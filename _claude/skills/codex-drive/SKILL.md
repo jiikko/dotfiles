@@ -232,6 +232,10 @@ Claude がやるのは:
 
 - **exit code を成功判定に使う**: 0 = 全本 + merger 成功 / 2 = 一部失敗 (digest はあるが観点が欠けている —
   **成功扱いしない**。欠けた観点を再実行するか「未実施」を Claude が明示的に引き継ぐ) / 1 = 全滅・merger 失敗
+- 🚨 **`codex-fanout` に `-C` は無く、各 run は driver を起動した cwd の木を読む**。レビュー対象が worktree なら、同じ Bash 呼び出しで
+  `cd <worktree の絶対パス> && codex-fanout …` として起動し、prompt に書く対象のファイルも絶対パスにする (`tmp/…` や `git show HEAD` の
+  相対の指定は、起動した場所の木を指す。obaket retro 1112: 共有 checkout から起動し、codex が自分で worktree を探したので結果は使えたが、
+  探し当てる保証は無い)。1 本だけなら `codex-run -C` で足りる
 - driver は read-only / review 専用。**workspace-write の並列 (`[2p]`) は対象外** (worktree 分離が必要。[2p] の手順に従う)
 - `-J` で JSONL を保存し、`<label>.meta.json` の完了状態・thread ID・usage・command_execution を確認する。
   機械集約が必要なら `-S <schema.json>` を ro run に付ける (全行に同じ schema を使える manifest のみ)。
