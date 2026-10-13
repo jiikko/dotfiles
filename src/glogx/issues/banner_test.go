@@ -262,3 +262,34 @@ func TestUnclaimChangesNothingWhenBannerClearFails(t *testing.T) {
 		}
 	}
 }
+
+// issue 748: front matter の境界は LoadMeta と同じ規則 (前後の空白を無視・閉じは --- か ...) で判定し、
+// バナーを front matter の後ろに入れる。前に入れると LoadMeta が front matter と見なくなり、status が消える。
+func TestAddBannerAfterFrontMatterOfEveryForm(t *testing.T) {
+	cases := map[string]string{
+		"... で閉じる":           "---\nstatus: pending\n...\n\n# T\n\n## 概要\n",
+		"開きの末尾に空白":            "--- \nstatus: pending\n---\n\n# T\n\n## 概要\n",
+		"... で閉じ本文に水平線":       "---\nstatus: pending\n...\n\n# T\n\n## 概要\n\n---\n\n本文\n",
+		"CRLF と ... の閉じ":       "---\r\nstatus: pending\r\n...\r\n\r\n# T\r\n\r\n## 概要\r\n",
+	}
+	for name, src := range cases {
+		got, changed := addBanner(src, testBanner)
+		if !changed {
+			t.Fatalf("%s: バナーが入らない", name)
+		}
+		p := filepath.Join(t.TempDir(), "001-feat-x.md")
+		if err := os.WriteFile(p, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		iss := &Issue{Path: p}
+		if err := iss.LoadMeta(); err != nil {
+			t.Fatal(err)
+		}
+		if iss.Declared != "pending" || iss.Title != "T" {
+			t.Errorf("%s: バナーを入れた後の Declared=%q Title=%q (本文 %q)", name, iss.Declared, iss.Title, got)
+		}
+		if back, ok := removeBanner(got); !ok || strings.Contains(back, "担当中") {
+			t.Errorf("%s: バナーを外せない (ok=%v): %q", name, ok, back)
+		}
+	}
+}

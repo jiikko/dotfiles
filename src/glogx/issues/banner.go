@@ -80,9 +80,9 @@ func addBanner(src, banner string) (string, bool) {
 	blank := func(l string) bool { return strings.TrimSpace(l) == "" }
 	var head []string
 	rest := lines
-	if len(rest) > 0 && strings.TrimSuffix(rest[0], "\r") == "---" {
+	if len(rest) > 0 && isFrontMatterOpen(rest[0]) {
 		for j := 1; j < len(rest); j++ {
-			if strings.TrimSuffix(rest[j], "\r") == "---" {
+			if isFrontMatterClose(rest[j]) {
 				head, rest = append([]string{}, rest[:j+1]...), rest[j+1:]
 				for len(rest) > 0 && blank(rest[0]) {
 					rest = rest[1:]

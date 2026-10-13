@@ -608,6 +608,17 @@ func (iss *Issue) StatusLabel() string {
 // フィクスチャが上限に当たらず、打ち切りを外しても green になった)。
 const loadMetaMaxLine = 1024 * 1024
 
+// isFrontMatterOpen / isFrontMatterClose は front matter の境界の判定の唯一の出典 (LoadMeta と
+// addBanner が共有する。issue 748: addBanner だけが完全一致で比べ、`...` の閉じや末尾の空白で
+// バナーを front matter の前に入れていた)。開きはファイルの 1 行目だけ、閉じは開きの後の最初の行。
+// tuikit/markdown の skipFrontMatter とも同じ規則 (前後の空白を無視し、閉じは --- か ...)。
+func isFrontMatterOpen(line string) bool { return strings.TrimSpace(line) == "---" }
+
+func isFrontMatterClose(line string) bool {
+	t := strings.TrimSpace(line)
+	return t == "---" || t == "..."
+}
+
 // LoadMeta は本文から H1 と front matter の status: を読む。二度目は何もしない。
 //
 // 🚨 scanIssues が**見つかった全 issue に対して**呼ぶ (可視行だけの遅延ではない)。
@@ -645,9 +656,9 @@ func (iss *Issue) LoadMeta() error {
 		// 一覧に出る文字列なので、github.com/jiikko/dotfiles/src/tuikit/markdown 側と同じ関門を通す。
 		lineText := termsafe.PlainLine(strings.TrimRight(sc.Text(), "\r"))
 		switch {
-		case firstLine && strings.TrimSpace(lineText) == "---":
+		case firstLine && isFrontMatterOpen(lineText):
 			inFront = true
-		case inFront && (strings.TrimSpace(lineText) == "---" || strings.TrimSpace(lineText) == "..."):
+		case inFront && isFrontMatterClose(lineText):
 			inFront = false
 		case inFront:
 			if m := frontStatusRe.FindStringSubmatch(strings.TrimSpace(lineText)); m != nil {

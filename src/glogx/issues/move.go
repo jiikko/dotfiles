@@ -19,11 +19,14 @@ import (
 
 // MoveToSubdir は issue を同じ issue ディレクトリ配下の subdir へ移す (subdir="" は直下へ戻す)。
 // 戻り値は移動後の絶対パス (同一性キー。目印の付け外しではファイルが動かないので元の Path)。
-// 🚨 next から出る経路は「先にバナーを外し、外せたら目印を外す / ファイルを動かす」の順。逆順だと
-// バナーの後始末だけ失敗したとき「目印は外れたが Status はもう Next でない」ので、もう一度 n を押しても
-// 解除が skip され、古いバナーを UI から外す手段が無くなる (敵対レビュー 2026-09-19 2 周目)。この順なら
-// 失敗は「何も変わっていない」なので再実行できる。
-// 残る既知の半端: 入る向きのバナー書き込み失敗 + 巻き戻しの失敗 (二重失敗) は "" を返すが、目印・ファイルは
+// 🚨 失敗は「何も変わっていない」で返す (再実行できるように)。宛先の決定・group の拒否・同名の確認は
+// 何にも触る前に済ませ、その後に失敗したら触ったものを戻す (issue 748: 以前は同名の確認がバナーと目印を
+// 外した後にあり、失敗しても claim が黙って外れていた)。next から出る経路は「目印を外す → 動かす →
+// 動かした先でバナーを外す」の順で、バナーを外せなければファイルと目印を戻す。バナーを最後にするのは、
+// 外した後の失敗でバナーを戻すと元の文言 (他のホストの署名かもしれない) を復元できないため。
+// 「目印は外れたが Status はもう Next でない」半端を残すと、もう一度 n を押しても解除が skip され、古いバナーを
+// UI から外す手段が無くなる (敵対レビュー 2026-09-19 2 周目)。
+// 残る既知の半端: 失敗の後の巻き戻しも失敗する二重失敗は "" とエラー (両方の理由) を返すが、目印・ファイルは
 // 動いている。呼び出し側は失敗時に再スキャンするので一覧は正される。
 //
 // `next` だけは例外で、**直下にある issue にはファイルを動かさず symlink の目印を置く** (nextlink.go。
@@ -56,20 +59,6 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		}
 		return iss.Path, removeNextLink(iss)
 	}
-	if iss.Status == StatusNext && subdir != NextDirName {
-		// next から出る (pending / done / 旧運用の実ファイルを直下へ戻す)。バナーを先に外す (上の doc)
-		if err := clearClaimBanner(iss.Path); err != nil {
-			return "", fmt.Errorf("担当者バナーを外せないため移動していません: %w", err)
-		}
-	}
-	if iss.NextLink != "" {
-		// done/ pending/ へ運ぶときは目印を先に消す。残すと dangling になり、同じ base の issue が
-		// 直下へ戻った瞬間に古い目印が再び成立して「誰も claim していない issue が Next として
-		// 共有される」(敵対レビュー 2 周目 P3-2)。規律だけに任せず、この経路では構造で消す
-		if err := removeNextLink(iss); err != nil {
-			return "", fmt.Errorf("%s へ移す前に next の目印を外せません: %w", subdir, err)
-		}
-	}
 	base := filepath.Base(iss.Rel)
 	// group issue は epic の外へ出さない。subdir="" は group 直下へ戻すので、claim の解除
 	// (next -> open) も group 内で完結する。宛先の器は ContainerDir が唯一の判定 (迷子も含む)
@@ -83,17 +72,47 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		destDir = filepath.Join(destDir, subdir)
 	}
 	dest := filepath.Join(destDir, base)
+	// 宛先が決まった時点で分かる失敗 (group の拒否・同名) は、目印にもバナーにも触る前に返す (issue 748)
 	if dest == iss.Path {
 		return iss.Path, nil // 既にそこに居る (呼び出し側が「変化なし」と数える)
 	}
 	if _, err := os.Stat(dest); err == nil {
 		return "", fmt.Errorf("%s には同名のファイルが既にあります", filepath.Join(subdir, base))
 	}
+	removedLink := ""
+	if iss.NextLink != "" {
+		// done/ pending/ へ運ぶときは目印を消す。残すと dangling になり、同じ base の issue が
+		// 直下へ戻った瞬間に古い目印が再び成立して「誰も claim していない issue が Next として
+		// 共有される」(敵対レビュー 2 周目 P3-2)。規律だけに任せず、この経路では構造で消す
+		if err := removeNextLink(iss); err != nil {
+			return "", fmt.Errorf("%s へ移す前に next の目印を外せません: %w", subdir, err)
+		}
+		removedLink = iss.NextLink
+	}
+	// undo は目印を戻す。移動の失敗で「目印だけ外れた」を残さない (issue 748)
+	undo := func(cause error) error {
+		if removedLink == "" {
+			return cause
+		}
+		if err := os.Symlink("../"+filepath.Base(removedLink), removedLink); err != nil {
+			return fmt.Errorf("%w (next の目印も戻せません: %w)", cause, err)
+		}
+		return cause
+	}
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
-		return "", err
+		return "", undo(err)
 	}
 	if err := os.Rename(iss.Path, dest); err != nil {
-		return "", err
+		return "", undo(err)
+	}
+	if iss.Status == StatusNext && subdir != NextDirName {
+		// next から出る (pending / done / 旧運用の実ファイルを直下へ戻す)。バナーは動かした後に外す (上の doc)
+		if err := clearClaimBanner(dest); err != nil {
+			if rerr := os.Rename(dest, iss.Path); rerr != nil {
+				return "", fmt.Errorf("担当者バナーを外せず、元の場所へも戻せません: %w (戻し: %w)", err, rerr)
+			}
+			return "", undo(fmt.Errorf("担当者バナーを外せないため移動していません: %w", err))
+		}
 	}
 	// バナーは next にいる間だけの表示。入るときは動かした後に書く (出るときは上で先に外している)
 	if subdir == NextDirName {

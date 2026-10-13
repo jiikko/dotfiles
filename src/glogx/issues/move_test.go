@@ -200,3 +200,95 @@ func TestMoveRejectsGroupIssueWithoutGroupKey(t *testing.T) {
 		}
 	}
 }
+
+// issue 748: next から出す移動が失敗したら、バナーも目印もファイルも動かない (再実行できる)。
+// 以前は同名の確認がバナーと目印を外した後にあり、失敗しても claim が黙って外れていた。
+func TestMoveOutOfNextChangesNothingOnFailure(t *testing.T) {
+	fixedNow(t)
+	claimed := func(t *testing.T) (*Issue, string) {
+		t.Helper()
+		dir := t.TempDir()
+		p := filepath.Join(dir, "001-feat-x.md")
+		if err := os.WriteFile(p, []byte("# x\n\n## 概要\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		iss := &Issue{Path: p, Dir: dir, Rel: "001-feat-x.md"}
+		if _, err := MoveToSubdir(iss, NextDirName); err != nil {
+			t.Fatal(err)
+		}
+		iss.Status, iss.NextLink = StatusNext, NextLinkPath(iss)
+		return iss, dir
+	}
+	unchanged := func(t *testing.T, iss *Issue) {
+		t.Helper()
+		b, err := os.ReadFile(iss.Path)
+		if err != nil {
+			t.Fatalf("ファイルが元の場所に無い: %v", err)
+		}
+		if !strings.Contains(string(b), "**担当中: ") {
+			t.Fatalf("失敗したのにバナーが外れた: %q", b)
+		}
+		if target, err := os.Readlink(iss.NextLink); err != nil || target != "../001-feat-x.md" {
+			t.Fatalf("失敗したのに目印が外れた: %q %v", target, err)
+		}
+	}
+	t.Run("宛先に同名", func(t *testing.T) {
+		iss, dir := claimed(t)
+		if err := os.MkdirAll(filepath.Join(dir, "done"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "done", "001-feat-x.md"), []byte("# 別\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := MoveToSubdir(iss, "done"); err == nil {
+			t.Fatal("同名があるのに成功した")
+		}
+		unchanged(t, iss)
+	})
+	t.Run("宛先の dir を作れない", func(t *testing.T) {
+		iss, dir := claimed(t)
+		if err := os.WriteFile(filepath.Join(dir, "done"), []byte("dir ではない\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := MoveToSubdir(iss, "done"); err == nil {
+			t.Fatal("宛先の dir を作れないのに成功した")
+		}
+		unchanged(t, iss)
+	})
+	t.Run("動かした後にバナーを外せない", func(t *testing.T) {
+		iss, _ := claimed(t)
+		old := beforeRewrite
+		beforeRewrite = func(path string) { // 読んでから書くまでの間に書き換えて、外す処理を失敗させる
+			_ = os.WriteFile(path, []byte("# x\n\n> 🚨 **担当中: 他人**\n\n## 概要\n追記\n"), 0o644)
+		}
+		t.Cleanup(func() { beforeRewrite = old })
+		if _, err := MoveToSubdir(iss, "done"); err == nil {
+			t.Fatal("バナーを外せないのに成功した")
+		}
+		beforeRewrite = old
+		unchanged(t, iss)
+	})
+}
+
+// 旧運用 (next/ に実ファイル) でも、同名で失敗したらバナーを外さない。
+func TestMoveLegacyNextFileKeepsBannerOnConflict(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, NextDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, NextDirName, "001-feat-x.md")
+	body := "# x\n\n" + testBanner + "\n\n## 概要\n"
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "001-feat-x.md"), []byte("# 別\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &Issue{Path: p, Dir: dir, Rel: "next/001-feat-x.md", Status: StatusNext}
+	if _, err := MoveToSubdir(iss, ""); err == nil {
+		t.Fatal("直下に同名があるのに成功した")
+	}
+	if b, _ := os.ReadFile(p); string(b) != body {
+		t.Fatalf("失敗したのに本文が変わった: %q", b)
+	}
+}
