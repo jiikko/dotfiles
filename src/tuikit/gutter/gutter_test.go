@@ -28,3 +28,17 @@ func TestFormat(t *testing.T) {
 		}
 	}
 }
+
+// Number は Format から区切りを除いた部分と一致する (番号だけを塗る使う側が、区切りの長さを知らずに切れる。issue 757)。
+func TestNumberIsFormatWithoutSeparator(t *testing.T) {
+	for _, w := range []int{1, 2, 3, 4, 6} {
+		for _, src := range []int{0, 1, 7, 42, 12345} {
+			if got, want := Number(src, w)+Separator, Format(src, w); got != want {
+				t.Errorf("Number(%d,%d)+Separator = %q, Format = %q", src, w, got, want)
+			}
+		}
+	}
+	if got := Number(7, 4); got != "  7" {
+		t.Errorf("Number(7,4) = %q, want %q", got, "  7")
+	}
+}

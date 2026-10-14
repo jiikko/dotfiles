@@ -2580,11 +2580,10 @@ func srcGutterWidth(srcLines int) int { return gutter.Width(srcLines) }
 
 // srcGutter は 1 行ぶんの行番号の溝。src=0 (折り返しの続き行・畳まれた 2 行目以降) は空白 (理由は tuikit/gutter の doc)。
 func srcGutter(src, width int, colored bool) string {
-	s := gutter.Format(src, width)
-	if src <= 0 || s == "" {
-		return s
+	if src <= 0 || width <= 0 {
+		return gutter.Format(src, width)
 	}
-	return paint(s[:len(s)-1], ansiDim, colored) + " " // 番号だけを薄くする (末尾の空白は塗らない)
+	return paint(gutter.Number(src, width), ansiDim, colored) + gutter.Separator // 番号だけを薄くする (区切りは塗らない)
 }
 
 // hint は viewer 表示中の操作案内 (最下行)。

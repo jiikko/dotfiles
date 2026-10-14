@@ -13,18 +13,28 @@ import (
 // minDigits は番号の最低の桁数 (行数が少なくても詰まって見えないように)。
 const minDigits = 2
 
-// Width は溝の桁数 (番号 + 空白 1)。lines は出しうる番号の最大値 (ソースの行数)。行数が増えても揃うよう桁数で決める。
+// Separator は番号と本文の間の区切り (1 桁)。
+const Separator = " "
+
+// Width は溝の桁数 (番号 + 区切り)。lines は出しうる番号の最大値 (ソースの行数)。行数が増えても揃うよう桁数で決める。
 func Width(lines int) int {
-	return max(len(strconv.Itoa(max(lines, 1))), minDigits) + 1
+	return max(len(strconv.Itoa(max(lines, 1))), minDigits) + termwidth.Of(Separator)
 }
 
-// Format は 1 行ぶんの溝 (width 桁・色なし)。番号を右に寄せ、末尾に空白 1 つ。src<=0 は空白だけ。
+// Format は 1 行ぶんの溝 (width 桁・色なし) = Number + Separator。src<=0 は空白だけ。
 func Format(src, width int) string {
 	if width <= 0 {
 		return ""
 	}
+	return Number(src, width) + Separator
+}
+
+// Number は溝のうち番号の部分 (width から区切りを引いた桁・右寄せ・色なし。src<=0 は空白)。番号だけを塗りたい
+// 使う側は、Format の出力を区切りの長さで切らずにこちらを使う (区切りの字を変えても壊れない。issue 757)。
+func Number(src, width int) string {
+	w := max(width-termwidth.Of(Separator), 0)
 	if src <= 0 {
-		return termwidth.PadSpaces(width)
+		return termwidth.PadSpaces(w)
 	}
-	return termwidth.FillLeft(strconv.Itoa(src), width-1) + " "
+	return termwidth.FillLeft(strconv.Itoa(src), w)
 }
