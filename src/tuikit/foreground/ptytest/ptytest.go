@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -18,11 +20,18 @@ import (
 
 const env = "PTYTEST_HELPER"
 
+// pidEnv は helper が自分の pid を書くファイル。script を止めても、止まった (SIGTTOU・SIGSTOP) helper は script の
+// 子の session に残るので、上限を超えたら Run がこの pid を直接止める (敵対レビュー 2026-10-14)。
+const pidEnv = "PTYTEST_PIDFILE"
+
 // Helper は、helper として起こされていれば f(mode) の結果を書いて抜ける (そうでなければ何もしない)。TestMain の先頭で呼ぶ。
 func Helper(f func(mode string) string) {
 	mode := os.Getenv(env)
 	if mode == "" {
 		return
+	}
+	if f := os.Getenv(pidEnv); f != "" {
+		_ = os.WriteFile(f, []byte(strconv.Itoa(os.Getpid())), 0o600) // 書けなくても検査は進める (止めるのは上限を超えたときだけ)
 	}
 	if fg, mine, err := foreground.Owner(int(os.Stdin.Fd())); err != nil || fg != mine {
 		_, _ = fmt.Fprintf(os.Stdout, "RESULT not-foreground fg=%d mine=%d err=%v\n", fg, mine, err)
@@ -50,10 +59,12 @@ func Run(t testing.TB, mode string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "script", "-q", "/dev/null", os.Args[0], "-test.run=^$")
-	cmd.Env = append(os.Environ(), env+"="+mode)
+	pidFile := t.TempDir() + "/helper.pid"
+	cmd.Env = append(os.Environ(), env+"="+mode, pidEnv+"="+pidFile)
 	cmd.WaitDelay = 5 * time.Second // script を止めた後、出力を持ったまま残る孫を待ち続けない
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
+		killHelper(pidFile)
 		t.Fatalf("script が %v で終わらない (helper が止まった):\n%s", timeout, out)
 	}
 	if err != nil {
@@ -79,4 +90,16 @@ func skip(t testing.TB, format string, args ...any) {
 		t.Fatalf("CI で pty の検査を飛ばそうとした: "+format, args...)
 	}
 	t.Skipf(format, args...)
+}
+
+// killHelper は上限を超えた helper を止める。helper は script の子の session に居るので、script を止めても残る。
+// SIGKILL は止まっている (T) プロセスにも届く。pid は helper 自身が書いたものだけを使う (広いパターンで kill しない)。
+func killHelper(pidFile string) {
+	b, err := os.ReadFile(pidFile)
+	if err != nil {
+		return
+	}
+	if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && pid > 1 {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
 }

@@ -72,7 +72,8 @@ linters:
         - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
           msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
         # 端末を外のコマンドへ渡す実行は、戻った後に端末の前面を取り戻す ui の termExec (foreground.Exec) を通す (issue 707)。
-        # glogx・treefiler は ruleguard で同じことを止めているが、pro-con は ruleguard を持たないので字面で止める (issue 757)
+        # glogx・treefiler は ruleguard で同じことを止めているが、pro-con は ruleguard を持たないので字面で止める (issue 757)。
+        # 字面で見るので、bubbletea を tea 以外の名前で import すると検出しない (今の import は全部 tea)
         - pattern: ^tea\.ExecProcess$
           msg: 端末を渡す実行は ui の termExec (foreground.Exec) を tea.Exec に渡す (戻った後に前面を取り戻す。issue 707)
     depguard:
