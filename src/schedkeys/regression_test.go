@@ -682,7 +682,7 @@ func TestMenuAndWhenPresetsWrapAround(t *testing.T) {
 	if want := (start - 1 + len(presets)) % len(presets); m.form.whenIdx != want {
 		t.Fatalf("「いつ」の候補が左で回らない (%d → %d, want %d)", start, m.form.whenIdx, want)
 	}
-	for range len(presets) {
+	for range presets {
 		press(m, "right", "")
 	}
 	if want := (start - 1 + len(presets)) % len(presets); m.form.whenIdx != want {
