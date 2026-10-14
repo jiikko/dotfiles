@@ -338,7 +338,7 @@ func TestWaitDelayOffendersCanary(t *testing.T) {
 var execCmdAllowlist = map[string]string{
 	"external_commands.go": "ブラウザ / エディタ / クリップボードの起動口",
 	"gitlog.go":            "git 実行の共通入口 (WaitDelay は runGitCmd が張る)",
-	"open_workspace.go":    "e / E の前景エディタ・ファイラー起動 (tea.ExecProcess)",
+	"open_workspace.go":    "e / E の前景エディタ・ファイラー起動 (runEditorCmd = tea.Exec + foreground.Exec)",
 	"tui.go":               "job ログを nvim の scratch で開く前景実行",
 }
 

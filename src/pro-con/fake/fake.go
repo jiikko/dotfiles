@@ -636,7 +636,7 @@ func fmtAgo(d time.Duration) string {
 }
 
 // AttachCommand は本物の claude attach の代わりに、自分自身の fake-attach を起動する。
-// 画面の受け渡しと戻り (tea.ExecProcess) は本物と同じ経路を通る。
+// 画面の受け渡しと戻り (tea.Exec。ui の termExec) は本物と同じ経路を通る。
 func (s *Sim) AttachCommand(sessionID string) (*exec.Cmd, error) {
 	if sessionID == "" {
 		return nil, backend.ErrNoSession

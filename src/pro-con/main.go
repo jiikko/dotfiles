@@ -816,7 +816,7 @@ func stateDir(home string) string {
 	return filepath.Join(base, "pro-con")
 }
 
-// fakeAttach は claude attach <id> の代わり。TUI から tea.ExecProcess で起動され、抜けると TUI へ戻る。
+// fakeAttach は claude attach <id> の代わり。TUI から tea.Exec (ui の termExec) で起動され、抜けると TUI へ戻る。
 func fakeAttach(session string, stdin io.Reader, stdout io.Writer) int {
 	_, _ = fmt.Fprintf(stdout, "\n  [模擬] session %s に attach したつもりの画面です。\n", session)
 	_, _ = fmt.Fprintln(stdout, "  本番ではここが claude attach の画面 (本物の Claude Code) になります。")

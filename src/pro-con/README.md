@@ -206,7 +206,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 ## 模擬 (ハリボテ) の中身
 
 - 1 秒ごとに `Poll` し、fake の模擬時間が 1 分進む (カードが列を進む・PG が質問する・watchdog が停滞を拾う・リソースの順番が回る)
-- attach (`a`) は本物の `claude attach` の代わりに `pro-con fake-attach <id>` を起動する (tmux の中は popup、外は `tea.ExecProcess`)。
+- attach (`a`) は本物の `claude attach` の代わりに `pro-con fake-attach <id>` を起動する (tmux の中は popup、外は `tea.Exec` で端末を渡す。ui の `termExec`)。
   画面の明け渡しと戻りは本番と同じ経路を通る
 
 | キー | 動作 |

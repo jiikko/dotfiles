@@ -23,7 +23,7 @@ var (
 // Screen は画面の出力 (端末) を包む。Keep の後に書かれた「alt screen を抜ける」「カーソルを出す」を落とす。
 // Fd を持つ (*os.File を埋める) ので、bubbletea は端末として扱う (大きさ・色の数を端末から読む)。
 //
-// 🚨 bubbletea の tea.ExecProcess は、子の Stdout が空なら出力 (これ) を渡す。*os.File でないと os/exec は
+// 🚨 bubbletea の tea.Exec (ui の termExec / foreground.Exec の SetStdout) は、子の Stdout が空なら出力 (これ) を渡す。*os.File でないと os/exec は
 // パイプを挟み、子 (attach の claude・エディタ) の stdout が端末でなくなる。子を起こす側で Stdout を端末に固定する (ui の execOnTerminal)。
 type Screen struct {
 	*os.File

@@ -9,7 +9,12 @@ import (
 )
 
 // Exec は端末を外のコマンド (エディタ・シェル) へ渡す bubbletea の ExecCommand (Run と SetStdin / SetStdout / SetStderr を持つ。
-// bubbletea は import しない)。tea.Exec(foreground.NewExec(cmd), fn) と使う。
+// bubbletea は import しない)。結果 (Was / Err) は Run の後にこの値へ入るので、値を手元に置いてから渡す:
+//
+//	x := foreground.NewExec(cmd)
+//	return tea.Exec(x, func(err error) tea.Msg { return doneMsg{err: err, reclaimErr: x.Err} })
+//
+// `tea.Exec(foreground.NewExec(cmd), fn)` と直に書くと、取り戻せなかった理由 (Err) を読めずに黙って捨てる (issue 757)。
 //
 // 渡す前に前面を持っていたなら、子が終わった直後 (bubbletea が端末を入れ直す前) に前面を取り戻す。子 (の孫) の対話のシェルは
 // job control のために前面を自分のグループへ移し、戻さずに終わることがある (`$SHELL -ic` が最後のコマンドを exec した等)。

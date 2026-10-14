@@ -26,7 +26,7 @@ type Backend interface {
 	// Apply は UI からの操作を 1 つ適用する。結果の文面は UI の通知行に出す。
 	Apply(Command) (string, error)
 	// AttachCommand は PG の session を対話で開くコマンドを返す (本番は `claude attach <id>`)。
-	// UI はこれを tea.ExecProcess で起動し、抜けたら自分の画面へ戻る (415 論点 7)。
+	// UI はこれを tea.Exec (ui の termExec) で起動し、抜けたら自分の画面へ戻る (415 論点 7)。
 	AttachCommand(sessionID string) (*exec.Cmd, error)
 }
 

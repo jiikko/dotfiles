@@ -37,7 +37,7 @@ func padViaPadSpaces(m dsl.Matcher) {
 		Report(`空白の連結は termwidth.PadSpaces($n) を使う (無確保。main では padSpaces)`)
 }
 
-// execViaForeground: 端末を外のコマンドへ渡す実行は tea.Exec(foreground.NewExec(cmd), fn) を通す (issue 707)。
+// execViaForeground: 端末を外のコマンドへ渡す実行は foreground.NewExec の値を tea.Exec に渡す (issue 707)。
 // tea.ExecProcess は戻った後に前面を確かめないので、子 (treefiler の `!` の `$SHELL -ic` 等) が前面を持ち去ったまま終わると、
 // 入れ直しで SIGTTOU に止まるか、EIO で何も読めず固まる。treefiler の pty テスト (filer/shell_pty_test.go) が見ているのは
 // foreground.Exec の振る舞いで、アプリがそれを通っていることはこの規則が止める。
@@ -47,5 +47,5 @@ func padViaPadSpaces(m dsl.Matcher) {
 func execViaForeground(m dsl.Matcher) {
 	m.Import("charm.land/bubbletea/v2")
 	m.Match(`tea.ExecProcess($*_)`).
-		Report(`端末を渡す実行は tea.Exec(foreground.NewExec(cmd), fn) を通す (戻った後に端末の前面を取り戻す。issue 707)`)
+		Report(`端末を渡す実行は x := foreground.NewExec(cmd) を tea.Exec(x, fn) に渡し、fn で x.Err を読む (戻った後に端末の前面を取り戻す。issue 707・757)`)
 }
