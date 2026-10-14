@@ -26,4 +26,12 @@ issue 759 で restartable の tuikit の固定版を 99b256e39f08 → 5bf65d09 �
 
 ## 進捗
 
-- [ ] 未着手
+- [x] tuikit の `confirm` に `FitHint(案内, 幅)` を公開した (Box に渡す幅を受け取り、Dialog と同じ規則で短い形に替える)。幅 1〜60 で
+  「Box + FitHint の板」が「Dialog の板」と一致することをテストで見る。README の confirm の行にも足した
+  — `feat(tuikit/confirm): Box に案内を並べる使う側のために FitHint を公開する`
+- [x] restartable の tuikit を cb9e1aaf (FitHint の版) へ上げ、`transitionPanel` の案内を `confirm.FitHint` に通した。幅 20/30/36/37/80 で
+  遷移中と通常時の案内の行が一致することをテストで見る (幅 20 は一番短い形も入らず、両方とも板が同じ形を切る)
+  — `fix(restartable): 遷移中の板の確認の案内も confirm.FitHint で幅に合わせ、通常時と同じ文言にする`
+- 変異: transitionPanel を `confirm.HintYesNo` の直置きへ戻す → `TestConfirmHintIsSameDuringTransition` が red
+- tuikit と restartable の `make lint` / `make test` rc=0、`tests/scripts/test_widthenv_guarded.sh` と `test_tuikit_consumers_aligned.sh` rc=0。`go mod tidy -diff` 差分 0
+- 敵対レビューは省いた: 表示の文言だけの変更で、判断ロジック・境界・状態遷移・外部 I/O が動いていないため
