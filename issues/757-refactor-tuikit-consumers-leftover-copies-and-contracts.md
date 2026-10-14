@@ -1,7 +1,5 @@
 # 757 (refactor): tuikit に寄せた後の、使う側に残った写しと暗黙の約束
 
-> 🚨 **担当中: Claude (tuikit の監査の対応セッション)**（2026-10-14〜）
-
 起票日: 2026-10-14
 
 ## 概要
@@ -56,4 +54,16 @@
 
 ## 進捗
 
-- [ ] 1〜5 は未着手
+- [x] 1 `foreground.NewExec` の doc・glogx と treefiler の lint の文言・tuikit の README を「`x := NewExec(cmd)` を `tea.Exec(x, fn)` に渡して `fn` で `x.Err` を読む」形に
+  — `fix(tuikit/foreground): NewExec の結果を読める書き方を doc と lint で案内し、pro-con にも tea.ExecProcess を止める規則を足す`
+- [x] 2 pro-con の `.golangci.yml` に forbidigo で `tea.ExecProcess` を禁止 (変異で lint が落ちるのを確認)。別名の import は検出しない限界をコメントに書いた。
+  pro-con と glogx の古い呼び名のコメント 6 か所 (pro-con 5・glogx の waitdelay の allowlist 1) を直した
+- [x] 3 剰余算の手書き 6 か所 (legend 1・schedkeys 5) を `listnav.Cycle` へ — `refactor(pro-con,schedkeys): 巡回の剰余算の手書きを listnav.Cycle に寄せる`。
+  schedkeys の移動キーを `MotionOf` に寄せない理由 (巡回と端で止まるの違い) をコードに残し、巡回をテストで固定した
+- [x] 4 `gutter.Number` / `Separator` を足し、glogx の `srcGutter` は番号の部分だけを塗る — `refactor(tuikit/gutter): ...`。区切りを塗らないことをテストで固定
+- [x] 5 `termwidth.EscLen` を公開し、pro-con の `markHits` が ESC 列をそれで読む (OSC 8 の URL の途中で切れていた) — `fix(pro-con): 検索の語の浮かせは ...`。
+  残り 2 つの走査 (`dimANSI` / `putSGR`) は CSI を終端バイトまで正しく読んでおり、SGR 以外が届かないので触っていない
+- 変異 (すべて red): markHits を「次の m まで」へ戻す / forbidigo に当たる呼び出しを足す / メニュー・「いつ」の巡回を端で止める / srcGutter で区切りまで塗る
+- 回帰の確認 (敵対レビュー): markHits は SGR だけの行 30 万件で旧と出力の差 0
+- 敵対レビュー 3 体 (壊す+回帰 / 素通り / 回帰。read-only・1 体ずつ直列、5h 枠に合わせて間を空けた) を通した
+- 6 module (tuikit・glogx・pro-con・schedkeys・treefiler・restartable) の `make lint` / `make test` rc=0 (最後の編集の後)

@@ -1,7 +1,5 @@
 # 756 (bug): restartable が幅の環境 (RUNEWIDTH_EASTASIAN) の警告を実行時に出さない (README に書いた既知の制約。P3)
 
-> 🚨 **担当中: Claude (tuikit の監査の対応セッション)**（2026-10-14〜）
-
 起票日: 2026-10-14
 
 ## 概要
@@ -38,4 +36,10 @@ restartable・schedkeys・ratelimit の本体は `widthenv` を一度も呼ば�
 
 ## 進捗
 
-- [ ] 未着手
+- [x] restartable は TTY の UI を出すときだけ、起動時に `widthenv.Message` を stderr へ 1 行出す (UI はインライン画面なので残る)。
+  警告と UI の取り付けを `withPresenter` に切り出し、headless では出さないことをテストで見る。README の注意書きにも書いた
+  — `feat(restartable): 曖昧幅を 2 桁と数える設定 (RUNEWIDTH_EASTASIAN) を起動時に 1 行警告する`・`test: 敵対レビュー (素通り) で緑のままだった退行を止める`
+- schedkeys・ratelimit は対象外 (本文の判断どおり。schedkeys は曖昧幅の字 0・ratelimit は hook 経路の CLI)
+- 変異 (すべて red): warnWidthEnv の条件を消す / 警告を headless の判定の外へ出す
+- 敵対レビュー 3 体 (壊す+回帰 / 素通り / 回帰。read-only・1 体ずつ直列、5h 枠に合わせて間を空けた) を通した
+- 6 module (tuikit・glogx・pro-con・schedkeys・treefiler・restartable) の `make lint` / `make test` rc=0 (最後の編集の後)

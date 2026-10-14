@@ -1,7 +1,5 @@
 # 758 (test): tuikit のテスト: foreground.Exec の SetStdin が未検査・何も検査しないテスト 2 本・pty テストの Skip が見えない
 
-> 🚨 **担当中: Claude (tuikit の監査の対応セッション)**（2026-10-14〜）
-
 起票日: 2026-10-14
 
 ## 概要
@@ -48,4 +46,14 @@ main は「foreground の Test 関数は Reclaim と Detached の 2 本だけ」
 
 ## 進捗
 
-- [ ] 1〜5 は未着手
+- [x] 1 `foreground/exec_test.go` に、持っていた前面だけ取り戻す / Cmd==nil で何もしない / 先に決めた入出力を上書きしない / 前面を子の実行の前に確かめる、の 4 本
+  (敵対レビュー (素通り) で「前面を子の後で確かめる」退行が緑だったので順番のテストを足した)
+- [x] 2・3 何も検査しない 2 本 (`TestSymbolWidthRejectsOutsideTable` の後半・`TestEastAsianAmbiguousUnset`) を消した。失うカバレッジは無い (範囲の外は前半の `symTableLo-1` / `symTableHi+1`、空文字は表の `{"", false}` が見る)
+- [x] 4 `ptytest.Run` は CI (環境変数 CI) では Skip せず落とし、script に 60 秒の上限を付けた。上限を超えたら helper が書いた pid を SIGKILL する
+  (敵対レビュー (壊す) の再現: 止まった helper が STAT=Ts+ PPID=1 で残っていた。`killHelper` を外すと残ることを負の対照で確認)。CI の分岐は偽の `testing.TB` でテストした
+- 5 任意のうち、toast のテストの枠の剥がしを `innerText` に寄せた。番犬のテストの改名は見送り (直上のコメントが役割を書いていて、旧名は done の 054 から引かれている)。
+  `basic16` の全数は見送り (外部の仕様表と突き合わせないと表の写しになる)
+- 変異 (すべて red): held の判定を消す / 取り戻しの結果を捨てる / SetStdin の条件を外す / 前面を子の後で確かめる / CI の判定を消す
+- 未確認: CI の macOS runner で pty の検査が今も実行されていること (-v が無いので PASS 行は見えない。所要からの推定は実行)。今回の push で、Skip なら CI が赤になる形にした
+- 敵対レビュー 3 体 (壊す+回帰 / 素通り / 回帰。read-only・1 体ずつ直列、5h 枠に合わせて間を空けた) を通した
+- 6 module (tuikit・glogx・pro-con・schedkeys・treefiler・restartable) の `make lint` / `make test` rc=0 (最後の編集の後)

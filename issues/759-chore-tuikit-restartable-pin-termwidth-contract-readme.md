@@ -1,7 +1,5 @@
 # 759 (chore): restartable の tuikit の固定版が古い / termwidth が不正な入力を受けたときの契約 / README の CI の記述
 
-> 🚨 **担当中: Claude (tuikit の監査の対応セッション)**（2026-10-14〜）
-
 起票日: 2026-10-14
 
 ## 概要
@@ -33,4 +31,11 @@
 
 ## 進捗
 
-- [ ] 1〜3 は未着手
+- [x] 1 restartable の tuikit を 99b256e39f08 → 5bf65d09 へ上げた (`go mod tidy -diff` 差分 0・`tests/scripts/test_tuikit_consumers_aligned.sh` rc=0)
+  — `chore(restartable): tuikit の固定版を 2026-09-30 から 5bf65d09 へ上げる`。副作用の確認の案内の不揃いは 761 へ切り出した
+- [x] 2 termwidth に渡す文字列の契約 (termsafe を通したもの) を tuikit の README の「使う側の約束」に書いた
+- [x] 3 README の CI の記述を、tuikit の変更で走る 5 つの workflow と、版を固定する restartable は走らないことに直した
+  — `docs(tuikit): termwidth に渡す文字列の契約 ...`
+- ついで: `claude-md-refresh` で tuikit の CLAUDE.md・README を実体に揃えた (6 件) — `docs(tuikit): CLAUDE.md と README を実体に揃える`
+- 敵対レビュー 3 体 (壊す+回帰 / 素通り / 回帰。read-only・1 体ずつ直列、5h 枠に合わせて間を空けた) を通した
+- 6 module (tuikit・glogx・pro-con・schedkeys・treefiler・restartable) の `make lint` / `make test` rc=0 (最後の編集の後)

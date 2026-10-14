@@ -50,3 +50,4 @@ pty テストの Skip が見えない件は品質の体と ci の体の両方が
   756 を P3 へ (restartable の README と issue 588 が既知の制約として記録済み)・対象を restartable に絞る (schedkeys は曖昧幅の字 0・ratelimit は hook 経路の CLI)・
   pro-con は画面の中の通知・版上げ不要 / 757-2 に pro-con の ruleguard 不在と ExecProcess のコメント 3 か所 / 757-3 に MotionOf の意味の差 / 757-4 は doc と TestFormat の契約 /
   758-1 を P3 へ (pro-con のテストが変異 1・2 を検出。穴は SetStdin だけ)・treefiler の pty テストは ptytest を使わない (誤りを削除)・母集合の数え直し
+- [x] 756〜759 を対応して done へ移した (2026-10-14)。残った確認の案内の不揃いは 761
