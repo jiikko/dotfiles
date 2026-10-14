@@ -79,12 +79,8 @@ func TestSymbolWidthRejectsOutsideTable(t *testing.T) {
 			t.Errorf("U+%04X を受理してしまった (w=%d)", r, w)
 		}
 	}
-	// 受理される rune が表の上限を超えないこと (fastDispWidth の default 分岐の前提)
-	for _, r := range acceptedSymbols(t) {
-		if r < symTableLo || r > symTableHi {
-			t.Errorf("受理 rune U+%04X が表の範囲外", r)
-		}
-	}
+	// 「受理 rune が表の範囲を超えない」は acceptedSymbols が表の範囲だけを走査するので常に真になり、何も検査しない
+	// (issue 758)。範囲の外を受理しないことは、上の symTableLo-1 / symTableHi+1 が見ている
 }
 
 // 受理文字同士は決してクラスタを結合しないこと。

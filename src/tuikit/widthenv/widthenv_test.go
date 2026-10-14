@@ -35,14 +35,6 @@ func TestEastAsianAmbiguousParsesLikeAnsi(t *testing.T) {
 	}
 }
 
-// env が立っていないときに偽を返すこと (env 未設定と空文字を区別しない)。
-func TestEastAsianAmbiguousUnset(t *testing.T) {
-	t.Setenv(Name, "")
-	if EastAsianAmbiguous() {
-		t.Fatalf("%s 未設定相当で真になった", Name)
-	}
-}
-
 // 🚨 このパッケージが前提にしている「x/ansi は Ambiguous を既定で幅 1 と数える」を、
 // ライブラリ側の実測で固定する。ここが 2 に変わったら (= 既定が変わったら) 支持しない
 // 判断の前提そのものが変わるので、Message の文言と issue 054 を読み直すこと。

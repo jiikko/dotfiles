@@ -5,11 +5,13 @@
 package ptytest
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 )
@@ -30,18 +32,30 @@ func Helper(f func(mode string) string) {
 	os.Exit(0)
 }
 
+// timeout は helper の 1 回の上限。helper は前面を確かめて 1 行書くだけで、手元では 0.02 秒で終わる。子が止まる退行
+// (前面でないまま端末の設定を書いて SIGTTOU で止まる等) で suite ごと待ち続けないための安全網 (issue 758)。
+const timeout = 60 * time.Second
+
 // Run は自分 (テストのバイナリ) を擬似端末の上で mode の helper として走らせ、f(mode) の結果を返す。
-// script・zsh が無い・擬似端末の前面に居られないときは Skip する。
+// script・zsh が無い・擬似端末の前面に居られないときは Skip する。🚨 ただし CI (環境変数 CI) では落とす: CI は
+// `go test` に -v を付けないので、Skip のまま緑だと pty の検査が 1 本も走っていないことがログから見えない (issue 758。
+// treefiler の needGit と同じ扱い)。
 func Run(t testing.TB, mode string) string {
 	t.Helper()
 	for _, bin := range []string{"script", "zsh"} {
 		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s が無い", bin)
+			skip(t, "%s が無い", bin)
 		}
 	}
-	cmd := exec.Command("script", "-q", "/dev/null", os.Args[0], "-test.run=^$")
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "script", "-q", "/dev/null", os.Args[0], "-test.run=^$")
 	cmd.Env = append(os.Environ(), env+"="+mode)
+	cmd.WaitDelay = 5 * time.Second // script を止めた後、出力を持ったまま残る孫を待ち続けない
 	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("script が %v で終わらない (helper が止まった):\n%s", timeout, out)
+	}
 	if err != nil {
 		t.Fatalf("script: %v\n%s", err, out)
 	}
@@ -49,11 +63,20 @@ func Run(t testing.TB, mode string) string {
 		if i := strings.Index(line, "RESULT "); i >= 0 {
 			r := strings.TrimSpace(line[i+len("RESULT "):])
 			if strings.HasPrefix(r, "not-foreground") {
-				t.Skipf("擬似端末の前面に居られない: %s", r)
+				skip(t, "擬似端末の前面に居られない: %s", r)
 			}
 			return r
 		}
 	}
 	t.Fatalf("helper の結果が無い:\n%s", out)
 	return ""
+}
+
+// skip は検査を飛ばす。CI では飛ばさずに落とす (Run の doc)。
+func skip(t testing.TB, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("CI") != "" {
+		t.Fatalf("CI で pty の検査を飛ばそうとした: "+format, args...)
+	}
+	t.Skipf(format, args...)
 }

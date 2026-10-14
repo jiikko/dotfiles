@@ -502,7 +502,7 @@ func TestToastWrapsLongTextWithinWidth(t *testing.T) {
 				if w := termwidth.Of(row); w > width {
 					t.Errorf("行の幅 %d が窓の幅 %d を超える: %q", w, width, row)
 				}
-				inner := strings.Trim(ansi.Strip(row), "│▖▁▗▓█▒░ ─┌┐")
+				inner := innerText(row)
 				inner = strings.TrimPrefix(inner, "✗ ")
 				if inner != "" {
 					body.WriteString(inner)
@@ -756,7 +756,7 @@ func TestToastBoxAtEveryNarrowWidth(t *testing.T) {
 		var body strings.Builder
 		for _, row := range box {
 			boxWidth = max(boxWidth, termwidth.Of(row))
-			inner := strings.Trim(ansi.Strip(row), "│▖▁▗▓█▒░ ─┌┐")
+			inner := innerText(row)
 			body.WriteString(strings.TrimPrefix(inner, "✓ "))
 		}
 		if want := max(width, layout.PanelMinWidth); boxWidth > want || (width < layout.PanelMinWidth && boxWidth != layout.PanelMinWidth) {
@@ -776,4 +776,9 @@ func TestToastBoxAtEveryNarrowWidth(t *testing.T) {
 			t.Errorf("幅 %d: 本文 %q が元の文の先頭と一致しない", width, got)
 		}
 	}
+}
+
+// innerText は 1 行から枠と影のグリフ・空白を剥がした本文 (枠の字を変えたらここだけ直す)。
+func innerText(row string) string {
+	return strings.Trim(ansi.Strip(row), "│▖▁▗▓█▒░ ─┌┐")
 }
