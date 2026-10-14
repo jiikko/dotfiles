@@ -13,7 +13,7 @@
      (issue 700。旧版は「英字まで」の自前の走査で、OSC 8 のように英字で終わらない列を途中で切る)
    - restartable の画面に OSC 8 を含む文字列が流れる経路は未確認
    - `src_restartable.yml` の paths に `src/tuikit/**` が無いのは固定版のため (設計どおり)
-   - 直し方: go.mod の版を上げ、restartable 側の CI で確かめる。756 の警告もこのとき足す
+   - 直し方: go.mod の版を上げ、restartable 側の CI で確かめる (756 の警告は固定版のままでも足せる)
 2. **termwidth は不正な UTF-8・不正な列を受けると、関数どうしの結果が食い違う** (品質の監査体。潜在)
    - `StripSGR` は ESC を含む行に生の C1 バイト (0x9e など。CP1252 の `ž`) が混ざると、後ろの本文を ST / BEL / 行末まで飲む
      (`"\x1b[33mFix \x9e bug in parser\x1b[m and more"` → 旧 `"Fix � bug in parser and more"`、新 `"Fix  and more"`)。ESC の無い行は素通しなので、ESC の有無で結果が変わる

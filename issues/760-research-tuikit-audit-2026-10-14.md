@@ -14,9 +14,9 @@ foreground の Test 関数が 2 本だけ・schedkeys の剰余算 5 か所・RE
 
 | 起票先 | 中身 | 今壊れているか |
 |---|---|---|
-| 756 | 幅の環境の警告を restartable・schedkeys・ratelimit が出さない (P2) | 壊れている (restartable は env ありで枠が崩れる。main が実測) |
+| 756 | restartable が幅の環境の警告を実行時に出さない (P3。README に既知の制約として記載済み) | 枠は崩れる (main が実測) が、制約として文書化済み |
 | 757 | 使う側に残った写しと暗黙の約束 5 項 (Exec の結果・lint の欠け・剰余算と移動キー・gutter の決め打ち・ESC の手書き走査) | 潜在 |
-| 758 | foreground.Exec のテストが tuikit に無い (P2)・何も検査しないテスト 2 本・pty テストの Skip が見えない・任意 3 | テストの穴 |
+| 758 | foreground.Exec の SetStdin が未検査 (P3。他は pro-con が守る)・何も検査しないテスト 2 本・pty テストの Skip が見えない・任意 3 | テストの穴 |
 | 759 | restartable の固定版・termwidth の不正な入力の契約・README | 潜在 / 文書 |
 
 全数勘定: 採用 18 項目 = 756 が 1・757 が 5・758 が 8 (1〜4・4 のついでの時間の上限・5 の任意 3)・759 が 4 (1・2 の 2 件・3)。
@@ -46,4 +46,7 @@ pty テストの Skip が見えない件は品質の体と ci の体の両方が
 ## 進捗
 
 - [x] 監査を実行し、発見を 756〜759 に起こした
-- [ ] 起こした issue の反証レビュー
+- [x] 起こした issue の反証レビュー (read-only のサブエージェント 1 体。codex は使っていない)。取り下げ 0 件。訂正を別 commit で反映:
+  756 を P3 へ (restartable の README と issue 588 が既知の制約として記録済み)・対象を restartable に絞る (schedkeys は曖昧幅の字 0・ratelimit は hook 経路の CLI)・
+  pro-con は画面の中の通知・版上げ不要 / 757-2 に pro-con の ruleguard 不在と ExecProcess のコメント 3 か所 / 757-3 に MotionOf の意味の差 / 757-4 は doc と TestFormat の契約 /
+  758-1 を P3 へ (pro-con のテストが変異 1・2 を検出。穴は SetStdin だけ)・treefiler の pty テストは ptytest を使わない (誤りを削除)・母集合の数え直し
