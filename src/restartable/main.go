@@ -140,10 +140,7 @@ func runCommand(args []string) int {
 		IDEnv: *idEnv, ControlPath: resolved, Stdin: os.Stdin,
 		Stdout: os.Stdout, Stderr: os.Stderr,
 	}, term.IsTerminal(os.Stdin.Fd()), term.IsTerminal(os.Stdout.Fd()))
-	if !cfg.Headless {
-		warnWidthEnv(os.Stderr)
-		cfg.Presenter = ui.New(os.Stdin, os.Stdout)
-	}
+	cfg = withPresenter(cfg, os.Stderr, func() runner.Presenter { return ui.New(os.Stdin, os.Stdout) })
 	code, err := runner.Run(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -187,6 +184,15 @@ func callErrorCode(err error) int {
 		return 124
 	}
 	return 1
+}
+
+// withPresenter は TTY の UI を出すとき (headless でないとき) だけ、幅の環境を警告してから UI を付ける。
+func withPresenter(cfg runner.Config, warn io.Writer, newUI func() runner.Presenter) runner.Config {
+	if !cfg.Headless {
+		warnWidthEnv(warn)
+		cfg.Presenter = newUI()
+	}
+	return cfg
 }
 
 // warnWidthEnv は曖昧幅を 2 桁と数える設定 (RUNEWIDTH_EASTASIAN) を起動時に知らせる。この設定では罫線と

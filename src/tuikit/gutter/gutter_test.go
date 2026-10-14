@@ -29,16 +29,17 @@ func TestFormat(t *testing.T) {
 	}
 }
 
-// Number は Format から区切りを除いた部分と一致する (番号だけを塗る使う側が、区切りの長さを知らずに切れる。issue 757)。
-func TestNumberIsFormatWithoutSeparator(t *testing.T) {
-	for _, w := range []int{1, 2, 3, 4, 6} {
-		for _, src := range []int{0, 1, 7, 42, 12345} {
-			if got, want := Number(src, w)+Separator, Format(src, w); got != want {
-				t.Errorf("Number(%d,%d)+Separator = %q, Format = %q", src, w, got, want)
-			}
+// Number は番号の部分 (区切りを除いた桁・右寄せ。番号 0 は空白) を返す。Format は Number + Separator と定義しているので
+// 両者の一致を見ても何も検査しない (敵対レビュー) — 値はリテラルで固定する。
+func TestNumber(t *testing.T) {
+	for _, c := range []struct {
+		src, width int
+		want       string
+	}{
+		{7, 4, "  7"}, {0, 4, "   "}, {42, 3, "42"}, {12345, 4, "12345"}, {7, 1, "7"}, {7, 0, "7"},
+	} {
+		if got := Number(c.src, c.width); got != c.want {
+			t.Errorf("Number(%d,%d) = %q, want %q", c.src, c.width, got, c.want)
 		}
-	}
-	if got := Number(7, 4); got != "  7" {
-		t.Errorf("Number(7,4) = %q, want %q", got, "  7")
 	}
 }

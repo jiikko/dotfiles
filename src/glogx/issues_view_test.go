@@ -2875,3 +2875,13 @@ func TestIsCopySafe(t *testing.T) {
 		}
 	}
 }
+
+// 行番号の溝は番号だけを薄くし、区切りの空白は塗らない (issue 757: gutter.Number を塗る形へ変えたときの見た目の約束)。
+func TestSrcGutterPaintsOnlyTheNumber(t *testing.T) {
+	if got, want := srcGutter(7, 4, true), ansiDim+"  7"+ansiReset+" "; got != want {
+		t.Fatalf("srcGutter(7,4,colored) = %q, want %q", got, want)
+	}
+	if got := srcGutter(0, 4, true); got != "    " {
+		t.Fatalf("続き行の溝は空白だけのはず: %q", got)
+	}
+}

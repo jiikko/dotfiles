@@ -661,3 +661,31 @@ func TestStartAtPick(t *testing.T) {
 		t.Errorf("指定なしでメニューから始まらない (screen=%v)", m3.screen)
 	}
 }
+
+// メニューと「いつ」の候補は端で止まらず巡回する (listnav.Cycle に寄せた 3 か所。issue 757 の敵対レビュー: 端で止める
+// 変異が緑のままだった。メニューを MotionOf に寄せない理由も「巡回」なので、ここで固定する)。
+func TestMenuAndWhenPresetsWrapAround(t *testing.T) {
+	m := newTestModel()
+	n := len(m.menuItems())
+	press(m, "ctrl+p", "") // 先頭の前 = 末尾
+	if m.menuIdx != n-1 {
+		t.Fatalf("メニューが先頭から末尾へ回らない (idx=%d, 件数 %d)", m.menuIdx, n)
+	}
+	press(m, "ctrl+n", "") // 末尾の次 = 先頭
+	if m.menuIdx != 0 {
+		t.Fatalf("メニューが末尾から先頭へ回らない (idx=%d)", m.menuIdx)
+	}
+	openForm(t, m)
+	focusWhenRow(t, m)
+	start := m.form.whenIdx
+	press(m, "left", "")
+	if want := (start - 1 + len(presets)) % len(presets); m.form.whenIdx != want {
+		t.Fatalf("「いつ」の候補が左で回らない (%d → %d, want %d)", start, m.form.whenIdx, want)
+	}
+	for range len(presets) {
+		press(m, "right", "")
+	}
+	if want := (start - 1 + len(presets)) % len(presets); m.form.whenIdx != want {
+		t.Fatalf("「いつ」の候補が右で一周して戻らない (idx=%d, want %d)", m.form.whenIdx, want)
+	}
+}

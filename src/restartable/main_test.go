@@ -244,3 +244,19 @@ func TestWarnWidthEnv(t *testing.T) {
 		t.Fatalf("設定があるのに警告しない: %q", b.String())
 	}
 }
+
+// 警告は TTY の UI を出すときだけ (headless では板を描かないので出さない)。呼ぶ位置を見る (issue 756 の敵対レビュー)。
+func TestWithPresenterWarnsOnlyForTTY(t *testing.T) {
+	t.Setenv("RUNEWIDTH_EASTASIAN", "1")
+	for _, headless := range []bool{true, false} {
+		var b strings.Builder
+		made := false
+		cfg := withPresenter(runner.Config{Headless: headless}, &b, func() runner.Presenter { made = true; return nil })
+		if headless && (b.Len() != 0 || made || cfg.Presenter != nil) {
+			t.Errorf("headless なのに警告した / UI を付けた: warn=%q made=%v", b.String(), made)
+		}
+		if !headless && (!strings.Contains(b.String(), "RUNEWIDTH_EASTASIAN") || !made) {
+			t.Errorf("TTY の UI なのに警告しない / UI を付けない: warn=%q made=%v", b.String(), made)
+		}
+	}
+}

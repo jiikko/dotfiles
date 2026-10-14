@@ -2,7 +2,9 @@ package foreground_test
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,6 +30,22 @@ func TestExecReclaimsOnlyWhatItHeld(t *testing.T) {
 		case !held && (calls != 0 || x.Was != 0 || x.Err != nil):
 			t.Errorf("持っていなかった前面を奪った: calls=%d Was=%d Err=%v", calls, x.Was, x.Err)
 		}
+	}
+}
+
+// 前面を確かめるのは子を走らせる前 (子のシェルが前面を持ち去った後に確かめると、持っていたのに「持っていない」と
+// 読んで取り戻さない)。Owned は「子がまだ走っていない」間だけ真を返し、呼ぶ順番をテストから見えるようにする (敵対レビュー)。
+func TestExecChecksForegroundBeforeChildRuns(t *testing.T) {
+	ran := filepath.Join(t.TempDir(), "ran")
+	calls := 0
+	x := foreground.NewExec(exec.Command("touch", ran))
+	x.Owned = func() bool { _, err := os.Stat(ran); return err != nil } // 子が走った後は「持っていない」
+	x.Reclaim = func() (int, error) { calls++; return 0, nil }
+	if err := x.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("子が走る前に前面を持っていたのに取り戻していない (前面を子の後で確かめた): calls=%d", calls)
 	}
 }
 
