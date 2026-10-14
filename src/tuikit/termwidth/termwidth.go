@@ -521,9 +521,10 @@ func Cut(s string, width int) string {
 	return Truncate(s, width, "")
 }
 
-// escLen は s の先頭の ESC から始まるシーケンスのバイト長。読み方は Of / Wrap / Slice と同じ x/ansi のパーサ
-// (OSC 8 のリンクのように英字で終わらないシーケンスを、自前の「英字まで」の走査で読むと URL の途中で切れる。issue 700 の 1)。
-func escLen(s string) int {
+// EscLen は s の先頭の ESC から始まるシーケンスのバイト長 (1 以上)。読み方は Of / Wrap / Slice と同じ x/ansi のパーサ
+// (OSC 8 のリンクのように英字で終わらないシーケンスを、自前の「英字まで」「次の m まで」の走査で読むと URL の途中で切れる。
+// issue 700 の 1)。使う側が ESC 列を読み飛ばすときもこれを使い、終わりの見方を自前で書かない (issue 757)。
+func EscLen(s string) int {
 	_, _, n, _ := ansi.DecodeSequence(s, ansi.NormalState, nil)
 	return max(n, 1)
 }
@@ -543,7 +544,7 @@ func DropColumns(s string, n int) string {
 	i := 0 // s へのバイト index
 	for i < len(s) && w < n {
 		if s[i] == '\x1b' { // ESC のシーケンス (幅 0): 後で replay するため蓄積
-			j := i + escLen(s[i:])
+			j := i + EscLen(s[i:])
 			sgr.WriteString(s[i:j])
 			i = j
 			continue

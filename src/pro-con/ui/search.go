@@ -152,13 +152,10 @@ func markHits(s string, words []string, after string) string {
 	}
 	var b strings.Builder
 	for len(s) > 0 {
-		if s[0] == '\x1b' { // SGR は丸ごと写す (語が色の番号に一致しないように)
-			end := strings.IndexByte(s, 'm')
-			if end < 0 {
-				end = len(s) - 1
-			}
-			b.WriteString(s[:end+1])
-			s = s[end+1:]
+		if s[0] == '\x1b' { // エスケープ列は丸ごと写す (語が色の番号や OSC の URL に一致しないように)
+			n := termwidth.EscLen(s) // 終わりの見方は termwidth と同じ (「次の m まで」だと OSC 8 の URL の途中で切れる。issue 757)
+			b.WriteString(s[:n])
+			s = s[n:]
 			continue
 		}
 		seg := s

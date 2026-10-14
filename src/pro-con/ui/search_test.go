@@ -153,6 +153,17 @@ func TestMarkHitsSkipsSGR(t *testing.T) {
 	}
 }
 
+// SGR 以外のエスケープ列 (OSC 8 のリンク) も丸ごと写す。「次の m まで」で読むと URL の "exam" の m で切れ、
+// 残りの URL を本文と見なして語を浮かせ、OSC の中に SGR を差し込んで列を壊していた (issue 757)。
+func TestMarkHitsSkipsOSCLink(t *testing.T) {
+	open := "\x1b]8;;https://example.com/\x1b\\"
+	closeLink := "\x1b]8;;\x1b\\"
+	got := markHits(open+"link"+closeLink, []string{"ple"}, sgrBold)
+	if !strings.HasPrefix(got, open) || !strings.HasSuffix(got, closeLink) {
+		t.Fatalf("OSC 8 のリンクの列が壊れた: %q", got)
+	}
+}
+
 // 選んでいたカードが隠れたら、隠れる直前の並びで 1 つ上のカードを選ぶ (最後のスナップショットの頃の行を使わない)。
 func TestSearchSelectsCardAboveHiddenOne(t *testing.T) {
 	be := searchSpy()
