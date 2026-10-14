@@ -174,6 +174,9 @@ if confirm.IsYes(key) { run() }
 - **閉じる演出のあいだは中身を捨てない**。捨てるのは `Settle` / `Finish` が `closed=true` を返してから
 - 詳細は**開ききった幅で整形**して渡す。途中の幅で整形し直すと毎フレーム折り返しが変わって文字が踊る
 - 幅は `termwidth` だけで測る。別の幅ライブラリ (runewidth 等) を混ぜると、枠の計算が端末・locale でずれる
+- `termwidth` に渡すのは `termsafe` を通した文字列 (外部由来の文字列は入口で 1 回通す)。不正な UTF-8・生の C1 バイト・不正な
+  エスケープ列を含むと、`Of` / `StripSGR` / `DropColumns` の結果が食い違う (例: ESC を含む行の生の 0x9e で `StripSGR` が後ろの本文を
+  落とす)。termwidth の側では直さず、入口の termsafe が先に落とす前提に置いている (issue 702 の 10・759)
 - `colored=false` で合成するなら、**渡す行に SGR を含めない** (色を付ける処理そのものを `colored` で止める)。
   layout は色なしのとき reset を 1 つも出さないので、閉じていない SGR があると区切り線・隣の板・後続の行まで
   色が続く。中身の SGR を自分で落とすのは `Panel` だけで、`ComposeDrawer` / `Scrollbar` / `OverlayCentered` は落とさない
@@ -196,8 +199,9 @@ if confirm.IsYes(key) { run() }
 | VS16 付きの文字列リテラルを書かない / 2 本目の幅エンジンを使わない | glogx の `own_sources_test.go` 経由の走査 (tuikit も対象。走査の根は glogx の go.mod の replace と突き合わせて固定) |
 | glogx の一覧 4 画面が移動の語彙を `listnav.MotionOf` から取り、半ページが `listnav.Half(各画面が基準に渡す行数)` | glogx の `motion_vocabulary_test.go` (入口 `browseModel.handleKey` から、別名と一次語彙の結果の一致と、半ページの移動量を見る) |
 
-CI は `.github/workflows/src_tuikit.yml` (lint + test)。tuikit を変えると glogx の CI も走る
-(`src_glogx.yml` の paths に `src/tuikit/**` がある)。
+CI は `.github/workflows/src_tuikit.yml` (lint + test)。tuikit を変えると、使う側のうち glogx・pro-con・treefiler・schedkeys・
+ratelimit の CI も走る (各 workflow の paths に `src/tuikit/**` がある)。restartable は tuikit を go.mod の版で固定している
+(replace を持たず go install できる形) ので走らない。restartable に取り込むときは版を上げて restartable 側の CI で確かめる。
 
 ## フレームの重さを測る
 
