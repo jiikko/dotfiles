@@ -104,7 +104,7 @@ restartable --build 'make build' -- ./bin/server 2>&1 | tee server.log
 
 ## 検出しない形 / 注意
 
-- `RUNEWIDTH_EASTASIAN=1` のように曖昧幅の文字を 2 桁と数える設定では、罫線と `→` を含む進捗板や最下行が端末幅を超える場合があります (既存の最下行と同じ制約です)。
+- `RUNEWIDTH_EASTASIAN=1` のように曖昧幅の文字を 2 桁と数える設定では、罫線と `→` を含む進捗板や最下行が端末幅を超える場合があります (既存の最下行と同じ制約です)。TTY の UI を出すときは、起動時にこの設定を 1 行で警告します。
 - `--control PATH` の親ディレクトリの所有者・権限は検査しません。自分だけが書けるディレクトリを指定してください。他人が書けるディレクトリでは socket を差し替えられ、`status` / `restart` が偽の応答を受けたり、runner へ届かなかったりします。既定の置き場所 (`$TMPDIR/restartable-<uid>`) は自分が所有する 0700 であることを確かめています。
 - 既定の control path では checkout ごとに runner は 1 つですが、同じ checkout でも異なる `--control PATH` を指定すれば別の runner を起動できます。複数起動する場合は各 runner に異なる path を指定してください。
 - runner の stdin が端末の場合、build / run / stop-cmd の stdin は `/dev/null` です。TTY UI の有無とは関係なく、子コマンドから端末の対話入力はできません。runner の stdin が非端末なら、その入力を子へ渡します。

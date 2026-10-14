@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/jiikko/dotfiles/src/restartable/internal/control"
 	"github.com/jiikko/dotfiles/src/restartable/internal/runner"
 	"github.com/jiikko/dotfiles/src/restartable/internal/ui"
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
 
 func main() { os.Exit(runMain(os.Args[1:])) }
@@ -139,6 +141,7 @@ func runCommand(args []string) int {
 		Stdout: os.Stdout, Stderr: os.Stderr,
 	}, term.IsTerminal(os.Stdin.Fd()), term.IsTerminal(os.Stdout.Fd()))
 	if !cfg.Headless {
+		warnWidthEnv(os.Stderr)
 		cfg.Presenter = ui.New(os.Stdin, os.Stdout)
 	}
 	code, err := runner.Run(cfg)
@@ -184,4 +187,15 @@ func callErrorCode(err error) int {
 		return 124
 	}
 	return 1
+}
+
+// warnWidthEnv は曖昧幅を 2 桁と数える設定 (RUNEWIDTH_EASTASIAN) を起動時に知らせる。この設定では罫線と
+// → を含む進捗板や最下行が端末幅を超える (README「検出しない形 / 注意」・issue 588)。黙って崩れると原因が
+// 分からないので、TTY の UI を出すときだけ 1 行出す (issue 756)。UI はインライン画面なので、起動前の 1 行は
+// 画面の上に残る。headless では板を描かないので出さない。
+func warnWidthEnv(w io.Writer) {
+	if widthenv.EastAsianAmbiguous() {
+		// 🚨 (U+1F6A8、常に 2 桁) を使う。VS16 付きの警告記号は端末で幅が割れるため
+		_, _ = fmt.Fprintln(w, "🚨 "+widthenv.Message) // 警告が書けなくても起動は続ける (板が崩れるだけ)
+	}
 }

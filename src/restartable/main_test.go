@@ -229,3 +229,18 @@ func TestWithTerminals(t *testing.T) {
 		}
 	}
 }
+
+// 曖昧幅を 2 桁と数える設定では、TTY の UI を出す前に 1 行知らせる (issue 756)。設定が無ければ何も出さない。
+func TestWarnWidthEnv(t *testing.T) {
+	var b strings.Builder
+	t.Setenv("RUNEWIDTH_EASTASIAN", "")
+	warnWidthEnv(&b)
+	if b.Len() != 0 {
+		t.Fatalf("設定が無いのに警告した: %q", b.String())
+	}
+	t.Setenv("RUNEWIDTH_EASTASIAN", "1")
+	warnWidthEnv(&b)
+	if !strings.Contains(b.String(), "RUNEWIDTH_EASTASIAN") {
+		t.Fatalf("設定があるのに警告しない: %q", b.String())
+	}
+}
