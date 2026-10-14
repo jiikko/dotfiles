@@ -16,7 +16,15 @@ import (
 
 	"github.com/jiikko/dotfiles/src/restartable/internal/control"
 	"github.com/jiikko/dotfiles/src/restartable/internal/runner"
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
+
+// main は tuikit (widthenv) を使うので、幅の環境が支持しない設定ならテストを走らせない
+// (tests/scripts/test_widthenv_guarded.sh。internal/ui と同じ)。
+func TestMain(m *testing.M) {
+	widthenv.ExitIfUnsupported()
+	os.Exit(m.Run())
+}
 
 func TestSIGPIPEMainHelper(t *testing.T) {
 	if os.Getenv("RESTARTABLE_SIGPIPE_HELPER") != "1" {
