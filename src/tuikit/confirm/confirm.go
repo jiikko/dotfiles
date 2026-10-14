@@ -70,6 +70,16 @@ var shortHints = map[string][]string{
 	HintYesOther: {"y/Enter:実行 その他:取消", "y/Enter:実行 他:取消"},
 }
 
+// FitHint は、Box に width を渡して組む板の中で hint を出すときの形 (入らなければ既定の案内の短い形。Dialog が案内に
+// 当てるのと同じ規則)。Box に案内の行を自分で並べる使う側が、Dialog と同じ文言を出すために使う (issue 761: restartable の
+// 遷移中の板は長い案内を切った形のままで、同じ確認が状態によって 2 通りの文言で出ていた)。
+func FitHint(hint string, width int) string {
+	if width <= 0 {
+		width = 80
+	}
+	return fitHint(hint, layout.PanelContentWidth(min(MaxWidth, width)))
+}
+
 // fitHint は hint が width に入らないとき、既定の案内なら入る短い形に替える (入らなければ一番短い形。切るのは box)。
 func fitHint(hint string, width int) string {
 	if termwidth.Of(hint) <= width {

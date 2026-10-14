@@ -140,3 +140,17 @@ func TestDialogHintKeepsCancelKeyWhenNarrow(t *testing.T) {
 		}
 	}
 }
+
+// FitHint は Box の中で Dialog と同じ案内を出す (issue 761)。広ければそのまま、狭ければ短い形で、板の中身の幅に収まる。
+func TestFitHintMatchesDialog(t *testing.T) {
+	if got := FitHint(HintYesNo, 80); got != HintYesNo {
+		t.Fatalf("広い板で案内を替えた: %q", got)
+	}
+	for w := 1; w <= 60; w++ {
+		dialog := Dialog("", []string{"x"}, HintYesNo, w, false)
+		inBox := Box("", []string{"x", "", FitHint(HintYesNo, w)}, w, false)
+		if strings.Join(dialog, "\n") != strings.Join(inBox, "\n") {
+			t.Fatalf("幅 %d: Box に FitHint を並べた板が Dialog と違う\nDialog:\n%s\nBox:\n%s", w, strings.Join(dialog, "\n"), strings.Join(inBox, "\n"))
+		}
+	}
+}
