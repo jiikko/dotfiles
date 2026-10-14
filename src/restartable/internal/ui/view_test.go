@@ -669,3 +669,33 @@ func TestPrintableLineKeepsBlankLinesVisible(t *testing.T) {
 		t.Fatalf("printableLine(\"log\") = %q, want unchanged", got)
 	}
 }
+
+// 同じ確認は、遷移中の板でも通常時の Dialog でも同じ案内で出る (狭い幅では両方とも短い形。issue 761: 遷移中だけ
+// 長い案内を板の幅で切った形のままだった)。一番短い形も入らない幅では、どちらも同じ形を板が切る。
+func TestConfirmHintIsSameDuringTransition(t *testing.T) {
+	hintLine := func(lines []string) string {
+		for _, l := range lines {
+			if strings.Contains(l, "y/Enter") {
+				return strings.Trim(termwidth.StripSGR(l), " │▓█")
+			}
+		}
+		return ""
+	}
+	for _, width := range []int{20, 30, 36, 37, 80} {
+		var got [2]string
+		for i, active := range []bool{false, true} {
+			state := runner.Model{State: runner.Running, Confirm: runner.ConfirmQuit, Transition: runner.Transition{
+				Active: active, Kind: runner.TransitionRestart, Stage: runner.TransitionReady,
+			}}
+			got[i] = hintLine(ViewLinesAt(state, width, 24, 0))
+		}
+		if got[0] == "" || got[0] != got[1] {
+			t.Errorf("幅 %d: 通常時の案内 %q と遷移中の案内 %q が違う", width, got[0], got[1])
+		}
+	}
+	if !strings.Contains(strings.Join(ViewLinesAt(runner.Model{State: runner.Running, Confirm: runner.ConfirmQuit, Transition: runner.Transition{
+		Active: true, Kind: runner.TransitionRestart, Stage: runner.TransitionReady,
+	}}, 30, 24, 0), "\n"), confirm.FitHint(confirm.HintYesNo, 30)) {
+		t.Error("幅 30 の遷移中の板が短い案内を出していない")
+	}
+}

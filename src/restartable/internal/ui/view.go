@@ -205,7 +205,8 @@ func transitionPanel(state runner.Model, width, frame int) []string {
 		rows = append(rows, "処理中")
 	}
 	if prompt := confirmPrompt(state); prompt != "" && state.Transition.Active {
-		rows = append(rows, "", prompt, confirm.HintYesNo)
+		// 案内は Dialog と同じ規則で幅に合わせる (通常時の確認と同じ文言にする。issue 761)
+		rows = append(rows, "", prompt, confirm.FitHint(confirm.HintYesNo, width))
 	} else {
 		rows = append(rows, "", transitionHint(state))
 	}
