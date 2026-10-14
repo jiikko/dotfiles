@@ -1,5 +1,7 @@
 # 759 (chore): restartable の tuikit の固定版が古い / termwidth が不正な入力を受けたときの契約 / README の CI の記述
 
+> 🚨 **担当中: Claude (tuikit の監査の対応セッション)**（2026-10-14〜）
+
 起票日: 2026-10-14
 
 ## 概要

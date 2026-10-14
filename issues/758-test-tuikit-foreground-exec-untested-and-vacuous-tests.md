@@ -1,5 +1,7 @@
 # 758 (test): tuikit のテスト: foreground.Exec の SetStdin が未検査・何も検査しないテスト 2 本・pty テストの Skip が見えない
 
+> 🚨 **担当中: Claude (tuikit の監査の対応セッション)**（2026-10-14〜）
+
 起票日: 2026-10-14
 
 ## 概要

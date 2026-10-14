@@ -1,5 +1,7 @@
 # 756 (bug): restartable が幅の環境 (RUNEWIDTH_EASTASIAN) の警告を実行時に出さない (README に書いた既知の制約。P3)
 
+> 🚨 **担当中: Claude (tuikit の監査の対応セッション)**（2026-10-14〜）
+
 起票日: 2026-10-14
 
 ## 概要
