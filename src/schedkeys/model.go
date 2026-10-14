@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
@@ -161,10 +162,12 @@ func (m *model) keyMenu(key string) tea.Cmd {
 	case "esc", "q":
 		m.quit = true
 		return tea.Quit
+	// 移動キーは listnav.MotionOf に寄せない: メニューは tab / shift+tab でも動いて末尾で先頭へ巡回するが、MotionOf の
+	// 語彙は一覧の移動 (端で止まる・g/G/半ページ) で意味が違う。寄せるなら画面ごとの意味を揃える判断が先 (issue 757)
 	case "j", "down", "tab", "ctrl+n":
-		m.menuIdx = (m.menuIdx + 1) % len(items)
+		m.menuIdx = listnav.Cycle(m.menuIdx, 1, len(items))
 	case "k", "up", "shift+tab", "ctrl+p":
-		m.menuIdx = (m.menuIdx - 1 + len(items)) % len(items)
+		m.menuIdx = listnav.Cycle(m.menuIdx, -1, len(items))
 	case "enter":
 		if it := items[m.menuIdx]; it.enabled {
 			m.screen = it.target

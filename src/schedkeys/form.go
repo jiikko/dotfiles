@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"strings"
 	"time"
 )
@@ -79,7 +80,7 @@ func (f *formState) moveFocus(delta int) {
 			cur = i
 		}
 	}
-	f.focus = fs[(cur+delta+len(fs))%len(fs)]
+	f.focus = fs[listnav.Cycle(cur, delta, len(fs))]
 }
 
 // focusedEditor は今フォーカスしている入力欄。候補行のときは文字列欄を返す
@@ -123,9 +124,9 @@ func (f *formState) handleKey(key, text string) {
 		// 候補行では ctrl+f / ctrl+b も左右に割り当てる (入力欄での文字移動と同じ向き)
 		switch key {
 		case "left", "h", "ctrl+b":
-			f.whenIdx = (f.whenIdx - 1 + len(presets)) % len(presets)
+			f.whenIdx = listnav.Cycle(f.whenIdx, -1, len(presets))
 		case "right", "l", "space", "ctrl+f":
-			f.whenIdx = (f.whenIdx + 1) % len(presets)
+			f.whenIdx = listnav.Cycle(f.whenIdx, 1, len(presets))
 		}
 		// 候補行で数字などを打っても入力欄へは送らない (誤爆を避ける)
 		return

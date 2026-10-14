@@ -54,12 +54,11 @@ func (m *Model) handleLegendKey(key string) tea.Cmd {
 	case "?", "q", "esc":
 		m.legend, m.legendOff = false, 0
 	case "tab", "shift+tab":
-		n := len(legendTabs)
 		step := 1
 		if key == "shift+tab" {
-			step = n - 1
+			step = -1
 		}
-		m.legendTab, m.legendOff = legendTabs[(slices.Index(legendTabs, m.legendTab)+step)%n], 0
+		m.legendTab, m.legendOff = legendTabs[listnav.Cycle(slices.Index(legendTabs, m.legendTab), step, len(legendTabs))], 0
 	case "ctrl+c":
 		m.legend = false
 		return m.requestQuit()
