@@ -16,7 +16,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 
 | パッケージ | 中身 | 使いどころ |
 |---|---|---|
-| `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …)。折り返しは `Wrap(s, 幅, 頭の空白を落とすか)` (書記素単位) / `WordWrap(s, 幅)` (単語の境目で折る) | 行を幅で切る・揃える・折るときは**必ずここを通す** (x/ansi の `Hardwrap` / `Wrap` はキーキャップで幅を超える。tuikit と、tuikit を使う全 module が lint で禁止) |
+| `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …)。折り返しは `Wrap(s, 幅, 頭の空白を落とすか)` (書記素単位) / `WordWrap(s, 幅)` (単語の境目で折る)。`EscLen(s)` は先頭のエスケープ列のバイト長 (使う側が列を読み飛ばすときも終わりの見方を自前で書かない) | 行を幅で切る・揃える・折るときは**必ずここを通す** (x/ansi の `Hardwrap` / `Wrap` はキーキャップで幅を超える。tuikit と、tuikit を使う全 module が lint で禁止) |
 | `widthenv` | 幅モデルが支持しない環境変数 (`RUNEWIDTH_EASTASIAN`) の検出 | 起動時の警告・テストのガード |
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …)・256 色の番号の RGB (`XtermRGB`。色を混ぜる・暗くする計算用) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
@@ -25,11 +25,11 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `lineedit` | 1 行の入力欄 (カーソル + readline の編集キー: `ctrl+h` / `ctrl+w` / `ctrl+u` / `ctrl+k` / `ctrl+a` / `ctrl+e` …)。移動と削除は書記素単位 (肌色・ZWJ・国旗・結合文字を割らない)。`Window(幅)` は欄に出す文字列とキャレットの桁 (長ければキャレットが欄に収まるよう前を切る。全角は 2)。保存したカーソルは `SetCursor` で戻す | 入力欄を毎回書かない。キーの語彙の正本は `docs/glogx-ui-guide.md` §7 |
 | `caret` | `At(x, y, 幅, 高さ)`: 入力欄のキャレットに置く棒の端末のカーソル (bubbletea v2 の `tea.Cursor`。幅の外の桁は最終列へ寄せ、画面の外の行なら nil) | IME の変換中の文字を入力欄に出す (IME は端末のカーソルの位置に出す)。桁は `lineedit.Line.Window` の「欄の左端 + 桁」。**tuikit で唯一 bubbletea を import する** (置く先が `tea.Cursor` そのもの)。pro-con の入力欄・回答フォームと schedkeys が使う (issue 517) |
 | `editor` | 実ファイルを 1 つエディタで開くコマンド ($VISUAL → $EDITOR → nvim、空白で語分割、quote は解釈しない) | glogx と pro-con の共通。`foreground.Exec` で前景で待つ前提 (GUI エディタは -w) |
-| `foreground` | 端末の前面 (前面のプロセスグループ) の確かめと取り戻し: `Owner` / `Reclaim` (使い捨ての子に移させる) / `Detached` (制御端末を持たせない子の SysProcAttr) / `Exec` (端末を外のコマンドへ渡す bubbletea の ExecCommand。戻った後、入れ直しの前に前面を取り戻す。bubbletea は import しない)。`ptytest` は擬似端末の上で helper を走らせる検査の部品 | 端末を子へ渡すときは `x := foreground.NewExec(cmd)` を `tea.Exec(x, fn)` に渡し、`fn` で `x.Err` (取り戻せなかった理由) を読む (glogx・treefiler は lint で `tea.ExecProcess` を禁止)。子の対話のシェルが前面を持ち去ったまま終わっても画面が固まらない (stdin が端末のとき。issue 518 / 707) |
+| `foreground` | 端末の前面 (前面のプロセスグループ) の確かめと取り戻し: `Owner` / `Reclaim` (使い捨ての子に移させる) / `Detached` (制御端末を持たせない子の SysProcAttr) / `Exec` (端末を外のコマンドへ渡す bubbletea の ExecCommand。戻った後、入れ直しの前に前面を取り戻す。bubbletea は import しない)。`ptytest` は擬似端末の上で helper を走らせる検査の部品 | 端末を子へ渡すときは `x := foreground.NewExec(cmd)` を `tea.Exec(x, fn)` に渡し、`fn` で `x.Err` (取り戻せなかった理由) を読む (glogx・treefiler は ruleguard、pro-con は forbidigo で `tea.ExecProcess` を禁止)。子の対話のシェルが前面を持ち去ったまま終わっても画面が固まらない (stdin が端末のとき。issue 518 / 707) |
 | `toast` | 右下に数秒だけ出る通知のスタック: `Stack` (`Show` 成功 ✓緑・失敗 ✗赤 / `ShowInfo` 進行中 …シアン / `Advance` / `StartLeaving` / `BoxLines`)。右外から滑り込み、`Hold` (3 秒) 止まって、右へ滑り出る。`BoxLines` には重ねる窓の幅を渡す: 収まらない文は箱の中で折り返し (最大 `MaxTextLines` 行。超えた分は末尾を … にする)、窓の右端で切れない。新しい通知は上に積み、古い通知は下から抜ける (最大 3 枚。溢れたら成功・進行中から捨て、警告は残す)。タイマーは張らず `Timer` として返す | 操作の結果を画面の邪魔をせずに知らせる (glogx の push / pull の結果など)。デモの gif は下の「デモ」 |
 | `markdown` | markdown の本文を幅で整形する `Render(src, width, colored)` (見出し・箇条書き・チェックボックス・引用・表・水平線・フェンスコードの chroma ハイライト。行ごとのソース行番号も返す)。出力は width 桁を超えず、`colored=false` なら ANSI を出さない。本文の制御文字は termsafe で落とす。第三者の本文を渡してよい: 1 段落の時間は長さに線形 (閉じない記法が多くても 2 乗にならない) | issue の本文 (glogx) と PG の応答の文 (pro-con の詳細) を同じ見た目で出す |
 | `highlight` | `Diff(lines)` (git の `--color=never` の diff に構造色 + chroma のシンタックスハイライト。行数は変えない) / `Lang(言語名, 1 行)` / `ForPath(パス)` (ファイル名で言語を 1 回だけ選び、1 行を色付けする関数を返す。分からなければ nil)。入力の無害化は使う側 (termsafe)。1 KiB を超える 1 行は色を付けずに返す (lexer が言語によって 2 乗で伸びるので、使う側は長さの上限を持たなくてよい) | glogx の diff の板・pro-con の差分の板・markdown のフェンスコード・treefiler のタイルで同じ色付けを使う |
-| `gutter` | 本文の左に出す行番号の溝 (nvim の number): `Width(行数)` (番号 + 空白 1 の桁。最低 2 桁) / `Format(番号, 桁)` (右寄せ・色なし。番号 0 は空白だけ) | 番号は**ソースの行番号**を渡す (表示行の連番ではない。折り返しの続き行は 0)。glogx の issues の本文と treefiler のタイル |
+| `gutter` | 本文の左に出す行番号の溝 (nvim の number): `Width(行数)` (番号 + 空白 1 の桁。最低 2 桁) / `Format(番号, 桁)` (右寄せ・色なし。番号 0 は空白だけ) = `Number(番号, 桁)` (番号の部分) + `Separator`。番号だけを塗るなら `Number` を使い、`Format` の出力を区切りの長さで切らない | 番号は**ソースの行番号**を渡す (表示行の連番ではない。折り返しの続き行は 0)。glogx の issues の本文と treefiler のタイル |
 | `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` / `WindowOffset` / `ClampOffset` (窓の計算) / `Cycle` (端で回る選択の位置) | 一覧・本文の移動を毎回書かない |
 | `framebench` | `NewRenderer(幅, 高さ)` / `Frame(content, 属性)` / `Written()`: 画面の文字列を bubbletea v2 のレンダラと同じ手順 (前のコマと同じなら描かない → セルへ書き直す → 端末への差分) で通す計測の道具。部品ではない (ultraviolet を import する。bubbletea は import しない) | フレームのベンチをレンダラ込みで測る。下の「フレームの重さを測る」 |
 | `cmd/termwidth` | シェルから `termwidth.Of` で表示幅を測るコマンド (`bin/termwidth <文字列>`)。部品ではない | `bin/tmux-toast` が通知の枠の幅を決める (issue 670 で python3 の east_asian_width を置き換えた) |
@@ -245,4 +245,4 @@ replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 ```
 
 tuikit は `src/termsafe` を require している (`markdown` / `toast` が使う)。replace は推移しないので、手元の termsafe を使うには取り込む側にも termsafe の replace を書く
-(glogx・pro-con・ratelimit はそうしている)。
+(glogx・pro-con・ratelimit・treefiler はそうしている)。
