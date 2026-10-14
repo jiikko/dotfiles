@@ -351,3 +351,15 @@ bash 5 でだけ起きる素通り (`( set -e ) || die`) は、敵対レビュ�
 
 `make lint-analyze` の後にテスト配列へ固定値を 1 行追加し、CI の SwiftLint strict が trailing comma で失敗した。
 analyze は strict lint を検査していなかった。
+
+## 長時間 push の完了と、新規対象を外す全件テスト (obaket retro 1124, 2026-10-14)
+
+WebDAV Phase 2 の push は pre-push の gate を全件通った後に rc=141 で終了し、remote へ届いていなかった。
+最初から detach した再試行は通ったが、obaket 1092 の別の記録では前景のまま終了した push も rc=141 になり、
+SSH keepalive を付けた試行は pack 送信まで進んだ。hook の所要等を揃えた切り分けは無く、detach を原因対策とは確定できない。
+したがって一律の detach 義務ではなく、ツールが継続実行を維持するかに応じた実行方法と、push 本体・remote の確認を規範にした。
+
+同じ作業の capability テストは `StorageServiceKind.allCases.filter(\.isSelectable)` を回しており、form をまだ持たない
+新規の汎用 WebDAV が対象外だった。他の provider が通るため集約結果は緑のまま。対象 filter を確認して専用の assertion を足した。
+別の endpoint policy テストは登録済み builder を回すため WebDAV を含んだ。対象の総数だけでは入れ替わりや skip を見分けられないため、
+新規項目の実行結果または対象一覧との照合を要求する。

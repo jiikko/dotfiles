@@ -131,6 +131,9 @@
 - 自分で新設した安全機構は [`adversarial-review-own-safeguards.md`](rules/adversarial-review-own-safeguards.md)、防御を外すときは [`list-masked-failure-modes-before-removing-guard.md`](rules/list-masked-failure-modes-before-removing-guard.md)
 - **敵対レビューの出力こそ無検閲で採用しない**。発火条件が具体的で再現できたものだけ直し、再現しないものは記録、示せないものは「未確認リスク」として issue / 観測ポイントに落とす。推測で防御コードを足さない (作法の正本は `~/.claude/skills/codex-review/SKILL.md` の「敵対的レビューの作法」)
   - **「A より B が悪い」という指摘は、A が現状 (status quo) かを確かめてから採る**。レビュワーは理想と比べることがあり、事実が正しく再現できても、現状より悪化するとは限らない (obaket 895)
+  - **レビューの推奨を設計・要件へ取り込む前に、関係する skill / rule / issue と会話の既存ユーザー決定を照合する**。
+    「ユーザー決定」「ユーザー指示」などを検索し、印のない制約も本文で確認する。推奨が既存の決定と食い違うなら、
+    ユーザーが変更を指示するまでその決定を維持し、推奨を採らない理由を記録する
 
 ## スキルファイル参照
 
