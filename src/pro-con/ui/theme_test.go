@@ -12,6 +12,16 @@ import (
 	"testing"
 )
 
+// themeRoles はテーマの role と style.go の col* の対応。TestThemeColorsMatchYML が yml と突き合わせ、TestNoThemeColorLiterals が
+// ここから「直書きしてはいけない番号」を作る (番号を検査の側に書くと、テーマを変えたときに新しい番号の直書きを通す)。
+var themeRoles = []struct {
+	role string
+	n    int
+}{
+	{"current_accent", colCurrent}, {"quantity_yellow", colAttention}, {"marker_orange", colMarker}, {"info_cyan", colInfo},
+	{"active_green", colActive}, {"cold_gray", colCold}, {"error_red", colError},
+}
+
 // テーマの色 (style.go の col*) が theme/colors.yml の role の cterm と一致する (issue 770)。
 // Go の生成器は無いので手で写している。yml を変えたときに黙ってずれないよう、ここで突き合わせる (glogx の TestFrameBorderMatchesThemeYML と同じ形)。
 func TestThemeColorsMatchYML(t *testing.T) {
@@ -19,19 +29,13 @@ func TestThemeColorsMatchYML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("theme/colors.yml を読めない: %v", err)
 	}
-	for _, tc := range []struct {
-		role string
-		got  int
-	}{
-		{"current_accent", colCurrent}, {"quantity_yellow", colAttention}, {"marker_orange", colMarker}, {"info_cyan", colInfo},
-		{"active_green", colActive}, {"cold_gray", colCold}, {"error_red", colError},
-	} {
+	for _, tc := range themeRoles {
 		want, ok := ymlCterm(string(data), tc.role)
 		if !ok {
 			t.Fatalf("theme/colors.yml に %s の cterm が無い", tc.role)
 		}
-		if tc.got != want {
-			t.Errorf("%s: style.go は %d、theme/colors.yml は %d (yml を変えたなら style.go の col* も揃える)", tc.role, tc.got, want)
+		if tc.n != want {
+			t.Errorf("%s: style.go は %d、theme/colors.yml は %d (yml を変えたなら style.go の col* も揃える)", tc.role, tc.n, want)
 		}
 	}
 }
@@ -62,12 +66,21 @@ func ymlCterm(yml, role string) (int, bool) {
 // 拾わないもの: style.go の関数の外の const の col* の定義そのもの・`theme-literal-ok: <理由>` の印 (理由は必須) がある行。
 // 検出しない形: ui の外の package・数字を計算で作る形 (200+2)・番号を分けた文字列の連結 ("20"+"2m")・rune や float で書いた番号・
 // 1 行の印が同じ行のほかのリテラルまで外すこと。
-var themeNums = map[int64]bool{202: true, 214: true, 208: true, 51: true, 46: true, 240: true, 196: true}
-
 var (
-	themeInString = regexp.MustCompile(`(colou?r|[;:]5[;:])(202|214|208|51|46|240|196)([^0-9]|$)|^["\x60](202|214|208|51|46|240|196)m?["\x60]$`)
+	themeNums     = map[int64]bool{}
+	themeInString *regexp.Regexp
 	themeOK       = regexp.MustCompile(`theme-literal-ok:\s*\S`)
 )
+
+func init() {
+	var alts []string
+	for _, r := range themeRoles {
+		themeNums[int64(r.n)] = true
+		alts = append(alts, strconv.Itoa(r.n))
+	}
+	n := "(" + strings.Join(alts, "|") + ")"
+	themeInString = regexp.MustCompile(`(colou?r|[;:]5[;:])` + n + `([^0-9]|$)|^["\x60]` + n + `m?["\x60]$`)
+}
 
 func TestNoThemeColorLiterals(t *testing.T) {
 	files, err := filepath.Glob("*.go")
@@ -130,7 +143,7 @@ func TestNoThemeColorLiterals(t *testing.T) {
 			return true
 		})
 	}
-	if seen == 0 || defs != len(themeNums) {
-		t.Fatalf("検査した .go が %d 件・style.go の col* の定義が %d 件 (テーマの番号は %d 個。col* を足したら themeNums と yml のテストの表も足す)", seen, defs, len(themeNums))
+	if seen == 0 || defs != len(themeRoles) {
+		t.Fatalf("検査した .go が %d 件・style.go の col* の定義が %d 件 (themeRoles は %d 個。col* を足したら themeRoles にも足す)", seen, defs, len(themeRoles))
 	}
 }
