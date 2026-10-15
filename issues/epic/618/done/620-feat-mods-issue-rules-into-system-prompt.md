@@ -1,7 +1,5 @@
 # 620 (feat): issue 規約の注入を、mod でシステムプロンプトの節へ上げる (守られる率が上がるかを先に測る)
 
-> 🚨 **担当中: obaket の session (peer-inbox / ratelimit-warn を作った Fable)**（2026-10-07〜）
-
 > 2026-10-02 に「移さない」で決着 → **2026-10-07 に再開**: 再開の trigger (managed settings が無くなり `prompt.compose` が user の mod に届く) を同日の測り直しで確認した (618 の進捗)。下の計測計画を回す。
 
 起票日: 2026-10-02

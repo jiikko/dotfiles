@@ -4,8 +4,6 @@
 
 > 起票時は 657 で採番したが、別セッションの 657 (retro) と衝突したので push 前に 658 へ改番した (参照の少ない側を寄せる。issues/README.md)。
 
-> 🚨 **担当中: obaket の session (peer-inbox を作った Fable)**（2026-10-07〜）
-
 epic 618 の子。618 の表で「今は移さない」とした `ratelimit-warn.sh` を、2026-10-07 の測り直し (`classic.*` が user の mod に届く) を受けて移す。
 
 ## 概要

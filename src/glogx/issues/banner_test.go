@@ -309,3 +309,54 @@ func TestAddBannerAfterFrontMatterOfEveryForm(t *testing.T) {
 		}
 	}
 }
+
+// 除去も 2 実装 (Go の removeBanner と scripts/lib/claim_banner.awk の strip。後者は scripts/issue_done.sh が done へ送るときに使う)
+// が同じ結果を出すことを見る。ずれると viewer で送った issue と issue_done.sh で送った issue で本文が変わる (issue 763)。
+func TestRemoveBannerMatchesShellStrip(t *testing.T) {
+	awkPath, err := filepath.Abs("../../../scripts/lib/claim_banner.awk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(awkPath); err != nil {
+		t.Fatalf("shell 側の規則が見つからない (repo の配置が変わった?): %v", err)
+	}
+	cases := map[string]string{
+		"空行つき":      "# t\n\n> 🚨 **担当中: x**（2026-10-15〜）\n\n本文\n## 概要\n",
+		"空行なし":      "# t\n> 🚨 **担当中: x**（2026-10-15〜）\n本文\n",
+		"着手中":       "# t\n\n**着手中: x**\n\n## 概要\n",
+		"フェンスの中":    "# t\n\n```\n**担当中: x**\n```\n\n## 概要\n",
+		"見出しより後":    "# t\n\n## 概要\n\n> 🚨 **担当中: x**\n",
+		"見出しが無い":    "# t\n\n本文\n\n**担当中: x**\n\nあと\n",
+		"CRLF":       "# t\r\n\r\n> 🚨 **担当中: x**\r\n\r\n本文\r\n",
+		"バナーが無い":    "# t\n\n本文\n",
+		"2 つ目は残る":   "# t\n\n**担当中: a**\n\n**担当中: b**\n\n## 概要\n",
+		"空白だけの次の行": "# t\n\n**担当中: a**\n  \t\n本文\n",
+	}
+	removedAny := false
+	for name, src := range cases {
+		path := filepath.Join(t.TempDir(), "x.md")
+		if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		want, removed := removeBanner(src)
+		removedAny = removedAny || removed
+		cmd := exec.Command("awk", "-v", "mode=strip", "-f", awkPath, path)
+		cmd.Env = append(os.Environ(), "LC_ALL=C") // shell 側の呼び出しと同じ (scripts/issue_done.sh)
+		out, err := cmd.Output()
+		rc := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			rc = ee.ExitCode()
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if (rc == 0) != removed {
+			t.Errorf("%s: 外したかの判定が違う (awk rc=%d / Go removed=%v)", name, rc, removed)
+		}
+		if string(out) != want {
+			t.Errorf("%s: 除去の結果が違う\nawk: %q\nGo:  %q", name, out, want)
+		}
+	}
+	if !removedAny {
+		t.Fatal("どのケースでもバナーを外していない (比較が何も見ていない)")
+	}
+}

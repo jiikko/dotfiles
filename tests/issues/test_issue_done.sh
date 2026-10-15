@@ -37,15 +37,22 @@ make_fixture() {
   : > "$d/_claude/rules/x.md"
   : > "$d/docs/y.md"
   : > "$d/issues/done/311-b.md"
+  # 冒頭の担当者バナーは done へ送ると外れる (issue 763)。フェンスの中と `## ` より後のバナーの書式は残る
   cat > "$d/issues/347-refactor-a.md" <<'EOF'
 # a
+
+> 🚨 **担当中: t**（2026-10-15〜）
+
 - 上向き: [rule](../_claude/rules/x.md)
 - 下向き: [old](done/311-b.md)
 - アンカー: [doc](../docs/y.md#sec)
 - インライン: `](path.md)` は書式の説明
 ```sh
 [fenced](../_claude/rules/x.md)
+**担当中: fenced**
 ```
+## 経過
+**担当中: later**
 EOF
   cat > "$d/issues/345-retro-c.md" <<'EOF'
 - [x](347-refactor-a.md) を起票
@@ -91,6 +98,7 @@ make_fake_root() {
   name="$1"; expr="$2"; fake="$work/$name"
   mkdir -p "$fake/scripts"
   ln -s "$ROOT_DIR/tests" "$fake/tests"
+  ln -s "$ROOT_DIR/scripts/lib" "$fake/scripts/lib" # バナーの判定規則 (claim_banner.awk) は本物を通す
   if [ -n "$expr" ]; then sed "$expr" "$SCRIPT" > "$fake/scripts/issue_done.sh"
   else cp "$SCRIPT" "$fake/scripts/issue_done.sh"; fi
   chmod +x "$fake/scripts/issue_done.sh"
@@ -120,6 +128,15 @@ grep -qF '](347-refactor-a.md)' "$d/issues/done/310-d.md" || fail "④ done/ か
 grep -qF '](../../../../_claude/rules/x.md)' "$d/issues/epic/900/done/901-feat-e.md" || fail "③ group の深さ (4 段) が違う"
 grep -qF '](../issues/done/347-refactor-a.md)' "$d/docs/g.md" || fail "④ issues/ の外 (docs/) からの参照が張り直されていない"
 grep -qF '](issues/done/347-refactor-a.md)' "$d/README.md" || fail "④ repo root 直下 (README.md) からの参照が張り直されていない"
+# 冒頭のバナーは外れ、直後の空行 1 つも消える。フェンスの中と `## ` より後は残る (issue 763)
+banner_check() { # $1=done へ送った 347 の本文
+  ! grep -qF '**担当中: t**' "$1" || return 1
+  [ "$(sed -n 1,3p "$1")" = "$(printf '# a\n\n- 上向き: [rule](../../_claude/rules/x.md)')" ] || return 1
+  grep -qxF '**担当中: fenced**' "$1" && grep -qxF '**担当中: later**' "$1"
+}
+banner_check "$d/issues/done/347-refactor-a.md" || { cat "$d/issues/done/347-refactor-a.md" >&2; fail "③ 冒頭の担当者バナーの外し方が違う"; }
+grep -qF '担当者バナーを削除' "$work/ok.log" || fail "③ バナーを外したことが結果の行に出ていない"
+"$ROOT_DIR/tests/issues/test_next_claims_have_banner.sh" "$d/issues" >/dev/null 2>&1 || fail "移動後にバナー検査が赤"
 
 "$ROOT_DIR/tests/issues/test_issue_links_valid.sh" "$d/issues" >/dev/null 2>&1 || fail "移動後にリンク検査が赤"
 "$ROOT_DIR/tests/issues/test_next_links_valid.sh" "$d/issues" >/dev/null 2>&1 || fail "移動後に next 検査が赤"
@@ -152,6 +169,27 @@ fi
 d27="$work/help"; mkdir -p "$d27"; make_fixture "$d27"
 ISSUES_DIR="$d27/issues" "$SCRIPT" 347 --help >/dev/null 2>&1 || fail "--help が rc≠0"
 [ -f "$d27/issues/347-refactor-a.md" ] || fail "--help なのに移動した"
+
+# 2.8 バナーを外すと本文のほかの部分も変わる (改行で終わらない最後の行に awk が改行を足す) なら、中止して元へ戻す (issue 763)
+d28="$work/noeol"; mkdir -p "$d28"; make_fixture "$d28"
+# 本文にリンクを置かない: リンクを書き換える手順 3 の前段 (rebase_file) は、書き換えたときに改行を足す (変更前からの挙動。issue 763 に記録)
+printf '# a\n\n> 🚨 **担当中: t**（2026-10-15〜）\n\n- 本文' > "$d28/issues/347-refactor-a.md"
+git -C "$d28" -c user.email=t@t -c user.name=t commit -qam noeol
+before28="$(shasum -a 256 < "$d28/issues/347-refactor-a.md")"
+if ISSUES_DIR="$d28/issues" "$SCRIPT" 347 > "$work/noeol.log" 2>&1; then
+  fail "改行で終わらない本文のバナーを、本文の書き換えを伴って外した"
+fi
+grep -q '本文のほかの部分も変わる' "$work/noeol.log" || { cat "$work/noeol.log" >&2; fail "改行で終わらない本文: 想定と違う理由で落ちた"; }
+[ "$before28" = "$(shasum -a 256 < "$d28/issues/347-refactor-a.md" 2>/dev/null)" ] || fail "改行で終わらない本文: 中止したのに元へ戻っていない"
+[ -L "$d28/issues/next/347-refactor-a.md" ] || fail "改行で終わらない本文: 中止したのに claim を消した"
+
+# 2.9 本文に不正なバイトがあっても、UTF-8 のロケールで送れる (awk が止まると張り直しが黙って抜け、別の理由で落ちる。issue 763)
+d29="$work/badbytes"; mkdir -p "$d29"; make_fixture "$d29"
+printf 'latin1: caf\xe9\n' >> "$d29/issues/347-refactor-a.md"
+git -C "$d29" -c user.email=t@t -c user.name=t commit -qam badbytes
+LANG=ja_JP.UTF-8 LC_ALL=ja_JP.UTF-8 ISSUES_DIR="$d29/issues" "$SCRIPT" 347 > "$work/badbytes.log" 2>&1 ||
+  { cat "$work/badbytes.log" >&2; fail "不正なバイトを含む本文の issue を UTF-8 のロケールで送れない"; }
+banner_check "$d29/issues/done/347-refactor-a.md" || fail "不正なバイトを含む本文: バナーの外し方が違う"
 
 # ---------------------------------------------------------------------------
 # 3. 着手前に既に赤いなら何も動かさない (自分の変更のせいに見える赤を作らない)
@@ -226,6 +264,18 @@ check_mutant abort-before-verdict 's|^  verdict=0$|  exit 3|' \
 check_mutant empty-scan 's|^  grep -rlF --binary-files=without-match .*|  return 0|' \
   '母集合の走査が壊れている'
 
+# ③ のバナー除去を外す → done/ にバナーが残る。issue_done.sh 自身の判定 (リンク検査) は見ないので緑のまま終わり、
+#    捕まえるのは上の banner_check とバナー検査 (目印の無いバナー) の 2 つ (issue 763)
+db="$work/mut-banner"; mkdir -p "$db"; make_fixture "$db"
+fake_b="$(make_fake_root root-banner 's|^  awk -v mode=strip -f "$BANNER_AWK" "$dest" .*|  banner_rc=1|')"
+diff -q "$SCRIPT" "$fake_b/scripts/issue_done.sh" >/dev/null && fail "変異 [no-banner-strip] が当たっていない"
+ISSUES_DIR="$db/issues" "$fake_b/scripts/issue_done.sh" 347 > "$work/mut-banner.log" 2>&1 ||
+  { cat "$work/mut-banner.log" >&2; fail "変異 [no-banner-strip] が移動そのものを落とした (想定は緑のまま終わる)"; }
+if banner_check "$db/issues/done/347-refactor-a.md"; then fail "変異 [no-banner-strip] を banner_check が捕まえない"; fi
+if "$ROOT_DIR/tests/issues/test_next_claims_have_banner.sh" "$db/issues" >/dev/null 2>&1; then
+  fail "変異 [no-banner-strip] をバナー検査 (目印の無いバナー) が捕まえない"
+fi
+
 # ---------------------------------------------------------------------------
 # 5. 変異: 書き換えロジックそのものを壊すと canary が **触る前に** 落とす
 # ---------------------------------------------------------------------------
@@ -239,4 +289,4 @@ grep -q '✗ canary' "$work/mut-canary.log" ||
   { cat "$work/mut-canary.log" >&2; fail "canary ではなく後段で落ちた (触る前に止まっていない)"; }
 [ "$before_c" = "$(snapshot "$dc")" ] || fail "canary で落ちたのに fixture が変わっている"
 
-printf '✓ issue_done.sh: 正常系 (global / group / repo root からの参照 / 追跡外 claim / epic の深い置き場を拒否 / --help) / baseline 赤の拒否 / 変異 7 本 (claim 削除・本文の張り直し・参照の張り直し・走査範囲・判定前の中断・母集合の空振り・canary) すべて red かつ rollback 済み\n'
+printf '✓ issue_done.sh: 正常系 (global / group / repo root からの参照 / 追跡外 claim / epic の深い置き場を拒否 / --help) / baseline 赤の拒否 / 変異 8 本 (claim 削除・本文の張り直し・参照の張り直し・走査範囲・判定前の中断・母集合の空振り・canary・バナー除去) すべて red (バナー除去は検査側で red。それ以外は rollback 済み)\n'

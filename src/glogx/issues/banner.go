@@ -19,8 +19,9 @@ import (
 // (tests/issues/test_next_claims_have_banner.sh) がバナーの無い claim を落とす。`n` が目印だけを
 // 置くと、`n` で付けた claim は必ず CI で赤になる (dotfiles issue 403 の残タスク)。
 //
-// 🚨 判定 (bannerLine / fenceLine) は CI 側の awk と同じ規則の Go 版。言語が違うので 1 実装に
-// 寄せられない。変えるなら両方を同じ commit で変え、両方のテストを通す:
+// 🚨 判定 (bannerLine / fenceLine) と除去 (removeBanner) は scripts/lib/claim_banner.awk (CI の検査と
+// scripts/issue_done.sh が使う) と同じ規則の Go 版。言語が違うので 1 実装に寄せられない。変えるなら両方を
+// 同じ commit で変え、両方のテストを通す:
 //   - 最初の `## ` 見出しより前だけを見る
 //   - コードフェンス (字下げ 3 桁までの ``` / ~~~) の中は見ない
 //   - 行頭 (前に `> ` と `🚨 ` を許す) の `**担当中` / `**着手中`

@@ -1,7 +1,5 @@
 # 586 (feat): restartable — 前面で動かすコマンドを R で再起動・Q で終了できるランナー (他 repo から go install で使う)
 
-> 🚨 **担当中: SFTP issue checkpoint [59ecdd]**（2026-09-30〜）
-
 起票日: 2026-09-30
 
 ## 概要

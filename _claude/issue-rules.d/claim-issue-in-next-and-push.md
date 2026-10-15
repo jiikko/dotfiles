@@ -43,7 +43,8 @@
 - **push できないときは黙って進めない**。`git pull --rebase` してから push し、それでも無理なら着手前にユーザーへ伝える
 - 完了したら **目印 (symlink) を消してから** done へ移す (残すと dangling で CI が落ちる)
   - 🚨 **手でやらない。dotfiles では `scripts/issue_done.sh <NNN>` に寄せる** (移動・目印削除・本文の相対リンクと
-    他 issue からの参照の張り直しを 1 コマンドで行い、リンク検査が落ちたら戻す)
+    他 issue からの参照の張り直し・担当者バナーの削除を 1 コマンドで行い、リンク検査が落ちたら戻す)。
+    バナーは next にいる間だけの表示で、目印の無い issue に残ったバナーは `tests/issues/test_next_claims_have_banner.sh` が落とす (issue 763)
 - **`git pull --rebase` が衝突したら claim を優先して片付ける**。相手が同じ issue を触っていたなら二重着手の証拠なので、
   相手の claim を尊重して別の issue へ回る。rebase は `--continue` か `--abort` で必ず閉じる
 - **二重着手が起きてしまったら、捨てる側のレビュー指摘を残す側の実装に当て直してから捨てる**

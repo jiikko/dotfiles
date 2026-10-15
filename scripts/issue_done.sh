@@ -15,7 +15,8 @@
 #   1. 実体を見つけて対応する done/ へ `git mv`
 #      (global issue → issues/done/ / group issue → issues/epic/<name>/done/。issue 291)
 #   2. `next/` の claim symlink があれば `git rm` (残すと dangling で test_next_links_valid.sh が赤)
-#   3. 移した本文の相対リンクを**新しい位置から**張り直す (issues/ 起点で書かれているので 1 段ずれる)
+#   3. 移した本文の相対リンクを**新しい位置から**張り直す (issues/ 起点で書かれているので 1 段ずれる)。
+#      あわせて本文冒頭の担当者バナー (`> 🚨 **担当中: …**`) を外す (規則は scripts/lib/claim_banner.awk。issue 763)
 #   4. 🚨 **他の issue から張られている「この issue へのリンク」も張り直す**。issue 347 の本文には
 #      無いが、実測すると必要 (例: issues/345 が `](347-….md)` で参照しており、347 を動かすと
 #      その 1 本が切れて test_issue_links_valid.sh が赤くなる)。3 だけでは CI は緑にならない
@@ -76,8 +77,12 @@
 # ISSUES_DIR を repo 外の fixture へ向けると、その fixture の git repo に対して操作する。
 set -euo pipefail
 unset CDPATH
+# 🚨 awk (リンクの張り直し・担当者バナーの除去) は UTF-8 のロケールだと、不正なバイトを含む本文で止まる (rc=2)。張り直しの awk が止まると
+# `|| true` で握り潰されて「リンクが解決しない」という別の理由で落ちる (敵対レビュー 2026-10-15)。判定はどれもバイト列の一致なので C で読む
+export LC_ALL=C
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BANNER_AWK="$ROOT_DIR/scripts/lib/claim_banner.awk" # 担当者バナーの判定規則 (tests/issues/test_next_claims_have_banner.sh と共用)
 ISSUES_DIR="${ISSUES_DIR:-$ROOT_DIR/issues}"
 while [ "${ISSUES_DIR%/}" != "$ISSUES_DIR" ]; do ISSUES_DIR="${ISSUES_DIR%/}"; done
 
@@ -85,7 +90,7 @@ usage() {
   cat >&2 <<'USAGE'
 usage: scripts/issue_done.sh <NNN> [<NNN>...]
 
-  issue を done/ へ送る (移動 / claim symlink の削除 / 本文リンクの張り直し /
+  issue を done/ へ送る (移動 / claim symlink の削除 / 本文リンクの張り直しと担当者バナーの削除 /
   他 issue からの参照の張り直し) を 1 コマンドで行い、リンク検査が落ちたら移動を戻す。
 
   ISSUES_DIR=<dir>   検査・操作の対象ディレクトリ (既定: <repo>/issues)
@@ -272,6 +277,15 @@ canary() {
   return 0
 }
 
+# banner_only_removed <元> <除去後>: 差が「元からの 1〜2 行の削除」だけなら 0 (バナー行と直後の空行)
+banner_only_removed() {
+  local d
+  d="$(diff -- "$1" "$2")" && return 1 # 差が無いのに外したと言っている
+  [ "$(grep -c '^>' <<< "$d")" -eq 0 ] || return 1
+  ! grep -q '^\\ No newline' <<< "$d" || return 1
+  case "$(grep -c '^<' <<< "$d")" in 1 | 2) return 0 ;; *) return 1 ;; esac
+}
+
 # 追跡されているか (追跡外へ git mv / git rm を打つと rc=128 で落ちる)
 tracked() { git "${GIT_DIR_ARG[@]}" ls-files --error-unmatch -- "$1" >/dev/null 2>&1; }
 
@@ -339,6 +353,8 @@ done
 # `$other != $dest` の比較や prefix 剥がしが静かに外れる
 ISSUES_DIR="$(cd "$ISSUES_DIR" && pwd -P)"
 
+# 規則のファイルが無いと、移動の後でバナーの判定が rc=2 になって rollback する。触る前に止める
+[ -f "$BANNER_AWK" ] || { printf '✗ 担当者バナーの判定規則が無い: %s (何も動かしていない)\n' "$BANNER_AWK" >&2; exit 1; }
 canary || exit 1
 
 TESTLOG="$(mktemp -d "${TMPDIR:-/tmp}/issue_done_log.XXXXXX")"
@@ -496,9 +512,26 @@ for num in "$@"; do
     undo_claim=1
   fi
 
-  # --- 手順 3: 移した本文のリンクを新しい位置から張り直す -----------------------------------
+  # --- 手順 3: 移した本文のリンクを新しい位置から張り直し、冒頭の担当者バナーを外す ---------------
+  # 🚨 バナーの除去は moved.bak を取った後に行う。判定が落ちたときの rollback は moved.bak から本文を戻すので、
+  # 先に外すとバナーだけ戻らない。バナーは next にいる間だけの表示 (glogx の viewer も next から出すときに外す。issue 763)
   cp -- "$dest" "$TESTLOG/moved.bak"
   rebase_file "$dest" "$old_base" "$new_base" "$moved_old" "$moved_new" || true
+  banner_removed=0
+  banner_rc=0
+  awk -v mode=strip -f "$BANNER_AWK" "$dest" > "$TESTLOG/unbannered" || banner_rc=$?
+  case "$banner_rc" in
+    0)
+      # 🚨 書き戻す前に「バナー行 (と直後の空行) を消しただけ」かを確かめる。awk は改行で終わらない最後の行に改行を足し、
+      # NUL を含む行を切り詰める (敵対レビュー 2026-10-15)。それ以外の差があれば本文を書き換えずに中止する (trap が rollback する)
+      if ! banner_only_removed "$dest" "$TESTLOG/unbannered"; then
+        printf '✗ issue %s: 担当者バナーを外すと本文のほかの部分も変わる (改行で終わらない / NUL を含む等)。手で外すこと\n' "$num" >&2
+        exit 1
+      fi
+      cat -- "$TESTLOG/unbannered" > "$dest"; banner_removed=1 ;; # cat で書く: inode と mode を保つ
+    1) ;;
+    *) printf '✗ issue %s の担当者バナーの判定に失敗した (rc=%s)\n' "$num" "$banner_rc" >&2; exit 1 ;; # trap が rollback する
+  esac
 
   # --- 手順 4: 他の md からの「この issue への参照」を張り直す --------------------------------
   # 🚨 走査は **repo 全体**。issues/ に閉じると、外から issue を指す参照 (docs/ など) が
@@ -534,6 +567,7 @@ for num in "$@"; do
     touched="$(grep -c . "$TESTLOG/touched.txt" || true)"
     printf '✓ issue %s -> %s' "$num" "${dest#"$BASE_DIR/"}"
     [ "$undo_claim" -eq 1 ] && printf ' / claim symlink を削除'
+    [ "$banner_removed" -eq 1 ] && printf ' / 担当者バナーを削除'
     [ "$touched" -gt 0 ] && printf ' / 参照を張り直したファイル %s 本' "$touched"
     printf '\n'
   else
