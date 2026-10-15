@@ -131,6 +131,11 @@ unset CDPATH  # export された CDPATH の下では、相対パスの cd が解
 
 prog="${0##*/}"
 die() { echo "$prog: $*" >&2; exit 2; }
+# 🚨 helper は $root (検査対象の repo) ではなく、この道具の実体の隣から読む。dotfiles 以外の repo の
+# $root にこの helper は無い (issue 585)。PATH / symlink 経由の起動でも実体まで辿る
+_self="$(readlink -f "${BASH_SOURCE[0]}")" || die "mutate-verify の実体を解決できない: ${BASH_SOURCE[0]}"
+# shellcheck source=bin/lib/uint.sh
+. "$(dirname "$_self")/lib/uint.sh" || die "$(dirname "$_self")/lib/uint.sh を読めない"
 # 起動時の stderr を fd 3 に控えて、報告はそこへ書く。bash は関数の実行中に届いたシグナルの trap を
 # その関数のリダイレクトがかかったまま走らせるので、`run_in_wt ... > "$mut_out" 2>&1` の最中に中断されると、
 # EXIT trap の報告 (rc=9 の警告・全体のログの置き場) が mv-mutant.log へ入り、worktree と一緒に消えていた
@@ -159,9 +164,13 @@ done
 [ -n "$expect" ]          || die "--expect は必須 (red の帰属を確かめないと、既存の assert が先に落ちても気づけない)"
 [ -n "$baseline_expect" ] || die "--baseline-expect は必須 (rc=0 だけでは zero execution と全 pass を区別できない)"
 [ -n "$name" ] || name="$file"
-case "$timeout" in ''|*[!0-9]*) die "--timeout は 0 以上の整数 (秒): $timeout" ;; esac
-# 桁が多すぎると `[ -gt ]` が整数として読めずに偽を返し、黙って無制限になる (red team で実測)
-[ "${#timeout}" -le 7 ] || die "--timeout が大きすぎる (7 桁まで。無制限は 0): $timeout"
+# 全角数字と桁あふれの罠は bin/lib/uint.sh (桁あふれは `[ -gt ]` が偽を返して黙って無制限になる。red team で実測)
+t_rc=0
+uint_ok "$timeout" 7 || t_rc=$?
+case "$t_rc" in
+  1) die "--timeout は 0 以上の整数 (秒): $timeout" ;;
+  2) die "--timeout が大きすぎる (7 桁まで。無制限は 0): $timeout" ;;
+esac
 
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "git repo の中で実行すること"
 [ -f "$root/$file" ] || die "--file が repo 内に無い: $file"
@@ -194,14 +203,6 @@ _canon="$( { git -C "$root" ls-files -z --full-name -- ":(literal)$file"
 # 同じ rc=8 誤検出になる。実体を指定させる (この repo は tracked symlink を実際に持つ)
 [ -L "$root/$file" ] && die "--file が symlink ($file)。変異は実体に当たるので実体のパスを指定すること"
 
-# 🚨 helper は $root (検査対象の repo) ではなく、この道具の実体の隣から読む。dotfiles 以外の repo の
-# $root にこの helper は無い (issue 585)。PATH / symlink 経由の起動でも実体まで辿る (bin/codex-fanout と同じ形)
-_self="${BASH_SOURCE[0]}"
-while [ -L "$_self" ]; do
-  _sdir="$(cd "$(dirname "$_self")" && pwd)"
-  _self="$(readlink "$_self")"
-  case "$_self" in /*) ;; *) _self="$_sdir/$_self" ;; esac
-done
 _tool_root="$(cd -P "$(dirname "$_self")/.." && pwd -P)" || die "mutate-verify の置き場所を解決できない: $_self"
 # shellcheck source=SCRIPTDIR/../scripts/lib/worktree_scratch.sh
 . "$_tool_root/scripts/lib/worktree_scratch.sh" || die "$_tool_root/scripts/lib/worktree_scratch.sh を読めない"

@@ -105,14 +105,20 @@ if [ -n "$output_schema" ]; then
 fi
 mkdir -p "$outdir" || die "outdir を作れない: $outdir"
 [ -z "$(ls -A "$outdir")" ] || die "outdir が空でない (使い回し禁止 — 前回世代の残骸が結果に混ざる): $outdir"
-# timeout の検証 (env と manifest 行で共用)。2 つの罠がどちらも「watchdog の無音無効化」になる:
-# ・[0-9] の範囲式はロケールの照合順で全角数字を通す (ja_JP.UTF-8 で実測) → 明示列挙で弾く
-# ・純数字でも 19 桁以上は [ -ge ] が integer expected で常に偽 → 桁数上限 9 (≈31 年) で弾く
+# 実体のディレクトリ ($0 が symlink でも辿る)。bin/lib の helper・merger プロンプトの既定・runtimeout の解決に使う
+script_dir="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=bin/lib/uint.sh
+. "$script_dir/lib/uint.sh" || die "$script_dir/lib/uint.sh を読めない"
+
+# timeout の検証 (env と manifest 行で共用)。全角数字と桁あふれは、どちらも watchdog を無音で無効化する (罠の中身は bin/lib/uint.sh)。
+# 上限 9 桁 (≈31 年)
 validate_timeout() { # $1=値 $2=エラー文脈 ("CODEX_FANOUT_TIMEOUT" / "manifest N 行目: timeout_s")
-  case "$1" in
-    '' | *[!0123456789]*) die "$2 は秒数の整数 (got: $1)。非数値だと watchdog が無効化される" ;;
+  local rc=0
+  uint_ok "$1" 9 || rc=$?
+  case "$rc" in
+    1) die "$2 は秒数の整数 (got: $1)。非数値だと watchdog が無効化される" ;;
+    2) die "$2 が大きすぎる (最大 9 桁。got: $1)。桁あふれも watchdog を無音で無効化する" ;;
   esac
-  [ "${#1}" -le 9 ] || die "$2 が大きすぎる (最大 9 桁。got: $1)。桁あふれも watchdog を無音で無効化する"
 }
 timeout_s="${CODEX_FANOUT_TIMEOUT:-1200}"
 validate_timeout "$timeout_s" "CODEX_FANOUT_TIMEOUT"
@@ -183,14 +189,6 @@ if [ "$do_merge" -eq 1 ] && [ "${#labels[@]}" -eq 1 ] && [ -z "$merge_prompt_fil
   merge_skipped_single=1
 fi
 
-# 実体のディレクトリ ($0 が symlink でも辿る)。merger プロンプトの既定と runtimeout の解決に使う
-src="$0"
-while [ -L "$src" ]; do
-  src_dir="$(cd "$(dirname "$src")" && pwd)"
-  src="$(readlink "$src")"
-  case "$src" in /*) ;; *) src="$src_dir/$src" ;; esac
-done
-script_dir="$(cd "$(dirname "$src")" && pwd)"
 # -J の結果の判定と -S の schema の事前確認は codex-events (src/codexevents)。起動前に 1 回だけ解決する (bin/lib/codex_events.sh。
 # run が終わった後にビルドすると、go が無い・ビルドの失敗・lock の競合で長い run の判定が失敗に落ちる)
 if [ "$json_events" -eq 1 ] || [ -n "$output_schema" ]; then

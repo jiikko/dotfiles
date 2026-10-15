@@ -20,15 +20,18 @@
 
 # shellcheck source=bin/lib/runtimeout.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/runtimeout.sh"
+# shellcheck source=bin/lib/uint.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/uint.sh"
 _CLAUDE_BIN_ROOT="$(CDPATH='' cd "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # _claude_bin_version_ok <候補>: 0 = 上限内に --version が成功 / 1 = 失敗 / 124 = 上限を超えたので止めた
 _claude_bin_version_ok() {
   local limit="${CLAUDE_BIN_VERSION_TIMEOUT:-10}" rc=0
   # 0 (と先頭が 0 のもの) も既定値に寄せる (runtimeout の 0 は「上限なし」で、終わらない候補 1 つで呼び出し元が止まったままになる)
-  # 7 桁を超える値も既定値に寄せる (runtimeout が誤用 rc=125 を返し、全候補が「失敗」に見える)
-  # [!0-9] でなく列挙する: bash 3.2 の ja_JP.UTF-8 では [!0-9] が全角数字に一致しない
-  case "$limit" in '' | *[!0123456789]* | 0* | ????????*) limit=10 ;; esac
+  # 数字でない値と 7 桁を超える値も既定値に寄せる (罠の中身は bin/lib/uint.sh。runtimeout は 9223372036 秒を超える値を
+  # 誤用 rc=125 で拒み、全候補が「失敗」に見える。7 桁 ≈ 115 日はそれより十分小さい)
+  uint_ok "$limit" 7 || limit=10
+  case "$limit" in 0*) limit=10 ;; esac
   # stdin を閉じる: resolve_claude のループの入力 (候補の一覧) を候補が読んで、後ろの候補が消えるのを防ぐ
   "$RUNTIMEOUT" -k 1 "$limit" "$1" --version </dev/null >/dev/null 2>&1 || rc=$?
   case "$rc" in

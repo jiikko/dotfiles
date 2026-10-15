@@ -75,13 +75,18 @@ case "$mode" in
   write|workspace-write) die "workspace-write は扱わない (codex-drive [2] の直接起動を使う)" ;;
   *) die "mode は ro | review のどちらか (指定: $mode)" ;;
 esac
-case "$timeout_s" in
-  "") ;;
-  *[!0123456789]*) die "-t は数字のみ (指定: $timeout_s)" ;;
-  *) [ "${#timeout_s}" -le 9 ] || die "-t の桁数が大きすぎる" ;;
-esac
-
-script_dir="$(cd "$(dirname "$0")" && pwd)"
+# 実体のディレクトリ ($0 が symlink でも辿る。兄弟の codex-fanout と bin/lib を実体の隣から探す)
+script_dir="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=bin/lib/uint.sh
+. "$script_dir/lib/uint.sh" || die "$script_dir/lib/uint.sh を読めない"
+if [ -n "$timeout_s" ]; then
+  t_rc=0
+  uint_ok "$timeout_s" 9 || t_rc=$?
+  case "$t_rc" in
+    1) die "-t は数字のみ (指定: $timeout_s)" ;;
+    2) die "-t の桁数が大きすぎる" ;;
+  esac
+fi
 driver="$script_dir/codex-fanout"
 [ -x "$driver" ] || die "codex-fanout が見つからない ($driver)"
 
