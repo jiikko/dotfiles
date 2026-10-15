@@ -423,11 +423,11 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 
 // RenderCached は --cached モードの出力 (HEAD の CI 状態 + staged diff)。
 // staged 変更自体に CI 結果は存在しないため「HEAD の状態」であることを明示する (issue の設計)。
-func RenderCached(head *Commit, state CIState, diff string, colored bool, spinner string) string {
+func RenderCached(head *Commit, state CIState, diff string, colored bool, glyph string) string {
 	var b strings.Builder
 	b.WriteString("HEAD CI: ")
 	// staged 変更に decoration は無い。RenderOpts は表記共通化のための最小構築。
-	b.WriteString(commitHeaderPrefix("", head.ShortSHA, "", state, RenderOpts{Colored: colored, Spinner: spinner}))
+	b.WriteString(commitHeaderPrefix("", head.ShortSHA, "", state, RenderOpts{Colored: colored, Spinner: glyph}))
 	b.WriteString(" ")
 	b.WriteString(head.Subject)
 	b.WriteString("\nStaged changes:\n")
