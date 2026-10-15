@@ -6,11 +6,13 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
 
 // sandbox は偽の networksetup / sudo / nohup だけが見える PATH を作る。偽の networksetup は引数を 1 つずつ [..] で囲んで log に書く。
+// 偽の sudo: -v は認証だけ / -n -b <cmd> は背景で起こして戻る / -n <cmd> と <cmd> (確認) は前面で起こす。
 // 🚨 本物 (/usr/sbin/networksetup・/usr/bin/sudo・/usr/bin/nohup) は PATH に入れない (`<sandbox>:/bin`)。走らせる前に、3 つとも
 // sandbox の中に解決することを確かめ、外へ解決したら走らせずに落とす (_claude/rules/sandbox-real-destructive-test-apis.md: 拒否は実行の前)。
 func sandbox(t *testing.T) (dir, path string) {
@@ -21,8 +23,10 @@ func sandbox(t *testing.T) (dir, path string) {
 	}
 	fakes := map[string]string{
 		"networksetup": `for a in "$@"; do printf '[%s]' "$a"; done >> "` + d + `/log"; echo >> "` + d + `/log"`,
-		// sudo -v は認証だけ。sudo -n -b <cmd> は <cmd> を背景で起こして戻る (本物と同じく呼び出し側は待たない)
-		"sudo":  `if [ "$1" = -v ]; then exit 0; fi; if [ "$1" = -n ] && [ "$2" = -b ]; then shift 2; "$@" & exit 0; fi; echo "fake sudo: $*" >&2; exit 1`,
+		"sudo": `if [ "$1" = -v ]; then exit 0; fi
+if [ "$1" = -n ]; then shift; fi
+if [ "$1" = -b ]; then shift; "$@" & exit 0; fi
+exec "$@"`,
 		"nohup": `exec "$@"`,
 	}
 	for name, body := range fakes {
@@ -50,6 +54,7 @@ func runSh(t *testing.T, path, script string, env ...string) *exec.Cmd {
 	t.Helper()
 	cmd := exec.Command("/bin/sh", "-c", script)
 	cmd.Env = append([]string{"PATH=" + path}, env...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // テストが止めるときに子 (sleep) ごと止められるように
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -77,9 +82,10 @@ func me(t *testing.T) string {
 	return u.Username
 }
 
+// staticIP の状態ディレクトリは sandbox の下 (テストの中では「root のディレクトリ」の役を自分が持つ)。
 func staticIP(t *testing.T, dir string) StaticIP {
 	return StaticIP{Service: "Thunderbolt Ethernet", IP: "192.168.100.11", Mask: "255.255.255.0",
-		Restore: Restore{Method: "DHCP"}, Token: "test-token-1", MarkDir: dir, Owner: me(t), Window: time.Second}
+		Restore: Restore{Method: "DHCP"}, Token: "test-token-1", StateDir: dir + "/state", StateOwner: me(t), Window: time.Second}
 }
 
 // viaNewIP は新しい IP (192.168.100.11) に届いた ssh の $SSH_CONNECTION。viaWifi は Wi-Fi の IP に届いた既存の接続。
@@ -88,7 +94,9 @@ const (
 	viaWifi  = "SSH_CONNECTION=192.168.50.250 50000 192.168.50.7 22"
 )
 
-// 確認の印が来なければ、固定 IP にした後で元 (DHCP) に戻す (相手を置き去りにしない)。
+const wantSet = "[-setmanual][Thunderbolt Ethernet][192.168.100.11][255.255.255.0]\n"
+
+// 確認の印が来なければ、固定 IP にした後で元 (DHCP) に戻し、lock を外す (相手を置き去りにしない)。
 func TestStaticIPRollsBackWithoutConfirm(t *testing.T) {
 	dir, path := sandbox(t)
 	s := staticIP(t, dir)
@@ -98,18 +106,26 @@ func TestStaticIPRollsBackWithoutConfirm(t *testing.T) {
 	if err := runSh(t, path, s.Script()).Wait(); err != nil {
 		t.Fatal(err)
 	}
-	want := "[-setmanual][Thunderbolt Ethernet][192.168.100.11][255.255.255.0]\n[-setdhcp][Thunderbolt Ethernet]\n"
-	if got := readLog(dir); got != want {
+	if got, want := readLog(dir), wantSet+"[-setdhcp][Thunderbolt Ethernet]\n"; got != want {
 		t.Errorf("log = %q, want %q", got, want)
+	}
+	if _, err := os.Stat(s.lockPath()); err == nil {
+		t.Error("終わったのに lock が残った")
+	}
+	if fi, err := os.Stat(s.StateDir); err != nil || fi.Mode().Perm() != 0o700 {
+		t.Errorf("状態ディレクトリが 0700 でない: %v %v", fi.Mode(), err)
 	}
 }
 
-// 期限内に確認の印が置かれたら戻さず、印を消して終わる。前の回の印が残っていても、それでは戻しを飛ばさない。
+// 新しい IP に届いた ssh から確認したら戻さない。前の回の印が残っていても、それでは戻しを飛ばさない。
 func TestStaticIPKeepsWhenConfirmed(t *testing.T) {
 	dir, path := sandbox(t)
 	s := staticIP(t, dir)
 	s.Window = 5 * time.Second
-	if err := os.WriteFile(s.ConfirmPath(), nil, 0o644); err != nil { // 前の回の印
+	if err := os.MkdirAll(s.StateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.ConfirmPath(), []byte("192.168.100.2 50000 192.168.100.11 22\n"), 0o600); err != nil { // 前の回の印
 		t.Fatal(err)
 	}
 	cmd := runSh(t, path, s.Script())
@@ -123,14 +139,116 @@ func TestStaticIPKeepsWhenConfirmed(t *testing.T) {
 	if err := cmd.Wait(); err != nil {
 		t.Fatal(err)
 	}
-	if got := readLog(dir); strings.Contains(got, "-setdhcp") {
+	if got := readLog(dir); got != wantSet {
 		t.Errorf("確認したのに戻した: %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "mac-lan-manager-staticip.lock")); err == nil {
-		t.Error("終わったのに 2 本目を止める印 (lock) が残った")
+	if _, err := os.Stat(s.lockPath()); err == nil {
+		t.Error("終わったのに lock が残った")
 	}
-	if _, err := os.Stat(s.ConfirmPath()); err == nil {
-		t.Error("確認の印が残った")
+}
+
+// 新しい IP 以外に届いた接続 (Wi-Fi 越しの既存の接続) からの確認は認めない (有線を確かめたことにならない。fable の敵対レビュー P1)。
+// 印の中身が glob でも展開しない (set -f)。
+func TestStaticIPConfirmMustComeViaNewIP(t *testing.T) {
+	for name, env := range map[string]string{
+		"Wi-Fi 越しの確認": viaWifi,
+		"glob の中身":    "SSH_CONNECTION=a b *",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir, path := sandbox(t)
+			s := staticIP(t, dir)
+			s.Window = 2 * time.Second
+			if name == "glob の中身" { // 作業ディレクトリに新しい IP の名前のファイルがあっても、それに化けない
+				if err := os.WriteFile(filepath.Join(dir, s.IP), nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cmd := runSh(t, path, "cd "+Quote(dir)+" && "+s.Script())
+			waitFor(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
+			if err := runSh(t, path, s.ConfirmCommand(), env).Wait(); err != nil {
+				t.Fatal(err)
+			}
+			if err := cmd.Wait(); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(readLog(dir), "-setdhcp") {
+				t.Errorf("新しい IP からの確認でないのに戻さなかった: %q", readLog(dir))
+			}
+		})
+	}
+}
+
+// 走っている間の 2 本目は前面で理由を出して断り (背景で黙って抜けると、変えたはずが何も変わらないのが見えない)、何もしない。
+// 持ち主の死んだ lock (待ちの途中の電源断・kill -9) は引き取る (fable の敵対レビュー)。
+func TestStaticIPLock(t *testing.T) {
+	dir, path := sandbox(t)
+	first := staticIP(t, dir)
+	first.Window = 3 * time.Second
+	cmd := runSh(t, path, first.Script())
+	waitFor(t, "1 本目が固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
+	second := staticIP(t, dir)
+	second.IP, second.Token = "192.168.100.12", "test-token-2"
+	pre := exec.Command("/bin/sh", "-c", second.RemoteCommand())
+	pre.Env = []string{"PATH=" + path}
+	out, err := pre.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "走っている") {
+		t.Errorf("走っている間の 2 本目を前面で断らない: err=%v out=%q", err, out)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(readLog(dir), "192.168.100.12") {
+		t.Errorf("2 本目が変更した: %q", readLog(dir))
+	}
+
+	// 死んだ lock: 持ち主の pid が居ない
+	if err := os.MkdirAll(second.lockPath(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second.lockPath()+"/pid", []byte("999999\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runSh(t, path, second.Script()).Wait(); err != nil {
+		t.Fatalf("死んだ lock を引き取らない: %v", err)
+	}
+	if !strings.Contains(readLog(dir), "192.168.100.12") {
+		t.Errorf("死んだ lock の後に変更しない: %q", readLog(dir))
+	}
+}
+
+// 状態ディレクトリが symlink・持ち主違いなら使わない (他の誰かが先に作った場所に印や lock を置かない)。
+func TestStaticIPRefusesForeignStateDir(t *testing.T) {
+	dir, path := sandbox(t)
+	s := staticIP(t, dir)
+	if err := os.Symlink(dir, s.StateDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := runSh(t, path, s.Script()).Wait(); err == nil || readLog(dir) != "" {
+		t.Errorf("symlink の状態ディレクトリを使った: err=%v log=%q", err, readLog(dir))
+	}
+	dir2, path2 := sandbox(t)
+	s2 := staticIP(t, dir2)
+	s2.StateOwner = "someone-else"
+	if err := runSh(t, path2, s2.Script()).Wait(); err == nil || readLog(dir2) != "" {
+		t.Errorf("持ち主の違う状態ディレクトリを使った: err=%v log=%q", err, readLog(dir2))
+	}
+}
+
+// 待ちの途中で止められたら (SIGTERM。相手の shutdown は TERM を配る)、戻してから終わる (新しい IP のまま残さない)。
+func TestStaticIPRollsBackOnTerm(t *testing.T) {
+	dir, path := sandbox(t)
+	s := staticIP(t, dir)
+	s.Window = 30 * time.Second
+	cmd := runSh(t, path, s.Script())
+	waitFor(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmd.Wait()
+	waitFor(t, "戻す", func() bool { return strings.Contains(readLog(dir), "-setdhcp") })
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // 残った sleep (自分が起こしたグループだけ)
+	if _, err := os.Stat(s.lockPath()); err == nil {
+		t.Error("止められた後に lock が残った")
 	}
 }
 
@@ -171,7 +289,7 @@ func TestStaticIPServiceNameIsOneWord(t *testing.T) {
 	}
 }
 
-// ssh で打つ 1 行 (sudo -v → sudo -n -b nohup sh -c ...) も、ssh が戻った後に背景で変更と戻しまで走る。
+// ssh で打つ 1 行 (sudo -v → 前面の事前確認 → sudo -n -b nohup sh -c ...) も、ssh が戻った後に背景で変更と戻しまで走る。
 func TestRemoteCommandRunsDetached(t *testing.T) {
 	dir, path := sandbox(t)
 	s := staticIP(t, dir)
@@ -186,9 +304,9 @@ func TestRemoteCommandRunsDetached(t *testing.T) {
 	}
 }
 
-// 埋め込む値の検査: 制御文字のサービス名・IPv4 でない値・知らない戻し方・使えない印の名前と置き場所・短すぎる待ちを拒む。
+// 埋め込む値の検査。
 func TestStaticIPValidate(t *testing.T) {
-	base := staticIP(t, "/var/tmp")
+	base := staticIP(t, "/var/db")
 	for name, mut := range map[string]func(*StaticIP){
 		"改行入りのサービス名": func(s *StaticIP) { s.Service = "a\nb" },
 		"空のサービス名":    func(s *StaticIP) { s.Service = "" },
@@ -197,10 +315,10 @@ func TestStaticIPValidate(t *testing.T) {
 		"戻し方":        func(s *StaticIP) { s.Restore.Method = "BOOTP" },
 		"戻す IP":      func(s *StaticIP) { s.Restore = Restore{Method: "manual", IP: "x", Mask: "255.0.0.0"} },
 		"印の名前":       func(s *StaticIP) { s.Token = "a b" },
-		"相対の置き場所":    func(s *StaticIP) { s.MarkDir = "tmp" },
+		"相対の置き場所":    func(s *StaticIP) { s.StateDir = "tmp" },
 		"待ちが短い":      func(s *StaticIP) { s.Window = 0 },
 		"秒でない待ち":     func(s *StaticIP) { s.Delay = 900 * time.Millisecond },
-		"持ち主":        func(s *StaticIP) { s.Owner = "a b" },
+		"持ち主":        func(s *StaticIP) { s.StateOwner = "a b" },
 	} {
 		s := base
 		mut(&s)
@@ -305,58 +423,5 @@ func TestQuote(t *testing.T) {
 		if err != nil || string(out) != v {
 			t.Errorf("Quote(%q) を sh に通すと %q (%v)", v, out, err)
 		}
-	}
-}
-
-// 確認の印は「新しい IP に届いた ssh」からのものだけを認める。Wi-Fi 越しの既存の接続から打っても、有線を確かめたことにならないので戻す
-// (fable の敵対レビュー P1)。印の場所にディレクトリを置かれても戻しは飛ばない。
-func TestStaticIPConfirmMustComeViaNewIP(t *testing.T) {
-	for name, prep := range map[string]func(s StaticIP, path string) *exec.Cmd{
-		"Wi-Fi 越しの確認": func(s StaticIP, path string) *exec.Cmd { return runSh(t, path, s.ConfirmCommand(), viaWifi) },
-		// 持ち主が違う印 (相手の Mac の他のユーザーが置いた形。ここでは「期待する持ち主」を別の名前にして作る)
-		"持ち主の違う印": func(s StaticIP, path string) *exec.Cmd { return runSh(t, path, s.ConfirmCommand(), viaNewIP) },
-		"置かれたディレクトリ": func(s StaticIP, path string) *exec.Cmd {
-			return runSh(t, path, "mkdir "+Quote(s.ConfirmPath()))
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			dir, path := sandbox(t)
-			s := staticIP(t, dir)
-			s.Window = 2 * time.Second
-			if name == "持ち主の違う印" {
-				s.Owner = "someone-else"
-			}
-			cmd := runSh(t, path, s.Script())
-			waitFor(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
-			if err := prep(s, path).Wait(); err != nil {
-				t.Fatal(err)
-			}
-			if err := cmd.Wait(); err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(readLog(dir), "-setdhcp") {
-				t.Errorf("新しい IP からの確認でないのに戻さなかった: %q", readLog(dir))
-			}
-		})
-	}
-}
-
-// 2 本目は 1 本目が終わるまで何もせずに抜ける (古い方の期限切れが新しい方の確定済みの変更を戻した。fable の敵対レビュー P2)。
-func TestStaticIPRefusesConcurrentRun(t *testing.T) {
-	dir, path := sandbox(t)
-	first := staticIP(t, dir)
-	first.Window = 3 * time.Second
-	cmd := runSh(t, path, first.Script())
-	waitFor(t, "1 本目が固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
-	second := staticIP(t, dir)
-	second.IP, second.Token = "192.168.100.12", "test-token-2"
-	if err := runSh(t, path, second.Script()).Wait(); err == nil {
-		t.Error("1 本目が走っている間に 2 本目が走った")
-	}
-	if err := cmd.Wait(); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(readLog(dir), "192.168.100.12") {
-		t.Errorf("2 本目が変更した: %q", readLog(dir))
 	}
 }

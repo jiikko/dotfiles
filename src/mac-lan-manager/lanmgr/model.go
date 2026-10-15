@@ -92,18 +92,19 @@ const (
 
 // Model は画面の状態。
 type Model struct {
-	o        Options
-	w, h     int
-	now      time.Time
-	sc       screen
-	tab      int    // 0: 管理対象 / 1: 未管理
-	cur      [2]int // タブごとのカーソル
-	listOff  [2]int // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
-	listRows int    // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
-	setC     int    // 設定の画面のカーソル
-	ov       overlay
-	ask      *ask
-	copyC    int
+	o            Options
+	w, h         int
+	now          time.Time
+	sc           screen
+	tab          int    // 0: 管理対象 / 1: 未管理
+	cur          [2]int // タブごとのカーソル
+	listOff      [2]int // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
+	listRows     int    // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
+	keysInFooter bool   // 詳細カードを出す高さが無く、動作のキーを最下行の案内に出している
+	setC         int    // 設定の画面のカーソル
+	ov           overlay
+	ask          *ask
+	copyC        int
 
 	filter    lineedit.Line
 	filtering bool `layer:"filter"`
@@ -241,7 +242,10 @@ func (m *Model) applyNetLoad(r netLoad) {
 func (m *Model) note(text string, ok bool) { m.notices = append(m.notices, Notice{text, ok}) }
 
 // Resize は画面の大きさを伝える。
-func (m *Model) Resize(w, h int) { m.w, m.h = w, h }
+func (m *Model) Resize(w, h int) {
+	m.w, m.h = w, h
+	m.listRows = 0 // 窓の行数は次に描くまで分からない (古い値で半ページ送りしない。それまでは枠の内側の高さで送る)
+}
 
 // Place は今のタブとカーソルの Mac (glogx が L を出したまま閉じたときに覚え、次の起動で戻す)。
 type Place struct {
@@ -699,7 +703,11 @@ func (m *Model) keyList(key string) Action {
 		}
 		return Quit
 	}
-	if move(&m.cur[m.tab], len(m.visible()), key, max(m.listRows, 1)) {
+	rows := m.listRows
+	if rows <= 0 {
+		rows = m.bodyHeight()
+	}
+	if move(&m.cur[m.tab], len(m.visible()), key, rows) {
 		return None
 	}
 	switch key {

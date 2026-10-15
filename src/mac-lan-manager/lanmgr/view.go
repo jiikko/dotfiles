@@ -67,6 +67,18 @@ func (m *Model) footer() string {
 		pairs = [][2]string{{"j/k", "項目"}, {"space", "入/切"}, {"←/→", "選ぶ"}, {"enter", "編集"}, {"q/esc/,", "閉じる"}}
 	case m.filtering:
 		pairs = [][2]string{{"enter", "確定"}, {"esc", "やめる"}}
+	case m.keysInFooter: // 詳細カードを出す高さが無い: カーソルの Mac への動作のキーをここに出す
+		pairs = [][2]string{{"j/k", "移動"}}
+		if r := m.current(); !r.self && r.connectIP() != "" {
+			pairs = append(pairs, [2]string{"s", "繋ぐ"}, [2]string{"Y", "コピー"})
+			if r.smb {
+				pairs = append(pairs, [2]string{"y", "smb"})
+			}
+			if r.vnc {
+				pairs = append(pairs, [2]string{"o", "画面共有"})
+			}
+		}
+		pairs = append(pairs, [2]string{"q", "閉じる"})
 	}
 	parts := make([]string, 0, len(pairs))
 	for _, p := range pairs {
@@ -140,19 +152,28 @@ func (m *Model) viewList(w int) string {
 	// 詳細カードもカーソル行も画面の外に出た (監査の指摘 2026-10-16)
 	frame := lipgloss.Height(shadow(card("", listW-1, surfList, tabColors[m.tab], cPurple))) - 1
 	rows := m.bodyHeight() - lipgloss.Height(head) - lipgloss.Height(tabs) - frame - 2 // 2 = 表の見出しと罫線
+	m.keysInFooter = false
 	if !wide {
 		if rows-lipgloss.Height(detail)-1 < min(3, len(m.visible())) {
 			// 詳細カードを積む高さが無い: 動作のキーだけの 1 行に畳む (カードごと下で切れると、s / Y / o の案内が黙って消えた。
 			// fable の敵対レビュー: 縦積みで高さ 22 以下)
 			detail = m.detailCompact(r)
 		}
-		rows -= lipgloss.Height(detail) + 1
+		if rows-lipgloss.Height(detail)-1 < 1 {
+			// 1 行に畳んでも入らない (高さ 13〜17): 動作のキーは最下行の案内へ回す (最下行は必ず画面に残る。fable の敵対レビュー)
+			detail, m.keysInFooter = "", true
+		} else {
+			rows -= lipgloss.Height(detail) + 1
+		}
 	}
 	list := lipgloss.JoinVertical(lipgloss.Left, tabs, shadow(card(m.listTable(listW-7, max(rows, 1)), listW-1, surfList, tabColors[m.tab], cPurple)))
 	var main string
-	if wide {
+	switch {
+	case detail == "":
+		main = list
+	case wide:
 		main = lipgloss.JoinHorizontal(lipgloss.Top, list, "  ", lipgloss.NewStyle().MarginTop(1).Render(detail))
-	} else {
+	default:
 		main = lipgloss.JoinVertical(lipgloss.Left, list, "", detail)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, head, main)

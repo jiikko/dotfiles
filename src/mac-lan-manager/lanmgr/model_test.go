@@ -804,8 +804,8 @@ func TestListFitsHeightKeepingCursorAndDetail(t *testing.T) {
 		peers = append(peers, discover.Peer{Host: fmt.Sprintf("mac%02d.local", i), Instances: []string{fmt.Sprintf("Mac %02d", i)}, SSH: true,
 			Addrs: map[int]string{14: fmt.Sprintf("192.168.50.%d", 100+i)}})
 	}
-	// 18 行未満は一覧の枠そのものが入らない (見出し 3・タブ 1・枠 6・表の見出し 2 で 12 行)
-	for _, size := range [][2]int{{120, 40}, {120, 30}, {120, 24}, {100, 18}, {200, 30}} {
+	// 13〜17 行は詳細カードも 1 行の形も入らないので、動作のキーは最下行の案内に出る
+	for _, size := range [][2]int{{120, 40}, {120, 30}, {120, 24}, {100, 18}, {100, 17}, {120, 14}, {100, 13}, {200, 30}} {
 		h := newHarness(t, nil, peers)
 		h.m.Resize(size[0], size[1])
 		h.keys("l")

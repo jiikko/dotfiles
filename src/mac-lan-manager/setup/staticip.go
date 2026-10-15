@@ -3,7 +3,8 @@
 // 要件と決定は issue 747 の「形」「決定」節。
 //
 // 🚨 本物の networksetup / sudo を起こすのは、人手の確認 (ルーターを空にした -setmanual が通るか・ssh が切れても変更が最後まで
-// 走るか) が済んでから。それまではこの package のテストだけが、偽物の networksetup / sudo / nohup で命令列を走らせる。
+// 走るか・sudo の use_pty の有無で SIGHUP を nohup が捨てられるか) が済んでから。それまではこの package のテストだけが、
+// 偽物の networksetup / sudo / nohup で命令列を走らせる。
 package setup
 
 import (
@@ -28,25 +29,38 @@ type Restore struct {
 
 // StaticIP は相手 (またはこの Mac) の有線のサービスを固定 IP にする 1 回分。
 //
-// 形 (デッドマンスイッチ。issue 747 の設計の反証レビュー): 背景で Delay 待ってから変え、Window の間に確認の印 (ConfirmPath) が
-// 置かれなければ Restore へ戻す。新しい IP で入り直せた側が印を置く (ConfirmCommand)。有線越しに入っていると変えた瞬間に
-// ssh が切れるので、変更は ssh から切り離して走らせる (sudo -b + nohup)。
+// 形 (デッドマンスイッチ。issue 747 の設計の反証レビュー): 背景で Delay 待ってから変え、Window の間に確認の印が置かれなければ
+// Restore へ戻す。新しい IP で入り直した側が印を置く (ConfirmCommand)。有線越しに入っていると変えた瞬間に ssh が切れるので、
+// 変更は ssh から切り離して走らせる (sudo -b + nohup)。
+//
+// 🚨 印と lock は root だけが書ける状態ディレクトリ (StateDir。0700) に置く。誰でも書ける /var/tmp に置いていたころは、
+// 相手の Mac の他のユーザーが印を先に置く・FIFO に差し替えて root の read を止める・symlink で確認の書き込みを別のファイルへ
+// 向ける・lock を先に作って以後を全部止める、ができた (fable の敵対レビュー 2 周)。root のディレクトリなら、これらは全部起きない。
 type StaticIP struct {
-	Service string // networksetup のサービス名 ("Thunderbolt Ethernet")
-	IP      string
-	Mask    string // "255.255.255.0"
-	Restore Restore
-	Token   string // 確認の印の名前 (実行ごとに変える)
-	MarkDir string // 確認の印を置くディレクトリ (空なら DefaultMarkDir。テストは sandbox を渡す)
-	Owner   string // 確認の印を置くユーザー (相手の Mac に ssh で入るユーザー名。この持ち主の印だけを認める)
-	Delay   time.Duration
-	Window  time.Duration
+	Service  string // networksetup のサービス名 ("Thunderbolt Ethernet")
+	IP       string
+	Mask     string // "255.255.255.0"
+	Restore  Restore
+	Token    string // 確認の印の名前 (実行ごとに変える)
+	StateDir string // root だけが書ける状態ディレクトリ (空なら DefaultStateDir。テストは sandbox を渡す)
+	// StateOwner は状態ディレクトリの持ち主として認めるユーザー (空なら root。テストは自分の名前を渡す。sh の外の道具 (id) を使わない)
+	StateOwner string
+	Delay      time.Duration
+	Window     time.Duration
 }
+
+// DefaultStateDir は状態ディレクトリの既定 (相手の Mac の上)。/var/db は再起動で消えず、root の場所。
+const DefaultStateDir = "/var/db/mac-lan-manager"
 
 var (
 	reToken = regexp.MustCompile(`^[A-Za-z0-9-]{8,64}$`)
 	reUser  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$`)
 )
+
+func ipv4(v string) bool {
+	a, err := netip.ParseAddr(v)
+	return err == nil && a.Is4()
+}
 
 // Validate は命令列に埋め込む値を確かめる。外から来た値 (サービス名は相手の networksetup の出力) は引用で語にするが、
 // 改行や制御文字は networksetup の引数として意味を持たないので拒む (ログや確認の板に出すときに行を割る)。
@@ -54,23 +68,14 @@ func (s StaticIP) Validate() error {
 	if s.Service == "" || strings.ContainsFunc(s.Service, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 		return fmt.Errorf("サービス名が使えない: %q", s.Service)
 	}
-	for _, v := range []string{s.IP, s.Mask} {
-		if a, err := netip.ParseAddr(v); err != nil || !a.Is4() {
-			return fmt.Errorf("IPv4 でない: %q", v)
-		}
+	if !ipv4(s.IP) || !ipv4(s.Mask) {
+		return fmt.Errorf("IPv4 でない: %q / %q", s.IP, s.Mask)
 	}
 	switch s.Restore.Method {
 	case "DHCP":
 	case "manual":
-		for _, v := range []string{s.Restore.IP, s.Restore.Mask} {
-			if a, err := netip.ParseAddr(v); err != nil || !a.Is4() {
-				return fmt.Errorf("戻す先が IPv4 でない: %q", v)
-			}
-		}
-		if s.Restore.Router != "" {
-			if a, err := netip.ParseAddr(s.Restore.Router); err != nil || !a.Is4() {
-				return fmt.Errorf("戻す先のルーターが IPv4 でない: %q", s.Restore.Router)
-			}
+		if !ipv4(s.Restore.IP) || !ipv4(s.Restore.Mask) || (s.Restore.Router != "" && !ipv4(s.Restore.Router)) {
+			return fmt.Errorf("戻す先が IPv4 でない: %+v", s.Restore)
 		}
 	default:
 		return fmt.Errorf("戻す方式が分からない: %q", s.Restore.Method)
@@ -78,42 +83,59 @@ func (s StaticIP) Validate() error {
 	if !reToken.MatchString(s.Token) {
 		return errors.New("確認の印の名前が使えない")
 	}
-	if d := s.markDir(); !strings.HasPrefix(d, "/") || strings.ContainsFunc(d, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
-		return fmt.Errorf("確認の印の置き場所が使えない: %q", d)
+	if d := s.stateDir(); !strings.HasPrefix(d, "/") || strings.ContainsFunc(d, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return fmt.Errorf("状態ディレクトリが使えない: %q", d)
+	}
+	if s.StateOwner != "" && !reUser.MatchString(s.StateOwner) {
+		return fmt.Errorf("状態ディレクトリの持ち主の名前が使えない: %q", s.StateOwner)
 	}
 	if s.Delay < 0 || s.Window < time.Second || s.Delay%time.Second != 0 || s.Window%time.Second != 0 {
 		return errors.New("待ちの長さが使えない (秒の整数)") // sleep は秒で渡す (900ms が sleep 0 に化けた)
 	}
-	if !reUser.MatchString(s.Owner) {
-		return fmt.Errorf("印の持ち主のユーザー名が使えない: %q", s.Owner)
-	}
 	return nil
 }
 
-// DefaultMarkDir は確認の印の既定の置き場所 (相手の Mac の上)。/var/tmp は再起動で消えない (確認の前に相手が再起動しても、
-// 戻す側の待ちは止まっているので印は使われない。古い印は Script が変更の前に消す)。
-const DefaultMarkDir = "/var/tmp"
-
-func (s StaticIP) markDir() string {
-	if s.MarkDir == "" {
-		return DefaultMarkDir
+func (s StaticIP) stateDir() string {
+	if s.StateDir == "" {
+		return DefaultStateDir
 	}
-	return s.MarkDir
+	return s.StateDir
 }
 
-// ConfirmPath は確認の印の置き場所。
-func (s StaticIP) ConfirmPath() string { return s.markDir() + "/mac-lan-manager-confirm-" + s.Token }
+// ConfirmPath は確認の印の置き場所 (状態ディレクトリの中)。
+func (s StaticIP) ConfirmPath() string { return s.stateDir() + "/confirm-" + s.Token }
 
-// ConfirmCommand は新しい IP で入り直した側が置く印 (ssh で相手に打つ 1 行。sh の組み込みだけで書く)。中身は相手の sh が展開する
-// $SSH_CONNECTION ("<送った側> <port> <受けた側> <port>") で、Script は受けた側が新しい IP であることを確かめる。
-func (s StaticIP) ConfirmCommand() string {
-	return `printf '%s\n' "$SSH_CONNECTION" > ` + Quote(s.ConfirmPath())
+func (s StaticIP) lockPath() string { return s.stateDir() + "/staticip.lock" }
+
+// prepare は状態ディレクトリを root の 0700 で用意し、lock の持ち主が生きていれば断る sh の断片 (前面の事前確認と背景の本体で使う)。
+// 状態ディレクトリが symlink・ディレクトリでない・root のものでないなら断る (他の誰かが先に作った場所は使わない)。
+func (s StaticIP) prepare(take bool) string {
+	dir, lock := Quote(s.stateDir()), Quote(s.lockPath())
+	var b strings.Builder
+	b.WriteString("umask 077\nset -f\n")
+	fmt.Fprintf(&b, "if [ -L %s ] || { [ -e %s ] && [ ! -d %s ]; }; then echo 'mac-lan-manager: 状態ディレクトリが使えない' >&2; exit 1; fi\n", dir, dir, dir)
+	fmt.Fprintf(&b, "mkdir -p %s && chmod 700 %s || exit 1\n", dir, dir)
+	owner := s.StateOwner
+	if owner == "" {
+		owner = "root"
+	}
+	fmt.Fprintf(&b, "set -- $(ls -ld %s)\nif [ \"$3\" != %s ]; then echo 'mac-lan-manager: 状態ディレクトリの持ち主が違う' >&2; exit 1; fi\n", dir, Quote(owner))
+	// 持ち主の生きている lock は断る (理由を出して rc=1)。死んだ lock (待ちの途中の電源断・kill -9) は引き取る
+	fmt.Fprintf(&b, "if [ -d %s ]; then\n  p=$(cat %s/pid 2>/dev/null)\n", lock, lock)
+	b.WriteString("  if [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null; then echo \"mac-lan-manager: 固定 IP への切り替えが走っている (pid $p)\" >&2; exit 1; fi\n")
+	if take {
+		fmt.Fprintf(&b, "  rm -rf %s\n", lock)
+	}
+	b.WriteString("fi\n")
+	if take {
+		fmt.Fprintf(&b, "mkdir %s || exit 1\necho $$ > %s/pid\n", lock, lock)
+	}
+	return b.String()
 }
 
 // Script は root で背景に走らせる sh の本文 (Validate の後に呼ぶ)。
 func (s StaticIP) Script() string {
-	mark := Quote(s.ConfirmPath())
-	lockPath := s.markDir() + "/mac-lan-manager-staticip.lock"
+	mark, lock := Quote(s.ConfirmPath()), Quote(s.lockPath())
 	svc := Quote(s.Service)
 	restore := "networksetup -setdhcp " + svc
 	if s.Restore.Method == "manual" {
@@ -123,27 +145,37 @@ func (s StaticIP) Script() string {
 		}
 	}
 	var b strings.Builder
-	// 同時に 2 本走らせない: 古い方の期限切れが、新しい方の確定済みの変更を戻した (fable の敵対レビュー)。2 本目は何もせずに抜ける
-	fmt.Fprintf(&b, "mkdir %s 2>/dev/null || exit 1\n", Quote(lockPath))
-	fmt.Fprintf(&b, "trap %s EXIT\n", Quote("rmdir "+Quote(lockPath)))
-	fmt.Fprintf(&b, "rm -rf %s\n", mark) // 前の回の印 (置かれたディレクトリも) で戻しを飛ばさない
+	b.WriteString(s.prepare(true))
+	// 終わり方を問わず (確認・期限切れ・SIGTERM / SIGHUP)、変えたまま確認が無ければ戻してから lock を外す。shutdown は TERM を配るので、
+	// 待ちの途中で相手を再起動しても新しい IP のまま残らない (fable の敵対レビュー)
+	fmt.Fprintf(&b, "changed=0\nconfirmed=0\nfinish() { if [ \"$changed\" = 1 ] && [ \"$confirmed\" = 0 ]; then %s; fi; rm -rf %s; }\n", restore, lock)
+	// INT / TERM / HUP の trap は EXIT の trap をシグナルでも走らせるため。macOS の /bin/sh (bash) はこれが無くても EXIT を走らせるので、
+	// この Mac の上のテストでは外しても緑のまま (変異で確かめた)。EXIT をシグナルで走らせない sh (dash など) のために残す
+	b.WriteString("trap 'finish' EXIT\ntrap 'exit 1' INT TERM HUP\n")
+	fmt.Fprintf(&b, "rm -rf %s\n", mark) // 前の回の印で戻しを飛ばさない
 	fmt.Fprintf(&b, "sleep %d\n", int(s.Delay/time.Second))
 	// 🚨 ルーターを渡さない形 (-setmanual <svc> <ip> <mask>) で「ルーター無し」になるかは未確認 (人手の確認の 1 つ)
-	fmt.Fprintf(&b, "networksetup -setmanual %s %s %s\n", svc, s.IP, s.Mask)
+	fmt.Fprintf(&b, "changed=1\nnetworksetup -setmanual %s %s %s\n", svc, s.IP, s.Mask)
 	fmt.Fprintf(&b, "i=0\nwhile [ \"$i\" -lt %d ]; do\n", int(s.Window/time.Second))
-	// 印を認める条件: 通常のファイル (シンボリックリンクでない)・持ち主が Owner (相手の Mac の他のユーザーは置けない)・中身の
-	// $SSH_CONNECTION の 3 語目 (ssh を受けた側の IP) が新しい IP (新しい IP に届いた ssh からしか確認が成り立たない。Wi-Fi 越しの
-	// 既存の接続から打っても有線を確かめたことにならない。fable の敵対レビュー P1)。sh の組み込みと /bin の ls だけで書く
-	fmt.Fprintf(&b, "  if [ -f %s ] && [ ! -L %s ]; then\n", mark, mark)
-	fmt.Fprintf(&b, "    set -- $(ls -ld %s)\n    owner=$3\n    read -r c < %s\n    set -- $c\n", mark, mark)
-	fmt.Fprintf(&b, "    if [ \"$owner\" = %s ] && [ \"$3\" = %s ]; then rm -f %s; exit 0; fi\n  fi\n", Quote(s.Owner), s.IP, mark)
+	// 印を認める条件: 通常のファイルで、中身の $SSH_CONNECTION の 3 語目 (ssh を受けた側の IP) が新しい IP。新しい IP に届いた ssh
+	// からしか確認が成り立たない (Wi-Fi 越しの既存の接続から打っても有線を確かめたことにならない。fable の敵対レビュー P1)。
+	// 印は root の 0700 のディレクトリにしか無いので、差し替え・FIFO・symlink は起きない
+	fmt.Fprintf(&b, "  if [ -f %s ] && [ ! -L %s ]; then\n    read -r c < %s\n    set -- $c\n", mark, mark, mark)
+	fmt.Fprintf(&b, "    if [ \"$3\" = %s ]; then confirmed=1; rm -f %s; exit 0; fi\n  fi\n", s.IP, mark)
 	b.WriteString("  sleep 1\n  i=$((i+1))\ndone\n")
-	fmt.Fprintf(&b, "%s\n", restore)
 	return b.String()
 }
 
-// RemoteCommand は ssh -t で相手に打つ 1 行。前面で sudo -v (パスワードを読む) し、変更は sudo -n -b + nohup で ssh から切り離す
-// (背景の sudo がパスワードを読もうとすると止まる。ssh が切れても SIGHUP で止まらない)。
+// RemoteCommand は ssh -t で相手に打つ 1 行。前面で sudo -v (パスワードを読む) し、走っているものが無いかを前面で確かめて理由を出し
+// (背景に回すと失敗が見えない。fable の敵対レビュー)、変更は sudo -n -b + nohup で ssh から切り離す (背景の sudo がパスワードを
+// 読もうとすると止まる。ssh が切れても SIGHUP で止まらない)。
 func (s StaticIP) RemoteCommand() string {
-	return "sudo -v && sudo -n -b nohup sh -c " + Quote(s.Script()) + " >/dev/null 2>&1"
+	return "sudo -v && sudo -n sh -c " + Quote(s.prepare(false)) + " && sudo -n -b nohup sh -c " + Quote(s.Script()) + " >/dev/null 2>&1"
+}
+
+// ConfirmCommand は新しい IP で入り直した側が打つ 1 行 (ssh -t で。sudo がパスワードを聞く)。印は root が状態ディレクトリに書く。
+// 中身は相手の sh が展開する $SSH_CONNECTION ("<送った側> <port> <受けた側> <port>") で、Script は受けた側が新しい IP であることを
+// 確かめる (sudo は環境を引き継がないので、値は sudo の外で読んで引数で渡す)。
+func (s StaticIP) ConfirmCommand() string {
+	return `c="$SSH_CONNECTION"; sudo sh -c 'umask 077; printf "%s\n" "$1" > "$2"' _ "$c" ` + Quote(s.ConfirmPath())
 }
