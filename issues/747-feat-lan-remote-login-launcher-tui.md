@@ -369,6 +369,7 @@ I/F を選ぶ手順で `Enter` を押すと、I/F の一覧の板が出る (こ�
   結果として glogx が lipgloss v2 / bubbles v2 に依存する → `docs/glogx-bubbletea-v2.md` の「bubbles を採らない」(glogx の固まった独自挙動が理由) を、
   新しい板に限って採ると書き換える。x/ansi が v0.11.8 に上がるので、tuikit を使う module の版を `tests/scripts/test_tuikit_consumers_aligned.sh` に合わせてそろえる。
   glogx の `L` は今どこにも使われていない (2026-10-15 に grep で確認)。ガイド §2 の横断キーの表 (`i` `s` `R` `D` `F` `U`) に `L` を足す
+  glogx に bubbles が入るので、ほかの TUI にも bubbles を取り込めるところを洗い出す話は 766 に切り出した (ユーザー依頼 2026-10-15)
 - **管理対象の印 = Bonjour の広告 (案 A)**
 - **名前 = `lanmac`**
 
