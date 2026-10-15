@@ -80,6 +80,7 @@ drop_worktree() {
   git -C "$repo" worktree prune >/dev/null 2>&1 || true
   wt=""
 }
+# shellcheck disable=SC2329 # trap 経由の間接呼び出し (SC2329 は直接呼び出ししか見ない)
 cleanup() { drop_worktree || true; git -C "$repo" worktree prune >/dev/null 2>&1 || true; rm -rf -- "$work"; }
 trap cleanup EXIT
 # シグナルは印だけを立てる。push の最中に受けても push の結果を確かめてから終わる (受けた瞬間に exit すると、

@@ -54,7 +54,7 @@ setup() {
 origin_has_claim() {
   local o="$work/$1/origin.git"
   [ "$(git -C "$o" ls-tree master -- "issues/$3" | cut -d' ' -f1)" = 120000 ] || return 1
-  git -C "$o" show "master:issues/$2" | head -4 | grep -q '^> 🚨 \*\*担当中: '
+  grep -q '^> 🚨 \*\*担当中: ' <<< "$(git -C "$o" show "master:issues/$2" | head -4)"
 }
 
 # no_leftovers <name>: 一時 worktree も一時ディレクトリも残っていない
@@ -116,7 +116,7 @@ if (cd "$work/exhaust/clone" && ISSUE_CLAIM_ATTEMPTS=2 ISSUE_CLAIM_TEST_BEFORE_P
   fail "上限を超えても成功を返した"
 fi
 grep -q '2 回とも origin が先へ進んでいて' "$work/exhaust.log" || { cat "$work/exhaust.log" >&2; fail "上限: 想定と違う理由で落ちた"; }
-if git -C "$work/exhaust/origin.git" ls-tree master -- issues/next/101-feat-a.md | grep -q .; then fail "上限: origin に claim が載った"; fi
+if [ -n "$(git -C "$work/exhaust/origin.git" ls-tree master -- issues/next/101-feat-a.md)" ]; then fail "上限: origin に claim が載った"; fi
 no_leftovers exhaust || fail "上限: 一時 worktree / 一時ディレクトリが残った"
 
 # --- 7. pre-push で落ちたら何も push しない -----------------------------------------------------
@@ -227,7 +227,7 @@ lock_cmd="git -C '$work/lock/seed' push -q '$work/lock/origin.git' master:refs/h
   { cat "$work/lock.log" >&2; fail "関係の無い ref の lock があると、載ったのに失敗を返した"; }
 origin_has_claim lock 101-feat-a.md next/101-feat-a.md || fail "lock: claim が origin に無い"
 # run ごとに sha を一意にする印 (同じ秒の二重 claim で commit が丸ごと同じにならない)
-git -C "$work/lock/origin.git" log -1 --format=%B master | grep -q '^Claim-Id: .' || fail "claim の commit に Claim-Id が無い"
+grep -q '^Claim-Id: .' <<< "$(git -C "$work/lock/origin.git" log -1 --format=%B master)" || fail "claim の commit に Claim-Id が無い"
 
 # --- 8. 引数の誤り ---------------------------------------------------------------------------
 if (cd "$work/ok/clone" && "$SCRIPT" 12) >/dev/null 2>&1; then fail "3 桁未満の番号を受け付けた"; fi

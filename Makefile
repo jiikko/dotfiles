@@ -25,6 +25,7 @@ ZSH_SYNTAX_FILES := \
   bin/disassemble_excel \
   bin/diskdoctor \
   bin/glogx \
+  bin/issue-claim \
   bin/lib/go_autobuild.zsh \
   bin/lockman \
   bin/mp4-effective-size \

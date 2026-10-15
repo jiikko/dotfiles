@@ -21,6 +21,7 @@
 - `src/doctor/svc` (`doctor/svc`) — Package svc は svcdoctor: 壊れた launchd 登録の検出 (issue 148 の 4 章)。
 - `src/doctor/testtmp` (`doctor/testtmp`) — Package testtmp は「テストが起こした一時ディレクトリを、中断されても回収する」ための 共通ヘルパー (issue 305)。
 - `src/glogx` (`glogx`) — 対話ブラウズ中はキー操作 (j/k/q/b 等) が主なので、起動時に IME を英数 (ABC) へ 切り替え、終了時に元へ戻す。 (main)
+- `src/glogx/cmd/issue-claim` (`glogx/cmd/issue-claim`) — issue-claim は issue に着手の claim を付ける: next/ に目印 (symlink) を置き、本文冒頭に担当者バナーを書く。 (main)
 - `src/glogx/gorules` (`glogx/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml の settings.gocritic.settings.ruleguard.rules から参照)。 (build tags: ruleguard)
 - `src/glogx/issues` (`glogx/issues`) — Package issues は repo 内の issue markdown ファイルの探索・分類と、端末表示用の整形を担う。
 - `src/glogx/tools/dial-preview` (`glogx/tools/dial-preview`) — dial-preview は全画面 ratelimit ダッシュボード (usage.RenderDashboard) の見た目プレビュー。 (main)
