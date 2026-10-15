@@ -242,12 +242,12 @@ func (m *Model) dispatcherGauge() string {
 	}
 	d := m.snap.Now.Sub(m.snap.DispatcherTick)
 	if m.snap.DispatcherGone { // プロセスが居ない: Tick の古さ (dispatcherStale) を待たずに出す (483。クラッシュの後の --view で気づけなかった)
-		return sgrRed + fmt.Sprintf("dispatcher が動いていない (最後の Tick %s前%s)", fmtDur(d), wake) + sgrFgReset
+		return sgrRed + fmt.Sprintf("dispatcher が動いていない (最後の Tick %s前%s)", card.Age(d), wake) + sgrFgReset
 	}
 	if d > dispatcherStale {
-		return sgrRed + fmt.Sprintf("dispatcher %s前 (止まっている?%s)", fmtDur(d), wake) + sgrFgReset
+		return sgrRed + fmt.Sprintf("dispatcher %s前 (止まっている?%s)", card.Age(d), wake) + sgrFgReset
 	}
-	return fmt.Sprintf("dispatcher %s前", fmtDur(d))
+	return fmt.Sprintf("dispatcher %s前", card.Age(d))
 }
 
 // ownerlessBand は、持ち主の画面が 1 つも無い join の画面に出す全幅の帯 (issue 543。無ければ空)。
@@ -270,11 +270,11 @@ func (m *Model) ownerlessBand() string {
 		text = " ■ カードは進まない — O で持ち主の画面に切り替えると起きる。dispatcher が 1 度も回っていない (持ち主の画面 (pro-con) を開くと起きる)"
 	case m.snap.DispatcherGone:
 		text = fmt.Sprintf(" ■ カードは進まない — O で持ち主の画面に切り替えると起きる。dispatcher が止まっている (最後の Tick %s前)。持ち主の画面が無いので誰も起こさない (持ち主の画面 (pro-con) を開くと起きる)",
-			fmtDur(m.snap.Now.Sub(m.snap.DispatcherTick)))
+			card.Age(m.snap.Now.Sub(m.snap.DispatcherTick)))
 	case m.dispatcherStopped():
 		// プロセスは居るのに回っていない (固まった): lock を持ったままなので、持ち主の画面を開いても起こさない (main.go の startDispatcherIfIdle)
 		text = fmt.Sprintf(" ■ カードは進まない — dispatcher のプロセスは居るが %s前から回っていない (固まっている?)。持ち主の画面を開いても、それが抜けるまでは起きない。pro-con ps で確かめる",
-			fmtDur(m.snap.Now.Sub(m.snap.DispatcherTick)))
+			card.Age(m.snap.Now.Sub(m.snap.DispatcherTick)))
 	default:
 		return paint(bg(colAttention)+fg(16)+sgrBold, " ⚠ 持ち主の画面が無い — O で持ち主の画面に切り替えると見張りが戻る。dispatcher は今は動いているが、止まっても誰も (supervisor も) 起こし直さない (持ち主の画面 (pro-con) を開くと見張りが戻る)", m.width)
 	}
@@ -367,7 +367,7 @@ func (m *Model) gauge() string {
 	if humans > 0 { // 人がやることを先に読ませる
 		items = append(items, humanTag(fmt.Sprintf("%sの番 %d", humanMark, humans)))
 	}
-	items = append(items, "最古の待ち "+fmtDur(oldest), m.pgGauge())
+	items = append(items, "最古の待ち "+card.Age(oldest), m.pgGauge())
 	if p := m.pmGauge(); p != "" {
 		items = append(items, p)
 	}
@@ -663,11 +663,7 @@ func (m *Model) roleProgress(c card.Card) string {
 	if m.dispatcherStopped() {
 		return ""
 	}
-	p := c.RoleStep(m.snap.Roles, m.snap.RoleStates)
-	if last, at, ok := c.LastCall(m.snap.Roles, m.snap.RoleStates); ok {
-		p += " ▸ " + last + " " + fmtDur(m.snap.Now.Sub(at))
-	}
-	return p
+	return c.RoleProgress(m.snap.Roles, m.snap.RoleStates, m.snap.Now)
 }
 
 // badge は待ちの理由と、issue との紐づき (要件 10)。
@@ -705,12 +701,12 @@ func (m *Model) badge(c card.Card) string {
 		if e.Resource != "" {
 			cmd = e.Resource + ": " + cmd
 		}
-		parts = append(parts, "▶ "+cmd+" "+fmtDur(m.snap.Now.Sub(e.Since)))
+		parts = append(parts, "▶ "+cmd+" "+card.Age(m.snap.Now.Sub(e.Since)))
 	} else if c.State != card.Done {
-		parts = append(parts, fmtDur(m.snap.Now.Sub(c.Since)))
+		parts = append(parts, card.Age(m.snap.Now.Sub(c.Since)))
 		// PG が今走らせているもの (issue 473)。集め直されていない古い様子はボードには出さない (詳細は古いと添えて出す)
 		if label, since, ok := c.DoingHeadline(); ok && m.snap.Now.Sub(c.DoingAt) <= card.DoingStale {
-			parts = append(parts, "▸ "+label+" "+fmtDur(m.snap.Now.Sub(since)))
+			parts = append(parts, "▸ "+label+" "+card.Age(m.snap.Now.Sub(since)))
 		}
 	}
 	switch {
@@ -816,16 +812,6 @@ func (m *Model) dimWhileTyping(region []string) []string {
 func fit(s string, w int) string {
 	s, sw := termwidth.TruncateMeasure(s, w, "…") // 切った行の幅も受け取る (測り直さない。演出のコマでは全行で走る)
 	return s + termwidth.PadSpaces(w-sw)
-}
-
-func fmtDur(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%d秒", int(d/time.Second))
-	case d < time.Hour:
-		return fmt.Sprintf("%d分", int(d/time.Minute))
-	}
-	return fmt.Sprintf("%d時間%d分", int(d/time.Hour), int(d%time.Hour/time.Minute))
 }
 
 func orDash(s string) string {

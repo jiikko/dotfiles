@@ -173,8 +173,7 @@ func (m *Model) drawerLines() drawerLines {
 	w := m.drawerTextWidth()
 	var out []string
 	add := func(style, text string) { out = append(out, wrapStyled(style, text, w)...) }
-	add("", fmt.Sprintf("状態: %s  担当: %s  repo: %s  session: %s", c.State.SinceText(fmtDur(m.snap.Now.Sub(c.Since))),
-		m.assignee(c), c.Repo, orDash(c.Session)))
+	add("", c.StatusLine(m.snap.Now, m.assignee(c), c.Repo, orDash(c.Session)))
 	var refs []string
 	for _, r := range c.Issues {
 		refs = append(refs, r.String()+" ("+r.Status+")")
@@ -217,23 +216,23 @@ func (m *Model) drawerLines() drawerLines {
 		}
 		add("", fmt.Sprintf("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text))
 	}
-	if ls := c.WorktreeLines(m.snap.Now, fmtDur, worktreePaint, sgrDim+"  (D で開く)"+sgrReset); len(ls) > 0 { // PG の worktree の場所と git (issue 508)
+	if ls := c.WorktreeLines(m.snap.Now, card.Age, worktreePaint, sgrDim+"  (D で開く)"+sgrReset); len(ls) > 0 { // PG の worktree の場所と git (issue 508)
 		out = append(out, "")
-		add(sgrDim, card.WorktreeHead(c, m.snap.Now, fmtDur))
+		add(sgrDim, card.WorktreeHead(c, m.snap.Now, card.Age))
 		for _, l := range ls {
 			out = append(out, hangWrap("  "+l, w)...)
 		}
 	}
-	if ls := c.ProgressLines(m.snap.Now, fmtDur); len(ls) > 0 { // どこまで進んだか (issue 469。dispatcher と見張りが集めたもの)
+	if ls := c.ProgressLines(m.snap.Now, card.Age); len(ls) > 0 { // どこまで進んだか (issue 469。dispatcher と見張りが集めたもの)
 		out = append(out, "")
-		add(sgrDim, card.ProgressHead(c, m.snap.Now, fmtDur))
+		add(sgrDim, card.ProgressHead(c, m.snap.Now, card.Age))
 		for _, l := range ls {
 			add("", "  "+l)
 		}
 	}
-	if ls := c.DoingLines(m.snap.Now, fmtDur); len(ls) > 0 { // PG が今走らせているもの (issue 473)
+	if ls := c.DoingLines(m.snap.Now, card.Age); len(ls) > 0 { // PG が今走らせているもの (issue 473)
 		out = append(out, "")
-		add(sgrDim, card.DoingHead(c, m.snap.Now, fmtDur))
+		add(sgrDim, card.DoingHead(c, m.snap.Now, card.Age))
 		for _, l := range ls {
 			add("", "  "+l)
 		}

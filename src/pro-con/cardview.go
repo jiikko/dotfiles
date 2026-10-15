@@ -94,11 +94,7 @@ type dispatcherView struct {
 
 // roleStep は役の番のカードの、役の側の段階 (card.RoleStep) と、役が扱っているカードなら最後の道具の呼び出し (画面の roleProgress と同じ)。
 func (v dispatcherView) roleStep(c card.Card) string {
-	p := c.RoleStep(v.roles, v.states)
-	if last, at, ok := c.LastCall(v.roles, v.states); ok {
-		p += " ▸ " + last + " (" + fmtAge(v.now.Sub(at)) + "前)"
-	}
-	return p
+	return c.RoleProgress(v.roles, v.states, v.now)
 }
 
 // viewDispatcher は dispatcher の様子を読む (読めなければ「どちらも起こす」= 人の番を少なめに出す)。役の様子は dispatcher が回っているときだけ使う
@@ -285,7 +281,7 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		if s.Purpose == card.ForQuestion.Name() { // 画面の 1 行目と同じ印 (issue 531)
 			title = card.QuestionMark + " " + title
 		}
-		line := fmt.Sprintf("%s  %s  %s  担当: %s  (%s)", s.ID, col, title, orDashCLI(s.Assignee), s.state.SinceText(fmtAge(now.Sub(s.Since))))
+		line := fmt.Sprintf("%s  %s  %s  担当: %s  (%s)", s.ID, col, title, orDashCLI(s.Assignee), s.state.SinceText(card.Age(now.Sub(s.Since))))
 		if s.Waiting != "" {
 			line += "  待ち: " + s.Waiting
 		}
@@ -389,7 +385,7 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 		_, _ = fmt.Fprintf(w, format+"\n", a...)
 	}
 	p("%s  %s", c.ID, c.Title)
-	p("状態: %s  担当: %s  repo: %s  session: %s", c.State.SinceText(fmtAge(now.Sub(c.Since))), orDashCLI(d.Assignee), orDashCLI(c.Repo), orDashCLI(c.Session))
+	p("%s", c.StatusLine(now, orDashCLI(d.Assignee), orDashCLI(c.Repo), orDashCLI(c.Session)))
 	var refs []string
 	for _, r := range c.Issues {
 		refs = append(refs, r.String()+" ("+r.Status+")")
@@ -413,7 +409,7 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 		p("PG への指示: %s", c.Prompt)
 	}
 	if c.Deleting() {
-		p("削除中: %s が %s前に依頼した (PG の session を止めてから消える)", c.DeleteBy, fmtAge(now.Sub(c.DeleteAt)))
+		p("削除中: %s が %s前に依頼した (PG の session を止めてから消える)", c.DeleteBy, card.Age(now.Sub(c.DeleteAt)))
 	}
 	if len(c.After) > 0 {
 		p("順番: %s の後 (PM が付けた。完了するまで起動しない)", strings.Join(c.After, ", "))
@@ -439,9 +435,9 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	if d.DoingErr != "" { // 進捗と今走っているものの両方に効くので、節の前に出す
 		p("dispatcher が集めた様子を読めない: %s", d.DoingErr)
 	}
-	if ls := c.WorktreeLines(now, fmtAge, card.Paint{}, ""); len(ls) > 0 { // PG の worktree の場所と git (issue 508)
+	if ls := c.WorktreeLines(now, card.Age, card.Paint{}, ""); len(ls) > 0 { // PG の worktree の場所と git (issue 508)
 		p("")
-		p("%s", card.WorktreeHead(c, now, fmtAge))
+		p("%s", card.WorktreeHead(c, now, card.Age))
 		for _, l := range ls {
 			p("  %s", l)
 		}
@@ -449,16 +445,16 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 			p("  差分の本文: %s", d.Path)
 		}
 	}
-	if ls := c.ProgressLines(now, fmtAge); len(ls) > 0 { // どこまで進んだか (issue 469)
+	if ls := c.ProgressLines(now, card.Age); len(ls) > 0 { // どこまで進んだか (issue 469)
 		p("")
-		p("%s", card.ProgressHead(c, now, fmtAge))
+		p("%s", card.ProgressHead(c, now, card.Age))
 		for _, l := range ls {
 			p("  %s", l)
 		}
 	}
-	if ls := c.DoingLines(now, fmtAge); len(ls) > 0 {
+	if ls := c.DoingLines(now, card.Age); len(ls) > 0 {
 		p("")
-		p("%s", card.DoingHead(c, now, fmtAge))
+		p("%s", card.DoingHead(c, now, card.Age))
 		for _, l := range ls {
 			p("  %s", l)
 		}
@@ -734,17 +730,4 @@ func orDashCLI(s string) string {
 		return "-"
 	}
 	return s
-}
-
-// fmtAge は経過時間を人が読む長さで (秒 / 分 / 時間 / 日。画面の ui の fmtDur とは書式が違う: あちらは空白なし・時間 + 分・日の単位なし。そろえるかは issue 772)。
-func fmtAge(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%d 秒", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%d 分", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%d 時間", int(d.Hours()))
-	}
-	return fmt.Sprintf("%d 日", int(d.Hours()/24))
 }

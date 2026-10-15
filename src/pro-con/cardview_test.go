@@ -269,7 +269,7 @@ func TestCardShow(t *testing.T) {
 			t.Fatalf("show に %q が無い: rc=%d out=%q err=%q", want, rc, out, errOut)
 		}
 	}
-	if !strings.Contains(out, "今走っているもの (dispatcher が集めた様子)\n  13 分  bash mut.sh\n") {
+	if !strings.Contains(out, "今走っているもの (dispatcher が集めた様子)\n  13分  bash mut.sh\n") {
 		t.Fatalf("show に PG が今走らせているもの (dispatcher が集めたもの) が無い: %q", out)
 	}
 	rc, out, _ = viewCmd(t, env, "show", "C-001", "--json")
@@ -797,7 +797,7 @@ func TestCardListAgeSaysWhatItMeasures(t *testing.T) {
 	env := viewFixture(t)
 	env.now = func() time.Time { return time.Now().Add(17 * time.Minute) }
 	_, out, _ := viewCmd(t, env, "list", "--all")
-	for id, want := range map[string]string{"C-001": "(質問待ち 17 分)", "C-002": "(依頼から 17 分)", "C-003": "(完了から 17 分)"} {
+	for id, want := range map[string]string{"C-001": "(質問待ち 17分)", "C-002": "(依頼から 17分)", "C-003": "(完了から 17分)"} {
 		found := false
 		for _, l := range strings.Split(out, "\n") {
 			if strings.HasPrefix(l, id+" ") {
@@ -808,7 +808,7 @@ func TestCardListAgeSaysWhatItMeasures(t *testing.T) {
 			t.Errorf("%s の行に %q が無い: %q", id, want, out)
 		}
 	}
-	if _, out, _ := viewCmd(t, env, "show", "C-003"); !strings.Contains(out, "状態: 完了から 17 分  担当: ") {
+	if _, out, _ := viewCmd(t, env, "show", "C-003"); !strings.Contains(out, "状態: 完了から 17分  担当: ") {
 		t.Errorf("show の状態に経過の起点が無い: %q", out)
 	}
 }

@@ -63,7 +63,7 @@ func (s State) Label() string {
 }
 
 // SinceText は今の列に入ってからの経過 age (呼び出し側で整形した長さ) に、何の経過かの語を付ける (issue 562)。
-// 裸の「(17 分)」は、完了のカードでは依頼から完了までの所要と読み違えられた。所要とは別物なので、起点を語で示す。
+// 裸の「(17分)」は、完了のカードでは依頼から完了までの所要と読み違えられた。所要とは別物なので、起点を語で示す。
 func (s State) SinceText(age string) string {
 	if s == Requested || s == Done { // 列に入った瞬間の出来事 (依頼を受けた / 完了した) から数える
 		return s.Label() + "から " + age

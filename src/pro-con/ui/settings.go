@@ -786,7 +786,7 @@ func (m *Model) procRow(p backend.Proc, w int) string {
 		pid = strconv.Itoa(p.PID)
 	}
 	if p.Age > 0 {
-		age = fmtDur(p.Age)
+		age = card.Age(p.Age)
 	}
 	col, state := "", p.State
 	switch {

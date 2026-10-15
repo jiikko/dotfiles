@@ -1,6 +1,10 @@
 package ui
 
-import "fmt"
+import (
+	"fmt"
+
+	"pro-con/card"
+)
 
 // screensBlock は開いている画面の一覧 (設定画面のプロセスのタブの下段。issue 481)。持ち主の画面が 1 つだけなら出さない (ヘッダと同じ)。
 // 見ているだけの画面 (--view) は画面の印を置かないので入らない。w は板の幅。
@@ -22,7 +26,7 @@ func (m *Model) screensBlock(w int) []string {
 		if tty == "" {
 			tty = "-"
 		}
-		row := fit(" "+s.ID, 10) + fit(mode, 22) + fit(s.Opened.Local().Format("15:04")+" ("+fmtDur(m.snap.Now.Sub(s.Opened))+"前)", 16) +
+		row := fit(" "+s.ID, 10) + fit(mode, 22) + fit(s.Opened.Local().Format("15:04")+" ("+card.Age(m.snap.Now.Sub(s.Opened))+"前)", 16) +
 			fit(tty, 16) + fmt.Sprintf("pid %d", s.PID)
 		out = append(out, boxLine(border, row, w))
 	}
