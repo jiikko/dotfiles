@@ -1,9 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"time"
 
 	"glogx/issues"
@@ -23,10 +20,6 @@ import (
 // 通常の起動 (大半) で fork が 1 本増える。1 本にしておけば、ファイルを読んで TTL 切れなら
 // そこで終われる。代償は「repo A → repo B と開くと A の記憶が消える」だが、TTL が短いので
 // 「直前に見ていた画面」の意味は変わらない。
-
-// issuesStateTTL は記憶の有効期限。C-g のトグル感覚 (閉じてすぐ開き直す) に効かせ、時間が
-// 経ってから開いたときは通常どおり git log 一覧から始める (ユーザー選定 2026-07-31)。
-const issuesStateTTL = 30 * time.Minute
 
 // issuesScreen は復元に必要な最小限の画面状態。
 //
@@ -49,63 +42,22 @@ type issuesScreen struct {
 	CursorGroup string `json:"cursor_group,omitempty"`
 }
 
-// issuesStatePath は保存先 ($XDG_CACHE_HOME/glog/issues-last-screen.json)。
-func issuesStatePath() (string, error) {
-	base, err := cacheBaseDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, "issues-last-screen.json"), nil
-}
+// issuesMemory は issues viewer の記憶 ($XDG_CACHE_HOME/glog/issues-last-screen.json)。作法は screen_memory.go。
+var issuesMemory = screenMemory[issuesScreen]{file: "issues-last-screen.json", savedAt: func(s issuesScreen) time.Time { return s.SavedAt }}
 
-// saveIssuesScreen は画面を保存する。失敗は握り潰してよい (復元は「できたら嬉しい」機能で、
-// 保存できないことを終了時に伝えても行動は変わらない)。
-func saveIssuesScreen(s issuesScreen) error {
-	path, err := issuesStatePath()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	data, err := json.Marshal(s)
-	if err != nil {
-		return err
-	}
-	// 🚨 素の os.WriteFile を使わないこと (issue 219 / 286)。writeAtomic は temp + rename で、
-	// write / Close / rename の 3 分岐すべてで temp を掃除する。素の WriteFile は O_TRUNC なので
-	// 書き込み中に落ちると**途中まで書けた JSON** が残り、次回起動の復元が黙って失敗する。
-	// 規律は cache_write_discipline_test.go がソース走査で強制する。
-	return writeAtomic(path, data)
-}
+func saveIssuesScreen(s issuesScreen) error { return issuesMemory.save(s) }
 
 // removeIssuesScreen は記憶を捨てる (git log 一覧から終了したとき)。
-func removeIssuesScreen() {
-	if path, err := issuesStatePath(); err == nil {
-		_ = os.Remove(path)
-	}
-}
+func removeIssuesScreen() { issuesMemory.remove() }
 
-// loadIssuesScreen は TTL 内の記憶を返す。ファイル欠損・破損・期限切れはすべて「記憶なし」に
-// 落とす (記憶の都合で起動を失敗させない。cache.go の LoadCache と同じ規律)。
+// loadIssuesScreen は TTL 内の記憶を返す (読めない・壊れている・期限切れ・未来の時刻は「記憶なし」。screenMemory.load)。
 //
 // repo の照合はここではしない: 呼び出し側が Root と実際の repo root を突き合わせる
 // (root の解決は git fork なので、記憶があるときだけ非同期で行う)。
 func loadIssuesScreen(now time.Time) (issuesScreen, bool) {
-	path, err := issuesStatePath()
-	if err != nil {
+	s, ok := issuesMemory.load(now)
+	if !ok || s.Root == "" {
 		return issuesScreen{}, false
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return issuesScreen{}, false
-	}
-	var s issuesScreen
-	if err := json.Unmarshal(data, &s); err != nil {
-		return issuesScreen{}, false
-	}
-	if s.Root == "" || now.Sub(s.SavedAt) >= issuesStateTTL || s.SavedAt.After(now) {
-		return issuesScreen{}, false // 期限切れ / 未来の時刻 (時計のずれ) は使わない
 	}
 	// 外部ファイル由来の値はここで正規化する。知らない段階名は「open のみ」に倒す
 	// (見えすぎるより見えなさすぎる方が、a を押せば戻せるぶん安全)

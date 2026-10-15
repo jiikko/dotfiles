@@ -33,7 +33,7 @@ func TestRatelimitScreenRejectsBadState(t *testing.T) {
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
 	write := func(t *testing.T, body string) {
 		t.Helper()
-		p, err := ratelimitStatePath()
+		p, err := ratelimitMemory.path()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -46,7 +46,7 @@ func TestRatelimitScreenRejectsBadState(t *testing.T) {
 	}
 	t.Run("期限切れ", func(t *testing.T) {
 		withRatelimitStateDir(t)
-		if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now.Add(-ratelimitStateTTL)}); err != nil {
+		if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now.Add(-screenMemoryTTL)}); err != nil {
 			t.Fatal(err)
 		}
 		if loadRatelimitScreen(now) {

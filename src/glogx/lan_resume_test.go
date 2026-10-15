@@ -19,7 +19,7 @@ func TestLanScreenRejectsBadState(t *testing.T) {
 		name string
 		s    lanScreen
 	}{
-		{"期限切れ", lanScreen{SavedAt: now.Add(-lanStateTTL)}},
+		{"期限切れ", lanScreen{SavedAt: now.Add(-screenMemoryTTL)}},
 		{"未来の時刻", lanScreen{SavedAt: now.Add(time.Minute)}},
 		{"時刻なし", lanScreen{}},
 	} {
@@ -30,7 +30,7 @@ func TestLanScreenRejectsBadState(t *testing.T) {
 			t.Errorf("%s: 復元しようとした", c.name)
 		}
 	}
-	path, _ := lanStatePath()
+	path, _ := lanMemory.path()
 	if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}

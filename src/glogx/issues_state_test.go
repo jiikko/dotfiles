@@ -35,7 +35,7 @@ func TestIssuesScreenRoundTrip(t *testing.T) {
 	// 🚨 段階は名前で保存する。序数に戻すと、段階を増減・並べ替えた瞬間に保存済みの画面が
 	// 黙って別の段階で復元される (issues.StatusFilter.String の注記)。往復テストだけでは
 	// 同じコードが書いて読むので気づけないため、ファイルの中身を直接見る。
-	path, err := issuesStatePath()
+	path, err := issuesMemory.path()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestIssuesScreenIgnoresStaleAndBroken(t *testing.T) {
 			if err := saveIssuesScreen(issuesScreen{Root: "/repo", SavedAt: now}); err != nil {
 				t.Fatal(err)
 			}
-		}, now.Add(issuesStateTTL)},
+		}, now.Add(screenMemoryTTL)},
 		{"未来の時刻 (時計のずれ)", func(t *testing.T, _ string) {
 			t.Helper()
 			if err := saveIssuesScreen(issuesScreen{Root: "/repo", SavedAt: now.Add(time.Hour)}); err != nil {

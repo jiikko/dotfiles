@@ -27,7 +27,7 @@ import (
 //   - 判定は 2 段: ①「cacheBaseDir / cachedir.Base を呼ぶ関数」= パス提供関数を集める
 //     ②「パス提供関数 (または cacheBaseDir 系) を呼び、かつ os.WriteFile も呼ぶ関数」を違反にする
 //   - 🚨 **1 段の近似では実際の違反を 1 件も捕まえられなかった**。saveIssuesScreen 等は
-//     `path, _ := issuesStatePath()` と**別関数からパスを受け取る**形なので、
+//     `path, _ := issuesMemory.path()` と**別関数からパスを受け取る**形なので、
 //     「同じ関数内に cacheBaseDir と os.WriteFile が両方ある」では 0 件になる (実測で踏んだ)
 //   - **検出しない**: 提供関数を 2 段以上辿る / io.WriteString / os.Create + Write /
 //     パスを引数で受け取るだけの関数 / 別 module 経由。これらは review の責務

@@ -34,7 +34,7 @@ func TestDoctorScreenRejectsBadState(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
 	write := func(t *testing.T, body string) {
 		t.Helper()
-		p, err := doctorStatePath()
+		p, err := doctorMemory.path()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -47,7 +47,7 @@ func TestDoctorScreenRejectsBadState(t *testing.T) {
 	}
 	t.Run("期限切れ", func(t *testing.T) {
 		withDoctorStateDir(t)
-		if err := saveDoctorScreen(doctorScreen{Tab: int(tabSvc), SavedAt: now.Add(-doctorStateTTL)}); err != nil {
+		if err := saveDoctorScreen(doctorScreen{Tab: int(tabSvc), SavedAt: now.Add(-screenMemoryTTL)}); err != nil {
 			t.Fatal(err)
 		}
 		if _, ok := loadDoctorScreen(now); ok {

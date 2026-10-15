@@ -1,9 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -24,60 +21,23 @@ import (
 // treefiler の Remember place (設定。既定 off) とは別の機能で、そちらの設定には依存しない (あちらは TTL 無しで「次に同じ場所で
 // 起動したとき」)。
 
-// filerStateTTL は記憶の有効期限。issues / doctor / ratelimit と同じ値で、根拠も同じ (C-g のトグル感覚に効かせる)。
-const filerStateTTL = issuesStateTTL
-
 // filerScreen は閉じたときの F の場所。Place.Start が照合のキー (F を開いた dir)。
 type filerScreen struct {
 	Place   filer.Place `json:"place"`
 	SavedAt time.Time   `json:"saved_at"`
 }
 
-func filerStatePath() (string, error) {
-	base, err := cacheBaseDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, "filer-screen.json"), nil
-}
+var filerMemory = screenMemory[filerScreen]{file: "filer-screen.json", savedAt: func(s filerScreen) time.Time { return s.SavedAt }}
 
-func saveFilerScreen(s filerScreen) error {
-	path, err := filerStatePath()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	data, err := json.Marshal(s)
-	if err != nil {
-		return err
-	}
-	return writeAtomic(path, data) // 素の os.WriteFile は途中まで書けた JSON を残す (ratelimit_resume.go と同じ理由)
-}
+func saveFilerScreen(s filerScreen) error { return filerMemory.save(s) }
 
-func removeFilerScreen() {
-	if path, err := filerStatePath(); err == nil {
-		_ = os.Remove(path)
-	}
-}
+func removeFilerScreen() { filerMemory.remove() }
 
-// loadFilerScreen は dir で開いた F の記憶を返す。読めない / 壊れている / 期限切れ / 未来の時刻 / 別の dir はすべて
-// 「復元しない」に倒す (勝手に全画面を出さない方が安全側)。
+// loadFilerScreen は dir で開いた F の記憶を返す。読めない / 壊れている / 期限切れ / 未来の時刻 (screenMemory.load) と
+// 別の dir はすべて「復元しない」に倒す (勝手に全画面を出さない方が安全側)。
 func loadFilerScreen(now time.Time, dir string) (filer.Place, bool) {
-	path, err := filerStatePath()
-	if err != nil {
-		return filer.Place{}, false
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return filer.Place{}, false
-	}
-	var s filerScreen
-	if err := json.Unmarshal(data, &s); err != nil {
-		return filer.Place{}, false
-	}
-	if s.SavedAt.IsZero() || now.Sub(s.SavedAt) >= filerStateTTL || s.SavedAt.After(now) || s.Place.Start == "" || s.Place.Start != dir {
+	s, ok := filerMemory.load(now)
+	if !ok || s.Place.Start == "" || s.Place.Start != dir {
 		return filer.Place{}, false
 	}
 	return s.Place, true

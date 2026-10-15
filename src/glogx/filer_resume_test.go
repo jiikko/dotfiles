@@ -33,7 +33,7 @@ func TestFilerScreenRejectsBadState(t *testing.T) {
 		s    filerScreen
 		dir  string
 	}{
-		{"期限切れ", filerScreen{Place: p, SavedAt: now.Add(-filerStateTTL)}, "/a"},
+		{"期限切れ", filerScreen{Place: p, SavedAt: now.Add(-screenMemoryTTL)}, "/a"},
 		{"未来の時刻", filerScreen{Place: p, SavedAt: now.Add(time.Minute)}, "/a"},
 		{"別の dir", filerScreen{Place: p, SavedAt: now}, "/a/sub"},
 		{"時刻なし", filerScreen{Place: p}, "/a"},
@@ -46,7 +46,7 @@ func TestFilerScreenRejectsBadState(t *testing.T) {
 			t.Errorf("%s: 復元しようとした", c.name)
 		}
 	}
-	path, _ := filerStatePath()
+	path, _ := filerMemory.path()
 	if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
