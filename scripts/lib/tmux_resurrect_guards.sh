@@ -343,6 +343,25 @@ tt_lock_release_if_owner() {
   return 0
 }
 
+# tt_prune_log_lines <file> <max>: 行数が max を超えたら末尾の max 行だけを残す。無音・非破壊で失敗する
+# (一時ファイルに書いてから mv。途中で失敗したら元のまま)。🚨 書き手が全員 `>> file` の open-append-close であることが前提
+# (inode を差し替えても取りこぼさない。fd を握り続ける書き手が居たら、その書き込みは消える)。いつ刈るかは呼び出し側が決める
+# (periodic_save は周期ごと、schedule_keys は書き込みのたび)。
+tt_prune_log_lines() {
+  local n tmp
+  [ -f "$1" ] || return 0
+  n="$(wc -l < "$1" 2>/dev/null | tr -d ' ')"
+  case "$n" in ''|*[!0123456789]*) return 0 ;; esac
+  [ "$n" -gt "$2" ] 2>/dev/null || return 0
+  tmp="$1.prune.$$"
+  if tail -n "$2" "$1" > "$tmp" 2>/dev/null; then
+    mv -f "$tmp" "$1" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+  else
+    rm -f "$tmp" 2>/dev/null
+  fi
+  return 0
+}
+
 # ── 共有観測ログ (tt-restore-trigger.log) ────────────────────────────────────
 # 復元・保存・kill の因果を 1 本の時系列で読むための共有ログ。**書き手はこの関数だけ**にする。
 #
@@ -354,7 +373,7 @@ tt_lock_release_if_owner() {
 #   この形に依存しているので、変えるならこの 1 箇所を変えて読み手も同時に直す。
 #
 # rotation はここでは**やらない**。上限 (TT_TRIGGER_LOG_MAX_LINES) の適用は
-# scripts/tmux_periodic_save.sh の prune_trigger_log が担当する。
+# scripts/tmux_periodic_save.sh が tt_prune_log_lines (下) で担当する。
 #   理由: 書き込みのたびに刈ると 1 行ごとに `wc -l` の fork が乗る。periodic_save は元々
 #   周期実行されていて追加 fork ゼロで刈れる。増加は実測 96 行/日 ≒ 8KB/日で、上限は
 #   forensics の保持期間を決めるものであって安全機構ではないため、periodic_save が

@@ -71,22 +71,6 @@ fi
 cleanup() { tt_lock_release_if_owner "$LOCK_DIR"; }
 trap cleanup EXIT
 
-# 観測ログを上限行数に刈る。書き手は全員 `>> file` の open-append-close なので、
-# tmp + mv で inode を差し替えても書き込みを取りこぼさない (fd を握り続ける書き手が居ない)。
-prune_trigger_log() {
-  local n tmp
-  [ -f "$TT_TRIGGER_LOG" ] || return 0
-  n="$(wc -l < "$TT_TRIGGER_LOG" 2>/dev/null | tr -d ' ')"
-  case "$n" in ''|*[!0-9]*) return 0 ;; esac
-  [ "$n" -gt "$TT_TRIGGER_LOG_MAX_LINES" ] || return 0
-  tmp="$TT_TRIGGER_LOG.prune.$$"
-  if tail -n "$TT_TRIGGER_LOG_MAX_LINES" "$TT_TRIGGER_LOG" > "$tmp" 2>/dev/null; then
-    mv -f "$tmp" "$TT_TRIGGER_LOG" 2>/dev/null || rm -f "$tmp" 2>/dev/null
-  else
-    rm -f "$tmp" 2>/dev/null
-  fi
-}
-
 interval_seconds() {
   local v
   v="$(tmux show -gqv @continuum-save-interval 2>/dev/null)"
@@ -113,7 +97,7 @@ while :; do
   if [ -n "$server_lstart" ]; then
     [ "$(ps -o lstart= -p "$SERVER_PID" 2>/dev/null)" = "$server_lstart" ] || break
   fi
-  prune_trigger_log
+  tt_prune_log_lines "$TT_TRIGGER_LOG" "$TT_TRIGGER_LOG_MAX_LINES"
   # socket gate は毎周期見る (サーバ入れ替わりで別環境の last を触らない)
   tt_on_default_server || break
 

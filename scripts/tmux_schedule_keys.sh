@@ -139,22 +139,7 @@ trap sk_cleanup_tmpfiles EXIT
 
 log() {
   { printf '%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >> "$LOG"; } 2>/dev/null || true
-  log_rotate
-}
-
-# log_rotate は上限を超えたら末尾だけ残す。fire からも呼ばれるので無音・非破壊的に失敗する。
-log_rotate() {
-  local n tmp
-  [[ -f "$LOG" ]] || return 0
-  n="$(wc -l < "$LOG" 2>/dev/null | tr -d ' ')"
-  [[ "$n" =~ ^[0-9]+$ ]] || return 0
-  (( n > LOG_MAX_LINES )) || return 0
-  tmp="$LOG.prune.$$"
-  if tail -n "$LOG_MAX_LINES" "$LOG" > "$tmp" 2>/dev/null; then
-    mv -f "$tmp" "$LOG" 2>/dev/null || rm -f "$tmp" 2>/dev/null
-  else
-    rm -f "$tmp" 2>/dev/null
-  fi
+  tt_prune_log_lines "$LOG" "$LOG_MAX_LINES"
 }
 
 # 残り秒 → "1h23m" / "45m" / "30s"
