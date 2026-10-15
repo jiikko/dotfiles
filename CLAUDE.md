@@ -8,6 +8,8 @@
   `timeout` / `gtimeout` / `( sleep; kill ) &` は `make test-lint` が落とす。`kill -0` で回す待ちの手組みは字句で決まらないのでレビューで見る)
 - 🚨 **残るのは「版」の差**。CI runner の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
   workflow 側で brew の bash を PATH 先頭に出して揃えている。新しい workflow を足すときは同じ手当てが要る
+- bin のスクリプトの定型は手で書かない (issue 775): 秒数などの整数の引数の検査は `bin/lib/uint.sh` の `uint_ok`
+  (`[!0-9]` は bash 3.2 の ja_JP で全角数字を通す)、自分の実体の置き場 (symlink 越し) は `readlink -f "$0"` (BSD の readlink も持つ)
 
 ## ドキュメント
 
