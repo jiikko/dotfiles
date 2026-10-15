@@ -98,15 +98,7 @@ func validPlistPath(p string) bool {
 // glogx 側と 2 実装持っていた。**残るのは復元固有の関心 = 長さの上限**だけ。
 // タブは PlainLine がスペース 4 へ展開する (端末のタブストップと dispWidth の食い違いを作らない)。
 func cleanText(s string) string {
-	s = termsafe.PlainLine(s)
-	// 🚨 切るのは rune 境界。バイト位置で切ると不正な UTF-8 の断片が残り、幅計算と端末で
-	// 解釈が割れる (`for i := range s` の i は rune の先頭バイトだけを取る)
-	for i := range s {
-		if i > maxRestoredText {
-			return s[:i]
-		}
-	}
-	return s
+	return termsafe.CutBytes(termsafe.PlainLine(s), maxRestoredText) // rune の境界で上限以下に切る
 }
 
 func cleanTexts(ss []string) []string {

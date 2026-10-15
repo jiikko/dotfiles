@@ -4,6 +4,7 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 const (
@@ -231,5 +232,28 @@ func TestPlainLines(t *testing.T) {
 	}
 	if PlainLines(nil) != nil || PlainLines([]string{}) != nil {
 		t.Fatal("空なら nil を返さない")
+	}
+}
+
+// CutBytes は上限以下に、rune の境界で切る (前の実装は上限を 1 rune 超えて返した。issue 777)。
+func TestCutBytes(t *testing.T) {
+	for _, tc := range []struct {
+		s    string
+		max  int
+		want string
+	}{
+		{"abcdefghijkl", 10, "abcdefghij"},
+		{"abc", 10, "abc"},
+		{"abcdefghij", 10, "abcdefghij"},
+		{"あいうえ", 10, "あいう"},   // 3 バイト × 3 = 9 (4 つ目を入れると 12)
+		{"aあいう", 10, "aあいう"},  // ちょうど 10
+		{"aあいうえ", 10, "aあいう"}, // 次の rune は丸ごと落とす
+		{"あ", 2, ""},
+		{"abc", 0, ""},
+	} {
+		got := CutBytes(tc.s, tc.max)
+		if got != tc.want || len(got) > tc.max || !utf8.ValidString(got) {
+			t.Errorf("CutBytes(%q, %d) = %q (len %d), want %q", tc.s, tc.max, got, len(got), tc.want)
+		}
 	}
 }

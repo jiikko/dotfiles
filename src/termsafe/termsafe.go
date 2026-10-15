@@ -57,6 +57,23 @@ func PlainLines(ss []string) []string {
 	return out
 }
 
+// CutBytes は s を maxBytes バイト以下に、rune の境界で切る (保存・復元する文字列の長さの上限。表示幅で切るなら tuikit の termwidth)。
+// バイト位置で切ると不正な UTF-8 の断片が残り、幅計算と端末で解釈が割れるので、上限を超える rune は丸ごと落とす。
+// 前は doctor と glogx が「i > 上限 になった最初の rune の先頭で切る」形を別々に持ち、上限を 1 rune 超えて返していた (issue 777)。
+func CutBytes(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	i := maxBytes
+	for i > 0 && !utf8.RuneStart(s[i]) {
+		i--
+	}
+	return s[:i]
+}
+
 // PlainLineKeepTabs は PlainLine のタブ非展開版。タブを「自前のタブストップ揃え」で展開する
 // 整形層 (issues の expandTabs) の入口で使う。
 //

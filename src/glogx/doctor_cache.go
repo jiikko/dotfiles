@@ -478,17 +478,8 @@ func sanitizeRestoredBrew(b brewDoctorResult) brewDoctorResult {
 // いたが、それは ESC だけ落として payload (`]52;c;…`) を本文に残す形で、doctor / issues /
 // git の各所と同じ判定を別実装で持っていた。**ここに残るのは長さの上限**だけ
 // (画面を埋め尽くさせない = 保存されたキャッシュを読み戻す側の関心)。
-func cleanOneLine(s string) string { return cutRunes(termsafe.PlainLine(s), maxRestoredBrewText) }
-
-// cutRunes は rune 境界で切る (バイト位置で切ると不正な UTF-8 の断片が残り、
-// 幅計算と端末で解釈が割れる)。`for i := range s` の i は rune の先頭バイトだけを取る。
-func cutRunes(s string, maxBytes int) string {
-	for i := range s {
-		if i > maxBytes {
-			return s[:i]
-		}
-	}
-	return s
+func cleanOneLine(s string) string {
+	return termsafe.CutBytes(termsafe.PlainLine(s), maxRestoredBrewText)
 }
 
 // --- 復元した値の検査 (snapshot と doctor-disk.json が共有する述語) ---
@@ -564,7 +555,9 @@ const (
 // 🚨 **1 件が 1 行として描かれる値には使わないこと**。改行を残すので、偽の行を差し込まれて
 // 固定高パネルの行数が狂う (行数を数えないテストは素通りする)。brew の `Unavailable` は
 // 1 行の doctorRow なので cleanBrewLine を使う (敵対レビュー 2026-09-04 が実測)。
-func cleanBrewText(s string) string { return cutRunes(termsafe.PlainBlock(s), maxRestoredBrewText) }
+func cleanBrewText(s string) string {
+	return termsafe.CutBytes(termsafe.PlainBlock(s), maxRestoredBrewText)
+}
 
 // cleanBrewLine は brew 節のうち**1 行として描かれる**値 (Unavailable) 用。
 func cleanBrewLine(s string) string { return cleanOneLine(s) }
