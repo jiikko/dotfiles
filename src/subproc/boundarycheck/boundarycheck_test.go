@@ -148,6 +148,12 @@ func TestScanLinesCanary(t *testing.T) {
 			wantOffender: true, wantSeen: 1, wantEnforced: 1,
 		},
 		{
+			// 語が**コード**に出るだけでも通さない (代入でない参照。`WaitDelay =` / `WaitDelay:` だけを代入と読む)
+			name:         "コードで WaitDelay を参照しているが代入ではない",
+			lines:        []string{`c := exec.Command("gh")`, `grace := 2 * subproc.WaitDelay`, `_ = grace`, `return c.Output()`},
+			wantOffender: true, wantSeen: 1, wantEnforced: 1,
+		},
+		{
 			name:         "subproc の起動口は数えない",
 			lines:        []string{`c := subproc.CommandContext(ctx, "gh")`, `d := subproc.Command("gh")`, `return c.Output()`},
 			wantOffender: false, wantSeen: 0, wantEnforced: 0,
@@ -220,6 +226,32 @@ func TestImportFactCanary(t *testing.T) {
 				t.Fatalf("got %+v, want found=%v alias=%q", f, tc.found, tc.alias)
 			}
 		})
+	}
+}
+
+// 走査と go list の突き合わせ: go list が見る分は数まで一致、go list が見ないディレクトリ (gorules 等) の走査は許す。
+func TestMismatchCanary(t *testing.T) {
+	want := map[string]int{".": 3, "sub": 1}
+	if msg := mismatch(map[string]int{".": 3, "sub": 1, "gorules": 1}, want); msg != "" {
+		t.Fatalf("一致しているのに食い違いが出た: %s", msg)
+	}
+	for name, got := range map[string]map[string]int{
+		"根の数が少ない":        {".": 2, "sub": 1},
+		"ディレクトリを飛ばした":    {".": 3},
+		"走査が 0 件":        {},
+		"数が多い (重複して数えた)": {".": 3, "sub": 2},
+	} {
+		if mismatch(got, want) == "" {
+			t.Fatalf("%s: 食い違いを見逃した (got=%v want=%v)", name, got, want)
+		}
+	}
+	// 本物の go list: この package は 1 ディレクトリ・非テスト 1 ファイル
+	counts, err := goListCounts(Spec{Root: "."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts["."] != 1 || len(counts) != 1 {
+		t.Fatalf("go list の数が期待と違う: %v", counts)
 	}
 }
 

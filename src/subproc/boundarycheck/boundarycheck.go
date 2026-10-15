@@ -125,10 +125,8 @@ func Run(t *testing.T, s Spec) {
 	if err != nil {
 		t.Fatalf("go list で走査を突き合わせられない: %v", err)
 	}
-	for _, dir := range sortedKeys(want) {
-		if got := r.perDir[dir]; got != want[dir] {
-			t.Fatalf("%s: 走査した非テストの .go が %d 件、go list では %d 件 (走査の根か除外が壊れている)", dir, got, want[dir])
-		}
+	if msg := mismatch(r.perDir, want); msg != "" {
+		t.Fatal(msg)
 	}
 	if s.SeenFloor > 0 && r.seen < s.SeenFloor {
 		t.Fatalf("外部コマンド実行の検出数が %d 件しかない (下限 %d)。走査パスか検出パターンが壊れている疑い", r.seen, s.SeenFloor)
@@ -386,6 +384,17 @@ func goListCounts(s Spec) (map[string]int, error) {
 		return nil, fmt.Errorf("go list が package を 1 つも返さない (in %s)", root)
 	}
 	return counts, nil
+}
+
+// mismatch は走査 (got) と go list (want) の数をディレクトリごとに突き合わせ、食い違いを 1 行で返す ("" なら一致)。
+// go list が見ないディレクトリを走査した分 (got にだけ在る) は許す。
+func mismatch(got, want map[string]int) string {
+	for _, dir := range sortedKeys(want) {
+		if got[dir] != want[dir] {
+			return fmt.Sprintf("%s: 走査した非テストの .go が %d 件、go list では %d 件 (走査の根か除外が壊れている)", dir, got[dir], want[dir])
+		}
+	}
+	return ""
 }
 
 func underSkipped(rel string, skip map[string]bool) bool {
