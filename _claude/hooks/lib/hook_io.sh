@@ -6,6 +6,7 @@
 
 # hook_read_bash_command: stdin の hook の JSON を読み、全体を HOOK_INPUT、.tool_input.command を HOOK_CMD に入れる。
 # jq が無い・JSON として読めないなら rc=1。
+# shellcheck disable=SC2034  # HOOK_INPUT / HOOK_CMD は呼び出し側 (source した hook) が読む
 hook_read_bash_command() {
   HOOK_INPUT=$(cat)
   HOOK_CMD=""
