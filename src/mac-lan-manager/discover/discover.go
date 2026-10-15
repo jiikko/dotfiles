@@ -34,13 +34,18 @@ type Addr struct {
 	IP   string
 }
 
+// stamp は dns-sd の各行の先頭の時刻。🚨 時は 2 桁にそろえず空白で詰める (0〜9 時台は " 0:12:01.848")。行頭を `^\S+` で書いていた
+// ころは、0:00〜9:59 の間 -B / -L / -G のどの行も読めず、Bonjour で 1 台も見つからなかった (ユーザー報告 2026-10-16 0 時台。
+// fixture が 21 時台に取った出力だけだった)。3 つの読み取りはこの 1 つの定義から作る。
+const stamp = `^\s*\d{1,2}:\d{2}:\d{2}\.\d+\s+`
+
 var (
 	// 例: "21:28:02.496  Add        3  27 local.               _ssh._tcp.           kojiのMac mini"
-	reBrowse = regexp.MustCompile(`^\S+\s+(Add|Rmv)\s+\d+\s+(\d+)\s+\S+\s+(\S+)\s+(.+?)\s*$`)
+	reBrowse = regexp.MustCompile(stamp + `(Add|Rmv)\s+\d+\s+(\d+)\s+\S+\s+(\S+)\s+(.+?)\s*$`)
 	// 例: "21:28:48.953  kojiのMac\032mini._ssh._tcp.local. can be reached at m2macmini.local.:22 (interface 27)"
-	reLookup = regexp.MustCompile(`^\S+\s+(.+?)\._[^.]+\._(?:tcp|udp)\.\S*\s+can be reached at (\S+?)\.?:(\d+) \(interface (\d+)\)`)
+	reLookup = regexp.MustCompile(stamp + `(.+?)\._[^.]+\._(?:tcp|udp)\.\S*\s+can be reached at (\S+?)\.?:(\d+) \(interface (\d+)\)`)
 	// 例: "21:27:58.076  Add  40000002      27  m2macmini.local.                       169.254.217.100                              4500"
-	reAddr = regexp.MustCompile(`^\S+\s+(Add|Rmv)\s+\S+\s+(\d+)\s+(\S+)\s+(\d+\.\d+\.\d+\.\d+)\s`)
+	reAddr = regexp.MustCompile(stamp + `(Add|Rmv)\s+\S+\s+(\d+)\s+(\S+)\s+(\d+\.\d+\.\d+\.\d+)\s`)
 	reDec  = regexp.MustCompile(`\\(\d{3})`)
 )
 

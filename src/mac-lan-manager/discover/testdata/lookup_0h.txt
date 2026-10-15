@@ -1,0 +1,4 @@
+Lookup kojiのMac mini._ssh._tcp.local
+DATE: ---Fri 16 Oct 2026---
+ 0:12:31.843  ...STARTING...
+ 0:12:31.843  kojiのMac\032mini._ssh._tcp.local. can be reached at m2macmini.local.:22 (interface 27)

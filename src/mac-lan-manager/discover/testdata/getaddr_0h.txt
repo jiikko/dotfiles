@@ -1,0 +1,4 @@
+DATE: ---Fri 16 Oct 2026---
+ 0:12:35.968  ...STARTING...
+Timestamp     A/R  Flags         IF  Hostname                               Address                                      TTL
+ 0:12:35.969  Add  40000002      27  m2macmini.local.                       169.254.217.100                              4500

@@ -1,0 +1,7 @@
+Browsing for _ssh._tcp.local
+DATE: ---Fri 16 Oct 2026---
+ 0:12:01.848  ...STARTING...
+Timestamp     A/R    Flags  if Domain               Service Type         Instance Name
+ 0:12:01.848  Add        3  27 local.               _ssh._tcp.           kojiのMac mini
+ 0:12:01.848  Add        3  14 local.               _ssh._tcp.           KOJI’s MacBook Pro
+ 0:12:01.848  Add        2  14 local.               _ssh._tcp.           kojiのMac meeini (2)

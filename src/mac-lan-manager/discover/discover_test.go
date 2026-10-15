@@ -7,7 +7,8 @@ import (
 	"testing"
 )
 
-// testdata は 2026-10-15 にこの Mac で本物の dns-sd を起こして取った出力 (bin/runtimeout で数秒で止めた)。
+// testdata は 2026-10-15 (21 時台) と 2026-10-16 (0 時台。*_0h.txt) にこの Mac で本物の dns-sd を起こして取った出力
+// (bin/runtimeout で数秒で止めた)。dns-sd は時を 2 桁にそろえないので、0〜9 時台は行頭が空白になる。
 
 func lines(t *testing.T, name string) []string {
 	t.Helper()
@@ -100,5 +101,37 @@ func TestUnescape(t *testing.T) {
 		if got := unescape(in); got != want {
 			t.Errorf("unescape(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// 0〜9 時台の出力 (行頭の時刻が " 0:12:01.848" と空白で始まる) も読む。読めないと、その時間帯は Bonjour で 1 台も見つからない
+// (ユーザー報告 2026-10-16 0 時台)。
+func TestParseAtSingleDigitHour(t *testing.T) {
+	var bs []Browse
+	for _, l := range lines(t, "browse_ssh_0h.txt") {
+		if b, ok := ParseBrowse(l); ok {
+			bs = append(bs, b)
+		}
+	}
+	if len(bs) != 3 || bs[0] != (Browse{true, 27, "_ssh._tcp.", "kojiのMac mini"}) {
+		t.Errorf("-B: %+v", bs)
+	}
+	var rs []Resolved
+	for _, l := range lines(t, "lookup_0h.txt") {
+		if r, ok := ParseLookup(l); ok {
+			rs = append(rs, r)
+		}
+	}
+	if len(rs) != 1 || rs[0] != (Resolved{Instance: "kojiのMac mini", Host: "m2macmini.local", Port: 22, If: 27}) {
+		t.Errorf("-L: %+v", rs)
+	}
+	var as []Addr
+	for _, l := range lines(t, "getaddr_0h.txt") {
+		if a, ok := ParseAddr(l); ok {
+			as = append(as, a)
+		}
+	}
+	if len(as) != 1 || as[0] != (Addr{true, 27, "m2macmini.local", "169.254.217.100"}) {
+		t.Errorf("-G: %+v", as)
 	}
 }
