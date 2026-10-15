@@ -1,0 +1,33 @@
+# 784 (retro): src・bin・scripts の繰り返しの集約 (767〜777) — 2026-10-16
+
+起票日: 2026-10-16
+
+## 何をしたか
+
+src の重複の調査 (773) から 767〜772 を直し、bin (775)・scripts / hooks / zshlib (776)・src の 2 回目 (777) の繰り返しを寄せた。どれも変異と敵対的レビューを通した。
+777 の起動口の検査は fable のサブエージェントに専用の worktree で実装させ、main が検閲して取り込んだ。
+
+## どこで踏んだか
+
+1. **push の前の make test で go-lint の赤を見落とした** (767〜772)。ログを `grep -n -E '失敗したターゲット|…' | head` で読み、`head` が別の行で埋まって go-lint の行が切れた。
+   lint の赤 (gofmt・errcheck・exhaustive) を含んだまま push し、別の session が「Go lint が赤」と書いてから直した。
+   → 規範は既にある (verify-execution-not-just-exit-code.md の「出力を head で削って読まない」「赤の帰属は失敗した対象の一覧を全部読んでから」)。守れなかった
+2. **「冗長な既定」を外したら、破壊的な誤爆の最後の砦だった** (776)。`${TT_HOLD_PREFIX:-__tt_hold_}` を「guards.sh が必ず決める値の写し」として外し、prefix が空のとき
+   数字名のセッションを kill しうる形にした (敵対的レビューが隔離サーバで再現)。→ 規範は既にある (list-masked-failure-modes-before-removing-guard.md)。外す前に副次的に守っていたものを書き出さなかった
+3. **依存を足した先の「写し」と「一覧」を見なかった** (2 回)。
+   - 775: bin/codex-run に `source lib/uint.sh` を足したら、codexevents のテストが bin/codex-run を一時ディレクトリへ写し、lib を偽物で用意していたので、uint.sh が無くて落ちた
+   - 777: glogx の go.mod に `replace userdirs` を足したのに、glogx 自身の「replace をすべて走査の根か除外に載せる」検査 (own_sources_test) に足さなかった。
+     glogx はテストの一部しか回しておらず、敵対的レビューが見つけた (CI の src/glogx が赤になるところだった)
+4. 回りくどかったこと: `mutate-verify` の `--expect` に成功時の出力にも出る文字列を書き、2 回やり直した (道具が「baseline にも出ている」で止めたので誤判定はしていない。局所)
+
+## 提案
+
+- **(3 の一般形) 既存の物 (スクリプト・module) に新しい依存 (source する lib・replace・設定ファイル) を足したら、「その物を別の場所へ写して動かすテスト」と「依存を名指しで並べる一覧 (CI の paths・走査の根・allowlist)」を
+  依存を足す変更の中で grep し、写しと一覧にも足す**。写しや一覧は依存の追加に気づかず、本体のテストは緑のまま、写した先・一覧の検査だけが赤くなる (2 回とも別の module の検査で初めて出た)
+  → 切り出し先: `_claude/rules/verify-execution-not-just-exit-code.md` の表の「CI のジョブに足す依存」の行へ追記 (発動点が同じ「依存を足すとき」なので新しい rule にしない)
+- 1・2: 却下 (規範は既にある。新しい文を足しても守れなかった原因は変わらない。make test の失敗の一覧を読む手順を道具にするかは、同じ見落としが 3 回目に出たら再評価)
+- 4: 却下 (局所。道具が止めている)
+
+## 残課題
+
+- [ ] 提案 (3) の rule への追記 (ユーザーの判断待ち)
