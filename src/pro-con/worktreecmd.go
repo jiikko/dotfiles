@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -27,6 +26,8 @@ import (
 	"pro-con/schedule"
 	"pro-con/store"
 	"pro-con/wtclean"
+
+	"subproc"
 )
 
 const worktreeUsage = `usage: pro-con worktree clean [--yes]
@@ -262,7 +263,7 @@ func worktreeInputs(ctx context.Context, env worktreeEnv, stderr io.Writer) (wtc
 func lsofCwds(ctx context.Context) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "lsof", "-w", "-a", "-d", "cwd", "-F", "n").Output()
+	out, err := subproc.CommandContext(ctx, "lsof", "-w", "-a", "-d", "cwd", "-F", "n").Output()
 	var cwds []string
 	for _, l := range strings.Split(string(out), "\n") {
 		if p, ok := strings.CutPrefix(l, "n"); ok && p != "" {

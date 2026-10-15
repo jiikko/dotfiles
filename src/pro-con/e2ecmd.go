@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"subproc"
 )
 
 const e2eUsage = `usage: pro-con e2e <start|keys|text|screen|wait|stop|scenario> <置き場> ...`
@@ -34,7 +36,7 @@ func e2eSocket(root string) string {
 
 // e2eTmux は隔離サーバへの tmux コマンド。TMUX / TMUX_PANE を落とす ($TMUX が生きていると -L より先に本番へ繋がる形を避ける)。
 func e2eTmux(root string, args ...string) *exec.Cmd {
-	cmd := exec.Command("tmux", append([]string{"-L", e2eSocket(root)}, args...)...)
+	cmd := subproc.Command("tmux", append([]string{"-L", e2eSocket(root)}, args...)...)
 	var env []string
 	for _, e := range os.Environ() {
 		if !strings.HasPrefix(e, "TMUX=") && !strings.HasPrefix(e, "TMUX_PANE=") {

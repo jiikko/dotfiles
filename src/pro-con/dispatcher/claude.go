@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"subproc"
 )
 
 // Tool は dispatcher が使うコマンドの実体 (絶対パス) と、その版 (`--version` の最初の行)。
@@ -52,7 +54,7 @@ func resolveTool(ctx context.Context, dir, name string) (Tool, error) {
 	}
 	if shim, ok := shimOf(p); ok {
 		manager := strings.TrimPrefix(filepath.Base(filepath.Dir(filepath.Dir(shim))), ".")
-		cmd := exec.CommandContext(ctx, manager, "which", name)
+		cmd := subproc.CommandContext(ctx, manager, "which", name)
 		cmd.Dir = dir
 		out, err := cmd.Output()
 		if err != nil {

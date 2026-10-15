@@ -49,9 +49,9 @@ func run(ctx context.Context, dir string, lazyFetch bool, args []string) (string
 	defer cancel()
 	var cmd *exec.Cmd
 	if lazyFetch {
-		cmd = exec.CommandContext(ctx, "git", subproc.GitArgsLazyFetch(append([]string{"-C", dir}, args...)...)...)
+		cmd = subproc.GitCommandLazyFetch(ctx, append([]string{"-C", dir}, args...)...)
 	} else {
-		cmd = exec.CommandContext(ctx, "git", subproc.GitArgs(append([]string{"-C", dir}, args...)...)...)
+		cmd = subproc.GitCommand(ctx, append([]string{"-C", dir}, args...)...)
 	}
 	cmd.Env = Env()
 	var out, errOut bytes.Buffer

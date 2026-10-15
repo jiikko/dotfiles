@@ -22,7 +22,7 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 - `schedule/` — dispatcher が決まった時刻に回す予定表 (`Jobs`)
 - `upgrade/` — 画面側のライブアップグレード (ctrl+r で syscall.Exec)。dispatcher 側は直下の `dispupgrade.go`
 - 端末の前面の確認・取り戻しは `src/tuikit/foreground` (treefiler・glogx と共有するため移した。issue 707)。`ui/terminal.go` の `termExec` はその `Exec` を埋め込む
-- `gitx/` — monitor と wtclean が git を呼ぶ口 (`-C` の落とし穴・GIT_DIR 等の継承に注意)。dispatcher は `exec.CommandContext(ctx, "git", …)` を直接呼んでいて、gitx を通らない
+- `gitx/` — monitor と wtclean が git を呼ぶ口 (`-C` の落とし穴・GIT_DIR 等の継承に注意)。dispatcher は `subproc.GitCommand(ctx, "-C", dir, …)` を直接呼んでいて、gitx を通らない (起動口の規律は `exec_boundary_test.go` = subproc/boundarycheck)
 - `config/` — `~/.config/pro-con/config.toml` の読み込みと repo 列挙
 - `ui/` — TUI 本体。状態は backend が持ち、ここは描画と Command 送信のみ
 - `help/` — `pro-con help` が出す話題ごとの本文 (`debug.md` / `flow.md` / `terms.md` / `usage.md`)

@@ -5,6 +5,7 @@
 # tarball・zip で配られた「repo」を開くだけで、キー操作なしに走った (git 2.55.0 で実測)。GitArgs が `-c core.fsmonitor=false` を付ける。
 # 脅威モデル: うっかりの漏れ (新しく git を起動する所で GitArgs を通し忘れる) を止める。意図的な迂回は対象外。
 # 拾う形: `"git"` / `` `git` `` / `"/usr/bin/git"` をコマンド名にした exec.Command(Context)・subproc.CommandContext (間に `)` があっても)。
+# subproc.GitCommand / GitCommandLazyFetch は GitArgs を内蔵した口なので、数には入れるが判定しない。
 # GitArgs( は行末のコメントを除いた部分で探す (コメントに書いただけで通さない)。
 # 検出しない形: コマンド名を変数・定数で渡す (`exec.Command(gitBin, ...)`)・任意のコマンド名を取る helper (glogx の CommandRunner 等) に "git" を渡す・
 # os.StartProcess / syscall・Command( と "git" が別の行にある書き方・GitArgs( をブロックコメントや同じ行の別の文に書く形・
@@ -31,6 +32,10 @@ while IFS= read -r f; do
         ;;
     esac
   done < <(grep -nE "$call_re" "$f" || true)
+  # GitArgs を内蔵した起動口 (subproc.GitCommand / GitCommandLazyFetch) も起動の数に入れる (通していることは形で決まるので判定は要らない。
+  # 数えないと、素の起動をこちらへ寄せるたびに下の「正規表現が壊れている」の下限に近づく。issue 777)
+  n=$(grep -cE 'subproc\.GitCommand(LazyFetch)?\(' "$f") || true
+  calls=$((calls + n))
 done < <(find src -name '*.go' ! -name '*_test.go' ! -path '*/vendor/*' ! -path 'src/subproc/*')
 
 # 遅延 fetch を許す口 (subproc.GitArgsLazyFetch / GitCommandLazyFetch・pro-con の gitx.RunLazyFetch) は、開いた repo の

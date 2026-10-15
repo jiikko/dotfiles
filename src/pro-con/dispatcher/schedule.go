@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -24,6 +23,8 @@ import (
 	"pro-con/eventlog"
 	"pro-con/schedule"
 	"pro-con/store"
+
+	"subproc"
 )
 
 // ScheduleRunner は予定の 1 行を起こして終わるまで待ち、終了コードと結果の 1 行 (無ければ失敗の理由) を返す。起こせなかったら rc -1。
@@ -223,7 +224,7 @@ func ExecScheduled(exe, dir string) ScheduleRunner {
 			return -1, "出力のファイルを作れない: " + err.Error()
 		}
 		defer func() { _ = stderr.Close() }()
-		cmd := exec.CommandContext(ctx, exe, j.Args...)
+		cmd := subproc.CommandContext(ctx, exe, j.Args...)
 		cmd.Dir = dir
 		cmd.Env = scheduleEnv(os.Environ())
 		cmd.Stdout, cmd.Stderr = stdout, stderr

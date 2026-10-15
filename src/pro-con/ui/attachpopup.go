@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"subproc"
 )
 
 // tmux の中の attach (issue 527 の案 A。2026-09-26 にユーザーが決めた): 端末を丸ごと claude attach に渡さず、pro-con の画面の上に
@@ -52,7 +54,7 @@ func TmuxPopup() *PopupAttach {
 
 // outerPrefix は外の tmux の prefix (tmux のキー名。読めない・None なら "")。
 func (p *PopupAttach) outerPrefix() string {
-	out, err := exec.Command(p.Tmux, "show", "-gv", "prefix").Output()
+	out, err := subproc.Command(p.Tmux, "show", "-gv", "prefix").Output()
 	if k := strings.TrimSpace(string(out)); err == nil && k != "None" {
 		return k
 	}
@@ -114,7 +116,7 @@ func (p *PopupAttach) command(c *exec.Cmd, cardID, prefix, dir string) *exec.Cmd
 	// 入れ子の tmux は TMUX があると入れ子を断るので落とす (popup の中身には外の tmux の TMUX が付く)
 	args = append(args, "--", "/usr/bin/env", "-u", "TMUX", "-u", "TMUX_PANE",
 		p.Tmux, "-S", filepath.Join(dir, "sock"), "-f", filepath.Join(dir, "conf"), "new-session", "--", c.Path)
-	return exec.Command(p.Tmux, append(args, c.Args[1:]...)...)
+	return subproc.Command(p.Tmux, append(args, c.Args[1:]...)...)
 }
 
 // run は popup で c を走らせ、窓が閉じるまで待つ (裏の処理から呼ぶ)。窓の閉じ方 (戻るキー・claude attach の終了) は問わず nil を返す

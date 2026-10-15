@@ -6,7 +6,6 @@ import (
 	"context"
 	"net"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/prefs"
 	"subproc"
+	"subproc/clipboard"
 )
 
 // Options は本物につないだ lanmgr.Options (台帳と設定の置き場所は MAC_LAN_MANAGER_CONFIG_DIR で差し替えられる)。
@@ -36,7 +36,7 @@ func Options() (lanmgr.Options, error) {
 		Ledger:    ledger.FileStore{Path: ledgerPath},
 		PrefsPath: prefsPath,
 		SavePrefs: prefs.Save,
-		Copy:      pbcopy,
+		Copy:      clipboard.Copy, // pbcopy (tmux の中では tmux バッファへもおまけ)。上限は clipboard.Timeout
 		User:      os.Getenv("USER"),
 	}, nil
 }
@@ -62,10 +62,4 @@ func ifName(index int) string {
 		return i.Name
 	}
 	return ""
-}
-
-func pbcopy(s string) error {
-	cmd := exec.Command("pbcopy")
-	cmd.Stdin = strings.NewReader(s)
-	return cmd.Run()
 }

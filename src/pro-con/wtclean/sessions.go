@@ -28,7 +28,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -42,6 +41,8 @@ import (
 	"pro-con/diskuse"
 	"pro-con/gitx"
 	"pro-con/store"
+
+	"subproc"
 )
 
 // SessionAction はカード 1 枚の session をどうするか。
@@ -492,7 +493,7 @@ func ClaudeRemover(claude, jobsDir string) func(ctx context.Context, id string) 
 		}
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, claude, "rm", id)
+		cmd := subproc.CommandContext(ctx, claude, "rm", id)
 		cmd.Dir = jobsDir // 中立な場所で走らせる (呼んだ shell の cwd の repo を claude rm に見せない)
 		out, err := cmd.CombinedOutput()
 		if err != nil {

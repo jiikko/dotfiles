@@ -13,7 +13,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,6 +20,8 @@ import (
 	"time"
 
 	"pro-con/ui"
+
+	"subproc"
 )
 
 const leaveUsage = "usage: pro-con attach --leave   (戻れなくなった attach の接続だけを終わらせる。PG の session は動き続ける)"
@@ -42,14 +43,14 @@ func realLeaver() attachLeaver {
 	return attachLeaver{
 		list: psRows,
 		killServer: func(sock string) error {
-			return exec.Command("tmux", "-S", sock, "kill-server").Run()
+			return subproc.Command("tmux", "-S", sock, "kill-server").Run()
 		},
 		term: func(pid int) error { return syscall.Kill(pid, syscall.SIGTERM) },
 	}
 }
 
 func psRows(ctx context.Context) ([]psRow, error) {
-	out, err := exec.CommandContext(ctx, "ps", "-axo", "pid=,ppid=,command=").Output()
+	out, err := subproc.CommandContext(ctx, "ps", "-axo", "pid=,ppid=,command=").Output()
 	if err != nil {
 		return nil, fmt.Errorf("ps: %w", err)
 	}

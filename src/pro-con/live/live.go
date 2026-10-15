@@ -28,6 +28,8 @@ import (
 	"pro-con/store"
 	"pro-con/wake"
 	"pro-con/wtclean"
+
+	"subproc"
 )
 
 // Interval は一覧と transcript を読み直す間隔。claude agents --json は 1 回 0.15 秒ほどかかるので、画面の tick (1 秒) では呼ばない。
@@ -813,7 +815,7 @@ func (b *Backend) AttachCommand(sessionID string) (*exec.Cmd, error) {
 			if b.attach != nil {
 				return b.attach(sessionID), nil
 			}
-			return exec.Command("claude", "attach", sessionID), nil // 画面は素の名前 (execList と同じ。464 の残り)
+			return subproc.Command("claude", "attach", sessionID), nil // 画面は素の名前 (execList と同じ。464 の残り)
 		}
 	}
 	return nil, errors.New("pro-con が起動した session ではない (または終わった): " + sessionID)

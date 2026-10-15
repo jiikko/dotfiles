@@ -19,6 +19,8 @@ import (
 	"time"
 
 	supervisor "process_supervisor"
+
+	"subproc"
 )
 
 // monitorCommand は見張りのコマンド (stdin は process_supervisor の生命線が付ける)。
@@ -29,7 +31,7 @@ var monitorCommand = func(stdout, stderr io.Writer) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(exe, "monitor", "--"+untilStdinClosesFlag)
+	cmd := subproc.Command(exe, "monitor", "--"+untilStdinClosesFlag)
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	return cmd, nil
 }

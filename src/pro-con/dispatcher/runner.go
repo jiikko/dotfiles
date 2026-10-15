@@ -552,7 +552,7 @@ func watchStopped(ctx context.Context, stop context.CancelCauseFunc, grace, poll
 // 🚨 kill(pid, 0) では止まっているのが分からないので、ps の STAT で見る。一部だけ止まっている (親が子を止めて待つ等) のは止まっていない扱い。
 // ps が失敗したら止まっていない扱い (取り消さない)。
 func groupStopped(pgids []int) bool {
-	out, err := exec.Command("ps", "-A", "-o", "pgid=,stat=").Output()
+	out, err := subproc.Command("ps", "-A", "-o", "pgid=,stat=").Output()
 	if err != nil {
 		return false
 	}
@@ -607,7 +607,7 @@ const (
 //
 //	lockman with "$(git rev-parse --path-format=absolute --git-common-dir)/pro-con-locks/test" -- make test
 func runLockDir(ctx context.Context, dir string) (string, error) {
-	out, err := exec.CommandContext(ctx, "git", subproc.GitArgs("-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir")...).Output()
+	out, err := subproc.GitCommand(ctx, "-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
 	if err != nil {
 		return "", fmt.Errorf("repo の lock の置き場を決められない (%s で git rev-parse --git-common-dir: %w)", dir, err)
 	}
@@ -620,7 +620,7 @@ func runLockDir(ctx context.Context, dir string) (string, error) {
 
 // withRunLock は実行の bash (runCommand) を `lockman with <lockDir> -- <bash>` で包む。bash は自分の pgid を pgidFile へ書く (runScript)。
 func withRunLock(ctx context.Context, bash *exec.Cmd, lockman, lockDir, pgidFile, runID string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, lockman, append([]string{"with", lockDir, "--label", "pro-con テストの係 " + runID, "--"}, bash.Args...)...)
+	cmd := subproc.CommandContext(ctx, lockman, append([]string{"with", lockDir, "--label", "pro-con テストの係 " + runID, "--"}, bash.Args...)...)
 	cmd.Env = append(slices.Clone(bash.Env), runPgidEnv+"="+pgidFile)
 	return cmd
 }
@@ -685,7 +685,7 @@ const (
 
 // runCommand は実行の bash を組む。印は $0 (`pro-con-run:<runID>`)。
 func runCommand(ctx context.Context, command, runID string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", runScript, RunMark+runID)
+	cmd := subproc.CommandContext(ctx, "/bin/bash", "-c", runScript, RunMark+runID)
 	cmd.Env = append(withoutTmux(os.Environ()), runCommandEnv+"="+command)
 	return cmd
 }
@@ -698,7 +698,7 @@ func killStale(runID string) {
 	if runID == "" {
 		return
 	}
-	out, err := exec.Command("ps", "-A", "-ww", "-o", "pid=,pgid=,command=").Output()
+	out, err := subproc.Command("ps", "-A", "-ww", "-o", "pid=,pgid=,command=").Output()
 	if err != nil {
 		return
 	}
@@ -727,7 +727,7 @@ func HaikuAsk(claude, dir, settings string) func(ctx context.Context, prompt str
 // settings (HaikuSettings) で、それでも祖先から拾われる ~/.claude/CLAUDE.md と auto memory を外す (431)
 func haiku(ctx context.Context, claude, dir, settings, prompt string) (string, error) {
 	// --no-session-persistence: 使い捨てなので transcript を残さない (460 の P3。1 回あたり約 200KB が ~/.claude/projects に残っていた)
-	cmd := exec.CommandContext(ctx, claude, "-p", "--model", "haiku", "--no-session-persistence", "--setting-sources", "project,local", "--settings", settings)
+	cmd := subproc.CommandContext(ctx, claude, "-p", "--model", "haiku", "--no-session-persistence", "--setting-sources", "project,local", "--settings", settings)
 	cmd.Dir = dir
 	cmd.Env = roleEnv(os.Environ())
 	cmd.Stdin = strings.NewReader(prompt)

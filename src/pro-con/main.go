@@ -47,6 +47,8 @@ import (
 	"pro-con/store"
 	"pro-con/ui"
 	"pro-con/upgrade"
+
+	"subproc"
 )
 
 func main() {
@@ -405,7 +407,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if e2e != nil {
 			lb.SetList(e2e.List) // 偽の session の一覧 (本物の claude agents を読まない)
 			if exe, err := os.Executable(); err == nil {
-				lb.SetAttach(func(id string) *exec.Cmd { return exec.Command(exe, "fake-attach", id) }) // 本物の claude attach を起動しない
+				lb.SetAttach(func(id string) *exec.Cmd { return subproc.Command(exe, "fake-attach", id) }) // 本物の claude attach を起動しない
 			}
 		}
 		var more []string
@@ -610,7 +612,7 @@ func ttyName(stdin io.Reader) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "tty")
+	cmd := subproc.CommandContext(ctx, "tty")
 	cmd.Stdin = f
 	out, err := cmd.Output()
 	if err != nil {
@@ -622,7 +624,7 @@ func ttyName(stdin io.Reader) string {
 // dispatcherCmd は画面が起こす dispatcher のコマンド。画面が 1 つも無い状態が 1 分続いたら、PG を止めて抜ける
 // (最後の画面が quit を通らずに消えても PG を残さない)。
 func dispatcherCmd(exe string, extra []string) *exec.Cmd {
-	return exec.Command(exe, append([]string{"dispatcher", "--" + fromScreenFlag, "--exit-without-screens", "1m"}, extra...)...)
+	return subproc.Command(exe, append([]string{"dispatcher", "--" + fromScreenFlag, "--exit-without-screens", "1m"}, extra...)...)
 }
 
 // spawnSupervisor は supervisor (`pro-con supervise`。dispatcher を子として持つ。issue 506) を画面とは別の session で起動する (制御端末を持たせない。spawnDetached)
@@ -642,7 +644,7 @@ func spawnSupervisor(dir string, extra []string) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	cmd := exec.Command(exe, append([]string{spawnDetachedCmd, superviseCmd}, extra...)...)
+	cmd := subproc.Command(exe, append([]string{spawnDetachedCmd, superviseCmd}, extra...)...)
 	cmd.Stdout, cmd.Stderr = f, f
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Run(); err != nil {
@@ -664,7 +666,7 @@ func spawnDetached(args []string, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "pro-con spawn-detached:", err)
 		return 1
 	}
-	cmd := exec.Command(exe, args...)
+	cmd := subproc.Command(exe, args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	cmd.SysProcAttr = foreground.Detached()
 	if err := cmd.Start(); err != nil {
@@ -677,7 +679,7 @@ func spawnDetached(args []string, stderr io.Writer) int {
 // stopCmd は画面の quit (と e2e の後始末) が dispatcher と PG を止めるコマンド。人が止めた印を置かない (--from-screen。issue 459):
 // 最後の画面の quit で止めても、次に開いた画面は今までどおり dispatcher を起こす。
 func stopCmd(exe string, extra []string) *exec.Cmd {
-	return exec.Command(exe, append([]string{"dispatcher", "--stop", "--" + fromScreenFlag}, extra...)...)
+	return subproc.Command(exe, append([]string{"dispatcher", "--stop", "--" + fromScreenFlag}, extra...)...)
 }
 
 // stopInChild は `pro-con dispatcher --stop` を別のプロセスで走らせて待つ。画面を ctrl+c で閉じても (待たずに閉じても)、

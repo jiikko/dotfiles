@@ -14,7 +14,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -26,6 +25,8 @@ import (
 	"pro-con/card"
 	"pro-con/live"
 	"pro-con/store"
+
+	"subproc"
 )
 
 // doingEvery は集め直す間隔 (Tick は 3 秒ごと。ps は 1 回 0.04 秒ほどだが、transcript の末尾を PG ごとに読むので毎 Tick は回さない)。
@@ -48,7 +49,7 @@ type Proc struct {
 func PSProcs(ctx context.Context) ([]Proc, error) {
 	ctx, cancel := context.WithTimeout(ctx, psTimeout) // ps が詰まっても Tick (登録・割り当て) を止めない
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "ps", "-A", "-ww", "-o", "pid=,ppid=,etime=,command=").Output()
+	out, err := subproc.CommandContext(ctx, "ps", "-A", "-ww", "-o", "pid=,ppid=,etime=,command=").Output()
 	if err != nil {
 		return nil, err
 	}

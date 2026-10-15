@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -35,6 +34,8 @@ import (
 	"pro-con/live"
 	"pro-con/relay"
 	"pro-con/store"
+
+	"subproc"
 )
 
 const psUsage = `usage: pro-con ps [--json]   (pro-con が起動したプロセスを役ごとに出す。読むだけ)`
@@ -46,7 +47,7 @@ type Proc = backend.Proc
 type procLister func(ctx context.Context) (map[int]string, error)
 
 func execProcs(ctx context.Context) (map[int]string, error) {
-	out, err := exec.CommandContext(ctx, "ps", "-axo", "pid=,command=").Output()
+	out, err := subproc.CommandContext(ctx, "ps", "-axo", "pid=,command=").Output()
 	if err != nil {
 		return nil, fmt.Errorf("ps: %w", err)
 	}

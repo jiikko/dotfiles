@@ -15,6 +15,8 @@ import (
 
 	"pro-con/backend"
 	"pro-con/card"
+
+	"subproc"
 )
 
 const (
@@ -645,7 +647,7 @@ func (s *Sim) AttachCommand(sessionID string) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, err
 	}
-	return exec.Command(self, "fake-attach", sessionID), nil
+	return subproc.Command(self, "fake-attach", sessionID), nil
 }
 
 // config は模擬の変える所の値 (review は設定が無ければ既定の claude で動いている形)。

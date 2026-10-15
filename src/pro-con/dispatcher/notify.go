@@ -8,13 +8,14 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
 	"pro-con/card"
 	"pro-con/eventlog"
 	"pro-con/store"
+
+	"subproc"
 )
 
 // StatusOption は dispatcher が件数を書く tmux のユーザー option。tmux の status は #() で fork せず、これを format で読む (_tmux.conf の方針)。
@@ -111,7 +112,7 @@ func TmuxPublish(ctx context.Context) func(string) error {
 		if s == "" {
 			args = []string{"set-option", "-gu", StatusOption}
 		}
-		if out, err := exec.CommandContext(ctx, "tmux", args...).CombinedOutput(); err != nil {
+		if out, err := subproc.CommandContext(ctx, "tmux", args...).CombinedOutput(); err != nil {
 			return fmt.Errorf("tmux %s: %w: %s", strings.Join(args[:2], " "), err, strings.TrimSpace(string(out)))
 		}
 		return nil
@@ -123,7 +124,7 @@ func MacNotify(ctx context.Context) func(title, body string) error {
 	return func(title, body string) error {
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "osascript",
+		cmd := subproc.CommandContext(ctx, "osascript",
 			"-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run", title, body)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("osascript: %w: %s", err, strings.TrimSpace(string(out)))

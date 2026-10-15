@@ -2,8 +2,9 @@ package live
 
 import (
 	"context"
-	"os/exec"
 	"strings"
+
+	"subproc"
 )
 
 // paneFormat は tmux list-panes の 1 行 (端末と、その pane の session:window.pane)。
@@ -12,7 +13,7 @@ const paneFormat = "#{pane_tty} #{session_name}:#{window_index}.#{pane_index}"
 // PaneNames は端末を tmux の pane の名前に直す表 (backend.PaneNamer)。聞くのは既定の tmux サーバだけ
 // (別のサーバ (-L) の pane と tmux の外の端末は入らず、画面には tty のまま出る)。tmux が無い・サーバが居なければ空。
 func (b *Backend) PaneNames(ctx context.Context) map[string]string {
-	out, err := exec.CommandContext(ctx, "tmux", "list-panes", "-a", "-F", paneFormat).Output()
+	out, err := subproc.CommandContext(ctx, "tmux", "list-panes", "-a", "-F", paneFormat).Output()
 	if err != nil {
 		return nil
 	}
