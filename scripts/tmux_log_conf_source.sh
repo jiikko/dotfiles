@@ -22,7 +22,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=scripts/lib/tmux_resurrect_guards.sh
 . "$SCRIPT_DIR/lib/tmux_resurrect_guards.sh"
 
-TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
 
 tt_on_default_server || exit 0
 

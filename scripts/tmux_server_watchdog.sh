@@ -28,7 +28,6 @@ SERVER_PID="${1:-}"
 SOCKET_PATH="${2:-unknown}"
 SERVER_START="${3:-unknown}"
 
-TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
 TT_WATCHDOG_DIR="${TT_WATCHDOG_DIR:-$HOME/.cache/tt-watchdog}"
 TT_PSLOG_DIR="${TT_PSLOG_DIR:-$HOME/.cache}"
 TT_PSLOG_KEEP="${TT_PSLOG_KEEP:-10}"

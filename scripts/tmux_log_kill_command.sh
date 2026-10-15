@@ -31,7 +31,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=scripts/lib/tmux_resurrect_guards.sh
 . "$SCRIPT_DIR/lib/tmux_resurrect_guards.sh"
 
-TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
 # 保存完了を待つ上限秒。wrapper の lock bounded-wait (15s) + 実保存 (数秒) を覆う値。
 # 超過時は保存を諦めて kill に進む (kill-server の体感遅延の上限でもある)。
 TT_KILL_SAVE_WAIT_SECONDS="${TT_KILL_SAVE_WAIT_SECONDS:-20}"

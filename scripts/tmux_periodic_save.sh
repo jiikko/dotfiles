@@ -30,7 +30,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/lib/tmux_resurrect_guards.sh"
 
 SERVER_PID="${1:-}"
-TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
 TT_PERIODIC_STATE_DIR="${TT_PERIODIC_STATE_DIR:-$HOME/.cache/tt-periodic-save}"
 # 既定間隔 (分)。continuum と同じ @continuum-save-interval を出典にする (設定の二重化を避ける)
 TT_PERIODIC_DEFAULT_MINUTES="${TT_PERIODIC_DEFAULT_MINUTES:-15}"

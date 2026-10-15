@@ -25,7 +25,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=scripts/lib/tmux_resurrect_guards.sh
 . "$SCRIPT_DIR/lib/tmux_resurrect_guards.sh"
 
-TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
 # 復元の所要時間だけを並べる人間用の診断ログ (自動の読み手は無い)。書き手はここ 1 箇所。
 TT_DURATION_LOG="${TT_DURATION_LOG:-$HOME/.cache/tt-restore-duration.log}"
 

@@ -119,11 +119,18 @@ prepare_save_fixture() {
   esac
 }
 
+# $2=seam (既定): TT_TRIGGER_LOG で seam へ書かせる / default: TT_TRIGGER_LOG を渡さず、guards.sh の既定 ($HOME/.cache/…) へ
+# 書くことを見る (issue 776: wrapper だけ既定を書き忘れ、本番では 2026-08-25 から 1 行も書かれていなかった。seam だけのテストでは見えない)
 run_save_writer_case() {
-  local mode="$1"
-  local case_home="$WORK/home-$mode" state="$WORK/state-$mode"
-  local rdir="$WORK/resurrect-$mode" seam="$WORK/trigger-$mode.log"
+  local mode="$1" via="${2:-seam}"
+  local case_home="$WORK/home-$mode-$via" state="$WORK/state-$mode-$via"
+  local rdir="$WORK/resurrect-$mode-$via" seam="$WORK/trigger-$mode.log"
   local default_log="$case_home/.cache/tt-restore-trigger.log" rc want_rc pattern tab
+  local -a log_env=(TT_TRIGGER_LOG="$seam")
+  if [ "$via" = default ]; then
+    seam="$default_log"
+    log_env=()
+  fi
 
   rm -rf "$case_home" "$state" "$rdir" "$seam"
   mkdir -p "$case_home"
@@ -141,12 +148,12 @@ run_save_writer_case() {
   esac
   tab="$(printf '\t')"
 
-  if TT_SAVE_SOURCE_ONLY=1 \
+  if env -u TT_TRIGGER_LOG ${log_env[@]+"${log_env[@]}"} \
+     TT_SAVE_SOURCE_ONLY=1 \
      HOME="$case_home" \
      TMUX=dummy \
      TT_SAVE_STATE_DIR="$state" \
      TT_REAL_SAVE_SCRIPT="$FAKE_SAVE" \
-     TT_TRIGGER_LOG="$seam" \
      TT_SAVE_ALLOW_REGRESSION=0 \
      TT_TEST_RESURRECT_DIR="$rdir" \
      TT_TEST_SAVE_MODE="$mode" \
@@ -174,12 +181,13 @@ run_save_writer_case() {
   if [ -f "$seam" ] \
      && [ "$(wc -l <"$seam" | tr -d '[:space:]')" -eq 1 ] \
      && grep -Eq "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}${tab}${pattern}$" "$seam"; then
-    ok "tt_save_main $mode 経路が seam へ識別子付きの1行を書く"
+    ok "tt_save_main $mode 経路が ${via} の置き場へ識別子付きの1行を書く"
   else
-    ng "tt_save_main $mode 経路の seam ログが不正 (want: $pattern)"
+    ng "tt_save_main $mode 経路の ${via} の置き場のログが不正 (want: $pattern)"
     cat "$seam" 2>/dev/null || true
   fi
 
+  [ "$via" = default ] && return 0
   if [ ! -e "$default_log" ]; then
     ok "tt_save_main $mode 経路が HOME の既定ログを汚さない"
   else
@@ -190,6 +198,7 @@ run_save_writer_case() {
 
 run_save_writer_case regression
 run_save_writer_case advance
+run_save_writer_case advance default
 
 # --- 5. archive の在処が退行ガードの外で決まる --------------------------------------------
 # bypass 実行 (TT_SAVE_ALLOW_REGRESSION=1) でも tt_archive が空にならないこと。ソースを読んで

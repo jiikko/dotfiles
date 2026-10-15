@@ -23,7 +23,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=scripts/lib/tmux_resurrect_guards.sh
 . "$SCRIPT_DIR/lib/tmux_resurrect_guards.sh"
 
-TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
 TT_TOAST="${TT_TOAST:-$SCRIPT_DIR/../bin/tmux-toast}"
 # 報告する欠落セッション名の上限 (ログ 1 行が長くなりすぎないように)
 TT_VERIFY_NAME_LIMIT="${TT_VERIFY_NAME_LIMIT:-8}"

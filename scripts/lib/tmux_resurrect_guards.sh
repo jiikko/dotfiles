@@ -361,6 +361,10 @@ tt_lock_release_if_owner() {
 #   止まっている間に上限を超えても実害は無い (ディスクを食う速度が 8KB/日)。
 #   🚨 この「暗黙の依存」を明示にするのがこのコメントの役目。prune を別の場所へ移すなら
 #   ここも直すこと。
+# 置き場の既定はここだけに書く (env の TT_TRIGGER_LOG が seam。テストが渡す)。各スクリプトが既定を手で書いていた間、
+# tmux_resurrect_save.sh だけが書き忘れ、set -u の未定義が `|| true` に潰されて save-advanced 等が 2026-08-25 から 1 行も
+# 書かれなかった (issue 776。テストは常に TT_TRIGGER_LOG を渡すので見えなかった)。
+: "${TT_TRIGGER_LOG:=$HOME/.cache/tt-restore-trigger.log}"
 # $1=本文 / $2=打刻 (省略時は「今」)。$2 は「イベントの発生時刻と、それを書ける状態になる時刻が
 # ずれる」書き手のためにある (watchdog の server-death は死亡検知時の時刻で打刻し、その後に
 # verdict を計算してから書く)。ここを省略形に丸めると打刻の意味が静かに変わる。

@@ -50,7 +50,6 @@ tt_on_default_server || exit 0
 #   終了コードを変えるときはそこが本体だと思うこと。
 exec </dev/null >/dev/null 2>&1
 
-TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
 TT_RESTORE_STATE_DIR="${TT_RESTORE_STATE_DIR:-$HOME/.cache/tt-restore-run}"
 
 
