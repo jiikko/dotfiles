@@ -111,9 +111,28 @@
   名前を一意に、`tmp/<作業名>-<日付>/`、move-report の表の例を直下でない形に。
   2 周目 — background / detach の run 出力を永続パスに置く保証が消えていた (P2) → 例外として戻した / headless 向けの行の日付漏れ (P3) → 直した。
   壊せなかった観点: compaction・Stop hook 後の読み戻し、worktree 削除後のログ、codex は CLAUDE.md を読まない
-- [ ] **残課題: 直下へ書く skill を `tmp/<skill名>/` 等へ寄せる** (規約は「skill の指定に従う」なので、直さないと規約どおりに直下へ溜まる)。
-  codex-review (`./tmp/codex-review.$stamp.md` / `./tmp/.last_review_path`)・codex-lead (`./tmp/design-contract.$stamp.md` ほか 2 つ。
-  `ls -t ./tmp/design-contract.*.md` で復元する手順も直す)・codex-drive (`./tmp/codex-drive-design.<タスク>.md`)・review-loop・perf-analysis
-- [ ] **残課題: codex-drive の置き場の割れ**。[2] (run 固有の永続パス `./tmp/<タスク>/`) と [3.5]/[3.8] (`./tmp` ではなく scratchpad) が同じ skill で逆を言い、
-  [2] の「scratchpad はセッション終了で消える」は実測と違う (再起動まで残る)
+- [x] **直下へ書く skill を `<本体 checkout>/tmp/<skill名>/<session-id>/` へ寄せた** (置き場の形はユーザー指定 2026-10-15)。
+  `bin/skill-tmpdir <名前>` が dir を作って絶対パスを返す (session-id は `CLAUDE_CODE_SESSION_ID`。worktree の中からでも本体 checkout を返す)。
+  直した skill: codex-review / codex-lead (`ls -t` の復元手順も) / codex-drive / review-loop / zundamon-kaisetsu / perf-analysis (プレビュー png だけ。
+  `./tmp/perf.log` はアプリが書く固定パスなので動かせない)。入口は `_claude/CLAUDE.md`「一時ファイルの配置」。
+  テスト `tests/bin/test_skill_tmpdir.sh` (20 件)。変異: worktree の分岐を消す → 2 件 red / 名前の検査を外す → 4 件 red /
+  submodule の core.worktree の分岐を外す → 1 件 red / GIT_DIR の unset を外す → 1 件 red / 本体での警告抑止を外す → 1 件 red
+  - 敵対的レビュー (opus 1 本、read-only) の指摘: P2 submodule・--separate-git-dir の worktree では common-dir の末尾が .git でなく、
+    worktree の中に tmp/ を作っていた → core.worktree で本体を引く / 本体の場所を git が持たない separate-git-dir の worktree は
+    cwd の checkout に倒して警告する。P3 継承した GIT_DIR に引きずられる → unset / codex-review の削除規約に旧ファイル名 /
+    zundamon-kaisetsu に「1 回打ってリテラルで使う」が無い → 直した。P3 bare repo では git dir の中に tmp/ を作る → 旧 `./tmp` と同じなので据え置き。
+    壊せなかった観点: 通常の worktree・symlink 経由・名前と sid の検証・session 共有での誤削除 (rm は完全一致パスのみ)
+  - skill-eval: `PASS` codex-drive / codex-lead / codex-review / perf-analysis / review-loop (各 1/1)・zundamon-kaisetsu (2/2)、計 約 $2.2
+  - `make test`: test-lint は通過。test-src の Go lint (src/pro-con の flockmark_test.go の errcheck・別 package の display.go の gofmt) が赤。
+    この差分は Go に触れていないので、origin/master に先に入った他の作業の赤
+- [x] **codex-drive の置き場の割れを解消**: [2] の `./tmp/<タスク>/`・[3.5]/[3.6]/[3.7] の `<scratchpad>/…`・設計ファイル `./tmp/codex-drive-design.*`
+  を「出力の置き場 (`<D>`)」節の 1 か所 (`skill-tmpdir codex-drive`) に寄せ、「scratchpad はセッション終了で消える」の誤りを直した
+- [x] skill-eval: eval の無かった 5 本 (codex-drive / codex-lead / codex-review / perf-analysis / review-loop) に「発火するか」のケースを足した
+- [ ] **残課題: `make clean-tmp` が `tmp/<skill名>/` を消せない**。`scripts/clean_tmp.sh` は直下のエントリ単位で、中に新しい子孫があれば dir ごと残すので、
+  skill を使い続ける限り `tmp/codex-review/` は古い session の dir ごと残る。案: `skill-tmpdir` が `tmp/<skill名>/` に印を置き、clean_tmp は印のある dir では
+  子 (session ごとの dir) を単位に判定する。破壊的な掃除の変更なので、テストと敵対的レビューを付けて別に入れる
+- [ ] **残課題: ThumbnailThumb の agent 4 本** (smoke-test-runner / tt-api-expert / test-runner / swiftui-test-expert) は今も `./tmp/` 直下に書く。
+  `thumbnailthumb-test.log` / `perf.log` はアプリ側が決める固定パス。`tt-client preview|export -o` の png はクライアント側の curl が保存するので
+  (`~/src/homebrew-tap/bin/tt-client` で確認) `skill-tmpdir` に移せるが、ここでは動かせないので見送った
+- [ ] `tmp/` のディレクトリ 51 件の片付け (ファイル 1150 件は削除済み。ディレクトリはユーザーの判断待ち)
 - [ ] A の後 2 週間ほどで直下の増え方を測り、B が要るかを決める

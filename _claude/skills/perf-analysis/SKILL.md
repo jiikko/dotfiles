@@ -29,8 +29,11 @@ description: Performance Analysis - パフォーマンス分析。./tmp/perf.log
 # アプリの状態確認
 bin/tt-client /status
 
-# 既存の perf.log をクリア
+# 既存の perf.log をクリア (perf.log はアプリが ./tmp/perf.log に書く固定パス。置き場は動かせない)
 rm -f ./tmp/perf.log
+
+# この skill が自分で書くもの (プレビュー画像) の置き場。出たパスを <D> として以降リテラルで使う (dotfiles issue 774)
+skill-tmpdir perf-analysis
 ```
 
 キャンバスが 3 つ未満、またはカレントキャンバスの要素が 0 件（`bin/tt-client --current elements` で確認）の場合は、負荷テストの前提を満たさないため、テストを開始せずユーザーに準備を依頼する。
@@ -81,9 +84,9 @@ bin/tt-client --current PATCH '/projects/{projectId}/canvases/{canvasId}/element
 
 ```bash
 # プレビュー連続取得（3回以上）
-bin/tt-client --current preview -o ./tmp/perf-test-1.png
-bin/tt-client --current preview -o ./tmp/perf-test-2.png
-bin/tt-client --current preview -o ./tmp/perf-test-3.png
+bin/tt-client --current preview -o <D>/perf-test-1.png
+bin/tt-client --current preview -o <D>/perf-test-2.png
+bin/tt-client --current preview -o <D>/perf-test-3.png
 ```
 
 #### 2.5 バッチ操作テスト
@@ -114,7 +117,7 @@ bin/tt-client redo
 bin/tt-client --current clear
 
 # テスト用プレビューファイルを削除
-rm -f ./tmp/perf-test-*.png
+rm -f <D>/perf-test-1.png <D>/perf-test-2.png <D>/perf-test-3.png
 ```
 
 ユーザーの既存要素が残っているキャンバスでは `clear` を使わず、テストで追加した要素 ID を控えておき個別に DELETE すること。

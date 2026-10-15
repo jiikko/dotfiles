@@ -57,14 +57,14 @@ Claude が先に設計を決めるのではなく、**最初に codex に「ど�
 
 ### 1-1. codex に渡すタスクコンテキストをまとめる
 
-codex がリードできるよう、タスクの前提を `./tmp` に書き出す。codex は read-only でリポジトリを読めるが、**何を達成したいか・既知の制約**は明示する。
+codex がリードできるよう、タスクの前提を `skill-tmpdir codex-lead` の dir に書き出す。codex は read-only でリポジトリを読めるが、**何を達成したいか・既知の制約**は明示する。
 
 ```bash
-mkdir -p ./tmp
+d="$(skill-tmpdir codex-lead)"   # <本体 checkout>/tmp/codex-lead/<session-id>/ (dotfiles の bin/skill-tmpdir)
 stamp="$(date +%Y%m%d-%H%M%S).$$"
-task_out="./tmp/task-context.$stamp.md"        # 入力。合意後に使い捨て
-lead_out="./tmp/design-lead.$stamp.md"          # codex の自由記述。蒸留後に使い捨て
-contract_out="./tmp/design-contract.$stamp.md"  # 設計コントラクト。Phase 3 まで生存させる（1-5 で蒸留）
+task_out="$d/task-context.$stamp.md"        # 入力。合意後に使い捨て
+lead_out="$d/design-lead.$stamp.md"          # codex の自由記述。蒸留後に使い捨て
+contract_out="$d/design-contract.$stamp.md"  # 設計コントラクト。Phase 3 まで生存させる（1-5 で蒸留）
 ```
 
 `$task_out` に以下を書く:
@@ -73,7 +73,7 @@ contract_out="./tmp/design-contract.$stamp.md"  # 設計コントラクト。Pha
 - **背景・制約**: 守るべき不変条件、触れない領域、既存の方針
 - **関連箇所**: 起点になりそうなファイル/機能（分かる範囲で。codex が自分で探すので網羅でなくてよい）
 
-`$ARGUMENTS` に issue ファイルや要件があればそれを使う。`/tmp` は使わず `./tmp` を使う。
+`$ARGUMENTS` に issue ファイルや要件があればそれを使う。`/tmp` は使わず上の `$d` を使う (`tmp/` 直下に置かない)。
 
 ### 1-2. codex に設計をリードさせる
 
@@ -162,7 +162,7 @@ codex の方針をベースに、**実装に進んでよいか確認する**。
 rm -f "$task_out" "$lead_out"   # contract_out は消さない
 ```
 
-- 削除対象は使い捨ての 2 ファイルのみ。`$contract_out` と `./tmp/*.md` の一括削除はしない
+- 削除対象は使い捨ての 2 ファイルのみ。`$contract_out` と `"$d"/*.md` の一括削除はしない
 - `$contract_out` を作らなかった薄いタスクでは、削除する使い捨てファイルのみ消す
 - ユーザーが「残しといて」と明示した場合のみスキップ
 
@@ -195,7 +195,7 @@ Bash ツールはシェル変数を呼び出し間で保持しないため、`$c
 
 - そのパスのファイルが存在する → Pass A を実行（3-2 へ）
 - そのパスのファイルが存在しない（薄いタスクで未生成、または会話からパスを復元できない） → 原則 Pass A をスキップし Pass B（3-3）のみ実行。ユーザーに「設計コンテキストが薄い／コントラクト未確認のため設計適合レビュー（Pass A）は省略し、実装レビューのみ行う」と一言告げる（黙ってスキップしない）
-- 会話から正確なパスを復元できないが Pass A を行いたい場合に限り、`ls -t ./tmp/design-contract.*.md` で候補を提示し、**今回のタスクのものか確認を取ってから**使う（`head -1` で最新を無確認に採用しない。別タスクの残骸コントラクトを誤って拾うため）
+- 会話から正確なパスを復元できないが Pass A を行いたい場合に限り、`ls -t <本体 checkout>/tmp/codex-lead/*/design-contract.*.md` で候補を提示し (別 session のものも並ぶ)、**今回のタスクのものか確認を取ってから**使う（`head -1` で最新を無確認に採用しない。別タスクの残骸コントラクトを誤って拾うため）
 - Claude が薄いと判断しても、ユーザーが設計レビューも明示的に求めた場合は Pass A を実行する
 
 ### 3-2. Pass A: 設計適合レビュー
@@ -204,7 +204,7 @@ Bash ツールはシェル変数を呼び出し間で保持しないため、`$c
 
 **渡し方は codex-review スキルのモード選択（手順 1）に従う**: 未コミット変更なら selector なしのプロンプト付きモード（`codex exec review` に下の注入プロンプトを渡す）、特定 commit / base を対象にする場合は selector とプロンプトを併用できないため fallback モード（`codex exec -s read-only` + 対象 diff をプロンプト内で名指し）になる。どちらを使うかは codex-lead 固有の判断ではなく、codex-review の既存分岐がそのまま処理する（「fallback が必須」と決め打ちしない）。
 
-実行コマンドの組み立て（`command` プレフィックス・`</dev/null`・`--ephemeral -o`・タイムアウト・`--full-auto` 禁止）と、Pass A 用の一時出力（`./tmp/codex-review.$stamp.md` 相当を別途作る）・読み取り・空時の stdout/stderr fallback・削除は **codex-review スキルの手順が正本**（ここでは再記述しない）。codex-lead 側で書くのは、下の codex-lead 固有の注入プロンプトだけ。
+実行コマンドの組み立て（`command` プレフィックス・`</dev/null`・`--ephemeral -o`・タイムアウト・`--full-auto` 禁止）と、Pass A 用の一時出力（codex-review の `$review_out` 相当を別途作る）・読み取り・空時の stdout/stderr fallback・削除は **codex-review スキルの手順が正本**（ここでは再記述しない）。codex-lead 側で書くのは、下の codex-lead 固有の注入プロンプトだけ。
 
 注入プロンプト（モード共通の本文。未コミットのプロンプト付きモード、または commit / base 併用時の fallback、どちらに渡してもよい。対象に合わせて該当する分岐を選び、`{sha}` / `{base}` を実際の値に差し替える）:
 
@@ -247,7 +247,7 @@ Pass A（設計適合）・Pass B（実装正当性）・Pass C（敵対）の�
 - **P1/P2**: コードを修正する。特に Pass A の設計逸脱は局所パッチでなく構造的に直す（場当たり的条件分岐への退行は Pass A の指摘趣旨に反するので採らない）
 - **P3**: 取り込むか、issue 化するか、認識のみかを判断する
 - 修正したら再レビューする。設計に関わる修正なら Pass A から、実装局所の修正なら Pass B から、Pass C の反証を潰した場合は Pass C から再実行する。P1/P2 の指摘がゼロになったら終了。再レビューは Pass 合計で最大 3 回とし、超えても残る場合は指摘を列挙してユーザーに判断を仰ぐ（反証が出続けるなら設計前提を疑い Phase 1 に戻す。モグラ叩きにしない）
-- 報告と対応が終わったら、3-1 で復元したコントラクトを削除する: `rm -f ./tmp/design-contract.<該当 stamp>.md`。削除対象は今回のコントラクト 1 ファイルのみ（`./tmp/*.md` の一括削除はしない）。codex-review が作るレビュー出力ファイルは codex-review スキル側で削除されるため触らない。`$contract_out` を作らなかった薄いタスクではこのステップは不要。ユーザーが「残しといて」と明示した場合はスキップ
+- 報告と対応が終わったら、3-1 で復元したコントラクトを削除する: `rm -f <控えた $contract_out の絶対パス>`。削除対象は今回のコントラクト 1 ファイルのみ（`"$d"/*.md` の一括削除はしない）。codex-review が作るレビュー出力ファイルは codex-review スキル側で削除されるため触らない。`$contract_out` を作らなかった薄いタスクではこのステップは不要。ユーザーが「残しといて」と明示した場合はスキップ
 
 ---
 
@@ -263,7 +263,7 @@ Pass A（設計適合）・Pass B（実装正当性）・Pass C（敵対）の�
 - **設計リードのモデルと effort はスキル側で明示する**: `-m gpt-6.1-sol -c model_reasoning_effort="high"` (codex-review と同じ組。ユーザー決定 2026-10-03 で effort を high に。2026-10-02 は medium、それまでは luna + low)。省略すると `~/.codex/config.toml` の既定（対話 TUI 側の都合で変わる）を拾い、実行ごとにモデルが変わる。Phase 3 のレビューが `codex exec review` に委譲される部分は codex-review スキル側のモデル指定に従う
 - まず `-o` の出力ファイルを読み、空なら stdout / stderr を fallback として使う
 - レビュー・方針はそのままユーザーに見せる（要約しすぎない）
-- `/tmp` は使わず、出力ファイルは必ず `./tmp` に置く。報告後、各フェーズで書き出したファイルだけを `rm -f` で削除する（`$task_out` / `$lead_out` は Phase 1-6、`$contract_out` は Phase 3-5）
+- `/tmp` は使わず、出力ファイルは必ず `skill-tmpdir codex-lead` の dir に置く。報告後、各フェーズで書き出したファイルだけを `rm -f` で削除する（`$task_out` / `$lead_out` は Phase 1-6、`$contract_out` は Phase 3-5）
 - コマンド実行ツールのタイムアウトは 900000ms（15分）に設定する
 - **構造的修正優先**: 設計リード・実装レビューいずれでも、中長期的に改修を続けることを前提とした構造的な方針を優先する。場当たり的な条件分岐やワークアラウンドを提示しない
 - 実装レビュー（Pass B）の詳細手順と、Pass A で使う fallback コマンドの組み立ては `codex-review` スキルに委ねる（このスキルでは設計リード・設計コントラクト・3 パスの全体フロー管理に集中する）

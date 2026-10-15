@@ -64,7 +64,8 @@
   - 例外: **background / detach で走らせて後から確かめる run の出力 (stdout・rc) は `./tmp/<作業名>-<日付>/` に repo root からの絶対パスで書く**。
     scratchpad は再起動で消え、空振りか遅れて完了かの証拠が残らない (codex-drive の obaket 581。`verify-execution-not-just-exit-code.md` の background の項と同じ)
 - **`./tmp` に置くのは、人や次のセッションが読むもの (レポート・見本) と上の例外だけ**。skill が出力先を指定していればそれに従う
-  (直下へ書く skill — codex-review / codex-lead / codex-drive / review-loop / perf-analysis — は dotfiles issue 774 で直す対象)
+  - **skill / agent が自分で書く成果物は `skill-tmpdir <skill名>` (dotfiles の `bin/skill-tmpdir`) が返す `<本体 checkout>/tmp/<skill名>/<session-id>/` に置く**。
+    worktree の中から打っても本体 checkout を返す。skill を新しく書く・直すときもこの形にする (dotfiles issue 774)
   - 🚨 **直下に散らさず、作業ごとに新しい `tmp/<issue番号か作業名>-<日付>/` に入れる**。同じ dir を使い回すと、中に新しいファイルがある限り
     `make clean-tmp` が dir ごと残す (実測 2026-10-15: `<番号>-push3.log` の形のログが直下に 1170 件・136 MiB、参照 0 件。dotfiles issue 774)
   - 🚨 `tmp/` の ignore が `~/.gitignore_global` 由来で repo の `.gitignore` に無い repo がある (dotfiles 等)。その場合、新品チェックアウトと CI では ignore されず、`tmp/` 自体も存在しない

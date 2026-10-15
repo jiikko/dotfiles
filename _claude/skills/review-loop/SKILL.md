@@ -19,7 +19,7 @@ description: make review / make review-close があるプロジェクトで、Co
 
 `make review` の直前に UTC の開始時刻を控え、実行後に PR URL・番号・head SHA を記録する。
 既存 PR を再利用する target なら、開始前に既存コメント・レビュー ID も控える。
-記録は `./tmp/review-loop.<一意な stamp>.json` に保存し、呼び出し間はその絶対パスを使う。
+記録は `skill-tmpdir review-loop` の dir (`<本体 checkout>/tmp/review-loop/<session-id>/`) に `<一意な stamp>.json` で保存し、呼び出し間はその絶対パスを使う。
 
 ```bash
 date -u +%Y-%m-%dT%H:%M:%SZ

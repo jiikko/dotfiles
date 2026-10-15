@@ -50,12 +50,12 @@ description: codex exec review を基本に、必要なら codex exec を使っ�
 ### 2. 出力先の準備
 
 ```bash
-mkdir -p ./tmp
+d="$(skill-tmpdir codex-review)"   # <本体 checkout>/tmp/codex-review/<session-id>/ を作って返す (dotfiles の bin/skill-tmpdir)
 stamp="$(date +%Y%m%d-%H%M%S).$$"
-review_out="./tmp/codex-review.$stamp.md"
+review_out="$d/review.$stamp.md"
 ```
 
-- 出力ファイルは毎回ユニークなパスにする（`./tmp` を使う理由は「ルール」参照）
+- 出力ファイルは毎回ユニークなパスにする。`tmp/` 直下に置かない (直下に散ると掃除できない。dotfiles issue 774)
 
 ### 3. レビューの実行
 
@@ -157,13 +157,13 @@ command codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort="high" 
 
 ### 5. 一時ファイルの削除
 
-レビュー本文を読み終わってユーザーに報告した **直後に**、`./tmp` に書き出したばかりの `.md` ファイル（`$review_out`）を必ず削除する。`./tmp` をレビュー結果のアーカイブ置き場にしない。
+レビュー本文を読み終わってユーザーに報告した **直後に**、書き出したばかりの `.md` ファイル（`$review_out`）を必ず削除する。`tmp/` をレビュー結果のアーカイブ置き場にしない。
 
 ```bash
 rm -f "$review_out"
 ```
 
-- **削除はグロブ禁止・完全一致パスのみ**。`./tmp/*.md` / `./tmp/codex-*.log` のような **glob を `rm` に渡さない**（並行する**他セッション**の codex レビューファイルを巻き込んで消す事故になる）。消すのは `codex-review.$stamp.md`（`$stamp` は `date +%Y%m%d-%H%M%S.$$` で **PID 込み = セッション一意**）の **その 1 本だけ**
+- **削除はグロブ禁止・完全一致パスのみ**。`"$d"/*.md` / `./tmp/codex-*.log` のような **glob を `rm` に渡さない**（`$d` は同じ session のサブエージェントと共有され、並行する他のレビューのファイルを巻き込んで消す事故になる）。消すのは `$d/review.$stamp.md`（`$stamp` は `date +%Y%m%d-%H%M%S.$$` で **PID 込み = セッション一意**）の **その 1 本だけ**
 - **🚨 Bash ツールは呼び出しごとに別シェルで、シェル変数 `$review_out` は次の呼び出しに引き継がれない**。安全なのは次のどちらか:
   1. **review 実行 → 出力 read → `rm -f "$review_out"` を 1 回の Bash 呼び出しにまとめる**（`$review_out` がスコープ内に残る。これを既定とする）
   2. 別呼び出しで消すなら、`$review_out` の **リテラル絶対パスをこの会話に控えてから、その完全一致パスを直接 `rm -f`** する。**固定名のマーカーファイル（例: `./tmp/.last_review_path`）に退避しない**（並行セッションが同名で上書きし合い、誤ったパスを消す）
@@ -220,7 +220,7 @@ Codex はリポジトリ内のコンテキストをある程度拾えるが、�
 - `codex exec` fallback を使う時は `-s read-only` を付ける
 - **モデルと effort は `-m gpt-6.1-sol -c model_reasoning_effort="high"` で明示する**。省略すると `~/.codex/config.toml` の既定 (対話 TUI 側の都合で変わる) を拾い、実行ごとにモデルが変わる。🚨 **effort も省かない** — モデルだけ指定すると effort は config.toml の値になる (対話の都合で変わるので、組を固定するのはここ)。codex-drive の「読む run」と同じ組に揃える (ユーザー決定 2026-10-02 で sol、2026-10-03 で effort を medium から high へ。それまでは `gpt-6-luna`)。high は運用上の既定。特定ベンチマークの優劣や API の価格を個別レビューの精度・5h 枠に一般化しない。effort を変えるときの比較方法は codex-drive のモデル表を参照
 - レビュー結果はそのままユーザーに見せる（要約しすぎない）
-- `/tmp` は使わず、出力ファイルは必ず `./tmp` に置く
+- `/tmp` は使わず、出力ファイルは必ず `skill-tmpdir codex-review` の dir に置く
 - `codex exec review` と `codex exec -s read-only` はレビュー用途として使い、コードを変更しない
 - **worktree など別 tree をレビューさせるときは `cd` する。`codex exec review` は `-C` を受け付けない**
   (`codex exec -s read-only` は取れるので取り違えやすい)。selector を使わない (プロンプト指定の) 実行なら

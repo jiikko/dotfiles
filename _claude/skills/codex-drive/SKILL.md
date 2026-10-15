@@ -34,7 +34,7 @@ codex トークンを積極消費したいタスク向け。
    `-o` の親ディレクトリは起動前に mkdir する。obaket 674 では本文が最終応答に載らず、
    ファイル編集が拒否された。この 2 操作を区別して扱う。長文であることを理由に workspace-write へ上げない。
    複数のファイルを実際に作る作業だけ、必要な書き込み権限を別途選ぶ。
-   設計スライス・spec・要件はプロンプトに長文で貼らず、`./tmp/codex-drive-design.*.md` 等の
+   設計スライス・spec・要件はプロンプトに長文で貼らず、`<D>/design.<タスク名>.md` 等の
    **ファイルパス + セクション名を指示して読ませる** (Claude の出力トークンを長文 heredoc に使わない)。
    定型部分は `templates/` のテンプレートとの**ファイル連結**で組み、Claude が書くのは brief 数行だけ。
 3. **機械ループは codex に回させる**: ミューテーション適用×テスト実行 (`[3.8]`) のような機械実行は
@@ -158,6 +158,18 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
 - 完了条件は **受け入れ条件を満たす / 採用した重要指摘を解消する / 重要な不変条件をテスト・型・設計・外部 oracle で確認する / 未確認範囲を明示する**。
   「新規ゼロが何周続いたか」は探索の記録であって、完了条件でも安全性の証明でもない。
 
+## 出力の置き場 (`<D>`。全フェーズ共通)
+
+本 skill が書くもの (要件・設計ファイル、プロンプト部品、manifest、codex の `-o` / stdout / rc、patch・status のスナップショット) は
+**すべて 1 つの dir `<D>` に置く**。`<D>` は着手時に 1 回 `skill-tmpdir codex-drive` を打って得た絶対パス
+(`<本体 checkout>/tmp/codex-drive/<session-id>/`。dotfiles の `bin/skill-tmpdir`) で、以降は**リテラルで**書く
+(Bash の変数は次の呼び出しに残らない)。
+
+- scratchpad に置かない: 再起動で消え、遅れて完了した run の証拠 (obaket 581。下の `[2]`) が残らない。repo の外なので codex にも渡しにくい
+- `tmp/` 直下に置かない: 置き場が散ると後から run を突き合わせられず、掃除もできない (dotfiles issue 774)
+- worktree の中から打っても本体 checkout を返すので、worktree を消しても出力は残る
+- 同じ session の中では名前を `<literal-stamp>.` や `<タスク名>` で一意にする (サブエージェントと共有される)
+
 ## 並列起動の作法（`[S]` / `[D1]` / `[D1.5]` / `[2p]` / `[3.5]` / `[3.55]` / `[3.6]` 共通）
 
 本 skill の並列フェーズはすべてこの作法に従う。各フェーズで再定義しない。
@@ -177,7 +189,7 @@ codex-run -J -C <worktree> -l adv-behavior review <prompt-file>
 `-C` を受け付けないが、その差分は codex-run が吸収するので呼び出し側から見えない。
 `command codex` / `</dev/null` / `--ephemeral -o` / stdout の保存 / rc の保存 / モデルと effort の固定も
 codex-run 側で満たす。**rc が 0 でも本文が空なら警告を出す**ので、成果物での判定がそのまま乗る。
-`-o` を省くと `./tmp/codex-run/<stamp>-<label>/` に出る (cwd 基準。`-C` の影響を受けない)。
+`-o` を省くと `./tmp/codex-run/<stamp>-<label>/` に出る (cwd 基準。`-C` の影響を受けない)。本 skill では `-o <D>/<literal-stamp>.<label>` を渡す。
 
 **Go repo では codex の sandbox が `go build` / `go test` を走らせられない**ことがある (work dir / build cache を
 `$HOME` 配下に作れず `operation not permitted`、goenv の version 不在。SnapTrim #251 で read-only lens が
@@ -205,7 +217,7 @@ primary cwd に戻り、別 repo の tmp に出る: obaket 696 項目 1 / 715 �
 
 Claude がやるのは:
 
-1. プロンプト部品を scratchpad に書く — 定型は `~/.claude/skills/codex-drive/templates/`
+1. プロンプト部品を `<D>` に書く — 定型は `~/.claude/skills/codex-drive/templates/`
    (`review-lens-header.md` = lens 共通ヘッダ、`merger.md` = merger の既定指示) を使い、
    **Claude が書くのは lens の攻め口 + タスク固有の的の brief 数行だけ** (トークン経済 2)
 2. manifest (TSV: `label \t mode \t model \t effort \t 部品1,部品2,... [\t timeout_s]`。部品は順に連結) を書く。
@@ -219,14 +231,14 @@ Claude がやるのは:
    (manifest は単純なカンマ分割)。`codex-fanout -J <絶対パスの manifest> <絶対パスの outdir>` を、
    同じ呼び出しで必要なファイルを生成してから **1 回だけ `run_in_background` で起動** (2 本以下で merger 不要なら `-M`。
    1 本だけの manifest は `-m` 明示が無い限り driver が merger を自動スキップする — 1 出力の digest は言い換えでしかない)
-   生成した manifest はその呼び出しで即実行する。scratchpad に絶対パスを残して後で再実行すると、repo 移動・
+   生成した manifest はその呼び出しで即実行する。manifest を残しておいて後で再実行すると、repo 移動・
    別 worktree・別マシンで stale path になる (出典: `573-retro-codex-drive-541-2026-08-24.md`)。
 4. 完了通知後に `<outdir>/digest.md` を読む (原文へは digest の出典パスで跳ぶ)
 
 **起動と同時に「待機中に自分がやる作業」を決める。** read-only フェーズは実測で
 20〜40 分かかることがあり、その間 main agent が「待機中です」のターンを重ねるのは丸損
 (1 ターンごとに会話全体を再送する)。起動した直後に、その codex の結果に**依存しない**作業を
-1 つ選んで着手する — issue / commit message のドラフトを `./tmp` に書く、自分でできる裏取り
+1 つ選んで着手する — issue / commit message のドラフトを `<D>` に書く、自分でできる裏取り
 (grep・件数の計測・ログの取得) を済ませる、次のフェーズのプロンプト部品を組む。
 待ち自体は**成果物ファイルの存在**で張る (`until [ -f <outdir>/runs.tsv ]`。プロセスの存在で
 待たない — [`verify-execution-not-just-exit-code.md`](../../rules/verify-execution-not-just-exit-code.md))。
@@ -342,7 +354,7 @@ codex-drive を回す前に、**そのタスクが codex 実装に向いてい�
 
 ```
 [0]   適性評価         … 上記。苦手領域なら一度ユーザーに確認 (UI 等)
-[R]   要件確定         … 依頼を「要件 + 受け入れ条件」リストに言語化し ./tmp へ保存。曖昧点はここでまとめて質問
+[R]   要件確定         … 依頼を「要件 + 受け入れ条件」リストに言語化し <D> へ保存。曖昧点はここでまとめて質問
 [S]   spec ダイジェスト … spec/プロトコル系のみ。codex 独立 2 本が spec を読解 → 第 3 の codex が相互照合 →
                         相違点と重要要件を Claude が原典で確認。digest は原典への索引になる
 [D1]  設計アウトライン  … codex 独立 2 本 (厚い運用は 4 本・read-only) が各々 1 案を作る。設計自由度が低ければ軽量パス (+ 敵対 1 本)
@@ -365,7 +377,7 @@ codex-drive を回す前に、**そのタスクが codex 実装に向いてい�
                         red の帰属を強制。issue 408)
 [4]   commit & push    … 自分の差分のみ commit (commit-policy)。push は必要時。**マイルストーンごとに issue の「進捗チェックポイント」節を更新して同時に commit する**
                         (採用設計の要点 / マイルストーン表と commit hash / 手順 / 再開方法。context 圧縮や別セッションからの再開はこの節が入口。
-                        設計ファイルは `./tmp` で消えるので、再開に要る判断はここに残す。obaket 617 で圧縮 2 回を跨いで有効だった)
+                        設計ファイルは `<D>` (gitignore。clean-tmp で消え、別マシンには無い) なので、再開に要る判断はここに残す。obaket 617 で圧縮 2 回を跨いで有効だった)
 [5]   実地検証 (任意)   … 実行 / 実機 / CI で動かす。失敗したら [6]
 [6]   観測 → 次の指示   … blind fix しない。観測を増やし事実を取り、次の指示にする → [2] (設計前提の誤りなら D2/D3 へ)
 [7]   要件照合         … [R] のリストと成果物を突き合わせ。codex 敵対照合 1 本を必須で先行させ、Claude が確定
@@ -378,7 +390,7 @@ codex-drive を回す前に、**そのタスクが codex 実装に向いてい�
 ### R. 要件確定（Claude・丸投げの入口）
 
 - 依頼 (丸投げの一言・issue・会話の文脈) を **「要件リスト + 受け入れ条件」に言語化**し、
-  `./tmp/codex-drive-design.<タスク名>.md` の冒頭に書き出す (このファイルに D3 の確定設計も追記していく)。
+  `<D>/design.<タスク名>.md` の冒頭に書き出す (このファイルに D3 の確定設計も追記していく)。
 - **曖昧点・選択肢はここでまとめてユーザーに質問する**。以降のフェーズを自走させるための前倒しであり、
   途中で 1 個ずつ聞き直すのを避ける (丸投げ運用ではユーザーは途中判断を待たない前提で組む)。
 - **寿命・拡張予定を判定して明記する** (大原則「構造投資の水準」): 長期運用/拡張前提か、地味な機能で
@@ -406,7 +418,7 @@ spec の読み違いは最も高くつく失敗 (実装・テスト・レビュ�
 - **第 3 の codex** (read-only・**sol-high**) に 2 本の digest を突き合わせさせ、相違点・出典欠落・
   原典との食い違いの候補を出させる。同じモデルの一致は独立した正しさの証明として数えない。
 - **Claude は相違点に加え、重要な不変条件・wire layout・異常系・破壊的操作の要件を、一致していても原典で確認する**。
-  裁定済み digest を要件ファイル (`./tmp/codex-drive-design.<タスク名>.md`) に保存する。
+  裁定済み digest を要件ファイル (`<D>/design.<タスク名>.md`) に保存する。
   digest は原典を引くための索引であり、正解の根拠は **原典・外部 vector・実サーバの契約** のままにする。
   D1/実装/`[3.7]` には要件 ID と原典参照も渡す。新しい疑義が出たら digest と原典を再照合する。
 - spec が無い/薄いタスクではこのフェーズを飛ばし、「[S] は対象外 (spec 非依存)」と一言明示する。
@@ -469,13 +481,13 @@ D3 敵対 1 本が「sheet 経由の対象を Delete 押下時に共有 selectio
 # 起動は codex-fanout driver が既定 (プロンプト部品を 4 案分書き、manifest で 1 回起動)。
 # 以下は fallback の per-call 形。プロンプト内容の見本としてはどちらでも同じ。
 # --- 案A (Bash 呼び出し 1・run_in_background)。案B〜案D も同形で別呼び出し・別パス ---
-out="<scratchpad>/codex-drive.<literal-stamp>.designA.md"; log="$out.log"
+out="<D>/<literal-stamp>.designA.md"; log="$out.log"
 command codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort="high" \
   --ephemeral -o "$out" </dev/null "$(cat <<'EOF'
 <タスク>の設計壁打ち。コードは書かない (設計検討のみ)。
 
 ## 要件 / 制約
-- ./tmp/codex-drive-design.<タスク名>.md の要件セクションを読むこと (貼らずに読ませる — トークン経済 2)
+- <D>/design.<タスク名>.md の要件セクションを読むこと (貼らずに読ませる — トークン経済 2)
 - <ファイルに無い補足だけ短く書く: 触ってよい範囲・依存方針 等>
 
 ## この案で最優先する軸
@@ -629,14 +641,13 @@ EOF
 ### 2. codex に実装させる（write 権限）
 
 ```bash
-# 最終応答・stdout・rc は **run 固有の永続パス** (repo の ./tmp/<タスク>/ 等) に保存する。
-# セッション scratchpad はセッション終了で消えるため、後から「空振りだったのか遅れて完了したのか」を
-# 診断できない (2026-08-25 obaket 581 で実際に証拠が残らなかった)。`</dev/null` 必須 (codex-review ルール)。
+# 最終応答・stdout・rc は **run 固有のパス** (<D>/<タスク>/。「出力の置き場」) に保存する。
+# 後から「空振りだったのか遅れて完了したのか」を診断するため (2026-08-25 obaket 581 で証拠が残らなかった)。`</dev/null` 必須 (codex-review ルール)。
 # 実装は書く run なので luna + effort **max** (モデル表)。
 # ROOT は repo root の絶対パス。cwd はサブディレクトリに残っていることがあるので `-C "$ROOT"` を必ず付ける
 # (Storage/ を cwd に起動され macOS/bin を書けず「対応できませんでした」で 30 分ロス: obaket 696 項目 1)。
 ROOT="$(git rev-parse --show-toplevel)"
-last_message="$ROOT/tmp/<タスク>/impl.out.md"; log="$ROOT/tmp/<タスク>/impl.log"
+last_message="<D>/<タスク>/impl.out.md"; log="<D>/<タスク>/impl.log"; mkdir -p "<D>/<タスク>"
 command codex exec -s danger-full-access -C "$ROOT" -m gpt-6-luna -c model_reasoning_effort="max" \
   --json -o "$last_message" </dev/null "$(cat <<'EOF'
 <タスク>。git 操作 (commit / pull / checkout / stash 等) はしない (人間が検証して commit する)。作業根 (この repo root) の外には書かない。
@@ -649,7 +660,7 @@ issue は起票しない。範囲外の発見は要約に書く (採番から pu
 - <1 マイルストーンの完了条件と検証方法>
 
 ## 承認済み設計 (このマイルストーンに関係するスライス)
-- ./tmp/codex-drive-design.<タスク名>.md の「<セクション名>」を読んでから着手すること
+- <D>/design.<タスク名>.md の「<セクション名>」を読んでから着手すること
   (新規の実装 run は前フェーズの設計を知らない。継続 run も現行版を再確認する。貼らずにパス + セクション名で読ませる — トークン経済 2。
   軽量パス (設計フェーズ省略) のときはこのセクションごと省略可)
 
@@ -720,9 +731,8 @@ EOF
   さらに、空振り判定後に Claude が書き直したテストを、遅れて完了した codex の出力が同じパスに
   上書きし、**commit されたのは codex 版だった** (テスト名が同じで取り違えた)。誤判定のコストは
   待ち直しではなく「**codex が壊れている**」という誤った因果を作ること。
-  🚨 **判定できるように、出力先は run 固有の永続パスにする**。`-o` と JSONL/stdout をセッション
-  scratchpad に出すと、セッション終了で消えて「空振りだったのか」を後から一切検証できない
-  (581 で実際に残らなかった。上の起動例が `./tmp/<タスク>/` を使うのはこのため)。一般則は
+  🚨 **判定できるように、出力先は run 固有のパス (`<D>/<タスク>/`) にする**。`-o` と JSONL/stdout を scratchpad に出すと
+  再起動で消え、「空振りだったのか」を後から検証できない (581 で実際に残らなかった)。一般則は
   [`verify-execution-not-just-exit-code.md`](../../rules/verify-execution-not-just-exit-code.md) の
   「非同期・background の完了も『成果物』で判定する」節。
 - **異常終了 (capacity 死・timeout・中断) も「全ロス」と決めつけない**。書き込み権限の run (`danger-full-access` / `workspace-write`) は
@@ -773,7 +783,7 @@ echo "A=$root/../wt-$stamp-a"; echo "B=$root/../wt-$stamp-b"   # ← この 2 �
 
 ```bash
 # --- 案a (Bash 呼び出し 2・run_in_background)。案b も同形で別呼び出し・別 worktree ---
-wt="/<控えた A の絶対パス>"; out="<scratchpad>/codex-drive.<literal-stamp>.implA.md"; log="$out.log"
+wt="/<控えた A の絶対パス>"; out="<D>/<literal-stamp>.implA.md"; log="$out.log"
 command codex exec -s danger-full-access -C "$wt" -m gpt-6-luna \
   -c model_reasoning_effort="max" --ephemeral -o "$out" </dev/null \
   "<[2] と同じプロンプト>" > "$log" 2>&1; tail -40 "$log"
@@ -800,7 +810,7 @@ command codex exec -s danger-full-access -C "$wt" -m gpt-6-luna \
     実装し直す。worktree は下記の手順で必ず片付ける
 
 ```bash
-wt="/<控えた勝者の絶対パス>"; patch="<scratchpad>/codex-drive.<literal-stamp>.winner.patch"
+wt="/<控えた勝者の絶対パス>"; patch="<D>/<literal-stamp>.winner.patch"
 git -C "$wt" add -A
 git -C "$wt" diff --cached --binary > "$patch"
 git apply --check "$patch" && git apply "$patch"   # --check が落ちたら適用しない
@@ -897,7 +907,7 @@ git worktree list   # 消えたことを確認する
 # 以下は fallback の per-call 形。パスはリテラルで書く ($stamp は次の呼び出しに残らない)。
 # stdout も保存する ($log 群は merger に全文読ませる)。詳細は「並列起動の作法」。
 # --- 観点A (Bash 呼び出し 1・run_in_background)。観点B・C も同形で別呼び出し・別パス ---
-out="<scratchpad>/codex-drive.<literal-stamp>.reviewA.md"; log="$out.log"
+out="<D>/<literal-stamp>.reviewA.md"; log="$out.log"
 command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
   --ephemeral -o "$out" </dev/null \
   "<観点A の指示。file:line・理由・最小修正案を。要約/称賛不要>" > "$log" 2>&1; tail -40 "$log"
@@ -933,7 +943,7 @@ command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
 
 - **プロンプトは codex-review スキルの「敵対的モード」テンプレートが正本**。ここでは再定義せず、そのまま使う
   (差分対象の選び方・実行作法も codex-review に従う。`command codex` / `</dev/null` / `--ephemeral -o` / `--full-auto` 禁止。
-  ただし**出力先は本 skill の scratchpad 規約**に従う。`[3.5]` と同じく `./tmp` ではなくセッション scratchpad の一意パス)。
+  ただし**出力先は本 skill の「出力の置き場」 (`<D>` の一意パス)** に従う)。
 **1 本に全部の攻め口を投げず、攻め口 (lens) ごとに分けて並列で回す**。「壊す条件を構築する」作業は攻め口ごとに
 必要な思考が別物で、1 本に束ねると最初に見つけた 1 種類の周辺を掘って残りが浅くなる。`[0]` の「既知の弱点」表が
 そのまま lens になる。タスクに合うものを **既定 1〜2 本、厚い運用は 2〜4 本**選び、選んだ lens を一言明示してから起動する:
@@ -974,7 +984,7 @@ command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
 ```bash
 # 起動は codex-fanout driver が既定 (lens ごとの brief + review-lens-header.md を連結する manifest)。
 # --- fallback の per-call 形: lens ごとに別 Bash 呼び出し・run_in_background。パスは round と lens で一意にする ---
-out="<scratchpad>/codex-drive.<literal-stamp>.r<N>-adv-<lens>.md"; log="$out.log"
+out="<D>/<literal-stamp>.r<N>-adv-<lens>.md"; log="$out.log"
 command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
   --ephemeral -o "$out" </dev/null \
   "<codex-review「敵対的モード」テンプレート全文 + この lens の攻め口だけを指定>" > "$log" 2>&1; tail -40 "$log"
@@ -989,8 +999,8 @@ command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
   **ラウンド台帳 (根本原因 / 発火条件 / 破れる不変条件 / 判定 / 解消したラウンド)** と照合する。
   台帳の更新ドラフトはラウンドの merger に作らせる (各指摘の新規/既出/格上げ判定つき。台帳ファイルの
   パスを渡して現行台帳と突き合わせさせる) — **Claude は判定を検閲して確定・追記する** (トークン経済 1)。
-  台帳は要件ファイル (`./tmp/codex-drive-design.<タスク名>.md`) に追記して**各ラウンドの統合検閲の直後に更新**する
-  (scratchpad は消えるので台帳を置かない)。解消した項目は行を消さず「解消 (round N)」と記す — 消すと次ラウンドで
+  台帳は要件ファイル (`<D>/design.<タスク名>.md`) に追記して**各ラウンドの統合検閲の直後に更新**する
+  (`<D>` の外に台帳を置かない)。解消した項目は行を消さず「解消 (round N)」と記す — 消すと次ラウンドで
   同じものが「新規」に見える。**行番号では同定しない** (修正のたびにズレる)。
   file:line や言い回しが変わっただけの同一原因は既出、
   **前ラウンドで「未確認リスク」だったものに具体的な発火条件が付いたら新規**として数える (格上げは発見であり、
@@ -1034,11 +1044,11 @@ command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
 
 ```bash
 # 起動前 (上の起動コマンドと同じ Bash 呼び出しで)
-git diff > "<scratchpad>/codex-drive.<literal-stamp>.pre.patch"
-git status --porcelain --untracked-files=all > "<scratchpad>/codex-drive.<literal-stamp>.pre.status"
+git diff > "<D>/<literal-stamp>.pre.patch"
+git status --porcelain --untracked-files=all > "<D>/<literal-stamp>.pre.status"
 # 終了後
-git diff > "<scratchpad>/codex-drive.<literal-stamp>.post.patch"
-git status --porcelain --untracked-files=all > "<scratchpad>/codex-drive.<literal-stamp>.post.status"
+git diff > "<D>/<literal-stamp>.post.patch"
+git status --porcelain --untracked-files=all > "<D>/<literal-stamp>.post.status"
 diff -u "<...>.pre.patch" "<...>.post.patch" | head -200   # ← [3.7] が実際に足した変更
 diff -u "<...>.pre.status" "<...>.post.status"             # ← 新規ファイルの検出
 ```
@@ -1080,7 +1090,7 @@ diff -u "<...>.pre.status" "<...>.post.status"             # ← 新規ファイ
 
 ```bash
 # 起動前スナップショット (上の pre.patch / pre.status) をこの呼び出しの冒頭で採る
-out="<scratchpad>/codex-drive.<literal-stamp>.harden.md"; log="$out.log"
+out="<D>/<literal-stamp>.harden.md"; log="$out.log"
 command codex exec -s danger-full-access -m gpt-6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$out" </dev/null "$(cat <<'EOF'
 このマイルストーンの実装を「落とす」テストを書く。git 操作 (commit / pull / checkout / stash 等) はしない。
@@ -1180,7 +1190,7 @@ EOF
 - **自分が触った差分のみ** `git add <path>` (commit-policy)。並行する他作業/WIP を巻き込まない。
 - 1 マイルストーン = 1 commit を基本に。commit message に「codex 実装 + main agent 検証」と何をやったかを書く。
 - 🚨 **`[S]` / `[D1]`〜`[D3]` で受け入れ条件が変わったら、設計ファイルだけでなく issue 本文にも移す**。
-  設計ファイルは `./tmp` にあり gitignore されるので**セッションが終われば消える**。issue に移し忘れると、
+  設計ファイルは `<D>` にあり gitignore されるので**commit されず、`make clean-tmp` で消え、別マシンには無い**。issue に移し忘れると、
   完了時のチェックリストが**起票時の (古い) 条件だけ**になり、敵対レビューが足した条件が
   誰にも検証されないまま done になる (実測 2026-09-07 obaket 740: D3 が足した 5 条件を設計ファイルに
   だけ書き、done へ移す直前に気づいて移した)。移すのは条件そのものと、それが足された理由 1 行
@@ -1208,7 +1218,7 @@ EOF
   (Claude が小さく入れるか codex に入れさせて) 仕込み、実行/CI で**事実**を取る。
 - 取れた事実 (実 status・実バイト・差分) を **codex への次の的確な指示**に翻訳して [2] に戻る。
 - **観測が「設計前提の誤り」を示したら [2] に戻らず D2/D3 へ戻る**: 実装の直しで吸収せず、設計を修正して
-  多角レビュー + **ユーザー再承認**を取り直し、保存済み設計ファイル (`./tmp/codex-drive-design.*.md`) を更新してから
+  多角レビュー + **ユーザー再承認**を取り直し、保存済み設計ファイル (`<D>/design.<タスク名>.md`) を更新してから
   実装に戻る。承認ゲートは初回限りではなく、設計が変わるたびに通す (黙って設計を変質させない)。
 - これにより、CI/実機でしか再現しない移植・プロトコル・wire バグを 1 往復 1 バグで確実に収束させる。
 
@@ -1228,7 +1238,7 @@ EOF
   **例外は D1 節の「小タスク軽量パス」だけ**: 要件が数個で証拠が CI ログ / テスト結果に機械的に現れるときは
   Claude 単独の照合でよい (codex は run の文脈 (cold/warm 等) を持たず、証拠の読み違いを Claude が
   再判定する往復が増えるだけだった。2026-08-28 実測)。それ以外の通常パスでは必須のまま。
-- 照合が済んで報告したら要件ファイル (`./tmp/codex-drive-design.*.md`) を削除してよい (ユーザーが「残して」と明示したら残す)。
+- 照合が済んで報告したら要件ファイル (`<D>/design.<タスク名>.md`) を削除してよい (ユーザーが「残して」と明示したら残す)。
 
 ## codex-lead / forge との使い分け
 

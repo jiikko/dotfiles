@@ -1,0 +1,42 @@
+#!/bin/bash
+# skill / agent が成果物を書く dir <本体 checkout>/tmp/<名前>/<session-id>/ を作り、絶対パスを 1 行で出す (issue 774)。
+#
+#   d=$(skill-tmpdir codex-drive)   # → /Users/me/repo/tmp/codex-drive/0b9a…/
+#
+# - 本体 checkout: worktree の中から呼んでも本体 checkout の tmp/ を返す (worktree は消すので、中の出力も一緒に消える)。
+#   git の repo の外なら cwd を基準にする
+# - session-id: Claude Code が渡す CLAUDE_CODE_SESSION_ID。無い・パスに使えない文字を含むなら nosession-<日時>-<pid>
+#   (呼ぶたびに別の dir になるので、同じ run の中では最初に得たパスを使い回す)
+# - 掃除は `make clean-tmp` (dotfiles) / 各 repo の手順に任せる。この道具は消さない
+set -eu
+unset CDPATH
+name=${1:-}
+case $name in
+'' | .* | *[!A-Za-z0-9._-]*) echo "usage: skill-tmpdir <名前>  (英数字と . _ - だけ。. で始めない): '$name'" >&2; exit 2 ;;
+esac
+sid=${CLAUDE_CODE_SESSION_ID:-}
+case $sid in
+'' | .* | *[!A-Za-z0-9._-]*) sid="nosession-$(date +%Y%m%d-%H%M%S)-$$" ;;
+esac
+# 継承した GIT_DIR / GIT_WORK_TREE (hook から起動された経路) は cwd と別の repo を指しうるので、cwd だけで決める
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
+# 本体 checkout: common-dir の末尾が .git ならその親。submodule は common-dir の core.worktree が本体を指す。
+# bare repo と repo の外は cwd の toplevel / cwd (旧 ./tmp と同じ基準)。--separate-git-dir の worktree は本体の場所を git が
+# 持たないので、cwd の toplevel に倒して警告する (worktree を消すと中の出力も消える)
+root=
+if common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+	if [ "${common##*/}" = .git ]; then
+		root=${common%/.git}
+	elif wt=$(git --git-dir="$common" config core.worktree 2>/dev/null) && [ -n "$wt" ]; then
+		root=$(cd "$common" && cd "$wt" && pwd -P) || root=
+	elif [ "$(git rev-parse --is-bare-repository 2>/dev/null)" != true ] &&
+		[ "$(git rev-parse --path-format=absolute --git-dir 2>/dev/null)" != "$common" ]; then
+		echo "skill-tmpdir: 本体 checkout を特定できない ($common)。cwd の checkout の tmp/ を使う" >&2
+	fi
+fi
+if [ -z "$root" ]; then
+	root=$(git rev-parse --show-toplevel 2>/dev/null) || root=$(pwd -P)
+fi
+dir="$root/tmp/$name/$sid"
+mkdir -p "$dir"
+printf '%s\n' "$dir"
