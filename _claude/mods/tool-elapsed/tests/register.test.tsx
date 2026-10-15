@@ -76,7 +76,10 @@ test('並列に終わっても記録が残らない (10 本同時に完了)', as
   await ui.unmount()
 })
 
-test('5 分ごとに toast が出る (10 分で 2 回)', async ($, on) => {
+// mock の時計は進めた間の tick を全部発火させる (飛ばす口は無い) ので、この 1 本は 1 秒の timer を約 600 回回す。単独で 3.6〜4.0 秒かかり
+// (2026-10-15 実測・2.1.300)、既定の上限 5 秒では make test の並列の負荷の中で切れていた。上限はハングの安全網で判定ではないので、
+// 仕事の量に見合う長さにする (判定は toast の中身と回数)
+test('5 分ごとに toast が出る (10 分で 2 回)', { timeoutMs: 30_000 }, async ($, on) => {
   const f = floor(on)
   const call = $.tool.call({ tool: 'Bash', command: 'make test' })
   await f.clock.advance(4 * 60_000 + 59_000)

@@ -1169,7 +1169,7 @@ func TestDrainOutputsDoesNotKillNaturalExitDescendantHoldingPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-proc.done
-	waitFor(t, time.Second, "descendant PID", func() bool { return strings.TrimSpace(readFile(pidFile)) != "" })
+	waitFor(t, 10*time.Second, "descendant PID", func() bool { return strings.TrimSpace(readFile(pidFile)) != "" })
 	pid, err := strconv.Atoi(strings.TrimSpace(readFile(pidFile)))
 	if err != nil {
 		t.Fatal(err)
@@ -1552,8 +1552,12 @@ func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
 	release := filepath.Join(dir, "release-descendant")
 	gracefulExit := filepath.Join(dir, "descendant-exited-gracefully")
 	childPIDPath := filepath.Join(dir, "descendant.pid")
-	run := fmt.Sprintf(`(trap 'echo ready > %s; while [ ! -e %s ]; do /bin/sleep 0.01; done; echo graceful > %s; exit 0' TERM; while :; do /bin/sleep 0.01; done) & echo $! > %s; trap 'while [ ! -e %s ]; do /bin/sleep 0.01; done; echo exited > %s; exit 0' TERM; wait`,
-		shellQuote(ready), shellQuote(release), shellQuote(gracefulExit), shellQuote(childPIDPath), shellQuote(ready), shellQuote(leaderExited))
+	childArmed := filepath.Join(dir, "descendant-armed")
+	// 🚨 合図 (pid と armed) は trap を張った**後**に書く。先に書くと、合図を見て送った SIGTERM が trap の前に届き、
+	// 既定の動作で死んで leader-exited / ready を書かず、待ちが 10 秒で切れる (負荷の中で隙間が広がって落ちていた。
+	// 親の trap の前に sleep 1 を挟むと毎回同じ文言で落ちることを確かめた。2026-10-15)
+	run := fmt.Sprintf(`trap 'while [ ! -e %s ]; do /bin/sleep 0.01; done; echo exited > %s; exit 0' TERM; (trap 'echo ready > %s; while [ ! -e %s ]; do /bin/sleep 0.01; done; echo graceful > %s; exit 0' TERM; echo armed > %s; while :; do /bin/sleep 0.01; done) & echo $! > %s; wait`,
+		shellQuote(ready), shellQuote(leaderExited), shellQuote(ready), shellQuote(release), shellQuote(gracefulExit), shellQuote(childArmed), shellQuote(childPIDPath))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN":        run,
 		"RESTARTABLE_TEST_TERM_GRACE": "30s",
@@ -1562,8 +1566,9 @@ func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
 	if initial.PID == nil {
 		t.Fatal("runner has no child PID")
 	}
-	waitFor(t, time.Second, "descendant PID", func() bool { return strings.TrimSpace(readFile(childPIDPath)) != "" })
+	waitFor(t, 10*time.Second, "descendant PID", func() bool { return strings.TrimSpace(readFile(childPIDPath)) != "" })
 	t.Cleanup(func() { _ = signalGroup(*initial.PID, syscall.SIGKILL) })
+	waitFor(t, 10*time.Second, "descendant to arm its TERM trap", func() bool { return strings.TrimSpace(readFile(childArmed)) != "" })
 	type restartResult struct {
 		response control.Response
 		err      error
