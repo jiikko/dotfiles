@@ -28,7 +28,7 @@ func SanitizeForDisplay(rep Report) Report {
 	out := rep
 	out.StatusErr = termsafe.PlainLine(rep.StatusErr)
 	out.BrewErr = termsafe.PlainLine(rep.BrewErr)
-	out.DirErrs = sanitizeDisplayLines(rep.DirErrs)
+	out.DirErrs = termsafe.PlainLines(rep.DirErrs)
 	dropped := 0
 	out.Findings = make([]Finding, 0, len(rep.Findings))
 	for _, f := range rep.Findings {
@@ -36,11 +36,11 @@ func SanitizeForDisplay(rep Report) Report {
 			dropped++
 			continue
 		}
-		f.Reasons = sanitizeDisplayLines(f.Reasons)
-		f.RestartKeys = sanitizeDisplayLines(f.RestartKeys)
+		f.Reasons = termsafe.PlainLines(f.Reasons)
+		f.RestartKeys = termsafe.PlainLines(f.RestartKeys)
 		f.MissingExec = termsafe.PlainLine(f.MissingExec)
 		f.BrewFormula = termsafe.PlainLine(f.BrewFormula)
-		f.Commands = sanitizeDisplayLines(f.Commands)
+		f.Commands = termsafe.PlainLines(f.Commands)
 		out.Findings = append(out.Findings, f)
 	}
 	out.Undiagnosed = make([]Undiagnosed, 0, len(rep.Undiagnosed))
@@ -67,17 +67,3 @@ func SanitizeForDisplay(rep Report) Report {
 // 落とす形にすると、識別子を持たない Report を「診断できず」へ倒してしまう。
 func displayableIdentity(s string) bool { return termsafe.IsPlain(s) }
 
-// 🚨 名前は sanitize で始めること。無害化の網羅検査 (doctor/internal/displaycheck) は
-// 右辺が `termsafe.*` / `sanitize*` / `Sanitize*` / `DisplayablePath` を呼んでいるかで
-// 「関門を通った代入」を見分ける。別の名前にすると、無害化していても**通していない**と
-// 判定される (逆に、無害化していないのにこの名前を付ければ素通りする = 名前ベースの近似)。
-func sanitizeDisplayLines(ss []string) []string {
-	if len(ss) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(ss))
-	for _, s := range ss {
-		out = append(out, termsafe.PlainLine(s))
-	}
-	return out
-}

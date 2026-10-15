@@ -44,6 +44,19 @@ func LineKeepTabs(s string) string { return sanitize(s, policy{keepTabs: true, k
 // 表示する契約があるので DetailLine 側 (SGR 許可) を使う。
 func PlainLine(s string) string { return sanitize(s, policy{}) }
 
+// PlainLines は各行に PlainLine を通した新しい slice を返す (元の slice は書き換えない)。空 (nil・長さ 0) なら nil を返す
+// (JSON の omitempty と「無い」の判定を、元が nil か空かで分けない)。
+func PlainLines(ss []string) []string {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		out = append(out, PlainLine(s))
+	}
+	return out
+}
+
 // PlainLineKeepTabs は PlainLine のタブ非展開版。タブを「自前のタブストップ揃え」で展開する
 // 整形層 (issues の expandTabs) の入口で使う。
 //

@@ -4,7 +4,7 @@
 
 ## ファイルの地図
 
-- `termsafe.go` — 唯一の実装ファイル。無害化関数群 (`DetailLine` / `LineKeepTabs` / `PlainLine` / `PlainLineKeepTabs` / `PlainBlock` / `IsPlain` / `DropEmojiVS16`) と内部の `sanitize` / `needsSanitize`
+- `termsafe.go` — 唯一の実装ファイル。無害化関数群 (`DetailLine` / `LineKeepTabs` / `PlainLine` / `PlainLines` (行の slice 版) / `PlainLineKeepTabs` / `PlainBlock` / `IsPlain` / `DropEmojiVS16`) と内部の `sanitize` / `needsSanitize`
 - `ctlprobe/` — **テスト専用**の独立オラクル (「制御文字が残っているか」を termsafe 実装とは別系統で判定する。termsafe の実装から判定を導かないため、ctlprobe から termsafe を import すると `termsafe_test.go` との循環で go test が落ちる。テストからだけ使うのは規約で、機械では強制されていない)
 - `termsafe_bench_test.go` — ベンチマーク
 

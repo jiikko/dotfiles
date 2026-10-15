@@ -9,7 +9,7 @@ import "github.com/jiikko/dotfiles/src/termsafe"
 func SanitizeForDisplay(rep Report) Report {
 	out := rep
 	out.Model = termsafe.PlainLine(rep.Model)
-	out.Notes = sanitizeDisplayLines(rep.Notes)
+	out.Notes = termsafe.PlainLines(rep.Notes)
 	out.Checks = make([]Check, 0, len(rep.Checks))
 	for _, c := range rep.Checks {
 		c.Label = termsafe.PlainLine(c.Label)
@@ -20,14 +20,3 @@ func SanitizeForDisplay(rep Report) Report {
 	return out
 }
 
-// 🚨 名前は sanitize で始めること (doctor/internal/displaycheck が右辺の呼び出し名で関門を見分ける)。
-func sanitizeDisplayLines(ss []string) []string {
-	if len(ss) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(ss))
-	for _, s := range ss {
-		out = append(out, termsafe.PlainLine(s))
-	}
-	return out
-}

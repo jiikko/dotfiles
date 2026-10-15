@@ -218,3 +218,18 @@ func TestDropsBidiControls(t *testing.T) {
 		}
 	}
 }
+
+// PlainLines は各行に PlainLine を通し、元の slice を書き換えず、空なら nil を返す。
+func TestPlainLines(t *testing.T) {
+	in := []string{"a\x1b[31mb", "c\x07d"}
+	got := PlainLines(in)
+	if len(got) != 2 || got[0] != PlainLine(in[0]) || got[1] != PlainLine(in[1]) || got[0] != "ab" || got[1] != "cd" {
+		t.Fatalf("PlainLines(%q) = %q", in, got)
+	}
+	if in[0] != "a\x1b[31mb" {
+		t.Fatalf("元の slice を書き換えた: %q", in)
+	}
+	if PlainLines(nil) != nil || PlainLines([]string{}) != nil {
+		t.Fatal("空なら nil を返さない")
+	}
+}

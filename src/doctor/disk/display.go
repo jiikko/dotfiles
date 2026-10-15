@@ -45,8 +45,8 @@ func SanitizeForDisplay(rep Report) Report {
 func SanitizeResultForDisplay(r Result) Result {
 	r.Entry = SanitizeEntryForDisplay(r.Entry)
 	r.Reason = termsafe.PlainLine(r.Reason)
-	r.Failures = sanitizeLines(r.Failures)
-	r.Contents = sanitizeLines(r.Contents)
+	r.Failures = termsafe.PlainLines(r.Failures)
+	r.Contents = termsafe.PlainLines(r.Contents)
 
 	kept := make([]Item, 0, len(r.Items))
 	dropped := 0
@@ -98,17 +98,6 @@ func SanitizeEntryForDisplay(e Entry) Entry {
 	return e
 }
 
-func sanitizeLines(ss []string) []string {
-	if len(ss) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(ss))
-	for _, s := range ss {
-		out = append(out, termsafe.PlainLine(s))
-	}
-	return out
-}
-
 // SanitizeDeleteReportForDisplay は削除の結果 (確認パネル・結果パネル・`y` のコピー) を
 // 無害化する。対象パスと OS のエラー文、`cli:` で起こしたコマンドの stdout / stderr が乗る。
 //
@@ -151,7 +140,7 @@ func SanitizeDeleteReportForDisplay(rep DeleteReport) DeleteReport {
 // commandLogLines) が 1 行ずつ扱う。
 func SanitizeCommandRecordForDisplay(c CommandRecord) CommandRecord {
 	c.Name = termsafe.PlainLine(c.Name)
-	c.Args = sanitizeLines(c.Args)
+	c.Args = termsafe.PlainLines(c.Args)
 	c.Stdout = termsafe.PlainBlock(c.Stdout)
 	c.Stderr = termsafe.PlainBlock(c.Stderr)
 	c.Err = termsafe.PlainLine(c.Err)

@@ -20,12 +20,12 @@ func SanitizeForDisplay(rep Report) Report {
 	out.Unavailable = termsafe.PlainLine(rep.Unavailable)
 	out.SystemPrune = termsafe.PlainLine(rep.SystemPrune)
 	out.SystemPruneNote = termsafe.PlainLine(rep.SystemPruneNote)
-	out.Notes = sanitizeDisplayLines(rep.Notes)
+	out.Notes = termsafe.PlainLines(rep.Notes)
 	out.Groups = make([]Group, 0, len(rep.Groups))
 	for _, g := range rep.Groups {
 		g.Label = termsafe.PlainLine(g.Label)
 		g.Command = termsafe.PlainLine(g.Command)
-		g.Notes = sanitizeDisplayLines(g.Notes)
+		g.Notes = termsafe.PlainLines(g.Notes)
 		items := make([]Item, 0, len(g.Items))
 		for _, it := range g.Items {
 			if !termsafe.IsPlain(it.Name) || !termsafe.IsPlain(it.Command) {
@@ -50,16 +50,3 @@ func SanitizeForDisplay(rep Report) Report {
 	return out
 }
 
-// 🚨 名前は sanitize で始めること。無害化の網羅検査 (doctor/internal/displaycheck) は
-// 右辺が `termsafe.*` / `sanitize*` / `Sanitize*` を呼んでいるかで「関門を通った代入」を
-// 見分けるので、別の名前だと無害化していても「通していない」と判定される。
-func sanitizeDisplayLines(ss []string) []string {
-	if len(ss) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(ss))
-	for _, s := range ss {
-		out = append(out, termsafe.PlainLine(s))
-	}
-	return out
-}
