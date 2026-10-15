@@ -61,8 +61,20 @@
 
 ## 進捗
 
-- [ ] 747 の実装で glogx に bubbles が入る
-- [ ] 候補の洗い出し (spinner の 4 か所・入力欄・進捗の表示は済み。キーの案内の対象を数える)
+- [x] ~~747 の実装で glogx に bubbles が入る~~ → 不要になった (747 は bubbles を使わない。spinner の共有は 747 に依存しないので先に着手した)
+- [x] 候補の判断: spinner だけ寄せる。help・textinput・progress・list 等は寄せない (理由は「方針の変更」節と候補の表)。キーの案内の数え上げは寄せないと決めたので不要
+- [x] 1 段目 (2026-10-15): `tuikit/spinner` (`Frame(i)` / `At(時刻, 1 コマの長さ)` / `Len`。状態も tea.Cmd も持たない) を足し、glogx・treefiler・pro-con が使う。
+  入口は tuikit の README の表・CLAUDE.md の地図・`docs/glogx-ui-guide.md` §9・`src/PACKAGES.md`
+  - commit: 「refactor(tuikit): spinner の字形とコマの選び方を tuikit/spinner に置き…」/「…字形を文字列で固定し、At の時刻の範囲を書く」/「refactor(glogx): RenderCached の引数名…」
+  - 変異 (`mutate-verify`。全部想定どおり red): 負の i の回しを外す → TestFrameWraps / At の単位を UnixMilli と混ぜる → TestAtSelectsByTime /
+    step≤0 の guard を外す → TestAtNonPositiveStep / コマの入れ替え → TestFramesMatchLiteral
+  - 敵対的レビュー (opus・read-only) 2 周: 1 周目 P2 テストの期待値を frames 自身から引いていて入れ替え・差し替えが緑 → 文字列リテラルで固定 /
+    P3 At は UnixNano なので 1678〜2262 年の外ではコマに意味が無い → doc に書いた (本番は time.Now で届かない) / P3 glogx の引数 `spinner` が package を隠す → glyph に改名 /
+    §9 が未対応の restartable を挙げていた → 外した / P3 負の時刻・frame で旧式は panic、新式は回す → 改善側なので受容。
+    2 周目 P1・P2 なし、P3 RenderCached の引数も隠していた → 改名 (他ファイルの `spinner string` は package を import していないので隠しにならない)。
+    2 周目の変異 8 本は 7 本 red、緑の 1 本 (At の `% Len` を外す) は Frame が回すので等価
+  - make test rc=0 (rebase 後、push する木で)
+- [ ] 2 段目: restartable の tuikit の固定版を 1 段目を push した版へ上げ、`internal/ui/view.go` の `spinnerFrames` を `spinner.Frame` に寄せる。§9 の「使っている所」に restartable を足す
 
 ## 反証レビュー
 
