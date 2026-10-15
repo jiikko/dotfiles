@@ -9,10 +9,10 @@ pro-con は同じ情報 (経過時間・役の進み具合・カードの状態�
 
 ## 詳細 (2026-10-15 に本文で確認)
 
-- 経過時間の整形が 4 つある:
+- 経過時間の整形が 4 つある (人に見せるのは上の 2 つ):
   - `pro-con/cardview.go` の `fmtAge` (CLI): `"%d 秒"` / `"%d 分"` / `"%d 時間"` / `"%d 日"` (空白あり・日まで)
   - `pro-con/ui/view.go` の `fmtDur` (画面): 空白なし (`"%d秒"` / `"%d分"` …)・日の単位が無い (時間 + 分で出す)
-  - `pro-con/dispatcher/btw.go` の `ago` / `pro-con/fake/fake.go` の `fmtAgo`
+  - (そろえる対象から外す) `pro-con/dispatcher/btw.go` の `ago` は LLM へのプロンプトの文、`pro-con/fake/fake.go` の `fmtAgo` は fake 専用で、どちらも人の見る画面ではない
 - CLI と画面で同じ行を別々に組んでいる:
   - 「▸ 最後の道具 (N前)」: `cardview.go` の `(dispatcherView).roleStep` と `ui/view.go` の `(*Model).roleProgress`
   - 「状態: 担当: repo:」の行: `cardview.go` と `ui/drawer.go`
@@ -28,3 +28,7 @@ pro-con は同じ情報 (経過時間・役の進み具合・カードの状態�
 
 - `pro-con/cardview.go` / `pro-con/ui/view.go` / `pro-con/ui/drawer.go` / `pro-con/dispatcher/btw.go` / `pro-con/fake/fake.go` / `pro-con/card/`
 - 調査の全体: 773
+
+## 反証レビュー
+
+- 2026-10-15 (read-only のサブエージェント 1 体): P3 `ago` (プロンプト) と `fmtAgo` (fake) は画面の書式ではない → そろえる対象から外した

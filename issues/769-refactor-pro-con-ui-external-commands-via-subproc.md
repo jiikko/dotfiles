@@ -19,9 +19,16 @@ pro-con の UI は外部コマンドを `subproc` を通さずに起こしてい
 
 - `pbcopy` を `subproc/clipboard.Copy` に置き換える。tmux のバッファへも積むのが pro-con で望ましいか (glogx と同じでよいか) を先に決める
 - `openWithSystem` を subproc の起動 (上限と WaitDelay 付き) に置き換える
-- 時間の上限が変わる (2 秒 → 5 秒) ので、UI のどの経路で待つかを確かめる (同期で待つなら画面が止まる時間が延びる)
+- 🚨 待つ時間が大きく延びる: tmux の中では `clipboard.Copy` が pbcopy の前に `tmux load-buffer -w` を同期で走らせ、それぞれに上限 5 秒がある
+  (最悪 10 秒 + WaitDelay 2 秒 × 2。今は 2 秒 + 1 秒)。pro-con はふつう tmux の中で動き、`m.copy` は同期で呼ばれる (`ui/clipboard.go`・`issues.go`・`settingslog.go`)。
+  画面が止まらない形 (tea.Cmd で裏に回す) にするかを先に決める
+- tmux の paste buffer を上書きするようになる (人に見える変化)
 
 ## 関連ファイル
 
 - `pro-con/ui/clipboard.go` / `pro-con/ui/attachments.go` / `src/subproc/clipboard/` / `treefiler/filer/open.go`
 - issue 718 (glogx・treefiler の寄せ) / 調査の全体: 773
+
+## 反証レビュー
+
+- 2026-10-15 (read-only のサブエージェント 1 体): P2「2 秒 → 5 秒」は過小 (tmux の load-buffer も同期で 5 秒) → 書き直した

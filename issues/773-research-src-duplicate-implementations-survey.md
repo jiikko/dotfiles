@@ -30,10 +30,10 @@ src の 22 module の非テストの `.go` を観点ごとに grep した。観�
 
 ## 切り出した issue (価値の高い順)
 
-- 767: pro-con の一時ファイル + rename の 5 か所を atomicfile に寄せる (固定名 `.tmp` の 2 か所は取り合いが起きうる)
+- 767: pro-con の一時ファイル + rename の 5 か所を atomicfile に寄せる (固定名の 2 か所は、失敗したときに一時ファイルが残る)
 - 768: pro-con の presence と relay の「flock した印」の作り方と掃除を 1 か所にする
 - 769: pro-con の UI の pbcopy と open を subproc に寄せる (issue 718 の取りこぼし)
-- 770: Go が手で写しているテーマの色番号を、theme/colors.yml との一致の検査に入れる
+- 770: pro-con が手で写しているテーマの色番号を、theme/colors.yml との一致の検査に入れる (glogx は既に `TestFrameBorderMatchesThemeYML` で守られている)
 - 771: doctor の 4 package の行の無害化を termsafe.PlainLines に 1 つにする
 - 772: pro-con の経過時間の書式と、CLI と画面で別々に組んでいる同じ行をそろえる (見た目の決定が要る)
 
@@ -46,6 +46,7 @@ src の 22 module の非テストの `.go` を観点ごとに grep した。観�
   - 止め方の方針 (TERM → KILL・lease) は意図的に違う
   - 共有する価値があるのは「pgid が 1 以下なら撃たない」(`kill(-1)` は全プロセス宛て) の守りだけ。これを持つのは lockman と pro-con の readPgid の経路だけで、
     restartable は `pid <= 0` しか弾かない。ただし restartable が渡すのは `cmd.Process.Pid` なので、1 が来ることは無い見込み (未確認)。
+  - `proctree` の `Target.send` / `Stop` も `Root <= 1` を弾かない。今の呼び出し元 (`runtimeout/main.go`・zundamon の `show_mermaid.go`) は `cmd.Process.Pid` を渡すので害は無いが、export された型なので守りを持たせる価値はある
   - restartable は下の却下の理由で寄せられない
 - **テストの「条件を待つ」helper が約 11 個ある**
   - 場所:
@@ -65,7 +66,7 @@ src の 22 module の非テストの `.go` を観点ごとに grep した。観�
 - **ruleguard の規則の写しに、ずれの検査が無い**
   - 写し: `padViaPadSpaces` が 3 module (glogx は Report の文言だけ違う)、`execViaForeground` が 2 module
   - dsl を解決できないので、写すこと自体は避けられない
-  - ずれを検出する検査が無い (tests / scripts / Makefile に gorules の参照が 0 件。未確認の粗い数え)。`_claude/rules/claude-md-maintenance.md` の「コピーするなら検出を置く」に当たる
+  - ずれを検出する検査が無い (glogx と ratelimit の Makefile の `vet-gorules` は型の検査だけで、写しどうしを比べない)。`_claude/rules/claude-md-maintenance.md` の「コピーするなら検出を置く」に当たる
 - **rune の境界でバイト数を切るループ**
   - `doctor/svc/restore.go` の `cleanText` と `glogx/doctor_cache.go` の `cutRunes` が同じ 4 行
 
@@ -95,4 +96,7 @@ src の 22 module の非テストの `.go` を観点ごとに grep した。観�
   - 770 の生成を畳んだ注記と、検査の対象
   - 771 の 4 関数
   - 772 の `fmtAge` / `fmtDur` の書式
-- [ ] 反証レビュー
+- [x] 反証レビュー (2026-10-15・read-only のサブエージェント 1 体): P1 1 件 (770 の glogx は既に守られていた) / P2 4 件 (767 の取り合いの前提・767 と 768 の重なり・769 の待ち時間・770 の数え漏れと意味のずれ) /
+  P3 6 件 (767 の 6 か所目・768 の差・771 の未確認・772 の対象・773 の ruleguard の数え・proctree の守り)。全部を各 issue に反映した。
+  却下リストを覆す指摘は無かった (`doctor/svc/restore.go` の `cleanTexts` と pro-con/monitor の `fileList` は 771 に似るが切り詰め・連結をするので別物)
+- 残課題は 767〜772 の着手だけ。この issue は記録なので done へ送る
