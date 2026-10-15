@@ -10,6 +10,14 @@
 (747 の「決定 (2026-10-15 ユーザー回答)」節)。依存が入るなら、ほかの TUI が自前で書いている同じ働きの部品を bubbles へ寄せられないかを調べ、
 寄せられるものは寄せる。bubbles は charm が出している bubbletea 用の出来合いの部品集 (spinner / progress / help + key / textinput / list / viewport / table 等)。
 
+## 方針の変更 (2026-10-15 ユーザー回答)
+
+- 747 の lanmac も bubbles を使わないことになった (747 の「決定 (2026-10-15)」)。この issue の前提「glogx に bubbles が入るなら、ほかの TUI も寄せる」は崩れた
+- 下の調査で、bubbles に寄せて得をする部品はほぼ無いと分かった (spinner は「時刻からコマを選ぶ」性質を捨てる・help は `q` を黙って落とす・入力欄は `lineedit` が正本・
+  進捗バーは自前で描いている画面が無い)。**残る価値は spinner の字形の重複 (4 か所) を tuikit に寄せること**。この issue はそこに絞る:
+  tuikit に字形と「時刻からコマを選ぶ関数」を置き、glogx・treefiler・restartable・pro-con と、新しく作る lanmac がそれを使う (各画面の tick の回し方はそのまま)
+- restartable は tuikit を擬似バージョンで固定しているので、tuikit の変更は restartable の go.mod の版を上げるまで届かない (`src/tuikit/CLAUDE.md`)
+
 ## 現状 (2026-10-15・grep で読んだだけ)
 
 - **spinner**: 同じ字形の並び (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`) が 4 か所に重複している

@@ -366,10 +366,16 @@ I/F を選ぶ手順で `Enter` を押すと、I/F の一覧の板が出る (こ�
 - **glogx の `L` で開く。glogx の全画面の板として埋め込む** (treefiler の `F` と同じ形。横断キーの表 `crossTarget` に `L` を足す)。
   別のコマンドを `foreground.Exec` で起こす案 (glogx に依存を入れない) は採らなかった。🚨 これは 2026-10-13 の決定「単体のコマンド。glogx の画面にはしない」を
   変える。画面の部品は `src/lanmac/` のパッケージに置き、単体のコマンド (`bin/lanmac`) と glogx の板の両方から使う (treefiler の `filer` パッケージと同じ分担)。
-  結果として glogx が lipgloss v2 / bubbles v2 に依存する → `docs/glogx-bubbletea-v2.md` の「bubbles を採らない」(glogx の固まった独自挙動が理由) を、
-  新しい板に限って採ると書き換える。x/ansi が v0.11.8 に上がるので、tuikit を使う module の版を `tests/scripts/test_tuikit_consumers_aligned.sh` に合わせてそろえる。
+  結果として glogx が lipgloss v2 に依存する (bubbles は下の決定で使わない)。x/ansi が v0.11.8 に上がるので、tuikit を使う module の版を `tests/scripts/test_tuikit_consumers_aligned.sh` に合わせてそろえる。
   glogx の `L` は今どこにも使われていない (2026-10-15 に grep で確認)。ガイド §2 の横断キーの表 (`i` `s` `R` `D` `F` `U`) に `L` を足す
   glogx に bubbles が入るので、ほかの TUI にも bubbles を取り込めるところを洗い出す話は 766 に切り出した (ユーザー依頼 2026-10-15)
+- **bubbles は使わない。lipgloss + tuikit で組む** (2026-10-15 ユーザー回答「lanmac では bubbles を使わないで、既存実装を使えば?」):
+  見本で bubbles が担った部品は代わりがある。spinner = 字形を回すだけ (同じ字形が既に 4 か所に重複しているので tuikit に 1 つ置く。766) /
+  進捗バー = 色は lipgloss の `Blend1D`、伸びる動きは tuikit の `anim` / キーの案内 = bubbles の `help` は幅が足りないと `q` を黙って落とし
+  ガイド §5 と合わない (766 の反証レビューで `shouldAddItem` を確認) ので各画面で組む / 入力欄 = 元から tuikit の `lineedit` + `caret`。
+  見本の「モダン」さの大半は lipgloss (角丸の枠・面の塗り・グラデーション・Compositor・リンク・色落とし) なので lipgloss は採る (推奨として伝えた。
+  lipgloss も外すなら自前描画の見本 `tmp/747-mock` のやり方に戻る)。→ **glogx に入る依存は lipgloss v2 だけ**になり、`docs/glogx-bubbletea-v2.md` の
+  「bubbles を採らない」は書き換えない (lipgloss を採る旨だけ足す)
 - **管理対象の印 = Bonjour の広告 (案 A)**
 - **名前 = `lanmac`**
 
