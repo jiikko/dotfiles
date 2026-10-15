@@ -259,7 +259,7 @@ hosts を管理する道具ではなく、**手元の Mac 同士を ssh と画�
   - 設定の画面 (`,` で開閉。macOS の ⌘, に合わせた字。ガイドの語彙に無く glogx でも空き。pro-con は `s` が設定だがこの画面の `s` は ssh):
     一覧に出す IP (メイン / 内部 / その他 = `+N` の札と詳細カードの一覧) の入/切、**内部 IP の決め方** (帯で決める `192.168.100.0/24` / I/F で決める)、
     その他の IP に含める種類 (有線 / 自動割り当て / 仮想 / VPN / 不明) の入/切。`Space` で入/切 (ガイドの「Space = 印」)、`←` `→` で選ぶ、`enter` で帯を編集。
-    保存先は `~/.config/mac-lan-manager/config.toml` (見本は書かない)
+    保存先は `~/.config/glogx/mac-lan-manager/config.toml` (見本は書かない)
   - 候補は `ifconfig` の I/F 全部から集めて種類を付ける (utun = VPN / bridge・vmnet・vnic = 仮想 / ルーターの無いサービス = 有線 / 169.254 = 自動割り当て / 他 = 不明)
   - 内部 IP は推測しない: 帯で決めるなら帯に入る IP (無ければ「未固定」と出す)、I/F で決めるならその I/F の IP。印の広告 (TXT の `lan=`) もこの 1 つだけを載せる
   - 列を足して幅が足りないときはホスト名の列を出さない (折り返させない。ホスト名は詳細カードの見出しにある)
@@ -379,7 +379,7 @@ I/F を選ぶ手順で `Enter` を押すと、I/F の一覧の板が出る (こ�
 - ~~管理対象の印 = Bonjour の広告 (案 A)~~ → 下の「台帳」で置き換えた (2026-10-15 の同じ日に変更)
 - **管理対象かは、lanmac を実行している Mac の中の台帳 (ローカルのファイル) で決める** (2026-10-15 ユーザー回答
   「一旦は実行時の macOS 内に対象かのリストをローカルで保持をすればいい」「設定済み端末情報の共有は考えないものとする」):
-  - 一覧の作り方は変わらない: Bonjour で見えている Mac を全部並べ、そのうち台帳 (`~/.config/mac-lan-manager/hosts.toml`。`host` = `.local` のホスト名を鍵に、
+  - 一覧の作り方は変わらない: Bonjour で見えている Mac を全部並べ、そのうち台帳 (`~/.config/glogx/mac-lan-manager/hosts.toml`。`host` = `.local` のホスト名を鍵に、
     `user` / `lan` (内部 IP) / 別名を持つ) に載っているものを「管理対象」のタブに出す
   - 初期設定の最後の手順は「印の名乗りを常駐させる」から「台帳に登録する」に変わる。**常駐も sudo も要らない**。LaunchAgent / LaunchDaemon の未決は不要になった
   - 初期設定を最後まで通さなくても、一覧から台帳へ直接登録・削除できるキーを持つ (手で設定済みの Mac のため。キーは実装で決める)
@@ -397,7 +397,7 @@ I/F を選ぶ手順で `Enter` を押すと、I/F の一覧の板が出る (こ�
     1 台なら共有は要らず 1 で足りる、と説明して 1 に決まった
 - ~~名前 = `lanmac`~~ → **名前 = `mac-lan-manager`** (2026-10-15 ユーザー回答。「mac-local-network-manager みたいなワードでわかりやすく」から、
   何をする道具かが読めて打てる長さの形を選んだ。手元のコマンド・Homebrew と衝突しない。glogx から開くキーは `L` のまま)。
-  ディレクトリは `src/mac-lan-manager/`、コマンドは `bin/mac-lan-manager`、台帳は `~/.config/mac-lan-manager/hosts.toml`。
+  ディレクトリは `src/mac-lan-manager/`、コマンドは `bin/mac-lan-manager`、台帳は `~/.config/glogx/mac-lan-manager/hosts.toml`。
   本文の上の節に残る `lanmac` は見本の仮の名前 (見本の記録として残す)
 
 - **固定 IP にするのは自分自身と相手の両方** (2026-10-15 ユーザー回答「相手の ip も固定にするのは、いいか」。「この Mac」の初期設定は手元で、
@@ -408,6 +408,34 @@ I/F を選ぶ手順で `Enter` を押すと、I/F の一覧の板が出る (こ�
 - **コピーのキー**: `Y` = `ssh <user>@<IP>` / `y` = `smb://<IP>` のまま (2026-10-15 ユーザー回答)
 - **並行セッションとの調整**: 766 (spinner の字形を tuikit に寄せる) を dotfiles-63 が作業中。こちらは lipgloss v2 を入れると x/ansi が上がり、tuikit を使う
   全 module の go.mod を揃えることになるので、約 1 時間おきに進み具合を聞いて調整する (2026-10-15 ユーザー依頼)。spinner は 766 で tuikit に置かれる関数を使う
+
+## 実装の設計 (2026-10-15)
+
+置き場所は `src/mac-lan-manager/` (新しい module)。構成は treefiler に倣う: `main.go` (`bin/mac-lan-manager` の入口。端末と toast だけ) と、画面の部品の
+package (`lanmgr`。glogx の `L` の板からも取り込む。`New` / `Resize` / `HandleKey` / `Advance` / `View` / `OwnsKeys` / `TakeExec` / `TakeNotices` を出す。
+描画の tick は張らず、時間は呼び出し側が `Advance(now)` で進める)。
+
+| package | 持つもの | I/O |
+|---|---|---|
+| `netinfo` | `networksetup -listnetworkserviceorder` / `-getinfo` / `ifconfig` の出力を読む純関数 (サービス・I/F・種類) と、それを起こす薄い層 | 読むだけ |
+| `discover` | `dns-sd -B` / `-L` / `-G` の出力を読む純関数と、数秒で一度出して後から足す走査 (`dns-sd` は終わらないので上限付きで起こす) | 読むだけ |
+| `ledger` | 台帳の口 (interface: 読む / 登録する / 削除する) と、ローカルのファイルの実装 (`~/.config/glogx/mac-lan-manager/hosts.toml`。`version = 1`・ホストごとに `host` (鍵) / `user` / `lan` / `alias` / `updated_at`)。書き込みは `src/atomicfile` | 書く |
+| `setup` | 初期設定の手順 (この Mac / 相手) を「実行するコマンドの列」として組む純関数と、それを確認の後に起こす層。sudo は書く瞬間だけ | 書く (sudo・ssh) |
+| `lanmgr` | 画面 (一覧・タブ・詳細カード・初期設定・設定・確認の板)。lipgloss v2 + tuikit (`listnav` / `toast` / `confirm` / `lineedit` + `caret` / `termwidth` / 766 の `spinner`)。bubbles は使わない | — |
+
+- 設定と台帳の置き場所は `~/.config/glogx/mac-lan-manager/` (treefiler の `~/.config/glogx/treefiler.toml` と同じ並び)。`MAC_LAN_MANAGER_CONFIG_DIR` で差し替える
+  (テストが本物を触らないため)。形式は treefiler と同じく依存を足さない手書きの TOML の部分集合
+- 🚨 書き込むテスト (台帳・設定) は一時ディレクトリの外を実行前に拒否する仕掛けを同じ commit で入れる (`_claude/rules/sandbox-real-destructive-test-apis.md`)。
+  `networksetup` / `systemsetup` / `ssh` / `ssh-copy-id` を起こす層はテストで偽物に差し替え、本物は呼ばない (コマンドの列を組む純関数をテストする)
+- 外から来た文字列 (Bonjour の名前・ホスト名・I/F の名前) は入口で termsafe を通す
+- キーの語彙はガイドどおり (「枠の見た目とキー」節の表 + `c` / `,`)。全部のキーを取る層は treefiler と同じく札を付けて検査する
+
+**段取り** (各段で make test・反証レビュー・push):
+1. module の土台 (Makefile / go.mod / `.golangci.yml` / workflow / README) と `netinfo` / `discover` / `ledger` の読み書き (純関数 + テスト)
+2. `lanmgr` の画面 (一覧・詳細カード・設定・この Mac の IP のコピー) と `bin/mac-lan-manager`。相手は本物の Bonjour から
+3. `setup` (初期設定の手順の実行。この Mac → 相手)
+4. glogx の `L` の板 (766 の 1 段目の push の後。glogx の `tui.go` を 766 も触るため)
+5. x/ansi の版上げと tuikit を使う全 module の go.mod の揃え (766 の 2 段目 = restartable の tuikit の固定版上げの後)
 
 ## 今後の拡張の候補 (使ってみてから足す。今は作らない)
 
