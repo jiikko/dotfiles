@@ -19,4 +19,3 @@ func SanitizeForDisplay(rep Report) Report {
 	}
 	return out
 }
-

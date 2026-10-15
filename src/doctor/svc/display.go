@@ -66,4 +66,3 @@ func SanitizeForDisplay(rep Report) Report {
 // ことは安全性の問題ではない (実走査では Label / Domain / PlistPath は必ず埋まる)。空を
 // 落とす形にすると、識別子を持たない Report を「診断できず」へ倒してしまう。
 func displayableIdentity(s string) bool { return termsafe.IsPlain(s) }
-

@@ -136,6 +136,7 @@ func TestNoThemeColorLiterals(t *testing.T) {
 				hit = err == nil && themeNums[v]
 			case token.STRING:
 				hit = themeInString.MatchString(bl.Value)
+			default: // rune・float は見ない (冒頭の「検出しない形」)
 			}
 			if pos := fset.Position(bl.Pos()); hit && !ok[pos.Line] {
 				t.Errorf("%s:%d: テーマの色の番号 %s を直に書いている (style.go の col* を使う。色でない数なら行に theme-literal-ok: <理由> を書く)", f, pos.Line, bl.Value)

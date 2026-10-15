@@ -15,7 +15,7 @@ func TestCreateHoldsLockAndWritesBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if len(id) != 8 || p != filepath.Join(d, id+".lock") {
 		t.Fatalf("id=%q p=%q", id, p)
 	}
@@ -26,7 +26,7 @@ func TestCreateHoldsLockAndWritesBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer g.Close()
+	defer func() { _ = g.Close() }()
 	if err := syscall.Flock(int(g.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err == nil {
 		t.Fatal("印の flock が持たれていない (ほかの画面から「落ちた画面の残り」に見える)")
 	}
@@ -103,7 +103,7 @@ func TestCreateLocksAndWritesBeforeRename(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		defer g.Close()
+		defer func() { _ = g.Close() }()
 		if err := syscall.Flock(int(g.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err == nil {
 			t.Error("rename の前に flock を持っていない")
 		}
@@ -113,7 +113,7 @@ func TestCreateLocksAndWritesBeforeRename(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if !checked {
 		t.Fatal("差し込み口が呼ばれていない")
 	}
