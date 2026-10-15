@@ -5,14 +5,12 @@ package ui
 // 回すカードがある間だけ spinInterval で描き直し、無くなったら止める (演出の frame と同じく、アイドルで CPU を使わない)。
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"pro-con/card"
 )
-
-// spinFrames は回る印の 1 コマずつ。点字は端末で幅が揺れない 1 桁 (github.com/jiikko/dotfiles/src/tuikit/termwidth の注記)。
-var spinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // spinInterval は 1 コマの長さ。frame (33ms) より遅くてよい (滑らかさより、回っていることが分かれば足りる)。
 const spinInterval = 100 * time.Millisecond
@@ -48,7 +46,7 @@ func waiting(c card.Card) bool {
 
 // spinFrame は今のコマ (時刻から決める。描き直しの回数に依らず同じ時刻なら同じコマ)。
 func (m *Model) spinFrame() string {
-	return spinFrames[int(m.now().UnixMilli()/spinInterval.Milliseconds())%len(spinFrames)]
+	return spinner.At(m.now(), spinInterval)
 }
 
 func (m *Model) anyProcessing() bool {

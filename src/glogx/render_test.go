@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"strings"
 	"testing"
 )
@@ -500,7 +501,7 @@ func TestStatusGlyphWidthIsUniform(t *testing.T) {
 	states := []CIState{StateSuccess, StateFailure, StatePending, StateNeutral, StateNone, StateUnpushed, StateUnknown, StateLoading}
 	for _, colored := range []bool{false, true} {
 		for _, st := range states {
-			if w := dispWidth(StatusGlyph(st, colored, spinnerFrames[0])); w != 2 {
+			if w := dispWidth(StatusGlyph(st, colored, spinner.Frame(0))); w != 2 {
 				t.Errorf("StatusGlyph(%s, colored=%v) の幅 = %d; want 2", st, colored, w)
 			}
 		}

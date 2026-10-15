@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"slices"
 	"strings"
@@ -50,9 +51,6 @@ const (
 	ansiFrameBorder = "\x1b[38;5;201m"
 )
 
-// spinnerFrames は取得中表示のフレーム。
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
 // 幅計算は width.go の dispWidth (= ansi.StringWidth) に一本化している。ambiguous
 // 文字は locale 非依存で幅 1、絵文字は端末/描画エンジンと一致する幅で数える。
 
@@ -84,11 +82,11 @@ func StatusGlyph(state CIState, colored bool, spinner string) string {
 	}
 }
 
-func spinnerOr(spinner string) string {
-	if spinner == "" {
-		return spinnerFrames[0]
+func spinnerOr(glyph string) string {
+	if glyph == "" {
+		return spinner.Frame(0)
 	}
-	return spinner
+	return glyph
 }
 
 func stateFor(statuses map[string]CIState, sha string) CIState {

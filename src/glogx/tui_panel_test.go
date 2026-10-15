@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"io"
 	"os/exec"
 	"slices"
@@ -147,7 +148,7 @@ func TestBrowsePanelPendingJobSpins(t *testing.T) {
 	m.details[m.commits[0].SHA] = []CheckDetail{{Name: "queued-job", State: StatePending}}
 	m.openPanel()
 	m.frame = 3
-	want := spinnerFrames[3] + "  queued-job"
+	want := spinner.Frame(3) + "  queued-job"
 	if view := m.View().Content; !strings.Contains(view, want) {
 		t.Errorf("パネルに %q が出ていない:\n%s", want, view)
 	}

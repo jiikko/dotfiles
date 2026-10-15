@@ -13,6 +13,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
@@ -1419,12 +1420,8 @@ func decodeRune(s string) (rune, int) { return utf8.DecodeRuneInString(s) }
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
 // spinnerFrame は 80ms ごとに進む点字のスピナー (spec §2.2)。
-func spinnerFrame(now time.Time) string {
-	return spinnerFrames[int(now.UnixMilli()/80)%len(spinnerFrames)]
-}
+func spinnerFrame(now time.Time) string { return spinner.At(now, 80*time.Millisecond) }
 
 // searchBar は検索中の最下行 (spec §3.4 の / 検索行)。
 func (m *Model) searchBar(c *canvas) {

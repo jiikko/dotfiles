@@ -20,6 +20,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `widthenv` | 幅モデルが支持しない環境変数 (`RUNEWIDTH_EASTASIAN`) の検出 | 起動時の警告・テストのガード |
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …)・256 色の番号の RGB (`XtermRGB`。色を混ぜる・暗くする計算用) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
+| `spinner` | 回る印 (点字 10 コマ・各 1 桁) の字形: `Frame(i)` (i 番目。負や Len 超えも回す) / `At(時刻, 1 コマの長さ)` (時刻から選ぶ。描き直しの回数に依らない) / `Len`。状態も tea.Cmd も持たない | 処理中の印を画面ごとに定義しない。いつ tick するか・いつ止めるかは各画面が持つ (回すものがある間だけ回す) |
 | `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `Panel` (落ち影つきの板) と `PanelContentWidth` (Panel に渡す幅から中身の幅を出す) / `Overlay` / `OverlayCentered` / `OverlayRight` (右端に寄せて重ねる) / `PadTo` | 画面の合成 |
 | `confirm` | y/N 確認ダイアログ: `Dialog` (本文 + 空行 + 案内の板) / `Box` (幅 44 で頭打ちの中央の板) / `WideDialog` (幅の上限を `WideMaxWidth` = 64 にした `Dialog`。揃えた行が 44 では切れる確認用) / `IsYes` (y・Y・Enter) / `IsYesStrict` (y・Enter) / 案内の定型 `HintYesNo` / `HintYesOther` / `FitHint(案内, 幅)` (`Box` に案内の行を自分で並べるとき、`Dialog` と同じ規則で狭い板では短い形に替える) | 破壊的操作の確認を毎回組まない。語彙の正本は `docs/glogx-ui-guide.md` §4 |
 | `lineedit` | 1 行の入力欄 (カーソル + readline の編集キー: `ctrl+h` / `ctrl+w` / `ctrl+u` / `ctrl+k` / `ctrl+a` / `ctrl+e` …)。移動と削除は書記素単位 (肌色・ZWJ・国旗・結合文字を割らない)。`Window(幅)` は欄に出す文字列とキャレットの桁 (長ければキャレットが欄に収まるよう前を切る。全角は 2)。保存したカーソルは `SetCursor` で戻す | 入力欄を毎回書かない。キーの語彙の正本は `docs/glogx-ui-guide.md` §7 |

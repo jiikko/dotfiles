@@ -11,6 +11,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 	"maps"
 	"math"
@@ -3603,7 +3604,7 @@ func (m *browseModel) hasRunningJob(sha string) bool {
 }
 
 func (m *browseModel) spinner() string {
-	return spinnerFrames[m.frame%len(spinnerFrames)]
+	return spinner.Frame(m.frame)
 }
 
 // renderOpts はリスト部分の描画パラメータ。job 一覧はパネルで重ねるため、

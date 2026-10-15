@@ -87,6 +87,7 @@
 - `src/tuikit/listnav` (`github.com/jiikko/dotfiles/src/tuikit/listnav`) — Package listnav は一覧と pager の移動 (キーの語彙・カーソル・スクロール) の部品。
 - `src/tuikit/markdown` (`github.com/jiikko/dotfiles/src/tuikit/markdown`) — Package markdown は markdown の本文を width 桁の端末行へ整形する (見出し・箇条書き・表・ フェンスコードの chroma ハイライト)。
 - `src/tuikit/sgr` (`github.com/jiikko/dotfiles/src/tuikit/sgr`) — Package sgr は端末の基本 SGR (Select Graphic Rendition) シーケンスを 1 箇所に置く。
+- `src/tuikit/spinner` (`github.com/jiikko/dotfiles/src/tuikit/spinner`) — Package spinner は回る印 (点字の 10 コマ) の字形と、何番目のコマを出すかの選び方を持つ。
 - `src/tuikit/termwidth` (`github.com/jiikko/dotfiles/src/tuikit/termwidth`) — Package termwidth は端末表示幅の単一情報源。
 - `src/tuikit/toast` (`github.com/jiikko/dotfiles/src/tuikit/toast`) — Package toast は右下に数秒だけ出す通知 (トースト) のスタック。
 - `src/tuikit/widthenv` (`github.com/jiikko/dotfiles/src/tuikit/widthenv`) — Package widthenv は「tuikit の幅モデルが支持しない env」の検出とその文言を 1 箇所に集める。

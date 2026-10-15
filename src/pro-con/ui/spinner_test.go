@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"strings"
 	"testing"
 
@@ -24,8 +25,8 @@ func spinModel(t *testing.T) (*Model, *clock) {
 }
 
 func hasSpin(s string) bool {
-	for _, f := range spinFrames {
-		if strings.Contains(s, f) {
+	for i := range spinner.Len {
+		if strings.Contains(s, spinner.Frame(i)) {
 			return true
 		}
 	}

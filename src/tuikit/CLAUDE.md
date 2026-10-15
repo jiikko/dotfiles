@@ -10,6 +10,7 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 - `widthenv` — 幅モデルが支持しない環境変数の検出
 - `sgr` — 基本の ANSI 色・装飾
 - `anim` — 開閉演出 (`Transition`)・進捗 (`Elapsed`)・数行スクロールの glide 演出
+- `spinner` — 回る印の字形とコマの選び方 (`Frame` / `At`。tick の回し方は各画面)
 - `layout` — 画面合成 (`ComposeDrawer` / `Panel` / `Overlay` / `Scrollbar` 等)
 - `confirm` — y/N 確認ダイアログ
 - `lineedit` — 1 行入力欄 (readline 風編集キー)
