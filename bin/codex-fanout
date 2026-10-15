@@ -106,7 +106,8 @@ fi
 mkdir -p "$outdir" || die "outdir を作れない: $outdir"
 [ -z "$(ls -A "$outdir")" ] || die "outdir が空でない (使い回し禁止 — 前回世代の残骸が結果に混ざる): $outdir"
 # 実体のディレクトリ ($0 が symlink でも辿る)。bin/lib の helper・merger プロンプトの既定・runtimeout の解決に使う
-script_dir="$(dirname "$(readlink -f "$0")")"
+script_dir="$(readlink -f "$0")" && [ -n "$script_dir" ] || die "自分の実体を解決できない: $0"
+script_dir="$(dirname "$script_dir")"
 # shellcheck source=bin/lib/uint.sh
 . "$script_dir/lib/uint.sh" || die "$script_dir/lib/uint.sh を読めない"
 

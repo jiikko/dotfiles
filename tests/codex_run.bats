@@ -109,6 +109,12 @@ EOS
   [ "$status" -ne 0 ]
 }
 
+@test "-t の桁あふれは codex-run 自身が拒む (issue 775)" {
+  run "$RUN" -t 1234567890 -o "$WORK/out" review "$WORK/prompt.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"-t の桁数が大きすぎる"* ]]
+}
+
 @test "outdir 未指定なら cwd 配下の tmp/codex-run に出す (-C の影響を受けない)" {
   mkdir -p "$WORK/tree"
   run "$RUN" -C "$WORK/tree" -l adv review "$WORK/prompt.md"

@@ -160,6 +160,24 @@ else
 fi
 unset CLAUDE_BIN_VERSION_TIMEOUT
 
+# 上限の値の検査 (bin/lib/uint.sh。issue 775): 数字でない・全角・8 桁以上・0 で始まるものは既定の 10 秒に寄せる。
+# runtimeout に渡った上限を、引数を記録する偽物で読む (lib を読み込んだ後で RUNTIMEOUT を差し替える。_claude_bin_version_ok は呼ぶときに読む)
+cat > "$WORK/rt-rec" <<EOF
+#!/bin/sh
+printf '%s\n' "\$3" > "$WORK/rt-limit"
+exit 0
+EOF
+chmod +x "$WORK/rt-rec"
+for c in "abc 10" "１２ 10" "12345678 10" "0 10" "05 10" "' ' 10" "7 7" "1234567 1234567"; do
+  eval "set -- $c"
+  rm -f "$WORK/rt-limit"
+  # shellcheck source=bin/lib/claude_bin.sh
+  (source "$LIB"; RUNTIMEOUT="$WORK/rt-rec"; CLAUDE_BIN_VERSION_TIMEOUT="$1" _claude_bin_version_ok /usr/bin/true) >/dev/null 2>&1 || true
+  got="$(cat "$WORK/rt-limit" 2>/dev/null || echo '(呼ばれない)')"
+  [ "$got" = "$2" ] || fail "CLAUDE_BIN_VERSION_TIMEOUT='$1' で runtimeout に渡った上限が $got (期待 $2)"
+done
+ok "上限の値: 数字でない・全角・8 桁・0 で始まるものは既定の 10 秒に寄せる"
+
 if [ "$fails" -gt 0 ]; then
   echo "✗ $fails 件失敗" >&2
   exit 1

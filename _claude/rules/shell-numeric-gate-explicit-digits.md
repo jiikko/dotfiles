@@ -25,7 +25,7 @@ paths:
   bash の `[ -ge ]` / `[ -lt ]` が integer expected で常に偽を返し、比較に依存する機構
   (watchdog・閾値ゲート) が**無音で無効化**される
 - 「ガードを通った値は整数比較できる」を暗黙の前提にしない。前提はガード自身が保証する
-- 実装の形は `bin/codex-fanout` の `validate_timeout` が正本 (明示列挙 + `${#v} -le 9`)
+- 実装は `bin/lib/uint.sh` の `uint_ok <値> <最大の桁数>` に寄せてある (明示列挙 + 桁の上限。bash / zsh / sh から source できる。issue 775)。新しく手で書かない
 
 ## なぜ
 

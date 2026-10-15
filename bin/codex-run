@@ -76,7 +76,8 @@ case "$mode" in
   *) die "mode は ro | review のどちらか (指定: $mode)" ;;
 esac
 # 実体のディレクトリ ($0 が symlink でも辿る。兄弟の codex-fanout と bin/lib を実体の隣から探す)
-script_dir="$(dirname "$(readlink -f "$0")")"
+script_dir="$(readlink -f "$0")" && [ -n "$script_dir" ] || die "自分の実体を解決できない: $0"
+script_dir="$(dirname "$script_dir")"
 # shellcheck source=bin/lib/uint.sh
 . "$script_dir/lib/uint.sh" || die "$script_dir/lib/uint.sh を読めない"
 if [ -n "$timeout_s" ]; then
