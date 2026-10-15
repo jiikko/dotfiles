@@ -51,5 +51,13 @@ read-only のサブエージェント 1 体 (opus) が洗い出し、main が本
   間隔 0 の既定への寄せを外す → 足したテスト (寄せる前から間隔 0 はどのテストも見ていなかった) / `__fs_file_size` を空にする → concat 1 本・av1ify 3 本 /
   hook_deny の permissionDecision を allow に → deny の 2 本 / 読み取る欄を変える → git-state-verify ほか
 - [x] 関係するテスト: tests/tmux の periodic_save・schedule_keys・snapshot_health、tests/zshrc/tmux-session の 6 本、concat・av1ify の 36 本、tests/claude の hook 5 本は rc=0
-- [ ] 敵対的レビュー
+- [x] 敵対的レビュー (opus・read-only): **P2 1 件**: `_tt_gc_stale_holds` から `${TT_HOLD_PREFIX:-__tt_hold_}` の既定を「guards.sh が必ず決める値の写し」として外したが、
+  これは破壊的な誤爆の最後の砦を兼ねていた。prefix が空 (guards.sh を読めなかった等) だと全セッションに一致し、"0" のような数字名のセッションを死んだ hold と読んで kill する
+  (隔離サーバで再現) → prefix が空なら何もしない guard を関数の頭に置き、test_tt.sh に固定した (guard を外す変異で「kill=[ =0]」が出て red)。
+  P3: HOME 未設定 + set -u で guards.sh の読み込みが落ちる → `${HOME:-}` / コメントの「既定はここだけ」に reap の例外 / **前からの不具合**: 間隔が "08" だと 8 進として読まれ、
+  算術が壊れて周期保存が待たずに回った → 10 進に直してテストを足した / `hook_read_bash_command` は jq が値を出した後に失敗する入力 (JSON の後ろにゴミ) を素通りにする →
+  Claude Code は単一の JSON を送るので発火経路が無く、deny 系は「誤 deny させない」fail-open なので受容。
+  壊せなかった: TT_TRIGGER_LOG の zsh への漏れ (export されない)・名前の衝突・tt_run_resurrect_save の rc の意味・保存先の解決 (空白・~・$HOME・$HOSTNAME で旧と一致)・
+  symlink 越しの hook の起動・__fs_file_size の空の扱い・寄せないものの判断。
+  テストの穴 (前から): schedule_keys の刈り込みと snapshot_health の間隔 0 はテストが見ていない
 - [ ] make test
