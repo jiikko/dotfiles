@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"pro-con/dispatcher"
+	"pro-con/internal/testwait"
 	"pro-con/monitor"
 	"pro-con/store"
 	supervisor "process_supervisor"
@@ -51,7 +52,7 @@ func TestMonitorCrashLoopStops(t *testing.T) {
 	for script, why := range map[string]string{"exit 1": "exit status 1", "exit 0": "rc=0"} {
 		r := &supRig{}
 		stop := superviseMonitor(context.Background(), r.sup(script))
-		waitUntil(t, "起こし直すのをやめない", func() bool {
+		testwait.Until(t, "起こし直すのをやめない", func() bool {
 			_, said := r.snapshot()
 			return len(said) > 0 && strings.Contains(said[len(said)-1], "起こし直さない")
 		})
@@ -67,7 +68,7 @@ func TestMonitorCrashLoopStops(t *testing.T) {
 func TestMonitorHeldIsNotCounted(t *testing.T) {
 	r := &supRig{}
 	stop := superviseMonitor(context.Background(), r.sup("exit 3"))
-	waitUntil(t, "起こし直さない", func() bool { n, _ := r.snapshot(); return n >= 6 })
+	testwait.Until(t, "起こし直さない", func() bool { n, _ := r.snapshot(); return n >= 6 })
 	stop()
 	_, said := r.snapshot()
 	if len(said) != 1 || !strings.Contains(said[0], "前の見張りが lock を持っている") {
@@ -89,7 +90,7 @@ func TestMonitorStartFailureIsReported(t *testing.T) {
 	s.Command = func() (*exec.Cmd, error) { return exec.Command("/nonexistent/pro-con"), nil }
 	stop := superviseMonitor(context.Background(), s)
 	defer stop()
-	waitUntil(t, "起こせないと書かない", func() bool { _, said := r.snapshot(); return len(said) == 1 })
+	testwait.Until(t, "起こせないと書かない", func() bool { _, said := r.snapshot(); return len(said) == 1 })
 	time.Sleep(20 * time.Millisecond) // sleep-ok: negative: 起こせないと書くのが 1 度だけで増えないことの確認 (成立条件が無い)
 	if _, said := r.snapshot(); len(said) != 1 || !strings.Contains(said[0], "見張りを起こせない") {
 		t.Fatalf("起こせないのを 1 度だけ書かない: %v", said)
@@ -144,13 +145,13 @@ func TestWatchLogsSameErrorOnce(t *testing.T) {
 	var out, errOut syncBuffer
 	done := make(chan int)
 	go func() { done <- watch(ctx, m, time.Millisecond, false, &out, &errOut) }()
-	waitUntil(t, "失敗を書かない", func() bool { return strings.Contains(errOut.String(), "読めない") })
+	testwait.Until(t, "失敗を書かない", func() bool { return strings.Contains(errOut.String(), "読めない") })
 	// sleep-ok: window: 1ms 間隔の見張りを何周も失敗させる入力 (失敗を 1 度しか書かないことを見る)
 	time.Sleep(30 * time.Millisecond) // 何周も失敗させる
 	if err := os.Remove(broken); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "直ったと書かない", func() bool { return strings.Contains(errOut.String(), "前の失敗は直った") })
+	testwait.Until(t, "直ったと書かない", func() bool { return strings.Contains(errOut.String(), "前の失敗は直った") })
 	cancel()
 	<-done
 	if n := strings.Count(errOut.String(), "読めない"); n != 1 {

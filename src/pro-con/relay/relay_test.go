@@ -11,18 +11,8 @@ import (
 	"time"
 
 	"pro-con/flockmark"
+	"pro-con/internal/testwait"
 )
-
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for range 500 { // 10 秒
-		if cond() {
-			return
-		}
-		time.Sleep(20 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitFor)
-	}
-	t.Fatal(what)
-}
 
 func fastInterval(t *testing.T) {
 	oldMin, oldBusy := minInterval, busyInterval
@@ -67,7 +57,7 @@ func TestPutDoesNotWaitForStuckWrite(t *testing.T) {
 	}
 	unstick()
 	path := filepath.Join(w.dir, w.ID()+".frame")
-	waitFor(t, "詰まりが解けても最後の 1 枚が書かれない", func() bool {
+	testwait.Until(t, "詰まりが解けても最後の 1 枚が書かれない", func() bool {
 		f, err := Read(path)
 		return err == nil && f.ANSI == "frame-1000"
 	})
@@ -86,7 +76,7 @@ func TestFrameFileAndClose(t *testing.T) {
 	}
 	w.Put(Frame{ANSI: "\x1b[38;5;196m赤い\x1b[0m 文字", View: true, Width: 80, Height: 24})
 	path := filepath.Join(dir, Dir, w.ID()+".frame")
-	waitFor(t, "1 枚目が書かれない", func() bool { _, err := os.Stat(path); return err == nil })
+	testwait.Until(t, "1 枚目が書かれない", func() bool { _, err := os.Stat(path); return err == nil })
 	f, err := Read(path)
 	if err != nil || f.Plain != "赤い 文字" || !f.View || f.ID != w.ID() || f.PID != os.Getpid() {
 		t.Fatalf("1 枚: %+v %v", f, err)
@@ -121,7 +111,7 @@ func TestLeftoversAreToldApartAndSweptByNextOpen(t *testing.T) {
 	}
 	defer w.Close()
 	w.Put(Frame{ANSI: "開いている画面"})
-	waitFor(t, "1 枚目が書かれない", func() bool { _, err := os.Stat(filepath.Join(d, w.ID()+".frame")); return err == nil })
+	testwait.Until(t, "1 枚目が書かれない", func() bool { _, err := os.Stat(filepath.Join(d, w.ID()+".frame")); return err == nil })
 	for _, n := range []string{"dead.lock", "dead.frame", "orphan.frame", "keep.txt"} { // 落ちた画面の残り (+ 印の無い 1 枚、関係ないファイル)
 		if err := os.WriteFile(filepath.Join(d, n), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
@@ -169,16 +159,16 @@ func TestSameContentIsNotRewritten(t *testing.T) {
 	w.write = func(p string, data []byte) error { writes.Add(1); return writeAtomic(p, data) }
 	t0 := time.Now()
 	w.Put(Frame{ANSI: "同じ", At: t0, State: map[string]string{"mode": "board"}})
-	waitFor(t, "1 枚目が書かれない", func() bool { return writes.Load() == 1 })
+	testwait.Until(t, "1 枚目が書かれない", func() bool { return writes.Load() == 1 })
 	taken := func() bool { w.mu.Lock(); defer w.mu.Unlock(); return w.latest == nil }
 	for i := range 5 {
 		// 1 枚ずつ書き出しの側が取るのを待つ (続けて置くと途中の枚が捨てられ、中身が同じでも書く退行が回数に出ない)
 		w.Put(Frame{ANSI: "同じ", At: t0.Add(time.Duration(i+1) * time.Second), State: map[string]string{"mode": "board"}})
-		waitFor(t, "書き出しの側が 1 枚を取らない", taken)
+		testwait.Until(t, "書き出しの側が 1 枚を取らない", taken)
 	}
 	w.Put(Frame{ANSI: "変わった", At: t0.Add(time.Minute), State: map[string]string{"mode": "board"}})
 	path := filepath.Join(dir, Dir, w.ID()+".frame")
-	waitFor(t, "変わった 1 枚が書かれない", func() bool { f, err := Read(path); return err == nil && f.ANSI == "変わった" })
+	testwait.Until(t, "変わった 1 枚が書かれない", func() bool { f, err := Read(path); return err == nil && f.ANSI == "変わった" })
 	if n := writes.Load(); n != 2 {
 		t.Fatalf("中身が同じ描き直しも書いた: 書き出し %d 回 (期待 2)", n)
 	}
@@ -202,10 +192,10 @@ func TestFailedWriteIsRetriedBySameContent(t *testing.T) {
 	}
 	taken := func() bool { w.mu.Lock(); defer w.mu.Unlock(); return w.latest == nil }
 	w.Put(Frame{ANSI: "B"})
-	waitFor(t, "1 回目の書き出しが走らない", func() bool { return calls.Load() == 1 && taken() })
+	testwait.Until(t, "1 回目の書き出しが走らない", func() bool { return calls.Load() == 1 && taken() })
 	w.Put(Frame{ANSI: "B"}) // 同じ中身の描き直し
 	path := filepath.Join(dir, Dir, w.ID()+".frame")
-	waitFor(t, "書き出しに失敗した 1 枚が、同じ中身の描き直しで書き直されない", func() bool { f, err := Read(path); return err == nil && f.ANSI == "B" })
+	testwait.Until(t, "書き出しに失敗した 1 枚が、同じ中身の描き直しで書き直されない", func() bool { f, err := Read(path); return err == nil && f.ANSI == "B" })
 }
 
 // 古い一時ファイル (作ってから rename するまでに落ちた残り) は次に開く画面が片付ける。新しいもの (作っている最中) には触らない。

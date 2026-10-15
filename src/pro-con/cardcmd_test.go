@@ -17,6 +17,7 @@ import (
 
 	"pro-con/card"
 	"pro-con/dispatcher"
+	"pro-con/internal/testwait"
 	"pro-con/store"
 )
 
@@ -381,7 +382,7 @@ func runApplied(t *testing.T, dir string, args ...string) (rc int, out, errOut s
 		rc := runCard(args, viewEnv{dir: dir, now: time.Now}, &o, &e)
 		ch <- result{rc, o.String(), e.String()}
 	}()
-	waitUntil(t, fmt.Sprintf("%q が箱に置かない", args), func() bool { return inboxCount(dir) == 1 })
+	testwait.Until(t, fmt.Sprintf("%q が箱に置かない", args), func() bool { return inboxCount(dir) == 1 })
 	if _, err := store.Apply(dir, time.Now(), nil); err != nil {
 		t.Fatal(err)
 	}

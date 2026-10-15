@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"pro-con/card"
+	"pro-con/internal/testwait"
 	"pro-con/store"
 )
 
@@ -162,7 +163,7 @@ func TestCollectProgressInterval(t *testing.T) {
 	}
 	d.ProgressGit = ExecProgressGit{}
 	d.collectProgress(context.Background(), t0)
-	if !pollUntil(t, 10*time.Second, func() bool { return !d.progressBusy.Load() }) {
+	if !testwait.Poll(10*time.Second, func() bool { return !d.progressBusy.Load() }) {
 		t.Fatal("進捗の収集が終わらない")
 	}
 	p, errs := store.LoadDerived(dir)

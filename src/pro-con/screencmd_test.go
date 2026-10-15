@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"pro-con/dispatcher"
+	"pro-con/internal/testwait"
 	"pro-con/relay"
 )
 
@@ -50,7 +51,7 @@ func openRelay(t *testing.T, root string, fr relay.Frame) *relay.Writer {
 	fr.At = time.Now()
 	w.Put(fr)
 	path := filepath.Join(dispatcher.E2E{Root: root}.StateDir(), relay.Dir, w.ID()+".frame")
-	waitUntil(t, "中継の 1 枚が書かれない", func() bool {
+	testwait.Until(t, "中継の 1 枚が書かれない", func() bool {
 		f, err := relay.Read(path)
 		return err == nil && f.ANSI == fr.ANSI
 	})
@@ -118,10 +119,10 @@ func TestScreenFollow(t *testing.T) {
 	go func() {
 		done <- runScreen([]string{"--e2e", root, "--follow", "--timeout", "30s"}, t.TempDir(), time.Now, &o, &e)
 	}()
-	waitUntil(t, "--follow が 1 枚目を出さない", func() bool { return strings.Contains(o.String(), "1 枚目") })
+	testwait.Until(t, "--follow が 1 枚目を出さない", func() bool { return strings.Contains(o.String(), "1 枚目") })
 	w.Put(relay.Frame{ANSI: "2 枚目", At: time.Now().Add(time.Second)})
 	// 描き直した 1 枚を follow が出してから閉じる (出す前に閉じると、読み直す前にファイルが消える)
-	waitUntil(t, "--follow が描き直した 2 枚目を出さない", func() bool { return strings.Contains(o.String(), "2 枚目") })
+	testwait.Until(t, "--follow が描き直した 2 枚目を出さない", func() bool { return strings.Contains(o.String(), "2 枚目") })
 	w.Close()
 	select {
 	case rc := <-done:

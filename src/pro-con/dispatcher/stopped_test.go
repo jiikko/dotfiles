@@ -15,6 +15,7 @@ import (
 
 	"pro-con/card"
 	"pro-con/eventlog"
+	"pro-con/internal/testwait"
 )
 
 // 止まったかを見る間を短くした ExecRunner (実時間の 30 秒を待たない)。
@@ -38,7 +39,7 @@ func stopFromOutside(t *testing.T, r ExecRunner, dir, runID string) (rc, child i
 	}
 	// 前提: グループの全部が止まっている。fork したばかりの子は、グループへの SIGSTOP を取りこぼすことがある (CI の ps で実測:
 	// bash は T・sleep は S。issue 541)。全部止まるまで送り直す (前提が欠けたまま待つと、見張りは「全部 T」を見ないので止め直さず 20 秒で落ちる)
-	if !pollUntil(t, 5*time.Second, func() bool {
+	if !testwait.Poll(5*time.Second, func() bool {
 		_ = syscall.Kill(-bash, syscall.SIGSTOP)
 		return groupStopped([]int{bash})
 	}) {
@@ -148,7 +149,7 @@ func TestStoppedRunIsReportedAndQueueMoves(t *testing.T) {
 	fr.relErr = fmt.Errorf("%w (テスト)", errRunStopped)
 	fr.release <- -1
 	var notes []eventlog.Event
-	if !pollUntil(t, 5*time.Second, func() bool { return r.d.active == nil || len(r.d.active.done) != 0 }) {
+	if !testwait.Poll(5*time.Second, func() bool { return r.d.active == nil || len(r.d.active.done) != 0 }) {
 		t.Fatal("実行が 5 秒たっても終わらない")
 	}
 	notes = r.tick(t)

@@ -16,6 +16,7 @@ import (
 	"context"
 	"pro-con/backend"
 	"pro-con/fake"
+	"pro-con/internal/testwait"
 	"pro-con/live"
 	"pro-con/store"
 	"pro-con/ui"
@@ -222,7 +223,7 @@ func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
 	}
 	release()
 	// dispatcher が rc=0 で抜けたら supervisor も抜ける
-	waitUntil(t, fmt.Sprintf("dispatcher が抜けたのに supervisor (pid %s) が残った", sup), func() bool { return exec.Command("kill", "-0", sup).Run() != nil })
+	testwait.Until(t, fmt.Sprintf("dispatcher が抜けたのに supervisor (pid %s) が残った", sup), func() bool { return exec.Command("kill", "-0", sup).Run() != nil })
 	for {
 		out, err := exec.Command("ps", "-o", "ppid=,stat=", "-p", strconv.Itoa(pid)).Output()
 		if err != nil { // 居ない = 刈り取られた

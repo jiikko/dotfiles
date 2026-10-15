@@ -17,6 +17,7 @@ import (
 
 	"pro-con/card"
 	"pro-con/eventlog"
+	"pro-con/internal/testwait"
 	"pro-con/live"
 	"pro-con/store"
 	"pro-con/wake"
@@ -432,17 +433,6 @@ func (f *fakeDispatcher) drain() []string {
 	return append([]string(nil), f.lines...)
 }
 
-func waitUntil(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for range 500 { // 10 秒
-		if cond() {
-			return
-		}
-		time.Sleep(20 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitUntil)
-	}
-	t.Fatal(what)
-}
-
 // wait は dispatcher の知らせですぐ読み直す (ポーリングの間隔を 1 時間にしても待たない)。
 func TestCardWaitWakesOnNotification(t *testing.T) {
 	env := viewFixture(t)
@@ -459,7 +449,7 @@ func TestCardWaitWakesOnNotification(t *testing.T) {
 		rc, out, e := viewCmd(t, env, "wait", "C-001", "--until", "review", "--timeout", "30s")
 		ch <- result{rc, out, e}
 	}()
-	waitUntil(t, "wait が購読しない", f.subscribed)
+	testwait.Until(t, "wait が購読しない", f.subscribed)
 	mustSubmit(t, env.dir, store.Request{Kind: "answer", CardID: "C-001", Answer: "青", From: "PM"})
 	mustApply(t, env.dir) // 質問待ち → 作業中 (--until review なので、まだ返らない)
 	f.broadcast()
@@ -533,7 +523,7 @@ func TestCardWaitWithoutUntilWaitsForChange(t *testing.T) {
 		ch <- out
 	}()
 	// 購読したなら、wait は最初の列 (依頼) を読み終えている (読む前に変えると「最初から着手待ち」になり、変化を待ち続ける)
-	waitUntil(t, "wait が購読しない", f.subscribed)
+	testwait.Until(t, "wait が購読しない", f.subscribed)
 	mustSubmit(t, env.dir, store.Request{Kind: "plan", CardID: "C-002"})
 	mustApply(t, env.dir)
 	f.broadcast()
@@ -597,7 +587,7 @@ func TestCardAddWaitsForCardID(t *testing.T) {
 	ch := run(func() (int, string, string) {
 		return viewCmd(t, env, "add", "--title", "このカード", "--wait", "10s")
 	})
-	waitUntil(t, "add が箱に置かない", func() bool { return inboxCount(dir) == 1 })
+	testwait.Until(t, "add が箱に置かない", func() bool { return inboxCount(dir) == 1 })
 	mustSubmit(t, dir, store.Request{Kind: "add", Title: "後ろのカード"})
 	mustApply(t, dir)
 	if r := <-ch; r.rc != 0 || strings.TrimSpace(r.out) != "C-002" || r.err != "" {
@@ -609,7 +599,7 @@ func TestCardAddWaitsForCardID(t *testing.T) {
 		rc := submitAndWait(dir, "add", func() (string, error) { return store.Submit(dir, store.Request{Kind: "add", Title: " "}) }, 10*time.Second, &o, &e)
 		return rc, o.String(), e.String()
 	})
-	waitUntil(t, "add が箱に置かない", func() bool { return inboxCount(dir) == 1 })
+	testwait.Until(t, "add が箱に置かない", func() bool { return inboxCount(dir) == 1 })
 	if _, err := store.Apply(dir, time.Now(), nil); err != nil {
 		t.Fatal(err)
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"pro-con/eventlog"
+	"pro-con/internal/testwait"
 )
 
 var logT0 = time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)
@@ -96,7 +97,7 @@ func TestLogFollowWakesOnNotification(t *testing.T) {
 	go func() {
 		rc <- runLog(ctx, []string{"--follow", "--card", "C-003"}, dir, time.Now, &out, &errOut)
 	}()
-	waitUntil(t, "--follow が購読しない", f.subscribed)
+	testwait.Until(t, "--follow が購読しない", f.subscribed)
 	if err := eventlog.Append(dir, []eventlog.Event{
 		{At: time.Now(), Kind: eventlog.KindLaunch, Card: "C-004", Reason: "C-004 に PG を起動した"},
 		{At: time.Now(), Kind: eventlog.KindWatchdog, Card: "C-003", Reason: "C-003: watchdog: 15 分進捗なし"},
@@ -104,7 +105,7 @@ func TestLogFollowWakesOnNotification(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.broadcast()
-	waitUntil(t, "知らせを受けても足された出来事を出さない", func() bool { return strings.Contains(out.String(), "watchdog: 15 分進捗なし") })
+	testwait.Until(t, "知らせを受けても足された出来事を出さない", func() bool { return strings.Contains(out.String(), "watchdog: 15 分進捗なし") })
 	if strings.Contains(out.String(), "C-004") || strings.Contains(out.String(), "C-001") {
 		t.Fatalf("--card で絞っていない: %q", out.String())
 	}
@@ -129,12 +130,12 @@ func TestLogFollowKeepsLateEvents(t *testing.T) {
 	go func() {
 		rc <- runLog(ctx, []string{"--follow", "--since", "30s"}, dir, func() time.Time { return logT0.Add(3 * time.Minute) }, &out, &errOut)
 	}()
-	waitUntil(t, "--follow が購読しない", f.subscribed)
+	testwait.Until(t, "--follow が購読しない", f.subscribed)
 	if err := eventlog.Append(dir, []eventlog.Event{{At: logT0, Kind: eventlog.KindScreen, Reason: "画面 (pid 1): 開いた"}}); err != nil {
 		t.Fatal(err)
 	}
 	f.broadcast()
-	waitUntil(t, "遅れて書かれた画面の出来事を --since で落とした", func() bool { return strings.Contains(out.String(), "画面 (pid 1): 開いた") })
+	testwait.Until(t, "遅れて書かれた画面の出来事を --since で落とした", func() bool { return strings.Contains(out.String(), "画面 (pid 1): 開いた") })
 	if strings.Contains(out.String(), "C-001 に PG を起動した") {
 		t.Fatalf("読み始めの分を --since で絞っていない: %q", out.String())
 	}

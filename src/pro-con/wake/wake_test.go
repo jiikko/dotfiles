@@ -9,19 +9,9 @@ import (
 	"sync"
 	"testing"
 	"time"
-)
 
-// waitFor は cond が真になるまで待つ (上限はハングの防止。時間は判定に使わない)。
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for range 400 {
-		if cond() {
-			return
-		}
-		time.Sleep(25 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitFor)
-	}
-	t.Fatalf("%s (10 秒待っても成立しない)", what)
-}
+	"pro-con/internal/testwait"
+)
 
 func listen(t *testing.T, dir string) *Server {
 	t.Helper()
@@ -86,7 +76,7 @@ func TestSubscribeGetsBroadcastAcrossRestart(t *testing.T) {
 	done := make(chan struct{})
 	sub := NewSubscriber(dir, func() { got <- struct{}{} })
 	go func() { sub.Run(ctx); close(done) }()
-	waitFor(t, "購読が繋がらない", func() bool { return s.Subscribers() == 1 })
+	testwait.Until(t, "購読が繋がらない", func() bool { return s.Subscribers() == 1 })
 	select { // 繋がった直後の 1 回
 	case <-got:
 	case <-time.After(10 * time.Second):
@@ -102,7 +92,7 @@ func TestSubscribeGetsBroadcastAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	s2 := listen(t, dir) // dispatcher の起動し直し
-	waitFor(t, "起動し直した dispatcher に繋ぎ直さない", func() bool { return s2.Subscribers() == 1 })
+	testwait.Until(t, "起動し直した dispatcher に繋ぎ直さない", func() bool { return s2.Subscribers() == 1 })
 	recv(t, got, "繋ぎ直しても読み直させない")
 	s2.Broadcast()
 	select {
@@ -116,7 +106,7 @@ func TestSubscribeGetsBroadcastAcrossRestart(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("ctx が終わっても購読が戻らない")
 	}
-	waitFor(t, "画面が抜けたのに購読に残る", func() bool { return s2.Subscribers() == 0 })
+	testwait.Until(t, "画面が抜けたのに購読に残る", func() bool { return s2.Subscribers() == 0 })
 }
 
 // 置き場のパスが長ければ /tmp/pro-con-<uid>/ にハッシュで置く (sun_path の上限)。同じ置き場は同じパス、違う置き場は違うパス。
@@ -301,7 +291,7 @@ func TestNotifyBroadcasts(t *testing.T) {
 		wg.Add(1)
 		go func() { defer wg.Done(); sub.Run(ctx) }()
 	}
-	waitFor(t, "2 つの画面が購読しない", func() bool { return s.Subscribers() == 2 })
+	testwait.Until(t, "2 つの画面が購読しない", func() bool { return s.Subscribers() == 2 })
 	recv(t, got, "繋がっても読み直させない (1 つ目)")
 	recv(t, got, "繋がっても読み直させない (2 つ目)")
 	if err := Notify(dir); err != nil {

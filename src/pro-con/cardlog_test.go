@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"pro-con/backend"
+	"pro-con/internal/testwait"
 )
 
 // card log はカードの PG の活動 (応答の文と道具の呼び出し) を、session を名乗ってから時刻の順に出す。--json は 1 行 1 活動。
@@ -59,9 +60,9 @@ func TestCardLogFollow(t *testing.T) {
 	var out, errOut syncBuf
 	rc := make(chan int, 1)
 	go func() { rc <- runCard([]string{"log", "C-001", "--follow"}, env, &out, &errOut) }()
-	waitUntil(t, "最初の活動を出さない", func() bool { return strings.Contains(out.String(), "色の候補") })
+	testwait.Until(t, "最初の活動を出さない", func() bool { return strings.Contains(out.String(), "色の候補") })
 	appendTranscript(t, env, `{"type":"assistant","timestamp":"2026-09-25T01:02:00Z","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"close.go"}}]}}`)
-	waitUntil(t, "足された活動を追わない", func() bool { return strings.Contains(out.String(), "Edit: close.go") })
+	testwait.Until(t, "足された活動を追わない", func() bool { return strings.Contains(out.String(), "Edit: close.go") })
 	cancel()
 	if r := <-rc; r != 0 {
 		t.Fatalf("取り消しで rc=%d (%s)", r, errOut.String())

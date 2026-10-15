@@ -12,6 +12,7 @@ import (
 
 	"pro-con/agents"
 	"pro-con/card"
+	"pro-con/internal/testwait"
 	"pro-con/live"
 	"pro-con/store"
 	"pro-con/wake"
@@ -127,7 +128,7 @@ func TestRequestStop(t *testing.T) {
 			done := make(chan error, 1)
 			go func() { _, err := RequestStop(context.Background(), dir, 10*time.Second); done <- err }()
 			// dispatcher の側: 印を見つけたら止めて抜ける
-			if !pollUntil(t, 5*time.Second, func() bool { return StopRequested(dir) }) {
+			if !testwait.Poll(5*time.Second, func() bool { return StopRequested(dir) }) {
 				t.Fatal("止める印が 5 秒たっても置かれない")
 			}
 			// 否定の確認 (起きないことに待つ条件は無いので時間で見る): dispatcher がロックを持っている間は待ちを抜けない。
@@ -481,7 +482,7 @@ func TestRequestStopReadsResultWhileLockTakenAgain(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { _, err := RequestStop(context.Background(), dir, 30*time.Second); done <- err }()
 	// 頼みが置かれたら、止め終えた結果を書く (lock は持ったまま)。置かれなくても進み、下の select が落とす
-	pollUntil(t, 4*time.Second, func() bool { _, err := os.Stat(filepath.Join(dir, StopRequestFile)); return err == nil })
+	testwait.Poll(4*time.Second, func() bool { _, err := os.Stat(filepath.Join(dir, StopRequestFile)); return err == nil })
 	WriteStopResult(dir, nil)
 	select {
 	case err := <-done:
