@@ -44,7 +44,7 @@ src の 22 module。773 の観点に加え、非テストの .go を `exec.Comma
 
 ## 残り
 
-- [ ] mac-lan-manager の main.go の usage と README の置き場の文言 (`~/.config/glogx/mac-lan-manager`) を直す。747 の作業 (並行セッション) が編集中なので、その push の後に直す
+- [x] mac-lan-manager の main.go の usage と README の置き場の文言を新しい置き場に直した (747 の push 6c41bbdd の後)
 - `cmd.WaitDelay = time.Second` の 9 本は subproc.WaitDelay (2 秒) と値が割れたまま (寄せるなら別の issue)
 - process_supervisor は見張りの子に WaitDelay を張らない (supervisor.Spec.Command を書く側も同じ穴を持ちうる。未確認)
 

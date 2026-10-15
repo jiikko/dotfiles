@@ -156,8 +156,8 @@ const usage = `usage: mac-lan-manager
        mac-lan-manager dump [--json] [--wait 8s]
 
 手元の Mac 同士を、ネットに繋がっていない有線の LAN (内部の網) で繋いで管理する。
-Bonjour で見えている Mac と台帳 (~/.config/glogx/mac-lan-manager/hosts.toml) の Mac を一覧にする。
-キーの一覧は中で ? を押す。設定は , (~/.config/glogx/mac-lan-manager/settings.toml)。
+Bonjour で見えている Mac と台帳 (~/.config/mac-lan-manager/hosts.toml) の Mac を一覧にする。
+キーの一覧は中で ? を押す。設定は , (~/.config/mac-lan-manager/settings.toml)。
 
 dump は画面を出さずに、この Mac の網・一覧 (画面と同じ判定)・Bonjour の生の結果を文字 (--json で JSON) で出す。
 読むだけで何も書かない (デバッグ用)。Bonjour の走査が終わるか --wait の上限まで待つ。
