@@ -26,12 +26,15 @@ const (
 	// 下線の開始と終了 (終了だけを戻すので、帯の背景色や太字を消さない)
 	sgrUnderline   = "\x1b[4m"
 	sgrNoUnderline = "\x1b[24m"
-	sgrRed         = "\x1b[38;5;196m"
-	sgrYellow      = "\x1b[38;5;214m"
-	sgrCyan        = "\x1b[38;5;51m"
 	// sgrPink は確認のカードの印 (issue 531。2026-09-27 にユーザーが見本の案 A を選んだ)。状態の色・人の番の黄と紛れない色
 	sgrPink = "\x1b[38;5;213m"
 	minColW = 14
+)
+
+var (
+	sgrRed    = fg(colError)
+	sgrYellow = fg(colAttention)
+	sgrCyan   = fg(colInfo)
 )
 
 func (m *Model) View() tea.View {
@@ -80,7 +83,7 @@ func (m *Model) headerRows() int {
 
 func (m *Model) render() string {
 	w := m.width
-	title := sgrBold + fg(202) + " pro-con" + sgrFgReset + " (producer-consumer)" + sgrReset
+	title := sgrBold + fg(colCurrent) + " pro-con" + sgrFgReset + " (producer-consumer)" + sgrReset
 	if d, ok := m.be.(backend.Describer); ok {
 		title += sgrDim + "  " + d.Describe() + sgrReset
 	}
@@ -88,7 +91,7 @@ func (m *Model) render() string {
 	if b := m.ownerlessBand(); b != "" { // 罫線の上 (2026-09-27 にユーザーが見本の案 A を選んだ。issue 543)
 		header = append(header, b)
 	}
-	header = append(header, fg(240)+strings.Repeat("─", w)+sgrReset)
+	header = append(header, fg(colCold)+strings.Repeat("─", w)+sgrReset)
 	// 入力欄・案内は画面の下端へ吸着させ、ボードとの間を空行で埋める (最低 1 行)。
 	// カードの詳細はこの領域 (ヘッダと下端の群のあいだ) に右から重ねる
 	foot := m.footGroup()
@@ -273,9 +276,9 @@ func (m *Model) ownerlessBand() string {
 		text = fmt.Sprintf(" ■ カードは進まない — dispatcher のプロセスは居るが %s前から回っていない (固まっている?)。持ち主の画面を開いても、それが抜けるまでは起きない。pro-con ps で確かめる",
 			fmtDur(m.snap.Now.Sub(m.snap.DispatcherTick)))
 	default:
-		return paint(bg(214)+fg(16)+sgrBold, " ⚠ 持ち主の画面が無い — O で持ち主の画面に切り替えると見張りが戻る。dispatcher は今は動いているが、止まっても誰も (supervisor も) 起こし直さない (持ち主の画面 (pro-con) を開くと見張りが戻る)", m.width)
+		return paint(bg(colAttention)+fg(16)+sgrBold, " ⚠ 持ち主の画面が無い — O で持ち主の画面に切り替えると見張りが戻る。dispatcher は今は動いているが、止まっても誰も (supervisor も) 起こし直さない (持ち主の画面 (pro-con) を開くと見張りが戻る)", m.width)
 	}
-	return paint(bg(196)+fg(231)+sgrBold, text, m.width)
+	return paint(bg(colError)+fg(231)+sgrBold, text, m.width)
 }
 
 // footGroup は下端に吸着させる群 (最下段)。
@@ -328,7 +331,7 @@ func (m *Model) tabBar() string {
 		}
 		parts = append(parts, label)
 	}
-	bar := " " + strings.Join(parts, fg(240)+"│"+sgrFgReset)
+	bar := " " + strings.Join(parts, fg(colCold)+"│"+sgrFgReset)
 	if outside := len(m.snap.Cards) - shown; outside > 0 {
 		bar += sgrDim + fmt.Sprintf("   config の外の repo のカード %d 枚は global にだけ出る", outside) + sgrReset
 	}
@@ -398,7 +401,7 @@ func (m *Model) gauge() string {
 	if n := len(m.snap.Violations); n > 0 {
 		items = append(items, sgrRed+fmt.Sprintf("不変条件の破れ %d", n)+sgrFgReset)
 	}
-	return " " + strings.Join(items, fg(240)+" │ "+sgrFgReset)
+	return " " + strings.Join(items, fg(colCold)+" │ "+sgrFgReset)
 }
 
 func (m *Model) colWidth() int {
@@ -750,7 +753,7 @@ func (m *Model) inputHead() string {
 		label += " — 補足があれば (空のまま enter でよい)"
 	case inputAnswer, inputBtw, inputNew, inputQuit:
 	}
-	return " " + sgrBold + fg(202) + label + ": " + sgrReset + fg(231)
+	return " " + sgrBold + fg(colCurrent) + label + ": " + sgrReset + fg(231)
 }
 
 // inputLabel は入力欄が何を書く欄か (見出しと、送る前の確認の題に使う)。

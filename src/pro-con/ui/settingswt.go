@@ -145,7 +145,7 @@ func (m *Model) onDecided(msg decidedMsg) tea.Cmd {
 // worktreeLines はディスクのタブの下の「残した worktree」の枠。out に足し、選んでいる行ならその位置を cur に入れる。
 // first は選べる行の添字の始まり (置き場の行の数)。
 func (m *Model) worktreeLines(out []string, w, first int, cur *int) []string {
-	border := fg(51)
+	border := fg(colInfo)
 	s := &m.set.wt
 	kept := m.keptWorktrees()
 	title := sgrBold + "残した worktree" + sgrReset + sgrDim + "  閉じる・消すその場で片付かなかったもの · r で読み直す" + sgrReset

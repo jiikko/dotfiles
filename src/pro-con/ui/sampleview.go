@@ -164,7 +164,7 @@ func (m *Model) overlaySample(region []string) []string {
 	if s.left > 0 {
 		title += fmt.Sprintf("  %s← %d 桁ずらしている%s", sgrYellow, s.left, sgrReset)
 	}
-	out := []string{fit(title, w), fg(240) + strings.Repeat("─", w) + sgrReset}
+	out := []string{fit(title, w), fg(colCold) + strings.Repeat("─", w) + sgrReset}
 	total := len(s.lines)
 	s.pager.Clamp(total, n)
 	off := s.pager.DrawOffset(total, n)

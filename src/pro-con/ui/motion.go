@@ -186,9 +186,9 @@ func splice(line string, x, w int, s string) string {
 
 // ghostLines は元の場所に一瞬残す点線の枠 (cardLines 行)。
 func ghostLines(w int) []string {
-	out := []string{fg(240) + "┌" + strings.Repeat("┄", max(0, w-2)) + "┐" + sgrReset}
+	out := []string{fg(colCold) + "┌" + strings.Repeat("┄", max(0, w-2)) + "┐" + sgrReset}
 	for range cardLines - 2 {
-		out = append(out, fg(240)+"┆"+strings.Repeat(" ", max(0, w-2))+"┆"+sgrReset)
+		out = append(out, fg(colCold)+"┆"+strings.Repeat(" ", max(0, w-2))+"┆"+sgrReset)
 	}
-	return append(out, fg(240)+"└"+strings.Repeat("┄", max(0, w-2))+"┘"+sgrReset)
+	return append(out, fg(colCold)+"└"+strings.Repeat("┄", max(0, w-2))+"┘"+sgrReset)
 }

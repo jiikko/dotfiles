@@ -12,8 +12,18 @@ import (
 )
 
 // 見た目 (2026-09-24 に B「枠」で合意。issue 415): 列と詳細を角丸の罫線で囲み、選択中のカードがある列の枠だけを現在地色にする。
-// 色の意味は theme/colors.yml に揃える (現在地 202 / 要対応 214 / 未 push 208 / 情報 51 / 正常 46 / 消灯 240 / 危険 196)。
-// Go からは theme/colors.yml を読めないので番号の手書きコピー (glogx の ansiFrameBorder と同じ事情)。
+// 色の意味は theme/colors.yml に揃える。番号は下の col* だけに書き、TestThemeColorsMatchYML が yml と突き合わせる
+// (Go の生成器は無い。glogx の ansiFrameBorder と同じ事情)。
+
+// テーマの色 (theme/colors.yml の role の cterm)。🚨 ここ以外に番号を書かない (yml を変えたときに黙ってずれる)。
+const (
+	colCurrent   = 202 // current_accent: 現在地
+	colAttention = 214 // quantity_yellow の色を「要対応」に使う (yml に要対応の role は無い。issue 770)
+	colInfo      = 51  // info_cyan: 情報
+	colActive    = 46  // active_green: 正常
+	colCold      = 240 // cold_gray: 消灯
+	colError     = 196 // error_red: 危険
+)
 
 func fg(n int) string { return "\x1b[38;5;" + strconv.Itoa(n) + "m" }
 func bg(n int) string { return "\x1b[48;5;" + strconv.Itoa(n) + "m" }
@@ -30,10 +40,9 @@ func bgDim(n int, k float64) string {
 	return "\x1b[48;2;" + scale(r) + ";" + scale(g) + ";" + scale(b) + "m"
 }
 
-const (
-	sgrSelected = "\x1b[48;5;202m\x1b[38;5;16m\x1b[1m" // 現在地 (蛍光オレンジ地に黒字)
-	sgrFgReset  = "\x1b[39m\x1b[22m"                   // 前景と太字だけを戻す (帯の背景色を消さない)
-)
+var sgrSelected = bg(colCurrent) + "\x1b[38;5;16m\x1b[1m" // 現在地 (蛍光オレンジ地に黒字)
+
+const sgrFgReset = "\x1b[39m\x1b[22m" // 前景と太字だけを戻す (帯の背景色を消さない)
 
 // cardPalette はカード固有の地の色。明るい地は文字が溶けるので暗い地だけ (docs/theme-colors.md の「選択中テキスト」の実例)。
 // 状態の色 (stateColor) や現在地色 (202) と紛れない暗さにしてある。

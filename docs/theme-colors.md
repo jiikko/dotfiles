@@ -28,6 +28,10 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
   tmux / nvim は設定言語が別で定数を共有できないため下記の各定数が手書きのまま残るが、
   `tests/theme/test_theme_colors.sh` (make test に含まれる) が yml との一致を機械検証する
   (色を変えるときは yml → 生成 → 各定数の順で揃える。ズレたらテストが落ちる)
+- **Go (glogx / pro-con)**: Go の生成器は無く、番号を手で写している。glogx は `src/glogx/render.go` の `ansiFrameBorder` を
+  `TestFrameBorderMatchesThemeYML` が、pro-con は `src/pro-con/ui/style.go` の `col*` を `TestThemeColorsMatchYML` が yml と突き合わせる
+  (pro-con は `col*` の外に番号を書くと `TestNoThemeColorLiterals` が落とす)。pro-con は `quantity_yellow` (214) を「要対応」の色に使っている
+  (yml に要対応の role は無い。issue 770)
 - **nvim**: [`nvim/lua/dotfiles/palette.lua`](../nvim/lua/dotfiles/palette.lua) — 全カスタム色の hex↔cterm 組。
   3 節構成 (gruvbox 基調 / accent=tmux 共有 / diag=coc 踏襲)。適用規律 (ColorScheme 再適用・
   cterm 併記) は [`hl.lua`](../nvim/lua/dotfiles/hl.lua) が一次情報

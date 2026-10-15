@@ -537,7 +537,7 @@ func (m *Model) settingsPanel(rows int) []string {
 
 // configLines は設定のタブ (変える所と見る所の要約)。cur は選んでいる行の位置。
 func (m *Model) configLines(w int) ([]string, int) {
-	border := fg(51)
+	border := fg(colInfo)
 	out := []string{boxTop(border, sgrBold+"変える所"+sgrReset, w)}
 	cur := 0
 	for i, key := range configKeys {
@@ -703,7 +703,7 @@ func fmtSec(d time.Duration) string { return strconv.FormatFloat(d.Seconds(), 'f
 
 // procLines はプロセスのタブ。動いているものとカードと食い違う PG を出し、止まっている役は 1 行に畳んで Enter で開く。下に開いている画面の一覧 (presence の印) を添える。
 func (m *Model) procLines(w int) ([]string, int) {
-	border := fg(51)
+	border := fg(colInfo)
 	s := &m.set
 	title := sgrBold + "プロセス (pro-con が起動したもの)" + sgrReset
 	if !s.procsAt.IsZero() {
@@ -795,7 +795,7 @@ func (m *Model) procRow(p backend.Proc, w int) string {
 	case p.State == backend.ProcStopped:
 		col = fg(239)
 	case strings.HasPrefix(p.State, "動いている"), strings.HasPrefix(p.State, "実行中"), strings.HasPrefix(p.State, "開いている"):
-		col = fg(46)
+		col = fg(colActive)
 	}
 	// 今のコマンドは残りの幅だけ (狭い端末では前の列を崩さずに切る)
 	return fit(" "+p.Role, 12) + fit(pid, 8) + fit(age, 13) + col + fit(state, procStateCells) + sgrFgReset + fit(m.procCard(p.Card), procCardCells) +
@@ -822,7 +822,7 @@ const diskBarCells = 24
 
 // diskLines はディスクのタブ。置き場ごとに大きさ・割合・数と、大きい順の内訳 (Enter で開いた置き場は全部)。
 func (m *Model) diskLines(w int) ([]string, int) {
-	border := fg(51)
+	border := fg(colInfo)
 	s := &m.set
 	d := s.disk
 	title := sgrBold + "ディスク" + sgrReset
@@ -899,7 +899,7 @@ func clipLeft(s string, n int) string {
 // scheduleLines は予定のタブ (issue 550)。予定ごとに、いつ・dispatcher が起こすコマンドの字面・前回・次回・出力の置き場
 // (pro-con config と同じ行 = backend.ScheduleRows)。
 func (m *Model) scheduleLines(w int) []string {
-	border := fg(51)
+	border := fg(colInfo)
 	s := &m.set
 	title := sgrBold + "スケジューラージョブ" + sgrReset + sgrDim + "  dispatcher が決まった時刻に回すコマンド · r で読み直す" + sgrReset
 	switch {

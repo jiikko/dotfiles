@@ -22,7 +22,7 @@ import (
 var drawerGeometry = layout.DrawerGeometry{Ratio: 0.8, Extra: 10, MinList: 8, MaxPeek: 18}
 
 // worktreePaint は worktree の節の色 (見本で決めた形。issue 508): hash は黄、時刻と「ほか」は暗く、index に入った変更は緑・作業ツリーだけの変更は赤。
-var worktreePaint = card.Paint{Hash: sgrYellow, Dim: sgrDim, Staged: fg(46), Unstaged: sgrRed, Reset: sgrReset}
+var worktreePaint = card.Paint{Hash: sgrYellow, Dim: sgrDim, Staged: fg(colActive), Unstaged: sgrRed, Reset: sgrReset}
 
 const (
 	drawerDuration = 112 * time.Millisecond
@@ -282,7 +282,7 @@ func (m *Model) drawerPanel() []string {
 		}
 	}
 	head := " " + sgrBold + fg(stateColor(c.State)) + c.ID + sgrFgReset + "  " + c.Title + sgrReset
-	out := []string{head, fg(240) + strings.Repeat("─", max(target-1, 0)) + sgrReset}
+	out := []string{head, fg(colCold) + strings.Repeat("─", max(target-1, 0)) + sgrReset}
 	return append(out, layout.Scrollbar(win, target-1, body.Len(), off, true)...)
 }
 

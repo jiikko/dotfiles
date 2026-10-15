@@ -126,7 +126,7 @@ func (m *Model) searchMark() string {
 
 // searchHead は最下段の検索の欄の見出し。
 func searchHead() string {
-	return " " + sgrBold + fg(202) + "/ 検索 (題名・カード ID・issue 番号・依頼の原文): " + sgrReset + fg(231)
+	return " " + sgrBold + fg(colCurrent) + "/ 検索 (題名・カード ID・issue 番号・依頼の原文): " + sgrReset + fg(231)
 }
 
 // searchField は検索の欄の見出しと、欄に出す文字列・その中のキャレットの桁 (inputField と同じ形)。
@@ -142,7 +142,7 @@ func searchHints() []string {
 }
 
 // sgrHit は一致した語の色 (要対応の 214 を太字で。確認の印の桃色と紛れない)。
-const sgrHit = "\x1b[38;5;214m\x1b[1m"
+var sgrHit = fg(colAttention) + "\x1b[1m"
 
 // markHits は SGR を含む行 s の、SGR の外の文字列にある words を色で浮かせる (大文字小文字は区別しない)。
 // after は浮かせた語の後に戻す SGR (選択中の太字・下線や、完了の dim)。

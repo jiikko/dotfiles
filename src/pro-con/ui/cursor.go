@@ -128,10 +128,9 @@ func (m *Model) overlayCursor(board []string) []string {
 }
 
 // 枠が字の上に乗ったときの色 (上線 = SGR 53。端末によっては出ない)。縦の辺は赤の背景に白の字。
-const (
-	sgrOverline = "\x1b[53m"
-	sgrFrameBg  = "\x1b[48;5;196m\x1b[38;5;231m"
-)
+const sgrOverline = "\x1b[53m"
+
+var sgrFrameBg = bg(colError) + "\x1b[38;5;231m"
 
 // frameCell は行の表示の 1 桁。全角の字は前半 (start) と後半の 2 桁に同じ字を入れる。
 type frameCell struct {

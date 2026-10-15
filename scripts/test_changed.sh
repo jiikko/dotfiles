@@ -33,7 +33,7 @@ tests/ の run_tests と同じ repo 既存の前提)。
   nvim/ _nviminit.lua         → test-nvim
   _tmux.conf                  → test-tmux (+ shell 系 lint)
   tests/<dir>/...             → make test-dir DIR=tests/<dir>  (そのディレクトリのテストを直接実行)
-  theme/...                   → test-yaml + tests/theme + make -C src/glogx lint test
+  theme/...                   → test-yaml + tests/theme + make -C src/glogx lint test + make -C src/pro-con lint test
                                 (色の単一ソース。消費者が shell/tmux/nvim/glogx に分かれる)
   mac/karabiner.json          → test-json test-karabiner
   *.json                      → test-json
@@ -203,10 +203,10 @@ for p in "$@"; do
       add_test_dir "tests"; add_target test-lint-tests ;;
     # theme/colors.yml は色の単一ソースで、消費者が 4 つに分かれている:
     # shell (生成物の drift) / _tmux.conf / nvim palette.lua は tests/theme が、
-    # glogx の ansiFrameBorder は Go 側の TestFrameBorderMatchesThemeYML が突き合わせる。
+    # glogx の ansiFrameBorder は Go 側の TestFrameBorderMatchesThemeYML が、pro-con の ui の col* は TestThemeColorsMatchYML が突き合わせる。
     # 🚨 *.yml の写像 (test-yaml だけ) に落とすと、色を変えても文法検査しか走らない。
     theme/*)
-      add_target test-yaml; add_test_dir "tests/theme"; add_go_dir "src/glogx" ;;
+      add_target test-yaml; add_test_dir "tests/theme"; add_go_dir "src/glogx"; add_go_dir "src/pro-con" ;;
     # mods (Claude Code の関数 hook の plugin) の manifest / hooks.json を *.json の写像に落とさない (test-json は Makefile の
     # JSON_FILES の固定のファイルしか見ない): modules の指す先を間違えても通り、本番では mod が黙って読まれない。.ts もここで拾う (issue 619)
     _claude/mods/*)

@@ -10,6 +10,7 @@ on:
     branches: [master]
     paths:
       - 'src/pro-con/**'
+      - theme/colors.yml  # ui/theme_test.go がテーマの色 (style.go の col*) と突き合わせる (issue 770)
       - 'src/tuikit/**'  # replace で取り込む共有 module (演出の部品 anim・markdown の整形器)
       - 'src/termsafe/**'  # replace で取り込む共有 module (コピーする本文の無害化)
       - 'src/process_supervisor/**'  # replace で取り込む共有 module (supervisor・見張りの起こし直し。issue 506)
@@ -31,6 +32,7 @@ on:
   pull_request:
     paths:
       - 'src/pro-con/**'
+      - theme/colors.yml  # ui/theme_test.go がテーマの色 (style.go の col*) と突き合わせる (issue 770)
       - 'src/tuikit/**'  # replace で取り込む共有 module (演出の部品 anim・markdown の整形器)
       - 'src/termsafe/**'  # replace で取り込む共有 module (コピーする本文の無害化)
       - 'src/process_supervisor/**'  # replace で取り込む共有 module (supervisor・見張りの起こし直し。issue 506)

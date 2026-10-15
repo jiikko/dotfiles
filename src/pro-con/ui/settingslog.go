@@ -123,17 +123,17 @@ func logReasonColor(e eventlog.Event) string {
 	case eventlog.KindRecover: // 「判定できないので待つ: なし」のように、無事でも「できない」を含む
 		return ""
 	case eventlog.KindCrash, eventlog.KindError:
-		return fg(196)
+		return fg(colError)
 	case eventlog.KindSuspect, eventlog.KindWatchdog:
-		return fg(214)
+		return fg(colAttention)
 	}
 	for _, w := range []string{"落ちた", "できない", "止めきれない", "起こせない", "抜けた ("} {
 		if strings.Contains(e.Reason, w) {
-			return fg(196)
+			return fg(colError)
 		}
 	}
 	if strings.Contains(e.Reason, "疑い") {
-		return fg(214)
+		return fg(colAttention)
 	}
 	return ""
 }
@@ -150,7 +150,7 @@ const (
 
 // logLines はログのタブ (rows 行に収める)。枠の見出しと列の名前は残し、選んでいる行が入るよう出来事の行だけを送る。
 func (m *Model) logLines(w, rows int) []string {
-	border := fg(51)
+	border := fg(colInfo)
 	l := &m.set.log
 	what, verb := "プロセスの出来事", "c でカードの出来事も出す"
 	if l.showCards {

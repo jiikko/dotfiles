@@ -277,7 +277,7 @@ func (f *answerForm) formLines(inner int) []formLine {
 	on := cur.q == len(f.qs)
 	head := "   "
 	if on {
-		head = " " + fg(214) + "›" + sgrReset + " "
+		head = " " + fg(colAttention) + "›" + sgrReset + " "
 	}
 	s, c := fieldView(&f.note, inner-3, on, "ここに書く (空でよい)")
 	out = append(out, formLine{text: head + s, cur: on, caret: caretIf(on, 3+c)})
@@ -304,15 +304,15 @@ func (f *answerForm) optionLines(q, j int, on bool, inner int) []formLine {
 	mark := map[[2]bool]string{{false, false}: "( )", {false, true}: "(•)", {true, false}: "[ ]", {true, true}: "[x]"}[[2]bool{f.qs[q].MultiSelect, chosen}]
 	ptr, nameSGR := " ", fg(252)
 	if on {
-		ptr, nameSGR = fg(214)+"›"+sgrReset, sgrBold+fg(231)
+		ptr, nameSGR = fg(colAttention)+"›"+sgrReset, sgrBold+fg(231)
 	}
 	markSGR := fg(244)
 	if chosen {
-		markSGR = fg(46)
+		markSGR = fg(colActive)
 	}
 	line := " " + ptr + " " + markSGR + mark + sgrReset + " " + nameSGR + name + sgrReset
 	if rec {
-		line += " " + fg(214) + "推奨" + sgrReset
+		line += " " + fg(colAttention) + "推奨" + sgrReset
 	}
 	if !other && opts[j].Sample != "" {
 		line += " " + fg(81) + "[見本]" + sgrReset
@@ -397,7 +397,7 @@ func (m *Model) overlayForm(region []string) []string {
 
 // formBox は角の丸いオレンジの罫線で囲む (見本の形)。
 func formBox(title string, lines []formLine, width, inner int) []string {
-	border := fg(202)
+	border := fg(colCurrent)
 	t := termwidth.Truncate(title, width-4, "…")
 	out := []string{border + "╭─" + sgrBold + t + sgrReset + border + strings.Repeat("─", max(width-3-termwidth.Of(t), 0)) + "╮" + sgrReset}
 	for _, l := range lines {

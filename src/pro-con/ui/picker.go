@@ -316,7 +316,7 @@ func (m *Model) pickerRowsShown() int { return max(1, m.height-12) }
 // pickerBlock は一覧の板。
 func (m *Model) pickerBlock() []string {
 	w := m.width
-	border := fg(202)
+	border := fg(colCurrent)
 	scope := "global (設定の全 repo)"
 	if m.tab != "" {
 		scope = m.tab
@@ -341,7 +341,7 @@ func (m *Model) pickerBlock() []string {
 		var line string
 		switch {
 		case r.head != "":
-			line = sgrBold + fg(51) + " " + r.head + sgrReset
+			line = sgrBold + fg(colInfo) + " " + r.head + sgrReset
 		case r.epic != "":
 			title := ""
 			if r.iss != nil {
@@ -360,12 +360,12 @@ func (m *Model) pickerBlock() []string {
 			line = fmt.Sprintf("%s#%s %s%s  %s%s%s", indent, r.iss.Number, tags, r.iss.Display(), sgrDim, r.iss.Status.String(), sgrReset)
 		}
 		if i == m.picker.cursor {
-			line = fg(202) + "▌" + sgrReset + sgrBold + strings.TrimPrefix(line, " ")
+			line = fg(colCurrent) + "▌" + sgrReset + sgrBold + strings.TrimPrefix(line, " ")
 		}
 		out = append(out, boxLine(border, line, w))
 	}
 	if m.picker.dupe != "" {
-		out = append(out, boxLine(border, " "+sgrBold+fg(214)+m.picker.dupe+sgrReset, w))
+		out = append(out, boxLine(border, " "+sgrBold+fg(colAttention)+m.picker.dupe+sgrReset, w))
 	}
 	if len(m.picker.warns) > 0 {
 		out = append(out, boxLine(border, sgrYellow+" 警告: "+m.picker.warns[0]+sgrReset, w))

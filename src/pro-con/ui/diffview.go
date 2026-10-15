@@ -213,7 +213,7 @@ func (d *diffView) headerText(f int) string {
 	if f == d.cur {
 		name = sgrReverse + name
 	}
-	return fmt.Sprintf("%s  %s+%d%s %s-%d%s", name, fg(46), d.files[f].Add, sgrReset, sgrRed, d.files[f].Del, sgrReset)
+	return fmt.Sprintf("%s  %s+%d%s %s-%d%s", name, fg(colActive), d.files[f].Add, sgrReset, sgrRed, d.files[f].Del, sgrReset)
 }
 
 // diffJumpTo はファイル f の見出しを上端へ送る (末尾で送りきれなければ Clamp が収める)。
@@ -243,7 +243,7 @@ func (m *Model) overlayDiff(region []string) []string {
 	// 狭いと後ろから切れるので、数と切った印を説明より前に置く
 	title := fmt.Sprintf(" %s%s%s の差分  %d ファイル +%d -%d%s  %s%s との merge-base から作業ツリーまで (未 commit を含む)%s",
 		sgrBold, m.diff.cardID, sgrReset, sum.Files, sum.Add, sum.Del, cut, sgrDim, m.diff.base, sgrReset)
-	out := []string{fit(title, w), fg(240) + strings.Repeat("─", w) + sgrReset}
+	out := []string{fit(title, w), fg(colCold) + strings.Repeat("─", w) + sgrReset}
 	n := m.diffBodyRows()
 	var body []string
 	switch {

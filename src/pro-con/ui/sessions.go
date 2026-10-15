@@ -9,7 +9,7 @@ func (m *Model) screensBlock(w int) []string {
 	if len(ss) == 0 || (len(ss) == 1 && !ss[0].Join) {
 		return nil
 	}
-	border := fg(51)
+	border := fg(colInfo)
 	owners, joins := m.snap.ScreenTally()
 	out := []string{boxTop(border, sgrBold+fmt.Sprintf("開いている画面 %d (持ち主 %d・join %d)", len(ss), owners, joins)+sgrReset, w)}
 	out = append(out, boxLine(border, sgrDim+fit(" 画面", 10)+fit("モード", 22)+fit("開いた", 16)+fit("端末", 16)+"実体"+sgrReset, w))
