@@ -48,5 +48,11 @@ src の重複の調査 (773) の bin 版。read-only のサブエージェント
 - [x] テスト: `tests/bin/test_uint.sh` (bash 3.2・bash 5・zsh・sh × 12 件と、mutate-verify が全角の --timeout を拒むこと)。既存の codex_fanout.bats・codex_run.bats・
   test_mutate_verify.sh (48 ケース。symlink / PATH / dir ごとの symlink のケース 43 を含む)・test_mutate_verify_list.sh・test_claude_bin.sh・test_skill_eval.sh は rc=0
 - [x] 変異: uint.sh の列挙を `[!0-9]` に戻す → test_uint.sh が /bin/bash と /bin/sh の「１２」「1２」で red
-- [ ] 敵対的レビュー
-- [ ] make test
+- [x] 敵対的レビュー (opus・read-only): P1 なし。
+  P2 shell の数値の検査の rule (`_claude/rules/shell-numeric-gate-explicit-digits.md`) が正本を codex-fanout の validate_timeout と書いたまま → uint.sh を指す /
+  P2 claude_bin.sh の検査を外してもテストが緑 → runtimeout に渡った上限を記録する偽物で、数字でない・全角・8 桁・0 始まりが 10 秒に寄ることを見る (変異で red) /
+  P3 codex-fanout・codex-run が readlink -f の失敗を見ず、空になると cwd の lib/uint.sh を読む → 失敗と空を die に /
+  P3 codex-run の -t の桁あふれの枝にテストが無い → bats に足した (変異で red)。
+  壊せなかった: 順序 (エラーの順は変わらない)・論理パスと実パス (後段の照合は pwd -P で揃える)・値の形 (0 始まり・+・改行・20 桁)・寄せないものの判断
+- [x] make test rc=0 (go-lint・go-test は 22 module とも rc=0)。1 回目は codexevents の driver のテストが「bin/lib/uint.sh が無い」で落ちた
+  (テストが bin/codex-run と codex-fanout を一時ディレクトリへ写し、lib を偽物で用意していた) → 本物の uint.sh を写し、src_codexevents.yml の paths に足した
