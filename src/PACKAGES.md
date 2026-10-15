@@ -72,6 +72,7 @@
 - `src/safefs/sandbox` (`safefs/sandbox`) — Package sandbox はテストのための safefs.Guard: 明示的に登録した一時ディレクトリの外への操作を**実行前に**拒否する (`~/.claude/rules/sandbox-real-destructive-test-apis.md`)。
 - `src/schedkeys` (`schedkeys`) — 1 行のテキスト編集状態。 (main)
 - `src/subproc` (`subproc`) — Package subproc は外部プロセス実行の安全弁を 1 箇所に集める。
+- `src/subproc/boundarycheck` (`subproc/boundarycheck`) — Package boundarycheck は「外部コマンドの Cmd を作ったのに WaitDelay を張り忘れる」を止める検査の本体 (glogx issue 105 / 303)。
 - `src/subproc/clipboard` (`subproc/clipboard`) — Package clipboard は文字列を OS のクリップボードへ書く (glogx と treefiler の両方が使う。
 - `src/termsafe` (`github.com/jiikko/dotfiles/src/termsafe`) — Package termsafe は「外部由来の文字列を端末へ出す前に無害化する」単一の関門。
 - `src/termsafe/ctlprobe` (`github.com/jiikko/dotfiles/src/termsafe/ctlprobe`) — Package ctlprobe は「端末が制御として解釈しうる文字が残っているか」を判定する、 **テスト専用**のオラクル。

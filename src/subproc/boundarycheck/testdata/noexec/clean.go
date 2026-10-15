@@ -1,0 +1,3 @@
+package noexec
+
+func clean() {}

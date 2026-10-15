@@ -4,7 +4,10 @@
 
 ## 入口
 
-- `CommandContext(ctx, name, args...) *exec.Cmd` — glogx / ratelimit では外部コマンドをこれで起こす (素の `exec.CommandContext` は使わない)。WaitDelay を張る
+- `CommandContext(ctx, name, args...) *exec.Cmd` — 外部コマンドはこれで起こす (素の `exec.CommandContext` は使わない)。WaitDelay を張る。
+  ctx を持たない起動 (前景の attach・supervisor が止める子・待つだけの ps) は `Command(name, args...)` (同じく WaitDelay を張る。ctx 無しでも効く)
+- `boundarycheck.Run(t, Spec)` (`subproc/boundarycheck`) — 張り忘れの検査の本体。各 module の root のテストが Spec (走査の根・Allow の表・下限、または `NoOsExec`) を渡して呼ぶ。
+  脅威モデルと「検出しない形」はパッケージの doc。検査器自身は testdata の fixture で検査する
 - `clipboard.Copy(text)` (`subproc/clipboard`) — 文字列を OS のクリップボードへ (pbcopy / xclip が本命、tmux 内は tmux バッファへもおまけ)。glogx と treefiler が使う。失敗モードはパッケージの doc
 - git を起こすとき (`tests/scripts/test_git_calls_hardened.sh` が素の起動を止める):
   - `GitArgs` / `GitCommand` — 開いた repo の設定からコマンドを走らせない引数を付ける (fsmonitor・署名の表示・遅延 fetch など。issue 692・739)
@@ -17,4 +20,5 @@
 ## ビルド・テスト
 
 - `make -C src/subproc lint` / `test`
-- 張り忘れの検出は消費者側にある: glogx は `waitdelay_discipline_test.go`、ratelimit は `exec_boundary_test.go`
+- 張り忘れの検出は boundarycheck を呼ぶ各 module のテスト (glogx `waitdelay_discipline_test.go`、ratelimit / treefiler / pro-con / mac-lan-manager の `exec_boundary_test.go`)。
+  検査を変えたら消費者の module でも `make test` を回す (CI の paths は `src/subproc/**` を持つ)
