@@ -1,0 +1,214 @@
+// Package netinfo は、この Mac のネットワークのサービスと I/F の IP を、networksetup と ifconfig の出力から読む。
+//
+// 読むだけで、設定は変えない。出力を読む部分は純関数 (Parse*) にしてあり、コマンドを起こす部分は Runner で差し替えられる。
+package netinfo
+
+import (
+	"context"
+	"regexp"
+	"strings"
+)
+
+// Service は networksetup のネットワークのサービス 1 つ (Wi-Fi・Thunderbolt Ethernet など)。
+type Service struct {
+	Name   string // サービス名 ("Thunderbolt Ethernet")
+	Device string // I/F の名前 ("en13")
+	Active bool   // ifconfig の status が active
+	IP     string // IPv4 (無ければ空)
+	Method string // "DHCP" / "manual" / "" (読めなかった)
+	Router string // IPv4 のルーター (無ければ空)
+}
+
+// Internet はインターネット用のサービスか (ルーターがある)。
+func (s Service) Internet() bool { return s.Router != "" }
+
+// Kind は I/F の IP の種類。
+type Kind int
+
+// IP の種類。「その他の IP」に含めるかを設定で切り替える単位。
+const (
+	KindUnknown   Kind = iota // 設定 (networksetup) に出てこない I/F
+	KindWired                 // ルーターの無いサービス (有線)
+	KindInternet              // ルーターのあるサービス (Wi-Fi など)
+	KindLinkLocal             // 169.254 (固定していない)
+	KindVirtual               // VM・Docker のブリッジ (bridge / vmnet / vnic)
+	KindVPN                   // utun (VPN・Tailscale)
+)
+
+// String は画面に出す種類の名前。
+func (k Kind) String() string {
+	switch k {
+	case KindWired:
+		return "有線"
+	case KindInternet:
+		return "インターネット"
+	case KindLinkLocal:
+		return "自動割り当て"
+	case KindVirtual:
+		return "仮想"
+	case KindVPN:
+		return "VPN"
+	case KindUnknown:
+		return "不明"
+	}
+	return "不明"
+}
+
+// IP は I/F の IPv4 1 つと、その種類。
+type IP struct {
+	Device string
+	Addr   string
+	Kind   Kind
+}
+
+// Snapshot はある時点のこの Mac のネットワーク。
+type Snapshot struct {
+	Services []Service
+	IPs      []IP // ifconfig の I/F 全部の IPv4 (lo0 を除く)
+}
+
+var (
+	reHWPort = regexp.MustCompile(`\(Hardware Port: (.*), Device: (.*)\)`)
+	reInet   = regexp.MustCompile(`(?m)^\s+inet (\S+)`)
+	// 🚨 行頭に固定する: getinfo は "IPv6 Router: none" の行も出すので、固定しないと IPv6 の行に当たる。
+	// 未接続のサービスは IPv4 の Router 行そのものを出さず、有線の自動割り当ては "Router: (null)" を出す (2026-10-15 の実測)
+	reRouter = regexp.MustCompile(`(?m)^Router: (.*)$`)
+	reIP     = regexp.MustCompile(`(?m)^IP address: (.*)$`)
+)
+
+// ParseServiceOrder は `networksetup -listnetworkserviceorder` の出力からサービス名と I/F の名前を並び順に読む。
+func ParseServiceOrder(out string) []Service {
+	ms := reHWPort.FindAllStringSubmatch(out, -1)
+	svcs := make([]Service, 0, len(ms))
+	for _, m := range ms {
+		svcs = append(svcs, Service{Name: m[1], Device: m[2]})
+	}
+	return svcs
+}
+
+// ParseGetInfo は `networksetup -getinfo <サービス名>` の出力から、方式・IPv4・ルーターを読む。
+func ParseGetInfo(out string) (method, ip, router string) {
+	switch {
+	case strings.Contains(out, "Manual Configuration"):
+		method = "manual"
+	case strings.Contains(out, "DHCP Configuration"):
+		method = "DHCP"
+	}
+	if m := reIP.FindStringSubmatch(out); m != nil && m[1] != "none" {
+		ip = strings.TrimSpace(m[1])
+	}
+	if m := reRouter.FindStringSubmatch(out); m != nil {
+		if r := strings.TrimSpace(m[1]); r != "(null)" && r != "none" {
+			router = r
+		}
+	}
+	return method, ip, router
+}
+
+// ParseIfconfig は `ifconfig <I/F>` の出力から、active か と IPv4 の一覧を読む。
+func ParseIfconfig(out string) (active bool, addrs []string) {
+	active = strings.Contains(out, "status: active")
+	for _, m := range reInet.FindAllStringSubmatch(out, -1) {
+		addrs = append(addrs, m[1])
+	}
+	return active, addrs
+}
+
+// Classify は I/F の名前と IP から種類を決める。wired はルーターの無いサービスの I/F、internet はルーターのあるサービスの I/F。
+func Classify(dev, addr string, wired, internet map[string]bool) Kind {
+	// サービスとして登録されている I/F を先に見る。🚨 名前で先に分けない: Thunderbolt Bridge は bridge0 という名前の本物の有線
+	// (Mac 同士を Thunderbolt ケーブルで直に繋ぐ) で、名前だけ見ると VM のブリッジと取り違える
+	switch {
+	case internet[dev]:
+		return KindInternet
+	case wired[dev]:
+		if strings.HasPrefix(addr, "169.254.") {
+			return KindLinkLocal
+		}
+		return KindWired
+	case strings.HasPrefix(dev, "utun"):
+		return KindVPN
+	case strings.HasPrefix(dev, "bridge") || strings.HasPrefix(dev, "vmnet") || strings.HasPrefix(dev, "vnic"):
+		return KindVirtual
+	case strings.HasPrefix(addr, "169.254."):
+		return KindLinkLocal
+	}
+	return KindUnknown
+}
+
+// Runner はコマンドを起こして stdout を返す (テストで差し替える)。
+type Runner func(ctx context.Context, name string, args ...string) (string, error)
+
+// Read はこの Mac のネットワークを読む。サービスごとに getinfo と ifconfig を起こし、I/F 全部 (ifconfig -l) の IPv4 も集める。
+// 1 つのサービスが読めなくても全体は止めない (読めた所だけ埋める)。サービスの一覧そのものが読めなければ err を返す。
+func Read(ctx context.Context, run Runner) (Snapshot, error) {
+	order, err := run(ctx, "networksetup", "-listnetworkserviceorder")
+	if err != nil {
+		return Snapshot{}, err
+	}
+	svcs := ParseServiceOrder(order)
+	wired, internet := map[string]bool{}, map[string]bool{}
+	for i := range svcs {
+		s := &svcs[i]
+		if out, err := run(ctx, "ifconfig", s.Device); err == nil {
+			var addrs []string
+			s.Active, addrs = ParseIfconfig(out)
+			if len(addrs) > 0 {
+				s.IP = addrs[0]
+			}
+		}
+		if out, err := run(ctx, "networksetup", "-getinfo", s.Name); err == nil {
+			var ip string
+			s.Method, ip, s.Router = ParseGetInfo(out)
+			if s.IP == "" {
+				s.IP = ip
+			}
+		}
+		if s.Internet() {
+			internet[s.Device] = true
+		} else {
+			wired[s.Device] = true
+		}
+	}
+	snap := Snapshot{Services: svcs}
+	list, err := run(ctx, "ifconfig", "-l")
+	if err != nil {
+		return snap, nil // I/F の一覧が読めなくても、サービスは返す
+	}
+	for _, dev := range strings.Fields(list) {
+		if dev == "lo0" {
+			continue
+		}
+		out, err := run(ctx, "ifconfig", dev)
+		if err != nil {
+			continue
+		}
+		_, addrs := ParseIfconfig(out)
+		for _, a := range addrs {
+			snap.IPs = append(snap.IPs, IP{Device: dev, Addr: a, Kind: Classify(dev, a, wired, internet)})
+		}
+	}
+	return snap, nil
+}
+
+// Main はメインのネットワーク (インターネット側) のサービス。並び順で最初の、繋がっていてルーターのあるもの。
+func (s Snapshot) Main() (Service, bool) {
+	for _, sv := range s.Services {
+		if sv.Active && sv.Internet() && sv.IP != "" {
+			return sv, true
+		}
+	}
+	return Service{}, false
+}
+
+// Offline は「ネットに繋がっていない」有線の候補 (繋がっていてルーターの無いサービス) を並び順に返す。
+// 内部 IP を決めるのは設定 (帯 / I/F) で、これは候補を出すだけ (どれを使うかを推測しない)。
+func (s Snapshot) Offline() []Service {
+	var out []Service
+	for _, sv := range s.Services {
+		if sv.Active && !sv.Internet() {
+			out = append(out, sv)
+		}
+	}
+	return out
+}

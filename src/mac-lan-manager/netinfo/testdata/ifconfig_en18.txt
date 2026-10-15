@@ -1,0 +1,8 @@
+en18: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+	options=404<VLAN_MTU,CHANNEL_IO>
+	ether 00:00:00:00:00:00
+	inet6 fe80::1%en18 prefixlen 64 secured scopeid 0x21 
+	inet 169.254.85.235 netmask 0xffff0000 broadcast 169.254.255.255
+	nd6 options=201<PERFORMNUD,DAD>
+	media: autoselect
+	status: active

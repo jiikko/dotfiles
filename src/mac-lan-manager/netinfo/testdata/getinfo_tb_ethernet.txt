@@ -1,0 +1,9 @@
+DHCP Configuration
+IP address: 169.254.13.42
+Subnet mask: 255.255.0.0
+Router: (null)
+Client ID: 
+IPv6: Automatic
+IPv6 IP address: none
+IPv6 Router: none
+Ethernet Address: 00:00:00:00:00:00

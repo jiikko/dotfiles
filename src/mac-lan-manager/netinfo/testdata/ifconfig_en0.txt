@@ -1,0 +1,9 @@
+en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+	options=6460<TSO4,TSO6,CHANNEL_IO,PARTIAL_CSUM,ZEROINVERT_CSUM>
+	ether 00:00:00:00:00:00
+	inet6 fe80::1%en0 prefixlen 64 secured scopeid 0xe 
+	inet6 fdff:34bd:c1ad:4618:1833:1d6:4bef:1351 prefixlen 64 autoconf secured 
+	inet 192.168.50.250 netmask 0xffffff00 broadcast 192.168.50.255
+	nd6 options=201<PERFORMNUD,DAD>
+	media: autoselect
+	status: active

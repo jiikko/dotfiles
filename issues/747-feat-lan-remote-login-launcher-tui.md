@@ -430,12 +430,34 @@ package (`lanmgr`。glogx の `L` の板からも取り込む。`New` / `Resize`
 - 外から来た文字列 (Bonjour の名前・ホスト名・I/F の名前) は入口で termsafe を通す
 - キーの語彙はガイドどおり (「枠の見た目とキー」節の表 + `c` / `,`)。全部のキーを取る層は treefiler と同じく札を付けて検査する
 
-**段取り** (各段で make test・反証レビュー・push):
-1. module の土台 (Makefile / go.mod / `.golangci.yml` / workflow / README) と `netinfo` / `discover` / `ledger` の読み書き (純関数 + テスト)
-2. `lanmgr` の画面 (一覧・詳細カード・設定・この Mac の IP のコピー) と `bin/mac-lan-manager`。相手は本物の Bonjour から
-3. `setup` (初期設定の手順の実行。この Mac → 相手)
-4. glogx の `L` の板 (766 の 1 段目の push の後。glogx の `tui.go` を 766 も触るため)
-5. x/ansi の版上げと tuikit を使う全 module の go.mod の揃え (766 の 2 段目 = restartable の tuikit の固定版上げの後)
+**段取り** (各段で make test・反証レビュー・push。設計の反証レビューで順番を直した):
+1. module の土台 (Makefile / go.mod / `.golangci.yml` / workflow / README) と `netinfo` / `discover` / `ledger` の読み書き (純関数 + テスト)。lipgloss も tuikit も使わない
+2. **x/ansi の版上げと tuikit を使う全 module の go.mod の揃え** (lipgloss v2 を初めて入れる段の前に済ませる。入れた時点で
+   `tests/scripts/test_tuikit_consumers_aligned.sh` が赤になるため。766 の 2 段目 = restartable の tuikit の固定版上げの後。ultraviolet の版も上がり
+   描画のエンジンが変わるので、`docs/glogx-bubbletea-v2.md` のチェックリストと Bench を見る)
+3. `lanmgr` の画面 (一覧・詳細カード・設定・この Mac の IP のコピー) と `bin/mac-lan-manager`。相手は本物の Bonjour から
+4. `setup` (初期設定の手順の実行。この Mac → 相手)。**その前に人手の確認** (ルーターを空にした `-setmanual`・`open vnc://<IP>`・切断を越えて走るか) を済ませる
+5. glogx の `L` の板 (766 の 1 段目の push の後。glogx の `tui.go` を 766 も触るため)。glogx の workflow の paths に `src/mac-lan-manager/**` を足す
+
+**設計の反証レビュー (2026-10-15・上位モデルのサブエージェント 1 体) で足したこと**:
+- 板の口は treefiler の filer と同じにそろえる (`Busy` / `Close` / `Binds` / `ExecDone` / `HandleInput` / `Paste` / `CaretPos` も)。`Busy` が無いと glogx の tick が止まって
+  探索の途中結果が取り込まれない・`Close` が無いと終わらない `dns-sd` が残る (`Close` で起こした pid だけを止めることを契約にする)・`Binds` が無いと `s` (ssh) が
+  横断キーの status に横取りされる
+- 相手を固定 IP にする手順は、置き去りにしない形にする: `sudo -b nohup sh -c 'sleep N; networksetup …; <期限内に確認の印が無ければ元に戻す>'`。新しい IP で
+  入り直せたら確認の印を置く (印が無ければ自動で元に戻る = デッドマンスイッチ)。macOS の sudo は端末ごとに認証を覚えるので、ssh が先に抜けると遅れて走る
+  `sudo -n` は落ちうる (この Mac の `sudo -n true` は "a password is required"。設定は未確認) → `sudo -b` で認証の後に背景へ回す
+- 端末の要る手順 (この Mac の sudo・最初の ssh のパスワードとホスト鍵の yes/no) は、裏で起こさず端末を明け渡す (treefiler の `TakeExec` と同じ形)
+- 初期設定は「観測した状態から残りの手順を組み直す」形にし、何度流しても同じ結果にする (途中で止まって「相手は新しい IP・台帳に `lan` が無い」を残さない)。
+  実行中の `x` の二度押しは断る
+- IP を付け替えると known_hosts が IP ごとの鍵で引っかかるので、ssh に `-o HostKeyAlias=<台帳の鍵>` を付けて鍵を台帳の鍵に結び付ける
+- 空き番号の確認は ping / ARP に加えて台帳の `lan` とも照らす (電源の切れた台は ping に答えない)
+- 台帳の鍵 (`.local` のホスト名) は 1 か所 (`ledger.Key`: 小文字・末尾の `.` を落とす) で正規化する。改名・名前の衝突で鍵が変わったときに古い行を付け替える操作を持つ
+- 台帳の書式はエスケープの往復テスト付きの専用の形 (`[[host]]` + `strconv.Quote`)。treefiler の設定の読み方 (`strings.Trim(v, "\"")`) は表もエスケープも無いので写さない
+- 同時の書き込みはロックで防ぐ (段 1 で実装済み)
+- 段 5 で glogx のテストのヘルパー (`tui_helpers_test.go` は `TREEFILER_CONFIG_DIR` だけを差し替えている) に `MAC_LAN_MANAGER_CONFIG_DIR` と偽の探索を足す
+  (`fullscreen_test.go` は横断キーで全部の板を開くので、足さないと本物の台帳を読み、CI で本物の `dns-sd` を起こす)
+- 採らなかった: 「台帳の置き場所が節どうしで食い違う」(指摘の時点で既に `~/.config/glogx/mac-lan-manager/` にそろえてあった) /
+  「`h` / `←` がタブ移動と閉じるの両方」(issues viewer と同じく、タブのある画面では `h` / `l` = タブ移動、閉じるのは `q` / `Esc` と開いたキー `L`。ガイド §2・§3 の既存の形)
 
 ## 今後の拡張の候補 (使ってみてから足す。今は作らない)
 
@@ -473,3 +495,14 @@ package (`lanmgr`。glogx の `L` の板からも取り込む。`New` / `Resize`
 - [x] 管理対象の印の案を決める (2026-10-15: Bonjour の広告 = 案 A。「決定 (2026-10-15)」節)
 - [x] ~~他の Mac から `_lanmac._tcp` の広告が見えるかを確かめる~~ (台帳に決まったので不要。2026-10-15)
 - [ ] 実装
+  - [x] 段 1: module の土台と `netinfo` / `discover` / `ledger` (2026-10-15。commit「mac-lan-manager: 段 1 …」)
+    - テストの fixture は 2026-10-15 にこの Mac で本物のコマンドから取った出力 (MAC と IPv6 のリンクローカルは伏せた)。`dns-sd -L` は空白を `\032` で返す
+    - 書いている途中で直した誤り: Thunderbolt Bridge (`bridge0`) を名前だけで「仮想」に分けていた → 登録されたサービスを先に見る
+    - 変異で赤を確かめたもの: 台帳のロック (外すと 30 台中 2 台しか残らない) / テストの書き込みの関門 (外すと外への書き込みを通す) /
+      ロックファイルの `O_NOFOLLOW` / 厳しい読み取りの「知らない鍵を拒む」。「sandbox そのものを拒む」と「ロックファイルのパスも関門に通す」は
+      同じ形を二重に止めていて、片方ずつ外しても緑・両方外すと赤 (二重の守りとして残す)
+    - 敵対的レビュー (上位モデルのサブエージェント 1 体): P2 ロックファイルが外を指す symlink だと関門を素通りして外に作る → ロックファイルも関門に通し `O_NOFOLLOW` /
+      P2 パスが sandbox そのものだと外にロック → 配下だけを許す / P2 書き直しで黙って消える中身 (知らない鍵・節の外の鍵・host の無い節・読めない時刻・
+      version の重複) → 書き戻す前は厳しく読んで拒む (一覧の読み取りは緩いまま。`Parse` / `ParseLenient`) / P3 鍵の重複を直さず書き戻す → 厳しい読み取りで拒む。
+      未確認として残す: 関門の検査から書き込みまでの間に symlink を差し替える競合 (テストは並行して symlink を作らない) /
+      使用中のロックファイルを手で消すと別の inode に flock がかかって排他が外れる (手作業で消した場合だけ)
