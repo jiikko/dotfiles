@@ -72,13 +72,7 @@ cleanup() { tt_lock_release_if_owner "$LOCK_DIR"; }
 trap cleanup EXIT
 
 interval_seconds() {
-  local v
-  v="$(tmux show -gqv @continuum-save-interval 2>/dev/null)"
-  case "$v" in
-    ''|*[!0-9]*) v="$TT_PERIODIC_DEFAULT_MINUTES" ;;
-    0)           v="$TT_PERIODIC_DEFAULT_MINUTES" ;;   # 0 = 無効は continuum の意味。ここでは既定へ
-  esac
-  printf '%s' "$((v * 60))"
+  printf '%s' "$(( $(tt_save_interval_minutes "$TT_PERIODIC_DEFAULT_MINUTES") * 60 ))"
 }
 
 tt_trigger_log "periodic-save-begin server=$SERVER_PID interval=$(interval_seconds)s epoch=$(date +%s)"
@@ -101,21 +95,13 @@ while :; do
   # socket gate は毎周期見る (サーバ入れ替わりで別環境の last を触らない)
   tt_on_default_server || break
 
-  save_script="$(tmux show -gqv @resurrect-save-script-path 2>/dev/null)"
-  if [ -z "$save_script" ] || [ ! -x "$save_script" ]; then
-    tt_trigger_log "periodic-save skipped=no-save-script epoch=$(date +%s)"
-  else
-    # 実際の保存可否 (復元中 / hold のみ / 退行) は wrapper 側ガードが判断する。
-    # lock も wrapper の bounded-wait が持つので、ここでは同期実行して結果だけ記録する。
-    if "$save_script" quiet >/dev/null 2>&1; then
-      # continuum の最終保存時刻を進める (debounce 経路と同じ簿記。interpolation を止めた後も
-      # continuum_save.sh を手動で叩く経路が残るため、意味論を揃えておく)
-      tmux set-option -g @continuum-save-last-timestamp "$(date +%s)" 2>/dev/null || true
-      tt_trigger_log "periodic-save rc=0 epoch=$(date +%s)"
-    else
-      tt_trigger_log "periodic-save rc=1 epoch=$(date +%s)"
-    fi
-  fi
+  # 保存の可否は wrapper 側のガードが、最終保存時刻の簿記は tt_run_resurrect_save (guards.sh) が持つ
+  save_rc=0
+  tt_run_resurrect_save || save_rc=$?
+  case "$save_rc" in
+    2) tt_trigger_log "periodic-save skipped=no-save-script epoch=$(date +%s)" ;;
+    *) tt_trigger_log "periodic-save rc=$save_rc epoch=$(date +%s)" ;;
+  esac
 
   [ -n "$TT_PERIODIC_ONESHOT" ] && break
 done

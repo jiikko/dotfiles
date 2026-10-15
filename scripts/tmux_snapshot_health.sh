@@ -53,8 +53,7 @@ last_link="$rdir/last"
 now="$(date +%s)"
 
 # --- 1. last の鮮度 --------------------------------------------------------------------
-interval_min="$(tmux show -gqv @continuum-save-interval 2>/dev/null)"
-case "$interval_min" in ''|*[!0-9]*|0) interval_min=15 ;; esac
+interval_min="$(tt_save_interval_minutes)"
 threshold=$(( interval_min * 60 * 2 ))
 [ "$threshold" -lt "$TT_HEALTH_MIN_STALE_SECONDS" ] && threshold="$TT_HEALTH_MIN_STALE_SECONDS"
 

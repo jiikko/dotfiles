@@ -92,27 +92,7 @@ tt_should_save() {
   return 0
 }
 
-# resurrect 本体の保存スクリプトを quiet で走らせる。
-# 保存成功後に continuum の最終保存時刻を「今」に進める。これにより continuum の
-# 周期 autosave（enough_time_since_last_run_passed）が @continuum-save-interval 分
-# gate され、「同一秒に save.sh が二重起動して last/archive を競合更新する」稀な
-# レースを実質排除する。本フックで頻繁に保存している間 continuum は idle 時のみ保存。
-#
-# 依存（変わったら再評価）: continuum の最終保存時刻 option 名
-# @continuum-save-last-timestamp（vendor/.../tmux-continuum/scripts/variables.sh の
-# last_auto_save_option）と epoch(date +%s)形式（shared.sh current_timestamp）。
-# この前提が崩れても last は壊さない（save.sh は世代別ファイル + 直近5世代を保持する
-# ため、万一の同秒衝突でも過去スナップショットから復旧可能）のが許容の根拠。
-tt_run_resurrect_save() {
-  local save_script
-  save_script="$(tmux show -gqv @resurrect-save-script-path 2>/dev/null)"
-  if [ -z "$save_script" ] || [ ! -x "$save_script" ]; then
-    return 1
-  fi
-  "$save_script" quiet >/dev/null 2>&1 || return 1
-  tmux set-option -g @continuum-save-last-timestamp "$(date +%s)" 2>/dev/null || true
-}
-
+# 保存の実行 (tt_run_resurrect_save) は guards.sh。
 # debounce 用のユニークトークンを生成（同一イベントバーストでも衝突しない値）
 tt_make_token() {
   echo "$(date +%s%N)-$$-${RANDOM}"

@@ -362,6 +362,34 @@ tt_prune_log_lines() {
   return 0
 }
 
+# tt_save_interval_minutes [既定]: 保存の間隔 (分)。出典は continuum と同じ @continuum-save-interval。未設定・数字でない・0
+# (continuum では「無効」の意味) なら既定 (省略時 15) を返す。周期保存の間隔と、スナップショットの鮮度の閾値が同じ値を使う。
+tt_save_interval_minutes() {
+  local v
+  v="$(tmux show -gqv @continuum-save-interval 2>/dev/null)"
+  case "$v" in ''|*[!0123456789]*|0) v="${1:-15}" ;; esac
+  printf '%s\n' "$v"
+}
+
+# tt_run_resurrect_save: resurrect の保存を 1 回、同期で走らせる (@resurrect-save-script-path = 保存の wrapper を quiet で)。
+# 成功したら continuum の最終保存時刻 (@continuum-save-last-timestamp) を進める。
+# rc: 0 = 保存した / 1 = wrapper が失敗・見送った (復元中 / hold のみ / 退行は wrapper 側が判断する) / 2 = wrapper が未設定・実行できない。
+# 保存の経路 (debounce・周期) はどれもここを通す (簿記の意味を揃える。issue 776)。lock は wrapper の bounded-wait が持つ。
+# 最終保存時刻を進めると、continuum の周期 autosave (enough_time_since_last_run_passed) が @continuum-save-interval 分 gate され、
+# 「同一秒に save.sh が二重起動して last/archive を競合更新する」稀なレースを実質排除する (頻繁に保存している間 continuum は idle 時のみ保存)。
+# 依存 (変わったら再評価): option 名 @continuum-save-last-timestamp (vendor/.../tmux-continuum/scripts/variables.sh の last_auto_save_option) と
+# epoch (date +%s) の形式 (shared.sh current_timestamp)。崩れても last は壊さない (save.sh は世代別ファイル + 直近 5 世代を保つ) のが許容の根拠。
+tt_run_resurrect_save() {
+  local save_script
+  save_script="$(tmux show -gqv @resurrect-save-script-path 2>/dev/null)"
+  if [ -z "$save_script" ] || [ ! -x "$save_script" ]; then
+    return 2
+  fi
+  "$save_script" quiet >/dev/null 2>&1 || return 1
+  tmux set-option -g @continuum-save-last-timestamp "$(date +%s)" 2>/dev/null || true
+  return 0
+}
+
 # ── 共有観測ログ (tt-restore-trigger.log) ────────────────────────────────────
 # 復元・保存・kill の因果を 1 本の時系列で読むための共有ログ。**書き手はこの関数だけ**にする。
 #
