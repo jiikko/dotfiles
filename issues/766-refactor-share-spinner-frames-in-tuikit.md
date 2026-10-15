@@ -1,4 +1,4 @@
-# 766 (refactor): bubbles (charm の画面部品) を lanmac 以外の TUI にも取り込めるところを洗い出して取り込む
+# 766 (refactor): spinner の字形と「時刻からコマを選ぶ関数」を tuikit に寄せる (bubbles は取り込まない)
 
 起票日: 2026-10-15
 
