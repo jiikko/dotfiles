@@ -1,0 +1,9 @@
+DATE: ---Fri 16 Oct 2026---
+ 0:51:54.381  ...STARTING...
+Timestamp     A/R  Flags         IF  Hostname                               Address                                      TTL
+ 0:51:54.383  Add  40000003      15  kojiM3MacBook-Pro.local.               0.0.0.0                                      1   No Such Record
+ 0:51:54.383  Add  40000003      32  kojiM3MacBook-Pro.local.               0.0.0.0                                      1   No Such Record
+ 0:51:54.383  Add  40000003       1  kojiM3MacBook-Pro.local.               127.0.0.1                                    4500
+ 0:51:54.383  Add  40000003      27  kojiM3MacBook-Pro.local.               169.254.13.42                                4500
+ 0:51:54.383  Add  40000003      33  kojiM3MacBook-Pro.local.               169.254.85.235                               4500
+ 0:51:54.383  Add  40000002      14  kojiM3MacBook-Pro.local.               192.168.50.250                               4500

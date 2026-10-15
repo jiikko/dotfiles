@@ -15,7 +15,7 @@ import (
 
 // runDump は `mac-lan-manager dump`: TUI を起こさずに、この Mac の網・台帳・Bonjour の結果を画面と同じ判定で出す
 // (LLM・人のデバッグ用。読むだけで何も書かない)。走査が終わるか --wait の上限まで待つ。
-func runDump(args []string, stdout, stderr io.Writer, now func() time.Time, newModel func() (*lanmgr.Model, error)) int {
+func runDump(args []string, stdout, stderr io.Writer, now func() time.Time, stop <-chan struct{}, newModel func() (*lanmgr.Model, error)) int {
 	fs := flag.NewFlagSet("dump", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	asJSON := fs.Bool("json", false, "JSON で出す")
@@ -43,6 +43,8 @@ func runDump(args []string, stdout, stderr io.Writer, now func() time.Time, newM
 		select { // 走査の合図か、刻み (ネットワークの読み込みは合図を出さないので刻みで見る)
 		case <-m.Changed():
 		case <-time.After(20 * time.Millisecond):
+		case <-stop: // SIGINT / SIGTERM / SIGHUP: 待ちを打ち切り、defer の Close で dns-sd を止めてから戻る (監査の指摘)
+			return 130
 		}
 	}
 	rep := m.Report()
@@ -88,6 +90,9 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 	fmt.Fprintf(w, "host: %s  net_ready: %v  busy(打ち切り): %v  台帳: %d 台\n", or(r.Host, "(不明)"), r.NetReady, r.Busy, r.LedgerSize)
 	if r.NetError != "" {
 		fmt.Fprintf(w, "net_error: %s\n", r.NetError)
+	}
+	if r.ScanError != "" {
+		fmt.Fprintf(w, "scan_error: %s  (0 台なら「居ない」ではなく「探せていない」)\n", r.ScanError)
 	}
 	fmt.Fprintln(w, "\n# この Mac のサービス (networksetup)")
 	for _, s := range r.Services {

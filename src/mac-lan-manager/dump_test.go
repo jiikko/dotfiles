@@ -18,14 +18,17 @@ import (
 func TestMain(m *testing.M) { widthenv.ExitIfUnsupported(); m.Run() }
 
 type dumpScan struct {
-	peers []discover.Peer
-	busy  bool
+	peers  []discover.Peer
+	busy   bool
+	closed bool
+	err    error
 }
 
 func (s *dumpScan) Snapshot() []discover.Peer { return s.peers }
 func (s *dumpScan) Busy(time.Time) bool       { return s.busy }
 func (s *dumpScan) Changed() <-chan struct{}  { return nil }
-func (s *dumpScan) Close()                    {}
+func (s *dumpScan) Close()                    { s.closed = true }
+func (s *dumpScan) Err() error                { return s.err }
 
 func dumpModel(busy bool) func() (*lanmgr.Model, error) {
 	return func() (*lanmgr.Model, error) {
@@ -50,7 +53,7 @@ func dumpModel(busy bool) func() (*lanmgr.Model, error) {
 // dump は画面と同じ判定の一覧を文字で出す (この Mac・見えた Mac・その IP の分類と繋ぐ先・Bonjour の生の結果)。
 func TestDumpText(t *testing.T) {
 	var out, errb bytes.Buffer
-	if rc := runDump(nil, &out, &errb, time.Now, dumpModel(false)); rc != 0 {
+	if rc := runDump(nil, &out, &errb, time.Now, nil, dumpModel(false)); rc != 0 {
 		t.Fatalf("rc=%d stderr=%s", rc, errb.String())
 	}
 	for _, want := range []string{"host: me.local", "net_ready: true", "m2macmini.local", "lan=169.254.217.100", "connect=169.254.217.100", "27:169.254.217.100", "# 時間", "ネットワーク読了="} {
@@ -64,7 +67,7 @@ func TestDumpText(t *testing.T) {
 func TestDumpJSONAndWaitCap(t *testing.T) {
 	var out, errb bytes.Buffer
 	start := time.Now()
-	if rc := runDump([]string{"--json", "--wait", "200ms"}, &out, &errb, time.Now, dumpModel(true)); rc != 0 {
+	if rc := runDump([]string{"--json", "--wait", "200ms"}, &out, &errb, time.Now, nil, dumpModel(true)); rc != 0 {
 		t.Fatalf("rc=%d stderr=%s", rc, errb.String())
 	}
 	if time.Since(start) > 5*time.Second {
@@ -76,5 +79,23 @@ func TestDumpJSONAndWaitCap(t *testing.T) {
 	}
 	if !r.Busy || len(r.Rows) != 2 || r.Rows[1].Host != "m2macmini.local" || r.Rows[1].ConnectIP != "169.254.217.100" {
 		t.Errorf("report = %+v", r)
+	}
+}
+
+// 待っている間にシグナル (stop) が来たら、待ちを打ち切って走査を止めてから戻る (止めないと dns-sd が親の外で残った。監査の指摘)。
+func TestDumpStopsScanOnSignal(t *testing.T) {
+	scan := &dumpScan{busy: true} // 走査が終わらない
+	stop := make(chan struct{})
+	close(stop)
+	var out, errb bytes.Buffer
+	start := time.Now()
+	rc := runDump([]string{"--wait", "30s"}, &out, &errb, time.Now, stop, func() (*lanmgr.Model, error) {
+		return lanmgr.New(lanmgr.Options{StartScan: func(time.Time) lanmgr.Scanner { return scan }}), nil
+	})
+	if rc != 130 || time.Since(start) > 5*time.Second {
+		t.Errorf("シグナルで打ち切らない: rc=%d (%v)", rc, time.Since(start))
+	}
+	if !scan.closed {
+		t.Error("シグナルで戻るときに走査を止めていない (dns-sd が残る)")
 	}
 }

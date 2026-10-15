@@ -135,3 +135,36 @@ func TestParseAtSingleDigitHour(t *testing.T) {
 		t.Errorf("-G: %+v", as)
 	}
 }
+
+// -G の否定応答 ("0.0.0.0  1  No Such Record") と lo0 の 127.0.0.1 は IP として読まない (2026-10-16 0 時台に本物の dns-sd から取った出力)。
+// 読むと 0.0.0.0 が「その他の IP」になり、それしか無い相手への s が自分へ ssh した (監査の指摘)。
+func TestParseAddrSkipsNegativeAndLoopback(t *testing.T) {
+	var got []Addr
+	for _, l := range lines(t, "getaddr_negative.txt") {
+		if a, ok := ParseAddr(l); ok {
+			got = append(got, a)
+		}
+	}
+	want := []Addr{
+		{true, 27, "kojiM3MacBook-Pro.local", "169.254.13.42"},
+		{true, 33, "kojiM3MacBook-Pro.local", "169.254.85.235"},
+		{true, 14, "kojiM3MacBook-Pro.local", "192.168.50.250"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("[%d] got %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	// 行末が TTL でない行 (否定応答の文が付く) は、IP が 0.0.0.0 でなくても読まない (この行は作った値。本物の否定応答は 0.0.0.0 だった。
+	// 0.0.0.0 を落とす検査と、行末を TTL に縛る検査の両方を、それぞれ 1 本で守るため)
+	if a, ok := ParseAddr(" 0:51:54.383  Add  40000003      15  x.local.               10.0.0.9                                      1   No Such Record"); ok {
+		t.Errorf("否定応答の行を読んだ: %+v", a)
+	}
+	// 行末が TTL でも 0.0.0.0 は読まない (この行も作った値。fixture の 0.0.0.0 は全部否定応答の文付きで、正規表現が先に落とすため)
+	if a, ok := ParseAddr(" 0:51:54.383  Add  40000003      15  x.local.               0.0.0.0                                      4500"); ok {
+		t.Errorf("0.0.0.0 を読んだ: %+v", a)
+	}
+}

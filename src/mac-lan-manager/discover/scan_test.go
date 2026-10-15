@@ -175,3 +175,55 @@ func TestResolveRefreshesAddrsWhenReadded(t *testing.T) {
 		t.Errorf("再起動で変わった IP を取り直していない: %q", got)
 	}
 }
+
+// dns-sd を起こせない / -B が取り消していないのに終わったら Err で知らせる (黙ると「0 台見つかった」と区別できない)。
+// 取り消し (Close) で終わったのは失敗にしない。
+func TestScannerReportsBrowseFailure(t *testing.T) {
+	f := &fakeStarter{out: map[string]string{"dns-sd -B _ssh._tcp local": "Browsing for _ssh._tcp.local\n"}}
+	s := Start(func(ctx context.Context, name string, args ...string) (io.ReadCloser, error) {
+		if len(args) > 1 && args[1] == "_ssh._tcp" {
+			// -B が 1 行出してすぐ終わる (本物は終わらない)
+			return io.NopCloser(strings.NewReader("Browsing for _ssh._tcp.local\n")), nil
+		}
+		return f.start(ctx, name, args...) // 残り 2 つは「偽物が無い」= 起こせない
+	}, time.Now())
+	for deadline := time.Now().Add(5 * time.Second); s.Err() == nil || strings.Count(s.Err().Error(), "dns-sd") < 3; {
+		if time.Now().After(deadline) {
+			t.Fatalf("走査の失敗を知らせない: %v", s.Err())
+		}
+		<-time.After(10 * time.Millisecond)
+	}
+	s.Close()
+	if !strings.Contains(s.Err().Error(), "途中で終わった") || !strings.Contains(s.Err().Error(), "起こせない") {
+		t.Errorf("Err = %v", s.Err())
+	}
+
+	ok := Start(func(ctx context.Context, _ string, _ ...string) (io.ReadCloser, error) {
+		r, w := io.Pipe()
+		go func() { <-ctx.Done(); _ = w.Close() }()
+		return r, nil
+	}, time.Now())
+	ok.Close()
+	if ok.Err() != nil {
+		t.Errorf("取り消しで終わったのを失敗にした: %v", ok.Err())
+	}
+}
+
+// 取り消しの後に起こそうとして失敗したもの (exec.CommandContext は取り消し済みの ctx で起動を断る) は、走査の失敗にしない
+// (Close の直後に Err が「起こせない: context canceled」を返していた。fable の敵対レビュー)。
+func TestScannerCloseIsNotFailure(t *testing.T) {
+	for range 20 {
+		s := Start(func(ctx context.Context, _ string, _ ...string) (io.ReadCloser, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			r, w := io.Pipe()
+			go func() { <-ctx.Done(); _ = w.Close() }()
+			return r, nil
+		}, time.Now())
+		s.Close()
+		if err := s.Err(); err != nil {
+			t.Fatalf("取り消しを失敗にした: %v", err)
+		}
+	}
+}

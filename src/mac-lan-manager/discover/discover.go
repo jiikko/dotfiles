@@ -5,6 +5,7 @@
 package discover
 
 import (
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -45,7 +46,10 @@ var (
 	// 例: "21:28:48.953  kojiのMac\032mini._ssh._tcp.local. can be reached at m2macmini.local.:22 (interface 27)"
 	reLookup = regexp.MustCompile(stamp + `(.+?)\._[^.]+\._(?:tcp|udp)\.\S*\s+can be reached at (\S+?)\.?:(\d+) \(interface (\d+)\)`)
 	// 例: "21:27:58.076  Add  40000002      27  m2macmini.local.                       169.254.217.100                              4500"
-	reAddr = regexp.MustCompile(stamp + `(Add|Rmv)\s+\S+\s+(\d+)\s+(\S+)\s+(\d+\.\d+\.\d+\.\d+)\s`)
+	// 🚨 行末は TTL の数字だけ。否定応答は "0.0.0.0  1  No Such Record" と後ろに文が付く (2026-10-16 に自分のホスト名を -G して実測。
+	// 読むと 0.0.0.0 を相手の IP にして、s が自分へ ssh した。監査の指摘)。0.0.0.0 は ParseAddr でも落とす (守りは 2 段で、
+	// テストは段ごとに 1 本ずつ持つ)
+	reAddr = regexp.MustCompile(stamp + `(Add|Rmv)\s+\S+\s+(\d+)\s+(\S+)\s+(\d+\.\d+\.\d+\.\d+)\s+\d+\s*$`)
 	reDec  = regexp.MustCompile(`\\(\d{3})`)
 )
 
@@ -77,6 +81,10 @@ func ParseAddr(line string) (Addr, bool) {
 		return Addr{}, false
 	}
 	ifn, _ := strconv.Atoi(m[2])
+	// 繋ぐ先にならない IP (0.0.0.0・127.x = lo0) は落とす
+	if a, err := netip.ParseAddr(m[4]); err != nil || a.IsUnspecified() || a.IsLoopback() {
+		return Addr{}, false
+	}
 	return Addr{Add: m[1] == "Add", If: ifn, Host: strings.TrimSuffix(m[3], "."), IP: m[4]}, true
 }
 

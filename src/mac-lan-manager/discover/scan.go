@@ -3,8 +3,11 @@ package discover
 import (
 	"bufio"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,7 +37,8 @@ type Scanner struct {
 	wg      sync.WaitGroup
 	mu      sync.Mutex
 	peers   map[string]*Peer
-	pending int // 引き当て中の数 (Busy の判定)
+	pending int      // 引き当て中の数 (Busy の判定)
+	errs    []string // 走査そのものの失敗 (dns-sd を起こせない / 取り消していないのに -B が終わった)
 	settle  time.Time
 	changed chan struct{}
 	closing sync.Once
@@ -72,6 +76,23 @@ func (s *Scanner) notify() {
 	case s.changed <- struct{}{}:
 	default:
 	}
+}
+
+func (s *Scanner) fail(msg string) {
+	s.mu.Lock()
+	s.errs = append(s.errs, msg)
+	s.mu.Unlock()
+	s.notify()
+}
+
+// Err は走査そのものの失敗 (無ければ nil)。見つかった台数が 0 なのが「居ない」のか「探せていない」のかを分ける。
+func (s *Scanner) Err() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.errs) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(s.errs, " / "))
 }
 
 // Busy は引き当て中か、起動から settleWindow の内か。
@@ -122,10 +143,20 @@ func (s *Scanner) browse(svc string) {
 	defer s.wg.Done()
 	r, err := s.start(s.ctx, "dns-sd", "-B", svc, "local")
 	if err != nil {
+		if s.ctx.Err() == nil { // 取り消した後の起動の失敗 (Close と Start の競り合い) は失敗にしない
+			s.fail(fmt.Sprintf("dns-sd -B %s を起こせない: %v", svc, err))
+		}
 		return
 	}
 	defer func() { _ = r.Close() }()
 	sc := bufio.NewScanner(r)
+	// -B は終わらない。取り消していないのに終わったら失敗 (dns-sd が無い・mDNSResponder が止まっている)。黙って抜けると
+	// 「0 台見つかった」と区別が付かなかった (監査の指摘 2026-10-16)
+	defer func() {
+		if s.ctx.Err() == nil {
+			s.fail("dns-sd -B " + svc + " が途中で終わった")
+		}
+	}()
 	for sc.Scan() {
 		b, ok := ParseBrowse(sc.Text())
 		if !ok || !s.onBrowse(svc, b) {

@@ -9,7 +9,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -168,13 +170,16 @@ func main() {
 			fmt.Print(usage)
 			return
 		case "dump":
-			os.Exit(runDump(os.Args[2:], os.Stdout, os.Stderr, time.Now, func() (*lanmgr.Model, error) {
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+			rc := runDump(os.Args[2:], os.Stdout, os.Stderr, time.Now, ctx.Done(), func() (*lanmgr.Model, error) {
 				o, err := live.Options()
 				if err != nil {
 					return nil, err
 				}
 				return lanmgr.New(o), nil
-			}))
+			})
+			cancel()
+			os.Exit(rc)
 		}
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
@@ -192,8 +197,11 @@ func main() {
 	if termcolor.TrueColorThroughTmux(os.Getenv("TMUX"), live.RunOut) {
 		opts = append(opts, tea.WithColorProfile(colorprofile.TrueColor))
 	}
-	if _, err := tea.NewProgram(&app{m: m}, opts...).Run(); err != nil {
-		m.Close()
+	_, err = tea.NewProgram(&app{m: m}, opts...).Run()
+	// 🚨 err が無くても止める: bubbletea は SIGTERM を「終了」に変えて err=nil で戻すので、err のときだけ止めると
+	// dns-sd が 9 本残った (-B は終わらない。監査の指摘 2026-10-16)
+	m.Close()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "mac-lan-manager:", err)
 		os.Exit(1)
 	}

@@ -240,3 +240,13 @@
 2026-10-14 09:45	ci	direct	issues/756-bug-width-env-warning-missing-in-restartable-schedkeys-ratelimit.md,issues/757-refactor-tuikit-consumers-leftover-copies-and-contracts.md,issues/758-test-tuikit-foreground-exec-untested-and-vacuous-tests.md,issues/759-chore-tuikit-restartable-pin-termwidth-contract-readme.md,issues/760-research-tuikit-audit-2026-10-14.md
 2026-10-14 09:45	lint-from-done	direct	issues/756-bug-width-env-warning-missing-in-restartable-schedkeys-ratelimit.md,issues/757-refactor-tuikit-consumers-leftover-copies-and-contracts.md,issues/758-test-tuikit-foreground-exec-untested-and-vacuous-tests.md,issues/759-chore-tuikit-restartable-pin-termwidth-contract-readme.md,issues/760-research-tuikit-audit-2026-10-14.md
 2026-10-14 09:45	general	direct	issues/756-bug-width-env-warning-missing-in-restartable-schedkeys-ratelimit.md,issues/757-refactor-tuikit-consumers-leftover-copies-and-contracts.md,issues/758-test-tuikit-foreground-exec-untested-and-vacuous-tests.md,issues/759-chore-tuikit-restartable-pin-termwidth-contract-readme.md,issues/760-research-tuikit-audit-2026-10-14.md
+2026-10-16 01:40	dead-code	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager: 0 件。scripts/check_unused_excluding_tests.sh で Go 22 module を staticcheck -tests=false)
+2026-10-16 01:40	dependency	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager: 0 件。go mod tidy -diff 2 module・charm の版を全 module で突き合わせ・govulncheck v1.1.4 で到達 0)
+2026-10-16 01:40	ci	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager: 0 件。run 38758505054 の step 所要・paths と replace の突き合わせ・テストが module 外を読まない)
+2026-10-16 01:40	security	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 1 波 fable: 0 件。改行入りの Bonjour 名を実際に広告して確認)
+2026-10-16 01:40	resource-leaks	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 1 波: 1 件を直した)
+2026-10-16 01:40	broken-code	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 1 波: 2 件を直した)
+2026-10-16 01:40	error-handling	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 1 波: 3 件を直した)
+2026-10-16 01:40	false-green	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 1 波: 0 件)
+2026-10-16 01:40	performance	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 1 波: 0 件。View 6 台 6.5 ms / 40 台 8.9 ms)
+2026-10-16 01:40	concurrency	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 1 波: 0 件)

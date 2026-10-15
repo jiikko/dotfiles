@@ -12,7 +12,8 @@ type Report struct {
 	Host       string            `json:"host"`      // この Mac の台帳の鍵 (.local のホスト名)
 	NetReady   bool              `json:"net_ready"` // この Mac のネットワークを読み終えたか
 	NetError   string            `json:"net_error,omitempty"`
-	Busy       bool              `json:"busy"` // まだ走査中 (待ちの上限で打ち切った)
+	ScanError  string            `json:"scan_error,omitempty"` // Bonjour の走査そのものの失敗 (0 台が「居ない」のか「探せていない」のか)
+	Busy       bool              `json:"busy"`                 // まだ走査中 (待ちの上限で打ち切った)
 	Services   []netinfo.Service `json:"services"`
 	Rows       []ReportRow       `json:"rows"`  // 先頭はこの Mac
 	Peers      []discover.Peer   `json:"peers"` // Bonjour の生の結果 (分類の前)
@@ -51,6 +52,9 @@ func (m *Model) Report() Report {
 		Notices: m.TakeNotices(), LedgerSize: len(m.hosts)}
 	if m.selfErr != nil {
 		r.NetError = m.selfErr.Error()
+	}
+	if m.scan != nil && m.scan.Err() != nil {
+		r.ScanError = m.scan.Err().Error()
 	}
 	for _, x := range m.rows() {
 		row := ReportRow{Self: x.self, Host: x.host, Alias: x.alias, Instance: x.instance, User: x.user, Managed: x.managed, Seen: x.seen,

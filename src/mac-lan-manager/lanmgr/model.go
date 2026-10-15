@@ -37,7 +37,12 @@ const (
 )
 
 // ExecRequest は呼び出し側に起こしてほしいプロセス (前面で端末を明け渡す)。
-type ExecRequest struct{ Argv []string }
+type ExecRequest struct {
+	Argv []string
+	// ExitIsFailure は終了コード ≠ 0 を失敗として知らせるか。ssh は相手のシェルの終了コードで抜けるので失敗と言わない。open は
+	// 開けなかったときに rc=1 で戻り、画面は TUI へすぐ戻るので理由も消える (知らせないと何も起きなかったように見えた。監査の指摘)
+	ExitIsFailure bool
+}
 
 // Notice は呼び出し側が右下の toast に出す知らせ。OK=false は「効かなかった」(✗ 赤。ガイド §9)。
 type Notice struct {
@@ -50,6 +55,7 @@ type Scanner interface {
 	Snapshot() []discover.Peer
 	Busy(now time.Time) bool
 	Changed() <-chan struct{} // 結果が変わった合図 (呼び出し側はこれを待って Advance を呼ぶ。後から見つかった Mac を出すため)
+	Err() error               // 走査そのものの失敗 (dns-sd を起こせない等。0 台の「居ない」と「探せていない」を分ける)
 	Close()
 }
 
@@ -86,16 +92,18 @@ const (
 
 // Model は画面の状態。
 type Model struct {
-	o     Options
-	w, h  int
-	now   time.Time
-	sc    screen
-	tab   int    // 0: 管理対象 / 1: 未管理
-	cur   [2]int // タブごとのカーソル
-	setC  int    // 設定の画面のカーソル
-	ov    overlay
-	ask   *ask
-	copyC int
+	o        Options
+	w, h     int
+	now      time.Time
+	sc       screen
+	tab      int    // 0: 管理対象 / 1: 未管理
+	cur      [2]int // タブごとのカーソル
+	listOff  [2]int // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
+	listRows int    // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
+	setC     int    // 設定の画面のカーソル
+	ov       overlay
+	ask      *ask
+	copyC    int
 
 	filter    lineedit.Line
 	filtering bool `layer:"filter"`
@@ -110,14 +118,16 @@ type Model struct {
 	hosts     []ledger.Host
 	peers     []discover.Peer
 	scan      Scanner
+	scanErr   error              // 走査の失敗 (見せた後も持つ。Reload で消す)
 	wantHost  string             // RestorePlace で戻したいカーソルの Mac (見つかるまで持つ。走査が終われば諦める)
 	netCh     <-chan netLoad     // 裏で読んでいるこの Mac のネットワーク (nil = 読んでいない)
 	netReady  bool               // この Mac のネットワークを一度は読み終えた (読み直しの間は前の値のまま描く)
 	netCancel context.CancelFunc // その取り消し
 	pf        prefs.Prefs
 
-	notices []Notice
-	exec    *ExecRequest
+	notices           []Notice
+	exec              *ExecRequest
+	execExitIsFailure bool // 最後に渡したプロセスの終了コードを失敗と見るか (ExecDone が読む)
 
 	// 入力欄に端末のカーソルを置く位置 (View が描くときに控える。-1 は入力欄が無い)
 	caretFX, caretFY int // 絞り込み
@@ -155,11 +165,12 @@ func (m *Model) Reload() {
 	}
 	m.startNetLoad()
 	if m.o.Ledger != nil {
-		hs, err := m.o.Ledger.Load()
-		if err != nil {
+		// 読めなければ前に読んだ一覧を残す (nil で上書きすると、管理対象の Mac が全部「未管理」に化けた。監査の指摘)
+		if hs, err := m.o.Ledger.Load(); err != nil {
 			m.note("台帳が読めない: "+err.Error(), false)
+		} else {
+			m.hosts = hs
 		}
-		m.hosts = hs
 	}
 	m.pf = prefs.Default()
 	if m.o.PrefsPath != "" {
@@ -170,6 +181,7 @@ func (m *Model) Reload() {
 	if m.scan != nil {
 		m.scan.Close()
 	}
+	m.scanErr = nil
 	if m.o.StartScan != nil {
 		m.scan = m.o.StartScan(m.now)
 		m.peers = m.scan.Snapshot()
@@ -278,6 +290,10 @@ func (m *Model) Advance(now time.Time) {
 	m.takeNetLoad()
 	if m.scan != nil {
 		m.peers = m.scan.Snapshot()
+		if err := m.scan.Err(); err != nil && m.scanErr == nil {
+			m.scanErr = err
+			m.note("Bonjour で探せない: "+err.Error(), false) // 1 回だけ (毎 tick 出さない)
+		}
 	}
 	m.seekWantHost()
 }
@@ -318,6 +334,7 @@ func (m *Model) TakeExec() (ExecRequest, bool) {
 	}
 	r := *m.exec
 	m.exec = nil
+	m.execExitIsFailure = r.ExitIsFailure
 	return r, true
 }
 
@@ -326,7 +343,15 @@ func (m *Model) TakeExec() (ExecRequest, bool) {
 // treefiler の filer.Model.ExecDone と同じ判断。全体レビューの指摘 2026-10-15)。
 func (m *Model) ExecDone(err error) string {
 	var exitErr interface{ ExitCode() int } // *exec.ExitError
-	if err == nil || errors.As(err, &exitErr) {
+	failOnExit := m.execExitIsFailure
+	m.execExitIsFailure = false // 1 回だけ読む (次の ExecDone へ漏らさない)
+	switch {
+	case err == nil:
+		return ""
+	case errors.As(err, &exitErr):
+		if failOnExit {
+			return fmt.Sprintf("開けなかった (終了コード %d)", exitErr.ExitCode())
+		}
 		return ""
 	}
 	return "起こせなかった: " + err.Error()
@@ -674,7 +699,7 @@ func (m *Model) keyList(key string) Action {
 		}
 		return Quit
 	}
-	if move(&m.cur[m.tab], len(m.visible()), key, m.h) {
+	if move(&m.cur[m.tab], len(m.visible()), key, max(m.listRows, 1)) {
 		return None
 	}
 	switch key {
@@ -727,7 +752,7 @@ func (m *Model) keyList(key string) Action {
 			m.note("画面共有を広告していない", false)
 			break
 		}
-		m.exec = &ExecRequest{Argv: []string{"open", "vnc://" + r.connectIP()}}
+		m.exec = &ExecRequest{Argv: []string{"open", "vnc://" + r.connectIP()}, ExitIsFailure: true}
 		return Exec
 	case "m": // 名前の変更 (treefiler と同じ動詞)
 		if r.self {

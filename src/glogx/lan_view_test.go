@@ -35,6 +35,7 @@ func (f *fakeLanScan) Busy(time.Time) bool {
 	return f.busy && !f.closed
 }
 func (f *fakeLanScan) Changed() <-chan struct{} { return f.changed }
+func (f *fakeLanScan) Err() error               { return nil }
 
 // Close は本物 (discover.Scanner.Close) と同じく Changed を閉じる (待っている側は ok=false で抜ける)。
 func (f *fakeLanScan) Close() {

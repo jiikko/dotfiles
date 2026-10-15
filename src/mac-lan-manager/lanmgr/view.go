@@ -2,6 +2,7 @@ package lanmgr
 
 import (
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"slices"
 	"strconv"
 	"strings"
@@ -38,7 +39,7 @@ func (m *Model) View() []string {
 	}
 	foot := m.footer()
 	h := max(m.h, 10)
-	inner := max(h-2*padY-2, 1)
+	inner := m.bodyHeight()
 	// 安全網: どの行も幅で切ってから枠に入れる (lipgloss は幅を超えた行を折り返し、行が増えて下のキーの案内が押し出される)
 	bl := strings.Split(body, "\n")
 	for i, l := range bl {
@@ -48,6 +49,7 @@ func (m *Model) View() []string {
 	base := lipgloss.NewStyle().Width(m.w).Height(h).MaxHeight(h).Padding(padY, padX).Render(lipgloss.JoinVertical(lipgloss.Left, body, "", foot))
 	layers := []*lipgloss.Layer{lipgloss.NewLayer(base)}
 	if box, fieldRow, fieldX := m.overlayBox(); box != "" {
+		box = lipgloss.NewStyle().MaxHeight(h).Render(box) // 板が画面より高いと View が h より多い行を返した (? の板は 22 行)
 		bw, bh := lipgloss.Width(box), lipgloss.Height(box)
 		x, y := max((m.w-bw)/2, 0), max((h-bh)/2, 0)
 		layers = append(layers, lipgloss.NewLayer(box).X(x).Y(y).Z(1))
@@ -80,13 +82,16 @@ func (m *Model) footer() string {
 
 func (m *Model) header(w int) string {
 	left := logo()
-	if m.Busy() {
+	switch {
+	case m.Busy():
 		what := fmt.Sprintf(" Bonjour で探しています (%d 台)", len(m.peers))
 		if !m.netReady {
 			what = " この Mac のネットワークを読んでいます"
 		}
 		left += "   " + lipgloss.NewStyle().Foreground(cPink).Render(spinner.At(m.now, spinStep)) + sDim.Render(what)
-	} else {
+	case m.scanErr != nil:
+		left += "   " + sWarn.Render("✗ Bonjour で探せない") + sDim.Render(fmt.Sprintf(" (%d 台。dump で理由を見る)", len(m.peers)))
+	default:
 		left += "   " + sOK.Render("✓") + sDim.Render(fmt.Sprintf(" %d 台見つかった", len(m.peers)))
 	}
 	ips := m.selfIPs()
@@ -94,10 +99,18 @@ func (m *Model) header(w int) string {
 	if _, note := m.selfLan(); strings.Contains(note, "未固定") {
 		right += " " + pillWrn.Render("未固定")
 	}
-	// 狭いときは段階的に詰める (折り返させない。折り返すと行が増えて下のキーの案内が押し出される)
+	// 狭いときは段階的に詰める (折り返させない。折り返すと行が増えて下のキーの案内が押し出される)。走査の失敗は
+	// この Mac の IP より大事なので、右を先に詰め、左は消さずに短い形を残す (消すと「0 台」と見分けが付かない)
 	fit := func() bool { return lipgloss.Width(left)+lipgloss.Width(right)+2 <= w }
+	if !fit() && m.scanErr != nil {
+		left = logo() + "   " + sWarn.Render("✗ Bonjour で探せない")
+		right = sKeycap.Render("c") + sDim.Render(" 内部 ") + sText.Render(or(ips[0], "-"))
+	}
 	if !fit() {
 		left = logo()
+		if m.scanErr != nil {
+			left += " " + sWarn.Render("✗ 探せない")
+		}
 	}
 	if !fit() {
 		right = sKeycap.Render("c") + sDim.Render(" メイン ") + sText.Render(or(ips[1], "-")) + sDim.Render("  内部 ") + sText.Render(or(ips[0], "-"))
@@ -115,14 +128,34 @@ func (m *Model) viewList(w int) string {
 	if wide {
 		listW = w * 58 / 100
 	}
-	list := lipgloss.JoinVertical(lipgloss.Left, m.tabs(listW-1), shadow(card(m.listTable(listW-7), listW-1, surfList, tabColors[m.tab], cPurple)))
+	head := lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "")
+	tabs := m.tabs(listW - 1)
+	detailW := w
+	if wide {
+		detailW = w - listW - 2
+	}
+	detail := m.detail(r, detailW)
+	// 一覧に回せる行数: 画面の高さから、見出し・タブ・枠・表の見出しと (縦に積むときは) 詳細カードを先に引く。詳細カードに動作の
+	// キー (s 繋ぐ・Y コピー・o 開く) があるので、それを押し出さないよう先に取る。全部を描いて下で切っていたころは、狭い画面で
+	// 詳細カードもカーソル行も画面の外に出た (監査の指摘 2026-10-16)
+	frame := lipgloss.Height(shadow(card("", listW-1, surfList, tabColors[m.tab], cPurple))) - 1
+	rows := m.bodyHeight() - lipgloss.Height(head) - lipgloss.Height(tabs) - frame - 2 // 2 = 表の見出しと罫線
+	if !wide {
+		if rows-lipgloss.Height(detail)-1 < min(3, len(m.visible())) {
+			// 詳細カードを積む高さが無い: 動作のキーだけの 1 行に畳む (カードごと下で切れると、s / Y / o の案内が黙って消えた。
+			// fable の敵対レビュー: 縦積みで高さ 22 以下)
+			detail = m.detailCompact(r)
+		}
+		rows -= lipgloss.Height(detail) + 1
+	}
+	list := lipgloss.JoinVertical(lipgloss.Left, tabs, shadow(card(m.listTable(listW-7, max(rows, 1)), listW-1, surfList, tabColors[m.tab], cPurple)))
 	var main string
 	if wide {
-		main = lipgloss.JoinHorizontal(lipgloss.Top, list, "  ", lipgloss.NewStyle().MarginTop(1).Render(m.detail(r, w-listW-2)))
+		main = lipgloss.JoinHorizontal(lipgloss.Top, list, "  ", lipgloss.NewStyle().MarginTop(1).Render(detail))
 	} else {
-		main = lipgloss.JoinVertical(lipgloss.Left, list, "", m.detail(r, w))
+		main = lipgloss.JoinVertical(lipgloss.Left, list, "", detail)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", main)
+	return lipgloss.JoinVertical(lipgloss.Left, head, main)
 }
 
 func (m *Model) tabs(width int) string {
@@ -223,7 +256,30 @@ func (m *Model) columns() []col {
 }
 
 // listTable は列ごとに幅を決め、セルを lipgloss のスタイルで描いて横に並べる (折り返さず … で切る)。
-func (m *Model) listTable(width int) string {
+// detailCompact は高さが足りないときの詳細カードの代わり (動作のキーだけの 1 行)。
+func (m *Model) detailCompact(r row) string {
+	if r.self {
+		return sDim.Render("この Mac  ") + keycap("c", "IP をコピー") + "   " + sMuted.Render("(端末を高くすると詳細)")
+	}
+	parts := []string{sText.Render(or(r.alias, or(r.instance, r.host)))}
+	if r.connectIP() != "" {
+		parts = append(parts, keycap("s", "繋ぐ"), keycap("Y", "コピー"))
+		if r.smb {
+			parts = append(parts, keycap("y", "smb"))
+		}
+		if r.vnc {
+			parts = append(parts, keycap("o", "画面共有"))
+		}
+	}
+	parts = append(parts, sMuted.Render("(端末を高くすると詳細)"))
+	return strings.Join(parts, "   ")
+}
+
+// bodyHeight は枠の内側の行数 (View の inner と同じ式)。
+func (m *Model) bodyHeight() int { return max(max(m.h, 10)-2*padY-2, 1) }
+
+// listTable は一覧の表。maxRows 行より多ければ、カーソルを含む窓だけを描く (窓の位置はタブごとに覚える)。
+func (m *Model) listTable(width, maxRows int) string {
 	vis := m.visible()
 	cur := min(m.cur[m.tab], len(vis)-1)
 	cols := m.columns()
@@ -290,7 +346,14 @@ func (m *Model) listTable(width int) string {
 		return lipgloss.JoinHorizontal(lipgloss.Top, out...)
 	}
 	lines := []string{render(-1, nil), sMuted.Render(strings.Repeat("─", width))}
-	for i := range vis {
+	from, to := 0, len(vis)
+	m.listRows = maxRows // 半ページ送りの量 (端末の高さではなく、一覧の窓の行数で送る)
+	if len(vis) > maxRows {
+		from = listnav.WindowOffset(m.listOff[m.tab], cur, len(vis), maxRows)
+		m.listOff[m.tab] = from
+		to = from + maxRows
+	}
+	for i := from; i < to; i++ {
 		lines = append(lines, render(i, &vis[i]))
 	}
 	return strings.Join(lines, "\n")

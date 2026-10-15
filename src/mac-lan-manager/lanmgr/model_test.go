@@ -25,9 +25,17 @@ import (
 func TestMain(m *testing.M) { widthenv.ExitIfUnsupported(); m.Run() }
 
 // memStore は台帳の偽物 (メモリの中だけ。本物のファイルを書かない)。
-type memStore struct{ hosts []ledger.Host }
+type memStore struct {
+	hosts   []ledger.Host
+	loadErr error
+}
 
-func (s *memStore) Load() ([]ledger.Host, error) { return slices.Clone(s.hosts), nil }
+func (s *memStore) Load() ([]ledger.Host, error) {
+	if s.loadErr != nil {
+		return nil, s.loadErr
+	}
+	return slices.Clone(s.hosts), nil
+}
 func (s *memStore) Upsert(h ledger.Host) error {
 	h.Host = ledger.Key(h.Host)
 	if i := slices.IndexFunc(s.hosts, func(x ledger.Host) bool { return x.Host == h.Host }); i >= 0 {
@@ -51,6 +59,7 @@ func (s *memStore) Remove(host string) error {
 }
 
 type fakeScan struct {
+	err    error
 	peers  []discover.Peer
 	busy   bool
 	closed int
@@ -60,6 +69,7 @@ func (f *fakeScan) Snapshot() []discover.Peer { return f.peers }
 func (f *fakeScan) Busy(time.Time) bool       { return f.busy }
 func (f *fakeScan) Close()                    { f.closed++ }
 func (f *fakeScan) Changed() <-chan struct{}  { return nil }
+func (f *fakeScan) Err() error                { return f.err }
 
 var t0 = time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 
@@ -549,12 +559,25 @@ func (exitCodeError) ExitCode() int { return 255 }
 
 // ssh の終了コード (相手のシェルの最後のコマンド・接続できなかった 255) は「起こせなかった」と言わない。起動できなかったときだけ言う。
 func TestExecDoneIgnoresExitCode(t *testing.T) {
-	h := newHarness(t, nil, nil)
+	h := newHarness(t, nil, []discover.Peer{mini})
+	h.keys("l", "j", "s") // ssh
+	h.m.TakeExec()
 	if w := h.m.ExecDone(fmt.Errorf("ssh: %w", exitCodeError{})); w != "" {
-		t.Errorf("終了コードで知らせた: %q", w)
+		t.Errorf("ssh の終了コードで知らせた: %q", w)
 	}
 	if w := h.m.ExecDone(errors.New(`exec: "ssh": executable file not found in $PATH`)); w == "" {
 		t.Error("起動できなかったのに知らせない")
+	}
+	// open (画面共有) は開けなかったら rc=1 で戻る。こちらは終了コードを失敗として知らせる
+	h.keys("o")
+	if r, _ := h.m.TakeExec(); len(r.Argv) == 0 || r.Argv[0] != "open" {
+		t.Fatalf("o が open を頼まない: %+v", r)
+	}
+	if w := h.m.ExecDone(fmt.Errorf("open: %w", exitCodeError{})); !strings.Contains(w, "開けなかった") {
+		t.Errorf("open が開けなかったのに知らせない: %q", w)
+	}
+	if w := h.m.ExecDone(fmt.Errorf("x: %w", exitCodeError{})); w != "" {
+		t.Errorf("前の open の判定が次の ExecDone に漏れた: %q", w)
 	}
 }
 
@@ -711,7 +734,7 @@ func TestRestorePlaceWaitsForLatePeer(t *testing.T) {
 func TestNameColumnFitsContent(t *testing.T) {
 	for _, w := range []int{120, 100} { // 100 はホスト名の列が入らず、名前の列へ幅を返す側 (90 は他の列だけで埋まる)
 		h := newHarness(t, nil, []discover.Peer{mini})
-		h.m.Resize(w, 20)
+		h.m.Resize(w, 40) // 幅の検査 (高さは一覧に全部の行が入る分)
 		h.keys("l")
 		if view := termwidth.StripSGR(strings.Join(h.m.View(), "\n")); !strings.Contains(view, "kojiのMac mini") {
 			t.Errorf("幅 %d で名前が切れた:\n%s", w, view)
@@ -736,5 +759,88 @@ func TestKeyAppliesFinishedNetLoad(t *testing.T) {
 	m.HandleKey("j")
 	if a := m.HandleKey("s"); a != Exec {
 		t.Errorf("届いた結果を取り込まず「読んでいます」で断った: %v %+v", a, m.TakeNotices())
+	}
+}
+
+// 走査そのものが失敗したら (dns-sd を起こせない等)、0 台の「居ない」と分けて見せる: 知らせを 1 回・見出しに ✗・Report に理由。
+func TestScanErrorIsShownNotZero(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	h.scan.err = errors.New("dns-sd -B _ssh._tcp を起こせない")
+	h.m.TakeNotices()
+	h.m.Advance(t0)
+	h.m.Advance(t0)
+	ns := h.m.TakeNotices()
+	if len(ns) != 1 || ns[0].OK || !strings.Contains(ns[0].Text, "起こせない") {
+		t.Errorf("知らせ = %+v (1 回だけ・✗ で出す)", ns)
+	}
+	if view := termwidth.StripSGR(strings.Join(h.m.View(), "\n")); !strings.Contains(view, "探せない") || strings.Contains(view, "台見つかった") {
+		t.Errorf("見出しが「0 台見つかった」のまま:\n%s", view)
+	}
+	if r := h.m.Report(); !strings.Contains(r.ScanError, "起こせない") {
+		t.Errorf("Report.ScanError = %q", r.ScanError)
+	}
+}
+
+// 読み直し (r) で台帳が読めなかったら、前に読んだ一覧を残す (管理対象を「未管理」に化けさせない)。読めないことは知らせる。
+func TestReloadKeepsLedgerOnReadError(t *testing.T) {
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2"}}, []discover.Peer{mini})
+	h.store.loadErr = errors.New("壊れた台帳")
+	h.m.TakeNotices()
+	h.keys("r")
+	awaitNetLoad(h.m)
+	if h.m.count(true) != 1 {
+		t.Errorf("台帳が読めないと管理対象が消えた (%d 台)", h.m.count(true))
+	}
+	if ns := h.m.TakeNotices(); len(ns) == 0 || !strings.Contains(ns[0].Text, "台帳が読めない") {
+		t.Errorf("読めないことを知らせない: %+v", ns)
+	}
+}
+
+// 一覧は画面の高さに収める: 行が多くても、カーソルの行と詳細カード (動作のキーの案内) は画面の中に残る。全部を描いて下で切って
+// いたころは、狭い画面でカーソルの行も詳細カードも画面の外に出た (監査の指摘 2026-10-16)。
+func TestListFitsHeightKeepingCursorAndDetail(t *testing.T) {
+	peers := make([]discover.Peer, 0, 40)
+	for i := range 40 {
+		peers = append(peers, discover.Peer{Host: fmt.Sprintf("mac%02d.local", i), Instances: []string{fmt.Sprintf("Mac %02d", i)}, SSH: true,
+			Addrs: map[int]string{14: fmt.Sprintf("192.168.50.%d", 100+i)}})
+	}
+	// 18 行未満は一覧の枠そのものが入らない (見出し 3・タブ 1・枠 6・表の見出し 2 で 12 行)
+	for _, size := range [][2]int{{120, 40}, {120, 30}, {120, 24}, {100, 18}, {200, 30}} {
+		h := newHarness(t, nil, peers)
+		h.m.Resize(size[0], size[1])
+		h.keys("l")
+		for range 20 {
+			h.keys("j")
+		}
+		lines := h.m.View()
+		if len(lines) != size[1] {
+			t.Fatalf("%v: %d 行 (高さを超えた)", size, len(lines))
+		}
+		view := termwidth.StripSGR(strings.Join(lines, "\n"))
+		cur := h.m.current()
+		if !strings.Contains(view, cur.instance) {
+			t.Errorf("%v: カーソルの行 (%s) が画面に無い:\n%s", size, cur.instance, view)
+		}
+		// 動作のキーの案内 (s 繋ぐ) は残る。高さがあれば詳細カード、無ければ 1 行に畳んだ形で
+		if !strings.Contains(view, "繋ぐ") {
+			t.Errorf("%v: 動作のキーの案内 (s 繋ぐ) が画面に無い:\n%s", size, view)
+		}
+		if size[1] >= 40 && !strings.Contains(view, "ssh koji@") {
+			t.Errorf("%v: 高さがあるのに詳細カードを畳んだ:\n%s", size, view)
+		}
+	}
+}
+
+// どの板も画面の高さを超えない (? の板は 22 行あり、高さ 21 以下で View が高さより多い行を返した)。
+func TestOverlaysFitHeight(t *testing.T) {
+	for _, key := range []string{"?", "c", "/"} {
+		for _, hgt := range []int{12, 18, 21} {
+			h := newHarness(t, nil, []discover.Peer{mini})
+			h.m.Resize(100, hgt)
+			h.keys(key)
+			if n := len(h.m.View()); n != hgt {
+				t.Errorf("%s の板・高さ %d: %d 行", key, hgt, n)
+			}
+		}
 	}
 }
