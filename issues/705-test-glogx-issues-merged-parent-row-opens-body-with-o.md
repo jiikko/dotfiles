@@ -49,3 +49,7 @@ glogx の issues viewer では、epic の親 issue（`epic/<name>/<name>-*.md` �
 
 - 2026-10-09: 起票
 - 2026-10-09: 反証レビューを 1 本（sonnet の読み取り専用）に通した。主張は反証されず。2 つ目の変異が検知力を示さないという P3 の指摘を、コードで確かめて反映した
+- 2026-10-15: `issues_group_view_test.go` に `TestIssuesViewMergedParentRowOpensBodyWithO` を足した（commit「test(glogx): 統合された親行の o が親 issue の本文を開くことを固定する」）
+  - 本文ファイルを `t.TempDir()` に書いた親 `epic/001/001-…` と子 `002-…`。前提（親行が `groupHead` で `issue == parent`）を確かめてから `o` を押し、`v.open == parent`・本文が親のもの・断り / 失敗の notice が無い・子リストの開閉が変わらない、を見る
+  - 変異: `openBody` の先頭を `row.kind == displayRowGroup || row.groupHead` で断るように変えると、新しいテストだけが `open=<nil>` で red（ほかの group テスト 10 本は緑のまま）。戻して green
+  - `src/glogx` で `make lint` 0 issues、`go test -count=1 ./...` rc=0

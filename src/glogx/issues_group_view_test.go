@@ -582,6 +582,43 @@ func TestIssuesViewGroupParentIssueMergesIntoHeaderRow(t *testing.T) {
 	}
 }
 
+// TestIssuesViewMergedParentRowOpensBodyWithO は、統合された親行 (groupHead) の `o` が親 issue の本文を開くことを
+// 固定する。Enter / Space は子リストの開閉なので、epic の親 issue の本文を viewer から開く手段は `o` だけ
+// (docs/issues-viewer-spec.md の親行のキー操作)。openBody が groupHead まで断るようになると、手段が無くなったまま
+// 反対側のテスト (合成の親行の no-op / Enter が開かない) は緑のまま通る (issue 705)。
+func TestIssuesViewMergedParentRowOpensBodyWithO(t *testing.T) {
+	dir := t.TempDir()
+	parent := fakeEpicIssue(dir, "001", "001", "blog", issues.StatusOpen)
+	child := fakeEpicIssue(dir, "001", "002", "post", issues.StatusOpen)
+	for _, iss := range []*issues.Issue{parent, child} {
+		if err := os.MkdirAll(filepath.Dir(iss.Path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(iss.Path, []byte("# "+iss.Number+" body\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := loadedView(parent, child)
+	if len(v.displayRows) != 1 || !v.displayRows[0].groupHead || v.displayRows[0].issue != parent {
+		t.Fatalf("前提: 親 issue が親行へ統合されていない: %+v", v.displayRows)
+	}
+	expanded := v.groups.manual[parent.GroupKey]
+
+	v.handleKey("o", vp(10))
+	if v.open != parent {
+		t.Fatalf("統合された親行の o で親 issue の本文が開かない: open=%+v", v.open)
+	}
+	if v.body == nil || !strings.Contains(strings.Join(v.body.Lines(80, false), "\n"), "001 body") {
+		t.Fatalf("開いた本文が親 issue のものでない")
+	}
+	if text, kind := v.takeNotice(); kind == noticeRefused || kind == noticeError {
+		t.Fatalf("o が断り / 失敗の notice を出した: %q (kind=%v)", text, kind)
+	}
+	if v.groups.manual[parent.GroupKey] != expanded {
+		t.Fatalf("o が子リストの開閉を変えた: %v -> %v", expanded, v.groups.manual[parent.GroupKey])
+	}
+}
+
 // TestIssuesViewNamedGroupParentMergesAndHidesWhenDone は名前付きの group の親 (`NNN-epic-<group 名>.md`。
 // obaket の形) が親行へ統合されることと、親と子を全部 done へ送ると `a` で全開にしても一覧から
 // 消えることを固定する (2026-10-02 ユーザー要望)。親の判定は issues.IsGroupParent の 1 箇所。
