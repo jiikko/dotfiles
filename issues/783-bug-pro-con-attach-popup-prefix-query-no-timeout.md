@@ -10,11 +10,12 @@
 ## 詳細
 
 - 問い合わせは Update の中から同期で呼ばれる (attach の操作)。上限が無いので、tmux が固まると画面ごと止まる
-- 同じ問い合わせは glogx にもある (`external_commands.go` の `loadTmuxPrefix`。表記を bubbletea の形に直す点が違う)。上限の有無は未確認
+- 同じ問い合わせは glogx にもあり、**glogx は上限を持つ** (`external_commands.go` の `loadTmuxPrefix`: `context.WithTimeout(localCmdTimeout = 5 秒)` + `subproc.CommandContext`。
+  失敗したら "" を返して機能を切る)。pro-con の `outerPrefix` だけが上限なし (呼び出しは attachpopup.go の 1 か所。Update から同期で呼ばれるかは未確認)
 
 ## 対応方針
 
-- `subproc.CommandContext` + 短い上限 (例: 2 秒) にし、読めなければ既定の prefix (C-b) で案内する
+- glogx と同じ形 (`subproc.CommandContext` + 上限) にし、読めなければ既定の prefix (C-b) で案内する
 - 上限を超えたときの案内の文言を決める (prefix が読めなかったことを toast に出すか)
 
 ## 関連ファイル
