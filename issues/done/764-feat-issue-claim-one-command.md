@@ -1,7 +1,5 @@
 # 764 (feat): issue の claim を 1 コマンドにする (scripts/issue_claim.sh)
 
-> 🚨 **担当中: claude (opus, dotfiles 762 のセッション)**（2026-10-15〜）
-
 起票日: 2026-10-15
 
 ## 概要
