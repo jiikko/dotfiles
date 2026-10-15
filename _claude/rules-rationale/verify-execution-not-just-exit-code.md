@@ -363,3 +363,13 @@ SSH keepalive を付けた試行は pack 送信まで進んだ。hook の所要�
 新規の汎用 WebDAV が対象外だった。他の provider が通るため集約結果は緑のまま。対象 filter を確認して専用の assertion を足した。
 別の endpoint policy テストは登録済み builder を回すため WebDAV を含んだ。対象の総数だけでは入れ替わりや skip を見分けられないため、
 新規項目の実行結果または対象一覧との照合を要求する。
+
+## ツールの判定値を手で移行して、検査を外した (2026-10-15、obaket retro 1144)
+
+`bin/webdav-test-server` の spec (証明書を使い回してよいかの判定の材料) に `declare -f make_self_signed` の cksum を足した後、共有 checkout の
+state dir の spec を新しい形式へ手で移そうとして、関数だけを切り出して cksum を計算した。script の中で計算した値と 2 byte ずれ、次の `up` が
+証明書を作り直し、登録済みの 2 接続の pin が合わなくなった (GUI で承認し直してもらった)。旧い鍵は上書きされて戻せなかった。
+spec をツール自身に書かせていれば (script の関数を呼ぶ) ずれは起きず、`up` の前に「使い回す」と判定されるかを確かめていれば作り直しの前に止まった。
+retro は `adversarial-review-own-safeguards` の 0-B への追記を提案したが、0-B は検査を作るときに読む checklist で、状態を手で移行する場面では開かれないので、
+「外部コマンド / アプリへ設定を書いたら読み戻す」の項に置いた。
+
