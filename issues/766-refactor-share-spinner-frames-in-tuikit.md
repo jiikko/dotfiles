@@ -74,7 +74,10 @@
     2 周目 P1・P2 なし、P3 RenderCached の引数も隠していた → 改名 (他ファイルの `spinner string` は package を import していないので隠しにならない)。
     2 周目の変異 8 本は 7 本 red、緑の 1 本 (At の `% Len` を外す) は Frame が回すので等価
   - make test rc=0 (rebase 後、push する木で)
-- [ ] 2 段目: restartable の tuikit の固定版を 1 段目を push した版へ上げ、`internal/ui/view.go` の `spinnerFrames` を `spinner.Frame` に寄せる。§9 の「使っている所」に restartable を足す
+- [x] 2 段目 (2026-10-15): restartable の tuikit の固定版を 1 段目を push した版 (`v0.0.0-20261015124436-ffd6e2aa8a68`) へ上げ、`internal/ui/view.go` の `spinnerFrames` と負の frame の回しを
+  `spinner.Frame` に寄せた。§9 の「使っている所」に restartable を足した。`make -C src/restartable lint test` rc=0、`tests/scripts/test_tuikit_consumers_aligned.sh` は 7 module が揃って緑
+  (x/ansi は v0.11.7 のまま。版上げは 747 の段 2 で dotfiles-16 が行う)。版の上げと機械的な置き換えだけなので、この段の敵対的レビューは省いた (挙動の変更なし。負の frame の回しは Frame のテスト TestFrameWraps が持つ)
+- 自前の点字の列は src/ の production コードから無くなった (`grep -rn '"⠙"' src --include='*.go'` は tuikit/spinner の 1 か所だけ)
 
 ## 反証レビュー
 

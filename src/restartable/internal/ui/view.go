@@ -10,6 +10,7 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
@@ -176,8 +177,6 @@ func fitFirst(width int, candidates ...string) string {
 	return termwidth.Truncate(candidates[len(candidates)-1], width, "")
 }
 
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
 func transitionPanel(state runner.Model, width, frame int) []string {
 	title := "起動中"
 	switch state.Transition.Kind {
@@ -186,7 +185,6 @@ func transitionPanel(state runner.Model, width, frame int) []string {
 	case runner.TransitionQuit:
 		title = "終了中"
 	}
-	frame = ((frame % len(spinnerFrames)) + len(spinnerFrames)) % len(spinnerFrames)
 	current := "アプリを起動しています…"
 	switch state.Transition.Stage {
 	case runner.TransitionStop:
@@ -198,7 +196,7 @@ func transitionPanel(state runner.Model, width, frame int) []string {
 	}
 	steps := transitionSteps(state.Transition)
 	rows := []string{
-		spinnerFrames[frame] + " " + current,
+		spinner.Frame(frame) + " " + current,
 		steps,
 	}
 	if state.Transition.Busy {

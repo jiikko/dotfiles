@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
 	github.com/jiikko/dotfiles/src/termsafe v0.0.0-20260930152350-8f8ec9851b4c
-	github.com/jiikko/dotfiles/src/tuikit v0.0.0-20261014032917-cb9e1aafbe84
+	github.com/jiikko/dotfiles/src/tuikit v0.0.0-20261015124436-ffd6e2aa8a68
 )
 
 require (
