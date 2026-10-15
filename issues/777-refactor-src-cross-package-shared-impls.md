@@ -56,5 +56,11 @@ src の 22 module。773 の観点に加え、非テストの .go を `exec.Comma
 - [x] 変異 (mutate-verify。全部 red): 画面の記憶の未来の時刻の判定を外す → 3 画面のテスト / CutBytes を前の実装に戻す → TestCutBytes / userdirs の上書きの守りを外す → TestMoveIfMissing /
   前の置き場から移すのを外す → TestConfigFileMovesLegacy / 起動口の検査 (fable): pro-con の 1 本を素の exec に戻す・glogx の注記を消す・glogx に素の起動を足す・ratelimit に os/exec を足す → それぞれの検査、
   検査器の別名検出・go list との突き合わせ・代入の判定を壊す → fixture と canary
-- [ ] 敵対的レビュー
-- [ ] make test
+- [x] 敵対的レビュー (opus・read-only): **P1**: glogx の go.mod に replace userdirs を足したのに own_sources_test の ownSourceExcluded に足しておらず、
+  TestOwnSourceRootsCoverLocalReplaces が落ちた (CI の src/glogx が赤になる。glogx はテストの一部しか回していなかった) → 足した /
+  P2: 相対パスの XDG_CONFIG_HOME を受け付けると前の置き場の設定を cwd の下へ移した → XDG の仕様どおり無視 /
+  P3: 前の置き場が相対 symlink だと移した後に壊れる → 絶対パスの link を作り直す / 移せなかったら前の置き場を返して読み続ける / 起動口の検査が見ない形 (os.StartProcess・syscall.ForkExec) を doc に /
+  testwait.Until は前の waitUntil (20ms × 500 回。負荷で 10 秒を超えて待つ) より負荷時の待ちが短い (壁時計で 10 秒) → 記録のみ。
+  壊せなかった: 両方の置き場にあるときの扱い・2 プロセスの同時の引っ越し・sync.Once と差し替えの env・本物の ~/.config を触る経路・pro-con の 22 本の置き換えの意味・Allow の理由・
+  screenMemory / CutBytes / ClipRunes の等価・CI の paths と replace (check_go_project_lanes rc=0)
+- [x] make test (776 と 777 を合わせた木): go-lint・go-test は restartable の 1 本 (触っていない。単独で 3 回 rc=0。負荷の下の不安定さ) を除き rc=0

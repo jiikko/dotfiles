@@ -60,4 +60,5 @@ read-only のサブエージェント 1 体 (opus) が洗い出し、main が本
   壊せなかった: TT_TRIGGER_LOG の zsh への漏れ (export されない)・名前の衝突・tt_run_resurrect_save の rc の意味・保存先の解決 (空白・~・$HOME・$HOSTNAME で旧と一致)・
   symlink 越しの hook の起動・__fs_file_size の空の扱い・寄せないものの判断。
   テストの穴 (前から): schedule_keys の刈り込みと snapshot_health の間隔 0 はテストが見ていない
-- [ ] make test
+- [x] make test (776 と 777 を合わせた木・rebase の後): go-lint 23 / go-test 22 module rc=0。赤は 2 つ: test-shellcheck (hook_io.sh の HOOK_INPUT / HOOK_CMD を SC2034 が未使用と見た
+  → 理由つきで抑止。make test-shellcheck rc=0) / restartable の TestPTYRunnerDrainsLateOutputDuringTerminationWithInputBurst (restartable は触っていない。単独で 3 回 rc=0。並列の負荷の下での不安定さ)
