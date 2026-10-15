@@ -43,12 +43,11 @@
 # 出力: 違反時のみ permissionDecision=deny の JSON。それ以外は無出力 exit 0。
 set -uo pipefail
 
-input=$(cat)
-
-# jq が無い環境では諦める (誤 deny させない。deny-bare-tmux-kill.sh と同じ fail-open。テストは jq 不在を失敗として扱う)
-command -v jq >/dev/null 2>&1 || exit 0
-
-cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
+# shellcheck source=_claude/hooks/lib/hook_io.sh
+. "$(dirname "$0")/lib/hook_io.sh" 2>/dev/null || exit 0
+# jq が無い・読めない環境では諦める (誤 deny させない。fail-open。テストは jq 不在を失敗として扱う)
+hook_read_bash_command || exit 0
+cmd=$HOOK_CMD
 [ -n "$cmd" ] || exit 0
 
 # 速い経路: 止める形は必ず push とパイプと worktree / branch を含む。含まないものは解析に入れない (判定は変えない)
@@ -56,24 +55,13 @@ case "$cmd" in *push*) ;; *) exit 0 ;; esac
 case "$cmd" in *'|'*) ;; *) exit 0 ;; esac
 case "$cmd" in *worktree* | *branch*) ;; *) exit 0 ;; esac
 
-deny() {
-  jq -n --arg reason "$1" '{
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: $reason
-    }
-  }'
-  exit 0
-}
-
 REASON="git push の出力をパイプに通したまま、後ろで worktree / branch を消しています。パイプの rc は終端 (tail 等) のものなので、push が弾かれても削除が走り、未 push の commit を失います (retro 266 / 450 で 2 回実害)。push の rc を直接取ってから繋いでください: git push … > <log> 2>&1; rc=\$?; tail -2 <log>; [ \$rc -eq 0 ] && git worktree remove … (または set -o pipefail を先に)。引用符やコメントの中の文言で止まったなら、commit message 等は heredoc で渡してください。規範: _claude/rules/verify-execution-not-just-exit-code.md"
 
 # 🚨 大きすぎる入力は、畳む・落とす前に粗く止める (/bin/bash 3.2 は下の置換が入力長の 2 乗で遅く、数 MB で timeout を越えて無出力 = 素通り。
 # 敵対的レビュー 5 周目)。${#} はロケールによって文字数だが、ここは粗い上限なので文字数でよい
 MAX_RAW=1048576
 if [ "${#cmd}" -gt "$MAX_RAW" ]; then
-  deny "入力が大きすぎて (${#cmd} > $MAX_RAW) 静的検査を上限の時間内に終えられる保証が無い。push とパイプと worktree / branch を含むため保守的に拒否した。push と削除を別の呼び出しに分けること"
+  hook_deny "入力が大きすぎて (${#cmd} > $MAX_RAW) 静的検査を上限の時間内に終えられる保証が無い。push とパイプと worktree / branch を含むため保守的に拒否した。push と削除を別の呼び出しに分けること"
 fi
 
 # 行継続 (`\` + 改行) を空白に畳む (sed を使わない: BSD sed の方言差でフックが静かに無力化する。deny-bare-tmux-kill.sh の注記)
@@ -112,13 +100,13 @@ body=$(strip_heredocs "$cmd")
 awk_rc=$?
 # 🚨 awk が失敗すると body が空になり、何にも一致せず素通りになる (敵対的レビュー 5 周目)。判定できないので拒否に倒す
 if [ "$awk_rc" -ne 0 ]; then
-  deny "heredoc の本文を落とす処理 (awk) が失敗した (rc=$awk_rc)。判定できないので保守的に拒否した。push と削除を別の呼び出しに分けること"
+  hook_deny "heredoc の本文を落とす処理 (awk) が失敗した (rc=$awk_rc)。判定できないので保守的に拒否した。push と削除を別の呼び出しに分けること"
 fi
 
 MAX_SCAN_BYTES=131072
 body_bytes=$(LC_ALL=C; printf '%s' "${#body}") # 🚨 UTF-8 のロケールでは ${#} は文字数 (4 byte の文字で上限が 4 倍に膨らむ)。byte で数える
 if [ "$body_bytes" -gt "$MAX_SCAN_BYTES" ]; then
-  deny "入力が大きすぎて (heredoc の本文を除いて ${body_bytes} byte > $MAX_SCAN_BYTES) 静的検査を上限の時間内に終えられる保証が無い。push とパイプと worktree / branch を含むため保守的に拒否した。push と削除を別の呼び出しに分けること"
+  hook_deny "入力が大きすぎて (heredoc の本文を除いて ${body_bytes} byte > $MAX_SCAN_BYTES) 静的検査を上限の時間内に終えられる保証が無い。push とパイプと worktree / branch を含むため保守的に拒否した。push と削除を別の呼び出しに分けること"
 fi
 
 # push の rc を見ている形は通す (「検出しない形」: 誤用は見分けない)。pipefail は set の引数として書いた形だけ (ブランチ名の中の pipefail で通さない)
@@ -146,7 +134,7 @@ PUSH="${GIT}push([^[:alnum:]_.|;&${NL}-][^|;&${NL}]*)?\\|([^|]|\$)"
 # --delete だけ。敵対的レビュー 4・5 周目)
 DESTROY="${GIT}(worktree([[:blank:]]+-[^[:space:]]+)*[[:blank:]]+(remove|rm)([^[:alnum:]_-]|\$)|branch([[:blank:]]+[^[:space:]|;&]+)*[[:blank:]]+(-[acCfilmMqrtuv]*[dD][acCdDfilmMqrtuv]*|--d(e(l(e(te?)?)?)?)?)([^[:alnum:]_-]|\$))"
 if [[ "$text" =~ ${PUSH}.*${DESTROY} ]]; then
-  deny "$REASON"
+  hook_deny "$REASON"
 fi
 
 exit 0

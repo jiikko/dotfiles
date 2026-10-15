@@ -27,12 +27,11 @@
 
 unset CDPATH   # 相対パスの cd を CDPATH に攫われないため (テスト側だけが防いでいた非対称)
 
-input=$(cat)
-
-# jq が無い環境では静かに諦める（誤動作させない）
-command -v jq >/dev/null 2>&1 || exit 0
-
-cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
+# shellcheck source=_claude/hooks/lib/hook_io.sh
+. "$(dirname "$0")/lib/hook_io.sh" 2>/dev/null || exit 0
+# jq が無い・読めない環境では静かに諦める（誤動作させない）
+hook_read_bash_command || exit 0
+cmd=$HOOK_CMD
 
 # git commit / git push を**コマンドとして**呼んでいるときだけ作動する。
 # shellcheck source=_claude/hooks/lib/git_cmd_detect.sh

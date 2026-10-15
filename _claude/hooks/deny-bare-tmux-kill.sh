@@ -27,12 +27,11 @@
 #   あると偽陽性 deny になる。回避は言い換え (ルール md の「強制手段」節に記載)。
 set -uo pipefail
 
-input=$(cat)
-
-# jq が無い環境では静かに諦める (誤 deny させない)
-command -v jq >/dev/null 2>&1 || exit 0
-
-cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
+# shellcheck source=_claude/hooks/lib/hook_io.sh
+. "$(dirname "$0")/lib/hook_io.sh" 2>/dev/null || exit 0
+# jq が無い・読めない環境では静かに諦める (誤 deny させない)
+hook_read_bash_command || exit 0
+cmd=$HOOK_CMD
 
 # 🚨 性能ガード (これが無いとゲートが黙って消える)。以降の検査は unquote の 1 文字ループと
 # セグメントごとの fork を通るため、コストが入力長に効く。実測 2026-08-21: 90KB / 2000 セグメントで
@@ -51,17 +50,6 @@ case "$cmd" in
 esac
 
 [ -n "$cmd" ] || exit 0
-
-deny() {
-  jq -n --arg reason "$1" '{
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: $reason
-    }
-  }'
-  exit 0
-}
 
 REASON_KILL="ソケット指定の無い tmux kill-server/kill-session は本番サーバを直撃します (\$TMUX が TMUX_TMPDIR に優先。2026-07-30 に 29 セッション誤殺の実害)。unset TMUX + ユニークな -L <name> (または -S <path>) を tmux の引数として付け、先に tmux -L <name> ls で隔離を実証してから実行してください。規範: _claude/rules/tmux-probe-requires-socket-isolation.md"
 REASON_PKILL="pkill/killall で tmux を狙うのは全サーバ無差別 kill です (本番サーバも死にます)。対象サーバの pid を特定して kill するか、tmux -L <name> kill-server を使ってください。規範: _claude/rules/tmux-probe-requires-socket-isolation.md"
@@ -86,7 +74,7 @@ MAX_SCAN_BYTES=131072
 # 偽陽性 (正当な隔離コマンドが巨大な入力に含まれる) は理屈上ありうるが、そのときは
 # コマンドを分割すれば通る。「検査できなかったので素通り」だけは選ばない。
 if [ "${#cmd}" -gt "$MAX_SCAN_BYTES" ]; then
-  deny "入力が大きすぎて (${#cmd} byte > $MAX_SCAN_BYTES) 静的検査を完了できない。kill 系トークンを含むため保守的に拒否した。コマンドを分割するか、破壊的操作を別呼び出しに分けること"
+  hook_deny "入力が大きすぎて (${#cmd} byte > $MAX_SCAN_BYTES) 静的検査を完了できない。kill 系トークンを含むため保守的に拒否した。コマンドを分割するか、破壊的操作を別呼び出しに分けること"
 fi
 
 # 行継続 (`\` + 改行) を空白に畳む。畳まないと `tmux \`+改行+`kill-server` が別セグメントに
@@ -226,7 +214,7 @@ while IFS= read -r seg; do
   # pkill / killall で tmux を狙う形は全サーバ無差別なので常に deny
   if [[ "$seg" =~ (^|[[:space:]\;\&\|])(pkill|killall)[[:space:]] ]] \
      && [[ "$seg" =~ [[:space:]][\"\']?tmux[\"\']?([[:space:]]|$) ]]; then
-    deny "$REASON_PKILL"
+    hook_deny "$REASON_PKILL"
   fi
 
   # 🚨 大入力では unquote を諦めて生セグメントを走査する。unquote は 1 文字ループで、bash の
@@ -241,8 +229,8 @@ while IFS= read -r seg; do
     scan_segment "$(unquote "$seg")"; seg_rc=$?
   fi
   case "$seg_rc" in
-    1) deny "$REASON_KILL" ;;       # ソケット未指定の kill
-    2) deny "$REASON_PROTECTED" ;;  # ソケット明示でも default (本番) 直撃
+    1) hook_deny "$REASON_KILL" ;;       # ソケット未指定の kill
+    2) hook_deny "$REASON_PROTECTED" ;;  # ソケット明示でも default (本番) 直撃
   esac
 done <<EOF
 $segments

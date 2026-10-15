@@ -25,9 +25,9 @@
 #    文字列に入り「control characters must be escaped」で壊れる (実測 2026-09-02: 最初の
 #    実装がこれで、出力を jq に食わせて初めて分かった)。
 
-input=$(cat)
-
-command -v jq >/dev/null 2>&1 || exit 0
+# shellcheck source=_claude/hooks/lib/hook_io.sh
+. "$(dirname "$0")/lib/hook_io.sh" 2>/dev/null || exit 0
+hook_read_bash_command || exit 0
 
 # 適用範囲は「作業中の repo に global または group 内の next/ が 1 つでも実在するとき」だけ。
 # 仕事の repo のように issues/ を持たない repo では、この規律ごと無効にする
@@ -47,7 +47,7 @@ for next_dir in "$repo_root/issues/next" "$repo_root/issues/epic"/*/next \
 done
 [ "$next_dir_found" -eq 1 ] || exit 0
 
-cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
+cmd=$HOOK_CMD
 
 # 判定: 「mv 系 / ln コマンドの**宛先**が issues/next または issues/epic/<name>/next か」を見る。
 # claim の正本は symlink の目印 (`ln -s ../NNN-x.md issues/next/NNN-x.md`。issue 263) で、

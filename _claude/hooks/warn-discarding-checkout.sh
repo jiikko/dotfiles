@@ -65,12 +65,11 @@
 
 set -uo pipefail
 
-input=$(cat)
-
-# jq が無い環境では静かに諦める (既存 hook と同じ振る舞い)
-command -v jq >/dev/null 2>&1 || exit 0
-
-cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null) || exit 0
+# shellcheck source=_claude/hooks/lib/hook_io.sh
+. "$(dirname "$0")/lib/hook_io.sh" 2>/dev/null || exit 0
+# jq が無い・読めない環境では静かに諦める (既存 hook と同じ振る舞い)
+hook_read_bash_command || exit 0
+input=$HOOK_INPUT cmd=$HOOK_CMD
 [ -n "$cmd" ] || exit 0
 
 # 🚨 性能ガード (deny-bare-tmux-kill.sh の教訓)。PreToolUse には timeout があり、大きな
