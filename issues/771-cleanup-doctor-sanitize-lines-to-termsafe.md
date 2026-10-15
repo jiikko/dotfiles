@@ -1,5 +1,7 @@
 # 771 (cleanup): doctor の 4 package の「行の slice を無害化する」関数を termsafe に 1 つにする
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-15〜）
+
 起票日: 2026-10-15
 
 ## 概要
