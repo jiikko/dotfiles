@@ -90,6 +90,13 @@ reset_calls; : > "$LOG"
 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_INTERVAL=5 STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run_periodic "$FAKE"
 assert_called "sleep 300" "@continuum-save-interval=5 分 → sleep 300 秒"  # sleep-ok: other: 期待する呼び出し文字列の中の sleep
+# 0 (continuum では「無効」) と数字でない値は既定の 15 分へ寄せる (tt_save_interval_minutes。issue 776)
+for v in 0 abc; do
+  reset_calls; : > "$LOG"
+  STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_INTERVAL="$v" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+    run_periodic "$FAKE"
+  assert_called "sleep 900" "@continuum-save-interval=$v → 既定の 15 分 (sleep 900 秒)"  # sleep-ok: other: 期待する呼び出し文字列の中の sleep
+done
 
 # --- (3) 保存失敗は rc=1 として記録される (無音で成功扱いにしない) --------------------
 reset_calls; : > "$LOG"
