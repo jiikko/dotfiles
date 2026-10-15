@@ -43,6 +43,7 @@
 - `src/pro-con/dispatcher` (`pro-con/dispatcher`) — Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。
 - `src/pro-con/eventlog` (`pro-con/eventlog`) — Package eventlog は dispatcher の出来事の記録 (状態の置き場の events.jsonl。
 - `src/pro-con/fake` (`pro-con/fake`) — Package fake は claude を起動せずに pro-con の画面とつなぎ込みを動かすための模擬 backend。
+- `src/pro-con/flockmark` (`pro-con/flockmark`) — Package flockmark は「開いている間 flock を持ち続ける印」(<id>.lock) の作り方と、作りかけの残りの見分け方を持つ。
 - `src/pro-con/gitx` (`pro-con/gitx`) — Package gitx は pro-con が git を呼ぶときの共通の口 (見張りの読み取り = package monitor と、worktree の片付け = package wtclean)。
 - `src/pro-con/live` (`pro-con/live`) — Package live は本物の backend (issue 424 / 427 の段階 3d)。
 - `src/pro-con/metrics` (`pro-con/metrics`) — Package metrics はカードごとの所要の記録 (issue 516)。
