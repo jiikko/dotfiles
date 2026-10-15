@@ -213,26 +213,34 @@ func TestSweepRemovesOnlyStaleTmp(t *testing.T) {
 	if err := os.MkdirAll(d, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// 印の作りかけ (.tmp-<id>) と、1 枚の書きかけ (atomicfile の <id>.frame.tmp.<乱数>) の両方
 	old, fresh := filepath.Join(d, ".tmp-old"), filepath.Join(d, ".tmp-fresh")
-	for _, p := range []string{old, fresh} {
+	oldFrame, freshFrame := filepath.Join(d, "old.frame.tmp.123"), filepath.Join(d, "fresh.frame.tmp.456")
+	for _, p := range []string{old, fresh, oldFrame, freshFrame} {
 		if err := os.WriteFile(p, nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	past := time.Now().Add(-2 * staleTmp)
-	if err := os.Chtimes(old, past, past); err != nil {
-		t.Fatal(err)
+	for _, p := range []string{old, oldFrame} {
+		if err := os.Chtimes(p, past, past); err != nil {
+			t.Fatal(err)
+		}
 	}
 	w, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer w.Close()
-	if _, err := os.Stat(old); err == nil {
-		t.Fatal("古い一時ファイルが片付かない")
+	for _, p := range []string{old, oldFrame} {
+		if _, err := os.Stat(p); err == nil {
+			t.Fatalf("古い一時ファイル %s が片付かない", filepath.Base(p))
+		}
 	}
-	if _, err := os.Stat(fresh); err != nil {
-		t.Fatal("作っている最中かもしれない新しい一時ファイルを消した")
+	for _, p := range []string{fresh, freshFrame} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("作っている最中かもしれない新しい一時ファイル %s を消した", filepath.Base(p))
+		}
 	}
 }
 

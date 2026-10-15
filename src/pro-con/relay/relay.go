@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"atomicfile"
 )
 
 // Dir は置き場の中の中継の置き場。
@@ -211,12 +213,17 @@ func sameContent(a, b Frame) bool {
 	return true
 }
 
-// staleTmp は一時ファイル (.tmp-*) を落ちた画面の残りとみなすまでの時間 (作ってから rename するまでは一瞬。presence と同じ)。
+// staleTmp は一時ファイル (印の .tmp-* と 1 枚の <id>.frame.tmp.*) を落ちた画面の残りとみなすまでの時間 (作ってから rename するまでは一瞬。presence と同じ)。
 const staleTmp = time.Minute
+
+// isTmp は relay/ の中の一時ファイルの名前か: 印の作りかけ (.tmp-<id>) と、1 枚の書きかけ (atomicfile が作る <id>.frame.tmp.<乱数>)。
+func isTmp(name string) bool {
+	return strings.HasPrefix(name, ".tmp-") || strings.Contains(name, ".frame.tmp.")
+}
 
 // sweep は落ちた画面の残り (flock の外れた印と、その 1 枚・印の無い 1 枚・古い一時ファイル) を消す。開く画面だけが呼ぶ (読む側は消さない)。
 // 印は一時名で flock を取ってから rename するので、開いている画面の印が「外れている」に見えることは無い。
-// 🚨 消すのは relay/ の中の <id>.lock と <id>.frame だけ (名前で絞る。ほかのファイル・ディレクトリには触らない)
+// 🚨 消すのは relay/ の中の <id>.lock と <id>.frame と上の一時ファイルだけ (名前で絞る。ほかのファイル・ディレクトリには触らない)
 func sweep(d string) {
 	es, err := os.ReadDir(d)
 	if err != nil {
@@ -224,7 +231,7 @@ func sweep(d string) {
 	}
 	alive := map[string]bool{}
 	for _, e := range es {
-		if strings.HasPrefix(e.Name(), ".tmp-") && e.Type().IsRegular() { // 作ってから rename するまでの間に落ちた残り。作っている最中のもの (新しい) には触らない
+		if isTmp(e.Name()) && e.Type().IsRegular() { // 作ってから rename するまでの間に落ちた残り。作っている最中のもの (新しい) には触らない
 			if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > staleTmp {
 				_ = os.Remove(filepath.Join(d, e.Name()))
 			}
@@ -247,22 +254,8 @@ func sweep(d string) {
 	}
 }
 
-func writeAtomic(path string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
-	if err != nil {
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	return os.Rename(tmp.Name(), path) // CreateTemp は 0600 で作る
-}
+// writeAtomic は 1 枚を一時ファイル (<id>.frame.tmp.*。sweep が古いものを消す) から rename で置く。
+func writeAtomic(path string, data []byte) error { return atomicfile.Write(path, data, 0o600) }
 
 // Screen は読む側から見た画面 1 つ。
 type Screen struct {

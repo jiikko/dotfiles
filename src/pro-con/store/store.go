@@ -28,6 +28,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/termsafe"
 
+	"atomicfile"
 	"pro-con/card"
 	"pro-con/wake"
 )
@@ -854,27 +855,8 @@ func indexOf(cs []card.Card, id string) int {
 	return -1
 }
 
-// writeAtomic は一時ファイルに書いてから rename する (途中で落ちても壊れたファイルを残さない)。
-func writeAtomic(path string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	return nil
-}
+// writeAtomic は一時ファイルに書いてから rename する (途中で落ちても壊れたファイルを残さない)。mode は 0600 (状態の置き場は本人だけが読む)。
+func writeAtomic(path string, data []byte) error { return atomicfile.Write(path, data, 0o600) }
 
 func firstNonEmpty(xs ...string) string {
 	for _, x := range xs {

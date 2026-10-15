@@ -313,7 +313,7 @@ func TestRegisterAppendsAtomically(t *testing.T) {
 	if err != nil || len(reg) != 2 || reg[0].ID != "a" || reg[1].ID != "b" {
 		t.Fatalf("追記されていない: %+v %v", reg, err)
 	}
-	if ms, _ := filepath.Glob(filepath.Join(filepath.Dir(p), "*.tmp-*")); len(ms) != 0 {
+	if ms, _ := filepath.Glob(filepath.Join(filepath.Dir(p), "*.tmp*")); len(ms) != 0 {
 		t.Fatalf("一時ファイルが残った: %v", ms)
 	}
 }

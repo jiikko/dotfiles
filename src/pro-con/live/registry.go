@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"atomicfile"
 	"pro-con/agents"
 )
 
@@ -155,24 +156,7 @@ func writeRows(path string, cur []Owned) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	return nil
+	return atomicfile.Write(path, data, 0o600)
 }
 
 // OwnedSessions は一覧のうち pro-con が起動した session (短い id → session)。画面の読み直しと、dispatcher が画面のために書く

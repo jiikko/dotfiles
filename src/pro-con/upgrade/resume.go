@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"atomicfile"
 )
 
 // 入れ替えの前後で引き継ぐ状態。新しいプロセスへは環境変数 ResumeEnv でファイルのパスを渡す。
@@ -44,12 +46,7 @@ func Save(dir, path string, st State) (string, error) {
 	if path == "" {
 		path = filepath.Join(dir, fmt.Sprintf("resume-%d-%d.json", os.Getpid(), time.Now().UnixNano()))
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	if err := atomicfile.Write(path, data, 0o600); err != nil {
 		return "", err
 	}
 	return path, nil

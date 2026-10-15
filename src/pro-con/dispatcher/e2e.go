@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"atomicfile"
 	"pro-con/agents"
 	"pro-con/card"
 	"pro-con/store"
@@ -73,11 +74,7 @@ func (e E2E) save(f e2eFile) error {
 	if err := os.MkdirAll(e.StateDir(), 0o700); err != nil {
 		return err
 	}
-	tmp := e.sessionsPath() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, e.sessionsPath()) // 画面が書きかけを読まない
+	return atomicfile.Write(e.sessionsPath(), data, 0o600) // 画面が書きかけを読まない
 }
 
 // FakePM は偽の PM: 依頼の列のカードを、その場で着手待ちにする (本物では PM の Claude が issue に分けてキューに積む)。

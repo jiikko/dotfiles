@@ -73,3 +73,18 @@ func TestE2EFakePM(t *testing.T) {
 		t.Fatalf("偽の PM が着手待ちにしない / repo が付かない: %v %q", c.State, c.Repo)
 	}
 }
+
+// 書けなかったとき (置き場の名前が dir で rename できない) に一時ファイルを残さない (issue 767。前は固定名の .tmp が残った)。
+func TestE2ESaveLeavesNoTmpOnFailure(t *testing.T) {
+	e := E2E{Root: t.TempDir()}
+	if err := os.MkdirAll(e.sessionsPath(), 0o700); err != nil { // rename の先を dir にして失敗させる
+		t.Fatal(err)
+	}
+	if err := e.save(e2eFile{Cards: map[string]string{"C-1": "s-1"}}); err == nil {
+		t.Fatal("rename の先が dir なのに save が成功した")
+	}
+	ms, err := filepath.Glob(e.sessionsPath() + ".tmp*")
+	if err != nil || len(ms) != 0 {
+		t.Fatalf("一時ファイルが残った: %v %v", ms, err)
+	}
+}

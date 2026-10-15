@@ -16,7 +16,7 @@ require (
 require doctor v0.0.0 // indirect
 
 require (
-	atomicfile v0.0.0 // indirect
+	atomicfile v0.0.0
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260803092147-8b693049ce2a // indirect
