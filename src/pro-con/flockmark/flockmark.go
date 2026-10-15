@@ -18,6 +18,9 @@ const StaleTmp = time.Minute
 
 const tmpPrefix = ".tmp-"
 
+// beforeRename はテストの差し込み口 (印の名前にする直前の状態を見る。flock を持ち、中身を書き終えているか)。本番では nil。
+var beforeRename func(tmp, lock string)
+
 // Create は d の中に、flock (LOCK_EX) を持った印 <id>.lock を置き、開いたファイルと id と印のパスを返す。id は idBytes バイトの乱数の hex。
 // body が nil でなければ、印の名前にする前にその中身を書く (数える側には書き終えた印しか見えない)。
 //
@@ -53,6 +56,9 @@ func Create(d string, idBytes int, body func(id string) ([]byte, error)) (*os.Fi
 		}
 	}
 	p := filepath.Join(d, id+".lock")
+	if beforeRename != nil {
+		beforeRename(tmp, p)
+	}
 	if err := os.Rename(tmp, p); err != nil {
 		return fail(err)
 	}
@@ -65,7 +71,7 @@ func IsTmp(name string) bool { return strings.HasPrefix(name, tmpPrefix) }
 // IsStaleTmp は e が StaleTmp より古い作りかけの印か (作っている最中の新しいものには触らない)。
 func IsStaleTmp(e fs.DirEntry) bool { return IsTmp(e.Name()) && Stale(e) }
 
-// Stale は e が普通のファイルで、StaleTmp より古いか (FIFO などは開くと止まるので偽)。
+// Stale は e が普通のファイルで、StaleTmp より古いか (FIFO などは読む側の open が止まる・flock できないので対象にしない)。
 func Stale(e fs.DirEntry) bool {
 	if !e.Type().IsRegular() {
 		return false

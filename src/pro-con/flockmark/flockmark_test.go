@@ -84,3 +84,37 @@ func TestIsStaleTmp(t *testing.T) {
 		t.Fatalf("作った数と違う: %d", len(es))
 	}
 }
+
+// 印の名前にする直前には、flock を持ち、中身を書き終えている (読む側に「誰も持っていない印」「中身の無い印」が見える窓を作らない)。
+// 順序の退行 (rename を先にする・中身を後で書く) は並行のテストでは確率的にしか出ないので、直前の状態を直に見る。
+func TestCreateLocksAndWritesBeforeRename(t *testing.T) {
+	d := t.TempDir()
+	checked := false
+	beforeRename = func(tmp, lock string) {
+		checked = true
+		if _, err := os.Stat(lock); err == nil {
+			t.Error("flock と中身より先に印の名前ができている")
+		}
+		if b, err := os.ReadFile(tmp); err != nil || string(b) != "body" {
+			t.Errorf("rename の前に中身が書かれていない: %q %v", b, err)
+		}
+		g, err := os.Open(tmp)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer g.Close()
+		if err := syscall.Flock(int(g.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err == nil {
+			t.Error("rename の前に flock を持っていない")
+		}
+	}
+	defer func() { beforeRename = nil }()
+	f, _, _, err := Create(d, 4, func(string) ([]byte, error) { return []byte("body"), nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if !checked {
+		t.Fatal("差し込み口が呼ばれていない")
+	}
+}
