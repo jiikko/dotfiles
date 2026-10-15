@@ -1,1 +1,0 @@
-../770-test-theme-colors-go-drift-check.md

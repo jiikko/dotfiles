@@ -1,1 +1,0 @@
-../767-refactor-pro-con-atomic-writes-to-atomicfile.md
