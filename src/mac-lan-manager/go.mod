@@ -10,6 +10,7 @@ require (
 	github.com/jiikko/dotfiles/src/termsafe v0.0.0
 	github.com/jiikko/dotfiles/src/tuikit v0.0.0
 	subproc v0.0.0-00010101000000-000000000000
+	userdirs v0.0.0
 )
 
 require (
@@ -35,3 +36,5 @@ replace (
 	github.com/jiikko/dotfiles/src/tuikit => ../tuikit
 	subproc => ../subproc
 )
+
+replace userdirs => ../userdirs

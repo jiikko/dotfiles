@@ -22,6 +22,8 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"pro-con/store"
+
+	"userdirs"
 )
 
 type Config struct {
@@ -75,11 +77,7 @@ func Default() Config {
 
 // DefaultPath は $XDG_CONFIG_HOME/pro-con/config.toml (未設定なら ~/.config/pro-con/config.toml)。
 func DefaultPath(home string) string {
-	base := os.Getenv("XDG_CONFIG_HOME")
-	if base == "" {
-		base = filepath.Join(home, ".config")
-	}
-	return filepath.Join(base, "pro-con", "config.toml")
+	return filepath.Join(userdirs.ConfigBase(home), "pro-con", "config.toml")
 }
 
 // Load は path を読む。ファイルが無ければ Default を返す (エラーにしない)。

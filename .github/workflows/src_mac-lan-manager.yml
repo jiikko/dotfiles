@@ -10,6 +10,7 @@ on:
     paths:
       - 'src/mac-lan-manager/**'
       - 'src/atomicfile/**'  # replace で取り込む共有 module (台帳の書き込み)
+      - 'src/userdirs/**'  # replace で取り込む共有 module (台帳・設定の置き場。issue 777)
       - 'src/tuikit/**'      # replace で取り込む共有 module (幅・移動の語彙・入力欄・spinner)
       - 'src/termsafe/**'    # replace で取り込む共有 module (外から来た名前の無害化)
       - 'src/subproc/**'     # replace で取り込む共有 module (ssh / open を起こす)
@@ -21,6 +22,7 @@ on:
     paths:
       - 'src/mac-lan-manager/**'
       - 'src/atomicfile/**'  # replace で取り込む共有 module (台帳の書き込み)
+      - 'src/userdirs/**'  # replace で取り込む共有 module (台帳・設定の置き場。issue 777)
       - 'src/tuikit/**'      # replace で取り込む共有 module (幅・移動の語彙・入力欄・spinner)
       - 'src/termsafe/**'    # replace で取り込む共有 module (外から来た名前の無害化)
       - 'src/subproc/**'     # replace で取り込む共有 module (ssh / open を起こす)

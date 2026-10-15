@@ -11,7 +11,7 @@ import (
 )
 
 // places.go は前回の場所を覚える (設定の Remember place。spec §7 の places)。
-// 保存先は ~/.config/glogx/treefiler-places (設定と同じ置き場所。treebeard は ~/.local/state/tb/places)。
+// 保存先は設定と同じ置き場の treefiler-places (configDir。treebeard は ~/.local/state/tb/places)。
 // 形式は treebeard と同じ: `= <起動したフォルダ>` に続けて `+ <開いていたフォルダ>` と `@ <カーソル>`。新しいものが先頭、最大 placesKeep 件。
 
 const placesKeep = 50

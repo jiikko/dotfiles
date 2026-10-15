@@ -36,12 +36,18 @@ func TestDefaultPathUsesEnvDir(t *testing.T) {
 func TestDefaultPathHome(t *testing.T) {
 	t.Setenv(EnvDir, "")
 	t.Setenv("HOME", "/Users/someone")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	p, err := DefaultPath()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p != "/Users/someone/.config/glogx/mac-lan-manager/hosts.toml" {
+	// 道具ごとの置き場 (glogx の下ではない。issue 777)
+	if p != "/Users/someone/.config/mac-lan-manager/hosts.toml" {
 		t.Errorf("DefaultPath() = %s", p)
+	}
+	t.Setenv("XDG_CONFIG_HOME", "/x/cfg")
+	if p, err := DefaultPath(); err != nil || p != "/x/cfg/mac-lan-manager/hosts.toml" {
+		t.Errorf("XDG_CONFIG_HOME のとき DefaultPath() = %s %v", p, err)
 	}
 }
 

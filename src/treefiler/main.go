@@ -134,7 +134,7 @@ func (a *app) View() tea.View {
 const usage = `usage: treefiler [DIR]
 
 DIR (既定はカレントディレクトリ) を root にして、横に育つ木のファイラーを開く。
-キーの一覧は中で ? を押す。設定は , (~/.config/glogx/treefiler.toml)。
+キーの一覧は中で ? を押す。設定は , (~/.config/treefiler/treefiler.toml)。
 `
 
 func main() {

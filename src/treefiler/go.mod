@@ -11,6 +11,7 @@ require (
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
 	golang.org/x/sys v0.47.0
 	subproc v0.0.0
+	userdirs v0.0.0
 )
 
 require (
@@ -42,3 +43,5 @@ replace subproc => ../subproc
 replace atomicfile => ../atomicfile
 
 replace safefs => ../safefs
+
+replace userdirs => ../userdirs

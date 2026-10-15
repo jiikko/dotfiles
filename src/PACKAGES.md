@@ -46,6 +46,7 @@
 - `src/pro-con/fake` (`pro-con/fake`) — Package fake は claude を起動せずに pro-con の画面とつなぎ込みを動かすための模擬 backend。
 - `src/pro-con/flockmark` (`pro-con/flockmark`) — Package flockmark は「開いている間 flock を持ち続ける印」(<id>.lock) の作り方と、作りかけの残りの見分け方を持つ。
 - `src/pro-con/gitx` (`pro-con/gitx`) — Package gitx は pro-con が git を呼ぶときの共通の口 (見張りの読み取り = package monitor と、worktree の片付け = package wtclean)。
+- `src/pro-con/internal/testwait` (`pro-con/internal/testwait`) — Package testwait は pro-con のテストが「何かが起きる」のを待つ helper (issue 777)。 (internal)
 - `src/pro-con/live` (`pro-con/live`) — Package live は本物の backend (issue 424 / 427 の段階 3d)。
 - `src/pro-con/metrics` (`pro-con/metrics`) — Package metrics はカードごとの所要の記録 (issue 516)。
 - `src/pro-con/monitor` (`pro-con/monitor`) — Package monitor は見張り (pro-con monitor。
@@ -101,6 +102,7 @@
 - `src/tuikit/termwidth` (`github.com/jiikko/dotfiles/src/tuikit/termwidth`) — Package termwidth は端末表示幅の単一情報源。
 - `src/tuikit/toast` (`github.com/jiikko/dotfiles/src/tuikit/toast`) — Package toast は右下に数秒だけ出す通知 (トースト) のスタック。
 - `src/tuikit/widthenv` (`github.com/jiikko/dotfiles/src/tuikit/widthenv`) — Package widthenv は「tuikit の幅モデルが支持しない env」の検出とその文言を 1 箇所に集める。
+- `src/userdirs` (`userdirs`) — Package userdirs は道具ごとの設定の置き場を 1 か所で決める (issue 777)。
 - `src/zundamon-kaisetsu` (`zundamon-kaisetsu`) — zundamon-kaisetsu は VOICEVOX で台本を合成し、四国めたんとずんだもんの掛け合い動画 (HTML プレイヤー / mp4) を作る。 (main)
 - `src/zundamon-kaisetsu/internal/app` (`zundamon-kaisetsu/internal/app`) — Package app は CLI の実行の文脈: 環境 (Env。 (internal)
 - `src/zundamon-kaisetsu/internal/build` (`zundamon-kaisetsu/internal/build`) — Package build は組み立て (Assemble: wav の連結・口の開き・まばたき・プレイヤーのデータ) と、HTML / mp4 への書き出し。 (internal)

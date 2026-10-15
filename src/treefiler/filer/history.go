@@ -15,7 +15,7 @@ import (
 	"atomicfile"
 )
 
-// history.go は `!` のコマンドの履歴をプロセスと dir をまたいで残す (issue 721)。保存先は ~/.config/glogx/treefiler-history。
+// history.go は `!` のコマンドの履歴をプロセスと dir をまたいで残す (issue 721)。保存先は設定と同じ置き場の treefiler-history (configDir)。
 //
 // 形式は 1 行 1 コマンドで、コマンドを strconv.Quote した文字列 (改行・制御文字を含んでも 1 行に収まる)。
 // 🚨 打つたびに O_APPEND で 1 行足す。「閉じるときにまとめて書く」にしない: Close は F を閉じる・他の画面へ移るたびに呼ばれ、

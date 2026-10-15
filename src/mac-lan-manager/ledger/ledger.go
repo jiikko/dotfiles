@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"atomicfile"
+
+	"userdirs"
 )
 
 // Version は書く形式の版。読んだ台帳の版がこれより新しければ書き込みを拒む (古い版で上書きして中身を失わないため)。
@@ -54,16 +56,13 @@ func Key(host string) string {
 // EnvDir は置き場所を差し替える環境変数 (テストが本物を触らないため)。
 const EnvDir = "MAC_LAN_MANAGER_CONFIG_DIR"
 
-// DefaultPath は台帳の置き場所 (~/.config/glogx/mac-lan-manager/hosts.toml。treefiler の ~/.config/glogx/treefiler.toml と同じ並び)。
+// DefaultPath は台帳の置き場所 ($XDG_CONFIG_HOME/mac-lan-manager/hosts.toml、未設定なら ~/.config/mac-lan-manager/hosts.toml)。
+// 前の置き場 (~/.config/glogx/mac-lan-manager/hosts.toml) にあれば初回に移す (userdirs.ConfigFile。issue 777)。
 func DefaultPath() (string, error) {
 	if d := os.Getenv(EnvDir); d != "" {
 		return filepath.Join(d, "hosts.toml"), nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".config", "glogx", "mac-lan-manager", "hosts.toml"), nil
+	return userdirs.ConfigFile("mac-lan-manager", "hosts.toml", filepath.Join(".config", "glogx", "mac-lan-manager", "hosts.toml"))
 }
 
 // writeGuard は書き込みの直前に通す関門。本番は nil (何もしない)。テストは一時ディレクトリの外を拒否する関数を入れる

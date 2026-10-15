@@ -7,17 +7,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"atomicfile"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
+
+	"userdirs"
 )
 
 // settings.go は設定の板 (`,`。spec §7・§8.2) と保存 (spec §0.5)。
 //
-// 保存先は ~/.config/glogx/treefiler.toml (ユーザー回答 2026-10-07)。TREEFILER_CONFIG_DIR で差し替える (テストが本物を触らないため)。
+// 保存先は configDir の treefiler.toml (ユーザー回答 2026-10-07。置き場は 2026-10-16 に道具ごとへ移した。issue 777)。TREEFILER_CONFIG_DIR で差し替える (テストが本物を触らないため)。
 // 形式は treebeard と同じフラットな `key = value`。変えた 1 行だけ書き換え、他の行とコメントは保つ。
 //
 // 写さない項目 (spec §0.1): Pipes の別方式・River tracks・Sort by / Reverse (ソートは後回し)・Step through (j k は兄弟の中と決めた)・
@@ -148,16 +151,29 @@ var items = []item{
 	boolItem("BEHAVIOR", "Remember place", "remember", "閉じたときの開いたフォルダとカーソルを、次に同じ場所で開いたときに戻す", func(s *Settings) *bool { return &s.Remember }),
 }
 
+// configDir は設定・places・history の置き場 ($XDG_CONFIG_HOME/treefiler、未設定なら ~/.config/treefiler)。
+// 前の置き場 (~/.config/glogx) の 3 ファイルは、初めて置き場を引いたときに 1 回だけ移す (userdirs.ConfigFile。issue 777)。
 func configDir() string {
 	if d := os.Getenv("TREEFILER_CONFIG_DIR"); d != "" {
 		return d
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".config", "glogx")
+	configDirOnce.Do(func() {
+		for _, name := range []string{"treefiler.toml", "treefiler-places", "treefiler-history"} {
+			p, err := userdirs.ConfigFile("treefiler", name, filepath.Join(".config", "glogx", name))
+			if err != nil {
+				return
+			}
+			configDirResolved = filepath.Dir(p)
+		}
+	})
+	return configDirResolved
 }
+
+// 置き場は 1 プロセスで 1 回だけ引く (引っ越しの確認を呼ばれるたびに走らせない)。TREEFILER_CONFIG_DIR の差し替えはこれより前に見る。
+var (
+	configDirOnce     sync.Once
+	configDirResolved string
+)
 
 func configPath() string {
 	d := configDir()

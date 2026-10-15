@@ -11,6 +11,7 @@ require (
 	glogx v0.0.0
 	golang.org/x/sys v0.47.0
 	process_supervisor v0.0.0
+	userdirs v0.0.0
 )
 
 require doctor v0.0.0 // indirect
@@ -48,3 +49,5 @@ replace (
 	subproc => ../subproc
 	treefiler => ../treefiler
 )
+
+replace userdirs => ../userdirs

@@ -14,6 +14,7 @@ on:
       - 'src/safefs/**'      # replace で取り込む共有 module (ファイル操作。issue 722)
       - 'src/subproc/**'     # replace で取り込む共有 module (git の起動)
       - 'src/atomicfile/**'  # replace で取り込む共有 module (設定・場所の保存)
+      - 'src/userdirs/**'  # replace で取り込む共有 module (設定の置き場。issue 777)
       - 'src/tuikit/**'      # replace で取り込む共有 module (幅の単一情報源)
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
       - .github/workflows/src_treefiler.yml
@@ -26,6 +27,7 @@ on:
       - 'src/safefs/**'      # replace で取り込む共有 module (ファイル操作。issue 722)
       - 'src/subproc/**'     # replace で取り込む共有 module (git の起動)
       - 'src/atomicfile/**'  # replace で取り込む共有 module (設定・場所の保存)
+      - 'src/userdirs/**'  # replace で取り込む共有 module (設定の置き場。issue 777)
       - 'src/tuikit/**'      # replace で取り込む共有 module (幅の単一情報源)
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
       - .github/workflows/src_treefiler.yml

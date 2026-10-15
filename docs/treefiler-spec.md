@@ -40,7 +40,7 @@
 | プレビューのスクロールバー | 枠の右の縦線に重ねる | **枠の 1 桁内側に、つまみ `█`・溝 `░`** (2026-10-09 ユーザー回答「もっと太く。四隅と見た目を区別して」)。枠と四隅はそのまま |
 | テキストの描画 | `glow` / `bat` (外部コマンド) | **外部コマンドを呼ばず** bubbletea v2 と tuikit で描く: markdown = `tuikit/markdown`、コード = `tuikit/highlight` (chroma)。`docs/glogx-bubbletea-v2.md` の幅の前提に乗る |
 | 巨大なテキスト | 先頭 2 MiB だけ読む | **先頭だけ読み、ページ送りで下へ進むたびに続きを読む** (§0.4) |
-| 設定の保存先 | `~/.config/tb/config.toml` | **`~/.config/glogx/` の下** (§0.5) |
+| 設定の保存先 | `~/.config/tb/config.toml` | **`$XDG_CONFIG_HOME/treefiler/` の下** (未設定なら `~/.config/treefiler/`。§0.5) |
 | 既存の `E` (外部ファイラー) | — | 消した (commit「refactor(glogx): 使っていない E (外部ファイラーの起動) を消す」)。`F` の別名にもしない |
 
 ### 0.2 タイル (ドラクエの対戦画面)
@@ -122,10 +122,10 @@
 
 ### 0.5 設定
 
-- `~/.config/glogx/` の下に置く (ファイル名は実装で決める。例 `filer.toml`)。形式は treebeard と同じフラットな `key = value` で、
+- `$XDG_CONFIG_HOME/treefiler/` (未設定なら `~/.config/treefiler/`) の下に置く (2026-10-16 に `~/.config/glogx/` から移した。道具を将来 glogx から分離するため。前の置き場のファイルは初回に移す。issue 777)。形式は treebeard と同じフラットな `key = value` で、
   変えた 1 行だけ書き換える (§7)。依存を足さずに書ける
 - 写す項目は §7 の表から × を除いたもの。Sort by は name / modified / size の 3 つ (type は写さない)、Reverse は写す (issue 720)
-- Remember place (§7 の places) の保存先も `~/.config/glogx/` の下にする (treebeard は `~/.local/state/tb/places`)。🚨 推奨で、ユーザー未確認
+- Remember place (§7 の places) の保存先も設定と同じ置き場にする (treebeard は `~/.local/state/tb/places`)。🚨 推奨で、ユーザー未確認
 
 ### 0.6 単体でも起動する (2026-10-08 ユーザー回答「このファイラー単体でも起動できるようにして」)
 
@@ -142,7 +142,7 @@
   - `q` `Esc` (木の上) は単体のプログラムを終了する。`F` で閉じる・git log 一覧へ戻るは glogx に埋め込んだときだけ
   - glogx の横断キー (`R` `D` `U` `X` `i`) は単体では無い
   - 起点は単体でも pwd (引数でディレクトリを渡せるようにするかは実装で決める。treebeard は `tb [DIR]`)
-  - 設定は単体でも glogx でも同じ `~/.config/glogx/` の下を読む (§0.5)
+  - 設定は単体でも glogx でも同じ置き場 (`~/.config/treefiler/`) を読む (§0.5)
 - **名前は `treefiler`** (2026-10-08 ユーザー回答): module は `src/treefiler/`、単体のコマンドは `bin/treefiler`。どちらも既存と衝突しない (2026-10-08 確認)
 - 単体で起動できると、見た目の確認 (撮影) も glogx を経由せずに回せる
 

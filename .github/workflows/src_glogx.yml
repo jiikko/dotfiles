@@ -20,6 +20,7 @@ on:
       - 'src/safefs/**'      # doctor と treefiler の依存 (replace は依存先から引き継がれないので glogx にも要る)
       - 'src/subproc/**'     # replace で取り込む共有 module (外部プロセス起動の安全弁)
       - 'src/atomicfile/**'  # replace で取り込む共有 module (temp + rename)
+      - 'src/userdirs/**'  # treefiler / mac-lan-manager の依存 (replace は依存先から引き継がれないので glogx にも要る)
       # issues/banner_test.go が module の外の CI 検査を実行して書式の一致を見る (issue 403 の続き)
       - tests/issues/test_next_claims_have_banner.sh
       - scripts/lib/claim_banner.awk
@@ -44,6 +45,7 @@ on:
       - 'src/safefs/**'      # doctor と treefiler の依存 (replace は依存先から引き継がれないので glogx にも要る)
       - 'src/subproc/**'     # replace で取り込む共有 module (外部プロセス起動の安全弁)
       - 'src/atomicfile/**'  # replace で取り込む共有 module (temp + rename)
+      - 'src/userdirs/**'  # treefiler / mac-lan-manager の依存 (replace は依存先から引き継がれないので glogx にも要る)
       # issues/banner_test.go が module の外の CI 検査を実行して書式の一致を見る (issue 403 の続き)
       - tests/issues/test_next_claims_have_banner.sh
       - scripts/lib/claim_banner.awk

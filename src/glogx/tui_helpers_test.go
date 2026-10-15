@@ -101,7 +101,7 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("XDG_CACHE_HOME", dir); err != nil {
 		panic(err)
 	}
-	// treefiler (F) の設定と前回の場所は ~/.config/glogx に書く。テストは本物を読み書きしない
+	// treefiler (F) の設定と前回の場所は ~/.config/treefiler に書く。テストは本物を読み書きしない
 	// (読むと利用者の設定でテストの結果が変わり、書くと利用者の設定を書き換える。2026-10-09 に実際に書いた)
 	if err := os.Setenv("TREEFILER_CONFIG_DIR", filepath.Join(dir, "treefiler-config")); err != nil {
 		panic(err)

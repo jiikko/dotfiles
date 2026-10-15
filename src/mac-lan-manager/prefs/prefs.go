@@ -1,6 +1,6 @@
 // Package prefs は mac-lan-manager の設定 (一覧に出す IP・内部 IP の決め方) を読み書きする。
 //
-// 置き場所は台帳と同じ ~/.config/glogx/mac-lan-manager/ (settings.toml)。ledger.EnvDir で差し替える。
+// 置き場所は台帳と同じ ~/.config/mac-lan-manager/ (settings.toml。XDG_CONFIG_HOME に従う)。ledger.EnvDir で差し替える。
 package prefs
 
 import (
@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"atomicfile"
+
+	"userdirs"
 )
 
 // Prefs は設定。ゼロ値ではなく Default から始める。
@@ -41,16 +43,12 @@ func (p Prefs) BandPrefix() string {
 // EnvDir は置き場所を差し替える環境変数 (ledger と同じ)。
 const EnvDir = "MAC_LAN_MANAGER_CONFIG_DIR"
 
-// DefaultPath は設定の置き場所。
+// DefaultPath は設定の置き場所 (台帳の隣。前の置き場 ~/.config/glogx/mac-lan-manager にあれば初回に移す。issue 777)。
 func DefaultPath() (string, error) {
 	if d := os.Getenv(EnvDir); d != "" {
 		return filepath.Join(d, "settings.toml"), nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".config", "glogx", "mac-lan-manager", "settings.toml"), nil
+	return userdirs.ConfigFile("mac-lan-manager", "settings.toml", filepath.Join(".config", "glogx", "mac-lan-manager", "settings.toml"))
 }
 
 // writeGuard は書き込みの直前に通す関門 (本番は nil。テストは一時ディレクトリの外を拒否する)。
