@@ -1,6 +1,7 @@
 package issues
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -321,15 +322,15 @@ func TestRemoveBannerMatchesShellStrip(t *testing.T) {
 		t.Fatalf("shell 側の規則が見つからない (repo の配置が変わった?): %v", err)
 	}
 	cases := map[string]string{
-		"空行つき":      "# t\n\n> 🚨 **担当中: x**（2026-10-15〜）\n\n本文\n## 概要\n",
-		"空行なし":      "# t\n> 🚨 **担当中: x**（2026-10-15〜）\n本文\n",
-		"着手中":       "# t\n\n**着手中: x**\n\n## 概要\n",
-		"フェンスの中":    "# t\n\n```\n**担当中: x**\n```\n\n## 概要\n",
-		"見出しより後":    "# t\n\n## 概要\n\n> 🚨 **担当中: x**\n",
-		"見出しが無い":    "# t\n\n本文\n\n**担当中: x**\n\nあと\n",
-		"CRLF":       "# t\r\n\r\n> 🚨 **担当中: x**\r\n\r\n本文\r\n",
-		"バナーが無い":    "# t\n\n本文\n",
-		"2 つ目は残る":   "# t\n\n**担当中: a**\n\n**担当中: b**\n\n## 概要\n",
+		"空行つき":     "# t\n\n> 🚨 **担当中: x**（2026-10-15〜）\n\n本文\n## 概要\n",
+		"空行なし":     "# t\n> 🚨 **担当中: x**（2026-10-15〜）\n本文\n",
+		"着手中":      "# t\n\n**着手中: x**\n\n## 概要\n",
+		"フェンスの中":   "# t\n\n```\n**担当中: x**\n```\n\n## 概要\n",
+		"見出しより後":   "# t\n\n## 概要\n\n> 🚨 **担当中: x**\n",
+		"見出しが無い":   "# t\n\n本文\n\n**担当中: x**\n\nあと\n",
+		"CRLF":     "# t\r\n\r\n> 🚨 **担当中: x**\r\n\r\n本文\r\n",
+		"バナーが無い":   "# t\n\n本文\n",
+		"2 つ目は残る":  "# t\n\n**担当中: a**\n\n**担当中: b**\n\n## 概要\n",
 		"空白だけの次の行": "# t\n\n**担当中: a**\n  \t\n本文\n",
 	}
 	removedAny := false
@@ -344,7 +345,8 @@ func TestRemoveBannerMatchesShellStrip(t *testing.T) {
 		cmd.Env = append(os.Environ(), "LC_ALL=C") // shell 側の呼び出しと同じ (scripts/issue_done.sh)
 		out, err := cmd.Output()
 		rc := 0
-		if ee, ok := err.(*exec.ExitError); ok {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
 			rc = ee.ExitCode()
 		} else if err != nil {
 			t.Fatal(err)
