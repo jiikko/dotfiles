@@ -23,6 +23,7 @@ import (
 
 	"pro-con/backend"
 	"pro-con/card"
+	"subproc/clipboard"
 )
 
 // TickInterval は Poll を呼ぶ間隔 (実時間)。fake では 1 回の Poll が模擬時間の 1 分に当たる。
@@ -144,7 +145,7 @@ type Model struct {
 	firstView func()
 	children  *atomic.Int64 // 裏で外部コマンドを起こしている処理の数 (exec の前に 0 を待つ。upgrade.go の child)
 
-	copy       func(string) error     // クリップボードへ入れる (既定は pbcopy。テストは差し替える)
+	copy       func(string) error     // クリップボードへ入れる (既定は subproc/clipboard.Copy。glogx・treefiler と同じく tmux の中では tmux のバッファへも積む。テストは差し替える)
 	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は github.com/jiikko/dotfiles/src/tuikit/editor。テストは差し替える)
 	// execProcess は端末を明け渡して外のコマンドを走らせる (既定は execOnTerminal。テストは戻りの知らせを取り出すために差し替える)
 	execProcess func(*exec.Cmd, tea.ExecCallback) tea.Cmd
@@ -160,7 +161,7 @@ type Model struct {
 
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }, openFiles: openWithSystem, stops: &stopState{}}
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: clipboard.Copy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }, openFiles: openWithSystem, stops: &stopState{}}
 	m.execProcess = m.execOnTerminal
 	m.toasts = toast.Stack{Shadow: layout.ShadowNearBlack} // 落ち影は他の板と同じ近黒 (glogx と同じ)
 	m.setSnap(be.Poll())

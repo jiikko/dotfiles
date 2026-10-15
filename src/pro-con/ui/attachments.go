@@ -7,11 +7,12 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
@@ -19,6 +20,7 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 
 	"pro-con/card"
+	"subproc"
 )
 
 const (
@@ -32,9 +34,14 @@ type openedMsg struct {
 	err error
 }
 
+// openTimeout は open の実行上限 (open は Preview に渡したらすぐ戻る。ハングしても添付を開く 1 回が失敗するだけ)。
+const openTimeout = 10 * time.Second
+
 // openWithSystem は paths を Preview で開く (複数の画像を 1 つの窓にまとめる)。
 func openWithSystem(paths []string) error {
-	out, err := exec.Command("open", append([]string{"-a", "Preview", "--"}, paths...)...).CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), openTimeout)
+	defer cancel()
+	out, err := subproc.CommandContext(ctx, "open", append([]string{"-a", "Preview", "--"}, paths...)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}

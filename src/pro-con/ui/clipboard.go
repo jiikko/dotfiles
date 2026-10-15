@@ -1,27 +1,13 @@
 package ui
 
 import (
-	"context"
 	"fmt"
-	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
 
 	"pro-con/card"
 )
-
-// pbcopy はテキストを OS のクリップボードへ入れる (macOS 専用の repo なので pbcopy だけ)。
-// ハングしても TUI を止めないよう timeout を付ける。Model.copy から呼ぶ (テストは差し替える)。
-func pbcopy(text string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "pbcopy")
-	cmd.Stdin = strings.NewReader(text)
-	cmd.WaitDelay = time.Second // ctx の kill 後に stdin の書き込みで Wait が止まり続けないように
-	return cmd.Run()
-}
 
 // cardText は y でコピーするカードの中身。🚨 カードの本文は将来 PG の出力 (自分以外が書いた文字列) を含むので、
 // termsafe.PlainBlock を通して制御文字・エスケープを落とす (貼った先の端末で発火させない)。改行だけ残す。
