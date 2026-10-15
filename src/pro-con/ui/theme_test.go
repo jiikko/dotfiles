@@ -57,12 +57,17 @@ func ymlCterm(yml, role string) (int, bool) {
 }
 
 // テーマの色の番号を col* を通さずに直に書いた所が無い (写しが 2 つになると、上のテストが見ない方がずれる。issue 770)。
-// ui の production の .go を AST で読み、テーマの番号と同じ整数リテラルと、文字列の中の `colour<番号>` / `;5;<番号>` / `<番号>m` を拾う。
-// 拾わないもの: style.go の col* の定義そのもの・`theme-literal-ok:` の印 (理由を添える) がある行。
-// 検出しない形: ui の外の package・数字を計算で作る形 (200+2)・番号を分けた文字列の連結 ("20"+"2m")。
-var themeNums = map[string]bool{"202": true, "214": true, "208": true, "51": true, "46": true, "240": true, "196": true}
+// ui の production の .go を AST で読み、テーマの番号と同じ値の整数リテラル (16 進・8 進・桁区切りも値で比べる) と、
+// 文字列の中の `colour<番号>` / `color<番号>` / `;5;<番号>` / `:5:<番号>` / 番号だけ・`<番号>m` の文字列を拾う。
+// 拾わないもの: style.go の関数の外の const の col* の定義そのもの・`theme-literal-ok: <理由>` の印 (理由は必須) がある行。
+// 検出しない形: ui の外の package・数字を計算で作る形 (200+2)・番号を分けた文字列の連結 ("20"+"2m")・rune や float で書いた番号・
+// 1 行の印が同じ行のほかのリテラルまで外すこと。
+var themeNums = map[int64]bool{202: true, 214: true, 208: true, 51: true, 46: true, 240: true, 196: true}
 
-var themeInString = regexp.MustCompile(`(colour|;5;)(202|214|208|51|46|240|196)\b|^"(202|214|208|51|46|240|196)m`)
+var (
+	themeInString = regexp.MustCompile(`(colou?r|[;:]5[;:])(202|214|208|51|46|240|196)([^0-9]|$)|^["\x60](202|214|208|51|46|240|196)m?["\x60]$`)
+	themeOK       = regexp.MustCompile(`theme-literal-ok:\s*\S`)
+)
 
 func TestNoThemeColorLiterals(t *testing.T) {
 	files, err := filepath.Glob("*.go")
@@ -80,39 +85,52 @@ func TestNoThemeColorLiterals(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ok := map[int]bool{} // theme-literal-ok の印がある行
+		ok := map[int]bool{} // theme-literal-ok の印 (理由つき) がある行
 		for _, cg := range af.Comments {
 			for _, c := range cg.List {
-				if strings.Contains(c.Text, "theme-literal-ok:") {
+				if themeOK.MatchString(c.Text) {
 					ok[fset.Position(c.Pos()).Line] = true
 				}
 			}
 		}
-		colDef := map[token.Pos]bool{} // col* の定義の値
-		ast.Inspect(af, func(n ast.Node) bool {
-			if vs, isVS := n.(*ast.ValueSpec); isVS {
-				for i, name := range vs.Names {
-					if strings.HasPrefix(name.Name, "col") && i < len(vs.Values) {
-						colDef[vs.Values[i].Pos()] = true
-						defs++
+		colDef := map[token.Pos]bool{} // style.go の関数の外の const の col* の値
+		if f == "style.go" {
+			for _, d := range af.Decls {
+				gd, isGD := d.(*ast.GenDecl)
+				if !isGD || gd.Tok != token.CONST {
+					continue
+				}
+				for _, sp := range gd.Specs {
+					vs := sp.(*ast.ValueSpec)
+					for i, name := range vs.Names {
+						if strings.HasPrefix(name.Name, "col") && i < len(vs.Values) {
+							colDef[vs.Values[i].Pos()] = true
+							defs++
+						}
 					}
 				}
 			}
-			return true
-		})
+		}
 		ast.Inspect(af, func(n ast.Node) bool {
 			bl, isBL := n.(*ast.BasicLit)
 			if !isBL || colDef[bl.Pos()] {
 				return true
 			}
-			hit := bl.Kind == token.INT && themeNums[bl.Value] || bl.Kind == token.STRING && themeInString.MatchString(bl.Value)
+			hit := false
+			switch bl.Kind {
+			case token.INT:
+				v, err := strconv.ParseInt(bl.Value, 0, 64)
+				hit = err == nil && themeNums[v]
+			case token.STRING:
+				hit = themeInString.MatchString(bl.Value)
+			}
 			if pos := fset.Position(bl.Pos()); hit && !ok[pos.Line] {
 				t.Errorf("%s:%d: テーマの色の番号 %s を直に書いている (style.go の col* を使う。色でない数なら行に theme-literal-ok: <理由> を書く)", f, pos.Line, bl.Value)
 			}
 			return true
 		})
 	}
-	if seen == 0 || defs < 7 {
-		t.Fatalf("検査した .go が %d 件・col* の定義が %d 件 (style.go の col* を見つけられていない)", seen, defs)
+	if seen == 0 || defs != len(themeNums) {
+		t.Fatalf("検査した .go が %d 件・style.go の col* の定義が %d 件 (テーマの番号は %d 個。col* を足したら themeNums と yml のテストの表も足す)", seen, defs, len(themeNums))
 	}
 }
