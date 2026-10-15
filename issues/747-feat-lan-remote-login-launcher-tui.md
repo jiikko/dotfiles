@@ -432,9 +432,14 @@ package (`lanmgr`。glogx の `L` の板からも取り込む。`New` / `Resize`
 
 **段取り** (各段で make test・反証レビュー・push。設計の反証レビューで順番を直した):
 1. module の土台 (Makefile / go.mod / `.golangci.yml` / workflow / README) と `netinfo` / `discover` / `ledger` の読み書き (純関数 + テスト)。lipgloss も tuikit も使わない
-2. **x/ansi の版上げと tuikit を使う全 module の go.mod の揃え** (lipgloss v2 を初めて入れる段の前に済ませる。入れた時点で
-   `tests/scripts/test_tuikit_consumers_aligned.sh` が赤になるため。766 の 2 段目 = restartable の tuikit の固定版上げの後。ultraviolet の版も上がり
-   描画のエンジンが変わるので、`docs/glogx-bubbletea-v2.md` のチェックリストと Bench を見る)
+2. ~~x/ansi の版上げと tuikit を使う全 module の go.mod の揃え~~ → **不要にした (2026-10-15): lipgloss を v2.0.5 に固定する**。
+   lipgloss v2.0.6 は x/ansi v0.11.8 と ultraviolet 006e29f を要求し、入れると全 module の版上げが要る。ultraviolet 006e29f は描画のエンジン
+   (`terminal_renderer.go`) が変わり、**全角の文字 (幅 2 のセル) を含む行を差分でなく行ごと消して描き直す** (全角が割れる不具合の対処。日本語の多い
+   この repo の TUI では、1 コマで書き出す量が増えうる)。lipgloss v2.0.5 は x/ansi v0.11.7・ultraviolet 1948445 (2025-12) しか要求しないので、
+   Go の版の選び方で今の repo の版 (x/ansi v0.11.7・ultraviolet 8b693049) がそのまま使われ、どの go.mod も上げずに済む。
+   v2.0.5 に見本で使った機能 (`Blend1D` / `BorderForegroundBlend` / `NewCompositor` / `Hyperlink`) が揃い、今の版の組み合わせでビルドでき、
+   見本の画面は v2.0.6 と行末の空白を除いて 240 行とも同じだった (2026-10-15 に確かめた)。ultraviolet を上げるかは全 TUI の見た目と速さの話なので、
+   測ってから別に判断する (mac-lan-manager のついでに上げない)
 3. `lanmgr` の画面 (一覧・詳細カード・設定・この Mac の IP のコピー) と `bin/mac-lan-manager`。相手は本物の Bonjour から
 4. `setup` (初期設定の手順の実行。この Mac → 相手)。**その前に人手の確認** (ルーターを空にした `-setmanual`・`open vnc://<IP>`・切断を越えて走るか) を済ませる
 5. glogx の `L` の板 (766 の 1 段目の push の後。glogx の `tui.go` を 766 も触るため)。glogx の workflow の paths に `src/mac-lan-manager/**` を足す
@@ -495,6 +500,7 @@ package (`lanmgr`。glogx の `L` の板からも取り込む。`New` / `Resize`
 - [x] 管理対象の印の案を決める (2026-10-15: Bonjour の広告 = 案 A。「決定 (2026-10-15)」節)
 - [x] ~~他の Mac から `_lanmac._tcp` の広告が見えるかを確かめる~~ (台帳に決まったので不要。2026-10-15)
 - [ ] 実装
+  - [x] 段 2 は不要にした (lipgloss を v2.0.5 に固定。上の「段取り」の 2)
   - [x] 段 1: module の土台と `netinfo` / `discover` / `ledger` (2026-10-15。commit「mac-lan-manager: 段 1 …」)
     - テストの fixture は 2026-10-15 にこの Mac で本物のコマンドから取った出力 (MAC と IPv6 のリンクローカルは伏せた)。`dns-sd -L` は空白を `\032` で返す
     - 書いている途中で直した誤り: Thunderbolt Bridge (`bridge0`) を名前だけで「仮想」に分けていた → 登録されたサービスを先に見る
