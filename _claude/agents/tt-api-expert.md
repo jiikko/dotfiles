@@ -44,12 +44,13 @@ bin/tt-client image /path/to/image.png 400 300
 # 図形追加
 bin/tt-client shape rectangle 640 360
 
+# 出力先: skill-tmpdir tt-api-expert が返す絶対パスを <D> として使う (tmp/ 直下に書かない。dotfiles issue 774)
 # プレビュー確認（低解像度）
-bin/tt-client --current preview -o ./tmp/preview.png
+bin/tt-client --current preview -o <D>/preview.png
 
 # フル解像度エクスポート
-bin/tt-client --current export -o ./tmp/export.png
-bin/tt-client --current export -o ./tmp/export.jpg --format jpeg
+bin/tt-client --current export -o <D>/export.png
+bin/tt-client --current export -o <D>/export.jpg --format jpeg
 ```
 
 ### クラッシュログの確認
@@ -81,7 +82,7 @@ cat ~/Library/Logs/DiagnosticReports/ThumbnailThumb-*.ips | head -200
    bin/tt-client ... | jq ...
 
    # OK: 組み込みオプションを使用
-   bin/tt-client --current preview -o ./tmp/output.png
+   bin/tt-client --current preview -o <D>/output.png
    ```
 
 3. **アプリ再起動**

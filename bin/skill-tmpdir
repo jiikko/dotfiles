@@ -39,4 +39,12 @@ if [ -z "$root" ]; then
 fi
 dir="$root/tmp/$name/$sid"
 mkdir -p "$dir"
+# 既にある dir (同じ session の再開) も今の mtime にする。古いままだと make clean-tmp が、パスを返した直後のこの dir を消しうる。
+# -c: mkdir の後に clean が消していたら作らない (素の touch は空のファイルを作り、以後の mkdir -p が File exists で失敗し続ける)。
+# 失敗 (所有者の違う dir) は mtime を延ばせないだけなので止めない。消されていたら次の mkdir -p で作り直し、返すのは必ず dir
+touch -c "$dir" || echo "skill-tmpdir: $dir の mtime を更新できない (make clean-tmp に古いと判定されうる)" >&2
+mkdir -p "$dir"
+# 印: make clean-tmp (scripts/clean_tmp.sh) はこれがある dir を丸ごと判定せず、中の session ごとの dir を単位に古いものを消す
+m="$root/tmp/$name/.skill-tmpdir"
+[ -e "$m" ] || [ -L "$m" ] || : > "$m" # 先の無い symlink を辿って外に作らない
 printf '%s\n' "$dir"

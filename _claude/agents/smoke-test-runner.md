@@ -52,14 +52,17 @@ Task tool:
 
 #### 手順
 
-1. テスト開始時に日時プレフィックスを生成:
+1. テスト開始時に出力先と日時プレフィックスを決める。出力先は `skill-tmpdir smoke-test-runner` が返す絶対パス
+   (`<本体 checkout>/tmp/smoke-test-runner/<session-id>/`。dotfiles の `bin/skill-tmpdir`) を `<D>` として以降リテラルで使う
+   (Bash の変数は次の呼び出しに残らない。`tmp/` 直下に置かない: dotfiles issue 774):
    ```bash
+   skill-tmpdir smoke-test-runner
    PREFIX=$(date +%Y%m%d-%H%M%S)
    ```
 2. 操作を実行（例: テキスト追加）
 3. プレビューを取得:
    ```bash
-   bin/tt-client -p PROJECT_ID -c CANVAS_ID preview -o ./tmp/${PREFIX}-step-NN-操作名.png
+   bin/tt-client -p PROJECT_ID -c CANVAS_ID preview -o <D>/${PREFIX}-step-NN-操作名.png
    ```
 4. Read ツールで画像を表示し、変更が反映されているか確認
 5. 問題があれば即座に記録し、調査
@@ -69,13 +72,13 @@ Task tool:
 日時プレフィックス（`YYYYMMDD-HHMMSS`）を付けて、過去のテストと区別する:
 
 ```
-./tmp/20260124-143052-step-01-canvas-created.png
-./tmp/20260124-143052-step-02-text-added.png
-./tmp/20260124-143052-step-03-text-updated.png
-./tmp/20260124-143052-step-04-shape-rectangle.png
-./tmp/20260124-143052-step-05-shape-circle.png
-./tmp/20260124-143052-step-06-background-solid.png
-./tmp/20260124-143052-step-07-background-gradient.png
+<D>/20260124-143052-step-01-canvas-created.png
+<D>/20260124-143052-step-02-text-added.png
+<D>/20260124-143052-step-03-text-updated.png
+<D>/20260124-143052-step-04-shape-rectangle.png
+<D>/20260124-143052-step-05-shape-circle.png
+<D>/20260124-143052-step-06-background-solid.png
+<D>/20260124-143052-step-07-background-gradient.png
 ...
 ```
 
@@ -179,7 +182,7 @@ bin/tt-client GET ...  # 確認
 
 ```bash
 # 簡易的なテスト画像を作成
-sips -s format png --out ./tmp/test-image.png /System/Library/Desktop\ Pictures/Solid\ Colors/Blue.png --resampleWidth 400
+sips -s format png --out <D>/test-image.png /System/Library/Desktop\ Pictures/Solid\ Colors/Blue.png --resampleWidth 400
 ```
 
 #### パフォーマンステスト（3.22）
@@ -249,14 +252,14 @@ bin/tt-client ... POST ... "$OPERATIONS"
 ### 視覚確認
 
 以下の画像を確認しました：
-- ./tmp/smoke-test-export.png: ✅ テキスト・シェイプが正しくレンダリング
-- ./tmp/youtube-thumbnail-final.png: ✅ 実用シナリオが正常動作
+- <D>/smoke-test-export.png: ✅ テキスト・シェイプが正しくレンダリング
+- <D>/youtube-thumbnail-final.png: ✅ 実用シナリオが正常動作
 
 ### 出力ファイル
 
 生成されたファイル:
 ```
-ls -lh ./tmp/smoke-test-*.png ./tmp/export-*.{png,jpg}
+ls -lh <D>/smoke-test-*.png <D>/export-*.{png,jpg}
 ```
 ```
 
@@ -274,7 +277,7 @@ ls -lh ./tmp/smoke-test-*.png ./tmp/export-*.{png,jpg}
 
 1. **アプリ起動確認**: テスト開始前に `bin/tt-client /status` で確認
 2. **ワークスペース必須**: `hasOpenWorkspace: true` でなければテスト不可
-3. **./tmp/ ディレクトリ**: 存在しない場合は `mkdir -p ./tmp` で作成
+3. **出力先**: 手順 1 の `skill-tmpdir smoke-test-runner` が作る (`./tmp/` 直下に書かない)
 4. **テストキャンバス**: `__SMOKE_TEST__` という名前で作成し、必ず削除
 5. **並行実行禁止**: 複数のテストを同時に実行しない
 6. **エラー時の継続判断**: クリティカルなエラーは即座に停止、軽微なエラーは記録して続行

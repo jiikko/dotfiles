@@ -70,7 +70,8 @@ KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/ka
 
 .PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-packages-index test-unused-excluding-tests test-go-lint test-go test-src test-fresh
 
-# ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ。中に新しい更新があるフォルダは残す)。
+# ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ。中に新しい更新があるフォルダは残す。
+# skill の dir (bin/skill-tmpdir の印 .skill-tmpdir がある tmp/<skill名>/) は中の session ごとの dir を単位にする)。
 #
 # ./tmp は「Claude がセッション中に作る成果物 (レポート・中間生成物)」の置き場
 # (~/.claude/CLAUDE.md「一時ファイルの配置」)。gitignore なので放っておくと溜まる一方で、

@@ -29,6 +29,18 @@ got=$(cd "$REPO/." && CLAUDE_CODE_SESSION_ID=abc-123 "$SUT" codex-drive)
 expect "$got" "$REPO/tmp/codex-drive/abc-123" "本体 checkout の tmp/<名前>/<sid>/ を返す"
 if [ -d "$got" ]; then ok "dir を作る"; else fail "dir を作っていない: $got"; fi
 
+if [ -f "$REPO/tmp/codex-drive/.skill-tmpdir" ] && [ ! -L "$REPO/tmp/codex-drive/.skill-tmpdir" ]; then ok "make clean-tmp 用の印を置く"; else fail "印が無い"; fi
+
+mkdir -p "$REPO/tmp/dang"
+ln -s "$WORK/nowhere-marker" "$REPO/tmp/dang/.skill-tmpdir"
+(cd "$REPO" && CLAUDE_CODE_SESSION_ID=d1 "$SUT" dang) >/dev/null
+if [ ! -e "$WORK/nowhere-marker" ]; then ok "先の無い symlink の印を辿って外に作らない"; else fail "印の symlink の先に作った"; fi
+
+# 1b. 既にある古い session の dir を返すときは今の mtime にする (再開した session の dir を make clean-tmp に消させない)
+mkdir -p "$REPO/tmp/codex-review/old-sid" && touch -t 202501010000 "$REPO/tmp/codex-review/old-sid"
+got=$(cd "$REPO" && CLAUDE_CODE_SESSION_ID=old-sid "$SUT" codex-review)
+if [ -n "$(find "$got" -prune -mtime -1 -print)" ]; then ok "既にある古い session の dir を今の mtime にする"; else fail "古い mtime のまま: $got"; fi
+
 # 2. worktree の中から呼んでも本体 checkout を返す
 got=$(cd "$WORK/wt" && CLAUDE_CODE_SESSION_ID=abc-123 "$SUT" codex-drive)
 expect "$got" "$REPO/tmp/codex-drive/abc-123" "worktree からでも本体 checkout の tmp/ を返す"

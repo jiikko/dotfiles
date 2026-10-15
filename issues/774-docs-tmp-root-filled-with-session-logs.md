@@ -128,12 +128,43 @@
 - [x] **codex-drive の置き場の割れを解消**: [2] の `./tmp/<タスク>/`・[3.5]/[3.6]/[3.7] の `<scratchpad>/…`・設計ファイル `./tmp/codex-drive-design.*`
   を「出力の置き場 (`<D>`)」節の 1 か所 (`skill-tmpdir codex-drive`) に寄せ、「scratchpad はセッション終了で消える」の誤りを直した
 - [x] skill-eval: eval の無かった 5 本 (codex-drive / codex-lead / codex-review / perf-analysis / review-loop) に「発火するか」のケースを足した
-- [ ] **残課題: `make clean-tmp` が `tmp/<skill名>/` を消せない**。`scripts/clean_tmp.sh` は直下のエントリ単位で、中に新しい子孫があれば dir ごと残すので、
-  skill を使い続ける限り `tmp/codex-review/` は古い session の dir ごと残る。案: `skill-tmpdir` が `tmp/<skill名>/` に印を置き、clean_tmp は印のある dir では
-  子 (session ごとの dir) を単位に判定する。破壊的な掃除の変更なので、テストと敵対的レビューを付けて別に入れる
-- [ ] **残課題: ThumbnailThumb の agent 4 本** (smoke-test-runner / tt-api-expert / test-runner / swiftui-test-expert) は今も `./tmp/` 直下に書く。
-  `thumbnailthumb-test.log` / `perf.log` はアプリ側が決める固定パス。`tt-client preview|export -o` の png はクライアント側の curl が保存するので
-  (`~/src/homebrew-tap/bin/tt-client` で確認) `skill-tmpdir` に移せるが、ここでは動かせないので見送った
+- [x] **`make clean-tmp` が `tmp/<skill名>/` の中の古い session の dir を消す** (ユーザー承認 2026-10-16)。`skill-tmpdir` が `tmp/<skill名>/.skill-tmpdir` に
+  印を置き、`scripts/clean_tmp.sh` は印のある dir を丸ごと判定せず、中の session の dir を 1 件ずつ既存と同じ judge で判定する。
+  敵対的レビュー (opus 1 本) の指摘を直した: P1 clone・worktree の dir に印があると兄弟の `.git` や `src/` を消した → 直下に git の印があれば降りない /
+  P1 一覧から削除までの間に skill の dir を symlink に差し替えると外を消した → 消す直前に親が実体の skill の dir かを取り直す /
+  P2 消す直前に自身の mtime を見ない (作ったばかりの空の session の dir を消しうる) → 取り直す / P3 印の大文字小文字・読めない skill の dir で全体が止まる・
+  先の無い symlink の印を辿って外に作る → 直した。テスト `tests/scripts/test_clean_tmp.sh` の 11〜11i。
+  変異: 直下の読み飛ばし・skill の中のループ・印の symlink 検査・skill の dir の symlink 検査・git の印の確認・親の取り直し・mtime の取り直し
+  (一覧の絞り込みと 2 段なので両方外して red)・-iname・skill-tmpdir の `-L` → いずれも red。読めない skill の dir の分岐は手前の `is_skill_dir` の find の失敗で
+  丸ごと判定に回るので、このテストの形では到達しない (11h はその経路で振る舞いを見る)
+  敵対的レビュー 2 周目 (opus): P2 親の取り直しと rm の間に差し替えると外を消せた → 削除はすべて「サブシェルで親へ cd → pwd -P が実体と一致 →
+  `./名前` を消す」に (直下のエントリも同じ形。tmp 自身の差し替えも防ぐ) / P2 祖先の差し替えと mtime の取り直しをテストが見ていない →
+  11j (rm の shim で直前に差し替え)・11k (du の shim で tmp を差し替え)・11l (一覧の後に更新) を足した / P3 印が途中で消えると二重に数える →
+  skill の dir を 1 回だけ決めて両ループで使う。変異: pwd -P の確認を外す → 11k red / mtime の取り直しを外す → 11l red。
+  絶対パスの rm に戻す変異は Claude Code の安全チェック (rm -rf を含む文字列) に止められて当てていない (その形が外を消すことはレビュアーが shim で再現済み)
+  3 周目 (opus): P2 builtin の `pwd -P` は cwd を見ず `$PWD` の文字列を解決し直すだけで、cd の後に親を実体へ戻されると外の cwd を一致と答える
+  (手元で再現: symlink の d へ cd → d を実体に戻す → builtin は .../d、`/bin/pwd -P` は .../other) → 比較と基準の root / tmp を `/bin/pwd -P` に揃えた。
+  cd と比較の間は外部の呼び出しが挟まらず shim で窓を作れないので、テスト 12 で形を固定した (builtin に戻す変異で red)。
+  P3 (旧実装から同じ・据え置き): 1 件の rm の失敗で exit 1 し、残りの判定と集計が出ない。壊せなかった観点: 名前の細工 (先頭の -・改行)・
+  dirp の綴り・rc の取り違え・in_skilldirs・テストの shim の窓
+  4 周目 (opus): P2 (変更前から在る) 継承した GIT_DIR / GIT_WORK_TREE で root が repo の外を向き、外の tmp を消す対象にした → 冒頭で unset (テスト 13。
+  unset を外す変異で red) / P3 テスト 12 は件数の下限が砦で、別の箇所に /bin/pwd -P を足すと論理 pwd の比較が通る → 出現を数え、削除の直前の比較の形そのものを固定
+  (論理 pwd + 余分な /bin/pwd の変異で 12 と 11k が red) / P3 cd の失敗も「実体でなくなった」と表示 → 文言を直した。
+  壊せなかった観点: 大文字小文字・symlink・firmlink・NFD/NFC の経路での綴り、/bin/pwd の差し替え、getcwd の失敗 (残す側に倒れる)
+  5 周目 (opus。角度を変えた: 変更前との全体比較・性能・skill-tmpdir との競合・記録の正しさ): P2 同じ session ID で DAYS 日後に skill-tmpdir を呼ぶと
+  (再開)、`mkdir -p` は既にある dir の mtime を更新しないので、返した直後のその dir を clean が消した (旧版は兄弟が新しければ dir ごと残していたので悪化) →
+  skill-tmpdir で `touch "$dir"` (テスト 1b。外す変異で red) / P3 ヘッダの「消す直前に mtime を取り直す」は言い過ぎ (取り直しは判定の始め) → 文言を直した。
+  性能 (DRY_RUN、レビュアーの実測): 古いファイル 1000 件 旧 2s → 新 6s / dir 2000 + skill の dir 101 + session 2000 旧 20.8s → 新 62.9s /
+  候補 1000 × skill の dir 1000 旧 13s → 新 26s。実際の tmp は数十〜百件で 1 秒以下なので据え置き (trigger: tmp が数千件で clean-tmp が遅いと感じたら
+  in_skilldirs の線形探索と judge 冒頭の find を見直す)。変更前との比較: 直下のエントリだけの tmp では出力・rc・消すものが skill の dir の行以外一致
+  6 周目 (opus): P2 `touch` は dir が消えていると空のファイルを作り、その session の skill-tmpdir が以後 File exists で失敗し続ける (順序を手で並べて再現。
+  mkdir と touch の間に clean が入る競合そのものは未発火) → `touch -c` の後にもう一度 `mkdir -p` / P3 touch の失敗 (所有者の違う dir) で止まる → 警告して続行。
+  壊せなかった観点: touch と judge の新しい更新の判定の噛み合い、印の作成のずれ。残る窓: judge の判定の始めから rm までの間に touch が来ると、消された dir の
+  パスを返す (旧実装と同じ種類で、ミリ秒の見積もり・未計測)。敵対的レビューはこの周で閉じた (5h 枠 87%)
+- [x] **ThumbnailThumb の agent** (ユーザー指示 2026-10-16): smoke-test-runner / tt-api-expert の `tt-client -o` の出力先を `skill-tmpdir` に寄せた
+  (`tt-client` の preview / export はクライアント側の curl が保存して親を mkdir する: `~/src/homebrew-tap/bin/tt-client`)。
+  test-runner / swiftui-test-expert の `./tmp/thumbnailthumb-test.log` 等は ThumbnailThumb の `make test-debug` が書く固定パスを読むだけなので変えない。
+  smoke-test-runner が詳細を任せる ThumbnailThumb の `.claude/commands/smoke-test.md` (別 repo) は未確認
 - [x] `tmp/` のディレクトリの片付け (ユーザー承認 2026-10-16): 44 件を削除。残したのは issue から参照される `747-mock` / `747-mock2` / `treefiler-mock` / `review-bench`、
   使用中の `747-mdns`、zundamon の完成物 `it-kaisetsu`。直下のファイルも 1 時間より古い 20 件を追加で削除 (残り 12 件は 747 などの作業中のログ)
 - [ ] A の後 2 週間ほどで直下の増え方を測り、B が要るかを決める
