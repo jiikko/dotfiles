@@ -34,3 +34,13 @@ pro-con の UI は外部コマンドを `subproc` を通さずに起こしてい
 ## 反証レビュー
 
 - 2026-10-15 (read-only のサブエージェント 1 体): P2「2 秒 → 5 秒」は過小 (tmux の load-buffer も同期で 5 秒) → 書き直した
+
+## 進捗
+
+- [x] 2026-10-15: `pbcopy` を `subproc/clipboard.Copy` に (glogx・treefiler と同じく同期で呼ぶ。tmux の中では tmux のバッファへも積む)、`openWithSystem` を `subproc.CommandContext` + 上限 10 秒に寄せた
+  - commit:「refactor(pro-con): UI のクリップボードを subproc/clipboard.Copy に…」
+  - 待ち時間: 固まったときの上限は 2 秒 + 1 秒から、tmux の中で最悪約 10 秒 + WaitDelay に延びる。glogx・treefiler と同じ形なので受容 (3 つとも裏に回すなら別の issue)
+  - 敵対的レビュー (opus): P3 だけ (待ち時間・paste buffer の上書きは上のとおり受容)。テストが本物の pbcopy / tmux / open を呼ばないことを偽物で確認 (0 件)
+  - 変異は当てていない (既定の関数の差し替えだけで、新しい判定が無い)
+  - 残り (未対応): `ui/attachpopup.go` の `exec.Command(p.Tmux, "show", "-gv", "prefix").Output()` も上限なしで直接起動している (同じ種類の取りこぼし)
+- make test (統合した木・rebase の後) rc=0 (src/PACKAGES.md の索引の漏れを直した後に test-lint を回し直した)

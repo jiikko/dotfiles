@@ -40,3 +40,18 @@ glogx は既に `src/glogx/box_test.go` の `TestFrameBorderMatchesThemeYML` が
 
 - 2026-10-15 (read-only のサブエージェント 1 体): P1 glogx は既に TestFrameBorderMatchesThemeYML と CI の paths で守られている → glogx を外し、その形を手本にした。タイトルも pro-con に絞った /
   P2 写しの数え漏れ (view.go・search.go) と、214 の意味のずれ → 書いた
+
+## 進捗
+
+- [x] 2026-10-15: pro-con/ui のテーマの番号を style.go の `col*` (current_accent / quantity_yellow / marker_orange / info_cyan / active_green / cold_gray / error_red) に集めた。
+  `TestThemeColorsMatchYML` が yml と突き合わせ、`TestNoThemeColorLiterals` が ui の production の .go を AST で読んで直書きを落とす (色でない同じ数とログの役の色 (見本 A) は `theme-literal-ok: <理由>` で外す)。
+  CI の paths と `scripts/test_changed.sh` に theme/colors.yml → pro-con を足し、`docs/theme-colors.md` に Go の消費者を書いた。出す SGR は 1 バイトも変えていない (レビューで確認)
+  - 意味のずれ: pro-con は quantity_yellow (214) を「要対応」に使っている (yml に要対応の role は無い)。番号は追従させ、意味は docs に書いた
+  - commit:「test(pro-con): テーマの色番号を style.go の col* に集め…」/「…AST で全部拾い、残っていた 7 か所を col* に寄せる」/「…素通りを塞ぐ」
+  - 変異 (全部 red): colCurrent を 203 → TestThemeColorsMatchYML / colMarker を 209 → 同 / fg(202) の直書き・`laneOn = 202`・tmux の `fg=colour202`・stateColor の `return 51`・
+    SGR の文字列 `"\x1b[48;5;196m"`・`var colorForLane = 214`・16 進 `0xF0` → TestNoThemeColorLiterals
+  - 敵対的レビュー (opus) 3 周: 1 周目 P1 正規表現が fg(N) と SGR の文字列しか見ず 7 か所残っていた → AST で全部拾う形に作り直した / 2 周目 P1 `\b` のせいで SGR の文字列が素通り (後退) → 直した、
+    P2 外す定義が「col で始まる名前ならどこでも」 → style.go の関数の外の const に限り、数をテーマの番号の数と合わせる、P3 理由の空の印・16 進 → 直した
+  - 検出しない形 (テストの冒頭に書いた): ui の外の package・計算で作る番号・分けた文字列の連結・rune や float・1 行の印が同じ行のほかのリテラルも外すこと。
+    settings.go の `fg(239)` は selection_bg と同じ番号だが、テーマの色として使っているかは未確認 (themeNums の外)
+- make test (統合した木・rebase の後) rc=0 (src/PACKAGES.md の索引の漏れを直した後に test-lint を回し直した)

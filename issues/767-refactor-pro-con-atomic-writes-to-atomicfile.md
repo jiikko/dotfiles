@@ -42,3 +42,15 @@ pro-con の go.mod にも既に (indirect + replace で) 入っている。寄�
 - 2026-10-15 (read-only のサブエージェント 1 体): P2 固定名の取り合いは経路が無い (e2eMu・resume の path は pid + nanotime) → 「失敗したときに残る」に立て直し、タイトルも直した /
   P2 768 と relay の `sweep` を取り合う → 対応方針に書いた / P3 attach の `copyFile` が 6 か所目 → 寄せない理由つきで書いた / P3 fsync の差が無いことを書いた。
   219 を「doctor の」と書いていたのは glogx の `doctor_cache.go` の誤り → 直した
+
+## 進捗
+
+- [x] 2026-10-15: store・relay・live・upgrade (resume)・dispatcher (e2e) の 5 か所を `atomicfile.Write(…, 0o600)` に寄せた。relay の sweep は atomicfile の temp の残りも消す
+  (判定は atomicfile に足した `IsTemp`。名前の規則 `tmpInfix` を Write と共有するので、命名を変えても掃除が黙って外れない)。live のテストの glob を新しい名前に直した (旧名のままだと何も検査しない)
+  - commit:「refactor(pro-con): 一時ファイル + rename の 5 か所を atomicfile.Write に寄せる」/「refactor(atomicfile): temp の名前の判定 IsTemp を足し…」
+  - 変異 (全部 red): e2e を旧実装 (固定名 .tmp) に戻す → TestE2ESaveLeavesNoTmpOnFailure / sweep の temp の判定を外す → TestSweepRemovesOnlyStaleTmp /
+    writeRows に一時ファイルを漏らす → TestRegisterAppendsAtomically / relay の `atomicfile.IsTemp` を外す → TestSweepRemovesOnlyStaleTmp
+  - 敵対的レビュー (opus) 2 周: 1 周目 P1・P2 なし。P3 テストの temp 名が手書き (atomicfile の命名と食い違っても緑) → IsTemp で単一の出典に / workflow と atomicfile の利用者の注記 → 直した /
+    P3 Chmod の失敗 (chmod を拒む FUSE・SMB の上の置き場でだけ新しく失敗しうる) → **未確認のまま受容** (状態の置き場はふつうローカルの APFS)。2 周目 (768 と一緒) で IsTemp の差分に指摘なし
+  - 寄せない 6 か所目 `store/attach.go` の `copyFile` は本文のとおり (流しながら上限を見る)。`store/doing.go` の `PruneDiffs` は書きかけの残り (旧名も新名も) を消さない (前からの形。未対応)
+- make test (統合した木・rebase の後) rc=0 (src/PACKAGES.md の索引の漏れを直した後に test-lint を回し直した)

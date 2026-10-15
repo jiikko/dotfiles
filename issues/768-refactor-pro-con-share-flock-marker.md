@@ -36,3 +36,15 @@
 ## 反証レビュー
 
 - 2026-10-15 (read-only のサブエージェント 1 体): P2 767 と relay の `sweep` を取り合う → 対応方針に書いた / P3 symlink の dir の拒否の差・2 つの呼び出し元で寄せる理由 → 書いた
+
+## 進捗
+
+- [x] 2026-10-15: 新しい package `pro-con/flockmark` (`Create` / `IsTmp` / `IsStaleTmp` / `Stale`) に、印を作る手順と作りかけの判定を寄せた。他人の印の確かめ方は呼び出し側のまま。
+  presence の作りかけの掃除も普通のファイルに限る (relay は前から)
+  - commit:「refactor(pro-con): presence と relay の「flock した印」の作り方と…を flockmark に 1 つにする」/「test(pro-con): flockmark の手順の順序…を決定的に確かめる」
+  - 変異 (全部 red): flock を外す (LOCK_UN) → TestCreateHoldsLockAndWritesBody ほか presence の 5 本 / 普通のファイルの判定を外す → TestIsStaleTmp /
+    flock を rename の後へ → TestCreateLocksAndWritesBeforeRename (「rename の前に flock を持っていない」) / 中身を rename の後へ → 同 (「rename の前に中身が書かれていない」)
+  - 敵対的レビュー (opus) 2 周: 1 周目 P1 なし。P2 順序を守るテストが presence の並行のテスト 1 本だけで、rename を先にする変異が 3 回中 1 回緑 / 中身を後で書く変異は別の理由でしか赤くならない
+    → rename の直前の差し込み口 `beforeRename` で状態を直に見るテストにした (上の変異で確認)。P3「FIFO は開くと止まる」は presence には当たらない → 文言を直した。2 周目は差し込み口に指摘なし
+  - 残り (前からの穴。未対応): presence の作りかけの掃除そのもの (`heldBySomeone` の呼び出し) にテストが無い / `screens/` に FIFO の `<x>.lock` があると `heldBySomeone` が EOPNOTSUPP で Count 全体が失敗する
+- make test (統合した木・rebase の後) rc=0 (src/PACKAGES.md の索引の漏れを直した後に test-lint を回し直した)

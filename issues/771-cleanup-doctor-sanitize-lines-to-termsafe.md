@@ -28,3 +28,12 @@ doctor の 4 package が、同じ「空なら nil を返し、各行に `termsaf
 ## 反証レビュー
 
 - 2026-10-15 (read-only のサブエージェント 1 体): P3 displaycheck が `termsafe.PlainLines` を数えるかは `sanitizingRHS` で確かめられる → 未確認を外した
+
+## 進捗
+
+- [x] 2026-10-15: `termsafe.PlainLines` を足し、docker・ssd・svc の `sanitizeDisplayLines` と disk の `sanitizeLines` を置き換えた (termsafe の README・CLAUDE.md にも足した)
+  - commit:「cleanup(doctor): 4 package の行の slice の無害化を termsafe.PlainLines に 1 つにする」
+  - 変異 (全部 red): disk の `r.Failures = termsafe.PlainLines(…)` を外す → displaycheck の TestSanitizeForDisplayCoversEveryStringField と TestFormatSanitizesUntrustedText /
+    PlainLines の「空なら nil」を外す → TestPlainLines
+  - 敵対的レビューは省いた (同じ中身の 4 関数を 1 つにする機械的な置き換え。displaycheck が関門を数え続けることは上の変異で確認)
+- make test (統合した木・rebase の後) rc=0 (src/PACKAGES.md の索引の漏れを直した後に test-lint を回し直した)
