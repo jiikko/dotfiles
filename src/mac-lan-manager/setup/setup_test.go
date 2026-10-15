@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -423,5 +424,87 @@ func TestQuote(t *testing.T) {
 		if err != nil || string(out) != v {
 			t.Errorf("Quote(%q) を sh に通すと %q (%v)", v, out, err)
 		}
+	}
+}
+
+// 同時に 2 本走らせても変更は 1 本だけ (背景の lock の取り合い)。止まった lock の引き取りも 1 本だけ (fable の敵対レビュー 3 周目 P2)。
+func TestStaticIPConcurrentRunsChangeOnce(t *testing.T) {
+	for _, stale := range []bool{false, true} {
+		dir, path := sandbox(t)
+		a, b := staticIP(t, dir), staticIP(t, dir)
+		b.IP, b.Token = "192.168.100.12", "test-token-2"
+		if stale {
+			// 「止まった」と見てから外し終えるまでの窓を広げる (本物の窓は µs 級で、自然な回数では当たらない)。2 本目は 0.25 秒遅れて
+			// 始めるので、1 本目が外して作り直した lock を、2 本目が「止まった lock」として外しにいく形になる。引き取りが 1 本ずつで
+			// なければ 2 本とも進む (fable の敵対レビュー 3 周目で再現した順序)
+			slowRm := "#!/bin/sh\n/bin/sleep 0.5 # sleep-ok: window: 外すまでの窓を作る入力\nexec /bin/rm \"$@\"\n"
+			if err := os.WriteFile(filepath.Join(dir, "rm"), []byte(slowRm), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(a.lockPath(), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(a.lockPath()+"/pid", []byte("999999\n"), 0o600); err != nil { // 居ない pid
+				t.Fatal(err)
+			}
+		}
+		for range 4 {
+			if err := os.Remove(filepath.Join(dir, "log")); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			ca := runSh(t, path, a.Script())
+			if stale {
+				time.Sleep(250 * time.Millisecond) // sleep-ok: window: 2 本目をずらして始める (上の窓に入れる)
+			}
+			cb := runSh(t, path, b.Script())
+			_ = ca.Wait() // 負けた側は rc=1 で抜ける
+			_ = cb.Wait()
+			if n := strings.Count(readLog(dir), "-setmanual][Thunderbolt Ethernet][192.168.100.1"); n != 1 {
+				t.Fatalf("stale=%v: 同時の 2 本で変更が %d 回: %q", stale, n, readLog(dir))
+			}
+			if stale { // 次の回も「止まった lock」から始める
+				_ = os.MkdirAll(a.lockPath(), 0o700)
+				_ = os.WriteFile(a.lockPath()+"/pid", []byte("999999\n"), 0o600)
+			}
+		}
+	}
+}
+
+// pid が生きていても、起動時刻が lock に書いた時刻と違えば別のプロセス (再起動の後に同じ番号が使われた) なので引き取る。
+// 持ち主が本当に生きているときは断り、外し方を出す。
+func TestStaticIPLockPidReuse(t *testing.T) {
+	dir, path := sandbox(t)
+	s := staticIP(t, dir)
+	if err := os.MkdirAll(s.lockPath(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pid := []byte(strconv.Itoa(os.Getpid()) + "\n") // 生きている (このテスト自身)
+	if err := os.WriteFile(s.lockPath()+"/pid", pid, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.lockPath()+"/start", []byte("Thu Jan  1 00:00:00 1970\n"), 0o600); err != nil { // 違う起動時刻
+		t.Fatal(err)
+	}
+	if err := runSh(t, path, s.Script()).Wait(); err != nil || !strings.Contains(readLog(dir), "-setmanual") {
+		t.Fatalf("再利用された pid の lock を引き取らない: err=%v log=%q", err, readLog(dir))
+	}
+
+	// 本当に生きている持ち主 (起動時刻も合う) なら断り、外し方を出す
+	if err := os.MkdirAll(s.lockPath(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ps := exec.Command("/bin/ps", "-o", "lstart=", "-p", strconv.Itoa(os.Getpid()))
+	ps.Env = []string{"LC_ALL=C"} // Script と同じ書式 (ps の起動時刻はロケールで書式が変わる)
+	st, err := ps.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(s.lockPath()+"/pid", pid, 0o600)
+	_ = os.WriteFile(s.lockPath()+"/start", st, 0o600)
+	cmd := exec.Command("/bin/sh", "-c", s.Script())
+	cmd.Env = []string{"PATH=" + path, "LC_ALL=C"}
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "rm -rf") {
+		t.Errorf("生きている持ち主の lock を断らない / 外し方を出さない: err=%v out=%q", err, out)
 	}
 }

@@ -25,7 +25,12 @@ const spinStep = 80 * time.Millisecond
 
 // View は画面の行 (w × h。最下行はキーの案内)。重ねる板 (確認・コピー・別名・キー一覧) もここで重ねる。
 func (m *Model) View() []string {
-	w := max(m.w-2*padX, 40)
+	if m.w < minWidth {
+		return m.viewTooNarrow()
+	}
+	// 幅を 40 桁に固定しない: max(…, 40) にしていたころは、それより狭い端末で枠と列が折り返し、最下行の案内 (抜け方) まで画面の外へ
+	// 出た (fable の敵対レビュー)。狭ければ列を落とし、どの行も幅で切る (下の安全網)
+	w := m.w - 2*padX
 	m.caretFY, m.caretMY = -1, -1
 	var body string
 	if m.sc == scSettings {
@@ -49,7 +54,7 @@ func (m *Model) View() []string {
 	base := lipgloss.NewStyle().Width(m.w).Height(h).MaxHeight(h).Padding(padY, padX).Render(lipgloss.JoinVertical(lipgloss.Left, body, "", foot))
 	layers := []*lipgloss.Layer{lipgloss.NewLayer(base)}
 	if box, fieldRow, fieldX := m.overlayBox(); box != "" {
-		box = lipgloss.NewStyle().MaxHeight(h).Render(box) // 板が画面より高いと View が h より多い行を返した (? の板は 22 行)
+		box = lipgloss.NewStyle().MaxHeight(h).MaxWidth(m.w).Render(box) // 板が画面より高い・広いと View が画面からはみ出した (? の板は 22 行・66 桁)
 		bw, bh := lipgloss.Width(box), lipgloss.Height(box)
 		x, y := max((m.w-bw)/2, 0), max((h-bh)/2, 0)
 		layers = append(layers, lipgloss.NewLayer(box).X(x).Y(y).Z(1))
@@ -294,6 +299,21 @@ func (m *Model) detailCompact(r row) string {
 	}
 	parts = append(parts, sMuted.Render("(端末を高くすると詳細)"))
 	return strings.Join(parts, "   ")
+}
+
+// minWidth はこの画面を組む最小の幅。12 桁以下では枠を組む計算が負になって落ちた (strings.Repeat)。20 桁未満では何も読めないので、
+// 抜け方だけの画面にする。
+const minWidth = 20
+
+// viewTooNarrow は幅が足りないときの画面 (抜け方だけは必ず見せる)。
+func (m *Model) viewTooNarrow() []string {
+	lines := make([]string, max(m.h, 1))
+	lines[0] = termwidth.Clip("幅が足りない", max(m.w, 1))
+	lines[len(lines)-1] = "q"
+	if m.w >= termwidth.Of("q 閉じる") {
+		lines[len(lines)-1] = "q 閉じる"
+	}
+	return lines
 }
 
 // bodyHeight は枠の内側の行数 (View の inner と同じ式)。

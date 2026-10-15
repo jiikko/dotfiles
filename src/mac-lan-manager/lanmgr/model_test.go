@@ -844,3 +844,31 @@ func TestOverlaysFitHeight(t *testing.T) {
 		}
 	}
 }
+
+// どの幅でも、画面は高さちょうどで、端末より広い行を出さず、抜け方 (q) は見える (幅 40 で全体が折り返して最下行の案内が消えた)。
+func TestViewFitsNarrowWidths(t *testing.T) {
+	for _, w := range []int{1, 8, 30, 40, 45, 46, 50, 60} {
+		for _, key := range []string{"", "?", "c"} {
+			h := newHarness(t, nil, []discover.Peer{mini})
+			h.m.Resize(w, 24)
+			if key != "" {
+				h.keys(key)
+			}
+			lines := h.m.View()
+			if len(lines) != 24 {
+				t.Errorf("幅 %d %q: %d 行", w, key, len(lines))
+			}
+			for i, l := range lines {
+				if lw := termwidth.Of(l); lw > w {
+					t.Errorf("幅 %d %q: %d 行目が %d 桁", w, key, i, lw)
+					break
+				}
+			}
+			view := termwidth.StripSGR(strings.Join(lines, "\n"))
+			exit := strings.Contains(view, "q 閉じる") || (w < 20 && strings.Contains(view, "q")) // 20 桁未満の画面は「q」だけのことがある
+			if key == "" && !exit {
+				t.Errorf("幅 %d: 抜け方 (q 閉じる) が見えない", w)
+			}
+		}
+	}
+}

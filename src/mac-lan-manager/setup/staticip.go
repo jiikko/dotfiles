@@ -37,12 +37,14 @@ type Restore struct {
 // 相手の Mac の他のユーザーが印を先に置く・FIFO に差し替えて root の read を止める・symlink で確認の書き込みを別のファイルへ
 // 向ける・lock を先に作って以後を全部止める、ができた (fable の敵対レビュー 2 周)。root のディレクトリなら、これらは全部起きない。
 type StaticIP struct {
-	Service  string // networksetup のサービス名 ("Thunderbolt Ethernet")
-	IP       string
-	Mask     string // "255.255.255.0"
-	Restore  Restore
-	Token    string // 確認の印の名前 (実行ごとに変える)
-	StateDir string // root だけが書ける状態ディレクトリ (空なら DefaultStateDir。テストは sandbox を渡す)
+	Service string // networksetup のサービス名 ("Thunderbolt Ethernet")
+	IP      string
+	Mask    string // "255.255.255.0"
+	Restore Restore
+	Token   string // 確認の印の名前 (実行ごとに変える)
+	// StateDir は root だけが書ける状態ディレクトリ (空なら DefaultStateDir)。既定以外はテストの差し込み口: 誰でも書ける親の下を
+	// 渡すと、ls -ld で確かめた後にディレクトリごと差し替えられる (既定の /var/db は root の 0755 なので起きない。fable の敵対レビュー)
+	StateDir string
 	// StateOwner は状態ディレクトリの持ち主として認めるユーザー (空なら root。テストは自分の名前を渡す。sh の外の道具 (id) を使わない)
 	StateOwner string
 	Delay      time.Duration
@@ -111,6 +113,7 @@ func (s StaticIP) lockPath() string { return s.stateDir() + "/staticip.lock" }
 // 状態ディレクトリが symlink・ディレクトリでない・root のものでないなら断る (他の誰かが先に作った場所は使わない)。
 func (s StaticIP) prepare(take bool) string {
 	dir, lock := Quote(s.stateDir()), Quote(s.lockPath())
+	takeover := Quote(s.lockPath() + ".takeover")
 	var b strings.Builder
 	b.WriteString("umask 077\nset -f\n")
 	fmt.Fprintf(&b, "if [ -L %s ] || { [ -e %s ] && [ ! -d %s ]; }; then echo 'mac-lan-manager: 状態ディレクトリが使えない' >&2; exit 1; fi\n", dir, dir, dir)
@@ -120,15 +123,21 @@ func (s StaticIP) prepare(take bool) string {
 		owner = "root"
 	}
 	fmt.Fprintf(&b, "set -- $(ls -ld %s)\nif [ \"$3\" != %s ]; then echo 'mac-lan-manager: 状態ディレクトリの持ち主が違う' >&2; exit 1; fi\n", dir, Quote(owner))
-	// 持ち主の生きている lock は断る (理由を出して rc=1)。死んだ lock (待ちの途中の電源断・kill -9) は引き取る
-	fmt.Fprintf(&b, "if [ -d %s ]; then\n  p=$(cat %s/pid 2>/dev/null)\n", lock, lock)
-	b.WriteString("  if [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null; then echo \"mac-lan-manager: 固定 IP への切り替えが走っている (pid $p)\" >&2; exit 1; fi\n")
+	// lock の持ち主が生きているか: pid が居て、その起動時刻が lock に書いた時刻と同じ。pid だけだと、電源断の後の再起動で同じ番号を
+	// 別のプロセスが使い、死んだ lock が永久に「走っている」になった (fable の敵対レビュー 3 周目)
+	fmt.Fprintf(&b, "alive() { p=$(cat %s/pid 2>/dev/null); st=$(cat %s/start 2>/dev/null); [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null && [ \"$(LC_ALL=C ps -o lstart= -p \"$p\" 2>/dev/null)\" = \"$st\" ]; }\n", lock, lock)
+	fmt.Fprintf(&b, "refuse() { echo \"mac-lan-manager: 固定 IP への切り替えが走っている (pid $p)。止まっているなら sudo rm -rf %s で外す\" >&2; exit 1; }\n", strings.Trim(lock, "'"))
+	fmt.Fprintf(&b, "if [ -d %s ] && alive; then refuse; fi\n", lock)
 	if take {
-		fmt.Fprintf(&b, "  rm -rf %s\n", lock)
-	}
-	b.WriteString("fi\n")
-	if take {
-		fmt.Fprintf(&b, "mkdir %s || exit 1\necho $$ > %s/pid\n", lock, lock)
+		// 死んだ lock の引き取りは 1 本ずつ (takeover を mkdir できた 1 本だけが、もう一度生死を見てから外す)。rm -rf と mkdir を
+		// それぞれが打つと、後の rm -rf が先の lock を消して 2 本とも進んだ (fable の敵対レビュー 3 周目 P2)
+		b.WriteString("tk=0\n")
+		fmt.Fprintf(&b, "if [ -d %s ]; then\n", lock)
+		fmt.Fprintf(&b, "  mkdir %s 2>/dev/null || { echo 'mac-lan-manager: 別の切り替えが止まった lock を引き取っている' >&2; exit 1; }\n  tk=1\n", takeover)
+		fmt.Fprintf(&b, "  if [ -d %s ] && alive; then rmdir %s; refuse; fi\n  rm -rf %s\nfi\n", lock, takeover, lock)
+		fmt.Fprintf(&b, "if ! mkdir %s 2>/dev/null; then [ \"$tk\" = 1 ] && rmdir %s; echo 'mac-lan-manager: 別の切り替えが先に始まった' >&2; exit 1; fi\n", lock, takeover)
+		fmt.Fprintf(&b, "echo $$ > %s/pid\nLC_ALL=C ps -o lstart= -p $$ > %s/start\n", lock, lock)
+		fmt.Fprintf(&b, "[ \"$tk\" = 1 ] && rmdir %s\n", takeover)
 	}
 	return b.String()
 }
@@ -169,13 +178,17 @@ func (s StaticIP) Script() string {
 // RemoteCommand は ssh -t で相手に打つ 1 行。前面で sudo -v (パスワードを読む) し、走っているものが無いかを前面で確かめて理由を出し
 // (背景に回すと失敗が見えない。fable の敵対レビュー)、変更は sudo -n -b + nohup で ssh から切り離す (背景の sudo がパスワードを
 // 読もうとすると止まる。ssh が切れても SIGHUP で止まらない)。
+//
+// 限界 (受容。issue 747): 前面の確かめと背景の lock の取得の間 (ssh 1 往復) に別の操作者が先に取ると、後の方は背景で黙って抜ける
+// (変更はしない)。電源断・kill -9 では戻しが走らず新しい IP のまま残る (次の回は止まった lock を引き取るだけ)。
 func (s StaticIP) RemoteCommand() string {
 	return "sudo -v && sudo -n sh -c " + Quote(s.prepare(false)) + " && sudo -n -b nohup sh -c " + Quote(s.Script()) + " >/dev/null 2>&1"
 }
 
 // ConfirmCommand は新しい IP で入り直した側が打つ 1 行 (ssh -t で。sudo がパスワードを聞く)。印は root が状態ディレクトリに書く。
 // 中身は相手の sh が展開する $SSH_CONNECTION ("<送った側> <port> <受けた側> <port>") で、Script は受けた側が新しい IP であることを
-// 確かめる (sudo は環境を引き継がないので、値は sudo の外で読んで引数で渡す)。
+// 確かめる (sudo は環境を引き継がないので、値は sudo の外で読んで引数で渡す)。🚨 相手のログインシェルが sh / bash / zsh である前提
+// (fish では `c=` が、tcsh では引用の中の書き方が通らない)。
 func (s StaticIP) ConfirmCommand() string {
 	return `c="$SSH_CONNECTION"; sudo sh -c 'umask 077; printf "%s\n" "$1" > "$2"' _ "$c" ` + Quote(s.ConfirmPath())
 }
