@@ -5,10 +5,10 @@ package ui
 // 回すカードがある間だけ spinInterval で描き直し、無くなったら止める (演出の frame と同じく、アイドルで CPU を使わない)。
 
 import (
-	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"pro-con/card"
 )
 

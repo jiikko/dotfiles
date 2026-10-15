@@ -14,7 +14,21 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// 各コマは 1 桁で、隣どうしが違う (回って見える)。
+// 字形と順序を、配列とは別に書いた文字列で固定する (期待値を frames から引くと、入れ替え・差し替えを素通りする)。
+// 寄せる前の 4 か所 (glogx・treefiler・pro-con・restartable) が出していた並び。
+const want = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+func TestFramesMatchLiteral(t *testing.T) {
+	var got string
+	for i := range Len {
+		got += Frame(i)
+	}
+	if got != want {
+		t.Errorf("コマの並び %q, want %q", got, want)
+	}
+}
+
+// 各コマは 1 桁で、重複しない (回って見える)。
 func TestFramesAreOneColumnAndDistinct(t *testing.T) {
 	seen := map[string]bool{}
 	for i := range Len {

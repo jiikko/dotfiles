@@ -60,15 +60,15 @@ const StateLoading CIState = "loading"
 // StatusGlyph は状態 1 つ分の記号。どの状態も表示幅 2 に揃える: 幅 1 の文字と幅 2 の絵文字を
 // 同じ列に混ぜると、桁数が合っていても縦に揃って見えない。絵文字は色を自前で持つので ANSI 色を
 // 付けない。実行中と取得中は回るスピナー (幅 1 の点字なので空白で埋める)。色で見分ける:
-// 実行中は黄、取得中はシアン。spinner を渡さない経路 (静的出力) では先頭のフレームで止まって出る。
-func StatusGlyph(state CIState, colored bool, spinner string) string {
+// 実行中は黄、取得中はシアン。glyph (今のコマ) を渡さない経路 (静的出力) では先頭のフレームで止まって出る。
+func StatusGlyph(state CIState, colored bool, glyph string) string {
 	switch state {
 	case StateSuccess:
 		return "✅"
 	case StateFailure:
 		return "❌"
 	case StatePending:
-		return paint(fillRight(spinnerOr(spinner), 2), ansiYellow, colored)
+		return paint(fillRight(spinnerOr(glyph), 2), ansiYellow, colored)
 	case StateNeutral:
 		return "🚫"
 	case StateNone:
@@ -78,7 +78,7 @@ func StatusGlyph(state CIState, colored bool, spinner string) string {
 	case StateUnknown:
 		return "❓"
 	default:
-		return paint(fillRight(spinner, 2), ansiCyan, colored)
+		return paint(fillRight(glyph, 2), ansiCyan, colored)
 	}
 }
 

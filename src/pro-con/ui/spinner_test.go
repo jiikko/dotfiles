@@ -1,11 +1,11 @@
 package ui
 
 import (
-	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"pro-con/backend"
 	"pro-con/card"
 )

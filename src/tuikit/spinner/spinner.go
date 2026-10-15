@@ -18,7 +18,8 @@ func Frame(i int) string {
 }
 
 // At は時刻 now に出すコマ。step ごとに 1 コマ進む。描き直しの回数に依らず、同じ時刻なら同じコマになる。
-// step が 0 以下なら最初のコマを返す (回さない)。
+// step が 0 以下なら最初のコマを返す (回さない)。now は UnixNano で数えるので、1678〜2262 年の外 (time.Time{} を含む) では
+// コマが決まらない (time.Now を渡す本番では届かない。テストで時計を注入するなら範囲内の時刻にする)。
 func At(now time.Time, step time.Duration) string {
 	if step <= 0 {
 		return frames[0]
