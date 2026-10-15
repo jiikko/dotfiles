@@ -1,5 +1,7 @@
 # 762 (chore): codex-run / codex-fanout が、利用上限で落ちた run を「上限」と分かる形で返す
 
+> 🚨 **担当中: claude (opus, dotfiles 762)**（2026-10-15〜）
+
 起票日: 2026-10-14
 
 - 起源: obaket retro 1077 の提案 C
