@@ -77,3 +77,58 @@ func TestConfigFileMovesLegacy(t *testing.T) {
 		t.Fatal("前の置き場に残っている")
 	}
 }
+
+// 相対パスの XDG_CONFIG_HOME は無視する (cwd の下へ設定を移さない)。
+func TestConfigBaseIgnoresRelativeXDG(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "rel")
+	if b := ConfigBase("/h"); b != "/h/.config" {
+		t.Fatalf("相対の XDG を採った: %q", b)
+	}
+}
+
+// 前の置き場が相対 symlink でも、移した後に同じ先を指す。
+func TestMoveIfMissingRelativeSymlink(t *testing.T) {
+	d := t.TempDir()
+	real := filepath.Join(d, "dot", "hosts.toml")
+	if err := os.MkdirAll(filepath.Dir(real), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(real, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldP := filepath.Join(d, "a", "b", "hosts.toml")
+	if err := os.MkdirAll(filepath.Dir(oldP), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../dot/hosts.toml", oldP); err != nil {
+		t.Fatal(err)
+	}
+	newP := filepath.Join(d, "new", "x", "y", "hosts.toml")
+	if err := MoveIfMissing(oldP, newP); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(newP); err != nil || string(b) != "x" {
+		t.Fatalf("移した link の先が壊れた: %q %v", b, err)
+	}
+}
+
+// 移せなかったら前の置き場を返す (前の設定を読み続ける)。
+func TestConfigFileFallsBackWhenMoveFails(t *testing.T) {
+	home, xdg := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	legacy := filepath.Join(".config", "glogx", "a.toml")
+	if err := os.MkdirAll(filepath.Join(home, filepath.Dir(legacy)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, legacy), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(xdg, "tool"), nil, 0o600); err != nil { // 置き場の dir を作れなくする (同名のファイル)
+		t.Fatal(err)
+	}
+	p, err := ConfigFile("tool", "a.toml", legacy)
+	if err != nil || p != filepath.Join(home, legacy) {
+		t.Fatalf("前の置き場を返さない: %q %v", p, err)
+	}
+}
