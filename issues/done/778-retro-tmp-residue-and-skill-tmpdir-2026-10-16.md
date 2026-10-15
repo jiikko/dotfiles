@@ -33,5 +33,7 @@ skill-tmpdir に 1 周、clean_tmp に 4 周かけた。
 
 ## 進捗
 
-- [ ] 提案 1・3・4 の採否 (ユーザー判断)
+- [x] 提案 1・3・4 を採用 (ユーザー指示 2026-10-16): 1 → `_claude/rules/claude-md-maintenance.md` の「書き方」/ 3 → チェックリスト
+  `_claude/rules-checklists/adversarial-review-own-safeguards.md` の §0-B (破壊的操作のときに Read される。常時読み込みの rule 本文は増やさない) /
+  4 → `_claude/CLAUDE.md`「確認を求めるときは…」の行に追記。提案 2 は 774 で済、提案 5 は却下
 - [x] 反証レビュー (sonnet 1 本): 提案 1・3 の切り出し先の発動点のずれ、提案 4 の却下理由の不成立、提案 5 の却下理由の書き方を直した
