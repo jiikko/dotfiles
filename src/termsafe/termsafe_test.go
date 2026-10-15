@@ -257,3 +257,21 @@ func TestCutBytes(t *testing.T) {
 		}
 	}
 }
+
+// ClipRunes は n rune を超えたときだけ切って … を足す (rune の単位。全角も 1 つ)。
+func TestClipRunes(t *testing.T) {
+	for _, tc := range []struct {
+		s    string
+		n    int
+		want string
+	}{
+		{"abc", 3, "abc"},
+		{"abcd", 3, "abc…"},
+		{"あいうえ", 3, "あいう…"},
+		{"", 3, ""},
+	} {
+		if got := ClipRunes(tc.s, tc.n); got != tc.want {
+			t.Errorf("ClipRunes(%q, %d) = %q, want %q", tc.s, tc.n, got, tc.want)
+		}
+	}
+}

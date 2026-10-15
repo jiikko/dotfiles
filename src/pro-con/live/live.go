@@ -30,6 +30,8 @@ import (
 	"pro-con/wtclean"
 
 	"subproc"
+
+	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
 // Interval は一覧と transcript を読み直す間隔。claude agents --json は 1 回 0.15 秒ほどかかるので、画面の tick (1 秒) では呼ばない。
@@ -570,7 +572,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	cards := append([]card.Card(nil), st.Cards...)
 	var cons []backend.Consumer
 	for i, c := range cards {
-		cards[i].Request = clip(c.Request, requestRunes) // 貼り付けた巨大な依頼を、詳細の描画のたびに折り返さない
+		cards[i].Request = termsafe.ClipRunes(c.Request, requestRunes) // 貼り付けた巨大な依頼を、詳細の描画のたびに折り返さない
 		derived.Attach(&cards[i])
 		s, ok := owned[c.Session]
 		if c.Session == "" || !ok {
@@ -666,7 +668,7 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 		if strings.TrimSpace(c.Text) == "" && c.Issue == nil {
 			return "", backend.ErrEmptyText
 		}
-		r = store.Request{Kind: "add", Title: clip(firstLine(c.Text), 40), Request: c.Text, Prompt: backend.PMPrompt(c.Repo, c.Text), Repo: c.Repo.Name, Owner: "PM"}
+		r = store.Request{Kind: "add", Title: termsafe.ClipRunes(firstLine(c.Text), 40), Request: c.Text, Prompt: backend.PMPrompt(c.Repo, c.Text), Repo: c.Repo.Name, Owner: "PM"}
 		if c.Issue != nil {
 			r.Title, r.Request, r.Issues = backend.IssueRequest(c.Repo.Name, *c.Issue, c.Text)
 			r.Prompt = backend.PMPrompt(c.Repo, backend.IssuePrompt(*c.Issue, c.Text))
@@ -691,7 +693,7 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 				return "", backend.ErrNotFound
 			}
 			repo := b.repo(parent.Repo)
-			r = store.Request{Kind: "add", ParentID: parent.ID, Title: clip(firstLine(c.Text), 40), Request: c.Text,
+			r = store.Request{Kind: "add", ParentID: parent.ID, Title: termsafe.ClipRunes(firstLine(c.Text), 40), Request: c.Text,
 				Prompt: backend.PMPrompt(repo, parent.ID+" の追加オーダー (別件) として出た依頼です。同じファイルを触るなら "+parent.ID+" の後に着手してください。\n\n"+c.Text),
 				Repo:   repo.Name, Owner: "PM"}
 			done = "別件として受け付けた (dispatcher が適用すると " + parent.ID + " の子の新しいカードになる)"
@@ -901,14 +903,6 @@ func (b *Backend) Describe() string {
 		return fmt.Sprintf("live: 受付の箱に適用待ち %d 件 (pro-con dispatcher が動いていない? 模擬は pro-con --mock)", b.pending)
 	}
 	return "live: 本物のカード (操作は受付の箱へ。dispatcher が適用する。模擬は pro-con --mock)"
-}
-
-func clip(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n]) + "…"
 }
 
 func firstNonEmpty(xs ...string) string {

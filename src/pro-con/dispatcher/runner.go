@@ -340,7 +340,7 @@ func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (eventlo
 		cc.LastRun = &card.RunRecord{Command: job.command, Cwd: cc.RunCwd, RC: r.rc, Took: now.Sub(job.start).Round(time.Second), At: now,
 			Tail: lastLines(logTail(job.logPath), card.RunTailLines), Log: job.logPath}
 		if r.err != nil {
-			cc.LastRun.Err = card.ClipRunes(termsafe.PlainLine(r.err.Error()), 200) // 理由は末尾にあることが多いので clipLine (60 字) より長く残す
+			cc.LastRun.Err = termsafe.ClipRunes(termsafe.PlainLine(r.err.Error()), 200) // 理由は末尾にあることが多いので clipLine (60 字) より長く残す
 		}
 		cc.DropRun()
 		cc.Resume = text
@@ -365,12 +365,7 @@ func lastLines(s string, n int) []string {
 	return out[max(len(out)-n, 0):]
 }
 
-func clipLine(s string) string {
-	if r := []rune(s); len(r) > 60 {
-		return string(r[:60]) + "…"
-	}
-	return s
-}
+func clipLine(s string) string { return termsafe.ClipRunes(s, 60) }
 
 // logTailBytes はログの末尾を読む量 (巨大なログを丸ごと読まない)。
 const logTailBytes = 64 << 10

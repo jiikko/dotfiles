@@ -172,7 +172,7 @@ func activities(line []byte, o Owned, seen map[string]bool) []backend.Activity {
 		case "text":
 			say(p.Text)
 		case "tool_use":
-			gist := termsafe.PlainLine(clip(oneLine(toolGist(p.Input, o.Cwd)), toolRunes))
+			gist := termsafe.PlainLine(termsafe.ClipRunes(oneLine(toolGist(p.Input, o.Cwd)), toolRunes))
 			if gist == "" { // 引数から何も取れなくても、呼んだことは残す
 				gist = "-"
 			}

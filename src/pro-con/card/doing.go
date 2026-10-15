@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
 // Doing は PG が今走らせているもの 1 つ (issue 473)。dispatcher が集めて store.DoingFile に書き、画面と `pro-con card show` が読む
@@ -80,20 +82,20 @@ func (c Card) DoingHeadline() (label string, since time.Time, ok bool) {
 // 下位のコマンドの名前が続けば 2 語まで)。ほかは説明の先頭。
 func ShortLabel(d Doing) string {
 	if d.Kind != DoingProcess {
-		return ClipRunes(d.Text, 20)
+		return termsafe.ClipRunes(d.Text, 20)
 	}
 	f := strings.Fields(d.Text)
 	for len(f) > 0 && (isShell(filepath.Base(f[0])) || strings.HasPrefix(f[0], "-") || strings.Contains(f[0], "=")) {
 		f = f[1:]
 	}
 	if len(f) == 0 {
-		return ClipRunes(d.Text, 20)
+		return termsafe.ClipRunes(d.Text, 20)
 	}
 	name := filepath.Base(f[0])
 	if len(f) > 1 && isWord(f[1]) {
 		name += " " + f[1]
 	}
-	return ClipRunes(name, 20)
+	return termsafe.ClipRunes(name, 20)
 }
 
 func isShell(s string) bool {
@@ -115,11 +117,4 @@ func isWord(s string) bool {
 		}
 	}
 	return true
-}
-
-func ClipRunes(s string, n int) string {
-	if r := []rune(s); len(r) > n {
-		return string(r[:n]) + "…"
-	}
-	return s
 }

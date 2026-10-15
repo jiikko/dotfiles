@@ -123,7 +123,7 @@ func FetchShared(ctx context.Context, run func(context.Context) (*Snapshot, erro
 		return nil, err
 	default:
 		// 理由は他の呼び出し元の画面にも出るので、短く切る (pro-con の run は stderr を全文添える)
-		st.AttemptedAt, st.LastErr = now, clipRunes(termsafe.PlainLine(err.Error()), 200)
+		st.AttemptedAt, st.LastErr = now, termsafe.ClipRunes(termsafe.PlainLine(err.Error()), 200)
 	}
 	// 書けなくても今回の結果は正しい。次の呼び出しがもう一度起こすだけなので、失敗は返さない
 	_ = saveShared(path, st)

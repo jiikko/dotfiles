@@ -431,7 +431,7 @@ func parseProgress(ip card.IssueProgress, sc *bufio.Scanner) (card.IssueProgress
 			ip.Total++
 			if m[1] == " " {
 				if len(ip.Left) < progressLeftMax {
-					ip.Left = append(ip.Left, card.ClipRunes(m[2], progressLastRunes))
+					ip.Left = append(ip.Left, termsafe.ClipRunes(m[2], progressLastRunes))
 				}
 			} else {
 				ip.Done++
@@ -439,7 +439,7 @@ func parseProgress(ip card.IssueProgress, sc *bufio.Scanner) (card.IssueProgress
 			continue
 		}
 		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") { // 字下げの無い項目 (続きの行と子の項目は数えない)
-			ip.Last = card.ClipRunes(strings.TrimSpace(line[2:]), progressLastRunes)
+			ip.Last = termsafe.ClipRunes(strings.TrimSpace(line[2:]), progressLastRunes)
 		}
 	}
 	if ip.Total > 0 {

@@ -24,6 +24,8 @@
 | `LineKeepTabs` | 残す | 残す | 落とす | git の subject / message (静的出力とのパリティ契約) |
 | `PlainLine` | 落とす | スペース 4 | 落とす | **既定**。ファイル名・issue 本文・診断結果の自由文 |
 | `PlainLines` | (`PlainLine` と同じ) | | | 行の slice をまとめて通す (空なら nil) |
+| `CutBytes` | — | — | — | 保存・復元する文を n バイト以下に、rune の境界で切る (表示幅で切るなら tuikit の termwidth) |
+| `ClipRunes` | — | — | — | ログ・記録に入れる文を n rune までにし、切ったら … を足す |
 | `PlainLineKeepTabs` | 落とす | 残す | 落とす | 自前でタブストップ揃えをする整形層の入口 |
 | `PlainBlock` | 落とす | スペース 4 | **残す** | 1 件が複数行の塊 (brew doctor の警告本文) |
 | `IsPlain` | — | — | — | **書き換えず落とす**判定 (同一性を持つ値: パス / ラベル) |

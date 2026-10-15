@@ -57,6 +57,15 @@ func PlainLines(ss []string) []string {
 	return out
 }
 
+// ClipRunes は s を n rune までにし、切ったときだけ末尾に … を足す (ログ・記録・案内に入れる文の長さの上限。表示幅で切るなら
+// tuikit の termwidth)。pro-con と ratelimit が同じ 4 行を 5 か所に持っていた (issue 777)。
+func ClipRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
+}
+
 // CutBytes は s を maxBytes バイト以下に、rune の境界で切る (保存・復元する文字列の長さの上限。表示幅で切るなら tuikit の termwidth)。
 // バイト位置で切ると不正な UTF-8 の断片が残り、幅計算と端末で解釈が割れるので、上限を超える rune は丸ごと落とす。
 // 前は doctor と glogx が「i > 上限 になった最初の rune の先頭で切る」形を別々に持ち、上限を 1 rune 超えて返していた (issue 777)。

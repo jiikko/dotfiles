@@ -180,17 +180,9 @@ func ParseStream(out []byte, now time.Time) (*Snapshot, error) {
 	}
 	// 実際に返った文の 1 行目を添える (未認証・書式変更などの原因を取り違えて見せない)
 	if line := firstNonEmptyLine(res.Result); line != "" {
-		return nil, fmt.Errorf("%w: %q", err, clipRunes(termsafe.PlainLine(line), 80))
+		return nil, fmt.Errorf("%w: %q", err, termsafe.ClipRunes(termsafe.PlainLine(line), 80))
 	}
 	return nil, err
-}
-
-// clipRunes は s を n 文字までに切る (切ったら … を足す)。誤りに添える引用が画面と状態のファイルを広げないため。
-func clipRunes(s string, n int) string {
-	if r := []rune(s); len(r) > n {
-		return string(r[:n]) + "…"
-	}
-	return s
 }
 
 // parseStream は stream-json の出力 (1 行 1 JSON) から result 行と usage_report を拾う。
