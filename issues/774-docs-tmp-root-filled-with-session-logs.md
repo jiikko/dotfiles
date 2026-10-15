@@ -104,4 +104,16 @@
 - [x] C の既存ファイルの削除 (ユーザー承認 2026-10-15): 直前に参照を数え直して 0 件 (1170 個の名前を `grep -rnoF -f` で一括照合。
   必ず当たる `tmp/skill-eval/` で較正して 1 件ヒット)。並行セッションが使用中かもしれない直近 1 時間のファイルは除いて
   `find tmp -maxdepth 1 -type f -mmin +60 -delete` → 1170 → 20 件 (残りは issue 747 の作業中のログ)。ディレクトリ 51 件は触っていない
+- [x] 敵対的レビュー (opus 2 周、read-only。ユーザー依頼 2026-10-15) を受けて規約を直した:
+  1 周目 P2 4 件 — 「スクラッチは ./tmp」と「scratchpad はログだけ」の矛盾 / scratchpad はサブエージェント・fork と共有なのに
+  「名前がぶつからない」と書いた / `tmp/<作業名>/` の使い回しは `scripts/clean_tmp.sh` が dir ごと残す / codex-drive を根拠に引いたが skill 内で割れている。
+  P3: 「scratchpad はセッション終了で消える」は誤り (実測: 過去 session の dir が 20 個残る。消えるのは再起動)。→ scratch の既定を scratchpad に一本化、
+  名前を一意に、`tmp/<作業名>-<日付>/`、move-report の表の例を直下でない形に。
+  2 周目 — background / detach の run 出力を永続パスに置く保証が消えていた (P2) → 例外として戻した / headless 向けの行の日付漏れ (P3) → 直した。
+  壊せなかった観点: compaction・Stop hook 後の読み戻し、worktree 削除後のログ、codex は CLAUDE.md を読まない
+- [ ] **残課題: 直下へ書く skill を `tmp/<skill名>/` 等へ寄せる** (規約は「skill の指定に従う」なので、直さないと規約どおりに直下へ溜まる)。
+  codex-review (`./tmp/codex-review.$stamp.md` / `./tmp/.last_review_path`)・codex-lead (`./tmp/design-contract.$stamp.md` ほか 2 つ。
+  `ls -t ./tmp/design-contract.*.md` で復元する手順も直す)・codex-drive (`./tmp/codex-drive-design.<タスク>.md`)・review-loop・perf-analysis
+- [ ] **残課題: codex-drive の置き場の割れ**。[2] (run 固有の永続パス `./tmp/<タスク>/`) と [3.5]/[3.8] (`./tmp` ではなく scratchpad) が同じ skill で逆を言い、
+  [2] の「scratchpad はセッション終了で消える」は実測と違う (再起動まで残る)
 - [ ] A の後 2 週間ほどで直下の増え方を測り、B が要るかを決める
