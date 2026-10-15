@@ -22,3 +22,11 @@
 - B. **複数段の状態変更 (採番 → 書く → commit → push) を手で `&&` に繋ぎかけたら、1 本ずつ結果を見るか、まとめて道具にする**。
   切り出し先: 却下候補 (764 で道具にしたので、この repo の claim については解消。一般形は既存の `verify-execution-not-just-exit-code.md` の「`&&` のつなぎ」の項で足りている)
 - C. 局所: 763 の LC_ALL の件はその場で直した (issue_done.sh の先頭で export)。提案にしない
+
+## 決着 (2026-10-15)
+
+- A: 採用。既存の `_claude/rules/measure-external-cli-streams-separately.md` の「外部の道具が出すログ・メッセージの 1 行も同じく仮説」の下に 1 項として追記した
+  (新規ルールにしない: 発動点「外部の道具の出力を判定材料にする」が既存のルールと同じ)。起源と実例は `_claude/rules-rationale/` の同名ファイルへ
+- B: 却下。この repo の claim は 764 で道具にして解消した。一般形 (成否で後段を走らせる `&&` のつなぎ) は `verify-execution-not-just-exit-code.md` の既存の項が持っている
+- C: 局所。763 で直した (issue_done.sh の先頭で `export LC_ALL=C`)。提案にしない
+
