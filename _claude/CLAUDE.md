@@ -58,10 +58,14 @@
 ## 一時ファイルの配置
 
 - **Claude がセッション中に作る成果物 (レポート・スクラッチ・中間生成物) は `./tmp`**。`/tmp` に置かない
-  - 例外: ハーネスが指定する scratchpad (`/private/tmp/claude-501/…`) はそのまま使ってよい
+  - **その場で書いて読み終えるログ (push / pull / rebase / lint / test の出力を `> log 2>&1` で取ったもの) は、ハーネスの scratchpad に置く**
+    (`/private/tmp/claude-501/…`。セッション専用で、並行セッションと名前もぶつからない)。scratchpad が無い環境では `tmp/<作業名>/` に入れる
+  - `./tmp` に置くのは、セッションを越えて人や次のセッションが読むもの (レポート・見本) と、後から確かめる run の出力
+    (codex / background / detach した run の stdout・rc。scratchpad はセッション終了で消える。codex-drive SKILL の「run 固有の永続パス」) だけ。
+    🚨 **直下に散らさず `tmp/<issue番号か作業名>/` に入れる** (実測 2026-10-15: `<番号>-push3.log` の形のログが直下に 1170 件・136 MiB、参照 0 件。dotfiles issue 774)
   - 🚨 `tmp/` の ignore が `~/.gitignore_global` 由来で repo の `.gitignore` に無い repo がある (dotfiles 等)。その場合、新品チェックアウトと CI では ignore されず、`tmp/` 自体も存在しない
   - 🚨 **リダイレクト先を `..` で repo の外へ出さない** (`<worktree>/../push.log` / `../../../../out`)。後で消す worktree の中で
-    走らせる出力は、本体 checkout の `tmp/` を絶対パスで書くか scratchpad に置く。親ディレクトリは誰の `tmp/` でもなく、
+    走らせる出力は、scratchpad に置くか、残すものなら本体 checkout の `tmp/<作業名>/` を絶対パスで書く。親ディレクトリは誰の `tmp/` でもなく、
     消し損ねると残り続ける (実測 2026-09-26: push のログ 22 個が `~/src` と `my-products/apps` の直下に残った。my-products issue 033)
   - 消す前に、結論が issue / コードへ移っているかと、issue や doc が指しているパスでないかを確かめる (`grep -rn 'tmp/' issues/ _claude/`)。dotfiles では `make clean-tmp` (既定は 30 日より古いもの。`DRY_RUN=1` で一覧のみ、`DAYS=7` で期間を変える)
 - **スクリプト / テストが実行時に作る隔離ディレクトリは対象外**。既定は OS の一時領域 (`mktemp -d` / `t.TempDir()`)。`./tmp` に置くなら理由をコード直近に残す

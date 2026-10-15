@@ -97,6 +97,11 @@
   CLAUDE.md に scratchpad の例外が既にある → 原因 2 に追記 / ディレクトリ数 50→51 / prefix・内訳の数え方の幅。
   記録のみ: `_claude/agents/test-runner.md` と `skills/perf-analysis` も `./tmp/` 直下 (`thumbnailthumb-test.log` / `perf.log`) を指すが、
   ThumbnailThumb 専用で 1 ファイル固定名 (上書き) なので溜まらない。A の追記と同時に揃えるかは A の実装時に決める
-- [ ] A の規約追記 (ユーザーの承認待ち)
-- [ ] C の既存ファイルの削除 (ユーザーの判断)
+- [x] A の規約追記 (ユーザー承認 2026-10-15): `_claude/CLAUDE.md`「一時ファイルの配置」に、その場で読み終えるログは scratchpad /
+  残すものと後から確かめる run の出力は `tmp/<作業名>/` / 直下に散らさない、を追記。worktree の項も `tmp/<作業名>/` に合わせた。
+  `verify-execution-not-just-exit-code.md` と `worktree-per-session.md` の例は `> log` とだけ書きパスを持たないので変えていない
+  (置き場の正本は `_claude/CLAUDE.md` の 1 か所)
+- [x] C の既存ファイルの削除 (ユーザー承認 2026-10-15): 直前に参照を数え直して 0 件 (1170 個の名前を `grep -rnoF -f` で一括照合。
+  必ず当たる `tmp/skill-eval/` で較正して 1 件ヒット)。並行セッションが使用中かもしれない直近 1 時間のファイルは除いて
+  `find tmp -maxdepth 1 -type f -mmin +60 -delete` → 1170 → 20 件 (残りは issue 747 の作業中のログ)。ディレクトリ 51 件は触っていない
 - [ ] A の後 2 週間ほどで直下の増え方を測り、B が要るかを決める
