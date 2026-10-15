@@ -107,14 +107,15 @@ func (m *Model) toggleCardEvents() {
 	m.refoldEvents()
 }
 
-// logRoleColors は役の色 (見本 A と同じ)。
+// logRoleColors は役の色 (見本 A と同じ)。テーマの role とは別の、ログの役を見分けるための色なので yml に追従させない
+// (番号がテーマと重なるものは theme-literal-ok の印で検査から外す)。
 var logRoleColors = map[string]int{
-	eventlog.RoleDispatcher: 51,
+	eventlog.RoleDispatcher: 51, // theme-literal-ok: 役の色 (上)
 	eventlog.RoleSupervisor: 141,
 	eventlog.RoleMonitor:    117,
-	eventlog.RolePM:         214,
-	eventlog.RoleIntegrator: 208,
-	eventlog.RolePG:         46,
+	eventlog.RolePM:         214, // theme-literal-ok: 役の色 (上)
+	eventlog.RoleIntegrator: 208, // theme-literal-ok: 役の色 (上)
+	eventlog.RolePG:         46,  // theme-literal-ok: 役の色 (上)
 }
 
 // logReasonColor は出来事の文の色 (落ちた・できない = 危険の赤 / 疑い・停滞 = 要対応の黄。ほかは色を付けない)。

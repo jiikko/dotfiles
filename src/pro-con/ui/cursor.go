@@ -17,7 +17,7 @@ import (
 // 選択の枠の文字と色 (issue 472: 赤い二重線。ユーザーの指定)。赤は docs/theme-colors.md の 196 (sync の枠と同じ番号。
 // 選んでいるレーンの枠の現在地の色 202 (lanefade.go) とは分けてある)。テストもこの定数で枠を探す。
 const (
-	frameColor = 196
+	frameColor = colError
 	frameTL    = "╔"
 	frameTR    = "╗"
 	frameBL    = "╚"

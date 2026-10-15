@@ -36,14 +36,14 @@ const (
 	// 持ち主の画面への切り替え (O。ownerswitch.go) の文言。新版とは言わない (同じバイナリを開き直すだけ)
 	ownerSwitchLabel  = "↻ 持ち主の画面へ切り替え中…"
 	ownerArrivedLabel = "↻ 持ち主の画面に切り替えた"
-	switchAccent      = 202 // 現在地の色 (style.go の冒頭の合意)
+	switchAccent      = colCurrent // 現在地の色 (style.go の冒頭の合意)
 )
 
 type rgb struct{ r, g, b int }
 
 // 端末に色を問い合わせられないときの既定の色 (暗い背景の端末)。
 var (
-	defaultTermFg = rgb{208, 208, 208}
+	defaultTermFg = rgb{208, 208, 208} // theme-literal-ok: RGB の成分 (256 色の番号ではない)
 	defaultTermBg = rgb{0, 0, 0}
 )
 

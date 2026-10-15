@@ -19,6 +19,7 @@ import (
 const (
 	colCurrent   = 202 // current_accent: 現在地
 	colAttention = 214 // quantity_yellow の色を「要対応」に使う (yml に要対応の role は無い。issue 770)
+	colMarker    = 208 // marker_orange: 未 push (まだ master に載っていない)
 	colInfo      = 51  // info_cyan: 情報
 	colActive    = 46  // active_green: 正常
 	colCold      = 240 // cold_gray: 消灯
@@ -62,17 +63,17 @@ func cardColor(id string) int {
 func stateColor(st card.State) int {
 	switch st {
 	case card.Requested:
-		return 51 // 情報: 来たばかり
+		return colInfo // 情報: 来たばかり
 	case card.Planned:
 		return 250 // 待機 (中立)
 	case card.Running:
-		return 46 // 正常 / アクティブ
+		return colActive // 正常 / アクティブ
 	case card.Waiting:
-		return 214 // 要対応 (人間の番)
+		return colAttention // 要対応 (人間の番)
 	case card.Review:
-		return 208 // 未 push マーカー (まだ master に載っていない)
+		return colMarker // 未 push マーカー (まだ master に載っていない)
 	case card.Done:
-		return 240 // 消灯
+		return colCold // 消灯
 	}
 	return 250
 }

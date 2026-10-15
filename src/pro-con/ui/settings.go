@@ -873,7 +873,7 @@ func (m *Model) diskLines(w int) ([]string, int) {
 				if it.Done {
 					note += " 完了"
 				}
-				out = append(out, boxLine(border, sgrDim+"      "+fit(diskuse.Human(it.Bytes), 7)+fit(clipLeft(it.Name, 44), 46)+note+sgrReset, w))
+				out = append(out, boxLine(border, sgrDim+"      "+fit(diskuse.Human(it.Bytes), 7)+fit(clipLeft(it.Name, 44), 46)+note+sgrReset, w)) // theme-literal-ok: 46 は欄の幅
 			}
 			if rest := len(g.Items) - len(items); rest > 0 {
 				out = append(out, boxLine(border, sgrDim+fmt.Sprintf("      … ほか %d %s (enter で全部)", rest, name[1])+sgrReset, w))

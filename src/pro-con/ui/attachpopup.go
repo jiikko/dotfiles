@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -30,7 +31,7 @@ const PopupDirPrefix = "pro-con-attach-"
 const popupLeaveKey = "C-z"
 
 // popupBorder は窓の枠の色 (pro-con の現在地の色 202。回答フォーム・送る前の確認の枠と揃える。見本からユーザーが選んだ)。
-const popupBorder = "fg=colour202"
+var popupBorder = "fg=colour" + strconv.Itoa(colCurrent)
 
 // PopupAttach は tmux の popup で attach を開く設定。
 type PopupAttach struct {

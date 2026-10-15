@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	laneOn  = 202 // 現在地のレーンの枠
-	laneOff = 240 // それ以外のレーンの枠
+	laneOn  = colCurrent // 現在地のレーンの枠
+	laneOff = colCold    // それ以外のレーンの枠
 )
 
 // laneFade はレーンごとの点灯の度合い (0 = 平常、1 = 現在地) の遷移。from から to へ start から cursorDuration で移る。
