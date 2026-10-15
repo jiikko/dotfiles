@@ -1,7 +1,5 @@
 # 763 (bug): scripts/issue_done.sh が担当者バナーを外さず、done/ に「担当中」が残る
 
-> 🚨 **担当中: claude (opus, dotfiles 762 のセッション)**（2026-10-15〜）
-
 起票日: 2026-10-15
 
 ## 概要
