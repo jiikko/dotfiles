@@ -22,6 +22,9 @@
    - **CI でしか出ない不具合は、新しい run を取る前に既存の失敗 run のログを全部取る**
      (`gh run view <id> --log-failed` / `--log`。GHA の retention は 90 日)。issue や過去の自分が
      「観測するには CI で 1 run 要る」と書いていても、**まずアーカイブを読む**
+   - **検証 (テスト・ビルド) が止まった / 落ちたときも、baseline と比べる前に open issue を症状の語 (止まる / hang / flaky) と
+     止まった target・suite の名前で grep する**。既知の止まりは回避策 (`--skip` する suite 等) が issue に書いてあることが多い
+     (obaket retro 1141: 既知の hang を baseline の worktree で切り分け直し、約 30 分かけた)
 4. 無ければ観測手段を仕込む (下表)
 5. 観測データで仮説を作り直す。データが仮説と矛盾したらデータを優先する
 6. 前提が確定してから、はじめて 2 つ目の修正を打つ
