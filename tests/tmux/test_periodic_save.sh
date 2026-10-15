@@ -97,6 +97,11 @@ for v in 0 abc; do
     run_periodic "$FAKE"
   assert_called "sleep 900" "@continuum-save-interval=$v → 既定の 15 分 (sleep 900 秒)"  # sleep-ok: other: 期待する呼び出し文字列の中の sleep
 done
+# 0 で始まる値 ("08") を 8 進として読まない (前は算術が壊れて間隔が空になり、周期保存が待たずに回った。issue 776)
+reset_calls; : > "$LOG"
+STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_INTERVAL=08 STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+  run_periodic "$FAKE"
+assert_called "sleep 480" "@continuum-save-interval=08 → 8 分 (sleep 480 秒)"  # sleep-ok: other: 期待する呼び出し文字列の中の sleep
 
 # --- (3) 保存失敗は rc=1 として記録される (無音で成功扱いにしない) --------------------
 reset_calls; : > "$LOG"

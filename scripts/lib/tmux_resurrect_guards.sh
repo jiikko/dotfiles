@@ -367,7 +367,9 @@ tt_prune_log_lines() {
 tt_save_interval_minutes() {
   local v
   v="$(tmux show -gqv @continuum-save-interval 2>/dev/null)"
-  case "$v" in ''|*[!0123456789]*|0) v="${1:-15}" ;; esac
+  case "$v" in ''|*[!0123456789]*) v="${1:-15}" ;; esac
+  v=$((10#$v))                     # "08" を 8 進として読んで算術が壊れないよう 10 進に直す
+  [ "$v" -gt 0 ] || v="${1:-15}"   # 0 (continuum では「無効」) も既定へ
   printf '%s\n' "$v"
 }
 
@@ -408,10 +410,10 @@ tt_run_resurrect_save() {
 #   止まっている間に上限を超えても実害は無い (ディスクを食う速度が 8KB/日)。
 #   🚨 この「暗黙の依存」を明示にするのがこのコメントの役目。prune を別の場所へ移すなら
 #   ここも直すこと。
-# 置き場の既定はここだけに書く (env の TT_TRIGGER_LOG が seam。テストが渡す)。各スクリプトが既定を手で書いていた間、
+# 置き場の既定はここだけに書く (env の TT_TRIGGER_LOG が seam。テストが渡す。guards.sh を読まない tmux_reap_orphan_servers.sh だけは例外で手書き)。各スクリプトが既定を手で書いていた間、
 # tmux_resurrect_save.sh だけが書き忘れ、set -u の未定義が `|| true` に潰されて save-advanced 等が 2026-08-25 から 1 行も
 # 書かれなかった (issue 776。テストは常に TT_TRIGGER_LOG を渡すので見えなかった)。
-: "${TT_TRIGGER_LOG:=$HOME/.cache/tt-restore-trigger.log}"
+: "${TT_TRIGGER_LOG:=${HOME:-}/.cache/tt-restore-trigger.log}"  # HOME が無ければ書けない場所になり、tt_trigger_log が黙って諦める
 # $1=本文 / $2=打刻 (省略時は「今」)。$2 は「イベントの発生時刻と、それを書ける状態になる時刻が
 # ずれる」書き手のためにある (watchdog の server-death は死亡検知時の時刻で打刻し、その後に
 # verdict を計算してから書く)。ここを省略形に丸めると打刻の意味が静かに変わる。

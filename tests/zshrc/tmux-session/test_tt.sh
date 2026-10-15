@@ -261,6 +261,11 @@ proj 3 1"
   _tt_gc_stale_holds
   print "CASE:gc_stale kill=[$_LOG_KILL]"
 
+  # (保護) prefix が空 (guards.sh を読めなかった等) → 数字名のセッションを hold と読んで kill しない (issue 776)
+  reset_log
+  _T_GC_SESSIONS="0 1 0"
+  ( TT_HOLD_PREFIX=""; _tt_gc_stale_holds; print "CASE:gc_noprefix kill=[$_LOG_KILL]" )
+
   # NOTE: 旧 @tt-adopted フラグによる adopted hold 保護のケース (gc_adopted) は廃止した。
   # adopt は rename で hold 名前空間から出る方式になり (C7/C7b で pin)、GC に adopted hold が
   # 到達する経路自体が消えたため (経緯は zshlib/_tmux_session.zsh の _tt_gc_stale_holds コメント)。
@@ -428,6 +433,7 @@ assert_eq_line name_pwd "t=[ x_y]"   "引数なし → basename \$PWD + ドッ�
 
 printf '\n## stale hold GC (三重条件)\n'
 assert_line_has gc_stale     "kill=[ =__tt_hold_" "死pid+非attach+pristine の hold は kill する"
+assert_line_has gc_noprefix  "kill=[]" "prefix が空なら数字名のセッションも kill しない"
 assert_eq_line  gc_alive     "kill=[]"           "生存pid の hold は触らない (並行 tt)"
 assert_line_has gc_pid_reused "kill=[ =__tt_hold_" "生存pidでも zsh 以外への再利用なら kill する (GC 恒久 skip の防止)"
 assert_eq_line  gc_attached  "kill=[]"           "attach 中の hold は触らない (採用された作業)"

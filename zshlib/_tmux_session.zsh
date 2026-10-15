@@ -147,6 +147,9 @@ _tt_wait_for_restore () {
 # 場合は "=name:" が必要な点に注意（has/kill/rename-session は "=name" で可）。
 _tt_gc_stale_holds () {
   local sname wins attached spid panes
+  # 🚨 prefix が空なら何もしない: 空の prefix は全セッションに一致し、"0" のような数字名のセッションを死んだ hold と読んで kill する
+  # (guards.sh の source に失敗したとき・誰かが空にしたとき。issue 776 の敵対的レビュー P2。前は既定値の写しがこれを防いでいた)
+  [ -n "${TT_HOLD_PREFIX:-}" ] || return 0
   tmux list-sessions -F '#{session_name} #{session_windows} #{session_attached}' 2>/dev/null \
   | while read -r sname wins attached; do
       case "$sname" in
