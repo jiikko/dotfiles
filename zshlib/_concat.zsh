@@ -533,7 +533,7 @@ EOF
 
   local total_size=0 fsize
   for file in "${sorted_files[@]}"; do
-    fsize=$(stat -f%z -- "$file" 2>/dev/null || stat -c%s -- "$file" 2>/dev/null)
+    fsize=$(__fs_file_size "$file")
     [[ -n "$fsize" ]] && total_size=$((total_size + fsize))
   done
   local total_size_mb=$((total_size / 1024 / 1024))

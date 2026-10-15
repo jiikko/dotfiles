@@ -52,3 +52,8 @@ __fs_is_network_volume() {
     *) return 1 ;;
   esac
 }
+
+# 内部補助: ファイルサイズ (バイト) を返す。取得できなければ空文字で rc≠0 (av1ify / concat が共有。issue 776)
+__fs_file_size() {
+  stat -f%z -- "$1" 2>/dev/null
+}

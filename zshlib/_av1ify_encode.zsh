@@ -33,10 +33,9 @@ __av1ify_fs_type_for() {
   __fs_type_for "$1"
 }
 
-# 内部補助: ファイルサイズ(バイト)を返す。取得失敗時は空文字。
-# macOS: stat -f%z, Linux: stat -c%s
+# 内部補助: __fs_file_size の薄いラッパ (実体は _fs_helpers.zsh。concat と共有)
 __av1ify_file_size() {
-  stat -f%z -- "$1" 2>/dev/null || stat -c%s -- "$1" 2>/dev/null
+  __fs_file_size "$1"
 }
 
 # 内部補助: バイト数を人間可読 (B/KB/MB/GB/TB) にフォーマット

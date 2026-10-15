@@ -483,7 +483,7 @@ __concat_diagnose_output() {
   # サイズ乖離チェック（入力合計と±5%以上乖離していれば異常、1MB未満はスキップ）
   if (( expected_size > 1048576 )); then
     local actual_size
-    actual_size=$(stat -f%z -- "$outfile" 2>/dev/null || stat -c%s -- "$outfile" 2>/dev/null)
+    actual_size=$(__fs_file_size "$outfile")
     if [[ -n "$actual_size" ]] && (( actual_size > 0 )); then
       local ratio
       ratio=$(awk -v a="$actual_size" -v e="$expected_size" 'BEGIN{ printf "%.4f", a/e }')
@@ -498,7 +498,7 @@ __concat_diagnose_output() {
           local _effective_total=0
           for _infile in "${input_files[@]}"; do
             _eff=$(__concat_mp4_effective_size "$_infile") || _eff_unmeasured=1
-            _stat=$(stat -f%z -- "$_infile" 2>/dev/null || stat -c%s -- "$_infile" 2>/dev/null)
+            _stat=$(__fs_file_size "$_infile")
             (( _effective_total += _eff ))
             if [[ -n "$_eff" ]] && [[ -n "$_stat" ]] && (( _stat > 0 && _eff > 0 )); then
               _orphaned=$((_stat - _eff))
