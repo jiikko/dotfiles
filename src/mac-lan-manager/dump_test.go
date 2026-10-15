@@ -8,10 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
+
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/netinfo"
 )
+
+func TestMain(m *testing.M) { widthenv.ExitIfUnsupported(); m.Run() }
 
 type dumpScan struct {
 	peers []discover.Peer
@@ -49,7 +53,7 @@ func TestDumpText(t *testing.T) {
 	if rc := runDump(nil, &out, &errb, time.Now, dumpModel(false)); rc != 0 {
 		t.Fatalf("rc=%d stderr=%s", rc, errb.String())
 	}
-	for _, want := range []string{"host: me.local", "net_ready: true", "m2macmini.local", "lan=169.254.217.100", "connect=169.254.217.100", "27:169.254.217.100"} {
+	for _, want := range []string{"host: me.local", "net_ready: true", "m2macmini.local", "lan=169.254.217.100", "connect=169.254.217.100", "27:169.254.217.100", "# 時間", "ネットワーク読了="} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("出力に %q が無い:\n%s", want, out.String())
 		}

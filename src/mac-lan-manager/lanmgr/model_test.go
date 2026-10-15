@@ -731,7 +731,7 @@ func TestKeyAppliesFinishedNetLoad(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("読み込みの結果が届かない")
 		}
-		time.Sleep(time.Millisecond) // sleep-ok: 条件のポーリングの刻み (待ちの実体は上の条件)
+		time.Sleep(time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は上の条件)
 	}
 	m.HandleKey("j")
 	if a := m.HandleKey("s"); a != Exec {

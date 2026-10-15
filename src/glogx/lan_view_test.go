@@ -296,6 +296,6 @@ func TestLanOpensWithoutWaitingForNetwork(t *testing.T) {
 			t.Fatal("読み終えても tick で取り込まない")
 		}
 		m.Update(tickMsg{})
-		time.Sleep(10 * time.Millisecond) // sleep-ok: 条件のポーリングの刻み (待ちの実体は上の条件)
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は上の条件)
 	}
 }
