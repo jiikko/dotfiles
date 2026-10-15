@@ -5,7 +5,7 @@ import tea "charm.land/bubbletea/v2"
 // 「今どの全画面ビューアが出ているか」の単一の出典。
 //
 // 全画面ビューア = 開いている間コミット一覧の窓ごと画面を差し替え、キーを全部飲むもの
-// (issues / status / 残量ダッシュボード / doctor)。**同時に開くのは高々 1 枚**で、
+// (issues / status / 残量ダッシュボード / doctor / treefiler / mac-lan-manager)。**同時に開くのは高々 1 枚**で、
 // 横断 (viewer の R / ダッシュボードの i・s) は「閉じてから開く」、起動時の復元は
 // 既に 1 枚出ていれば捨てる (issuesRestoreMsg の注記)。
 //
@@ -66,6 +66,7 @@ const (
 	fullScreenStatus
 	fullScreenIssues
 	fullScreenFiler
+	fullScreenLan
 	// fullScreenCount は番兵 (テストが ID を全部走査するのに使う)。新しいビューアはこの上へ足す。
 	fullScreenCount
 )
@@ -85,6 +86,8 @@ func (id fullScreenID) String() string {
 		return "issues"
 	case fullScreenFiler:
 		return "filer"
+	case fullScreenLan:
+		return "lan"
 	case fullScreenCount:
 		return "count(番兵)"
 	}
@@ -108,6 +111,8 @@ func (m *browseModel) activeFullScreen() fullScreenID {
 		return fullScreenIssues
 	case m.filerV.visible():
 		return fullScreenFiler
+	case m.lanV.visible():
+		return fullScreenLan
 	}
 	return fullScreenNone
 }
@@ -132,6 +137,8 @@ func crossTarget(key string) (fullScreenID, bool) {
 		return fullScreenDoctor, true
 	case "F":
 		return fullScreenFiler, true // treefiler (filer_view.go。docs/treefiler-spec.md §0.3)
+	case "L":
+		return fullScreenLan, true // mac-lan-manager (lan_view.go。issue 747)
 	}
 	return fullScreenNone, false
 }
@@ -157,6 +164,14 @@ func (m *browseModel) openFullScreen(id fullScreenID) tea.Cmd {
 			m.showWarning(e)
 		}
 		return tea.Batch(m.filerV.watchCmd(), m.maybeTick())
+	case fullScreenLan:
+		m.usageOv.dismiss()
+		m.lanV.toggle()
+		if e := m.lanV.takeOpenErr(); e != "" {
+			m.showWarning(e)
+		}
+		m.drainLanNotices() // 開いたときの読み込みの失敗 (台帳が読めない等)
+		return tea.Batch(m.lanV.watchCmd(), m.maybeTick())
 	case fullScreenNone, fullScreenCount:
 	}
 	return nil

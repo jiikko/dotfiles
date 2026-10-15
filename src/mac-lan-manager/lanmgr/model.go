@@ -1,15 +1,16 @@
 // Package lanmgr は mac-lan-manager の画面 (一覧・詳細カード・設定・この Mac の IP のコピー) を持つ。
 //
 // 単体の bin/mac-lan-manager と glogx の L の板の両方から使う (treefiler の filer と同じ分担)。描画の tick は張らない:
-// 時間は呼び出し側が Advance(now) で進め、Busy の間は遅い周期で呼ぶ。外へ出す口は New / Resize / HandleInput / Advance / View /
+// 時間は呼び出し側が Advance(now) で進め、Busy の間は遅い周期で呼ぶ。外へ出す口は New / Resize / HandleKey / HandleInput / Advance / View / Changed / Reload /
 // Busy / OwnsKeys / Binds / CaretPos / Paste / TakeExec / ExecDone / TakeNotices / Close。
 // キーの語彙は docs/glogx-ui-guide.md に従う (issue 747 の「枠の見た目とキー」節の表)。
 package lanmgr
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -52,7 +53,7 @@ type Scanner interface {
 	Close()
 }
 
-// Options は外とのつなぎ。nil のものは本物を使う。
+// Options は外とのつなぎ。nil のものは使わない (本物のつなぎは live パッケージ。テストは偽物を渡す)。
 type Options struct {
 	ReadNet   func(ctx context.Context) (netinfo.Snapshot, error) // この Mac のネットワーク
 	LocalHost func() string                                       // この Mac の Bonjour の名前 ("kojiM3MacBook-Pro.local")
@@ -63,7 +64,7 @@ type Options struct {
 	SavePrefs func(path string, p prefs.Prefs) error
 	Copy      func(s string) error // クリップボードへ
 	Now       func() time.Time
-	User      string // 台帳にユーザー名が無い相手に使う推測の名前 (既定は $USER)
+	User      string // 台帳にユーザー名が無い相手に使う推測の名前 (live は $USER を入れる。環境を読むのはつなぎの側)
 }
 
 type screen int
@@ -99,6 +100,7 @@ type Model struct {
 	filter    lineedit.Line
 	filtering bool `layer:"filter"`
 	alias     lineedit.Line
+	aliasHost string // 別名の入力欄を開いたときの Mac (台帳の鍵)
 	band      lineedit.Line
 	bandEdit  bool `layer:"band"`
 
@@ -131,16 +133,16 @@ func New(o Options) *Model {
 	if o.Now == nil {
 		o.Now = time.Now //nolint:forbidigo // 注入しないときの既定値 (ここだけが「今」を直に読む)
 	}
-	if o.User == "" {
-		o.User = os.Getenv("USER")
-	}
 	m := &Model{o: o, now: o.Now(), w: 120, h: 40}
-	m.reload()
+	m.Reload()
 	return m
 }
 
-// reload はこの Mac のネットワーク・台帳・設定を読み直し、走査を起こし直す (r)。
-func (m *Model) reload() {
+// Reload はこの Mac のネットワーク・台帳・設定を読み直し、走査を起こし直す (r と、glogx の板を開き直したとき。Close の後でも使える)。
+func (m *Model) Reload() {
+	// 走査の settle の起点は今。最後の Advance の時刻のままだと、閉じていた間の分だけ settle が過ぎた扱いになり、開き直した直後に
+	// 走査中の印が消えて tick が止まる (red team の指摘 2026-10-15)
+	m.now = m.o.Now()
 	if m.o.ReadNet != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		m.self, m.selfErr = m.o.ReadNet(ctx)
@@ -201,9 +203,15 @@ func (m *Model) OwnsKeys() bool {
 	return m.filtering || m.bandEdit || m.ov != ovNone || m.sc == scSettings
 }
 
-// Binds はこの画面が使うキーか (glogx の横断キーより先にこの画面へ渡す。s は status の横断キーと同じ字だが、ここでは ssh)。
+// Binds はこの画面が使うキーか (glogx の横断キー・U より先にこの画面へ渡す。s は status の横断キーと同じ字だが、ここでは ssh)。
+// 入力欄・確認・板・設定が開いている間は全部のキー (横断キーで閉じると打っている文字が消える。treefiler の filer.Model.Binds と同じ契約)。
 func (m *Model) Binds(key string) bool {
-	return slices.Contains([]string{"s", "y", "Y", "o", "m", "c", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key)
+	key = canonKey(key)
+	if m.OwnsKeys() {
+		return true
+	}
+	return slices.Contains([]string{"s", "y", "Y", "o", "m", "c", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
+		listnav.MotionOf(key) != listnav.None
 }
 
 // TakeExec は起こしてほしいプロセス (HandleInput が Exec を返したとき)。
@@ -216,12 +224,15 @@ func (m *Model) TakeExec() (ExecRequest, bool) {
 	return r, true
 }
 
-// ExecDone は起こしたプロセスから戻ったとき。起動できなかったら知らせの文を返す。
+// ExecDone は起こしたプロセスから戻ったとき。起動できなかったときだけ知らせの文を返す。終了コードは失敗と言わない
+// (ssh は相手のシェルの最後のコマンドの終了コードで抜ける。接続できなかった 255 も ssh 自身が端末に理由を出している。
+// treefiler の filer.Model.ExecDone と同じ判断。全体レビューの指摘 2026-10-15)。
 func (m *Model) ExecDone(err error) string {
-	if err != nil {
-		return "起こせなかった: " + err.Error()
+	var exitErr interface{ ExitCode() int } // *exec.ExitError
+	if err == nil || errors.As(err, &exitErr) {
+		return ""
 	}
-	return ""
+	return "起こせなかった: " + err.Error()
 }
 
 // TakeNotices は積んだ知らせを取り出す。
@@ -357,15 +368,23 @@ func (m *Model) rows() []row {
 		if len(p.Instances) > 0 {
 			r.instance = clean(p.Instances[0])
 		}
-		for idx, ip := range p.Addrs {
+		// I/F の番号の順に見て、それぞれ最初に見えた IP を採る。map の順で回すと、ルーターの無い I/F が 2 つある相手
+		// (Thunderbolt Ethernet + USB LAN・bridge0) では描くたびに内部 IP が入れ替わり、s の ssh 先が押した瞬間の運で決まった
+		// (全体レビューの指摘 2026-10-15)。台帳の内部 IP があればそちらを採る (固定 IP)
+		lanPicked := r.ledgerLAN != ""
+		for _, idx := range slices.Sorted(maps.Keys(p.Addrs)) {
+			ip := p.Addrs[idx]
 			dev := ""
 			if m.o.IfName != nil {
 				dev = m.o.IfName(idx)
 			}
-			if m.isInternetIF(dev) {
-				r.mainIP = clean(ip)
-			} else if r.lanIP == "" || !r.managed {
-				r.lanIP = clean(ip) // 台帳の内部 IP があればそちらを採る (固定 IP)
+			switch {
+			case m.isInternetIF(dev):
+				if r.mainIP == "" {
+					r.mainIP = clean(ip)
+				}
+			case !lanPicked:
+				r.lanIP, lanPicked = clean(ip), true
 			}
 		}
 	}
@@ -426,8 +445,21 @@ func or(a, b string) string {
 
 // ---- キー ----
 
+// canonKey はキーの表記を 1 つに寄せる。glogx は Space を " " に書き換えてから板へ渡す (tui.go の normalizeSpaceKey) ので、
+// "space" だけを見ると glogx の板で Space が台帳の登録ではなく半ページ送り (listnav は " " も下へ送る) に化ける (red team の指摘 2026-10-15)。
+func canonKey(key string) string {
+	if key == " " {
+		return "space"
+	}
+	return key
+}
+
+// HandleKey はキーを 1 つ処理する (打った文字はキーの表記から推す。KeyPressMsg.Text を持たない glogx の板の口)。
+func (m *Model) HandleKey(key string) Action { return m.HandleInput(key, lineedit.KeyText(key)) }
+
 // HandleInput はキーを 1 つ処理する (text は打った文字。入力欄に入れる)。
 func (m *Model) HandleInput(key, text string) Action {
+	key = canonKey(key)
 	if key == "ctrl+c" {
 		return Quit
 	}
@@ -522,7 +554,7 @@ func (m *Model) keyList(key string) Action {
 	case "c":
 		m.ov, m.copyC = ovCopyIP, 0
 	case "r":
-		m.reload()
+		m.Reload()
 		m.note("読み直した", true)
 	case "enter":
 		m.note("初期設定は次の段で入る (issue 747 の段 4)", false)
@@ -573,6 +605,7 @@ func (m *Model) keyList(key string) Action {
 		}
 		m.alias.Reset()
 		m.alias.Insert(r.alias)
+		m.aliasHost = r.host // 確定の時点のカーソル行ではなく、開いたときの Mac に付ける (入力中に走査で行が増えるとカーソルがずれる)
 		m.ov = ovAlias
 	}
 	return None
@@ -680,10 +713,9 @@ func (m *Model) keyAlias(key, text string) Action {
 		m.ov = ovNone
 	case "enter":
 		m.ov = ovNone
-		r := m.current()
 		alias := strings.TrimSpace(m.alias.String())
 		// 別名だけを変える (台帳を読み直した上で。古い一覧の行で丸ごと書き戻すと、外された Mac が戻り、Bonjour の 169.254 が固定 IP の欄に入る)
-		if err := m.o.Ledger.Update(r.host, func(h *ledger.Host) { h.Alias = alias }); err != nil {
+		if err := m.o.Ledger.Update(m.aliasHost, func(h *ledger.Host) { h.Alias = alias }); err != nil {
 			m.note("別名を付けられない: "+err.Error(), false)
 			m.reloadLedger()
 			return None

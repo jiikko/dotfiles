@@ -60,6 +60,12 @@ var overlayOwnershipTable = []overlayParticipant{
 		stoppedByCancelAll:    false,
 	},
 	{
+		// mac-lan-manager は絞り込み・別名・帯の入力欄と y/N・設定の間に語彙を持つ (issue 747)。走査 (dns-sd) は cancelAll が止める
+		name: "lanV", owns: true, uninterruptible: false,
+		whyNotUninterruptible: "非同期の処理は読み取りだけの Bonjour の走査 (止めても壊れない)。台帳の書き込みは Update の中で同期に終わる",
+		stoppedByCancelAll:    true,
+	},
+	{
 		name: "statusOv", owns: true, uninterruptible: false,
 		// 🚨 破壊的操作 (runGitRestoreWorktree / runGitCleanUntracked) は **Update の中で同期に**
 		// 走るので相を跨がない。非同期は fetchDiff (読み取り専用) だけ。
@@ -180,6 +186,9 @@ func showOverlayOwning(t *testing.T, m *browseModel, name string) {
 	case "filerV":
 		m.filerV.toggle(t.TempDir())
 		m.filerV.f.HandleKey("/") // 検索欄の入力中
+	case "lanV":
+		m.lanV.toggle()
+		m.lanV.m.HandleKey("/") // 絞り込みの入力中
 	default:
 		t.Fatalf("showOverlayOwning: 未知の参加者 %s (表に足したらここも足す)", name)
 	}
@@ -213,6 +222,8 @@ func overlayOwnsKeys(m *browseModel, name string) bool {
 		return m.statusOv.ownsKeys()
 	case "filerV":
 		return m.filerV.ownsKeys()
+	case "lanV":
+		return m.lanV.ownsKeys()
 	}
 	return false
 }

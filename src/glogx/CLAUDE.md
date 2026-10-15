@@ -22,6 +22,7 @@
 - `usage_overlay.go`, `usage_cache.go` — 右上の利用枠オーバーレイ (`U`) とそのキャッシュ
 - `ratelimit_dashboard.go`, `ratelimit_resume.go` — 全画面 ratelimit ダッシュボード (`R`)。取得・整形は `ratelimit/usage`
 - `filer_view.go`, `filer_resume.go` — 全画面 treefiler (`F`)。`filer_resume.go` は F を出したまま終えたときの場所の記憶 (C-g で開き直すと戻る)。画面の部品は `src/treefiler` の `filer` パッケージ (replace で取り込む)。仕様は `docs/treefiler-spec.md`
+- `lan_view.go` — 全画面 mac-lan-manager (`L`)。画面の部品は `src/mac-lan-manager` の `lanmgr` パッケージ、本物へのつなぎは `live` (replace で取り込む)。要件は issue 747
 - `ime.go`, `ime_tis_darwin.go`, `ime_tis_stub.go` — ブラウズ中の IME 英数切替 (macOS TIS 直接呼び出し)
 - `url_picker.go` — issue 本文 URL のピッカー (本文 pager で `u`)
 - `zoom.go`, `scroll_glide.go`, `hint_surfaces.go` — 開閉演出・スクロール滑走・最下行ヒントの共有ロジック

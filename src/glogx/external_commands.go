@@ -17,6 +17,7 @@ import (
 	"subproc"
 	"subproc/clipboard"
 
+	"mac-lan-manager/lanmgr"
 	"treefiler/filer"
 )
 
@@ -409,4 +410,11 @@ func filerExecCommand(r filer.ExecRequest) *exec.Cmd {
 	cmd.Dir = r.Dir
 	cmd.Env = r.Env
 	return cmd
+}
+
+// lanExecCommand は mac-lan-manager の s (ssh) / o (画面共有) が頼んだプロセス。返した Cmd は runEditorCmd (tea.Exec + foreground.Exec) が
+// 前景で起動する。免除の理由は editorCommand と同じ (ssh はパスワードとホスト鍵の確認に端末が要る。ctx が無く、端末を継承するのでパイプも
+// copy goroutine も作らない)。
+func lanExecCommand(r lanmgr.ExecRequest) *exec.Cmd {
+	return exec.Command(r.Argv[0], r.Argv[1:]...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 }

@@ -106,6 +106,12 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("TREEFILER_CONFIG_DIR", filepath.Join(dir, "treefiler-config")); err != nil {
 		panic(err)
 	}
+	// mac-lan-manager (L) の台帳と設定も同じ理由で一時領域へ。加えて本物のネットワークの読み取り (networksetup) と
+	// Bonjour の走査 (終わらない dns-sd) を起こさない: fullscreen_test は横断キーで全部の板を開く (issue 747)
+	if err := os.Setenv("MAC_LAN_MANAGER_CONFIG_DIR", filepath.Join(dir, "mac-lan-manager-config")); err != nil {
+		panic(err)
+	}
+	lanOptions = fakeLanOptions
 	// Go 1.26 の testing.T.TempDir は GOTMPDIR を優先する。呼び出し側が sandbox 用に
 	// repo 内のパスを指定しても、そこを TempDir の起点にすると「repo 外」を検査するテストが
 	// glogx の git root を誤って拾うため、テスト用の一時領域へ隔離する。

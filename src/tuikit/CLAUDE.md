@@ -8,6 +8,7 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 
 - `termwidth` — 表示幅の単一情報源。行を幅で切る・揃えるときは必ずここを通す
 - `widthenv` — 幅モデルが支持しない環境変数の検出
+- `termcolor` — tmux の中で 24bit の色を書き出してよいかの判定 (bubbletea の色の判定の補い)
 - `sgr` — 基本の ANSI 色・装飾
 - `anim` — 開閉演出 (`Transition`)・進捗 (`Elapsed`)・数行スクロールの glide 演出
 - `spinner` — 回る印の字形とコマの選び方 (`Frame` / `At`。tick の回し方は各画面)
@@ -27,7 +28,7 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 
 ## 消費者
 
-- glogx (issues viewer 本体)・pro-con・schedkeys・ratelimit・treefiler が replace で取り込む (`grep -l 'github.com/jiikko/dotfiles/src/tuikit =>' src/*/go.mod`。ブロック形式の `replace ( … )` も拾うため `replace` を前置しない)
+- glogx (issues viewer 本体)・pro-con・schedkeys・ratelimit・treefiler・mac-lan-manager が replace で取り込む (`grep -l 'github.com/jiikko/dotfiles/src/tuikit =>' src/*/go.mod`。ブロック形式の `replace ( … )` も拾うため `replace` を前置しない)
 - restartable は replace を使わず擬似バージョンで固定する (`go install …@<版>` で入れられるようにするため。
   `src/restartable/README.md`)。tuikit の変更は、restartable の go.mod の版を上げるまで届かない
 - schedkeys は `caret` / `lineedit` / `listnav` / `sgr` / `termwidth` を使い、`toast` だけは別実装 (理由は schedkeys の `toast.go` の冒頭)

@@ -442,7 +442,7 @@ package (`lanmgr`。glogx の `L` の板からも取り込む。`New` / `Resize`
    測ってから別に判断する (mac-lan-manager のついでに上げない)
 3. `lanmgr` の画面 (一覧・詳細カード・設定・この Mac の IP のコピー) と `bin/mac-lan-manager`。相手は本物の Bonjour から
 4. `setup` (初期設定の手順の実行。この Mac → 相手)。**その前に人手の確認** (ルーターを空にした `-setmanual`・`open vnc://<IP>`・切断を越えて走るか) を済ませる
-5. glogx の `L` の板 (766 の 1 段目の push の後。glogx の `tui.go` を 766 も触るため)。glogx の workflow の paths に `src/mac-lan-manager/**` を足す
+5. ✅ (2026-10-15) glogx の `L` の板 (766 の 1 段目の push の後。glogx の `tui.go` を 766 も触るため)。glogx の workflow の paths に `src/mac-lan-manager/**` を足す
 
 **設計の反証レビュー (2026-10-15・上位モデルのサブエージェント 1 体) で足したこと**:
 - 板の口は treefiler の filer と同じにそろえる (`Busy` / `Close` / `Binds` / `ExecDone` / `HandleInput` / `Paste` / `CaretPos` も)。`Busy` が無いと glogx の tick が止まって
@@ -507,7 +507,7 @@ package (`lanmgr`。glogx の `L` の板からも取り込む。`New` / `Resize`
     - 本物のデータで起動して確かめた (隔離した tmux `-L` で起動して撮った): Bonjour で 6 台見つかり、未管理のタブに 5 台
     - 🚨 色: tmux の中では bubbletea の色の判定 (colorprofile) が tmux の端末の定義しか見ず (RGB / Tc が missing)、256 色へ落として面の色
       #2A2430 が紺 (`48;5;17`) になった。この repo の tmux はクライアントの機能に RGB を持つ (`_tmux.conf` の terminal-features) ので、
-      `main.go` の `trueColorThroughTmux` が `#{client_termfeatures}` を聞いて 24bit で書き出す。glogx の板にするとき (段 5) は glogx の
+      `main.go` の `trueColorThroughTmux` (段 5 で `tuikit/termcolor` へ移した) が `#{client_termfeatures}` を聞いて 24bit で書き出す。glogx の板にするとき (段 5) は glogx の
       プログラムの色の判定に同じ手当てが要る。**未確認: クライアントの付いた本物の端末での色味** (隔離した tmux にはクライアントが無い)
     - 直した不具合: 設定の画面で `space` が移動 (半ページ) に食べられていた / 幅の狭い画面で見出しが折り返して下のキーの案内を押し出していた
       (見出しを段階的に詰め、どの行も幅で切ってから重ねる) / 外から来た名前の無害化を描画からではなく行の入口の 1 か所に寄せた
@@ -519,7 +519,42 @@ package (`lanmgr`。glogx の `L` の板からも取り込む。`New` / `Resize`
       制御文字を含むホスト名は捨てる / テストの穴: 画面だけを見る無害化のテストは画面の側でも落ちるので `rows()` の無害化を検査できていなかった → `rows()` を直接見る。
       変異で赤を確かめた: 別名を丸ごと書き戻す形に戻す・重複除きを外す・`rows()` の無害化を外す。壊せなかった: 確認の板の間に行が増えても板に出た Mac が対象 /
       ssh の引数への注入 (argv は分割済み・ユーザー名は台帳か $USER からしか来ない) / Scanner の競合 (`-race -count=3`)
-    - 未確認として残す: glogx の横断キーと `Binds` の食い違い (段 5 で配線するときに見る)
+    - ~~未確認として残す: glogx の横断キーと `Binds` の食い違い~~ → 段 5 で閉じた
+  - [x] 段 5: glogx の `L` の板 (2026-10-15。commit「mac-lan-manager: 段 5 …」)
+    - `src/glogx/lan_view.go` が treefiler の `F` (`filer_view.go`) と同じ口で lanmgr を全画面に載せる。`L` / `q` / `Esc` は一覧へ戻る (ガイド §1 の「q は 1 段戻る」。
+      treefiler と違い glogx ごとは終えない)。中の `s` は ssh なので status へは横断しない。入力中・確認・設定の間は lanmgr の `Binds` が全部のキーを取る
+      (filer と同じ契約)。閉じたとき・`cancelAll` (終了・再起動) で走査 (`dns-sd`) を止め、開き直すと読み直して走査を起こし直す
+    - 本物へのつなぎは `mac-lan-manager/live` に出し、単体の `main.go` と glogx が共有する (glogx はクリップボードと時計だけ自分の口に替える。`$USER` の既定も live)
+    - 24bit の色の判定は `tuikit/termcolor` (`TrueColorThroughTmux`) に出し、glogx の `RunBrowse` も使う。glogx の中の treefiler の色も 256 色に落ちなくなる
+      (glogx 自身は 256 色・基本色なので変わらない)。NO_COLOR が真なら引き上げない (読み方は colorprofile の `strconv.ParseBool` に揃えた)
+    - キーの表記から入力文字を推す処理を `lineedit.KeyText` に寄せた (treefiler と lanmgr の 2 か所にあった)
+    - glogx のテストは TestMain で `lanOptions = fakeLanOptions` (ネットワークの読み取り無し・偽の走査) と `MAC_LAN_MANAGER_CONFIG_DIR` を一時領域へ向ける。
+      全画面の登録の検査 (`fullscreen_test` / `overlay_ownership_test` / hint の幅 / `own_sources_test`) が配線の書き忘れを 4 件捕まえた
+    - 「`Binds` と横断キーの食い違い」(段 3 の未確認) は、入力中は全部のキーを取る形にして閉じた
+    - 変異で赤を確かめた: `cancelAll` から走査の停止を外す / 閉じても走査を止めない / 古いチャネルで待ち直す / 開き直しで読み直さない / 入力中の `Binds` を外す
+      (lanmgr と glogx の両方) / `HasRGB` を部分一致にする
+    - 敵対的レビュー 1 周目 (上位モデル 1 体): P1 glogx は Space を `" "` に書き換えて板へ渡すので、lanmgr の `"space"` に当たらず台帳の登録が半ページ送りに化けた
+      → lanmgr の入口 (`canonKey`) で揃えた / P2 板の中の `r` が新しい走査の合図を待たず、後から見つかった Mac が次のキーまで出ない (単体の main.go にも以前からあった) →
+      待っているチャネルを覚えて、走査が替わったら待ち直す / P2 読み直しの settle の起点が最後の Advance の古い時刻 → `Reload` が今を読む /
+      P3 待ちの goroutine が開き直すたびに漏れる → `Scanner.Close` が `Changed` を閉じる (`sync.Once`・`wg.Wait` の後) / P3 入力中の連打を飲まない分岐にテストが無い → 足した /
+      P3 NO_COLOR を上書きして 24bit を強制 → 見る。いずれも変異で赤を確かめた
+    - 敵対的レビュー 2 周目 (直した差分): P1 / P2 なし。P3 テストの偽の走査が `Changed` を閉じない / `TestLanChangedMsgRearms` が tick の状態に頼る /
+      NO_COLOR の読み方が colorprofile と違う → 直した。P3 単体の `main.go` の待ち直しにテストが無い → 記録だけ (package main にテストが無く、2 周目の机上の追跡で二重待ち・漏れなし)
+    - 全体の実装レビュー (fable 1 体。段 1 / 3 / 5): P1 なし。直したもの (変異で赤を確かめた): P2 ルーターの無い I/F が 2 つある相手の内部 IP を map の順で選び、描くたびに
+      ssh 先が入れ替わった → I/F の番号の順で最初の IP / P2 ssh の終了コード (相手のシェル・接続失敗の 255) を「起こせなかった」と出した → treefiler と同じく終了コードは
+      失敗と言わない / P3 別名を Enter の時点のカーソル行へ書いた → 開いたときの Mac に付ける / P3 `$USER` を lanmgr が読んでいた → live へ。
+      fable の指摘を直した差分に追加の敵対的レビューは回していない (どれも変異で赤を確かめた局所の修正)
+    - 残したもの (未着手・未確認):
+      - 共有台帳へ広げる前に、削除の墓標 (`removed_at` / tombstone。台帳の version 2) が要る。今は行ごと消すので、2 台の台帳を「新しい方を採る」で合わせると外した Mac が戻る。
+        `/etc/hosts` に別名を使うなら、別名は自由文なので別の欄か検証が要る
+      - 走査は一度引き当てたインスタンスを引き直さない (`discover/scan.go` の `seen`)。相手の再起動で 169.254 が変わっても `r` まで古い IP のまま
+      - `IfName` が空を返す I/F (VM の NAT の bridge100 等) の IP を内部 IP として「有線・固定」の札で出す。netinfo の `Kind` を相手の IP にも当てるとよい
+      - issue の決定と実装の差: 「有線だけに絞る設定」が prefs に無い / 要件 3「繋ぐ前に経路が有線を向くか確かめる」が無い (固定 IP の決定で要るかを段 4 で判断) /
+        相手ごとのユーザー名を変える口が無い (台帳に `user` はあるが登録時の `$USER` のまま)。段 4 の範囲で決める
+      - tmux の prefix を入力欄の編集キー (C-a / C-b) にしていると、L の入力中にその編集が使えない (`tui.go` の `inputEditsWith` が issues しか見ない。treefiler の F も同じ)
+      - 24bit の判定の `tmux display -p` は `-t` を付けていない。クライアントが複数あると別の端末の機能を読むかもしれない (未確認)
+      - `L` を開くたびに `networksetup` / `scutil` を同期で読む (fable の実測で約 200 ms。サービス 5 個)
+    - root の make test: restartable の `TestGroupStopWaitsForDescendantAfterLeaderExit` が負荷の中で落ちることがある (単独では緑。この変更は restartable を触らない)
   - [x] 段 2 は不要にした (lipgloss を v2.0.5 に固定。上の「段取り」の 2)
   - [x] 段 1: module の土台と `netinfo` / `discover` / `ledger` (2026-10-15。commit「mac-lan-manager: 段 1 …」)
     - テストの fixture は 2026-10-15 にこの Mac で本物のコマンドから取った出力 (MAC と IPv6 のリンクローカルは伏せた)。`dns-sd -L` は空白を `\032` で返す

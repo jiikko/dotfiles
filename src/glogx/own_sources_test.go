@@ -12,11 +12,12 @@ import (
 
 // ownSourceRoots は「glogx の画面に出るコード」の置き場所。glogx 本体と、go.mod の replace で
 // 取り込む tuikit (幅の単一情報源 termwidth と、演出・合成の部品がそこにある)・doctor・
-// ratelimit (利用枠の盤と表の描画 = usage パッケージ)・treefiler・safefs (ファイル操作の失敗の文言が F の toast に出る)。
+// ratelimit (利用枠の盤と表の描画 = usage パッケージ)・treefiler・safefs (ファイル操作の失敗の文言が F の toast に出る)・
+// mac-lan-manager (L の板)。
 //
 // 🚨 表示の不変条件を走査で守る検査 (VS16 リテラル / 2 本目の幅エンジン) はここを回すこと。
 // "." だけを回すと、tuikit へ移した部品が黙って検査対象から外れる。
-var ownSourceRoots = []string{".", filepath.Join("..", "tuikit"), filepath.Join("..", "doctor"), filepath.Join("..", "ratelimit"), filepath.Join("..", "treefiler"), filepath.Join("..", "safefs")}
+var ownSourceRoots = []string{".", filepath.Join("..", "tuikit"), filepath.Join("..", "doctor"), filepath.Join("..", "ratelimit"), filepath.Join("..", "treefiler"), filepath.Join("..", "safefs"), filepath.Join("..", "mac-lan-manager")}
 
 // walkOwnSources は ownSourceRoots を順に filepath.WalkDir し、各エントリで fn を呼ぶ。
 // どれかの根で .go を 1 つも見なかったら落とす (根が移動・改名されると、その根の検査が

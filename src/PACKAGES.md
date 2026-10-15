@@ -31,6 +31,7 @@
 - `src/mac-lan-manager/discover` (`mac-lan-manager/discover`) — Package discover は、Bonjour (dns-sd) で LAN の Mac を見つけるときの出力を読む。
 - `src/mac-lan-manager/lanmgr` (`mac-lan-manager/lanmgr`) — Package lanmgr は mac-lan-manager の画面 (一覧・詳細カード・設定・この Mac の IP のコピー) を持つ。
 - `src/mac-lan-manager/ledger` (`mac-lan-manager/ledger`) — Package ledger は、管理対象の Mac の台帳を読み書きする (台帳は mac-lan-manager を実行している Mac の中だけに持つ)。
+- `src/mac-lan-manager/live` (`mac-lan-manager/live`) — Package live は lanmgr の画面を本物 (この Mac のネットワーク・Bonjour・台帳・設定・クリップボード) につなぐ。
 - `src/mac-lan-manager/netinfo` (`mac-lan-manager/netinfo`) — Package netinfo は、この Mac のネットワークのサービスと I/F の IP を、networksetup と ifconfig の出力から読む。
 - `src/mac-lan-manager/prefs` (`mac-lan-manager/prefs`) — Package prefs は mac-lan-manager の設定 (一覧に出す IP・内部 IP の決め方) を読み書きする。
 - `src/mp4box` (`mp4box`) — Command mp4-effective-size は、MP4 のトップレベルの box を先頭から辿り、壊れていない box の大きさの合計 (実効サイズ) をバイト数で出す。 (main)
@@ -95,6 +96,7 @@
 - `src/tuikit/markdown` (`github.com/jiikko/dotfiles/src/tuikit/markdown`) — Package markdown は markdown の本文を width 桁の端末行へ整形する (見出し・箇条書き・表・ フェンスコードの chroma ハイライト)。
 - `src/tuikit/sgr` (`github.com/jiikko/dotfiles/src/tuikit/sgr`) — Package sgr は端末の基本 SGR (Select Graphic Rendition) シーケンスを 1 箇所に置く。
 - `src/tuikit/spinner` (`github.com/jiikko/dotfiles/src/tuikit/spinner`) — Package spinner は回る印 (点字の 10 コマ) の字形と、何番目のコマを出すかの選び方を持つ。
+- `src/tuikit/termcolor` (`github.com/jiikko/dotfiles/src/tuikit/termcolor`) — Package termcolor は、24bit の色をそのまま書き出してよいかの判定 (bubbletea の色の判定を tmux の中で補う)。
 - `src/tuikit/termwidth` (`github.com/jiikko/dotfiles/src/tuikit/termwidth`) — Package termwidth は端末表示幅の単一情報源。
 - `src/tuikit/toast` (`github.com/jiikko/dotfiles/src/tuikit/toast`) — Package toast は右下に数秒だけ出す通知 (トースト) のスタック。
 - `src/tuikit/widthenv` (`github.com/jiikko/dotfiles/src/tuikit/widthenv`) — Package widthenv は「tuikit の幅モデルが支持しない env」の検出とその文言を 1 箇所に集める。

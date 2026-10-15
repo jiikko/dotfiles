@@ -207,6 +207,7 @@ func hintSurfaces() []hintSurface {
 		fullScreenStatus:    "q: 終了",
 		fullScreenIssues:    "q: 終了",
 		fullScreenFiler:     "F: 閉じる",
+		fullScreenLan:       "L/q: 閉じる",
 	}
 	for _, c := range fullScreenCases {
 		exit, ok := exits[c.id]

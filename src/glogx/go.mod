@@ -11,6 +11,7 @@ require (
 )
 
 require (
+	charm.land/lipgloss/v2 v2.0.5 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260803092147-8b693049ce2a // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
@@ -25,7 +26,7 @@ require (
 	atomicfile v0.0.0
 	charm.land/bubbletea/v2 v2.0.8
 	doctor v0.0.0
-	github.com/charmbracelet/colorprofile v0.4.3 // indirect
+	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/dlclark/regexp2/v2 v2.5.2 // indirect
 	github.com/jiikko/dotfiles/src/termsafe v0.0.0
@@ -35,6 +36,7 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sys v0.47.0 // indirect
+	mac-lan-manager v0.0.0
 	ratelimit v0.0.0
 	safefs v0.0.0 // indirect
 	subproc v0.0.0
@@ -56,3 +58,5 @@ replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit
 
 replace safefs => ../safefs
+
+replace mac-lan-manager => ../mac-lan-manager

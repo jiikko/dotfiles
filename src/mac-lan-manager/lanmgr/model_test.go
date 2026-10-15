@@ -3,6 +3,7 @@ package lanmgr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -106,11 +107,7 @@ func newHarness(t *testing.T, hosts []ledger.Host, peers []discover.Peer) *harne
 func (h *harness) keys(ks ...string) Action {
 	var a Action
 	for _, k := range ks {
-		text := ""
-		if len([]rune(k)) == 1 {
-			text = k
-		}
-		a = h.m.HandleInput(k, text)
+		a = h.m.HandleKey(k)
 	}
 	return a
 }
@@ -426,5 +423,101 @@ func TestReadNetErrorStillOpens(t *testing.T) {
 	m.Resize(100, 30)
 	if lines := m.View(); len(lines) != 30 {
 		t.Errorf("ネットワークが読めなくても画面は出す: %d 行", len(lines))
+	}
+}
+
+// 入力欄を開いている間は、glogx の横断キー (i / R / D / F / L / U) もこの画面のキー (打っている文字を横断で消さない)。
+// 開いていなければ横断キーは glogx へ譲る (s だけはここの ssh)。
+func TestBindsYieldsCrossKeysOnlyOutsideInput(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini})
+	for _, k := range []string{"i", "R", "D", "F", "L", "U"} {
+		if h.m.Binds(k) {
+			t.Errorf("一覧で %q を取っている (glogx の横断キーが効かない)", k)
+		}
+	}
+	if !h.m.Binds("s") || !h.m.Binds("j") {
+		t.Error("s (ssh) / j (移動) を取っていない")
+	}
+	h.keys("/", "i", "space", "L")
+	for _, k := range []string{"i", "R", "L", "U"} {
+		if !h.m.Binds(k) {
+			t.Errorf("絞り込みの入力中に %q を譲った (打っている文字が横断で消える)", k)
+		}
+	}
+	if got := h.m.filter.String(); got != "i L" {
+		t.Errorf("絞り込みの文字 = %q, want %q (HandleKey が space と字を入れる)", got, "i L")
+	}
+}
+
+// glogx は Space を " " に書き換えてから板へ渡す。" " でも "space" と同じく台帳の登録の確認が開く (半ページ送りに化けない)。
+func TestSpaceSpelledAsBlankRegisters(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini})
+	h.keys("l", "j")
+	if !h.m.Binds(" ") {
+		t.Error(`Binds(" ") が false`)
+	}
+	h.m.HandleKey(" ")
+	if h.m.ov != ovConfirm {
+		t.Fatalf(`" " で台帳の登録の確認が開かない (ov=%v)`, h.m.ov)
+	}
+}
+
+// Reload は走査の settle の起点を今にする (最後の Advance の古い時刻で起こすと、開き直した直後に走査中が消える)。
+func TestReloadStartsScanAtNow(t *testing.T) {
+	now := t0
+	var started []time.Time
+	m := New(Options{
+		StartScan: func(at time.Time) Scanner { started = append(started, at); return &fakeScan{} },
+		Now:       func() time.Time { return now },
+	})
+	now = t0.Add(10 * time.Minute)
+	m.Reload()
+	if len(started) != 2 || !started[1].Equal(now) {
+		t.Errorf("走査の起点 = %v, want 2 回目は %v", started, now)
+	}
+}
+
+// ルーターの無い I/F が 2 つある相手でも、内部 IP は描くたびに同じ (I/F の番号の小さい方)。map の順で選ぶと揺れる。
+func TestLanIPIsDeterministicAcrossIFs(t *testing.T) {
+	two := discover.Peer{Host: "two.local", SSH: true, Addrs: map[int]string{168: "192.168.100.5", 32: "169.254.1.1", 40: "10.0.0.7", 50: "10.0.0.8"}}
+	h := newHarness(t, nil, []discover.Peer{two})
+	for i := range 200 {
+		rs := h.m.rows()
+		if got := rs[len(rs)-1].lanIP; got != "169.254.1.1" {
+			t.Fatalf("%d 回目の内部 IP = %q, want 169.254.1.1 (I/F の番号の小さい方)", i, got)
+		}
+	}
+}
+
+type exitCodeError struct{}
+
+func (exitCodeError) Error() string { return "exit status 255" }
+func (exitCodeError) ExitCode() int { return 255 }
+
+// ssh の終了コード (相手のシェルの最後のコマンド・接続できなかった 255) は「起こせなかった」と言わない。起動できなかったときだけ言う。
+func TestExecDoneIgnoresExitCode(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	if w := h.m.ExecDone(fmt.Errorf("ssh: %w", exitCodeError{})); w != "" {
+		t.Errorf("終了コードで知らせた: %q", w)
+	}
+	if w := h.m.ExecDone(errors.New(`exec: "ssh": executable file not found in $PATH`)); w == "" {
+		t.Error("起動できなかったのに知らせない")
+	}
+}
+
+// 別名は入力欄を開いたときの Mac に付く (入力中に走査で行が増えてカーソルがずれても、別の Mac に付けない)。
+func TestAliasGoesToMacOpenedFor(t *testing.T) {
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2"}, {Host: "studio.local", User: "koji"}}, []discover.Peer{mini})
+	h.keys("j", "m")
+	opened := h.m.current().host
+	h.m.cur[h.m.tab]++ // 入力中にカーソルの下の行が入れ替わった
+	if h.m.current().host == opened {
+		t.Fatal("前提が作れていない: カーソルの下が同じ Mac のまま")
+	}
+	h.keys("x", "enter")
+	for _, x := range h.store.hosts {
+		if want := map[bool]string{true: "x", false: ""}[x.Host == opened]; x.Alias != want {
+			t.Errorf("%s の別名 = %q, want %q", x.Host, x.Alias, want)
+		}
 	}
 }

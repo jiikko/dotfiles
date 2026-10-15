@@ -12,6 +12,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/spinner"
+	"github.com/jiikko/dotfiles/src/tuikit/termcolor"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 	"maps"
 	"math"
@@ -26,6 +27,7 @@ import (
 	"subproc"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 )
 
 // Bubble Tea による less 風の対話ブラウズ (カーソル移動 + CI job 表示)。
@@ -355,6 +357,8 @@ type browseModel struct {
 	rlDash ratelimitDash
 	// filerV は F の全画面 treefiler (filer_view.go)。画面の部品は src/treefiler の filer パッケージ
 	filerV filerView
+	// lanV は L の全画面 mac-lan-manager (lan_view.go)。画面の部品は src/mac-lan-manager の lanmgr パッケージ
+	lanV lanView
 	// doctorOv は D の全画面 doctor (doctor_view.go)。rlDash と同じ薄い器で、開くと走査を始める
 	doctorOv doctorView
 	// status viewer (s キーで開く全画面の作業ツリービュー)。stage / unstage / 変更を捨てる を
@@ -853,6 +857,14 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filerV.advance(timeNow())
 		m.drainFilerNotices()
 		return m, tea.Batch(m.filerV.rearm(msg), m.maybeTick())
+	case lanChangedMsg:
+		// mac-lan-manager の走査の合図。取り込んで、今のチャネルからの合図なら次の合図を待ち直す
+		if !msg.ok {
+			return m, nil
+		}
+		m.lanV.advance(timeNow())
+		m.drainLanNotices()
+		return m, tea.Batch(m.lanV.rearm(msg), m.maybeTick())
 	case tickMsg:
 		m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
 		// 閉じる演出が着地したらここで初めて終了する (演出の間はまだ描き続ける)
@@ -868,6 +880,8 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// treefiler の動きも spinnerActive の判定より前に進める (後ろだと、動き終わる最後の 1 拍が届かず途中の姿で止まる)
 		m.filerV.advance(timeNow())
 		m.drainFilerNotices()
+		m.lanV.advance(timeNow()) // 走査の途中の結果を取り込む (spinnerActive の判定より前: 走査が終わる最後の 1 拍を取りこぼさない)
+		m.drainLanNotices()
 		if !m.spinnerActive() {
 			return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
 		}
@@ -1390,6 +1404,16 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.maybeTick()
 		}
+		// mac-lan-manager の s (ssh) / o から戻ったとき。起こせなかったときだけ知らせる (ssh の終了コードは相手のシェルのもの)
+		if m.lanV.execPending {
+			m.lanV.execPending = false
+			if lm := m.lanV.live(); lm != nil {
+				if w := lm.ExecDone(msg.err); w != "" {
+					m.showWarning(firstLine(w))
+				}
+			}
+			return m, m.maybeTick()
+		}
 		// エディタを閉じて復帰。job ログは stdin 渡しなのでファイルは残らず、バッファも破棄済み。
 		// 🚨 issues viewer の e (別名 v) だけは実ファイルを編集可能で開く (メモを足せるように
 		// readonly にしていない) ので、復帰の境界で取り直す。取り直さないと編集結果 (H1・front matter の
@@ -1427,6 +1451,9 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.activeFullScreen() == fullScreenFiler && !m.actModal.active() && !m.restartPromptVisible() {
 			m.filerV.paste(msg.Content) // 入力中 (検索・! のコマンド) だけ入る。filer が捨てる
+		}
+		if m.activeFullScreen() == fullScreenLan && !m.actModal.active() && !m.restartPromptVisible() {
+			m.lanV.paste(msg.Content) // 入力中 (絞り込み・別名・帯) だけ入る。lanmgr が捨てる
 		}
 		return m, m.maybeTick()
 	case tea.KeyPressMsg:
@@ -1486,6 +1513,9 @@ func (m *browseModel) updateKeyReachable(key string) bool {
 	// treefiler は C を「経路以外を全部畳む」に使う (spec §0.1)。入力モード中は X も譲る (どちらも filer の Binds が決める)
 	if m.filerV.visible() && m.filerV.binds(key) {
 		return false
+	}
+	if m.lanV.visible() && m.lanV.binds(key) {
+		return false // mac-lan-manager の入力中・確認・設定も全部のキーを譲る (lanmgr の Binds が決める)
 	}
 	return true
 }
@@ -1652,6 +1682,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m.routeKeyToStatus(key)
 	case fullScreenFiler:
 		return m.routeKeyToFiler(key)
+	case fullScreenLan:
+		return m.routeKeyToLan(key)
 	case fullScreenNone, fullScreenCount:
 		// 一覧を見ている (fullScreenCount は番兵で activeFullScreen は返さない)。下へ落とす
 	}
@@ -1676,6 +1708,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// F = 全画面 treefiler (issue 662)。R / D と同じ判定位置なので、diff・PR status・job パネルの上からも開く
 	if key == "F" {
 		return m, m.openFullScreen(fullScreenFiler)
+	}
+	// L = 全画面 mac-lan-manager (issue 747)。F と同じ判定位置
+	if key == "L" {
+		return m, m.openFullScreen(fullScreenLan)
 	}
 	m.usageOv.dismiss()
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
@@ -2422,6 +2458,7 @@ func (m *browseModel) cancelAll() {
 	m.issuesOv.stopWatch()
 	m.stopGitLogWatch() // git log の見張りも同じ理由で閉じる (gitlog_watch.go)
 	m.doctorOv.stop()   // doctor の走査 goroutine / 子プロセス (brew / simctl) を止める (popup の開閉で残さない)
+	m.lanV.stop()       // mac-lan-manager の Bonjour の走査 (終わらない dns-sd) を止める
 }
 
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
@@ -2562,6 +2599,9 @@ func (m *browseModel) swallowKeyRepeat(key string) bool {
 	}
 	if m.activeFullScreen() == fullScreenFiler && m.filerV.ownsKeys() {
 		return false // treefiler の検索・! の入力中も同じ (ss / dd の 2 字目が飲まれていた。レビューの指摘 2026-10-09)
+	}
+	if m.activeFullScreen() == fullScreenLan && m.lanV.ownsKeys() {
+		return false // mac-lan-manager の絞り込み・別名の入力中も同じ
 	}
 	if !repeatGuardedKeys[key] {
 		m.lastKey, m.lastKeyAt = "", time.Time{} // 別のキーが来たら押しっぱなしは切れている
@@ -3512,7 +3552,7 @@ func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
 	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.listHasPending() || m.panelHasPendingJob() || m.usageOv.loading() || m.rlDashLoading() || m.issuesOv.loading() ||
-		m.statusOv.fetching() || m.doctorOv.scanning() || m.doctorOv.deleting() || m.filerV.busy()
+		m.statusOv.fetching() || m.doctorOv.scanning() || m.doctorOv.deleting() || m.filerV.busy() || m.lanV.busy()
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ
@@ -3737,7 +3777,7 @@ func (m *browseModel) View() tea.View {
 // (action モーダル・再起動・usage は左上の入力欄に重なりうる) は置かない。
 func (m *browseModel) caret() *tea.Cursor {
 	active := m.activeFullScreen()
-	if m.done || (active != fullScreenIssues && active != fullScreenFiler) || m.zoom.scale(timeNow()) < appZoomSnap {
+	if m.done || (active != fullScreenIssues && active != fullScreenFiler && active != fullScreenLan) || m.zoom.scale(timeNow()) < appZoomSnap {
 		return nil
 	}
 	// toast は見ない: 右下に積む板で、入力欄のある 0 行目に届くのは窓が 4 行以下 (端末の高さ 5 以下) のときだけ
@@ -3747,10 +3787,15 @@ func (m *browseModel) caret() *tea.Cursor {
 	}
 	var x, y int
 	var ok bool
-	if active == fullScreenFiler {
+	switch active {
+	case fullScreenFiler:
 		x, y, ok = m.filerV.caretPos() // treefiler の検索欄 (最下行)
-	} else {
+	case fullScreenLan:
+		x, y, ok = m.lanV.caretPos() // mac-lan-manager の絞り込み・別名・帯の入力欄
+	case fullScreenIssues:
 		x, ok = m.issuesOv.caretCol(m.issuesOpts())
+	case fullScreenNone, fullScreenRatelimit, fullScreenDoctor, fullScreenStatus, fullScreenCount:
+		return nil // 入力欄が無い (上の判定で弾いている)
 	}
 	if !ok {
 		return nil
@@ -3844,6 +3889,8 @@ func (m *browseModel) viewLines() string {
 		return m.finishWithGlobalChrome(m.issuesOv.lines(m.issuesOpts()), page)
 	case fullScreenFiler:
 		return m.finishWithGlobalChrome(m.filerV.lines(m.contentWidth(), page), page)
+	case fullScreenLan:
+		return m.finishWithGlobalChrome(m.lanV.lines(m.contentWidth(), page), page)
 	case fullScreenNone, fullScreenCount:
 		// 全画面ビューアが出ていない = 下でコミット一覧を組む
 	}
@@ -4122,6 +4169,8 @@ func (m *browseModel) hintLine() string {
 		return m.hintLineText(m.issuesOv.hint(m.hintWidth()))
 	case fullScreenFiler:
 		return m.hintLineText(m.filerV.hint(m.hintWidth()))
+	case fullScreenLan:
+		return m.hintLineText(m.lanV.hint(m.hintWidth()))
 	case fullScreenNone, fullScreenCount:
 		// 全画面ビューアが出ていない = 下の一覧の hint
 	}
@@ -4181,7 +4230,16 @@ func clampIdx(i, total int) int {
 // 終了時に表示は消える (git log の pager と同じ。ユーザー要望 2026-07-17)。
 func RunBrowse(m *browseModel) (*browseModel, error) {
 	// Alt Screen は View が宣言する (v2 では program オプションではない)。
-	p := tea.NewProgram(m)
+	var opts []tea.ProgramOption
+	// tmux の中でも、外側の端末が対応していれば 24bit の色をそのまま書く (treefiler の F と mac-lan-manager の L の板が 24bit の色を描く。
+	// 判定しないと 256 色に落ちて面の色が紺になる。理由は tuikit/termcolor の doc)。glogx 自身の色は 256 色・基本色なので変わらない
+	if termcolor.TrueColorThroughTmux(os.Getenv("TMUX"), func(ctx context.Context, name string, args ...string) (string, error) {
+		out, err := subproc.CommandContext(ctx, name, args...).Output()
+		return string(out), err
+	}) {
+		opts = append(opts, tea.WithColorProfile(colorprofile.TrueColor))
+	}
+	p := tea.NewProgram(m, opts...)
 	final, err := p.Run()
 	if err != nil {
 		return m, err

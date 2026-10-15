@@ -37,6 +37,7 @@ type Scanner struct {
 	pending int // 引き当て中の数 (Busy の判定)
 	settle  time.Time
 	changed chan struct{}
+	closing sync.Once
 	seen    map[string]bool // 引き当てを起こしたサービス + インスタンス (同じものが Wi-Fi と有線の 2 つの I/F で Add されても 1 回だけ引く)
 	sem     chan struct{}   // 同時に起こす引き当ての上限 (LAN 上の広告の数だけ dns-sd を起こさない)
 }
@@ -105,10 +106,15 @@ func (s *Scanner) Snapshot() []Peer {
 	return out
 }
 
-// Close は自分が起こした dns-sd を全部止め、裏の goroutine が終わるのを待つ。
+// Close は自分が起こした dns-sd を全部止め、裏の goroutine が終わるのを待ってから Changed を閉じる (待っている側は ok=false で抜ける。
+// 閉じないと、開き直しや r のたびに古いチャネルを待つ goroutine が 1 本ずつ残る。red team の指摘 2026-10-15)。何度呼んでもよい。
+// 🚨 notify は wg が待つ goroutine の中からしか呼ばないので、Wait の後に閉じれば閉じたチャネルへ送らない。
 func (s *Scanner) Close() {
-	s.cancel()
-	s.wg.Wait()
+	s.closing.Do(func() {
+		s.cancel()
+		s.wg.Wait()
+		close(s.changed)
+	})
 }
 
 func (s *Scanner) browse(svc string) {

@@ -48,6 +48,7 @@ linters:
             - "**/highlight/**"
             - "**/markdown/**"
             - "**/sgr/**"
+            - "**/termcolor/**"
             - "**/termwidth/**"
             - "**/widthenv/**"
             - "**/toast/**"
@@ -64,7 +65,7 @@ linters:
               desc: 部品はフレームワーク非依存 (tick は使う側が回す。README の「使う側の約束」)
         # 部品は「状態 → 文字列」の純粋な層。I/O・プロセス起動・非同期を持ち込むと、毎フレーム呼ばれる
         # 合成の性能とテスト容易性が壊れる (glogx の render.go に掛けていた render-pure と同じ)。
-        # widthenv は環境変数を読む・editor は外部のエディタを起こすのが仕事なので対象外。
+        # widthenv は環境変数を読む・editor は外部のエディタを起こす・termcolor は端末 (tmux) に機能を聞くのが仕事なので対象外。
         parts-pure:
           files:
             - "**/anim/**"

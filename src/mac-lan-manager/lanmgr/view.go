@@ -59,7 +59,7 @@ func (m *Model) View() []string {
 }
 
 func (m *Model) footer() string {
-	pairs := [][2]string{{"j/k", "移動"}, {"h/l", "タブ"}, {"space", "台帳"}, {"c", "この Mac の IP"}, {",", "設定"}, {"?", "全部のキー"}, {"q", "終了"}}
+	pairs := [][2]string{{"j/k", "移動"}, {"h/l", "タブ"}, {"space", "台帳"}, {"c", "この Mac の IP"}, {",", "設定"}, {"?", "全部のキー"}, {"q", "閉じる"}}
 	switch {
 	case m.sc == scSettings:
 		pairs = [][2]string{{"j/k", "項目"}, {"space", "入/切"}, {"←/→", "選ぶ"}, {"enter", "編集"}, {"q/esc/,", "閉じる"}}

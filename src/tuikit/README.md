@@ -18,12 +18,13 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 |---|---|---|
 | `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …)。折り返しは `Wrap(s, 幅, 頭の空白を落とすか)` (書記素単位) / `WordWrap(s, 幅)` (単語の境目で折る)。`EscLen(s)` は先頭のエスケープ列のバイト長 (使う側が列を読み飛ばすときも終わりの見方を自前で書かない) | 行を幅で切る・揃える・折るときは**必ずここを通す** (x/ansi の `Hardwrap` / `Wrap` はキーキャップで幅を超える。tuikit と、tuikit を使う全 module が lint で禁止) |
 | `widthenv` | 幅モデルが支持しない環境変数 (`RUNEWIDTH_EASTASIAN`) の検出 | 起動時の警告・テストのガード |
+| `termcolor` | `TrueColorThroughTmux(TMUX の値, 起こす口)`: tmux の中で外側の端末が 24bit の色に対応しているか (`#{client_termfeatures}` に RGB があるか。`HasRGB`)。bubbletea v2 の色の判定は tmux の中では tmux の端末の定義しか見ず、24bit の色を 256 色に落とすので、その補い | true なら `tea.WithColorProfile(colorprofile.TrueColor)` を渡す。24bit の色を描く glogx (treefiler・mac-lan-manager の板) と bin/mac-lan-manager |
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …)・256 色の番号の RGB (`XtermRGB`。色を混ぜる・暗くする計算用) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
 | `spinner` | 回る印 (点字 10 コマ・各 1 桁) の字形: `Frame(i)` (i 番目。負や Len 超えも回す) / `At(時刻, 1 コマの長さ)` (時刻から選ぶ。描き直しの回数に依らない) / `Len`。状態も tea.Cmd も持たない | 処理中の印を画面ごとに定義しない。いつ tick するか・いつ止めるかは各画面が持つ (回すものがある間だけ回す) |
 | `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `Panel` (落ち影つきの板) と `PanelContentWidth` (Panel に渡す幅から中身の幅を出す) / `Overlay` / `OverlayCentered` / `OverlayRight` (右端に寄せて重ねる) / `PadTo` | 画面の合成 |
 | `confirm` | y/N 確認ダイアログ: `Dialog` (本文 + 空行 + 案内の板) / `Box` (幅 44 で頭打ちの中央の板) / `WideDialog` (幅の上限を `WideMaxWidth` = 64 にした `Dialog`。揃えた行が 44 では切れる確認用) / `IsYes` (y・Y・Enter) / `IsYesStrict` (y・Enter) / 案内の定型 `HintYesNo` / `HintYesOther` / `FitHint(案内, 幅)` (`Box` に案内の行を自分で並べるとき、`Dialog` と同じ規則で狭い板では短い形に替える) | 破壊的操作の確認を毎回組まない。語彙の正本は `docs/glogx-ui-guide.md` §4 |
-| `lineedit` | 1 行の入力欄 (カーソル + readline の編集キー: `ctrl+h` / `ctrl+w` / `ctrl+u` / `ctrl+k` / `ctrl+a` / `ctrl+e` …)。移動と削除は書記素単位 (肌色・ZWJ・国旗・結合文字を割らない)。`Window(幅)` は欄に出す文字列とキャレットの桁 (長ければキャレットが欄に収まるよう前を切る。全角は 2)。保存したカーソルは `SetCursor` で戻す | 入力欄を毎回書かない。キーの語彙の正本は `docs/glogx-ui-guide.md` §7 |
+| `lineedit` | 1 行の入力欄 (カーソル + readline の編集キー: `ctrl+h` / `ctrl+w` / `ctrl+u` / `ctrl+k` / `ctrl+a` / `ctrl+e` …)。移動と削除は書記素単位 (肌色・ZWJ・国旗・結合文字を割らない)。`Window(幅)` は欄に出す文字列とキャレットの桁 (長ければキャレットが欄に収まるよう前を切る。全角は 2)。保存したカーソルは `SetCursor` で戻す。`KeyText(キー)` はキーの表記から入力する文字を推す (Text を持たない呼び出し側用) | 入力欄を毎回書かない。キーの語彙の正本は `docs/glogx-ui-guide.md` §7 |
 | `caret` | `At(x, y, 幅, 高さ)`: 入力欄のキャレットに置く棒の端末のカーソル (bubbletea v2 の `tea.Cursor`。幅の外の桁は最終列へ寄せ、画面の外の行なら nil) | IME の変換中の文字を入力欄に出す (IME は端末のカーソルの位置に出す)。桁は `lineedit.Line.Window` の「欄の左端 + 桁」。**tuikit で唯一 bubbletea を import する** (置く先が `tea.Cursor` そのもの)。pro-con の入力欄・回答フォームと schedkeys が使う (issue 517) |
 | `editor` | 実ファイルを 1 つエディタで開くコマンド ($VISUAL → $EDITOR → nvim、空白で語分割、quote は解釈しない) | glogx と pro-con の共通。`foreground.Exec` で前景で待つ前提 (GUI エディタは -w) |
 | `foreground` | 端末の前面 (前面のプロセスグループ) の確かめと取り戻し: `Owner` / `Reclaim` (使い捨ての子に移させる) / `Detached` (制御端末を持たせない子の SysProcAttr) / `Exec` (端末を外のコマンドへ渡す bubbletea の ExecCommand。戻った後、入れ直しの前に前面を取り戻す。bubbletea は import しない)。`ptytest` は擬似端末の上で helper を走らせる検査の部品 | 端末を子へ渡すときは `x := foreground.NewExec(cmd)` を `tea.Exec(x, fn)` に渡し、`fn` で `x.Err` (取り戻せなかった理由) を読む (glogx・treefiler は ruleguard、pro-con は forbidigo で `tea.ExecProcess` を禁止)。子の対話のシェルが前面を持ち去ったまま終わっても画面が固まらない (stdin が端末のとき。issue 518 / 707) |
@@ -191,7 +192,7 @@ if confirm.IsYes(key) { run() }
 
 | 何を | どこで |
 |---|---|
-| 部品 (`anim` / `confirm` / `editor` / `highlight` / `layout` / `lineedit` / `listnav` / `markdown` / `sgr` / `termwidth` / `toast` / `widthenv`) は bubbletea を import しない (使ってよいのは `caret` と `examples/`) | `.golangci.yml` の depguard (`no-framework-in-parts`) |
+| 部品 (`anim` / `confirm` / `editor` / `highlight` / `layout` / `lineedit` / `listnav` / `markdown` / `sgr` / `termcolor` / `termwidth` / `toast` / `widthenv`) は bubbletea を import しない (使ってよいのは `caret` と `examples/`) | `.golangci.yml` の depguard (`no-framework-in-parts`) |
 | 部品 (上から `editor`・`widthenv` を除いたもの) は `os` / `os/exec` / `context` を import しない | `.golangci.yml` の depguard (`parts-pure`) |
 | 部品の中で `time.Now` / `time.Since` を呼ばない | `.golangci.yml` の forbidigo |
 | 幅モデルは 1 系統 (runewidth・uniseg・`ansi.StringWidthWc` を使わない) | `.golangci.yml` の depguard / forbidigo |

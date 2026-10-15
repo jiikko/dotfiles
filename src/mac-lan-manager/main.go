@@ -8,10 +8,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
-	"os/exec"
-	"slices"
 	"strings"
 	"time"
 
@@ -20,14 +17,12 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/caret"
 	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/termcolor"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 
-	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
-	"mac-lan-manager/ledger"
-	"mac-lan-manager/netinfo"
-	"mac-lan-manager/prefs"
+	"mac-lan-manager/live"
 	"subproc"
 )
 
@@ -39,8 +34,11 @@ const frameInterval = 16 * time.Millisecond
 
 type tickMsg struct{}
 
-// changedMsg は走査の結果が変わった合図 (ok=false はチャネルが閉じた = もう待たない)。
-type changedMsg struct{ ok bool }
+// changedMsg は走査の結果が変わった合図。ch はどのチャネルからか (ok=false はチャネルが閉じた = もう待たない)。
+type changedMsg struct {
+	ch <-chan struct{}
+	ok bool
+}
 
 // waitChange は走査の合図を待つ (Busy の間しか tick を張らないので、後から見つかった Mac を出すにはこれを待つ)。
 func waitChange(ch <-chan struct{}) tea.Cmd {
@@ -49,20 +47,31 @@ func waitChange(ch <-chan struct{}) tea.Cmd {
 	}
 	return func() tea.Msg {
 		_, ok := <-ch
-		return changedMsg{ok}
+		return changedMsg{ch, ok}
 	}
 }
 
 type execDoneMsg struct{ err, reclaimErr error }
 
 type app struct {
-	m       *lanmgr.Model
-	toast   toast.Stack
-	w, h    int
-	ticking bool
+	watching <-chan struct{} // 今待っている走査の合図のチャネル (r で走査が替わったら待ち直す)
+	m        *lanmgr.Model
+	toast    toast.Stack
+	w, h     int
+	ticking  bool
 }
 
-func (a *app) Init() tea.Cmd { return tea.Batch(a.tick(), waitChange(a.m.Changed())) }
+func (a *app) Init() tea.Cmd { return tea.Batch(a.tick(), a.watch()) }
+
+// watch は今の走査のチャネルにまだ待ちを張っていなければ張る (r が走査を起こし直すと、前に張った待ちは古いチャネルを見ている)。
+func (a *app) watch() tea.Cmd {
+	ch := a.m.Changed()
+	if ch == nil || ch == a.watching {
+		return nil
+	}
+	a.watching = ch
+	return waitChange(ch)
+}
 
 func (a *app) tick() tea.Cmd {
 	if a.ticking {
@@ -113,8 +122,8 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		a.ticking = false
 	case changedMsg:
-		if msg.ok {
-			cmds = append(cmds, waitChange(a.m.Changed())) // 取り込みは下の Advance。また次の合図を待つ
+		if msg.ok && msg.ch == a.watching {
+			cmds = append(cmds, waitChange(msg.ch)) // 取り込みは下の Advance。また次の合図を待つ
 		}
 	}
 	a.m.Advance(time.Now())
@@ -124,7 +133,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	for _, t := range a.toast.Advance() {
 		cmds = append(cmds, tea.Tick(t.After, func(time.Time) tea.Msg { return t.Msg }))
 	}
-	cmds = append(cmds, a.tick())
+	cmds = append(cmds, a.tick(), a.watch())
 	return a, tea.Batch(cmds...)
 }
 
@@ -139,52 +148,6 @@ func (a *app) View() tea.View {
 		v.Cursor = caret.At(x, y, a.w, a.h)
 	}
 	return v
-}
-
-func runOut(ctx context.Context, name string, args ...string) (string, error) {
-	out, err := subproc.CommandContext(ctx, name, args...).Output()
-	return string(out), err
-}
-
-func localHost() string {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	out, err := runOut(ctx, "scutil", "--get", "LocalHostName")
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(out) + ".local"
-}
-
-func ifName(index int) string {
-	if i, err := net.InterfaceByIndex(index); err == nil {
-		return i.Name
-	}
-	return ""
-}
-
-// trueColorThroughTmux は tmux の中で、外側の端末が 24bit の色に対応しているか (tmux のクライアントの端末の機能に RGB がある)。
-// 🚨 bubbletea の色の判定 (colorprofile) は tmux の中では COLORTERM を見ず、`tmux info` (tmux の端末の定義) の Tc / RGB だけを見る。
-// この repo の tmux は定義に RGB を持たない (missing) ので 256 色と判定され、面の色 (#2A2430 など) が紺 (48;5;17) に落ちた
-// (2026-10-15 に隔離した tmux で撮って確かめた)。一方、_tmux.conf の terminal-features で外側の端末に RGB を付けていて、
-// アプリが 24bit の色を書けば tmux はそのまま外側へ渡す。そこでクライアントの機能を直接聞いて、対応していれば 24bit で書き出す。
-func trueColorThroughTmux() bool {
-	if os.Getenv("TMUX") == "" {
-		return false // tmux の外は colorprofile の判定 (COLORTERM) に任せる
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	out, err := runOut(ctx, "tmux", "display", "-p", "#{client_termfeatures}")
-	if err != nil {
-		return false
-	}
-	return slices.Contains(strings.Split(strings.TrimSpace(out), ","), "RGB")
-}
-
-func pbcopy(s string) error {
-	cmd := exec.Command("pbcopy")
-	cmd.Stdin = strings.NewReader(s)
-	return cmd.Run()
 }
 
 const usage = `usage: mac-lan-manager
@@ -203,31 +166,17 @@ func main() {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
 	}
-	ledgerPath, err := ledger.DefaultPath()
+	o, err := live.Options()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mac-lan-manager:", err)
 		os.Exit(1)
 	}
-	prefsPath, err := prefs.DefaultPath()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "mac-lan-manager:", err)
-		os.Exit(1)
-	}
-	m := lanmgr.New(lanmgr.Options{
-		ReadNet:   func(ctx context.Context) (netinfo.Snapshot, error) { return netinfo.Read(ctx, runOut) },
-		LocalHost: localHost,
-		StartScan: func(now time.Time) lanmgr.Scanner { return discover.Start(discover.ExecStarter, now) },
-		IfName:    ifName,
-		Ledger:    ledger.FileStore{Path: ledgerPath},
-		PrefsPath: prefsPath,
-		SavePrefs: prefs.Save,
-		Copy:      pbcopy,
-	})
+	m := lanmgr.New(o)
 	if widthenv.EastAsianAmbiguous() {
 		fmt.Fprintln(os.Stderr, "🚨 "+widthenv.Message)
 	}
 	var opts []tea.ProgramOption
-	if trueColorThroughTmux() {
+	if termcolor.TrueColorThroughTmux(os.Getenv("TMUX"), live.RunOut) {
 		opts = append(opts, tea.WithColorProfile(colorprofile.TrueColor))
 	}
 	if _, err := tea.NewProgram(&app{m: m}, opts...).Run(); err != nil {

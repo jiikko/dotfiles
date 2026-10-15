@@ -195,3 +195,11 @@ func TestSetCursor(t *testing.T) {
 		}
 	}
 }
+
+func TestKeyText(t *testing.T) {
+	for key, want := range map[string]string{"a": "a", "あ": "あ", "space": " ", "enter": "", "ctrl+a": "", "": ""} {
+		if got := KeyText(key); got != want {
+			t.Errorf("KeyText(%q) = %q, want %q", key, got, want)
+		}
+	}
+}

@@ -111,3 +111,25 @@ func TestScannerFindsPeersAndClosesAll(t *testing.T) {
 		t.Errorf("起こした数 = %d, want 8", f.started)
 	}
 }
+
+// Close は Changed を閉じる (待っている側を ok=false で抜けさせる。閉じないと開き直しのたびに待ちの goroutine が残る)。2 度呼んでもよい。
+func TestCloseClosesChanged(t *testing.T) {
+	s := Start(func(ctx context.Context, _ string, _ ...string) (io.ReadCloser, error) {
+		r, w := io.Pipe()
+		go func() { <-ctx.Done(); _ = w.Close() }()
+		return r, nil
+	}, time.Now())
+	ch := s.Changed()
+	s.Close()
+	s.Close()
+	for { // 閉じる前に積まれた合図が 1 つ残っていることがあるので、閉じたと分かるまで読む
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Close の後も Changed が閉じない")
+		}
+	}
+}

@@ -136,6 +136,18 @@ func (l *Line) Insert(s string) {
 	l.cur = l.snap(l.cur + len(add))
 }
 
+// KeyText はキーの表記 (KeyPressMsg.String()) から、その打鍵が入力する文字を推す (1 文字のキーはその文字、space は空白、
+// それ以外は空)。KeyPressMsg.Text を持たない呼び出し側 (キーを文字列だけで受け渡す glogx の板) が Key に渡す text を作るのに使う。
+func KeyText(key string) string {
+	switch {
+	case key == "space":
+		return " "
+	case len([]rune(key)) == 1:
+		return key
+	}
+	return ""
+}
+
 // Key は編集キーを適用する。key は KeyPressMsg.String()、text はその打鍵が入力する文字 (KeyPressMsg.Text)。
 // 編集キーか文字の入力なら true。Enter / Esc / Tab などは false を返す (呼び出し側が捌く)。
 func (l *Line) Key(key, text string) bool {
