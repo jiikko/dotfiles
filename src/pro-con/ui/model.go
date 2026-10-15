@@ -145,7 +145,10 @@ type Model struct {
 	firstView func()
 	children  *atomic.Int64 // 裏で外部コマンドを起こしている処理の数 (exec の前に 0 を待つ。upgrade.go の child)
 
-	copy       func(string) error     // クリップボードへ入れる (既定は subproc/clipboard.Copy。glogx・treefiler と同じく tmux の中では tmux のバッファへも積む。テストは差し替える)
+	// copy はクリップボードへ入れる (既定は subproc/clipboard.Copy。テストは差し替える)。Update から同期で呼ぶので、固まったときは画面が止まる:
+	// 上限は 1 コマンド 5 秒 + WaitDelay で、tmux の中では tmux load-buffer と pbcopy の 2 本 (最悪約 10 秒強。前の自前の pbcopy は 2 秒 + 1 秒)。
+	// glogx・treefiler と同じ形にそろえた (issue 769)。止まるのが問題になったら 3 つとも tea.Cmd で裏に回す
+	copy       func(string) error
 	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は github.com/jiikko/dotfiles/src/tuikit/editor。テストは差し替える)
 	// execProcess は端末を明け渡して外のコマンドを走らせる (既定は execOnTerminal。テストは戻りの知らせを取り出すために差し替える)
 	execProcess func(*exec.Cmd, tea.ExecCallback) tea.Cmd

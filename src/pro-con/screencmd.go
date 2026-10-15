@@ -147,7 +147,7 @@ func screenHeader(e screenEntry, now time.Time) string {
 	}
 	h := fmt.Sprintf("%s  %s", e.ID, kind)
 	if !e.At.IsZero() {
-		h += fmt.Sprintf("  %dx%d  最後に変わったのは %s 前  mode=%s", e.Width, e.Height, card.Age(now.Sub(e.At)), orDashCLI(e.State["mode"]))
+		h += fmt.Sprintf("  %dx%d  最後に変わったのは %s前  mode=%s", e.Width, e.Height, card.Age(now.Sub(e.At)), orDashCLI(e.State["mode"]))
 		if d := e.State["drawer"]; d != "" {
 			h += "  詳細=" + d
 		}
