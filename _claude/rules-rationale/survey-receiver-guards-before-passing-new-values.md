@@ -80,3 +80,10 @@ glogx の issues viewer で、クリップボードへ入れてよいかを `ter
 同じ retro で提案した「ユーザーが変えたかを値の比較で判定しない (A → B → A を見落とす)」は、表の「途中 × ユーザー操作」のセルで
 同じ穴が見つかるので却下した。
 
+## 値から別の事実を推定する読み手 (2026-10-15、obaket retro 1138)
+
+obaket issue 591 で、upload の single の入口も送信中の byte 進捗を出すようにした。SFTP の provider contract のテストは、
+upload の入口 (single / streaming) を transfer の progress の列から推定していた (列が `[]` なら single)。single も進捗を出すようになったので、
+テストは入口を streaming と取り違えて落ちた。値そのもの (進捗の列) を assert するテストではないので、進捗の変更の差分からは見えず、
+切り分けに一時 worktree で 1 hunk ずつ当てる手間がかかった。
+
