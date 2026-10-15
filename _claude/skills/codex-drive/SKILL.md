@@ -235,6 +235,8 @@ Claude がやるのは:
 
 - **exit code を成功判定に使う**: 0 = 全本 + merger 成功 / 2 = 一部失敗 (digest はあるが観点が欠けている —
   **成功扱いしない**。欠けた観点を再実行するか「未実施」を Claude が明示的に引き継ぐ) / 1 = 全滅・merger 失敗
+  - codex の利用上限で落ちた run は rc を変えずに、`runs.tsv` の `cause` 列が `usage_limit`・要約が `label:rc=N(利用上限)` になる
+    (`ratelimit -check` が見ない枠。prompt や観点を直しても通らないので、再開の時刻を待って回し直す。検出の範囲は `bin/codex-fanout` の `usage_limit_line`)
 - 🚨 **`codex-fanout` に `-C` は無く、各 run は driver を起動した cwd の木を読む**。レビュー対象が worktree なら、同じ Bash 呼び出しで
   `cd <worktree の絶対パス> && codex-fanout …` として起動し、prompt に書く対象のファイルも絶対パスにする (`tmp/…` や `git show HEAD` の
   相対の指定は、起動した場所の木を指す。obaket retro 1112: 共有 checkout から起動し、codex が自分で worktree を探したので結果は使えたが、

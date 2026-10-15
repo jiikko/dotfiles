@@ -18,7 +18,9 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   if [[ "${args[$i]}" == "-o" ]]; then out="${args[$((i + 1))]}"; fi
 done
 prompt="${args[$((${#args[@]} - 1))]}"
+printf 'user\n%s\n' "$prompt" >&2 # 実 codex と同じく stderr の冒頭にプロンプトを出す
 if [[ "$prompt" == *FAIL_MARKER* ]]; then echo "stub: fail" >&2; exit 1; fi
+if [[ "$prompt" == *LIMIT_MARKER* ]]; then echo "ERROR: You’ve hit your usage limit. Upgrade to Pro or try again at Oct 10th, 2026 7:29 AM." >&2; exit 1; fi
 if [[ "$prompt" == *EMPTY_OUT_MARKER* ]]; then : >"$out"; echo "stdout-only body"; exit 0; fi
 printf 'stub-body: %s\n' "${prompt:0:40}" >"$out"
 echo "stub-stdout"
@@ -27,6 +29,7 @@ EOS
   export PATH="$WORK/bin:$PATH"
   printf 'review this diff\n' >"$WORK/prompt.md"
   printf 'FAIL_MARKER\n' >"$WORK/prompt_fail.md"
+  printf 'LIMIT_MARKER\n' >"$WORK/prompt_limit.md"
   printf 'EMPTY_OUT_MARKER\n' >"$WORK/prompt_empty.md"
   cd "$WORK"
 }
@@ -112,4 +115,13 @@ EOS
   [ "$status" -eq 0 ]
   [ -n "$(find "$WORK/tmp/codex-run" -name 'adv.out.md' 2>/dev/null)" ]
   [ -z "$(find "$WORK/tree/tmp" -name 'adv.out.md' 2>/dev/null)" ]
+}
+
+@test "利用上限で落ちた run は要約で上限と分かり、rc は変えない。ほかの失敗には出さない (issue 762)" {
+  run "$RUN" -o "$WORK/out_lim" ro "$WORK/prompt_limit.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"codex の利用上限で失敗"* ]]
+  run "$RUN" -o "$WORK/out_fail" ro "$WORK/prompt_fail.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"利用上限"* ]]
 }

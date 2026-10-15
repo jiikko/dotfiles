@@ -28,6 +28,18 @@ if [ "$prompt" != CASE_NO_OUTPUT_FILE ]; then
   if [ "$prompt" = CASE_EMPTY ]; then : > "$out"; else printf 'final body' > "$out"; fi
 fi
 [ "$prompt" != CASE_PARTIAL ] && echo '{"type":"turn.completed","usage":{"input_tokens":7}}'
+# 利用上限: 上限の行が events にだけ出る形 (stderr には何も出さない)
+if [ "$prompt" = CASE_LIMIT ]; then echo '{"type":"error","message":"You\u2019ve hit your usage limit. Upgrade to Pro or try again at Oct 10th, 2026 7:29 AM."}'; exit 1; fi
+# 応答の本文が上限の行を引用しているだけで、失敗は上限ではない (codex-events が本文を log の末尾へ追記する)
+if [ "$prompt" = CASE_QUOTED_BODY ]; then printf '実ログ:\nERROR: You’ve hit your usage limit. try again at Oct 10th\n' > "$out"; echo '{"type":"item.completed","item":{"type":"agent_message","text":"実ログ:\nERROR: You\u2019ve hit your usage limit. try again at Oct 10th"}}'; echo '{"type":"turn.failed","error":{"message":"failure"}}'; exit 1; fi
+# 本文が上限の行と区切り行まで引用し、本当の原因は stderr の別の ERROR
+if [ "$prompt" = CASE_QUOTED_MARK ]; then echo 'ERROR: stream disconnected before completion' >&2; printf 'repro:\nERROR: You’ve hit your usage limit. try again at Oct 10th\n--- Codex JSONL result ---\nend\n' > "$out"; echo '{"type":"turn.failed","error":{"message":"failure"}}'; exit 1; fi
+# stderr が上限の行の引用 (プロンプトの echo) と空行で終わり、何も言わずに死ぬ
+if [ "$prompt" = CASE_SILENT_DEATH ]; then printf 'user\nこれを直して:\nERROR: You’ve hit your usage limit. try again at Oct 10th\n\n' >&2; exit 137; fi
+# 上限の行が stderr にだけ出る (events には出ない)
+if [ "$prompt" = CASE_LIMIT_STDERR ]; then echo "ERROR: You've hit your usage limit. try again at Oct 10th" >&2; exit 1; fi
+# 上限の文字列はコマンドの出力にあるだけで、失敗は上限ではない
+if [ "$prompt" = CASE_QUOTED_FAIL ]; then echo '{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"ERROR: You\u2019ve hit your usage limit."}}'; echo '{"type":"turn.failed","error":{"message":"failure"}}'; exit 9; fi
 if [ "$prompt" = CASE_FAIL ]; then echo '{"type":"turn.failed","error":{"message":"failure"}}'; exit 9; fi
 exit 0
 `
@@ -216,4 +228,70 @@ func TestDriverPartialFanoutExcludesIncompleteRunFromMerger(t *testing.T) {
 		t.Errorf("merger.prompt.md が未完了の run を除いていない: %s", prompt)
 	}
 	d.read("out/digest.md")
+}
+
+// -J の run は上限の行が events にだけ出ることがある。log に無くても台帳の cause で上限と分かる (issue 762)
+func TestDriverJSONUsageLimitOnlyInEventsIsReported(t *testing.T) {
+	d := newDriver(t)
+	rc, out := d.invoke("CASE_LIMIT", "ro", "-J")
+	if rc != 1 {
+		t.Fatalf("rc=%d %s", rc, out)
+	}
+	if strings.Contains(d.read("out/ro.log"), "usage limit") {
+		t.Fatal("前提が崩れた: 上限の行が log にも出ている (events だけを見る経路を検査できない)")
+	}
+	if !strings.Contains(d.read("out/runs.tsv"), "\tusage_limit\n") || !strings.Contains(out, "利用上限") {
+		t.Errorf("events にだけ出た上限を拾っていない: runs.tsv=%q out=%s", d.read("out/runs.tsv"), out)
+	}
+}
+
+// events の中でも上限と見るのは error / turn.failed のイベントだけ。コマンドの出力に同じ文字列があるだけの失敗は上限にしない (issue 762)
+func TestDriverJSONUsageLimitTextInCommandOutputIsNotReported(t *testing.T) {
+	d := newDriver(t)
+	rc, out := d.invoke("CASE_QUOTED_FAIL", "ro", "-J")
+	if rc != 1 {
+		t.Fatalf("rc=%d %s", rc, out)
+	}
+	if !strings.Contains(d.read("out/ro.events.jsonl"), "hit your usage limit") {
+		t.Fatal("前提が崩れた: events に上限の文字列が無い")
+	}
+	if strings.Contains(d.read("out/runs.tsv"), "usage_limit") || strings.Contains(out, "利用上限") {
+		t.Errorf("コマンドの出力にある文字列を上限と読んだ: runs.tsv=%q out=%s", d.read("out/runs.tsv"), out)
+	}
+}
+
+// -J の log には応答の本文が追記される。本文が上限の行を引用しているだけの失敗は上限にせず、stderr にだけ出た本物の上限は拾う (issue 762)
+func TestDriverJSONUsageLimitIgnoresQuotedBodyButReadsStderr(t *testing.T) {
+	d := newDriver(t)
+	rc, out := d.invoke("CASE_QUOTED_BODY", "ro", "-J")
+	if rc != 1 {
+		t.Fatalf("rc=%d %s", rc, out)
+	}
+	if !strings.Contains(d.read("out/ro.log"), "hit your usage limit") {
+		t.Fatal("前提が崩れた: 本文が log に追記されていない")
+	}
+	if strings.Contains(d.read("out/runs.tsv"), "usage_limit") {
+		t.Errorf("本文の引用を上限と読んだ: %q", d.read("out/runs.tsv"))
+	}
+	d = newDriver(t)
+	if rc, out := d.invoke("CASE_LIMIT_STDERR", "ro", "-J"); rc != 1 || !strings.Contains(d.read("out/runs.tsv"), "\tusage_limit\n") {
+		t.Errorf("stderr にだけ出た上限を拾っていない: rc=%d runs.tsv=%q out=%s", rc, d.read("out/runs.tsv"), out)
+	}
+}
+
+// -J の log の本文が上限の行と区切り行まで引用していても、何も言わずに死んだ run でも、上限にしない (issue 762 の 4 周目)
+func TestDriverJSONUsageLimitIgnoresAppendedBodyAndSilentDeath(t *testing.T) {
+	for _, c := range []string{"CASE_QUOTED_MARK", "CASE_SILENT_DEATH"} {
+		d := newDriver(t)
+		rc, out := d.invoke(c, "ro", "-J")
+		if rc != 1 {
+			t.Fatalf("%s: rc=%d %s", c, rc, out)
+		}
+		if !strings.Contains(d.read("out/ro.log"), "hit your usage limit") {
+			t.Fatalf("%s: 前提が崩れた: log に上限の行の引用が無い", c)
+		}
+		if strings.Contains(d.read("out/runs.tsv"), "usage_limit") {
+			t.Errorf("%s: 上限でない失敗を上限と読んだ: %q", c, d.read("out/runs.tsv"))
+		}
+	}
 }

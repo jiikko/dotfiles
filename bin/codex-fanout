@@ -42,17 +42,21 @@
 #   <label>.events.jsonl  -J のときの生イベント (stdout)。stderr と最終応答は従来の .log に残す
 #   <label>.meta.json     -J のときの thread ID / 完了・失敗 / usage / command_execution
 #   <label>.cli.rc        -J のときの CLI の終了コード (.rc はイベント検査後。検査失敗は 65)
-#   runs.tsv        label / rc / started_at / elapsed_s / out / log の台帳 (TSV・ヘッダ行つき)。
+#   runs.tsv        label / rc / started_at / elapsed_s / out / log / cause の台帳 (TSV・ヘッダ行つき)。
 #                   started_at はローカル時刻 (ISO 8601)、elapsed_s は起動から終了までの整数秒。
+#                   cause は失敗の原因が分かったときだけ値を持つ (usage_limit = codex の利用上限。それ以外は "-")。
+#                   上限で落ちた run も rc は変えない。stdout の要約・merger への注記では label:rc=N(利用上限) と出る
 #                   merger を回したときは末尾に label=merger の行を追記する (-o は digest.md)。
+#                   runs.tsv は merger まで終わってから公開する (在れば全 run と merger の rc は揃っている。driver の終了コードはその後に決まる。中断では作らない)。
 #                   「どの工程に壁時計が何分かかったか」を run 単位で残す (dotfiles issue 369 案 1)。
 #                   run 合計は通しの壁時計ではない (Claude の digest 読み・build・修正は外)
+#   <label>.stderr_bytes  -J のときの、codex-events が本文を追記する前の log の長さ (上限の判定がそこで切る)
 #   digest.md       merger の出力 (呼び出し側が読むのは原則これ 1 枚)
 #
 # exit code:
 #   0 = 全 run + merger 成功
 #   2 = 一部の run が失敗 (digest はあり。欠けた観点が digest に明記される)。成功扱いにしないこと
-#   1 = 全滅 / merger 失敗 / 中断 (SIGINT/SIGTERM) / 引数・manifest エラー
+#   1 = 全滅 / merger 失敗 / 中断 (SIGINT/SIGTERM) / 引数・manifest エラー / runs.tsv を公開できない
 #
 # 中断 (SIGINT/SIGTERM) は trap で受け、走行中の codex を kill してから exit 1 する
 # (driver だけ死んで codex が裏で API を消費し続ける孤児化を防ぐ)。codex は runtimeout (bin/runtimeout) の
@@ -242,6 +246,10 @@ run_captured() { # timeout / label / last-message path / command...
       "$@" --json </dev/null >"$outdir/$label.events.jsonl" 2>"$log"
     rc=$?
     printf '%s\n' "$rc" >"$outdir/$label.cli.rc"
+    # inspect は応答の本文を log の末尾へ追記する。codex が終わった時点の長さを控えておき、上限の判定 (usage_limit_line) はそこで切る
+    # (本文は上限の行も区切り行も引用しうるので、字面では切る位置を決められない)。
+    # codex の子孫が codex の終了後にも stderr へ書くと、その行はこの長さの後ろに入って判定から落ちる (実際の codex で起きるかは未確認。issue 762)
+    wc -c <"$log" | tr -d ' ' >"$outdir/$label.stderr_bytes"
     "$CODEX_EVENTS" inspect "$outdir/$label.events.jsonl" "$out" "$outdir/$label.meta.json" "$log"
     inspect_rc=$?
     if [ "$rc" -eq 0 ] && [ "$inspect_rc" -ne 0 ]; then
@@ -283,33 +291,86 @@ wait
 # --- 台帳 (runs.tsv) と成否の集計。rc ファイル欠損は「静かな成功」ではなく失敗 (127) に倒す ---
 # ledger_row <label> <rc> <out> <log>: <label>.time があれば時刻を、無ければ "-" を埋める
 # (time が無いのは launch_with_watchdog に到達しなかった run。rc 127 と同じく「測れていない」を残す)
-ledger_row() {
+ledger_row() { # <label> <rc> <out> <log> [cause]
   local started_at="-" elapsed="-"
   if [ -f "$outdir/$1.time" ]; then
     IFS=$'\t' read -r started_at elapsed <"$outdir/$1.time"
   fi
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$started_at" "$elapsed" "$3" "$4"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$started_at" "$elapsed" "$3" "$4" "${5:--}"
+}
+# usage_limit_line <label> <rc>: 失敗した run が codex の利用上限で落ちたなら、上限の行を出して rc=0。
+# 実測の形 (2026-09-16 / 10-07 の実ログ 2 本): log の最後が codex 自身の "ERROR: You’ve hit your usage limit. ... try again at <時刻>." の行の連続で、
+# その後に "tokens used" と数値の 2 行が付くことがある。アポストロフィは U+2019 と ASCII の両方を見たので、記号を含まない部分で照合する。
+# 🚨 log の中の位置で決める (どこかに在るかでは決めない): codex は stderr の冒頭にプロンプト全文を、途中に実行したコマンドの出力を出し、
+# -J では codex-events が応答の本文を log の末尾へ追記する。どれも上限の行を引用しうる (このドライバ自身のレビュー等)。
+# そこで「log の最後の ERROR の塊が全部上限の行」のときだけ上限と読む。時間切れ (rc=124。runtimeout が止めた) は原因が分かっているので候補にしない。
+# -J の run は codex-events が本文を追記する前の長さ (<label>.stderr_bytes。run_captured が控える) で切り、codex が終わるまでに出した部分だけを見る。
+# -J の run は上限の行が events にだけ出ることがあるので、type が error / turn.failed のイベントも見る
+usage_limit_line() {
+  local label="$1" rc="$2" line="" log="$outdir/$1.log" bytes=""
+  [ "$rc" != 124 ] || return 1
+  if [ -f "$log" ]; then
+    [ ! -f "$outdir/$label.stderr_bytes" ] || bytes="$(cat "$outdir/$label.stderr_bytes")"
+    line="$(if [ -n "$bytes" ]; then head -c "$bytes" "$log"; else cat "$log"; fi | tail -n 64 | awk '{ l[++n] = $0 }
+      END {
+        i = n
+        if (i > 1 && l[i] ~ /^[0-9,]+$/ && l[i - 1] == "tokens used") i -= 2
+        last = i
+        for (; i > 0 && l[i] ~ /^ERROR: /; i--) if (l[i] !~ /hit your usage limit/) exit
+        if (i < last) print l[last]
+      }')"
+  fi
+  if [ -z "$line" ] && [ -f "$outdir/$label.events.jsonl" ]; then
+    line="$(grep -a -E '^[{]"type":"(error|turn[.]failed)"' "$outdir/$label.events.jsonl" |
+      grep -a -F 'hit your usage limit' | tail -n 1)"
+  fi
+  [ -n "$line" ] && printf '%s\n' "$line"
 }
 failed=()
 ok=()
 ok_idx=()
+limit_line="" # 上限で落ちた run の行の見本 (再開の時刻が載っている)
+limit_count=0
 {
-  printf 'label\trc\tstarted_at\telapsed_s\tout\tlog\n'
+  printf 'label\trc\tstarted_at\telapsed_s\tout\tlog\tcause\n'
   for i in "${!labels[@]}"; do
     label="${labels[$i]}"
     rc="$(cat "$outdir/$label.rc" 2>/dev/null || echo 127)"
-    ledger_row "$label" "$rc" "$outdir/$label.out.md" "$outdir/$label.log"
+    cause=""
+    if [ "$rc" -ne 0 ] && line="$(usage_limit_line "$label" "$rc")"; then
+      cause=usage_limit
+      limit_count=$((limit_count + 1))
+      [ -n "$limit_line" ] || limit_line="$line"
+    fi
+    ledger_row "$label" "$rc" "$outdir/$label.out.md" "$outdir/$label.log" "$cause"
     if [ "$rc" -eq 0 ]; then
       ok+=("$label")
       ok_idx+=("$i")
+    elif [ -n "$cause" ]; then
+      failed+=("$label:rc=$rc(利用上限)")
     else
       failed+=("$label:rc=$rc")
     fi
   done
-} >"$outdir/runs.tsv"
+} >"$outdir/runs.tsv.tmp"
+# publish_ledger: 台帳を runs.tsv として公開する。merger の行まで書き終えてから、どの終了経路でも 1 回だけ呼ぶ。
+# 完了を runs.tsv の有無で待ち、その後に digest.md を読む呼び出し側 (codex-drive SKILL.md「並列起動の作法」) に、
+# merger が走っている間の台帳を見せない (中断 = on_interrupt では公開しない。待つ側は deadline で判定不能にする)
+publish_ledger() {
+  mv "$outdir/runs.tsv.tmp" "$outdir/runs.tsv" || { printf 'codex-fanout: runs.tsv を公開できない (待つ側は判定不能になる): %s\n' "$outdir" >&2; exit 1; }
+}
+
+# report_usage_limit: 上限で落ちた run があれば、その本数と上限の行 (再開の時刻) を stderr に出す
+report_usage_limit() {
+  [ "$limit_count" -gt 0 ] || return 0
+  printf 'codex-fanout: codex の利用上限で失敗した run: %d 本 (ratelimit -check は見ていない枠。時間を置いて回し直す): %s\n' \
+    "$limit_count" "$limit_line" >&2
+}
 
 if [ "${#ok[@]}" -eq 0 ]; then
   printf 'codex-fanout: 全 %d 本が失敗。merger は回さない (runs: %s)\n' "${#labels[@]}" "$outdir/runs.tsv" >&2
+  report_usage_limit
+  publish_ledger
   exit 1
 fi
 
@@ -337,6 +398,9 @@ if [ "$do_merge" -eq 1 ]; then
     if [ "${#failed[@]}" -gt 0 ]; then
       printf '\n## 失敗した run (%d 本) — digest の冒頭に「この観点は未実施」と明記すること\n\n' "${#failed[@]}"
       printf -- '- %s\n' "${failed[@]}"
+      if [ "$limit_count" -gt 0 ]; then
+        printf '\n(利用上限) の run は観点の中身ではなく codex の利用上限で落ちた。digest にも「利用上限で未実施」と書くこと\n'
+      fi
     fi
   } >"$merger_prompt"
   run_captured "$timeout_s" merger "$outdir/digest.md" \
@@ -345,18 +409,29 @@ if [ "$do_merge" -eq 1 ]; then
     --ephemeral -o "$outdir/digest.md" "$(cat "$merger_prompt")"
   merger_rc=$?
   # 成否に関係なく台帳へ (失敗した merger の所要時間も「どこで時間を食ったか」の材料)
-  ledger_row merger "$merger_rc" "$outdir/digest.md" "$outdir/merger.log" >>"$outdir/runs.tsv"
+  merger_cause=""
+  if [ "$merger_rc" -ne 0 ] && line="$(usage_limit_line merger "$merger_rc")"; then
+    merger_cause=usage_limit
+    limit_count=$((limit_count + 1))
+    [ -n "$limit_line" ] || limit_line="$line"
+  fi
+  ledger_row merger "$merger_rc" "$outdir/digest.md" "$outdir/merger.log" "$merger_cause" >>"$outdir/runs.tsv.tmp"
+  publish_ledger
   if [ "$merger_rc" -ne 0 ]; then
     printf 'codex-fanout: merger が失敗 (log: %s)\n' "$outdir/merger.log" >&2
+    report_usage_limit
     exit 1
   fi
   [ -s "$outdir/digest.md" ] || { printf 'codex-fanout: digest が空 (log: %s)\n' "$outdir/merger.log" >&2; exit 1; }
+else
+  publish_ledger
 fi
 
 printf 'runs: %d ok, %d failed\n' "${#ok[@]}" "${#failed[@]}"
 if [ "${#failed[@]}" -gt 0 ]; then
   printf 'failed: %s\n' "${failed[*]}"
 fi
+report_usage_limit
 printf 'runs.tsv: %s\n' "$outdir/runs.tsv"
 if [ "$do_merge" -eq 1 ]; then
   printf 'digest: %s\n' "$outdir/digest.md"

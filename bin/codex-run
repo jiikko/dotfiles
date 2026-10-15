@@ -27,7 +27,8 @@
 #     -t sec       1 本あたりの秒数上限 (既定は codex-fanout の CODEX_FANOUT_TIMEOUT)
 #
 # 出力 (outdir): <label>.out.md (最終応答) / <label>.log (stdout+stderr 全文) /
-#                 runs.tsv (label / rc / started_at / elapsed_s / out / log の台帳。列の正本は codex-fanout のヘッダ)
+#                 runs.tsv (label / rc / started_at / elapsed_s / out / log / cause の台帳。列の正本は codex-fanout のヘッダ)
+#   cause が usage_limit (codex の利用上限で落ちた) なら、その旨を要約に 1 行出す。rc は変えない
 #   review は本文が -o でなく stdout にだけ出ることがある (codex-review スキル手順 4) ので、
 #   out.md が空のときは log を読むよう案内する。
 #
@@ -126,6 +127,10 @@ rc=$?
 out="$outdir/$label.out.md"
 log="$outdir/$label.log"
 printf 'codex-run: rc=%d (mode=%s label=%s cwd=%s)\n' "$rc" "$mode" "$label" "$PWD"
+# 上限の検出は codex-fanout が持つ (runs.tsv の cause 列)。ここで log を読み直さない
+if [ -f "$outdir/runs.tsv" ] && awk -F'\t' -v l="$label" '$1 == l && $7 == "usage_limit" { f = 1 } END { exit !f }' "$outdir/runs.tsv"; then
+  printf '  🚨 codex の利用上限で失敗 (再開の時刻はログの "usage limit" の行)。時間を置いて回し直す\n'
+fi
 if [ -s "$out" ]; then
   printf '  本文: %s (%s bytes)\n' "$out" "$(wc -c < "$out" | tr -d ' ')"
 else

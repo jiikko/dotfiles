@@ -28,7 +28,40 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   if [[ "${args[$i]}" == "-o" ]]; then out="${args[$((i + 1))]}"; fi
 done
 prompt="${args[$((${#args[@]} - 1))]}"
+# 実 codex と同じく stderr の冒頭にプロンプト全文を出す (log にプロンプトが残る形を検出の検査に含める)
+printf 'user\n%s\n' "$prompt" >&2
 if [[ "$prompt" == *FAIL_MARKER* ]]; then
+  echo "stub: fail" >&2
+  exit 1
+fi
+if [[ "$prompt" == *LIMIT_MARKER* ]]; then
+  # 実測した codex の利用上限の終わり方 (アポストロフィは U+2019。ERROR の行の後に tokens used と数値が付くことがある)
+  echo "ERROR: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro) or try again at Oct 10th, 2026 7:29 AM." >&2
+  printf 'tokens used\n96,277\n' >&2
+  exit 1
+fi
+if [[ "$prompt" == *MIXED_MARKER* ]]; then
+  # codex の発言が上限の行の引用で終わり、直後に別の原因の ERROR で落ちる
+  printf 'codex\nERROR: You’ve hit your usage limit. try again at Oct 10th, 2026 7:29 AM.\nERROR: stream disconnected before completion\n' >&2
+  exit 1
+fi
+if [[ "$prompt" == *KILLED_MARKER* ]]; then
+  # 上限の行で終わるコマンドの出力の後、何も言わずに外から kill される (rc=137)
+  printf 'exec\ntail -4 err.log succeeded in 1ms:\nERROR: You’ve hit your usage limit. try again at Oct 10th, 2026 7:29 AM.\ntokens used\n96,277\n\n' >&2
+  kill -KILL $$
+fi
+if [[ "$prompt" == *LEDGER_PROBE* ]]; then
+  # merger の実行中に runs.tsv が見えているか (待つ側は runs.tsv ができたら digest.md を読む)
+  if [ -e "$(dirname "$out")/runs.tsv" ]; then echo "ledger-seen" >"$out"; else echo "ledger-not-seen" >"$out"; fi
+  exit 0
+fi
+if [[ "$prompt" == *CMDOUT_MARKER* ]]; then
+  # 実行したコマンドの出力として上限の行が残る (実 codex は字下げせずに出す)。その後の終わり方はプロンプトで選ぶ
+  printf 'exec\n/bin/zsh -lc "tail -2 err.log" in /repo succeeded in 1ms:\n' >&2
+  echo "ERROR: You’ve hit your usage limit. Upgrade to Pro or try again at Oct 10th, 2026 7:29 AM." >&2
+  if [[ "$prompt" == *CMDOUT_HANG* ]]; then
+    sleep 60 # sleep-ok: dummy: 時間切れ (rc=124) にする偽 codex
+  fi
   echo "stub: fail" >&2
   exit 1
 fi
@@ -50,6 +83,7 @@ EOS
   printf 'template head\n' >"$WORK/tpl.md"
   printf 'attack the target\n' >"$WORK/brief_ok.md"
   printf 'FAIL_MARKER\n' >"$WORK/brief_fail.md"
+  printf 'LIMIT_MARKER\n' >"$WORK/brief_limit.md"
   printf 'SLEEP_MARKER\n' >"$WORK/brief_sleep.md"
   printf 'merge instructions\n' >"$WORK/merger.md"
   printf 'EMPTY_OUT_MARKER\n' >"$WORK/merger_empty.md"
@@ -64,8 +98,9 @@ EOS
   [ -s "$WORK/out1/digest.md" ]
   grep -q "^a	0	" "$WORK/out1/runs.tsv"
   grep -q "^b	0	" "$WORK/out1/runs.tsv"
-  # 台帳の列 (issue 369 案 1): label / rc / started_at / elapsed_s / out / log。ヘッダは完全一致で固定する
-  [ "$(head -1 "$WORK/out1/runs.tsv")" = "$(printf 'label\trc\tstarted_at\telapsed_s\tout\tlog')" ]
+  # 台帳の列 (issue 369 案 1 / 762): label / rc / started_at / elapsed_s / out / log / cause。ヘッダは完全一致で固定する
+  [ "$(head -1 "$WORK/out1/runs.tsv")" = "$(printf 'label\trc\tstarted_at\telapsed_s\tout\tlog\tcause')" ]
+  [ "$(awk -F'\t' '$1=="a"{print $7}' "$WORK/out1/runs.tsv")" = "-" ]
   # started_at は ISO 8601 (YYYY-MM-DDTHH:MM:SS+ZZZZ)、elapsed_s は整数。placeholder "-" ではない
   awk -F'\t' '$1=="a"{print $3}' "$WORK/out1/runs.tsv" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}$'
   awk -F'\t' '$1=="a"{print $4}' "$WORK/out1/runs.tsv" | grep -qE '^[0-9]+$'
@@ -124,6 +159,91 @@ EOS
   [ -s "$WORK/out2/digest.md" ]
   grep -q "失敗した run" "$WORK/out2/merger.prompt.md"
   grep -q "bad:rc=1" "$WORK/out2/merger.prompt.md"
+}
+
+@test "利用上限で落ちた run は台帳・要約・merger への注記で上限と分かり、rc とほかの失敗の表示は変わらない (issue 762)" {
+  printf 'good\tro\tm1\thigh\t%s\nlim\tro\tm1\thigh\t%s\nbad\tro\tm1\thigh\t%s\n' \
+    "$WORK/brief_ok.md" "$WORK/brief_limit.md" "$WORK/brief_fail.md" >"$WORK/m.tsv"
+  run "$DRIVER" -m "$WORK/merger.md" "$WORK/m.tsv" "$WORK/out_lim"
+  [ "$status" -eq 2 ]
+  [ "$(awk -F'\t' '$1=="lim"{print $2 "/" $7}' "$WORK/out_lim/runs.tsv")" = "1/usage_limit" ]
+  [ "$(awk -F'\t' '$1=="bad"{print $2 "/" $7}' "$WORK/out_lim/runs.tsv")" = "1/-" ]
+  [[ "$output" == *"failed: lim:rc=1(利用上限) bad:rc=1"* ]]
+  [[ "$output" == *"codex の利用上限で失敗した run: 1 本"*"try again at Oct 10th"* ]]
+  grep -qF -- "- lim:rc=1(利用上限)" "$WORK/out_lim/merger.prompt.md"
+  grep -qxF -- "- bad:rc=1" "$WORK/out_lim/merger.prompt.md"
+}
+
+@test "上限以外の失敗には上限の注記を出さない (issue 762)" {
+  printf 'good\tro\tm1\thigh\t%s\nbad\tro\tm1\thigh\t%s\n' \
+    "$WORK/brief_ok.md" "$WORK/brief_fail.md" >"$WORK/m.tsv"
+  run "$DRIVER" -m "$WORK/merger.md" "$WORK/m.tsv" "$WORK/out_nolim"
+  [ "$status" -eq 2 ]
+  [[ "$output" != *"利用上限"* ]]
+  ! grep -q "利用上限" "$WORK/out_nolim/merger.prompt.md"
+}
+
+@test "プロンプトが上限の行を引用しているだけの失敗は上限にしない。本物の上限ではプロンプトの古い行でなく最後の行を出す (issue 762)" {
+  printf 'FAIL_MARKER\nERROR: You’ve hit your usage limit. try again at OLD-QUOTED\n' >"$WORK/brief_quote_fail.md"
+  printf 'LIMIT_MARKER\nERROR: You’ve hit your usage limit. try again at OLD-QUOTED\n' >"$WORK/brief_quote_limit.md"
+  printf 'good\tro\tm1\thigh\t%s\nq\tro\tm1\thigh\t%s\nl\tro\tm1\thigh\t%s\n' \
+    "$WORK/brief_ok.md" "$WORK/brief_quote_fail.md" "$WORK/brief_quote_limit.md" >"$WORK/m.tsv"
+  run "$DRIVER" -m "$WORK/merger.md" "$WORK/m.tsv" "$WORK/out_quote"
+  [ "$status" -eq 2 ]
+  # 前提: 引用した行は log に残っている (stub がプロンプトを stderr に出す)
+  grep -q "OLD-QUOTED" "$WORK/out_quote/q.log"
+  [ "$(awk -F'\t' '$1=="q"{print $7}' "$WORK/out_quote/runs.tsv")" = "-" ]
+  [ "$(awk -F'\t' '$1=="l"{print $7}' "$WORK/out_quote/runs.tsv")" = "usage_limit" ]
+  [[ "$output" == *"failed: q:rc=1 l:rc=1(利用上限)"* ]]
+  [[ "$output" == *"try again at Oct 10th"* ]]
+  [[ "$output" != *"try again at OLD-QUOTED"* ]]
+}
+
+@test "時間切れの run とコマンドの出力に上限の行があるだけの run は上限にしない。プロンプトが同じ行を引用していても本物の上限は拾う (issue 762)" {
+  printf 'CMDOUT_MARKER CMDOUT_HANG\n' >"$WORK/brief_cmd_hang.md"
+  printf 'CMDOUT_MARKER\n' >"$WORK/brief_cmd_fail.md"
+  printf 'LIMIT_MARKER\nERROR: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro) or try again at Oct 10th, 2026 7:29 AM.\n' >"$WORK/brief_same_line.md"
+  printf 'good\tro\tm1\thigh\t%s\nhang\tro\tm1\thigh\t%s\t2\ncmd\tro\tm1\thigh\t%s\nsame\tro\tm1\thigh\t%s\n' \
+    "$WORK/brief_ok.md" "$WORK/brief_cmd_hang.md" "$WORK/brief_cmd_fail.md" "$WORK/brief_same_line.md" >"$WORK/m.tsv"
+  run "$DRIVER" -m "$WORK/merger.md" "$WORK/m.tsv" "$WORK/out_pos"
+  [ "$status" -eq 2 ]
+  # 前提: 時間切れの run の log の最後の行は上限の行 (時間切れを候補から外す判定だけが上限と読ませない)
+  [ "$(awk -F'\t' '$1=="hang"{print $2}' "$WORK/out_pos/runs.tsv")" = 124 ]
+  tail -1 "$WORK/out_pos/hang.log" | grep -q "hit your usage limit"
+  [ "$(awk -F'\t' '$1=="hang"{print $7}' "$WORK/out_pos/runs.tsv")" = "-" ]
+  [ "$(awk -F'\t' '$1=="cmd"{print $7}' "$WORK/out_pos/runs.tsv")" = "-" ]
+  [ "$(awk -F'\t' '$1=="same"{print $7}' "$WORK/out_pos/runs.tsv")" = "usage_limit" ]
+}
+
+@test "上限の行の引用に別の原因の ERROR が続く run と、kill された run は上限にしない。プロンプトに -J の区切り行の字面があっても本物の上限は拾う (issue 762)" {
+  printf 'MIXED_MARKER\n' >"$WORK/brief_mixed.md"
+  printf 'KILLED_MARKER\n' >"$WORK/brief_killed.md"
+  printf 'LIMIT_MARKER\n--- Codex JSONL result ---\n' >"$WORK/brief_mark.md"
+  printf 'good\tro\tm1\thigh\t%s\nmixed\tro\tm1\thigh\t%s\nkilled\tro\tm1\thigh\t%s\nmark\tro\tm1\thigh\t%s\n' \
+    "$WORK/brief_ok.md" "$WORK/brief_mixed.md" "$WORK/brief_killed.md" "$WORK/brief_mark.md" >"$WORK/m.tsv"
+  run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out_r3"
+  [ "$status" -eq 2 ]
+  [ "$(awk -F'\t' '$1=="mixed"{print $7}' "$WORK/out_r3/runs.tsv")" = "-" ]
+  [ "$(awk -F'\t' '$1=="killed"{print $2 "/" $7}' "$WORK/out_r3/runs.tsv")" = "137/-" ]
+  [ "$(awk -F'\t' '$1=="mark"{print $7}' "$WORK/out_r3/runs.tsv")" = "usage_limit" ]
+}
+
+@test "runs.tsv は merger の後に公開する (待つ側が runs.tsv を見て digest.md を読みに行ったとき、merger は終わっている)" {
+  printf 'LEDGER_PROBE\n' >"$WORK/merger_probe.md"
+  printf 'a\tro\tm1\thigh\t%s\nb\tro\tm1\thigh\t%s\n' "$WORK/brief_ok.md" "$WORK/brief_ok.md" >"$WORK/m.tsv"
+  run "$DRIVER" -m "$WORK/merger_probe.md" "$WORK/m.tsv" "$WORK/out_ledger"
+  [ "$status" -eq 0 ]
+  grep -qx "ledger-not-seen" "$WORK/out_ledger/digest.md"
+  [ "$(tail -1 "$WORK/out_ledger/runs.tsv" | cut -f1,2)" = "$(printf 'merger\t0')" ]
+  [ ! -e "$WORK/out_ledger/runs.tsv.tmp" ]
+}
+
+@test "全滅が利用上限によるものなら、全滅の要約に上限の本数と行を出す (issue 762)" {
+  printf 'x\tro\tm1\thigh\t%s\ny\tro\tm1\thigh\t%s\n' "$WORK/brief_limit.md" "$WORK/brief_limit.md" >"$WORK/m.tsv"
+  run "$DRIVER" -m "$WORK/merger.md" "$WORK/m.tsv" "$WORK/out_alllim"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"全 2 本が失敗"* ]]
+  [[ "$output" == *"codex の利用上限で失敗した run: 2 本"* ]]
 }
 
 @test "全滅: merger を回さず exit 1" {
