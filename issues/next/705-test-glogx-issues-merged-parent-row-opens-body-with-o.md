@@ -1,1 +1,0 @@
-../705-test-glogx-issues-merged-parent-row-opens-body-with-o.md
