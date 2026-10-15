@@ -67,6 +67,10 @@ func newDriver(t *testing.T) *driver {
 		must(t, err)
 		must(t, os.WriteFile(filepath.Join(root, "bin", name), b, 0o755))
 	}
+	// 引数の検査の helper は本物を写す (差し替えると検査の挙動が本物と離れる。issue 775)
+	b, err := os.ReadFile(filepath.Join(repo, "bin", "lib", "uint.sh"))
+	must(t, err)
+	must(t, os.WriteFile(filepath.Join(root, "bin", "lib", "uint.sh"), b, 0o644))
 	// 解決は差し替える (ビルドの経路は bin/lib/go_tool.sh の側の検査)。時間の上限は別の suite が見るので、引数を渡すだけにする
 	must(t, os.WriteFile(filepath.Join(root, "bin", "lib", "runtimeout.sh"), []byte(`runtimeout_resolve() { RUNTIMEOUT="$1/bin/runtimeout"; }`+"\n"), 0o644))
 	must(t, os.WriteFile(filepath.Join(root, "bin", "lib", "codex_events.sh"), []byte(`codex_events_resolve() { CODEX_EVENTS="`+exe+`"; export CODEX_EVENTS; }`+"\n"), 0o644))

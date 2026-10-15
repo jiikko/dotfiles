@@ -13,6 +13,7 @@ on:
       - 'src/codexevents/**'
       - bin/codex-run          # driver のテストが写して走らせる
       - bin/codex-fanout
+      - bin/lib/uint.sh        # driver のテストが本物を写す (issue 775)
       - .github/workflows/src_codexevents.yml
       - .github/workflows/_go-project.yml
       - .github/go-version
@@ -22,6 +23,7 @@ on:
       - 'src/codexevents/**'
       - bin/codex-run          # driver のテストが写して走らせる
       - bin/codex-fanout
+      - bin/lib/uint.sh        # driver のテストが本物を写す (issue 775)
       - .github/workflows/src_codexevents.yml
       - .github/workflows/_go-project.yml
       - .github/go-version
