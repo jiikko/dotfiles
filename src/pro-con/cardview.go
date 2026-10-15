@@ -736,7 +736,7 @@ func orDashCLI(s string) string {
 	return s
 }
 
-// fmtAge は経過時間を人が読む長さで (画面の fmtDur と同じ粒度: 秒 / 分 / 時間 / 日)。
+// fmtAge は経過時間を人が読む長さで (秒 / 分 / 時間 / 日。画面の ui の fmtDur とは書式が違う: あちらは空白なし・時間 + 分・日の単位なし。そろえるかは issue 772)。
 func fmtAge(d time.Duration) string {
 	switch {
 	case d < time.Minute:
