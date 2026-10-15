@@ -88,3 +88,5 @@ issue を done へ送る入口は 2 つある。glogx の issues viewer で送�
   - 採用 (再現つき): 起点の末尾の `/` を付けたのが逆向きの find だけで、順方向 (目印があるのにバナーが無い) の find は symlink の起点を辿らず 0 件のまま → 同じく `/` を付けた
   - 記録 (変更前からの性質): 検査は `cd "$ROOT_DIR"` するので相対の引数は repo root から解決され、検査件数の下限も無い (issues の親を渡すと 0 件の緑)。trigger: 引数を差し替える使い方を足すとき
   - 敵対的レビューを 3 周で閉じた理由: 3 周目で issue_done.sh 側の指摘が尽き、検査側の残りは同じ形の直し残し 1 件だけになった
+- 2026-10-15: `make test` は `tests/claude/test_claude_mods.sh` の tool-elapsed (`5 分ごとに toast が出る` が 5 秒で時間切れ) だけが赤。並列の負荷下でだけ出る形で、`make test-dir DIR=tests/claude` で単独に回すと 9 件とも pass した (この変更は mods に触れていない)。
+  issue 運用の検査 (`test_next_claims_have_banner` / `_fixtures` / `test_issue_done`) と `glogx/issues` は緑。`src/glogx` の `make lint` は 0 issues (errorlint と gofmt の 2 件を直した後)
