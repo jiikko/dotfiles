@@ -81,7 +81,11 @@ func (m *Model) footer() string {
 func (m *Model) header(w int) string {
 	left := logo()
 	if m.Busy() {
-		left += "   " + lipgloss.NewStyle().Foreground(cPink).Render(spinner.At(m.now, spinStep)) + sDim.Render(fmt.Sprintf(" Bonjour で探しています (%d 台)", len(m.peers)))
+		what := fmt.Sprintf(" Bonjour で探しています (%d 台)", len(m.peers))
+		if !m.netReady {
+			what = " この Mac のネットワークを読んでいます"
+		}
+		left += "   " + lipgloss.NewStyle().Foreground(cPink).Render(spinner.At(m.now, spinStep)) + sDim.Render(what)
 	} else {
 		left += "   " + sOK.Render("✓") + sDim.Render(fmt.Sprintf(" %d 台見つかった", len(m.peers)))
 	}
@@ -150,10 +154,18 @@ func (m *Model) tabs(width int) string {
 // col は一覧の 1 列 (設定で出し入れする)。
 type col struct {
 	title string
-	width int // 0 なら残りの幅
+	width int // 0 なら残りの幅、fitWidth なら中身の最長に合わせる
 	cell  func(r row) string
 	style func(s lipgloss.Style, r row) lipgloss.Style
 }
+
+// fitWidth は中身の最長に合わせる列の印 (名前の列)。上限は maxFitWidth、幅が足りなければホスト名の列に minFlexWidth を残すまで縮める。
+const (
+	fitWidth     = -1
+	maxFitWidth  = 34 // 中身 32 桁 + 左右の余白 (ユーザー要望 2026-10-15: 名前の列が短すぎる。固定の 12 では「kojiのMac mini」も切れた)
+	minFitWidth  = 12
+	minFlexWidth = 12
+)
 
 func pill(on bool, s string, st lipgloss.Style) string {
 	if on {
@@ -165,7 +177,7 @@ func pill(on bool, s string, st lipgloss.Style) string {
 func (m *Model) columns() []col {
 	cols := []col{
 		{" ", 1, func(row) string { return " " }, nil},
-		{"別名", 12, func(r row) string { return or(r.alias, or(r.instance, "-")) }, func(s lipgloss.Style, r row) lipgloss.Style {
+		{"別名", fitWidth, func(r row) string { return or(r.alias, or(r.instance, "-")) }, func(s lipgloss.Style, r row) lipgloss.Style {
 			s = s.Bold(true)
 			switch {
 			case r.self:
@@ -215,11 +227,35 @@ func (m *Model) listTable(width int) string {
 	vis := m.visible()
 	cur := min(m.cur[m.tab], len(vis)-1)
 	cols := m.columns()
-	used := 0
-	for _, c := range cols {
-		used += c.width
+	used, fitAt := 0, -1
+	for i, c := range cols {
+		if c.width == fitWidth {
+			fitAt = i
+			fit := termwidth.Of(c.title)
+			for _, r := range vis {
+				fit = max(fit, termwidth.Of(c.cell(r)))
+			}
+			cols[i].width = min(max(fit+2, minFitWidth), maxFitWidth)
+		}
+		used += cols[i].width
 	}
-	if width-used < 12 { // ホスト名の列に回す幅が無ければ出さない (ホスト名は詳細カードの見出しにある)
+	// 足りなければ名前の列を縮めて、ホスト名の列に minFlexWidth を残す。縮めても残らなければホスト名の列を出さず (ホスト名は
+	// 詳細カードの見出しにある)、空いた幅を名前の列へ返す (縮めたまま返さないと、ホスト名も名前も両方切れる)
+	desired := 0
+	if fitAt >= 0 {
+		desired = cols[fitAt].width
+		if width-used < minFlexWidth {
+			shrink := min(desired-minFitWidth, minFlexWidth-(width-used))
+			cols[fitAt].width -= shrink
+			used -= shrink
+		}
+	}
+	if width-used < minFlexWidth {
+		if fitAt >= 0 {
+			back := min(desired-cols[fitAt].width, max(width-used, 0))
+			cols[fitAt].width += back
+			used += back
+		}
 		cols = cols[:len(cols)-1]
 	}
 	render := func(i int, r *row) string {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/live"
+	"mac-lan-manager/netinfo"
 )
 
 // fakeLanScan は Bonjour の走査の偽物 (dns-sd を起こさない)。closed で「止めたか」を見る。
@@ -243,5 +245,57 @@ func TestLanTypingDoesNotSwallowRepeats(t *testing.T) {
 	m.lanV.m.HandleKey("enter")
 	if view := stripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "ssii") {
 		t.Errorf("絞り込みに ssii が入っていない (連打が飲まれた):\n%s", view)
+	}
+}
+
+// tmux の prefix が入力欄の編集キー (C-a) でも、L の絞り込みに打っている間は入力欄に届く。入力欄の外では今までどおり案内を出す。
+func TestLanTmuxPrefixReachesFilterWhileTyping(t *testing.T) {
+	m := openLan(t)
+	m.tmuxPrefix = "ctrl+a"
+	for _, k := range []string{"/", "i", "n", "ctrl+a", "m"} { // 先頭へ動いてから m
+		m.handleKey(k)
+	}
+	m.lanV.m.HandleKey("enter")
+	if view := stripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "min") {
+		t.Errorf("入力中の C-a (prefix と同じ) が編集として効かない:\n%s", view)
+	}
+	if strings.Contains(m.toast.Text(), "tmux prefix") {
+		t.Errorf("入力中に prefix の案内を出した: %q", m.toast.Text())
+	}
+	m.handleKey("ctrl+a")
+	if !strings.Contains(m.toast.Text(), "tmux prefix") {
+		t.Errorf("入力欄の外で prefix の案内が出ない: toast=%q", m.toast.Text())
+	}
+}
+
+// L は、この Mac のネットワークの読み込み (networksetup。約 420 ms) を待たずに開く。読み込み中は走査中として tick が回り、
+// 読み終えたら tick で取り込む (Update の中で同期に読むと、L を押すたびに glogx が止まった。ユーザー報告 2026-10-15)。
+func TestLanOpensWithoutWaitingForNetwork(t *testing.T) {
+	release := make(chan struct{})
+	orig := lanOptions
+	lanOptions = func() (lanmgr.Options, error) {
+		o, err := fakeLanOptions()
+		o.ReadNet = func(ctx context.Context) (netinfo.Snapshot, error) {
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return netinfo.Snapshot{}, nil
+		}
+		return o, err
+	}
+	t.Cleanup(func() { lanOptions = orig })
+	m := openLan(t) // ReadNet が止まっていても戻る
+	view := func() string { return stripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")) }
+	if !m.lanV.busy() || !m.spinnerActive() || !strings.Contains(view(), "ネットワークを読んでいます") {
+		t.Fatalf("読み込み中なのに tick が回らない / 読んでいる印が無い: busy=%v\n%s", m.lanV.busy(), view())
+	}
+	close(release)
+	for deadline := time.Now().Add(5 * time.Second); strings.Contains(view(), "ネットワークを読んでいます"); {
+		if time.Now().After(deadline) {
+			t.Fatal("読み終えても tick で取り込まない")
+		}
+		m.Update(tickMsg{})
+		time.Sleep(10 * time.Millisecond) // sleep-ok: 条件のポーリングの刻み (待ちの実体は上の条件)
 	}
 }

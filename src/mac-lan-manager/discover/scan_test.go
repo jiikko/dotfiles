@@ -133,3 +133,45 @@ func TestCloseClosesChanged(t *testing.T) {
 		}
 	}
 }
+
+// Add は 1 回だけ引き、Rmv の後にまた Add されたら引き直す (相手の再起動で IP が変わる)。Rmv だけでは引かない。
+func TestOnBrowseReresolvesAfterRemove(t *testing.T) {
+	s := &Scanner{seen: map[string]bool{}, readded: map[string]bool{}, peers: map[string]*Peer{}}
+	add := Browse{Add: true, Instance: "mini"}
+	rmv := Browse{Add: false, Instance: "mini"}
+	if !s.onBrowse("_ssh._tcp", add) {
+		t.Fatal("最初の Add で引かない")
+	}
+	if s.onBrowse("_ssh._tcp", add) {
+		t.Error("同じ Add (別の I/F) でもう一度引いた")
+	}
+	if s.onBrowse("_ssh._tcp", rmv) {
+		t.Error("Rmv で引いた")
+	}
+	if !s.onBrowse("_ssh._tcp", add) {
+		t.Fatal("Rmv の後の Add で引き直さない (再起動で変わった IP が古いまま残る)")
+	}
+	if !s.readded["_ssh._tcp\x00mini"] {
+		t.Error("引き直しの印が無い (resolve が -G を起こさず、IP を取り直さない)")
+	}
+}
+
+// 引き直しの印のあるインスタンスは、知っているホストでも -G を起こし直し、同じ I/F の古い IP を新しい IP で上書きする。
+func TestResolveRefreshesAddrsWhenReadded(t *testing.T) {
+	f := &fakeStarter{out: map[string]string{
+		"dns-sd -L mini _ssh._tcp local": "21:28:48.953  mini._ssh._tcp.local. can be reached at m2macmini.local.:22 (interface 27)\n",
+		"dns-sd -G v4 m2macmini.local":   "21:27:58.076  Add  40000002      27  m2macmini.local.                       169.254.9.9                                  4500\n",
+	}}
+	s := Start(f.start, time.Now()) // -B の偽物は無い (起こせずにすぐ終わる)
+	defer s.Close()
+	s.mu.Lock()
+	s.peers["m2macmini.local"] = &Peer{Host: "m2macmini.local", Addrs: map[int]string{27: "169.254.1.1"}, Instances: []string{"mini"}}
+	s.readded["_ssh._tcp\x00mini"] = true
+	s.pending++
+	s.mu.Unlock()
+	s.wg.Add(1)
+	s.resolve("_ssh._tcp", "mini")
+	if got := s.Snapshot()[0].Addrs[27]; got != "169.254.9.9" {
+		t.Errorf("再起動で変わった IP を取り直していない: %q", got)
+	}
+}

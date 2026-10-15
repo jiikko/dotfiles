@@ -1,0 +1,76 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
+	"mac-lan-manager/discover"
+	"mac-lan-manager/lanmgr"
+	"mac-lan-manager/netinfo"
+)
+
+type dumpScan struct {
+	peers []discover.Peer
+	busy  bool
+}
+
+func (s *dumpScan) Snapshot() []discover.Peer { return s.peers }
+func (s *dumpScan) Busy(time.Time) bool       { return s.busy }
+func (s *dumpScan) Changed() <-chan struct{}  { return nil }
+func (s *dumpScan) Close()                    {}
+
+func dumpModel(busy bool) func() (*lanmgr.Model, error) {
+	return func() (*lanmgr.Model, error) {
+		return lanmgr.New(lanmgr.Options{
+			ReadNet: func(context.Context) (netinfo.Snapshot, error) {
+				return netinfo.Snapshot{Services: []netinfo.Service{
+					{Name: "Thunderbolt Ethernet", Device: "en13", Active: true, IP: "169.254.13.42"},
+					{Name: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Router: "192.168.50.1"},
+				}}, nil
+			},
+			LocalHost: func() string { return "me.local" },
+			StartScan: func(time.Time) lanmgr.Scanner {
+				return &dumpScan{busy: busy, peers: []discover.Peer{{Host: "m2macmini.local", Instances: []string{"kojiのMac mini"}, SSH: true,
+					Addrs: map[int]string{14: "192.168.50.7", 27: "169.254.217.100"}}}}
+			},
+			IfName: func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
+			User:   "koji",
+		}), nil
+	}
+}
+
+// dump は画面と同じ判定の一覧を文字で出す (この Mac・見えた Mac・その IP の分類と繋ぐ先・Bonjour の生の結果)。
+func TestDumpText(t *testing.T) {
+	var out, errb bytes.Buffer
+	if rc := runDump(nil, &out, &errb, time.Now, dumpModel(false)); rc != 0 {
+		t.Fatalf("rc=%d stderr=%s", rc, errb.String())
+	}
+	for _, want := range []string{"host: me.local", "net_ready: true", "m2macmini.local", "lan=169.254.217.100", "connect=169.254.217.100", "27:169.254.217.100"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("出力に %q が無い:\n%s", want, out.String())
+		}
+	}
+}
+
+// --json は同じ中身を JSON で出す。走査が終わらなければ --wait の上限で打ち切り、busy=true で出す (待ち続けない)。
+func TestDumpJSONAndWaitCap(t *testing.T) {
+	var out, errb bytes.Buffer
+	start := time.Now()
+	if rc := runDump([]string{"--json", "--wait", "200ms"}, &out, &errb, time.Now, dumpModel(true)); rc != 0 {
+		t.Fatalf("rc=%d stderr=%s", rc, errb.String())
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Errorf("--wait の上限で打ち切らない (%v)", time.Since(start))
+	}
+	var r lanmgr.Report
+	if err := json.Unmarshal(out.Bytes(), &r); err != nil {
+		t.Fatalf("JSON が読めない: %v\n%s", err, out.String())
+	}
+	if !r.Busy || len(r.Rows) != 2 || r.Rows[1].Host != "m2macmini.local" || r.Rows[1].ConnectIP != "169.254.217.100" {
+		t.Errorf("report = %+v", r)
+	}
+}

@@ -104,13 +104,17 @@ type Model struct {
 	band      lineedit.Line
 	bandEdit  bool `layer:"band"`
 
-	self    netinfo.Snapshot
-	selfErr error
-	host    string // この Mac のホスト名 (台帳の鍵の形)
-	hosts   []ledger.Host
-	peers   []discover.Peer
-	scan    Scanner
-	pf      prefs.Prefs
+	self      netinfo.Snapshot
+	selfErr   error
+	host      string // この Mac のホスト名 (台帳の鍵の形)
+	hosts     []ledger.Host
+	peers     []discover.Peer
+	scan      Scanner
+	wantHost  string             // RestorePlace で戻したいカーソルの Mac (見つかるまで持つ。走査が終われば諦める)
+	netCh     <-chan netLoad     // 裏で読んでいるこの Mac のネットワーク (nil = 読んでいない)
+	netReady  bool               // この Mac のネットワークを一度は読み終えた (読み直しの間は前の値のまま描く)
+	netCancel context.CancelFunc // その取り消し
+	pf        prefs.Prefs
 
 	notices []Notice
 	exec    *ExecRequest
@@ -143,14 +147,13 @@ func (m *Model) Reload() {
 	// 走査の settle の起点は今。最後の Advance の時刻のままだと、閉じていた間の分だけ settle が過ぎた扱いになり、開き直した直後に
 	// 走査中の印が消えて tick が止まる (red team の指摘 2026-10-15)
 	m.now = m.o.Now()
-	if m.o.ReadNet != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		m.self, m.selfErr = m.o.ReadNet(ctx)
-		cancel()
-	}
-	if m.o.LocalHost != nil {
+	// ホスト名は同期に読む (scutil 1 回。実測 12 ms)。裏へ回すと読み終わるまで「この Mac」の照合ができず、台帳と Bonjour の自分の
+	// 行が別の Mac として出て、そこへ ssh できた (fable の敵対レビュー 2026-10-16)
+	// 読めていれば読み直さない (ホスト名はまず変わらない。configd が詰まると scutil は上限の 3 秒まで戻らず、L を押すたびに止まる)
+	if m.o.LocalHost != nil && m.host == "" {
 		m.host = ledger.Key(m.o.LocalHost())
 	}
+	m.startNetLoad()
 	if m.o.Ledger != nil {
 		hs, err := m.o.Ledger.Load()
 		if err != nil {
@@ -173,17 +176,110 @@ func (m *Model) Reload() {
 	}
 }
 
+// netLoad はこの Mac のネットワークを裏で読んだ結果。
+type netLoad struct {
+	self netinfo.Snapshot
+	err  error
+}
+
+// startNetLoad はこの Mac のネットワーク (networksetup / ifconfig を順に起こす。実測 約 420 ms) を裏で読み始める。
+// 🚨 Update の中で同期に読まない: glogx の L を押すたびに画面がその間止まった (ユーザー報告 2026-10-15)。読み終わるまでは前に読んだ値の
+// ままで描き、Busy を立てて呼び出し側の tick を回させ、Advance で取り込む。読み直しが重なったら前の読み込みは取り消して結果も捨てる。
+func (m *Model) startNetLoad() {
+	m.stopNetLoad()
+	readNet := m.o.ReadNet
+	if readNet == nil {
+		m.netReady = true // 読むものが無い (テスト・ネットワークを見ない呼び出し側)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ch := make(chan netLoad, 1)
+	m.netCh, m.netCancel = ch, cancel
+	go func() {
+		defer cancel()
+		var r netLoad
+		r.self, r.err = readNet(ctx)
+		ch <- r // 容量 1 なので、読む側が捨てていても止まらない
+	}()
+}
+
+// stopNetLoad は裏の読み込みを取り消す (結果は待たない。読み込みは 5 秒で必ず終わる)。
+func (m *Model) stopNetLoad() {
+	if m.netCancel != nil {
+		m.netCancel()
+	}
+	m.netCh, m.netCancel = nil, nil
+}
+
+// takeNetLoad は裏の読み込みが終わっていれば取り込む (待たない)。
+func (m *Model) takeNetLoad() {
+	select {
+	case r := <-m.netCh:
+		m.applyNetLoad(r)
+	default:
+	}
+}
+
+func (m *Model) applyNetLoad(r netLoad) {
+	m.self, m.selfErr = r.self, r.err
+	m.netReady = true
+	m.netCh, m.netCancel = nil, nil
+}
+
 func (m *Model) note(text string, ok bool) { m.notices = append(m.notices, Notice{text, ok}) }
 
 // Resize は画面の大きさを伝える。
 func (m *Model) Resize(w, h int) { m.w, m.h = w, h }
 
+// Place は今のタブとカーソルの Mac (glogx が L を出したまま閉じたときに覚え、次の起動で戻す)。
+type Place struct {
+	Tab  int    `json:"tab"`
+	Host string `json:"host"` // 台帳の鍵 (.local のホスト名)。この Mac の行なら空
+}
+
+// Place は今の場所。
+func (m *Model) Place() Place {
+	p := Place{Tab: m.tab}
+	if r := m.current(); !r.self {
+		p.Host = r.host
+	}
+	return p
+}
+
+// RestorePlace は場所を戻す。カーソルの Mac がまだ一覧に無ければ (Bonjour の走査で後から見つかる)、見つかったときに合わせる。
+func (m *Model) RestorePlace(p Place) {
+	if p.Tab == 0 || p.Tab == 1 {
+		m.tab = p.Tab
+	}
+	m.wantHost = p.Host
+	m.seekWantHost()
+}
+
+// seekWantHost は戻したい Mac が一覧に出ていればカーソルを合わせる。走査が終わっても出なければ諦める (居なくなった Mac)。
+func (m *Model) seekWantHost() {
+	if m.wantHost == "" {
+		return
+	}
+	for i, r := range m.visible() {
+		if r.host == m.wantHost && !r.self {
+			m.cur[m.tab] = i
+			m.wantHost = ""
+			return
+		}
+	}
+	if !m.Busy() {
+		m.wantHost = ""
+	}
+}
+
 // Advance は時間を進め、走査の途中の結果を取り込む。
 func (m *Model) Advance(now time.Time) {
 	m.now = now
+	m.takeNetLoad()
 	if m.scan != nil {
 		m.peers = m.scan.Snapshot()
 	}
+	m.seekWantHost()
 }
 
 // Changed は走査の結果が変わった合図のチャネル (走査が無ければ nil = 待っても来ない)。呼び出し側は合図を受けたら Advance を呼び、また待つ。
@@ -196,7 +292,8 @@ func (m *Model) Changed() <-chan struct{} {
 }
 
 // Busy は走査が続いているか (呼び出し側はこの間、遅い周期で Advance を呼ぶ。spinner もこの間だけ回る)。
-func (m *Model) Busy() bool { return m.scan != nil && m.scan.Busy(m.now) }
+// この Mac のネットワークを裏で読んでいる間も Busy (読み終わりを Advance で取り込むため)。
+func (m *Model) Busy() bool { return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) }
 
 // OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定) が開いているか (glogx は横断キーも渡す)。
 func (m *Model) OwnsKeys() bool {
@@ -257,6 +354,7 @@ func (m *Model) Paste(s string) {
 
 // Close は走査を止める (自分が起こした dns-sd を全部止める)。
 func (m *Model) Close() {
+	m.stopNetLoad()
 	if m.scan != nil {
 		m.scan.Close()
 		m.scan = nil
@@ -284,14 +382,28 @@ type row struct {
 	instance  string // Bonjour のインスタンス名 (別名が無いときの表示)
 }
 
-// ifKind は I/F の名前がこの Mac のどの側か (インターネット側 = メイン / それ以外 = 内部)。
-func (m *Model) isInternetIF(dev string) bool {
+// ifKind は相手の IP が見えた I/F (この Mac の I/F の名前) の種類。この Mac のサービスとして登録された I/F だけが
+// メイン (ルーターあり) / 内部 (ルーター無しの有線) になる。登録の無い I/F (VM の NAT の bridge100・VPN の utun・
+// 名前を引けなかった I/F) は netinfo.Classify の種類のまま「その他」に回す: 内部 IP にすると「有線・固定」の札が付き、
+// 台帳への登録で固定 IP の欄に書いてしまう (全体レビューの指摘 2026-10-15)。
+func (m *Model) ifKind(dev, addr string) netinfo.Kind {
+	if dev == "" {
+		return netinfo.KindUnknown
+	}
+	wired, internet := map[string]bool{}, map[string]bool{}
 	for _, s := range m.self.Services {
-		if s.Device == dev {
-			return s.Internet()
+		if s.Internet() {
+			internet[s.Device] = true
+		} else {
+			wired[s.Device] = true
 		}
 	}
-	return false
+	return netinfo.Classify(dev, addr, wired, internet)
+}
+
+// isServiceIF は dev がこの Mac のサービスとして登録された I/F か (169.254 も、登録された有線の上なら内部の網)。
+func (m *Model) isServiceIF(dev string) bool {
+	return slices.ContainsFunc(m.self.Services, func(s netinfo.Service) bool { return s.Device == dev })
 }
 
 // selfLan は設定に従って決めたこの Mac の内部 IP と、その出どころの説明 (推測しない。帯 / I/F で決める)。
@@ -378,13 +490,22 @@ func (m *Model) rows() []row {
 			if m.o.IfName != nil {
 				dev = m.o.IfName(idx)
 			}
+			if !m.netReady {
+				break // この Mac のどの I/F が有線かを読み終えるまで分けない (分けると全部「その他」になり、s がその先頭へ繋いだ)
+			}
+			k := m.ifKind(dev, ip)
+			// 内部 IP にするのは、この Mac のサービスとして登録された有線の I/F で見えたものだけ。Classify は登録の無い I/F の
+			// 169.254 も KindLinkLocal にするので、LinkLocal だけは登録を確かめる (KindWired は登録された I/F にしか付かない)
+			wiredService := k == netinfo.KindWired || (k == netinfo.KindLinkLocal && m.isServiceIF(dev))
 			switch {
-			case m.isInternetIF(dev):
+			case k == netinfo.KindInternet:
 				if r.mainIP == "" {
 					r.mainIP = clean(ip)
 				}
-			case !lanPicked:
+			case wiredService && !lanPicked:
 				r.lanIP, lanPicked = clean(ip), true
+			default:
+				r.others = append(r.others, netinfo.IP{Device: dev, Addr: clean(ip), Kind: k})
 			}
 		}
 	}
@@ -425,8 +546,14 @@ func (m *Model) current() row {
 	return vis[m.cur[m.tab]]
 }
 
-// connectIP は繋ぐ先 (内部 IP があればそちら = 有線を通す。無ければメイン)。
-func (r row) connectIP() string { return or(r.lanIP, r.mainIP) }
+// connectIP は繋ぐ先 (内部 IP があればそちら = 有線を通す。無ければメイン。どちらも無ければその他の I/F で見えた IP。
+// VM のゲストは VM の網にしか居ないので、その他を最後の手段に残す)。
+func (r row) connectIP() string {
+	if ip := or(r.lanIP, r.mainIP); ip != "" || len(r.others) == 0 {
+		return ip
+	}
+	return r.others[0].Addr
+}
 
 // userFor は ssh のユーザー名 (台帳に無ければ推測の名前と、推測であることの印)。
 func (m *Model) userFor(r row) (user string, guessed bool) {
@@ -460,6 +587,8 @@ func (m *Model) HandleKey(key string) Action { return m.HandleInput(key, lineedi
 // HandleInput はキーを 1 つ処理する (text は打った文字。入力欄に入れる)。
 func (m *Model) HandleInput(key, text string) Action {
 	key = canonKey(key)
+	m.takeNetLoad() // 読み終えていれば、次の tick を待たずにこのキーから効かせる
+	m.wantHost = "" // 自分で動かしたら、後から見つかった Mac へカーソルを跳ばさない
 	if key == "ctrl+c" {
 		return Quit
 	}
@@ -522,6 +651,12 @@ func move(cur *int, n int, key string, rows int) bool {
 }
 
 func (m *Model) keyList(key string) Action {
+	// 繋ぐ・コピー・登録は、この Mac のネットワーク (どの I/F が有線か・この Mac の IP) を読み終えてから。読み込み中に受けると
+	// 繋ぐ先・登録する内部 IP を誤った分類で決める (fable の敵対レビュー 2026-10-16)
+	if !m.netReady && slices.Contains([]string{"s", "Y", "y", "o", "c", "space"}, key) {
+		m.note("この Mac のネットワークを読んでいます (少し待ってから)", false)
+		return None
+	}
 	r := m.current()
 	user, guessed := m.userFor(r)
 	guessNote := ""

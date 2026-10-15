@@ -39,6 +39,7 @@ type Scanner struct {
 	changed chan struct{}
 	closing sync.Once
 	seen    map[string]bool // 引き当てを起こしたサービス + インスタンス (同じものが Wi-Fi と有線の 2 つの I/F で Add されても 1 回だけ引く)
+	readded map[string]bool // Rmv の後にもう一度 Add されたもの (相手の再起動など。IP が変わりうるので引き直す)
 	sem     chan struct{}   // 同時に起こす引き当ての上限 (LAN 上の広告の数だけ dns-sd を起こさない)
 }
 
@@ -55,7 +56,7 @@ const settleWindow = 3 * time.Second
 func Start(start Starter, now time.Time) *Scanner {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Scanner{start: start, ctx: ctx, cancel: cancel, peers: map[string]*Peer{}, settle: now.Add(settleWindow), changed: make(chan struct{}, 1),
-		seen: map[string]bool{}, sem: make(chan struct{}, maxLookups)}
+		seen: map[string]bool{}, readded: map[string]bool{}, sem: make(chan struct{}, maxLookups)}
 	for _, svc := range Services {
 		s.wg.Add(1)
 		go s.browse(svc)
@@ -127,21 +128,34 @@ func (s *Scanner) browse(svc string) {
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		b, ok := ParseBrowse(sc.Text())
-		if !ok || !b.Add {
-			continue // Rmv は今は扱わない (見えなくなった Mac も一覧に残る。読み直しの r で消える)
-		}
-		s.mu.Lock()
-		key := svc + "\x00" + b.Instance
-		if s.seen[key] {
-			s.mu.Unlock()
+		if !ok || !s.onBrowse(svc, b) {
 			continue
 		}
-		s.seen[key] = true
-		s.pending++
-		s.mu.Unlock()
 		s.wg.Add(1)
 		go s.resolve(svc, b.Instance)
 	}
+}
+
+// onBrowse は -B の 1 行を帳簿に付け、引き当てを起こすかを返す。Add は 1 回だけ引く (2 つの I/F で Add されても)。Rmv は帳簿から外し、
+// その後にまた Add されたら引き直す: 相手が再起動すると 169.254 の IP が変わるので、外さないと r を押すまで古い IP のままになる
+// (全体レビューの指摘 2026-10-15)。見えなくなった Mac は一覧に残す (台帳の Mac と同じく「今は見えていない」は r で消える)。
+func (s *Scanner) onBrowse(svc string, b Browse) bool {
+	key := svc + "\x00" + b.Instance
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !b.Add {
+		if s.seen[key] {
+			delete(s.seen, key)
+			s.readded[key] = true // 次の Add は引き直し
+		}
+		return false
+	}
+	if s.seen[key] {
+		return false
+	}
+	s.seen[key] = true
+	s.pending++
+	return true
 }
 
 // resolve はインスタンスをホスト名に引き当て (-L)、初めてのホストなら IP も引く (-G)。
@@ -167,6 +181,9 @@ func (s *Scanner) resolve(svc, inst string) {
 		return
 	}
 	s.mu.Lock()
+	key := svc + "\x00" + inst
+	refresh := s.readded[key]
+	delete(s.readded, key)
 	p := s.peers[host]
 	newHost := p == nil
 	if newHost {
@@ -185,7 +202,7 @@ func (s *Scanner) resolve(svc, inst string) {
 		p.SMB = true
 	}
 	s.mu.Unlock()
-	if newHost {
+	if newHost || refresh { // 同じ I/F の IP は I/F の番号で上書きされる (Addrs は I/F の番号が鍵)
 		s.addrs(host)
 	}
 }

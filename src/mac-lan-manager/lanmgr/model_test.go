@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"time"
 
 	"charm.land/lipgloss/v2"
@@ -100,8 +102,16 @@ func newHarness(t *testing.T, hosts []ledger.Host, peers []discover.Peer) *harne
 		Now:       func() time.Time { return t0 },
 		User:      "koji",
 	})
+	awaitNetLoad(h.m)
 	h.m.Resize(120, 40)
 	return h
+}
+
+// awaitNetLoad は裏で読んでいるこの Mac のネットワークを待って取り込む (テストを読み込みの速さに依らせない)。
+func awaitNetLoad(m *Model) {
+	if m.netCh != nil {
+		m.applyNetLoad(<-m.netCh)
+	}
 }
 
 func (h *harness) keys(ks ...string) Action {
@@ -420,6 +430,10 @@ func TestReadNetErrorStillOpens(t *testing.T) {
 	m := New(Options{ReadNet: func(context.Context) (netinfo.Snapshot, error) {
 		return netinfo.Snapshot{}, errors.New("no networksetup")
 	}, Now: func() time.Time { return t0 }})
+	awaitNetLoad(m)
+	if !m.netReady {
+		t.Error("読み込みに失敗したまま「読んでいます」で操作を断り続ける")
+	}
 	m.Resize(100, 30)
 	if lines := m.View(); len(lines) != 30 {
 		t.Errorf("ネットワークが読めなくても画面は出す: %d 行", len(lines))
@@ -479,13 +493,52 @@ func TestReloadStartsScanAtNow(t *testing.T) {
 
 // ルーターの無い I/F が 2 つある相手でも、内部 IP は描くたびに同じ (I/F の番号の小さい方)。map の順で選ぶと揺れる。
 func TestLanIPIsDeterministicAcrossIFs(t *testing.T) {
-	two := discover.Peer{Host: "two.local", SSH: true, Addrs: map[int]string{168: "192.168.100.5", 32: "169.254.1.1", 40: "10.0.0.7", 50: "10.0.0.8"}}
-	h := newHarness(t, nil, []discover.Peer{two})
+	net := selfNet()
+	net.Services = append(net.Services, netinfo.Service{Name: "USB LAN", Device: "en14", Active: true, Method: "manual", IP: "192.168.100.2"})
+	two := discover.Peer{Host: "two.local", SSH: true, Addrs: map[int]string{168: "192.168.100.5", 32: "169.254.1.1"}}
+	m := New(Options{
+		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
+		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{two}} },
+		IfName:    func(i int) string { return map[int]string{32: "en13", 168: "en14"}[i] },
+		Now:       func() time.Time { return t0 },
+	})
+	awaitNetLoad(m)
 	for i := range 200 {
-		rs := h.m.rows()
+		rs := m.rows()
 		if got := rs[len(rs)-1].lanIP; got != "169.254.1.1" {
 			t.Fatalf("%d 回目の内部 IP = %q, want 169.254.1.1 (I/F の番号の小さい方)", i, got)
 		}
+	}
+}
+
+// この Mac のサービスに無い I/F (VM の NAT の bridge100) で見えた相手は、内部 IP (有線・固定) にしない。その他の IP に種類つきで出し、
+// 繋ぐ先は最後の手段としてそれを使う。台帳に登録しても固定 IP の欄に書かない。
+func TestVirtualIFIsNotLan(t *testing.T) {
+	vm := discover.Peer{Host: "vm.local", SSH: true, Addrs: map[int]string{30: "192.168.64.3"}}
+	m := New(Options{
+		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil },
+		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{vm}} },
+		IfName:    func(i int) string { return map[int]string{30: "bridge100"}[i] },
+		Now:       func() time.Time { return t0 },
+		Ledger:    &memStore{},
+		User:      "koji",
+	})
+	awaitNetLoad(m)
+	rs := m.rows()
+	r := rs[len(rs)-1]
+	if r.lanIP != "" || r.mainIP != "" {
+		t.Errorf("VM の網の IP を内部 / メインにした: lan=%q main=%q", r.lanIP, r.mainIP)
+	}
+	if len(r.others) != 1 || r.others[0].Kind != netinfo.KindVirtual || r.connectIP() != "192.168.64.3" {
+		t.Errorf("その他 = %+v / 繋ぐ先 = %q", r.others, r.connectIP())
+	}
+	m.HandleKey("l")
+	m.HandleKey("j")
+	m.HandleKey("space")
+	m.HandleKey("y")
+	hs, _ := m.o.Ledger.Load()
+	if len(hs) != 1 || hs[0].LAN != "" {
+		t.Errorf("台帳 = %+v (VM の網の IP を固定 IP の欄に書いた)", hs)
 	}
 }
 
@@ -519,5 +572,169 @@ func TestAliasGoesToMacOpenedFor(t *testing.T) {
 		if want := map[bool]string{true: "x", false: ""}[x.Host == opened]; x.Alias != want {
 			t.Errorf("%s の別名 = %q, want %q", x.Host, x.Alias, want)
 		}
+	}
+}
+
+// この Mac のネットワークは裏で読む (New / Reload は待たずに返る。glogx の L が止まらない)。読み終わるまでは Busy で、Advance で取り込む。
+// 読み直しが重なったら前の読み込みを取り消し (ctx が取り消される)、前の結果を待たずに新しい結果を載せる。
+func TestNetLoadIsAsyncAndSuperseded(t *testing.T) {
+	release, cancelled := make(chan struct{}), make(chan struct{})
+	m := New(Options{
+		ReadNet: func(ctx context.Context) (netinfo.Snapshot, error) {
+			select { // 1 回目は止めておく (古い読み込み)
+			case <-release:
+			case <-ctx.Done():
+				close(cancelled)
+			}
+			return netinfo.Snapshot{Services: []netinfo.Service{{Name: "古い", Device: "en9"}}}, nil
+		},
+		Now: func() time.Time { return t0 },
+	})
+	defer close(release)
+	if !m.Busy() {
+		t.Fatal("読み込み中なのに Busy でない (呼び出し側の tick が回らず取り込まれない)")
+	}
+	m.Advance(t0)
+	if m.netReady {
+		t.Fatal("New が読み込みを待った / 読み終わっていないものを取り込んだ")
+	}
+	m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil }
+	m.Reload()
+	select {
+	case <-cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("読み直しで前の読み込みを取り消していない")
+	}
+	done := make(chan struct{})
+	go func() { awaitNetLoad(m); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("読み直しの結果が来ない (前の読み込みを待っている / 読み直していない)")
+	}
+	if len(m.self.Services) != 2 || m.Busy() {
+		t.Errorf("読み直しの結果が取り込まれていない: %+v busy=%v", m.self.Services, m.Busy())
+	}
+}
+
+// 読み込み中も「この Mac」は 1 行 (ホスト名は同期に読むので、台帳と Bonjour の自分の行を照合できる)。繋ぐ・コピー・登録は読み終えるまで断る
+// (どの I/F が有線か分からないまま繋ぐ先を決めない)。読み終えたら効く。
+func TestLoadingKeepsSelfSingleAndRefusesActions(t *testing.T) {
+	release := make(chan struct{})
+	me := discover.Peer{Host: "me.local", SSH: true, Addrs: map[int]string{14: "192.168.50.250"}}
+	m := New(Options{
+		ReadNet: func(ctx context.Context) (netinfo.Snapshot, error) {
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return selfNet(), nil
+		},
+		LocalHost: func() string { return "me.local" },
+		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{me, mini}} },
+		IfName:    func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
+		// x.local は台帳に内部 IP があるので、読み込み中でも行に IP が出る (ガードが無いと s がそこへ繋ぐ)
+		Ledger: &memStore{hosts: []ledger.Host{{Host: "me.local", User: "koji"}, {Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
+		Now:    func() time.Time { return t0 },
+		User:   "koji",
+	})
+	for _, r := range m.rows() {
+		if !r.self && r.host == "me.local" {
+			t.Fatalf("読み込み中に「この Mac」が別の行として出た: %+v", r)
+		}
+	}
+	for _, r := range m.rows() {
+		if len(r.others) > 0 || (!r.self && r.mainIP != "") {
+			t.Errorf("読み込み中に相手の IP を分類した: %+v (どの I/F が有線か分からないまま「その他」に入れる)", r)
+		}
+	}
+	m.HandleKey("j") // 管理対象のタブの x.local (台帳の内部 IP がある)
+	if m.current().host != "x.local" || m.current().connectIP() == "" {
+		t.Fatalf("前提が作れていない: %+v", m.current())
+	}
+	for _, k := range []string{"s", "Y", "y", "o", "c", "space"} {
+		if a := m.HandleKey(k); a != None || m.ov != ovNone {
+			t.Errorf("読み込み中の %s を受けた (action=%v ov=%v)", k, a, m.ov)
+		}
+	}
+	m.HandleKey("l")
+	m.HandleKey("j")
+	close(release)
+	awaitNetLoad(m)
+	if a := m.HandleKey("s"); a != Exec {
+		t.Errorf("読み終えた後の s が効かない: %v (notices %+v)", a, m.TakeNotices())
+	}
+}
+
+// Place はカーソルが「この Mac」の行なら Host を空にする (戻すときに自分の行を探さない)。
+func TestPlaceOnSelfHasNoHost(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini})
+	if p := h.m.Place(); p.Host != "" {
+		t.Errorf("この Mac の行で Host = %q", p.Host)
+	}
+}
+
+// RestorePlace: カーソルの Mac が走査で後から見つかったら、見つかった時点で合わせる。走査が終わっても出なければ諦める。
+// その前に自分で動かしたら、後から見つかっても跳ばない。
+func TestRestorePlaceWaitsForLatePeer(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	h.scan.busy = true
+	h.m.RestorePlace(Place{Tab: 1, Host: "m2macmini.local"})
+	if h.m.tab != 1 {
+		t.Fatalf("タブが戻らない: %d", h.m.tab)
+	}
+	h.scan.peers = []discover.Peer{{Host: "a.local", SSH: true}, mini}
+	h.m.Advance(t0)
+	if got := h.m.current().host; got != "m2macmini.local" {
+		t.Errorf("後から見つかった Mac にカーソルが合わない: %q", got)
+	}
+
+	h = newHarness(t, nil, nil)
+	h.scan.busy = true
+	h.m.RestorePlace(Place{Tab: 1, Host: "m2macmini.local"})
+	h.keys("j") // 自分で動かした
+	h.scan.peers = []discover.Peer{{Host: "a.local", SSH: true}, mini}
+	h.m.Advance(t0)
+	if got := h.m.current().host; got == "m2macmini.local" {
+		t.Error("自分で動かした後に、後から見つかった Mac へ跳んだ")
+	}
+
+	h = newHarness(t, nil, nil)
+	h.m.RestorePlace(Place{Tab: 1, Host: "gone.local"}) // 走査は終わっている
+	if h.m.wantHost != "" {
+		t.Error("走査が終わっているのに、居ない Mac を待ち続ける")
+	}
+}
+
+// 名前の列は中身の最長に合わせて伸びる (固定の 12 桁では「kojiのMac mini」も切れた。ユーザー要望 2026-10-15)。幅が足りずホスト名の列を
+// 出さないときは、その幅を名前の列へ返す (縮めたまま返さないと、ホスト名も名前も両方切れる)。
+func TestNameColumnFitsContent(t *testing.T) {
+	for _, w := range []int{120, 100} { // 100 はホスト名の列が入らず、名前の列へ幅を返す側 (90 は他の列だけで埋まる)
+		h := newHarness(t, nil, []discover.Peer{mini})
+		h.m.Resize(w, 20)
+		h.keys("l")
+		if view := termwidth.StripSGR(strings.Join(h.m.View(), "\n")); !strings.Contains(view, "kojiのMac mini") {
+			t.Errorf("幅 %d で名前が切れた:\n%s", w, view)
+		}
+	}
+}
+
+// 読み込みの結果が届いてから次の tick (Advance) までの間に押したキーも効く (キーを受けたときに取り込む)。
+func TestKeyAppliesFinishedNetLoad(t *testing.T) {
+	m := New(Options{
+		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil },
+		LocalHost: func() string { return "me.local" },
+		Ledger:    &memStore{hosts: []ledger.Host{{Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
+		Now:       func() time.Time { return t0 },
+	})
+	for deadline := time.Now().Add(5 * time.Second); len(m.netCh) == 0; {
+		if time.Now().After(deadline) {
+			t.Fatal("読み込みの結果が届かない")
+		}
+		time.Sleep(time.Millisecond) // sleep-ok: 条件のポーリングの刻み (待ちの実体は上の条件)
+	}
+	m.HandleKey("j")
+	if a := m.HandleKey("s"); a != Exec {
+		t.Errorf("届いた結果を取り込まず「読んでいます」で断った: %v %+v", a, m.TakeNotices())
 	}
 }
