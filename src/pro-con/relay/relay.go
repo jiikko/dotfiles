@@ -216,9 +216,9 @@ func sameContent(a, b Frame) bool {
 // staleTmp は一時ファイル (印の .tmp-* と 1 枚の <id>.frame.tmp.*) を落ちた画面の残りとみなすまでの時間 (作ってから rename するまでは一瞬。presence と同じ)。
 const staleTmp = time.Minute
 
-// isTmp は relay/ の中の一時ファイルの名前か: 印の作りかけ (.tmp-<id>) と、1 枚の書きかけ (atomicfile が作る <id>.frame.tmp.<乱数>)。
+// isTmp は relay/ の中の一時ファイルの名前か: 印の作りかけ (.tmp-<id>) と、1 枚の書きかけ (atomicfile.Write の temp。名前の規則は atomicfile に聞く)。
 func isTmp(name string) bool {
-	return strings.HasPrefix(name, ".tmp-") || strings.Contains(name, ".frame.tmp.")
+	return strings.HasPrefix(name, ".tmp-") || atomicfile.IsTemp(name)
 }
 
 // sweep は落ちた画面の残り (flock の外れた印と、その 1 枚・印の無い 1 枚・古い一時ファイル) を消す。開く画面だけが呼ぶ (読む側は消さない)。
@@ -254,7 +254,7 @@ func sweep(d string) {
 	}
 }
 
-// writeAtomic は 1 枚を一時ファイル (<id>.frame.tmp.*。sweep が古いものを消す) から rename で置く。
+// writeAtomic は 1 枚を一時ファイル (atomicfile の temp。sweep が古いものを消す) から rename で置く。
 func writeAtomic(path string, data []byte) error { return atomicfile.Write(path, data, 0o600) }
 
 // Screen は読む側から見た画面 1 つ。

@@ -1,12 +1,20 @@
 // Package atomicfile は「途中の状態を残さない」ファイル書き込みを 1 箇所に置く。
 // glogx の状態キャッシュ (cache.go の writeAtomic)・issues の本文書き換え (claim バナー)・
-// ratelimit の利用枠キャッシュが共有する。
+// ratelimit の利用枠キャッシュ・pro-con の状態の置き場 (store / relay / live / upgrade / dispatcher) が共有する。
 package atomicfile
 
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// tmpInfix は temp の名前の `<元のファイル名>` と乱数の間に挟む印。Write と IsTemp がここだけを見る。
+const tmpInfix = ".tmp."
+
+// IsTemp は name (ファイル名) が Write の作る temp の形か。残骸を掃除する側が、名前の規則を写さずに判定するために使う
+// (写すと、ここの規則を変えたときに掃除が黙って外れる)。
+func IsTemp(name string) bool { return strings.Contains(filepath.Base(name), tmpInfix) }
 
 // Write は temp + rename で path を置き換える (最終的な mode は perm)。write / Close / rename のどの分岐で失敗しても temp を掃除する。
 //
@@ -28,7 +36,7 @@ import (
 // ⚠️ **Close 分岐の掃除は変異検証の射程外**: RLIMIT_FSIZE では Close 失敗を作れないため、
 // この分岐の os.Remove を外してもどのテストも赤くならない (issue 219 で実測)。
 func Write(path string, data []byte, perm os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp.*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+tmpInfix+"*")
 	if err != nil {
 		return err
 	}
