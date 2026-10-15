@@ -134,5 +134,6 @@
 - [ ] **残課題: ThumbnailThumb の agent 4 本** (smoke-test-runner / tt-api-expert / test-runner / swiftui-test-expert) は今も `./tmp/` 直下に書く。
   `thumbnailthumb-test.log` / `perf.log` はアプリ側が決める固定パス。`tt-client preview|export -o` の png はクライアント側の curl が保存するので
   (`~/src/homebrew-tap/bin/tt-client` で確認) `skill-tmpdir` に移せるが、ここでは動かせないので見送った
-- [ ] `tmp/` のディレクトリ 51 件の片付け (ファイル 1150 件は削除済み。ディレクトリはユーザーの判断待ち)
+- [x] `tmp/` のディレクトリの片付け (ユーザー承認 2026-10-16): 44 件を削除。残したのは issue から参照される `747-mock` / `747-mock2` / `treefiler-mock` / `review-bench`、
+  使用中の `747-mdns`、zundamon の完成物 `it-kaisetsu`。直下のファイルも 1 時間より古い 20 件を追加で削除 (残り 12 件は 747 などの作業中のログ)
 - [ ] A の後 2 週間ほどで直下の増え方を測り、B が要るかを決める
