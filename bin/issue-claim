@@ -1,0 +1,9 @@
+#!/usr/bin/env zsh
+# issue-claim — issue に着手の claim (next/ の目印 + 本文冒頭の担当者バナー) を付ける。commit も push もしない。
+# Go implementation at: ~/dotfiles/src/glogx/ (cmd/issue-claim が main。本体は issues.MoveToSubdir = viewer の `n` と同じ)
+#   issue-claim <issues ディレクトリ> <NNN> / issue-claim help
+# commit と push まで 1 コマンドで行うなら scripts/issue_claim.sh <NNN> を使う (一時 worktree で行い、手元の checkout を触らない)。
+# 再ビルドは同期: 呼び出し側は rc で判定する。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec --pkg cmd/issue-claim "${0:A:h}/../src/glogx" issue-claim -- "$@"

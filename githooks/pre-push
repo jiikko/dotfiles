@@ -39,6 +39,7 @@ LINK_CHECKS=(
 # 回さない tests/issues/ の検査 (道具自身のテストで、repo の状態を見ない)。
 # CHECKS とこの一覧の和が tests/issues/test_*.sh と一致することを tests/githooks/test_pre_push.sh が見る
 EXCLUDED=(
+  test_issue_claim
   test_issue_done
   test_issue_number_drafts
   test_next_claims_have_banner_fixtures

@@ -18,6 +18,10 @@
     (関連として名前が出ただけの issue は含めない)。2 本目の着手は 1 本目の作業中になし崩しに始まり「着手を決めた瞬間」が来ないので、
     後回しにした方ほど並行着手される (obaket 1006: 841 と 854 を頼まれて 841 だけ claim し、854 が二重着手になった)
   - 🚨 **目印は symlink で、issue ファイルは動かさない** (issue 263。rename すると本文の相対リンクが切れる)
+  - 🚨 **dotfiles の `scripts/issue_claim.sh <NNN>` がある環境では手で打たない** (issue 764。他の repo でもその repo の中から呼べる)。
+    `origin/<既定のブランチ>` から一時 worktree を切って目印・バナー・commit・push を行い、worktree を捨てる。手元の checkout は触らないので、
+    claim は作業の前に rebase / pull で取り込む。既に claim 済み・直下に無い・番号の衝突は拒否し、non-fast-forward は取り直して再試行、
+    pre-push で落ちたら何も push しない。道具が使えない環境の手順は次のとおり (4 つの操作が途中で崩れやすいので、1 本ずつ結果を見る)
 
     ```sh
     ln -s ../NNN-slug.md issues/next/NNN-slug.md && git add issues/next/NNN-slug.md

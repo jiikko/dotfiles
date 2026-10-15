@@ -27,10 +27,17 @@ git fetch origin
   （`grep -rn '<番号>'` と `git log --grep='issue <番号>'` の両方を数え、commit message から参照されている側は
   動かさない）。改番したファイルの冒頭に「旧番号の話ならこの issue」と注記を残す（実例: 135 と 136）
 
+## 着手: `scripts/issue_claim.sh <NNN>`
+
+claim (`next/` の目印 + 本文冒頭の担当者バナー + その 2 つだけの commit + 即 push) を 1 コマンドで行う (issue 764)。
+`origin/<既定のブランチ>` から一時 worktree を切って行い、手元の checkout は触らない (作業の前に rebase / pull で取り込む)。
+目印とバナーは glogx の viewer の `n` と同じ本体 (`bin/issue-claim` = `src/glogx/cmd/issue-claim`) が置く。規約の正本は
+`_claude/issue-rules.d/claim-issue-in-next-and-push.md`。
+
 ## 完了: `scripts/issue_done.sh <NNN>`
 
 🚨 **done への移動は手でやらない**。`scripts/issue_done.sh <NNN>` が ①`done/`（group issue は
-`epic/<name>/done/`）へ移動 ②`next/` の claim symlink を削除 ③本文の相対リンクを張り直し
+`epic/<name>/done/`）へ移動 ②`next/` の claim symlink を削除 ③本文の相対リンクを張り直し、冒頭の担当者バナーを外す（issue 763）
 ④他 issue からの参照を張り直し、を 1 コマンドで行い、リンク検査（`tests/issues/test_issue_links_valid.sh` /
 `test_next_links_valid.sh`）が落ちたら移動を戻す。手作業では 2026-09-09 に 12 件中 4 回落とした（issue 313）。
 issues/ の外から markdown リンク `[issue 012](../issues/done/012-….md)` で書いた参照も張り直しの対象になる。
