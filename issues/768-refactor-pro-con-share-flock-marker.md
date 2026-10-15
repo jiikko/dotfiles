@@ -1,5 +1,7 @@
 # 768 (refactor): pro-con の presence と relay の「flock した印」の作り方と掃除を 1 か所にする
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-15〜）
+
 起票日: 2026-10-15
 
 ## 概要
