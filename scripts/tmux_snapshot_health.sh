@@ -49,7 +49,6 @@ lines=()
 # mtime 取得は guards.sh の tt_mtime_of に集約 (GNU / BSD の stat 方言差の罠はあちらに記録)
 
 rdir="$(tt_resurrect_dir 2>/dev/null)"
-[ -n "$rdir" ] || rdir="${XDG_DATA_HOME:-$HOME/.local/share}/tmux/resurrect"
 last_link="$rdir/last"
 now="$(date +%s)"
 

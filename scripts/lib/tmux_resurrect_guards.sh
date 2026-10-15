@@ -154,7 +154,7 @@ tt_resurrect_dir() {
   if [ -n "$d" ]; then
     # helpers.sh:103 と同一の展開式 ($HOME / $HOSTNAME / ~)。$HOSTNAME を欠くと
     # マルチホスト設定 (@resurrect-dir に $HOSTNAME) で last を取りこぼし、
-    # Fix B 退行ガード全体が silent no-op になる (zshlib/_tmux_session.zsh:80 と同式)。
+    # Fix B 退行ガード全体が silent no-op になる。zsh の _tt_wait_for_restore もこの関数を使う (書き直さない)。
     printf '%s\n' "$d" | sed "s,\$HOME,$HOME,g; s,\$HOSTNAME,$(hostname),g; s,\~,$HOME,g"
   elif [ -d "$HOME/.tmux/resurrect" ]; then
     printf '%s\n' "$HOME/.tmux/resurrect"

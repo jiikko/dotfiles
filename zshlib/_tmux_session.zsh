@@ -95,19 +95,9 @@ _tt_wait_for_restore () {
 
   # resurrect 本体（helpers.sh の resurrect_dir）と同じ規則で保存先を解決し、last の
   # 有無を判定する。両候補を OR で見ると本体の選択とズレて「走らない復元」を待ち続けうる。
-  # 規則: @resurrect-dir があればそれ / 無ければ ~/.tmux/resurrect が在ればそちら、無ければ XDG。
+  # 規則と展開 ($HOME / $HOSTNAME / ~) は guards.sh の tt_resurrect_dir が唯一の出典 (ここで書き直さない。issue 776)。
   local rdir
-  rdir="$(tmux show -gqv @resurrect-dir 2>/dev/null)"
-  if [ -z "$rdir" ]; then
-    if [ -d "$HOME/.tmux/resurrect" ]; then
-      rdir="$HOME/.tmux/resurrect"
-    else
-      rdir="${XDG_DATA_HOME:-$HOME/.local/share}/tmux/resurrect"
-    fi
-  fi
-  # @resurrect-dir 内の $HOME / $HOSTNAME / ~ を本体（helpers.sh resurrect_dir）と
-  # 同じ規則で展開する。展開がズレると last を取りこぼし、復元中でも誤って rc=3 になる。
-  rdir="$(printf '%s' "$rdir" | sed "s,\$HOME,$HOME,g; s,\$HOSTNAME,$(hostname),g; s,\~,$HOME,g")"
+  rdir="$(tt_resurrect_dir)"
   [ -f "$rdir/last" ] || return 3      # 保存が無い → 復元は走らない
 
   # 自動復元が有効か（continuum_restore.sh の auto_restore_enabled 相当:
@@ -160,10 +150,10 @@ _tt_gc_stale_holds () {
   tmux list-sessions -F '#{session_name} #{session_windows} #{session_attached}' 2>/dev/null \
   | while read -r sname wins attached; do
       case "$sname" in
-        "${TT_HOLD_PREFIX:-__tt_hold_}"*) ;;
+        "${TT_HOLD_PREFIX}"*) ;;
         *) continue ;;
       esac
-      spid="${sname#${TT_HOLD_PREFIX:-__tt_hold_}}"
+      spid="${sname#${TT_HOLD_PREFIX}}"
       case "$spid" in ''|*[!0-9]*) continue ;; esac   # pid 部が数値でない → 触らない
       # (a) pid 生存 かつ zsh プロセス = 並行 tt → 触らない。zsh 以外への pid 再利用は
       #     (b)(c) の判定へ進む（attach 中 / 育った hold は依然そちらで守られる）。
