@@ -1,1 +1,0 @@
-../776-refactor-scripts-hooks-zshlib-shared-idioms.md
