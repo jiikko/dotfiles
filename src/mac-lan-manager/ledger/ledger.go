@@ -35,7 +35,13 @@ type Store interface {
 	Load() ([]Host, error)
 	Upsert(h Host) error // 同じ鍵があれば置き換える (UpdatedAt は Store が付ける)
 	Remove(host string) error
+	// Update は既にある 1 台を f で書き換える (書く直前に読み直す)。台帳に無ければ ErrNotFound (外された Mac を戻さない)。
+	// 一部の欄だけを変える (別名など) ときに使う。古い一覧の行で Upsert すると、他の欄を古い値で上書きする
+	Update(host string, f func(*Host)) error
 }
+
+// ErrNotFound は台帳にその Mac が無い。
+var ErrNotFound = errors.New("台帳にその Mac が無い")
 
 // ErrNewerFormat は、台帳がこの版より新しい形式で書かれているので触らない、という失敗。
 var ErrNewerFormat = errors.New("台帳がこの版より新しい形式で書かれている")
@@ -104,6 +110,27 @@ func (s FileStore) Upsert(h Host) error {
 		}
 		return append(hosts, h)
 	})
+}
+
+// Update は既にある 1 台を f で書き換える。無ければ ErrNotFound (書かない)。
+func (s FileStore) Update(host string, f func(*Host)) error {
+	k := Key(host)
+	var found bool
+	err := s.modify(func(hosts []Host) []Host {
+		for i := range hosts {
+			if hosts[i].Host == k {
+				found = true
+				f(&hosts[i])
+				hosts[i].Host = k // 鍵は変えさせない
+				hosts[i].UpdatedAt = s.now().UTC().Truncate(time.Second)
+			}
+		}
+		return hosts
+	})
+	if err == nil && !found {
+		return ErrNotFound
+	}
+	return err
 }
 
 // Remove は 1 台を消す。無ければ何もしない。

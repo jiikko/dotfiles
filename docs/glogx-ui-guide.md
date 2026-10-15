@@ -81,19 +81,21 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 | `o` | 外のアプリで開く (ブラウザ・Preview) | コミット / job / PR / pro-con のカードの添付 |
 | `O` | Finder で選んだ状態で見せる (`open -R`)。大文字が小文字の強い版ではない例外 (`o` の「開く」の代わりに「置き場所を見せる」) | treefiler (木・タイル) |
 | `e` (`v`) | エディタで開く | repo root / issue 本文 / job ログ |
-| `y` | コピー (素の値: URL / パス / group 名) | issues の**合成の** group 親行だけ group 名 (親 issue のある行はパス)。treefiler は項目の絶対パス (`Y` で root からの相対パス) |
+| `y` | コピー (素の値: URL / パス / group 名) | issues の**合成の** group 親行だけ group 名 (親 issue のある行はパス)。treefiler は項目の絶対パス (`Y` で root からの相対パス)。mac-lan-manager は `smb://<IP>` (`Y` で `ssh <user>@<IP>`) |
 | `Y` | コピー (整形した参照: Markdown / 番号+タイトル+パス) | |
 | `S` | 並び (sort) の巡回 | treefiler (名前順 → 更新の新しい順 → 大きい順)。小文字の `s` (シェル) の強い版ではない例外 |
 | `p` | PR または番号 | 一覧では PR を開く、issues では番号コピー (「PR / number」の頭文字) |
 | `d` | diff | コミット / status のファイル / treefiler のタイル。**treefiler の木の上では「ゴミ箱へ移す」**(§4 の `d` 削除と同じ。y/N 確認) |
-| `m` | 名前の変更 (move / rename) | treefiler (同じフォルダの中だけ) |
+| `m` | 名前の変更 (move / rename) | treefiler (同じフォルダの中だけ)。mac-lan-manager は台帳の別名 |
+| `c` | この Mac の IP をコピー | mac-lan-manager (選んでいる行に関係なく。板で内部 / メインを選ぶ)。**pro-con では「止めた dispatcher を起こす」** (画面ごとに意味が違う。glogx には無い) |
+| `,` | 設定 | treefiler・mac-lan-manager (macOS の ⌘, に合わせた字)。pro-con の設定は `s` |
 | `r` | 再読込 / 再実行 | issues の再読込、job の rerun |
 | `a` | all / 巡回 | status で全部 stage、issues で状態フィルタ巡回。**例外: treefiler では新規作成 (add)** (ファイラーの慣習。ユーザー確認 2026-10-12。issue 722) |
 | `n` | next (次にやる目印) | issues の claim |
 | `N` | 次の番号 | issues の採番コピー |
 | `i` `s` `R` `D` `F` `U` | 板の toggle (横断キー) | どの画面からも同じ板へ飛べる (`F` = treefiler。treefiler の中では `s` がシェルなので status へは飛ばない。docs/treefiler-spec.md §0.1)。割当の表は `crossTarget` (fullscreen.go) の 1 本で、各画面はそれを引く (`U` は重ねる箱なので別経路)。**画面が自分でキーを解釈し切るモード (確認の y/N・status の全画面 diff・URL ピッカー・番号入力・doctor の削除の確認と実行) では効かない** (issues の本文 pager では効く) (誤爆防止。issue 664) |
 | `C` `X` | update (claude / codex) | どの画面からも。**status では `X` = 変更を捨てる**なので例外 |
-| `Space` | 選択 / stage | 「対象に印を付ける」。一覧では半ページ (less) |
+| `Space` | 選択 / stage | 「対象に印を付ける」。一覧では半ページ (less)。mac-lan-manager は台帳への登録 / 削除 (管理対象の印。y/N 確認) |
 
 🚨 **大文字は小文字の「強い版」または「まとめ版」**にする (`y` → `Y`、`n` → `N`、
 `j` → `J`)。無関係な意味を大文字に与えると、shift の押し間違いが別の操作になる。

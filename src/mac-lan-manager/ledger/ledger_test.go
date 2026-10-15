@@ -159,7 +159,11 @@ func TestWriteGuardRejectsOutsideSandbox(t *testing.T) {
 		t.Errorf("拒否したのにディレクトリが作られた: %v", err)
 	}
 	// symlink で外へ出る形も拒否する
-	link := filepath.Join(sandbox, "escape")
+	base, err := os.MkdirTemp(sandbox, "escape-") //nolint:usetesting // 関門の中 (sandbox) に置く。t.TempDir は関門の外
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "escape") // 回ごとに別の場所 (-count で繰り返しても名前がぶつからない)
 	if err := os.Symlink(os.TempDir(), link); err != nil {
 		t.Fatal(err)
 	}
@@ -253,5 +257,26 @@ func TestRefusesLossyRewrite(t *testing.T) {
 				t.Errorf("一覧のための読み取りまで失敗した: %v", err)
 			}
 		})
+	}
+}
+
+// Update は既にある 1 台の一部だけを変え、無い Mac は足さない (別の画面で外した Mac を戻さない)。
+func TestUpdateOnlyExisting(t *testing.T) {
+	s := newStore(t)
+	if err := s.Upsert(Host{Host: "a.local", User: "u", LAN: "192.168.100.5"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update("A.local.", func(h *Host) { h.Alias = "mini" }); err != nil {
+		t.Fatal(err)
+	}
+	hs, _ := s.Load()
+	if len(hs) != 1 || hs[0].Alias != "mini" || hs[0].User != "u" || hs[0].LAN != "192.168.100.5" {
+		t.Errorf("hosts = %+v (別名以外が変わった)", hs)
+	}
+	if err := s.Update("gone.local", func(h *Host) { h.Alias = "x" }); !errors.Is(err, ErrNotFound) {
+		t.Errorf("無い Mac の Update = %v, want ErrNotFound", err)
+	}
+	if hs, _ := s.Load(); len(hs) != 1 {
+		t.Errorf("無い Mac を足した: %+v", hs)
 	}
 }

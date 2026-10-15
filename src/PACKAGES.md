@@ -27,9 +27,12 @@
 - `src/glogx/tools/dial-preview` (`glogx/tools/dial-preview`) — dial-preview は全画面 ratelimit ダッシュボード (usage.RenderDashboard) の見た目プレビュー。 (main)
 - `src/glogx/tools/width-probe` (`glogx/tools/width-probe`) — width-probe は「端末が各文字に実際に何セル割り当てるか」を端末自身に問い合わせて表示する。 (main)
 - `src/lockman` (`lockman`) — lockman — ディレクトリ単位の排他を取る CLI (SMB 越しの複数マシン + 公開ホストの ローカル経路が混在する前提)。 (main)
+- `src/mac-lan-manager` (`mac-lan-manager`) — mac-lan-manager は手元の Mac 同士を内部の網で繋いで管理する道具 (bin/mac-lan-manager)。 (main)
 - `src/mac-lan-manager/discover` (`mac-lan-manager/discover`) — Package discover は、Bonjour (dns-sd) で LAN の Mac を見つけるときの出力を読む。
+- `src/mac-lan-manager/lanmgr` (`mac-lan-manager/lanmgr`) — Package lanmgr は mac-lan-manager の画面 (一覧・詳細カード・設定・この Mac の IP のコピー) を持つ。
 - `src/mac-lan-manager/ledger` (`mac-lan-manager/ledger`) — Package ledger は、管理対象の Mac の台帳を読み書きする (台帳は mac-lan-manager を実行している Mac の中だけに持つ)。
 - `src/mac-lan-manager/netinfo` (`mac-lan-manager/netinfo`) — Package netinfo は、この Mac のネットワークのサービスと I/F の IP を、networksetup と ifconfig の出力から読む。
+- `src/mac-lan-manager/prefs` (`mac-lan-manager/prefs`) — Package prefs は mac-lan-manager の設定 (一覧に出す IP・内部 IP の決め方) を読み書きする。
 - `src/mp4box` (`mp4box`) — Command mp4-effective-size は、MP4 のトップレベルの box を先頭から辿り、壊れていない box の大きさの合計 (実効サイズ) をバイト数で出す。 (main)
 - `src/pro-con` (`pro-con`) — pro-con — PM (producer) と PG (consumer) を分けて Claude Code を並列に回すための TUI。 (main)
 - `src/pro-con/agents` (`pro-con/agents`) — Package agents は `claude agents --json` で、今動いている Claude Code の session を一覧する。
