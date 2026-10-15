@@ -14,8 +14,6 @@
 package relay
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +28,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"atomicfile"
+	"pro-con/flockmark"
 )
 
 // Dir は置き場の中の中継の置き場。
@@ -85,27 +84,9 @@ func Open(dir string) (*Writer, error) {
 	if st, err := os.Lstat(d); err != nil || !st.IsDir() {
 		return nil, fmt.Errorf("中継の置き場 %s がディレクトリではない (symlink は使わない)", d)
 	}
-	var b [6]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return nil, err
-	}
-	id := hex.EncodeToString(b[:])
-	// 🚨 一時名で作って flock を取ってから印の名前にする。印の名前で作ってから flock すると、その間に読む側 (held) が共有の flock を
-	// 取れて、この画面の flock が EWOULDBLOCK で失敗する (敵対的レビュー 2026-09-25 P2。presence と同じ形)
-	tmp := filepath.Join(d, ".tmp-"+id)
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0o600)
+	// 一時名で作って flock を取ってから印の名前にする (理由は flockmark.Create)
+	f, id, lock, err := flockmark.Create(d, 6, nil)
 	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return nil, err
-	}
-	lock := filepath.Join(d, id+".lock")
-	if err := os.Rename(tmp, lock); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
 		return nil, err
 	}
 	sweep(d)
@@ -213,12 +194,9 @@ func sameContent(a, b Frame) bool {
 	return true
 }
 
-// staleTmp は一時ファイル (印の .tmp-* と 1 枚の <id>.frame.tmp.*) を落ちた画面の残りとみなすまでの時間 (作ってから rename するまでは一瞬。presence と同じ)。
-const staleTmp = time.Minute
-
-// isTmp は relay/ の中の一時ファイルの名前か: 印の作りかけ (.tmp-<id>) と、1 枚の書きかけ (atomicfile.Write の temp。名前の規則は atomicfile に聞く)。
+// isTmp は relay/ の中の一時ファイルの名前か: 印の作りかけ (flockmark) と、1 枚の書きかけ (atomicfile.Write の temp)。名前の規則はそれぞれに聞く。
 func isTmp(name string) bool {
-	return strings.HasPrefix(name, ".tmp-") || atomicfile.IsTemp(name)
+	return flockmark.IsTmp(name) || atomicfile.IsTemp(name)
 }
 
 // sweep は落ちた画面の残り (flock の外れた印と、その 1 枚・印の無い 1 枚・古い一時ファイル) を消す。開く画面だけが呼ぶ (読む側は消さない)。
@@ -231,10 +209,8 @@ func sweep(d string) {
 	}
 	alive := map[string]bool{}
 	for _, e := range es {
-		if isTmp(e.Name()) && e.Type().IsRegular() { // 作ってから rename するまでの間に落ちた残り。作っている最中のもの (新しい) には触らない
-			if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > staleTmp {
-				_ = os.Remove(filepath.Join(d, e.Name()))
-			}
+		if isTmp(e.Name()) && flockmark.Stale(e) { // 作ってから rename するまでの間に落ちた残り。作っている最中のもの (新しい) には触らない
+			_ = os.Remove(filepath.Join(d, e.Name()))
 		}
 	}
 	for _, e := range es {

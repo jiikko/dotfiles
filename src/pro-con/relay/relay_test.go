@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"pro-con/flockmark"
 )
 
 func waitFor(t *testing.T, what string, cond func() bool) {
@@ -221,7 +223,7 @@ func TestSweepRemovesOnlyStaleTmp(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	past := time.Now().Add(-2 * staleTmp)
+	past := time.Now().Add(-2 * flockmark.StaleTmp)
 	for _, p := range []string{old, oldFrame} {
 		if err := os.Chtimes(p, past, past); err != nil {
 			t.Fatal(err)

@@ -12,8 +12,6 @@
 package presence
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -23,15 +21,14 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"pro-con/flockmark"
 )
 
 // Dir は置き場の中の画面の印の置き場。
 const Dir = "screens"
 
 const quitFile = "quit.lock"
-
-// staleTmp は作りかけの印を落ちた画面の残りとみなすまでの時間 (作ってから rename するまでは一瞬)。
-const staleTmp = time.Minute
 
 // Mode は画面のモード。
 type Mode string
@@ -105,42 +102,15 @@ func OpenAs(dir string, info Info) (*Screen, error) {
 	if err := os.MkdirAll(d, 0o700); err != nil {
 		return nil, err
 	}
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return nil, err
-	}
-	id := hex.EncodeToString(b[:])
-	// 🚨 数える対象にならない名前で作って flock してから、印の名前へ rename する。作ってから flock すると、その間はほかの画面の
-	// Count から「誰も持っていない = 落ちた画面の印」に見え、消されて数えられない画面になる (敵対的レビューで 20000 回中 146 回再現。
-	// O_EXLOCK でも open の中で作成と lock の間に割り込まれて再現した)
-	tmp := filepath.Join(d, ".tmp-"+id)
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return nil, err
-	}
 	if info.Mode == "" {
 		info.Mode = Owner
 	}
-	info.ID, info.PID, info.Opened = id, os.Getpid(), time.Now()
-	// 中身は印の名前にする前に書く (数える側には書き終えた印しか見えない)
-	data, err := json.Marshal(info)
-	if err == nil {
-		_, err = f.Write(data)
-	}
+	// 一時名で作って flock を取り、中身を書いてから印の名前にする (理由は flockmark.Create)
+	f, _, p, err := flockmark.Create(d, 8, func(id string) ([]byte, error) {
+		info.ID, info.PID, info.Opened = id, os.Getpid(), time.Now()
+		return json.Marshal(info)
+	})
 	if err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return nil, err
-	}
-	p := filepath.Join(d, id+".lock")
-	if err := os.Rename(tmp, p); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
 		return nil, err
 	}
 	return &Screen{dir: d, path: p, f: f, info: info}, nil
@@ -213,9 +183,9 @@ func scan(d string) ([]Info, error) {
 	var out []Info
 	for _, e := range es {
 		name := e.Name()
-		if strings.HasPrefix(name, ".tmp-") { // 作ってから印の名前にするまでの間に落ちた画面の残り。数えない
+		if flockmark.IsTmp(name) { // 作ってから印の名前にするまでの間に落ちた画面の残り。数えない
 			// 🚨 作っている最中のものに触らない (flock を先に取ると、その画面が印を置けなくなる)。古いものだけ片付ける
-			if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > staleTmp {
+			if flockmark.IsStaleTmp(e) {
 				_, _, _ = heldBySomeone(filepath.Join(d, name))
 			}
 			continue
