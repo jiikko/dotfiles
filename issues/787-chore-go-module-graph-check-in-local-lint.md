@@ -1,5 +1,7 @@
 # 787 (chore): go.mod の replace の抜けを手元でも止める (`go mod tidy -diff` / `go list -m all` を手元の lint に入れる)
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-16〜）
+
 起票日: 2026-10-16
 
 ## 概要
