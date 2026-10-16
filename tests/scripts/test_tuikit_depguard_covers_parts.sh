@@ -7,7 +7,10 @@
 # 脅威モデル: package を足してリストに足し忘れる・外す表に古い名前が残る・リストの行をコメントアウトして外す・知らない形の項目を足す。
 # リストの files の項目は、知っている 3 つの形 (`"**/<名前>/**"` / `"!**/tuikit/<名前>/**"` / `"!**/*_test.go"`) だけを読み、それ以外の項目が
 # 1 つでもあれば「判定できない」として落とす (黙って読み飛ばすと、別の形の否定で depguard が外れても緑になった。敵対レビュー)。
-# 検出しない形: YAML の flow style・アンカー (files の項目として読めず、較正の termwidth で落ちる)。リストの中身以外
+# 読み取りは字句 (字下げと行の形) で、YAML のパーサではない。files の中の行は「- <値>」の形だけを読み、それ以外 (「-」の後で改行した項目など)
+# と、2 つ目以降の YAML 文書 (golangci は最初の文書しか読まない) は「判定できない」として落とす。
+# 検出しない形 (どれも較正の termwidth か「知らない形」で赤に倒れる側。緑に倒れる形は残していない): YAML の flow style・アンカー・CRLF・
+# 項目を files と同じ字下げで書く形。リストの中身以外
 # (linters.enable から depguard を消す・deny を空にする・linters.exclusions で depguard を外す・生成ファイルの見出し
 # (`// Code generated ... DO NOT EDIT.`) を付ける・`//nolint:depguard`) は見ない。パターンの意味 (どのファイルに当たるか) は golangci 自身が決めるので、
 # ここは「名前が載っているか」だけを見る
@@ -36,7 +39,9 @@ foreground/ptytest:foreground のテストが使う pty の道具 (context / os 
 # (敵対レビュー。golangci は知らないキーを黙って無視する)
 list_items() {
   awk -v L="$1:" '
+    /^(---|\.\.\.)/ { if (seen) { print "?文書の区切り (golangci は最初の文書しか読まない): " $0 }; next }
     /^[[:space:]]*(#|$)/ { next }
+    { seen = 1 }
     { match($0, /^ */); ind = RLENGTH }
     ind == 0 { lin = ($1 == "linters:"); st = 0; dg = 0; ru = 0; inlist = 0; next }
     ind == 2 { st = (lin && $1 == "settings:"); dg = 0; ru = 0; inlist = 0; next }
@@ -44,7 +49,8 @@ list_items() {
     ind == 6 { ru = (dg && $1 == "rules:"); inlist = 0; next }
     ind == 8 { inlist = (ru && $1 == L); fl = 0; next }
     inlist && ind == 10 { fl = ($1 == "files:"); next }
-    inlist && fl && /^[[:space:]]*- / { sub(/^[[:space:]]*- /, ""); sub(/[[:space:]]+#.*$/, ""); print }
+    inlist && fl && /^[[:space:]]*- [^ ]/ { sub(/^[[:space:]]*- /, ""); sub(/[[:space:]]+#.*$/, ""); print; next }
+    inlist && fl { print "?読めない行: " $0 }  # 「-」の後で改行した項目など。黙って捨てると、その項目が否定でも緑になった (敵対レビュー)
   ' "$yml"
 }
 
