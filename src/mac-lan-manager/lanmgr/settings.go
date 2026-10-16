@@ -28,13 +28,18 @@ const (
 
 func (m *Model) setCount() int { return setKind0 + len(otherKinds) }
 
-// lanIFs は I/F で決めるときの候補 (ルーターの無いサービス)。
+// lanIFs は I/F で決めるときの候補 (ルーターの無い有線の I/F。1 つの I/F は 1 回だけ: 同じ I/F のサービスが 2 つあると → で先へ進めなかった)。
+// 保存してある I/F が候補に無い (今は読めない・外れている) ときは、先頭にその I/F を「今は使えない」として残す
+// (残さないと、画面は候補の先頭を選んでいるように描き、← → で黙って別の I/F に替えて保存した)。
 func (m *Model) lanIFs() []netinfo.Service {
 	var out []netinfo.Service
 	for _, s := range m.self.Services {
-		if s.Wired() {
+		if m.self.WiredIF(s.Device) && !slices.ContainsFunc(out, func(o netinfo.Service) bool { return o.Device == s.Device }) {
 			out = append(out, s)
 		}
+	}
+	if m.pf.LanIF != "" && len(out) > 0 && !slices.ContainsFunc(out, func(o netinfo.Service) bool { return o.Device == m.pf.LanIF }) {
+		out = append([]netinfo.Service{{Device: m.pf.LanIF, Name: "(今は使えない)"}}, out...)
 	}
 	return out
 }
@@ -115,7 +120,7 @@ func (m *Model) keySettings(key, text string) Action {
 				d = len(ifs) - 1
 			}
 			m.pf.LanIF = ifs[(max(i, 0)+d)%len(ifs)].Device
-			if i < 0 {
+			if i < 0 { // まだ決めていない: 先頭から選ぶ
 				m.pf.LanIF = ifs[0].Device
 			}
 		default:

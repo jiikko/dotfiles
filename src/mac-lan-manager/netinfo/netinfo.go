@@ -47,37 +47,54 @@ type Service struct {
 // Internet はインターネット用のサービスか (ルーターがある)。
 func (s Service) Internet() bool { return s.Router != "" }
 
-// Wired はルーターの無い有線のサービスか。-getinfo を読めなかったものは数えない (ルーターが分からないまま有線と数えると、
-// Wi-Fi が内部 IP の候補や「未固定」に出た。監査の第 3 波の敵対レビュー)。
-func (s Service) Wired() bool { return s.Read && s.Router == "" }
+// ifClass は I/F 1 つの分類。有線かどうかはサービスではなく I/F で決める (1 つの I/F に複数のサービスが載ると、サービスごとの判定と
+// I/F ごとの判定が食い違った: 未接続の「Wi-Fi 2」が en0 を有線と言い、Wi-Fi の IP が内部 IP の候補に出た。監査の第 3 波の敵対レビュー)。
+type ifClass int
 
-// Kind は dev で見えた addr の種類。サービスとして登録されているのに -getinfo が読めなかった I/F は「分からない」にする
-// (名前で決めると、読めなかった Thunderbolt Bridge を「仮想」に、Wi-Fi の上の 169.254 を「自動割り当て」にした。監査の第 3 波の敵対レビュー)。
-func (s Snapshot) Kind(dev, addr string) Kind {
-	wired, internet := s.Classes()
-	if !wired[dev] && !internet[dev] && slices.ContainsFunc(s.Services, func(sv Service) bool { return sv.Device == dev }) {
-		return KindUnknown
-	}
-	return Classify(dev, addr, wired, internet)
-}
+const (
+	ifNone     ifClass = iota // サービスとして登録されていない
+	ifInternet                // ルーターのあるサービスが載っている (他のサービスより優先する)
+	ifUnread                  // ルーターのあるサービスは無いが、-getinfo を読めないサービスが載っている (分からない)
+	ifWired                   // 載っているサービスを全部読めて、どれにもルーターが無い
+)
 
-// WiredIF は dev がルーターの無い有線のサービスの I/F か (Wired と同じ判定を I/F の名前で引く)。
-func (s Snapshot) WiredIF(dev string) bool {
-	return slices.ContainsFunc(s.Services, func(sv Service) bool { return sv.Device == dev && sv.Wired() })
-}
-
-// Classes は I/F の名前を有線 / インターネット側に分ける (Classify に渡す 2 つの map)。どちらにも入らない I/F は分からない。
-func (s Snapshot) Classes() (wired, internet map[string]bool) {
-	wired, internet = map[string]bool{}, map[string]bool{}
+func (s Snapshot) class(dev string) ifClass {
+	c := ifNone
 	for _, sv := range s.Services {
+		if sv.Device != dev {
+			continue
+		}
 		switch {
 		case sv.Internet():
-			internet[sv.Device] = true
-		case sv.Wired():
-			wired[sv.Device] = true
+			return ifInternet
+		case !sv.Read:
+			c = ifUnread
+		case c == ifNone:
+			c = ifWired
 		}
 	}
-	return wired, internet
+	return c
+}
+
+// WiredIF は dev がルーターの無い有線の I/F か。内部 IP の候補・「未固定」・I/F で決める設定は全部これで決める。
+func (s Snapshot) WiredIF(dev string) bool { return s.class(dev) == ifWired }
+
+// Kind は dev で見えた addr の種類。サービスとして登録されているのに読めない I/F は「分からない」にする
+// (名前で決めると、読めなかった Thunderbolt Bridge を「仮想」に、Wi-Fi の上の 169.254 を「自動割り当て」にした)。
+func (s Snapshot) Kind(dev, addr string) Kind {
+	switch s.class(dev) {
+	case ifInternet:
+		return KindInternet
+	case ifUnread:
+		return KindUnknown
+	case ifWired:
+		if IsLinkLocal(addr) {
+			return KindLinkLocal
+		}
+		return KindWired
+	case ifNone:
+	}
+	return classifyByName(dev, addr)
 }
 
 // Kind は I/F の IP の種類。
@@ -202,18 +219,10 @@ func ParseIfconfig(out string) (active bool, addrs []string) {
 	return active, addrs
 }
 
-// Classify は I/F の名前と IP から種類を決める。wired はルーターの無いサービスの I/F、internet はルーターのあるサービスの I/F。
-func Classify(dev, addr string, wired, internet map[string]bool) Kind {
-	// サービスとして登録されている I/F を先に見る。🚨 名前で先に分けない: Thunderbolt Bridge は bridge0 という名前の本物の有線
-	// (Mac 同士を Thunderbolt ケーブルで直に繋ぐ) で、名前だけ見ると VM のブリッジと取り違える
+// classifyByName は、サービスとして登録されていない I/F の種類を名前と番地で決める (登録のある I/F は Snapshot.Kind が先に決める。
+// 🚨 名前で先に分けない: Thunderbolt Bridge は bridge0 という名前の本物の有線で、登録のある I/F をここへ落とすと VM のブリッジと取り違える)。
+func classifyByName(dev, addr string) Kind {
 	switch {
-	case internet[dev]:
-		return KindInternet
-	case wired[dev]:
-		if IsLinkLocal(addr) {
-			return KindLinkLocal
-		}
-		return KindWired
 	case strings.HasPrefix(dev, "utun"):
 		return KindVPN
 	case strings.HasPrefix(dev, "bridge") || strings.HasPrefix(dev, "vmnet") || strings.HasPrefix(dev, "vnic"):
@@ -291,7 +300,7 @@ func (s Snapshot) Main() (Service, bool) {
 func (s Snapshot) Offline() []Service {
 	var out []Service
 	for _, sv := range s.Services {
-		if sv.Active && sv.Wired() {
+		if sv.Active && s.WiredIF(sv.Device) && !slices.ContainsFunc(out, func(o Service) bool { return o.Device == sv.Device }) {
 			out = append(out, sv)
 		}
 	}

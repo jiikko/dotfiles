@@ -78,9 +78,12 @@ func TestParseIfconfig(t *testing.T) {
 	}
 }
 
-func TestClassify(t *testing.T) {
-	wired := map[string]bool{"en13": true, "bridge0": true}
-	internet := map[string]bool{"en0": true}
+func TestKind(t *testing.T) {
+	snap := Snapshot{Services: []Service{
+		{Name: "Wi-Fi", Device: "en0", Router: "192.168.50.1", Read: true},
+		{Name: "Thunderbolt Ethernet", Device: "en13", Read: true},
+		{Name: "Thunderbolt Bridge", Device: "bridge0", Read: true},
+	}}
 	cases := []struct {
 		dev, addr string
 		want      Kind
@@ -95,9 +98,35 @@ func TestClassify(t *testing.T) {
 		{"bridge0", "192.168.100.20", KindWired}, // Thunderbolt Bridge (サービスの bridge0) は本物の有線。名前で仮想に分けない
 	}
 	for _, c := range cases {
-		if got := Classify(c.dev, c.addr, wired, internet); got != c.want {
-			t.Errorf("Classify(%q, %q) = %v, want %v", c.dev, c.addr, got, c.want)
+		if got := snap.Kind(c.dev, c.addr); got != c.want {
+			t.Errorf("Kind(%q, %q) = %v, want %v", c.dev, c.addr, got, c.want)
 		}
+	}
+}
+
+// 1 つの I/F に複数のサービスが載っても、I/F ごとに 1 つに決める (ルーターのあるサービスが優先、読めないサービスがあれば分からない)。
+// サービスごとに判定していたころは、未接続の「Wi-Fi 2」(ルーター無し) が en0 を有線と言い、Wi-Fi の IP が内部 IP の候補に出た。
+// Wi-Fi が読めず Wi-Fi 2 だけ読めると、Wi-Fi の上の相手が内部 IP になった (監査の第 3 波の敵対レビュー)。
+func TestKindWithServicesSharingIF(t *testing.T) {
+	both := Snapshot{Services: []Service{
+		{Name: "Wi-Fi 2", Device: "en0", Active: true, IP: "192.168.50.250", Read: true},
+		{Name: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Router: "192.168.50.1", Read: true},
+	}}
+	if k := both.Kind("en0", "192.168.50.20"); k != KindInternet || both.WiredIF("en0") || len(both.Offline()) != 0 {
+		t.Errorf("ルーターのあるサービスが載る en0: Kind=%v WiredIF=%v Offline=%+v", k, both.WiredIF("en0"), both.Offline())
+	}
+	unread := Snapshot{Services: []Service{
+		{Name: "Wi-Fi", Device: "en0", Active: true},
+		{Name: "Wi-Fi 2", Device: "en0", Active: true, Read: true},
+	}}
+	if k := unread.Kind("en0", "192.168.50.20"); k != KindUnknown || unread.WiredIF("en0") {
+		t.Errorf("読めないサービスが載る en0: Kind=%v WiredIF=%v", k, unread.WiredIF("en0"))
+	}
+	twice := Snapshot{Services: []Service{
+		{Name: "A", Device: "en13", Active: true, Read: true}, {Name: "B", Device: "en13", Active: true, Read: true},
+	}}
+	if off := twice.Offline(); len(off) != 1 {
+		t.Errorf("同じ I/F を 2 回候補にした: %+v", off)
 	}
 }
 

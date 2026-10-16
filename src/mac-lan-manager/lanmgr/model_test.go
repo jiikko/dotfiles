@@ -1432,3 +1432,41 @@ func TestUnreadServiceIsNotLan(t *testing.T) {
 		t.Errorf("読めない I/F の IP をこの Mac の内部 IP にした: %+v", sl)
 	}
 }
+
+// I/F で決める設定の候補: 保存してある I/F が今は候補に無くても、黙って別の I/F に替えて保存しない (先頭に「今は使えない」で残す)。
+// 同じ I/F のサービスが 2 つあっても、→ で次の I/F へ進める (候補は I/F ごとに 1 つ。監査の第 3 波の敵対レビュー)。
+func TestLanIFChoicesKeepSavedAndSkipDuplicates(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	net := selfNet()
+	net.Services = append(net.Services,
+		netinfo.Service{Name: "Thunderbolt Ethernet 2", Device: "en13", Active: true, Read: true},
+		netinfo.Service{Name: "USB LAN", Device: "en14", Active: true, Read: true})
+	h.m.self = net
+	h.m.pf.LanByBand, h.m.pf.LanIF = false, "en10" // 保存してある en10 は今は無い
+	ifs := h.m.lanIFs()
+	devs := make([]string, 0, len(ifs))
+	for _, s := range ifs {
+		devs = append(devs, s.Device)
+	}
+	if !slices.Equal(devs, []string{"en10", "en13", "en14"}) {
+		t.Fatalf("候補 = %v (保存値を先頭に残し、en13 は 1 回だけ)", devs)
+	}
+	h.keys(",")
+	for range setIF {
+		h.keys("j")
+	}
+	if view := termwidth.StripSGR(strings.Join(h.m.View(), "\n")); !strings.Contains(view, "今は使えない") {
+		t.Errorf("保存してある I/F が候補に無いことを画面に出さない:\n%s", view)
+	}
+	if len(h.saved) != 0 {
+		t.Fatalf("開いただけで保存した: %+v", h.saved)
+	}
+	got := make([]string, 0, 3)
+	for range 3 {
+		h.keys("right")
+		got = append(got, h.m.pf.LanIF)
+	}
+	if !slices.Equal(got, []string{"en13", "en14", "en13"}) { // 選び直した後は「今は使えない」の候補は消える
+		t.Errorf("→ の順 = %v (en13 の 2 つ目で止まらない)", got)
+	}
+}
