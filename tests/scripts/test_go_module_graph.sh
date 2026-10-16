@@ -46,7 +46,8 @@ run() {  # $1 = dir。rc / out を残す
 # 1. 依存先が require する module の replace が無い → go list -m all で落ち、足す replace と paths を案内する
 dir="$(mk missing '')"
 # 前提: この fixture は go build が通る (落ちるのが build なら、この検査が要る理由の再現になっていない)
-if (cd "$dir" && go build ./... >/dev/null 2>&1); then ok "前提: replace の抜けがあっても go build は通る"; else bad "前提が崩れた: replace の抜けで go build が落ちる"; fi
+# 前提の確かめ (素の go コマンド) は親の GOFLAGS / GOWORK に左右させない。script の呼び出しは親の環境のまま (script 側の固定を見る)
+if (cd "$dir" && GOWORK=off GOFLAGS='' go build ./... >/dev/null 2>&1); then ok "前提: replace の抜けがあっても go build は通る"; else bad "前提が崩れた: replace の抜けで go build が落ちる"; fi
 run "$dir"
 if [ "$rc" -eq 1 ] && grep -q 'go list -m all が rc=1' <<<"$out" && grep -q '「c => ../c」' <<<"$out" && grep -q '「src/c/\*\*」' <<<"$out"; then
   ok "replace の抜けを go list -m all で止め、足す replace と workflow の paths を案内する"
@@ -70,7 +71,7 @@ if [ "$rc" -eq 2 ]; then ok "go.mod の無い場所では rc=2"; else bad "go.mo
 # 5. 上に go.work があっても素通りしない (workspace の module が replace の抜けを埋める。敵対的レビュー 2026-10-16 で再現)
 dir="$(mk work '')"
 printf 'go 1.24\n\nuse (\n\t./a\n\t./b\n\t./c\n)\n' > "$(dirname "$dir")/go.work"
-if (cd "$dir" && GOWORK='' go list -m all >/dev/null 2>&1); then ok "前提: go.work があると素の go list -m all は通る"; else bad "前提が崩れた: go.work があっても go list -m all が落ちる"; fi
+if (cd "$dir" && GOWORK='' GOFLAGS='' go list -m all >/dev/null 2>&1); then ok "前提: go.work があると素の go list -m all は通る"; else bad "前提が崩れた: go.work があっても go list -m all が落ちる"; fi
 rc=0; out="$(cd "$dir" && GOWORK='' "$SCRIPT" 2>&1)" || rc=$?
 if [ "$rc" -eq 1 ] && grep -q '「c => ../c」' <<<"$out"; then ok "go.work があっても replace の抜けを止める"; else bad "go.work で素通りした (rc=${rc}):"; printf '%s\n' "$out"; fi
 

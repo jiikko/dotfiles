@@ -68,8 +68,9 @@ grep -q probe <<< 'probe' || fail "grep が正常に動作しない"
 #    (敵対的レビュー 2026-09-03 の P2-3 で実測)。指定は quoted / unquoted の両方が使われている
 # 🚨 判定は awk の exit status で返す。`awk … | grep -q` にすると pipefail 下で
 #    「一致しているのに非 0」になりうる (issue 096 / test-pipefail-grep-q が止めている形)
+# $4 = exact なら、want の後ろが行末・空白・# のときだけ一致にする (scripts/x.sh.bak のような別名の行で通さない)
 paths_has() {
-  awk -v want="$2" -v trig="$3" '
+  awk -v want="$2" -v trig="$3" -v exact="${4:-}" '
     # on: の中だけを見る。**トリガー名を列挙しない**: 知らないキー (pull_request_target /
     # 行末コメント付き) で intrig が落ちないと、直前のトリガーの判定が次のブロックへ漏れる
     # (実測 2026-09-04: `pull_request:   # PR でも回す` で push の判定が true になった)
@@ -91,7 +92,7 @@ paths_has() {
       line = $0
       gsub(/^[[:space:]]*-[[:space:]]*/, "", line)
       gsub(/^['"'"'"]|['"'"'"]$/, "", line)
-      if (index(line, want) == 1) { found = 1; exit }
+      if (index(line, want) == 1 && (exact == "" || length(line) == length(want) || substr(line, length(want) + 1, 1) ~ /[ \t#]/)) { found = 1; exit }
     }
     END { exit !found }
   ' "$1"
@@ -263,10 +264,15 @@ while IFS= read -r name; do
     fi
   done
   # 7. lint の recipe が scripts/go_module_graph.sh を呼ぶ (replace の抜けは go build / go test / golangci-lint では落ちない。issue 787)。
-  #    見るのは lint: の行から、次のタブで始まらない行までの recipe。呼び出しの行は前置き (@ / - = 失敗を無視) も後ろ (|| true・コメント) も
-  #    付けない形に限る (コメントアウト・失敗の無視・echo の中の文字列で通さない。敵対的レビュー 2026-10-16)。
-  #    検出しない形: lint: の再定義 (make は後の定義を使う)・ifeq の片側だけで呼ぶ形 (review の担当)
-  if ! awk '/^lint:/ { inl = 1; next } inl && !/^\t/ { inl = 0 } inl && /^\t\.\.\/\.\.\/scripts\/go_module_graph\.sh[ \t]*$/ { found = 1 } END { exit !found }' "$mk"; then
+  #    見るのは lint: の行から、次のタブで始まらない行までの recipe。呼び出しの行は - 前置き (失敗を無視) も後ろ (|| true・コメント) も
+  #    付けない形に限る (@ は表示を抑えるだけなので許す)。前の行が \ で終わる行は数えない (前の行の続き = echo の引数などになる)。
+  #    コメントアウト・失敗の無視・echo の中の文字列で通さない (敵対的レビュー 2026-10-16 の 1・2 周目)。
+  #    検出しない形: lint: の再定義 (make は後の定義を使う)・ifeq の片側だけで呼ぶ形・.IGNORE: lint・target 別の SHELL の差し替え (review の担当)
+  if ! awk '/^lint:/ { inl = 1; cont = 0; next }
+            inl && !/^\t/ && !cont { inl = 0 }
+            inl && !cont && /^\t@?\.\.\/\.\.\/scripts\/go_module_graph\.sh[ \t]*$/ { found = 1 }
+            inl { cont = /\\$/ }
+            END { exit !found }' "$mk"; then
     printf '✗ %s: %s の lint: が ../../scripts/go_module_graph.sh を呼ばない (go.mod の replace の抜けを手元で止められない)\n' "$name" "$mk"; bad=$((bad + 1))
   fi
 
@@ -285,7 +291,7 @@ while IFS= read -r name; do
     fi
     # 8. make lint が呼ぶ共有の script も paths に含む (含まないと、その script だけを変える push で実 module の lint が 1 本も走らない)
     for shared in scripts/golangci_lint.sh scripts/go_module_graph.sh; do
-      if ! paths_has "$wf" "$shared" "$trig"; then
+      if ! paths_has "$wf" "$shared" "$trig" exact; then
         printf '✗ %s: %s の %s.paths が %s を含まない (make lint が呼ぶ共有の script。変えても CI の lint が走らない)\n' \
           "$name" "$wf" "$trig" "$shared"; bad=$((bad + 1))
       fi

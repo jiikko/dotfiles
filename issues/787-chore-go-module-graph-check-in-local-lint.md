@@ -71,3 +71,13 @@
 - 壊せなかった観点: CI の経路 (削った step と同じ cwd・同じコマンド。make 以外で src の lint を回す workflow は無い) / 並列 (tidy -diff は書かない・module cache はロックを持つ。負荷を掛けての確認はしていない)
 - レビュアーが `GOFLAGS=-mod=mod` で走らせた結果 worktree の go.sum が 9 行書き換わった (読み取りの約束の外)。差分を確かめて戻した
 - 残る穴 (前から): `check_go_project_lanes.sh` に fixture のテストが無く、検査そのものを壊す退行は repo の実物でしか見えない
+
+### 敵対的レビュー 2 周目 (opus 1 本、2026-10-16。直した差分に対して)
+
+- 偽の緑は見つからなかった。P2 (採用): テストの前提を確かめる素の go コマンドが親の GOFLAGS / GOWORK を受け、`GOFLAGS=-mod=vendor` などの手元で偽の赤 → 前提の行だけ `GOWORK=off GOFLAGS=''` に固定
+  (script の呼び出しは親の環境のまま)。`GOFLAGS=-mod=vendor / -mod=mod / -modfile=x.mod`・空の go.work の 4 通りでテストが rc=0 を確かめた
+- P3 (採用): 不変条件 8 が前方一致で `scripts/go_module_graph.sh.bak` の行を通した → 共有の script だけ完全一致 (後ろが行末・空白・#)。変異: .bak にする → red
+- P3 (採用): 不変条件 7 が前の行の `\` の続き (echo の引数) を通した → 続きの行は数えない。`@` 前置きは失敗を無視しないので許した (確かめた)。変異: 前に `@echo skip \` を足す → red。
+  `.IGNORE: lint`・target 別の SHELL は検出しない形としてコメントに書いた
+- P3 (見送り): テスト 6 は「-mod=mod で go.sum を書き換える」を名指しで見ない (変異 `GOFLAGS=` は緑のまま。挙動としては安全)。名指しで見るには外部の依存を持つ fixture と network が要るので足さない
+- 壊せなかった観点: `go mod tidy -diff` は -mod=readonly を受ける (go1.26.0) / src/* に vendor は無く CI も GOFLAGS を設定しない / actionlint・yamllint の 23 本 (警告 3 件は前から) / restartable は push・pull_request の両方に入った
