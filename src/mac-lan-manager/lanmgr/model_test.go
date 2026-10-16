@@ -1133,7 +1133,7 @@ func TestFilterCaretExact(t *testing.T) {
 		line := termwidth.StripSGR(lines[y])
 		i := strings.LastIndex(line, "/ ")
 		txt := strings.TrimRight(line[max(i, 0)+2:], " ")
-		if i < 0 || txt == "" || !strings.HasSuffix("min", txt) {
+		if i < 0 || txt == "" || len(txt) > len("min") || "min"[len("min")-len(txt):] != txt { // txt は入力 "min" の末尾
 			t.Errorf("幅 %d: キャレットの行 %d に入力欄が無い: %q", w, y, line)
 			continue
 		}
