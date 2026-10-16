@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,12 +17,18 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
-// setupHarness は初期設定の画面を開いた状態 (相手は mini。観測は obs が返す値)。
-func setupHarness(t *testing.T, obs *setup.PeerNet) (*harness, *[]setup.Dest) {
+// setupHarness は初期設定の画面を開いた状態 (相手は mini。観測は obs が返す値)。観測は裏の goroutine で走るので、obs は
+// setObs でだけ書き換え、宛先の記録は dests で読む (直に書くと、走っている観測とどちらの値を読むかが決まらなかった。-race で検出)。
+func setupHarness(t *testing.T, obs *setup.PeerNet) (*harness, *observed) {
 	t.Helper()
 	h := newHarness(t, nil, []discover.Peer{mini})
-	var dests []setup.Dest
-	h.m.o.Observe = func(_ context.Context, d setup.Dest) setup.PeerNet { dests = append(dests, d); return *obs }
+	o := &observed{v: obs}
+	h.m.o.Observe = func(_ context.Context, d setup.Dest) setup.PeerNet {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		o.dests = append(o.dests, d)
+		return *o.v
+	}
 	h.keys("l")
 	h.cursorTo(t, "m2macmini.local")
 	h.keys("enter")
@@ -29,7 +36,31 @@ func setupHarness(t *testing.T, obs *setup.PeerNet) (*harness, *[]setup.Dest) {
 		t.Fatalf("Enter で初期設定の画面にならない")
 	}
 	awaitSetup(h.m)
-	return h, &dests
+	return h, o
+}
+
+// observed は偽物の観測が返す値と、観測した宛先の記録。
+type observed struct {
+	mu    sync.Mutex
+	v     *setup.PeerNet
+	dests []setup.Dest
+}
+
+// setObs は次の観測が返す値を替える。観測が走っている間は替えない (どちらの値で読むかが決まらない)。
+func setObs(t *testing.T, h *harness, o *observed, p setup.PeerNet) {
+	t.Helper()
+	if h.m.su != nil && h.m.su.ch != nil {
+		t.Fatal("観測が走っている間に観測の値を替えようとした (先に awaitSetup で取り込む)")
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	*o.v = p
+}
+
+func (o *observed) destsCopy() []setup.Dest {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return slices.Clone(o.dests)
 }
 
 // awaitSetup は裏の観測を待って取り込む (テストを観測の速さに依らせない)。
@@ -71,7 +102,7 @@ func runStep(t *testing.T, h *harness, err error) []string {
 func TestSetupWalksAllSteps(t *testing.T) {
 	obs := &setup.PeerNet{}
 	h, dests := setupHarness(t, obs)
-	if d := (*dests)[0]; d != (setup.Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}) {
+	if d := dests.destsCopy()[0]; d != (setup.Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}) {
 		t.Fatalf("観測の宛先 = %+v (Wi-Fi の IP・推測のユーザー・台帳の鍵)", d)
 	}
 
@@ -85,7 +116,7 @@ func TestSetupWalksAllSteps(t *testing.T) {
 	if argv[0] != "sh" || !strings.Contains(argv[2], "ssh-copy-id") {
 		t.Fatalf("鍵 = %q", argv)
 	}
-	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	setObs(t, h, dests, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"})
 	h.keys("r")
 	awaitSetup(h.m)
 
@@ -111,7 +142,7 @@ func TestSetupWalksAllSteps(t *testing.T) {
 	if h.m.conf() != nil {
 		t.Fatal("確認の後も確認待ちのまま")
 	}
-	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: c.static.IP}
+	setObs(t, h, dests, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: c.static.IP})
 	h.keys("r")
 	awaitSetup(h.m)
 
@@ -239,14 +270,14 @@ func TestSetupRefusesWithoutObservation(t *testing.T) {
 // 期限切れは抜けられず、Busy が立ちっぱなしだった。敵対レビュー)。
 func TestSetupConfirmSurvivesReopenAndExpires(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
-	h, _ := setupHarness(t, obs)
+	h, ob := setupHarness(t, obs)
 	setSelfStatic(h.m)
 	runStep(t, h, nil)
 	c := h.m.conf()
 	if c == nil {
 		t.Fatal("前提: 確認待ちにならない")
 	}
-	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: c.static.IP} // 窓の間は新しい IP に見える
+	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: c.static.IP}) // 窓の間は新しい IP に見える
 	h.keys("q", "enter")
 	awaitSetup(h.m)
 	if st, _ := nextStep(h.m.setupSteps()); st.ID != stepConfirm {
@@ -338,13 +369,13 @@ func TestSetupGuards(t *testing.T) {
 // 手元の期限を過ぎて 0 で戻った確認も確認済みとして扱い、割り当てた番号を残す (0 は相手の待ちが印を受け取ったこと)。
 func TestSetupUnreachableAndLateConfirm(t *testing.T) {
 	obs := &setup.PeerNet{KeyErr: fmt.Errorf("%w: timeout", setup.ErrUnknown)}
-	h, _ := setupHarness(t, obs)
+	h, ob := setupHarness(t, obs)
 	h.keys("x")
 	if h.m.ov != ovNone {
 		t.Fatal("届かない相手で確認の板を出した")
 	}
 
-	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"})
 	h.keys("r")
 	awaitSetup(h.m)
 	setSelfStatic(h.m)
@@ -380,13 +411,13 @@ func TestSetupUnreachableAndLateConfirm(t *testing.T) {
 // 有線でしか入れない相手は、確認待ちの間に古い IP の観測が届かなくても、確認の手順は断らない (確認は新しい IP へ入る。敵対レビュー)。
 func TestSetupWiredOnlyConfirmNotBlockedByUnreachable(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
-	h, _ := setupHarness(t, obs)
+	h, ob := setupHarness(t, obs)
 	setSelfStatic(h.m)
 	runStep(t, h, nil)
 	if h.m.conf() == nil {
 		t.Fatal("前提: 確認待ちにならない")
 	}
-	*obs = setup.PeerNet{KeyErr: fmt.Errorf("%w: timeout", setup.ErrUnknown)} // 相手は新しい IP に移り、古い宛先の観測が届かない
+	setObs(t, h, ob, setup.PeerNet{KeyErr: fmt.Errorf("%w: timeout", setup.ErrUnknown)}) // 相手は新しい IP に移り、古い宛先の観測が届かない
 	h.keys("r")
 	awaitSetup(h.m)
 	h.keys("x")
@@ -399,17 +430,12 @@ func TestSetupWiredOnlyConfirmNotBlockedByUnreachable(t *testing.T) {
 // 変わっていた場合も同じ (台帳の手順が確認を知らずに観測だけを信じた。敵対レビュー)。期限の後の板の y では確認を起こさない。
 func TestSetupLedgerNeedsConfirm(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
-	h, _ := setupHarness(t, obs)
+	h, ob := setupHarness(t, obs)
 	setSelfStatic(h.m)
 	h.keys("x", "y")
 	h.m.TakeExec()
+	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: "192.168.100.11"})
 	h.m.ExecDone(exitCodeError{}) // 失敗で戻ったが、相手の上では変わっていた
-	ip := ""
-	for _, a := range h.m.claimed {
-		ip = a
-	}
-	_ = ip
-	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: "192.168.100.11"}
 	awaitSetup(h.m)
 	h.keys("x")
 	if h.m.ov == ovConfirm && h.m.ask != nil && h.m.ask.yes != nil {
@@ -551,7 +577,7 @@ func TestSetupTriedIPsSurviveRetry(t *testing.T) {
 
 func triedIPsSurviveRetry(t *testing.T, confirm bool) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
-	h, _ := setupHarness(t, obs)
+	h, ob := setupHarness(t, obs)
 	setSelfStatic(h.m)
 	expire := func(at time.Time) {
 		h.m.o.Now = func() time.Time { return at }
@@ -566,6 +592,8 @@ func triedIPsSurviveRetry(t *testing.T, confirm bool) {
 	t1 := t0.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second)
 	expire(t1)
 	h.m.Reload()
+	awaitNetLoad(h.m) // 読み直したこの Mac の網を取り込んでから固定を立て直す (取り込みが x の後に来ると、この Mac の手順に戻った)
+	setSelfStatic(h.m)
 	runStep(t, h, nil) // 2 回目
 	c := h.m.conf()
 	if c == nil || c.static.IP == first {
@@ -577,7 +605,7 @@ func triedIPsSurviveRetry(t *testing.T, confirm bool) {
 		runStep(t, h, nil) // 2 回目は確認する: 確認した番号だけを外す (集合ごと消すと 1 回目の守りも消えた)
 	} else {
 		runStep(t, h, errors.New("exit status 1")) // 確認は受け取られなかったと返ったが、相手は固定のまま
-		*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: second, Mask: "255.255.255.0"}
+		setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: second, Mask: "255.255.255.0"})
 	}
 	expire(t2)
 	if why := h.m.ledgerBlocked("m2macmini.local", second); why != "" {
@@ -597,12 +625,12 @@ func triedIPsSurviveRetry(t *testing.T, confirm bool) {
 // 台帳の手順を断り続けない (試した番号を確認でしか外さず、正しく固定された相手を台帳に書けなくなった。敵対レビュー)。
 func TestSetupFixedAfterFailedConfirmCanLedger(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
-	h, _ := setupHarness(t, obs)
+	h, ob := setupHarness(t, obs)
 	setSelfStatic(h.m)
 	runStep(t, h, nil)
 	ip := h.m.conf().static.IP
 	runStep(t, h, errors.New("exit status 1")) // 確認は受け取られなかったと返った
-	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"}
+	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"})
 	at := t0.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second)
 	h.m.o.Now = func() time.Time { return at }
 	h.m.Advance(at)
@@ -616,12 +644,12 @@ func TestSetupFixedAfterFailedConfirmCanLedger(t *testing.T) {
 // (読めない観測で印を解き、後で固定が見えても試した番号が外れず、台帳に書けなくなった。敵対レビュー)。
 func TestSetupFailedObserveKeepsUnconf(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
-	h, _ := setupHarness(t, obs)
+	h, ob := setupHarness(t, obs)
 	setSelfStatic(h.m)
 	runStep(t, h, nil)
 	ip := h.m.conf().static.IP
 	runStep(t, h, errors.New("exit status 1"))
-	*obs = setup.PeerNet{KeyErr: fmt.Errorf("%w: timeout", setup.ErrUnknown)}
+	setObs(t, h, ob, setup.PeerNet{KeyErr: fmt.Errorf("%w: timeout", setup.ErrUnknown)})
 	at := t0.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second)
 	h.m.o.Now = func() time.Time { return at }
 	h.m.Advance(at)
@@ -629,7 +657,7 @@ func TestSetupFailedObserveKeepsUnconf(t *testing.T) {
 	if _, ok := h.m.unconf["m2macmini.local"]; !ok {
 		t.Fatal("読めなかった観測で未確認の印を解いた")
 	}
-	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"}
+	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"})
 	h.keys("r")
 	awaitSetup(h.m)
 	if why := h.m.ledgerBlocked("m2macmini.local", ip); why != "" {
