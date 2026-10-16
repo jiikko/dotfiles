@@ -60,4 +60,4 @@
 - [ ] RCTL で低い帯域を伝えたとき、相手が本当に落とすか (803)
 - [ ] macOS の sandbox の中で、同じ番号への bind (`SO_REUSEPORT`) が通るか
 
-clone は `~/dotfiles/tmp/rootshell-vnc-2026-10-16/repo` に残した (結論はここに移したので、消してよい)。
+clone (`~/dotfiles/tmp/rootshell-vnc-2026-10-16/repo`) は結論をここに移した後に消した (2026-10-16、ユーザー指示)。読み直すときは commit `c56ae02` を clone し直す。
