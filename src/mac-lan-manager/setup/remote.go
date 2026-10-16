@@ -94,7 +94,7 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 			// known_hosts に台帳の鍵の名前があるかで分ける (無ければ初めての相手。あれば鍵が変わった: 成りすましか相手の入れ直し)。
 			// 分けないと初めての相手は「判定できない」になり、x が全部の手順を断って、指紋を聞ける ssh-copy-id にも辿り着けなかった (air5 で実測)
 			if strings.Contains(err.Error(), "Host key verification failed") {
-				switch known, kerr := knownHost(ctx, run, d.HostKeyAlias); {
+				switch known, kerr := knownHost(ctx, run, d); {
 				case kerr == nil && !known:
 					p.HostKeyUnknown = true
 					return p
@@ -127,17 +127,38 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 	return p
 }
 
-// knownHost は known_hosts に alias の行があるか (ssh-keygen -F は見つかれば 0、無ければ 1 で抜ける。読むだけ)。
-func knownHost(ctx context.Context, run Run, alias string) (bool, error) {
-	_, err := run(ctx, []string{"ssh-keygen", "-F", alias})
-	if err == nil {
-		return true, nil
+// knownHost は、ssh がこの宛先の照合に使う known_hosts のどれかに alias の行があるか (読むだけ)。照合先は ssh -G で読む
+// (~/.ssh/known_hosts だけを見ると、known_hosts2・/etc/ssh/ssh_known_hosts・config の UserKnownHostsFile にある変わった鍵を
+// 「初めての相手」と取り違えた。敵対レビュー)。無いファイルは行が無いと数える (一度も ssh していない Mac には known_hosts が無く、
+// ssh-keygen -F はそのとき 255 で抜けて「読めない」になった。敵対レビュー)。ssh-keygen -F は見つかれば 0、無ければ 1 で抜ける
+func knownHost(ctx context.Context, run Run, d Dest) (bool, error) {
+	cfg, err := run(ctx, []string{"ssh", "-G", "-o", "HostKeyAlias=" + d.HostKeyAlias, "--", d.User + "@" + d.IP})
+	if err != nil {
+		return false, err
 	}
-	var ec exitCoder
-	if errors.As(err, &ec) && ec.ExitCode() == 1 {
-		return false, nil
+	var files []string
+	for _, l := range strings.Split(cfg, "\n") {
+		if k, v, ok := strings.Cut(strings.TrimSpace(l), " "); ok && (k == "userknownhostsfile" || k == "globalknownhostsfile") {
+			files = append(files, strings.Fields(v)...)
+		}
 	}
-	return false, err
+	if len(files) == 0 {
+		return false, errors.New("ssh -G が known_hosts の置き場所を返さない")
+	}
+	for _, f := range files {
+		if _, err := run(ctx, []string{"test", "-e", f}); err != nil {
+			continue // 無いファイル
+		}
+		_, err := run(ctx, []string{"ssh-keygen", "-F", d.HostKeyAlias, "-f", f})
+		if err == nil {
+			return true, nil
+		}
+		var ec exitCoder
+		if !errors.As(err, &ec) || ec.ExitCode() != 1 {
+			return false, err
+		}
+	}
+	return false, nil
 }
 
 // Window と Delay は相手を固定 IP にするときの待ち (変えるまで / 確認を待つ間)。確認は新しい IP で入り直して印を置くので、その分の余裕を取る。

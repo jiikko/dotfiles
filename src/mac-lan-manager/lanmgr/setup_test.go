@@ -97,7 +97,8 @@ func runStep(t *testing.T, h *harness, err error) []string {
 	return r.Argv
 }
 
-// 初期設定を最初から最後まで流す: この Mac の固定 IP → 鍵 → 相手の固定 IP → 新しい IP で確認 → 台帳。各手順は確認の板の後に、
+// 初期設定を最初から最後まで流す: 鍵 → この Mac の固定 IP → 相手の固定 IP → 新しい IP で確認 → 台帳 (鍵が先: 人が相手の指紋を
+// 確かめるまでどちらの Mac も変えない)。各手順は確認の板の後に、
 // 端末を明け渡して起こす (台帳だけは手元の書き込み)。戻るたびに相手を読み直す。
 func TestSetupWalksAllSteps(t *testing.T) {
 	obs := &setup.PeerNet{}
@@ -107,18 +108,18 @@ func TestSetupWalksAllSteps(t *testing.T) {
 	}
 
 	argv := runStep(t, h, nil)
-	if len(argv) < 6 || argv[0] != "sudo" || argv[3] != "Thunderbolt Ethernet" || !strings.HasPrefix(argv[4], "192.168.100.") {
-		t.Fatalf("この Mac の固定 IP = %q", argv)
-	}
-	setSelfStatic(h.m)
-
-	argv = runStep(t, h, nil)
 	if argv[0] != "sh" || !strings.Contains(argv[2], "ssh-copy-id") {
 		t.Fatalf("鍵 = %q", argv)
 	}
 	setObs(t, h, dests, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"})
 	h.keys("r")
 	awaitSetup(h.m)
+
+	argv = runStep(t, h, nil)
+	if len(argv) < 6 || argv[0] != "sudo" || argv[3] != "Thunderbolt Ethernet" || !strings.HasPrefix(argv[4], "192.168.100.") {
+		t.Fatalf("この Mac の固定 IP = %q", argv)
+	}
+	setSelfStatic(h.m)
 
 	argv = runStep(t, h, nil)
 	if !slices.Contains(argv, "-t") || argv[slices.Index(argv, "--")+1] != "koji@192.168.50.7" {
@@ -351,8 +352,12 @@ func TestSetupGuards(t *testing.T) {
 	h.cursorTo(t, "wired.local")
 	h.keys("enter")
 	awaitSetup(h.m)
-	if st, _ := nextStep(h.m.setupSteps()); st.ID != setup.StepSelfStatic || !strings.Contains(st.Blocked, "Wi-Fi") {
-		t.Errorf("Wi-Fi で入れない相手でこの Mac の固定を止めない: %+v", st)
+	steps := h.m.setupSteps()
+	if st, _ := nextStep(steps); st.ID != setup.StepKey || st.Blocked != "" {
+		t.Errorf("鍵の手順 (169.254 で入る) が先に来ない: %+v", st)
+	}
+	if i := slices.IndexFunc(steps, func(s setup.Step) bool { return s.ID == setup.StepSelfStatic }); i < 0 || !strings.Contains(steps[i].Blocked, "Wi-Fi") {
+		t.Errorf("Wi-Fi で入れない相手でこの Mac の固定を止めない: %+v", steps)
 	}
 
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: "192.168.100.12"}

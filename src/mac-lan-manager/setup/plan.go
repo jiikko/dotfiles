@@ -93,5 +93,8 @@ func Plan(o Observed) []Step {
 	if !ledger.Done && !peer.Done {
 		ledger.Blocked = "先に相手の有線を固定 IP にする"
 	}
-	return []Step{self, key, peer, ledger}
+	// 公開鍵を先に置く: 鍵の手順 (端末を持つ ssh-copy-id) で人が相手の指紋を確かめるまで、どちらの Mac の設定も変えない
+	// (この Mac の固定を先にしていたので、初めての相手ではホスト鍵を確かめる前に自動では戻らない変更が走った。敵対レビュー)。
+	// 鍵はこの Mac の固定に依らない (相手の Wi-Fi か 169.254 で入る)
+	return []Step{key, self, peer, ledger}
 }

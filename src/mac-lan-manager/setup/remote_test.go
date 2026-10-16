@@ -176,25 +176,45 @@ func TestStepArgv(t *testing.T) {
 	}
 }
 
-// 初めての相手 (known_hosts に台帳の鍵の名前が無い) は、BatchMode の ssh が "Host key verification failed." で落ちても「判定できない」に
-// しない (鍵を置く手順の ssh-copy-id で人が指紋を確かめる)。known_hosts にあるのに落ちたら鍵が変わったので断る (air5 で実測した形)。
+// 初めての相手 (ssh が照合に使う known_hosts のどれにも台帳の鍵の名前が無い) は、BatchMode の ssh が "Host key verification failed." で
+// 落ちても「判定できない」にしない (鍵を置く手順の ssh-copy-id で人が指紋を確かめる)。どれかにあるのに落ちたら鍵が変わったので断る (air5 で実測した形)。
+// 照合先は ssh -G で読み、無いファイルは行が無いと数える (known_hosts の無い Mac で ssh-keygen -F が 255 になった。敵対レビュー)。
 func TestObservePeerHostKey(t *testing.T) {
 	hkFail := exitError{255, "exit status 255: Host key verification failed."}
+	const cfg = "hostkeyalias m2macmini.local\nglobalknownhostsfile /etc/ssh/ssh_known_hosts\nuserknownhostsfile /u/.ssh/known_hosts /u/.ssh/known_hosts2\n"
 	for _, c := range []struct {
 		name    string
-		keygen  error
+		exists  map[string]bool
+		keygen  map[string]error // ファイルごとの ssh-keygen -F の結果 (nil は見つかった)
 		first   bool
 		unknown bool
 	}{
-		{"初めての相手", exitError{1, "exit status 1"}, true, false},
-		{"鍵が変わった", nil, false, true},
-		{"known_hosts を読めない", exitError{255, "boom"}, false, true},
+		{"known_hosts が 1 つも無い", nil, nil, true, false},
+		{"どこにも行が無い", map[string]bool{"/u/.ssh/known_hosts": true}, map[string]error{"/u/.ssh/known_hosts": exitError{1, "exit status 1"}}, true, false},
+		{"known_hosts2 で鍵が変わった", map[string]bool{"/u/.ssh/known_hosts": true, "/u/.ssh/known_hosts2": true},
+			map[string]error{"/u/.ssh/known_hosts": exitError{1, "exit status 1"}, "/u/.ssh/known_hosts2": nil}, false, true},
+		{"global で鍵が変わった", map[string]bool{"/etc/ssh/ssh_known_hosts": true}, map[string]error{"/etc/ssh/ssh_known_hosts": nil}, false, true},
+		{"known_hosts を読めない", map[string]bool{"/u/.ssh/known_hosts": true}, map[string]error{"/u/.ssh/known_hosts": exitError{255, "boom"}}, false, true},
 	} {
-		var keygenArgv []string
+		var keygenAliases []string
 		run := func(_ context.Context, argv []string) (string, error) {
-			if argv[0] == "ssh-keygen" {
-				keygenArgv = argv
-				return "", c.keygen
+			switch {
+			case argv[0] == "ssh" && argv[1] == "-G":
+				if !slices.Contains(argv, "HostKeyAlias=m2macmini.local") {
+					t.Errorf("%s: ssh -G に台帳の鍵の名前を渡さない: %q", c.name, argv)
+				}
+				return cfg, nil
+			case argv[0] == "test":
+				if c.exists[argv[2]] {
+					return "", nil
+				}
+				return "", exitError{1, "exit status 1"}
+			case argv[0] == "ssh-keygen":
+				keygenAliases = append(keygenAliases, argv[2])
+				if !c.exists[argv[4]] {
+					t.Errorf("%s: 無いファイルを ssh-keygen に渡した: %q", c.name, argv)
+				}
+				return "", c.keygen[argv[4]]
 			}
 			return "", hkFail
 		}
@@ -202,8 +222,10 @@ func TestObservePeerHostKey(t *testing.T) {
 		if p.HostKeyUnknown != c.first || errors.Is(p.KeyErr, ErrUnknown) != c.unknown || p.KeyOK {
 			t.Errorf("%s: PeerNet = %+v", c.name, p)
 		}
-		if !slices.Equal(keygenArgv, []string{"ssh-keygen", "-F", "m2macmini.local"}) {
-			t.Errorf("%s: known_hosts を台帳の鍵の名前で引かない: %q", c.name, keygenArgv)
+		for _, a := range keygenAliases {
+			if a != "m2macmini.local" {
+				t.Errorf("%s: known_hosts を台帳の鍵の名前で引かない: %q", c.name, a)
+			}
 		}
 	}
 }
