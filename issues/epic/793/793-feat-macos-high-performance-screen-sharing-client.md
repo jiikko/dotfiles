@@ -31,3 +31,4 @@
 - [800](800-research-screen-sharing-multiple-hp-sessions.md) — 複数の Mac に同時に高性能で繋げるか (自作の意味を決める)
 - [801](801-feat-screen-sharing-ssh-side-channel-reactive.md) — 画面共有と並べて ssh を張り、相手の出来事をアプリに反映する (リアクティブ)
 - [803](803-feat-screen-sharing-throttle-hidden-sessions.md) — 見えていない画面の負荷を下げる
+- [804](804-feat-multi-mac-claude-code-dashboard.md) — 複数の Mac で走る Claude Code を 1 台から見渡して操作する

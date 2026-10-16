@@ -18,6 +18,7 @@
 | [800](800-research-screen-sharing-multiple-hp-sessions.md) | 複数の Mac に同時に高性能で繋げるか | 一部実測 (標準アプリでは 1 本が高性能、2 本目は標準) | — |
 | [801](801-feat-screen-sharing-ssh-side-channel-reactive.md) | 画面共有と並べて ssh を張り、相手の出来事を反映する (ユースケースの案つき) | 案 | 798・747 の鍵 |
 | [803](803-feat-screen-sharing-throttle-hidden-sessions.md) | 見えていない画面の負荷を下げる (隠れている間は frame rate を落とす) | 案 | 798・800 |
+| [804](804-feat-multi-mac-claude-code-dashboard.md) | 複数の Mac で走る Claude Code を 1 台から見渡して操作する | 案 (Go の TUI で先に試す道あり) | 801・各 Mac の tmux-pane-state.sh |
 
 ## 作業の順番
 
@@ -34,7 +35,7 @@
 4. **段 3 — 使い勝手 (798・797・803)**: 常時接続・ショートカットでの切り替え・ウインドウの大きさを覚える・相手のディスプレイの切り替え・別ウインドウ・
    見えていない画面の負荷を下げる。747 から `open` で受け渡す
 5. **段 4 — キー (799)**: アプリが前面の間だけ ctrl+→ などを止めて相手へ送る (手元でビルドする版だけ)
-6. **段 5 — ssh の副経路 (801)**
+6. **段 5 — ssh の副経路 (801・804)**。804 (Claude Code を見渡す) は、Swift のアプリを待たずに mac-lan-manager の Go の TUI で先に試せる
 7. **段 6 — App Store 版 (795)**: sandbox・entitlements・審査。手元の版が使えるようになってから
 
 ## ブロッカー
