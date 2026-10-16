@@ -373,3 +373,11 @@ spec をツール自身に書かせていれば (script の関数を呼ぶ) ず�
 retro は `adversarial-review-own-safeguards` の 0-B への追記を提案したが、0-B は検査を作るときに読む checklist で、状態を手で移行する場面では開かれないので、
 「外部コマンド / アプリへ設定を書いたら読み戻す」の項に置いた。
 
+## 既存の物に足す依存 (retro 784, 2026-10-16)
+
+2 回とも、依存を足した本体のテストは緑で、別の場所にある検査だけが赤くなった。
+- issue 775: bin/codex-run に `source lib/uint.sh` を足したら、codexevents の driver のテストが bin/codex-run を一時ディレクトリへ写し、lib を偽物で用意していたので
+  「bin/lib/uint.sh: No such file or directory」で落ちた (make test で初めて出た)
+- issue 777: glogx の go.mod に `replace userdirs` を足したのに、glogx 自身の「replace をすべて走査の根か除外に載せる」検査 (own_sources_test) に足さなかった。
+  glogx はテストの一部しか回しておらず、敵対的レビューが見つけた (CI の src/glogx が赤になるところだった)
+既存の「CI のジョブに足す依存」の行は「検査が走る鎖を辿る」向きで、こちらは「写しと一覧に足す」向きなので、別の行にした。

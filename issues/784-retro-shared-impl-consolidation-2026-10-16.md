@@ -36,4 +36,4 @@ src の重複の調査 (773) から 767〜772 を直し、bin (775)・scripts / 
 
 ## 残課題
 
-- [ ] 提案 (3) の rule への追記 (ユーザーの判断待ち)
+- [x] 提案 (3) を `_claude/rules/verify-execution-not-just-exit-code.md` の「確認の仕方」の表に 1 行足した (2026-10-16 ユーザー承認。起源は rules-rationale の同名ファイル)
