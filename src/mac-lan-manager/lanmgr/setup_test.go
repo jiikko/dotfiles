@@ -335,7 +335,7 @@ func TestSetupGuards(t *testing.T) {
 }
 
 // 読みに行ったが届かない (判定できない) 相手では x を断る (この Mac の固定は自動では戻らないので、届かない相手に向けて始めない)。
-// 期限の間際に 0 で戻った確認は確認済みとして扱い、割り当てた番号を残す (敵対レビュー)。
+// 手元の期限を過ぎて 0 で戻った確認も確認済みとして扱い、割り当てた番号を残す (0 は相手の待ちが印を受け取ったこと)。
 func TestSetupUnreachableAndLateConfirm(t *testing.T) {
 	obs := &setup.PeerNet{KeyErr: fmt.Errorf("%w: timeout", setup.ErrUnknown)}
 	h, _ := setupHarness(t, obs)
@@ -369,11 +369,11 @@ func TestSetupUnreachableAndLateConfirm(t *testing.T) {
 	if h.m.claimed["m2macmini.local"] != c.static.IP {
 		t.Errorf("間際の確認で番号を落とした: %+v", h.m.claimed)
 	}
-	if _, ok := h.m.confirmed["m2macmini.local"]; ok {
-		t.Error("間際の確認を確認済みの宛先にした (相手が戻っていたら、開き直しても抜けられなかった)")
+	if h.m.confirmed["m2macmini.local"] != c.static.IP {
+		t.Error("間際の確認を確認済みにしない (相手は固定のまま、台帳に書けなくなった。敵対レビュー)")
 	}
-	if _, ok := h.m.unconf["m2macmini.local"]; !ok {
-		t.Error("間際の確認で未確認の印を解いた")
+	if why := h.m.ledgerBlocked("m2macmini.local", c.static.IP); why != "" {
+		t.Errorf("間際に確認した番号を台帳に書けない: %s", why)
 	}
 }
 
@@ -538,5 +538,59 @@ func TestSetupListSpaceSkipsTriedIP(t *testing.T) {
 	h.keys("space")
 	if h.m.ov == ovConfirm && h.m.ask != nil && strings.Contains(strings.Join(h.m.ask.body, "\n"), c.static.IP) {
 		t.Fatalf("確認できなかった番号 %s を台帳に書こうとした: %q", c.static.IP, h.m.ask.body)
+	}
+}
+
+// 2 回目に別の番号を試した後も、1 回目に試して確認できなかった番号を一覧の space で台帳に書かない
+// (試した番号を 1 つしか持たず、2 回目で上書きされて 1 回目の守りが消えた。敵対レビュー)。
+func TestSetupTriedIPsSurviveRetry(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	expire := func(at time.Time) {
+		h.m.o.Now = func() time.Time { return at }
+		h.m.Advance(at)
+		awaitSetup(h.m)
+	}
+	runStep(t, h, nil)
+	first := h.m.conf().static.IP
+	p := mini
+	p.Addrs = map[int]string{14: "192.168.50.7", 27: first} // 窓の間に走査が 1 回目の番号を拾い、そのまま残る
+	h.scan.peers = []discover.Peer{p}
+	t1 := t0.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second)
+	expire(t1)
+	h.m.Reload()
+	runStep(t, h, nil) // 2 回目
+	c := h.m.conf()
+	if c == nil || c.static.IP == first {
+		t.Fatalf("前提: 2 回目が別の番号にならない (%+v)", c)
+	}
+	expire(t1.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second))
+	h.keys("q")
+	h.m.sc = scList
+	h.m.Reload()
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("space")
+	if h.m.ov == ovConfirm && h.m.ask != nil && strings.Contains(strings.Join(h.m.ask.body, "\n"), first) {
+		t.Fatalf("2 回目の後に 1 回目の番号 %s を台帳に書こうとした", first)
+	}
+}
+
+// 確認が非 0 で戻っても (待ちの終わりと同時に読まれた印)、期限の後の観測で試した番号の手動の固定に見えれば、相手の上で確定している:
+// 台帳の手順を断り続けない (試した番号を確認でしか外さず、正しく固定された相手を台帳に書けなくなった。敵対レビュー)。
+func TestSetupFixedAfterFailedConfirmCanLedger(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	runStep(t, h, nil)
+	ip := h.m.conf().static.IP
+	runStep(t, h, errors.New("exit status 1")) // 確認は受け取られなかったと返った
+	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"}
+	at := t0.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second)
+	h.m.o.Now = func() time.Time { return at }
+	h.m.Advance(at)
+	awaitSetup(h.m)
+	if why := h.m.ledgerBlocked("m2macmini.local", ip); why != "" {
+		t.Errorf("期限の後に固定が見えた相手を台帳に書けない: %s", why)
 	}
 }

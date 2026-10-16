@@ -85,7 +85,7 @@ func (m *Model) ledgerBlocked(host, ip string) string {
 	if _, ok := m.unconf[host]; ok {
 		return "固定 IP にした後、まだ確認していない (確認するか、相手が元に戻る頃に初期設定の画面で r で読み直す)"
 	}
-	if ip != "" && m.tried[host] == ip {
+	if ip != "" && m.tried[host][ip] {
 		return "内部 IP " + ip + " は固定しようとして確認できなかった番号 (相手は元に戻っている。一覧で r を押して読み直す)"
 	}
 	return ""
@@ -94,7 +94,10 @@ func (m *Model) ledgerBlocked(host, ip string) string {
 // markUnconf は host を ip に固定しようとした印を立てる (未確認の期限と、確認するまで台帳に書かない番号)。
 func (m *Model) markUnconf(host, ip string) {
 	m.unconf[host] = m.o.Now().Add(setup.PeerDelay + setup.PeerWindow + unconfMargin)
-	m.tried[host] = ip
+	if m.tried[host] == nil {
+		m.tried[host] = map[string]bool{}
+	}
+	m.tried[host][ip] = true
 }
 
 // awaitingUnconf は、開いている相手に未確認の印があり、その期限の後の観測をまだしていないか (Busy に含め、tick で期限の頃に読み直す。
@@ -186,6 +189,11 @@ func (m *Model) applyObserve(p setup.PeerNet) {
 	// 未確認の固定 IP は、期限の後に始めた観測で解く (相手は元に戻っているか、確認されて新しい IP のまま: どちらも観測が正しい)
 	if dl, ok := m.unconf[su.host]; ok && su.obsAt.After(dl) {
 		delete(m.unconf, su.host)
+		// 期限の後にまだ試した番号の手動の固定に見えるなら、相手の上で確定している (Script は確認が無ければ必ず戻す。
+		// 戻せないのは電源断・kill -9 だけで、そのときも相手はその番号にいる)
+		if p.Method == "manual" {
+			delete(m.tried[su.host], p.IP)
+		}
 	}
 }
 
@@ -451,15 +459,9 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 		if c == nil {
 			break
 		}
-		if now.After(c.deadline) {
-			// 確認の ssh は 0 で戻った。印は期限の内に置けて、戻りだけが遅れたことがある。番号は残す (落とすと 2 台目に同じ番号を振った)。
-			// ただし確認済みとはしない: 未確認の印は残し、宛先 (confirmed) も立てない。間に合わなかったなら、相手は元に戻っている。
-			// 受容: 有線だけの相手で印が実は間に合っていたときは、宛先が 169.254 のままで新しい IP に辿り着けない (台帳には書かない側に倒れる)
-			m.note("期限の間際に確認した: 相手の上の戻しが終わる頃に読み直す (r)", false)
-			break
-		}
+		// 確認の ssh の 0 は「相手の待ちが印を受け取った」(ConfirmCommand は受け取られるまで待つ)。手元の期限を過ぎていても確定している
 		delete(m.unconf, host)
-		delete(m.tried, host)
+		delete(m.tried[host], c.static.IP)
 		m.confirmed[host] = c.static.IP
 		// 有線でしか入れない相手は、宛先を新しい IP に替える (古い 169.254 に入りに行き続けた。敵対レビュー)
 		if m.su != nil && m.su.host == host {
