@@ -26,3 +26,4 @@
 - [798](798-feat-screen-sharing-always-connected.md) — 常時接続にして、選んだらすぐ切り替わる
 - [799](799-feat-screen-sharing-modifier-keys-and-spaces.md) — 修飾キーとデスクトップの切り替えを相手へ送る
 - [800](800-research-screen-sharing-multiple-hp-sessions.md) — 複数の Mac に同時に高性能で繋げるか (自作の意味を決める)
+- [801](801-feat-screen-sharing-ssh-side-channel-reactive.md) — 画面共有と並べて ssh を張り、相手の出来事をアプリに反映する (リアクティブ)
