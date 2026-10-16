@@ -24,11 +24,11 @@ func fixture(t *testing.T, name string) string {
 func TestParseServiceOrder(t *testing.T) {
 	got := ParseServiceOrder(fixture(t, "serviceorder.txt"))
 	want := []Service{
-		{Name: "Thunderbolt Bridge", Device: "bridge0"},
-		{Name: "USB 10/100/1G/2.5G LAN", Device: "en10"},
-		{Name: "Thunderbolt Ethernet", Device: "en13"},
-		{Name: "Wi-Fi", Device: "en0"},
-		{Name: "iPhone USB", Device: "en11"},
+		{Name: "Thunderbolt Bridge", Port: "Thunderbolt Bridge", Device: "bridge0"},
+		{Name: "USB 10/100/1G/2.5G LAN", Port: "USB 10/100/1G/2.5G LAN", Device: "en10"},
+		{Name: "Thunderbolt Ethernet", Port: "Thunderbolt Ethernet", Device: "en13"},
+		{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0"},
+		{Name: "iPhone USB", Port: "iPhone USB", Device: "en11"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d services, want %d: %+v", len(got), len(want), got)
@@ -208,7 +208,8 @@ func TestRead(t *testing.T) {
 // serviceorder_renamed.txt は作った値 (この Mac のサービスは名前を変えていない)。番号の行と Hardware Port の行の形は本物の出力に合わせた。
 func TestReadUsesRenamedServiceNames(t *testing.T) {
 	got := ParseServiceOrder(fixture(t, "serviceorder_renamed.txt"))
-	want := []Service{{Name: "社内の有線", Device: "en13"}, {Name: "Wi-Fi (自宅)", Device: "en0"}, {Name: "Thunderbolt Bridge", Device: "bridge0", Disabled: true}, {Name: "Wi-Fi 2", Device: "en0"}}
+	want := []Service{{Name: "社内の有線", Port: "Thunderbolt Ethernet", Device: "en13"}, {Name: "Wi-Fi (自宅)", Port: "Wi-Fi", Device: "en0"},
+		{Name: "Thunderbolt Bridge", Port: "Thunderbolt Bridge", Device: "bridge0", Disabled: true}, {Name: "Wi-Fi 2", Port: "Wi-Fi", Device: "en0"}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("ParseServiceOrder = %+v\nwant %+v", got, want)
 	}
@@ -302,5 +303,18 @@ func TestParseMask(t *testing.T) {
 	}
 	if got := ParseMask("Manual Configuration\nSubnet mask: none\n"); got != "" {
 		t.Errorf("ParseMask(none) = %q", got)
+	}
+}
+
+// ネットに繋がっていない有線 (Offline) に無線を数えない。ルーターの無い Wi-Fi (サービス名を変えていても Hardware Port で分かる) を
+// 固定 IP の対象にしかけた (ユーザーの指示 2026-10-16「ネットに繋がっていない有線ネットワークに限定」)。
+func TestOfflineExcludesWireless(t *testing.T) {
+	s := Snapshot{Services: []Service{
+		{Name: "家の外の網", Port: "Wi-Fi", Device: "en0", Active: true, IP: "169.254.1.2", Method: "DHCP", Read: true},
+		{Name: "Thunderbolt Ethernet", Port: "Thunderbolt Ethernet", Device: "en13", Active: true, IP: "169.254.13.42", Method: "DHCP", Read: true},
+	}}
+	off := s.Offline()
+	if len(off) != 1 || off[0].Device != "en13" {
+		t.Errorf("Offline = %+v (有線の en13 だけ)", off)
 	}
 }

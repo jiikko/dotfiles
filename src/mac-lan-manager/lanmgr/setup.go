@@ -238,7 +238,7 @@ func (m *Model) setupObserved() (setup.Observed, row) {
 func (m *Model) selfWired() (netinfo.Service, bool) {
 	if !m.pf.LanByBand {
 		for _, s := range m.self.Enabled() {
-			if s.Device == m.pf.LanIF && m.self.WiredIF(s.Device) {
+			if s.Device == m.pf.LanIF && !s.Wireless() && m.self.WiredIF(s.Device) { // ネットに繋がっていない有線だけ (Offline と同じ)
 				return s, true
 			}
 		}
@@ -487,6 +487,10 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 				m.su.dest.IP = c.static.IP
 			}
 		}
+	}
+	if step == setup.StepSelfStatic {
+		// この Mac の網も読み直す (相手だけを読み直していたので、固定 IP にしても「未固定」のまま次の手順へ進まなかった。ユーザー報告)
+		m.startNetLoad()
 	}
 	if m.su != nil && m.su.host == host {
 		m.observe()

@@ -36,6 +36,7 @@ func InBand(band, ip string) bool {
 // Service は networksetup のネットワークのサービス 1 つ (Wi-Fi・Thunderbolt Ethernet など)。
 type Service struct {
 	Name   string // サービス名 ("Thunderbolt Ethernet")
+	Port   string // Hardware Port (I/F の種類の名前。"Wi-Fi" / "Thunderbolt Ethernet")
 	Device string // I/F の名前 ("en13")
 	Active bool   // ifconfig の status が active
 	IP     string // IPv4 (無ければ空)
@@ -47,6 +48,9 @@ type Service struct {
 	// 監査の第 3 波の敵対レビュー)
 	Disabled bool
 }
+
+// Wireless は無線の I/F のサービスか (Hardware Port で決める。サービス名は利用者が変えられる)。
+func (s Service) Wireless() bool { return s.Port == "Wi-Fi" || s.Port == "AirPort" }
 
 // Internet はインターネット用のサービスか (ルーターがある)。
 func (s Service) Internet() bool { return s.Router != "" }
@@ -193,7 +197,7 @@ type Snapshot struct {
 var (
 	// サービス名は番号の行 ("(1) 社内の有線" / 無効なら "(*) …") から取る。Hardware Port は I/F の種類の名前で、サービスの名前を
 	// 変えると食い違う (Hardware Port を -getinfo に渡すと、知らないサービスとして rc=4 になった。監査の指摘)
-	reService = regexp.MustCompile(`(?m)^\((\d+|\*)\) (.+)\n\(Hardware Port: .*, Device: (.*)\)`)
+	reService = regexp.MustCompile(`(?m)^\((\d+|\*)\) (.+)\n\(Hardware Port: (.*), Device: (.*)\)`)
 	reInet    = regexp.MustCompile(`(?m)^\s+inet (\S+)`)
 	// 🚨 行頭に固定する: getinfo は "IPv6 Router: none" の行も出すので、固定しないと IPv6 の行に当たる。
 	// 未接続のサービスは IPv4 の Router 行そのものを出さず、有線の自動割り当ては "Router: (null)" を出す (2026-10-15 の実測)
@@ -207,7 +211,7 @@ func ParseServiceOrder(out string) []Service {
 	ms := reService.FindAllStringSubmatch(out, -1)
 	svcs := make([]Service, 0, len(ms))
 	for _, m := range ms {
-		svcs = append(svcs, Service{Name: m[2], Device: m[3], Disabled: m[1] == "*"})
+		svcs = append(svcs, Service{Name: m[2], Port: m[3], Device: m[4], Disabled: m[1] == "*"})
 	}
 	return svcs
 }
@@ -335,7 +339,9 @@ func (s Snapshot) Main() (Service, bool) {
 func (s Snapshot) Offline() []Service {
 	var out []Service
 	for _, sv := range s.Enabled() {
-		if sv.Active && s.WiredIF(sv.Device) && !slices.ContainsFunc(out, func(o Service) bool { return o.Device == sv.Device }) {
+		// 無線は数えない: ルーターの無い Wi-Fi (どこにも繋がっていない・ルーターの無い網に繋いだ) を「ネットに繋がっていない有線」として
+		// 固定 IP にしかけた (ユーザーの指示 2026-10-16「ネットに繋がっていない有線ネットワークに限定」)
+		if sv.Active && !sv.Wireless() && s.WiredIF(sv.Device) && !slices.ContainsFunc(out, func(o Service) bool { return o.Device == sv.Device }) {
 			out = append(out, sv)
 		}
 	}

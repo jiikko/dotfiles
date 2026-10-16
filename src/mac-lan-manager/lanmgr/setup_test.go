@@ -12,6 +12,7 @@ import (
 
 	"mac-lan-manager/discover"
 	"mac-lan-manager/ledger"
+	"mac-lan-manager/netinfo"
 	"mac-lan-manager/setup"
 
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
@@ -70,13 +71,16 @@ func awaitSetup(m *Model) {
 	}
 }
 
-// setSelfStatic はこの Mac の有線を帯の固定 IP にした状態にする。
+// setSelfStatic はこの Mac の有線を帯の固定 IP にした状態にする (この Mac の網の読み直しも、その状態を返す)。
 func setSelfStatic(m *Model) {
+	awaitNetLoad(m) // 走っている読み直し (手順から戻ったときのもの) が後から届いて上書きしないように、先に取り込む
 	for i := range m.self.Services {
 		if m.self.Services[i].Device == "en13" {
 			m.self.Services[i].Method, m.self.Services[i].IP = "manual", "192.168.100.10"
 		}
 	}
+	snap := m.self
+	m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return snap, nil }
 }
 
 // runStep は x → y で次の手順を走らせ、Exec ならその引数を返して、戻った (err) ことにする。
@@ -702,5 +706,32 @@ func TestSetupFirstContactNotRefused(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(h.m.ask.body, "\n"), "指紋") {
 		t.Error("初めての相手で指紋を確かめる案内を出さない")
+	}
+}
+
+// この Mac の有線を固定 IP にする手順から戻ったら、この Mac の網も読み直して次の手順へ進む (相手だけを読み直していたので、固定 IP に
+// しても「未固定」のまま進まなかった。ユーザー報告 2026-10-16)。
+func TestSetupSelfStaticReloadsSelf(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	if st, _ := nextStep(h.m.setupSteps()); st.ID != setup.StepSelfStatic {
+		t.Fatalf("前提: 次の手順 = %v", st.ID)
+	}
+	h.keys("x", "y")
+	r, ok := h.m.TakeExec()
+	if !ok || len(r.Argv) < 5 || r.Argv[0] != "sudo" {
+		t.Fatalf("前提: この Mac の固定 IP を起こさない: %+v", r)
+	}
+	ip := r.Argv[4]
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { // 実際に固定 IP になった後のこの Mac
+		s := selfNet()
+		s.Services[0].Method, s.Services[0].IP = "manual", ip
+		return s, nil
+	}
+	h.m.ExecDone(nil)
+	awaitNetLoad(h.m)
+	awaitSetup(h.m)
+	if st, _ := nextStep(h.m.setupSteps()); st.ID == setup.StepSelfStatic {
+		t.Errorf("この Mac を固定した後も次の手順がこの Mac の固定のまま")
 	}
 }
