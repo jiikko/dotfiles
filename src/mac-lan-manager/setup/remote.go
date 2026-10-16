@@ -147,7 +147,11 @@ func knownHost(ctx context.Context, run Run, d Dest) (bool, error) {
 	}
 	for _, f := range files {
 		if _, err := run(ctx, []string{"test", "-e", f}); err != nil {
-			continue // 無いファイル
+			var ec exitCoder
+			if errors.As(err, &ec) && ec.ExitCode() == 1 {
+				continue // 無いファイル
+			}
+			return false, err // 確かめられない (期限切れ・test を起こせない): 初めての相手と数えない (敵対レビュー)
 		}
 		_, err := run(ctx, []string{"ssh-keygen", "-F", d.HostKeyAlias, "-f", f})
 		if err == nil {

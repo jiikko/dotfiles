@@ -195,6 +195,9 @@ func TestObservePeerHostKey(t *testing.T) {
 			map[string]error{"/u/.ssh/known_hosts": exitError{1, "exit status 1"}, "/u/.ssh/known_hosts2": nil}, false, true},
 		{"global で鍵が変わった", map[string]bool{"/etc/ssh/ssh_known_hosts": true}, map[string]error{"/etc/ssh/ssh_known_hosts": nil}, false, true},
 		{"known_hosts を読めない", map[string]bool{"/u/.ssh/known_hosts": true}, map[string]error{"/u/.ssh/known_hosts": exitError{255, "boom"}}, false, true},
+		{"ssh -G が失敗する", nil, nil, false, true},
+		{"照合先が 0 件", nil, nil, false, true},
+		{"test を確かめられない", nil, nil, false, true},
 	} {
 		var keygenAliases []string
 		run := func(_ context.Context, argv []string) (string, error) {
@@ -203,8 +206,17 @@ func TestObservePeerHostKey(t *testing.T) {
 				if !slices.Contains(argv, "HostKeyAlias=m2macmini.local") {
 					t.Errorf("%s: ssh -G に台帳の鍵の名前を渡さない: %q", c.name, argv)
 				}
+				switch c.name {
+				case "ssh -G が失敗する":
+					return "", exitError{255, "bad config"}
+				case "照合先が 0 件":
+					return "hostkeyalias m2macmini.local\n", nil
+				}
 				return cfg, nil
 			case argv[0] == "test":
+				if c.name == "test を確かめられない" {
+					return "", exitError{-1, "signal: killed"}
+				}
 				if c.exists[argv[2]] {
 					return "", nil
 				}

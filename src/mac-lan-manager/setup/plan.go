@@ -30,7 +30,7 @@ type PeerObs struct {
 // StepID は手順の名前 (画面と台帳の進み具合のキー)。
 type StepID string
 
-// 手順。この順に並べる (前の手順が済まないと後ろは Blocked)。
+// 手順の ID。並びは Plan が返す順 (鍵 → この Mac → 相手 → 台帳)。前の手順が済まないと後ろは Blocked。
 const (
 	StepSelfStatic StepID = "self-static" // この Mac の有線を帯の固定 IP にする (先にしないと、相手を変えた後に有線で届かない)
 	StepKey        StepID = "key"         // 相手に自分の公開鍵を置く
