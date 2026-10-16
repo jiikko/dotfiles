@@ -126,6 +126,22 @@ func TestKindWithServicesSharingIF(t *testing.T) {
 	if k := unread.Kind("en0", "192.168.50.20"); k != KindUnknown || unread.WiredIF("en0") {
 		t.Errorf("読めないサービスが後に載る en0: Kind=%v WiredIF=%v", k, unread.WiredIF("en0"))
 	}
+	// 読めないサービスが先でも、ルーターのあるサービスが載る I/F はインターネット側 (最優先)
+	unreadThenInternet := Snapshot{Services: []Service{
+		{Name: "Wi-Fi 2", Device: "en0"},
+		{Name: "Wi-Fi", Device: "en0", Router: "192.168.50.1", Read: true},
+	}}
+	if k := unreadThenInternet.Kind("en0", "192.168.50.20"); k != KindInternet {
+		t.Errorf("読めないサービスの後にルーターのあるサービスが載る en0: Kind=%v", k)
+	}
+	// 無効にしたサービス ((*)) は分類に数えない: 無効にした古い設定のルーターで、本物の有線の内部 IP が消えた
+	disabled := Snapshot{Services: []Service{
+		{Name: "TB", Device: "en13", Active: true, IP: "192.168.100.5", Method: "manual", Read: true},
+		{Name: "古い設定", Device: "en13", Router: "192.168.100.1", Read: true, Disabled: true},
+	}}
+	if !disabled.WiredIF("en13") || disabled.Kind("en13", "192.168.100.5") != KindWired {
+		t.Errorf("無効のサービスのルーターで有線を外した: WiredIF=%v Kind=%v", disabled.WiredIF("en13"), disabled.Kind("en13", "192.168.100.5"))
+	}
 	twice := Snapshot{Services: []Service{
 		{Name: "A", Device: "en13", Active: true, Read: true}, {Name: "B", Device: "en13", Active: true, Read: true},
 	}}
@@ -192,7 +208,7 @@ func TestRead(t *testing.T) {
 // serviceorder_renamed.txt は作った値 (この Mac のサービスは名前を変えていない)。番号の行と Hardware Port の行の形は本物の出力に合わせた。
 func TestReadUsesRenamedServiceNames(t *testing.T) {
 	got := ParseServiceOrder(fixture(t, "serviceorder_renamed.txt"))
-	want := []Service{{Name: "社内の有線", Device: "en13"}, {Name: "Wi-Fi (自宅)", Device: "en0"}, {Name: "Thunderbolt Bridge", Device: "bridge0"}, {Name: "Wi-Fi 2", Device: "en0"}}
+	want := []Service{{Name: "社内の有線", Device: "en13"}, {Name: "Wi-Fi (自宅)", Device: "en0"}, {Name: "Thunderbolt Bridge", Device: "bridge0", Disabled: true}, {Name: "Wi-Fi 2", Device: "en0"}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("ParseServiceOrder = %+v\nwant %+v", got, want)
 	}

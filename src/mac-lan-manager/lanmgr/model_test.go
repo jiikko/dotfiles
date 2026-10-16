@@ -1470,3 +1470,22 @@ func TestLanIFChoicesKeepSavedAndSkipDuplicates(t *testing.T) {
 		t.Errorf("→ の順 = %v (en13 の 2 つ目で止まらない)", got)
 	}
 }
+
+// lanmgr 側も I/F ごとの分類で決める: en0 に未接続の「Wi-Fi 2」(ルーター無し) と Wi-Fi (ルーターあり) が載っても、en0 を I/F の候補に
+// 出さず、I/F で決める設定でも Wi-Fi の IP を内部 IP にしない (netinfo の Offline だけが守っていて、lanmgr の 2 か所はサービスごとの判定に
+// 戻しても緑だった。監査の第 3 波の敵対レビュー)。
+func TestSharedIFIsNotLanInModel(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	net := selfNet()
+	net.Services = append([]netinfo.Service{{Name: "Wi-Fi 2", Device: "en0", Active: true, IP: "192.168.50.250", Read: true}}, net.Services...)
+	h.m.self = net
+	h.m.pf.LanByBand, h.m.pf.LanIF = false, "en0"
+	if sl := h.m.selfLan(); sl.IP != "" {
+		t.Errorf("Wi-Fi の IP を内部 IP にした: %+v", sl)
+	}
+	for _, s := range h.m.lanIFs() {
+		if s.Device == "en0" && s.Name != "(今は使えない)" {
+			t.Errorf("en0 を I/F の候補に出した: %+v", s)
+		}
+	}
+}

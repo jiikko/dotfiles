@@ -42,6 +42,9 @@ type Service struct {
 	Method string // "DHCP" / "manual" / "" (読めなかった)
 	Router string // IPv4 のルーター (無ければ空)
 	Read   bool   // -getinfo を読めた (読めなければルーターの有無は分からない)
+	// Disabled は無効にしたサービス ("(*)")。I/F の分類に数えない (無効にした古い設定のルーターで、本物の有線の内部 IP が消えた。
+	// 監査の第 3 波の敵対レビュー)
+	Disabled bool
 }
 
 // Internet はインターネット用のサービスか (ルーターがある)。
@@ -59,21 +62,31 @@ const (
 )
 
 func (s Snapshot) class(dev string) ifClass {
-	c := ifNone
+	var registered, unread, wired bool
 	for _, sv := range s.Services {
 		if sv.Device != dev {
 			continue
 		}
+		registered = true
 		switch {
+		case sv.Disabled: // 無効のサービスは判定に数えない (無効にした古い設定のルーターで、本物の有線の内部 IP が消えた)
 		case sv.Internet():
 			return ifInternet
 		case !sv.Read:
-			c = ifUnread
-		case c == ifNone:
-			c = ifWired
+			unread = true
+		default:
+			wired = true
 		}
 	}
-	return c
+	switch {
+	case unread:
+		return ifUnread
+	case wired:
+		return ifWired
+	case registered: // 無効のサービスしか無い: 登録はあるので名前の判定 (bridge0 → 仮想) には落とさない
+		return ifUnread
+	}
+	return ifNone
 }
 
 // WiredIF は dev がルーターの無い有線の I/F か。内部 IP の候補・「未固定」・I/F で決める設定は全部これで決める。
@@ -173,7 +186,7 @@ type Snapshot struct {
 var (
 	// サービス名は番号の行 ("(1) 社内の有線" / 無効なら "(*) …") から取る。Hardware Port は I/F の種類の名前で、サービスの名前を
 	// 変えると食い違う (Hardware Port を -getinfo に渡すと、知らないサービスとして rc=4 になった。監査の指摘)
-	reService = regexp.MustCompile(`(?m)^\((?:\d+|\*)\) (.+)\n\(Hardware Port: .*, Device: (.*)\)`)
+	reService = regexp.MustCompile(`(?m)^\((\d+|\*)\) (.+)\n\(Hardware Port: .*, Device: (.*)\)`)
 	reInet    = regexp.MustCompile(`(?m)^\s+inet (\S+)`)
 	// 🚨 行頭に固定する: getinfo は "IPv6 Router: none" の行も出すので、固定しないと IPv6 の行に当たる。
 	// 未接続のサービスは IPv4 の Router 行そのものを出さず、有線の自動割り当ては "Router: (null)" を出す (2026-10-15 の実測)
@@ -186,7 +199,7 @@ func ParseServiceOrder(out string) []Service {
 	ms := reService.FindAllStringSubmatch(out, -1)
 	svcs := make([]Service, 0, len(ms))
 	for _, m := range ms {
-		svcs = append(svcs, Service{Name: m[1], Device: m[2]})
+		svcs = append(svcs, Service{Name: m[2], Device: m[3], Disabled: m[1] == "*"})
 	}
 	return svcs
 }
