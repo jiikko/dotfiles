@@ -35,7 +35,7 @@ func setupHarness(t *testing.T, obs *setup.PeerNet) (*harness, *[]setup.Dest) {
 // awaitSetup は裏の観測を待って取り込む (テストを観測の速さに依らせない)。
 func awaitSetup(m *Model) {
 	if ch := m.su.ch; ch != nil {
-		m.su.obs, m.su.seen, m.su.ch, m.su.stop = <-ch, true, nil, nil
+		m.applyObserve(<-ch)
 	}
 }
 
@@ -252,7 +252,16 @@ func TestSetupConfirmSurvivesReopenAndExpires(t *testing.T) {
 	if st, _ := nextStep(h.m.setupSteps()); st.ID != stepConfirm {
 		t.Fatalf("開き直したら確認を飛ばした: 次の手順 = %v", st.ID)
 	}
-	h.m.Advance(t0.Add(setup.PeerDelay + setup.PeerWindow + time.Second))
+	late := t0.Add(setup.PeerDelay + setup.PeerWindow + time.Second)
+	h.m.o.Now = func() time.Time { return late }
+	h.m.Advance(late)
+	if h.m.su.ch == nil {
+		t.Fatal("期限が過ぎても読み直さない (窓の間の観測のまま次の手順を組む)")
+	}
+	awaitSetup(h.m) // 期限の後に始めた観測で、未確認の印が解ける
+	if _, ok := h.m.unconf["m2macmini.local"]; ok {
+		t.Error("期限の後の観測でも未確認のまま")
+	}
 	if h.m.conf() != nil || h.m.Busy() {
 		t.Fatalf("期限が過ぎても確認待ちのまま (conf=%+v busy=%v)", h.m.conf(), h.m.Busy())
 	}
@@ -362,5 +371,68 @@ func TestSetupWiredOnlyConfirmNotBlockedByUnreachable(t *testing.T) {
 	h.keys("x")
 	if h.m.ov != ovConfirm {
 		t.Fatalf("確認待ちの間に、届かないことを理由に確認まで断った (notices %+v)", h.m.TakeNotices())
+	}
+}
+
+// 固定 IP にした後、確認しないまま期限が切れても、窓の間の古い観測 (新しい IP に見える) で台帳に書かない。失敗で戻ったが相手の上で
+// 変わっていた場合も同じ (台帳の手順が確認を知らずに観測だけを信じた。敵対レビュー)。期限の後の板の y では確認を起こさない。
+func TestSetupLedgerNeedsConfirm(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	h.keys("x", "y")
+	h.m.TakeExec()
+	h.m.ExecDone(exitCodeError{}) // 失敗で戻ったが、相手の上では変わっていた
+	ip := ""
+	for _, a := range h.m.claimed {
+		ip = a
+	}
+	_ = ip
+	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: "192.168.100.11"}
+	awaitSetup(h.m)
+	h.keys("x")
+	if h.m.ov == ovConfirm && h.m.ask != nil && h.m.ask.yes != nil {
+		h.keys("y")
+	}
+	if len(h.store.hosts) != 0 {
+		t.Fatalf("確認していない固定 IP を台帳に書いた: %+v", h.store.hosts)
+	}
+
+	obs2 := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h2, _ := setupHarness(t, obs2)
+	setSelfStatic(h2.m)
+	runStep(t, h2, nil)
+	h2.keys("x") // 確認の板
+	if h2.m.ov != ovConfirm {
+		t.Fatal("前提: 確認の板が出ない")
+	}
+	late := t0.Add(setup.PeerDelay + setup.PeerWindow + time.Second)
+	h2.m.Advance(late)
+	if a := h2.keys("y"); a == Exec {
+		t.Error("期限が過ぎた確認の板の y で確認を起こした")
+	}
+}
+
+// 有線だけの相手は、確認した後に閉じて開き直しても、確認した新しい IP へ入る (行の 169.254 は古い。敵対レビュー)。
+func TestSetupWiredOnlyReopenUsesConfirmedIP(t *testing.T) {
+	wired := discover.Peer{Host: "wired.local", Instances: []string{"wired"}, SSH: true, Addrs: map[int]string{27: "169.254.9.9"}}
+	h := newHarness(t, nil, []discover.Peer{wired})
+	var dests []setup.Dest
+	h.m.o.Observe = func(_ context.Context, d setup.Dest) setup.PeerNet {
+		dests = append(dests, d)
+		return setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.9.9"}
+	}
+	setSelfStatic(h.m)
+	h.keys("l")
+	h.cursorTo(t, "wired.local")
+	h.keys("enter")
+	awaitSetup(h.m)
+	runStep(t, h, nil) // 相手の固定 IP
+	ip := h.m.conf().static.IP
+	runStep(t, h, nil) // 確認
+	h.keys("q", "enter")
+	awaitSetup(h.m)
+	if got := dests[len(dests)-1].IP; got != ip {
+		t.Errorf("開き直した宛先 = %s (確認した %s)", got, ip)
 	}
 }

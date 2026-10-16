@@ -115,6 +115,8 @@ type Model struct {
 	// (台帳に載る前の新しい IP を、次の相手の番号の計算で避ける)。どちらも画面を閉じても残す
 	pending map[string]*pendingConfirm
 	claimed map[string]string
+	// unconf は「固定 IP にしたが、まだ確認していない」相手 (値は期限)。ある間は台帳の手順を断る
+	unconf map[string]time.Time
 	// execStep / execStatic / execSetup は、初期設定の手順として渡したプロセスの印 (ExecDone が setupExecDone へ渡す)
 	execStep   setup.StepID
 	execStatic *setup.StaticIP
@@ -172,7 +174,7 @@ func New(o Options) *Model {
 	if o.Now == nil {
 		o.Now = time.Now //nolint:forbidigo // 注入しないときの既定値 (ここだけが「今」を直に読む)
 	}
-	m := &Model{o: o, now: o.Now(), w: 120, h: 40, pending: map[string]*pendingConfirm{}, claimed: map[string]string{}}
+	m := &Model{o: o, now: o.Now(), w: 120, h: 40, pending: map[string]*pendingConfirm{}, claimed: map[string]string{}, unconf: map[string]time.Time{}}
 	m.Reload()
 	return m
 }
@@ -706,6 +708,10 @@ func (m *Model) HandleInput(key, text string) Action {
 		m.ov, m.ask = ovNone, nil
 		if a != nil && confirm.IsYes(key) {
 			if a.exec != nil {
+				if a.step == stepConfirm && m.conf() == nil { // 板を出している間に期限が切れた (相手は元に戻っている)
+					m.note("確認の期限が過ぎた (読み直す)", false)
+					return None
+				}
 				r := *a.exec
 				m.exec, m.execStep, m.execStatic, m.execSetup = &r, a.step, a.static, true
 				return Exec

@@ -27,7 +27,8 @@ type setupState struct {
 	seen  bool // 一度は観測を読み終えた
 	ch    <-chan setup.PeerNet
 	stop  context.CancelFunc
-	label string // 画面の題 (別名か Bonjour の名前)
+	obsAt time.Time // 今の観測を始めた時刻 (未確認の固定 IP を解いてよいかの判定)
+	label string    // 画面の題 (別名か Bonjour の名前)
 }
 
 // conf は開いている相手の確認待ち (無ければ nil)。確認待ちは画面ではなく Model が相手ごとに持つ: 画面に持っていたころは、
@@ -51,7 +52,11 @@ func (m *Model) expireConfirms() {
 		if m.now.After(c.deadline) {
 			delete(m.pending, host)
 			delete(m.claimed, host)
-			m.note("確認の期限が過ぎた: "+host+" は元の設定に戻る (r で読み直す)", false)
+			m.note("確認の期限が過ぎた: "+host+" は元の設定に戻る (読み直す)", false)
+			if m.su != nil && m.su.host == host { // 窓の間の観測 (新しい IP) のまま次の手順を組まない
+				m.su.seen = false
+				m.observe()
+			}
 		}
 	}
 }
@@ -75,6 +80,9 @@ func (m *Model) openSetup(r row) {
 	ip := r.mainIP
 	if ip == "" {
 		ip = r.lanIP
+		if c, ok := m.claimed[r.host]; ok {
+			ip = c // 有線だけの相手は、確認した新しい IP で入る (行の 169.254 は古い。閉じて開き直すと古い宛先に戻った。敵対レビュー)
+		}
 	}
 	d := setup.Dest{User: user, IP: ip, HostKeyAlias: r.host}
 	if err := d.Validate(); err != nil {
@@ -109,7 +117,7 @@ func (m *Model) observe() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	ch := make(chan setup.PeerNet, 1)
-	su.ch, su.stop = ch, cancel
+	su.ch, su.stop, su.obsAt = ch, cancel, m.o.Now()
 	obs, d := m.o.Observe, su.dest
 	go func() {
 		defer cancel()
@@ -125,10 +133,20 @@ func (m *Model) takeObserve() {
 	}
 	select {
 	case p := <-su.ch:
-		su.obs, su.seen, su.ch, su.stop = p, true, nil, nil
+		m.applyObserve(p)
 	default:
 	}
 	m.expireConfirms()
+}
+
+// applyObserve は読み終えた観測を取り込む。
+func (m *Model) applyObserve(p setup.PeerNet) {
+	su := m.su
+	su.obs, su.seen, su.ch, su.stop = p, true, nil, nil
+	// 未確認の固定 IP は、期限の後に始めた観測で解く (相手は元に戻っているか、確認されて新しい IP のまま: どちらも観測が正しい)
+	if dl, ok := m.unconf[su.host]; ok && su.obsAt.After(dl) {
+		delete(m.unconf, su.host)
+	}
 }
 
 // setupObserved は Plan に渡す観測 (この Mac・相手の行・裏で読んだ相手)。
@@ -298,6 +316,9 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 			"$ " + shellLine(argv),
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepLedger:
+		if _, ok := m.unconf[su.host]; ok {
+			return nil, "固定 IP にした後、まだ確認していない (確認するか、期限の後に r で読み直す)"
+		}
 		if m.o.Ledger == nil {
 			return nil, "台帳が無い"
 		}
@@ -329,11 +350,11 @@ func (m *Model) keySetup(key string) Action {
 		m.observe()
 		m.note("読み直している", true)
 	case "x":
-		if m.su.ch != nil {
+		if m.su.ch != nil && m.conf() == nil { // 確認待ちの間は観測を待たない (確認は観測を使わず、待つ分だけ窓を削った)
 			m.note("相手を読んでいる (少し待ってから)", false)
 			return None
 		}
-		if !m.su.seen {
+		if !m.su.seen && m.conf() == nil {
 			// 観測の口が無い (live が相手を読まない版) か、まだ一度も読めていない: 何も分からないまま本物の sudo / ssh-copy-id を起こさない (敵対レビュー)
 			m.note("相手を読めていない (この版は相手を読む口が無いか、r で読み直す)", false)
 			return None
@@ -373,6 +394,11 @@ func (m *Model) setupExecDone(step setup.StepID, static *setup.StaticIP, failed 
 		return
 	}
 	now := m.o.Now()
+	if step == setup.StepPeerStatic && static != nil {
+		// 失敗で戻っても相手の上では変わっていることがある (背景に回した後に接続が切れる等)。確認するか期限が過ぎて読み直すまで、
+		// 台帳には書かない (観測だけを信じると、元に戻る相手の新しい IP を台帳に書けた。敵対レビュー)
+		m.unconf[su.host] = now.Add(setup.PeerDelay + setup.PeerWindow)
+	}
 	switch {
 	case failed:
 	case step == setup.StepPeerStatic && static != nil:
@@ -381,6 +407,9 @@ func (m *Model) setupExecDone(step setup.StepID, static *setup.StaticIP, failed 
 	case step == stepConfirm:
 		c := m.pending[su.host]
 		delete(m.pending, su.host)
+		if c != nil {
+			delete(m.unconf, su.host)
+		}
 		if c == nil {
 			break
 		}
