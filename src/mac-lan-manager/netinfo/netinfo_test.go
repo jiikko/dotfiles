@@ -252,3 +252,19 @@ func TestReadFailsWhenServiceOrderFails(t *testing.T) {
 		t.Fatal("サービスの一覧が読めないのに err が nil")
 	}
 }
+
+// 無効のサービスはサービスを 1 つずつ使う経路 (Main・Offline) にも出さない (無効の古い設定 (ルーターあり) がメインになり、本当の
+// メインの IP が消えた。監査の第 3 波の敵対レビュー)。
+func TestDisabledServiceIsNotUsed(t *testing.T) {
+	snap := Snapshot{Services: []Service{
+		{Name: "古い設定", Device: "en13", Active: true, IP: "10.9.9.9", Router: "10.9.9.1", Read: true, Disabled: true},
+		{Name: "TB", Device: "en13", Active: true, IP: "192.168.100.5", Read: true},
+		{Name: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Router: "192.168.50.1", Read: true},
+	}}
+	if m, ok := snap.Main(); !ok || m.Name != "Wi-Fi" {
+		t.Errorf("Main() = %+v (無効のサービスをメインにした)", m)
+	}
+	if off := snap.Offline(); len(off) != 1 || off[0].Name != "TB" {
+		t.Errorf("Offline() = %+v (無効のサービスを有線の候補にした)", off)
+	}
+}

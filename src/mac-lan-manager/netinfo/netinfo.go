@@ -89,6 +89,12 @@ func (s Snapshot) class(dev string) ifClass {
 	return ifNone
 }
 
+// Enabled は無効 ((*)) でないサービス (並び順のまま)。サービスを 1 つずつ使う経路 (Main・Offline・内部 IP の I/F・I/F の候補) は
+// これを通す: 無効の古い設定 (ルーターあり) がメインになり、本当のメインの IP が消えた。分類 (class) は無効のサービスを自分で扱う。
+func (s Snapshot) Enabled() []Service {
+	return slices.DeleteFunc(slices.Clone(s.Services), func(sv Service) bool { return sv.Disabled })
+}
+
 // WiredIF は dev がルーターの無い有線の I/F か。内部 IP の候補・「未固定」・I/F で決める設定は全部これで決める。
 func (s Snapshot) WiredIF(dev string) bool { return s.class(dev) == ifWired }
 
@@ -266,6 +272,9 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 				s.IP = addrs[0]
 			}
 		}
+		if s.Disabled {
+			continue // 無効のサービスはどの判定にも使わない (-getinfo も打たない)
+		}
 		out, err := run(ctx, "networksetup", "-getinfo", s.Name)
 		if err != nil {
 			continue // ルーターの有無が分からない: Read を立てない (有線とも インターネット側とも決めない)
@@ -300,7 +309,7 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 
 // Main はメインのネットワーク (インターネット側) のサービス。並び順で最初の、繋がっていてルーターのあるもの。
 func (s Snapshot) Main() (Service, bool) {
-	for _, sv := range s.Services {
+	for _, sv := range s.Enabled() {
 		if sv.Active && sv.Internet() && sv.IP != "" {
 			return sv, true
 		}
@@ -312,7 +321,7 @@ func (s Snapshot) Main() (Service, bool) {
 // 内部 IP を決めるのは設定 (帯 / I/F) で、これは候補を出すだけ (どれを使うかを推測しない)。
 func (s Snapshot) Offline() []Service {
 	var out []Service
-	for _, sv := range s.Services {
+	for _, sv := range s.Enabled() {
 		if sv.Active && s.WiredIF(sv.Device) && !slices.ContainsFunc(out, func(o Service) bool { return o.Device == sv.Device }) {
 			out = append(out, sv)
 		}

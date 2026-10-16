@@ -1489,3 +1489,23 @@ func TestSharedIFIsNotLanInModel(t *testing.T) {
 		}
 	}
 }
+
+// 無効のサービスは内部 IP の I/F・I/F の候補・この Mac のメインにも使わない。
+func TestDisabledServiceIsNotUsedInModel(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	net := selfNet()
+	net.Services = append([]netinfo.Service{{Name: "古い設定", Device: "en13", Active: true, IP: "10.9.9.9", Router: "10.9.9.1", Read: true, Disabled: true}}, net.Services...)
+	h.m.self = net
+	h.m.pf.LanByBand, h.m.pf.LanIF = false, "en13"
+	if sl := h.m.selfLan(); sl.IP == "10.9.9.9" {
+		t.Errorf("無効のサービスの IP を内部 IP にした: %+v", sl)
+	}
+	for _, s := range h.m.lanIFs() {
+		if s.Disabled {
+			t.Errorf("無効のサービスを I/F の候補にした: %+v", s)
+		}
+	}
+	if self := h.m.rows()[0]; self.mainIP != "192.168.50.250" {
+		t.Errorf("この Mac のメイン = %q (無効のサービスをメインにした)", self.mainIP)
+	}
+}

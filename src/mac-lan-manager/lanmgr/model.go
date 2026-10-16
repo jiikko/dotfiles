@@ -476,7 +476,7 @@ func (m *Model) selfLan() selfLanInfo {
 		}
 		return selfLanInfo{Note: "帯に入る IP が無い"}
 	}
-	for _, s := range m.self.Services {
+	for _, s := range m.self.Enabled() {
 		if s.Device == m.pf.LanIF {
 			if !m.self.WiredIF(s.Device) { // 設定が読めない・ルーターがある I/F の IP を内部 IP として出さない (I/F の候補と同じ判定)
 				return selfLanInfo{Note: "I/F " + s.Device + " がルーターの無い有線として読めない"}
