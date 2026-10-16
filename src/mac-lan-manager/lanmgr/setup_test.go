@@ -263,6 +263,9 @@ func TestSetupConfirmSurvivesReopenAndExpires(t *testing.T) {
 	if _, ok := h.m.unconf["m2macmini.local"]; !ok {
 		t.Fatal("確認の期限の直後の観測で未確認の印を解いた")
 	}
+	if !h.m.Busy() {
+		t.Fatal("未確認の印が残る間に Busy でない (tick が止まり、戻しが終わる頃の読み直しが次のキーまで遅れる)")
+	}
 	h.keys("x")
 	if h.m.ov == ovConfirm && h.m.ask != nil && h.m.ask.title == "台帳に内部 IP 付きで載せる" {
 		t.Fatal("確認の期限の直後に台帳の板を出した")
