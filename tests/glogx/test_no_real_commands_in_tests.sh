@@ -62,6 +62,9 @@ else
 fi
 if ! PATH="$SHIM:$PATH" go test "$@" > "$TMP/test.out" 2>&1; then
   echo "✗ go test が落ちた (このテストの前提が崩れている):" >&2
+  # 🚨 tail だけにしない: -v の出力の末尾は PASS の並びなので、落ちたテストの名前と理由が CI のログから消える (CI run 38843952856)
+  grep -E -e '--- FAIL|^panic|_test\.go:[0-9]+:|test timed out' "$TMP/test.out" >&2 || true
+  echo "--- (末尾 20 行)" >&2
   tail -20 "$TMP/test.out" >&2
   exit 1
 fi
