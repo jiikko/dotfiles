@@ -1181,4 +1181,16 @@ wait "$wiz_pid" 2>/dev/null || true
 wait_for "中断後に一時ファイルが残ったまま (issue 299)" no_leftovers
 printf '✓ 一時ファイル: UI 実行中の SIGTERM でも $TMPDIR に残骸ゼロ\n'
 
+printf '\n## log: 書き込みのたびに上限の行数まで刈る (新しい側を残す。issue 781)\n'
+reset_state
+SK_LOG="$XDG_CACHE_HOME/tt-schedule-keys.log"
+mkdir -p "$XDG_CACHE_HOME"
+for i in 1 2 3 4 5; do printf 'old-%s\n' "$i"; done > "$SK_LOG"
+TMUX_SCHEDULE_KEYS_LOG_MAX_LINES=3 STUB_UI_EXIT=127 STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard
+sk_lines="$(wc -l < "$SK_LOG" | tr -d ' ')"
+[[ "$sk_lines" == 3 ]] || { printf '✗ 上限 3 行に刈られない (%s 行):\n' "$sk_lines"; cat "$SK_LOG"; exit 1; }
+grep -q 'ui: 起動できない (rc=127)' "$SK_LOG" || { printf '✗ 刈った後に新しい行が残っていない:\n'; cat "$SK_LOG"; exit 1; }
+! grep -qE '^old-(1|2|3)$' "$SK_LOG" || { printf '✗ 古い側ではなく新しい側を落とした:\n'; cat "$SK_LOG"; exit 1; }
+printf '✓ ログは書き込みのたびに新しい側の上限行だけが残る\n'
+
 printf '\n[test-schedule-keys] all ok\n'

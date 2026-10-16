@@ -10,6 +10,7 @@
 #   (5) archive が last より古い → NG (window は復元されるが pane 内容が別世代)
 #   (6) 非 default socket → 判定対象外で exit 0 (隔離テストサーバを NG にしない)
 #   (7) --quiet は NG のときだけ 1 行出す
+#   (8) 保存の間隔 (@continuum-save-interval) が 0 / 数字でないなら既定の間隔から閾値を出す
 set -euo pipefail
 unset CDPATH
 unset TMUX TMUX_PANE 2>/dev/null || true
@@ -76,7 +77,7 @@ health() {  # 共通 env で実行。追加 env は呼び出し側が前置き�
     TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PERIODIC_STATE_DIR="$TMP_DIR/ps" \
     STUB_SOCKET_PATH="${SOCK_OVERRIDE:-$TT_DEFAULT_SOCK}" STUB_RDIR="$RDIR" \
     STUB_INTERVAL="${INTERVAL_OVERRIDE:-15}" STUB_SESSIONS="${SESSIONS_OVERRIDE:-$DEF_SESSIONS}" \
-    STUB_CAPTURE="${CAPTURE_OVERRIDE:-on}" \
+    STUB_CAPTURE="${CAPTURE_OVERRIDE:-on}" TT_HEALTH_MIN_STALE_SECONDS="${MIN_STALE_OVERRIDE:-1800}" \
     bash "$SCRIPT" "$@"
 }
 
@@ -155,6 +156,17 @@ grep -q 'last の pane が 3 個入っていない' "$RUN_OUT" \
 printf '✓ archive に last の pane が欠けていると NG (その pane は復元しても空になる)\n'
 mk_snapshot snap_now.txt 3 0
 mk_archive 3
+
+# --- (8) 保存の間隔の読み方 → 鮮度の閾値 (= 間隔 × 2) ------------------------------------
+# 0 (continuum では「無効」) と数字でない値は既定の 15 分に寄せ、"08" は 8 進でなく 8 分と読む (issue 781)。
+# 下限 (既定 30 分) に隠れないよう下限を 1 分に下げ、閾値そのものを見る
+for tc in '0:30' 'abc:30' '08:16' '20:40'; do
+  iv="${tc%%:*}"; want="${tc##*:}"
+  MIN_STALE_OVERRIDE=60 INTERVAL_OVERRIDE="$iv" health
+  [[ "$RC" -eq 0 ]] && grep -q "閾値 ${want} 分)" "$RUN_OUT" \
+    || { printf '✗ @continuum-save-interval=%s で閾値が %s 分にならない (RC=%s):\n' "$iv" "$want" "$RC"; cat "$RUN_OUT"; exit 1; }
+done
+printf '✓ 保存の間隔が 0 / 数字でないときは既定の 15 分から、"08" は 8 分から閾値を出す\n'
 
 # --- (4b) owner の起動時刻が記録と違う (pid 再利用) → NG --------------------------------
 # 🚨 ここが「pid<TAB>lstart 形式で書く唯一の理由」を守る検査。生きている pid を owner に

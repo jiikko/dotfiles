@@ -20,3 +20,11 @@ issue 776 で `tt_prune_log_lines` と `tt_save_interval_minutes` を guards.sh 
 ## 関連ファイル
 
 - `scripts/tmux_schedule_keys.sh` / `scripts/tmux_snapshot_health.sh` / `scripts/lib/tmux_resurrect_guards.sh` / issue 776 (done)
+
+## 進捗
+
+- [x] test_schedule_keys.sh に「log: 書き込みのたびに上限の行数まで刈る」: 古い 5 行のログに `TMUX_SCHEDULE_KEYS_LOG_MAX_LINES=3` で 1 回書かせ、3 行・新しい行が残る・古い側が落ちる
+- [x] test_snapshot_health.sh に (8): 下限 (`TT_HEALTH_MIN_STALE_SECONDS`) を 60 秒に下げ、`@continuum-save-interval` が 0 / abc / 08 / 20 で閾値が 30 / 30 / 16 / 40 分。
+  health() は `TT_HEALTH_MIN_STALE_SECONDS` を明示で渡すようにした (既定 1800。親の環境から漏れない)
+- 変異で red を確認 (`mutate-verify`): `log` の刈り込みを `:` に → 「上限 3 行に刈られない (7 行)」/ `[ "$v" -gt 0 ] || v=…` を外す → 「=0 で閾値が 30 分にならない」
+  (test_periodic_save.sh も同時に red) / `v=$((10#$v))` を外す → 「=08 で閾値が 16 分にならない」
