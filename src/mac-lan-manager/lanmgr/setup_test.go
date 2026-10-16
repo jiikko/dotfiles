@@ -3,6 +3,7 @@ package lanmgr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -306,5 +307,35 @@ func TestSetupGuards(t *testing.T) {
 	h2.keys("x")
 	if h2.m.ov != ovNone {
 		t.Fatal("台帳の別の Mac と同じ内部 IP を書く確認の板を出した")
+	}
+}
+
+// 読みに行ったが届かない (判定できない) 相手では x を断る (この Mac の固定は自動では戻らないので、届かない相手に向けて始めない)。
+// 期限の間際に 0 で戻った確認は確認済みとして扱い、割り当てた番号を残す (敵対レビュー)。
+func TestSetupUnreachableAndLateConfirm(t *testing.T) {
+	obs := &setup.PeerNet{KeyErr: fmt.Errorf("%w: timeout", setup.ErrUnknown)}
+	h, _ := setupHarness(t, obs)
+	h.keys("x")
+	if h.m.ov != ovNone {
+		t.Fatal("届かない相手で確認の板を出した")
+	}
+
+	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h.keys("r")
+	awaitSetup(h.m)
+	setSelfStatic(h.m)
+	runStep(t, h, nil)
+	c := h.m.conf()
+	if c == nil {
+		t.Fatal("前提: 確認待ちにならない")
+	}
+	late := c.deadline.Add(time.Second)
+	h.m.o.Now = func() time.Time { return late }
+	runStep(t, h, nil)
+	if h.m.conf() != nil {
+		t.Error("確認の後も確認待ちのまま")
+	}
+	if h.m.claimed["m2macmini.local"] != c.static.IP {
+		t.Errorf("間際の確認で番号を落とした: %+v", h.m.claimed)
 	}
 }

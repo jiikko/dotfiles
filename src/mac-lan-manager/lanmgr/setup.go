@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -31,6 +32,9 @@ type setupState struct {
 
 // conf は開いている相手の確認待ち (無ければ nil)。確認待ちは画面ではなく Model が相手ごとに持つ: 画面に持っていたころは、
 // 閉じて開き直すと消え、Plan が「済み」と見て未確認の IP を台帳に書けた (敵対レビュー)。
+// 受容した限界: プロセスの中にしか持たないので、確認待ちの間 (約 185 秒) にプロセスを起こし直すと消え、同じ形で未確認の IP を
+// 台帳に書ける。glogx と単体の mac-lan-manager を同時に使うと、割り当てた番号 (claimed) を互いに知らない。塞ぐなら、相手の状態
+// ディレクトリにある未確認の印を観測で読む (setup.StaticIP の ConfirmPath)。
 func (m *Model) conf() *pendingConfirm {
 	if m.su == nil {
 		return nil
@@ -147,6 +151,8 @@ func (m *Model) setupObserved() (setup.Observed, row) {
 }
 
 // selfWired はこの Mac の内部の網のサービス (I/F で決める設定ならその I/F、帯で決めるならルーターの無い有線の先頭)。
+// 受容した限界: 帯で決める設定では、DHCP を一時的に失ってルーターが無く見えるインターネット用の有線も候補に入る。
+// 確認の板にサービス名を出しているので、選ぶ前に人が見る。確実にするなら I/F で決める設定にする
 func (m *Model) selfWired() (netinfo.Service, bool) {
 	if !m.pf.LanByBand {
 		for _, s := range m.self.Enabled() {
@@ -329,6 +335,12 @@ func (m *Model) keySetup(key string) Action {
 			m.note("相手を読めていない (この版は相手を読む口が無いか、r で読み直す)", false)
 			return None
 		}
+		if errors.Is(m.su.obs.KeyErr, setup.ErrUnknown) {
+			// 読みに行ったが届かない (Bonjour の IP へ ssh が届かない等): 届かない相手に向けて、この Mac の固定 (自動では戻らない) から
+			// 始めない。鍵が無いだけの相手は KeyErr が nil なので止まらない (敵対レビュー)
+			m.note("相手に届かない (r で読み直す): "+m.su.obs.KeyErr.Error(), false)
+			return None
+		}
 		st, ok := nextStep(m.setupSteps())
 		if !ok {
 			m.note("全部済んでいる", true)
@@ -368,10 +380,10 @@ func (m *Model) setupExecDone(step setup.StepID, static *setup.StaticIP, failed 
 		if c == nil {
 			break
 		}
-		if now.After(c.deadline) { // 期限の後に届いた確認は受け付けられていない (相手は元に戻っている)
-			delete(m.claimed, su.host)
-			m.note("期限を過ぎてから確認した: 相手は元の設定に戻っている (r で読み直す)", false)
-			break
+		if now.After(c.deadline) {
+			// 確認の ssh は 0 で戻った。印は期限の内に置けて、戻りだけが遅れたことがある (手元の期限は相手の期限より後ろ)。確認済みとして
+			// 扱い、番号も残す (落とすと 2 台目に同じ番号を振った。敵対レビュー)。間に合わなかったなら、読み直すと元の設定に見える
+			m.note("期限の間際に確認した: r で読み直して、新しい IP のままかを確かめる", false)
 		}
 		// 有線でしか入れない相手は、宛先を新しい IP に替える (古い 169.254 に入りに行き続けた。敵対レビュー)
 		if _, r := m.setupObserved(); r.mainIP == "" {
