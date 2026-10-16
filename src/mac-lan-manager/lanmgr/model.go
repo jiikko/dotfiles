@@ -126,9 +126,9 @@ type Model struct {
 	// setupExec は初期設定の手順として渡したプロセスの印 (ExecDone が setupExecDone へ渡す。nil は手順ではないプロセス)
 	setupExec *setupExec
 	setC      int // 設定の画面のカーソル
-	ov         overlay
-	ask        *ask
-	copyC      int
+	ov        overlay
+	ask       *ask
+	copyC     int
 
 	filter    lineedit.Line
 	filtering bool `layer:"filter"`
@@ -408,7 +408,7 @@ func (m *Model) TakeExec() (ExecRequest, bool) {
 func (m *Model) ExecDone(err error) string {
 	var exitErr interface{ ExitCode() int } // *exec.ExitError
 	failOnExit := m.execExitIsFailure
-	m.execExitIsFailure = false // 1 回だけ読む (次の ExecDone へ漏らさない)
+	m.execExitIsFailure = false       // 1 回だけ読む (次の ExecDone へ漏らさない)
 	if se := m.setupExec; se != nil { // 初期設定の手順: 成功なら次へ進め、どちらでも相手を読み直す
 		m.setupExec = nil
 		failed := err != nil && (!errors.As(err, &exitErr) || failOnExit)
