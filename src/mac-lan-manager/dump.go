@@ -152,7 +152,8 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 	}
 }
 
-// peerReport は dump --peer の出力。Key は KeyOK / KeyErr の読み (ok = 鍵で入れる / denied = 鍵で入れない / unknown = 判定できない)。
+// peerReport は dump --peer の出力。Key は KeyOK / KeyErr の読み (ok = 鍵で入れる / denied = 鍵で入れない /
+// host_key_unknown = 初めての相手 (ホスト鍵をまだ知らない) / unknown = 判定できない)。
 type peerReport struct {
 	User         string `json:"user"`
 	IP           string `json:"ip"`
@@ -188,6 +189,8 @@ func dumpPeer(d setup.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan s
 	switch {
 	case p.KeyOK:
 		r.Key = "ok"
+	case p.HostKeyUnknown:
+		r.Key = "host_key_unknown"
 	case p.KeyErr == nil:
 		r.Key = "denied"
 	default:
@@ -202,7 +205,8 @@ func dumpPeer(d setup.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan s
 		}
 		return 0
 	}
-	key := map[string]string{"ok": "鍵で入れる", "denied": "鍵で入れない (Permission denied)", "unknown": "判定できない (届かない・期限切れ)"}[r.Key]
+	key := map[string]string{"ok": "鍵で入れる", "denied": "鍵で入れない (Permission denied)",
+		"host_key_unknown": "初めての相手 (ホスト鍵をまだ知らない。鍵を置く手順で指紋を確かめる)", "unknown": "判定できない (届かない・期限切れ)"}[r.Key]
 	fmt.Fprintf(stdout, "peer: %s@%s  host_key_alias=%s\n", r.User, r.IP, r.HostKeyAlias)
 	fmt.Fprintf(stdout, "key: %s (%s)", r.Key, key)
 	if r.KeyErr != "" {

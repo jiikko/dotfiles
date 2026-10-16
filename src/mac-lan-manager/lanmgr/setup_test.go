@@ -684,3 +684,18 @@ func TestSetupOverdueUnconfAsksReload(t *testing.T) {
 		t.Error("期限の後の観測が読めず印が残ったのに、読み直しを促さない")
 	}
 }
+
+// 初めての相手 (ホスト鍵をまだ知らない) でも x を断らない: 鍵を置く手順 (指紋を聞ける ssh-copy-id) へ進めるように
+// (「判定できない」と同じに断っていて、初めての相手では初期設定を始められなかった。air5 で実測)。
+func TestSetupFirstContactNotRefused(t *testing.T) {
+	obs := &setup.PeerNet{HostKeyUnknown: true}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	h.keys("x")
+	if h.m.ov != ovConfirm || h.m.ask == nil || h.m.ask.title != "相手に公開鍵を置く" {
+		t.Fatalf("初めての相手で鍵を置く手順の板が出ない (ov=%v ask=%+v notices=%+v)", h.m.ov, h.m.ask, h.m.TakeNotices())
+	}
+	if !strings.Contains(strings.Join(h.m.ask.body, "\n"), "指紋") {
+		t.Error("初めての相手で指紋を確かめる案内を出さない")
+	}
+}

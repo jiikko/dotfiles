@@ -57,14 +57,17 @@ var ErrUnknown = errors.New("判定できない")
 
 // PeerNet は ssh で読んだ相手の状態。KeyOK が偽で KeyErr が nil なら「鍵で入れない」と分かった。KeyErr が ErrUnknown なら判定できない。
 type PeerNet struct {
-	KeyOK    bool
-	KeyErr   error
-	NetKnown bool
-	Service  string // ルーターの無い有線のサービス (Offline の先頭)
-	IP       string
-	Method   string
-	Mask     string
-	Router   string
+	KeyOK  bool
+	KeyErr error
+	// HostKeyUnknown は相手のホスト鍵をまだ known_hosts に持っていない (初めての相手)。KeyOK は偽・KeyErr は nil で「鍵で入れない」と
+	// 同じに扱い、鍵を置く手順 (端末を持つ ssh-copy-id) で人が指紋を確かめて受け入れる
+	HostKeyUnknown bool
+	NetKnown       bool
+	Service        string // ルーターの無い有線のサービス (Offline の先頭)
+	IP             string
+	Method         string
+	Mask           string
+	Router         string
 }
 
 // exitCoder は終了コードを持つエラー (*exec.ExitError)。
@@ -83,8 +86,23 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 	}
 	if _, err := run(ctx, d.SSHArgv(false, true, "true")); err != nil {
 		var ec exitCoder
-		if ctx.Err() == nil && errors.As(err, &ec) && ec.ExitCode() == 255 && strings.Contains(err.Error(), "Permission denied (") {
-			return p // 鍵で入れない
+		if ctx.Err() == nil && errors.As(err, &ec) && ec.ExitCode() == 255 {
+			if strings.Contains(err.Error(), "Permission denied (") {
+				return p // 鍵で入れない
+			}
+			// BatchMode の ssh は初めての相手の指紋を聞けず "Host key verification failed." で落ちる。鍵が変わった相手も同じ 1 行なので、
+			// known_hosts に台帳の鍵の名前があるかで分ける (無ければ初めての相手。あれば鍵が変わった: 成りすましか相手の入れ直し)。
+			// 分けないと初めての相手は「判定できない」になり、x が全部の手順を断って、指紋を聞ける ssh-copy-id にも辿り着けなかった (air5 で実測)
+			if strings.Contains(err.Error(), "Host key verification failed") {
+				switch known, kerr := knownHost(ctx, run, d.HostKeyAlias); {
+				case kerr == nil && !known:
+					p.HostKeyUnknown = true
+					return p
+				case kerr == nil && known:
+					p.KeyErr = fmt.Errorf("%w: 相手のホスト鍵が known_hosts と違う (相手を入れ直したか、別の相手。確かめてから ssh-keygen -R %s で消す)", ErrUnknown, d.HostKeyAlias)
+					return p
+				}
+			}
 		}
 		p.KeyErr = fmt.Errorf("%w: %w", ErrUnknown, err)
 		return p
@@ -107,6 +125,19 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 		p.Service, p.IP, p.Method, p.Mask, p.Router = s.Name, s.IP, s.Method, s.Mask, s.Router
 	}
 	return p
+}
+
+// knownHost は known_hosts に alias の行があるか (ssh-keygen -F は見つかれば 0、無ければ 1 で抜ける。読むだけ)。
+func knownHost(ctx context.Context, run Run, alias string) (bool, error) {
+	_, err := run(ctx, []string{"ssh-keygen", "-F", alias})
+	if err == nil {
+		return true, nil
+	}
+	var ec exitCoder
+	if errors.As(err, &ec) && ec.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, err
 }
 
 // Window と Delay は相手を固定 IP にするときの待ち (変えるまで / 確認を待つ間)。確認は新しい IP で入り直して印を置くので、その分の余裕を取る。

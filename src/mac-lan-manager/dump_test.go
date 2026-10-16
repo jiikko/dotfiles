@@ -163,6 +163,7 @@ func TestDumpPeerJSONKeyOutcomes(t *testing.T) {
 	}{
 		{"ok", setup.PeerNet{KeyOK: true}, "ok"},
 		{"denied", setup.PeerNet{}, "denied"},
+		{"host_key_unknown", setup.PeerNet{HostKeyUnknown: true}, "host_key_unknown"},
 		{"unknown", setup.PeerNet{KeyErr: unknown}, "unknown"},
 	}
 	for _, c := range cases {

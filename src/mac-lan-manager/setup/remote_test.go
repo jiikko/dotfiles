@@ -175,3 +175,35 @@ func TestStepArgv(t *testing.T) {
 		t.Error("改行を含むサービス名を通した")
 	}
 }
+
+// 初めての相手 (known_hosts に台帳の鍵の名前が無い) は、BatchMode の ssh が "Host key verification failed." で落ちても「判定できない」に
+// しない (鍵を置く手順の ssh-copy-id で人が指紋を確かめる)。known_hosts にあるのに落ちたら鍵が変わったので断る (air5 で実測した形)。
+func TestObservePeerHostKey(t *testing.T) {
+	hkFail := exitError{255, "exit status 255: Host key verification failed."}
+	for _, c := range []struct {
+		name    string
+		keygen  error
+		first   bool
+		unknown bool
+	}{
+		{"初めての相手", exitError{1, "exit status 1"}, true, false},
+		{"鍵が変わった", nil, false, true},
+		{"known_hosts を読めない", exitError{255, "boom"}, false, true},
+	} {
+		var keygenArgv []string
+		run := func(_ context.Context, argv []string) (string, error) {
+			if argv[0] == "ssh-keygen" {
+				keygenArgv = argv
+				return "", c.keygen
+			}
+			return "", hkFail
+		}
+		p := ObservePeer(context.Background(), run, dest)
+		if p.HostKeyUnknown != c.first || errors.Is(p.KeyErr, ErrUnknown) != c.unknown || p.KeyOK {
+			t.Errorf("%s: PeerNet = %+v", c.name, p)
+		}
+		if !slices.Equal(keygenArgv, []string{"ssh-keygen", "-F", "m2macmini.local"}) {
+			t.Errorf("%s: known_hosts を台帳の鍵の名前で引かない: %q", c.name, keygenArgv)
+		}
+	}
+}

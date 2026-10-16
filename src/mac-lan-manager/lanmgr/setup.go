@@ -334,6 +334,9 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 			return nil, err.Error()
 		}
 		body := []string{"鍵 (~/.ssh/id_ed25519) が無ければ作り、" + su.dest.User + "@" + su.dest.IP + " に置く。相手のパスワードを聞く"}
+		if su.obs.HostKeyUnknown {
+			body = append(body, "初めての相手: ssh が相手の指紋を出して続けるかを聞く (相手で ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub と見比べてから yes)")
+		}
 		for _, l := range strings.Split(argv[2], "\n") {
 			body = append(body, "$ "+l)
 		}

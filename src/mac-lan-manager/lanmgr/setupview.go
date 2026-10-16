@@ -35,6 +35,8 @@ func (m *Model) viewSetup(w int) string {
 		b.WriteString(sWarn.Render("固定 IP にした後の確認が済んでいない: 相手が元に戻った頃なので r で読み直す") + "\n")
 	case errors.Is(su.obs.KeyErr, setup.ErrUnknown):
 		b.WriteString(sWarn.Render("相手を読めない (届かない・判定できない): "+su.obs.KeyErr.Error()) + "\n")
+	case su.seen && su.obs.HostKeyUnknown:
+		b.WriteString(sDim.Render("初めての相手 (ホスト鍵をまだ知らない): 公開鍵を置く手順で、ssh が出す指紋を確かめて受け入れる") + "\n")
 	case su.seen && !su.obs.KeyOK:
 		b.WriteString(sDim.Render("鍵ではまだ入れない (公開鍵を置く手順で入れるようになる)") + "\n")
 	default:
