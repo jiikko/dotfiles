@@ -72,7 +72,8 @@ type exitCoder interface{ ExitCode() int }
 
 // ObservePeer は鍵で入れるかを確かめ、入れたら相手の netinfo.Read を ssh 越しに走らせる (読むだけ。設定を変えるコマンドは打たない)。
 // ssh の終了コード 255 は ssh 自身の失敗で、鍵で入れない (Permission denied) と届かない (timeout・経路無し) が混ざる。stderr に
-// Permission denied があるときだけ「鍵で入れない」とし、それ以外は判定できない (ErrUnknown) にする (届かない相手を「鍵が無い」に
+// 認証の失敗の形 ("Permission denied (publickey,…)") があるときだけ「鍵で入れない」とし (接続の EPERM や鍵のファイルの
+// 読めなさも "Permission denied" を含む。敵対レビュー)、それ以外は判定できない (ErrUnknown) にする (届かない相手を「鍵が無い」に
 // 丸めると、次の手順の ssh-copy-id が同じく届かずに失敗するだけになる。issue 792)。
 func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 	var p PeerNet
@@ -82,7 +83,7 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 	}
 	if _, err := run(ctx, d.SSHArgv(false, true, "true")); err != nil {
 		var ec exitCoder
-		if ctx.Err() == nil && errors.As(err, &ec) && ec.ExitCode() == 255 && strings.Contains(err.Error(), "Permission denied") {
+		if ctx.Err() == nil && errors.As(err, &ec) && ec.ExitCode() == 255 && strings.Contains(err.Error(), "Permission denied (") {
 			return p // 鍵で入れない
 		}
 		p.KeyErr = fmt.Errorf("%w: %w", ErrUnknown, err)

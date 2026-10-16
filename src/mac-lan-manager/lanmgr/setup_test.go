@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"mac-lan-manager/discover"
 	"mac-lan-manager/ledger"
@@ -91,7 +92,7 @@ func TestSetupWalksAllSteps(t *testing.T) {
 	if !slices.Contains(argv, "-t") || argv[slices.Index(argv, "--")+1] != "koji@192.168.50.7" {
 		t.Fatalf("相手の固定 IP = %q", argv)
 	}
-	c := h.m.su.conf
+	c := h.m.conf()
 	if c == nil || c.static.IP == "192.168.100.10" || !strings.HasPrefix(c.static.IP, "192.168.100.") {
 		t.Fatalf("確認待ちにならない・この Mac と同じ IP を選んだ: %+v", c)
 	}
@@ -106,7 +107,7 @@ func TestSetupWalksAllSteps(t *testing.T) {
 	if argv[slices.Index(argv, "--")+1] != "koji@"+c.static.IP {
 		t.Fatalf("確認は新しい IP で入る: %q", argv)
 	}
-	if h.m.su.conf != nil {
+	if h.m.conf() != nil {
 		t.Fatal("確認の後も確認待ちのまま")
 	}
 	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: c.static.IP}
@@ -137,8 +138,8 @@ func TestSetupPeerStaticFailureDoesNotWaitConfirm(t *testing.T) {
 		t.Error("失敗を知らせない (終了コード ≠ 0 は失敗として返す)")
 	}
 	awaitSetup(h.m)
-	if h.m.su.conf != nil {
-		t.Fatalf("失敗したのに確認待ちにした: %+v", h.m.su.conf)
+	if h.m.conf() != nil {
+		t.Fatalf("失敗したのに確認待ちにした: %+v", h.m.conf())
 	}
 }
 
@@ -215,5 +216,95 @@ func TestSetupViewFits(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Errorf("画面に %q が無い:\n%s", want, view)
 		}
+	}
+}
+
+// 相手を一度も読めていない (観測の口が無い版を含む) ときは x で何も起こさない (本物の sudo / ssh-copy-id を、何も分からないまま起こした。敵対レビュー)。
+func TestSetupRefusesWithoutObservation(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini})
+	h.keys("l")
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("enter")
+	if h.m.sc != scSetup {
+		t.Fatal("前提: 初期設定の画面が開かない")
+	}
+	h.keys("x")
+	if h.m.ov != ovNone {
+		t.Fatal("観測の無いまま確認の板を出した")
+	}
+}
+
+// 確認待ちは画面を閉じて開き直しても残り、期限が過ぎたら片付く (画面に持っていたころは開き直すと消え、未確認の IP を台帳に書けた。
+// 期限切れは抜けられず、Busy が立ちっぱなしだった。敵対レビュー)。
+func TestSetupConfirmSurvivesReopenAndExpires(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	runStep(t, h, nil)
+	c := h.m.conf()
+	if c == nil {
+		t.Fatal("前提: 確認待ちにならない")
+	}
+	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: c.static.IP} // 窓の間は新しい IP に見える
+	h.keys("q", "enter")
+	awaitSetup(h.m)
+	if st, _ := nextStep(h.m.setupSteps()); st.ID != stepConfirm {
+		t.Fatalf("開き直したら確認を飛ばした: 次の手順 = %v", st.ID)
+	}
+	h.m.Advance(t0.Add(setup.PeerDelay + setup.PeerWindow + time.Second))
+	if h.m.conf() != nil || h.m.Busy() {
+		t.Fatalf("期限が過ぎても確認待ちのまま (conf=%+v busy=%v)", h.m.conf(), h.m.Busy())
+	}
+	if _, ok := h.m.claimed["m2macmini.local"]; ok {
+		t.Error("期限が過ぎた番号を割り当て済みのまま")
+	}
+}
+
+// 2 台目の相手には、1 台目に割り当てた番号を選ばない (台帳に載る前の新しい IP は、台帳にも Bonjour の行にもまだ無い。敵対レビュー)。
+func TestSetupSecondPeerGetsDifferentIP(t *testing.T) {
+	air := discover.Peer{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}
+	h := newHarness(t, nil, []discover.Peer{mini, air})
+	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet {
+		return setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.1.1"}
+	}
+	setSelfStatic(h.m)
+	h.keys("l")
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("enter")
+	awaitSetup(h.m)
+	runStep(t, h, nil)
+	first := h.m.conf().static.IP
+	h.keys("q")
+	h.cursorTo(t, "air.local")
+	h.keys("enter")
+	awaitSetup(h.m)
+	argv := runStep(t, h, nil)
+	second := h.m.conf().static.IP
+	if second == first || argv == nil {
+		t.Fatalf("2 台目に 1 台目と同じ番号 (%s / %s)", first, second)
+	}
+}
+
+// 相手に Wi-Fi で入れない (有線の 169.254 でしか見えない) ときは、この Mac の固定を止める (先に固定すると相手に届かなくなる)。
+// 台帳の別の Mac と同じ内部 IP は台帳に書かない。
+func TestSetupGuards(t *testing.T) {
+	wired := discover.Peer{Host: "wired.local", Instances: []string{"wired"}, SSH: true, Addrs: map[int]string{27: "169.254.9.9"}}
+	h := newHarness(t, nil, []discover.Peer{wired})
+	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet { return setup.PeerNet{} }
+	h.keys("l")
+	h.cursorTo(t, "wired.local")
+	h.keys("enter")
+	awaitSetup(h.m)
+	if st, _ := nextStep(h.m.setupSteps()); st.ID != setup.StepSelfStatic || !strings.Contains(st.Blocked, "Wi-Fi") {
+		t.Errorf("Wi-Fi で入れない相手でこの Mac の固定を止めない: %+v", st)
+	}
+
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: "192.168.100.12"}
+	h2, _ := setupHarness(t, obs)
+	setSelfStatic(h2.m)
+	h2.m.hosts = append(h2.m.hosts, ledger.Host{Host: "studio.local", LAN: "192.168.100.12"})
+	h2.keys("x")
+	if h2.m.ov != ovNone {
+		t.Fatal("台帳の別の Mac と同じ内部 IP を書く確認の板を出した")
 	}
 }

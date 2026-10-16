@@ -82,6 +82,7 @@ func TestObservePeerKeyOutcomes(t *testing.T) {
 	}{
 		{"鍵で入れない", exitError{255, "koji@192.168.50.7: Permission denied (publickey,password)."}, false, false},
 		{"届かない", exitError{255, "ssh: connect to host 192.168.50.7 port 22: Operation timed out"}, false, true},
+		{"接続の EPERM", exitError{255, "ssh: connect to host 192.168.50.7 port 22: Permission denied"}, false, true},
 		{"255 以外", exitError{1, "boom"}, false, true},
 		{"終了コードの無い失敗", errors.New("exec: not found"), false, true},
 	}
@@ -94,7 +95,7 @@ func TestObservePeerKeyOutcomes(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	run, _ := fakeRemote(t, exitError{255, "Permission denied"})
+	run, _ := fakeRemote(t, exitError{255, "Permission denied (publickey)."})
 	if p := ObservePeer(ctx, run, dest); !errors.Is(p.KeyErr, ErrUnknown) {
 		t.Errorf("期限切れの ssh を「鍵で入れない」と読んだ: %+v", p)
 	}

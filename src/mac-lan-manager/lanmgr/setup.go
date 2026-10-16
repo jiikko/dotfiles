@@ -26,8 +26,27 @@ type setupState struct {
 	seen  bool // 一度は観測を読み終えた
 	ch    <-chan setup.PeerNet
 	stop  context.CancelFunc
-	conf  *pendingConfirm // 相手を固定 IP にした後、確認を待っている
-	label string          // 画面の題 (別名か Bonjour の名前)
+	label string // 画面の題 (別名か Bonjour の名前)
+}
+
+// conf は開いている相手の確認待ち (無ければ nil)。確認待ちは画面ではなく Model が相手ごとに持つ: 画面に持っていたころは、
+// 閉じて開き直すと消え、Plan が「済み」と見て未確認の IP を台帳に書けた (敵対レビュー)。
+func (m *Model) conf() *pendingConfirm {
+	if m.su == nil {
+		return nil
+	}
+	return m.pending[m.su.host]
+}
+
+// expireConfirms は期限を過ぎた確認待ちを片付ける (相手の上では元の設定に戻っている)。Advance と観測の取り込みで呼ぶ。
+func (m *Model) expireConfirms() {
+	for host, c := range m.pending {
+		if m.now.After(c.deadline) {
+			delete(m.pending, host)
+			delete(m.claimed, host)
+			m.note("確認の期限が過ぎた: "+host+" は元の設定に戻る (r で読み直す)", false)
+		}
+	}
 }
 
 // pendingConfirm は相手を固定 IP にした後の確認待ち。期限を過ぎると相手の上で元に戻っている。
@@ -102,6 +121,7 @@ func (m *Model) takeObserve() {
 		su.obs, su.seen, su.ch, su.stop = p, true, nil, nil
 	default:
 	}
+	m.expireConfirms()
 }
 
 // setupObserved は Plan に渡す観測 (この Mac・相手の行・裏で読んだ相手)。
@@ -146,12 +166,9 @@ func (m *Model) selfWired() (netinfo.Service, bool) {
 func (m *Model) setupSteps() []setup.Step {
 	o, _ := m.setupObserved()
 	steps := setup.Plan(o)
-	if c := m.su.conf; c != nil {
+	if c := m.conf(); c != nil {
 		left := int(c.deadline.Sub(m.now).Seconds())
 		st := setup.Step{ID: stepConfirm, Title: fmt.Sprintf("新しい IP (%s) で入り直して確認する (残り %d 秒)", c.static.IP, max(left, 0))}
-		if left <= 0 {
-			st.Blocked = "期限が過ぎた (相手は元の設定に戻っている。r で読み直す)"
-		}
 		out := make([]setup.Step, 0, len(steps)+1)
 		for _, s := range steps {
 			out = append(out, s)
@@ -182,7 +199,10 @@ func nextStep(steps []setup.Step) (setup.Step, bool) {
 // usedIPs は帯の番号を決めるときに避ける IP (台帳の内部 IP・この Mac・見えている相手)。電源の切れた Mac は見えないので台帳も入れる。
 func (m *Model) usedIPs() []string {
 	rows := m.rows()
-	used := make([]string, 0, len(m.hosts)+len(m.self.IPs)+2*len(rows))
+	used := make([]string, 0, len(m.hosts)+len(m.self.IPs)+2*len(rows)+len(m.claimed))
+	for _, ip := range m.claimed { // この起動で割り当てた番号 (台帳に載る前の相手の新しい IP は、台帳にも Bonjour の行にもまだ無い)
+		used = append(used, ip)
+	}
 	for _, h := range m.hosts {
 		used = append(used, h.LAN)
 	}
@@ -220,6 +240,7 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		}
 		return &ask{title: "この Mac の有線を固定 IP にする", body: []string{
 			o.SelfService + " を " + ip + " / 255.255.255.0 (ルーター無し) にする。sudo のパスワードを聞く",
+			"🚨 この Mac の変更は自動では戻らない。ルーター無しの固定になるかは未確認 (issue 789)。戻すなら sudo networksetup -setdhcp " + setup.Quote(o.SelfService),
 			"$ " + shellLine(argv),
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepKey:
@@ -227,10 +248,11 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		return &ask{title: "相手に公開鍵を置く", body: []string{
-			"鍵 (~/.ssh/id_ed25519) が無ければ作り、" + su.dest.User + "@" + su.dest.IP + " に置く。相手のパスワードを聞く",
-			"$ ssh-copy-id -i ~/.ssh/id_ed25519.pub " + su.dest.User + "@" + su.dest.IP,
-		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
+		body := []string{"鍵 (~/.ssh/id_ed25519) が無ければ作り、" + su.dest.User + "@" + su.dest.IP + " に置く。相手のパスワードを聞く"}
+		for _, l := range strings.Split(argv[2], "\n") {
+			body = append(body, "$ "+l)
+		}
+		return &ask{title: "相手に公開鍵を置く", body: body, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepPeerStatic:
 		used := append(m.usedIPs(), o.SelfIP)
 		ip, err := setup.SuggestIP(o.Band, used)
@@ -252,9 +274,10 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		return &ask{title: "相手の有線を固定 IP にする", body: []string{
 			su.obs.Service + " を " + ip + " / 255.255.255.0 (ルーター無し) にする。相手の sudo のパスワードを聞く",
 			fmt.Sprintf("変えた後 %d 秒以内に新しい IP で入り直して確認しないと、相手の上で元の設定 (%s) に戻る", int(setup.PeerWindow.Seconds()), s.Restore.Method),
+			"$ " + shellLine(argv),
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID, static: &s}, ""
 	case stepConfirm:
-		c := su.conf
+		c := m.conf()
 		nd := su.dest
 		nd.IP = c.static.IP
 		argv, err := setup.ConfirmArgv(nd, c.static)
@@ -263,12 +286,18 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		}
 		return &ask{title: "新しい IP で入り直して確認する", body: []string{
 			nd.User + "@" + nd.IP + " に入り直して確認の印を置く (相手の sudo のパスワードを聞く)",
+			"$ " + shellLine(argv),
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepLedger:
 		if m.o.Ledger == nil {
 			return nil, "台帳が無い"
 		}
 		h := ledger.Host{Host: su.host, User: su.dest.User, LAN: su.obs.IP, Alias: r.alias}
+		for _, x := range m.hosts {
+			if x.Host != su.host && x.LAN == h.LAN {
+				return nil, "内部 IP " + h.LAN + " は台帳の " + x.Host + " と同じ (番号を振り直す)"
+			}
+		}
 		return &ask{title: "台帳に内部 IP 付きで載せる", body: []string{
 			su.host + " を管理対象にする: user " + h.User + " / 内部 IP " + h.LAN,
 		}, yes: func() Notice {
@@ -293,6 +322,11 @@ func (m *Model) keySetup(key string) Action {
 	case "x":
 		if m.su.ch != nil {
 			m.note("相手を読んでいる (少し待ってから)", false)
+			return None
+		}
+		if !m.su.seen {
+			// 観測の口が無い (live が相手を読まない版) か、まだ一度も読めていない: 何も分からないまま本物の sudo / ssh-copy-id を起こさない (敵対レビュー)
+			m.note("相手を読めていない (この版は相手を読む口が無いか、r で読み直す)", false)
 			return None
 		}
 		st, ok := nextStep(m.setupSteps())
@@ -322,12 +356,27 @@ func (m *Model) setupExecDone(step setup.StepID, static *setup.StaticIP, failed 
 	if su == nil {
 		return
 	}
+	now := m.o.Now()
 	switch {
 	case failed:
 	case step == setup.StepPeerStatic && static != nil:
-		su.conf = &pendingConfirm{static: *static, deadline: m.o.Now().Add(setup.PeerDelay + setup.PeerWindow)}
+		m.pending[su.host] = &pendingConfirm{static: *static, deadline: now.Add(setup.PeerDelay + setup.PeerWindow)}
+		m.claimed[su.host] = static.IP
 	case step == stepConfirm:
-		su.conf = nil
+		c := m.pending[su.host]
+		delete(m.pending, su.host)
+		if c == nil {
+			break
+		}
+		if now.After(c.deadline) { // 期限の後に届いた確認は受け付けられていない (相手は元に戻っている)
+			delete(m.claimed, su.host)
+			m.note("期限を過ぎてから確認した: 相手は元の設定に戻っている (r で読み直す)", false)
+			break
+		}
+		// 有線でしか入れない相手は、宛先を新しい IP に替える (古い 169.254 に入りに行き続けた。敵対レビュー)
+		if _, r := m.setupObserved(); r.mainIP == "" {
+			su.dest.IP = c.static.IP
+		}
 	}
 	m.observe()
 }

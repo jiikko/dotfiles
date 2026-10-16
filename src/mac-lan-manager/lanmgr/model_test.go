@@ -144,6 +144,7 @@ func bandKeys() []string {
 // cursorTo はカーソルを host の行へ動かす (今のタブの中で。合わなければテストを止める: 合わないまま検査すると別の行を見て通った)。
 func (h *harness) cursorTo(t *testing.T, host string) {
 	t.Helper()
+	h.keys("g") // 先頭から探す (下にしか動かないと、上にある行を見つけられない)
 	for range len(h.m.visible()) {
 		if h.m.current().host == host {
 			return

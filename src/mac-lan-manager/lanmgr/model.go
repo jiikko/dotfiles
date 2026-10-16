@@ -111,6 +111,10 @@ type Model struct {
 	prefsUnread bool        // 設定ファイルが読めなかった (既定で描き、保存しない)
 	small       bool        // 最後に描いた画面が幅・高さの足りない画面 (抜け方だけ)。HandleInput は q しか受けない
 	su          *setupState // 初期設定の画面 (開いていなければ nil)
+	// pending は相手ごとの確認待ち (固定 IP にした後、新しい IP で確認するまで)。claimed はこの起動で相手に割り当てた番号
+	// (台帳に載る前の新しい IP を、次の相手の番号の計算で避ける)。どちらも画面を閉じても残す
+	pending map[string]*pendingConfirm
+	claimed map[string]string
 	// execStep / execStatic / execSetup は、初期設定の手順として渡したプロセスの印 (ExecDone が setupExecDone へ渡す)
 	execStep   setup.StepID
 	execStatic *setup.StaticIP
@@ -168,7 +172,7 @@ func New(o Options) *Model {
 	if o.Now == nil {
 		o.Now = time.Now //nolint:forbidigo // 注入しないときの既定値 (ここだけが「今」を直に読む)
 	}
-	m := &Model{o: o, now: o.Now(), w: 120, h: 40}
+	m := &Model{o: o, now: o.Now(), w: 120, h: 40, pending: map[string]*pendingConfirm{}, claimed: map[string]string{}}
 	m.Reload()
 	return m
 }
@@ -317,6 +321,7 @@ func (m *Model) Advance(now time.Time) {
 	m.now = now
 	m.takeNetLoad()
 	m.takeObserve()
+	m.expireConfirms()
 	if m.scan != nil {
 		m.peers = m.scan.Snapshot()
 		if err := m.scan.Err(); err != nil && m.scanErr == nil {
@@ -339,7 +344,7 @@ func (m *Model) Changed() <-chan struct{} {
 // Busy は走査が続いているか (呼び出し側はこの間、遅い周期で Advance を呼ぶ。spinner もこの間だけ回る)。
 // この Mac のネットワークを裏で読んでいる間も Busy (読み終わりを Advance で取り込むため)。
 func (m *Model) Busy() bool {
-	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && (m.su.ch != nil || m.su.conf != nil))
+	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && m.su.ch != nil) || len(m.pending) > 0
 }
 
 // OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定) が開いているか (glogx は横断キーも渡す)。
@@ -436,6 +441,7 @@ func (m *Model) Close() {
 	}
 	m.bandEdit = false
 	m.closeSetup()
+	m.execStep, m.execStatic, m.execSetup = "", nil, false
 	m.sc = scList
 	m.stopNetLoad()
 	if m.scan != nil {
