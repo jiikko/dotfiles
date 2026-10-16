@@ -46,7 +46,30 @@ issue 785 で足した `hintfit` も最初は漏れ、bubbletea を import し�
 
 ## 進捗
 
-- [ ] 反証レビュー
-- [ ] 1. リストに足す
-- [ ] 2. 漏れを止める検査
-- [ ] 3. depguard が出ることの確かめ
+- [x] 反証レビュー (sonnet。母集合の数え方・ptytest・README の一覧を訂正した)
+- [x] 1. リストに足す (commit「tuikit: depguard の部品のリストに gutter / spinner / foreground を足し…」)。README の「不変条件の守り」も実際に合わせた
+  (parts-pure から外すのは editor / widthenv だけと書いていたが、termcolor も外れていた)
+- [x] 2. 漏れを止める検査 `tests/scripts/test_tuikit_depguard_covers_parts.sh` (make test が自動で拾う)。
+  - opus の敵対レビューを 3 周回した。1 周目は P1 1 / P2 2 / P3 1、2 周目は P2 1、3 周目は P2 1 / P3 1。直したのは次の 7 つ:
+    - コメントアウトを「載っている」と読む
+    - 知らない形の否定を読み飛ばす
+    - root の package を落とす
+    - 外す表を先頭の名前で引く
+    - YAML の位置を見ない
+    - 「-」の後の改行を読み飛ばす
+    - 2 つ目の文書を足し合わせる
+  - 字句の検査として、脅威モデルと「検出しない形」(どれも赤に倒れる側) をヘッダに書いて閉じた
+  - 変異で赤を確かめたもの (11 本):
+    - DROPGUTTER: リストから 1 行消す
+    - COMMENT: リストの行をコメントアウトする
+    - UNKNOWNNEG: 知らない形の否定を足す
+    - XRULES: rule を rules の外へ出す
+    - DASHNL: 「-」の後で改行する
+    - MULTIDOC: YAML の文書を足す
+    - STALE: 外す表に古い名前を足す
+    - DROPCARET: 外す表から caret を消す
+    - BOTH: リストと外す表の両方に載せる
+    - NESTED: 入れ子の外す項目を消す
+    - CANARY: 読み取りを壊す
+  - tuikit 直下に .go を置く形は、一時ファイルで赤になることを確かめた
+- [x] 3. 一時ファイルで gutter / spinner / foreground に bubbletea を、gutter に os を import し、depguard が 4 件とも出すことを確かめた (ファイルは消した)
