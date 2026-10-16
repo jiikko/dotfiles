@@ -109,7 +109,8 @@ func (s StaticIP) Validate() error {
 		return fmt.Errorf("状態ディレクトリの持ち主の名前が使えない: %q", s.StateOwner)
 	}
 	t := s.tick()
-	if t < time.Millisecond || t > time.Second || t%time.Millisecond != 0 || s.Delay < 0 || s.Window < t || s.Delay%t != 0 || s.Window%t != 0 {
+	// 10 ms より短い周期は確認の待ち (ConfirmTicks 周) が Script の 1 周 (sleep の起動・read) より短くなり、確認が恒常的に失敗する
+	if t < 10*time.Millisecond || t > time.Second || t%time.Millisecond != 0 || s.Delay < 0 || s.Window < t || s.Delay%t != 0 || s.Window%t != 0 {
 		return errors.New("待ちの長さが使えない (周期の整数倍)") // 割り切れない待ちは sleep と周の数で丸まる (900ms が sleep 0 に化けた)
 	}
 	return nil

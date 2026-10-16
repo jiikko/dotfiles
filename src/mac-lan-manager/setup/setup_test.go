@@ -324,6 +324,7 @@ func TestStaticIPValidate(t *testing.T) {
 		"周期で割り切れない窓":   func(s *StaticIP) { s.Window = 330 * time.Millisecond },
 		"本番の周期で秒でない待ち": func(s *StaticIP) { s.Tick, s.Window, s.Delay = 0, time.Second, 900*time.Millisecond },
 		"1 秒より長い周期":    func(s *StaticIP) { s.Tick, s.Window = 2*time.Second, 4*time.Second },
+		"10 ms より短い周期": func(s *StaticIP) { s.Tick, s.Window = 5*time.Millisecond, 300*time.Millisecond },
 		"持ち主":          func(s *StaticIP) { s.StateOwner = "a b" },
 	} {
 		s := base

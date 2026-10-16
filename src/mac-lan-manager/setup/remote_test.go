@@ -120,6 +120,23 @@ func TestDestValidate(t *testing.T) {
 	}
 }
 
+// 本番の値 (周期は既定の 1 秒) で組む待ちの形を固定する (テストは周期を縮めて走らせるので、既定の周期が変わっても他のテストは緑のまま)。
+func TestPeerStaticProductionTiming(t *testing.T) {
+	s, err := PeerStatic(PeerNet{Service: "Thunderbolt Ethernet", Method: "DHCP"}, "192.168.100.12", "tok-12345678")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := s.Script()
+	for _, want := range []string{"\nsleep 5\n", `-lt 180 ]`, "  sleep 1\n"} {
+		if !strings.Contains(sc, want) {
+			t.Errorf("Script に %q が無い (確認を待つのは 5 秒の後の 180 秒、1 秒ごと)", want)
+		}
+	}
+	if c := s.ConfirmCommand(); !strings.Contains(c, "sleep 1;") || !strings.HasSuffix(c, " 3") {
+		t.Errorf("ConfirmCommand が 1 秒ごと 3 周で待たない: %s", c)
+	}
+}
+
 // 各手順のコマンド: 相手を固定 IP にする ssh は端末を明け渡し (-t)、確認は新しい IP で入る。戻す先は今の設定 (DHCP / 手動の値)。
 func TestStepArgv(t *testing.T) {
 	p := PeerNet{KeyOK: true, NetKnown: true, Service: "Thunderbolt Ethernet", Method: "DHCP"}
