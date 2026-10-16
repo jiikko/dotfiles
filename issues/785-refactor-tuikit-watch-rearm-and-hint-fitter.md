@@ -1,5 +1,7 @@
 # 785 (refactor): 合図の待ち直しと最下行の案内の詰め方を tuikit に寄せる (mac-lan-manager / glogx / treefiler)
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-16〜）
+
 起票日: 2026-10-16
 
 ## 概要
