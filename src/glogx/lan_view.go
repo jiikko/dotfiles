@@ -125,6 +125,10 @@ func (v *lanView) watchCmd() tea.Cmd {
 
 // rearm は合図を受けた後の待ち直し。今待っているチャネルからの合図のときだけ待ち直す (走査が替わった後に古い待ちが
 // ok=true で戻ると、新しいチャネルに待ちが 2 本張られる。filerView.rearm と同じ理由)。
+// 🚨 この待ち直しは mac-lan-manager の app.watch・glogx の lanView / filerView.rearm・treefiler の waitChange にもあるが、共通の部品にしない:
+// 比べるのは「今のチャネルか」の 1 行で、状態の持ち主 (自分で持つ / model が持つ / 比べない)・ok=false のときに取り込むか・tick との関係が
+// 4 か所で違い、部品にすると各画面の前提を引数で表すだけになる (tuikit は bubbletea を import できないので tea.Cmd も返せない)。
+// 4 か所のどれかで穴を直したら、残りの 3 か所も同じ穴を grep で探す。
 func (v *lanView) rearm(msg lanChangedMsg) tea.Cmd {
 	if !msg.ok || v.live() == nil || msg.ch != v.watching {
 		return nil
