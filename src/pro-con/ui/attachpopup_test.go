@@ -108,8 +108,9 @@ func TestAttachGuideRechecksSelection(t *testing.T) {
 	}
 }
 
-// 外の tmux の prefix は聞いて読む。tmux が応答しなければ上限で諦めて "" (戻るキーは Ctrl+Z だけ) にする (issue 783)。
-func TestOuterPrefixGivesUpOnHungTmux(t *testing.T) {
+// 外の tmux の prefix は聞いて読む。tmux が応答しなければ上限で諦め、popup も開かずに失敗で戻る (同じサーバへの display-popup も
+// 戻らないので、開きに行くと裏の処理が止まったままになる。issue 783)。
+func TestPopupGivesUpOnHungTmux(t *testing.T) {
 	fake := func(body string) string {
 		p := filepath.Join(t.TempDir(), "tmux")
 		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
@@ -117,19 +118,23 @@ func TestOuterPrefixGivesUpOnHungTmux(t *testing.T) {
 		}
 		return p
 	}
-	if got := (&PopupAttach{Tmux: fake(`echo C-t`)}).outerPrefix(); got != "C-t" {
-		t.Fatalf("応答する tmux の prefix を読めない: %q", got)
+	if got, hung := (&PopupAttach{Tmux: fake(`echo C-t`)}).outerPrefix(); got != "C-t" || hung {
+		t.Fatalf("応答する tmux の prefix を読めない: %q hung=%v", got, hung)
 	}
-	// 応答しない tmux は sleep で演じる (待ちではなく入力。上限に掛からなければ 1 時間戻らない)
-	hung := &PopupAttach{Tmux: fake(`exec sleep 3600`), prefixTimeout: 50 * time.Millisecond}
-	got := make(chan string, 1)
-	go func() { got <- hung.outerPrefix() }()
+	if got, hung := (&PopupAttach{Tmux: fake(`echo None`)}).outerPrefix(); got != "" || hung {
+		t.Fatalf("prefix が None なのに %q hung=%v", got, hung)
+	}
+	// 応答しない tmux は、どのサブコマンドにも sleep で演じる (待ちではなく入力。上限に掛からなければ戻らない。
+	// red の経路で子が残っても 60 秒で消えるよう長くしない)
+	hung := &PopupAttach{Tmux: fake(`exec sleep 60`), prefixTimeout: 50 * time.Millisecond}
+	got := make(chan error, 1)
+	go func() { got <- hung.run(exec.Command("/usr/bin/true"), "C-1") }()
 	select {
-	case k := <-got:
-		if k != "" {
-			t.Fatalf("応答しない tmux の prefix が %q", k)
+	case err := <-got:
+		if err == nil || !strings.Contains(err.Error(), "応答しない") {
+			t.Fatalf("応答しない tmux で popup を開きに行った / 失敗で戻らない: %v", err)
 		}
 	case <-time.After(30 * time.Second): // hang guard (合否は「戻ったか」。所要は測らない)
-		t.Fatal("応答しない tmux へ prefix を聞いたまま戻らない")
+		t.Fatal("応答しない tmux で attach の裏の処理が戻らない")
 	}
 }

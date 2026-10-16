@@ -28,3 +28,4 @@ issue 776 で `tt_prune_log_lines` と `tt_save_interval_minutes` を guards.sh 
   health() は `TT_HEALTH_MIN_STALE_SECONDS` を明示で渡すようにした (既定 1800。親の環境から漏れない)
 - 変異で red を確認 (`mutate-verify`): `log` の刈り込みを `:` に → 「上限 3 行に刈られない (7 行)」/ `[ "$v" -gt 0 ] || v=…` を外す → 「=0 で閾値が 30 分にならない」
   (test_periodic_save.sh も同時に red) / `v=$((10#$v))` を外す → 「=08 で閾値が 16 分にならない」
+- 敵対的レビュー (opus 1 本、2026-10-16): 指摘なし (下限を明示で渡すので親の環境から漏れない / 「閾値 30 分)」の grep が 130 分に当たらない を確かめた)

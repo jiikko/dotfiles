@@ -46,6 +46,7 @@ type PopupAttach struct {
 
 // prefixTimeout は外の tmux へ prefix を聞く上限 (glogx の loadTmuxPrefix と同じ 5 秒)。tmux が応答しないと、上限が無ければ
 // attach の裏の処理が戻らず、数え上がったままの裏の処理が ctrl+r の切り替え (PrepareSwitch) も止める (issue 783)。
+// 上限を超えたら popup を開かずに失敗で戻る (同じサーバへの display-popup も戻らないので、開きに行くと結局止まる)。
 const prefixTimeout = 5 * time.Second
 
 // TmuxPopup は tmux の中なら popup の設定を返す (外なら nil。端末を渡す今の attach を使う)。
@@ -60,20 +61,27 @@ func TmuxPopup() *PopupAttach {
 	return &PopupAttach{Tmux: p}
 }
 
-// outerPrefix は外の tmux の prefix (tmux のキー名。読めない・None・上限を超えたなら "")。
+// outerPrefix は外の tmux の prefix (tmux のキー名。読めない・None なら "")。上限を超えたら hung が真 (tmux のサーバが応答しない)。
 // 🚨 読めないときに既定の C-b を仮定しない: 外の prefix でないキーを入れ子のサーバに bind し、見出しにも出すことになる (戻るキーは Ctrl+Z が残る)。
-func (p *PopupAttach) outerPrefix() string {
-	limit := p.prefixTimeout
-	if limit == 0 {
-		limit = prefixTimeout
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), limit)
+func (p *PopupAttach) outerPrefix() (prefix string, hung bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), p.limit())
 	defer cancel()
 	out, err := subproc.CommandContext(ctx, p.Tmux, "show", "-gv", "prefix").Output()
-	if k := strings.TrimSpace(string(out)); err == nil && k != "None" {
-		return k
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "", true
 	}
-	return ""
+	if k := strings.TrimSpace(string(out)); err == nil && k != "None" {
+		return k, false
+	}
+	return "", false
+}
+
+// limit は prefix を聞く上限。
+func (p *PopupAttach) limit() time.Duration {
+	if p.prefixTimeout == 0 {
+		return prefixTimeout
+	}
+	return p.prefixTimeout
 }
 
 // popupTitle は窓の枠の見出し (見本からユーザーが選んだ長い形)。prefix が "" なら Ctrl+Z だけを出す。
@@ -142,7 +150,10 @@ func (p *PopupAttach) run(c *exec.Cmd, cardID string) error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(dir) }() // tmux はサーバが終わっても socket を消さない
-	prefix := p.outerPrefix()
+	prefix, hung := p.outerPrefix()
+	if hung {
+		return fmt.Errorf("tmux が %s 応答しないので popup を開かない", p.limit())
+	}
 	if err := os.WriteFile(filepath.Join(dir, "conf"), []byte(popupConf(prefix)), 0o600); err != nil {
 		return err
 	}

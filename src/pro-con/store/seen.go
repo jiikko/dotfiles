@@ -22,7 +22,8 @@ type Seen struct {
 }
 
 // SeenFresh は間引いていない一覧を今の様子として使う古さの上限。dispatcher の tick (3 秒) と、一覧の取得の上限
-// (agents.Timeout = 10 秒) を足した余裕。
+// (agents.Timeout = 10 秒) を足した余裕。WaitDelay (subproc.WaitDelay = 2 秒) は数えない: 効くのは子孫が出力を握ったまま
+// 上限を過ぎたときだけで、その一覧は Err つきになり今の様子として使われない (issue 782 で 1 秒から 2 秒にした)。
 const SeenFresh = 15 * time.Second
 
 // seenKeepMax は Keep の上限 (壊れた値で、画面がいつまでも自分で読まなくなるのを防ぐ)。

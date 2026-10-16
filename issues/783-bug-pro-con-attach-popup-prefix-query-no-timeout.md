@@ -33,3 +33,12 @@
   "" なら見出しは「Ctrl+Z で pro-con に戻る」だけになり、戻るキーは残る。toast も出さない (見出しが既に読めた範囲だけを案内する)
 - テスト `TestOuterPrefixGivesUpOnHungTmux` (応答する偽の tmux から読める / `exec sleep 3600` の偽の tmux では上限 50ms で "" が返る。合否は戻ったかで、所要は測らない)
 - 変異で red を確認 (`mutate-verify`): `subproc.Command` (ctx なし) に戻す → hang guard で「聞いたまま戻らない」の red
+
+### 敵対的レビュー (opus 1 本、2026-10-16)
+
+- P2 (採用): 上限で "" を返しても、`run` はそのあと同じサーバへ `display-popup` を ctx 無しで打つ。サーバが応答しないとそれも戻らず、裏の処理は止まったまま (最初の版の doc は効き目を誇張していた)。
+  → `outerPrefix` が上限切れ (`DeadlineExceeded`) を「読めない / None」と分けて返し、上限切れなら `run` は popup を開かずに「tmux が 5s 応答しないので popup を開かない」の失敗で戻る (attach の失敗として知らせが出る)。
+  テストは `TestPopupGivesUpOnHungTmux` に作り直した (偽の tmux はどのサブコマンドでも `exec sleep 60`。`run` が失敗で戻ることを見る)。
+  変異: `if hung` を `if false && hung` に → hang guard の「attach の裏の処理が戻らない」で red
+- P3 (採用): red の経路で偽の tmux の子が 1 時間残る → `sleep 60` に縮めた
+- 範囲の外: popup を開いた後にサーバが固まる場合 (display-popup は attach の間ずっと戻らないのが正常なので上限を付けられない)

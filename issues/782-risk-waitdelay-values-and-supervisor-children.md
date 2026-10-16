@@ -46,3 +46,9 @@ issue 777 で外部コマンドの起動口の検査を `subproc/boundarycheck` 
 - `supervisor.Spec.Command` を書くのは pro-con の 2 か所だけ (2026-10-16 に `grep -rn 'supervisor.Spec'` で数えた): 見張り (`monitorCommand`) と dispatcher (`supervise.go` の `dispatcherCmd`)。
   どちらも `subproc.Command` を通す (WaitDelay 2 秒)。出力の渡し先も dispatcher は os.Stdout / os.Stderr (dispatcher.log の file)、見張りは runDispatcher の stdout / stderr (main が渡す os.Stdout / os.Stderr。旧版から引き継いで起動したときだけ stderr が altGuard = io.Writer になり exec がパイプを作るが、その場合も WaitDelay は張られている)
 - [x] Spec.Command の doc に「Stdout / Stderr を *os.File 以外にするなら WaitDelay を張る」を足した (process_supervisor 側では強制しない: 呼び出し側が Cmd を作るので)
+
+### 敵対的レビュー (opus 1 本、2026-10-16。779/781/783 と同じ 1 本)
+
+- P1・P2 なし。壊せなかった観点: GitCommand に変えた 2 本の argv が旧形と一致 / Dir・Env・Stdout の設定順は不変 / 非テストに素の exec.Command( は 0 件
+- P3 (採用・コメントのみ): store/seen.go の `SeenFresh` (15 秒 = tick 3 + agents.Timeout 10) は WaitDelay を数えていない。効くのは上限を過ぎて子孫が出力を握ったときだけで、そのときは Err つきで今の様子に使われないので挙動は変わらない。その旨をコメントに書いた
+- P3 (記録): Allow 空・floor 0 で module ごとの canary は無くなったが、Cmd を作る行が 1 つでもあれば「Allow に無い」で落ちるので前より厳しい。走査の空振りは go list との突き合わせ、走査器の canary は boundarycheck_test と glogx の floor が持つ
