@@ -95,20 +95,21 @@ const (
 
 // Model は画面の状態。
 type Model struct {
-	o        Options
-	w, h     int
-	now      time.Time
-	sc       screen
-	tab      int    // 0: 管理対象 / 1: 未管理
-	cur      [2]int // タブごとのカーソル
-	listOff  [2]int // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
-	listRows int    // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
-	tooShort bool   // 一覧の板に 1 行も入らない高さ (描いたとき)
-	small    bool   // 最後に描いた画面が幅・高さの足りない画面 (抜け方だけ)。HandleInput は q しか受けない
-	setC     int    // 設定の画面のカーソル
-	ov       overlay
-	ask      *ask
-	copyC    int
+	o           Options
+	w, h        int
+	now         time.Time
+	sc          screen
+	tab         int    // 0: 管理対象 / 1: 未管理
+	cur         [2]int // タブごとのカーソル
+	listOff     [2]int // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
+	listRows    int    // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
+	tooShort    bool   // 一覧の板に 1 行も入らない高さ (描いたとき)
+	prefsUnread bool   // 設定ファイルが読めなかった (既定で描き、保存しない)
+	small       bool   // 最後に描いた画面が幅・高さの足りない画面 (抜け方だけ)。HandleInput は q しか受けない
+	setC        int    // 設定の画面のカーソル
+	ov          overlay
+	ask         *ask
+	copyC       int
 
 	filter    lineedit.Line
 	filtering bool `layer:"filter"`
@@ -190,9 +191,13 @@ func (m *Model) Reload() {
 			m.hosts = hs
 		}
 	}
-	m.pf = prefs.Default()
+	m.pf, m.prefsUnread = prefs.Default(), false
 	if m.o.PrefsPath != "" {
-		if p, err := prefs.Load(m.o.PrefsPath); err == nil {
+		if p, err := prefs.Load(m.o.PrefsPath); err != nil {
+			// 読めない (権限など) 間は既定で描くが保存しない: 1 つ切り替えると、読めなかった本物の設定を既定で上書きした (監査の指摘)
+			m.prefsUnread = true
+			m.note("設定が読めない (読めるまで変更を保存しない): "+err.Error(), false)
+		} else {
 			m.pf = p
 		}
 	}
@@ -482,12 +487,11 @@ type selfLanInfo struct {
 
 func (m *Model) selfLan() selfLanInfo {
 	if m.pf.LanByBand {
-		prefix := m.pf.BandPrefix()
-		if prefix == "" {
-			return selfLanInfo{Note: "帯が /24 でない (" + m.pf.Band + ")"}
+		if _, err := netinfo.ParseBand(m.pf.Band); err != nil {
+			return selfLanInfo{Note: "帯が使えない形 (" + m.pf.Band + ")"}
 		}
 		for _, x := range m.self.IPs {
-			if strings.HasPrefix(x.Addr, prefix) {
+			if netinfo.InBand(m.pf.Band, x.Addr) {
 				return selfLanInfo{IP: x.Addr, Note: "帯 " + m.pf.Band}
 			}
 		}

@@ -33,15 +33,6 @@ func Default() Prefs {
 	return Prefs{ShowMain: true, ShowLan: true, LanByBand: true, Band: "192.168.100.0/24", Kinds: []string{netinfo.KindWired.Key(), netinfo.KindLinkLocal.Key(), netinfo.KindUnknown.Key()}}
 }
 
-// BandPrefix は帯の先頭 3 つ ("192.168.100.")。/24 でなければ "" (帯で決められない)。
-func (p Prefs) BandPrefix() string {
-	ip, ok := strings.CutSuffix(p.Band, ".0/24")
-	if !ok || strings.Count(ip, ".") != 2 {
-		return ""
-	}
-	return ip + "."
-}
-
 // EnvDir は置き場所を差し替える環境変数。台帳と同じ 1 つの名前を使う (別の定数に写していたので、片方の改名で黙ってずれた。監査の指摘)。
 const EnvDir = ledger.EnvDir
 

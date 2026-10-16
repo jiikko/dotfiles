@@ -11,7 +11,6 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"mac-lan-manager/netinfo"
-	"mac-lan-manager/prefs"
 )
 
 // otherKinds は「その他の IP」に含めるかを切り替える種類 (表示の順)。
@@ -41,6 +40,10 @@ func (m *Model) lanIFs() []netinfo.Service {
 }
 
 func (m *Model) savePrefs() {
+	if m.prefsUnread {
+		m.note("設定が読めなかったので保存しない (この起動の間だけ効く)", false)
+		return
+	}
 	if m.o.SavePrefs == nil || m.o.PrefsPath == "" {
 		return
 	}
@@ -56,8 +59,8 @@ func (m *Model) keySettings(key, text string) Action {
 			m.bandEdit = false
 		case "enter":
 			v := strings.TrimSpace(m.band.String())
-			if (prefs.Prefs{Band: v}).BandPrefix() == "" {
-				m.note("帯は 192.168.100.0/24 の形 (/24) で書く", false)
+			if _, err := netinfo.ParseBand(v); err != nil {
+				m.note("帯は 192.168.100.0/24 の形で書く (/16〜/30)", false)
 				return None
 			}
 			m.bandEdit = false

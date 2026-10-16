@@ -5,10 +5,32 @@ package netinfo
 
 import (
 	"context"
+	"fmt"
 	"net/netip"
 	"regexp"
 	"strings"
 )
+
+// ParseBand は内部の網の帯 ("192.168.100.0/24") を読む。IPv4 で /16〜/30 だけ (それより広い帯は番号の割り当てで回しきれず、
+// 狭い帯は Mac が入らない)。帯に入るかの判定はすべて InBand を通す (文字列の前方一致と netip の 2 系統があり、"abc.def.ghi.0/24" が
+// 前方一致の側だけを通った。監査の指摘)。
+func ParseBand(s string) (netip.Prefix, error) {
+	p, err := netip.ParsePrefix(s)
+	if err != nil || !p.Addr().Is4() || p.Bits() < 16 || p.Bits() > 30 {
+		return netip.Prefix{}, fmt.Errorf("帯が使えない: %q (192.168.100.0/24 の形。/16〜/30)", s)
+	}
+	return p.Masked(), nil
+}
+
+// InBand は ip が帯に入るか。帯が読めない・ip が IP でなければ false。
+func InBand(band, ip string) bool {
+	p, err := ParseBand(band)
+	if err != nil {
+		return false
+	}
+	a, err := netip.ParseAddr(ip)
+	return err == nil && p.Contains(a)
+}
 
 // Service は networksetup のネットワークのサービス 1 つ (Wi-Fi・Thunderbolt Ethernet など)。
 type Service struct {

@@ -81,14 +81,6 @@ func TestLoadMissingIsDefault(t *testing.T) {
 	}
 }
 
-func TestBandPrefix(t *testing.T) {
-	for band, want := range map[string]string{"192.168.100.0/24": "192.168.100.", "10.0.0.0/16": "", "x": ""} {
-		if got := (Prefs{Band: band}).BandPrefix(); got != want {
-			t.Errorf("BandPrefix(%q) = %q, want %q", band, got, want)
-		}
-	}
-}
-
 func TestSaveGuardRejectsOutside(t *testing.T) {
 	outside := filepath.Join(os.TempDir(), fmt.Sprintf("mac-lan-manager-prefs-guard-%d-%d", os.Getpid(), time.Now().UnixNano()), "settings.toml")
 	if err := Save(outside, Default()); err == nil {

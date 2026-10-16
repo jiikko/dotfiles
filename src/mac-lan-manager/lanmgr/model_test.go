@@ -1363,3 +1363,28 @@ func TestUnusableLedgerFieldsAreNotUsed(t *testing.T) {
 		}
 	}
 }
+
+// 設定ファイルが読めない (権限など) 間は、既定で描いて知らせ、切り替えても保存しない (読めなかった本物の設定を既定で上書きした。監査の指摘)。
+func TestUnreadablePrefsAreNotOverwritten(t *testing.T) {
+	var saved []prefs.Prefs
+	m := New(Options{
+		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil },
+		LocalHost: func() string { return "kojiM3MacBook-Pro.local" },
+		StartScan: func(time.Time) Scanner { return &fakeScan{} },
+		Ledger:    &memStore{},
+		PrefsPath: t.TempDir(), // ディレクトリは読めない (ErrNotExist ではない読み取りの失敗)
+		SavePrefs: func(_ string, p prefs.Prefs) error { saved = append(saved, p); return nil },
+		Now:       func() time.Time { return t0 },
+		User:      "koji",
+	})
+	awaitNetLoad(m)
+	m.Resize(120, 40)
+	if notes := m.TakeNotices(); len(notes) == 0 || !strings.Contains(notes[0].Text, "設定が読めない") {
+		t.Errorf("読めない設定を知らせない: %+v", notes)
+	}
+	m.HandleKey(",")
+	m.HandleKey("space")
+	if len(saved) != 0 {
+		t.Errorf("読めなかった設定を上書きした: %+v", saved)
+	}
+}

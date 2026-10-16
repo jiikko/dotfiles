@@ -1,6 +1,6 @@
 package setup
 
-import "net/netip"
+import "mac-lan-manager/netinfo"
 
 // Observed は初期設定の手順を組む材料 (観測した今の状態)。観測できなかったものは空のまま渡す (推測で埋めない)。
 type Observed struct {
@@ -49,18 +49,15 @@ type Step struct {
 
 // Plan は観測から手順を組む。何度呼んでも、済んだ手順は Done で返す (途中で止まっても、観測し直して続きから流せる)。
 func Plan(o Observed) []Step {
-	band, bandErr := netip.ParsePrefix(o.Band)
-	inBand := func(ip string) bool {
-		a, err := netip.ParseAddr(ip)
-		return bandErr == nil && err == nil && band.Masked().Contains(a)
-	}
+	_, bandErr := netinfo.ParseBand(o.Band)
+	inBand := func(ip string) bool { return netinfo.InBand(o.Band, ip) }
 	via := o.Peer.WifiIP
 	if via == "" {
 		via = o.Peer.LanIP
 	}
 	self := Step{ID: StepSelfStatic, Title: "この Mac の有線を固定 IP にする", Done: o.SelfMethod == "manual" && inBand(o.SelfIP)}
 	switch {
-	case bandErr != nil || !band.Addr().Is4():
+	case bandErr != nil:
 		self.Blocked = "内部の網の帯が設定されていない (, の設定で帯を決める)" // 帯が無いと「未固定」と誤った理由で止まった (fable の敵対レビュー)
 	case o.SelfService == "":
 		self.Blocked = "この Mac にルーターの無い有線のサービスが無い (ケーブル・アダプタを確かめる)"
