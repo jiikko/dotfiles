@@ -914,3 +914,52 @@ func TestPeerStaticBoardIsSummary(t *testing.T) {
 		t.Errorf("板に戻しの仕掛けの全文を出した / 要約が無い (%d 字): %s", len(body), body)
 	}
 }
+
+// 手順の確認の板で c を押すと、実行するコマンドの全文 (板は要約) をコピーし、板は閉じない (うまくいかないときに相談できるように)。
+func TestConfirmBoardCopiesCommand(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	h.keys("x")
+	if h.m.ask == nil || h.m.ask.exec == nil {
+		t.Fatal("前提: 手順の板が出ない")
+	}
+	h.keys("c")
+	if h.m.ov != ovConfirm {
+		t.Error("c で板を閉じた")
+	}
+	if len(h.copied) != 1 || !strings.HasPrefix(h.copied[0], "ssh ") || !strings.Contains(h.copied[0], "networksetup -setmanual") || !strings.Contains(h.copied[0], "while") {
+		t.Errorf("実行するコマンドの全文をコピーしない: %q", h.copied)
+	}
+}
+
+// 操作のログ: キーとそのときの画面、相手を読んだ結果、起こしたコマンドと戻りを 1 行ずつ渡す。入力欄に打った文字は伏せる
+// (ユーザー要望「俺の操作ログを目で確認できるように。何が詰まっているのか見えて欲しい」)。
+func TestOperationLog(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	var lines []string
+	h := newHarness(t, nil, []discover.Peer{mini})
+	h.m.o.Log = func(l string) { lines = append(lines, l) }
+	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet { return *obs }
+	h.keys("l")
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("enter")
+	awaitSetup(h.m)
+	h.keys("x", "y")
+	h.m.TakeExec()
+	h.m.ExecDone(errors.New("exit status 1"))
+	awaitNetLoad(h.m)
+	awaitSetup(h.m)
+	h.m.Advance(t0)                                     // 読み終えて進捗を閉じる
+	h.keys("q", "/", "h", "i", "m", "i", "t", "s", "u") // 画面を閉じ、絞り込みに打つ
+	all := strings.Join(lines, "\n")
+	for _, want := range []string{"key enter  [一覧 行=m2macmini.local]", "observe start m2macmini.local (koji@192.168.50.7)", "observe done m2macmini.local key_ok=true",
+		"key y  [初期設定 m2macmini.local", "exec sudo networksetup -setmanual", "exec done err=exit status 1"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("ログに %q が無い:\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "key h  [一覧") || strings.Contains(all, "key s  [一覧") {
+		t.Errorf("絞り込みの入力欄に打った文字を記録した:\n%s", all)
+	}
+}

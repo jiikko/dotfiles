@@ -28,7 +28,12 @@ func Options() (lanmgr.Options, error) {
 	if err != nil {
 		return lanmgr.Options{}, err
 	}
+	var log func(string)
+	if p, err := DefaultLogPath(); err == nil {
+		log = FileLog(p)
+	}
 	return lanmgr.Options{
+		Log:       log, // 操作のログ (~/Library/Logs/mac-lan-manager.log)
 		ReadNet:   func(ctx context.Context) (netinfo.Snapshot, error) { return netinfo.Read(ctx, RunOut) },
 		LocalHost: localHost,
 		StartScan: func(now time.Time) lanmgr.Scanner { return discover.Start(discover.ExecStarter, now) },

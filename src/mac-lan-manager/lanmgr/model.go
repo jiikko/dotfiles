@@ -87,9 +87,11 @@ type Options struct {
 	Ledger    ledger.Store
 	PrefsPath string
 	SavePrefs func(path string, p prefs.Prefs) error
-	Copy      func(s string) error // クリップボードへ
-	Now       func() time.Time
-	User      string // 台帳にユーザー名が無い相手に使う推測の名前 (live は $USER を入れる。環境を読むのはつなぎの側)
+	// Log は操作のログの 1 行を受け取る (oplog.go。nil なら記録しない。live が ~/Library/Logs/mac-lan-manager.log へ書く)
+	Log  func(line string)
+	Copy func(s string) error // クリップボードへ
+	Now  func() time.Time
+	User string // 台帳にユーザー名が無い相手に使う推測の名前 (live は $USER を入れる。環境を読むのはつなぎの側)
 	// Observe は相手を ssh で読む (段 4 の初期設定。読むだけ)。live は setup.ObservePeer を本物の ssh で走らせる。nil なら観測しない
 	Observe func(ctx context.Context, d setup.Dest) setup.PeerNet
 }
@@ -207,6 +209,7 @@ func New(o Options) *Model {
 
 // Reload はこの Mac のネットワーク・台帳・設定を読み直し、走査を起こし直す (r と、glogx の板を開き直したとき。Close の後でも使える)。
 func (m *Model) Reload() {
+	m.logf("reload")
 	// 走査の settle の起点は今。最後の Advance の時刻のままだと、閉じていた間の分だけ settle が過ぎた扱いになり、開き直した直後に
 	// 走査中の印が消えて tick が止まる (red team の指摘 2026-10-15)
 	m.now = m.o.Now()
@@ -414,6 +417,7 @@ type setupExec struct {
 // handOff は起こすプロセスを渡す。se は初期設定の手順の印 (手順でなければ nil)。プロセスと印を 1 か所で決める: 一覧の s / o が
 // 前の印を消し忘れると、閉じた後に届かなかった手順の印が無関係な ssh の戻りに流用され、確認の成功として扱われた (敵対レビュー)
 func (m *Model) handOff(r ExecRequest, se *setupExec) {
+	m.logf("exec %s", argvSummary(r.Argv))
 	m.exec, m.setupExec = &r, se
 }
 
@@ -432,6 +436,7 @@ func (m *Model) TakeExec() (ExecRequest, bool) {
 // (ssh は相手のシェルの最後のコマンドの終了コードで抜ける。接続できなかった 255 も ssh 自身が端末に理由を出している。
 // treefiler の filer.Model.ExecDone と同じ判断。全体レビューの指摘 2026-10-15)。
 func (m *Model) ExecDone(err error) string {
+	m.logf("exec done err=%v", err)
 	var exitErr interface{ ExitCode() int } // *exec.ExitError
 	failOnExit := m.execExitIsFailure
 	m.execExitIsFailure = false       // 1 回だけ読む (次の ExecDone へ漏らさない)
@@ -823,6 +828,7 @@ func (m *Model) HandleKey(key string) Action { return m.HandleInput(key, lineedi
 
 // HandleInput はキーを 1 つ処理する (text は打った文字。入力欄に入れる)。
 func (m *Model) HandleInput(key, text string) Action {
+	m.logKey(key)
 	key = canonKey(key)
 	m.takeNetLoad() // 読み終えていれば、次の tick を待たずにこのキーから効かせる
 	m.takeObserve()
@@ -841,6 +847,10 @@ func (m *Model) HandleInput(key, text string) Action {
 	switch m.ov {
 	case ovConfirm:
 		a := m.ask
+		if a != nil && a.exec != nil && key == "c" { // 実行するコマンドの全文をコピーする (板は閉じない。うまくいかないときに相談できるように。ユーザー要望)
+			m.copyAs(shellLine(a.exec.Argv), "実行するコマンド (全文)")
+			return None
+		}
 		m.ov, m.ask = ovNone, nil
 		if a != nil && confirm.IsYes(key) {
 			if a.exec != nil {

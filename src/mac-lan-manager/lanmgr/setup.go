@@ -178,6 +178,7 @@ func (m *Model) observe() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	ch := make(chan setup.PeerNet, 1)
 	su.ch, su.stop, su.obsAt = ch, cancel, m.o.Now()
+	m.logf("observe start %s (%s@%s)", su.host, su.dest.User, su.dest.IP)
 	obs, d := m.o.Observe, su.dest
 	go func() {
 		defer cancel()
@@ -203,6 +204,8 @@ func (m *Model) takeObserve() {
 func (m *Model) applyObserve(p setup.PeerNet) {
 	su := m.su
 	su.obs, su.seen, su.ch, su.stop = p, true, nil, nil
+	m.logf("observe done %s key_ok=%v host_key_unknown=%v err=%v net=%v service=%q ip=%s method=%s (%.1f 秒)", su.host, p.KeyOK, p.HostKeyUnknown,
+		p.KeyErr, p.NetKnown, p.Service, p.IP, p.Method, m.o.Now().Sub(su.obsAt).Seconds())
 	if p.KeyErr != nil { // 画面には状態の行で出す。理由の全文 (ssh の stderr) は一覧に残す (行は幅で切れる)
 		m.record("相手を読めない ("+su.host+"): "+p.KeyErr.Error(), false)
 	}

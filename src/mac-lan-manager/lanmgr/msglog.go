@@ -25,6 +25,7 @@ type logEntry struct {
 
 // record は履歴に足す (toast には出さない)。知らせ (note) はこれも通る。
 func (m *Model) record(text string, ok bool) {
+	m.logf("note %s %s", map[bool]string{true: "✓", false: "✗"}[ok], text)
 	m.log = append(m.log, logEntry{at: m.o.Now(), text: text, ok: ok})
 	if len(m.log) > logCap {
 		m.log = m.log[len(m.log)-logCap:]

@@ -564,7 +564,11 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	switch m.ov {
 	case ovConfirm:
 		if m.ask != nil {
-			return modal(m.ask.title, m.ask.body, confirm.HintYesNo, m.w), -1, 0
+			hint := confirm.HintYesNo
+			if m.ask.exec != nil {
+				hint = "y/Enter: 実行   c: コマンドをコピー   n/Esc: キャンセル"
+			}
+			return modal(m.ask.title, m.ask.body, hint, m.w), -1, 0
 		}
 	case ovLog:
 		return m.logBox(), -1, 0
