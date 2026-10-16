@@ -104,6 +104,7 @@ type Model struct {
 	listOff  [2]int // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
 	listRows int    // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
 	tooShort bool   // 一覧の板に 1 行も入らない高さ (描いたとき)
+	small    bool   // 最後に描いた画面が幅・高さの足りない画面 (抜け方だけ)。HandleInput は q しか受けない
 	setC     int    // 設定の画面のカーソル
 	ov       overlay
 	ask      *ask
@@ -590,6 +591,19 @@ func (m *Model) current() row {
 
 // connectIP は繋ぐ先 (内部 IP があればそちら = 有線を通す。無ければメイン。どちらも無ければその他の I/F で見えた IP。
 // VM のゲストは VM の網にしか居ないので、その他を最後の手段に残す)。
+// shellRefusal は s (ssh) を断る理由。空なら繋げる。最下行の案内もこれで s を出すか決める (案内と効くキーを 1 つの述語にする)。
+func (r row) shellRefusal() string {
+	switch {
+	case r.self:
+		return "この Mac には ssh しない"
+	case !r.ssh && !r.managed:
+		return "ssh が閉じている (相手の画面でリモートログインをオンにしてから)"
+	case r.connectIP() == "":
+		return "繋ぐ IP が分からない"
+	}
+	return ""
+}
+
 func (r row) connectIP() string {
 	if ip := or(r.lanIP, r.mainIP); ip != "" || len(r.others) == 0 {
 		return ip
@@ -633,6 +647,14 @@ func (m *Model) HandleInput(key, text string) Action {
 	m.wantHost = "" // 自分で動かしたら、後から見つかった Mac へカーソルを跳ばさない
 	if key == "ctrl+c" {
 		return Quit
+	}
+	// 幅・高さが足りない画面 (抜け方だけ) を出している間は、見えている q だけを効かせる。隠れた確認の板に y が届いて
+	// 台帳から外したり、絞り込みに q が文字として入ったりした (opus の敵対レビュー)
+	if m.small {
+		if key == "q" {
+			return Quit
+		}
+		return None
 	}
 	switch m.ov {
 	case ovConfirm:
@@ -740,14 +762,9 @@ func (m *Model) keyList(key string) Action {
 	case "enter":
 		m.note("初期設定は次の段で入る (issue 747 の段 4)", false)
 	case "s": // シェル (treefiler の s と同じ動詞)
-		switch {
-		case r.self:
-			m.note("この Mac には ssh しない", false)
-		case !r.ssh && !r.managed:
-			m.note("ssh が閉じている (相手の画面でリモートログインをオンにしてから)", false)
-		case r.connectIP() == "":
-			m.note("繋ぐ IP が分からない", false)
-		default:
+		if why := r.shellRefusal(); why != "" {
+			m.note(why, false)
+		} else {
 			// known_hosts を IP でなく台帳の鍵に結び付ける (IP を付け替えても「鍵が変わった」にしない)
 			m.exec = &ExecRequest{Argv: []string{"ssh", "-o", "HostKeyAlias=" + r.host, user + "@" + r.connectIP()}}
 			return Exec

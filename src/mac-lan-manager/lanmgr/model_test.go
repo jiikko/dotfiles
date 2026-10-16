@@ -1072,7 +1072,7 @@ func TestSettingsFrameFitsHeight(t *testing.T) {
 // カーソルの行まで入らない高さは「高さが足りない」の画面になり、そこでも q は残る。
 func TestFooterKeepsActionKeys(t *testing.T) {
 	long := discover.Peer{Host: "long.local", Instances: []string{strings.Repeat("とても長い名前の Mac ", 6)}, SSH: true,
-		Addrs: map[int]string{14: "192.168.50.9"}}
+		Addrs: map[int]string{14: "192.168.50.9", 27: "192.168.100.9"}}
 	for _, w := range []int{minWidth, 44, 60, 100, 120, 200} {
 		for hgt := 10; hgt <= 24; hgt++ {
 			h := newHarness(t, nil, []discover.Peer{long, mini})
@@ -1095,8 +1095,8 @@ func TestFooterKeepsActionKeys(t *testing.T) {
 			for i := len(lines) - 1; i >= 0 && strings.TrimSpace(last) == ""; i-- {
 				last = termwidth.StripSGR(lines[i])
 			}
-			if !strings.Contains(last, "q") {
-				t.Errorf("%dx%d: 最下行に q が無い: %q", w, hgt, last)
+			if !strings.Contains(last, "q 閉じる") {
+				t.Errorf("%dx%d: 最下行に q 閉じる が無い: %q", w, hgt, last)
 			}
 			view := termwidth.StripSGR(strings.Join(lines, "\n"))
 			if strings.Contains(view, "高さが足りない") {
@@ -1109,39 +1109,116 @@ func TestFooterKeepsActionKeys(t *testing.T) {
 			if w >= 44 && !strings.Contains(last, "繋ぐ") {
 				t.Errorf("%dx%d: 最下行に動作のキー (s 繋ぐ) が無い: %q", w, hgt, last)
 			}
-			if w >= 100 && !strings.Contains(view, "長い名前") {
-				t.Errorf("%dx%d: カーソルの行が画面に無い:\n%s", w, hgt, view)
+			if !listHasRow(lines, "192.168.100.9") {
+				t.Errorf("%dx%d: 一覧の板にカーソルの行が無い:\n%s", w, hgt, view)
 			}
 		}
 	}
 }
 
-// 絞り込みの入力中のキャレットは、入力した文字の直後に立つ (右寄せを仮定した式は、間の空白が 1 桁に詰まる幅 43〜44 で 2 桁左にずれた)。
-func TestFilterCaretExact(t *testing.T) {
-	seen := 0
-	for w := minWidth; w <= 120; w++ {
-		h := newHarness(t, nil, []discover.Peer{mini})
-		h.m.Resize(w, 30)
-		h.keys("/", "m", "i", "n")
-		lines := h.m.View()
-		x, y, ok := h.m.CaretPos()
-		if !ok {
-			continue // 入力欄が入らない幅
-		}
-		seen++
-		// 狭い入力欄は末尾 ("in") だけを見せる。キャレットは見えている文字の直後
-		line := termwidth.StripSGR(lines[y])
-		i := strings.LastIndex(line, "/ ")
-		txt := strings.TrimRight(line[max(i, 0)+2:], " ")
-		if i < 0 || txt == "" || len(txt) > len("min") || "min"[len("min")-len(txt):] != txt { // txt は入力 "min" の末尾
-			t.Errorf("幅 %d: キャレットの行 %d に入力欄が無い: %q", w, y, line)
+// listHasRow は、一覧の板 (行の最初の ▐…▌) の中に want を含む行があるか。右の詳細カードや最下行の案内に同じ値が出ても数えない。
+// 詳細カードを下に積む配置では、その板のコマンド (ssh koji@) と 内部 の行を除く (一覧の行には出ない語)。
+func listHasRow(lines []string, want string) bool {
+	for _, l := range lines {
+		l = termwidth.StripSGR(l)
+		i := strings.Index(l, "▐")
+		if i < 0 {
 			continue
 		}
-		if want := termwidth.Of(line[:i]) + 2 + termwidth.Of(txt); x != want {
-			t.Errorf("幅 %d: キャレットの桁 %d (入力した文字の直後は %d): %q", w, x, want, line)
+		j := strings.Index(l[i:], "▌")
+		if j < 0 {
+			continue
+		}
+		seg := l[i : i+j]
+		if strings.Contains(seg, want) && !strings.Contains(seg, "ssh koji@") && !strings.Contains(seg, "内部") {
+			return true
 		}
 	}
-	if seen < 40 {
-		t.Fatalf("キャレットを確かめた幅が %d しか無い (入力欄が出ていない)", seen)
+	return false
+}
+
+// 絞り込みの入力中のキャレットは、入力した文字の直後に立つ (右寄せを仮定した式は、間の空白が 1 桁に詰まる幅 43〜44 で 2 桁左にずれた)。
+// 入力欄が入る幅 (43 以上) では必ず出る。全角の入力と広い配置も見る。
+func TestFilterCaretExact(t *testing.T) {
+	for _, in := range [][]string{{"m", "i", "n"}, {"み", "に", "ま", "っ", "く"}} {
+		typed := strings.Join(in, "")
+		for w := minWidth; w <= 200; w++ {
+			h := newHarness(t, nil, []discover.Peer{mini})
+			h.m.Resize(w, 30)
+			h.keys("/")
+			h.keys(in...)
+			lines := h.m.View()
+			x, y, ok := h.m.CaretPos()
+			if !ok {
+				if w >= 43 {
+					t.Errorf("幅 %d (%s): 入力欄が入る幅でキャレットが出ない", w, typed)
+				}
+				continue
+			}
+			// 狭い入力欄は末尾だけを見せる。キャレットは見えている文字の直後
+			line := termwidth.StripSGR(lines[y])
+			i := strings.LastIndex(line, "/ ")
+			txt := strings.TrimRight(line[max(i, 0)+2:], " ")
+			if i < 0 || txt == "" || !strings.HasSuffix(typed, txt) {
+				t.Errorf("幅 %d (%s): キャレットの行 %d に入力欄が無い: %q", w, typed, y, line)
+				continue
+			}
+			if want := termwidth.Of(line[:i]) + 2 + termwidth.Of(txt); x != want {
+				t.Errorf("幅 %d (%s): キャレットの桁 %d (入力した文字の直後は %d): %q", w, typed, x, want, line)
+			}
+		}
+	}
+}
+
+// 幅・高さが足りない画面 (抜け方だけ) では q だけが効く。隠れた確認の板に y が届いて台帳から外れたり、
+// 絞り込みに q が文字として入ったり、何も無い画面にキャレットが立ったりしない (opus の敵対レビュー)。
+func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
+	for _, size := range [][2]int{{80, 12}, {80, 10}, {30, 40}} {
+		managed := []ledger.Host{{Host: "m2macmini.local"}}
+		h := newHarness(t, managed, []discover.Peer{mini})
+		h.m.Resize(size[0], size[1])
+		h.keys("j", "space") // 台帳から外す確認 (見えない)
+		view := termwidth.StripSGR(strings.Join(h.m.View(), "\n"))
+		if !strings.Contains(view, "が足りない") {
+			t.Fatalf("%v: 足りない画面にならない:\n%s", size, view)
+		}
+		if h.keys("y") != None || len(h.store.hosts) != 1 {
+			t.Errorf("%v: 見えない確認の板に y が届いた (台帳 %d 台)", size, len(h.store.hosts))
+		}
+		if h.keys("q") != Quit {
+			t.Errorf("%v: q で閉じない", size)
+		}
+
+		h = newHarness(t, nil, []discover.Peer{mini})
+		h.m.Resize(size[0], size[1])
+		h.keys("/", "z")
+		h.m.View()
+		if _, _, ok := h.m.CaretPos(); ok {
+			t.Errorf("%v: 足りない画面にキャレットを立てた", size)
+		}
+		if a := h.keys("q"); a != Quit || h.m.filter.String() != "z" {
+			t.Errorf("%v: 絞り込み中の q が閉じずに文字として入った (action=%v filter=%q)", size, a, h.m.filter.String())
+		}
+	}
+}
+
+// 最下行の s 繋ぐ は、s が効く Mac にだけ出す (ssh が閉じた未管理の Mac には出さない。案内と効くキーを同じ述語で決める)。
+func TestFooterShellHintFollowsKey(t *testing.T) {
+	vncOnly := discover.Peer{Host: "vnc.local", Instances: []string{"画面共有だけ"}, VNC: true, Addrs: map[int]string{14: "192.168.50.8"}}
+	h := newHarness(t, nil, []discover.Peer{vncOnly})
+	h.keys("l")
+	for range 3 {
+		if h.m.current().host == "vnc.local" {
+			break
+		}
+		h.keys("j")
+	}
+	lines := h.m.View()
+	last := termwidth.StripSGR(lines[len(lines)-padY-1])
+	if strings.Contains(last, "繋ぐ") {
+		t.Errorf("ssh が閉じた Mac で s 繋ぐ を出した: %q", last)
+	}
+	if h.keys("s") == Exec {
+		t.Errorf("ssh が閉じた Mac で s が ssh を起こした")
 	}
 }

@@ -32,6 +32,7 @@ func (m *Model) View() []string {
 	// 出た (fable の敵対レビュー)。狭ければ列を落とし、どの行も幅で切る (下の安全網)
 	w := m.w - 2*padX
 	m.caretFY, m.caretMY = -1, -1
+	m.small = false
 	var body string
 	if m.sc == scSettings {
 		body = lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", m.viewSettings(w))
@@ -93,7 +94,10 @@ func (m *Model) footer() string {
 	default:
 		hs = []keyHint{{"j/k", "移動", 40}}
 		if r := m.current(); !r.self && r.connectIP() != "" {
-			hs = append(hs, keyHint{"s", "繋ぐ", 80}, keyHint{"Y", "コピー", 70})
+			if r.shellRefusal() == "" {
+				hs = append(hs, keyHint{"s", "繋ぐ", 80})
+			}
+			hs = append(hs, keyHint{"Y", "コピー", 70})
 			if r.vnc {
 				hs = append(hs, keyHint{"o", "画面共有", 60})
 			}
@@ -350,6 +354,7 @@ const minWidth = 36 // 一覧の表の最小 (印 1 + 名前 4 + 内部 IP 18) +
 
 // viewTooSmall は幅・高さが足りないときの画面 (抜け方だけは必ず見せる)。
 func (m *Model) viewTooSmall(why string) []string {
+	m.small, m.caretFY, m.caretMY = true, -1, -1 // 何も無い画面に端末のカーソルを立てない
 	lines := make([]string, max(m.h, 1))
 	lines[0] = termwidth.Clip(why, max(m.w, 1))
 	lines[len(lines)-1] = "q"
