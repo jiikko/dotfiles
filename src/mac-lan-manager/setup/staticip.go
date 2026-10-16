@@ -54,6 +54,8 @@ type StaticIP struct {
 	Window     time.Duration
 	// Tick は印を見る周期 (0 なら 1 秒)。Delay と Window はその整数倍。テストの差し込み口 (縮めると、確認の来ない経路の待ちが縮む)
 	Tick time.Duration
+	// startWait は背景の本体が走り出すのを待つ長さ (0 なら StartWait)。テストの差し込み口 (走り出さない経路の待ちを縮める)
+	startWait time.Duration
 }
 
 // tick は印を見る周期。
@@ -128,6 +130,9 @@ func (s StaticIP) ConfirmPath() string { return s.stateDir() + "/confirm-" + s.T
 
 func (s StaticIP) lockPath() string { return s.stateDir() + "/staticip.lock" }
 
+// startedPath は背景の本体が lock を取って走り出した印 (前面がこれを見てから ssh を終える。RemoteCommand)。
+func (s StaticIP) startedPath() string { return s.stateDir() + "/started-" + s.Token }
+
 // prepare は状態ディレクトリを root の 0700 で用意し、lock の持ち主が生きていれば断る sh の断片 (前面の事前確認と背景の本体で使う)。
 // 状態ディレクトリが symlink・ディレクトリでない・root のものでないなら断る (他の誰かが先に作った場所は使わない)。
 func (s StaticIP) prepare(take bool) string {
@@ -174,6 +179,7 @@ func (s StaticIP) Script() string {
 	}
 	var b strings.Builder
 	b.WriteString(s.prepare(true))
+	fmt.Fprintf(&b, "echo $$ > %s\n", Quote(s.startedPath()))
 	// 終わり方を問わず (確認・期限切れ・SIGTERM / SIGHUP)、変えたまま確認が無ければ戻してから lock を外す。shutdown は TERM を配るので、
 	// 待ちの途中で相手を再起動しても新しい IP のまま残らない (fable の敵対レビュー)
 	fmt.Fprintf(&b, "changed=0\nconfirmed=0\nfinish() { if [ \"$changed\" = 1 ] && [ \"$confirmed\" = 0 ]; then %s; fi; rm -rf %s; }\n", restore, lock)
@@ -198,10 +204,28 @@ func (s StaticIP) Script() string {
 // (背景に回すと失敗が見えない。fable の敵対レビュー)、変更は sudo -n -b + nohup で ssh から切り離す (背景の sudo がパスワードを
 // 読もうとすると止まる。ssh が切れても SIGHUP で止まらない)。
 //
+// 🚨 背景が走り出した印 (startedPath) を前面で待ってから終える。sudo -b はすぐ戻るので、待たずに終えると ssh の端末が閉じた
+// SIGHUP が、nohup が SIGHUP を捨てる前の子に届いて変更が始まらない (air5 で再現: 背景に回してすぐ抜けると死に、1 秒待つと
+// 生き残った。issue 789)。印が StartWait のうちに現れなければ理由を出して非 0 で抜ける (黙って成功にしない)。
+//
 // 限界 (受容。issue 747): 前面の確かめと背景の lock の取得の間 (ssh 1 往復) に別の操作者が先に取ると、後の方は背景で黙って抜ける
 // (変更はしない)。電源断・kill -9 では戻しが走らず新しい IP のまま残る (次の回は止まった lock を引き取るだけ)。
 func (s StaticIP) RemoteCommand() string {
-	return "sudo -v && sudo -n sh -c " + Quote(s.prepare(false)) + " && sudo -n -b nohup sh -c " + Quote(s.Script()) + " >/dev/null 2>&1"
+	return "sudo -v && sudo -n sh -c " + Quote(s.prepare(false)) + " && sudo -n -b nohup sh -c " + Quote(s.Script()) + " >/dev/null 2>&1" +
+		" && sudo -n sh -c " + Quote(s.waitStarted())
+}
+
+// StartWait は背景の本体が走り出すのを前面で待つ長さ。
+const StartWait = 15 * time.Second
+
+// waitStarted は背景の本体が走り出した印を待って消す sh の断片。
+func (s StaticIP) waitStarted() string {
+	started, wait := Quote(s.startedPath()), s.startWait
+	if wait == 0 {
+		wait = StartWait
+	}
+	return fmt.Sprintf("i=0\nwhile [ ! -f %s ]; do\n  if [ \"$i\" -ge %d ]; then echo 'mac-lan-manager: 背景の切り替えが始まらなかった (何も変えていない)' >&2; exit 1; fi\n  sleep %s\n  i=$((i+1))\ndone\nrm -f %s\n",
+		started, int(wait/s.tick()), secs(s.tick()), started)
 }
 
 // ConfirmCommand は新しい IP で入り直した側が打つ 1 行 (ssh -t で。sudo がパスワードを聞く)。印は root が状態ディレクトリに書く。

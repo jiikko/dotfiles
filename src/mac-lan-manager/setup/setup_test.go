@@ -299,11 +299,32 @@ func TestRemoteCommandRunsDetached(t *testing.T) {
 	if err := runSh(t, path, s.RemoteCommand()).Wait(); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(s.startedPath()); !os.IsNotExist(err) {
+		t.Errorf("走り出した印を前面が消していない: %v", err)
+	}
 	waitFor(t, "背景で戻しまで走る", func() bool { return strings.Contains(readLog(dir), "-setdhcp") })
 	// nohup は ssh が切れたときの SIGHUP で止まらないためのもの。SIGHUP は本物の端末が切れないと届かないので、ここでは
 	// 配線だけを固定する (挙動は段 4 の前の人手の確認: ssh が切れても変更が最後まで走るか。issue 747)
 	if !strings.Contains(s.RemoteCommand(), "sudo -n -b nohup sh -c ") {
 		t.Errorf("背景に回す側が nohup を通っていない: %s", s.RemoteCommand())
+	}
+}
+
+// 背景の本体が走り出さなければ (ssh の端末が閉じた SIGHUP で nohup の前に死んだ等)、前面が理由を出して非 0 で抜ける。
+// sudo -b はすぐ戻るので、印を待たないと何も変わらないまま成功に見えた (issue 789: air5 で固定 IP にならなかった)。
+func TestRemoteCommandFailsWhenBackgroundDoesNotStart(t *testing.T) {
+	dir, path := sandbox(t)
+	// 背景の子が本体に届かずに死ぬ形を、何も走らせない nohup で作る
+	if err := os.WriteFile(filepath.Join(dir, "nohup"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := staticIP(t, dir)
+	s.startWait = 500 * time.Millisecond
+	cmd := exec.Command("/bin/sh", "-c", s.RemoteCommand())
+	cmd.Env = []string{"PATH=" + path}
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "始まらなかった") {
+		t.Errorf("背景が走り出さないのに成功した: err=%v out=%q", err, out)
 	}
 }
 
