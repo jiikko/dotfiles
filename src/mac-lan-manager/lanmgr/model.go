@@ -516,6 +516,7 @@ type row struct {
 	seen      bool   // Bonjour で見えている
 	wired     bool   // Bonjour でこの Mac の有線の I/F に見えた (台帳の内部 IP ではなく、今の走査で)
 	others    []netinfo.IP
+	lanAway   bool   // 内部 IP がこの Mac の有線と別の網 (片方だけ固定して 169.254 と帯の番号に分かれた): 有線では届かないので繋ぐ先にしない
 	instance  string // Bonjour のインスタンス名 (別名が無いときの表示)
 }
 
@@ -695,6 +696,9 @@ func (m *Model) rows() []row {
 			}
 		}
 	}
+	for i := range out {
+		out[i].lanAway = !lanReachable(self.lanIP, out[i].lanIP, m.pf.Band)
+	}
 	slices.SortFunc(out, func(a, b row) int { return strings.Compare(or(a.alias, a.host), or(b.alias, b.host)) })
 	return append([]row{self}, out...)
 }
@@ -753,10 +757,28 @@ func (r row) shellRefusal() string {
 // connectIP は繋ぐ先 (内部 IP があればそちら = 有線を通す。無ければメイン。どちらも無ければその他の I/F で見えた IP。
 // VM のゲストは VM の網にしか居ないので、その他を最後の手段に残す)。
 func (r row) connectIP() string {
-	if ip := or(r.lanIP, r.mainIP); ip != "" || len(r.others) == 0 {
+	lan := r.lanIP
+	if r.lanAway {
+		lan = "" // 有線で届かない: 片方だけ固定すると、送り元が固定の番号になり、169.254 のままの相手は返事を Wi-Fi 側へ出して届かない (air5 で実測)
+	}
+	if ip := or(lan, r.mainIP); ip != "" || len(r.others) == 0 {
 		return ip
 	}
 	return r.others[0].Addr
+}
+
+// lanReachable は、この Mac の内部 IP (self) から相手の内部 IP (peer) へ有線で届くか。両方が 169.254 (自動) か、両方が帯の中なら同じ網。
+// 片方だけ固定すると網が分かれ、送り元の番号に相手が返事をできない。この Mac の内部 IP が分からなければ届くと見る (前と同じ)。
+func lanReachable(self, peer, band string) bool {
+	switch {
+	case self == "" || peer == "":
+		return true
+	case netinfo.IsLinkLocal(peer) || netinfo.IsLinkLocal(self):
+		return netinfo.IsLinkLocal(peer) && netinfo.IsLinkLocal(self)
+	case netinfo.InBand(band, peer) || netinfo.InBand(band, self):
+		return netinfo.InBand(band, peer) && netinfo.InBand(band, self)
+	}
+	return true
 }
 
 // userFor は ssh のユーザー名 (台帳に無ければ推測の名前と、推測であることの印)。

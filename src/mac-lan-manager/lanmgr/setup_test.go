@@ -870,3 +870,32 @@ func TestSetupBandOverlapAndRestore(t *testing.T) {
 		t.Errorf("手動の固定を今の IP とマスクへ戻す案内を出さない: %+v", h.m.ask)
 	}
 }
+
+// 片方だけ固定して網が分かれた相手 (この Mac は帯の番号・相手は 169.254、またはその逆) には、有線ではなく Wi-Fi の IP で繋ぐ
+// (送り元が固定の番号になり、169.254 のままの相手は返事を Wi-Fi 側へ出して届かない。air5 で実測)。同じ網なら有線のまま。
+func TestConnectIPSkipsLanOnOtherNetwork(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini}) // mini は Wi-Fi 192.168.50.7・有線 169.254.217.100
+	ssh := func() string {
+		h.m.Advance(t0) // 走査の結果 (相手の番号) を取り込む
+		h.m.tab = 1     // 未管理のタブ
+		h.cursorTo(t, "m2macmini.local")
+		if h.keys("s") != Exec {
+			t.Fatal("前提: s で ssh を起こさない")
+		}
+		r, _ := h.m.TakeExec()
+		return r.Argv[len(r.Argv)-1]
+	}
+	if got := ssh(); got != "koji@169.254.217.100" {
+		t.Errorf("両方 169.254 なのに有線を使わない: %s", got)
+	}
+	setSelfStatic(h.m) // この Mac は 192.168.100.10 (帯) に固定済み
+	if got := ssh(); got != "koji@192.168.50.7" {
+		t.Errorf("この Mac だけ固定したのに 169.254 の相手へ有線で繋いだ: %s", got)
+	}
+	p := mini
+	p.Addrs = map[int]string{14: "192.168.50.7", 27: "192.168.100.12"}
+	h.scan.peers = []discover.Peer{p}
+	if got := ssh(); got != "koji@192.168.100.12" {
+		t.Errorf("両方帯の中なのに有線を使わない: %s", got)
+	}
+}

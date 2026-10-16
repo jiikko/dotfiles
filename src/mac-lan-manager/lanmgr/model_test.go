@@ -204,6 +204,7 @@ func TestTabsSplitManaged(t *testing.T) {
 
 func TestSSHUsesLanIPAndHostKeyAlias(t *testing.T) {
 	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2", LAN: "192.168.100.13"}}, []discover.Peer{mini})
+	setSelfStatic(h.m) // この Mac も帯の中 (同じ網でないと有線では繋がない)
 	if a := h.keys("j", "s"); a != Exec {
 		t.Fatalf("s = %v, want Exec", a)
 	}
@@ -775,7 +776,12 @@ func TestNameColumnFitsContent(t *testing.T) {
 // 読み込みの結果が届いてから次の tick (Advance) までの間に押したキーも効く (キーを受けたときに取り込む)。
 func TestKeyAppliesFinishedNetLoad(t *testing.T) {
 	m := New(Options{
-		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil },
+		ReadNet: func(context.Context) (netinfo.Snapshot, error) {
+			s := selfNet() // この Mac も帯の中 (同じ網でないと有線では繋がない)
+			s.Services[0].Method, s.Services[0].IP = "manual", "192.168.100.10"
+			s.IPs[1].Addr = "192.168.100.10"
+			return s, nil
+		},
 		LocalHost: func() string { return "me.local" },
 		Ledger:    &memStore{hosts: []ledger.Host{{Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
 		Now:       func() time.Time { return t0 },
@@ -1548,6 +1554,7 @@ func TestUserEditChangesOnlyUser(t *testing.T) {
 	if got := h.store.hosts[0]; got != (ledger.Host{Host: "m2macmini.local", User: "koji", Alias: "mini", LAN: "192.168.100.13"}) {
 		t.Errorf("台帳 = %+v (ユーザー名だけを変える)", got)
 	}
+	setSelfStatic(h.m) // この Mac も帯の中 (同じ網でないと有線では繋がない)
 	if h.keys("s"); true {
 		if r, ok := h.m.TakeExec(); !ok || r.Argv[len(r.Argv)-1] != "koji@192.168.100.13" {
 			t.Errorf("変えたユーザー名で繋がない: %v", r.Argv)
