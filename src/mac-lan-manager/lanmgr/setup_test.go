@@ -963,3 +963,27 @@ func TestOperationLog(t *testing.T) {
 		t.Errorf("絞り込みの入力欄に打った文字を記録した:\n%s", all)
 	}
 }
+
+// 台帳に既に載っている相手は、台帳の手順で user と内部 IP だけを書く (開いた時の一覧の行で丸ごと書き戻すと、別のプロセス
+// (単体と glogx の L) がその後に変えた別名を古い値に戻した。敵対レビュー)。
+func TestSetupLedgerKeepsAliasChangedElsewhere(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, ob := setupHarness(t, obs)
+	h.store.hosts = []ledger.Host{{Host: "m2macmini.local", User: "koji", Alias: "旧い別名"}}
+	h.m.reloadLedger()
+	setSelfStatic(h.m)
+	runStep(t, h, nil) // 相手の固定 IP
+	ip := h.m.conf().static.IP
+	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"})
+	runStep(t, h, nil) // 確認
+	awaitSetup(h.m)
+	h.store.hosts[0].Alias = "新しい別名" // 別のプロセスが変えた
+	h.keys("x")
+	if h.m.ov != ovConfirm || h.m.ask == nil || h.m.ask.yes == nil {
+		t.Fatalf("前提: 台帳の手順の確認の板が出ない: %s", strings.Join(h.m.View(), "\n"))
+	}
+	h.keys("y")
+	if len(h.store.hosts) != 1 || h.store.hosts[0].LAN != ip || h.store.hosts[0].Alias != "新しい別名" {
+		t.Errorf("台帳 = %+v (内部 IP %s と別のプロセスの別名を残すはず)", h.store.hosts, ip)
+	}
+}

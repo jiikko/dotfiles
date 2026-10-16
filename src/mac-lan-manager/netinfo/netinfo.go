@@ -114,6 +114,9 @@ const (
 )
 
 func (s Snapshot) class(dev string) ifClass {
+	if dev == "" { // I/F を持たないサービス (VPN など) は I/F ではない。"" 同士の一致で有線と読み、VPN を固定 IP にしかけた (敵対レビュー)
+		return ifNone
+	}
 	var registered, unread, wired bool
 	for _, sv := range s.Services {
 		if sv.Device != dev {
@@ -351,10 +354,15 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 			s.IP = ip
 		}
 	}
+	// 期限切れ・取り消しで途中から失敗したサービスは「読めない」に畳まれ、最後まで読めたように見える (相手に有線が無い・メインの網が
+	// 無いと断定し、帯の重なりの検査を素通りした。敵対レビュー)。期限が来ていたら読めなかったことにする
+	if err := ctx.Err(); err != nil {
+		return Snapshot{}, err
+	}
 	snap := Snapshot{Services: svcs}
 	list, err := run(ctx, "ifconfig", "-l")
 	if err != nil {
-		return snap, nil // I/F の一覧が読めなくても、サービスは返す
+		return snap, ctx.Err() // I/F の一覧が読めなくても、サービスは返す (期限切れは除く)
 	}
 	for _, dev := range strings.Fields(list) {
 		if dev == "lo0" {
@@ -369,7 +377,7 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 			snap.IPs = append(snap.IPs, IP{Device: dev, Addr: a, Kind: snap.Kind(dev, a)})
 		}
 	}
-	return snap, nil
+	return snap, ctx.Err()
 }
 
 // Main はメインのネットワーク (インターネット側) のサービス。並び順で最初の、繋がっていてルーターのあるもの。

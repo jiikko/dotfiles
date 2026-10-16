@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/termsafe"
+
 	"mac-lan-manager/ledger"
 )
 
@@ -75,7 +77,8 @@ func secs(d time.Duration) string {
 const DefaultStateDir = "/var/db/mac-lan-manager"
 
 var (
-	reToken = regexp.MustCompile(`^[A-Za-z0-9-]{8,64}$`)
+	reToken    = regexp.MustCompile(`^[A-Za-z0-9-]{8,64}$`)
+	reStateDir = regexp.MustCompile(`^/[A-Za-z0-9/._-]*$`)
 )
 
 func ipv4(v string) bool {
@@ -86,7 +89,9 @@ func ipv4(v string) bool {
 // Validate は命令列に埋め込む値を確かめる。外から来た値 (サービス名は相手の networksetup の出力) は引用で語にするが、
 // 改行や制御文字は networksetup の引数として意味を持たないので拒む (ログや確認の板に出すときに行を割る)。
 func (s StaticIP) Validate() error {
-	if s.Service == "" || strings.ContainsFunc(s.Service, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+	// サービス名は相手が決める値で、確認の板と端末の帯にそのまま出る。C1・双方向の制御文字で板の見た目を偽装できたので、
+	// 端末に安全に出せない名前は使わない (敵対レビュー)
+	if s.Service == "" || !termsafe.IsPlain(s.Service) || strings.ContainsFunc(s.Service, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 		return fmt.Errorf("サービス名が使えない: %q", s.Service)
 	}
 	if !ipv4(s.IP) || !ipv4(s.Mask) {
@@ -104,7 +109,8 @@ func (s StaticIP) Validate() error {
 	if !reToken.MatchString(s.Token) {
 		return errors.New("確認の印の名前が使えない")
 	}
-	if d := s.stateDir(); !strings.HasPrefix(d, "/") || strings.ContainsFunc(d, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+	// 状態ディレクトリは refuse() の二重引用符の中にも入るので、sh が展開する文字を通さない (本番は既定の固定値。テストの差し込み口)
+	if d := s.stateDir(); !reStateDir.MatchString(d) {
 		return fmt.Errorf("状態ディレクトリが使えない: %q", d)
 	}
 	if s.StateOwner != "" && !ledger.ValidUser(s.StateOwner) {
@@ -226,7 +232,7 @@ func (s StaticIP) waitStarted() string {
 	if wait == 0 {
 		wait = StartWait
 	}
-	return fmt.Sprintf("i=0\nwhile [ ! -f %s ]; do\n  if [ \"$i\" -ge %d ]; then echo 'mac-lan-manager: 背景の切り替えが始まらなかった (何も変えていない)' >&2; exit 1; fi\n  sleep %s\n  i=$((i+1))\ndone\nrm -f %s\n",
+	return fmt.Sprintf("i=0\nwhile [ ! -f %s ]; do\n  if [ \"$i\" -ge %d ]; then echo 'mac-lan-manager: 背景の切り替えが始まらなかった (遅れて始まっても、確認しなければ元に戻る)' >&2; exit 1; fi\n  sleep %s\n  i=$((i+1))\ndone\nrm -f %s\n",
 		started, int(wait/s.tick()), secs(s.tick()), started)
 }
 

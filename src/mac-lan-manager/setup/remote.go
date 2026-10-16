@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -27,7 +28,9 @@ func (d Dest) Validate() error {
 	if a, err := netip.ParseAddr(d.IP); err != nil || !a.Is4() {
 		return fmt.Errorf("IPv4 でない: %q", d.IP)
 	}
-	if d.HostKeyAlias == "" || strings.ContainsFunc(d.HostKeyAlias, func(r rune) bool { return r <= ' ' || r == 0x7f || r == '=' }) {
+	// HostKeyAlias は known_hosts の行 (`,` で名前を並べる・`*` `?` `[` はパターン) と ssh の -o の値 (引用と \ を読む) に入る。
+	// ssh が照合する名前と ssh-keygen -F で引く名前が食い違わないよう、ホスト名に使う文字だけを通す (敵対レビュー)
+	if !reAlias.MatchString(d.HostKeyAlias) {
 		return fmt.Errorf("ホスト名が使えない: %q", d.HostKeyAlias)
 	}
 	return nil
@@ -82,6 +85,8 @@ type Run func(ctx context.Context, argv []string) (stdout string, err error)
 
 // ErrUnknown は「鍵で入れない」と「判定できない」(timeout・接続の失敗) を分けるための印。
 var ErrUnknown = errors.New("判定できない")
+
+var reAlias = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // PeerNet は ssh で読んだ相手の状態。KeyOK が偽で KeyErr が nil なら「鍵で入れない」と分かった。KeyErr が ErrUnknown なら判定できない。
 type PeerNet struct {

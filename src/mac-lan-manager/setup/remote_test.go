@@ -109,6 +109,9 @@ func TestDestValidate(t *testing.T) {
 		{User: "koji", IP: "fe80::1", HostKeyAlias: "a.local"},
 		{User: "koji", IP: "192.168.50.7", HostKeyAlias: "a b"},
 		{User: "koji", IP: "192.168.50.7", HostKeyAlias: ""},
+		{User: "koji", IP: "192.168.50.7", HostKeyAlias: "a.local,b.local"}, // known_hosts では 2 つの名前
+		{User: "koji", IP: "192.168.50.7", HostKeyAlias: "*.local"},         // known_hosts ではパターン
+		{User: "koji", IP: "192.168.50.7", HostKeyAlias: `a"b.local`},       // ssh の -o の値では引用
 	} {
 		if d.Validate() == nil {
 			t.Errorf("使えない宛先を通した: %+v", d)

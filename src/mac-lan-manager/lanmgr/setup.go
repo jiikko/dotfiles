@@ -421,7 +421,13 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		return &ask{title: "台帳に内部 IP 付きで載せる", body: []string{
 			su.host + " を管理対象にする: user " + h.User + " / 内部 IP " + h.LAN,
 		}, yes: func() Notice {
-			if err := m.o.Ledger.Upsert(h); err != nil {
+			// 既に載っている行は user と内部 IP だけを書き換える (古い一覧の行で Upsert すると、別のプロセスが変えた別名を古い値に戻した。
+			// 敵対レビュー)。無いときだけ足す
+			err := m.o.Ledger.Update(h.Host, func(x *ledger.Host) { x.User, x.LAN = h.User, h.LAN })
+			if errors.Is(err, ledger.ErrNotFound) {
+				err = m.o.Ledger.Upsert(h)
+			}
+			if err != nil {
 				return Notice{"登録できない: " + err.Error(), false}
 			}
 			m.reloadLedger()

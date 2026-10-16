@@ -355,3 +355,30 @@ func TestOverlaps(t *testing.T) {
 		}
 	}
 }
+
+// 期限切れ・取り消しで途中から失敗したサービスを「読めない」に畳んで、最後まで読めたように返さない (相手に有線が無い・メインの網が
+// 無いと断定した。敵対レビュー)。
+func TestReadFailsWhenContextEndsMidway(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	base := fakeRunner(t, map[string]string{
+		"networksetup -listnetworkserviceorder": "serviceorder.txt",
+		"ifconfig -l":                           "=lo0 en0",
+	})
+	run := func(c context.Context, name string, args ...string) (string, error) {
+		out, err := base(c, name, args...)
+		cancel() // 1 本目 (並び順) の後で期限が来る
+		return out, err
+	}
+	if snap, err := Read(ctx, run); err == nil {
+		t.Errorf("途中で期限が来たのに読めたことにした: %+v", snap.Services)
+	}
+}
+
+// I/F を持たないサービス (VPN など) は有線の I/F ではない ("" 同士の一致で有線と読み、I/F で決める設定が VPN を固定 IP にしかけた)。
+func TestWiredIFRejectsEmptyDevice(t *testing.T) {
+	snap := Snapshot{Services: []Service{{Name: "VPN (L2TP)", Port: "L2TP", Device: "", Read: true, Method: "DHCP"}}}
+	if snap.WiredIF("") {
+		t.Error("I/F の無いサービスを有線と読んだ")
+	}
+}

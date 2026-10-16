@@ -360,6 +360,9 @@ func TestStaticIPValidate(t *testing.T) {
 		"1 秒より長い周期":    func(s *StaticIP) { s.Tick, s.Window = 2*time.Second, 4*time.Second },
 		"10 ms より短い周期": func(s *StaticIP) { s.Tick, s.Window = 5*time.Millisecond, 300*time.Millisecond },
 		"持ち主":          func(s *StaticIP) { s.StateOwner = "a b" },
+		"双方向の制御文字の名前": func(s *StaticIP) { s.Service = "Ethernet\u202eNAL" },
+		"C1 の制御文字の名前":  func(s *StaticIP) { s.Service = "Ethernet\u009b2J" },
+		"sh が展開する置き場所": func(s *StaticIP) { s.StateDir = "/var/db/$(id)" },
 	} {
 		s := base
 		mut(&s)
