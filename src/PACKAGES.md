@@ -94,6 +94,7 @@
 - `src/tuikit/framebench` (`github.com/jiikko/dotfiles/src/tuikit/framebench`) — Package framebench は、描いた画面の文字列を bubbletea v2 のレンダラと同じ手順でセルへ書き直し、端末への差分まで通す 計測の道具 (issue 607)。
 - `src/tuikit/gutter` (`github.com/jiikko/dotfiles/src/tuikit/gutter`) — Package gutter は本文の左に出す行番号の溝 (nvim の number)。
 - `src/tuikit/highlight` (`github.com/jiikko/dotfiles/src/tuikit/highlight`) — Package highlight は diff とコードの行へシンタックスハイライト (chroma) を付ける。
+- `src/tuikit/hintfit` (`github.com/jiikko/dotfiles/src/tuikit/hintfit`) — Package hintfit は最下行のキーの案内を幅に収める。
 - `src/tuikit/layout` (`github.com/jiikko/dotfiles/src/tuikit/layout`) — Package layout は端末 UI の画面合成 (行の配列 → 行の配列)。
 - `src/tuikit/lineedit` (`github.com/jiikko/dotfiles/src/tuikit/lineedit`) — Package lineedit は 1 行の入力欄の編集 (カーソルと readline の編集キー)。
 - `src/tuikit/listnav` (`github.com/jiikko/dotfiles/src/tuikit/listnav`) — Package listnav は一覧と pager の移動 (キーの語彙・カーソル・スクロール) の部品。

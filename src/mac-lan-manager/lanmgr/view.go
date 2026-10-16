@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/jiikko/dotfiles/src/termsafe"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
 	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
@@ -77,64 +78,47 @@ func (m *Model) View() []string {
 	return strings.Split(lipgloss.NewCompositor(layers...).Render(), "\n")
 }
 
-// keyHint は最下行の案内の 1 つ。prio が小さいものから、幅に入るまで落とす。
+// keyHint は最下行の案内の 1 つ。prio は小さいほど残す (1 = 抜ける手段。tuikit/hintfit の尺度)。
 type keyHint struct {
 	key, label string
 	prio       int
 }
 
-// footer は最下行の案内。一覧では、選んでいる Mac への動作のキー (s 繋ぐ / Y コピー / o / y) をいつも載せる: 詳細カードが出るか・
-// 1 行に畳むか・出せないかは画面の大きさで変わり、そのどれでもキーが消える形が見つかった (名前が長いと 1 行の形からキーが押し出された・
-// 広い配置で低いと詳細カードの下が切れた。fable / opus の敵対レビュー)。最下行は必ず画面に残るので、ここに載せればどの配置でも見える。
-// 幅が足りなければ prio の小さいものから落とす。q (抜け方) は落とさない。
+// footer は最下行の案内。幅が足りなければ hintfit が優先度の低いものから項目ごと落とし、q (抜け方) は最後まで残す。
+// 一覧では、選んでいる Mac の動作のキー (s 繋ぐ…) を名前の長さ・配置に依らず載せる (詳細カードが 1 行に畳まれると、そこから押し出された)。
 func (m *Model) footer() string {
 	var hs []keyHint
 	switch {
 	case m.sc == scSettings:
-		hs = []keyHint{{"j/k", "項目", 40}, {"space", "入/切", 30}, {"←/→", "選ぶ", 20}, {"enter", "編集", 10}, {"q/esc/,", "閉じる", 100}}
+		hs = []keyHint{{"j/k", "項目", 2}, {"space", "入/切", 3}, {"←/→", "選ぶ", 4}, {"enter", "編集", 5}, {"q/esc/,", "閉じる", 1}}
 	case m.filtering:
-		hs = []keyHint{{"enter", "確定", 50}, {"esc", "やめる", 100}}
+		hs = []keyHint{{"enter", "確定", 2}, {"esc", "やめる", 1}}
 	default:
-		hs = []keyHint{{"j/k", "移動", 40}}
+		hs = []keyHint{{"j/k", "移動", 7}}
 		if r := m.current(); !r.self && r.connectIP() != "" {
 			if r.shellRefusal() == "" {
-				hs = append(hs, keyHint{"s", "繋ぐ", 80})
+				hs = append(hs, keyHint{"s", "繋ぐ", 3})
 			}
-			hs = append(hs, keyHint{"Y", "コピー", 70})
+			hs = append(hs, keyHint{"Y", "コピー", 4})
 			if r.vnc {
-				hs = append(hs, keyHint{"o", "画面共有", 60})
+				hs = append(hs, keyHint{"o", "画面共有", 5})
 			}
 			if r.smb {
-				hs = append(hs, keyHint{"y", "smb", 50})
+				hs = append(hs, keyHint{"y", "smb", 6})
 			}
 		}
-		hs = append(hs, keyHint{"h/l", "タブ", 15}, keyHint{"space", "台帳", 30}, keyHint{"c", "この Mac の IP", 20},
-			keyHint{",", "設定", 10}, keyHint{"?", "全部のキー", 90}, keyHint{"q", "閉じる", 100})
+		hs = append(hs, keyHint{"h/l", "タブ", 10}, keyHint{"space", "台帳", 8}, keyHint{"c", "この Mac の IP", 9},
+			keyHint{",", "設定", 11}, keyHint{"?", "全部のキー", 2}, keyHint{"q", "閉じる", 1})
 	}
 	if m.sc != scSettings && !m.filtering && !m.netReady { // 読み終えるまで断るキーは案内にも出さない (出すと押しても断られた)
 		hs = slices.DeleteFunc(hs, func(h keyHint) bool { return slices.Contains(needsNet, h.key) })
 	}
-	sep := sMuted.Render(" • ")
-	render := func() string {
-		parts := make([]string, 0, len(hs))
-		for _, h := range hs {
-			parts = append(parts, lipgloss.NewStyle().Foreground(cPink).Bold(true).Render(h.key)+" "+sDim.Render(h.label))
-		}
-		return strings.Join(parts, sep)
+	items := make([]hintfit.Item, 0, len(hs))
+	for _, h := range hs {
+		items = append(items, hintfit.Item{Text: lipgloss.NewStyle().Foreground(cPink).Bold(true).Render(h.key) + " " + sDim.Render(h.label), Prio: h.prio})
 	}
-	for out := render(); lipgloss.Width(out) > m.w-2*padX; out = render() {
-		low := -1
-		for i, h := range hs {
-			if h.prio < 100 && (low < 0 || h.prio < hs[low].prio) {
-				low = i
-			}
-		}
-		if low < 0 {
-			return termwidth.Truncate(out, max(m.w-2*padX, 1), "")
-		}
-		hs = slices.Delete(hs, low, low+1)
-	}
-	return render()
+	w := max(m.w-2*padX, 1)
+	return termwidth.Truncate(hintfit.Fit(w, sMuted.Render(" • "), items), w, "")
 }
 
 func (m *Model) header(w int) string {

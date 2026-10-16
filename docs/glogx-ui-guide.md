@@ -131,7 +131,8 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 
 ## 5. 案内 (hint 行) の規律
 
-- 最下行の案内は端末幅で落とすが、**抜ける手段 (`q` / 閉じるキー) は必ず残す**
+- 最下行の案内は端末幅で落とすが、**抜ける手段 (`q` / 閉じるキー) は必ず残す**。落とし方は `hintfit.Fit` (下の §9 の表) を通す
+  (入らない項目は切らずに落とし、優先度 1 = 抜ける手段は席を予約する)。treefiler の最下行は凡例 → 右の欄 → 案内の段で落とす別の方式
 - 案内に載せたキーは**その画面のあらゆる状態で案内どおりに動く**こと。ピッカーや絞り込みの
   入力中に案内が残っていると、載せたキーが全部検索語に化ける (issues viewer の URL ピッカーで
   実測)。入力中は案内を差し替える
@@ -266,6 +267,7 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 | 本文の左の行番号の溝 (nvim の number) | `gutter.Width` / `gutter.Format` (番号はソースの行番号。折り返しの続き行は空白) | glogx の issues の本文・treefiler のタイル |
 | diff・コードの色付け | `highlight.Diff` (本文のフェンスコードは `markdown.Render` が中で `highlight.Lang` を通す) | glogx の diff の板・pro-con の差分の板 |
 | 一覧・本文の移動 (§2) | `listnav.MotionOf` / `List` / `Pager` | glogx の全画面・pro-con |
+| 最下行の案内を幅で落とす (§5) | `hintfit.Fit` (`Item{Text, Prio}`。Prio は小さいほど残す。1 = 抜ける手段) | glogx の全画面 (`fitHintItems`)・mac-lan-manager |
 | 入力欄 (§7) | `lineedit` + `caret` | pro-con・schedkeys・glogx (issues の番号の絞り込み・URL ピッカー) |
 | 操作の結果の通知 (下) | `toast.Stack` | glogx・pro-con |
 | 処理中の回る印 (点字の spinner) | `spinner.Frame` (自前の整数で回す) / `spinner.At` (時刻から選ぶ)。いつ tick し・いつ止めるかは各画面 | glogx・pro-con・treefiler・restartable |

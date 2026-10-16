@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"io"
@@ -950,76 +951,27 @@ func (v *statusView) hint(width int) string {
 	})
 }
 
-// hintItem は hint の 1 項目と優先度 (小さいほど残す)。
+// hintItem は hint の 1 項目と優先度 (小さいほど残す。1 = 抜ける手段)。
 type hintItem struct {
 	text string
 	prio int
 }
 
-// fitHintItems は幅 width に収まるところまで項目を採り、**元の並び順で**繋ぐ。
+// fitHintItems は幅 width に収まるところまで項目を採り、元の並び順で繋ぐ (落とし方・優先度 1 の席の予約は hintfit.Fit が正本)。
 //
-// 🚨 利用者は status / doctor / issues / ratelimit / detailOv / job パネル / diffOv /
-// 基底一覧 (issue 279 で全部ここへ寄せた)。「今の利用者は status viewer だけなので
-// 2 つ目が出たら共通の場所へ移す」という当初の注記は実態と合わなくなっていたので消した。
-// 移していないのは意図的で、置き場所を探す jump が増えるだけで複雑性は下がらないため。
-//
-// 🚨 「入らないから末尾を切る」ではなく「入らない項目を落とす」。切ると語の途中で切れて
-// 意味が壊れ (実測 2026-09-01: "d: diff" が "d…" になっていた)、しかも切れるのは常に末尾 =
-// 並びの最後にある項目が幅に関係なく消える。優先度で落とせば、狭い端末でも「何ができて
-// どう抜けるか」は残る。
-//
-// 🚨 落とした項目は `--help` / README / docs/status-viewer-spec.md が正本 (issues viewer の
-// hint と同じ作法)。画面の案内は「今の幅で確実に読めるもの」だけにする。
+// 🚨 名前を残しているのは、hintLine の hint が必ずここを通ることを hint_registry_gate_test.go が AST の呼び出し名で縛るため。
+// 🚨 落とした項目は `--help` / README / docs/status-viewer-spec.md が正本 (issues viewer の hint と同じ作法)。画面の案内は
+// 「今の幅で確実に読めるもの」だけにする。
 func fitHintItems(width int, items []hintItem) string {
-	const sep = "  "
-	keep := make([]bool, len(items))
-	total := 0
-	// 優先度の高い順に採る。同じ優先度は元の並び順 (左から) を優先する。
-	for prio := 1; prio <= 7; prio++ {
-		for i, it := range items {
-			if keep[i] || it.prio != prio {
-				continue
-			}
-			w := dispWidth(it.text)
-			if total > 0 {
-				w += dispWidth(sep)
-			}
-			if total+w > width {
-				continue // この項目は入らない。より短い後続は入るかもしれないので続ける
-			}
-			keep[i], total = true, total+w
-		}
+	return hintfit.Fit(width, "  ", hintfitItems(items))
+}
+
+func hintfitItems(items []hintItem) []hintfit.Item {
+	out := make([]hintfit.Item, 0, len(items))
+	for _, it := range items {
+		out = append(out, hintfit.Item{Text: it.text, Prio: it.prio})
 	}
-	// 🚨 **優先度 1 は席を予約する** (issue 279)。上のループは「採る順序」を決めるだけなので、
-	// 優先度 1 が幅に入らないと**より短い低優先が代わりに入る**。実例: doctor の出口
-	// `D/q/esc: 閉じる` (17 桁) は幅 9〜16 で落ち、`j/k: 移動` (9 桁) だけが残っていた。
-	// 抜ける手段が消えた案内は、短い案内より悪い (docs/glogx-ui-guide.md の hint 節)。
-	// 優先度 1 が 1 つでもあるのに 1 つも採れなかったら、低優先で埋めずに
-	// **最短の優先度 1 を単独で返す** (hintLineText が切り詰めて出す)。
-	if best := shortestPrio1(items); best != "" {
-		keptPrio1 := false
-		for i, it := range items {
-			if keep[i] && it.prio == 1 {
-				keptPrio1 = true
-				break
-			}
-		}
-		if !keptPrio1 {
-			return best
-		}
-	}
-	out := make([]string, 0, len(items))
-	for i, it := range items {
-		if keep[i] {
-			out = append(out, it.text)
-		}
-	}
-	if len(out) == 0 && len(items) > 0 {
-		// 1 つも入らない極端な幅でも無言にしない (hintLineText が切り詰めて出す)。
-		// 🚨 優先度 1 が無いときだけここへ来る (上で先に返している)。
-		return items[len(items)-1].text
-	}
-	return strings.Join(out, sep)
+	return out
 }
 
 // ---- 描画 ----
@@ -1424,19 +1376,4 @@ func (v *statusView) discardBox(o statusRenderOpts) []string {
 	}
 	body := []string{head, "  " + string(v.discard.code) + " " + v.discard.dispPath()}
 	return confirm.Dialog(" 変更を捨てる ", body, confirm.HintYesNo, o.width, o.colored)
-}
-
-// shortestPrio1 は優先度 1 の項目のうち最も短いもの ("" = 優先度 1 が無い)。
-// 「抜ける手段だけは残す」の最後の砦なので、幅が足りないときは一番短いものを選ぶ。
-func shortestPrio1(items []hintItem) string {
-	best, bestW := "", 0
-	for _, it := range items {
-		if it.prio != 1 {
-			continue
-		}
-		if w := dispWidth(it.text); best == "" || w < bestW {
-			best, bestW = it.text, w
-		}
-	}
-	return best
 }

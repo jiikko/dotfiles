@@ -22,6 +22,7 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 - `markdown` — markdown 本文を幅で整形するレンダラ
 - `highlight` — diff / コードのシンタックスハイライト
 - `gutter` — 本文の左の行番号の溝 (nvim の number)
+- `hintfit` — 最下行のキーの案内を幅に収める (入らない項目を落とし、抜ける手段は残す)
 - `listnav` — 一覧・本文のカーソル移動・スクロール窓の計算
 - `framebench` — フレームをレンダラ込みで測る計測の道具 (部品ではない。ultraviolet を import する)
 - `cmd/termwidth` — シェルから表示幅を測るコマンド (`bin/termwidth`。部品ではない)
