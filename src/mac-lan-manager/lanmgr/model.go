@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -93,7 +94,7 @@ const (
 	ovNone    overlay = iota
 	ovConfirm         // y/N (台帳への登録・削除)
 	ovCopyIP          // この Mac の IP のどれをコピーするか
-	ovAlias           // 別名の入力欄
+	ovAlias           // 台帳の欄 (別名 / ユーザー名) の入力欄
 	ovHelp            // 全部のキー
 )
 
@@ -133,7 +134,7 @@ type Model struct {
 	filter    lineedit.Line
 	filtering bool `layer:"filter"`
 	alias     lineedit.Line
-	aliasHost string // 別名の入力欄を開いたときの Mac (台帳の鍵)
+	edit      hostEdit // 入力欄で書き換えている台帳の欄 (別名 / ユーザー名)
 	band      lineedit.Line
 	bandEdit  bool `layer:"band"`
 
@@ -374,7 +375,7 @@ func (m *Model) Binds(key string) bool {
 	if m.OwnsKeys() {
 		return true
 	}
-	return slices.Contains([]string{"s", "y", "Y", "o", "m", "c", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
+	return slices.Contains([]string{"s", "y", "Y", "o", "m", "u", "c", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
 		listnav.MotionOf(key) != listnav.None
 }
 
@@ -883,18 +884,10 @@ func (m *Model) keyList(key string) Action {
 		m.handOff(ExecRequest{Argv: []string{"open", "vnc://" + r.connectIP()}, ExitIsFailure: true}, nil)
 		return Exec
 	case "m": // 名前の変更 (treefiler と同じ動詞)
-		if r.self {
-			m.note("この Mac には別名を付けない", false)
-			break
-		}
-		if !r.managed {
-			m.note("台帳に無い Mac には別名を付けない (先に space で台帳に登録する)", false)
-			break
-		}
-		m.alias.Reset()
-		m.alias.Insert(r.alias)
-		m.aliasHost = r.host // 確定の時点のカーソル行ではなく、開いたときの Mac に付ける (入力中に走査で行が増えるとカーソルがずれる)
-		m.ov = ovAlias
+		m.openEdit(r, aliasEdit, r.alias)
+	case "u": // ssh のユーザー名 (台帳の user)
+		user, _ := m.userFor(r)
+		m.openEdit(r, userEdit, user)
 	}
 	return None
 }
@@ -1019,21 +1012,63 @@ func (m *Model) copySelf(i int) {
 	m.copy(ip, "  (この Mac の"+label+")")
 }
 
+// hostEdit は入力欄で書き換える台帳の 1 欄。host は開いたときの Mac (確定の時点のカーソル行ではない。入力中に走査で行が増えると
+// カーソルがずれる)。check は入れた値を確かめる (空なら通す)。
+type hostEdit struct {
+	host, label, title, done string
+	check                    func(string) string
+	set                      func(*ledger.Host, string)
+}
+
+var (
+	aliasEdit = hostEdit{label: "別名", title: "別名を付ける", done: "別名を付けた", set: func(h *ledger.Host, v string) { h.Alias = v }}
+	userEdit  = hostEdit{label: "ユーザー", title: "ssh のユーザー名を変える", done: "ユーザー名を変えた",
+		check: func(v string) string {
+			if !ledger.ValidUser(v) {
+				return "ユーザー名が使えない: " + strconv.Quote(v)
+			}
+			return ""
+		}, set: func(h *ledger.Host, v string) { h.User = v }}
+)
+
+// openEdit は台帳に載っている Mac の 1 欄の入力欄を開く。
+func (m *Model) openEdit(r row, e hostEdit, cur string) {
+	if r.self {
+		m.note("この Mac は台帳に載せない", false)
+		return
+	}
+	if !r.managed {
+		m.note("台帳に無い Mac は変えられない (先に space で台帳に登録する)", false)
+		return
+	}
+	e.host = r.host
+	m.edit = e
+	m.alias.Reset()
+	m.alias.Insert(cur)
+	m.ov = ovAlias
+}
+
 func (m *Model) keyAlias(key, text string) Action {
 	switch key {
 	case "esc":
 		m.ov = ovNone
 	case "enter":
+		e, v := m.edit, strings.TrimSpace(m.alias.String())
+		if e.check != nil {
+			if why := e.check(v); why != "" {
+				m.note(why, false) // 入力欄は開いたまま (直して打ち直せる)
+				return None
+			}
+		}
 		m.ov = ovNone
-		alias := strings.TrimSpace(m.alias.String())
-		// 別名だけを変える (台帳を読み直した上で。古い一覧の行で丸ごと書き戻すと、外された Mac が戻り、Bonjour の 169.254 が固定 IP の欄に入る)
-		if err := m.o.Ledger.Update(m.aliasHost, func(h *ledger.Host) { h.Alias = alias }); err != nil {
-			m.note("別名を付けられない: "+err.Error(), false)
+		// その欄だけを変える (台帳を読み直した上で。古い一覧の行で丸ごと書き戻すと、外された Mac が戻り、Bonjour の 169.254 が固定 IP の欄に入る)
+		if err := m.o.Ledger.Update(e.host, func(h *ledger.Host) { e.set(h, v) }); err != nil {
+			m.note(e.label+"を変えられない: "+err.Error(), false)
 			m.reloadLedger()
 			return None
 		}
 		m.reloadLedger()
-		m.note("別名を付けた: "+or(alias, "(無し)"), true)
+		m.note(e.done+": "+or(v, "(無し)"), true)
 	default:
 		m.alias.Key(key, text)
 	}

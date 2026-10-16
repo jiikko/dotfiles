@@ -1511,3 +1511,43 @@ func TestDisabledServiceIsNotUsedInModel(t *testing.T) {
 		t.Errorf("この Mac のメイン = %q (無効のサービスをメインにした)", self.mainIP)
 	}
 }
+
+// u は台帳の ssh のユーザー名だけを変える (別名・内部 IP は触らない)。使えない名前 (先頭の - は ssh が option として読む) は
+// 書かずに入力欄を開いたまま断り、台帳に無い Mac には開かない (issue 747 の決定 2026-10-16)。
+func TestUserEditChangesOnlyUser(t *testing.T) {
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2", Alias: "mini", LAN: "192.168.100.13"}}, []discover.Peer{mini})
+	typ := func(s string) {
+		for _, r := range s {
+			h.m.HandleInput(string(r), string(r))
+		}
+	}
+	h.keys("j", "u")
+	if h.m.ov != ovAlias || h.m.alias.String() != "k2" {
+		t.Fatalf("u で今のユーザー名の入力欄が開かない (ov=%v %q)", h.m.ov, h.m.alias.String())
+	}
+	h.m.alias.Reset()
+	typ("-oProxyCommand=x")
+	h.keys("enter")
+	if h.store.hosts[0].User != "k2" || h.m.ov != ovAlias {
+		t.Fatalf("使えない名前を書いた・入力欄を閉じた: %+v ov=%v", h.store.hosts, h.m.ov)
+	}
+	h.m.alias.Reset()
+	typ("koji")
+	h.keys("enter")
+	if got := h.store.hosts[0]; got != (ledger.Host{Host: "m2macmini.local", User: "koji", Alias: "mini", LAN: "192.168.100.13"}) {
+		t.Errorf("台帳 = %+v (ユーザー名だけを変える)", got)
+	}
+	if h.keys("s"); true {
+		if r, ok := h.m.TakeExec(); !ok || r.Argv[len(r.Argv)-1] != "koji@192.168.100.13" {
+			t.Errorf("変えたユーザー名で繋がない: %v", r.Argv)
+		}
+	}
+
+	h = newHarness(t, nil, []discover.Peer{{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}})
+	h.keys("l")
+	h.cursorTo(t, "air.local")
+	h.keys("u")
+	if h.m.ov == ovAlias {
+		t.Error("台帳に無い Mac にユーザー名の欄を開いた")
+	}
+}

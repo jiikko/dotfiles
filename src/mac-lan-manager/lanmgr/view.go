@@ -576,14 +576,14 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 		return modal("この Mac の IP をコピー", body, "1 / 2 すぐコピー   j/k + enter 選んでコピー   esc やめる", m.w), -1, 0
 	case ovAlias:
 		txt, col := m.alias.Window(24)
-		prefix := sDim.Render("別名  ")
+		prefix := sDim.Render(m.edit.label + "  ")
 		field := lipgloss.NewStyle().Background(cCode).Render(termwidth.FillRight(txt, 25))
 		// 板の中の位置: 上の辺 1 + 余白 1 + 題 1 + 空行 1 = 4 行目、左の辺 1 + 余白 2 + 前置き
-		return modal("別名を付ける", []string{prefix + field}, "enter 決める   esc やめる", m.w), 4, 3 + lipgloss.Width(prefix) + col
+		return modal(m.edit.title, []string{prefix + field}, "enter 決める   esc やめる", m.w), 4, 3 + lipgloss.Width(prefix) + col
 	case ovHelp:
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"o", "画面共有を開く"},
-			{"c", "この Mac の IP をコピー"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {",", "設定"},
+			{"c", "この Mac の IP をコピー"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"u", "ssh のユーザー名を変える"}, {",", "設定"},
 			{"r", "読み直す"}, {"q / esc", "閉じる"}}
 		body := make([]string, 0, len(keys)+3)
 		if m.scanErr != nil { // 見出しの「✗ 探せない」の理由 (知らせは数秒で消え、glogx の中からは dump を起こせない。監査の指摘)
