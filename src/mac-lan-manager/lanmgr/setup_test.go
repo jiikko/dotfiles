@@ -811,6 +811,9 @@ func TestSetupQueuedXRaces(t *testing.T) {
 	h2, _ := setupHarness(t, obs)
 	h2.keys("x", "y") // この Mac の固定
 	h2.m.TakeExec()
+	release := make(chan struct{}) // この Mac の網の読み直しを手で離すまで止める (すぐ戻ると、キーの時点で取り込まれて順序が運で決まった)
+	defer close(release)
+	h2.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { <-release; return selfNet(), nil }
 	h2.m.ExecDone(nil) // この Mac の網と相手を読み直す
 	awaitSetup(h2.m)   // 相手は読み終えたが、この Mac の網はまだ
 	h2.keys("esc", "x")
