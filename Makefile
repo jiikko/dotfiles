@@ -630,8 +630,8 @@ test-go:
 	@+$(call run_go_projects,test)
 
 # src/ 配下の全プロジェクトを lint + test 一括で回す集約ターゲット (人間の選択実行用)。
-# root の `make test` は test-go (テストのみ) を含むが golangci-lint は含まないため、
-# src/ を触った後のコミット前検証はこれ 1 発で CI (src_*.yml の lint / test 両 job) と揃う。
+# root の `make test` もこれを含む (test-lint + test-runtime + test-src)。src/ だけを触った後は、これ 1 発で
+# CI (src_*.yml の lint / test 両 job) と揃う。ただし CI の lint job の「Module graph」step (go mod tidy -diff / go list -m all) は含まない (issue 787)。
 # 🚨 ここも集約 (issue 130)。prerequisite に並べると lint の失敗で test が走らない
 test-src:
 	@+$(call run_all_targets,test-go-lint test-unused-excluding-tests test-go)
