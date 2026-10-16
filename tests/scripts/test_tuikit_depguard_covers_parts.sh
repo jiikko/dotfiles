@@ -8,7 +8,8 @@
 # リストの files の項目は、知っている 3 つの形 (`"**/<名前>/**"` / `"!**/tuikit/<名前>/**"` / `"!**/*_test.go"`) だけを読み、それ以外の項目が
 # 1 つでもあれば「判定できない」として落とす (黙って読み飛ばすと、別の形の否定で depguard が外れても緑になった。敵対レビュー)。
 # 検出しない形: YAML の flow style・アンカー (files の項目として読めず、較正の termwidth で落ちる)。リストの中身以外
-# (linters.enable から depguard を消す・deny を空にする) は見ない。パターンの意味 (どのファイルに当たるか) は golangci 自身が決めるので、
+# (linters.enable から depguard を消す・deny を空にする・linters.exclusions で depguard を外す・生成ファイルの見出し
+# (`// Code generated ... DO NOT EDIT.`) を付ける・`//nolint:depguard`) は見ない。パターンの意味 (どのファイルに当たるか) は golangci 自身が決めるので、
 # ここは「名前が載っているか」だけを見る
 set -uo pipefail
 unset CDPATH
@@ -30,13 +31,20 @@ termcolor:端末 (tmux) に機能を聞くのが仕事
 foreground:端末の前面を確かめ、子へ端末を渡すのが仕事 (os / os/exec / os/signal)
 foreground/ptytest:foreground のテストが使う pty の道具 (context / os / os/exec)"
 
-# list_items <リスト名> — 指定のリストの files の項目 (コメントの行は読まない)
+# list_items <リスト名> — linters.settings.depguard.rules.<リスト名>.files の項目 (コメントの行は読まない)。
+# YAML の位置 (字下げ 0 / 2 / 4 / 6 / 8) で読む: 字下げを見ないと、rule が rules の外へ出て depguard から消えても、その行を読んで緑になった
+# (敵対レビュー。golangci は知らないキーを黙って無視する)
 list_items() {
   awk -v L="$1:" '
-    $1 == L { inlist = 1; next }
-    inlist && $1 == "deny:" { exit }
-    inlist && $1 ~ /^#/ { next }
-    inlist && /^[[:space:]]*- / { sub(/^[[:space:]]*- /, ""); sub(/[[:space:]]+#.*$/, ""); print }
+    /^[[:space:]]*(#|$)/ { next }
+    { match($0, /^ */); ind = RLENGTH }
+    ind == 0 { lin = ($1 == "linters:"); st = 0; dg = 0; ru = 0; inlist = 0; next }
+    ind == 2 { st = (lin && $1 == "settings:"); dg = 0; ru = 0; inlist = 0; next }
+    ind == 4 { dg = (st && $1 == "depguard:"); ru = 0; inlist = 0; next }
+    ind == 6 { ru = (dg && $1 == "rules:"); inlist = 0; next }
+    ind == 8 { inlist = (ru && $1 == L); fl = 0; next }
+    inlist && ind == 10 { fl = ($1 == "files:"); next }
+    inlist && fl && /^[[:space:]]*- / { sub(/^[[:space:]]*- /, ""); sub(/[[:space:]]+#.*$/, ""); print }
   ' "$yml"
 }
 
@@ -85,7 +93,9 @@ for list in no-framework-in-parts parts-pure; do
     printf '%s' "$minus" | grep -qxF -- "$top" && listed=0
     isexcl=0
     excluded "$excl" "$rel" && isexcl=1
-    if [ "$listed" -eq 0 ] && [ "$isexcl" -eq 0 ]; then
+    if [ "$listed" -eq 0 ] && [ "$isexcl" -eq 0 ] && [ "$rel" = . ]; then
+      printf '  ✗ %s: tuikit 直下に package がある (files の形では表せない。部品はディレクトリに入れるか、この検査の外す表に理由つきで載せる)\n' "$list"; fail=1
+    elif [ "$listed" -eq 0 ] && [ "$isexcl" -eq 0 ]; then
       printf '  ✗ %s: %s がリストにも外す表にも無い (.golangci.yml の %s の files に足すか、この検査の外す表に理由つきで載せる)\n' "$list" "$rel" "$list"; fail=1
     elif [ "$listed" -eq 1 ] && [ "$isexcl" -eq 1 ]; then
       printf '  ✗ %s: %s はリストに入っているのに外す表にもある (どちらかにする)\n' "$list" "$rel"; fail=1
