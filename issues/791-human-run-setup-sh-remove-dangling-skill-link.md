@@ -27,3 +27,11 @@ bash tests/claude/test_dangling_symlinks.sh; echo rc=$?   # rc=0
   出ていないかを、検査の出力ごと貼る (検査は `$HOME` 直下・`~/.claude`・`~/.config` の、`~/dotfiles` を指す dangling を全部見る)
 
 確認が済んだら done へ移す。
+
+## 結果 (2026-10-16)
+
+ユーザーの許可を受けて、セッションが `~/dotfiles` で `./setup.sh` を回した (rc=0)。
+
+- 出力: `removing dangling symlink /Users/koji/.claude/skills/product-events`
+- `ls -la ~/.claude/skills/product-events` → `No such file or directory`
+- `bash tests/claude/test_dangling_symlinks.sh` → rc=0 (`OK: dotfiles 由来の dangling symlink なし`)
