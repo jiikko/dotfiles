@@ -195,6 +195,9 @@ func (m *Model) takeObserve() {
 func (m *Model) applyObserve(p setup.PeerNet) {
 	su := m.su
 	su.obs, su.seen, su.ch, su.stop = p, true, nil, nil
+	if p.KeyErr != nil { // 画面には状態の行で出す。理由の全文 (ssh の stderr) は一覧に残す (行は幅で切れる)
+		m.record("相手を読めない ("+su.host+"): "+p.KeyErr.Error(), false)
+	}
 	// 未確認の固定 IP は、期限の後に始めた観測で解く (相手は元に戻っているか、確認されて新しい IP のまま: どちらも観測が正しい)
 	// 読めなかった観測 (届かない・netinfo の失敗) では解かない: 次の観測で読み直す (解くと、後で固定が見えても試した番号が外れなかった。敵対レビュー)
 	if dl, ok := m.unconf[su.host]; ok && su.obsAt.After(dl) && p.NetKnown {
@@ -410,6 +413,8 @@ func (m *Model) keySetup(key string) Action {
 	case "r":
 		m.observe()
 		m.note("読み直している", true)
+	case "e":
+		m.openLog()
 	case "x":
 		if m.su.ch != nil && m.conf() == nil { // 確認待ちの間は観測を待たない (確認は観測を使わず、待つ分だけ窓を削った)
 			m.note("相手を読んでいる (少し待ってから)", false)

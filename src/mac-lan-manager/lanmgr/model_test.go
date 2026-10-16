@@ -20,6 +20,7 @@ import (
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/prefs"
+	"mac-lan-manager/setup"
 )
 
 func TestMain(m *testing.M) { widthenv.ExitIfUnsupported(); m.Run() }
@@ -1623,5 +1624,50 @@ func TestUnknownUserRefusesShell(t *testing.T) {
 	h.keys("enter")
 	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "既定 (koji)") {
 		t.Errorf("空にしたときに使う既定の名前を知らせない: %+v", n)
+	}
+}
+
+// 知らせは e のメッセージ一覧に残り (新しいものが上)、y で選んだ 1 件を、Y で全部を、切らずにコピーする。相手を読めなかった理由
+// (ssh の stderr) は toast にせず一覧にだけ残す。件数は上限で古いものから捨てる (ユーザー要望 2026-10-16)。
+func TestMessageLogCopies(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini})
+	h.keys("s") // この Mac の行: 断りの知らせ
+	h.m.TakeNotices()
+	long := "exit status 255: " + strings.Repeat("Host key verification failed. ", 10)
+	h.m.note(long, false)
+	h.keys("e")
+	if h.m.ov != ovLog {
+		t.Fatalf("e で一覧が開かない (ov=%v)", h.m.ov)
+	}
+	if v := strings.Join(h.m.View(), "\n"); !strings.Contains(v, "メッセージ一覧  2 件") {
+		t.Errorf("一覧の板が出ない")
+	}
+	h.keys("y")
+	if len(h.copied) != 1 || !strings.HasSuffix(h.copied[0], long) || !strings.Contains(h.copied[0], "✗") {
+		t.Fatalf("最新の 1 件を全文でコピーしない: %q", h.copied)
+	}
+	h.keys("j", "y")
+	if len(h.copied) != 2 || strings.Contains(h.copied[1], long) {
+		t.Errorf("j で選んだ 1 件をコピーしない: %q", h.copied)
+	}
+	h.keys("Y")
+	if got := h.copied[len(h.copied)-1]; strings.Count(got, "\n") != 3 || !strings.HasPrefix(got[9:], "✗ この Mac") || strings.Count(got, long) != 1 {
+		t.Errorf("Y で全部 (古い順) をコピーしない: %q", got)
+	}
+	h.keys("esc")
+	for i := range logCap + 5 {
+		h.m.note(fmt.Sprint(i), true)
+	}
+	if len(h.m.log) != logCap || h.m.log[len(h.m.log)-1].text != fmt.Sprint(logCap+4) {
+		t.Errorf("上限で古いものから捨てない: %d 件", len(h.m.log))
+	}
+
+	obs := &setup.PeerNet{KeyErr: fmt.Errorf("%w: exit status 255: ssh: connect to host 192.168.50.7 port 22: Operation timed out", setup.ErrUnknown)}
+	h2, _ := setupHarness(t, obs)
+	if n := h2.m.TakeNotices(); slices.ContainsFunc(n, func(x Notice) bool { return strings.Contains(x.Text, "Operation timed out") }) {
+		t.Errorf("相手を読めない理由を toast にも出した: %+v", n)
+	}
+	if !slices.ContainsFunc(h2.m.log, func(e logEntry) bool { return strings.Contains(e.text, "Operation timed out") }) {
+		t.Error("相手を読めない理由 (全文) を一覧に残さない")
 	}
 }

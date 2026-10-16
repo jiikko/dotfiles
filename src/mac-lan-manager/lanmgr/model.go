@@ -94,6 +94,7 @@ const (
 	ovNone    overlay = iota
 	ovConfirm         // y/N (台帳への登録・削除)
 	ovCopyIP          // この Mac の IP のどれをコピーするか
+	ovLog             // メッセージ一覧 (msglog.go)
 	ovAlias           // 台帳の欄 (別名 / ユーザー名) の入力欄
 	ovHelp            // 全部のキー
 )
@@ -135,8 +136,11 @@ type Model struct {
 	filtering bool `layer:"filter"`
 	alias     lineedit.Line
 	edit      hostEdit // 入力欄で書き換えている台帳の欄 (別名 / ユーザー名)
-	band      lineedit.Line
-	bandEdit  bool `layer:"band"`
+	// log はメッセージ一覧 (古い順。msglog.go)。logC は一覧のカーソル (0 が最新)、logRows / logOffPrev は描いた窓
+	log                       []logEntry
+	logC, logRows, logOffPrev int
+	band                      lineedit.Line
+	bandEdit                  bool `layer:"band"`
 
 	self      netinfo.Snapshot
 	selfErr   error
@@ -277,7 +281,10 @@ func (m *Model) applyNetLoad(r netLoad) {
 	m.netCh, m.netCancel = nil, nil
 }
 
-func (m *Model) note(text string, ok bool) { m.notices = append(m.notices, Notice{text, ok}) }
+func (m *Model) note(text string, ok bool) {
+	m.notices = append(m.notices, Notice{text, ok})
+	m.record(text, ok)
+}
 
 // Resize は画面の大きさを伝える。
 func (m *Model) Resize(w, h int) {
@@ -378,7 +385,7 @@ func (m *Model) Binds(key string) bool {
 	if m.OwnsKeys() {
 		return true
 	}
-	return slices.Contains([]string{"s", "y", "Y", "o", "m", "u", "c", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
+	return slices.Contains([]string{"s", "y", "Y", "o", "m", "u", "e", "c", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
 		listnav.MotionOf(key) != listnav.None
 }
 
@@ -762,6 +769,8 @@ func (m *Model) HandleInput(key, text string) Action {
 		return None // 知らないキーはすべて取り消し (§4)
 	case ovCopyIP:
 		return m.keyCopyIP(key)
+	case ovLog:
+		return m.keyLog(key)
 	case ovAlias:
 		return m.keyAlias(key, text)
 	case ovHelp:
@@ -899,13 +908,18 @@ func (m *Model) keyList(key string) Action {
 		return Exec
 	case "m": // 名前の変更 (treefiler と同じ動詞)
 		m.openEdit(r, aliasEdit, r.alias)
+	case "e": // メッセージ一覧 (msglog.go)
+		m.openLog()
 	case "u": // ssh のユーザー名 (台帳の user)。欄は台帳の値で開く (推測の名前で開くと、そのまま enter で台帳に固定された。敵対レビュー)
 		m.openEdit(r, userEdit, r.user)
 	}
 	return None
 }
 
-func (m *Model) copy(s, note string) {
+func (m *Model) copy(s, note string) { m.copyAs(s, s+note) }
+
+// copyAs は s をコピーし、知らせには shown を出す (メッセージ一覧の全文を知らせへ写すと、一覧が同じ本文で埋まった)。
+func (m *Model) copyAs(s, shown string) {
 	if m.o.Copy == nil {
 		return
 	}
@@ -913,7 +927,7 @@ func (m *Model) copy(s, note string) {
 		m.note("コピーできない: "+err.Error(), false)
 		return
 	}
-	m.note("コピーした: "+s+note, true)
+	m.note("コピーした: "+shown, true)
 }
 
 // askLedger は台帳への登録 / 削除の確認を出す (どちらも y/N。§4)。
