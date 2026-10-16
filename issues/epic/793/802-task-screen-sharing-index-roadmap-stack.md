@@ -42,8 +42,24 @@
 - **B3 — macOS の版と Apple silicon (796)**: 高性能モードは両方の Mac が Apple silicon・Sonoma 14 以降。rootshell-vnc のパッケージは macOS 15 以降。
   手元は macOS 27.0.1 (2026-10-16 に `sw_vers`)。**相手の各 Mac の版とチップは未確認** (m1prombp は名前から M1 と推定)
 - ~~B4 — 置き場所~~ → **ユーザー決定 (2026-10-16): ソースは別の repo にする。private**。dotfiles には issue (この epic) だけを置く。
-  repo の名前と、issue を新しい repo へ移すかは未定
+  repo の名前と、issue を新しい repo へ移すかは未定。**repo は仕様を詰め終えるまで作らない** (ユーザー指示 2026-10-16)
 - B5 (軽い) — 747 側の改修: `open vnc://…` をこのアプリの URL scheme に替える (797)。747 の担当と合わせる
+
+## アプリ名の候補 (2026-10-16。repo の名前もこれに合わせる)
+
+決めていない。App Store・GitHub・商標で同じ名前が使われていないかは**未確認** (決める前に確かめる)。
+
+| 候補 | 由来 |
+|---|---|
+| **Hopscreen** | 画面から画面へ跳ぶ (ショートカットで接続先を切り替える) |
+| **Switchyard** | 操車場。何台もの Mac を繋いだまま置いておき、行き先を切り替える |
+| **Fleetglass** | 手元の Mac の群れ (fleet) を、ガラス越しに眺めて触る |
+| **Mado** | 窓 (日本語)。相手の Mac への窓。短い |
+| **Madoguchi** | 窓口。一覧から相手を選んで繋ぐ入口 |
+| **Paneshift** | 画面 (pane) をずらして切り替える |
+| **Tetherdesk** | 繋ぎっぱなし (tether) の机 (desktop) |
+| **Lanview** | 内部の網 (LAN、747) の Mac を見る。747 (mac-lan-manager) と対になる名前 |
+| **Multimac** | 複数の Mac を同時に。説明的で分かりやすいが、Mac を名前に入れると App Store の審査で問われうる (未確認) |
 
 ## 技術スタック (案。2026-10-16 の調査。確かめたものは出典つき)
 
