@@ -167,8 +167,8 @@ func TestStaticIPConfirmMustComeViaNewIP(t *testing.T) {
 			}
 			cmd := runSh(t, path, "cd "+Quote(dir)+" && "+s.Script())
 			waitFor(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
-			if err := runSh(t, path, s.ConfirmCommand(), env).Wait(); err != nil {
-				t.Fatal(err)
+			if err := runSh(t, path, s.ConfirmCommand(), env).Wait(); err == nil {
+				t.Error("受け取られなかった確認が 0 で戻った")
 			}
 			if err := cmd.Wait(); err != nil {
 				t.Fatal(err)
@@ -507,5 +507,21 @@ func TestStaticIPLockPidReuse(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "rm -rf") {
 		t.Errorf("生きている持ち主の lock を断らない / 外し方を出さない: err=%v out=%q", err, out)
+	}
+}
+
+// 相手の待ちが終わった後 (期限切れで戻した後) の確認は、印を書けても非 0 で戻り、印を残さない
+// (印は lock の外に置くので書けてしまい、0 で戻ると元に戻った相手を確認済みとして扱った。敵対レビュー)。
+func TestStaticIPConfirmAfterWindowFails(t *testing.T) {
+	dir, path := sandbox(t)
+	s := staticIP(t, dir)
+	if err := runSh(t, path, s.Script()).Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runSh(t, path, s.ConfirmCommand(), viaNewIP).Wait(); err == nil {
+		t.Error("待ちが終わった後の確認が 0 で戻った")
+	}
+	if _, err := os.Stat(s.ConfirmPath()); err == nil {
+		t.Error("受け取られなかった印が残った")
 	}
 }

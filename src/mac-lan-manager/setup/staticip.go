@@ -190,6 +190,15 @@ func (s StaticIP) RemoteCommand() string {
 // 中身は相手の sh が展開する $SSH_CONNECTION ("<送った側> <port> <受けた側> <port>") で、Script は受けた側が新しい IP であることを
 // 確かめる (sudo は環境を引き継がないので、値は sudo の外で読んで引数で渡す)。🚨 相手のログインシェルが sh / bash / zsh である前提
 // (fish では `c=` が、tcsh では引用の中の書き方が通らない)。
+//
+// 印を書いて終わりにしない: Script は認めた印を消すので、消えるまで ConfirmWait 待ち、消えなければ印を消して非 0 で抜ける。
+// 印は lock の外に置くので、相手の待ちが終わった後 (期限切れで戻した後・最後の検査と戻しの間) でも書けて 0 で戻り、元に戻った相手を
+// 確認済みとして扱った (敵対レビュー)。待ちの終わりと同時に読まれた印を消して非 0 にすることはありうる (確認していない側に倒れる)
 func (s StaticIP) ConfirmCommand() string {
-	return `c="$SSH_CONNECTION"; sudo sh -c 'umask 077; printf "%s\n" "$1" > "$2"' _ "$c" ` + Quote(s.ConfirmPath())
+	return `c="$SSH_CONNECTION"; sudo sh -c 'umask 077; printf "%s\n" "$1" > "$2" || exit 1; i=0; while [ -e "$2" ]; do ` +
+		`if [ "$i" -ge "$3" ]; then rm -f "$2"; echo "mac-lan-manager: 相手が確認を受け取らなかった (期限が過ぎて元に戻ったか、新しい IP に届いていない)" >&2; exit 1; fi; ` +
+		`sleep 1; i=$((i+1)); done' _ "$c" ` + Quote(s.ConfirmPath()) + fmt.Sprintf(" %d", int(ConfirmWait/time.Second))
 }
+
+// ConfirmWait は確認の印が相手の待ちに受け取られるまで待つ長さ (Script は 1 秒ごとに印を見る)。
+const ConfirmWait = 3 * time.Second
