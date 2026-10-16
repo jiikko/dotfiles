@@ -77,7 +77,7 @@ func setSelfStatic(m *Model) {
 	awaitNetLoad(m) // 走っている読み直し (手順から戻ったときのもの) が後から届いて上書きしないように、先に取り込む
 	for i := range m.self.Services {
 		if m.self.Services[i].Device == "en13" {
-			m.self.Services[i].Method, m.self.Services[i].IP = "manual", "192.168.100.10"
+			m.self.Services[i].Method, m.self.Services[i].IP = "manual", "169.254.100.10"
 		}
 	}
 	snap := m.self
@@ -121,7 +121,7 @@ func TestSetupWalksAllSteps(t *testing.T) {
 	awaitSetup(h.m)
 
 	argv = runStep(t, h, nil)
-	if len(argv) < 6 || argv[0] != "sudo" || argv[3] != "Thunderbolt Ethernet" || !strings.HasPrefix(argv[4], "192.168.100.") {
+	if len(argv) < 6 || argv[0] != "sudo" || argv[3] != "Thunderbolt Ethernet" || !strings.HasPrefix(argv[4], "169.254.100.") || argv[5] != "255.255.0.0" {
 		t.Fatalf("この Mac の固定 IP = %q", argv)
 	}
 	setSelfStatic(h.m)
@@ -131,7 +131,7 @@ func TestSetupWalksAllSteps(t *testing.T) {
 		t.Fatalf("相手の固定 IP = %q", argv)
 	}
 	c := h.m.conf()
-	if c == nil || c.static.IP == "192.168.100.10" || !strings.HasPrefix(c.static.IP, "192.168.100.") {
+	if c == nil || c.static.IP == "169.254.100.10" || !strings.HasPrefix(c.static.IP, "169.254.100.") {
 		t.Fatalf("確認待ちにならない・この Mac と同じ IP を選んだ: %+v", c)
 	}
 	if st, _ := nextStep(h.m.setupSteps()); st.ID != stepConfirm {
@@ -190,7 +190,7 @@ func TestSetupRefusals(t *testing.T) {
 	if h.m.ov != ovNone {
 		t.Fatal("止まっている手順で確認の板を出した")
 	}
-	h.m.pf.Band = "192.168.100.0/24"
+	h.m.pf.Band = "169.254.100.0/24"
 	h.m.su.ch = make(chan setup.PeerNet) // 読み込み中
 	h.keys("x")
 	if h.m.ov != ovNone {
@@ -361,14 +361,23 @@ func TestSetupGuards(t *testing.T) {
 	if st, _ := nextStep(steps); st.ID != setup.StepKey || st.Blocked != "" {
 		t.Errorf("鍵の手順 (169.254 で入る) が先に来ない: %+v", st)
 	}
-	if i := slices.IndexFunc(steps, func(s setup.Step) bool { return s.ID == setup.StepSelfStatic }); i < 0 || !strings.Contains(steps[i].Blocked, "Wi-Fi") {
-		t.Errorf("Wi-Fi で入れない相手でこの Mac の固定を止めない: %+v", steps)
+	selfStep := func() setup.Step {
+		steps := h.m.setupSteps()
+		return steps[slices.IndexFunc(steps, func(s setup.Step) bool { return s.ID == setup.StepSelfStatic })]
+	}
+	// 帯が 169.254 の中 (既定) なら止めない: マスクは /16 で、固定した後も 169.254 の相手と同じ網に居る
+	if st := selfStep(); st.Blocked != "" {
+		t.Errorf("169.254 の帯で、Wi-Fi で入れない相手のためにこの Mac の固定を止めた: %+v", st)
+	}
+	h.m.pf.Band = "192.168.100.0/24" // 169.254 の外の帯: 固定すると 169.254 の相手に届かなくなる
+	if st := selfStep(); !strings.Contains(st.Blocked, "Wi-Fi") {
+		t.Errorf("169.254 の外の帯で、Wi-Fi で入れない相手でこの Mac の固定を止めない: %+v", st)
 	}
 
-	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: "192.168.100.12"}
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: "169.254.100.12"}
 	h2, _ := setupHarness(t, obs)
 	setSelfStatic(h2.m)
-	h2.m.hosts = append(h2.m.hosts, ledger.Host{Host: "studio.local", LAN: "192.168.100.12"})
+	h2.m.hosts = append(h2.m.hosts, ledger.Host{Host: "studio.local", LAN: "169.254.100.12"})
 	h2.keys("x")
 	if h2.m.ov != ovNone {
 		t.Fatal("台帳の別の Mac と同じ内部 IP を書く確認の板を出した")
@@ -444,7 +453,7 @@ func TestSetupLedgerNeedsConfirm(t *testing.T) {
 	setSelfStatic(h.m)
 	h.keys("x", "y")
 	h.m.TakeExec()
-	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: "192.168.100.11"})
+	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: "169.254.100.11"})
 	h.m.ExecDone(exitCodeError{}) // 失敗で戻ったが、相手の上では変わっていた
 	awaitSetup(h.m)
 	h.keys("x")

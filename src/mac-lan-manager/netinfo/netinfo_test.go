@@ -319,3 +319,22 @@ func TestOfflineExcludesWireless(t *testing.T) {
 		t.Errorf("Offline = %+v (有線の en13 だけ)", off)
 	}
 }
+
+// 固定 IP のマスクは帯から決める。169.254 の中なら /16 (自動で 169.254 を付けた機器と同じ網に居る)、他は帯の長さ
+// (/24 に決め打ちしていたので、/16 の帯で番号が別の /24 に散ると届かなかった)。
+func TestMaskFor(t *testing.T) {
+	for band, want := range map[string]string{
+		"169.254.100.0/24": "255.255.0.0",
+		"192.168.100.0/24": "255.255.255.0",
+		"10.20.0.0/16":     "255.255.0.0",
+		"172.16.5.0/28":    "255.255.255.240",
+		"x":                "",
+	} {
+		if got := MaskFor(band); got != want {
+			t.Errorf("MaskFor(%q) = %q, want %q", band, got, want)
+		}
+	}
+	if !LinkLocalBand("169.254.100.0/24") || LinkLocalBand("192.168.100.0/24") {
+		t.Error("LinkLocalBand の判定が違う")
+	}
+}

@@ -307,6 +307,9 @@ func (m *Model) usedIPs() []string {
 	}
 	for _, r := range rows {
 		used = append(used, r.lanIP, r.mainIP)
+		for _, x := range r.others { // 他の I/F に見えた番号も避ける (固定の帯は 169.254 の中にあり、自動で付いた番号と同じ網に居る)
+			used = append(used, x.Addr)
+		}
 	}
 	return used
 }
@@ -330,13 +333,14 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		argv, err := setup.SelfStaticArgv(o.SelfService, ip)
+		mask := netinfo.MaskFor(o.Band)
+		argv, err := setup.SelfStaticArgv(o.SelfService, ip, mask)
 		if err != nil {
 			return nil, err.Error()
 		}
 		return &ask{title: "この Mac の有線を固定 IP にする", body: []string{
-			o.SelfService + " を " + ip + " / 255.255.255.0 (ルーター無し) にする。sudo のパスワードを聞く",
-			"🚨 この Mac の変更は自動では戻らない。ルーター無しの固定になるかは未確認 (issue 789)。戻すなら sudo networksetup -setdhcp " + setup.Quote(o.SelfService),
+			o.SelfService + " を " + ip + " / " + mask + " (ルーター無し) にする。sudo のパスワードを聞く",
+			"🚨 この Mac の変更は自動では戻らない。戻すなら sudo networksetup -setdhcp " + setup.Quote(o.SelfService),
 			"$ " + shellLine(argv),
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepKey:
@@ -362,7 +366,7 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		if err != nil {
 			return nil, "確認の印の名前を作れない: " + err.Error()
 		}
-		s, err := setup.PeerStatic(su.obs, ip, tok)
+		s, err := setup.PeerStatic(su.obs, ip, netinfo.MaskFor(o.Band), tok)
 		if err != nil {
 			return nil, err.Error()
 		}
@@ -371,7 +375,7 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 			return nil, err.Error()
 		}
 		return &ask{title: "相手の有線を固定 IP にする", body: []string{
-			su.obs.Service + " を " + ip + " / 255.255.255.0 (ルーター無し) にする。相手の sudo のパスワードを聞く",
+			su.obs.Service + " を " + ip + " / " + s.Mask + " (ルーター無し) にする。相手の sudo のパスワードを聞く",
 			fmt.Sprintf("変えた後 %d 秒以内に新しい IP で入り直して確認しないと、相手の上で元の設定 (%s) に戻る", int(setup.PeerWindow.Seconds()), s.Restore.Method),
 			"$ " + shellLine(argv),
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID, static: &s}, ""

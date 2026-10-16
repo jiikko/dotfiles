@@ -172,23 +172,23 @@ const (
 )
 
 // PeerStatic は相手の有線を ip にする 1 回分 (確認が来なければ今の設定へ戻す)。
-func PeerStatic(p PeerNet, ip, token string) (StaticIP, error) {
+func PeerStatic(p PeerNet, ip, mask, token string) (StaticIP, error) {
 	r := Restore{Method: p.Method}
 	if p.Method == "manual" {
 		r.IP, r.Mask, r.Router = p.IP, p.Mask, p.Router
 	}
-	s := StaticIP{Service: p.Service, IP: ip, Mask: "255.255.255.0", Restore: r, Token: token, Delay: PeerDelay, Window: PeerWindow}
+	s := StaticIP{Service: p.Service, IP: ip, Mask: mask, Restore: r, Token: token, Delay: PeerDelay, Window: PeerWindow}
 	return s, s.Validate()
 }
 
 // SelfStaticArgv はこの Mac の有線を ip にするコマンド (端末を明け渡して sudo のパスワードを聞く)。ルーターは渡さない
 // (ルーター無しになるかは issue 789 の 1 で確かめる)。
-func SelfStaticArgv(service, ip string) ([]string, error) {
-	s := StaticIP{Service: service, IP: ip, Mask: "255.255.255.0", Restore: Restore{Method: "DHCP"}, Token: "self-static", Window: time.Second}
+func SelfStaticArgv(service, ip, mask string) ([]string, error) {
+	s := StaticIP{Service: service, IP: ip, Mask: mask, Restore: Restore{Method: "DHCP"}, Token: "self-static", Window: time.Second}
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
-	return []string{"sudo", "networksetup", "-setmanual", service, ip, "255.255.255.0"}, nil
+	return []string{"sudo", "networksetup", "-setmanual", service, ip, mask}, nil
 }
 
 // KeyArgv は鍵 (~/.ssh/id_ed25519) が無ければ作り、相手へ置くコマンド (ssh-keygen はパスフレーズを、ssh-copy-id は相手のパスワードを聞く)。

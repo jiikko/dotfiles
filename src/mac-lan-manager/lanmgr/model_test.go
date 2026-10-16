@@ -163,8 +163,8 @@ var mini = discover.Peer{Host: "m2macmini.local", Instances: []string{"kojiのMa
 
 func TestRowsMergeLedgerAndBonjour(t *testing.T) {
 	h := newHarness(t, []ledger.Host{
-		{Host: "studio.local", User: "koji", LAN: "192.168.100.12", Alias: "studio"}, // 台帳にあるが見えていない
-		{Host: "m2macmini.local", User: "k2", LAN: "192.168.100.13", Alias: "mini"},  // 台帳にあり見えている
+		{Host: "studio.local", User: "koji", LAN: "169.254.100.12", Alias: "studio"}, // 台帳にあるが見えていない
+		{Host: "m2macmini.local", User: "k2", LAN: "169.254.100.13", Alias: "mini"},  // 台帳にあり見えている
 	}, []discover.Peer{mini, {Host: "kojis-macbook-air.local", Instances: []string{"air"}, VNC: true, Addrs: map[int]string{14: "192.168.50.44"}},
 		{Host: "kojiM3MacBook-Pro.local", SSH: true, VNC: true}}) // 自分自身も Bonjour に出る
 	rows := h.m.rows()
@@ -180,7 +180,7 @@ func TestRowsMergeLedgerAndBonjour(t *testing.T) {
 	}
 	m := byHost["m2macmini.local"]
 	// 台帳の内部 IP (固定) を Bonjour の 169.254 より優先し、Wi-Fi 側 (en0 = ルーターあり) はメインに分ける
-	if !m.managed || !m.seen || m.lanIP != "192.168.100.13" || m.mainIP != "192.168.50.7" || m.user != "k2" || m.alias != "mini" {
+	if !m.managed || !m.seen || m.lanIP != "169.254.100.13" || m.mainIP != "192.168.50.7" || m.user != "k2" || m.alias != "mini" {
 		t.Errorf("mini = %+v", m)
 	}
 	if s := byHost["studio.local"]; !s.managed || s.seen {
@@ -203,12 +203,12 @@ func TestTabsSplitManaged(t *testing.T) {
 }
 
 func TestSSHUsesLanIPAndHostKeyAlias(t *testing.T) {
-	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2", LAN: "192.168.100.13"}}, []discover.Peer{mini})
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2", LAN: "169.254.100.13"}}, []discover.Peer{mini})
 	if a := h.keys("j", "s"); a != Exec {
 		t.Fatalf("s = %v, want Exec", a)
 	}
 	r, ok := h.m.TakeExec()
-	want := []string{"ssh", "-o", "HostKeyAlias=m2macmini.local", "--", "k2@192.168.100.13"}
+	want := []string{"ssh", "-o", "HostKeyAlias=m2macmini.local", "--", "k2@169.254.100.13"}
 	if !ok || !slices.Equal(r.Argv, want) {
 		t.Errorf("argv = %v, want %v", r.Argv, want)
 	}
@@ -377,10 +377,15 @@ func TestSettingsToggleAndSave(t *testing.T) {
 func TestSelfLanByBandFindsFixedIP(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	s := selfNet()
-	s.Services[0].IP = "192.168.100.11"
-	s.IPs[1].Addr = "192.168.100.11"
+	s.Services[0].IP = "169.254.100.11"
+	s.IPs[1].Addr = "169.254.100.11"
 	h.m.self = s
-	if sl := h.m.selfLan(); sl.IP != "192.168.100.11" || sl.Unfixed {
+	// 帯は 169.254 の中にあるので、自動の番号が帯を引くことがある: 方式が手動でなければ未固定
+	if sl := h.m.selfLan(); sl.IP != "169.254.100.11" || !sl.Unfixed {
+		t.Errorf("DHCP で帯を引いた番号を固定と見た: %+v", sl)
+	}
+	s.Services[0].Method = "manual"
+	if sl := h.m.selfLan(); sl.IP != "169.254.100.11" || sl.Unfixed {
 		t.Errorf("selfLan = %+v", sl)
 	}
 }
@@ -522,8 +527,8 @@ func TestReloadStartsScanAtNow(t *testing.T) {
 // ルーターの無い I/F が 2 つある相手でも、内部 IP は描くたびに同じ (I/F の番号の小さい方)。map の順で選ぶと揺れる。
 func TestLanIPIsDeterministicAcrossIFs(t *testing.T) {
 	net := selfNet()
-	net.Services = append(net.Services, netinfo.Service{Name: "USB LAN", Device: "en14", Active: true, Method: "manual", IP: "192.168.100.2", Read: true})
-	two := discover.Peer{Host: "two.local", SSH: true, Addrs: map[int]string{168: "192.168.100.5", 32: "169.254.1.1"}}
+	net.Services = append(net.Services, netinfo.Service{Name: "USB LAN", Device: "en14", Active: true, Method: "manual", IP: "169.254.100.2", Read: true})
+	two := discover.Peer{Host: "two.local", SSH: true, Addrs: map[int]string{168: "169.254.100.5", 32: "169.254.1.1"}}
 	m := New(Options{
 		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
 		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{two}} },
@@ -675,7 +680,7 @@ func TestLoadingKeepsSelfSingleAndRefusesActions(t *testing.T) {
 		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{me, mini}} },
 		IfName:    func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
 		// x.local は台帳に内部 IP があるので、読み込み中でも行に IP が出る (ガードが無いと s がそこへ繋ぐ)
-		Ledger: &memStore{hosts: []ledger.Host{{Host: "me.local", User: "koji"}, {Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
+		Ledger: &memStore{hosts: []ledger.Host{{Host: "me.local", User: "koji"}, {Host: "x.local", User: "koji", LAN: "169.254.100.9"}}},
 		Now:    func() time.Time { return t0 },
 		User:   "koji",
 	})
@@ -772,7 +777,7 @@ func TestKeyAppliesFinishedNetLoad(t *testing.T) {
 	m := New(Options{
 		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil },
 		LocalHost: func() string { return "me.local" },
-		Ledger:    &memStore{hosts: []ledger.Host{{Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
+		Ledger:    &memStore{hosts: []ledger.Host{{Host: "x.local", User: "koji", LAN: "169.254.100.9"}}},
 		Now:       func() time.Time { return t0 },
 	})
 	for deadline := time.Now().Add(5 * time.Second); len(m.netCh) == 0; {
@@ -970,7 +975,7 @@ func TestSettingsCaretAndWindow(t *testing.T) {
 		if !ok || y < 0 || y >= len(lines) {
 			t.Fatalf("%v: キャレットが無い / 画面の外 (%d,%d)", size, x, y)
 		}
-		if line := termwidth.StripSGR(lines[y]); !strings.Contains(line, "192.168.100.0/24") {
+		if line := termwidth.StripSGR(lines[y]); !strings.Contains(line, "169.254.100.0/24") {
 			t.Errorf("%v: キャレットの行 %d が帯の入力欄でない: %q", size, y, line)
 		}
 		if x <= 0 || x >= size[0] {
@@ -1020,7 +1025,8 @@ func TestUnfixedBadge(t *testing.T) {
 		t.Error("帯に入る IP が無いのに「未固定」の札が無い")
 	}
 	s := selfNet()
-	s.IPs[1].Addr = "192.168.100.11"
+	s.Services[0].IP, s.Services[0].Method = "169.254.100.11", "manual"
+	s.IPs[1].Addr = "169.254.100.11"
 	h.m.self = s
 	if strings.Contains(termwidth.StripSGR(h.m.header(120)), "未固定") {
 		t.Error("帯に入る IP があるのに「未固定」の札を出した")
@@ -1091,7 +1097,7 @@ func TestSettingsFrameFitsHeight(t *testing.T) {
 // カーソルの行まで入らない高さは「高さが足りない」の画面になり、そこでも q は残る。
 func TestFooterKeepsActionKeys(t *testing.T) {
 	long := discover.Peer{Host: "long.local", Instances: []string{strings.Repeat("とても長い名前の Mac ", 6)}, SSH: true,
-		Addrs: map[int]string{14: "192.168.50.9", 27: "192.168.100.9"}}
+		Addrs: map[int]string{14: "192.168.50.9", 27: "169.254.100.9"}}
 	for _, w := range []int{minWidth, 44, 60, 100, 120, 200} {
 		for hgt := 10; hgt <= 24; hgt++ {
 			h := newHarness(t, nil, []discover.Peer{long, mini})
@@ -1120,7 +1126,7 @@ func TestFooterKeepsActionKeys(t *testing.T) {
 			if w >= 44 && !strings.Contains(last, "繋ぐ") {
 				t.Errorf("%dx%d: 最下行に動作のキー (s 繋ぐ) が無い: %q", w, hgt, last)
 			}
-			if !listHasRow(lines, "192.168.100.9") {
+			if !listHasRow(lines, "169.254.100.9") {
 				t.Errorf("%dx%d: 一覧の板にカーソルの行が無い:\n%s", w, hgt, view)
 			}
 		}
@@ -1332,7 +1338,7 @@ func TestEveryScreenFitsHeight(t *testing.T) {
 // 台帳の user / lan は手で書き換えうる。使えない形なら使わずに知らせ、ssh の引数にもクリップボードにも出さない
 // (user が "-oProxyCommand=…" だと ssh が option として読み、lan に "; echo" が付くとコピーした文字列にそのまま入った。監査の指摘)。
 func TestUnusableLedgerFieldsAreNotUsed(t *testing.T) {
-	bad := []ledger.Host{{Host: "m2macmini.local", User: "-oProxyCommand=touch /tmp/x", LAN: "192.168.100.13; echo pwn"}}
+	bad := []ledger.Host{{Host: "m2macmini.local", User: "-oProxyCommand=touch /tmp/x", LAN: "169.254.100.13; echo pwn"}}
 	h := newHarness(t, bad, []discover.Peer{mini})
 	notes := h.m.TakeNotices()
 	if len(notes) != 2 {
@@ -1372,18 +1378,18 @@ func TestUnusableLedgerFieldsAreNotUsed(t *testing.T) {
 	}
 }
 
-// 帯は読んだ形 (Masked) で保存する。"192.168.100.5/24" を入れても判定は "192.168.100.0/24" なので、保存・表示もそれにそろえる。
+// 帯は読んだ形 (Masked) で保存する。"169.254.100.5/24" を入れても判定は "169.254.100.0/24" なので、保存・表示もそれにそろえる。
 func TestBandIsSavedNormalized(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	h.keys(bandKeys()...)
 	for range 30 {
 		h.keys("backspace")
 	}
-	for _, r := range "192.168.100.5/24" {
+	for _, r := range "169.254.100.5/24" {
 		h.m.HandleInput(string(r), string(r))
 	}
 	h.keys("enter")
-	if len(h.saved) == 0 || h.saved[len(h.saved)-1].Band != "192.168.100.0/24" {
+	if len(h.saved) == 0 || h.saved[len(h.saved)-1].Band != "169.254.100.0/24" {
 		t.Errorf("保存した帯 = %+v", h.saved)
 	}
 }
@@ -1520,7 +1526,7 @@ func TestDisabledServiceIsNotUsedInModel(t *testing.T) {
 // u は台帳の ssh のユーザー名だけを変える (別名・内部 IP は触らない)。使えない名前 (先頭の - は ssh が option として読む) は
 // 書かずに入力欄を開いたまま断り、台帳に無い Mac には開かない (issue 747 の決定 2026-10-16)。
 func TestUserEditChangesOnlyUser(t *testing.T) {
-	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2", Alias: "mini", LAN: "192.168.100.13"}}, []discover.Peer{mini})
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2", Alias: "mini", LAN: "169.254.100.13"}}, []discover.Peer{mini})
 	typ := func(s string) {
 		for _, r := range s {
 			h.m.HandleInput(string(r), string(r))
@@ -1539,11 +1545,11 @@ func TestUserEditChangesOnlyUser(t *testing.T) {
 	h.m.alias.Reset()
 	typ("koji")
 	h.keys("enter")
-	if got := h.store.hosts[0]; got != (ledger.Host{Host: "m2macmini.local", User: "koji", Alias: "mini", LAN: "192.168.100.13"}) {
+	if got := h.store.hosts[0]; got != (ledger.Host{Host: "m2macmini.local", User: "koji", Alias: "mini", LAN: "169.254.100.13"}) {
 		t.Errorf("台帳 = %+v (ユーザー名だけを変える)", got)
 	}
 	if h.keys("s"); true {
-		if r, ok := h.m.TakeExec(); !ok || r.Argv[len(r.Argv)-1] != "koji@192.168.100.13" {
+		if r, ok := h.m.TakeExec(); !ok || r.Argv[len(r.Argv)-1] != "koji@169.254.100.13" {
 			t.Errorf("変えたユーザー名で繋がない: %v", r.Argv)
 		}
 	}
@@ -1676,5 +1682,22 @@ func TestMessageLogCopies(t *testing.T) {
 	}
 	if !slices.ContainsFunc(h2.m.log, func(e logEntry) bool { return strings.Contains(e.text, "Operation timed out") }) {
 		t.Error("相手を読めない理由 (全文) を一覧に残さない")
+	}
+}
+
+// 固定の帯は 169.254 の中にあるので、相手の内部 IP が固定かは台帳に書いた固定の番号で決める (台帳に無い 169.254 は自動割り当て)。
+func TestPeerLanFixedByLedger(t *testing.T) {
+	fixed := discover.Peer{Host: "m2macmini.local", Instances: []string{"mini"}, SSH: true, Addrs: map[int]string{27: "169.254.100.12"}}
+	auto := discover.Peer{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{27: "169.254.33.4"}}
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2", LAN: "169.254.100.12"}}, []discover.Peer{fixed, auto})
+	byHost := map[string]row{}
+	for _, r := range h.m.rows() {
+		byHost[r.host] = r
+	}
+	if !h.m.lanFixed(byHost["m2macmini.local"]) {
+		t.Error("台帳の固定の番号と同じ 169.254 を固定と見ない")
+	}
+	if h.m.lanFixed(byHost["air.local"]) {
+		t.Error("台帳に無い 169.254 を固定と見た")
 	}
 }

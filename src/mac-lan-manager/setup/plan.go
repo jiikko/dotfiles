@@ -61,7 +61,8 @@ func Plan(o Observed) []Step {
 		self.Blocked = "内部の網の帯が無いか使えない形 (, の設定で帯を決める。192.168.100.0/24 の形で /16〜/28)" // 帯が無いと「未固定」と誤った理由で止まった (fable の敵対レビュー)
 	case o.SelfService == "":
 		self.Blocked = "この Mac にルーターの無い有線のサービスが無い (ケーブル・アダプタを確かめる)"
-	case !self.Done && o.Peer.WifiIP == "":
+	case !self.Done && o.Peer.WifiIP == "" && !netinfo.LinkLocalBand(o.Band):
+		// 帯が 169.254 の中なら止めない: マスクは /16 で、固定した後も 169.254 の相手と同じ網に居る
 		// 相手に有線 (169.254) でしか入れないのに、この Mac を先に帯の固定 IP にすると、169.254 の相手に届かなくなる (敵対レビュー)
 		self.Blocked = "相手に Wi-Fi (メイン) で入れない。この Mac を先に固定すると有線の 169.254 の相手に届かなくなる (相手を Wi-Fi に繋ぐ)"
 	}

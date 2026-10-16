@@ -308,7 +308,7 @@ func (m *Model) columns() []col {
 	}
 	if m.pf.ShowLan {
 		cols = append(cols, col{"内部 IP", 18, func(r row) string {
-			if netinfo.IsLinkLocal(r.lanIP) {
+			if r.lanIP != "" && !m.lanFixed(r) {
 				return sWarn.Render(r.lanIP) // 自動割り当て (起動のたびに変わりうる。未固定)
 			}
 			return or(r.lanIP, "-")
@@ -509,7 +509,7 @@ func (m *Model) detail(r row, width int) string {
 	switch {
 	case r.lanIP == "":
 		lanState = sMuted.Render("内部の網に居ない")
-	case netinfo.IsLinkLocal(r.lanIP):
+	case !m.lanFixed(r):
 		lanState = pillWrn.Render("自動割り当て")
 	}
 	lines = append(lines, "")

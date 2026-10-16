@@ -122,7 +122,7 @@ func TestDestValidate(t *testing.T) {
 
 // 本番の値 (周期は既定の 1 秒) で組む待ちの形を固定する (テストは周期を縮めて走らせるので、既定の周期が変わっても他のテストは緑のまま)。
 func TestPeerStaticProductionTiming(t *testing.T) {
-	s, err := PeerStatic(PeerNet{Service: "Thunderbolt Ethernet", Method: "DHCP"}, "192.168.100.12", "tok-12345678")
+	s, err := PeerStatic(PeerNet{Service: "Thunderbolt Ethernet", Method: "DHCP"}, "192.168.100.12", "255.255.255.0", "tok-12345678")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestPeerStaticProductionTiming(t *testing.T) {
 // 各手順のコマンド: 相手を固定 IP にする ssh は端末を明け渡し (-t)、確認は新しい IP で入る。戻す先は今の設定 (DHCP / 手動の値)。
 func TestStepArgv(t *testing.T) {
 	p := PeerNet{KeyOK: true, NetKnown: true, Service: "Thunderbolt Ethernet", Method: "DHCP"}
-	s, err := PeerStatic(p, "192.168.100.12", "tok-12345678")
+	s, err := PeerStatic(p, "192.168.100.12", "255.255.255.0", "tok-12345678")
 	if err != nil || s.Restore.Method != "DHCP" || s.Window != PeerWindow {
 		t.Fatalf("PeerStatic = %+v %v", s, err)
 	}
@@ -157,10 +157,10 @@ func TestStepArgv(t *testing.T) {
 		t.Errorf("ConfirmArgv = %q %v", argv, err)
 	}
 	manual := PeerNet{Service: "TB", Method: "manual", IP: "10.0.0.5", Mask: "255.255.255.0", Router: ""}
-	if s, err := PeerStatic(manual, "192.168.100.12", "tok-12345678"); err != nil || s.Restore != (Restore{Method: "manual", IP: "10.0.0.5", Mask: "255.255.255.0"}) {
+	if s, err := PeerStatic(manual, "192.168.100.12", "255.255.255.0", "tok-12345678"); err != nil || s.Restore != (Restore{Method: "manual", IP: "10.0.0.5", Mask: "255.255.255.0"}) {
 		t.Errorf("手動の戻し先 = %+v %v", s.Restore, err)
 	}
-	if _, err := PeerStatic(PeerNet{Service: "TB", Method: "manual", IP: "10.0.0.5"}, "192.168.100.12", "tok-12345678"); err == nil {
+	if _, err := PeerStatic(PeerNet{Service: "TB", Method: "manual", IP: "10.0.0.5"}, "192.168.100.12", "255.255.255.0", "tok-12345678"); err == nil {
 		t.Error("マスクの分からない手動の設定を戻し先にした")
 	}
 	argv, err = KeyArgv(dest)
@@ -168,10 +168,10 @@ func TestStepArgv(t *testing.T) {
 		!strings.Contains(argv[2], "'HostKeyAlias=m2macmini.local'") {
 		t.Errorf("KeyArgv = %q %v", argv, err)
 	}
-	if argv, err := SelfStaticArgv("Thunderbolt Ethernet", "192.168.100.11"); err != nil || !slices.Equal(argv, []string{"sudo", "networksetup", "-setmanual", "Thunderbolt Ethernet", "192.168.100.11", "255.255.255.0"}) {
+	if argv, err := SelfStaticArgv("Thunderbolt Ethernet", "192.168.100.11", "255.255.255.0"); err != nil || !slices.Equal(argv, []string{"sudo", "networksetup", "-setmanual", "Thunderbolt Ethernet", "192.168.100.11", "255.255.255.0"}) {
 		t.Errorf("SelfStaticArgv = %q %v", argv, err)
 	}
-	if _, err := SelfStaticArgv("TB\nx", "192.168.100.11"); err == nil {
+	if _, err := SelfStaticArgv("TB\nx", "192.168.100.11", "255.255.255.0"); err == nil {
 		t.Error("改行を含むサービス名を通した")
 	}
 }

@@ -6,6 +6,7 @@ package netinfo
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 	"regexp"
 	"slices"
@@ -21,6 +22,28 @@ func ParseBand(s string) (netip.Prefix, error) {
 		return netip.Prefix{}, fmt.Errorf("帯が使えない: %q (192.168.100.0/24 の形。/16〜/28)", s)
 	}
 	return p.Masked(), nil
+}
+
+// LinkLocalBand は帯がリンクローカル (169.254.0.0/16) の中か。
+func LinkLocalBand(band string) bool {
+	p, err := ParseBand(band)
+	return err == nil && p.Addr().IsLinkLocalUnicast()
+}
+
+// MaskFor は帯で固定 IP にするときのサブネットマスク。リンクローカルの中なら /16 (自動で 169.254 を付けた機器と同じ網に居て、
+// 固定していない Mac にも有線で届く。ユーザー決定 2026-10-16)、他は帯の長さ (/24 に決め打ちしていたので、/16 の帯で番号が別の /24 に
+// 散ると届かなかった)。帯が読めなければ ""。
+func MaskFor(band string) string {
+	p, err := ParseBand(band)
+	if err != nil {
+		return ""
+	}
+	bits := p.Bits()
+	if p.Addr().IsLinkLocalUnicast() {
+		bits = 16
+	}
+	m := net.CIDRMask(bits, 32)
+	return fmt.Sprintf("%d.%d.%d.%d", m[0], m[1], m[2], m[3])
 }
 
 // InBand は ip が帯に入るか。帯が読めない・ip が IP でなければ false。
@@ -182,7 +205,8 @@ func (k Kind) Key() string {
 // Kinds は種類の全部 (設定の読み替えと検査に使う)。
 var Kinds = []Kind{KindUnknown, KindWired, KindInternet, KindLinkLocal, KindVirtual, KindVPN}
 
-// IsLinkLocal は ip が自動割り当て (169.254.0.0/16。固定していない) か。判定はここ 1 か所 (5 か所に写っていた。監査の指摘)。
+// IsLinkLocal は ip がリンクローカル (169.254.0.0/16) か。固定の帯も 169.254 の中に置ける (既定) ので、これだけで「固定していない」とは
+// 決めない (固定かは方式か台帳で決める)。判定はここ 1 か所 (5 か所に写っていた。監査の指摘)。
 func IsLinkLocal(ip string) bool {
 	a, err := netip.ParseAddr(ip)
 	return err == nil && a.Is4() && a.IsLinkLocalUnicast()

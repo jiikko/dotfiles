@@ -538,6 +538,31 @@ type selfLanInfo struct {
 	Unfixed  bool
 }
 
+// lanFixed は行の内部 IP が固定か。固定の帯は 169.254 の中に置ける (既定) ので「169.254 なら未固定」とは決めない:
+// この Mac はサービスの方式、相手は台帳に書いた固定の番号 (初期設定で確かめてから書く) で決める。台帳に無い 169.254 は自動割り当てと見る
+// (相手の方式は Bonjour からは分からない)。169.254 でない番号は前から固定の扱い。
+func (m *Model) lanFixed(r row) bool {
+	switch {
+	case r.lanIP == "":
+		return false
+	case r.self:
+		return !m.selfLan().Unfixed
+	case r.ledgerLAN != "" && r.lanIP == r.ledgerLAN:
+		return true
+	}
+	return !netinfo.IsLinkLocal(r.lanIP)
+}
+
+// serviceMethod は dev のサービスの方式 ("manual" / "DHCP" / 分からなければ "")。
+func (m *Model) serviceMethod(dev string) string {
+	for _, s := range m.self.Enabled() {
+		if s.Device == dev {
+			return s.Method
+		}
+	}
+	return ""
+}
+
 func (m *Model) selfLan() selfLanInfo {
 	if m.pf.LanByBand {
 		if _, err := netinfo.ParseBand(m.pf.Band); err != nil {
@@ -545,7 +570,8 @@ func (m *Model) selfLan() selfLanInfo {
 		}
 		for _, x := range m.self.IPs {
 			if netinfo.InBand(m.pf.Band, x.Addr) {
-				return selfLanInfo{IP: x.Addr, Note: "帯 " + m.pf.Band}
+				// 帯に入っても、手動の固定でなければ未固定 (帯は 169.254 の中にあり、自動の番号が帯を引くことがある)
+				return selfLanInfo{IP: x.Addr, Note: "帯 " + m.pf.Band, Unfixed: m.serviceMethod(x.Device) != "manual"}
 			}
 		}
 		if off := m.self.Offline(); len(off) > 0 && off[0].IP != "" {
@@ -978,7 +1004,7 @@ func (m *Model) askLedger(r row) {
 			m.note(why, false)
 			return
 		}
-		if lan != "" && !netinfo.IsLinkLocal(lan) {
+		if lan != "" && m.lanFixed(r) {
 			h.LAN = lan
 		}
 		m.ask = &ask{title: "台帳に登録する", body: []string{
