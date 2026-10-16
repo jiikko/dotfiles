@@ -23,7 +23,8 @@
 - 高性能モードは相手の Mac に仮想ディスプレイ (1 枚か 2 枚、最大 4K) を作る ([Mac ユーザガイド](https://support.apple.com/guide/mac-help/mchl1883115d/mac)・
   [Apple](https://support.apple.com/guide/remote-desktop/apdf8e09f5a9/mac))
 - 再接続: rootshell-vnc は「Automatic reconnection with bounded exponential backoff and jitter」を持つ
-- 帯域: Apple は 4K の画面 1 枚で 75 Mbps を推奨。画面が変わらない間に何 Mbps 流れるかは未実測
+- 帯域: Apple は 4K の画面 1 枚で 75 Mbps を推奨。**アイドルに近い間の実測 (2026-10-16、標準アプリ)**: 高性能 1 本の映像で約 35 kbps、
+  標準 1 本で 0.4〜0.7 Mbps (800 の「実測」。画面が動けば増える。動いている間は未実測)
 
 ## 作り方の案
 
