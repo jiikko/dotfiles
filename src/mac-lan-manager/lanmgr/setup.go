@@ -51,7 +51,7 @@ func (m *Model) expireConfirms() {
 		}
 	}
 	for host, c := range m.pending {
-		if m.execSetup && m.execStep == stepConfirm && m.su != nil && m.su.host == host {
+		if m.execSetup && m.execStep == stepConfirm && m.execHost == host {
 			continue // 確認のプロセスから戻るのを待つ (端末を渡している間の tick が先に届き、間際の確認を期限切れにした。敵対レビュー)
 		}
 		if m.now.After(c.deadline) {
@@ -187,7 +187,8 @@ func (m *Model) applyObserve(p setup.PeerNet) {
 	su := m.su
 	su.obs, su.seen, su.ch, su.stop = p, true, nil, nil
 	// 未確認の固定 IP は、期限の後に始めた観測で解く (相手は元に戻っているか、確認されて新しい IP のまま: どちらも観測が正しい)
-	if dl, ok := m.unconf[su.host]; ok && su.obsAt.After(dl) {
+	// 読めなかった観測 (届かない・netinfo の失敗) では解かない: 次の観測で読み直す (解くと、後で固定が見えても試した番号が外れなかった。敵対レビュー)
+	if dl, ok := m.unconf[su.host]; ok && su.obsAt.After(dl) && p.NetKnown {
 		delete(m.unconf, su.host)
 		// 期限の後にまだ試した番号の手動の固定に見えるなら、相手の上で確定している (Script は確認が無ければ必ず戻す。
 		// 戻せないのは電源断・kill -9 だけで、そのときも相手はその番号にいる)

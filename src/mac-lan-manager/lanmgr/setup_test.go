@@ -544,6 +544,12 @@ func TestSetupListSpaceSkipsTriedIP(t *testing.T) {
 // 2 回目に別の番号を試した後も、1 回目に試して確認できなかった番号を一覧の space で台帳に書かない
 // (試した番号を 1 つしか持たず、2 回目で上書きされて 1 回目の守りが消えた。敵対レビュー)。
 func TestSetupTriedIPsSurviveRetry(t *testing.T) {
+	for _, confirm := range []bool{true, false} {
+		t.Run(fmt.Sprintf("2 回目を確認=%v", confirm), func(t *testing.T) { triedIPsSurviveRetry(t, confirm) })
+	}
+}
+
+func triedIPsSurviveRetry(t *testing.T, confirm bool) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
 	setSelfStatic(h.m)
@@ -565,7 +571,18 @@ func TestSetupTriedIPsSurviveRetry(t *testing.T) {
 	if c == nil || c.static.IP == first {
 		t.Fatalf("前提: 2 回目が別の番号にならない (%+v)", c)
 	}
-	expire(t1.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second))
+	second := c.static.IP
+	t2 := t1.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second)
+	if confirm {
+		runStep(t, h, nil) // 2 回目は確認する: 確認した番号だけを外す (集合ごと消すと 1 回目の守りも消えた)
+	} else {
+		runStep(t, h, errors.New("exit status 1")) // 確認は受け取られなかったと返ったが、相手は固定のまま
+		*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: second, Mask: "255.255.255.0"}
+	}
+	expire(t2)
+	if why := h.m.ledgerBlocked("m2macmini.local", second); why != "" {
+		t.Errorf("確定した 2 回目の番号 %s を台帳に書けない: %s", second, why)
+	}
 	h.keys("q")
 	h.m.sc = scList
 	h.m.Reload()
@@ -592,5 +609,30 @@ func TestSetupFixedAfterFailedConfirmCanLedger(t *testing.T) {
 	awaitSetup(h.m)
 	if why := h.m.ledgerBlocked("m2macmini.local", ip); why != "" {
 		t.Errorf("期限の後に固定が見えた相手を台帳に書けない: %s", why)
+	}
+}
+
+// 期限の後の最初の観測が読めなくても未確認の印を解かず、次に読めた観測で固定が見えれば試した番号を外す
+// (読めない観測で印を解き、後で固定が見えても試した番号が外れず、台帳に書けなくなった。敵対レビュー)。
+func TestSetupFailedObserveKeepsUnconf(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	runStep(t, h, nil)
+	ip := h.m.conf().static.IP
+	runStep(t, h, errors.New("exit status 1"))
+	*obs = setup.PeerNet{KeyErr: fmt.Errorf("%w: timeout", setup.ErrUnknown)}
+	at := t0.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second)
+	h.m.o.Now = func() time.Time { return at }
+	h.m.Advance(at)
+	awaitSetup(h.m)
+	if _, ok := h.m.unconf["m2macmini.local"]; !ok {
+		t.Fatal("読めなかった観測で未確認の印を解いた")
+	}
+	*obs = setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"}
+	h.keys("r")
+	awaitSetup(h.m)
+	if why := h.m.ledgerBlocked("m2macmini.local", ip); why != "" {
+		t.Errorf("読み直して固定が見えたのに台帳に書けない: %s", why)
 	}
 }
