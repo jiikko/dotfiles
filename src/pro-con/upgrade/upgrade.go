@@ -19,6 +19,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"subproc"
 )
 
 // BinaryName は shim が src/pro-con/ に置くバイナリの名前。
@@ -60,8 +62,7 @@ type Runner func(ctx context.Context, name string, args ...string) error
 
 // ExecRunner は本物の実行。
 func ExecRunner(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.WaitDelay = time.Second
+	cmd := subproc.CommandContext(ctx, name, args...)
 	return cmd.Run()
 }
 

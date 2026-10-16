@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -30,6 +29,8 @@ import (
 	"pro-con/dispatcher"
 	"pro-con/eventlog"
 	"pro-con/upgrade"
+
+	"subproc"
 )
 
 const (
@@ -263,8 +264,7 @@ func binaryLabel(start os.FileInfo) string {
 
 // runPreflight は新版のバイナリ exe を `dispatcher <args> --preflight` で起こし、記録を読めたら新版の名前を返す。
 func runPreflight(ctx context.Context, exe string, args []string) (string, error) {
-	cmd := exec.CommandContext(ctx, exe, append(append([]string{"dispatcher"}, args...), "--"+preflightFlag)...)
-	cmd.WaitDelay = time.Second
+	cmd := subproc.CommandContext(ctx, exe, append(append([]string{"dispatcher"}, args...), "--"+preflightFlag)...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	err := cmd.Run()

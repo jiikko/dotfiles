@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"pro-con/store"
+
+	"subproc"
 )
 
 // ExecLauncher は Launcher の本物。Claude は claude の実体の絶対パス (ResolveClaude。素の名前にしない = 464)。
@@ -139,12 +141,11 @@ func UserSettingsPath(home string) string {
 func runClaude(ctx context.Context, claude, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, launchTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, claude, args...)
+	cmd := subproc.CommandContext(ctx, claude, args...)
 	cmd.Dir = dir
 	cmd.Env = roleEnv(os.Environ())
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
-	cmd.WaitDelay = time.Second
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
 		// 起動できなかった (cmd.Process が無い: chdir の失敗・claude が無い) か、時間内に自分で rc≠0 を返したものだけが「立っていない」。

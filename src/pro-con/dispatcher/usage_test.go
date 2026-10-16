@@ -16,6 +16,7 @@ import (
 	"pro-con/eventlog"
 	"pro-con/store"
 	"ratelimit/usage"
+	"subproc"
 )
 
 // 2.1.287 の `claude -p /usage --output-format stream-json --verbose` の形 (2026-10-02 に実測。使用率は差し替えた)
@@ -378,7 +379,7 @@ func TestUsageCmd(t *testing.T) {
 		t.Fatalf("親の環境を引き継いでいない / Env が nil (親の TMUX がそのまま渡る): %d 個", len(cmd.Env))
 	}
 	want := []string{"/bin/claude", "-p", "--no-session-persistence", "--setting-sources", "", "--output-format", "stream-json", "--verbose", "/usage"}
-	if strings.Join(cmd.Args, "\x00") != strings.Join(want, "\x00") || cmd.Dir != "/state" || cmd.WaitDelay != time.Second {
+	if strings.Join(cmd.Args, "\x00") != strings.Join(want, "\x00") || cmd.Dir != "/state" || cmd.WaitDelay != subproc.WaitDelay {
 		t.Fatalf("args=%q dir=%q waitDelay=%v", cmd.Args, cmd.Dir, cmd.WaitDelay)
 	}
 	for _, e := range cmd.Env {

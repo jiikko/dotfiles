@@ -12,11 +12,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"subproc"
 )
 
 type Session struct {
@@ -187,9 +188,8 @@ func ExecRunnerAll(claude string) func(context.Context) ([]byte, []byte, error) 
 
 func execAgents(ctx context.Context, claude string, extra ...string) ([]byte, []byte, error) {
 	var out, errOut bytes.Buffer
-	cmd := exec.CommandContext(ctx, claude, append([]string{"agents", "--json"}, extra...)...)
+	cmd := subproc.CommandContext(ctx, claude, append([]string{"agents", "--json"}, extra...)...)
 	cmd.Stdout, cmd.Stderr = &out, &errOut
-	cmd.WaitDelay = time.Second
 	err := cmd.Run()
 	return out.Bytes(), errOut.Bytes(), err
 }

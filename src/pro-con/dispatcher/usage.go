@@ -26,6 +26,8 @@ import (
 
 	"pro-con/store"
 	"ratelimit/usage"
+
+	"subproc"
 )
 
 // Usage は利用枠の使用率 (%)。
@@ -100,10 +102,9 @@ func readUsage(ctx context.Context, claude, dir string) (Usage, error) {
 // 置くようになったら (apiKeyHelper / CLAUDE_CONFIG_DIR) PG と別の枠を読む。プロセスの環境の CLAUDE_CODE_PLUGIN_DIRS は
 // --setting-sources では落ちないので roleEnv で落とす (619)
 func usageCmd(ctx context.Context, claude, dir string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, claude, "-p", "--no-session-persistence", "--setting-sources", "", "--output-format", "stream-json", "--verbose", "/usage")
+	cmd := subproc.CommandContext(ctx, claude, "-p", "--no-session-persistence", "--setting-sources", "", "--output-format", "stream-json", "--verbose", "/usage")
 	cmd.Dir = dir // 空の project が 1 つだけできる (Claude Code が cwd ごとに memory の dir を作る)
 	cmd.Env = roleEnv(os.Environ())
-	cmd.WaitDelay = time.Second // 子孫が stdout を握ったままでも timeout で戻る (launcher と同じ)
 	return cmd
 }
 

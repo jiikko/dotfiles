@@ -4,14 +4,14 @@ import (
 	"context"
 	"io"
 	"os/exec"
-	"time"
+
+	"subproc"
 )
 
 // ExecStarter は本物の dns-sd を起こす Starter。読み手を Close するか ctx を取り消すと、そのプロセスを止めて待つ
 // (止めるのは自分が起こした pid だけ。名前で探して止めない)。
 func ExecStarter(ctx context.Context, name string, args ...string) (io.ReadCloser, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.WaitDelay = time.Second // 子が stdout を握ったまま残っても Wait が返る
+	cmd := subproc.CommandContext(ctx, name, args...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err

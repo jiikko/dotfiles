@@ -67,9 +67,8 @@ func resolveTool(ctx context.Context, dir, name string) (Tool, error) {
 			return Tool{}, fmt.Errorf("%s (%s) の実体が shim (%s) のまま", name, shim, p)
 		}
 	}
-	cmd := exec.CommandContext(ctx, p, "--version")
+	cmd := subproc.CommandContext(ctx, p, "--version")
 	cmd.Dir = dir
-	cmd.WaitDelay = time.Second
 	out, err := cmd.Output()
 	if err != nil {
 		return Tool{}, fmt.Errorf("%s --version: %w", p, err)

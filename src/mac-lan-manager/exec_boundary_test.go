@@ -12,10 +12,8 @@ import (
 func TestExecBoundary(t *testing.T) {
 	boundarycheck.Run(t, boundarycheck.Spec{
 		Root: ".",
-		Allow: map[string]string{
-			"discover/exec.go": "dns-sd を StdoutPipe で読み続ける Starter (Close で自分の pid だけを止める)。WaitDelay は 1 秒を自分で張る",
-		},
-		// 実測 2026-10-16: seen=1、enforced=1 (discover/exec.go だけ)。これ以上は減らせない (0 なら NoOsExec へ切り替える)
-		SeenFloor: 1, EnforcedFloor: 1,
+		// Cmd を自分で作ってよいファイルは無い。dns-sd の Starter (discover/exec.go) も issue 782 で subproc.CommandContext へ寄せた
+		// (WaitDelay は subproc の 2 秒。1 秒を選んだ理由は無かった)。os/exec は *exec.Cmd の型に要るので NoOsExec にはしない
+		Allow: map[string]string{},
 	})
 }
