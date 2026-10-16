@@ -7,7 +7,8 @@
 
 ## 今やること
 
-**段 0 の実測** (ユーザーの手。コードは書かない)。結果で段 1 以降の形が変わる。
+**段 0 の実測** (ユーザーの手。コードは書かない) と、別のマシンでの spike (repo `jiikko/screen-share-app` の `HANDOFF.md`。
+rootshell-vnc の CLI で 1 台、次に 2 台へ同時に高性能で繋ぐ。800 の B1 と 806 の残った問いに答える)。
 
 ## 目次 (着手する順)
 
@@ -39,7 +40,10 @@
 - **B3 — macOS の版と Apple silicon (796)**: 高性能モードは両方の Mac が Apple silicon・Sonoma 14 以降。rootshell-vnc のパッケージは macOS 15 以降。
   手元は macOS 27.0.1 (2026-10-16 に `sw_vers`)。**相手の各 Mac の版とチップは未確認** (m1prombp は名前から M1 と推定)
 - ~~B4 — 置き場所~~ → **ユーザー決定 (2026-10-16): ソースは別の repo にする。private**。dotfiles には issue (この epic) だけを置く。
-  repo の名前と、issue を新しい repo へ移すかは未定。**repo は仕様を詰め終えるまで作らない** (ユーザー指示 2026-10-16)
+  **2026-10-16 に作った: private repo `jiikko/screen-share-app` (`~/src/screen-share-app`)**。repo 名は仮で、製品名が決まったら揃える (ユーザー)。
+  別のマシンで開発を続けるため、引き継ぎのプロンプトを repo の `HANDOFF.md` に置き、issues/ の運用を入れた。中身は SwiftPM の骨組み
+  (rootshell-vnc 0.1.6 に依存する実行ファイル `ssa-probe`) だけで、spike はまだ書いていない (`swift build` も未実行)。
+  この Mac には Xcode が無い。epic 793 の issue は dotfiles に残している (移すかは未定)
 - B5 (軽い) — 747 側の改修: `open vnc://…` をこのアプリの URL scheme に替える (797)。747 の担当と合わせる
 
 ## アプリ名の候補 (2026-10-16。repo の名前もこれに合わせる)
