@@ -11,6 +11,7 @@ on:
     paths:
       - 'src/atomicfile/**'
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
+      - scripts/go_module_graph.sh   # 全プロジェクトの make lint が先に回す module グラフの検査 (issue 787)
       - .github/workflows/src_atomicfile.yml
       - .github/workflows/_go-project.yml
       - .github/go-version
@@ -18,6 +19,7 @@ on:
     paths:
       - 'src/atomicfile/**'
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
+      - scripts/go_module_graph.sh   # 全プロジェクトの make lint が先に回す module グラフの検査 (issue 787)
       - .github/workflows/src_atomicfile.yml
       - .github/workflows/_go-project.yml
       - .github/go-version

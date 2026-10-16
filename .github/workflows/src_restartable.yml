@@ -9,12 +9,16 @@ on:
       - .github/workflows/src_restartable.yml
       - .github/workflows/_go-project.yml
       - .github/go-version
+      - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
+      - scripts/go_module_graph.sh   # 全プロジェクトの make lint が先に回す module グラフの検査 (issue 787)
   pull_request:
     paths:
       - 'src/restartable/**'
       - .github/workflows/src_restartable.yml
       - .github/workflows/_go-project.yml
       - .github/go-version
+      - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
+      - scripts/go_module_graph.sh   # 全プロジェクトの make lint が先に回す module グラフの検査 (issue 787)
   workflow_dispatch:
 
 permissions:

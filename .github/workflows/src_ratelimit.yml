@@ -21,6 +21,7 @@ on:
       # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いている。
       - _claude/statusline-command.sh
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
+      - scripts/go_module_graph.sh   # 全プロジェクトの make lint が先に回す module グラフの検査 (issue 787)
       - .github/workflows/src_ratelimit.yml
       - .github/workflows/_go-project.yml
       - .github/go-version
@@ -38,6 +39,7 @@ on:
       # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いている。
       - _claude/statusline-command.sh
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
+      - scripts/go_module_graph.sh   # 全プロジェクトの make lint が先に回す module グラフの検査 (issue 787)
       - .github/workflows/src_ratelimit.yml
       - .github/workflows/_go-project.yml
       - .github/go-version

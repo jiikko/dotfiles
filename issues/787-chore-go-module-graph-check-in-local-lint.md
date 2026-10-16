@@ -49,5 +49,25 @@
 ## 進捗
 
 - [x] 反証レビュー (opus 1 本、2026-10-16): P1 2 件 (`make test` は `test-go-lint` まで回す / lint.yml は Go を持つ) を訂正、P2 (pre-push・既存の仕組み・CI の step を lint へ寄せる案) を案に足した、P3 (run ID) を訂正。反証できなかった: 5 回連続の赤とその step・module 数・issue 736 の引用
-- [ ] 置き場所を決める
-- [ ] 実装・変異 (replace を 1 行消して手元の入口が落ちることを見る)
+- [x] 置き場所: ユーザーが A を選んだ (2026-10-16)
+- [x] `scripts/go_module_graph.sh` を新設 (`go mod tidy -diff` → `go list -m all`。落ちたら足す replace と workflow の paths を案内する。`GOWORK=off GOFLAGS=-mod=readonly` に固定)。
+  23 個の `src/*/Makefile` の `lint:` の先頭から呼ぶ。CI の `_go-project.yml` の step「Module graph」は消し、Lint step (`make -C <dir> lint`) に寄せた。`src/README.md` のテンプレと `scripts/CLAUDE.md` を直した
+- [x] `scripts/check_go_project_lanes.sh` に不変条件 7 (lint の recipe が前置き・後ろ無しの 1 行で呼ぶ) と 8 (workflow の paths が `scripts/golangci_lint.sh` と `scripts/go_module_graph.sh` を含む) を足した。
+  23 本の `src_*.yml` の paths に `scripts/go_module_graph.sh` を足し、restartable だけ抜けていた `scripts/golangci_lint.sh` も足した
+- [x] テスト `tests/scripts/test_go_module_graph.sh`: fixture は a → b (replace あり) → c (b だけが replace を持つ) で、今日の落ち方 (go build と tidy は通り、`go list -m all` だけ落ちる) を写す。
+  replace の抜け / 揃った形 / tidy でない形 / go.mod 無し (rc=2) / 上の go.work / `GOFLAGS=-mod=vendor`
+- 変異で red を確認 (`mutate-verify`): `go list -m all` を外す → テストが red / pro-con の go.mod から mac-lan-manager の replace を消す → 本物の `make -C src/pro-con lint` が「go list -m all が rc=1」と案内つきで落ちる /
+  `GOWORK=off` を外す → 「go.work で素通りした」/ `GOFLAGS` を外す → 「-mod=vendor で落ちた」/ tuikit の呼び出しを `-` 前置・コメントアウトにする → 不変条件 7 が red / src_tuikit.yml の paths から消す → 不変条件 8 が red
+- 実測: `make test-lint` rc=0 / `make test-go-lint` rc=0 (23 module すべてで go_module_graph.sh が走った)
+
+### 敵対的レビュー (opus 1 本、2026-10-16)
+
+- P2 (採用): go.work があると素通りする (fixture で再現) → `GOWORK=off` に固定 + テスト
+- P2 (採用): workflow の paths に script が無く、script だけを変える push では実 module の lint が CI で 1 本も走らない → 23 本に足し、不変条件 8 で固定
+- P3 (採用): 不変条件 7 の awk がコメントアウト・`-` 前置・`|| true`・echo の中の文字列を通した → 前置き・後ろの無い 1 行に限った。検出しない形 (lint: の再定義・ifeq の片側) は script のコメントに書いた
+- P3 (採用): GOFLAGS=-mod=mod だと検査が go.sum を書き換える・-mod=vendor だと筋違いの red → `-mod=readonly` に固定 + テスト
+- P3 (採用): script の冒頭の「呼び忘れはテストが止める」は誤り → lanes の検査が止めると直した
+- P3 (記録): dot のある module 名 (chromecookie 等) の抜けは「malformed module path」の形で落ちないので案内が出ない (落ちることは変わらない。network の問い合わせで落ちる見込み、未確認)
+- 壊せなかった観点: CI の経路 (削った step と同じ cwd・同じコマンド。make 以外で src の lint を回す workflow は無い) / 並列 (tidy -diff は書かない・module cache はロックを持つ。負荷を掛けての確認はしていない)
+- レビュアーが `GOFLAGS=-mod=mod` で走らせた結果 worktree の go.sum が 9 行書き換わった (読み取りの約束の外)。差分を確かめて戻した
+- 残る穴 (前から): `check_go_project_lanes.sh` に fixture のテストが無く、検査そのものを壊す退行は repo の実物でしか見えない

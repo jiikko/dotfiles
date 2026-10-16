@@ -6,7 +6,7 @@
 # `wildcard src/*/go.mod` で解決済み (Makefile:392) だが、**CI の paths filter と
 # プロジェクト側の Makefile target は今も手で用意する**ので、同じ穴が残っている。
 #
-# 検査する不変条件 (src/*/go.mod を出典に、7 つ):
+# 検査する不変条件 (src/*/go.mod を出典に、8 つ):
 #   1. src/<name>/Makefile に lint: と test: の両方がある
 #      (Makefile の run_go_projects が `make -C <dir> lint` / `test` を呼ぶ)
 #   2. .github/workflows/src_<name>.yml がある (paths filter つきの薄い caller)
@@ -23,6 +23,7 @@
 #      引用符で囲んだ job id や with 以外のキーの下の dir: (後勝ちで上書きされる)・steps の中の uses。
 #      `dir: ./src/<name>` は動くが赤になる (安全側に倒す。今の書き方に揃える)
 #   7. src/<name>/Makefile の lint: の recipe が scripts/go_module_graph.sh を呼ぶ (go mod tidy -diff / go list -m all。issue 787)
+#   8. その workflow の paths が make lint の呼ぶ共有の script (scripts/golangci_lint.sh・scripts/go_module_graph.sh) を含む
 #
 # 🚨 検査できなかったときに緑を返さない。依存コマンド不在・発見 0 件はすべて失敗にする
 #   (`_claude/rules/adversarial-review-own-safeguards.md` の false green)。
@@ -262,8 +263,10 @@ while IFS= read -r name; do
     fi
   done
   # 7. lint の recipe が scripts/go_module_graph.sh を呼ぶ (replace の抜けは go build / go test / golangci-lint では落ちない。issue 787)。
-  #    見るのは lint: の行から、次のタブで始まらない行までの recipe
-  if ! awk '/^lint:/ { inl = 1; next } inl && !/^\t/ { inl = 0 } inl && /scripts\/go_module_graph\.sh/ { found = 1 } END { exit !found }' "$mk"; then
+  #    見るのは lint: の行から、次のタブで始まらない行までの recipe。呼び出しの行は前置き (@ / - = 失敗を無視) も後ろ (|| true・コメント) も
+  #    付けない形に限る (コメントアウト・失敗の無視・echo の中の文字列で通さない。敵対的レビュー 2026-10-16)。
+  #    検出しない形: lint: の再定義 (make は後の定義を使う)・ifeq の片側だけで呼ぶ形 (review の担当)
+  if ! awk '/^lint:/ { inl = 1; next } inl && !/^\t/ { inl = 0 } inl && /^\t\.\.\/\.\.\/scripts\/go_module_graph\.sh[ \t]*$/ { found = 1 } END { exit !found }' "$mk"; then
     printf '✗ %s: %s の lint: が ../../scripts/go_module_graph.sh を呼ばない (go.mod の replace の抜けを手元で止められない)\n' "$name" "$mk"; bad=$((bad + 1))
   fi
 
@@ -280,6 +283,13 @@ while IFS= read -r name; do
       printf '✗ %s: %s の %s.paths が src/%s/ を含まない (この変更では CI が走らない)\n' \
         "$name" "$wf" "$trig" "$name"; bad=$((bad + 1))
     fi
+    # 8. make lint が呼ぶ共有の script も paths に含む (含まないと、その script だけを変える push で実 module の lint が 1 本も走らない)
+    for shared in scripts/golangci_lint.sh scripts/go_module_graph.sh; do
+      if ! paths_has "$wf" "$shared" "$trig"; then
+        printf '✗ %s: %s の %s.paths が %s を含まない (make lint が呼ぶ共有の script。変えても CI の lint が走らない)\n' \
+          "$name" "$wf" "$trig" "$shared"; bad=$((bad + 1))
+      fi
+    done
   done
   # 6. CI が実際に検査する dir が src/<name> か
   gp_n=0

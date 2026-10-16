@@ -19,8 +19,8 @@ if ! command -v go >/dev/null 2>&1; then
   echo "skipped: go が無い (scripts/go_module_graph.sh は go を呼ぶ)"
   exit 77
 fi
-# 手元の go.work・GOFLAGS・proxy に左右されない (fixture は replace だけで閉じる)
-export GOWORK=off GOFLAGS='' GOPROXY=off GOTOOLCHAIN=local
+# fixture は replace だけで閉じる (proxy へ出ない)。GOWORK / GOFLAGS は落とさない: script が自分で固定することを下の 5・6 で見る
+export GOPROXY=off GOTOOLCHAIN=local
 
 # fixture を作る。$1 = a の go.mod に足す行
 mk() {
@@ -66,6 +66,17 @@ if [ "$rc" -eq 1 ] && grep -q 'go mod tidy -diff が rc=' <<<"$out"; then ok "ti
 mkdir -p "$TMP_DIR/nomod"
 run "$TMP_DIR/nomod"
 if [ "$rc" -eq 2 ]; then ok "go.mod の無い場所では rc=2"; else bad "go.mod の無い場所で rc=${rc}"; fi
+
+# 5. 上に go.work があっても素通りしない (workspace の module が replace の抜けを埋める。敵対的レビュー 2026-10-16 で再現)
+dir="$(mk work '')"
+printf 'go 1.24\n\nuse (\n\t./a\n\t./b\n\t./c\n)\n' > "$(dirname "$dir")/go.work"
+if (cd "$dir" && GOWORK='' go list -m all >/dev/null 2>&1); then ok "前提: go.work があると素の go list -m all は通る"; else bad "前提が崩れた: go.work があっても go list -m all が落ちる"; fi
+rc=0; out="$(cd "$dir" && GOWORK='' "$SCRIPT" 2>&1)" || rc=$?
+if [ "$rc" -eq 1 ] && grep -q '「c => ../c」' <<<"$out"; then ok "go.work があっても replace の抜けを止める"; else bad "go.work で素通りした (rc=${rc}):"; printf '%s\n' "$out"; fi
+
+# 6. 手元の GOFLAGS=-mod=vendor で筋違いの red にしない (script が -mod=readonly に固定する)
+rc=0; out="$(cd "$(mk vendor $'\nreplace c => ../c\n')" && GOFLAGS=-mod=vendor "$SCRIPT" 2>&1)" || rc=$?
+if [ "$rc" -eq 0 ]; then ok "GOFLAGS=-mod=vendor の手元でも揃った go.mod は通る"; else bad "GOFLAGS=-mod=vendor で落ちた (rc=${rc}):"; printf '%s\n' "$out"; fi
 
 # src/*/Makefile の lint が全部これを呼ぶことは scripts/check_go_project_lanes.sh (make test-lint) が止める
 
