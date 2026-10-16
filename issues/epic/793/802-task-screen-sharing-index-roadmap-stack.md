@@ -1,44 +1,34 @@
-# 802 (task): epic 793 の index — 子 issue の一覧・作業の順番・ブロッカー・技術スタック
+# 802 (task): epic 793 の目次 — 着手する順番・ブロッカー・技術スタック
 
 起票日: 2026-10-16
 
-> epic 793 の子。子 issue の地図と段取りの正本。各 issue の中身はそれぞれの本文が正本で、ここには写さない。
-> 子 issue を足したら、下の表と段取りに 1 行足す。
+> epic 793 の子。子 issue の目次と段取りの正本 (目次はここ 1 か所だけに置く)。各 issue の中身はそれぞれの本文が正本で、ここには写さない。
+> 子 issue を足したら、下の目次の着手する段に 1 行足す。
 
-## 子 issue の一覧
+## 今やること
 
-| issue | 何か | 状態 | 依存 |
-|---|---|---|---|
-| [794](794-research-macos-screen-sharing-client-feasibility.md) | 要件・なぜ自作するのか・わかっていること・着手前に決めること | 決めることが残る | — |
-| [795](795-research-app-store-distribution-and-third-party-apps.md) | App Store で出せるか / 他社アプリの仕組み | 決定済み: 自分で使うのが第一、出せるなら出す | — |
-| [796](796-feat-screen-sharing-hp-protocol-client.md) | 高性能モードで 1 台に繋ぐ芯 (接続・認証・映像・入力) | 未着手 | 794 の 4・6 |
-| [797](797-feat-screen-sharing-host-list.md) | 繋ぐ先の一覧 (747 から `open` で受け渡す) | 未着手 | 796・747 側の改修 |
-| [798](798-feat-screen-sharing-always-connected.md) | 常時接続・ショートカットで切り替え・ウインドウの大きさを覚える・相手のディスプレイの切り替え | 未着手 | 796・800 |
-| [799](799-feat-screen-sharing-modifier-keys-and-spaces.md) | 修飾キーと操作スペースの切り替えを相手へ送る | 未着手 | 796・下の B2 |
-| [800](800-research-screen-sharing-multiple-hp-sessions.md) | 複数の Mac に同時に高性能で繋げるか | 一部実測 (標準アプリでは 1 本が高性能、2 本目は標準) | — |
-| [801](801-feat-screen-sharing-ssh-side-channel-reactive.md) | 画面共有と並べて ssh を張り、相手の出来事を反映する (ユースケースの案つき) | 案 | 798・747 の鍵 |
-| [803](803-feat-screen-sharing-throttle-hidden-sessions.md) | 見えていない画面の負荷を下げる (隠れている間は frame rate を落とす) | 案 | 798・800 |
-| [805](805-design-screen-sharing-claude-pdca-debug-loop.md) | Claude Code がこのアプリを自分で動かして確かめ、直せる経路 (PDCA の C) | 案 (段 2 の前に決める) | — |
-| [804](804-feat-multi-mac-claude-code-dashboard.md) | 複数の Mac で走る Claude Code を 1 台から見渡して操作する | 案 (Go の TUI で先に試す道あり) | 801・各 Mac の tmux-pane-state.sh |
+**段 0 の実測** (ユーザーの手。コードは書かない)。結果で段 1 以降の形が変わる。
 
-## 作業の順番
+## 目次 (着手する順)
 
-段ごとに、前の段の結果で次の段の形が変わる。段 0 は作るより安い実測で、自作の意味を決める。
+段の順に進める。同じ段の中は並べてよい。「着手の条件」が揃うまで、その段の設計を固めない。
 
-1. **段 0 — 実測 (ユーザーの手で数分〜。コードは書かない)**
-   - 799: 標準アプリで MacBook Pro に繋いだまま ctrl+→ を押し、手元・相手・どちらも動かない、のどれかを見る (全画面でも) → B2
-   - 800: 体感の遅延を標準と高性能で撮り比べる (スマホのスローモーション)。標準で足りるなら B1 が軽くなる
-   - 800: 2 台に同時に高性能で繋げるか。一番安いのは iShareScreen を Terminal から 2 本 (動かすだけで、コードは写さない) → B1
-   - 800: 高性能に繋ぐまでの秒数と、標準と行き来したときに相手のウインドウが動くか → 「触っている Mac だけ高性能」の案が採れるか (B1 の回避策)
-2. **段 1 — 決める (ユーザー)**: ライセンスの道 (794 の 4。推奨は (c) rootshell-vnc)、系統 1 / 2 (B1 の結果次第。795)。
-   置き場所は決定済み (B4)。別の private の repo を作る (名前は未定)
-3. **段 2 — 芯 (796)**: rootshell-vnc を呼ぶ最小の macOS のアプリで、1 台に高性能で繋ぐ。ここで B3 も確かめる。
-   同時に、Claude が確かめる経路の 1・2 (画面を出さない CLI・構造化したログ。805) を入れる
-4. **段 3 — 使い勝手 (798・797・803)**: 常時接続・ショートカットでの切り替え・ウインドウの大きさを覚える・相手のディスプレイの切り替え・別ウインドウ・
-   見えていない画面の負荷を下げる。747 から `open` で受け渡す
-5. **段 4 — キー (799)**: アプリが前面の間だけ ctrl+→ などを止めて相手へ送る (手元でビルドする版だけ)
-6. **段 5 — ssh の副経路 (801・804)**。804 (Claude Code を見渡す) は、Swift のアプリを待たずに mac-lan-manager の Go の TUI で先に試せる
-7. **段 6 — App Store 版 (795)**: sandbox・entitlements・審査。手元の版が使えるようになってから
+| 段 | issue | やること | 誰が | 着手の条件 |
+|---|---|---|---|---|
+| 前提 | [794](794-research-macos-screen-sharing-client-feasibility.md) | 要件・なぜ自作するのか・わかっていること・決めることの正本 (読む) | — | — |
+| 前提 | [795](795-research-app-store-distribution-and-third-party-apps.md) | App Store の扱い (決定済み: 自分で使うのが第一、出せるなら出す) と他社アプリの仕組み (読む) | — | — |
+| **0** | [800](800-research-screen-sharing-multiple-hp-sessions.md) | 実測: 2 台に同時に高性能で繋げるか / 高性能に繋ぐまでの秒数と、標準と行き来したときに相手のウインドウが動くか / 標準と高性能の体感の遅延 | ユーザー | なし (今すぐ) |
+| **0** | [799](799-feat-screen-sharing-modifier-keys-and-spaces.md) | 実測: 標準アプリで ctrl+→ を押し、手元・相手・どちらも動かない、のどれかを見る (全画面でも) | ユーザー | なし (今すぐ) |
+| **1** | [794](794-research-macos-screen-sharing-client-feasibility.md) の 4 / [795](795-research-app-store-distribution-and-third-party-apps.md) | 決める: ライセンスの道 (推奨は rootshell-vnc)・相手に自作のサーバを置くか (系統 1 / 2)・アプリ名 (下の候補)・repo を作る時期 | ユーザー | 段 0 の 800 の結果 |
+| **1** | [805](805-design-screen-sharing-claude-pdca-debug-loop.md) | 決める: Claude が確かめる経路 (CLI・ログ・デバッグの口)・試験に使う Mac・verify の入口の名前 | ユーザー + Claude | なし |
+| **2** | [796](796-feat-screen-sharing-hp-protocol-client.md) | 作る: 1 台に高性能で繋ぐ芯。805 の 1・2 (画面を出さない CLI・ログ) を同時に入れる。B3 (相手の版とチップ) を確かめる | Claude | 段 1 の決定・別の repo |
+| **3** | [798](798-feat-screen-sharing-always-connected.md) | 作る: 常時接続・ショートカットでの切り替え・ウインドウの大きさを覚える・相手のディスプレイの切り替え・別ウインドウ | Claude | 796。複数台の設計は 800 の結果次第 |
+| **3** | [797](797-feat-screen-sharing-host-list.md) | 作る: 747 から `open` で受け渡す URL scheme (747 側の改修と合わせる) | Claude | 796 |
+| **3** | [803](803-feat-screen-sharing-throttle-hidden-sessions.md) | 作る: 見えていない画面の負荷を下げる | Claude | 798 |
+| **4** | [799](799-feat-screen-sharing-modifier-keys-and-spaces.md) | 作る: アプリが前面の間だけ ctrl+→ などを止めて相手へ送る (手元でビルドする版だけ) | Claude | 796。段 0 の 799 で相手側で効くと分かっていること |
+| **5** | [801](801-feat-screen-sharing-ssh-side-channel-reactive.md) | 作る: ssh の副経路 (ユースケースの 2・3 から) | Claude | 798 |
+| 別線 | [804](804-feat-multi-mac-claude-code-dashboard.md) | 複数の Mac の Claude Code を 1 台から見渡す。**Swift のアプリを待たずに mac-lan-manager の Go の TUI で先に試せる**。試すならいつでも着手できる | Claude | ユーザーが「Go の TUI で先に試す」と決めたら |
+| **6** | [795](795-research-app-store-distribution-and-third-party-apps.md) | App Store 版: sandbox・entitlements・審査 | Claude + ユーザー | 手元の版が使えるようになってから |
 
 ## ブロッカー
 

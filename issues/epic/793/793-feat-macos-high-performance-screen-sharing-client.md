@@ -16,7 +16,7 @@
 
 ## 子 issue
 
-**作業の順番・ブロッカー・技術スタックは [802](802-task-screen-sharing-index-roadmap-stack.md) (index) が正本。**
+**着手する順番の目次は [802](802-task-screen-sharing-index-roadmap-stack.md)。ブロッカー・技術スタックもそこが正本。**
 
 
 - [794](794-research-macos-screen-sharing-client-feasibility.md) — 要件・わかっていること・着手前に決めること
