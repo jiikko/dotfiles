@@ -59,6 +59,10 @@ func TestFitReservesExit(t *testing.T) {
 	if ShortestExit([]Item{{"x", 2}}) != "" {
 		t.Error("優先度 1 が無いのに出口を返した")
 	}
+	// 優先度 1 が無く 1 つも入らない極端な幅でも、無言にせず末尾の項目を返す (呼び出し側が幅で切る)
+	if got := Fit(1, "  ", []Item{{"aa", 2}, {"bb", 3}}); got != "bb" {
+		t.Errorf("1 つも入らない幅: %q (末尾の項目)", got)
+	}
 }
 
 // 優先度の値は飛んでいてもよい (1..7 に限らない。mac-lan-manager は 1..11 を使う)。

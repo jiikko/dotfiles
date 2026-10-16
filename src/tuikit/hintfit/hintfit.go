@@ -13,6 +13,7 @@ import (
 )
 
 // Item は案内の 1 項目。Prio は小さいほど残す (1 = 抜ける手段。同じ優先度は左を先に採る)。Text は SGR を含んでよい (幅は termwidth で測る)。
+// Prio は 1 以上にし、優先度 1 の Text は空にしない (空だと ShortestExit の「無い」と区別できず、席の予約が外れる)。
 type Item struct {
 	Text string
 	Prio int

@@ -917,7 +917,8 @@ func TestListTableFitsWidth(t *testing.T) {
 	}
 }
 
-// 最下行の案内は幅で落とすが、q (抜け方) は必ず残し、? (全部のキー) は最後まで残す (80 桁で ? が真っ先に消えた)。
+// 最下行の案内は幅で落とすが、q (抜け方) は必ず残し、? (全部のキー) は s より先に採る (80 桁で ? が真っ先に消えた)。
+// hintfit は入らない項目を飛ばして短い後続を入れるので、? が入らない狭い幅では、より短い s が入ることはある。
 func TestFooterKeepsHelpKey(t *testing.T) {
 	for _, w := range []int{60, 80, 100} {
 		h := newHarness(t, nil, nil)
