@@ -950,7 +950,7 @@ func (m *Model) askLedger(r row) {
 		}
 		m.ask = &ask{title: "台帳に登録する", body: []string{
 			r.host + " を管理対象にする (Mac には何もしない。初期設定は別)",
-			"user " + h.User + " / 内部 IP " + or(h.LAN, "-"),
+			"user " + or(h.User, "(無し。繋ぐときはこの Mac のユーザー名)") + " / 内部 IP " + or(h.LAN, "-"),
 		}, yes: func() Notice {
 			if err := m.o.Ledger.Upsert(h); err != nil {
 				return Notice{"登録できない: " + err.Error(), false}
