@@ -1,1 +1,0 @@
-../807-perf-make-test-go-duplicate-std-race-compiles.md
