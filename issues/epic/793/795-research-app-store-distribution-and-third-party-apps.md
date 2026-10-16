@@ -24,31 +24,50 @@
   than a generic mirror of the host device」
 - 🚨 **修飾キーの横取りは sandbox とぶつかる** (794 の 2):
   - Mac App Store のアプリは sandbox が必須 (ガイドライン 2.4.5 (i))
-  - Apple の DTS の回答 ([forums 707680](https://developer.apple.com/forums/thread/707680)・[789896](https://developer.apple.com/forums/thread/789896)):
-    sandbox のアプリはアクセシビリティの権限を使えない。CGEventTap でキーを**読む**のは入力監視の権限で、sandbox でもできる
-  - キーを**送る**側 (CGEvent.post) はアクセシビリティの権限 (kTCCServicePostEvent) が要る。それを使ったクリップボードのアプリが
-    2.4.5 で却下された例がある ([forums 820594](https://developer.apple.com/forums/thread/820594))。リモートのクライアントがキーを相手へ送るのは
-    ネットワーク越しなので CGEvent.post は要らないはず。問題は、手元の macOS が先に食う ctrl+←→ などを奪えるかで、入力監視のタップで
-    (読むだけでなく) 止められるかは未確認
-- 🚨 **AGPL の移植は App Store と相性が悪い** (794 の 4 の (a)): App Store の利用規約と GPL 系のライセンスがぶつかる、という見方が広く
-  知られている (FSF の立場。この issue ではまだ一次資料を確かめていない)。App Store で出すなら、(b) 書き直すか (c) MIT の rootshell-vnc の道になる
+  - Apple の DTS の回答 ([forums 820594](https://developer.apple.com/forums/thread/820594)・[789896](https://developer.apple.com/forums/thread/789896)・
+    [707680](https://developer.apple.com/forums/thread/707680)): 権限は 3 つある
+    - Accessibility (アクセシビリティ): 「not compatible with the App Sandbox」
+    - ListenEvent (入力監視。CGEventTap でキーを**読む**): sandbox で使える
+    - PostEvent (CGEvent.post でキーを**起こす**): sandbox で使える。設定の画面ではアクセシビリティの欄に出るが、別の権限
+      (「it doesn't give you complete accessibility access. It's just limited to posting events.」)
+  - リモートのクライアントがキーを相手へ送るのはネットワーク越しなので、PostEvent は要らない。問題は、手元の macOS が先に処理する
+    ctrl+←→ などを**止めて**手元で効かせないことができるか:
+    - 読むだけのタップ (`listenOnly`) はイベントを止められない。DTS の例もこの形 (707680:「We don't replace the event」)
+    - 止められるタップ (`defaultTap`) が sandbox の中で作れるかは、DTS も答えていない (未確認)。アクセシビリティの許可が要る、
+      sandbox の中では作れなかった、という利用者の報告はある ([forums 122492](https://developer.apple.com/forums/thread/122492)。Apple の人ではない)。
+      **否の側に寄る**ので、App Store で出すなら、修飾キーの問題は直せない前提で考える
+  - PostEvent を使ったクリップボードのアプリが「アクセシビリティの機能をアクセシビリティ以外の目的に使っている」として 2.4.5 で 2 回
+    却下された例がある (820594。却下の文言は開発者の言い換えで、DTS は「I work for DTS, not App Review」)。技術的に使えることと、
+    審査が通ることは別
+- 🚨 **AGPL の移植は App Store と相性が悪い** (794 の 4 の (a)): FSF は 2010 年に、App Store の利用規約が GPLv2 とぶつかるとして
+  GNU Go を取り下げさせた ([FSF](https://www.fsf.org/news/2010-05-app-store-compliance)。VLC も同じ理由で外され、2013 年に MPL 2.0 との
+  二重ライセンスで戻った。[Computerworld](https://www.computerworld.com/article/1347653/gplv2-blocks-vlc-from-apple-s-app-store.html))。
+  AGPLv3 について FSF が明示した声明は見つからなかった。iShareScreen の権利者が異議を出すかどうかにもよる。
+  App Store で出すなら、(b) 書き直すか (c) MIT の rootshell-vnc の道が安全
 - Apple はプロトコルを公開していないので、macOS の更新で予告なく変わりうる。審査を通っても、後から壊れる
 - **自分の Mac だけで使うなら App Store は要らない**: 自分でビルドして署名すれば、sandbox も審査も外せる (アクセシビリティの権限も使える)。
-  App Store で出すかどうかで、取れる設計が変わる
+  App Store で出すかどうかで、取れる設計が変わる。ただし手元のビルドで ad-hoc 署名すると、ビルドし直すたびに権限の許可を付け直す手間が
+  出うる (未確認)
+- 新しく出すアプリは sandbox が必須。sandbox を採っていない App Store のアプリは、必須になる前から並んでいる古いものだけ (DTS、707680)
 
 ## 他社のアプリは何を話しているか (初期の答え: 大きく 2 つの系統。全部が VNC ではない)
 
 1. **Mac に最初から入っている画面共有のサーバ (screensharingd) と話す系統** — こちらは VNC (RFB) 
    - Screens 5 (名前も「VNC Remote Desktop」)、Jump Desktop の VNC の接続など。Edovia の案内は、相手の Mac で標準の画面共有を有効にする手順
      ([Edovia](https://help.edovia.com/en/screens-5/getting-started/prepare-mac-for-screen-sharing))
-   - RFB 自体は公開された仕様。Apple 独自の部分 (Apple Remote Desktop の認証方式など) は仕様が公開されておらず、各社や libvncserver などが
-     解析して実装している、と言われる (未確認。この issue ではまだ一次資料を確かめていない)
+   - RFB 自体は公開された仕様。Apple 独自の部分は、IANA の登録表で security type 30〜36 が Apple に割り当てられている
+     ([IANA](https://www.iana.org/assignments/rfb/rfb.xhtml))。その中身 (Apple Remote Desktop の認証。DH 鍵交換・MD5・AES-128) は
+     libvncclient の `rfbclient.c` (`HandleARDAuth`) が実装している。2020 年のフォーラムでも、公開の資料は 2011 年の解説だけだという
+     ([forums 654421](https://developer.apple.com/forums/thread/654421))。Apple が仕様を公開していないこと自体は確かめきれない
    - **高性能モード (HEVC・UDP) を話すものはまだ少ない**: rootshell-vnc / iShareScreen / remotex など、どれも解析による実装 (794)。
      Screens と Jump Desktop が高性能モードを話すという記述は見つからなかった
 2. **相手の Mac にも自社のアプリ (host agent) を入れてもらい、自社のプロトコルで話す系統** — Apple の仕組みを解析する必要が無い
-   - Jump Desktop の Fluid: 「Screen Sharing features require the free Jump Desktop Connect app」(App Store の説明)
-   - Parsec / AnyDesk / TeamViewer / RustDesk も同じ系統と思われる (この issue では一次資料を確かめていない)。
-     画面は ScreenCaptureKit で撮り、入力は相手の Mac の上で自分で起こす
+   - Jump Desktop の Fluid: 相手の Mac に Jump Desktop Connect を入れる (App Store の説明の「asking them to install the free Jump Desktop
+     Connect app」はリモートサポートの文脈。Fluid の画面共有に要るという逐語の文はまだ確かめていない)。同じページの VNC の節は
+     「Tested with macOS 10.5+」で、標準のサーバとも話す
+   - Parsec / AnyDesk / RustDesk も相手の Mac にアプリを入れ、画面収録とアクセシビリティの許可を求める
+     ([Parsec](https://support.parsec.app/hc/en-us/articles/4423549357837)・[AnyDesk](https://support.anydesk.com/knowledge/security-permissions-on-macos)・
+     [RustDesk](https://rustdesk.com/docs/pt/client/mac/))。自社のプロトコルで話すことの一次資料はまだ取っていない。TeamViewer は未調査
    - 794 の要件に当てると、この系統なら「1 本まで」も「画面の暗転」も Apple の制約ではなくなる。代わりに相手の Mac に自作の
      サーバを常駐させることになり、画面収録とアクセシビリティの権限が要る
 
@@ -57,4 +76,15 @@
 - [ ] App Store で出したいのか、自分の Mac で使えればよいのか (ユーザーに聞く。794 の設計の分かれ目)
 - [ ] 794 の方針として、系統 1 (Apple のサーバと話す) と系統 2 (自作のサーバを相手に置く) のどちらを取るか。
   系統 2 は 794 の 1 と 3 の制約を外せるが、作る量が倍になる
-- [ ] 入力監視のタップで ctrl+←→ を止められるかを、sandbox の中で試す (App Store で出すときだけ要る)
+- [ ] sandbox の中で止められるタップ (`defaultTap`) が作れるかを試す (App Store で出すときだけ要る。否の側に寄る)
+
+## 反証レビュー (2026-10-16、opus のサブエージェント 1 体。出典を開いて照合)
+
+採った指摘 (P1 の 2 件は DTS の原文 789896・820594 を開いて確かめた):
+- PostEvent はアクセシビリティとは別の権限で、sandbox で使える。「送る側は sandbox で使えない」と読める書き方を直した
+- 読むだけのタップはキーを止められない。止められるタップが sandbox で作れるかは未確認だが否の側に寄る、と書き直した
+- AGPL と App Store は FSF の GPLv2 の声明 (2010) で裏を取り、対象が GPLv2 であることを限定した
+- Apple の認証方式は IANA の登録と libvncclient の実装で裏を取った。Jump Desktop の引用は逐語で確かめられなかったので書き直した
+
+反証できなかった主張: 2.5.1 / 2.4.5 (i) / 4.2.7 の読み、Screens 5 と Jump Desktop が Mac App Store にあること、Screens が標準の画面共有を使うこと、
+両者が高性能モードを話すという一次情報が無いこと
