@@ -3,6 +3,7 @@ package discover
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -179,7 +180,7 @@ func TestResolveRefreshesAddrsWhenReadded(t *testing.T) {
 // dns-sd を起こせない / -B が取り消していないのに終わったら Err で知らせる (黙ると「0 台見つかった」と区別できない)。
 // 取り消し (Close) で終わったのは失敗にしない。
 func TestScannerReportsBrowseFailure(t *testing.T) {
-	f := &fakeStarter{out: map[string]string{"dns-sd -B _ssh._tcp local": "Browsing for _ssh._tcp.local\n"}}
+	f := &fakeStarter{} // _ssh._tcp は上で横取りする。残り 2 つは偽物が無い = 起こせない
 	s := Start(func(ctx context.Context, name string, args ...string) (io.ReadCloser, error) {
 		if len(args) > 1 && args[1] == "_ssh._tcp" {
 			// -B が 1 行出してすぐ終わる (本物は終わらない)
@@ -225,5 +226,72 @@ func TestScannerCloseIsNotFailure(t *testing.T) {
 		if err := s.Err(); err != nil {
 			t.Fatalf("取り消しを失敗にした: %v", err)
 		}
+	}
+}
+
+// hangStarter は -L / -G が何も出さずに止められるまで待つ dns-sd (応えない相手)。同時に生きている -L の数の最大を数える。
+type hangStarter struct {
+	mu        sync.Mutex
+	browse    string
+	live, max int
+}
+
+func (h *hangStarter) start(ctx context.Context, _ string, args ...string) (io.ReadCloser, error) {
+	pr, pw := io.Pipe()
+	out := ""
+	if args[0] == "-B" && args[1] == "_ssh._tcp" {
+		out = h.browse
+	}
+	lookup := args[0] == "-L"
+	if lookup {
+		h.mu.Lock()
+		h.live++
+		h.max = max(h.max, h.live)
+		h.mu.Unlock()
+	}
+	go func() {
+		_, _ = io.WriteString(pw, out)
+		<-ctx.Done() // 応えない: 止められるまで閉じない
+		if lookup {
+			h.mu.Lock()
+			h.live--
+			h.mu.Unlock()
+		}
+		_ = pw.Close()
+	}()
+	return pr, nil
+}
+
+// 応えない相手が多くても、同時に起こす -L は maxLookups まで。応えない -L は lookupTimeout で諦めて、引き当て中の数を戻す
+// (上限の select を外しても、待ちの上限を 4 時間にしても全部緑だった。監査の指摘)。
+func TestResolveIsBoundedAndTimesOut(t *testing.T) {
+	old := lookupTimeout
+	lookupTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { lookupTimeout = old })
+	var b strings.Builder
+	b.WriteString("Browsing for _ssh._tcp.local\n")
+	for i := range 20 {
+		fmt.Fprintf(&b, "10:57:52.588  Add        3  27 local.               _ssh._tcp.           mac%02d\n", i)
+	}
+	h := &hangStarter{browse: b.String()}
+	s := Start(h.start, time.Now())
+	defer s.Close()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		s.mu.Lock()
+		p, seen := s.pending, len(s.seen)
+		s.mu.Unlock()
+		if seen == 20 && p == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("応えない -L が諦められない (seen %d pending %d)", seen, p)
+		}
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は上の条件)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.max > maxLookups || h.max < 2 {
+		t.Errorf("同時に生きていた -L の最大 = %d (上限 %d。2 未満なら並べて起こしていない)", h.max, maxLookups)
 	}
 }

@@ -257,7 +257,7 @@ func TestLanTmuxPrefixReachesFilterWhileTyping(t *testing.T) {
 		m.handleKey(k)
 	}
 	m.lanV.m.HandleKey("enter")
-	if view := stripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "min") {
+	if view := stripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "/ min") { // 絞り込みの欄 ("min" だけだと Mac mini の行でも満たせた)
 		t.Errorf("入力中の C-a (prefix と同じ) が編集として効かない:\n%s", view)
 	}
 	if strings.Contains(m.toast.Text(), "tmux prefix") {

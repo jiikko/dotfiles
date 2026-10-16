@@ -1,8 +1,10 @@
 package discover
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -166,5 +168,87 @@ func TestParseAddrSkipsNegativeAndLoopback(t *testing.T) {
 	// 行末が TTL でも 0.0.0.0 は読まない (この行も作った値。fixture の 0.0.0.0 は全部否定応答の文付きで、正規表現が先に落とすため)
 	if a, ok := ParseAddr(" 0:51:54.383  Add  40000003      15  x.local.               0.0.0.0                                      4500"); ok {
 		t.Errorf("0.0.0.0 を読んだ: %+v", a)
+	}
+}
+
+// 消えた相手の Rmv を -B と -G の両方で読む (browse_rmv.txt / getaddr_rmv.txt は 2026-10-16 10 時台に、この Mac で _mlmtest._tcp を
+// dns-sd -R / -P で数秒だけ広告して取り消し、本物の dns-sd -B / -G で取った出力)。Rmv を読めないと、相手の再起動で IP を引き直す
+// (Rmv → Add) が黙って死んだ (Rmv の fixture が無く、(Add|Rmv) を (Add) にしても全部緑だった。監査の指摘)。
+func TestParseRmv(t *testing.T) {
+	var add, rmv int
+	for _, l := range lines(t, "browse_rmv.txt") {
+		if b, ok := ParseBrowse(l); ok {
+			if b.Add {
+				add++
+			} else {
+				rmv++
+			}
+			if b.Instance != "mlm-rmv-test" || b.Service != "_mlmtest._tcp." {
+				t.Errorf("-B: %+v", b)
+			}
+		}
+	}
+	if add != 6 || rmv != 6 {
+		t.Errorf("-B: Add %d / Rmv %d (6 / 6)", add, rmv)
+	}
+	add, rmv = 0, 0
+	for _, l := range lines(t, "getaddr_rmv.txt") {
+		if a, ok := ParseAddr(l); ok {
+			if a.Add {
+				add++
+			} else {
+				rmv++
+			}
+			if a.Host != "mlmrmvtest.local" || a.IP != "192.168.100.250" {
+				t.Errorf("-G: %+v", a)
+			}
+		}
+	}
+	if add != 6 || rmv != 6 {
+		t.Errorf("-G: Add %d / Rmv %d (6 / 6)", add, rmv)
+	}
+}
+
+// どの時間帯の出力も同じに読む。fixture の行頭の時刻を 0〜23 時に書き換えて (dns-sd は時を空白で 2 桁に詰める)、元と同じ結果になるかを見る
+// (fixture が 21 時台だけだったころ、0〜9 時台の行がどれも読めなかった。時間帯ごとに fixture を取り直さずに全部の時間帯を見る)。
+func TestParseEveryHour(t *testing.T) {
+	head := regexp.MustCompile(`^\s*\d{1,2}:`)
+	parse := map[string]func(string) (any, bool){
+		"browse":  func(l string) (any, bool) { return ParseBrowse(l) },
+		"lookup":  func(l string) (any, bool) { return ParseLookup(l) },
+		"getaddr": func(l string) (any, bool) { return ParseAddr(l) },
+	}
+	files, err := filepath.Glob(filepath.Join("testdata", "*.txt"))
+	if err != nil || len(files) < 7 {
+		t.Fatalf("fixture が見つからない: %v %v", files, err)
+	}
+	for _, f := range files {
+		base := filepath.Base(f)
+		var p func(string) (any, bool)
+		for k, fn := range parse {
+			if strings.HasPrefix(base, k) {
+				p = fn
+			}
+		}
+		if p == nil {
+			t.Fatalf("%s: どの読み取りの fixture か分からない (名前を browse / lookup / getaddr で始める)", base)
+		}
+		seen := 0
+		for _, l := range lines(t, base) {
+			want, ok := p(l)
+			if !ok {
+				continue
+			}
+			seen++
+			for h := range 24 {
+				moved := head.ReplaceAllString(l, fmt.Sprintf("%2d:", h))
+				if got, ok := p(moved); !ok || got != want {
+					t.Errorf("%s の %d 時台: %q を %+v と読んだ (元は %+v)", base, h, moved, got, want)
+				}
+			}
+		}
+		if seen == 0 && !strings.Contains(base, "negative") {
+			t.Errorf("%s: 読めた行が 0 (時刻の書き換えを確かめられない)", base)
+		}
 	}
 }

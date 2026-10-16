@@ -29,6 +29,7 @@
 - `src/lockman` (`lockman`) — lockman — ディレクトリ単位の排他を取る CLI (SMB 越しの複数マシン + 公開ホストの ローカル経路が混在する前提)。 (main)
 - `src/mac-lan-manager` (`mac-lan-manager`) — mac-lan-manager は手元の Mac 同士を内部の網で繋いで管理する道具 (bin/mac-lan-manager)。 (main)
 - `src/mac-lan-manager/discover` (`mac-lan-manager/discover`) — Package discover は、Bonjour (dns-sd) で LAN の Mac を見つけるときの出力を読む。
+- `src/mac-lan-manager/internal/testsandbox` (`mac-lan-manager/internal/testsandbox`) — Package testsandbox は、ledger と prefs のテストの書き込みを一時ディレクトリの配下に閉じ込める関門を持つ。 (internal)
 - `src/mac-lan-manager/lanmgr` (`mac-lan-manager/lanmgr`) — Package lanmgr は mac-lan-manager の画面 (一覧・詳細カード・設定・この Mac の IP のコピー) を持つ。
 - `src/mac-lan-manager/ledger` (`mac-lan-manager/ledger`) — Package ledger は、管理対象の Mac の台帳を読み書きする (台帳は mac-lan-manager を実行している Mac の中だけに持つ)。
 - `src/mac-lan-manager/live` (`mac-lan-manager/live`) — Package live は lanmgr の画面を本物 (この Mac のネットワーク・Bonjour・台帳・設定・クリップボード) につなぐ。

@@ -50,8 +50,8 @@ type Scanner struct {
 // maxLookups は同時に起こす -L / -G の上限。
 const maxLookups = 8
 
-// lookupTimeout は -L / -G を待つ上限 (出なければ諦める。相手が居なくなった・応えない)。
-const lookupTimeout = 4 * time.Second
+// lookupTimeout は -L / -G を待つ上限 (出なければ諦める。相手が居なくなった・応えない)。テストが短くするので var。
+var lookupTimeout = 4 * time.Second
 
 // settleWindow は起動から「一覧が出揃うまで」とみなす間 (この間は Busy。後から見つかった Mac は足していく)。
 const settleWindow = 3 * time.Second

@@ -8,46 +8,24 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"mac-lan-manager/internal/testsandbox"
 )
 
 var sandbox string
 
 func TestMain(m *testing.M) {
-	d, err := os.MkdirTemp("", "mac-lan-manager-prefs-")
-	if err == nil {
-		sandbox, err = filepath.EvalSymlinks(d)
-	}
-	if err == nil {
+	var err error
+	if sandbox, err = testsandbox.New("mac-lan-manager-prefs-"); err == nil {
 		err = os.Setenv(EnvDir, filepath.Join(sandbox, "config"))
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	// 一時ディレクトリの配下だけに書かせる (_claude/rules/sandbox-real-destructive-test-apis.md)。親を実体にしてから比べる
-	writeGuard = func(path string) error {
-		abs, err := filepath.Abs(path)
-		if err != nil {
-			return err
-		}
-		dir := filepath.Dir(abs)
-		for {
-			if real, err := filepath.EvalSymlinks(dir); err == nil {
-				abs = filepath.Join(real, strings.TrimPrefix(abs, dir))
-				break
-			}
-			if dir == filepath.Dir(dir) {
-				break
-			}
-			dir = filepath.Dir(dir)
-		}
-		if !strings.HasPrefix(abs, sandbox+string(filepath.Separator)) {
-			return fmt.Errorf("テストの書き込みが一時ディレクトリの外を指している: %s", path)
-		}
-		return nil
-	}
+	writeGuard = testsandbox.Guard(sandbox)
 	code := m.Run()
-	_ = os.RemoveAll(d)
+	_ = os.RemoveAll(sandbox)
 	os.Exit(code)
 }
 

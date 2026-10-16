@@ -132,6 +132,29 @@ func (h *harness) keys(ks ...string) Action {
 	return a
 }
 
+// bandKeys は設定を開いて帯の入力欄に入るキーの列 (設定の項目の並びが変わっても setBand に追従する)。
+func bandKeys() []string {
+	ks := []string{","}
+	for range setBand {
+		ks = append(ks, "j")
+	}
+	return append(ks, "enter")
+}
+
+// cursorTo はカーソルを host の行へ動かす (今のタブの中で。合わなければテストを止める: 合わないまま検査すると別の行を見て通った)。
+func (h *harness) cursorTo(t *testing.T, host string) {
+	t.Helper()
+	for range len(h.m.visible()) {
+		if h.m.current().host == host {
+			return
+		}
+		h.keys("j")
+	}
+	if h.m.current().host != host {
+		t.Fatalf("前提: カーソルを %s に合わせられない (今 %+v)", host, h.m.current())
+	}
+}
+
 var mini = discover.Peer{Host: "m2macmini.local", Instances: []string{"kojiのMac mini"}, SSH: true, VNC: true, SMB: true,
 	Addrs: map[int]string{14: "192.168.50.7", 27: "169.254.217.100"}}
 
@@ -262,6 +285,17 @@ func TestAliasOnlyForManaged(t *testing.T) {
 	h.keys("l", "m") // 未管理のタブのこの Mac
 	if h.m.ov == ovAlias {
 		t.Error("この Mac に別名の欄を開いた")
+	}
+	// 台帳に無い相手 (未管理のタブの air.local) にも開かない (自分の行だけを見ていて、この分岐を消しても緑だった。監査の指摘)
+	h = newHarness(t, nil, []discover.Peer{{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}})
+	h.keys("l")
+	h.cursorTo(t, "air.local")
+	if h.m.current().managed {
+		t.Fatalf("前提: air.local が管理対象になっている")
+	}
+	h.keys("m")
+	if h.m.ov == ovAlias {
+		t.Error("台帳に無い Mac に別名の欄を開いた")
 	}
 }
 
@@ -397,25 +431,6 @@ func TestSanitizesExternalNames(t *testing.T) {
 			if strings.Contains(l, "pwned") || strings.Contains(l, "\x07") || strings.Contains(l, "\x1b]0;") {
 				t.Fatalf("制御文字が画面に出た: %q", l)
 			}
-		}
-	}
-}
-
-func TestViewFitsWidthAndKeepsQuit(t *testing.T) {
-	h := newHarness(t, []ledger.Host{{Host: "studio.local", Alias: "studio", LAN: "192.168.100.12"}}, []discover.Peer{mini})
-	for _, w := range []int{80, 120, 172} {
-		h.m.Resize(w, 40)
-		lines := h.m.View()
-		if len(lines) != 40 {
-			t.Errorf("w=%d: %d 行 (高さに合わない)", w, len(lines))
-		}
-		for i, l := range lines {
-			if lw := lipgloss.Width(l); lw > w {
-				t.Errorf("w=%d: %d 行目が %d 桁 (はみ出す)", w, i, lw)
-			}
-		}
-		if foot := lines[len(lines)-2]; !strings.Contains(foot, "q") { // 下の余白の 1 行上がキーの案内
-			t.Errorf("w=%d: 抜ける手段 (q) が案内から落ちた: %q", w, foot)
 		}
 	}
 }
@@ -876,7 +891,8 @@ func TestViewFitsNarrowWidths(t *testing.T) {
 				}
 			}
 			view := termwidth.StripSGR(strings.Join(lines, "\n"))
-			exit := strings.Contains(view, "q 閉じる") || (w < 20 && strings.Contains(view, "q")) // 20 桁未満の画面は「q」だけのことがある
+			last := strings.TrimSpace(termwidth.StripSGR(lines[len(lines)-1]))
+			exit := strings.Contains(view, "q 閉じる") || (w < 20 && last == "q") // 20 桁未満の画面は最下行が「q」だけのことがある
 			if key == "" && !exit {
 				t.Errorf("幅 %d: 抜け方 (q 閉じる) が見えない", w)
 			}
@@ -931,7 +947,7 @@ func TestOverlaysKeepHintWhenNarrow(t *testing.T) {
 					break
 				}
 			}
-			if !strings.Contains(strings.ReplaceAll(view, "\n", ""), c.hint) && !strings.Contains(view, c.hint) {
+			if !strings.Contains(strings.ReplaceAll(view, "\n", ""), c.hint) {
 				t.Errorf("%s の板・幅 %d: 案内 (%s) が無い:\n%s", c.key, w, c.hint, view)
 			}
 		}
@@ -944,11 +960,7 @@ func TestSettingsCaretAndWindow(t *testing.T) {
 	for _, size := range [][2]int{{120, 40}, {80, 24}, {60, 18}} {
 		h := newHarness(t, nil, nil)
 		h.m.Resize(size[0], size[1])
-		h.keys(",")
-		for range setBand {
-			h.keys("j")
-		}
-		h.keys("enter") // 帯を編集
+		h.keys(bandKeys()...) // 帯を編集
 		lines := h.m.View()
 		x, y, ok := h.m.CaretPos()
 		if !ok || y < 0 || y >= len(lines) {
@@ -1018,11 +1030,7 @@ func TestSettingsCaretExact(t *testing.T) {
 		for hgt := 10; hgt <= 40; hgt++ {
 			h := newHarness(t, nil, nil)
 			h.m.Resize(w, hgt)
-			h.keys(",")
-			for range setBand {
-				h.keys("j")
-			}
-			h.keys("enter")
+			h.keys(bandKeys()...)
 			lines := h.m.View()
 			if len(lines) != hgt {
 				t.Fatalf("%dx%d: %d 行", w, hgt, len(lines))
@@ -1085,15 +1093,7 @@ func TestFooterKeepsActionKeys(t *testing.T) {
 			h := newHarness(t, nil, []discover.Peer{long, mini})
 			h.m.Resize(w, hgt)
 			h.keys("l")
-			for range 3 {
-				if h.m.current().host == "long.local" {
-					break
-				}
-				h.keys("j")
-			}
-			if h.m.current().host != "long.local" {
-				t.Fatalf("%dx%d: カーソルを長い名前の Mac に合わせられない", w, hgt)
-			}
+			h.cursorTo(t, "long.local")
 			lines := h.m.View()
 			if len(lines) != hgt {
 				t.Fatalf("%dx%d: %d 行", w, hgt, len(lines))
@@ -1240,11 +1240,7 @@ func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
 // 閉じる (Close) と、開いていた確認・入力欄・設定を畳む。glogx は Model を使い回すので、残すと L で開き直した直後に
 // 覚えの無い確認の板が y を待ち、y で台帳から外れた (足りない画面の q で抜けたとき。opus の敵対レビュー)。
 func TestCloseFoldsLayers(t *testing.T) {
-	band := []string{","}
-	for range setBand {
-		band = append(band, "j")
-	}
-	band = append(band, "enter")
+	band := bandKeys()
 	open := map[string][]string{"確認": {"j", "space"}, "絞り込み": {"/", "z"}, "別名": {"j", "m"}, "設定": {","}, "帯の編集": band}
 	for name, ks := range open {
 		h := newHarness(t, []ledger.Host{{Host: "m2macmini.local"}}, []discover.Peer{mini})
@@ -1276,12 +1272,7 @@ func TestFooterShellHintFollowsKey(t *testing.T) {
 	vncOnly := discover.Peer{Host: "vnc.local", Instances: []string{"画面共有だけ"}, VNC: true, Addrs: map[int]string{14: "192.168.50.8"}}
 	h := newHarness(t, nil, []discover.Peer{vncOnly})
 	h.keys("l")
-	for range 3 {
-		if h.m.current().host == "vnc.local" {
-			break
-		}
-		h.keys("j")
-	}
+	h.cursorTo(t, "vnc.local")
 	lines := h.m.View()
 	last := termwidth.StripSGR(lines[len(lines)-padY-1])
 	if strings.Contains(last, "繋ぐ") {
@@ -1295,11 +1286,7 @@ func TestFooterShellHintFollowsKey(t *testing.T) {
 // どの画面でも View は高さちょうどの行を返す。設定の画面で項目の行が入らない高さは「高さが足りない」の画面になり、
 // 見えない項目に space が届いて設定を書き換えない (高さを 10 とみなして描き、端末より多い行を返していた。opus の敵対レビュー)。
 func TestEveryScreenFitsHeight(t *testing.T) {
-	band := []string{","}
-	for range setBand {
-		band = append(band, "j")
-	}
-	band = append(band, "enter")
+	band := bandKeys()
 	for _, w := range []int{minWidth, 80, 120, 160, 200} {
 		for hgt := 1; hgt <= 30; hgt++ {
 			for _, open := range [][]string{nil, {"G"}, {","}, {",", "G"}, band} {
@@ -1309,6 +1296,11 @@ func TestEveryScreenFitsHeight(t *testing.T) {
 				lines := h.m.View()
 				if len(lines) != hgt {
 					t.Errorf("%dx%d %v: %d 行 (高さと違う)", w, hgt, open, len(lines))
+				}
+				for i, l := range lines {
+					if lw := lipgloss.Width(l); lw > w {
+						t.Errorf("%dx%d %v: %d 行目が %d 桁 (はみ出す)", w, hgt, open, i, lw)
+					}
 				}
 				if len(open) == 0 || open[0] != "," {
 					continue

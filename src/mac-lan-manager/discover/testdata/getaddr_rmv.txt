@@ -1,0 +1,15 @@
+DATE: ---Fri 16 Oct 2026---
+10:58:17.327  ...STARTING...
+Timestamp     A/R  Flags         IF  Hostname                               Address                                      TTL
+10:58:17.336  Add  40000003      15  mlmrmvtest.local.                      192.168.100.250                              240
+10:58:17.336  Add  40000003      32  mlmrmvtest.local.                      192.168.100.250                              240
+10:58:17.336  Add  40000003       1  mlmrmvtest.local.                      192.168.100.250                              240
+10:58:17.336  Add  40000003      14  mlmrmvtest.local.                      192.168.100.250                              240
+10:58:17.336  Add  40000003      27  mlmrmvtest.local.                      192.168.100.250                              240
+10:58:17.336  Add  40000002      33  mlmrmvtest.local.                      192.168.100.250                              240
+10:58:19.840  Rmv  1             15  mlmrmvtest.local.                      192.168.100.250                              0
+10:58:19.840  Rmv  1             32  mlmrmvtest.local.                      192.168.100.250                              0
+10:58:19.840  Rmv  1              1  mlmrmvtest.local.                      192.168.100.250                              0
+10:58:19.840  Rmv  1             14  mlmrmvtest.local.                      192.168.100.250                              0
+10:58:19.840  Rmv  1             27  mlmrmvtest.local.                      192.168.100.250                              0
+10:58:19.840  Rmv  0             33  mlmrmvtest.local.                      192.168.100.250                              0

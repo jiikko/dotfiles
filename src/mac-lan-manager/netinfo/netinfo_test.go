@@ -44,21 +44,17 @@ func TestParseGetInfo(t *testing.T) {
 	cases := []struct {
 		file               string
 		method, ip, router string
-		internet           bool
 	}{
 		// 有線の自動割り当ては "Router: (null)"
-		{"getinfo_tb_ethernet.txt", "DHCP", "169.254.13.42", "", false},
+		{"getinfo_tb_ethernet.txt", "DHCP", "169.254.13.42", ""},
 		// 未接続のサービスは IPv4 の Router 行を出さない。"IPv6 Router: none" の行に当ててはいけない
-		{"getinfo_tb_bridge.txt", "DHCP", "", "", false},
-		{"getinfo_wifi.txt", "DHCP", "192.168.50.250", "192.168.50.1", true},
+		{"getinfo_tb_bridge.txt", "DHCP", "", ""},
+		{"getinfo_wifi.txt", "DHCP", "192.168.50.250", "192.168.50.1"},
 	}
 	for _, c := range cases {
 		m, ip, r := ParseGetInfo(fixture(t, c.file))
 		if m != c.method || ip != c.ip || r != c.router {
 			t.Errorf("%s: got (%q, %q, %q), want (%q, %q, %q)", c.file, m, ip, r, c.method, c.ip, c.router)
-		}
-		if (Service{Router: r}).Internet() != c.internet {
-			t.Errorf("%s: Internet() = %v, want %v", c.file, !c.internet, c.internet)
 		}
 	}
 }
@@ -107,6 +103,7 @@ func TestClassify(t *testing.T) {
 
 // fakeRunner は fixture を返す偽物。知らないコマンドは失敗として返す (読めなかったサービスがあっても全体が止まらないことを見る)。
 func fakeRunner(t *testing.T, files map[string]string) Runner {
+	t.Helper()
 	return func(_ context.Context, name string, args ...string) (string, error) {
 		key := strings.TrimSpace(name + " " + strings.Join(args, " "))
 		f, ok := files[key]

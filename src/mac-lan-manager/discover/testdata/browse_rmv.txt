@@ -1,0 +1,16 @@
+Browsing for _mlmtest._tcp.local
+DATE: ---Fri 16 Oct 2026---
+10:57:51.634  ...STARTING...
+Timestamp     A/R    Flags  if Domain               Service Type         Instance Name
+10:57:52.588  Add        3   1 local.               _mlmtest._tcp.       mlm-rmv-test
+10:57:52.588  Add        3  15 local.               _mlmtest._tcp.       mlm-rmv-test
+10:57:52.588  Add        3  14 local.               _mlmtest._tcp.       mlm-rmv-test
+10:57:52.588  Add        3  27 local.               _mlmtest._tcp.       mlm-rmv-test
+10:57:52.588  Add        3  32 local.               _mlmtest._tcp.       mlm-rmv-test
+10:57:52.588  Add        2  33 local.               _mlmtest._tcp.       mlm-rmv-test
+10:57:55.843  Rmv        1  15 local.               _mlmtest._tcp.       mlm-rmv-test
+10:57:55.843  Rmv        1  32 local.               _mlmtest._tcp.       mlm-rmv-test
+10:57:55.843  Rmv        1   1 local.               _mlmtest._tcp.       mlm-rmv-test
+10:57:55.843  Rmv        1  14 local.               _mlmtest._tcp.       mlm-rmv-test
+10:57:55.843  Rmv        1  27 local.               _mlmtest._tcp.       mlm-rmv-test
+10:57:55.843  Rmv        0  33 local.               _mlmtest._tcp.       mlm-rmv-test

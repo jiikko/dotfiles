@@ -85,6 +85,7 @@ func me(t *testing.T) string {
 
 // staticIP の状態ディレクトリは sandbox の下 (テストの中では「root のディレクトリ」の役を自分が持つ)。
 func staticIP(t *testing.T, dir string) StaticIP {
+	t.Helper()
 	return StaticIP{Service: "Thunderbolt Ethernet", IP: "192.168.100.11", Mask: "255.255.255.0",
 		Restore: Restore{Method: "DHCP"}, Token: "test-token-1", StateDir: dir + "/state", StateOwner: me(t), Window: time.Second}
 }
