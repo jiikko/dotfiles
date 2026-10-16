@@ -268,3 +268,30 @@ func TestDisabledServiceIsNotUsed(t *testing.T) {
 		t.Errorf("Offline() = %+v (無効のサービスを有線の候補にした)", off)
 	}
 }
+
+// 無効のサービスには ifconfig も -getinfo も打たない (どの判定にも使わないので、引いても観測が紛らわしくなるだけ)。
+func TestReadSkipsDisabledService(t *testing.T) {
+	base := fakeRunner(t, map[string]string{
+		"networksetup -listnetworkserviceorder": "serviceorder_renamed.txt",
+		"networksetup -getinfo 社内の有線":           "getinfo_tb_ethernet.txt",
+		"networksetup -getinfo Wi-Fi (自宅)":      "getinfo_wifi.txt",
+		"ifconfig en13":                         "ifconfig_en13.txt",
+		"ifconfig en0":                          "ifconfig_en0.txt",
+		"ifconfig -l":                           "=lo0 en0 en13",
+	})
+	run := func(ctx context.Context, name string, args ...string) (string, error) {
+		if strings.Contains(strings.Join(args, " "), "Thunderbolt Bridge") || (name == "ifconfig" && len(args) == 1 && args[0] == "bridge0") {
+			t.Errorf("無効のサービスに %s %v を打った", name, args)
+		}
+		return base(ctx, name, args...)
+	}
+	snap, err := Read(context.Background(), run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range snap.Services {
+		if s.Disabled && (s.Active || s.IP != "" || s.Read) {
+			t.Errorf("無効のサービスに I/F の状態を入れた: %+v", s)
+		}
+	}
+}

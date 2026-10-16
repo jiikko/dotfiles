@@ -265,15 +265,15 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 	svcs := ParseServiceOrder(order)
 	for i := range svcs {
 		s := &svcs[i]
+		if s.Disabled {
+			continue // 無効のサービスはどの判定にも使わない (ifconfig も -getinfo も打たない。dump にも I/F の IP を持って見せない)
+		}
 		if out, err := run(ctx, "ifconfig", s.Device); err == nil {
 			var addrs []string
 			s.Active, addrs = ParseIfconfig(out)
 			if len(addrs) > 0 {
 				s.IP = addrs[0]
 			}
-		}
-		if s.Disabled {
-			continue // 無効のサービスはどの判定にも使わない (-getinfo も打たない)
 		}
 		out, err := run(ctx, "networksetup", "-getinfo", s.Name)
 		if err != nil {
