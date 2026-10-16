@@ -47,7 +47,7 @@ func (m *Model) lanIFs() []netinfo.Service {
 
 func (m *Model) savePrefs() {
 	if m.prefsUnread {
-		m.note("設定が読めなかったので保存しない (r で読み直すと戻る)", false)
+		m.note("設定が読めなかったので保存しない (r でリロードすると戻る)", false)
 		return
 	}
 	if m.o.SavePrefs == nil || m.o.PrefsPath == "" {

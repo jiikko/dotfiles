@@ -899,3 +899,18 @@ func TestConnectIPSkipsLanOnOtherNetwork(t *testing.T) {
 		t.Errorf("両方帯の中なのに有線を使わない: %s", got)
 	}
 }
+
+// 相手の固定 IP の板は、相手で走らせる戻しの仕掛け (数十行の sh) の全文ではなく要約を出す (全文が画面を埋めた。ユーザー報告)。
+func TestPeerStaticBoardIsSummary(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	h.keys("x")
+	if h.m.ask == nil || h.m.ask.title != "相手の有線を固定 IP にする" {
+		t.Fatalf("前提: 相手の固定 IP の板が出ない: %+v", h.m.ask)
+	}
+	body := strings.Join(h.m.ask.body, "\n")
+	if strings.Contains(body, "while [") || len(body) > 600 || !strings.Contains(body, "→ sudo networksetup -setmanual") {
+		t.Errorf("板に戻しの仕掛けの全文を出した / 要約が無い (%d 字): %s", len(body), body)
+	}
+}

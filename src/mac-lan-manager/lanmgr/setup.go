@@ -62,7 +62,7 @@ func (m *Model) expireConfirms() {
 		if m.now.After(c.deadline) {
 			delete(m.pending, host)
 			delete(m.claimed, host)
-			m.note("確認の期限が過ぎた: "+host+" は元の設定に戻る (読み直す)", false)
+			m.note("確認の期限が過ぎた: "+host+" は元の設定に戻る (r でリロード)", false)
 			if m.su != nil && m.su.host == host { // 窓の間の観測 (新しい IP) のまま次の手順を組まない
 				m.su.seen = false
 				m.observe()
@@ -88,10 +88,10 @@ func (m *Model) ledgerBlocked(host, ip string) string {
 		return "固定 IP にした後の確認を待っている (確認してから)"
 	}
 	if _, ok := m.unconf[host]; ok {
-		return "固定 IP にした後、まだ確認していない (確認するか、相手が元に戻る頃に初期設定の画面で r で読み直す。相手を読めるようになるまで解けない)"
+		return "固定 IP にした後、まだ確認していない (確認するか、相手が元に戻る頃に初期設定の画面で r でリロード。相手を読めるようになるまで解けない)"
 	}
 	if ip != "" && m.tried[host][ip] {
-		return "内部 IP " + ip + " は固定しようとして確認できなかった番号 (相手は元に戻っている。一覧で r を押して読み直す)"
+		return "内部 IP " + ip + " は固定しようとして確認できなかった番号 (相手は元に戻っている。一覧で r でリロード)"
 	}
 	return ""
 }
@@ -386,7 +386,9 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		return &ask{title: "相手の有線を固定 IP にする", body: []string{
 			su.obs.Service + " を " + ip + " / " + s.Mask + " (ルーター無し) にする。相手の sudo のパスワードを聞く",
 			fmt.Sprintf("変えた後 %d 秒以内に新しい IP で入り直して確認しないと、相手の上で元の設定 (%s) に戻る", int(setup.PeerWindow.Seconds()), s.Restore.Method),
-			"$ " + shellLine(argv),
+			// 実際の argv は戻しの仕掛け (数十行の sh) を 1 語に引用して持つので、全文を出すと板が画面を埋めた (ユーザー報告)。要約を出す
+			"$ ssh -t " + su.dest.User + "@" + su.dest.IP + " → sudo networksetup -setmanual " + setup.Quote(s.Service) + " " + ip + " " + s.Mask +
+				fmt.Sprintf(" (確認が無ければ %d 秒後に元へ戻す仕掛けを相手で走らせる)", int(setup.PeerWindow.Seconds())),
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID, static: &s}, ""
 	case stepConfirm:
 		c := m.conf()
@@ -461,14 +463,14 @@ func (m *Model) setupX() {
 	{
 		if !m.su.seen && m.conf() == nil {
 			// 観測の口が無い (live が相手を読まない版) か、まだ一度も読めていない: 何も分からないまま本物の sudo / ssh-copy-id を起こさない (敵対レビュー)
-			m.note("相手を読めていない (この版は相手を読む口が無いか、r で読み直す)", false)
+			m.note("相手を読めていない (この版は相手を読む口が無いか、r でリロード)", false)
 			return
 		}
 		if errors.Is(m.su.obs.KeyErr, setup.ErrUnknown) && m.conf() == nil {
 			// 読みに行ったが届かない (Bonjour の IP へ ssh が届かない等): 届かない相手に向けて、この Mac の固定 (自動では戻らない) から
 			// 始めない。鍵が無いだけの相手は KeyErr が nil なので止まらない。確認待ちの間は掛けない: 確認は新しい IP へ入るので観測とは
 			// 関係が無く、有線だけの相手は古い IP の観測が届かずに確認まで断られ、期限が切れた (敵対レビュー)
-			m.note("相手に届かない (r で読み直す): "+m.su.obs.KeyErr.Error(), false)
+			m.note("相手に届かない (r でリロード): "+m.su.obs.KeyErr.Error(), false)
 			return
 		}
 		st, ok := nextStep(m.setupSteps())

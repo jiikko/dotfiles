@@ -96,7 +96,7 @@ func (m *Model) footer() string {
 	var hs []keyHint
 	switch {
 	case m.sc == scSetup:
-		hs = []keyHint{{"x", "実行", 2}, {"r", "読み直す", 3}, {"q/esc", "戻る", 1}}
+		hs = []keyHint{{"x", "実行", 2}, {"r", "リロード", 3}, {"q/esc", "戻る", 1}}
 	case m.sc == scSettings:
 		hs = []keyHint{{"j/k", "項目", 2}, {"space", "入/切", 3}, {"←/→", "選ぶ", 4}, {"enter", "編集", 5}, {"q/esc/,", "閉じる", 1}}
 	case m.filtering:
@@ -594,7 +594,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"o", "画面共有を開く"},
 			{"c", "この Mac の IP をコピー"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
-			{"r", "読み直す"}, {"q / esc", "閉じる"}}
+			{"r", "リロード"}, {"q / esc", "閉じる"}}
 		body := make([]string, 0, len(keys)+3)
 		if m.scanErr != nil { // 見出しの「✗ 探せない」の理由 (知らせは数秒で消え、glogx の中からは dump を起こせない。監査の指摘)
 			body = append(body, sWarn.Render("Bonjour で探せない: ")+sText.Render(termsafe.PlainLine(m.scanErr.Error())), "")

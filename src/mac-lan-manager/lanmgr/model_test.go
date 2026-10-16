@@ -1754,3 +1754,43 @@ func TestSelfLanPrefersManualInBand(t *testing.T) {
 		t.Errorf("手動で固定した en13 ではなく自動の番号を拾った: %+v", sl)
 	}
 }
+
+// 有線で届くかは、この Mac と相手の内部 IP が同じ網か (両方帯の中か、両方 169.254)。帯は 169.254 の中にも置けるので帯を先に見る。
+func TestLanReachable(t *testing.T) {
+	for _, c := range []struct {
+		self, peer, band string
+		want             bool
+	}{
+		{"169.254.13.42", "169.254.217.100", "192.168.100.0/24", true},
+		{"192.168.100.10", "169.254.113.65", "192.168.100.0/24", false},
+		{"169.254.13.42", "192.168.100.12", "192.168.100.0/24", false},
+		{"192.168.100.10", "192.168.100.12", "192.168.100.0/24", true},
+		{"169.254.100.10", "169.254.217.100", "169.254.100.0/24", false}, // 帯の固定と自動の 169.254
+		{"169.254.100.10", "169.254.100.12", "169.254.100.0/24", true},
+		{"", "169.254.1.1", "192.168.100.0/24", true},
+	} {
+		if got := lanReachable(c.self, c.peer, c.band); got != c.want {
+			t.Errorf("lanReachable(%s, %s, %s) = %v, want %v", c.self, c.peer, c.band, got, c.want)
+		}
+	}
+}
+
+// 有線でしか見えない相手と網が分かれていたら、その他の I/F (VPN 等) へ黙って繋がず、網が分かれている理由で断る (敵対レビュー)。
+func TestAwayPeerWithoutWifiRefuses(t *testing.T) {
+	wired := discover.Peer{Host: "wired.local", Instances: []string{"wired"}, SSH: true, VNC: true, Addrs: map[int]string{27: "169.254.9.9", 40: "100.64.0.5"}}
+	h := newHarness(t, nil, []discover.Peer{wired})
+	setSelfStatic(h.m)
+	h.m.Advance(t0)
+	h.m.tab = 1
+	h.cursorTo(t, "wired.local")
+	h.m.TakeNotices()
+	if h.keys("s") == Exec {
+		t.Fatal("有線で網が分かれた相手へ ssh を起こした")
+	}
+	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[0].Text, "網が分かれている") {
+		t.Errorf("断りの理由が違う: %+v", n)
+	}
+	if h.keys("o") == Exec {
+		t.Error("有線で網が分かれた相手の画面共有を開いた")
+	}
+}

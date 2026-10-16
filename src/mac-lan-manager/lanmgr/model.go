@@ -749,7 +749,15 @@ func (r row) shellRefusal() string {
 	case !r.ssh && !r.managed:
 		return "ssh が閉じている (相手の画面でリモートログインをオンにしてから)"
 	case r.connectIP() == "":
-		return "繋ぐ IP が分からない"
+		return or(r.awayReason(), "繋ぐ IP が分からない")
+	}
+	return ""
+}
+
+// awayReason は、有線で別の網に居て Wi-Fi も無いので繋げない理由 (そうでなければ "")。
+func (r row) awayReason() string {
+	if r.lanAway && r.mainIP == "" {
+		return "有線で網が分かれている (この Mac か相手の片方だけが固定 IP)。相手も初期設定で固定するか、Wi-Fi に繋ぐ"
 	}
 	return ""
 }
@@ -760,6 +768,9 @@ func (r row) connectIP() string {
 	lan := r.lanIP
 	if r.lanAway {
 		lan = "" // 有線で届かない: 片方だけ固定すると、送り元が固定の番号になり、169.254 のままの相手は返事を Wi-Fi 側へ出して届かない (air5 で実測)
+		if r.mainIP == "" {
+			return "" // その他の I/F (VPN 等) へは落とさない (見当違いの IP へ黙って繋いだ。敵対レビュー)。理由は awayReason
+		}
 	}
 	if ip := or(lan, r.mainIP); ip != "" || len(r.others) == 0 {
 		return ip
@@ -773,10 +784,10 @@ func lanReachable(self, peer, band string) bool {
 	switch {
 	case self == "" || peer == "":
 		return true
+	case netinfo.InBand(band, peer) || netinfo.InBand(band, self): // 帯を先に (帯は 169.254 の中にも置ける。敵対レビュー)
+		return netinfo.InBand(band, peer) && netinfo.InBand(band, self)
 	case netinfo.IsLinkLocal(peer) || netinfo.IsLinkLocal(self):
 		return netinfo.IsLinkLocal(peer) && netinfo.IsLinkLocal(self)
-	case netinfo.InBand(band, peer) || netinfo.InBand(band, self):
-		return netinfo.InBand(band, peer) && netinfo.InBand(band, self)
 	}
 	return true
 }
@@ -838,7 +849,7 @@ func (m *Model) HandleInput(key, text string) Action {
 					return None
 				}
 				if a.step == stepConfirm && m.conf() == nil { // 板を出している間に期限が切れた (相手は元に戻っている)
-					m.note("確認の期限が過ぎた (読み直す)", false)
+					m.note("確認の期限が過ぎた (r でリロード)", false)
 					return None
 				}
 				se := &setupExec{step: a.step, static: a.static}
@@ -961,7 +972,7 @@ func (m *Model) keyList(key string) Action {
 		m.ov, m.copyC = ovCopyIP, 0
 	case "r":
 		m.Reload()
-		m.note("読み直した", true)
+		m.note("リロードした", true)
 	case "enter":
 		m.openSetup(r)
 	case "s": // シェル (treefiler の s と同じ動詞)
@@ -989,8 +1000,12 @@ func (m *Model) keyList(key string) Action {
 		}
 		m.copy("smb://"+r.connectIP(), "")
 	case "o": // 外のアプリで開く (§2)
-		if !r.vnc || r.connectIP() == "" {
+		if !r.vnc {
 			m.note("画面共有を広告していない", false)
+			break
+		}
+		if r.connectIP() == "" {
+			m.note(or(r.awayReason(), "繋ぐ IP が分からない"), false)
 			break
 		}
 		m.handOff(ExecRequest{Argv: []string{"open", "vnc://" + r.connectIP()}, ExitIsFailure: true}, nil)
