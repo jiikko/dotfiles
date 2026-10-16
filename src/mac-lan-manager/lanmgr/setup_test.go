@@ -163,6 +163,23 @@ func TestSetupRefusals(t *testing.T) {
 		t.Fatal("q で一覧に戻らない")
 	}
 
+	// 止まっている手順の理由だけで断る形 (コマンドは組める): ssh を広告していない相手では「公開鍵を置く」が止まる
+	vnc := discover.Peer{Host: "vnc.local", Instances: []string{"画面共有だけ"}, VNC: true, Addrs: map[int]string{14: "192.168.50.8"}}
+	h3 := newHarness(t, nil, []discover.Peer{vnc})
+	h3.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet { return setup.PeerNet{} }
+	setSelfStatic(h3.m)
+	h3.keys("l")
+	h3.cursorTo(t, "vnc.local")
+	h3.keys("enter")
+	awaitSetup(h3.m)
+	if st, _ := nextStep(h3.m.setupSteps()); st.ID != setup.StepKey || st.Blocked == "" {
+		t.Fatalf("前提: 公開鍵の手順が止まっていない: %+v", st)
+	}
+	h3.keys("x")
+	if h3.m.ov != ovNone {
+		t.Fatal("止まっている手順 (リモートログインがオフ) で確認の板を出した")
+	}
+
 	h2 := newHarness(t, nil, []discover.Peer{mini})
 	h2.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet {
 		t.Fatal("この Mac を観測した")
