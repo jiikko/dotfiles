@@ -22,6 +22,7 @@ import (
 // Prefs は設定。ゼロ値ではなく Default から始める。
 type Prefs struct {
 	ShowMain, ShowLan, ShowOthers bool
+	WiredOnly                     bool     // 一覧に出す相手を、この Mac の有線の I/F に見えた相手だけにする (issue 747 の決定)
 	LanByBand                     bool     // true: 帯で決める / false: I/F で決める
 	Band                          string   // "192.168.100.0/24" (IPv4 の /16〜/28。netinfo.ParseBand)
 	LanIF                         string   // I/F で決めるときの I/F の名前 ("en13")
@@ -64,12 +65,12 @@ func Load(path string) (Prefs, error) {
 		}
 		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
 		switch k {
-		case "show_main", "show_lan", "show_others", "lan_by_band":
+		case "show_main", "show_lan", "show_others", "lan_by_band", "wired_only":
 			bv, err := strconv.ParseBool(v)
 			if err != nil {
 				continue
 			}
-			*map[string]*bool{"show_main": &p.ShowMain, "show_lan": &p.ShowLan, "show_others": &p.ShowOthers, "lan_by_band": &p.LanByBand}[k] = bv
+			*map[string]*bool{"show_main": &p.ShowMain, "show_lan": &p.ShowLan, "show_others": &p.ShowOthers, "lan_by_band": &p.LanByBand, "wired_only": &p.WiredOnly}[k] = bv
 		case "band", "lan_if":
 			s, err := strconv.Unquote(v)
 			if err != nil {
@@ -122,7 +123,7 @@ func Save(path string, p Prefs) error {
 	}
 	kinds := slices.Clone(p.Kinds)
 	slices.Sort(kinds)
-	s := fmt.Sprintf("# mac-lan-manager の設定 (中の , で変える)\nshow_main = %t\nshow_lan = %t\nshow_others = %t\nlan_by_band = %t\nband = %s\nlan_if = %s\nkinds = %s\n",
-		p.ShowMain, p.ShowLan, p.ShowOthers, p.LanByBand, strconv.Quote(p.Band), strconv.Quote(p.LanIF), strconv.Quote(strings.Join(kinds, ",")))
+	s := fmt.Sprintf("# mac-lan-manager の設定 (中の , で変える)\nshow_main = %t\nshow_lan = %t\nshow_others = %t\nlan_by_band = %t\nwired_only = %t\nband = %s\nlan_if = %s\nkinds = %s\n",
+		p.ShowMain, p.ShowLan, p.ShowOthers, p.LanByBand, p.WiredOnly, strconv.Quote(p.Band), strconv.Quote(p.LanIF), strconv.Quote(strings.Join(kinds, ",")))
 	return atomicfile.Write(path, []byte(s), 0o644)
 }

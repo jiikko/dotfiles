@@ -23,6 +23,7 @@ const (
 	setMode
 	setBand
 	setIF
+	setWired
 	setKind0 // ここから otherKinds の順
 )
 
@@ -108,6 +109,8 @@ func (m *Model) keySettings(key, text string) Action {
 		switch m.setC {
 		case setMode:
 			m.pf.LanByBand = !m.pf.LanByBand
+		case setWired:
+			m.pf.WiredOnly = !m.pf.WiredOnly
 		case setIF:
 			ifs := m.lanIFs()
 			if len(ifs) == 0 {
@@ -160,8 +163,8 @@ func choice(opts []string, cur int) string {
 }
 
 func (m *Model) viewSettings(w int) string {
-	labels := []string{"メイン IP (インターネット側)", "内部 IP (この Mac 同士の通信)", "その他の IP (+N の札・詳細カード)", "決め方", "帯", "I/F"}
-	sections := map[int]string{setMain: "一覧に出す IP", setMode: "内部 IP の決め方", setKind0: "その他の IP に含める種類"}
+	labels := []string{"メイン IP (インターネット側)", "内部 IP (この Mac 同士の通信)", "その他の IP (+N の札・詳細カード)", "決め方", "帯", "I/F", "出す相手"}
+	sections := map[int]string{setMain: "一覧に出す IP", setMode: "内部 IP の決め方", setWired: "一覧に出す相手", setKind0: "その他の IP に含める種類"}
 	explain := map[netinfo.Kind]string{netinfo.KindWired: "ルーターの無い有線の I/F", netinfo.KindLinkLocal: "169.254 (固定していない I/F)",
 		netinfo.KindVirtual: "bridge / vmnet (VM・Docker のブリッジ)", netinfo.KindVPN: "utun (VPN・Tailscale)", netinfo.KindUnknown: "設定に出てこない I/F"}
 	inner := max(w-7, 10) // 板の中身の幅 (card の Width(w-1-2) と左右の余白 2)
@@ -230,6 +233,12 @@ func (m *Model) viewSettings(w int) string {
 			} else {
 				val = sMuted.Render("ルーターの無い I/F が無い")
 			}
+		case setWired:
+			cur := 0
+			if m.pf.WiredOnly {
+				cur = 1
+			}
+			val = choice([]string{"全部", "有線で見えた相手だけ"}, cur)
 		default:
 			k := otherKinds[i-setKind0]
 			if !m.pf.ShowOthers {

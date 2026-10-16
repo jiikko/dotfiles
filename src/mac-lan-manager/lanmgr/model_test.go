@@ -1551,3 +1551,36 @@ func TestUserEditChangesOnlyUser(t *testing.T) {
 		t.Error("台帳に無い Mac にユーザー名の欄を開いた")
 	}
 }
+
+// 設定の「出す相手: 有線で見えた相手だけ」は、この Mac の有線の I/F に見えた相手だけを一覧とタブの件数に出し、設定に保存する
+// (Wi-Fi でだけ見えた相手・台帳にだけある相手は出さない。issue 747 の決定)。消えた行にカーソルが残っていても描ける。
+func TestWiredOnlyHidesWifiOnlyPeers(t *testing.T) {
+	air := discover.Peer{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}
+	h := newHarness(t, nil, []discover.Peer{mini, air})
+	h.keys("l")
+	h.cursorTo(t, "air.local")
+	if h.m.count(false) != 2 {
+		t.Fatalf("前提: 未管理が %d 台", h.m.count(false))
+	}
+	h.keys(",")
+	for h.m.setC != setWired {
+		h.keys("j")
+	}
+	h.keys("l", ",")
+	if len(h.saved) == 0 || !h.saved[len(h.saved)-1].WiredOnly {
+		t.Fatalf("有線だけを保存しない: %+v", h.saved)
+	}
+	hosts := []string{}
+	for _, r := range h.m.visible()[1:] {
+		hosts = append(hosts, r.host)
+	}
+	if !slices.Equal(hosts, []string{"m2macmini.local"}) || h.m.count(false) != 1 {
+		t.Errorf("有線だけの一覧 = %v / 件数 %d (mini だけ)", hosts, h.m.count(false))
+	}
+	if v := strings.Join(h.m.View(), "\n"); !strings.Contains(v, "未管理  1") {
+		t.Errorf("タブの件数が一覧と食い違う")
+	}
+	if h.m.current().host != "m2macmini.local" {
+		t.Errorf("消えた行にカーソルが残った: %q", h.m.current().host)
+	}
+}

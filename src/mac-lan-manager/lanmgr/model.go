@@ -489,6 +489,7 @@ type row struct {
 	managed   bool   // 台帳に載っている
 	ledgerLAN string // 台帳の内部 IP (Bonjour から見えた IP と分ける。台帳へ書き戻すのはこちらだけ)
 	seen      bool   // Bonjour で見えている
+	wired     bool   // Bonjour でこの Mac の有線の I/F に見えた (台帳の内部 IP ではなく、今の走査で)
 	others    []netinfo.IP
 	instance  string // Bonjour のインスタンス名 (別名が無いときの表示)
 }
@@ -608,6 +609,7 @@ func (m *Model) rows() []row {
 			// 内部 IP にするのは、この Mac のサービスとして登録された有線の I/F で見えたものだけ。Classify は登録の無い I/F の
 			// 169.254 も KindLinkLocal にするので、LinkLocal だけは登録を確かめる (KindWired は登録された I/F にしか付かない)
 			wiredService := k == netinfo.KindWired || (k == netinfo.KindLinkLocal && m.self.WiredIF(dev)) // 169.254 も、ルーターの無い有線の上なら内部の網
+			r.wired = r.wired || wiredService
 			switch {
 			case k == netinfo.KindInternet:
 				if r.mainIP == "" {
@@ -630,7 +632,7 @@ func (m *Model) visible() []row {
 	out := []row{all[0]}
 	q := strings.ToLower(m.filter.String())
 	for _, r := range all[1:] {
-		if r.managed != (m.tab == 0) {
+		if r.managed != (m.tab == 0) || !m.listed(r) {
 			continue
 		}
 		if q != "" && !strings.Contains(strings.ToLower(r.alias+" "+r.host+" "+r.instance), q) {
@@ -641,10 +643,15 @@ func (m *Model) visible() []row {
 	return out
 }
 
+// listed は設定で一覧に出す相手か (タブの件数と一覧が同じ述語を通る。絞り込みの文字はタブの件数に含めない)。
+func (m *Model) listed(r row) bool {
+	return !m.pf.WiredOnly || r.wired
+}
+
 func (m *Model) count(managed bool) int {
 	n := 0
 	for _, r := range m.rows()[1:] {
-		if r.managed == managed {
+		if r.managed == managed && m.listed(r) {
 			n++
 		}
 	}

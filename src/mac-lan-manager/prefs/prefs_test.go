@@ -38,7 +38,7 @@ func TestDefaultPathUsesEnvDir(t *testing.T) {
 
 func TestSaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(sandbox, "rt", "settings.toml")
-	want := Prefs{ShowMain: false, ShowLan: true, ShowOthers: true, LanByBand: false, Band: "10.0.5.0/24", LanIF: "en13", Kinds: []string{"virtual", "vpn"}}
+	want := Prefs{ShowMain: false, ShowLan: true, ShowOthers: true, LanByBand: false, WiredOnly: true, Band: "10.0.5.0/24", LanIF: "en13", Kinds: []string{"virtual", "vpn"}}
 	if err := Save(path, want); err != nil {
 		t.Fatal(err)
 	}
