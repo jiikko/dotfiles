@@ -13,26 +13,34 @@
 
 - 高性能モードの通信は、制御が TCP 5900、映像が UDP 5901、音声と RTCP が UDP 5900。SRTP で暗号化する。映像は HEVC RExt 4:4:4、
   音声は AAC-ELD ([iShareScreen](https://github.com/renegadelink/iShareScreen) の README)。Apple は UDP 5900〜5902 が通ることを求める
-  ([Apple](https://support.apple.com/guide/remote-desktop/apdf8e09f5a9/mac))
+  ([Apple](https://support.apple.com/guide/remote-desktop/apdf8e09f5a9/mac))。UDP 5902 の用途は分かっていない (iShareScreen は 5900〜5901 だけを使う)
 - iShareScreen (AGPL) は `docs/apple_vnc_rfc.md` にプロトコルを書き起こしているらしい (ファイル名だけを見た。中身は読んでいない)
 - **rootshell-vnc (MIT、Swift) は、この issue の部品をほぼ全部持っている** ([kitknox/rootshell-vnc](https://github.com/kitknox/rootshell-vnc) の README):
   - 部品の分け方: `RFBProtocol` (RFB の型・状態機械) / `RFBTransport` (TCP・UDP・認証・暗号・Apple の媒体の取り決め) /
     `RFBRendering` (画面の合成・カーソル・VideoToolbox の HEVC 復号・音声) / `rootshellVNC` (セッションの API・SwiftUI・入力・クリップボード)
   - 認証: 「Apple Remote Desktop authentication, including Apple DH and Mac/SRP flows」
   - 「High Performance `.adaptive` mode requires direct UDP reachability」
+  - 🚨 パッケージは macOS 15 以降だが、**付属のビューア (`Examples/`) は macOS のアプリではない**:「The standalone viewer currently has an iOS and
+    iPadOS 26.2 deployment target and also supports Mac Catalyst」。Mac では Catalyst で動かすことになり、要る macOS の版は Tahoe 相当の見込み
+    (推定)。ビューアは App Sandbox を宣言していない (反証レビューが entitlements を読んだ)
+- macOS 15 からの**ローカルネットワークのプライバシー**: アプリが手元の網の相手に繋ぐ・Bonjour で探すには許可が要り、Info.plist の
+  `NSBonjourServices` に探すサービス型を並べる。許可が無いと `NWBrowser` は `-65570` (PolicyDenied) で待ちに入りうる。Terminal・ssh から
+  走らせたコマンドの道具は対象外 ([TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy))
 - RFB の Apple 独自の認証 (security type 30〜36) は IANA に Apple の割り当てとして載っていて、libvncclient に実装がある (795)
 
 ## 作り方の案
 
-- **rootshell-vnc を Swift のパッケージとして使う** (MIT。794 の 4 の (c))。この issue の大半は「組み込んで高性能モードで 1 台に繋ぐ」で済むかもしれない
+- **rootshell-vnc を Swift のパッケージとして使い、macOS のアプリ (AppKit か SwiftUI) から呼ぶ** (MIT。794 の 4 の (c))。付属のビューアは iOS 向けなので、
+  Mac のアプリの殻は自分で書く。この issue の大半は「組み込んで高性能モードで 1 台に繋ぐ」で済むかもしれない
 - 使えない・足りない部分だけを自分で書く。AGPL の iShareScreen のコードと docs は写さない (795 の決定。App Store の道を閉じない)
 
 ## 確かめること
 
-- [ ] rootshell-vnc の `Examples/` のビューアを手元でビルドし、手元の Mac から相手の Mac 1 台に高性能モードで繋がるか
-- [ ] rootshell-vnc の macOS の最低版 (README は macOS 15 以降) と、手元・相手の Mac の版
+- [ ] 手元・相手の Mac の macOS の版 (パッケージは macOS 15 以降、付属のビューアを Catalyst で動かすなら Tahoe 相当)
+- [ ] 付属のビューアを Catalyst で動かすか、パッケージを呼ぶ最小の macOS のアプリを書くかして、相手の Mac 1 台に高性能モードで繋がるか
 - [ ] sandbox の中で動くか (Network.framework の UDP・VideoToolbox。795 の「中身は sandbox で動く形」)
 
 ## 受け入れ条件
 
-- 自作のアプリから、相手の Mac 1 台に高性能モードで繋ぎ、画面が動き、キーとマウスが届く
+- 自作のアプリから、相手の Mac 1 台に高性能モードで繋ぎ、画面が動き、キーとマウスが届く。「高性能モードで」の判定: UDP 5901 に映像が流れ
+  (`nettop` 等で受信を見る)、VideoToolbox の HEVC の復号を通っている (アプリのログに出す)

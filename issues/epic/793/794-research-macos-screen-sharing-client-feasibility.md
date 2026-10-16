@@ -9,10 +9,13 @@
 ユーザー依頼 (2026-10-16): macOS 標準の「画面共有」(Screen Sharing.app) と同じことを、自作の macOS ネイティブアプリでやりたい。
 標準アプリの**高性能モード** (High Performance) と同じプロトコルを、リバースエンジニアリングした公開実装 (Python) を参考に自前で話す。
 
-自作したい理由 (ユーザーの言)。どちらも標準アプリの不満で、まだ実測していない:
+## なぜ自作するのか
 
-- **修飾キーが手元の Mac と被る**。繋いだ先の Mac でデスクトップ (Mission Control の操作スペース) を切り替えられない
-- **高性能モードで繋げる Mac が 1 台だけ**。ほかにも制限が多い
+標準アプリ (Screen Sharing.app) への不満 (ユーザーの言。まだ実測していない):
+
+- **修飾キーが手元の Mac と被る**。繋いだ先の Mac でデスクトップ (Mission Control の操作スペース) を切り替えられない (799)
+- **高性能モードで繋げる Mac が 1 台だけ**。ほかにも制限が多い (800)
+- **キーボードショートカットで接続先を切り替えられない**。ショートカット一発で、繋いでいる Mac をシュッと替えたい (798。2026-10-16 に追加)
 
 ## 要件 (ユーザーの言から)
 
@@ -46,7 +49,8 @@
 - **同じ仕組みの既存の実装** (作る前に見比べる):
   - **rootshell-vnc** ([上流 kitknox/rootshell-vnc](https://github.com/kitknox/rootshell-vnc)。調べたのは fork の
     [dave-atx/rootshell-vnc](https://github.com/dave-atx/rootshell-vnc) の README): **MIT License**。
-    Swift のパッケージ (macOS 15 以降・iOS 18 以降) で、単体のビューアは `Examples/` にある。
+    Swift のパッケージ (macOS 15 以降・iOS 18 以降) で、単体のビューアは `Examples/` にある。ただしビューアは
+    「iOS and iPadOS 26.2 deployment target and also supports Mac Catalyst」で、macOS のアプリではない (796)。
     「High Performance mode with low-latency HEVC video over UDP」。custom transport provider を入れると高性能モードは使えない
   - [remotex](https://github.com/aleonnet/remotex) (MIT。ブラウザ向けのゲートウェイ): README には Apple の高性能モードへの言及が無い
     (Web 検索の要約にはそう出たが、裏が取れない)
@@ -69,8 +73,7 @@
    自作のアプリでも、手元の macOS がアプリより先に処理するキー (Mission Control の ctrl+←→ など) は CGEventTap などで横取りしないと
    相手へ送れない。アクセシビリティの許可が要る
 3. **常時接続と相手の画面の暗転**: ログイン中のユーザーで入ると、相手の Mac は誰も使えなくなる (Apple の文書)。
-   常時接続を保つなら、別のユーザーで入るか、暗くしない形 (iShareScreen の `--no-curtain` が何をするか) を確かめる。
-   相手の Mac の前に座って使う時間があるかで、常時接続の意味が変わる (ユーザーの使い方を聞く)
+   → **ユーザー決定 (2026-10-16): 繋いでいる間、相手の Mac が暗くなってよい**。暗くしない形を探す必要は無くなった (798)
 4. **ライセンス**: 取れる道は 3 つで、ユーザーの判断が要る (App Store で出すなら (a) は相性が悪い。795):
    - (a) iShareScreen (AGPL-3.0) を移植する。コードを写したり別の言語へ訳したりすると派生物になり、AGPL がかかる。
      義務 (ソースの公開) が生じるのは配布するとき・ネットワーク越しに他人へ使わせるときで、自分の Mac だけで使うなら実質の負担は小さい
