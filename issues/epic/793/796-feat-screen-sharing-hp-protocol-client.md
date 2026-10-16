@@ -28,6 +28,15 @@
   走らせたコマンドの道具は対象外 ([TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy))
 - RFB の Apple 独自の認証 (security type 30〜36) は IANA に Apple の割り当てとして載っていて、libvncclient に実装がある (795)
 
+## 標準アプリの高性能モードと同じ技術か (ユーザーの問い 2026-10-16)
+
+- **同じ**: 相手の Mac の側 (Apple の画面共有サーバ・画面の撮影・専用回路での HEVC の符号化) と、通信の中身 (プロトコル)。自作はそれと話すだけ
+- **違う**: 手元のクライアントの実装。標準アプリの高性能の UDP は `avconferenced` が握っていた (2026-10-16 に `lsof` で観測。800 の実測)。
+  これは Apple の非公開のフレームワークの一部と見られ、アプリからは使えない (審査ガイドライン 2.5.1「Apps may only use public APIs」)。
+  自作は公開 API で組み直した実装 (rootshell-vnc の swift-nio・Network.framework、VideoToolbox) を使う
+- 差が出うるのは手元の網の扱い (揺らぎを吸収するバッファ・落ちたパケットからの回復・帯域に合わせた画質の調整)。復号は同じハードウェアの
+  復号器を通るはず。標準アプリと同じ条件で遅延と乱れを比べるまで、同等とは言わない (未実測)
+
 ## 作り方の案
 
 - **rootshell-vnc を Swift のパッケージとして使い、macOS のアプリ (AppKit か SwiftUI) から呼ぶ** (MIT。794 の 4 の (c))。付属のビューアは iOS 向けなので、
