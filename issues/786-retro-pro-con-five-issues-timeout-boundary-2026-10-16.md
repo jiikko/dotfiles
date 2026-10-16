@@ -10,6 +10,13 @@
 2. **issue の前提 (「Update から同期で呼ばれる」) を、未確認と注記されたまま読み始めた**。実際は `m.child` (裏の処理) の中だった。読んで直したので損は小さい
 3. **1 秒 / 2 秒の WaitDelay の割れ (782) は、理由を探したら「どこにも無い」が答えだった**。値の写しの Allow 理由も「1 秒を自分で張る」の写しで、判断の痕跡ではなかった
 
+4. **(後半) go.mod に replace を足した直後、`make test-lint` を回さずに push し、Lint を赤くした** (1d8eb4be。replace を足すと workflow の paths も要るのを
+   `check_go_project_lanes.sh` が見ている)。`make -C src/pro-con lint test` と `go list -m all` は回していたが、変えたファイル (go.mod) を検査する集約 gate を選び損ねた
+5. **(後半) 「読み取りのみ」と頼んだ敵対的レビュアーが `GOFLAGS=-mod=mod` で `go list -m all` を走らせ、worktree の go.sum に 9 行書き足した**。
+   ファイルを編集しない約束は守っていたが、道具の副作用 (go の -mod=mod・lock の更新・キャッシュの生成) は約束の外だった。報告で本人が申告し、差分を確かめて戻した
+6. **(後半) CI の src/glogx (8af6ab8e) の `no-real-commands` が 1 回落ち、再実行で緑になった**。落ちたテストの名前は、検査が go test の出力の末尾 20 行
+   (PASS の並び) しか出していなかったので分からない。出力を直した (88c426c2)。手元の HEAD でも再現しなかった
+
 ## 次に効きそうな改善
 
 - 1 → **既存ルールへの追記を提案**: `_claude/rules/survey-receiver-guards-before-passing-new-values.md` か `instrument-before-second-fix.md` の近くに
@@ -18,7 +25,13 @@
   別の repo・別の外部コマンド (git・ssh・HTTP) でも同じ形で効く。切り出し先は `survey-receiver-guards-before-passing-new-values.md` (新しい値「上限切れの空」を既存の経路へ通す場面と同じ発動点)
 - 2 → 却下: issue の記述を鵜呑みにしない規範は issue-rules に既にあり、今回はそのとおり確かめられた
 - 3 → 却下: 局所的 (782 で寄せて解消済み)
+- 4 → 却下: `verify-execution-not-just-exit-code.md` の「最後の編集の後に、変更したファイルを実際に検査する gate を回す」がそのまま当たる (規範はあり、守れなかった)
+- 5 → **既存ルールへの追記を提案**: `_claude/rules/subagent-model-tiering.md` の「指示を書くとき」に「読み取りのみを頼むなら、ファイルの編集だけでなく、
+  道具が黙って書く副作用 (go の `-mod=mod`・パッケージマネージャの install / lock の更新) も名指しで止める (`GOFLAGS=-mod=readonly` 等)」。
+  別の言語・別の道具でも同じ形で効く。発動点は既存の「プロセスを起こしうる作業を頼むとき」と同じなので、その近くに足す
+- 6 → 局所的: 出力を直したので、次に落ちたら名前が残る。再発したら risk issue にする (今は名前が分からず、起票しても中身が書けない)
 
 ## 残課題
 
 - [ ] 項目 1 の rule への追記 (ユーザーの判断待ち)
+- [ ] 項目 5 の rule への追記 (ユーザーの判断待ち)
