@@ -230,7 +230,10 @@ func (m *Model) setupObserved() (setup.Observed, row) {
 	}
 	o := setup.Observed{Band: m.pf.Band}
 	if s, ok := m.selfWired(); ok {
-		o.SelfService, o.SelfIP, o.SelfMethod = s.Name, s.IP, s.Method
+		o.SelfService, o.SelfIP, o.SelfMethod, o.SelfMask = s.Name, s.IP, s.Method, s.Mask
+	}
+	if s, ok := m.self.Main(); ok {
+		o.SelfMainIP = s.IP
 	}
 	o.Peer = setup.PeerObs{
 		Host: su.host, WifiIP: r.mainIP, LanIP: r.lanIP, SSHOpen: r.ssh || r.managed,
@@ -252,7 +255,13 @@ func (m *Model) selfWired() (netinfo.Service, bool) {
 		}
 		return netinfo.Service{}, false
 	}
-	if off := m.self.Offline(); len(off) > 0 {
+	off := m.self.Offline()
+	for _, s := range off { // 帯に入る番号を持つ有線を先に (一覧の内部 IP (selfLan) と同じサービスを見る。食い違うと札と手順の済みがずれた。敵対レビュー)
+		if netinfo.InBand(m.pf.Band, s.IP) {
+			return s, true
+		}
+	}
+	if len(off) > 0 {
 		return off[0], true
 	}
 	return netinfo.Service{}, false
@@ -340,7 +349,7 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		}
 		return &ask{title: "この Mac の有線を固定 IP にする", body: []string{
 			o.SelfService + " を " + ip + " / " + mask + " (ルーター無し) にする。sudo のパスワードを聞く",
-			"🚨 この Mac の変更は自動では戻らない。戻すなら sudo networksetup -setdhcp " + setup.Quote(o.SelfService),
+			"🚨 この Mac の変更は自動では戻らない。戻すなら " + selfRestoreLine(o),
 			"$ " + shellLine(argv),
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepKey:
@@ -528,6 +537,15 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 	if m.su != nil && m.su.host == host {
 		m.observe()
 	}
+}
+
+// selfRestoreLine はこの Mac の固定を戻すコマンド (今の設定へ。手動の固定なら今の IP とマスクへ: 帯を変えた後に -setdhcp と案内すると、
+// 前の帯で固定していた人を元に戻さなかった。敵対レビュー)。
+func selfRestoreLine(o setup.Observed) string {
+	if o.SelfMethod == "manual" && o.SelfIP != "" && o.SelfMask != "" {
+		return "sudo networksetup -setmanual " + setup.Quote(o.SelfService) + " " + o.SelfIP + " " + o.SelfMask
+	}
+	return "sudo networksetup -setdhcp " + setup.Quote(o.SelfService)
 }
 
 // shellLine は argv を確認の板に出す 1 行にする (語ごとに sh の引用)。

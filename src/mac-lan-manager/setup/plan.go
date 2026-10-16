@@ -6,8 +6,10 @@ import "mac-lan-manager/netinfo"
 type Observed struct {
 	Band string // 内部の網の帯 ("192.168.100.0/24"。設定の帯)
 
-	// この Mac の有線 (内部の網に使う I/F のサービス)。空 = ルーターの無い有線のサービスが無い
-	SelfService, SelfIP, SelfMethod string
+	// この Mac の有線 (内部の網に使う I/F のサービス)。空 = ルーターの無い有線のサービスが無い。SelfMask は戻し方の案内に使う
+	SelfService, SelfIP, SelfMethod, SelfMask string
+	// SelfMainIP はこの Mac のメイン (ルーターのある網。Wi-Fi) の IP。帯がこの網と重なると、その網の宛先が有線へ流れる
+	SelfMainIP string
 
 	Peer PeerObs
 }
@@ -57,6 +59,9 @@ func Plan(o Observed) []Step {
 	}
 	self := Step{ID: StepSelfStatic, Title: "この Mac の有線を固定 IP にする", Done: o.SelfMethod == "manual" && inBand(o.SelfIP)}
 	switch {
+	case bandErr == nil && inBand(o.SelfMainIP):
+		// 帯がメインの網と重なると、同じ番号の網が有線と Wi-Fi の両方に乗り、メインの網の宛先が有線へ流れる (前の調べで挙げた欠陥)
+		self.Blocked = "帯 " + o.Band + " がこの Mac のメインの網 (" + o.SelfMainIP + ") と重なる (, の設定で別の帯にする)"
 	case bandErr != nil:
 		self.Blocked = "内部の網の帯が無いか使えない形 (, の設定で帯を決める。192.168.100.0/24 の形で /16〜/28)" // 帯が無いと「未固定」と誤った理由で止まった (fable の敵対レビュー)
 	case o.SelfService == "":

@@ -31,7 +31,7 @@ type Prefs struct {
 
 // Default は最初の設定 (仮想と VPN は含めない)。
 func Default() Prefs {
-	return Prefs{ShowMain: true, ShowLan: true, LanByBand: true, Band: "169.254.100.0/24", Kinds: []string{netinfo.KindWired.Key(), netinfo.KindLinkLocal.Key(), netinfo.KindUnknown.Key()}}
+	return Prefs{ShowMain: true, ShowLan: true, LanByBand: true, Band: "192.168.100.0/24", Kinds: []string{netinfo.KindWired.Key(), netinfo.KindLinkLocal.Key(), netinfo.KindUnknown.Key()}}
 }
 
 // EnvDir は置き場所を差し替える環境変数。台帳と同じ 1 つの名前を使う (別の定数に写していたので、片方の改名で黙ってずれた。監査の指摘)。

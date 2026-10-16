@@ -584,7 +584,7 @@ func (m *Model) selfLan() selfLanInfo {
 			if !m.self.WiredIF(s.Device) { // 設定が読めない・ルーターがある I/F の IP を内部 IP として出さない (I/F の候補と同じ判定)
 				return selfLanInfo{Note: "I/F " + s.Device + " がルーターの無い有線として読めない"}
 			}
-			return selfLanInfo{IP: s.IP, Note: "I/F " + s.Device}
+			return selfLanInfo{IP: s.IP, Note: "I/F " + s.Device, Unfixed: s.Method != "manual"} // 方式で決める (自動の 169.254 を固定と見て台帳に書けた。敵対レビュー)
 		}
 	}
 	return selfLanInfo{Note: "I/F " + or(m.pf.LanIF, "(未設定)") + " が無い"}
