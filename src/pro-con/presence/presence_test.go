@@ -1,10 +1,15 @@
 package presence
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
+
+	"pro-con/flockmark"
 )
 
 func open(t *testing.T, dir string) *Screen {
@@ -164,5 +169,69 @@ func TestUnreadableInfoCountsAsOwner(t *testing.T) {
 	ss, err := List(dir)
 	if err != nil || len(ss) != 1 || ss[0].Mode != Owner || ss[0].ID != s.Info().ID {
 		t.Fatalf("中身の壊れた生きている印を持ち主として数えない: %+v (%v)", ss, err)
+	}
+}
+
+// 普通のファイルでない印 (FIFO 等) は flock できない。1 つあっても、ほかの画面は数えられる (issue 779)。
+func TestScanSkipsNonRegularLock(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	if err := syscall.Mkfifo(filepath.Join(dir, Dir, "fifo.lock"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	var ss []Info
+	var err error
+	go func() { ss, err = List(dir); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("FIFO の印で数え上げが止まった")
+	}
+	if err != nil || len(ss) != 1 || ss[0].ID != s.Info().ID {
+		t.Fatalf("FIFO の印があると数えられない: %+v (%v)", ss, err)
+	}
+	if left, err := s.Leave(); err != nil || left != (Tally{}) {
+		t.Fatalf("FIFO の印があると最後の持ち主を判定できない: %+v (%v)", left, err)
+	}
+}
+
+// 作りかけの印 (.tmp-<id>) は数えない。古くて誰も持っていないものだけ片付け、作っている最中 (新しい) と持たれているものには触らない。
+func TestScanCleansOnlyStaleUnheldTmp(t *testing.T) {
+	dir := t.TempDir()
+	open(t, dir)
+	d := filepath.Join(dir, Dir)
+	old := time.Now().Add(-2 * flockmark.StaleTmp)
+	mk := func(name string, stale bool) string {
+		p := filepath.Join(d, name)
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if stale {
+			if err := os.Chtimes(p, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return p
+	}
+	dead, fresh, held := mk(".tmp-dead", true), mk(".tmp-fresh", false), mk(".tmp-held", true)
+	f, err := os.OpenFile(held, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	if n := mustCount(t, dir); n != 1 {
+		t.Fatalf("作りかけの印を数えた: %d", n)
+	}
+	if _, err := os.Stat(dead); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("古くて誰も持っていない作りかけが残った: %v", err)
+	}
+	for _, p := range []string{fresh, held} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("消してはいけない作りかけ %s が消えた: %v", filepath.Base(p), err)
+		}
 	}
 }

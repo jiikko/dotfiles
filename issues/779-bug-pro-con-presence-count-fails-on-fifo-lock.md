@@ -25,3 +25,10 @@ issue 768 の敵対的レビューで見つかった前からの穴 (768 で作�
 ## 関連ファイル
 
 - `src/pro-con/presence/presence.go` (`scan` / `heldBySomeone`) / `src/pro-con/relay/relay.go` (`List`) / issue 768 (done)
+
+## 進捗
+
+- [x] `scan` で普通のファイルでない `<id>.lock` を開かずに飛ばす (relay の `List` と同じ)。テスト `TestScanSkipsNonRegularLock` (FIFO の印があっても数えられ、`Leave` が最後の持ち主を判定できる)
+- [x] 作りかけ (`.tmp-*`) の掃除のテスト `TestScanCleansOnlyStaleUnheldTmp` (古くて誰も持っていないものだけ消し、新しいもの・持たれているものは残す。数えない)
+- 変異で red を確認 (`mutate-verify`): IsRegular の飛ばしを外す → `TestScanSkipsNonRegularLock` が `operation not supported` で red / 作りかけの `heldBySomeone` 呼び出しを消す → `TestScanCleansOnlyStaleUnheldTmp` red / `IsStaleTmp` を常に真にする → 同 red (と既存の `TestOpenIsAtomicAgainstConcurrentCount`)
+- 範囲の外: 普通のファイルで flock が EWOULDBLOCK 以外 (権限など) で失敗する印は、今までどおり数え上げの誤りとして返す (最後の持ち主の判定を誤るより、数えられないと返す方を残した)

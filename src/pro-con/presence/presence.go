@@ -193,6 +193,9 @@ func scan(d string) ([]Info, error) {
 		if !strings.HasSuffix(name, ".lock") || name == quitFile {
 			continue
 		}
+		if !e.Type().IsRegular() { // 普通のファイルでない印 (FIFO 等) は flock できず、1 つで数え上げ全体が失敗する。画面の印ではないので数えない (relay.List と同じ)
+			continue
+		}
 		held, data, err := heldBySomeone(filepath.Join(d, name))
 		if err != nil {
 			return nil, err
