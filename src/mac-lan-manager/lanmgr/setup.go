@@ -45,6 +45,9 @@ func (m *Model) conf() *pendingConfirm {
 // expireConfirms は期限を過ぎた確認待ちを片付ける (相手の上では元の設定に戻っている)。Advance と観測の取り込みで呼ぶ。
 func (m *Model) expireConfirms() {
 	for host, c := range m.pending {
+		if m.execSetup && m.execStep == stepConfirm && m.su != nil && m.su.host == host {
+			continue // 確認のプロセスから戻るのを待つ (端末を渡している間の tick が先に届き、間際の確認を期限切れにした。敵対レビュー)
+		}
 		if m.now.After(c.deadline) {
 			delete(m.pending, host)
 			delete(m.claimed, host)
@@ -335,9 +338,10 @@ func (m *Model) keySetup(key string) Action {
 			m.note("相手を読めていない (この版は相手を読む口が無いか、r で読み直す)", false)
 			return None
 		}
-		if errors.Is(m.su.obs.KeyErr, setup.ErrUnknown) {
+		if errors.Is(m.su.obs.KeyErr, setup.ErrUnknown) && m.conf() == nil {
 			// 読みに行ったが届かない (Bonjour の IP へ ssh が届かない等): 届かない相手に向けて、この Mac の固定 (自動では戻らない) から
-			// 始めない。鍵が無いだけの相手は KeyErr が nil なので止まらない (敵対レビュー)
+			// 始めない。鍵が無いだけの相手は KeyErr が nil なので止まらない。確認待ちの間は掛けない: 確認は新しい IP へ入るので観測とは
+			// 関係が無く、有線だけの相手は古い IP の観測が届かずに確認まで断られ、期限が切れた (敵対レビュー)
 			m.note("相手に届かない (r で読み直す): "+m.su.obs.KeyErr.Error(), false)
 			return None
 		}
@@ -383,7 +387,7 @@ func (m *Model) setupExecDone(step setup.StepID, static *setup.StaticIP, failed 
 		if now.After(c.deadline) {
 			// 確認の ssh は 0 で戻った。印は期限の内に置けて、戻りだけが遅れたことがある (手元の期限は相手の期限より後ろ)。確認済みとして
 			// 扱い、番号も残す (落とすと 2 台目に同じ番号を振った。敵対レビュー)。間に合わなかったなら、読み直すと元の設定に見える
-			m.note("期限の間際に確認した: r で読み直して、新しい IP のままかを確かめる", false)
+			m.note("期限の間際に確認した: r で読み直して、新しい IP のままかを確かめる (届かなければ q で閉じて開き直す)", false)
 		}
 		// 有線でしか入れない相手は、宛先を新しい IP に替える (古い 169.254 に入りに行き続けた。敵対レビュー)
 		if _, r := m.setupObserved(); r.mainIP == "" {

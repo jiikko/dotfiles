@@ -331,11 +331,36 @@ func TestSetupUnreachableAndLateConfirm(t *testing.T) {
 	}
 	late := c.deadline.Add(time.Second)
 	h.m.o.Now = func() time.Time { return late }
-	runStep(t, h, nil)
+	// 実際の TUI の順: 端末を渡している間の tick (Advance) が、プロセスから戻る (ExecDone) より先に届く
+	h.keys("x", "y")
+	if _, ok := h.m.TakeExec(); !ok {
+		t.Fatal("確認のプロセスが無い")
+	}
+	h.m.Advance(late)
+	h.m.ExecDone(nil)
+	awaitSetup(h.m)
 	if h.m.conf() != nil {
 		t.Error("確認の後も確認待ちのまま")
 	}
 	if h.m.claimed["m2macmini.local"] != c.static.IP {
 		t.Errorf("間際の確認で番号を落とした: %+v", h.m.claimed)
+	}
+}
+
+// 有線でしか入れない相手は、確認待ちの間に古い IP の観測が届かなくても、確認の手順は断らない (確認は新しい IP へ入る。敵対レビュー)。
+func TestSetupWiredOnlyConfirmNotBlockedByUnreachable(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	runStep(t, h, nil)
+	if h.m.conf() == nil {
+		t.Fatal("前提: 確認待ちにならない")
+	}
+	*obs = setup.PeerNet{KeyErr: fmt.Errorf("%w: timeout", setup.ErrUnknown)} // 相手は新しい IP に移り、古い宛先の観測が届かない
+	h.keys("r")
+	awaitSetup(h.m)
+	h.keys("x")
+	if h.m.ov != ovConfirm {
+		t.Fatalf("確認待ちの間に、届かないことを理由に確認まで断った (notices %+v)", h.m.TakeNotices())
 	}
 }
