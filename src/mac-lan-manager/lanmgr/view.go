@@ -135,7 +135,7 @@ func (m *Model) header(w int) string {
 	case m.Busy():
 		what := fmt.Sprintf(" Bonjour で探しています (%d 台)", len(m.peers))
 		if !m.netReady {
-			what = " この Mac のネットワークを読んでいます"
+			what = " この Mac のネットワーク設定を確認中"
 		}
 		left += "   " + lipgloss.NewStyle().Foreground(cPink).Render(spinner.At(m.now, spinStep)) + sDim.Render(what)
 	case m.scanErr != nil:

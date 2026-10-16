@@ -88,7 +88,7 @@ func (m *Model) ledgerBlocked(host, ip string) string {
 		return "固定 IP にした後の確認を待っている (確認してから)"
 	}
 	if _, ok := m.unconf[host]; ok {
-		return "固定 IP にした後、まだ確認していない (確認するか、相手が元に戻る頃に初期設定の画面で r でリロード。相手を読めるようになるまで解けない)"
+		return "固定 IP にした後、まだ確認していない (確認するか、相手が元に戻る頃に初期設定の画面で r でリロード。相手に接続できるようになるまで解けない)"
 	}
 	if ip != "" && m.tried[host][ip] {
 		return "内部 IP " + ip + " は固定しようとして確認できなかった番号 (相手は元に戻っている。一覧で r でリロード)"
@@ -207,7 +207,7 @@ func (m *Model) applyObserve(p setup.PeerNet) {
 	m.logf("observe done %s key_ok=%v host_key_unknown=%v err=%v net=%v service=%q ip=%s method=%s (%.1f 秒)", su.host, p.KeyOK, p.HostKeyUnknown,
 		p.KeyErr, p.NetKnown, p.Service, p.IP, p.Method, m.o.Now().Sub(su.obsAt).Seconds())
 	if p.KeyErr != nil { // 画面には状態の行で出す。理由の全文 (ssh の stderr) は一覧に残す (行は幅で切れる)
-		m.record("相手を読めない ("+su.host+"): "+p.KeyErr.Error(), false)
+		m.record("接続できない ("+su.host+"): "+p.KeyErr.Error(), false)
 	}
 	// 未確認の固定 IP は、期限の後に始めた観測で解く (相手は元に戻っているか、確認されて新しい IP のまま: どちらも観測が正しい)
 	// 読めなかった観測 (届かない・netinfo の失敗) では解かない: 次の観測で読み直す (解くと、後で固定が見えても試した番号が外れなかった。敵対レビュー)
@@ -437,6 +437,9 @@ func (m *Model) keySetup(key string) Action {
 	if m.progressShown() { // 進捗のモーダル: esc / q で閉じる (読み込みは裏で続く)。他のキーは捨てる (読み終える前の板を出さない)
 		if key == "esc" || key == "q" {
 			m.su.after, m.su.queuedX = "", false
+		} else {
+			// 黙って捨てると、読み込み中に押した y が効いたように見えた (ユーザー報告)
+			m.note("確認中: 終わったら次の手順の確認を表示 (esc で閉じる)", false)
 		}
 		return None
 	}
@@ -466,7 +469,7 @@ func (m *Model) setupX() {
 	{
 		if !m.su.seen && m.conf() == nil {
 			// 観測の口が無い (live が相手を読まない版) か、まだ一度も読めていない: 何も分からないまま本物の sudo / ssh-copy-id を起こさない (敵対レビュー)
-			m.note("相手を読めていない (この版は相手を読む口が無いか、r でリロード)", false)
+			m.note("まだ接続できていない (r でリロード)", false)
 			return
 		}
 		if errors.Is(m.su.obs.KeyErr, setup.ErrUnknown) && m.conf() == nil {

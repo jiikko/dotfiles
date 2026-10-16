@@ -757,7 +757,7 @@ func TestSetupProgressModal(t *testing.T) {
 	if n := h.m.TakeNotices(); len(n) != 0 {
 		t.Errorf("読み込み中の r / x で toast を出した: %+v", n)
 	}
-	if !h.m.progressShown() || !strings.Contains(strings.Join(h.m.View(), "\n"), "相手を読んでいる") {
+	if !h.m.progressShown() || !strings.Contains(strings.Join(h.m.View(), "\n"), "を確認中") {
 		t.Fatal("読み込み中の x で進捗のモーダルを出さない")
 	}
 	awaitSetup(h.m)

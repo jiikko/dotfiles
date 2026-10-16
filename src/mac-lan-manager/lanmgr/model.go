@@ -938,7 +938,7 @@ func (m *Model) keyList(key string) Action {
 	// 繋ぐ・コピー・登録は、この Mac のネットワーク (どの I/F が有線か・この Mac の IP) を読み終えてから。読み込み中に受けると
 	// 繋ぐ先・登録する内部 IP を誤った分類で決める (fable の敵対レビュー 2026-10-16)
 	if !m.netReady && slices.Contains(needsNet, key) {
-		m.note("この Mac のネットワークを読んでいます (少し待ってから)", false)
+		m.note("この Mac のネットワーク設定を確認中 (少し待ってから)", false)
 		return None
 	}
 	r := m.current()

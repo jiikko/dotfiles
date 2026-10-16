@@ -29,12 +29,12 @@ func (m *Model) viewSetup(w int) string {
 	b.WriteString(progressBar(done, len(steps), min(30, max(inner-14, 4))) + sDim.Render(fmt.Sprintf("  %d / %d 済", done, len(steps))) + "\n")
 	switch {
 	case su.ch != nil:
-		b.WriteString(sAccent.Render(m.spin()) + sDim.Render(" 相手を読んでいる") + "\n")
+		b.WriteString(sAccent.Render(m.spin()) + sDim.Render(" "+su.label+" に接続して確認中") + "\n")
 	case m.unconfOverdue():
 		// 期限の後の観測が読めずに印が残ると tick が止まる (読み直しは r だけ)。断りの文言を読んだ人にしか届かなかった (敵対レビュー)
 		b.WriteString(sWarn.Render("固定 IP にした後の確認が済んでいない: 相手が元に戻った頃なので r でリロード") + "\n")
 	case errors.Is(su.obs.KeyErr, setup.ErrUnknown):
-		b.WriteString(sWarn.Render("相手を読めない (届かない・判定できない): "+su.obs.KeyErr.Error()) + "\n")
+		b.WriteString(sWarn.Render(su.label+" に接続できない: "+su.obs.KeyErr.Error()) + "\n")
 	case su.seen && su.obs.HostKeyUnknown:
 		b.WriteString(sDim.Render("初めての相手 (ホスト鍵をまだ知らない): 公開鍵を置く手順で、ssh が出す指紋を確かめて受け入れる") + "\n")
 	case su.seen && !su.obs.KeyOK:
@@ -43,16 +43,19 @@ func (m *Model) viewSetup(w int) string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
+	first := su.ch != nil && !su.seen // 相手をまだ一度も読み終えていない: 済んでいない手順は「確かめている」(「まだ」と描くと、鍵を置いた相手も毎回未実行に見えた)
 	for i, s := range steps {
 		mark, title := sMuted.Render("·"), sDim.Render(s.Title)
 		switch {
+		case first && !s.Done:
+			mark, title = sAccent.Render(m.spin()), sDim.Render(s.Title+"  (確認中)")
 		case s.Done && s.ID != stepConfirm:
 			mark, title = sOK.Render("✓"), sText.Render(s.Title)
 		case hasNext && s.ID == next.ID:
 			mark, title = sAccent.Render("▶"), sText.Bold(true).Render(s.Title)
 		}
 		b.WriteString(fmt.Sprintf("%s %d  %s\n", mark, i+1, title))
-		if hasNext && s.ID == next.ID && s.Blocked != "" {
+		if !first && hasNext && s.ID == next.ID && s.Blocked != "" {
 			b.WriteString(sWarn.Render("     止まっている: "+s.Blocked) + "\n")
 		}
 	}
@@ -61,6 +64,8 @@ func (m *Model) viewSetup(w int) string {
 	var c strings.Builder
 	c.WriteString(sAccent.Render("この手順で実行するもの") + "\n" + gradRule(inner, cTeal, cPurple, lipgloss.Color(surfDetail)) + "\n\n")
 	switch {
+	case su.ch != nil && !su.seen:
+		c.WriteString(sDim.Render("確認が終わったら表示") + "\n")
 	case !hasNext:
 		c.WriteString(sOK.Render("全部済んでいる") + "\n")
 	case next.Blocked != "":

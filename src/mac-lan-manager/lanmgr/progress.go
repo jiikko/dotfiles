@@ -56,7 +56,7 @@ func (m *Model) stepTitle(id string) string {
 // progressBox は進捗のモーダル。読んでいるものごとに回る印か済みの印を出す。
 func (m *Model) progressBox() string {
 	su := m.su
-	title := "相手を読んでいる"
+	title := su.label + " を確認中"
 	if su.after != "" {
 		title = su.after + " — 結果を確かめている"
 	}
@@ -67,17 +67,17 @@ func (m *Model) progressBox() string {
 		return sOK.Render("✓") + " " + sDim.Render(what)
 	}
 	body := []string{
-		line(su.ch != nil, "相手 "+su.label+" を ssh で読む (鍵で入れるか・ネットに繋がっていない有線の設定)"),
+		line(su.ch != nil, su.label+" に ssh で接続 (鍵・ネットに繋がっていない有線の設定)"),
 	}
 	if m.netCh != nil || su.after != "" {
-		body = append(body, line(m.netCh != nil, "この Mac の網を読む"))
+		body = append(body, line(m.netCh != nil, "この Mac のネットワーク設定"))
 	}
 	el := int(m.now.Sub(su.waitSince) / time.Second)
 	body = append(body, "", sDim.Render(fmt.Sprintf("%d 秒", max(el, 0))))
 	if su.queuedX {
-		body = append(body, sDim.Render("読み終えたら次の手順の確認を出す"))
+		body = append(body, sDim.Render("終わったら次の手順の確認を表示"))
 	}
-	return modal(title, body, "esc 閉じる (読み込みは裏で続く)", m.w)
+	return modal(title, body, "esc 閉じる (確認は裏で続く)", m.w)
 }
 
 // execBanner は端末を渡す前に出す板 (確認の板と同じ枠。題・何を聞かれるか・戻り方)。

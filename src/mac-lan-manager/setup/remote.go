@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,6 +39,12 @@ func (d Dest) SSHArgv(tty, batch bool, remote string) []string {
 	argv := []string{"ssh", "-o", "HostKeyAlias=" + d.HostKeyAlias, "-o", "ConnectTimeout=5"}
 	if batch {
 		argv = append(argv, "-o", "BatchMode=yes")
+		// 観測は ssh を十数本打つ (鍵の確認・サービスの一覧・サービスごとの設定・I/F ごとの状態)。1 本ずつ繋ぎ直すと air5 で約 12 秒かかった
+		// (実測)。接続を使い回す。置き場は ~/.ssh (自分だけが書ける): 誰でも書ける /tmp だと、他のユーザーが先に置いた socket へ繋いで
+		// しまいうる。$TMPDIR はパスが長く、ssh が足す 17 文字で socket の上限を超えた (実測)
+		if cp := controlPath(); cp != "" {
+			argv = append(argv, "-o", "ControlMaster=auto", "-o", "ControlPath="+cp, "-o", "ControlPersist=15")
+		}
 	}
 	if tty {
 		argv = append(argv, "-t")
@@ -46,6 +54,24 @@ func (d Dest) SSHArgv(tty, batch bool, remote string) []string {
 		argv = append(argv, remote)
 	}
 	return argv
+}
+
+// controlPath は ssh の接続を使い回す socket の置き場 (%C は宛先から ssh が作る 40 文字の名前。作るとき ssh はさらに 17 文字の
+// 一時の後ろを足す)。socket のパスの上限 (104 バイト) に収まらない・~/.ssh が無いなら使い回さない。
+func controlPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Join(home, ".ssh")
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return ""
+	}
+	p := filepath.Join(dir, "mlm-%C")
+	if len(p)-2+40+17 > 103 {
+		return ""
+	}
+	return p
 }
 
 // Run は argv を起こして stdout を返す (観測のための口。テストで差し替える)。失敗したときの err は終了コード (ExitCode) を持ち、
