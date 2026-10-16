@@ -352,7 +352,7 @@ func (m *Model) Advance(now time.Time) {
 	m.now = now
 	m.takeNetLoad()
 	m.takeObserve()
-	m.settleProgress()
+	m.settleProgress(true)
 	m.expireConfirms()
 	if m.scan != nil {
 		m.peers = m.scan.Snapshot()

@@ -777,7 +777,7 @@ func TestRunArgvBanner(t *testing.T) {
 	if got := (ExecRequest{Argv: []string{"ssh", "x"}}).RunArgv(); !slices.Equal(got, []string{"ssh", "x"}) {
 		t.Errorf("板の無いプロセスを包んだ: %q", got)
 	}
-	r := ExecRequest{Argv: []string{"/bin/sh", "-c", "echo 本体; exit 3"}, Banner: "【板】"}
+	r := ExecRequest{Argv: []string{"/bin/sh", "-c", "echo 本体; exit 3"}, Banner: "【板】100%d"} // % は printf の書式に入れない
 	argv := r.RunArgv()
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin = strings.NewReader("\n")
@@ -786,11 +786,38 @@ func TestRunArgvBanner(t *testing.T) {
 	if !errors.As(err, &ee) || ee.ExitCode() != 3 {
 		t.Fatalf("終了コードを返さない: %v", err)
 	}
-	if s := string(out); !strings.Contains(s, "【板】") || strings.Index(s, "【板】") > strings.Index(s, "本体") || !strings.Contains(s, "終了コード 3") {
+	if s := string(out); !strings.Contains(s, "【板】100%d") || strings.Index(s, "【板】") > strings.Index(s, "本体") || !strings.Contains(s, "終了コード 3") {
 		t.Errorf("板 → 本体 → 失敗の案内の順に出ない: %q", s)
 	}
 	ok := ExecRequest{Argv: []string{"/bin/sh", "-c", "exit 0"}, Banner: "【板】"}.RunArgv()
 	if out, err := exec.Command(ok[0], ok[1:]...).Output(); err != nil || strings.Contains(string(out), "Enter") {
 		t.Errorf("成功でも Enter を待った: %q %v", out, err)
+	}
+}
+
+// 読み込み中に予約した x は、読み終わりと同時に押した q / esc で板を一覧に残さない (キーの入口で予約を走らせていたので、板を出した
+// 直後に同じ q が画面を閉じ、一覧に残った板の y が相手の名前の無い手順を起こした。敵対レビュー)。この Mac の網だけを読んでいる間の
+// x も予約になる (古い網で計画を組み、この Mac の固定の板がもう一度出た)。
+func TestSetupQueuedXRaces(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	h.keys("r", "x")
+	awaitSetup(h.m) // 読み終えたが、まだ tick が来ていない
+	h.keys("q")
+	if h.m.ov != ovNone || h.m.ask != nil || h.m.su != nil {
+		t.Fatalf("画面を閉じた後に初期設定の板が残った (ov=%v ask=%v)", h.m.ov, h.m.ask)
+	}
+
+	h2, _ := setupHarness(t, obs)
+	h2.keys("x", "y") // この Mac の固定
+	h2.m.TakeExec()
+	h2.m.ExecDone(nil) // この Mac の網と相手を読み直す
+	awaitSetup(h2.m)   // 相手は読み終えたが、この Mac の網はまだ
+	h2.keys("esc", "x")
+	if h2.m.ov == ovConfirm {
+		t.Error("この Mac の網を読み直している間の x で、古い網の板を出した")
+	}
+	if !h2.m.su.queuedX {
+		t.Error("この Mac の網を読み直している間の x を予約しない")
 	}
 }

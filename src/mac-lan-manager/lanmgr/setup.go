@@ -157,6 +157,9 @@ func (m *Model) closeSetup() {
 	if m.su != nil && m.su.stop != nil {
 		m.su.stop()
 	}
+	if m.ov == ovConfirm && m.ask != nil && m.ask.exec != nil { // 初期設定の手順の板も閉じる (画面の外に残すと、相手の無い手順を起こせた)
+		m.ov, m.ask = ovNone, nil
+	}
 	m.su = nil
 	if m.sc == scSetup {
 		m.sc = scList
@@ -243,7 +246,7 @@ func (m *Model) setupObserved() (setup.Observed, row) {
 func (m *Model) selfWired() (netinfo.Service, bool) {
 	if !m.pf.LanByBand {
 		for _, s := range m.self.Enabled() {
-			if s.Device == m.pf.LanIF && !s.Wireless() && m.self.WiredIF(s.Device) { // ネットに繋がっていない有線だけ (Offline と同じ)
+			if s.Device == m.pf.LanIF && !s.NotWiredLAN() && m.self.WiredIF(s.Device) { // ネットに繋がっていない有線だけ (Offline と同じ)
 				return s, true
 			}
 		}
@@ -412,7 +415,7 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 
 // keySetup は初期設定の画面のキー。
 func (m *Model) keySetup(key string) Action {
-	m.settleProgress()
+	m.settleProgress(false)
 	if m.progressShown() { // 進捗のモーダル: esc / q で閉じる (読み込みは裏で続く)。他のキーは捨てる (読み終える前の板を出さない)
 		if key == "esc" || key == "q" {
 			m.su.after, m.su.queuedX = "", false
@@ -427,7 +430,9 @@ func (m *Model) keySetup(key string) Action {
 	case "e":
 		m.openLog()
 	case "x":
-		if m.su.ch != nil && m.conf() == nil { // 確認待ちの間は観測を待たない (確認は観測を使わず、待つ分だけ窓を削った)
+		// 読み込み中 (相手の観測・この Mac の網) は予約する。この Mac の網だけを読んでいる間に通すと、読み直す前の古い網で計画を組み、
+		// この Mac の固定の板がもう一度出た (敵対レビュー)。確認待ちの間は観測を待たない (確認は観測を使わず、待つ分だけ窓を削った)
+		if m.setupBusy() && m.conf() == nil {
 			m.su.queuedX, m.su.waitSince = true, m.o.Now() // 読み終えたら次の手順の板を出す (断る toast を出していた。ユーザー報告)
 			return None
 		}

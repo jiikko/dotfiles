@@ -312,6 +312,7 @@ func TestOfflineExcludesWireless(t *testing.T) {
 	s := Snapshot{Services: []Service{
 		{Name: "家の外の網", Port: "Wi-Fi", Device: "en0", Active: true, IP: "169.254.1.2", Method: "DHCP", Read: true},
 		{Name: "Thunderbolt Ethernet", Port: "Thunderbolt Ethernet", Device: "en13", Active: true, IP: "169.254.13.42", Method: "DHCP", Read: true},
+		{Name: "Bluetooth PAN", Port: "Bluetooth PAN", Device: "en7", Active: true, IP: "169.254.7.7", Method: "DHCP", Read: true},
 	}}
 	off := s.Offline()
 	if len(off) != 1 || off[0].Device != "en13" {

@@ -49,8 +49,15 @@ type Service struct {
 	Disabled bool
 }
 
-// Wireless は無線の I/F のサービスか (Hardware Port で決める。サービス名は利用者が変えられる)。
-func (s Service) Wireless() bool { return s.Port == "Wi-Fi" || s.Port == "AirPort" }
+// NotWiredLAN は Mac 同士の有線の網に使わない I/F のサービスか (無線・Bluetooth・iPhone のテザリング)。Hardware Port で決める
+// (サービス名は利用者が変えられる)。Thunderbolt Bridge は Mac 同士の有線なので含めない
+func (s Service) NotWiredLAN() bool {
+	switch s.Port {
+	case "Wi-Fi", "AirPort", "Bluetooth PAN", "iPhone USB":
+		return true
+	}
+	return false
+}
 
 // Internet はインターネット用のサービスか (ルーターがある)。
 func (s Service) Internet() bool { return s.Router != "" }
@@ -341,7 +348,7 @@ func (s Snapshot) Offline() []Service {
 	for _, sv := range s.Enabled() {
 		// 無線は数えない: ルーターの無い Wi-Fi (どこにも繋がっていない・ルーターの無い網に繋いだ) を「ネットに繋がっていない有線」として
 		// 固定 IP にしかけた (ユーザーの指示 2026-10-16「ネットに繋がっていない有線ネットワークに限定」)
-		if sv.Active && !sv.Wireless() && s.WiredIF(sv.Device) && !slices.ContainsFunc(out, func(o Service) bool { return o.Device == sv.Device }) {
+		if sv.Active && !sv.NotWiredLAN() && s.WiredIF(sv.Device) && !slices.ContainsFunc(out, func(o Service) bool { return o.Device == sv.Device }) {
 			out = append(out, sv)
 		}
 	}

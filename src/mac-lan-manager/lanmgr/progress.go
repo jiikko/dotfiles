@@ -24,13 +24,15 @@ func (m *Model) progressShown() bool {
 	return m.sc == scSetup && m.ov == ovNone && m.su != nil && (m.su.after != "" || m.su.queuedX) && m.setupBusy()
 }
 
-// settleProgress は読み込みが終わっていたら進捗を閉じ、予約した x を走らせる (Advance とキーの入口で呼ぶ)。
-func (m *Model) settleProgress() {
+// settleProgress は読み込みが終わっていたら進捗を閉じ、runQueued なら予約した x を走らせる。予約した x を走らせるのは Advance
+// だけ: キーの入口で走らせると、読み終わりと同時に押した q / esc が、出たばかりの確認の板を残したまま画面を閉じ、一覧に残った板の
+// y が相手の名前の無い手順を起こした (未確認の印も確認待ちも立たない。敵対レビュー)
+func (m *Model) settleProgress(runQueued bool) {
 	if m.su == nil || m.setupBusy() {
 		return
 	}
 	m.su.after = ""
-	if m.su.queuedX {
+	if runQueued && m.su.queuedX {
 		m.su.queuedX = false
 		if m.ov == ovNone {
 			m.setupX()
