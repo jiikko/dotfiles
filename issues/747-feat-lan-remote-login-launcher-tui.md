@@ -637,6 +637,33 @@ package (`lanmgr`。glogx の `L` の板からも取り込む。`New` / `Resize`
     - 受容したもの: 足りない画面でも glogx の最下行に「?: キーの一覧」が出たまま (押しても何も起きない。lanmgr の画面には q 閉じる だけを出す) /
       glogx の終了の演出の間、Close が層を畳んだ一覧が描かれる (記録は Close より前に済む。見た目だけ) /
       単体で設定の画面を開いたまま高さ 10〜15 になると、q は設定でなくアプリを閉じる (画面の案内は「q 閉じる」で食い違いは無い)
+  - [x] 監査の第 3 波 (2026-10-16。test-cleanup / test-helpers / lint-from-done / general。sonnet の調査 1 体 + 直しへの opus の敵対レビュー 6 周)。直したもの (どれも変異で赤を確かめた):
+    - general:
+      - サービス名を Hardware Port から読んでいた。名前を変えたサービスの -getinfo が rc=4 になり、Wi-Fi が「有線」に倒れた。段 4 の -setmanual の対象名にもなる
+      - 台帳の user / lan を確かめずに ssh の引数・コピーに入れていた。ledger.ValidUser / ValidLAN を置き、m.hosts に入れる経路は setHosts の 1 つにし、ssh の宛先の前に `--` を置く
+      - 帯の判定が文字列の前方一致と netip の 2 系統だった。netinfo.ParseBand / InBand に寄せ、/16〜/28 とし、保存・読み込みは Masked の形にする
+      - 読めない settings.toml を既定で上書きしていた (読めない間は保存しない)
+    - 敵対レビューで出たもの: 有線かどうかをサービスごとと I/F ごとの 2 系統で決めていた。同じ I/F に複数のサービスが載ると食い違い、Wi-Fi の IP が内部 IP になった。
+      - I/F ごとの分類 (netinfo の ifClass。ルーターあり優先 → 読めないサービスがあれば分からない → 有線) を正本にした。Kind / WiredIF / Offline / I/F の候補 / selfLan がそれを使う
+      - 無効 ((*)) のサービスは分類に数えず、Snapshot.Enabled を通して Main・候補にも出さない。ifconfig も -getinfo も打たない
+      - 保存した I/F が候補に無いときは「今は使えない」として残し、黙って替えない。候補は I/F ごとに 1 つ
+    - lint-from-done:
+      - Rmv の行を本物の dns-sd -B / -G で取って fixture にした (_mlmtest._tcp を数秒広告して取り消した)
+      - 全 fixture の行頭の時刻を 0〜23 時に書き換えて同じに読むことを見る。時間帯で形の変わる parser は他に無かった (discover の 3 本は共有の stamp、netinfo は時刻を読まない)
+      - thelper の抜けを足した
+    - test-cleanup:
+      - discover の同時に起こす上限 (8) と lookupTimeout を守るテストを足した。lookupTimeout はテストのため var にした
+      - 台帳に無い相手への m を見る
+      - 循環した Internet() の検査と、死んだ条件・届かない fixture を消した
+      - TestViewFitsWidthAndKeepsQuit は幅の検査を TestEveryScreenFitsHeight へ移して消した (失ったカバレッジは無い。q は TestFooterKeepsActionKeys が見る)
+    - test-helpers: ledger / prefs のテストの書き込み関門を internal/testsandbox の 1 つにした。lanmgr のテストに cursorTo (合わなければ止める) と bandKeys を置いた
+    - 受容 / trigger 待ち:
+      - 有効なサービスどうしが同じ I/F で食い違う (手でルーターを書いた別の設定が有効なまま) ときは、内部 IP を出さない側に倒したまま
+      - 同じ I/F の最初のサービスの IP を使う件 (ifconfig に IPv4 が無く、-getinfo の IP にだけ差があるとき)。Device が空のサービス (VPN) が候補に出る件 (未確認)
+      - I/F 指定で、指定した I/F に載るのが無効のサービスだけのときの文言は「が無い」。値 (IP は空) は正しい
+      - setup のテストは約 34 秒かかる。Validate が窓を整数秒に縛り、実際に 1 秒刻みで待つため。trigger: 段 4 の配線で周期を注入できる形にする
+      - 本物の `Manual Configuration` の -getinfo の出力は未確認 (この Mac のサービスは全部 DHCP)。trigger: 段 4 の人手の確認で fixture にする
+      - 無効のサービスの本物の出力 ("(*)" の行) は未観測。networksetup の文字列には同じ 2 行の書式がある
   - [x] 段 2 は不要にした (lipgloss を v2.0.5 に固定。上の「段取り」の 2)
   - [x] 段 1: module の土台と `netinfo` / `discover` / `ledger` (2026-10-15。commit「mac-lan-manager: 段 1 …」)
     - テストの fixture は 2026-10-15 にこの Mac で本物のコマンドから取った出力 (MAC と IPv6 のリンクローカルは伏せた)。`dns-sd -L` は空白を `\032` で返す

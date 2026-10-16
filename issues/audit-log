@@ -258,3 +258,7 @@
 2026-10-16 09:10	encapsulation	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 2 波: 0 件)
 2026-10-16 09:10	ui-components	direct	issues/785-refactor-tuikit-watch-rearm-and-hint-fitter.md (lan-manager 第 2 波: 1 件。案内の詰め方を 785 へ)
 2026-10-16 09:10	ux	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 2 波: 6 件を直した。幅 20〜200 × 高さ 10〜50 で描いて確認)
+2026-10-16 12:00	test-cleanup	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 3 波 sonnet: 6 件。直した・1 本は移して消した)
+2026-10-16 12:00	test-helpers	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 3 波: 2 件を寄せた。testsandbox・cursorTo / bandKeys)
+2026-10-16 12:00	lint-from-done	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 3 波: 時間帯の掃引・Rmv の本物の fixture・thelper。時間帯で形の変わる parser は他に 0 件)
+2026-10-16 12:00	general	direct	issues/747-feat-lan-remote-login-launcher-tui.md (lan-manager 第 3 波: 5 件。P2 サービス名の取り違えを含め 4 件直した・1 件 trigger 待ち。直しへの opus の敵対レビュー 6 周)
