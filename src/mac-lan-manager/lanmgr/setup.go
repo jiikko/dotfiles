@@ -83,7 +83,7 @@ func (m *Model) ledgerBlocked(host, ip string) string {
 		return "固定 IP にした後の確認を待っている (確認してから)"
 	}
 	if _, ok := m.unconf[host]; ok {
-		return "固定 IP にした後、まだ確認していない (確認するか、相手が元に戻る頃に初期設定の画面で r で読み直す)"
+		return "固定 IP にした後、まだ確認していない (確認するか、相手が元に戻る頃に初期設定の画面で r で読み直す。相手を読めるようになるまで解けない)"
 	}
 	if ip != "" && m.tried[host][ip] {
 		return "内部 IP " + ip + " は固定しようとして確認できなかった番号 (相手は元に戻っている。一覧で r を押して読み直す)"
@@ -108,6 +108,15 @@ func (m *Model) awaitingUnconf() bool {
 	}
 	dl, ok := m.unconf[m.su.host]
 	return ok && !m.su.obsAt.After(dl)
+}
+
+// unconfOverdue は、開いている相手の未確認の印の期限が過ぎ、その後に読み直した観測でも解けていないか (画面に r を促す)。
+func (m *Model) unconfOverdue() bool {
+	if m.su == nil || m.su.ch != nil {
+		return false
+	}
+	dl, ok := m.unconf[m.su.host]
+	return ok && m.su.obsAt.After(dl)
 }
 
 // stepConfirm は相手を固定 IP にした後の「新しい IP で入り直して確認する」手順 (Plan の手順とは別に、確認待ちの間だけ出す)。

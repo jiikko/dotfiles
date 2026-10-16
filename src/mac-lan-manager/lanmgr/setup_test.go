@@ -664,3 +664,23 @@ func TestSetupFailedObserveKeepsUnconf(t *testing.T) {
 		t.Errorf("読み直して固定が見えたのに台帳に書けない: %s", why)
 	}
 }
+
+// 期限の後の観測が読めずに未確認の印が残ったら、画面に r で読み直す 1 行を出す (tick が止まり、断りの文言を読んだ人にしか届かなかった)。
+func TestSetupOverdueUnconfAsksReload(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, ob := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	runStep(t, h, nil)
+	if strings.Contains(strings.Join(h.m.View(), "\n"), "確認が済んでいない") {
+		t.Fatal("前提: 期限の前から読み直しを促した")
+	}
+	runStep(t, h, errors.New("exit status 1"))
+	setObs(t, h, ob, setup.PeerNet{KeyErr: fmt.Errorf("%w: timeout", setup.ErrUnknown)})
+	at := t0.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second)
+	h.m.o.Now = func() time.Time { return at }
+	h.m.Advance(at)
+	awaitSetup(h.m)
+	if !strings.Contains(strings.Join(h.m.View(), "\n"), "確認が済んでいない") {
+		t.Error("期限の後の観測が読めず印が残ったのに、読み直しを促さない")
+	}
+}

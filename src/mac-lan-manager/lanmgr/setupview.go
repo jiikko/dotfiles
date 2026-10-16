@@ -30,6 +30,9 @@ func (m *Model) viewSetup(w int) string {
 	switch {
 	case su.ch != nil:
 		b.WriteString(sDim.Render("相手を読んでいる…") + "\n")
+	case m.unconfOverdue():
+		// 期限の後の観測が読めずに印が残ると tick が止まる (読み直しは r だけ)。断りの文言を読んだ人にしか届かなかった (敵対レビュー)
+		b.WriteString(sWarn.Render("固定 IP にした後の確認が済んでいない: 相手が元に戻った頃なので r で読み直す") + "\n")
 	case errors.Is(su.obs.KeyErr, setup.ErrUnknown):
 		b.WriteString(sWarn.Render("相手を読めない (届かない・判定できない): "+su.obs.KeyErr.Error()) + "\n")
 	case su.seen && !su.obs.KeyOK:
