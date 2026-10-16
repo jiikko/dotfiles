@@ -33,3 +33,4 @@
 - [803](803-feat-screen-sharing-throttle-hidden-sessions.md) — 見えていない画面の負荷を下げる
 - [804](804-feat-multi-mac-claude-code-dashboard.md) — 複数の Mac で走る Claude Code を 1 台から見渡して操作する
 - [805](805-design-screen-sharing-claude-pdca-debug-loop.md) — Claude Code がこのアプリを自分で動かして確かめ、直せる経路
+- [806](806-research-rootshell-vnc-internals.md) — rootshell-vnc の中身を調べる

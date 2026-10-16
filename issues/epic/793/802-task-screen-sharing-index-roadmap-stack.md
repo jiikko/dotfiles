@@ -20,6 +20,7 @@
 | **0** | [800](800-research-screen-sharing-multiple-hp-sessions.md) | 実測: 2 台に同時に高性能で繋げるか / 高性能に繋ぐまでの秒数と、標準と行き来したときに相手のウインドウが動くか / 標準と高性能の体感の遅延 | ユーザー | なし (今すぐ) |
 | **0** | [799](799-feat-screen-sharing-modifier-keys-and-spaces.md) | 実測: 標準アプリで ctrl+→ を押し、手元・相手・どちらも動かない、のどれかを見る (全画面でも) | ユーザー | なし (今すぐ) |
 | **1** | [794](794-research-macos-screen-sharing-client-feasibility.md) の 4 / [795](795-research-app-store-distribution-and-third-party-apps.md) | 決める: ライセンスの道 (推奨は rootshell-vnc)・相手に自作のサーバを置くか (系統 1 / 2)・アプリ名 (下の候補)・repo を作る時期 | ユーザー | 段 0 の 800 の結果 |
+| **1** | [806](806-research-rootshell-vnc-internals.md) | 調べる: rootshell-vnc の中身 (公開 API・Mac で使えるか・複数セッション・負荷の下げ方) | Claude | なし (2026-10-16 に着手) |
 | **1** | [805](805-design-screen-sharing-claude-pdca-debug-loop.md) | 決める: Claude が確かめる経路 (CLI・ログ・デバッグの口)・試験に使う Mac・verify の入口の名前 | ユーザー + Claude | なし |
 | **2** | [796](796-feat-screen-sharing-hp-protocol-client.md) | 作る: 1 台に高性能で繋ぐ芯。805 の 1・2 (画面を出さない CLI・ログ) を同時に入れる。B3 (相手の版とチップ) を確かめる | Claude | 段 1 の決定・別の repo |
 | **3** | [798](798-feat-screen-sharing-always-connected.md) | 作る: 常時接続・ショートカットでの切り替え・ウインドウの大きさを覚える・相手のディスプレイの切り替え・別ウインドウ | Claude | 796。複数台の設計は 800 の結果次第 |
