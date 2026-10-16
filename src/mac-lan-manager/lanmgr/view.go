@@ -28,6 +28,9 @@ func (m *Model) View() []string {
 	if m.w < minWidth {
 		return m.viewTooSmall("幅が足りない")
 	}
+	if m.h < 10 { // 枠を組む最低の高さ。これより低い端末では画面を組まない (高さ 10 とみなして描くと、View が端末より多い行を返した)
+		return m.viewTooSmall("高さが足りない")
+	}
 	// 幅を 40 桁に固定しない: max(…, 40) にしていたころは、それより狭い端末で枠と列が折り返し、最下行の案内 (抜け方) まで画面の外へ
 	// 出た (fable の敵対レビュー)。狭ければ列を落とし、どの行も幅で切る (下の安全網)
 	w := m.w - 2*padX
@@ -36,6 +39,9 @@ func (m *Model) View() []string {
 	var body string
 	if m.sc == scSettings {
 		body = lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", m.viewSettings(w))
+		if m.tooShort {
+			return m.viewTooSmall("高さが足りない")
+		}
 		if m.bandEdit {
 			// 板の左端 (padX) + 枠 1 + 余白 2 + 選んでいる行の左の棒 1 (selRow。帯の行は編集中は必ず選んでいる) + 名前の列 +
 			// 入力欄の左の余白 1。行は 見出し 3・枠 1・余白 1・板の見出し 3 の下で、窓の分を引く。画面の中に無ければ出さない

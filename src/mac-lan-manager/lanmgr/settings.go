@@ -249,7 +249,9 @@ func (m *Model) viewSettings(w int) string {
 	// カーソルだけ進んだ)。板の枠・余白・影の行数は定数で書かず描いて測る (定数が 1 行少なく、低い画面でキャレットが案内の行に出た。
 	// fable の敵対レビュー)。見出し 3・板の見出し 3 を引く
 	frame := lipgloss.Height(shadow(card("", w-1, surfPanel, cPink, cPurple, cTeal))) - 1
-	avail := max(m.bodyHeight()-3-frame-3, 1)
+	raw := m.bodyHeight() - 3 - frame - 3
+	m.tooShort = raw < 1 // 項目の行が 1 行も入らない: View が抜け方だけの画面にする (見えない項目に space が届いて設定を書き換えた)
+	avail := max(raw, 1)
 	m.setOff = 0
 	if len(rows) > avail {
 		m.setOff = listnav.WindowOffset(m.setOffPrev, selAt, len(rows), avail)

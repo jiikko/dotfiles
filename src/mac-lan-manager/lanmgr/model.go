@@ -336,6 +336,9 @@ func (m *Model) Binds(key string) bool {
 	if m.small && !m.OwnsKeys() {
 		return key == "q" || key == "esc"
 	}
+	if m.small && key == "L" { // 層が開いていても L (glogx の開閉) は渡す。案内「L/q: 閉じる」のとおり閉じ、hide の Close が層を畳む
+		return false
+	}
 	if m.OwnsKeys() {
 		return true
 	}

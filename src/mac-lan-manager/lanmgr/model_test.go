@@ -1192,8 +1192,8 @@ func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
 		if h.keys("y") != None || len(h.store.hosts) != 1 {
 			t.Errorf("%v: 見えない確認の板に y が届いた (台帳 %d 台)", size, len(h.store.hosts))
 		}
-		if !h.m.Binds("L") {
-			t.Errorf("%v: 確認の板を開いたまま足りない画面になったら L も取る", size)
+		if h.m.Binds("L") || !h.m.Binds("C") {
+			t.Errorf("%v: 確認の板を開いたまま足りない画面では、L (glogx の開閉) だけを渡して他は取る", size)
 		}
 		bare := newHarness(t, nil, []discover.Peer{mini}) // 層の無い足りない画面: 閉じるキーだけを取り、L や横断キーは glogx へ渡す
 		bare.m.Resize(size[0], size[1])
@@ -1209,7 +1209,7 @@ func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
 		h.m.Resize(size[0], size[1])
 		h.keys("/", "z")
 		h.m.View()
-		for _, k := range []string{"C", "s", "L", "x"} {
+		for _, k := range []string{"C", "s", "x"} {
 			if !h.m.Binds(k) {
 				t.Errorf("%v: 入力欄を開いたまま足りない画面になったら %s も取る (glogx の横断キーに渡すと update が走り、文字が消えた)", size, k)
 			}
@@ -1289,5 +1289,38 @@ func TestFooterShellHintFollowsKey(t *testing.T) {
 	}
 	if h.keys("s") == Exec {
 		t.Errorf("ssh が閉じた Mac で s が ssh を起こした")
+	}
+}
+
+// どの画面でも View は高さちょうどの行を返す。設定の画面で項目の行が入らない高さは「高さが足りない」の画面になり、
+// 見えない項目に space が届いて設定を書き換えない (高さを 10 とみなして描き、端末より多い行を返していた。opus の敵対レビュー)。
+func TestEveryScreenFitsHeight(t *testing.T) {
+	for _, w := range []int{minWidth, 80, 120} {
+		for hgt := 1; hgt <= 30; hgt++ {
+			for _, open := range [][]string{nil, {","}} {
+				h := newHarness(t, nil, []discover.Peer{mini})
+				h.keys(open...)
+				h.m.Resize(w, hgt)
+				lines := h.m.View()
+				if len(lines) != hgt {
+					t.Errorf("%dx%d %v: %d 行 (高さと違う)", w, hgt, open, len(lines))
+				}
+				if open == nil {
+					continue
+				}
+				view := termwidth.StripSGR(strings.Join(lines, "\n"))
+				if h.m.small {
+					before := len(h.saved)
+					h.keys("space", "enter")
+					if len(h.saved) != before || h.m.bandEdit {
+						t.Errorf("%dx%d: 見えない設定の項目に space / enter が届いた", w, hgt)
+					}
+					continue
+				}
+				if !strings.Contains(view, "メイン") { // 狭い幅では項目名が切り詰められる
+					t.Errorf("%dx%d: 設定の画面なのに選んでいる項目の行が無い:\n%s", w, hgt, view)
+				}
+			}
+		}
 	}
 }
