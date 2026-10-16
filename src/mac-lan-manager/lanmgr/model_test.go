@@ -1543,6 +1543,18 @@ func TestUserEditChangesOnlyUser(t *testing.T) {
 		}
 	}
 
+	h.keys("u") // 空にすると既定 (この Mac のユーザー名) に戻す
+	h.m.alias.Reset()
+	h.keys("enter")
+	if h.store.hosts[0].User != "" || h.m.ov == ovAlias {
+		t.Errorf("空にして既定へ戻せない: %+v", h.store.hosts)
+	}
+	h.keys("u") // 台帳が空なら欄も空で開く (推測の名前で開くと、そのまま enter で台帳に固定された)
+	if h.m.alias.String() != "" {
+		t.Errorf("台帳の空の欄を推測の名前 %q で開いた", h.m.alias.String())
+	}
+	h.keys("esc")
+
 	h = newHarness(t, nil, []discover.Peer{{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}})
 	h.keys("l")
 	h.cursorTo(t, "air.local")
@@ -1577,8 +1589,8 @@ func TestWiredOnlyHidesWifiOnlyPeers(t *testing.T) {
 	if !slices.Equal(hosts, []string{"m2macmini.local"}) || h.m.count(false) != 1 {
 		t.Errorf("有線だけの一覧 = %v / 件数 %d (mini だけ)", hosts, h.m.count(false))
 	}
-	if v := strings.Join(h.m.View(), "\n"); !strings.Contains(v, "未管理  1") {
-		t.Errorf("タブの件数が一覧と食い違う")
+	if v := strings.Join(h.m.View(), "\n"); !strings.Contains(v, "未管理  1") || !strings.Contains(v, "有線で見えた相手だけ") {
+		t.Errorf("タブの件数が一覧と食い違う・絞っていることを出さない")
 	}
 	if h.m.current().host != "m2macmini.local" {
 		t.Errorf("消えた行にカーソルが残った: %q", h.m.current().host)

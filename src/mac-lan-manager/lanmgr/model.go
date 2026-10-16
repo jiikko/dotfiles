@@ -892,9 +892,8 @@ func (m *Model) keyList(key string) Action {
 		return Exec
 	case "m": // 名前の変更 (treefiler と同じ動詞)
 		m.openEdit(r, aliasEdit, r.alias)
-	case "u": // ssh のユーザー名 (台帳の user)
-		user, _ := m.userFor(r)
-		m.openEdit(r, userEdit, user)
+	case "u": // ssh のユーザー名 (台帳の user)。欄は台帳の値で開く (推測の名前で開くと、そのまま enter で台帳に固定された。敵対レビュー)
+		m.openEdit(r, userEdit, r.user)
 	}
 	return None
 }
@@ -1031,7 +1030,7 @@ var (
 	aliasEdit = hostEdit{label: "別名", title: "別名を付ける", done: "別名を付けた", set: func(h *ledger.Host, v string) { h.Alias = v }}
 	userEdit  = hostEdit{label: "ユーザー", title: "ssh のユーザー名を変える", done: "ユーザー名を変えた",
 		check: func(v string) string {
-			if !ledger.ValidUser(v) {
+			if v != "" && !ledger.ValidUser(v) { // 空は「既定 (この Mac のユーザー名) に戻す」
 				return "ユーザー名が使えない: " + strconv.Quote(v)
 			}
 			return ""
