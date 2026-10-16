@@ -24,6 +24,7 @@ import (
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/prefs"
+	"mac-lan-manager/setup"
 )
 
 // Action は HandleInput の結果 (呼び出し側がすること)。
@@ -74,6 +75,8 @@ type Options struct {
 	Copy      func(s string) error // クリップボードへ
 	Now       func() time.Time
 	User      string // 台帳にユーザー名が無い相手に使う推測の名前 (live は $USER を入れる。環境を読むのはつなぎの側)
+	// Observe は相手を ssh で読む (段 4 の初期設定。読むだけ)。live は setup.ObservePeer を本物の ssh で走らせる。nil なら観測しない
+	Observe func(ctx context.Context, d setup.Dest) setup.PeerNet
 }
 
 type screen int
