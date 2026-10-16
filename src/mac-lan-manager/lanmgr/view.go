@@ -35,7 +35,13 @@ func (m *Model) View() []string {
 	m.caretFY, m.caretMY = -1, -1
 	m.small = false
 	var body string
-	if m.sc == scSettings {
+	switch {
+	case m.sc == scSetup && m.su != nil:
+		body = lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", m.viewSetup(w))
+		if m.tooShort {
+			return m.viewTooSmall("高さが足りない")
+		}
+	case m.sc == scSettings:
 		body = lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", m.viewSettings(w))
 		if m.tooShort {
 			return m.viewTooSmall("高さが足りない")
@@ -49,7 +55,7 @@ func (m *Model) View() []string {
 				m.caretMY = -1
 			}
 		}
-	} else {
+	default:
 		body = m.viewList(w)
 		if m.tooShort { // カーソルの行まで入らない高さ: 切れた板を出さず、抜け方だけの画面にする (高さ 12 以下でカーソルの行ごと板が切れた)
 			return m.viewTooSmall("高さが足りない")
@@ -89,6 +95,8 @@ type keyHint struct {
 func (m *Model) footer() string {
 	var hs []keyHint
 	switch {
+	case m.sc == scSetup:
+		hs = []keyHint{{"x", "実行", 2}, {"r", "読み直す", 3}, {"q/esc", "戻る", 1}}
 	case m.sc == scSettings:
 		hs = []keyHint{{"j/k", "項目", 2}, {"space", "入/切", 3}, {"←/→", "選ぶ", 4}, {"enter", "編集", 5}, {"q/esc/,", "閉じる", 1}}
 	case m.filtering:

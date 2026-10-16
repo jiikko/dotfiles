@@ -77,7 +77,7 @@ type exitCoder interface{ ExitCode() int }
 func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 	var p PeerNet
 	if err := d.Validate(); err != nil {
-		p.KeyErr = fmt.Errorf("%w: %v", ErrUnknown, err)
+		p.KeyErr = fmt.Errorf("%w: %w", ErrUnknown, err)
 		return p
 	}
 	if _, err := run(ctx, d.SSHArgv(false, true, "true")); err != nil {
@@ -85,7 +85,7 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 		if ctx.Err() == nil && errors.As(err, &ec) && ec.ExitCode() == 255 && strings.Contains(err.Error(), "Permission denied") {
 			return p // 鍵で入れない
 		}
-		p.KeyErr = fmt.Errorf("%w: %v", ErrUnknown, err)
+		p.KeyErr = fmt.Errorf("%w: %w", ErrUnknown, err)
 		return p
 	}
 	p.KeyOK = true

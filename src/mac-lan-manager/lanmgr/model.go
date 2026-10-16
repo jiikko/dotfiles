@@ -84,6 +84,7 @@ type screen int
 const (
 	scList screen = iota
 	scSettings
+	scSetup // 相手 1 台の初期設定 (段 4。setup.go)
 )
 
 type overlay int
@@ -102,17 +103,22 @@ type Model struct {
 	w, h        int
 	now         time.Time
 	sc          screen
-	tab         int    // 0: 管理対象 / 1: 未管理
-	cur         [2]int // タブごとのカーソル
-	listOff     [2]int // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
-	listRows    int    // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
-	tooShort    bool   // 一覧の板に 1 行も入らない高さ (描いたとき)
-	prefsUnread bool   // 設定ファイルが読めなかった (既定で描き、保存しない)
-	small       bool   // 最後に描いた画面が幅・高さの足りない画面 (抜け方だけ)。HandleInput は q しか受けない
-	setC        int    // 設定の画面のカーソル
-	ov          overlay
-	ask         *ask
-	copyC       int
+	tab         int         // 0: 管理対象 / 1: 未管理
+	cur         [2]int      // タブごとのカーソル
+	listOff     [2]int      // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
+	listRows    int         // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
+	tooShort    bool        // 一覧の板に 1 行も入らない高さ (描いたとき)
+	prefsUnread bool        // 設定ファイルが読めなかった (既定で描き、保存しない)
+	small       bool        // 最後に描いた画面が幅・高さの足りない画面 (抜け方だけ)。HandleInput は q しか受けない
+	su          *setupState // 初期設定の画面 (開いていなければ nil)
+	// execStep / execStatic / execSetup は、初期設定の手順として渡したプロセスの印 (ExecDone が setupExecDone へ渡す)
+	execStep   setup.StepID
+	execStatic *setup.StaticIP
+	execSetup  bool
+	setC       int // 設定の画面のカーソル
+	ov         overlay
+	ask        *ask
+	copyC      int
 
 	filter    lineedit.Line
 	filtering bool `layer:"filter"`
@@ -151,6 +157,10 @@ type ask struct {
 	title string
 	body  []string
 	yes   func() Notice
+	// exec は y で端末を明け渡して起こすプロセス (初期設定の手順。yes の代わり)。step / static は戻ったときに setupExecDone へ渡す
+	exec   *ExecRequest
+	step   setup.StepID
+	static *setup.StaticIP
 }
 
 // New は画面を作り、この Mac のネットワーク・台帳・設定を読み、Bonjour の走査を起こす。
@@ -306,6 +316,7 @@ func (m *Model) seekWantHost() {
 func (m *Model) Advance(now time.Time) {
 	m.now = now
 	m.takeNetLoad()
+	m.takeObserve()
 	if m.scan != nil {
 		m.peers = m.scan.Snapshot()
 		if err := m.scan.Err(); err != nil && m.scanErr == nil {
@@ -327,11 +338,13 @@ func (m *Model) Changed() <-chan struct{} {
 
 // Busy は走査が続いているか (呼び出し側はこの間、遅い周期で Advance を呼ぶ。spinner もこの間だけ回る)。
 // この Mac のネットワークを裏で読んでいる間も Busy (読み終わりを Advance で取り込むため)。
-func (m *Model) Busy() bool { return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) }
+func (m *Model) Busy() bool {
+	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && (m.su.ch != nil || m.su.conf != nil))
+}
 
 // OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定) が開いているか (glogx は横断キーも渡す)。
 func (m *Model) OwnsKeys() bool {
-	return m.filtering || m.bandEdit || m.ov != ovNone || m.sc == scSettings
+	return m.filtering || m.bandEdit || m.ov != ovNone || m.sc == scSettings || m.sc == scSetup
 }
 
 // Binds はこの画面が使うキーか (glogx の横断キー・U より先にこの画面へ渡す。s は status の横断キーと同じ字だが、ここでは ssh)。
@@ -372,6 +385,11 @@ func (m *Model) ExecDone(err error) string {
 	var exitErr interface{ ExitCode() int } // *exec.ExitError
 	failOnExit := m.execExitIsFailure
 	m.execExitIsFailure = false // 1 回だけ読む (次の ExecDone へ漏らさない)
+	if m.execSetup {            // 初期設定の手順: 成功なら次へ進め、どちらでも相手を読み直す
+		failed := err != nil && (!errors.As(err, &exitErr) || failOnExit)
+		m.setupExecDone(m.execStep, m.execStatic, failed)
+		m.execStep, m.execStatic, m.execSetup = "", nil, false
+	}
 	switch {
 	case err == nil:
 		return ""
@@ -416,7 +434,9 @@ func (m *Model) Close() {
 		m.filtering = false
 		m.filter.Reset()
 	}
-	m.bandEdit, m.sc = false, scList
+	m.bandEdit = false
+	m.closeSetup()
+	m.sc = scList
 	m.stopNetLoad()
 	if m.scan != nil {
 		m.scan.Close()
@@ -661,6 +681,7 @@ func (m *Model) HandleKey(key string) Action { return m.HandleInput(key, lineedi
 func (m *Model) HandleInput(key, text string) Action {
 	key = canonKey(key)
 	m.takeNetLoad() // 読み終えていれば、次の tick を待たずにこのキーから効かせる
+	m.takeObserve()
 	if key == "ctrl+c" {
 		return Quit
 	}
@@ -678,6 +699,11 @@ func (m *Model) HandleInput(key, text string) Action {
 		a := m.ask
 		m.ov, m.ask = ovNone, nil
 		if a != nil && confirm.IsYes(key) {
+			if a.exec != nil {
+				r := *a.exec
+				m.exec, m.execStep, m.execStatic, m.execSetup = &r, a.step, a.static, true
+				return Exec
+			}
 			n := a.yes()
 			m.note(n.Text, n.OK)
 		}
@@ -690,6 +716,9 @@ func (m *Model) HandleInput(key, text string) Action {
 		m.ov = ovNone // どのキーでも閉じる
 		return None
 	case ovNone:
+	}
+	if m.sc == scSetup && m.su != nil {
+		return m.keySetup(key)
 	}
 	if m.sc == scSettings {
 		return m.keySettings(key, text)
@@ -780,7 +809,7 @@ func (m *Model) keyList(key string) Action {
 		m.Reload()
 		m.note("読み直した", true)
 	case "enter":
-		m.note("初期設定は次の段で入る (issue 747 の段 4)", false)
+		m.openSetup(r)
 	case "s": // シェル (treefiler の s と同じ動詞)
 		if why := r.shellRefusal(); why != "" {
 			m.note(why, false)

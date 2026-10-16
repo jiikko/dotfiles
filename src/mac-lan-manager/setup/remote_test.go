@@ -10,13 +10,13 @@ import (
 	"testing"
 )
 
-type exitErr struct {
+type exitError struct {
 	code int
 	msg  string
 }
 
-func (e exitErr) Error() string { return e.msg }
-func (e exitErr) ExitCode() int { return e.code }
+func (e exitError) Error() string { return e.msg }
+func (e exitError) ExitCode() int { return e.code }
 
 var dest = Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}
 
@@ -48,7 +48,7 @@ func fakeRemote(t *testing.T, key error) (Run, *[][]string) {
 		if o, ok := out[remote]; ok {
 			return o, nil
 		}
-		return "", exitErr{1, "no fake: " + remote}
+		return "", exitError{1, "no fake: " + remote}
 	}, &calls
 }
 
@@ -80,9 +80,9 @@ func TestObservePeerKeyOutcomes(t *testing.T) {
 		key     bool
 		unknown bool
 	}{
-		{"鍵で入れない", exitErr{255, "koji@192.168.50.7: Permission denied (publickey,password)."}, false, false},
-		{"届かない", exitErr{255, "ssh: connect to host 192.168.50.7 port 22: Operation timed out"}, false, true},
-		{"255 以外", exitErr{1, "boom"}, false, true},
+		{"鍵で入れない", exitError{255, "koji@192.168.50.7: Permission denied (publickey,password)."}, false, false},
+		{"届かない", exitError{255, "ssh: connect to host 192.168.50.7 port 22: Operation timed out"}, false, true},
+		{"255 以外", exitError{1, "boom"}, false, true},
 		{"終了コードの無い失敗", errors.New("exec: not found"), false, true},
 	}
 	for _, c := range cases {
@@ -94,7 +94,7 @@ func TestObservePeerKeyOutcomes(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	run, _ := fakeRemote(t, exitErr{255, "Permission denied"})
+	run, _ := fakeRemote(t, exitError{255, "Permission denied"})
 	if p := ObservePeer(ctx, run, dest); !errors.Is(p.KeyErr, ErrUnknown) {
 		t.Errorf("期限切れの ssh を「鍵で入れない」と読んだ: %+v", p)
 	}
