@@ -46,6 +46,7 @@ issue 785 (案内の詰め方を tuikit/hintfit に寄せる) をやった。
 
 ## 残課題
 
-- [ ] (1) の rule への追記 (ユーザーの判断待ち)
-- [ ] (3) のチェックリストへの追記 (ユーザーの判断待ち)
-- [ ] (5) の rule への追記 (ユーザーの判断待ち)
+- [x] (1) `survey-receiver-guards-before-passing-new-values.md` の「状態 × 読み手」の項の発動点に追記した (2026-10-16 ユーザー承認)
+- [x] (3) `rules-checklists/mutation-verify-new-tests.md` の「先に効く別の防御が影になって」の下に 1 行追記した (新しい項は立てない。既存の項と同じ主張)
+- [x] (5) `verify-design-intent-before-refactor.md` の手順 1 に追記した
+- (2)・(4) は却下 (理由は上)
