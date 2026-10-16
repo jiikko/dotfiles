@@ -8,16 +8,17 @@ import (
 	"fmt"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strings"
 )
 
-// ParseBand は内部の網の帯 ("192.168.100.0/24") を読む。IPv4 で /16〜/30 だけ (それより広い帯は番号の割り当てで回しきれず、
-// 狭い帯は Mac が入らない)。帯に入るかの判定はすべて InBand を通す (文字列の前方一致と netip の 2 系統があり、"abc.def.ghi.0/24" が
+// ParseBand は内部の網の帯 ("192.168.100.0/24") を読む。IPv4 で /16〜/28 だけ (それより広い帯は番号の割り当てで回しきれず、
+// /29 より狭い帯は setup.SuggestIP が飛ばす .1〜.9 で埋まって Mac が入らない)。帯に入るかの判定はすべて InBand を通す (文字列の前方一致と netip の 2 系統があり、"abc.def.ghi.0/24" が
 // 前方一致の側だけを通った。監査の指摘)。
 func ParseBand(s string) (netip.Prefix, error) {
 	p, err := netip.ParsePrefix(s)
-	if err != nil || !p.Addr().Is4() || p.Bits() < 16 || p.Bits() > 30 {
-		return netip.Prefix{}, fmt.Errorf("帯が使えない: %q (192.168.100.0/24 の形。/16〜/30)", s)
+	if err != nil || !p.Addr().Is4() || p.Bits() < 16 || p.Bits() > 28 {
+		return netip.Prefix{}, fmt.Errorf("帯が使えない: %q (192.168.100.0/24 の形。/16〜/28)", s)
 	}
 	return p.Masked(), nil
 }
@@ -49,6 +50,21 @@ func (s Service) Internet() bool { return s.Router != "" }
 // Wired はルーターの無い有線のサービスか。-getinfo を読めなかったものは数えない (ルーターが分からないまま有線と数えると、
 // Wi-Fi が内部 IP の候補や「未固定」に出た。監査の第 3 波の敵対レビュー)。
 func (s Service) Wired() bool { return s.Read && s.Router == "" }
+
+// Kind は dev で見えた addr の種類。サービスとして登録されているのに -getinfo が読めなかった I/F は「分からない」にする
+// (名前で決めると、読めなかった Thunderbolt Bridge を「仮想」に、Wi-Fi の上の 169.254 を「自動割り当て」にした。監査の第 3 波の敵対レビュー)。
+func (s Snapshot) Kind(dev, addr string) Kind {
+	wired, internet := s.Classes()
+	if !wired[dev] && !internet[dev] && slices.ContainsFunc(s.Services, func(sv Service) bool { return sv.Device == dev }) {
+		return KindUnknown
+	}
+	return Classify(dev, addr, wired, internet)
+}
+
+// WiredIF は dev がルーターの無い有線のサービスの I/F か (Wired と同じ判定を I/F の名前で引く)。
+func (s Snapshot) WiredIF(dev string) bool {
+	return slices.ContainsFunc(s.Services, func(sv Service) bool { return sv.Device == dev && sv.Wired() })
+}
 
 // Classes は I/F の名前を有線 / インターネット側に分ける (Classify に渡す 2 つの map)。どちらにも入らない I/F は分からない。
 func (s Snapshot) Classes() (wired, internet map[string]bool) {
@@ -240,7 +256,6 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 		}
 	}
 	snap := Snapshot{Services: svcs}
-	wired, internet := snap.Classes()
 	list, err := run(ctx, "ifconfig", "-l")
 	if err != nil {
 		return snap, nil // I/F の一覧が読めなくても、サービスは返す
@@ -255,7 +270,7 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 		}
 		_, addrs := ParseIfconfig(out)
 		for _, a := range addrs {
-			snap.IPs = append(snap.IPs, IP{Device: dev, Addr: a, Kind: Classify(dev, a, wired, internet)})
+			snap.IPs = append(snap.IPs, IP{Device: dev, Addr: a, Kind: snap.Kind(dev, a)})
 		}
 	}
 	return snap, nil

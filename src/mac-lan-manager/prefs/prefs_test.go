@@ -97,3 +97,20 @@ func TestLoadOldKindNames(t *testing.T) {
 		t.Errorf("Save と Load の後に知らない種類が消えた: %v", again.Kinds)
 	}
 }
+
+// 手で書いた帯も、判定と同じ形 (Masked) にそろえて読む。読めない値はそのまま残す (画面が「使えない形」と出す)。
+func TestLoadNormalizesBand(t *testing.T) {
+	for in, want := range map[string]string{"192.168.100.5/24": "192.168.100.0/24", "abc": "abc"} {
+		path := filepath.Join(sandbox, "band", in[:3], "settings.toml")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("band = \""+in+"\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got, err := Load(path)
+		if err != nil || got.Band != want {
+			t.Errorf("Load(band=%q).Band = %q (%v), want %q", in, got.Band, err, want)
+		}
+	}
+}

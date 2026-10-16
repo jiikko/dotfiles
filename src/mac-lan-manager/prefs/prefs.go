@@ -23,7 +23,7 @@ import (
 type Prefs struct {
 	ShowMain, ShowLan, ShowOthers bool
 	LanByBand                     bool     // true: 帯で決める / false: I/F で決める
-	Band                          string   // "192.168.100.0/24" (IPv4 の /16〜/30。netinfo.ParseBand)
+	Band                          string   // "192.168.100.0/24" (IPv4 の /16〜/28。netinfo.ParseBand)
 	LanIF                         string   // I/F で決めるときの I/F の名前 ("en13")
 	Kinds                         []string // 「その他の IP」に含める種類 (netinfo.Kind.Key())
 }
@@ -76,6 +76,9 @@ func Load(path string) (Prefs, error) {
 				continue
 			}
 			if k == "band" {
+				if b, err := netinfo.ParseBand(s); err == nil {
+					s = b.String() // 手で書いた "192.168.100.5/24" も判定と同じ形で表示する。読めない値はそのまま残す (画面が「使えない形」と出す)
+				}
 				p.Band = s
 			} else {
 				p.LanIF = s

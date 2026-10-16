@@ -450,13 +450,7 @@ func (m *Model) ifKind(dev, addr string) netinfo.Kind {
 	if dev == "" {
 		return netinfo.KindUnknown
 	}
-	wired, internet := m.self.Classes()
-	return netinfo.Classify(dev, addr, wired, internet)
-}
-
-// isServiceIF は dev がこの Mac のサービスとして登録された I/F か (169.254 も、登録された有線の上なら内部の網)。
-func (m *Model) isServiceIF(dev string) bool {
-	return slices.ContainsFunc(m.self.Services, func(s netinfo.Service) bool { return s.Device == dev })
+	return m.self.Kind(dev, addr)
 }
 
 // selfLan は設定に従って決めたこの Mac の内部 IP と、その出どころの説明 (推測しない。帯 / I/F で決める)。
@@ -484,6 +478,9 @@ func (m *Model) selfLan() selfLanInfo {
 	}
 	for _, s := range m.self.Services {
 		if s.Device == m.pf.LanIF {
+			if !s.Wired() { // 設定が読めない・ルーターがある I/F の IP を内部 IP として出さない (I/F の候補と同じ Wired で決める)
+				return selfLanInfo{Note: "I/F " + s.Device + " がルーターの無い有線として読めない"}
+			}
 			return selfLanInfo{IP: s.IP, Note: "I/F " + s.Device}
 		}
 	}
@@ -556,7 +553,7 @@ func (m *Model) rows() []row {
 			k := m.ifKind(dev, ip)
 			// 内部 IP にするのは、この Mac のサービスとして登録された有線の I/F で見えたものだけ。Classify は登録の無い I/F の
 			// 169.254 も KindLinkLocal にするので、LinkLocal だけは登録を確かめる (KindWired は登録された I/F にしか付かない)
-			wiredService := k == netinfo.KindWired || (k == netinfo.KindLinkLocal && m.isServiceIF(dev))
+			wiredService := k == netinfo.KindWired || (k == netinfo.KindLinkLocal && m.self.WiredIF(dev)) // 169.254 も、ルーターの無い有線の上なら内部の網
 			switch {
 			case k == netinfo.KindInternet:
 				if r.mainIP == "" {

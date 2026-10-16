@@ -1405,3 +1405,22 @@ func TestUnreadablePrefsAreNotOverwritten(t *testing.T) {
 		t.Errorf("読めなかった設定を上書きした: %+v", saved)
 	}
 }
+
+// -getinfo が読めなかったサービスの I/F で見えた 169.254 は、相手の内部 IP にしない。I/F で決める設定でも、読めない I/F の IP を
+// この Mac の内部 IP にしない (有線かどうかは Wired の 1 つで決める。監査の第 3 波の敵対レビュー)。
+func TestUnreadServiceIsNotLan(t *testing.T) {
+	net := selfNet()
+	net.Services[1].Read, net.Services[1].Router = false, "" // Wi-Fi (en0) の -getinfo が読めなかった
+	h := newHarness(t, nil, []discover.Peer{{Host: "p.local", Instances: []string{"p"}, SSH: true, Addrs: map[int]string{14: "169.254.5.5"}}})
+	h.m.self = net
+	h.m.Resize(120, 40)
+	for _, r := range h.m.rows() {
+		if r.host == "p.local" && r.lanIP == "169.254.5.5" {
+			t.Errorf("読めない Wi-Fi で見えた 169.254 を内部 IP にした: %+v", r)
+		}
+	}
+	h.m.pf.LanByBand, h.m.pf.LanIF = false, "en0"
+	if sl := h.m.selfLan(); sl.IP != "" {
+		t.Errorf("読めない I/F の IP をこの Mac の内部 IP にした: %+v", sl)
+	}
+}

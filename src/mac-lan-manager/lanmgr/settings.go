@@ -61,7 +61,7 @@ func (m *Model) keySettings(key, text string) Action {
 			v := strings.TrimSpace(m.band.String())
 			band, err := netinfo.ParseBand(v)
 			if err != nil {
-				m.note("帯は 192.168.100.0/24 の形で書く (/16〜/30)", false)
+				m.note("帯は 192.168.100.0/24 の形で書く (/16〜/28)", false)
 				return None
 			}
 			m.bandEdit = false

@@ -96,7 +96,7 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 	}
 	fmt.Fprintln(w, "\n# この Mac のサービス (networksetup)")
 	for _, s := range r.Services {
-		fmt.Fprintf(w, "  %-24s %-8s active=%-5v ip=%-16s method=%-6s router=%s\n", s.Name, s.Device, s.Active, or(s.IP, "-"), or(s.Method, "-"), or(s.Router, "-"))
+		fmt.Fprintf(w, "  %-24s %-8s active=%-5v ip=%-16s method=%-6s router=%-14s read=%v\n", s.Name, s.Device, s.Active, or(s.IP, "-"), or(s.Method, "-"), or(s.Router, "-"), s.Read)
 	}
 	fmt.Fprintln(w, "\n# 一覧 (画面と同じ判定。connect = s / y / o が繋ぐ先)")
 	for _, x := range r.Rows {

@@ -183,8 +183,8 @@ func TestReadUsesRenamedServiceNames(t *testing.T) {
 	for _, ip := range snap.IPs {
 		if ip.Device == "bridge0" {
 			seen = true
-			if ip.Kind == KindWired {
-				t.Errorf("-getinfo が読めない bridge0 を有線と決めた: %+v", ip)
+			if ip.Kind != KindUnknown { // 有線とも、名前から「仮想」とも決めない (bridge0 は本物の有線のことがある)
+				t.Errorf("-getinfo が読めない bridge0 を %v と決めた: %+v", ip.Kind, ip)
 			}
 		}
 	}
