@@ -585,6 +585,11 @@ func (m *Model) selfLan() selfLanInfo {
 		if _, err := netinfo.ParseBand(m.pf.Band); err != nil {
 			return selfLanInfo{Note: "帯が使えない形 (" + m.pf.Band + ")"}
 		}
+		for _, x := range m.self.IPs { // 手動で固定した帯の番号を先に (自動の番号が帯を引いた別の I/F を拾って「未固定」と出した。敵対レビュー)
+			if netinfo.InBand(m.pf.Band, x.Addr) && m.serviceMethod(x.Device, x.Addr) == "manual" {
+				return selfLanInfo{IP: x.Addr, Note: "帯 " + m.pf.Band}
+			}
+		}
 		for _, x := range m.self.IPs {
 			if netinfo.InBand(m.pf.Band, x.Addr) {
 				// 帯に入っても、手動の固定でなければ未固定 (帯は 169.254 の中にあり、自動の番号が帯を引くことがある)

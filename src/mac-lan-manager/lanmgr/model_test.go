@@ -1733,3 +1733,17 @@ func TestSelfLanUnknownMethodAndWiredPick(t *testing.T) {
 		t.Errorf("自動の番号が帯を引いた別の I/F を固定の対象にした: %+v", w)
 	}
 }
+
+// 一覧の内部 IP は、手動で固定した帯の番号を、自動の番号が帯を引いた別の I/F より先に拾う (並びで別の I/F を拾い「未固定」と出した)。
+func TestSelfLanPrefersManualInBand(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	s := selfNet()
+	s.Services[0].IP, s.Services[0].Method = "192.168.100.10", "manual"
+	s.Services = append(s.Services, netinfo.Service{Name: "Thunderbolt Bridge", Port: "Thunderbolt Bridge", Device: "bridge0", Active: true, IP: "192.168.100.5", Method: "DHCP", Read: true})
+	s.IPs = append([]netinfo.IP{{Device: "bridge0", Addr: "192.168.100.5", Kind: netinfo.KindWired}}, s.IPs...)
+	s.IPs[2].Addr = "192.168.100.10" // en13
+	h.m.self = s
+	if sl := h.m.selfLan(); sl.IP != "192.168.100.10" || sl.Unfixed {
+		t.Errorf("手動で固定した en13 ではなく自動の番号を拾った: %+v", sl)
+	}
+}
