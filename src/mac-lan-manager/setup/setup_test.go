@@ -197,6 +197,14 @@ func TestStaticIPLock(t *testing.T) {
 	if err == nil || !strings.Contains(string(out), "走っている") {
 		t.Errorf("走っている間の 2 本目を前面で断らない: err=%v out=%q", err, out)
 	}
+	// 前面の確かめをすり抜けた 2 本目 (確かめと lock の間に先を越された) の本体は、lock を取れずに抜け、走り出した印を書かない
+	// (書くと前面が待ちを抜けて成功に見える。印は lock の後)
+	if err := runSh(t, path, second.Script()).Wait(); err == nil {
+		t.Errorf("lock を持たれているのに 2 本目の本体が成功した")
+	}
+	if _, err := os.Stat(second.startedPath()); !os.IsNotExist(err) {
+		t.Errorf("lock を取れなかった背景が走り出した印を書いた: %v", err)
+	}
 	if err := cmd.Wait(); err != nil {
 		t.Fatal(err)
 	}
@@ -296,11 +304,16 @@ func TestStaticIPServiceNameIsOneWord(t *testing.T) {
 func TestRemoteCommandRunsDetached(t *testing.T) {
 	dir, path := sandbox(t)
 	s := staticIP(t, dir)
+	s.Delay = time.Second // 前面が戻った時点でまだ変えていないことを見る
 	if err := runSh(t, path, s.RemoteCommand()).Wait(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(s.startedPath()); !os.IsNotExist(err) {
 		t.Errorf("走り出した印を前面が消していない: %v", err)
+	}
+	// 印は変更より前に書く (変更の後だと、有線越しの前面の ssh が変更で切れて、変えたのに失敗に見える)
+	if strings.Contains(readLog(dir), "-setmanual") {
+		t.Errorf("前面が戻る前に変更が走った (印を変更の後に書いている): %q", readLog(dir))
 	}
 	waitFor(t, "背景で戻しまで走る", func() bool { return strings.Contains(readLog(dir), "-setdhcp") })
 	// nohup は ssh が切れたときの SIGHUP で止まらないためのもの。SIGHUP は本物の端末が切れないと届かないので、ここでは

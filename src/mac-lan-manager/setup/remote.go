@@ -58,6 +58,8 @@ func (d Dest) SSHArgv(tty, batch bool, remote string) []string {
 
 // controlPath は ssh の接続を使い回す socket の置き場 (%C は宛先から ssh が作る 40 文字の名前。作るとき ssh はさらに 17 文字の
 // 一時の後ろを足す)。socket のパスの上限 (104 バイト) に収まらない・~/.ssh が無いなら使い回さない。
+// 受容 (敵対レビュー P3): %C は HostKeyAlias を含まないので、同じ user@IP に別の名前で 15 秒以内に入ると前の接続を通る
+// (同じ IP は同じ機械なので実害は小さい)。相手の IP を変えた直後は、旧い IP 宛ての観測が死んだ接続で ObserveTimeout まで待つ。
 func controlPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
