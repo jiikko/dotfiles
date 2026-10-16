@@ -26,7 +26,8 @@
    - 799: 標準アプリで MacBook Pro に繋いだまま ctrl+→ を押し、手元・相手・どちらも動かない、のどれかを見る (全画面でも) → B2
    - 800: 体感の遅延を標準と高性能で撮り比べる (スマホのスローモーション)。標準で足りるなら B1 が軽くなる
    - 800: 2 台に同時に高性能で繋げるか。一番安いのは iShareScreen を Terminal から 2 本 (動かすだけで、コードは写さない) → B1
-2. **段 1 — 決める (ユーザー)**: 置き場所 (B4)、ライセンスの道 (794 の 4。推奨は (c) rootshell-vnc)、系統 1 / 2 (B1 の結果次第。795)
+2. **段 1 — 決める (ユーザー)**: ライセンスの道 (794 の 4。推奨は (c) rootshell-vnc)、系統 1 / 2 (B1 の結果次第。795)。
+   置き場所は決定済み (B4)。別の private の repo を作る (名前は未定)
 3. **段 2 — 芯 (796)**: rootshell-vnc を呼ぶ最小の macOS のアプリで、1 台に高性能で繋ぐ。ここで B3 も確かめる
 4. **段 3 — 使い勝手 (798・797)**: 常時接続・ショートカットでの切り替え・ウインドウの大きさを覚える・相手のディスプレイの切り替え。747 から `open` で受け渡す
 5. **段 4 — キー (799)**: アプリが前面の間だけ ctrl+→ などを止めて相手へ送る (手元でビルドする版だけ)
@@ -40,8 +41,8 @@
 - **B2 — ctrl+→ が相手の側で効くか (799)**: 手元で止めて送れても、相手の画面共有のサービスが通さないなら、送り方では直らない
 - **B3 — macOS の版と Apple silicon (796)**: 高性能モードは両方の Mac が Apple silicon・Sonoma 14 以降。rootshell-vnc のパッケージは macOS 15 以降。
   手元は macOS 27.0.1 (2026-10-16 に `sw_vers`)。**相手の各 Mac の版とチップは未確認** (m1prombp は名前から M1 と推定)
-- **B4 — 置き場所 (ユーザーの判断)**: dotfiles の `src/` (今は Go と shell が主) に Xcode のアプリを置くか、別の repo にするか。
-  App Store に出すなら、別の repo の方が CI・署名・版の管理が分けやすい (推奨。判断はユーザー)
+- ~~B4 — 置き場所~~ → **ユーザー決定 (2026-10-16): ソースは別の repo にする。private**。dotfiles には issue (この epic) だけを置く。
+  repo の名前と、issue を新しい repo へ移すかは未定
 - B5 (軽い) — 747 側の改修: `open vnc://…` をこのアプリの URL scheme に替える (797)。747 の担当と合わせる
 
 ## 技術スタック (案。2026-10-16 の調査。確かめたものは出典つき)
@@ -49,7 +50,7 @@
 | 層 | 案 | 根拠・気になる点 |
 |---|---|---|
 | 言語 | Swift 6 (language mode v6、厳しい並行性の検査) | rootshell-vnc の全 target が `.swiftLanguageMode(.v6)` (Package.swift) |
-| 最低の OS | macOS 15 | rootshell-vnc の `platforms: .macOS(.v15)`。高性能モードの条件 (Sonoma 14) より上 |
+| 最低の OS | **macOS 27** (ユーザー決定 2026-10-16) | 手元 (見る側) のアプリの条件。相手の Mac は高性能モードの条件 (Apple silicon・Sonoma 14 以降) を満たせばよく、27 である必要は無い。rootshell-vnc は macOS 15 以降なので足りる。新しい API を版の分岐なしで使える |
 | 画面共有のプロトコル | [rootshell-vnc](https://github.com/kitknox/rootshell-vnc) (MIT) の `RFBProtocol` / `RFBTransport` / `RFBRendering` | 依存を版で固定している: swift-nio `exact: 2.95.0`・swift-nio-ssl `2.36.0`・swift-nio-transport-services `1.26.0`・BigInt `5.3.0` 以上 ([Package.swift](https://raw.githubusercontent.com/kitknox/rootshell-vnc/main/Package.swift))。🚨 同じ swift-nio を使うほかの依存 (下の SSH) と版がぶつかりうる |
 | アプリの殻・ウインドウ | AppKit (`NSWindow`) を主に、一覧などは SwiftUI | ウインドウの大きさを覚える (798) は `NSWindow` の frame の保存を相手ごとの鍵で持つ。全画面・キーの扱いも AppKit が素直。rootshell-vnc の SwiftUI の部品は iOS の操作 (タッチ・Pencil) が中心で、Mac でそのまま使えるかは未確認 |
 | 映像の復号と描画 | VideoToolbox の HEVC の復号 (rootshell-vnc の `RFBRendering`) → `AVSampleBufferDisplayLayer` か Metal | どちらが遅れが少ないかの比較の資料は見つからなかった。VideoToolbox の復号器は別プロセスで動く ([WWDC20 10090](https://developer.apple.com/videos/play/wwdc2020/10090/))。動いてから測る (794 の 10) |
