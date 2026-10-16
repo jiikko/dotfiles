@@ -81,3 +81,5 @@
   `.IGNORE: lint`・target 別の SHELL は検出しない形としてコメントに書いた
 - P3 (見送り): テスト 6 は「-mod=mod で go.sum を書き換える」を名指しで見ない (変異 `GOFLAGS=` は緑のまま。挙動としては安全)。名指しで見るには外部の依存を持つ fixture と network が要るので足さない
 - 壊せなかった観点: `go mod tidy -diff` は -mod=readonly を受ける (go1.26.0) / src/* に vendor は無く CI も GOFLAGS を設定しない / actionlint・yamllint の 23 本 (警告 3 件は前から) / restartable は push・pull_request の両方に入った
+- CI (022ff612): 29 run すべて success。src_pro-con の lint のログに `../../scripts/go_module_graph.sh` → `../../scripts/golangci_lint.sh` の順で出ている (検査が CI の Lint step の中で走った)
+- `make test` (rebase 後): 赤は `tests/claude/test_dangling_symlinks.sh` の 1 本だけ (手元の `~/.claude/skills/product-events` の link 切れ。e97b6657 の改名の後始末で、この変更とは無関係)
