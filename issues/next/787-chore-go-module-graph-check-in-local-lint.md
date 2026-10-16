@@ -1,1 +1,0 @@
-../787-chore-go-module-graph-check-in-local-lint.md
