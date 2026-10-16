@@ -24,50 +24,68 @@
 ## わかっていること (2026-10-16 の Web 調査。出典は各項。手元ではまだ何も実測していない)
 
 - **Apple の公式の制約** ([Apple: Use High Performance screen sharing](https://support.apple.com/guide/remote-desktop/apdf8e09f5a9/mac)):
-  両方の Mac が Apple silicon で macOS Sonoma 14 以降。「高性能の画面共有のセッションは各 Mac で同時に 1 本まで」。
-  4K の画面 1 枚で 75 Mbps を推奨、有線を推奨。UDP 5900〜5902 が通ること。仮想ディスプレイは最大 4K
+  - 両方の Mac が Apple silicon で macOS Sonoma 14 以降
+  - 「Only one High Performance screen sharing session can be active on each Mac at a time.」
+    「各 Mac」なので、見る側にも見られる側にもかかる。**標準アプリでは、2 台に同時に高性能で繋げない**ことが文書から読める
+  - 4K の画面 1 枚で 75 Mbps を推奨、有線を推奨。仮想ディスプレイは最大 4K
+  - 「Both Mac computers must be able to communicate with each other over UDP ports 5900, 5901, and 5902.」(制御は TCP 5900。下の iShareScreen)
+  - 🚨 **相手の Mac に、そこでログインしているユーザーの名前で入ると、相手の画面は暗くなる**:
+    「the hardware displays connected to that Mac are blanked to give you privacy」「no one can use that Mac while you're using
+    High Performance screen sharing」。**常時接続と真っ向からぶつかる** (下の「決めること」の 3)
 - **参考にする Python 実装は [iShareScreen](https://github.com/renegadelink/iShareScreen)** (README の記述。コードはまだ読んでいない):
   - ライセンスは **AGPL-3.0-or-later**。Python 3.10 以降。macOS / Windows / Linux で動くビューア
   - 制御は TCP 5900、音声と RTCP は UDP 5900、映像は UDP 5901。暗号化は SRTP。映像は HEVC RExt 4:4:4、音声は AAC-ELD-SBR
   - 認証は相手の Mac のユーザー名とパスワード。クリップボードの同期は Linux でだけ書かれている
+  - 起動例に `--no-curtain` がある (`iss --host mac.local -u me --advertise 1920x1080 --no-curtain`)。相手の画面を暗くしないかを
+    クライアント側で選べるのかもしれない (README に説明は無く、未確認)
   - キー・マウスの送り方と、複数の画面・複数のセッションについては README に書かれていない
-- **同じ仕組みの既存の実装** (どれも作る前に見比べる。ライセンスは未確認):
-  [rootshell-vnc](https://github.com/dave-atx/rootshell-vnc) (Swift で書いたネイティブのクライアントで、高性能モードを UDP で話す) /
-  [remotex](https://github.com/aleonnet/remotex) (ブラウザ向けのゲートウェイ。標準と高性能の両方を話す) /
-  [libvncserver issue 696](https://github.com/LibVNC/libvncserver/issues/696) (高性能モードを入れるかの議論)
-- 高性能モードで共有している間は相手の Mac の画面が暗くなる、と書く記事がある
-  ([Six Colors](https://sixcolors.com/post/2026/06/high-performance-mode-allows-sharing-another-macs-display-as-if-your-own/))。
-  常時接続にすると、相手の Mac の前に座っても使えない時間が続くかもしれない (未確認)
+- **同じ仕組みの既存の実装** (作る前に見比べる):
+  - **rootshell-vnc** ([上流 kitknox/rootshell-vnc](https://github.com/kitknox/rootshell-vnc)。調べたのは fork の
+    [dave-atx/rootshell-vnc](https://github.com/dave-atx/rootshell-vnc) の README): **MIT License**。
+    Swift のパッケージ (macOS 15 以降・iOS 18 以降) で、単体のビューアは `Examples/` にある。
+    「High Performance mode with low-latency HEVC video over UDP」。custom transport provider を入れると高性能モードは使えない
+  - [remotex](https://github.com/aleonnet/remotex) (MIT。ブラウザ向けのゲートウェイ): README には Apple の高性能モードへの言及が無い
+    (Web 検索の要約にはそう出たが、裏が取れない)
+  - [libvncserver issue 696](https://github.com/LibVNC/libvncserver/issues/696): 高性能モードを入れるかの議論
 - screensharingd に認証を素通りできる脆弱性 (CVE-2026-65400) が報告されている
   ([Resecurity](https://www.resecurity.com/jp/blog/article/cve-2026-65400-macos-screen-sharing-authentication-bypass-under-active-exploitation))。
-  画面共有を常時開けておくなら、繋ぐのは手元の網 (issue 747 の内部の網) の中だけに絞る
+  直った版は Tahoe 26.6.1 / Sequoia 15.7.9 / Sonoma 14.8.9 (同記事)。**穴は相手の Mac の待ち受け側にある**ので、繋ぐ先を絞っても守れない。
+  相手の Mac をその版以上に上げ、待ち受ける面を絞る (Wi-Fi 側で 5900 を開けない)。issue 747 の一覧は Wi-Fi 側の相手も出す
 
 ## 着手前に決めること・確かめること
 
-1. **「1 台だけ」の制限がどちら側にあるか** (自作する意味がここで決まる): Apple の文言「各 Mac で同時に 1 本まで」は、見る側と
-   見られる側のどちらの制限かが読み取れない。**見られる側の制限なら、1 台の相手に 2 本は繋げないが、別々の Mac に 1 本ずつなら自作でも標準
-   アプリでも足りるかもしれない**。**見る側 (Screen Sharing.app) の制限なら、自作で外せる**。
-   確かめ方: 手元の Mac から 2 台の相手へ、標準アプリで高性能のまま同時に繋げるかを試す。繋げなければ iShareScreen を 2 つ起こして試す
-2. **修飾キーの問題が自作で直るか**: 標準アプリの設定で直らないかを先に確かめる。直らないなら、何がキーを取っているか
-   (標準アプリか、手元の macOS のショートカットか) を確かめる。自作のアプリでも、手元の macOS がアプリより先に処理するキー
-   (Mission Control の ctrl+←→ など) は CGEventTap などで横取りしないと相手へ送れない。アクセシビリティの許可が要る
-3. **ライセンス**: iShareScreen は AGPL。コードを写したり、別の言語へ訳して移植したりすると派生物になり、AGPL がかかる。
-   取れる道は 2 つで、ユーザーの判断が要る:
-   - (a) AGPL を受け入れて移植する
-   - (b) 仕様だけを文書に起こし (ポート・パケットの形・鍵の交換の手順)、その文書から書き直す
-4. **作る前に既存の実装で足りないかを見る**: rootshell-vnc は既に Swift のネイティブのクライアントで、高性能モードを話す。
-   上の 1・2 に答えられて、一覧・常時接続を足すだけで済むなら、自作より安い
-5. **置き場所と言語**: 「ネイティブアプリ」なら Swift (HEVC の復号は VideoToolbox、UDP は Network.framework、入力は CGEvent)。
+1. **見る側の「1 本まで」を自作のクライアントで外せるか** (自作する意味がここで決まる): Apple の文書では、見る側の Mac も 1 本までになる。
+   それが Screen Sharing.app の中の制限 (自作なら外せる) か、相手の Mac が「見る側に既に別の 1 本がある」ことを知って断る形 (外せない) かは
+   文書から分からない。確かめ方: 手元の Mac から、iShareScreen か rootshell-vnc のビューアを 2 本同時に起こし、別々の 2 台へ高性能で繋ぐ
+2. **修飾キーの問題が自作で直るか**: 標準アプリには、システムのキーを相手へ送らず手元に残す隠し設定がある
+   (`defaults write com.apple.ScreenSharing DoNotSendSystemKeys -bool YES`。10.6 のころの記事
+   [computerwoche](https://www.computerwoche.de/a/don-t-send-special-keys-in-10-6-s-screen-sharing,1926509) の「the "special" keys will be
+   executed locally」。今の macOS と高性能モードで効くかは未確認)。まず `defaults read com.apple.ScreenSharing` で今の値を読み、
+   標準アプリの設定で直らないかを確かめる。直らないなら、何がキーを取っているか (標準アプリか、手元の macOS のショートカットか) を確かめる。
+   自作のアプリでも、手元の macOS がアプリより先に処理するキー (Mission Control の ctrl+←→ など) は CGEventTap などで横取りしないと
+   相手へ送れない。アクセシビリティの許可が要る
+3. **常時接続と相手の画面の暗転**: ログイン中のユーザーで入ると、相手の Mac は誰も使えなくなる (Apple の文書)。
+   常時接続を保つなら、別のユーザーで入るか、暗くしない形 (iShareScreen の `--no-curtain` が何をするか) を確かめる。
+   相手の Mac の前に座って使う時間があるかで、常時接続の意味が変わる (ユーザーの使い方を聞く)
+4. **ライセンス**: 取れる道は 3 つで、ユーザーの判断が要る:
+   - (a) iShareScreen (AGPL-3.0) を移植する。コードを写したり別の言語へ訳したりすると派生物になり、AGPL がかかる。
+     義務 (ソースの公開) が生じるのは配布するとき・ネットワーク越しに他人へ使わせるときで、自分の Mac だけで使うなら実質の負担は小さい
+   - (b) 仕様だけを文書に起こし (ポート・パケットの形・鍵の交換の手順)、その文書から書き直す。ただし AGPL のコードを読んだ同じ主体
+     (同じ Claude のセッション) が仕様を書いて実装も書くと、クリーンルームとしては弱い
+   - (c) MIT の rootshell-vnc を使う・参考にする。ライセンスの縛りは著作権表示を残すことだけ
+5. **作る前に既存の実装で足りないかを見る**: rootshell-vnc は Swift のパッケージで、高性能モードを話し、単体のビューアもある。
+   上の 1〜3 に答えられて、一覧・常時接続を足すだけで済むなら、それを使うのが一番安い
+6. **置き場所と言語**: 「ネイティブアプリ」なら Swift (HEVC の復号は VideoToolbox、UDP は Network.framework、入力は CGEvent)。
    dotfiles の中に置くか、別の repo にするか
-6. **一覧の出どころ**: issue 747 (mac-lan-manager) の台帳と Bonjour の一覧を使えるか。
+7. **一覧の出どころ**: issue 747 (mac-lan-manager) の台帳と Bonjour の一覧を使えるか。
    747 の画面共有は今、標準アプリを開いている
-7. **常時接続の重さ**: 画面が変わらない間の帯域・CPU・電池は未実測。繋いでおく台数 × 推奨 75 Mbps (4K) が網に収まるか。
+8. **常時接続の重さ**: 画面が変わらない間の帯域・CPU・電池は未実測。繋いでおく台数 × 推奨 75 Mbps (4K) が網に収まるか。
    アイドルの間は映像を止めて繋がりだけを保つ、という形を取れるか
-8. **パスワード**: Keychain に置く (iShareScreen は保存しない)
+9. **パスワード**: Keychain に置く (iShareScreen は保存しない)
 
 ## 対応方針
 
-未定。上の 1 と 2 の答えで、自作するか・どこまで作るかが決まる。最初の一歩は 1 の実測 (標準アプリで 2 台に同時に繋ぐ)。
+未定。上の 1〜3 の答えで、自作するか・どこまで作るかが決まる。最初の一歩は 2 の `defaults read` (安い) と 1 の実測。
 
 ## 関連
 
@@ -75,7 +93,18 @@
 
 ## 進捗
 
-- [ ] 1: 「1 台だけ」の制限がどちら側にあるかを実測する
-- [ ] 2: 修飾キーの問題の原因を確かめる
-- [ ] 3: ライセンスの道 (a / b) をユーザーが決める
-- [ ] 4: 既存の実装 (rootshell-vnc ほか) で足りないかを見る
+- [ ] 1: 自作のクライアント 2 本で、別々の 2 台へ高性能で同時に繋げるかを実測する
+- [ ] 2: 修飾キーの問題の原因を確かめる (まず `DoNotSendSystemKeys`)
+- [ ] 3: 相手の画面の暗転と常時接続をどう両立させるかを決める
+- [ ] 4: ライセンスの道 (a / b / c) をユーザーが決める
+- [ ] 5: 既存の実装 (rootshell-vnc) で足りないかを見る
+
+## 反証レビュー (2026-10-16、opus のサブエージェント 1 体。出典を開いて照合)
+
+採った指摘 (裏は Apple のページと rootshell-vnc の README を開いて取った):
+- 「1 本まで」は「各 Mac」なので見る側にもかかる。標準アプリで 2 台に同時に繋げないかを試す実測は要らない。決めることの 1 を「自作で外せるか」に直した
+- 相手の画面の暗転は Apple の公式文書にあり、ログイン中のユーザーで入ったときという条件が付く。注記から決めることの 3 へ上げた
+- rootshell-vnc は MIT で、調べたのは fork。ライセンスの道に (c) を足した
+- remotex の README に高性能モードの記述が無い。CVE は待ち受け側の穴で、繋ぐ先を絞っても守れない。修飾キーには `DoNotSendSystemKeys` がある。AGPL の重さは配布するかで変わり、(b) はクリーンルームとして弱い
+
+反証できなかった主張: Apple の要件 (Apple silicon・Sonoma 14・75 Mbps・有線・4K)、iShareScreen の README の記述、issue 747 への言及
