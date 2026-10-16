@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1656,9 +1657,9 @@ func TestMessageLogCopies(t *testing.T) {
 	}
 	h.keys("esc")
 	for i := range logCap + 5 {
-		h.m.note(fmt.Sprint(i), true)
+		h.m.note(strconv.Itoa(i), true)
 	}
-	if len(h.m.log) != logCap || h.m.log[len(h.m.log)-1].text != fmt.Sprint(logCap+4) {
+	if len(h.m.log) != logCap || h.m.log[len(h.m.log)-1].text != strconv.Itoa(logCap+4) {
 		t.Errorf("上限で古いものから捨てない: %d 件", len(h.m.log))
 	}
 
