@@ -50,7 +50,7 @@
 | 層 | 案 | 根拠・気になる点 |
 |---|---|---|
 | 言語 | Swift 6 (language mode v6、厳しい並行性の検査) | rootshell-vnc の全 target が `.swiftLanguageMode(.v6)` (Package.swift) |
-| 最低の OS | **macOS 27** (ユーザー決定 2026-10-16) | 手元 (見る側) のアプリの条件。相手の Mac は高性能モードの条件 (Apple silicon・Sonoma 14 以降) を満たせばよく、27 である必要は無い。rootshell-vnc は macOS 15 以降なので足りる。新しい API を版の分岐なしで使える |
+| 最低の OS | **macOS 26** (ユーザー決定 2026-10-16。一度 27 にして 26 に直した) | 手元 (見る側) のアプリの条件。相手の Mac は高性能モードの条件 (Apple silicon・Sonoma 14 以降) を満たせばよく、26 である必要は無い。rootshell-vnc は macOS 15 以降なので足りる |
 | 画面共有のプロトコル | [rootshell-vnc](https://github.com/kitknox/rootshell-vnc) (MIT) の `RFBProtocol` / `RFBTransport` / `RFBRendering` | 依存を版で固定している: swift-nio `exact: 2.95.0`・swift-nio-ssl `2.36.0`・swift-nio-transport-services `1.26.0`・BigInt `5.3.0` 以上 ([Package.swift](https://raw.githubusercontent.com/kitknox/rootshell-vnc/main/Package.swift))。🚨 同じ swift-nio を使うほかの依存 (下の SSH) と版がぶつかりうる |
 | アプリの殻・ウインドウ | AppKit (`NSWindow`) を主に、一覧などは SwiftUI | ウインドウの大きさを覚える (798) は `NSWindow` の frame の保存を相手ごとの鍵で持つ。全画面・キーの扱いも AppKit が素直。rootshell-vnc の SwiftUI の部品は iOS の操作 (タッチ・Pencil) が中心で、Mac でそのまま使えるかは未確認 |
 | 映像の復号と描画 | VideoToolbox の HEVC の復号 (rootshell-vnc の `RFBRendering`) → `AVSampleBufferDisplayLayer` か Metal | どちらが遅れが少ないかの比較の資料は見つからなかった。VideoToolbox の復号器は別プロセスで動く ([WWDC20 10090](https://developer.apple.com/videos/play/wwdc2020/10090/))。動いてから測る (794 の 10) |
