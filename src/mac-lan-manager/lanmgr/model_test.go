@@ -1295,9 +1295,14 @@ func TestFooterShellHintFollowsKey(t *testing.T) {
 // どの画面でも View は高さちょうどの行を返す。設定の画面で項目の行が入らない高さは「高さが足りない」の画面になり、
 // 見えない項目に space が届いて設定を書き換えない (高さを 10 とみなして描き、端末より多い行を返していた。opus の敵対レビュー)。
 func TestEveryScreenFitsHeight(t *testing.T) {
-	for _, w := range []int{minWidth, 80, 120} {
+	band := []string{","}
+	for range setBand {
+		band = append(band, "j")
+	}
+	band = append(band, "enter")
+	for _, w := range []int{minWidth, 80, 120, 160, 200} {
 		for hgt := 1; hgt <= 30; hgt++ {
-			for _, open := range [][]string{nil, {","}} {
+			for _, open := range [][]string{nil, {"G"}, {","}, {",", "G"}, band} {
 				h := newHarness(t, nil, []discover.Peer{mini})
 				h.keys(open...)
 				h.m.Resize(w, hgt)
@@ -1305,20 +1310,20 @@ func TestEveryScreenFitsHeight(t *testing.T) {
 				if len(lines) != hgt {
 					t.Errorf("%dx%d %v: %d 行 (高さと違う)", w, hgt, open, len(lines))
 				}
-				if open == nil {
+				if len(open) == 0 || open[0] != "," {
 					continue
 				}
 				view := termwidth.StripSGR(strings.Join(lines, "\n"))
 				if h.m.small {
-					before := len(h.saved)
-					h.keys("space", "enter")
-					if len(h.saved) != before || h.m.bandEdit {
+					before, edit, txt := len(h.saved), h.m.bandEdit, h.m.band.String()
+					h.keys("space", "x", "enter")
+					if len(h.saved) != before || h.m.bandEdit != edit || h.m.band.String() != txt {
 						t.Errorf("%dx%d: 見えない設定の項目に space / enter が届いた", w, hgt)
 					}
 					continue
 				}
-				if !strings.Contains(view, "メイン") { // 狭い幅では項目名が切り詰められる
-					t.Errorf("%dx%d: 設定の画面なのに選んでいる項目の行が無い:\n%s", w, hgt, view)
+				if !strings.Contains(view, "設定") {
+					t.Errorf("%dx%d %v: 設定の画面が出ていない:\n%s", w, hgt, open, view)
 				}
 			}
 		}
