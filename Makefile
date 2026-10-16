@@ -572,6 +572,26 @@ test-lint:
 #   `_claude/rules/adversarial-review-own-safeguards.md` が禁じる false green そのもの。
 GO_PROJECT_DIRS := $(patsubst %/,%,$(dir $(wildcard src/*/go.mod)))
 
+# 一斉起動の前に std の -race 版を 1 プロセスで cache に入れる (issue 807)。go の build cache は
+# プロセス間で「ビルド中」を共有しないので、冷えた cache では 22 プロセスが std をそれぞれコンパイルしていた
+# (重複 942 回のうち 829 回が std)。std 以外の依存まで温めると温まった cache で毎回 20 秒かかるので std だけにする。
+# 🚨 module の中で走らせる。root には go.mod が無く、GOTOOLCHAIN=auto で手元の go が go.mod の go 行より古いと
+#   root と module で別のツールチェーンが選ばれ、温めた std が使われない。
+# 失敗しても一斉起動は止めない (最適化であって判定ではない。同じ原因ならテスト側が落ちて理由を出す)。
+# 🚨 `+` を付けない別のレシピ行に置く (test-go)。run_go_projects の行は `+` 付きで make -n でもシェルが走るので、
+#   そこに入れると -n で本当にビルドする。-n の判定を MAKEFLAGS から組むのは make 3.81 の書式の揺れ
+#   (上書きだけのとき `V=…` から始まる・長いオプションがあると ` --x -n -- …` になる) で外れるのでやらない。
+#   go が無い・プロジェクトが 0 件のときは何もしない (その判定と失敗は run_go_projects が出す)。
+define go_test_warm_std
+if [ -z "$(firstword $(GO_PROJECT_DIRS))" ] || ! command -v go >/dev/null 2>&1; then exit 0; fi; \
+warm_start=$$(date +%s); \
+if (cd "$(firstword $(GO_PROJECT_DIRS))" && go build -race std); then \
+	echo "[go-test] std の -race 版を温めた ($$(( $$(date +%s) - warm_start )) 秒)"; \
+else \
+	echo "[go-test] std の -race 版の事前ビルドに失敗 (rc=$$?)。そのまま一斉起動する" >&2; \
+fi;
+endef
+
 # 🚨 **最初のプロジェクトの失敗で残りを隠さない** (issue 130)。全プロジェクトを回してから
 #   失敗したディレクトリをまとめて返す (run_all_targets と同じ規律。CI は src_*.yml で
 #   プロジェクト別に分かれているため無傷だったが、ローカルの方が弱い状態だった)。
@@ -626,6 +646,7 @@ test-go-lint:
 	@+$(call run_go_projects,lint)
 
 test-go:
+	@$(go_test_warm_std)
 	@+$(call run_go_projects,test)
 
 # src/ 配下の全プロジェクトを lint + test 一括で回す集約ターゲット (人間の選択実行用)。

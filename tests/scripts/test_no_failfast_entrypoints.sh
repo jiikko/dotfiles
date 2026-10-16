@@ -40,10 +40,13 @@ printf 'lint:\n\t@echo good-lint >> %s\ntest:\n\t@echo good-test >> %s\n' \
 #    入れていないので、置かないと **CI では何も検査していない**ことになる (実測: run
 #    33169546465 で 6 件が false green ではなく false red として露出した)。
 #    ここで見たいのは「集約して回すか」だけで go の挙動ではない。偽プロジェクトの Makefile は
-#    go を呼ばないので、スタブは**呼ばれたら失敗する**形にする (黙って 0 を返すと、将来
-#    recipe が本当に go を使い始めたときに嘘の緑になる)。
+#    go を呼ばない。go を呼ぶのは test-go の一斉起動前の std の事前ビルド (issue 807) だけなので、
+#    スタブは**呼ばれた引数を calls に書いて失敗する**形にする: 事前ビルドの失敗の経路を通しつつ、
+#    いつ・何で呼ばれたかを calls の順序で見る (黙って 0 を返すと、将来 recipe が本当に go を
+#    使い始めたときに嘘の緑になる)。
 mkdir -p "$TMP_DIR/bin"
-printf '#!/bin/sh\necho "test stub: go must not be executed here" >&2\nexit 97\n' > "$TMP_DIR/bin/go"
+printf '#!/bin/sh\necho "go $*" >> %s\necho "test stub: go は失敗を返す (事前ビルドの失敗の経路を通すため)" >&2\nexit 97\n' \
+  "$TMP_DIR/calls" > "$TMP_DIR/bin/go"
 chmod +x "$TMP_DIR/bin/go"
 
 for goal in lint test; do
@@ -58,7 +61,28 @@ for goal in lint test; do
     || bad "$target: 1 つ目が落ちた後、2 つ目が走っていない ($(tr '\n' ' ' < "$TMP_DIR/calls"))"
   grep -q "失敗したプロジェクト.*bad" "$TMP_DIR/out" \
     || bad "$target: 失敗したプロジェクト名がまとめて出ない: $(cat "$TMP_DIR/out")"
+  # test-go は一斉起動の前に std の -race 版を go で温める (issue 807)。スタブの go が落ちるので
+  # その失敗の経路を通る: 失敗を出したうえで一斉起動へ進むこと (上の good-test が走ったかと合わせて見る)
+  if [ "$goal" = test ]; then
+    grep -q "std の -race 版の事前ビルドに失敗" "$TMP_DIR/out" \
+      || bad "$target: std の事前ビルドの失敗が出力に出ない: $(cat "$TMP_DIR/out")"
+    [ "$(head -n 1 "$TMP_DIR/calls")" = "go build -race std" ] \
+      || bad "$target: 一斉起動より前に go build -race std を 1 回呼んでいない ($(tr '\n' ' ' < "$TMP_DIR/calls"))"
+    [ "$(grep -c '^go ' "$TMP_DIR/calls")" -eq 1 ] \
+      || bad "$target: go を 1 回だけ呼ぶはずが違う ($(tr '\n' ' ' < "$TMP_DIR/calls"))"
+  else
+    ! grep -q '^go ' "$TMP_DIR/calls" \
+      || bad "$target: lint の一斉起動で go を呼んでいる ($(tr '\n' ' ' < "$TMP_DIR/calls"))"
+  fi
 done
+
+# make -n は事前ビルドを走らせない (test-go のレシピは `+` 付きで -n でもシェルが走る)
+: > "$TMP_DIR/calls"
+PATH="$TMP_DIR/bin:$PATH" make -n test-go GO_PROJECT_DIRS="$TMP_DIR/bad $TMP_DIR/good" > "$TMP_DIR/out" 2>&1 || true
+grep -q 'go build -race std' "$TMP_DIR/out" \
+  || bad "make -n test-go: 事前ビルドの行まで届いていない (表示されない): $(cat "$TMP_DIR/out")"
+! grep -q '^go ' "$TMP_DIR/calls" \
+  || bad "make -n test-go: go を実際に呼んでいる ($(tr '\n' ' ' < "$TMP_DIR/calls"))"
 note "test-go-lint / test-go は全プロジェクトを回してから集約して落ちる"
 
 # go が無い環境では skip して緑になる (0 件の失敗と混ぜない)。
