@@ -44,6 +44,11 @@
   二重ライセンスで戻った。[Computerworld](https://www.computerworld.com/article/1347653/gplv2-blocks-vlc-from-apple-s-app-store.html))。
   AGPLv3 について FSF が明示した声明は見つからなかった。iShareScreen の権利者が異議を出すかどうかにもよる。
   App Store で出すなら、(b) 書き直すか (c) MIT の rootshell-vnc の道が安全
+- **同じプロトコルで App Store に出ている先例 (らしいもの)**: rootshell (bundle ID `com.kk2.rootshell`。rootshell-vnc の作者の端末アプリ。iPhone・iPad・
+  Vision Pro・Mac)。第三者の掲載 ([APKPure](https://iphone.apkpure.com/rootshell-local-terminal-ssh/com.kk2.rootshell/amp)) で 1.0.11 に「High Performance mode
+  streams up to 4K at 60 FPS, fully encrypted」の画面共有が載り、App Store の評価 (4.64・11 件) を集めたサイトもある
+  ([marlvel.ai](https://marlvel.ai/apps/com-kk2-rootshell))。**App Store の公式のページ自体は見ていない**ので、高性能モードの入った版が審査を通って
+  並んでいるかは未確認 (確かめるには App Store で rootshell を開き、版の履歴を見る)。Mac 版が Catalyst か、sandbox の中で動いているかも未確認
 - Apple はプロトコルを公開していないので、macOS の更新で予告なく変わりうる。審査を通っても、後から壊れる
 - **自分の Mac だけで使うなら App Store は要らない**: 自分でビルドして署名すれば、sandbox も審査も外せる (アクセシビリティの権限も使える)。
   App Store で出すかどうかで、取れる設計が変わる。ただし手元のビルドで ad-hoc 署名すると、ビルドし直すたびに権限の許可を付け直す手間が
