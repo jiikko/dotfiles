@@ -33,5 +33,5 @@
 
 ## 残課題
 
-- [ ] 項目 1 の rule への追記 (ユーザーの判断待ち)
-- [ ] 項目 5 の rule への追記 (ユーザーの判断待ち)
+- [x] 項目 1: `_claude/rules/survey-receiver-guards-before-passing-new-values.md` に追記した (ユーザーの指示 2026-10-16)
+- [x] 項目 5: `_claude/rules/subagent-model-tiering.md` の「指示を書くとき」に追記した (同上)
