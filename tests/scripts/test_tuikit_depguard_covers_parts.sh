@@ -4,9 +4,11 @@
 #
 # なぜ: リストは .golangci.yml に手で並べていて、package を足すと漏れる。漏れた package は bubbletea / os を import しても lint が
 # 通る (issue 785 で足した hintfit が漏れ、敵対レビューで見つかった。gutter・spinner・foreground も以前から漏れていた)。
-# 脅威モデル: package を足してリストに足し忘れる・外す表に古い名前が残る。
-# 検出しない形: YAML の別の書き方 (flow style・アンカー)。パターンは `"**/<名前>/**"` と `"!**/tuikit/<名前>/**"` の形だけを読む
-# (今の 2 つのリストはこの形だけ。別の形を足したら、ここも直す)。パターンの意味 (どのファイルに当たるか) は golangci 自身が決めるので、
+# 脅威モデル: package を足してリストに足し忘れる・外す表に古い名前が残る・リストの行をコメントアウトして外す・知らない形の項目を足す。
+# リストの files の項目は、知っている 3 つの形 (`"**/<名前>/**"` / `"!**/tuikit/<名前>/**"` / `"!**/*_test.go"`) だけを読み、それ以外の項目が
+# 1 つでもあれば「判定できない」として落とす (黙って読み飛ばすと、別の形の否定で depguard が外れても緑になった。敵対レビュー)。
+# 検出しない形: YAML の flow style・アンカー (files の項目として読めず、較正の termwidth で落ちる)。リストの中身以外
+# (linters.enable から depguard を消す・deny を空にする) は見ない。パターンの意味 (どのファイルに当たるか) は golangci 自身が決めるので、
 # ここは「名前が載っているか」だけを見る
 set -uo pipefail
 unset CDPATH
@@ -14,59 +16,86 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR/src/tuikit" || exit 1
 yml=.golangci.yml
 
-# 外す理由つきの表 (先頭の名前で引く。入れ子 (examples/toast 等) も先頭の名前で外す)
+# 外す理由つきの表。package のパス (tuikit からの相対) そのもので引く (先頭の名前で引くと、外した package の下に足した package も黙って外れた)。
+# 末尾の /* は直下の子を全部外す (examples のデモだけに使う)
 excl_framework='caret:bubbletea の View.Cursor を組むのが仕事
 framebench:部品ではなく計測の道具 (ultraviolet で bubbletea のレンダラを再現する)
-examples:デモ (bubbletea を使ってよい)'
+examples/*:デモ (bubbletea を使ってよい)'
 # cmd/termwidth は no-framework-in-parts の **/termwidth/** に当たる (bubbletea を使わないので当たってよい)。parts-pure は !cmd で外す
 excl_pure="$excl_framework
-cmd:シェルから部品を呼ぶ入口のコマンド (引数と標準出力が仕事)
+cmd/termwidth:シェルから部品を呼ぶ入口のコマンド (引数と標準出力が仕事)
 editor:外部のエディタを起こすのが仕事
 widthenv:環境変数を読むのが仕事
 termcolor:端末 (tmux) に機能を聞くのが仕事
-foreground:端末の前面を確かめ、子へ端末を渡すのが仕事 (os / os/exec / os/signal)"
+foreground:端末の前面を確かめ、子へ端末を渡すのが仕事 (os / os/exec / os/signal)
+foreground/ptytest:foreground のテストが使う pty の道具 (context / os / os/exec)"
 
-# list_names <リスト名> <+|!> — 指定のリストの files の名前 (+ は当てる、! は外す)
-list_names() {
-  awk -v L="$1:" -v sign="$2" '
+# list_items <リスト名> — 指定のリストの files の項目 (コメントの行は読まない)
+list_items() {
+  awk -v L="$1:" '
     $1 == L { inlist = 1; next }
     inlist && $1 == "deny:" { exit }
-    inlist && sign == "+" && match($0, /- "\*\*\/[^\/*]+\/\*\*"/) { s = substr($0, RSTART, RLENGTH); sub(/- "\*\*\//, "", s); sub(/\/\*\*"/, "", s); print s }
-    inlist && sign == "!" && match($0, /- "!\*\*\/tuikit\/[^\/*]+\/\*\*"/) { s = substr($0, RSTART, RLENGTH); sub(/- "!\*\*\/tuikit\//, "", s); sub(/\/\*\*"/, "", s); print s }
+    inlist && $1 ~ /^#/ { next }
+    inlist && /^[[:space:]]*- / { sub(/^[[:space:]]*- /, ""); sub(/[[:space:]]+#.*$/, ""); print }
   ' "$yml"
+}
+
+# excluded <表> <rel> — rel が外す表に載っているか (パスそのもの、または「親/*」)
+excluded() {
+  local key
+  while IFS= read -r key; do
+    [ "$key" = "$2" ] && return 0
+    case $key in */\*) [ "${2%/*}" = "${key%/*}" ] && [ "$2" != "${key%/*}" ] && return 0 ;; esac
+  done < <(printf '%s\n' "$1" | cut -d: -f1)
+  return 1
 }
 
 if ! pkgs=$(GOWORK=off go list -f '{{.ImportPath}}' ./... 2>&1); then
   printf '✗ go list が失敗した (判定できない): %s\n' "$pkgs"; exit 1
 fi
 mod=$(GOWORK=off go list -m)
-rels=$(printf '%s\n' "$pkgs" | sed -n "s|^$mod/||p")
+# module の root の package (tuikit 直下の .go) も集合に入れる (落とすと、root に置いた .go が検査にも depguard にも当たらなかった)
+rels=$(printf '%s\n' "$pkgs" | sed -n -e "s|^$mod/||p" -e "s|^$mod\$|.|p")
 n=$(printf '%s\n' "$rels" | grep -c .)
 fail=0
 
 for list in no-framework-in-parts parts-pure; do
   if [ "$list" = no-framework-in-parts ]; then excl=$excl_framework; else excl=$excl_pure; fi
-  plus=$(list_names "$list" +); minus=$(list_names "$list" !)
+  plus=""; minus=""
+  while IFS= read -r item; do
+    case $item in
+      '"**/'*'/**"')
+        v=${item#'"**/'}; v=${v%'/**"'}
+        case $v in */* | *'*'* | '') printf '  ✗ %s: files の項目 %s を読めない (判定できない)\n' "$list" "$item"; fail=1 ;; *) plus+="$v"$'\n' ;; esac ;;
+      '"!**/tuikit/'*'/**"')
+        v=${item#'"!**/tuikit/'}; v=${v%'/**"'}
+        case $v in */* | *'*'* | '') printf '  ✗ %s: files の項目 %s を読めない (判定できない)\n' "$list" "$item"; fail=1 ;; *) minus+="$v"$'\n' ;; esac ;;
+      '"!**/*_test.go"') ;;
+      *) printf '  ✗ %s: files の項目 %s は知らない形 (判定できない。この検査の読み取りを直す)\n' "$list" "$item"; fail=1 ;;
+    esac
+  done < <(list_items "$list")
   # 較正: 必ず入っているはずの termwidth が読めなければ、読み取りが壊れている
-  printf '%s\n' "$plus" | grep -qx termwidth || { printf '✗ %s: files から termwidth が読めない (読み取りが壊れている)\n' "$list"; exit 1; }
+  printf '%s' "$plus" | grep -qx termwidth || { printf '✗ %s: files から termwidth が読めない (読み取りが壊れている)\n' "$list"; exit 1; }
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue
     top=${rel%%/*}
     listed=0
     IFS=/ read -ra parts <<< "$rel"
-    for c in "${parts[@]}"; do printf '%s\n' "$plus" | grep -qxF -- "$c" && listed=1; done
-    printf '%s\n' "$minus" | grep -qxF -- "$top" && listed=0
-    excluded=0
-    printf '%s\n' "$excl" | cut -d: -f1 | grep -qxF -- "$top" && excluded=1
-    if [ "$listed" -eq 0 ] && [ "$excluded" -eq 0 ]; then
+    for c in "${parts[@]}"; do printf '%s' "$plus" | grep -qxF -- "$c" && listed=1; done
+    printf '%s' "$minus" | grep -qxF -- "$top" && listed=0
+    isexcl=0
+    excluded "$excl" "$rel" && isexcl=1
+    if [ "$listed" -eq 0 ] && [ "$isexcl" -eq 0 ]; then
       printf '  ✗ %s: %s がリストにも外す表にも無い (.golangci.yml の %s の files に足すか、この検査の外す表に理由つきで載せる)\n' "$list" "$rel" "$list"; fail=1
-    elif [ "$listed" -eq 1 ] && [ "$excluded" -eq 1 ]; then
+    elif [ "$listed" -eq 1 ] && [ "$isexcl" -eq 1 ]; then
       printf '  ✗ %s: %s はリストに入っているのに外す表にもある (どちらかにする)\n' "$list" "$rel"; fail=1
     fi
   done <<< "$rels"
   # 外す表の古い名前 (もう無い package) を残さない
-  while IFS= read -r name; do
-    printf '%s\n' "$rels" | cut -d/ -f1 | grep -qxF -- "$name" || { printf '  ✗ %s: 外す表の %s に当たる package が無い (表から消す)\n' "$list" "$name"; fail=1; }
+  while IFS= read -r key; do
+    hit=0
+    while IFS= read -r rel; do excluded "$key" "$rel" && { hit=1; break; }; done <<< "$rels"
+    [ "$hit" -eq 1 ] || { printf '  ✗ %s: 外す表の %s に当たる package が無い (表から消す)\n' "$list" "$key"; fail=1; }
   done < <(printf '%s\n' "$excl" | cut -d: -f1)
 done
 
