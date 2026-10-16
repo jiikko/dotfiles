@@ -553,14 +553,31 @@ func (m *Model) lanFixed(r row) bool {
 	return !netinfo.IsLinkLocal(r.lanIP)
 }
 
-// serviceMethod は dev のサービスの方式 ("manual" / "DHCP" / 分からなければ "")。
-func (m *Model) serviceMethod(dev string) string {
+// serviceMethod は dev で ip を持つサービスの方式 ("manual" / "DHCP" / 分からなければ "")。1 つの I/F に手動と DHCP の 2 つの
+// サービスが載ることがあるので、IP が一致するものを先に見る (I/F の最初のサービスで決めると方式を取り違えた。敵対レビュー)。
+func (m *Model) serviceMethod(dev, ip string) string {
+	method := ""
 	for _, s := range m.self.Enabled() {
-		if s.Device == dev {
+		if s.Device != dev {
+			continue
+		}
+		if s.IP == ip {
 			return s.Method
 		}
+		if method == "" {
+			method = s.Method
+		}
 	}
-	return ""
+	return method
+}
+
+// unfixedBy はこの Mac の内部 IP を未固定と見るか。方式が分かれば方式で、分からなければ (-getinfo が読めない等) 前と同じく 169.254 か
+// で決める (方式が読めない有線を未固定と見て、前は台帳に書けた内部 IP が書けなくなった。敵対レビュー)。
+func unfixedBy(method, ip string) bool {
+	if method == "" {
+		return netinfo.IsLinkLocal(ip)
+	}
+	return method != "manual"
 }
 
 func (m *Model) selfLan() selfLanInfo {
@@ -571,7 +588,7 @@ func (m *Model) selfLan() selfLanInfo {
 		for _, x := range m.self.IPs {
 			if netinfo.InBand(m.pf.Band, x.Addr) {
 				// 帯に入っても、手動の固定でなければ未固定 (帯は 169.254 の中にあり、自動の番号が帯を引くことがある)
-				return selfLanInfo{IP: x.Addr, Note: "帯 " + m.pf.Band, Unfixed: m.serviceMethod(x.Device) != "manual"}
+				return selfLanInfo{IP: x.Addr, Note: "帯 " + m.pf.Band, Unfixed: unfixedBy(m.serviceMethod(x.Device, x.Addr), x.Addr)}
 			}
 		}
 		if off := m.self.Offline(); len(off) > 0 && off[0].IP != "" {
@@ -584,7 +601,7 @@ func (m *Model) selfLan() selfLanInfo {
 			if !m.self.WiredIF(s.Device) { // 設定が読めない・ルーターがある I/F の IP を内部 IP として出さない (I/F の候補と同じ判定)
 				return selfLanInfo{Note: "I/F " + s.Device + " がルーターの無い有線として読めない"}
 			}
-			return selfLanInfo{IP: s.IP, Note: "I/F " + s.Device, Unfixed: s.Method != "manual"} // 方式で決める (自動の 169.254 を固定と見て台帳に書けた。敵対レビュー)
+			return selfLanInfo{IP: s.IP, Note: "I/F " + s.Device, Unfixed: unfixedBy(s.Method, s.IP)} // 方式で決める (自動の 169.254 を固定と見て台帳に書けた。敵対レビュー)
 		}
 	}
 	return selfLanInfo{Note: "I/F " + or(m.pf.LanIF, "(未設定)") + " が無い"}

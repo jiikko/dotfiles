@@ -1714,3 +1714,22 @@ func TestSelfLanByIFUsesMethod(t *testing.T) {
 		t.Errorf("手動の固定を未固定と見た: %+v", sl)
 	}
 }
+
+// 方式が読めない (-getinfo が読めない等) 有線の帯の番号は前と同じく固定と見る (未固定と見て、前は書けた台帳の内部 IP が書けなくなった)。
+// 固定の対象は、自動の番号が帯を引いた別の I/F ではなく、手動のサービスか先頭の有線 (敵対レビュー)。
+func TestSelfLanUnknownMethodAndWiredPick(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	s := selfNet()
+	s.Services[0].IP, s.Services[0].Method = "192.168.100.11", ""
+	s.IPs[1].Addr = "192.168.100.11"
+	h.m.self = s
+	if sl := h.m.selfLan(); sl.Unfixed {
+		t.Errorf("方式が読めない帯の番号を未固定と見た: %+v", sl)
+	}
+	s = selfNet()
+	s.Services = append(s.Services, netinfo.Service{Name: "Thunderbolt Bridge", Port: "Thunderbolt Bridge", Device: "bridge0", Active: true, IP: "192.168.100.77", Method: "DHCP", Read: true})
+	h.m.self = s
+	if w, ok := h.m.selfWired(); !ok || w.Device != "en13" {
+		t.Errorf("自動の番号が帯を引いた別の I/F を固定の対象にした: %+v", w)
+	}
+}

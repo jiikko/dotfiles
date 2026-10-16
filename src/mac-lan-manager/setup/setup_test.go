@@ -531,3 +531,14 @@ func TestStaticIPConfirmAfterWindowFails(t *testing.T) {
 		t.Error("受け取られなかった印が残った")
 	}
 }
+
+// メインの網 (IP とマスク) が帯を含むなら、メインの IP が帯の外でもこの Mac の固定を止める。
+func TestPlanBlocksBandOverlappingMain(t *testing.T) {
+	o := Observed{Band: "192.168.100.0/24", SelfService: "Thunderbolt Ethernet", SelfIP: "169.254.13.42", SelfMethod: "DHCP",
+		SelfMainIP: "192.168.0.10", SelfMainMask: "255.255.0.0", Peer: PeerObs{WifiIP: "192.168.0.20", SSHOpen: true}}
+	for _, s := range Plan(o) {
+		if s.ID == StepSelfStatic && !strings.Contains(s.Blocked, "メインの網") {
+			t.Errorf("帯を含むメインの網でこの Mac の固定を止めない: %+v", s)
+		}
+	}
+}

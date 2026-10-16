@@ -338,3 +338,20 @@ func TestMaskFor(t *testing.T) {
 		t.Error("LinkLocalBand の判定が違う")
 	}
 }
+
+// 帯とメインの網の重なりは、IP 1 点ではなく IP とマスクの網で見る (Wi-Fi が 192.168.0.10/16 だと帯 192.168.100.0/24 を含むのに止まらなかった)。
+func TestOverlaps(t *testing.T) {
+	for _, c := range []struct {
+		ip, mask string
+		want     bool
+	}{
+		{"192.168.0.10", "255.255.0.0", true},
+		{"192.168.50.250", "255.255.255.0", false},
+		{"192.168.100.7", "255.255.255.0", true},
+		{"192.168.0.10", "", false},
+	} {
+		if got := Overlaps("192.168.100.0/24", c.ip, c.mask); got != c.want {
+			t.Errorf("Overlaps(%s/%s) = %v, want %v", c.ip, c.mask, got, c.want)
+		}
+	}
+}

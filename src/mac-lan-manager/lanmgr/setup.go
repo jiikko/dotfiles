@@ -233,7 +233,7 @@ func (m *Model) setupObserved() (setup.Observed, row) {
 		o.SelfService, o.SelfIP, o.SelfMethod, o.SelfMask = s.Name, s.IP, s.Method, s.Mask
 	}
 	if s, ok := m.self.Main(); ok {
-		o.SelfMainIP = s.IP
+		o.SelfMainIP, o.SelfMainMask = s.IP, s.Mask
 	}
 	o.Peer = setup.PeerObs{
 		Host: su.host, WifiIP: r.mainIP, LanIP: r.lanIP, SSHOpen: r.ssh || r.managed,
@@ -257,7 +257,7 @@ func (m *Model) selfWired() (netinfo.Service, bool) {
 	}
 	off := m.self.Offline()
 	for _, s := range off { // 帯に入る番号を持つ有線を先に (一覧の内部 IP (selfLan) と同じサービスを見る。食い違うと札と手順の済みがずれた。敵対レビュー)
-		if netinfo.InBand(m.pf.Band, s.IP) {
+		if netinfo.InBand(m.pf.Band, s.IP) && s.Method == "manual" { // 自動の番号が帯を引いた別の I/F を固定しにいかない (帯が 169.254 の中のとき。敵対レビュー)
 			return s, true
 		}
 	}

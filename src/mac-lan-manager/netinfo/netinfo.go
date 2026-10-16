@@ -46,6 +46,23 @@ func MaskFor(band string) string {
 	return fmt.Sprintf("%d.%d.%d.%d", m[0], m[1], m[2], m[3])
 }
 
+// Overlaps は帯と、ip / mask の網が重なるか (どちらかが読めなければ false)。
+func Overlaps(band, ip, mask string) bool {
+	p, err := ParseBand(band)
+	if err != nil {
+		return false
+	}
+	a, err1 := netip.ParseAddr(ip)
+	mk, err2 := netip.ParseAddr(mask)
+	if err1 != nil || err2 != nil || !a.Is4() || !mk.Is4() {
+		return false
+	}
+	m4 := mk.As4()
+	bits, _ := net.IPv4Mask(m4[0], m4[1], m4[2], m4[3]).Size()
+	q, err := a.Prefix(bits)
+	return err == nil && p.Overlaps(q)
+}
+
 // InBand は ip が帯に入るか。帯が読めない・ip が IP でなければ false。
 func InBand(band, ip string) bool {
 	p, err := ParseBand(band)
