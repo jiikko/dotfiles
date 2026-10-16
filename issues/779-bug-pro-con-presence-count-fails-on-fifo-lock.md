@@ -1,5 +1,7 @@
 # 779 (bug): pro-con の presence が screens/ の FIFO の印 1 つで画面の数え上げ全体を失敗させる
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-16〜）
+
 起票日: 2026-10-16
 
 ## 概要
