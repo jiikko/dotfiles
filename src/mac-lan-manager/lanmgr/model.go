@@ -176,6 +176,9 @@ type ask struct {
 
 // New は画面を作り、この Mac のネットワーク・台帳・設定を読み、Bonjour の走査を起こす。
 func New(o Options) *Model {
+	if !ledger.ValidUser(o.User) { // $USER は検査されていない値。空・使えない名前なら「分からない」にする (空のまま ssh すると宛先が "@<IP>" になった)
+		o.User = ""
+	}
 	if o.Now == nil {
 		o.Now = time.Now //nolint:forbidigo // 注入しないときの既定値 (ここだけが「今」を直に読む)
 	}
@@ -825,6 +828,10 @@ func (m *Model) keyList(key string) Action {
 	if guessed {
 		guessNote = "  (ユーザー名は推測)"
 	}
+	if user == "" && (key == "s" || key == "Y") {
+		m.note("ssh のユーザー名が分からない ($USER が使えない。u で台帳に書く)", false)
+		return None
+	}
 	switch key {
 	case "space": // 台帳への登録 / 削除 (Space = 印を付ける。ガイド §2)。一覧では半ページより先に捌く
 		m.askLedger(r)
@@ -1024,6 +1031,7 @@ type hostEdit struct {
 	host, label, title, done string
 	check                    func(string) string
 	set                      func(*ledger.Host, string)
+	emptyMeans               func(*Model) string // 空にしたときに実際に使う値 (知らせに出す。nil なら「(無し)」)
 }
 
 var (
@@ -1034,7 +1042,8 @@ var (
 				return "ユーザー名が使えない: " + strconv.Quote(v)
 			}
 			return ""
-		}, set: func(h *ledger.Host, v string) { h.User = v }}
+		}, set: func(h *ledger.Host, v string) { h.User = v },
+		emptyMeans: func(m *Model) string { return "既定 (" + or(m.o.User, "分からない") + ")" }}
 )
 
 // openEdit は台帳に載っている Mac の 1 欄の入力欄を開く。
@@ -1074,7 +1083,11 @@ func (m *Model) keyAlias(key, text string) Action {
 			return None
 		}
 		m.reloadLedger()
-		m.note(e.done+": "+or(v, "(無し)"), true)
+		shown := or(v, "(無し)")
+		if v == "" && e.emptyMeans != nil {
+			shown = e.emptyMeans(m)
+		}
+		m.note(e.done+": "+shown, true)
 	default:
 		m.alias.Key(key, text)
 	}

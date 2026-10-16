@@ -1150,30 +1150,33 @@ func listHasRow(lines []string, want string) bool {
 // 入力欄が入る幅 (43 以上) では必ず出る。全角の入力と広い配置も見る。
 func TestFilterCaretExact(t *testing.T) {
 	for _, in := range [][]string{{"m", "i", "n"}, {"み", "に", "ま", "っ", "く"}} {
-		typed := strings.Join(in, "")
-		for w := minWidth; w <= 200; w++ {
-			h := newHarness(t, nil, []discover.Peer{mini})
-			h.m.Resize(w, 30)
-			h.keys("/")
-			h.keys(in...)
-			lines := h.m.View()
-			x, y, ok := h.m.CaretPos()
-			if !ok {
-				if w >= 43 {
-					t.Errorf("幅 %d (%s): 入力欄が入る幅でキャレットが出ない", w, typed)
+		for _, wired := range []bool{false, true} { // 有線だけに絞っているとタブの横に札が付く (札の分で入力欄が消えた。敵対レビュー)
+			typed := strings.Join(in, "")
+			for w := minWidth; w <= 200; w++ {
+				h := newHarness(t, nil, []discover.Peer{mini})
+				h.m.pf.WiredOnly = wired
+				h.m.Resize(w, 30)
+				h.keys("/")
+				h.keys(in...)
+				lines := h.m.View()
+				x, y, ok := h.m.CaretPos()
+				if !ok {
+					if w >= 43 {
+						t.Errorf("幅 %d (%s): 入力欄が入る幅でキャレットが出ない", w, typed)
+					}
+					continue
 				}
-				continue
-			}
-			// 狭い入力欄は末尾だけを見せる。キャレットは見えている文字の直後
-			line := termwidth.StripSGR(lines[y])
-			i := strings.LastIndex(line, "/ ")
-			txt := strings.TrimRight(line[max(i, 0)+2:], " ")
-			if i < 0 || txt == "" || !strings.HasSuffix(typed, txt) {
-				t.Errorf("幅 %d (%s): キャレットの行 %d に入力欄が無い: %q", w, typed, y, line)
-				continue
-			}
-			if want := termwidth.Of(line[:i]) + 2 + termwidth.Of(txt); x != want {
-				t.Errorf("幅 %d (%s): キャレットの桁 %d (入力した文字の直後は %d): %q", w, typed, x, want, line)
+				// 狭い入力欄は末尾だけを見せる。キャレットは見えている文字の直後
+				line := termwidth.StripSGR(lines[y])
+				i := strings.LastIndex(line, "/ ")
+				txt := strings.TrimRight(line[max(i, 0)+2:], " ")
+				if i < 0 || txt == "" || !strings.HasSuffix(typed, txt) {
+					t.Errorf("幅 %d (%s): キャレットの行 %d に入力欄が無い: %q", w, typed, y, line)
+					continue
+				}
+				if want := termwidth.Of(line[:i]) + 2 + termwidth.Of(txt); x != want {
+					t.Errorf("幅 %d (%s): キャレットの桁 %d (入力した文字の直後は %d): %q", w, typed, x, want, line)
+				}
 			}
 		}
 	}
@@ -1594,5 +1597,31 @@ func TestWiredOnlyHidesWifiOnlyPeers(t *testing.T) {
 	}
 	if h.m.current().host != "m2macmini.local" {
 		t.Errorf("消えた行にカーソルが残った: %q", h.m.current().host)
+	}
+}
+
+// $USER が使えない (空・先頭の -) と、台帳にユーザー名の無い相手への s / Y は断る (宛先が "@<IP>" になった。敵対レビュー)。
+// u で空にしたときの知らせには、実際に使う既定の名前を出す。
+func TestUnknownUserRefusesShell(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini})
+	h.m.o.User = ""
+	h.keys("l", "j")
+	if h.keys("s") == Exec || len(h.copied) != 0 {
+		t.Fatal("ユーザー名が分からないのに ssh を起こした")
+	}
+	h.keys("Y")
+	if len(h.copied) != 0 {
+		t.Errorf("ユーザー名が分からないのに ssh のコマンドをコピーした: %v", h.copied)
+	}
+	if m := New(Options{User: "-oProxyCommand=x", Now: func() time.Time { return t0 }}); m.o.User != "" {
+		t.Errorf("使えない $USER を既定のユーザー名にした: %q", m.o.User)
+	}
+
+	h = newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2"}}, []discover.Peer{mini})
+	h.keys("j", "u")
+	h.m.alias.Reset()
+	h.keys("enter")
+	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "既定 (koji)") {
+		t.Errorf("空にしたときに使う既定の名前を知らせない: %+v", n)
 	}
 }

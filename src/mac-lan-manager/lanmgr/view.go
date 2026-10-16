@@ -232,8 +232,10 @@ func (m *Model) tabs(width int) string {
 		}
 	}
 	row := strings.Join(parts, " ")
-	if m.pf.WiredOnly { // 一覧が空のとき「相手がいない」と区別できるように (設定で絞っている。敵対レビュー)
-		row += sMuted.Render("  有線で見えた相手だけ")
+	// 一覧が空のとき「相手がいない」と区別できるように、設定で絞っていることを出す (敵対レビュー)。ただし右の絞り込みの最小の欄
+	// (前置き 2 + 欄 4 + 間 1 + 余白 2) が残るときだけ (残らない幅で足すと、入力欄とキャレットが消えた。敵対レビュー)
+	if mark := sMuted.Render("  有線で見えた相手だけ"); m.pf.WiredOnly && width-lipgloss.Width(row)-lipgloss.Width(mark) >= 9 {
+		row += mark
 	}
 	// 右の絞り込みには、タブの残りの幅だけを使う (固定の幅だと狭い端末で行が広がり、下の一覧の板の右辺まで切れた。fable の敵対レビュー)
 	room := width - lipgloss.Width(row) - 3
