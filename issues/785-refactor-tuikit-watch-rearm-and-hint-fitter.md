@@ -70,3 +70,10 @@ glogx の利用者は status_view のほか doctor / issues / ratelimit / filer 
 - [x] 1. 合図の待ち直し (やらない。理由はコードのコメント)
 - [x] 2. 案内の詰め方 (commit「tuikit: 最下行の案内の詰め方を hintfit に移し…」)。変異で赤を確かめた: 席の予約を外す / 入らない項目で打ち切る / 最長の出口を返す →
   hintfit のテスト。lanmgr の q・s の優先度を下げる → TestFooterKeepsActionKeys。glogx の幅を無視する → TestEveryHintKeepsExitWithinWidth
+- [x] opus の敵対レビュー (P1 なし):
+  - glogx の出力は、移す前と後で比べて 1 文字も変わらない (ランダム 20 万ケース・21 面 × 幅 1〜200)
+  - lanmgr の footer は 10,000 セルのうち 875 セルで項目が増え、項目が消えたセルは 0
+  - 直したもの:
+    - P2: hintfit が depguard の部品のリストに無かった (足した)
+    - P3: 落とした assert を戻した。doc を足した。テストのコメントを貪欲の挙動に合わせた
+  - 残したもの: spinner / gutter / foreground も depguard の部品のリストに無い (以前から)。リストと実際の package を突き合わせる検査は無い
