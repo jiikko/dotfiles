@@ -6,7 +6,7 @@
 # `wildcard src/*/go.mod` で解決済み (Makefile:392) だが、**CI の paths filter と
 # プロジェクト側の Makefile target は今も手で用意する**ので、同じ穴が残っている。
 #
-# 検査する不変条件 (src/*/go.mod を出典に、6 つ):
+# 検査する不変条件 (src/*/go.mod を出典に、7 つ):
 #   1. src/<name>/Makefile に lint: と test: の両方がある
 #      (Makefile の run_go_projects が `make -C <dir> lint` / `test` を呼ぶ)
 #   2. .github/workflows/src_<name>.yml がある (paths filter つきの薄い caller)
@@ -22,6 +22,7 @@
 #      追加 job の go-version-file / cache-dependency-path / env に残った古い project 名・job id の衝突・
 #      引用符で囲んだ job id や with 以外のキーの下の dir: (後勝ちで上書きされる)・steps の中の uses。
 #      `dir: ./src/<name>` は動くが赤になる (安全側に倒す。今の書き方に揃える)
+#   7. src/<name>/Makefile の lint: の recipe が scripts/go_module_graph.sh を呼ぶ (go mod tidy -diff / go list -m all。issue 787)
 #
 # 🚨 検査できなかったときに緑を返さない。依存コマンド不在・発見 0 件はすべて失敗にする
 #   (`_claude/rules/adversarial-review-own-safeguards.md` の false green)。
@@ -260,6 +261,11 @@ while IFS= read -r name; do
       printf '✗ %s: %s の %s: が空 (recipe も依存も無い = 実際には何も走らない)\n' "$name" "$mk" "$t"; bad=$((bad + 1))
     fi
   done
+  # 7. lint の recipe が scripts/go_module_graph.sh を呼ぶ (replace の抜けは go build / go test / golangci-lint では落ちない。issue 787)。
+  #    見るのは lint: の行から、次のタブで始まらない行までの recipe
+  if ! awk '/^lint:/ { inl = 1; next } inl && !/^\t/ { inl = 0 } inl && /scripts\/go_module_graph\.sh/ { found = 1 } END { exit !found }' "$mk"; then
+    printf '✗ %s: %s の lint: が ../../scripts/go_module_graph.sh を呼ばない (go.mod の replace の抜けを手元で止められない)\n' "$name" "$mk"; bad=$((bad + 1))
+  fi
 
   if [ ! -f "src/$name/go.sum" ]; then
     printf '✗ %s: src/%s/go.sum が無い (CI のキャッシュが復元されない。依存が無ければ空のファイルを置く)\n' "$name" "$name"
@@ -320,4 +326,4 @@ if [ "$bad" -gt 0 ]; then
   printf '  src_<name>.yml の with: の dir は src/<name> にする (コピー元の名前を残さない)\n'
   exit 1
 fi
-printf '✓ Go プロジェクト %s 件すべてに lint/test target・go.sum・CI レーン (paths と dir つき) がある (replace 依存 %s 件も paths に在り)\n' "$n" "$deps"
+printf '✓ Go プロジェクト %s 件すべてに lint/test target (lint は module グラフの検査つき)・go.sum・CI レーン (paths と dir つき) がある (replace 依存 %s 件も paths に在り)\n' "$n" "$deps"

@@ -47,6 +47,8 @@ Claude Code で package を探すときは [PACKAGES.md](PACKAGES.md) を引く�
 
 1. **プロジェクト直下に Makefile（`lint` / `test` ターゲット必須）**
    root の `make test-go-lint` / `make test-go` と CI が `make -C src/<name> lint|test` として呼ぶ契約。実装言語が Go 以外になっても、この 2 ターゲットの契約だけは維持する
+   `lint` は先に `scripts/go_module_graph.sh` (`go mod tidy -diff` / `go list -m all`) を呼ぶ。依存先が require する module の replace の抜けは
+   go build / go test / golangci-lint では落ちず、ここでだけ落ちる (replace は依存元へ伝わらない。issue 787)。呼び忘れは `test-go-project-lanes` が落とす
 2. **`go.mod` と `go.sum` をプロジェクト直下に置く** (登録作業は無い。依存が無くても `go.sum` は空のファイルを置く)
    root [Makefile](../Makefile) の `GO_PROJECT_DIRS` は `src/*/go.mod` の存在で自動発見する
    (issue 080)。ローカルの `make test`（コミット前検証）に自動で組み込まれる。`go.sum` は CI のキャッシュの復元に使うので、
@@ -93,6 +95,7 @@ GOLANGCI_LINT_VERSION := v2.5.0
 .PHONY: lint test
 
 lint:
+	../../scripts/go_module_graph.sh
 	../../scripts/golangci_lint.sh $(GOLANGCI_LINT_VERSION) run ./...
 
 test:

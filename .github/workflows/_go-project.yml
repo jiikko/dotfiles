@@ -85,16 +85,8 @@ jobs:
           path: ~/Library/Caches/dotfiles-go-tools
           key: ${{ steps.gl.outputs.key }}
 
-      # go.mod / go.sum が tidy の形で、module グラフ全体が解決できること (issue 736)。
-      # make lint もテストも通るのに、replace の抜け (依存先の go.mod の require に対応する replace が無い) は
-      # `go list -m all` と govulncheck だけが落ち、手で書き足した go.mod の並びは tidy をかけた人の差分に混ざる。
-      # どちらも build に届くまで誰も気づかない
-      - name: Module graph (go mod tidy -diff / go list -m all)
-        working-directory: ${{ inputs.dir }}
-        run: |
-          go mod tidy -diff
-          go list -m all > /dev/null
-
+      # Lint の make lint は先に scripts/go_module_graph.sh (go mod tidy -diff / go list -m all) を回す (issue 736 で足した step を
+      # issue 787 で make lint へ寄せた。手元の make test と同じ入口)。go build / go test / golangci-lint は replace の抜けで落ちない
       - name: Lint
         run: make -C ${{ inputs.dir }} lint
 

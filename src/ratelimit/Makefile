@@ -7,6 +7,7 @@ GOLANGCI_LINT_VERSION := v2.5.0
 .PHONY: lint test vet-gorules
 
 lint: vet-gorules
+	../../scripts/go_module_graph.sh
 	../../scripts/golangci_lint.sh $(GOLANGCI_LINT_VERSION) run ./...
 
 # gorules/ は build tag で通常ビルドから外れるので、ここで型検査する (src/glogx/Makefile と同じ理由)

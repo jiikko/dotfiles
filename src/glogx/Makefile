@@ -8,6 +8,7 @@ GOLANGCI_LINT_VERSION := v2.5.0
 .PHONY: lint test
 
 lint: vet-gorules
+	../../scripts/go_module_graph.sh
 	../../scripts/golangci_lint.sh $(GOLANGCI_LINT_VERSION) run ./...
 
 # gorules/ は build tag で通常ビルドから外れるので、golangci-lint も go build も型検査しない。
