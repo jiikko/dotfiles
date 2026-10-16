@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/netip"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,6 +52,21 @@ type StaticIP struct {
 	StateOwner string
 	Delay      time.Duration
 	Window     time.Duration
+	// Tick は印を見る周期 (0 なら 1 秒)。Delay と Window はその整数倍。テストの差し込み口 (縮めると、確認の来ない経路の待ちが縮む)
+	Tick time.Duration
+}
+
+// tick は印を見る周期。
+func (s StaticIP) tick() time.Duration {
+	if s.Tick == 0 {
+		return time.Second
+	}
+	return s.Tick
+}
+
+// secs は sleep に渡す秒 (ミリ秒まで。BSD の sleep は小数を受ける)。
+func secs(d time.Duration) string {
+	return strconv.FormatFloat(d.Seconds(), 'f', -1, 64)
 }
 
 // DefaultStateDir は状態ディレクトリの既定 (相手の Mac の上)。/var/db は再起動で消えず、root の場所。
@@ -92,8 +108,9 @@ func (s StaticIP) Validate() error {
 	if s.StateOwner != "" && !ledger.ValidUser(s.StateOwner) {
 		return fmt.Errorf("状態ディレクトリの持ち主の名前が使えない: %q", s.StateOwner)
 	}
-	if s.Delay < 0 || s.Window < time.Second || s.Delay%time.Second != 0 || s.Window%time.Second != 0 {
-		return errors.New("待ちの長さが使えない (秒の整数)") // sleep は秒で渡す (900ms が sleep 0 に化けた)
+	t := s.tick()
+	if t < time.Millisecond || t > time.Second || t%time.Millisecond != 0 || s.Delay < 0 || s.Window < t || s.Delay%t != 0 || s.Window%t != 0 {
+		return errors.New("待ちの長さが使えない (周期の整数倍)") // 割り切れない待ちは sleep と周の数で丸まる (900ms が sleep 0 に化けた)
 	}
 	return nil
 }
@@ -163,16 +180,16 @@ func (s StaticIP) Script() string {
 	// この Mac の上のテストでは外しても緑のまま (変異で確かめた)。EXIT をシグナルで走らせない sh (dash など) のために残す
 	b.WriteString("trap 'finish' EXIT\ntrap 'exit 1' INT TERM HUP\n")
 	fmt.Fprintf(&b, "rm -rf %s\n", mark) // 前の回の印で戻しを飛ばさない
-	fmt.Fprintf(&b, "sleep %d\n", int(s.Delay/time.Second))
+	fmt.Fprintf(&b, "sleep %s\n", secs(s.Delay))
 	// 🚨 ルーターを渡さない形 (-setmanual <svc> <ip> <mask>) で「ルーター無し」になるかは未確認 (人手の確認の 1 つ)
 	fmt.Fprintf(&b, "changed=1\nnetworksetup -setmanual %s %s %s\n", svc, s.IP, s.Mask)
-	fmt.Fprintf(&b, "i=0\nwhile [ \"$i\" -lt %d ]; do\n", int(s.Window/time.Second))
+	fmt.Fprintf(&b, "i=0\nwhile [ \"$i\" -lt %d ]; do\n", int(s.Window/s.tick()))
 	// 印を認める条件: 通常のファイルで、中身の $SSH_CONNECTION の 3 語目 (ssh を受けた側の IP) が新しい IP。新しい IP に届いた ssh
 	// からしか確認が成り立たない (Wi-Fi 越しの既存の接続から打っても有線を確かめたことにならない。fable の敵対レビュー P1)。
 	// 印は root の 0700 のディレクトリにしか無いので、差し替え・FIFO・symlink は起きない
 	fmt.Fprintf(&b, "  if [ -f %s ] && [ ! -L %s ]; then\n    read -r c < %s\n    set -- $c\n", mark, mark, mark)
 	fmt.Fprintf(&b, "    if [ \"$3\" = %s ]; then confirmed=1; rm -f %s; exit 0; fi\n  fi\n", s.IP, mark)
-	b.WriteString("  sleep 1\n  i=$((i+1))\ndone\n")
+	fmt.Fprintf(&b, "  sleep %s\n  i=$((i+1))\ndone\n", secs(s.tick()))
 	return b.String()
 }
 
@@ -191,14 +208,14 @@ func (s StaticIP) RemoteCommand() string {
 // 確かめる (sudo は環境を引き継がないので、値は sudo の外で読んで引数で渡す)。🚨 相手のログインシェルが sh / bash / zsh である前提
 // (fish では `c=` が、tcsh では引用の中の書き方が通らない)。
 //
-// 印を書いて終わりにしない: Script は認めた印を消すので、消えるまで ConfirmWait 待ち、消えなければ印を消して非 0 で抜ける。
+// 印を書いて終わりにしない: Script は認めた印を消すので、消えるまで ConfirmTicks 周待ち、消えなければ印を消して非 0 で抜ける。
 // 印は lock の外に置くので、相手の待ちが終わった後 (期限切れで戻した後・最後の検査と戻しの間) でも書けて 0 で戻り、元に戻った相手を
 // 確認済みとして扱った (敵対レビュー)。待ちの終わりと同時に読まれた印を消して非 0 にすることはありうる (確認していない側に倒れる)
 func (s StaticIP) ConfirmCommand() string {
 	return `c="$SSH_CONNECTION"; sudo sh -c 'umask 077; printf "%s\n" "$1" > "$2" || exit 1; i=0; while [ -e "$2" ]; do ` +
 		`if [ "$i" -ge "$3" ]; then rm -f "$2"; echo "mac-lan-manager: 相手が確認を受け取らなかった (期限が過ぎて元に戻ったか、新しい IP に届いていない)" >&2; exit 1; fi; ` +
-		`sleep 1; i=$((i+1)); done' _ "$c" ` + Quote(s.ConfirmPath()) + fmt.Sprintf(" %d", int(ConfirmWait/time.Second))
+		`sleep ` + secs(s.tick()) + `; i=$((i+1)); done' _ "$c" ` + Quote(s.ConfirmPath()) + fmt.Sprintf(" %d", ConfirmTicks)
 }
 
-// ConfirmWait は確認の印が相手の待ちに受け取られるまで待つ長さ (Script は 1 秒ごとに印を見る)。
-const ConfirmWait = 3 * time.Second
+// ConfirmTicks は確認の印が相手の待ちに受け取られるまで待つ周の数 (Script は 1 周ごとに印を見る。本番は 3 秒)。
+const ConfirmTicks = 3

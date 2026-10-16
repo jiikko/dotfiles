@@ -83,11 +83,12 @@ func me(t *testing.T) string {
 	return u.Username
 }
 
-// staticIP の状態ディレクトリは sandbox の下 (テストの中では「root のディレクトリ」の役を自分が持つ)。
+// staticIP の状態ディレクトリは sandbox の下 (テストの中では「root のディレクトリ」の役を自分が持つ)。印を見る周期を縮め、
+// 確認の来ない経路の待ちを短くする (本番の 1 秒刻みだと setup のテストが約 40 秒かかった)。
 func staticIP(t *testing.T, dir string) StaticIP {
 	t.Helper()
 	return StaticIP{Service: "Thunderbolt Ethernet", IP: "192.168.100.11", Mask: "255.255.255.0",
-		Restore: Restore{Method: "DHCP"}, Token: "test-token-1", StateDir: dir + "/state", StateOwner: me(t), Window: time.Second}
+		Restore: Restore{Method: "DHCP"}, Token: "test-token-1", StateDir: dir + "/state", StateOwner: me(t), Tick: 50 * time.Millisecond, Window: 300 * time.Millisecond}
 }
 
 // viaNewIP は新しい IP (192.168.100.11) に届いた ssh の $SSH_CONNECTION。viaWifi は Wi-Fi の IP に届いた既存の接続。
@@ -123,7 +124,7 @@ func TestStaticIPRollsBackWithoutConfirm(t *testing.T) {
 func TestStaticIPKeepsWhenConfirmed(t *testing.T) {
 	dir, path := sandbox(t)
 	s := staticIP(t, dir)
-	s.Window = 5 * time.Second
+	s.Window = 2 * time.Second // 確認で抜けるので、長くても待たない
 	if err := os.MkdirAll(s.StateDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +160,7 @@ func TestStaticIPConfirmMustComeViaNewIP(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir, path := sandbox(t)
 			s := staticIP(t, dir)
-			s.Window = 2 * time.Second
+			s.Window = 500 * time.Millisecond
 			if name == "glob の中身" { // 作業ディレクトリに新しい IP の名前のファイルがあっても、それに化けない
 				if err := os.WriteFile(filepath.Join(dir, s.IP), nil, 0o644); err != nil {
 					t.Fatal(err)
@@ -185,7 +186,7 @@ func TestStaticIPConfirmMustComeViaNewIP(t *testing.T) {
 func TestStaticIPLock(t *testing.T) {
 	dir, path := sandbox(t)
 	first := staticIP(t, dir)
-	first.Window = 3 * time.Second
+	first.Window = time.Second // 2 本目の前面の確かめが走る間、1 本目が lock を持っている
 	cmd := runSh(t, path, first.Script())
 	waitFor(t, "1 本目が固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
 	second := staticIP(t, dir)
@@ -310,17 +311,19 @@ func TestRemoteCommandRunsDetached(t *testing.T) {
 func TestStaticIPValidate(t *testing.T) {
 	base := staticIP(t, "/var/db")
 	for name, mut := range map[string]func(*StaticIP){
-		"改行入りのサービス名": func(s *StaticIP) { s.Service = "a\nb" },
-		"空のサービス名":    func(s *StaticIP) { s.Service = "" },
-		"IPv6":       func(s *StaticIP) { s.IP = "fe80::1" },
-		"IP でない":     func(s *StaticIP) { s.Mask = "255.255.255" },
-		"戻し方":        func(s *StaticIP) { s.Restore.Method = "BOOTP" },
-		"戻す IP":      func(s *StaticIP) { s.Restore = Restore{Method: "manual", IP: "x", Mask: "255.0.0.0"} },
-		"印の名前":       func(s *StaticIP) { s.Token = "a b" },
-		"相対の置き場所":    func(s *StaticIP) { s.StateDir = "tmp" },
-		"待ちが短い":      func(s *StaticIP) { s.Window = 0 },
-		"秒でない待ち":     func(s *StaticIP) { s.Delay = 900 * time.Millisecond },
-		"持ち主":        func(s *StaticIP) { s.StateOwner = "a b" },
+		"改行入りのサービス名":   func(s *StaticIP) { s.Service = "a\nb" },
+		"空のサービス名":      func(s *StaticIP) { s.Service = "" },
+		"IPv6":         func(s *StaticIP) { s.IP = "fe80::1" },
+		"IP でない":       func(s *StaticIP) { s.Mask = "255.255.255" },
+		"戻し方":          func(s *StaticIP) { s.Restore.Method = "BOOTP" },
+		"戻す IP":        func(s *StaticIP) { s.Restore = Restore{Method: "manual", IP: "x", Mask: "255.0.0.0"} },
+		"印の名前":         func(s *StaticIP) { s.Token = "a b" },
+		"相対の置き場所":      func(s *StaticIP) { s.StateDir = "tmp" },
+		"待ちが短い":        func(s *StaticIP) { s.Window = 0 },
+		"周期で割り切れない待ち":  func(s *StaticIP) { s.Delay = 930 * time.Millisecond },
+		"本番の周期で秒でない待ち": func(s *StaticIP) { s.Tick, s.Window, s.Delay = 0, time.Second, 900*time.Millisecond },
+		"1 秒より長い周期":    func(s *StaticIP) { s.Tick, s.Window = 2*time.Second, 4*time.Second },
+		"持ち主":          func(s *StaticIP) { s.StateOwner = "a b" },
 	} {
 		s := base
 		mut(&s)
@@ -434,6 +437,7 @@ func TestStaticIPConcurrentRunsChangeOnce(t *testing.T) {
 		dir, path := sandbox(t)
 		a, b := staticIP(t, dir), staticIP(t, dir)
 		b.IP, b.Token = "192.168.100.12", "test-token-2"
+		a.Window, b.Window = time.Second, time.Second // 2 本が重なる長さ (2 本目は 0.25 秒遅れ、止まった lock の引き取りは 0.5 秒かかる)
 		if stale {
 			// 「止まった」と見てから外し終えるまでの窓を広げる (本物の窓は µs 級で、自然な回数では当たらない)。2 本目は 0.25 秒遅れて
 			// 始めるので、1 本目が外して作り直した lock を、2 本目が「止まった lock」として外しにいく形になる。引き取りが 1 本ずつで
