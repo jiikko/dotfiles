@@ -1419,6 +1419,14 @@ func TestUnreadServiceIsNotLan(t *testing.T) {
 			t.Errorf("読めない Wi-Fi で見えた 169.254 を内部 IP にした: %+v", r)
 		}
 	}
+	// サービスに登録の無い I/F (en18) で見えた 169.254 も内部 IP にしない (Classify は名前の判定で「自動割り当て」にする)
+	h.m.o.IfName = func(i int) string { return map[int]string{14: "en0", 27: "en13", 31: "en18"}[i] }
+	h.m.peers = []discover.Peer{{Host: "q.local", Instances: []string{"q"}, SSH: true, Addrs: map[int]string{31: "169.254.6.6"}}}
+	for _, r := range h.m.rows() {
+		if r.host == "q.local" && r.lanIP == "169.254.6.6" {
+			t.Errorf("登録の無い I/F で見えた 169.254 を内部 IP にした: %+v", r)
+		}
+	}
 	h.m.pf.LanByBand, h.m.pf.LanIF = false, "en0"
 	if sl := h.m.selfLan(); sl.IP != "" {
 		t.Errorf("読めない I/F の IP をこの Mac の内部 IP にした: %+v", sl)
