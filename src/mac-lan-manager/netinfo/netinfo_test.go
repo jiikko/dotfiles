@@ -122,6 +122,10 @@ func TestKindWithServicesSharingIF(t *testing.T) {
 	if k := unread.Kind("en0", "192.168.50.20"); k != KindUnknown || unread.WiredIF("en0") {
 		t.Errorf("読めないサービスが載る en0: Kind=%v WiredIF=%v", k, unread.WiredIF("en0"))
 	}
+	slices.Reverse(unread.Services) // 読めたサービスが先に並んでも同じ
+	if k := unread.Kind("en0", "192.168.50.20"); k != KindUnknown || unread.WiredIF("en0") {
+		t.Errorf("読めないサービスが後に載る en0: Kind=%v WiredIF=%v", k, unread.WiredIF("en0"))
+	}
 	twice := Snapshot{Services: []Service{
 		{Name: "A", Device: "en13", Active: true, Read: true}, {Name: "B", Device: "en13", Active: true, Read: true},
 	}}
