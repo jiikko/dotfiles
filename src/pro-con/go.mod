@@ -43,6 +43,7 @@ replace (
 	github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 	github.com/jiikko/dotfiles/src/tuikit => ../tuikit
 	glogx => ../glogx
+	mac-lan-manager => ../mac-lan-manager
 	process_supervisor => ../process_supervisor
 	ratelimit => ../ratelimit
 	safefs => ../safefs
