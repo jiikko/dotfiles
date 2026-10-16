@@ -17,3 +17,11 @@
 
 - [794](794-research-macos-screen-sharing-client-feasibility.md) — 要件・わかっていること・着手前に決めること
 - [795](795-research-app-store-distribution-and-third-party-apps.md) — Swift で作って App Store で出せるか / 他社の画面共有アプリは何を話しているか
+
+要望ごと (2026-10-16 に要望を調べて書き出した):
+
+- [796](796-feat-screen-sharing-hp-protocol-client.md) — 高性能モードのプロトコルで繋ぐ (接続・認証・映像・入力の芯)
+- [797](797-feat-screen-sharing-host-list.md) — 繋ぐ先の Mac を一覧から選ぶ
+- [798](798-feat-screen-sharing-always-connected.md) — 常時接続にして、選んだらすぐ切り替わる
+- [799](799-feat-screen-sharing-modifier-keys-and-spaces.md) — 修飾キーとデスクトップの切り替えを相手へ送る
+- [800](800-research-screen-sharing-multiple-hp-sessions.md) — 複数の Mac に同時に高性能で繋げるか (自作の意味を決める)
