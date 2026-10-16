@@ -193,8 +193,9 @@ if confirm.IsYes(key) { run() }
 
 | 何を | どこで |
 |---|---|
-| 部品 (`anim` / `confirm` / `editor` / `highlight` / `layout` / `lineedit` / `listnav` / `markdown` / `sgr` / `termcolor` / `termwidth` / `toast` / `widthenv`) は bubbletea を import しない (使ってよいのは `caret` と `examples/`) | `.golangci.yml` の depguard (`no-framework-in-parts`) |
-| 部品 (上から `editor`・`widthenv` を除いたもの) は `os` / `os/exec` / `context` を import しない | `.golangci.yml` の depguard (`parts-pure`) |
+| 部品 (`anim` / `confirm` / `editor` / `foreground` / `gutter` / `highlight` / `hintfit` / `layout` / `lineedit` / `listnav` / `markdown` / `sgr` / `spinner` / `termcolor` / `termwidth` / `toast` / `widthenv`) は bubbletea を import しない (使ってよいのは `caret` と `examples/`。`framebench` は計測の道具で部品ではない) | `.golangci.yml` の depguard (`no-framework-in-parts`) |
+| 部品 (上から `editor`・`foreground`・`termcolor`・`widthenv` を除いたもの) は `os` / `os/exec` / `context` を import しない | `.golangci.yml` の depguard (`parts-pure`) |
+| 部品を足したら上の 2 つのリスト (または外す理由つきの表) に載せる | `tests/scripts/test_tuikit_depguard_covers_parts.sh` (issue 790) |
 | 部品の中で `time.Now` / `time.Since` を呼ばない | `.golangci.yml` の forbidigo |
 | 幅モデルは 1 系統 (runewidth・uniseg・`ansi.StringWidthWc` を使わない) | `.golangci.yml` の depguard / forbidigo |
 | 折り返しは `termwidth.Wrap` / `WordWrap` (`ansi.Hardwrap` / `Wrap` / `Wordwrap` を直に呼ばない。issue 590) | tuikit と全消費者の `.golangci.yml` の forbidigo |

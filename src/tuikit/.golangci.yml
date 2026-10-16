@@ -46,6 +46,10 @@ linters:
             - "**/layout/**"
             - "**/listnav/**"
             - "**/hintfit/**"
+            - "**/gutter/**"
+            - "**/spinner/**"
+            # foreground は端末の前面の確かめ・子へ端末を渡すのが仕事 (I/O なので parts-pure の対象外) だが、描画フレームワークには依存しない
+            - "**/foreground/**"
             - "**/highlight/**"
             - "**/markdown/**"
             - "**/sgr/**"
@@ -66,7 +70,8 @@ linters:
               desc: 部品はフレームワーク非依存 (tick は使う側が回す。README の「使う側の約束」)
         # 部品は「状態 → 文字列」の純粋な層。I/O・プロセス起動・非同期を持ち込むと、毎フレーム呼ばれる
         # 合成の性能とテスト容易性が壊れる (glogx の render.go に掛けていた render-pure と同じ)。
-        # widthenv は環境変数を読む・editor は外部のエディタを起こす・termcolor は端末 (tmux) に機能を聞くのが仕事なので対象外。
+        # widthenv は環境変数を読む・editor は外部のエディタを起こす・termcolor は端末 (tmux) に機能を聞く・foreground は端末を子へ渡すのが仕事なので対象外。
+        # 部品を足したら、ここと上のリストのどちらか (または両方) に足す (tests/scripts/test_tuikit_depguard_covers_parts.sh が漏れを落とす。issue 790)
         parts-pure:
           files:
             - "**/anim/**"
@@ -74,6 +79,8 @@ linters:
             - "**/layout/**"
             - "**/listnav/**"
             - "**/hintfit/**"
+            - "**/gutter/**"
+            - "**/spinner/**"
             - "**/highlight/**"
             - "**/markdown/**"
             - "**/sgr/**"
