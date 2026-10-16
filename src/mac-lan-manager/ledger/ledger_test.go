@@ -286,3 +286,16 @@ func TestUpdateOnlyExisting(t *testing.T) {
 		t.Errorf("無い Mac を足した: %+v", hs)
 	}
 }
+
+func TestValidUserAndLAN(t *testing.T) {
+	for s, want := range map[string]bool{"koji": true, "k2.dev_1": true, "-oProxyCommand=x": false, "": false, "a b": false, "a;b": false} {
+		if ValidUser(s) != want {
+			t.Errorf("ValidUser(%q) = %v", s, !want)
+		}
+	}
+	for s, want := range map[string]bool{"192.168.100.13": true, "192.168.100.13; echo": false, "fe80::1": false, "192.168.100.013": false, "": false} {
+		if ValidLAN(s) != want {
+			t.Errorf("ValidLAN(%q) = %v", s, !want)
+		}
+	}
+}

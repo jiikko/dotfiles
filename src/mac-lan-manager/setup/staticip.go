@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"mac-lan-manager/ledger"
 )
 
 // Quote は s を sh の 1 つの語にする (単引用符で包み、中の単引用符は「閉じて \' を挟んで開き直す」)。
@@ -56,7 +58,6 @@ const DefaultStateDir = "/var/db/mac-lan-manager"
 
 var (
 	reToken = regexp.MustCompile(`^[A-Za-z0-9-]{8,64}$`)
-	reUser  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$`)
 )
 
 func ipv4(v string) bool {
@@ -88,7 +89,7 @@ func (s StaticIP) Validate() error {
 	if d := s.stateDir(); !strings.HasPrefix(d, "/") || strings.ContainsFunc(d, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 		return fmt.Errorf("状態ディレクトリが使えない: %q", d)
 	}
-	if s.StateOwner != "" && !reUser.MatchString(s.StateOwner) {
+	if s.StateOwner != "" && !ledger.ValidUser(s.StateOwner) {
 		return fmt.Errorf("状態ディレクトリの持ち主の名前が使えない: %q", s.StateOwner)
 	}
 	if s.Delay < 0 || s.Window < time.Second || s.Delay%time.Second != 0 || s.Window%time.Second != 0 {

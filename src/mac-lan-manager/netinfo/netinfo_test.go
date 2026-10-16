@@ -172,7 +172,7 @@ func TestReadUsesRenamedServiceNames(t *testing.T) {
 		"networksetup -getinfo Wi-Fi (自宅)":      "getinfo_wifi.txt",
 		"ifconfig en13":                         "ifconfig_en13.txt",
 		"ifconfig en0":                          "ifconfig_en0.txt",
-		"ifconfig bridge0":                      "ifconfig_bridge0.txt",
+		"ifconfig bridge0":                      "=bridge0: flags=8863<UP>\n\tinet 192.168.100.5 netmask 0xffffff00 broadcast 192.168.100.255\n\tstatus: active\n",
 		"ifconfig -l":                           "=lo0 en0 bridge0 en13",
 	})
 	snap, err := Read(context.Background(), run)
@@ -182,10 +182,17 @@ func TestReadUsesRenamedServiceNames(t *testing.T) {
 	if m, ok := snap.Main(); !ok || m.Name != "Wi-Fi (自宅)" || m.Device != "en0" {
 		t.Errorf("Main() = %+v, %v (名前を変えた Wi-Fi をインターネット側と読めない)", m, ok)
 	}
+	seen := false
 	for _, ip := range snap.IPs {
-		if ip.Device == "bridge0" && ip.Kind == KindWired {
-			t.Errorf("-getinfo が読めない bridge0 を有線と決めた: %+v", ip)
+		if ip.Device == "bridge0" {
+			seen = true
+			if ip.Kind == KindWired {
+				t.Errorf("-getinfo が読めない bridge0 を有線と決めた: %+v", ip)
+			}
 		}
+	}
+	if !seen {
+		t.Fatal("前提: bridge0 の IP が読めていない")
 	}
 }
 

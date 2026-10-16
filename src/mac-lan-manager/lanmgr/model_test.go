@@ -182,7 +182,7 @@ func TestSSHUsesLanIPAndHostKeyAlias(t *testing.T) {
 		t.Fatalf("s = %v, want Exec", a)
 	}
 	r, ok := h.m.TakeExec()
-	want := []string{"ssh", "-o", "HostKeyAlias=m2macmini.local", "k2@192.168.100.13"}
+	want := []string{"ssh", "-o", "HostKeyAlias=m2macmini.local", "--", "k2@192.168.100.13"}
 	if !ok || !slices.Equal(r.Argv, want) {
 		t.Errorf("argv = %v, want %v", r.Argv, want)
 	}
@@ -1326,6 +1326,40 @@ func TestEveryScreenFitsHeight(t *testing.T) {
 					t.Errorf("%dx%d %v: 設定の画面が出ていない:\n%s", w, hgt, open, view)
 				}
 			}
+		}
+	}
+}
+
+// 台帳の user / lan は手で書き換えうる。使えない形なら使わずに知らせ、ssh の引数にもクリップボードにも出さない
+// (user が "-oProxyCommand=…" だと ssh が option として読み、lan に "; echo" が付くとコピーした文字列にそのまま入った。監査の指摘)。
+func TestUnusableLedgerFieldsAreNotUsed(t *testing.T) {
+	bad := []ledger.Host{{Host: "m2macmini.local", User: "-oProxyCommand=touch /tmp/x", LAN: "192.168.100.13; echo pwn"}}
+	h := newHarness(t, bad, []discover.Peer{mini})
+	notes := h.m.TakeNotices()
+	if len(notes) != 2 {
+		t.Errorf("使えない欄の知らせ = %+v (user と lan の 2 つ)", notes)
+	}
+	r := h.m.current()
+	if r.host != "m2macmini.local" {
+		h.keys("j")
+		r = h.m.current()
+	}
+	if r.user != "" || r.ledgerLAN != "" || strings.Contains(r.lanIP, "pwn") { // 内部 IP は Bonjour で見えた値で埋まってよい
+		t.Fatalf("使えない欄を行に入れた: user=%q ledgerLAN=%q lan=%q", r.user, r.ledgerLAN, r.lanIP)
+	}
+	if h.keys("s") != Exec {
+		t.Fatalf("s が ssh を起こさない")
+	}
+	ex, _ := h.m.TakeExec()
+	for _, a := range ex.Argv {
+		if strings.Contains(a, "Proxy") || strings.Contains(a, "pwn") {
+			t.Errorf("ssh の引数に台帳の不正な値が入った: %q", ex.Argv)
+		}
+	}
+	h.keys("Y")
+	for _, c := range h.copied {
+		if strings.Contains(c, "Proxy") || strings.Contains(c, "pwn") {
+			t.Errorf("コピーに台帳の不正な値が入った: %q", c)
 		}
 	}
 }

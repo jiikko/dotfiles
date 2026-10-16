@@ -7,8 +7,10 @@ package ledger
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -30,6 +32,30 @@ type Host struct {
 	LAN       string // 内部 IP (固定 IP)
 	Alias     string // 自分で付けた別名
 	UpdatedAt time.Time
+}
+
+// reUser は macOS のアカウント名として使える形 (先頭に - を置けない: ssh の引数にすると option として読まれた。監査の指摘)。
+var reUser = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$`)
+
+// ValidUser は ssh のユーザー名・chown の持ち主として使ってよい形か。
+func ValidUser(s string) bool { return reUser.MatchString(s) }
+
+// ValidLAN は内部 IP として使ってよい形か (IPv4 の 1 つの番地)。
+func ValidLAN(s string) bool {
+	a, err := netip.ParseAddr(s)
+	return err == nil && a.Is4() && a.String() == s
+}
+
+// Unusable は台帳の行のうち、繋ぐときに使えない欄 (空は使えないに数えない)。台帳は手で書き換えうるので、読んだ側が使う前に見る。
+func (h Host) Unusable() []string {
+	var bad []string
+	if h.User != "" && !ValidUser(h.User) {
+		bad = append(bad, "user")
+	}
+	if h.LAN != "" && !ValidLAN(h.LAN) {
+		bad = append(bad, "lan")
+	}
+	return bad
 }
 
 // Store は台帳の口。

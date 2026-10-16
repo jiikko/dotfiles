@@ -176,6 +176,17 @@ func (m *Model) Reload() {
 		if hs, err := m.o.Ledger.Load(); err != nil {
 			m.note("台帳が読めない: "+err.Error(), false)
 		} else {
+			// 手で書き換えうる欄は使う前に確かめる: user が "-o…" だと ssh が option として読み、lan が IP でないと引数に何でも入った (監査の指摘)
+			for i := range hs {
+				for _, f := range hs[i].Unusable() {
+					m.note(fmt.Sprintf("台帳の %s の %s が使えない形なので使わない", hs[i].Host, f), false)
+					if f == "user" {
+						hs[i].User = ""
+					} else {
+						hs[i].LAN = ""
+					}
+				}
+			}
 			m.hosts = hs
 		}
 	}
@@ -789,7 +800,7 @@ func (m *Model) keyList(key string) Action {
 			m.note(why, false)
 		} else {
 			// known_hosts を IP でなく台帳の鍵に結び付ける (IP を付け替えても「鍵が変わった」にしない)
-			m.exec = &ExecRequest{Argv: []string{"ssh", "-o", "HostKeyAlias=" + r.host, user + "@" + r.connectIP()}}
+			m.exec = &ExecRequest{Argv: []string{"ssh", "-o", "HostKeyAlias=" + r.host, "--", user + "@" + r.connectIP()}}
 			return Exec
 		}
 	case "Y": // コピー (整形した参照 = コマンド)
