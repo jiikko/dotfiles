@@ -96,7 +96,7 @@ func Load(path string) (Prefs, error) {
 			}
 			p.Kinds = nil
 			for _, x := range strings.Split(s, ",") {
-				if x = kindKey(strings.TrimSpace(x)); x != "" {
+				if x = kindKey(strings.TrimSpace(x)); x != "" && !slices.Contains(p.Kinds, x) { // 古い名前と新しい名前の重なりを 1 つに
 					p.Kinds = append(p.Kinds, x)
 				}
 			}

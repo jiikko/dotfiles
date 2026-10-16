@@ -36,9 +36,13 @@ func (m *Model) View() []string {
 	if m.sc == scSettings {
 		body = lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", m.viewSettings(w))
 		if m.bandEdit {
-			// 板の左端 (padX) + 枠 1 + 余白 2 + 名前の列 + 入力欄の左の余白 1。行は 見出し 3・枠 1・余白 1・板の見出し 3 の下で、窓の分を引く
-			m.caretMX = padX + 1 + 2 + m.setLabelW + 1 + m.bandCol
+			// 板の左端 (padX) + 枠 1 + 余白 2 + 選んでいる行の左の棒 1 (selRow。帯の行は編集中は必ず選んでいる) + 名前の列 +
+			// 入力欄の左の余白 1。行は 見出し 3・枠 1・余白 1・板の見出し 3 の下で、窓の分を引く。画面の中に無ければ出さない
+			m.caretMX = padX + 1 + 2 + 1 + m.setLabelW + 1 + m.bandCol
 			m.caretMY = padY + 3 + 1 + 1 + 3 + m.bandRow - m.setOff
+			if m.caretMY >= padY+m.bodyHeight() || m.caretMX >= m.w {
+				m.caretMY = -1
+			}
 		}
 	} else {
 		body = m.viewList(w)
@@ -149,7 +153,8 @@ func (m *Model) header(w int) string {
 	if !fit() {
 		right = sKeycap.Render("c") + sDim.Render(" 内部 ") + sText.Render(or(ips[0], "-"))
 	}
-	return left + strings.Repeat(" ", max(w-lipgloss.Width(left)-lipgloss.Width(right), 2)) + right
+	// 詰めても 1 桁超えることがある (左右の間の 2 桁の空白)。超えると全体の行が広がり、影の列が切れた (fable の敵対レビュー)
+	return termwidth.Truncate(left+strings.Repeat(" ", max(w-lipgloss.Width(left)-lipgloss.Width(right), 2))+right, w, "")
 }
 
 func (m *Model) viewList(w int) string {
@@ -166,6 +171,9 @@ func (m *Model) viewList(w int) string {
 		detailW = w - listW - 2
 	}
 	detail := m.detail(r, detailW)
+	if lipgloss.Width(detail) > detailW { // 詳細カードが幅に収まらない (狭い端末): 動作のキーだけの 1 行にする (広がると一覧の板の右辺まで切れた)
+		detail = m.detailCompact(r)
+	}
 	// 一覧に回せる行数: 画面の高さから、見出し・タブ・枠・表の見出しと (縦に積むときは) 詳細カードを先に引く。詳細カードに動作の
 	// キー (s 繋ぐ・Y コピー・o 開く) があるので、それを押し出さないよう先に取る。全部を描いて下で切っていたころは、狭い画面で
 	// 詳細カードもカーソル行も画面の外に出た (監査の指摘 2026-10-16)
@@ -209,11 +217,14 @@ func (m *Model) tabs(width int) string {
 		}
 	}
 	row := strings.Join(parts, " ")
+	// 右の絞り込みには、タブの残りの幅だけを使う (固定の幅だと狭い端末で行が広がり、下の一覧の板の右辺まで切れた。fable の敵対レビュー)
+	room := width - lipgloss.Width(row) - 3
 	var search string
 	switch {
 	case m.filtering:
-		txt, col := m.filter.Window(24)
-		search = sAccent.Render("/ ") + lipgloss.NewStyle().Background(cCode).Render(termwidth.FillRight(txt, 25))
+		fw := min(25, max(room-2, 4))
+		txt, col := m.filter.Window(fw - 1)
+		search = sAccent.Render("/ ") + lipgloss.NewStyle().Background(cCode).Render(termwidth.FillRight(txt, fw))
 		m.caretFX = padX + width - 2 - lipgloss.Width(search) + 2 + col
 		m.caretFY = padY + 3
 	case m.filter.String() != "":
@@ -221,7 +232,12 @@ func (m *Model) tabs(width int) string {
 	default:
 		search = sMuted.Render("/ で絞り込み")
 	}
-	return row + strings.Repeat(" ", max(width-lipgloss.Width(row)-lipgloss.Width(search)-2, 1)) + search
+	out := row + strings.Repeat(" ", max(width-lipgloss.Width(row)-lipgloss.Width(search)-2, 1)) + search
+	if lipgloss.Width(out) > width {
+		m.caretFY = -1 // 入力欄まで切れる幅ではキャレットを出さない
+		out = termwidth.Truncate(out, width, "")
+	}
+	return out
 }
 
 // col は一覧の 1 列 (設定で出し入れする)。
@@ -299,8 +315,12 @@ func (m *Model) columns() []col {
 }
 
 // listTable は列ごとに幅を決め、セルを lipgloss のスタイルで描いて横に並べる (折り返さず … で切る)。
-// detailCompact は高さが足りないときの詳細カードの代わり (動作のキーだけの 1 行)。
+// detailCompact は高さ・幅が足りないときの詳細カードの代わり (動作のキーだけの 1 行。枠が無いので、幅で切っても壊れない)。
 func (m *Model) detailCompact(r row) string {
+	return termwidth.Truncate(m.detailCompactLine(r), max(m.w-2*padX, 1), "…")
+}
+
+func (m *Model) detailCompactLine(r row) string {
 	if r.self {
 		return sDim.Render("この Mac  ") + keycap("c", "IP をコピー") + "   " + sMuted.Render("(端末を高くすると詳細)")
 	}
@@ -318,9 +338,9 @@ func (m *Model) detailCompact(r row) string {
 	return strings.Join(parts, "   ")
 }
 
-// minWidth はこの画面を組む最小の幅。12 桁以下では枠を組む計算が負になって落ちた (strings.Repeat)。20 桁未満では何も読めないので、
+// minWidth はこの画面を組む最小の幅。12 桁以下では枠を組む計算が負になって落ちた (strings.Repeat)。これより狭ければ
 // 抜け方だけの画面にする。
-const minWidth = 20
+const minWidth = 36 // 一覧の表の最小 (印 1 + 名前 4 + 内部 IP 18) + 板の枠と余白 7 + 外の余白 6 より狭いと、板の右辺が切れた
 
 // viewTooNarrow は幅が足りないときの画面 (抜け方だけは必ず見せる)。
 func (m *Model) viewTooNarrow() []string {

@@ -105,7 +105,7 @@ func TestLoadOldKindNames(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("kinds = \"有線,自動割り当て,VPN,なにか\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("kinds = \"有線,自動割り当て,VPN,なにか,wired\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got, err := Load(path)

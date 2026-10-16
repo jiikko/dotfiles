@@ -195,8 +195,10 @@ func (m *Model) viewSettings(w int) string {
 				dim = "(この決め方では使わない)"
 			}
 			if m.bandEdit {
-				txt, col := m.band.Window(20)
-				val = lipgloss.NewStyle().Background(cCode).Padding(0, 1).Render(termwidth.FillRight(txt, 21)) + sMuted.Render("   enter で確定 / esc でやめる")
+				// 入力欄の幅は板に入る分だけ (固定の 21 桁だと、幅 50 未満で欄の右が切れ、キャレットが「…」の上や画面の外に出た)
+				fw := min(21, max(inner-m.setLabelW-1-2, 4))
+				txt, col := m.band.Window(fw - 1)
+				val = lipgloss.NewStyle().Background(cCode).Padding(0, 1).Render(termwidth.FillRight(txt, fw)) + sMuted.Render("   enter で確定 / esc でやめる")
 				m.bandCol, m.bandRow = col, len(rows) // カーソルの位置は View が板の位置から決める (窓で切った後の行に直す)
 			} else {
 				val = sText.Render(m.pf.Band) + sMuted.Render("   enter で編集")
@@ -244,8 +246,10 @@ func (m *Model) viewSettings(w int) string {
 		rows[i] = termwidth.Truncate(r, inner, "…")
 	}
 	// 窓: 画面に入る行だけを、選んでいる項目を含むように描く (24 行以下で「その他の IP に含める種類」が画面の外のまま
-	// カーソルだけ進んだ)。見出し 3・板の枠と余白 4・板の見出し 3 を引いた行数
-	avail := max(m.bodyHeight()-3-4-3, 3)
+	// カーソルだけ進んだ)。板の枠・余白・影の行数は定数で書かず描いて測る (定数が 1 行少なく、低い画面でキャレットが案内の行に出た。
+	// fable の敵対レビュー)。見出し 3・板の見出し 3 を引く
+	frame := lipgloss.Height(shadow(card("", w-1, surfPanel, cPink, cPurple, cTeal))) - 1
+	avail := max(m.bodyHeight()-3-frame-3, 1)
 	m.setOff = 0
 	if len(rows) > avail {
 		m.setOff = listnav.WindowOffset(m.setOffPrev, selAt, len(rows), avail)

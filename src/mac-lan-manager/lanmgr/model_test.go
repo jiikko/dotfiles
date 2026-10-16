@@ -981,9 +981,9 @@ func TestBindsCoversHandledKeys(t *testing.T) {
 		}
 		h := newHarness(t, nil, []discover.Peer{mini, {Host: "b.local", SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}})
 		h.keys("l", "j")
-		before := snap(h)
+		before, bound := snap(h), h.m.Binds(k) // 打つ前に見る (打った後は板が開いて Binds が全部のキーを取る)
 		a := h.m.HandleKey(k)
-		if (a != None || snap(h) != before) && !h.m.Binds(k) {
+		if (a != None || snap(h) != before) && !bound {
 			t.Errorf("%q は一覧で使うのに Binds に無い (glogx の板で横取りされる)", k)
 		}
 	}
@@ -1001,5 +1001,68 @@ func TestUnfixedBadge(t *testing.T) {
 	h.m.self = s
 	if strings.Contains(termwidth.StripSGR(h.m.header(120)), "未固定") {
 		t.Error("帯に入る IP があるのに「未固定」の札を出した")
+	}
+}
+
+// 帯の入力欄のキャレットは、欄の文字の直後 (行も桁も) に出る。画面に入らない高さでは出さない (案内や空の行に出ない)。
+// 選んでいる行の左の棒の分 1 桁左に出ていた・低い画面で板の外に出ていた (fable の敵対レビュー)。
+func TestSettingsCaretExact(t *testing.T) {
+	for _, w := range []int{120, 80, 60, 48, 40} {
+		for hgt := 10; hgt <= 40; hgt++ {
+			h := newHarness(t, nil, nil)
+			h.m.Resize(w, hgt)
+			h.keys(",")
+			for range setBand {
+				h.keys("j")
+			}
+			h.keys("enter")
+			lines := h.m.View()
+			if len(lines) != hgt {
+				t.Fatalf("%dx%d: %d 行", w, hgt, len(lines))
+			}
+			x, y, ok := h.m.CaretPos()
+			if !ok {
+				continue // 入力欄が画面に入らない高さ・幅
+			}
+			// 狭い欄では入力欄が末尾 (".168.100.0/24") を見せる。キャレットは文字の末尾 "0/24" の直後
+			line := termwidth.StripSGR(lines[y])
+			i := strings.Index(line, "0/24")
+			if i < 0 {
+				t.Errorf("%dx%d: キャレットの行 %d に入力欄が無い: %q", w, hgt, y, line)
+				continue
+			}
+			if want := termwidth.Of(line[:i]) + termwidth.Of("0/24"); x != want {
+				t.Errorf("%dx%d: キャレットの桁 %d (入力欄の文字の直後は %d): %q", w, hgt, x, want, line)
+			}
+		}
+	}
+}
+
+// 一覧の板の右辺は、画面を組む幅 (minWidth) 以上のどの幅でも切れない (表の最小より狭い板では右辺が切れた)。
+func TestListFrameIntactAtNarrowWidths(t *testing.T) {
+	for w := minWidth; w <= 70; w++ {
+		h := newHarness(t, nil, []discover.Peer{mini})
+		h.m.Resize(w, 40)
+		h.keys("l")
+		for _, l := range h.m.View() {
+			l = termwidth.StripSGR(l)
+			if strings.Contains(l, "▐") && !strings.Contains(l, "▌") {
+				t.Errorf("幅 %d: 板の右辺が切れた: %q", w, l)
+				break
+			}
+		}
+	}
+}
+
+// 設定の板は、どの高さでも下の枠と影まで画面に入る (枠と余白の行数を定数で数えていたころは 1 行少なく、影や下の枠が切れた)。
+func TestSettingsFrameFitsHeight(t *testing.T) {
+	for hgt := 18; hgt <= 40; hgt++ {
+		h := newHarness(t, nil, nil)
+		h.m.Resize(100, hgt)
+		h.keys(",")
+		view := termwidth.StripSGR(strings.Join(h.m.View(), "\n"))
+		if !strings.Contains(view, "▀") || !strings.Contains(view, "▆") {
+			t.Errorf("高さ %d: 設定の板の下の枠か影が切れた", hgt)
+		}
 	}
 }
