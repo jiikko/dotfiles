@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -102,5 +105,31 @@ func TestAttachGuideRechecksSelection(t *testing.T) {
 	press(m, "enter")
 	if handed {
 		t.Fatal("案内の間に選択が変わったのに端末を渡した")
+	}
+}
+
+// 外の tmux の prefix は聞いて読む。tmux が応答しなければ上限で諦めて "" (戻るキーは Ctrl+Z だけ) にする (issue 783)。
+func TestOuterPrefixGivesUpOnHungTmux(t *testing.T) {
+	fake := func(body string) string {
+		p := filepath.Join(t.TempDir(), "tmux")
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if got := (&PopupAttach{Tmux: fake(`echo C-t`)}).outerPrefix(); got != "C-t" {
+		t.Fatalf("応答する tmux の prefix を読めない: %q", got)
+	}
+	// 応答しない tmux は sleep で演じる (待ちではなく入力。上限に掛からなければ 1 時間戻らない)
+	hung := &PopupAttach{Tmux: fake(`exec sleep 3600`), prefixTimeout: 50 * time.Millisecond}
+	got := make(chan string, 1)
+	go func() { got <- hung.outerPrefix() }()
+	select {
+	case k := <-got:
+		if k != "" {
+			t.Fatalf("応答しない tmux の prefix が %q", k)
+		}
+	case <-time.After(30 * time.Second): // hang guard (合否は「戻ったか」。所要は測らない)
+		t.Fatal("応答しない tmux へ prefix を聞いたまま戻らない")
 	}
 }

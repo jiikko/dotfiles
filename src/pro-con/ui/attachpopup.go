@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"subproc"
 )
@@ -38,7 +40,13 @@ var popupBorder = "fg=colour" + strconv.Itoa(colCurrent)
 // PopupAttach は tmux の popup で attach を開く設定。
 type PopupAttach struct {
 	Tmux string // tmux の実体のパス
+
+	prefixTimeout time.Duration // 外の tmux へ prefix を聞く上限 (0 なら prefixTimeout。テストが縮める)
 }
+
+// prefixTimeout は外の tmux へ prefix を聞く上限 (glogx の loadTmuxPrefix と同じ 5 秒)。tmux が応答しないと、上限が無ければ
+// attach の裏の処理が戻らず、数え上がったままの裏の処理が ctrl+r の切り替え (PrepareSwitch) も止める (issue 783)。
+const prefixTimeout = 5 * time.Second
 
 // TmuxPopup は tmux の中なら popup の設定を返す (外なら nil。端末を渡す今の attach を使う)。
 func TmuxPopup() *PopupAttach {
@@ -52,9 +60,16 @@ func TmuxPopup() *PopupAttach {
 	return &PopupAttach{Tmux: p}
 }
 
-// outerPrefix は外の tmux の prefix (tmux のキー名。読めない・None なら "")。
+// outerPrefix は外の tmux の prefix (tmux のキー名。読めない・None・上限を超えたなら "")。
+// 🚨 読めないときに既定の C-b を仮定しない: 外の prefix でないキーを入れ子のサーバに bind し、見出しにも出すことになる (戻るキーは Ctrl+Z が残る)。
 func (p *PopupAttach) outerPrefix() string {
-	out, err := subproc.Command(p.Tmux, "show", "-gv", "prefix").Output()
+	limit := p.prefixTimeout
+	if limit == 0 {
+		limit = prefixTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	out, err := subproc.CommandContext(ctx, p.Tmux, "show", "-gv", "prefix").Output()
 	if k := strings.TrimSpace(string(out)); err == nil && k != "None" {
 		return k
 	}
