@@ -46,3 +46,16 @@ issue 747 の段 4 は、相手の Mac の有線を固定 IP にし、鍵を配�
 
 - [ ] 反証レビュー
 - [ ] 着手 (789 の後)
+
+## 決着 (2026-10-16)
+
+着手の条件 (789 の後) を待たず、747 の段 4 の配線の中で作った (ユーザーの指示「段 4 をやって」)。対応方針の項目ごとの在り処:
+
+- 鍵の確認と相手の `netinfo.Read` を ssh で包む: `src/mac-lan-manager/setup/remote.go` の `ObservePeer` (宛先は `Dest`。`--` と HostKeyAlias を付け、Validate で検査)
+- timeout・接続の失敗を「鍵が無い」に丸めない: `ObservePeer` は stderr の `Permission denied (` の 255 だけを「鍵で入れない」とし、他は `ErrUnknown`
+- 上限: ssh 1 本ごとに `ConnectTimeout=5`、全体は `live.ObserveTimeout` (15 秒)。本物の ssh は `src/mac-lan-manager/live/ssh.go` の `SSHRun` / `Observe`
+  (dotfiles-41 の commit を 2026-10-16 に取り込んだ)。`mac-lan-manager dump --peer <IP>` でも同じ観測を出す
+- Plan に渡して「次にやること」を出す: 初期設定の画面 (`lanmgr/setup.go`・`setupview.go`。一覧の行で Enter)
+- テストは偽の ssh (`setup/remote_test.go`・`live/ssh_test.go`)
+
+残り: `Manual Configuration` の本物の出力の fixture と、本物の相手に 1 回当てるのは issue 789 (最初に使うときが兼ねる)。
