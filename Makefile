@@ -22,7 +22,6 @@ ZSH_SYNTAX_FILES := \
   bin/binav1c \
   bin/concat \
   bin/codex-events \
-  bin/disassemble_excel \
   bin/diskdoctor \
   bin/glogx \
   bin/issue-claim \

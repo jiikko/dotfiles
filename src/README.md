@@ -20,7 +20,6 @@
 | [`restartable`](restartable/README.md) | コマンドを前面で起動し、キーか socket から再起動できる runner |
 | [`process_supervisor`](process_supervisor/README.md) | 呼んだプロセスが生きている間だけ子を見張って起こし直す module |
 | [`zundamon-kaisetsu`](zundamon-kaisetsu/README.md) | VOICEVOX の掛け合い解説動画 (HTML / mp4) を作る CLI (skill `zundamon-kaisetsu` の本体) |
-| [`disassemble_excel`](disassemble_excel/README.md) | Excel (`.xlsx` / `.xlsm` / `.xlsb`) を diff できるテキスト群に分解する CLI |
 | [`chromecookie`](chromecookie/README.md) | Chrome のプロファイルから Cookie を復号して読むライブラリ |
 | [`treefiler`](treefiler/README.md) | 横に育つ木のファイラー `bin/treefiler`。glogx の `F` も同じ画面 (filer パッケージ) を取り込む |
 | [`mac-lan-manager`](mac-lan-manager/README.md) | 手元の Mac 同士を内部の網で繋いで管理する道具 `bin/mac-lan-manager` (一覧・台帳・ssh / 画面共有。初期設定と glogx の `L` はこれから。issue 747) |
@@ -43,7 +42,7 @@ Claude Code で package を探すときは [PACKAGES.md](PACKAGES.md) を引く�
 
 ## 新規プロジェクトのガイドライン
 
-プロジェクトを追加するときは、以下の **3 点セット**を必ず揃える。どれか欠けると lint / test がローカルまたは CI から漏れる（disassemble_excel はこれが無かったためテスト 6 ファイルが死蔵していた実例あり）。
+プロジェクトを追加するときは、以下の **3 点セット**を必ず揃える。どれか欠けると lint / test がローカルまたは CI から漏れる（これが無かったためテスト 6 ファイルが死蔵していた実例あり）。
 
 1. **プロジェクト直下に Makefile（`lint` / `test` ターゲット必須）**
    root の `make test-go-lint` / `make test-go` と CI が `make -C src/<name> lint|test` として呼ぶ契約。実装言語が Go 以外になっても、この 2 ターゲットの契約だけは維持する

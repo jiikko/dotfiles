@@ -34,3 +34,4 @@ LibreOffice の一般に知られた挙動 (**この Mac には LibreOffice が�
 ## 進捗
 
 - 2026-10-02: 起票のみ (この Mac に soffice が無く再現できないため、修正は入れていない)
+- 2026-10-16: disassemble_excel を dotfiles から切り出して github.com/jiikko/disassemble_excel へ移した。この issue は https://github.com/jiikko/disassemble_excel/issues/1 へ移したので、dotfiles 側では閉じる
