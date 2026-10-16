@@ -1,10 +1,10 @@
 ---
-name: product-events
+name: my-products-update-apps-event
 version: 1.0.0
-description: my-products の product-analytics (web/product-analytics) の apps/<app>/events.yml に、App Store で公開された最新バージョンの記録を足す。app をチェックボックスで選ばせ、App Store の lookup API で最新バージョン・公開日時・リリースノートを取ってエントリを書き、commit する。「events.yml に追記」「審査が通ったので events に反映」「バージョン公開を記録」「product-events」で発火。ASO 変更・記事公開などバージョン以外の施策だけを記録するときは、手順 4 から先の書式に従って手で書く。
+description: my-products の product-analytics (web/product-analytics) の apps/<app>/events.yml に、App Store で公開された最新バージョンの記録を足す。app をチェックボックスで選ばせ、App Store の lookup API で最新バージョン・公開日時・リリースノートを取ってエントリを書き、commit する。「events.yml に追記」「審査が通ったので events に反映」「バージョン公開を記録」「my-products-update-apps-event」で発火。ASO 変更・記事公開などバージョン以外の施策だけを記録するときは、手順 4 から先の書式に従って手で書く。
 ---
 
-# product-events — App Store の最新バージョンを events.yml に記録する
+# my-products-update-apps-event — App Store の最新バージョンを events.yml に記録する
 
 `events.yml` はダッシュボードのチャートに縦線で重ねる施策ログ。スキーマと「何を記録するか」の正本は
 各 `events.yml` の冒頭のコメントで、ここに写さない。
