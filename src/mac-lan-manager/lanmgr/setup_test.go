@@ -824,3 +824,17 @@ func TestSetupQueuedXRaces(t *testing.T) {
 		t.Error("この Mac の網を読み直している間の x を予約しない")
 	}
 }
+
+// 初期設定の手順の板は、初期設定の画面の外では y で起こさない (閉じる経路が板を残しても、相手の名前の無い手順を起こさない。敵対レビュー)。
+func TestSetupBoardNeedsSetupScreen(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	h.keys("x")
+	if h.m.ov != ovConfirm || h.m.ask == nil || h.m.ask.exec == nil {
+		t.Fatal("前提: 手順の板が出ない")
+	}
+	h.m.su = nil // 閉じる経路が板を残した形
+	if h.keys("y") == Exec {
+		t.Error("初期設定の画面の外で手順を起こした")
+	}
+}

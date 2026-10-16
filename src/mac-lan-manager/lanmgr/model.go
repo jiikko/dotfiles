@@ -763,6 +763,10 @@ func (m *Model) HandleInput(key, text string) Action {
 		m.ov, m.ask = ovNone, nil
 		if a != nil && confirm.IsYes(key) {
 			if a.exec != nil {
+				if m.su == nil { // 初期設定の画面の外で手順を起こさない (相手の名前の無い手順は、未確認の印も確認待ちも立たない。敵対レビュー)
+					m.note("初期設定の画面が閉じている (開き直して x)", false)
+					return None
+				}
 				if a.step == stepConfirm && m.conf() == nil { // 板を出している間に期限が切れた (相手は元に戻っている)
 					m.note("確認の期限が過ぎた (読み直す)", false)
 					return None
