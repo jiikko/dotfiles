@@ -537,6 +537,9 @@ func (m *Model) selfLan() selfLanInfo {
 	return selfLanInfo{Note: "I/F " + or(m.pf.LanIF, "(未設定)") + " が無い"}
 }
 
+// rows は台帳・Bonjour・この Mac の網から一覧の行を組む (分類はここと ifKind / selfLan / connectIP / userFor に閉じ、UI の状態を読まない)。
+// inventory 型へ切り出していないのは、読む側 (画面・Report・初期設定) が既にこの関数を共有していて重複が無く、切り出しても
+// 変更の波及も読む範囲もほとんど変わらないため (issue 747 段 4 で測った)。分類の規則が画面と独立に変わり始めたら再評価する
 func (m *Model) rows() []row {
 	self := row{self: true, host: m.host, alias: "この Mac", user: m.o.User}
 	if s, ok := m.self.Main(); ok {
