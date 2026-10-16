@@ -117,6 +117,9 @@ type Model struct {
 	claimed map[string]string
 	// unconf は「固定 IP にしたが、まだ確認していない」相手 (値は期限)。ある間は台帳の手順を断る
 	unconf map[string]time.Time
+	// tried は固定 IP にしようとした番号 (確認したら消す)。期限で unconf が解けた後も残す: Bonjour は相手が戻っても A レコードを
+	// 引き直さず (discover の resolve はサービスの出し直しのときだけ引く)、一覧の行に古い番号が残る (敵対レビュー)
+	tried map[string]string
 	// confirmed は期限内に確認した新しい IP (有線だけの相手を開き直したときの宛先)
 	confirmed map[string]string
 	execHost  string // 初期設定の手順として渡したプロセスの相手 (画面を閉じても ExecDone で印を立てる)
@@ -177,7 +180,7 @@ func New(o Options) *Model {
 	if o.Now == nil {
 		o.Now = time.Now //nolint:forbidigo // 注入しないときの既定値 (ここだけが「今」を直に読む)
 	}
-	m := &Model{o: o, now: o.Now(), w: 120, h: 40, pending: map[string]*pendingConfirm{}, claimed: map[string]string{}, unconf: map[string]time.Time{}, confirmed: map[string]string{}}
+	m := &Model{o: o, now: o.Now(), w: 120, h: 40, pending: map[string]*pendingConfirm{}, claimed: map[string]string{}, unconf: map[string]time.Time{}, tried: map[string]string{}, confirmed: map[string]string{}}
 	m.Reload()
 	return m
 }
@@ -721,9 +724,9 @@ func (m *Model) HandleInput(key, text string) Action {
 				m.exec, m.execStep, m.execStatic, m.execSetup = &r, a.step, a.static, true
 				if m.su != nil {
 					m.execHost = m.su.host
-					if a.step == setup.StepPeerStatic {
+					if a.step == setup.StepPeerStatic && a.static != nil {
 						// 起こす時点で未確認の印を立てる (戻ったときに立てると、戻りを受けない経路 (glogx で閉じた後) で立たなかった)
-						m.unconf[m.su.host] = m.o.Now().Add(setup.PeerDelay + setup.PeerWindow + unconfMargin)
+						m.markUnconf(m.su.host, a.static.IP)
 					}
 				}
 				return Exec
@@ -913,16 +916,16 @@ func (m *Model) askLedger(r row) {
 			m.note("ホスト名が分からない Mac は登録できない", false)
 			return
 		}
-		if why := m.ledgerBlocked(r.host); why != "" {
-			m.note(why, false)
-			return
-		}
 		user, _ := m.userFor(r)
 		// 台帳の内部 IP の欄は固定 IP のためのもの。自動割り当て (169.254) は起動のたびに変わるので書かない
 		h := ledger.Host{Host: r.host, User: user}
 		lan := r.lanIP
 		if r.self {
 			lan = m.selfLan().IP
+		}
+		if why := m.ledgerBlocked(r.host, lan); why != "" {
+			m.note(why, false)
+			return
 		}
 		if lan != "" && !netinfo.IsLinkLocal(lan) {
 			h.LAN = lan

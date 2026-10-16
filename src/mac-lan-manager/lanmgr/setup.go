@@ -77,14 +77,24 @@ const unconfMargin = 60 * time.Second
 
 // ledgerBlocked は host を台帳に内部 IP 付きで書いてはいけない理由 (空なら書いてよい)。台帳に書く経路 (初期設定の台帳の手順・一覧の space) は
 // どれもこれを通す (一覧の space が未確認の印を見ず、未確認の IP を台帳に書けた。敵対レビュー)。
-func (m *Model) ledgerBlocked(host string) string {
+// ip は書こうとしている内部 IP。
+func (m *Model) ledgerBlocked(host, ip string) string {
 	if _, ok := m.pending[host]; ok {
 		return "固定 IP にした後の確認を待っている (確認してから)"
 	}
 	if _, ok := m.unconf[host]; ok {
 		return "固定 IP にした後、まだ確認していない (確認するか、相手が元に戻る頃に初期設定の画面で r で読み直す)"
 	}
+	if ip != "" && m.tried[host] == ip {
+		return "内部 IP " + ip + " は固定しようとして確認できなかった番号 (相手は元に戻っている。一覧で r を押して読み直す)"
+	}
 	return ""
+}
+
+// markUnconf は host を ip に固定しようとした印を立てる (未確認の期限と、確認するまで台帳に書かない番号)。
+func (m *Model) markUnconf(host, ip string) {
+	m.unconf[host] = m.o.Now().Add(setup.PeerDelay + setup.PeerWindow + unconfMargin)
+	m.tried[host] = ip
 }
 
 // awaitingUnconf は、開いている相手に未確認の印があり、その期限の後の観測をまだしていないか (Busy に含め、tick で期限の頃に読み直す。
@@ -346,7 +356,7 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 			"$ " + shellLine(argv),
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepLedger:
-		if why := m.ledgerBlocked(su.host); why != "" {
+		if why := m.ledgerBlocked(su.host, su.obs.IP); why != "" {
 			return nil, why
 		}
 		if m.o.Ledger == nil {
@@ -428,7 +438,7 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 		// 確認するか、相手の上の戻しが終わった後に読み直すまで、台帳には書かない (観測だけを信じると、元に戻る相手の新しい IP を
 		// 台帳に書けた。敵対レビュー)。印の期限は確認の期限より unconfMargin だけ後ろ: 相手の上の戻しは、手元の期限より後に終わる。
 		// 相手の lock を読んで解く形にしないのは、lock が root だけが読める状態ディレクトリにあり、ssh で読めないため
-		m.unconf[host] = now.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin)
+		m.markUnconf(host, static.IP)
 	}
 	switch {
 	case failed:
@@ -449,6 +459,7 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 			break
 		}
 		delete(m.unconf, host)
+		delete(m.tried, host)
 		m.confirmed[host] = c.static.IP
 		// 有線でしか入れない相手は、宛先を新しい IP に替える (古い 169.254 に入りに行き続けた。敵対レビュー)
 		if m.su != nil && m.su.host == host {

@@ -505,7 +505,38 @@ func TestSetupStaleExecMarkNotReused(t *testing.T) {
 	if _, ok := h.m.confirmed["m2macmini.local"]; ok {
 		t.Error("ssh の戻りを確認の成功として扱った")
 	}
-	if why := h.m.ledgerBlocked("m2macmini.local"); why == "" {
+	if why := h.m.ledgerBlocked("m2macmini.local", ""); why == "" {
 		t.Error("確認していないのに台帳に書ける")
+	}
+}
+
+// 固定 IP にしようとして確認しないまま期限が過ぎた相手を、一覧の space で台帳に書くとき、Bonjour の行に残った試した番号を内部 IP に
+// しない (discover はサービスの出し直しのときしか A レコードを引き直さず、相手が元に戻っても行に古い番号が残る。敵対レビュー)。
+func TestSetupListSpaceSkipsTriedIP(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	runStep(t, h, nil)
+	c := h.m.conf()
+	if c == nil {
+		t.Fatal("前提: 確認待ちにならない")
+	}
+	p := mini
+	p.Addrs = map[int]string{14: "192.168.50.7", 27: c.static.IP} // 窓の間に走査が新しい番号を拾った
+	h.scan.peers = []discover.Peer{p}
+	after := t0.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second)
+	h.m.o.Now = func() time.Time { return after }
+	h.m.Advance(after) // 確認の期限が過ぎ、戻しの後に読み直す (相手は元の DHCP に見える)
+	awaitSetup(h.m)
+	if _, ok := h.m.unconf["m2macmini.local"]; ok {
+		t.Fatal("前提: 戻しの後の観測で未確認の印が解けない")
+	}
+	h.keys("q")
+	h.m.sc = scList
+	h.m.Reload()
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("space")
+	if h.m.ov == ovConfirm && h.m.ask != nil && strings.Contains(strings.Join(h.m.ask.body, "\n"), c.static.IP) {
+		t.Fatalf("確認できなかった番号 %s を台帳に書こうとした: %q", c.static.IP, h.m.ask.body)
 	}
 }
