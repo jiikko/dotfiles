@@ -12,9 +12,12 @@
 
 ## 状態
 
-調査中。まだ作るかどうかも決めていない。
+調査中。次は段 0 の実測 (ユーザーの手。802)。
 
 ## 子 issue
+
+**作業の順番・ブロッカー・技術スタックは [802](802-task-screen-sharing-index-roadmap-stack.md) (index) が正本。**
+
 
 - [794](794-research-macos-screen-sharing-client-feasibility.md) — 要件・わかっていること・着手前に決めること
 - [795](795-research-app-store-distribution-and-third-party-apps.md) — Swift で作って App Store で出せるか / 他社の画面共有アプリは何を話しているか
