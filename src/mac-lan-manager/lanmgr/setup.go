@@ -78,10 +78,23 @@ const unconfMargin = 60 * time.Second
 // ledgerBlocked は host を台帳に内部 IP 付きで書いてはいけない理由 (空なら書いてよい)。台帳に書く経路 (初期設定の台帳の手順・一覧の space) は
 // どれもこれを通す (一覧の space が未確認の印を見ず、未確認の IP を台帳に書けた。敵対レビュー)。
 func (m *Model) ledgerBlocked(host string) string {
+	if _, ok := m.pending[host]; ok {
+		return "固定 IP にした後の確認を待っている (確認してから)"
+	}
 	if _, ok := m.unconf[host]; ok {
 		return "固定 IP にした後、まだ確認していない (確認するか、相手が元に戻る頃に初期設定の画面で r で読み直す)"
 	}
 	return ""
+}
+
+// awaitingUnconf は、開いている相手に未確認の印があり、その期限の後の観測をまだしていないか (Busy に含め、tick で期限の頃に読み直す。
+// 含めないと確認待ちが消えた後に tick が止まり、読み直しが次のキーまで遅れた。敵対レビュー)。
+func (m *Model) awaitingUnconf() bool {
+	if m.su == nil {
+		return false
+	}
+	dl, ok := m.unconf[m.su.host]
+	return ok && !m.su.obsAt.After(dl)
 }
 
 // stepConfirm は相手を固定 IP にした後の「新しい IP で入り直して確認する」手順 (Plan の手順とは別に、確認待ちの間だけ出す)。
@@ -411,9 +424,9 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 	}
 	now := m.o.Now()
 	if step == setup.StepPeerStatic && static != nil {
-		// 失敗で戻っても相手の上では変わっていることがある (背景に回した後に接続が切れる等)。確認するか、相手の上の戻しが終わった後に
-		// 読み直すまで、台帳には書かない (観測だけを信じると、元に戻る相手の新しい IP を台帳に書けた。敵対レビュー)。印の期限は確認の
-		// 期限より unconfMargin だけ後ろ: 相手の上の戻しは、手元の期限より後に終わる (待ちの周ごとの検査の時間・ずれ。敵対レビュー)。
+		// 未確認の印は起こした時点で立ててある。戻った時刻から数え直す (失敗で戻っても相手の上では変わっていることがある)。
+		// 確認するか、相手の上の戻しが終わった後に読み直すまで、台帳には書かない (観測だけを信じると、元に戻る相手の新しい IP を
+		// 台帳に書けた。敵対レビュー)。印の期限は確認の期限より unconfMargin だけ後ろ: 相手の上の戻しは、手元の期限より後に終わる。
 		// 相手の lock を読んで解く形にしないのは、lock が root だけが読める状態ディレクトリにあり、ssh で読めないため
 		m.unconf[host] = now.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin)
 	}
@@ -430,7 +443,8 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 		}
 		if now.After(c.deadline) {
 			// 確認の ssh は 0 で戻った。印は期限の内に置けて、戻りだけが遅れたことがある。番号は残す (落とすと 2 台目に同じ番号を振った)。
-			// ただし確認済みとはしない (未確認の印も宛先も残さない): 間に合わなかったなら、相手は元に戻っている (敵対レビュー)
+			// ただし確認済みとはしない: 未確認の印は残し、宛先 (confirmed) も立てない。間に合わなかったなら、相手は元に戻っている。
+			// 受容: 有線だけの相手で印が実は間に合っていたときは、宛先が 169.254 のままで新しい IP に辿り着けない (台帳には書かない側に倒れる)
 			m.note("期限の間際に確認した: 相手の上の戻しが終わる頃に読み直す (r)", false)
 			break
 		}

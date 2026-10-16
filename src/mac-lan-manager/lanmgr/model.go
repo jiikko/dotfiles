@@ -349,7 +349,7 @@ func (m *Model) Changed() <-chan struct{} {
 // Busy は走査が続いているか (呼び出し側はこの間、遅い周期で Advance を呼ぶ。spinner もこの間だけ回る)。
 // この Mac のネットワークを裏で読んでいる間も Busy (読み終わりを Advance で取り込むため)。
 func (m *Model) Busy() bool {
-	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && m.su.ch != nil) || len(m.pending) > 0
+	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && m.su.ch != nil) || len(m.pending) > 0 || m.awaitingUnconf()
 }
 
 // OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定) が開いているか (glogx は横断キーも渡す)。
@@ -445,7 +445,10 @@ func (m *Model) Close() {
 		m.filter.Reset()
 	}
 	m.bandEdit = false
-	m.closeSetup() // 渡したプロセスの印 (exec*) は消さない: プロセスから戻ったら ExecDone が相手ごとの印を立てる (消すと未確認の印が立たなかった)
+	m.closeSetup()
+	// 渡したプロセスの印 (exec*) も消す: 閉じた後の戻りは届かないことがあり (glogx は閉じた板に ExecDone を渡さない)、残すと後の
+	// 無関係な ssh の戻りが確認の成功として扱われた (敵対レビュー)。未確認の印は起こした時点で立てているので、戻りに頼らない
+	m.execStep, m.execStatic, m.execSetup, m.execHost = "", nil, false, ""
 	m.sc = scList
 	m.stopNetLoad()
 	if m.scan != nil {
@@ -718,6 +721,10 @@ func (m *Model) HandleInput(key, text string) Action {
 				m.exec, m.execStep, m.execStatic, m.execSetup = &r, a.step, a.static, true
 				if m.su != nil {
 					m.execHost = m.su.host
+					if a.step == setup.StepPeerStatic {
+						// 起こす時点で未確認の印を立てる (戻ったときに立てると、戻りを受けない経路 (glogx で閉じた後) で立たなかった)
+						m.unconf[m.su.host] = m.o.Now().Add(setup.PeerDelay + setup.PeerWindow + unconfMargin)
+					}
 				}
 				return Exec
 			}
@@ -833,6 +840,7 @@ func (m *Model) keyList(key string) Action {
 		} else {
 			// known_hosts を IP でなく台帳の鍵に結び付ける (IP を付け替えても「鍵が変わった」にしない)
 			m.exec = &ExecRequest{Argv: []string{"ssh", "-o", "HostKeyAlias=" + r.host, "--", user + "@" + r.connectIP()}}
+			m.execStep, m.execStatic, m.execSetup, m.execHost = "", nil, false, "" // 初期設定の手順ではない
 			return Exec
 		}
 	case "Y": // コピー (整形した参照 = コマンド)
@@ -857,6 +865,7 @@ func (m *Model) keyList(key string) Action {
 			break
 		}
 		m.exec = &ExecRequest{Argv: []string{"open", "vnc://" + r.connectIP()}, ExitIsFailure: true}
+		m.execStep, m.execStatic, m.execSetup, m.execHost = "", nil, false, "" // 初期設定の手順ではない
 		return Exec
 	case "m": // 名前の変更 (treefiler と同じ動詞)
 		if r.self {

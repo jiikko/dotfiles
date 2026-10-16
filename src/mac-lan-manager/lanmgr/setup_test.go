@@ -479,3 +479,30 @@ func TestSetupLedgerGuardsAllPaths(t *testing.T) {
 		t.Fatal("未確認の固定 IP の相手を一覧の space で台帳に登録しようとした")
 	}
 }
+
+// 確認のプロセスを渡した後に閉じられ、その戻りが届かないまま一覧の s (ssh) を起こしても、ssh の戻りを確認の成功として扱わない
+// (閉じたときに exec の印を残していたので、後の無関係な戻りが確認に流れて台帳に書けた。敵対レビュー)。
+func TestSetupStaleExecMarkNotReused(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	runStep(t, h, nil) // 相手の固定 IP → 確認待ち
+	h.keys("x", "y")   // 確認のプロセスを渡す
+	if _, ok := h.m.TakeExec(); !ok {
+		t.Fatal("前提: 確認のプロセスが無い")
+	}
+	h.m.Close() // 戻りが届かない (glogx は閉じた板に ExecDone を渡さない)
+	h.m.Reload()
+	h.cursorTo(t, "m2macmini.local")
+	if h.keys("s") != Exec {
+		t.Fatal("前提: s で ssh を起こさない")
+	}
+	h.m.TakeExec()
+	h.m.ExecDone(nil)
+	if _, ok := h.m.confirmed["m2macmini.local"]; ok {
+		t.Error("ssh の戻りを確認の成功として扱った")
+	}
+	if why := h.m.ledgerBlocked("m2macmini.local"); why == "" {
+		t.Error("確認していないのに台帳に書ける")
+	}
+}
