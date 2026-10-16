@@ -89,14 +89,14 @@ for list in no-framework-in-parts parts-pure; do
     esac
   done < <(list_items "$list")
   # 較正: 必ず入っているはずの termwidth が読めなければ、読み取りが壊れている
-  printf '%s' "$plus" | grep -qx termwidth || { printf '✗ %s: files から termwidth が読めない (読み取りが壊れている)\n' "$list"; exit 1; }
+  grep -qx termwidth <<< "$plus" || { printf '✗ %s: files から termwidth が読めない (読み取りが壊れている)\n' "$list"; exit 1; }
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue
     top=${rel%%/*}
     listed=0
     IFS=/ read -ra parts <<< "$rel"
-    for c in "${parts[@]}"; do printf '%s' "$plus" | grep -qxF -- "$c" && listed=1; done
-    printf '%s' "$minus" | grep -qxF -- "$top" && listed=0
+    for c in "${parts[@]}"; do grep -qxF -- "$c" <<< "$plus" && listed=1; done
+    grep -qxF -- "$top" <<< "$minus" && listed=0
     isexcl=0
     excluded "$excl" "$rel" && isexcl=1
     if [ "$listed" -eq 0 ] && [ "$isexcl" -eq 0 ] && [ "$rel" = . ]; then
