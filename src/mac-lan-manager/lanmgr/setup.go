@@ -45,6 +45,11 @@ func (m *Model) conf() *pendingConfirm {
 
 // expireConfirms は期限を過ぎた確認待ちを片付ける (相手の上では元の設定に戻っている)。Advance と観測の取り込みで呼ぶ。
 func (m *Model) expireConfirms() {
+	if m.su != nil && m.su.ch == nil {
+		if dl, ok := m.unconf[m.su.host]; ok && m.now.After(dl) && !m.su.obsAt.After(dl) {
+			m.observe() // 相手の上の戻しが終わる頃に読み直す (その観測で未確認の印が解ける)
+		}
+	}
 	for host, c := range m.pending {
 		if m.execSetup && m.execStep == stepConfirm && m.su != nil && m.su.host == host {
 			continue // 確認のプロセスから戻るのを待つ (端末を渡している間の tick が先に届き、間際の確認を期限切れにした。敵対レビュー)
@@ -67,6 +72,18 @@ type pendingConfirm struct {
 	deadline time.Time
 }
 
+// unconfMargin は未確認の印の期限に足す余白 (相手の上の戻しが終わるまで。待ちの 180 周の検査の時間とずれの分)。
+const unconfMargin = 60 * time.Second
+
+// ledgerBlocked は host を台帳に内部 IP 付きで書いてはいけない理由 (空なら書いてよい)。台帳に書く経路 (初期設定の台帳の手順・一覧の space) は
+// どれもこれを通す (一覧の space が未確認の印を見ず、未確認の IP を台帳に書けた。敵対レビュー)。
+func (m *Model) ledgerBlocked(host string) string {
+	if _, ok := m.unconf[host]; ok {
+		return "固定 IP にした後、まだ確認していない (確認するか、相手が元に戻る頃に初期設定の画面で r で読み直す)"
+	}
+	return ""
+}
+
 // stepConfirm は相手を固定 IP にした後の「新しい IP で入り直して確認する」手順 (Plan の手順とは別に、確認待ちの間だけ出す)。
 const stepConfirm setup.StepID = "confirm"
 
@@ -80,8 +97,8 @@ func (m *Model) openSetup(r row) {
 	ip := r.mainIP
 	if ip == "" {
 		ip = r.lanIP
-		if c, ok := m.claimed[r.host]; ok {
-			ip = c // 有線だけの相手は、確認した新しい IP で入る (行の 169.254 は古い。閉じて開き直すと古い宛先に戻った。敵対レビュー)
+		if c, ok := m.confirmed[r.host]; ok {
+			ip = c // 有線だけの相手は、期限内に確認した新しい IP で入る (行の 169.254 は古い。閉じて開き直すと古い宛先に戻った。敵対レビュー)
 		}
 	}
 	d := setup.Dest{User: user, IP: ip, HostKeyAlias: r.host}
@@ -316,8 +333,8 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 			"$ " + shellLine(argv),
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepLedger:
-		if _, ok := m.unconf[su.host]; ok {
-			return nil, "固定 IP にした後、まだ確認していない (確認するか、期限の後に r で読み直す)"
+		if why := m.ledgerBlocked(su.host); why != "" {
+			return nil, why
 		}
 		if m.o.Ledger == nil {
 			return nil, "台帳が無い"
@@ -388,42 +405,47 @@ func (m *Model) keySetup(key string) Action {
 }
 
 // setupExecDone は初期設定の手順のプロセスから戻ったとき (ExecDone から)。成功したら次の状態へ進め、相手を読み直す。
-func (m *Model) setupExecDone(step setup.StepID, static *setup.StaticIP, failed bool) {
-	su := m.su
-	if su == nil {
+func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.StaticIP, failed bool) {
+	if host == "" {
 		return
 	}
 	now := m.o.Now()
 	if step == setup.StepPeerStatic && static != nil {
-		// 失敗で戻っても相手の上では変わっていることがある (背景に回した後に接続が切れる等)。確認するか期限が過ぎて読み直すまで、
-		// 台帳には書かない (観測だけを信じると、元に戻る相手の新しい IP を台帳に書けた。敵対レビュー)
-		m.unconf[su.host] = now.Add(setup.PeerDelay + setup.PeerWindow)
+		// 失敗で戻っても相手の上では変わっていることがある (背景に回した後に接続が切れる等)。確認するか、相手の上の戻しが終わった後に
+		// 読み直すまで、台帳には書かない (観測だけを信じると、元に戻る相手の新しい IP を台帳に書けた。敵対レビュー)。印の期限は確認の
+		// 期限より unconfMargin だけ後ろ: 相手の上の戻しは、手元の期限より後に終わる (待ちの周ごとの検査の時間・ずれ。敵対レビュー)。
+		// 相手の lock を読んで解く形にしないのは、lock が root だけが読める状態ディレクトリにあり、ssh で読めないため
+		m.unconf[host] = now.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin)
 	}
 	switch {
 	case failed:
 	case step == setup.StepPeerStatic && static != nil:
-		m.pending[su.host] = &pendingConfirm{static: *static, deadline: now.Add(setup.PeerDelay + setup.PeerWindow)}
-		m.claimed[su.host] = static.IP
+		m.pending[host] = &pendingConfirm{static: *static, deadline: now.Add(setup.PeerDelay + setup.PeerWindow)}
+		m.claimed[host] = static.IP
 	case step == stepConfirm:
-		c := m.pending[su.host]
-		delete(m.pending, su.host)
-		if c != nil {
-			delete(m.unconf, su.host)
-		}
+		c := m.pending[host]
+		delete(m.pending, host)
 		if c == nil {
 			break
 		}
 		if now.After(c.deadline) {
-			// 確認の ssh は 0 で戻った。印は期限の内に置けて、戻りだけが遅れたことがある (手元の期限は相手の期限より後ろ)。確認済みとして
-			// 扱い、番号も残す (落とすと 2 台目に同じ番号を振った。敵対レビュー)。間に合わなかったなら、読み直すと元の設定に見える
-			m.note("期限の間際に確認した: r で読み直して、新しい IP のままかを確かめる (届かなければ q で閉じて開き直す)", false)
+			// 確認の ssh は 0 で戻った。印は期限の内に置けて、戻りだけが遅れたことがある。番号は残す (落とすと 2 台目に同じ番号を振った)。
+			// ただし確認済みとはしない (未確認の印も宛先も残さない): 間に合わなかったなら、相手は元に戻っている (敵対レビュー)
+			m.note("期限の間際に確認した: 相手の上の戻しが終わる頃に読み直す (r)", false)
+			break
 		}
+		delete(m.unconf, host)
+		m.confirmed[host] = c.static.IP
 		// 有線でしか入れない相手は、宛先を新しい IP に替える (古い 169.254 に入りに行き続けた。敵対レビュー)
-		if _, r := m.setupObserved(); r.mainIP == "" {
-			su.dest.IP = c.static.IP
+		if m.su != nil && m.su.host == host {
+			if _, r := m.setupObserved(); r.mainIP == "" {
+				m.su.dest.IP = c.static.IP
+			}
 		}
 	}
-	m.observe()
+	if m.su != nil && m.su.host == host {
+		m.observe()
+	}
 }
 
 // shellLine は argv を確認の板に出す 1 行にする (語ごとに sh の引用)。

@@ -117,6 +117,9 @@ type Model struct {
 	claimed map[string]string
 	// unconf は「固定 IP にしたが、まだ確認していない」相手 (値は期限)。ある間は台帳の手順を断る
 	unconf map[string]time.Time
+	// confirmed は期限内に確認した新しい IP (有線だけの相手を開き直したときの宛先)
+	confirmed map[string]string
+	execHost  string // 初期設定の手順として渡したプロセスの相手 (画面を閉じても ExecDone で印を立てる)
 	// execStep / execStatic / execSetup は、初期設定の手順として渡したプロセスの印 (ExecDone が setupExecDone へ渡す)
 	execStep   setup.StepID
 	execStatic *setup.StaticIP
@@ -174,7 +177,7 @@ func New(o Options) *Model {
 	if o.Now == nil {
 		o.Now = time.Now //nolint:forbidigo // 注入しないときの既定値 (ここだけが「今」を直に読む)
 	}
-	m := &Model{o: o, now: o.Now(), w: 120, h: 40, pending: map[string]*pendingConfirm{}, claimed: map[string]string{}, unconf: map[string]time.Time{}}
+	m := &Model{o: o, now: o.Now(), w: 120, h: 40, pending: map[string]*pendingConfirm{}, claimed: map[string]string{}, unconf: map[string]time.Time{}, confirmed: map[string]string{}}
 	m.Reload()
 	return m
 }
@@ -394,8 +397,8 @@ func (m *Model) ExecDone(err error) string {
 	m.execExitIsFailure = false // 1 回だけ読む (次の ExecDone へ漏らさない)
 	if m.execSetup {            // 初期設定の手順: 成功なら次へ進め、どちらでも相手を読み直す
 		failed := err != nil && (!errors.As(err, &exitErr) || failOnExit)
-		m.setupExecDone(m.execStep, m.execStatic, failed)
-		m.execStep, m.execStatic, m.execSetup = "", nil, false
+		m.setupExecDone(m.execHost, m.execStep, m.execStatic, failed)
+		m.execStep, m.execStatic, m.execSetup, m.execHost = "", nil, false, ""
 	}
 	switch {
 	case err == nil:
@@ -442,8 +445,7 @@ func (m *Model) Close() {
 		m.filter.Reset()
 	}
 	m.bandEdit = false
-	m.closeSetup()
-	m.execStep, m.execStatic, m.execSetup = "", nil, false
+	m.closeSetup() // 渡したプロセスの印 (exec*) は消さない: プロセスから戻ったら ExecDone が相手ごとの印を立てる (消すと未確認の印が立たなかった)
 	m.sc = scList
 	m.stopNetLoad()
 	if m.scan != nil {
@@ -714,6 +716,9 @@ func (m *Model) HandleInput(key, text string) Action {
 				}
 				r := *a.exec
 				m.exec, m.execStep, m.execStatic, m.execSetup = &r, a.step, a.static, true
+				if m.su != nil {
+					m.execHost = m.su.host
+				}
 				return Exec
 			}
 			n := a.yes()
@@ -897,6 +902,10 @@ func (m *Model) askLedger(r row) {
 	} else {
 		if r.host == "" {
 			m.note("ホスト名が分からない Mac は登録できない", false)
+			return
+		}
+		if why := m.ledgerBlocked(r.host); why != "" {
+			m.note(why, false)
 			return
 		}
 		user, _ := m.userFor(r)

@@ -258,9 +258,21 @@ func TestSetupConfirmSurvivesReopenAndExpires(t *testing.T) {
 	if h.m.su.ch == nil {
 		t.Fatal("期限が過ぎても読み直さない (窓の間の観測のまま次の手順を組む)")
 	}
-	awaitSetup(h.m) // 期限の後に始めた観測で、未確認の印が解ける
+	awaitSetup(h.m)
+	// 確認の期限の直後は、相手の上の戻しがまだ終わっていない: その観測 (まだ新しい IP に見える) で未確認の印を解かない (敵対レビュー)
+	if _, ok := h.m.unconf["m2macmini.local"]; !ok {
+		t.Fatal("確認の期限の直後の観測で未確認の印を解いた")
+	}
+	h.keys("x")
+	if h.m.ov == ovConfirm && h.m.ask != nil && h.m.ask.title == "台帳に内部 IP 付きで載せる" {
+		t.Fatal("確認の期限の直後に台帳の板を出した")
+	}
+	after := late.Add(unconfMargin + time.Second)
+	h.m.o.Now = func() time.Time { return after }
+	h.m.Advance(after) // 戻しが終わる頃に読み直す
+	awaitSetup(h.m)
 	if _, ok := h.m.unconf["m2macmini.local"]; ok {
-		t.Error("期限の後の観測でも未確認のまま")
+		t.Error("戻しが終わる頃の観測でも未確認のまま")
 	}
 	if h.m.conf() != nil || h.m.Busy() {
 		t.Fatalf("期限が過ぎても確認待ちのまま (conf=%+v busy=%v)", h.m.conf(), h.m.Busy())
@@ -354,6 +366,12 @@ func TestSetupUnreachableAndLateConfirm(t *testing.T) {
 	if h.m.claimed["m2macmini.local"] != c.static.IP {
 		t.Errorf("間際の確認で番号を落とした: %+v", h.m.claimed)
 	}
+	if _, ok := h.m.confirmed["m2macmini.local"]; ok {
+		t.Error("間際の確認を確認済みの宛先にした (相手が戻っていたら、開き直しても抜けられなかった)")
+	}
+	if _, ok := h.m.unconf["m2macmini.local"]; !ok {
+		t.Error("間際の確認で未確認の印を解いた")
+	}
 }
 
 // 有線でしか入れない相手は、確認待ちの間に古い IP の観測が届かなくても、確認の手順は断らない (確認は新しい IP へ入る。敵対レビュー)。
@@ -434,5 +452,30 @@ func TestSetupWiredOnlyReopenUsesConfirmedIP(t *testing.T) {
 	awaitSetup(h.m)
 	if got := dests[len(dests)-1].IP; got != ip {
 		t.Errorf("開き直した宛先 = %s (確認した %s)", got, ip)
+	}
+}
+
+// 一覧の space (台帳に登録) も、未確認の固定 IP の相手は登録しない (台帳に書く経路が 2 本あり、片方が未確認の印を見なかった。敵対レビュー)。
+// 固定 IP のプロセスの最中に画面を閉じても、戻ったら未確認の印を立てる。
+func TestSetupLedgerGuardsAllPaths(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	h.keys("x", "y")
+	if _, ok := h.m.TakeExec(); !ok {
+		t.Fatal("前提: 固定 IP のプロセスが無い")
+	}
+	h.m.Close() // 端末を渡す前に閉じられた (glogx の L の先打ち)
+	h.m.ExecDone(nil)
+	if _, ok := h.m.unconf["m2macmini.local"]; !ok {
+		t.Fatal("閉じた後に戻ったプロセスで未確認の印を立てない")
+	}
+	h.m.Reload()
+	h.keys("q") // 一覧へ
+	h.m.sc = scList
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("space")
+	if h.m.ov == ovConfirm {
+		t.Fatal("未確認の固定 IP の相手を一覧の space で台帳に登録しようとした")
 	}
 }
