@@ -36,6 +36,9 @@
 - HEVC は前のコマとの差分で送るので、復号だけ途中を飛ばすことはできない。復号を止めたら、見えるようになったときに全体のコマ (IDR) を
   頼み直す必要がある (iShareScreen には IDR を頼み直すキーがある。README の「f to force an IDR refresh」)。その待ち時間が 0.5 秒に収まるかを測る
 
+- rootshell-vnc で使える手段 (806 の 4): RCTL で低い帯域を相手に伝える / `suspendsDisplayPresentation` で描画を止める (復号は続く) /
+  `suspendsRemoteDisplaySizeUpdates` で隠れている間の大きさの変更を送らない。frame rate を直に頼む口と、外から IDR を頼む口は見つからなかった
+
 ## 確かめること
 
 - [ ] 高性能モードで、手元から frame rate・帯域を下げるよう頼めるか

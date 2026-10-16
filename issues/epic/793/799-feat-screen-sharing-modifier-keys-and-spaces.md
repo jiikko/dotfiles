@@ -37,6 +37,8 @@
   手元でビルドする版だけの機能 (795 の決定。App Store 版は止めずに送るだけ)
 - 次: 送るか手元に残すかを、キーごとに切り替えられる設定にする
 
+- rootshell-vnc のキーの受け取りは UIKit だけで、Mac の入力 (NSEvent → `sendKeyEvent`) は自分で書く (806 の 2)。キーの振り分けはその中に作る
+
 ## 確かめること
 
 - [ ] 標準アプリの今の挙動: どのキーが相手へ届き、どのキーが手元で効くか (ctrl+←→ / ctrl+↑ / cmd+tab / cmd+space)。`defaults read com.apple.ScreenSharing`
