@@ -55,3 +55,14 @@ func TestOpenedTextFitsColumn(t *testing.T) {
 		}
 	}
 }
+
+// 開いた時刻を持たない印 (中身を読めない) は「-」、時計のずれで未来になったものは「0秒前」(隣の欄とくっつかない。issue 780 の 2 周目のレビュー)。
+func TestOpenedTextOddTimes(t *testing.T) {
+	now := time.Date(2026, 10, 16, 15, 30, 0, 0, time.Local)
+	if got := openedText(time.Time{}, now); got != "-" {
+		t.Errorf("開いた時刻の無い画面: %q", got)
+	}
+	if got := openedText(now.Add(3*time.Second), now); got != now.Add(3*time.Second).Format("15:04")+" (0秒前)" {
+		t.Errorf("未来の時刻: %q", got)
+	}
+}

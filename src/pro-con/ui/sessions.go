@@ -40,7 +40,10 @@ const openedWidth = 18
 // openedText は「開いた」の欄の中身。経過は 1 時間以上を時間・日に丸める (この欄だけ。案C の「1時間5分」の形は欄に収まらず切れていた。
 // 2026-10-16 に見本からユーザーが選んだ案 B。issue 780)。端数は時刻の側で読める。
 func openedText(opened, now time.Time) string {
-	d := now.Sub(opened)
+	if opened.IsZero() { // 中身を読めない印 (presence.readInfo) は開いた時刻を持たない
+		return "-"
+	}
+	d := max(now.Sub(opened), 0) // 時計のずれで未来の時刻になったものは「0秒前」
 	age := card.Age(d)
 	switch {
 	case d >= 24*time.Hour:

@@ -448,3 +448,26 @@ func TestAttachDoneRecordsInstructions(t *testing.T) {
 		t.Fatalf("残せなかったことを消えない通知で出さない: %q", m.sticky)
 	}
 }
+
+// popup を開く前に失敗したら (tmux が応答しない・起動できない) attach していないので、attach の間の指示を探しに行かない。
+// 失敗は出す (issue 783 の 2 周目の敵対的レビュー: 窓の間に別の経路で入った発言をこのカードに残しえた)。
+func TestAttachNotOpenedSkipsRecording(t *testing.T) {
+	rec := &recorder{spy: newSpy()}
+	m := New(rec, nil)
+	m.UsePopupAttach(&PopupAttach{Tmux: "/nonexistent/tmux"})
+	press(m, "right") // W1
+	_, cmd := m.Update(press(m, "a")())
+	done, ok := cmd().(attachDoneMsg) // tmux を起動できないので popup は開かない
+	if !ok || !errors.Is(done.err, errPopupNotOpened) {
+		t.Fatalf("popup を開けなかった失敗として戻らない: %+v", done)
+	}
+	if _, cmd := m.Update(done); cmd != nil {
+		m.Update(cmd())
+	}
+	if rec.card != "" {
+		t.Fatalf("popup を開いていないのに attach の間の指示を探しに行った: %+v", rec)
+	}
+	if !strings.Contains(m.View().Content, "attach が失敗した") && !strings.Contains(m.sticky+m.toasts.Text(), "attach が失敗した") {
+		t.Fatal("開けなかったことを出さない")
+	}
+}

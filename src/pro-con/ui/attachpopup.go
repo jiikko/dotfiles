@@ -67,7 +67,7 @@ func (p *PopupAttach) outerPrefix() (prefix string, hung bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), p.limit())
 	defer cancel()
 	out, err := subproc.CommandContext(ctx, p.Tmux, "show", "-gv", "prefix").Output()
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) { // 読めた直後に上限が来たものは応答したと数える
 		return "", true
 	}
 	if k := strings.TrimSpace(string(out)); err == nil && k != "None" {
@@ -147,15 +147,15 @@ func (p *PopupAttach) command(c *exec.Cmd, cardID, prefix, dir string) *exec.Cmd
 func (p *PopupAttach) run(c *exec.Cmd, cardID string) error {
 	dir, err := os.MkdirTemp("", PopupDirPrefix)
 	if err != nil {
-		return err
+		return notOpened(err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }() // tmux はサーバが終わっても socket を消さない
 	prefix, hung := p.outerPrefix()
 	if hung {
-		return fmt.Errorf("tmux が %s 応答しないので popup を開かない", p.limit())
+		return notOpened(fmt.Errorf("tmux が %s 応答しないので popup を開かない", p.limit()))
 	}
 	if err := os.WriteFile(filepath.Join(dir, "conf"), []byte(popupConf(prefix)), 0o600); err != nil {
-		return err
+		return notOpened(err)
 	}
 	out, err := p.command(c, cardID, prefix, dir).CombinedOutput()
 	var exit *exec.ExitError
@@ -163,9 +163,18 @@ func (p *PopupAttach) run(c *exec.Cmd, cardID string) error {
 	case err == nil:
 		return nil
 	case !errors.As(err, &exit): // tmux を起動できない
-		return fmt.Errorf("tmux の popup を開けない: %w", err)
-	case msg != "": // display-popup 自身が断った (client が無い等)
-		return fmt.Errorf("tmux の popup を開けない: %s", msg)
+		return notOpened(fmt.Errorf("tmux の popup を開けない: %w", err))
+	case msg != "": // display-popup 自身が断った (client が無い等。窓の中身の出力は窓へ出るので、ここには来ない)
+		return notOpened(fmt.Errorf("tmux の popup を開けない: %s", msg))
 	}
 	return nil // 窓の中身が 0 以外で終わった (戻るキーの kill-server)
 }
+
+// errPopupNotOpened は popup を開く前に失敗したこと (attach していないので、attach の間の指示を探しに行かない)。
+var errPopupNotOpened = errors.New("popup を開いていない")
+
+type notOpenedError struct{ err error }
+
+func (e notOpenedError) Error() string   { return e.err.Error() }
+func (e notOpenedError) Unwrap() []error { return []error{e.err, errPopupNotOpened} }
+func notOpened(err error) error          { return notOpenedError{err} }

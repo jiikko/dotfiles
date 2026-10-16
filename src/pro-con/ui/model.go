@@ -335,9 +335,10 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		} else {
 			m.done(msg.cardID + " の session から戻った (session は動き続けている)")
 		}
-		// 失敗で戻っても、それまでに打った指示はある。transcript を全部読むので裏で頼む
+		// 失敗で戻っても、それまでに打った指示はある。transcript を全部読むので裏で頼む。popup を開く前の失敗は attach していないので頼まない
+		// (窓の間に別の経路で入った発言を、このカードの attach の指示として残しうる)
 		rec, ok := m.be.(backend.AttachRecorder)
-		if !ok {
+		if !ok || errors.Is(msg.err, errPopupNotOpened) {
 			return m, nil
 		}
 		to := m.now()
