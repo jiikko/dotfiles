@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -153,6 +154,38 @@ func TestRead(t *testing.T) {
 	want := "en0=192.168.50.250/インターネット en13=169.254.13.42/自動割り当て en18=169.254.85.235/自動割り当て"
 	if strings.Join(got, " ") != want {
 		t.Errorf("IPs = %v\nwant %v", strings.Join(got, " "), want)
+	}
+}
+
+// サービスの名前を変えた Mac: 名前は番号の行から取り、-getinfo にもその名前を渡す (Hardware Port の名前を渡すと rc=4 で、
+// ルーターが分からないまま Wi-Fi が「有線」に倒れた。監査の指摘)。-getinfo が読めないサービスは有線とも決めない。
+// serviceorder_renamed.txt は作った値 (この Mac のサービスは名前を変えていない)。番号の行と Hardware Port の行の形は本物の出力に合わせた。
+func TestReadUsesRenamedServiceNames(t *testing.T) {
+	got := ParseServiceOrder(fixture(t, "serviceorder_renamed.txt"))
+	want := []Service{{Name: "社内の有線", Device: "en13"}, {Name: "Wi-Fi (自宅)", Device: "en0"}, {Name: "Thunderbolt Bridge", Device: "bridge0"}, {Name: "Wi-Fi 2", Device: "en0"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ParseServiceOrder = %+v\nwant %+v", got, want)
+	}
+	run := fakeRunner(t, map[string]string{
+		"networksetup -listnetworkserviceorder": "serviceorder_renamed.txt",
+		"networksetup -getinfo 社内の有線":           "getinfo_tb_ethernet.txt",
+		"networksetup -getinfo Wi-Fi (自宅)":      "getinfo_wifi.txt",
+		"ifconfig en13":                         "ifconfig_en13.txt",
+		"ifconfig en0":                          "ifconfig_en0.txt",
+		"ifconfig bridge0":                      "ifconfig_bridge0.txt",
+		"ifconfig -l":                           "=lo0 en0 bridge0 en13",
+	})
+	snap, err := Read(context.Background(), run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, ok := snap.Main(); !ok || m.Name != "Wi-Fi (自宅)" || m.Device != "en0" {
+		t.Errorf("Main() = %+v, %v (名前を変えた Wi-Fi をインターネット側と読めない)", m, ok)
+	}
+	for _, ip := range snap.IPs {
+		if ip.Device == "bridge0" && ip.Kind == KindWired {
+			t.Errorf("-getinfo が読めない bridge0 を有線と決めた: %+v", ip)
+		}
 	}
 }
 

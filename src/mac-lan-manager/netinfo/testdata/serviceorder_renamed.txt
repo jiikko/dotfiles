@@ -1,0 +1,13 @@
+An asterisk (*) denotes that a network service is disabled.
+(1) 社内の有線
+(Hardware Port: Thunderbolt Ethernet, Device: en13)
+
+(2) Wi-Fi (自宅)
+(Hardware Port: Wi-Fi, Device: en0)
+
+(*) Thunderbolt Bridge
+(Hardware Port: Thunderbolt Bridge, Device: bridge0)
+
+(3) Wi-Fi 2
+(Hardware Port: Wi-Fi, Device: en0)
+

@@ -97,8 +97,10 @@ type Snapshot struct {
 }
 
 var (
-	reHWPort = regexp.MustCompile(`\(Hardware Port: (.*), Device: (.*)\)`)
-	reInet   = regexp.MustCompile(`(?m)^\s+inet (\S+)`)
+	// サービス名は番号の行 ("(1) 社内の有線" / 無効なら "(*) …") から取る。Hardware Port は I/F の種類の名前で、サービスの名前を
+	// 変えると食い違う (Hardware Port を -getinfo に渡すと、知らないサービスとして rc=4 になった。監査の指摘)
+	reService = regexp.MustCompile(`(?m)^\((?:\d+|\*)\) (.+)\n\(Hardware Port: .*, Device: (.*)\)`)
+	reInet    = regexp.MustCompile(`(?m)^\s+inet (\S+)`)
 	// 🚨 行頭に固定する: getinfo は "IPv6 Router: none" の行も出すので、固定しないと IPv6 の行に当たる。
 	// 未接続のサービスは IPv4 の Router 行そのものを出さず、有線の自動割り当ては "Router: (null)" を出す (2026-10-15 の実測)
 	reRouter = regexp.MustCompile(`(?m)^Router: (.*)$`)
@@ -107,7 +109,7 @@ var (
 
 // ParseServiceOrder は `networksetup -listnetworkserviceorder` の出力からサービス名と I/F の名前を並び順に読む。
 func ParseServiceOrder(out string) []Service {
-	ms := reHWPort.FindAllStringSubmatch(out, -1)
+	ms := reService.FindAllStringSubmatch(out, -1)
 	svcs := make([]Service, 0, len(ms))
 	for _, m := range ms {
 		svcs = append(svcs, Service{Name: m[1], Device: m[2]})
@@ -186,12 +188,14 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 				s.IP = addrs[0]
 			}
 		}
-		if out, err := run(ctx, "networksetup", "-getinfo", s.Name); err == nil {
-			var ip string
-			s.Method, ip, s.Router = ParseGetInfo(out)
-			if s.IP == "" {
-				s.IP = ip
-			}
+		out, err := run(ctx, "networksetup", "-getinfo", s.Name)
+		if err != nil {
+			continue // ルーターの有無が分からない: 有線とも インターネット側とも決めない (決めないと「ルーター無し = 有線」に倒れた)
+		}
+		var ip string
+		s.Method, ip, s.Router = ParseGetInfo(out)
+		if s.IP == "" {
+			s.IP = ip
 		}
 		if s.Internet() {
 			internet[s.Device] = true
