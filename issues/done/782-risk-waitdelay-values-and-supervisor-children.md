@@ -1,7 +1,5 @@
 # 782 (risk): WaitDelay の値が subproc (2 秒) と自前 (1 秒) に割れている・process_supervisor の見張りの子に WaitDelay が無い
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-16〜）
-
 起票日: 2026-10-16
 
 ## 概要

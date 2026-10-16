@@ -1,1 +1,0 @@
-../780-ux-pro-con-settings-screens-opened-column-truncates.md

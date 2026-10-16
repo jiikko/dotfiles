@@ -1,7 +1,5 @@
 # 781 (test): tmux の schedule_keys のログの刈り込みと、snapshot_health の間隔 0 の扱いをテストで固定する
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-16〜）
-
 起票日: 2026-10-16
 
 ## 概要
