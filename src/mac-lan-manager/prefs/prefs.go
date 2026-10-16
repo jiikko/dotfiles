@@ -105,14 +105,15 @@ func Load(path string) (Prefs, error) {
 	return p, nil
 }
 
-// kindKey は保存された種類の名前を Key に揃える。前の版は画面の名前 (「有線」) を書いていたので、それも読む。知らない名前は捨てる。
+// kindKey は保存された種類の名前を Key に揃える。前の版は画面の名前 (「有線」) を書いていたので、それも読む。
+// 知らない名前はそのまま残す (新しい版が足した種類を古い版が読んで Save すると、捨てた分が設定から消えた。opus の敵対レビュー)。
 func kindKey(x string) string {
 	for _, k := range netinfo.Kinds {
 		if x == k.Key() || x == k.String() {
 			return k.Key()
 		}
 	}
-	return ""
+	return x
 }
 
 // Save は設定を書く (temp + rename)。

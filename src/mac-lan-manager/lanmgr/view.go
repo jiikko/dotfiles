@@ -26,7 +26,7 @@ const spinStep = 80 * time.Millisecond
 // View は画面の行 (w × h。最下行はキーの案内)。重ねる板 (確認・コピー・別名・キー一覧) もここで重ねる。
 func (m *Model) View() []string {
 	if m.w < minWidth {
-		return m.viewTooNarrow()
+		return m.viewTooSmall("幅が足りない")
 	}
 	// 幅を 40 桁に固定しない: max(…, 40) にしていたころは、それより狭い端末で枠と列が折り返し、最下行の案内 (抜け方) まで画面の外へ
 	// 出た (fable の敵対レビュー)。狭ければ列を落とし、どの行も幅で切る (下の安全網)
@@ -46,6 +46,9 @@ func (m *Model) View() []string {
 		}
 	} else {
 		body = m.viewList(w)
+		if m.tooShort { // カーソルの行まで入らない高さ: 切れた板を出さず、抜け方だけの画面にする (高さ 12 以下でカーソルの行ごと板が切れた)
+			return m.viewTooSmall("高さが足りない")
+		}
 	}
 	foot := m.footer()
 	h := max(m.h, 10)
@@ -70,49 +73,58 @@ func (m *Model) View() []string {
 	return strings.Split(lipgloss.NewCompositor(layers...).Render(), "\n")
 }
 
+// keyHint は最下行の案内の 1 つ。prio が小さいものから、幅に入るまで落とす。
+type keyHint struct {
+	key, label string
+	prio       int
+}
+
+// footer は最下行の案内。一覧では、選んでいる Mac への動作のキー (s 繋ぐ / Y コピー / o / y) をいつも載せる: 詳細カードが出るか・
+// 1 行に畳むか・出せないかは画面の大きさで変わり、そのどれでもキーが消える形が見つかった (名前が長いと 1 行の形からキーが押し出された・
+// 広い配置で低いと詳細カードの下が切れた。fable / opus の敵対レビュー)。最下行は必ず画面に残るので、ここに載せればどの配置でも見える。
+// 幅が足りなければ prio の小さいものから落とす。q (抜け方) は落とさない。
 func (m *Model) footer() string {
-	pairs := [][2]string{{"j/k", "移動"}, {"h/l", "タブ"}, {"space", "台帳"}, {"c", "この Mac の IP"}, {",", "設定"}, {"?", "全部のキー"}, {"q", "閉じる"}}
+	var hs []keyHint
 	switch {
 	case m.sc == scSettings:
-		pairs = [][2]string{{"j/k", "項目"}, {"space", "入/切"}, {"←/→", "選ぶ"}, {"enter", "編集"}, {"q/esc/,", "閉じる"}}
+		hs = []keyHint{{"j/k", "項目", 40}, {"space", "入/切", 30}, {"←/→", "選ぶ", 20}, {"enter", "編集", 10}, {"q/esc/,", "閉じる", 100}}
 	case m.filtering:
-		pairs = [][2]string{{"enter", "確定"}, {"esc", "やめる"}}
-	case m.keysInFooter: // 詳細カードを出す高さが無い: カーソルの Mac への動作のキーをここに出す
-		pairs = [][2]string{{"j/k", "移動"}}
+		hs = []keyHint{{"enter", "確定", 50}, {"esc", "やめる", 100}}
+	default:
+		hs = []keyHint{{"j/k", "移動", 40}}
 		if r := m.current(); !r.self && r.connectIP() != "" {
-			pairs = append(pairs, [2]string{"s", "繋ぐ"}, [2]string{"Y", "コピー"})
-			if r.smb {
-				pairs = append(pairs, [2]string{"y", "smb"})
-			}
+			hs = append(hs, keyHint{"s", "繋ぐ", 80}, keyHint{"Y", "コピー", 70})
 			if r.vnc {
-				pairs = append(pairs, [2]string{"o", "画面共有"})
+				hs = append(hs, keyHint{"o", "画面共有", 60})
+			}
+			if r.smb {
+				hs = append(hs, keyHint{"y", "smb", 50})
 			}
 		}
-		pairs = append(pairs, [2]string{"q", "閉じる"})
+		hs = append(hs, keyHint{"h/l", "タブ", 15}, keyHint{"space", "台帳", 30}, keyHint{"c", "この Mac の IP", 20},
+			keyHint{",", "設定", 10}, keyHint{"?", "全部のキー", 90}, keyHint{"q", "閉じる", 100})
 	}
-	parts := make([]string, 0, len(pairs))
-	for _, p := range pairs {
-		parts = append(parts, lipgloss.NewStyle().Foreground(cPink).Bold(true).Render(p[0])+" "+sDim.Render(p[1]))
-	}
-	// 幅が足りなければ後ろから落とすが、抜ける手段 (最後の q) は必ず残し、全部のキーの案内 (?) は最後まで残す (ガイド §5。
-	// 末尾から 2 番目を落としていたので、? が真っ先に消えた。監査の指摘)
 	sep := sMuted.Render(" • ")
-	keep := func(i int) bool { return i == len(parts)-1 || pairs[i][0] == "?" }
-	for lipgloss.Width(strings.Join(parts, sep)) > m.w-2*padX {
-		i := len(parts) - 2
-		for i >= 0 && keep(i) {
-			i--
+	render := func() string {
+		parts := make([]string, 0, len(hs))
+		for _, h := range hs {
+			parts = append(parts, lipgloss.NewStyle().Foreground(cPink).Bold(true).Render(h.key)+" "+sDim.Render(h.label))
 		}
-		if i < 0 { // 残すものしか無い: ? も落とす (q だけは残す)
-			if len(parts) <= 1 {
-				break
-			}
-			i = len(parts) - 2
-		}
-		parts = slices.Delete(parts, i, i+1)
-		pairs = slices.Delete(pairs, i, i+1)
+		return strings.Join(parts, sep)
 	}
-	return strings.Join(parts, sep)
+	for out := render(); lipgloss.Width(out) > m.w-2*padX; out = render() {
+		low := -1
+		for i, h := range hs {
+			if h.prio < 100 && (low < 0 || h.prio < hs[low].prio) {
+				low = i
+			}
+		}
+		if low < 0 {
+			return termwidth.Truncate(out, max(m.w-2*padX, 1), "")
+		}
+		hs = slices.Delete(hs, low, low+1)
+	}
+	return render()
 }
 
 func (m *Model) header(w int) string {
@@ -179,16 +191,17 @@ func (m *Model) viewList(w int) string {
 	// 詳細カードもカーソル行も画面の外に出た (監査の指摘 2026-10-16)
 	frame := lipgloss.Height(shadow(card("", listW-1, surfList, tabColors[m.tab], cPurple))) - 1
 	rows := m.bodyHeight() - lipgloss.Height(head) - lipgloss.Height(tabs) - frame - 2 // 2 = 表の見出しと罫線
-	m.keysInFooter = false
+	// 一覧の行 (カーソルの行) まで入らない高さは抜け方だけの画面にする (View)。板の下の余白・枠・影の 3 行は切れてよい
+	// (行が見える方が、空の画面より役に立つ)。高さ 12 以下で、カーソルの行ごと板が切れていた
+	m.tooShort = rows < -2
 	if !wide {
+		// 縦に積むときは、一覧に min(3, 行数) 行を残せなければ詳細カードを 1 行 (名前だけ) に畳み、それも入らなければ出さない。
+		// 動作のキーは最下行の案内にいつも載せている (footer) ので、ここで何を出しても消えない
 		if rows-lipgloss.Height(detail)-1 < min(3, len(m.visible())) {
-			// 詳細カードを積む高さが無い: 動作のキーだけの 1 行に畳む (カードごと下で切れると、s / Y / o の案内が黙って消えた。
-			// fable の敵対レビュー: 縦積みで高さ 22 以下)
 			detail = m.detailCompact(r)
 		}
 		if rows-lipgloss.Height(detail)-1 < 1 {
-			// 1 行に畳んでも入らない (高さ 13〜17): 動作のキーは最下行の案内へ回す (最下行は必ず画面に残る。fable の敵対レビュー)
-			detail, m.keysInFooter = "", true
+			detail = ""
 		} else {
 			rows -= lipgloss.Height(detail) + 1
 		}
@@ -225,14 +238,17 @@ func (m *Model) tabs(width int) string {
 		fw := min(25, max(room-2, 4))
 		txt, col := m.filter.Window(fw - 1)
 		search = sAccent.Render("/ ") + lipgloss.NewStyle().Background(cCode).Render(termwidth.FillRight(txt, fw))
-		m.caretFX = padX + width - 2 - lipgloss.Width(search) + 2 + col
+		m.caretFX = 2 + col // 入力欄の中の桁。行の左端からの位置は間の空白が決まってから足す
 		m.caretFY = padY + 3
 	case m.filter.String() != "":
 		search = sAccent.Render("/ "+termsafe.PlainLine(m.filter.String())) + sMuted.Render("  esc で解除")
 	default:
 		search = sMuted.Render("/ で絞り込み")
 	}
-	out := row + strings.Repeat(" ", max(width-lipgloss.Width(row)-lipgloss.Width(search)-2, 1)) + search
+	gap := max(width-lipgloss.Width(row)-lipgloss.Width(search)-2, 1)
+	out := row + strings.Repeat(" ", gap) + search
+	// キャレットは実際に置いた間の空白から出す (右寄せを仮定すると、間の空白が 1 桁に詰まる幅で左へずれた。opus の敵対レビュー)
+	m.caretFX += padX + lipgloss.Width(row) + gap
 	if lipgloss.Width(out) > width {
 		m.caretFY = -1 // 入力欄まで切れる幅ではキャレットを出さない
 		out = termwidth.Truncate(out, width, "")
@@ -321,31 +337,21 @@ func (m *Model) detailCompact(r row) string {
 }
 
 func (m *Model) detailCompactLine(r row) string {
+	name := or(r.alias, or(r.instance, r.host))
 	if r.self {
-		return sDim.Render("この Mac  ") + keycap("c", "IP をコピー") + "   " + sMuted.Render("(端末を高くすると詳細)")
+		name = "この Mac"
 	}
-	parts := []string{sText.Render(or(r.alias, or(r.instance, r.host)))}
-	if r.connectIP() != "" {
-		parts = append(parts, keycap("s", "繋ぐ"), keycap("Y", "コピー"))
-		if r.smb {
-			parts = append(parts, keycap("y", "smb"))
-		}
-		if r.vnc {
-			parts = append(parts, keycap("o", "画面共有"))
-		}
-	}
-	parts = append(parts, sMuted.Render("(端末を高くすると詳細)"))
-	return strings.Join(parts, "   ")
+	return sText.Render(name) + "   " + sMuted.Render("(動作のキーは最下行。端末を高くすると詳細)")
 }
 
 // minWidth はこの画面を組む最小の幅。12 桁以下では枠を組む計算が負になって落ちた (strings.Repeat)。これより狭ければ
 // 抜け方だけの画面にする。
 const minWidth = 36 // 一覧の表の最小 (印 1 + 名前 4 + 内部 IP 18) + 板の枠と余白 7 + 外の余白 6 より狭いと、板の右辺が切れた
 
-// viewTooNarrow は幅が足りないときの画面 (抜け方だけは必ず見せる)。
-func (m *Model) viewTooNarrow() []string {
+// viewTooSmall は幅・高さが足りないときの画面 (抜け方だけは必ず見せる)。
+func (m *Model) viewTooSmall(why string) []string {
 	lines := make([]string, max(m.h, 1))
-	lines[0] = termwidth.Clip("幅が足りない", max(m.w, 1))
+	lines[0] = termwidth.Clip(why, max(m.w, 1))
 	lines[len(lines)-1] = "q"
 	if m.w >= termwidth.Of("q 閉じる") {
 		lines[len(lines)-1] = "q 閉じる"

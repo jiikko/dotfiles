@@ -99,7 +99,8 @@ func TestSaveGuardRejectsOutside(t *testing.T) {
 	}
 }
 
-// 前の版は種類を画面の名前 (「有線」) で書いていた。それも Key に読み替え、知らない名前は捨てる (語を直しても設定が外れない)。
+// 前の版は種類を画面の名前 (「有線」) で書いていた。それも Key に読み替える (語を直しても設定が外れない)。
+// 知らない名前 (新しい版が足した種類) は残し、Save でも書き戻す (古い版で設定を変えても消えない)。
 func TestLoadOldKindNames(t *testing.T) {
 	path := filepath.Join(sandbox, "old", "settings.toml")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -112,7 +113,17 @@ func TestLoadOldKindNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"wired", "link-local", "vpn"}; !slices.Equal(got.Kinds, want) {
+	if want := []string{"wired", "link-local", "vpn", "なにか"}; !slices.Equal(got.Kinds, want) {
 		t.Errorf("Kinds = %v, want %v", got.Kinds, want)
+	}
+	if err := Save(path, got); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(again.Kinds, "なにか") {
+		t.Errorf("Save と Load の後に知らない種類が消えた: %v", again.Kinds)
 	}
 }

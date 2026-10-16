@@ -95,19 +95,19 @@ const (
 
 // Model は画面の状態。
 type Model struct {
-	o            Options
-	w, h         int
-	now          time.Time
-	sc           screen
-	tab          int    // 0: 管理対象 / 1: 未管理
-	cur          [2]int // タブごとのカーソル
-	listOff      [2]int // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
-	listRows     int    // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
-	keysInFooter bool   // 詳細カードを出す高さが無く、動作のキーを最下行の案内に出している
-	setC         int    // 設定の画面のカーソル
-	ov           overlay
-	ask          *ask
-	copyC        int
+	o        Options
+	w, h     int
+	now      time.Time
+	sc       screen
+	tab      int    // 0: 管理対象 / 1: 未管理
+	cur      [2]int // タブごとのカーソル
+	listOff  [2]int // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
+	listRows int    // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
+	tooShort bool   // 一覧の板に 1 行も入らない高さ (描いたとき)
+	setC     int    // 設定の画面のカーソル
+	ov       overlay
+	ask      *ask
+	copyC    int
 
 	filter    lineedit.Line
 	filtering bool `layer:"filter"`

@@ -1066,3 +1066,82 @@ func TestSettingsFrameFitsHeight(t *testing.T) {
 		}
 	}
 }
+
+// どの幅・高さでも、選んでいる Mac の動作のキー (s 繋ぐ) と q が最下行に残る。名前が長い Mac・広い配置・低い画面を含む
+// (長い名前の 1 行の形が動作のキーを押し出し、広い配置の高さ 10〜13 ではキーがどこにも出なかった。opus の敵対レビュー)。
+// カーソルの行まで入らない高さは「高さが足りない」の画面になり、そこでも q は残る。
+func TestFooterKeepsActionKeys(t *testing.T) {
+	long := discover.Peer{Host: "long.local", Instances: []string{strings.Repeat("とても長い名前の Mac ", 6)}, SSH: true,
+		Addrs: map[int]string{14: "192.168.50.9"}}
+	for _, w := range []int{minWidth, 44, 60, 100, 120, 200} {
+		for hgt := 10; hgt <= 24; hgt++ {
+			h := newHarness(t, nil, []discover.Peer{long, mini})
+			h.m.Resize(w, hgt)
+			h.keys("l")
+			for range 3 {
+				if h.m.current().host == "long.local" {
+					break
+				}
+				h.keys("j")
+			}
+			if h.m.current().host != "long.local" {
+				t.Fatalf("%dx%d: カーソルを長い名前の Mac に合わせられない", w, hgt)
+			}
+			lines := h.m.View()
+			if len(lines) != hgt {
+				t.Fatalf("%dx%d: %d 行", w, hgt, len(lines))
+			}
+			last := "" // 最下行の案内 (枠の下の余白を除いた最後の行)
+			for i := len(lines) - 1; i >= 0 && strings.TrimSpace(last) == ""; i-- {
+				last = termwidth.StripSGR(lines[i])
+			}
+			if !strings.Contains(last, "q") {
+				t.Errorf("%dx%d: 最下行に q が無い: %q", w, hgt, last)
+			}
+			view := termwidth.StripSGR(strings.Join(lines, "\n"))
+			if strings.Contains(view, "高さが足りない") {
+				if hgt > 12 {
+					t.Errorf("%dx%d: カーソルの行が入る高さで「高さが足りない」を出した", w, hgt)
+				}
+				continue
+			}
+			// 最小の幅 36 は ? と q で埋まる (? の板から全部のキーに辿れる)
+			if w >= 44 && !strings.Contains(last, "繋ぐ") {
+				t.Errorf("%dx%d: 最下行に動作のキー (s 繋ぐ) が無い: %q", w, hgt, last)
+			}
+			if w >= 100 && !strings.Contains(view, "長い名前") {
+				t.Errorf("%dx%d: カーソルの行が画面に無い:\n%s", w, hgt, view)
+			}
+		}
+	}
+}
+
+// 絞り込みの入力中のキャレットは、入力した文字の直後に立つ (右寄せを仮定した式は、間の空白が 1 桁に詰まる幅 43〜44 で 2 桁左にずれた)。
+func TestFilterCaretExact(t *testing.T) {
+	seen := 0
+	for w := minWidth; w <= 120; w++ {
+		h := newHarness(t, nil, []discover.Peer{mini})
+		h.m.Resize(w, 30)
+		h.keys("/", "m", "i", "n")
+		lines := h.m.View()
+		x, y, ok := h.m.CaretPos()
+		if !ok {
+			continue // 入力欄が入らない幅
+		}
+		seen++
+		// 狭い入力欄は末尾 ("in") だけを見せる。キャレットは見えている文字の直後
+		line := termwidth.StripSGR(lines[y])
+		i := strings.LastIndex(line, "/ ")
+		txt := strings.TrimRight(line[max(i, 0)+2:], " ")
+		if i < 0 || txt == "" || !strings.HasSuffix("min", txt) {
+			t.Errorf("幅 %d: キャレットの行 %d に入力欄が無い: %q", w, y, line)
+			continue
+		}
+		if want := termwidth.Of(line[:i]) + 2 + termwidth.Of(txt); x != want {
+			t.Errorf("幅 %d: キャレットの桁 %d (入力した文字の直後は %d): %q", w, x, want, line)
+		}
+	}
+	if seen < 40 {
+		t.Fatalf("キャレットを確かめた幅が %d しか無い (入力欄が出ていない)", seen)
+	}
+}
