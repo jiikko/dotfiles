@@ -23,6 +23,7 @@ bash tests/claude/test_dangling_symlinks.sh; echo rc=$?   # rc=0
 ```
 
 - **期待**: setup.sh の出力に `removing dangling symlink /Users/koji/.claude/skills/product-events` が出る。上の検査が rc=0
-- **期待と違ったら**: 出力をこの issue に貼る (setup.sh の掃除が改名を拾えていない可能性)
+- **期待と違ったら**: 出力をこの issue に貼る (setup.sh の掃除が改名を拾えていない可能性)。検査が rc≠0 なら、product-events 以外の dangling も
+  出ていないかを、検査の出力ごと貼る (検査は `$HOME` 直下・`~/.claude`・`~/.config` の、`~/dotfiles` を指す dangling を全部見る)
 
 確認が済んだら done へ移す。

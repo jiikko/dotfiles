@@ -12,7 +12,7 @@ issue 785 で足した `hintfit` も最初は漏れ、bubbletea を import し�
 
 ## 詳細
 
-2026-10-16 に `go list -f '{{.Imports}}'` と、2 つのリストを突き合わせた。母集合は `src/tuikit/` 直下の 21 package。
+2026-10-16 に `go list -f '{{.Imports}}'` と、2 つのリストを突き合わせた。母集合は `src/tuikit/` 直下の 21 ディレクトリ (cmd / examples は package ではない。`go list ./...` では `cmd/termwidth`・`examples/*`・`foreground/ptytest` を含む 23 package)。
 
 | package | import | no-framework-in-parts | parts-pure | 判断 |
 |---|---|---|---|---|
@@ -27,9 +27,13 @@ issue 785 で足した `hintfit` も最初は漏れ、bubbletea を import し�
 
 ## 対応方針
 
-1. gutter / spinner を 2 つのリストに、foreground を no-framework-in-parts に足す
+1. gutter / spinner を 2 つのリストに、foreground を no-framework-in-parts に足す (反証レビューが設定のコピーで lint を回し、足しても 0 issues を確かめた)。
+   - `**/foreground/**` は `foreground/ptytest` (テスト用の pty の道具。context / os / os/exec を使い、bubbletea は使わない) にも当たる。no-framework に入っても通る
+   - `spinner_test.go` は os / widthenv を使うが、parts-pure は `!**/*_test.go` で外しているので通る
+   - `README.md` の「部品は bubbletea を import しない」の一覧にも同じ 4 つ (gutter / spinner / foreground / hintfit) が無い。同じ変更で直す
 2. 漏れを機械で止める検査を足す: tuikit の全 package が、2 つのリストのどちらか、または「外す理由つきの表」に載っていることを見る
-   (`tests/scripts/` か tuikit の Go のテスト。表は検査の中に持つ)
+   (`tests/scripts/` か tuikit の Go のテスト。表は検査の中に持つ)。母集合は `go list ./...` で取り、`foreground/ptytest` などの入れ子も
+   どちらかに載せる。今ある `test_tuikit_consumers_aligned.sh` は ansi の禁止の揃いだけを見ていて、depguard の網羅は見ていない
 3. 一時ファイルで bubbletea / os を import して、足した package で depguard が出ることを確かめる (785 と同じ確かめ方)
 
 ## 関連ファイル
