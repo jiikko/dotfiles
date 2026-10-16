@@ -15,7 +15,7 @@ func TestMain(m *testing.M) {
 
 // 入らない項目は切らずに落とし、より短い後続は入れる。残った項目は元の並び順で繋ぐ。
 func TestFitDropsWholeItemsInOrder(t *testing.T) {
-	items := []Item{{"a: 長い長い案内", 3}, {"b: 短い", 4}, {"q: 終了", 1}}
+	items := []Item{{"a: 長い長い案内", 3}, {"b: 短い", 3}, {"q: 終了", 1}} // a と b は同じ優先度: 入らない a を飛ばして b を入れる
 	got := Fit(termwidth.Of("b: 短い  q: 終了"), "  ", items)
 	if got != "b: 短い  q: 終了" {
 		t.Errorf("Fit = %q (入らない a を落とし、短い b は入れて、並びは元のまま)", got)
