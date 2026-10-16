@@ -288,11 +288,11 @@ func TestLanOpensWithoutWaitingForNetwork(t *testing.T) {
 	t.Cleanup(func() { lanOptions = orig })
 	m := openLan(t) // ReadNet が止まっていても戻る
 	view := func() string { return stripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")) }
-	if !m.lanV.busy() || !m.spinnerActive() || !strings.Contains(view(), "ネットワークを読んでいます") {
+	if !m.lanV.busy() || !m.spinnerActive() || !strings.Contains(view(), "ネットワーク設定を確認中") {
 		t.Fatalf("読み込み中なのに tick が回らない / 読んでいる印が無い: busy=%v\n%s", m.lanV.busy(), view())
 	}
 	close(release)
-	for deadline := time.Now().Add(5 * time.Second); strings.Contains(view(), "ネットワークを読んでいます"); {
+	for deadline := time.Now().Add(5 * time.Second); strings.Contains(view(), "ネットワーク設定を確認中"); {
 		if time.Now().After(deadline) {
 			t.Fatal("読み終えても tick で取り込まない")
 		}
