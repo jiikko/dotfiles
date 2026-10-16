@@ -330,7 +330,10 @@ func (m *Model) OwnsKeys() bool {
 // 入力欄・確認・板・設定が開いている間は全部のキー (横断キーで閉じると打っている文字が消える。treefiler の filer.Model.Binds と同じ契約)。
 func (m *Model) Binds(key string) bool {
 	key = canonKey(key)
-	if m.small { // 足りない画面では閉じるキーだけ。L や横断キーは glogx に渡す (渡さないと L で閉じず、? も効かなかった)
+	// 足りない画面で層が閉じていれば閉じるキーだけを取り、L や横断キーは glogx に渡す (渡さないと L で閉じなかった)。
+	// 層が開いていれば下の OwnsKeys で全部取る (HandleInput は q / esc 以外を捨てる)。渡すと、絞り込みに打った C で
+	// claude update が確認なしに走り、横断キーで閉じて打っていた文字が消えた (opus の敵対レビュー)
+	if m.small && !m.OwnsKeys() {
 		return key == "q" || key == "esc"
 	}
 	if m.OwnsKeys() {

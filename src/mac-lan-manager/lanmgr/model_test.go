@@ -1192,8 +1192,14 @@ func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
 		if h.keys("y") != None || len(h.store.hosts) != 1 {
 			t.Errorf("%v: 見えない確認の板に y が届いた (台帳 %d 台)", size, len(h.store.hosts))
 		}
-		if h.m.Binds("L") || h.m.Binds("?") || !h.m.Binds("q") || !h.m.Binds("esc") {
-			t.Errorf("%v: 足りない画面で閉じるキー以外を取った (L や横断キーは glogx へ渡す)", size)
+		if !h.m.Binds("L") {
+			t.Errorf("%v: 確認の板を開いたまま足りない画面になったら L も取る", size)
+		}
+		bare := newHarness(t, nil, []discover.Peer{mini}) // 層の無い足りない画面: 閉じるキーだけを取り、L や横断キーは glogx へ渡す
+		bare.m.Resize(size[0], size[1])
+		bare.m.View()
+		if bare.m.Binds("L") || bare.m.Binds("C") || !bare.m.Binds("q") || !bare.m.Binds("esc") {
+			t.Errorf("%v: 層の無い足りない画面で閉じるキー以外を取った", size)
 		}
 		if h.keys("esc") != Quit || h.keys("q") != Quit {
 			t.Errorf("%v: q / esc で閉じない", size)
@@ -1203,6 +1209,11 @@ func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
 		h.m.Resize(size[0], size[1])
 		h.keys("/", "z")
 		h.m.View()
+		for _, k := range []string{"C", "s", "L", "x"} {
+			if !h.m.Binds(k) {
+				t.Errorf("%v: 入力欄を開いたまま足りない画面になったら %s も取る (glogx の横断キーに渡すと update が走り、文字が消えた)", size, k)
+			}
+		}
 		if _, _, ok := h.m.CaretPos(); ok {
 			t.Errorf("%v: 足りない画面にキャレットを立てた", size)
 		}
@@ -1229,7 +1240,12 @@ func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
 // 閉じる (Close) と、開いていた確認・入力欄・設定を畳む。glogx は Model を使い回すので、残すと L で開き直した直後に
 // 覚えの無い確認の板が y を待ち、y で台帳から外れた (足りない画面の q で抜けたとき。opus の敵対レビュー)。
 func TestCloseFoldsLayers(t *testing.T) {
-	open := map[string][]string{"確認": {"j", "space"}, "絞り込み": {"/", "z"}, "別名": {"j", "m"}, "設定": {","}}
+	band := []string{","}
+	for range setBand {
+		band = append(band, "j")
+	}
+	band = append(band, "enter")
+	open := map[string][]string{"確認": {"j", "space"}, "絞り込み": {"/", "z"}, "別名": {"j", "m"}, "設定": {","}, "帯の編集": band}
 	for name, ks := range open {
 		h := newHarness(t, []ledger.Host{{Host: "m2macmini.local"}}, []discover.Peer{mini})
 		h.keys(ks...)
@@ -1245,7 +1261,7 @@ func TestCloseFoldsLayers(t *testing.T) {
 		h.m.Reload()
 		h.m.Resize(120, 40)
 		h.m.View()
-		if h.m.OwnsKeys() {
+		if h.m.OwnsKeys() || h.m.bandEdit {
 			t.Errorf("%s: 開き直したら層が残っていた", name)
 		}
 		h.keys("y")
