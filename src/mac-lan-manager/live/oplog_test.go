@@ -29,3 +29,17 @@ func TestFileLog(t *testing.T) {
 		t.Errorf("上限を超えても新しい方の半分を残さない (%d 字、行の頭から始まるか)", len(b))
 	}
 }
+
+// 別のプロセスが先に切り詰めて上限より短くなったファイルでも、切り詰めで panic しない (負の添字で TUI ごと落ちた)。
+// 既に在る 0644 のファイルも 0600 にする。
+func TestFileLogTrimRaceAndPerm(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "mac-lan-manager.log")
+	if err := os.WriteFile(p, []byte("short\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	trimLog(p) // Stat の後に別のプロセスが切り詰めた形
+	FileLog(p)("x")
+	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o600 {
+		t.Errorf("既に在る 0644 のファイルを 0600 にしない: %v", fi.Mode().Perm())
+	}
+}
