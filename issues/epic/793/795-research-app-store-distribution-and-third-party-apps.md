@@ -44,11 +44,15 @@
   二重ライセンスで戻った。[Computerworld](https://www.computerworld.com/article/1347653/gplv2-blocks-vlc-from-apple-s-app-store.html))。
   AGPLv3 について FSF が明示した声明は見つからなかった。iShareScreen の権利者が異議を出すかどうかにもよる。
   App Store で出すなら、(b) 書き直すか (c) MIT の rootshell-vnc の道が安全
-- **同じプロトコルで App Store に出ている先例 (らしいもの)**: rootshell (bundle ID `com.kk2.rootshell`。rootshell-vnc の作者の端末アプリ。iPhone・iPad・
-  Vision Pro・Mac)。第三者の掲載 ([APKPure](https://iphone.apkpure.com/rootshell-local-terminal-ssh/com.kk2.rootshell/amp)) で 1.0.11 に「High Performance mode
-  streams up to 4K at 60 FPS, fully encrypted」の画面共有が載り、App Store の評価 (4.64・11 件) を集めたサイトもある
-  ([marlvel.ai](https://marlvel.ai/apps/com-kk2-rootshell))。**App Store の公式のページ自体は見ていない**ので、高性能モードの入った版が審査を通って
-  並んでいるかは未確認 (確かめるには App Store で rootshell を開き、版の履歴を見る)。Mac 版が Catalyst か、sandbox の中で動いているかも未確認
+- **同じプロトコルで App Store に出ている先例**: rootshell (rootshell-vnc の作者の端末と SSH のアプリ。主な機能は端末だが、GUI のアプリで、
+  画面共有の機能を持つ)。2026-10-16 に App Store のページ ([id6755794662](https://apps.apple.com/app/rootshell-local-terminal-ssh/id6755794662)) で確かめた:
+  - 1.0.9 (7 月 22 日) で「Connect to Your Mac's Screen」「High Performance Mode: Smooth video up to 4K at 60 FPS, encrypted」を足し、審査を通って並んでいる
+    (今は 1.0.13)。説明文に「Nothing to install on the Mac — turn on Screen Sharing and connect」
+  - **App Store にあるのは iPhone と iPad の版だけ** (iOS 18 以降)。iOS のアプリは必ず sandbox の中で動くので、**高性能モードのプロトコルは sandbox の中でも
+    話せる**ことの実例になる
+  - **Mac の版はまだ App Store に無い**: 公式サイト ([rootshell.com](https://www.rootshell.com/)) は「Required for Vision Pro and Mac while those platforms
+    complete App Store review」として TestFlight で配り、Mac には sandbox を外した版の直接ダウンロードを勧めている。**Mac App Store で高性能モードの
+    アプリが通った先例は、まだ無い** (審査中)
 - Apple はプロトコルを公開していないので、macOS の更新で予告なく変わりうる。審査を通っても、後から壊れる
 - **自分の Mac だけで使うなら App Store は要らない**: 自分でビルドして署名すれば、sandbox も審査も外せる (アクセシビリティの権限も使える)。
   App Store で出すかどうかで、取れる設計が変わる。ただし手元のビルドで ad-hoc 署名すると、ビルドし直すたびに権限の許可を付け直す手間が

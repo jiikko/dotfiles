@@ -47,7 +47,8 @@
 
 - [ ] 手元・相手の Mac の macOS の版 (パッケージは macOS 15 以降、付属のビューアを Catalyst で動かすなら Tahoe 相当)
 - [ ] 付属のビューアを Catalyst で動かすか、パッケージを呼ぶ最小の macOS のアプリを書くかして、相手の Mac 1 台に高性能モードで繋がるか
-- [ ] sandbox の中で動くか (Network.framework の UDP・VideoToolbox。795 の「中身は sandbox で動く形」)
+- [ ] sandbox の中で動くか (Network.framework の UDP・VideoToolbox。795 の「中身は sandbox で動く形」)。iOS の rootshell (sandbox の中) が App Store で
+  高性能モードを話している (795) ので、仕組みとしては動く見込み。macOS の sandbox で同じに動くかを確かめる
 
 ## 受け入れ条件
 
