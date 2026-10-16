@@ -295,3 +295,12 @@ func TestReadSkipsDisabledService(t *testing.T) {
 		}
 	}
 }
+
+func TestParseMask(t *testing.T) {
+	if got := ParseMask(fixture(t, "getinfo_wifi.txt")); got != "255.255.255.0" {
+		t.Errorf("ParseMask(wifi) = %q", got)
+	}
+	if got := ParseMask("Manual Configuration\nSubnet mask: none\n"); got != "" {
+		t.Errorf("ParseMask(none) = %q", got)
+	}
+}

@@ -41,6 +41,7 @@ type Service struct {
 	IP     string // IPv4 (無ければ空)
 	Method string // "DHCP" / "manual" / "" (読めなかった)
 	Router string // IPv4 のルーター (無ければ空)
+	Mask   string // サブネットマスク (読めなければ空。手動の設定へ戻すときに要る)
 	Read   bool   // -getinfo を読めた (読めなければルーターの有無は分からない)
 	// Disabled は無効にしたサービス ("(*)")。I/F の分類に数えない (無効にした古い設定のルーターで、本物の有線の内部 IP が消えた。
 	// 監査の第 3 波の敵対レビュー)
@@ -198,6 +199,7 @@ var (
 	// 未接続のサービスは IPv4 の Router 行そのものを出さず、有線の自動割り当ては "Router: (null)" を出す (2026-10-15 の実測)
 	reRouter = regexp.MustCompile(`(?m)^Router: (.*)$`)
 	reIP     = regexp.MustCompile(`(?m)^IP address: (.*)$`)
+	reMask   = regexp.MustCompile(`(?m)^Subnet mask: (.*)$`)
 )
 
 // ParseServiceOrder は `networksetup -listnetworkserviceorder` の出力からサービス名と I/F の名前を並び順に読む。
@@ -227,6 +229,16 @@ func ParseGetInfo(out string) (method, ip, router string) {
 		}
 	}
 	return method, ip, router
+}
+
+// ParseMask は `networksetup -getinfo` の出力のサブネットマスク (無い・"none" なら空)。
+func ParseMask(out string) string {
+	if m := reMask.FindStringSubmatch(out); m != nil {
+		if v := strings.TrimSpace(m[1]); v != "none" && v != "(null)" {
+			return v
+		}
+	}
+	return ""
 }
 
 // ParseIfconfig は `ifconfig <I/F>` の出力から、active か と IPv4 の一覧を読む。
@@ -282,6 +294,7 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 		var ip string
 		s.Method, ip, s.Router = ParseGetInfo(out)
 		s.Read = true
+		s.Mask = ParseMask(out)
 		if s.IP == "" {
 			s.IP = ip
 		}
