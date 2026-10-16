@@ -10,6 +10,7 @@ glogx の `L` の板からも開く (要件・決定・設計の正本は issue 
 **デバッグ (画面を出さない)**: `GO_AUTOBUILD_SYNC=1 bin/mac-lan-manager dump` (`--json` で JSON、`--wait 8s` で Bonjour を待つ上限)。
 この Mac のサービス・一覧 (画面と同じ判定。各行の内部 IP・メイン IP・その他の IP と繋ぐ先)・Bonjour の生の結果・知らせを出す。
 読むだけで何も書かない。「見つからない」「違う IP に繋ぐ」を調べるときはまずこれを見る (LLM に渡すのも安い)。
+相手の Mac は `dump --peer <IP> [--user <name>] [--host <Bonjour のホスト名>]` で、鍵で入れるか (ok / denied / unknown) と相手のルーターの無い有線のサービスを読む (段 4 の初期設定が見るのと同じ。読むだけ)。
 `GO_AUTOBUILD_SYNC=1` を付けないと、bin は古いバイナリで起動して裏で作り直す (直した直後は古い版の結果になる)。
 
 ## package
@@ -22,7 +23,7 @@ glogx の `L` の板からも開く (要件・決定・設計の正本は issue 
 | `prefs` | 設定 (一覧に出す IP・内部 IP の決め方・その他の IP の種類。`settings.toml`) |
 | `lanmgr` | 画面 (一覧・詳細カード・設定・確認の板)。lipgloss v2.0.5 + tuikit。単体の `main.go` と glogx の板の両方から使う口 (`New` / `HandleKey` / `HandleInput` / `Advance` / `View` / `Busy` / `Changed` / `Reload` / `OwnsKeys` / `Binds` / `TakeExec` / `TakeNotices` / `Close` …) |
 | `setup` | 初期設定 (段 4) の手順を組む: 観測から残りの手順を組み直す `Plan` / 相手の有線を固定 IP にする命令列 `StaticIP` (確認の印が来なければ元へ戻すデッドマンスイッチ) / 空き番号の提案 `SuggestIP`。命令を組むだけで起こさない。🚨 本物の networksetup / sudo を起こすのは、段 4 の前の人手の確認が済んでから。テストは偽物だけが見える PATH (`<sandbox>:/bin`) で走らせ、外へ解決したら走らせる前に落とす |
-| `live` | `lanmgr` を本物 (ネットワーク・Bonjour・台帳・設定・クリップボード) につなぐ `Options()`。単体の `main.go` と glogx の板が共有する (glogx はクリップボードと時計だけ自分の口に替える) |
+| `live` | `lanmgr` を本物 (ネットワーク・Bonjour・台帳・設定・クリップボード・相手への ssh の `SSHRun` / `Observe`) につなぐ `Options()`。単体の `main.go` と glogx の板が共有する (glogx はクリップボードと時計だけ自分の口に替える) |
 
 ## 触る前に読むもの
 

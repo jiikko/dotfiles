@@ -38,6 +38,7 @@ func Options() (lanmgr.Options, error) {
 		SavePrefs: prefs.Save,
 		Copy:      clipboard.Copy, // pbcopy (tmux の中では tmux バッファへもおまけ)。上限は clipboard.Timeout
 		User:      os.Getenv("USER"),
+		Observe:   Observe,
 	}, nil
 }
 

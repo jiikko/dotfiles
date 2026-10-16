@@ -158,6 +158,7 @@ func (a *app) View() tea.View {
 
 const usage = `usage: mac-lan-manager
        mac-lan-manager dump [--json] [--wait 8s]
+       mac-lan-manager dump --peer <IP> [--user <name>] [--host <Bonjour のホスト名>] [--json]
 
 手元の Mac 同士を、ネットに繋がっていない有線の LAN (内部の網) で繋いで管理する。
 Bonjour で見えている Mac と台帳 (~/.config/mac-lan-manager/hosts.toml) の Mac を一覧にする。
@@ -165,6 +166,8 @@ Bonjour で見えている Mac と台帳 (~/.config/mac-lan-manager/hosts.toml) 
 
 dump は画面を出さずに、この Mac の網・一覧 (画面と同じ判定)・Bonjour の生の結果を文字 (--json で JSON) で出す。
 読むだけで何も書かない (デバッグ用)。Bonjour の走査が終わるか --wait の上限まで待つ。
+dump --peer は相手を鍵だけの ssh で読み、鍵で入れるかと相手のルーターの無い有線のサービスを出す (読むだけ。上限 15 秒)。
+--user の既定は $USER、--host (known_hosts の鍵の名前) の既定は IP。
 `
 
 func main() {
@@ -181,7 +184,7 @@ func main() {
 					return nil, err
 				}
 				return lanmgr.New(o), nil
-			})
+			}, live.Observe)
 			cancel()
 			os.Exit(rc)
 		}
