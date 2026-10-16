@@ -44,6 +44,20 @@ type ExecRequest struct {
 	// ExitIsFailure は終了コード ≠ 0 を失敗として知らせるか。ssh は相手のシェルの終了コードで抜けるので失敗と言わない。open は
 	// 開けなかったときに rc=1 で戻り、画面は TUI へすぐ戻るので理由も消える (知らせないと何も起きなかったように見えた。監査の指摘)
 	ExitIsFailure bool
+	// Banner は端末を渡す前に出す板 (初期設定の手順。何を起こし、何を聞かれるか)。空なら出さない
+	Banner string
+}
+
+// RunArgv は呼び出し側が実際に起こす argv。Banner があれば、画面を消して板を出してから Argv を起こし、失敗したら終了コードを出して
+// Enter を待つ (端末を渡すと TUI の枠が消えて素のプロンプトだけになり、失敗の出力も TUI に戻った瞬間に消えた。ユーザー報告)。
+// 単体の main と glogx の板は、どちらもこれを起こす
+func (r ExecRequest) RunArgv() []string {
+	if r.Banner == "" {
+		return r.Argv
+	}
+	const script = `printf '\033[2J\033[H%s\n\n' "$1"; shift; "$@"; rc=$?; ` +
+		`if [ "$rc" -ne 0 ]; then printf '\n失敗した (終了コード %d)。Enter で mac-lan-manager に戻る ' "$rc"; read -r _; fi; exit "$rc"`
+	return append([]string{"/bin/sh", "-c", script, "mac-lan-manager", r.Banner}, r.Argv...)
 }
 
 // Notice は呼び出し側が右下の toast に出す知らせ。OK=false は「効かなかった」(✗ 赤。ガイド §9)。
@@ -338,6 +352,7 @@ func (m *Model) Advance(now time.Time) {
 	m.now = now
 	m.takeNetLoad()
 	m.takeObserve()
+	m.settleProgress()
 	m.expireConfirms()
 	if m.scan != nil {
 		m.peers = m.scan.Snapshot()

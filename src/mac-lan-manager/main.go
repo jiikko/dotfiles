@@ -110,7 +110,8 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case lanmgr.Exec:
 			if r, ok := a.m.TakeExec(); ok && len(r.Argv) > 0 {
 				// 前景で端末を明け渡す (ssh はパスワードとホスト鍵の確認に端末が要る)。戻った後に前面が外れていたら取り戻す
-				cmd := subproc.CommandContext(context.Background(), r.Argv[0], r.Argv[1:]...)
+				argv := r.RunArgv() // 初期設定の手順は、端末を渡す前に板を出す
+				cmd := subproc.CommandContext(context.Background(), argv[0], argv[1:]...)
 				x := foreground.NewExec(cmd)
 				cmds = append(cmds, tea.Exec(x, func(err error) tea.Msg { return execDoneMsg{err: err, reclaimErr: x.Err} }))
 			}

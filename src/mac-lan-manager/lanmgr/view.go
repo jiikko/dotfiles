@@ -558,6 +558,9 @@ func kindPill(k netinfo.Kind) string {
 
 // overlayBox は重ねる板と、その中の入力欄の行・桁 (入力欄が無ければ fieldRow = -1)。
 func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
+	if m.progressShown() {
+		return m.progressBox(), -1, 0
+	}
 	switch m.ov {
 	case ovConfirm:
 		if m.ask != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"slices"
 	"strings"
 	"sync"
@@ -733,5 +734,63 @@ func TestSetupSelfStaticReloadsSelf(t *testing.T) {
 	awaitSetup(h.m)
 	if st, _ := nextStep(h.m.setupSteps()); st.ID == setup.StepSelfStatic {
 		t.Errorf("この Mac を固定した後も次の手順がこの Mac の固定のまま")
+	}
+}
+
+// 読み込み中の x は断らず (toast を出さず) 予約し、読み終えたら次の手順の板を出す。r も toast を出さない。手順から戻った後、
+// その結果を確かめている間は進捗のモーダルを出す (何待ちか分からなかった。ユーザー報告 2026-10-16)。
+func TestSetupProgressModal(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	h.m.TakeNotices()
+	h.keys("r", "x")
+	if n := h.m.TakeNotices(); len(n) != 0 {
+		t.Errorf("読み込み中の r / x で toast を出した: %+v", n)
+	}
+	if !h.m.progressShown() || !strings.Contains(strings.Join(h.m.View(), "\n"), "相手を読んでいる") {
+		t.Fatal("読み込み中の x で進捗のモーダルを出さない")
+	}
+	awaitSetup(h.m)
+	h.m.Advance(t0)
+	if h.m.ov != ovConfirm || h.m.ask == nil {
+		t.Fatalf("読み終えたのに予約した x の板を出さない (ov=%v)", h.m.ov)
+	}
+	h.keys("y")
+	if _, ok := h.m.TakeExec(); !ok {
+		t.Fatal("前提: 手順のプロセスが無い")
+	}
+	h.m.ExecDone(nil)
+	if v := strings.Join(h.m.View(), "\n"); !h.m.progressShown() || !strings.Contains(v, "結果を確かめている") {
+		t.Errorf("手順から戻った後に進捗のモーダルを出さない")
+	}
+	awaitNetLoad(h.m)
+	awaitSetup(h.m)
+	h.m.Advance(t0)
+	if h.m.progressShown() {
+		t.Error("読み終えても進捗のモーダルを閉じない")
+	}
+}
+
+// 初期設定の手順は、端末を渡す前に板を出してから起こし、失敗したら終了コードを出して Enter を待つ (端末を渡すと TUI の枠が消え、
+// 失敗の出力も戻った瞬間に消えた。ユーザー報告)。終了コードはそのまま返す。s / o (板の無いプロセス) は argv のまま。
+func TestRunArgvBanner(t *testing.T) {
+	if got := (ExecRequest{Argv: []string{"ssh", "x"}}).RunArgv(); !slices.Equal(got, []string{"ssh", "x"}) {
+		t.Errorf("板の無いプロセスを包んだ: %q", got)
+	}
+	r := ExecRequest{Argv: []string{"/bin/sh", "-c", "echo 本体; exit 3"}, Banner: "【板】"}
+	argv := r.RunArgv()
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Stdin = strings.NewReader("\n")
+	out, err := cmd.Output()
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 3 {
+		t.Fatalf("終了コードを返さない: %v", err)
+	}
+	if s := string(out); !strings.Contains(s, "【板】") || strings.Index(s, "【板】") > strings.Index(s, "本体") || !strings.Contains(s, "終了コード 3") {
+		t.Errorf("板 → 本体 → 失敗の案内の順に出ない: %q", s)
+	}
+	ok := ExecRequest{Argv: []string{"/bin/sh", "-c", "exit 0"}, Banner: "【板】"}.RunArgv()
+	if out, err := exec.Command(ok[0], ok[1:]...).Output(); err != nil || strings.Contains(string(out), "Enter") {
+		t.Errorf("成功でも Enter を待った: %q %v", out, err)
 	}
 }

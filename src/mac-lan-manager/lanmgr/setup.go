@@ -29,6 +29,11 @@ type setupState struct {
 	stop  context.CancelFunc
 	obsAt time.Time // 今の観測を始めた時刻 (未確認の固定 IP を解いてよいかの判定)
 	label string    // 画面の題 (別名か Bonjour の名前)
+	// 進捗のモーダル (progress.go): after は戻った手順の名前 (その結果を確かめている間に出す)、queuedX は読み込み中に押した x
+	// (読み終えたら次の手順の板を出す)、waitSince はモーダルの経過の起点
+	after     string
+	queuedX   bool
+	waitSince time.Time
 }
 
 // conf は開いている相手の確認待ち (無ければ nil)。確認待ちは画面ではなく Model が相手ごとに持つ: 画面に持っていたころは、
@@ -407,50 +412,66 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 
 // keySetup は初期設定の画面のキー。
 func (m *Model) keySetup(key string) Action {
+	m.settleProgress()
+	if m.progressShown() { // 進捗のモーダル: esc / q で閉じる (読み込みは裏で続く)。他のキーは捨てる (読み終える前の板を出さない)
+		if key == "esc" || key == "q" {
+			m.su.after, m.su.queuedX = "", false
+		}
+		return None
+	}
 	switch key {
 	case "q", "esc", "h", "left":
 		m.closeSetup()
 	case "r":
-		m.observe()
-		m.note("読み直している", true)
+		m.observe() // 読んでいる間は状態の行に出す (toast は出さない)
 	case "e":
 		m.openLog()
 	case "x":
 		if m.su.ch != nil && m.conf() == nil { // 確認待ちの間は観測を待たない (確認は観測を使わず、待つ分だけ窓を削った)
-			m.note("相手を読んでいる (少し待ってから)", false)
+			m.su.queuedX, m.su.waitSince = true, m.o.Now() // 読み終えたら次の手順の板を出す (断る toast を出していた。ユーザー報告)
 			return None
 		}
+		m.setupX()
+	case "enter":
+		m.note("x で実行する", false) // Enter は開閉 (ガイド §3)。手順の実行は x
+	}
+	return None
+}
+
+// setupX は次の手順の確認の板を出す (x。読み込み中に押した x も、読み終えたときにここを通る)。
+func (m *Model) setupX() {
+	{
 		if !m.su.seen && m.conf() == nil {
 			// 観測の口が無い (live が相手を読まない版) か、まだ一度も読めていない: 何も分からないまま本物の sudo / ssh-copy-id を起こさない (敵対レビュー)
 			m.note("相手を読めていない (この版は相手を読む口が無いか、r で読み直す)", false)
-			return None
+			return
 		}
 		if errors.Is(m.su.obs.KeyErr, setup.ErrUnknown) && m.conf() == nil {
 			// 読みに行ったが届かない (Bonjour の IP へ ssh が届かない等): 届かない相手に向けて、この Mac の固定 (自動では戻らない) から
 			// 始めない。鍵が無いだけの相手は KeyErr が nil なので止まらない。確認待ちの間は掛けない: 確認は新しい IP へ入るので観測とは
 			// 関係が無く、有線だけの相手は古い IP の観測が届かずに確認まで断られ、期限が切れた (敵対レビュー)
 			m.note("相手に届かない (r で読み直す): "+m.su.obs.KeyErr.Error(), false)
-			return None
+			return
 		}
 		st, ok := nextStep(m.setupSteps())
 		if !ok {
 			m.note("全部済んでいる", true)
-			return None
+			return
 		}
 		if st.Blocked != "" {
 			m.note(st.Blocked, false)
-			return None
+			return
 		}
 		a, why := m.setupAction(st)
 		if a == nil {
 			m.note(why, false)
-			return None
+			return
+		}
+		if a.exec != nil {
+			a.exec.Banner = m.execBanner(a)
 		}
 		m.ask, m.ov = a, ovConfirm
-	case "enter":
-		m.note("x で実行する", false) // Enter は開閉 (ガイド §3)。手順の実行は x
 	}
-	return None
 }
 
 // setupExecDone は初期設定の手順のプロセスから戻ったとき (ExecDone から)。成功したら次の状態へ進め、相手を読み直す。
@@ -487,6 +508,9 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 				m.su.dest.IP = c.static.IP
 			}
 		}
+	}
+	if m.su != nil && m.su.host == host {
+		m.su.after, m.su.waitSince = m.stepTitle(string(step)), now // その結果を確かめている間、進捗のモーダルを出す
 	}
 	if step == setup.StepSelfStatic {
 		// この Mac の網も読み直す (相手だけを読み直していたので、固定 IP にしても「未固定」のまま次の手順へ進まなかった。ユーザー報告)

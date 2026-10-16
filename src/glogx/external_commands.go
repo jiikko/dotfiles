@@ -416,5 +416,6 @@ func filerExecCommand(r filer.ExecRequest) *exec.Cmd {
 // 前景で起動する。免除の理由は editorCommand と同じ (ssh はパスワードとホスト鍵の確認に端末が要る。ctx が無く、端末を継承するのでパイプも
 // copy goroutine も作らない)。
 func lanExecCommand(r lanmgr.ExecRequest) *exec.Cmd {
-	return exec.Command(r.Argv[0], r.Argv[1:]...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
+	argv := r.RunArgv()                       // 初期設定の手順は、端末を渡す前に板を出す
+	return exec.Command(argv[0], argv[1:]...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 }
