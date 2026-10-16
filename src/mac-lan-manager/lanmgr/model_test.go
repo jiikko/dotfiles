@@ -328,7 +328,7 @@ func TestSettingsToggleAndSave(t *testing.T) {
 	if h.m.pf.LanIF != "en13" {
 		t.Errorf("LanIF = %q", h.m.pf.LanIF)
 	}
-	if ip, _ := h.m.selfLan(); ip != "169.254.13.42" {
+	if ip := h.m.selfLan().IP; ip != "169.254.13.42" {
 		t.Errorf("I/F で決めた内部 IP = %q", ip)
 	}
 	h.keys("q")
@@ -343,8 +343,8 @@ func TestSelfLanByBandFindsFixedIP(t *testing.T) {
 	s.Services[0].IP = "192.168.100.11"
 	s.IPs[1].Addr = "192.168.100.11"
 	h.m.self = s
-	if ip, note := h.m.selfLan(); ip != "192.168.100.11" || strings.Contains(note, "未固定") {
-		t.Errorf("selfLan = %q %q", ip, note)
+	if sl := h.m.selfLan(); sl.IP != "192.168.100.11" || sl.Unfixed {
+		t.Errorf("selfLan = %+v", sl)
 	}
 }
 
@@ -360,7 +360,7 @@ func TestOthersFollowKinds(t *testing.T) {
 	if !slices.Equal(got(), []string{"en18"}) { // 既定は VPN を含めない
 		t.Errorf("others = %v", got())
 	}
-	h.m.pf.Kinds = append(h.m.pf.Kinds, netinfo.KindVPN.String())
+	h.m.pf.Kinds = append(h.m.pf.Kinds, netinfo.KindVPN.Key())
 	if !slices.Equal(got(), []string{"en18", "utun4"}) {
 		t.Errorf("others (VPN を含める) = %v", got())
 	}
@@ -779,6 +779,10 @@ func TestScanErrorIsShownNotZero(t *testing.T) {
 	if r := h.m.Report(); !strings.Contains(r.ScanError, "起こせない") {
 		t.Errorf("Report.ScanError = %q", r.ScanError)
 	}
+	h.keys("?") // 理由は ? の板にも出る (知らせは数秒で消える)
+	if box, _, _ := h.m.overlayBox(); !strings.Contains(termwidth.StripSGR(box), "起こせない") {
+		t.Errorf("? の板に走査の失敗の理由が無い")
+	}
 }
 
 // 読み直し (r) で台帳が読めなかったら、前に読んだ一覧を残す (管理対象を「未管理」に化けさせない)。読めないことは知らせる。
@@ -870,5 +874,132 @@ func TestViewFitsNarrowWidths(t *testing.T) {
 				t.Errorf("幅 %d: 抜け方 (q 閉じる) が見えない", w)
 			}
 		}
+	}
+}
+
+// 一覧の表のどの行も、渡した幅を超えない (超えると枠の中で折り返し、Mac ごとに 2 行になった。幅 75〜89 の既定の列で再現。監査の指摘)。
+// 列を全部出す設定・長い名前でも、落とす順に列を落として収める。
+func TestListTableFitsWidth(t *testing.T) {
+	long := discover.Peer{Host: "studio.local", Instances: []string{"小嶋の Mac Studio (仕事用・2 階の奥の部屋)"}, SSH: true, VNC: true, SMB: true,
+		Addrs: map[int]string{14: "192.168.50.254", 27: "169.254.9.9"}}
+	h := newHarness(t, nil, []discover.Peer{mini, long})
+	h.m.pf.ShowOthers = true
+	h.keys("l")
+	for w := 30; w <= 140; w += 5 {
+		for i, l := range strings.Split(h.m.listTable(w, 10), "\n") {
+			if lw := termwidth.Of(l); lw > w {
+				t.Errorf("幅 %d: %d 行目が %d 桁 (%q)", w, i, lw, termwidth.StripSGR(l))
+			}
+		}
+	}
+}
+
+// 最下行の案内は幅で落とすが、q (抜け方) は必ず残し、? (全部のキー) は最後まで残す (80 桁で ? が真っ先に消えた)。
+func TestFooterKeepsHelpKey(t *testing.T) {
+	for _, w := range []int{60, 80, 100} {
+		h := newHarness(t, nil, nil)
+		h.m.Resize(w, 30)
+		f := termwidth.StripSGR(h.m.footer())
+		if !strings.Contains(f, "q 閉じる") || !strings.Contains(f, "? 全部のキー") {
+			t.Errorf("幅 %d: %q", w, f)
+		}
+		if termwidth.Of(f) > w-2*padX {
+			t.Errorf("幅 %d: 案内が %d 桁", w, termwidth.Of(f))
+		}
+	}
+}
+
+// 板は画面の幅に収まり、閉じ方の案内 (どのキーでも閉じる / esc やめる) が切れない (幅 66 未満で ? の板の右と案内が切れた)。
+func TestOverlaysKeepHintWhenNarrow(t *testing.T) {
+	for _, c := range []struct{ key, hint string }{{"?", "閉じる"}, {"c", "やめる"}} {
+		for _, w := range []int{40, 50, 60} {
+			h := newHarness(t, nil, []discover.Peer{mini})
+			h.m.Resize(w, 40)
+			h.keys(c.key)
+			box, _, _ := h.m.overlayBox()
+			view := termwidth.StripSGR(box)
+			for _, l := range strings.Split(view, "\n") {
+				if termwidth.Of(l) > w {
+					t.Errorf("%s の板・幅 %d: %d 桁の行", c.key, w, termwidth.Of(l))
+					break
+				}
+			}
+			if !strings.Contains(strings.ReplaceAll(view, "\n", ""), c.hint) && !strings.Contains(view, c.hint) {
+				t.Errorf("%s の板・幅 %d: 案内 (%s) が無い:\n%s", c.key, w, c.hint, view)
+			}
+		}
+	}
+}
+
+// 設定の板: 帯の入力欄のキャレットは入力欄の行に出る (狭い幅で行が折り返し、キャレットが別の行・最下行の案内に出た)。
+// 選んでいる項目は画面に入る (24 行以下で最後の項目が画面の外のままカーソルだけ進んだ)。
+func TestSettingsCaretAndWindow(t *testing.T) {
+	for _, size := range [][2]int{{120, 40}, {80, 24}, {60, 18}} {
+		h := newHarness(t, nil, nil)
+		h.m.Resize(size[0], size[1])
+		h.keys(",")
+		for range setBand {
+			h.keys("j")
+		}
+		h.keys("enter") // 帯を編集
+		lines := h.m.View()
+		x, y, ok := h.m.CaretPos()
+		if !ok || y < 0 || y >= len(lines) {
+			t.Fatalf("%v: キャレットが無い / 画面の外 (%d,%d)", size, x, y)
+		}
+		if line := termwidth.StripSGR(lines[y]); !strings.Contains(line, "192.168.100.0/24") {
+			t.Errorf("%v: キャレットの行 %d が帯の入力欄でない: %q", size, y, line)
+		}
+		if x <= 0 || x >= size[0] {
+			t.Errorf("%v: キャレットの桁 %d が画面の外", size, x)
+		}
+		h.keys("esc")
+		for range 20 { // 最後の項目まで
+			h.keys("j")
+		}
+		view := termwidth.StripSGR(strings.Join(h.m.View(), "\n"))
+		if last := otherKinds[len(otherKinds)-1].String(); !strings.Contains(view, last) {
+			t.Errorf("%v: 選んでいる最後の項目 (%s) が画面に無い", size, last)
+		}
+	}
+}
+
+// 一覧で何かをするキーは全部 Binds に載っている (載っていないと、glogx の板で同じ字の横断キー・C・X・U に黙って取られる)。
+// Binds は手で持つ表なので、ふるまいから突き合わせる: キーを打って状態か知らせか起こすプロセスが変わったら「使うキー」(監査の指摘)。
+func TestBindsCoversHandledKeys(t *testing.T) {
+	keys := []string{"space", "enter", "tab", "shift+tab", "left", "right", "up", "down", "backspace", "ctrl+d", "ctrl+u"}
+	for c := '!'; c <= '~'; c++ {
+		keys = append(keys, string(c))
+	}
+	snap := func(h *harness) string {
+		m := h.m
+		return fmt.Sprint(m.tab, m.cur, m.ov, m.sc, m.filtering, m.exec != nil, len(m.notices), len(h.copied), len(h.store.hosts))
+	}
+	for _, k := range keys {
+		if k == "q" || k == "ctrl+c" { // 閉じる (glogx が自分で捌く)
+			continue
+		}
+		h := newHarness(t, nil, []discover.Peer{mini, {Host: "b.local", SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}})
+		h.keys("l", "j")
+		before := snap(h)
+		a := h.m.HandleKey(k)
+		if (a != None || snap(h) != before) && !h.m.Binds(k) {
+			t.Errorf("%q は一覧で使うのに Binds に無い (glogx の板で横取りされる)", k)
+		}
+	}
+}
+
+// 帯に入る IP が無く、ルーターの無い有線の IP を仮に出しているときは「未固定」の札が出る (札は判定の結果で出す。文言で判定していたので
+// 文言を直すと札が消えた。監査の指摘)。帯に入る IP があれば出さない。
+func TestUnfixedBadge(t *testing.T) {
+	h := newHarness(t, nil, nil) // selfNet の有線は 169.254 (帯の外)
+	if !strings.Contains(termwidth.StripSGR(h.m.header(120)), "未固定") {
+		t.Error("帯に入る IP が無いのに「未固定」の札が無い")
+	}
+	s := selfNet()
+	s.IPs[1].Addr = "192.168.100.11"
+	h.m.self = s
+	if strings.Contains(termwidth.StripSGR(h.m.header(120)), "未固定") {
+		t.Error("帯に入る IP があるのに「未固定」の札を出した")
 	}
 }

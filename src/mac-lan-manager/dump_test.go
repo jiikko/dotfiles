@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
+	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 )
 
@@ -99,3 +101,22 @@ func TestDumpStopsScanOnSignal(t *testing.T) {
 		t.Error("シグナルで戻るときに走査を止めていない (dns-sd が残る)")
 	}
 }
+
+// 開いたときに積んだ知らせ (台帳が読めない) も、待ちの後の出力に残る (Report は知らせを取り出さない)。
+func TestDumpKeepsEarlyNotices(t *testing.T) {
+	var out, errb bytes.Buffer
+	// 走査が終わらない (busy) ので、待ちの中で Report が何度も呼ばれる (知らせを取り出していたころは、ここで消えた)
+	rc := runDump([]string{"--wait", "200ms"}, &out, &errb, time.Now, nil, func() (*lanmgr.Model, error) {
+		return lanmgr.New(lanmgr.Options{Ledger: brokenStore{}, StartScan: func(time.Time) lanmgr.Scanner { return &dumpScan{busy: true} }}), nil
+	})
+	if rc != 0 || !strings.Contains(out.String(), "台帳が読めない") {
+		t.Errorf("rc=%d 開いたときの知らせが出力に無い:\n%s", rc, out.String())
+	}
+}
+
+type brokenStore struct{}
+
+func (brokenStore) Load() ([]ledger.Host, error)            { return nil, errors.New("壊れた台帳") }
+func (brokenStore) Upsert(ledger.Host) error                { return nil }
+func (brokenStore) Remove(string) error                     { return nil }
+func (brokenStore) Update(string, func(*ledger.Host)) error { return nil }

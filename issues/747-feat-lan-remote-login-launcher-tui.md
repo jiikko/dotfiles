@@ -608,6 +608,23 @@ package (`lanmgr`。glogx の `L` の板からも取り込む。`New` / `Resize`
     台帳が読めないと管理対象が「未管理」に化ける (前の一覧を残す)。ci・dependency・dead-code は 0 件 (母集合と手段は audit-log)。第 2 波 (設計 + ux)・第 3 波 (テスト・lint-from-done・general) は続き
     - fable の敵対レビュー (この直しと setup): 上の setup の P1 / P2 のほか、Close 直後の Err の偽陽性・0.0.0.0 の検査が 1 本で守れていない・ExecDone の判定が次へ漏れる・
       ? の板が画面より高い・半ページ送りが端末の高さで跳ぶ を直した。いずれも変異で赤を確かめた
+  - [x] 監査の第 2 波 (2026-10-16。設計 7 タイプ + ux。fable。P1 なし)。直したもの (変異で赤を確かめた):
+    幅 75〜89 で一覧の 1 行が折り返す (列が収まらなければ 他 → user → メイン IP → 接続できる の順に列ごと落とす) /
+    設定の画面が狭い幅で折り返し帯の入力欄のキャレットが別の行に出る・24 行以下で項目が画面の外 (行を幅で切り、窓を持ち、キャレットは描いた配置から決める) /
+    dump の待ちの中で Report が知らせを取り出し、開いたときの「台帳が読めない」が消える (Report は覗くだけ) /
+    設定の種類を画面の名前 (「有線」) で保存していた (Kind.Key で保存。前の版の名前も読み替える) / 「未固定」の札を説明の文言で判定 (判定の結果で出す) /
+    169.254 の判定が 5 か所 (netinfo.IsLinkLocal) / 台帳と設定で環境変数の名前を別の定数に写していた (prefs.EnvDir = ledger.EnvDir) /
+    板が狭い画面で切れて閉じ方の案内が消える (画面の幅に収める) / 最下行の案内で ? が真っ先に消える (q は常に・? は最後まで残す) /
+    「✗ Bonjour で探せない」の理由がどこにも残らない (? の板に出す) / Binds (glogx に横取りさせないキーの表) と実際に使うキーの突き合わせ (ふるまいで検査) /
+    ガイド §3 に「値を左右で選ぶ設定の画面では h / ← は値の切り替え」の例外を書いた / Scanner の口に「Close は Changed を閉じる」の契約を書いた
+    - 残したもの (trigger 待ち。今は作らない。verify-design-intent-before-refactor の「実需要が来たら」):
+      - `ExecRequest.ExitIsFailure` (bool) を model 内の「戻ったら何をするか」の種類 (enum) にする — trigger: 段 4 の配線で、戻った後の処理が
+        鍵の配布・相手の固定・確認の 3 種になったとき (bool では表せない)。今は呼び出し側は読まず model が自分に写すだけ
+      - `lanmgr.Model` の一覧の分類 (`rows` / `ifKind` / `selfLan` / `selfIPs` / `connectIP` / `userFor` / `visible` / `count`。UI の状態を読まない) を
+        `inventory` 型へ移す — trigger: 段 4 で `setup.Observed` を組むとき (Report・setup・画面の 3 つが同じ分類を読む)。良くなるのは変更理由の分離と参照の局所化
+      - サービス種別 (ssh / rfb / smb) の bool 3 欄を `map[Service]bool` にする — trigger: 4 つ目のサービス (afp など) を足すとき (今は 5 ファイル 18 か所)
+    - issue 785 に切り出したもの (module をまたぐ共通化): 走査・監視の合図を待ち直す 4 実装 (mac-lan-manager / glogx の L と F / treefiler) と
+      最下行の案内を幅で落とす 3 実装 (glogx / lanmgr / treefiler) を tuikit に寄せる
   - [x] 段 2 は不要にした (lipgloss を v2.0.5 に固定。上の「段取り」の 2)
   - [x] 段 1: module の土台と `netinfo` / `discover` / `ledger` (2026-10-15。commit「mac-lan-manager: 段 1 …」)
     - テストの fixture は 2026-10-15 にこの Mac で本物のコマンドから取った出力 (MAC と IPv6 のリンクローカルは伏せた)。`dns-sd -L` は空白を `\032` で返す

@@ -36,8 +36,9 @@ func (m *Model) View() []string {
 	if m.sc == scSettings {
 		body = lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", m.viewSettings(w))
 		if m.bandEdit {
-			m.caretMX = padX + 1 + 2 + 40 + 1 + m.bandCol
-			m.caretMY = padY + 3 + 1 + 1 + 3 + m.bandRow
+			// 板の左端 (padX) + 枠 1 + 余白 2 + 名前の列 + 入力欄の左の余白 1。行は 見出し 3・枠 1・余白 1・板の見出し 3 の下で、窓の分を引く
+			m.caretMX = padX + 1 + 2 + m.setLabelW + 1 + m.bandCol
+			m.caretMY = padY + 3 + 1 + 1 + 3 + m.bandRow - m.setOff
 		}
 	} else {
 		body = m.viewList(w)
@@ -89,10 +90,23 @@ func (m *Model) footer() string {
 	for _, p := range pairs {
 		parts = append(parts, lipgloss.NewStyle().Foreground(cPink).Bold(true).Render(p[0])+" "+sDim.Render(p[1]))
 	}
-	// 幅が足りなければ後ろから落とすが、抜ける手段 (最後の q) は必ず残す (ガイド §5)
+	// 幅が足りなければ後ろから落とすが、抜ける手段 (最後の q) は必ず残し、全部のキーの案内 (?) は最後まで残す (ガイド §5。
+	// 末尾から 2 番目を落としていたので、? が真っ先に消えた。監査の指摘)
 	sep := sMuted.Render(" • ")
-	for len(parts) > 1 && lipgloss.Width(strings.Join(parts, sep)) > m.w-2*padX {
-		parts = slices.Delete(parts, len(parts)-2, len(parts)-1)
+	keep := func(i int) bool { return i == len(parts)-1 || pairs[i][0] == "?" }
+	for lipgloss.Width(strings.Join(parts, sep)) > m.w-2*padX {
+		i := len(parts) - 2
+		for i >= 0 && keep(i) {
+			i--
+		}
+		if i < 0 { // 残すものしか無い: ? も落とす (q だけは残す)
+			if len(parts) <= 1 {
+				break
+			}
+			i = len(parts) - 2
+		}
+		parts = slices.Delete(parts, i, i+1)
+		pairs = slices.Delete(pairs, i, i+1)
 	}
 	return strings.Join(parts, sep)
 }
@@ -107,13 +121,13 @@ func (m *Model) header(w int) string {
 		}
 		left += "   " + lipgloss.NewStyle().Foreground(cPink).Render(spinner.At(m.now, spinStep)) + sDim.Render(what)
 	case m.scanErr != nil:
-		left += "   " + sWarn.Render("✗ Bonjour で探せない") + sDim.Render(fmt.Sprintf(" (%d 台。dump で理由を見る)", len(m.peers)))
+		left += "   " + sWarn.Render("✗ Bonjour で探せない") + sDim.Render(fmt.Sprintf(" (%d 台。理由は ?)", len(m.peers)))
 	default:
 		left += "   " + sOK.Render("✓") + sDim.Render(fmt.Sprintf(" %d 台見つかった", len(m.peers)))
 	}
 	ips := m.selfIPs()
 	right := sKeycap.Render("c") + sDim.Render(" この Mac  メイン ") + sText.Render(or(ips[1], "-")) + sDim.Render("   内部 ") + sText.Render(or(ips[0], "-"))
-	if _, note := m.selfLan(); strings.Contains(note, "未固定") {
+	if m.selfLan().Unfixed {
 		right += " " + pillWrn.Render("未固定")
 	}
 	// 狭いときは段階的に詰める (折り返させない。折り返すと行が増えて下のキーの案内が押し出される)。走査の失敗は
@@ -218,6 +232,9 @@ type col struct {
 	style func(s lipgloss.Style, r row) lipgloss.Style
 }
 
+// dropOrder は幅が足りないときに列を落とす順 (大きいほど先: 他 → user → メイン IP → 接続できる。名前と内部 IP は落とさない)。
+var dropOrder = map[string]int{"他": 4, "user": 3, "メイン IP": 2, "接続できる": 1}
+
 // fitWidth は中身の最長に合わせる列の印 (名前の列)。上限は maxFitWidth、幅が足りなければホスト名の列に minFlexWidth を残すまで縮める。
 const (
 	fitWidth     = -1
@@ -252,7 +269,7 @@ func (m *Model) columns() []col {
 	}
 	if m.pf.ShowLan {
 		cols = append(cols, col{"内部 IP", 18, func(r row) string {
-			if strings.HasPrefix(r.lanIP, "169.254.") {
+			if netinfo.IsLinkLocal(r.lanIP) {
 				return sWarn.Render(r.lanIP) // 自動割り当て (起動のたびに変わりうる。未固定)
 			}
 			return or(r.lanIP, "-")
@@ -355,6 +372,36 @@ func (m *Model) listTable(width, maxRows int) string {
 		}
 		cols = cols[:len(cols)-1]
 	}
+	// それでも固定の列だけで幅を超えるなら、落とす順に列ごと落とす (落とさないと 1 行が枠の中で折り返し、Mac ごとに 2 行になった。
+	// 幅 75〜89 の既定の列で再現。監査の指摘)。空いた幅は名前の列へ返す
+	for used > width {
+		best := -1
+		for i, c := range cols {
+			if d := dropOrder[c.title]; d > 0 && (best < 0 || d > dropOrder[cols[best].title]) {
+				best = i
+			}
+		}
+		if best < 0 {
+			break
+		}
+		used -= cols[best].width
+		if best < fitAt {
+			fitAt--
+		}
+		cols = slices.Delete(cols, best, best+1)
+	}
+	// 落とせる列が無くても超えるなら、名前の列を 12 桁より細くする (最後の手段。最低 4 桁)
+	if fitAt >= 0 && used > width {
+		shrink := min(cols[fitAt].width-4, used-width)
+		cols[fitAt].width -= shrink
+		used -= shrink
+	}
+	// 残りの幅を取る列 (ホスト名) が無いときだけ、空いた幅を名前の列へ返す (ある間はその列が残りを取る。両方に渡すと幅を超えた)
+	if fitAt >= 0 && used < width && cols[fitAt].width < desired && !slices.ContainsFunc(cols, func(c col) bool { return c.width == 0 }) {
+		grow := min(desired-cols[fitAt].width, width-used)
+		cols[fitAt].width += grow
+		used += grow
+	}
 	render := func(i int, r *row) string {
 		out := make([]string, 0, len(cols))
 		for ci, c := range cols {
@@ -428,7 +475,7 @@ func (m *Model) detail(r row, width int) string {
 	switch {
 	case r.lanIP == "":
 		lanState = sMuted.Render("内部の網に居ない")
-	case strings.HasPrefix(r.lanIP, "169.254."):
+	case netinfo.IsLinkLocal(r.lanIP):
 		lanState = pillWrn.Render("自動割り当て")
 	}
 	lines = append(lines, "")
@@ -480,16 +527,15 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	switch m.ov {
 	case ovConfirm:
 		if m.ask != nil {
-			return modal(m.ask.title, m.ask.body, confirm.HintYesNo), -1, 0
+			return modal(m.ask.title, m.ask.body, confirm.HintYesNo, m.w), -1, 0
 		}
 	case ovCopyIP:
 		ips := m.selfIPs()
-		lan, note := m.selfLan()
-		_ = lan
+		unfixed := m.selfLan().Unfixed
 		body := make([]string, 0, 2)
 		for i, label := range []string{"内部", "メイン"} {
 			extra := ""
-			if i == 0 && strings.Contains(note, "未固定") {
+			if i == 0 && unfixed {
 				extra = pillWrn.Render("未固定")
 			}
 			row := sKeycap.Render(strconv.Itoa(i+1)) + "  " + sDim.Width(8).Render(label) + sText.Bold(true).Width(18).Render(or(ips[i], "-")) + extra
@@ -498,23 +544,26 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 			}
 			body = append(body, row)
 		}
-		return modal("この Mac の IP をコピー", body, "1 / 2 すぐコピー   j/k + enter 選んでコピー   esc やめる"), -1, 0
+		return modal("この Mac の IP をコピー", body, "1 / 2 すぐコピー   j/k + enter 選んでコピー   esc やめる", m.w), -1, 0
 	case ovAlias:
 		txt, col := m.alias.Window(24)
 		prefix := sDim.Render("別名  ")
 		field := lipgloss.NewStyle().Background(cCode).Render(termwidth.FillRight(txt, 25))
 		// 板の中の位置: 上の辺 1 + 余白 1 + 題 1 + 空行 1 = 4 行目、左の辺 1 + 余白 2 + 前置き
-		return modal("別名を付ける", []string{prefix + field}, "enter 決める   esc やめる"), 4, 3 + lipgloss.Width(prefix) + col
+		return modal("別名を付ける", []string{prefix + field}, "enter 決める   esc やめる", m.w), 4, 3 + lipgloss.Width(prefix) + col
 	case ovHelp:
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"o", "画面共有を開く"},
 			{"c", "この Mac の IP をコピー"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {",", "設定"},
 			{"r", "読み直す"}, {"q / esc", "閉じる"}}
-		body := make([]string, 0, len(keys))
+		body := make([]string, 0, len(keys)+3)
+		if m.scanErr != nil { // 見出しの「✗ 探せない」の理由 (知らせは数秒で消え、glogx の中からは dump を起こせない。監査の指摘)
+			body = append(body, sWarn.Render("Bonjour で探せない: ")+sText.Render(termsafe.PlainLine(m.scanErr.Error())), "")
+		}
 		for _, k := range keys {
 			body = append(body, lipgloss.NewStyle().Foreground(cPink).Bold(true).Width(34).Render(k[0])+sText.Render(k[1]))
 		}
-		return modal("キーの一覧", body, "どのキーでも閉じる"), -1, 0
+		return modal("キーの一覧", body, "どのキーでも閉じる", m.w), -1, 0
 	case ovNone:
 	}
 	return "", -1, 0

@@ -60,7 +60,7 @@ func TestDefaultPathUsesEnvDir(t *testing.T) {
 
 func TestSaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(sandbox, "rt", "settings.toml")
-	want := Prefs{ShowMain: false, ShowLan: true, ShowOthers: true, LanByBand: false, Band: "10.0.5.0/24", LanIF: "en13", Kinds: []string{"仮想", "VPN"}}
+	want := Prefs{ShowMain: false, ShowLan: true, ShowOthers: true, LanByBand: false, Band: "10.0.5.0/24", LanIF: "en13", Kinds: []string{"virtual", "vpn"}}
 	if err := Save(path, want); err != nil {
 		t.Fatal(err)
 	}
@@ -96,5 +96,23 @@ func TestSaveGuardRejectsOutside(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Dir(outside)); !os.IsNotExist(err) {
 		t.Errorf("拒否したのにディレクトリが作られた: %v", err)
+	}
+}
+
+// 前の版は種類を画面の名前 (「有線」) で書いていた。それも Key に読み替え、知らない名前は捨てる (語を直しても設定が外れない)。
+func TestLoadOldKindNames(t *testing.T) {
+	path := filepath.Join(sandbox, "old", "settings.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("kinds = \"有線,自動割り当て,VPN,なにか\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"wired", "link-local", "vpn"}; !slices.Equal(got.Kinds, want) {
+		t.Errorf("Kinds = %v, want %v", got.Kinds, want)
 	}
 }

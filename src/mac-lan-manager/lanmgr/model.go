@@ -56,6 +56,9 @@ type Scanner interface {
 	Busy(now time.Time) bool
 	Changed() <-chan struct{} // 結果が変わった合図 (呼び出し側はこれを待って Advance を呼ぶ。後から見つかった Mac を出すため)
 	Err() error               // 走査そのものの失敗 (dns-sd を起こせない等。0 台の「居ない」と「探せていない」を分ける)
+	// Close は走査を止め、Changed を閉じる (待っている側は ok=false で抜ける)。🚨 閉じない実装を足すと、glogx の L の開き直しや r の
+	// たびに古いチャネルを待つ goroutine が 1 本ずつ残る (lan_view.go の rearm と main.go の watch が ok=false で抜けるのを当てにする。
+	// discover.Scanner は TestCloseClosesChanged で守る)。何度呼んでもよい
 	Close()
 }
 
@@ -131,9 +134,11 @@ type Model struct {
 	execExitIsFailure bool // 最後に渡したプロセスの終了コードを失敗と見るか (ExecDone が読む)
 
 	// 入力欄に端末のカーソルを置く位置 (View が描くときに控える。-1 は入力欄が無い)
-	caretFX, caretFY int // 絞り込み
-	caretMX, caretMY int // 板の中の入力欄 (別名・帯)
-	bandCol, bandRow int // 設定の板の帯の入力欄 (桁と、板の中の行)
+	caretFX, caretFY   int // 絞り込み
+	caretMX, caretMY   int // 板の中の入力欄 (別名・帯)
+	bandCol, bandRow   int // 設定の板の帯の入力欄 (桁と、板の中の行)
+	setLabelW          int // 設定の板の名前の列の幅 (描いたとき。キャレットの桁に使う)
+	setOff, setOffPrev int // 設定の板の窓の先頭 (描いたとき / 前に描いたとき)
 }
 
 // ask は y/N の確認の板 (知らないキーはすべて取り消し。ガイド §4)。
@@ -436,28 +441,35 @@ func (m *Model) isServiceIF(dev string) bool {
 }
 
 // selfLan は設定に従って決めたこの Mac の内部 IP と、その出どころの説明 (推測しない。帯 / I/F で決める)。
-func (m *Model) selfLan() (ip, note string) {
+// selfLanInfo はこの Mac の内部 IP と、その出どころの説明。Unfixed は「帯に入る IP が無く、ルーターの無い有線の IP を仮に出している」
+// (画面の「未固定」の札。説明の文言で判定していたので、文言を直すと札が消えた。監査の指摘)。
+type selfLanInfo struct {
+	IP, Note string
+	Unfixed  bool
+}
+
+func (m *Model) selfLan() selfLanInfo {
 	if m.pf.LanByBand {
 		prefix := m.pf.BandPrefix()
 		if prefix == "" {
-			return "", "帯が /24 でない (" + m.pf.Band + ")"
+			return selfLanInfo{Note: "帯が /24 でない (" + m.pf.Band + ")"}
 		}
 		for _, x := range m.self.IPs {
 			if strings.HasPrefix(x.Addr, prefix) {
-				return x.Addr, "帯 " + m.pf.Band
+				return selfLanInfo{IP: x.Addr, Note: "帯 " + m.pf.Band}
 			}
 		}
 		if off := m.self.Offline(); len(off) > 0 && off[0].IP != "" {
-			return off[0].IP, "帯に入る IP が無い (未固定)"
+			return selfLanInfo{IP: off[0].IP, Note: "帯に入る IP が無い (未固定)", Unfixed: true}
 		}
-		return "", "帯に入る IP が無い"
+		return selfLanInfo{Note: "帯に入る IP が無い"}
 	}
 	for _, s := range m.self.Services {
 		if s.Device == m.pf.LanIF {
-			return s.IP, "I/F " + s.Device
+			return selfLanInfo{IP: s.IP, Note: "I/F " + s.Device}
 		}
 	}
-	return "", "I/F " + or(m.pf.LanIF, "(未設定)") + " が無い"
+	return selfLanInfo{Note: "I/F " + or(m.pf.LanIF, "(未設定)") + " が無い"}
 }
 
 func (m *Model) rows() []row {
@@ -465,9 +477,10 @@ func (m *Model) rows() []row {
 	if s, ok := m.self.Main(); ok {
 		self.mainIP = s.IP
 	}
-	self.lanIP, self.lanNote = m.selfLan()
+	sl := m.selfLan()
+	self.lanIP, self.lanNote = sl.IP, sl.Note
 	for _, x := range m.self.IPs {
-		if x.Addr != self.mainIP && x.Addr != self.lanIP && slices.Contains(m.pf.Kinds, x.Kind.String()) {
+		if x.Addr != self.mainIP && x.Addr != self.lanIP && slices.Contains(m.pf.Kinds, x.Kind.Key()) {
 			self.others = append(self.others, x)
 		}
 	}
@@ -813,9 +826,9 @@ func (m *Model) askLedger(r row) {
 		h := ledger.Host{Host: r.host, User: user}
 		lan := r.lanIP
 		if r.self {
-			lan, _ = m.selfLan()
+			lan = m.selfLan().IP
 		}
-		if lan != "" && !strings.HasPrefix(lan, "169.254.") {
+		if lan != "" && !netinfo.IsLinkLocal(lan) {
 			h.LAN = lan
 		}
 		m.ask = &ask{title: "台帳に登録する", body: []string{
@@ -857,7 +870,7 @@ func (m *Model) keyCopyIP(key string) Action {
 
 // selfIPs はこの Mac の IP (0 = 内部 / 1 = メイン)。
 func (m *Model) selfIPs() [2]string {
-	lan, _ := m.selfLan()
+	lan := m.selfLan().IP
 	main := ""
 	if s, ok := m.self.Main(); ok {
 		main = s.IP

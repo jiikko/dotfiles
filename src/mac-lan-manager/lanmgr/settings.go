@@ -3,6 +3,7 @@ package lanmgr
 // 設定の画面 (`,` で開閉)。何の IP をどう出すかを、環境の推測に頼らず設定で決める (issue 747 の「IP の出し方を設定で決める」)。
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"slices"
 	"strings"
 
@@ -83,7 +84,7 @@ func (m *Model) keySettings(key, text string) Action {
 		case m.setC == setOthers:
 			m.pf.ShowOthers = !m.pf.ShowOthers
 		case m.setC >= setKind0:
-			k := otherKinds[m.setC-setKind0].String()
+			k := otherKinds[m.setC-setKind0].Key()
 			if i := slices.Index(m.pf.Kinds, k); i >= 0 {
 				m.pf.Kinds = slices.Delete(m.pf.Kinds, i, i+1)
 			} else {
@@ -154,8 +155,13 @@ func (m *Model) viewSettings(w int) string {
 	sections := map[int]string{setMain: "一覧に出す IP", setMode: "内部 IP の決め方", setKind0: "その他の IP に含める種類"}
 	explain := map[netinfo.Kind]string{netinfo.KindWired: "ルーターの無い有線の I/F", netinfo.KindLinkLocal: "169.254 (固定していない I/F)",
 		netinfo.KindVirtual: "bridge / vmnet (VM・Docker のブリッジ)", netinfo.KindVPN: "utun (VPN・Tailscale)", netinfo.KindUnknown: "設定に出てこない I/F"}
-	label := func(s string) string { return lipgloss.NewStyle().Width(40).Render("  " + s) }
+	inner := max(w-7, 10) // 板の中身の幅 (card の Width(w-1-2) と左右の余白 2)
+	m.setLabelW = min(40, max(inner/2, 8))
+	label := func(s string) string {
+		return lipgloss.NewStyle().Width(m.setLabelW).Render(termwidth.Truncate("  "+s, m.setLabelW, "…"))
+	}
 	rows := make([]string, 0, m.setCount()+8)
+	selAt := 0 // 選んでいる項目の rows の中の位置 (窓をここへ合わせる)
 	for i := range m.setCount() {
 		if sec, ok := sections[i]; ok {
 			if i > 0 {
@@ -191,7 +197,7 @@ func (m *Model) viewSettings(w int) string {
 			if m.bandEdit {
 				txt, col := m.band.Window(20)
 				val = lipgloss.NewStyle().Background(cCode).Padding(0, 1).Render(termwidth.FillRight(txt, 21)) + sMuted.Render("   enter で確定 / esc でやめる")
-				m.bandCol, m.bandRow = col, len(rows) // カーソルの位置は View が板の位置から決める
+				m.bandCol, m.bandRow = col, len(rows) // カーソルの位置は View が板の位置から決める (窓で切った後の行に直す)
 			} else {
 				val = sText.Render(m.pf.Band) + sMuted.Render("   enter で編集")
 			}
@@ -218,7 +224,7 @@ func (m *Model) viewSettings(w int) string {
 			if !m.pf.ShowOthers {
 				dim = "(その他の IP がオフ)"
 			}
-			val = onOffPill(slices.Contains(m.pf.Kinds, k.String())) + sMuted.Render("   "+explain[k])
+			val = onOffPill(slices.Contains(m.pf.Kinds, k.Key())) + sMuted.Render("   "+explain[k])
 		}
 		row := label(name) + val
 		if dim != "" {
@@ -226,12 +232,26 @@ func (m *Model) viewSettings(w int) string {
 		}
 		if i == m.setC {
 			row = selRow(row, w-8)
+			selAt = len(rows)
 		}
 		rows = append(rows, row)
 	}
-	ip, note := m.selfLan()
-	rows = append(rows, "", sDim.Render("今の設定でのこの Mac の内部 IP: ")+sText.Bold(true).Render(or(ip, "-"))+sMuted.Render("  ("+note+")"))
+	sl := m.selfLan()
+	rows = append(rows, "", sDim.Render("今の設定でのこの Mac の内部 IP: ")+sText.Bold(true).Render(or(sl.IP, "-"))+sMuted.Render("  ("+sl.Note+")"))
 	rows = append(rows, sMuted.Render("保存先 "+or(m.o.PrefsPath, "(保存しない)")))
+	// どの行も板の中の幅で切る (折り返すと行が増え、帯の入力欄のキャレットが別の行に出た。監査の指摘)
+	for i, r := range rows {
+		rows[i] = termwidth.Truncate(r, inner, "…")
+	}
+	// 窓: 画面に入る行だけを、選んでいる項目を含むように描く (24 行以下で「その他の IP に含める種類」が画面の外のまま
+	// カーソルだけ進んだ)。見出し 3・板の枠と余白 4・板の見出し 3 を引いた行数
+	avail := max(m.bodyHeight()-3-4-3, 3)
+	m.setOff = 0
+	if len(rows) > avail {
+		m.setOff = listnav.WindowOffset(m.setOffPrev, selAt, len(rows), avail)
+		m.setOffPrev = m.setOff
+		rows = rows[m.setOff : m.setOff+avail]
+	}
 	head := sAccent.Render("設定") + "\n" + gradRule(w-7, cPink, cPurple, cTeal, lipgloss.Color(surfPanel))
 	return shadow(card(head+"\n\n"+strings.Join(rows, "\n"), w-1, surfPanel, cPink, cPurple, cTeal))
 }

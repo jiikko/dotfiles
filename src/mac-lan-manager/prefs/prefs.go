@@ -13,8 +13,10 @@ import (
 	"strings"
 
 	"atomicfile"
-
 	"userdirs"
+
+	"mac-lan-manager/ledger"
+	"mac-lan-manager/netinfo"
 )
 
 // Prefs は設定。ゼロ値ではなく Default から始める。
@@ -23,12 +25,12 @@ type Prefs struct {
 	LanByBand                     bool     // true: 帯で決める / false: I/F で決める
 	Band                          string   // "192.168.100.0/24" (/24 だけを扱う)
 	LanIF                         string   // I/F で決めるときの I/F の名前 ("en13")
-	Kinds                         []string // 「その他の IP」に含める種類の名前 (netinfo.Kind.String())
+	Kinds                         []string // 「その他の IP」に含める種類 (netinfo.Kind.Key())
 }
 
 // Default は最初の設定 (仮想と VPN は含めない)。
 func Default() Prefs {
-	return Prefs{ShowMain: true, ShowLan: true, LanByBand: true, Band: "192.168.100.0/24", Kinds: []string{"有線", "自動割り当て", "不明"}}
+	return Prefs{ShowMain: true, ShowLan: true, LanByBand: true, Band: "192.168.100.0/24", Kinds: []string{netinfo.KindWired.Key(), netinfo.KindLinkLocal.Key(), netinfo.KindUnknown.Key()}}
 }
 
 // BandPrefix は帯の先頭 3 つ ("192.168.100.")。/24 でなければ "" (帯で決められない)。
@@ -40,8 +42,8 @@ func (p Prefs) BandPrefix() string {
 	return ip + "."
 }
 
-// EnvDir は置き場所を差し替える環境変数 (ledger と同じ)。
-const EnvDir = "MAC_LAN_MANAGER_CONFIG_DIR"
+// EnvDir は置き場所を差し替える環境変数。台帳と同じ 1 つの名前を使う (別の定数に写していたので、片方の改名で黙ってずれた。監査の指摘)。
+const EnvDir = ledger.EnvDir
 
 // DefaultPath は設定の置き場所 (台帳の隣。前の置き場 ~/.config/glogx/mac-lan-manager にあれば初回に移す。issue 777)。
 func DefaultPath() (string, error) {
@@ -94,13 +96,23 @@ func Load(path string) (Prefs, error) {
 			}
 			p.Kinds = nil
 			for _, x := range strings.Split(s, ",") {
-				if x = strings.TrimSpace(x); x != "" {
+				if x = kindKey(strings.TrimSpace(x)); x != "" {
 					p.Kinds = append(p.Kinds, x)
 				}
 			}
 		}
 	}
 	return p, nil
+}
+
+// kindKey は保存された種類の名前を Key に揃える。前の版は画面の名前 (「有線」) を書いていたので、それも読む。知らない名前は捨てる。
+func kindKey(x string) string {
+	for _, k := range netinfo.Kinds {
+		if x == k.Key() || x == k.String() {
+			return k.Key()
+		}
+	}
+	return ""
 }
 
 // Save は設定を書く (temp + rename)。

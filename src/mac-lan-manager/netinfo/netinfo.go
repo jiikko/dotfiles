@@ -5,6 +5,7 @@ package netinfo
 
 import (
 	"context"
+	"net/netip"
 	"regexp"
 	"strings"
 )
@@ -52,6 +53,34 @@ func (k Kind) String() string {
 		return "不明"
 	}
 	return "不明"
+}
+
+// Key は設定ファイルに書く種類の名前 (画面の名前 String とは分ける: 画面の語を直すと、保存した設定が黙って外れた。監査の指摘)。
+func (k Kind) Key() string {
+	switch k {
+	case KindWired:
+		return "wired"
+	case KindInternet:
+		return "internet"
+	case KindLinkLocal:
+		return "link-local"
+	case KindVirtual:
+		return "virtual"
+	case KindVPN:
+		return "vpn"
+	case KindUnknown:
+		return "unknown"
+	}
+	return "unknown"
+}
+
+// Kinds は種類の全部 (設定の読み替えと検査に使う)。
+var Kinds = []Kind{KindUnknown, KindWired, KindInternet, KindLinkLocal, KindVirtual, KindVPN}
+
+// IsLinkLocal は ip が自動割り当て (169.254.0.0/16。固定していない) か。判定はここ 1 か所 (5 か所に写っていた。監査の指摘)。
+func IsLinkLocal(ip string) bool {
+	a, err := netip.ParseAddr(ip)
+	return err == nil && a.Is4() && a.IsLinkLocalUnicast()
 }
 
 // IP は I/F の IPv4 1 つと、その種類。
@@ -122,7 +151,7 @@ func Classify(dev, addr string, wired, internet map[string]bool) Kind {
 	case internet[dev]:
 		return KindInternet
 	case wired[dev]:
-		if strings.HasPrefix(addr, "169.254.") {
+		if IsLinkLocal(addr) {
 			return KindLinkLocal
 		}
 		return KindWired
@@ -130,7 +159,7 @@ func Classify(dev, addr string, wired, internet map[string]bool) Kind {
 		return KindVPN
 	case strings.HasPrefix(dev, "bridge") || strings.HasPrefix(dev, "vmnet") || strings.HasPrefix(dev, "vnic"):
 		return KindVirtual
-	case strings.HasPrefix(addr, "169.254."):
+	case IsLinkLocal(addr):
 		return KindLinkLocal
 	}
 	return KindUnknown
