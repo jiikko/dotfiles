@@ -108,6 +108,9 @@ func (m *Model) footer() string {
 		hs = append(hs, keyHint{"h/l", "タブ", 15}, keyHint{"space", "台帳", 30}, keyHint{"c", "この Mac の IP", 20},
 			keyHint{",", "設定", 10}, keyHint{"?", "全部のキー", 90}, keyHint{"q", "閉じる", 100})
 	}
+	if m.sc != scSettings && !m.filtering && !m.netReady { // 読み終えるまで断るキーは案内にも出さない (出すと押しても断られた)
+		hs = slices.DeleteFunc(hs, func(h keyHint) bool { return slices.Contains(needsNet, h.key) })
+	}
 	sep := sMuted.Render(" • ")
 	render := func() string {
 		parts := make([]string, 0, len(hs))

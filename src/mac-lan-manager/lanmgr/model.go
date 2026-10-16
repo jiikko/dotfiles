@@ -330,6 +330,9 @@ func (m *Model) OwnsKeys() bool {
 // 入力欄・確認・板・設定が開いている間は全部のキー (横断キーで閉じると打っている文字が消える。treefiler の filer.Model.Binds と同じ契約)。
 func (m *Model) Binds(key string) bool {
 	key = canonKey(key)
+	if m.small { // 足りない画面では閉じるキーだけ。L や横断キーは glogx に渡す (渡さないと L で閉じず、? も効かなかった)
+		return key == "q" || key == "esc"
+	}
 	if m.OwnsKeys() {
 		return true
 	}
@@ -376,6 +379,9 @@ func (m *Model) TakeNotices() []Notice {
 
 // Paste は貼り付け (入力欄が開いているときだけ入れる。改行とタブは空白にする。ガイド §7)。
 func (m *Model) Paste(s string) {
+	if m.small { // 足りない画面では入力欄が見えない
+		return
+	}
 	s = strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(s)
 	switch {
 	case m.filtering:
@@ -388,7 +394,15 @@ func (m *Model) Paste(s string) {
 }
 
 // Close は走査を止める (自分が起こした dns-sd を全部止める)。
+// 開いていた一時的な層 (確認・板・入力欄・設定) も畳む: glogx はこの Model を使い回すので、残すと L で開き直した直後に
+// 覚えの無い確認の板が y を待っていた (足りない画面の q で抜けたとき。opus の敵対レビュー)。
 func (m *Model) Close() {
+	m.ov, m.ask = ovNone, nil
+	if m.filtering {
+		m.filtering = false
+		m.filter.Reset()
+	}
+	m.bandEdit, m.sc = false, scList
 	m.stopNetLoad()
 	if m.scan != nil {
 		m.scan.Close()
@@ -589,8 +603,6 @@ func (m *Model) current() row {
 	return vis[m.cur[m.tab]]
 }
 
-// connectIP は繋ぐ先 (内部 IP があればそちら = 有線を通す。無ければメイン。どちらも無ければその他の I/F で見えた IP。
-// VM のゲストは VM の網にしか居ないので、その他を最後の手段に残す)。
 // shellRefusal は s (ssh) を断る理由。空なら繋げる。最下行の案内もこれで s を出すか決める (案内と効くキーを 1 つの述語にする)。
 func (r row) shellRefusal() string {
 	switch {
@@ -604,6 +616,8 @@ func (r row) shellRefusal() string {
 	return ""
 }
 
+// connectIP は繋ぐ先 (内部 IP があればそちら = 有線を通す。無ければメイン。どちらも無ければその他の I/F で見えた IP。
+// VM のゲストは VM の網にしか居ないので、その他を最後の手段に残す)。
 func (r row) connectIP() string {
 	if ip := or(r.lanIP, r.mainIP); ip != "" || len(r.others) == 0 {
 		return ip
@@ -644,18 +658,18 @@ func (m *Model) HandleKey(key string) Action { return m.HandleInput(key, lineedi
 func (m *Model) HandleInput(key, text string) Action {
 	key = canonKey(key)
 	m.takeNetLoad() // 読み終えていれば、次の tick を待たずにこのキーから効かせる
-	m.wantHost = "" // 自分で動かしたら、後から見つかった Mac へカーソルを跳ばさない
 	if key == "ctrl+c" {
 		return Quit
 	}
-	// 幅・高さが足りない画面 (抜け方だけ) を出している間は、見えている q だけを効かせる。隠れた確認の板に y が届いて
-	// 台帳から外したり、絞り込みに q が文字として入ったりした (opus の敵対レビュー)
+	// 幅・高さが足りない画面 (抜け方だけ) を出している間は、閉じるキー (q / esc) だけを効かせる。隠れた確認の板に y が届いて
+	// 台帳から外したり、絞り込みに q が文字として入ったりした (opus の敵対レビュー)。開いていた層は Close が畳む
 	if m.small {
-		if key == "q" {
+		if key == "q" || key == "esc" {
 			return Quit
 		}
 		return None
 	}
+	m.wantHost = "" // 自分で動かしたら、後から見つかった Mac へカーソルを跳ばさない (効かないキーでは消さない)
 	switch m.ov {
 	case ovConfirm:
 		a := m.ask
@@ -714,10 +728,13 @@ func move(cur *int, n int, key string, rows int) bool {
 	return true
 }
 
+// needsNet は、この Mac のネットワークを読み終えるまで断るキー (最下行の案内もこの間は出さない)。
+var needsNet = []string{"s", "Y", "y", "o", "c", "space"}
+
 func (m *Model) keyList(key string) Action {
 	// 繋ぐ・コピー・登録は、この Mac のネットワーク (どの I/F が有線か・この Mac の IP) を読み終えてから。読み込み中に受けると
 	// 繋ぐ先・登録する内部 IP を誤った分類で決める (fable の敵対レビュー 2026-10-16)
-	if !m.netReady && slices.Contains([]string{"s", "Y", "y", "o", "c", "space"}, key) {
+	if !m.netReady && slices.Contains(needsNet, key) {
 		m.note("この Mac のネットワークを読んでいます (少し待ってから)", false)
 		return None
 	}

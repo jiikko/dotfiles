@@ -675,6 +675,13 @@ func TestLoadingKeepsSelfSingleAndRefusesActions(t *testing.T) {
 	if m.current().host != "x.local" || m.current().connectIP() == "" {
 		t.Fatalf("前提が作れていない: %+v", m.current())
 	}
+	m.Resize(120, 40)
+	foot := termwidth.StripSGR(m.footer())
+	for _, k := range []string{"s 繋ぐ", "Y コピー", "space 台帳", "c この Mac"} {
+		if strings.Contains(foot, k) {
+			t.Errorf("読み込み中に断るキー %q を案内に出した: %q", k, foot)
+		}
+	}
 	for _, k := range []string{"s", "Y", "y", "o", "c", "space"} {
 		if a := m.HandleKey(k); a != None || m.ov != ovNone {
 			t.Errorf("読み込み中の %s を受けた (action=%v ov=%v)", k, a, m.ov)
@@ -1185,8 +1192,11 @@ func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
 		if h.keys("y") != None || len(h.store.hosts) != 1 {
 			t.Errorf("%v: 見えない確認の板に y が届いた (台帳 %d 台)", size, len(h.store.hosts))
 		}
-		if h.keys("q") != Quit {
-			t.Errorf("%v: q で閉じない", size)
+		if h.m.Binds("L") || h.m.Binds("?") || !h.m.Binds("q") || !h.m.Binds("esc") {
+			t.Errorf("%v: 足りない画面で閉じるキー以外を取った (L や横断キーは glogx へ渡す)", size)
+		}
+		if h.keys("esc") != Quit || h.keys("q") != Quit {
+			t.Errorf("%v: q / esc で閉じない", size)
 		}
 
 		h = newHarness(t, nil, []discover.Peer{mini})
@@ -1196,8 +1206,51 @@ func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
 		if _, _, ok := h.m.CaretPos(); ok {
 			t.Errorf("%v: 足りない画面にキャレットを立てた", size)
 		}
+		h.m.Paste("PASTED")
+		if h.m.filter.String() != "z" {
+			t.Errorf("%v: 見えない絞り込みに貼り付けが入った: %q", size, h.m.filter.String())
+		}
 		if a := h.keys("q"); a != Quit || h.m.filter.String() != "z" {
 			t.Errorf("%v: 絞り込み中の q が閉じずに文字として入った (action=%v filter=%q)", size, a, h.m.filter.String())
+		}
+
+		// 大きさを戻して描き直せば、また全部のキーが効く (足りない画面の印を戻さないと、q 以外がずっと効かなかった)
+		h = newHarness(t, nil, []discover.Peer{mini})
+		h.m.Resize(size[0], size[1])
+		h.m.View()
+		h.m.Resize(120, 40)
+		h.m.View()
+		if h.keys("/") != None || !h.m.filtering {
+			t.Errorf("%v: 大きさを戻した後に / が効かない", size)
+		}
+	}
+}
+
+// 閉じる (Close) と、開いていた確認・入力欄・設定を畳む。glogx は Model を使い回すので、残すと L で開き直した直後に
+// 覚えの無い確認の板が y を待ち、y で台帳から外れた (足りない画面の q で抜けたとき。opus の敵対レビュー)。
+func TestCloseFoldsLayers(t *testing.T) {
+	open := map[string][]string{"確認": {"j", "space"}, "絞り込み": {"/", "z"}, "別名": {"j", "m"}, "設定": {","}}
+	for name, ks := range open {
+		h := newHarness(t, []ledger.Host{{Host: "m2macmini.local"}}, []discover.Peer{mini})
+		h.keys(ks...)
+		if !h.m.OwnsKeys() {
+			t.Fatalf("%s: 前提の層が開いていない", name)
+		}
+		h.m.Resize(30, 10) // 設定の画面は高さ 10 でも描くので、幅で足りない画面にする
+		h.m.View()
+		if h.keys("q") != Quit {
+			t.Fatalf("%s: 足りない画面の q で閉じない", name)
+		}
+		h.m.Close() // glogx の hide と単体の終了が呼ぶ
+		h.m.Reload()
+		h.m.Resize(120, 40)
+		h.m.View()
+		if h.m.OwnsKeys() {
+			t.Errorf("%s: 開き直したら層が残っていた", name)
+		}
+		h.keys("y")
+		if len(h.store.hosts) != 1 {
+			t.Errorf("%s: 開き直した直後の y で台帳が変わった (%d 台)", name, len(h.store.hosts))
 		}
 	}
 }
