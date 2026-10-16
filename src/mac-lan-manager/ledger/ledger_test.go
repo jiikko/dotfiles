@@ -288,7 +288,7 @@ func TestUpdateOnlyExisting(t *testing.T) {
 }
 
 func TestValidUserAndLAN(t *testing.T) {
-	for s, want := range map[string]bool{"koji": true, "k2.dev_1": true, "-oProxyCommand=x": false, "": false, "a b": false, "a;b": false} {
+	for s, want := range map[string]bool{"koji": true, "k2.dev_1": true, "-oProxyCommand=x": false, "-koji": false, "": false, "a b": false, "a;b": false} {
 		if ValidUser(s) != want {
 			t.Errorf("ValidUser(%q) = %v", s, !want)
 		}
