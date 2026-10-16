@@ -4,8 +4,9 @@
 初期設定 (鍵を置く・内部の I/F を固定 IP にする・台帳に登録する) を済ませた Mac を「管理対象」として ssh / 画面共有 / smb で繋ぐ。
 glogx の `L` の板からも開く (要件・決定・設計の正本は issue 747)。
 
-**今の状態**: 段 3 と段 5 まで (一覧・詳細カード・台帳への登録と削除・別名・ssh / 画面共有 / コピー・設定・glogx の `L`)。初期設定の実行は段 4。
-起動は `bin/mac-lan-manager`。キーの一覧は中で `?`。
+**今の状態**: 段 3〜5 (一覧・詳細カード・台帳への登録と削除・別名とユーザー名 (`m` / `u`)・ssh / 画面共有 / コピー・設定 (有線で見えた相手だけに
+絞る項目を含む)・glogx の `L`・初期設定)。初期設定は一覧の行で `Enter` を押して開き、`x` で次の手順を確認の板に出して `y` で実行する (`r` で相手を読み直す)。
+本物の相手での最初の確認は issue 789。起動は `bin/mac-lan-manager`。キーの一覧は中で `?`。
 
 **デバッグ (画面を出さない)**: `GO_AUTOBUILD_SYNC=1 bin/mac-lan-manager dump` (`--json` で JSON、`--wait 8s` で Bonjour を待つ上限)。
 この Mac のサービス・一覧 (画面と同じ判定。各行の内部 IP・メイン IP・その他の IP と繋ぐ先)・Bonjour の生の結果・知らせを出す。
@@ -22,7 +23,7 @@ glogx の `L` の板からも開く (要件・決定・設計の正本は issue 
 | `ledger` | 管理対象の台帳 (`~/.config/mac-lan-manager/hosts.toml`。`$XDG_CONFIG_HOME` があればその下。前の置き場 `~/.config/glogx/mac-lan-manager` のファイルは初回に移す)。この Mac の中だけに持つ。読み書きは `Store` の口だけを通す (共有を後から足す余地) |
 | `prefs` | 設定 (一覧に出す IP・内部 IP の決め方・その他の IP の種類。`settings.toml`) |
 | `lanmgr` | 画面 (一覧・詳細カード・設定・確認の板)。lipgloss v2.0.5 + tuikit。単体の `main.go` と glogx の板の両方から使う口 (`New` / `HandleKey` / `HandleInput` / `Advance` / `View` / `Busy` / `Changed` / `Reload` / `OwnsKeys` / `Binds` / `TakeExec` / `TakeNotices` / `Close` …) |
-| `setup` | 初期設定 (段 4) の手順を組む: 観測から残りの手順を組み直す `Plan` / 相手の有線を固定 IP にする命令列 `StaticIP` (確認の印が来なければ元へ戻すデッドマンスイッチ) / 空き番号の提案 `SuggestIP`。命令を組むだけで起こさない。🚨 本物の networksetup / sudo を起こすのは、段 4 の前の人手の確認が済んでから。テストは偽物だけが見える PATH (`<sandbox>:/bin`) で走らせ、外へ解決したら走らせる前に落とす |
+| `setup` | 初期設定 (段 4) の手順を組む: 観測から残りの手順を組み直す `Plan` / 相手の有線を固定 IP にする命令列 `StaticIP` (確認の印が来なければ元へ戻すデッドマンスイッチ) / 空き番号の提案 `SuggestIP`。命令を組むだけで起こさない (起こすのは `lanmgr` の初期設定の画面で、確認の板の `y` の後だけ)。テストは偽物だけが見える PATH (`<sandbox>:/bin`) で走らせ、外へ解決したら走らせる前に落とす |
 | `live` | `lanmgr` を本物 (ネットワーク・Bonjour・台帳・設定・クリップボード・相手への ssh の `SSHRun` / `Observe`) につなぐ `Options()`。単体の `main.go` と glogx の板が共有する (glogx はクリップボードと時計だけ自分の口に替える) |
 
 ## 触る前に読むもの
