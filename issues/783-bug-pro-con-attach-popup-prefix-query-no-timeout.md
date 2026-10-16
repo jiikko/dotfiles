@@ -1,5 +1,7 @@
 # 783 (bug): pro-con の attach の popup が外の tmux の prefix を時間の上限なしで問い合わせる
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-16〜）
+
 起票日: 2026-10-16
 
 ## 概要
