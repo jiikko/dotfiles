@@ -19,3 +19,11 @@
 ## 関連ファイル
 
 - `src/pro-con/ui/sessions.go` (`screensBlock`) / `src/pro-con/card/age.go` (`Age`) / issue 772 (done)
+
+## 進捗
+
+- 2026-10-16: 見本 (実際の `fit` / `card.Age` で描いた A / B / C) からユーザーが **B** を選んだ (1 時間以上は「N時間前」「N日前」に丸める。この欄だけ)
+- [x] `ui/sessions.go` に `openedText` / `openedWidth = 18` を置いた (最長「15:04 (999日前)」16 桁 + 区切り 2 桁)。端数は時刻の側で読める
+- [x] テスト `TestOpenedTextFitsColumn` (5秒 / 42分 / 1時間5分 / 23時間59分 / 3日2時間 / 999日23時間 で丸め方と、欄に区切りを残して収まること)
+- 変異で red を確認 (`mutate-verify`): 時間への丸めを消す → 「1時間5分前」「23時間59分前」が丸まらず欄に収まらない、で red
+- 範囲の外: 1000 日以上は 17 桁で区切りが 1 桁になる (切れはしない)
