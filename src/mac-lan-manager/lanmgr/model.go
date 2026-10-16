@@ -177,18 +177,7 @@ func (m *Model) Reload() {
 		if hs, err := m.o.Ledger.Load(); err != nil {
 			m.note("台帳が読めない: "+err.Error(), false)
 		} else {
-			// 手で書き換えうる欄は使う前に確かめる: user が "-o…" だと ssh が option として読み、lan が IP でないと引数に何でも入った (監査の指摘)
-			for i := range hs {
-				for _, f := range hs[i].Unusable() {
-					m.note(fmt.Sprintf("台帳の %s の %s が使えない形なので使わない", hs[i].Host, f), false)
-					if f == "user" {
-						hs[i].User = ""
-					} else {
-						hs[i].LAN = ""
-					}
-				}
-			}
-			m.hosts = hs
+			m.setHosts(hs, true)
 		}
 	}
 	m.pf, m.prefsUnread = prefs.Default(), false
@@ -461,14 +450,7 @@ func (m *Model) ifKind(dev, addr string) netinfo.Kind {
 	if dev == "" {
 		return netinfo.KindUnknown
 	}
-	wired, internet := map[string]bool{}, map[string]bool{}
-	for _, s := range m.self.Services {
-		if s.Internet() {
-			internet[s.Device] = true
-		} else {
-			wired[s.Device] = true
-		}
-	}
+	wired, internet := m.self.Classes()
 	return netinfo.Classify(dev, addr, wired, internet)
 }
 
@@ -902,8 +884,28 @@ func (m *Model) askLedger(r row) {
 
 func (m *Model) reloadLedger() {
 	if hs, err := m.o.Ledger.Load(); err == nil {
-		m.hosts = hs
+		m.setHosts(hs, false) // 知らせは Reload で出している (別名・登録のたびに繰り返さない)
 	}
+}
+
+// setHosts は読んだ台帳を一覧に入れる。m.hosts に入れる経路はここだけ (Reload と、別名・登録・外した後の reloadLedger の 2 つが
+// 同じ確かめを通る。Reload の中だけで確かめていたころは、別名を付けた後に不正な user / lan が戻り、コピーした ssh の文字列に入った。
+// 監査の第 3 波の敵対レビュー)。手で書き換えうる欄は使う前に確かめる: user が "-o…" だと ssh が option として読み、lan が IP でないと
+// 引数に何でも入った。
+func (m *Model) setHosts(hs []ledger.Host, tell bool) {
+	for i := range hs {
+		for _, f := range hs[i].Unusable() {
+			if tell {
+				m.note(fmt.Sprintf("台帳の %s の %s が使えない形なので使わない", hs[i].Host, f), false)
+			}
+			if f == "user" {
+				hs[i].User = ""
+			} else {
+				hs[i].LAN = ""
+			}
+		}
+	}
+	m.hosts = hs
 }
 
 func (m *Model) keyCopyIP(key string) Action {

@@ -77,8 +77,8 @@ var t0 = time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 func selfNet() netinfo.Snapshot {
 	return netinfo.Snapshot{
 		Services: []netinfo.Service{
-			{Name: "Thunderbolt Ethernet", Device: "en13", Active: true, IP: "169.254.13.42", Method: "DHCP"},
-			{Name: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Method: "DHCP", Router: "192.168.50.1"},
+			{Name: "Thunderbolt Ethernet", Device: "en13", Active: true, IP: "169.254.13.42", Method: "DHCP", Read: true},
+			{Name: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Method: "DHCP", Router: "192.168.50.1", Read: true},
 		},
 		IPs: []netinfo.IP{
 			{Device: "en0", Addr: "192.168.50.250", Kind: netinfo.KindInternet},
@@ -519,7 +519,7 @@ func TestReloadStartsScanAtNow(t *testing.T) {
 // ルーターの無い I/F が 2 つある相手でも、内部 IP は描くたびに同じ (I/F の番号の小さい方)。map の順で選ぶと揺れる。
 func TestLanIPIsDeterministicAcrossIFs(t *testing.T) {
 	net := selfNet()
-	net.Services = append(net.Services, netinfo.Service{Name: "USB LAN", Device: "en14", Active: true, Method: "manual", IP: "192.168.100.2"})
+	net.Services = append(net.Services, netinfo.Service{Name: "USB LAN", Device: "en14", Active: true, Method: "manual", IP: "192.168.100.2", Read: true})
 	two := discover.Peer{Host: "two.local", SSH: true, Addrs: map[int]string{168: "192.168.100.5", 32: "169.254.1.1"}}
 	m := New(Options{
 		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
@@ -624,7 +624,7 @@ func TestNetLoadIsAsyncAndSuperseded(t *testing.T) {
 			case <-ctx.Done():
 				close(cancelled)
 			}
-			return netinfo.Snapshot{Services: []netinfo.Service{{Name: "古い", Device: "en9"}}}, nil
+			return netinfo.Snapshot{Services: []netinfo.Service{{Name: "古い", Device: "en9", Read: true}}}, nil
 		},
 		Now: func() time.Time { return t0 },
 	})
@@ -1349,10 +1349,35 @@ func TestUnusableLedgerFieldsAreNotUsed(t *testing.T) {
 		}
 	}
 	h.keys("Y")
+	// 別名を付けると台帳を読み直す (reloadLedger)。その経路でも不正な値を戻さない (Reload の中だけで確かめていたころは戻った)
+	h.keys("m", "enter")
+	if r := h.m.current(); r.user != "" || r.ledgerLAN != "" {
+		t.Errorf("別名を付けた後に不正な値が戻った: user=%q ledgerLAN=%q", r.user, r.ledgerLAN)
+	}
+	h.keys("Y")
+	if len(h.copied) < 2 {
+		t.Fatalf("前提: Y が 2 回コピーしていない: %q", h.copied)
+	}
 	for _, c := range h.copied {
 		if strings.Contains(c, "Proxy") || strings.Contains(c, "pwn") {
 			t.Errorf("コピーに台帳の不正な値が入った: %q", c)
 		}
+	}
+}
+
+// 帯は読んだ形 (Masked) で保存する。"192.168.100.5/24" を入れても判定は "192.168.100.0/24" なので、保存・表示もそれにそろえる。
+func TestBandIsSavedNormalized(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	h.keys(bandKeys()...)
+	for range 30 {
+		h.keys("backspace")
+	}
+	for _, r := range "192.168.100.5/24" {
+		h.m.HandleInput(string(r), string(r))
+	}
+	h.keys("enter")
+	if len(h.saved) == 0 || h.saved[len(h.saved)-1].Band != "192.168.100.0/24" {
+		t.Errorf("保存した帯 = %+v", h.saved)
 	}
 }
 

@@ -37,8 +37,8 @@ func dumpModel(busy bool) func() (*lanmgr.Model, error) {
 		return lanmgr.New(lanmgr.Options{
 			ReadNet: func(context.Context) (netinfo.Snapshot, error) {
 				return netinfo.Snapshot{Services: []netinfo.Service{
-					{Name: "Thunderbolt Ethernet", Device: "en13", Active: true, IP: "169.254.13.42"},
-					{Name: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Router: "192.168.50.1"},
+					{Name: "Thunderbolt Ethernet", Device: "en13", Active: true, IP: "169.254.13.42", Read: true},
+					{Name: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Router: "192.168.50.1", Read: true},
 				}}, nil
 			},
 			LocalHost: func() string { return "me.local" },

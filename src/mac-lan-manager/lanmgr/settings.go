@@ -32,7 +32,7 @@ func (m *Model) setCount() int { return setKind0 + len(otherKinds) }
 func (m *Model) lanIFs() []netinfo.Service {
 	var out []netinfo.Service
 	for _, s := range m.self.Services {
-		if !s.Internet() {
+		if s.Wired() {
 			out = append(out, s)
 		}
 	}
@@ -41,7 +41,7 @@ func (m *Model) lanIFs() []netinfo.Service {
 
 func (m *Model) savePrefs() {
 	if m.prefsUnread {
-		m.note("設定が読めなかったので保存しない (この起動の間だけ効く)", false)
+		m.note("設定が読めなかったので保存しない (r で読み直すと戻る)", false)
 		return
 	}
 	if m.o.SavePrefs == nil || m.o.PrefsPath == "" {
@@ -59,12 +59,13 @@ func (m *Model) keySettings(key, text string) Action {
 			m.bandEdit = false
 		case "enter":
 			v := strings.TrimSpace(m.band.String())
-			if _, err := netinfo.ParseBand(v); err != nil {
+			band, err := netinfo.ParseBand(v)
+			if err != nil {
 				m.note("帯は 192.168.100.0/24 の形で書く (/16〜/30)", false)
 				return None
 			}
 			m.bandEdit = false
-			m.pf.Band = v
+			m.pf.Band = band.String() // 読んだ形で保存する ("192.168.100.5/24" を入れても判定に使う "192.168.100.0/24" を保存・表示する)
 			m.savePrefs()
 		default:
 			m.band.Key(key, text)

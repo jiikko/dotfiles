@@ -40,10 +40,29 @@ type Service struct {
 	IP     string // IPv4 (無ければ空)
 	Method string // "DHCP" / "manual" / "" (読めなかった)
 	Router string // IPv4 のルーター (無ければ空)
+	Read   bool   // -getinfo を読めた (読めなければルーターの有無は分からない)
 }
 
 // Internet はインターネット用のサービスか (ルーターがある)。
 func (s Service) Internet() bool { return s.Router != "" }
+
+// Wired はルーターの無い有線のサービスか。-getinfo を読めなかったものは数えない (ルーターが分からないまま有線と数えると、
+// Wi-Fi が内部 IP の候補や「未固定」に出た。監査の第 3 波の敵対レビュー)。
+func (s Service) Wired() bool { return s.Read && s.Router == "" }
+
+// Classes は I/F の名前を有線 / インターネット側に分ける (Classify に渡す 2 つの map)。どちらにも入らない I/F は分からない。
+func (s Snapshot) Classes() (wired, internet map[string]bool) {
+	wired, internet = map[string]bool{}, map[string]bool{}
+	for _, sv := range s.Services {
+		switch {
+		case sv.Internet():
+			internet[sv.Device] = true
+		case sv.Wired():
+			wired[sv.Device] = true
+		}
+	}
+	return wired, internet
+}
 
 // Kind は I/F の IP の種類。
 type Kind int
@@ -200,7 +219,6 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	svcs := ParseServiceOrder(order)
-	wired, internet := map[string]bool{}, map[string]bool{}
 	for i := range svcs {
 		s := &svcs[i]
 		if out, err := run(ctx, "ifconfig", s.Device); err == nil {
@@ -212,20 +230,17 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 		}
 		out, err := run(ctx, "networksetup", "-getinfo", s.Name)
 		if err != nil {
-			continue // ルーターの有無が分からない: 有線とも インターネット側とも決めない (決めないと「ルーター無し = 有線」に倒れた)
+			continue // ルーターの有無が分からない: Read を立てない (有線とも インターネット側とも決めない)
 		}
 		var ip string
 		s.Method, ip, s.Router = ParseGetInfo(out)
+		s.Read = true
 		if s.IP == "" {
 			s.IP = ip
 		}
-		if s.Internet() {
-			internet[s.Device] = true
-		} else {
-			wired[s.Device] = true
-		}
 	}
 	snap := Snapshot{Services: svcs}
+	wired, internet := snap.Classes()
 	list, err := run(ctx, "ifconfig", "-l")
 	if err != nil {
 		return snap, nil // I/F の一覧が読めなくても、サービスは返す
@@ -261,7 +276,7 @@ func (s Snapshot) Main() (Service, bool) {
 func (s Snapshot) Offline() []Service {
 	var out []Service
 	for _, sv := range s.Services {
-		if sv.Active && !sv.Internet() {
+		if sv.Active && sv.Wired() {
 			out = append(out, sv)
 		}
 	}

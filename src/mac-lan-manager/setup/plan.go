@@ -58,7 +58,7 @@ func Plan(o Observed) []Step {
 	self := Step{ID: StepSelfStatic, Title: "この Mac の有線を固定 IP にする", Done: o.SelfMethod == "manual" && inBand(o.SelfIP)}
 	switch {
 	case bandErr != nil:
-		self.Blocked = "内部の網の帯が設定されていない (, の設定で帯を決める)" // 帯が無いと「未固定」と誤った理由で止まった (fable の敵対レビュー)
+		self.Blocked = "内部の網の帯が無いか使えない形 (, の設定で帯を決める。192.168.100.0/24 の形で /16〜/30)" // 帯が無いと「未固定」と誤った理由で止まった (fable の敵対レビュー)
 	case o.SelfService == "":
 		self.Blocked = "この Mac にルーターの無い有線のサービスが無い (ケーブル・アダプタを確かめる)"
 	}

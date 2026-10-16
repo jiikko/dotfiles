@@ -23,7 +23,7 @@ import (
 type Prefs struct {
 	ShowMain, ShowLan, ShowOthers bool
 	LanByBand                     bool     // true: 帯で決める / false: I/F で決める
-	Band                          string   // "192.168.100.0/24" (/24 だけを扱う)
+	Band                          string   // "192.168.100.0/24" (IPv4 の /16〜/30。netinfo.ParseBand)
 	LanIF                         string   // I/F で決めるときの I/F の名前 ("en13")
 	Kinds                         []string // 「その他の IP」に含める種類 (netinfo.Kind.Key())
 }

@@ -191,6 +191,11 @@ func TestReadUsesRenamedServiceNames(t *testing.T) {
 	if !seen {
 		t.Fatal("前提: bridge0 の IP が読めていない")
 	}
+	for _, s := range snap.Offline() { // ルーターの無い有線の候補にも入れない (内部 IP の「未固定」や I/F の候補に出た)
+		if s.Device == "bridge0" {
+			t.Errorf("-getinfo が読めない bridge0 をルーターの無い有線の候補にした: %+v", s)
+		}
+	}
 }
 
 func TestReadFailsWhenServiceOrderFails(t *testing.T) {
