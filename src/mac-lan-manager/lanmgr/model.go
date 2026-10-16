@@ -123,12 +123,9 @@ type Model struct {
 	tried map[string]map[string]bool
 	// confirmed は期限内に確認した新しい IP (有線だけの相手を開き直したときの宛先)
 	confirmed map[string]string
-	execHost  string // 初期設定の手順として渡したプロセスの相手 (画面を閉じても ExecDone で印を立てる)
-	// execStep / execStatic / execSetup は、初期設定の手順として渡したプロセスの印 (ExecDone が setupExecDone へ渡す)
-	execStep   setup.StepID
-	execStatic *setup.StaticIP
-	execSetup  bool
-	setC       int // 設定の画面のカーソル
+	// setupExec は初期設定の手順として渡したプロセスの印 (ExecDone が setupExecDone へ渡す。nil は手順ではないプロセス)
+	setupExec *setupExec
+	setC      int // 設定の画面のカーソル
 	ov         overlay
 	ask        *ask
 	copyC      int
@@ -381,6 +378,19 @@ func (m *Model) Binds(key string) bool {
 		listnav.MotionOf(key) != listnav.None
 }
 
+// setupExec は初期設定の手順として渡したプロセスの印。
+type setupExec struct {
+	host   string
+	step   setup.StepID
+	static *setup.StaticIP
+}
+
+// handOff は起こすプロセスを渡す。se は初期設定の手順の印 (手順でなければ nil)。プロセスと印を 1 か所で決める: 一覧の s / o が
+// 前の印を消し忘れると、閉じた後に届かなかった手順の印が無関係な ssh の戻りに流用され、確認の成功として扱われた (敵対レビュー)
+func (m *Model) handOff(r ExecRequest, se *setupExec) {
+	m.exec, m.setupExec = &r, se
+}
+
 // TakeExec は起こしてほしいプロセス (HandleInput が Exec を返したとき)。
 func (m *Model) TakeExec() (ExecRequest, bool) {
 	if m.exec == nil {
@@ -399,10 +409,10 @@ func (m *Model) ExecDone(err error) string {
 	var exitErr interface{ ExitCode() int } // *exec.ExitError
 	failOnExit := m.execExitIsFailure
 	m.execExitIsFailure = false // 1 回だけ読む (次の ExecDone へ漏らさない)
-	if m.execSetup {            // 初期設定の手順: 成功なら次へ進め、どちらでも相手を読み直す
+	if se := m.setupExec; se != nil { // 初期設定の手順: 成功なら次へ進め、どちらでも相手を読み直す
+		m.setupExec = nil
 		failed := err != nil && (!errors.As(err, &exitErr) || failOnExit)
-		m.setupExecDone(m.execHost, m.execStep, m.execStatic, failed)
-		m.execStep, m.execStatic, m.execSetup, m.execHost = "", nil, false, ""
+		m.setupExecDone(se.host, se.step, se.static, failed)
 	}
 	switch {
 	case err == nil:
@@ -450,9 +460,9 @@ func (m *Model) Close() {
 	}
 	m.bandEdit = false
 	m.closeSetup()
-	// 渡したプロセスの印 (exec*) も消す: 閉じた後の戻りは届かないことがあり (glogx は閉じた板に ExecDone を渡さない)、残すと後の
+	// 渡したプロセスの印 (setupExec) も消す: 閉じた後の戻りは届かないことがあり (glogx は閉じた板に ExecDone を渡さない)、残すと後の
 	// 無関係な ssh の戻りが確認の成功として扱われた (敵対レビュー)。未確認の印は起こした時点で立てているので、戻りに頼らない
-	m.execStep, m.execStatic, m.execSetup, m.execHost = "", nil, false, ""
+	m.setupExec = nil
 	m.sc = scList
 	m.stopNetLoad()
 	if m.scan != nil {
@@ -721,15 +731,15 @@ func (m *Model) HandleInput(key, text string) Action {
 					m.note("確認の期限が過ぎた (読み直す)", false)
 					return None
 				}
-				r := *a.exec
-				m.exec, m.execStep, m.execStatic, m.execSetup = &r, a.step, a.static, true
+				se := &setupExec{step: a.step, static: a.static}
 				if m.su != nil {
-					m.execHost = m.su.host
+					se.host = m.su.host
 					if a.step == setup.StepPeerStatic && a.static != nil {
 						// 起こす時点で未確認の印を立てる (戻ったときに立てると、戻りを受けない経路 (glogx で閉じた後) で立たなかった)
 						m.markUnconf(m.su.host, a.static.IP)
 					}
 				}
+				m.handOff(*a.exec, se)
 				return Exec
 			}
 			n := a.yes()
@@ -843,8 +853,7 @@ func (m *Model) keyList(key string) Action {
 			m.note(why, false)
 		} else {
 			// known_hosts を IP でなく台帳の鍵に結び付ける (IP を付け替えても「鍵が変わった」にしない)
-			m.exec = &ExecRequest{Argv: []string{"ssh", "-o", "HostKeyAlias=" + r.host, "--", user + "@" + r.connectIP()}}
-			m.execStep, m.execStatic, m.execSetup, m.execHost = "", nil, false, "" // 初期設定の手順ではない
+			m.handOff(ExecRequest{Argv: []string{"ssh", "-o", "HostKeyAlias=" + r.host, "--", user + "@" + r.connectIP()}}, nil)
 			return Exec
 		}
 	case "Y": // コピー (整形した参照 = コマンド)
@@ -868,8 +877,7 @@ func (m *Model) keyList(key string) Action {
 			m.note("画面共有を広告していない", false)
 			break
 		}
-		m.exec = &ExecRequest{Argv: []string{"open", "vnc://" + r.connectIP()}, ExitIsFailure: true}
-		m.execStep, m.execStatic, m.execSetup, m.execHost = "", nil, false, "" // 初期設定の手順ではない
+		m.handOff(ExecRequest{Argv: []string{"open", "vnc://" + r.connectIP()}, ExitIsFailure: true}, nil)
 		return Exec
 	case "m": // 名前の変更 (treefiler と同じ動詞)
 		if r.self {

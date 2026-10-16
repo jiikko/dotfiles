@@ -51,7 +51,7 @@ func (m *Model) expireConfirms() {
 		}
 	}
 	for host, c := range m.pending {
-		if m.execSetup && m.execStep == stepConfirm && m.execHost == host {
+		if se := m.setupExec; se != nil && se.step == stepConfirm && se.host == host {
 			continue // 確認のプロセスから戻るのを待つ (端末を渡している間の tick が先に届き、間際の確認を期限切れにした。敵対レビュー)
 		}
 		if m.now.After(c.deadline) {
