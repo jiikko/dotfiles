@@ -1296,7 +1296,7 @@ func TestEveryScreenFitsHeight(t *testing.T) {
 	band := bandKeys()
 	for _, w := range []int{minWidth, 80, 120, 160, 200} {
 		for hgt := 1; hgt <= 30; hgt++ {
-			for _, open := range [][]string{nil, {"G"}, {","}, {",", "G"}, band} {
+			for _, open := range [][]string{nil, {"G"}, {","}, {",", "G"}, band, {"e"}} {
 				h := newHarness(t, nil, []discover.Peer{mini})
 				h.keys(open...)
 				h.m.Resize(w, hgt)
@@ -1654,6 +1654,12 @@ func TestMessageLogCopies(t *testing.T) {
 	h.keys("Y")
 	if got := h.copied[len(h.copied)-1]; strings.Count(got, "\n") != 3 || !strings.HasPrefix(got[9:], "✗ この Mac") || strings.Count(got, long) != 1 {
 		t.Errorf("Y で全部 (古い順) をコピーしない: %q", got)
+	}
+	h.keys("esc")
+	h.m.note("相手の出力\x1b]52;c;ZXZpbA==\x07\nrm -rf ~", false) // 相手が書ける stderr の形
+	h.keys("e", "y")
+	if got := h.copied[len(h.copied)-1]; strings.ContainsAny(got, "\x1b\x07\n") {
+		t.Errorf("制御文字・改行を落とさずにコピーした: %q", got)
 	}
 	h.keys("esc")
 	for i := range logCap + 5 {
