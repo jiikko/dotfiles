@@ -80,3 +80,19 @@ ssh <相手> 'cat /tmp/mlm-detach-test; sudo -l | grep -i use_pty; sudo rm -f /t
 - 3 で日時が出ない → 切り離し (`sudo -n -b nohup`) が切断で止まる。`setup/staticip.go` の `RemoteCommand` を見直す (747 に書く)
 
 確認が済んだら done へ移す。
+
+## 結果 (2026-10-17, air5 / macOS 26.7 / sudo 1.9.17p2)
+
+### 3: 切り離しが切断で止まった → 直した (人の確認は 1 回だけ残る)
+
+- 相手の固定 IP の手順を air5 で y → 実行は rc=0 で戻ったが、有線 (en5) は DHCP の 169.254.113.65 のまま。確認の ssh は
+  192.168.100.11 に届かず exit 255 (操作のログ `~/Library/Logs/mac-lan-manager.log` 07:24:57 / 07:25:10)
+- air5 の `/var/db/mac-lan-manager` は空で mtime が前の回 (00:34) のまま = 背景の本体は lock を一度も取っていない (走り出していない)
+- sudo 無しの同じ形で再現 (air5 へ `ssh -tt` で `nohup sh -c "sleep 3; echo ok > f" </dev/null >/dev/null 2>&1 &` を打ってすぐ抜ける):
+  すぐ抜けると f ができず、抜ける前に `sleep 1` を挟むとできた。ssh の端末が閉じた SIGHUP が、nohup が SIGHUP を捨てる前の子に
+  届く競争。`sudo -b` はすぐ戻るので、毎回この負け側に入っていた
+- 修正: 背景の本体が lock を取った直後に印 (`started-<token>`) を書き、前面はそれを待ってから ssh を終える。15 秒で現れなければ
+  「背景の切り替えが始まらなかった (何も変えていない)」を出して失敗にする (commit「相手の固定 IP は背景の切り替えが走り出したのを
+  確かめてから ssh を終える」)
+- 残る人の確認: 直した版で air5 の相手の固定 IP → 180 秒以内に確認、が通るか (印を待った後に ssh が閉じても背景が生き残るか。
+  sudo の use_pty の下の挙動は sudo 無しの再現では見ていない)
