@@ -241,6 +241,9 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
 ## 進捗
 
 - [x] 2026-10-17: open に戻し、現状の数字を数え直し、ビルドキャッシュの増え方を測った (上の節)
+- [x] 2026-10-17: 案 D を採った (ユーザー判断)。確保の回数の予算 (-race なしの `TestFrameAllocBudget`) を手元の `make test` から外し、
+  `make test-budget` に分けて CI (環境変数 `CI`) でだけ回す (glogx: 確保の回数の予算 (-race なしの TestFrameAllocBudget) を手元の make test から外し、CI でだけ回す (issue 742 の案 D))。
+  変異 (一覧の回数の上限 130 → 10) で `make test-budget` が red になることを確かめた。分割 (A → C) は、トークンに余裕があるときにユーザーが着手する
 - [ ] 設計 (層と置き場所) を決めて反証レビューを通す
 - [ ] 土台の層を出す
 - [ ] 画面を 1 つずつ出す
