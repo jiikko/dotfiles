@@ -385,13 +385,18 @@ func TestNoFixtureCallsInProduction(t *testing.T) {
 		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			return nil
 		}
-		f, err := parser.ParseFile(fset, p, nil, parser.SkipObjectResolution)
+		f, err := parser.ParseFile(fset, p, nil, parser.SkipObjectResolution|parser.ParseComments)
 		if err != nil {
 			return err
 		}
 		scanned++
 		isDef := filepath.Base(p) == "fixture.go" // Fixture を定義するファイル (`return Fixture{v}` は定義の一部)
 		if isDef {
+			// 外してよいのは nofixture のビルドから消えるものだけ。build tag の無い fixture.go は本番に残るので、
+			// そこから本番が Fixture を使っても字句の検査も nofixture のビルドも素通りする (opus の敵対的レビュー 2026-10-18)
+			if !hasNofixtureConstraint(f) {
+				t.Errorf("%s: fixture.go に //go:build !nofixture が無い (本番のビルドに残り、Fixture の検査を素通りする)", p)
+			}
 			return nil
 		}
 		// 名前が Fixture で始まる識別子 (メソッドの `.Fixture()`・`Fixture{v}` の直接構築・パッケージの関数
@@ -491,4 +496,19 @@ func TestEveryTestPackageUsesTestenv(t *testing.T) {
 			t.Errorf("%s: テストを持つのに TestMain で testenv.Main を呼んでいない (隔離・幅 env のガード・外部作用の既定が掛からない)", dir)
 		}
 	}
+}
+
+// hasNofixtureConstraint は f の先頭の //go:build 行が `!nofixture` を含むか。
+func hasNofixtureConstraint(f *ast.File) bool {
+	for _, cg := range f.Comments {
+		if cg.Pos() >= f.Package {
+			break
+		}
+		for _, c := range cg.List {
+			if strings.HasPrefix(c.Text, "//go:build ") && strings.Contains(c.Text, "!nofixture") {
+				return true
+			}
+		}
+	}
+	return false
 }

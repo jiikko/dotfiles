@@ -189,7 +189,13 @@ P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.
 ## 引き継ぎ (2026-10-18。別マシンで続ける)
 
 残り (上から順に):
-- [ ] D / E / F の反証レビュー (codex が使えれば codex。観点は ①挙動が変わっていないか ②検査の素通り (Fixture の抜け道・golden・allowlist))。
+- [x] D / E / F の反証レビュー (2026-10-18。codex の 5h 枠が尽きていたので opus 2 体、観点は ①挙動 ②検査の素通り):
+  ① 壊せなかった (前景実行の判定順 filer → lan・RememberScreen の順と中身・記憶の JSON 名・ChangedMsg.Open・Viewport を旧コードと並べて比べた)。
+  ② P1 なし。P2「TestMain の前処理の中身は検査されていない」は変異で裏を取った: main の lan の前処理を外すと Lan のテスト 8 本が red
+  (守られている)。lanview の中の前処理を外しても緑で本物のコマンドも起きない (中のテストは L を開かない。今は効いていない保険として残す)。
+  なお test_no_real_commands_in_tests.sh は subset の 358 件しか回さず、lan の前処理を外した変異でも緑だった (lan のテストが subset の外)。
+  P3「build tag の無い fixture.go が検査から丸ごと外れる」は直した: TestNoFixtureCallsInProduction が fixture.go に
+  //go:build !nofixture を要求する (lanview の fixture.go から tag を消すと red)
   C までは opus 2 体で通した。D〜F はまだ誰も攻めていない
 - [x] ratelimitview の SaveRatelimitScreen / RemoveRatelimitScreen を Fixture の関数 (FixtureSaveScreen / FixtureRemoveScreen) へ寄せて非公開にした (2026-10-18)
 - [ ] G-1 / G-2 / G-3 (上の節)。G-3 では src/glogx/CLAUDE.md・README の構造の記述と structure_ratchet_test.go の一覧の「移設待ち」を片付ける
