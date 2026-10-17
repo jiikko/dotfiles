@@ -1,7 +1,5 @@
 # 817 (refactor): glogx の main を薄くする (API を絞った package の境界)
 
-> 🚨 **担当中: M4Pro-MacBook-Pro (glogx)**（2026-10-17〜）
-
 起票日: 2026-10-17
 
 ## 概要
