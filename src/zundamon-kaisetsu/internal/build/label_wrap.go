@@ -112,23 +112,32 @@ func jsTrim(s string) string {
 // clipTolerance は描画範囲のはみ出しとして数えない px (Range の外接矩形と箱の境界の丸めの差)
 const clipTolerance = 1
 
-// LabelProblems は測った結果を判定し、問題のあるラベルを 1 行ずつ返す。期待したラベルの欠け・字の食い違いも問題として返す。
-func LabelProblems(d *PlayerData, ms []LabelMeasure) []string {
+// LabelProblems は測った結果を判定する。layout は台本の字を直せば消える問題 (改行・はみ出し)、broken は計測の契約違反
+// (期待したラベルの欠け・字や種類の食い違い・壊れた計測)。broken は --allow-label-wraps でも止める (測れていないものを通さない)
+func LabelProblems(d *PlayerData, ms []LabelMeasure) (layout, broken []string) {
 	want := map[string]ExpectedLabel{}
 	for _, e := range ExpectedLabels(d) {
 		want[e.Key] = e
 	}
 	got := map[string]bool{}
-	var out []string
+	report := func(dst *[]string, m LabelMeasure, why []string) {
+		if len(why) == 0 {
+			return
+		}
+		line := fmt.Sprintf("%s: %s", labelWhere(d, m.Key), strings.Join(why, "・"))
+		if len(m.Lines) > 0 {
+			line += fmt.Sprintf(" (%s)", strings.Join(m.Lines, " / "))
+		}
+		*dst = append(*dst, line)
+	}
 	for _, m := range ms {
 		got[m.Key] = true
-		where := labelWhere(d, m.Key)
-		var why []string
+		var bad, why []string
 		if e, ok := want[m.Key]; ok && (e.Kind != m.Kind || e.Text != m.Text) {
-			why = append(why, fmt.Sprintf("計測モードが返した種類・字 (%q %q) が台本 (%q %q) と違う (player.html と label_wrap.go が食い違っている)", m.Kind, m.Text, e.Kind, e.Text))
+			bad = append(bad, fmt.Sprintf("計測モードが返した種類・字 (%q %q) が台本 (%q %q) と違う (player.html と label_wrap.go が食い違っている)", m.Kind, m.Text, e.Kind, e.Text))
 		}
 		if len(m.Clip) != 2 {
-			why = append(why, fmt.Sprintf("はみ出しの量を読めない (clip %v)", m.Clip))
+			bad = append(bad, fmt.Sprintf("はみ出しの量を読めない (clip %v)", m.Clip))
 		} else if m.Clip[0] > clipTolerance || m.Clip[1] > clipTolerance {
 			why = append(why, fmt.Sprintf("箱か舞台からはみ出して隠れる (横 %d px / 縦 %d px)", m.Clip[0], m.Clip[1]))
 		}
@@ -136,7 +145,7 @@ func LabelProblems(d *PlayerData, ms []LabelMeasure) []string {
 		case "box":
 		case "line", "wrap":
 			if len(m.Lines) == 0 || len(m.Breaks) != len(m.Lines)-1 || len(m.Glen) != len(m.Lines) || strings.Join(m.Lines, "") != m.Text {
-				why = append(why, fmt.Sprintf("行の測り方が壊れている (lines %q / breaks %v / glen %v)", m.Lines, m.Breaks, m.Glen))
+				bad = append(bad, fmt.Sprintf("行の測り方が壊れている (lines %q / breaks %v / glen %v)", m.Lines, m.Breaks, m.Glen))
 				break
 			}
 			if m.Kind == "line" && len(m.Lines) > 1 {
@@ -150,22 +159,17 @@ func LabelProblems(d *PlayerData, ms []LabelMeasure) []string {
 				why = append(why, "1 字だけの行ができる")
 			}
 		default:
-			why = append(why, fmt.Sprintf("計測モードが知らない種類 %q を返した (player.html と label_wrap.go が食い違っている)", m.Kind))
+			bad = append(bad, fmt.Sprintf("計測モードが知らない種類 %q を返した (player.html と label_wrap.go が食い違っている)", m.Kind))
 		}
-		if len(why) > 0 {
-			line := fmt.Sprintf("%s: %s", where, strings.Join(why, "・"))
-			if len(m.Lines) > 0 {
-				line += fmt.Sprintf(" (%s)", strings.Join(m.Lines, " / "))
-			}
-			out = append(out, line)
-		}
+		report(&broken, m, bad)
+		report(&layout, m, why)
 	}
 	for _, e := range ExpectedLabels(d) {
 		if !got[e.Key] {
-			out = append(out, fmt.Sprintf("%s: 測れなかった (player.html の計測モードが返さない)", labelWhere(d, e.Key)))
+			broken = append(broken, fmt.Sprintf("%s: 測れなかった (player.html の計測モードが返さない)", labelWhere(d, e.Key)))
 		}
 	}
-	return out
+	return layout, broken
 }
 
 // labelWhere はラベルの鍵を、台本のどこかが分かる言い方にする。
@@ -211,17 +215,18 @@ func MeasureLabelsWithChrome(page string) ([]LabelMeasure, error) {
 		return nil, errNoChrome
 	}
 	uri := (&url.URL{Scheme: "file", Path: page}).String() + "#measure"
-	rc, msg := extcmd.RunQuiet(120*time.Second, chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
+	// DOM は stdout だけから読む (Chrome は stderr にログを出し、混ぜると計測の結果の途中に割り込みうる)
+	rc, dom, msg := extcmd.RunSplit(120*time.Second, chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
 		fmt.Sprintf("--window-size=%d,%d", VideoSize[0], VideoSize[1]), "--virtual-time-budget=3000", "--dump-dom", uri)
 	if e := app.InterruptedErr(); e != nil {
 		return nil, e
 	}
-	if rc != 0 {
+	m := measureOut.FindStringSubmatch(dom)
+	switch {
+	case m == nil && rc != 0: // 終了の処理で落ちただけなら結果は出ているので、結果が無いときだけ Chrome の失敗として扱う
 		return nil, &chromeFailed{fmt.Sprintf("rc=%d: %s", rc, textx.LastRunes(msg, 300))}
-	}
-	m := measureOut.FindStringSubmatch(msg)
-	if m == nil {
-		return nil, app.Fail("ラベルの改行を測れない (Chrome の出力に計測の結果が無い。templates/player.html の #measure が効いていない): %s", textx.LastRunes(msg, 300))
+	case m == nil:
+		return nil, app.Fail("ラベルの改行を測れない (Chrome の出力に計測の結果が無い。templates/player.html の #measure が効いていない): %s", textx.LastRunes(dom+msg, 300))
 	}
 	var res struct {
 		Labels []LabelMeasure `json:"labels"`
@@ -284,16 +289,23 @@ func CheckLabelLayout(env *app.Env, data *PlayerData, td string, allow bool) err
 	if err != nil {
 		return err
 	}
-	problems := LabelProblems(data, ms)
-	if len(problems) == 0 {
+	layout, broken := LabelProblems(data, ms)
+	if len(broken) > 0 {
+		fmt.Fprintf(env.Stderr, "build: ラベルの改行を正しく測れなかった (%d 個):\n", len(broken))
+		for _, p := range broken {
+			fmt.Fprintf(env.Stderr, "  %s\n", p)
+		}
+		return app.Fail("ラベルの改行の計測が壊れているので止めた (templates/player.html の #measure と label_wrap.go が食い違っている。--allow-label-wraps では通さない)")
+	}
+	if len(layout) == 0 {
 		return nil
 	}
-	fmt.Fprintf(env.Stderr, "build: 意図しない改行・はみ出しのあるラベルが %d 個 (mp4 と同じ 1280x720 の舞台で測った):\n", len(problems))
-	for _, p := range problems {
+	fmt.Fprintf(env.Stderr, "build: 意図しない改行・はみ出しのあるラベルが %d 個 (mp4 と同じ 1280x720 の舞台で測った):\n", len(layout))
+	for _, p := range layout {
 		fmt.Fprintf(env.Stderr, "  %s\n", p)
 	}
 	if allow {
 		return nil
 	}
-	return app.Fail("ラベルの改行に問題が %d 個あるので、書き出す前に止めた (語を短くするか、文節が 1 行に収まる言い方にする。このまま書き出すなら --allow-label-wraps)", len(problems))
+	return app.Fail("ラベルの改行に問題が %d 個あるので、書き出す前に止めた (語を短くするか、文節が 1 行に収まる言い方にする。このまま書き出すなら --allow-label-wraps)", len(layout))
 }

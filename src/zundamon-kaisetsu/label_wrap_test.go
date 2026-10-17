@@ -18,7 +18,7 @@ func TestLabelProblems(t *testing.T) {
 	d := &build.PlayerData{
 		Title: "タイトル", Overlays: []string{"title", "topic"},
 		Chapters: []build.ChapterData{{Title: "はじめに"}, {Title: "まとめ"}},
-		Shows:    []show.Data{{Type: "keyword", Text: "モックだらけのテスト"}, {Type: "image"}},
+		Shows:    []show.Data{{Type: "keyword", Text: "モックだらけのテスか\u3099"}, {Type: "image"}}, // 末尾は「か」+ 結合の濁点 (2 rune で 1 書記素)
 		Lines:    []build.TimelineLine{{}, {Show: new(int)}},
 	}
 	line := func(key, kind, text string, lines []string, breaks []bool, glen []int) build.LabelMeasure {
@@ -29,62 +29,67 @@ func TestLabelProblems(t *testing.T) {
 		line("topic:0", "line", "はじめに", []string{"はじめに"}, []bool{}, []int{4}),
 		line("topic:1", "line", "まとめ", []string{"まとめ"}, []bool{}, []int{3}),
 		{Key: "show:0", Kind: "box", Clip: []int{1, 0}}, // 丸めの 1 px は数えない
-		line("show:0:text", "wrap", "モックだらけのテスト", []string{"モックだらけの", "テスト"}, []bool{true}, []int{7, 3}),
+		line("show:0:text", "wrap", "モックだらけのテスか\u3099", []string{"モックだらけの", "テスか\u3099"}, []bool{true}, []int{7, 3}),
 	}
-	if p := build.LabelProblems(d, ok); len(p) != 0 {
-		t.Fatalf("問題の無い計測で問題が出た: %q", p)
+	if layout, broken := build.LabelProblems(d, ok); len(layout)+len(broken) != 0 {
+		t.Fatalf("問題の無い計測で問題が出た: %q %q", layout, broken)
 	}
 	for name, c := range map[string]struct {
-		edit func(ms []build.LabelMeasure) []build.LabelMeasure
-		want string
+		edit   func(ms []build.LabelMeasure) []build.LabelMeasure
+		want   string
+		broken bool // 計測の契約違反 (--allow-label-wraps でも止める) の側に出るか
 	}{
 		"タイトルが 2 行": {func(ms []build.LabelMeasure) []build.LabelMeasure {
 			ms[0] = line("title", "line", "タイトル", []string{"タイト", "ル"}, []bool{false}, []int{3, 1})
 			return ms
-		}, "左上のタイトル: 1 行に収まらず 2 行になる (タイト / ル)"},
+		}, "左上のタイトル: 1 行に収まらず 2 行になる (タイト / ル)", false},
 		"語の途中で改行": {func(ms []build.LabelMeasure) []build.LabelMeasure {
-			ms[4] = line("show:0:text", "wrap", "モックだらけのテスト", []string{"モックだらけのテ", "スト"}, []bool{false}, []int{8, 2})
+			ms[4] = line("show:0:text", "wrap", "モックだらけのテスか\u3099", []string{"モックだらけのテ", "スか\u3099"}, []bool{false}, []int{8, 2})
 			return ms
-		}, "図解 0 (keyword。lines[1] から) の text: 語の途中で改行する (モックだらけのテ / スト)"},
+		}, "図解 0 (keyword。lines[1] から) の text: 語の途中で改行する (モックだらけのテ / スか\u3099)", false},
 		"1 字だけの行 (合成の濁点は 1 字)": {func(ms []build.LabelMeasure) []build.LabelMeasure {
-			ms[4] = line("show:0:text", "wrap", "モックだらけのテスト", []string{"モックだらけのテス", "ト"}, []bool{true}, []int{9, 1})
+			ms[4] = line("show:0:text", "wrap", "モックだらけのテスか\u3099", []string{"モックだらけのテス", "か\u3099"}, []bool{true}, []int{9, 1})
 			return ms
-		}, ": 1 字だけの行ができる (モックだらけのテス / ト)"},
+		}, ": 1 字だけの行ができる (モックだらけのテス / か\u3099)", false},
 		"カードのはみ出し": {func(ms []build.LabelMeasure) []build.LabelMeasure {
 			ms[3].Clip = []int{0, 12}
 			return ms
-		}, "箱か舞台からはみ出して隠れる (横 0 px / 縦 12 px)"},
+		}, "箱か舞台からはみ出して隠れる (横 0 px / 縦 12 px)", false},
 		"文字のラベルのはみ出し (改行の位置が無い長い英字)": {func(ms []build.LabelMeasure) []build.LabelMeasure {
 			ms[1].Clip = []int{310, 0}
 			return ms
-		}, "トピック名「はじめに」: 箱か舞台からはみ出して隠れる (横 310 px / 縦 0 px)"},
+		}, "トピック名「はじめに」: 箱か舞台からはみ出して隠れる (横 310 px / 縦 0 px)", false},
 		"はみ出しの量を読めない": {func(ms []build.LabelMeasure) []build.LabelMeasure {
 			ms[3].Clip = nil
 			return ms
-		}, "はみ出しの量を読めない"},
+		}, "はみ出しの量を読めない", true},
 		"知らない種類": {func(ms []build.LabelMeasure) []build.LabelMeasure {
 			ms[3].Kind = "boxes"
 			return ms
-		}, "計測モードが知らない種類"},
+		}, "計測モードが知らない種類", true},
 		"字が台本と違う (子要素に包まれて直下の字が無い等)": {func(ms []build.LabelMeasure) []build.LabelMeasure {
 			ms[4] = line("show:0:text", "wrap", "", []string{""}, []bool{}, []int{0})
 			return ms
-		}, "が台本 (\"wrap\" \"モックだらけのテスト\") と違う"},
+		}, "が台本 (\"wrap\" \"モックだらけのテスか\u3099\") と違う", true},
 		"行の測り方が壊れている": {func(ms []build.LabelMeasure) []build.LabelMeasure {
 			ms[2].Breaks = []bool{true}
 			return ms
-		}, "行の測り方が壊れている"},
+		}, "行の測り方が壊れている", true},
 		"測れなかった (箱)": {func(ms []build.LabelMeasure) []build.LabelMeasure {
 			return slices.DeleteFunc(ms, func(m build.LabelMeasure) bool { return m.Key == "show:0" })
-		}, "図解 0 (keyword。lines[1] から): 測れなかった"},
+		}, "図解 0 (keyword。lines[1] から): 測れなかった", true},
 		"測れなかった (項目)": {func(ms []build.LabelMeasure) []build.LabelMeasure {
 			return slices.DeleteFunc(ms, func(m build.LabelMeasure) bool { return m.Key == "show:0:text" })
-		}, "の text: 測れなかった"},
+		}, "の text: 測れなかった", true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			p := build.LabelProblems(d, c.edit(slices.Clone(ok)))
-			if len(p) != 1 || !strings.Contains(p[0], c.want) {
-				t.Errorf("問題 %q に %q が 1 つだけ出るはず", p, c.want)
+			layout, broken := build.LabelProblems(d, c.edit(slices.Clone(ok)))
+			p, other := layout, broken
+			if c.broken {
+				p, other = broken, layout
+			}
+			if len(p) != 1 || !strings.Contains(p[0], c.want) || len(other) != 0 {
+				t.Errorf("問題 (改行 %q / 計測 %q) の %v の側に %q が 1 つだけ出るはず", layout, broken, map[bool]string{false: "改行", true: "計測"}[c.broken], c.want)
 			}
 		})
 	}
@@ -215,5 +220,16 @@ func TestMeasureLabelsChromeFailureWarns(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "確かめずに続ける (rc=2") {
 		t.Errorf("確かめていないことを出していない:\n%s", stderr.String())
+	}
+}
+
+// --allow-label-wraps で通すのは改行・はみ出しだけで、計測の契約違反 (測れなかったラベル) は止める
+func TestAllowLabelWrapsDoesNotPassBrokenMeasure(t *testing.T) {
+	env := testEnv(t)
+	env.MeasureLabels = fakeLabelMeasure(func(_ *build.PlayerData, ms []build.LabelMeasure) []build.LabelMeasure { return ms[1:] })
+	err := dispatch([]string{"build", buildFixtureScript(t, nil), "-o", filepath.Join(t.TempDir(), "out"), "--format", "html",
+		"--allow-fast-captions", "--allow-label-wraps"}, env)
+	if err == nil || !strings.Contains(err.Error(), "計測が壊れている") {
+		t.Fatalf("測れなかったラベルがあれば --allow-label-wraps でも止まるはず: %v", err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -56,13 +57,33 @@ func RunQuiet(timeout time.Duration, name string, args ...string) (int, string) 
 
 // RunQuietCtx は RunQuiet の親 context を選べる版。中断の後の後始末 (エンジンの停止) は Ctx 以外から呼ぶ。
 func RunQuietCtx(parent context.Context, timeout time.Duration, name string, args ...string) (int, string) {
+	var out bytes.Buffer
+	rc, msg := run(parent, timeout, &out, &out, name, args...)
+	if msg == "" {
+		msg = strings.TrimSpace(out.String())
+	}
+	return rc, msg
+}
+
+// RunSplit は RunQuiet の stdout と stderr を分けて返す版 (stdout をデータとして読むとき。Chrome の --dump-dom は stderr にログを混ぜる)。
+// 中断・timeout・起動できないときの rc は RunQuiet と同じで、そのときの説明は stderr の側に入れる
+func RunSplit(timeout time.Duration, name string, args ...string) (rc int, stdout, stderr string) {
+	var o, e bytes.Buffer
+	rc, msg := run(app.Ctx, timeout, &o, &e, name, args...)
+	if msg == "" {
+		msg = strings.TrimSpace(e.String())
+	}
+	return rc, o.String(), msg
+}
+
+// run はコマンドを走らせて rc を返す。中断・timeout・起動の失敗のときだけ、その説明を返す (それ以外は "")
+func run(parent context.Context, timeout time.Duration, stdout, stderr io.Writer, name string, args ...string) (int, string) {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	// timeout で kill した後、孫プロセス (Chrome の子など) が出力のパイプを持ったままでも待ち続けない
 	cmd.WaitDelay = 5 * time.Second
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
+	cmd.Stdout, cmd.Stderr = stdout, stderr
 	err := cmd.Run()
 	if errors.Is(parent.Err(), context.Canceled) {
 		return 130, "中断した"
@@ -73,9 +94,9 @@ func RunQuietCtx(parent context.Context, timeout time.Duration, name string, arg
 	var ee *exec.ExitError
 	switch {
 	case err == nil:
-		return 0, strings.TrimSpace(out.String())
+		return 0, ""
 	case errors.As(err, &ee):
-		return ee.ExitCode(), strings.TrimSpace(out.String())
+		return ee.ExitCode(), ""
 	default:
 		return 127, err.Error()
 	}

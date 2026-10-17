@@ -98,7 +98,8 @@ h1 { font-size: 1.25rem; margin: 0 0 12px; }
 .stage-title:empty, .stage-date:empty { display: none; }
 .caption:empty { display: none; }
 /* トピック (チャプター) 名。チャプターが 2 つ以上あるときだけ、上端のタイトルと立ち絵の頭の間に出す */
-.stage-topic { position: absolute; left: 50%; top: 17%; transform: translateX(-50%); max-width: 70%; text-align: center;
+/* width: max-content が無いと、left: 50% の箱は舞台の残り 50% に縮み、max-width 70% が効かずに 16 字ほどで折り返した (issue 812) */
+.stage-topic { position: absolute; left: 50%; top: 17%; transform: translateX(-50%); width: max-content; max-width: 70%; text-align: center;
                background: var(--caption-bg); border-radius: 14px; padding: 10px 28px;
                font-size: clamp(18px, 3.8vw, 38px); font-weight: 800; color: var(--accent); z-index: 1; }
 .stage-topic:empty { display: none; }
@@ -334,7 +335,7 @@ html.render * { transition: none !important; }
       }
       lines.push(line); glen.push(n);
       let clip = [0, 0];
-      if (texts.length) {
+      if (texts.length && (() => { r.setStart(texts[0], 0); r.setEnd(texts[texts.length - 1], texts[texts.length - 1].data.length); return r.getClientRects().length > 0; })()) { // 空白だけの字は描かれず、外接矩形が (0,0) になる
         r.setStart(texts[0], 0); r.setEnd(texts[texts.length - 1], texts[texts.length - 1].data.length);
         const t = r.getBoundingClientRect(); const a = excess(t, node.getBoundingClientRect()); const b = excess(t, stageRect());
         clip = [Math.max(a[0], b[0]), Math.max(a[1], b[1])].map(Math.round);
