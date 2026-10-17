@@ -660,8 +660,23 @@ func CmdBuild(env *app.Env, scriptArg, output, format string, jobs, kbps int, al
 			return app.Fail("%s: 書き出されていない (%v)", out, err)
 		}
 		fmt.Fprintf(env.Stderr, "build: %s / %d 行 / %.1f 秒 / %.1f MB → %s\n", f, len(data.Lines), data.Duration, float64(st.Size())/1e6, out)
+		if f == "mp4" {
+			printMP4Credits(env, data.Credits)
+		}
 	}
 	return nil
+}
+
+// printMP4Credits は mp4 に入らないクレジットを、概要欄などに貼れる形で標準出力に出す (issue 811)。
+// VOICEVOX の規約で声のクレジットは必須で、HTML は「クレジット」に自動で入るが mp4 には入らない。中身は HTML と同じ一覧 (Assemble の Credits)。
+func printMP4Credits(env *app.Env, credits []string) {
+	if len(credits) == 0 {
+		return
+	}
+	fmt.Fprintln(env.Stderr, "build: mp4 には入らないクレジット (概要欄などに書く。声のクレジットは VOICEVOX の規約で必須):")
+	for _, c := range credits {
+		fmt.Fprintln(env.Stdout, c)
+	}
 }
 
 // embedShowImages は図の画像を読み、検査して data URI に置き換える (mermaid の図は PNG にしてから同じ検査に通す)。
