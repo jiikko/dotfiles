@@ -204,7 +204,7 @@ func (m *Model) viewSettings(w int) string {
 			val = choice([]string{"帯で決める", "I/F で決める"}, cur)
 		case setBand:
 			if !m.pf.LanByBand {
-				dim = "(この決め方では使わない)"
+				dim = "(I/F で決めるときも、固定の判定と番号の提案に使う)"
 			}
 			if m.bandEdit {
 				// 入力欄の幅は板に入る分だけ (固定の 21 桁だと、幅 50 未満で欄の右が切れ、キャレットが「…」の上や画面の外に出た)

@@ -2362,27 +2362,48 @@ func TestWiredNameRelookupAfterNetReload(t *testing.T) {
 	}
 }
 
-// この Mac の「固定」は、画面 (selfLan / lanFixed) と初期設定 (setup.Plan の self) で同じ結論になる: I/F で決める設定でも、手動で
-// 帯の外の番号は未固定 (整合の監査: 札は固定なのに、初期設定は帯へ固定し直そうとした)。
+// この Mac の「固定」は、画面 (selfLan / lanFixed) と初期設定 (setup.Plan の self) で同じ結論になる。初期設定に渡すのと同じ観測
+// (selfWired から組む setupObserved の self の部分) で Plan を組み、帯で決める / I/F で決める の両方で突き合わせる (Observed を手で組むと、
+// 画面と初期設定が別のサービスを見ている食い違いを見られなかった。整合の監査の敵対レビュー)。
 func TestSelfFixedAgreesWithPlan(t *testing.T) {
-	for _, ip := range []string{"10.0.0.5", "192.168.100.10"} {
-		h := newHarness(t, nil, nil)
-		nn := selfNet()
-		nn.Services[0].Method, nn.Services[0].IP = "manual", ip
-		h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return nn, nil }
-		awaitNetLoad(h.m)
-		h.m.startNetLoad()
-		awaitNetLoad(h.m)
-		h.m.pf.LanByBand, h.m.pf.LanIF = false, "en13"
-		o := setup.Observed{Band: h.m.pf.Band, SelfIP: ip, SelfMethod: "manual", SelfService: "Thunderbolt Ethernet"}
-		var planDone bool
-		for _, st := range setup.Plan(o) {
-			if st.ID == setup.StepSelfStatic {
-				planDone = st.Done
+	type c struct {
+		name, ip, method string
+		bridge           bool // サービスを持たない I/F (VM のブリッジ) に帯の番号がある
+	}
+	for _, x := range []c{
+		{"帯の外の手動", "10.0.0.5", "manual", false},
+		{"帯の中の手動", "192.168.100.10", "manual", false},
+		{"方式が分からない帯の番号", "192.168.100.10", "", false},
+		{"方式が分からない帯の外", "10.0.0.5", "", false},
+		{"DHCP + ブリッジに帯の番号", "169.254.13.42", "DHCP", true},
+	} {
+		for _, byBand := range []bool{true, false} {
+			h := newHarness(t, nil, nil)
+			nn := selfNet()
+			nn.Services[0].Method, nn.Services[0].IP = x.method, x.ip
+			nn.IPs[1].Addr = x.ip
+			if x.bridge {
+				nn.IPs = append(nn.IPs, netinfo.IP{Device: "bridge100", Addr: "192.168.100.1", Kind: netinfo.KindVirtual})
 			}
-		}
-		if got := h.m.lanFixed(h.m.rows()[0]); got != planDone {
-			t.Errorf("%s: 画面の固定=%v / 初期設定の済み=%v", ip, got, planDone)
+			h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return nn, nil }
+			awaitNetLoad(h.m)
+			h.m.startNetLoad()
+			awaitNetLoad(h.m)
+			h.m.pf.LanByBand, h.m.pf.LanIF = byBand, "en13"
+			o := setup.Observed{Band: h.m.pf.Band}
+			if s, ok := h.m.selfWired(); ok {
+				o.SelfService, o.SelfIP, o.SelfMethod = s.Name, s.IP, s.Method
+			}
+			var planDone bool
+			for _, st := range setup.Plan(o) {
+				if st.ID == setup.StepSelfStatic {
+					planDone = st.Done
+				}
+			}
+			self := h.m.rows()[0]
+			if got := h.m.lanFixed(self); got != planDone || (planDone && self.lanIP != o.SelfIP) {
+				t.Errorf("%s (帯で決める=%v): 画面の固定=%v (内部 IP %s) / 初期設定の済み=%v (%s)", x.name, byBand, got, self.lanIP, planDone, o.SelfIP)
+			}
 		}
 	}
 }
@@ -2392,14 +2413,16 @@ func TestSelfFixedAgreesWithPlan(t *testing.T) {
 func TestGuidanceMatchesKeys(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini})
 	h.keys("h") // この Mac のタブ
-	for _, k := range []string{"Y", "y", "o"} {
+	for _, k := range []string{"Y", "y", "o", "s"} {
 		h.copied = nil
+		h.m.TakeNotices()
 		if a := h.keys(k); a == Exec || len(h.copied) != 0 {
 			t.Errorf("この Mac の行で %s が効いた: %v %v", k, a, h.copied)
 		}
-	}
-	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "この Mac には繋がない") {
-		t.Errorf("断った理由を出さない: %+v", n)
+		// キーごとに、この Mac の行だから断ったと出す (smb / 画面共有が無いことや、ユーザー名の理由で断ったように見せない)
+		if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "この Mac には") {
+			t.Errorf("%s: この Mac の行だから断ったと出さない: %+v", k, n)
+		}
 	}
 
 	h = newHarness(t, nil, []discover.Peer{mini})

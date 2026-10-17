@@ -166,7 +166,7 @@ Bonjour で見えている Mac と台帳 (~/.config/mac-lan-manager/hosts.toml) 
 キーの一覧は中で ? を押す。設定は , (~/.config/mac-lan-manager/settings.toml)。
 
 dump は画面を出さずに、この Mac の網・一覧 (画面と同じ判定)・Bonjour の生の結果を文字 (--json で JSON) で出す。
-読むだけで何も書かない (デバッグ用)。Bonjour の走査が終わるか --wait の上限まで待つ。
+読むだけ (台帳・設定・操作のログに書かない。初回だけ旧い置き場から移す。デバッグ用)。Bonjour の走査が終わるか --wait の上限まで待つ。
 dump --peer は相手を鍵だけの ssh で読み、鍵で入れるかと相手のルーターの無い有線のサービスを出す (読むだけ。上限 15 秒)。
 --user の既定は $USER、--host (known_hosts の鍵の名前) の既定は IP。
 `

@@ -17,7 +17,7 @@ import (
 )
 
 // runDump は `mac-lan-manager dump`: TUI を起こさずに、この Mac の網・台帳・Bonjour の結果を画面と同じ判定で出す
-// (LLM・人のデバッグ用。読むだけで何も書かない)。走査が終わるか --wait の上限まで待つ。
+// (LLM・人のデバッグ用。読むだけ: 台帳・設定・操作のログに書かない。初回だけ旧い置き場から移す)。走査が終わるか --wait の上限まで待つ。
 // --peer を付けると、この Mac の代わりにその相手を ssh で読む (observe。段 4 の初期設定が見るのと同じ PeerNet)。
 func runDump(args []string, stdout, stderr io.Writer, now func() time.Time, stop <-chan struct{}, newModel func() (*lanmgr.Model, error),
 	observe func(context.Context, setup.Dest) setup.PeerNet) int {

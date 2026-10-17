@@ -70,6 +70,9 @@ func (m *Model) Report() Report {
 			SSH: x.ssh, VNC: x.vnc, SMB: x.smb, MainIP: x.mainIP, LanIP: x.lanIP, ConnectIP: x.connectIP(), Target: m.target(x),
 			Listed: x.self || m.listed(x), LanFixed: m.lanFixed(x)}
 		row.WiredName, row.WiredOK, row.WiredNote = m.wiredState(x)
+		if x.self {
+			row.Target = "" // この Mac の行では s / Y / y / o を断る (宛先は無い)
+		}
 		for _, o := range x.others {
 			row.Others = append(row.Others, ReportIP{Device: o.Device, Addr: o.Addr, Kind: o.Kind.String()})
 		}

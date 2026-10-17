@@ -629,67 +629,39 @@ func (m *Model) lanFixed(r row) bool {
 	return !netinfo.IsLinkLocal(r.lanIP)
 }
 
-// serviceMethod は dev で ip を持つサービスの方式 ("manual" / "DHCP" / 分からなければ "")。1 つの I/F に手動と DHCP の 2 つの
-// サービスが載ることがあるので、IP が一致するものを先に見る (I/F の最初のサービスで決めると方式を取り違えた。敵対レビュー)。
-func (m *Model) serviceMethod(dev, ip string) string {
-	method := ""
-	for _, s := range m.self.Enabled() {
-		if s.Device != dev {
-			continue
-		}
-		if s.IP == ip {
-			return s.Method
-		}
-		if method == "" {
-			method = s.Method
-		}
-	}
-	return method
-}
-
-// unfixedBy はこの Mac の内部 IP を未固定と見るか。方式が分かれば方式で、分からなければ (-getinfo が読めない等) 前と同じく 169.254 か
-// で決める (方式が読めない有線を未固定と見て、前は台帳に書けた内部 IP が書けなくなった。敵対レビュー)。
-func unfixedBy(method, ip string) bool {
-	if method == "" {
-		return netinfo.IsLinkLocal(ip)
-	}
-	return method != "manual"
-}
-
 func (m *Model) selfLan() selfLanInfo {
+	// 「固定」は初期設定 (setup.Plan の self) と同じ 1 つの規則: 初期設定が固定するのと同じサービス (selfWired) が、手動で帯の中。
+	// 画面と初期設定で別々に組むと、I/F で決める設定では方式だけで固定と出し、帯で決める設定ではサービスを持たない I/F (VM のブリッジ等) の
+	// 帯の番号を内部 IP と出して、どちらも初期設定は固定し直そうとした (整合の監査・その敵対レビュー)。固定かは setup.SelfFixed
+	_, bandErr := netinfo.ParseBand(m.pf.Band)
+	fixed := func(s netinfo.Service) bool { return setup.SelfFixed(m.pf.Band, s.Method, s.IP) }
 	if m.pf.LanByBand {
-		if _, err := netinfo.ParseBand(m.pf.Band); err != nil {
+		if bandErr != nil {
 			return selfLanInfo{Note: "帯が使えない形 (" + m.pf.Band + ")"}
 		}
-		for _, x := range m.self.IPs { // 手動で固定した帯の番号を先に (自動の番号が帯を引いた別の I/F を拾って「未固定」と出した。敵対レビュー)
-			if netinfo.InBand(m.pf.Band, x.Addr) && m.serviceMethod(x.Device, x.Addr) == "manual" {
-				return selfLanInfo{IP: x.Addr, Note: "帯 " + m.pf.Band}
-			}
+		s, ok := m.selfWired()
+		switch {
+		case !ok || s.IP == "":
+			return selfLanInfo{Note: "帯に入る IP が無い"}
+		case !netinfo.InBand(m.pf.Band, s.IP):
+			return selfLanInfo{IP: s.IP, Note: "帯に入る IP が無い (未固定)", Unfixed: true}
 		}
-		for _, x := range m.self.IPs {
-			if netinfo.InBand(m.pf.Band, x.Addr) {
-				// 帯に入っても、手動の固定でなければ未固定 (帯を 169.254 の中に置く設定では、自動の番号が帯を引くことがある)
-				return selfLanInfo{IP: x.Addr, Note: "帯 " + m.pf.Band, Unfixed: unfixedBy(m.serviceMethod(x.Device, x.Addr), x.Addr)}
-			}
-		}
-		if off := m.self.Offline(); len(off) > 0 && off[0].IP != "" {
-			return selfLanInfo{IP: off[0].IP, Note: "帯に入る IP が無い (未固定)", Unfixed: true}
-		}
-		return selfLanInfo{Note: "帯に入る IP が無い"}
+		return selfLanInfo{IP: s.IP, Note: "帯 " + m.pf.Band, Unfixed: !fixed(s)}
 	}
 	for _, s := range m.self.Enabled() {
 		if m.pf.LanIF != "" && s.Device == m.pf.LanIF { // 未設定 ("") を I/F の無いサービス (VPN) に一致させない
 			if !m.self.WiredIF(s.Device) { // 設定が読めない・ルーターがある I/F の IP を内部 IP として出さない (I/F の候補と同じ判定)
 				return selfLanInfo{Note: "I/F " + s.Device + " がルーターの無い有線として読めない"}
 			}
-			// 方式で決める (自動の 169.254 を固定と見て台帳に書けた。敵対レビュー)。帯の外の手動も未固定: 初期設定 (setup.Plan の self) は
-			// 「手動で帯の中」を済みと見るので、方式だけで固定と出すと、札は固定なのに初期設定は帯へ固定し直そうとした (整合の監査)
+			// 方式で決める (自動の 169.254 を固定と見て台帳に書けた。敵対レビュー)。帯は I/F で決めるときも固定の判定と番号の提案に使う
 			note := "I/F " + s.Device
-			outside := s.Method == "manual" && !netinfo.InBand(m.pf.Band, s.IP)
-			if outside {
+			switch {
+			case bandErr != nil:
+				note += " (帯が使えない形)"
+			case !netinfo.InBand(m.pf.Band, s.IP):
 				note += " (帯 " + m.pf.Band + " の外)"
 			}
-			return selfLanInfo{IP: s.IP, Note: note, Unfixed: unfixedBy(s.Method, s.IP) || outside}
+			return selfLanInfo{IP: s.IP, Note: note, Unfixed: !fixed(s)}
 		}
 	}
 	return selfLanInfo{Note: "I/F " + or(m.pf.LanIF, "(未設定)") + " が無い"}
@@ -860,10 +832,13 @@ func (m *Model) sshRefusal(r row) string {
 		return why
 	}
 	if user, _ := m.userFor(r); user == "" {
-		return "ssh のユーザー名が分からない ($USER が使えない。u で台帳に書く)"
+		return noUserNote
 	}
 	return ""
 }
+
+// noUserNote は ssh のユーザー名が分からないときの断り (u は台帳に載っている行でだけ効く)。
+const noUserNote = "ssh のユーザー名が分からない ($USER が使えない。台帳に載せてから u で書く)"
 
 // awayReason は、有線で別の網に居て Wi-Fi も無いので繋げない理由 (そうでなければ "")。
 func (r row) awayReason() string {
@@ -1077,8 +1052,8 @@ func (m *Model) keyList(key string) Action {
 		m.note("この Mac には繋がない (この Mac の IP・名前は c でコピー)", false)
 		return None
 	}
-	if user == "" && (key == "s" || key == "Y") {
-		m.note("ssh のユーザー名が分からない ($USER が使えない。u で台帳に書く)", false)
+	if user == "" && key == "Y" { // s は sshRefusal が (この Mac の行・ssh が閉じている を先に) 断る
+		m.note(noUserNote, false)
 		return None
 	}
 	switch key {

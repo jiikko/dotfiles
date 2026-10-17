@@ -58,6 +58,16 @@ type Step struct {
 	Via     string // 相手に入る先の IP (StepKey / StepPeerStatic。Wi-Fi で入れるなら Wi-Fi)
 }
 
+// SelfFixed はこの Mac の有線 (method / ip) が帯の固定か。画面 (lanmgr の selfLan) と初期設定 (Plan の self) が同じ答えを出すための
+// 1 つの述語 (別々に組むと、札は固定なのに初期設定は固定し直そうとした。整合の監査)。手動で帯の中なら固定。方式が読めない (空) ときは、
+// 169.254 でない帯の番号なら固定と見る (分からないまま固定し直さない。未固定と見て、前は書けた台帳の内部 IP が書けなくなった。敵対レビュー)
+func SelfFixed(band, method, ip string) bool {
+	if _, err := netinfo.ParseBand(band); err != nil || !netinfo.InBand(band, ip) {
+		return false
+	}
+	return method == "manual" || (method == "" && !netinfo.IsLinkLocal(ip))
+}
+
 // Plan は観測から手順を組む。何度呼んでも、済んだ手順は Done で返す (途中で止まっても、観測し直して続きから流せる)。
 func Plan(o Observed) []Step {
 	_, bandErr := netinfo.ParseBand(o.Band)
@@ -66,7 +76,7 @@ func Plan(o Observed) []Step {
 	if via == "" {
 		via = o.Peer.LanIP
 	}
-	self := Step{ID: StepSelfStatic, Title: "この Mac の有線を固定 IP にする", Done: o.SelfMethod == "manual" && inBand(o.SelfIP)}
+	self := Step{ID: StepSelfStatic, Title: "この Mac の有線を固定 IP にする", Done: SelfFixed(o.Band, o.SelfMethod, o.SelfIP)}
 	switch {
 	case bandErr == nil && (inBand(o.SelfMainIP) || netinfo.Overlaps(o.Band, o.SelfMainIP, o.SelfMainMask)):
 		// 帯がメインの網と重なると、同じ番号の網が有線と Wi-Fi の両方に乗り、メインの網の宛先が有線へ流れる (前の調べで挙げた欠陥)

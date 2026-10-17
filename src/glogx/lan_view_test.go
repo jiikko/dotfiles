@@ -310,4 +310,11 @@ func TestLanHintFollowsLayers(t *testing.T) {
 	if h := stripANSI(m.lanV.hint(80)); strings.Contains(h, "L/q") || !strings.Contains(h, "esc: 戻る") {
 		t.Errorf("設定の画面の最下行 = %q", h)
 	}
+	// 足りない画面では q / esc が L ごと閉じ、L も glogx に渡る: 層が開いていても「L/q: 閉じる」
+	lm := m.lanV.live()
+	lm.Resize(20, 6)
+	lm.View()
+	if h := stripANSI(m.lanV.hint(80)); !strings.Contains(h, "L/q: 閉じる") {
+		t.Errorf("足りない画面の最下行 = %q", h)
+	}
 }

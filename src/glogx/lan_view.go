@@ -212,7 +212,8 @@ func (v *lanView) lines(width, page int) []string {
 func (v *lanView) hint(width int) string {
 	// 層 (初期設定・設定・確認の板・入力欄) が開いている間は L も ? も lanmgr が取り、q / esc は 1 段戻るだけ (Binds)。そのときに
 	// 「L/q: 閉じる」を出すと嘘になった (整合の監査)
-	if lm := v.live(); lm != nil && lm.OwnsKeys() {
+	// ただし足りない画面では q / esc が L ごと閉じ、L も glogx に渡る (Binds("L") が偽) ので「L/q: 閉じる」が正しい (敵対レビュー)
+	if lm := v.live(); lm != nil && lm.OwnsKeys() && lm.Binds("L") {
 		return fitHintItems(width, []hintItem{{text: "esc: 戻る", prio: 1}})
 	}
 	return fitHintItems(width, []hintItem{
