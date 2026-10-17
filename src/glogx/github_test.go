@@ -208,7 +208,7 @@ func TestChunkSHAs(t *testing.T) {
 	}
 }
 
-// capFetchSHAs で丸めた入力なら 1 チャンクが fetchMaxSHAs (1 クエリの alias 上限) を
+// 一括取得の経路 (planCIChunks) は丸めてから割るので、1 チャンクが fetchMaxSHAs (1 クエリの alias 上限) を
 // 超えないこと。TUI の起動/再取得経路がこの上限を素通りして 100 超の alias クエリを
 // 投げていた回帰の防止 (2026-07-29)。
 func TestCapFetchSHAsBoundsChunkSize(t *testing.T) {
@@ -220,11 +220,11 @@ func TestCapFetchSHAsBoundsChunkSize(t *testing.T) {
 		return out
 	}
 	for _, n := range []int{101, 399, 400, 401, 1000} {
-		capped := capFetchSHAs(shas(n))
+		capped, chunks := planCIChunks(shas(n))
 		if want := min(n, fetchTotalSHAs); len(capped) != want {
-			t.Errorf("n=%d の capFetchSHAs = %d 件, want %d", n, len(capped), want)
+			t.Errorf("n=%d の planCIChunks の対象 = %d 件, want %d", n, len(capped), want)
 		}
-		for i, c := range chunkSHAs(capped) {
+		for i, c := range chunks {
 			if len(c) > fetchMaxSHAs {
 				t.Errorf("n=%d チャンク %d のサイズ = %d > fetchMaxSHAs %d", n, i, len(c), fetchMaxSHAs)
 			}

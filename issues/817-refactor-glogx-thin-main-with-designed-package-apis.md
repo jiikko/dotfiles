@@ -209,7 +209,9 @@ P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.
   先に設計が要るもの 2 つ:
   1. ✅ 2026-10-18 済み (glogx: git log の取得の関数が CLI の Options でなく LogQuery を受け取る)。`LoadCommits` などが CLI の `Options` を丸ごと受け取っている → gitdata 側に取得の条件だけを持つ型 (仮名 LogQuery) を置き、
      main が Options から組んで渡す。StateLoading (表示専用の擬似状態) は render.go に残すか、CIState の定数として gitdata へ移す
-  2. CI の分割取得の中身 (capFetchSHAs / chunkSHAs / fetchCIChunk / fetchMaxSHAs / fillUnknownFetched / formatDuration / lastLine) を
+  2. 一部済み 2026-10-18 (glogx: 一括取得の「丸めてから割る」を planCIChunks 1 つに寄せる): tui.go と FetchCIStatuses は planCIChunks だけを通す。
+     チャンクごとの Cmd は残す (結果をチャンク単位で先に描くための意図的な形)。残り: fillUnknownFetched / formatDuration / lastLine の口を決めて gitdata へ移す。
+     元の記述: CI の分割取得の中身 (capFetchSHAs / chunkSHAs / fetchCIChunk / fetchMaxSHAs / fillUnknownFetched / formatDuration / lastLine) を
      tui.go と external_commands.go が直接組んでいる → 「SHA の列を渡すと分割して取得し、取れなかったものを埋める」1 つの口 (仮名 FetchCIBatch) へ寄せてから移す。
      機械的に大文字にしない (C 以降と同じ作法)
 - **G-2: diff / job_detail / pr_status の overlay は G-1 の後に移せる** (依存は gitdata の型・tui.go の Msg (diffMsg / jobDetailMsg) と

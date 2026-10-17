@@ -390,7 +390,7 @@ type browseModel struct {
 func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, opts *Options, colored bool, width, height int) *browseModel {
 	// 上限超過分は問い合わせず StateUnknown 表示のまま (capFetchSHAs のポリシー)。
 	// toFetch に残すと「取得中」のまま永遠に解決しない
-	toFetch = capFetchSHAs(toFetch)
+	toFetch, chunks := planCIChunks(toFetch)
 	ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 	m := &browseModel{
 		toast:          toast.Stack{Shadow: term.AnsiShadowFg}, // 落ち影は他の板と同じ近黒 (term.BuildPanelBoxImpl と同じ)
@@ -433,7 +433,6 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		// 🚨 チャンク closure で cancel() を defer しないこと: 共有 ctx なので最初に終わった
 		// チャンクが残りを巻き添えキャンセルしてしまう。timer の解放は m.cancel
 		// (main.go の defer browse.cancel() と quit 経路) が担う。
-		chunks := chunkSHAs(toFetch)
 		m.pendingFetches = len(chunks)
 		epoch := m.fetchEpoch // closure は別 goroutine で走るので値で捕捉 (m の直読みは race)
 		cmds := make([]tea.Cmd, 0, len(chunks))
@@ -667,9 +666,8 @@ func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError
 func (m *browseModel) fetching() bool { return m.pendingFetches > 0 }
 
 func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
-	shas = capFetchSHAs(shas) // 超過分は StateUnknown のまま (newBrowseModel と同じポリシー)
-	chunks := chunkSHAs(shas)
-	m.fetchEpoch++ // 旧世代の未着チャンクを無効化 (ciResultMsg ハンドラの世代ガード)
+	shas, chunks := planCIChunks(shas) // 超過分は StateUnknown のまま (newBrowseModel と同じポリシー)
+	m.fetchEpoch++                     // 旧世代の未着チャンクを無効化 (ciResultMsg ハンドラの世代ガード)
 	// 🚨 世代を進めると、旧世代のチャンクは ciResultMsg の epoch ガードで**丸ごと捨てられる**
 	// = そこにあった「札を降ろす」処理も一緒に捨てられる。降ろす責任を負っていた札を、
 	// 世代を進めるこの 1 箇所で解放する (issue 272。gitlog_watch.go:handleGitLogProbe の

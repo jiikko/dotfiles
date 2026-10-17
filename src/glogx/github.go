@@ -230,8 +230,7 @@ func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []s
 	if len(shas) == 0 {
 		return emptyBatch(), nil
 	}
-	shas = capFetchSHAs(shas)
-	chunks := chunkSHAs(shas)
+	_, chunks := planCIChunks(shas)
 	if len(chunks) == 1 {
 		return fetchCIChunk(ctx, run, repo, chunks[0])
 	}
@@ -304,9 +303,17 @@ func capFetchSHAs(shas []string) []string {
 	return shas
 }
 
+// planCIChunks は一括取得の対象を上限で丸め (capFetchSHAs)、チャンクへ割る (chunkSHAs)。丸めた後の対象も返す
+// (呼び手は「取得中」の集合として持つ。丸めで落ちた SHA を残すと「取得中」のまま解決しない)。
+// 一括取得の経路はここだけを通す: 丸めずに割ると 1 チャンクが fetchMaxSHAs を超える (capFetchSHAs の注記)。
+func planCIChunks(shas []string) (capped []string, chunks [][]string) {
+	capped = capFetchSHAs(shas)
+	return capped, chunkSHAs(capped)
+}
+
 // chunkSHAs は shas を最大 fetchConcurrency 個のチャンクへほぼ均等に割る
 // (件数が少ないときは 1 チャンク = 従来どおりの単発リクエスト)。
-// 🚨 入力は capFetchSHAs 済み (≤ fetchTotalSHAs) が前提。これにより 1 チャンクは
+// 入力は capFetchSHAs 済み (≤ fetchTotalSHAs) が前提で、planCIChunks だけが呼ぶ。これにより 1 チャンクは
 // 必ず fetchMaxSHAs 以下になる (等分なので len/fetchConcurrency ≤ fetchMaxSHAs)。
 func chunkSHAs(shas []string) [][]string {
 	n := min((len(shas)+minChunkSHAs-1)/minChunkSHAs, fetchConcurrency)
