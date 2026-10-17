@@ -232,16 +232,24 @@ func (m *Model) viewList(w int) string {
 }
 
 func (m *Model) tabs(width int) string {
-	labels := []string{fmt.Sprintf("管理対象  %d", m.count(true)), fmt.Sprintf("未管理  %d", m.count(false))}
-	parts := make([]string, 0, len(labels))
-	for i, lb := range labels {
-		if i == m.tab {
-			parts = append(parts, pillTab(lb, tabColors[i], cBg, true))
-		} else {
-			parts = append(parts, pillTab(lb, cTabIdle, cDim, false))
+	pills := func(labels []string) string {
+		parts := make([]string, 0, len(labels))
+		for i, lb := range labels {
+			if i == m.tab {
+				parts = append(parts, pillTab(lb, tabColors[i], cBg, true))
+			} else {
+				parts = append(parts, pillTab(lb, cTabIdle, cDim, false))
+			}
 		}
+		return strings.Join(parts, " ")
 	}
-	row := strings.Join(parts, " ")
+	managed, unmanaged := m.count(true), m.count(false)
+	row := pills([]string{fmt.Sprintf("管理対象  %d", managed), fmt.Sprintf("未管理  %d", unmanaged), "この Mac"})
+	// 右の絞り込みの最小の欄 (前置き 2 + 欄 4 + 間 1 + 余白 2) が残らない幅では、タブの名前を縮める (この Mac のタブを足して 13 桁
+	// 伸び、狭い端末で絞り込みの入力欄が消えた)
+	if width-lipgloss.Width(row)-3 < 9 {
+		row = pills([]string{fmt.Sprintf("管理 %d", managed), fmt.Sprintf("未管理 %d", unmanaged), "自分"})
+	}
 	// 一覧が空のとき「相手がいない」と区別できるように、設定で絞っていることを出す (敵対レビュー)。ただし右の絞り込みの最小の欄
 	// (前置き 2 + 欄 4 + 間 1 + 余白 2) が残るときだけ (残らない幅で足すと、入力欄とキャレットが消えた。敵対レビュー)
 	if mark := sMuted.Render("  有線で見えた相手だけ"); m.pf.WiredOnly && width-lipgloss.Width(row)-lipgloss.Width(mark) >= 9 {
@@ -478,6 +486,9 @@ func (m *Model) listTable(width, maxRows int) string {
 		return lipgloss.JoinHorizontal(lipgloss.Top, out...)
 	}
 	lines := []string{render(-1, nil), sMuted.Render(strings.Repeat("─", width))}
+	if len(vis) == 0 {
+		return strings.Join(append(lines, sDim.Render("  "+m.emptyTabNote())), "\n")
+	}
 	from, to := 0, len(vis)
 	m.listRows = maxRows // 半ページ送りの量 (端末の高さではなく、一覧の窓の行数で送る)
 	if len(vis) > maxRows {
@@ -491,7 +502,23 @@ func (m *Model) listTable(width, maxRows int) string {
 	return strings.Join(lines, "\n")
 }
 
+// emptyTabNote は相手のタブに行が無いときの 1 行。
+func (m *Model) emptyTabNote() string {
+	switch {
+	case m.filter.String() != "":
+		return "絞り込みに合う Mac が無い"
+	case m.tab == tabManaged:
+		return "管理対象の Mac はまだ無い (未管理のタブで space か初期設定)"
+	case m.Busy():
+		return "探しています…"
+	}
+	return "見つかった Mac は無い"
+}
+
 func (m *Model) detail(r row, width int) string {
+	if !r.self && r.host == "" { // タブに行が無い
+		return sDim.Render(m.emptyTabNote())
+	}
 	user, _ := m.userFor(r)
 	name := or(r.alias, or(r.instance, r.host))
 	title := sAccent.Render(name)
@@ -610,7 +637,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 		// 板の中の位置: 上の辺 1 + 余白 1 + 題 1 + 空行 1 = 4 行目、左の辺 1 + 余白 2 + 前置き
 		return modal(m.edit.title, []string{prefix + field}, "enter 決める   esc やめる", m.w), 4, 3 + lipgloss.Width(prefix) + col
 	case ovHelp:
-		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理のタブ"}, {"/", "絞り込み"},
+		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理 / この Mac のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"o", "画面共有を開く"},
 			{"c", "この Mac の IP をコピー"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
 			{"r", "リロード"}, {"q / esc", "閉じる"}}

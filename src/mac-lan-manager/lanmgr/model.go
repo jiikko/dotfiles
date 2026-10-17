@@ -121,14 +121,14 @@ type Model struct {
 	w, h        int
 	now         time.Time
 	sc          screen
-	tab         int         // 0: 管理対象 / 1: 未管理
-	cur         [2]int      // タブごとのカーソル
-	listOff     [2]int      // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
-	listRows    int         // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
-	tooShort    bool        // 一覧の板に 1 行も入らない高さ (描いたとき)
-	prefsUnread bool        // 設定ファイルが読めなかった (既定で描き、保存しない)
-	small       bool        // 最後に描いた画面が幅・高さの足りない画面 (抜け方だけ)。HandleInput は q しか受けない
-	su          *setupState // 初期設定の画面 (開いていなければ nil)
+	tab         int          // tabManaged / tabUnmanaged / tabSelf
+	cur         [numTabs]int // タブごとのカーソル
+	listOff     [numTabs]int // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
+	listRows    int          // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
+	tooShort    bool         // 一覧の板に 1 行も入らない高さ (描いたとき)
+	prefsUnread bool         // 設定ファイルが読めなかった (既定で描き、保存しない)
+	small       bool         // 最後に描いた画面が幅・高さの足りない画面 (抜け方だけ)。HandleInput は q しか受けない
+	su          *setupState  // 初期設定の画面 (開いていなければ nil)
 	// pending は相手ごとの確認待ち (固定 IP にした後、新しい IP で確認するまで)。claimed はこの起動で相手に割り当てた番号
 	// (台帳に載る前の新しい IP を、次の相手の番号の計算で避ける)。どちらも画面を閉じても残す
 	pending map[string]*pendingConfirm
@@ -336,7 +336,7 @@ func (m *Model) Place() Place {
 
 // RestorePlace は場所を戻す。カーソルの Mac がまだ一覧に無ければ (Bonjour の走査で後から見つかる)、見つかったときに合わせる。
 func (m *Model) RestorePlace(p Place) {
-	if p.Tab == 0 || p.Tab == 1 {
+	if p.Tab >= 0 && p.Tab < numTabs {
 		m.tab = p.Tab
 	}
 	m.wantHost = p.Host
@@ -749,13 +749,25 @@ func (m *Model) rows() []row {
 	return append([]row{self}, out...)
 }
 
-// visible は今のタブ・絞り込みで出す行 (この Mac はどちらのタブでも先頭)。
+// タブ。相手の一覧 (管理対象 / 未管理) にこの Mac は出さず、この Mac は自分のタブにだけ出す (一覧は他の Mac を見る場所。
+// 両方のタブの先頭に固定していた。ユーザー指示 2026-10-17)
+const (
+	tabManaged = iota
+	tabUnmanaged
+	tabSelf
+	numTabs
+)
+
+// visible は今のタブの行 (相手のタブは空でありうる)。
 func (m *Model) visible() []row {
 	all := m.rows()
-	out := []row{all[0]}
+	if m.tab == tabSelf {
+		return all[:1]
+	}
+	out := make([]row, 0, len(all)-1)
 	q := strings.ToLower(m.filter.String())
 	for _, r := range all[1:] {
-		if r.managed != (m.tab == 0) || !m.listed(r) {
+		if r.managed != (m.tab == tabManaged) || !m.listed(r) {
 			continue
 		}
 		if q != "" && !strings.Contains(strings.ToLower(r.alias+" "+r.host+" "+r.instance), q) {
@@ -781,9 +793,14 @@ func (m *Model) count(managed bool) int {
 	return n
 }
 
+// current はカーソルの行。今のタブに行が無ければ空の行 (host も IP も無い。行に効くキーは keyList が先に断る)。
 func (m *Model) current() row {
 	vis := m.visible()
-	m.cur[m.tab] = min(m.cur[m.tab], len(vis)-1)
+	if len(vis) == 0 {
+		m.cur[m.tab] = 0
+		return row{}
+	}
+	m.cur[m.tab] = max(min(m.cur[m.tab], len(vis)-1), 0)
 	return vis[m.cur[m.tab]]
 }
 
@@ -960,6 +977,7 @@ func (m *Model) HandleInput(key, text string) Action {
 
 // move はカーソルを移動の語彙 (listnav.MotionOf) で動かす。
 func move(cur *int, n int, key string, rows int) bool {
+	defer func() { *cur = max(*cur, 0) }() // 行が無いタブ (n=0) で n-1 = -1 を入れない
 	switch listnav.MotionOf(key) {
 	case listnav.Down:
 		*cur = min(*cur+1, n-1)
@@ -982,8 +1000,8 @@ func move(cur *int, n int, key string, rows int) bool {
 // needsNet は、この Mac のネットワークを読み終えるまで断るキー (最下行の案内もこの間は出さない)。
 var needsNet = []string{"s", "Y", "y", "o", "c", "space"}
 
-// rowKeys はカーソルの行の Mac に効くキー (キーの入口の取り込みで、見ていた Mac が一覧から消えたら断る)。
-var rowKeys = append(slices.Clone(needsNet), "enter", "m", "u")
+// rowKeys はカーソルの行の Mac に効くキー (見ていた Mac が一覧から消えた・タブに行が無いときは断る)。c はこの Mac の IP のコピーで行に効かない
+var rowKeys = []string{"s", "Y", "y", "o", "space", "enter", "m", "u"}
 
 func (m *Model) keyList(key string) Action {
 	// 繋ぐ・コピー・登録は、この Mac のネットワーク (どの I/F が有線か・この Mac の IP) を読み終えてから。読み込み中に受けると
@@ -994,6 +1012,10 @@ func (m *Model) keyList(key string) Action {
 	}
 	if m.cursorLost && slices.Contains(rowKeys, key) {
 		m.note("一覧が変わった (カーソルの Mac を見直してから)", false)
+		return None
+	}
+	if len(m.visible()) == 0 && slices.Contains(rowKeys, key) {
+		m.note("このタブには Mac が無い", false)
 		return None
 	}
 	r := m.current()
@@ -1025,8 +1047,10 @@ func (m *Model) keyList(key string) Action {
 		return None
 	}
 	switch key {
-	case "tab", "shift+tab", "h", "l", "left", "right": // タブのある画面では h / l がタブ移動 (§2)
-		m.tab = 1 - m.tab
+	case "tab", "l", "right": // タブのある画面では h / l がタブ移動 (§2)
+		m.tab = (m.tab + 1) % numTabs
+	case "shift+tab", "h", "left":
+		m.tab = (m.tab + numTabs - 1) % numTabs
 	case "/":
 		m.filtering = true
 	case "?":

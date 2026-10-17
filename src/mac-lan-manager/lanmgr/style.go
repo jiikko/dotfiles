@@ -37,8 +37,8 @@ var (
 	surfPanel  = "#2B2530"
 	surfModal  = "#30293F"
 
-	// タブごとの色 (管理対象 = 水色 / 未管理 = ピンク)。一覧のカードの枠もこの色から始まる
-	tabColors = []color.Color{cTeal, cPink}
+	// タブごとの色 (管理対象 = 水色 / 未管理 = ピンク / この Mac = 青緑)。一覧のカードの枠もこの色から始まる
+	tabColors = []color.Color{cTeal, cPink, cInfo} // tabManaged / tabUnmanaged / tabSelf
 )
 
 var (

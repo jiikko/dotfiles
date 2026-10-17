@@ -193,12 +193,39 @@ func TestRowsMergeLedgerAndBonjour(t *testing.T) {
 
 func TestTabsSplitManaged(t *testing.T) {
 	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", Alias: "mini"}}, []discover.Peer{mini, {Host: "air.local", SSH: true}})
-	if v := h.m.visible(); len(v) != 2 || v[1].host != "m2macmini.local" {
+	if v := h.m.visible(); len(v) != 1 || v[0].host != "m2macmini.local" {
 		t.Errorf("管理対象のタブ = %+v", v)
 	}
 	h.keys("l")
-	if v := h.m.visible(); len(v) != 2 || v[1].host != "air.local" || !v[0].self {
-		t.Errorf("未管理のタブ (この Mac は先頭に固定) = %+v", v)
+	if v := h.m.visible(); len(v) != 1 || v[0].host != "air.local" {
+		t.Errorf("未管理のタブ (この Mac は出さない) = %+v", v)
+	}
+	h.keys("l")
+	if v := h.m.visible(); len(v) != 1 || !v[0].self {
+		t.Errorf("この Mac のタブ = %+v", v)
+	}
+	h.keys("l")
+	if h.m.tab != tabManaged {
+		t.Errorf("この Mac のタブの次 = %d (管理対象へ戻る)", h.m.tab)
+	}
+	h.keys("h")
+	if h.m.tab != tabSelf {
+		t.Errorf("管理対象の前 = %d (この Mac のタブ)", h.m.tab)
+	}
+}
+
+// 相手のタブが空でも落ちず、行に効くキーは断る (この Mac の行が必ずあった頃の前提が外れた)。
+func TestEmptyPeerTab(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	h.keys("j", "k", "G")
+	if a := h.keys("s"); a != None {
+		t.Errorf("行の無いタブで s が %v", a)
+	}
+	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "Mac が無い") {
+		t.Errorf("断った理由を出していない: %+v", n)
+	}
+	if v := strings.Join(h.m.View(), "\n"); !strings.Contains(v, "管理対象の Mac はまだ無い") {
+		t.Errorf("空のタブの案内が無い:\n%s", v)
 	}
 }
 
@@ -220,7 +247,7 @@ func TestSSHUsesLanIPAndHostKeyAlias(t *testing.T) {
 
 func TestCopyKeys(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini, {Host: "nosmb.local", SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}})
-	h.keys("l", "j") // 未管理のタブの 1 台目 (m2macmini)
+	h.keys("l") // 未管理のタブの 1 台目 (m2macmini)
 	h.keys("Y", "y")
 	want := []string{"ssh koji@169.254.217.100", "smb://169.254.217.100"} // 内部 (有線) を優先
 	if !slices.Equal(h.copied, want) {
@@ -608,7 +635,7 @@ func TestExecDoneIgnoresExitCode(t *testing.T) {
 // 別名は入力欄を開いたときの Mac に付く (入力中に走査で行が増えてカーソルがずれても、別の Mac に付けない)。
 func TestAliasGoesToMacOpenedFor(t *testing.T) {
 	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2"}, {Host: "studio.local", User: "koji"}}, []discover.Peer{mini})
-	h.keys("j", "m")
+	h.keys("m")
 	opened := h.m.current().host
 	h.m.cur[h.m.tab]++ // 入力中にカーソルの下の行が入れ替わった
 	if h.m.current().host == opened {
@@ -1175,7 +1202,7 @@ func TestFilterCaretExact(t *testing.T) {
 				lines := h.m.View()
 				x, y, ok := h.m.CaretPos()
 				if !ok {
-					if w >= 43 {
+					if w >= 46 { // 実測 (この Mac のタブを足して 43 → 46。狭い幅ではタブの名前を縮める)
 						t.Errorf("幅 %d (%s): 入力欄が入る幅でキャレットが出ない", w, typed)
 					}
 					continue
@@ -1601,7 +1628,7 @@ func TestWiredOnlyHidesWifiOnlyPeers(t *testing.T) {
 		t.Fatalf("有線だけを保存しない: %+v", h.saved)
 	}
 	hosts := []string{}
-	for _, r := range h.m.visible()[1:] {
+	for _, r := range h.m.visible() {
 		hosts = append(hosts, r.host)
 	}
 	if !slices.Equal(hosts, []string{"m2macmini.local"}) || h.m.count(false) != 1 {
@@ -1645,7 +1672,7 @@ func TestUnknownUserRefusesShell(t *testing.T) {
 // (ssh の stderr) は toast にせず一覧にだけ残す。件数は上限で古いものから捨てる (ユーザー要望 2026-10-16)。
 func TestMessageLogCopies(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini})
-	h.keys("s") // この Mac の行: 断りの知らせ
+	h.keys("h", "s") // この Mac のタブの行: 断りの知らせ
 	h.m.TakeNotices()
 	long := "exit status 255: " + strings.Repeat("Host key verification failed. ", 10)
 	h.m.note(long, false)
@@ -1858,7 +1885,7 @@ func TestKeyAfterNetLoadActsOnShownMac(t *testing.T) {
 	h.keys("l")
 	h.m.pf.WiredOnly = true
 	h.cursorTo(t, "zed.local")
-	if n := len(h.m.visible()); n != 2 {
+	if n := len(h.m.visible()); n != 1 {
 		t.Fatalf("前提: aaa は有線に見えない (visible=%d)", n)
 	}
 	nn := selfNet()

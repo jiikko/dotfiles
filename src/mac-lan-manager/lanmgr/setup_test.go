@@ -240,7 +240,7 @@ func TestSetupRefusals(t *testing.T) {
 		t.Fatal("この Mac を観測した")
 		return setup.PeerNet{}
 	}
-	h2.keys("l", "enter") // 未管理のタブの先頭はこの Mac
+	h2.keys("h", "enter") // この Mac のタブ
 	if h2.m.sc == scSetup {
 		t.Error("この Mac の行で初期設定の画面を開いた")
 	}
