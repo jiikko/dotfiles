@@ -8,6 +8,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 // actionModal は glogx 独自の「実行を伴う操作」= git push / git pull --rebase / claude update の
@@ -310,10 +311,10 @@ func (a *actionModal) boxLines(width int, colored bool, spinner string, unpushed
 	var rows []string
 	switch {
 	case a.pushing:
-		rows = []string{spinner + " pushing...", "", paint(a.runningQuitHint(), ansiDim, colored)}
+		rows = []string{spinner + " pushing...", "", term.Paint(a.runningQuitHint(), term.AnsiDim, colored)}
 	case a.pulling:
 		title = " git pull --rebase "
-		rows = []string{spinner + " pulling...", "", paint(a.runningQuitHint(), ansiDim, colored)}
+		rows = []string{spinner + " pulling...", "", term.Paint(a.runningQuitHint(), term.AnsiDim, colored)}
 	case a.rerunning:
 		title = " CI 再実行 "
 		rows = []string{spinner + " 再実行を要求中..."}
@@ -330,7 +331,7 @@ func (a *actionModal) boxLines(width int, colored bool, spinner string, unpushed
 				rows = append(rows, spinner+" "+t+" updating...")
 			}
 		}
-		rows = append(rows, "", paint("完了まで終了できません", ansiDim, colored))
+		rows = append(rows, "", term.Paint("完了まで終了できません", term.AnsiDim, colored))
 	case a.pullConfirm:
 		title = " git pull --rebase "
 		return confirm.Dialog(title, []string{"origin から pull --rebase します"}, confirm.HintYesNo, width, colored)

@@ -19,6 +19,7 @@ import (
 	"doctor/runner"
 	"doctor/ssd"
 	"doctor/svc"
+	"glogx/internal/term"
 )
 
 // doctor (D キー) — 環境の健全性診断を並べる全画面ビュー (issue 148 の 3 章)。
@@ -708,7 +709,7 @@ func (v *doctorView) applyMotion(m listnav.Motion, page int) {
 }
 
 // hint は最下行の案内。**幅に入らない項目は落とす** (切ると語の途中で切れて意味が壊れ、
-// しかも消えるのは常に末尾 = 抜ける手段が消える。status viewer と同じ fitHintItems の作法)。
+// しかも消えるのは常に末尾 = 抜ける手段が消える。status viewer と同じ term.FitHintItems の作法)。
 // 実測 2026-09-03: 固定文字列だと 112 桁あり、popup の予算 82 桁で「D/q/esc: 閉じる」と
 // 「(削除はまだできません)」が画面から消えていた (issue 201)。
 func (v *doctorView) hint(width int) string {
@@ -735,38 +736,38 @@ func (v *doctorView) hint(width int) string {
 	}
 	// 🚨 **タブごとに出す導線を変える**。一覧に d (削除) と x (実行) が同時に出ていたのが
 	// 混乱の元だったので、タブが違えば案内自体を出さない (押せないキーを案内しない)
-	items := []hintItem{
-		{"j/k: 移動", 3},
+	items := []term.HintItem{
+		{Text: "j/k: 移動", Prio: 3},
 	}
 	switch v.tab {
 	case tabDisk:
 		items = append(items,
-			hintItem{"Space: 選択", 2}, // 削除の入口なので Enter より優先して残す
-			hintItem{"d: 削除", 2})
+			term.HintItem{Text: "Space: 選択", Prio: 2}, // 削除の入口なので Enter より優先して残す
+			term.HintItem{Text: "d: 削除", Prio: 2})
 	case tabBrew, tabDocker:
-		items = append(items, hintItem{"Space: 選択", 2})
+		items = append(items, term.HintItem{Text: "Space: 選択", Prio: 2})
 	case tabSvc, tabSSD:
 		// サービスと SSD は選択も実行も持たない (見て判断するだけ)
 	}
 	if v.tab != tabSSD { // SSD の行は開くものを持たない (押せないキーを案内しない)
-		items = append(items, hintItem{"Enter: 開閉", 4}) // 開くと対象パスへカーソルが移り、そこでも Space で選べる
+		items = append(items, term.HintItem{Text: "Enter: 開閉", Prio: 4}) // 開くと対象パスへカーソルが移り、そこでも Space で選べる
 	}
-	items = append(items, []hintItem{
-		{doctorCopyHintLabel(v.tab), 5},
-		{"Y: 解説をコピー", 6},
-		{"r: 再スキャン", 5},
-		{doctorCloseHintLabel(v.collapsibleAtCursor()), 1}, // 抜ける手段は最優先で残す
+	items = append(items, []term.HintItem{
+		{Text: doctorCopyHintLabel(v.tab), Prio: 5},
+		{Text: "Y: 解説をコピー", Prio: 6},
+		{Text: "r: 再スキャン", Prio: 5},
+		{Text: doctorCloseHintLabel(v.collapsibleAtCursor()), Prio: 1}, // 抜ける手段は最優先で残す
 	}...)
 	// 🚨 x は**選ばれているときだけ出す**。常設すると幅の予算を食い、`r: 再スキャン` のような
 	// 常に使える手を押し出す (実測: 幅 120 で再スキャンが消えた)。手が選ばれていないときの
 	// x は「Space で選んでください」と言うだけなので、案内する価値も無い
 	if n := v.selectedRunCount(); n > 0 && (v.tab == tabBrew || v.tab == tabDocker) {
-		items = append(items, hintItem{fmt.Sprintf("x: %d 件を実行", n), 2})
+		items = append(items, term.HintItem{Text: fmt.Sprintf("x: %d 件を実行", n), Prio: 2})
 	}
 	if n, total := v.selectionSummary(); n > 0 && v.tab == tabDisk {
-		items = append([]hintItem{{fmt.Sprintf("選択 %d 件 %s", n, disk.HumanSize(total)), 1}}, items...)
+		items = append([]term.HintItem{{Text: fmt.Sprintf("選択 %d 件 %s", n, disk.HumanSize(total)), Prio: 1}}, items...)
 	}
-	return fitHintItems(width, items)
+	return term.FitHintItems(width, items)
 }
 
 // selectedRunCount は今のタブで x が実行する件数。
@@ -834,7 +835,7 @@ func (v *doctorView) lines(o doctorRenderOpts) []string {
 		if i == v.cur.index && v.rows[i].selectable {
 			mark = "▶ "
 		}
-		out = append(out, truncateDisp(mark+v.rows[i].text, o.width, "…"))
+		out = append(out, term.TruncateDisp(mark+v.rows[i].text, o.width, "…"))
 	}
 	return layout.PadTo(out, o.page)
 }
@@ -870,7 +871,7 @@ func (v *doctorView) headerLine(o doctorRenderOpts) string {
 	// 🚨 キーの凡例をここに置かない。**hint() が唯一の出典**にする (下段は常に描かれる)。
 	// 以前は右端にも凡例を置いていたが、語も内容も hint と食い違っていた
 	// (「詳細」vs「開閉」/ q が無い / Space と d が無い) うえ、hint が issue 201 で
-	// fitHintItems に寄った後もこちらは幅が足りないと凡例ごと消す旧方式のままだった。
+	// term.FitHintItems に寄った後もこちらは幅が足りないと凡例ごと消す旧方式のままだった。
 	// 状態 (スキャン中 / 前回の結果) はここにしか無いので、そちらだけ残す
 	return left
 }
@@ -909,30 +910,30 @@ func (v *doctorView) tabBarLine(o doctorRenderOpts) string {
 			}
 			label := names[i] + " " + v.tabSummary(o, t)
 			if t == v.tab {
-				parts = append(parts, doctorColor(o.colored, ansiBold, "["+label+"]"))
+				parts = append(parts, doctorColor(o.colored, term.AnsiBold, "["+label+"]"))
 				continue
 			}
-			parts = append(parts, doctorColor(o.colored, ansiDim, pad+label+pad))
+			parts = append(parts, doctorColor(o.colored, term.AnsiDim, pad+label+pad))
 		}
-		return " " + strings.Join(parts, doctorColor(o.colored, ansiDim, "│"))
+		return " " + strings.Join(parts, doctorColor(o.colored, term.AnsiDim, "│"))
 	}
 	// 狭い幅では段階的に詰める: ①選んでいないタブの前後の空白を外す ②タブ名を短くする。
 	// 🚨 末尾を切るのは最後の手段: 切られるのは最後のタブ (SSD) の要約で、タブ行の役目
 	// (切り替えずにどこに異常があるか分かる) を失う (敵対レビュー 2 周目。幅 60・実在の値で 63 桁)
 	line := build(names, " ")
-	if dispWidth(line) > o.width {
+	if term.DispWidth(line) > o.width {
 		line = build(names, "")
 	}
-	if dispWidth(line) > o.width {
+	if term.DispWidth(line) > o.width {
 		line = build(short, "")
 	}
-	if dispWidth(line) > o.width {
-		return truncateDisp(line, o.width, "…")
+	if term.DispWidth(line) > o.width {
+		return term.TruncateDisp(line, o.width, "…")
 	}
 	// 🚨 切り替えのキーは**タブ行の隣**に置く。hint に足すと幅の予算を食って
 	// 「r: 再スキャン」のような常に使える手を押し出す (実測でそうなった)
-	if hintText := "  (tab / h l で切替)"; dispWidth(line)+dispWidth(hintText) <= o.width {
-		line += doctorColor(o.colored, ansiDim, hintText)
+	if hintText := "  (tab / h l で切替)"; term.DispWidth(line)+term.DispWidth(hintText) <= o.width {
+		line += doctorColor(o.colored, term.AnsiDim, hintText)
 	}
 	return line
 }
@@ -981,19 +982,19 @@ func (v *doctorView) tabSummary(o doctorRenderOpts, t doctorTab) string {
 // 🚨 「要約が入るか」を呼び出し側で書き直さず、これを呼ぶ (SSD の見出しが題を削るかの判定で
 // 1 桁食い違い、幅 58 で要約だけが消えた。敵対レビュー 3 周目)
 func sectionHeaderGap(o doctorRenderOpts, title, summary string) int {
-	return o.width - 2 - dispWidth("▌"+title) - dispWidth(summary) - 1
+	return o.width - 2 - term.DispWidth("▌"+title) - term.DispWidth(summary) - 1
 }
 
 // sectionHeader は案 A の見出し 2 行 (左に縦棒 + 太字の題、右端に要約 / 下に罫線)。
 func sectionHeader(o doctorRenderOpts, title, summary string) []doctorRow {
 	left := "▌" + title
 	inner := o.width - 2 // 行頭のカーソル欄 2 桁
-	line := doctorColor(o.colored, ansiBold, left)
+	line := doctorColor(o.colored, term.AnsiBold, left)
 	if gap := sectionHeaderGap(o, title, summary); gap >= 1 {
-		line += padSpaces(gap) + summary
+		line += term.PadSpaces(gap) + summary
 	}
 	rule := strings.Repeat("─", max(1, inner))
-	return []doctorRow{{text: line}, {text: doctorColor(o.colored, ansiDim, rule)}}
+	return []doctorRow{{text: line}, {text: doctorColor(o.colored, term.AnsiDim, rule)}}
 }
 
 // buildRows はセクション列 (ディスク / サービス / Homebrew)。展開中の行はその直後に detail を足す。
@@ -1036,7 +1037,7 @@ func doctorColor(colored bool, code, s string) string {
 	if !colored {
 		return s
 	}
-	return code + s + ansiReset
+	return code + s + term.AnsiReset
 }
 
 func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
@@ -1090,21 +1091,21 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		// 幅で切るので、ここで引かないと最長マーク「❓ 走査できず」(幅 13) が切れる。
 		// 同じファイルの sectionHeader は `o.width - 2` と正しく引いており、非対称だった
 		// (フレーム最小構成の contentWidth 53 では常時 +2 超過。実測 2026-09-04)
-		if room := o.width - doctorDiskRowFixedW - doctorMaxMarkWidth() - cursorGutterWidth; room < labelW {
+		if room := o.width - doctorDiskRowFixedW - doctorMaxMarkWidth() - term.CursorGutterWidth; room < labelW {
 			labelW = max(room, doctorMinLabelWidth)
 		}
-		label := truncateDisp(r.Entry.Label, labelW, "…")
+		label := term.TruncateDisp(r.Entry.Label, labelW, "…")
 		// 選択の印は**半角 1 桁で固定**する (全角を混ぜると列がずれる)。
 		// `*` = エントリ全体 / `+` = 中の一部だけ (Enter で開いて個別に選んだ状態)
 		sel := " "
 		switch {
 		case v.selected[resultEntryID(r)]:
-			sel = doctorColor(o.colored, ansiBold, "*")
+			sel = doctorColor(o.colored, term.AnsiBold, "*")
 		case v.hasSelectedItems(resultEntryID(r)):
-			sel = doctorColor(o.colored, ansiBold, "+")
+			sel = doctorColor(o.colored, term.AnsiBold, "+")
 		}
 		row := doctorRow{
-			text:       fmt.Sprintf("%s%8s  %s%s %s", sel, size, label, padSpaces(labelW-dispWidth(label)), doctorColor(o.colored, color, mark)),
+			text:       fmt.Sprintf("%s%8s  %s%s %s", sel, size, label, term.PadSpaces(labelW-term.DispWidth(label)), doctorColor(o.colored, color, mark)),
 			selectable: true,
 			key:        diskRowKey(resultEntryID(r)),
 			hasDetail:  diskHasDetail(r),
@@ -1119,17 +1120,17 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		//   - 助言より前: 下の分岐が blocked / failed / 未実測 0 件で `continue` するため、
 		//     後ろに置くと**実機では一度も出ない** (2026-09-04 実測。CLI 側と同じ理由)
 		if note := disk.RebootNote(r.Entry, o.env); note != "" && r.Status != disk.StatusFailed {
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+note)})
+			rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "           "+note)})
 		}
 		if r.Status == disk.StatusFailed || r.Status == disk.StatusBlocked {
 			// 理由は 1 行下に出す (マーク列に置くと狭い幅で切れる。issue 182)
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+r.Reason)})
+			rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "           "+r.Reason)})
 			continue
 		}
 		// 未実測のエントリで 0 件のときは、Recover (「消しても再生成されます」) を出さない。
 		// 消す対象が 1 件も無いのに復元方法を出すと、**検出できている**ように読めるため。
 		if r.Entry.Unverified != "" && len(r.Items) == 0 {
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim,
+			rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim,
 				"           0 件ですが「候補なし」ではありません: "+r.Entry.Unverified)})
 			continue
 		}
@@ -1143,20 +1144,20 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 			// 「注記で分かる形にしてある」と書いた前提が幅で崩れる。issue 182)
 			advice = fmt.Sprintf("%d 分前の計測を再利用 (r で再計測)。%s", int(o.now.Sub(r.MeasuredAt).Minutes()), advice)
 		}
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+advice)})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "           "+advice)})
 		for _, f := range r.Failures {
 			// 「診断できず」は最も追加調査が必要な行なので、選んで中身を取り出せるようにする
 			// (幅で末尾が切れても y / Y で完全な文字列が手に入る。幅そのものの改善は issues/182)。
 			// 🚨 y が渡すのは理由の文字列 (パスを含む) で、パス単体ではない: disk.Result.Failures が
 			// []string で、パスがエラー文に埋め込まれているため (構造化は issues/180 で保留と判断)
 			rows = append(rows, doctorRow{
-				text:       doctorColor(o.colored, ansiYellow, "           ❓ 一部走査できず (合計に含めていません): "+f),
+				text:       doctorColor(o.colored, term.AnsiYellow, "           ❓ 一部走査できず (合計に含めていません): "+f),
 				selectable: true,
 				key:        diskFailRowKey(resultEntryID(r), f),
 				hasDetail:  true,
 				detail: textRows([]string{
-					doctorColor(o.colored, ansiDim, "        "+r.Entry.Label+" の一部を走査できませんでした (この分は合計に入っていません)"),
-					doctorColor(o.colored, ansiDim, "        "+f),
+					doctorColor(o.colored, term.AnsiDim, "        "+r.Entry.Label+" の一部を走査できませんでした (この分は合計に入っていません)"),
+					doctorColor(o.colored, term.AnsiDim, "        "+f),
 				}),
 				copyPath: f,
 				copyText: diskCopyText(r, mark),
@@ -1164,7 +1165,7 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		}
 	}
 	if v.diskRep != nil && shown == 0 {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "   掃除候補はありません")})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "   掃除候補はありません")})
 	}
 	return rows
 }
@@ -1196,11 +1197,11 @@ func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []doctorRow {
 	// 「Space で選び d で削除」と案内しておいて Space が拒否する形になっていた
 	// (敵対レビュー 2026-09-03 が実測)
 	if r.Status == disk.StatusOK {
-		out = append(out, doctorRow{text: doctorColor(o.colored, ansiDim,
+		out = append(out, doctorRow{text: doctorColor(o.colored, term.AnsiDim,
 			"             削除経路: "+r.Entry.DeleteVia+" (Space で選び d で削除)")})
 	}
 	if r.Entry.Detail != "" {
-		out = append(out, doctorRow{text: doctorColor(o.colored, ansiDim, "             "+r.Entry.Detail)})
+		out = append(out, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "             "+r.Entry.Detail)})
 	}
 	if r.Entry.Inspect || len(r.Contents) > 0 {
 		// 🚨 **対象パスの行を必ず出す** (issue 240)。以前は Contents があると選べる行を出さずに
@@ -1212,13 +1213,13 @@ func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []doctorRow {
 		// 作らない (中身が無いのか、走査が拾えなかったのかが区別できないまま選べてしまう。
 		// 敵対レビュー 2026-09-03)
 		if len(r.Contents) == 0 {
-			out = append(out, doctorRow{text: doctorColor(o.colored, ansiDim,
+			out = append(out, doctorRow{text: doctorColor(o.colored, term.AnsiDim,
 				"             (中身の一覧はありません。上の対象パスから選んでください)")})
 			return out
 		}
 		// 中身は**選べない**: Contents は全 Item を平坦に連結した名前の羅列で、パスもサイズも
 		// 持たない (選択の単位にできない)。選ぶのは上の対象パス行
-		out = append(out, doctorRow{text: doctorColor(o.colored, ansiDim,
+		out = append(out, doctorRow{text: doctorColor(o.colored, term.AnsiDim,
 			"             中身 (この一覧は選べません):")})
 		for _, c := range r.Contents {
 			out = append(out, doctorRow{text: "               - " + c})
@@ -1235,7 +1236,7 @@ func (v *doctorView) diskItemRows(o doctorRenderOpts, r disk.Result) []doctorRow
 	for _, it := range r.Items {
 		mark := " "
 		if v.selectedItems[diskItemKey(resultEntryID(r), it.Path)] {
-			mark = doctorColor(o.colored, ansiBold, "*")
+			mark = doctorColor(o.colored, term.AnsiBold, "*")
 		}
 		riskMark, _ := doctorRiskMark(r)
 		out = append(out, doctorRow{
@@ -1261,12 +1262,12 @@ func doctorFitPath(path string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	return truncateDispLeft(path, width, "…")
+	return term.TruncateDispLeft(path, width, "…")
 }
 
 // doctorItemPathFixedW は対象パス行のうちパス以外が使う幅 (8 空白 + 選択の印 1 +
 // サイズ %9s + 空白 2) と、行頭のカーソル欄。
-const doctorItemPathFixedW = 8 + 1 + 9 + 2 + cursorGutterWidth
+const doctorItemPathFixedW = 8 + 1 + 9 + 2 + term.CursorGutterWidth
 
 func doctorRiskMark(r disk.Result) (string, string) {
 	// 🚨 **語は disk.Mark が唯一の出典**。CLI (diskdoctor の Format) と同じ文字列がここへ来る。
@@ -1286,22 +1287,22 @@ func doctorRiskMark(r disk.Result) (string, string) {
 func doctorRiskColor(r disk.Result) string {
 	switch r.Status {
 	case disk.StatusBlocked:
-		return ansiYellow
+		return term.AnsiYellow
 	case disk.StatusFailed:
-		return ansiDim
+		return term.AnsiDim
 	case disk.StatusOK:
 		// 検出条件が未実測で候補 0 件 (disk.Mark は "🔎 未検証" を返す)
 		if r.Entry.Unverified != "" && len(r.Items) == 0 {
-			return ansiDim
+			return term.AnsiDim
 		}
 	}
 	switch r.Entry.Risk {
 	case disk.RiskSafe:
-		return ansiGreen
+		return term.AnsiGreen
 	case disk.RiskCaution:
-		return ansiYellow
+		return term.AnsiYellow
 	case disk.RiskConfirm:
-		return ansiRed
+		return term.AnsiRed
 	}
 	return ""
 }
@@ -1337,7 +1338,7 @@ const (
 var doctorMaxMarkWidth = sync.OnceValue(func() int {
 	w := 0
 	for _, m := range disk.MarkVocabulary() {
-		w = max(w, dispWidth(m))
+		w = max(w, term.DispWidth(m))
 	}
 	return w
 })
@@ -1360,41 +1361,41 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 	rows := sectionHeader(o, "サービス", fmt.Sprintf("壊れた登録 %d 件 (%d 件を走査)", len(rep.Findings), rep.Scanned))
 	undiagnosed := rep.Interrupted || rep.StatusErr != "" || rep.BrewErr != "" || len(rep.DirErrs) > 0 || len(rep.Undiagnosed) > 0
 	if rep.Interrupted {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 途中で中断されました")})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 途中で中断されました")})
 	}
 	if rep.StatusErr != "" {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 診断できず (launchctl): "+rep.StatusErr+" — 実行ファイルの不在と Homebrew 台帳だけを見ています")})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 診断できず (launchctl): "+rep.StatusErr+" — 実行ファイルの不在と Homebrew 台帳だけを見ています")})
 	}
 	if rep.BrewErr != "" {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 診断できず (brew): "+rep.BrewErr)})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 診断できず (brew): "+rep.BrewErr)})
 	}
 	for _, e := range rep.DirErrs {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 走査できず: "+e)})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 走査できず: "+e)})
 	}
 	for _, f := range rep.Findings {
-		detail := []string{doctorColor(o.colored, ansiDim, "      手動で実行してください (このツールは実行しません):")}
+		detail := []string{doctorColor(o.colored, term.AnsiDim, "      手動で実行してください (このツールは実行しません):")}
 		for _, c := range f.Commands {
 			detail = append(detail, "        "+c)
 		}
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiRed, " ⛔ "+f.Label), selectable: true, key: svcRowKey(f.PlistPath), hasDetail: len(detail) > 0, detail: textRows(detail),
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiRed, " ⛔ "+f.Label), selectable: true, key: svcRowKey(f.PlistPath), hasDetail: len(detail) > 0, detail: textRows(detail),
 			copyPath: f.PlistPath, copyText: svcCopyText(f)})
 		for _, r := range f.Reasons {
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "      - "+r)})
+			rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "      - "+r)})
 		}
 		for _, a := range svc.Annotations(f) {
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "      - "+a)})
+			rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "      - "+a)})
 		}
 	}
 	for _, u := range rep.Undiagnosed {
 		// 選べないと理由も plist のパスもどこからも取り出せなかった (幅 80 で理由が丸ごと消える。issues/180)
 		rows = append(rows, doctorRow{
-			text:       doctorColor(o.colored, ansiYellow, " ❔ 診断できず: "+u.PlistPath+" ("+u.Reason+")"),
+			text:       doctorColor(o.colored, term.AnsiYellow, " ❔ 診断できず: "+u.PlistPath+" ("+u.Reason+")"),
 			selectable: true,
 			key:        svcUndiagnosedRowKey(u.PlistPath),
 			hasDetail:  true,
 			detail: textRows([]string{
-				doctorColor(o.colored, ansiDim, "      理由: "+u.Reason),
-				doctorColor(o.colored, ansiDim, "      手動で確かめてください (このツールは実行しません):"),
+				doctorColor(o.colored, term.AnsiDim, "      理由: "+u.Reason),
+				doctorColor(o.colored, term.AnsiDim, "      手動で確かめてください (このツールは実行しません):"),
 				"        plutil -p " + svc.ShellQuote(u.PlistPath),
 				"        ls -l " + svc.ShellQuote(u.PlistPath),
 			}),
@@ -1405,7 +1406,7 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 	if len(rep.Findings) == 0 && !undiagnosed {
 		// 🎉 は「指摘が 1 件も無い」ときだけ (診断できずが 1 件でもあれば上の分岐で undiagnosed が
 		// 立つので、ここには来ない)。祝うのは**本当に何も無かったとき**だけにする
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiGreen, "   🎉 壊れた登録は見つかりませんでした")})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiGreen, "   🎉 壊れた登録は見つかりませんでした")})
 	}
 	return rows
 }
@@ -1417,11 +1418,11 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 	b := v.brew
 	switch {
 	case b.Unavailable != "":
-		return append(sectionHeader(o, "Homebrew", "診断できず"), doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 "+b.Unavailable)})
+		return append(sectionHeader(o, "Homebrew", "診断できず"), doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 "+b.Unavailable)})
 	case b.Clean:
 		// Clean は rc=0 かつ警告 0 件のときだけ立つ (parseBrewDoctor)。診断できずは上の分岐
 		return append(sectionHeader(o, "Homebrew", "brew doctor: 警告なし"),
-			doctorRow{text: doctorColor(o.colored, ansiGreen, "   🎉 Your system is ready to brew.")})
+			doctorRow{text: doctorColor(o.colored, term.AnsiGreen, "   🎉 Your system is ready to brew.")})
 	}
 	rows := sectionHeader(o, "Homebrew", fmt.Sprintf("brew doctor: 警告 %d 件 (Enter で本文)", len(b.Warnings)))
 	for i, w := range b.Warnings {
@@ -1431,16 +1432,16 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 		var detailRows []doctorRow
 		if adv.Known {
 			summary = adv.Title // 見出しは日本語 (原文は詳細の末尾に残す)
-			// 🚨 説明は**折り返す**。ここが一番読ませたい部分なので、truncateDisp に
+			// 🚨 説明は**折り返す**。ここが一番読ませたい部分なので、term.TruncateDisp に
 			// 末尾から削られると意味が壊れる (原文の英語より先に日本語が消える)
 			wrapW := max(20, o.width-8)
 			for _, l := range strings.Split(adv.Detail, "\n") {
-				for _, w := range wrapToWidth(l, wrapW) {
-					detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, ansiDim, "     "+w)})
+				for _, w := range term.WrapToWidth(l, wrapW) {
+					detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "     "+w)})
 				}
 			}
 			if adv.Dropped > 0 {
-				detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, ansiYellow,
+				detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow,
 					fmt.Sprintf("     🚨 名前として読めない語を %d 件落としました (原文を確認してください)", adv.Dropped))})
 			}
 			for j, act := range adv.Actions {
@@ -1450,44 +1451,44 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 				v.actionByCmd[cmdKey(act.Cmd)] = act
 				mark := "▸"
 				if v.selectedActions[cmdKey(act.Cmd)] {
-					mark = doctorColor(o.colored, ansiBold, "*")
+					mark = doctorColor(o.colored, term.AnsiBold, "*")
 				}
 				detailRows = append(detailRows, doctorRow{text: ""},
 					doctorRow{
-						text:       "     " + mark + " " + doctorColor(o.colored, ansiBold, act.Label),
+						text:       "     " + mark + " " + doctorColor(o.colored, term.AnsiBold, act.Label),
 						selectable: true,
 						key:        brewActionRowKey(i, j),
 						copyPath:   act.Cmd,
 						copyText:   act.Label + ":\n" + act.Cmd + "\n",
 					},
-					doctorRow{text: doctorColor(o.colored, ansiDim, "       $ "+act.Cmd)})
+					doctorRow{text: doctorColor(o.colored, term.AnsiDim, "       $ "+act.Cmd)})
 				if act.Note != "" {
-					for k, w := range wrapToWidth(act.Note, max(20, o.width-10)) {
+					for k, w := range term.WrapToWidth(act.Note, max(20, o.width-10)) {
 						pre := "       🚨 "
 						if k > 0 {
 							pre = "          "
 						}
-						detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, ansiYellow, pre+w)})
+						detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, pre+w)})
 					}
 				}
 			}
 			detailRows = append(detailRows, doctorRow{text: ""},
-				doctorRow{text: doctorColor(o.colored, ansiDim, "     原文 (brew doctor):")})
+				doctorRow{text: doctorColor(o.colored, term.AnsiDim, "     原文 (brew doctor):")})
 		}
 		var detail []string
 		for _, l := range lines[1:] {
-			detail = append(detail, doctorColor(o.colored, ansiDim, "     "+l))
+			detail = append(detail, doctorColor(o.colored, term.AnsiDim, "     "+l))
 		}
 		// 「Enter で何行出てくるか」の予告なので detail の行数をそのまま数える (見出しは既に見えているので
 		// 数えない / 段落の空行は 1 行として表示されるので数える)。敵対レビュー 2026-09-03: 見出しを数えて
 		// 空行を数えない中間形にすると、段落の数によって実際の展開行数と系統的にずれる。
 		count := fmt.Sprintf("(%d 行)", len(detailRows)+len(detail))
 		inner := o.width - 2
-		sumW := dispWidth(summary)
-		gap := inner - 3 - sumW - dispWidth(count) - 1
-		text := "   " + doctorColor(o.colored, ansiYellow, summary)
+		sumW := term.DispWidth(summary)
+		gap := inner - 3 - sumW - term.DispWidth(count) - 1
+		text := "   " + doctorColor(o.colored, term.AnsiYellow, summary)
 		if gap >= 1 {
-			text += padSpaces(gap) + doctorColor(o.colored, ansiDim, count)
+			text += term.PadSpaces(gap) + doctorColor(o.colored, term.AnsiDim, count)
 		}
 		rows = append(rows, doctorRow{text: text, selectable: true, key: brewRowKey(i, summary),
 			hasDetail: len(detailRows)+len(detail) > 0,

@@ -28,6 +28,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
+	"glogx/internal/term"
 )
 
 // Bubble Tea による less 風の対話ブラウズ (カーソル移動 + CI job 表示)。
@@ -412,7 +413,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 	toFetch = capFetchSHAs(toFetch)
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	m := &browseModel{
-		toast:          toast.Stack{Shadow: ansiShadowFg}, // 落ち影は他の板と同じ近黒 (buildPanelBoxImpl と同じ)
+		toast:          toast.Stack{Shadow: term.AnsiShadowFg}, // 落ち影は他の板と同じ近黒 (term.BuildPanelBoxImpl と同じ)
 		commits:        commits,
 		statuses:       statuses,
 		fetched:        map[string]CIState{},
@@ -791,7 +792,7 @@ func (m *browseModel) showWarning(text string) {
 	// lastWarning は w でクリップボードへコピーされる = 端末の外へ出る値なので、
 	// 表示 (toast 側で無害化) とは別にここでも無害化する。制御文字入りの文字列を
 	// 貼り付け先へ持ち出さない
-	m.lastWarning = sanitizePlainLine(text)
+	m.lastWarning = term.SanitizePlainLine(text)
 	m.toast.Show(text, false)
 }
 
@@ -1817,7 +1818,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	default:
 		// 移動の語彙 (j/k/g/G/半ページ) は listnav が持つ。🚨 この面は b が push (上で捌く) で
 		// Space が開くなので、上半ページの経路は ctrl+u / pgup (shift+space は端末によって届かない。
-		// 理由は pagerScrollKey の doc)
+		// 理由は term.PagerScrollKey の doc)
 		return m, m.applyListMotion(listnav.MotionOf(key))
 	}
 	return m, nil
@@ -2436,7 +2437,7 @@ func (m *browseModel) startScrollAnim(prev int) tea.Cmd {
 		m.glide.Stop() // pull アニメ中は積まず即時 (連打の抑制は glide.Start が持つ)
 		return nil
 	}
-	if !m.glide.Start(prev, m.offset, scrollAnimFrames) {
+	if !m.glide.Start(prev, m.offset, term.ScrollAnimFrames) {
 		return nil
 	}
 	return m.maybeTick()
@@ -2857,12 +2858,12 @@ func (m *browseModel) copyJobContext() tea.Cmd {
 // job.URL (= StatusContext の targetUrl 等) は外部 CI が任意に設定できる。detailsOf が受け取った時点で
 // 平文にしているが、クリップボードは描画処理のような後ろ盾の無い最後の関門なので、ここでも通す
 // (受け取る側の 1 箇所だけに頼ると、CheckDetail を別の経路で組んだときに素通りする。issue 417)。
-// 🚨 stripANSI 単体は OSC を落とせない (英字終端判定のため OSC の途中で誤終了し BEL が残る・実測) ので、
-// sanitizeDetailLine を先に通す順を崩さないこと。
+// 🚨 term.StripANSI 単体は OSC を落とせない (英字終端判定のため OSC の途中で誤終了し BEL が残る・実測) ので、
+// term.SanitizeDetailLine を先に通す順を崩さないこと。
 // c.Subject は %q が制御文字を Go エスケープするため安全。本文 lines は取得時に
-// sanitizeDetailLine 済みなので jobLogText の stripANSI だけで足りる。
+// term.SanitizeDetailLine 済みなので jobLogText の term.StripANSI だけで足りる。
 func (m *browseModel) copyJobContextLines(job CheckDetail, lines []string) {
-	plain := func(s string) string { return stripANSI(sanitizeDetailLine(s)) }
+	plain := func(s string) string { return term.StripANSI(term.SanitizeDetailLine(s)) }
 	var b strings.Builder
 	b.WriteString("## CI job: ")
 	b.WriteString(plain(job.Name))
@@ -3059,7 +3060,7 @@ func (m *browseModel) copyFocusURL() {
 	}
 	// クリップボードへ入れる直前にも平文にする (copyJobContextLines と同じ理由。job.URL は外部 CI が
 	// 設定できる。issue 417 まではここが生のままクリップボードへ入れていた)
-	url = sanitizePlainLine(url)
+	url = term.SanitizePlainLine(url)
 	m.copyWithToast(url, "コピーしました: "+url)
 }
 
@@ -3288,7 +3289,7 @@ func (m *browseModel) openURLCmd(url string) tea.Cmd {
 func jobLogText(lines []string) string {
 	var b strings.Builder
 	for _, l := range lines {
-		b.WriteString(stripANSI(l))
+		b.WriteString(term.StripANSI(l))
 		b.WriteByte('\n')
 	}
 	return b.String()
@@ -3424,7 +3425,7 @@ func (m *browseModel) handlePRStatusKey(key string) (tea.Model, tea.Cmd) {
 		if pr := m.prStatusOv.current(); pr != nil {
 			// PR の url は取得の段階で無害化していない (表示する欄だけを無害化している)。
 			// クリップボードは最後の関門なので、入れる直前に平文にする (issue 417)
-			url := sanitizePlainLine(pr.URL)
+			url := term.SanitizePlainLine(pr.URL)
 			m.copyWithToast(url, "コピーしました: "+url)
 		}
 	}
@@ -3678,7 +3679,7 @@ func (m *browseModel) renderOpts() RenderOpts {
 		// 全行に 2 桁のカーソル溝 (cursorGutter*) を確保するため、折り返し幅は
 		// その分狭い (bg 塗りだけでは視認しにくいという 2026-07-21 のユーザー要望で、
 		// 2026-07-19 の「溝なし・全幅」から再反転した)
-		Width:    max(m.contentWidth()-cursorGutterWidth, 0),
+		Width:    max(m.contentWidth()-term.CursorGutterWidth, 0),
 		Decor:    m.decor,
 		PRs:      m.prCache,
 		Verbatim: m.verbatim,
@@ -3727,7 +3728,7 @@ func (m *browseModel) frameActive() bool {
 
 // contentWidth はコンテンツ (リスト行・overlay・モーダル) が使える横幅。フレーム有効時は枠 + 余白 +
 // 影のぶんを引く。m.width/m.height を直読みしてよいのは frameActive/contentWidth/pageSize と
-// View の wrapWindowFrame 呼び出しだけ、という規約で幅の単一ファネルにする。
+// View の term.WrapWindowFrame 呼び出しだけ、という規約で幅の単一ファネルにする。
 func (m *browseModel) contentWidth() int {
 	if !m.frameActive() {
 		return m.width
@@ -3838,7 +3839,7 @@ func (m *browseModel) caret() *tea.Cursor {
 // 各オーバーレイの理由:
 //   - action モーダル (pull 確認・実行中): キーは viewer より先に actModal が捌く (handleKey の
 //     判定順) ので、描かないと「見えないモーダルがキーを持つ」= y/N の行き先が画面から分からない
-//     状態になる。status viewer の p (pull) で実際にこの経路へ来る。overlayCenteredBox は行を
+//     状態になる。status viewer の p (pull) で実際にこの経路へ来る。term.OverlayCenteredBox は行を
 //     塗り潰さず左右の背景を残して合成する (モーダルの左側テキストが消えるのを解消)
 //   - 再起動ダイアログ: 中央。答えるまで残る (次の 1 キーで必ず閉じる)
 //   - usage: 上部右端の複数行モーダル。U で再表示、任意キーで消える
@@ -3849,10 +3850,10 @@ func (m *browseModel) caret() *tea.Cursor {
 // (入力欄の上に板が重なると、IME の変換中の文字が板の上に出る)。
 func (m *browseModel) finishWithGlobalChrome(window []string, page int) string {
 	if box := m.centerModalLines(); len(box) > 0 {
-		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
+		window = term.OverlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
 	}
 	if box := m.restartPromptLines(); len(box) > 0 {
-		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
+		window = term.OverlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
 	}
 	if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
 		window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
@@ -3928,8 +3929,8 @@ func (m *browseModel) viewLines() string {
 		// 付けて幅でクリップする (「非活性になって origin へ吸い込まれる」見た目)。
 		// カーソル強調より優先する (演出中の bg 塗りは動きを汚す)
 		if off := slides[i]; off > 0 {
-			text = padSpaces(off) + paint(stripANSI(text), ansiDim, m.colored)
-			window = append(window, cursorGutterBlank+clipToWidth(text, max(m.contentWidth()-cursorGutterWidth, 0)))
+			text = term.PadSpaces(off) + term.Paint(term.StripANSI(text), term.AnsiDim, m.colored)
+			window = append(window, term.CursorGutterBlank+term.ClipToWidth(text, max(m.contentWidth()-term.CursorGutterWidth, 0)))
 			continue
 		}
 		// カーソルは全行に確保した 2 桁の溝の「→ 」+ ヘッダー行全体の bg 塗りで示す。
@@ -3939,7 +3940,7 @@ func (m *browseModel) viewLines() string {
 			window = append(window, m.cursorLine(text))
 			continue
 		}
-		window = append(window, cursorGutterBlank+clipToWidth(text, max(m.contentWidth()-cursorGutterWidth, 0)))
+		window = append(window, term.CursorGutterBlank+term.ClipToWidth(text, max(m.contentWidth()-term.CursorGutterWidth, 0)))
 	}
 	// リストが 1 画面に収まらないときは右端にスクロールバー列を出す (diff/job overlay と同じ
 	// 見た目)。overlay 群の合成より先に足す = ポップアップ類はバーの上に浮く。offset は
@@ -3949,17 +3950,17 @@ func (m *browseModel) viewLines() string {
 	// リストの行構成自体は変えないので、開閉で後続行がずれない。
 	// 下に収まらない場合はビューポート内へ収まる位置まで引き上げる
 	if panel := m.panelLines(); len(panel) > 0 {
-		window = overlayBox(window, panel, m.boxAnchor(lines, offset, m.panelSHA)+1, page)
+		window = term.OverlayBox(window, panel, m.boxAnchor(lines, offset, m.panelSHA)+1, page)
 	}
 	// diff ポップアップは job パネルよりさらに前面 (openDiff がパネルを閉じるため
 	// 実際に同時表示になることはないが、重ね順の契約としてパネルの後に描く)
 	if diffBox := m.diffBoxLines(); len(diffBox) > 0 {
-		window = overlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffOv.sha)+1, page)
+		window = term.OverlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffOv.sha)+1, page)
 	}
 	// PR 状態ポップアップも対象コミット直下へ重ねる (job パネルとは同時表示にならない:
 	// P は一覧のみで受け、表示中は handlePRStatusKey がモーダルに捌く)
 	if prBox := m.prStatusOv.boxLines(m.contentWidth(), m.colored, m.spinner(), m.prStatusCILine()); len(prBox) > 0 {
-		window = overlayBox(window, prBox, m.boxAnchor(lines, offset, m.prStatusOv.sha)+1, page)
+		window = term.OverlayBox(window, prBox, m.boxAnchor(lines, offset, m.prStatusOv.sha)+1, page)
 	}
 	// ここから先 (action モーダル → 再起動 → usage → トースト) は全ビュー共通なので
 	// finishWithGlobalChrome が持つ。一覧固有のオーバーレイ (スクロールバー / job パネル /
@@ -3977,7 +3978,7 @@ func (m *browseModel) finishWindow(window []string, page int) string {
 		for len(window) < page {
 			window = append(window, "")
 		}
-		window = wrapWindowFrame(window, m.width, m.colored)
+		window = term.WrapWindowFrame(window, m.width, m.colored)
 	}
 	// 1 フレーム分の最終文字列は 10-30KB になる。pre-size しないと Builder の倍々成長で
 	// 出力サイズと同程度のバッファを毎フレーム捨てる (alloc プロファイルで View 全体の 57%)。
@@ -4004,7 +4005,7 @@ func (m *browseModel) finishWindow(window []string, page int) string {
 	// 塗るので、ここ (1 フレームの出口) で 1 回だけ掛ける。
 	bg := m.screenBg()
 	if bg != "" {
-		size += (len(window) + 1) * (len(bg) + len(ansiReset) + m.width)
+		size += (len(window) + 1) * (len(bg) + len(term.AnsiReset) + m.width)
 	}
 	var b strings.Builder
 	b.Grow(size)
@@ -4021,12 +4022,12 @@ func (m *browseModel) finishWindow(window []string, page int) string {
 // 🚨 面塗りは既定では**しない**。bgLine の doc にあるとおり、push 済みエリアの面塗りは
 // 「環境の配色次第で視認性を落とす」としてユーザー判断で撤去した経緯があり、その判断は
 // 生きている (面塗りを自発的に増やさない)。ここが例外なのは、全画面の残量表示だけは地色を
-// 固定したいという明示要望があるため (2026-09-01。理由は ansiScreenBg の doc)。
+// 固定したいという明示要望があるため (2026-09-01。理由は term.AnsiScreenBg の doc)。
 func (m *browseModel) screenBg() string {
 	if !m.colored || !m.rlDash.visible() {
 		return ""
 	}
-	return ansiScreenBg
+	return term.AnsiScreenBg
 }
 
 // paintScreenBg は 1 行を bg で端末幅まで塗る。行内の SGR リセットで地色が切れるので、
@@ -4036,9 +4037,9 @@ func paintScreenBg(line, bg string, width int) string {
 	if bg == "" || width <= 0 {
 		return line
 	}
-	line = clipToWidth(line, width)
-	pad := max(width-dispWidth(line), 0)
-	return bg + reapplyAfterReset(line, bg) + padSpaces(pad) + ansiReset
+	line = term.ClipToWidth(line, width)
+	pad := max(width-term.DispWidth(line), 0)
+	return bg + term.ReapplyAfterReset(line, bg) + term.PadSpaces(pad) + term.AnsiReset
 }
 
 // boxAnchor は sha のコミットヘッダー行のウィンドウ内位置を返す
@@ -4080,11 +4081,11 @@ func (m *browseModel) panelLines() []string {
 	var rows []string
 	switch {
 	case m.detailsLoading[m.panelSHA]:
-		rows = []string{paint(m.spinner()+" CI job を取得中...", ansiDim, m.colored)}
+		rows = []string{term.Paint(m.spinner()+" CI job を取得中...", term.AnsiDim, m.colored)}
 	case !haveDetails:
-		rows = []string{paint("(CI job 情報なし)", ansiDim, m.colored)}
+		rows = []string{term.Paint("(CI job 情報なし)", term.AnsiDim, m.colored)}
 	case len(jobs) == 0:
-		rows = []string{paint("(Check はありません)", ansiDim, m.colored)}
+		rows = []string{term.Paint("(Check はありません)", term.AnsiDim, m.colored)}
 	default:
 		// panelCursor が見える範囲の job を切り出す (maxPanelJobs でスクロール)
 		start := 0
@@ -4095,11 +4096,11 @@ func (m *browseModel) panelLines() []string {
 		for i := start; i < endJob; i++ {
 			mark := "  "
 			if i == m.panelCursor {
-				mark = cursorMark(m.colored)
+				mark = term.CursorMark(m.colored)
 			}
 			row := mark + StatusGlyph(jobs[i].State, m.colored, m.spinner()) + " " + jobs[i].Name
 			if suffix := m.jobTimeSuffix(jobs[i]); suffix != "" {
-				row += paint(" ("+suffix+")", ansiDim, m.colored)
+				row += term.Paint(" ("+suffix+")", term.AnsiDim, m.colored)
 			}
 			rows = append(rows, row)
 		}
@@ -4111,7 +4112,7 @@ func (m *browseModel) panelLines() []string {
 	case len(jobs) > 0:
 		title = fmt.Sprintf(" CI jobs: %s (%d 件) %s ", commit.ShortSHA, len(jobs), commit.Subject)
 	}
-	box := buildShadowPanelBox(title, rows, width, m.colored)
+	box := term.BuildShadowPanelBox(title, rows, width, m.colored)
 	if m.detailOv.visible() {
 		// 詳細ボックスは job パネルの「子」であることが分かるよう段差を付ける (ユーザー要望)
 		for _, line := range m.detailBoxLines(width - len(detailIndent)) {
@@ -4138,9 +4139,9 @@ func (m *browseModel) detailBoxLines(width int) []string {
 // 行全体 (溝込み) を暗青 bg で塗る。色なし (NO_COLOR) では矢印のみ。
 func (m *browseModel) cursorLine(text string) string {
 	if !m.colored {
-		return clipToWidth(cursorGutterMark+text, m.contentWidth())
+		return term.ClipToWidth(term.CursorGutterMark+text, m.contentWidth())
 	}
-	return m.bgLine(cursorGutterMark+text, ansiCursorBg)
+	return m.bgLine(term.CursorGutterMark+text, term.AnsiCursorBg)
 }
 
 // bgLine は行全体を指定 bg で端末幅まで塗る (行内の SGR リセットで bg が切れないよう、
@@ -4152,23 +4153,23 @@ func (m *browseModel) cursorLine(text string) string {
 // cursorPaint はこれ。
 //
 // 🚨 cursorLine を渡してはいけない: あちらは溝の矢印を前置するため、溝を自分で持つ viewer
-// (行の幅計算が cursorGutterWidth 前提。issues_view.go の rowLine) では矢印が二重になる
+// (行の幅計算が term.CursorGutterWidth 前提。issues_view.go の rowLine) では矢印が二重になる
 // (実測 2026-07-31: "→ → 030 ○ feat alpha")。cursorPaint の契約は issuesRenderOpts の doc
 // どおり「強調」だけで、溝の所有者は viewer 側。
 func (m *browseModel) cursorEmphasis(text string) string {
 	if !m.colored {
 		return text // 色なしでは矢印 (viewer 側の溝) だけが指標
 	}
-	return m.bgLine(text, ansiCursorBg)
+	return m.bgLine(text, term.AnsiCursorBg)
 }
 
 func (m *browseModel) bgLine(text, bg string) string {
 	if !m.colored {
-		return clipToWidth(text, m.contentWidth())
+		return term.ClipToWidth(text, m.contentWidth())
 	}
-	text = clipToWidth(text, m.contentWidth())
-	pad := max(m.contentWidth()-dispWidth(text), 0)
-	return bg + reapplyAfterReset(text, bg) + padSpaces(pad) + ansiReset
+	text = term.ClipToWidth(text, m.contentWidth())
+	pad := max(m.contentWidth()-term.DispWidth(text), 0)
+	return bg + term.ReapplyAfterReset(text, bg) + term.PadSpaces(pad) + term.AnsiReset
 }
 
 func (m *browseModel) hintLine() string {
@@ -4196,7 +4197,7 @@ func (m *browseModel) hintLine() string {
 		// 全画面ビューアが出ていない = 下の一覧の hint
 	}
 	// 🚨 前置 (取得中 / gh の警告) は hint と**同じ予算**に載せる (issue 279)。以前は
-	// fitHintItems が幅ぴったりに収めた後で前置を積み、hintLineText の clipToWidth が
+	// term.FitHintItems が幅ぴったりに収めた後で前置を積み、hintLineText の term.ClipToWidth が
 	// 末尾 = **出口**を落としていた。m.ghErr は次の取得開始までクリアされないので、
 	// gh 未導入 / 未認証 / 非 GitHub repo では**常時**その状態になり、幅 60〜200 の全帯で
 	// 出口が消えていた (敵対レビューが実測 2026-09-06)。
@@ -4208,26 +4209,26 @@ func (m *browseModel) hintLine() string {
 	// 超えたら前置の方を切る (頭打ちは hintPrefix の中でやる — ここで prefix に触る形を
 	// 残さないため。敵対的レビュー 2 周目の P1)。
 	prefix := m.hintPrefix(hw / 2)
-	hw = max(hw-dispWidth(prefix), 0)
+	hw = max(hw-term.DispWidth(prefix), 0)
 
 	// 面ごとの hint 項目は hint_surfaces.go のレジストリが唯一の出典 (issue 289)。
-	// ここで直接文字列を組まないこと — 予算計算 (fitHintItems) と幅ゲートの両方を
+	// ここで直接文字列を組まないこと — 予算計算 (term.FitHintItems) と幅ゲートの両方を
 	// 迂回でき、末尾 = 出口が黙って切れる形が再生産される (279 / 281 の P1 2 本がその形)。
 	// 迂回は TestHintLineHasNoInlineHintText が字句で止める。
-	hint := fitHintItems(hw, hintBuilders[m.activeHintSurface()](m))
+	hint := term.FitHintItems(hw, hintBuilders[m.activeHintSurface()](m))
 	return m.hintLineText(prefix + hint)
 }
 
 // hintLineText は最下行の hint を塗って幅に収める (前置の有無で分かれる出口を 1 本にする)。
 func (m *browseModel) hintLineText(hint string) string {
-	painted := paint(hint, ansiDim, m.colored)
+	painted := term.Paint(hint, term.AnsiDim, m.colored)
 	if m.frameActive() {
 		// hint は板の外 (最下行) だが、左余白 1 桁を付けて板の左端 (┌) と縦に揃える。素朴に
 		// " " を前置すると、既定 hint が clip 後に m.width ちょうどになり実効幅 m.width+1 で
 		// 折り返し崩壊するため、clip 幅を左右余白ぶん (2) 差し引く (板の footprint と同じ span)。
-		return " " + clipToWidth(painted, m.hintWidth())
+		return " " + term.ClipToWidth(painted, m.hintWidth())
 	}
-	return clipToWidth(painted, m.hintWidth())
+	return term.ClipToWidth(painted, m.hintWidth())
 }
 
 // hintWidth は hint 行に使える桁数。🚨 hintLineText の clip 幅と、hint を組む側 (statusView.hint)

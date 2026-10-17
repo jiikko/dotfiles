@@ -13,6 +13,7 @@ import (
 	"doctor/disk"
 	"doctor/docker"
 	"doctor/svc"
+	"glogx/internal/term"
 )
 
 // reapplyAfterResetRe は置き換える前の実装 (正規表現版)。**テスト専用**で、
@@ -28,7 +29,7 @@ var reapplyAfterResetRe = regexp.MustCompile("\x1b\\[0?m")
 //   - bg="0" → `$00` という別の変数参照になり、旧実装が "" を返す
 //   - bg="$0" → bg 内の `$0` がマッチ全体に展開され、旧実装が "\x1b[m\x1b[m" を返す
 //
-// production の bg は必ず SGR 定数 (ansiCursorBg = "\x1b[48;5;24m") で `$` も英数字始まりも
+// production の bg は必ず SGR 定数 (term.AnsiCursorBg = "\x1b[48;5;24m") で `$` も英数字始まりも
 // 含まないため、この 2 つは**実運用では起こらない**。旧挙動の忠実な参照であることは変わらず、
 // 曖昧さを消すことで bg を振った fuzz が「実装の差」だけを検出できるようになる。
 func reapplyAfterResetOld(text, bg string) string {
@@ -66,9 +67,9 @@ func TestReapplyAfterResetMatchesRegexpImpl(t *testing.T) {
 		"\x1b[\x1b[0m",
 		"a\x1b[\x1b[m b",
 	}
-	for _, bg := range []string{ansiCursorBg, "\x1b[48;5;238m", "", "\x1b[7m"} {
+	for _, bg := range []string{term.AnsiCursorBg, "\x1b[48;5;238m", "", "\x1b[7m"} {
 		for _, s := range cases {
-			got := reapplyAfterReset(s, bg)
+			got := term.ReapplyAfterReset(s, bg)
 			want := reapplyAfterResetOld(s, bg)
 			if got != want {
 				t.Errorf("bg=%q text=%q\n got=%q\nwant=%q", bg, s, got, want)
@@ -84,7 +85,7 @@ func FuzzReapplyAfterReset(f *testing.F) {
 	for _, s := range []string{"", "a", "\x1b[m", "\x1b[0m", "\x1b[1mx\x1b[m",
 		"\x1b[00m", "\x1b[", "\x1b", "\x1b[2K", "日\x1b[m"} {
 		f.Add(s, "\x1b[7m")
-		f.Add(s, ansiCursorBg) // production が実際に渡す唯一の値
+		f.Add(s, term.AnsiCursorBg) // production が実際に渡す唯一の値
 	}
 	// fuzz が見つけた「bg が置換テンプレートとして解釈される」2 例を seed に固定する
 	// (reapplyAfterResetOld の doc)。production の bg では起きないが、参照実装の
@@ -93,14 +94,14 @@ func FuzzReapplyAfterReset(f *testing.F) {
 	f.Add("\x1b[m", "$0")
 	f.Add("\x1b[0m\x1b[m", "$$1")
 	f.Fuzz(func(t *testing.T, s, bg string) {
-		if got, want := reapplyAfterReset(s, bg), reapplyAfterResetOld(s, bg); got != want {
+		if got, want := term.ReapplyAfterReset(s, bg), reapplyAfterResetOld(s, bg); got != want {
 			t.Fatalf("text=%q bg=%q\n got=%q\nwant=%q", s, bg, got, want)
 		}
 	})
 }
 
 // フレーム 1 枚の確保回数の上限。issue 047 で「1 行が 1 フレームで 4 回コピーされる」うち
-// 最外周の余白付け (旧 wrapWindowFrame の `" "+l`) を組み立てへ織り込み、可視行ぶんの
+// 最外周の余白付け (旧 term.WrapWindowFrame の `" "+l`) を組み立てへ織り込み、可視行ぶんの
 // 確保を落とした。実測 178 → 135 / 40,144 → 30,745 B。内訳は **indent が 38・カーソル行の
 // regexp 撤去が 5** (片方だけ戻して実測。43 は 2 つの変更の合計であって indent 単独ではない)。
 //
@@ -159,8 +160,8 @@ func FuzzReapplyAfterReset(f *testing.F) {
 // 「表示行ごとに 1 確保」を足す変異 (太る退行の最小の形) が、doctor の 4 ケースとも red になること。
 // 2026-10-03 (上の上限で) の結果は issue 323 ではなく commit message に残した。上限を動かすときは、この変異を当て直して red を確認すること。
 func TestFrameAllocBudget(t *testing.T) {
-	// diff overlay / job パネルを含める理由: これらは buildShadowPanelBox を通る経路で、
-	// 一覧と status だけでは **その経路がテストの視界に入らない**。実際「buildShadowPanelBox の
+	// diff overlay / job パネルを含める理由: これらは term.BuildShadowPanelBox を通る経路で、
+	// 一覧と status だけでは **その経路がテストの視界に入らない**。実際「term.BuildShadowPanelBox の
 	// 返り値を全行作り直す」純粋な perf 退行が、一覧 + status の fixture では検出できなかった
 	// (R3 レビューで実測)。
 	cases := []struct {
@@ -361,20 +362,20 @@ func TestPanelBoxIndentIsPureLeftPad(t *testing.T) {
 	}
 	for _, colored := range []bool{false, true} {
 		for _, content := range contents {
-			// 265 は buildPanelBoxImpl が padSpaces の n>256 fallback へ到達する最小幅
+			// 265 は term.BuildPanelBoxImpl が term.PadSpaces の n>256 fallback へ到達する最小幅
 			// (258 では pad が 250 で届かない。R3 レビューで実測)
 			for _, width := range []int{0, 1, 9, 10, 11, 40, 80, 200, 258, 265, 300} {
 				for _, indent := range []int{0, 1, 2, 5} {
-					st := layout.PanelStyle{Border: layout.BorderDouble, Color: ansiFrameBorder}
-					base := buildPanelBoxImpl("", content, width, colored, st)
+					st := layout.PanelStyle{Border: layout.BorderDouble, Color: term.AnsiFrameBorder}
+					base := term.BuildPanelBoxImpl("", content, width, colored, st)
 					st.Indent = indent
-					got := buildPanelBoxImpl("", content, width, colored, st)
+					got := term.BuildPanelBoxImpl("", content, width, colored, st)
 					if len(got) != len(base) {
 						t.Fatalf("indent=%d で行数が変わった: %d != %d (w=%d colored=%v)",
 							indent, len(got), len(base), width, colored)
 					}
 					// 🚨 相対比較だけでは「両辺に同じ定数を足す」変異 (pre を
-					// padSpaces(indent+1) にする等) がキャンセルして素通りする (R3 の指摘)。
+					// term.PadSpaces(indent+1) にする等) がキャンセルして素通りする (R3 の指摘)。
 					// indent=0 のときの**絶対**の姿を 1 点固定して基準を釘付けする:
 					// 色なしの上辺は罫線の角で始まり、空白では始まらない。
 					if indent == 0 && !colored && width >= layout.PanelMinWidth && len(base) > 0 {
@@ -396,11 +397,11 @@ func TestPanelBoxIndentIsPureLeftPad(t *testing.T) {
 	}
 }
 
-// wrapWindowFrame の幾何 (行数・左余白 1 桁・端末幅に収まること)。
+// term.WrapWindowFrame の幾何 (行数・左余白 1 桁・端末幅に収まること)。
 func TestWrapWindowFrameGeometry(t *testing.T) {
 	content := []string{"aaa", "bbb", "ccc"}
 	for _, termW := range []int{20, 40, 80, 200} {
-		got := wrapWindowFrame(content, termW, false)
+		got := term.WrapWindowFrame(content, termW, false)
 		if len(got) != len(content)+4 {
 			t.Fatalf("termW=%d: 行数が %d (want %d = content+4)", termW, len(got), len(content)+4)
 		}
@@ -420,18 +421,18 @@ func TestWrapWindowFrameGeometry(t *testing.T) {
 				t.Errorf("termW=%d 行 %d の行頭空白が %d 桁 (want %d): %q",
 					termW, i+1, lead, wantLead, l)
 			}
-			if w := dispWidth(l); w > termW {
+			if w := term.DispWidth(l); w > termW {
 				t.Errorf("termW=%d 行 %d が端末幅を超えた: %d (%q)", termW, i+1, w, l)
 			}
 		}
 	}
 }
 
-// padSpaces が strings.Repeat(" ", n) と同値であること (n<=0 は "")。
+// term.PadSpaces が strings.Repeat(" ", n) と同値であること (n<=0 は "")。
 //
-// 🚨 256 桁を跨いで確かめる: padSpaces は 256 桁までは定数文字列のスライスを返し、
+// 🚨 256 桁を跨いで確かめる: term.PadSpaces は 256 桁までは定数文字列のスライスを返し、
 // それを超えると strings.Repeat に落ちる。047 で strings.Repeat の呼び出しを
-// padSpaces へ置き換えた根拠が「同値だが無確保」なので、fallback 側の同値を
+// term.PadSpaces へ置き換えた根拠が「同値だが無確保」なので、fallback 側の同値を
 // 守るテストが無いと主張が裏付けられない (R3 の指摘。それまで直接テストは 0 本だった)。
 func TestPadSpacesEquivalentToRepeat(t *testing.T) {
 	for n := -3; n <= 300; n++ {
@@ -439,13 +440,13 @@ func TestPadSpacesEquivalentToRepeat(t *testing.T) {
 		if n > 0 {
 			want = strings.Repeat(" ", n)
 		}
-		if got := padSpaces(n); got != want {
-			t.Fatalf("padSpaces(%d) = %q (len %d); want len %d", n, got, len(got), len(want))
+		if got := term.PadSpaces(n); got != want {
+			t.Fatalf("term.PadSpaces(%d) = %q (len %d); want len %d", n, got, len(got), len(want))
 		}
 	}
 	// 256 桁以下は確保しない (定数文字列のスライス) ことも固定する
-	if n := testing.AllocsPerRun(50, func() { _ = padSpaces(200) }); n != 0 {
-		t.Errorf("padSpaces(200) が %v 回確保している (バッキング共有が壊れた)", n)
+	if n := testing.AllocsPerRun(50, func() { _ = term.PadSpaces(200) }); n != 0 {
+		t.Errorf("term.PadSpaces(200) が %v 回確保している (バッキング共有が壊れた)", n)
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"doctor/docker"
 	"doctor/ssd"
 	"doctor/svc"
+	"glogx/internal/term"
 )
 
 // fakeDelete は disk.Delete の差し替え。呼ばれた引数を記録し、進捗を流してから rep を返す。
@@ -602,7 +603,7 @@ func TestDeleteShowsProgressInPanel(t *testing.T) {
 	v.del = doctorDelete{running: true, progress: progAt(2, 3, "Xcode DerivedData", disk.PhaseDeleting)}
 	out := doctorPanelText(v, 20)
 	// 🚨 エントリ名と「相 + 経過」は**別の行**に出す。1 行に詰めると狭い端末で
-	// truncateDisp が末尾から削り、生存の手がかり (スピナー・経過) が最初に消える
+	// term.TruncateDisp が末尾から削り、生存の手がかり (スピナー・経過) が最初に消える
 	for _, want := range []string{"削除しています", "2/3  Xcode DerivedData", "削除中", "Ctrl-C"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("実行中のパネルに %q が無い:\n%s", want, out)
@@ -724,7 +725,7 @@ func TestDeleteVocabulary(t *testing.T) {
 	}
 	// 記号は単独で幅 2 のものだけ (端末で右端が動かないように)
 	for _, s := range []string{"✅", "🚮", "🚨", "🚫", "❌", "📋"} {
-		if w := dispWidth(s); w != 2 {
+		if w := term.DispWidth(s); w != 2 {
 			t.Errorf("%q の幅 = %d (2 でない記号は使わない)", s, w)
 		}
 	}
@@ -737,7 +738,7 @@ func TestDeleteVocabulary(t *testing.T) {
 		words = append(words, doctorOutcomeWord(o))
 	}
 	for _, w := range words {
-		if got := dispWidth(w); got > deleteWordW {
+		if got := term.DispWidth(w); got > deleteWordW {
 			t.Errorf("語 %q の幅 = %d (deleteWordW = %d を超えると行末で切れる)", w, got, deleteWordW)
 		}
 	}
@@ -1410,8 +1411,8 @@ func TestDiskItemRowKeepsPathTail(t *testing.T) {
 	}
 	// 🚨 **この層で予算に収めていること**まで見る。行が予算を超えたまま返ると、後段の lines() が
 	// 行末を切るので末尾が落ちる (この assert が無いと「切らずに返す」変異が緑のまま通った。実測)
-	if w := dispWidth(rows[0].text); w > 77-cursorGutterWidth {
-		t.Errorf("行が予算を超えている: 幅 %d > %d: %q", w, 77-cursorGutterWidth, rows[0].text)
+	if w := term.DispWidth(rows[0].text); w > 77-term.CursorGutterWidth {
+		t.Errorf("行が予算を超えている: 幅 %d > %d: %q", w, 77-term.CursorGutterWidth, rows[0].text)
 	}
 	// 🚨 コピーは**切っていない実パス**であること (表示の都合で壊さない)
 	if rows[0].copyPath != long {

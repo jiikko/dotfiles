@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"doctor/docker"
+	"glogx/internal/term"
 )
 
 // Docker タブに 4 群が並び、docker 申告の回収可能量が見出しに出る。
@@ -128,7 +129,7 @@ func TestDoctorDockerMarksAreAligned(t *testing.T) {
 	for _, row := range v.rows {
 		for _, label := range []string{"停止したコンテナ", "使われていないイメージ", "ビルドキャッシュ", "参照されていないボリューム"} {
 			if i := strings.Index(row.text, label); i >= 0 {
-				offsets = append(offsets, dispWidth(row.text[:i]))
+				offsets = append(offsets, term.DispWidth(row.text[:i]))
 			}
 		}
 	}

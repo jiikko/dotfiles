@@ -1,13 +1,14 @@
 package main
 
 import (
+	"glogx/internal/term"
 	"strings"
 	"testing"
 	"time"
 )
 
 // 演出の中間フレームは「中央に置かれた小さい枠」になる (枠のジオメトリのテスト。
-// 中身のアンカーは wrapWindowFrame 済みの実入力を使う TestZoomWindowFramedInputNoNestedBorder
+// 中身のアンカーは term.WrapWindowFrame 済みの実入力を使う TestZoomWindowFramedInputNoNestedBorder
 // が守る — framed=true の中身切り出しはクロームスキップ込みで、生テキスト入力では検証できない)。
 func TestZoomWindowShrinksToCenter(t *testing.T) {
 	const w, h = 60, 12
@@ -21,7 +22,7 @@ func TestZoomWindowShrinksToCenter(t *testing.T) {
 		t.Fatalf("行数が変わった: %d (want %d)", len(small), h)
 	}
 	for i, ln := range small {
-		if got := dispWidth(ln); got > w {
+		if got := term.DispWidth(ln); got > w {
 			t.Fatalf("行 %d が幅を超えた (w=%d): %q", i, got, ln)
 		}
 	}
@@ -45,7 +46,7 @@ func boxWidth(t *testing.T, lines []string) int {
 	t.Helper()
 	w := 0
 	for _, ln := range lines {
-		w = max(w, dispWidth(strings.TrimRight(ln, " ")))
+		w = max(w, term.DispWidth(strings.TrimRight(ln, " ")))
 	}
 	return w
 }
@@ -272,7 +273,7 @@ func TestZoomStepsAreSmall(t *testing.T) {
 	}
 }
 
-// framed の実入力 (wrapWindowFrame 適用後の画面 + hint 行) での回帰ガード: 演出枠の内側に
+// framed の実入力 (term.WrapWindowFrame 適用後の画面 + hint 行) での回帰ガード: 演出枠の内側に
 // 実画面自身の枠 (上辺の角・左の ║ 列・下辺の接地行 ▁・hint) が入れ子で映らないこと +
 // 1 行目の中身が最初から見えること。
 // 経緯 (2026-08-13): 左上アンカー導入時、(1) クロームをスキップせず lines[0] から切り出して
@@ -286,7 +287,7 @@ func TestZoomWindowFramedInputNoNestedBorder(t *testing.T) {
 		content[i] = "line" + strings.Repeat("x", 20)
 	}
 	content[0] = "FIRSTCOMMIT" + strings.Repeat("x", 9)
-	all := append(wrapWindowFrame(content, termW, false), "hint: q quit")
+	all := append(term.WrapWindowFrame(content, termW, false), "hint: q quit")
 
 	for _, scale := range []float64{0.2, 0.5, 0.8, 0.95} {
 		out := zoomWindow(all, scale, termW, false, true)

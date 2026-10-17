@@ -1,6 +1,9 @@
 package main
 
-import "strings"
+import (
+	"glogx/internal/term"
+	"strings"
+)
 
 // 最下行の案内 (hint) を出す「面」のレジストリ。issue 289。
 //
@@ -49,105 +52,105 @@ const (
 //
 // 🚨 配列にしているのは、ID を足したときに要素が nil のまま残るのを検査で捕まえるため
 // (map だと「まだ足していない」と「意図的に空」が区別できない)。
-var hintBuilders = [hintSurfaceCount]func(*browseModel) []hintItem{
+var hintBuilders = [hintSurfaceCount]func(*browseModel) []term.HintItem{
 	// 🚨 固定文字列にしないこと (issue 279)。全部つなぐと 174 桁あり、端末 176 桁未満では
 	// 末尾の `q: 終了` が切られて**抜ける手段が案内から消える**。既定の画面・一般的な幅で
 	// 常時そうなっていた。優先度 1 = 出口、2 = 移動と主要操作、以降は幅が許せば出す。
-	hintSurfaceBase: func(*browseModel) []hintItem {
-		return []hintItem{
-			{"j/k: 移動", 2},
-			{"Enter: CI job", 3},
-			{"d: diff", 3},
-			{"o: ブラウザ", 5},
-			{"p: PR", 6},
-			{"P: PR 状態", 6},
-			{"y: URL コピー", 5},
-			{"b: push", 4},
-			{"u: pull", 4},
-			{"i: issues", 4},
-			{"U: usage", 6},
-			{"R: 残量", 6},
-			{"C: update", 7},
-			{"D: doctor", 5},
-			{"w: 警告コピー", 7},
-			{"q: 終了", 1},
+	hintSurfaceBase: func(*browseModel) []term.HintItem {
+		return []term.HintItem{
+			{Text: "j/k: 移動", Prio: 2},
+			{Text: "Enter: CI job", Prio: 3},
+			{Text: "d: diff", Prio: 3},
+			{Text: "o: ブラウザ", Prio: 5},
+			{Text: "p: PR", Prio: 6},
+			{Text: "P: PR 状態", Prio: 6},
+			{Text: "y: URL コピー", Prio: 5},
+			{Text: "b: push", Prio: 4},
+			{Text: "u: pull", Prio: 4},
+			{Text: "i: issues", Prio: 4},
+			{Text: "U: usage", Prio: 6},
+			{Text: "R: 残量", Prio: 6},
+			{Text: "C: update", Prio: 7},
+			{Text: "D: doctor", Prio: 5},
+			{Text: "w: 警告コピー", Prio: 7},
+			{Text: "q: 終了", Prio: 1},
 		}
 	},
 	// 確認・進行中の面は 1 項目だけ。**優先度 1** にするのは、幅が足りないときに
 	// 「何を聞かれているか / 何を待っているか」が消えると操作不能になるため
-	// (fitHintItems は入らない項目を落とすので、1 でないと丸ごと消えうる)。
-	hintSurfacePushConfirm: func(*browseModel) []hintItem {
-		return []hintItem{{"push しますか? [Y/n] (Enter=y)", 1}}
+	// (term.FitHintItems は入らない項目を落とすので、1 でないと丸ごと消えうる)。
+	hintSurfacePushConfirm: func(*browseModel) []term.HintItem {
+		return []term.HintItem{{Text: "push しますか? [Y/n] (Enter=y)", Prio: 1}}
 	},
-	hintSurfacePullConfirm: func(*browseModel) []hintItem {
-		return []hintItem{{"pull --rebase しますか? [Y/n] (Enter=y)", 1}}
+	hintSurfacePullConfirm: func(*browseModel) []term.HintItem {
+		return []term.HintItem{{Text: "pull --rebase しますか? [Y/n] (Enter=y)", Prio: 1}}
 	},
-	hintSurfacePushing: func(m *browseModel) []hintItem {
-		return []hintItem{{m.spinner() + " pushing...", 1}}
+	hintSurfacePushing: func(m *browseModel) []term.HintItem {
+		return []term.HintItem{{Text: m.spinner() + " pushing...", Prio: 1}}
 	},
-	hintSurfacePulling: func(m *browseModel) []hintItem {
-		return []hintItem{{m.spinner() + " pulling...", 1}}
+	hintSurfacePulling: func(m *browseModel) []term.HintItem {
+		return []term.HintItem{{Text: m.spinner() + " pulling...", Prio: 1}}
 	},
-	hintSurfaceRerunConfirm: func(*browseModel) []hintItem {
-		return []hintItem{{"job を再実行しますか? [Y/n] (Enter=y)", 1}}
+	hintSurfaceRerunConfirm: func(*browseModel) []term.HintItem {
+		return []term.HintItem{{Text: "job を再実行しますか? [Y/n] (Enter=y)", Prio: 1}}
 	},
-	hintSurfaceRerunning: func(m *browseModel) []hintItem {
-		return []hintItem{{m.spinner() + " rerunning...", 1}}
+	hintSurfaceRerunning: func(m *browseModel) []term.HintItem {
+		return []term.HintItem{{Text: m.spinner() + " rerunning...", Prio: 1}}
 	},
-	hintSurfaceUpdating: func(m *browseModel) []hintItem {
-		return []hintItem{{m.spinner() + " " + strings.Join(m.actModal.updatingTargets(), " + ") + " update...", 1}}
+	hintSurfaceUpdating: func(m *browseModel) []term.HintItem {
+		return []term.HintItem{{Text: m.spinner() + " " + strings.Join(m.actModal.updatingTargets(), " + ") + " update...", Prio: 1}}
 	},
-	hintSurfaceDiff: func(*browseModel) []hintItem {
-		return []hintItem{
-			{"j/k/Space: スクロール", 2},
-			{"J/K: 隣のコミット", 3},
-			{"g/G: 先頭/末尾", 5},
-			{"y: URL コピー", 4},
-			{"q/h: 閉じる", 1}, // 抜ける手段は最優先
+	hintSurfaceDiff: func(*browseModel) []term.HintItem {
+		return []term.HintItem{
+			{Text: "j/k/Space: スクロール", Prio: 2},
+			{Text: "J/K: 隣のコミット", Prio: 3},
+			{Text: "g/G: 先頭/末尾", Prio: 5},
+			{Text: "y: URL コピー", Prio: 4},
+			{Text: "q/h: 閉じる", Prio: 1}, // 抜ける手段は最優先
 		}
 	},
-	hintSurfacePRStatus: func(*browseModel) []hintItem {
-		return []hintItem{
-			{"o: PR をブラウザで開く", 3},
-			{"y: URL コピー", 4},
-			{"P/q/h: 閉じる", 1},
+	hintSurfacePRStatus: func(*browseModel) []term.HintItem {
+		return []term.HintItem{
+			{Text: "o: PR をブラウザで開く", Prio: 3},
+			{Text: "y: URL コピー", Prio: 4},
+			{Text: "P/q/h: 閉じる", Prio: 1},
 		}
 	},
-	hintSurfaceJobDetail: func(*browseModel) []hintItem {
-		return []hintItem{
-			{"j/k: スクロール", 3},
-			{"J/K: 隣の job", 4},
-			{"v: nvim で開く", 4},
-			{"r: 再実行", 3},
-			{"Enter/h/q: 戻る", 1}, // 抜ける手段は最優先
-			{"o: ブラウザ", 4},
-			{"y: URL", 5},
-			{"Y: 詳細コピー", 5},
+	hintSurfaceJobDetail: func(*browseModel) []term.HintItem {
+		return []term.HintItem{
+			{Text: "j/k: スクロール", Prio: 3},
+			{Text: "J/K: 隣の job", Prio: 4},
+			{Text: "v: nvim で開く", Prio: 4},
+			{Text: "r: 再実行", Prio: 3},
+			{Text: "Enter/h/q: 戻る", Prio: 1}, // 抜ける手段は最優先
+			{Text: "o: ブラウザ", Prio: 4},
+			{Text: "y: URL", Prio: 5},
+			{Text: "Y: 詳細コピー", Prio: 5},
 		}
 	},
-	hintSurfacePanelCursor: func(*browseModel) []hintItem {
-		return []hintItem{
-			{"j/k: job 移動", 3},
-			{"Enter: 詳細ログ", 3},
-			{"r: 再実行", 4},
-			{"o: ブラウザ", 4},
-			{"d: diff", 5},
-			{"p: PR", 5},
-			{"y: URL", 5},
-			{"Y: 詳細コピー", 6},
-			{"h/q: 閉じる", 1}, // 抜ける手段は最優先
+	hintSurfacePanelCursor: func(*browseModel) []term.HintItem {
+		return []term.HintItem{
+			{Text: "j/k: job 移動", Prio: 3},
+			{Text: "Enter: 詳細ログ", Prio: 3},
+			{Text: "r: 再実行", Prio: 4},
+			{Text: "o: ブラウザ", Prio: 4},
+			{Text: "d: diff", Prio: 5},
+			{Text: "p: PR", Prio: 5},
+			{Text: "y: URL", Prio: 5},
+			{Text: "Y: 詳細コピー", Prio: 6},
+			{Text: "h/q: 閉じる", Prio: 1}, // 抜ける手段は最優先
 		}
 	},
 	// カーソル無し (パネルを開いた直後の既定状態。openPanel が panelCursor = -1 にする)。
 	// 🚨 固定文字列にしないこと (issue 279)。63 桁あり、最小サポート幅の帯 (w=60〜69) で
 	// 出口 `Enter/h/q: 閉じる` が語中で切れて消えていた。
-	hintSurfacePanelNoCursor: func(*browseModel) []hintItem {
-		return []hintItem{
-			{"j: job を選択", 2},
-			{"d: diff", 3},
-			{"p: PR", 4},
-			{"y: commit URL", 4},
-			{"Enter/h/q: 閉じる", 1}, // 抜ける手段は最優先
+	hintSurfacePanelNoCursor: func(*browseModel) []term.HintItem {
+		return []term.HintItem{
+			{Text: "j: job を選択", Prio: 2},
+			{Text: "d: diff", Prio: 3},
+			{Text: "p: PR", Prio: 4},
+			{Text: "y: commit URL", Prio: 4},
+			{Text: "Enter/h/q: 閉じる", Prio: 1}, // 抜ける手段は最優先
 		}
 	},
 }
@@ -157,8 +160,8 @@ var hintBuilders = [hintSurfaceCount]func(*browseModel) []hintItem{
 // 🚨 **前置を足すならここに足すこと。hintLine の中で prefix へ書き足さない**
 // (敵対的レビュー 2 周目の P1)。hintLine 側は `prefix := m.hintPrefix()` の 1 行だけを持ち、
 // その直後に予算を引く。**予算を引いた後で前置を積める形を残さない**のが目的で、
-// それこそが 279 / 281 の根本原因だった (fitHintItems が幅ぴったりに収めた後に前置を積み、
-// hintLineText の clipToWidth が末尾 = 出口を落としていた)。
+// それこそが 279 / 281 の根本原因だった (term.FitHintItems が幅ぴったりに収めた後に前置を積み、
+// hintLineText の term.ClipToWidth が末尾 = 出口を落としていた)。
 // 実測 2026-09-06: 予算減算の下に新しい前置を 1 ブロック足すと、字句ゲートも幅ゲートも
 // 素通りしたまま幅 60〜140 の全帯で出口が消えた。迂回は TestHintLinePrefixGoesThroughHelper が止める。
 //
@@ -171,8 +174,8 @@ func (m *browseModel) hintPrefix(maxWidth int) string {
 	if m.ghErr != nil {
 		prefix = "🚨 " + firstLine(m.ghErr.Warning()) + "  " + prefix
 	}
-	if dispWidth(prefix) > maxWidth {
-		prefix = clipToWidth(prefix, maxWidth)
+	if term.DispWidth(prefix) > maxWidth {
+		prefix = term.ClipToWidth(prefix, maxWidth)
 	}
 	return prefix
 }

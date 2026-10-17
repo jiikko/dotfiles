@@ -21,6 +21,7 @@
 - `src/glogx` (`glogx`) — 対話ブラウズ中はキー操作 (j/k/q/b 等) が主なので、起動時に IME を英数 (ABC) へ 切り替え、終了時に元へ戻す。 (main)
 - `src/glogx/cmd/issue-claim` (`glogx/cmd/issue-claim`) — issue-claim は issue に着手の claim を付ける: next/ に目印 (symlink) を置き、本文冒頭に担当者バナーを書く。 (main)
 - `src/glogx/gorules` (`glogx/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml の settings.gocritic.settings.ruleguard.rules から参照)。 (build tags: ruleguard)
+- `src/glogx/internal/term` (`glogx/internal/term`) — Package term は glogx の描画の土台: ANSI 色と Paint・切り詰め / 折り返しの純関数・幅計算の別名・枠と影・ 端末サニタイズの入口・glide のキー語彙・最下行の案内の詰めを持つ。 (internal)
 - `src/glogx/issues` (`glogx/issues`) — Package issues は repo 内の issue markdown ファイルの探索・分類と、端末表示用の整形を担う。
 - `src/glogx/tools/dial-preview` (`glogx/tools/dial-preview`) — dial-preview は全画面 ratelimit ダッシュボード (usage.RenderDashboard) の見た目プレビュー。 (main)
 - `src/glogx/tools/width-probe` (`glogx/tools/width-probe`) — width-probe は「端末が各文字に実際に何セル割り当てるか」を端末自身に問い合わせて表示する。 (main)

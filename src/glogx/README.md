@@ -11,10 +11,11 @@ src/glog の完全コピーから出発しており、当時 github.go / render.
 重複していた。**意図的に共有パッケージへは分離せず**、「glog を使わなくなったら退役して
 一本化 (分離不要のまま終わり) / 同じ修正を両方へ入れる事態が 2 回起きたら core を抽出」の
 二択で再評価すると決めていた。結果は前者: **glog は 2026-07-22 に退役済み (`40d4a28`) で、
-重複問題ごと消滅した**。glogx は flat な package main を維持する (サブパッケージを切る基準は
+重複問題ごと消滅した**。glogx は長く flat な package main だった (サブパッケージを切る基準は
 「実在する第二消費者」か「明示的な分離要望」— issues/ の前例。termsafe は
 `src/termsafe` の独立 module へ出した = doctor module も同じ関門を通すため。issue 228。usage / subproc /
-atomicfile も第二消費者 (bin/ratelimit) ができたので `src/ratelimit` / `src/subproc` / `src/atomicfile` へ出した)。
+atomicfile も第二消費者 (bin/ratelimit) ができたので `src/ratelimit` / `src/subproc` / `src/atomicfile` へ出した)。2026-10-17 にユーザーの明示的な分離要望 (issue 742。
+開発中のビルドキャッシュの増え方を減らす) で、描画の土台から順に `internal/` のパッケージへ割り始めた。
 
 GitHub Actions / GitHub Checks の結果をコミットごとに添える `git log` ラッパー。
 
@@ -175,7 +176,7 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 - `--no-frame` で無効化できる
 - 端末が下限サイズ (60×15) 未満のときは自動で OFF (tmux の小 pane / popup でも崩れない)
 - `NO_COLOR` / 非 TTY では色を出さない (枠の字形だけ残る)
-- 色を変えたいときは `render.go` の `ansiFrameBorder` を差し替える。候補の見比べは
+- 色を変えたいときは `internal/term/render.go` の `term.AnsiFrameBorder` を差し替える。候補の見比べは
   `./tools/border-preview.sh` (実端末で実行)
 
 ### 対話ブラウズのキー操作 (TTY のみ)
@@ -409,14 +410,14 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `_go-project.yml` を呼び、lint と test を回す (src/glogx を触った push/PR のときだけ起動)
 - Bubble Tea は v2 (`charm.land/bubbletea/v2`)。移行で変えた点・採らなかった v2 機能・上げるときに
   測り直すこと (幅モデルの一致) は [`docs/glogx-bubbletea-v2.md`](../../docs/glogx-bubbletea-v2.md)
-- 実装は flat な `package main` (+ `issues/` サブパッケージ)。利用枠の取得・整形 (`usage`) と外部プロセス起動の
+- 実装は `package main` を中心に、描画の土台 `internal/term` と `issues/` サブパッケージ (画面ごとの切り出しは issue 742 で進行中)。利用枠の取得・整形 (`usage`) と外部プロセス起動の
   安全弁 (`subproc`)・atomic 書き込み (`atomicfile`) は独立 module ([`../ratelimit`](../ratelimit/README.md) /
   [`../subproc`](../subproc/README.md) / [`../atomicfile`](../atomicfile/README.md)) から replace で取り込む。主な境界:
   `options.go` (引数 allowlist) / `gitlog.go` (git 実行と %x1e/%x1f レコード解析) /
   `github.go` (repo 解決・GraphQL・集約) / `cache.go` (XDG キャッシュ) /
   `external_commands.go` (git/tmux/claude/browser/clipboard の外部プロセスラッパー) /
-  `terminal.go` (端末サニタイズ) / `render.go` (行生成) / `tui.go` (Bubble Tea ブラウズの中核・状態遷移) /
-  `box.go` (枠と影の本体は tuikit の `layout.Panel` / `OverlayCentered`。ここは glogx のテーマ色を渡すラッパ。確認ダイアログは tuikit の `confirm`) /
+  `internal/term` (ANSI 色・`Paint`・幅の別名・枠と影 (`box.go`)・端末サニタイズ (`terminal.go`)・glide のキー語彙・最下行の案内の詰め) / `render.go` (コミット行の生成) / `tui.go` (Bubble Tea ブラウズの中核・状態遷移) /
+  `internal/term/box.go` は枠と影の本体 (tuikit の `layout.Panel` / `OverlayCentered`) に glogx のテーマ色を渡すラッパ (確認ダイアログは tuikit の `confirm`) /
   各種オーバーレイ・モーダル (`diff_overlay.go` / `job_detail_overlay.go` /
   `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go`。右下の通知スタック (新しい通知は上に積まれ
   古い通知は下から抜ける。最大 3 枚) は tuikit の `toast`) /
@@ -425,12 +426,12 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `main.go` (配線)。diff のシンタックスハイライト (`highlight`) と基本 ANSI 色 (`sgr`) は tuikit から取り込む
 - 表示幅の単一情報源 (`termwidth`) と、演出・画面合成の部品 (drawer の開閉 / glide / slide-in /
   窓の計算) は [`../tuikit`](../tuikit/README.md) にある (replace で取り込む。別の TUI でも使えるように
-  切り出した)。main は `width.go` の別名経由、issues / usage は `github.com/jiikko/dotfiles/src/tuikit/termwidth` を直接呼ぶ。
-  glogx 側に残るのは寸法・所要時間・キーの語彙だけ (`issues_drawer.go` / `zoom.go` / `scroll_glide.go`)
+  切り出した)。glogx は `internal/term/width.go` の別名経由、issues / usage は `github.com/jiikko/dotfiles/src/tuikit/termwidth` を直接呼ぶ。
+  glogx 側に残るのは寸法・所要時間・キーの語彙だけ (`issues_drawer.go` / `zoom.go` / `internal/term/scroll_glide.go`)
 - `tools/width-probe/`: 端末が各文字に何セル割り当てるかを CPR (CSI 6n) で端末自身に
   問い合わせる調査ツール。幅ズレの原因層 (glogx / 描画エンジン / tmux / 端末) を推測でなく
   実測で切り分けるためのもので、本体からは参照しない。
-  **3 つの幅モデルを並べて出す** (`grapheme` = `ansi.StringWidth` = glogx の `dispWidth` /
+  **3 つの幅モデルを並べて出す** (`grapheme` = `ansi.StringWidth` = glogx の `term.DispWidth` /
   `wc` = `ansi.StringWidthWc` = bubbletea v2 描画エンジンの既定 / `uniseg` = 分割に使っている
   ライブラリ) ので、「端末がどれと一致するか」= **揃える先**が 1 回の実行で決まる (issue 124)。
   ⚠️ **絵文字を「無情報」として外さないこと**: `⚠+VS16` は (grapheme 2 / wc 1 / uniseg 2) で、

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jiikko/dotfiles/src/tuikit/editor"
+	"glogx/internal/term"
 	"glogx/issues"
 )
 
@@ -266,7 +267,7 @@ func TestIssuesViewTabLineFollowsSelection(t *testing.T) {
 		v.tabIdx = i
 		v.refresh()
 		line := v.tabLine(issuesRenderOpts{width: width})
-		if w := dispWidth(line); w > width {
+		if w := term.DispWidth(line); w > width {
 			t.Fatalf("tabIdx=%d でタブ行が幅 %d を超えた (w=%d): %q", i, width, w, line)
 		}
 		want := "[All " + strconv.Itoa(v.allCount) + "]"
@@ -432,7 +433,7 @@ func TestIssuesViewMultiSelectIsVisible(t *testing.T) {
 		if strings.HasPrefix(ln, issuesSelGutter) {
 			marked++
 		}
-		if w := dispWidth(ln); w > 80 {
+		if w := term.DispWidth(ln); w > 80 {
 			t.Fatalf("選択表示で行が幅を超えた (w=%d): %q", w, ln)
 		}
 	}
@@ -466,7 +467,7 @@ func TestIssuesViewBodyShowsSrcLineNumbers(t *testing.T) {
 		}
 	}
 	for _, ln := range out {
-		if w := dispWidth(ln); w > width {
+		if w := term.DispWidth(ln); w > width {
 			t.Fatalf("行番号の溝を足して幅を超えた (w=%d): %q", w, ln)
 		}
 	}
@@ -801,7 +802,7 @@ func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 func TestIssuesViewLinesAlwaysExactlyPageRows(t *testing.T) {
 	// 幅は 1 から全数で振る: 狭い幅では固定部分 (溝・番号・バッジ・カテゴリ) だけで幅を
 	// 超えるため、行のクリップが 1 経路でも抜けていると枠を突き破る。掃き始めが 20 だった
-	// 頃は幅 1-2 の取りこぼしが眠っていた (issue 053: clipToWidth の width<=0 素通しと
+	// 頃は幅 1-2 の取りこぼしが眠っていた (issue 053: term.ClipToWidth の width<=0 素通しと
 	// tabLine のフィルタバッジ後置)。
 	for width := 1; width <= 80; width++ {
 		for _, page := range []int{3, 5, 20, 40} {
@@ -813,7 +814,7 @@ func TestIssuesViewLinesAlwaysExactlyPageRows(t *testing.T) {
 					t.Fatalf("width=%d page=%d なのに %d 行返った", width, page, len(got))
 				}
 				for i, ln := range got {
-					if w := dispWidth(ln); w > width {
+					if w := term.DispWidth(ln); w > width {
 						t.Fatalf("width=%d page=%d 行 %d が幅を超えた (w=%d): %q", width, page, i, w, ln)
 					}
 				}
@@ -838,7 +839,7 @@ func TestIssuesViewRowShowsNumberBadgeCategoryTitle(t *testing.T) {
 	// 矢印はカーソル行だけに 1 本出る (先頭行 = 030)
 	marked := make([]string, 0, 1)
 	for _, ln := range lines {
-		if strings.HasPrefix(ln, cursorGutterMark) {
+		if strings.HasPrefix(ln, term.CursorGutterMark) {
 			marked = append(marked, ln)
 		}
 	}
@@ -952,7 +953,7 @@ func TestIssuesViewBodyScrollClampsToEnd(t *testing.T) {
 // hasCursorMark はカーソル行の矢印が描かれている行があるか。
 func hasCursorMark(lines []string) bool {
 	for _, ln := range lines {
-		if strings.HasPrefix(ln, cursorGutterMark) {
+		if strings.HasPrefix(ln, term.CursorGutterMark) {
 			return true
 		}
 	}
@@ -1304,7 +1305,7 @@ func TestCategoryColorIsStableAndReservesRed(t *testing.T) {
 	if categoryColor("feat") != catGreen {
 		t.Fatal("feat が緑になっていない")
 	}
-	if categoryColor("") != ansiDim {
+	if categoryColor("") != term.AnsiDim {
 		t.Fatal("カテゴリ無しが dim になっていない")
 	}
 	// 表に無い語: 同じ語なら常に同じ色 (起動ごとに変わらない)
@@ -1347,7 +1348,7 @@ func TestIssuesViewSlideInAnimation(t *testing.T) {
 	}
 	shifted := false
 	for _, ln := range early {
-		if w := dispWidth(ln); w > 80 {
+		if w := term.DispWidth(ln); w > 80 {
 			t.Fatalf("演出中の行が幅を超えた (w=%d): %q", w, ln)
 		}
 		if strings.HasPrefix(ln, " ") && strings.TrimSpace(ln) != "" {
@@ -1396,7 +1397,7 @@ func TestIssuesViewKeyLandsAnimationImmediately(t *testing.T) {
 }
 
 func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
-	// hint は fitHintItems で組むので「収まる」は構造で保証される (issue 264)。ここで見るのは
+	// hint は term.FitHintItems で組むので「収まる」は構造で保証される (issue 264)。ここで見るのは
 	// ①予算幅では全モードの全項目が入る (= 代表幅の端末で案内が欠けない) ②狭い幅でも
 	// 優先度 1 の「抜ける手段」が最後まで残る、の 2 つ。
 	budget := testHintBudget(t)
@@ -1425,18 +1426,18 @@ func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
 	for _, md := range modes {
 		md.setup()
 		h := v.hint(budget)
-		if w := dispWidth(h); w > budget {
+		if w := term.DispWidth(h); w > budget {
 			t.Errorf("%s: 予算 %d に収まらない (w=%d): %q", md.name, budget, w, h)
 		}
 		if !strings.Contains(h, md.full) {
 			t.Errorf("%s: 予算幅で項目が落ちている (%q が無い): %q", md.name, md.full, h)
 		}
 		// 🚨 1 点だけ見ない。落ちる項目は幅の刻みごとに変わるので、下限から予算まで掃く
-		// (下限は抜ける手段そのものが入る幅。それ未満は fitHintItems が末尾の項目を出す極端域)
-		for w := dispWidth(md.exit); w <= budget; w++ {
+		// (下限は抜ける手段そのものが入る幅。それ未満は term.FitHintItems が末尾の項目を出す極端域)
+		for w := term.DispWidth(md.exit); w <= budget; w++ {
 			h := v.hint(w)
-			if dispWidth(h) > w {
-				t.Errorf("%s: 幅 %d に収まらない (w=%d): %q", md.name, w, dispWidth(h), h)
+			if term.DispWidth(h) > w {
+				t.Errorf("%s: 幅 %d に収まらない (w=%d): %q", md.name, w, term.DispWidth(h), h)
 			}
 			if !strings.Contains(h, md.exit) {
 				t.Errorf("%s: 幅 %d で抜ける手段 %q が消えた: %q", md.name, w, md.exit, h)
@@ -1457,7 +1458,7 @@ func TestIssuesHintUsesRenderBudget(t *testing.T) {
 		m.issuesOv.shown = true
 		m.issuesOv.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: sampleIssues()})
 		line := m.hintLine()
-		if got := dispWidth(stripANSI(line)); got > w {
+		if got := term.DispWidth(term.StripANSI(line)); got > w {
 			t.Errorf("w=%d: hint 行が端末幅を超えた (%d 桁): %q", w, got, line)
 		}
 		if strings.Contains(line, "…") {
@@ -2260,7 +2261,7 @@ func newTestIssuesView() issuesView {
 //
 // 🚨 TestHalfPageScrollGlidesOnAllSurfaces の本文サブテストは glide を startPagerGlide で直接立てる
 // (body が nil の workaround) ため、handleBodyKey が glide を配線し忘れても green のままだった。
-// pagerScrollKey への委譲 (2026-08-19) で glide を落とす退行はこのテストだけが検出する。
+// term.PagerScrollKey への委譲 (2026-08-19) で glide を落とす退行はこのテストだけが検出する。
 func TestIssuesViewBodyHalfPageGlidesViaKeyPath(t *testing.T) {
 	e := newBodyKeyEnv(t)
 	before := e.v.bodyPager.Offset
@@ -2594,7 +2595,7 @@ func TestIssuesViewerUsageStillWorksWhenNotOwningKeys(t *testing.T) {
 // 本文モードでも i で viewer が閉じる (issue 122)。
 //
 // --help と README は i を「viewer 内のキー」として案内しているのに、handleBodyKey に case が
-// 無く default の pagerScrollKey へ落ちて offset 不変で返っていた = **押しても何も起きず理由も
+// 無く default の term.PagerScrollKey へ落ちて offset 不変で返っていた = **押しても何も起きず理由も
 // 出ない**。同じ関数の case "s" には「本文だけ沈黙すると案内が嘘になる」という同型の根拠が
 // 既に書かれている。
 func TestIssuesViewerBodyModeIClosesViewer(t *testing.T) {
@@ -2613,7 +2614,7 @@ func TestIssuesViewerBodyModeIClosesViewer(t *testing.T) {
 
 // R は一覧モードでも本文モードでも ratelimit ダッシュボードへ横断する (ユーザー要望 2026-09-01)。
 // s (status への横断) と同じ扱いで、viewer は閉じてから browseModel が開く (全画面は同時に 1 枚)。
-// 🚨 本文モードも見る: 横断の表引きが一覧の switch の中にあると、本文は pagerScrollKey へ落ちて無音になる (issue 122 と同型)。
+// 🚨 本文モードも見る: 横断の表引きが一覧の switch の中にあると、本文は term.PagerScrollKey へ落ちて無音になる (issue 122 と同型)。
 func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 	t.Run("一覧モード", func(t *testing.T) {
 		v := loadedView(realIssue(t))
@@ -2857,7 +2858,7 @@ func TestIssuesViewRefusesToCopyControlChars(t *testing.T) {
 	}
 }
 
-// isCopySafe の境界: タブだけ通し、貼ったときに端末やシェルが解釈するものは断る (issue 753)。
+// term.IsCopySafe の境界: タブだけ通し、貼ったときに端末やシェルが解釈するものは断る (issue 753)。
 func TestIsCopySafe(t *testing.T) {
 	for s, want := range map[string]bool{
 		"/repo/issues/001-feat-x.md": true,
@@ -2870,15 +2871,15 @@ func TestIsCopySafe(t *testing.T) {
 		"\u26a0\ufe0f-notes":         true, // 絵文字の VS16 は制御文字ではない (無害化の結果との一致で判定すると断っていた)
 		"epic-\u2764\ufe0f":          true,
 	} {
-		if got := isCopySafe(s); got != want {
-			t.Errorf("isCopySafe(%q) = %v, want %v", s, got, want)
+		if got := term.IsCopySafe(s); got != want {
+			t.Errorf("term.IsCopySafe(%q) = %v, want %v", s, got, want)
 		}
 	}
 }
 
 // 行番号の溝は番号だけを薄くし、区切りの空白は塗らない (issue 757: gutter.Number を塗る形へ変えたときの見た目の約束)。
 func TestSrcGutterPaintsOnlyTheNumber(t *testing.T) {
-	if got, want := srcGutter(7, 4, true), ansiDim+"  7"+ansiReset+" "; got != want {
+	if got, want := srcGutter(7, 4, true), term.AnsiDim+"  7"+term.AnsiReset+" "; got != want {
 		t.Fatalf("srcGutter(7,4,colored) = %q, want %q", got, want)
 	}
 	if got := srcGutter(0, 4, true); got != "    " {

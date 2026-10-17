@@ -12,6 +12,7 @@ import (
 	"ratelimit/usage"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 // overlayBoxTopRight は box を右上へ右揃えで重ね、覆った各行の表示幅が width ちょうどに
@@ -26,7 +27,7 @@ func TestOverlayBoxTopRightAligns(t *testing.T) {
 		if !strings.HasSuffix(got[i], b) {
 			t.Errorf("行 %d が box 行で終わっていない: %q", i, got[i])
 		}
-		if w := dispWidth(got[i]); w != width {
+		if w := term.DispWidth(got[i]); w != width {
 			t.Errorf("行 %d の表示幅 = %d, want %d", i, w, width)
 		}
 	}
@@ -37,15 +38,15 @@ func TestOverlayBoxTopRightAligns(t *testing.T) {
 
 // 覆う行の左側 (見えている部分) の色は保持される (取得中に上部行の色が抜けない回帰)。
 func TestOverlayBoxTopRightKeepsLeftColor(t *testing.T) {
-	colored := ansiGreen + "green subject text here" + ansiReset
+	colored := term.AnsiGreen + "green subject text here" + term.AnsiReset
 	window := []string{colored}
 	box := []string{"┌ usage ┐"}
 	got := overlayBoxTopRight(window, box, 40, true)
-	if !strings.Contains(got[0], ansiGreen) {
-		t.Errorf("左側の色 (%q) が保持されていない: %q", ansiGreen, got[0])
+	if !strings.Contains(got[0], term.AnsiGreen) {
+		t.Errorf("左側の色 (%q) が保持されていない: %q", term.AnsiGreen, got[0])
 	}
 	// 幅は width ちょうど、右端は box。
-	if w := dispWidth(got[0]); w != 40 {
+	if w := term.DispWidth(got[0]); w != 40 {
 		t.Errorf("表示幅 = %d, want 40", w)
 	}
 	if !strings.HasSuffix(got[0], box[0]) {
@@ -61,7 +62,7 @@ func TestOverlayBoxTopRightTallBox(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("行数が変わった: %d", len(got))
 	}
-	if w := dispWidth(got[0]); w != 20 {
+	if w := term.DispWidth(got[0]); w != 20 {
 		t.Errorf("表示幅 = %d, want 20", w)
 	}
 }
@@ -81,7 +82,7 @@ func TestOverlayBoxTopRightEmpty(t *testing.T) {
 	}
 }
 
-// overlayCenteredBox は中央モーダルを行塗り潰しでなく合成で重ね、左右の背景リストを残す
+// term.OverlayCenteredBox は中央モーダルを行塗り潰しでなく合成で重ね、左右の背景リストを残す
 // (ユーザー要望 2026-07-22: モーダル左側テキストが消える問題の解消)。
 func TestOverlayCenteredBoxKeepsBackgroundBothSides(t *testing.T) {
 	const width = 60
@@ -92,7 +93,7 @@ func TestOverlayCenteredBoxKeepsBackgroundBothSides(t *testing.T) {
 		window[i] = bg
 	}
 	box := []string{strings.Repeat("B", 44)} // 幅 44 → leftGap=(60-44)/2=8
-	out := overlayCenteredBox(window, box, width, len(window), false)
+	out := term.OverlayCenteredBox(window, box, width, len(window), false)
 
 	// box は縦中央 ((10-1)/2=4) に載る
 	got := out[4]
@@ -114,20 +115,20 @@ func TestOverlayCenteredBoxKeepsBackgroundBothSides(t *testing.T) {
 	}
 }
 
-// 右背景の色 (cut より後ろの SGR) が合成後も保たれる (dropToColumn の replay 経由)。
+// 右背景の色 (cut より後ろの SGR) が合成後も保たれる (term.DropToColumn の replay 経由)。
 func TestOverlayCenteredBoxPreservesRightColor(t *testing.T) {
 	const width = 60
 	// 右 8 桁を緑に。左 8 "L" + 中央 44 "m" + 緑 "RRRRRRRR"
-	bg := strings.Repeat("L", 8) + strings.Repeat("m", 44) + ansiGreen + strings.Repeat("R", 8) + ansiReset
+	bg := strings.Repeat("L", 8) + strings.Repeat("m", 44) + term.AnsiGreen + strings.Repeat("R", 8) + term.AnsiReset
 	window := []string{bg, bg, bg, bg, bg, bg, bg, bg, bg, bg}
 	box := []string{strings.Repeat("B", 44)}
-	out := overlayCenteredBox(window, box, width, len(window), true)
+	out := term.OverlayCenteredBox(window, box, width, len(window), true)
 	got := out[4]
-	if !strings.Contains(got, ansiGreen) {
+	if !strings.Contains(got, term.AnsiGreen) {
 		t.Errorf("右背景の色コードが失われた: %q", got)
 	}
-	if stripANSI(got) != strings.Repeat("L", 8)+strings.Repeat("B", 44)+strings.Repeat("R", 8) {
-		t.Errorf("合成後の可視内容がずれた: plain=%q", stripANSI(got))
+	if term.StripANSI(got) != strings.Repeat("L", 8)+strings.Repeat("B", 44)+strings.Repeat("R", 8) {
+		t.Errorf("合成後の可視内容がずれた: plain=%q", term.StripANSI(got))
 	}
 }
 
@@ -195,7 +196,7 @@ func TestUsageBoxLines(t *testing.T) {
 	if len(loading) < 3 { // 上罫線 + 内容 + 下罫線 (影付きは更に多い)
 		t.Fatalf("取得中の box 行数が少ない: %d", len(loading))
 	}
-	loadingPlain := stripANSI(strings.Join(loading, "\n"))
+	loadingPlain := term.StripANSI(strings.Join(loading, "\n"))
 	if !strings.Contains(loadingPlain, "取得中") {
 		t.Errorf("取得中 box に '取得中' が無い:\n%s", loadingPlain)
 	}
@@ -209,7 +210,7 @@ func TestUsageBoxLines(t *testing.T) {
 		{Label: "7d", Percent: 29, ResetAt: time.Now().Add(50 * time.Hour)},
 	}}
 	box := m.usageOv.boxLines(m.width, m.colored, m.spinner())
-	plain := stripANSI(strings.Join(box, "\n"))
+	plain := term.StripANSI(strings.Join(box, "\n"))
 	if !strings.Contains(plain, "5h") || !strings.Contains(plain, "7d") {
 		t.Errorf("成功 box に 5h/7d が無い:\n%s", plain)
 	}
@@ -253,7 +254,7 @@ func TestUsageOverlayBoxLinesError(t *testing.T) {
 	if len(box) == 0 {
 		t.Fatal("エラー時に box が空")
 	}
-	plain := stripANSI(strings.Join(box, "\n"))
+	plain := term.StripANSI(strings.Join(box, "\n"))
 	if !strings.Contains(plain, "取得失敗") {
 		t.Errorf("エラー box に '取得失敗' が無い:\n%s", plain)
 	}
@@ -353,7 +354,7 @@ func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
 		}},
 	}
 	box := ov.boxLines(80, false, "|")
-	plain := stripANSI(strings.Join(box, "\n"))
+	plain := term.StripANSI(strings.Join(box, "\n"))
 	if !strings.Contains(plain, usageFooter) {
 		t.Errorf("usage box に自動更新フッターが無い:\n%s", plain)
 	}
@@ -364,8 +365,8 @@ func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
 	// 右寄せ: フッター文言は行の右端 (右罫線 │ の直前) に来る。左端 "│ " 直後には出さない。
 	var footerLine string
 	for _, l := range box {
-		if strings.Contains(stripANSI(l), usageFooter) {
-			footerLine = stripANSI(l)
+		if strings.Contains(term.StripANSI(l), usageFooter) {
+			footerLine = term.StripANSI(l)
 			break
 		}
 	}
@@ -446,7 +447,7 @@ func TestUsageBoxLinesCodexDivider(t *testing.T) {
 	// 区切り行 = 側罫線の内側が ─ の連続だけの行。位置は 7d 行と cx7d 行の間。
 	divider, idx7d, idxCx := -1, -1, -1
 	for i, line := range box {
-		content := strings.Trim(stripANSI(line), "│░▒▓█ ")
+		content := strings.Trim(term.StripANSI(line), "│░▒▓█ ")
 		switch {
 		case content != "" && strings.Trim(content, "─") == "" && i > 0: // 上辺 (┌...┐) は除外
 			divider = i
@@ -468,7 +469,7 @@ func TestUsageBoxLinesCodexDivider(t *testing.T) {
 		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(4 * time.Hour)},
 	}}
 	for i, line := range o.boxLines(120, false, "") {
-		content := strings.Trim(stripANSI(line), "│░▒▓█ ")
+		content := strings.Trim(term.StripANSI(line), "│░▒▓█ ")
 		if i > 0 && content != "" && strings.Trim(content, "─") == "" {
 			t.Errorf("単一出所なのに区切り罫線がある (行 %d):\n%s", i, line)
 		}
@@ -639,7 +640,7 @@ func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
 func usageBoxPlain(o *usageOverlay) []string {
 	lines := o.boxLines(120, false, "*")
 	for i, l := range lines {
-		lines[i] = stripANSI(l)
+		lines[i] = term.StripANSI(l)
 	}
 	return lines
 }
@@ -647,7 +648,7 @@ func usageBoxPlain(o *usageOverlay) []string {
 func linesWidth(lines []string) int {
 	w := 0
 	for _, l := range lines {
-		w = max(w, dispWidth(l))
+		w = max(w, term.DispWidth(l))
 	}
 	return w
 }
@@ -870,12 +871,12 @@ func TestUsageBoxLinesTitleShowsCodexVersion(t *testing.T) {
 		},
 	}
 	ov := usageOverlay{visible: true, snap: snap}
-	plain := stripANSI(strings.Join(ov.boxLines(120, false, ""), "\n"))
+	plain := term.StripANSI(strings.Join(ov.boxLines(120, false, ""), "\n"))
 	if !strings.Contains(plain, "Claude Code v2.1.216 + codex v0.144.6 · usage") {
 		t.Errorf("タイトルに codex バージョンが無い:\n%s", plain)
 	}
 	snap.CodexVersion = ""
-	plain = stripANSI(strings.Join(ov.boxLines(120, false, ""), "\n"))
+	plain = term.StripANSI(strings.Join(ov.boxLines(120, false, ""), "\n"))
 	if !strings.Contains(plain, "Claude Code v2.1.216 + codex · usage") {
 		t.Errorf("codex バージョン欠損時に名前だけの表記へ落ちない:\n%s", plain)
 	}
@@ -890,16 +891,16 @@ func TestUsageBoxShowsClaudeFetchError(t *testing.T) {
 		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(time.Hour)},
 	}}
 	base := m.usageOv.boxLines(m.width, m.colored, m.spinner())
-	if strings.Contains(stripANSI(strings.Join(base, "\n")), "取得に失敗") {
-		t.Fatalf("取得できているのに注記がある:\n%s", stripANSI(strings.Join(base, "\n")))
+	if strings.Contains(term.StripANSI(strings.Join(base, "\n")), "取得に失敗") {
+		t.Fatalf("取得できているのに注記がある:\n%s", term.StripANSI(strings.Join(base, "\n")))
 	}
 	m.usageOv.snap.ClaudeErr = "claude /usage 実行失敗: exit status 127: " + strings.Repeat("x", 300)
 	box := m.usageOv.boxLines(m.width, m.colored, m.spinner())
-	plain := stripANSI(strings.Join(box, "\n"))
+	plain := term.StripANSI(strings.Join(box, "\n"))
 	if !strings.Contains(plain, "Claude Code の取得に失敗 (前回の値を表示中)") {
 		t.Errorf("箱に注記が無い:\n%s", plain)
 	}
-	if got, want := dispWidth(box[0]), dispWidth(base[0]); got != want {
+	if got, want := term.DispWidth(box[0]), term.DispWidth(base[0]); got != want {
 		t.Errorf("理由の長さで箱の幅が変わった: %d → %d", want, got)
 	}
 }
@@ -919,17 +920,17 @@ func TestUsageLastGoodShowsStaleReason(t *testing.T) {
 	if m.usageOv.snap != good {
 		t.Fatal("全滅で last-good を捨てた")
 	}
-	box := stripANSI(strings.Join(m.usageOv.boxLines(m.width, m.colored, m.spinner()), "\n"))
+	box := term.StripANSI(strings.Join(m.usageOv.boxLines(m.width, m.colored, m.spinner()), "\n"))
 	if !strings.Contains(box, "取得に失敗 (前回の値を表示中)") {
 		t.Errorf("last-good を保持したのに注記が無い:\n%s", box)
 	}
 	var d ratelimitDash
 	d.toggle()
-	if head := stripANSI(d.lines(m.ratelimitOpts())[1]); !strings.Contains(head, "exit status 127 / ") {
+	if head := term.StripANSI(d.lines(m.ratelimitOpts())[1]); !strings.Contains(head, "exit status 127 / ") {
 		t.Errorf("ダッシュボードに両方の理由が区切られて出ていない: %q", head)
 	}
 	m.usageOv.handle(usageMsg{snap: good}) // 回復 (同じポインタでも注記は消える = 描画キャッシュの鍵に理由が要る)
-	box = stripANSI(strings.Join(m.usageOv.boxLines(m.width, m.colored, m.spinner()), "\n"))
+	box = term.StripANSI(strings.Join(m.usageOv.boxLines(m.width, m.colored, m.spinner()), "\n"))
 	if strings.Contains(box, "取得に失敗") {
 		t.Errorf("回復後も注記が残る:\n%s", box)
 	}

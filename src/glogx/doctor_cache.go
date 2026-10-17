@@ -659,7 +659,7 @@ func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
 		// (敵対レビュー 2026-09-03)。制御文字を落として長さと件数を切る
 		// 🚨 **改行も落とす**。brew の警告は「(N 行)」の塊として畳んで出すので改行が正常だが、
 		// ディスク節の Reason / Failures / Contents は**1 件が 1 行**として描かれる。改行が残ると
-		// doctorRow.text の中に改行が入り、幅を数えるテスト (dispWidth) を素通りしたまま
+		// doctorRow.text の中に改行が入り、幅を数えるテスト (term.DispWidth) を素通りしたまま
 		// 固定高のパネルの行数が実際には増える (敵対レビュー 2026-09-03)。
 		// 同じ helper を「畳む側」と「1 行の側」で共用しないこと
 		r.Reason = cleanOneLine(r.Reason)

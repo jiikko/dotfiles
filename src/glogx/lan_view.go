@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/term"
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/live"
 )
@@ -214,11 +215,11 @@ func (v *lanView) hint(width int) string {
 	// 「L/q: 閉じる」を出すと嘘になった (整合の監査)
 	// ただし足りない画面では q / esc が L ごと閉じ、L も glogx に渡る (Binds("L") が偽) ので「L/q: 閉じる」が正しい (敵対レビュー)
 	if lm := v.live(); lm != nil && lm.OwnsKeys() && lm.Binds("L") {
-		return fitHintItems(width, []hintItem{{text: "esc: 戻る", prio: 1}})
+		return term.FitHintItems(width, []term.HintItem{{Text: "esc: 戻る", Prio: 1}})
 	}
-	return fitHintItems(width, []hintItem{
-		{text: "L/q: 閉じる", prio: 1},
-		{text: "?: キーの一覧", prio: 2},
+	return term.FitHintItems(width, []term.HintItem{
+		{Text: "L/q: 閉じる", Prio: 1},
+		{Text: "?: キーの一覧", Prio: 2},
 	})
 }
 

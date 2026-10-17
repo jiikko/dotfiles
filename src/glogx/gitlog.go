@@ -12,6 +12,7 @@ import (
 	"subproc"
 
 	"github.com/jiikko/dotfiles/src/tuikit/highlight"
+	"glogx/internal/term"
 )
 
 // コミット境界の識別は人間向け出力の正規表現ではなく制御文字レコードで行う (issue の設計)。
@@ -174,7 +175,7 @@ func LoadLogDisplay(opts *Options, colored bool) ([]string, error) {
 	// (静的出力のパリティ契約。TUI では decorateVerbatim が展開する)
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	for i, l := range lines {
-		lines[i] = sanitizeLineKeepTabs(l)
+		lines[i] = term.SanitizeLineKeepTabs(l)
 	}
 	return lines, nil
 }
@@ -198,7 +199,7 @@ func ParseLog(out string) ([]Commit, error) {
 		// subject/message/body/author はコミット作者が任意の文字を入れられる外部入力。
 		// CI ログと同じ端末制御シーケンス注入 (OSC52 のクリップボード書き込み等) の経路に
 		// なるため、ここ (解析の単一ファネル) で無害化する。タブは残す
-		// (静的出力の git log パリティ契約。タブ展開は TUI 描画側 — sanitizeLineKeepTabs の doc)。
+		// (静的出力の git log パリティ契約。タブ展開は TUI 描画側 — term.SanitizeLineKeepTabs の doc)。
 		// SGR (色) を残すのは git が --color=always で色を付ける欄 (decoration の %D と、--stat / -p の
 		// body) だけ。subject / author / email / message (%B) に git は色を付けないので、そこにある SGR は
 		// 作者が書いたもので、ESC[8m で文字を隠せる。色も落として平文にする (issue 417)。
@@ -208,12 +209,12 @@ func ParseLog(out string) ([]Commit, error) {
 		commits = append(commits, Commit{
 			SHA:         parts[0],
 			ShortSHA:    parts[1],
-			Subject:     sanitizePlainKeepTabs(parts[2]),
-			Author:      sanitizePlainKeepTabs(parts[3]),
-			AuthorEmail: sanitizePlainKeepTabs(parts[4]),
+			Subject:     term.SanitizePlainKeepTabs(parts[2]),
+			Author:      term.SanitizePlainKeepTabs(parts[3]),
+			AuthorEmail: term.SanitizePlainKeepTabs(parts[4]),
 			Date:        parts[5],
 			RelDate:     parts[6],
-			Decoration:  sanitizeLineKeepTabs(parts[7]),
+			Decoration:  term.SanitizeLineKeepTabs(parts[7]),
 			Message:     sanitizeAuthorText(strings.TrimRight(parts[8], "\n")),
 			Body:        sanitizeGitText(capGitBody(body, parts[1])),
 		})
@@ -241,7 +242,7 @@ func truncatedNotice(sha string) string {
 	return fmt.Sprintf("... (%d 行を超えるため省略。全文: git show %s)", maxDiffLines, sha)
 }
 
-// sanitizeGitText は複数行の git 由来テキストを行ごとに sanitizeLineKeepTabs へ通す
+// sanitizeGitText は複数行の git 由来テキストを行ごとに term.SanitizeLineKeepTabs へ通す
 // (\n は構造なので保持。サニタイザは制御文字として \n を落とすため行単位で呼ぶ)。
 // sanitizeAuthorText は作者が書いた複数行 (%B) を行ごとに平文にする (色も落とす。sanitizeGitText は色を残す)。
 func sanitizeAuthorText(s string) string {
@@ -250,7 +251,7 @@ func sanitizeAuthorText(s string) string {
 	}
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
-		lines[i] = sanitizePlainKeepTabs(l)
+		lines[i] = term.SanitizePlainKeepTabs(l)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -261,7 +262,7 @@ func sanitizeGitText(s string) string {
 	}
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
-		lines[i] = sanitizeLineKeepTabs(l)
+		lines[i] = term.SanitizeLineKeepTabs(l)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -273,8 +274,8 @@ func LoadCommits(opts *Options, colored bool) ([]Commit, error) {
 		return nil, err
 	}
 	// Subject/Message/Body に VS16 付き絵文字が残ると描画エンジンと端末で幅が食い違い
-	// ガタつくため、解析前に正規化する (dropEmojiVS16 参照)。
-	return ParseLog(dropEmojiVS16(out))
+	// ガタつくため、解析前に正規化する (term.DropEmojiVS16 参照)。
+	return ParseLog(term.DropEmojiVS16(out))
 }
 
 // LoadHeadCommit は --cached モード用に HEAD 1 件を取得する。
@@ -411,7 +412,7 @@ func LoadDecorColors() DecorColors {
 const maxDiffLines = 5000
 
 // LoadCommitDiff は d キーの diff ポップアップ本文 (git show --stat --patch) を取得する。
-// 行は sanitizeDetailLine で無害化する (SGR 色は残しタブ/制御文字は枠描画を壊すため潰す)。
+// 行は term.SanitizeDetailLine で無害化する (SGR 色は残しタブ/制御文字は枠描画を壊すため潰す)。
 // 色は git に任せず --color=never で受けて github.com/jiikko/dotfiles/src/tuikit/highlight.Diff が付ける (diff 構造色 +
 // chroma のシンタックスハイライト。方式は github.com/jiikko/dotfiles/src/tuikit/highlight の冒頭)。
 func LoadCommitDiff(sha string, colored bool) ([]string, error) {
@@ -426,7 +427,7 @@ func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 			lines = append(lines, truncatedNotice(sha))
 			break
 		}
-		lines = append(lines, sanitizeDetailLine(line))
+		lines = append(lines, term.SanitizeDetailLine(line))
 	}
 	if colored {
 		lines = highlight.Diff(lines)

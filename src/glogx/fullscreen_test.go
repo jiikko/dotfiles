@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/term"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -116,7 +117,7 @@ func firstMeaningfulLine(lines []string) string {
 	for _, l := range lines {
 		// 🚨 **畳む前に左端を切る**。右側は overlay (usage の箱・トースト) に上書きされるので、
 		// 先に空白を畳むと「上書きされた領域の語」まで marker に入って一致しなくなる
-		r := []rune(strings.TrimLeft(stripANSI(l), " ")) // 中央寄せの盤 (残量) は左が余白
+		r := []rune(strings.TrimLeft(term.StripANSI(l), " ")) // 中央寄せの盤 (残量) は左が余白
 		if len(r) > 12 {
 			r = r[:12]
 		}
@@ -133,7 +134,7 @@ func squashSpaces(s string) string { return strings.Join(strings.Fields(s), " ")
 
 // frameWindow は 1 フレームのうち**窓の部分**を比較用に正規化する (最下行 = hint を落とす)。
 func frameWindow(content string) string {
-	lines := strings.Split(stripANSI(content), "\n")
+	lines := strings.Split(term.StripANSI(content), "\n")
 	if len(lines) > 1 {
 		lines = lines[:len(lines)-1]
 	}

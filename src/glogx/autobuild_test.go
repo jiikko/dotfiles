@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 func TestClassifyAutobuild(t *testing.T) {
@@ -231,7 +232,7 @@ func TestAutobuildMsgInstalledOpensRestartPrompt(t *testing.T) {
 	if m.autobuild.active {
 		t.Error("完了後も監視が続いている (tick が残る)")
 	}
-	if out := stripANSI(m.View().Content); !strings.Contains(out, "新しいバージョンが利用可能です") {
+	if out := term.StripANSI(m.View().Content); !strings.Contains(out, "新しいバージョンが利用可能です") {
 		t.Fatalf("ダイアログが画面に出ていない:\n%s", out)
 	}
 }
@@ -266,7 +267,7 @@ func TestRestartPromptDefersWhileBlockingOperation(t *testing.T) {
 			tc.apply(m)
 			m.restartPending = true
 
-			if out := stripANSI(m.View().Content); strings.Contains(out, "新しいバージョンが利用可能です") {
+			if out := term.StripANSI(m.View().Content); strings.Contains(out, "新しいバージョンが利用可能です") {
 				t.Errorf("actModal が出ているのに再起動ダイアログを重ねた:\n%s", out)
 			}
 			// 🚨 1 キーだけ押して見る: 確認待ちは 1 キーで解けるので、続けて押すと「解けた後の
@@ -292,7 +293,7 @@ func TestRestartPromptDoesNotShadowPushConfirm(t *testing.T) {
 	m.actModal.pushConfirm = true
 	m.restartPending = true
 
-	out := stripANSI(m.View().Content)
+	out := term.StripANSI(m.View().Content)
 	if strings.Contains(out, "r: 今すぐ再起動") {
 		t.Fatalf("push 確認中に再起動ダイアログを重ねた (押したキーの行き先と表示が食い違う):\n%s", out)
 	}
@@ -308,12 +309,12 @@ func TestRestartPromptAppearsAfterOperationFinishes(t *testing.T) {
 	m.restartPending = true
 
 	// 更新中は更新中モーダルが見えている (ダイアログに覆われない = 効かない理由が画面にある)
-	if out := stripANSI(m.View().Content); !strings.Contains(out, "完了まで終了できません") {
+	if out := term.StripANSI(m.View().Content); !strings.Contains(out, "完了まで終了できません") {
 		t.Fatalf("更新中モーダルが見えない (ダイアログが覆っている):\n%s", out)
 	}
 
 	m.Update(updateMsg{target: "claude"}) // 更新が決着
-	if out := stripANSI(m.View().Content); !strings.Contains(out, "新しいバージョンが利用可能です") {
+	if out := term.StripANSI(m.View().Content); !strings.Contains(out, "新しいバージョンが利用可能です") {
 		t.Fatalf("走行中の処理が終わっても保留していたダイアログが出ない:\n%s", out)
 	}
 	m.handleKey("r")
@@ -432,7 +433,7 @@ func TestPullStartsAutobuildAndOffersRestart(t *testing.T) {
 	if !m.restartPending {
 		t.Fatal("完成しても再起動を案内しない")
 	}
-	if out := stripANSI(m.View().Content); !strings.Contains(out, "新しいバージョンが利用可能です") {
+	if out := term.StripANSI(m.View().Content); !strings.Contains(out, "新しいバージョンが利用可能です") {
 		t.Fatalf("再起動ダイアログが画面に出ていない:\n%s", out)
 	}
 }

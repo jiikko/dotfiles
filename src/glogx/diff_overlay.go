@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"glogx/internal/term"
 )
 
 // diffOverlay はコミット diff (d キー) を最前面に重ねる pager 型オーバーレイの状態と描画。
@@ -13,7 +14,7 @@ import (
 type diffOverlay struct {
 	sha string // 表示中の SHA ("" = 非表示)
 	// pager はスクロール位置 (論理 = 着地点) と、表示位置をそこへ滑らせる glide (scroll_glide.go の
-	// pagerScrollKey を通す。一覧と同じ手触りにする。ユーザー要望 2026-07-31)。
+	// term.PagerScrollKey を通す。一覧と同じ手触りにする。ユーザー要望 2026-07-31)。
 	pager listnav.Pager
 	// lines は sha → 整形済み diff 行のキャッシュと取得の単発化 (line_cache.go)。
 	cache lineCache
@@ -86,8 +87,8 @@ func (o *diffOverlay) scroll(key string, rows int) {
 		return
 	}
 	// スクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は status viewer の全画面 diff と
-	// 共有する (scroll_glide.go の pagerScrollKey)。手触りを 1 箇所に集約するため。
-	pagerScrollKey(key, &o.pager, rows, len(o.visibleLines()))
+	// 共有する (scroll_glide.go の term.PagerScrollKey)。手触りを 1 箇所に集約するため。
+	term.PagerScrollKey(key, &o.pager, rows, len(o.visibleLines()))
 }
 
 // boxLines は diff ポップアップの描画行 (枠付き)。非表示・コミット解決不能なら nil。
@@ -104,11 +105,11 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 	title := fmt.Sprintf(" diff: %s %s ", commit.ShortSHA, commit.Subject)
 	switch {
 	case o.cache.loading(o.sha):
-		body = []string{paint(spinner+" diff を取得中...", ansiDim, colored)}
+		body = []string{term.Paint(spinner+" diff を取得中...", term.AnsiDim, colored)}
 	default:
 		lines := o.visibleLines()
 		if len(lines) == 0 {
-			body = []string{paint("(diff はありません)", ansiDim, colored)}
+			body = []string{term.Paint("(diff はありません)", term.AnsiDim, colored)}
 			break
 		}
 		// 描画で確定した行数・窓で論理 offset を収束させる (理由は listnav.Pager.Clamp の doc)
@@ -117,10 +118,10 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 		end := min(start+rows, len(lines))
 		body = append(body, lines[start:end]...)
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] %s ", commit.ShortSHA, start+1, end, len(lines), commit.Subject)
-		// j/k スクロール中の現在位置を視覚化する (withScrollbar が影付き枠の本文幅を補正する)
-		body = withScrollbar(body, width, len(lines), start, colored)
+		// j/k スクロール中の現在位置を視覚化する (term.WithScrollbar が影付き枠の本文幅を補正する)
+		body = term.WithScrollbar(body, width, len(lines), start, colored)
 	}
-	return buildShadowPanelBox(title, body, width, colored)
+	return term.BuildShadowPanelBox(title, body, width, colored)
 }
 
 // animating は演出の途中か (tick チェーンを回すか の判定に使う。issuesView.animating /

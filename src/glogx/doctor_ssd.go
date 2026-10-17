@@ -8,6 +8,7 @@ import (
 
 	"doctor/runner"
 	"doctor/ssd"
+	"glogx/internal/term"
 )
 
 // doctor の SSD タブ (issue 578)。内蔵 SSD の健康状態を**読むだけ**で、修復・sudo・APFS の検査は
@@ -122,20 +123,20 @@ func (v *doctorView) ssdSection(o doctorRenderOpts) []doctorRow {
 
 	labelW, markW := 0, 0
 	for _, c := range rep.Checks {
-		labelW = max(labelW, dispWidth(c.Label))
-		markW = max(markW, dispWidth(ssdMark(c.Status)))
+		labelW = max(labelW, term.DispWidth(c.Label))
+		markW = max(markW, term.DispWidth(ssdMark(c.Status)))
 	}
-	labelW = max(labelW, dispWidth("APFS (Data)"))
-	markW = max(markW, dispWidth(ssdMark(rep.APFS)))
+	labelW = max(labelW, term.DispWidth("APFS (Data)"))
+	markW = max(markW, term.DispWidth(ssdMark(rep.APFS)))
 	cell := func(label string, st ssd.Status) string {
 		mark := ssdMark(st)
-		return label + padSpaces(labelW-dispWidth(label)) + "  " +
-			doctorColor(o.colored, ssdColor(st), mark) + padSpaces(markW-dispWidth(mark)) + "  "
+		return label + term.PadSpaces(labelW-term.DispWidth(label)) + "  " +
+			doctorColor(o.colored, ssdColor(st), mark) + term.PadSpaces(markW-term.DispWidth(mark)) + "  "
 	}
 	for _, c := range rep.Checks {
 		text := cell(c.Label, c.Status) + c.Value
 		if c.Note != "" && c.Status != ssd.StatusOK && c.Status != ssd.StatusInfo {
-			text += doctorColor(o.colored, ansiDim, "  "+c.Note)
+			text += doctorColor(o.colored, term.AnsiDim, "  "+c.Note)
 		}
 		row := doctorRow{text: text}
 		if c.Label == "smartctl" && rep.SmartctlMissing {
@@ -148,14 +149,14 @@ func (v *doctorView) ssdSection(o doctorRenderOpts) []doctorRow {
 	}
 	rows = append(rows, doctorRow{
 		text: cell("APFS (Data)", rep.APFS) +
-			doctorColor(o.colored, ansiDim, "y で検査コマンドをコピー (doctor は実行しません。数分かかります)"),
+			doctorColor(o.colored, term.AnsiDim, "y で検査コマンドをコピー (doctor は実行しません。数分かかります)"),
 		selectable: true,
 		key:        ssdAPFSRowKey,
 		copyPath:   ssd.APFSCommand,
 		copyText:   ssdCopyText(rep),
 	})
 	for _, n := range rep.Notes {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "  "+n)})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "  "+n)})
 	}
 	return rows
 }
@@ -163,15 +164,15 @@ func (v *doctorView) ssdSection(o doctorRenderOpts) []doctorRow {
 func ssdColor(s ssd.Status) string {
 	switch s {
 	case ssd.StatusOK:
-		return ansiGreen
+		return term.AnsiGreen
 	case ssd.StatusWarn, ssd.StatusUnknown:
-		return ansiYellow
+		return term.AnsiYellow
 	case ssd.StatusFail:
-		return ansiRed
+		return term.AnsiRed
 	case ssd.StatusUnchecked, ssd.StatusInfo:
-		return ansiDim
+		return term.AnsiDim
 	}
-	return ansiDim
+	return term.AnsiDim
 }
 
 // ssdCopyText は Y の解説 (別セッションの LLM にそのまま渡せる形)。値はすべて関門を通った後のもの。

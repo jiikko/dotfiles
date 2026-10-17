@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/jiikko/dotfiles/src/tuikit/spinner"
+	"glogx/internal/term"
 	"strings"
 	"testing"
 )
@@ -87,12 +88,12 @@ func TestRenderLinesPushBoundary(t *testing.T) {
 	// 全部 push 済み (HasRepo) なら先頭に all pushed マークが入る (ユーザー要望)
 	all := map[string]CIState{"a": StateSuccess, "b": StateSuccess}
 	out := RenderLines(testCommits(), all, RenderOpts{HasRepo: true})
-	if len(out) == 0 || !strings.Contains(stripANSI(out[0].Text), "origin (all pushed ✓)") {
+	if len(out) == 0 || !strings.Contains(term.StripANSI(out[0].Text), "origin (all pushed ✓)") {
 		t.Fatalf("全部 push 済みの先頭マークが無い: %q", out[0].Text)
 	}
 	// 混在時は先頭マークではなく中間の境界線 (二重に出ない)
 	mixed := RenderLines(testCommits(), statuses, RenderOpts{HasRepo: true})
-	if strings.Contains(stripANSI(mixed[0].Text), "all pushed") {
+	if strings.Contains(term.StripANSI(mixed[0].Text), "all pushed") {
 		t.Fatal("混在時に先頭へ all pushed マークが出た")
 	}
 	// 全部未 push は HasRepo でも何も出ない
@@ -196,11 +197,11 @@ func TestPRBadge(t *testing.T) {
 	}
 	// 色: OPEN=緑 / MERGED=マゼンタ
 	colored := prBadge("a", RenderOpts{Colored: true, PRs: prs})
-	if !strings.Contains(colored, ansiGreen) {
+	if !strings.Contains(colored, term.AnsiGreen) {
 		t.Errorf("OPEN が緑でない: %q", colored)
 	}
 	merged := prBadge("m", RenderOpts{Colored: true, PRs: map[string]*PRRef{"m": {Number: 9, State: "MERGED"}}})
-	if !strings.Contains(merged, ansiMagenta) {
+	if !strings.Contains(merged, term.AnsiMagenta) {
 		t.Errorf("MERGED がマゼンタでない: %q", merged)
 	}
 }
@@ -211,13 +212,13 @@ func TestRenderDecorationGitStyle(t *testing.T) {
 	dc := DefaultDecorColors()
 	out := renderDecoration("HEAD -> master, origin/master, origin/HEAD, tag: v1.0, feature/x", o)
 	for _, want := range []string{
-		dc.HEAD + "HEAD" + ansiReset,
-		dc.Branch + "master" + ansiReset,
-		dc.RemoteBranch + "origin/master" + ansiReset,
-		dc.RemoteBranch + "origin/HEAD" + ansiReset,
-		dc.Tag + "tag: v1.0" + ansiReset,
+		dc.HEAD + "HEAD" + term.AnsiReset,
+		dc.Branch + "master" + term.AnsiReset,
+		dc.RemoteBranch + "origin/master" + term.AnsiReset,
+		dc.RemoteBranch + "origin/HEAD" + term.AnsiReset,
+		dc.Tag + "tag: v1.0" + term.AnsiReset,
 		// "/" を含むだけのローカルブランチは remote 扱いにしない
-		dc.Branch + "feature/x" + ansiReset,
+		dc.Branch + "feature/x" + term.AnsiReset,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("decoration に %q がありません:\n%q", want, out)
@@ -262,7 +263,7 @@ func TestRenderLinesWrapsMessage(t *testing.T) {
 		t.Errorf("折り返しで文字が失われた: %q", joined)
 	}
 	for _, l := range msgLines {
-		if w := dispWidth(l); w > 44 {
+		if w := term.DispWidth(l); w > 44 {
 			t.Errorf("折り返し後も幅超過 (%d): %q", w, l)
 		}
 	}
@@ -303,7 +304,7 @@ func TestRenderLinesExpandsBodyTabsInTUI(t *testing.T) {
 }
 
 // Body と対称: mediumLines fallback (Verbatim==nil) でも TUI (Width>0) はコミットメッセージ内の
-// タブを展開する。展開しないと clipToWidth が \t を幅0と数え端末が展開して再描画が崩れる
+// タブを展開する。展開しないと term.ClipToWidth が \t を幅0と数え端末が展開して再描画が崩れる
 // (Body/decorateVerbatim は展開するのに Message だけ取りこぼしていた片側バグの回帰ガード)。
 func TestRenderLinesExpandsMessageTabsInTUI(t *testing.T) {
 	commits := testCommits()[:1]
@@ -341,7 +342,7 @@ func TestJapaneseOnelineAlignment(t *testing.T) {
 		if idx < 0 {
 			t.Fatalf("%q に %q が無い", text, marker)
 		}
-		return dispWidth(text[:idx])
+		return term.DispWidth(text[:idx])
 	}
 	p1 := datePos(lines[0].Text, "2 hours ago")
 	p2 := datePos(lines[1].Text, "1 day ago")
@@ -359,35 +360,35 @@ func TestJapaneseSubjectTruncation(t *testing.T) {
 	}
 	start := strings.Index(lines[0].Text, "長")
 	end := strings.Index(lines[0].Text, "…") + len("…")
-	if w := dispWidth(lines[0].Text[start:end]); w > subjectWidthCap {
+	if w := term.DispWidth(lines[0].Text[start:end]); w > subjectWidthCap {
 		t.Errorf("subject 列の幅 = %d > cap %d", w, subjectWidthCap)
 	}
 }
 
 func TestWrapToWidth(t *testing.T) {
-	if got := wrapToWidth("short", 10); len(got) != 1 || got[0] != "short" {
+	if got := term.WrapToWidth("short", 10); len(got) != 1 || got[0] != "short" {
 		t.Errorf("幅内の行が変更された: %v", got)
 	}
-	if got := wrapToWidth("", 10); len(got) != 1 || got[0] != "" {
+	if got := term.WrapToWidth("", 10); len(got) != 1 || got[0] != "" {
 		t.Errorf("空行 = %v", got)
 	}
-	got := wrapToWidth("abcdefghij", 4)
+	got := term.WrapToWidth("abcdefghij", 4)
 	if len(got) != 3 || got[0] != "abcd" || got[2] != "ij" {
 		t.Errorf("ASCII 折り返し = %v", got)
 	}
 	// 全角は 2 幅で数える (幅 5 に「ああ」(4) + 次の「あ」は入らない)
-	got = wrapToWidth("あああ", 5)
+	got = term.WrapToWidth("あああ", 5)
 	if len(got) != 2 || got[0] != "ああ" {
 		t.Errorf("全角折り返し = %v", got)
 	}
 	// 半角/全角混在でも各行が幅内に収まり、文字が失われない
 	mixed := "aあbいcうdえeお"
-	segs := wrapToWidth(mixed, 5)
+	segs := term.WrapToWidth(mixed, 5)
 	if strings.Join(segs, "") != mixed {
 		t.Errorf("混在折り返しで文字が失われた: %v", segs)
 	}
 	for _, seg := range segs {
-		if w := dispWidth(seg); w > 5 {
+		if w := term.DispWidth(seg); w > 5 {
 			t.Errorf("混在折り返しの幅超過 (%d): %q", w, seg)
 		}
 	}
@@ -399,15 +400,15 @@ func TestDecorateDetailLine(t *testing.T) {
 		line string
 		want string
 	}{
-		{"##[error]Process completed with exit code 1.", ansiRed},
-		{"[failure] src/a.go:10", ansiRed},
-		{"##[warning]deprecated", ansiYellow},
-		{"##[group]Run make test", ansiDim},
-		{"##[endgroup]", ansiDim},
+		{"##[error]Process completed with exit code 1.", term.AnsiRed},
+		{"[failure] src/a.go:10", term.AnsiRed},
+		{"##[warning]deprecated", term.AnsiYellow},
+		{"##[group]Run make test", term.AnsiDim},
+		{"##[endgroup]", term.AnsiDim},
 	}
 	for _, tt := range tests {
 		got := decorateDetailLine(tt.line, true)
-		if !strings.HasPrefix(got, tt.want) || !strings.HasSuffix(got, ansiReset) {
+		if !strings.HasPrefix(got, tt.want) || !strings.HasSuffix(got, term.AnsiReset) {
 			t.Errorf("decorate(%q) = %q; want %s で着色", tt.line, got, tt.want)
 		}
 	}
@@ -422,22 +423,22 @@ func TestDecorateDetailLine(t *testing.T) {
 
 func TestClipToWidth(t *testing.T) {
 	long := strings.Repeat("x", 100)
-	if got := clipToWidth(long, 40); len([]rune(got)) > 40 {
+	if got := term.ClipToWidth(long, 40); len([]rune(got)) > 40 {
 		t.Errorf("幅超過: %q", got)
 	}
-	colored := ansiGreen + "short" + ansiReset
-	if got := clipToWidth(colored, 40); got != colored {
+	colored := term.AnsiGreen + "short" + term.AnsiReset
+	if got := term.ClipToWidth(colored, 40); got != colored {
 		t.Errorf("幅内の色付き行が変更された: %q", got)
 	}
 	// fast-path: ANSI 無し・幅内は無改変で素通し
-	if got := clipToWidth("plain ascii", 40); got != "plain ascii" {
+	if got := term.ClipToWidth("plain ascii", 40); got != "plain ascii" {
 		t.Errorf("ANSI 無し幅内が変更された: %q", got)
 	}
 	// fast-path の byte 長ヒューリスティックが全角を誤って素通ししない
 	// (あ×30 = 表示幅 60 > 40。byte 長 90 も 40 超なので fast-path を通らず truncate される)
 	wide := strings.Repeat("あ", 30)
-	if got := clipToWidth(wide, 40); dispWidth(got) > 40 {
-		t.Errorf("全角行が幅超過のまま素通しされた: 幅 %d", dispWidth(got))
+	if got := term.ClipToWidth(wide, 40); term.DispWidth(got) > 40 {
+		t.Errorf("全角行が幅超過のまま素通しされた: 幅 %d", term.DispWidth(got))
 	}
 }
 
@@ -501,7 +502,7 @@ func TestStatusGlyphWidthIsUniform(t *testing.T) {
 	states := []CIState{StateSuccess, StateFailure, StatePending, StateNeutral, StateNone, StateUnpushed, StateUnknown, StateLoading}
 	for _, colored := range []bool{false, true} {
 		for _, st := range states {
-			if w := dispWidth(StatusGlyph(st, colored, spinner.Frame(0))); w != 2 {
+			if w := term.DispWidth(StatusGlyph(st, colored, spinner.Frame(0))); w != 2 {
 				t.Errorf("StatusGlyph(%s, colored=%v) の幅 = %d; want 2", st, colored, w)
 			}
 		}
@@ -574,7 +575,7 @@ func TestRenderLinesVerbatimDecoratesHeaderOnly(t *testing.T) {
 		t.Errorf("ヘッダーに CI 記号が前置されていない: %q", lines[0].Text)
 	}
 	// PR バッジは git の出力より前 (行末だと decoration で長くなったヘッダーと一緒に幅で切られる)
-	if !strings.HasSuffix(stripANSI(lines[0].Text), "#7 "+stripANSI(raw[0])) {
+	if !strings.HasSuffix(term.StripANSI(lines[0].Text), "#7 "+term.StripANSI(raw[0])) {
 		t.Errorf("PR バッジが git 出力の直前に無い: %q", lines[0].Text)
 	}
 	if !strings.HasSuffix(lines[0].Text, raw[0]) {
@@ -599,9 +600,9 @@ func TestRenderLinesVerbatimDecoratesHeaderOnly(t *testing.T) {
 
 // 表示色は「意味ごとに違う色」であることが本体で、値そのものは sgr の別名。
 //
-// 🚨 テストの期待値を production の定数から作ると (`strings.HasPrefix(out[0], ansiYellow)` の形)、
+// 🚨 テストの期待値を production の定数から作ると (`strings.HasPrefix(out[0], term.AnsiYellow)` の形)、
 // **定数を書き換えても期待値が一緒に動くので永久に green** になる。実測 (issue 198 発見 4):
-// `ansiYellow = sgr.Cyan` に変えても全 957 本が green のままで、commit 行と hunk 行が同じ色に
+// `term.AnsiYellow = sgr.Cyan` に変えても全 957 本が green のままで、commit 行と hunk 行が同じ色に
 // なる退行を 1 本も検出しなかった。ここでは値をリテラルで pin し、意味の違う色どうしが
 // 衝突しないことを固定する。
 func TestAnsiColorsAreDistinctPerMeaning(t *testing.T) {
@@ -611,11 +612,11 @@ func TestAnsiColorsAreDistinctPerMeaning(t *testing.T) {
 		got  string
 		want string
 	}{
-		{"ansiYellow", ansiYellow, "\x1b[33m"},
-		{"ansiCyan", ansiCyan, "\x1b[36m"},
-		{"ansiGreen", ansiGreen, "\x1b[32m"},
-		{"ansiRed", ansiRed, "\x1b[31m"},
-		{"ansiMagenta", ansiMagenta, "\x1b[35m"},
+		{"term.AnsiYellow", term.AnsiYellow, "\x1b[33m"},
+		{"term.AnsiCyan", term.AnsiCyan, "\x1b[36m"},
+		{"term.AnsiGreen", term.AnsiGreen, "\x1b[32m"},
+		{"term.AnsiRed", term.AnsiRed, "\x1b[31m"},
+		{"term.AnsiMagenta", term.AnsiMagenta, "\x1b[35m"},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %q; want %q (色の割り当てが変わった。docs/theme-colors.md と揃っているか確認する)", c.name, c.got, c.want)
@@ -625,8 +626,8 @@ func TestAnsiColorsAreDistinctPerMeaning(t *testing.T) {
 	// 2 つ同時に同じ値へ変えられると両方 red になるが、片方だけ変える変異は相互比較が拾う)
 	seen := map[string]string{}
 	for _, c := range []struct{ name, val string }{
-		{"ansiRed", ansiRed}, {"ansiGreen", ansiGreen}, {"ansiYellow", ansiYellow},
-		{"ansiMagenta", ansiMagenta}, {"ansiCyan", ansiCyan}, {"ansiDim", ansiDim},
+		{"term.AnsiRed", term.AnsiRed}, {"term.AnsiGreen", term.AnsiGreen}, {"term.AnsiYellow", term.AnsiYellow},
+		{"term.AnsiMagenta", term.AnsiMagenta}, {"term.AnsiCyan", term.AnsiCyan}, {"term.AnsiDim", term.AnsiDim},
 	} {
 		if prev, dup := seen[c.val]; dup {
 			t.Errorf("%s と %s が同じ値 %q (意味の違う色が区別できない)", prev, c.name, c.val)

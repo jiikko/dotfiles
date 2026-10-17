@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"glogx/internal/term"
 	"glogx/issues"
 )
 
@@ -92,7 +93,7 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 		v := newTestIssuesView()
 		v.bodyPager.Offset = 10
 		startPagerGlide(t, &v.bodyPager, 0, 10)
-		for range scrollAnimFrames {
+		for range term.ScrollAnimFrames {
 			v.advanceGlide()
 		}
 		if v.bodyPager.Animating() {
@@ -141,11 +142,11 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 // issues の一覧は glide を持たない (issue 031)。
 func TestResizeStopsAllGlides(t *testing.T) {
 	m := newTestBrowse(t, 10, map[string]CIState{}, nil)
-	m.glide.Start(0, 10, scrollAnimFrames)
+	m.glide.Start(0, 10, term.ScrollAnimFrames)
 	startPagerGlide(t, &m.diffOv.pager, 0, 10)
 	startPagerGlide(t, &m.issuesOv.bodyPager, 0, 10)
 	startPagerGlide(t, &m.statusOv.pager, 0, 10)
-	m.issuesOv.curGlide.Start(0, 10, cursorAnimFrames)
+	m.issuesOv.curGlide.Start(0, 10, term.CursorAnimFrames)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	if m.glide.Active() || m.diffOv.pager.Animating() || m.issuesOv.bodyPager.Animating() ||
 		m.statusOv.pager.Animating() || m.issuesOv.curGlide.Active() {
@@ -176,7 +177,7 @@ func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {
 
 	for _, key := range []string{" ", "ctrl+d", "shift+space", "ctrl+u", "G", "g", "j", "k", "ctrl+d", "G"} {
 		v.handleKey(key, vp(page))
-		out := stripANSI(strings.Join(v.lines(opts), "\n"))
+		out := term.StripANSI(strings.Join(v.lines(opts), "\n"))
 		if want := fmt.Sprintf("TITLE%02d", v.cursor); !strings.Contains(out, want) {
 			t.Fatalf("%q の後にカーソル行 %q が描かれていない (cursor=%d offset=%d)\n%s",
 				key, want, v.cursor, v.offset, out)
@@ -208,7 +209,7 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		m.usageOv.dismiss()
 		m.height = 12
 		m.handleKey("ctrl+d") // まず下へ
-		for range scrollAnimFrames {
+		for range term.ScrollAnimFrames {
 			m.glide.Advance(m.offset)
 		}
 		down := m.offset
@@ -293,7 +294,7 @@ func startPagerGlide(t *testing.T, p *listnav.Pager, from, to int) {
 	rows := 2 * d // listnav.Half(rows) == d
 	p.Offset = from
 	p.Stop()
-	p.Move(m, max(from, to)+rows+1, rows, scrollAnimFrames)
+	p.Move(m, max(from, to)+rows+1, rows, term.ScrollAnimFrames)
 	if p.Offset != to || !p.Animating() {
 		t.Fatalf("startPagerGlide の前提の破れ: offset=%d (want %d) animating=%v", p.Offset, to, p.Animating())
 	}

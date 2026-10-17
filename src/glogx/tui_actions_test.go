@@ -12,6 +12,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 // b → y/N → git push (glogx の独自機能)。
@@ -85,7 +86,7 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	cmd = runCmd
 	// 実行中は spinner モーダルが出て、終了できない旨も表示する
 	m.width, m.height = 80, 20
-	if v := stripANSI(m.View().Content); !strings.Contains(v, "claude update") || !strings.Contains(v, "updating") ||
+	if v := term.StripANSI(m.View().Content); !strings.Contains(v, "claude update") || !strings.Contains(v, "updating") ||
 		!strings.Contains(v, "完了まで終了できません") {
 		t.Fatal("claude update 実行中モーダルが描画されない")
 	}
@@ -254,7 +255,7 @@ func TestBrowsePushFlow(t *testing.T) {
 	}
 	// 確認中は中央モーダルが出る (幅より狭いボックス + 左パディングでセンタリング)
 	m.width, m.height = 80, 20
-	if v := stripANSI(m.View().Content); !strings.Contains(v, "git push") || !strings.Contains(v, "push します") {
+	if v := term.StripANSI(m.View().Content); !strings.Contains(v, "git push") || !strings.Contains(v, "push します") {
 		t.Fatal("push 確認モーダルが描画されない")
 	}
 	m.handleKey("n")
@@ -374,7 +375,7 @@ func TestBrowsePullFlow(t *testing.T) {
 		t.Fatal("u で pull 確認に入らない")
 	}
 	m.width, m.height = 80, 20
-	if v := stripANSI(m.View().Content); !strings.Contains(v, "pull --rebase") {
+	if v := term.StripANSI(m.View().Content); !strings.Contains(v, "pull --rebase") {
 		t.Fatal("pull 確認モーダルが描画されない")
 	}
 	m.handleKey("n")
@@ -532,7 +533,7 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 	for i := 0; i < 200 && m.toast.Phase() != toast.Holding; i++ {
 		m.Update(tickMsg{})
 	}
-	if v := stripANSI(m.View().Content); !strings.Contains(v, "未 push のコミットはありません") {
+	if v := term.StripANSI(m.View().Content); !strings.Contains(v, "未 push のコミットはありません") {
 		t.Fatalf("トーストが描画されない (phase=%d frame=%d)", m.toast.Phase(), m.toast.Frame())
 	}
 	// トーストはキーを消費しない (モーダルと違い、次のキーが本来の動作をする)
@@ -627,7 +628,7 @@ func TestBrowseRerunFlow(t *testing.T) {
 	if !m.actModal.rerunConfirm || m.actModal.rerunJobName != "lint" {
 		t.Fatalf("r で再実行確認に入らない: confirm=%v name=%q", m.actModal.rerunConfirm, m.actModal.rerunJobName)
 	}
-	if v := stripANSI(m.View().Content); !strings.Contains(v, "CI 再実行") || !strings.Contains(v, "lint") {
+	if v := term.StripANSI(m.View().Content); !strings.Contains(v, "CI 再実行") || !strings.Contains(v, "lint") {
 		t.Fatal("再実行確認モーダルが描画されない")
 	}
 	m.handleKey("n")
@@ -757,7 +758,7 @@ func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 		}
 		m2.toast.Advance()
 	}
-	out := stripANSI(m2.View().Content)
+	out := term.StripANSI(m2.View().Content)
 	if !strings.Contains(out, "9.9.9") || !strings.Contains(out, "先行警告") {
 		t.Errorf("両方が画面に出ていない:\n%s", out)
 	}
@@ -878,7 +879,7 @@ func TestBrowseFrameView(t *testing.T) {
 	}
 	// 幅 canary: 全行の実効幅 <= m.width (contentWidth() 置換漏れの最短検出)
 	for i, l := range lines {
-		if w := dispWidth(l); w > 64 {
+		if w := term.DispWidth(l); w > 64 {
 			t.Errorf("行 %d の実効幅 = %d > 64: %q", i, w, l)
 		}
 	}
@@ -1308,7 +1309,7 @@ func TestUpdateDoesNotOverlapConfirmModal(t *testing.T) {
 				t.Fatalf("確認モーダル中に update を重ねた (画面と操作がずれる): updating=%v",
 					m.actModal.updatingTargets())
 			}
-			out := stripANSI(m.View().Content)
+			out := term.StripANSI(m.View().Content)
 			if strings.Contains(out, "完了まで終了できません") {
 				t.Errorf("update モーダルが確認モーダルを覆っている:\n%s", out)
 			}
@@ -1495,7 +1496,7 @@ func TestBrowseParallelUpdateThroughKeys(t *testing.T) {
 	m.actModal.beginUpdate("claude")
 
 	// codex 単独ではないので、まずは claude だけの表示を確認
-	if hint := stripANSI(m.View().Content); !strings.Contains(hint, "claude update...") {
+	if hint := term.StripANSI(m.View().Content); !strings.Contains(hint, "claude update...") {
 		t.Errorf("ヒント行に走行中の claude が出ていない:\n%s", hint)
 	}
 
@@ -1509,7 +1510,7 @@ func TestBrowseParallelUpdateThroughKeys(t *testing.T) {
 	if got := m.actModal.updatingTargets(); !reflect.DeepEqual(got, []string{"claude", "codex"}) {
 		t.Fatalf("並走していない: %v", got)
 	}
-	if hint := stripANSI(m.View().Content); !strings.Contains(hint, "claude + codex update...") {
+	if hint := term.StripANSI(m.View().Content); !strings.Contains(hint, "claude + codex update...") {
 		t.Errorf("ヒント行が並走を示していない:\n%s", hint)
 	}
 }

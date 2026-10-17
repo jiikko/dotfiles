@@ -9,6 +9,7 @@ import (
 
 	"doctor/docker"
 	"doctor/runner"
+	"glogx/internal/term"
 )
 
 // doctor の Docker タブ (ユーザー要望 2026-09-04)。
@@ -103,12 +104,12 @@ func dockerRunNote(k docker.Kind) string {
 //
 // 差が出ない理由は確保の中身が違うから。disk 側の `disk.MarkVocabulary()` は呼ぶたびに
 // `[]Item` と `[]Result` を 6 件ぶん**構築する**ので、8 行 × それが効いていた。
-// こちらは `[]docker.Kind` (string 4 個) を作って `dispWidth` を回すだけで、しかも
+// こちらは `[]docker.Kind` (string 4 個) を作って `term.DispWidth` を回すだけで、しかも
 // 群の行ごと = 4 回/frame しかない。**効果の無い修正は入れない** (CLAUDE.md「不具合対応の原則」)。
 func dockerMarkWidth() int {
 	w := 0
 	for _, k := range []docker.Kind{docker.KindContainers, docker.KindImages, docker.KindBuildCache, docker.KindVolumes} {
-		w = max(w, dispWidth(dockerMark(k)))
+		w = max(w, term.DispWidth(dockerMark(k)))
 	}
 	return w
 }
@@ -136,12 +137,12 @@ func (v *doctorView) dockerSection(o doctorRenderOpts) []doctorRow {
 	d := v.docker
 	if d.Unavailable != "" {
 		return append(sectionHeader(o, "Docker", "診断できず"),
-			doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 "+d.Unavailable)})
+			doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 "+d.Unavailable)})
 	}
 	rows := sectionHeader(o, "Docker", fmt.Sprintf("docker 申告の回収可能 %s (Enter で内訳)",
 		docker.HumanSize(d.DockerReclaimable())))
 	for _, n := range d.Notes {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 "+n)})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 "+n)})
 	}
 	for _, g := range d.Groups {
 		rows = append(rows, v.dockerGroupRow(o, g))
@@ -149,16 +150,16 @@ func (v *doctorView) dockerSection(o doctorRenderOpts) []doctorRow {
 	v.registerDockerAction("まとめて回収する", d.SystemPrune, d.SystemPruneNote)
 	rows = append(rows,
 		doctorRow{text: ""},
-		doctorRow{text: doctorColor(o.colored, ansiDim, "   まとめて回収するなら (Space で選んで x):")},
+		doctorRow{text: doctorColor(o.colored, term.AnsiDim, "   まとめて回収するなら (Space で選んで x):")},
 		doctorRow{
 			text: "  " + v.dockerSelectMark(o, d.SystemPrune, true) + " " +
-				doctorColor(o.colored, ansiBold, d.SystemPrune),
+				doctorColor(o.colored, term.AnsiBold, d.SystemPrune),
 			selectable: true,
 			key:        dockerPruneRowKey,
 			hasDetail:  true,
 			detail: textRows([]string{
-				doctorColor(o.colored, ansiYellow, "     🚨 "+d.SystemPruneNote),
-				doctorColor(o.colored, ansiDim, "     Space で選んで x、または y でコピーして自分で叩いてください"),
+				doctorColor(o.colored, term.AnsiYellow, "     🚨 "+d.SystemPruneNote),
+				doctorColor(o.colored, term.AnsiDim, "     Space で選んで x、または y でコピーして自分で叩いてください"),
 			}),
 			copyPath: d.SystemPrune,
 			copyText: d.SystemPrune + "\n# " + d.SystemPruneNote + "\n",
@@ -174,26 +175,26 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 	for _, n := range g.Notes {
 		// 🚨 注記は**折り返す**。ここが「何を数えたか」の説明なので、末尾から削られると
 		// 意味が壊れる (brew の説明と同じ扱い)
-		for _, line := range wrapToWidth(n, max(20, o.width-8)) {
-			detail = append(detail, doctorRow{text: doctorColor(o.colored, ansiDim, "     "+line)})
+		for _, line := range term.WrapToWidth(n, max(20, o.width-8)) {
+			detail = append(detail, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "     "+line)})
 		}
 	}
 	if g.Command != "" {
 		detail = append(detail,
 			doctorRow{text: ""},
-			doctorRow{text: doctorColor(o.colored, ansiDim, "     この群をまとめて回収するなら:")},
-			doctorRow{text: "       $ " + doctorColor(o.colored, ansiBold, g.Command)})
+			doctorRow{text: doctorColor(o.colored, term.AnsiDim, "     この群をまとめて回収するなら:")},
+			doctorRow{text: "       $ " + doctorColor(o.colored, term.AnsiBold, g.Command)})
 	} else {
 		detail = append(detail,
 			doctorRow{text: ""},
-			doctorRow{text: doctorColor(o.colored, ansiYellow,
+			doctorRow{text: doctorColor(o.colored, term.AnsiYellow,
 				"     🚨 まとめて消すコマンドは出しません (1 件ずつ選んでください)")},
-			doctorRow{text: doctorColor(o.colored, ansiDim,
+			doctorRow{text: doctorColor(o.colored, term.AnsiDim,
 				"        下の行を選んで y を押すと、その 1 件を消すコマンドをコピーします")})
 	}
 	if len(g.Items) == 0 {
 		detail = append(detail, doctorRow{text: ""},
-			doctorRow{text: doctorColor(o.colored, ansiGreen, "     🎉 古い候補はありません")})
+			doctorRow{text: doctorColor(o.colored, term.AnsiGreen, "     🎉 古い候補はありません")})
 	}
 	for _, it := range g.Items {
 		row := doctorRow{text: v.dockerSelectMark(o, it.Command, dockerRunnable(g)) + dockerItemLine(o, it)}
@@ -215,8 +216,8 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 	}
 	return doctorRow{
 		text: v.dockerSelectMark(o, g.Command, dockerRunnable(g)) +
-			dockerMark(g.Kind) + padSpaces(max(0, dockerMarkWidth()-dispWidth(dockerMark(g.Kind)))) + " " + g.Label + "   " +
-			doctorColor(o.colored, ansiDim, summary),
+			dockerMark(g.Kind) + term.PadSpaces(max(0, dockerMarkWidth()-term.DispWidth(dockerMark(g.Kind)))) + " " + g.Label + "   " +
+			doctorColor(o.colored, term.AnsiDim, summary),
 		selectable: true,
 		key:        dockerGroupRowKey(string(g.Kind)),
 		hasDetail:  len(detail) > 0,
@@ -235,7 +236,7 @@ func (v *doctorView) dockerSelectMark(o doctorRenderOpts, cmd string, runnable b
 		return " "
 	}
 	if v.selectedActions[cmdKey(cmd)] {
-		return doctorColor(o.colored, ansiBold, "*")
+		return doctorColor(o.colored, term.AnsiBold, "*")
 	}
 	return " "
 }
@@ -308,9 +309,9 @@ func dockerItemLine(o doctorRenderOpts, it docker.Item) string {
 	}
 	line := fmt.Sprintf("     %9s %s  %s", it.SizeText, age, it.Name)
 	if it.Detail != "" {
-		line += doctorColor(o.colored, ansiDim, "  "+it.Detail)
+		line += doctorColor(o.colored, term.AnsiDim, "  "+it.Detail)
 	}
-	return truncateDisp(line, max(20, o.width-2), "…")
+	return term.TruncateDisp(line, max(20, o.width-2), "…")
 }
 
 // dockerGroupCopyPath は y でコピーするコマンド。群のまとめコマンドが無い群では

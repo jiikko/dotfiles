@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"glogx/internal/term"
 	"glogx/issues"
 )
 
@@ -532,10 +533,10 @@ func TestIssuesViewGroupChildrenAreIndentedUnderParent(t *testing.T) {
 	if globalLine == "" || childLine == "" {
 		t.Fatalf("行が見つからない:\n%s", strings.Join(lines, "\n"))
 	}
-	if !strings.HasPrefix(childLine, cursorGutterBlank+groupChildIndent+"710") {
+	if !strings.HasPrefix(childLine, term.CursorGutterBlank+groupChildIndent+"710") {
 		t.Fatalf("子 issue が親の下でインデントされていない: %q", childLine)
 	}
-	if strings.HasPrefix(globalLine, cursorGutterMark+"711") == false {
+	if strings.HasPrefix(globalLine, term.CursorGutterMark+"711") == false {
 		t.Fatalf("単独 issue の桁が動いた (インデントは group の子だけ): %q", globalLine)
 	}
 }

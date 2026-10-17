@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"glogx/internal/term"
 	"glogx/issues"
 )
 
@@ -24,7 +25,7 @@ func manyIssuesOf(n int, category string) []*issues.Issue {
 // (見つからなければ -1)。窓の中に無ければカーソルは 1 行も描かれていない。
 func cursorRow(lines []string) int {
 	for i, ln := range lines {
-		if strings.HasPrefix(ln, cursorGutterMark) {
+		if strings.HasPrefix(ln, term.CursorGutterMark) {
 			return i
 		}
 	}
@@ -49,7 +50,7 @@ func TestIssuesListSpaceStartsCursorGlide(t *testing.T) {
 		t.Fatalf("描画カーソルが途中位置にいない: from=%d disp=%d cursor=%d", v.curGlide.From(), got, v.cursor)
 	}
 	// 最終フレームで論理カーソルへ着地し、tick を止める。
-	for range cursorAnimFrames {
+	for range term.CursorAnimFrames {
 		v.advanceGlide()
 	}
 	if v.curGlide.Active() || v.dispCursor(v.offset, 20) != v.cursor {
@@ -78,7 +79,7 @@ func TestIssuesListGlideKeepsCursorInsideWindow(t *testing.T) {
 		t.Fatal("前提: 3 回目の Space で滑走が始まっていない")
 	}
 	// 全フレームで「窓は表示カーソルを含む」= カーソル行が必ず 1 本描かれる。
-	for f := 0; f <= cursorAnimFrames; f++ {
+	for f := 0; f <= term.CursorAnimFrames; f++ {
 		lines := v.listLines(renderOpts(20))
 		if cursorRow(lines) < 0 {
 			t.Fatalf("frame %d: 滑走中にカーソル行が描かれていない:\n%s", f, strings.Join(lines, "\n"))
@@ -128,7 +129,7 @@ func TestIssuesListGlideMovesTheDrawnCursor(t *testing.T) {
 		t.Fatalf("描かれたカーソルが起点から進んでいない: drawn=%d from=%d", got, v.curGlide.From())
 	}
 
-	for range cursorAnimFrames {
+	for range term.CursorAnimFrames {
 		v.advanceGlide()
 	}
 	if got := drawnRow(); got != v.cursor {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"glogx/internal/term"
 	"maps"
 	"os/exec"
 	"slices"
@@ -625,7 +626,7 @@ func TestSanitizeDetailLineDropsNonSGREscapes(t *testing.T) {
 		{"SGR は残る (混在)", "\x1b[31mred\x1b[0m \x1b[2Jx", "\x1b[31mred\x1b[0m x"},
 	}
 	for _, tt := range tests {
-		if got := sanitizeDetailLine(tt.in); got != tt.want {
+		if got := term.SanitizeDetailLine(tt.in); got != tt.want {
 			t.Errorf("%s: sanitize(%q) = %q; want %q", tt.name, tt.in, got, tt.want)
 		}
 	}
@@ -699,15 +700,15 @@ func TestLogTailStripsTimestamp(t *testing.T) {
 }
 
 func TestSanitizeDetailLine(t *testing.T) {
-	if got := sanitizeDetailLine("plain text"); got != "plain text" {
+	if got := term.SanitizeDetailLine("plain text"); got != "plain text" {
 		t.Errorf("素の行が変更された: %q", got)
 	}
 	// SGR (色/装飾) は残す (枠側の幅計算が対応済み)
 	colored := "\x1b[36;1mmake test\x1b[0m"
-	if got := sanitizeDetailLine(colored); got != colored {
+	if got := term.SanitizeDetailLine(colored); got != colored {
 		t.Errorf("SGR が落ちた: %q", got)
 	}
-	if got := sanitizeDetailLine("a\tb\rc\ufeffd"); got != "a    bcd" {
+	if got := term.SanitizeDetailLine("a\tb\rc\ufeffd"); got != "a    bcd" {
 		t.Errorf("sanitize = %q; want %q", got, "a    bcd")
 	}
 }
@@ -893,7 +894,7 @@ func TestFetchPRStatus(t *testing.T) {
 
 // job 名は workflow YAML 由来でユーザーが自由に付けられる (絵文字が入りうる)。panelLines は
 // job 名をそのまま枠の中へ置くので、VS16 付き絵文字が残ると枠と本文の幅が食い違う。
-// git 由来テキストは gitlog.go の 2 入口、CI ログ由来は sanitizeDetailLine で正規化済みだが、
+// git 由来テキストは gitlog.go の 2 入口、CI ログ由来は term.SanitizeDetailLine で正規化済みだが、
 // job 名だけこの経路が抜けていた (実測 2026-07-25)。
 func TestDetailsOfNormalizesVS16InJobName(t *testing.T) {
 	const vs16 = "️"

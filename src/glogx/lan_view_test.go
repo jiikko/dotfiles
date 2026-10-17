@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/term"
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/live"
@@ -103,7 +104,7 @@ func TestLanOpensAndClosesWithL(t *testing.T) {
 	m := openLan(t)
 	scan := lastLanScan(t)
 	m.handleKey("l") // 未管理のタブ (見えた Mac は台帳に無いのでこちら)
-	if view := stripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "m2macmini") {
+	if view := term.StripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "m2macmini") {
 		t.Errorf("見えた Mac が出ていない:\n%s", view)
 	}
 	m.handleKey("L")
@@ -245,7 +246,7 @@ func TestLanTypingDoesNotSwallowRepeats(t *testing.T) {
 	m.handleKey("i")
 	m.handleKey("i")
 	m.lanV.m.HandleKey("enter")
-	if view := stripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "ssii") {
+	if view := term.StripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "ssii") {
 		t.Errorf("絞り込みに ssii が入っていない (連打が飲まれた):\n%s", view)
 	}
 }
@@ -258,7 +259,7 @@ func TestLanTmuxPrefixReachesFilterWhileTyping(t *testing.T) {
 		m.handleKey(k)
 	}
 	m.lanV.m.HandleKey("enter")
-	if view := stripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "/ min") { // 絞り込みの欄 ("min" だけだと Mac mini の行でも満たせた)
+	if view := term.StripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "/ min") { // 絞り込みの欄 ("min" だけだと Mac mini の行でも満たせた)
 		t.Errorf("入力中の C-a (prefix と同じ) が編集として効かない:\n%s", view)
 	}
 	if strings.Contains(m.toast.Text(), "tmux prefix") {
@@ -288,7 +289,7 @@ func TestLanOpensWithoutWaitingForNetwork(t *testing.T) {
 	}
 	t.Cleanup(func() { lanOptions = orig })
 	m := openLan(t) // ReadNet が止まっていても戻る
-	view := func() string { return stripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")) }
+	view := func() string { return term.StripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")) }
 	if !m.lanV.busy() || !m.spinnerActive() || !strings.Contains(view(), "ネットワーク設定を確認中") {
 		t.Fatalf("読み込み中なのに tick が回らない / 読んでいる印が無い: busy=%v\n%s", m.lanV.busy(), view())
 	}
@@ -305,18 +306,18 @@ func TestLanOpensWithoutWaitingForNetwork(t *testing.T) {
 // 層 (設定・初期設定・板) が開いている間の最下行は「esc: 戻る」(L も ? も lanmgr が取り、q / esc は 1 段戻るだけ。「L/q: 閉じる」は嘘になる)。
 func TestLanHintFollowsLayers(t *testing.T) {
 	m := openLan(t)
-	if h := stripANSI(m.lanV.hint(80)); !strings.Contains(h, "L/q: 閉じる") {
+	if h := term.StripANSI(m.lanV.hint(80)); !strings.Contains(h, "L/q: 閉じる") {
 		t.Fatalf("一覧の最下行 = %q", h)
 	}
 	m.handleKey(",") // 設定
-	if h := stripANSI(m.lanV.hint(80)); strings.Contains(h, "L/q") || !strings.Contains(h, "esc: 戻る") {
+	if h := term.StripANSI(m.lanV.hint(80)); strings.Contains(h, "L/q") || !strings.Contains(h, "esc: 戻る") {
 		t.Errorf("設定の画面の最下行 = %q", h)
 	}
 	// 足りない画面では q / esc が L ごと閉じ、L も glogx に渡る: 層が開いていても「L/q: 閉じる」
 	lm := m.lanV.live()
 	lm.Resize(20, 6)
 	lm.View()
-	if h := stripANSI(m.lanV.hint(80)); !strings.Contains(h, "L/q: 閉じる") {
+	if h := term.StripANSI(m.lanV.hint(80)); !strings.Contains(h, "L/q: 閉じる") {
 		t.Errorf("足りない画面の最下行 = %q", h)
 	}
 }

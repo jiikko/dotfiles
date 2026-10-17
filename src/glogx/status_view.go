@@ -3,11 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/jiikko/dotfiles/src/tuikit/anim"
-	"github.com/jiikko/dotfiles/src/tuikit/confirm"
-	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
-	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"io"
 	"math"
 	"os"
@@ -16,7 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 // status viewer (s キー) — 未コミットの変更を一覧し、stage / unstage / 変更を捨てる を行う全画面ビュー。
@@ -302,7 +303,7 @@ func (v *statusView) stopGlides() {
 // 🚨 ここで無害化する: 通知文はパス・git のエラー出力を素で埋め込む呼び出しが多く、
 // 呼び出しごとに包むと必ずどこかが漏れる (自前の静的文だけの通知は無害化しても変わらない)。
 func (v *statusView) setNotice(text string, kind noticeKind) {
-	v.notice, v.noticeKind = sanitizePlainLine(text), kind
+	v.notice, v.noticeKind = term.SanitizePlainLine(text), kind
 }
 
 func (v *statusView) takeNotice() (string, noticeKind) {
@@ -355,7 +356,7 @@ func (v *statusView) receive(msg statusLoadMsg) tea.Cmd {
 	}
 	v.loading = false
 	if msg.err != nil {
-		v.err = sanitizePlainLine(firstLine(msg.err.Error())) // git の stderr を含む (issue 417)
+		v.err = term.SanitizePlainLine(firstLine(msg.err.Error())) // git の stderr を含む (issue 417)
 		if !v.loaded {
 			v.rows = nil
 		}
@@ -557,7 +558,7 @@ func untrackedPreview(path string, isDir bool) ([]string, error) {
 			lines = append(lines, "... (これ以降は省略)")
 			break
 		}
-		lines = append(lines, sanitizeDetailLine(line))
+		lines = append(lines, term.SanitizeDetailLine(line))
 	}
 	return lines, nil
 }
@@ -573,7 +574,7 @@ func (v *statusView) receivePreview(msg statusPreviewMsg) {
 	}
 	if msg.err != nil {
 		// エラー文は git の stderr や os.Open の生のパスを含む (issue 417)
-		v.storePreview(msg.key, []string{"(diff を取得できませんでした: " + sanitizePlainLine(firstLine(msg.err.Error())) + ")"})
+		v.storePreview(msg.key, []string{"(diff を取得できませんでした: " + term.SanitizePlainLine(firstLine(msg.err.Error())) + ")"})
 		return
 	}
 	if len(msg.lines) == 0 {
@@ -698,7 +699,7 @@ func (v *statusView) pagerKeyPress(key string, vp statusViewport) tea.Cmd {
 		return v.openNeighborPager(-1, vp)
 	}
 	total := len(v.pagerLines())
-	pagerScrollKey(key, &v.pager, v.pagerRows(vp.page), total)
+	term.PagerScrollKey(key, &v.pager, v.pagerRows(vp.page), total)
 	return nil
 }
 
@@ -920,12 +921,12 @@ func (v *statusView) hint(width int) string {
 	case v.discarding:
 		return "y/Enter: 捨てる  n/Esc: キャンセル"
 	case v.pagerKey != "":
-		return fitHintItems(width, []hintItem{
-			{"j/k: スクロール", 2},
-			{"J/K: 隣のファイル", 3},
-			{"Space/C-d: 半ページ", 4},
-			{"g/G: 先頭/末尾", 5},
-			{"d/q: 閉じる", 1}, // 抜ける手段は最優先
+		return term.FitHintItems(width, []term.HintItem{
+			{Text: "j/k: スクロール", Prio: 2},
+			{Text: "J/K: 隣のファイル", Prio: 3},
+			{Text: "Space/C-d: 半ページ", Prio: 4},
+			{Text: "g/G: 先頭/末尾", Prio: 5},
+			{Text: "d/q: 閉じる", Prio: 1}, // 抜ける手段は最優先
 		})
 	}
 	// 🚨 "q: 終了" (glogx ごと終了。一覧へ戻るのは s)。上の pager の "d/q: 閉じる" は
@@ -934,44 +935,21 @@ func (v *statusView) hint(width int) string {
 	// 一覧モードの案内は全部で 155 桁あり、popup の実幅 (84 桁前後) には入らない。入らない分は
 	// hintLineText が**末尾から黙って切る**ので、素朴に並べると「抜ける手段 (s/q) だけが
 	// 画面から消える」状態になっていた (issue 155)。幅に応じて優先度の低い順に落とす。
-	return fitHintItems(width, []hintItem{
-		{"j/k: 移動", 4},
-		{"Tab: セクション", 5},
-		{"Space: stage/unstage", 2}, // この画面の主目的
-		{"a: 全 stage", 5},
-		{"X: 変更を捨てる", 3}, // 破壊操作は案内が消えると危ない
-		{"d: diff", 3},
-		{"r: 再読込", 5},
-		{"b: push", 6},
-		{"p: pull", 6},
-		{"U: usage", 7},
-		{"R: 残量", 7},
-		{"s: 一覧へ", 1}, // 抜ける手段は最後まで残す
-		{"q: 終了", 1},
+	return term.FitHintItems(width, []term.HintItem{
+		{Text: "j/k: 移動", Prio: 4},
+		{Text: "Tab: セクション", Prio: 5},
+		{Text: "Space: stage/unstage", Prio: 2}, // この画面の主目的
+		{Text: "a: 全 stage", Prio: 5},
+		{Text: "X: 変更を捨てる", Prio: 3}, // 破壊操作は案内が消えると危ない
+		{Text: "d: diff", Prio: 3},
+		{Text: "r: 再読込", Prio: 5},
+		{Text: "b: push", Prio: 6},
+		{Text: "p: pull", Prio: 6},
+		{Text: "U: usage", Prio: 7},
+		{Text: "R: 残量", Prio: 7},
+		{Text: "s: 一覧へ", Prio: 1}, // 抜ける手段は最後まで残す
+		{Text: "q: 終了", Prio: 1},
 	})
-}
-
-// hintItem は hint の 1 項目と優先度 (小さいほど残す。1 = 抜ける手段)。
-type hintItem struct {
-	text string
-	prio int
-}
-
-// fitHintItems は幅 width に収まるところまで項目を採り、元の並び順で繋ぐ (落とし方・優先度 1 の席の予約は hintfit.Fit が正本)。
-//
-// 🚨 名前を残しているのは、hintLine の hint が必ずここを通ることを hint_registry_gate_test.go が AST の呼び出し名で縛るため。
-// 🚨 落とした項目は `--help` / README / docs/status-viewer-spec.md が正本 (issues viewer の hint と同じ作法)。画面の案内は
-// 「今の幅で確実に読めるもの」だけにする。
-func fitHintItems(width int, items []hintItem) string {
-	return hintfit.Fit(width, "  ", hintfitItems(items))
-}
-
-func hintfitItems(items []hintItem) []hintfit.Item {
-	out := make([]hintfit.Item, 0, len(items))
-	for _, it := range items {
-		out = append(out, hintfit.Item{Text: it.text, Prio: it.prio})
-	}
-	return out
 }
 
 // ---- 描画 ----
@@ -994,9 +972,9 @@ func (v *statusView) lines(o statusRenderOpts) []string {
 		left := layout.PadTo(v.listLines(inner, listW), rows)
 		right := layout.PadTo(v.previewPane(inner, o.width-listW-statusSepWidth), rows)
 		body = make([]string, 0, rows)
-		sep := paint("│ ", ansiDim, o.colored)
+		sep := term.Paint("│ ", term.AnsiDim, o.colored)
 		for i := range rows {
-			body = append(body, fillRight(left[i], listW)+sep+right[i])
+			body = append(body, term.FillRight(left[i], listW)+sep+right[i])
 		}
 	}
 	body = append(head, body...)
@@ -1004,10 +982,10 @@ func (v *statusView) lines(o statusRenderOpts) []string {
 	// 極端に小さいとき (0 / 1 行の窓) に page を超える
 	body = layout.PadTo(body, o.page)
 	if box := v.pagerBox(o); len(box) > 0 {
-		body = overlayCenteredBox(body, box, o.width, o.page, o.colored)
+		body = term.OverlayCenteredBox(body, box, o.width, o.page, o.colored)
 	}
 	if box := v.discardBox(o); len(box) > 0 {
-		body = overlayCenteredBox(body, box, o.width, o.page, o.colored)
+		body = term.OverlayCenteredBox(body, box, o.width, o.page, o.colored)
 	}
 	if p := v.animProgress(); p < 1 {
 		body = slideLeftWindow(body, p, o.width, v.closing, o.colored)
@@ -1038,7 +1016,7 @@ func (v *statusView) animProgress() float64 {
 //
 // 当初の「下からせり上がる」縦スライドをやめたのは解像度の問題: 縦は行数 (~40 ステップ) しか
 // なく 60fps でも 1 コマの移動が粗い。横は桁数 (数百ステップ) で滑らか (ユーザー要望 2026-08-06)。
-// 行が左から滑り込む真の平行移動 (truncateDispLeft) にしないのも意図的: 頭が画面外に出て
+// 行が左から滑り込む真の平行移動 (term.TruncateDispLeft) にしないのも意図的: 頭が画面外に出て
 // 尻尾の桁から現れる見た目になる。左端アンカーの成長なら行頭から読める形で現れる。
 func slideLeftWindow(window []string, progress float64, width int, closing, colored bool) []string {
 	ratio := 1 - anim.EaseOutCubic(progress)
@@ -1053,16 +1031,16 @@ func slideLeftWindow(window []string, progress float64, width int, closing, colo
 	// 画面の地も既定色のため、端を描かないと空白部分で「板がどこまで来ているか」が透明になる。
 	// 色はドロップシャドウと同じ語彙 (近黒 █ / NO_COLOR は ▒)。ボーダーは板の幅の内側 1 桁を
 	// 使う (外側に足すと終端間際で画面幅からはみ出す)
-	edge := ansiShadowFg + layout.ShadowFull + ansiReset
+	edge := term.AnsiShadowFg + layout.ShadowFull + term.AnsiReset
 	if !colored {
 		edge = layout.ShadowMono
 	}
 	inner := max(cols-1, 0)
 	out := make([]string, 0, len(window))
 	for _, ln := range window {
-		// clipToWidth でなく tail 無しの truncateDisp: 動く右端に「…」を走らせない。
-		// 短い行・空行も fillRight でボーダー位置まで詰める (縦に切れ目のない 1 本の端にする)
-		out = append(out, fillRight(truncateDisp(ln, inner, ""), inner)+edge)
+		// term.ClipToWidth でなく tail 無しの term.TruncateDisp: 動く右端に「…」を走らせない。
+		// 短い行・空行も term.FillRight でボーダー位置まで詰める (縦に切れ目のない 1 本の端にする)
+		out = append(out, term.FillRight(term.TruncateDisp(ln, inner, ""), inner)+edge)
 	}
 	return out
 }
@@ -1071,7 +1049,7 @@ func slideLeftWindow(window []string, progress float64, width int, closing, colo
 // ここには含めない。
 func (v *statusView) listLines(o statusRenderOpts, width int) []string {
 	if msg := v.emptyMessage(o); msg != "" {
-		return []string{paint(clipToWidth(msg, width), ansiDim, o.colored)}
+		return []string{term.Paint(term.ClipToWidth(msg, width), term.AnsiDim, o.colored)}
 	}
 	rows := max(o.page, 1)
 	// 🚨 整形するのは窓の中だけ (displayIndex の doc)。全行を整形してから切ると、画面に出る
@@ -1109,8 +1087,8 @@ func (v *statusView) headerLine(o statusRenderOpts, width int) string {
 		// 一部だけ解釈できなかったケース (行はあるが取りこぼしている = 一覧が不完全)
 		right = fmt.Sprintf("🚨 %d 件解釈不能 / ", v.st.skipped) + right
 	}
-	pad := max(width-dispWidth(left)-dispWidth(right), 1)
-	return paint(clipToWidth(left+padSpaces(pad)+right, width), ansiBold, o.colored)
+	pad := max(width-term.DispWidth(left)-term.DispWidth(right), 1)
+	return term.Paint(term.ClipToWidth(left+term.PadSpaces(pad)+right, width), term.AnsiBold, o.colored)
 }
 
 // emptyMessage は「一覧に出すものが無い」状態の案内 ("" = 行を描く)。
@@ -1208,7 +1186,7 @@ func sameRowsBacking(a, b []worktreeRow) bool {
 func (v *statusView) displayLine(dl statusDisplayLine, o statusRenderOpts, width int) string {
 	if dl.row < 0 {
 		label := fmt.Sprintf("%s (%d)", dl.sec.label(), dl.n)
-		return paint(clipToWidth(label, width), sectionColor(dl.sec)+ansiBold, o.colored)
+		return term.Paint(term.ClipToWidth(label, width), sectionColor(dl.sec)+term.AnsiBold, o.colored)
 	}
 	return v.rowLine(dl.row, o, width)
 }
@@ -1218,40 +1196,40 @@ func (v *statusView) displayLine(dl statusDisplayLine, o statusRenderOpts, width
 func sectionColor(sec worktreeSection) string {
 	switch sec {
 	case sectionStaged:
-		return ansiGreen
+		return term.AnsiGreen
 	case sectionUnstaged:
-		return ansiRed
+		return term.AnsiRed
 	case sectionUntracked:
-		return ansiDim
+		return term.AnsiDim
 	default:
-		return ansiYellow
+		return term.AnsiYellow
 	}
 }
 
 // rowLine は 1 行 (溝 + コード + パス + ◐)。
 func (v *statusView) rowLine(i int, o statusRenderOpts, width int) string {
 	r := v.rows[i]
-	code := paint(string(r.code), sectionColor(r.section), o.colored)
+	code := term.Paint(string(r.code), sectionColor(r.section), o.colored)
 	badge := ""
 	if r.partial {
 		badge = " ◐" // index 側と作業ツリー側の両方に変更がある = 一部だけ staged
 	}
-	pathW := max(width-cursorGutterWidth-2-dispWidth(badge), 4)
+	pathW := max(width-term.CursorGutterWidth-2-term.DispWidth(badge), 4)
 	text := code + " " + statusPathText(r, pathW, o.colored) + badge
 	if i != v.cursor {
-		return clipToWidth(cursorGutterBlank+text, width)
+		return term.ClipToWidth(term.CursorGutterBlank+text, width)
 	}
-	return statusCursorPaint(clipToWidth(cursorGutterMark+text, width), width, o.colored)
+	return statusCursorPaint(term.ClipToWidth(term.CursorGutterMark+text, width), width, o.colored)
 }
 
 // statusPathText はパスを「ディレクトリ部分を dim、basename を明るく」描く (幅を超える場合は
 // 先頭を削って basename を残す: 末尾から切ると「どのファイルか」が分からなくなる)。
 func statusPathText(r worktreeRow, width int, colored bool) string {
 	path := r.dispPath()
-	if dispWidth(path) > width {
+	if term.DispWidth(path) > width {
 		// 🚨 先頭を削る (末尾を残す)。末尾から切ると basename が消えて「どのファイルか」が
 		// 分からなくなる = 一覧として役に立たなくなる
-		return paint(truncateDispLeft(path, width, "…"), ansiDim, colored)
+		return term.Paint(term.TruncateDispLeft(path, width, "…"), term.AnsiDim, colored)
 	}
 	dir, base := "", path
 	if i := strings.LastIndex(strings.TrimSuffix(path, "/"), "/"); i >= 0 {
@@ -1260,7 +1238,7 @@ func statusPathText(r worktreeRow, width int, colored bool) string {
 	if dir == "" {
 		return base
 	}
-	return paint(dir, ansiDim, colored) + base
+	return term.Paint(dir, term.AnsiDim, colored) + base
 }
 
 // statusCursorPaint はカーソル行の強調。🚨 塗る幅は「一覧カラムの幅」で、画面幅ではない
@@ -1269,8 +1247,8 @@ func statusCursorPaint(text string, width int, colored bool) string {
 	if !colored {
 		return text
 	}
-	pad := max(width-dispWidth(text), 0)
-	return ansiCursorBg + reapplyAfterReset(text, ansiCursorBg) + padSpaces(pad) + ansiReset
+	pad := max(width-term.DispWidth(text), 0)
+	return term.AnsiCursorBg + term.ReapplyAfterReset(text, term.AnsiCursorBg) + term.PadSpaces(pad) + term.AnsiReset
 }
 
 // previewPane はプレビューカラム (カーソル行の diff の先頭部分)。スクロールは持たない
@@ -1284,24 +1262,24 @@ func (v *statusView) previewPane(o statusRenderOpts, width int) []string {
 		sectionStaged: "staged", sectionUnstaged: "unstaged",
 		sectionUntracked: "untracked", sectionConflicted: "conflict",
 	}[row.section]
-	head := clipToWidth(row.dispPath()+"  ("+kind+")", width)
-	out := []string{paint(head, ansiBold, o.colored), ""}
+	head := term.ClipToWidth(row.dispPath()+"  ("+kind+")", width)
+	out := []string{term.Paint(head, term.AnsiBold, o.colored), ""}
 	key := previewKey(row)
 	body, ok := v.preview.get(key)
 	switch {
 	case !ok && v.preview.loading(key):
-		out = append(out, paint(o.spinner+" diff を取得中...", ansiDim, o.colored))
+		out = append(out, term.Paint(o.spinner+" diff を取得中...", term.AnsiDim, o.colored))
 	case !ok:
-		out = append(out, paint("(d で全文)", ansiDim, o.colored))
+		out = append(out, term.Paint("(d で全文)", term.AnsiDim, o.colored))
 	default:
 		rows := max(o.page-len(out), 1)
 		body = body[previewSkipDiffHeader(body):]
 		for i, line := range body {
 			if i >= rows {
-				out = append(out, paint("… 続きは d", ansiDim, o.colored))
+				out = append(out, term.Paint("… 続きは d", term.AnsiDim, o.colored))
 				break
 			}
-			out = append(out, clipToWidth(line, width))
+			out = append(out, term.ClipToWidth(line, width))
 		}
 	}
 	return out
@@ -1321,7 +1299,7 @@ func previewSkipDiffHeader(lines []string) int {
 		if i >= scan {
 			break
 		}
-		if strings.HasPrefix(stripANSI(line), "@@") {
+		if strings.HasPrefix(term.StripANSI(line), "@@") {
 			return i
 		}
 	}
@@ -1334,7 +1312,7 @@ func (v *statusView) pagerBox(o statusRenderOpts) []string {
 		return nil
 	}
 	// 🚨 diffOverlay.boxLines のような width<=0 の下限ガードは置かない: 幅 0 の窓へ重ねる
-	// overlayCenteredBox 自体が何もせず返すため観測できず、テストで壊せない防御になる
+	// term.OverlayCenteredBox 自体が何もせず返すため観測できず、テストで壊せない防御になる
 	// (ミューテーション検証 2026-08-03: ガードを外しても TestStatusLinesSurvivesExtremeSizes は green)。
 	width := o.width
 	rows := v.pagerRows(o.page)
@@ -1343,9 +1321,9 @@ func (v *statusView) pagerBox(o statusRenderOpts) []string {
 	title := " diff: " + v.pagerTitle + " "
 	switch {
 	case !ok && v.preview.loading(v.pagerKey):
-		body = []string{paint(o.spinner+" diff を取得中...", ansiDim, o.colored)}
+		body = []string{term.Paint(o.spinner+" diff を取得中...", term.AnsiDim, o.colored)}
 	case !ok:
-		body = []string{paint("(diff はありません)", ansiDim, o.colored)}
+		body = []string{term.Paint("(diff はありません)", term.AnsiDim, o.colored)}
 	default:
 		// 描画で確定した行数・窓で論理 offset を収束させる (理由は listnav.Pager.Clamp の doc)
 		v.pager.Clamp(len(lines), rows)
@@ -1353,9 +1331,9 @@ func (v *statusView) pagerBox(o statusRenderOpts) []string {
 		end := min(start+rows, len(lines))
 		body = append(body, lines[start:end]...)
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] ", v.pagerTitle, start+1, end, len(lines))
-		body = withScrollbar(body, width, len(lines), start, o.colored)
+		body = term.WithScrollbar(body, width, len(lines), start, o.colored)
 	}
-	return buildShadowPanelBox(title, body, width, o.colored)
+	return term.BuildShadowPanelBox(title, body, width, o.colored)
 }
 
 // pagerRows は全画面 diff の本文行数 (visibleDiffRows と同じ内訳: 枠 2 + 影 1 + 余白 1 + hint 1)。

@@ -23,6 +23,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 
+	"glogx/internal/term"
 	"glogx/issues"
 )
 
@@ -74,7 +75,7 @@ func (f *issuesNumberFilter) edit(key string) bool {
 // 先に termsafe で無害化する (エスケープの中の数字を拾わない: "\x1b[31m415" を 31 と読む。敵対レビューが実測)。
 // 最初の数字の並びが番号でない貼り付け (先頭に日付がある等) は外れるが、Y の参照は「issue N …」で始まるので起きない。
 func (f *issuesNumberFilter) paste(s string) bool {
-	s = sanitizePlainLine(s)
+	s = term.SanitizePlainLine(s)
 	start := strings.IndexFunc(s, isASCIIDigit)
 	if start < 0 {
 		return false

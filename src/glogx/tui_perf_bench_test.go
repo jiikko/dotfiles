@@ -81,7 +81,7 @@ func benchDiffBrowse(tb testing.TB, ja bool) *browseModel {
 	return m
 }
 
-// diff オーバーレイ表示中のフレーム (withShadowScrollbar + buildShadowPanelBox が毎フレーム走る)。
+// diff オーバーレイ表示中のフレーム (withShadowScrollbar + term.BuildShadowPanelBox が毎フレーム走る)。
 func BenchmarkViewWithDiff(b *testing.B) {
 	m := benchDiffBrowse(b, false)
 	b.ReportAllocs()

@@ -17,6 +17,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/fsnotify/fsnotify"
+	"glogx/internal/term"
 )
 
 // realRepoBrowse は実 git repo (subjects のコミット付き) を作り、そこへ chdir した状態の
@@ -270,7 +271,7 @@ func TestGitLogReflectKeepsAnchorRow(t *testing.T) {
 	}
 	// offset の算術と独立に、実際に描かれる行の中身で確かめる (同じ画面行に同じコミットが来ているか)
 	if lines := m.lines(); m.offset+rowBefore < len(lines) {
-		if got := stripANSI(lines[m.offset+rowBefore].Text); !strings.Contains(got, anchor) {
+		if got := term.StripANSI(lines[m.offset+rowBefore].Text); !strings.Contains(got, anchor) {
 			t.Errorf("同じ画面行に別の内容が来た: %q (錨 %s)", got, anchor)
 		}
 	} else {

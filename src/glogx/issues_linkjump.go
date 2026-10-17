@@ -15,6 +15,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/markdown"
+	"glogx/internal/term"
 	"glogx/issues"
 )
 
@@ -288,7 +289,7 @@ func (v *issuesView) pathLabel(p string) string {
 	} else if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(p, home+string(filepath.Separator)) {
 		p = "~" + p[len(home):]
 	}
-	return sanitizePlainLine(p)
+	return term.SanitizePlainLine(p)
 }
 
 // linkJumpStatus はジャンプ中にヘッダー 2 行目 (状態の行) へ出す文言 (行数を変えないため差し替える)。

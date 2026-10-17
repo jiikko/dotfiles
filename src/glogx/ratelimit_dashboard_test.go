@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"glogx/internal/term"
 	"ratelimit/usage"
 )
 
@@ -46,7 +47,7 @@ func TestRatelimitDashLinesFillsPage(t *testing.T) {
 				t.Errorf("%s page=%d: 行数 %d", name, page, len(got))
 			}
 			for i, ln := range got {
-				if w := dispWidth(ln); w > o.width {
+				if w := term.DispWidth(ln); w > o.width {
 					t.Errorf("%s page=%d: %d 行目の幅 %d > %d", name, page, i, w, o.width)
 				}
 			}
@@ -109,7 +110,7 @@ func TestRatelimitDashShowsClaudeFetchError(t *testing.T) {
 	snap.ClaudeErr = "claude /usage 実行失敗: exit status 127: nodenv: \x1b[31mcommand not found"
 	o := rlTestOpts(snap, nil)
 	lines := d.lines(o)
-	note := stripANSI(lines[1])
+	note := term.StripANSI(lines[1])
 	for _, want := range []string{"Claude Code の取得に失敗", "前回の値を表示中", "exit status 127"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("注記に %q が無い: %q", want, note)
@@ -122,7 +123,7 @@ func TestRatelimitDashShowsClaudeFetchError(t *testing.T) {
 		t.Errorf("行数 = %d, want %d", len(lines), o.page)
 	}
 	for i, l := range lines {
-		if w := dispWidth(l); w > o.width {
+		if w := term.DispWidth(l); w > o.width {
 			t.Errorf("%d 行目が幅 %d を超える (%d): %q", i, o.width, w, l)
 		}
 	}
@@ -280,15 +281,15 @@ func TestRatelimitDashShowsWaitingSource(t *testing.T) {
 		t.Fatal("ratelimitOpts が待っている出所を渡さない")
 	}
 	o.width, o.page = 100, 30 // ゼロ値の browseModel は窓の寸法を持たない
-	if got := stripANSI(m.rlDash.lines(o)[1]); !strings.Contains(got, "Claude Code 取得中...") {
+	if got := term.StripANSI(m.rlDash.lines(o)[1]); !strings.Contains(got, "Claude Code 取得中...") {
 		t.Errorf("見出しの下に待っている出所が無い: %q", got)
 	}
 	// 盤の本体は Claude の 2 枚を、スピナー付きの場所取りのカードで取る
-	if all := stripANSI(strings.Join(m.rlDash.lines(o), "\n")); strings.Count(all, m.spinner()+" 取得中...") != 2 {
+	if all := term.StripANSI(strings.Join(m.rlDash.lines(o), "\n")); strings.Count(all, m.spinner()+" 取得中...") != 2 {
 		t.Errorf("盤が場所取りのカードで Claude の段を取っていない:\n%s", all)
 	}
 	o.waiting = ""
-	if got := stripANSI(m.rlDash.lines(o)[1]); strings.Contains(got, "取得中") {
+	if got := term.StripANSI(m.rlDash.lines(o)[1]); strings.Contains(got, "取得中") {
 		t.Errorf("待ちが終わっても描画キャッシュの「取得中」が残った: %q", got)
 	}
 }
@@ -305,7 +306,7 @@ func TestRatelimitDashPlaceholdersBeforeAnyArrives(t *testing.T) {
 	defer m.usageOv.stop()
 	o := m.ratelimitOpts()
 	o.width, o.page = 100, 30
-	all := stripANSI(strings.Join(m.rlDash.lines(o), "\n"))
+	all := term.StripANSI(strings.Join(m.rlDash.lines(o), "\n"))
 	if want := len(usage.PendingWindows("", nil)) + len(usage.PendingWindows(usage.SourceCodex, nil)); strings.Count(all, m.spinner()+" 取得中...") != want {
 		t.Errorf("何も届いていない盤が場所取りのカード %d 枚になっていない:\n%s", want, all)
 	}
@@ -314,7 +315,7 @@ func TestRatelimitDashPlaceholdersBeforeAnyArrives(t *testing.T) {
 	m.usageOv.fetchCmd(false)
 	o = m.ratelimitOpts()
 	o.width, o.page = 100, 30
-	if all := stripANSI(strings.Join(m.rlDash.lines(o), "\n")); !strings.Contains(all, "取得失敗") || strings.Contains(all, "取得中...") {
+	if all := term.StripANSI(strings.Join(m.rlDash.lines(o), "\n")); !strings.Contains(all, "取得失敗") || strings.Contains(all, "取得中...") {
 		t.Errorf("初回の全滅の後の取り直しで「取得失敗」が場所取りに隠れた:\n%s", all)
 	}
 }
@@ -386,7 +387,7 @@ func TestRatelimitDashHeaderFitsWidth(t *testing.T) {
 		o := rlTestOpts(snap, nil)
 		o.width, o.page = w, 30
 		for i, ln := range d.lines(o) {
-			if got := dispWidth(ln); got > w {
+			if got := term.DispWidth(ln); got > w {
 				t.Errorf("w=%d: %d 行目の幅 %d: %q", w, i, got, ln)
 			}
 		}
@@ -407,18 +408,18 @@ func TestRatelimitDashPaintsScreenBackground(t *testing.T) {
 		t.Fatalf("行が少なすぎる: %d", len(lines))
 	}
 	for i, ln := range lines {
-		if !strings.HasPrefix(ln, ansiScreenBg) {
+		if !strings.HasPrefix(ln, term.AnsiScreenBg) {
 			t.Errorf("%d 行目に地色が無い: %q", i, ln)
 			continue
 		}
 		// 端末幅ぶん塗り切る (途中で切れると右側が端末の地色のまま残る)。
-		if w := dispWidth(ln); w != m.width {
+		if w := term.DispWidth(ln); w != m.width {
 			t.Errorf("%d 行目の塗り幅 %d != %d: %q", i, w, m.width, ln)
 		}
 		// 行内の SGR リセットの後は地色を張り直す (リセットで地が切れる)。
-		body := strings.TrimSuffix(ln, ansiReset)
-		if idx := strings.LastIndex(body, ansiReset); idx >= 0 &&
-			!strings.HasPrefix(body[idx+len(ansiReset):], ansiScreenBg) {
+		body := strings.TrimSuffix(ln, term.AnsiReset)
+		if idx := strings.LastIndex(body, term.AnsiReset); idx >= 0 &&
+			!strings.HasPrefix(body[idx+len(term.AnsiReset):], term.AnsiScreenBg) {
 			t.Errorf("%d 行目: リセット後に地色を張り直していない: %q", i, ln)
 		}
 	}
@@ -433,11 +434,11 @@ func TestScreenBackgroundOnlyForDashboard(t *testing.T) {
 	if got := m.screenBg(); got != "" {
 		t.Errorf("一覧なのに地色を敷いた: %q", got)
 	}
-	if strings.Contains(m.View().Content, ansiScreenBg) {
+	if strings.Contains(m.View().Content, term.AnsiScreenBg) {
 		t.Error("一覧の描画に地色が混ざっている")
 	}
 	m.handleKey("R")
-	if m.screenBg() != ansiScreenBg {
+	if m.screenBg() != term.AnsiScreenBg {
 		t.Error("ダッシュボードで地色を敷いていない")
 	}
 	m.colored = false

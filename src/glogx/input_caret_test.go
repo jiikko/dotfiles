@@ -11,6 +11,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
+	"glogx/internal/term"
 	"glogx/issues"
 )
 
@@ -42,7 +43,7 @@ func caretPrefix(t *testing.T, m *browseModel) string {
 	if c == nil {
 		t.Fatal("入力中なのに端末のカーソルが無い (IME の変換中の文字が入力欄の外に出る)")
 	}
-	rows := strings.Split(stripANSI(m.viewLines()), "\n")
+	rows := strings.Split(term.StripANSI(m.viewLines()), "\n")
 	if c.Y < 0 || c.Y >= len(rows) {
 		t.Fatalf("カーソルの行 %d が画面 (%d 行) の外", c.Y, len(rows))
 	}

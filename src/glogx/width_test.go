@@ -8,9 +8,10 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"glogx/internal/term"
 )
 
-// dispWidth は描画エンジン (Bubble Tea) が使う ansi.StringWidth と同一の幅を返す。
+// term.DispWidth は描画エンジン (Bubble Tea) が使う ansi.StringWidth と同一の幅を返す。
 // この一致が崩れると ⚠️ 等で毎秒の再描画のたびに桁がずれてガタつく (2026-07-24 の回帰対象)。
 func TestDispWidthMatchesRenderer(t *testing.T) {
 	cases := map[string]int{
@@ -20,67 +21,67 @@ func TestDispWidthMatchesRenderer(t *testing.T) {
 		"日本": 4, "abc": 3,
 	}
 	for s, want := range cases {
-		got := dispWidth(s)
+		got := term.DispWidth(s)
 		if got != want {
-			t.Errorf("dispWidth(%q) = %d; want %d", s, got, want)
+			t.Errorf("term.DispWidth(%q) = %d; want %d", s, got, want)
 		}
 		if eng := ansi.StringWidth(s); got != eng {
-			t.Errorf("dispWidth(%q)=%d が描画エンジンの ansi.StringWidth=%d と食い違う", s, got, eng)
+			t.Errorf("term.DispWidth(%q)=%d が描画エンジンの ansi.StringWidth=%d と食い違う", s, got, eng)
 		}
 	}
 }
 
-// wrapToWidth は grapheme クラスタ単位で折り、⚠️ を VS16 の手前で分断しない。
+// term.WrapToWidth は grapheme クラスタ単位で折り、⚠️ を VS16 の手前で分断しない。
 func TestWrapToWidthKeepsEmojiCluster(t *testing.T) {
-	for _, seg := range wrapToWidth("⚠️警告⚠️警告", 3) {
+	for _, seg := range term.WrapToWidth("⚠️警告⚠️警告", 3) {
 		if strings.HasPrefix(seg, "️") || strings.HasSuffix(seg, "⚠") {
 			t.Fatalf("⚠️ クラスタが VS16 の境界で分断された: %q", seg)
 		}
 	}
 }
 
-// dropEmojiVS16 は VS16 (U+FE0F) を除去し bare 記号 (双方幅 1 で端末と食い違わない) へ倒す。
-// dropEmojiVS16 は termsafe.DropEmojiVS16 への 1 行 alias なので、**除去そのものの検査は
+// term.DropEmojiVS16 は VS16 (U+FE0F) を除去し bare 記号 (双方幅 1 で端末と食い違わない) へ倒す。
+// term.DropEmojiVS16 は termsafe.DropEmojiVS16 への 1 行 alias なので、**除去そのものの検査は
 // termsafe/termsafe_test.go:TestDropEmojiVS16 が持つ** (1 つの変異で両方が落ちる重複だった。
 // issue 198 発見 5)。ここに残すのは main / termwidth 固有の主張だけ。
 func TestDropEmojiVS16BareWidth(t *testing.T) {
 	// bare 記号は描画エンジンでも幅 1 (端末実測とも一致) — この不変条件が崩れたら再発
-	if w := dispWidth("⚠"); w != 1 {
-		t.Fatalf("bare ⚠ の dispWidth = %d; want 1", w)
+	if w := term.DispWidth("⚠"); w != 1 {
+		t.Fatalf("bare ⚠ の term.DispWidth = %d; want 1", w)
 	}
 	// VS15 (U+FE0E, text 強制) は残す (termsafe 側は VS16 の除去だけを見ており、VS15 の
 	// 保持は幅モデルと対で意味を持つのでこちらに残す)
-	if s := "⚠︎"; dropEmojiVS16(s) != s {
-		t.Fatalf("VS15 まで除去した: %q", dropEmojiVS16(s))
+	if s := "⚠︎"; term.DropEmojiVS16(s) != s {
+		t.Fatalf("VS15 まで除去した: %q", term.DropEmojiVS16(s))
 	}
 }
 
-// sanitizeDetailLine (CI 由来テキストの funnel) も VS16 を正規化する。
+// term.SanitizeDetailLine (CI 由来テキストの funnel) も VS16 を正規化する。
 func TestSanitizeDetailLineDropsVS16(t *testing.T) {
-	if got := sanitizeDetailLine("job ⚠️ fail"); got != "job ⚠ fail" {
-		t.Fatalf("sanitizeDetailLine が VS16 を残した: %q", got)
+	if got := term.SanitizeDetailLine("job ⚠️ fail"); got != "job ⚠ fail" {
+		t.Fatalf("term.SanitizeDetailLine が VS16 を残した: %q", got)
 	}
 }
 
-// overlayCenteredBox: 背景行に ⚠️ が含まれても合成後の各行幅が端末幅と一致する
+// term.OverlayCenteredBox: 背景行に ⚠️ が含まれても合成後の各行幅が端末幅と一致する
 // (glogx と端末で幅が食い違うとこの行がガタついていた)。
 func TestOverlayCompositeWidthWithEmoji(t *testing.T) {
 	const width = 40
 	// 実際の window 行は View で端末幅に clip 済み。絵文字入りの行を width ちょうどに整える。
-	bg := []string{fillRight(clipToWidth(strings.Repeat("⚠️ commit ", 8), width), width)}
-	if w := dispWidth(bg[0]); w != width {
+	bg := []string{term.FillRight(term.ClipToWidth(strings.Repeat("⚠️ commit ", 8), width), width)}
+	if w := term.DispWidth(bg[0]); w != width {
 		t.Fatalf("前提: bg[0] の幅 = %d; want %d", w, width)
 	}
-	box := buildShadowPanelBox(" x ", []string{"body"}, 20, false)
-	out := overlayCenteredBox(bg, box, width, 1, false)
+	box := term.BuildShadowPanelBox(" x ", []string{"body"}, 20, false)
+	out := term.OverlayCenteredBox(bg, box, width, 1, false)
 	for i, l := range out {
-		if w := dispWidth(l); w != width {
+		if w := term.DispWidth(l); w != width {
 			t.Errorf("合成行 %d の幅 = %d; want %d: %q", i, w, width, l)
 		}
 	}
 }
 
-// TestNoSecondWidthEngine は「表示幅を測るのは dispWidth ただ 1 系統」を強制する (issue 112)。
+// TestNoSecondWidthEngine は「表示幅を測るのは term.DispWidth ただ 1 系統」を強制する (issue 112)。
 //
 // なぜ depguard でなくテストか: depguard は**パッケージ単位**でしか禁止できず、
 // 「同じパッケージの中の 2 本目のモデル」(ansi.StringWidthWc) を止められない。
@@ -93,7 +94,7 @@ func TestOverlayCompositeWidthWithEmoji(t *testing.T) {
 //
 // ⚠️ この検査は文字列一致なので万能ではない。敵対的レビュー (2026-08-27) が
 // **識別子 1 語の書き換えで素通りする経路**を実証した:
-//   - uniseg を既に import しているファイルで `dispWidth(c)` を `g.Width()` に変える
+//   - uniseg を既に import しているファイルで `term.DispWidth(c)` を `g.Width()` に変える
 //   - 同じ x/ansi の 2 本目のモデル `ansi.StringWidthWc` を使う
 //
 // この 2 つは下で明示的に塞いだが、**新しい抜け道は作れる**。clusterWidth の呼び出し地点に
@@ -125,7 +126,7 @@ func TestNoSecondWidthEngine(t *testing.T) {
 		checked++
 		text := string(src)
 		// uniseg を import しているファイルでは、uniseg 側の幅 API (Graphemes.Width) も塞ぐ。
-		// これを入れないと `w: dispWidth(c)` を `w: g.Width()` に変えるだけで幅が uniseg へ戻る
+		// これを入れないと `w: term.DispWidth(c)` を `w: g.Width()` に変えるだけで幅が uniseg へ戻る
 		// (全テスト green のまま通ることを敵対的レビューが実測)。
 		importsUniseg := strings.Contains(text, `"github.com/rivo/uniseg"`)
 		for i, line := range strings.Split(text, "\n") {
@@ -155,7 +156,7 @@ func TestNoSecondWidthEngine(t *testing.T) {
 		t.Fatal(".go を 1 つも走査できなかった (走査が壊れている)")
 	}
 	if len(offenders) > 0 {
-		t.Fatalf("2 本目の幅エンジンが使われている (幅は termwidth.Of (main では dispWidth) を通すこと。uniseg は分割にだけ使う):\n  %s",
+		t.Fatalf("2 本目の幅エンジンが使われている (幅は termwidth.Of (main では term.DispWidth) を通すこと。uniseg は分割にだけ使う):\n  %s",
 			strings.Join(offenders, "\n  "))
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"glogx/issues"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 // issues viewer (i キー) の全画面ビュー。
@@ -1120,7 +1121,7 @@ func reorderTabsByCount(tabs []issues.Tab, counts []int) ([]issues.Tab, []int) {
 // 🚨 ここで無害化する: 通知文は issue のファイル名・本文由来の URL を素で埋め込む呼び出しが
 // 多く、呼び出しごとに包むと必ずどこかが漏れる (status_view.go の setNotice と同じ規律)。
 func (v *issuesView) setNotice(text string, kind noticeKind) {
-	v.notice, v.noticeKind = sanitizePlainLine(text), kind
+	v.notice, v.noticeKind = term.SanitizePlainLine(text), kind
 }
 
 // takeNotice は未表示の操作結果を取り出して消す。browseModel がトーストへ流すための口で、
@@ -1661,7 +1662,7 @@ func (v *issuesView) handleBodyKey(key string, vp issuesViewport, rows int) tea.
 	// Enter は「TUI 内の開閉 toggle」(ユーザー要望 2026-08-01)。一覧の Enter で開き、本文の
 	// Enter で閉じる。glogx 本体の job パネル (tui.go の handlePanelKey) が既にこの語彙なので、
 	// viewer だけ Enter が行送りだと同じキーの意味が画面ごとに変わる。
-	// 🚨 pagerScrollKey へ渡す前に捌くこと: あちらは enter を 1 行送りに写す。
+	// 🚨 term.PagerScrollKey へ渡す前に捌くこと: あちらは enter を 1 行送りに写す。
 	case "q", "esc", "h", "left", "enter":
 		if v.popDoc() {
 			break // doc を開いていたら 1 段戻る (元の本文へ)
@@ -1689,8 +1690,8 @@ func (v *issuesView) handleBodyKey(key string, vp issuesViewport, rows int) tea.
 		v.openNeighbor(-1, rows)
 	default:
 		// スクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は diffOverlay・status viewer の
-		// 全画面 diff と共有する (scroll_glide.go の pagerScrollKey)。手触りを 1 箇所に集約するため。
-		pagerScrollKey(key, &v.bodyPager, rows, v.body.Len())
+		// 全画面 diff と共有する (scroll_glide.go の term.PagerScrollKey)。手触りを 1 箇所に集約するため。
+		term.PagerScrollKey(key, &v.bodyPager, rows, v.body.Len())
 	}
 	return nil
 }
@@ -1699,13 +1700,13 @@ func (v *issuesView) handleBodyKey(key string, vp issuesViewport, rows int) tea.
 // moveCursor と同じで、描画カーソルだけを数フレーム滑らせる (cursorGlide)。
 //
 // 🚨 1 行移動 (j/k) と端ジャンプ (g/G) には載せない。前者は距離 1 で滑らせる意味が無く連打の
-// 体感を損ね、後者は「飛ぶ」ことがそのまま操作の意味 (本文 pager の pagerScrollKey が
+// 体感を損ね、後者は「飛ぶ」ことがそのまま操作の意味 (本文 pager の term.PagerScrollKey が
 // 半ページだけ glide に載せているのと同じ線引き)。
 func (v *issuesView) movePage(delta, rows int) {
 	v.ensureDisplayRows()
 	from := v.cursor
 	v.moveCursor(delta, rows)
-	v.curGlide.Start(from, v.cursor, cursorAnimFrames)
+	v.curGlide.Start(from, v.cursor, term.CursorAnimFrames)
 }
 
 // moveCursor はカーソルを動かしてスクロール位置を追従させる。素の移動は選択を解除する
@@ -1944,7 +1945,7 @@ func (v *issuesView) copyLines(lines []string, label string) {
 		return
 	}
 	for _, l := range lines { // 1 件は copyText が断る。まとめて入れる経路も同じく断る (issue 753)
-		if !isCopySafe(l) {
+		if !term.IsCopySafe(l) {
 			v.refuseUnsafeCopy(label)
 			return
 		}
@@ -1958,7 +1959,7 @@ func (v *issuesView) copyLines(lines []string, label string) {
 
 // copyGroupName は合成の group 親行の名称をコピーする (y)。
 //
-// 🚨 画面用に無害化した名前 (groupLine の sanitizePlainLine) ではなく **生の GroupName** を
+// 🚨 画面用に無害化した名前 (groupLine の term.SanitizePlainLine) ではなく **生の GroupName** を
 // クリップボードへ入れる。貼り先は実在するディレクトリ名でなければならない
 // (`issues/epic/<name>/` を組む・grep する) ので、書き換えると別物になるため
 // (termsafe.IsPlain の doc「同一性を持つ値は書き換えず落とす」と同じ理由)。
@@ -1987,9 +1988,9 @@ func (v *issuesView) copyNextNumber() {
 // 🚨 制御文字を含む値はコピーしない (書き換えもしない)。ファイル名や group 名は PR で入りうる外部由来の値で、
 // ESC や bracketed paste の終わり (ESC[201~) をクリップボードへ入れると、貼った先の端末がそれを解釈する。
 // 画面側は無害化されているので、利用者には見えない (issue 753)。書き換えると実在の名前と食い違うので、
-// 落として断る側に倒す (termsafe.IsPlain の doc。判定は isCopySafe でタブだけは通す)。
+// 落として断る側に倒す (termsafe.IsPlain の doc。判定は term.IsCopySafe でタブだけは通す)。
 func (v *issuesView) copyText(text, okPrefix string) {
-	if !isCopySafe(text) {
+	if !term.IsCopySafe(text) {
 		v.refuseUnsafeCopy(strings.TrimSuffix(okPrefix, "をコピーしました: "))
 		return
 	}
@@ -2011,7 +2012,7 @@ func (v *issuesView) refuseUnsafeCopy(label string) {
 //
 // 色番号は 256 色 (docs/theme-colors.md の 256 色主環境・gruvbox 基調に合わせた bright 系)。
 const (
-	catRed    = "\x1b[38;5;167m" // bug / fix / security — 失敗系の赤 (本体の ansiRed と同じ意味)
+	catRed    = "\x1b[38;5;167m" // bug / fix / security — 失敗系の赤 (本体の term.AnsiRed と同じ意味)
 	catGreen  = "\x1b[38;5;142m" // feat
 	catTeal   = "\x1b[38;5;73m"  // refactor / cleanup / chore (feat の緑と混ざらない青緑)
 	catYellow = "\x1b[38;5;214m" // perf
@@ -2041,7 +2042,7 @@ var catHashPalette = []string{catGreen, catTeal, catYellow, catBlue, catPurple, 
 // categoryColor は語に対する色を返す (同じ語なら常に同じ色)。カテゴリ無しは dim。
 func categoryColor(name string) string {
 	if name == "" {
-		return ansiDim
+		return term.AnsiDim
 	}
 	if c, ok := categoryColors[name]; ok {
 		return c
@@ -2104,7 +2105,7 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 	body = layout.PadTo(body, o.page)
 	// 確認モーダルは最前面 (実ファイルを動かす操作なので、裏の一覧より確実に目に入る位置)
 	if box := v.markNextBox(o.width, o.colored); len(box) > 0 {
-		body = overlayCenteredBox(body, box, o.width, o.page, o.colored)
+		body = term.OverlayCenteredBox(body, box, o.width, o.page, o.colored)
 	}
 	if p := v.animProgress(); p < 1 {
 		body = layout.SlideIn(body, p, o.width, v.closing, issuesAnimStagger)
@@ -2129,7 +2130,7 @@ func (v *issuesView) animProgress() float64 {
 // 行数だけが必要な呼び出し (中身は使われない)。
 // headLines はモードに応じたヘッダー行。
 //
-// 🚨 返す行数は width に依らないこと (幅で折り返さず clipToWidth で切る)。キー処理は描画幅を
+// 🚨 返す行数は width に依らないこと (幅で折り返さず term.ClipToWidth で切る)。キー処理は描画幅を
 // 知らないまま幅 0 で数えている (visibleRows) ため、幅で行数が変わるヘッダーを足すと page の
 // 分割がキー側と描画側で食い違う。折り返したいヘッダーが要るなら、まず visibleRows へ幅を
 // 通す経路を作ること (handleKey のシグネチャまで届く変更になる)。
@@ -2161,7 +2162,7 @@ func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
 	}
 	if len(v.docStack) > 0 {
 		// doc を開いている: issue の状態の代わりに戻り先を出す (状態・進捗は doc には無い)
-		status = "doc " + strconv.Itoa(len(v.docStack)) + " 段目  h/Esc: " + sanitizePlainLine(v.docStack[len(v.docStack)-1].open.Rel) + " へ戻る"
+		status = "doc " + strconv.Itoa(len(v.docStack)) + " 段目  h/Esc: " + term.SanitizePlainLine(v.docStack[len(v.docStack)-1].open.Rel) + " へ戻る"
 	}
 	if v.linkJump.active && v.body != nil {
 		// ジャンプ中は状態の行を「どこを開くか」に差し替える (行を足すと本文の位置が 1 行ずれる)
@@ -2173,8 +2174,8 @@ func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
 	return []string{
 		// Rel はファイル名 = 外部由来。ファイルを開く同一性は v.open.Path 側が持つので、
 		// 画面に出すこちらだけ無害化する (worktreeRow.dispPath と同じ分け方)。
-		paint(clipToWidth(sanitizePlainLine(v.open.Rel), width), ansiBold, colored),
-		paint(clipToWidth(status, width), ansiDim, colored),
+		term.Paint(term.ClipToWidth(term.SanitizePlainLine(v.open.Rel), width), term.AnsiBold, colored),
+		term.Paint(term.ClipToWidth(status, width), term.AnsiDim, colored),
 		"",
 	}
 }
@@ -2202,7 +2203,7 @@ func (v *issuesView) listHeadLines(width int, colored bool) []string {
 		if n := len(v.warnings) - 1; n > 0 {
 			w = "🚨 (ほか " + strconv.Itoa(n) + " 件) " + v.warnings[0] // 件数を先に置く (幅で切られても残る)
 		}
-		head = append(head, paint(clipToWidth(w, width), ansiYellow, colored))
+		head = append(head, term.Paint(term.ClipToWidth(w, width), term.AnsiYellow, colored))
 	}
 	return append(head, "")
 }
@@ -2212,7 +2213,7 @@ func (v *issuesView) listLines(o issuesRenderOpts) []string {
 	v.ensureDisplayRows()
 	head := v.listHeadLines(o.width, o.colored) // 引き出しの下地でも一覧のタブを出す
 	if msg := v.emptyMessage(o); msg != "" {
-		return append(head, paint(clipToWidth(msg, o.width), ansiDim, o.colored))
+		return append(head, term.Paint(term.ClipToWidth(msg, o.width), term.AnsiDim, o.colored))
 	}
 	rows := max(o.page-len(head), 1)
 	// 論理 offset を「描画時の行数でカーソルを含む窓」へ収束させる (キー処理時の行数と
@@ -2267,7 +2268,7 @@ func (v *issuesView) numberFilterLine(width int, colored bool) string {
 	text, _ := promptWindow(numberFilterPrompt, &v.numFilter.line, width)
 	line := numberFilterPrompt + text +
 		"  " + strconv.Itoa(len(v.rows)) + " 件 (全カテゴリ・全状態)"
-	return paint(clipToWidth(line, width), ansiBold, colored)
+	return term.Paint(term.ClipToWidth(line, width), term.AnsiBold, colored)
 }
 
 // numberFilterPrompt は番号の絞り込みの行の頭。キャレットの桁はこの幅から数える。
@@ -2331,13 +2332,13 @@ func (v *issuesView) tabLine(o issuesRenderOpts) string {
 	// 🚨 段階 (v.filter) ではなく「実際に見えている状態」を出す。epic group の子は状態フィルタの
 	// 対象外、番号フィルタは状態を問わず拾うので、段階だけを出すとバッジが嘘になる (issue 296)
 	filter := issues.VisibleBadges(v.filter, v.rows)
-	avail := max(o.width-dispWidth(filter)-1, 1)
+	avail := max(o.width-term.DispWidth(filter)-1, 1)
 	left := scrollTabs(chips, v.tabIdx+1, avail, o.colored) // チップ配列は [next] が 0 番
-	pad := max(o.width-dispWidth(left)-dispWidth(filter), 0)
+	pad := max(o.width-term.DispWidth(left)-term.DispWidth(filter), 0)
 	// 🚨 組んだ後に必ず切る (scrollTabs 末尾と同じ規律): avail には下限 1 があるので、
-	// バッジ + 印すら入らない極小幅 (o.width ≤ dispWidth(filter)) では合成が幅を超える
+	// バッジ + 印すら入らない極小幅 (o.width ≤ term.DispWidth(filter)) では合成が幅を超える
 	// (issue 053: 幅 1 で「…○」= 2 セルが出ていた。収まる幅では clip は素通りで無 alloc)
-	return clipToWidth(left+padSpaces(pad)+paint(filter, ansiDim, o.colored), o.width)
+	return term.ClipToWidth(left+term.PadSpaces(pad)+term.Paint(filter, term.AnsiDim, o.colored), o.width)
 }
 
 // tabScrollMark は「この向きにまだタブがある」ことを示す印 (幅 1 の bare 記号に限る。
@@ -2362,15 +2363,15 @@ func scrollTabs(chips []string, sel, avail int, colored bool) string {
 		return ""
 	}
 	sel = clampIdx(sel, len(chips))
-	mark := func(s string) string { return paint(s, ansiDim, colored) }
+	mark := func(s string) string { return term.Paint(s, term.AnsiDim, colored) }
 	// 印のぶんを先に差し引いてから詰める (印を後付けすると幅を超える)
 	reserve := func(start, end int) int {
 		w := 0
 		if start > 0 {
-			w += dispWidth(tabScrollLeft) + 1 // "‹ "
+			w += term.DispWidth(tabScrollLeft) + 1 // "‹ "
 		}
 		if end < len(chips) {
-			w += 1 + dispWidth(tabScrollRight) // " ›"
+			w += 1 + term.DispWidth(tabScrollRight) // " ›"
 		}
 		return w
 	}
@@ -2398,7 +2399,7 @@ func scrollTabs(chips []string, sel, avail int, colored bool) string {
 		b.WriteString(mark(tabScrollRight))
 	}
 	// 🚨 最後に必ず切る: 1 チップだけで avail を超える極端な狭さでは上のループが縮めきれない。
-	return clipToWidth(b.String(), avail)
+	return term.ClipToWidth(b.String(), avail)
 }
 
 // joinedWidth は空白 1 つで連結したときの表示幅。
@@ -2408,7 +2409,7 @@ func joinedWidth(chips []string) int {
 		if i > 0 {
 			w++
 		}
-		w += dispWidth(c)
+		w += term.DispWidth(c)
 	}
 	return w
 }
@@ -2420,7 +2421,7 @@ func (v *issuesView) tabChip(name string, count int, active bool, colored bool) 
 	label, color := name, categoryColor(name)
 	switch name {
 	case "All":
-		color = ansiCyan // 特定のカテゴリではないので本体の見出し色
+		color = term.AnsiCyan // 特定のカテゴリではないので本体の見出し色
 	case tabNextName:
 		// 疑似カテゴリは識別子 (@next) でなく見出しの綴りで出す。色は状態バッジ ▶ と同じ意味の
 		// 「これからやる」を示す固定色にする (語のハッシュだと repo ごとに色が変わる)
@@ -2428,12 +2429,12 @@ func (v *issuesView) tabChip(name string, count int, active bool, colored bool) 
 	}
 	text := "[" + label + " " + strconv.Itoa(count) + "]"
 	if active {
-		return paint(text, ansiBold+color, colored)
+		return term.Paint(text, term.AnsiBold+color, colored)
 	}
-	return paint(text, ansiDim+color, colored)
+	return term.Paint(text, term.AnsiDim+color, colored)
 }
 
-// issuesSelGutter は選択範囲の行に出す溝。🚨 幅は cursorGutterWidth と同じ 2 桁にすること
+// issuesSelGutter は選択範囲の行に出す溝。🚨 幅は term.CursorGutterWidth と同じ 2 桁にすること
 // (カーソル行の "→ " と混在するので、違う幅だと選択行だけ 1 桁ずれる)。
 const issuesSelGutter = "▌ "
 
@@ -2485,10 +2486,10 @@ func (v *issuesView) rowLine(i, cur int, o issuesRenderOpts, width int) string {
 		}
 		indent = arrow + " (" + groupProgress(row) + ") "
 	}
-	num := indent + fillRight(iss.Number, 3)
+	num := indent + term.FillRight(iss.Number, 3)
 	badge := iss.Status.Badge()
-	cat := fillRight(clipToWidth(iss.Category, 9), 9)
-	catPainted := paint(cat, categoryColor(iss.Category), o.colored)
+	cat := term.FillRight(term.ClipToWidth(iss.Category, 9), 9)
+	catPainted := term.Paint(cat, categoryColor(iss.Category), o.colored)
 	// 🚨 一覧に進捗 (チェックボックスの n/N) は出さない。数えるには本文を最後まで読む必要が
 	// あり、一覧を出すたびに全 issue の全文を読んでいた (起動と外部編集後の再スキャンで毎回)。
 	// 進捗は「あると便利」程度で、そのために全件の全文を読むのは釣り合わないと判断した。
@@ -2496,30 +2497,30 @@ func (v *issuesView) rowLine(i, cur int, o issuesRenderOpts, width int) string {
 	// (bodyHeadLines)。空いた幅はタイトルへ回る。
 	// 一次情報: issue 050
 	// 溝 + "NNN " + バッジ + " " + カテゴリ + " " + タイトル
-	fixed := cursorGutterWidth + dispWidth(num) + 1 + dispWidth(badge) + 1 + dispWidth(cat) + 1
+	fixed := term.CursorGutterWidth + term.DispWidth(num) + 1 + term.DispWidth(badge) + 1 + term.DispWidth(cat) + 1
 	titleW := max(width-fixed, 4)
-	title := clipToWidth(iss.Display(), titleW)
+	title := term.ClipToWidth(iss.Display(), titleW)
 	text := num + " " + badge + " " + catPainted + " " + title
 	// 🚨 どの経路も同じ幅に切る。titleW には下限 (4) があるので、極端に狭い幅では固定部分だけで
 	// width を超える。カーソル行だけ切っていたため、そこ以外の行が枠を突き破っていた。
 	if i != cur {
 		// 選択範囲の行は溝で示す (カーソル行は → が優先。範囲は必ずカーソルを含むので競合しない)
-		gutter := cursorGutterBlank
+		gutter := term.CursorGutterBlank
 		if lo, hi, ok := v.selection(); ok && i >= lo && i <= hi {
-			gutter = paint(issuesSelGutter, ansiCyan, o.colored)
+			gutter = term.Paint(issuesSelGutter, term.AnsiCyan, o.colored)
 		}
-		return clipToWidth(gutter+text, width)
+		return term.ClipToWidth(gutter+text, width)
 	}
-	return o.paintCursorRow(text, width, ansiBold)
+	return o.paintCursorRow(text, width, term.AnsiBold)
 }
 
 // paintCursorRow はカーソル行を描く: 溝の矢印 (→) を付け、cursorPaint があればその強調、無ければ emph の
 // 色で塗る (一覧の行 / group の親行 / URL ピッカーで共有する語彙)。
 func (o issuesRenderOpts) paintCursorRow(text string, width int, emph string) string {
 	if o.cursorPaint != nil {
-		return o.cursorPaint(clipToWidth(cursorGutterMark+text, width))
+		return o.cursorPaint(term.ClipToWidth(term.CursorGutterMark+text, width))
 	}
-	return clipToWidth(cursorGutterMark+paint(text, emph, o.colored), width)
+	return term.ClipToWidth(term.CursorGutterMark+term.Paint(text, emph, o.colored), width)
 }
 
 func (v *issuesView) groupLine(i, cur int, row displayRow, o issuesRenderOpts, width int) string {
@@ -2527,12 +2528,12 @@ func (v *issuesView) groupLine(i, cur int, row displayRow, o issuesRenderOpts, w
 	if v.groupExpanded(row.groupKey) {
 		arrow = "▾"
 	}
-	text := arrow + " " + sanitizePlainLine(row.groupName) + " (" + groupProgress(row) + ")"
-	text = clipToWidth(text, max(width-cursorGutterWidth, 0))
+	text := arrow + " " + term.SanitizePlainLine(row.groupName) + " (" + groupProgress(row) + ")"
+	text = term.ClipToWidth(text, max(width-term.CursorGutterWidth, 0))
 	if i != cur {
-		return clipToWidth(cursorGutterBlank+text, width)
+		return term.ClipToWidth(term.CursorGutterBlank+text, width)
 	}
-	return o.paintCursorRow(text, width, ansiBold+ansiCyan)
+	return o.paintCursorRow(text, width, term.AnsiBold+term.AnsiCyan)
 }
 
 // bodyLines は本文 pager (ヘッダー + 本文) を描く。
@@ -2583,7 +2584,7 @@ func srcGutter(src, width int, colored bool) string {
 	if src <= 0 || width <= 0 {
 		return gutter.Format(src, width)
 	}
-	return paint(gutter.Number(src, width), ansiDim, colored) + gutter.Separator // 番号だけを薄くする (区切りは塗らない)
+	return term.Paint(gutter.Number(src, width), term.AnsiDim, colored) + gutter.Separator // 番号だけを薄くする (区切りは塗らない)
 }
 
 // hint は viewer 表示中の操作案内 (最下行)。
@@ -2592,7 +2593,7 @@ func srcGutter(src, width int, colored bool) string {
 // ピッカー表示中に本文 pager の案内 (j/k/g/G/p/u/e/h/q) が出る — それらは全部 urlPicker が検索語
 // として飲むので、案内したキーが 1 つも案内どおりに動かない。
 func (v *issuesView) hint(width int) string {
-	// 🚨 hint は 1 行。全モードを fitHintItems で組み、幅に入らない項目は**末尾を切るのではなく
+	// 🚨 hint は 1 行。全モードを term.FitHintItems で組み、幅に入らない項目は**末尾を切るのではなく
 	// 優先度で落とす** (issue 264。それ以前は固定文字列を予算ぎりぎりに詰めていて、代表幅より
 	// 狭い端末では並びの最後 = 抜ける手段が黙って消えた)。🚨 優先度 1 は「どう抜けるか」**だけ**に
 	// する (同じ優先度は左から採るので、ラベルを 1 に置くと極端な幅で出口の方が落ちる)。
@@ -2603,77 +2604,77 @@ func (v *issuesView) hint(width int) string {
 		// n の確認中は handleKey が全キーを先に飲む (Enter も実行になる)。一覧の案内 (Enter: 本文 /
 		// q: 終了) を残すと、効かない・逆の意味のキーを案内することになる (issue 750。status viewer の
 		// 確認中と同じ扱い)。語彙は板の中の confirm.HintYesOther と揃える
-		return fitHintItems(width, []hintItem{
-			{"y/Enter: 実行", 2},
-			{"その他: キャンセル", 1},
+		return term.FitHintItems(width, []term.HintItem{
+			{Text: "y/Enter: 実行", Prio: 2},
+			{Text: "その他: キャンセル", Prio: 1},
 		})
 	}
 	if v.urlPick.active {
 		// 件数と 1 字消し (ctrl+h) はピッカー自身のヘッダーが出すので繰り返さない。ここは
 		// 「打った文字がそのまま絞り込みになる」= 本文 pager のキーが効かないことだけを伝える。
-		return fitHintItems(width, []hintItem{
-			{"文字入力で絞り込み", 2},
-			{"ctrl+n/p: 移動", 2},
-			{"Enter: 開く", 2},
-			{"Esc: 戻る", 1},
+		return term.FitHintItems(width, []term.HintItem{
+			{Text: "文字入力で絞り込み", Prio: 2},
+			{Text: "ctrl+n/p: 移動", Prio: 2},
+			{Text: "Enter: 開く", Prio: 2},
+			{Text: "Esc: 戻る", Prio: 1},
 		})
 	}
 	if v.open != nil && v.linkJump.active {
 		// ジャンプ中は j/k がスクロールでなくリンクの移動になる (本文 pager の案内を残すと嘘になる)
-		return fitHintItems(width, []hintItem{
-			{"j/k: 選ぶ", 2},
-			{"Enter: 開く (md は中で)", 2},
-			{"e: 編集", 4},
-			{"y: パス", 4},
-			{"Esc: 戻る", 1},
+		return term.FitHintItems(width, []term.HintItem{
+			{Text: "j/k: 選ぶ", Prio: 2},
+			{Text: "Enter: 開く (md は中で)", Prio: 2},
+			{Text: "e: 編集", Prio: 4},
+			{Text: "y: パス", Prio: 4},
+			{Text: "Esc: 戻る", Prio: 1},
 		})
 	}
 	if v.numFilter.typing {
 		// 打鍵がすべて検索語になる = 一覧のキーが効かないことを伝える (urlPick と同じ理由)
-		return fitHintItems(width, []hintItem{
-			{"数字で絞り込み", 2},
-			{"ctrl+n/p: 移動", 2},
-			{"Enter: 確定", 2},
-			{"Esc: 解除", 1},
+		return term.FitHintItems(width, []term.HintItem{
+			{Text: "数字で絞り込み", Prio: 2},
+			{Text: "ctrl+n/p: 移動", Prio: 2},
+			{Text: "Enter: 確定", Prio: 2},
+			{Text: "Esc: 解除", Prio: 1},
 		})
 	}
 	if v.open != nil {
 		// エディタ名を書かないのは editCmd が $VISUAL/$EDITOR を見るため ($EDITOR=code の人に
 		// "nvim" と案内しない)。案内した全キーが効くことは TestIssuesViewBodyHintKeysAllRespond が
 		// 予算幅で固定する。Enter/h/q は job パネルと同じ「戻る」。
-		return fitHintItems(width, []hintItem{
+		return term.FitHintItems(width, []term.HintItem{
 			// 「スクロール」でなく「移動」: Tab を足して予算幅 (popup) に入らなくなったため縮めた
 			// (diff の pager の hint_surfaces.go は据え置き。あちらには Tab が無い)
-			{"j/k/Space: 移動", 2},
-			{"J/K: 隣へ", 3},
-			{"g/G: 端", 5},
-			{"p: 番号", 4},
-			{"u: URL", 5},
-			{"Tab: パス", 5},
-			{"e: 編集", 4},
-			{"Enter/h/q: 戻る", 1},
+			{Text: "j/k/Space: 移動", Prio: 2},
+			{Text: "J/K: 隣へ", Prio: 3},
+			{Text: "g/G: 端", Prio: 5},
+			{Text: "p: 番号", Prio: 4},
+			{Text: "u: URL", Prio: 5},
+			{Text: "Tab: パス", Prio: 5},
+			{Text: "e: 編集", Prio: 4},
+			{Text: "Enter/h/q: 戻る", Prio: 1},
 		})
 	}
 	if lo, hi, ok := v.selection(); ok {
 		// 選択中は効くキーだけを出す (移動と Enter は選択を畳むので、並べると誤解を招く)
-		return fitHintItems(width, []hintItem{
-			{strconv.Itoa(hi-lo+1) + " 件選択", 2},
-			{"J/K・shift+↑↓: 増減", 2},
-			{"y: パス", 3},
-			{"p: 番号", 3},
-			{"Y: 参照", 4},
-			{"Esc: 解除", 1},
+		return term.FitHintItems(width, []term.HintItem{
+			{Text: strconv.Itoa(hi-lo+1) + " 件選択", Prio: 2},
+			{Text: "J/K・shift+↑↓: 増減", Prio: 2},
+			{Text: "y: パス", Prio: 3},
+			{Text: "p: 番号", Prio: 3},
+			{Text: "Y: 参照", Prio: 4},
+			{Text: "Esc: 解除", Prio: 1},
 		})
 	}
 	if v.numFilter.active {
 		// Tab と a は絞り込み中の no-op なので案内しない (押しても何も起きないキーを出さない)
-		return fitHintItems(width, []hintItem{
-			{"j/k: 移動", 2},
-			{"Enter: 本文", 2},
-			{"p: 番号", 3},
-			{"n: next", 3},
-			{"/: 絞り込み直す", 4},
-			{"Esc: 解除", 1},
+		return term.FitHintItems(width, []term.HintItem{
+			{Text: "j/k: 移動", Prio: 2},
+			{Text: "Enter: 本文", Prio: 2},
+			{Text: "p: 番号", Prio: 3},
+			{Text: "n: next", Prio: 3},
+			{Text: "/: 絞り込み直す", Prio: 4},
+			{Text: "Esc: 解除", Prio: 1},
 		})
 	}
 	// a は 3 段の巡回なので「次に押すと何が増えるか」を出す (今どこまで見えているかはタブ行
@@ -2693,21 +2694,21 @@ func (v *issuesView) hint(width int) string {
 	// (ユーザー要望 2026-08-06)。一覧へ戻るのは i (toggle)。README も 2 語を使い分けており、
 	// git log 一覧の hint も同じ動作を "q: 終了" と書いている。issue 121。
 	// "i: 一覧へ" は出さない (戻り方は --help と README が正本。足すなら優先度を付けて並べる)。
-	return fitHintItems(width, []hintItem{
-		{"j/k: 移動", 2},
+	return term.FitHintItems(width, []term.HintItem{
+		{Text: "j/k: 移動", Prio: 2},
 		// 🚨 上方向を `b` で案内するのは、shift+space が端末を選ぶから (spec の
 		// 「半ページ移動はカーソルが滑る」末尾)。Apple Terminal では shift が落ちて Space と
 		// 同じ下方向になるので、案内を shift+space にすると「押しても下へ行く」案内になる。
 		// 🚨 語が「半ページ」でなく「送り」なのは幅のため: 予算幅 89 に対し現行の hint が 71 桁で、
 		// "Space/b: 半ページ" は区切り込み 19 桁と 1 桁だけ入らず、a の案内 (状態フィルタ) を
 		// 押しのける (TestIssuesViewHintFitsPopupWidth が予算幅で a が残ることを要求している)。
-		{"Space/b: 送り", 5},
-		{"Tab: カテゴリ", 3},
-		{"/: 検索", 4},
-		{"Enter: 本文", 2},
-		{"n: next", 4},
-		{next, 5},
-		{"q: 終了", 1},
+		{Text: "Space/b: 送り", Prio: 5},
+		{Text: "Tab: カテゴリ", Prio: 3},
+		{Text: "/: 検索", Prio: 4},
+		{Text: "Enter: 本文", Prio: 2},
+		{Text: "n: next", Prio: 4},
+		{Text: next, Prio: 5},
+		{Text: "q: 終了", Prio: 1},
 	})
 }
 
@@ -2858,7 +2859,7 @@ func (v *issuesView) markNextBox(width int, colored bool) []string {
 	if len(v.markNext.targets) == 1 {
 		// Rel は同一性のため無害化しない実物 (issues/parse.go newIssue の doc)。画面へ出す
 		// ここで sanitize する (制御文字入りのファイル名で確認モーダルを細工させない)
-		what = sanitizePlainLine(filepath.Base(v.markNext.targets[0].Rel))
+		what = term.SanitizePlainLine(filepath.Base(v.markNext.targets[0].Rel))
 	}
 	title, lines := " next の目印 ", []string{what + " に next の目印を付けます"}
 	if v.markNext.unmark {
@@ -2874,6 +2875,6 @@ func (v *issuesView) markNextBox(width int, colored bool) []string {
 		}
 	}
 	return confirm.Dialog(title, append(lines,
-		paint("(次にやる目印。ファイルを移動します。commit はしません)", ansiDim, colored),
+		term.Paint("(次にやる目印。ファイルを移動します。commit はしません)", term.AnsiDim, colored),
 	), confirm.HintYesOther, width, colored)
 }

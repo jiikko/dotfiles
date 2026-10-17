@@ -1,4 +1,4 @@
-package main
+package term
 
 import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
@@ -9,71 +9,71 @@ import (
 // レイアウト関数だけ。m.width/m.colored 等のモデル状態を読むもの (cursorLine/bgLine/panelLines
 // など) は tui.go に残す。
 
-// overlayBox / overlayCenteredBox は tuikit layout.Overlay / layout.OverlayCentered の別名
+// OverlayBox / OverlayCenteredBox は tuikit layout.Overlay / layout.OverlayCentered の別名
 // (行ごと置き換える / 中央に浮かせて左右の背景を残す)。
-func overlayBox(window, box []string, anchor, page int) []string {
+func OverlayBox(window, box []string, anchor, page int) []string {
 	return layout.Overlay(window, box, anchor, page)
 }
 
-func overlayCenteredBox(window, box []string, width, page int, colored bool) []string {
+func OverlayCenteredBox(window, box []string, width, page int, colored bool) []string {
 	return layout.OverlayCentered(window, box, width, page, colored)
 }
 
-// buildShadowPanelBox は右下ドロップシャドウ付きの枠パネルを組み立てる (行の実効幅は ANSI を
+// BuildShadowPanelBox は右下ドロップシャドウ付きの枠パネルを組み立てる (行の実効幅は ANSI を
 // 除いて計算)。呼び出し元は小面積モーダル (confirm.Box 経由の action モーダル /
-// usage / PR 状態)、大面積の diff / job パネル + job 詳細、画面最外周フレーム (wrapWindowFrame →
-// buildPanelBoxImpl を直接呼ぶ)。
+// usage / PR 状態)、大面積の diff / job パネル + job 詳細、画面最外周フレーム (WrapWindowFrame →
+// BuildPanelBoxImpl を直接呼ぶ)。
 //
 // 影の適用経緯: 大面積 popup への全面シャドウは「面積が大きく影が主張しすぎる」で一度導入 →
 // revert した (4fb36a2) が、その後影の描画がフェザー付き近黒に作り直され、ユーザー要望
 // (2026-07-29) で diff / job / PR パネルへ再導入し全ポップアップを統一した。影なしの
 // buildPanelBox 変種はこの統一で呼び出しゼロになったため削除済み (必要になったら git 履歴から
 // 復活させる)。最外周フレームは画面端の余白セルにだけ影を落としコンテンツと重ならない (issue 025)。
-// 枠線は ansiDim (種別色で枠を染める通知の箱は github.com/jiikko/dotfiles/src/tuikit/toast が自分で組む)。
-func buildShadowPanelBox(title string, rows []string, width int, colored bool) []string {
-	return buildPanelBoxImpl(title, rows, width, colored, layout.PanelStyle{Border: layout.BorderLight, Color: ansiDim})
+// 枠線は AnsiDim (種別色で枠を染める通知の箱は github.com/jiikko/dotfiles/src/tuikit/toast が自分で組む)。
+func BuildShadowPanelBox(title string, rows []string, width int, colored bool) []string {
+	return BuildPanelBoxImpl(title, rows, width, colored, layout.PanelStyle{Border: layout.BorderLight, Color: AnsiDim})
 }
 
-// wrapWindowFrame は画面全体のコンテンツ (リスト + overlay 群を合成済みの window) を、最外周に
+// WrapWindowFrame は画面全体のコンテンツ (リスト + overlay 群を合成済みの window) を、最外周に
 // 余白を残した枠 + 右下ドロップシャドウで包み「板がターミナル地色の上に浮いている」見た目にする
-// (issue 025)。影の幾何は buildPanelBoxImpl(shadow=true) へ完全委譲する (影の実装は 1 箇所に保つ)。
+// (issue 025)。影の幾何は BuildPanelBoxImpl(shadow=true) へ完全委譲する (影の実装は 1 箇所に保つ)。
 // 返す行数 = len(content) + 4 (上余白 + 上辺 + 下辺 + 下影)。左右余白 1 桁ずつ + 影 1 桁で、
 // footprint は termW に収まる (呼び出し側の contentWidth()/frameVOverhead と一致)。
-// 罫線は ansiFrameBorder (scratch と同じマゼンタ) で染める。落ち影は中立 dim のまま
-// (buildShadowPanelBox の方針と同じ。トーストが枠だけ種別色にして影を据え置いたのと同型)。
-func wrapWindowFrame(content []string, termW int, colored bool) []string {
+// 罫線は AnsiFrameBorder (scratch と同じマゼンタ) で染める。落ち影は中立 dim のまま
+// (BuildShadowPanelBox の方針と同じ。トーストが枠だけ種別色にして影を据え置いたのと同型)。
+func WrapWindowFrame(content []string, termW int, colored bool) []string {
 	// -2 = 左右余白 1 桁ずつ。二重罫線 (ユーザー要望)。左余白 1 桁は indent で組み立てに
 	// 織り込む (全行を " "+l で作り直すと 8.3 KB/frame を捨てる。layout.PanelStyle.Indent の doc)
-	box := buildPanelBoxImpl("", content, termW-2, colored,
-		layout.PanelStyle{Border: layout.BorderDouble, Color: ansiFrameBorder, Indent: 1})
+	box := BuildPanelBoxImpl("", content, termW-2, colored,
+		layout.PanelStyle{Border: layout.BorderDouble, Color: AnsiFrameBorder, Indent: 1})
 	out := make([]string, 0, len(box)+1)
 	out = append(out, "") // 上余白 1 行 (端末地色)
 	return append(out, box...)
 }
 
-// withScrollbar は buildShadowPanelBox に渡す本文行の右端に 1 桁のスクロールバー列を足す。
-// boxWidth は buildShadowPanelBox に渡すのと同じ幅を受け取り、本文幅は layout.PanelContentWidth で出す
+// WithScrollbar は BuildShadowPanelBox に渡す本文行の右端に 1 桁のスクロールバー列を足す。
+// boxWidth は BuildShadowPanelBox に渡すのと同じ幅を受け取り、本文幅は layout.PanelContentWidth で出す
 // (影の 1 桁と最小幅を引いた幅。広く数えるとバー列が枠の clip に食われて消える)。
-func withScrollbar(rows []string, boxWidth, total, offset int, colored bool) []string {
+func WithScrollbar(rows []string, boxWidth, total, offset int, colored bool) []string {
 	return layout.Scrollbar(rows, layout.PanelContentWidth(boxWidth), total, offset, colored)
 }
 
-// buildPanelBoxImpl は tuikit layout.Panel に glogx の影の色 (テーマの近黒) を渡して板を組む。
+// BuildPanelBoxImpl は tuikit layout.Panel に glogx の影の色 (テーマの近黒) を渡して板を組む。
 // 呼び出し元は小面積モーダル (confirm.Box 経由の action モーダル / usage / PR 状態)、
-// 大面積の diff / job パネル + job 詳細、画面最外周フレーム (wrapWindowFrame)、zoom の演出枠。
-func buildPanelBoxImpl(title string, rows []string, width int, colored bool, st layout.PanelStyle) []string {
-	st.Shadow = ansiShadowFg
+// 大面積の diff / job パネル + job 詳細、画面最外周フレーム (WrapWindowFrame)、zoom の演出枠。
+func BuildPanelBoxImpl(title string, rows []string, width int, colored bool, st layout.PanelStyle) []string {
+	st.Shadow = AnsiShadowFg
 	return layout.Panel(title, rows, width, colored, st)
 }
 
-func cursorMark(colored bool) string {
-	return paint("❯ ", ansiBold, colored)
+func CursorMark(colored bool) string {
+	return Paint("❯ ", AnsiBold, colored)
 }
 
 // カーソル溝: 全リスト行の行頭に確保する 2 桁のマージン。カーソル行だけ「→ 」が入り、
 // 他の行は空白 (行ごとのガタつきを避けるため全行で幅を揃える)。
 const (
-	cursorGutterMark  = "→ "
-	cursorGutterBlank = "  "
-	cursorGutterWidth = 2
+	CursorGutterMark  = "→ "
+	CursorGutterBlank = "  "
+	CursorGutterWidth = 2
 )

@@ -21,6 +21,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
+	"glogx/internal/term"
 )
 
 type urlPicker struct {
@@ -123,7 +124,7 @@ func (p *urlPicker) paste(s string) {
 	if !p.active {
 		return
 	}
-	s = strings.Join(strings.Fields(sanitizePlainLine(s)), "")
+	s = strings.Join(strings.Fields(term.SanitizePlainLine(s)), "")
 	if s == "" {
 		return
 	}
@@ -162,14 +163,14 @@ func promptWindow(prompt string, line *lineedit.Line, width int) (text string, c
 func (p *urlPicker) lines(o issuesRenderOpts) []string {
 	text, _ := promptWindow(urlPickerPrompt, &p.line, o.width)
 	head := []string{
-		paint(clipToWidth(urlPickerPrompt+text, o.width), ansiBold, o.colored),
-		paint(clipToWidth(fmt.Sprintf("%d/%d 件  ctrl+n/p: 移動  ctrl+h: 1 字消す  Enter: 開く  Esc: 戻る",
-			len(p.match), len(p.urls)), o.width), ansiDim, o.colored),
+		term.Paint(term.ClipToWidth(urlPickerPrompt+text, o.width), term.AnsiBold, o.colored),
+		term.Paint(term.ClipToWidth(fmt.Sprintf("%d/%d 件  ctrl+n/p: 移動  ctrl+h: 1 字消す  Enter: 開く  Esc: 戻る",
+			len(p.match), len(p.urls)), o.width), term.AnsiDim, o.colored),
 		"",
 	}
 	rows := max(o.page-len(head), 1)
 	if len(p.match) == 0 {
-		return append(head, paint(clipToWidth("一致する URL がありません", o.width), ansiDim, o.colored))
+		return append(head, term.Paint(term.ClipToWidth("一致する URL がありません", o.width), term.AnsiDim, o.colored))
 	}
 	// 窓は状態 (offset) で持ち、カーソルが窓を出たときだけ動かす (issues 一覧と同じ規律。以前は
 	// カーソルから毎回導出していて、下端を越えた後に上へ戻すと窓が 1 行ずつ戻った。issue 666)
@@ -178,10 +179,10 @@ func (p *urlPicker) lines(o issuesRenderOpts) []string {
 	for i := p.offset; i < min(p.offset+rows, len(p.match)); i++ {
 		text := p.urls[p.match[i]]
 		if i != p.cursor {
-			out = append(out, clipToWidth(cursorGutterBlank+text, o.width))
+			out = append(out, term.ClipToWidth(term.CursorGutterBlank+text, o.width))
 			continue
 		}
-		out = append(out, o.paintCursorRow(text, o.width, ansiBold))
+		out = append(out, o.paintCursorRow(text, o.width, term.AnsiBold))
 	}
 	return out
 }

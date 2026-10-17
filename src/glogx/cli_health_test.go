@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 func TestParseClaudeAuthStatus(t *testing.T) {
@@ -476,7 +477,7 @@ func TestBrowseStartupShowsCLIHealthWarningsInView(t *testing.T) {
 		m.toast.Advance()
 	}
 
-	out := stripANSI(m.View().Content)
+	out := term.StripANSI(m.View().Content)
 	for _, want := range []string{
 		"claude が見つかりません (Claude Code をインストールしてください)",
 		"codex がログアウト状態です (codex login で再ログイン)",

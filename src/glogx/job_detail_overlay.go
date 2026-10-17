@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"glogx/internal/term"
 )
 
 // jobDetailOverlay は job 詳細 (annotations / ログ tail) の第 2 ポップアップの状態と描画。
@@ -105,11 +106,11 @@ func (o *jobDetailOverlay) boxLines(width int, colored bool, spinner, name, key 
 	title := " " + name + " "
 	switch {
 	case o.cache.loading(key):
-		body = []string{paint(spinner+" 詳細を取得中...", ansiDim, colored)}
+		body = []string{term.Paint(spinner+" 詳細を取得中...", term.AnsiDim, colored)}
 	default:
 		lines := o.lines(key)
 		if len(lines) == 0 {
-			body = []string{paint("(詳細なし)", ansiDim, colored)}
+			body = []string{term.Paint("(詳細なし)", term.AnsiDim, colored)}
 			break
 		}
 		// 描画で確定した行数・窓で論理 offset を収束させる (理由は listnav.Pager.Clamp の doc)
@@ -121,8 +122,8 @@ func (o *jobDetailOverlay) boxLines(width int, colored bool, spinner, name, key 
 			body = append(body, decorateDetailLine(l, colored))
 		}
 		title = fmt.Sprintf(" %s [%d-%d/%d] ", name, start+1, end, len(lines))
-		// j/k スクロール中の現在位置を視覚化する (withScrollbar が影付き枠の本文幅を補正する)。
-		body = withScrollbar(body, width, len(lines), start, colored)
+		// j/k スクロール中の現在位置を視覚化する (term.WithScrollbar が影付き枠の本文幅を補正する)。
+		body = term.WithScrollbar(body, width, len(lines), start, colored)
 	}
-	return buildShadowPanelBox(title, body, width, colored)
+	return term.BuildShadowPanelBox(title, body, width, colored)
 }

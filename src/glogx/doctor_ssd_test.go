@@ -11,6 +11,7 @@ import (
 	"doctor/docker"
 	"doctor/ssd"
 	"doctor/svc"
+	"glogx/internal/term"
 )
 
 // fakeSSDDiskutil / fakeSSDSmartctl は実機の出力 (2026-09-29) を必要な欄に絞ったもの。
@@ -188,7 +189,7 @@ func TestDoctorTabBarKeepsAllTabsAtNarrowWidth(t *testing.T) {
 			v.tab = active
 			v.ssd.SMART = st
 			line := v.tabBarLine(o)
-			if w := dispWidth(line); w > o.width {
+			if w := term.DispWidth(line); w > o.width {
 				t.Fatalf("タブ行が幅 %d を超えた (%d 桁): %q", o.width, w, line)
 			}
 			if strings.Contains(line, "…") {
@@ -243,7 +244,7 @@ func TestDoctorTabBarCompactsBeforeShortNames(t *testing.T) {
 	o := doctorTestOpts(20)
 	o.width = 1000
 	padded := strings.TrimSuffix(v.tabBarLine(o), "  (tab / h l で切替)")
-	o.width = dispWidth(padded) - 1 // 空白ありでは入らず、空白を詰めれば入る
+	o.width = term.DispWidth(padded) - 1 // 空白ありでは入らず、空白を詰めれば入る
 	line := v.tabBarLine(o)
 	if !strings.Contains(line, "ディスク") || strings.Contains(line, "…") {
 		t.Fatalf("幅 %d: 空白を詰める段を飛ばした: %q (空白あり %q)", o.width, line, padded)

@@ -14,6 +14,7 @@ import (
 	"ratelimit/usage"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 func TestBrowseCopyURL(t *testing.T) {
@@ -247,7 +248,7 @@ func TestBrowseDiffOpenScrollClose(t *testing.T) {
 
 // diff ポップアップの本文にスクロールバー列が出ても枠が崩れない (全行が同じ表示幅) ことと、
 // 全行が収まるときはバー列が出ないこと (TestJobDetailBoxLinesScrollbar の diff 版。
-// withScrollbar の単体テストではなく描画経路 boxLines で幅の均一性を見る)。
+// term.WithScrollbar の単体テストではなく描画経路 boxLines で幅の均一性を見る)。
 func TestDiffBoxLinesScrollbar(t *testing.T) {
 	diffLines := func(n int) []string {
 		out := make([]string, n)
@@ -295,8 +296,8 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 	o.cache.store(commit.SHA, diffLines(rows-2), commit.SHA)
 	o.pager.Offset = 0
 	fit := o.boxLines(width, false, "", commit, rows)
-	if w := uniformWidth(t, fit); w != dispWidth(stripANSI(box[0])) {
-		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, dispWidth(stripANSI(box[0])))
+	if w := uniformWidth(t, fit); w != term.DispWidth(term.StripANSI(box[0])) {
+		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, term.DispWidth(term.StripANSI(box[0])))
 	}
 	for i, l := range fit[1 : len(fit)-2] {
 		if strings.Contains(l, layout.ScrollbarThumb) {
@@ -306,7 +307,7 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 }
 
 // pager overlay の描画は offset を「窓 (total-rows)」へ再クランプすること。offset はキー処理側
-// (pagerScrollKey 等) がその時点の rows でクランプするが、G で末尾へ行った後にリサイズで rows が
+// (term.PagerScrollKey 等) がその時点の rows でクランプするが、G で末尾へ行った後にリサイズで rows が
 // 増えると保存済み offset が窓の上限を越えたまま残る。描画側で clampScrollOffset を通さないと、
 // 広がった分の行を使わず末尾数行だけの箱になる (status viewer の pagerBox と同じ規律)。
 func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
@@ -455,11 +456,11 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	if m.handleKey(" "); m.diffOv.pager.Animating() && !m.ticking {
 		t.Fatal("glide 中なのに tick チェーンが無い (実機では中途位置で固まる)")
 	}
-	for range scrollAnimFrames {
+	for range term.ScrollAnimFrames {
 		m.diffOv.advanceGlide()
 	}
 	if m.diffOv.pager.Animating() {
-		t.Errorf("%d フレームで glide が着地しない", scrollAnimFrames)
+		t.Errorf("%d フレームで glide が着地しない", term.ScrollAnimFrames)
 	}
 	view := m.View().Content
 	if !strings.Contains(view, diffLines[len(diffLines)-1]) {
@@ -481,7 +482,7 @@ func TestBrowseDiffEmptyShowsMessage(t *testing.T) {
 	if m.diffOv.sha == "" {
 		t.Fatal("空 diff でポップアップが閉じてしまった (エラーではないので開いたままが仕様)")
 	}
-	if v := stripANSI(m.View().Content); !strings.Contains(v, "diff はありません") {
+	if v := term.StripANSI(m.View().Content); !strings.Contains(v, "diff はありません") {
 		t.Fatalf("空 diff の案内が出ていない:\n%s", v)
 	}
 }
@@ -685,7 +686,7 @@ func TestBrowsePRStatusFlow(t *testing.T) {
 		BaseRefName: "master", HeadRefName: "f/new",
 	}})
 	m.details[sha] = []CheckDetail{{Name: "lint", State: StateFailure}}
-	v := stripANSI(m.View().Content)
+	v := term.StripANSI(m.View().Content)
 	for _, want := range []string{"PR #12: new feature", "OPEN", "f/new → master", "APPROVED", "CONFLICTING", "CI: ❌", "1 job 失敗"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("PR ポップアップに %q が無い:\n%s", want, v)
@@ -746,7 +747,7 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 	releaseKey(m)
 	m.handleKey("P")
 	m.Update(prStatusMsg{sha: sha, status: nil})
-	if !strings.Contains(stripANSI(m.View().Content), "紐づく PR はありません") {
+	if !strings.Contains(term.StripANSI(m.View().Content), "紐づく PR はありません") {
 		t.Fatal("PR なしの表示が出ない")
 	}
 }
@@ -783,7 +784,7 @@ func TestBrowseCopyJobContextFocusMovedDropsCopy(t *testing.T) {
 }
 
 // 回帰 (レビュー確定 medium security): コピー時に job 名/URL の端末制御シーケンス (OSC52 等) を
-// 除去する。stripANSI 単体は OSC を残すため sanitizeDetailLine と併用している。
+// 除去する。term.StripANSI 単体は OSC を残すため term.SanitizeDetailLine と併用している。
 func TestBrowseCopyJobContextSanitizesHeader(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
@@ -881,7 +882,7 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	if !m.usageOv.visible {
 		t.Fatal("viewer 表示中の U で usage が開かない")
 	}
-	if out := stripANSI(m.View().Content); !strings.Contains(out, "5h") {
+	if out := term.StripANSI(m.View().Content); !strings.Contains(out, "5h") {
 		t.Fatalf("usage が viewer の窓へ合成されていない:\n%s", out)
 	}
 	// 一覧と同じ語彙: 次のキーで引っ込む
@@ -1234,7 +1235,7 @@ func TestIssuesViewerCursorArrowNotDoubled(t *testing.T) {
 		})
 		m.issuesOv.finishAnim() // 開く演出中は行が流し込み途中で出ない
 		var cursorRow string
-		for _, ln := range strings.Split(stripANSI(m.View().Content), "\n") {
+		for _, ln := range strings.Split(term.StripANSI(m.View().Content), "\n") {
 			if strings.Contains(ln, "alpha") {
 				cursorRow = ln
 			}
@@ -1242,11 +1243,11 @@ func TestIssuesViewerCursorArrowNotDoubled(t *testing.T) {
 		if cursorRow == "" {
 			t.Fatalf("colored=%v: カーソル行が描かれていない", colored)
 		}
-		if n := strings.Count(cursorRow, cursorGutterMark[:len(cursorGutterMark)-1]); n != 1 {
+		if n := strings.Count(cursorRow, term.CursorGutterMark[:len(term.CursorGutterMark)-1]); n != 1 {
 			t.Errorf("colored=%v: カーソル行の矢印が %d 本 (want 1): %q", colored, n, strings.TrimRight(cursorRow, " "))
 		}
 		// 溝は 2 桁ぶんだけ (矢印 + 空白)。番号がその直後から始まる
-		if !strings.HasPrefix(strings.TrimLeft(cursorRow, " "), cursorGutterMark+"030") {
+		if !strings.HasPrefix(strings.TrimLeft(cursorRow, " "), term.CursorGutterMark+"030") {
 			t.Errorf("colored=%v: 溝の幅がずれている: %q", colored, strings.TrimRight(cursorRow, " "))
 		}
 	}
@@ -1286,7 +1287,7 @@ func TestIssuesViewerNotifiesViaToast(t *testing.T) {
 		m.toast.Advance()
 	}
 	// viewer は全画面なので、トーストを合成しないと画面に出ない
-	if out := stripANSI(m.View().Content); !strings.Contains(out, "コピーしました") {
+	if out := term.StripANSI(m.View().Content); !strings.Contains(out, "コピーしました") {
 		t.Errorf("viewer の上にトーストが載っていない:\n%s", out)
 	}
 	// ヘッダー行には出さない (トーストと二重に出さない)

@@ -4,11 +4,12 @@
 
 ## ファイルの地図
 
-`package main` フラットな 1 package (理由は下の「構造の判断」)。責務のまとまりごとに:
+`package main` が中心で、画面ごとに `internal/` のパッケージへ割っている途中 (issue 742。下の「構造の判断」)。責務のまとまりごとに:
 
 - `main.go` / `options.go` — エントリポイント・CLI フラグ (`Options`)
 - `tui.go` — Bubble Tea の状態機械本体 (`browseModel`)。git log の対話ブラウズ
-- `render.go` / `width.go` / `box.go` — 描画層。コミット行の整形・幅計算 (`dispWidth`)・枠のレイアウト純関数
+- `internal/term/` — 描画の土台 (画面のパッケージと main の両方が使う)。`render.go` は ANSI 色と `Paint` / 切り詰め・折り返しの純関数、`width.go` は幅計算 (`term.DispWidth`。tuikit termwidth の別名)、`box.go` は枠のレイアウト純関数、`terminal.go` は termsafe の入口、`scroll_glide.go` は glide のキー語彙、`hint_items.go` は最下行の案内の詰め (`term.FitHintItems`)。🚨 main の宣言を import できない (main は下位から import できない) ので、ここへ main の型を持ち込まない
+- `render.go` — コミット行の整形 (git log の行。`gitlog.go` / `github.go` の型を使うので main に残す)
 - `gitlog.go`, `gitlog_watch.go` — git log の取得 (制御文字レコードでコミット境界を識別) と外部変更の監視
 - `watch_chain.go` — fsnotify のイベント待ち + 保険のポーリングの 2 本のチェーンの札 (git log と issues viewer の見張りが共有)
 - `github.go`, `cache.go` — CI 状態の GraphQL 取得とローカルキャッシュ
@@ -27,9 +28,8 @@
 - `cmd/issue-claim/` — `bin/issue-claim` の main (claim の目印とバナーを付ける。本体は `issues.MoveToSubdir` = viewer の `n` と同じ)
 - `ime.go`, `ime_tis_darwin.go`, `ime_tis_stub.go` — ブラウズ中の IME 英数切替 (macOS TIS 直接呼び出し)
 - `url_picker.go` — issue 本文 URL のピッカー (本文 pager で `u`)
-- `zoom.go`, `scroll_glide.go`, `hint_surfaces.go` — 開閉演出・スクロール滑走・最下行ヒントの共有ロジック
+- `zoom.go`, `hint_surfaces.go` — 開閉演出・最下行ヒントの共有ロジック
 - `autobuild.go`, `cleanup_latch.go`, `probe.go`, `fullscreen.go` — 自動再ビルド通知・終了前の完了待ち latch・計測フック・全画面ビューアの排他制御
-- `terminal.go` — termsafe の main 側の入口
 - `open_workspace.go` — `e` で nvim を repo root で起動
 - `line_cache.go` — diff / job / status が共有する行キャッシュと取得の単発化
 - `issues/` — 独立パッケージ。issue markdown の探索・分類・parse・本文整形 (glogx 本体に非依存)
@@ -44,11 +44,12 @@
 
 ## 不変条件は lint / test が正本 (ここにもコードにも再掲しない)
 
-render.go の純粋描画層・幅計算の単一出典・stdout / 時刻のシーム・外部プロセスの WaitDelay・switch の網羅は `.golangci.yml` (depguard / forbidigo / exhaustive) / `gorules/rules.go` (gocritic の ruleguard。🚨 **glogx 直下に置くと package 名衝突で型検査されない**ので独立ディレクトリ。`make lint` が `go vet -tags ruleguard ./gorules` も回す。issue 202) / `waitdelay_discipline_test.go` / `clock_rollback_test.go` (永続キャッシュの鮮度判定に時計の巻き戻しガードを強制。issue 201) / `hint_width_test.go` (最下行の hint が幅に収まること。収まらないと**抜ける手段が案内から消える**) が強制し、理由もそこに書いてある。新しい規律を足すときも、まず lint / test で強制できないかを考える (`~/.claude/rules/comment-no-restate-enforced.md`)。
+render.go (main と `internal/term` の両方) の純粋描画層・幅計算の単一出典・stdout / 時刻のシーム・外部プロセスの WaitDelay・switch の網羅は `.golangci.yml` (depguard / forbidigo / exhaustive) / `gorules/rules.go` (gocritic の ruleguard。🚨 **glogx 直下に置くと package 名衝突で型検査されない**ので独立ディレクトリ。`make lint` が `go vet -tags ruleguard ./gorules` も回す。issue 202) / `waitdelay_discipline_test.go` / `clock_rollback_test.go` (永続キャッシュの鮮度判定に時計の巻き戻しガードを強制。issue 201) / `hint_width_test.go` (最下行の hint が幅に収まること。収まらないと**抜ける手段が案内から消える**) が強制し、理由もそこに書いてある。新しい規律を足すときも、まず lint / test で強制できないかを考える (`~/.claude/rules/comment-no-restate-enforced.md`)。
 
 ## 構造の判断 (lint では守れないもの)
 
-- flat な `package main` は意図的。サブパッケージを切る基準は「実在する第二消費者」か「明示的な分離要望」(issues/ の前例。usage / subproc / atomicfile は第二消費者 = ratelimit ができたので独立 module へ出した)。行数や責務の見た目で割らない (README「glog との共通コード分離について」)
+- サブパッケージを切る基準は「実在する第二消費者」か「明示的な分離要望」(issues/ の前例。usage / subproc / atomicfile は第二消費者 = ratelimit ができたので独立 module へ出した)。行数や責務の見た目で割らない (README「glog との共通コード分離について」)。`internal/` への画面ごとの分割は明示的な分離要望 (issue 742。ビルドキャッシュの増え方を減らすため。順番・罠・計測は issue 742 が正本)
+- 🚨 移したファイルを cwd 相対で読むテストは、移すと読めずに **Skip / 0 件で緑** になりうる (`internal/term/box_test.go` の theme/colors.yml は `../../` → `../../../../` に直した)。移す前に `".."` と `testdata` を grep する
 - main から下位パッケージへ値・規律を共有したくなったら独立パッケージへ出す。main は下位から import できず、置くと「値を写す」運用になる (subproc がその教訓: issue 105)
 - 外部由来の文字列 (git / CI ログ / issue markdown / ファイル名) は表示前に termsafe を入口で 1 回通す。出所ごとに書き分けると漏れる (issue markdown と git status のパスが実際に漏れた / doctor の live 経路が 1 度も通っていなかった = issue 228)
   - termsafe は **`src/termsafe` の独立 module** (各 module が replace で取り込む)。doctor 側の CLI (`bin/diskdoctor` / `bin/svcdoctor`) は **stdout へ直接書く**ので、TUI と違って描画層による後段の落としが無い = そちらこそ関門が要る、というのが分離の理由

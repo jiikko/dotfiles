@@ -74,7 +74,7 @@ linters:
     depguard:
       rules:
         width-single-source:
-          # 幅計算の唯一の出典は termwidth.Of (= ansi.StringWidth。main では dispWidth の別名)。runewidth は
+          # 幅計算の唯一の出典は termwidth.Of (= ansi.StringWidth。main では term.DispWidth の別名)。runewidth は
           # East Asian ambiguous (罫線・ブロック・…) を locale 依存で 2 桁と数えるため、
           # 混在すると枠計算とテストのアサートが実行環境依存でずれる (issue 027: LANG=ja_JP で
           # テスト 12 件が落ちていた)。production/テストとも import を禁止して構造的に防ぐ。
@@ -82,7 +82,7 @@ linters:
             - "**/*.go"
           deny:
             - pkg: github.com/mattn/go-runewidth
-              desc: 幅は termwidth.Of (ansi.StringWidth) で測る (locale 非依存。main では dispWidth 別名)
+              desc: 幅は termwidth.Of (ansi.StringWidth) で測る (locale 非依存。main では term.DispWidth 別名)
         # uniseg は本体から一切使わない。**幅だけでなく分割も** x/ansi に一本化したため
         # (termwidth.FirstCluster。issue 124)。以前は「分割にだけ使う」として render.go /
         # issues/wrap.go を除外していたが、分割器が 2 本ある限り列不変条件は閉じなかった
@@ -101,7 +101,7 @@ linters:
             - "!**/tools/width-probe/main.go"
           deny:
             - pkg: github.com/rivo/uniseg
-              desc: 分割も幅も termwidth に一本化した (termwidth.FirstCluster / dispWidth)。uniseg は使わない (issue 124)
+              desc: 分割も幅も termwidth に一本化した (termwidth.FirstCluster / term.DispWidth)。uniseg は使わない (issue 124)
         render-pure:
           # render.go は「状態 → 文字列」の純粋な描画層。I/O・プロセス起動・非同期を
           # 持ち込むと TUI (毎フレーム呼ばれる) の性能とテスト容易性が壊れる

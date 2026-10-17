@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"glogx/internal/term"
 	"glogx/issues"
 )
 
@@ -179,7 +180,7 @@ func TestComposeDrawer(t *testing.T) {
 
 	out := layout.ComposeDrawer(base, panel, 10, 20, false)
 	for i, ln := range out {
-		if w := dispWidth(ln); w != 20 {
+		if w := term.DispWidth(ln); w != 20 {
 			t.Errorf("行 %d の幅 = %d, want 20 (合成で幅が変わってはいけない)", i, w)
 		}
 	}
@@ -229,11 +230,11 @@ func TestIssuesViewDrawerIntegration(t *testing.T) {
 	if !strings.Contains(out, "▏") {
 		t.Errorf("引き出しの境界が出ていない:\n%s", out)
 	}
-	if !strings.Contains(stripANSI(out), v.open.Rel) {
+	if !strings.Contains(term.StripANSI(out), v.open.Rel) {
 		t.Errorf("本文のヘッダーが出ていない:\n%s", out)
 	}
 	// 🚨 下地は一覧のヘッダー (タブ) であって本文のヘッダーではない
-	if strings.Count(stripANSI(out), v.open.Rel) != 1 {
+	if strings.Count(term.StripANSI(out), v.open.Rel) != 1 {
 		t.Errorf("本文のヘッダーが下地にも出ている:\n%s", out)
 	}
 
@@ -291,9 +292,9 @@ func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
 
 	// 境界の桁位置 = 引き出しの幅。無ければ -1。
 	edge := func() int {
-		for _, ln := range strings.Split(stripANSI(m.View().Content), "\n") {
+		for _, ln := range strings.Split(term.StripANSI(m.View().Content), "\n") {
 			if i := strings.Index(ln, "▏"); i >= 0 {
-				return dispWidth(ln[:i])
+				return term.DispWidth(ln[:i])
 			}
 		}
 		return -1

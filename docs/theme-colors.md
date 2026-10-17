@@ -16,7 +16,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 | 通知 (bell/メッセージ) | シアン 51 (稀なイベントの ping) | bell セル反転・message-style (alert 帯/: プロンプト)・copy-mode current match | — |
 | マーカー (未保存) | 橙 208 | copy-mode mark 行 | `palette.bright_orange` (incline ● のみ) |
 | 選択バー (bufferline) | — (pill 化で廃止 2026-07-17) | — | slant 系スタイルではインジケータバー自体が描画されない。選択の強調は pill のキャップ (現在地色) が担う。indicator_selected のクリーム light1 指定は非 slant へ戻したとき用に残置 (橙系は蛍光橙地 202 と近接して不可視になるため使わない、の判断ごと保存) |
-| 点滅/scratch アイデンティティ | マゼンタ 201 | prefix/SCRATCH 点滅・scratch チップ/popup 枠 (fade hot 201 と紛れるなら 213 へ。ライブ判断) | — (nvim では未使用。glogx の最外周フレーム罫線が同色 = `src/glogx/render.go` の `ansiFrameBorder`。Go なので定数は共有できず手書きコピー) |
+| 点滅/scratch アイデンティティ | マゼンタ 201 | prefix/SCRATCH 点滅・scratch チップ/popup 枠 (fade hot 201 と紛れるなら 213 へ。ライブ判断) | — (nvim では未使用。glogx の最外周フレーム罫線が同色 = `src/glogx/internal/term/render.go` の `term.AnsiFrameBorder`。Go なので定数は共有できず手書きコピー) |
 | 危険/警告状態 | 赤 160 (zoom) / 196 (sync) | `@zoom-accent` / pane-border sync | `palette.diag.error_bg` (診断は coc 踏襲の別系統) / pro-con の選択の枠も 196 (ユーザーの指定。pro-con の警告 (停滞・dispatcher が止まっている・ビルド失敗。`ui/view.go` の sgrRed) と同じ番号。見分けは形 (枠か文字か) で付ける) |
 | アクティブ pane | 緑 46 (枠・ACTIVE 帯) / terminal 既定地 (=プロファイルの暖色) | pane-active-border / `window-active-style bg=terminal` | — (nvim は自前で地を塗る) |
 | 地色 | 234 (pane/エディタ) / 235 (バー) | `window-style` bg / status-style bg | retrobox Normal bg=234 / `palette.dark0_hard` (bufferline fill)。**両ツールの地は 234 で揃っている**。bufferline の非選択タブ pill だけ一段浮かせた dark0 (235) = tmux バー地と同段 |
@@ -28,7 +28,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
   tmux / nvim は設定言語が別で定数を共有できないため下記の各定数が手書きのまま残るが、
   `tests/theme/test_theme_colors.sh` (make test に含まれる) が yml との一致を機械検証する
   (色を変えるときは yml → 生成 → 各定数の順で揃える。ズレたらテストが落ちる)
-- **Go (glogx / pro-con)**: Go の生成器は無く、番号を手で写している。glogx は `src/glogx/render.go` の `ansiFrameBorder` を
+- **Go (glogx / pro-con)**: Go の生成器は無く、番号を手で写している。glogx は `src/glogx/internal/term/render.go` の `term.AnsiFrameBorder` を
   `TestFrameBorderMatchesThemeYML` が、pro-con は `src/pro-con/ui/style.go` の `col*` を `TestThemeColorsMatchYML` が yml と突き合わせる
   (pro-con は `col*` の外に番号を書くと `TestNoThemeColorLiterals` が落とす)。pro-con は `quantity_yellow` (214) を「要対応」の色に使っている
   (yml に要対応の role は無い。issue 770)

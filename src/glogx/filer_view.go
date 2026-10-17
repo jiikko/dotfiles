@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/term"
 	"treefiler/filer"
 )
 
@@ -195,10 +196,10 @@ func (v *filerView) lines(width, page int) []string {
 
 // hint は最下行の案内。抜ける手段 (F / q) を先に置き、幅で切る (glogx-ui-guide §5: 抜ける手段は必ず残す)。
 func (v *filerView) hint(width int) string {
-	return fitHintItems(width, []hintItem{
-		{text: "F: 閉じる", prio: 1},
-		{text: "q: glogx を終了", prio: 2},
-		{text: "キーは src/treefiler/README.md", prio: 5},
+	return term.FitHintItems(width, []term.HintItem{
+		{Text: "F: 閉じる", Prio: 1},
+		{Text: "q: glogx を終了", Prio: 2},
+		{Text: "キーは src/treefiler/README.md", Prio: 5},
 	})
 }
 

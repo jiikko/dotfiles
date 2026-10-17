@@ -8,7 +8,7 @@ package main
 // 入れる」形にする。🚨 枠だけを開いて最後に中身を出す形にしない: 最後のフレームだけ中身が
 // パッと現れる段差が出る (実装前に両方の中間フレームを描いて選定した 2026-08-01)。
 //
-// 🚨 枠は buildPanelBoxImpl で組む (最外周フレーム wrapWindowFrame と同じ関数)。自前で罫線を
+// 🚨 枠は term.BuildPanelBoxImpl で組む (最外周フレーム term.WrapWindowFrame と同じ関数)。自前で罫線を
 // 描くと、開き切る瞬間に本物の枠と字形・影・内側余白がずれて「最後にガタつく」。同じ関数を
 // 通せば、開き切った姿がそのまま本物になる。
 //
@@ -22,6 +22,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"glogx/internal/term"
 )
 
 const (
@@ -111,7 +112,7 @@ func (z *appZoom) scale(now time.Time) float64 {
 // zoomWindow は画面 lines を割合 scale の姿へ変換する (1 = そのまま)。
 //
 // 中身は実画面の**左上**から切り出して枠へ入れる (枠自体は中央から開く)。切り出しは表示幅で
-// 行う (ANSI を壊さないよう dropToColumn / truncateKeepANSI を通す)。
+// 行う (ANSI を壊さないよう term.DropToColumn / term.TruncateKeepANSI を通す)。
 //
 // 左上アンカーにしている理由 (ユーザー要望 2026-08-13): 当初は縦横とも中央アンカーだったが、
 // コミット一覧のテキストは左上寄せなので、小さい枠のうちは「画面中央の空白 (行の右半分)」を
@@ -122,7 +123,7 @@ func (z *appZoom) scale(now time.Time) float64 {
 // 🚨 framed は「実画面が最外周フレームを持つか」。持たない画面 (--no-frame / 小さい端末) で
 // 演出だけ枠を描くと、開き切った瞬間に枠が消える段差が出る。実画面に合わせて枠の有無を決める。
 //
-// 🚨 framed のとき lines は wrapWindowFrame 適用**後**の画面 (finishWindow の呼び出し順)。
+// 🚨 framed のとき lines は term.WrapWindowFrame 適用**後**の画面 (finishWindow の呼び出し順)。
 // 素朴に lines[0] から切り出すと「上余白 + 実画面自身の枠の角 + 左の ║ 列」が演出枠の内側に
 // 入れ子で映る (二重罫線。敵対的レビューで実フレーム描画により検出 2026-08-13)。演出枠が
 // 実枠の代役なので、実枠のクローム分をスキップして中身だけを映す。
@@ -133,7 +134,7 @@ func zoomWindow(lines []string, scale float64, width int, colored, framed bool) 
 	}
 	boxW := max(min(int(math.Round(float64(width)*scale)), width), layout.PanelMinWidth)
 	boxH := max(min(int(math.Round(float64(h)*scale)), h), appZoomMinRows)
-	// buildPanelBoxImpl は右 1 桁を影に使い、返す行数は 中身 + 3 (上辺 + 下辺 + 下影)
+	// term.BuildPanelBoxImpl は右 1 桁を影に使い、返す行数は 中身 + 3 (上辺 + 下辺 + 下影)
 	inner, innerH := boxW, boxH // 枠なしは切り出した中身がそのまま演出フレームになる
 	if framed {
 		inner, innerH = layout.PanelContentWidth(boxW), max(boxH-3, 1)
@@ -155,17 +156,17 @@ func zoomWindow(lines []string, scale float64, width int, colored, framed bool) 
 	for i := range innerH {
 		src := ""
 		if j := srcTop + i; j < min(h, maxRow) {
-			src = truncateKeepANSI(dropToColumn(lines[j], srcLeft), maxCols)
+			src = term.TruncateKeepANSI(term.DropToColumn(lines[j], srcLeft), maxCols)
 		}
 		rows = append(rows, src)
 	}
 	box := rows
 	if framed {
-		box = buildPanelBoxImpl("", rows, boxW, colored,
-			layout.PanelStyle{Border: layout.BorderDouble, Color: ansiFrameBorder})
+		box = term.BuildPanelBoxImpl("", rows, boxW, colored,
+			layout.PanelStyle{Border: layout.BorderDouble, Color: term.AnsiFrameBorder})
 	}
 	out := make([]string, h)
-	pad := padSpaces(max((width-boxW)/2, 0))
+	pad := term.PadSpaces(max((width-boxW)/2, 0))
 	top := max((h-len(box))/2, 0)
 	for i, l := range box {
 		if y := top + i; y < h {

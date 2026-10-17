@@ -15,6 +15,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"time"
 
+	"glogx/internal/term"
 	"ratelimit/usage"
 )
 
@@ -75,9 +76,9 @@ type ratelimitRenderOpts struct {
 func (d *ratelimitDash) lines(o ratelimitRenderOpts) []string {
 	head := []string{d.headerLine(o), ""}
 	if note := fetchNote(o.snap, o.staleErr); note != "" {
-		head[1] = paint(centerLine(note, o.width), ansiYellow, o.colored)
+		head[1] = term.Paint(centerLine(note, o.width), term.AnsiYellow, o.colored)
 	} else if o.waiting != "" {
-		head[1] = paint(centerLine(o.waiting, o.width), ansiDim, o.colored)
+		head[1] = term.Paint(centerLine(o.waiting, o.width), term.AnsiDim, o.colored)
 	}
 	body := max(o.page-len(head), 1)
 	switch {
@@ -115,33 +116,33 @@ func (d *ratelimitDash) lines(o ratelimitRenderOpts) []string {
 func (d *ratelimitDash) headerLine(o ratelimitRenderOpts) string {
 	title := "Claude Code"
 	if o.snap != nil {
-		if v := sanitizePlainLine(o.snap.Version); v != "" {
+		if v := term.SanitizePlainLine(o.snap.Version); v != "" {
 			title += " v" + v
 		}
 		if o.snap.HasCodex() {
 			title += " + codex"
-			if v := sanitizePlainLine(o.snap.CodexVersion); v != "" {
+			if v := term.SanitizePlainLine(o.snap.CodexVersion); v != "" {
 				title += " v" + v
 			}
 		}
 	}
-	return paint(centerLine(title+" · ratelimit", o.width), ansiDim, o.colored)
+	return term.Paint(centerLine(title+" · ratelimit", o.width), term.AnsiDim, o.colored)
 }
 
 // hint は最下行のキー案内。
 // hint は最下行の案内。
 //
-// 🚨 width を受けて fitHintItems を通すこと (issue 279)。固定文字列だと 70 桁あり、
+// 🚨 width を受けて term.FitHintItems を通すこと (issue 279)。固定文字列だと 70 桁あり、
 // 最小サポート幅 (frameMinWidth=60 のとき予算 58) で切り詰められ、さらに狭いと
 // 出口 `R/q/esc/h: 閉じる` が完全に消える。全画面かつ rlDashSwallow で裏へキーを
 // 通さないので、出口が消えると抜け方が分からなくなる。
 func (d *ratelimitDash) hint(width int) string {
-	return fitHintItems(width, []hintItem{
-		{"r: 今すぐ更新", 3},
-		{"i: issues", 4},
-		{"s: status", 4},
-		{"R/q/esc/h: 閉じる", 1},
-		{"(毎分自動更新)", 5},
+	return term.FitHintItems(width, []term.HintItem{
+		{Text: "r: 今すぐ更新", Prio: 3},
+		{Text: "i: issues", Prio: 4},
+		{Text: "s: status", Prio: 4},
+		{Text: "R/q/esc/h: 閉じる", Prio: 1},
+		{Text: "(毎分自動更新)", Prio: 5},
 	})
 }
 
@@ -193,11 +194,11 @@ func (d *ratelimitDash) takeWantCross() fullScreenID {
 // 狭い端末で width を超え、フレームが自動 OFF になる帯 (frameMinWidth 未満) ではクリップも
 // 効かないので折り返して画面が崩れる (セルフレビュー指摘 2026-09-01)。
 func centerLine(s string, w int) string {
-	pad := w - dispWidth(s)
+	pad := w - term.DispWidth(s)
 	if pad <= 0 {
-		return clipToWidth(s, w)
+		return term.ClipToWidth(s, w)
 	}
-	return padSpaces(pad/2) + s
+	return term.PadSpaces(pad/2) + s
 }
 
 // errString は err の文字列 (nil は空)。比較できる鍵に error を載せるときに使う。

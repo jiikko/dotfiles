@@ -16,6 +16,7 @@ import (
 	"doctor/svc"
 	"doctor/testtmp"
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
+	"glogx/internal/term"
 	"glogx/issues"
 	"subproc"
 )
@@ -79,7 +80,7 @@ func joinDoctorCleanup(t *testing.T) {
 // t.Setenv("XDG_CACHE_HOME", ...) は従来どおり上書きできる。
 //
 // 幅 env のガードもここに置く: RUNEWIDTH_EASTASIAN が真だと幅系テストが 20 本以上まとめて
-// 落ち、しかも「dispWidth(\"→\") = 2; want 1」のような期待値の話に見えるが、実体は glogx が
+// 落ち、しかも「term.DispWidth(\"→\") = 2; want 1」のような期待値の話に見えるが、実体は glogx が
 // この env を支持していないこと (罫線・ブロックが幅 2 になり枠が 2 倍近くに膨らむ。issue 054)。
 // 意味の分からない赤を量産する代わりに、理由を 1 度だけ言って止める (env をわざと立てる
 // TestDispWidthAgreesUnderEastAsianEnv は termwidth パッケージ側にあり、そちらの TestMain が除外する)。
@@ -379,9 +380,9 @@ func withFailedJob(m *browseModel, idx int, checkID int64, state CIState) {
 // コピーされていた。issue 030)。
 func uniformWidth(t *testing.T, box []string) int {
 	t.Helper()
-	w := dispWidth(stripANSI(box[0]))
+	w := term.DispWidth(term.StripANSI(box[0]))
 	for i, l := range box {
-		if got := dispWidth(stripANSI(l)); got != w {
+		if got := term.DispWidth(term.StripANSI(l)); got != w {
 			t.Fatalf("行 %d の表示幅 = %d, 他の行 = %d: %q", i, got, w, l)
 		}
 	}

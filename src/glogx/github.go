@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"glogx/internal/term"
 	"subproc"
 )
 
@@ -61,9 +62,9 @@ func (e *GHError) Warning() string {
 	case GHNotAuthenticated:
 		return "glogx: gh が未認証のため CI 状態を取得できません (gh auth login)"
 	case GHRateLimited:
-		return "glogx: GitHub API の rate limit に達しています: " + sanitizePlainLine(firstLine(e.Detail))
+		return "glogx: GitHub API の rate limit に達しています: " + term.SanitizePlainLine(firstLine(e.Detail))
 	default:
-		return "glogx: CI 状態の取得に失敗しました: " + sanitizePlainLine(firstLine(e.Detail))
+		return "glogx: CI 状態の取得に失敗しました: " + term.SanitizePlainLine(firstLine(e.Detail))
 	}
 }
 
@@ -448,7 +449,7 @@ func pickBestPR(nodes []PRRef) *PRRef {
 	// 受け取った時点で平文にしておく (issue 417)。PR ポップアップの y (コピー) は FetchPRStatus の
 	// 別の経路で、そちらはコピーする直前に無害化している
 	pr := *best
-	pr.URL = sanitizePlainLine(pr.URL)
+	pr.URL = term.SanitizePlainLine(pr.URL)
 	return &pr
 }
 
@@ -544,10 +545,10 @@ func detailsOf(rollup *rollupPayload) []CheckDetail {
 		// job 名は GitHub Actions の workflow YAML 由来でユーザーが自由に付けられる = 絵文字が
 		// 入りうる。panelLines は job 名をそのまま枠の中に置くので、VS16 付き絵文字が残ると
 		// 枠と本文の幅が食い違う (git 由来テキストは gitlog.go の 2 入口、CI ログ由来は
-		// sanitizeDetailLine で既に正規化済みだが、job 名だけ経路が抜けていた)。
-		name := dropEmojiVS16(node.Name)
+		// term.SanitizeDetailLine で既に正規化済みだが、job 名だけ経路が抜けていた)。
+		name := term.DropEmojiVS16(node.Name)
 		if name == "" {
-			name = dropEmojiVS16(node.Context)
+			name = term.DropEmojiVS16(node.Context)
 		}
 		if name == "" {
 			name = "(unnamed)"
@@ -565,9 +566,9 @@ func detailsOf(rollup *rollupPayload) []CheckDetail {
 		// ブラウザへ流れるので、ここで 1 回だけ無害化する (コピーする側ごとに無害化すると片方が漏れる。
 		// issue 417: copyFocusURL が生の url をクリップボードへ入れていた)。url は色も要らないので平文にする
 		details = append(details, CheckDetail{
-			Name:      sanitizeDetailLine(name),
+			Name:      term.SanitizeDetailLine(name),
 			State:     nodeState(node),
-			URL:       sanitizePlainLine(url),
+			URL:       term.SanitizePlainLine(url),
 			CheckID:   node.DatabaseID,
 			Duration:  duration,
 			StartedAt: node.StartedAt,
@@ -657,7 +658,7 @@ func FetchJobDetail(ctx context.Context, run CommandRunner, repo Repo, check Che
 //
 // 出力形式の違いは logTail が吸収する: gh run view の "job名<TAB>step名<TAB>" プレフィックスは
 // 付かず (SplitN が 3 分割にならず素通り)、行頭の ISO タイムスタンプは logTimestampRe が落とす。
-// 先頭の UTF-8 BOM も sanitizeDetailLine が制御文字として除去する。
+// 先頭の UTF-8 BOM も term.SanitizeDetailLine が制御文字として除去する。
 func fetchJobLogTail(ctx context.Context, run CommandRunner, repo Repo, id string) ([]string, *GHError) {
 	stdout, stderr, err := run(ctx, "gh", "api",
 		fmt.Sprintf("repos/%s/%s/actions/jobs/%s/logs", repo.Owner, repo.Name, id))
@@ -714,7 +715,7 @@ func fetchJobSteps(ctx context.Context, run CommandRunner, repo Repo, jobID stri
 		if !s.StartedAt.IsZero() && !s.CompletedAt.IsZero() {
 			duration = s.CompletedAt.Sub(s.StartedAt)
 		}
-		line := glyph + " " + sanitizeDetailLine(s.Name)
+		line := glyph + " " + term.SanitizeDetailLine(s.Name)
 		if d := formatDuration(duration); d != "" {
 			line += " (" + d + ")"
 		}
@@ -781,10 +782,10 @@ func annotationLines(stdout []byte) []string {
 	lines := make([]string, 0, len(annotations)*2) // head + message 1 行以上/件
 	for _, a := range annotations {
 		// Level / Path も CI 側が制御する表示文字列なので無害化を通す
-		head := sanitizeDetailLine(fmt.Sprintf("[%s] %s:%d", a.Level, a.Path, a.StartLine))
+		head := term.SanitizeDetailLine(fmt.Sprintf("[%s] %s:%d", a.Level, a.Path, a.StartLine))
 		lines = append(lines, head)
 		for msg := range strings.SplitSeq(strings.TrimRight(a.Message, "\n"), "\n") {
-			lines = append(lines, "  "+sanitizeDetailLine(msg))
+			lines = append(lines, "  "+term.SanitizeDetailLine(msg))
 		}
 	}
 	return lines
@@ -873,7 +874,7 @@ var logTimestampRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\
 
 // logTail は gh run view --log の出力から末尾 n 行を取り出す。各行の
 // "job名<TAB>step名<TAB>" プレフィックスとタイムスタンプは表示幅の邪魔なので落とし、
-// 残りは sanitizeDetailLine で枠描画を壊す制御文字を無害化する。
+// 残りは term.SanitizeDetailLine で枠描画を壊す制御文字を無害化する。
 //
 // 入力は []byte のまま受ける (ExecRunner が MB 級ログの string 再コピーを避けて []byte を
 // 返す最適化を尊重する)。整形 (tab 剥がし + sanitize + regex) は末尾 n 非空行にだけ掛ける:
@@ -896,7 +897,7 @@ func logTail(out []byte, n int) []string {
 		if parts := strings.SplitN(line, "\t", 3); len(parts) == 3 {
 			line = parts[2]
 		}
-		line = sanitizeDetailLine(line)
+		line = term.SanitizeDetailLine(line)
 		line = logTimestampRe.ReplaceAllString(line, "")
 		lines = append(lines, line)
 	}

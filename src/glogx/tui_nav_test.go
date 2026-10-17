@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 func TestBrowseCursorNavigation(t *testing.T) {
@@ -53,7 +54,7 @@ func TestBrowseWrapUsesFullWidth(t *testing.T) {
 		t.Errorf("折り返しで文字が欠けた: あ が %d 文字 (want 38)\n%s", got, view)
 	}
 	for line := range strings.SplitSeq(view, "\n") {
-		if w := dispWidth(line); w > m.width {
+		if w := term.DispWidth(line); w > m.width {
 			t.Errorf("幅超過 (%d > %d): %q", w, m.width, line)
 		}
 	}
@@ -336,7 +337,7 @@ func TestJapaneseFullViewStaysInWidth(t *testing.T) {
 	}, m.detailKey())
 	m.openJobDetail()
 	for line := range strings.SplitSeq(m.View().Content, "\n") {
-		if w := dispWidth(line); w > m.width {
+		if w := term.DispWidth(line); w > m.width {
 			t.Errorf("幅超過 (%d > %d): %q", w, m.width, line)
 		}
 	}
@@ -350,11 +351,11 @@ func TestJapaneseFullViewStaysInWidth(t *testing.T) {
 func TestBgLineReappliesAfterShortReset(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.colored = true
-	got := m.bgLine("\x1b[33mcommit abc\x1b[m subject", ansiCursorBg)
-	if !strings.Contains(got, "\x1b[m"+ansiCursorBg) {
+	got := m.bgLine("\x1b[33mcommit abc\x1b[m subject", term.AnsiCursorBg)
+	if !strings.Contains(got, "\x1b[m"+term.AnsiCursorBg) {
 		t.Fatalf("短縮形リセット後に bg が張り直されない: %q", got)
 	}
-	if !strings.HasSuffix(got, ansiReset) || !strings.Contains(got, "  ") {
+	if !strings.HasSuffix(got, term.AnsiReset) || !strings.Contains(got, "  ") {
 		t.Fatalf("行末までの padding が無い: %q", got)
 	}
 }
@@ -385,7 +386,7 @@ func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
 	view := strings.Split(m.View().Content, "\n")
 	var authorLine, cursorHeader, otherHeader string
 	for _, l := range view {
-		if strings.HasPrefix(stripANSI(l), cursorGutterBlank+"Author: ") && authorLine == "" {
+		if strings.HasPrefix(term.StripANSI(l), term.CursorGutterBlank+"Author: ") && authorLine == "" {
 			authorLine = l
 		}
 		if strings.Contains(l, "commit "+m.commits[0].SHA) {
@@ -399,27 +400,27 @@ func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
 		t.Fatalf("期待行が見つからない:\n%s", m.View().Content)
 	}
 	// 全行にカーソル溝 2 桁のマージンがあり、カーソル行だけ「→ 」が入る
-	if !strings.HasPrefix(stripANSI(cursorHeader), cursorGutterMark) {
-		t.Errorf("カーソル行が %q で始まっていない: %q", cursorGutterMark, cursorHeader)
+	if !strings.HasPrefix(term.StripANSI(cursorHeader), term.CursorGutterMark) {
+		t.Errorf("カーソル行が %q で始まっていない: %q", term.CursorGutterMark, cursorHeader)
 	}
-	if !strings.HasPrefix(stripANSI(otherHeader), cursorGutterBlank) {
+	if !strings.HasPrefix(term.StripANSI(otherHeader), term.CursorGutterBlank) {
 		t.Errorf("非カーソル行に溝の空白マージンがない: %q", otherHeader)
 	}
-	if !strings.Contains(cursorHeader, ansiCursorBg) {
+	if !strings.Contains(cursorHeader, term.AnsiCursorBg) {
 		t.Errorf("カーソル行に bg 塗りがない: %q", cursorHeader)
 	}
-	if strings.Contains(otherHeader, ansiCursorBg) {
+	if strings.Contains(otherHeader, term.AnsiCursorBg) {
 		t.Errorf("非カーソル行に bg が付いている: %q", otherHeader)
 	}
 	// bg は行内のリセット後も維持される (途切れると sha の直後で塗りが切れる)
-	if strings.Contains(cursorHeader, ansiReset+" ") && !strings.Contains(cursorHeader, ansiReset+ansiCursorBg) {
+	if strings.Contains(cursorHeader, term.AnsiReset+" ") && !strings.Contains(cursorHeader, term.AnsiReset+term.AnsiCursorBg) {
 		t.Errorf("リセット後に bg が張り直されていない: %q", cursorHeader)
 	}
 	// 色なしは bg が使えないため「→ 」のみに degrade (溝は全行にあるのでずれない)
 	m.colored = false
 	m.invalidateLines()
-	if !strings.Contains(m.View().Content, cursorGutterMark) {
-		t.Errorf("NO_COLOR で %q マーカーが出ていない", cursorGutterMark)
+	if !strings.Contains(m.View().Content, term.CursorGutterMark) {
+		t.Errorf("NO_COLOR で %q マーカーが出ていない", term.CursorGutterMark)
 	}
 }
 
@@ -502,7 +503,7 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"pullAnimating", func(m *browseModel) { m.pullAnimating = true }},
 		{"pushAnimating", func(m *browseModel) { m.pushAnimating = true }},
 		{"pushSlides", func(m *browseModel) { m.pushSlides = map[string]time.Time{"a": time.Now()} }},
-		{"scrollAnim", func(m *browseModel) { m.glide.Start(0, 1, scrollAnimFrames) }},
+		{"scrollAnim", func(m *browseModel) { m.glide.Start(0, 1, term.ScrollAnimFrames) }},
 		{"toast.animating", func(m *browseModel) { m.toast.Show("x", true) }}, // 積んだ直後は入場のスライド中
 		{"awaitCI", func(m *browseModel) { m.awaitCI = map[string]bool{"a": true} }},
 		{"detailsLoading", func(m *browseModel) { m.detailsLoading["a"] = true }},

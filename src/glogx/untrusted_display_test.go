@@ -14,6 +14,7 @@ import (
 	"doctor/disk"
 	"doctor/docker"
 	"doctor/svc"
+	"glogx/internal/term"
 	"glogx/issues"
 	"ratelimit/usage"
 )
@@ -105,18 +106,18 @@ func TestToastAndWarningAreSanitized(t *testing.T) {
 
 // 色なしモードでは外部由来の SGR も枠へ通さない。
 //
-// paint も scrollbarColumn も colored=false のとき reset を出さないので、閉じていない SGR が
+// term.Paint も scrollbarColumn も colored=false のとき reset を出さないので、閉じていない SGR が
 // 1 行でもあると padding・枠・スクロールバー列・後続行まで属性が続く (NO_COLOR 起動時に
 // 「以降が全部消える」形の画面破壊になる)。
 func TestPanelBoxDropsANSIWhenNotColored(t *testing.T) {
 	rows := []string{"\x1b[41;30m閉じていない SGR", "無関係な次の行"}
-	for _, line := range buildShadowPanelBox(" title ", rows, 40, false) {
+	for _, line := range term.BuildShadowPanelBox(" title ", rows, 40, false) {
 		if strings.Contains(line, "\x1b") {
 			t.Errorf("色なしモードなのに ANSI が枠へ出た: %q", line)
 		}
 	}
 	// 色ありモードでは従来どおり通す (色を出すのが仕事なので落とさない)
-	got := strings.Join(buildShadowPanelBox(" title ", rows, 40, true), "\n")
+	got := strings.Join(term.BuildShadowPanelBox(" title ", rows, 40, true), "\n")
 	if !strings.Contains(got, "\x1b[41;30m") {
 		t.Errorf("色ありモードで外部の SGR まで落とした: %q", got)
 	}

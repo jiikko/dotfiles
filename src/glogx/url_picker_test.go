@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"glogx/internal/term"
 	"strings"
 	"testing"
 )
@@ -140,7 +141,7 @@ func TestURLPickerCtrlHDeletesChar(t *testing.T) {
 		t.Errorf("空からさらに消して壊れた: query=%q match=%d", p.query(), len(p.match))
 	}
 	// 案内にも出す
-	if out := stripANSI(strings.Join(p.lines(issuesRenderOpts{width: testPopupWidth, page: 8}), "\n")); !strings.Contains(out, "ctrl+h") {
+	if out := term.StripANSI(strings.Join(p.lines(issuesRenderOpts{width: testPopupWidth, page: 8}), "\n")); !strings.Contains(out, "ctrl+h") {
 		t.Errorf("ヘッダーに ctrl+h の案内が無い:\n%s", out)
 	}
 }
@@ -164,21 +165,21 @@ func TestURLPickerLines(t *testing.T) {
 	p.handleKey("b")
 	o := issuesRenderOpts{width: testPopupWidth, page: 8} // popup の実幅
 	out := p.lines(o)
-	joined := stripANSI(strings.Join(out, "\n"))
+	joined := term.StripANSI(strings.Join(out, "\n"))
 	if !strings.Contains(joined, "URL 検索: b") {
 		t.Errorf("検索語が出ない:\n%s", joined)
 	}
 	if !strings.Contains(joined, "1/3 件") {
 		t.Errorf("件数が出ない:\n%s", joined)
 	}
-	// 🚨 cursorGutterMark[:1] で数えない: "→" は 3 バイトなので先頭バイトだけを数えることになり、
+	// 🚨 term.CursorGutterMark[:1] で数えない: "→" は 3 バイトなので先頭バイトだけを数えることになり、
 	// 切り詰めの "…" など他のマルチバイト文字にも一致する (実際に誤検出した)
-	arrow := strings.TrimSuffix(cursorGutterMark, " ")
+	arrow := strings.TrimSuffix(term.CursorGutterMark, " ")
 	if n := strings.Count(joined, arrow); n != 1 {
 		t.Errorf("選択の矢印が %d 本 (want 1):\n%s", n, joined)
 	}
 	for i, ln := range out {
-		if w := dispWidth(stripANSI(ln)); w > o.width {
+		if w := term.DispWidth(term.StripANSI(ln)); w > o.width {
 			t.Errorf("行 %d が幅を超えた (w=%d): %q", i, w, ln)
 		}
 	}
@@ -196,7 +197,7 @@ func TestURLPickerWindowFollowsCursor(t *testing.T) {
 		p.handleKey("ctrl+n")
 	}
 	sel := p.selected()
-	out := stripANSI(strings.Join(p.lines(issuesRenderOpts{width: 60, page: 10}), "\n"))
+	out := term.StripANSI(strings.Join(p.lines(issuesRenderOpts{width: 60, page: 10}), "\n"))
 	if !strings.Contains(out, sel) {
 		t.Errorf("選択行 %q が描かれていない:\n%s", sel, out)
 	}
@@ -214,7 +215,7 @@ func TestURLPickerWindowStaysWhileCursorInside(t *testing.T) {
 	o := issuesRenderOpts{width: 60, page: 8} // ヘッダー 3 行 + 一覧 5 行
 	first := func() string {
 		lines := p.lines(o)
-		return strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(lines[3], cursorGutterMark), cursorGutterBlank))
+		return strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(lines[3], term.CursorGutterMark), term.CursorGutterBlank))
 	}
 	for range 7 {
 		p.handleKey("down")

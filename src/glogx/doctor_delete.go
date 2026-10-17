@@ -29,6 +29,7 @@ import (
 
 	"doctor/disk"
 	"doctor/runner"
+	"glogx/internal/term"
 )
 
 // doctorDelete は削除の状態機械。confirm → running → result の 3 相。
@@ -111,7 +112,7 @@ func (s *deleteScroll) window(o doctorRenderOpts, all []string, avail int) []str
 	}
 	out := make([]string, 0, view+1)
 	out = append(out, all[s.offset:s.offset+view]...)
-	return append(out, doctorColor(o.colored, ansiDim,
+	return append(out, doctorColor(o.colored, term.AnsiDim,
 		fmt.Sprintf(" … %s (j/k で送る)", strings.Join(parts, " / "))))
 }
 
@@ -444,7 +445,7 @@ func doctorPhaseWord(p disk.DeletePhase) string {
 // deleteProgressLines は進捗を 2 行で描く (1 行目: 何番目のエントリか / 2 行目: 相 + 経過)。
 //
 // 🚨 **スピナーと経過秒を 2 行目に置くのは幅のため。** 1 行に詰めると、エントリ名が長い +
-// 端末が狭いときに truncateDisp が**末尾から**削るので、「動いている」ことを示す手がかり
+// 端末が狭いときに term.TruncateDisp が**末尾から**削るので、「動いている」ことを示す手がかり
 // (スピナー・経過) が最初に消える。固まって見える問題を直すための表示が、狭い端末でだけ
 // 消えるのでは意味がない (ユーザー選定 2026-09-04: 候補 4 案からこの形)。
 //
@@ -541,7 +542,7 @@ func (v *doctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 	}
 	if ev.prog != nil {
 		next := *ev.prog
-		next.label = sanitizePlainLine(next.label) // エントリ名は Result 由来 = 外部の文字列
+		next.label = term.SanitizePlainLine(next.label) // エントリ名は Result 由来 = 外部の文字列
 		// 同じ相の続きなら基準を据え置く (経過が 0 に戻らないように)
 		if next.sameStep(v.del.progress) {
 			next.since = v.del.progress.since
@@ -561,7 +562,7 @@ func (v *doctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 	}
 	v.del.preparing, v.del.running = false, false
 	if ev.err != "" {
-		v.del.err = sanitizePlainLine(ev.err)
+		v.del.err = term.SanitizePlainLine(ev.err)
 		return nil
 	}
 	rep := disk.SanitizeDeleteReportForDisplay(*ev.rep)
@@ -1077,14 +1078,14 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 // (同意の対象と実行の対象を一致させる。削除側が issue 245 で学んだのと同じ規律)。
 func cmdConfirmLines(o doctorRenderOpts, acts []doctorCmdAction) (blocks [][]string, tail []string) {
 	for _, a := range acts {
-		b := []string{"▸ " + doctorColor(o.colored, ansiBold, a.Label), "  $ " + a.Cmd}
+		b := []string{"▸ " + doctorColor(o.colored, term.AnsiBold, a.Label), "  $ " + a.Cmd}
 		if a.Note != "" {
-			for i, w := range wrapToWidth(a.Note, max(20, o.width-8)) {
+			for i, w := range term.WrapToWidth(a.Note, max(20, o.width-8)) {
 				pre := "  🚨 "
 				if i > 0 {
 					pre = "     "
 				}
-				b = append(b, doctorColor(o.colored, ansiYellow, pre+w))
+				b = append(b, doctorColor(o.colored, term.AnsiYellow, pre+w))
 			}
 		}
 		blocks = append(blocks, b)
@@ -1097,7 +1098,7 @@ func cmdConfirmLines(o doctorRenderOpts, acts []doctorCmdAction) (blocks [][]str
 func cmdResultLines(o doctorRenderOpts, rep cmdRunReport, plan []doctorCmdAction, log []string) []string {
 	head := fmt.Sprintf("%d 件すべて成功しました", len(rep.Records))
 	if f := rep.failed(); f > 0 {
-		head = doctorColor(o.colored, ansiYellow, fmt.Sprintf("%d 件中 %d 件が失敗しました", len(rep.Records), f))
+		head = doctorColor(o.colored, term.AnsiYellow, fmt.Sprintf("%d 件中 %d 件が失敗しました", len(rep.Records), f))
 	}
 	if n := len(plan) - len(rep.Records); n > 0 {
 		// 中断で走らなかったぶん。0 件に畳まず「走っていない」と言う
@@ -1440,7 +1441,7 @@ func deleteMethodWord(method string) string {
 func deleteLabelWidth(entries []disk.EntryOutcome, width int) int {
 	w := 0
 	for _, e := range entries {
-		w = max(w, dispWidth(e.Label))
+		w = max(w, term.DispWidth(e.Label))
 	}
 	return max(8, min(w, width-deleteRowFixedW))
 }
@@ -1448,7 +1449,7 @@ func deleteLabelWidth(entries []disk.EntryOutcome, width int) int {
 // deleteWordW は行の最後の列 (語) に充てている幅。
 // 🚨 語の出典は deleteMethodWord **と** doctorPlanOutcomeWord / doctorOutcomeWord の両方。
 // 今の最長は「📋 コマンド」= 2+1+10 = 13 で収まっているが、これを超える語を足すと
-// ラベルの予算が破れ、行末の truncateDisp が**語そのもの**を切る (語が最後の列なので)。
+// ラベルの予算が破れ、行末の term.TruncateDisp が**語そのもの**を切る (語が最後の列なので)。
 // 全語彙が収まっているかは TestDeleteVocabulary が見る
 const deleteWordW = 13
 
@@ -1456,13 +1457,13 @@ const deleteWordW = 13
 const deleteRowFixedW = 1 + 8 + 2 + 2 + deleteWordW
 
 func padLabel(label string, w int) string {
-	label = truncateDisp(label, w, "…")
-	return label + padSpaces(w-dispWidth(label))
+	label = term.TruncateDisp(label, w, "…")
+	return label + term.PadSpaces(w-term.DispWidth(label))
 }
 
 // deleteNote はラベル列の下に付く補足 (dim)。1 行 = 1 件の契約なので改行は入れない。
 func deleteNote(o doctorRenderOpts, s string) string {
-	return doctorColor(o.colored, ansiDim, padSpaces(deleteNoteIndent)+s)
+	return doctorColor(o.colored, term.AnsiDim, term.PadSpaces(deleteNoteIndent)+s)
 }
 
 // deleteNoteIndent は deleteNote の字下げ幅 (パスの予算計算に要る)。
@@ -1477,7 +1478,7 @@ const deleteNoteIndent = 11
 // 本文を**行単位の窓**で見せる: 塊単位で落とす形だと、1 つの塊が窓より大きいときに
 // 本文が丸ごと消える (issue 241)。sc == nil (結果パネル) は従来どおり塊単位で落とす。
 func assembleDeletePanel(o doctorRenderOpts, title string, blocks [][]string, tail []string, sc *deleteScroll) []string {
-	head := []string{" " + doctorColor(o.colored, ansiBold, title), ""}
+	head := []string{" " + doctorColor(o.colored, term.AnsiBold, title), ""}
 	room := max(o.page-len(head), 1)
 	// 末尾は**後ろから**優先して残す。tail の並びは「捨ててよい順」= 空行 → 補足 → 合計 → 操作の説明
 	kept := tail
@@ -1495,7 +1496,7 @@ func assembleDeletePanel(o doctorRenderOpts, title string, blocks [][]string, ta
 		out = append(out, sc.window(o, all, avail)...)
 		out = append(out, kept...)
 		for i, l := range out {
-			out[i] = truncateDisp(l, o.width, "…")
+			out[i] = term.TruncateDisp(l, o.width, "…")
 		}
 		return layout.PadTo(out, o.page)
 	}
@@ -1517,7 +1518,7 @@ func assembleDeletePanel(o doctorRenderOpts, title string, blocks [][]string, ta
 		shown++
 	}
 	if elide && avail > 0 {
-		body = append(body, doctorColor(o.colored, ansiDim,
+		body = append(body, doctorColor(o.colored, term.AnsiDim,
 			fmt.Sprintf(" … 他 %d 件は画面に入りません (端末を広げてください)", len(blocks)-shown)))
 	}
 	out := make([]string, 0, len(head)+len(body)+len(kept))
@@ -1525,7 +1526,7 @@ func assembleDeletePanel(o doctorRenderOpts, title string, blocks [][]string, ta
 	out = append(out, body...)
 	out = append(out, kept...)
 	for i, l := range out {
-		out[i] = truncateDisp(l, o.width, "…")
+		out[i] = term.TruncateDisp(l, o.width, "…")
 	}
 	return layout.PadTo(out, o.page)
 }
@@ -1542,9 +1543,9 @@ func tailLines(lines []string, n int) []string {
 
 // doctorPanel は見出し + 本文を全画面に敷く (行数は呼び出し側の lines が padTo で揃える)。
 func doctorPanel(o doctorRenderOpts, title string, body []string) []string {
-	out := []string{" " + doctorColor(o.colored, ansiBold, title), ""}
+	out := []string{" " + doctorColor(o.colored, term.AnsiBold, title), ""}
 	for _, l := range body {
-		out = append(out, truncateDisp(" "+l, o.width, "…"))
+		out = append(out, term.TruncateDisp(" "+l, o.width, "…"))
 	}
 	return out
 }

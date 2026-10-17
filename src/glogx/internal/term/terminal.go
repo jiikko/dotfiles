@@ -1,4 +1,4 @@
-package main
+package term
 
 import (
 	"strings"
@@ -15,20 +15,20 @@ import (
 // ここに別名を置いているのは callsite の量が多い (git / CI / diff の各入口) ためで、
 // 意味は完全に同一。新しい呼び出しはどちらの名前で書いてもよい。
 //
-// 🚨 var でなく func で持つ: sanitizePlainLine は毎フレーム全行から呼ばれる経路
+// 🚨 var でなく func で持つ: SanitizePlainLine は毎フレーム全行から呼ばれる経路
 // (worktreeRow.dispPath) にあり、変数だと間接呼び出しが 1 段挟まる。差し替え点にする意図も無い。
 // (訂正: 7d60537 のコミットメッセージは「fast path がインライン化されない」と書いたが誤り。
 // fast path は termsafe.sanitize の中にあり、sanitize はループを持つため var / func どちらでも
 // インライン化されない — `go build -gcflags=-m ./...` (src/termsafe) の can inline 一覧に載らない。
 // var → func で消えるのは間接呼び出しだけで、効果自体は実在するが理由が違っていた)
-func sanitizeDetailLine(s string) string    { return termsafe.DetailLine(s) }
-func sanitizeLineKeepTabs(s string) string  { return termsafe.LineKeepTabs(s) }
-func sanitizePlainLine(s string) string     { return termsafe.PlainLine(s) }
-func sanitizePlainKeepTabs(s string) string { return termsafe.PlainLineKeepTabs(s) }
-func dropEmojiVS16(s string) string         { return termsafe.DropEmojiVS16(s) }
+func SanitizeDetailLine(s string) string    { return termsafe.DetailLine(s) }
+func SanitizeLineKeepTabs(s string) string  { return termsafe.LineKeepTabs(s) }
+func SanitizePlainLine(s string) string     { return termsafe.PlainLine(s) }
+func SanitizePlainKeepTabs(s string) string { return termsafe.PlainLineKeepTabs(s) }
+func DropEmojiVS16(s string) string         { return termsafe.DropEmojiVS16(s) }
 
-// isCopySafe はクリップボードへ生のまま入れてよいか (issue 753)。タブだけは通す: group 名にタブを含む
+// IsCopySafe はクリップボードへ生のまま入れてよいか (issue 753)。タブだけは通す: group 名にタブを含む
 // 実例を生でコピーする決定があり (TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice)、
 // 貼っても補完が動く程度で端末の解釈を変えない。ESC・改行 (貼った瞬間にコマンドが走る)・C1・BiDi は断る。
 // 🚨 「無害化の結果と一致するか」で判定しない: 無害化は絵文字の VS16 も落とすので、⚠️ を含む名前まで断る。
-func isCopySafe(s string) bool { return termsafe.IsPlain(strings.ReplaceAll(s, "\t", "")) }
+func IsCopySafe(s string) bool { return termsafe.IsPlain(strings.ReplaceAll(s, "\t", "")) }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"glogx/internal/term"
 	"strings"
 	"testing"
 	"time"
@@ -41,7 +42,7 @@ func TestBrowseCodexUpdateFlow(t *testing.T) {
 		t.Fatalf("updateBeginMsg で codex update が始まらない: updating=%v", m.actModal.updatingTargets())
 	}
 	m.width, m.height = 80, 20
-	if v := stripANSI(m.View().Content); !strings.Contains(v, "codex update") {
+	if v := term.StripANSI(m.View().Content); !strings.Contains(v, "codex update") {
 		t.Fatal("codex update 実行中モーダルが描画されない")
 	}
 	// updateMsg (codex) の結果トーストは CLI 名を前置して claude と区別できる

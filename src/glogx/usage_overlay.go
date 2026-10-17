@@ -11,6 +11,7 @@ import (
 	"ratelimit/usage"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 // usageMsg は /usage の非同期取得結果 (右上オーバーレイ用)。2 つの形がある:
@@ -375,13 +376,13 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 	snap := o.view(spinner)
 	switch {
 	case o.err != nil:
-		rows = []string{paint("取得失敗", ansiDim, colored)}
+		rows = []string{term.Paint("取得失敗", term.AnsiDim, colored)}
 	case snap == nil:
-		rows = []string{paint(spinner+" 取得中...", ansiDim, colored)}
+		rows = []string{term.Paint(spinner+" 取得中...", term.AnsiDim, colored)}
 	default:
 		// CLI バージョンが取れていればタイトルに添える (取得失敗時は空で従来どおり)。
 		// バージョン文字列は外部バイナリの出力なので無害化して枠へ載せる
-		if v := sanitizePlainLine(snap.Version); v != "" {
+		if v := term.SanitizePlainLine(snap.Version); v != "" {
 			title = " Claude Code v" + v + " · usage "
 		}
 		// codex の枠が取れているときだけ "+ codex" を添える (codex 未導入環境や取得失敗時に
@@ -389,7 +390,7 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		// バージョンは Claude 側と同じく取れていれば添える (取得失敗時は名前だけで従来どおり)。
 		if snap.HasCodex() {
 			cx := " + codex"
-			if v := sanitizePlainLine(snap.CodexVersion); v != "" {
+			if v := term.SanitizePlainLine(snap.CodexVersion); v != "" {
 				cx += " v" + v
 			}
 			title = strings.Replace(title, " · usage ", cx+" · usage ", 1)
@@ -401,12 +402,12 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		w := 0
 		for _, g := range groups {
 			for _, r := range g {
-				w = max(w, dispWidth(r))
+				w = max(w, term.DispWidth(r))
 			}
 		}
 		for gi, g := range groups {
 			if gi > 0 {
-				rows = append(rows, paint(strings.Repeat("─", w), ansiDim, colored))
+				rows = append(rows, term.Paint(strings.Repeat("─", w), term.AnsiDim, colored))
 			}
 			rows = append(rows, g...)
 		}
@@ -414,20 +415,20 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		// 差し替わるので、更新中であることは出さない。
 		if note := fetchNote(snap, o.staleErr); note != "" {
 			// 右上の小さな箱を理由の長さで横に広げない (全文は R のダッシュボードに出る)
-			rows = append(rows, paint(clipToWidth(note, max(w, dispWidth(title))), ansiYellow, colored))
+			rows = append(rows, term.Paint(term.ClipToWidth(note, max(w, term.DispWidth(title))), term.AnsiYellow, colored))
 		}
 		footer := usageFooter
-		rows = append(rows, padSpaces(max(w-dispWidth(footer), 0))+paint(footer, ansiDim, colored))
+		rows = append(rows, term.PadSpaces(max(w-term.DispWidth(footer), 0))+term.Paint(footer, term.AnsiDim, colored))
 	}
 	// 枠幅 = 内容の最大表示幅 + 罫線・影の余白。ただし title を切り詰めない幅 (title 幅 + 3。
-	// buildShadowPanelBox が title を fw-2=boxWidth-3 に truncate するため) を最低確保する。
+	// term.BuildShadowPanelBox が title を fw-2=boxWidth-3 に truncate するため) を最低確保する。
 	// 端末幅は超えない。
 	inner := 0
 	for _, r := range rows {
-		inner = max(inner, dispWidth(r))
+		inner = max(inner, term.DispWidth(r))
 	}
-	boxWidth := min(max(inner+layout.PanelChrome, dispWidth(title)+3), width)
-	return buildShadowPanelBox(title, rows, boxWidth, colored)
+	boxWidth := min(max(inner+layout.PanelChrome, term.DispWidth(title)+3), width)
+	return term.BuildShadowPanelBox(title, rows, boxWidth, colored)
 }
 
 // overlayBoxTopRight は box をウィンドウ上部の右端へ重ねる (usage オーバーレイ用)。
@@ -453,7 +454,7 @@ func fetchNote(snap *usage.Snapshot, staleErr error) string {
 	// 上位の事実で、1 行に 2 つの注記は載せない
 	if staleErr != nil {
 		// 全滅の理由は errors.Join (改行区切り。handle)。無害化は改行を詰めて落とすので、先に区切りへ置き換える
-		return "🚨 取得に失敗 (前回の値を表示中): " + sanitizePlainLine(strings.ReplaceAll(staleErr.Error(), "\n", " / "))
+		return "🚨 取得に失敗 (前回の値を表示中): " + term.SanitizePlainLine(strings.ReplaceAll(staleErr.Error(), "\n", " / "))
 	}
 	if snap.ClaudeErr == "" {
 		return ""
@@ -462,5 +463,5 @@ func fetchNote(snap *usage.Snapshot, staleErr error) string {
 	if snap.HasClaude() {
 		head += " (前回の値を表示中)"
 	}
-	return head + ": " + sanitizePlainLine(snap.ClaudeErr)
+	return head + ": " + term.SanitizePlainLine(snap.ClaudeErr)
 }

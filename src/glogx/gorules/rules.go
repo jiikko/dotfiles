@@ -34,7 +34,7 @@ import "github.com/quasilyte/go-ruleguard/dsl"
 // 確保回数のテスト (layout/alloc_test.go) で止めている。
 func padViaPadSpaces(m dsl.Matcher) {
 	m.Match(`strings.Repeat(" ", $n)`).
-		Report(`空白の連結は termwidth.PadSpaces($n) を使う (無確保。main では padSpaces)`)
+		Report(`空白の連結は termwidth.PadSpaces($n) を使う (無確保。main では term.PadSpaces)`)
 }
 
 // execViaForeground: 端末を外のコマンドへ渡す実行は foreground.NewExec の値を tea.Exec に渡す (issue 707)。

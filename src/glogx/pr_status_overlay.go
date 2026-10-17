@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"glogx/internal/term"
+)
 
 // prStatusOverlay は PR 状態ポップアップ (P キー, issue 021) の状態と描画。コミットに紐づく
 // PR の「マージできるか」(draft / レビュー / conflict) をブラウザを開かずに確認する。
@@ -82,20 +85,20 @@ func prStateLabel(pr *PRStatus, colored bool) string {
 	if pr.IsDraft {
 		label += " (draft)"
 	}
-	return paint(label, prStateColor(pr.State), colored)
+	return term.Paint(label, prStateColor(pr.State), colored)
 }
 
 // reviewRow は reviewDecision の表示行。ブランチ保護が無い repo では null ("") が返る。
 func reviewRow(decision string, colored bool) string {
 	switch decision {
 	case "APPROVED":
-		return paint("✓ APPROVED", ansiGreen, colored)
+		return term.Paint("✓ APPROVED", term.AnsiGreen, colored)
 	case "CHANGES_REQUESTED":
-		return paint("✗ CHANGES_REQUESTED", ansiRed, colored)
+		return term.Paint("✗ CHANGES_REQUESTED", term.AnsiRed, colored)
 	case "REVIEW_REQUIRED":
-		return paint("● REVIEW_REQUIRED", ansiYellow, colored)
+		return term.Paint("● REVIEW_REQUIRED", term.AnsiYellow, colored)
 	default:
-		return paint("(レビュー必須ではない)", ansiDim, colored)
+		return term.Paint("(レビュー必須ではない)", term.AnsiDim, colored)
 	}
 }
 
@@ -103,11 +106,11 @@ func reviewRow(decision string, colored bool) string {
 func mergeableRow(mergeable string, colored bool) string {
 	switch mergeable {
 	case "MERGEABLE":
-		return paint("✓ なし (MERGEABLE)", ansiGreen, colored)
+		return term.Paint("✓ なし (MERGEABLE)", term.AnsiGreen, colored)
 	case "CONFLICTING":
-		return paint("✗ あり (CONFLICTING)", ansiRed, colored)
+		return term.Paint("✗ あり (CONFLICTING)", term.AnsiRed, colored)
 	default:
-		return paint("? 計算中 (UNKNOWN)", ansiDim, colored)
+		return term.Paint("? 計算中 (UNKNOWN)", term.AnsiDim, colored)
 	}
 }
 
@@ -121,24 +124,24 @@ func (o *prStatusOverlay) boxLines(width int, colored bool, spinner, ciLine stri
 		width = 80
 	}
 	if o.busy[o.sha] {
-		return buildShadowPanelBox(" PR ", []string{paint(spinner+" PR を取得中...", ansiDim, colored)}, width, colored)
+		return term.BuildShadowPanelBox(" PR ", []string{term.Paint(spinner+" PR を取得中...", term.AnsiDim, colored)}, width, colored)
 	}
 	pr := o.cache[o.sha]
 	if pr == nil {
 		// receive で PR なしが確定したケース (呼び出し側は notice も出すが、開いたままなら枠で示す)
-		return buildShadowPanelBox(" PR ", []string{paint("(紐づく PR はありません)", ansiDim, colored)}, width, colored)
+		return term.BuildShadowPanelBox(" PR ", []string{term.Paint("(紐づく PR はありません)", term.AnsiDim, colored)}, width, colored)
 	}
-	title := fmt.Sprintf(" PR #%d: %s ", pr.Number, sanitizeDetailLine(pr.Title))
+	title := fmt.Sprintf(" PR #%d: %s ", pr.Number, term.SanitizeDetailLine(pr.Title))
 	rows := []string{
 		// ブランチ名も外部由来 (直上の Title と同じ扱いにする)。git は ASCII 制御文字を ref に
 		// 許さないが C1 は許すので、無害化しないと 8bit の OSC/CSI がそのまま流れる
 		prStateLabel(pr, colored) + "  " +
-			paint(sanitizeDetailLine(pr.HeadRefName)+" → "+sanitizeDetailLine(pr.BaseRefName), ansiDim, colored),
+			term.Paint(term.SanitizeDetailLine(pr.HeadRefName)+" → "+term.SanitizeDetailLine(pr.BaseRefName), term.AnsiDim, colored),
 		"レビュー: " + reviewRow(pr.ReviewDecision, colored),
 		"conflict: " + mergeableRow(pr.Mergeable, colored),
 	}
 	if ciLine != "" {
 		rows = append(rows, "CI: "+ciLine)
 	}
-	return buildShadowPanelBox(title, rows, width, colored)
+	return term.BuildShadowPanelBox(title, rows, width, colored)
 }

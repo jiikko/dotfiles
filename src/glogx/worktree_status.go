@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/jiikko/dotfiles/src/tuikit/highlight"
+	"glogx/internal/term"
 	"glogx/issues"
 )
 
@@ -61,9 +62,9 @@ type worktreeRow struct {
 // 出たか、ファイル名に制御文字を使う運用を実際に見たら着手する (敵対的レビュー 2026-08-05)。
 func (r worktreeRow) dispPath() string {
 	if r.orig != "" {
-		return sanitizePlainLine(r.orig) + " → " + sanitizePlainLine(r.path)
+		return term.SanitizePlainLine(r.orig) + " → " + term.SanitizePlainLine(r.path)
 	}
-	return sanitizePlainLine(r.path)
+	return term.SanitizePlainLine(r.path)
 }
 
 // worktreeStatus は git status 1 回分の読み取り結果 (画面が毎回作り直す派生ビューの素)。
@@ -142,7 +143,7 @@ func parseBranchHeader(rec string) (branch, track string) {
 	}
 	// ref 名は ASCII の制御文字しか禁じられておらず、C1 や双方向テキストの制御文字を含む
 	// ブランチは正当に作れる。ヘッダの表示にしか使わないので、ここで平文にする (issue 417)
-	return sanitizePlainLine(rest), sanitizePlainLine(track)
+	return term.SanitizePlainLine(rest), term.SanitizePlainLine(track)
 }
 
 // rowsFor は 1 エントリを表示行へ写像する (spec 2 節の表)。XY の両方が立つ場合だけ 2 行になる。
@@ -206,7 +207,7 @@ var loadWorktreeDiff = func(paths []string, staged, colored bool) ([]string, err
 }
 
 // diffLines は git diff の生出力を表示行へ整える (行数上限・幅の正規化・色付け)。
-// LoadCommitDiff と同じ整形なので、揃えるためにここも sanitizeDetailLine + highlight.Diff を通す。
+// LoadCommitDiff と同じ整形なので、揃えるためにここも term.SanitizeDetailLine + highlight.Diff を通す。
 func diffLines(out string, colored bool) []string {
 	trimmed := strings.TrimRight(out, "\n")
 	if trimmed == "" {
@@ -218,7 +219,7 @@ func diffLines(out string, colored bool) []string {
 			lines = append(lines, "... (これ以降は省略)")
 			break
 		}
-		lines = append(lines, sanitizeDetailLine(line))
+		lines = append(lines, term.SanitizeDetailLine(line))
 	}
 	if colored {
 		lines = highlight.Diff(lines)

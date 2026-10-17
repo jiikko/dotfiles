@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
+	"glogx/internal/term"
 )
 
 // --- ヘルパー ---
@@ -309,7 +310,7 @@ func TestStatusLoadErrorAfterLoadedKeepsLastGood(t *testing.T) {
 	if !strings.Contains(body, "a.go") {
 		t.Fatalf("失敗で last-good の一覧が消えた:\n%s", body)
 	}
-	if !strings.Contains(stripANSI(body), "status 取得失敗") {
+	if !strings.Contains(term.StripANSI(body), "status 取得失敗") {
 		t.Fatalf("古い可能性を示す印がヘッダーに無い:\n%s", body)
 	}
 }
@@ -329,7 +330,7 @@ func TestStatusPathIsSanitizedForDisplayOnly(t *testing.T) {
 	evil := "evil" + esc + "]0;pwned" + bel + ".txt"
 	row := worktreeRow{section: sectionUntracked, code: '?', x: '?', y: '?', path: evil}
 
-	shown := stripANSI(statusPathText(row, 60, false))
+	shown := term.StripANSI(statusPathText(row, 60, false))
 	if hasTerminalControl(shown) {
 		t.Errorf("一覧のパスに制御シーケンスが残った: %q", shown)
 	}
@@ -344,7 +345,7 @@ func TestStatusPathIsSanitizedForDisplayOnly(t *testing.T) {
 	}
 	// rename 行は "元 → 先" の両方が対象
 	rn := worktreeRow{section: sectionStaged, code: 'R', path: "new.txt", orig: evil}
-	if got := stripANSI(statusPathText(rn, 60, false)); hasTerminalControl(got) {
+	if got := term.StripANSI(statusPathText(rn, 60, false)); hasTerminalControl(got) {
 		t.Errorf("rename 元に制御シーケンスが残った: %q", got)
 	}
 }
@@ -363,9 +364,9 @@ func TestStatusNoticeIsSanitized(t *testing.T) {
 // パスが幅を超えるときは basename を残す (末尾から切ると「どのファイルか」が分からない)。
 func TestStatusPathTextKeepsBasename(t *testing.T) {
 	row := worktreeRow{section: sectionUnstaged, path: "src/glogx/deeply/nested/dir/render.go"}
-	got := stripANSI(statusPathText(row, 16, false))
-	if dispWidth(got) > 16 {
-		t.Fatalf("幅 = %d, want <= 16: %q", dispWidth(got), got)
+	got := term.StripANSI(statusPathText(row, 16, false))
+	if term.DispWidth(got) > 16 {
+		t.Fatalf("幅 = %d, want <= 16: %q", term.DispWidth(got), got)
 	}
 	if !strings.HasSuffix(got, "render.go") {
 		t.Fatalf("basename が残っていない: %q", got)
@@ -527,7 +528,7 @@ func TestStatusLinesTwoColumnsWhenWide(t *testing.T) {
 		t.Fatalf("2 カラムの区切りが無い: %q", lines[1])
 	}
 	// ヘッダーは全幅で描く (一覧カラムの中に入れると件数が切り落とされる)
-	head := stripANSI(lines[0])
+	head := term.StripANSI(lines[0])
 	if strings.Contains(head, "│") {
 		t.Fatalf("ヘッダーが 2 カラムに割られている: %q", head)
 	}
@@ -580,7 +581,7 @@ func TestStatusLinesCleanTreeMessage(t *testing.T) {
 
 func TestStatusHeaderShowsBranchAndCounts(t *testing.T) {
 	v := newTestStatusView(t, statusRec("## topic...origin/topic [ahead 2]", "M  a.go", " M b.go"))
-	head := stripANSI(v.lines(testStatusOpts(120, 20))[0])
+	head := term.StripANSI(v.lines(testStatusOpts(120, 20))[0])
 	for _, want := range []string{"topic", "ahead 2", "staged 1", "unstaged 1"} {
 		if !strings.Contains(head, want) {
 			t.Errorf("ヘッダーに %q が無い: %q", want, head)
@@ -591,10 +592,10 @@ func TestStatusHeaderShowsBranchAndCounts(t *testing.T) {
 // カーソル行の強調は一覧カラムの幅で完結する (プレビュー側まで背景が伸びない)。
 func TestStatusCursorPaintStaysInListColumn(t *testing.T) {
 	painted := statusCursorPaint("→ M a.go", 30, true)
-	if w := dispWidth(stripANSI(painted)); w != 30 {
+	if w := term.DispWidth(term.StripANSI(painted)); w != 30 {
 		t.Fatalf("カーソル行の表示幅 = %d, want 30 (カラム幅で止める)", w)
 	}
-	if !strings.HasSuffix(painted, ansiReset) {
+	if !strings.HasSuffix(painted, term.AnsiReset) {
 		t.Errorf("行末で色をリセットしていない: %q", painted)
 	}
 }
@@ -621,8 +622,8 @@ func TestSlideLeftWindow(t *testing.T) {
 		}
 	}
 	// 開きは easeOutCubic: 折り返し地点で半分 (等速の 5 桁) より先へ進んでいる
-	if dispWidth(got[0]) <= 5 {
-		t.Errorf("終端減速が効いていない (0.5 時点で %q = %d 桁。等速なら 5 桁)", got[0], dispWidth(got[0]))
+	if term.DispWidth(got[0]) <= 5 {
+		t.Errorf("終端減速が効いていない (0.5 時点で %q = %d 桁。等速なら 5 桁)", got[0], term.DispWidth(got[0]))
 	}
 	// 着地 (進捗 1) ではボーダーごと消えて元の行に戻る
 	if full := slideLeftWindow(window, 1, 10, false, false); full[0] != "0123456789" || full[3] != "0123456789" {
@@ -647,12 +648,12 @@ func TestSlideLeftWindow(t *testing.T) {
 	}
 	// 空行にもボーダーを立てる (行ごとに欠けると縦 1 本の端に見えない)
 	blank := slideLeftWindow([]string{"", "0123456789"}, 0.5, 10, true, false)
-	if dispWidth(blank[0]) != dispWidth(blank[1]) || !strings.HasSuffix(blank[0], "▒") {
+	if term.DispWidth(blank[0]) != term.DispWidth(blank[1]) || !strings.HasSuffix(blank[0], "▒") {
 		t.Errorf("空行のボーダーが欠けている: %q vs %q", blank[0], blank[1])
 	}
 	// colored=true は近黒の █ (ドロップシャドウと同じ色)
 	col := slideLeftWindow(window, 0.5, 10, true, true)
-	if !strings.HasSuffix(col[0], ansiShadowFg+"█"+ansiReset) {
+	if !strings.HasSuffix(col[0], term.AnsiShadowFg+"█"+term.AnsiReset) {
 		t.Errorf("colored のボーダーが近黒 █ になっていない: %q", col[0])
 	}
 }
@@ -786,7 +787,7 @@ func TestStatusViewerPullKeyOpensConfirm(t *testing.T) {
 	}
 	// 🚨 確認モーダルが viewer の上に描かれること。キーは viewer より先に actModal が捌くので、
 	// 描かれないと「見えないモーダルが y/N を持つ」= 画面の指示と行き先が食い違う。
-	out := stripANSI(m.View().Content)
+	out := term.StripANSI(m.View().Content)
 	if !strings.Contains(out, "pull") {
 		t.Fatalf("pull 確認が viewer の上に出ていない:\n%s", out)
 	}
@@ -850,7 +851,7 @@ func TestStatusViewerPushKeyOpensConfirm(t *testing.T) {
 	if !m.statusOv.visible() {
 		t.Error("b で viewer が閉じた (確認は viewer の上に重ねる)")
 	}
-	out := stripANSI(m.View().Content)
+	out := term.StripANSI(m.View().Content)
 	if !strings.Contains(out, "push") {
 		t.Fatalf("push 確認が viewer の上に出ていない:\n%s", out)
 	}
@@ -1146,7 +1147,7 @@ func TestPreviewSkipDiffHeaderKeepsHunklessDiff(t *testing.T) {
 // 解釈できない出力を「クリーン」と同じ絵にしない (沈黙を成功にしない)。
 func TestStatusUnparsableOutputIsNotReportedAsClean(t *testing.T) {
 	v := newTestStatusView(t, statusRec("garbage-line", "another-garbage"))
-	body := stripANSI(strings.Join(v.lines(testStatusOpts(70, 20)), "\n"))
+	body := term.StripANSI(strings.Join(v.lines(testStatusOpts(70, 20)), "\n"))
 	if strings.Contains(body, "クリーン") {
 		t.Fatalf("解釈できなかったのに「クリーン」と表示した:\n%s", body)
 	}
@@ -1155,7 +1156,7 @@ func TestStatusUnparsableOutputIsNotReportedAsClean(t *testing.T) {
 	}
 	// 一部だけ読めたときは一覧を出しつつヘッダーで取りこぼしを知らせる
 	v2 := newTestStatusView(t, statusRec(" M a.go", "garbage"))
-	head := stripANSI(v2.lines(testStatusOpts(120, 20))[0])
+	head := term.StripANSI(v2.lines(testStatusOpts(120, 20))[0])
 	if !strings.Contains(head, "解釈不能") {
 		t.Fatalf("取りこぼしがヘッダーに出ていない: %q", head)
 	}
@@ -1171,7 +1172,7 @@ func TestStatusTrailingNulIsNotCountedAsSkipped(t *testing.T) {
 
 // 全行が幅に収まる不変条件を width 1 から全数で掃く (issues 側の
 // TestIssuesViewLinesAlwaysExactlyPageRows と対。issue 053: 掃き始めが広い幅だけだと、
-// 極小幅でしか出ない枠越え (clipToWidth の width<=0 素通し・scrollbarColumn の床上げ) が
+// 極小幅でしか出ない枠越え (term.ClipToWidth の width<=0 素通し・scrollbarColumn の床上げ) が
 // 眠る)。
 func TestStatusViewLinesFitWidthDownToOne(t *testing.T) {
 	recs := make([]string, 0, 30)
@@ -1187,7 +1188,7 @@ func TestStatusViewLinesFitWidthDownToOne(t *testing.T) {
 	for width := 1; width <= 80; width++ {
 		for _, page := range []int{3, 12} {
 			for _, ln := range v.lines(testStatusOpts(width, page)) {
-				if w := dispWidth(ln); w > width {
+				if w := term.DispWidth(ln); w > width {
 					t.Fatalf("width=%d page=%d の行が幅を超えた (w=%d): %q", width, page, w, ln)
 				}
 			}
@@ -1410,7 +1411,7 @@ func TestStatusViewHintFitsWidth(t *testing.T) {
 			{"破棄確認", func() { v.pagerKey, v.discarding = "", true }},
 		} {
 			mode.setup()
-			if got := dispWidth(v.hint(w)); got > w && mode.name == "一覧" {
+			if got := term.DispWidth(v.hint(w)); got > w && mode.name == "一覧" {
 				t.Errorf("w=%d %s: hint が %d 桁 (収まっていない): %q", w, mode.name, got, v.hint(w))
 			}
 		}
@@ -1454,7 +1455,7 @@ func TestStatusHintUsesRenderBudget(t *testing.T) {
 		m.handleKey("s")
 		releaseKey(m)
 		line := m.hintLine()
-		if got := dispWidth(stripANSI(line)); got > w {
+		if got := term.DispWidth(term.StripANSI(line)); got > w {
 			t.Errorf("w=%d: hint 行が端末幅を超えた (%d 桁): %q", w, got, line)
 		}
 		// 切り詰めの … が出ていない = 組む側の予算と描画側の clip 幅が一致している

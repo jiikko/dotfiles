@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 // pending なコミットは「どんな状況でも」追い続ける: パネルを閉じても、そもそも一度も開いて
@@ -600,7 +601,7 @@ func TestBrowseOpenJobRejectsNonHTTP(t *testing.T) {
 // job 詳細ログを v キーで nvim (stdin 渡し) に開く。ANSI は除去し、ファイルは残さない。
 func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	// jobLogText: ANSI 除去 + 各行 + 改行
-	got := jobLogText([]string{ansiGreen + "ok" + ansiReset, "plain", "\x1b[31mred\x1b[0m line"})
+	got := jobLogText([]string{term.AnsiGreen + "ok" + term.AnsiReset, "plain", "\x1b[31mred\x1b[0m line"})
 	if got != "ok\nplain\nred line\n" {
 		t.Fatalf("jobLogText = %q", got)
 	}
@@ -615,7 +616,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	m.handleKey("j")
 	m.detailOv.open = true
 	m.panelCursor = 0
-	m.detailOv.cache.store(m.detailKey(), []string{ansiRed + "boom" + ansiReset, "at foo.go:10"}, m.detailKey())
+	m.detailOv.cache.store(m.detailKey(), []string{term.AnsiRed + "boom" + term.AnsiReset, "at foo.go:10"}, m.detailKey())
 
 	_, cmd := m.handleKey("v")
 	if cmd == nil || len(*cmds) != 1 {
@@ -697,7 +698,7 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	// 詳細ボックスは job パネルの子であることが分かるよう段差付き (ユーザー要望)
 	indented := false
 	for line := range strings.SplitSeq(m.View().Content, "\n") {
-		if strings.HasPrefix(stripANSI(line), detailIndent+"┌") {
+		if strings.HasPrefix(term.StripANSI(line), detailIndent+"┌") {
 			indented = true
 			break
 		}
@@ -1130,7 +1131,7 @@ func TestBrowseRerunNoDoublePoll(t *testing.T) {
 }
 
 // job 詳細ポップアップの本文にスクロールバー列が出ても枠が崩れない (全行が同じ表示幅) ことと、
-// 全行が収まるときはバー列が出ないこと。withScrollbar の単体テストではなく描画経路 (boxLines)
+// 全行が収まるときはバー列が出ないこと。term.WithScrollbar の単体テストではなく描画経路 (boxLines)
 // で幅の均一性を見る (rows と len(lines) の噛み合わせが崩れる回帰を捕まえる)。
 func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 	logLines := func(n int) []string {
@@ -1178,8 +1179,8 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 	o.cache.store("fit", logLines(rows-2), "fit")
 	o.pager.Offset = 0
 	fit := o.boxLines(width, false, "", "job", "fit", rows)
-	if w := uniformWidth(t, fit); w != dispWidth(stripANSI(box[0])) {
-		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, dispWidth(stripANSI(box[0])))
+	if w := uniformWidth(t, fit); w != term.DispWidth(term.StripANSI(box[0])) {
+		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, term.DispWidth(term.StripANSI(box[0])))
 	}
 	for i, l := range fit[1 : len(fit)-2] {
 		if strings.Contains(l, layout.ScrollbarThumb) {

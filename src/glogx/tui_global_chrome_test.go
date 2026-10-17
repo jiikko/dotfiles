@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/term"
 )
 
 func TestGlobalChromeShowsInEveryView(t *testing.T) {
@@ -50,7 +51,7 @@ func TestGlobalChromeShowsInEveryView(t *testing.T) {
 			m.width, m.height = 100, 24
 			c.open(t, m)
 			showToastLanded(t, m, msg)
-			out := stripANSI(m.View().Content)
+			out := term.StripANSI(m.View().Content)
 			if !strings.Contains(out, msg) {
 				t.Fatalf("トーストが画面に出ていない (%s は共通 chrome を載せていない):\n%s", c.name, out)
 			}
@@ -69,7 +70,7 @@ func TestRestartPromptShowsInViewers(t *testing.T) {
 				m.issuesOv.finishAnim()
 			}
 			m.restartPending = true
-			out := stripANSI(m.View().Content)
+			out := term.StripANSI(m.View().Content)
 			if !strings.Contains(out, "再起動") {
 				t.Fatalf("再起動ダイアログが画面に出ていない (%s):\n%s", name, out)
 			}
@@ -119,7 +120,7 @@ func TestToastDrawBudgetIsWiredThroughViewContent(t *testing.T) {
 		}
 		showWarningsLanded(t, m, olderWarning, newerWarning)
 
-		out := stripANSI(m.View().Content)
+		out := term.StripANSI(m.View().Content)
 		for _, want := range []string{olderWarning, newerWarning} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("page=9 の View().Content に %q がない:\n%s", want, out)
@@ -137,7 +138,7 @@ func TestToastDrawBudgetIsWiredThroughViewContent(t *testing.T) {
 		}
 		showWarningsLanded(t, m, olderWarning, newerWarning)
 
-		out := stripANSI(m.View().Content)
+		out := term.StripANSI(m.View().Content)
 		if !strings.Contains(out, newerWarning) {
 			t.Fatalf("page=8 の View().Content に最新の警告がない:\n%s", out)
 		}
@@ -169,12 +170,12 @@ func TestToastLongTextWrapsWithinViewWidth(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
 	m.width, m.height = 50, 20
 	showWarningsLanded(t, m, "push failed: remote rejected the update because the branch is protected TAILMARK")
-	out := stripANSI(m.View().Content)
+	out := term.StripANSI(m.View().Content)
 	if !strings.Contains(out, "TAILMARK") {
 		t.Fatalf("長い通知の末尾が画面に出ていない:\n%s", out)
 	}
 	for _, line := range strings.Split(out, "\n") {
-		if w := dispWidth(line); w > m.contentWidth() {
+		if w := term.DispWidth(line); w > m.contentWidth() {
 			t.Errorf("行の幅 %d が窓の幅 %d を超える: %q", w, m.contentWidth(), line)
 		}
 	}
@@ -187,7 +188,7 @@ func TestToastDrawBudgetFitsTwoWrappedWarnings(t *testing.T) {
 	showWarningsLanded(t, m,
 		"push failed: remote rejected the update OLDERMARK",
 		"pull failed: could not resolve host github.com NEWERMARK")
-	out := stripANSI(m.View().Content)
+	out := term.StripANSI(m.View().Content)
 	for _, want := range []string{"OLDERMARK", "NEWERMARK"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("折り返した警告 %q が描かれていない:\n%s", want, out)
@@ -205,7 +206,7 @@ func TestToastShortSuccessesStayWithinHalfPage(t *testing.T) {
 	for i := 0; m.toast.Animating() && i < 100; i++ {
 		m.toast.Advance()
 	}
-	out := stripANSI(m.View().Content)
+	out := term.StripANSI(m.View().Content)
 	if strings.Contains(out, "OLDEST-SUCCESS") || !strings.Contains(out, "pulled") {
 		t.Fatalf("page=13 で 1 行の成功が 2 枚に収まっていない (最古が残る / 2 枚目が消えた):\n%s", out)
 	}
@@ -220,7 +221,7 @@ func TestToastBudgetReservesNewestSuccessAndTwoWarnings(t *testing.T) {
 	m.toast.Show(long+"OLDERMARK", false)
 	m.toast.Show(long+"NEWERMARK", false)
 	showToastLanded(t, m, "SUCCESSMARK")
-	out := stripANSI(m.View().Content)
+	out := term.StripANSI(m.View().Content)
 	for _, want := range []string{"OLDERMARK", "NEWERMARK", "SUCCESSMARK"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("page=20 で %q が描かれていない:\n%s", want, out)

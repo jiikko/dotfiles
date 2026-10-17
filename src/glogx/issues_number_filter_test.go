@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"glogx/internal/term"
 	"glogx/issues"
 )
 
@@ -177,7 +178,7 @@ func TestIssuesNumberFilterEmptyMessageDoesNotSuggestStatusKey(t *testing.T) {
 func TestIssuesNumberFilterHeaderReplacesTabLine(t *testing.T) {
 	v := filteringView(t, "41", numbered()...)
 
-	head := stripANSI(v.listHeadLines(80, false)[0])
+	head := term.StripANSI(v.listHeadLines(80, false)[0])
 	if !strings.Contains(head, "番号: 41") || !strings.Contains(head, "全カテゴリ・全状態") {
 		t.Fatalf("絞り込みヘッダーの内容が足りない: %q", head)
 	}

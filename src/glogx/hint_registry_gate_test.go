@@ -8,18 +8,19 @@ import (
 	"testing"
 
 	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
+	"glogx/internal/term"
 )
 
 // hintLine は面ごとの hint を**レジストリからしか**取らない (issue 289)。
 //
-// なぜ機械で縛るか: 直接 `hint = "..."` と書くと、予算計算 (fitHintItems) と幅ゲートの
+// なぜ機械で縛るか: 直接 `hint = "..."` と書くと、予算計算 (term.FitHintItems) と幅ゲートの
 // 両方を迂回できる。迂回した分岐は末尾 = 出口が黙って切れるので、279 / 281 の P1 2 本と
 // 同じ形が再生産される。build もテストも通るため silent に壊れる。
 //
 // 🚨 **脅威モデルと射程** (adversarial-review-own-safeguards §8。実装前に書いたもの):
 //   - 止めるのは「hintLine の中で hint を直接組む」典型形だけ
 //   - 判定: hintLine の本体で `hint` への代入は **1 回だけ**で、その右辺は
-//     `fitHintItems(...)` の呼び出しであること
+//     `term.FitHintItems(...)` の呼び出しであること
 //   - **検出しない**: hintLine の外の関数で組んでから渡す形 / レジストリの builder が
 //     返す項目の中身 (語の妥当性・実行時の長さ) / 全画面ビューア 4 枚の早期 return
 //     (前置を積まないのが意図で、幅は fullScreenCases 経由で別に検査している)。
@@ -78,8 +79,10 @@ func scanHintLineAssigns(f *ast.File) (assigns, viaFit, returns, prefixAssigns, 
 				if !ok {
 					continue
 				}
-				if fid, ok := call.Fun.(*ast.Ident); ok && fid.Name == "fitHintItems" {
-					viaFit++
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "FitHintItems" {
+					if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "term" {
+						viaFit++
+					}
 				}
 			}
 			return true
@@ -106,7 +109,7 @@ func (m *browseModel) hintLine() string {
 	if y {
 		prefix = "後から積んだ前置" + prefix
 	}
-	hint := fitHintItems(hw, hintBuilders[m.activeHintSurface()](m))
+	hint := term.FitHintItems(hw, hintBuilders[m.activeHintSurface()](m))
 	if x {
 		hint = "直接組んだ案内"
 	}
@@ -119,7 +122,7 @@ func (m *browseModel) hintLine() string {
 	}
 	ca, cv, cr, cp, cpf, cfound := scanHintLineAssigns(cf)
 	if !cfound || ca != 2 || cv != 1 || cr != 1 || cp != 2 || cpf != 1 {
-		t.Fatalf("canary の検出が 代入 %d / fitHintItems 経由 %d / hintLineText %d / "+
+		t.Fatalf("canary の検出が 代入 %d / term.FitHintItems 経由 %d / hintLineText %d / "+
 			"prefix 代入 %d / hintPrefix 経由 %d / 発見 %v (期待 2 / 1 / 1 / 2 / 1 / true)。判定が壊れている",
 			ca, cv, cr, cp, cpf, cfound)
 	}
@@ -133,7 +136,7 @@ func (m *browseModel) hintLine() string {
 		t.Fatal("hintLine が見つからない (改名したなら、このゲートの対象名も直すこと)")
 	}
 	if assigns != 1 || viaFit != 1 {
-		t.Errorf("hintLine の中で hint への代入が %d 件 / うち fitHintItems 経由が %d 件 (期待 1 / 1)。"+
+		t.Errorf("hintLine の中で hint への代入が %d 件 / うち term.FitHintItems 経由が %d 件 (期待 1 / 1)。"+
 			"面ごとの hint は hint_surfaces.go のレジストリから取ること (直接組むと予算計算と幅ゲートを迂回する)",
 			assigns, viaFit)
 	}
@@ -147,12 +150,12 @@ func (m *browseModel) hintLine() string {
 			"前置は hintPrefix() に足すこと — 予算を引いた後で積むと、字句ゲートも幅ゲートも"+
 			"素通りしたまま末尾 = 出口が消える (279 / 281 の根本原因)", prefixAssigns, viaPrefixFn)
 	}
-	t.Logf("hintLine の hint 代入 %d 件 / fitHintItems 経由 %d 件 / hintLineText %d 件 / "+
+	t.Logf("hintLine の hint 代入 %d 件 / term.FitHintItems 経由 %d 件 / hintLineText %d 件 / "+
 		"prefix 代入 %d 件 (hintPrefix 経由 %d 件)", assigns, viaFit, returns, prefixAssigns, viaPrefixFn)
 }
 
 // レジストリの面がすべて「幅が足りなくても消えない語」を持つこと。
-// fitHintItems は入らない項目を落とすので、優先度 1 が無い面は狭い幅で丸ごと消える。
+// term.FitHintItems は入らない項目を落とすので、優先度 1 が無い面は狭い幅で丸ごと消える。
 func TestEveryHintSurfaceHasPrioOne(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.actModal.updating = map[string]bool{"claude": true} // updating 面の項目を非空にする
@@ -167,7 +170,7 @@ func TestEveryHintSurfaceHasPrioOne(t *testing.T) {
 			t.Errorf("%s: hint 項目が空", hintSurfaceSetup[id].name)
 			continue
 		}
-		if hintfit.ShortestExit(hintfitItems(items)) == "" {
+		if hintfit.ShortestExit(term.HintfitItems(items)) == "" {
 			t.Errorf("%s: 優先度 1 の項目が無い (狭い幅で案内が丸ごと消える)", hintSurfaceSetup[id].name)
 		}
 		checked++
@@ -176,7 +179,7 @@ func TestEveryHintSurfaceHasPrioOne(t *testing.T) {
 	if checked != int(hintSurfaceCount) {
 		t.Fatalf("検査した面が %d 件 (期待 %d)", checked, hintSurfaceCount)
 	}
-	if !strings.Contains(hintBuilders[hintSurfaceBase](m)[len(hintBuilders[hintSurfaceBase](m))-1].text, "終了") {
+	if !strings.Contains(hintBuilders[hintSurfaceBase](m)[len(hintBuilders[hintSurfaceBase](m))-1].Text, "終了") {
 		t.Error("基底一覧の最後の項目が出口でなくなっている (並び順の前提が変わった)")
 	}
 	t.Logf("面 %d 件すべてに優先度 1 の項目がある", checked)

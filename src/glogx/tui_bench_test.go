@@ -16,7 +16,7 @@ import (
 //
 // 測る意味: tickMsg は spinnerActive の間 12.5fps (アニメ中は 30fps) で View を回す。RenderLines
 // は linesCache でメモ化されるが、View 自体 — 可視行の clip / overlay 合成 / 最外周フレーム
-// (wrapWindowFrame → buildPanelBoxImpl) / 最終結合 — は毎フレーム走る。ここが素朴だと
+// (term.WrapWindowFrame → term.BuildPanelBoxImpl) / 最終結合 — は毎フレーム走る。ここが素朴だと
 // フレーム描画のたびに出力サイズ級のゴミを吐く (2026-07-25 の perf 監査で実測 56KB/frame)。
 //
 //	go test -run '^$' -bench BenchmarkView -benchmem .

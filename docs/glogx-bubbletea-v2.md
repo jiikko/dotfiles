@@ -28,16 +28,16 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 
 ## 幅モデル — v2 でエンジンの計測ライブラリが変わった
 
-`termwidth` パッケージ (main からは `width.go` の別名経由) の不変条件は「glogx の幅計算とエンジンの幅計算が一致すること」。**その相手は bubbletea の実装詳細で、勝手に一致し続けない**。
+`termwidth` パッケージ (glogx からは `internal/term/width.go` の別名経由) の不変条件は「glogx の幅計算とエンジンの幅計算が一致すること」。**その相手は bubbletea の実装詳細で、勝手に一致し続けない**。
 
 🚨 当初この節に「v2 のエンジンは `clipperhouse/displaywidth` で測る」と書いたが**誤り**（セルフレビューで訂正）。`displaywidth` は `x/ansi` v0.11 以降が内部で使うライブラリで、独立した実装ではない。実際に変わったのは**ライブラリではなく幅モデル (`ansi.Method`)**:
 
-| | エンジンの幅モデル | glogx (`dispWidth`) |
+| | エンジンの幅モデル | glogx (`term.DispWidth`) |
 |---|---|---|
 | v1 (`standardRenderer`) | `ansi.StringWidth` = **GraphemeWidth** | GraphemeWidth（一致） |
 | v2 (cursed renderer / `ultraviolet`) | `ansi.Method`、**既定は WcWidth**。端末が Unicode Core (mode 2027) 対応を報告したときだけ GraphemeWidth へ昇格（`tea.go` の `ModeReportMsg` → `setWidthMethod`） | GraphemeWidth（**食い違う**） |
 
-食い違うのは「1 クラスタ = 複数 rune」の字だけ。実測 (Grapheme / Wc): `⚠+VS16` 2/1（`dropEmojiVS16` で bare 化するので出てこない）・**国旗 🇯🇵 2/1**・**keycap 1️⃣ 2/1**・ZWJ 絵文字と肌色は 2/2 で一致。
+食い違うのは「1 クラスタ = 複数 rune」の字だけ。実測 (Grapheme / Wc): `⚠+VS16` 2/1（`term.DropEmojiVS16` で bare 化するので出てこない）・**国旗 🇯🇵 2/1**・**keycap 1️⃣ 2/1**・ZWJ 絵文字と肌色は 2/2 で一致。
 
 実害を測った結果は「v2 のほうが揃っている」: 国旗を含む行の右枠位置は v1 が 98 セル相当・v2 が 97 セル相当で、**ASCII 行 (97) と一致するのは v2** だった（100 桁 pane・tmux 3.7b で実測）。したがって v2 化で悪化はしていないが、この安定は「エンジンが WcWidth である」ことに乗っている。
 

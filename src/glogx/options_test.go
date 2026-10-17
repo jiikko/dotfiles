@@ -132,8 +132,8 @@ func TestParseArgsMissingCountValue(t *testing.T) {
 
 // Usage() の静的テキストに VS16 付き絵文字を入れない。
 //
-// --help は git 由来テキストの正規化経路 (gitlog.go の dropEmojiVS16) も CI 由来の
-// sanitizeDetailLine も通らず、Usage() の文字列がそのまま端末へ出る。VS16 付き絵文字は
+// --help は git 由来テキストの正規化経路 (gitlog.go の term.DropEmojiVS16) も CI 由来の
+// term.SanitizeDetailLine も通らず、Usage() の文字列がそのまま端末へ出る。VS16 付き絵文字は
 // 描画エンジン (x/ansi=2) と端末で幅が食い違う環境があり、そこでズレの原因になる
 // (実測 2026-07-25: options.go に ⚠️ が 1 件残っていた)。bare 記号を使うこと。
 func TestUsageHasNoVS16(t *testing.T) {

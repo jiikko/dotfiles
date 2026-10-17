@@ -2,57 +2,14 @@ package main
 
 import (
 	"fmt"
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
-	"github.com/jiikko/dotfiles/src/tuikit/spinner"
-	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"slices"
 	"strings"
 
-	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
+	"glogx/internal/term"
 )
 
 // 状態記号は絵文字ではなく 1 カラム記号を使う (端末幅とフォント差異の影響を抑える: issue の設計)。
-//
-// 基本色は glogx/sgr の別名 (issues / usage と同じ値を 1 箇所から引く。issue 106)。
-const (
-	ansiReset   = sgr.Reset
-	ansiRed     = sgr.Red
-	ansiGreen   = sgr.Green
-	ansiYellow  = sgr.Yellow
-	ansiMagenta = sgr.Magenta
-	ansiCyan    = sgr.Cyan
-	ansiDim     = sgr.Dim
-	// カーソル行の bg (256色の暗灰 237)。テーマの意味マップ (docs/theme-colors.md) の
-	// カーソル行の bg。無彩色の 237 では地色 234/235 と近く見失いやすかったため、
-	// 色相のある暗青 24 に変更 (ユーザー要望 2026-07-21。fg 色はそのまま透ける)
-	ansiCursorBg = "\x1b[48;5;24m"
-	// ansiScreenBg は全画面 ratelimit ダッシュボードだけが敷く地の色 (256 色の黒 16)。
-	//
-	// 🚨 「端末の既定の背景」に戻す (\x1b[49m) では解決しない場面のための固定色。scratch popup は
-	// display-popup 自身が `-s bg=colour17` (濃紺) を敷いており、**その popup では既定の背景が
-	// 濃紺**なので既定へ戻しても青いままになる (scripts/tmux_scratch_popup.sh)。
-	// ユーザー要望 2026-09-01: 全画面の残量表示だけは地色を固定したい。
-	ansiScreenBg = "\x1b[48;5;16m"
-	ansiBold     = sgr.Bold
-	// 落ち影の前景色 (256色の近黒 232)。bg ベタ塗りではなく █/▓ の前景ブロックで影を描き、
-	// グリフの隙間から端末の地色が透けて自然な penumbra になる (端末 bg に依存せず、色の
-	// 濃淡 █>▓ で縁をフェザーできる)。buildShadowPanelBox の drop shadow。
-	// 🚨 tuikit の既定値を指す: 確認ダイアログ (confirm.Box) は tuikit の既定の影で描くので、
-	// ここだけ別の値にすると確認ダイアログと他の板で影の色が割れる。
-	ansiShadowFg = layout.ShadowNearBlack
-	// 最外周フレームの罫線色 (256色のマゼンタ 201)。dotfiles のテーマ意味マップ
-	// (docs/theme-colors.md) の「点滅/scratch アイデンティティ」= tmux の scratch popup 枠と
-	// 同じ色で、glogx も「ふだんの pane とは別の一時的な板」であることを色で示す
-	// (ユーザー要望 2026-07-25「scratch tmux terminal みたいに色をつけたい」)。
-	//
-	// 🚨 色番号は theme/colors.yml の blink_magenta が出典。変えるなら yml 側と揃えること
-	// (yml は機械可読な単一ソースで、tests/theme/test_theme_colors.sh が tmux/nvim 側の
-	// 定数との一致を検証している。glogx は Go で定数を共有できないため手書きコピーになる)。
-	ansiFrameBorder = "\x1b[38;5;201m"
-)
-
-// 幅計算は width.go の dispWidth (= ansi.StringWidth) に一本化している。ambiguous
-// 文字は locale 非依存で幅 1、絵文字は端末/描画エンジンと一致する幅で数える。
 
 // StateLoading は表示専用の擬似状態。statuses map に SHA が無いとき render 側で使う。
 const StateLoading CIState = "loading"
@@ -68,7 +25,7 @@ func StatusGlyph(state CIState, colored bool, glyph string) string {
 	case StateFailure:
 		return "❌"
 	case StatePending:
-		return paint(fillRight(spinnerOr(glyph), 2), ansiYellow, colored)
+		return term.Paint(term.FillRight(spinnerOr(glyph), 2), term.AnsiYellow, colored)
 	case StateNeutral:
 		return "🚫"
 	case StateNone:
@@ -78,7 +35,7 @@ func StatusGlyph(state CIState, colored bool, glyph string) string {
 	case StateUnknown:
 		return "❓"
 	default:
-		return paint(fillRight(glyph, 2), ansiCyan, colored)
+		return term.Paint(term.FillRight(glyph, 2), term.AnsiCyan, colored)
 	}
 }
 
@@ -149,8 +106,8 @@ func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []
 		subjectWidth := 0
 		authorWidth := 0
 		for _, c := range commits {
-			subjectWidth = max(subjectWidth, dispWidth(c.Subject))
-			authorWidth = max(authorWidth, dispWidth(c.Author))
+			subjectWidth = max(subjectWidth, term.DispWidth(c.Subject))
+			authorWidth = max(authorWidth, term.DispWidth(c.Author))
 		}
 		subjectWidth = min(subjectWidth, subjectWidthCap)
 		for i, c := range commits {
@@ -205,25 +162,25 @@ func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CISt
 	labeledRule := func(label, labelColor string) string {
 		head := "── origin"
 		gap := " "
-		dashes := strings.Repeat("─", max(width-dispWidth(head+label+gap), 0))
-		return paint(head, ansiDim, o.Colored) +
-			paint(label, labelColor, o.Colored) +
-			paint(gap+dashes, ansiDim, o.Colored)
+		dashes := strings.Repeat("─", max(width-term.DispWidth(head+label+gap), 0))
+		return term.Paint(head, term.AnsiDim, o.Colored) +
+			term.Paint(label, labelColor, o.Colored) +
+			term.Paint(gap+dashes, term.AnsiDim, o.Colored)
 	}
 	if allPushed {
 		// 全 push 済みは「達成」状態なのでラベルだけ緑+太字で強調する (dim な罫線と差を
 		// つけて視覚的に目立たせる。ユーザー要望)。罫線部分は従来どおり dim
-		text := labeledRule(" (all pushed ✓)", ansiGreen+ansiBold)
+		text := labeledRule(" (all pushed ✓)", term.AnsiGreen+term.AnsiBold)
 		return append([]Line{{Text: text, CommitIdx: 0}}, lines...)
 	}
 	// 混在時: 未 push 件数 (= origin より何コミット先行しているか) を all pushed と同じ
 	// 「先頭」に赤+太字で出す。複数行表示だと push 境界はずっと下 (未 push 件数ぶんの行の
 	// 先) にあり、そこだけに件数を置くとスクロールしないと見えないため (ユーザー要望
 	// 2026-07-22)。加えて push 境界の正確な位置には従来どおり dim の罫線を挿す。
-	summary := labeledRule(fmt.Sprintf(" (↑%d unpushed)", unpushed), ansiRed+ansiBold)
-	boundaryRule := labeledRule("", ansiDim) // 位置マーカー: ラベル無しの dim 罫線
+	summary := labeledRule(fmt.Sprintf(" (↑%d unpushed)", unpushed), term.AnsiRed+term.AnsiBold)
+	boundaryRule := labeledRule("", term.AnsiDim) // 位置マーカー: ラベル無しの dim 罫線
 	if o.PushAnim {
-		boundaryRule = labeledRule(" ↑ pushing…", ansiGreen+ansiBold)
+		boundaryRule = labeledRule(" ↑ pushing…", term.AnsiGreen+term.AnsiBold)
 	}
 	for i, l := range lines {
 		if l.Header && l.CommitIdx == boundary {
@@ -239,14 +196,14 @@ func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CISt
 }
 
 // VerbatimLines は git log 実出力をコミット境界で分類する。ヘッダー検出は
-// 「stripANSI 後に "commit <次に期待する SHA>" で始まる行」なので、コミットメッセージ内の
+// 「term.StripANSI 後に "commit <次に期待する SHA>" で始まる行」なので、コミットメッセージ内の
 // "commit ..." 行 (インデント 4 だが --color 無しでは理論上先頭に来ない) を誤認しない。
 // ヘッダー数が commits と一致しない場合は nil (呼び出し側が自前レンダリングへ fallback)。
 func VerbatimLines(raw []string, commits []Commit) []Line {
 	lines := make([]Line, 0, len(raw))
 	next := 0
 	for _, line := range raw {
-		if next < len(commits) && strings.HasPrefix(stripANSI(line), "commit "+commits[next].SHA) {
+		if next < len(commits) && strings.HasPrefix(term.StripANSI(line), "commit "+commits[next].SHA) {
 			lines = append(lines, Line{Text: line, CommitIdx: next, Header: true})
 			next++
 			continue
@@ -274,16 +231,16 @@ func decorateVerbatim(commits []Commit, statuses map[string]CIState, o RenderOpt
 		text := l.Text
 		if o.Width > 0 {
 			// mediumLines と同じ理由 (タブは clip の幅計算をすり抜けて再描画を崩す)。
-			// 入口 (sanitizeLineKeepTabs) は静的出力のパリティのためタブを残す設計なので
+			// 入口 (term.SanitizeLineKeepTabs) は静的出力のパリティのためタブを残す設計なので
 			// TUI 側で展開する
 			text = strings.ReplaceAll(text, "\t", "    ")
 			if !strings.Contains(text, "\x1b") {
-				for _, seg := range wrapToWidth(text, o.Width) {
+				for _, seg := range term.WrapToWidth(text, o.Width) {
 					out = append(out, Line{Text: seg, CommitIdx: l.CommitIdx})
 				}
 				continue
 			}
-			// 色付き行 (diff 本文等) は wrapToWidth が ANSI 非対応のため折り返さない
+			// 色付き行 (diff 本文等) は term.WrapToWidth が ANSI 非対応のため折り返さない
 			// (View 側の clip に任せる。自前レンダリング時代の body 行と同じ扱い)
 		}
 		out = append(out, Line{Text: text, CommitIdx: l.CommitIdx})
@@ -310,7 +267,7 @@ func commitHeaderPrefix(lead, shaText, decoration string, state CIState, o Rende
 	b.WriteString(StatusGlyph(state, o.Colored, o.Spinner))
 	b.WriteString(" ")
 	b.WriteString(lead)
-	b.WriteString(paint(shaText, ansiYellow, o.Colored))
+	b.WriteString(term.Paint(shaText, term.AnsiYellow, o.Colored))
 	if decoration != "" {
 		b.WriteString(" ")
 		b.WriteString(renderDecoration(decoration, o))
@@ -323,12 +280,12 @@ func renderOnelineRow(c Commit, state CIState, subjectWidth, authorWidth int, o 
 	var b strings.Builder
 	b.WriteString(commitHeaderPrefix("", c.ShortSHA, c.Decoration, state, o))
 	b.WriteString(" ")
-	subject := truncateDisp(c.Subject, subjectWidthCap, "…")
-	b.WriteString(fillRight(subject, subjectWidth))
+	subject := term.TruncateDisp(c.Subject, subjectWidthCap, "…")
+	b.WriteString(term.FillRight(subject, subjectWidth))
 	b.WriteString("  ")
-	b.WriteString(paint(fillRight(c.Author, authorWidth), ansiDim, o.Colored))
+	b.WriteString(term.Paint(term.FillRight(c.Author, authorWidth), term.AnsiDim, o.Colored))
 	b.WriteString("  ")
-	b.WriteString(paint(c.RelDate, ansiDim, o.Colored))
+	b.WriteString(term.Paint(c.RelDate, term.AnsiDim, o.Colored))
 	b.WriteString(prBadge(c.SHA, o))
 	return b.String()
 }
@@ -357,7 +314,7 @@ func prBadgeText(sha string, o RenderOpts) string {
 	if pr == nil {
 		return ""
 	}
-	return paint(fmt.Sprintf("#%d", pr.Number), prStateColor(pr.State), o.Colored)
+	return term.Paint(fmt.Sprintf("#%d", pr.Number), prStateColor(pr.State), o.Colored)
 }
 
 // prStateColor は PR 状態の表示色 (GitHub の慣例: OPEN=緑 / MERGED=マゼンタ / CLOSED=赤)。
@@ -366,13 +323,13 @@ func prBadgeText(sha string, o RenderOpts) string {
 func prStateColor(state string) string {
 	switch state {
 	case "OPEN":
-		return ansiGreen
+		return term.AnsiGreen
 	case "MERGED":
-		return ansiMagenta
+		return term.AnsiMagenta
 	case "CLOSED":
-		return ansiRed
+		return term.AnsiRed
 	}
-	return ansiDim
+	return term.AnsiDim
 }
 
 // mediumLines は git log 標準形式の 1 コミット分。
@@ -396,19 +353,19 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 	// 端末に任せる = git log と同じ挙動)。インデント 4 の分を差し引いて折る
 	for msgLine := range strings.SplitSeq(c.Message, "\n") {
 		// TUI (Width > 0) ではタブを展開する (下の Body ループ・decorateVerbatim と同じ理由:
-		// clipToWidth は \t を幅 0 と数えるが端末は展開するため、タブ入りメッセージ行が幅判定を
+		// term.ClipToWidth は \t を幅 0 と数えるが端末は展開するため、タブ入りメッセージ行が幅判定を
 		// すり抜けてインライン再描画が崩れる)。静的出力 (Width=0) は git log と同じ素通し。
 		if o.Width > 0 {
 			msgLine = strings.ReplaceAll(msgLine, "\t", "    ")
 		}
-		for _, seg := range wrapToWidth(msgLine, o.Width-4) {
+		for _, seg := range term.WrapToWidth(msgLine, o.Width-4) {
 			lines = append(lines, Line{Text: "    " + seg, CommitIdx: idx})
 		}
 	}
 	if c.Body != "" {
 		lines = append(lines, Line{Text: "", CommitIdx: idx})
 		for bodyLine := range strings.SplitSeq(c.Body, "\n") {
-			// TUI (Width > 0) ではタブを展開する。clipToWidth は \t を幅 0 と数えるが端末は
+			// TUI (Width > 0) ではタブを展開する。term.ClipToWidth は \t を幅 0 と数えるが端末は
 			// タブストップへ展開するため、タブ入り diff (Go ソース等) が幅判定をすり抜けて
 			// 折り返し、インライン再描画が崩壊する (job ログで実測したのと同じ病気)。
 			// 静的出力 (Width=0) は git log と同じ素通しにする
@@ -432,7 +389,7 @@ func RenderCached(head *Commit, state CIState, diff string, colored bool, glyph 
 	b.WriteString(head.Subject)
 	b.WriteString("\nStaged changes:\n")
 	if diff == "" {
-		b.WriteString(paint("(staged な変更はありません)", ansiDim, colored))
+		b.WriteString(term.Paint("(staged な変更はありません)", term.AnsiDim, colored))
 	} else {
 		b.WriteString(diff)
 	}
@@ -448,30 +405,30 @@ func renderDecoration(deco string, o RenderOpts) string {
 	}
 	dc := o.decorColors()
 	var b strings.Builder
-	b.WriteString(ansiYellow + "(" + ansiReset)
+	b.WriteString(term.AnsiYellow + "(" + term.AnsiReset)
 	first := true
 	for item := range strings.SplitSeq(deco, ", ") {
 		if !first {
-			b.WriteString(ansiYellow + ", " + ansiReset)
+			b.WriteString(term.AnsiYellow + ", " + term.AnsiReset)
 		}
 		first = false
 		b.WriteString(decorItem(item, dc))
 	}
-	b.WriteString(ansiYellow + ")" + ansiReset)
+	b.WriteString(term.AnsiYellow + ")" + term.AnsiReset)
 	return b.String()
 }
 
 func decorItem(item string, dc DecorColors) string {
 	if name, ok := strings.CutPrefix(item, "HEAD -> "); ok {
-		return dc.HEAD + "HEAD" + ansiReset + " -> " + refColor(name, dc) + name + ansiReset
+		return dc.HEAD + "HEAD" + term.AnsiReset + " -> " + refColor(name, dc) + name + term.AnsiReset
 	}
 	if item == "HEAD" {
-		return dc.HEAD + item + ansiReset
+		return dc.HEAD + item + term.AnsiReset
 	}
 	if strings.HasPrefix(item, "tag: ") {
-		return dc.Tag + item + ansiReset
+		return dc.Tag + item + term.AnsiReset
 	}
-	return refColor(item, dc) + item + ansiReset
+	return refColor(item, dc) + item + term.AnsiReset
 }
 
 // refColor はブランチ名がリポジトリの remote 配下 (<remote>/...) なら remote branch 色、
@@ -494,93 +451,14 @@ func decorateDetailLine(line string, colored bool) string {
 	}
 	switch {
 	case strings.HasPrefix(line, "##[error]"), strings.HasPrefix(line, "[failure]"):
-		return ansiRed + line + ansiReset
+		return term.AnsiRed + line + term.AnsiReset
 	case strings.HasPrefix(line, "##[warning]"), strings.HasPrefix(line, "[warning]"):
-		return ansiYellow + line + ansiReset
+		return term.AnsiYellow + line + term.AnsiReset
 	case strings.HasPrefix(line, "##[notice]"), strings.HasPrefix(line, "[notice]"):
-		return ansiCyan + line + ansiReset
+		return term.AnsiCyan + line + term.AnsiReset
 	case strings.HasPrefix(line, "##[group]"), strings.HasPrefix(line, "##[endgroup]"),
 		strings.HasPrefix(line, "##[command]"), strings.HasPrefix(line, "##[debug]"):
-		return paint(line, ansiDim, true)
+		return term.Paint(line, term.AnsiDim, true)
 	}
 	return line
 }
-
-// wrapToWidth は表示幅 width で折り返す (ANSI を含まない行の前提)。width <= 0 なら
-// 折り返さない。単語境界は考慮せず端末の折り返しと同じく文字単位で折る
-// (日本語混じりの commit message では単語境界折りの利得が薄いため)。
-func wrapToWidth(s string, width int) []string {
-	if width <= 0 || dispWidth(s) <= width {
-		return []string{s}
-	}
-	// 書記素クラスタ単位で折り、各行の幅は termwidth.Of で width 以下を保証する (rune 単位だと ⚠️ を VS16 の手前で
-	// 分断し、ansi.Hardwrap はキーキャップで幅を超えた。issue 590)。単語境界は見ず、折り返しの頭の空白は落とす。
-	return termwidth.Wrap(s, width, true)
-}
-
-func paint(s, color string, colored bool) string {
-	if !colored {
-		return s
-	}
-	return color + s + ansiReset
-}
-
-// clipToWidth は端末幅を超える行を切り詰める (インライン TUI で折り返しが再描画範囲を
-// ずらすのを防ぐ: issue の懸念点)。ANSI を除いた実効幅で判定し、超過時は末尾に `…` を付けて
-// 切り詰める。**SGR は保持する**。静的出力では使わない。
-//
-// truncateKeepANSI との違いは `…` を付けるかどうかだけ (どちらも色は残る)。切り詰めた行の
-// 表示幅も要る hot path では termwidth.ClipMeasure を使う (幅の二度測りを避けるため)。
-func clipToWidth(line string, width int) string { return termwidth.Clip(line, width) }
-
-// reapplyAfterReset は text 中の SGR リセット (`ESC[m` / `ESC[0m`) の直後に bg を張り直した
-// 文字列を返す。行全体を特定の背景で塗るとき、行内のリセットで背景が切れるのを防ぐ
-// (カーソル行の強調が唯一の用途で、一覧・status viewer の 2 箇所が共有する)。
-//
-// git log --color は短縮形 `ESC[m` を多用するため両形を拾う必要がある (literal 一致だと
-// 色付き行の塗りが途中で切れる。実測 2026-07-19)。
-//
-// 🚨 正規表現ではなく手書きの走査にしている: この関数はカーソル行のために毎フレーム走り、
-// regexp だと 1 フレームあたり約 0.9 KB (bitState + 置換結果) を確保していた (実測 2026-08-14)。
-// 対象が固定 2 パターンしかないので走査で足りる。
-func reapplyAfterReset(text, bg string) string {
-	if !strings.Contains(text, "\x1b[") {
-		return text // リセット候補が無い = 確保せずそのまま
-	}
-	var b strings.Builder
-	b.Grow(len(text) + len(bg)*2)
-	last, i := 0, 0
-	for i < len(text) {
-		j := strings.Index(text[i:], "\x1b[")
-		if j < 0 {
-			break
-		}
-		i += j
-		n := 0
-		switch {
-		case strings.HasPrefix(text[i:], "\x1b[m"):
-			n = 3
-		case strings.HasPrefix(text[i:], "\x1b[0m"):
-			n = 4
-		}
-		if n == 0 {
-			i += 2 // リセットでない SGR。次の候補へ
-			continue
-		}
-		b.WriteString(text[last : i+n])
-		b.WriteString(bg)
-		i += n
-		last = i
-	}
-	b.WriteString(text[last:])
-	return b.String()
-}
-
-// truncateKeepANSI は SGR を保ったまま表示幅 width へ切る (末尾に … を付けない。tuikit termwidth.Cut の別名)。
-func truncateKeepANSI(s string, width int) string { return termwidth.Cut(s, width) }
-
-// dropToColumn は表示列 n 以降を返す (手前の SGR は replay する。tuikit termwidth.DropColumns の別名)。
-func dropToColumn(s string, n int) string { return termwidth.DropColumns(s, n) }
-
-// stripANSI は SGR を剥がす (tuikit termwidth.StripSGR の別名)。
-func stripANSI(s string) string { return termwidth.StripSGR(s) }

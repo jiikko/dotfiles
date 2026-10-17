@@ -54,7 +54,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
   pager の配線は既存のテスト (`TestBrowseJobDetailPopup` 等) が捕まえる
   - 例外は doctor の削除確認パネル (`deleteScrollKeys`): 「送るキー以外は中止に落とす」安全側の
     契約なので、語彙を寄せると中止のつもりの打鍵が送りに化ける。送るキーはそこに 1 つずつ足す
-- スクロールは全 pager で `pagerScrollKey` (`scroll_glide.go`) を共有し、**手触り (glide の
+- スクロールは全 pager で `term.PagerScrollKey` (`internal/term/scroll_glide.go`) を共有し、**手触り (glide の
   フレーム数・末尾で止まる挙動) を 1 箇所で決める**。画面ごとに別実装しない
 
 ### emacs 層 (別名だけ)
@@ -268,7 +268,7 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 | 本文の左の行番号の溝 (nvim の number) | `gutter.Width` / `gutter.Format` (番号はソースの行番号。折り返しの続き行は空白) | glogx の issues の本文・treefiler のタイル |
 | diff・コードの色付け | `highlight.Diff` (本文のフェンスコードは `markdown.Render` が中で `highlight.Lang` を通す) | glogx の diff の板・pro-con の差分の板 |
 | 一覧・本文の移動 (§2) | `listnav.MotionOf` / `List` / `Pager` | glogx の全画面・pro-con |
-| 最下行の案内を幅で落とす (§5) | `hintfit.Fit` (`Item{Text, Prio}`。Prio は小さいほど残す。1 = 抜ける手段) | glogx の全画面 (`fitHintItems`)・mac-lan-manager |
+| 最下行の案内を幅で落とす (§5) | `hintfit.Fit` (`Item{Text, Prio}`。Prio は小さいほど残す。1 = 抜ける手段) | glogx の全画面 (`term.FitHintItems`)・mac-lan-manager |
 | 入力欄 (§7) | `lineedit` + `caret` | pro-con・schedkeys・glogx (issues の番号の絞り込み・URL ピッカー) |
 | 操作の結果の通知 (下) | `toast.Stack` | glogx・pro-con |
 | 処理中の回る印 (点字の spinner) | `spinner.Frame` (自前の整数で回す) / `spinner.At` (時刻から選ぶ)。いつ tick し・いつ止めるかは各画面 | glogx・pro-con・treefiler・restartable |
