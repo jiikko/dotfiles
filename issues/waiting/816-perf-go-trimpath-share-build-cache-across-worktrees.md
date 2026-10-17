@@ -1,8 +1,8 @@
 # 816 (perf): -trimpath で worktree をまたいで Go のビルドキャッシュを共有する
 
-> 🚨 **担当中: M4Pro-MacBook-Pro (glogx)**（2026-10-17〜）
-
 起票日: 2026-10-17
+
+> **waiting**: 入れてから 1 週間後 (2026-10-24 ごろ) の GOCACHE の大きさを待つ。来たら「進捗」の最後の観測で効き目を判定して閉じる。
 
 ## 概要
 
@@ -99,6 +99,14 @@ P2 4 件を採用して直した: runtime.Caller に頼るテスト 2 本が実�
     (通常の go test では起きない)・autobuild (`bin/lib/go_autobuild.zsh`) と保存済みの golangci-lint の指紋に GOFLAGS が入らず、
     -trimpath を入れても既存のバイナリはそのまま使われる (動作は同じでパスの表示だけが違うので害は無い)・`go version -m` から
     ldflags・CGO のフラグが消える (load/pkg.go)
-- [ ] 実装 2 周目の敵対的レビュー (直した差分に)
-- [ ] push して、この機械の go env に書く (`scripts/go_env_trimpath.sh` を実行する) → `GOFLAGS='' go env GOFLAGS` で読み戻す
-- [ ] 計測 2・3 (残す。trigger: 入れてから 1 週間後に GOCACHE の大きさを見るとき)
+- [x] 実装 2 周目の敵対的レビュー (直した差分に): P1 / P2 なし。P3 2 件を直した (単体テストの 2 回目の rc と読み戻しの成否・
+  TestOpenEditorAtRoot で処理の前後に cwd が動かないこと。後者は open_workspace.go に os.Chdir("/") を足す変異で red を確認)
+- [x] 2026-10-17: push して (tests: go_env_trimpath の 2 回目の rc と読み戻しの成否も見る・…)、この機械の go env に書いた。
+  `GOFLAGS='' go env GOFLAGS` = `-trimpath` (go env のファイル `~/Library/Application Support/go/env` に `GOFLAGS=-trimpath`)。CI は緑
+- [x] 2026-10-17: 計測 2 (1 行の変更の増分が悪化しないか。tui.go の先頭に 1 行・`./...`・空の GOCACHE): -trimpath=false で +23.0 MB、
+  -trimpath で +23.0 MB (22,976 KB / 22,956 KB)。悪化していない
+- 計測 3 (今の GOCACHE の worktree 別の内訳) はやめる: 2026-10-17 の GOCACHE は 2.6 GB まで減っていて (5 日の自動削除か掃除)、
+  入れる前の内訳を測っても効き目の判定に使えない。代わりに下の観測で、入れた後の大きさを 54 GB (742 の実測) と比べる
+- [ ] **観測 (waiting)**: 2026-10-24 ごろ (入れてから 1 週間、並行セッションの worktree が何本も作られた後) に `du -sh $(go env GOCACHE)` を見る。
+  入れる前は 54 GB (2026-10-17 の 742 の実測。今日 15 GB・昨日 23 GB の項目)。数 GB に留まっていれば効いている。
+  大きければ、項目の中の worktree のパスの有無を見て、-trimpath を通らない入口 (GOFLAGS を上書きする経路・GOENV=off) が無いかを探す

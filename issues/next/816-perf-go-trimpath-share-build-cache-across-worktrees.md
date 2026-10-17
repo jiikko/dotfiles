@@ -1,1 +1,0 @@
-../816-perf-go-trimpath-share-build-cache-across-worktrees.md
