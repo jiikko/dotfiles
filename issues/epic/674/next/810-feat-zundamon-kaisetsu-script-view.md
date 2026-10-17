@@ -1,1 +1,0 @@
-../810-feat-zundamon-kaisetsu-script-view.md
