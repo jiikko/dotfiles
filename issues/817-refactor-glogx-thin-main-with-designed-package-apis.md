@@ -84,25 +84,25 @@ golangci には「main を薄く」をそのまま表す規則が無いので、
 - [x] C-1 下準備 (742 で 2026-10-17 に数えた): url_picker は issues と一緒に、watch_chain は dirWatcher・newDirWatcher・drainWatchEvents と一緒に
       app へ (interface だけでは足りない)、editorCommand など 4 関数と runEditorCmd・editorClosedMsg・openURLMsg・openInBrowser・copyToClipboard は
       extcmd (新設) へ、notice の種類・firstLine・clampIdx・normalizeSpaceKey・clipboardFailText は app へ
-- [ ] C-2 本体を移す。**機械的に先頭を大文字にせず**、main から使われる名前だけを 0-2 の形で公開する
-- [ ] C-3 テストを置き分ける (中を見るテスト / 外部テスト / browseModel と組み合わせるテストは main)。共有のテスト部品は issuesviewtest へ
-- [ ] C-4 移設が外す検査を洗う (742 の罠の一覧: 固定名で読むテスト・reflect・識別子名の照合・TestMain・実コマンドの監視の範囲・CI の paths)
+- [x] C-2 本体を移す。**機械的に先頭を大文字にせず**、main から使われる名前だけを 0-2 の形で公開する
+- [x] C-3 テストを置き分ける (中を見るテスト / 外部テスト / browseModel と組み合わせるテストは main)。共有のテスト部品は issuesviewtest へ
+- [x] C-4 移設が外す検査を洗う (742 の罠の一覧: 固定名で読むテスト・reflect・識別子名の照合・TestMain・実コマンドの監視の範囲・CI の paths)
 
 ### D. status 画面 (`internal/statusview`)
 
-- [ ] D-1 status_view.go と worktree_status.go を移す (hintItem は term へ出し済み)。lineCache は diff / job の overlay とも共有するので app へ
-- [ ] D-2 テストを置き分ける
+- [x] D-1 status_view.go と worktree_status.go を移す (hintItem は term へ出し済み)。lineCache は diff / job の overlay とも共有するので app へ
+- [x] D-2 テストを置き分ける
 
 ### E. usage / ratelimit
 
-- [ ] E-1 usage_overlay / usage_cache と ratelimit_dashboard / ratelimit_resume を移す (どちらも browseModel のメソッドを持たない。742 で数えた)
-- [ ] E-2 テストを置き分ける
+- [x] E-1 usage_overlay / usage_cache と ratelimit_dashboard / ratelimit_resume を移す (どちらも browseModel のメソッドを持たない。742 で数えた)
+- [x] E-2 テストを置き分ける
 
 ### F. filer / lan
 
-- [ ] F-1 browseModel のメソッド (`quit` / `toggleUsage` / `deliverNotice` / `maybeTick` / `openFullScreen`) と tui.go の差し替え点
+- [x] F-1 browseModel のメソッド (`quit` / `toggleUsage` / `deliverNotice` / `maybeTick` / `openFullScreen`) と tui.go の差し替え点
       (`currentDir` / `runEditorCmd`) への依存を、画面から main へ頼む口 (0-2) に置き換える
-- [ ] F-2 移す・テストを置き分ける
+- [x] F-2 移す・テストを置き分ける
 
 ### G. main に残すものを整理する
 
@@ -176,3 +176,28 @@ P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.
 - [x] 2026-10-17 C-1 (glogx: issues 画面を出す下準備として、共有の道具を app と extcmd へ出す): issues が main から借りていた 24 個を
   app (通知の種類・小さな道具・WatchChain と watcher の seam) と extcmd (新設。エディタ・ブラウザ・クリップボードの口と結果の Msg) へ。
   notice_kind_test (識別子の名前で照合)・waitdelay_discipline_test (Cmd を作るファイルの許可表) を直した
+- [x] 2026-10-17 C-2〜C-4 (glogx: issuesview の公開名を main へ頼む口だけに絞る / 本番のコードから Fixture… のパッケージの関数を呼ぶ形も止める ほか):
+  画面を internal/issuesview へ移し、main のテストは Fixture の口 (fixture.go。`//go:build !nofixture`) へ書き換えた。
+  本番のコードから Fixture を呼ぶ形は TestNoFixtureCallsInProduction、各テストパッケージの TestMain が testenv.Main を呼ぶことは
+  TestEveryTestPackageUsesTestenv が止める。到達不能の検査は -tags=nofixture で回す。opus の反証レビューを 2 体 (挙動 / 検査の素通り) 通した
+- [x] 2026-10-18 D (glogx: status 画面を internal/statusview へ移し、公開名を main へ頼む口だけに絞る): golden は statusview 39 行
+- [x] 2026-10-18 E (glogx: usage と ratelimit の画面を internal/usageview / internal/ratelimitview へ移す)
+- [x] 2026-10-18 F (glogx: treefiler (F) と mac-lan-manager (L) の画面を internal/filerview / internal/lanview へ移す):
+  前景実行は画面の TakeExecCmd / ExecReturned、終了時の記憶は RememberScreen に寄せ、tui.go の ExecPending の手組みを消した。
+  テスト名 1252 件は前後で一致。変異: lanview.TakeExecCmd から execPending = true を外すと TestLanBindsBeatCrossKeys が red
+
+## 引き継ぎ (2026-10-18。別マシンで続ける)
+
+残り (上から順に):
+- [ ] D / E / F の反証レビュー (codex が使えれば codex。観点は ①挙動が変わっていないか ②検査の素通り (Fixture の抜け道・golden・allowlist))。
+  C までは opus 2 体で通した。D〜F はまだ誰も攻めていない
+- [ ] ratelimitview の SaveRatelimitScreen / RemoveRatelimitScreen は main のテストだけが使う。filerview と同じく Fixture の関数へ寄せて非公開にする
+- [ ] G-1 / G-2 / G-3 (上の節)。G-3 では src/glogx/CLAUDE.md・README の構造の記述と structure_ratchet_test.go の一覧の「移設待ち」を片付ける
+- [ ] 全部済んだら `scripts/issue_done.sh 817` と retro
+
+検証の手順 (各 commit の前): `src/glogx` で `go test -race ./...` / `make lint` / repo root で `scripts/check_unused_excluding_tests.sh` /
+`bash tests/glogx/test_no_real_commands_in_tests.sh`、テスト名の集合 (`go test -list '.*' ./...`) を移設の前後で比べる。
+公開名の golden は `GLOGX_API_UPDATE=1 go test -run TestInternalAPIGolden .` で作り直し、増えた名前が main から頼む口だけかを見てから commit する。
+罠: gopls rename は長さが変わる名前を 1 つずつ (位置がずれる)。外のパッケージが使う名前は gopls が拒むので、main 側を先に書き換えてから非公開にする。
+JSON のタグ付きのフィールドは小文字にしない。unparam (check-exported) は他パッケージの利用を数えないので `//nolint:unparam // 理由` で受ける。
+
