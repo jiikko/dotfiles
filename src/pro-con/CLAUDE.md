@@ -18,6 +18,7 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 - `wtclean/` — 閉じたカードの PG の worktree/branch/session の片付け判定 (`Judge`) と実行
 - `presence/` — 開いている画面の数え上げ (flock ベース)
 - `relay/` — 画面が描いた最新の 1 枚を `pro-con screen` へ渡す中継
+- `flockmark/` — presence と relay が使う「開いている間 flock を持ち続ける印」の作り方と、作りかけの残りの見分け方
 - `wake/` — dispatcher を即時に起こす Unix socket
 - `schedule/` — dispatcher が決まった時刻に回す予定表 (`Jobs`)
 - `upgrade/` — 画面側のライブアップグレード (ctrl+r で syscall.Exec)。dispatcher 側は直下の `dispupgrade.go`

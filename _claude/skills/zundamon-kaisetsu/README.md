@@ -20,13 +20,13 @@
 | `examples/script.json` | 台本の見本 |
 | `examples/review-bench/` | 欠陥を仕込んだ試験用の台本と正解表 (`lint` のテストと、確認役の試験に使う) |
 | `readings.json` | 読み間違えやすい語の辞書 (SKILL.md の手順で台本の `readings` に合流させる) |
-| `improving.md` | 改善点を挙げるときの観点と測り方 (適宜更新する。今動いている改善は issue の epic 674) |
+| `improving.md` | 改善点を挙げるときの観点と測り方 (適宜更新する。これまでの改善は issue の epic 674 (完了済み)) |
 | `kanji-candidates.txt` | 読み分けを誤りやすい漢字の候補 (1 行 1 語)。SKILL.md の手順 5 の 3 で、これを含む行を目で見る。誤読を見つけたら足す |
 | `acronyms.json` | 1 文字ずつ読むのが正しい略語 (CPU・OS 等)。`kana --script --check` がこの語を「1 文字ずつ読んだ誤読」として警告しない。台本だけの語 (社内の略語) は台本の `acronyms` に書く |
 | `assets/zundamon-kaisetsu/` | 立ち絵の置き場 (`psd/` に元の素材、`faces/<キャラ>/` に書き出した表情)。**同梱しない** (下の Setup で用意する) |
 
 合成・組み立ての本体は Go 製のコマンド `zundamon-kaisetsu` (`check` / `up` / `down` / `speakers` / `kana` (文か台本の全行の読み。`--check` で読みの機械検査) /
-`synth` / `build`)。ソースは dotfiles の `src/zundamon-kaisetsu/`、入口は dotfiles の `bin/zundamon-kaisetsu` で、
+`lint` (台本の機械検査) / `synth` / `times` (合成済みの行ごとの時刻) / `view` (台本を人に見せる一覧) / `build`)。ソースは dotfiles の `src/zundamon-kaisetsu/`、入口は dotfiles の `bin/zundamon-kaisetsu` で、
 このディレクトリ (テンプレートと立ち絵の既定の置き場) を環境変数 `ZUNDAMON_KAISETSU_SKILL_DIR` で渡す。
 
 ## Setup

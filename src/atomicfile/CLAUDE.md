@@ -4,7 +4,7 @@
 
 ## 入口
 
-- `Write(path string, data []byte, perm os.FileMode) error` — glogx (状態キャッシュ・issue の claim バナー)・ratelimit (利用枠キャッシュ)・pro-con (状態の置き場) が replace で取り込む
+- `Write(path string, data []byte, perm os.FileMode) error` — glogx (状態キャッシュ・issue の claim バナー)・ratelimit (利用枠キャッシュ)・pro-con (状態の置き場)・treefiler (設定・履歴・前回の場所)・mac-lan-manager (台帳・設定・操作のログ) が replace で取り込む
 - `IsTemp(name string) bool` — ファイル名が Write の temp の形か。残骸を掃除する側 (pro-con の relay の sweep) が名前の規則を写さずに判定する
 
 ## ビルド・テスト

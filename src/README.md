@@ -22,13 +22,14 @@
 | [`zundamon-kaisetsu`](zundamon-kaisetsu/README.md) | VOICEVOX の掛け合い解説動画 (HTML / mp4) を作る CLI (skill `zundamon-kaisetsu` の本体) |
 | [`chromecookie`](chromecookie/README.md) | Chrome のプロファイルから Cookie を復号して読むライブラリ |
 | [`treefiler`](treefiler/README.md) | 横に育つ木のファイラー `bin/treefiler`。glogx の `F` も同じ画面 (filer パッケージ) を取り込む |
-| [`mac-lan-manager`](mac-lan-manager/README.md) | 手元の Mac 同士を内部の網で繋いで管理する道具 `bin/mac-lan-manager` (一覧・台帳・ssh / 画面共有。初期設定と glogx の `L` はこれから。issue 747) |
-| [`tuikit`](tuikit/README.md) | TUI の部品 (画面遷移・演出・幅計算・確認・入力欄)。glogx / pro-con / schedkeys / ratelimit / restartable / treefiler が使う |
+| [`mac-lan-manager`](mac-lan-manager/README.md) | 手元の Mac 同士を内部の網で繋いで管理する道具 `bin/mac-lan-manager` (一覧・台帳・ssh / 画面共有・固定 IP と有線の名前の初期設定。glogx の `L` も同じ画面。issue 747) |
+| [`tuikit`](tuikit/README.md) | TUI の部品 (画面遷移・演出・幅計算・確認・入力欄)。glogx / pro-con / schedkeys / ratelimit / restartable / treefiler / mac-lan-manager が使う |
 | [`termsafe`](termsafe/README.md) | 外から来た文字列を端末へ安全に出す無害化 |
 | [`subproc`](subproc/README.md) | 外部プロセス実行の安全弁 (WaitDelay と git の timeout) |
 | [`atomicfile`](atomicfile/README.md) | 途中の状態を残さないファイル書き込み (temp + rename) |
 | [`safefs`](safefs/README.md) | 上書きしない作成・名前の変更・ゴミ箱への移動 (doctor と treefiler が共有) |
 | [`proctree`](proctree/README.md) | プロセスの子孫を集めて止める (runtimeout と zundamon-kaisetsu が使う) |
+| [`userdirs`](userdirs/README.md) | 道具ごとの設定の置き場 (`~/.config/<app>`) を 1 か所で決め、置き場を変えたときに 1 回だけ引っ越す (pro-con / treefiler / mac-lan-manager が使う) |
 
 package 単位の一覧は [PACKAGES.md](PACKAGES.md) (生成物)。道具を知らなくても grep で見つけられるよう commit しておき、`scripts/go_packages_index.sh --check` (`make test-lint`) が生成し直した結果との差分を検査する。
 

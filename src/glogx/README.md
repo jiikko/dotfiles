@@ -202,8 +202,10 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 | `D` | **doctor を全画面で開く** (toggle。掃除候補のディスク占有・壊れた launchd 登録・Homebrew の警告・Docker の未使用資源・内蔵 SSD の健康状態を、リスク・復元方法つきでタブで並べる。**Docker タブは Docker Desktop がある環境にだけ出る**。停止コンテナ / 使われていないイメージ / ビルドキャッシュ / 参照されていないボリュームを数え、`Enter` で内訳と回収する `docker ... prune` コマンドを見せ、`Space` で選んで `x` で実行する (確認モーダルを必ず挟む。実行の機構は Homebrew タブと共有)。🚨 **ボリュームだけは実行できない** — 中身はデータで消すと戻らず、しかも「最後にマウントされた日」を Docker が持っていないので判定が近似だから。`y` でコマンドをコピーして人が叩く (群のまとめコマンドも出さず 1 件ずつ)。🚨 提示するコマンドには `-f` が付く: prune は対話プロンプトを出し、TTY 無しの実行では**何も消さずに rc=0 で返る**ため (実測)。表示・コピー・実行で同じ文字列を使う (画面に出ているものと走るものを分けない)。見出しの数字は `docker system df` の申告で、候補の合計は共有レイヤーを重複計上する「見積もり」として別に出す)。**SSD タブは読むだけ** (issue 578): `diskutil info disk0` の SMART Status と `smartctl -j -a disk0` の NVMe の健康情報 (Critical Warning・整合性エラー・予備領域・摩耗など) を、開くたびに取り直して出す (キャッシュしない。実測 0.1 秒未満)。smartctl が無ければ判定不能と出し、開いた直後に toast で `brew install smartmontools` を案内する (画面からは入れない)。APFS の整合性は実行せず、`y` で `diskutil verifyVolume` のコマンドをコピーするだけ。判定の正本は `src/doctor/ssd`。画面内のキーは `j`/`k` 移動・`Space` で削除するものを選択・`d` で削除 (確認プロンプトを必ず挟む)・`Enter` で中を開く/畳む (開くとカーソルが対象パスへ移り、ディレクトリ単位で選べる)・`y` でパスをコピー・`Y` で解説をコピー・`r` で再スキャン・`D`/`q`/`Esc` で閉じる。**削除できるのはディスクの行だけ**で、サービス診断と SSD は表示とコピーのみ (削除経路を持たない)。`risk: 要確認` の行は `Enter` で中身を見るまで選べず、ゴミ箱へ移動する (空にするまで容量は戻らない)。同じ検査は CLI からも叩ける (`bin/diskdoctor` / `bin/svcdoctor` はどちらも走査のみで削除しない。使い分けは [src/doctor/README.md](../doctor/README.md)) |
 | `F` | **treefiler (ファイラー) を全画面で開く** (toggle。どの画面からでも開く。pwd を root にした横に育つ木で、ファイルを開くと中央にタイルが重なる。`q`/`Esc` は glogx ごと終了、`F` で閉じて一覧へ戻る。キーと見た目は [src/treefiler/README.md](../treefiler/README.md)、仕様は [docs/treefiler-spec.md](../../docs/treefiler-spec.md)。単体では `bin/treefiler`) |
 | `L` | **mac-lan-manager を全画面で開く** (toggle。どの画面からでも開く。手元の Mac 同士を内部の有線 LAN で繋いで管理する: Bonjour で見えた Mac と台帳の Mac を一覧にし、`s` で ssh・`o` で画面共有・`y`/`Y` でコピー・`space` で台帳に登録。`L`/`q`/`Esc` で閉じて一覧へ戻る (treefiler と違い glogx ごとは終えない。ガイド §1 の「`q` は 1 段戻る」)。キーは中で `?`、説明は [src/mac-lan-manager/README.md](../mac-lan-manager/README.md)。単体では `bin/mac-lan-manager`) |
-| `C` | **claude update を実行** (確認なし即実行。結果を下部モーダルに表示。**どの画面からでも押せる** — issues / status / ratelimit / doctor / diff / PR status を開いたままでよく、一覧へ戻る必要はない。viewer が入力中 (絞り込み・y/N 確認) のときだけそちらへ渡す) |
-| `X` | **codex update を実行** (`C` の codex 版。起動時に新バージョンの有無を調べ、最新なら「すでに最新」を出す。`C` と同じくどの画面からでも押せるが、**status viewer では `X` = 変更を捨てる**なので、そこでは codex update にならない) |
+| `C` | **claude update を実行** (確認なし即実行。結果を下部モーダルに表示。**どの画面からでも押せる** — issues / status / ratelimit / doctor / diff / PR status を開いたままでよく、一覧へ戻る必要はない。viewer が入力中 (絞り込み・y/N 確認・doctor の削除の確認と実行中) のときだけそちらへ渡す。**treefiler (`F`) では `C` は「経路以外を全部畳む」**、mac-lan-manager (`L`) では入力中・確認・設定の間はそちらへ渡す) |
+| `X` | **codex update を実行** (`C` の codex 版。起動時に新バージョンの有無を調べ、最新なら「すでに最新」を出す。`C` と同じくどの画面からでも押せるが、**status viewer では `X` = 変更を捨てる**なので、そこでは codex update にならない。`C` と同じく F / L の入力中もそちらへ渡す) |
+
+全画面 (`i` / `D` / `R` / `F` / `L`) を出したまま `C-g` で glogx ごと閉じると、次の起動はその画面を開き直す (30 分以内。issues は同じ repo、`F` は同じ dir のときだけ。`L` は場所を問わない)。
 | `w` | **直近の警告/エラーをクリップボードへコピー** (トーストが消えた後も可。LLM に貼る用) |
 | `Ctrl-D` / `Ctrl-U` / `PgDn` / `PgUp` | ページスクロール |
 | `g` / `G` | 先頭 / 末尾のコミットへ |
@@ -387,7 +389,7 @@ bare 記号なら全層で 1 に一致するため。割れる文字を出すと
 
 ```bash
 make test   # go test -race ./... (unit + 一時 git リポジトリでの integration。外部通信なし) + 確保回数の予算 (TestFrameAllocBudget) だけ -race なしでもう 1 回
-make lint   # golangci-lint (scripts/golangci_lint.sh 経由・バージョン固定、設定は .golangci.yml)
+make lint   # gorules の vet と module の依存グラフの検査 (scripts/go_module_graph.sh) の後に golangci-lint (scripts/golangci_lint.sh 経由・バージョン固定、設定は .golangci.yml)
 
 # 幅ズレ調査用 (要 TTY。tmux の内と外で走らせて比べる)
 go run ./tools/width-probe

@@ -1,7 +1,7 @@
 # treefiler
 
 横に育つ木のファイラー。単体の `bin/treefiler` と、glogx の `F` (filer パッケージを取り込む) の両方で使う。
-**見た目と挙動の正本は `docs/treefiler-spec.md`** (§0 = glogx での決定、§1〜 = treebeard のソースからの抜き出し)。進捗は issue 662。
+**見た目と挙動の正本は `docs/treefiler-spec.md`** (§0 = glogx での決定、§1〜 = treebeard のソースからの抜き出し)。実装の経緯は issue 662 (完了済み)。
 
 ## ファイルの地図
 
@@ -23,6 +23,8 @@
 - `filer/watch.go` — ライブ更新 (開いているフォルダを読み比べる)
 - `filer/search.go` / `filer/shell.go` — `/` の検索と、`!` / `s` (呼び出し側に起こしてほしいプロセスを渡す)
 - `filer/fileops.go` — `a` 新規作成・`m` 名前の変更・`d` ゴミ箱へ移す (issue 722)。本体は `src/safefs`。名前の入力は `!` と同じ欄 (`promptState.kind`)、確認の板は `Model.ask`
+- `filer/copy.go` — `y` / `Y` でカーソルの項目のパスをクリップボードへ (絶対 / root からの相対。issue 718)
+- `filer/history.go` — `!` のコマンドの履歴 (`treefiler-history` に 1 行ずつ追記。issue 721)
 - `filer/goto.go` — `:` 入力したパスへカーソルを飛ばす (root の外なら root を上げる。issue 746)。入力は `!` と同じ欄
 - `filer/settings.go` / `filer/places.go` — 設定の板と保存、前回の場所
 - `filer/open.go` / `filer/explode.go` — `o` (外のアプリで開く)・`e` (配下を全部開く)

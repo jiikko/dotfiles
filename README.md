@@ -59,6 +59,9 @@ make test-lint   # aggregate lint target (shellcheck + zsh syntax + YAML + JSON 
 make test-src    # lint + unused check + test for all Go projects under src/ (same coverage as CI's src_*.yml)
 make test-runtime # aggregate runtime target (syntax + auto-discovered tests/**/test_*.sh + bats)
 make test-bats   # bats tests (skips if bats is not installed)
+make test-changed PATHS="a b"  # only the tests that cover the given paths (PATHS is required; DRY_RUN=1 lists them)
+make test-dir DIR=tests/<dir>  # run one tests/ directory
+make test-fresh  # run the tests in a fresh checkout of HEAD (catches files that are not in git; run before push)
 tests/zshrc/test_zshrc.sh  # existing zsh tests (also run via make test)
 ```
 

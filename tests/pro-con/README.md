@@ -1,7 +1,7 @@
 # tests/pro-con
 
 pro-con の e2e モード (`bin/pro-con e2e start <置き場>`) を使うテスト。本物の dispatcher と画面を、置き場ごとの隔離 tmux サーバで動かし、
-PG / PM は台本どおりの偽物 (claude を起動しない)。共通部品は `lib/e2e_helper.sh`。
+PG / PM は台本どおりの偽物 (claude を起動しない)。共通部品は `lib/e2e_helper.sh` (`test_e2e_scenario.sh` だけは使わず自前で持つ)。
 
 | ファイル | 確かめること | 所要 | どこで走るか |
 |---|---|---|---|

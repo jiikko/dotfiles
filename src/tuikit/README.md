@@ -204,7 +204,7 @@ if confirm.IsYes(key) { run() }
 | glogx の一覧 4 画面が移動の語彙を `listnav.MotionOf` から取り、半ページが `listnav.Half(各画面が基準に渡す行数)` | glogx の `motion_vocabulary_test.go` (入口 `browseModel.handleKey` から、別名と一次語彙の結果の一致と、半ページの移動量を見る) |
 
 CI は `.github/workflows/src_tuikit.yml` (lint + test)。tuikit を変えると、使う側のうち glogx・pro-con・treefiler・schedkeys・
-ratelimit の CI も走る (各 workflow の paths に `src/tuikit/**` がある)。restartable は tuikit を go.mod の版で固定している
+ratelimit・mac-lan-manager の CI も走る (各 workflow の paths に `src/tuikit/**` がある)。restartable は tuikit を go.mod の版で固定している
 (replace を持たず go install できる形) ので走らない。restartable に取り込むときは版を上げて restartable 側の CI で確かめる。
 
 ## フレームの重さを測る
@@ -249,4 +249,4 @@ replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 ```
 
 tuikit は `src/termsafe` を require している (`markdown` / `toast` が使う)。replace は推移しないので、手元の termsafe を使うには取り込む側にも termsafe の replace を書く
-(glogx・pro-con・ratelimit・treefiler はそうしている)。
+(glogx・pro-con・ratelimit・treefiler・mac-lan-manager はそうしている)。

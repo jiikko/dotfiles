@@ -5,7 +5,7 @@ MP4 のトップレベルの box を先頭から辿り、壊れていない box 
 `__concat_mp4_effective_size` (concat の出力が入力の合計より小さいときの診断) が `bin/mp4-effective-size` を通して呼ぶ。
 
 ```sh
-mp4-effective-size <file>   # 常に rc=0 で数を 1 行。読めない・壊れているなら 0
+mp4-effective-size <file>   # 数を 1 行出して rc=0。読めない・壊れているなら 0 (引数の数を誤ると usage を出して rc=2)
 ```
 
 数え方 (大きさ 0 は終わりまで・1 は 64 bit の大きさ・型が印字できる ASCII でない / 大きさが 8 未満 / ファイルの外へ出るところで止める) は、

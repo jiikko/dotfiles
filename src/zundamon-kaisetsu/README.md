@@ -8,7 +8,7 @@
 
 `bin/zundamon-kaisetsu` (go_autobuild のラッパー) が、skill のディレクトリを環境変数 `ZUNDAMON_KAISETSU_SKILL_DIR` で渡して起動する。
 テンプレート (`templates/player.html`)・立ち絵の既定の置き場・略語の一覧 (`acronyms.json`。`kana --check` が読む) はそこから読む
-(読み替えの辞書 `readings.json` は Go が読まない。台本の `readings` へ合流させる手順は SKILL.md)。バイナリを直接起動するときも、この環境変数が要る。
+(読み替えの辞書 `readings.json` は `lint` が合流漏れの検査にだけ読む。台本の `readings` へ合流させる手順は SKILL.md)。バイナリを直接起動するときも、この環境変数が要る。
 
 ```sh
 zundamon-kaisetsu check | up | down | speakers | kana … | lint script.json | synth script.json | times script.json | view script.json | build script.json -o out --format html|mp4|both

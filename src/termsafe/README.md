@@ -1,6 +1,6 @@
 # termsafe — 外部由来の文字列を端末へ出す前に無害化する単一の関門
 
-各 module (glogx / doctor / pro-con / ratelimit / tuikit) が go.mod の `replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe` で取り込む共有 module (restartable だけは `go install` で配るので replace を使わず、疑似バージョンで require する)。
+各 module (glogx / doctor / pro-con / ratelimit / tuikit / treefiler / mac-lan-manager) が go.mod の `replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe` で取り込む共有 module (restartable だけは `go install` で配るので replace を使わず、疑似バージョンで require する)。
 依存はゼロ (標準ライブラリのみ)。仕様・トレードオフの一次情報は `termsafe.go` の doc コメント。
 
 ## なぜ独立 module か
@@ -39,8 +39,8 @@
 「画面に出ているものと、実際に消す / 案内するものが違う」を作る。落とす側へ倒し、
 落とした件数を人に見せる (`disk.DisplayablePath` / `svc` の `displayableIdentity` がその形)。
 
-どの関数も、C0 / DEL / C1 の制御文字・BOM・双方向テキストの制御文字 (U+202A-U+202E / U+2066-U+2069。
-表示順を書き換えて文字列を偽装できる) を落とす。`IsPlain` はこれらを含む値を「そのまま出せない」と判定する。
+整形する関数 (`DetailLine` / `LineKeepTabs` / `Plain*`) は、C0 / DEL / C1 の制御文字・BOM・双方向テキストの制御文字 (U+202A-U+202E / U+2066-U+2069。
+表示順を書き換えて文字列を偽装できる) を落とす (`ClipRunes` / `CutBytes` は切るだけで落とさない)。`IsPlain` はこれらを含む値を「そのまま出せない」と判定する。
 
 ## 通し忘れを機械で止める (issue 251 / 252)
 

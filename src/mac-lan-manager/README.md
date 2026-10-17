@@ -27,7 +27,7 @@ ssh / 画面共有 / コピー・この Mac の IP と有線の名前のコピ�
 | `ledger` | 管理対象の台帳 (`~/.config/mac-lan-manager/hosts.toml`。`$XDG_CONFIG_HOME` があればその下。前の置き場 `~/.config/glogx/mac-lan-manager` のファイルは初回に移す)。この Mac の中だけに持つ。読み書きは `Store` の口だけを通す (共有を後から足す余地) |
 | `prefs` | 設定 (一覧に出す IP・内部 IP の決め方・その他の IP の種類。`settings.toml`) |
 | `lanmgr` | 画面 (一覧・詳細カード・設定・確認の板・初期設定・メッセージ一覧)。有線の名前を引いて宛先に使う (`wiredname.go`)。lipgloss v2.0.5 + tuikit。単体の `main.go` と glogx の板の両方から使う口 (`New` / `HandleKey` / `HandleInput` / `Advance` / `View` / `Busy` / `Changed` / `Reload` / `OwnsKeys` / `Binds` / `TakeExec` / `TakeNotices` / `Close` …) |
-| `setup` | 初期設定 (段 4) の手順を組む: 観測から残りの手順を組み直す `Plan` (鍵 → この Mac の固定 → 相手の固定 → 確認 → 台帳 → この Mac / 相手の有線の名前) / 相手の有線を固定 IP にする命令列 `StaticIP` (確認の印が来なければ元へ戻すデッドマンスイッチ) / 有線の名前を広告する LaunchAgent の命令列 (`wiredname.go`) / 空き番号の提案 `SuggestIP`。命令を組むだけで起こさない (起こすのは `lanmgr` の初期設定の画面で、確認の板の `y` の後だけ)。テストは偽物だけが見える PATH (`<sandbox>:/bin`) で走らせ、外へ解決したら走らせる前に落とす |
+| `setup` | 初期設定 (段 4) の手順を組む: 観測から残りの手順を組み直す `Plan` (鍵 → この Mac の固定 → 相手の固定 → 台帳 → この Mac / 相手の有線の名前。相手の固定は確認まで含む) / 相手の有線を固定 IP にする命令列 `StaticIP` (確認の印が来なければ元へ戻すデッドマンスイッチ) / 有線の名前を広告する LaunchAgent の命令列 (`wiredname.go`) / 空き番号の提案 `SuggestIP`。命令を組むだけで起こさない (起こすのは `lanmgr` の初期設定の画面で、確認の板の `y` の後だけ)。テストは偽物だけが見える PATH (`<sandbox>:/bin`) で走らせ、外へ解決したら走らせる前に落とす |
 | `live` | `lanmgr` を本物 (ネットワーク・Bonjour・台帳・設定・クリップボード・相手への ssh の `SSHRun` / `Observe`) につなぐ `Options()`。単体の `main.go` と glogx の板が共有する (glogx はクリップボードと時計だけ自分の口に替える) |
 
 ## 触る前に読むもの

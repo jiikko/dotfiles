@@ -19,7 +19,7 @@
 ## 入口
 
 - `bin/diskdoctor` / `bin/svcdoctor` (`cmd/diskdoctor`, `cmd/svcdoctor` の `main.go`)
-- glogx の `D` 画面 (`src/glogx/doctor_*.go`。地図は src/glogx/CLAUDE.md) は CLI を経由せず disk / svc / docker / ssd / brewledger を直接呼ぶ。削除は `doctor_delete.go` → `disk.Delete`
+- glogx の `D` 画面 (`src/glogx/doctor_*.go`。地図は src/glogx/CLAUDE.md) は CLI を経由せず disk / svc / docker / ssd を直接呼ぶ (brewledger は svc と disk の中から使う)。削除は `doctor_delete.go` → `disk.Delete`
 
 ## ビルド・テスト
 

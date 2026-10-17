@@ -43,7 +43,7 @@
 
 | CLI | 条件 |
 | --- | --- |
-| `diskdoctor` | エントリが `failed` / エントリ内の一部の Item を走査できず (`failures`) / 中断 (`partial`) |
+| `diskdoctor` | エントリが `failed` / エントリ内の一部の Item を走査できず (`failures`) / 中断 (`partial`) / 検出条件が未実測 (`Unverified`) のエントリが 0 件だった |
 | `svcdoctor` | 中断 / `launchctl` の失敗 / **brew 台帳が取れない (`BrewErr`)** / 未診断あり / 読めないディレクトリ |
 
 判定は `cmd/diskdoctor/exit.go` の `diskExitCode` と `cmd/svcdoctor/exit.go` の `svcExitCode` に

@@ -415,7 +415,7 @@ issue の読み方 (状態 = ファイルの位置、`epic/<name>/` の 2 段、
 | package | 役割 |
 |---|---|
 | `config` | 設定ファイルと repo の列挙 |
-| `agents` | `claude agents --json` で動いている session を一覧する (本物を読む。3 秒ごと・timeout 3 秒。取れなかったら 0 本にせずエラー) |
+| `agents` | `claude agents --json` で動いている session を一覧する (本物を読む。3 秒ごと・timeout 10 秒。取れなかったら 0 本にせずエラー) |
 | `card` | ドメイン (カード・状態・不変条件の検査)。UI にも backend にも依存しない |
 | `backend` | UI と状態の持ち主の境界 (`Backend` interface / `Command` / `Snapshot`)。UI はここより下を知らない |
 | `fake` | 模擬 backend (`--mock` の画面で使う)。本物は `live` (`main.go` で `--mock` かどうかで切り替える) |
