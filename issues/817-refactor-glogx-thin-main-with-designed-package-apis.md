@@ -67,21 +67,21 @@ golangci には「main を薄く」をそのまま表す規則が無いので、
 
 ### A. doctorview の公開面を絞る (済んだ画面で型を固める)
 
-- [ ] A-1 0-1 の道具で doctorview の公開名を分類する (main の本体が使う / main のテストだけが使う / 外部テストだけが使う / 中だけ)
-- [ ] A-2 main の本体が使う口を 0-2 の形の API にまとめ、それ以外を非公開に戻す
-- [ ] A-3 main のテスト・外部テストが中身 (フィールド) を見ている箇所は、API 経由に書き換えるか、`package doctorview` の中のテストへ戻す
-- [ ] A-4 doctortest の公開面も同じく絞る
-- [ ] A-5 JSON に載る構造体 (doctor_cache.go / doctor_resume.go) のフィールド名を変えていないことを確かめる
+- [x] A-1 0-1 の道具で doctorview の公開名を分類する (main の本体が使う / main のテストだけが使う / 外部テストだけが使う / 中だけ)
+- [x] A-2 main の本体が使う口を 0-2 の形の API にまとめ、それ以外を非公開に戻す
+- [x] A-3 main のテスト・外部テストが中身 (フィールド) を見ている箇所は、API 経由に書き換えるか、`package doctorview` の中のテストへ戻す
+- [x] A-4 doctortest の公開面も同じく絞る
+- [x] A-5 JSON に載る構造体 (doctor_cache.go / doctor_resume.go) のフィールド名を変えていないことを確かめる
 
 ### B. 土台 (term / app) の公開面
 
-- [ ] B-1 term・app の公開名のうち、package の外から使われないもの (例: `term.HintfitItems` は外からはテストだけ。
+- [x] B-1 term・app の公開名のうち、package の外から使われないもの (例: `term.HintfitItems` は外からはテストだけ。
       🚨 `term.BuildPanelBoxImpl` は zoom.go が本番で使うので、戻すなら呼び出し側の移設か代わりの API が要る) を非公開に戻す
-- [ ] B-2 app の `ScreenMemory` などのフィールドを公開している理由を見直す
+- [x] B-2 app の `ScreenMemory` などのフィールドを公開している理由を見直す
 
 ### C. issues 画面 (`internal/issuesview`)
 
-- [ ] C-1 下準備 (742 で 2026-10-17 に数えた): url_picker は issues と一緒に、watch_chain は dirWatcher・newDirWatcher・drainWatchEvents と一緒に
+- [x] C-1 下準備 (742 で 2026-10-17 に数えた): url_picker は issues と一緒に、watch_chain は dirWatcher・newDirWatcher・drainWatchEvents と一緒に
       app へ (interface だけでは足りない)、editorCommand など 4 関数と runEditorCmd・editorClosedMsg・openURLMsg・openInBrowser・copyToClipboard は
       extcmd (新設) へ、notice の種類・firstLine・clampIdx・normalizeSpaceKey・clipboardFailText は app へ
 - [ ] C-2 本体を移す。**機械的に先頭を大文字にせず**、main から使われる名前だけを 0-2 の形で公開する
@@ -146,3 +146,33 @@ P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.
     interface のレジストリは 1 フレームの確保が増える (742 の fullscreen_id.go の注記)。動詞は main の issuesView / statusView /
     filerView / lanView と doctorview に既にある名前を採った
   - 0-3: H-3 と同じもの (golden)
+  - H の codex の敵対的レビュー (1 本): P2 2 件・P3 1 件を採用 (型の別名 `type bm = browseModel` と括弧の受け手のメソッドを
+    H-2 が数えない・公開の変数の無名構造体のフィールドと括弧で包んだ型のフィールドを H-3 が数えない)。再現手順 4 つで red を確認。
+    ビルドタグ・cgo・ファイル名の大小文字・canary の空振り・recvTypeName の変更は壊せなかった
+- [x] 2026-10-17 A (glogx: doctor のテストを doctorview の中へ戻し、main へ頼む口を整える / doctorview の公開名を main へ頼む口だけに絞る):
+  - 外部テスト (`*_ext_test.go`) を package doctorview の中へ統合した。doctortest は doctorview を import しない fake の置き場にし
+    (import の循環を断つ)、doctorview の型を使う部品は doctorview の `testhelpers_test.go` へ。差し替え口は `Deps` 1 つ
+    (doctortest.Deps は同じ形の構造体で、変換して渡す。形がずれるとコンパイルで落ちる)
+  - main へ頼む口: `Receive` (非同期の結果 6 種を 1 つで受ける。tui.go の型の switch 6 本が消えた)・`StartupToast`・
+    `RestoreScreen` / `RememberScreen`・`InterruptDelete`。main の配線テストが要る状態は `Fixture()` の口だけ
+    (Show / Delete / Reports / Rows / CursorIndex など)。本番のコードからの `.Fixture` と `Fixture{}` の直接構築は
+    `TestNoFixtureCallsInProduction` が止める。**この形 (画面ごとの Fixture) を他の画面にも使う** (0-2 の決定に足す)
+  - doctor だけで閉じる main のテスト (untrusted_display の doctor の 10 本・clock_rollback の小テスト・RememberScreen・latch の型の pin)
+    を doctorview へ移した。テスト名 1,244 → 1,246 (増えたのは分割した 1 本と新しい検査 1 本)
+  - 公開名 163 個を gopls rename で非公開に戻した (先頭の小文字化だけ = 742 の前の名前)。golden の doctorview は 231 行 → 95 行
+    (うち 21 行は JSON に載る非公開の型のフィールド)。A-5: JSON に載る 5 つの構造体のフィールド名とタグが前後で同じことを比べた
+  - A-4: doctortest の公開名 15 個はどれも doctortest の外 (main か doctorview の中のテスト) から使われている
+  - 外れかけた検査: src/doctor の derived_fields_bypass_test が glogx のフィールド名を覚えている (`DiskRep` / `R` / `Rep` を
+    小文字に戻した)。`Deps.Disk` (関数の型) が snapshot の `Disk` と名前で衝突して同じ検査が落ちたので、Deps のフィールドは元の
+    差し替え口の名前 (DiskOpts など) にした。非公開に戻した名前は staticcheck の U1000 (-tests=false) と unparam の検査に戻る
+  - 変異で red を確認: SSD の世代の照合を外す・武装を飛ばす・cancelAll の Stop を外す・寄せのトーストを外す・Update の Receive を外す
+  - codex の敵対的レビュー (1 本): 本番の挙動の不変性は壊せなかった。P2 (Fixture.Delete が進捗を「既知」で置いて、進捗の届く前の
+    削除中を見落とす) と P3 (`Fixture{v}` の直接構築が検査を通る) を直し、変異で red を確認
+  - 踏んだ罠 (道具): 改名の位置を先に全部取ってから当てると、名前の長さが変わる改名の後の位置がずれて別の識別子を書き換える。
+    gopls rename は改名ごとに位置を取り直す。改名の長さが変わらない (大文字・小文字だけ) なら位置はずれない
+- [x] 2026-10-17 B (glogx: term.HintItem を hintfit.Item の別名にし、テストだけが使う変換を消す): term の公開名のうち外からテストだけが
+  使っていたのは HintfitItems だけで、HintItem を hintfit.Item の別名にして変換ごと消した。app.ScreenMemory のフィールドは各画面が
+  パッケージ変数として宣言する形なので公開のまま (理由と再評価の条件をコードに書いた)
+- [x] 2026-10-17 C-1 (glogx: issues 画面を出す下準備として、共有の道具を app と extcmd へ出す): issues が main から借りていた 24 個を
+  app (通知の種類・小さな道具・WatchChain と watcher の seam) と extcmd (新設。エディタ・ブラウザ・クリップボードの口と結果の Msg) へ。
+  notice_kind_test (識別子の名前で照合)・waitdelay_discipline_test (Cmd を作るファイルの許可表) を直した
