@@ -345,10 +345,11 @@ func (m *Model) RestorePlace(p Place) {
 
 // cursorHost はカーソルのある相手の Mac (この Mac の行・行が無いときは "")。
 func (m *Model) cursorHost() string {
-	if len(m.visible()) == 0 {
+	vis := m.visible()
+	if len(vis) == 0 {
 		return ""
 	}
-	if r := m.current(); !r.self {
+	if r := vis[min(m.cur[m.tab], len(vis)-1)]; !r.self { // current() は添字を詰めて書き換える。毎キー・毎 tick に呼ぶので読むだけにする
 		return r.host
 	}
 	return ""
@@ -981,6 +982,9 @@ func move(cur *int, n int, key string, rows int) bool {
 // needsNet は、この Mac のネットワークを読み終えるまで断るキー (最下行の案内もこの間は出さない)。
 var needsNet = []string{"s", "Y", "y", "o", "c", "space"}
 
+// rowKeys はカーソルの行の Mac に効くキー (キーの入口の取り込みで、見ていた Mac が一覧から消えたら断る)。
+var rowKeys = append(slices.Clone(needsNet), "enter", "m", "u")
+
 func (m *Model) keyList(key string) Action {
 	// 繋ぐ・コピー・登録は、この Mac のネットワーク (どの I/F が有線か・この Mac の IP) を読み終えてから。読み込み中に受けると
 	// 繋ぐ先・登録する内部 IP を誤った分類で決める (fable の敵対レビュー 2026-10-16)
@@ -988,7 +992,7 @@ func (m *Model) keyList(key string) Action {
 		m.note("この Mac のネットワーク設定を確認中 (少し待ってから)", false)
 		return None
 	}
-	if m.cursorLost && (slices.Contains(needsNet, key) || key == "enter" || key == "m" || key == "u") {
+	if m.cursorLost && slices.Contains(rowKeys, key) {
 		m.note("一覧が変わった (カーソルの Mac を見直してから)", false)
 		return None
 	}

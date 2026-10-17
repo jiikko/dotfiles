@@ -91,7 +91,7 @@ func ipv4(v string) bool {
 func (s StaticIP) Validate() error {
 	// サービス名は相手が決める値で、確認の板と端末の帯にそのまま出る。C1・双方向の制御文字で板の見た目を偽装できたので、
 	// 端末に安全に出せない名前は使わない (敵対レビュー)
-	if s.Service == "" || !termsafe.IsPlain(s.Service) || strings.ContainsFunc(s.Service, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+	if s.Service == "" || !termsafe.IsPlain(s.Service) { // IsPlain は C0・DEL (改行を含む) も弾く
 		return fmt.Errorf("サービス名が使えない: %q", s.Service)
 	}
 	if !ipv4(s.IP) || !ipv4(s.Mask) {

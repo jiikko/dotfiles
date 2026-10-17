@@ -432,9 +432,8 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		return &ask{title: "台帳に内部 IP 付きで載せる", body: []string{
 			su.host + " を管理対象にする: user " + h.User + " / 内部 IP " + h.LAN,
 		}, yes: func() Notice {
-			// 既に載っている行は user と内部 IP だけを書き換える (古い一覧の行で Upsert すると、別のプロセスが変えた別名を古い値に戻した。
-			// 敵対レビュー)。無いときだけ足す
-			// 既にある行の user は触らない (この手順の役目は内部 IP。別のプロセスが u で変えた・空 (既定) にした値を、開いた時の値や推測の
+			// 既に載っている行は内部 IP だけを書き換え、無いときだけ足す (古い一覧の行で Upsert すると、別のプロセスが変えた別名を古い値に
+			// 戻した。敵対レビュー)。既にある行の user は触らない (この手順の役目は内部 IP。別のプロセスが u で変えた・空 (既定) にした値を、開いた時の値や推測の
 			// $USER で書き戻した。敵対レビュー)。使えない形の user だけは直す (一覧はそれを捨てて推測で入るので、板の user と台帳が食い違った)
 			err := m.o.Ledger.Update(h.Host, func(x *ledger.Host) {
 				x.LAN = h.LAN
