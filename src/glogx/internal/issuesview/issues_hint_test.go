@@ -19,14 +19,14 @@ import (
 // 選択範囲は溝で見える (どこを選んでいるか画面から分かる)。幅も超えない。
 func TestIssuesViewMultiSelectIsVisible(t *testing.T) {
 	v := loadedView(issuesviewtest.SampleIssues()...)
-	v.Filter = issues.FilterAll
-	v.Refresh()
-	v.Cursor = 2
+	v.filter = issues.FilterAll
+	v.refresh()
+	v.cursor = 2
 	v.HandleKey("shift+up", vp(10))
 	out := v.Lines(renderOpts(10))
 	marked := 0
 	for _, ln := range out {
-		if strings.HasPrefix(ln, IssuesSelGutter) {
+		if strings.HasPrefix(ln, issuesSelGutter) {
 			marked++
 		}
 		if w := term.DispWidth(ln); w > 80 {
@@ -47,13 +47,13 @@ func TestIssuesViewHintChangesByMode(t *testing.T) {
 	if !strings.Contains(v.Hint(testenv.PopupHintBudget), "カテゴリ") {
 		t.Fatalf("一覧の hint が想定と違う: %q", v.Hint(testenv.PopupHintBudget))
 	}
-	v.Open = v.Rows[0]
+	v.open = v.rows[0]
 	if !strings.Contains(v.Hint(testenv.PopupHintBudget), "隣へ") {
 		t.Fatalf("本文の hint が想定と違う: %q", v.Hint(testenv.PopupHintBudget))
 	}
 	// URL ピッカーは本文の上に重なる 3 つ目のモード。本文の案内を出したままにすると、案内した
 	// キー (j/k/g/G/p/u/v/h/q) が全部 urlPicker の検索語に化けて 1 つも案内どおりに動かない。
-	v.UrlPick.Open([]string{"https://example.com/"})
+	v.urlPick.open([]string{"https://example.com/"})
 	if h := v.Hint(testenv.PopupHintBudget); !strings.Contains(h, "絞り込み") || strings.Contains(h, "隣へ") {
 		t.Fatalf("URL ピッカーの hint が想定と違う: %q", h)
 	}
@@ -61,7 +61,7 @@ func TestIssuesViewHintChangesByMode(t *testing.T) {
 	// n の確認中は全キーを確認が飲む (Enter は実行)。一覧の案内 (Enter: 本文 / q: 終了) を残さない (issue 750)
 	l := loadedView(issuesviewtest.SampleIssues()...)
 	l.HandleKey("n", vp(10))
-	if !l.MarkNext.Active {
+	if !l.markNext.active {
 		t.Fatal("前提が崩れた: n で確認が出ない")
 	}
 	if h := l.Hint(testenv.PopupHintBudget); !strings.Contains(h, "y/Enter: 実行") || strings.Contains(h, "本文") || strings.Contains(h, "終了") {
@@ -82,19 +82,19 @@ func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
 		full  string // 予算幅で最後に並ぶ項目 (= 全項目が入ったことの証拠)
 	}
 	modes := []mode{
-		{"一覧 open", func() { v.Filter = issues.FilterOpen; v.Refresh() }, "q: 終了", "a: +"},
-		{"一覧 pending", func() { v.Filter = issues.FilterPending; v.Refresh() }, "q: 終了", "a: +"},
-		{"一覧 all", func() { v.Filter = issues.FilterAll; v.Refresh() }, "q: 終了", "のみ"},
+		{"一覧 open", func() { v.filter = issues.FilterOpen; v.refresh() }, "q: 終了", "a: +"},
+		{"一覧 pending", func() { v.filter = issues.FilterPending; v.refresh() }, "q: 終了", "a: +"},
+		{"一覧 all", func() { v.filter = issues.FilterAll; v.refresh() }, "q: 終了", "のみ"},
 		{"選択中 (3 桁)", func() {
-			v.Filter = issues.FilterAll
-			v.Refresh()
-			v.Marked, v.MarkAt, v.Cursor = true, 0, len(v.Rows)-1
+			v.filter = issues.FilterAll
+			v.refresh()
+			v.marked, v.markAt, v.cursor = true, 0, len(v.rows)-1
 		}, "Esc: 解除", "Y: 参照"},
-		{"番号絞り込み中", func() { v.ClearMark(); v.NumFilter.Active = true }, "Esc: 解除", "/: 絞り込み直す"},
-		{"番号入力中", func() { v.NumFilter.Typing = true }, "Esc: 解除", "Enter: 確定"},
-		{"本文", func() { v.NumFilter.Active, v.NumFilter.Typing = false, false; v.Open = v.Rows[0] }, "Enter/h/q: 戻る", "u: URL"},
-		{"URL ピッカー", func() { v.UrlPick.Open([]string{"https://example.com/"}) }, "Esc: 戻る", "Enter: 開く"},
-		{"パスのジャンプ", func() { v.UrlPick.Close(); v.LinkJump.Active = true }, "Esc: 戻る", "y: パス"},
+		{"番号絞り込み中", func() { v.clearMark(); v.numFilter.active = true }, "Esc: 解除", "/: 絞り込み直す"},
+		{"番号入力中", func() { v.numFilter.typing = true }, "Esc: 解除", "Enter: 確定"},
+		{"本文", func() { v.numFilter.active, v.numFilter.typing = false, false; v.open = v.rows[0] }, "Enter/h/q: 戻る", "u: URL"},
+		{"URL ピッカー", func() { v.urlPick.open([]string{"https://example.com/"}) }, "Esc: 戻る", "Enter: 開く"},
+		{"パスのジャンプ", func() { v.urlPick.close(); v.linkJump.active = true }, "Esc: 戻る", "y: パス"},
 	}
 	for _, md := range modes {
 		md.setup()
@@ -134,13 +134,13 @@ func TestIssuesStatusFilterCycle(t *testing.T) {
 		{issues.FilterOpen, 2, "○"}, // 巡回して既定へ戻る
 	}
 	for i, w := range want {
-		if v.Filter != w.filter {
-			t.Fatalf("%d 打目: filter=%d want %d", i, v.Filter, w.filter)
+		if v.filter != w.filter {
+			t.Fatalf("%d 打目: filter=%d want %d", i, v.filter, w.filter)
 		}
-		if len(v.Rows) != w.rows {
-			t.Errorf("%d 打目: 行数=%d want %d", i, len(v.Rows), w.rows)
+		if len(v.rows) != w.rows {
+			t.Errorf("%d 打目: 行数=%d want %d", i, len(v.rows), w.rows)
 		}
-		if got := v.Filter.Badges(); got != w.badges {
+		if got := v.filter.Badges(); got != w.badges {
 			t.Errorf("%d 打目: バッジ=%q want %q", i, got, w.badges)
 		}
 		// hint は「次に何が増えるか」を出し、現在地は出さない (幅が 1 行しかない)
@@ -167,7 +167,7 @@ func TestIssuesViewBodyHintAdvertisedEditorKeyWorks(t *testing.T) {
 	}
 	v := loadedView(issuesviewtest.Path2Issue(dir, "028-refactor-x.md"))
 	v.HandleKey("enter", vp(10)) // 本文モードへ
-	if v.Open == nil {
+	if v.open == nil {
 		t.Fatal("本文モードに入れていない")
 	}
 	const advertised = "e: 編集"
@@ -191,42 +191,42 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 	// (本文の途中まで送ってから k を押す等。端で押して「変わらない」を通すと空振りする)
 	probes := map[string]func(t *testing.T, e *bodyKeyEnv){
 		"j": func(t *testing.T, e *bodyKeyEnv) {
-			before := e.v.BodyPager.Offset
+			before := e.v.bodyPager.Offset
 			e.press("j")
-			if e.v.BodyPager.Offset <= before {
-				t.Errorf("j で本文が下へ進まない: %d → %d", before, e.v.BodyPager.Offset)
+			if e.v.bodyPager.Offset <= before {
+				t.Errorf("j で本文が下へ進まない: %d → %d", before, e.v.bodyPager.Offset)
 			}
 		},
 		"k": func(t *testing.T, e *bodyKeyEnv) {
 			// 🚨 G を押して状態を作らない。G が壊れると k の probe も red になり、
 			// 壊れていないキーを名指しして原因追跡を遅らせる
-			e.v.BodyPager.Offset = 5
-			before := e.v.BodyPager.Offset
+			e.v.bodyPager.Offset = 5
+			before := e.v.bodyPager.Offset
 			e.press("k")
-			if e.v.BodyPager.Offset >= before {
-				t.Errorf("k で本文が上へ戻らない: %d → %d", before, e.v.BodyPager.Offset)
+			if e.v.bodyPager.Offset >= before {
+				t.Errorf("k で本文が上へ戻らない: %d → %d", before, e.v.bodyPager.Offset)
 			}
 		},
 		"Space": func(t *testing.T, e *bodyKeyEnv) {
-			before := e.v.BodyPager.Offset
+			before := e.v.bodyPager.Offset
 			e.press(" ")
 			// 🚨 方向だけでなく「半ページ」まで見る (1 行送りの実装を通さない)
-			if want := before + e.rows()/2; e.v.BodyPager.Offset != want {
-				t.Errorf("Space が半ページ送りでない: %d → %d (want %d)", before, e.v.BodyPager.Offset, want)
+			if want := before + e.rows()/2; e.v.bodyPager.Offset != want {
+				t.Errorf("Space が半ページ送りでない: %d → %d (want %d)", before, e.v.bodyPager.Offset, want)
 			}
 		},
 		"g": func(t *testing.T, e *bodyKeyEnv) {
 			e.press("G")
 			e.press("g")
-			if e.v.BodyPager.Offset != 0 {
-				t.Errorf("g で先頭へ戻らない: bodyOff=%d", e.v.BodyPager.Offset)
+			if e.v.bodyPager.Offset != 0 {
+				t.Errorf("g で先頭へ戻らない: bodyOff=%d", e.v.bodyPager.Offset)
 			}
 		},
 		"G": func(t *testing.T, e *bodyKeyEnv) {
 			e.press("G")
 			// 🚨 「0 でない」ではなく末尾そのものを見る (途中で止まる実装を通さない)
-			if want := e.v.Body.Len() - e.rows(); e.v.BodyPager.Offset != want {
-				t.Errorf("G が末尾へ飛ばない: bodyOff=%d want %d", e.v.BodyPager.Offset, want)
+			if want := e.v.body.Len() - e.rows(); e.v.bodyPager.Offset != want {
+				t.Errorf("G が末尾へ飛ばない: bodyOff=%d want %d", e.v.bodyPager.Offset, want)
 			}
 		},
 		"p": func(t *testing.T, e *bodyKeyEnv) {
@@ -238,13 +238,13 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 		},
 		"Tab": func(t *testing.T, e *bodyKeyEnv) {
 			e.press("tab")
-			if !e.v.LinkJump.Active {
+			if !e.v.linkJump.active {
 				t.Error("Tab でジャンプモードに入らない")
 			}
 		},
 		"u": func(t *testing.T, e *bodyKeyEnv) {
 			e.press("u")
-			if !e.v.UrlPick.Active {
+			if !e.v.urlPick.active {
 				t.Error("u で URL ピッカーが開かない")
 			}
 		},
@@ -256,7 +256,7 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 			}
 			// 🚨 起動しただけでなく対象まで見る (専用テストと同じ強さに揃える。方向だけの
 			// 弱い二重化にすると「壊れても片方しか落ちない」状態になる)
-			if args, want := (*e.cmds)[before].Args, []string{editor.Fallback, e.v.Open.Path}; !slices.Equal(args, want) {
+			if args, want := (*e.cmds)[before].Args, []string{editor.Fallback, e.v.open.Path}; !slices.Equal(args, want) {
 				t.Errorf("e の起動コマンドが違う: args=%v want=%v", args, want)
 			}
 		},
@@ -347,13 +347,13 @@ func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
 	// 自分自身の絶対パスを 1 つ入れるのは Tab (ジャンプモード) の観測のため (実在するファイルしかリンクにしない)
 	body := "# 001 feat: hint keys\n\nhttps://example.com/x `" + path + "`\n\n" + strings.Repeat("本文の行。\n\n", 60)
 	v := loadedView(issuesviewtest.WriteRealIssue(t, dir, rel, body))
-	v.Root = dir // Tab (ジャンプモード) は「repo の中」の範囲が決まらないとパスを開かない (fail-closed)
+	v.root = dir // Tab (ジャンプモード) は「repo の中」の範囲が決まらないとパスを開かない (fail-closed)
 	landBody(t, v, 10)
 	// 🚨 行数は描画で確定する (未描画だと body.Len() = 0 でスクロール上限が 0 になり、
 	// j / Space / G が「動かない」ので効果を観測できない)
 	v.Lines(renderOpts(20))
-	if v.Body.Len() <= 10 {
-		t.Fatalf("前提が崩れた: 本文が窓より短くスクロールできない (Len=%d)", v.Body.Len())
+	if v.body.Len() <= 10 {
+		t.Fatalf("前提が崩れた: 本文が窓より短くスクロールできない (Len=%d)", v.body.Len())
 	}
 	return &bodyKeyEnv{v: v, cmds: cmds, copied: copied, page: 10}
 }
@@ -362,19 +362,19 @@ func (e *bodyKeyEnv) press(key string) { e.v.HandleKey(key, vp(e.page)) }
 
 // rows は本文 pager の実際の行数 (ヘッダー行数を引いた値)。🚨 page とは違うので、
 // 「半ページ」「末尾」を語義で検証する probe はこちらを使う。
-func (e *bodyKeyEnv) rows() int { return e.v.VisibleRows(vp(e.page)) }
+func (e *bodyKeyEnv) rows() int { return e.v.visibleRows(vp(e.page)) }
 
 func (e *bodyKeyEnv) assertClosesBody(t *testing.T, key string) {
 	t.Helper()
 	e.press(key)
 	// 🚨 本文は「閉じる演出の着地後」に捨てられるので、open == nil を待つと時刻の進め方に
 	// 依存する。キーの直接の効果である「閉じる演出に入ったか」を見る。
-	if e.v.Drawer.Phase() != anim.Closing {
-		t.Errorf("%q で本文が閉じ始めない: phase=%v", key, e.v.Drawer.Phase())
+	if e.v.drawer.phase() != anim.Closing {
+		t.Errorf("%q で本文が閉じ始めない: phase=%v", key, e.v.drawer.phase())
 	}
 	// 次の打鍵で実際に畳まれる (handleKey 冒頭の drawer.finish → discardBody)
 	e.press("j")
-	if e.v.Open != nil {
+	if e.v.open != nil {
 		t.Errorf("%q の後に本文が捨てられない", key)
 	}
 }

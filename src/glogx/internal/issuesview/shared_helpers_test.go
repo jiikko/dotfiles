@@ -20,8 +20,8 @@ import (
 // loadedView は receive 済みの viewer を返す。
 func loadedView(list ...*issues.Issue) *IssuesView {
 	v := newTestIssuesView()
-	v.Shown = true
-	v.Receive(IssuesScanMsg{Dirs: []string{"/repo/issues"}, Issues: list})
+	v.shown = true
+	v.Receive(IssuesScanMsg{dirs: []string{"/repo/issues"}, issues: list})
 	return &v
 }
 
@@ -38,7 +38,7 @@ func renderOpts(page int) IssuesRenderOpts {
 // issues_close_anim_test.go が明示的に on にして検査する (newTestBrowse の zoom.off と同じ)。
 func newTestIssuesView() IssuesView {
 	v := NewIssuesView()
-	v.CloseAnimOff = true
+	v.closeAnimOff = true
 	return v
 }
 
@@ -95,10 +95,10 @@ func drainScanMsg(t *testing.T, cmd tea.Cmd) IssuesScanMsg {
 func landBody(t *testing.T, v *IssuesView, page int) {
 	t.Helper()
 	v.HandleKey("enter", vp(page))
-	if v.Open == nil || v.Body == nil {
+	if v.open == nil || v.body == nil {
 		t.Fatal("本文モードに入れていない")
 	}
-	v.Drawer.Finish()
+	v.drawer.finish()
 }
 
 // maxRowShift は窓の各行の右へのずれ (先頭の空白幅) の最大値。空行は演出で消えた行なので除く。
@@ -171,9 +171,9 @@ func recvTypeName(e ast.Expr) string {
 // 戻っていたら、この検査は CI では走らなくなっているので停止させる)。
 func requireFake(t *testing.T, v *IssuesView) *testenv.FakeWatcher {
 	t.Helper()
-	fw, ok := v.Watch.W.(*testenv.FakeWatcher)
+	fw, ok := v.watch.W.(*testenv.FakeWatcher)
 	if !ok {
-		t.Fatalf("startWatch が newDirWatcher seam を通っていない (w=%T)。この検査は実 fsnotify に依存している", v.Watch.W)
+		t.Fatalf("startWatch が newDirWatcher seam を通っていない (w=%T)。この検査は実 fsnotify に依存している", v.watch.W)
 	}
 	return fw
 }
@@ -181,15 +181,15 @@ func requireFake(t *testing.T, v *IssuesView) *testenv.FakeWatcher {
 // observe は watchCmd と同じ指紋を同期で計算する (tea.Tick を待たずにテストで駆動するため)。
 // 対象集合は production と同じ watchTargets を通す (ここで再実装すると本番とずれる)。
 func observeIssues(v *IssuesView) IssuesWatchMsg {
-	return IssuesWatchMsg{Fp: IssuesFingerprint(v.WatchTargets())}
+	return IssuesWatchMsg{fp: issuesFingerprint(v.watchTargets())}
 }
 
 // scanOf は実ファイルを走査した結果を返す。🚨 中身を再実装せず production の scanIssues を
 // 呼ぶ: 指紋の取り方がずれると「テストでは基準が揃うのに本番ではずれる」形で穴を見逃す。
 func scanOf(t *testing.T, root string) IssuesScanMsg {
 	t.Helper()
-	msg := ScanIssues(root)
-	if len(msg.Dirs) == 0 {
+	msg := scanIssues(root)
+	if len(msg.dirs) == 0 {
 		t.Fatalf("issues ディレクトリが見つからない: %s", root)
 	}
 	return msg

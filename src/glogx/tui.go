@@ -2439,7 +2439,7 @@ func (m *browseModel) quitNow() (tea.Model, tea.Cmd) { return m.quitWith(false) 
 // 🚨 後始末 (走行中 subprocess の cancel・issues の画面記憶) は演出の前に済ませる: 演出中に
 // 端末を閉じられても、止めるべきものは止まっている状態にしておく。
 func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
-	m.rememberIssuesScreen()
+	m.issuesOv.RememberScreen(app.TimeNow()) // 出したまま終了したら次の起動で開き直す (出していなければ消す)
 	m.doctorOv.RememberScreen(app.TimeNow()) // 出したまま終了したら次の起動で開き直す (出していなければ消す)
 	m.rememberRatelimitScreen()
 	m.rememberFilerScreen()
@@ -2629,17 +2629,6 @@ func (m *browseModel) toggleUsage() tea.Cmd {
 		return tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
 	}
 	return m.maybeTick()
-}
-
-// rememberIssuesScreen は「issues viewer を出したまま終了したら次の起動で復元する」ための
-// 保存 (issues_state.go)。🚨 一覧から終了したときは消す — 残すと、一覧を見て閉じた次の起動で
-// 2 回前の viewer が蘇る (ユーザー指定: git log 一覧のときは復元しない)。
-func (m *browseModel) rememberIssuesScreen() {
-	if s, ok := m.issuesOv.Screen(app.TimeNow()); ok {
-		_ = issuesview.SaveIssuesScreen(s) // 保存できなくても終了は妨げない
-		return
-	}
-	issuesview.RemoveIssuesScreen()
 }
 
 // rememberRatelimitScreen は「ratelimit ダッシュボードを出したまま終了したら次の起動で開き直す」

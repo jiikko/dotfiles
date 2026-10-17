@@ -37,10 +37,10 @@ import (
 // 扱い、viewer が表示すべき異常 (同名ファイルの二重化など) は warnings に載る。全体が失敗する
 // ケースが無いので、失敗を表す経路も持たない。
 type IssuesScanMsg struct {
-	Root     string // repo root (貼り付け用の repo 相対パスに使う)
-	Dirs     []string
-	Issues   []*issues.Issue
-	Warnings []string
+	root     string // repo root (貼り付け用の repo 相対パスに使う)
+	dirs     []string
+	issues   []*issues.Issue
+	warnings []string
 	// fp は読んだ時点のファイル群の指紋 (issues_watch.go)。見張りの基準に使う。
 	fp string
 }
@@ -85,26 +85,26 @@ type displayUnit struct {
 
 // issuesView は一覧 (タブ + リスト) と本文 pager の 2 モードを持つ全画面ビュー。
 type IssuesView struct {
-	Shown    bool
-	Loaded   bool // 一度スキャンを完了したか (取り直し中に前回の結果を出してよいかの判定)
-	Scanning bool // スキャン中 (スピナーを回す。二重発行の防止も兼ねる)
+	shown    bool
+	loaded   bool // 一度スキャンを完了したか (取り直し中に前回の結果を出してよいかの判定)
+	scanning bool // スキャン中 (スピナーを回す。二重発行の防止も兼ねる)
 	// rescanPending は「飛行中のスキャンが終わったら、もう 1 回取り直す」予約。
 	// 🚨 single-flight (scanCmd) は連打でゴルーチンを積まないための仕組みだが、自分がファイルを
 	// 動かした後 (n の next/ 移動) の取り直しまで落とすと、実ファイルは動いたのに一覧が旧位置を
 	// 出し続ける。しかも飛行中のスキャンは移動より前に始まっているので、その結果が届いても
 	// 移動は映らない。要求を 1 つに畳んで receive の出口で張り直すことで、貫通の穴を増やさずに
 	// 「最後の要求は必ず反映される」を満たす。
-	RescanPending bool
+	rescanPending bool
 
-	Cwd      string // スキャンの起点 (再読込で使い回す)
-	Root     string // repo root
-	Dirs     []string
-	All      []*issues.Issue
+	cwd      string // スキャンの起点 (再読込で使い回す)
+	root     string // repo root
+	dirs     []string
+	all      []*issues.Issue
 	warnings []string
 	// notice は直近の操作結果 (コピー成功・読み込み失敗など)。app.NoticeOK は成功か。
 	// browseModel はこれを取り出してトーストにする (takeNotice)。🚨 viewer 単体でも駆動できる
 	// 契約 (このファイル冒頭) を保つため、ここではトーストを知らず「結果」だけを置く。
-	Notice     string
+	notice     string
 	noticeKind app.NoticeKind
 
 	// tabsCanon は issues.Tabs が返す正規順序 (done 込みの件数降順 → 名前昇順、other は末尾)。
@@ -117,17 +117,17 @@ type IssuesView struct {
 	tabIdx    int          // 0 = All、1.. = tabs[tabIdx-1]
 	// filter は「どの状態まで見せるか」(a キーで巡回)。zero value = open のみが既定
 	// (issues.FilterOpen)。pending / done を既定で伏せる理由は issues.StatusFilter の doc。
-	Filter issues.StatusFilter
+	filter issues.StatusFilter
 	// numFilter は番号のインクリメンタルフィルタ (/)。zero value = 絞り込みなし。効いている
 	// あいだはタブと filter の両方を無視した全 issue が対象になる (issuesNumberFilter の doc)。
-	NumFilter issuesNumberFilter
+	numFilter issuesNumberFilter
 	// チップに出す件数。issues.Tab.Count は done を含む全件なので表示には使わない (理由は
 	// refresh)。tabCount は tabs と同じ並び、allCount は All チップ用。
 	tabCount  []int
 	allCount  int
 	nextCount int // 疑似カテゴリ [next] のチップに出す件数
 
-	Rows []*issues.Issue // 現在のタブ・フィルタの表示対象 (親行を含めない子 issue 集合)
+	rows []*issues.Issue // 現在のタブ・フィルタの表示対象 (親行を含めない子 issue 集合)
 	// displayRows は rows から導出する表示単位。親行はここにだけ存在し、rows / tabCount /
 	// allCount は従来どおり子 issue 数を持つ。
 	displayRows []displayRow
@@ -142,12 +142,12 @@ type IssuesView struct {
 	// groups は epic group の展開状態 (手動 / 番号フィルタの一時展開 / フィルタ中の明示的な畳み)。
 	// 3 つの整合は groupExpansion が持つ (issues_group_expansion.go)
 	groups groupExpansion
-	Cursor int
+	cursor int
 	// 複数選択 (shift+↑/↓)。範囲は錨 (markAt) と cursor から毎回導出する。🚨 選択集合を別に
 	// 持たない: 行集合はフィルタ・タブ・再スキャンで入れ替わるので、集合で持つと実体を失った
 	// 選択が残り「見えていない行がコピーされる」。錨だけなら行集合を作り直す refresh で畳める。
-	Marked bool
-	MarkAt int
+	marked bool
+	markAt int
 	// offset は窓の先頭行。🚨 一覧に glide (スクロールアニメ) は載せない: 半ページ移動は
 	// cursor と窓を同時に動かし、windowOffset が「カーソルを含む最小の窓」を導出するので
 	// カーソルは必ず窓の端に来る = 窓を 1 行でも遅らせるとカーソルが画面から出る。遅らせる余地が
@@ -156,12 +156,12 @@ type IssuesView struct {
 	offset int
 
 	// 本文 pager (open != nil のとき本文モード)
-	Open *issues.Issue
-	Body *issues.Body
+	open *issues.Issue
+	body *issues.Body
 	// urlPick は本文中 URL のピッカー (u)。閉じているときは zero value。
-	UrlPick urlPicker
+	urlPick urlPicker
 	// linkJump は本文中のファイルパスのジャンプモード (Tab。issues_linkjump.go)。zero value = モード外。
-	LinkJump linkJump
+	linkJump linkJump
 	// docStack はジャンプ先の .md を本文 pager で開いたときに下へ積んだ本文 (issue → doc → doc)。
 	// 空 = issue の本文だけ。🚨 空でないとき v.open は issue ではなく doc (一覧に無いパス) なので、
 	// 一覧と照合する処理 (rebindOpen・画面の記憶) は底の issue (rootOpen) を使う。
@@ -173,21 +173,21 @@ type IssuesView struct {
 	linkReposRoot string
 	// markNext は「次にやる」の目印を付ける確認 (n)。🚨 実ファイルを動かす唯一の操作なので、
 	// 他のキーと違って必ず確認を挟む (glogx の push/pull と同じ作法)。zero value = 確認なし。
-	MarkNext IssuesMarkConfirm
+	markNext issuesMarkConfirm
 	// drawer は本文を左から開く引き出しの演出状態 (issues_drawer.go)。閉じる演出のあいだは
 	// open/body を生かしたまま逆再生するため、破棄は settleDrawer が担う。
-	Drawer    issuesDrawer
-	BodyPager listnav.Pager // 本文のスクロール (論理 offset = 着地点 + 半ページの glide)
+	drawer    issuesDrawer
+	bodyPager listnav.Pager // 本文のスクロール (論理 offset = 着地点 + 半ページの glide)
 
 	// curGlide は一覧の半ページ移動でカーソルを滑らせる演出 (internal/term/scroll_glide.go)。論理カーソルは
 	// 即着地するので、描画だけが遅れる。
-	CurGlide anim.CursorGlide
+	curGlide anim.CursorGlide
 
 	// 開くときのスライドイン演出の開始時刻 (ゼロ値 = 演出なし)。フレーム数ではなく壁時計で
 	// 進めるのは、tick 周期が変わっても所要時間が変わらないようにするため (push 演出の
 	// pushSlides と同じ方式)。演出中の tick 周期は tickInterval が上げる (slideAnimating)。
 	// 閉じる演出 (closing) でも同じ時計を使う — 開く演出の逆再生なので所要も同じ。
-	AnimStart time.Time
+	animStart time.Time
 	// wantCross は横断キー (app.CrossTarget) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
 	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。app.FullScreenNone = 無し
 	wantCross app.FullScreenID
@@ -199,15 +199,15 @@ type IssuesView struct {
 	// 🚨 演出のあいだ shown を false にしない: 逆再生で画面が見えている必要がある。実際の
 	// 片付け (本文の破棄・watcher の停止) は finishClose に一本化する。片付けを二箇所に書くと、
 	// 演出の着地とキーによる即着地のどちらかが stopWatch を通らず watcher が二重に走る。
-	Closing bool
+	closing bool
 	// closeAnimOff は閉じる演出を出さない (テスト用)。🚨 zero value = 演出あり: 本番の既定を
 	// 「演出する」に置く。テストは「close したら即座に畳まれている」前提で書かれており、演出を
 	// 挟むと全てが 1 拍待ちになって読めなくなる (アプリ開閉演出の appZoom.off と同じ作法)。
 	// 演出そのものは issues_close_anim_test.go が明示的に on にして検査する。
-	CloseAnimOff bool
+	closeAnimOff bool
 
 	// watch は開いている間だけ回す「別プロセスの編集」の見張り (issues_watch.go)。
-	Watch issuesWatch
+	watch issuesWatch
 
 	// pending は前回終了時の画面の復元予約 (issues_state.go)。スキャン結果が要るので、
 	// 適用は最初の receive まで待つ (applyScreen が 1 度だけ消費する)。
@@ -241,10 +241,10 @@ const (
 func NewIssuesView() IssuesView { return IssuesView{} }
 
 // visible は viewer を表示中か。
-func (v *IssuesView) Visible() bool { return v.Shown }
+func (v *IssuesView) Visible() bool { return v.shown }
 
 // loading はスキャン中か (スピナー tick を回し続ける判定用)。
-func (v *IssuesView) Loading() bool { return v.Scanning }
+func (v *IssuesView) Loading() bool { return v.scanning }
 
 // toggle は viewer の開閉。開くたびにスキャンし直す tea.Cmd を返す。
 //
@@ -254,18 +254,18 @@ func (v *IssuesView) Loading() bool { return v.Scanning }
 // 実際に 37 件発生している事故)。スキャンは非同期かつ実測 2.5〜13.6ms なので、開くたびに
 // 取り直しても体感は変わらない: 取得中も前回の結果を出したまま差し替わる (emptyMessage)。
 func (v *IssuesView) Toggle(cwd string) tea.Cmd {
-	if v.Closing {
+	if v.closing {
 		v.FinishClose() // 閉じる演出の途中の i は「閉じ切ってから開き直す」(watcher を二重に張らない)
-	} else if v.Shown {
-		v.Close()
+	} else if v.shown {
+		v.close()
 		return nil
 	}
-	v.Shown = true
+	v.shown = true
 	// 右から左へ流し込む演出を開始 (lines が窓を変形する)。🚨 時計は app.TimeNow で取る:
 	// 引き出し (drawer) と同じ差し替え点に揃えないと、この 1 つのビューの中で
 	// 「止められる時計」と「止められない時計」が混在する。
-	v.AnimStart = app.TimeNow()
-	return tea.Batch(v.ScanCmd(cwd), v.watchCmd())
+	v.animStart = app.TimeNow()
+	return tea.Batch(v.scanCmd(cwd), v.watchCmd())
 }
 
 // restore は前回終了時の画面を復元しながら viewer を開く (起動時。issues_state.go)。
@@ -276,13 +276,13 @@ func (v *IssuesView) Toggle(cwd string) tea.Cmd {
 // 🚨 既に開いているなら何もしない: 復元の git fork とスキャンの間に i が押された場合で、
 // 上書きするとユーザーの操作を奪う。
 func (v *IssuesView) Restore(cwd string, s IssuesScreen) tea.Cmd {
-	if v.Shown {
+	if v.shown {
 		return nil
 	}
-	v.Shown = true
-	v.AnimStart = time.Time{}
+	v.shown = true
+	v.animStart = time.Time{}
 	v.pending = &s
-	return tea.Batch(v.ScanCmd(cwd), v.watchCmd())
+	return tea.Batch(v.scanCmd(cwd), v.watchCmd())
 }
 
 // screen は今の画面を保存用に書き出す (ok=false = 覚えるものが無い)。
@@ -290,25 +290,25 @@ func (v *IssuesView) Restore(cwd string, s IssuesScreen) tea.Cmd {
 // viewer を出していないときに false を返すのが「git log 一覧から終了したら記憶しない」の実体
 // (呼び出し側はそのとき記憶を消す)。スキャン前 (root 未確定) も覚えない: 照合キーが無い記憶は
 // 復元時に別 repo で当たってしまう。
-func (v *IssuesView) Screen(now time.Time) (IssuesScreen, bool) {
+func (v *IssuesView) screen(now time.Time) (IssuesScreen, bool) {
 	// 🚨 閉じる演出の途中 = ユーザーは既に閉じている。shown はまだ true だが覚えない
 	// (覚えると「q で閉じてすぐ終了した」次の起動で、閉じたはずの viewer が蘇る)。
-	if !v.Shown || v.Closing || v.Root == "" {
+	if !v.shown || v.closing || v.root == "" {
 		return IssuesScreen{}, false
 	}
 	// doc を開いていたら底の issue とその位置を覚える (doc は一覧に無いので、復元の照合で外れる)
-	open, bodyOff := issuePath(v.rootOpen()), v.BodyPager.Offset
+	open, bodyOff := issuePath(v.rootOpen()), v.bodyPager.Offset
 	if len(v.docStack) > 0 {
 		bodyOff = v.docStack[0].offset
 	}
-	if v.Drawer.Phase() == anim.Closing {
+	if v.drawer.phase() == anim.Closing {
 		open = "" // 閉じる演出の途中 = ユーザーは既に閉じている。開いた状態で復元しない
 	}
 	return IssuesScreen{
-		Root:        v.Root,
+		Root:        v.root,
 		SavedAt:     now,
 		Tab:         v.currentTab(),
-		Filter:      v.Filter.String(),
+		Filter:      v.filter.String(),
 		Cursor:      issuePath(v.current()),
 		Open:        open,
 		BodyOff:     bodyOff,
@@ -323,17 +323,17 @@ func (v *IssuesView) Screen(now time.Time) (IssuesScreen, bool) {
 // anchorCursorInternal が当たらなければ先頭のまま、本文はパスが見つからなければ一覧のままにする。
 func (v *IssuesView) applyScreen(s IssuesScreen) {
 	v.groups.restore(s.Groups)
-	for _, iss := range v.All {
+	for _, iss := range v.all {
 		key, ok := iss.EpicGroupKey()
 		if (iss.Path != s.Cursor && iss.Path != s.Open) || !ok {
 			continue
 		}
 		v.groups.reveal(key) // カーソル・本文の居場所が畳んだ group の中に隠れないように
 	}
-	v.Filter, _ = issues.ParseStatusFilter(s.Filter) // 未知の名前は既定へ (loadIssuesScreen で正規化済み)
-	v.Refresh()                                      // フィルタを反映してタブの並びと件数を作る (tabIdx を引くのに要る)
+	v.filter, _ = issues.ParseStatusFilter(s.Filter) // 未知の名前は既定へ (loadIssuesScreen で正規化済み)
+	v.refresh()                                      // フィルタを反映してタブの並びと件数を作る (tabIdx を引くのに要る)
 	v.tabIdx = tabIndexOf(v.tabs, s.Tab)
-	v.Refresh() // 選んだタブで行集合を作り直す
+	v.refresh() // 選んだタブで行集合を作り直す
 	v.pruneExpandedGroups()
 	// 窓 (offset) はここで動かさない: 描画が windowOffset でカーソルを含む位置へ収束させる
 	// (offset を状態でなく導出値として扱う規律。windowOffset の doc)
@@ -345,13 +345,13 @@ func (v *IssuesView) applyScreen(s IssuesScreen) {
 	if s.Open == "" {
 		return
 	}
-	for _, iss := range v.All {
+	for _, iss := range v.all {
 		if iss.Path != s.Open {
 			continue
 		}
-		if v.OpenIssue(iss) {
-			v.Drawer.Finish()              // 演出は出さず開き切った状態から始める
-			v.BodyPager.Offset = s.BodyOff // 行数を超えていれば bodyLines が収束させる
+		if v.openIssue(iss) {
+			v.drawer.finish()              // 演出は出さず開き切った状態から始める
+			v.bodyPager.Offset = s.BodyOff // 行数を超えていれば bodyLines が収束させる
 		}
 		return
 	}
@@ -361,23 +361,23 @@ func (v *IssuesView) applyScreen(s IssuesScreen) {
 //
 // 閉じる演出 (開く演出の逆再生) を挟んでから片付ける (ユーザー要望 2026-08-01)。ここで画面を
 // 落とさないのは、逆再生のあいだ一覧が見えている必要があるため (引き出しの startClose と同じ)。
-func (v *IssuesView) Close() {
-	if !v.Shown || v.Closing {
+func (v *IssuesView) close() {
+	if !v.shown || v.closing {
 		return
 	}
-	v.Closing = true
+	v.closing = true
 	// 閉じたらカーソルの滑走を残さない (本文 pager の glide と同じ理由: 再表示の一瞬だけ古い位置から滑るのを
 	// 防ぐ)。close は toggle 経由だと handleKey を通らないので finishAnim が効かない。
-	v.CurGlide.Stop()
-	v.AnimStart = app.TimeNow()
-	if v.CloseAnimOff {
+	v.curGlide.Stop()
+	v.animStart = app.TimeNow()
+	if v.closeAnimOff {
 		v.FinishClose() // 演出なしの設定では同じ出口を即座に通す (片付けの経路を分けない)
 	}
 }
 
 // settleClose は閉じる演出が着地していれば片付ける (browseModel の tick から毎拍呼ばれる)。
 func (v *IssuesView) SettleClose() {
-	if !v.Closing || anim.Elapsed(v.AnimStart, app.TimeNow(), IssuesCloseDuration) < 1 {
+	if !v.closing || anim.Elapsed(v.animStart, app.TimeNow(), IssuesCloseDuration) < 1 {
 		return
 	}
 	v.FinishClose()
@@ -391,22 +391,22 @@ func (v *IssuesView) SettleClose() {
 // 戻り値は「この呼び出しで実際に畳んだか」。🚨 tui.go が演出中のキーを 1 つだけ捨てる判定に使う
 // (素通しで別ターゲットを開いてしまう e。理由はそちらのコメント)。
 func (v *IssuesView) FinishClose() bool { //nolint:unparam // 戻り値は main (tui.go の演出中のキーの判定) が使う。unparam はパッケージの外の呼び出しを見ない
-	if !v.Closing {
+	if !v.closing {
 		return false
 	}
-	v.Closing = false
-	v.Shown = false
-	v.AnimStart = time.Time{}
+	v.closing = false
+	v.shown = false
+	v.animStart = time.Time{}
 	v.discardBody() // viewer ごと閉じるので引き出しの演出は持ち越さない
 	v.StopWatch()   // 見張りの watcher を閉じる (fd を残さない。issues_watch.go)
 	// 🚨 取り直しの予約も捨てる。残すと閉じた後に「非表示の viewer のための」スキャンが 1 回走り、
 	// その間 loading() が true になって tick が昂進する (自己終息はするが無駄な仕事)。
-	v.RescanPending = false
+	v.rescanPending = false
 	// 番号の絞り込みは持ち越さない。🚨 q / Esc は絞り込みを解くだけで閉じない (1 段戻る) が、
 	// i は 1 段戻さず閉じるので、ここで捨てないと次に開いた viewer が「なぜか件数が少ない一覧」
 	// から始まる。行集合も作り直す — rows は常に visibleIssues() と一致させる (残すと、開いた
 	// 直後の 1 フレームだけタブ行の下に絞り込まれた行が並ぶ)。
-	if v.NumFilter.Active {
+	if v.numFilter.active {
 		v.endNumberFilter("")
 	}
 	return true
@@ -414,15 +414,15 @@ func (v *IssuesView) FinishClose() bool { //nolint:unparam // 戻り値は main 
 
 // finishAnim は演出を即座に着地させる。閉じる演出のときは片付けまで進める
 // (ここで時計だけ止めると、閉じかけの姿のまま二度と畳まれない状態で固まる)。
-func (v *IssuesView) FinishAnim() {
+func (v *IssuesView) finishAnim() {
 	// 半ページ移動のカーソル滑走も即着地させる: 次のキーは必ず論理カーソル (着地点) に効くので、
 	// 描画だけが遅れて「見えている行と操作対象が違う」時間を残さない。
-	v.CurGlide.Stop()
-	if v.Closing {
+	v.curGlide.Stop()
+	if v.closing {
 		v.FinishClose()
 		return
 	}
-	v.AnimStart = time.Time{}
+	v.animStart = time.Time{}
 }
 
 // slideAnimating は viewer 全体の開閉スライド中か。tickInterval が 125fps へ上げる判定に使う
@@ -431,21 +431,21 @@ func (v *IssuesView) SlideAnimating() bool {
 	// 🚨 閉じる演出は「時間が過ぎたら false」にしない: tick は animating が false になった拍で
 	// 止まるので、時間で降ろすと片付けの settleClose が呼ばれる前にチェーンが切れ、閉じかけの姿で
 	// 固まる。settleClose が closing を下ろして初めて false になる (自分で終われる形にする)。
-	if v.Closing {
+	if v.closing {
 		return true
 	}
-	return v.Shown && anim.Elapsed(v.AnimStart, app.TimeNow(), issuesAnimDuration) < 1
+	return v.shown && anim.Elapsed(v.animStart, app.TimeNow(), issuesAnimDuration) < 1
 }
 
 // animating は演出の途中か (tick チェーンを回し続ける spinnerActive の判定に使う)。
 func (v *IssuesView) Animating() bool {
-	if v.BodyPager.Animating() {
+	if v.bodyPager.Animating() {
 		return true // 本文 pager の glide は tick で進むので「アニメ中」に含める
 	}
-	if v.CurGlide.Active() {
+	if v.curGlide.Active() {
 		return true // 一覧のカーソル滑走も tick で進む
 	}
-	if v.Drawer.animating(app.TimeNow()) {
+	if v.drawer.animating(app.TimeNow()) {
 		return true // 本文の引き出しの開閉も tick で進む
 	}
 	return v.SlideAnimating()
@@ -467,9 +467,9 @@ func (v *IssuesView) TakeWantQuit() bool {
 
 // advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。
 func (v *IssuesView) AdvanceGlide() {
-	v.BodyPager.Advance()
-	if v.CurGlide.Active() {
-		v.CurGlide.Advance(v.Cursor)
+	v.bodyPager.Advance()
+	if v.curGlide.Active() {
+		v.curGlide.Advance(v.cursor)
 	}
 }
 
@@ -477,8 +477,8 @@ func (v *IssuesView) AdvanceGlide() {
 // 窓の起点が resize 前の行数基準で古くなる。🚨 滑走を足したらここにも足す: 呼び出し側 (tui.go の
 // resize) が viewer の中のフィールドを直接止めていた頃は、足した滑走の止め忘れが tui.go 側に出た (issue 666)
 func (v *IssuesView) StopGlides() {
-	v.BodyPager.Stop()
-	v.CurGlide.Stop()
+	v.bodyPager.Stop()
+	v.curGlide.Stop()
 }
 
 // scanCmd は探索・メタデータ読み込みを 1 つのゴルーチンでまとめて行う。
@@ -488,13 +488,13 @@ func (v *IssuesView) StopGlides() {
 // チェックボックス) を同じゴルーチンで終わらせて完成品を渡せば競合が構造的に起きない。
 // コストは実測 2.5〜13.6ms (229 ファイルの repo) で、glogx の起動パスではなく i を
 // 押したときだけ通る (仕様書「本文を起動時に全件読まない」の担保)。
-func (v *IssuesView) ScanCmd(cwd string) tea.Cmd {
-	if v.Scanning {
+func (v *IssuesView) scanCmd(cwd string) tea.Cmd {
+	if v.scanning {
 		return nil // single-flight: i / r の連打で同じ探索のゴルーチンを積まない
 	}
-	v.Cwd = cwd
-	v.Scanning = true
-	return func() tea.Msg { return ScanIssues(cwd) }
+	v.cwd = cwd
+	v.scanning = true
+	return func() tea.Msg { return scanIssues(cwd) }
 }
 
 // scanAfterChangeCmd は「自分が (または開いていたエディタが) ファイルを変えた後」の取り直し。
@@ -507,11 +507,11 @@ func (v *IssuesView) ScanCmd(cwd string) tea.Cmd {
 // 🚨 読み直しだけの経路 (toggle / restore / r) には使わない。あちらは連打を畳むのが正しく、
 // 予約すると 1 打ごとに追加のスキャンが後から積まれる (single-flight の目的そのものを損なう)。
 func (v *IssuesView) scanAfterChangeCmd() tea.Cmd {
-	if v.Scanning {
-		v.RescanPending = true
+	if v.scanning {
+		v.rescanPending = true
 		return nil
 	}
-	return v.ScanCmd(v.Cwd)
+	return v.scanCmd(v.cwd)
 }
 
 // scanIssues は探索・メタデータ読み込み・見張りの基準づくりを 1 回で行う (scanCmd の本体)。
@@ -523,17 +523,17 @@ func (v *IssuesView) scanAfterChangeCmd() tea.Cmd {
 //   - ファイルの追加・削除: 見張る集合は Scan の結果から作るので、Scan の前に取ることはできない。
 //     代わりに構造のディレクトリの指紋を Scan の前と指紋を取った後で比べ、違えば基準を
 //     issuesStaleBaseline にして次の観測で必ず取り直させる
-func ScanIssues(cwd string) IssuesScanMsg {
+func scanIssues(cwd string) IssuesScanMsg {
 	root := issues.RepoRoot(cwd)
 	dirs := issues.FindDirs(root)
-	before := IssuesFingerprint(issuesWatchDirs(dirs, nil), nil)
+	before := issuesFingerprint(issuesWatchDirs(dirs, nil), nil)
 	found, warnings := issuesScanDirs(dirs)
-	fp := IssuesFingerprint(issuesWatchDirs(dirs, found), issuesWatchPaths(found))
-	if IssuesFingerprint(issuesWatchDirs(dirs, nil), nil) != before {
+	fp := issuesFingerprint(issuesWatchDirs(dirs, found), issuesWatchPaths(found))
+	if issuesFingerprint(issuesWatchDirs(dirs, nil), nil) != before {
 		fp = issuesStaleBaseline
 	}
 	loadAllMeta(found)
-	return IssuesScanMsg{Root: root, Dirs: dirs, Issues: found, Warnings: warnings, fp: fp}
+	return IssuesScanMsg{root: root, dirs: dirs, issues: found, warnings: warnings, fp: fp}
 }
 
 // loadAllMeta は全件のメタデータを読む。読み終えた時点の差し込み口を同じ関数に持つのは、読む位置を動かす
@@ -565,12 +565,12 @@ var scanIssuesStage = func(string) {}
 // 戻り値は「この結果を受けて追加で走らせる Cmd」(予約されていた取り直し。無ければ nil)。
 // restore / reloadAfterEdit と同じく Cmd を返す作法に揃えている。
 func (v *IssuesView) Receive(msg IssuesScanMsg) tea.Cmd {
-	v.Scanning, v.Loaded = false, true
+	v.scanning, v.loaded = false, true
 	// 見張りの基準は「このスキャンが読んだ時点の指紋」に揃える (issues_watch.go)。最初の観測で
 	// 取ると、読んだ時刻と基準を取る時刻が最大 1 周期ずれ、その間の外部編集が基準へ焼き込まれて
 	// 次の編集が来るまで永久に取りこぼす。自分の取り直しを「外部の変化」と誤検出しないのも同じ式で
 	// 満たせる (スキャンは内容を変えないので指紋は動かない)。
-	v.Watch.seen, v.Watch.pending = msg.fp, ""
+	v.watch.seen, v.watch.pending = msg.fp, ""
 	tab, cursorPath, openPath, markPath := v.currentTab(), issuePath(v.current()), issuePath(v.rootOpen()), v.markPath()
 	cursorGroupKey := v.currentGroupKey()
 	pendingCursorPath, pendingMarkPath := v.pendingCursorPath, v.pendingMarkPath
@@ -581,11 +581,11 @@ func (v *IssuesView) Receive(msg IssuesScanMsg) tea.Cmd {
 	if pendingMarkPath != "" {
 		markPath = pendingMarkPath
 	}
-	v.Root, v.Dirs, v.All, v.warnings = msg.Root, msg.Dirs, msg.Issues, msg.Warnings
-	v.tabsCanon = issues.Tabs(v.All, issues.TabMinCount)
+	v.root, v.dirs, v.all, v.warnings = msg.root, msg.dirs, msg.issues, msg.warnings
+	v.tabsCanon = issues.Tabs(v.all, issues.TabMinCount)
 	v.tabs = v.tabsCanon // refresh が件数を数えて表示順 (0 件を右) へ並べ替える
 	v.tabIdx = tabIndexOf(v.tabs, tab)
-	v.Refresh()
+	v.refresh()
 	v.pruneExpandedGroups() // 開いたまま group を消して作り直しても、死にキーで勝手に展開しない
 	// 親行にカーソルがあっても、move の再アンカー予約 (pendingCursorPath) があるならそちらを
 	// 優先する。予約は必ず issue の path なので、親行アンカーで飛ばすと消費だけされて効かない
@@ -598,10 +598,10 @@ func (v *IssuesView) Receive(msg IssuesScanMsg) tea.Cmd {
 	v.anchorMark(markPath)
 	// 移動直後に到着した結果が move 前に始まった stale scan なら、新 path はまだ msg.all に
 	// 無い。stale 印の次の結果まで pending anchor を残し、そこで宛先を消費する。
-	if pendingCursorPath != "" && (hasIssuePath(v.All, pendingCursorPath) || !pendingMoveStale) {
+	if pendingCursorPath != "" && (hasIssuePath(v.all, pendingCursorPath) || !pendingMoveStale) {
 		v.pendingCursorPath = ""
 	}
-	if pendingMarkPath != "" && (hasIssuePath(v.All, pendingMarkPath) || !pendingMoveStale) {
+	if pendingMarkPath != "" && (hasIssuePath(v.all, pendingMarkPath) || !pendingMoveStale) {
 		v.pendingMarkPath = ""
 	}
 	if pendingMoveStale {
@@ -616,9 +616,9 @@ func (v *IssuesView) Receive(msg IssuesScanMsg) tea.Cmd {
 		v.pending = nil
 		v.applyScreen(s)
 	}
-	if v.RescanPending {
-		v.RescanPending = false
-		return v.ScanCmd(v.Cwd) // 畳んでおいた要求を 1 回だけ張り直す (ここでは scanning=false)
+	if v.rescanPending {
+		v.rescanPending = false
+		return v.scanCmd(v.cwd) // 畳んでおいた要求を 1 回だけ張り直す (ここでは scanning=false)
 	}
 	return nil
 }
@@ -665,7 +665,7 @@ func (v *IssuesView) anchorCursorInternal(path string) {
 	if path == "" {
 		return
 	}
-	v.EnsureDisplayRows()
+	v.ensureDisplayRows()
 	if v.cursorToPath(path) {
 		return
 	}
@@ -679,7 +679,7 @@ func (v *IssuesView) anchorCursorInternal(path string) {
 	// groups.auto は refresh のたびに捨てられるので、再スキャンを跨ぐ移動の
 	// 再アンカーには使えない (置き場が groups.manual しかない)。カーソルの居場所を
 	// 見せる方を優先した意図的な選択 (同 3 周目 P3-5)。
-	for _, iss := range v.Rows {
+	for _, iss := range v.rows {
 		if iss.Path != path || iss.GroupKey == "" {
 			continue
 		}
@@ -694,7 +694,7 @@ func (v *IssuesView) anchorCursorInternal(path string) {
 func (v *IssuesView) cursorToPath(path string) bool {
 	for i, row := range v.displayRows {
 		if row.kind == displayRowIssue && row.issue.Path == path {
-			v.Cursor = i
+			v.cursor = i
 			return true
 		}
 	}
@@ -709,7 +709,7 @@ func (v *IssuesView) pruneExpandedGroups() {
 		return
 	}
 	alive := make(map[string]bool, len(v.groups.manual))
-	for _, iss := range v.All {
+	for _, iss := range v.all {
 		if key, ok := iss.EpicGroupKey(); ok {
 			alive[key] = true
 		}
@@ -732,12 +732,12 @@ func (v *IssuesView) currentGroupKey() string {
 
 // markPath は選択の錨が指す issue のパス ("" = 選択していない / 錨が範囲外)。
 func (v *IssuesView) markPath() string {
-	v.EnsureDisplayRows()
-	if !v.Marked || v.MarkAt < 0 || v.MarkAt >= len(v.displayRows) ||
-		v.displayRows[v.MarkAt].kind != displayRowIssue {
+	v.ensureDisplayRows()
+	if !v.marked || v.markAt < 0 || v.markAt >= len(v.displayRows) ||
+		v.displayRows[v.markAt].kind != displayRowIssue {
 		return ""
 	}
-	return v.displayRows[v.MarkAt].issue.Path
+	return v.displayRows[v.markAt].issue.Path
 }
 
 // anchorMark は再スキャン前と同じ issue へ選択の錨を張り替える (消えていれば選択したままにしない)。
@@ -753,10 +753,10 @@ func (v *IssuesView) anchorMark(path string) {
 	if path == "" {
 		return
 	}
-	v.EnsureDisplayRows()
+	v.ensureDisplayRows()
 	for i, row := range v.displayRows {
 		if row.kind == displayRowIssue && row.issue.Path == path {
-			v.Marked, v.MarkAt = true, i
+			v.marked, v.markAt = true, i
 			return
 		}
 	}
@@ -785,13 +785,13 @@ func (v *IssuesView) rebindOpen(path string) {
 	}
 	if len(v.docStack) > 0 {
 		// doc を開いている: 一覧と照合するのは底の issue (doc は一覧に無いので、照合すると「見つからない」で畳まれる)
-		doc := v.Open
-		v.Open = v.docStack[0].open
+		doc := v.open
+		v.open = v.docStack[0].open
 		v.rebindOpenIssue(path)
-		if v.Open == nil {
+		if v.open == nil {
 			return // 底の issue が消えた = 本文ごと畳んだ (discardBody が積んだものも捨てている)
 		}
-		v.docStack[0].open, v.Open = v.Open, doc
+		v.docStack[0].open, v.open = v.open, doc
 		return
 	}
 	v.rebindOpenIssue(path)
@@ -799,16 +799,16 @@ func (v *IssuesView) rebindOpen(path string) {
 
 // rebindOpenIssue は rebindOpen の本体 (v.open が issue のとき)。
 func (v *IssuesView) rebindOpenIssue(path string) {
-	for _, iss := range v.All {
+	for _, iss := range v.all {
 		if iss.Path == path {
-			v.Open = iss
+			v.open = iss
 			return
 		}
 	}
 	base := filepath.Base(path)
 	dir := ""
-	if v.Open != nil {
-		dir = v.Open.Dir
+	if v.open != nil {
+		dir = v.open.Dir
 	}
 	// 🚨 ここの通知は app.NoticeError (lastWarning に積む)。Msg 経路 (外部の変更) で置かれるので、次の打鍵が q だと
 	// トーストを読む前に終了し、理由が w でしか辿れない (issue 059)
@@ -827,13 +827,13 @@ func (v *IssuesView) rebindOpenIssue(path string) {
 		// 200ms が両イベントを 1 回の再スキャンへ畳むので**日常操作で成立する**。
 		// 捨てると、自分で直した見出しのせいで起きていない事象を告げられ、読んでいた位置を失う。
 		// 黙って入れ替わるのを防ぐ目的は notice で足りる (利用者が見て判断できる)。
-		if v.Open != nil && v.Open.Title != "" {
+		if v.open != nil && v.open.Title != "" {
 			_ = moved.LoadMeta() // 見出しは遅延読み。読めなければ突き合わせを諦める (下の条件が偽)
-			if moved.Title != "" && moved.Title != v.Open.Title {
+			if moved.Title != "" && moved.Title != v.open.Title {
 				v.setNotice("見出しが変わりました (別 issue の可能性): "+base, app.NoticeError)
 			}
 		}
-		v.Open = moved
+		v.open = moved
 	case ambiguous:
 		// 実体はあるが本人を決められない。畳むのは「どこにも無い」ときだけなので現状維持
 	default:
@@ -850,7 +850,7 @@ func (v *IssuesView) rebindOpenIssue(path string) {
 // 中で起き、同一性の範囲も issues.conflicts と同じ (Dir, basename)。跨ぐと、root の issues/ と
 // macOS/issues/ を両方持つ repo で、見出しまで同じ別 dir の issue へ黙って繋ぎ直す (issue 665)。
 func (v *IssuesView) matchByBase(dir, base string) (found *issues.Issue, ambiguous bool) {
-	for _, iss := range v.All {
+	for _, iss := range v.all {
 		if filepath.Base(iss.Path) != base || (dir != "" && iss.Dir != dir) {
 			continue
 		}
@@ -867,30 +867,30 @@ func (v *IssuesView) matchByBase(dir, base string) (found *issues.Issue, ambiguo
 // offset を 0 に戻さないのは、cursor を温存したまま窓だけ先頭へ飛ばすと「カーソル行が
 // どの行にも描かれない」状態が残るため (a / Tab / 再スキャンで実際に起きていた)。窓は
 // windowOffset が cursor から導出するので、ここは行集合の作り直しだけを担う。
-func (v *IssuesView) Refresh() {
+func (v *IssuesView) refresh() {
 	// 🚨 行集合が変わるので選択は畳む。錨は位置で持つため、残すと別の issue を指す
-	v.ClearMark()
-	v.CurGlide.Stop() // 同じ理由で滑走も畳む (起点の行番号が別の issue を指す)
-	v.SetRows(v.visibleIssues())
-	if v.NumFilter.Active {
-		v.groups.setAuto(v.NumFilter.groupKeys(v.Rows))
+	v.clearMark()
+	v.curGlide.Stop() // 同じ理由で滑走も畳む (起点の行番号が別の issue を指す)
+	v.setRows(v.visibleIssues())
+	if v.numFilter.active {
+		v.groups.setAuto(v.numFilter.groupKeys(v.rows))
 	} else {
 		v.groups.setAuto(nil)
 	}
 	v.rebuildDisplayRows()
-	v.Cursor = app.ClampIdx(v.Cursor, len(v.displayRows))
+	v.cursor = app.ClampIdx(v.cursor, len(v.displayRows))
 	// チップの件数は「そのタブを選んだときに実際に並ぶ行数」と同じ Filter から出す。
 	// issues.Tab.Count は done を含む全件なので、そのまま出すと done を伏せた既定表示で
 	// 「カテゴリの合計 ≠ All ≠ 一覧の行数」になる。
 	//
 	// 🚨 タブ集合そのものは v.all から作る (receive)。Filter 後の集合から作り直すと done だけの
 	// カテゴリが消え、位置で持つ tabIdx が別カテゴリを指す。ここで数えるのは件数だけ。
-	v.allCount = len(issues.Filter(v.All, "", v.Filter))
+	v.allCount = len(issues.Filter(v.all, "", v.filter))
 	v.nextCount = len(v.rowsForTab(tabNextName))
 	sel := v.currentTab() // 並べ替えを跨いで選択を保つため名前で覚える (tabIdx は位置で持つ)
 	counts := make([]int, len(v.tabsCanon))
 	for i, t := range v.tabsCanon {
-		counts[i] = len(issues.Filter(v.All, t.Name, v.Filter))
+		counts[i] = len(issues.Filter(v.all, t.Name, v.filter))
 	}
 	// 0 件のカテゴリは右へ寄せる (ユーザー要望 2026-07-31)。タブ集合の順序は done 込みの全件数で
 	// 決まる (issues.Tabs) ため、状態を伏せた表示では「0 件なのに左端」が構造的に起きていた。
@@ -911,8 +911,8 @@ func (v *IssuesView) rebuildDisplayRows() {
 	}
 	groups := make(map[string]*group)
 	groupList := make([]*group, 0, 4)
-	units := make([]displayUnit, 0, len(v.Rows))
-	for _, iss := range v.Rows {
+	units := make([]displayUnit, 0, len(v.rows))
+	for _, iss := range v.rows {
 		key, epic := iss.EpicGroupKey()
 		if !epic {
 			n, ok := issues.Number(iss)
@@ -966,7 +966,7 @@ func (v *IssuesView) rebuildDisplayRows() {
 		// Scan の通常順序は既に番号降順で、テスト/復元の手組みの順序も壊さない。
 		sortDisplayUnits(units)
 	}
-	out := make([]displayRow, 0, len(v.Rows)+len(groupList))
+	out := make([]displayRow, 0, len(v.rows)+len(groupList))
 	for _, u := range units {
 		out = append(out, u.row)
 		if !u.row.isGroupParent() || !v.groupExpanded(u.row.groupKey) {
@@ -987,8 +987,8 @@ func (v *IssuesView) rebuildDisplayRows() {
 // 「同期済み」と判断し、displayRows が古いまま描かれる (issue 268)。
 // production の書き込み口は refresh の 1 箇所だが、テストが行集合を手で作る経路もある
 // (scroll_glide_test)。規律は issues_rows_setter_test.go が走査で強制する。
-func (v *IssuesView) SetRows(rows []*issues.Issue) {
-	v.Rows = rows
+func (v *IssuesView) setRows(rows []*issues.Issue) {
+	v.rows = rows
 	v.rowsGen++
 }
 
@@ -1009,7 +1009,7 @@ func (v *IssuesView) groupExpanded(key string) bool {
 //
 // 🚨 判定は世代の比較だけ (O(1))。以前は rows の全件突き合わせで、これを可視行ごとに呼ぶ
 // 描画経路が「可視行数 × 全件」で走っていた (issue 268)。
-func (v *IssuesView) EnsureDisplayRows() {
+func (v *IssuesView) ensureDisplayRows() {
 	// 🚨 世代が同じでも「rows が非空なのに displayRows が空」なら作り直す。
 	// 世代だけを見ると、ゼロ値から `&issuesView{rows: list}` のように**複合リテラルで
 	// 直接埋めた**場合に rowsGen も displayRowsGen も 0 のまま = 同期済みと誤判定して
@@ -1017,22 +1017,22 @@ func (v *IssuesView) EnsureDisplayRows() {
 	// `len(displayRowsSource) != len(rows)` で偶然この形を自己回復していたので、
 	// 世代化でその回復を落とさないよう明示する。rows が非空なら rebuildDisplayRows は
 	// 必ず 1 行以上を作る (issue 行か group 親行) ので、この条件は O(1) で足りる。
-	if v.displayRowsGen == v.rowsGen && (len(v.displayRows) > 0 || len(v.Rows) == 0) {
+	if v.displayRowsGen == v.rowsGen && (len(v.displayRows) > 0 || len(v.rows) == 0) {
 		return
 	}
 	v.rebuildDisplayRows()
 }
 
 func (v *IssuesView) currentDisplayRow() (displayRow, bool) {
-	v.EnsureDisplayRows()
-	if v.Cursor < 0 || v.Cursor >= len(v.displayRows) {
+	v.ensureDisplayRows()
+	if v.cursor < 0 || v.cursor >= len(v.displayRows) {
 		return displayRow{}, false
 	}
-	return v.displayRows[v.Cursor], true
+	return v.displayRows[v.cursor], true
 }
 
 func (v *IssuesView) isIssueDisplayRow(i int) bool {
-	v.EnsureDisplayRows()
+	v.ensureDisplayRows()
 	return i >= 0 && i < len(v.displayRows) && v.displayRows[i].kind == displayRowIssue
 }
 
@@ -1058,8 +1058,8 @@ func copyExpandedGroups(src map[string]bool) map[string]bool {
 // 残るので、/ の処理側で v.rows を差し替える形にすると、refresh を通る経路 (receive /
 // applyScreen / a) が絞り込みヘッダーを出したままタブの行へ黙って戻してしまう。
 func (v *IssuesView) visibleIssues() []*issues.Issue {
-	if v.NumFilter.Active {
-		return v.NumFilter.rows(v.All)
+	if v.numFilter.active {
+		return v.numFilter.rows(v.all)
 	}
 	return v.rowsForTab(v.currentTab())
 }
@@ -1075,10 +1075,10 @@ func (v *IssuesView) visibleIssues() []*issues.Issue {
 // 見えるので載せない (載せると同じ issue が group と [next] の 2 箇所に並ぶ。ユーザー要望 2026-09-24)。
 func (v *IssuesView) rowsForTab(tab string) []*issues.Issue {
 	if tab != tabNextName {
-		return issues.Filter(v.All, tab, v.Filter)
+		return issues.Filter(v.all, tab, v.filter)
 	}
 	out := make([]*issues.Issue, 0, 8)
-	for _, iss := range v.All {
+	for _, iss := range v.all {
 		if _, epic := iss.EpicGroupKey(); iss.Status == issues.StatusNext && !epic {
 			out = append(out, iss)
 		}
@@ -1125,7 +1125,7 @@ func reorderTabsByCount(tabs []issues.Tab, counts []int) ([]issues.Tab, []int) {
 // 🚨 ここで無害化する: 通知文は issue のファイル名・本文由来の URL を素で埋め込む呼び出しが
 // 多く、呼び出しごとに包むと必ずどこかが漏れる (status_view.go の setNotice と同じ規律)。
 func (v *IssuesView) setNotice(text string, kind app.NoticeKind) {
-	v.Notice, v.noticeKind = term.SanitizePlainLine(text), kind
+	v.notice, v.noticeKind = term.SanitizePlainLine(text), kind
 }
 
 // takeNotice は未表示の操作結果を取り出して消す。browseModel がトーストへ流すための口で、
@@ -1135,8 +1135,8 @@ func (v *IssuesView) setNotice(text string, kind app.NoticeKind) {
 // 出す語彙で統一されている (ユーザー要望 2026-07-31)。viewer が全画面でトーストが隠れていた
 // 時代の名残でヘッダーに出していたが、トーストを viewer の上にも合成するようにしたので不要。
 func (v *IssuesView) TakeNotice() (string, app.NoticeKind) {
-	text, kind := v.Notice, v.noticeKind
-	v.Notice, v.noticeKind = "", app.NoticeOK
+	text, kind := v.notice, v.noticeKind
+	v.notice, v.noticeKind = "", app.NoticeOK
 	return text, kind
 }
 
@@ -1168,30 +1168,30 @@ func (v *IssuesView) currentTab() string {
 // closeBody は本文モードを抜ける。
 // closeBody は本文を閉じる。🚨 ここでは逆再生を始めるだけで中身は消さない — 消すと閉じる
 // 演出に何も映らない。実際の破棄は演出が着地したとき (settleDrawer)。
-func (v *IssuesView) CloseBody() {
+func (v *IssuesView) closeBody() {
 	// 後始末は本文の有無に依らず行う (呼ばれた時点で「本文モードではない」を満たすべき)。
-	v.BodyPager.Stop()
-	v.UrlPick.Close()
-	if v.Open == nil {
+	v.bodyPager.Stop()
+	v.urlPick.close()
+	if v.open == nil {
 		return
 	}
-	v.Drawer.startClose(app.TimeNow())
+	v.drawer.startClose(app.TimeNow())
 }
 
 // discardBody は本文の状態を実際に捨てる (演出の着地後・viewer を閉じるとき)。
 func (v *IssuesView) discardBody() {
-	v.Open, v.Body = nil, nil
-	v.BodyPager.Reset()
-	v.UrlPick.Close()
-	v.LinkJump = linkJump{}
+	v.open, v.body = nil, nil
+	v.bodyPager.Reset()
+	v.urlPick.close()
+	v.linkJump = linkJump{}
 	v.docStack, v.docLine = nil, 0
-	v.Drawer = issuesDrawer{}
+	v.drawer = issuesDrawer{}
 }
 
 // settleDrawer は引き出しの演出が終わっていれば静止状態へ進め、閉じ切っていれば本文を捨てる。
 // 描画とキー処理の両方から呼ぶ (どちらが先に来ても状態が進む)。
 func (v *IssuesView) settleDrawer() {
-	if v.Drawer.settle(app.TimeNow()) {
+	if v.drawer.settle(app.TimeNow()) {
 		v.discardBody()
 	}
 }
@@ -1206,25 +1206,25 @@ func (v *IssuesView) openBody() {
 		return
 	}
 	if iss := v.current(); iss != nil {
-		v.OpenIssue(iss)
+		v.openIssue(iss)
 	}
 }
 
 // openIssue は指定した issue の本文を開く (読めたら true)。カーソル行を開く openBody と、
 // 前回終了時の画面をパスから開き直す applyScreen が共有する。
-func (v *IssuesView) OpenIssue(iss *issues.Issue) bool {
-	v.ClearMark() // 本文は 1 件の操作。選択を残すと y が一覧の範囲へ効いて対象が食い違う
+func (v *IssuesView) openIssue(iss *issues.Issue) bool {
+	v.clearMark() // 本文は 1 件の操作。選択を残すと y が一覧の範囲へ効いて対象が食い違う
 	body, err := iss.ReadBody()
 	if err != nil {
 		v.setNotice("本文を読めませんでした: "+app.FirstLine(err.Error()), app.NoticeError)
 		return false
 	}
-	v.Open, v.Body = iss, body
-	v.BodyPager.Reset()
-	v.UrlPick.Close() // 別の issue を開いたら前の URL 一覧を持ち越さない
-	v.LinkJump = linkJump{}
+	v.open, v.body = iss, body
+	v.bodyPager.Reset()
+	v.urlPick.close() // 別の issue を開いたら前の URL 一覧を持ち越さない
+	v.linkJump = linkJump{}
 	v.docStack, v.docLine = nil, 0 // 別の issue を開いたら積んだ doc は捨てる (戻り先が別の issue になる)
-	v.Drawer.open(app.TimeNow())
+	v.drawer.open(app.TimeNow())
 	return true
 }
 
@@ -1236,11 +1236,11 @@ func (v *IssuesView) OpenIssue(iss *issues.Issue) bool {
 // スクロール位置は先頭へ戻す (openIssue が bodyPager を先頭へ戻す。前の位置を引き継ぐと短い本文で
 // 空白だけが見える)。
 func (v *IssuesView) openNeighbor(delta, rows int) {
-	if v.Open == nil {
+	if v.open == nil {
 		return
 	}
-	v.EnsureDisplayRows()
-	i := v.Cursor + delta
+	v.ensureDisplayRows()
+	i := v.cursor + delta
 	for ; i >= 0 && i < len(v.displayRows); i += delta {
 		if v.displayRows[i].kind == displayRowIssue {
 			break
@@ -1254,10 +1254,10 @@ func (v *IssuesView) openNeighbor(delta, rows int) {
 		}
 		return
 	}
-	if !v.OpenIssue(v.displayRows[i].issue) {
+	if !v.openIssue(v.displayRows[i].issue) {
 		return // 読めなかった issue へはカーソルも動かさない (見えているものと開いているものを揃える)
 	}
-	v.Drawer.Finish() // openIssue が開く演出を始め直すので即着地させる (引き出しは既に開いている)
+	v.drawer.finish() // openIssue が開く演出を始め直すので即着地させる (引き出しは既に開いている)
 	v.setCursor(i, rows)
 }
 
@@ -1267,12 +1267,12 @@ func (v *IssuesView) openNeighbor(delta, rows int) {
 // いる本文は Body が読み込み時の内容を握っているので読み直す。どちらもしないと、編集した当人に
 // 対して viewer が編集前の内容を出し続ける (仕様が最も嫌う「viewer が確信を持って嘘をつく」型)。
 func (v *IssuesView) ReloadAfterEdit() tea.Cmd {
-	if !v.Shown {
+	if !v.shown {
 		return nil
 	}
-	if v.Open != nil {
-		if body, err := v.Open.ReadBody(); err == nil {
-			v.Body = body // bodyPager の位置は保つ (描画側が新しい行数へ収束させる)
+	if v.open != nil {
+		if body, err := v.open.ReadBody(); err == nil {
+			v.body = body // bodyPager の位置は保つ (描画側が新しい行数へ収束させる)
 		}
 		// 積んだ本文も読み直す: doc から底の issue へジャンプして e で編集すると、編集したのは積んだ側で、
 		// h で戻ったときに編集前の本文を出すことになる (「確信を持って嘘をつく」形)
@@ -1308,7 +1308,7 @@ func (v *IssuesView) toggleGroupAtCursor() bool {
 	}
 	key := row.groupKey
 	v.groups.toggle(key)
-	v.Refresh()
+	v.refresh()
 	v.anchorGroup(key)
 	return true
 }
@@ -1319,10 +1319,10 @@ func (v *IssuesView) anchorGroup(key string) {
 }
 
 func (v *IssuesView) anchorGroupInternal(key string) {
-	v.EnsureDisplayRows()
+	v.ensureDisplayRows()
 	for i, row := range v.displayRows {
 		if row.isGroupParent() && row.groupKey == key {
-			v.Cursor = i
+			v.cursor = i
 			return
 		}
 	}
@@ -1334,18 +1334,18 @@ func (v *IssuesView) anchorGroupInternal(key string) {
 // 展開しても開かない (issue 666 の E / 752)。
 func (v *IssuesView) endNumberFilter(keep string) {
 	v.groups.endFilter(keep)
-	v.NumFilter.clear()
-	v.Refresh()
+	v.numFilter.clear()
+	v.refresh()
 }
 
 // confirmNumberFilter は Enter で入力を終える。検索語が空なら絞り込みごとやめる (issuesNumberFilter.confirm の doc)。
 func (v *IssuesView) confirmNumberFilter() {
-	if v.NumFilter.Query() == "" {
+	if v.numFilter.query() == "" {
 		v.clearNumberFilter()
 		return
 	}
-	v.NumFilter.Confirm()
-	v.Refresh()
+	v.numFilter.confirm()
+	v.refresh()
 }
 
 // clearNumberFilter は一時 autoExpanded を捨て、解除前に見ていた子 issue のパスへカーソルを
@@ -1373,7 +1373,7 @@ func (v *IssuesView) clearNumberFilter() {
 	case path != "":
 		v.anchorCursorInternal(path)
 	default:
-		v.Cursor = 0 // filter 中の添字を持ち越さない
+		v.cursor = 0 // filter 中の添字を持ち越さない
 	}
 }
 
@@ -1401,7 +1401,7 @@ func (v *IssuesView) clearNumberFilter() {
 // 「印字入力を食うモード」としてここで一括して扱う。
 // なお status 側の pager も U を無言で飲む (割当が無い) ので、この repo の既存の作法とは一貫する。
 func (v *IssuesView) OwnsKeys() bool {
-	return v.UrlPick.Active || v.NumFilter.Typing || v.MarkNext.Active
+	return v.urlPick.active || v.numFilter.typing || v.markNext.active
 }
 
 // handleKey は viewer 表示中のキーを処理する。
@@ -1416,31 +1416,31 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 	// このビューは browseModel なしでも駆動できる契約なので、Space の正規化も自分で通す
 	// (呼び出し側の app.NormalizeSpaceKey と同じ関数。理由はそちらのコメント)
 	key = app.NormalizeSpaceKey(key)
-	v.FinishAnim() // 演出中のキーは即着地させる (q が効かない時間を作らないため)
-	if v.Drawer.Finish() {
+	v.finishAnim() // 演出中のキーは即着地させる (q が効かない時間を作らないため)
+	if v.drawer.finish() {
 		v.discardBody() // 引き出しの逆再生中にキーが来たら即座に閉じ切る
 	}
 	// 通知は takeNotice で取り出された時点で消えるので、ここでのクリアは不要 (取り出されない
 	// まま次のキーが来た場合だけ古い結果が残るが、browseModel は毎キーで取り出す)
-	rows := v.VisibleRows(vp)
+	rows := v.visibleRows(vp)
 	// 🚨 確認モーダルは最優先で飲む (実ファイルを動かす操作なので、裏のキーを効かせない)
-	if v.MarkNext.Active {
+	if v.markNext.active {
 		return v.markNextKey(key)
 	}
 	// 🚨 URL ピッカーは他のどの割当よりも先に飲む: インクリメンタルサーチでは印字文字がすべて
 	// 検索語なので、e/v (エディタ) や y (コピー) を先に処理すると "e" や "y" を含む URL を
 	// 検索できない (e は example / .dev / developer に頻出するので実害が大きい)。
-	if v.UrlPick.Active {
+	if v.urlPick.active {
 		return v.urlPickerKey(key)
 	}
 	// 番号入力中も同じ理由で先に飲む: 打った数字が検索語なので、一覧のキーへ素通りさせると
 	// 数字キーに割当を足した瞬間に「検索語を打つと画面が動く」ことになる
-	if v.NumFilter.Typing {
+	if v.numFilter.typing {
 		return v.numberFilterKey(key, rows)
 	}
 	// 🚨 ジャンプモードはアクションキーより先に飲む: e / y は選択中のリンクへ効かせる (後回しにすると
 	// パスが光ったまま issue 自体を開く・コピーする)。捌かないキーはモードを抜けて下へ流れる
-	if v.Open != nil && v.LinkJump.Active {
+	if v.open != nil && v.linkJump.active {
 		if cmd, ok := v.linkJumpKey(key, vp, rows); ok {
 			return cmd
 		}
@@ -1449,7 +1449,7 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 	// しない (別の画面を見たい意図が明確なため)。i は自分自身なので下の toggle (閉じる) に任せる。
 	// 確認モーダル・URL ピッカー・番号入力中はここまで届かないので誤爆しない
 	if target, ok := app.CrossTarget(key); ok && target != app.FullScreenIssues {
-		v.Close()
+		v.close()
 		v.wantCross = target
 		return nil
 	}
@@ -1457,20 +1457,20 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 	if cmd, ok := v.actionKey(key); ok {
 		return cmd
 	}
-	if v.Open != nil {
-		return v.HandleBodyKey(key, vp, rows)
+	if v.open != nil {
+		return v.handleBodyKey(key, vp, rows)
 	}
 	switch key {
 	case "q", "esc":
 		// 選択中は解除を優先する (tig 流に 1 段戻る)。選択したまま終了すると、再開記憶で
 		// 次に開いたとき解除の手段が無い状態から始まる
-		if v.Marked {
-			v.ClearMark()
+		if v.marked {
+			v.clearMark()
 			return nil
 		}
 		// 絞り込みも同じく 1 段戻る (絞り込んだまま終了すると、次に開いたとき「なぜか件数が
 		// 少ない一覧」から始まる)
-		if v.NumFilter.Active {
+		if v.numFilter.active {
 			v.clearNumberFilter()
 			return nil
 		}
@@ -1479,7 +1479,7 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 		v.wantQuit = true
 	case "i":
 		// i は toggle で一覧へ戻る (閉じる意図が明確なので 1 段戻りはしない)
-		v.Close()
+		v.close()
 	case "u":
 		// 🚨 黙って無視しない。u は git log 一覧では pull、本文では URL ピッカー、status viewer では
 		// 「pull は p です」を返す — 一覧だけ無音だと「押したのに何も起きない」= 壊れて見える
@@ -1488,7 +1488,7 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 		// 読むことになり、しかも「その issue に URL があるか」は一覧に出ていない。
 		v.setNotice("URL 一覧は本文を開いてから u で出します", app.NoticeRefused)
 	case "/":
-		v.NumFilter.Start() // 絞り込み中なら続きから打てる (行集合は変わらないので refresh 不要)
+		v.numFilter.start() // 絞り込み中なら続きから打てる (行集合は変わらないので refresh 不要)
 	// 範囲選択 (ユーザー要望 2026-08-01)。y / p / Y が選択範囲へ効く。
 	// 移動が矢印と j/k の 2 系統あるので、伸張も両方に付ける (K = shift+k、J = shift+j)。
 	// 🚨 矢印だけにしない: shift+矢印は端末・多重化 (tmux) の設定次第でアプリまで届かないことが
@@ -1503,7 +1503,7 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 			v.applyMotion(listnav.HalfDown, rows)
 		}
 	case "tab", "l", "right":
-		if v.NumFilter.Active {
+		if v.numFilter.active {
 			break // 絞り込み中はカテゴリの概念が無い (ヘッダーもタブ行を出していない)
 		}
 		v.moveTab(1)
@@ -1511,7 +1511,7 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 	// 既に効いており、ここで足すのは対になる左だけ。C-b を「←の別名」として全ビューに広げないのは
 	// 一覧・パネル側の left に別の意味を与えないため (tui.go の C-f 正規化の注記を参照)。
 	case "shift+tab", "h", "left", "ctrl+b":
-		if v.NumFilter.Active {
+		if v.numFilter.active {
 			break
 		}
 		v.moveTab(-1)
@@ -1525,13 +1525,13 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 	case "n":
 		v.askMarkNext()
 	case "a":
-		if v.NumFilter.Active {
+		if v.numFilter.active {
 			break // 番号検索は状態を無視するので、押しても画面が変わらない (裏で状態だけ変える方が悪い)
 		}
-		v.Filter = v.Filter.Next()
-		v.Refresh()
+		v.filter = v.filter.Next()
+		v.refresh()
 	case "r":
-		return v.ScanCmd(v.Cwd) // loaded は落とさない (取り直し中も前回の結果を出したままにする)
+		return v.scanCmd(v.cwd) // loaded は落とさない (取り直し中も前回の結果を出したままにする)
 	default:
 		v.applyMotion(listnav.MotionOf(key), rows) // 移動の語彙 (j/k/g/G/半ページ) は listnav が持つ
 	}
@@ -1552,13 +1552,13 @@ func (v *IssuesView) applyMotion(m listnav.Motion, rows int) {
 		v.movePage(-listnav.Half(rows), rows)
 	case listnav.Top:
 		v.clearPendingMoveAnchors()
-		v.ClearMark()
-		v.Cursor, v.offset = 0, 0
+		v.clearMark()
+		v.cursor, v.offset = 0, 0
 	case listnav.Bottom:
 		v.clearPendingMoveAnchors()
-		v.ClearMark()
-		v.EnsureDisplayRows()
-		v.Cursor = max(len(v.displayRows)-1, 0)
+		v.clearMark()
+		v.ensureDisplayRows()
+		v.cursor = max(len(v.displayRows)-1, 0)
 		v.scrollToCursor(rows)
 	case listnav.None:
 	}
@@ -1579,9 +1579,9 @@ func (v *IssuesView) numberFilterKey(key string, rows int) tea.Cmd {
 	case "up", "ctrl+p":
 		v.moveCursor(-1, rows)
 	default:
-		if v.NumFilter.Edit(key) {
-			v.Cursor = 0 // 絞り込み直後は先頭を見せる (urlPicker と同じ)
-			v.Refresh()
+		if v.numFilter.edit(key) {
+			v.cursor = 0 // 絞り込み直後は先頭を見せる (urlPicker と同じ)
+			v.refresh()
 		}
 	}
 	return nil
@@ -1594,7 +1594,7 @@ func (v *IssuesView) numberFilterKey(key string, rows int) tea.Cmd {
 // 2 箇所を編集する必要があり、片方に入れ忘れても「そのモードでだけ効かない」だけなので
 // テストは緑のまま通る (実際に本文モードのコピーが無通知だったのもこの二重化の側で起きた)。
 func (v *IssuesView) actionKey(key string) (tea.Cmd, bool) {
-	if v.Open == nil && v.currentIsGroup() {
+	if v.open == nil && v.currentIsGroup() {
 		switch key {
 		case "y":
 			// 合成の親行に issue は無いが、**group 名という identity はある**ので y だけは
@@ -1642,15 +1642,15 @@ func (v *IssuesView) actionKey(key string) (tea.Cmd, bool) {
 // 折り返すヘッダーを足した瞬間にキー側と描画側の page 分割が食い違い、半ページ移動の距離や
 // カーソルと窓の関係が静かにずれる (描画側には収束処理があるので症状から原因へ辿り着けない)。
 // 一致は TestIssuesLayoutAgreesBetweenKeysAndRender が固定する。
-func (v *IssuesView) VisibleRows(vp IssuesViewport) int {
-	return max(vp.Page-len(v.headLines(v.headWidth(vp.Width), false)), 1)
+func (v *IssuesView) visibleRows(vp IssuesViewport) int {
+	return max(vp.page-len(v.headLines(v.headWidth(vp.width), false)), 1)
 }
 
 // headWidth はヘッダーを組む幅。本文は引き出しの内側に描くので、そちらの幅で数える。
 // 本文のヘッダーの行数は今は幅によらない (bodyHeadLines は 3 行固定) が、linkJump の状態文は幅で
 // リンクを組み直すので、描画と同じ幅を渡す (行数がずれる形が足されたときに備える意味もある。issue 751)
 func (v *IssuesView) headWidth(total int) int {
-	if v.Open != nil {
+	if v.open != nil {
 		return v.bodyWidth(total)
 	}
 	return total
@@ -1658,10 +1658,10 @@ func (v *IssuesView) headWidth(total int) int {
 
 // bodyWidth は本文を組む幅 (引き出しの内側)。🚨 演出中の途中幅ではなく着地後の幅で組む:
 // 途中幅で整形し直すと毎フレーム折り返しが変わって文字が踊る (composeDrawer の doc)。
-func (v *IssuesView) bodyWidth(total int) int { return max(v.Drawer.TargetWidth(total)-1, 1) }
+func (v *IssuesView) bodyWidth(total int) int { return max(v.drawer.targetWidth(total)-1, 1) }
 
 // handleBodyKey は本文 pager のキー操作 (diffOverlay と同じ語彙)。
-func (v *IssuesView) HandleBodyKey(key string, vp IssuesViewport, rows int) tea.Cmd {
+func (v *IssuesView) handleBodyKey(key string, vp IssuesViewport, rows int) tea.Cmd {
 	switch key {
 	// Enter は「TUI 内の開閉 toggle」(ユーザー要望 2026-08-01)。一覧の Enter で開き、本文の
 	// Enter で閉じる。glogx 本体の job パネル (tui.go の handlePanelKey) が既にこの語彙なので、
@@ -1671,13 +1671,13 @@ func (v *IssuesView) HandleBodyKey(key string, vp IssuesViewport, rows int) tea.
 		if v.popDoc() {
 			break // doc を開いていたら 1 段戻る (元の本文へ)
 		}
-		v.CloseBody()
+		v.closeBody()
 	case "i":
 		// i は本文からも効く (一覧の i と同じ toggle。**s と同じ理由**: --help と README が
 		// 「viewer 内のキー」として i を案内しており、本文だけ沈黙すると案内が嘘になる。issue 122)。
 		// 🚨 本文だけ畳む 1 段戻りにはしない: それは Enter / q / h が既に持っている語彙で、
 		//   README の「i で閉じて一覧へ戻る」とも食い違う。
-		v.Close()
+		v.close()
 	case "u":
 		v.openURLPicker()
 	case "tab":
@@ -1695,7 +1695,7 @@ func (v *IssuesView) HandleBodyKey(key string, vp IssuesViewport, rows int) tea.
 	default:
 		// スクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は diffOverlay・status viewer の
 		// 全画面 diff と共有する (internal/term/scroll_glide.go の term.PagerScrollKey)。手触りを 1 箇所に集約するため。
-		term.PagerScrollKey(key, &v.BodyPager, rows, v.Body.Len())
+		term.PagerScrollKey(key, &v.bodyPager, rows, v.body.Len())
 	}
 	return nil
 }
@@ -1707,60 +1707,60 @@ func (v *IssuesView) HandleBodyKey(key string, vp IssuesViewport, rows int) tea.
 // 体感を損ね、後者は「飛ぶ」ことがそのまま操作の意味 (本文 pager の term.PagerScrollKey が
 // 半ページだけ glide に載せているのと同じ線引き)。
 func (v *IssuesView) movePage(delta, rows int) {
-	v.EnsureDisplayRows()
-	from := v.Cursor
+	v.ensureDisplayRows()
+	from := v.cursor
 	v.moveCursor(delta, rows)
-	v.CurGlide.Start(from, v.Cursor, term.CursorAnimFrames)
+	v.curGlide.Start(from, v.cursor, term.CursorAnimFrames)
 }
 
 // moveCursor はカーソルを動かしてスクロール位置を追従させる。素の移動は選択を解除する
 // (選択したまま離れた場所へ動くと「見えていない範囲がコピー対象」になる)。
 func (v *IssuesView) moveCursor(delta, rows int) {
-	v.ClearMark()
-	v.setCursor(v.Cursor+delta, rows)
+	v.clearMark()
+	v.setCursor(v.cursor+delta, rows)
 }
 
 // setCursor はカーソルを位置 i へ置いて窓を追従させる (選択には触れない)。
 func (v *IssuesView) setCursor(i, rows int) {
 	v.clearPendingMoveAnchors()
-	v.EnsureDisplayRows()
-	v.Cursor = app.ClampIdx(i, len(v.displayRows))
+	v.ensureDisplayRows()
+	v.cursor = app.ClampIdx(i, len(v.displayRows))
 	v.scrollToCursor(rows)
 }
 
 // extendMark は shift+↑/↓ の伸張。初回は今の行を錨にしてから動くので、1 回押すと
 // 「元の行 + 隣の行」の 2 行が選択される (エディタ・Finder と同じ)。
 func (v *IssuesView) extendMark(delta, rows int) {
-	v.EnsureDisplayRows()
+	v.ensureDisplayRows()
 	if len(v.displayRows) == 0 {
 		return
 	}
-	if !v.isIssueDisplayRow(v.Cursor) {
+	if !v.isIssueDisplayRow(v.cursor) {
 		v.setNotice("親行では issue を選択できません", app.NoticeRefused)
 		return
 	}
-	next := app.ClampIdx(v.Cursor+delta, len(v.displayRows))
+	next := app.ClampIdx(v.cursor+delta, len(v.displayRows))
 	if !v.isIssueDisplayRow(next) {
 		v.setNotice("親行は選択できません", app.NoticeRefused)
 		return
 	}
-	if !v.Marked {
-		v.Marked, v.MarkAt = true, v.Cursor
+	if !v.marked {
+		v.marked, v.markAt = true, v.cursor
 	}
 	v.setCursor(next, rows)
 }
 
 // clearMark は選択を解除する。
-func (v *IssuesView) ClearMark() { v.Marked, v.MarkAt = false, 0 }
+func (v *IssuesView) clearMark() { v.marked, v.markAt = false, 0 }
 
 // selection は選択範囲 [lo, hi] (両端を含む)。選択していなければ ok=false。
 // 🚨 錨は行集合の入れ替えで無効になりうるので、範囲は必ず今の rows へ収めてから返す。
-func (v *IssuesView) Selection() (lo, hi int, ok bool) {
-	v.EnsureDisplayRows()
-	if !v.Marked || len(v.displayRows) == 0 {
+func (v *IssuesView) selection() (lo, hi int, ok bool) {
+	v.ensureDisplayRows()
+	if !v.marked || len(v.displayRows) == 0 {
 		return 0, 0, false
 	}
-	lo, hi = min(v.MarkAt, v.Cursor), max(v.MarkAt, v.Cursor)
+	lo, hi = min(v.markAt, v.cursor), max(v.markAt, v.cursor)
 	lo, hi = max(lo, 0), min(hi, len(v.displayRows)-1)
 	for i := lo; i <= hi; i++ {
 		if !v.isIssueDisplayRow(i) {
@@ -1772,7 +1772,7 @@ func (v *IssuesView) Selection() (lo, hi int, ok bool) {
 
 // selectedRows は操作の対象 (選択中ならその範囲、選択していなければ対象 1 件)。
 func (v *IssuesView) selectedRows() []*issues.Issue {
-	if lo, hi, ok := v.Selection(); ok {
+	if lo, hi, ok := v.selection(); ok {
 		rows := make([]*issues.Issue, 0, hi-lo+1)
 		for i := lo; i <= hi; i++ {
 			rows = append(rows, v.displayRows[i].issue)
@@ -1804,9 +1804,9 @@ func (v *IssuesView) scrollToCursor(rows int) { v.offset = v.windowOffset(rows) 
 // 収める — 半ページ移動では起点も着地点も着地後の窓に入るので通常は素通りし、行き過ぎ
 // (ease-out-back) が窓の端を越えたときだけ端で止まる。
 func (v *IssuesView) dispCursor(offset, rows int) int {
-	v.EnsureDisplayRows()
-	cur := app.ClampIdx(v.CurGlide.Cursor(v.Cursor), len(v.displayRows))
-	if !v.CurGlide.Active() || rows <= 0 {
+	v.ensureDisplayRows()
+	cur := app.ClampIdx(v.curGlide.Cursor(v.cursor), len(v.displayRows))
+	if !v.curGlide.Active() || rows <= 0 {
 		return cur
 	}
 	return min(max(cur, offset), offset+rows-1)
@@ -1816,8 +1816,8 @@ func (v *IssuesView) windowOffset(rows int) int {
 	if rows <= 0 {
 		return 0
 	}
-	v.EnsureDisplayRows()
-	return listnav.WindowOffset(v.offset, v.Cursor, len(v.displayRows), rows)
+	v.ensureDisplayRows()
+	return listnav.WindowOffset(v.offset, v.cursor, len(v.displayRows), rows)
 }
 
 // moveTab はタブを切り替える (端で止まらず巡回する)。
@@ -1826,13 +1826,13 @@ func (v *IssuesView) moveTab(delta int) {
 	// [next] (-1) と All (0) を含めた巡回。-1 起点なので +1 して 0 起点へ寄せてから回す
 	n := len(v.tabs) + 2
 	v.tabIdx = listnav.Cycle(v.tabIdx+1, delta, n) - 1
-	v.Refresh()
+	v.refresh()
 }
 
 // target は操作対象の issue (本文モードなら開いているもの、一覧ならカーソル行)。
 func (v *IssuesView) target() *issues.Issue {
-	if v.Open != nil {
-		return v.Open
+	if v.open != nil {
+		return v.open
 	}
 	return v.current()
 }
@@ -1864,22 +1864,22 @@ func (v *IssuesView) editCmd() tea.Cmd {
 // 一覧モードでは効かない (本文を読んでいないため)。一覧で押せるようにするとキー 1 打ごとに
 // ファイルを読むことになり、しかも「その issue に URL があるか」は一覧に出ていない。
 func (v *IssuesView) openURLPicker() {
-	if v.Body == nil {
+	if v.body == nil {
 		return
 	}
-	if !v.UrlPick.Open(v.Body.URLs()) {
+	if !v.urlPick.open(v.body.URLs()) {
 		v.setNotice("この本文に URL はありません", app.NoticeRefused)
 	}
 }
 
 // urlPickerKey はピッカー表示中のキーを捌く。確定 (Enter) でブラウザを開く Cmd を返す。
 func (v *IssuesView) urlPickerKey(key string) tea.Cmd {
-	url := v.UrlPick.selected() // 確定前に読む (close で状態が消えるため)
-	open, _ := v.UrlPick.handleKey(key)
+	url := v.urlPick.selected() // 確定前に読む (close で状態が消えるため)
+	open, _ := v.urlPick.handleKey(key)
 	if !open || url == "" {
 		return nil
 	}
-	v.UrlPick.Close()
+	v.urlPick.close()
 	// 「開きました」と断定しない: 失敗は extcmd.OpenURLMsg 経由でトースト警告になる (browseModel 側)。
 	v.setNotice("URL を開きます: "+url, app.NoticeOK)
 	return func() tea.Msg { return extcmd.OpenURLMsg{Err: extcmd.OpenInBrowser(url)} }
@@ -1922,7 +1922,7 @@ func (v *IssuesView) copyNumber() {
 
 // copyReference は貼り付け用の 1 行参照をコピーする (Y)。番号 + タイトル + repo 相対パス。
 func (v *IssuesView) copyReference() {
-	v.copyEach("参照", func(iss *issues.Issue) string { return iss.Reference(v.Root) })
+	v.copyEach("参照", func(iss *issues.Issue) string { return iss.Reference(v.root) })
 }
 
 // copyEach は対象 (選択中なら範囲、なければ 1 件) から text() を作ってコピーする。
@@ -1981,10 +1981,10 @@ func (v *IssuesView) copyGroupName() {
 // copyNextNumber は次に採番すべき番号をコピーする (N)。走査済みの全ディレクトリから計算する
 // ので、状態ディレクトリを見落として番号を再利用する事故が起きない (issues.NextNumber)。
 func (v *IssuesView) copyNextNumber() {
-	if len(v.All) == 0 {
+	if len(v.all) == 0 {
 		return
 	}
-	v.copyText(issues.NextNumber(v.All), "次の番号をコピーしました: ")
+	v.copyText(issues.NextNumber(v.all), "次の番号をコピーしました: ")
 }
 
 // copyText はクリップボードへ入れて結果を通知する (コピー系アクションの共通処理)。
@@ -2066,8 +2066,8 @@ func categoryColor(name string) string {
 // 別の型にしてある。🚨 幅を落とさないこと: 幅を知らずに page を分割していた頃は、ヘッダーを
 // 幅 0 で数えるしかなく「ヘッダーは折り返してはいけない」という暗黙の前提を抱えていた。
 type IssuesViewport struct {
-	Width int
-	Page  int
+	width int
+	page  int
 }
 
 type IssuesRenderOpts struct {
@@ -2082,7 +2082,7 @@ type IssuesRenderOpts struct {
 
 // viewport は描画情報から窓の寸法だけを取り出す (キー処理へ渡す形)。
 func (o IssuesRenderOpts) Viewport() IssuesViewport {
-	return IssuesViewport{Width: o.Width, Page: o.Page}
+	return IssuesViewport{width: o.Width, page: o.Page}
 }
 
 // lines は全画面ビューの page 行を返す (常にちょうど page 行。呼び出し側の枠・hint 経路を
@@ -2091,20 +2091,20 @@ func (v *IssuesView) Lines(o IssuesRenderOpts) []string {
 	v.settleDrawer() // 閉じ切っていたら本文を捨ててから組む (描画とキーのどちらが先でも進む)
 	var body []string
 	switch {
-	case v.UrlPick.Active:
-		body = v.UrlPick.lines(o)
-	case v.Open != nil:
+	case v.urlPick.active:
+		body = v.urlPick.lines(o)
+	case v.open != nil:
 		// 本文は「一覧の上に左から開く引き出し」として重ねる。全画面で置き換えると、どの一覧の
 		// どこから開いたかが画面から消える (ユーザー要望 2026-07-31: Notion の peek のように)。
-		w := v.Drawer.width(o.Width, app.TimeNow())
+		w := v.drawer.width(o.Width, app.TimeNow())
 		inner := o
 		// 整形は最終幅で行い、演出中は切るだけにする (途中幅で整形し直すと毎フレーム折り返しが
 		// 変わって文字が踊る。詳細は composeDrawer の doc)
 		inner.Width = v.bodyWidth(o.Width)
-		body = layout.ComposeDrawer(layout.PadTo(v.ListLines(o), o.Page), layout.PadTo(v.bodyLines(inner), o.Page),
+		body = layout.ComposeDrawer(layout.PadTo(v.listLines(o), o.Page), layout.PadTo(v.bodyLines(inner), o.Page),
 			w, o.Width, o.Colored)
 	default:
-		body = v.ListLines(o)
+		body = v.listLines(o)
 	}
 	body = layout.PadTo(body, o.Page)
 	// 確認モーダルは最前面 (実ファイルを動かす操作なので、裏の一覧より確実に目に入る位置)
@@ -2112,7 +2112,7 @@ func (v *IssuesView) Lines(o IssuesRenderOpts) []string {
 		body = term.OverlayCenteredBox(body, box, o.Width, o.Page, o.Colored)
 	}
 	if p := v.animProgress(); p < 1 {
-		body = layout.SlideIn(body, p, o.Width, v.Closing, IssuesAnimStagger)
+		body = layout.SlideIn(body, p, o.Width, v.closing, IssuesAnimStagger)
 	}
 	return body
 }
@@ -2123,10 +2123,10 @@ func (v *IssuesView) Lines(o IssuesRenderOpts) []string {
 // のは進捗の向きだけで、見え方 (緩急・行ごとのずらし) まで開く演出の逆再生にはしない
 // (理由は tuikit layout.RowOffsetRatio の doc)。
 func (v *IssuesView) animProgress() float64 {
-	if v.Closing {
-		return 1 - anim.Elapsed(v.AnimStart, app.TimeNow(), IssuesCloseDuration)
+	if v.closing {
+		return 1 - anim.Elapsed(v.animStart, app.TimeNow(), IssuesCloseDuration)
 	}
-	return anim.Elapsed(v.AnimStart, app.TimeNow(), issuesAnimDuration)
+	return anim.Elapsed(v.animStart, app.TimeNow(), issuesAnimDuration)
 }
 
 // headLines は現在のモードのヘッダー行 (一覧ならタブ行 + 通知、本文ならパス + 状態)。
@@ -2139,7 +2139,7 @@ func (v *IssuesView) animProgress() float64 {
 // 分割がキー側と描画側で食い違う。折り返したいヘッダーが要るなら、まず visibleRows へ幅を
 // 通す経路を作ること (handleKey のシグネチャまで届く変更になる)。
 func (v *IssuesView) headLines(width int, colored bool) []string {
-	if v.Open != nil {
+	if v.open != nil {
 		return v.bodyHeadLines(width, colored)
 	}
 	return v.listHeadLines(width, colored)
@@ -2151,7 +2151,7 @@ func (v *IssuesView) headLines(width int, colored bool) []string {
 // 右下トーストに出す (ユーザー要望 2026-07-31)。以前は「トーストは全画面差し替えの下に隠れる」
 // ためここが唯一の受け皿だったが、viewer の上にもトーストを合成するようにして解消した。
 func (v *IssuesView) bodyHeadLines(width int, colored bool) []string {
-	status := v.Open.StatusLabel()
+	status := v.open.StatusLabel()
 	// 進捗は開いている本文から数える (Issue 側で持つと一覧を出すたびに全 issue の全文を
 	// 読むことになる。issues/body.go の Body.Progress の doc)。
 	//
@@ -2159,8 +2159,8 @@ func (v *IssuesView) bodyHeadLines(width int, colored bool) []string {
 	// (reloadAfterEdit は err == nil のときだけ v.body を差し替える) は本文も進捗も
 	// 古いまま残る。本文テキストの stale は以前からある性質で、進捗をここへ移したことで
 	// **本文と進捗の鮮度が揃った** (以前は Issue 側の進捗だけ別経路で更新されていた)
-	if v.Body != nil {
-		if p := v.Body.Progress(); p != "" {
+	if v.body != nil {
+		if p := v.body.Progress(); p != "" {
 			status += "  " + p
 		}
 	}
@@ -2168,17 +2168,17 @@ func (v *IssuesView) bodyHeadLines(width int, colored bool) []string {
 		// doc を開いている: issue の状態の代わりに戻り先を出す (状態・進捗は doc には無い)
 		status = "doc " + strconv.Itoa(len(v.docStack)) + " 段目  h/Esc: " + term.SanitizePlainLine(v.docStack[len(v.docStack)-1].open.Rel) + " へ戻る"
 	}
-	if v.LinkJump.Active && v.Body != nil {
+	if v.linkJump.active && v.body != nil {
 		// ジャンプ中は状態の行を「どこを開くか」に差し替える (行を足すと本文の位置が 1 行ずれる)
-		fl := v.Body.FileLinks(v.bodyTextWidth(width), v.jumpRepos())
-		if cur := v.LinkJump.reanchor(fl); cur >= 0 {
+		fl := v.body.FileLinks(v.bodyTextWidth(width), v.jumpRepos())
+		if cur := v.linkJump.reanchor(fl); cur >= 0 {
 			status = v.linkJumpStatus(fl, cur)
 		}
 	}
 	return []string{
 		// Rel はファイル名 = 外部由来。ファイルを開く同一性は v.open.Path 側が持つので、
 		// 画面に出すこちらだけ無害化する (worktreeRow.dispPath と同じ分け方)。
-		term.Paint(term.ClipToWidth(term.SanitizePlainLine(v.Open.Rel), width), term.AnsiBold, colored),
+		term.Paint(term.ClipToWidth(term.SanitizePlainLine(v.open.Rel), width), term.AnsiBold, colored),
 		term.Paint(term.ClipToWidth(status, width), term.AnsiDim, colored),
 		"",
 	}
@@ -2197,7 +2197,7 @@ func (v *IssuesView) listHeadLines(width int, colored bool) []string {
 	// 絞り込み中はタブ行を検索行に差し替える (両方出さない: タブは無視される概念なので、
 	// 並べると「どのタブの中を検索しているのか」という無い関係を読ませてしまう)
 	head := make([]string, 0, 3)
-	if v.NumFilter.Active {
+	if v.numFilter.active {
 		head = append(head, v.numberFilterLine(width, colored))
 	} else {
 		head = append(head, v.tabLine(IssuesRenderOpts{Width: width, Colored: colored}))
@@ -2213,8 +2213,8 @@ func (v *IssuesView) listHeadLines(width int, colored bool) []string {
 }
 
 // listLines はタブ + 警告 + リストを描く。
-func (v *IssuesView) ListLines(o IssuesRenderOpts) []string {
-	v.EnsureDisplayRows()
+func (v *IssuesView) listLines(o IssuesRenderOpts) []string {
+	v.ensureDisplayRows()
 	head := v.listHeadLines(o.Width, o.Colored) // 引き出しの下地でも一覧のタブを出す
 	if msg := v.emptyMessage(o); msg != "" {
 		return append(head, term.Paint(term.ClipToWidth(msg, o.Width), term.AnsiDim, o.Colored))
@@ -2240,22 +2240,22 @@ func (v *IssuesView) ListLines(o IssuesRenderOpts) []string {
 // emptyMessage は「出すものが無い」状態の案内 ("" = リストを描く)。
 func (v *IssuesView) emptyMessage(o IssuesRenderOpts) string {
 	switch {
-	case v.Scanning && !v.Loaded:
+	case v.scanning && !v.loaded:
 		// スピナーは初回だけ。取り直しの間は前回の結果を出したままにする (last-good)。開くたびに
 		// 再スキャンするので、ここでスピナーに落とすと開く瞬間に毎回一覧が消えて瞬く
 		// (usage overlay の「取得中も last-good を維持する」と同じ規律)。
 		return o.Spinner + " issues を探しています..."
-	case len(v.Dirs) == 0:
+	case len(v.dirs) == 0:
 		return "issues ディレクトリが見つかりません (repo root と root/*/issues を探しました)"
-	case len(v.Rows) == 0 && v.NumFilter.Active && v.NumFilter.Query() != "":
+	case len(v.rows) == 0 && v.numFilter.active && v.numFilter.query() != "":
 		// 🚨 状態フィルタの案内 (a: pending も表示) を出さない。番号検索は状態を無視しているので、
 		// a を押しても結果は 1 件も増えない
-		return "番号に「" + v.NumFilter.Query() + "」を含む issue はありません (Esc: 解除)"
-	case len(v.Rows) == 0 && v.Filter == issues.FilterOpen:
+		return "番号に「" + v.numFilter.query() + "」を含む issue はありません (Esc: 解除)"
+	case len(v.rows) == 0 && v.filter == issues.FilterOpen:
 		return "このタブに open の issue はありません (a: pending も表示)"
-	case len(v.Rows) == 0 && v.Filter == issues.FilterPending:
+	case len(v.rows) == 0 && v.filter == issues.FilterPending:
 		return "このタブに open / pending の issue はありません (a: done も表示)"
-	case len(v.Rows) == 0:
+	case len(v.rows) == 0:
 		return "このタブに issue はありません"
 	default:
 		return ""
@@ -2269,9 +2269,9 @@ func (v *IssuesView) emptyMessage(o IssuesRenderOpts) string {
 // 入力中は端末のカーソルを検索語の中に置く (caretCol)。確定した後はカーソルを出さないので、
 // 打鍵を待っているのか確定済みなのかはカーソルの有無で分かる。
 func (v *IssuesView) numberFilterLine(width int, colored bool) string {
-	text, _ := promptWindow(NumberFilterPrompt, &v.NumFilter.line, width)
+	text, _ := promptWindow(NumberFilterPrompt, &v.numFilter.line, width)
 	line := NumberFilterPrompt + text +
-		"  " + strconv.Itoa(len(v.Rows)) + " 件 (全カテゴリ・全状態)"
+		"  " + strconv.Itoa(len(v.rows)) + " 件 (全カテゴリ・全状態)"
 	return term.Paint(term.ClipToWidth(line, width), term.AnsiBold, colored)
 }
 
@@ -2282,19 +2282,19 @@ const NumberFilterPrompt = "番号: "
 // docs/glogx-ui-guide.md §7)。
 func (v *IssuesView) Paste(s string) {
 	switch {
-	case v.UrlPick.Active:
-		v.UrlPick.paste(s)
-	case v.NumFilter.Typing:
-		if v.NumFilter.paste(s) {
-			v.Cursor = 0 // 絞り込み直後は先頭を見せる (numberFilterKey と同じ)
-			v.Refresh()
+	case v.urlPick.active:
+		v.urlPick.paste(s)
+	case v.numFilter.typing:
+		if v.numFilter.paste(s) {
+			v.cursor = 0 // 絞り込み直後は先頭を見せる (numberFilterKey と同じ)
+			v.refresh()
 		}
 	}
 }
 
 // typingInput は入力欄 (URL ピッカー・番号の入力中) にキーを打っているか。打っている間は印字キーがすべて
 // 検索語なので、browseModel のキーリピートの抑止 (swallowKeyRepeat) を外す。
-func (v *IssuesView) TypingInput() bool { return v.UrlPick.Active || v.NumFilter.Typing }
+func (v *IssuesView) TypingInput() bool { return v.urlPick.active || v.numFilter.typing }
 
 // caretCol は入力欄のキャレットを置く桁 (lines が返す窓の中の桁)。入力欄が無い・隠れているときは ok=false。
 // 行は常に窓の 0 行目 (どちらの入力欄も先頭の行にある。下の並びの注記)。
@@ -2304,14 +2304,14 @@ func (v *IssuesView) TypingInput() bool { return v.UrlPick.Active || v.NumFilter
 // 変えたらここも直す (input_caret_test.go が描画結果の上で固定している)。
 // 演出中 (開く・閉じる) と確認の板が出ている間は置かない (行がずれる・板の下に隠れる)。
 func (v *IssuesView) CaretCol(o IssuesRenderOpts) (x int, ok bool) {
-	if v.MarkNext.Active || v.animProgress() < 1 {
+	if v.markNext.active || v.animProgress() < 1 {
 		return 0, false
 	}
 	switch {
-	case v.UrlPick.Active:
-		return v.UrlPick.caretCol(o.Width), true
-	case v.NumFilter.Typing && v.Open == nil:
-		_, caret := promptWindow(NumberFilterPrompt, &v.NumFilter.line, o.Width)
+	case v.urlPick.active:
+		return v.urlPick.caretCol(o.Width), true
+	case v.numFilter.typing && v.open == nil:
+		_, caret := promptWindow(NumberFilterPrompt, &v.numFilter.line, o.Width)
 		return caret, true
 	}
 	return 0, false
@@ -2335,7 +2335,7 @@ func (v *IssuesView) tabLine(o IssuesRenderOpts) string {
 	}
 	// 🚨 段階 (v.filter) ではなく「実際に見えている状態」を出す。epic group の子は状態フィルタの
 	// 対象外、番号フィルタは状態を問わず拾うので、段階だけを出すとバッジが嘘になる (issue 296)
-	filter := issues.VisibleBadges(v.Filter, v.Rows)
+	filter := issues.VisibleBadges(v.filter, v.rows)
 	avail := max(o.Width-term.DispWidth(filter)-1, 1)
 	left := scrollTabs(chips, v.tabIdx+1, avail, o.Colored) // チップ配列は [next] が 0 番
 	pad := max(o.Width-term.DispWidth(left)-term.DispWidth(filter), 0)
@@ -2440,7 +2440,7 @@ func (v *IssuesView) tabChip(name string, count int, active bool, colored bool) 
 
 // issuesSelGutter は選択範囲の行に出す溝。🚨 幅は term.CursorGutterWidth と同じ 2 桁にすること
 // (カーソル行の "→ " と混在するので、違う幅だと選択行だけ 1 桁ずれる)。
-const IssuesSelGutter = "▌ "
+const issuesSelGutter = "▌ "
 
 // countDoneIssues は done の件数。epic の子は状態フィルタを通らない (issues.StatusFilter.showsIssue)
 // ので、done も必ずここに数えられる。
@@ -2473,7 +2473,7 @@ func groupProgress(row displayRow) string {
 // rowLine は 1 行を描く。cur は「カーソル記号を出す行」= 表示カーソル (滑走中は論理カーソルと
 // 違いうる。dispCursor の doc)。
 func (v *IssuesView) rowLine(i, cur int, o IssuesRenderOpts, width int) string {
-	v.EnsureDisplayRows()
+	v.ensureDisplayRows()
 	row := v.displayRows[i]
 	if row.kind == displayRowGroup {
 		return v.groupLine(i, cur, row, o, width)
@@ -2510,8 +2510,8 @@ func (v *IssuesView) rowLine(i, cur int, o IssuesRenderOpts, width int) string {
 	if i != cur {
 		// 選択範囲の行は溝で示す (カーソル行は → が優先。範囲は必ずカーソルを含むので競合しない)
 		gutter := term.CursorGutterBlank
-		if lo, hi, ok := v.Selection(); ok && i >= lo && i <= hi {
-			gutter = term.Paint(IssuesSelGutter, term.AnsiCyan, o.Colored)
+		if lo, hi, ok := v.selection(); ok && i >= lo && i <= hi {
+			gutter = term.Paint(issuesSelGutter, term.AnsiCyan, o.Colored)
 		}
 		return term.ClipToWidth(gutter+text, width)
 	}
@@ -2546,16 +2546,16 @@ func (v *IssuesView) bodyLines(o IssuesRenderOpts) []string {
 	rows := max(o.Page-len(header), 1)
 	// 左の行番号の溝ぶんも整形前に引く (溝を後付けすると幅を超える)。桁数はソース行数から
 	// 決める: 整形しないと行番号が分からず、行番号が分からないと溝幅が決まらない循環を切る
-	gutter := srcGutterWidth(v.Body.SrcLineCount())
+	gutter := srcGutterWidth(v.body.SrcLineCount())
 	textW := v.bodyTextWidth(o.Width) // バー列と溝のぶんも引く
-	lines := v.Body.Lines(textW, o.Colored)
-	if v.LinkJump.Active {
+	lines := v.body.Lines(textW, o.Colored)
+	if v.linkJump.active {
 		// 強調は整形し直して塗る (行数・桁は Lines と同じ。markdown.RenderLinks の doc)
 		repos := v.jumpRepos()
-		if cur := v.LinkJump.reanchor(v.Body.FileLinks(textW, repos)); cur >= 0 {
-			lines = v.Body.JumpLines(textW, o.Colored, repos, cur)
+		if cur := v.linkJump.reanchor(v.body.FileLinks(textW, repos)); cur >= 0 {
+			lines = v.body.JumpLines(textW, o.Colored, repos, cur)
 		} else {
-			v.LinkJump = linkJump{} // 読み直しで選択していたリンクが消えた
+			v.linkJump = linkJump{} // 読み直しで選択していたリンクが消えた
 		}
 	}
 	// 行数は幅で変わる (Body は幅ごとに整形し直す)。描画で確定した行数で論理 offset を収束させる
@@ -2564,10 +2564,10 @@ func (v *IssuesView) bodyLines(o IssuesRenderOpts) []string {
 		v.scrollToSrcLine(v.docLine, rows)
 		v.docLine = 0
 	}
-	v.BodyPager.Clamp(len(lines), rows)
-	offset := v.BodyPager.DrawOffset(len(lines), rows)
+	v.bodyPager.Clamp(len(lines), rows)
+	offset := v.bodyPager.DrawOffset(len(lines), rows)
 	end := min(offset+rows, len(lines))
-	nums := v.Body.SrcLines()
+	nums := v.body.SrcLines()
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {
 		src := 0
@@ -2604,7 +2604,7 @@ func (v *IssuesView) Hint(width int) string {
 	// 落とした項目は --help と README が正本 (status viewer と同じ作法)。
 	// nvim を開くキーは e と v の 2 本あるが、案内するのは e だけ (v は打ち慣れのための別名で、
 	// 幅で絞ったのではなく意図的に出さない)。一覧モードはどちらも案内しない。
-	if v.MarkNext.Active {
+	if v.markNext.active {
 		// n の確認中は handleKey が全キーを先に飲む (Enter も実行になる)。一覧の案内 (Enter: 本文 /
 		// q: 終了) を残すと、効かない・逆の意味のキーを案内することになる (issue 750。status viewer の
 		// 確認中と同じ扱い)。語彙は板の中の confirm.HintYesOther と揃える
@@ -2613,7 +2613,7 @@ func (v *IssuesView) Hint(width int) string {
 			{Text: "その他: キャンセル", Prio: 1},
 		})
 	}
-	if v.UrlPick.Active {
+	if v.urlPick.active {
 		// 件数と 1 字消し (ctrl+h) はピッカー自身のヘッダーが出すので繰り返さない。ここは
 		// 「打った文字がそのまま絞り込みになる」= 本文 pager のキーが効かないことだけを伝える。
 		return term.FitHintItems(width, []term.HintItem{
@@ -2623,7 +2623,7 @@ func (v *IssuesView) Hint(width int) string {
 			{Text: "Esc: 戻る", Prio: 1},
 		})
 	}
-	if v.Open != nil && v.LinkJump.Active {
+	if v.open != nil && v.linkJump.active {
 		// ジャンプ中は j/k がスクロールでなくリンクの移動になる (本文 pager の案内を残すと嘘になる)
 		return term.FitHintItems(width, []term.HintItem{
 			{Text: "j/k: 選ぶ", Prio: 2},
@@ -2633,7 +2633,7 @@ func (v *IssuesView) Hint(width int) string {
 			{Text: "Esc: 戻る", Prio: 1},
 		})
 	}
-	if v.NumFilter.Typing {
+	if v.numFilter.typing {
 		// 打鍵がすべて検索語になる = 一覧のキーが効かないことを伝える (urlPick と同じ理由)
 		return term.FitHintItems(width, []term.HintItem{
 			{Text: "数字で絞り込み", Prio: 2},
@@ -2642,7 +2642,7 @@ func (v *IssuesView) Hint(width int) string {
 			{Text: "Esc: 解除", Prio: 1},
 		})
 	}
-	if v.Open != nil {
+	if v.open != nil {
 		// エディタ名を書かないのは editCmd が $VISUAL/$EDITOR を見るため ($EDITOR=code の人に
 		// "nvim" と案内しない)。案内した全キーが効くことは TestIssuesViewBodyHintKeysAllRespond が
 		// 予算幅で固定する。Enter/h/q は job パネルと同じ「戻る」。
@@ -2659,7 +2659,7 @@ func (v *IssuesView) Hint(width int) string {
 			{Text: "Enter/h/q: 戻る", Prio: 1},
 		})
 	}
-	if lo, hi, ok := v.Selection(); ok {
+	if lo, hi, ok := v.selection(); ok {
 		// 選択中は効くキーだけを出す (移動と Enter は選択を畳むので、並べると誤解を招く)
 		return term.FitHintItems(width, []term.HintItem{
 			{Text: strconv.Itoa(hi-lo+1) + " 件選択", Prio: 2},
@@ -2670,7 +2670,7 @@ func (v *IssuesView) Hint(width int) string {
 			{Text: "Esc: 解除", Prio: 1},
 		})
 	}
-	if v.NumFilter.Active {
+	if v.numFilter.active {
 		// Tab と a は絞り込み中の no-op なので案内しない (押しても何も起きないキーを出さない)
 		return term.FitHintItems(width, []term.HintItem{
 			{Text: "j/k: 移動", Prio: 2},
@@ -2690,8 +2690,8 @@ func (v *IssuesView) Hint(width int) string {
 	// が、hint は 1 行しかないので段階だけを言う (issue 296)。
 	// 増える状態は issues.StatusFilter.AddedBadges が段階の正本 (shows) から導出する。ここで
 	// 段階ごとに書き分けると waiting を足したときに置き去りになる (issue 665)
-	next := "a: +" + v.Filter.AddedBadges()
-	if v.Filter.Next() == issues.FilterOpen {
+	next := "a: +" + v.filter.AddedBadges()
+	if v.filter.Next() == issues.FilterOpen {
 		next = "a: " + issues.FilterOpen.Badges() + "のみ"
 	}
 	// 🚨 "q: 終了" であって "閉じる" ではない。q/esc は **glogx ごと終了**する
@@ -2723,8 +2723,8 @@ func (v *IssuesView) Hint(width int) string {
 //
 // 一覧モードだけで受ける: 本文を開いたまま動かすと、開いている Body のパスが実体から外れて
 // 「読んでいるファイルがもう無い」状態になる。目印は一覧を見ながら付けるものなので実害もない。
-type IssuesMarkConfirm struct {
-	Active  bool
+type issuesMarkConfirm struct {
+	active  bool
 	targets []*issues.Issue
 	// unmark は「目印を外す」向きか (next/ から issue ディレクトリ直下へ戻す)。
 	unmark bool
@@ -2749,7 +2749,7 @@ func (v *IssuesView) askMarkNext() {
 	if cur := v.current(); cur != nil {
 		unmark = cur.Status == issues.StatusNext
 	}
-	v.MarkNext = IssuesMarkConfirm{Active: true, targets: rows, unmark: unmark}
+	v.markNext = issuesMarkConfirm{active: true, targets: rows, unmark: unmark}
 }
 
 // markNextKey は確認中のキーを捌く。y/Enter で実行、それ以外は取り消し。
@@ -2761,8 +2761,8 @@ func (v *IssuesView) askMarkNext() {
 //
 //	ToLower 判定へ揃えない (理由は status_view.go:discardKey の注記。issue 071 / 123)。
 func (v *IssuesView) markNextKey(key string) tea.Cmd {
-	targets, unmark := v.MarkNext.targets, v.MarkNext.unmark
-	v.MarkNext = IssuesMarkConfirm{}
+	targets, unmark := v.markNext.targets, v.markNext.unmark
+	v.markNext = issuesMarkConfirm{}
 	if !confirm.IsYesStrict(key) {
 		return nil
 	}
@@ -2790,7 +2790,7 @@ func (v *IssuesView) markNextKey(key string) tea.Cmd {
 		movedPaths[iss.Path] = newPath
 		moved++
 	}
-	v.ClearMark()
+	v.clearMark()
 	if moved == 0 {
 		v.setNotice("対象がありません (すべて既にその状態)", app.NoticeOK)
 		return nil
@@ -2813,7 +2813,7 @@ func (v *IssuesView) setPendingMoveAnchors(cursorPath, markPath string, moved ma
 		v.pendingMarkPath = next
 	}
 	if v.pendingCursorPath != "" || v.pendingMarkPath != "" {
-		v.pendingMoveStale = v.Scanning
+		v.pendingMoveStale = v.scanning
 	}
 }
 
@@ -2856,17 +2856,17 @@ func unmarkDestLabel(targets []*issues.Issue) string {
 
 // markNextBox は確認モーダルの箱 (glogx の push/pull 確認と同じ見た目)。
 func (v *IssuesView) markNextBox(width int, colored bool) []string {
-	if !v.MarkNext.Active {
+	if !v.markNext.active {
 		return nil
 	}
-	what := strconv.Itoa(len(v.MarkNext.targets)) + " 件"
-	if len(v.MarkNext.targets) == 1 {
+	what := strconv.Itoa(len(v.markNext.targets)) + " 件"
+	if len(v.markNext.targets) == 1 {
 		// Rel は同一性のため無害化しない実物 (issues/parse.go newIssue の doc)。画面へ出す
 		// ここで sanitize する (制御文字入りのファイル名で確認モーダルを細工させない)
-		what = term.SanitizePlainLine(filepath.Base(v.MarkNext.targets[0].Rel))
+		what = term.SanitizePlainLine(filepath.Base(v.markNext.targets[0].Rel))
 	}
 	title, lines := " next の目印 ", []string{what + " に next の目印を付けます"}
-	if v.MarkNext.unmark {
+	if v.markNext.unmark {
 		// 🚨 宛先は独立した行にする。箱は 44 桁で頭打ち (confirm.MaxWidth) なので、1 行に繋ぐと
 		// 実在する長さのファイル名 (`292-feat-audit-forge-should-hand-each-agent-its-own-worktree.md`)
 		// で宛先が丸ごと切り落とされ、「ファイルを動かす前の唯一の確認画面」に何も出ない
@@ -2875,7 +2875,7 @@ func (v *IssuesView) markNextBox(width int, colored bool) []string {
 		title = " next を外す "
 		lines = []string{
 			what + " を next/ から",
-			"→ " + unmarkDestLabel(v.MarkNext.targets) + " へ戻します",
+			"→ " + unmarkDestLabel(v.markNext.targets) + " へ戻します",
 		}
 	}
 	return confirm.Dialog(title, append(lines,

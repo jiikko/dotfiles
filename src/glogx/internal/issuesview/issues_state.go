@@ -46,10 +46,20 @@ type IssuesScreen struct {
 // issuesMemory は issues viewer の記憶 ($XDG_CACHE_HOME/glog/issues-last-screen.json)。作法は screen_memory.go。
 var issuesMemory = app.ScreenMemory[IssuesScreen]{File: "issues-last-screen.json", SavedAt: func(s IssuesScreen) time.Time { return s.SavedAt }}
 
-func SaveIssuesScreen(s IssuesScreen) error { return issuesMemory.Save(s) }
+func saveIssuesScreen(s IssuesScreen) error { return issuesMemory.Save(s) }
 
 // removeIssuesScreen は記憶を捨てる (git log 一覧から終了したとき)。
-func RemoveIssuesScreen() { issuesMemory.Remove() }
+func removeIssuesScreen() { issuesMemory.Remove() }
+
+// RememberScreen は終了時の記憶。viewer を出していれば画面を保存し、出していなければ消す (Screen の doc。
+// 消さないと一覧を見て閉じた次の起動で 2 回前の viewer が蘇る。ユーザー指定: git log 一覧のときは復元しない)。保存の失敗は終了を妨げない。
+func (v *IssuesView) RememberScreen(now time.Time) {
+	if s, ok := v.screen(now); ok {
+		_ = saveIssuesScreen(s)
+		return
+	}
+	removeIssuesScreen()
+}
 
 // loadIssuesScreen は TTL 内の記憶を返す (読めない・壊れている・期限切れ・未来の時刻は「記憶なし」。app.ScreenMemory.load)。
 //

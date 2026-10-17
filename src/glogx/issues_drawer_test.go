@@ -81,7 +81,7 @@ func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
 	m.width, m.height = 100, 20
 	m.usageOv.dismiss()
 	m.issuesOv = *realIssuesView(t)
-	m.issuesOv.FinishAnim() // 開く演出は本題でないので着地させる
+	m.issuesOv.Fixture().FinishAnim() // 開く演出は本題でないので着地させる
 
 	// 境界の桁位置 = 引き出しの幅。無ければ -1。
 	edge := func() int {
@@ -97,7 +97,7 @@ func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
 		t.Fatalf("本文を開く前から境界がある (col=%d)", got)
 	}
 	m.handleKey("enter")
-	if m.issuesOv.Open == nil {
+	if !m.issuesOv.Fixture().BodyOpen() {
 		t.Fatal("Enter で本文が開かない")
 	}
 	if !m.spinnerActive() {
@@ -126,7 +126,7 @@ func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
 		t.Errorf("板が動いたフレームが %d 回しかない (アニメになっていない)", moved)
 	}
 	// 着地: 板の左辺 = 画面幅 - 引き出しの幅
-	target := m.issuesOv.Drawer.TargetWidth(m.contentWidth())
+	target := m.issuesOv.Fixture().DrawerTargetWidth(m.contentWidth())
 	if want := m.contentWidth() - target; prev != want {
 		t.Errorf("着地した板の左辺 = %d, want %d", prev, want)
 	}

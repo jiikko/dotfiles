@@ -33,8 +33,8 @@ func TestEpicChildStatusReachedByAllThreeConsumers(t *testing.T) {
 			// (ここだけが EpicChildStatus の答えで分岐する。受けない名前は下の (2) の
 			// 「issue が居るディレクトリは見張る」経路で拾われる)
 			v := newTestIssuesView()
-			v.Dirs = []string{dir}
-			watchedEmpty, _ := v.WatchTargets()
+			v.dirs = []string{dir}
+			watchedEmpty, _ := v.watchTargets()
 			if slices.Contains(watchedEmpty, sub) != known {
 				t.Errorf("空の状態ディレクトリの監視が EpicChildStatus と食い違う: watched=%v want=%v (%v)",
 					slices.Contains(watchedEmpty, sub), known, watchedEmpty)
@@ -70,8 +70,8 @@ func TestEpicChildStatusReachedByAllThreeConsumers(t *testing.T) {
 			// (4) 監視: issue が居るディレクトリは必ず見張る (外部編集を取りこぼさない)。
 			// 走査結果を持たせた状態で見る (production も scan 後の all で見張る先を決める)
 			v = newTestIssuesView()
-			v.Dirs, v.All = []string{dir}, got
-			watched, _ := v.WatchTargets()
+			v.dirs, v.all = []string{dir}, got
+			watched, _ := v.watchTargets()
 			if !slices.Contains(watched, sub) {
 				t.Errorf("issue が居るディレクトリが監視対象にない: %v", watched)
 			}

@@ -39,8 +39,8 @@ import (
 // canary (下) が 7 件を検出できずに落ちる (issue 817 で main から移して公開名になったときに 1 度変わった)。
 const (
 	rowsOwner    = "IssuesView"
-	rowsField    = "Rows"
-	rowsSetter   = "SetRows"
+	rowsField    = "rows"
+	rowsSetter   = "setRows"
 	rowsTestCtor = "newTestIssuesView"
 )
 

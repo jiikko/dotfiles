@@ -56,7 +56,7 @@ var fullScreenCases = []fullScreenCase{
 	},
 	{
 		id: app.FullScreenIssues, name: "issues viewer",
-		show:  func(m *browseModel) { m.issuesOv.Shown = true },
+		show:  func(m *browseModel) { m.issuesOv.Fixture().SetShown(true) },
 		hint:  func(m *browseModel) string { return m.issuesOv.Hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.issuesOv.Lines(m.issuesOpts()) },
 	},
@@ -319,7 +319,7 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 			m.width, m.height = 100, 30
 			m.doctorOv.SetDeps(doctorview.Deps(doctortest.FakeDeps(t))) // 実ディスクを走査しない
 			m.handleKey(fromKey)
-			m.issuesOv.FinishAnim()
+			m.issuesOv.Fixture().FinishAnim()
 			if got := m.activeFullScreen(); got != from {
 				t.Fatalf("前提が崩れた: %s で %v が開かない (active=%v)", fromKey, from, got)
 			}

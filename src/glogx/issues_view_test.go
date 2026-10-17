@@ -19,14 +19,10 @@ import (
 // loadedView は receive 済みの viewer を返す。
 func loadedView(list ...*issues.Issue) *issuesview.IssuesView {
 	v := newTestIssuesView()
-	v.Shown = true
-	v.Receive(issuesview.IssuesScanMsg{Dirs: []string{"/repo/issues"}, Issues: list})
+	v.Fixture().SetShown(true)
+	v.Receive(issuesview.FixtureScanMsg("", []string{"/repo/issues"}, list))
 	return &v
 }
-
-// vp は窓の寸法 (キー処理へ渡す)。幅は renderOpts と同じにする — テストだけ幅 0 で駆動すると、
-// 幅で行数が変わるヘッダーを足したときに本番でだけ page 分割がずれる。
-func vp(page int) issuesview.IssuesViewport { return renderOpts(page).Viewport() }
 
 func renderOpts(page int) issuesview.IssuesRenderOpts {
 	return issuesview.IssuesRenderOpts{Width: 80, Page: page, Colored: false}
@@ -41,8 +37,8 @@ func TestIssuesHintUsesRenderBudget(t *testing.T) {
 		if !m.frameActive() {
 			t.Fatalf("w=%d: 前提が崩れた (フレームが有効でない)", w)
 		}
-		m.issuesOv.Shown = true
-		m.issuesOv.Receive(issuesview.IssuesScanMsg{Dirs: []string{"/repo/issues"}, Issues: issuesviewtest.SampleIssues()})
+		m.issuesOv.Fixture().SetShown(true)
+		m.issuesOv.Receive(issuesview.FixtureScanMsg("", []string{"/repo/issues"}, issuesviewtest.SampleIssues()))
 		line := m.hintLine()
 		if got := term.DispWidth(term.StripANSI(line)); got > w {
 			t.Errorf("w=%d: hint 行が端末幅を超えた (%d 桁): %q", w, got, line)
@@ -76,17 +72,17 @@ func TestIssuesScanMsgDeliversRebindNotice(t *testing.T) {
 	if err := iss.LoadMeta(); err != nil {
 		t.Fatal(err)
 	}
-	m.issuesOv.Cwd = root
-	m.Update(issuesview.IssuesScanMsg{Root: root, Dirs: []string{dir}, Issues: []*issues.Issue{iss}})
-	m.issuesOv.FinishAnim()
+	m.issuesOv.Fixture().SetCwd(root)
+	m.Update(issuesview.FixtureScanMsg(root, []string{dir}, []*issues.Issue{iss}))
+	m.issuesOv.Fixture().FinishAnim()
 	m.handleKey("enter")
-	m.issuesOv.Drawer.Finish() // 本文モードへ
+	m.issuesOv.Fixture().FinishDrawer() // 本文モードへ
 
 	// 別プロセスがファイルを消したスキャン結果が Msg 経路で届く (キーは押さない)
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	m.Update(issuesview.IssuesScanMsg{Root: root, Dirs: []string{dir}})
+	m.Update(issuesview.FixtureScanMsg(root, []string{dir}, nil))
 
 	if !strings.Contains(m.lastWarning, "見つかりません") {
 		t.Errorf("畳んだ理由が lastWarning に届いていない (q で恒久喪失する): %q", m.lastWarning)
@@ -107,14 +103,14 @@ func TestBrowseIssuesScanMsgPropagatesRescanCmd(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	m.issuesOv = *loadedView(iss)
 
-	if cmd := m.issuesOv.ScanCmd(m.issuesOv.Cwd); cmd == nil {
+	if cmd := m.issuesOv.Fixture().StartScan(); cmd == nil {
 		t.Fatal("前提が崩れた: 1 本目のスキャンが張れない")
 	}
-	if cmd := m.issuesOv.ReloadAfterEdit(); cmd != nil || !m.issuesOv.RescanPending {
-		t.Fatalf("前提が崩れた: 予約が立っていない (cmd=%v pending=%v)", cmd != nil, m.issuesOv.RescanPending)
+	if cmd := m.issuesOv.ReloadAfterEdit(); cmd != nil || !m.issuesOv.Fixture().RescanPending() {
+		t.Fatalf("前提が崩れた: 予約が立っていない (cmd=%v pending=%v)", cmd != nil, m.issuesOv.Fixture().RescanPending())
 	}
 
-	_, cmd := m.Update(issuesview.IssuesScanMsg{Dirs: []string{iss.Dir}, Issues: []*issues.Issue{iss}})
+	_, cmd := m.Update(issuesview.FixtureScanMsg("", []string{iss.Dir}, []*issues.Issue{iss}))
 	if cmd == nil {
 		t.Error("issuesScanMsg の case が取り直しの Cmd を捨てている (予約が失われる)")
 	}
@@ -125,7 +121,7 @@ func TestBrowseIssuesScanMsgPropagatesRescanCmd(t *testing.T) {
 // issues_close_anim_test.go が明示的に on にして検査する (newTestBrowse の zoom.off と同じ)。
 func newTestIssuesView() issuesview.IssuesView {
 	v := issuesview.NewIssuesView()
-	v.CloseAnimOff = true
+	v.Fixture().SetCloseAnim(false)
 	return v
 }
 
@@ -137,7 +133,7 @@ func newTestIssuesView() issuesview.IssuesView {
 func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	m.issuesOv = *loadedView(issuesviewtest.RealIssue(t))
-	if !m.issuesOv.UrlPick.Open([]string{"https://github.com/Ueno/repo", "https://example.com/x"}) {
+	if !m.issuesOv.Fixture().OpenURLPicker([]string{"https://github.com/Ueno/repo", "https://example.com/x"}) {
 		t.Fatal("前提が崩れた: URL ピッカーが開かない")
 	}
 	// 🚨 起動時グランスの既定を継承しないこと。継承すると片方向で vacuous になる (敵対的レビュー)
@@ -146,7 +142,7 @@ func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
 	m.handleKey("U")
 
 	// 本命の主張はこちら: キーが viewer へ届いているか
-	if q := m.issuesOv.UrlPick.Query(); q != "U" {
+	if q := m.issuesOv.Fixture().URLPickerQuery(); q != "U" {
 		t.Errorf("U が検索語に届いていない (外側が横取りしている): query=%q (期待 \"U\")", q)
 	}
 	// 🚨 こちらは別の主張 (残量モーダルを開かない)。混ぜて 1 つの非難文にすると、dismiss の
@@ -164,7 +160,7 @@ func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
 func TestIssuesViewerOwnsKeysWhileTypingNumberFilter(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	m.issuesOv = *loadedView(issuesviewtest.RealIssue(t))
-	m.issuesOv.NumFilter.Start()
+	m.issuesOv.Fixture().SetNumberFilterTyping()
 	if !m.issuesOv.OwnsKeys() {
 		t.Fatal("番号入力中に ownsKeys() が false")
 	}
@@ -177,11 +173,11 @@ func TestIssuesViewerOwnsKeysWhileTypingNumberFilter(t *testing.T) {
 	// 確定後は通常のナビゲーションに戻る = U は外側で受ける
 	// 🚨 数字を打ってから確定すること。空入力の確定は confirmNumberFilter が解除へ回すので active も
 	//   false になり、typing→active の変異を素通りさせる (敵対的レビューの再現手順は / → 0 → Enter だった)
-	if !m.issuesOv.NumFilter.Edit("0") {
+	if !m.issuesOv.Fixture().EditNumberFilter("0") {
 		t.Fatal("前提が崩れた: 番号フィルタが数字を受け付けない")
 	}
-	m.issuesOv.NumFilter.Confirm()
-	if !m.issuesOv.NumFilter.Active {
+	m.issuesOv.Fixture().ConfirmNumberFilter()
+	if !m.issuesOv.Fixture().NumberFilterActive() {
 		t.Fatal("前提が崩れた: 確定後に絞り込みが残っていない")
 	}
 	if m.issuesOv.OwnsKeys() {
@@ -202,7 +198,7 @@ func TestIssuesViewerOwnsKeysWhileTypingNumberFilter(t *testing.T) {
 func TestIssuesViewerOwnsKeysDuringMarkNextConfirm(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	m.issuesOv = *loadedView(issuesviewtest.RealIssue(t))
-	m.issuesOv.MarkNext = issuesview.IssuesMarkConfirm{Active: true}
+	m.issuesOv.Fixture().SetMarkNextActive()
 	if !m.issuesOv.OwnsKeys() {
 		t.Fatal("確認中に ownsKeys() が false")
 	}
@@ -213,7 +209,7 @@ func TestIssuesViewerOwnsKeysDuringMarkNextConfirm(t *testing.T) {
 	if m.usageOv.visible {
 		t.Error("確認中の U が残量モーダルを開いた (確認が armed のまま裏に残る)")
 	}
-	if m.issuesOv.MarkNext.Active {
+	if m.issuesOv.Fixture().MarkNextActive() {
 		t.Error("確認が取り消されていない (知らないキーで実ファイルが動く側に倒れている)")
 	}
 }

@@ -15,7 +15,7 @@ func TestQuitRemembersOnlyWhenViewerVisible(t *testing.T) {
 
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.issuesOv = *loadedView(issuesviewtest.SampleIssues()...)
-	m.issuesOv.Root = "/repo"
+	m.issuesOv.Fixture().SetRoot("/repo")
 	m.quit()
 	// 読むのは保存より後の時刻で (SavedAt が読み取り時刻より未来なら時計のずれとして捨てる仕様)
 	s, ok := issuesview.LoadIssuesScreen(app.TimeNow())

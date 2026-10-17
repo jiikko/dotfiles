@@ -27,50 +27,50 @@ import (
 )
 
 type urlPicker struct {
-	Active bool
+	active bool
 	urls   []string      // 元の並び (本文の出現順)
 	line   lineedit.Line // インクリメンタルサーチの検索語
-	Match  []int         // query に一致する urls の index (絞り込み結果。並びは出現順)
-	Cursor int           // match 内の位置
+	match  []int         // query に一致する urls の index (絞り込み結果。並びは出現順)
+	cursor int           // match 内の位置
 	offset int           // 窓の先頭 (描画のたびに listnav.WindowOffset で更新する。issues 一覧と同じ規律)
 }
 
 // open はピッカーを開く。URL が 1 本も無ければ開かず false を返す (呼び出し側が通知を出す)。
-func (p *urlPicker) Open(urls []string) bool {
+func (p *urlPicker) open(urls []string) bool {
 	if len(urls) == 0 {
 		return false
 	}
-	p.Active, p.urls, p.line, p.Cursor, p.offset = true, urls, lineedit.Line{}, 0, 0
+	p.active, p.urls, p.line, p.cursor, p.offset = true, urls, lineedit.Line{}, 0, 0
 	p.refilter()
 	return true
 }
 
 // query は今の検索語。
-func (p *urlPicker) Query() string { return p.line.String() }
+func (p *urlPicker) query() string { return p.line.String() }
 
 // close はピッカーを閉じる (状態は捨てる。次に開いたときは検索語なしから始める)。
-func (p *urlPicker) Close() { *p = urlPicker{} }
+func (p *urlPicker) close() { *p = urlPicker{} }
 
 // selected は今選んでいる URL ("" = 一致なし)。
 func (p *urlPicker) selected() string {
-	if !p.Active || p.Cursor < 0 || p.Cursor >= len(p.Match) {
+	if !p.active || p.cursor < 0 || p.cursor >= len(p.match) {
 		return ""
 	}
-	return p.urls[p.Match[p.Cursor]]
+	return p.urls[p.match[p.cursor]]
 }
 
 // refilter は query で match を作り直し、カーソルを範囲内へ収める。
 // 大文字小文字を無視した部分一致 (URL はホスト名も path も小文字が多く、入力で shift を
 // 押させる意味がない)。
 func (p *urlPicker) refilter() {
-	q := strings.ToLower(p.Query())
-	p.Match = p.Match[:0]
+	q := strings.ToLower(p.query())
+	p.match = p.match[:0]
 	for i, u := range p.urls {
 		if q == "" || strings.Contains(strings.ToLower(u), q) {
-			p.Match = append(p.Match, i)
+			p.match = append(p.match, i)
 		}
 	}
-	p.Cursor = max(min(p.Cursor, len(p.Match)-1), 0)
+	p.cursor = max(min(p.cursor, len(p.match)-1), 0)
 }
 
 // handleKey はピッカー表示中のキーを処理する。open=true なら選択を確定した (呼び出し側が
@@ -79,12 +79,12 @@ func (p *urlPicker) refilter() {
 // 🚨 印字文字はすべて検索語に流す (default 節)。ここで個別のキーを先に横取りすると、その文字を
 // 含む URL を検索できなくなる。
 func (p *urlPicker) handleKey(key string) (open, closed bool) {
-	if !p.Active {
+	if !p.active {
 		return false, false
 	}
 	switch key {
 	case "esc", "ctrl+g":
-		p.Close()
+		p.close()
 		return false, true
 	case "enter":
 		if p.selected() == "" {
@@ -92,25 +92,25 @@ func (p *urlPicker) handleKey(key string) (open, closed bool) {
 		}
 		return true, false
 	case "down", "ctrl+n":
-		if len(p.Match) > 0 {
-			p.Cursor = listnav.Cycle(p.Cursor, 1, len(p.Match))
+		if len(p.match) > 0 {
+			p.cursor = listnav.Cycle(p.cursor, 1, len(p.match))
 		}
 	case "up", "ctrl+p":
-		if len(p.Match) > 0 {
-			p.Cursor = listnav.Cycle(p.Cursor, -1, len(p.Match))
+		if len(p.match) > 0 {
+			p.cursor = listnav.Cycle(p.cursor, -1, len(p.match))
 		}
 	case " ":
 		// Space は URL に現れないので絞り込みには不要。誤爆 (本文スクロールの癖) を無視する
 	default:
-		before := p.Query()
+		before := p.query()
 		text := ""
 		if isPrintableKey(key) {
 			text = key // 1 文字の印字キーは、その文字を入れる (KeyPressMsg.String() は印字キーなら Text と同じ)
 		}
 		p.line.Key(key, text)
-		if after := p.Query(); after != before {
+		if after := p.query(); after != before {
 			if text != "" {
-				p.Cursor = 0 // 絞り込み直後は先頭を見せる (fzf と同じ)
+				p.cursor = 0 // 絞り込み直後は先頭を見せる (fzf と同じ)
 			}
 			p.refilter()
 		}
@@ -123,7 +123,7 @@ func (p *urlPicker) handleKey(key string) (open, closed bool) {
 // 落とさず、`[31m` の残骸や RLO が検索語と画面に残る。敵対レビューが実測)。空白・改行・タブも落とす: URL に現れず、
 // 打鍵の Space も入れていない (handleKey) ので、貼り付けた URL の末尾の改行が空白として残って何にも一致しなくなるのを避ける。
 func (p *urlPicker) paste(s string) {
-	if !p.Active {
+	if !p.active {
 		return
 	}
 	s = strings.Join(strings.Fields(term.SanitizePlainLine(s)), "")
@@ -131,7 +131,7 @@ func (p *urlPicker) paste(s string) {
 		return
 	}
 	p.line.Insert(s)
-	p.Cursor = 0 // 絞り込み直後は先頭を見せる (打鍵と同じ)
+	p.cursor = 0 // 絞り込み直後は先頭を見せる (打鍵と同じ)
 	p.refilter()
 }
 
@@ -167,20 +167,20 @@ func (p *urlPicker) lines(o IssuesRenderOpts) []string {
 	head := []string{
 		term.Paint(term.ClipToWidth(UrlPickerPrompt+text, o.Width), term.AnsiBold, o.Colored),
 		term.Paint(term.ClipToWidth(fmt.Sprintf("%d/%d 件  ctrl+n/p: 移動  ctrl+h: 1 字消す  Enter: 開く  Esc: 戻る",
-			len(p.Match), len(p.urls)), o.Width), term.AnsiDim, o.Colored),
+			len(p.match), len(p.urls)), o.Width), term.AnsiDim, o.Colored),
 		"",
 	}
 	rows := max(o.Page-len(head), 1)
-	if len(p.Match) == 0 {
+	if len(p.match) == 0 {
 		return append(head, term.Paint(term.ClipToWidth("一致する URL がありません", o.Width), term.AnsiDim, o.Colored))
 	}
 	// 窓は状態 (offset) で持ち、カーソルが窓を出たときだけ動かす (issues 一覧と同じ規律。以前は
 	// カーソルから毎回導出していて、下端を越えた後に上へ戻すと窓が 1 行ずつ戻った。issue 666)
-	p.offset = listnav.WindowOffset(p.offset, p.Cursor, len(p.Match), rows)
+	p.offset = listnav.WindowOffset(p.offset, p.cursor, len(p.match), rows)
 	out := head
-	for i := p.offset; i < min(p.offset+rows, len(p.Match)); i++ {
-		text := p.urls[p.Match[i]]
-		if i != p.Cursor {
+	for i := p.offset; i < min(p.offset+rows, len(p.match)); i++ {
+		text := p.urls[p.match[i]]
+		if i != p.cursor {
 			out = append(out, term.ClipToWidth(term.CursorGutterBlank+text, o.Width))
 			continue
 		}

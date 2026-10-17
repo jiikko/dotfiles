@@ -18,17 +18,17 @@ func pickerURLs() []string {
 
 func TestURLPickerOpenClose(t *testing.T) {
 	var p urlPicker
-	if p.Open(nil) || p.Active {
+	if p.open(nil) || p.active {
 		t.Error("URL が無いのに開いた")
 	}
-	if !p.Open(pickerURLs()) || !p.Active {
+	if !p.open(pickerURLs()) || !p.active {
 		t.Fatal("開けない")
 	}
 	if got := p.selected(); got != pickerURLs()[0] {
 		t.Errorf("初期選択 = %q", got)
 	}
-	p.Close()
-	if p.Active || p.Query() != "" || len(p.Match) != 0 {
+	p.close()
+	if p.active || p.query() != "" || len(p.match) != 0 {
 		t.Errorf("close で状態が残る: %+v", p)
 	}
 	// 閉じているときはキーを飲まない (呼び出し側の他の割当へ通す)
@@ -39,7 +39,7 @@ func TestURLPickerOpenClose(t *testing.T) {
 
 func TestURLPickerIncrementalSearch(t *testing.T) {
 	var p urlPicker
-	p.Open(pickerURLs())
+	p.open(pickerURLs())
 	type step struct {
 		key   string
 		match int
@@ -54,25 +54,25 @@ func TestURLPickerIncrementalSearch(t *testing.T) {
 		{"g", 1, "https://other.test/gamma"},          // query "g": gamma だけ
 	} {
 		p.handleKey(s.key)
-		if len(p.Match) != s.match || p.selected() != s.sel {
-			t.Errorf("%d (%q): match=%d sel=%q, want %d/%q", i, s.key, len(p.Match), p.selected(), s.match, s.sel)
+		if len(p.match) != s.match || p.selected() != s.sel {
+			t.Errorf("%d (%q): match=%d sel=%q, want %d/%q", i, s.key, len(p.match), p.selected(), s.match, s.sel)
 		}
 	}
 	// ctrl+u で検索語を捨てる (絞り込んだ状態から一気に戻せる)
 	p.handleKey("ctrl+u")
-	if p.Query() != "" || len(p.Match) != 3 {
-		t.Errorf("ctrl+u で戻らない: query=%q match=%d", p.Query(), len(p.Match))
+	if p.query() != "" || len(p.match) != 3 {
+		t.Errorf("ctrl+u で戻らない: query=%q match=%d", p.query(), len(p.match))
 	}
 	// 大文字小文字を無視する
 	p.handleKey("A")
-	if len(p.Match) == 0 {
+	if len(p.match) == 0 {
 		t.Error("大文字で一致しない (小文字化していない)")
 	}
 }
 
 func TestURLPickerNavigation(t *testing.T) {
 	var p urlPicker
-	p.Open(pickerURLs())
+	p.open(pickerURLs())
 	p.handleKey("ctrl+n")
 	if p.selected() != pickerURLs()[1] {
 		t.Errorf("ctrl+n で進まない: %q", p.selected())
@@ -94,12 +94,12 @@ func TestURLPickerNavigation(t *testing.T) {
 // 一致 0 件では Enter を無視する (閉じてしまうと検索語を直せない)。
 func TestURLPickerNoMatch(t *testing.T) {
 	var p urlPicker
-	p.Open(pickerURLs())
+	p.open(pickerURLs())
 	for _, k := range []string{"z", "z", "z"} {
 		p.handleKey(k)
 	}
-	if len(p.Match) != 0 || p.selected() != "" {
-		t.Fatalf("一致するはずがない: match=%d sel=%q", len(p.Match), p.selected())
+	if len(p.match) != 0 || p.selected() != "" {
+		t.Fatalf("一致するはずがない: match=%d sel=%q", len(p.match), p.selected())
 	}
 	if open, closed := p.handleKey("enter"); open || closed {
 		t.Error("一致 0 件の Enter で確定/終了した")
@@ -112,34 +112,34 @@ func TestURLPickerNoMatch(t *testing.T) {
 
 func TestURLPickerEscCloses(t *testing.T) {
 	var p urlPicker
-	p.Open(pickerURLs())
+	p.open(pickerURLs())
 	open, closed := p.handleKey("esc")
-	if open || !closed || p.Active {
-		t.Errorf("esc で閉じない: open=%v closed=%v active=%v", open, closed, p.Active)
+	if open || !closed || p.active {
+		t.Errorf("esc で閉じない: open=%v closed=%v active=%v", open, closed, p.active)
 	}
 }
 
 // ctrl+h は backspace の別名 (端末によっては backspace が 0x08 = ctrl+h として届く)。
 func TestURLPickerCtrlHDeletesChar(t *testing.T) {
 	var p urlPicker
-	p.Open(pickerURLs())
+	p.open(pickerURLs())
 	p.handleKey("b")
 	p.handleKey("e")
-	if p.Query() != "be" {
-		t.Fatalf("前提が崩れている: query=%q", p.Query())
+	if p.query() != "be" {
+		t.Fatalf("前提が崩れている: query=%q", p.query())
 	}
 	p.handleKey("ctrl+h")
-	if p.Query() != "b" {
-		t.Errorf("ctrl+h で 1 字消えない: query=%q", p.Query())
+	if p.query() != "b" {
+		t.Errorf("ctrl+h で 1 字消えない: query=%q", p.query())
 	}
-	if len(p.Match) != 1 || p.selected() != "https://example.com/beta" {
-		t.Errorf("消した後に絞り込みが追従しない: match=%d sel=%q", len(p.Match), p.selected())
+	if len(p.match) != 1 || p.selected() != "https://example.com/beta" {
+		t.Errorf("消した後に絞り込みが追従しない: match=%d sel=%q", len(p.match), p.selected())
 	}
 	// 空でも落ちない
 	p.handleKey("ctrl+h")
 	p.handleKey("ctrl+h")
-	if p.Query() != "" || len(p.Match) != 3 {
-		t.Errorf("空からさらに消して壊れた: query=%q match=%d", p.Query(), len(p.Match))
+	if p.query() != "" || len(p.match) != 3 {
+		t.Errorf("空からさらに消して壊れた: query=%q match=%d", p.query(), len(p.match))
 	}
 	// 案内にも出す
 	if out := term.StripANSI(strings.Join(p.lines(IssuesRenderOpts{Width: testenv.PopupWidth, Page: 8}), "\n")); !strings.Contains(out, "ctrl+h") {
@@ -150,19 +150,19 @@ func TestURLPickerCtrlHDeletesChar(t *testing.T) {
 // 名前付きキー・修飾キーは検索語にしない (pgdown で "pgdown" が入ると絞り込みが壊れる)。
 func TestURLPickerIgnoresNamedKeys(t *testing.T) {
 	var p urlPicker
-	p.Open(pickerURLs())
+	p.open(pickerURLs())
 	for _, k := range []string{"pgdown", "ctrl+x", "shift+tab", "home", " "} {
 		p.handleKey(k)
 	}
-	if p.Query() != "" {
-		t.Errorf("名前付き/修飾キーが検索語に入った: %q", p.Query())
+	if p.query() != "" {
+		t.Errorf("名前付き/修飾キーが検索語に入った: %q", p.query())
 	}
 }
 
 // 描画: ヘッダーに検索語と件数、選択行に矢印が 1 本だけ出る。幅は超えない。
 func TestURLPickerLines(t *testing.T) {
 	var p urlPicker
-	p.Open(pickerURLs())
+	p.open(pickerURLs())
 	p.handleKey("b")
 	o := IssuesRenderOpts{Width: testenv.PopupWidth, Page: 8} // popup の実幅
 	out := p.lines(o)
@@ -193,7 +193,7 @@ func TestURLPickerWindowFollowsCursor(t *testing.T) {
 		urls[i] = fmt.Sprintf("https://example.com/%s%d", strings.Repeat("x", i%3), i)
 	}
 	var p urlPicker
-	p.Open(urls)
+	p.open(urls)
 	for range 20 {
 		p.handleKey("ctrl+n")
 	}
@@ -212,7 +212,7 @@ func TestURLPickerWindowStaysWhileCursorInside(t *testing.T) {
 		urls[i] = fmt.Sprintf("https://example.com/%02d", i)
 	}
 	var p urlPicker
-	p.Open(urls)
+	p.open(urls)
 	o := IssuesRenderOpts{Width: 60, Page: 8} // ヘッダー 3 行 + 一覧 5 行
 	first := func() string {
 		lines := p.lines(o)

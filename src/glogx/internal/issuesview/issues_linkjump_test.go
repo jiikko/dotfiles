@@ -49,7 +49,7 @@ func newJumpEnv(t *testing.T, body string) *jumpEnv {
 	rel := "001-feat-jump.md"
 	body = strings.ReplaceAll(body, "{filler}", strings.Repeat("埋め草の行。\n\n", 30))
 	v := loadedView(issuesviewtest.WriteRealIssue(t, dir, rel, body))
-	v.Root = root
+	v.root = root
 	landBody(t, v, 10)
 	v.Lines(renderOpts(20))
 	return &jumpEnv{v: v, root: root}
@@ -58,11 +58,11 @@ func newJumpEnv(t *testing.T, body string) *jumpEnv {
 // selected は選択中のリンク (モード外なら ok=false)。
 func (e *jumpEnv) selected(t *testing.T) (issues.FileLink, bool) {
 	t.Helper()
-	if !e.v.LinkJump.Active {
+	if !e.v.linkJump.active {
 		return issues.FileLink{}, false
 	}
 	fl := e.v.jumpLinks(vp(10))
-	i := e.v.LinkJump.reanchor(fl)
+	i := e.v.linkJump.reanchor(fl)
 	if i < 0 {
 		t.Fatal("モード中なのに選択が一覧に無い")
 	}
@@ -115,7 +115,7 @@ func TestLinkJumpEnterOpensReadonly(t *testing.T) {
 	if args, want := (*cmds)[0].Args, []string{"nvim", "-R", "+7", "--", e.path("src/a.go")}; !slices.Equal(args, want) {
 		t.Fatalf("起動コマンド %q (want %q)", args, want)
 	}
-	if !e.v.LinkJump.Active || e.v.Open == nil {
+	if !e.v.linkJump.active || e.v.open == nil {
 		t.Fatal("開いた後もジャンプモードと本文は残る (戻ってきて次のリンクを開けるように)")
 	}
 	// 行番号の無いリンクは +N を付けない
@@ -135,14 +135,14 @@ func TestLinkJumpMarkdownOpensInViewerAndPops(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.press("tab")
-	before := e.v.BodyPager.Offset
-	issuePath := e.v.Open.Path
+	before := e.v.bodyPager.Offset
+	issuePath := e.v.open.Path
 	e.v.HandleKey("enter", vp(10))
 	if len(*cmds) != 0 {
 		t.Fatalf(".md で nvim を起動した: %v", (*cmds)[0].Args)
 	}
-	if e.v.Open.Path != e.path("docs/spec.md") || len(e.v.docStack) != 1 || e.v.LinkJump.Active {
-		t.Fatalf("doc が積まれていない: open=%q stack=%d jump=%v", e.v.Open.Path, len(e.v.docStack), e.v.LinkJump.Active)
+	if e.v.open.Path != e.path("docs/spec.md") || len(e.v.docStack) != 1 || e.v.linkJump.active {
+		t.Fatalf("doc が積まれていない: open=%q stack=%d jump=%v", e.v.open.Path, len(e.v.docStack), e.v.linkJump.active)
 	}
 	if out := strings.Join(e.v.Lines(renderOpts(20)), "\n"); !strings.Contains(out, "001-feat-jump.md へ戻る") {
 		t.Fatalf("ヘッダーに戻り先が出ない:\n%s", out)
@@ -154,18 +154,18 @@ func TestLinkJumpMarkdownOpensInViewerAndPops(t *testing.T) {
 	}
 	e.press("esc") // ジャンプを抜ける
 	e.press("h")   // doc から戻る
-	if e.v.Open == nil || e.v.Open.Path != issuePath || len(e.v.docStack) != 0 {
-		t.Fatalf("元の本文へ戻らない: open=%v stack=%d", e.v.Open, len(e.v.docStack))
+	if e.v.open == nil || e.v.open.Path != issuePath || len(e.v.docStack) != 0 {
+		t.Fatalf("元の本文へ戻らない: open=%v stack=%d", e.v.open, len(e.v.docStack))
 	}
-	if e.v.BodyPager.Offset != before || !e.v.LinkJump.Active {
-		t.Fatalf("戻ったとき位置・選択が戻らない: offset %d→%d jump=%v", before, e.v.BodyPager.Offset, e.v.LinkJump.Active)
+	if e.v.bodyPager.Offset != before || !e.v.linkJump.active {
+		t.Fatalf("戻ったとき位置・選択が戻らない: offset %d→%d jump=%v", before, e.v.bodyPager.Offset, e.v.linkJump.active)
 	}
 	if l, _ := e.selected(t); l.Path != e.path("docs/spec.md") {
 		t.Fatalf("戻ったときの選択が違う: %q", l.Path)
 	}
 	e.press("esc")
 	e.press("h") // もう戻る段が無いので本文を閉じる
-	if e.v.Drawer.Phase() != anim.Closing && e.v.Open != nil {
+	if e.v.drawer.phase() != anim.Closing && e.v.open != nil {
 		t.Fatal("底の本文で h を押しても閉じない")
 	}
 }
@@ -173,17 +173,17 @@ func TestLinkJumpMarkdownOpensInViewerAndPops(t *testing.T) {
 // doc を開いたまま再スキャン (見張り) が来ても、底の issue で照合するので畳まれない。画面の記憶も底の issue。
 func TestLinkJumpDocSurvivesRescanAndScreenSavesRoot(t *testing.T) {
 	e := newJumpEnv(t, "# 001\n\n[仕様](../docs/spec.md)\n")
-	issuePath := e.v.Open.Path
+	issuePath := e.v.open.Path
 	e.press("tab")
 	e.v.HandleKey("enter", vp(10))
 	if len(e.v.docStack) != 1 {
 		t.Fatal("前提: doc が積まれていない")
 	}
 	e.v.rebindOpen(issuePath)
-	if e.v.Open == nil || e.v.Open.Path != e.path("docs/spec.md") || e.v.docStack[0].open.Path != issuePath {
-		t.Fatalf("再スキャンで doc が畳まれた / 底がずれた: open=%v", e.v.Open)
+	if e.v.open == nil || e.v.open.Path != e.path("docs/spec.md") || e.v.docStack[0].open.Path != issuePath {
+		t.Fatalf("再スキャンで doc が畳まれた / 底がずれた: open=%v", e.v.open)
 	}
-	if s, ok := e.v.Screen(time.Now()); !ok || s.Open != issuePath {
+	if s, ok := e.v.screen(time.Now()); !ok || s.Open != issuePath {
 		t.Fatalf("画面の記憶が底の issue でない: %+v ok=%v", s, ok)
 	}
 }
@@ -197,12 +197,12 @@ func TestLinkJumpDocStackEdges(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.press("tab")
-	rootOff := e.v.BodyPager.Offset
+	rootOff := e.v.bodyPager.Offset
 	if rootOff == 0 {
 		t.Fatal("前提: 底の本文が先頭から動いていない (BodyOff の取り違えを観測できない)")
 	}
 	e.v.HandleKey("enter", vp(10)) // spec.md
-	if s, _ := e.v.Screen(time.Now()); s.BodyOff != rootOff {
+	if s, _ := e.v.screen(time.Now()); s.BodyOff != rootOff {
 		t.Fatalf("記憶する位置が底の本文のものでない: %d (want %d)", s.BodyOff, rootOff)
 	}
 	// 底の issue を書き換えて (spec から e で編集した想定) 取り直すと、積んだ本文も新しくなる
@@ -220,7 +220,7 @@ func TestLinkJumpDocStackEdges(t *testing.T) {
 	}
 	e.v.ReloadAfterEdit()
 	for range 2 * maxDocDepth {
-		if !e.v.LinkJump.Active {
+		if !e.v.linkJump.active {
 			e.press("tab")
 		}
 		e.v.HandleKey("enter", vp(10))
@@ -229,7 +229,7 @@ func TestLinkJumpDocStackEdges(t *testing.T) {
 		t.Fatalf("積んだ段数 %d (上限 %d)", len(e.v.docStack), maxDocDepth)
 	}
 	// 別の issue を開く (J/K・復元が通る openIssue) と積んだものを捨てる (h で古い本文へ戻らない)
-	e.v.OpenIssue(e.v.rootOpen())
+	e.v.openIssue(e.v.rootOpen())
 	if len(e.v.docStack) != 0 {
 		t.Fatalf("openIssue の後も doc が積まれたまま: %d", len(e.v.docStack))
 	}
@@ -282,14 +282,14 @@ func TestLinkJumpExitAndFallThrough(t *testing.T) {
 	e := newJumpEnv(t, jumpBody)
 	e.press("tab")
 	e.press("esc")
-	if e.v.LinkJump.Active || e.v.Open == nil {
-		t.Fatalf("Esc はモードだけ抜けて本文は残す: active=%v open=%v", e.v.LinkJump.Active, e.v.Open != nil)
+	if e.v.linkJump.active || e.v.open == nil {
+		t.Fatalf("Esc はモードだけ抜けて本文は残す: active=%v open=%v", e.v.linkJump.active, e.v.open != nil)
 	}
 	// 捌かないキーはモードを抜けて通常どおり処理する (u は URL ピッカー。URL が無いので案内が出る)
 	e.press("tab")
 	e.v.TakeNotice()
 	e.press("u")
-	if e.v.LinkJump.Active {
+	if e.v.linkJump.active {
 		t.Fatal("u でモードを抜けていない")
 	}
 	if msg, _ := testenv.NoticeOKOf(e.v.TakeNotice()); !strings.Contains(msg, "URL") {
@@ -297,8 +297,8 @@ func TestLinkJumpExitAndFallThrough(t *testing.T) {
 	}
 	// 隣の issue へ行く操作 (openIssue) はモードを捨てる
 	e.press("tab")
-	e.v.OpenIssue(e.v.Open)
-	if e.v.LinkJump.Active {
+	e.v.openIssue(e.v.open)
+	if e.v.linkJump.active {
 		t.Fatal("本文を開き直してもモードが残った")
 	}
 }
@@ -306,7 +306,7 @@ func TestLinkJumpExitAndFallThrough(t *testing.T) {
 func TestLinkJumpNoLinksNotifies(t *testing.T) {
 	e := newJumpEnv(t, "# 001\n\n`src/none.go` と `make test`\n")
 	e.press("tab")
-	if e.v.LinkJump.Active {
+	if e.v.linkJump.active {
 		t.Fatal("開けるリンクが無いのにモードに入った")
 	}
 	if msg, _ := testenv.NoticeOKOf(e.v.TakeNotice()); !strings.Contains(msg, "開けるファイルパスはありません") {
@@ -321,14 +321,14 @@ func TestLinkJumpStartsInWindowAndScrolls(t *testing.T) {
 	if len(fl) != 3 {
 		t.Fatalf("前提: リンク 3 個 (got %d)", len(fl))
 	}
-	rows := e.v.VisibleRows(vp(10))
-	e.v.BodyPager.Offset = fl[1].Top - 1 // 2 個目だけが窓に入る位置
+	rows := e.v.visibleRows(vp(10))
+	e.v.bodyPager.Offset = fl[1].Top - 1 // 2 個目だけが窓に入る位置
 	e.press("tab")
 	if l, _ := e.selected(t); l.Path != e.path("src/b.go") {
 		t.Fatalf("窓の最初のリンクを選ばない: %q", l.Path)
 	}
 	e.press("j")
-	off := e.v.BodyPager.Offset
+	off := e.v.bodyPager.Offset
 	if top := fl[2].Top; top < off || top >= off+rows {
 		t.Fatalf("選んだリンク (行 %d) が窓 [%d, %d) の外", top, off, off+rows)
 	}
@@ -366,7 +366,7 @@ func TestLinkJumpSurvivesBodyReload(t *testing.T) {
 	e.press("tab")
 	e.press("j") // docs/spec.md
 	// 先頭に別のリンクを足す = 添字で持っていたら 1 つずれる
-	if err := os.WriteFile(e.v.Open.Path, []byte("# 001\n\n`src/b.go` を先に\n\n"+jumpBody), 0o644); err != nil {
+	if err := os.WriteFile(e.v.open.Path, []byte("# 001\n\n`src/b.go` を先に\n\n"+jumpBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	e.v.ReloadAfterEdit()
@@ -374,12 +374,12 @@ func TestLinkJumpSurvivesBodyReload(t *testing.T) {
 		t.Fatalf("読み直しで選択がずれた: %+v ok=%v", l, ok)
 	}
 	// 選んでいたリンクが消えたらモードを抜ける
-	if err := os.WriteFile(e.v.Open.Path, []byte("# 001\n\n`src/a.go`\n"), 0o644); err != nil {
+	if err := os.WriteFile(e.v.open.Path, []byte("# 001\n\n`src/a.go`\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	e.v.ReloadAfterEdit()
 	e.v.Lines(renderOpts(20))
-	if e.v.LinkJump.Active {
+	if e.v.linkJump.active {
 		t.Fatal("選択していたリンクが消えたのにモードが残った")
 	}
 }
@@ -392,13 +392,13 @@ func TestLinkJumpReanchorWhenOccurrencesShrink(t *testing.T) {
 	e.press("tab")
 	e.press("j")
 	e.press("j") // 3 個目の src/a.go
-	if err := os.WriteFile(e.v.Open.Path, []byte("# 001\n\n`src/a.go` と `src/a.go` と `src/b.go`\n"), 0o644); err != nil {
+	if err := os.WriteFile(e.v.open.Path, []byte("# 001\n\n`src/a.go` と `src/a.go` と `src/b.go`\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	e.v.ReloadAfterEdit()
 	e.v.Lines(renderOpts(20))
 	fl := e.v.jumpLinks(vp(10))
-	if cur := e.v.LinkJump.reanchor(fl); cur != 1 {
+	if cur := e.v.linkJump.reanchor(fl); cur != 1 {
 		t.Fatalf("最後に残った出現 (添字 1) へ寄せない: cur=%d", cur)
 	}
 }
@@ -407,7 +407,7 @@ func TestLinkJumpReanchorWhenOccurrencesShrink(t *testing.T) {
 func TestLinkJumpStartsAtWindowTopBoundary(t *testing.T) {
 	e := newJumpEnv(t, "# 001\n\n`src/a.go`\n\n{filler}`src/b.go`\n\n{filler}`docs/spec.md`\n")
 	fl := e.v.jumpLinks(vp(10))
-	e.v.BodyPager.Offset = fl[1].Top
+	e.v.bodyPager.Offset = fl[1].Top
 	e.press("tab")
 	if l, _ := e.selected(t); l.Path != e.path("src/b.go") {
 		t.Fatalf("窓の先頭行のリンクを選ばない: %q", l.Path)
@@ -456,13 +456,13 @@ func TestLinkJumpOpenRechecksEscape(t *testing.T) {
 func TestLinkJumpRepeatedDestStopsTwice(t *testing.T) {
 	e := newJumpEnv(t, "# 001\n\n`src/a.go`\n\n{filler}`src/a.go`\n")
 	e.press("tab")
-	first := e.v.BodyPager.Offset
+	first := e.v.bodyPager.Offset
 	e.press("j")
 	fl := e.v.jumpLinks(vp(10))
-	if len(fl) != 2 || e.v.LinkJump.reanchor(fl) != 1 {
-		t.Fatalf("2 個目の出現に止まらない: n=%d cur=%d", len(fl), e.v.LinkJump.reanchor(fl))
+	if len(fl) != 2 || e.v.linkJump.reanchor(fl) != 1 {
+		t.Fatalf("2 個目の出現に止まらない: n=%d cur=%d", len(fl), e.v.linkJump.reanchor(fl))
 	}
-	if e.v.BodyPager.Offset == first {
+	if e.v.bodyPager.Offset == first {
 		t.Fatal("2 個目の出現まで本文が送られていない")
 	}
 }

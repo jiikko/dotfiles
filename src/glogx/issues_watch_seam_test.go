@@ -24,9 +24,9 @@ import (
 // 戻っていたら、この検査は CI では走らなくなっているので停止させる)。
 func requireFake(t *testing.T, v *issuesview.IssuesView) *testenv.FakeWatcher {
 	t.Helper()
-	fw, ok := v.Watch.W.(*testenv.FakeWatcher)
+	fw, ok := v.Fixture().Watcher().(*testenv.FakeWatcher)
 	if !ok {
-		t.Fatalf("startWatch が newDirWatcher seam を通っていない (w=%T)。この検査は実 fsnotify に依存している", v.Watch.W)
+		t.Fatalf("startWatch が newDirWatcher seam を通っていない (w=%T)。この検査は実 fsnotify に依存している", v.Fixture().Watcher())
 	}
 	return fw
 }
@@ -42,7 +42,7 @@ func TestCancelAllClosesIssuesWatcherWithoutFsnotify(t *testing.T) {
 	fw := requireFake(t, &m.issuesOv)
 
 	m.cancelAll()
-	if m.issuesOv.Watch.W != nil {
+	if m.issuesOv.Fixture().Watcher() != nil {
 		t.Fatal("cancelAll 後も watcher が開いたまま (restart の exec で fd が漏れる)")
 	}
 	// スロットの nil 化だけでなく実体が Close されたことを直接固定する (Close を消して

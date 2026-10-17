@@ -19,15 +19,15 @@ import (
 // observe は watchCmd と同じ指紋を同期で計算する (tea.Tick を待たずにテストで駆動するため)。
 // 対象集合は production と同じ watchTargets を通す (ここで再実装すると本番とずれる)。
 func observeIssues(v *issuesview.IssuesView) issuesview.IssuesWatchMsg {
-	return issuesview.IssuesWatchMsg{Fp: issuesview.IssuesFingerprint(v.WatchTargets())}
+	return v.Fixture().Observe()
 }
 
 // scanOf は実ファイルを走査した結果を返す。🚨 中身を再実装せず production の scanIssues を
 // 呼ぶ: 指紋の取り方がずれると「テストでは基準が揃うのに本番ではずれる」形で穴を見逃す。
 func scanOf(t *testing.T, root string) issuesview.IssuesScanMsg {
 	t.Helper()
-	msg := issuesview.ScanIssues(root)
-	if len(msg.Dirs) == 0 {
+	msg := issuesview.FixtureScanDir(root)
+	if len(issuesview.FixtureScanDirs(msg)) == 0 {
 		t.Fatalf("issues ディレクトリが見つからない: %s", root)
 	}
 	return msg
@@ -42,12 +42,12 @@ func TestCancelAllClosesIssuesWatcher(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	m.issuesOv.Toggle(root)
 	m.issuesOv.Receive(scanOf(t, root))
-	w := m.issuesOv.Watch.W
+	w := m.issuesOv.Fixture().Watcher()
 	if w == nil {
 		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
 	}
 	m.cancelAll()
-	if m.issuesOv.Watch.W != nil {
+	if m.issuesOv.Fixture().Watcher() != nil {
 		t.Fatal("cancelAll 後も fsnotify watcher が開いたまま (restart の exec で fd が漏れる)")
 	}
 	// スロットの nil 化だけでなく実体が Close されたことを直接固定する (Close を消して
@@ -62,10 +62,10 @@ func TestIssuesViewerWatchWiredIntoUpdate(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	root, _ := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	m.handleKey("i")
-	m.issuesOv.Cwd = root
+	m.issuesOv.Fixture().SetCwd(root)
 	m.Update(scanOf(t, root))
-	m.issuesOv.FinishAnim()
-	if !m.issuesOv.Watch.PollArmed {
+	m.issuesOv.Fixture().FinishAnim()
+	if !m.issuesOv.Fixture().PollArmed() {
 		t.Fatal("viewer を開いても見張りが張られていない")
 	}
 	_, cmd := m.Update(observeIssues(&m.issuesOv))

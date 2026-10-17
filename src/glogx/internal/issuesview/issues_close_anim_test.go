@@ -15,8 +15,8 @@ func openAnimView(t *testing.T) *IssuesView {
 	t.Helper()
 	v := NewIssuesView() // 演出 on (zero value = 本番の既定)
 	v.Toggle(t.TempDir())
-	v.Root = t.TempDir() // screen() が覚えるのに要る (スキャン結果の代わり)
-	v.FinishAnim()       // 開く演出は着地させておく (見たいのは閉じる側)
+	v.root = t.TempDir() // screen() が覚えるのに要る (スキャン結果の代わり)
+	v.finishAnim()       // 開く演出は着地させておく (見たいのは閉じる側)
 	return &v
 }
 
@@ -29,7 +29,7 @@ func TestIssuesCloseProgressFallsToZero(t *testing.T) {
 		t.Fatalf("前提が崩れた: 開き切っているのに進捗が 1 でない (%v)", p)
 	}
 
-	v.Close()
+	v.close()
 	if !v.Visible() {
 		t.Fatal("閉じる演出の前に画面が消えた (抜けていく中身が無い)")
 	}
@@ -58,8 +58,8 @@ func TestIssuesCloseCurveReachesRender(t *testing.T) {
 	advance := testenv.StubClock(t)
 
 	v := loadedView(issuesviewtest.SampleIssues()...)
-	v.CloseAnimOff = false
-	v.Close()
+	v.closeAnimOff = false
+	v.close()
 	// 折り返し地点で見る: 閉じる向きなら中身のある行が幅の半分ずれ、開く向き (渡し忘れ) なら
 	// stagger で最下行しか動かない。そこは一覧の外なので空行 = ずれは数桁で止まる
 	advance(IssuesCloseDuration / 2)
@@ -93,7 +93,7 @@ func TestIssuesCloseKeepsTickingUntilSettled(t *testing.T) {
 	advance := testenv.StubClock(t)
 
 	v := openAnimView(t)
-	v.Close()
+	v.close()
 	advance(IssuesCloseDuration * 3) // とっくに時間は過ぎている
 	if !v.Animating() {
 		t.Fatal("片付け前に animating が false になった (最後の 1 拍が届かず閉じかけで固まる)")
@@ -113,16 +113,16 @@ func TestIssuesCloseDefersTeardownUntilSettled(t *testing.T) {
 
 	root, path := issuesviewtest.WatchTree(t, "# a\n")
 	v := openedWatchView(t, root, path)
-	v.CloseAnimOff = false // このテストだけ演出を on に戻す
-	gen := v.Watch.Gen
+	v.closeAnimOff = false // このテストだけ演出を on に戻す
+	gen := v.watch.Gen
 
-	v.Close()
-	if v.Watch.Gen != gen {
+	v.close()
+	if v.watch.Gen != gen {
 		t.Fatal("演出中に見張りを畳んだ (逆再生の途中で中身が死ぬ)")
 	}
 	advance(IssuesCloseDuration)
 	v.SettleClose()
-	if v.Watch.Gen == gen {
+	if v.watch.Gen == gen {
 		t.Fatal("着地しても見張りが畳まれていない (watcher が残る)")
 	}
 }
@@ -132,11 +132,11 @@ func TestIssuesClosingIsNotRemembered(t *testing.T) {
 	testenv.StubClock(t)
 
 	v := openAnimView(t)
-	if _, ok := v.Screen(app.TimeNow()); !ok {
+	if _, ok := v.screen(app.TimeNow()); !ok {
 		t.Fatal("前提が崩れた: 開いているのに覚えない")
 	}
-	v.Close()
-	if _, ok := v.Screen(app.TimeNow()); ok {
+	v.close()
+	if _, ok := v.screen(app.TimeNow()); ok {
 		t.Fatal("閉じる演出の途中を「開いている」として覚えた (次の起動で蘇る)")
 	}
 }
@@ -147,18 +147,18 @@ func TestIssuesReopenDuringCloseDoesNotDoubleWatch(t *testing.T) {
 
 	root, path := issuesviewtest.WatchTree(t, "# a\n")
 	v := openedWatchView(t, root, path)
-	v.CloseAnimOff = false
-	gen := v.Watch.Gen
+	v.closeAnimOff = false
+	gen := v.watch.Gen
 
-	v.Close()
+	v.close()
 	v.Toggle(root) // 逆再生の途中で開き直す
 	if !v.Visible() {
 		t.Fatal("開き直せていない")
 	}
-	if v.Closing {
+	if v.closing {
 		t.Fatal("閉じる演出が残ったまま開き直した (次の settleClose が開いた viewer を畳む)")
 	}
-	if v.Watch.Gen == gen {
+	if v.watch.Gen == gen {
 		t.Fatal("前の見張りを畳まずに開き直した (watcher が二重に居座る)")
 	}
 }

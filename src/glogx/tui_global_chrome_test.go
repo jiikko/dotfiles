@@ -32,7 +32,7 @@ func TestGlobalChromeShowsInEveryView(t *testing.T) {
 		{name: "issues viewer", open: func(t *testing.T, m *browseModel) {
 			t.Helper()
 			m.handleKey("i")
-			m.issuesOv.FinishAnim()
+			m.issuesOv.Fixture().FinishAnim()
 			if !m.issuesOv.Visible() {
 				t.Fatal("issues viewer が開かない")
 			}
@@ -68,7 +68,7 @@ func TestRestartPromptShowsInViewers(t *testing.T) {
 			m.width, m.height = 100, 24
 			if name == "issues viewer" {
 				m.handleKey("i")
-				m.issuesOv.FinishAnim()
+				m.issuesOv.Fixture().FinishAnim()
 			}
 			m.restartPending = true
 			out := term.StripANSI(m.View().Content)

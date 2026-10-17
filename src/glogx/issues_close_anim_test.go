@@ -46,8 +46,8 @@ func TestIssuesCloseLeavesNoBlankFrame(t *testing.T) {
 	advance := testenv.StubClock(t)
 
 	v := loadedView(issuesviewtest.SampleIssues()...)
-	v.CloseAnimOff = false
-	v.Close()
+	v.Fixture().SetCloseAnim(true)
+	v.Fixture().Close()
 
 	for elapsed := time.Duration(0); elapsed < 5*issuesview.IssuesCloseDuration; elapsed += scrollInterval {
 		v.SettleClose() // browseModel の tick と同じ順 (畳んでから描く)
@@ -83,7 +83,7 @@ func TestIssuesCloseLandsOnKeyWithoutSwallowing(t *testing.T) {
 		t.Fatal("前提が崩れた: viewer が開いていない")
 	}
 
-	m.issuesOv.Close()
+	m.issuesOv.Fixture().Close()
 	if !m.issuesOv.Visible() {
 		t.Fatal("前提が崩れた: 演出なしで即閉じた")
 	}
@@ -110,7 +110,7 @@ func TestIssuesCloseLandsBeforeKeyReachesViewer(t *testing.T) {
 
 	for _, key := range []string{"/", "n"} {
 		m := openAnimBrowse(t)
-		m.issuesOv.Close()
+		m.issuesOv.Fixture().Close()
 		advance(issuesview.IssuesCloseDuration / 4) // まだ演出の途中
 
 		releaseKey(m)
@@ -119,9 +119,9 @@ func TestIssuesCloseLandsBeforeKeyReachesViewer(t *testing.T) {
 		if m.issuesOv.Visible() {
 			t.Fatalf("%q で演出が着地していない", key)
 		}
-		if m.issuesOv.NumFilter.Active || m.issuesOv.MarkNext.Active {
+		if m.issuesOv.Fixture().NumberFilterActive() || m.issuesOv.Fixture().MarkNextActive() {
 			t.Fatalf("%q が畳んだ後の viewer に状態を残した (絞り込み=%v 確認=%v)",
-				key, m.issuesOv.NumFilter.Active, m.issuesOv.MarkNext.Active)
+				key, m.issuesOv.Fixture().NumberFilterActive(), m.issuesOv.Fixture().MarkNextActive())
 		}
 	}
 }
@@ -134,16 +134,16 @@ func TestBrowseCloseAnimSwallowsEditorKeyOnly(t *testing.T) {
 	cmds := testenv.StubEditorCapture(t)
 
 	m := newTestBrowse(t, 1, nil, nil)
-	m.issuesOv.CloseAnimOff = false // 本番の既定 (演出あり) に戻す
+	m.issuesOv.Fixture().SetCloseAnim(true) // 本番の既定 (演出あり) に戻す
 	m.issuesOv.Toggle(t.TempDir())
-	m.issuesOv.FinishAnim() // 開く演出は着地させる
+	m.issuesOv.Fixture().FinishAnim() // 開く演出は着地させる
 	if !m.issuesOv.Visible() {
 		t.Fatal("前提が崩れた: viewer が開いていない")
 	}
 
 	m.handleKey("i") // 閉じ始める (演出中は visible のまま)
-	if !m.issuesOv.Closing || !m.issuesOv.Visible() {
-		t.Fatalf("閉じる演出に入っていない: closing=%v visible=%v", m.issuesOv.Closing, m.issuesOv.Visible())
+	if !m.issuesOv.Fixture().Closing() || !m.issuesOv.Visible() {
+		t.Fatalf("閉じる演出に入っていない: closing=%v visible=%v", m.issuesOv.Fixture().Closing(), m.issuesOv.Visible())
 	}
 
 	m.handleKey("e")
@@ -155,11 +155,11 @@ func TestBrowseCloseAnimSwallowsEditorKeyOnly(t *testing.T) {
 // 上の例外で q が死んでいないこと (演出中の q は素通しして通常処理へ届く)。
 func TestBrowseCloseAnimStillPassesQuitKey(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
-	m.issuesOv.CloseAnimOff = false
+	m.issuesOv.Fixture().SetCloseAnim(true)
 	m.issuesOv.Toggle(t.TempDir())
-	m.issuesOv.FinishAnim()
+	m.issuesOv.Fixture().FinishAnim()
 	m.handleKey("i") // 閉じ始める
-	if !m.issuesOv.Closing {
+	if !m.issuesOv.Fixture().Closing() {
 		t.Fatal("閉じる演出に入っていない")
 	}
 	if _, cmd := m.handleKey("q"); cmd == nil {
@@ -171,8 +171,8 @@ func TestBrowseCloseAnimStillPassesQuitKey(t *testing.T) {
 func openAnimBrowse(t *testing.T) *browseModel {
 	t.Helper()
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.issuesOv.CloseAnimOff = false
+	m.issuesOv.Fixture().SetCloseAnim(true)
 	m.issuesOv.Toggle(t.TempDir())
-	m.issuesOv.FinishAnim()
+	m.issuesOv.Fixture().FinishAnim()
 	return m
 }

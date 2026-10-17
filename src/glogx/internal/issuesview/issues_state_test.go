@@ -22,7 +22,7 @@ func TestIssuesScreenRoundTrip(t *testing.T) {
 		Cursor: "/repo/issues/028-refactor-c.md", Open: "/repo/issues/029-feat-b.md", BodyOff: 12,
 		Groups: map[string]bool{"/repo/issues/epic/google-drive": true},
 	}
-	if err := SaveIssuesScreen(want); err != nil {
+	if err := saveIssuesScreen(want); err != nil {
 		t.Fatal(err)
 	}
 	got, ok := LoadIssuesScreen(now.Add(time.Minute))
@@ -53,9 +53,9 @@ func TestIssuesScreenRoundTrip(t *testing.T) {
 func TestIssuesViewScreenCarriesExpandedGroups(t *testing.T) {
 	child := fakeEpicIssue("/repo/issues", "cloud", "710", "drive", issues.StatusOpen)
 	v := loadedView(child)
-	v.Root = "/repo"
+	v.root = "/repo"
 	v.HandleKey("enter", vp(10))
-	s, ok := v.Screen(time.Now())
+	s, ok := v.screen(time.Now())
 	if !ok {
 		t.Fatal("展開済み group の画面を保存できない")
 	}
@@ -93,8 +93,8 @@ func TestIssuesViewRestoreExpandsEpicChildForCursorAndOpen(t *testing.T) {
 			name: "open",
 			set:  func(s *IssuesScreen, path string) { s.Open = path },
 			check: func(t *testing.T, v *IssuesView, child *issues.Issue) {
-				if v.Open == nil || v.Open.Path != child.Path {
-					t.Fatalf("折り畳まれた子の本文が開かれない: open=%+v", v.Open)
+				if v.open == nil || v.open.Path != child.Path {
+					t.Fatalf("折り畳まれた子の本文が開かれない: open=%+v", v.open)
 				}
 			},
 		},
@@ -132,13 +132,13 @@ func TestIssuesScreenIgnoresStaleAndBroken(t *testing.T) {
 		{"不在", func(*testing.T, string) {}, now},
 		{"TTL 切れ", func(t *testing.T, string2 string) {
 			t.Helper()
-			if err := SaveIssuesScreen(IssuesScreen{Root: "/repo", SavedAt: now}); err != nil {
+			if err := saveIssuesScreen(IssuesScreen{Root: "/repo", SavedAt: now}); err != nil {
 				t.Fatal(err)
 			}
 		}, now.Add(app.ScreenMemoryTTL)},
 		{"未来の時刻 (時計のずれ)", func(t *testing.T, _ string) {
 			t.Helper()
-			if err := SaveIssuesScreen(IssuesScreen{Root: "/repo", SavedAt: now.Add(time.Hour)}); err != nil {
+			if err := saveIssuesScreen(IssuesScreen{Root: "/repo", SavedAt: now.Add(time.Hour)}); err != nil {
 				t.Fatal(err)
 			}
 		}, now},
@@ -150,7 +150,7 @@ func TestIssuesScreenIgnoresStaleAndBroken(t *testing.T) {
 		}, now},
 		{"root なし", func(t *testing.T, _ string) {
 			t.Helper()
-			if err := SaveIssuesScreen(IssuesScreen{SavedAt: now}); err != nil {
+			if err := saveIssuesScreen(IssuesScreen{SavedAt: now}); err != nil {
 				t.Fatal(err)
 			}
 		}, now},
@@ -175,7 +175,7 @@ func TestIssuesScreenIgnoresStaleAndBroken(t *testing.T) {
 func TestIssuesScreenClampsBrokenFilter(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	now := time.Unix(1000, 0)
-	if err := SaveIssuesScreen(IssuesScreen{Root: "/repo", SavedAt: now, Filter: "そんな段階はない", BodyOff: -5}); err != nil {
+	if err := saveIssuesScreen(IssuesScreen{Root: "/repo", SavedAt: now, Filter: "そんな段階はない", BodyOff: -5}); err != nil {
 		t.Fatal(err)
 	}
 	got, ok := LoadIssuesScreen(now)
@@ -190,8 +190,8 @@ func TestIssuesScreenClampsBrokenFilter(t *testing.T) {
 // スキャン前 (root 未確定) は覚えない: 照合キーの無い記憶は別 repo で当たってしまう。
 func TestScreenNotSavedBeforeScan(t *testing.T) {
 	v := newTestIssuesView()
-	v.Shown = true
-	if _, ok := v.Screen(app.TimeNow()); ok {
+	v.shown = true
+	if _, ok := v.screen(app.TimeNow()); ok {
 		t.Fatal("スキャン前の viewer を覚えてしまった")
 	}
 }
@@ -199,11 +199,11 @@ func TestScreenNotSavedBeforeScan(t *testing.T) {
 // 閉じる演出の途中 (h を押した直後に C-g) は「開いている」として覚えない。
 func TestScreenDoesNotRememberClosingBody(t *testing.T) {
 	v := loadedView(issuesviewtest.SampleIssues()...)
-	v.Root = "/repo"
-	v.Open = v.Rows[0]
-	v.Drawer.open(app.TimeNow())
-	v.CloseBody()
-	s, ok := v.Screen(app.TimeNow())
+	v.root = "/repo"
+	v.open = v.rows[0]
+	v.drawer.open(app.TimeNow())
+	v.closeBody()
+	s, ok := v.screen(app.TimeNow())
 	if !ok {
 		t.Fatal("覚えられていない")
 	}
@@ -239,10 +239,10 @@ func TestIssuesViewRestoreAppliesScreen(t *testing.T) {
 	if v.Animating() {
 		t.Fatal("復元で開く演出が始まっている (閉じたところから再開のはず)")
 	}
-	v.Receive(IssuesScanMsg{Root: dir, Dirs: []string{dir}, Issues: []*issues.Issue{target, sibling, other}})
+	v.Receive(IssuesScanMsg{root: dir, dirs: []string{dir}, issues: []*issues.Issue{target, sibling, other}})
 
-	if v.Filter != issues.FilterAll {
-		t.Fatalf("フィルタが戻っていない: %d", v.Filter)
+	if v.filter != issues.FilterAll {
+		t.Fatalf("フィルタが戻っていない: %d", v.filter)
 	}
 	if v.currentTab() != "feat" {
 		t.Fatalf("タブが戻っていない: %q", v.currentTab())
@@ -250,23 +250,23 @@ func TestIssuesViewRestoreAppliesScreen(t *testing.T) {
 	if v.current() == nil || v.current().Path != target.Path {
 		t.Fatalf("カーソルが戻っていない: %+v", v.current())
 	}
-	if v.Open == nil || v.Open.Path != target.Path || v.Body == nil {
+	if v.open == nil || v.open.Path != target.Path || v.body == nil {
 		t.Fatal("本文が開いていない")
 	}
-	if v.Drawer.Phase() != anim.Open {
-		t.Fatalf("引き出しが開き切っていない (演出が残っている): phase=%d", v.Drawer.Phase())
+	if v.drawer.phase() != anim.Open {
+		t.Fatalf("引き出しが開き切っていない (演出が残っている): phase=%d", v.drawer.phase())
 	}
 	out := strings.Join(v.Lines(renderOpts(40)), "\n")
 	if !strings.Contains(out, "029-feat-b.md") {
 		t.Fatalf("復元した本文が描かれていない:\n%s", out)
 	}
-	if v.BodyPager.Offset != 7 {
-		t.Fatalf("本文のスクロール位置が戻っていない: %d", v.BodyPager.Offset)
+	if v.bodyPager.Offset != 7 {
+		t.Fatalf("本文のスクロール位置が戻っていない: %d", v.bodyPager.Offset)
 	}
 	// 復元は 1 度だけ: 以降の再スキャン (r) は「今見ている場所」を引き継ぐ。カーソルを記憶と
 	// 別の行 (feat タブの先頭 = 030) へ動かしてから取り直し、記憶の 029 へ戻らないことを見る
-	v.Cursor = 1
-	v.Receive(IssuesScanMsg{Root: dir, Dirs: []string{dir}, Issues: []*issues.Issue{target, sibling, other}})
+	v.cursor = 1
+	v.Receive(IssuesScanMsg{root: dir, dirs: []string{dir}, issues: []*issues.Issue{target, sibling, other}})
 	if v.current() == nil || v.current().Path != sibling.Path {
 		t.Fatalf("再スキャンで復元がもう一度当たった: %+v", v.current())
 	}
@@ -282,12 +282,12 @@ func TestIssuesViewRestoreMissingIssueFallsBack(t *testing.T) {
 		Root: dir, SavedAt: app.TimeNow(), Cursor: filepath.Join(dir, "消えた.md"),
 		Open: filepath.Join(dir, "消えた.md"),
 	})
-	v.Receive(IssuesScanMsg{Root: dir, Dirs: []string{dir}, Issues: []*issues.Issue{alive}})
-	if v.Open != nil {
-		t.Fatalf("消えた issue の本文を開いた: %+v", v.Open)
+	v.Receive(IssuesScanMsg{root: dir, dirs: []string{dir}, issues: []*issues.Issue{alive}})
+	if v.open != nil {
+		t.Fatalf("消えた issue の本文を開いた: %+v", v.open)
 	}
-	if v.Cursor != 0 {
-		t.Fatalf("カーソルが先頭に落ちていない: %d", v.Cursor)
+	if v.cursor != 0 {
+		t.Fatalf("カーソルが先頭に落ちていない: %d", v.cursor)
 	}
 }
 

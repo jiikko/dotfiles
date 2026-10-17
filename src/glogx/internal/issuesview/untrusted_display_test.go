@@ -10,7 +10,7 @@ import (
 // 生のまま保持される契約)。表示に出すここで無害化する回帰テスト。
 func TestMarkNextBoxSanitizesFilename(t *testing.T) {
 	v := &IssuesView{}
-	v.MarkNext = IssuesMarkConfirm{Active: true, targets: []*issues.Issue{
+	v.markNext = issuesMarkConfirm{active: true, targets: []*issues.Issue{
 		{Rel: "036-bug-" + testenv.OSC8 + "0;PWNED" + testenv.ST8 + testenv.CSI8 + "2J.md"},
 	}}
 	assertSanitizedAndVisible(t, "markNext 確認モーダル", v.markNextBox(80, false), "036-bug-", ".md")

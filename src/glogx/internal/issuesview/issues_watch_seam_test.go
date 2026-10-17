@@ -63,7 +63,7 @@ func TestIssuesWatchEventPathWithoutFsnotify(t *testing.T) {
 	v := openedWatchView(t, root, path)
 	fw := requireFake(t, v)
 
-	v.Watch.EvArmed = false // 既に張られているチェーンをテストが引き取る
+	v.watch.EvArmed = false // 既に張られているチェーンをテストが引き取る
 	cmd := v.eventCmd()
 	if cmd == nil {
 		t.Fatal("イベント待ちの Cmd が作れない")
@@ -96,16 +96,16 @@ func TestIssuesWatchEventPathWithoutFsnotify(t *testing.T) {
 	if !msg.fromEvent {
 		t.Fatal("イベント由来の観測に fromEvent が立っていない (札の降ろし先が変わる)")
 	}
-	if msg.Fp == v.Watch.seen {
+	if msg.fp == v.watch.seen {
 		t.Fatal("イベント経路の指紋が変化を捉えていない")
 	}
 	v.HandleWatch(msg)                                                // 1 回目: 安定待ち
-	reload := v.HandleWatch(IssuesWatchMsg{Fp: msg.Fp, gen: msg.gen}) // 2 回目: 安定 → 取り直し
+	reload := v.HandleWatch(IssuesWatchMsg{fp: msg.fp, gen: msg.gen}) // 2 回目: 安定 → 取り直し
 	if reload == nil {
 		t.Fatal("イベント由来の変化で取り直しが走らない")
 	}
 	v.Receive(drainScanMsg(t, reload))
-	if got := v.Rows[0].Display(); got != "feat: 編集後" {
+	if got := v.rows[0].Display(); got != "feat: 編集後" {
 		t.Fatalf("イベント経由の編集が反映されていない: %q", got)
 	}
 }
@@ -124,7 +124,7 @@ func TestIssuesWatchPollDoesNotStackEventChainsWithoutFsnotify(t *testing.T) {
 	requireFake(t, v)
 
 	msgs := make(chan tea.Msg, 64)
-	v.Watch.EvArmed = false // 既に張られている札をテストが引き取り、実体の goroutine を作る
+	v.watch.EvArmed = false // 既に張られている札をテストが引き取り、実体の goroutine を作る
 	runWatchChains(t, v.eventCmd(), msgs)
 
 	for range 3 {

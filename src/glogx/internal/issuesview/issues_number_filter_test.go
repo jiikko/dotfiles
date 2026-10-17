@@ -42,10 +42,10 @@ func numbersOf(rows []*issues.Issue) string {
 func TestIssuesNumberFilterMatchesAcrossTabsAndStatuses(t *testing.T) {
 	v := filteringView(t, "41", numbered()...)
 
-	if got := numbersOf(v.Rows); got != "415,141,041" {
+	if got := numbersOf(v.rows); got != "415,141,041" {
 		t.Fatalf("41 の絞り込み結果が %q (415,141,041 を期待)", got)
 	}
-	if v.Filter != issues.FilterOpen {
+	if v.filter != issues.FilterOpen {
 		t.Fatal("前提が崩れた: 既定の状態フィルタが open のみでない")
 	}
 }
@@ -53,12 +53,12 @@ func TestIssuesNumberFilterMatchesAcrossTabsAndStatuses(t *testing.T) {
 // 検索語を消すと元に戻る (1 字消しが効く)。
 func TestIssuesNumberFilterBackspaceWidensAgain(t *testing.T) {
 	v := filteringView(t, "415", numbered()...)
-	if got := numbersOf(v.Rows); got != "415" {
+	if got := numbersOf(v.rows); got != "415" {
 		t.Fatalf("415 の絞り込み結果が %q", got)
 	}
 
 	v.HandleKey("backspace", vp(20))
-	if got := numbersOf(v.Rows); got != "415,141,041" {
+	if got := numbersOf(v.rows); got != "415,141,041" {
 		t.Fatalf("1 字消した後の結果が %q (41 相当を期待)", got)
 	}
 }
@@ -67,19 +67,19 @@ func TestIssuesNumberFilterBackspaceWidensAgain(t *testing.T) {
 // 「検索語を打っただけで何かが起きた」状態になる (将来タイトル検索を足すと j/k も検索語になる)。
 func TestIssuesNumberFilterTypingSwallowsListKeys(t *testing.T) {
 	v := filteringView(t, "4", numbered()...)
-	before := numbersOf(v.Rows)
+	before := numbersOf(v.rows)
 
 	for _, key := range []string{"j", "a", "G", "tab"} {
 		v.HandleKey(key, vp(20))
-		if v.Cursor != 0 {
+		if v.cursor != 0 {
 			t.Fatalf("%q でカーソルが動いた (入力中は飲むこと)", key)
 		}
-		if got := numbersOf(v.Rows); got != before {
+		if got := numbersOf(v.rows); got != before {
 			t.Fatalf("%q で行集合が変わった: %q → %q", key, before, got)
 		}
 	}
-	if v.NumFilter.Query() != "4" {
-		t.Fatalf("数字以外が検索語に混ざった: %q", v.NumFilter.Query())
+	if v.numFilter.query() != "4" {
+		t.Fatalf("数字以外が検索語に混ざった: %q", v.numFilter.query())
 	}
 }
 
@@ -88,15 +88,15 @@ func TestIssuesNumberFilterEnterKeepsRowsAndFreesKeys(t *testing.T) {
 	v := filteringView(t, "41", numbered()...)
 	v.HandleKey("enter", vp(20))
 
-	if v.NumFilter.Typing || !v.NumFilter.Active {
-		t.Fatalf("Enter 後の状態が typing=%v active=%v (入力だけ終える)", v.NumFilter.Typing, v.NumFilter.Active)
+	if v.numFilter.typing || !v.numFilter.active {
+		t.Fatalf("Enter 後の状態が typing=%v active=%v (入力だけ終える)", v.numFilter.typing, v.numFilter.active)
 	}
-	if got := numbersOf(v.Rows); got != "415,141,041" {
+	if got := numbersOf(v.rows); got != "415,141,041" {
 		t.Fatalf("Enter で絞り込みが解けた: %q", got)
 	}
 	v.HandleKey("j", vp(20)) // 一覧のキーが戻っている
-	if v.Cursor != 1 {
-		t.Fatalf("確定後に j が効かない (cursor=%d)", v.Cursor)
+	if v.cursor != 1 {
+		t.Fatalf("確定後に j が効かない (cursor=%d)", v.cursor)
 	}
 }
 
@@ -105,7 +105,7 @@ func TestIssuesNumberFilterEmptyConfirmStopsFiltering(t *testing.T) {
 	v := filteringView(t, "", numbered()...)
 	v.HandleKey("enter", vp(20))
 
-	if v.NumFilter.Active {
+	if v.numFilter.active {
 		t.Fatal("空入力の確定で絞り込みが残った")
 	}
 }
@@ -116,13 +116,13 @@ func TestIssuesNumberFilterEscUnfiltersBeforeClosing(t *testing.T) {
 	v.HandleKey("enter", vp(20)) // 入力を終えてから Esc (確定後の Esc も解除であること)
 
 	v.HandleKey("esc", vp(20))
-	if v.NumFilter.Active {
+	if v.numFilter.active {
 		t.Fatal("Esc で絞り込みが解けない")
 	}
 	if !v.Visible() {
 		t.Fatal("Esc で viewer ごと閉じた (1 段戻ること)")
 	}
-	if got := numbersOf(v.Rows); got != "415,500" {
+	if got := numbersOf(v.rows); got != "415,500" {
 		t.Fatalf("解除後にタブの行集合へ戻っていない: %q (open のみ = 415,500)", got)
 	}
 }
@@ -137,10 +137,10 @@ func TestIssuesNumberFilterIsDroppedWhenViewerCloses(t *testing.T) {
 	if v.Visible() {
 		t.Fatal("前提が崩れた: i で閉じていない")
 	}
-	if v.NumFilter.Active {
+	if v.numFilter.active {
 		t.Fatal("閉じても絞り込みが残った (次に開くと理由の分からない絞り込み一覧から始まる)")
 	}
-	if got := numbersOf(v.Rows); got != "415,500" {
+	if got := numbersOf(v.rows); got != "415,500" {
 		t.Fatalf("行集合が絞り込まれたまま残った: %q (open のみ = 415,500)", got)
 	}
 }
@@ -151,12 +151,12 @@ func TestIssuesNumberFilterSurvivesRescan(t *testing.T) {
 	v := filteringView(t, "41", numbered()...)
 	v.HandleKey("enter", vp(20))
 
-	v.Receive(IssuesScanMsg{Dirs: []string{"/repo/issues"}, Issues: numbered()})
+	v.Receive(IssuesScanMsg{dirs: []string{"/repo/issues"}, issues: numbered()})
 
-	if !v.NumFilter.Active {
+	if !v.numFilter.active {
 		t.Fatal("再スキャンで絞り込みが消えた")
 	}
-	if got := numbersOf(v.Rows); got != "415,141,041" {
+	if got := numbersOf(v.rows); got != "415,141,041" {
 		t.Fatalf("再スキャン後の行集合が絞り込まれていない: %q", got)
 	}
 }

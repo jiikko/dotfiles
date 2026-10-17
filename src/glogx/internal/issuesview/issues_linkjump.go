@@ -28,7 +28,7 @@ import (
 // 意味を持ち、resize・見張りによる本文の読み直し・エディタから戻ったときの読み直しで別のリンクを
 // 指しうる。(種類, dest, 同じ組の中の何番目か) を鍵にして毎回引き直す (reanchor)。
 type linkJump struct {
-	Active bool
+	active bool
 	kind   markdown.LinkKind
 	dest   string
 	nth    int
@@ -38,21 +38,21 @@ type linkJump struct {
 // 🚨 描画 (bodyLines) とキー処理 (リンク一覧を引く) の両方がこれを使う。式を 2 箇所に書くと、
 // 片方だけ幅が違ってキー側のリンク一覧と画面の強調が食い違う。
 func (v *IssuesView) bodyTextWidth(inner int) int {
-	return inner - layout.ScrollbarWidth - srcGutterWidth(v.Body.SrcLineCount())
+	return inner - layout.ScrollbarWidth - srcGutterWidth(v.body.SrcLineCount())
 }
 
 // jumpLinks は今の幅で開けるリンクの一覧 (vp はキー処理の窓。描画側は bodyLines が同じ幅で引く)。
 func (v *IssuesView) jumpLinks(vp IssuesViewport) []issues.FileLink {
-	return v.Body.FileLinks(v.bodyTextWidth(v.bodyWidth(vp.Width)), v.jumpRepos())
+	return v.body.FileLinks(v.bodyTextWidth(v.bodyWidth(vp.width)), v.jumpRepos())
 }
 
 // jumpRepos は「repo の中」とみなす範囲 (同じ repo の全 checkout。issues.LinkBase.Repos の doc)。
 // git を 1 回叩くので root ごとに覚える (描画のたびに叩かない)。
 func (v *IssuesView) jumpRepos() []string {
-	if v.linkReposRoot != v.Root || v.linkRepos == nil {
-		v.linkRepos, v.linkReposRoot = nil, v.Root
-		if v.Root != "" {
-			v.linkRepos = issues.WorktreeRoots(v.Root)
+	if v.linkReposRoot != v.root || v.linkRepos == nil {
+		v.linkRepos, v.linkReposRoot = nil, v.root
+		if v.root != "" {
+			v.linkRepos = issues.WorktreeRoots(v.root)
 		}
 	}
 	return v.linkRepos
@@ -84,8 +84,8 @@ func (v *IssuesView) selectLink(fl []issues.FileLink, i, rows int) {
 			nth++
 		}
 	}
-	v.LinkJump = linkJump{Active: true, kind: l.Kind, dest: l.Dest, nth: nth}
-	p := &v.BodyPager
+	v.linkJump = linkJump{active: true, kind: l.Kind, dest: l.Dest, nth: nth}
+	p := &v.bodyPager
 	if l.Top < p.Offset || l.Top >= p.Offset+rows {
 		p.Stop()
 		p.Offset = max(l.Top-rows/3, 0) // 窓の上 1/3 に置く (端に置くと前後の文脈が見えない)
@@ -100,7 +100,7 @@ func (v *IssuesView) startLinkJump(vp IssuesViewport, rows int) {
 		v.setNotice("この issue に開けるファイルパスはありません", app.NoticeRefused)
 		return
 	}
-	top := v.BodyPager.Offset
+	top := v.bodyPager.Offset
 	pick := 0
 	for i, l := range fl {
 		if l.Top >= top {
@@ -115,10 +115,10 @@ func (v *IssuesView) startLinkJump(vp IssuesViewport, rows int) {
 // 呼び出し側が通常の本文 pager のキーとして処理する (死んだキーを作らない)。
 func (v *IssuesView) linkJumpKey(key string, vp IssuesViewport, rows int) (cmd tea.Cmd, handled bool) {
 	fl := v.jumpLinks(vp)
-	cur := v.LinkJump.reanchor(fl)
+	cur := v.linkJump.reanchor(fl)
 	if cur < 0 {
 		// 本文が読み直されて選択していたリンクが消えた。抜けて、キーは通常どおり処理する
-		v.LinkJump = linkJump{}
+		v.linkJump = linkJump{}
 		return nil, false
 	}
 	// 移動の語彙は listnav.MotionOf (glogx-ui-guide §2)。半ページ送り (space・ctrl+d など) はジャンプを抜けて本文の pager へ渡す
@@ -151,9 +151,9 @@ func (v *IssuesView) linkJumpKey(key string, vp IssuesViewport, rows int) (cmd t
 	case "y":
 		v.copyText(fl[cur].Path, "パスをコピーしました: ")
 	case "esc", "q", "h", "left":
-		v.LinkJump = linkJump{} // 1 段戻る (本文は閉じない)
+		v.linkJump = linkJump{} // 1 段戻る (本文は閉じない)
 	default:
-		v.LinkJump = linkJump{}
+		v.linkJump = linkJump{}
 		return nil, false
 	}
 	return nil, true
@@ -168,7 +168,7 @@ func (v *IssuesView) linkJumpKey(key string, vp IssuesViewport, rows int) (cmd t
 // symlink に差し替わった (git pull) ものを開かない。消えたものを開くと nvim は空の新規バッファを
 // 「そのファイル」として見せる。
 func (v *IssuesView) openLink(l issues.FileLink, readonly bool) tea.Cmd {
-	if !v.Body.Recheck(l, v.jumpRepos()) {
+	if !v.body.Recheck(l, v.jumpRepos()) {
 		v.setNotice("ファイルが見つかりません: "+v.linkLabel(l), app.NoticeRefused)
 		return nil
 	}
@@ -215,17 +215,17 @@ func (v *IssuesView) openDoc(l issues.FileLink) {
 		v.setNotice("これ以上は積めません ("+strconv.Itoa(maxDocDepth)+" 段)。h で戻ってから開いてください", app.NoticeRefused)
 		return
 	}
-	doc := &issues.Issue{Path: l.Path, Dir: v.Open.Dir, Rel: v.pathLabel(l.Path)}
+	doc := &issues.Issue{Path: l.Path, Dir: v.open.Dir, Rel: v.pathLabel(l.Path)}
 	body, err := doc.ReadBody()
 	if err != nil {
 		v.setNotice("開けませんでした: "+app.FirstLine(err.Error()), app.NoticeError)
 		return
 	}
-	v.docStack = append(v.docStack, bodyFrame{open: v.Open, body: v.Body, offset: v.BodyPager.Offset, jump: v.LinkJump})
-	v.Open, v.Body = doc, body
-	v.BodyPager.Reset()
-	v.UrlPick.Close()
-	v.LinkJump = linkJump{}
+	v.docStack = append(v.docStack, bodyFrame{open: v.open, body: v.body, offset: v.bodyPager.Offset, jump: v.linkJump})
+	v.open, v.body = doc, body
+	v.bodyPager.Reset()
+	v.urlPick.close()
+	v.linkJump = linkJump{}
 	v.docLine = l.Line
 }
 
@@ -237,10 +237,10 @@ func (v *IssuesView) popDoc() bool {
 	}
 	f := v.docStack[n-1]
 	v.docStack = v.docStack[:n-1]
-	v.Open, v.Body = f.open, f.body
-	v.BodyPager.Reset()
-	v.BodyPager.Offset = f.offset
-	v.LinkJump = f.jump
+	v.open, v.body = f.open, f.body
+	v.bodyPager.Reset()
+	v.bodyPager.Offset = f.offset
+	v.linkJump = f.jump
 	v.docLine = 0
 	return true
 }
@@ -250,12 +250,12 @@ func (v *IssuesView) rootOpen() *issues.Issue {
 	if len(v.docStack) > 0 {
 		return v.docStack[0].open
 	}
-	return v.Open
+	return v.open
 }
 
 // scrollToSrcLine はソース行 line を含む表示行が窓の上 1/3 に来るよう本文を送る (`x.md#L12` で開いたとき)。
 func (v *IssuesView) scrollToSrcLine(line, rows int) {
-	nums := v.Body.SrcLines()
+	nums := v.body.SrcLines()
 	top := -1
 	for i, n := range nums {
 		if n > 0 && n <= line {
@@ -266,8 +266,8 @@ func (v *IssuesView) scrollToSrcLine(line, rows int) {
 		}
 	}
 	if top >= 0 {
-		v.BodyPager.Stop()
-		v.BodyPager.Offset = max(top-rows/3, 0)
+		v.bodyPager.Stop()
+		v.bodyPager.Offset = max(top-rows/3, 0)
 	}
 }
 
@@ -287,7 +287,7 @@ func (v *IssuesView) linkLabel(l issues.FileLink) string {
 
 // pathLabel は p の表示名 (repo 相対。repo の外は ~ 始まりか絶対パス。無害化済み)。
 func (v *IssuesView) pathLabel(p string) string {
-	if rel, err := filepath.Rel(v.Root, p); err == nil && v.Root != "" && !strings.HasPrefix(rel, "..") {
+	if rel, err := filepath.Rel(v.root, p); err == nil && v.root != "" && !strings.HasPrefix(rel, "..") {
 		p = rel
 	} else if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(p, home+string(filepath.Separator)) {
 		p = "~" + p[len(home):]

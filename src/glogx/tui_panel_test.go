@@ -1210,7 +1210,7 @@ func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	// 🚨 戻り値の cmd != nil では検証にならない (maybeTick も Cmd を返すので、reload を
 	// 飛ばす変異が通ってしまった)。取り直しが実際に走ったか = scanning が立ったかを見る。
 	m.Update(extcmd.EditorClosedMsg{Err: exitErr})
-	if !m.issuesOv.Scanning {
+	if !m.issuesOv.Fixture().Scanning() {
 		t.Error("異常終了で取り直しが走らない (保存済みの編集が反映されない)")
 	}
 	if m.toast.OK() || !strings.Contains(m.toast.Text(), "異常終了") {
@@ -1221,7 +1221,7 @@ func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	m2 := newTestBrowse(t, 1, nil, nil)
 	m2.issuesOv = *loadedView(issuesviewtest.RealIssue(t))
 	m2.Update(extcmd.EditorClosedMsg{Err: errors.New("exec: \"zz\": executable file not found in $PATH")})
-	if m2.issuesOv.Scanning {
+	if m2.issuesOv.Fixture().Scanning() {
 		t.Error("起動失敗で取り直しが走った (ファイルは変わっていないので不要)")
 	}
 	if !strings.Contains(m2.toast.Text(), "開けませんでした") {

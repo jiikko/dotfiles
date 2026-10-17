@@ -179,9 +179,9 @@ func benchIssuesBrowse(tb testing.TB, files, w, h int) *browseModel {
 		_ = iss.LoadMeta()
 	}
 	m.handleKey("i")
-	m.issuesOv.Cwd = root
-	m.Update(issuesview.IssuesScanMsg{Root: root, Dirs: []string{dir}, Issues: found, Warnings: warnings})
-	m.issuesOv.FinishAnim() // 開きドロワーの演出後 = 定常フレームを測る
+	m.issuesOv.Fixture().SetCwd(root)
+	m.Update(issuesview.FixtureScanMsg(root, []string{dir}, found, warnings...))
+	m.issuesOv.Fixture().FinishAnim() // 開きドロワーの演出後 = 定常フレームを測る
 	return m
 }
 
@@ -212,9 +212,7 @@ func BenchmarkIssuesViewFrame2000(b *testing.B) {
 func BenchmarkIssuesViewFrameSelected2000(b *testing.B) {
 	m := benchIssuesBrowse(b, 2000, 120, 40)
 	v := &m.issuesOv
-	v.EnsureDisplayRows()
-	v.Cursor, v.Marked, v.MarkAt = 0, true, 19
-	if _, _, ok := v.Selection(); !ok {
+	if !v.Fixture().Select(0, 19) {
 		b.Fatal("選択が成立していない (fixture が狙った分岐に届いていない)")
 	}
 	b.ReportAllocs()

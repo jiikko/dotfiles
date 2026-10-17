@@ -14,7 +14,7 @@ func TestDrawerPhasesAndWidth(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.Local)
 	var d issuesDrawer
 	const total = 100
-	target := d.TargetWidth(total) // 80
+	target := d.targetWidth(total) // 80
 
 	if d.width(total, now) != 0 {
 		t.Error("閉じているのに幅がある")
@@ -31,8 +31,8 @@ func TestDrawerPhasesAndWidth(t *testing.T) {
 		t.Errorf("開ききった幅 = %d, want %d", got, target)
 	}
 	// 着地で静止状態へ
-	if closed := d.settle(now.Add(issuesDrawerDuration)); closed || d.Phase() != anim.Open {
-		t.Errorf("開き切りの settle: closed=%v phase=%v", closed, d.Phase())
+	if closed := d.settle(now.Add(issuesDrawerDuration)); closed || d.phase() != anim.Open {
+		t.Errorf("開き切りの settle: closed=%v phase=%v", closed, d.phase())
 	}
 }
 
@@ -43,7 +43,7 @@ func TestDrawerTargetWidth(t *testing.T) {
 	// 寸法はユーザー要望で決めた値 (80% + 10 桁・覗き見は 8〜18 桁・16 桁以下は全幅) をリテラルで固定する。
 	// 下のループは定数どうしの関係しか見ないので、定数を変えても緑のままだった (issue 751)
 	for total, want := range map[int]int{16: 16, 20: 16, 40: 32, 84: 76, 100: 90, 200: 182, 312: 294} {
-		if got := d.TargetWidth(total); got != want {
+		if got := d.targetWidth(total); got != want {
 			t.Errorf("total=%d: 本文の幅 %d, want %d", total, got, want)
 		}
 	}
@@ -52,7 +52,7 @@ func TestDrawerTargetWidth(t *testing.T) {
 	// 広い端末では一覧の覗き見が上限で止まり、余りは全部本文へ回る (比率のままだと画面が
 	// 広いほど一覧が場所を食う。実測 2026-07-31: 端末 312 桁で一覧に 50 桁超)
 	for _, total := range []int{200, 280, 312} {
-		got := d.TargetWidth(total)
+		got := d.targetWidth(total)
 		if peek := total - got; peek != issuesDrawerMaxPeek {
 			t.Errorf("total=%d: 一覧の覗き見 %d 桁, want %d (上限で止まるはず)", total, peek, issuesDrawerMaxPeek)
 		}
@@ -62,13 +62,13 @@ func TestDrawerTargetWidth(t *testing.T) {
 	}
 	// 覗き見は上限を超えない
 	for total := issuesDrawerMinList*2 + 1; total <= 400; total++ {
-		if peek := total - d.TargetWidth(total); peek > issuesDrawerMaxPeek {
+		if peek := total - d.targetWidth(total); peek > issuesDrawerMaxPeek {
 			t.Fatalf("total=%d: 覗き見が %d 桁 (上限 %d を超えた)", total, peek, issuesDrawerMaxPeek)
 		}
 	}
 	// どの幅でも「比率ぶん」より狭くならない
 	for total := 1; total <= 200; total++ {
-		got := d.TargetWidth(total)
+		got := d.targetWidth(total)
 		if total > issuesDrawerMinList*2 && got < ratioOnly(total) {
 			t.Fatalf("total=%d: %d が比率ぶん %d より狭い", total, got, ratioOnly(total))
 		}
@@ -78,12 +78,12 @@ func TestDrawerTargetWidth(t *testing.T) {
 	}
 	// 余裕があるときは一覧を最小幅ぶん残す (狭すぎて比率ぶんと両立しない場合を除く)
 	for _, total := range []int{60, 84, 120, 280} {
-		if peek := total - d.TargetWidth(total); peek < issuesDrawerMinList {
+		if peek := total - d.targetWidth(total); peek < issuesDrawerMinList {
 			t.Errorf("total=%d で一覧が %d 桁しか残らない (最小 %d)", total, peek, issuesDrawerMinList)
 		}
 	}
 	// 覗き見の余地が無い狭さでは全幅
-	if got := d.TargetWidth(issuesDrawerMinList); got != issuesDrawerMinList {
+	if got := d.targetWidth(issuesDrawerMinList); got != issuesDrawerMinList {
 		t.Errorf("狭い端末で全幅にならない: %d", got)
 	}
 }
@@ -122,8 +122,8 @@ func TestDrawerCloseFromPartialOpen(t *testing.T) {
 	if got := d.width(total, at.Add(issuesDrawerDuration)); got != 0 {
 		t.Errorf("閉じ切りの幅 = %d, want 0", got)
 	}
-	if closed := d.settle(at.Add(issuesDrawerDuration)); !closed || d.Phase() != anim.Closed {
-		t.Errorf("閉じ切りの settle: closed=%v phase=%v", closed, d.Phase())
+	if closed := d.settle(at.Add(issuesDrawerDuration)); !closed || d.phase() != anim.Closed {
+		t.Errorf("閉じ切りの settle: closed=%v phase=%v", closed, d.phase())
 	}
 }
 
@@ -131,12 +131,12 @@ func TestDrawerFinishLandsImmediately(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.Local)
 	var d issuesDrawer
 	d.open(now)
-	if closed := d.Finish(); closed || d.Phase() != anim.Open {
-		t.Errorf("開く演出の finish: closed=%v phase=%v", closed, d.Phase())
+	if closed := d.finish(); closed || d.phase() != anim.Open {
+		t.Errorf("開く演出の finish: closed=%v phase=%v", closed, d.phase())
 	}
 	d.startClose(now)
-	if closed := d.Finish(); !closed || d.Phase() != anim.Closed {
-		t.Errorf("閉じる演出の finish: closed=%v phase=%v", closed, d.Phase())
+	if closed := d.finish(); !closed || d.phase() != anim.Closed {
+		t.Errorf("閉じる演出の finish: closed=%v phase=%v", closed, d.phase())
 	}
 }
 
@@ -165,7 +165,7 @@ func TestIssuesViewDrawerIntegration(t *testing.T) {
 	o := IssuesRenderOpts{Width: 80, Page: 12}
 	v.Lines(o)
 	v.HandleKey("enter", vp(o.Page))
-	if v.Open == nil {
+	if v.open == nil {
 		t.Fatal("Enter で本文が開かない")
 	}
 
@@ -175,29 +175,29 @@ func TestIssuesViewDrawerIntegration(t *testing.T) {
 	if !strings.Contains(out, "▏") {
 		t.Errorf("引き出しの境界が出ていない:\n%s", out)
 	}
-	if !strings.Contains(term.StripANSI(out), v.Open.Rel) {
+	if !strings.Contains(term.StripANSI(out), v.open.Rel) {
 		t.Errorf("本文のヘッダーが出ていない:\n%s", out)
 	}
 	// 🚨 下地は一覧のヘッダー (タブ) であって本文のヘッダーではない
-	if strings.Count(term.StripANSI(out), v.Open.Rel) != 1 {
+	if strings.Count(term.StripANSI(out), v.open.Rel) != 1 {
 		t.Errorf("本文のヘッダーが下地にも出ている:\n%s", out)
 	}
 
 	// 閉じる: 演出のあいだ本文は生きていて、幅は縮んでいく
 	v.HandleKey("h", vp(o.Page))
-	if v.Open == nil {
+	if v.open == nil {
 		t.Fatal("h の直後に本文が消えた (逆再生に何も映らない)")
 	}
 	now = base.Add(issuesDrawerDuration + issuesDrawerDuration/2)
-	mid := v.Drawer.width(o.Width, now)
-	if mid <= 0 || mid >= v.Drawer.TargetWidth(o.Width) {
+	mid := v.drawer.width(o.Width, now)
+	if mid <= 0 || mid >= v.drawer.targetWidth(o.Width) {
 		t.Errorf("閉じ途中の幅 = %d (0 と満杯の間のはず)", mid)
 	}
 	// 着地で本文を捨てる
 	now = base.Add(issuesDrawerDuration * 3)
 	v.Lines(o)
-	if v.Open != nil || v.Drawer.Phase() != anim.Closed {
-		t.Errorf("閉じ切っても本文が残る: open=%v phase=%v", v.Open != nil, v.Drawer.Phase())
+	if v.open != nil || v.drawer.phase() != anim.Closed {
+		t.Errorf("閉じ切っても本文が残る: open=%v phase=%v", v.open != nil, v.drawer.phase())
 	}
 }
 
