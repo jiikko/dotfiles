@@ -246,8 +246,30 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
 - [x] 2026-10-17: 案 D を採った (ユーザー判断)。確保の回数の予算 (-race なしの `TestFrameAllocBudget`) を手元の `make test` から外し、
   `make test-budget` に分けて CI (環境変数 `CI`) でだけ回す (glogx: 確保の回数の予算 (-race なしの TestFrameAllocBudget) を手元の make test から外し、CI でだけ回す (issue 742 の案 D))。
   変異 (一覧の回数の上限 130 → 10) で `make test-budget` が red になることを確かめた。分割 (A → C) は、トークンに余裕があるときにユーザーが着手する
-- [ ] 設計 (層と置き場所) を決めて反証レビューを通す
-- [ ] 土台の層を出す
+- [x] 2026-10-17: 設計は上の「設計 (案)」の層の順をそのまま採った (2026-10-17 の「試算と設計」の反証レビュー済み)。土台は term (描画) と
+  app (画面が共有する状態) の 2 つにし、gitdata / extcmd は使う画面を出す段で要る分だけ出す。改名は先頭の大文字化だけにして、
+  等価の確認 (トークン列の比較) で機械的に戻せる形にした
+- [x] 2026-10-17: 土台の層を出す
+  - 段 1 (glogx: 描画の土台を internal/term へ出す (issue 742 の段 1)): width / box / terminal / scroll_glide と render.go の純粋な部分・
+    hintItem / fitHintItems を `internal/term` へ。コミット行の描画は main の render.go に残した
+  - 段 2 (glogx: 画面が共有する状態と道具を internal/app へ出す (issue 742 の段 2)): timeNow / 全画面の ID と crossTarget /
+    screenMemory / cleanupLatch / cacheBaseDir と writeAtomic を `internal/app` へ
+  - 等価の確認は各段で 3 つ (go test -race 緑・テスト名 1,241 本の一致・トークン列を改名と修飾を戻して比べ、差は意図した検査の直しだけ)
+  - 段 1 の反証レビュー (sonnet 1 本): P1 / P2 なし。P3 (古い名前・パスのコメント 7 か所) は段 2 で直した。
+    却下なし。記録: hint の gate は「`term` という名前のローカル変数が package を隠す」形を数え違える (現実に起きにくいので受容)、
+    t.Run の副テスト名が表のラベル (`term.AnsiRed` など) の書き換えで変わった (`-run` で副テストを名指す箇所は repo に 0 件)
+  - 移設で踏んだ罠 (次の段でも同じ形で出る):
+    - cwd 相対でファイルを読むテストは、移すと **Skip で緑**になる (`box_test.go` の theme/colors.yml。パスを直して PASS 行を確かめた)
+    - ソースを読む検査が**移す前の名前**で照合している: `hint_registry_gate_test.go` (fitHintItems の素の識別子)・
+      `cache_write_discipline_test.go` (cacheBaseDir)・`clock_rollback_test.go` (`.After(timeNow())` の字句と、再帰しない ParseDir)。
+      どれも名前の照合を新しい形に直し、変異で red を確かめた
+    - ジェネリック型 (ScreenMemory) のメソッド・フィールドは、使う側ではインスタンスの別オブジェクトになるので、go/types の
+      Uses から改名すると定義側が漏れる (build が落ちるので気づける)
+    - 別パッケージの構造体を位置指定のリテラルで書くと vet (composites) が落ちる (HintItem で 138 か所。キーを付けた)
+    - nolint が置き場所の変更で unused になる (`app.TimeNow` の forbidigo。nolintlint が落とす)
+  - 外れた防御 (記録): `scripts/check_unused_excluding_tests.sh` (staticcheck U1000 -tests=false) は exported を見ないので、
+    internal へ出して公開名にした宣言が「テストからしか使われない」になっても検出されない。2026-10-17 時点で該当は 0 個
+    (term・app の公開名を数えた)。**trigger**: 画面のパッケージを出した段で同じ数え方をし、該当が出たら internal の公開名を対象にした検査を足すかを決める
 - [ ] 画面を 1 つずつ出す
 - [ ] CLAUDE.md / README の構造の記述を直す
 
