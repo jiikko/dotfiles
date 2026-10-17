@@ -1,4 +1,4 @@
-# 814 (retro): lan-manager の有線の名前〜一覧の印のセッション (CI の赤を 4 push 見落とした)
+# 814 (retro): lan-manager の有線の名前〜一覧の印のセッション (src/glogx の CI の赤を 4 run 見落とした)
 
 起票日: 2026-10-17
 
@@ -7,9 +7,9 @@
 
 ## どこで踏んだか
 
-### 1. push した後に CI を見ず、src/glogx の赤を 4 push 続けて見落とした (ユーザーが見つけた)
+### 1. push した後に CI を見ず、src/glogx の赤を 4 run 続けて見落とした (ユーザーが見つけた)
 
-- 98002fc9 (有線の名前の広告) から src/glogx の no-real-commands が毎回落ちていた。glogx のテストの L の偽物 (`fakeLanOptions`) が
+- 98002fc9 (有線の名前の広告) から src/glogx の no-real-commands が毎回落ちていた (落ちた run は 98002fc9・45af1602・f1a3a369・3177475a の 4 本)。glogx のテストの L の偽物 (`fakeLanOptions`) が
   `live.Options()` から危ない口を 1 つずつ外す形で、新しく足した `ReadAdvert` (launchctl) を外していなかった
 - 手元の `make test` は緑だった。手元の no-real-commands は一部のテスト (`-run 'TestUpdateKeys|TestDoctor|…'`) しか回さず、
   `TestLan*` は CI の `GLOGX_SHIM_SCOPE=all` でだけ走る。手元の緑は CI の緑を予言しない形だった
@@ -18,8 +18,8 @@
 
 ### 2. テストの偽物を「本物から危ない口を外す」形にしていた
 
-- 外す形 (deny-list) は、本物の側に口が増えるたびに外し忘れが本物を起こす。今回は `ReadAdvert` のほか、`Observe` (ssh)・`LookupHost`
-  (dscacheutil)・`Copy` (pbcopy)・`RunQuiet` も本物のまま残っていた (検出側の shim が見ていないので CI でも出なかった)
+- 外す形 (deny-list) は、本物の側に口が増えるたびに外し忘れが本物を起こす。今回は `ReadAdvert` のほか、`Observe` (ssh)・`Copy` (pbcopy)・`RunQuiet` (ssh)、
+  45af1602 からは `LookupHost` (dscacheutil) も本物のまま残っていた (検出側の shim が見ていないので CI でも出なかった)
 - 直し方は「空から組み、安全な口だけ本物から写す」(allow-list)。口が増えても空 = 何もしない、になる
 
 ### 3. 空いていないキーを「空いている」と推した
@@ -35,16 +35,19 @@
 ## 提案
 
 1. **手元の検査が CI より狭い範囲しか回さない (scope の切り替え・`-run` の絞り込み) と知っている変更では、push の後に CI の結果を待ってから
-   次の push・完了報告へ進む。待たないなら CI の範囲を手元で 1 回回す**。手元の緑は「手元の範囲」の緑でしかない
+   次の push・完了報告へ進む。待たないなら CI の範囲を手元で 1 回回す**
+   - 既にあるもの: 「関係しそうな suite だけを選んで回すのも代用」(verify-execution の同じ項)、待ち方と報告前の引数なしの `ci-log`
+     (`.claude/rules/use-ci-log-for-ci-inspection.md`)。足すのは「待たずに次の push へ進まない」の 1 点 (これを止める規範は無かった)
    - 切り出し先: `_claude/rules/verify-execution-not-just-exit-code.md` の「最後の編集の後に、変更したファイルを実際に検査する gate を回す」の項へ追記
 2. **本物の依存の束 (Options・config・client) からテストの偽物を作るときは、ゼロ値から組み、安全と確かめた口だけを本物から写す。
    本物を丸ごと受け取って危ない口を外す形にしない** (束に口が増えるたびに、外し忘れが本物を起こす)
    - 切り出し先: `_claude/rules-checklists/mutation-verify-new-tests.md` の fake / stub の節へ追記
 3. 「空いているキー / 名前 / 番号」を選択肢として出すのは不在の主張なので、出す前に定義側 (キーの割り当て・名前の一覧) を読む
    - 却下: `~/.claude/CLAUDE.md`「ぼやきも事実の主張なら裏を取る (特に不在の主張)」と同じ規範で、新しく書き足すことが無い
-4. 読み取りのみの指示に「リダイレクトでどこかへ書く」を名指しで入れる
-   - 却下: `_claude/rules/subagent-model-tiering.md`「指示を書くとき」の「道具が黙って書く副作用も名指しで止める」で足りる。今回はそれを
-     ファイルの編集だけに読んで書いた (適用の漏れで、規範の欠けではない)
+4. **読み取りのみを頼む指示には、作業者が自分で書くシェルのリダイレクト (`> /tmp/x`) も「どこにも書かない」と名指しで入れる**
+   - 既にあるもの: `_claude/rules/subagent-model-tiering.md`「指示を書くとき」の、道具が黙って書く副作用 (go.sum・lock) を名指しで止める項。
+     作業者が自分で書くリダイレクトはこの文言では読めない (反証レビューで却下を撤回)
+   - 切り出し先: 同じ項へ 1 行追記
 
 ## 局所 (その場で直した / 直さない)
 
