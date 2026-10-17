@@ -81,7 +81,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 | `o` | 外のアプリで開く (ブラウザ・Preview) | コミット / job / PR / pro-con のカードの添付 |
 | `O` | Finder で選んだ状態で見せる (`open -R`)。大文字が小文字の強い版ではない例外 (`o` の「開く」の代わりに「置き場所を見せる」) | treefiler (木・タイル) |
 | `e` (`v`) | エディタで開く | repo root / issue 本文 / job ログ |
-| `y` | コピー (素の値: URL / パス / group 名) | issues の**合成の** group 親行だけ group 名 (親 issue のある行はパス)。treefiler は項目の絶対パス (`Y` で root からの相対パス)。mac-lan-manager は `smb://<宛先>` (`Y` で `ssh <user>@<宛先>`。宛先は有線の名前 `<ホスト名>.wired.local` が引ければ名前、それ以外は IP) |
+| `y` | コピー (素の値: URL / パス / group 名) | issues の**合成の** group 親行だけ group 名 (親 issue のある行はパス)。treefiler は項目の絶対パス (`Y` で root からの相対パス)。mac-lan-manager は `smb://<宛先>` (`Y` で `ssh <user>@<宛先>`、`O` で `open smb://<宛先>`。宛先は有線の名前 `<ホスト名>.wired.local` が引ければ名前、それ以外は IP) |
 | `Y` | コピー (整形した参照: Markdown / 番号+タイトル+パス) | |
 | `S` | 並び (sort) の巡回 | treefiler (名前順 → 更新の新しい順 → 大きい順)。小文字の `s` (シェル) の強い版ではない例外 |
 | `p` | PR または番号 | 一覧では PR を開く、issues では番号コピー (「PR / number」の頭文字) |
@@ -99,6 +99,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 
 🚨 **大文字は小文字の「強い版」または「まとめ版」**にする (`y` → `Y`、`n` → `N`、
 `j` → `J`)。無関係な意味を大文字に与えると、shift の押し間違いが別の操作になる。
+例外: mac-lan-manager の `O` (`open smb://…` をコピー) は `o` (画面共有を開く) の強い版ではない (ユーザー選定 2026-10-17。`f` は半ページの移動で空いていない)。押し間違えても起きるのはコピーだけ。
 
 ## 3. 開閉の語彙
 

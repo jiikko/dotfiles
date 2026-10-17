@@ -114,7 +114,7 @@ func (m *Model) footer() string {
 				hs = append(hs, keyHint{"o", "画面共有", 5})
 			}
 			if r.smb {
-				hs = append(hs, keyHint{"y", "smb", 6})
+				hs = append(hs, keyHint{"y", "smb", 6}, keyHint{"O", "Finder で繋ぐ", 12})
 			}
 		}
 		hs = append(hs, keyHint{"h/l", "タブ", 10}, keyHint{"space", "台帳", 8}, keyHint{"c", "この Mac の IP", 9},
@@ -546,7 +546,7 @@ func (m *Model) detail(r row, width int) string {
 			lines = append(lines, label("ssh")+sCode.Render(fmt.Sprintf("ssh %s@%s", user, ip))+"  "+keys)
 		}
 		if r.smb && ip != "" {
-			lines = append(lines, label("smb")+link("smb://"+ip)+"   "+keycap("y", "コピー"))
+			lines = append(lines, label("smb")+link("smb://"+ip)+"   "+keycap("y", "コピー")+"  "+keycap("O", "open をコピー"))
 		}
 		if r.vnc && ip != "" {
 			lines = append(lines, label("画面共有")+link("vnc://"+ip)+"   "+keycap("o", "開く"))
@@ -671,7 +671,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 		return modal(m.edit.title, []string{prefix + field}, "enter 決める   esc やめる", m.w), 4, 3 + lipgloss.Width(prefix) + col
 	case ovHelp:
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理 / この Mac のタブ"}, {"/", "絞り込み"},
-			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"o", "画面共有を開く"},
+			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"O", "Finder で smb に繋ぐコマンド (open smb://…) をコピー"}, {"o", "画面共有を開く"},
 			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "初期設定 (相手の行)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
 			{"r", "リロード"}, {"q / esc", "閉じる"}}
 		body := make([]string, 0, len(keys)+3)

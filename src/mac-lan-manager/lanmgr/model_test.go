@@ -251,20 +251,20 @@ func TestSSHUsesLanIPAndHostKeyAlias(t *testing.T) {
 func TestCopyKeys(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini, {Host: "nosmb.local", SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}})
 	h.keys("l") // 未管理のタブの 1 台目 (m2macmini)
-	h.keys("Y", "y")
-	want := []string{"ssh koji@169.254.217.100", "smb://169.254.217.100"} // 内部 (有線) を優先
+	h.keys("Y", "y", "O")
+	want := []string{"ssh koji@169.254.217.100", "smb://169.254.217.100", "open smb://169.254.217.100"} // 内部 (有線) を優先
 	if !slices.Equal(h.copied, want) {
 		t.Errorf("copied = %v, want %v", h.copied, want)
 	}
-	if n := h.m.TakeNotices(); len(n) != 2 || !strings.Contains(n[0].Text, "推測") {
+	if n := h.m.TakeNotices(); len(n) != 3 || !strings.Contains(n[0].Text, "推測") {
 		t.Errorf("台帳に無い相手のユーザー名は推測と知らせる: %+v", n)
 	}
 	h.copied = nil
-	h.keys("j", "y") // smb を開いていない相手
+	h.keys("j", "y", "O") // smb を開いていない相手
 	if len(h.copied) != 0 {
 		t.Errorf("smb を開いていないのにコピーした: %v", h.copied)
 	}
-	if n := h.m.TakeNotices(); len(n) != 1 || n[0].OK {
+	if n := h.m.TakeNotices(); len(n) != 2 || n[0].OK || n[1].OK {
 		t.Errorf("断りは ✗ で出す: %+v", n)
 	}
 }
@@ -372,7 +372,7 @@ func TestRegisterSkipsLinkLocal(t *testing.T) {
 // red team の P3-5: IP が分からない相手の y は断る (smb:// だけをコピーしない)。
 func TestCopySMBWithoutIPRefused(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{{Host: "noip.local", SMB: true}})
-	h.keys("l", "j", "y")
+	h.keys("l", "j", "y", "O")
 	if len(h.copied) != 0 {
 		t.Errorf("IP が無いのにコピーした: %v", h.copied)
 	}
@@ -736,9 +736,14 @@ func TestLoadingKeepsSelfSingleAndRefusesActions(t *testing.T) {
 			t.Errorf("読み込み中に断るキー %q を案内に出した: %q", k, foot)
 		}
 	}
-	for _, k := range []string{"s", "Y", "y", "o", "c", "space"} {
+	m.TakeNotices()
+	for _, k := range []string{"s", "Y", "y", "O", "o", "c", "space"} {
 		if a := m.HandleKey(k); a != None || m.ov != ovNone {
 			t.Errorf("読み込み中の %s を受けた (action=%v ov=%v)", k, a, m.ov)
+		}
+		// 断った理由は読み込み中だから (行の事情 = smb が無い等で断ったのでは、needsNet から漏れても緑になる)
+		if n := m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "確認中") {
+			t.Errorf("読み込み中の %s を、読み込み中だからと断っていない: %+v", k, n)
 		}
 	}
 	m.HandleKey("l")
@@ -2072,8 +2077,8 @@ func TestWiredNameUsedAsTarget(t *testing.T) {
 	if v := strings.Join(h.m.View(), "\n"); !strings.Contains(v, "m2macmini.wired.local") || !strings.Contains(v, "✓ 引ける") {
 		t.Errorf("詳細に有線の名前と状態が出ない:\n%s", v)
 	}
-	h.keys("Y", "y")
-	if want := []string{"ssh koji@m2macmini.wired.local", "smb://m2macmini.wired.local"}; !slices.Equal(h.copied, want) {
+	h.keys("Y", "y", "O")
+	if want := []string{"ssh koji@m2macmini.wired.local", "smb://m2macmini.wired.local", "open smb://m2macmini.wired.local"}; !slices.Equal(h.copied, want) {
 		t.Errorf("copied = %v, want %v", h.copied, want)
 	}
 	if a := h.keys("s"); a != Exec {
@@ -2408,12 +2413,12 @@ func TestSelfFixedAgreesWithPlan(t *testing.T) {
 	}
 }
 
-// 整合の監査で揃えた案内と効くキー: この Mac の行では Y / y / o を断る (自分宛ての ssh をコピーしていた)。ユーザー名が分からないときは
+// 整合の監査で揃えた案内と効くキー: この Mac の行では Y / y / O / o を断る (自分宛ての ssh をコピーしていた)。ユーザー名が分からないときは
 // s / Y を案内しない (最下行・詳細のカード)。初期設定 (enter) は詳細のカードと ? の板に出る。
 func TestGuidanceMatchesKeys(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini})
 	h.keys("h") // この Mac のタブ
-	for _, k := range []string{"Y", "y", "o", "s"} {
+	for _, k := range []string{"Y", "y", "O", "o", "s"} {
 		h.copied = nil
 		h.m.TakeNotices()
 		if a := h.keys(k); a == Exec || len(h.copied) != 0 {

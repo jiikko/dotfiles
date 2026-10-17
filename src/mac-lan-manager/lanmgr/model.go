@@ -473,7 +473,7 @@ func (m *Model) Binds(key string) bool {
 	if m.OwnsKeys() {
 		return true
 	}
-	return slices.Contains([]string{"s", "y", "Y", "o", "m", "u", "e", "c", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
+	return slices.Contains([]string{"s", "y", "Y", "o", "O", "m", "u", "e", "c", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
 		listnav.MotionOf(key) != listnav.None
 }
 
@@ -1022,10 +1022,10 @@ func move(cur *int, n int, key string, rows int) bool {
 }
 
 // needsNet は、この Mac のネットワークを読み終えるまで断るキー (最下行の案内もこの間は出さない)。
-var needsNet = []string{"s", "Y", "y", "o", "c", "space"}
+var needsNet = []string{"s", "Y", "y", "O", "o", "c", "space"}
 
 // rowKeys はカーソルの行の Mac に効くキー (見ていた Mac が一覧から消えた・タブに行が無いときは断る)。c はこの Mac の IP のコピーで行に効かない
-var rowKeys = []string{"s", "Y", "y", "o", "space", "enter", "m", "u"}
+var rowKeys = []string{"s", "Y", "y", "O", "o", "space", "enter", "m", "u"}
 
 func (m *Model) keyList(key string) Action {
 	// 繋ぐ・コピー・登録は、この Mac のネットワーク (どの I/F が有線か・この Mac の IP) を読み終えてから。読み込み中に受けると
@@ -1048,7 +1048,7 @@ func (m *Model) keyList(key string) Action {
 	if guessed {
 		guessNote = "  (ユーザー名は推測)"
 	}
-	if r.self && (key == "Y" || key == "y" || key == "o") { // この Mac 自身には繋がない (s は shellRefusal が断る)。最下行・カードも出さない
+	if r.self && (key == "Y" || key == "y" || key == "O" || key == "o") { // この Mac 自身には繋がない (s は shellRefusal が断る)。最下行・カードも出さない
 		m.note("この Mac には繋がない (この Mac の IP・名前は c でコピー)", false)
 		return None
 	}
@@ -1106,16 +1106,14 @@ func (m *Model) keyList(key string) Action {
 			break
 		}
 		m.copy(fmt.Sprintf("ssh %s@%s", user, m.target(r)), guessNote)
-	case "y": // コピー (素の値 = URL)
-		if !r.smb {
-			m.note("ファイル共有 (smb / 445) を開いていない", false)
-			break
+	case "y": // コピー (素の値 = URL。Finder の「サーバへ接続」に貼る)
+		if url := m.smbURL(r); url != "" {
+			m.copy(url, "")
 		}
-		if r.connectIP() == "" {
-			m.note("繋ぐ IP が分からない", false)
-			break
+	case "O": // コピー (Finder で smb に繋ぐコマンド。端末に貼ればそのまま Finder が繋ぎにいく)。o の強い版ではない例外 (docs/glogx-ui-guide.md §2)
+		if url := m.smbURL(r); url != "" {
+			m.copy("open "+url, "")
 		}
-		m.copy("smb://"+m.target(r), "")
 	case "o": // 外のアプリで開く (§2)
 		if !r.vnc {
 			m.note("画面共有を広告していない", false)
@@ -1170,6 +1168,19 @@ func (m *Model) takeBG() {
 			return false
 		}
 	})
+}
+
+// smbURL は r のファイル共有の URL (smb://<宛先>)。繋げないなら理由を知らせて "" を返す (y と O が同じ断り方をする)。
+func (m *Model) smbURL(r row) string {
+	if !r.smb {
+		m.note("ファイル共有 (smb / 445) を開いていない", false)
+		return ""
+	}
+	if r.connectIP() == "" {
+		m.note("繋ぐ IP が分からない", false)
+		return ""
+	}
+	return "smb://" + m.target(r)
 }
 
 func (m *Model) copy(s, note string) { m.copyAs(s, s+note) }
