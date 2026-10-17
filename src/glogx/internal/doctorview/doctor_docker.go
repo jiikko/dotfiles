@@ -1,4 +1,4 @@
-package main
+package doctorview
 
 import (
 	"context"
@@ -27,44 +27,44 @@ import (
 // 取り直せばよく、保存すると復元経路の無害化・カタログ突合を新設することになる。
 // snapshot を復元する経路でも docker だけは走らせる (start を参照)。
 
-type doctorDockerMsg struct {
+type DoctorDockerMsg struct {
 	gen int
 	rep docker.Report
 }
 
 // dockerCmd は docker の走査を 1 本の Cmd にする。
-func (v *doctorView) dockerCmd(ctx context.Context, gen int) tea.Cmd {
+func (v *DoctorView) dockerCmd(ctx context.Context, gen int) tea.Cmd {
 	opt := docker.Options{Run: runner.Exec}
-	if v.dockerOpts != nil {
-		opt = v.dockerOpts()
+	if v.DockerOpts != nil {
+		opt = v.DockerOpts()
 	}
 	return func() tea.Msg {
 		var rep docker.Report
 		doctorTrack(func() { rep = docker.Scan(ctx, opt) })
-		return doctorDockerMsg{gen: gen, rep: rep}
+		return DoctorDockerMsg{gen: gen, rep: rep}
 	}
 }
 
-func (v *doctorView) receiveDocker(msg doctorDockerMsg) {
-	if msg.gen != v.gen || !v.shown {
+func (v *DoctorView) ReceiveDocker(msg DoctorDockerMsg) {
+	if msg.gen != v.Gen || !v.Shown {
 		return
 	}
 	rep := msg.rep
-	v.docker = &rep
+	v.Docker = &rep
 	// タブが消えることがあるので、今いるタブが消えたら先頭へ戻す
 	// (消えたタブに留まると、buildRows がどの節も返さず空画面になる)
-	if !v.tabVisible(v.tab) {
-		v.tab = tabDisk
+	if !v.tabVisible(v.Tab) {
+		v.Tab = TabDisk
 	}
 }
 
 // tabVisible は「そのタブを出すか」。Docker だけが条件つき。
-func (v *doctorView) tabVisible(t doctorTab) bool {
-	if t != tabDocker {
+func (v *DoctorView) tabVisible(t DoctorTab) bool {
+	if t != TabDocker {
 		return true
 	}
 	// 走査中 (nil) は出す。入っていないと**分かった**ときだけ消す
-	return v.docker == nil || v.docker.Installed
+	return v.Docker == nil || v.Docker.Installed
 }
 
 // dockerRunnable は「この群のコマンドを x で実行してよいか」。
@@ -130,81 +130,81 @@ func dockerMark(k docker.Kind) string {
 	return string(k)
 }
 
-func (v *doctorView) dockerSection(o doctorRenderOpts) []doctorRow {
-	if v.docker == nil {
-		return sectionHeader(o, "Docker", o.spinner+" docker system df を実行中")
+func (v *DoctorView) dockerSection(o DoctorRenderOpts) []DoctorRow {
+	if v.Docker == nil {
+		return sectionHeader(o, "Docker", o.Spinner+" docker system df を実行中")
 	}
-	d := v.docker
+	d := v.Docker
 	if d.Unavailable != "" {
 		return append(sectionHeader(o, "Docker", "診断できず"),
-			doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 "+d.Unavailable)})
+			DoctorRow{Text: doctorColor(o.Colored, term.AnsiYellow, " 🚨 "+d.Unavailable)})
 	}
 	rows := sectionHeader(o, "Docker", fmt.Sprintf("docker 申告の回収可能 %s (Enter で内訳)",
 		docker.HumanSize(d.DockerReclaimable())))
 	for _, n := range d.Notes {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 "+n)})
+		rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiYellow, " 🚨 "+n)})
 	}
 	for _, g := range d.Groups {
 		rows = append(rows, v.dockerGroupRow(o, g))
 	}
 	v.registerDockerAction("まとめて回収する", d.SystemPrune, d.SystemPruneNote)
 	rows = append(rows,
-		doctorRow{text: ""},
-		doctorRow{text: doctorColor(o.colored, term.AnsiDim, "   まとめて回収するなら (Space で選んで x):")},
-		doctorRow{
-			text: "  " + v.dockerSelectMark(o, d.SystemPrune, true) + " " +
-				doctorColor(o.colored, term.AnsiBold, d.SystemPrune),
-			selectable: true,
-			key:        dockerPruneRowKey,
-			hasDetail:  true,
-			detail: textRows([]string{
-				doctorColor(o.colored, term.AnsiYellow, "     🚨 "+d.SystemPruneNote),
-				doctorColor(o.colored, term.AnsiDim, "     Space で選んで x、または y でコピーして自分で叩いてください"),
+		DoctorRow{Text: ""},
+		DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "   まとめて回収するなら (Space で選んで x):")},
+		DoctorRow{
+			Text: "  " + v.dockerSelectMark(o, d.SystemPrune, true) + " " +
+				doctorColor(o.Colored, term.AnsiBold, d.SystemPrune),
+			Selectable: true,
+			Key:        dockerPruneRowKey,
+			HasDetail:  true,
+			Detail: textRows([]string{
+				doctorColor(o.Colored, term.AnsiYellow, "     🚨 "+d.SystemPruneNote),
+				doctorColor(o.Colored, term.AnsiDim, "     Space で選んで x、または y でコピーして自分で叩いてください"),
 			}),
-			copyPath: d.SystemPrune,
-			copyText: d.SystemPrune + "\n# " + d.SystemPruneNote + "\n",
+			CopyPath: d.SystemPrune,
+			CopyText: d.SystemPrune + "\n# " + d.SystemPruneNote + "\n",
 		})
 	return rows
 }
 
 // dockerGroupRow は群 1 つの行 (Enter で注記と内訳を開く)。
-func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRow {
+func (v *DoctorView) dockerGroupRow(o DoctorRenderOpts, g docker.Group) DoctorRow {
 	summary := fmt.Sprintf("候補 %d/%d 件  見積もり %s  (docker 申告 %s)",
 		len(g.Items), g.Total, docker.HumanSize(g.Size), docker.HumanSize(g.Reclaimable))
-	detail := make([]doctorRow, 0, len(g.Notes)+len(g.Items)+4)
+	detail := make([]DoctorRow, 0, len(g.Notes)+len(g.Items)+4)
 	for _, n := range g.Notes {
 		// 🚨 注記は**折り返す**。ここが「何を数えたか」の説明なので、末尾から削られると
 		// 意味が壊れる (brew の説明と同じ扱い)
-		for _, line := range term.WrapToWidth(n, max(20, o.width-8)) {
-			detail = append(detail, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "     "+line)})
+		for _, line := range term.WrapToWidth(n, max(20, o.Width-8)) {
+			detail = append(detail, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "     "+line)})
 		}
 	}
 	if g.Command != "" {
 		detail = append(detail,
-			doctorRow{text: ""},
-			doctorRow{text: doctorColor(o.colored, term.AnsiDim, "     この群をまとめて回収するなら:")},
-			doctorRow{text: "       $ " + doctorColor(o.colored, term.AnsiBold, g.Command)})
+			DoctorRow{Text: ""},
+			DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "     この群をまとめて回収するなら:")},
+			DoctorRow{Text: "       $ " + doctorColor(o.Colored, term.AnsiBold, g.Command)})
 	} else {
 		detail = append(detail,
-			doctorRow{text: ""},
-			doctorRow{text: doctorColor(o.colored, term.AnsiYellow,
+			DoctorRow{Text: ""},
+			DoctorRow{Text: doctorColor(o.Colored, term.AnsiYellow,
 				"     🚨 まとめて消すコマンドは出しません (1 件ずつ選んでください)")},
-			doctorRow{text: doctorColor(o.colored, term.AnsiDim,
+			DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim,
 				"        下の行を選んで y を押すと、その 1 件を消すコマンドをコピーします")})
 	}
 	if len(g.Items) == 0 {
-		detail = append(detail, doctorRow{text: ""},
-			doctorRow{text: doctorColor(o.colored, term.AnsiGreen, "     🎉 古い候補はありません")})
+		detail = append(detail, DoctorRow{Text: ""},
+			DoctorRow{Text: doctorColor(o.Colored, term.AnsiGreen, "     🎉 古い候補はありません")})
 	}
 	for _, it := range g.Items {
-		row := doctorRow{text: v.dockerSelectMark(o, it.Command, dockerRunnable(g)) + dockerItemLine(o, it)}
+		row := DoctorRow{Text: v.dockerSelectMark(o, it.Command, dockerRunnable(g)) + dockerItemLine(o, it)}
 		if it.Command != "" {
 			// 🚨 1 件ずつ消したいときの導線。ボリュームには群のコマンドが無いので、
 			// ここが選べないと「1 件ずつ選んでください」と言うだけで手段が無い
-			row.selectable = true
-			row.key = dockerItemRowKey(string(g.Kind), it.Name)
-			row.copyPath = it.Command
-			row.copyText = it.Name + " (" + it.SizeText + "):\n" + it.Command + "\n"
+			row.Selectable = true
+			row.Key = dockerItemRowKey(string(g.Kind), it.Name)
+			row.CopyPath = it.Command
+			row.CopyText = it.Name + " (" + it.SizeText + "):\n" + it.Command + "\n"
 		}
 		detail = append(detail, row)
 	}
@@ -214,29 +214,29 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 			v.registerDockerAction(it.Name+" を消す ("+it.SizeText+")", it.Command, dockerRunNote(g.Kind))
 		}
 	}
-	return doctorRow{
-		text: v.dockerSelectMark(o, g.Command, dockerRunnable(g)) +
+	return DoctorRow{
+		Text: v.dockerSelectMark(o, g.Command, dockerRunnable(g)) +
 			dockerMark(g.Kind) + term.PadSpaces(max(0, dockerMarkWidth()-term.DispWidth(dockerMark(g.Kind)))) + " " + g.Label + "   " +
-			doctorColor(o.colored, term.AnsiDim, summary),
-		selectable: true,
-		key:        dockerGroupRowKey(string(g.Kind)),
-		hasDetail:  len(detail) > 0,
-		detail:     detail,
+			doctorColor(o.Colored, term.AnsiDim, summary),
+		Selectable: true,
+		Key:        DockerGroupRowKey(string(g.Kind)),
+		HasDetail:  len(detail) > 0,
+		Detail:     detail,
 		// 🚨 群のコマンドが無い (ボリューム) 行でも y が無言にならないよう、
 		// 1 件ずつのコマンドを並べたものを渡す (hint は「y: コマンドをコピー」と言っている)
-		copyPath: dockerGroupCopyPath(g),
-		copyText: dockerGroupCopyText(g),
+		CopyPath: dockerGroupCopyPath(g),
+		CopyText: dockerGroupCopyText(g),
 	}
 }
 
 // dockerSelectMark は行頭の選択欄。実行できる行だけ印を出す (実行できない行に空欄を置くと
 // 「選べるのに選ばれていない」に見える)。あわせて x の実体をコマンド文字列で登録する。
-func (v *doctorView) dockerSelectMark(o doctorRenderOpts, cmd string, runnable bool) string {
+func (v *DoctorView) dockerSelectMark(o DoctorRenderOpts, cmd string, runnable bool) string {
 	if cmd == "" || !runnable {
 		return " "
 	}
-	if v.selectedActions[cmdKey(cmd)] {
-		return doctorColor(o.colored, term.AnsiBold, "*")
+	if v.SelectedActions[CmdKey(cmd)] {
+		return doctorColor(o.Colored, term.AnsiBold, "*")
 	}
 	return " "
 }
@@ -248,14 +248,14 @@ func (v *doctorView) dockerSelectMark(o doctorRenderOpts, cmd string, runnable b
 // 群を畳んだ瞬間に中の選択が 0 件に見え、x が「選んでください」と言い出す
 // (選択自体は残っているので、開き直すと戻る = 同じ選択が開閉で増減する。
 // 敵対レビュー 2 周目 P2-2)。畳まれている行も登録は通るので、こちらを出典にする。
-func (v *doctorView) registerDockerAction(label, cmd, note string) {
+func (v *DoctorView) registerDockerAction(label, cmd, note string) {
 	if cmd == "" {
 		return
 	}
 	if v.actionByCmd == nil {
-		v.actionByCmd = map[cmdKey]doctorCmdAction{}
+		v.actionByCmd = map[CmdKey]doctorCmdAction{}
 	}
-	k := cmdKey(cmd)
+	k := CmdKey(cmd)
 	if _, dup := v.actionByCmd[k]; !dup {
 		v.dockerOrder = append(v.dockerOrder, k)
 	}
@@ -268,13 +268,13 @@ func (v *doctorView) registerDockerAction(label, cmd, note string) {
 // 🚨 出典は dockerOrder (登録順) で、`v.rows` ではない。理由は registerDockerAction の 🚨。
 // 🚨 登録に無いコマンドは返さない (「(不明な手)」で実行しない) — 実行してよい手の集合は
 // 登録が唯一の出典で、fallback を置くと実行不可の群の手が紛れ込む口になる
-func (v *doctorView) selectedDockerActions() []doctorCmdAction {
-	if len(v.selectedActions) == 0 {
+func (v *DoctorView) selectedDockerActions() []doctorCmdAction {
+	if len(v.SelectedActions) == 0 {
 		return nil
 	}
-	out := make([]doctorCmdAction, 0, len(v.selectedActions))
+	out := make([]doctorCmdAction, 0, len(v.SelectedActions))
 	for _, cmd := range v.dockerOrder {
-		if !v.selectedActions[cmd] {
+		if !v.SelectedActions[cmd] {
 			continue
 		}
 		if act, ok := v.actionByCmd[cmd]; ok {
@@ -288,30 +288,30 @@ func (v *doctorView) selectedDockerActions() []doctorCmdAction {
 //
 // 🚨 **実行できない行は断る理由を返す** (無言で何もしない、にしない)。ボリュームは
 // 「y でコピーして自分で叩く」しか手段が無いので、そう案内する。
-func (v *doctorView) toggleDockerAction() (string, bool) {
-	cmd := v.rows[v.cur.index].copyPath
+func (v *DoctorView) toggleDockerAction() (string, bool) {
+	cmd := v.Rows[v.Cur.Index].CopyPath
 	if cmd == "" {
 		return "この行には実行するコマンドがありません", false
 	}
 	// 🚨 実行してよい手だけを選ばせる。**登録されていないコマンドは実行できない** —
 	// 実行不可の群 (ボリューム) の手は registerDockerAction を通っていないので、ここで落ちる
 	// (行の key から Kind を導き直すと、判定が 2 実装になる)
-	if _, ok := v.actionByCmd[cmdKey(cmd)]; !ok {
+	if _, ok := v.actionByCmd[CmdKey(cmd)]; !ok {
 		return "この行はこの画面から実行しません (消すと戻らないので y でコマンドをコピーしてください)", false
 	}
 	return v.toggleCmdAction()
 }
 
-func dockerItemLine(o doctorRenderOpts, it docker.Item) string {
+func dockerItemLine(o DoctorRenderOpts, it docker.Item) string {
 	age := "  日数不明"
 	if it.AgeKnown {
 		age = fmt.Sprintf("%4.0f日前", it.Age.Hours()/24)
 	}
 	line := fmt.Sprintf("     %9s %s  %s", it.SizeText, age, it.Name)
 	if it.Detail != "" {
-		line += doctorColor(o.colored, term.AnsiDim, "  "+it.Detail)
+		line += doctorColor(o.Colored, term.AnsiDim, "  "+it.Detail)
 	}
-	return term.TruncateDisp(line, max(20, o.width-2), "…")
+	return term.TruncateDisp(line, max(20, o.Width-2), "…")
 }
 
 // dockerGroupCopyPath は y でコピーするコマンド。群のまとめコマンドが無い群では

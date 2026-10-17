@@ -14,6 +14,7 @@ import (
 	"doctor/docker"
 	"doctor/svc"
 	"glogx/internal/app"
+	"glogx/internal/doctorview"
 	"glogx/internal/term"
 )
 
@@ -491,9 +492,9 @@ func budgetRatelimitModel(tb testing.TB) *browseModel {
 // 残り 3 タブ (svc / brew / docker) はどの予算の視界にも入っていなかった (issue 323 ②)。
 // 空の Report を渡したタブを測っても「ほとんど何も描かないフレーム」の値しか出ず、
 // そのタブの描画が太っても気づけない。件数は disk と揃えて 8 エントリ規模にしてある。
-func budgetDoctorModelFor(tb testing.TB, tab doctorTab) *browseModel {
+func budgetDoctorModelFor(tb testing.TB, tab doctorview.DoctorTab) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
-	m.doctorOv = doctorView{shown: true, expanded: map[rowKey]bool{}, tab: tab}
+	m.doctorOv = doctorview.DoctorView{Shown: true, Expanded: map[doctorview.RowKey]bool{}, Tab: tab}
 
 	res := make([]disk.Result, 0, 8)
 	for e := range 8 {
@@ -506,7 +507,7 @@ func budgetDoctorModelFor(tb testing.TB, tab doctorTab) *browseModel {
 			Status: disk.StatusOK, Size: 4, Items: items,
 		})
 	}
-	m.doctorOv.diskRep = &disk.Report{Results: res}
+	m.doctorOv.DiskRep = &disk.Report{Results: res}
 
 	finds := make([]svc.Finding, 0, 8)
 	for i := range 8 {
@@ -521,13 +522,13 @@ func budgetDoctorModelFor(tb testing.TB, tab doctorTab) *browseModel {
 			RestartKeys: []string{"KeepAlive"},
 		})
 	}
-	m.doctorOv.svcRep = &svc.Report{Findings: finds, Scanned: 64}
+	m.doctorOv.SvcRep = &svc.Report{Findings: finds, Scanned: 64}
 
 	warns := make([]string, 0, 8)
 	for i := range 8 {
 		warns = append(warns, fmt.Sprintf("Warning: unbrewed header files were found in /usr/local/include (%d)", i))
 	}
-	m.doctorOv.brew = &brewDoctorResult{Warnings: warns}
+	m.doctorOv.Brew = &doctorview.BrewDoctorResult{Warnings: warns}
 
 	kinds := []docker.Kind{docker.KindContainers, docker.KindImages, docker.KindBuildCache, docker.KindVolumes}
 	groups := make([]docker.Group, 0, len(kinds))
@@ -546,13 +547,21 @@ func budgetDoctorModelFor(tb testing.TB, tab doctorTab) *browseModel {
 			Items: items, Size: 1 << 22, Command: fmt.Sprintf("docker %s prune -f", k),
 		})
 	}
-	m.doctorOv.docker = &docker.Report{Installed: true, Groups: groups, SystemPrune: "docker system prune -a -f", OldAfter: 14 * 24 * time.Hour}
+	m.doctorOv.Docker = &docker.Report{Installed: true, Groups: groups, SystemPrune: "docker system prune -a -f", OldAfter: 14 * 24 * time.Hour}
 
 	return m
 }
 
 // タブごとの入口。名前を分けるのは、予算テーブルの行と失敗メッセージでどのタブか分かるようにするため。
-func budgetDoctorModel(tb testing.TB) *browseModel       { return budgetDoctorModelFor(tb, tabDisk) }
-func budgetDoctorSvcModel(tb testing.TB) *browseModel    { return budgetDoctorModelFor(tb, tabSvc) }
-func budgetDoctorBrewModel(tb testing.TB) *browseModel   { return budgetDoctorModelFor(tb, tabBrew) }
-func budgetDoctorDockerModel(tb testing.TB) *browseModel { return budgetDoctorModelFor(tb, tabDocker) }
+func budgetDoctorModel(tb testing.TB) *browseModel {
+	return budgetDoctorModelFor(tb, doctorview.TabDisk)
+}
+func budgetDoctorSvcModel(tb testing.TB) *browseModel {
+	return budgetDoctorModelFor(tb, doctorview.TabSvc)
+}
+func budgetDoctorBrewModel(tb testing.TB) *browseModel {
+	return budgetDoctorModelFor(tb, doctorview.TabBrew)
+}
+func budgetDoctorDockerModel(tb testing.TB) *browseModel {
+	return budgetDoctorModelFor(tb, doctorview.TabDocker)
+}

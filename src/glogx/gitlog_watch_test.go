@@ -514,7 +514,7 @@ func TestGitLogReloadDeferredCoversEachState(t *testing.T) {
 		{"issues viewer", func(m *browseModel) { m.issuesOv.shown = true }},
 		{"status viewer", func(m *browseModel) { m.statusOv.shown = true }},
 		{"残量ダッシュボード", func(m *browseModel) { m.rlDash.shown = true }},
-		{"doctor", func(m *browseModel) { m.doctorOv.shown = true }},
+		{"doctor", func(m *browseModel) { m.doctorOv.Shown = true }},
 	}
 	// 🚨 t.Run でケースごとに分ける (issue 227)。1 つの loop で回して t.Fatalf を使うと、
 	// 変異を当てたときに「スイートが red」しか分からず、**緑のまま残ったケース**が見えない

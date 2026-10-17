@@ -1,4 +1,4 @@
-package main
+package doctorview
 
 import (
 	"strings"
@@ -11,7 +11,7 @@ import (
 // fixture は実機 (Homebrew 6.0.20 / rc=1) の stderr。
 func TestParseBrewDoctorKeepsLinesAfterBlankLine(t *testing.T) {
 	const fixture = "Please note that these warnings are just used to help the Homebrew maintainers\nwith debugging if you file an issue. If everything you use Homebrew for is\nworking fine: please don't worry or file an issue; just ignore this. Thanks!\n\nWarning: Some installed formulae are deprecated or disabled.\nYou should find replacements for the following formulae:\n    gemini-cli\n  tree-sitter@0.25\n\nWarning: You have unlinked kegs in your Cellar.\nLeaving kegs unlinked can lead to build-trouble and cause formulae that depend on\nthose kegs to fail to run properly once built.\n\nRun `brew link` on these:\n  ruby"
-	res := parseBrewDoctor("", fixture, 1)
+	res := ParseBrewDoctor("", fixture, 1)
 	joined := strings.Join(res.Warnings, "\n")
 	// 前置き 3 行以外の非空行が 1 行も落ちていないこと (行単位の全数勘定)
 	lines := strings.Split(fixture, "\n")
@@ -55,7 +55,7 @@ func TestParseBrewDoctorKeepsLinesAfterBlankLine(t *testing.T) {
 // 敵対レビュー 2026-09-03: 前置き allowlist に無い行が警告のあいだに現れたとき、直前の警告の本文へ
 // 地続きに繋がって見えないこと (段落の空行を残す)。塊の先頭・末尾に空行は持たない。
 func TestParseBrewDoctorKeepsParagraphBreaks(t *testing.T) {
-	res := parseBrewDoctor("", "Warning: A\ndetail1\n\nstray line not in the allowlist\n\nWarning: B\ndetail2\n\n", 1)
+	res := ParseBrewDoctor("", "Warning: A\ndetail1\n\nstray line not in the allowlist\n\nWarning: B\ndetail2\n\n", 1)
 	if len(res.Warnings) != 2 {
 		t.Fatalf("警告の数: %+v", res.Warnings)
 	}
@@ -66,12 +66,12 @@ func TestParseBrewDoctorKeepsParagraphBreaks(t *testing.T) {
 		t.Errorf("末尾の空行が塊に残った: %q", res.Warnings[1])
 	}
 	// 連続する空行は 1 つに畳む (展開時の余白が段落数ぶん増えるだけで意味を持たない)
-	res = parseBrewDoctor("", "Warning: A\ndetail1\n\n\n\nafter\n", 1)
+	res = ParseBrewDoctor("", "Warning: A\ndetail1\n\n\n\nafter\n", 1)
 	if len(res.Warnings) != 1 || res.Warnings[0] != "Warning: A\ndetail1\n\nafter" {
 		t.Errorf("連続空行が畳まれていない: %q", res.Warnings)
 	}
 	// 見出し直後の空行だけの本文は、末尾トリムで見出しだけの塊になる
-	res = parseBrewDoctor("", "Warning: A\n\n\nWarning: B\ndetail2\n", 1)
+	res = ParseBrewDoctor("", "Warning: A\n\n\nWarning: B\ndetail2\n", 1)
 	if len(res.Warnings) != 2 || res.Warnings[0] != "Warning: A" {
 		t.Errorf("見出しだけの塊にならない: %q", res.Warnings)
 	}

@@ -20,6 +20,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
+	"glogx/internal/doctorview"
 )
 
 func main() {
@@ -174,7 +175,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// doctor の走査 (brew / du) も看取る (issue 211)。cancelAll は ctx を切るだけで子の死を
 	// 待たないので、これが無いとシグナル終了で brew の子孫が走り続ける (Setpgid のため
 	// 端末の SIGINT も届かない)。LIFO なので cancelAll → doctor → pull の順に走る
-	defer waitDoctorCleanup()
+	defer doctorview.WaitDoctorCleanup()
 	defer browse.cancelAll()
 	browse.decor = decor
 	// TUI はキー操作が主なので IME を英数へ。切替そのものは TUI 開始前に完了させる必要がある
@@ -211,8 +212,8 @@ func runLog(opts *Options, colored, isTTY bool) int {
 		// 🚨 **cancelAll と restartSelf の間で看取る** (issue 211)。syscall.Exec はプロセス像を
 		// 置き換えるので、cancel で起きた kill の watchdog goroutine ごと消える。ここで待たないと
 		// brew の子孫が新しいプロセス像の子として走り続ける。上に積んだ defer
-		// (waitPullCleanup / waitDoctorCleanup) は exec では 1 つも走らないため、明示で呼ぶ
-		waitDoctorCleanup()
+		// (waitPullCleanup / doctorview.WaitDoctorCleanup) は exec では 1 つも走らないため、明示で呼ぶ
+		doctorview.WaitDoctorCleanup()
 		waitPullCleanup()
 		if err := restartSelf(); err != nil {
 			fmt.Fprintln(os.Stderr, "glogx: 再起動できません:", err)

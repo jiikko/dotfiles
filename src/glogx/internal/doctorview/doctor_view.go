@@ -1,4 +1,7 @@
-package main
+// Package doctorview は glogx の doctor 画面 (D): ディスク・サービス・brew・docker・SSD の診断の表示と、
+// 選んだ項目の削除の確認と実行。判定は doctor module (doctor/disk・svc・docker・ssd) を直接呼ぶ。
+// 画面の開閉・横断・トーストは main の browseModel が仲介する (この package は main を import できない。issue 742)。
+package doctorview
 
 import (
 	"context"
@@ -40,144 +43,144 @@ import (
 // 頻繁なので、残留するとディスク I/O を飽和させる (3 章「終了時の後始末」)。
 // 🚨 disk.Scan の OnResult は走査 goroutine から並行に呼ばれるので、channel に載せて Cmd で 1 件ずつ
 // Msg にする (Update の外で状態を触らない)。
-// doctorTab は一覧のタブ。
+// DoctorTab は一覧のタブ。
 //
 // 🚨 **分割の目的は「印を付けた後にやることをタブごとに 1 つにする」こと。**
 // 1 つの一覧に disk の d (削除) と brew の x (実行) が同時に出ていると、
 // 両方をチェックできてしまい「チェックしたもの」と「実行されるもの」が一致しない。
 // Space は空いていても**後続キーが衝突していた** (ユーザー指摘 2026-09-04)。
 // 一望性はタブ行に 3 つとも件数を出すことで保つ (どのタブに何件あるかは切り替えずに分かる)。
-type doctorTab int
+type DoctorTab int
 
 const (
-	tabDisk doctorTab = iota
-	tabSvc
-	tabBrew
-	tabDocker
-	tabSSD
+	TabDisk DoctorTab = iota
+	TabSvc
+	TabBrew
+	TabDocker
+	TabSSD
 )
 
-// numDoctorTabs はタブの数。**enum の番兵にしない** — doctorTab の値として持つと
+// NumDoctorTabs はタブの数。**enum の番兵にしない** — DoctorTab の値として持つと
 // exhaustive の switch すべてに「タブでない値」の case を書かされる
-const numDoctorTabs = 5
+const NumDoctorTabs = 5
 
-type doctorView struct {
-	shown bool
-	// wantCross は横断先 (doctorCross を返したときだけ意味を持つ。takeWantCross で取り出す)
+type DoctorView struct {
+	Shown bool
+	// wantCross は横断先 (DoctorCross を返したときだけ意味を持つ。takeWantCross で取り出す)
 	wantCross app.FullScreenID
 	// tab は表示中のタブ。tabCur はタブごとのカーソル (切り替えても位置が戻る)
-	tab    doctorTab
-	tabCur [numDoctorTabs]rowCursor
-	gen    int // 開くたびに進める。閉じた後に届く古い Msg を捨てる
-	cancel context.CancelFunc
+	Tab    DoctorTab
+	tabCur [NumDoctorTabs]rowCursor
+	Gen    int // 開くたびに進める。閉じた後に届く古い Msg を捨てる
+	Cancel context.CancelFunc
 
-	diskResults []disk.Result // 完了順
-	diskTotal   int           // カタログのエントリ数 (進捗の分母)
-	diskRep     *disk.Report  // 完了後 (nil = 走査中)
-	diskCh      chan doctorDiskEvent
-	svcRep      *svc.Report // nil = 走査中
-	brew        *brewDoctorResult
+	DiskResults []disk.Result // 完了順
+	DiskTotal   int           // カタログのエントリ数 (進捗の分母)
+	DiskRep     *disk.Report  // 完了後 (nil = 走査中)
+	diskCh      chan DoctorDiskEvent
+	SvcRep      *svc.Report // nil = 走査中
+	Brew        *BrewDoctorResult
 	// docker は nil = 走査中。🚨 キャッシュ (snapshot) には載せない — 走査が速いので
 	// 開くたびに取り直す (doctor_docker.go の冒頭)
-	docker *docker.Report
+	Docker *docker.Report
 	// ssd は nil = 走査中。docker と同じくキャッシュに載せない (doctor_ssd.go の冒頭)
-	ssd        *ssd.Report
+	Ssd        *ssd.Report
 	startedAt  time.Time
-	snapshotAt time.Time // 前回の結果をそのまま出しているときの走査時刻 (zero = 今回走査した)
+	SnapshotAt time.Time // 前回の結果をそのまま出しているときの走査時刻 (zero = 今回走査した)
 
 	// enterDetail は「Enter で今開いた行」。次の描画でカーソルをその中の最初の対象パスへ移す
 	// (開いてから j を何度も押さずに、消したいディレクトリへ直接行けるようにする)
-	enterDetail rowKey
+	EnterDetail RowKey
 	// cur は行の上のカーソルと窓 (doctor_rowcursor.go)。行の列しか知らない閉じた機械なので、
 	// 不変条件はそちらのテストが行の列を直接与えて検査する
-	cur      rowCursor
-	expanded map[rowKey]bool // 展開中の行 (key = 行の同一性)
-	rows     []doctorRow     // 直近の描画で組んだ行 (キー操作の対象。lines() が作り直す)
+	Cur      rowCursor
+	Expanded map[RowKey]bool // 展開中の行 (key = 行の同一性)
+	Rows     []DoctorRow     // 直近の描画で組んだ行 (キー操作の対象。lines() が作り直す)
 
-	pendingCopy  string // 直近の y / Y の中身 (copyPayload)
-	pendingToast string // 直近の doctorToast の文言
+	PendingCopy  string // 直近の y / Y の中身 (copyPayload)
+	PendingToast string // 直近の DoctorToast の文言
 
 	// ④ 削除 (doctor_delete.go)。selected はエントリ ID、inspected は「Enter で中身を一度開いた」印
 	// (risk: confirm の行はこれが立つまで選べない)。
-	selected map[entryID]bool
+	Selected map[EntryID]bool
 	// selectedItems は**ディレクトリ単位**の選択 (key = diskItemKey)。エントリ全体を選ぶ
 	// selected とは別に持つ: 「エントリを丸ごと」と「その中の一部」は意図が違う
-	selectedItems map[itemKey]bool
+	SelectedItems map[itemKey]bool
 	// selectedActions は brew の手の選択 (key = **コマンド文字列**)。
 	// 🚨 行の key ("brewact:i:j") で持たない: 再スキャンで警告の並びが変わると別の手を指す。
 	// コマンドそのものは「何を実行するか」の同一性そのものなので、ずれない
-	selectedActions map[cmdKey]bool
+	SelectedActions map[CmdKey]bool
 	// actionByCmd は直近の描画で組んだ手の実体 (key = コマンド)。確認画面がラベルと
 	// 注記を引くため。行のテキストから復元しない (色と印が混ざっていて壊れやすい)
-	actionByCmd map[cmdKey]doctorCmdAction
+	actionByCmd map[CmdKey]doctorCmdAction
 	// dockerOrder は Docker タブの手を**描画順**で覚える (畳まれている行も含む)
-	dockerOrder      []cmdKey
-	inspected        map[entryID]bool
-	del              doctorDelete
-	pendingDeleteCmd tea.Cmd // handleKey が組んだ削除の Cmd (browseModel が取り出して返す)
+	dockerOrder      []CmdKey
+	inspected        map[EntryID]bool
+	Del              DoctorDelete
+	PendingDeleteCmd tea.Cmd // handleKey が組んだ削除の Cmd (browseModel が取り出して返す)
 
 	// テスト用の差し替え口 (zero value = 本番)
-	diskOpts   func() disk.Options
-	svcOpts    func() svc.Options
-	brewRun    runner.Runner
-	dockerOpts func() docker.Options
-	ssdOpts    func() ssd.Options
-	deleteOpts func() disk.DeleteOptions
-	deleteFn   func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
+	DiskOpts   func() disk.Options
+	SvcOpts    func() svc.Options
+	BrewRun    runner.Runner
+	DockerOpts func() docker.Options
+	SsdOpts    func() ssd.Options
+	DeleteOpts func() disk.DeleteOptions
+	DeleteFn   func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
 }
 
 // deleteOptions は削除の実行口。走査と同じ Env / Runner を使う (判定の材料を 2 つ持たない)。
-func (v *doctorView) deleteOptions() disk.DeleteOptions {
-	if v.deleteOpts != nil {
-		return v.deleteOpts()
+func (v *DoctorView) deleteOptions() disk.DeleteOptions {
+	if v.DeleteOpts != nil {
+		return v.DeleteOpts()
 	}
 	return disk.DeleteOptions{Env: disk.RealEnv(), Run: runner.Exec}
 }
 
-// doctorRow は 1 行。selectable な行だけにカーソルが止まる。detail は Enter で展開する本文。
-type doctorRow struct {
-	text       string
-	selectable bool
-	key        rowKey
+// DoctorRow は 1 行。selectable な行だけにカーソルが止まる。detail は Enter で展開する本文。
+type DoctorRow struct {
+	Text       string
+	Selectable bool
+	Key        RowKey
 	// detail は Enter で展開したときに描く本文。
 	// 🚨 **展開している行だけ**が値を持つ (issue 270)。畳まれている行のぶんまで毎フレーム
 	// 組むと、1 フレームのコストがカタログ全エントリの Items / Contents の総数に比例する。
 	// 「展開できるか」は len(detail) でなく hasDetail で判定すること。
-	detail []doctorRow
+	Detail []DoctorRow
 	// hasDetail は「Enter で展開できる行か」。detail が畳まれていて空でも真になる。
-	hasDetail bool
+	HasDetail bool
 	// copyPath は y でコピーするパス (複数なら改行区切り)。copyText は Y でコピーする解説文
 	// (ラベル・パス・復元方法・リスク・削除経路・提示コマンド。別セッションの LLM にそのまま投げられる形)。
-	copyPath string
-	copyText string
+	CopyPath string
+	CopyText string
 }
 
-// doctorDiskEvent は disk.Scan からの 1 イベント (r = 1 エントリ完了 / rep = 全完了)。
-type doctorDiskEvent struct {
-	r   *disk.Result
-	rep *disk.Report
+// DoctorDiskEvent は disk.Scan からの 1 イベント (r = 1 エントリ完了 / rep = 全完了)。
+type DoctorDiskEvent struct {
+	R   *disk.Result
+	Rep *disk.Report
 }
 
-type doctorDiskMsg struct {
-	gen int
-	ev  doctorDiskEvent
+type DoctorDiskMsg struct {
+	Gen int
+	Ev  DoctorDiskEvent
 }
 
-type doctorSvcMsg struct {
-	gen int
-	rep svc.Report
+type DoctorSvcMsg struct {
+	Gen int
+	Rep svc.Report
 }
 
-type doctorBrewMsg struct {
-	gen int
-	res brewDoctorResult
+type DoctorBrewMsg struct {
+	Gen int
+	Res BrewDoctorResult
 }
 
-func (v *doctorView) visible() bool { return v.shown }
+func (v *DoctorView) Visible() bool { return v.Shown }
 
 // scanning はいずれかのセクションが走査中か (スピナーの根拠)。
-func (v *doctorView) scanning() bool {
-	return v.shown && (v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.docker == nil || v.ssd == nil)
+func (v *DoctorView) Scanning() bool {
+	return v.Shown && (v.DiskRep == nil || v.SvcRep == nil || v.Brew == nil || v.Docker == nil || v.Ssd == nil)
 }
 
 // deleting は削除の下見 / 実行中か (スピナーと再描画の根拠)。
@@ -187,28 +190,28 @@ func (v *doctorView) scanning() bool {
 // false のままになり、**engine のイベントとイベントの合間に 1 度も再描画されない**。
 // OnProgress はエントリ 1 個が終わるたびにしか出ないため、重いエントリでは数十秒
 // 画面が完全に静止する = 文字どおり固まる (ユーザー報告 2026-09-04)。
-func (v *doctorView) deleting() bool { return v.shown && v.del.blocking() }
+func (v *DoctorView) Deleting() bool { return v.Shown && v.Del.Blocking() }
 
 // toggle は開閉。開くときにスキャンを始める Cmd を返す。
-func (v *doctorView) toggle() tea.Cmd {
-	if v.shown {
-		v.close()
+func (v *DoctorView) Toggle() tea.Cmd {
+	if v.Shown {
+		v.Close()
 		return nil
 	}
-	return v.open()
+	return v.Open()
 }
 
-// open は開いて走査を始める。🚨 直近 doctorSnapshotTTL 以内の完全な結果があれば走査せずそれを出す
+// open は開いて走査を始める。🚨 直近 DoctorSnapshotTTL 以内の完全な結果があれば走査せずそれを出す
 // (popup の開閉のたびにスキャンが走って見えるのを避ける)。r (rescan) は snapshot を無視する。
-func (v *doctorView) open() tea.Cmd { return v.start(false) }
+func (v *DoctorView) Open() tea.Cmd { return v.Start(false) }
 
 // catalogHas は「この ID が実効カタログにあるか」を返す (テストは diskOpts で catalog を差し替える)。
 // catalogLookup は ID から**今のカタログの Entry** を引く関数を返す (テストは diskOpts で差し替える)。
 // 在るかどうかだけでなく Entry を返すのは、復元した Result の表示文言をカタログ側へ
 // 束ね直すため (issue 229)。
-func (v *doctorView) catalogLookup() func(string) (disk.Entry, bool) {
-	if v.diskOpts != nil {
-		if cat := v.diskOpts().Catalog; len(cat) > 0 {
+func (v *DoctorView) catalogLookup() func(string) (disk.Entry, bool) {
+	if v.DiskOpts != nil {
+		if cat := v.DiskOpts().Catalog; len(cat) > 0 {
 			byID := make(map[string]disk.Entry, len(cat))
 			for _, e := range cat {
 				byID[e.ID] = e
@@ -223,105 +226,105 @@ func (v *doctorView) catalogLookup() func(string) (disk.Entry, bool) {
 }
 
 // rescan は snapshot を無視して走査し直す (r)。
-func (v *doctorView) rescan() tea.Cmd { return v.start(true) }
+func (v *DoctorView) Rescan() tea.Cmd { return v.Start(true) }
 
-func (v *doctorView) start(force bool) tea.Cmd {
+func (v *DoctorView) Start(force bool) tea.Cmd {
 	// 🚨 **前世代を止めてから世代を進める** (issue 211 の敵対的レビュー P1)。rescan (r) は
 	// start(true) を直接呼ぶので、ここで止めないと前世代の disk goroutine を誰も cancel できず、
-	// latch に載ったまま完走する = waitDoctorCleanup の上限が「cancel + WaitDelay 2 秒」ではなく
+	// latch に載ったまま完走する = WaitDoctorCleanup の上限が「cancel + WaitDelay 2 秒」ではなく
 	// PerEntry 60 秒 × 並列度 (約 6 分) になる。latch を入れる前は即終了だったので、
 	// これが無いと 211 が hang を新設することになる
-	v.stop()
-	v.shown = true
-	v.gen++
-	v.cur.reset()
-	v.expanded = map[rowKey]bool{}
-	v.selected, v.selectedItems, v.inspected = map[entryID]bool{}, map[itemKey]bool{}, map[entryID]bool{}
+	v.Stop()
+	v.Shown = true
+	v.Gen++
+	v.Cur.reset()
+	v.Expanded = map[RowKey]bool{}
+	v.Selected, v.SelectedItems, v.inspected = map[EntryID]bool{}, map[itemKey]bool{}, map[EntryID]bool{}
 	// 🚨 コマンドの選択も捨てる。残すと、doctor を閉じて開き直したときに `*` が付いたまま
 	// 「x: 1 件を実行」で復帰する (ディスク側の選択は毎回消えるので非対称だった。
 	// 共有 map に prune 系が載った時点で意味が変わった。敵対レビュー 2 周目 P2-3)
-	v.selectedActions, v.actionByCmd, v.dockerOrder = map[cmdKey]bool{}, map[cmdKey]doctorCmdAction{}, nil
+	v.SelectedActions, v.actionByCmd, v.dockerOrder = map[CmdKey]bool{}, map[CmdKey]doctorCmdAction{}, nil
 	// 🚨 世代をまたいで残る状態をここで**まとめて**捨てる。1 つでも残すと前の世代の行・文言・
 	// Cmd が次の画面に混ざる (pendingToast は実際に漏れて、次の再スキャンの理由として
 	// 再表示されていた。敵対レビュー 2026-09-03)
-	v.rows, v.enterDetail, v.pendingCopy, v.pendingToast, v.pendingDeleteCmd = nil, "", "", "", nil
-	v.del.reset()
-	v.diskResults, v.diskRep, v.svcRep, v.brew, v.docker, v.ssd = nil, nil, nil, nil, nil, nil
+	v.Rows, v.EnterDetail, v.PendingCopy, v.PendingToast, v.PendingDeleteCmd = nil, "", "", "", nil
+	v.Del.reset()
+	v.DiskResults, v.DiskRep, v.SvcRep, v.Brew, v.Docker, v.Ssd = nil, nil, nil, nil, nil, nil
 	v.startedAt = app.TimeNow()
-	v.snapshotAt = time.Time{}
+	v.SnapshotAt = time.Time{}
 	if !force {
-		if sn, ok := loadDoctorSnapshot(app.TimeNow()); ok {
+		if sn, ok := LoadDoctorSnapshot(app.TimeNow()); ok {
 			rep := sn.Disk
 			// 実効カタログに無い ID は落とす (snapshot は書き換えられる。issue 178)
 			rep = rep.WithResults(doctorSnapshotInCatalog(rep.Results, v.catalogLookup()))
-			v.diskRep = &rep
-			v.diskResults = rep.Results
+			v.DiskRep = &rep
+			v.DiskResults = rep.Results
 			svcRep := sn.Svc
-			v.svcRep = &svcRep
+			v.SvcRep = &svcRep
 			brew := sn.Brew
-			v.brew = &brew
-			v.snapshotAt = sn.ScannedAt
+			v.Brew = &brew
+			v.SnapshotAt = sn.ScannedAt
 			// 🚨 docker と ssd は snapshot に載せていないので、復元経路でも走らせる
 			// (走らせないとそのタブが永久にスピナーのままになる)
 			ctx, cancel := context.WithCancel(context.Background())
-			v.cancel = cancel
-			return tea.Batch(v.uncachedCmds(ctx, v.gen)...)
+			v.Cancel = cancel
+			return tea.Batch(v.uncachedCmds(ctx, v.Gen)...)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	v.cancel = cancel
-	gen := v.gen
+	v.Cancel = cancel
+	gen := v.Gen
 
 	dOpt := disk.Options{Env: disk.RealEnv(), Run: runner.Exec}
-	if v.diskOpts != nil {
-		dOpt = v.diskOpts()
+	if v.DiskOpts != nil {
+		dOpt = v.DiskOpts()
 	}
 	if !force {
 		// TTL を過ぎて走査し直すときも、重かったエントリは前回の値を使う (ディスク I/O を節約)
-		sn, ok := loadDoctorSnapshotAny()
-		dOpt.Reuse = doctorReuseFrom(sn, ok, app.TimeNow())
+		sn, ok := LoadDoctorSnapshotAny()
+		dOpt.Reuse = DoctorReuseFrom(sn, ok, app.TimeNow())
 	}
 	catalogN := len(dOpt.Catalog)
 	if catalogN == 0 {
 		catalogN = disk.CatalogSize()
 	}
-	v.diskTotal = catalogN
+	v.DiskTotal = catalogN
 	// 容量 = OnResult の回数 (カタログ数) + 完了 1 件。閉じた後に誰も読まなくても走査 goroutine は詰まらない
-	ch := make(chan doctorDiskEvent, catalogN+1)
+	ch := make(chan DoctorDiskEvent, catalogN+1)
 	v.diskCh = ch
-	dOpt.OnResult = func(r disk.Result) { ch <- doctorDiskEvent{r: &r} }
+	dOpt.OnResult = func(r disk.Result) { ch <- DoctorDiskEvent{R: &r} }
 	// latch へ登録する (issue 211): 再起動・終了の直前に子プロセスの帰還を看取るため。
 	// doctorTrack は Add を呼び出し元の goroutine で済ませるので、Wait が登録を追い越さない
-	doctorCleanup.Add()
+	DoctorCleanup.Add()
 	go func() {
-		defer doctorCleanup.Done()
+		defer DoctorCleanup.Done()
 		rep := disk.Scan(ctx, dOpt)
-		ch <- doctorDiskEvent{rep: &rep}
+		ch <- DoctorDiskEvent{Rep: &rep}
 	}()
 
 	sOpt := svc.Options{Run: runner.Exec}
-	if v.svcOpts != nil {
-		sOpt = v.svcOpts()
+	if v.SvcOpts != nil {
+		sOpt = v.SvcOpts()
 	} else if home, err := os.UserHomeDir(); err == nil {
 		sOpt.Dirs = svc.DefaultDirs(home, os.Getuid())
 	}
-	bRun := v.brewRun
+	bRun := v.BrewRun
 	if bRun == nil {
 		bRun = runner.Exec
 	}
 	// 🚨 svc / brew は tea.Cmd の goroutine で走る。bubbletea は Run を抜けるときに
 	// Cmd の goroutine を待たないので、latch で看取る側を作っておく (issue 211)
 	return tea.Batch(append([]tea.Cmd{
-		v.waitDiskCmd(gen),
+		v.WaitDiskCmd(gen),
 		func() tea.Msg {
 			var rep svc.Report
 			doctorTrack(func() { rep = svc.Scan(ctx, sOpt) })
-			return doctorSvcMsg{gen: gen, rep: rep}
+			return DoctorSvcMsg{Gen: gen, Rep: rep}
 		},
 		func() tea.Msg {
-			var res brewDoctorResult
+			var res BrewDoctorResult
 			doctorTrack(func() { res = runBrewDoctor(ctx, bRun) })
-			return doctorBrewMsg{gen: gen, res: res}
+			return DoctorBrewMsg{Gen: gen, Res: res}
 		},
 	}, v.uncachedCmds(ctx, gen)...)...)
 }
@@ -330,48 +333,48 @@ func (v *doctorView) start(force bool) tea.Cmd {
 // 起こすよう 1 箇所にまとめる (片方にだけ足すと、そのタブが復元経路でスピナーのまま残る)。
 // 🚨 tea.Batch で包まず列で返す: 包むと start の Batch が入れ子になり、1 段だけ開いて Cmd を
 // 走らせる検査 (TestEachDoctorScanIsTrackedUntilItReturns) から中の走査が見えなくなる
-func (v *doctorView) uncachedCmds(ctx context.Context, gen int) []tea.Cmd {
+func (v *DoctorView) uncachedCmds(ctx context.Context, gen int) []tea.Cmd {
 	return []tea.Cmd{v.dockerCmd(ctx, gen), v.ssdCmd(ctx, gen)}
 }
 
 // waitDiskCmd は channel から 1 イベント取り出して Msg にする (受け取り側が再アームする)。
-func (v *doctorView) waitDiskCmd(gen int) tea.Cmd {
+func (v *DoctorView) WaitDiskCmd(gen int) tea.Cmd {
 	ch := v.diskCh
 	return func() tea.Msg {
 		ev, ok := <-ch
 		if !ok {
 			return nil
 		}
-		return doctorDiskMsg{gen: gen, ev: ev}
+		return DoctorDiskMsg{Gen: gen, Ev: ev}
 	}
 }
 
 // close は走査を止めて閉じる。ディスクが未完了なら完了済みの分を partial としてキャッシュに書く
 // (savePartialOnClose が守る条件のもとで)。
-func (v *doctorView) close() {
-	v.del.reset() // 相を残さない (今は handleDeleteKey が閉じるキーを飲むので不到達だが、並び順に依存させない)
-	v.stop()
-	v.shown = false
-	if v.diskRep == nil && len(v.diskResults) > 0 {
-		results := append([]disk.Result(nil), v.diskResults...)
+func (v *DoctorView) Close() {
+	v.Del.reset() // 相を残さない (今は handleDeleteKey が閉じるキーを飲むので不到達だが、並び順に依存させない)
+	v.Stop()
+	v.Shown = false
+	if v.DiskRep == nil && len(v.DiskResults) > 0 {
+		results := append([]disk.Result(nil), v.DiskResults...)
 		sort.SliceStable(results, func(a, b int) bool { return results[a].Size > results[b].Size })
 		rep := disk.Report{ScannedAt: app.TimeNow(), Partial: true}.WithResults(results)
-		v.saveCache(rep)
+		v.SaveCache(rep)
 	}
 }
 
 // stop は走査だけを止める (cancelAll から呼ぶ後始末。画面の状態は触らない。partial も保存しない)。
-func (v *doctorView) stop() {
+func (v *DoctorView) Stop() {
 	// 削除の途中で外から終了させられたら、**ctx で中断を伝える** (プロセスを殺すだけだと
 	// 記録が executing のまま残り、cli: の子プロセスが孤児になる)。
-	// 🚨 cancel だけでは**子プロセスの死を待たない** (issue 211)。cancelAll → waitDoctorCleanup の
-	//    順で看取ること。削除も doctorCleanup latch に載っている (doctor_delete.go)
-	if v.del.cancel != nil {
-		v.del.cancel()
+	// 🚨 cancel だけでは**子プロセスの死を待たない** (issue 211)。cancelAll → WaitDoctorCleanup の
+	//    順で看取ること。削除も DoctorCleanup latch に載っている (doctor_delete.go)
+	if v.Del.Cancel != nil {
+		v.Del.Cancel()
 	}
-	if v.cancel != nil {
-		v.cancel()
-		v.cancel = nil
+	if v.Cancel != nil {
+		v.Cancel()
+		v.Cancel = nil
 	}
 }
 
@@ -382,88 +385,88 @@ func (v *doctorView) stop() {
 //
 //	partial (中断)     : 🚨 完全な結果を潰さない。Esc や r の直後の数件だけの結果で 45GB を 200MB に
 //	                     置き換えると、起動トーストが閾値未満で無期限に沈黙する (敵対レビュー
-//	                     2026-09-02 P2)。**これは doctorCacheFromReport が前回の記録に重ねて書く
+//	                     2026-09-02 P2)。**これは DoctorCacheFromReport が前回の記録に重ねて書く
 //	                     ことで構造的に防ぐ**。以前は「合計が前回より小さければ書かない」という
 //	                     ガードで守っていたが、重ねるようになった今それは冗長で、しかも
 //	                     「今回実際に測り直して縮んだと分かったエントリ」まで古い値へ差し戻す
 //	                     副作用があった (敵対レビュー 2026-09-03)。外したときにマスクしていたものは
 //	                     issue 173 に列挙してある
 //	Reused を含む完了  : 書く。ただし再利用したエントリの数字は**前回の実測値を引き継ぐ**
-//	                     (doctorCacheFromReport)。「Reused があれば書かない」にすると、重いエントリが
+//	                     (DoctorCacheFromReport)。「Reused があれば書かない」にすると、重いエントリが
 //	                     複数あるときに恒久的に凍結する (issue 172)
 //	failed を含む完了  : 書く。走査は完走していて、その環境の現実がそれ。書かないと「1 エントリが
 //	                     恒久的に測れない Mac」でキャッシュが永久に凍結する。沈黙は Failed 件数を
 //	                     キャッシュに持たせ、トースト側で「N 件は診断できず」を出して防ぐ (issue 173)
-func (v *doctorView) saveCache(rep disk.Report) {
-	prev, _ := loadDoctorDiskCache()
-	_ = saveDoctorDiskCache(doctorCacheFromReport(rep, prev)) // 保存失敗は表示に影響しない
+func (v *DoctorView) SaveCache(rep disk.Report) {
+	prev, _ := LoadDoctorDiskCache()
+	_ = SaveDoctorDiskCache(DoctorCacheFromReport(rep, prev)) // 保存失敗は表示に影響しない
 }
 
 // receiveDisk は disk のイベントを受ける。完了なら nil、途中なら次を待つ Cmd を返す。
-func (v *doctorView) receiveDisk(msg doctorDiskMsg) tea.Cmd {
-	if msg.gen != v.gen || !v.shown {
+func (v *DoctorView) ReceiveDisk(msg DoctorDiskMsg) tea.Cmd {
+	if msg.Gen != v.Gen || !v.Shown {
 		return nil
 	}
 	// 🚨 **ここが live 経路の唯一の関門** (issue 228)。走査した値はパスも Contents も
-	// 「自分以外が書いた文字列」で、無害化せずに持つと doctorRow.text と `y` / `Y` の
+	// 「自分以外が書いた文字列」で、無害化せずに持つと DoctorRow.text と `y` / `Y` の
 	// コピーへ生のまま乗る (コピーは pbcopy 経由なので、貼った先の端末で発火する)。
 	// 出所ごとに書き分けず、モデルへ入る前に 1 回通す。CLI (diskdoctor の Format) と
 	// **同じ関数**を使う (判定を 2 実装持たない)。
-	if msg.ev.rep != nil {
-		rep := disk.SanitizeForDisplay(*msg.ev.rep)
-		v.diskRep = &rep
-		v.saveCache(rep) // Partial な完了 (中断) も saveCache の規律の中で扱う
+	if msg.Ev.Rep != nil {
+		rep := disk.SanitizeForDisplay(*msg.Ev.Rep)
+		v.DiskRep = &rep
+		v.SaveCache(rep) // Partial な完了 (中断) も saveCache の規律の中で扱う
 		v.maybeSaveSnapshot()
 		return nil
 	}
-	if msg.ev.r != nil {
-		v.diskResults = append(v.diskResults, disk.SanitizeResultForDisplay(*msg.ev.r))
+	if msg.Ev.R != nil {
+		v.DiskResults = append(v.DiskResults, disk.SanitizeResultForDisplay(*msg.Ev.R))
 	}
-	return v.waitDiskCmd(msg.gen)
+	return v.WaitDiskCmd(msg.Gen)
 }
 
-func (v *doctorView) receiveSvc(msg doctorSvcMsg) {
-	if msg.gen != v.gen || !v.shown {
+func (v *DoctorView) ReceiveSvc(msg DoctorSvcMsg) {
+	if msg.Gen != v.Gen || !v.Shown {
 		return
 	}
-	rep := svc.SanitizeForDisplay(msg.rep) // live も復元と同じ関門を通す (issue 228)
-	v.svcRep = &rep
+	rep := svc.SanitizeForDisplay(msg.Rep) // live も復元と同じ関門を通す (issue 228)
+	v.SvcRep = &rep
 	v.maybeSaveSnapshot()
 }
 
-func (v *doctorView) receiveBrew(msg doctorBrewMsg) {
-	if msg.gen != v.gen || !v.shown {
+func (v *DoctorView) ReceiveBrew(msg DoctorBrewMsg) {
+	if msg.Gen != v.Gen || !v.Shown {
 		return
 	}
 	// 🚨 brew の警告本文は**複数行が正常**なので、改行だけ残す版で通す (1 行 1 件の
 	// ディスク節とは別扱い。cleanBrewText の doc 参照)
-	res := cleanLiveBrew(msg.res)
-	v.brew = &res
+	res := cleanLiveBrew(msg.Res)
+	v.Brew = &res
 	v.maybeSaveSnapshot()
 }
 
 // maybeSaveSnapshot は 3 セクションが揃った時点で完全な結果を書く (TTL 内の開き直しで再利用)。
-func (v *doctorView) maybeSaveSnapshot() {
-	if v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.diskRep.Partial {
+func (v *DoctorView) maybeSaveSnapshot() {
+	if v.DiskRep == nil || v.SvcRep == nil || v.Brew == nil || v.DiskRep.Partial {
 		return
 	}
-	_ = saveDoctorSnapshot(doctorSnapshot{ScannedAt: app.TimeNow(), Disk: *v.diskRep, Svc: *v.svcRep, Brew: *v.brew})
+	_ = SaveDoctorSnapshot(DoctorSnapshot{ScannedAt: app.TimeNow(), Disk: *v.DiskRep, Svc: *v.SvcRep, Brew: *v.Brew})
 }
 
 // doctorAction は handleKey の結果 (rlDash と同じ語彙)。
 type doctorAction int
 
 const (
-	doctorSwallow doctorAction = iota // 全画面なので裏の一覧へ素通りさせない
-	doctorClosed
-	doctorRescan    // r: 走査し直す (browseModel が open() で起こす。close は経由しない = partial を書かない)
-	doctorCopyPath  // y: 選んだ行のパスをコピー (中身は copyPayload)
-	doctorCopyText  // Y: 選んだ行の解説文をコピー (同上)
-	doctorNothing   // y/Y を押したがコピーするものが無い (browseModel がその旨をトーストにする)
-	doctorToast     // 削除の導線が理由を出したい (pendingToast)
-	doctorCopyLog   // 削除の実行記録をコピー (y。トーストの文言が「解説」ではないので分ける)
-	doctorRunDelete // 削除を開始する (pendingDeleteCmd を browseModel が実行する)
-	doctorCross     // 別の全画面へ横断 (doctor は閉じ済み。行き先は takeWantCross)
+	DoctorSwallow doctorAction = iota // 全画面なので裏の一覧へ素通りさせない
+	DoctorClosed
+	DoctorRescan    // r: 走査し直す (browseModel が open() で起こす。close は経由しない = partial を書かない)
+	DoctorCopyPath  // y: 選んだ行のパスをコピー (中身は copyPayload)
+	DoctorCopyText  // Y: 選んだ行の解説文をコピー (同上)
+	DoctorNothing   // y/Y を押したがコピーするものが無い (browseModel がその旨をトーストにする)
+	DoctorToast     // 削除の導線が理由を出したい (pendingToast)
+	DoctorCopyLog   // 削除の実行記録をコピー (y。トーストの文言が「解説」ではないので分ける)
+	DoctorRunDelete // 削除を開始する (pendingDeleteCmd を browseModel が実行する)
+	DoctorCross     // 別の全画面へ横断 (doctor は閉じ済み。行き先は takeWantCross)
 )
 
 // jumpIntoDetail は Enter で開いた直後に、カーソルを**その中の最初の対象パス**へ移す。
@@ -471,15 +474,15 @@ const (
 // (ユーザー要望 2026-09-03)。対象パスの行が無い (Inspect の中身一覧だけ / 走査できず) なら
 // 何もしない = カーソルはエントリの行に留まる。
 // expandableRow はカーソル行が開閉できるか (開ける詳細を持つ選択可能な行) と、その key。
-func (v *doctorView) expandableRow() (rowKey, bool) {
-	if v.cur.index < 0 || v.cur.index >= len(v.rows) {
+func (v *DoctorView) expandableRow() (RowKey, bool) {
+	if v.Cur.Index < 0 || v.Cur.Index >= len(v.Rows) {
 		return "", false
 	}
-	r := v.rows[v.cur.index]
-	if !r.selectable || !r.hasDetail {
+	r := v.Rows[v.Cur.Index]
+	if !r.Selectable || !r.HasDetail {
 		return "", false
 	}
-	return r.key, true
+	return r.Key, true
 }
 
 // collapseTargetAtCursor は「今このカーソル位置で畳めるもの」を返す。
@@ -491,15 +494,15 @@ func (v *doctorView) expandableRow() (rowKey, bool) {
 // 🚨 ここで `v.rows[i].detail` を見て「本当に中身があるか」を確かめないこと。rows は描画時に
 // 遅延再構築されるので、Enter 直後 (次の lines() の前) は展開済みの行でも detail が nil で、
 // 「畳むものが無い」と誤答する (実測 2026-09-06: 既存テスト 2 本が落ちた)。
-// 「展開しても 0 行」の行は hasDetail を立てない側で解決する (diskHasDetail / brewHasDetail)。
-func (v *doctorView) collapseTargetAtCursor() (key rowKey, viaParent, ok bool) {
-	if v.cur.index >= 0 && v.cur.index < len(v.rows) {
-		if parent, isChild := parentRowKey(v.rows[v.cur.index].key); isChild {
+// 「展開しても 0 行」の行は hasDetail を立てない側で解決する (DiskHasDetail / brewHasDetail)。
+func (v *DoctorView) collapseTargetAtCursor() (key RowKey, viaParent, ok bool) {
+	if v.Cur.Index >= 0 && v.Cur.Index < len(v.Rows) {
+		if parent, isChild := parentRowKey(v.Rows[v.Cur.Index].Key); isChild {
 			return parent, true, true
 		}
 	}
 	k, expandable := v.expandableRow()
-	if !expandable || !v.expanded[k] {
+	if !expandable || !v.Expanded[k] {
 		return "", false, false
 	}
 	return k, false, true
@@ -507,7 +510,7 @@ func (v *doctorView) collapseTargetAtCursor() (key rowKey, viaParent, ok bool) {
 
 // collapsibleAtCursor は「今このカーソル位置で畳めるものがあるか」。Enter / q が畳むか
 // どうかと、hint の文言がここを唯一の出典にする。
-func (v *doctorView) collapsibleAtCursor() bool {
+func (v *DoctorView) collapsibleAtCursor() bool {
 	_, _, ok := v.collapseTargetAtCursor()
 	return ok
 }
@@ -515,87 +518,87 @@ func (v *doctorView) collapsibleAtCursor() bool {
 // collapseAtCursor はカーソル位置の展開を 1 段閉じる。畳んだら true。
 // 対象パスの行に居るなら**親のエントリを畳んでカーソルを親へ戻し** (入る側だけ作ると
 // カーソルが中に居たまま畳めなくなる)、開いているエントリの行に居るならそれを畳む。
-func (v *doctorView) collapseAtCursor() bool {
+func (v *DoctorView) collapseAtCursor() bool {
 	k, viaParent, ok := v.collapseTargetAtCursor()
 	if !ok {
 		return false
 	}
-	delete(v.expanded, k)
+	delete(v.Expanded, k)
 	if viaParent {
-		v.cur.key = k
+		v.Cur.Key = k
 	}
 	return true
 }
 
 // openRow は詳細を開く。disk のエントリは inspected を立て (risk: confirm の行はこれが
 // 立つまで選べない)、カーソルを中の最初の対象パスへ移す。
-func (v *doctorView) openRow(k rowKey) {
-	v.expanded[k] = true
+func (v *DoctorView) openRow(k RowKey) {
+	v.Expanded[k] = true
 	if id, ok := k.diskEntryID(); ok {
 		if v.inspected == nil {
-			v.inspected = map[entryID]bool{}
+			v.inspected = map[EntryID]bool{}
 		}
 		v.inspected[id] = true
-		v.enterDetail = k
+		v.EnterDetail = k
 	}
 }
 
-func (v *doctorView) jumpIntoDetail() {
-	if v.enterDetail == "" {
+func (v *DoctorView) JumpIntoDetail() {
+	if v.EnterDetail == "" {
 		return
 	}
-	id, ok := v.enterDetail.diskEntryID()
-	v.enterDetail = ""
+	id, ok := v.EnterDetail.diskEntryID()
+	v.EnterDetail = ""
 	if !ok {
 		return
 	}
-	v.cur.jumpTo(v.rows, diskItemsPrefix(id))
+	v.Cur.JumpTo(v.Rows, diskItemsPrefix(id))
 }
 
 // takeCursorFellBack は「描画中に選択行が消えて寄せた」印を 1 回だけ取り出し、文言を返す。
 //
-// 🚨 **キーを飲まずに知らせる**ための seam。以前は handleKey の先頭で `doctorToast` を
+// 🚨 **キーを飲まずに知らせる**ための seam。以前は handleKey の先頭で `DoctorToast` を
 // 返していたが、それだと**その打鍵が空振りする** (q / esc / d / r / Enter が等しく 1 回死ぬ)。
 // 呼ぶのは browseModel 側 (tui.go) で、handleKey を呼ぶ**前**にトーストを出す。
 //
 // 🚨 文言は**返り値で渡す**。pendingToast に書くと、それを消すのは takeToast() だけなので、
 // 次の再スキャンの理由として使い回される (敵対レビュー 2026-09-03 が実測)。
-func (v *doctorView) takeCursorFellBack() string {
-	if !v.cur.takeFellBack() {
+func (v *DoctorView) TakeCursorFellBack() string {
+	if !v.Cur.takeFellBack() {
 		return ""
 	}
 	return "選んでいた行が無くなったので近くの行へ移りました"
 }
 
 // takeToast は溜めておいた文言を取り出して空にする (同じ文言が次の操作で再び出ないように)。
-func (v *doctorView) takeToast() string {
-	t := v.pendingToast
-	v.pendingToast = ""
+func (v *DoctorView) TakeToast() string {
+	t := v.PendingToast
+	v.PendingToast = ""
 	return t
 }
 
 // takeWantCross は横断先 (無ければ app.FullScreenNone) を一度だけ取り出す (viewer と同じ語彙)。
-func (v *doctorView) takeWantCross() app.FullScreenID {
+func (v *DoctorView) TakeWantCross() app.FullScreenID {
 	want := v.wantCross
 	v.wantCross = app.FullScreenNone
 	return want
 }
 
 // copyPayload は直近の y / Y でコピーする文字列 (handleKey がセットし、browseModel が取り出す)。
-func (v *doctorView) copyPayload() string { return v.pendingCopy }
+func (v *DoctorView) CopyPayload() string { return v.PendingCopy }
 
-func (v *doctorView) handleKey(key string, page int) doctorAction {
+func (v *DoctorView) HandleKey(key string, page int) doctorAction {
 	// 削除の語彙が立っているあいだは、そちらが先にキーを取る
 	// (確認中の y が「コピー」に化けない / 実行中に別の行へ移動できない)
-	if act, taken := v.handleDeleteKey(key); taken {
+	if act, taken := v.HandleDeleteKey(key); taken {
 		return act
 	}
 	// 横断キー (i / s / R。表は app.CrossTarget)。D は自分自身なので下の「閉じる」に任せる。
 	// 削除の確認・実行中は上で飲まれるのでここまで届かない
 	if target, ok := app.CrossTarget(key); ok && target != app.FullScreenDoctor {
-		v.close()
+		v.Close()
 		v.wantCross = target
-		return doctorCross
+		return DoctorCross
 	}
 	switch key {
 	case " ":
@@ -604,12 +607,12 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		}
 		if why, ok := v.toggleSelect(); !ok {
 			if why == "" {
-				return doctorSwallow
+				return DoctorSwallow
 			}
-			v.pendingToast = why
-			return doctorToast
+			v.PendingToast = why
+			return DoctorToast
 		}
-		return doctorSwallow
+		return DoctorSwallow
 	case "tab", "l", "right":
 		// 🚨 h/l は**タブ移動**。issues viewer が同じ語彙を持つ (tab/l/right = 次、
 		// shift+tab/h/left = 前) ので、画面をまたいで意味を揃える (ユーザー選定 2026-09-04)。
@@ -618,93 +621,93 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 	case "shift+tab", "h", "left":
 		v.moveTab(-1)
 	case "d":
-		if v.tab != tabDisk {
+		if v.Tab != TabDisk {
 			// 🚨 タブごとに「印を付けた後にやること」を 1 つに保つ。ここで削除を許すと
 			// 一覧に 2 つの実行キーが同居していた頃の混乱がタブ越しに戻る
-			v.pendingToast = "削除はディスクのタブで (tab で移動)"
-			return doctorToast
+			v.PendingToast = "削除はディスクのタブで (tab で移動)"
+			return DoctorToast
 		}
 		return v.beginDelete()
 	case "x":
 		// x は「提示したコマンドを実行する」。**削除 (d) と別のキーにする**: d は「消す」の語で、
 		// brew install は消す操作ではない。同じキーに 2 つの意味を持たせない
-		switch v.tab {
-		case tabBrew:
+		switch v.Tab {
+		case TabBrew:
 			return v.beginBrewRun()
-		case tabDocker:
+		case TabDocker:
 			return v.beginDockerRun()
-		case tabDisk, tabSvc, tabSSD:
-			v.pendingToast = "コマンドの実行は Homebrew か Docker のタブで (tab で移動)"
-			return doctorToast
+		case TabDisk, TabSvc, TabSSD:
+			v.PendingToast = "コマンドの実行は Homebrew か Docker のタブで (tab で移動)"
+			return DoctorToast
 		}
-		return doctorSwallow
+		return DoctorSwallow
 	case "q":
 		// 🚨 q は**まず「開いたものを閉じる」**。Enter で開いた先で q を押すと画面ごと消えるのは、
 		// 開いた操作の取り消しとして重すぎる (ユーザー要望 2026-09-04)。
 		// 畳むものが無いときだけ doctor を閉じる。**D と esc は無条件に閉じる**ので、
 		// 「一発で抜ける手段」は常に残る
 		if v.collapseAtCursor() {
-			return doctorSwallow
+			return DoctorSwallow
 		}
-		v.close()
-		return doctorClosed
+		v.Close()
+		return DoctorClosed
 	case "D", "esc":
-		v.close()
-		return doctorClosed
+		v.Close()
+		return DoctorClosed
 	case "r":
-		return doctorRescan // 止めるのは start() の先頭 (issue 211)。ここで二重に呼ばない
+		return DoctorRescan // 止めるのは start() の先頭 (issue 211)。ここで二重に呼ばない
 	case "enter":
 		// Enter で入って Enter で出る (対象パスの行なら親ごと畳んでカーソルを親へ戻す)
 		if v.collapseAtCursor() {
-			return doctorSwallow
+			return DoctorSwallow
 		}
 		if k, ok := v.expandableRow(); ok {
 			v.openRow(k)
 		}
 	case "y", "Y":
-		if v.cur.index < 0 || v.cur.index >= len(v.rows) || !v.rows[v.cur.index].selectable {
-			return doctorNothing
+		if v.Cur.Index < 0 || v.Cur.Index >= len(v.Rows) || !v.Rows[v.Cur.Index].Selectable {
+			return DoctorNothing
 		}
-		row := v.rows[v.cur.index]
-		v.pendingCopy = row.copyText
-		action := doctorCopyText
+		row := v.Rows[v.Cur.Index]
+		v.PendingCopy = row.CopyText
+		action := DoctorCopyText
 		if key == "y" {
-			v.pendingCopy, action = row.copyPath, doctorCopyPath
+			v.PendingCopy, action = row.CopyPath, DoctorCopyPath
 		}
-		if v.pendingCopy == "" {
-			return doctorNothing
+		if v.PendingCopy == "" {
+			return DoctorNothing
 		}
 		return action
 	default:
 		v.applyMotion(listnav.MotionOf(key), page) // 移動の語彙 (j/k/g/G/半ページ) は listnav が持つ
 	}
-	return doctorSwallow
+	return DoctorSwallow
 }
 
 // applyMotion はカーソル移動を適用する。cur.move は選択できない行 (見出し) を飛ばすので、
 // 半ページは 1 行ずつ積む (行数の足し算にすると見出しの上で止まる)。
-func (v *doctorView) applyMotion(m listnav.Motion, page int) {
+func (v *DoctorView) applyMotion(m listnav.Motion, page int) {
 	switch m {
 	case listnav.Down:
-		v.cur.move(v.rows, +1)
+		v.Cur.Move(v.Rows, +1)
 	case listnav.Up:
-		v.cur.move(v.rows, -1)
+		v.Cur.Move(v.Rows, -1)
 	case listnav.HalfDown:
 		for range listnav.Half(page) {
-			v.cur.move(v.rows, +1)
+			v.Cur.Move(v.Rows, +1)
 		}
 	case listnav.HalfUp:
 		for range listnav.Half(page) {
-			v.cur.move(v.rows, -1)
+			v.Cur.Move(v.Rows, -1)
 		}
 	case listnav.Top:
 		// fellBack は消さない: tui が handleKey より前に必ず取り出すので、ここに来た時点で
 		// 常に false (書いても意味が無く、Bottom 側にも同じ行が無い = 非対称だった)
-		v.cur.index, v.cur.key, v.cur.offset = 0, "", 0
-		v.cur.move(v.rows, 0)
+		v.Cur.Index, v.Cur.Key, v.Cur.offset = 0, "", 0
+		v.Cur.Move(v.Rows, 0)
 	case listnav.Bottom:
-		v.cur.index = len(v.rows) - 1
-		v.cur.move(v.rows, 0)
+		v.Cur.Index = len(v.Rows) - 1
+		v.Cur.Move(v.Rows, 0)
 	case listnav.None:
 	}
 }
@@ -713,18 +716,18 @@ func (v *doctorView) applyMotion(m listnav.Motion, page int) {
 // しかも消えるのは常に末尾 = 抜ける手段が消える。status viewer と同じ term.FitHintItems の作法)。
 // 実測 2026-09-03: 固定文字列だと 112 桁あり、popup の予算 82 桁で「D/q/esc: 閉じる」と
 // 「(削除はまだできません)」が画面から消えていた (issue 201)。
-func (v *doctorView) hint(width int) string {
+func (v *DoctorView) Hint(width int) string {
 	// 🚨 下見 (preparing) と実行 (running) を 1 語に畳まない。下見はまだ何も壊しておらず、
 	// パネルは「削除できるか確認しています」と言う。ここだけ「実行中」と読ませると、
 	// 押していいキーの判断が変わる (中断の重さが違う)
-	if v.del.preparing {
+	if v.Del.Preparing {
 		return " 確認しています (Ctrl-C ×2 で中断)"
 	}
-	if v.del.running {
+	if v.Del.Running {
 		return " 実行中です (Ctrl-C ×2 で中断)"
 	}
-	if v.del.confirm {
-		if !planHasWork(v.del.plan) {
+	if v.Del.Confirm {
+		if !planHasWork(v.Del.Plan) {
 			return " 消せるものがありません (何かキーを押すと戻ります)"
 		}
 		// 🚨 送り方 (j/k) は**パネルの注記が唯一の出典**。ここに足すと、hint は
@@ -732,7 +735,7 @@ func (v *doctorView) hint(width int) string {
 		// 「パネルと hint が違うことを言う」形になる (issue 242 の P3-2 と同型)
 		return " y: 削除する   n/Esc: やめる   (Enter は何もしない)"
 	}
-	if v.del.result != nil || v.del.err != "" {
+	if v.Del.Result != nil || v.Del.Err != "" {
 		return " y: 出力をコピー   他のキー: 閉じてもう一度スキャン"
 	}
 	// 🚨 **タブごとに出す導線を変える**。一覧に d (削除) と x (実行) が同時に出ていたのが
@@ -740,21 +743,21 @@ func (v *doctorView) hint(width int) string {
 	items := []term.HintItem{
 		{Text: "j/k: 移動", Prio: 3},
 	}
-	switch v.tab {
-	case tabDisk:
+	switch v.Tab {
+	case TabDisk:
 		items = append(items,
 			term.HintItem{Text: "Space: 選択", Prio: 2}, // 削除の入口なので Enter より優先して残す
 			term.HintItem{Text: "d: 削除", Prio: 2})
-	case tabBrew, tabDocker:
+	case TabBrew, TabDocker:
 		items = append(items, term.HintItem{Text: "Space: 選択", Prio: 2})
-	case tabSvc, tabSSD:
+	case TabSvc, TabSSD:
 		// サービスと SSD は選択も実行も持たない (見て判断するだけ)
 	}
-	if v.tab != tabSSD { // SSD の行は開くものを持たない (押せないキーを案内しない)
+	if v.Tab != TabSSD { // SSD の行は開くものを持たない (押せないキーを案内しない)
 		items = append(items, term.HintItem{Text: "Enter: 開閉", Prio: 4}) // 開くと対象パスへカーソルが移り、そこでも Space で選べる
 	}
 	items = append(items, []term.HintItem{
-		{Text: doctorCopyHintLabel(v.tab), Prio: 5},
+		{Text: doctorCopyHintLabel(v.Tab), Prio: 5},
 		{Text: "Y: 解説をコピー", Prio: 6},
 		{Text: "r: 再スキャン", Prio: 5},
 		{Text: doctorCloseHintLabel(v.collapsibleAtCursor()), Prio: 1}, // 抜ける手段は最優先で残す
@@ -762,10 +765,10 @@ func (v *doctorView) hint(width int) string {
 	// 🚨 x は**選ばれているときだけ出す**。常設すると幅の予算を食い、`r: 再スキャン` のような
 	// 常に使える手を押し出す (実測: 幅 120 で再スキャンが消えた)。手が選ばれていないときの
 	// x は「Space で選んでください」と言うだけなので、案内する価値も無い
-	if n := v.selectedRunCount(); n > 0 && (v.tab == tabBrew || v.tab == tabDocker) {
+	if n := v.SelectedRunCount(); n > 0 && (v.Tab == TabBrew || v.Tab == TabDocker) {
 		items = append(items, term.HintItem{Text: fmt.Sprintf("x: %d 件を実行", n), Prio: 2})
 	}
-	if n, total := v.selectionSummary(); n > 0 && v.tab == tabDisk {
+	if n, total := v.SelectionSummary(); n > 0 && v.Tab == TabDisk {
 		items = append([]term.HintItem{{Text: fmt.Sprintf("選択 %d 件 %s", n, disk.HumanSize(total)), Prio: 1}}, items...)
 	}
 	return term.FitHintItems(width, items)
@@ -774,13 +777,13 @@ func (v *doctorView) hint(width int) string {
 // selectedRunCount は今のタブで x が実行する件数。
 // 🚨 **len(v.selectedActions) では数えない。** brew と docker は選択の map を共有しており
 // (同一性はコマンド文字列)、素の長さだと別のタブの選択まで数えて hint が嘘になる。
-func (v *doctorView) selectedRunCount() int {
-	switch v.tab {
-	case tabDocker:
+func (v *DoctorView) SelectedRunCount() int {
+	switch v.Tab {
+	case TabDocker:
 		return len(v.selectedDockerActions())
-	case tabBrew:
+	case TabBrew:
 		return len(v.selectedBrewActions())
-	case tabDisk, tabSvc, tabSSD:
+	case TabDisk, TabSvc, TabSSD:
 		return 0
 	}
 	return 0
@@ -788,8 +791,8 @@ func (v *doctorView) selectedRunCount() int {
 
 // doctorCopyHintLabel は y が何をコピーするか。タブで中身が違うので語も変える
 // (Docker タブにパスは無い。押せる手の説明が嘘になると、押さなくなる)。
-func doctorCopyHintLabel(t doctorTab) string {
-	if t == tabDocker || t == tabSSD {
+func doctorCopyHintLabel(t DoctorTab) string {
+	if t == TabDocker || t == TabSSD {
 		return "y: コマンドをコピー"
 	}
 	return "y: パスをコピー"
@@ -805,69 +808,69 @@ func doctorCloseHintLabel(collapsible bool) string {
 	return "D/q/esc: 閉じる"
 }
 
-// doctorRenderOpts は描画情報。
-type doctorRenderOpts struct {
+// DoctorRenderOpts は描画情報。
+type DoctorRenderOpts struct {
 	// env は再起動の注記の判定に要る (実効 TMPDIR が dirhelper の担当かどうか)。
 	// 🚨 既定のゼロ値は「注記を出さない」側 = 安全側に倒れる
-	env     disk.Env
-	width   int
-	page    int
-	colored bool
-	spinner string
-	now     time.Time
+	Env     disk.Env
+	Width   int
+	Page    int
+	Colored bool
+	Spinner string
+	Now     time.Time
 }
 
 // lines はちょうど page 行を返す (全画面 viewer 共通の契約)。行を組み直し、カーソルが窓に入るよう offset を寄せる。
-func (v *doctorView) lines(o doctorRenderOpts) []string {
+func (v *DoctorView) Lines(o DoctorRenderOpts) []string {
 	// 削除の確認 / 進捗 / 結果は全画面で差し替える (重ねると狭い幅で下の行が透けて読めなくなる)
 	if panel := v.deletePanel(o); panel != nil {
-		return layout.PadTo(panel, o.page)
+		return layout.PadTo(panel, o.Page)
 	}
-	v.rows = flattenDoctorRows(v.buildRows(o))
-	v.jumpIntoDetail()
-	v.cur.restore(v.rows)
-	head := []string{v.headerLine(o), v.tabBarLine(o), ""}
-	room := max(o.page-len(head), 1)
-	from := v.cur.window(len(v.rows), room)
-	out := make([]string, 0, o.page)
+	v.Rows = FlattenDoctorRows(v.BuildRows(o))
+	v.JumpIntoDetail()
+	v.Cur.restore(v.Rows)
+	head := []string{v.headerLine(o), v.TabBarLine(o), ""}
+	room := max(o.Page-len(head), 1)
+	from := v.Cur.window(len(v.Rows), room)
+	out := make([]string, 0, o.Page)
 	out = append(out, head...)
-	for i := from; i < len(v.rows) && len(out) < o.page; i++ {
+	for i := from; i < len(v.Rows) && len(out) < o.Page; i++ {
 		mark := "  "
-		if i == v.cur.index && v.rows[i].selectable {
+		if i == v.Cur.Index && v.Rows[i].Selectable {
 			mark = "▶ "
 		}
-		out = append(out, term.TruncateDisp(mark+v.rows[i].text, o.width, "…"))
+		out = append(out, term.TruncateDisp(mark+v.Rows[i].Text, o.Width, "…"))
 	}
-	return layout.PadTo(out, o.page)
+	return layout.PadTo(out, o.Page)
 }
 
-// flattenDoctorRows は row の text から改行を落として「1 row = 1 行」を機械で守る。
+// FlattenDoctorRows は row の text から改行を落として「1 row = 1 行」を機械で守る。
 //
-// 🚨 doctorRow は名前のとおり 1 行のつもりだが、それを守っていたのは組み立て側の規律だけだった。
+// 🚨 DoctorRow は名前のとおり 1 行のつもりだが、それを守っていたのは組み立て側の規律だけだった。
 // 改行が 1 つ混ざると**固定高パネルの行数が増える**のに、行数を数えるテスト
 // (TestDoctorLinesFillsPage) はスライスの要素数しか見ないので素通りする (敵対レビュー
 // 2026-09-04 が brew の Unavailable で実測: 要素 20 個・実際の出力 21 行)。
 // 出口 1 箇所で潰しておけば、無害化の使い分け (PlainLine / PlainBlock) を間違えた将来の
 // 1 行も構造的に止まる。**copyText / copyPath は対象外** (コピー文は複数行が正常)。
-func flattenDoctorRows(rows []doctorRow) []doctorRow {
+func FlattenDoctorRows(rows []DoctorRow) []DoctorRow {
 	for i, r := range rows {
-		if strings.ContainsRune(r.text, '\n') {
-			rows[i].text = strings.ReplaceAll(r.text, "\n", " ")
+		if strings.ContainsRune(r.Text, '\n') {
+			rows[i].Text = strings.ReplaceAll(r.Text, "\n", " ")
 		}
-		if len(r.detail) > 0 {
-			rows[i].detail = flattenDoctorRows(r.detail)
+		if len(r.Detail) > 0 {
+			rows[i].Detail = FlattenDoctorRows(r.Detail)
 		}
 	}
 	return rows
 }
 
-func (v *doctorView) headerLine(o doctorRenderOpts) string {
+func (v *DoctorView) headerLine(o DoctorRenderOpts) string {
 	left := " doctor"
 	switch {
-	case v.scanning():
-		left += "  " + o.spinner + " スキャン中 " + app.TimeNow().Sub(v.startedAt).Round(time.Second).String()
-	case !v.snapshotAt.IsZero():
-		left += fmt.Sprintf("  %d 分前の結果 (r で再スキャン)", int(o.now.Sub(v.snapshotAt).Minutes()))
+	case v.Scanning():
+		left += "  " + o.Spinner + " スキャン中 " + app.TimeNow().Sub(v.startedAt).Round(time.Second).String()
+	case !v.SnapshotAt.IsZero():
+		left += fmt.Sprintf("  %d 分前の結果 (r で再スキャン)", int(o.Now.Sub(v.SnapshotAt).Minutes()))
 	}
 	// 🚨 キーの凡例をここに置かない。**hint() が唯一の出典**にする (下段は常に描かれる)。
 	// 以前は右端にも凡例を置いていたが、語も内容も hint と食い違っていた
@@ -880,156 +883,156 @@ func (v *doctorView) headerLine(o doctorRenderOpts) string {
 // moveTab はタブを送る。カーソルはタブごとに覚える (戻ったときに元の行に居る)。
 //
 // h/l / left/right / tab も同じ入口 (issues viewer と同じ語彙)。
-func (v *doctorView) moveTab(d int) {
-	v.tabCur[v.tab] = v.cur
+func (v *DoctorView) moveTab(d int) {
+	v.tabCur[v.Tab] = v.Cur
 	// 🚨 出していないタブは飛ばす (Docker が無い環境で「空のタブ」を通らせない)。
 	// 全部不可視になることは無い (Docker 以外は常に可視) が、念のため回数で打ち切る
-	n := int(v.tab)
-	for range numDoctorTabs {
-		n = (n + d + numDoctorTabs) % numDoctorTabs
-		if v.tabVisible(doctorTab(n)) {
+	n := int(v.Tab)
+	for range NumDoctorTabs {
+		n = (n + d + NumDoctorTabs) % NumDoctorTabs
+		if v.tabVisible(DoctorTab(n)) {
 			break
 		}
 	}
-	v.tab = doctorTab(n)
-	v.cur = v.tabCur[v.tab]
+	v.Tab = DoctorTab(n)
+	v.Cur = v.tabCur[v.Tab]
 }
 
 // tabBarLine は 3 つのタブと件数を 1 行で出す。
 //
 // 🚨 **切り替えなくても「どこに何件あるか」が分かること**が、タブにしても一望性を失わない条件。
 // 件数を出さないタブ行にすると、異常の有無を知るために全タブを回ることになる。
-func (v *doctorView) tabBarLine(o doctorRenderOpts) string {
-	names := [numDoctorTabs]string{"ディスク", "サービス", "Homebrew", "Docker", "SSD"}
-	short := [numDoctorTabs]string{"Disk", "Svc", "Brew", "Docker", "SSD"}
-	build := func(names [numDoctorTabs]string, pad string) string {
-		parts := make([]string, 0, numDoctorTabs)
-		for i := range numDoctorTabs {
-			t := doctorTab(i)
+func (v *DoctorView) TabBarLine(o DoctorRenderOpts) string {
+	names := [NumDoctorTabs]string{"ディスク", "サービス", "Homebrew", "Docker", "SSD"}
+	short := [NumDoctorTabs]string{"Disk", "Svc", "Brew", "Docker", "SSD"}
+	build := func(names [NumDoctorTabs]string, pad string) string {
+		parts := make([]string, 0, NumDoctorTabs)
+		for i := range NumDoctorTabs {
+			t := DoctorTab(i)
 			if !v.tabVisible(t) {
 				continue
 			}
 			label := names[i] + " " + v.tabSummary(o, t)
-			if t == v.tab {
-				parts = append(parts, doctorColor(o.colored, term.AnsiBold, "["+label+"]"))
+			if t == v.Tab {
+				parts = append(parts, doctorColor(o.Colored, term.AnsiBold, "["+label+"]"))
 				continue
 			}
-			parts = append(parts, doctorColor(o.colored, term.AnsiDim, pad+label+pad))
+			parts = append(parts, doctorColor(o.Colored, term.AnsiDim, pad+label+pad))
 		}
-		return " " + strings.Join(parts, doctorColor(o.colored, term.AnsiDim, "│"))
+		return " " + strings.Join(parts, doctorColor(o.Colored, term.AnsiDim, "│"))
 	}
 	// 狭い幅では段階的に詰める: ①選んでいないタブの前後の空白を外す ②タブ名を短くする。
 	// 🚨 末尾を切るのは最後の手段: 切られるのは最後のタブ (SSD) の要約で、タブ行の役目
 	// (切り替えずにどこに異常があるか分かる) を失う (敵対レビュー 2 周目。幅 60・実在の値で 63 桁)
 	line := build(names, " ")
-	if term.DispWidth(line) > o.width {
+	if term.DispWidth(line) > o.Width {
 		line = build(names, "")
 	}
-	if term.DispWidth(line) > o.width {
+	if term.DispWidth(line) > o.Width {
 		line = build(short, "")
 	}
-	if term.DispWidth(line) > o.width {
-		return term.TruncateDisp(line, o.width, "…")
+	if term.DispWidth(line) > o.Width {
+		return term.TruncateDisp(line, o.Width, "…")
 	}
 	// 🚨 切り替えのキーは**タブ行の隣**に置く。hint に足すと幅の予算を食って
 	// 「r: 再スキャン」のような常に使える手を押し出す (実測でそうなった)
-	if hintText := "  (tab / h l で切替)"; term.DispWidth(line)+term.DispWidth(hintText) <= o.width {
-		line += doctorColor(o.colored, term.AnsiDim, hintText)
+	if hintText := "  (tab / h l で切替)"; term.DispWidth(line)+term.DispWidth(hintText) <= o.Width {
+		line += doctorColor(o.Colored, term.AnsiDim, hintText)
 	}
 	return line
 }
 
 // tabSummary はタブ 1 つぶんの件数 (走査中は spinner、診断できずは 🚨)。
-func (v *doctorView) tabSummary(o doctorRenderOpts, t doctorTab) string {
+func (v *DoctorView) tabSummary(o DoctorRenderOpts, t DoctorTab) string {
 	switch t {
-	case tabSvc:
-		if v.svcRep == nil {
-			return o.spinner
+	case TabSvc:
+		if v.SvcRep == nil {
+			return o.Spinner
 		}
-		return strconv.Itoa(len(v.svcRep.Findings))
-	case tabBrew:
+		return strconv.Itoa(len(v.SvcRep.Findings))
+	case TabBrew:
 		switch {
-		case v.brew == nil:
-			return o.spinner
-		case v.brew.Unavailable != "":
+		case v.Brew == nil:
+			return o.Spinner
+		case v.Brew.Unavailable != "":
 			return "🚨"
 		}
-		return strconv.Itoa(len(v.brew.Warnings))
-	case tabDocker:
+		return strconv.Itoa(len(v.Brew.Warnings))
+	case TabDocker:
 		switch {
-		case v.docker == nil:
-			return o.spinner
-		case v.docker.Unavailable != "":
+		case v.Docker == nil:
+			return o.Spinner
+		case v.Docker.Unavailable != "":
 			return "🚨"
 		}
 		// 🚨 出すのは docker 自身の申告。候補の見積もりは共有レイヤーを重複計上して
 		// 上振れするので、一望の数字には使わない (doctor/docker の Estimate の 🚨)
-		return docker.HumanSize(v.docker.DockerReclaimable())
-	case tabSSD:
-		if v.ssd == nil {
-			return o.spinner
+		return docker.HumanSize(v.Docker.DockerReclaimable())
+	case TabSSD:
+		if v.Ssd == nil {
+			return o.Spinner
 		}
-		return ssdTabSummary(v.ssd.SMART)
-	case tabDisk:
-		if v.diskRep == nil {
-			return o.spinner
+		return ssdTabSummary(v.Ssd.SMART)
+	case TabDisk:
+		if v.DiskRep == nil {
+			return o.Spinner
 		}
-		return disk.HumanSize(disk.SumDeletable(v.diskRep.Results))
+		return disk.HumanSize(disk.SumDeletable(v.DiskRep.Results))
 	}
-	return "" // doctorTab の外の値 (switch は exhaustive なので、タブを足すと lint がここへ来る前に止める)
+	return "" // DoctorTab の外の値 (switch は exhaustive なので、タブを足すと lint がここへ来る前に止める)
 }
 
 // sectionHeaderGap は見出しの題と要約の間の空白。1 未満なら要約は入らない (sectionHeader が落とす)。
 // 🚨 「要約が入るか」を呼び出し側で書き直さず、これを呼ぶ (SSD の見出しが題を削るかの判定で
 // 1 桁食い違い、幅 58 で要約だけが消えた。敵対レビュー 3 周目)
-func sectionHeaderGap(o doctorRenderOpts, title, summary string) int {
-	return o.width - 2 - term.DispWidth("▌"+title) - term.DispWidth(summary) - 1
+func sectionHeaderGap(o DoctorRenderOpts, title, summary string) int {
+	return o.Width - 2 - term.DispWidth("▌"+title) - term.DispWidth(summary) - 1
 }
 
 // sectionHeader は案 A の見出し 2 行 (左に縦棒 + 太字の題、右端に要約 / 下に罫線)。
-func sectionHeader(o doctorRenderOpts, title, summary string) []doctorRow {
+func sectionHeader(o DoctorRenderOpts, title, summary string) []DoctorRow {
 	left := "▌" + title
-	inner := o.width - 2 // 行頭のカーソル欄 2 桁
-	line := doctorColor(o.colored, term.AnsiBold, left)
+	inner := o.Width - 2 // 行頭のカーソル欄 2 桁
+	line := doctorColor(o.Colored, term.AnsiBold, left)
 	if gap := sectionHeaderGap(o, title, summary); gap >= 1 {
 		line += term.PadSpaces(gap) + summary
 	}
 	rule := strings.Repeat("─", max(1, inner))
-	return []doctorRow{{text: line}, {text: doctorColor(o.colored, term.AnsiDim, rule)}}
+	return []DoctorRow{{Text: line}, {Text: doctorColor(o.Colored, term.AnsiDim, rule)}}
 }
 
 // buildRows はセクション列 (ディスク / サービス / Homebrew)。展開中の行はその直後に detail を足す。
-func (v *doctorView) buildRows(o doctorRenderOpts) []doctorRow {
-	var rows []doctorRow
-	add := func(section []doctorRow) {
+func (v *DoctorView) BuildRows(o DoctorRenderOpts) []DoctorRow {
+	var rows []DoctorRow
+	add := func(section []DoctorRow) {
 		for _, r := range section {
 			rows = append(rows, r)
-			if r.selectable && v.expanded[r.key] {
-				rows = append(rows, r.detail...) // 詳細の行も選べることがある (ディスクの対象パス)
+			if r.Selectable && v.Expanded[r.Key] {
+				rows = append(rows, r.Detail...) // 詳細の行も選べることがある (ディスクの対象パス)
 			}
 		}
-		rows = append(rows, doctorRow{})
+		rows = append(rows, DoctorRow{})
 	}
-	switch v.tab {
-	case tabSvc:
+	switch v.Tab {
+	case TabSvc:
 		add(v.svcSection(o))
-	case tabBrew:
+	case TabBrew:
 		add(v.brewSection(o))
-	case tabDocker:
+	case TabDocker:
 		add(v.dockerSection(o))
-	case tabSSD:
+	case TabSSD:
 		add(v.ssdSection(o))
-	case tabDisk:
+	case TabDisk:
 		add(v.diskSection(o))
 	}
 	return rows
 }
 
 // textRows は「ただ表示するだけ」の詳細行 (選べない)。
-func textRows(lines []string) []doctorRow {
-	out := make([]doctorRow, 0, len(lines))
+func textRows(lines []string) []DoctorRow {
+	out := make([]DoctorRow, 0, len(lines))
 	for _, l := range lines {
-		out = append(out, doctorRow{text: l})
+		out = append(out, DoctorRow{Text: l})
 	}
 	return out
 }
@@ -1041,12 +1044,12 @@ func doctorColor(colored bool, code, s string) string {
 	return code + s + term.AnsiReset
 }
 
-func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
-	results := v.diskResults
+func (v *DoctorView) diskSection(o DoctorRenderOpts) []DoctorRow {
+	results := v.DiskResults
 	partial := false
-	if v.diskRep != nil {
-		results = v.diskRep.Results
-		partial = v.diskRep.Partial
+	if v.DiskRep != nil {
+		results = v.DiskRep.Results
+		partial = v.DiskRep.Partial
 	}
 	// 🚨 **同一フレームで tabSummary も SumDeletable を呼ぶ (2 回) が、まとめない** (issue 321 ③)。
 	// SumDeletable は Result を舐めて int64 を足すだけで**確保を 1 バイトもしない**ので、
@@ -1056,8 +1059,8 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 	total := disk.SumDeletable(results)
 	summary := fmt.Sprintf("合計 %s 解放可能", disk.HumanSize(total))
 	switch {
-	case v.diskRep == nil:
-		summary = fmt.Sprintf("%s スキャン中 %d/%d   %s", o.spinner, len(results), v.diskTotal, summary)
+	case v.DiskRep == nil:
+		summary = fmt.Sprintf("%s スキャン中 %d/%d   %s", o.Spinner, len(results), v.DiskTotal, summary)
 	case partial:
 		summary = "(中断: 部分結果) " + summary
 	}
@@ -1083,7 +1086,7 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		if r.Status == disk.StatusFailed {
 			size = "---"
 		}
-		mark, color := doctorRiskMark(r)
+		mark, color := DoctorRiskMark(r)
 		// ラベル列は狭い幅で縮める。**マークより先にラベルを削る**のは、切れて困る順が
 		// 「状態 > ラベルの詳細」だから (幅 60 で `⛔ 要…` になると、その行が何なのかは
 		// 分かってもどう扱えばよいかが消える。実測 2026-09-03。issue 182)
@@ -1092,7 +1095,7 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		// 幅で切るので、ここで引かないと最長マーク「❓ 走査できず」(幅 13) が切れる。
 		// 同じファイルの sectionHeader は `o.width - 2` と正しく引いており、非対称だった
 		// (フレーム最小構成の contentWidth 53 では常時 +2 超過。実測 2026-09-04)
-		if room := o.width - doctorDiskRowFixedW - doctorMaxMarkWidth() - term.CursorGutterWidth; room < labelW {
+		if room := o.Width - doctorDiskRowFixedW - doctorMaxMarkWidth() - term.CursorGutterWidth; room < labelW {
 			labelW = max(room, doctorMinLabelWidth)
 		}
 		label := term.TruncateDisp(r.Entry.Label, labelW, "…")
@@ -1100,19 +1103,19 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		// `*` = エントリ全体 / `+` = 中の一部だけ (Enter で開いて個別に選んだ状態)
 		sel := " "
 		switch {
-		case v.selected[resultEntryID(r)]:
-			sel = doctorColor(o.colored, term.AnsiBold, "*")
+		case v.Selected[resultEntryID(r)]:
+			sel = doctorColor(o.Colored, term.AnsiBold, "*")
 		case v.hasSelectedItems(resultEntryID(r)):
-			sel = doctorColor(o.colored, term.AnsiBold, "+")
+			sel = doctorColor(o.Colored, term.AnsiBold, "+")
 		}
-		row := doctorRow{
-			text:       fmt.Sprintf("%s%8s  %s%s %s", sel, size, label, term.PadSpaces(labelW-term.DispWidth(label)), doctorColor(o.colored, color, mark)),
-			selectable: true,
-			key:        diskRowKey(resultEntryID(r)),
-			hasDetail:  diskHasDetail(r),
-			detail:     v.diskDetailIfExpanded(o, r),
-			copyPath:   diskCopyPath(r),
-			copyText:   diskCopyText(r, mark),
+		row := DoctorRow{
+			Text:       fmt.Sprintf("%s%8s  %s%s %s", sel, size, label, term.PadSpaces(labelW-term.DispWidth(label)), doctorColor(o.Colored, color, mark)),
+			Selectable: true,
+			Key:        diskRowKey(resultEntryID(r)),
+			HasDetail:  DiskHasDetail(r),
+			Detail:     v.diskDetailIfExpanded(o, r),
+			CopyPath:   diskCopyPath(r),
+			CopyText:   DiskCopyText(r, mark),
 		}
 		rows = append(rows, row)
 		// 🚨 注記は**行の直後**に出し、助言 (advice) には連結しない。
@@ -1120,60 +1123,60 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		//     注記が丸ごと末尾から消える。独立行なら少なくとも「再起動すると消える…」まで読める
 		//   - 助言より前: 下の分岐が blocked / failed / 未実測 0 件で `continue` するため、
 		//     後ろに置くと**実機では一度も出ない** (2026-09-04 実測。CLI 側と同じ理由)
-		if note := disk.RebootNote(r.Entry, o.env); note != "" && r.Status != disk.StatusFailed {
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "           "+note)})
+		if note := disk.RebootNote(r.Entry, o.Env); note != "" && r.Status != disk.StatusFailed {
+			rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "           "+note)})
 		}
 		if r.Status == disk.StatusFailed || r.Status == disk.StatusBlocked {
 			// 理由は 1 行下に出す (マーク列に置くと狭い幅で切れる。issue 182)
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "           "+r.Reason)})
+			rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "           "+r.Reason)})
 			continue
 		}
 		// 未実測のエントリで 0 件のときは、Recover (「消しても再生成されます」) を出さない。
 		// 消す対象が 1 件も無いのに復元方法を出すと、**検出できている**ように読めるため。
 		if r.Entry.Unverified != "" && len(r.Items) == 0 {
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim,
+			rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim,
 				"           0 件ですが「候補なし」ではありません: "+r.Entry.Unverified)})
 			continue
 		}
 		advice := r.Entry.Recover
 		if newest := doctorNewest(r); !newest.IsZero() {
-			advice += fmt.Sprintf("。最終更新 %s (%d日前)", newest.Format("2006-01-02"), int(o.now.Sub(newest).Hours()/24))
+			advice += fmt.Sprintf("。最終更新 %s (%d日前)", newest.Format("2006-01-02"), int(o.Now.Sub(newest).Hours()/24))
 		}
 		if r.Reused {
 			// 🚨 再利用の注記は**行頭**に置く。末尾に足すと狭い幅で真っ先に切れ、
 			// 「その数字は今測ったものではない」が分からなくなる (issue 172 が
 			// 「注記で分かる形にしてある」と書いた前提が幅で崩れる。issue 182)
-			advice = fmt.Sprintf("%d 分前の計測を再利用 (r で再計測)。%s", int(o.now.Sub(r.MeasuredAt).Minutes()), advice)
+			advice = fmt.Sprintf("%d 分前の計測を再利用 (r で再計測)。%s", int(o.Now.Sub(r.MeasuredAt).Minutes()), advice)
 		}
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "           "+advice)})
+		rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "           "+advice)})
 		for _, f := range r.Failures {
 			// 「診断できず」は最も追加調査が必要な行なので、選んで中身を取り出せるようにする
 			// (幅で末尾が切れても y / Y で完全な文字列が手に入る。幅そのものの改善は issues/182)。
 			// 🚨 y が渡すのは理由の文字列 (パスを含む) で、パス単体ではない: disk.Result.Failures が
 			// []string で、パスがエラー文に埋め込まれているため (構造化は issues/180 で保留と判断)
-			rows = append(rows, doctorRow{
-				text:       doctorColor(o.colored, term.AnsiYellow, "           ❓ 一部走査できず (合計に含めていません): "+f),
-				selectable: true,
-				key:        diskFailRowKey(resultEntryID(r), f),
-				hasDetail:  true,
-				detail: textRows([]string{
-					doctorColor(o.colored, term.AnsiDim, "        "+r.Entry.Label+" の一部を走査できませんでした (この分は合計に入っていません)"),
-					doctorColor(o.colored, term.AnsiDim, "        "+f),
+			rows = append(rows, DoctorRow{
+				Text:       doctorColor(o.Colored, term.AnsiYellow, "           ❓ 一部走査できず (合計に含めていません): "+f),
+				Selectable: true,
+				Key:        diskFailRowKey(resultEntryID(r), f),
+				HasDetail:  true,
+				Detail: textRows([]string{
+					doctorColor(o.Colored, term.AnsiDim, "        "+r.Entry.Label+" の一部を走査できませんでした (この分は合計に入っていません)"),
+					doctorColor(o.Colored, term.AnsiDim, "        "+f),
 				}),
-				copyPath: f,
-				copyText: diskCopyText(r, mark),
+				CopyPath: f,
+				CopyText: DiskCopyText(r, mark),
 			})
 		}
 	}
-	if v.diskRep != nil && shown == 0 {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "   掃除候補はありません")})
+	if v.DiskRep != nil && shown == 0 {
+		rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "   掃除候補はありません")})
 	}
 	return rows
 }
 
 // diskDetail は Enter で開く内訳。**対象パスの行は選べる** (ディレクトリ単位で削除するため。
 // ユーザー要望 2026-09-03)。Inspect の中身一覧は「人が見て判断する」ためのものなので選べない。
-// diskHasDetail は「この行を展開したら 1 行でも出るか」。
+// DiskHasDetail は「この行を展開したら 1 行でも出るか」。
 //
 // 🚨 **diskDetail の空判定と同じものを 2 箇所に書かないための唯一の出典。** 270 で detail を
 // 遅延化したとき、行は `hasDetail: true` を無条件に立てていたので、items の無い blocked /
@@ -1181,16 +1184,16 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 // **次の q が畳む側に取られて doctor が 1 回目で閉じない** (敵対的レビュー 2026-09-06 が実測)。
 // 遅延化を捨てずに直すには、展開せずに答えられる述語が要る。
 // 一致は TestDiskHasDetailMatchesBuilder が突き合わせる (片方だけ育てたら red)。
-func diskHasDetail(r disk.Result) bool {
+func DiskHasDetail(r disk.Result) bool {
 	return r.Status == disk.StatusOK || r.Entry.Detail != "" || r.Entry.Inspect ||
 		len(r.Contents) > 0 || len(r.Items) > 0
 }
 
-func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []doctorRow {
-	if !diskHasDetail(r) {
+func (v *DoctorView) DiskDetail(o DoctorRenderOpts, r disk.Result) []DoctorRow {
+	if !DiskHasDetail(r) {
 		return nil
 	}
-	out := make([]doctorRow, 0, 2+len(r.Contents)+len(r.Items))
+	out := make([]DoctorRow, 0, 2+len(r.Contents)+len(r.Items))
 	// 走査できなかった行に削除経路を出さない。消せる候補が確定していないのに
 	// 「削除経路: rm」だけ出ると、消してよいものが見つかったように読める
 	// (CLI の Format は failed のとき理由だけを出す。UI もそれに揃える。issue 182)
@@ -1198,57 +1201,57 @@ func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []doctorRow {
 	// 「Space で選び d で削除」と案内しておいて Space が拒否する形になっていた
 	// (敵対レビュー 2026-09-03 が実測)
 	if r.Status == disk.StatusOK {
-		out = append(out, doctorRow{text: doctorColor(o.colored, term.AnsiDim,
+		out = append(out, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim,
 			"             削除経路: "+r.Entry.DeleteVia+" (Space で選び d で削除)")})
 	}
 	if r.Entry.Detail != "" {
-		out = append(out, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "             "+r.Entry.Detail)})
+		out = append(out, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "             "+r.Entry.Detail)})
 	}
 	if r.Entry.Inspect || len(r.Contents) > 0 {
 		// 🚨 **対象パスの行を必ず出す** (issue 240)。以前は Contents があると選べる行を出さずに
 		// 返しており、Inspect の 5 エントリ (どれも RiskConfirm) は「エントリ全体か、何もしないか」
 		// しか選べなかった。README と画面の「ディレクトリ単位で選べる」が嘘になり、
 		// jumpIntoDetail の飛び先 (diskitem:) も無いのでカーソルも動かない
-		out = append(out, v.diskItemRows(o, r)...)
+		out = append(out, v.DiskItemRows(o, r)...)
 		// 🚨 Inspect は「中身を見てから選ばせる」ためのゲートなので、**開いても何も出ない**形を
 		// 作らない (中身が無いのか、走査が拾えなかったのかが区別できないまま選べてしまう。
 		// 敵対レビュー 2026-09-03)
 		if len(r.Contents) == 0 {
-			out = append(out, doctorRow{text: doctorColor(o.colored, term.AnsiDim,
+			out = append(out, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim,
 				"             (中身の一覧はありません。上の対象パスから選んでください)")})
 			return out
 		}
 		// 中身は**選べない**: Contents は全 Item を平坦に連結した名前の羅列で、パスもサイズも
 		// 持たない (選択の単位にできない)。選ぶのは上の対象パス行
-		out = append(out, doctorRow{text: doctorColor(o.colored, term.AnsiDim,
+		out = append(out, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim,
 			"             中身 (この一覧は選べません):")})
 		for _, c := range r.Contents {
-			out = append(out, doctorRow{text: "               - " + c})
+			out = append(out, DoctorRow{Text: "               - " + c})
 		}
 		return out
 	}
-	return append(out, v.diskItemRows(o, r)...)
+	return append(out, v.DiskItemRows(o, r)...)
 }
 
 // diskItemRows は対象パスを 1 行ずつ、**選べる行**として出す。エントリ全体でなく
 // ディレクトリ単位で消したいときの入口 (`Space` で個別に選ぶ)。
-func (v *doctorView) diskItemRows(o doctorRenderOpts, r disk.Result) []doctorRow {
-	out := make([]doctorRow, 0, len(r.Items))
+func (v *DoctorView) DiskItemRows(o DoctorRenderOpts, r disk.Result) []DoctorRow {
+	out := make([]DoctorRow, 0, len(r.Items))
 	for _, it := range r.Items {
 		mark := " "
-		if v.selectedItems[diskItemKey(resultEntryID(r), it.Path)] {
-			mark = doctorColor(o.colored, term.AnsiBold, "*")
+		if v.SelectedItems[diskItemKey(resultEntryID(r), it.Path)] {
+			mark = doctorColor(o.Colored, term.AnsiBold, "*")
 		}
-		riskMark, _ := doctorRiskMark(r)
-		out = append(out, doctorRow{
-			text: fmt.Sprintf("        %s%9s  %s", mark, disk.HumanSize(it.Size),
-				doctorFitPath(it.Path, o.width-doctorItemPathFixedW)),
-			selectable: true,
-			key:        diskItemRowKey(diskItemKey(resultEntryID(r), it.Path)),
-			copyPath:   it.Path,
+		riskMark, _ := DoctorRiskMark(r)
+		out = append(out, DoctorRow{
+			Text: fmt.Sprintf("        %s%9s  %s", mark, disk.HumanSize(it.Size),
+				doctorFitPath(it.Path, o.Width-doctorItemPathFixedW)),
+			Selectable: true,
+			Key:        diskItemRowKey(diskItemKey(resultEntryID(r), it.Path)),
+			CopyPath:   it.Path,
 			// 🚨 エントリ全体の解説を使い回さない。この行が指すのは**この 1 本**なので、
 			// 合計や他のパスを混ぜると「何を聞かれているか」がずれる
-			copyText: diskItemCopyText(r, it, riskMark),
+			CopyText: diskItemCopyText(r, it, riskMark),
 		})
 	}
 	return out
@@ -1270,7 +1273,7 @@ func doctorFitPath(path string, width int) string {
 // サイズ %9s + 空白 2) と、行頭のカーソル欄。
 const doctorItemPathFixedW = 8 + 1 + 9 + 2 + term.CursorGutterWidth
 
-func doctorRiskMark(r disk.Result) (string, string) {
+func DoctorRiskMark(r disk.Result) (string, string) {
 	// 🚨 **語は disk.Mark が唯一の出典**。CLI (diskdoctor の Format) と同じ文字列がここへ来る。
 	// 以前は同じ写像が 2 つあり、「相手と同じ語彙を使うこと」というコメントだけが両者を
 	// 結んでいたので、片側だけ語を変えてもどちらのテストも赤くならなかった (issue 222)。
@@ -1354,147 +1357,147 @@ func doctorNewest(r disk.Result) time.Time {
 	return t
 }
 
-func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
-	if v.svcRep == nil {
-		return sectionHeader(o, "サービス", o.spinner+" launchd の登録を確認中")
+func (v *DoctorView) svcSection(o DoctorRenderOpts) []DoctorRow {
+	if v.SvcRep == nil {
+		return sectionHeader(o, "サービス", o.Spinner+" launchd の登録を確認中")
 	}
-	rep := v.svcRep
+	rep := v.SvcRep
 	rows := sectionHeader(o, "サービス", fmt.Sprintf("壊れた登録 %d 件 (%d 件を走査)", len(rep.Findings), rep.Scanned))
 	undiagnosed := rep.Interrupted || rep.StatusErr != "" || rep.BrewErr != "" || len(rep.DirErrs) > 0 || len(rep.Undiagnosed) > 0
 	if rep.Interrupted {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 途中で中断されました")})
+		rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiYellow, " 🚨 途中で中断されました")})
 	}
 	if rep.StatusErr != "" {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 診断できず (launchctl): "+rep.StatusErr+" — 実行ファイルの不在と Homebrew 台帳だけを見ています")})
+		rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiYellow, " 🚨 診断できず (launchctl): "+rep.StatusErr+" — 実行ファイルの不在と Homebrew 台帳だけを見ています")})
 	}
 	if rep.BrewErr != "" {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 診断できず (brew): "+rep.BrewErr)})
+		rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiYellow, " 🚨 診断できず (brew): "+rep.BrewErr)})
 	}
 	for _, e := range rep.DirErrs {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 走査できず: "+e)})
+		rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiYellow, " 🚨 走査できず: "+e)})
 	}
 	for _, f := range rep.Findings {
-		detail := []string{doctorColor(o.colored, term.AnsiDim, "      手動で実行してください (このツールは実行しません):")}
+		detail := []string{doctorColor(o.Colored, term.AnsiDim, "      手動で実行してください (このツールは実行しません):")}
 		for _, c := range f.Commands {
 			detail = append(detail, "        "+c)
 		}
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiRed, " ⛔ "+f.Label), selectable: true, key: svcRowKey(f.PlistPath), hasDetail: len(detail) > 0, detail: textRows(detail),
-			copyPath: f.PlistPath, copyText: svcCopyText(f)})
+		rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiRed, " ⛔ "+f.Label), Selectable: true, Key: svcRowKey(f.PlistPath), HasDetail: len(detail) > 0, Detail: textRows(detail),
+			CopyPath: f.PlistPath, CopyText: svcCopyText(f)})
 		for _, r := range f.Reasons {
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "      - "+r)})
+			rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "      - "+r)})
 		}
 		for _, a := range svc.Annotations(f) {
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "      - "+a)})
+			rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "      - "+a)})
 		}
 	}
 	for _, u := range rep.Undiagnosed {
 		// 選べないと理由も plist のパスもどこからも取り出せなかった (幅 80 で理由が丸ごと消える。issues/180)
-		rows = append(rows, doctorRow{
-			text:       doctorColor(o.colored, term.AnsiYellow, " ❔ 診断できず: "+u.PlistPath+" ("+u.Reason+")"),
-			selectable: true,
-			key:        svcUndiagnosedRowKey(u.PlistPath),
-			hasDetail:  true,
-			detail: textRows([]string{
-				doctorColor(o.colored, term.AnsiDim, "      理由: "+u.Reason),
-				doctorColor(o.colored, term.AnsiDim, "      手動で確かめてください (このツールは実行しません):"),
+		rows = append(rows, DoctorRow{
+			Text:       doctorColor(o.Colored, term.AnsiYellow, " ❔ 診断できず: "+u.PlistPath+" ("+u.Reason+")"),
+			Selectable: true,
+			Key:        svcUndiagnosedRowKey(u.PlistPath),
+			HasDetail:  true,
+			Detail: textRows([]string{
+				doctorColor(o.Colored, term.AnsiDim, "      理由: "+u.Reason),
+				doctorColor(o.Colored, term.AnsiDim, "      手動で確かめてください (このツールは実行しません):"),
 				"        plutil -p " + svc.ShellQuote(u.PlistPath),
 				"        ls -l " + svc.ShellQuote(u.PlistPath),
 			}),
-			copyPath: u.PlistPath,
-			copyText: svcUndiagnosedCopyText(u),
+			CopyPath: u.PlistPath,
+			CopyText: SvcUndiagnosedCopyText(u),
 		})
 	}
 	if len(rep.Findings) == 0 && !undiagnosed {
 		// 🎉 は「指摘が 1 件も無い」ときだけ (診断できずが 1 件でもあれば上の分岐で undiagnosed が
 		// 立つので、ここには来ない)。祝うのは**本当に何も無かったとき**だけにする
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, term.AnsiGreen, "   🎉 壊れた登録は見つかりませんでした")})
+		rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiGreen, "   🎉 壊れた登録は見つかりませんでした")})
 	}
 	return rows
 }
 
-func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
-	if v.brew == nil {
-		return sectionHeader(o, "Homebrew", o.spinner+" brew doctor を実行中")
+func (v *DoctorView) brewSection(o DoctorRenderOpts) []DoctorRow {
+	if v.Brew == nil {
+		return sectionHeader(o, "Homebrew", o.Spinner+" brew doctor を実行中")
 	}
-	b := v.brew
+	b := v.Brew
 	switch {
 	case b.Unavailable != "":
-		return append(sectionHeader(o, "Homebrew", "診断できず"), doctorRow{text: doctorColor(o.colored, term.AnsiYellow, " 🚨 "+b.Unavailable)})
+		return append(sectionHeader(o, "Homebrew", "診断できず"), DoctorRow{Text: doctorColor(o.Colored, term.AnsiYellow, " 🚨 "+b.Unavailable)})
 	case b.Clean:
-		// Clean は rc=0 かつ警告 0 件のときだけ立つ (parseBrewDoctor)。診断できずは上の分岐
+		// Clean は rc=0 かつ警告 0 件のときだけ立つ (ParseBrewDoctor)。診断できずは上の分岐
 		return append(sectionHeader(o, "Homebrew", "brew doctor: 警告なし"),
-			doctorRow{text: doctorColor(o.colored, term.AnsiGreen, "   🎉 Your system is ready to brew.")})
+			DoctorRow{Text: doctorColor(o.Colored, term.AnsiGreen, "   🎉 Your system is ready to brew.")})
 	}
 	rows := sectionHeader(o, "Homebrew", fmt.Sprintf("brew doctor: 警告 %d 件 (Enter で本文)", len(b.Warnings)))
 	for i, w := range b.Warnings {
 		lines := strings.Split(w, "\n")
 		summary := strings.TrimSpace(strings.TrimPrefix(lines[0], "Warning:"))
-		adv := brewAdviceFor(w)
-		var detailRows []doctorRow
+		adv := BrewAdviceFor(w)
+		var detailRows []DoctorRow
 		if adv.Known {
 			summary = adv.Title // 見出しは日本語 (原文は詳細の末尾に残す)
 			// 🚨 説明は**折り返す**。ここが一番読ませたい部分なので、term.TruncateDisp に
 			// 末尾から削られると意味が壊れる (原文の英語より先に日本語が消える)
-			wrapW := max(20, o.width-8)
+			wrapW := max(20, o.Width-8)
 			for _, l := range strings.Split(adv.Detail, "\n") {
 				for _, w := range term.WrapToWidth(l, wrapW) {
-					detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, term.AnsiDim, "     "+w)})
+					detailRows = append(detailRows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "     "+w)})
 				}
 			}
 			if adv.Dropped > 0 {
-				detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow,
+				detailRows = append(detailRows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiYellow,
 					fmt.Sprintf("     🚨 名前として読めない語を %d 件落としました (原文を確認してください)", adv.Dropped))})
 			}
 			for j, act := range adv.Actions {
 				if v.actionByCmd == nil {
-					v.actionByCmd = map[cmdKey]doctorCmdAction{}
+					v.actionByCmd = map[CmdKey]doctorCmdAction{}
 				}
-				v.actionByCmd[cmdKey(act.Cmd)] = act
+				v.actionByCmd[CmdKey(act.Cmd)] = act
 				mark := "▸"
-				if v.selectedActions[cmdKey(act.Cmd)] {
-					mark = doctorColor(o.colored, term.AnsiBold, "*")
+				if v.SelectedActions[CmdKey(act.Cmd)] {
+					mark = doctorColor(o.Colored, term.AnsiBold, "*")
 				}
-				detailRows = append(detailRows, doctorRow{text: ""},
-					doctorRow{
-						text:       "     " + mark + " " + doctorColor(o.colored, term.AnsiBold, act.Label),
-						selectable: true,
-						key:        brewActionRowKey(i, j),
-						copyPath:   act.Cmd,
-						copyText:   act.Label + ":\n" + act.Cmd + "\n",
+				detailRows = append(detailRows, DoctorRow{Text: ""},
+					DoctorRow{
+						Text:       "     " + mark + " " + doctorColor(o.Colored, term.AnsiBold, act.Label),
+						Selectable: true,
+						Key:        brewActionRowKey(i, j),
+						CopyPath:   act.Cmd,
+						CopyText:   act.Label + ":\n" + act.Cmd + "\n",
 					},
-					doctorRow{text: doctorColor(o.colored, term.AnsiDim, "       $ "+act.Cmd)})
+					DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "       $ "+act.Cmd)})
 				if act.Note != "" {
-					for k, w := range term.WrapToWidth(act.Note, max(20, o.width-10)) {
+					for k, w := range term.WrapToWidth(act.Note, max(20, o.Width-10)) {
 						pre := "       🚨 "
 						if k > 0 {
 							pre = "          "
 						}
-						detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, term.AnsiYellow, pre+w)})
+						detailRows = append(detailRows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiYellow, pre+w)})
 					}
 				}
 			}
-			detailRows = append(detailRows, doctorRow{text: ""},
-				doctorRow{text: doctorColor(o.colored, term.AnsiDim, "     原文 (brew doctor):")})
+			detailRows = append(detailRows, DoctorRow{Text: ""},
+				DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "     原文 (brew doctor):")})
 		}
 		var detail []string
 		for _, l := range lines[1:] {
-			detail = append(detail, doctorColor(o.colored, term.AnsiDim, "     "+l))
+			detail = append(detail, doctorColor(o.Colored, term.AnsiDim, "     "+l))
 		}
 		// 「Enter で何行出てくるか」の予告なので detail の行数をそのまま数える (見出しは既に見えているので
 		// 数えない / 段落の空行は 1 行として表示されるので数える)。敵対レビュー 2026-09-03: 見出しを数えて
 		// 空行を数えない中間形にすると、段落の数によって実際の展開行数と系統的にずれる。
 		count := fmt.Sprintf("(%d 行)", len(detailRows)+len(detail))
-		inner := o.width - 2
+		inner := o.Width - 2
 		sumW := term.DispWidth(summary)
 		gap := inner - 3 - sumW - term.DispWidth(count) - 1
-		text := "   " + doctorColor(o.colored, term.AnsiYellow, summary)
+		text := "   " + doctorColor(o.Colored, term.AnsiYellow, summary)
 		if gap >= 1 {
-			text += term.PadSpaces(gap) + doctorColor(o.colored, term.AnsiDim, count)
+			text += term.PadSpaces(gap) + doctorColor(o.Colored, term.AnsiDim, count)
 		}
-		rows = append(rows, doctorRow{text: text, selectable: true, key: brewRowKey(i, summary),
-			hasDetail: len(detailRows)+len(detail) > 0,
-			detail:    append(detailRows, textRows(detail)...),
-			copyPath:  summary, copyText: "brew doctor の警告 (macOS Homebrew):\n" + w + "\n"})
+		rows = append(rows, DoctorRow{Text: text, Selectable: true, Key: brewRowKey(i, summary),
+			HasDetail: len(detailRows)+len(detail) > 0,
+			Detail:    append(detailRows, textRows(detail)...),
+			CopyPath:  summary, CopyText: "brew doctor の警告 (macOS Homebrew):\n" + w + "\n"})
 	}
 	return rows
 }
@@ -1508,7 +1511,7 @@ func diskCopyPath(r disk.Result) string {
 	return strings.Join(paths, "\n")
 }
 
-// diskCopyText は Y でコピーする解説文。別セッションの LLM に「これは消していいか」を聞ける形にする。
+// DiskCopyText は Y でコピーする解説文。別セッションの LLM に「これは消していいか」を聞ける形にする。
 // diskVerifyCommands は「なぜこの候補が出たか」を人が自分で確かめるコマンド (issue 183)。
 //
 // なぜ要るか: `Y` のコピー文は「別セッションの LLM にそのまま投げられる形」と定義されている
@@ -1518,7 +1521,7 @@ func diskCopyPath(r disk.Result) string {
 // 引用しないと doctor 自身が提示するコマンドがインジェクションを運ぶ (issue 178 / 193 が塞いだ穴を
 // 新設することになる。`svc.manualCommands` が Label に対して同じ規律を持つ)。
 //
-// 🚨 ここに**既存の出力と重複するコマンドを足さない**。`diskCopyText` は各 Item のサイズ・
+// 🚨 ここに**既存の出力と重複するコマンドを足さない**。`DiskCopyText` は各 Item のサイズ・
 // 最終更新・合計・`Contents` を既に出しているので、`du -sk` や `stat -f %Sm` は情報を増やさない
 // (2026-09-03 の反証レビュー)。
 // 🚨 `orphan-container` に **`mdfind` を出さない**。カタログの Detail が
@@ -1562,7 +1565,7 @@ func diskVerifyCommands(r disk.Result) []string {
 const maxVerifyCommands = 5
 
 // diskItemCopyText は**ディレクトリ 1 本**についての解説文 (Y でコピー)。エントリ全体の
-// diskCopyText を使い回すと、合計と他のパスが混ざって「何を聞かれているか」がずれる。
+// DiskCopyText を使い回すと、合計と他のパスが混ざって「何を聞かれているか」がずれる。
 func diskItemCopyText(r disk.Result, it disk.Item, mark string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "glogx doctor (ディスク診断) の候補のうち 1 件: %s [%s]\n", r.Entry.Label, r.Entry.ID)
@@ -1576,7 +1579,7 @@ func diskItemCopyText(r disk.Result, it disk.Item, mark string) string {
 	return b.String()
 }
 
-func diskCopyText(r disk.Result, mark string) string {
+func DiskCopyText(r disk.Result, mark string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "glogx doctor (ディスク診断) の候補: %s [%s]\n", r.Entry.Label, r.Entry.ID)
 	fmt.Fprintf(&b, "判定: %s / 合計 %s / 削除経路: %s\n", mark, disk.HumanSize(r.Size), r.Entry.DeleteVia)
@@ -1615,9 +1618,9 @@ func diskCopyText(r disk.Result, mark string) string {
 	return b.String()
 }
 
-// svcUndiagnosedCopyText は Y でコピーする解説文 (判定できなかった登録)。
+// SvcUndiagnosedCopyText は Y でコピーする解説文 (判定できなかった登録)。
 // 「診断できなかったので人が確かめてほしい」と言う以上、確かめる材料 (完全なパス・理由・裏取りコマンド) を渡す。
-func svcUndiagnosedCopyText(u svc.Undiagnosed) string {
+func SvcUndiagnosedCopyText(u svc.Undiagnosed) string {
 	var b strings.Builder
 	b.WriteString("glogx doctor (サービス診断) が判定できなかった登録\n")
 	fmt.Fprintf(&b, "plist: %s\n", u.PlistPath)
@@ -1687,16 +1690,16 @@ func svcCopyText(f svc.Finding) string {
 //
 // buildRows の add() が detail を並べるのは `v.expanded[r.key]` のときだけなので、
 // 畳まれている行のぶんは**作って捨てていた**。diskDetail は Contents / Items を全件走査して
-// doctorRow を組むので、1 フレームのコストがカタログ全エントリの Items / Contents の総数に
+// DoctorRow を組むので、1 フレームのコストがカタログ全エントリの Items / Contents の総数に
 // 比例していた (合成 32 エントリ x 200 items で 7.15ms / 9.92MB / 174,352 allocs)。
 //
-// 🚨 無害化 (flattenDoctorRows) との関係: 展開している行の detail は従来どおり値として
+// 🚨 無害化 (FlattenDoctorRows) との関係: 展開している行の detail は従来どおり値として
 // 存在するので、lines() の出口で再帰的に無害化される。畳まれている行は描かれないので
 // 無害化する対象そのものが無い。untrusted_display_test.go の
 // TestFlattenDoctorRowsEnforcesSingleLine は detail を直に組んで渡すので影響を受けない。
-func (v *doctorView) diskDetailIfExpanded(o doctorRenderOpts, r disk.Result) []doctorRow {
-	if !v.expanded[diskRowKey(resultEntryID(r))] {
+func (v *DoctorView) diskDetailIfExpanded(o DoctorRenderOpts, r disk.Result) []DoctorRow {
+	if !v.Expanded[diskRowKey(resultEntryID(r))] {
 		return nil
 	}
-	return v.diskDetail(o, r)
+	return v.DiskDetail(o, r)
 }

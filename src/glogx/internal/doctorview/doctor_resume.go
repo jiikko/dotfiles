@@ -1,4 +1,4 @@
-package main
+package doctorview
 
 import (
 	"glogx/internal/app"
@@ -18,29 +18,29 @@ import (
 // 作法は issues viewer の記憶 (issues_state.go) に揃えてある: 同じ TTL / 未来の時刻を弾く /
 // **開いていないまま終了したら消す**。片方だけ違う規律にすると、どちらかの理由が腐る。
 
-// doctorScreen は閉じたときの doctor の画面。
-type doctorScreen struct {
+// DoctorScreen は閉じたときの doctor の画面。
+type DoctorScreen struct {
 	Tab     int       `json:"tab"`
 	SavedAt time.Time `json:"saved_at"`
 }
 
-var doctorMemory = app.ScreenMemory[doctorScreen]{File: "doctor-screen.json", SavedAt: func(s doctorScreen) time.Time { return s.SavedAt }}
+var DoctorMemory = app.ScreenMemory[DoctorScreen]{File: "doctor-screen.json", SavedAt: func(s DoctorScreen) time.Time { return s.SavedAt }}
 
-func saveDoctorScreen(s doctorScreen) error { return doctorMemory.Save(s) }
+func SaveDoctorScreen(s DoctorScreen) error { return DoctorMemory.Save(s) }
 
-func removeDoctorScreen() { doctorMemory.Remove() }
+func RemoveDoctorScreen() { DoctorMemory.Remove() }
 
-// loadDoctorScreen は復元するタブを返す (読めない・壊れている・期限切れ・未来の時刻は「復元しない」。app.ScreenMemory.load)。
+// LoadDoctorScreen は復元するタブを返す (読めない・壊れている・期限切れ・未来の時刻は「復元しない」。app.ScreenMemory.load)。
 //
 // 🚨 **範囲外のタブは既定へ畳む。** このファイルは一般ユーザー権限で書き換えられるので、
 // 保存値をそのまま添字に使わない (doctor-snapshot.json と同じ信頼境界)。
-func loadDoctorScreen(now time.Time) (doctorTab, bool) {
-	s, ok := doctorMemory.Load(now)
+func LoadDoctorScreen(now time.Time) (DoctorTab, bool) {
+	s, ok := DoctorMemory.Load(now)
 	if !ok {
-		return tabDisk, false
+		return TabDisk, false
 	}
-	if s.Tab < 0 || s.Tab >= numDoctorTabs {
-		return tabDisk, true // 復元はするが、タブは既定へ
+	if s.Tab < 0 || s.Tab >= NumDoctorTabs {
+		return TabDisk, true // 復元はするが、タブは既定へ
 	}
-	return doctorTab(s.Tab), true
+	return DoctorTab(s.Tab), true
 }

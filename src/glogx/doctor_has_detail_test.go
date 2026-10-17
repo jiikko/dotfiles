@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"doctor/disk"
+	"glogx/internal/doctorview"
 )
 
 // hasDetail は「Enter で展開できる行か」を **展開せずに** 答える (270 で detail を遅延化した
@@ -11,25 +12,25 @@ import (
 // 「展開できる」ことになり、Enter が無反応なのに expanded だけ立つ。その状態では
 // **次の q が畳む側に取られて doctor が 1 回目で閉じない**。
 //
-// 🚨 述語 (diskHasDetail) と builder (diskDetail) を別々に育てると、この保証が静かに崩れる。
+// 🚨 述語 (doctorview.DiskHasDetail) と builder (diskDetail) を別々に育てると、この保証が静かに崩れる。
 // 下の 2 本目がその一致を突き合わせる。
 func TestBlockedDiskRowIsNotExpandable(t *testing.T) {
-	mk := func() *doctorView {
-		v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
-		v.diskRep = &disk.Report{Results: []disk.Result{{
+	mk := func() *doctorview.DoctorView {
+		v := &doctorview.DoctorView{Shown: true, Expanded: map[doctorview.RowKey]bool{}}
+		v.DiskRep = &disk.Report{Results: []disk.Result{{
 			Entry:  disk.Entry{ID: "blocked-x", Label: "blocked", Risk: disk.RiskConfirm, DeleteVia: "rm"},
 			Status: disk.StatusBlocked, Size: 4096, Reason: "今は対象外"}}}
-		v.tab = tabDisk
-		_ = v.lines(doctorTestOpts(40))
+		v.Tab = doctorview.TabDisk
+		_ = v.Lines(doctorTestOpts(40))
 		return v
 	}
 
 	v := mk()
 	var found bool
-	for _, r := range v.rows {
-		if r.key == "disk:blocked-x" {
+	for _, r := range v.Rows {
+		if r.Key == "disk:blocked-x" {
 			found = true
-			if r.hasDetail {
+			if r.HasDetail {
 				t.Errorf("展開しても 0 行の行に hasDetail が立っている (Enter が無反応なのに expanded が立つ)")
 			}
 		}
@@ -39,23 +40,23 @@ func TestBlockedDiskRowIsNotExpandable(t *testing.T) {
 	}
 
 	// 本題: Enter を押しても、その次の q は doctor を閉じること
-	before := len(v.rows)
-	v.handleKey("enter", 40)
-	if after := len(v.rows); after != before {
+	before := len(v.Rows)
+	v.HandleKey("enter", 40)
+	if after := len(v.Rows); after != before {
 		t.Fatalf("fixture が想定と違う: Enter で行数が %d -> %d に増えた", before, after)
 	}
-	if act := v.handleKey("q", 40); act != doctorClosed {
+	if act := v.HandleKey("q", 40); act != doctorview.DoctorClosed {
 		t.Errorf("Enter の後の q が飲まれた (act=%v)。畳むものが無いので閉じるべき", act)
 	}
 
 	// 対照: Enter を押していなければ 1 回目の q で閉じる (この対照が無いと、q が常に
 	// 閉じるだけの実装でも上の assert が通る)
-	if act := mk().handleKey("q", 40); act != doctorClosed {
+	if act := mk().HandleKey("q", 40); act != doctorview.DoctorClosed {
 		t.Fatalf("対照が壊れている: Enter 無しの q でも閉じない (act=%v)", act)
 	}
 }
 
-// diskHasDetail (述語) と diskDetail (builder) が一致すること。
+// doctorview.DiskHasDetail (述語) と diskDetail (builder) が一致すること。
 // 🚨 builder に行を足したのに述語を直し忘れる / その逆を検出する。片方だけ育てると
 // 「展開できると言うのに 0 行」か「中身があるのに展開できない」のどちらかになる。
 func TestDiskHasDetailMatchesBuilder(t *testing.T) {
@@ -73,13 +74,13 @@ func TestDiskHasDetailMatchesBuilder(t *testing.T) {
 		{"blocked/Inspect", disk.Result{Entry: disk.Entry{ID: "g", Inspect: true}, Status: disk.StatusBlocked}},
 		{"blocked/Contents あり", disk.Result{Entry: disk.Entry{ID: "h"}, Status: disk.StatusBlocked, Contents: []string{"x"}}},
 	}
-	v := &doctorView{expanded: map[rowKey]bool{}}
+	v := &doctorview.DoctorView{Expanded: map[doctorview.RowKey]bool{}}
 	empties, nonEmpties := 0, 0
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			built := len(v.diskDetail(doctorTestOpts(60), c.r)) > 0
-			if got := diskHasDetail(c.r); got != built {
-				t.Errorf("diskHasDetail=%v だが diskDetail は %d 行", got, len(v.diskDetail(doctorTestOpts(60), c.r)))
+			built := len(v.DiskDetail(doctorTestOpts(60), c.r)) > 0
+			if got := doctorview.DiskHasDetail(c.r); got != built {
+				t.Errorf("doctorview.DiskHasDetail=%v だが diskDetail は %d 行", got, len(v.DiskDetail(doctorTestOpts(60), c.r)))
 			}
 			if built {
 				nonEmpties++

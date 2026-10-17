@@ -50,6 +50,10 @@ linters:
   settings:
     dupl:
       threshold: 120
+    unparam:
+      # 🚨 既定 (false) では package main 以外の公開関数を検査しない。internal/ へ出した画面・土台は
+      # main から呼ぶために公開名になるので、既定のままだと移設で未使用引数の検査から黙って外れる (issue 742)
+      check-exported: true
     exhaustive:
       # default 付き switch は「残りは default で受ける」という意図表明なので網羅を要求しない。
       # default なし switch にだけ enum 全 case を要求する (この repo の「網羅は実装で強制する」

@@ -2,6 +2,7 @@ package main
 
 import (
 	"glogx/internal/app"
+	"glogx/internal/doctorview"
 	"os"
 	"path/filepath"
 	"testing"
@@ -145,7 +146,7 @@ func TestInitRestoresOnlyOneFullScreen(t *testing.T) {
 	if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveDoctorScreen(doctorScreen{Tab: int(tabSvc), SavedAt: now}); err != nil {
+	if err := doctorview.SaveDoctorScreen(doctorview.DoctorScreen{Tab: int(doctorview.TabSvc), SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -155,7 +156,7 @@ func TestInitRestoresOnlyOneFullScreen(t *testing.T) {
 	if !m.rlDash.visible() {
 		t.Fatal("ratelimit の記憶が復元されていない")
 	}
-	if m.doctorOv.visible() {
+	if m.doctorOv.Visible() {
 		t.Error("全画面が 2 枚同時に開いた (doctor が裏で shown)")
 	}
 }

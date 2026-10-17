@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"doctor/disk"
+	"glogx/internal/doctorview"
 )
 
 // C / X (claude / codex update) が git log 一覧以外の画面からも始められることの配線テスト。
@@ -63,8 +64,8 @@ func TestUpdateKeysReachableFromOverlays(t *testing.T) {
 			func(m *browseModel) bool { return m.statusOv.visible() }, true},
 		{"ratelimit", openByKey("R", func(m *browseModel) bool { return m.rlDash.visible() }),
 			func(m *browseModel) bool { return m.rlDash.visible() }, false},
-		{"doctor", openByKey("D", func(m *browseModel) bool { return m.doctorOv.visible() }),
-			func(m *browseModel) bool { return m.doctorOv.visible() }, false},
+		{"doctor", openByKey("D", func(m *browseModel) bool { return m.doctorOv.Visible() }),
+			func(m *browseModel) bool { return m.doctorOv.Visible() }, false},
 		// diff / PR status のポップアップも同じ (以前は未知キーとして飲んでいた)
 		{"diff", func(t *testing.T, m *browseModel) { m.diffOv.open(m.commits[0].SHA) },
 			func(m *browseModel) bool { return m.diffOv.visible() }, false},
@@ -144,18 +145,18 @@ func TestUpdateKeysYieldToOverlayInputModes(t *testing.T) {
 // 削除の確認が裏に残る)。
 //
 // 🚨 この検査が無いと `updateKeyReachable` の doctor 節を消す変異が**全テスト green** を通る
-// (敵対レビュー 2026-09-03 の実測)。doctorView 側のテストは `ownsKeys()` の値しか見ておらず、
+// (敵対レビュー 2026-09-03 の実測)。doctorview.DoctorView 側のテストは `ownsKeys()` の値しか見ておらず、
 // **browseModel がそれを見ているか**は守っていなかった。
 func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
 	claude, codex := stubUpdates(t)
 	states := []struct {
 		name string
-		del  doctorDelete
+		del  doctorview.DoctorDelete
 	}{
-		{"確認中", doctorDelete{confirm: true}},
-		{"下見中", doctorDelete{preparing: true}},
-		{"実行中", doctorDelete{running: true}},
-		{"結果の表示中", doctorDelete{result: &disk.DeleteReport{}}},
+		{"確認中", doctorview.DoctorDelete{Confirm: true}},
+		{"下見中", doctorview.DoctorDelete{Preparing: true}},
+		{"実行中", doctorview.DoctorDelete{Running: true}},
+		{"結果の表示中", doctorview.DoctorDelete{Result: &disk.DeleteReport{}}},
 	}
 	// 🚨 状態 × キーの直積で、**1 キーだけ**押す。確認や結果は 1 キーで解けるので、
 	// 続けて押すと「解けた後の画面に答えた」ことになり、この分岐の主張と混ざる
@@ -163,9 +164,9 @@ func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
 		for _, key := range []string{"C", "X"} {
 			t.Run(st.name+"/"+key, func(t *testing.T) {
 				m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-				m.doctorOv.shown = true
-				m.doctorOv.del = st.del
-				if !m.doctorOv.ownsKeys() {
+				m.doctorOv.Shown = true
+				m.doctorOv.Del = st.del
+				if !m.doctorOv.OwnsKeys() {
 					t.Fatal("前提: doctor が語彙を持っていない")
 				}
 				before, beforeX := *claude, *codex
@@ -179,7 +180,7 @@ func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
 	}
 	// 削除の語彙が立っていなければ、doctor の上からでも update は始められる (既存の契約)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.doctorOv.shown = true
+	m.doctorOv.Shown = true
 	before := *claude
 	press(m, "C")
 	if *claude == before {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"glogx/internal/app"
+	"glogx/internal/doctorview"
 	"runtime"
 	"sync"
 	"testing"
@@ -159,11 +160,11 @@ func TestCleanupLatchWaitIsClosedWhenIdle(t *testing.T) {
 // ⚠️ **宣言で pin する** (テスト関数の中で wait() を読まない)。以前は関数の中で
 // 「仕事が無ければ wait が閉じている」を assert していたが、それは
 // TestCleanupLatchWaitIsClosedWhenIdle の重複であるうえ、**グローバルを読むので
-// 先行テストが doctorCleanup に仕事を残していると 1 秒待って落ちる**
+// 先行テストが doctorview.DoctorCleanup に仕事を残していると 1 秒待って落ちる**
 // (敵対的レビューが実験で再現。自然な到達は shuffle 17 seed で出なかったが、
 // glogx のスイート中に本物の doctor 走査が並走する窓は実在する)。
 // 得られる価値は型の pin だけなので、コストのかからない形に寄せた。
 var (
 	_ *app.CleanupLatch = &pullCleanup
-	_ *app.CleanupLatch = &doctorCleanup
+	_ *app.CleanupLatch = &doctorview.DoctorCleanup
 )

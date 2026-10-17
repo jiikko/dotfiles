@@ -2,6 +2,7 @@ package main
 
 import (
 	"glogx/internal/app"
+	"glogx/internal/doctorview"
 	"glogx/internal/term"
 	"strings"
 	"testing"
@@ -25,10 +26,10 @@ func TestHintsFitPopupWidth(t *testing.T) {
 	width := testHintBudget(t)
 
 	t.Run("doctor", func(t *testing.T) {
-		v := &doctorView{}
-		assertFits(t, "doctorView.hint", v.hint(width), width)
+		v := &doctorview.DoctorView{}
+		assertFits(t, "doctorview.DoctorView.hint", v.Hint(width), width)
 		// 狭くしても「抜ける手段」は残る (優先度 1)
-		if got := v.hint(20); !strings.Contains(got, "esc") {
+		if got := v.Hint(20); !strings.Contains(got, "esc") {
 			t.Errorf("幅 20 で抜ける手段が消えた: %q", got)
 		}
 	})

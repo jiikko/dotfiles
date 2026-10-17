@@ -1,4 +1,4 @@
-package main
+package doctorview
 
 import (
 	"context"
@@ -31,8 +31,8 @@ func TestSaveDoctorCachesCleanTempOnWriteFailure(t *testing.T) {
 		tmpName string // err に載る temp 名 (出所が読めることの検証)
 		save    func() error
 	}{
-		"disk-cache": {"doctor-disk.json.tmp.", func() error { return saveDoctorDiskCache(doctorDiskCache{Total: 1}) }},
-		"snapshot":   {"doctor-snapshot.json.tmp.", func() error { return saveDoctorSnapshot(doctorSnapshot{}) }},
+		"disk-cache": {"doctor-disk.json.tmp.", func() error { return SaveDoctorDiskCache(DoctorDiskCache{Total: 1}) }},
+		"snapshot":   {"doctor-snapshot.json.tmp.", func() error { return SaveDoctorSnapshot(DoctorSnapshot{}) }},
 	}
 	// 子プロセス側: 自分の枠を落として実際に検査する
 	if name := os.Getenv(rlimitChildEnv); name != "" {

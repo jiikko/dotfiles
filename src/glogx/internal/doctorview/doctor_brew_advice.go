@@ -1,4 +1,4 @@
-package main
+package doctorview
 
 import "strings"
 
@@ -89,8 +89,8 @@ func brewNamesAfter(body, marker string) (names []string, dropped int) {
 	return names, dropped
 }
 
-// brewAdviceFor は警告 1 件 (Warning: で始まる塊) を訳と手に落とす。
-func brewAdviceFor(warning string) brewAdvice {
+// BrewAdviceFor は警告 1 件 (Warning: で始まる塊) を訳と手に落とす。
+func BrewAdviceFor(warning string) brewAdvice {
 	head := strings.SplitN(warning, "\n", 2)[0]
 	join := func(ns []string) string { return strings.Join(ns, " ") }
 

@@ -32,6 +32,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 	"glogx/internal/app"
+	"glogx/internal/doctorview"
 )
 
 // Bubble Tea による less 風の対話ブラウズ (カーソル移動 + CI job 表示)。
@@ -364,7 +365,7 @@ type browseModel struct {
 	// lanV は L の全画面 mac-lan-manager (lan_view.go)。画面の部品は src/mac-lan-manager の lanmgr パッケージ
 	lanV lanView
 	// doctorOv は D の全画面 doctor (doctor_view.go)。rlDash と同じ薄い器で、開くと走査を始める
-	doctorOv doctorView
+	doctorOv doctorview.DoctorView
 	// status viewer (s キーで開く全画面の作業ツリービュー)。stage / unstage / 変更を捨てる を
 	// 行う write 側の画面で、状態と描画は statusView 型 (status_view.go) に切り出す。
 	// 読み書きの規約の一次情報は docs/status-viewer-spec.md。
@@ -492,10 +493,10 @@ func (m *browseModel) Init() tea.Cmd {
 	cliHealth := checkCLIHealthCmd()
 	// doctor の起動時トースト: 前回のスキャン結果 (ファイル読みのみ、fork なし) が閾値を超えていれば
 	// 文言で D へ誘導する。起動時に走査はしない (issue 148 の骨格)。
-	if c, ok := loadDoctorDiskCache(); ok {
-		if text := doctorStartupToast(c, ok, app.TimeNow()); text != "" {
+	if c, ok := doctorview.LoadDoctorDiskCache(); ok {
+		if text := doctorview.DoctorStartupToast(c, ok, app.TimeNow()); text != "" {
 			m.toast.ShowInfo(text)
-			markDoctorNotified(app.TimeNow())
+			doctorview.MarkDoctorNotified(app.TimeNow())
 		}
 	}
 	// バックグラウンド再ビルドの監視 (autobuild.go)。shim が GO_AUTOBUILD_PENDING を
@@ -543,9 +544,9 @@ func (m *browseModel) Init() tea.Cmd {
 	// 両方 shown にすると「見えている画面」と「キーを受ける画面」が食い違う。記憶は互いに
 	// 排他 (開いていない方は終了時に消える) なので通常は同時に残らないが、異常終了で片方が
 	// 残ったときにここで倒す。issues 側は issuesRestoreMsg のガードが同じ理由で弾く。
-	if tb, ok := loadDoctorScreen(app.TimeNow()); ok && rlRestore == nil {
-		doctorRestore = m.doctorOv.toggle()
-		m.doctorOv.tab = tb
+	if tb, ok := doctorview.LoadDoctorScreen(app.TimeNow()); ok && rlRestore == nil {
+		doctorRestore = m.doctorOv.Toggle()
+		m.doctorOv.Tab = tb
 	}
 	// F を出したまま終了していたら、同じ dir で開いたときに同じ場所の F を開き直す (filer_resume.go。issue 710)。
 	// 優先は最下位: 他の全画面の記憶が当たったら開かない (全画面は同時に 1 枚。issues は repo の照合が非同期なので、
@@ -1149,23 +1150,23 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case codexUpdateAvailableMsg:
 		m.toast.Show("codex v"+msg.latest+" が公開されています (X で更新)", true)
 		return m, m.maybeTick()
-	case doctorDiskMsg:
-		return m, tea.Batch(m.doctorOv.receiveDisk(msg), m.maybeTick())
-	case doctorDeleteMsg:
-		return m, tea.Batch(m.doctorOv.receiveDelete(msg), m.maybeTick())
-	case doctorSvcMsg:
-		m.doctorOv.receiveSvc(msg)
+	case doctorview.DoctorDiskMsg:
+		return m, tea.Batch(m.doctorOv.ReceiveDisk(msg), m.maybeTick())
+	case doctorview.DoctorDeleteMsg:
+		return m, tea.Batch(m.doctorOv.ReceiveDelete(msg), m.maybeTick())
+	case doctorview.DoctorSvcMsg:
+		m.doctorOv.ReceiveSvc(msg)
 		return m, m.maybeTick()
-	case doctorDockerMsg:
-		m.doctorOv.receiveDocker(msg)
+	case doctorview.DoctorDockerMsg:
+		m.doctorOv.ReceiveDocker(msg)
 		return m, m.maybeTick()
-	case doctorSSDMsg:
-		if text := m.doctorOv.receiveSSD(msg); text != "" {
+	case doctorview.DoctorSSDMsg:
+		if text := m.doctorOv.ReceiveSSD(msg); text != "" {
 			m.toast.Show(text, false)
 		}
 		return m, m.maybeTick()
-	case doctorBrewMsg:
-		m.doctorOv.receiveBrew(msg)
+	case doctorview.DoctorBrewMsg:
+		m.doctorOv.ReceiveBrew(msg)
 		return m, m.maybeTick()
 	case cliHealthMsg:
 		for _, issue := range msg.issues {
@@ -1528,7 +1529,7 @@ func (m *browseModel) updateKeyReachable(key string) bool {
 	}
 	// doctor の削除は y/N の確認と実行中のブロックを持つ (issue 148 ④)。ここで譲らないと
 	// 確認中の X が codex update を始め、削除の確認が裏に残る
-	if m.doctorOv.visible() && m.doctorOv.ownsKeys() {
+	if m.doctorOv.Visible() && m.doctorOv.OwnsKeys() {
 		return false
 	}
 	if m.statusOv.visible() && (m.statusOv.ownsKeys() || key == "X") {
@@ -1587,16 +1588,16 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			// 終了すると、残った自己更新が孤児のまま進む)。
 			// escape は updateTimeout のみ。モーダルに「完了まで終了できません」を出す。
 			return m, nil
-		case m.doctorOv.visible() && m.doctorOv.del.blocking():
+		case m.doctorOv.Visible() && m.doctorOv.Del.Blocking():
 			// doctor の削除も push / pull と同じ 2 段ガード。🚨 ここに case が無いと
 			// **1 回目の Ctrl-C でプロセスごと落ちる**。それは削除の中断を ctx で伝える経路を
 			// 使わないので、記録が executing のまま残り、cli: の子プロセスも孤児化する
 			// (doctor_delete.go 冒頭の不変条件を、UI の配線が破る形。敵対レビュー 2026-09-03 が実測)。
-			// 中断の意味づけ (1 回目は武装 / 2 回目で cancel) は doctorView が持つので、
+			// 中断の意味づけ (1 回目は武装 / 2 回目で cancel) は doctorview.DoctorView が持つので、
 			// 判定を 2 箇所に書かず handleDeleteKey へ渡す。**どちらの回でもここで飲む**
 			// (2 回目の cancel は相を落とさない = 相を落とすのは receiveDelete なので、
 			// 回数で戻り値を分けても同じ値になる)
-			m.doctorOv.handleDeleteKey("ctrl+c")
+			m.doctorOv.HandleDeleteKey("ctrl+c")
 			return m, m.maybeTick()
 		case m.actModal.pushing || m.actModal.pulling:
 			// 途中終了は不整合 (特に pull --rebase の mid-rebase 状態) を招くので 1 回目はブロック。
@@ -1864,7 +1865,7 @@ func (m *browseModel) applyListMotion(mo listnav.Motion) tea.Cmd {
 func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 	// 描画中に選択行が消えて寄せていたら、**キーを飲まずに**知らせる (issue 210)。
 	// カーソルの寄せは View から起きるので、通知経路はここしか無い
-	if t := m.doctorOv.takeCursorFellBack(); t != "" {
+	if t := m.doctorOv.TakeCursorFellBack(); t != "" {
 		m.toast.Show(t, false)
 	}
 	// U (usage) は doctor の上でも効く (issues / status と同じ契約。issue 227 ③)。usage の箱は
@@ -1872,40 +1873,40 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 	// 🚨 doctor が自分でキーを解釈し切る状態 (削除の y/N 確認・実行中) では横取りごと飛ばして
 	// 委譲へ落とす: 飛ばさないと確認中の U が箱を出し、確認は裏に残ったままになる
 	// (issues の URL ピッカーで実際に起きた形 = issue 113)。
-	if !m.doctorOv.ownsKeys() {
+	if !m.doctorOv.OwnsKeys() {
 		if key == "U" {
 			return m, m.toggleUsage()
 		}
 		m.usageOv.dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
 	}
-	switch m.doctorOv.handleKey(key, m.pageSize()) {
-	case doctorClosed:
+	switch m.doctorOv.HandleKey(key, m.pageSize()) {
+	case doctorview.DoctorClosed:
 		return m, m.maybeTick()
-	case doctorRescan:
+	case doctorview.DoctorRescan:
 		// 再スキャンの理由がある場合は伝える (「前回の結果だったので取り直します」等)。
 		// 🚨 黙って走らせない: ユーザーは Space / d を押したのであって r を押していない
-		if t := m.doctorOv.takeToast(); t != "" {
+		if t := m.doctorOv.TakeToast(); t != "" {
 			m.toast.Show(t, false)
 		}
-		// close() を経由しない: 数件だけの partial を書いて完全な結果を潰さない (doctorView.saveCache の注記)
-		return m, tea.Batch(m.doctorOv.rescan(), m.maybeTick())
-	case doctorCopyPath:
-		m.copyWithToast(m.doctorOv.copyPayload(), "パスをコピーしました")
-	case doctorCopyText:
-		m.copyWithToast(m.doctorOv.copyPayload(), "解説をコピーしました (LLM にそのまま貼れます)")
-	case doctorCopyLog:
-		m.copyWithToast(m.doctorOv.copyPayload(), "実行の記録をコピーしました (LLM にそのまま貼れます)")
-	case doctorNothing:
+		// close() を経由しない: 数件だけの partial を書いて完全な結果を潰さない (doctorview.DoctorView.saveCache の注記)
+		return m, tea.Batch(m.doctorOv.Rescan(), m.maybeTick())
+	case doctorview.DoctorCopyPath:
+		m.copyWithToast(m.doctorOv.CopyPayload(), "パスをコピーしました")
+	case doctorview.DoctorCopyText:
+		m.copyWithToast(m.doctorOv.CopyPayload(), "解説をコピーしました (LLM にそのまま貼れます)")
+	case doctorview.DoctorCopyLog:
+		m.copyWithToast(m.doctorOv.CopyPayload(), "実行の記録をコピーしました (LLM にそのまま貼れます)")
+	case doctorview.DoctorNothing:
 		m.toast.Show("この行にはコピーするものがありません", false)
-	case doctorToast:
-		m.toast.Show(m.doctorOv.takeToast(), false)
-	case doctorRunDelete:
-		// 削除 (と、その下見) は doctorView が組んだ Cmd をそのまま走らせる
-		return m, tea.Batch(m.doctorOv.takeDeleteCmd(), m.maybeTick())
-	case doctorCross:
+	case doctorview.DoctorToast:
+		m.toast.Show(m.doctorOv.TakeToast(), false)
+	case doctorview.DoctorRunDelete:
+		// 削除 (と、その下見) は doctorview.DoctorView が組んだ Cmd をそのまま走らせる
+		return m, tea.Batch(m.doctorOv.TakeDeleteCmd(), m.maybeTick())
+	case doctorview.DoctorCross:
 		// 横断 (i / s / R)。doctor は handleKey が閉じ済み (演出なし) なので、そのまま開いてよい
-		return m, m.openFullScreen(m.doctorOv.takeWantCross())
-	case doctorSwallow:
+		return m, m.openFullScreen(m.doctorOv.TakeWantCross())
+	case doctorview.DoctorSwallow:
 	}
 	return m, m.maybeTick()
 }
@@ -2481,7 +2482,7 @@ func (m *browseModel) cancelAll() {
 	// たびに kqueue fd が新プロセスへ 1 本ずつ継承され続ける。
 	m.issuesOv.stopWatch()
 	m.stopGitLogWatch() // git log の見張りも同じ理由で閉じる (gitlog_watch.go)
-	m.doctorOv.stop()   // doctor の走査 goroutine / 子プロセス (brew / simctl) を止める (popup の開閉で残さない)
+	m.doctorOv.Stop()   // doctor の走査 goroutine / 子プロセス (brew / simctl) を止める (popup の開閉で残さない)
 	m.lanV.stop()       // mac-lan-manager の Bonjour の走査 (終わらない dns-sd) を止める
 }
 
@@ -2572,7 +2573,7 @@ func (m *browseModel) restartPromptVisible() bool {
 	// 🚨 doctor の削除中も出さない。このダイアログの r は cancelAll で走行中の処理を殺すし、
 	// 出ている間はどのキーもダイアログに吸われて doctor に届かない (削除の確認が裏に残る)。
 	// actModal を除外しているのと同じ理由 (敵対レビュー 2026-09-03 が実測)
-	return m.restartPending && !m.actModal.active() && (!m.doctorOv.visible() || !m.doctorOv.ownsKeys())
+	return m.restartPending && !m.actModal.active() && (!m.doctorOv.Visible() || !m.doctorOv.OwnsKeys())
 }
 
 // restartPromptLines は完成ダイアログの箱 (push/pull 確認と同じ見た目)。
@@ -2704,11 +2705,11 @@ func (m *browseModel) rememberIssuesScreen() {
 // (doctor_resume.go)。🚨 issues 側と同じく、**開いていないまま終了したら消す** — 残すと、
 // 一覧を見て閉じた次の起動で 2 回前の doctor が蘇る。
 func (m *browseModel) rememberDoctorScreen() {
-	if m.doctorOv.visible() {
-		_ = saveDoctorScreen(doctorScreen{Tab: int(m.doctorOv.tab), SavedAt: app.TimeNow()}) // 失敗しても終了は妨げない
+	if m.doctorOv.Visible() {
+		_ = doctorview.SaveDoctorScreen(doctorview.DoctorScreen{Tab: int(m.doctorOv.Tab), SavedAt: app.TimeNow()}) // 失敗しても終了は妨げない
 		return
 	}
-	removeDoctorScreen()
+	doctorview.RemoveDoctorScreen()
 }
 
 // rememberRatelimitScreen は「ratelimit ダッシュボードを出したまま終了したら次の起動で開き直す」
@@ -3574,7 +3575,7 @@ func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
 	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.listHasPending() || m.panelHasPendingJob() || m.usageOv.loading() || m.rlDashLoading() || m.issuesOv.loading() ||
-		m.statusOv.fetching() || m.doctorOv.scanning() || m.doctorOv.deleting() || m.filerV.busy() || m.lanV.busy()
+		m.statusOv.fetching() || m.doctorOv.Scanning() || m.doctorOv.Deleting() || m.filerV.busy() || m.lanV.busy()
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ
@@ -3597,8 +3598,8 @@ func (o statusRenderOpts) viewport() statusViewport {
 
 // ratelimitOpts は全画面 ratelimit ダッシュボードの描画情報。データは usageOv の Snapshot を
 // そのまま渡す (取得経路を 1 本に保つ。ratelimit_dashboard.go 冒頭)。
-func (m *browseModel) doctorOpts() doctorRenderOpts {
-	return doctorRenderOpts{env: disk.RealEnv(), width: m.contentWidth(), page: m.pageSize(), colored: m.colored, spinner: m.spinner(), now: app.TimeNow()}
+func (m *browseModel) doctorOpts() doctorview.DoctorRenderOpts {
+	return doctorview.DoctorRenderOpts{Env: disk.RealEnv(), Width: m.contentWidth(), Page: m.pageSize(), Colored: m.colored, Spinner: m.spinner(), Now: app.TimeNow()}
 }
 
 func (m *browseModel) ratelimitOpts() ratelimitRenderOpts {
@@ -3904,7 +3905,7 @@ func (m *browseModel) viewLines() string {
 	case app.FullScreenRatelimit:
 		return m.finishWithGlobalChrome(m.rlDash.lines(m.ratelimitOpts()), page)
 	case app.FullScreenDoctor:
-		return m.finishWithGlobalChrome(m.doctorOv.lines(m.doctorOpts()), page)
+		return m.finishWithGlobalChrome(m.doctorOv.Lines(m.doctorOpts()), page)
 	case app.FullScreenStatus:
 		return m.finishWithGlobalChrome(m.statusOv.lines(m.statusOpts()), page)
 	case app.FullScreenIssues:
@@ -4184,7 +4185,7 @@ func (m *browseModel) hintLine() string {
 	case app.FullScreenRatelimit:
 		return m.hintLineText(m.rlDash.hint(m.hintWidth()))
 	case app.FullScreenDoctor:
-		return m.hintLineText(m.doctorOv.hint(m.hintWidth()))
+		return m.hintLineText(m.doctorOv.Hint(m.hintWidth()))
 	case app.FullScreenStatus:
 		return m.hintLineText(m.statusOv.hint(m.hintWidth()))
 	case app.FullScreenIssues:

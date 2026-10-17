@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/doctorview"
 )
 
 // overlay が「自分の語彙を持っている (a)」「中断できない処理を走らせている (b)」を主張する場所は
@@ -17,7 +18,7 @@ import (
 //  2. **表に載っていない参加者が現れたら red にする** (reflect で ownsKeys の実装を数え上げる)
 //
 // 🚨 production の述語を新しく発明しない (issue 213 の判断)。`actModal.active()` /
-// `running()` と `doctorDelete.active()` / `blocking()` が既に 2 軸そのもので、doc も
+// `running()` と `doctorview.DoctorDelete.active()` / `blocking()` が既に 2 軸そのもので、doc も
 // 一致テストの前例 (`TestActionModalActiveMatchesHandleKey`) も在る。ここは**参照側の
 // 網羅**だけを守る。
 //
@@ -121,7 +122,7 @@ func TestOverlayUninterruptibleMatchesCtrlCAndRestartPrompt(t *testing.T) {
 // 表に載っていない参加者が現れたら red にする (issue 213 の受け入れ条件)。
 //
 // 🚨 **compile error にはできない**ので、`browseModel` のフィールドを reflect で走査し、
-// `ownsKeys()` を実装している型が表に在ることを要求する。非公開メソッドの interface は
+// `ownsKeys()` (internal/ へ出した画面は `OwnsKeys()`) を実装している型が表に在ることを要求する。非公開メソッドの interface は
 // 同一 package なら判定できる。走査の実体は `ownsKeysFieldNames` (ポインタ / スライスの
 // フィールドを取りこぼさないこと自体を canary で検査している)。
 func TestOverlayOwnershipTableCoversAllParticipants(t *testing.T) {
@@ -175,8 +176,8 @@ func showOverlayOwning(t *testing.T, m *browseModel, name string) {
 	t.Helper()
 	switch name {
 	case "doctorOv":
-		m.doctorOv.shown = true
-		m.doctorOv.del = doctorDelete{confirm: true}
+		m.doctorOv.Shown = true
+		m.doctorOv.Del = doctorview.DoctorDelete{Confirm: true}
 	case "issuesOv":
 		m.issuesOv.shown = true
 		m.issuesOv.numFilter.typing = true // 番号入力中はキーを解釈し切る
@@ -202,9 +203,9 @@ func showOverlayUninterruptible(t *testing.T, m *browseModel, name string) {
 	t.Helper()
 	switch name {
 	case "doctorOv":
-		m.doctorOv.shown = true
-		m.doctorOv.del = doctorDelete{running: true}
-		if !m.doctorOv.del.blocking() {
+		m.doctorOv.Shown = true
+		m.doctorOv.Del = doctorview.DoctorDelete{Running: true}
+		if !m.doctorOv.Del.Blocking() {
 			t.Fatal("前提が作れていない: doctor の削除が blocking でない")
 		}
 	default:
@@ -215,7 +216,7 @@ func showOverlayUninterruptible(t *testing.T, m *browseModel, name string) {
 func overlayOwnsKeys(m *browseModel, name string) bool {
 	switch name {
 	case "doctorOv":
-		return m.doctorOv.ownsKeys()
+		return m.doctorOv.OwnsKeys()
 	case "issuesOv":
 		return m.issuesOv.ownsKeys()
 	case "statusOv":
@@ -244,14 +245,24 @@ func isQuitCmd(cmd tea.Cmd) bool {
 // `*fooView` のフィールドは false、`[]fooView` も false)。既存の値フィールドで
 // 件数 > 0 になるので「判定不能」ガードも鳴らず、**次の overlay をポインタで持たせた瞬間に
 // 静かに無検査になる** (敵対的レビューの P2)。ポインタ / スライスは要素型まで開いて見る。
+//
+// 🚨 **非公開の ownsKeys() と公開の OwnsKeys() の両方を数える**。internal/ の package へ出した画面
+// (internal/doctorview の DoctorView など) は main の非公開 interface を満たせないので、公開名の OwnsKeys() を持つ。
+// 片方だけを見ると、出した画面がこの走査から黙って外れる (issue 742 の移設で実際に外れかけた)。
 func ownsKeysFieldNames(t reflect.Type) []string {
 	type ownsKeyser interface{ ownsKeys() bool }
-	want := reflect.TypeOf((*ownsKeyser)(nil)).Elem()
+	type exportedOwnsKeyser interface{ OwnsKeys() bool }
+	wants := []reflect.Type{
+		reflect.TypeOf((*ownsKeyser)(nil)).Elem(),
+		reflect.TypeOf((*exportedOwnsKeyser)(nil)).Elem(),
+	}
 
 	implements := func(ft reflect.Type) bool {
 		for range 2 { // 値 → 要素型 の 2 段まで開く (*T / []T)
-			if ft.Implements(want) || reflect.PointerTo(ft).Implements(want) {
-				return true
+			for _, want := range wants {
+				if ft.Implements(want) || reflect.PointerTo(ft).Implements(want) {
+					return true
+				}
 			}
 			switch ft.Kind() {
 			case reflect.Pointer, reflect.Slice, reflect.Array:
@@ -277,9 +288,9 @@ func ownsKeysFieldNames(t reflect.Type) []string {
 // 🚨 **本走査と同じ関数を通す**。式をコピーして別に書くと canary はコピーを検査するだけになる。
 func TestOwnsKeysFieldScanFindsPointerAndSliceFields(t *testing.T) {
 	type probe struct {
-		Value    doctorView
-		Pointer  *doctorView
-		Slice    []doctorView
+		Value    doctorview.DoctorView
+		Pointer  *doctorview.DoctorView
+		Slice    []doctorview.DoctorView
 		Unrelate int
 	}
 	got := ownsKeysFieldNames(reflect.TypeOf(probe{}))

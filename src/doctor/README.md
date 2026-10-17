@@ -52,7 +52,7 @@
 
 ## glogx の doctor 画面との関係
 
-`glogx` の `D` は、この 2 つの検査を同じ画面に並べて出す (`src/glogx/doctor_view.go` が
+`glogx` の `D` は、この 2 つの検査を同じ画面に並べて出す (`src/glogx/internal/doctorview/doctor_view.go` が
 `doctor/disk` と `doctor/svc` を直接呼ぶ。CLI を起動するのではない)。
 画面内のキーとキャッシュの規律は [`src/glogx/README.md`](../glogx/README.md) のキー表を参照。
 

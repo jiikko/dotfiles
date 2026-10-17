@@ -17,6 +17,7 @@ import (
 	"doctor/testtmp"
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 	"glogx/internal/app"
+	"glogx/internal/doctorview"
 	"glogx/internal/term"
 	"glogx/issues"
 	"subproc"
@@ -25,14 +26,14 @@ import (
 // installInertDoctor は doctor の走査口を**何も触らない fake** に差し替える。
 //
 // 🚨 差さないと、キー操作の先で **実マシンに対する走査**が始まる: `D` で開く経路だけでなく、
-// 削除の結果パネルを閉じる (= doctorRescan) のような**間接的な経路**でも起きる。
+// 削除の結果パネルを閉じる (= doctorview.DoctorRescan) のような**間接的な経路**でも起きる。
 // 実測 2026-09-03 (issue 216): glogx のテスト全体で実 `xcrun` / `brew` / `pgrep` を 29 回叩き、
 // しかも `t.Cleanup(m.cancel)` は join しないので goroutine が次のテストへ跨いでいた
 // (issue 214 のデータ競合はその跨ぎが踏んだ 1 個)。
 //
 // カタログを空にするのが要点: エントリが 0 件なら走査は即座に終わり、Run も呼ばれない。
 // doctor 自体を検査するテストは `doctorTestView` を使うか、この後で seam を上書きする。
-func installInertDoctor(t *testing.T, v *doctorView) {
+func installInertDoctor(t *testing.T, v *doctorview.DoctorView) {
 	t.Helper()
 	home := t.TempDir()
 	inert := func(_ context.Context, name string, _ ...string) (string, string, int, error) {
@@ -41,7 +42,7 @@ func installInertDoctor(t *testing.T, v *doctorView) {
 		}
 		return "", "", 0, nil
 	}
-	v.diskOpts = func() disk.Options {
+	v.DiskOpts = func() disk.Options {
 		return disk.Options{
 			Env:     disk.Env{Home: home, TmpDir: home + "/", Getenv: func(string) string { return "" }},
 			Run:     inert,
@@ -50,22 +51,22 @@ func installInertDoctor(t *testing.T, v *doctorView) {
 			BootTime: func() (time.Time, error) { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), nil },
 		}
 	}
-	v.svcOpts = func() svc.Options { return svc.Options{Run: inert} } // Dirs 空 = 走査対象なし
-	v.brewRun = inert
-	v.dockerOpts = noDockerOptions // Docker Desktop が入っていない扱い (本物の docker system df を叩かない)
-	v.ssdOpts = fakeSSDOptions(true)
+	v.SvcOpts = func() svc.Options { return svc.Options{Run: inert} } // Dirs 空 = 走査対象なし
+	v.BrewRun = inert
+	v.DockerOpts = noDockerOptions // Docker Desktop が入っていない扱い (本物の docker system df を叩かない)
+	v.SsdOpts = fakeSSDOptions(true)
 }
 
 // joinDoctorCleanup は走査の終了を**上限つきで**待つ。
 //
-// ⚠️ production の `waitDoctorCleanup()` を直接呼ばない: あれは上限が無く、止まらない走査が
+// ⚠️ production の `doctorview.WaitDoctorCleanup()` を直接呼ばない: あれは上限が無く、止まらない走査が
 // あると go test の 10 分タイムアウトまでハングして goroutine dump で終わる (何が悪いのか
 // 読めない)。判定不能は**第 3 の結果**として Fatal で出す (doctor_cleanup_test.go の
 // drainDoctorCleanup と同じ規律)。
 func joinDoctorCleanup(t *testing.T) {
 	t.Helper()
 	done := make(chan struct{})
-	go func() { defer close(done); waitDoctorCleanup() }()
+	go func() { defer close(done); doctorview.WaitDoctorCleanup() }()
 	select {
 	case <-done:
 	case <-time.After(30 * time.Second):
@@ -157,7 +158,7 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 		// 組み合わさると**パッケージ全体がハングする** (敵対レビュー 2026-09-03 が再現)。
 		// production の quit / main.go と同じ後始末にすることで fidelity も上がる
 		m.cancelAll()
-		// ⚠️ cancel は**子の死を待たない** (doctorView.stop() のコメントが正本。issue 211)。
+		// ⚠️ cancel は**子の死を待たない** (doctorview.DoctorView.stop() のコメントが正本。issue 211)。
 		// join しないと走査 goroutine が次のテストへ跨ぎ、package 変数を踏む (issue 214 / 216)
 		joinDoctorCleanup(t)
 	})

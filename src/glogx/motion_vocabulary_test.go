@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"glogx/internal/doctorview"
 	"strconv"
 	"testing"
 )
@@ -100,14 +101,14 @@ var motionScreens = []motionScreen{
 		build: func(t *testing.T) motionProbe {
 			m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 			m.width, m.height = 100, 20
-			m.doctorOv = doctorView{shown: true}
+			m.doctorOv = doctorview.DoctorView{Shown: true}
 			for i := range 40 {
-				m.doctorOv.rows = append(m.doctorOv.rows, doctorRow{text: strconv.Itoa(i), selectable: true, key: rowKey(strconv.Itoa(i))})
+				m.doctorOv.Rows = append(m.doctorOv.Rows, doctorview.DoctorRow{Text: strconv.Itoa(i), Selectable: true, Key: doctorview.RowKey(strconv.Itoa(i))})
 			}
 			return motionProbe{
 				press:   func(k string) { m.handleKey(k) },
-				observe: func() string { return fmt.Sprintf("index=%d", m.doctorOv.cur.index) },
-				pos:     func() int { return m.doctorOv.cur.index },
+				observe: func() string { return fmt.Sprintf("index=%d", m.doctorOv.Cur.Index) },
+				pos:     func() int { return m.doctorOv.Cur.Index },
 				half:    listnav.Half(m.pageSize()), // routeKeyToDoctor が渡す page
 			}
 		},
