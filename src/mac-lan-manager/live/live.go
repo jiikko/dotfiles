@@ -4,8 +4,11 @@ package live
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -14,6 +17,7 @@ import (
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/prefs"
+	"mac-lan-manager/setup"
 	"subproc"
 	"subproc/clipboard"
 )
@@ -33,8 +37,11 @@ func Options() (lanmgr.Options, error) {
 		log = FileLog(p)
 	}
 	return lanmgr.Options{
-		Log:       log, // 操作のログ (~/Library/Logs/mac-lan-manager.log)
-		ReadNet:   func(ctx context.Context) (netinfo.Snapshot, error) { return netinfo.Read(ctx, RunOut) },
+		Log:     log, // 操作のログ (~/Library/Logs/mac-lan-manager.log)
+		ReadNet: func(ctx context.Context) (netinfo.Snapshot, error) { return netinfo.Read(ctx, RunOut) },
+		ReadAdvert: func(ctx context.Context) (setup.NameState, error) {
+			return setup.ReadNameState(ctx, func(ctx context.Context, argv []string) (string, error) { return RunOut(ctx, argv[0], argv[1:]...) })
+		},
 		LocalHost: localHost,
 		StartScan: func(now time.Time) lanmgr.Scanner { return discover.Start(discover.ExecStarter, now) },
 		IfName:    ifName,
@@ -44,6 +51,14 @@ func Options() (lanmgr.Options, error) {
 		Copy:      clipboard.Copy, // pbcopy (tmux の中では tmux バッファへもおまけ)。上限は clipboard.Timeout
 		User:      os.Getenv("USER"),
 		Observe:   Observe,
+		RunQuiet: func(ctx context.Context, argv []string) error {
+			_, err := RunOut(ctx, argv[0], argv[1:]...)
+			var ee *exec.ExitError
+			if errors.As(err, &ee) && len(ee.Stderr) > 0 { // 理由 (相手の sh が stderr に出した 1 行) を画面に届ける。終了コードは %w で残る
+				return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
+			}
+			return err
+		},
 	}, nil
 }
 

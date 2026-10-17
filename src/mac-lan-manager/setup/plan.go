@@ -10,6 +10,10 @@ type Observed struct {
 	SelfService, SelfIP, SelfMethod, SelfMask string
 	// SelfMainIP / SelfMainMask はこの Mac のメイン (ルーターのある網。Wi-Fi) の IP とマスク。帯がこの網と重なると、その網の宛先が有線へ流れる
 	SelfMainIP, SelfMainMask string
+	// SelfHost はこの Mac の Bonjour のホスト名 (有線の名前の元)。SelfAdvert はこの Mac の有線の名前の広告の状態 (読めたときだけ SelfAdvertKnown)
+	SelfHost        string
+	SelfAdvertKnown bool
+	SelfAdvert      NameState
 
 	Peer PeerObs
 }
@@ -27,6 +31,9 @@ type PeerObs struct {
 	Method    string // "DHCP" / "manual"
 	Managed   bool   // 台帳に載っている
 	LedgerLAN string // 台帳の内部 IP
+	// AdvertKnown / Advert は相手の有線の名前の広告の状態 (観測で読めたときだけ)
+	AdvertKnown bool
+	Advert      NameState
 }
 
 // StepID は手順の名前 (画面と台帳の進み具合のキー)。
@@ -38,6 +45,8 @@ const (
 	StepKey        StepID = "key"         // 相手に自分の公開鍵を置く
 	StepPeerStatic StepID = "peer-static" // 相手の有線を帯の固定 IP にする (デッドマンスイッチ付き)
 	StepLedger     StepID = "ledger"      // 台帳に内部 IP 付きで載せる
+	StepSelfName   StepID = "self-name"   // この Mac の有線の名前 (<ホスト名>.wired.local) を広告する (wiredname.go)
+	StepPeerName   StepID = "peer-name"   // 相手の有線の名前を広告する
 )
 
 // Step は手順の 1 つ。Done なら済んでいる。Blocked が空でなければ、その理由で今は進めない。
@@ -99,8 +108,35 @@ func Plan(o Observed) []Step {
 	if !ledger.Done && !peer.Done {
 		ledger.Blocked = "先に相手の有線を固定 IP にする"
 	}
+	selfName := nameStep(StepSelfName, "この Mac の", o.SelfHost, o.SelfIP, self.Done, o.SelfAdvertKnown, o.SelfAdvert,
+		"先にこの Mac の有線を固定 IP にする", "この Mac の名前の広告の状態を読めていない (r でリロード)")
+	peerName := nameStep(StepPeerName, "相手の", o.Peer.Host, o.Peer.IP, ledger.Done, o.Peer.AdvertKnown, o.Peer.Advert,
+		"先に台帳に内部 IP 付きで載せる", "相手の名前の広告の状態を読めていない (r でリロード)")
 	// 公開鍵を先に置く: 鍵の手順 (端末を持つ ssh-copy-id) で人が相手の指紋を確かめるまで、どちらの Mac の設定も変えない
 	// (この Mac の固定を先にしていたので、初めての相手ではホスト鍵を確かめる前に自動では戻らない変更が走った。敵対レビュー)。
 	// 鍵はこの Mac の固定に依らない (相手の Wi-Fi か 169.254 で入る)
-	return []Step{key, self, peer, ledger}
+	// 有線の名前は最後: 仕上げの手順なので、読めない・止まっていても固定 IP と台帳の手順を止めない (x は済んでいない最初の手順を出すので、
+	// 前に置くと「この Mac の名前の広告の状態を読めていない」で相手の固定 IP まで断った)
+	return []Step{key, self, peer, ledger, selfName, peerName}
+}
+
+// nameStep は有線の名前を広告する手順 (この Mac / 相手で同じ形)。済みは「広告する Mac の launchd が、今の有線の IP でその名前を
+// 広告している」(名前の解決では見ない: 止めた名前も問い合わせた側のキャッシュに約 4 分残った。wiredname.go)。
+func nameStep(id StepID, who, host, ip string, ready, known bool, st NameState, notReady, unknown string) Step {
+	name, err := WiredName(host)
+	title := who + "有線の名前を広告する"
+	if err == nil {
+		title = who + "有線の名前 (" + name + ") を広告する"
+	}
+	s := Step{ID: id, Title: title, Done: err == nil && ready && known && st.Advertises(NameAdvert{Name: name, IP: ip})}
+	switch {
+	case s.Done:
+	case err != nil:
+		s.Blocked = err.Error()
+	case !ready:
+		s.Blocked = notReady
+	case !known:
+		s.Blocked = unknown
+	}
+	return s
 }

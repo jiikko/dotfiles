@@ -96,11 +96,14 @@ type PeerNet struct {
 	// 同じに扱い、鍵を置く手順 (端末を持つ ssh-copy-id) で人が指紋を確かめて受け入れる
 	HostKeyUnknown bool
 	NetKnown       bool
-	Service        string // ルーターの無い有線のサービス (Offline の先頭)
-	IP             string
-	Method         string
-	Mask           string
-	Router         string
+	// AdvertKnown は有線の名前の広告の状態 (Advert) を読めた (wiredname.go)
+	AdvertKnown bool
+	Advert      NameState
+	Service     string // ルーターの無い有線のサービス (Offline の先頭)
+	IP          string
+	Method      string
+	Mask        string
+	Router      string
 }
 
 // exitCoder は終了コードを持つエラー (*exec.ExitError)。
@@ -156,6 +159,11 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 	if off := snap.Offline(); len(off) > 0 {
 		s := off[0]
 		p.Service, p.IP, p.Method, p.Mask, p.Router = s.Name, s.IP, s.Method, s.Mask, s.Router
+	}
+	if out, err := run(ctx, d.SSHArgv(false, true, "sh -c "+Quote(StatusScript()))); err == nil {
+		if st, err := ParseStatus(out); err == nil {
+			p.Advert, p.AdvertKnown = st, true
+		}
 	}
 	return p
 }

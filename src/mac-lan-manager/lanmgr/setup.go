@@ -133,16 +133,8 @@ func (m *Model) openSetup(r row) {
 		m.note("初期設定は相手の行で Enter (この Mac の固定 IP は、その 1 つ目の手順)", false)
 		return
 	}
-	user, _ := m.userFor(r)
-	ip := r.mainIP
-	if ip == "" {
-		ip = r.lanIP
-		if c, ok := m.confirmed[r.host]; ok {
-			ip = c // 有線だけの相手は、期限内に確認した新しい IP で入る (行の 169.254 は古い。閉じて開き直すと古い宛先に戻った。敵対レビュー)
-		}
-	}
-	d := setup.Dest{User: user, IP: ip, HostKeyAlias: r.host}
-	if err := d.Validate(); err != nil {
+	d, err := m.destFor(r)
+	if err != nil {
 		m.note("この Mac には入れない: "+err.Error(), false)
 		return
 	}
@@ -221,6 +213,20 @@ func (m *Model) applyObserve(p setup.PeerNet) {
 	}
 }
 
+// destFor は行の Mac に ssh で入る宛先 (Wi-Fi で入れるなら Wi-Fi、有線だけなら有線)。
+func (m *Model) destFor(r row) (setup.Dest, error) {
+	user, _ := m.userFor(r)
+	ip := r.mainIP
+	if ip == "" {
+		ip = r.lanIP
+		if c, ok := m.confirmed[r.host]; ok {
+			ip = c // 有線だけの相手は、期限内に確認した新しい IP で入る (行の 169.254 は古い。閉じて開き直すと古い宛先に戻った。敵対レビュー)
+		}
+	}
+	d := setup.Dest{User: user, IP: ip, HostKeyAlias: r.host}
+	return d, d.Validate()
+}
+
 // setupObserved は Plan に渡す観測 (この Mac・相手の行・裏で読んだ相手)。
 func (m *Model) setupObserved() (setup.Observed, row) {
 	su := m.su
@@ -238,10 +244,11 @@ func (m *Model) setupObserved() (setup.Observed, row) {
 	if s, ok := m.self.Main(); ok {
 		o.SelfMainIP, o.SelfMainMask = s.IP, s.Mask
 	}
+	o.SelfHost, o.SelfAdvertKnown, o.SelfAdvert = m.host, m.selfAdvertKnown, m.selfAdvert
 	o.Peer = setup.PeerObs{
 		Host: su.host, WifiIP: r.mainIP, LanIP: r.lanIP, SSHOpen: r.ssh || r.managed,
 		KeyOK: su.obs.KeyOK, NetKnown: su.obs.NetKnown, Service: su.obs.Service, IP: su.obs.IP, Method: su.obs.Method,
-		Managed: r.managed, LedgerLAN: r.ledgerLAN,
+		Managed: r.managed, LedgerLAN: r.ledgerLAN, AdvertKnown: su.obs.AdvertKnown, Advert: su.obs.Advert,
 	}
 	return o, r
 }
@@ -296,8 +303,18 @@ func nextStep(steps []setup.Step) (setup.Step, bool) {
 			return s, true // 確認待ちは、相手の固定 IP が済んで見えても先にやる
 		}
 	}
-	for _, s := range steps {
+	for i, s := range steps {
 		if !s.Done {
+			// この Mac の名前の手順が止まっていても (この Mac の広告を読めない等)、相手の名前の手順は進められる (どちらも仕上げで互いに
+			// 依らない。敵対レビュー)。止まっている手順を飛ばすのはここだけ: 鍵が止まっている間にこの Mac の固定へ進むと、人が相手の
+			// 指紋を確かめる前に戻らない変更が走る
+			if s.ID == setup.StepSelfName && s.Blocked != "" {
+				for _, t := range steps[i+1:] {
+					if t.ID == setup.StepPeerName && !t.Done && t.Blocked == "" {
+						return t, true
+					}
+				}
+			}
 			return s, true
 		}
 	}
@@ -415,6 +432,28 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		return &ask{title: "新しい IP で入り直して確認する", body: []string{
 			nd.User + "@" + nd.IP + " に入り直して確認の印を置く (相手の sudo のパスワードを聞く)",
 			"$ " + shellLine(argv),
+		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
+	case setup.StepSelfName, setup.StepPeerName:
+		host, ip, who := m.host, o.SelfIP, "この Mac"
+		if st.ID == setup.StepPeerName {
+			host, ip, who = su.host, su.obs.IP, "相手 ("+su.dest.User+"@"+su.dest.IP+" に鍵で入る)"
+		}
+		name, err := setup.WiredName(host)
+		if err != nil {
+			return nil, err.Error()
+		}
+		a := setup.NameAdvert{Name: name, IP: ip}
+		if err := a.Validate(); err != nil {
+			return nil, err.Error()
+		}
+		argv := []string{"sh", "-c", a.InstallScript()}
+		if st.ID == setup.StepPeerName {
+			argv = su.dest.SSHArgv(false, true, "sh -c "+setup.Quote(a.InstallScript()))
+		}
+		return &ask{title: st.Title, body: []string{
+			who + " で " + name + " → " + ip + " を Bonjour に広告し続ける (ssh / 画面共有 / smb をこの名前で有線へ繋げる)",
+			"ユーザーの LaunchAgent (~/Library/LaunchAgents/" + setup.WiredNameLabel + ".plist) が dns-sd -P を起こし続ける。sudo は要らない",
+			"$ dns-sd -P " + strings.TrimSuffix(name, ".local") + " … " + name + " " + ip,
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepLedger:
 		if why := m.ledgerBlocked(su.host, su.obs.IP); why != "" {
@@ -565,7 +604,7 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 	if m.su != nil && m.su.host == host {
 		m.su.after, m.su.waitSince = m.stepTitle(string(step)), now // その結果を確かめている間、進捗のモーダルを出す
 	}
-	if step == setup.StepSelfStatic {
+	if step == setup.StepSelfStatic || step == setup.StepSelfName {
 		// この Mac の網も読み直す (相手だけを読み直していたので、固定 IP にしても「未固定」のまま次の手順へ進まなかった。ユーザー報告)
 		m.startNetLoad()
 	}

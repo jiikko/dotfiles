@@ -434,10 +434,36 @@ func TestPlan(t *testing.T) {
 	}
 	o = ready
 	o.Peer.Method, o.Peer.IP, o.Peer.Managed, o.Peer.LedgerLAN = "manual", "192.168.100.11", true, "192.168.100.11"
+	o.SelfHost, o.SelfAdvertKnown, o.SelfAdvert = "self.local", true, NameState{Running: true, Name: "self.wired.local", IP: "192.168.100.2"}
+	o.Peer.AdvertKnown, o.Peer.Advert = true, NameState{Running: true, Name: "mini.wired.local", IP: "192.168.100.11"}
 	for _, st := range Plan(o) {
 		if !st.Done {
 			t.Errorf("全部済んでいるのに %s が残る", st.ID)
 		}
+	}
+	// 有線の名前: 広告が古い IP・止まっている・読めないなら済みにしない (読めないは理由を出して止める)
+	for name, mut := range map[string]func(*Observed){
+		"相手の広告が古い IP":     func(o *Observed) { o.Peer.Advert.IP = "192.168.100.99" },
+		"相手の広告が止まっている":    func(o *Observed) { o.Peer.Advert.Running = false },
+		"この Mac の広告が別の名前": func(o *Observed) { o.SelfAdvert.Name = "other.wired.local" },
+	} {
+		x := o
+		mut(&x)
+		for _, st := range Plan(x) {
+			if (st.ID == StepSelfName || st.ID == StepPeerName) && st.Done && (name == "この Mac の広告が別の名前") == (st.ID == StepSelfName) {
+				t.Errorf("%s: %s を済みにした", name, st.ID)
+			}
+		}
+	}
+	x := o
+	x.Peer.AdvertKnown = false
+	if s := byID(Plan(x)); s[StepPeerName].Done || s[StepPeerName].Blocked == "" {
+		t.Errorf("相手の広告を読めないのに理由を出さない: %+v", s[StepPeerName])
+	}
+	x = o
+	x.Peer.LedgerLAN = ""
+	if s := byID(Plan(x)); s[StepPeerName].Blocked == "" {
+		t.Errorf("台帳に載る前に相手の名前を広告できる: %+v", s[StepPeerName])
 	}
 	o.Peer.LedgerLAN = "192.168.100.99" // 台帳の内部 IP が古い
 	if s := byID(Plan(o)); s[StepLedger].Done {

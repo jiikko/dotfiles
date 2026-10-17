@@ -80,13 +80,17 @@ type Scanner interface {
 
 // Options は外とのつなぎ。nil のものは使わない (本物のつなぎは live パッケージ。テストは偽物を渡す)。
 type Options struct {
-	ReadNet   func(ctx context.Context) (netinfo.Snapshot, error) // この Mac のネットワーク
-	LocalHost func() string                                       // この Mac の Bonjour の名前 ("kojiM3MacBook-Pro.local")
-	StartScan func(now time.Time) Scanner
-	IfName    func(index int) string // I/F の番号 → 名前 (dns-sd の if 列を、この Mac の I/F に照らす)
-	Ledger    ledger.Store
-	PrefsPath string
-	SavePrefs func(path string, p prefs.Prefs) error
+	ReadNet func(ctx context.Context) (netinfo.Snapshot, error) // この Mac のネットワーク
+	// RunQuiet は端末を渡さずにコマンドを起こす (台帳から外した相手の名前の広告を止める ssh。nil なら止めない)
+	RunQuiet func(ctx context.Context, argv []string) error
+	// ReadAdvert はこの Mac の有線の名前の広告の状態 (setup.ReadNameState。nil なら読まない = 初期設定の手順は「読めていない」で止まる)
+	ReadAdvert func(ctx context.Context) (setup.NameState, error)
+	LocalHost  func() string // この Mac の Bonjour の名前 ("kojiM3MacBook-Pro.local")
+	StartScan  func(now time.Time) Scanner
+	IfName     func(index int) string // I/F の番号 → 名前 (dns-sd の if 列を、この Mac の I/F に照らす)
+	Ledger     ledger.Store
+	PrefsPath  string
+	SavePrefs  func(path string, p prefs.Prefs) error
 	// Log は操作のログの 1 行を受け取る (oplog.go。nil なら記録しない。live が ~/Library/Logs/mac-lan-manager.log へ書く)
 	Log  func(line string)
 	Copy func(s string) error // クリップボードへ
@@ -160,11 +164,15 @@ type Model struct {
 
 	self    netinfo.Snapshot
 	selfErr error
-	host    string // この Mac のホスト名 (台帳の鍵の形)
-	hosts   []ledger.Host
-	peers   []discover.Peer
-	scan    Scanner
-	scanErr error // 走査の失敗 (見せた後も持つ。Reload で消す)
+	// selfAdvert はこの Mac の有線の名前の広告の状態 (selfAdvertKnown のときだけ有効。網と一緒に読む)
+	selfAdvert      setup.NameState
+	selfAdvertKnown bool
+	bg              []<-chan Notice // 裏で走らせている後始末 (台帳から外した相手の名前の広告を止める) の結果
+	host            string          // この Mac のホスト名 (台帳の鍵の形)
+	hosts           []ledger.Host
+	peers           []discover.Peer
+	scan            Scanner
+	scanErr         error // 走査の失敗 (見せた後も持つ。Reload で消す)
 	// cursorLost はこのキーの入口の取り込みで、画面で見ていた Mac が一覧から消えた (行に効くキーを断る)
 	cursorLost bool
 	wantHost   string             // RestorePlace で戻したいカーソルの Mac (見つかるまで持つ。走査が終われば諦める)
@@ -260,8 +268,10 @@ func (m *Model) Reload() {
 
 // netLoad はこの Mac のネットワークを裏で読んだ結果。
 type netLoad struct {
-	self netinfo.Snapshot
-	err  error
+	self      netinfo.Snapshot
+	err       error
+	advert    setup.NameState
+	advertErr error // 読めなかった (nil で advert が有効)
 }
 
 // startNetLoad はこの Mac のネットワーク (networksetup / ifconfig を順に起こす。実測 約 420 ms) を裏で読み始める。
@@ -269,7 +279,7 @@ type netLoad struct {
 // ままで描き、Busy を立てて呼び出し側の tick を回させ、Advance で取り込む。読み直しが重なったら前の読み込みは取り消して結果も捨てる。
 func (m *Model) startNetLoad() {
 	m.stopNetLoad()
-	readNet := m.o.ReadNet
+	readNet, readAdvert := m.o.ReadNet, m.o.ReadAdvert
 	if readNet == nil {
 		m.netReady = true // 読むものが無い (テスト・ネットワークを見ない呼び出し側)
 		return
@@ -281,6 +291,10 @@ func (m *Model) startNetLoad() {
 		defer cancel()
 		var r netLoad
 		r.self, r.err = readNet(ctx)
+		r.advertErr = errors.New("読む口が無い")
+		if readAdvert != nil {
+			r.advert, r.advertErr = readAdvert(ctx)
+		}
 		ch <- r // 容量 1 なので、読む側が捨てていても止まらない
 	}()
 }
@@ -304,6 +318,7 @@ func (m *Model) takeNetLoad() {
 
 func (m *Model) applyNetLoad(r netLoad) {
 	m.self, m.selfErr = r.self, r.err
+	m.selfAdvert, m.selfAdvertKnown = r.advert, r.advertErr == nil
 	m.netReady = true
 	m.netCh, m.netCancel = nil, nil
 }
@@ -393,6 +408,7 @@ func (m *Model) Advance(now time.Time) {
 	held := m.cursorHost()
 	m.takeNetLoad()
 	m.takeObserve()
+	m.takeBG()
 	m.settleProgress(true)
 	m.expireConfirms()
 	if m.scan != nil {
@@ -420,7 +436,8 @@ func (m *Model) Changed() <-chan struct{} {
 // Busy は走査が続いているか (呼び出し側はこの間、遅い周期で Advance を呼ぶ。spinner もこの間だけ回る)。
 // この Mac のネットワークを裏で読んでいる間も Busy (読み終わりを Advance で取り込むため)。
 func (m *Model) Busy() bool {
-	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && m.su.ch != nil) || len(m.pending) > 0 || m.awaitingUnconf()
+	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && m.su.ch != nil) || len(m.pending) > 0 || m.awaitingUnconf() ||
+		len(m.bg) > 0
 }
 
 // OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定) が開いているか (glogx は横断キーも渡す)。
@@ -1109,6 +1126,41 @@ func (m *Model) keyList(key string) Action {
 	return None
 }
 
+// unadvertise は台帳から外した相手の名前の広告を裏で止める。結果は takeBG が知らせる (届かない相手を待って画面を止めない)。
+func (m *Model) unadvertise(host, name string, argv []string) {
+	run := m.o.RunQuiet
+	ch := make(chan Notice, 1)
+	m.bg = append(m.bg, ch)
+	m.logf("unadvertise start %s %s", host, argvSummary(argv))
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := run(ctx, argv); err != nil {
+			var ec interface{ ExitCode() int }
+			if errors.As(err, &ec) && ec.ExitCode() == setup.ExitOtherName {
+				ch <- Notice{name + " の広告は止めていない: 相手は別の名前を広告している (" + err.Error() + ")", false}
+				return
+			}
+			ch <- Notice{name + " の広告を止められなかった (" + err.Error() + ")。相手で: " + setup.RemoveHint(), false}
+			return
+		}
+		ch <- Notice{name + " の広告を止めた", true}
+	}()
+}
+
+// takeBG は裏の後始末の結果を取り込む。
+func (m *Model) takeBG() {
+	m.bg = slices.DeleteFunc(m.bg, func(ch <-chan Notice) bool {
+		select {
+		case n := <-ch:
+			m.note(n.Text, n.OK)
+			return true
+		default:
+			return false
+		}
+	})
+}
+
 func (m *Model) copy(s, note string) { m.copyAs(s, s+note) }
 
 // copyAs は s をコピーし、知らせには shown を出す (メッセージ一覧の全文を知らせへ写すと、一覧が同じ本文で埋まった)。
@@ -1129,11 +1181,24 @@ func (m *Model) askLedger(r row) {
 		return
 	}
 	if r.managed {
-		m.ask = &ask{title: "台帳から外す", body: []string{r.host + " を管理対象から外す (Mac には何もしない)"}, yes: func() Notice {
+		body := []string{r.host + " を管理対象から外す"}
+		name, nerr := setup.WiredName(r.host)
+		d, derr := m.destFor(r)
+		argv, aerr := setup.UnadvertiseArgv(d, name)
+		stop := m.o.RunQuiet != nil && !r.self && nerr == nil && derr == nil && aerr == nil
+		if stop {
+			body = append(body, "相手の有線の名前 ("+name+") の広告も止める (ssh の鍵で入る。届かなければ止め方を知らせる)")
+		} else {
+			body = append(body, "Mac には何もしない (有線の名前の広告は止めない)")
+		}
+		m.ask = &ask{title: "台帳から外す", body: body, yes: func() Notice {
 			if err := m.o.Ledger.Remove(r.host); err != nil {
 				return Notice{"外せない: " + err.Error(), false}
 			}
 			m.reloadLedger()
+			if stop {
+				m.unadvertise(r.host, name, argv)
+			}
 			return Notice{"台帳から外した: " + r.host, true}
 		}}
 	} else {

@@ -174,6 +174,29 @@ func TestSetupWalksAllSteps(t *testing.T) {
 	if len(h.store.hosts) != 1 || h.store.hosts[0] != (ledger.Host{Host: "m2macmini.local", User: "koji", LAN: c.static.IP}) {
 		t.Fatalf("台帳 = %+v", h.store.hosts)
 	}
+
+	// 有線の名前: この Mac → 相手。どちらも広告する Mac の launchd の状態で済みを決める (名前の解決では見ない)
+	advert := setup.NameState{}
+	h.m.o.ReadAdvert = func(context.Context) (setup.NameState, error) { return advert, nil }
+	h.m.startNetLoad()
+	awaitNetLoad(h.m)
+	peerObs := setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: c.static.IP, AdvertKnown: true}
+	setObs(t, h, dests, peerObs)
+	h.keys("r")
+	awaitSetup(h.m)
+	advert = setup.NameState{Running: true, Name: "kojim3macbook-pro.wired.local", IP: "192.168.100.10"} // 入れた後に読む値
+	argv = runStep(t, h, nil)
+	awaitNetLoad(h.m)
+	if len(argv) != 3 || argv[0] != "sh" || !strings.Contains(argv[2], "kojim3macbook-pro.wired.local") || !strings.Contains(argv[2], "192.168.100.10") {
+		t.Fatalf("この Mac の名前の広告 = %q", argv)
+	}
+	peerObs.Advert = setup.NameState{Running: true, Name: "m2macmini.wired.local", IP: c.static.IP}
+	setObs(t, h, dests, peerObs) // 入れた後の観測が返す値
+	argv = runStep(t, h, nil)
+	if i := slices.Index(argv, "--"); i < 0 || argv[i+1] != "koji@192.168.50.7" || !strings.Contains(argv[len(argv)-1], "m2macmini.wired.local") ||
+		!strings.Contains(argv[len(argv)-1], c.static.IP) {
+		t.Fatalf("相手の名前の広告 = %q", argv)
+	}
 	if _, ok := nextStep(h.m.setupSteps()); ok {
 		t.Errorf("全部済んだのに次の手順がある: %+v", h.m.setupSteps())
 	}
@@ -1163,5 +1186,25 @@ func TestSetupLedgerUserHandling(t *testing.T) {
 				t.Errorf("台帳 = %+v (user %q / 内部 IP %s のはず)", got, c.want, ip)
 			}
 		})
+	}
+}
+
+// この Mac の名前の手順が止まっていても、相手の名前の手順へ進める (止まっている手順を飛ばすのは名前の手順どうしだけ)。
+func TestNextStepSkipsBlockedSelfName(t *testing.T) {
+	steps := []setup.Step{
+		{ID: setup.StepLedger, Done: true},
+		{ID: setup.StepSelfName, Blocked: "読めていない"},
+		{ID: setup.StepPeerName},
+	}
+	if st, _ := nextStep(steps); st.ID != setup.StepPeerName {
+		t.Errorf("次の手順 = %s (相手の名前のはず)", st.ID)
+	}
+	steps[2].Blocked = "読めていない"
+	if st, _ := nextStep(steps); st.ID != setup.StepSelfName {
+		t.Errorf("両方止まっているときの次 = %s (先の理由を出す)", st.ID)
+	}
+	core := []setup.Step{{ID: setup.StepKey, Blocked: "リモートログインがオフ"}, {ID: setup.StepSelfStatic}}
+	if st, _ := nextStep(core); st.ID != setup.StepKey {
+		t.Errorf("鍵が止まっているのに %s へ進んだ (指紋を確かめる前にこの Mac を変える)", st.ID)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -1982,3 +1983,55 @@ func TestKeyRefusedWhenShownMacVanishes(t *testing.T) {
 		t.Errorf("次の s も断った: %v", a)
 	}
 }
+
+// 台帳から外すと、相手の有線の名前の広告も ssh の鍵で入って止める。届かなければ止め方を知らせる (台帳から外した相手の名前が、
+// 相手の上で広告されたまま残らないように)。
+func TestLedgerRemoveStopsWiredName(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want string // 知らせに含む語
+		ok   bool
+	}{
+		{nil, "の広告を止めた", true},
+		{errors.New("exit status 255"), "launchctl bootout", false},
+		// 相手は別の名前を広告している: 止めていないと知らせ、手で止める案内は出さない (案内どおりに止めると今の広告を消した)
+		{otherNameError{}, "止めていない", false},
+	} {
+		h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji"}}, []discover.Peer{mini})
+		var got [][]string
+		h.m.o.RunQuiet = func(_ context.Context, argv []string) error {
+			got = append(got, argv)
+			return c.err
+		}
+		h.keys("space")
+		if v := strings.Join(h.m.View(), "\n"); !strings.Contains(v, "m2macmini.wired.local") {
+			t.Fatalf("板に広告を止めることを出さない:\n%s", v)
+		}
+		h.keys("y")
+		var notes []Notice
+		for deadline := time.Now().Add(5 * time.Second); len(h.m.bg) > 0 && time.Now().Before(deadline); {
+			h.m.Advance(t0)
+			runtime.Gosched()
+		}
+		notes = h.m.TakeNotices()
+		if len(h.store.hosts) != 0 {
+			t.Fatalf("台帳から外していない: %+v", h.store.hosts)
+		}
+		if len(got) != 1 || !slices.Contains(got[0], "koji@192.168.50.7") || !strings.Contains(got[0][len(got[0])-1], "bootout") {
+			t.Fatalf("広告を止める ssh = %q", got)
+		}
+		if !slices.ContainsFunc(notes, func(n Notice) bool { return strings.Contains(n.Text, c.want) && n.OK == c.ok }) {
+			t.Errorf("%v: 結果を知らせない: %+v", c.err, notes)
+		}
+		if errors.As(c.err, new(otherNameError)) && slices.ContainsFunc(notes, func(n Notice) bool { return strings.Contains(n.Text, "launchctl bootout") }) {
+			t.Errorf("別の名前を広告している相手に、手で止める案内を出した: %+v", notes)
+		}
+	}
+}
+
+type otherNameError struct{}
+
+func (otherNameError) Error() string {
+	return "exit status 4: mac-lan-manager: 別の名前 (air6.wired.local) を広告している (止めない)"
+}
+func (otherNameError) ExitCode() int { return setup.ExitOtherName }
