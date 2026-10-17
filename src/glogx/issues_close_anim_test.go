@@ -6,7 +6,7 @@ package main
 // 畳まれている前提で書かれているため)。ここだけ明示的に on にして演出そのものを見る。
 
 import (
-	"glogx/internal/app"
+	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/testenv"
 	"strings"
@@ -15,48 +15,6 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 )
-
-// openAnimView は演出を on にしたまま viewer を開いた状態を作る。
-func openAnimView(t *testing.T) *issuesView {
-	t.Helper()
-	v := newIssuesView() // 演出 on (zero value = 本番の既定)
-	v.toggle(t.TempDir())
-	v.root = t.TempDir() // screen() が覚えるのに要る (スキャン結果の代わり)
-	v.finishAnim()       // 開く演出は着地させておく (見たいのは閉じる側)
-	return &v
-}
-
-// 閉じるときは進捗が 1 から 0 へ落ち、0 で止まる。
-func TestIssuesCloseProgressFallsToZero(t *testing.T) {
-	advance := testenv.StubClock(t)
-
-	v := openAnimView(t)
-	if p := v.animProgress(); p != 1 {
-		t.Fatalf("前提が崩れた: 開き切っているのに進捗が 1 でない (%v)", p)
-	}
-
-	v.close()
-	if !v.visible() {
-		t.Fatal("閉じる演出の前に画面が消えた (抜けていく中身が無い)")
-	}
-	if p := v.animProgress(); p != 1 {
-		t.Fatalf("閉じ始めが開き切った姿から始まっていない: %v", p)
-	}
-	advance(issuesCloseDuration / 2)
-	mid := v.animProgress()
-	if mid <= 0 || mid >= 1 {
-		t.Fatalf("途中の進捗が 0..1 でない: %v", mid)
-	}
-	advance(issuesCloseDuration / 2)
-	if p := v.animProgress(); p != 0 {
-		t.Fatalf("所要を過ぎても画面外まで抜けていない: %v", p)
-	}
-	// 🚨 進捗は 0 で止まる (負に走らない)。負になると layout.SlideIn の局所進捗が壊れる。
-	advance(issuesCloseDuration)
-	if p := v.animProgress(); p != 0 {
-		t.Fatalf("進捗が 0 を下回った: %v", p)
-	}
-}
 
 // 閉じ始めの 1 フレームで目に見えて動く。開く動きをそのまま逆再生すると easeOutCubic の緩やかな
 // 尾が立ち上がりの平坦部になり、最初のフレームでは 1 桁も動かない (esc の反応が鈍く見える)。
@@ -69,51 +27,15 @@ func TestIssuesCloseMovesOnFirstFrame(t *testing.T) {
 		window[i] = strings.Repeat("x", width)
 	}
 	// tick 1 拍 (scrollInterval) ぶん進んだ時点の進捗。閉じるので 1 から落ちる
-	p := 1 - float64(scrollInterval)/float64(issuesCloseDuration)
+	p := 1 - float64(scrollInterval)/float64(issuesview.IssuesCloseDuration)
 
-	closing := maxRowShift(layout.SlideIn(window, p, width, true, issuesAnimStagger))
+	closing := maxRowShift(layout.SlideIn(window, p, width, true, issuesview.IssuesAnimStagger))
 	if closing < width/20 {
 		t.Fatalf("閉じ始めの 1 フレームで %d 桁しか動いていない (立ち上がりが潰れている)", closing)
 	}
 	// 開く側は右外から入ってくる = 1 フレーム目はまだ大きくずれている (逆向きの回帰よけ)
-	if opening := maxRowShift(layout.SlideIn(window, 1-p, width, false, issuesAnimStagger)); opening <= closing {
+	if opening := maxRowShift(layout.SlideIn(window, 1-p, width, false, issuesview.IssuesAnimStagger)); opening <= closing {
 		t.Fatalf("開き始めが右外から入ってきていない (ずれ %d 桁)", opening)
-	}
-}
-
-// 閉じる向きが描画まで届いている。🚨 上の検査は layout.SlideIn を直接叩くので、lines() が
-// closing を渡し忘れても気づかない (開く向きの平坦な立ち上がりへ黙って戻る)。
-func TestIssuesCloseCurveReachesRender(t *testing.T) {
-	advance := testenv.StubClock(t)
-
-	v := loadedView(issuesviewtest.SampleIssues()...)
-	v.closeAnimOff = false
-	v.close()
-	// 折り返し地点で見る: 閉じる向きなら中身のある行が幅の半分ずれ、開く向き (渡し忘れ) なら
-	// stagger で最下行しか動かない。そこは一覧の外なので空行 = ずれは数桁で止まる
-	advance(issuesCloseDuration / 2)
-
-	shift := maxRowShift(v.lines(renderOpts(12)))
-	if shift < renderOpts(12).width/4 {
-		t.Fatalf("閉じる向きが描画へ届いていない (中間フレームのずれが %d 桁。開く向きの式なら数桁で止まる)", shift)
-	}
-}
-
-// 閉じるときは全行が同時に抜ける (板が 1 枚右へ出ていく)。行ごとにずらすと視線のある最上行が
-// 最後に回され、静止してから動き出す。
-func TestIssuesCloseMovesAllRowsTogether(t *testing.T) {
-	const width = 100
-	window := make([]string, 20)
-	for i := range window {
-		window[i] = strings.Repeat("x", width)
-	}
-
-	out := layout.SlideIn(window, 0.5, width, true, issuesAnimStagger)
-	head := maxRowShift(out[:1])
-	for i, ln := range out {
-		if shift := maxRowShift([]string{ln}); shift != head {
-			t.Fatalf("行 %d のずれが %d 桁で最上行 (%d 桁) と違う (行ごとにずれている)", i, shift, head)
-		}
 	}
 }
 
@@ -124,15 +46,15 @@ func TestIssuesCloseLeavesNoBlankFrame(t *testing.T) {
 	advance := testenv.StubClock(t)
 
 	v := loadedView(issuesviewtest.SampleIssues()...)
-	v.closeAnimOff = false
-	v.close()
+	v.CloseAnimOff = false
+	v.Close()
 
-	for elapsed := time.Duration(0); elapsed < 5*issuesCloseDuration; elapsed += scrollInterval {
-		v.settleClose() // browseModel の tick と同じ順 (畳んでから描く)
-		if !v.visible() {
+	for elapsed := time.Duration(0); elapsed < 5*issuesview.IssuesCloseDuration; elapsed += scrollInterval {
+		v.SettleClose() // browseModel の tick と同じ順 (畳んでから描く)
+		if !v.Visible() {
 			return
 		}
-		if strings.TrimSpace(strings.Join(v.lines(renderOpts(12)), "")) == "" {
+		if strings.TrimSpace(strings.Join(v.Lines(renderOpts(12)), "")) == "" {
 			t.Fatalf("%v 時点で画面が空なのに viewer が畳まれていない (ここが白画面になる)", elapsed)
 		}
 		advance(scrollInterval)
@@ -152,75 +74,22 @@ func maxRowShift(window []string) int {
 	return shift
 }
 
-// 演出が着地するまで tick を止めない (時間で降ろすと片付け前にチェーンが切れて固まる)。
-func TestIssuesCloseKeepsTickingUntilSettled(t *testing.T) {
-	advance := testenv.StubClock(t)
-
-	v := openAnimView(t)
-	v.close()
-	advance(issuesCloseDuration * 3) // とっくに時間は過ぎている
-	if !v.animating() {
-		t.Fatal("片付け前に animating が false になった (最後の 1 拍が届かず閉じかけで固まる)")
-	}
-	v.settleClose()
-	if v.animating() {
-		t.Fatal("片付けた後も animating が true (tick が回り続ける)")
-	}
-	if v.visible() {
-		t.Fatal("着地しても viewer が閉じていない")
-	}
-}
-
-// 着地するまで片付けない = 逆再生の間は見張りも本文も生きている。
-func TestIssuesCloseDefersTeardownUntilSettled(t *testing.T) {
-	advance := testenv.StubClock(t)
-
-	root, path := issuesviewtest.WatchTree(t, "# a\n")
-	v := openedWatchView(t, root, path)
-	v.closeAnimOff = false // このテストだけ演出を on に戻す
-	gen := v.watch.Gen
-
-	v.close()
-	if v.watch.Gen != gen {
-		t.Fatal("演出中に見張りを畳んだ (逆再生の途中で中身が死ぬ)")
-	}
-	advance(issuesCloseDuration)
-	v.settleClose()
-	if v.watch.Gen == gen {
-		t.Fatal("着地しても見張りが畳まれていない (watcher が残る)")
-	}
-}
-
-// 演出の途中で終了しても画面を覚えない (閉じたはずの viewer が次の起動で蘇らない)。
-func TestIssuesClosingIsNotRemembered(t *testing.T) {
-	testenv.StubClock(t)
-
-	v := openAnimView(t)
-	if _, ok := v.screen(app.TimeNow()); !ok {
-		t.Fatal("前提が崩れた: 開いているのに覚えない")
-	}
-	v.close()
-	if _, ok := v.screen(app.TimeNow()); ok {
-		t.Fatal("閉じる演出の途中を「開いている」として覚えた (次の起動で蘇る)")
-	}
-}
-
 // キーは演出を即着地させ、かつ飲み込まれない (q で閉じた直後の q が効かない時間を作らない)。
 func TestIssuesCloseLandsOnKeyWithoutSwallowing(t *testing.T) {
 	testenv.StubClock(t)
 
 	m := openAnimBrowse(t)
-	if !m.issuesOv.visible() {
+	if !m.issuesOv.Visible() {
 		t.Fatal("前提が崩れた: viewer が開いていない")
 	}
 
-	m.issuesOv.close()
-	if !m.issuesOv.visible() {
+	m.issuesOv.Close()
+	if !m.issuesOv.Visible() {
 		t.Fatal("前提が崩れた: 演出なしで即閉じた")
 	}
 	releaseKey(m)
 	m.handleKey("q") // 閉じる演出の途中に来たキー
-	if m.issuesOv.visible() {
+	if m.issuesOv.Visible() {
 		t.Fatal("キーで演出が着地しない (入力が効かない時間ができる)")
 	}
 	// 🚨 飲み込まれず通常処理まで届く。届かないと「q で閉じた直後の q が効かない」ことになる。
@@ -241,41 +110,19 @@ func TestIssuesCloseLandsBeforeKeyReachesViewer(t *testing.T) {
 
 	for _, key := range []string{"/", "n"} {
 		m := openAnimBrowse(t)
-		m.issuesOv.close()
-		advance(issuesCloseDuration / 4) // まだ演出の途中
+		m.issuesOv.Close()
+		advance(issuesview.IssuesCloseDuration / 4) // まだ演出の途中
 
 		releaseKey(m)
 		m.handleKey(key)
 
-		if m.issuesOv.visible() {
+		if m.issuesOv.Visible() {
 			t.Fatalf("%q で演出が着地していない", key)
 		}
-		if m.issuesOv.numFilter.active || m.issuesOv.markNext.active {
+		if m.issuesOv.NumFilter.Active || m.issuesOv.MarkNext.Active {
 			t.Fatalf("%q が畳んだ後の viewer に状態を残した (絞り込み=%v 確認=%v)",
-				key, m.issuesOv.numFilter.active, m.issuesOv.markNext.active)
+				key, m.issuesOv.NumFilter.Active, m.issuesOv.MarkNext.Active)
 		}
-	}
-}
-
-// 演出中の i は「閉じ切ってから開き直す」= 見張りを二重に張らない。
-func TestIssuesReopenDuringCloseDoesNotDoubleWatch(t *testing.T) {
-	testenv.StubClock(t)
-
-	root, path := issuesviewtest.WatchTree(t, "# a\n")
-	v := openedWatchView(t, root, path)
-	v.closeAnimOff = false
-	gen := v.watch.Gen
-
-	v.close()
-	v.toggle(root) // 逆再生の途中で開き直す
-	if !v.visible() {
-		t.Fatal("開き直せていない")
-	}
-	if v.closing {
-		t.Fatal("閉じる演出が残ったまま開き直した (次の settleClose が開いた viewer を畳む)")
-	}
-	if v.watch.Gen == gen {
-		t.Fatal("前の見張りを畳まずに開き直した (watcher が二重に居座る)")
 	}
 }
 
@@ -287,16 +134,16 @@ func TestBrowseCloseAnimSwallowsEditorKeyOnly(t *testing.T) {
 	cmds := testenv.StubEditorCapture(t)
 
 	m := newTestBrowse(t, 1, nil, nil)
-	m.issuesOv.closeAnimOff = false // 本番の既定 (演出あり) に戻す
-	m.issuesOv.toggle(t.TempDir())
-	m.issuesOv.finishAnim() // 開く演出は着地させる
-	if !m.issuesOv.visible() {
+	m.issuesOv.CloseAnimOff = false // 本番の既定 (演出あり) に戻す
+	m.issuesOv.Toggle(t.TempDir())
+	m.issuesOv.FinishAnim() // 開く演出は着地させる
+	if !m.issuesOv.Visible() {
 		t.Fatal("前提が崩れた: viewer が開いていない")
 	}
 
 	m.handleKey("i") // 閉じ始める (演出中は visible のまま)
-	if !m.issuesOv.closing || !m.issuesOv.visible() {
-		t.Fatalf("閉じる演出に入っていない: closing=%v visible=%v", m.issuesOv.closing, m.issuesOv.visible())
+	if !m.issuesOv.Closing || !m.issuesOv.Visible() {
+		t.Fatalf("閉じる演出に入っていない: closing=%v visible=%v", m.issuesOv.Closing, m.issuesOv.Visible())
 	}
 
 	m.handleKey("e")
@@ -308,11 +155,11 @@ func TestBrowseCloseAnimSwallowsEditorKeyOnly(t *testing.T) {
 // 上の例外で q が死んでいないこと (演出中の q は素通しして通常処理へ届く)。
 func TestBrowseCloseAnimStillPassesQuitKey(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
-	m.issuesOv.closeAnimOff = false
-	m.issuesOv.toggle(t.TempDir())
-	m.issuesOv.finishAnim()
+	m.issuesOv.CloseAnimOff = false
+	m.issuesOv.Toggle(t.TempDir())
+	m.issuesOv.FinishAnim()
 	m.handleKey("i") // 閉じ始める
-	if !m.issuesOv.closing {
+	if !m.issuesOv.Closing {
 		t.Fatal("閉じる演出に入っていない")
 	}
 	if _, cmd := m.handleKey("q"); cmd == nil {
@@ -324,8 +171,8 @@ func TestBrowseCloseAnimStillPassesQuitKey(t *testing.T) {
 func openAnimBrowse(t *testing.T) *browseModel {
 	t.Helper()
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.issuesOv.closeAnimOff = false
-	m.issuesOv.toggle(t.TempDir())
-	m.issuesOv.finishAnim()
+	m.issuesOv.CloseAnimOff = false
+	m.issuesOv.Toggle(t.TempDir())
+	m.issuesOv.FinishAnim()
 	return m
 }

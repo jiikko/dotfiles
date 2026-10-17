@@ -56,9 +56,9 @@ var fullScreenCases = []fullScreenCase{
 	},
 	{
 		id: app.FullScreenIssues, name: "issues viewer",
-		show:  func(m *browseModel) { m.issuesOv.shown = true },
-		hint:  func(m *browseModel) string { return m.issuesOv.hint(m.hintWidth()) },
-		lines: func(m *browseModel) []string { return m.issuesOv.lines(m.issuesOpts()) },
+		show:  func(m *browseModel) { m.issuesOv.Shown = true },
+		hint:  func(m *browseModel) string { return m.issuesOv.Hint(m.hintWidth()) },
+		lines: func(m *browseModel) []string { return m.issuesOv.Lines(m.issuesOpts()) },
 	},
 	{
 		id: app.FullScreenFiler, name: "treefiler",
@@ -202,7 +202,7 @@ func TestFullScreenSurfacesWireEverySite(t *testing.T) {
 			// 🚨 issues 自身は対象外 (復元先が自分なので捨てない)
 			if c.id != app.FullScreenIssues {
 				m.Update(issuesRestoreMsg{})
-				if m.issuesOv.visible() {
+				if m.issuesOv.Visible() {
 					t.Error("別の全画面ビューアが出ているのに issues の復元が通った")
 				}
 			}
@@ -218,7 +218,7 @@ func TestFullScreenSurfacesWireEverySite(t *testing.T) {
 			t.Fatal("前提が作れていない")
 		}
 		m.Update(issuesRestoreMsg{})
-		if !m.issuesOv.visible() {
+		if !m.issuesOv.Visible() {
 			t.Error("何も出ていないのに issues の復元が捨てられた (起動時の再開記憶が効かない)")
 		}
 	})
@@ -319,7 +319,7 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 			m.width, m.height = 100, 30
 			m.doctorOv.SetDeps(doctorview.Deps(doctortest.FakeDeps(t))) // 実ディスクを走査しない
 			m.handleKey(fromKey)
-			m.issuesOv.finishAnim()
+			m.issuesOv.FinishAnim()
 			if got := m.activeFullScreen(); got != from {
 				t.Fatalf("前提が崩れた: %s で %v が開かない (active=%v)", fromKey, from, got)
 			}
@@ -349,7 +349,7 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 // visibleFullScreens は開いている全画面の枚数 (同時に 1 枚の前提が守られているかを見る)。
 func visibleFullScreens(m *browseModel) int {
 	n := 0
-	for _, v := range []bool{m.issuesOv.visible(), m.statusOv.visible(), m.rlDash.visible(), m.doctorOv.Visible(), m.filerV.visible(), m.lanV.visible()} {
+	for _, v := range []bool{m.issuesOv.Visible(), m.statusOv.visible(), m.rlDash.visible(), m.doctorOv.Visible(), m.filerV.visible(), m.lanV.visible()} {
 		if v {
 			n++
 		}

@@ -8,9 +8,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"glogx/internal/issuesview"
 	"glogx/internal/term"
 	"glogx/issues"
+
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
 // 半ページ移動 (Space / ctrl+d) が 4 面すべてで glide に載る (ユーザー要望 2026-07-31 の回帰)。
@@ -69,21 +71,21 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 
 	t.Run("issues 本文 pager (Space)", func(t *testing.T) {
 		v := newTestIssuesView()
-		v.bodyPager.Offset = 0
-		v.body = nil
+		v.BodyPager.Offset = 0
+		v.Body = nil
 		// body が nil でも maxOffset=0 になり動かないため、offset を直接動かす経路で検証する
 		prev := 3
-		v.bodyPager.Offset = 10
-		startPagerGlide(t, &v.bodyPager, prev, v.bodyPager.Offset)
-		if !v.bodyPager.Animating() {
+		v.BodyPager.Offset = 10
+		startPagerGlide(t, &v.BodyPager, prev, v.BodyPager.Offset)
+		if !v.BodyPager.Animating() {
 			t.Error("本文の半ページが glide に載らない")
 		}
-		if got := pagerShown(&v.bodyPager); got != prev {
+		if got := pagerShown(&v.BodyPager); got != prev {
 			t.Errorf("glide 開始位置 = %d, want %d", got, prev)
 		}
 		// 本文を閉じたら glide を残さない (次に開いた瞬間に古い位置から滑らない)
-		v.closeBody()
-		if v.bodyPager.Animating() {
+		v.CloseBody()
+		if v.BodyPager.Animating() {
 			t.Error("本文を閉じても glide が残っている")
 		}
 	})
@@ -91,12 +93,12 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 	t.Run("advanceGlide が本文 pager を進める", func(t *testing.T) {
 		// 🚨 一覧は glide を持たない (幾何的にアニメしないため削除。issue 031)
 		v := newTestIssuesView()
-		v.bodyPager.Offset = 10
-		startPagerGlide(t, &v.bodyPager, 0, 10)
+		v.BodyPager.Offset = 10
+		startPagerGlide(t, &v.BodyPager, 0, 10)
 		for range term.ScrollAnimFrames {
-			v.advanceGlide()
+			v.AdvanceGlide()
 		}
-		if v.bodyPager.Animating() {
+		if v.BodyPager.Animating() {
 			t.Error("advanceGlide で着地しない")
 		}
 	})
@@ -144,55 +146,15 @@ func TestResizeStopsAllGlides(t *testing.T) {
 	m := newTestBrowse(t, 10, map[string]CIState{}, nil)
 	m.glide.Start(0, 10, term.ScrollAnimFrames)
 	startPagerGlide(t, &m.diffOv.pager, 0, 10)
-	startPagerGlide(t, &m.issuesOv.bodyPager, 0, 10)
+	startPagerGlide(t, &m.issuesOv.BodyPager, 0, 10)
 	startPagerGlide(t, &m.statusOv.pager, 0, 10)
-	m.issuesOv.curGlide.Start(0, 10, term.CursorAnimFrames)
+	m.issuesOv.CurGlide.Start(0, 10, term.CursorAnimFrames)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	if m.glide.Active() || m.diffOv.pager.Animating() || m.issuesOv.bodyPager.Animating() ||
-		m.statusOv.pager.Animating() || m.issuesOv.curGlide.Active() {
+	if m.glide.Active() || m.diffOv.pager.Animating() || m.issuesOv.BodyPager.Animating() ||
+		m.statusOv.pager.Animating() || m.issuesOv.CurGlide.Active() {
 		t.Errorf("resize で glide が残る: list=%v diff=%v issuesBody=%v status=%v issuesCursor=%v",
-			m.glide.Active(), m.diffOv.pager.Animating(), m.issuesOv.bodyPager.Animating(),
-			m.statusOv.pager.Animating(), m.issuesOv.curGlide.Active())
-	}
-}
-
-// 一覧の窓は必ずカーソル行を含む (どのスクロールキーの直後も)。
-//
-// 🚨 この不変条件のテストは glide を外した後も残す (issue 031 の決定)。半ページ移動は cursor と
-// offset を同時に動かすので、窓の導出を素朴に書き換えると「カーソル行が 1 本も描かれない =
-// 見えない行が Enter・v・y の対象になる」窓が復活する (敵対的レビュー P2 の回帰)。
-func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {
-	v := newTestIssuesView()
-	v.shown, v.loaded = true, true
-	all := make([]*issues.Issue, 60)
-	for i := range all {
-		all[i] = &issues.Issue{Number: fmt.Sprintf("%03d", i), Title: fmt.Sprintf("TITLE%02d", i), Path: "p"}
-	}
-	v.all = all
-	v.setRows(all)
-	v.dirs = []string{"/x/issues"} // 空だと emptyMessage が早期 return して一覧を描かない
-	const page = 20
-	opts := issuesRenderOpts{width: 100, page: page}
-	v.lines(opts) // 初期描画で窓を確定させる
-
-	for _, key := range []string{" ", "ctrl+d", "shift+space", "ctrl+u", "G", "g", "j", "k", "ctrl+d", "G"} {
-		v.handleKey(key, vp(page))
-		out := term.StripANSI(strings.Join(v.lines(opts), "\n"))
-		if want := fmt.Sprintf("TITLE%02d", v.cursor); !strings.Contains(out, want) {
-			t.Fatalf("%q の後にカーソル行 %q が描かれていない (cursor=%d offset=%d)\n%s",
-				key, want, v.cursor, v.offset, out)
-		}
-	}
-}
-
-// 閉じたら本文の glide を残さない (再表示の一瞬だけ古い位置から滑るのを防ぐ)。
-func TestIssuesCloseStopsBodyGlide(t *testing.T) {
-	v := newTestIssuesView()
-	v.shown = true
-	startPagerGlide(t, &v.bodyPager, 0, 10)
-	v.close()
-	if v.bodyPager.Animating() {
-		t.Error("close で本文の glide が残る")
+			m.glide.Active(), m.diffOv.pager.Animating(), m.issuesOv.BodyPager.Animating(),
+			m.statusOv.pager.Animating(), m.issuesOv.CurGlide.Active())
 	}
 }
 
@@ -245,21 +207,21 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 
 	t.Run("issues 一覧 (handleKey 経由)", func(t *testing.T) {
 		v := newTestIssuesView()
-		v.shown, v.loaded = true, true
+		v.Shown, v.Loaded = true, true
 		all := make([]*issues.Issue, 60)
 		for i := range all {
 			all[i] = &issues.Issue{Number: fmt.Sprintf("%03d", i), Title: "t", Path: "p"}
 		}
-		v.all = all
-		v.setRows(all)
-		v.dirs = []string{"/x"}
-		v.cursor = 40
+		v.All = all
+		v.SetRows(all)
+		v.Dirs = []string{"/x"}
+		v.Cursor = 40
 		page := 20
-		v.handleKey(" ", vp(page)) // 下へ (窓を進める)
-		down := v.cursor
-		v.handleKey("shift+space", vp(page))
-		if v.cursor >= down {
-			t.Errorf("shift+space で上に戻らない: cursor %d -> %d", down, v.cursor)
+		v.HandleKey(" ", vp(page)) // 下へ (窓を進める)
+		down := v.Cursor
+		v.HandleKey("shift+space", vp(page))
+		if v.Cursor >= down {
+			t.Errorf("shift+space で上に戻らない: cursor %d -> %d", down, v.Cursor)
 		}
 	})
 
@@ -271,13 +233,13 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		for i := range 200 {
 			src.WriteString(fmt.Sprintf("line %d\n", i))
 		}
-		v.body = issues.NewBody(src.String())
-		v.body.Lines(80, false) // Len() を確定させる (幅ごとに整形するため)
-		v.bodyPager.Offset = 30
-		before := v.bodyPager.Offset
-		v.handleBodyKey("shift+space", issuesViewport{width: 80, page: 20}, 20)
-		if v.bodyPager.Offset >= before {
-			t.Errorf("shift+space で上に戻らない: bodyOff %d -> %d", before, v.bodyPager.Offset)
+		v.Body = issues.NewBody(src.String())
+		v.Body.Lines(80, false) // Len() を確定させる (幅ごとに整形するため)
+		v.BodyPager.Offset = 30
+		before := v.BodyPager.Offset
+		v.HandleBodyKey("shift+space", issuesview.IssuesViewport{Width: 80, Page: 20}, 20)
+		if v.BodyPager.Offset >= before {
+			t.Errorf("shift+space で上に戻らない: bodyOff %d -> %d", before, v.BodyPager.Offset)
 		}
 	})
 }

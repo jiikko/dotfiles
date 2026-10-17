@@ -12,6 +12,7 @@ import (
 	"doctor/svc"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
+	"glogx/internal/issuesview"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 )
@@ -107,7 +108,7 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 	m.zoom.off = true
 	// issues viewer の閉じる演出も同じ理由で切る (既存テストは i / q で即座に閉じる前提)。
 	// 演出そのものは issues_close_anim_test.go が明示的に on にして検査する。
-	m.issuesOv.closeAnimOff = true
+	m.issuesOv.CloseAnimOff = true
 	// status viewer の閉じる演出も同じ理由で切る (s の toggle が「即座に閉じている」前提で読める
 	// ように)。演出そのものは status_view_test.go の TestSlideLeftWindow 等が直接検査する。
 	m.statusOv.closeAnimOff = true
@@ -243,11 +244,11 @@ func uniformWidth(t *testing.T, box []string) int {
 // landBody は一覧のカーソル行を Enter で開き、引き出しの着地まで済ませる。
 // 🚨 着地させずに描画を検査すると、引き出しの幅が 0 のままで本文が描かれず、一覧側の文字列に
 // 一致して緑になる (issue 667: 本文ヘッダーの状態の assert が一覧の空表示の案内に一致していた)。
-func landBody(t *testing.T, v *issuesView, page int) {
+func landBody(t *testing.T, v *issuesview.IssuesView, page int) {
 	t.Helper()
-	v.handleKey("enter", vp(page))
-	if v.open == nil || v.body == nil {
+	v.HandleKey("enter", vp(page))
+	if v.Open == nil || v.Body == nil {
 		t.Fatal("本文モードに入れていない")
 	}
-	v.drawer.finish()
+	v.Drawer.Finish()
 }

@@ -15,8 +15,9 @@ import (
 	"strings"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"glogx/internal/term"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestGlobalChromeShowsInEveryView(t *testing.T) {
@@ -31,8 +32,8 @@ func TestGlobalChromeShowsInEveryView(t *testing.T) {
 		{name: "issues viewer", open: func(t *testing.T, m *browseModel) {
 			t.Helper()
 			m.handleKey("i")
-			m.issuesOv.finishAnim()
-			if !m.issuesOv.visible() {
+			m.issuesOv.FinishAnim()
+			if !m.issuesOv.Visible() {
 				t.Fatal("issues viewer が開かない")
 			}
 		}},
@@ -67,7 +68,7 @@ func TestRestartPromptShowsInViewers(t *testing.T) {
 			m.width, m.height = 100, 24
 			if name == "issues viewer" {
 				m.handleKey("i")
-				m.issuesOv.finishAnim()
+				m.issuesOv.FinishAnim()
 			}
 			m.restartPending = true
 			out := term.StripANSI(m.View().Content)

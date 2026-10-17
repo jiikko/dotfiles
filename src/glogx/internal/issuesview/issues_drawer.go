@@ -1,4 +1,4 @@
-package main
+package issuesview
 
 // issue 本文の「引き出し (drawer)」演出。issue を選ぶと本文が画面の右外から飛び出して左へ
 // 滑り込み、画面の 8 割を占めて止まる。閉じるときは同じ動きの逆再生 (ユーザー要望 2026-07-31)。
@@ -55,15 +55,15 @@ type issuesDrawer struct{ t anim.Transition }
 
 func (d *issuesDrawer) open(now time.Time)                 { d.t.Open(now, issuesDrawerDuration) }
 func (d *issuesDrawer) startClose(now time.Time)           { d.t.Close(now, issuesDrawerDuration) }
-func (d *issuesDrawer) phase() anim.Phase                  { return d.t.Phase() }
+func (d *issuesDrawer) Phase() anim.Phase                  { return d.t.Phase() }
 func (d *issuesDrawer) animating(now time.Time) bool       { return d.t.Animating(now) }
 func (d *issuesDrawer) settle(now time.Time) (closed bool) { return d.t.Settle(now) }
-func (d *issuesDrawer) finish() (closed bool)              { return d.t.Finish() }
+func (d *issuesDrawer) Finish() (closed bool)              { return d.t.Finish() }
 
 // targetWidth は開ききったときの本文の幅。
-func (d *issuesDrawer) targetWidth(total int) int { return issuesDrawerGeometry.Target(total) }
+func (d *issuesDrawer) TargetWidth(total int) int { return issuesDrawerGeometry.Target(total) }
 
 // width は今フレームで画面に入っている本文の幅 (閉じていれば 0)。
 func (d *issuesDrawer) width(total int, now time.Time) int {
-	return layout.DrawerWidth(d.targetWidth(total), d.t.Openness(now, anim.EaseOutCubic))
+	return layout.DrawerWidth(d.TargetWidth(total), d.t.Openness(now, anim.EaseOutCubic))
 }

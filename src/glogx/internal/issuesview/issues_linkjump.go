@@ -1,4 +1,4 @@
-package main
+package issuesview
 
 // 本文中のファイルパスのジャンプモード (本文 pager の Tab)。仕様は docs/issues-viewer-spec.md の
 // 「本文中のファイルパスは Tab のジャンプモードから開く」。パスの解決 (何をリンクにするか) は
@@ -28,7 +28,7 @@ import (
 // 意味を持ち、resize・見張りによる本文の読み直し・エディタから戻ったときの読み直しで別のリンクを
 // 指しうる。(種類, dest, 同じ組の中の何番目か) を鍵にして毎回引き直す (reanchor)。
 type linkJump struct {
-	active bool
+	Active bool
 	kind   markdown.LinkKind
 	dest   string
 	nth    int
@@ -37,22 +37,22 @@ type linkJump struct {
 // bodyTextWidth は本文を整形する幅 (引き出しの内側から、スクロールバーと行番号の溝を引く)。
 // 🚨 描画 (bodyLines) とキー処理 (リンク一覧を引く) の両方がこれを使う。式を 2 箇所に書くと、
 // 片方だけ幅が違ってキー側のリンク一覧と画面の強調が食い違う。
-func (v *issuesView) bodyTextWidth(inner int) int {
-	return inner - layout.ScrollbarWidth - srcGutterWidth(v.body.SrcLineCount())
+func (v *IssuesView) bodyTextWidth(inner int) int {
+	return inner - layout.ScrollbarWidth - srcGutterWidth(v.Body.SrcLineCount())
 }
 
 // jumpLinks は今の幅で開けるリンクの一覧 (vp はキー処理の窓。描画側は bodyLines が同じ幅で引く)。
-func (v *issuesView) jumpLinks(vp issuesViewport) []issues.FileLink {
-	return v.body.FileLinks(v.bodyTextWidth(v.bodyWidth(vp.width)), v.jumpRepos())
+func (v *IssuesView) jumpLinks(vp IssuesViewport) []issues.FileLink {
+	return v.Body.FileLinks(v.bodyTextWidth(v.bodyWidth(vp.Width)), v.jumpRepos())
 }
 
 // jumpRepos は「repo の中」とみなす範囲 (同じ repo の全 checkout。issues.LinkBase.Repos の doc)。
 // git を 1 回叩くので root ごとに覚える (描画のたびに叩かない)。
-func (v *issuesView) jumpRepos() []string {
-	if v.linkReposRoot != v.root || v.linkRepos == nil {
-		v.linkRepos, v.linkReposRoot = nil, v.root
-		if v.root != "" {
-			v.linkRepos = issues.WorktreeRoots(v.root)
+func (v *IssuesView) jumpRepos() []string {
+	if v.linkReposRoot != v.Root || v.linkRepos == nil {
+		v.linkRepos, v.linkReposRoot = nil, v.Root
+		if v.Root != "" {
+			v.linkRepos = issues.WorktreeRoots(v.Root)
 		}
 	}
 	return v.linkRepos
@@ -76,7 +76,7 @@ func (j *linkJump) reanchor(fl []issues.FileLink) int {
 }
 
 // selectLink は fl[i] を選択にして鍵を覚え、選択の行が窓に入るよう本文をスクロールする。
-func (v *issuesView) selectLink(fl []issues.FileLink, i, rows int) {
+func (v *IssuesView) selectLink(fl []issues.FileLink, i, rows int) {
 	l := fl[i]
 	nth := 0
 	for _, o := range fl[:i] {
@@ -84,8 +84,8 @@ func (v *issuesView) selectLink(fl []issues.FileLink, i, rows int) {
 			nth++
 		}
 	}
-	v.linkJump = linkJump{active: true, kind: l.Kind, dest: l.Dest, nth: nth}
-	p := &v.bodyPager
+	v.LinkJump = linkJump{Active: true, kind: l.Kind, dest: l.Dest, nth: nth}
+	p := &v.BodyPager
 	if l.Top < p.Offset || l.Top >= p.Offset+rows {
 		p.Stop()
 		p.Offset = max(l.Top-rows/3, 0) // 窓の上 1/3 に置く (端に置くと前後の文脈が見えない)
@@ -94,13 +94,13 @@ func (v *issuesView) selectLink(fl []issues.FileLink, i, rows int) {
 
 // startLinkJump はジャンプモードに入る。今見えている窓の最初のリンクを選ぶ (無ければ窓より後ろの
 // 最初、それも無ければ先頭)。開けるリンクが無ければ入らずに通知する。
-func (v *issuesView) startLinkJump(vp issuesViewport, rows int) {
+func (v *IssuesView) startLinkJump(vp IssuesViewport, rows int) {
 	fl := v.jumpLinks(vp)
 	if len(fl) == 0 {
 		v.setNotice("この issue に開けるファイルパスはありません", app.NoticeRefused)
 		return
 	}
-	top := v.bodyPager.Offset
+	top := v.BodyPager.Offset
 	pick := 0
 	for i, l := range fl {
 		if l.Top >= top {
@@ -113,12 +113,12 @@ func (v *issuesView) startLinkJump(vp issuesViewport, rows int) {
 
 // linkJumpKey はジャンプモード中のキーを捌く。handled=false なら、モードを抜けたうえで
 // 呼び出し側が通常の本文 pager のキーとして処理する (死んだキーを作らない)。
-func (v *issuesView) linkJumpKey(key string, vp issuesViewport, rows int) (cmd tea.Cmd, handled bool) {
+func (v *IssuesView) linkJumpKey(key string, vp IssuesViewport, rows int) (cmd tea.Cmd, handled bool) {
 	fl := v.jumpLinks(vp)
-	cur := v.linkJump.reanchor(fl)
+	cur := v.LinkJump.reanchor(fl)
 	if cur < 0 {
 		// 本文が読み直されて選択していたリンクが消えた。抜けて、キーは通常どおり処理する
-		v.linkJump = linkJump{}
+		v.LinkJump = linkJump{}
 		return nil, false
 	}
 	// 移動の語彙は listnav.MotionOf (glogx-ui-guide §2)。半ページ送り (space・ctrl+d など) はジャンプを抜けて本文の pager へ渡す
@@ -151,9 +151,9 @@ func (v *issuesView) linkJumpKey(key string, vp issuesViewport, rows int) (cmd t
 	case "y":
 		v.copyText(fl[cur].Path, "パスをコピーしました: ")
 	case "esc", "q", "h", "left":
-		v.linkJump = linkJump{} // 1 段戻る (本文は閉じない)
+		v.LinkJump = linkJump{} // 1 段戻る (本文は閉じない)
 	default:
-		v.linkJump = linkJump{}
+		v.LinkJump = linkJump{}
 		return nil, false
 	}
 	return nil, true
@@ -167,8 +167,8 @@ func (v *issuesView) linkJumpKey(key string, vp issuesViewport, rows int) (cmd t
 // 🚨 開く直前に解決をやり直す (Body.Recheck): 一覧を作った後に消えた・ディレクトリに化けた・repo の外への
 // symlink に差し替わった (git pull) ものを開かない。消えたものを開くと nvim は空の新規バッファを
 // 「そのファイル」として見せる。
-func (v *issuesView) openLink(l issues.FileLink, readonly bool) tea.Cmd {
-	if !v.body.Recheck(l, v.jumpRepos()) {
+func (v *IssuesView) openLink(l issues.FileLink, readonly bool) tea.Cmd {
+	if !v.Body.Recheck(l, v.jumpRepos()) {
 		v.setNotice("ファイルが見つかりません: "+v.linkLabel(l), app.NoticeRefused)
 		return nil
 	}
@@ -209,53 +209,53 @@ func isMarkdownPath(p string) bool {
 // Issue の形に包む。🚨 Dir は元の issue のものを引き継ぐ: インラインコードの基準 (プロジェクトの root) は
 // issue ディレクトリの親から決まる (LinkBase.Project)。doc 自身のディレクトリにすると基準がずれる。
 // 番号・状態は持たないので p は「番号が無いのでファイル名」に落ち、n (claim) は一覧でしか効かない。
-func (v *issuesView) openDoc(l issues.FileLink) {
+func (v *IssuesView) openDoc(l issues.FileLink) {
 	if len(v.docStack) >= maxDocDepth {
 		// 相互リンクした doc を Enter で往復すると際限なく積まれ、抜けるのに h を何回も押すことになる
 		v.setNotice("これ以上は積めません ("+strconv.Itoa(maxDocDepth)+" 段)。h で戻ってから開いてください", app.NoticeRefused)
 		return
 	}
-	doc := &issues.Issue{Path: l.Path, Dir: v.open.Dir, Rel: v.pathLabel(l.Path)}
+	doc := &issues.Issue{Path: l.Path, Dir: v.Open.Dir, Rel: v.pathLabel(l.Path)}
 	body, err := doc.ReadBody()
 	if err != nil {
 		v.setNotice("開けませんでした: "+app.FirstLine(err.Error()), app.NoticeError)
 		return
 	}
-	v.docStack = append(v.docStack, bodyFrame{open: v.open, body: v.body, offset: v.bodyPager.Offset, jump: v.linkJump})
-	v.open, v.body = doc, body
-	v.bodyPager.Reset()
-	v.urlPick.close()
-	v.linkJump = linkJump{}
+	v.docStack = append(v.docStack, bodyFrame{open: v.Open, body: v.Body, offset: v.BodyPager.Offset, jump: v.LinkJump})
+	v.Open, v.Body = doc, body
+	v.BodyPager.Reset()
+	v.UrlPick.Close()
+	v.LinkJump = linkJump{}
 	v.docLine = l.Line
 }
 
 // popDoc は積んだ doc を 1 段戻す。戻る段が無ければ false (呼び出し側が本文を閉じる)。
-func (v *issuesView) popDoc() bool {
+func (v *IssuesView) popDoc() bool {
 	n := len(v.docStack)
 	if n == 0 {
 		return false
 	}
 	f := v.docStack[n-1]
 	v.docStack = v.docStack[:n-1]
-	v.open, v.body = f.open, f.body
-	v.bodyPager.Reset()
-	v.bodyPager.Offset = f.offset
-	v.linkJump = f.jump
+	v.Open, v.Body = f.open, f.body
+	v.BodyPager.Reset()
+	v.BodyPager.Offset = f.offset
+	v.LinkJump = f.jump
 	v.docLine = 0
 	return true
 }
 
 // rootOpen は一覧と照合できる本文 = docStack の底の issue (doc を開いていなければ v.open)。
-func (v *issuesView) rootOpen() *issues.Issue {
+func (v *IssuesView) rootOpen() *issues.Issue {
 	if len(v.docStack) > 0 {
 		return v.docStack[0].open
 	}
-	return v.open
+	return v.Open
 }
 
 // scrollToSrcLine はソース行 line を含む表示行が窓の上 1/3 に来るよう本文を送る (`x.md#L12` で開いたとき)。
-func (v *issuesView) scrollToSrcLine(line, rows int) {
-	nums := v.body.SrcLines()
+func (v *IssuesView) scrollToSrcLine(line, rows int) {
+	nums := v.Body.SrcLines()
 	top := -1
 	for i, n := range nums {
 		if n > 0 && n <= line {
@@ -266,15 +266,15 @@ func (v *issuesView) scrollToSrcLine(line, rows int) {
 		}
 	}
 	if top >= 0 {
-		v.bodyPager.Stop()
-		v.bodyPager.Offset = max(top-rows/3, 0)
+		v.BodyPager.Stop()
+		v.BodyPager.Offset = max(top-rows/3, 0)
 	}
 }
 
 // linkLabel はリンクの表示名 (repo 相対。repo の外は ~ 始まりか絶対パス)。本文に書かれた値ではなく
 // **解決した先**を出す: 共通名 (README.md / Makefile) は別の repo のつもりで書かれていても
 // ここの同名ファイルに当たるので、どこを開くのかを画面で確かめられるようにする。
-func (v *issuesView) linkLabel(l issues.FileLink) string {
+func (v *IssuesView) linkLabel(l issues.FileLink) string {
 	p := v.pathLabel(l.Path)
 	if l.Dir {
 		p += "/"
@@ -286,8 +286,8 @@ func (v *issuesView) linkLabel(l issues.FileLink) string {
 }
 
 // pathLabel は p の表示名 (repo 相対。repo の外は ~ 始まりか絶対パス。無害化済み)。
-func (v *issuesView) pathLabel(p string) string {
-	if rel, err := filepath.Rel(v.root, p); err == nil && v.root != "" && !strings.HasPrefix(rel, "..") {
+func (v *IssuesView) pathLabel(p string) string {
+	if rel, err := filepath.Rel(v.Root, p); err == nil && v.Root != "" && !strings.HasPrefix(rel, "..") {
 		p = rel
 	} else if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(p, home+string(filepath.Separator)) {
 		p = "~" + p[len(home):]
@@ -296,6 +296,6 @@ func (v *issuesView) pathLabel(p string) string {
 }
 
 // linkJumpStatus はジャンプ中にヘッダー 2 行目 (状態の行) へ出す文言 (行数を変えないため差し替える)。
-func (v *issuesView) linkJumpStatus(fl []issues.FileLink, cur int) string {
+func (v *IssuesView) linkJumpStatus(fl []issues.FileLink, cur int) string {
 	return "パス " + strconv.Itoa(cur+1) + "/" + strconv.Itoa(len(fl)) + ": " + v.linkLabel(fl[cur])
 }

@@ -55,8 +55,8 @@ func TestUpdateKeysReachableFromOverlays(t *testing.T) {
 		// codexIsDiscard: その画面では X が「変更を捨てる」で、codex update に取らない
 		codexIsDiscard bool
 	}{
-		{"issues", openByKey("i", func(m *browseModel) bool { return m.issuesOv.visible() }),
-			func(m *browseModel) bool { return m.issuesOv.visible() }, false},
+		{"issues", openByKey("i", func(m *browseModel) bool { return m.issuesOv.Visible() }),
+			func(m *browseModel) bool { return m.issuesOv.Visible() }, false},
 		// status は行が無いと X (破棄) が何もしないので、1 行持った viewer を直接差し込む
 		// (TestUpdateKeysDoNotLeakIntoStatusViewer と同じ準備)
 		{"status", func(t *testing.T, m *browseModel) { m.statusOv = *newTestStatusView(t, statusRec(" M a.go")) },
@@ -114,7 +114,7 @@ func TestUpdateKeysYieldToOverlayInputModes(t *testing.T) {
 	releaseKey(m)
 	m.handleKey("/")
 	releaseKey(m)
-	if !m.issuesOv.visible() || !m.issuesOv.ownsKeys() {
+	if !m.issuesOv.Visible() || !m.issuesOv.OwnsKeys() {
 		t.Fatal("前提: / で issues viewer が入力モードに入っていない")
 	}
 	press(m, "C")

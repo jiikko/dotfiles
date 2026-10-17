@@ -16,6 +16,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
+	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
@@ -860,7 +861,7 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("i でスキャンの Cmd が返らない")
 	}
-	if !m.issuesOv.visible() {
+	if !m.issuesOv.Visible() {
 		t.Fatal("i で issues viewer が開かない")
 	}
 	// 🚨 回帰防止の主眼: viewer 表示中のキーは viewer が全部飲む。判定順を崩すと、一覧を
@@ -875,8 +876,8 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	}
 	// C (claude update) は viewer の上でも効く (ユーザー要望 2026-09-02。詳細は
 	// tui_update_keys_test.go)。ここでは viewer が閉じないことだけ見る
-	if _, cmd := m.handleKey("C"); cmd == nil || !m.issuesOv.visible() {
-		t.Fatalf("viewer 表示中の C が update を始めない / viewer を閉じた (cmd=%v visible=%v)", cmd != nil, m.issuesOv.visible())
+	if _, cmd := m.handleKey("C"); cmd == nil || !m.issuesOv.Visible() {
+		t.Fatalf("viewer 表示中の C が update を始めない / viewer を閉じた (cmd=%v visible=%v)", cmd != nil, m.issuesOv.Visible())
 	}
 	// 🚨 U (usage) だけは素通りではなく viewer の上でも効く (ユーザー要望 2026-08-01)。
 	// 以前は「全画面 viewer の下では描かれないのに取得だけ走る」ため弾いていたので、
@@ -897,7 +898,7 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 		t.Fatal("viewer 表示中の他キーで usage が引っ込まない")
 	}
 	m.handleKey("i") // トグルで閉じる
-	if m.issuesOv.visible() {
+	if m.issuesOv.Visible() {
 		t.Fatal("i で閉じない")
 	}
 }
@@ -905,11 +906,11 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 func TestIssuesViewerReplacesWholeScreen(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.handleKey("i")
-	m.Update(issuesScanMsg{
-		dirs:   []string{"/repo/issues"},
-		issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "new-thing", issues.StatusOpen)},
+	m.Update(issuesview.IssuesScanMsg{
+		Dirs:   []string{"/repo/issues"},
+		Issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "new-thing", issues.StatusOpen)},
 	})
-	m.issuesOv.finishAnim() // 開く演出は別テストで見る (ここは着地後の画面を見たい)
+	m.issuesOv.FinishAnim() // 開く演出は別テストで見る (ここは着地後の画面を見たい)
 	out := m.viewLines()
 	if strings.Contains(out, "subject") {
 		t.Fatalf("コミット一覧が残っている:\n%s", out)
@@ -962,9 +963,9 @@ func TestIssuesViewerReloadsAfterEditorCloses(t *testing.T) {
 	if err := iss.LoadMeta(); err != nil {
 		t.Fatal(err)
 	}
-	m.issuesOv.cwd = root
-	m.Update(issuesScanMsg{root: root, dirs: []string{dir}, issues: []*issues.Issue{iss}})
-	m.issuesOv.finishAnim()
+	m.issuesOv.Cwd = root
+	m.Update(issuesview.IssuesScanMsg{Root: root, Dirs: []string{dir}, Issues: []*issues.Issue{iss}})
+	m.issuesOv.FinishAnim()
 	if out := m.viewLines(); !strings.Contains(out, "編集前") {
 		t.Fatalf("前提が崩れた: 編集前のタイトルが出ていない:\n%s", out)
 	}
@@ -979,7 +980,7 @@ func TestIssuesViewerReloadsAfterEditorCloses(t *testing.T) {
 	}
 	msg := drainScanMsg(t, cmd)
 	m.Update(msg)
-	m.issuesOv.finishAnim()
+	m.issuesOv.FinishAnim()
 	out := m.viewLines()
 	if !strings.Contains(out, "編集後") {
 		t.Fatalf("編集結果が一覧に反映されていない:\n%s", out)
@@ -995,31 +996,31 @@ func TestIssuesViewerReloadsAfterEditorCloses(t *testing.T) {
 	}
 	// 進捗は詳細を開いたときだけ出る (そこでは Body が全文を持っているので追加の I/O が無い)。
 	// 一覧から消したぶんの表示カバレッジをここで持つ
-	m.issuesOv.handleKey("enter", issuesViewport{width: 120, page: 20})
-	m.issuesOv.drawer.finish()
+	m.issuesOv.HandleKey("enter", issuesview.IssuesViewport{Width: 120, Page: 20})
+	m.issuesOv.Drawer.Finish()
 	if body := m.viewLines(); !strings.Contains(body, "1/2") {
 		t.Errorf("詳細ヘッダに進捗が出ていない:\n%s", body)
 	}
 }
 
 // drainScanMsg は tea.Cmd (Batch を含む) から issuesScanMsg を取り出す。
-func drainScanMsg(t *testing.T, cmd tea.Cmd) issuesScanMsg {
+func drainScanMsg(t *testing.T, cmd tea.Cmd) issuesview.IssuesScanMsg {
 	t.Helper()
 	switch msg := cmd().(type) {
-	case issuesScanMsg:
+	case issuesview.IssuesScanMsg:
 		return msg
 	case tea.BatchMsg:
 		for _, c := range msg {
 			if c == nil {
 				continue
 			}
-			if scan, ok := c().(issuesScanMsg); ok {
+			if scan, ok := c().(issuesview.IssuesScanMsg); ok {
 				return scan
 			}
 		}
 	}
 	t.Fatal("Cmd から issuesScanMsg が取れない")
-	return issuesScanMsg{}
+	return issuesview.IssuesScanMsg{}
 }
 
 func TestIssuesViewerNotOpenedWhilePanelOpen(t *testing.T) {
@@ -1028,7 +1029,7 @@ func TestIssuesViewerNotOpenedWhilePanelOpen(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("i")
-	if m.issuesOv.visible() {
+	if m.issuesOv.Visible() {
 		t.Fatal("job パネル表示中の i が viewer を開いた (パネルの語彙を優先すべき)")
 	}
 }
@@ -1039,14 +1040,14 @@ func TestIssuesViewerScanKeepsSpinnerAlive(t *testing.T) {
 	if !m.spinnerActive() {
 		t.Fatal("スキャン中にスピナーの tick が回らない")
 	}
-	m.Update(issuesScanMsg{dirs: []string{"/repo/issues"}})
+	m.Update(issuesview.IssuesScanMsg{Dirs: []string{"/repo/issues"}})
 	if !m.spinnerActive() {
 		t.Fatal("開く演出中はチェーンを回し続ける必要がある")
 	}
 	if got := m.tickInterval(); got != zoomInterval {
 		t.Fatalf("開閉スライド中の tick 周期 = %v, want zoomInterval (60fps)", got)
 	}
-	m.issuesOv.finishAnim()
+	m.issuesOv.FinishAnim()
 	if m.spinnerActive() {
 		t.Fatal("スキャンも演出も終わったのにスピナーが回り続けている")
 	}
@@ -1095,12 +1096,12 @@ func TestViewerCrossSwitching(t *testing.T) {
 	if m.statusOv.visible() {
 		t.Fatal("status viewer の i で status が閉じない")
 	}
-	if !m.issuesOv.visible() {
+	if !m.issuesOv.Visible() {
 		t.Fatal("status viewer の i で issues viewer が開かない")
 	}
 	releaseKey(m)
 	m.handleKey("s")
-	if m.issuesOv.visible() {
+	if m.issuesOv.Visible() {
 		t.Fatal("issues viewer の s で issues が閉じない")
 	}
 	if !m.statusOv.visible() {
@@ -1115,7 +1116,7 @@ func TestIssuesRestoreDroppedWhenStatusOpen(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.handleKey("s")
 	m.Update(issuesRestoreMsg{})
-	if m.issuesOv.visible() {
+	if m.issuesOv.Visible() {
 		t.Fatal("status viewer 表示中の遅延 restore で issues viewer が開いた")
 	}
 	if !m.statusOv.visible() {
@@ -1155,9 +1156,9 @@ func TestIssuesViewerFilterSwallowsSwitchKey(t *testing.T) {
 	m.handleKey("/")
 	releaseKey(m)
 	m.handleKey("s")
-	if !m.issuesOv.visible() || m.statusOv.visible() {
+	if !m.issuesOv.Visible() || m.statusOv.visible() {
 		t.Fatalf("番号入力中の s が viewer を切り替えた (issues=%v status=%v)",
-			m.issuesOv.visible(), m.statusOv.visible())
+			m.issuesOv.Visible(), m.statusOv.visible())
 	}
 }
 
@@ -1181,14 +1182,14 @@ func TestSpaceKeyScrollsEverywhere(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m.Update(issuesScanMsg{
-		dirs:   []string{dir},
-		issues: []*issues.Issue{{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}},
+	m.Update(issuesview.IssuesScanMsg{
+		Dirs:   []string{dir},
+		Issues: []*issues.Issue{{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}},
 	})
 	m.handleKey("enter")
 	m.viewLines() // 幅ごとの整形を確定させる
 	m.handleKey("space")
-	if m.issuesOv.bodyPager.Offset == 0 {
+	if m.issuesOv.BodyPager.Offset == 0 {
 		t.Fatal("issues 本文で Space が半ページ送りしていない")
 	}
 	// 2. issues viewer の一覧 (カーソルの半ページ移動)
@@ -1197,9 +1198,9 @@ func TestSpaceKeyScrollsEverywhere(t *testing.T) {
 	for i := 30; i > 0; i-- {
 		many = append(many, issuesviewtest.FakeIssue(fmt.Sprintf("%03d", i), "feat", "x", issues.StatusOpen))
 	}
-	m.Update(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: many})
+	m.Update(issuesview.IssuesScanMsg{Dirs: []string{"/repo/issues"}, Issues: many})
 	m.handleKey("space")
-	if m.issuesOv.cursor == 0 {
+	if m.issuesOv.Cursor == 0 {
 		t.Fatal("issues 一覧で Space がカーソルを送っていない")
 	}
 	m.handleKey("i") // viewer を閉じる
@@ -1232,14 +1233,14 @@ func TestIssuesViewerCursorArrowNotDoubled(t *testing.T) {
 		m.width, m.height = 100, 16
 		m.colored = colored
 		m.handleKey("i")
-		m.issuesOv.receive(issuesScanMsg{
-			dirs: []string{"/repo/issues"},
-			issues: []*issues.Issue{
+		m.issuesOv.Receive(issuesview.IssuesScanMsg{
+			Dirs: []string{"/repo/issues"},
+			Issues: []*issues.Issue{
 				issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen),
 				issuesviewtest.FakeIssue("029", "feat", "beta", issues.StatusOpen),
 			},
 		})
-		m.issuesOv.finishAnim() // 開く演出中は行が流し込み途中で出ない
+		m.issuesOv.FinishAnim() // 開く演出中は行が流し込み途中で出ない
 		var cursorRow string
 		for _, ln := range strings.Split(term.StripANSI(m.View().Content), "\n") {
 			if strings.Contains(ln, "alpha") {
@@ -1269,11 +1270,11 @@ func TestIssuesViewerNotifiesViaToast(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.width, m.height = 100, 16
 	m.handleKey("i")
-	m.issuesOv.receive(issuesScanMsg{
-		dirs:   []string{"/repo/issues"},
-		issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen)},
+	m.issuesOv.Receive(issuesview.IssuesScanMsg{
+		Dirs:   []string{"/repo/issues"},
+		Issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen)},
 	})
-	m.issuesOv.finishAnim()
+	m.issuesOv.FinishAnim()
 
 	m.handleKey("p") // 番号をコピー
 	if !m.toast.Visible() {
@@ -1297,8 +1298,8 @@ func TestIssuesViewerNotifiesViaToast(t *testing.T) {
 		t.Errorf("viewer の上にトーストが載っていない:\n%s", out)
 	}
 	// ヘッダー行には出さない (トーストと二重に出さない)
-	if v := m.issuesOv; v.notice != "" {
-		t.Errorf("通知が viewer 側に残っている: %q", v.notice)
+	if v := m.issuesOv; v.Notice != "" {
+		t.Errorf("通知が viewer 側に残っている: %q", v.Notice)
 	}
 }
 
@@ -1309,11 +1310,11 @@ func TestIssuesViewerCopyFailureToast(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.width, m.height = 100, 16
 	m.handleKey("i")
-	m.issuesOv.receive(issuesScanMsg{
-		dirs:   []string{"/repo/issues"},
-		issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen)},
+	m.issuesOv.Receive(issuesview.IssuesScanMsg{
+		Dirs:   []string{"/repo/issues"},
+		Issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen)},
 	})
-	m.issuesOv.finishAnim()
+	m.issuesOv.FinishAnim()
 
 	m.lastWarning = "pull に失敗: rejected" // 直前のエラー (w でコピーしたいもの)
 	m.handleKey("y")
@@ -1333,11 +1334,11 @@ func TestIssuesViewerRefusalKeepsLastWarning(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.width, m.height = 100, 16
 	m.handleKey("i")
-	m.issuesOv.receive(issuesScanMsg{
-		dirs:   []string{"/repo/issues"},
-		issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen)},
+	m.issuesOv.Receive(issuesview.IssuesScanMsg{
+		Dirs:   []string{"/repo/issues"},
+		Issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen)},
 	})
-	m.issuesOv.finishAnim()
+	m.issuesOv.FinishAnim()
 	m.lastWarning = "pull に失敗: rejected"
 	for _, key := range []string{"u"} { // 一覧モードの u は「本文を開いてから」の断り
 		m.handleKey(key)

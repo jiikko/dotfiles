@@ -180,8 +180,8 @@ func showOverlayOwning(t *testing.T, m *browseModel, name string) {
 		m.doctorOv.Fixture().Show()
 		m.doctorOv.Fixture().Delete(doctorview.DeleteConfirm, nil)
 	case "issuesOv":
-		m.issuesOv.shown = true
-		m.issuesOv.numFilter.typing = true // 番号入力中はキーを解釈し切る
+		m.issuesOv.Shown = true
+		m.issuesOv.NumFilter.Typing = true // 番号入力中はキーを解釈し切る
 	case "statusOv":
 		m.statusOv.shown = true
 		m.statusOv.discarding = true // 破棄の y/N 確認中
@@ -219,7 +219,7 @@ func overlayOwnsKeys(m *browseModel, name string) bool {
 	case "doctorOv":
 		return m.doctorOv.OwnsKeys()
 	case "issuesOv":
-		return m.issuesOv.ownsKeys()
+		return m.issuesOv.OwnsKeys()
 	case "statusOv":
 		return m.statusOv.ownsKeys()
 	case "filerV":

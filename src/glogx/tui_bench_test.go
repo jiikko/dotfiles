@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"glogx/internal/issuesview"
 	"glogx/issues"
 )
 
@@ -178,9 +179,9 @@ func benchIssuesBrowse(tb testing.TB, files, w, h int) *browseModel {
 		_ = iss.LoadMeta()
 	}
 	m.handleKey("i")
-	m.issuesOv.cwd = root
-	m.Update(issuesScanMsg{root: root, dirs: []string{dir}, issues: found, warnings: warnings})
-	m.issuesOv.finishAnim() // 開きドロワーの演出後 = 定常フレームを測る
+	m.issuesOv.Cwd = root
+	m.Update(issuesview.IssuesScanMsg{Root: root, Dirs: []string{dir}, Issues: found, Warnings: warnings})
+	m.issuesOv.FinishAnim() // 開きドロワーの演出後 = 定常フレームを測る
 	return m
 }
 
@@ -211,9 +212,9 @@ func BenchmarkIssuesViewFrame2000(b *testing.B) {
 func BenchmarkIssuesViewFrameSelected2000(b *testing.B) {
 	m := benchIssuesBrowse(b, 2000, 120, 40)
 	v := &m.issuesOv
-	v.ensureDisplayRows()
-	v.cursor, v.marked, v.markAt = 0, true, 19
-	if _, _, ok := v.selection(); !ok {
+	v.EnsureDisplayRows()
+	v.Cursor, v.Marked, v.MarkAt = 0, true, 19
+	if _, _, ok := v.Selection(); !ok {
 		b.Fatal("選択が成立していない (fixture が狙った分岐に届いていない)")
 	}
 	b.ReportAllocs()

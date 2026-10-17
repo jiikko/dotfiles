@@ -190,13 +190,13 @@ func TestRatelimitDashCrossSwitching(t *testing.T) {
 	}
 	releaseKey(m)
 	m.handleKey("i")
-	if m.rlDash.visible() || !m.issuesOv.visible() {
-		t.Fatalf("ダッシュボードの i で issues viewer へ移らない (dash=%v issues=%v)", m.rlDash.visible(), m.issuesOv.visible())
+	if m.rlDash.visible() || !m.issuesOv.Visible() {
+		t.Fatalf("ダッシュボードの i で issues viewer へ移らない (dash=%v issues=%v)", m.rlDash.visible(), m.issuesOv.Visible())
 	}
 	releaseKey(m)
 	m.handleKey("R")
-	if !m.rlDash.visible() || m.issuesOv.visible() {
-		t.Fatalf("issues viewer の R でダッシュボードへ移らない (dash=%v issues=%v)", m.rlDash.visible(), m.issuesOv.visible())
+	if !m.rlDash.visible() || m.issuesOv.Visible() {
+		t.Fatalf("issues viewer の R でダッシュボードへ移らない (dash=%v issues=%v)", m.rlDash.visible(), m.issuesOv.Visible())
 	}
 	releaseKey(m)
 	m.handleKey("s")
@@ -216,7 +216,7 @@ func TestIssuesRestoreDroppedWhenRatelimitDashOpen(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.handleKey("R")
 	m.Update(issuesRestoreMsg{})
-	if m.issuesOv.visible() {
+	if m.issuesOv.Visible() {
 		t.Fatal("ダッシュボード表示中の遅延 restore で issues viewer が開いた")
 	}
 	if !m.rlDash.visible() {
@@ -225,7 +225,7 @@ func TestIssuesRestoreDroppedWhenRatelimitDashOpen(t *testing.T) {
 	// 横断が toggle で裏返らないこと (この restore ガードが守っている本体)
 	releaseKey(m)
 	m.handleKey("i")
-	if !m.issuesOv.visible() {
+	if !m.issuesOv.Visible() {
 		t.Fatal("復元を捨てた後の i で issues viewer が開かない")
 	}
 }

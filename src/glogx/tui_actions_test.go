@@ -925,7 +925,7 @@ func TestKeyRepeatIsOneInput(t *testing.T) {
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.handleKey("i")
-	if !m.issuesOv.visible() {
+	if !m.issuesOv.Visible() {
 		t.Fatal("前提が崩れた: i で viewer が開かない")
 	}
 	// 実機の自動リピート (最初 225ms → 以降 30ms。実測) を模して押しっぱなしにする
@@ -935,13 +935,13 @@ func TestKeyRepeatIsOneInput(t *testing.T) {
 		advance(30 * time.Millisecond)
 		m.handleKey("i")
 	}
-	if !m.issuesOv.visible() {
+	if !m.issuesOv.Visible() {
 		t.Fatal("押しっぱなしで viewer が開閉を繰り返した (1 回の入力として扱われていない)")
 	}
 	// 指を離す = 窓が切れる。次の 1 回は効く
 	advance(keyRepeatGuard + time.Millisecond)
 	m.handleKey("i")
-	if m.issuesOv.visible() {
+	if m.issuesOv.Visible() {
 		t.Fatal("押し直しが効かない (離しても 1 回扱いのまま)")
 	}
 }

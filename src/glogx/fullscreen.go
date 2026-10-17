@@ -1,8 +1,9 @@
 package main
 
 import (
-	tea "charm.land/bubbletea/v2"
 	"glogx/internal/app"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // activeFullScreen は今出ている全画面ビューア (無ければ app.FullScreenNone)。
@@ -18,7 +19,7 @@ func (m *browseModel) activeFullScreen() app.FullScreenID {
 		return app.FullScreenDoctor
 	case m.statusOv.visible():
 		return app.FullScreenStatus
-	case m.issuesOv.visible():
+	case m.issuesOv.Visible():
 		return app.FullScreenIssues
 	case m.filerV.visible():
 		return app.FullScreenFiler
@@ -37,7 +38,7 @@ func (m *browseModel) fullScreenActive() bool { return m.activeFullScreen() != a
 func (m *browseModel) openFullScreen(id app.FullScreenID) tea.Cmd {
 	switch id {
 	case app.FullScreenIssues:
-		return tea.Batch(m.issuesOv.toggle(currentDir()), m.maybeTick())
+		return tea.Batch(m.issuesOv.Toggle(currentDir()), m.maybeTick())
 	case app.FullScreenStatus:
 		return tea.Batch(m.statusOv.toggle(), m.maybeTick())
 	case app.FullScreenRatelimit:

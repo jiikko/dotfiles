@@ -1,4 +1,4 @@
-package main
+package issuesview
 
 // issuesNumberFilter は一覧を issue 番号で絞り込むインクリメンタルフィルタ (一覧で /)。
 //
@@ -29,33 +29,33 @@ import (
 
 type issuesNumberFilter struct {
 	// active は絞り込みが効いているか。入力を終えた (typing=false) 後も残る。
-	active bool
+	Active bool
 	// typing は検索語を入力中か。true のあいだ一覧のキーは飲まれる。
-	typing bool
+	Typing bool
 	line   lineedit.Line // 検索語 (数字だけ)
 }
 
 // query は今の検索語。
-func (f *issuesNumberFilter) query() string { return f.line.String() }
+func (f *issuesNumberFilter) Query() string { return f.line.String() }
 
 // start は入力を始める。絞り込み中に呼べば検索語の続きから打てる (打ち直しにしない — 1 文字
 // 消したいだけのときに全部消えるのは操作の取り消しとして強すぎる)。
-func (f *issuesNumberFilter) start() {
-	f.active, f.typing = true, true
+func (f *issuesNumberFilter) Start() {
+	f.Active, f.Typing = true, true
 }
 
 // confirm は入力を終えて絞り込みを残す。🚨 空の検索語では呼ばない: 空の絞り込みは「全部見えている」=
 // 絞り込んでいないのと同じで、ヘッダーだけが残ると嘘になる。空なら絞り込みごとやめるが、その判断は
 // issuesView.confirmNumberFilter が持つ (やめるときは group の展開も一緒に戻す必要があり、それは
 // この型の外の状態なので。issue 752: 以前はここで clear に落ち、group の後始末を通らない経路があった)。
-func (f *issuesNumberFilter) confirm() { f.typing = false }
+func (f *issuesNumberFilter) Confirm() { f.Typing = false }
 
 // clear は絞り込みを捨てる。
 func (f *issuesNumberFilter) clear() { *f = issuesNumberFilter{} }
 
 // edit は入力中のキーを検索語へ反映する (検索語が変わったら true)。数字は入れ、数字以外の文字は捨て、
 // それ以外は lineedit の編集キーとして渡す (カーソルを動かすだけのキーは false)。
-func (f *issuesNumberFilter) edit(key string) bool {
+func (f *issuesNumberFilter) Edit(key string) bool {
 	before := f.line.String()
 	switch {
 	case isDigitKey(key):
@@ -93,7 +93,7 @@ func isASCIIDigit(r rune) bool { return r >= '0' && r <= '9' }
 // rows は番号に検索語を含む issue を、渡された並びのまま返す。検索語が空なら全件
 // (入力を始めた直後に一覧が消えると、何を絞り込んでいるのか分からなくなる)。
 func (f *issuesNumberFilter) rows(all []*issues.Issue) []*issues.Issue {
-	q := f.query()
+	q := f.Query()
 	out := make([]*issues.Issue, 0, len(all))
 	for _, iss := range all {
 		if q == "" || strings.Contains(iss.Number, q) {
@@ -106,7 +106,7 @@ func (f *issuesNumberFilter) rows(all []*issues.Issue) []*issues.Issue {
 // groupKeys は番号フィルタの結果に含まれる Epic の GroupKey を返す。番号フィルタ中だけ親を
 // 自動展開し、解除時には呼び出し側がこの集合を捨てる (手動の展開状態とは分離する)。
 func (f *issuesNumberFilter) groupKeys(rows []*issues.Issue) map[string]bool {
-	if !f.active {
+	if !f.Active {
 		return nil
 	}
 	out := make(map[string]bool)

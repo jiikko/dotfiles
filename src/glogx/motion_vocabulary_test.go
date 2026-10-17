@@ -75,9 +75,9 @@ var motionScreens = []motionScreen{
 			m.issuesOv = *loadedView(issuesviewtest.ManyIssues(40)...)
 			return motionProbe{
 				press:   func(k string) { m.handleKey(k) },
-				observe: func() string { return fmt.Sprintf("cursor=%d", m.issuesOv.cursor) },
-				pos:     func() int { return m.issuesOv.cursor },
-				half:    listnav.Half(m.issuesOv.visibleRows(m.issuesOpts().viewport())),
+				observe: func() string { return fmt.Sprintf("cursor=%d", m.issuesOv.Cursor) },
+				pos:     func() int { return m.issuesOv.Cursor },
+				half:    listnav.Half(m.issuesOv.VisibleRows(m.issuesOpts().Viewport())),
 			}
 		},
 	},

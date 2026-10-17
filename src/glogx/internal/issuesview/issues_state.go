@@ -1,4 +1,4 @@
-package main
+package issuesview
 
 import (
 	"time"
@@ -27,7 +27,7 @@ import (
 // issue は番号でも basename でもなくパスで指す (仕様が定める同一性キー。
 // docs/issues-viewer-spec.md 2 節)。復元時に見つからなければ黙って別の issue を出さず、
 // 当たらなかったぶんだけ既定へ落ちる。
-type issuesScreen struct {
+type IssuesScreen struct {
 	Root    string    `json:"root"`     // スキャンの起点 (別 repo の画面を復元しないための照合キー)
 	SavedAt time.Time `json:"saved_at"` // TTL 判定
 	Tab     string    `json:"tab"`      // カテゴリタブ名 ("" = All)
@@ -44,21 +44,21 @@ type issuesScreen struct {
 }
 
 // issuesMemory は issues viewer の記憶 ($XDG_CACHE_HOME/glog/issues-last-screen.json)。作法は screen_memory.go。
-var issuesMemory = app.ScreenMemory[issuesScreen]{File: "issues-last-screen.json", SavedAt: func(s issuesScreen) time.Time { return s.SavedAt }}
+var issuesMemory = app.ScreenMemory[IssuesScreen]{File: "issues-last-screen.json", SavedAt: func(s IssuesScreen) time.Time { return s.SavedAt }}
 
-func saveIssuesScreen(s issuesScreen) error { return issuesMemory.Save(s) }
+func SaveIssuesScreen(s IssuesScreen) error { return issuesMemory.Save(s) }
 
 // removeIssuesScreen は記憶を捨てる (git log 一覧から終了したとき)。
-func removeIssuesScreen() { issuesMemory.Remove() }
+func RemoveIssuesScreen() { issuesMemory.Remove() }
 
 // loadIssuesScreen は TTL 内の記憶を返す (読めない・壊れている・期限切れ・未来の時刻は「記憶なし」。app.ScreenMemory.load)。
 //
 // repo の照合はここではしない: 呼び出し側が Root と実際の repo root を突き合わせる
 // (root の解決は git fork なので、記憶があるときだけ非同期で行う)。
-func loadIssuesScreen(now time.Time) (issuesScreen, bool) {
+func LoadIssuesScreen(now time.Time) (IssuesScreen, bool) {
 	s, ok := issuesMemory.Load(now)
 	if !ok || s.Root == "" {
-		return issuesScreen{}, false
+		return IssuesScreen{}, false
 	}
 	// 外部ファイル由来の値はここで正規化する。知らない段階名は「open のみ」に倒す
 	// (見えすぎるより見えなさすぎる方が、a を押せば戻せるぶん安全)

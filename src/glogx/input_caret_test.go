@@ -12,6 +12,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"glogx/internal/app"
+	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/issues"
@@ -56,18 +57,18 @@ func TestNumberFilterCaretFollowsLineEdit(t *testing.T) {
 	for _, frame := range []bool{false, true} {
 		m := caretTestModel(t, frame)
 		typeKeys(m, "/", "1", "2", "left", "9") // 12 の 1 と 2 の間に 9 を入れる
-		if q := m.issuesOv.numFilter.query(); q != "192" {
+		if q := m.issuesOv.NumFilter.Query(); q != "192" {
 			t.Fatalf("frame=%v: 途中に入らない: query=%q (期待 192)", frame, q)
 		}
-		if got := caretPrefix(t, m); !strings.HasSuffix(got, numberFilterPrompt+"19") {
+		if got := caretPrefix(t, m); !strings.HasSuffix(got, issuesview.NumberFilterPrompt+"19") {
 			t.Errorf("frame=%v: カーソルが 9 の直後に無い: カーソルの左 = %q", frame, got)
 		}
 		typeKeys(m, "ctrl+k") // カーソルの後ろ (2) を消す
-		if q := m.issuesOv.numFilter.query(); q != "19" {
+		if q := m.issuesOv.NumFilter.Query(); q != "19" {
 			t.Errorf("frame=%v: ctrl+k で後ろが消えない: query=%q", frame, q)
 		}
 		typeKeys(m, "a") // 数字以外は入れない
-		if q := m.issuesOv.numFilter.query(); q != "19" {
+		if q := m.issuesOv.NumFilter.Query(); q != "19" {
 			t.Errorf("frame=%v: 数字以外が入った: query=%q", frame, q)
 		}
 		typeKeys(m, "enter") // 確定すると入力欄ではなくなる
@@ -80,19 +81,19 @@ func TestNumberFilterCaretFollowsLineEdit(t *testing.T) {
 func TestURLPickerCaretFollowsLineEdit(t *testing.T) {
 	for _, frame := range []bool{false, true} {
 		m := caretTestModel(t, frame)
-		if !m.issuesOv.urlPick.open([]string{"https://example.com/abc", "https://github.com/x"}) {
+		if !m.issuesOv.UrlPick.Open([]string{"https://example.com/abc", "https://github.com/x"}) {
 			t.Fatal("前提が崩れた: URL ピッカーが開かない")
 		}
 		typeKeys(m, "down")                     // 2 本目を選んでから打つ: 絞り込み直後は先頭へ戻す (fzf と同じ)
 		typeKeys(m, "e", "x", "m", "home", "g") // 先頭へ戻って g を入れる
-		if q := m.issuesOv.urlPick.query(); q != "gexm" {
+		if q := m.issuesOv.UrlPick.Query(); q != "gexm" {
 			t.Fatalf("frame=%v: 先頭に入らない: query=%q (期待 gexm)", frame, q)
 		}
-		if got := caretPrefix(t, m); !strings.HasSuffix(got, urlPickerPrompt+"g") {
+		if got := caretPrefix(t, m); !strings.HasSuffix(got, issuesview.UrlPickerPrompt+"g") {
 			t.Errorf("frame=%v: カーソルが g の直後に無い: カーソルの左 = %q", frame, got)
 		}
 		typeKeys(m, "end", "ctrl+w") // 末尾の語を消す
-		if q := m.issuesOv.urlPick.query(); q != "" {
+		if q := m.issuesOv.UrlPick.Query(); q != "" {
 			t.Errorf("frame=%v: ctrl+w で語が消えない: query=%q", frame, q)
 		}
 		typeKeys(m, "esc")
@@ -109,7 +110,7 @@ func TestCaretHiddenWhileIssuesViewerAnimates(t *testing.T) {
 	if m.caret() == nil {
 		t.Fatal("前提が崩れた: 入力中なのにカーソルが無い")
 	}
-	m.issuesOv.animStart = app.TimeNow()
+	m.issuesOv.AnimStart = app.TimeNow()
 	if c := m.caret(); c != nil {
 		t.Errorf("演出の最中にカーソルを置いている: %+v", c)
 	}
@@ -121,13 +122,13 @@ func TestCaretStaysInFieldWithLongQuery(t *testing.T) {
 	t.Run("URL", func(t *testing.T) {
 		m := caretTestModel(t, false)
 		m.width = width
-		m.issuesOv.urlPick.open([]string{"https://example.com/abc"})
+		m.issuesOv.UrlPick.Open([]string{"https://example.com/abc"})
 		q := "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMN" // 同じ並びが 2 度出ない (ずれた桁で偶然一致しない)
 		for _, r := range q {
 			typeKeys(m, string(r))
 		}
 		got := caretPrefix(t, m)
-		if !strings.HasPrefix(got, urlPickerPrompt) || !strings.HasSuffix(got, "LMN") {
+		if !strings.HasPrefix(got, issuesview.UrlPickerPrompt) || !strings.HasSuffix(got, "LMN") {
 			t.Errorf("長い検索語でカーソルが打った字の直後に無い: カーソルの左 = %q", got)
 		}
 	})
@@ -161,7 +162,7 @@ func typeLongNumber(t *testing.T, m *browseModel) {
 		}
 		typeKeys(m, "5")
 		got := caretPrefix(t, m)
-		if !strings.Contains(got, numberFilterPrompt) || !strings.HasSuffix(got, "78905") {
+		if !strings.Contains(got, issuesview.NumberFilterPrompt) || !strings.HasSuffix(got, "78905") {
 			t.Errorf("長い番号でカーソルが打った字の直後に無い: カーソルの左 = %q", got)
 		}
 	}
@@ -175,14 +176,14 @@ func TestCaretHiddenWhenFieldIsCoveredOrGone(t *testing.T) {
 		set  func(m *browseModel)
 	}{
 		{"glogx を終える", func(m *browseModel) { m.done = true }},
-		{"issues viewer を閉じた", func(m *browseModel) { m.issuesOv.shown = false }},
+		{"issues viewer を閉じた", func(m *browseModel) { m.issuesOv.Shown = false }},
 		{"窓の zoom の演出中", func(m *browseModel) { m.zoom.off = false; m.zoom.start(app.TimeNow()) }},
 		{"action モーダル", func(m *browseModel) { m.actModal.pullConfirm = true }},
 		{"再起動の確認", func(m *browseModel) { m.restartPending = true }},
 		{"usage の板", func(m *browseModel) { m.usageOv.visible = true }},
-		{"next の目印の確認", func(m *browseModel) { m.issuesOv.markNext.active = true }},
+		{"next の目印の確認", func(m *browseModel) { m.issuesOv.MarkNext.Active = true }},
 		{"本文を開いている", func(m *browseModel) {
-			if !m.issuesOv.openIssue(issuesviewtest.RealIssue(t)) {
+			if !m.issuesOv.OpenIssue(issuesviewtest.RealIssue(t)) {
 				t.Fatal("前提が崩れた: 本文を開けない")
 			}
 		}},
@@ -204,11 +205,11 @@ func TestCaretHiddenWhenFieldIsCoveredOrGone(t *testing.T) {
 // 入力欄に打っている間は、同じ字を素早く続けて打っても飲まない (https の ss)。キーリピートの抑止は入力欄の外だけ。
 func TestRepeatGuardDoesNotSwallowTypedLetters(t *testing.T) {
 	m := caretTestModel(t, false)
-	m.issuesOv.urlPick.open([]string{"https://example.com/abc"})
+	m.issuesOv.UrlPick.Open([]string{"https://example.com/abc"})
 	for _, k := range []string{"s", "s", "i", "i", "a", "a"} { // releaseKey を挟まない = 素早い連打
 		m.handleKey(k)
 	}
-	if q := m.issuesOv.urlPick.query(); q != "ssiiaa" {
+	if q := m.issuesOv.UrlPick.Query(); q != "ssiiaa" {
 		t.Errorf("連打の 2 字目が飲まれた: query=%q (期待 ssiiaa)", q)
 	}
 }
@@ -217,21 +218,21 @@ func TestRepeatGuardDoesNotSwallowTypedLetters(t *testing.T) {
 // refilter が選択を範囲へ寄せて 0 になり、戻す処理を消しても緑のまま通る (変異で実測)。
 func TestURLPickerTypingResetsSelection(t *testing.T) {
 	m := caretTestModel(t, false)
-	m.issuesOv.urlPick.open([]string{"https://a.example/1", "https://b.example/2"})
+	m.issuesOv.UrlPick.Open([]string{"https://a.example/1", "https://b.example/2"})
 	typeKeys(m, "down")
-	if m.issuesOv.urlPick.cursor != 1 {
-		t.Fatalf("前提が崩れた: 2 本目を選べない: cursor=%d", m.issuesOv.urlPick.cursor)
+	if m.issuesOv.UrlPick.Cursor != 1 {
+		t.Fatalf("前提が崩れた: 2 本目を選べない: cursor=%d", m.issuesOv.UrlPick.Cursor)
 	}
 	typeKeys(m, "x") // どちらの URL にも x がある
-	if n := len(m.issuesOv.urlPick.match); n != 2 {
+	if n := len(m.issuesOv.UrlPick.Match); n != 2 {
 		t.Fatalf("前提が崩れた: 絞り込みで一致が %d 件 (2 件のままでないと戻す処理を検査できない)", n)
 	}
-	if m.issuesOv.urlPick.cursor != 0 {
-		t.Errorf("打った後に選択が先頭へ戻らない: cursor=%d", m.issuesOv.urlPick.cursor)
+	if m.issuesOv.UrlPick.Cursor != 0 {
+		t.Errorf("打った後に選択が先頭へ戻らない: cursor=%d", m.issuesOv.UrlPick.Cursor)
 	}
 	typeKeys(m, "down", "left") // カーソルを動かすだけのキーでは選択を動かさない
-	if m.issuesOv.urlPick.cursor != 1 {
-		t.Errorf("検索語のカーソルを動かしただけで選択が動いた: cursor=%d", m.issuesOv.urlPick.cursor)
+	if m.issuesOv.UrlPick.Cursor != 1 {
+		t.Errorf("検索語のカーソルを動かしただけで選択が動いた: cursor=%d", m.issuesOv.UrlPick.Cursor)
 	}
 }
 
@@ -241,11 +242,11 @@ func TestURLPickerTypingResetsSelection(t *testing.T) {
 func TestRepeatGuardStillHoldsNConfirmOutsideInputs(t *testing.T) {
 	m := caretTestModel(t, false)
 	m.handleKey("n")
-	if !m.issuesOv.markNext.active {
+	if !m.issuesOv.MarkNext.Active {
 		t.Fatal("前提が崩れた: n で目印の確認が開かない")
 	}
 	m.handleKey("n") // releaseKey を挟まない = 押しっぱなしのリピート
-	if !m.issuesOv.markNext.active {
+	if !m.issuesOv.MarkNext.Active {
 		t.Error("押しっぱなしの n のリピートが目印の確認を取り消した")
 	}
 }
@@ -255,46 +256,46 @@ func TestRepeatGuardStillHoldsNConfirmOutsideInputs(t *testing.T) {
 func TestPasteGoesOnlyIntoInputs(t *testing.T) {
 	t.Run("URL", func(t *testing.T) {
 		m := caretTestModel(t, false)
-		m.issuesOv.urlPick.open([]string{"https://a.example/1", "https://b.example/2"})
+		m.issuesOv.UrlPick.Open([]string{"https://a.example/1", "https://b.example/2"})
 		typeKeys(m, "down")
 		m.Update(tea.PasteMsg{Content: "b.exa mple/\n"}) // 空白と改行は落とす (URL に現れない)
-		if q := m.issuesOv.urlPick.query(); q != "b.example/" {
+		if q := m.issuesOv.UrlPick.Query(); q != "b.example/" {
 			t.Errorf("貼り付けが検索語に入らない: query=%q (期待 b.example/)", q)
 		}
-		if p := &m.issuesOv.urlPick; len(p.match) != 1 || p.cursor != 0 {
-			t.Errorf("貼り付けで絞り込みが更新されない: match=%v cursor=%d", p.match, p.cursor)
+		if p := &m.issuesOv.UrlPick; len(p.Match) != 1 || p.Cursor != 0 {
+			t.Errorf("貼り付けで絞り込みが更新されない: match=%v cursor=%d", p.Match, p.Cursor)
 		}
 	})
 	t.Run("URL の無害化", func(t *testing.T) {
 		m := caretTestModel(t, false)
-		m.issuesOv.urlPick.open([]string{"https://a.example/1"})
+		m.issuesOv.UrlPick.Open([]string{"https://a.example/1"})
 		m.Update(tea.PasteMsg{Content: "\x1b[31ma.exa\u202emple\x07"}) // ESC のシーケンス・RLO・BEL は落とす
-		if q := m.issuesOv.urlPick.query(); q != "a.example" {
+		if q := m.issuesOv.UrlPick.Query(); q != "a.example" {
 			t.Errorf("制御文字・エスケープの残骸が検索語に残った: query=%q (期待 a.example)", q)
 		}
 	})
 	t.Run("番号", func(t *testing.T) {
 		m := caretTestModel(t, false)
 		typeKeys(m, "/", "down") // 選択を 2 行目にしてから貼る: 絞り込み直後は先頭へ戻す
-		if m.issuesOv.cursor != 1 {
-			t.Fatalf("前提が崩れた: 2 行目を選べない: cursor=%d", m.issuesOv.cursor)
+		if m.issuesOv.Cursor != 1 {
+			t.Fatalf("前提が崩れた: 2 行目を選べない: cursor=%d", m.issuesOv.Cursor)
 		}
 		m.Update(tea.PasteMsg{Content: "issue #12"}) // 数字だけを入れる
-		if q := m.issuesOv.numFilter.query(); q != "12" {
+		if q := m.issuesOv.NumFilter.Query(); q != "12" {
 			t.Errorf("貼り付けの数字が検索語に入らない: query=%q (期待 12)", q)
 		}
-		if len(m.issuesOv.rows) != 2 { // 123 と 129
-			t.Errorf("貼り付けで絞り込みが更新されない: rows=%d (期待 2)", len(m.issuesOv.rows))
+		if len(m.issuesOv.Rows) != 2 { // 123 と 129
+			t.Errorf("貼り付けで絞り込みが更新されない: rows=%d (期待 2)", len(m.issuesOv.Rows))
 		}
-		if m.issuesOv.cursor != 0 {
-			t.Errorf("貼り付けの後に選択が先頭へ戻らない: cursor=%d", m.issuesOv.cursor)
+		if m.issuesOv.Cursor != 0 {
+			t.Errorf("貼り付けの後に選択が先頭へ戻らない: cursor=%d", m.issuesOv.Cursor)
 		}
 	})
 	t.Run("番号に Y の参照", func(t *testing.T) {
 		m := caretTestModel(t, false)
 		typeKeys(m, "/")
 		m.Update(tea.PasteMsg{Content: "issue 123 a (issues/123-feat-a.md)"}) // 最初の数字の並びだけを使う
-		if q := m.issuesOv.numFilter.query(); q != "123" {
+		if q := m.issuesOv.NumFilter.Query(); q != "123" {
 			t.Errorf("Y でコピーした参照から番号を引けない: query=%q (期待 123)", q)
 		}
 	})
@@ -302,16 +303,16 @@ func TestPasteGoesOnlyIntoInputs(t *testing.T) {
 		m := caretTestModel(t, false)
 		typeKeys(m, "/")
 		m.Update(tea.PasteMsg{Content: "\x1b[31m129"}) // エスケープの中の 31 を拾わない
-		if q := m.issuesOv.numFilter.query(); q != "129" {
+		if q := m.issuesOv.NumFilter.Query(); q != "129" {
 			t.Errorf("エスケープの中の数字を拾った: query=%q (期待 129)", q)
 		}
 	})
 	t.Run("入力欄の外", func(t *testing.T) {
 		m := caretTestModel(t, false)
-		before := m.issuesOv.cursor
+		before := m.issuesOv.Cursor
 		m.Update(tea.PasteMsg{Content: "jjj/12"}) // キーとして走れば下へ動き、/ で絞り込みが始まる
-		if m.issuesOv.cursor != before || m.issuesOv.numFilter.active {
-			t.Errorf("入力欄の外の貼り付けがキーとして走った: cursor %d→%d numFilter.active=%v", before, m.issuesOv.cursor, m.issuesOv.numFilter.active)
+		if m.issuesOv.Cursor != before || m.issuesOv.NumFilter.Active {
+			t.Errorf("入力欄の外の貼り付けがキーとして走った: cursor %d→%d numFilter.active=%v", before, m.issuesOv.Cursor, m.issuesOv.NumFilter.Active)
 		}
 	})
 	for _, c := range []struct {
@@ -326,7 +327,7 @@ func TestPasteGoesOnlyIntoInputs(t *testing.T) {
 			typeKeys(m, "/")
 			c.set(m)
 			m.Update(tea.PasteMsg{Content: "12"})
-			if q := m.issuesOv.numFilter.query(); q != "" {
+			if q := m.issuesOv.NumFilter.Query(); q != "" {
 				t.Errorf("板の下の入力欄に貼り付けが入った: query=%q", q)
 			}
 		})
@@ -349,7 +350,7 @@ func TestTmuxPrefixReachesInputWhileTyping(t *testing.T) {
 				typeKeys(m, "left")
 			}
 			typeKeys(m, c.prefix, "9")
-			if q := m.issuesOv.numFilter.query(); q != c.want {
+			if q := m.issuesOv.NumFilter.Query(); q != c.want {
 				t.Errorf("入力中の %s (prefix と同じ) が編集として効かない: query=%q (期待 %s)", c.prefix, q, c.want)
 			}
 			if strings.Contains(m.toast.Text(), "tmux prefix") {
@@ -368,7 +369,7 @@ func TestTmuxPrefixNotEditKeyStillWarnsWhileTyping(t *testing.T) {
 	m := caretTestModel(t, false)
 	m.tmuxPrefix = "ctrl+t"
 	typeKeys(m, "/", "1", "2", "ctrl+t")
-	if q := m.issuesOv.numFilter.query(); q != "12" {
+	if q := m.issuesOv.NumFilter.Query(); q != "12" {
 		t.Errorf("前提が崩れた: query=%q", q)
 	}
 	if !strings.Contains(m.toast.Text(), "tmux prefix") {

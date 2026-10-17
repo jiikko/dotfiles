@@ -1,18 +1,17 @@
-package main
+package issuesview
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-	"time"
-
 	"glogx/internal/app"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 	"glogx/issues"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
 )
 
 func fakeEpicIssue(dir, group, number, slug string, status issues.Status) *issues.Issue {
@@ -50,8 +49,8 @@ func TestIssuesViewGroupsUseSeparateDisplayRowsAndToggle(t *testing.T) {
 	betaChild := fakeEpicIssue("/repo/issues", "beta", "700", "beta-child", issues.StatusOpen)
 	v := loadedView(betaChild, global, beta, alpha)
 
-	if len(v.rows) != 4 {
-		t.Fatalf("子 issue 数が変わった: %d", len(v.rows))
+	if len(v.Rows) != 4 {
+		t.Fatalf("子 issue 数が変わった: %d", len(v.Rows))
 	}
 	if len(v.displayRows) != 3 {
 		t.Fatalf("既定で group が折り畳まれていない: displayRows=%d", len(v.displayRows))
@@ -63,24 +62,24 @@ func TestIssuesViewGroupsUseSeparateDisplayRowsAndToggle(t *testing.T) {
 		v.displayRows[2].groupName != "beta" {
 		t.Fatalf("最大番号同値の group が GroupKey 順でない: %+v", v.displayRows)
 	}
-	out := strings.Join(v.listLines(renderOpts(10)), "\n")
+	out := strings.Join(v.ListLines(renderOpts(10)), "\n")
 	if !strings.Contains(out, "▸ alpha (1)") || !strings.Contains(out, "▸ beta (2)") ||
 		strings.Contains(out, "beta-child") {
 		t.Fatalf("折り畳み表示が違う:\n%s", out)
 	}
 
-	v.handleKey("j", vp(10)) // alpha 親行
+	v.HandleKey("j", vp(10)) // alpha 親行
 	if v.current() != nil || !v.currentIsGroup() {
 		t.Fatalf("親行が issue として扱われた: current=%+v", v.current())
 	}
-	v.handleKey("enter", vp(10))
+	v.HandleKey("enter", vp(10))
 	if !v.groups.manual[alpha.GroupKey] || len(v.displayRows) != 4 {
 		t.Fatalf("Enter で group が展開されない: expanded=%v rows=%d", v.groups.manual, len(v.displayRows))
 	}
 	if v.displayRows[2].kind != displayRowIssue || v.displayRows[2].issue != alpha {
 		t.Fatalf("展開後に子 issue が親の直下にない: %+v", v.displayRows)
 	}
-	v.handleKey(" ", vp(10))
+	v.HandleKey(" ", vp(10))
 	if v.groups.manual[alpha.GroupKey] || len(v.displayRows) != 3 {
 		t.Fatalf("Space で group が折り畳まれない: expanded=%v rows=%d", v.groups.manual, len(v.displayRows))
 	}
@@ -101,15 +100,15 @@ func TestIssuesViewGroupParentActionsAreNoopWithNotice(t *testing.T) {
 	// y はここに入れない: 親行の y は「group 名のコピー」という別の意味を持つ
 	// (TestIssuesViewGroupParentCopiesGroupName)。
 	for _, key := range []string{"shift+down", "p", "Y", "N", "o", "n"} {
-		before := v.cursor
-		v.handleKey(key, vp(10))
-		if v.cursor != before || v.open != nil || v.markNext.active {
-			t.Fatalf("親行で %q が issue 操作として効いた: cursor=%d open=%v mark=%v", key, v.cursor, v.open != nil, v.markNext.active)
+		before := v.Cursor
+		v.HandleKey(key, vp(10))
+		if v.Cursor != before || v.Open != nil || v.MarkNext.Active {
+			t.Fatalf("親行で %q が issue 操作として効いた: cursor=%d open=%v mark=%v", key, v.Cursor, v.Open != nil, v.MarkNext.Active)
 		}
 		if *copied != "" || len(opened) > 0 {
 			t.Fatalf("親行で %q がコピー・起動した: copied=%q opened=%v", key, *copied, opened)
 		}
-		if text, kind := v.takeNotice(); text == "" || kind != app.NoticeRefused {
+		if text, kind := v.TakeNotice(); text == "" || kind != app.NoticeRefused {
 			t.Fatalf("親行で %q が断りの notice を出していない: %q (kind=%v)", key, text, kind)
 		}
 	}
@@ -128,19 +127,19 @@ func TestIssuesViewGroupParentCopiesGroupName(t *testing.T) {
 	if !v.currentIsGroup() {
 		t.Fatalf("前提: カーソルが合成の group 親行にない: %+v", v.displayRows)
 	}
-	before := v.cursor
+	before := v.Cursor
 
-	v.handleKey("y", vp(10))
+	v.HandleKey("y", vp(10))
 	if *copied != "google-drive" {
 		t.Fatalf("group 名がコピーされていない: %q", *copied)
 	}
-	if text, ok := testenv.NoticeOKOf(v.takeNotice()); !ok || !strings.Contains(text, "group 名をコピーしました: google-drive") {
+	if text, ok := testenv.NoticeOKOf(v.TakeNotice()); !ok || !strings.Contains(text, "group 名をコピーしました: google-drive") {
 		t.Fatalf("コピーの通知が想定と違う: %q", text)
 	}
 	// y は「コピーするだけ」: 親行の no-op 表 (ActionsAreNoopWithNotice) から y を外したぶん、
 	// カーソル・本文・n の確認モーダルが動かないことはここで見る。
-	if v.cursor != before || v.open != nil || v.markNext.active {
-		t.Fatalf("y が別の操作も起こした: cursor=%d open=%v mark=%v", v.cursor, v.open != nil, v.markNext.active)
+	if v.Cursor != before || v.Open != nil || v.MarkNext.Active {
+		t.Fatalf("y が別の操作も起こした: cursor=%d open=%v mark=%v", v.Cursor, v.Open != nil, v.MarkNext.Active)
 	}
 }
 
@@ -157,11 +156,11 @@ func TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice(t *testing.T)
 		t.Fatalf("前提: カーソルが合成の group 親行にない: %+v", v.displayRows)
 	}
 
-	v.handleKey("y", vp(10))
+	v.HandleKey("y", vp(10))
 	if *copied != name {
 		t.Fatalf("コピーに無害化が掛かった (貼り先で別物になる): %q", *copied)
 	}
-	text, _ := testenv.NoticeOKOf(v.takeNotice())
+	text, _ := testenv.NoticeOKOf(v.TakeNotice())
 	if strings.ContainsAny(text, "\t\n") {
 		t.Fatalf("通知に制御文字が残った (1 行の枠が壊れる): %q", text)
 	}
@@ -175,11 +174,11 @@ func TestIssuesViewGroupHeadRowStillCopiesPath(t *testing.T) {
 	parent := fakeEpicIssue("/repo/issues", "467", "467", "asset-library", issues.StatusOpen)
 	child := fakeEpicIssue("/repo/issues", "467", "468", "child", issues.StatusOpen)
 	v := loadedView(parent, child)
-	if v.currentIsGroup() || !v.displayRows[v.cursor].groupHead {
+	if v.currentIsGroup() || !v.displayRows[v.Cursor].groupHead {
 		t.Fatalf("前提: カーソルが統合した親 issue 行にない: %+v", v.displayRows)
 	}
 
-	v.handleKey("y", vp(10))
+	v.HandleKey("y", vp(10))
 	if *copied != parent.Path {
 		t.Fatalf("統合した親行の y がパスをコピーしていない: %q", *copied)
 	}
@@ -191,19 +190,19 @@ func TestIssuesViewNumberFilterAutoExpandsAndReanchorsChild(t *testing.T) {
 	other := fakeEpicIssue("/repo/issues", "other", "050", "other", issues.StatusOpen)
 	v := loadedView(first, second, other)
 	groupKey := first.GroupKey
-	v.handleKey("/", vp(10))
-	v.handleKey("4", vp(10))
-	v.handleKey("1", vp(10))
+	v.HandleKey("/", vp(10))
+	v.HandleKey("4", vp(10))
+	v.HandleKey("1", vp(10))
 	if !v.groups.auto[groupKey] || v.groups.manual[groupKey] {
 		t.Fatalf("番号 filter の group 展開状態が分離されていない: manual=%v auto=%v", v.groups.manual[groupKey], v.groups.auto[groupKey])
 	}
-	v.handleKey("enter", vp(10))
-	v.handleKey("down", vp(10)) // auto 展開された親の下の 415
+	v.HandleKey("enter", vp(10))
+	v.HandleKey("down", vp(10)) // auto 展開された親の下の 415
 	want := first.Path
 	if v.current() == nil || v.current().Path != want {
 		t.Fatalf("filter 中の子 issue へ移れない: %+v", v.current())
 	}
-	v.handleKey("esc", vp(10))
+	v.HandleKey("esc", vp(10))
 	if len(v.groups.auto) != 0 {
 		t.Fatalf("解除後も autoExpanded が残った: %v", v.groups.auto)
 	}
@@ -216,27 +215,27 @@ func TestIssuesViewClearingNumberFilterDropsStaleCollapsedGroups(t *testing.T) {
 	child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
 	v := loadedView(child)
 
-	v.handleKey("/", vp(10))
-	v.handleKey("4", vp(10))
-	v.handleKey("1", vp(10))
-	v.handleKey("5", vp(10))
-	v.handleKey("enter", vp(10))
-	v.handleKey(" ", vp(10)) // 自動展開された group を手動で折り畳む
+	v.HandleKey("/", vp(10))
+	v.HandleKey("4", vp(10))
+	v.HandleKey("1", vp(10))
+	v.HandleKey("5", vp(10))
+	v.HandleKey("enter", vp(10))
+	v.HandleKey(" ", vp(10)) // 自動展開された group を手動で折り畳む
 	if !v.groups.collapsed[child.GroupKey] {
 		t.Fatal("前提: 番号 filter 中の group を折り畳めていない")
 	}
 
-	v.handleKey("/", vp(10))
-	v.handleKey("ctrl+u", vp(10))
-	v.handleKey("9", vp(10))
-	v.handleKey("9", vp(10))
-	v.handleKey("9", vp(10)) // group A を不一致にして autoExpandedGroups から外す
-	v.handleKey("esc", vp(10))
+	v.HandleKey("/", vp(10))
+	v.HandleKey("ctrl+u", vp(10))
+	v.HandleKey("9", vp(10))
+	v.HandleKey("9", vp(10))
+	v.HandleKey("9", vp(10)) // group A を不一致にして autoExpandedGroups から外す
+	v.HandleKey("esc", vp(10))
 
-	v.handleKey("/", vp(10))
-	v.handleKey("4", vp(10))
-	v.handleKey("1", vp(10))
-	v.handleKey("5", vp(10))
+	v.HandleKey("/", vp(10))
+	v.HandleKey("4", vp(10))
+	v.HandleKey("1", vp(10))
+	v.HandleKey("5", vp(10))
 	if !v.groupExpanded(child.GroupKey) || len(v.displayRows) != 2 {
 		t.Fatalf("検索語を戻しても group が再展開されない: expanded=%v collapsed=%v rows=%+v",
 			v.groupExpanded(child.GroupKey), v.groups.collapsed, v.displayRows)
@@ -251,29 +250,29 @@ func TestIssuesViewRescanReanchorsGroupParentByGroupKey(t *testing.T) {
 	}
 
 	newer := issuesviewtest.FakeIssue("999", "feat", "new", issues.StatusOpen)
-	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: []*issues.Issue{newer, child}})
+	v.Receive(IssuesScanMsg{Dirs: []string{"/repo/issues"}, Issues: []*issues.Issue{newer, child}})
 	row, ok := v.currentDisplayRow()
 	if !ok || row.kind != displayRowGroup || row.groupKey != child.GroupKey {
-		t.Fatalf("再スキャン後に親行へ戻らない: row=%+v cursor=%d display=%+v", row, v.cursor, v.displayRows)
+		t.Fatalf("再スキャン後に親行へ戻らない: row=%+v cursor=%d display=%+v", row, v.Cursor, v.displayRows)
 	}
 }
 
 func TestIssuesViewAutoExpandedGroupStillToggles(t *testing.T) {
 	child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
 	v := loadedView(child)
-	v.handleKey("/", vp(10))
-	v.handleKey("4", vp(10))
-	v.handleKey("1", vp(10))
+	v.HandleKey("/", vp(10))
+	v.HandleKey("4", vp(10))
+	v.HandleKey("1", vp(10))
 	if !v.groups.auto[child.GroupKey] || !v.groupExpanded(child.GroupKey) {
 		t.Fatal("番号 filter で group が自動展開されていない")
 	}
-	v.handleKey("enter", vp(10)) // 入力を確定し、親行の toggle を通常モードで試す
-	v.handleKey(" ", vp(10))
+	v.HandleKey("enter", vp(10)) // 入力を確定し、親行の toggle を通常モードで試す
+	v.HandleKey(" ", vp(10))
 	if v.groupExpanded(child.GroupKey) || len(v.displayRows) != 1 || !v.currentIsGroup() {
 		t.Fatalf("auto 展開中の Space が折り畳み toggle になっていない: expanded=%v rows=%d current=%+v",
 			v.groupExpanded(child.GroupKey), len(v.displayRows), v.current())
 	}
-	v.handleKey("enter", vp(10))
+	v.HandleKey("enter", vp(10))
 	if !v.groupExpanded(child.GroupKey) || len(v.displayRows) != 2 {
 		t.Fatalf("auto 展開中の Enter が再展開 toggle になっていない: expanded=%v rows=%d",
 			v.groupExpanded(child.GroupKey), len(v.displayRows))
@@ -286,14 +285,14 @@ func TestIssuesViewTabCountsChildrenNotGroupParents(t *testing.T) {
 		fakeEpicIssue("/repo/issues", "cloud", "709", "b", issues.StatusOpen),
 		issuesviewtest.FakeIssue("708", "feat", "plain", issues.StatusOpen),
 	)
-	if v.allCount != 3 || len(v.rows) != 3 {
-		t.Fatalf("件数が親行込みになった: all=%d rows=%d", v.allCount, len(v.rows))
+	if v.allCount != 3 || len(v.Rows) != 3 {
+		t.Fatalf("件数が親行込みになった: all=%d rows=%d", v.allCount, len(v.Rows))
 	}
 	if len(v.displayRows) != 2 {
 		t.Fatalf("折り畳み後の表示行数が違う: %d", len(v.displayRows))
 	}
-	if !strings.Contains(v.tabLine(issuesRenderOpts{width: 120}), "[All 3]") {
-		t.Fatalf("タブバッジが子件数でない: %q", v.tabLine(issuesRenderOpts{width: 120}))
+	if !strings.Contains(v.tabLine(IssuesRenderOpts{Width: 120}), "[All 3]") {
+		t.Fatalf("タブバッジが子件数でない: %q", v.tabLine(IssuesRenderOpts{Width: 120}))
 	}
 }
 
@@ -313,15 +312,15 @@ func TestIssuesViewMoveReanchorsCursorAndMarkToReturnedPaths(t *testing.T) {
 		}
 	}
 	v := loadedView(old...)
-	v.cwd = dir
-	v.handleKey("enter", vp(10)) // group を展開
-	v.handleKey("j", vp(10))     // 002
-	v.handleKey("J", vp(10))     // 002..001 を選択
+	v.Cwd = dir
+	v.HandleKey("enter", vp(10)) // group を展開
+	v.HandleKey("j", vp(10))     // 002
+	v.HandleKey("J", vp(10))     // 002..001 を選択
 	if len(v.selectedRows()) != 2 {
 		t.Fatal("前提: 2 件の選択が作れていない")
 	}
-	v.handleKey("n", vp(10))
-	cmd := v.handleKey("y", vp(10))
+	v.HandleKey("n", vp(10))
+	cmd := v.HandleKey("y", vp(10))
 	if cmd == nil || v.pendingCursorPath == "" || v.pendingMarkPath == "" {
 		t.Fatalf("移動後の再アンカーが予約されていない: cmd=%v cursor=%q mark=%q", cmd != nil, v.pendingCursorPath, v.pendingMarkPath)
 	}
@@ -338,11 +337,11 @@ func TestIssuesViewMoveReanchorsCursorAndMarkToReturnedPaths(t *testing.T) {
 			NextLink: filepath.Join(groupDir, issues.NextDirName, base),
 		})
 	}
-	v.receive(issuesScanMsg{dirs: []string{dir}, issues: fresh})
+	v.Receive(IssuesScanMsg{Dirs: []string{dir}, Issues: fresh})
 	if v.current() == nil || v.current().Path != filepath.Join(groupDir, "001-feat-b.md") {
 		t.Fatalf("cursor が move の戻り値へ再アンカーされない: %+v", v.current())
 	}
-	if lo, hi, ok := v.selection(); !ok || hi-lo != 1 {
+	if lo, hi, ok := v.Selection(); !ok || hi-lo != 1 {
 		t.Fatalf("mark が move 後に再アンカーされない: lo=%d hi=%d ok=%v", lo, hi, ok)
 	}
 }
@@ -350,14 +349,14 @@ func TestIssuesViewMoveReanchorsCursorAndMarkToReturnedPaths(t *testing.T) {
 func TestIssuesViewUserCursorActionsCancelPendingMoveAnchors(t *testing.T) {
 	type action struct {
 		name string
-		run  func(*issuesView)
+		run  func(*IssuesView)
 	}
 	actions := []action{
-		{name: "moveCursor", run: func(v *issuesView) { v.moveCursor(1, 10) }},
-		{name: "setCursor", run: func(v *issuesView) { v.setCursor(1, 10) }},
-		{name: "g", run: func(v *issuesView) { v.handleKey("g", vp(10)) }},
-		{name: "G", run: func(v *issuesView) { v.handleKey("G", vp(10)) }},
-		{name: "tab", run: func(v *issuesView) { v.handleKey("tab", vp(10)) }},
+		{name: "moveCursor", run: func(v *IssuesView) { v.moveCursor(1, 10) }},
+		{name: "setCursor", run: func(v *IssuesView) { v.setCursor(1, 10) }},
+		{name: "g", run: func(v *IssuesView) { v.HandleKey("g", vp(10)) }},
+		{name: "G", run: func(v *IssuesView) { v.HandleKey("G", vp(10)) }},
+		{name: "tab", run: func(v *IssuesView) { v.HandleKey("tab", vp(10)) }},
 	}
 	for _, tc := range actions {
 		t.Run(tc.name, func(t *testing.T) {
@@ -386,28 +385,28 @@ func TestIssuesViewPendingMoveAnchorsExpireAfterFreshMissingScan(t *testing.T) {
 	// 「移動先が消える」状況が作れない。done/ からの claim は従来どおり rename なので、宛先の消失を再現できる
 	iss := realDoneIssue(t)
 	v := loadedView(iss)
-	v.filter = issues.FilterAll // done は既定の一覧に出ないので見せる
-	v.refresh()
-	v.cwd = iss.Dir
-	if v.scanCmd(v.cwd) == nil {
+	v.Filter = issues.FilterAll // done は既定の一覧に出ないので見せる
+	v.Refresh()
+	v.Cwd = iss.Dir
+	if v.ScanCmd(v.Cwd) == nil {
 		t.Fatal("前提: stale scan を飛行させられない")
 	}
-	v.handleKey("n", vp(10))
-	if v.handleKey("y", vp(10)) != nil || v.pendingCursorPath == "" {
+	v.HandleKey("n", vp(10))
+	if v.HandleKey("y", vp(10)) != nil || v.pendingCursorPath == "" {
 		t.Fatal("前提: move 後の pending cursor anchor がない")
 	}
 	if err := os.Remove(filepath.Join(iss.Dir, issues.NextDirName, filepath.Base(iss.Rel))); err != nil {
 		t.Fatal(err)
 	}
 
-	stale := issuesScanMsg{dirs: []string{iss.Dir}, issues: []*issues.Issue{iss}}
-	if cmd := v.receive(stale); cmd == nil {
+	stale := IssuesScanMsg{Dirs: []string{iss.Dir}, Issues: []*issues.Issue{iss}}
+	if cmd := v.Receive(stale); cmd == nil {
 		t.Fatal("stale receive 後の authoritative scan が予約されない")
 	}
 	if v.pendingCursorPath == "" {
 		t.Fatal("stale receive だけで pending anchor を消費した")
 	}
-	v.receive(stale)
+	v.Receive(stale)
 	if v.pendingCursorPath != "" || v.pendingMarkPath != "" {
 		t.Fatalf("宛先が消えた fresh receive 後も pending が残る: cursor=%q mark=%q",
 			v.pendingCursorPath, v.pendingMarkPath)
@@ -419,19 +418,19 @@ func TestIssuesScreenRoundTripsGroupCursor(t *testing.T) {
 	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
 	global := issuesviewtest.FakeIssue("711", "feat", "global", issues.StatusOpen)
 	v := loadedView(global, alpha)
-	v.shown, v.root = true, "/repo" // screen は開いている viewer だけを覚える
-	v.handleKey("j", vp(10))        // alpha の親行
+	v.Shown, v.Root = true, "/repo" // screen は開いている viewer だけを覚える
+	v.HandleKey("j", vp(10))        // alpha の親行
 	if !v.currentIsGroup() {
 		t.Fatal("前提: 親行にカーソルがない")
 	}
-	s, ok := v.screen(time.Now())
+	s, ok := v.Screen(time.Now())
 	if !ok || s.CursorGroup != alpha.GroupKey || s.Cursor != "" {
 		t.Fatalf("親行のカーソルが state に残らない: ok=%v %+v", ok, s)
 	}
 	w := loadedView(global, alpha)
 	w.applyScreen(s)
 	if !w.currentIsGroup() || w.currentGroupKey() != alpha.GroupKey {
-		t.Fatalf("復元で親行に戻らない: cursor=%d group=%q", w.cursor, w.currentGroupKey())
+		t.Fatalf("復元で親行に戻らない: cursor=%d group=%q", w.Cursor, w.currentGroupKey())
 	}
 }
 
@@ -440,7 +439,7 @@ func TestIssuesScreenRoundTripsGroupCursor(t *testing.T) {
 func TestIssuesViewApplyScreenPrunesDeadGroupKeys(t *testing.T) {
 	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
 	v := loadedView(alpha)
-	v.applyScreen(issuesScreen{Groups: map[string]bool{alpha.GroupKey: true, "/repo/issues/epic/gone": true}})
+	v.applyScreen(IssuesScreen{Groups: map[string]bool{alpha.GroupKey: true, "/repo/issues/epic/gone": true}})
 	if !v.groups.manual[alpha.GroupKey] {
 		t.Fatal("生きている GroupKey まで落とした")
 	}
@@ -456,17 +455,17 @@ func TestIssuesViewPendingMoveAnchorSurvivesNonCursorKeys(t *testing.T) {
 	global := issuesviewtest.FakeIssue("711", "feat", "global", issues.StatusOpen)
 	v := loadedView(global, alpha)
 	v.pendingCursorPath = "/repo/issues/epic/alpha/next/710-feat-alpha.md"
-	v.handleKey("a", vp(10))
+	v.HandleKey("a", vp(10))
 	if v.pendingCursorPath == "" {
 		t.Fatal("a (filter 切替) で move の再アンカー予約が消えた")
 	}
-	v.handleKey("/", vp(10))
-	v.handleKey("7", vp(10))
-	v.handleKey("esc", vp(10))
+	v.HandleKey("/", vp(10))
+	v.HandleKey("7", vp(10))
+	v.HandleKey("esc", vp(10))
 	if v.pendingCursorPath == "" {
 		t.Fatal("番号 filter の解除で move の再アンカー予約が消えた")
 	}
-	v.handleKey("j", vp(10))
+	v.HandleKey("j", vp(10))
 	if v.pendingCursorPath != "" {
 		t.Fatal("j (カーソル移動) で move の再アンカー予約が捨てられない")
 	}
@@ -477,11 +476,11 @@ func TestIssuesViewReceivePrunesDeadGroupKeys(t *testing.T) {
 	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
 	beta := fakeEpicIssue("/repo/issues", "beta", "709", "beta", issues.StatusOpen)
 	v := loadedView(alpha, beta)
-	v.handleKey("enter", vp(10)) // alpha を展開
+	v.HandleKey("enter", vp(10)) // alpha を展開
 	if !v.groups.manual[alpha.GroupKey] {
 		t.Fatal("前提: alpha が展開されていない")
 	}
-	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: []*issues.Issue{beta}}) // alpha が消えた
+	v.Receive(IssuesScanMsg{Dirs: []string{"/repo/issues"}, Issues: []*issues.Issue{beta}}) // alpha が消えた
 	if v.groups.manual[alpha.GroupKey] {
 		t.Fatalf("消えた group の展開キーが残っている: %v", v.groups.manual)
 	}
@@ -493,18 +492,18 @@ func TestIssuesViewClearNumberFilterOnGroupRowReanchorsGroup(t *testing.T) {
 	g1 := issuesviewtest.FakeIssue("712", "feat", "a", issues.StatusOpen)
 	g2 := issuesviewtest.FakeIssue("711", "feat", "b", issues.StatusOpen)
 	v := loadedView(g1, g2, alpha)
-	v.handleKey("/", vp(10))
-	v.handleKey("7", vp(10))
-	v.handleKey("1", vp(10))
-	v.handleKey("0", vp(10)) // alpha の子だけがヒット → 親行 + 子行
-	v.handleKey("up", vp(10))
-	v.handleKey("up", vp(10)) // 先頭 = alpha の親行
+	v.HandleKey("/", vp(10))
+	v.HandleKey("7", vp(10))
+	v.HandleKey("1", vp(10))
+	v.HandleKey("0", vp(10)) // alpha の子だけがヒット → 親行 + 子行
+	v.HandleKey("up", vp(10))
+	v.HandleKey("up", vp(10)) // 先頭 = alpha の親行
 	if !v.currentIsGroup() {
 		t.Fatalf("前提: filter 中の先頭が親行でない: %+v", v.displayRows)
 	}
-	v.handleKey("esc", vp(10))
+	v.HandleKey("esc", vp(10))
 	if !v.currentIsGroup() || v.currentGroupKey() != alpha.GroupKey {
-		t.Fatalf("Esc 後に親行へ戻らない: cursor=%d rows=%+v", v.cursor, v.displayRows)
+		t.Fatalf("Esc 後に親行へ戻らない: cursor=%d rows=%+v", v.Cursor, v.displayRows)
 	}
 }
 
@@ -520,10 +519,10 @@ func TestIssuesViewGroupChildrenAreIndentedUnderParent(t *testing.T) {
 	global := issuesviewtest.FakeIssue("711", "feat", "global", issues.StatusOpen)
 	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
 	v := loadedView(global, alpha)
-	v.handleKey("j", vp(10)) // alpha 親行
-	v.handleKey("enter", vp(10))
-	v.handleKey("k", vp(10)) // カーソルを global へ戻し、子行を非カーソル行として描く
-	lines := v.listLines(renderOpts(10))
+	v.HandleKey("j", vp(10)) // alpha 親行
+	v.HandleKey("enter", vp(10))
+	v.HandleKey("k", vp(10)) // カーソルを global へ戻し、子行を非カーソル行として描く
+	lines := v.ListLines(renderOpts(10))
 	var globalLine, childLine string
 	for _, l := range lines {
 		switch {
@@ -560,7 +559,7 @@ func TestIssuesViewGroupParentIssueMergesIntoHeaderRow(t *testing.T) {
 		head.groupKey != parent.GroupKey || head.childCount != 1 {
 		t.Fatalf("親行が統合された issue 行になっていない: %+v", head)
 	}
-	out := strings.Join(v.listLines(renderOpts(10)), "\n")
+	out := strings.Join(v.ListLines(renderOpts(10)), "\n")
 	if !strings.Contains(out, "▸ (1) 467") || strings.Contains(out, "▸ 467 (") {
 		t.Fatalf("親行の描画が違う:\n%s", out)
 	}
@@ -570,17 +569,17 @@ func TestIssuesViewGroupParentIssueMergesIntoHeaderRow(t *testing.T) {
 		t.Fatalf("統合行が issue として扱われない: current=%+v", v.current())
 	}
 	// Enter / Space はどちらも子 issue の展開 toggle (本文は o で開く)
-	v.handleKey("enter", vp(10))
+	v.HandleKey("enter", vp(10))
 	if !v.groups.manual[parent.GroupKey] || len(v.displayRows) != 2 {
 		t.Fatalf("Enter で子リストが開かない: expanded=%v rows=%d", v.groups.manual, len(v.displayRows))
 	}
 	if v.displayRows[1].issue != child || !v.displayRows[1].inGroup {
 		t.Fatalf("子行が親の下に並ばない: %+v", v.displayRows[1])
 	}
-	if v.open != nil {
+	if v.Open != nil {
 		t.Fatalf("Enter が本文を開いた (子リストの展開が優先されるべき)")
 	}
-	v.handleKey(" ", vp(10)) // Space でも同じ toggle
+	v.HandleKey(" ", vp(10)) // Space でも同じ toggle
 	if v.groups.manual[parent.GroupKey] || len(v.displayRows) != 1 {
 		t.Fatalf("Space で畳めない: expanded=%v rows=%d", v.groups.manual, len(v.displayRows))
 	}
@@ -608,14 +607,14 @@ func TestIssuesViewMergedParentRowOpensBodyWithO(t *testing.T) {
 	}
 	expanded := v.groups.manual[parent.GroupKey]
 
-	v.handleKey("o", vp(10))
-	if v.open != parent {
-		t.Fatalf("統合された親行の o で親 issue の本文が開かない: open=%+v", v.open)
+	v.HandleKey("o", vp(10))
+	if v.Open != parent {
+		t.Fatalf("統合された親行の o で親 issue の本文が開かない: open=%+v", v.Open)
 	}
-	if v.body == nil || !strings.Contains(strings.Join(v.body.Lines(80, false), "\n"), "001 body") {
+	if v.Body == nil || !strings.Contains(strings.Join(v.Body.Lines(80, false), "\n"), "001 body") {
 		t.Fatalf("開いた本文が親 issue のものでない")
 	}
-	if text, kind := v.takeNotice(); kind == app.NoticeRefused || kind == app.NoticeError {
+	if text, kind := v.TakeNotice(); kind == app.NoticeRefused || kind == app.NoticeError {
 		t.Fatalf("o が断り / 失敗の notice を出した: %q (kind=%v)", text, kind)
 	}
 	if v.groups.manual[parent.GroupKey] != expanded {
@@ -644,8 +643,8 @@ func TestIssuesViewNamedGroupParentMergesAndHidesWhenDone(t *testing.T) {
 
 	done := named(issues.StatusDone)
 	v = loadedView(done, child)
-	v.filter = issues.FilterAll
-	v.refresh()
+	v.Filter = issues.FilterAll
+	v.Refresh()
 	if len(v.displayRows) != 0 {
 		t.Fatalf("親を done へ送った epic が a の全開で残っている: %+v", v.displayRows)
 	}
@@ -678,10 +677,10 @@ func TestIssuesViewGroupParentShowsDoneCount(t *testing.T) {
 	globalDone := issuesviewtest.FakeIssue("711", "feat", "global-done", issues.StatusDone)
 	v := loadedView(open1, next1, held, done1, done2, fresh, globalDone)
 
-	if v.filter != issues.FilterOpen {
-		t.Fatalf("既定の状態フィルタが open でない: %v", v.filter)
+	if v.Filter != issues.FilterOpen {
+		t.Fatalf("既定の状態フィルタが open でない: %v", v.Filter)
 	}
-	out := strings.Join(v.listLines(renderOpts(20)), "\n")
+	out := strings.Join(v.ListLines(renderOpts(20)), "\n")
 	if !strings.Contains(out, "▸ alpha (5 ✓2)") {
 		t.Fatalf("親行に子の件数と done の件数が出ていない:\n%s", out)
 	}
@@ -695,8 +694,8 @@ func TestIssuesViewGroupParentShowsDoneCount(t *testing.T) {
 	if !v.currentIsGroup() {
 		t.Fatalf("先頭行が alpha の親行でない: %+v", v.displayRows[0])
 	}
-	v.handleKey("enter", vp(20)) // alpha を展開
-	out = strings.Join(v.listLines(renderOpts(20)), "\n")
+	v.HandleKey("enter", vp(20)) // alpha を展開
+	out = strings.Join(v.ListLines(renderOpts(20)), "\n")
 	// 番号 + バッジで見る (タイトルはスラッグを整形するので、状態が読めない)
 	for _, want := range []string{"707 ✓", "706 ✓", "708 ⏸", "709 ▶", "710 ○"} {
 		if !strings.Contains(out, want) {
@@ -714,7 +713,7 @@ func TestIssuesViewGroupHeadRowShowsDoneCount(t *testing.T) {
 	doneChild := fakeEpicIssue(dir, "467", "459", "spike", issues.StatusDone)
 	v := loadedView(parent, child, doneChild)
 
-	out := strings.Join(v.listLines(renderOpts(20)), "\n")
+	out := strings.Join(v.ListLines(renderOpts(20)), "\n")
 	if !strings.Contains(out, "(2 ✓1)") {
 		t.Fatalf("統合した親行に進捗が出ていない:\n%s", out)
 	}
@@ -789,7 +788,7 @@ func TestIssuesViewAnchorIgnoresIssuesOutsideVisibleRows(t *testing.T) {
 	dir := "/repo/issues"
 	child := fakeEpicIssue(dir, "cloud", "702", "done-child", issues.StatusDone)
 	v := loadedView(issuesviewtest.FakeIssue("900", "feat", "global", issues.StatusOpen), child)
-	v.setRows(nil) // 可視集合から外れた状態 (タブ切り替え・フィルタで起きる)
+	v.SetRows(nil) // 可視集合から外れた状態 (タブ切り替え・フィルタで起きる)
 	v.rebuildDisplayRows()
 
 	v.anchorCursorInternal(child.Path)
@@ -823,7 +822,7 @@ func TestIssuesViewAnchorOverridesExplicitCollapse(t *testing.T) {
 		t.Fatalf("カーソルが移動先の issue にない: ok=%v row=%+v", ok, row)
 	}
 
-	v.refresh() // 再スキャン相当 (autoExpandedGroups はここで捨てられる)
+	v.Refresh() // 再スキャン相当 (autoExpandedGroups はここで捨てられる)
 	if !v.groupExpanded(child.GroupKey) {
 		t.Fatalf("refresh で group が畳み直された (展開先が autoExpandedGroups になっている)")
 	}
@@ -852,15 +851,15 @@ func TestIssuesViewGroupProgressCountsOnlyVisibleChildren(t *testing.T) {
 		bugChild("707", "done", issues.StatusDone),
 	)
 
-	if out := strings.Join(v.listLines(renderOpts(10)), "\n"); !strings.Contains(out, "▸ alpha (4 ✓2)") {
+	if out := strings.Join(v.ListLines(renderOpts(10)), "\n"); !strings.Contains(out, "▸ alpha (4 ✓2)") {
 		t.Fatalf("All タブで全子を数えていない:\n%s", out)
 	}
 	v.tabIdx = tabIndexOf(v.tabs, "bug")
 	if v.currentTab() != "bug" {
 		t.Fatalf("bug タブが無い: %+v", v.tabs)
 	}
-	v.refresh()
-	out := strings.Join(v.listLines(renderOpts(10)), "\n")
+	v.Refresh()
+	out := strings.Join(v.ListLines(renderOpts(10)), "\n")
 	if !strings.Contains(out, "▸ alpha (2 ✓1)") {
 		t.Fatalf("タブ filter 後の集合を数えていない:\n%s", out)
 	}
@@ -900,12 +899,12 @@ func TestUnmarkDestLabelCoversMixedSelection(t *testing.T) {
 	// 短い fixture だけで見ていたため、宛先が丸ごと切り落とされているのを 3 周目まで
 	// 検出できていなかった (2026-09-06 の敵対的レビュー 4 周目)
 	long := fakeEpicIssue(dir, "cloud", "292", "audit-forge-should-hand-each-agent-its-own-worktree", issues.StatusNext)
-	v.markNext = issuesMarkConfirm{active: true, unmark: true, targets: []*issues.Issue{long}}
+	v.MarkNext = IssuesMarkConfirm{Active: true, unmark: true, targets: []*issues.Issue{long}}
 	box := strings.Join(v.markNextBox(80, false), "\n")
 	if !strings.Contains(box, "group 直下 へ戻します") {
 		t.Fatalf("長い名前だと宛先が箱から切れる:\n%s", box)
 	}
-	v.markNext = issuesMarkConfirm{active: true, unmark: true, targets: []*issues.Issue{global, long}}
+	v.MarkNext = IssuesMarkConfirm{Active: true, unmark: true, targets: []*issues.Issue{global, long}}
 	if box = strings.Join(v.markNextBox(80, false), "\n"); !strings.Contains(box, "元の group / issues 直下 へ戻します") {
 		t.Fatalf("混在選択で宛先が読めない:\n%s", box)
 	}
@@ -920,7 +919,7 @@ func TestIssuesViewTabLineShowsBypassBadge(t *testing.T) {
 		fakeEpicIssue(dir, "alpha", "710", "open", issues.StatusOpen),
 		fakeEpicIssue(dir, "alpha", "709", "done", issues.StatusDone),
 	)
-	if v.filter != issues.FilterOpen {
+	if v.Filter != issues.FilterOpen {
 		t.Fatalf("前提が違う: 既定の段階が open でない")
 	}
 	line := v.tabLine(renderOpts(10))
@@ -928,7 +927,7 @@ func TestIssuesViewTabLineShowsBypassBadge(t *testing.T) {
 		t.Fatalf("タブ行が迂回を示していない: %q", line)
 	}
 	// a を 1 段進めても ✓ は括弧の中のまま (段階は pending までしか見せていない)
-	v.handleKey("a", vp(10))
+	v.HandleKey("a", vp(10))
 	if line = v.tabLine(renderOpts(10)); !strings.Contains(line, "○⏸◌(✓)") {
 		t.Fatalf("a を進めた後のバッジが違う: %q", line)
 	}
@@ -943,16 +942,16 @@ func TestIssuesViewHidesClosedEpicFromListAndCounts(t *testing.T) {
 		fakeEpicIssue(dir, "zeta", "999", "done-a", issues.StatusDone),
 		fakeEpicIssue(dir, "zeta", "998", "done-b", issues.StatusDone),
 	)
-	out := strings.Join(v.listLines(renderOpts(10)), "\n")
+	out := strings.Join(v.ListLines(renderOpts(10)), "\n")
 	if strings.Contains(out, "zeta") {
 		t.Fatalf("終わった epic が既定の一覧に残っている:\n%s", out)
 	}
 	if v.allCount != 1 {
 		t.Fatalf("件数に終わった epic の子が数えられている: allCount=%d", v.allCount)
 	}
-	v.handleKey("a", vp(10)) // +pending
-	v.handleKey("a", vp(10)) // +done
-	if out = strings.Join(v.listLines(renderOpts(10)), "\n"); !strings.Contains(out, "zeta (2 ✓2)") {
+	v.HandleKey("a", vp(10)) // +pending
+	v.HandleKey("a", vp(10)) // +done
+	if out = strings.Join(v.ListLines(renderOpts(10)), "\n"); !strings.Contains(out, "zeta (2 ✓2)") {
 		t.Fatalf("a を全開にしても終わった epic が出ない:\n%s", out)
 	}
 }
@@ -964,19 +963,19 @@ func TestIssuesViewCloseDuringFilterDropsCollapse(t *testing.T) {
 	child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
 	v := loadedView(child)
 	for _, k := range []string{"/", "4", "1", "5", "enter", " "} {
-		v.handleKey(k, vp(10))
+		v.HandleKey(k, vp(10))
 	}
 	if !v.groups.collapsed[child.GroupKey] {
 		t.Fatal("前提: フィルタ中に group を畳めていない")
 	}
-	v.handleKey("i", vp(10))
-	v.finishAnim()
-	if v.shown {
+	v.HandleKey("i", vp(10))
+	v.FinishAnim()
+	if v.Shown {
 		t.Fatal("前提: i で閉じていない")
 	}
-	v.shown = true // 開き直す (スキャン結果は保持される)
+	v.Shown = true // 開き直す (スキャン結果は保持される)
 	for _, k := range []string{"/", "4", "1", "5"} {
-		v.handleKey(k, vp(10))
+		v.HandleKey(k, vp(10))
 	}
 	if !v.groupExpanded(child.GroupKey) {
 		t.Fatalf("閉じて開き直した後の同じ番号フィルタで group が自動展開されない: collapsed=%v", v.groups.collapsed)
@@ -990,15 +989,15 @@ func TestIssuesViewEmptyConfirmDropsCollapse(t *testing.T) {
 	child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
 	v := loadedView(child)
 	for _, k := range []string{"/", "4", "1", "5", "enter", " "} {
-		v.handleKey(k, vp(10))
+		v.HandleKey(k, vp(10))
 	}
 	if !v.groups.collapsed[child.GroupKey] {
 		t.Fatal("前提: フィルタ中に group を畳めていない")
 	}
 	for _, k := range []string{"/", "backspace", "backspace", "backspace", "enter"} {
-		v.handleKey(k, vp(10))
+		v.HandleKey(k, vp(10))
 	}
-	if v.numFilter.active {
+	if v.NumFilter.Active {
 		t.Fatal("前提: 空の確定で絞り込みが解けていない")
 	}
 	if len(v.groups.collapsed) != 0 {

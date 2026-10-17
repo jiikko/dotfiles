@@ -18,7 +18,7 @@
 - `action_modal.go` — push/pull/claude update の確認→実行→結果モーダル
 - `diff_overlay.go`, `pr_status_overlay.go`, `job_detail_overlay.go` — コミットに重ねるポップアップ群 (いずれも「対象 SHA/key を持つ pager」型)
 - `status_view.go`, `worktree_status.go` — status viewer (`s`)。仕様は `docs/status-viewer-spec.md`
-- `issues_view.go`, `issues_drawer.go`, `issues_state.go`, `issues_watch.go`, `issues_number_filter.go`, `issues_linkjump.go`, `issues_group_expansion.go` — issues viewer (`i`) の画面側 (`issues_group_expansion.go` は epic group の展開状態 3 集合の整合) (最後は本文のファイルパスのジャンプモード `Tab`)。仕様は `docs/issues-viewer-spec.md`。ドメイン (探索・parse・表示整形) は独立パッケージ `issues/`
+- `internal/issuesview/` (`issues_view.go`, `issues_drawer.go`, `issues_state.go`, `issues_watch.go`, `issues_number_filter.go`, `issues_linkjump.go`, `issues_group_expansion.go`, `url_picker.go`) — issues viewer (`i`) の画面側 (`issues_group_expansion.go` は epic group の展開状態 3 集合の整合、`issues_linkjump.go` は本文のファイルパスのジャンプモード `Tab`、`url_picker.go` は本文 pager の `u` の URL ピッカー)。仕様は `docs/issues-viewer-spec.md`。ドメイン (探索・parse・表示整形) は独立パッケージ `issues/`。テストは画面の中だけで閉じるものを `package issuesview` に、browseModel と組み合わせる配線のテストを main に置く。両方が使う issue の fixture は `internal/issuesview/issuesviewtest` (issuesview を import しない)
 - `internal/doctorview/` (`doctor_view.go`, `doctor_brew*.go`, `doctor_cache.go`, `doctor_cleanup.go`, `doctor_delete.go`, `doctor_docker.go`, `doctor_keys.go`, `doctor_resume.go`, `doctor_rowcursor.go`, `doctor_ssd.go`) — doctor 画面 (`D`)。テストは 3 か所: 画面の中を直接見るテスト (`package doctorview`)、画面の公開面だけで書けるテスト (`*_ext_test.go` = `package doctorview_test`)、browseModel と組み合わせるテスト (main の `doctor_*_test.go`。キーの振り分け・トースト・終了経路の配線)。後の 2 つが共有する部品 (テスト用の DoctorView・fake) は `internal/doctorview/doctortest` (本番からの import は depguard が止める)。新しい doctor のテストは、browseModel が要らない限り doctorview の中に書く (main のテストを増やすと、tui.go を直すたびの再コンパイルが重くなる。issue 742)。判定は `doctor/disk` `doctor/svc` `doctor/docker` `doctor/ssd` を直接呼ぶ (削除の破壊的操作は `doctor_delete.go` ではなく `doctor/disk.Delete` が持つ)
 - `usage_overlay.go`, `usage_cache.go` — 右上の利用枠オーバーレイ (`U`) とそのキャッシュ
 - `ratelimit_dashboard.go`, `ratelimit_resume.go` — 全画面 ratelimit ダッシュボード (`R`)。取得・整形は `ratelimit/usage`
@@ -27,7 +27,6 @@
 - `internal/app/` — 画面のパッケージと main が共有する状態・道具。`clock.go` は時刻のシーム (`app.TimeNow`。テストが差し替える)、`fullscreen_id.go` は全画面ビューアの ID と横断キーの表 (`app.CrossTarget`)、`screen_memory.go` は全画面 (issues / doctor / ratelimit / F / L) を閉じたときの記憶の保存・読み込み (30 分で失効。照合は各画面の `*_resume.go`)、`cleanup_latch.go` は終了前の完了待ち latch、`cache_io.go` はキャッシュの置き場 (`app.CacheBaseDir`) と atomic 書き込み (`app.WriteAtomic`)、`notice.go` は viewer の操作結果の種類 (`app.NoticeKind`) と小さな道具 (`app.FirstLine` / `app.ClampIdx` など)、`watch_chain.go` は fsnotify のイベント待ち + 保険のポーリングの 2 本のチェーンの札 (`app.WatchChain`。git log と issues viewer の見張りが共有) と watcher の seam (`app.DirWatcher` / `app.NewDirWatcher`)
 - `cmd/issue-claim/` — `bin/issue-claim` の main (claim の目印とバナーを付ける。本体は `issues.MoveToSubdir` = viewer の `n` と同じ)
 - `ime.go`, `ime_tis_darwin.go`, `ime_tis_stub.go` — ブラウズ中の IME 英数切替 (macOS TIS 直接呼び出し)
-- `url_picker.go` — issue 本文 URL のピッカー (本文 pager で `u`)
 - `zoom.go`, `hint_surfaces.go` — 開閉演出・最下行ヒントの共有ロジック
 - `autobuild.go`, `probe.go`, `fullscreen.go` — 自動再ビルド通知・計測フック・全画面ビューアの排他制御 (どれが出ているか・開く口。ID は `internal/app/fullscreen_id.go`)
 - `open_workspace.go` — `e` で nvim を repo root で起動

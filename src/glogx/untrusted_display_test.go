@@ -9,7 +9,6 @@ import (
 
 	"glogx/internal/term"
 	"glogx/internal/testenv"
-	"glogx/issues"
 	"ratelimit/usage"
 )
 
@@ -41,16 +40,6 @@ func TestDiscardBoxSanitizesPath(t *testing.T) {
 	}
 	assertSanitizedAndVisible(t, "discard 確認モーダル",
 		v.discardBox(statusRenderOpts{width: 80, page: 20}), "notes", ".txt")
-}
-
-// n の確認モーダルに載る issue ファイル名は issues/ 直下の実ファイル名 (Rel は同一性のため
-// 生のまま保持される契約)。表示に出すここで無害化する回帰テスト。
-func TestMarkNextBoxSanitizesFilename(t *testing.T) {
-	v := &issuesView{}
-	v.markNext = issuesMarkConfirm{active: true, targets: []*issues.Issue{
-		{Rel: "036-bug-" + testenv.OSC8 + "0;PWNED" + testenv.ST8 + testenv.CSI8 + "2J.md"},
-	}}
-	assertSanitizedAndVisible(t, "markNext 確認モーダル", v.markNextBox(80, false), "036-bug-", ".md")
 }
 
 // usage の枠タイトルに載る CLI バージョンは外部バイナリの出力。

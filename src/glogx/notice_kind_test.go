@@ -21,7 +21,7 @@ func TestSetNoticeKindsFollowWarningClassification(t *testing.T) {
 	noticeErrorWithoutDetail := []string{"開いていた issue が見つかりません", "見出しが変わりました"}
 	counts := map[string]int{}
 	fset := token.NewFileSet()
-	for _, file := range []string{"issues_view.go", "issues_linkjump.go", "status_view.go"} {
+	for _, file := range []string{"internal/issuesview/issues_view.go", "internal/issuesview/issues_linkjump.go", "status_view.go"} {
 		f, err := parser.ParseFile(fset, file, nil, 0)
 		if err != nil {
 			t.Fatal(err)

@@ -1,4 +1,4 @@
-package main
+package issuesview
 
 // issues viewer を開いている間だけ issue ファイルの変化を見張り、別プロセス (Claude Code /
 // 別ターミナルの $EDITOR / git pull) の編集をその場で反映する。
@@ -45,8 +45,8 @@ const (
 
 // issuesWatchMsg は 1 回分の観測結果 (指紋)。計算は Cmd の goroutine 側で行う。
 // closed は「イベントの経路が閉じた」(viewer を閉じた / watcher が死んだ)。
-type issuesWatchMsg struct {
-	fp     string
+type IssuesWatchMsg struct {
+	Fp     string
 	closed bool
 	// fromEvent は発行元がイベント経路か (false = 保険のポーリング)。🚨 受け取り側は「届けた
 	// チェーンの札だけ」を降ろすのにこれを使う。両方降ろすと、まだ w.Events でブロックしている
@@ -80,7 +80,7 @@ type issuesWatch struct {
 //
 // 観測対象のパスは値で捕捉する: Issue はポインタで共有されるので、goroutine から構造体を読むと
 // View 側の読み取りと競合する (scanCmd と同じ規律)。
-func (v *issuesView) watchCmd() tea.Cmd { return tea.Batch(v.eventCmd(), v.pollCmd()) }
+func (v *IssuesView) watchCmd() tea.Cmd { return tea.Batch(v.eventCmd(), v.pollCmd()) }
 
 // startWatch は監視対象のディレクトリを fsnotify へ登録する (スキャン結果が届くたびに呼ぶ)。
 //
@@ -89,31 +89,31 @@ func (v *issuesView) watchCmd() tea.Cmd { return tea.Batch(v.eventCmd(), v.pollC
 // 空でも登録する。新しいサブディレクトリの作成は親のイベントとして飛び、取り直し → ここで Add されて
 // 追従する (予約外の名前は md が入ってからの取り直しで初めて Add される。spec §5)。
 // watcher を作れない環境 (fd 上限・未対応 platform) では黙ってポーリングだけに縮退する。
-func (v *issuesView) startWatch() {
-	if !v.shown {
+func (v *IssuesView) startWatch() {
+	if !v.Shown {
 		return
 	}
-	if !v.watch.EnsureWatcher() {
+	if !v.Watch.EnsureWatcher() {
 		return
 	}
 	for _, dir := range v.watchDirs() {
 		// 失敗は無視して次の取り直しで再挑戦する (消えたディレクトリ等)。成功しても印を
 		// 残さない = 消えて戻ったディレクトリが再び watch される (上のフィールドコメント参照)。
-		_ = v.watch.W.Add(dir)
+		_ = v.Watch.W.Add(dir)
 	}
 }
 
 // stopWatch は watcher を閉じて状態を畳む (fd を残さない)。世代を 1 つ進めて、閉じる前に
 // 張ってあったチェーンの観測が開き直した後の状態へ効かないようにする。
-func (v *issuesView) stopWatch() {
-	v.watch.Close()
-	v.watch = issuesWatch{WatchChain: app.WatchChain{Gen: v.watch.Gen + 1}}
+func (v *IssuesView) StopWatch() {
+	v.Watch.Close()
+	v.Watch = issuesWatch{WatchChain: app.WatchChain{Gen: v.Watch.Gen + 1}}
 }
 
 // watchDirs は fsnotify へ Add するディレクトリ (issue ディレクトリ + ファイルが居るサブ + epic/ と
 // 全 group dir)。空の group dir も含めるのは、そこへ最初の issue が置かれた変化を拾うため。
-func (v *issuesView) watchDirs() []string {
-	dirs, _ := v.watchTargets()
+func (v *IssuesView) watchDirs() []string {
+	dirs, _ := v.WatchTargets()
 	return dirs
 }
 
@@ -122,41 +122,41 @@ func (v *issuesView) watchDirs() []string {
 // ブロックする Cmd にするのは、外から Msg を送る口 (Program ハンドル) を持たずに済むため
 // (bubbletea では Cmd の goroutine で待つのが定石)。viewer を閉じると watcher が Close され、
 // チャネルが閉じてこの Cmd も終わる。
-func (v *issuesView) eventCmd() tea.Cmd {
-	if !v.shown {
+func (v *IssuesView) eventCmd() tea.Cmd {
+	if !v.Shown {
 		return nil
 	}
-	return v.watch.EventCmd(issuesWatchDebounce, func() func(bool) tea.Msg {
-		gen := v.watch.Gen
-		dirs, paths := v.watchTargets()
+	return v.Watch.EventCmd(issuesWatchDebounce, func() func(bool) tea.Msg {
+		gen := v.Watch.Gen
+		dirs, paths := v.WatchTargets()
 		return func(closed bool) tea.Msg {
 			if closed {
-				return issuesWatchMsg{closed: true, fromEvent: true, gen: gen}
+				return IssuesWatchMsg{closed: true, fromEvent: true, gen: gen}
 			}
-			return issuesWatchMsg{fp: issuesFingerprint(dirs, paths), fromEvent: true, gen: gen}
+			return IssuesWatchMsg{Fp: IssuesFingerprint(dirs, paths), fromEvent: true, gen: gen}
 		}
 	})
 }
 
 // pollCmd は保険のポーリング。イベントを取りこぼしても必ず追いつく。
-func (v *issuesView) pollCmd() tea.Cmd {
-	if !v.shown {
+func (v *IssuesView) pollCmd() tea.Cmd {
+	if !v.Shown {
 		return nil
 	}
-	return v.watch.PollCmd(v.pollInterval(), func() func() tea.Msg {
-		gen := v.watch.Gen
-		dirs, paths := v.watchTargets()
-		return func() tea.Msg { return issuesWatchMsg{fp: issuesFingerprint(dirs, paths), gen: gen} }
+	return v.Watch.PollCmd(v.pollInterval(), func() func() tea.Msg {
+		gen := v.Watch.Gen
+		dirs, paths := v.WatchTargets()
+		return func() tea.Msg { return IssuesWatchMsg{Fp: IssuesFingerprint(dirs, paths), gen: gen} }
 	})
 }
 
 // pollInterval は保険の周期。変化を見つけた後は安定の確認と保留の再挑戦のために短くし、
 // イベントが来ない環境 (watcher を作れなかった) では唯一の経路になるので上げる。
-func (v *issuesView) pollInterval() time.Duration {
+func (v *IssuesView) pollInterval() time.Duration {
 	switch {
-	case v.watch.pending != "":
+	case v.Watch.pending != "":
 		return issuesWatchVerifyPoll
-	case v.watch.W == nil:
+	case v.Watch.W == nil:
 		return issuesWatchBlindPoll
 	default:
 		return issuesWatchIdlePoll
@@ -164,8 +164,8 @@ func (v *issuesView) pollInterval() time.Duration {
 }
 
 // watchTargets は指紋の対象を値のコピーで返す (goroutine へ渡すため)。
-func (v *issuesView) watchTargets() (dirs, paths []string) {
-	return issuesWatchDirs(v.dirs, v.all), issuesWatchPaths(v.all)
+func (v *IssuesView) WatchTargets() (dirs, paths []string) {
+	return issuesWatchDirs(v.Dirs, v.All), issuesWatchPaths(v.All)
 }
 
 // issuesWatchDirs は scanIssues と watchTargets が共有するディレクトリ集合を作る。epic の group
@@ -259,43 +259,43 @@ func issuesWatchPaths(all []*issues.Issue) []string {
 //
 // 「変化を検出した次の周期でも同じ指紋なら読む」= 書きかけのファイルを掴まない。エディタの
 // tmp+rename なら atomic だが、`>>` で追記するツール (シェルスクリプト・ログ追記) もあるため。
-func (v *issuesView) handleWatch(msg issuesWatchMsg) tea.Cmd {
-	if msg.gen != v.watch.Gen {
+func (v *IssuesView) HandleWatch(msg IssuesWatchMsg) tea.Cmd {
+	if msg.gen != v.Watch.Gen {
 		return nil // 閉じる前に張った古いチェーンの観測 (札も触らない)
 	}
 	if msg.closed {
-		if !v.shown {
-			v.stopWatch()
+		if !v.Shown {
+			v.StopWatch()
 			return nil
 		}
 		// watcher が死んだ (fd 回収・NFS 等)。閉じてポーリングだけで続ける (無音にはしない)。
 		// 世代は進めない: 指紋は goroutine の中で測り終えて届くので、捨てるべき飛行中の測定が無く、
 		// 旧世代のポーリングもそのまま有効 (git log の見張りは測定を後段に持つので進める。gitlog_watch.go)
-		v.watch.DropDeadWatcher()
+		v.Watch.DropDeadWatcher()
 		return v.watchCmd()
 	}
 	// 指紋つきの観測はイベント経路とポーリング経路の両方から来る。降ろすのは届けたチェーンの札だけ
 	// (理由は app.WatchChain.release。平常時のポーリングは 30s 周期なので、両方降ろすと viewer を
 	// 開きっぱなしにするだけで goroutine が増え続ける)
-	v.watch.Release(msg.fromEvent)
-	if !v.shown {
-		v.stopWatch() // 閉じたら watcher ごと畳む (fd を残さない)
+	v.Watch.Release(msg.fromEvent)
+	if !v.Shown {
+		v.StopWatch() // 閉じたら watcher ごと畳む (fd を残さない)
 		return nil
 	}
 	switch {
-	case v.watch.seen == "":
+	case v.Watch.seen == "":
 		// 基準がまだ無い = スキャン結果より先に観測が届いた (初回スキャン中) / スキャンが
 		// 失敗した。通常はスキャン自身が基準を持ってくる (receive) のでここは通らない。
-		v.watch.seen = msg.fp
-	case msg.fp == v.watch.seen:
-		v.watch.pending = "" // 変化なし (安定待ちだったものが元へ戻った場合も含む)
-	case msg.fp != v.watch.pending:
-		v.watch.pending = msg.fp // 変化を検出。安定を確かめるまで読まない
+		v.Watch.seen = msg.Fp
+	case msg.Fp == v.Watch.seen:
+		v.Watch.pending = "" // 変化なし (安定待ちだったものが元へ戻った場合も含む)
+	case msg.Fp != v.Watch.pending:
+		v.Watch.pending = msg.Fp // 変化を検出。安定を確かめるまで読まない
 	case v.reloadDeferred():
 		// 指紋は安定したが今は読めない (下記)。pending を保って次の周期で再挑戦する
 	default:
-		v.watch.seen, v.watch.pending = msg.fp, ""
-		return tea.Batch(v.reloadAfterEdit(), v.watchCmd())
+		v.Watch.seen, v.Watch.pending = msg.Fp, ""
+		return tea.Batch(v.ReloadAfterEdit(), v.watchCmd())
 	}
 	return v.watchCmd()
 }
@@ -306,8 +306,8 @@ func (v *issuesView) handleWatch(msg issuesWatchMsg) tea.Cmd {
 //   - 引き出しの開閉アニメ中は、着地までレイアウトが動いている
 //
 // どちらも数百 ms で終わるので、pollInterval が短くなって次の周期で反映される。
-func (v *issuesView) reloadDeferred() bool {
-	return v.urlPick.active || v.drawer.animating(app.TimeNow())
+func (v *IssuesView) reloadDeferred() bool {
+	return v.UrlPick.Active || v.Drawer.animating(app.TimeNow())
 }
 
 // issuesFingerprint は監視対象の状態を 1 本の文字列にする。
@@ -315,7 +315,7 @@ func (v *issuesView) reloadDeferred() bool {
 // ディレクトリは mtime だけ (ファイルの追加・削除・done/ への移動で動く)。🚨 ディレクトリの mtime
 // では本文の書き換えを検出できない (create/delete/rename でしか動かない) ので、ファイルは
 // mtime + サイズまで見る。ハッシュにしないのは、比較しかしないので生の文字列で足りるため。
-func issuesFingerprint(dirs, paths []string) string {
+func IssuesFingerprint(dirs, paths []string) string {
 	var b strings.Builder
 	b.Grow(len(dirs)*32 + len(paths)*48)
 	for _, dir := range dirs {

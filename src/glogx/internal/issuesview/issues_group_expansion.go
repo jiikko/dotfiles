@@ -1,4 +1,4 @@
-package main
+package issuesview
 
 // groupExpansion は issues viewer の epic group の展開状態。3 つの集合の整合を 1 か所で持つ。
 //
