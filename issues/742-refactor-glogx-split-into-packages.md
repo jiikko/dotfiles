@@ -305,6 +305,27 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
       golangci の unused (ExportedIsUsed 固定) から外れる。上の check_unused_excluding_tests の記録と同じ種類の弱まりで、
       internal の公開名を対象にした検査を足さない限り戻らない。**trigger**: 分割を再開するとき、または internal の公開名で
       未使用・定数引数の残骸が見つかったとき
+- [x] 2026-10-17: 案 C を doctor で試した (ユーザー判断。glogx: doctor のテストを main から internal/doctorview へ移す (issue 742 の案 C を doctor で試す))
+  - main に残っていた doctor のテスト 136 本のうち、状態機械 (browseModel) を本当に使うのは約 20 本だけで、残りは main 側と共有する
+    テスト用ヘルパーのせいで動かせなかった。共有ヘルパー 14 宣言をテスト専用のパッケージ `internal/doctorview/doctortest` へ出し、
+    main の本体に依存しないテスト **122 本** (commit message の「124 本」は main へ戻した 2 本を引き忘れた数) を doctorview の外部テスト
+    (`*_ext_test.go` = `package doctorview_test`) へ移した。本番から doctortest を import することは depguard で止める (変異で red を確認)
+  - 確認: テスト名 1,241 本の一致・TestDoctor の PASS 105 本・doctor のテストの宣言 170 個の一致。移したテストの検知力は
+    doctor_brew_advice.go の見出しを変える変異で外部テストが red
+  - codex の敵対的レビュー (1 本): P2 1 件を採用。実コマンドの監視 (tests/glogx/test_no_real_commands_in_tests.sh) が `go test .` しか回さず、
+    移したテストが監視から外れていた。`. ./internal/...` に広げ、scope=all の PASS が分割前と同じ 1,559 件になった。
+    doctortest の fake から BrewRun を外す変異では、doctorview のテストが shim の下で落ちる (赤の出どころはテストの失敗で、
+    呼び出しの件数の検査ではない)。初期化・変数の干渉・depguard・仕分けの取りこぼし・CI の本数は「壊せなかった」
+  - 実測 (同じ手順。`./...` を空の GOCACHE で):
+
+    | 1 行足したファイル | 分割前 | 段 3 の後 | doctor のテストを移した後 |
+    |---|---|---|---|
+    | `tui.go` | +27.5 MB | +24.7 MB | **+22.5 MB (分割前から −18%)** |
+    | doctor_view.go | +27.5 MB | +30.2 MB | +31.1 MB (+13%) |
+
+    - tui.go の減り (24.7 → 22.5 MB) は、main から抜いたテストの行数 (約 4,700 行 × 0.45 KB/行 ≒ 2.1 MB) と合う。行数に比例する見積もりは当たっている
+    - 残りの画面 (issues・status・usage・ratelimit) で同じことをすると、tui.go の変更は 16 MB 前後 (−40% 程度) の見込み (未実測。行数比例の試算)。
+      doctor を直したときは、画面を 2 回コンパイルするぶん分割前より重い (+13%) まま
 - [x] 2026-10-17: **段 3 で止める** (ユーザー判断)。理由: 画面ごとの分割単独ではビルドキャッシュの効き目が小さい (上の実測。
   tui.go の変更で −10%、doctor の変更で +10%)。大きく減らすには画面のテストを browseModel 抜きに書き分ける案 C が要り、
   数千行のテストの書き直しになる。段 1〜3 (term / app / doctor の分割と、移設で外れかけた検査の直し) は master に入れた
