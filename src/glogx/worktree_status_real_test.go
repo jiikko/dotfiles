@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -164,7 +165,7 @@ func TestRealOpsFromSubdirectory(t *testing.T) {
 
 	// stage できること
 	v.handleKey(" ", statusViewport{page: 20})
-	if notice, ok := noticeOKOf(v.takeNotice()); notice != "" && !ok {
+	if notice, ok := testenv.NoticeOKOf(v.takeNotice()); notice != "" && !ok {
 		t.Fatalf("stage が失敗した: %s", notice)
 	}
 	st, err := loadWorktreeStatus()
@@ -236,7 +237,7 @@ func TestRealDiscardAbortsWhenFileChangedDuringConfirm(t *testing.T) {
 	if string(body) != "two\n" {
 		t.Fatalf("確認中に状態が変わったのに捨ててしまった (中身 = %q)", body)
 	}
-	if notice, ok := noticeOKOf(v.takeNotice()); ok || !strings.Contains(notice, "変わった") {
+	if notice, ok := testenv.NoticeOKOf(v.takeNotice()); ok || !strings.Contains(notice, "変わった") {
 		t.Errorf("notice = %q (ok=%v), want 中止の警告", notice, ok)
 	}
 }
@@ -250,7 +251,7 @@ func TestRealCleanRepoIsSafe(t *testing.T) {
 		t.Fatalf("新品の repo が clean でない: %+v", v.st.rows)
 	}
 	v.handleKey("a", statusViewport{page: 20})
-	if notice, ok := noticeOKOf(v.takeNotice()); !ok || !strings.Contains(notice, "ありません") {
+	if notice, ok := testenv.NoticeOKOf(v.takeNotice()); !ok || !strings.Contains(notice, "ありません") {
 		t.Errorf("notice = %q (ok=%v), want 「stage するものがありません」", notice, ok)
 	}
 	// 行が無い状態で各キーを叩いても panic しないこと
@@ -273,7 +274,7 @@ func TestRealFailedOpIsReportedAsFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	v.handleKey(" ", statusViewport{page: 20}) // 消えたファイルを stage しようとする
-	notice, ok := noticeOKOf(v.takeNotice())
+	notice, ok := testenv.NoticeOKOf(v.takeNotice())
 	if notice == "" {
 		t.Fatal("失敗が黙って捨てられた (notice が空)")
 	}

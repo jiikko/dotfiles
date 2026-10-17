@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"glogx/internal/testenv"
 	"glogx/issues"
 )
 
@@ -57,7 +58,7 @@ func TestOpenEditorAtRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := newTestBrowse(t, 1, nil, nil)
-	cmds := stubEditorCapture(t)
+	cmds := testenv.StubEditorCapture(t)
 
 	if _, cmd := m.handleKey("e"); cmd == nil {
 		t.Fatal("e が tea.Cmd を返さない")

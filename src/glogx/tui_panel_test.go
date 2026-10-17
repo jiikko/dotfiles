@@ -15,6 +15,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 
@@ -612,7 +613,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	}
 
 	// v キー: 詳細表示中に nvim 起動コマンドを組む (実起動はスタブで捕捉)
-	cmds := stubEditorCapture(t)
+	cmds := testenv.StubEditorCapture(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
@@ -888,7 +889,7 @@ func TestBrowsePanelShowsJobDuration(t *testing.T) {
 }
 
 func TestBrowsePanelShowsRunningElapsed(t *testing.T) {
-	stubClock(t)
+	testenv.StubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.usageOv.visible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
@@ -910,7 +911,7 @@ func TestBrowsePanelShowsRunningElapsed(t *testing.T) {
 }
 
 func TestBrowsePanelShowsRunningETA(t *testing.T) {
-	stubClock(t)
+	testenv.StubClock(t)
 
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	running, prev := m.commits[0].SHA, m.commits[1].SHA
@@ -930,7 +931,7 @@ func TestBrowsePanelShowsRunningETA(t *testing.T) {
 }
 
 func TestBrowsePanelRunningETAOverrun(t *testing.T) {
-	stubClock(t)
+	testenv.StubClock(t)
 
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	running, prev := m.commits[0].SHA, m.commits[1].SHA
@@ -945,7 +946,7 @@ func TestBrowsePanelRunningETAOverrun(t *testing.T) {
 }
 
 func TestBrowseRunningETASkipsCancelled(t *testing.T) {
-	stubClock(t)
+	testenv.StubClock(t)
 
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	running := m.commits[0].SHA
@@ -967,7 +968,7 @@ func TestBrowseRunningETASkipsCancelled(t *testing.T) {
 }
 
 func TestBrowseRunningETAFetchesMissingBasis(t *testing.T) {
-	stubClock(t)
+	testenv.StubClock(t)
 
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.usageOv.visible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
@@ -1199,7 +1200,7 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 // 保存済みの編集が出ないまま古い内容を最新として表示する (extcmd.EditorClosedMsg の doc)。
 func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
-	m.issuesOv = *loadedView(realIssue(t))
+	m.issuesOv = *loadedView(issuesviewtest.RealIssue(t))
 
 	// 実物の *exec.ExitError を作る (errors.As の分岐を本物で通す)
 	exitErr := exec.Command("sh", "-c", "exit 1").Run()
@@ -1218,7 +1219,7 @@ func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 
 	// 起動失敗はファイルが変わっていないので取り直さない (分岐が効いていること)
 	m2 := newTestBrowse(t, 1, nil, nil)
-	m2.issuesOv = *loadedView(realIssue(t))
+	m2.issuesOv = *loadedView(issuesviewtest.RealIssue(t))
 	m2.Update(extcmd.EditorClosedMsg{Err: errors.New("exec: \"zz\": executable file not found in $PATH")})
 	if m2.issuesOv.scanning {
 		t.Error("起動失敗で取り直しが走った (ファイルは変わっていないので不要)")

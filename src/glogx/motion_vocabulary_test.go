@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"glogx/internal/doctorview"
+	"glogx/internal/issuesview/issuesviewtest"
 	"testing"
 
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
@@ -71,7 +72,7 @@ var motionScreens = []motionScreen{
 			t.Setenv("XDG_CACHE_HOME", t.TempDir())
 			m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 			m.width, m.height = 100, 20
-			m.issuesOv = *loadedView(manyIssues(40)...)
+			m.issuesOv = *loadedView(issuesviewtest.ManyIssues(40)...)
 			return motionProbe{
 				press:   func(k string) { m.handleKey(k) },
 				observe: func() string { return fmt.Sprintf("cursor=%d", m.issuesOv.cursor) },

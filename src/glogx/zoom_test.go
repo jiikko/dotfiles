@@ -3,6 +3,7 @@ package main
 import (
 	"glogx/internal/app"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"strings"
 	"testing"
 	"time"
@@ -90,7 +91,7 @@ func TestAppZoomOpensAndSettles(t *testing.T) {
 
 // 終了は演出を挟んでから抜ける。🚨 キーが来たら即着地させる (q が効かない時間を作らない)。
 func TestAppZoomCloseThenQuit(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.zoom.off = false // このテストだけ演出を有効にする (ヘルパーは既定で切る)
@@ -121,7 +122,7 @@ func TestAppZoomCloseThenQuit(t *testing.T) {
 
 // キーで即着地 (待たされない)。
 func TestAppZoomCloseFinishesOnKey(t *testing.T) {
-	stubClock(t)
+	testenv.StubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.zoom.off = false
@@ -167,7 +168,7 @@ func TestZoomWindowMatchesFrameState(t *testing.T) {
 // 220ms の演出に中間フレームが 2 枚しか出ず (4行 → 30行 → 実画面) 点滅に見える (実測 2026-08-01)。
 // 固定値でなく「何枚出るか」で縛るのは、所要 (appZoomDuration) を変えたときに一緒に守るため。
 func TestZoomRendersEnoughFrames(t *testing.T) {
-	stubClock(t)
+	testenv.StubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.zoom.off = false
@@ -191,7 +192,7 @@ func TestZoomRendersEnoughFrames(t *testing.T) {
 
 // 演出が終われば周期は元へ戻る (常時 60fps で回し続けない)。
 func TestZoomFrameRateDropsAfterSettle(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.zoom.off = false
@@ -227,7 +228,7 @@ func TestZoomMovesForWholeDuration(t *testing.T) {
 // フレームあたりの跳びが小さいこと。🚨 端末は文字セル単位でしか動けないので、フレーム数だけ
 // 増やしても曲線が前のめりだと 1 フレームで何行も跳ぶ。40 行の画面を想定して平均の跳びを見る。
 func TestZoomStepsAreSmall(t *testing.T) {
-	stubClock(t)
+	testenv.StubClock(t)
 
 	// 🚨 開くときと閉じるときを同じ基準で見る。片方だけ直すと「開くのは滑らかなのに終了だけ
 	// カクつく」ずれが入る (周期・所要・曲線の 3 つとも両方向へ効いている必要がある)。

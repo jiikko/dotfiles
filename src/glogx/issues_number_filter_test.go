@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/issues"
 )
@@ -11,10 +12,10 @@ import (
 // numbered は番号だけが違う issue 群 (カテゴリ・状態はばらけさせる)。
 func numbered() []*issues.Issue {
 	return []*issues.Issue{
-		fakeIssue("415", "feat", "a", issues.StatusOpen),
-		fakeIssue("141", "bug", "b", issues.StatusDone),
-		fakeIssue("041", "refactor", "c", issues.StatusPending),
-		fakeIssue("500", "feat", "d", issues.StatusOpen),
+		issuesviewtest.FakeIssue("415", "feat", "a", issues.StatusOpen),
+		issuesviewtest.FakeIssue("141", "bug", "b", issues.StatusDone),
+		issuesviewtest.FakeIssue("041", "refactor", "c", issues.StatusPending),
+		issuesviewtest.FakeIssue("500", "feat", "d", issues.StatusOpen),
 	}
 }
 

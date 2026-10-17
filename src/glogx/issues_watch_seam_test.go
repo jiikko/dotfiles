@@ -12,11 +12,11 @@ package main
 
 import (
 	"errors"
-	"glogx/internal/app"
+	"glogx/internal/issuesview/issuesviewtest"
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
 	"slices"
-	"sync"
 	"testing"
 	"time"
 
@@ -24,122 +24,11 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// fakeWatcher は app.DirWatcher のフェイク。Add の履歴と watch 集合を観測できる。
-//
-// 実 fsnotify に合わせている点:
-//   - 存在しないパスの Add は失敗する (watch も張られない)
-//   - Close でイベントチャネルが閉じる (待っている goroutine が解ける)
-//
-// 合わせていない点 (明示的にテストが動かす): ディレクトリが消えたときの watch の消失は
-// OS が黙ってやるので、フェイクでは loseWatch で再現する (Add の失敗契機に混ぜると
-// 「Add を呼ばなくても消えている」形になり、再 Add の検査が空回りしうる)。
-type fakeWatcher struct {
-	mu     sync.Mutex
-	added  []string // Add の呼び出し履歴 (成否に関わらず、順に全件)
-	list   []string // 現に張られている watch
-	closed bool
-	events chan fsnotify.Event
-	errors chan error
-}
-
-func newFakeWatcher() *fakeWatcher {
-	return &fakeWatcher{events: make(chan fsnotify.Event, 16), errors: make(chan error, 4)}
-}
-
-func (f *fakeWatcher) Add(dir string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.closed {
-		return fsnotify.ErrClosed
-	}
-	f.added = append(f.added, dir)
-	if _, err := os.Stat(dir); err != nil {
-		return err // 消えているディレクトリは張れない
-	}
-	if !slices.Contains(f.list, dir) {
-		f.list = append(f.list, dir)
-	}
-	return nil
-}
-
-func (f *fakeWatcher) Close() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.closed {
-		return nil // 冪等 (二重 Close で panic しない)
-	}
-	f.closed = true
-	close(f.events)
-	close(f.errors)
-	return nil
-}
-
-func (f *fakeWatcher) WatchList() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.list...)
-}
-
-func (f *fakeWatcher) Events() <-chan fsnotify.Event { return f.events }
-func (f *fakeWatcher) Errors() <-chan error          { return f.errors }
-
-// loseWatch は「ディレクトリが消えて OS が watch を黙って落とした」を再現する。
-func (f *fakeWatcher) loseWatch(dir string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.list = slices.DeleteFunc(f.list, func(s string) bool { return s == dir })
-}
-
-// addCount は dir に対する Add の呼び出し回数 (成否を問わない)。
-func (f *fakeWatcher) addCount(dir string) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	n := 0
-	for _, d := range f.added {
-		if d == dir {
-			n++
-		}
-	}
-	return n
-}
-
-// emit はイベントを 1 本流す (実 fsnotify の代わり)。
-//
-// 🚨 送信までロックを持ったままにする。closed を読んでから解錠して送ると、その隙間に Close が
-// 入って「閉じたチャネルへの送信」で panic する (red team が 2000 回ループで再現)。events は
-// バッファ 16 で、ドレインするのは検査対象のコードだけ (Add/Close/WatchList はチャネルを読まない)
-// なので、ロックを持ったままの送信でデッドロックしない。
-func (f *fakeWatcher) emit(ev fsnotify.Event) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.closed {
-		return
-	}
-	f.events <- ev
-}
-
-// fakeWatcherSeam は app.NewDirWatcher をフェイクへ差し替え、そのフェイクを返す。
-//
-// 🚨 seam は 2 つの見張り (issues / git log) の共用なので、1 つのテストで両方を起動すると
-// **同じフェイクを 2 つが掴んでイベントチャネルを取り合う**。両方を動かすテストを書くなら
-// フェイクを見張りごとに分けること。
-func fakeWatcherSeam(t *testing.T) *fakeWatcher {
-	t.Helper()
-	fw := newFakeWatcher()
-	prev := app.NewDirWatcher
-	app.NewDirWatcher = func() (app.DirWatcher, error) { return fw, nil }
-	t.Cleanup(func() {
-		app.NewDirWatcher = prev
-		_ = fw.Close()
-	})
-	return fw
-}
-
 // requireFake は見張りが seam 経由でフェイクを掴んでいることを確かめる (実 fsnotify に
 // 戻っていたら、この検査は CI では走らなくなっているので停止させる)。
-func requireFake(t *testing.T, v *issuesView) *fakeWatcher {
+func requireFake(t *testing.T, v *issuesView) *testenv.FakeWatcher {
 	t.Helper()
-	fw, ok := v.watch.W.(*fakeWatcher)
+	fw, ok := v.watch.W.(*testenv.FakeWatcher)
 	if !ok {
 		t.Fatalf("startWatch が newDirWatcher seam を通っていない (w=%T)。この検査は実 fsnotify に依存している", v.watch.W)
 	}
@@ -150,14 +39,14 @@ func requireFake(t *testing.T, v *issuesView) *fakeWatcher {
 // issues_watch_test.go の同名検査は実 fsnotify 版で CI では skip されるため、不変条件は
 // ここで環境非依存に固定する。
 func TestIssuesWatchReAddsRecreatedDirWithoutFsnotify(t *testing.T) {
-	fakeWatcherSeam(t)
-	root, path := watchTree(t, "# 001 feat: x\n")
+	testenv.FakeWatcherSeam(t)
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	done := filepath.Join(root, "issues", "done")
 	if err := os.MkdirAll(done, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// 🚨 空ディレクトリは watch 対象にならない (FindDirs は markdown を含むものだけ拾う)
-	writeIssue(t, filepath.Join(done, "000-feat-old.md"), "# 000 feat: old\n", time.Now().Add(-time.Hour))
+	issuesviewtest.WriteIssue(t, filepath.Join(done, "000-feat-old.md"), "# 000 feat: old\n", time.Now().Add(-time.Hour))
 	v := openedWatchView(t, root, path)
 	fw := requireFake(t, v)
 	if !slices.Contains(fw.WatchList(), done) {
@@ -168,19 +57,19 @@ func TestIssuesWatchReAddsRecreatedDirWithoutFsnotify(t *testing.T) {
 	if err := os.RemoveAll(done); err != nil {
 		t.Fatal(err)
 	}
-	fw.loseWatch(done)
+	fw.LoseWatch(done)
 	v.startWatch() // 消えている間の取り直し (Add は失敗する)
 	if slices.Contains(fw.WatchList(), done) {
 		t.Fatal("消えているディレクトリが watch されている (フェイクが実 fsnotify と食い違っている)")
 	}
 
-	before := fw.addCount(done)
+	before := fw.AddCount(done)
 	if err := os.MkdirAll(done, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	v.startWatch() // 戻った後の取り直し: ここで再び Add されなければならない
 
-	if fw.addCount(done) == before {
+	if fw.AddCount(done) == before {
 		t.Fatal("戻ってきた done/ に Add が呼ばれていない (「Add 済み」を覚えて skip している)")
 	}
 	if !slices.Contains(fw.WatchList(), done) {
@@ -191,8 +80,8 @@ func TestIssuesWatchReAddsRecreatedDirWithoutFsnotify(t *testing.T) {
 // イベント駆動経路 (eventCmd → 指紋 → 取り直し) を実 fsnotify 無しで通す。CI ではこの経路が
 // 一度も走っていなかった (指紋ポーリングだけで緑になっていた)。
 func TestIssuesWatchEventPathWithoutFsnotify(t *testing.T) {
-	fakeWatcherSeam(t)
-	root, path := watchTree(t, "# 001 feat: 編集前\n")
+	testenv.FakeWatcherSeam(t)
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: 編集前\n")
 	v := openedWatchView(t, root, path)
 	fw := requireFake(t, v)
 
@@ -213,8 +102,8 @@ func TestIssuesWatchEventPathWithoutFsnotify(t *testing.T) {
 	case <-time.After(150 * time.Millisecond):
 	}
 
-	writeIssue(t, path, "# 001 feat: 編集後\n", time.Now())
-	fw.emit(fsnotify.Event{Name: path, Op: fsnotify.Write})
+	issuesviewtest.WriteIssue(t, path, "# 001 feat: 編集後\n", time.Now())
+	fw.Emit(fsnotify.Event{Name: path, Op: fsnotify.Write})
 
 	var raw tea.Msg
 	select {
@@ -251,8 +140,8 @@ func TestIssuesWatchEventPathWithoutFsnotify(t *testing.T) {
 // 回しても再現しなかった (red team 実測 2026-08-21)。実際に intermittent な失敗が出たら、
 // 窓を広げる推測ベースの防御ではなく「チャネル close の完了を ack で同期する」形へ直すこと。
 func TestIssuesWatchPollDoesNotStackEventChainsWithoutFsnotify(t *testing.T) {
-	fakeWatcherSeam(t)
-	root, path := watchTree(t, "# 001 feat: x\n")
+	testenv.FakeWatcherSeam(t)
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	requireFake(t, v)
 
@@ -271,8 +160,8 @@ func TestIssuesWatchPollDoesNotStackEventChainsWithoutFsnotify(t *testing.T) {
 // 回帰 (fd 漏れ) を CI でも走らせる版: restartSelf の syscall.Exec は fd テーブルを引き継ぐため、
 // cancelAll が watcher を閉じ忘れると viewer を開いたまま r 再起動するたびに fd が漏れ続ける。
 func TestCancelAllClosesIssuesWatcherWithoutFsnotify(t *testing.T) {
-	fakeWatcherSeam(t)
-	root, _ := watchTree(t, "# 001 feat: x\n")
+	testenv.FakeWatcherSeam(t)
+	root, _ := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	m := newTestBrowse(t, 1, nil, nil)
 	m.issuesOv.toggle(root)
 	m.issuesOv.receive(scanOf(t, root))

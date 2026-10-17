@@ -1,25 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
-	"glogx/issues"
 )
-
-// manyIssues は滑走が観測できるだけの行数を持つ一覧を作る (窓より十分多い件数)。
-func manyIssues(n int) []*issues.Issue { return manyIssuesOf(n, "bug") }
-
-// manyIssuesOf は番号 n..1 (3 桁) の open な issue を降順に並べる (スクロール・窓の検査用)。
-func manyIssuesOf(n int, category string) []*issues.Issue {
-	out := make([]*issues.Issue, 0, n)
-	for i := n; i > 0; i-- {
-		out = append(out, fakeIssue(fmt.Sprintf("%03d", i), category, "x", issues.StatusOpen))
-	}
-	return out
-}
 
 // cursorRow は描画されたリストのうち、カーソル記号が付いた行の「表示上の位置」を返す
 // (見つからなければ -1)。窓の中に無ければカーソルは 1 行も描かれていない。
@@ -33,7 +20,7 @@ func cursorRow(lines []string) int {
 }
 
 func TestIssuesListSpaceStartsCursorGlide(t *testing.T) {
-	v := loadedView(manyIssues(40)...)
+	v := loadedView(issuesviewtest.ManyIssues(40)...)
 	v.listLines(renderOpts(20)) // 論理 offset を描画時の行数で収束させる (本番と同じ順序)
 	v.handleKey(" ", vp(20))
 	if !v.curGlide.Active() {
@@ -59,7 +46,7 @@ func TestIssuesListSpaceStartsCursorGlide(t *testing.T) {
 }
 
 func TestIssuesListLineMoveHasNoGlide(t *testing.T) {
-	v := loadedView(manyIssues(40)...)
+	v := loadedView(issuesviewtest.ManyIssues(40)...)
 	v.listLines(renderOpts(20))
 	for _, key := range []string{"j", "k", "G", "g"} {
 		v.handleKey(key, vp(20))
@@ -70,7 +57,7 @@ func TestIssuesListLineMoveHasNoGlide(t *testing.T) {
 }
 
 func TestIssuesListGlideKeepsCursorInsideWindow(t *testing.T) {
-	v := loadedView(manyIssues(60)...)
+	v := loadedView(issuesviewtest.ManyIssues(60)...)
 	v.listLines(renderOpts(20))
 	v.handleKey(" ", vp(20)) // 窓が動く距離を作る
 	v.handleKey(" ", vp(20))
@@ -89,7 +76,7 @@ func TestIssuesListGlideKeepsCursorInsideWindow(t *testing.T) {
 }
 
 func TestIssuesListNextKeyLandsGlideImmediately(t *testing.T) {
-	v := loadedView(manyIssues(40)...)
+	v := loadedView(issuesviewtest.ManyIssues(40)...)
 	v.listLines(renderOpts(20))
 	v.handleKey(" ", vp(20))
 	v.advanceGlide()
@@ -106,7 +93,7 @@ func TestIssuesListNextKeyLandsGlideImmediately(t *testing.T) {
 // (curGlide.Active()) や dispCursor の戻り値だけを見るテストは、描画がそれを使わなくなっても
 // 緑のまま通る (rowLine のカーソル判定を論理カーソルへ戻す変異が、これを足すまで全 green だった)。
 func TestIssuesListGlideMovesTheDrawnCursor(t *testing.T) {
-	v := loadedView(manyIssues(40)...)
+	v := loadedView(issuesviewtest.ManyIssues(40)...)
 	const page = 20
 	v.listLines(renderOpts(page))
 	v.handleKey(" ", vp(page))
@@ -141,7 +128,7 @@ func TestIssuesListGlideMovesTheDrawnCursor(t *testing.T) {
 // 止める必要がある (止めないと次に開いた一瞬だけ古い位置から滑る)。本文 pager の
 // TestIssuesCloseStopsBodyGlide と対になる。
 func TestIssuesCloseStopsCursorGlide(t *testing.T) {
-	v := loadedView(manyIssues(40)...)
+	v := loadedView(issuesviewtest.ManyIssues(40)...)
 	v.listLines(renderOpts(20))
 	v.handleKey(" ", vp(20))
 	if !v.curGlide.Active() {
@@ -159,7 +146,7 @@ func TestIssuesCloseStopsCursorGlide(t *testing.T) {
 // 「半ページ移動はカーソルが滑る (窓は滑らせない)」の末尾)。案内を shift+space へ変えると、
 // 非対応の端末では「押すと下へ行くキー」を上方向として案内することになる。
 func TestIssuesListHintAdvertisesWorkingHalfPageKeys(t *testing.T) {
-	v := loadedView(manyIssues(40)...)
+	v := loadedView(issuesviewtest.ManyIssues(40)...)
 	const page = 20
 	v.listLines(renderOpts(page))
 	if h := v.hint(testHintBudget(t)); !strings.Contains(h, "Space/b") {

@@ -16,6 +16,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 
@@ -906,7 +907,7 @@ func TestIssuesViewerReplacesWholeScreen(t *testing.T) {
 	m.handleKey("i")
 	m.Update(issuesScanMsg{
 		dirs:   []string{"/repo/issues"},
-		issues: []*issues.Issue{fakeIssue("030", "feat", "new-thing", issues.StatusOpen)},
+		issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "new-thing", issues.StatusOpen)},
 	})
 	m.issuesOv.finishAnim() // 開く演出は別テストで見る (ここは着地後の画面を見たい)
 	out := m.viewLines()
@@ -1194,7 +1195,7 @@ func TestSpaceKeyScrollsEverywhere(t *testing.T) {
 	m.handleKey("h") // 一覧へ戻る
 	many := make([]*issues.Issue, 0, 30)
 	for i := 30; i > 0; i-- {
-		many = append(many, fakeIssue(fmt.Sprintf("%03d", i), "feat", "x", issues.StatusOpen))
+		many = append(many, issuesviewtest.FakeIssue(fmt.Sprintf("%03d", i), "feat", "x", issues.StatusOpen))
 	}
 	m.Update(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: many})
 	m.handleKey("space")
@@ -1234,8 +1235,8 @@ func TestIssuesViewerCursorArrowNotDoubled(t *testing.T) {
 		m.issuesOv.receive(issuesScanMsg{
 			dirs: []string{"/repo/issues"},
 			issues: []*issues.Issue{
-				fakeIssue("030", "feat", "alpha", issues.StatusOpen),
-				fakeIssue("029", "feat", "beta", issues.StatusOpen),
+				issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen),
+				issuesviewtest.FakeIssue("029", "feat", "beta", issues.StatusOpen),
 			},
 		})
 		m.issuesOv.finishAnim() // 開く演出中は行が流し込み途中で出ない
@@ -1270,7 +1271,7 @@ func TestIssuesViewerNotifiesViaToast(t *testing.T) {
 	m.handleKey("i")
 	m.issuesOv.receive(issuesScanMsg{
 		dirs:   []string{"/repo/issues"},
-		issues: []*issues.Issue{fakeIssue("030", "feat", "alpha", issues.StatusOpen)},
+		issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen)},
 	})
 	m.issuesOv.finishAnim()
 
@@ -1310,7 +1311,7 @@ func TestIssuesViewerCopyFailureToast(t *testing.T) {
 	m.handleKey("i")
 	m.issuesOv.receive(issuesScanMsg{
 		dirs:   []string{"/repo/issues"},
-		issues: []*issues.Issue{fakeIssue("030", "feat", "alpha", issues.StatusOpen)},
+		issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen)},
 	})
 	m.issuesOv.finishAnim()
 
@@ -1334,7 +1335,7 @@ func TestIssuesViewerRefusalKeepsLastWarning(t *testing.T) {
 	m.handleKey("i")
 	m.issuesOv.receive(issuesScanMsg{
 		dirs:   []string{"/repo/issues"},
-		issues: []*issues.Issue{fakeIssue("030", "feat", "alpha", issues.StatusOpen)},
+		issues: []*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen)},
 	})
 	m.issuesOv.finishAnim()
 	m.lastWarning = "pull に失敗: rejected"

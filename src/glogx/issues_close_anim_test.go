@@ -7,6 +7,8 @@ package main
 
 import (
 	"glogx/internal/app"
+	"glogx/internal/issuesview/issuesviewtest"
+	"glogx/internal/testenv"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +28,7 @@ func openAnimView(t *testing.T) *issuesView {
 
 // 閉じるときは進捗が 1 から 0 へ落ち、0 で止まる。
 func TestIssuesCloseProgressFallsToZero(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 
 	v := openAnimView(t)
 	if p := v.animProgress(); p != 1 {
@@ -82,9 +84,9 @@ func TestIssuesCloseMovesOnFirstFrame(t *testing.T) {
 // 閉じる向きが描画まで届いている。🚨 上の検査は layout.SlideIn を直接叩くので、lines() が
 // closing を渡し忘れても気づかない (開く向きの平坦な立ち上がりへ黙って戻る)。
 func TestIssuesCloseCurveReachesRender(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 
-	v := loadedView(sampleIssues()...)
+	v := loadedView(issuesviewtest.SampleIssues()...)
 	v.closeAnimOff = false
 	v.close()
 	// 折り返し地点で見る: 閉じる向きなら中身のある行が幅の半分ずれ、開く向き (渡し忘れ) なら
@@ -119,9 +121,9 @@ func TestIssuesCloseMovesAllRowsTogether(t *testing.T) {
 // git log へ戻ることになる。🚨 終端で減速するカーブを使うと必ずこれが起きる (残り数 % の距離に
 // 時間の後半を使うため。easeOutCubic + 700ms のとき 280 桁端末で 100ms の白画面が出ていた)。
 func TestIssuesCloseLeavesNoBlankFrame(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 
-	v := loadedView(sampleIssues()...)
+	v := loadedView(issuesviewtest.SampleIssues()...)
 	v.closeAnimOff = false
 	v.close()
 
@@ -152,7 +154,7 @@ func maxRowShift(window []string) int {
 
 // 演出が着地するまで tick を止めない (時間で降ろすと片付け前にチェーンが切れて固まる)。
 func TestIssuesCloseKeepsTickingUntilSettled(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 
 	v := openAnimView(t)
 	v.close()
@@ -171,9 +173,9 @@ func TestIssuesCloseKeepsTickingUntilSettled(t *testing.T) {
 
 // 着地するまで片付けない = 逆再生の間は見張りも本文も生きている。
 func TestIssuesCloseDefersTeardownUntilSettled(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 
-	root, path := watchTree(t, "# a\n")
+	root, path := issuesviewtest.WatchTree(t, "# a\n")
 	v := openedWatchView(t, root, path)
 	v.closeAnimOff = false // このテストだけ演出を on に戻す
 	gen := v.watch.Gen
@@ -191,7 +193,7 @@ func TestIssuesCloseDefersTeardownUntilSettled(t *testing.T) {
 
 // 演出の途中で終了しても画面を覚えない (閉じたはずの viewer が次の起動で蘇らない)。
 func TestIssuesClosingIsNotRemembered(t *testing.T) {
-	stubClock(t)
+	testenv.StubClock(t)
 
 	v := openAnimView(t)
 	if _, ok := v.screen(app.TimeNow()); !ok {
@@ -205,7 +207,7 @@ func TestIssuesClosingIsNotRemembered(t *testing.T) {
 
 // キーは演出を即着地させ、かつ飲み込まれない (q で閉じた直後の q が効かない時間を作らない)。
 func TestIssuesCloseLandsOnKeyWithoutSwallowing(t *testing.T) {
-	stubClock(t)
+	testenv.StubClock(t)
 
 	m := openAnimBrowse(t)
 	if !m.issuesOv.visible() {
@@ -235,7 +237,7 @@ func TestIssuesCloseLandsOnKeyWithoutSwallowing(t *testing.T) {
 // q でも閉じられなくなり、確認モーダルが蘇ると y/Enter で実ファイルが動く。
 // 実体は browseModel が routing 前に finishClose すること (tui.go)。
 func TestIssuesCloseLandsBeforeKeyReachesViewer(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 
 	for _, key := range []string{"/", "n"} {
 		m := openAnimBrowse(t)
@@ -257,9 +259,9 @@ func TestIssuesCloseLandsBeforeKeyReachesViewer(t *testing.T) {
 
 // 演出中の i は「閉じ切ってから開き直す」= 見張りを二重に張らない。
 func TestIssuesReopenDuringCloseDoesNotDoubleWatch(t *testing.T) {
-	stubClock(t)
+	testenv.StubClock(t)
 
-	root, path := watchTree(t, "# a\n")
+	root, path := issuesviewtest.WatchTree(t, "# a\n")
 	v := openedWatchView(t, root, path)
 	v.closeAnimOff = false
 	gen := v.watch.Gen
@@ -282,7 +284,7 @@ func TestIssuesReopenDuringCloseDoesNotDoubleWatch(t *testing.T) {
 // なる。q/Esc は素通しのまま (飲むと「閉じた直後の q が効かない」窓ができる) なので、
 // e を捨てても q が死なないことまで見る。
 func TestBrowseCloseAnimSwallowsEditorKeyOnly(t *testing.T) {
-	cmds := stubEditorCapture(t)
+	cmds := testenv.StubEditorCapture(t)
 
 	m := newTestBrowse(t, 1, nil, nil)
 	m.issuesOv.closeAnimOff = false // 本番の既定 (演出あり) に戻す

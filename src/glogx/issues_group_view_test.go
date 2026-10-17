@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"glogx/internal/app"
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 	"glogx/issues"
@@ -43,7 +44,7 @@ func epicStatusDir(status issues.Status) string {
 }
 
 func TestIssuesViewGroupsUseSeparateDisplayRowsAndToggle(t *testing.T) {
-	global := fakeIssue("711", "feat", "global", issues.StatusOpen)
+	global := issuesviewtest.FakeIssue("711", "feat", "global", issues.StatusOpen)
 	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
 	beta := fakeEpicIssue("/repo/issues", "beta", "710", "beta", issues.StatusOpen)
 	betaChild := fakeEpicIssue("/repo/issues", "beta", "700", "beta-child", issues.StatusOpen)
@@ -133,7 +134,7 @@ func TestIssuesViewGroupParentCopiesGroupName(t *testing.T) {
 	if *copied != "google-drive" {
 		t.Fatalf("group 名がコピーされていない: %q", *copied)
 	}
-	if text, ok := noticeOKOf(v.takeNotice()); !ok || !strings.Contains(text, "group 名をコピーしました: google-drive") {
+	if text, ok := testenv.NoticeOKOf(v.takeNotice()); !ok || !strings.Contains(text, "group 名をコピーしました: google-drive") {
 		t.Fatalf("コピーの通知が想定と違う: %q", text)
 	}
 	// y は「コピーするだけ」: 親行の no-op 表 (ActionsAreNoopWithNotice) から y を外したぶん、
@@ -160,7 +161,7 @@ func TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice(t *testing.T)
 	if *copied != name {
 		t.Fatalf("コピーに無害化が掛かった (貼り先で別物になる): %q", *copied)
 	}
-	text, _ := noticeOKOf(v.takeNotice())
+	text, _ := testenv.NoticeOKOf(v.takeNotice())
 	if strings.ContainsAny(text, "\t\n") {
 		t.Fatalf("通知に制御文字が残った (1 行の枠が壊れる): %q", text)
 	}
@@ -249,7 +250,7 @@ func TestIssuesViewRescanReanchorsGroupParentByGroupKey(t *testing.T) {
 		t.Fatal("前提: 初期カーソルが group 親行にない")
 	}
 
-	newer := fakeIssue("999", "feat", "new", issues.StatusOpen)
+	newer := issuesviewtest.FakeIssue("999", "feat", "new", issues.StatusOpen)
 	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: []*issues.Issue{newer, child}})
 	row, ok := v.currentDisplayRow()
 	if !ok || row.kind != displayRowGroup || row.groupKey != child.GroupKey {
@@ -283,7 +284,7 @@ func TestIssuesViewTabCountsChildrenNotGroupParents(t *testing.T) {
 	v := loadedView(
 		fakeEpicIssue("/repo/issues", "cloud", "710", "a", issues.StatusOpen),
 		fakeEpicIssue("/repo/issues", "cloud", "709", "b", issues.StatusOpen),
-		fakeIssue("708", "feat", "plain", issues.StatusOpen),
+		issuesviewtest.FakeIssue("708", "feat", "plain", issues.StatusOpen),
 	)
 	if v.allCount != 3 || len(v.rows) != 3 {
 		t.Fatalf("件数が親行込みになった: all=%d rows=%d", v.allCount, len(v.rows))
@@ -360,7 +361,7 @@ func TestIssuesViewUserCursorActionsCancelPendingMoveAnchors(t *testing.T) {
 	}
 	for _, tc := range actions {
 		t.Run(tc.name, func(t *testing.T) {
-			v := loadedView(sampleIssues()...)
+			v := loadedView(issuesviewtest.SampleIssues()...)
 			v.pendingCursorPath, v.pendingMarkPath = "/moved/cursor", "/moved/mark"
 			tc.run(v)
 			if v.pendingCursorPath != "" || v.pendingMarkPath != "" {
@@ -416,7 +417,7 @@ func TestIssuesViewPendingMoveAnchorsExpireAfterFreshMissingScan(t *testing.T) {
 // round 2 の敵対レビュー: 親行のカーソルは state に GroupKey で残り、復元で親行へ戻る。
 func TestIssuesScreenRoundTripsGroupCursor(t *testing.T) {
 	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
-	global := fakeIssue("711", "feat", "global", issues.StatusOpen)
+	global := issuesviewtest.FakeIssue("711", "feat", "global", issues.StatusOpen)
 	v := loadedView(global, alpha)
 	v.shown, v.root = true, "/repo" // screen は開いている viewer だけを覚える
 	v.handleKey("j", vp(10))        // alpha の親行
@@ -452,7 +453,7 @@ func TestIssuesViewApplyScreenPrunesDeadGroupKeys(t *testing.T) {
 // では保持する。捨てるのは j/k/g/G/tab 等のカーソル移動だけ。
 func TestIssuesViewPendingMoveAnchorSurvivesNonCursorKeys(t *testing.T) {
 	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
-	global := fakeIssue("711", "feat", "global", issues.StatusOpen)
+	global := issuesviewtest.FakeIssue("711", "feat", "global", issues.StatusOpen)
 	v := loadedView(global, alpha)
 	v.pendingCursorPath = "/repo/issues/epic/alpha/next/710-feat-alpha.md"
 	v.handleKey("a", vp(10))
@@ -489,8 +490,8 @@ func TestIssuesViewReceivePrunesDeadGroupKeys(t *testing.T) {
 // 親行で番号 filter を Esc したときは親行へ戻る (filter 中の添字を持ち越さない)。
 func TestIssuesViewClearNumberFilterOnGroupRowReanchorsGroup(t *testing.T) {
 	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
-	g1 := fakeIssue("712", "feat", "a", issues.StatusOpen)
-	g2 := fakeIssue("711", "feat", "b", issues.StatusOpen)
+	g1 := issuesviewtest.FakeIssue("712", "feat", "a", issues.StatusOpen)
+	g2 := issuesviewtest.FakeIssue("711", "feat", "b", issues.StatusOpen)
 	v := loadedView(g1, g2, alpha)
 	v.handleKey("/", vp(10))
 	v.handleKey("7", vp(10))
@@ -510,13 +511,13 @@ func TestIssuesViewClearNumberFilterOnGroupRowReanchorsGroup(t *testing.T) {
 // realDoneIssue は done/ に実ファイルを持つ issue (claim が rename になる側の配置)。
 func realDoneIssue(t *testing.T) *issues.Issue {
 	t.Helper()
-	return writeRealIssue(t, t.TempDir(), filepath.Join("done", "001-feat-real.md"), "# 001 feat: real\n")
+	return issuesviewtest.WriteRealIssue(t, t.TempDir(), filepath.Join("done", "001-feat-real.md"), "# 001 feat: real\n")
 }
 
 // group を展開したとき、子 issue の行は親行より右 (groupChildIndent ぶん) に寄り、単独 issue と
 // 同じ桁に並ばない。親と同じ桁だと「開いたのに所属が読めない」(2026-09-05 のユーザー要望)。
 func TestIssuesViewGroupChildrenAreIndentedUnderParent(t *testing.T) {
-	global := fakeIssue("711", "feat", "global", issues.StatusOpen)
+	global := issuesviewtest.FakeIssue("711", "feat", "global", issues.StatusOpen)
 	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
 	v := loadedView(global, alpha)
 	v.handleKey("j", vp(10)) // alpha 親行
@@ -674,7 +675,7 @@ func TestIssuesViewGroupParentShowsDoneCount(t *testing.T) {
 	done1 := fakeEpicIssue(dir, "alpha", "707", "done-one", issues.StatusDone)
 	done2 := fakeEpicIssue(dir, "alpha", "706", "done-two", issues.StatusDone)
 	fresh := fakeEpicIssue(dir, "beta", "705", "no-progress", issues.StatusOpen)
-	globalDone := fakeIssue("711", "feat", "global-done", issues.StatusDone)
+	globalDone := issuesviewtest.FakeIssue("711", "feat", "global-done", issues.StatusDone)
 	v := loadedView(open1, next1, held, done1, done2, fresh, globalDone)
 
 	if v.filter != issues.FilterOpen {
@@ -752,7 +753,7 @@ func TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue(t *testing.T) {
 		{"無関係な group が後 (番号降順 = production の並び)", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			global := fakeIssue("900", "feat", "global", issues.StatusOpen)
+			global := issuesviewtest.FakeIssue("900", "feat", "global", issues.StatusOpen)
 			child := fakeEpicIssue(dir, "cloud", "702", "moved-in", issues.StatusNext)
 			other := fakeEpicIssue(dir, "alpha", "701", "unrelated", issues.StatusOpen)
 			list := []*issues.Issue{global, other, child}
@@ -787,7 +788,7 @@ func TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue(t *testing.T) {
 func TestIssuesViewAnchorIgnoresIssuesOutsideVisibleRows(t *testing.T) {
 	dir := "/repo/issues"
 	child := fakeEpicIssue(dir, "cloud", "702", "done-child", issues.StatusDone)
-	v := loadedView(fakeIssue("900", "feat", "global", issues.StatusOpen), child)
+	v := loadedView(issuesviewtest.FakeIssue("900", "feat", "global", issues.StatusOpen), child)
 	v.setRows(nil) // 可視集合から外れた状態 (タブ切り替え・フィルタで起きる)
 	v.rebuildDisplayRows()
 
@@ -805,7 +806,7 @@ func TestIssuesViewAnchorIgnoresIssuesOutsideVisibleRows(t *testing.T) {
 func TestIssuesViewAnchorOverridesExplicitCollapse(t *testing.T) {
 	dir := "/repo/issues"
 	child := fakeEpicIssue(dir, "cloud", "702", "moved-in", issues.StatusNext)
-	v := loadedView(fakeIssue("900", "feat", "global", issues.StatusOpen), child)
+	v := loadedView(issuesviewtest.FakeIssue("900", "feat", "global", issues.StatusOpen), child)
 	v.groups.collapsed = map[string]bool{child.GroupKey: true}
 	v.groups.auto = map[string]bool{child.GroupKey: true} // 番号フィルタが開けた分を人が畳んだ形
 
@@ -870,7 +871,7 @@ func TestIssuesViewGroupProgressCountsOnlyVisibleChildren(t *testing.T) {
 // 後続の並びだと「issues 直下」と嘘をついていた (敵対レビュー 3 周目 P2-1)。
 func TestUnmarkDestLabelCoversMixedSelection(t *testing.T) {
 	dir := "/repo/issues"
-	global := fakeIssue("900", "feat", "global", issues.StatusNext)
+	global := issuesviewtest.FakeIssue("900", "feat", "global", issues.StatusNext)
 	child := fakeEpicIssue(dir, "cloud", "702", "child", issues.StatusNext)
 	for _, tc := range []struct {
 		name    string
@@ -915,7 +916,7 @@ func TestUnmarkDestLabelCoversMixedSelection(t *testing.T) {
 func TestIssuesViewTabLineShowsBypassBadge(t *testing.T) {
 	dir := "/repo/issues"
 	v := loadedView(
-		fakeIssue("900", "feat", "global", issues.StatusOpen),
+		issuesviewtest.FakeIssue("900", "feat", "global", issues.StatusOpen),
 		fakeEpicIssue(dir, "alpha", "710", "open", issues.StatusOpen),
 		fakeEpicIssue(dir, "alpha", "709", "done", issues.StatusDone),
 	)
@@ -938,7 +939,7 @@ func TestIssuesViewTabLineShowsBypassBadge(t *testing.T) {
 func TestIssuesViewHidesClosedEpicFromListAndCounts(t *testing.T) {
 	dir := "/repo/issues"
 	v := loadedView(
-		fakeIssue("100", "feat", "global", issues.StatusOpen),
+		issuesviewtest.FakeIssue("100", "feat", "global", issues.StatusOpen),
 		fakeEpicIssue(dir, "zeta", "999", "done-a", issues.StatusDone),
 		fakeEpicIssue(dir, "zeta", "998", "done-b", issues.StatusDone),
 	)

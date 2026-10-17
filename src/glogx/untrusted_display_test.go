@@ -8,18 +8,13 @@ import (
 	"time"
 
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"glogx/issues"
 	"ratelimit/usage"
 )
 
 // 外部由来の文字列が「無害化を通らずに端末へ出る」sink が残っていないことを、sink ごとに固定する。
 // 敵対的レビュー (2026-08-05) が実際に見つけた素通し経路の回帰テスト。
-
-const (
-	csi8 = "\u009b" // 8bit CSI (C1)
-	osc8 = "\u009d" // 8bit OSC (C1)
-	st8  = "\u009c" // 8bit ST (C1)
-)
 
 // PR の枠に載るブランチ名は外部由来。git は ref に ASCII 制御文字を許さないが C1 は許すので、
 // 8bit の OSC/CSI が実際に入ってくる (直上の Title は無害化していたのにここだけ抜けていた)。
@@ -28,8 +23,8 @@ func TestPRStatusBoxSanitizesBranchNames(t *testing.T) {
 	o.sha = "deadbeef"
 	o.cache["deadbeef"] = &PRStatus{
 		PRRef: PRRef{Number: 12, State: "OPEN"}, Title: "PR タイトル",
-		HeadRefName: "feat/" + osc8 + "0;PWNED" + st8 + "x",
-		BaseRefName: "master" + csi8 + "2J",
+		HeadRefName: "feat/" + testenv.OSC8 + "0;PWNED" + testenv.ST8 + "x",
+		BaseRefName: "master" + testenv.CSI8 + "2J",
 	}
 	assertSanitizedAndVisible(t, "PR の枠", o.boxLines(80, false, "⠋", ""), "feat/", "master")
 }
@@ -41,8 +36,8 @@ func TestDiscardBoxSanitizesPath(t *testing.T) {
 	v.discarding = true
 	v.discard = worktreeRow{
 		section: sectionUnstaged, code: 'M', x: ' ', y: 'M',
-		path: "notes" + osc8 + "0;PWNED" + st8 + ".txt",
-		orig: "old" + csi8 + "2J.txt",
+		path: "notes" + testenv.OSC8 + "0;PWNED" + testenv.ST8 + ".txt",
+		orig: "old" + testenv.CSI8 + "2J.txt",
 	}
 	assertSanitizedAndVisible(t, "discard 確認モーダル",
 		v.discardBox(statusRenderOpts{width: 80, page: 20}), "notes", ".txt")
@@ -53,7 +48,7 @@ func TestDiscardBoxSanitizesPath(t *testing.T) {
 func TestMarkNextBoxSanitizesFilename(t *testing.T) {
 	v := &issuesView{}
 	v.markNext = issuesMarkConfirm{active: true, targets: []*issues.Issue{
-		{Rel: "036-bug-" + osc8 + "0;PWNED" + st8 + csi8 + "2J.md"},
+		{Rel: "036-bug-" + testenv.OSC8 + "0;PWNED" + testenv.ST8 + testenv.CSI8 + "2J.md"},
 	}}
 	assertSanitizedAndVisible(t, "markNext 確認モーダル", v.markNextBox(80, false), "036-bug-", ".md")
 }
@@ -63,7 +58,7 @@ func TestUsageBoxSanitizesVersion(t *testing.T) {
 	o := usageOverlay{
 		visible: true,
 		snap: &usage.Snapshot{
-			Version: "1.2.3\a" + osc8 + "0;PWNED" + st8,
+			Version: "1.2.3\a" + testenv.OSC8 + "0;PWNED" + testenv.ST8,
 			Windows: []usage.Window{{Label: "5h", Percent: 20}},
 		},
 	}
@@ -75,11 +70,11 @@ func TestUsageBoxSanitizesVersion(t *testing.T) {
 // lastWarning は w でクリップボードへ出るため、そちらも無害化する。
 func TestToastAndWarningAreSanitized(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
-	m.showWarning("push に失敗: fatal" + osc8 + "0;PWNED" + st8 + " remote rejected")
-	if hasTerminalControl(m.toast.Text()) {
+	m.showWarning("push に失敗: fatal" + testenv.OSC8 + "0;PWNED" + testenv.ST8 + " remote rejected")
+	if testenv.HasTerminalControl(m.toast.Text()) {
 		t.Errorf("トーストに制御シーケンスが残った: %q", m.toast.Text())
 	}
-	if hasTerminalControl(m.lastWarning) {
+	if testenv.HasTerminalControl(m.lastWarning) {
 		t.Errorf("コピー対象の警告に制御シーケンスが残った: %q", m.lastWarning)
 	}
 	if strings.Contains(m.lastWarning, "PWNED") {
@@ -127,7 +122,7 @@ func TestUsageCacheSanitizesCodexLabel(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
 	snap := usageSnapFixture(t)
 	snap.Windows = append(snap.Windows, usage.Window{
-		Label:   "cx7d\a" + osc8 + "0;PWNED" + st8,
+		Label:   "cx7d\a" + testenv.OSC8 + "0;PWNED" + testenv.ST8,
 		Percent: 20, Source: usage.SourceCodex, ResetAt: now.Add(time.Hour),
 	})
 	if err := saveUsageCache(path, snap, now); err != nil {
@@ -149,7 +144,7 @@ func TestUsageCacheSanitizesCodexLabel(t *testing.T) {
 	assertNoTerminalControl := func(where string, lines ...string) {
 		t.Helper()
 		for _, l := range lines {
-			if hasTerminalControl(l) {
+			if testenv.HasTerminalControl(l) {
 				t.Errorf("%s に制御シーケンスが残った: %q", where, l)
 			}
 			if strings.Contains(l, "PWNED") {
@@ -185,7 +180,7 @@ func TestUsageCacheSanitizesCodexLabel(t *testing.T) {
 func assertSanitizedAndVisible(t *testing.T, where string, lines []string, wantVisible ...string) {
 	t.Helper()
 	for _, line := range lines {
-		if hasTerminalControl(line) {
+		if testenv.HasTerminalControl(line) {
 			t.Errorf("%s に制御シーケンスが残った: %q", where, line)
 		}
 		if strings.Contains(line, "PWNED") {

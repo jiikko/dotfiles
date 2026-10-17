@@ -218,7 +218,7 @@ func TestActionModalStopCancelsRunningPush(t *testing.T) {
 // 退行しても green のままになる。こちらは時計を凍結し「実時間がいくら経っても、凍結時計が
 // pushAnimStep 進むまでは段が進まない」ことでシーム経由を守る。
 func TestPushAnimUsesClockSeam(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StateUnpushed
 	m.statuses[m.commits[1].SHA] = StateUnpushed
@@ -921,7 +921,7 @@ func TestBrowseFrameAutoOffAndNoFrame(t *testing.T) {
 // 🚨 端末はキーを離したことを教えてくれないので、離鍵の代わりに時間で判定する。窓は押される
 // たびに更新するので、押し続けている限り 1 回にまとまり、指を離して窓が切れてから次の 1 回になる。
 func TestKeyRepeatIsOneInput(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.handleKey("i")
@@ -948,7 +948,7 @@ func TestKeyRepeatIsOneInput(t *testing.T) {
 
 // s (status viewer) も i と同じ toggle なので押しっぱなしを 1 回に丸める (ユーザー報告 2026-08-07)。
 func TestKeyRepeatIsOneInputStatusViewer(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	stubWorktreeStatus(t, statusRec(" M a.go"), nil)
@@ -975,7 +975,7 @@ func TestKeyRepeatIsOneInputStatusViewer(t *testing.T) {
 // 🚨 移動系は潰さない: 押しっぱなしでスクロールし続けるのは期待される動作で、潰すと
 // 「押しても動かない」壊れ方になる。
 func TestKeyRepeatDoesNotBlockMovement(t *testing.T) {
-	advance := stubClock(t)
+	advance := testenv.StubClock(t)
 
 	m := newTestBrowse(t, 5, map[string]CIState{}, nil)
 	for range 3 {

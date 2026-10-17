@@ -114,11 +114,14 @@ linters:
             - "!**/*_test.go"
             - "!**/internal/doctorview/doctortest/*.go"
             - "!**/internal/testenv/*.go"
+            - "!**/internal/issuesview/issuesviewtest/*.go"
           deny:
             - pkg: glogx/internal/doctorview/doctortest
               desc: doctortest はテスト専用 (本番のコードから import しない)
             - pkg: glogx/internal/testenv
               desc: testenv はテスト専用 (本番のコードから import しない)
+            - pkg: glogx/internal/issuesview/issuesviewtest
+              desc: issuesviewtest はテスト専用 (本番のコードから import しない)
         render-pure:
           # render.go は「状態 → 文字列」の純粋な描画層。I/O・プロセス起動・非同期を
           # 持ち込むと TUI (毎フレーム呼ばれる) の性能とテスト容易性が壊れる

@@ -2,9 +2,6 @@ package main
 
 import (
 	"context"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,13 +10,10 @@ import (
 
 	"doctor/disk"
 	"doctor/svc"
-	"glogx/internal/app"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
-	"glogx/internal/extcmd"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
-	"glogx/issues"
 )
 
 // installInertDoctor は doctor の走査口を**何も触らない fake** に差し替える。
@@ -120,26 +114,6 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 	return m
 }
 
-// stubClock は app.TimeNow を固定時刻 Unix(1000, 0) に差し替え、テスト終了時に戻す。返す advance で
-// 時計を進める (演出の進捗・経過時間の判定を決定的にする)。実時間に戻したいテストは従来どおり
-// 自前で退避する。🚨 基準時刻を変えないこと: tui_panel_test.go の ETA fixture (StartedAt に
-// Unix(880/910/940) 等) が「Unix(1000) から見た相対時間」で組まれている。
-func stubClock(t *testing.T) (advance func(time.Duration)) {
-	t.Helper()
-	now := time.Unix(1000, 0)
-	stubClockFrom(t, &now)
-	return func(d time.Duration) { now = now.Add(d) }
-}
-
-// stubClockFrom は app.TimeNow を *now を返す時計に差し替え、テスト終了時に戻す。呼び出し側は *now を
-// 書き換えて時刻を進める (絶対時刻や実時刻を起点にしたいとき用。起点を固定でよいなら stubClock)。
-func stubClockFrom(t *testing.T, now *time.Time) {
-	t.Helper()
-	orig := app.TimeNow
-	t.Cleanup(func() { app.TimeNow = orig })
-	app.TimeNow = func() time.Time { return *now }
-}
-
 // releaseKey は「指を離した」ことにする (キーリピート判定をリセットする。swallowKeyRepeat)。
 // 🚨 テストは同じキーを瞬間的に 2 回押すが、実機ではありえない速さなので自動リピート扱いに
 // なる。意図的な 2 回目であることをテスト側で明示する (実機では 300ms 空ければ同じ)。
@@ -179,15 +153,9 @@ func withJobs(m *browseModel, idx int) {
 	}
 }
 
-// testPopupWidth は tmux popup で glogx が実際に使う幅の代表値。🚨 production はこの値を持たない
-// (幅は m.contentWidth() = 端末幅から決まる)。tmux 側が端末幅の 90% を popup に割り当てる運用
-// (_tmux.conf) での実測値で、「1 行に収まるか」を見るテストの基準として共有する。
-// ここを変えると hint の長さの許容量が変わるので、変えたら実機で末尾が切れないか確認すること。
-const testPopupWidth = 84
-
-// testPopupTermWidth は testPopupWidth の content 幅を出す**端末の幅** (frame の 7 桁を足し戻した値)。
+// testPopupTermWidth は testenv.PopupWidth の content 幅を出す**端末の幅** (frame の 7 桁を足し戻した値)。
 // hint 行の予算はこちらから決まる (hintWidth は m.width から引く)。
-const testPopupTermWidth = testPopupWidth + frameHOverhead
+const testPopupTermWidth = testenv.PopupWidth + frameHOverhead
 
 // testHintBudget は hint 文字列が収まるべき桁数。🚨 production の browseModel.hintWidth() から
 // 導く (数字を書かない)。以前は issues のテストが 84 (content 幅)、hint_width_test が 84-2 と
@@ -201,39 +169,6 @@ func testHintBudget(t *testing.T) int {
 		t.Fatal("前提が崩れた: popup 幅でフレームが有効にならない")
 	}
 	return m.hintWidth()
-}
-
-// pinFallbackEditor は $VISUAL / $EDITOR を空にして extcmd.EditorCommand の fallback (nvim) を固定する。
-//
-// 🚨 起動コマンドを**完全一致**で検証するテストはこれを呼ぶ。extcmd.EditorCommand は環境変数を読むので、
-// 開発者の環境 (EDITOR="code -w" 等) がそのまま期待値に混ざる。末尾引数だけ見る形にすれば環境に
-// 強いが、それだと前に引数を挿し込む変異 (例: -R を足して実ファイルを readonly で開く =
-// editCmd の doc が禁じている) を通してしまうので、環境を固定して完全一致で見る方を選ぶ。
-func pinFallbackEditor(t *testing.T) {
-	t.Helper()
-	t.Setenv("VISUAL", "")
-	t.Setenv("EDITOR", "")
-}
-
-// stubEditorCapture は extcmd.RunEditorCmd を「起動せず *exec.Cmd を記録する」実装へ差し替える。
-//
-// 🚨 エディタ連携のテストは全部これを使う。回数だけ数える stub も昔あったが、それだと
-// 「何を開いたか」が見えず、渡す対象を取り違えた実装 (iss.Path → iss.Dir 等) を通してしまう。
-// 差し替え点を 1 つに保つのは、extcmd.RunEditorCmd の契約 (非 nil な Cmd を返す) が変わったときに
-// 直す箇所を 1 箇所にするため。
-//
-// エディタを起動するキーは 3 系統ある: issues viewer の e (別名 v) = その issue の実ファイル /
-// git log 一覧の e = repo root を `nvim .` / job パネルの v = 標準入力の scratch。
-func stubEditorCapture(t *testing.T) *[]*exec.Cmd {
-	t.Helper()
-	var cmds []*exec.Cmd
-	orig := extcmd.RunEditorCmd
-	extcmd.RunEditorCmd = func(c *exec.Cmd) tea.Cmd {
-		cmds = append(cmds, c)
-		return func() tea.Msg { return extcmd.EditorClosedMsg{} }
-	}
-	t.Cleanup(func() { extcmd.RunEditorCmd = orig })
-	return &cmds
 }
 
 // stubDiff は loadCommitDiff を差し替え、呼び出し記録と固定行を返す。
@@ -303,48 +238,6 @@ func uniformWidth(t *testing.T, box []string) int {
 		}
 	}
 	return w
-}
-
-// noticeOKOf は takeNotice の戻りを (文言, 成功か) に読み替える (成功 / 失敗だけを見るテスト用)。
-// 失敗の種類 (app.NoticeRefused / app.NoticeError) を見るテストは takeNotice を直接読む。
-func noticeOKOf(text string, kind app.NoticeKind) (string, bool) {
-	return text, kind == app.NoticeOK
-}
-
-// writeRealIssue は dir/rel に本文 body の issue ファイルを実際に置き、対応する Issue を返す
-// (番号・カテゴリ・slug はファイル名から取る。状態ディレクトリの下なら Status もそこから)。
-// 実ファイルが要るテスト (editCmd の実体確認・本文の読み込み・移動) の唯一の土台。手組みすると
-// 状態や Dir の付け忘れが黙ってずれる (issue 667)。
-func writeRealIssue(t *testing.T, dir, rel, body string) *issues.Issue {
-	t.Helper()
-	path := filepath.Join(dir, rel)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path2issue(dir, rel)
-}
-
-// path2issue は dir/rel の Issue を組む (ファイルは作らない)。番号・カテゴリ・slug はファイル名、
-// Status は rel の先頭ディレクトリ (done/ pending/ …) から取る。
-func path2issue(dir, rel string) *issues.Issue {
-	base := filepath.Base(rel)
-	parts := strings.SplitN(strings.TrimSuffix(base, ".md"), "-", 3)
-	iss := &issues.Issue{Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Number: parts[0]}
-	if len(parts) > 1 {
-		iss.Category = parts[1]
-	}
-	if len(parts) > 2 {
-		iss.Slug = parts[2]
-	}
-	if sub, _, ok := strings.Cut(filepath.ToSlash(rel), "/"); ok {
-		if st, known := issues.StatusOfDir(sub); known {
-			iss.Status = st // 走査と同じ表 (別綴り・大文字小文字も同じに扱う)
-		}
-	}
-	return iss
 }
 
 // landBody は一覧のカーソル行を Enter で開き、引き出しの着地まで済ませる。

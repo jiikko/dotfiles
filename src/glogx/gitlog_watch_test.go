@@ -17,6 +17,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/fsnotify/fsnotify"
@@ -160,7 +161,7 @@ func TestGitLogWatchIgnoresStaleGeneration(t *testing.T) {
 
 // watcher が死んだらイベントを諦めてポーリングだけで続ける (無音にしない)。
 func TestGitLogWatchClosedFallsBackToPolling(t *testing.T) {
-	fw := fakeWatcherSeam(t)
+	fw := testenv.FakeWatcherSeam(t)
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.logWatch.dirs = []string{t.TempDir()}
 	m.startGitLogWatch()
@@ -397,12 +398,12 @@ func TestGitLogWatchWiredThroughUpdate(t *testing.T) {
 // 見張りを閉じ忘れると r で再起動するたびに kqueue fd が漏れる。git log の見張りは起動から
 // 終了まで開き続けるため、issues viewer より漏れやすい。
 func TestCancelAllClosesGitLogWatcher(t *testing.T) {
-	fakeWatcherSeam(t)
+	testenv.FakeWatcherSeam(t)
 	m := newTestBrowse(t, 1, nil, nil)
 	dir := t.TempDir()
 	m.logWatch.dirs = []string{dir}
 	m.startGitLogWatch()
-	fw, ok := m.logWatch.W.(*fakeWatcher)
+	fw, ok := m.logWatch.W.(*testenv.FakeWatcher)
 	if !ok {
 		t.Fatalf("startGitLogWatch が newDirWatcher seam を通っていない (w=%T)", m.logWatch.W)
 	}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/testenv"
 	"glogx/issues"
 
@@ -48,7 +49,7 @@ func newJumpEnv(t *testing.T, body string) *jumpEnv {
 	}
 	rel := "001-feat-jump.md"
 	body = strings.ReplaceAll(body, "{filler}", strings.Repeat("埋め草の行。\n\n", 30))
-	v := loadedView(writeRealIssue(t, dir, rel, body))
+	v := loadedView(issuesviewtest.WriteRealIssue(t, dir, rel, body))
 	v.root = root
 	landBody(t, v, 10)
 	v.lines(renderOpts(20))
@@ -103,7 +104,7 @@ func TestLinkJumpMovesOverExistingPathsOnly(t *testing.T) {
 }
 
 func TestLinkJumpEnterOpensReadonly(t *testing.T) {
-	cmds := stubEditorCapture(t)
+	cmds := testenv.StubEditorCapture(t)
 	e := newJumpEnv(t, jumpBody)
 	e.press("tab")
 	if cmd := e.v.handleKey("enter", vp(10)); cmd == nil {
@@ -129,7 +130,7 @@ func TestLinkJumpEnterOpensReadonly(t *testing.T) {
 
 // .md は viewer の本文 pager に積んで開き、h/Esc で元の本文・位置・選択へ戻る (nvim は起動しない)。
 func TestLinkJumpMarkdownOpensInViewerAndPops(t *testing.T) {
-	cmds := stubEditorCapture(t)
+	cmds := testenv.StubEditorCapture(t)
 	e := newJumpEnv(t, "# 001\n\n{filler}[仕様](../docs/spec.md) と `src/a.go`\n")
 	if err := os.WriteFile(e.path("docs/spec.md"), []byte("# spec\n\n`src/b.go` を見る\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -191,7 +192,7 @@ func TestLinkJumpDocSurvivesRescanAndScreenSavesRoot(t *testing.T) {
 // doc から底の issue を編集して戻っても古い本文を出さない / 画面の記憶は底の位置 / J・K で積んだものを捨てる /
 // 相互リンクで際限なく積まない。
 func TestLinkJumpDocStackEdges(t *testing.T) {
-	stubEditorCapture(t)
+	testenv.StubEditorCapture(t)
 	e := newJumpEnv(t, "# 001\n\n{filler}[仕様](../docs/spec.md)\n")
 	if err := os.WriteFile(e.path("docs/spec.md"), []byte("# spec\n\n[戻る](../issues/001-feat-jump.md)\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -237,7 +238,7 @@ func TestLinkJumpDocStackEdges(t *testing.T) {
 
 // #L12 で開いた doc はその行を窓に入れる。ディレクトリは nvim -R で開く。
 func TestLinkJumpDocLineAndDirectory(t *testing.T) {
-	cmds := stubEditorCapture(t)
+	cmds := testenv.StubEditorCapture(t)
 	e := newJumpEnv(t, "# 001\n\n[仕様](../docs/spec.md#L40) と `src/`\n")
 	var b strings.Builder
 	for i := 1; i <= 60; i++ {
@@ -262,9 +263,9 @@ func TestLinkJumpDocLineAndDirectory(t *testing.T) {
 
 // e / y は選択中のリンクへ効く (issue 自体を開く・コピーしない)。
 func TestLinkJumpActionKeysTargetLink(t *testing.T) {
-	cmds := stubEditorCapture(t)
+	cmds := testenv.StubEditorCapture(t)
 	copied := testenv.StubClipboard(t)
-	pinFallbackEditor(t)
+	testenv.PinFallbackEditor(t)
 	e := newJumpEnv(t, jumpBody)
 	e.press("tab")
 	e.press("j")
@@ -292,7 +293,7 @@ func TestLinkJumpExitAndFallThrough(t *testing.T) {
 	if e.v.linkJump.active {
 		t.Fatal("u でモードを抜けていない")
 	}
-	if msg, _ := noticeOKOf(e.v.takeNotice()); !strings.Contains(msg, "URL") {
+	if msg, _ := testenv.NoticeOKOf(e.v.takeNotice()); !strings.Contains(msg, "URL") {
 		t.Fatalf("抜けた後に u が通常のキーとして処理されていない: %q", msg)
 	}
 	// 隣の issue へ行く操作 (openIssue) はモードを捨てる
@@ -309,7 +310,7 @@ func TestLinkJumpNoLinksNotifies(t *testing.T) {
 	if e.v.linkJump.active {
 		t.Fatal("開けるリンクが無いのにモードに入った")
 	}
-	if msg, _ := noticeOKOf(e.v.takeNotice()); !strings.Contains(msg, "開けるファイルパスはありません") {
+	if msg, _ := testenv.NoticeOKOf(e.v.takeNotice()); !strings.Contains(msg, "開けるファイルパスはありません") {
 		t.Fatalf("案内が無い: %q", msg)
 	}
 }
@@ -416,7 +417,7 @@ func TestLinkJumpStartsAtWindowTopBoundary(t *testing.T) {
 
 // 開く直前に消えていたら開かずに知らせる。
 func TestLinkJumpOpenRechecksFile(t *testing.T) {
-	cmds := stubEditorCapture(t)
+	cmds := testenv.StubEditorCapture(t)
 	e := newJumpEnv(t, jumpBody)
 	e.press("tab")
 	if err := os.Remove(e.path("src/a.go")); err != nil {
@@ -426,14 +427,14 @@ func TestLinkJumpOpenRechecksFile(t *testing.T) {
 	if len(*cmds) != 0 {
 		t.Fatalf("消えたファイルを開いた: %v", *cmds)
 	}
-	if msg, _ := noticeOKOf(e.v.takeNotice()); !strings.Contains(msg, "見つかりません") {
+	if msg, _ := testenv.NoticeOKOf(e.v.takeNotice()); !strings.Contains(msg, "見つかりません") {
 		t.Fatalf("案内が無い: %q", msg)
 	}
 }
 
 // 一覧を作った後に repo の外への symlink へ差し替わったら (git pull 等)、開く直前の再確認で止める。
 func TestLinkJumpOpenRechecksEscape(t *testing.T) {
-	cmds := stubEditorCapture(t)
+	cmds := testenv.StubEditorCapture(t)
 	e := newJumpEnv(t, jumpBody)
 	e.press("tab")
 	outside := filepath.Join(t.TempDir(), "secret")

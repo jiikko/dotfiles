@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"strings"
 	"testing"
 )
@@ -141,7 +142,7 @@ func TestURLPickerCtrlHDeletesChar(t *testing.T) {
 		t.Errorf("空からさらに消して壊れた: query=%q match=%d", p.query(), len(p.match))
 	}
 	// 案内にも出す
-	if out := term.StripANSI(strings.Join(p.lines(issuesRenderOpts{width: testPopupWidth, page: 8}), "\n")); !strings.Contains(out, "ctrl+h") {
+	if out := term.StripANSI(strings.Join(p.lines(issuesRenderOpts{width: testenv.PopupWidth, page: 8}), "\n")); !strings.Contains(out, "ctrl+h") {
 		t.Errorf("ヘッダーに ctrl+h の案内が無い:\n%s", out)
 	}
 }
@@ -163,7 +164,7 @@ func TestURLPickerLines(t *testing.T) {
 	var p urlPicker
 	p.open(pickerURLs())
 	p.handleKey("b")
-	o := issuesRenderOpts{width: testPopupWidth, page: 8} // popup の実幅
+	o := issuesRenderOpts{width: testenv.PopupWidth, page: 8} // popup の実幅
 	out := p.lines(o)
 	joined := term.StripANSI(strings.Join(out, "\n"))
 	if !strings.Contains(joined, "URL 検索: b") {

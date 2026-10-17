@@ -1,14 +1,16 @@
 package main
 
 import (
-	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+
 	"glogx/internal/app"
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/issues"
 )
 
@@ -192,7 +194,7 @@ func TestQuitRemembersOnlyWhenViewerVisible(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-	m.issuesOv = *loadedView(sampleIssues()...)
+	m.issuesOv = *loadedView(issuesviewtest.SampleIssues()...)
 	m.issuesOv.root = "/repo"
 	m.quit()
 	// 読むのは保存より後の時刻で (SavedAt が読み取り時刻より未来なら時計のずれとして捨てる仕様)
@@ -222,7 +224,7 @@ func TestScreenNotSavedBeforeScan(t *testing.T) {
 
 // 閉じる演出の途中 (h を押した直後に C-g) は「開いている」として覚えない。
 func TestScreenDoesNotRememberClosingBody(t *testing.T) {
-	v := loadedView(sampleIssues()...)
+	v := loadedView(issuesviewtest.SampleIssues()...)
 	v.root = "/repo"
 	v.open = v.rows[0]
 	v.drawer.open(app.TimeNow())
@@ -317,7 +319,7 @@ func TestIssuesViewRestoreMissingIssueFallsBack(t *testing.T) {
 
 // 復元の照合中に i が押されていたら、開いている viewer を上書きしない。
 func TestIssuesViewRestoreDoesNotClobberOpenViewer(t *testing.T) {
-	v := loadedView(sampleIssues()...)
+	v := loadedView(issuesviewtest.SampleIssues()...)
 	before := v.currentTab()
 	if cmd := v.restore("/repo", issuesScreen{Root: "/repo", SavedAt: app.TimeNow(), Tab: "feat"}); cmd != nil {
 		t.Fatal("既に開いている viewer に復元のスキャンを走らせた")

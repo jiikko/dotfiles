@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/issues"
 
 	tea "charm.land/bubbletea/v2"
@@ -20,30 +21,6 @@ import (
 // issues_watch_seam_test.go がフェイクを差して環境非依存に固定しているので、そちらを消さないこと。
 // CI でも走る組: 再 Add / イベント経路 / チェーンの積み上がり / cancelAll の Close。
 // CI では未カバーのまま (受け入れ済み): 閉じたときの closed 観測・死んだ後のポーリング縮退・世代の弾き。
-
-// watchTree は issues ディレクトリを 1 つ持つ木を作り (root, issue のパス) を返す。
-func watchTree(t *testing.T, body string) (root, path string) {
-	t.Helper()
-	root = t.TempDir()
-	dir := filepath.Join(root, "issues")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	path = filepath.Join(dir, "001-feat-x.md")
-	writeIssue(t, path, body, time.Now().Add(-time.Hour))
-	return root, path
-}
-
-// writeIssue は本文を書いて mtime を固定する (指紋の比較を時計に依存させない)。
-func writeIssue(t *testing.T, path, body string, mtime time.Time) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(path, mtime, mtime); err != nil {
-		t.Fatal(err)
-	}
-}
 
 // openedWatchView は「viewer を開いてスキャン結果を受け取り、見張りの基準も取れた」状態を作る。
 func openedWatchView(t *testing.T, root, path string) *issuesView {
@@ -83,13 +60,13 @@ func scanOf(t *testing.T, root string) issuesScanMsg {
 func TestIssuesWatchReloadsAfterExternalEdit(t *testing.T) {
 	// 🚨 変化を見つけた最初の周期では読まない (書きかけを掴まないため)。安定を確かめた次の
 	// 周期で reloadAfterEdit を返す。
-	root, path := watchTree(t, "# 001 feat: 編集前\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: 編集前\n")
 	v := openedWatchView(t, root, path)
 	if got := v.rows[0].Display(); got != "feat: 編集前" {
 		t.Fatalf("前提が崩れた: 一覧のタイトルが %q", got)
 	}
 
-	writeIssue(t, path, "# 001 feat: 編集後\n", time.Now())
+	issuesviewtest.WriteIssue(t, path, "# 001 feat: 編集後\n", time.Now())
 	changed := v.observe()
 	if cmd := v.handleWatch(changed); cmd == nil {
 		t.Fatal("変化を見つけた周期でも次の観測は予約する")
@@ -186,7 +163,7 @@ func TestIssuesWatchDirsUsesActualCaseInsensitiveEpicEntry(t *testing.T) {
 
 func TestIssuesWatchReloadsOpenBody(t *testing.T) {
 	// 本文を開いたまま書き換えられたら本文も差し替わり、スクロール位置は保つ。
-	root, path := watchTree(t, "# 001 feat: x\n\n本文の初版。\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n\n本文の初版。\n")
 	v := openedWatchView(t, root, path)
 	v.handleKey("enter", vp(20))
 	v.drawer.finish() // 引き出しの演出は着地させる (アニメ中は反映を保留する = 別テストで見る)
@@ -195,7 +172,7 @@ func TestIssuesWatchReloadsOpenBody(t *testing.T) {
 		t.Fatal("本文モードに入れていない")
 	}
 
-	writeIssue(t, path, "# 001 feat: x\n\n本文の第 2 版。\n", time.Now())
+	issuesviewtest.WriteIssue(t, path, "# 001 feat: x\n\n本文の第 2 版。\n", time.Now())
 	changed := v.observe()
 	v.handleWatch(changed)
 	cmd := v.handleWatch(changed)
@@ -211,11 +188,11 @@ func TestIssuesWatchReloadsOpenBody(t *testing.T) {
 
 func TestIssuesWatchIgnoresUnstableFile(t *testing.T) {
 	// 書きかけ (周期ごとに指紋が変わる) の間は読まない。
-	root, path := watchTree(t, "# 001 feat: x\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	seen := v.watch.seen
 	for i := range 3 {
-		writeIssue(t, path, strings.Repeat("a", i+1), time.Now().Add(time.Duration(i)*time.Second))
+		issuesviewtest.WriteIssue(t, path, strings.Repeat("a", i+1), time.Now().Add(time.Duration(i)*time.Second))
 		if cmd := v.handleWatch(v.observe()); cmd == nil {
 			t.Fatal("次の観測が予約されない")
 		}
@@ -232,11 +209,11 @@ func TestIssuesWatchIgnoresUnstableFile(t *testing.T) {
 
 func TestIssuesWatchDefersWhileURLPickerOpen(t *testing.T) {
 	// ピッカーは本文の URL 集合を握っているので、下から差し替えると選択が別 URL に化ける。
-	root, path := watchTree(t, "# 001 feat: x\n\nhttps://example.com/a\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n\nhttps://example.com/a\n")
 	v := openedWatchView(t, root, path)
 	v.urlPick.open([]string{"https://example.com/a"})
 
-	writeIssue(t, path, "# 001 feat: x\n\nhttps://example.com/b\n", time.Now())
+	issuesviewtest.WriteIssue(t, path, "# 001 feat: x\n\nhttps://example.com/b\n", time.Now())
 	changed := v.observe()
 	v.handleWatch(changed)
 	if cmd := v.handleWatch(changed); cmd == nil {
@@ -258,11 +235,11 @@ func TestIssuesWatchDefersWhileURLPickerOpen(t *testing.T) {
 
 func TestIssuesWatchDefersWhileDrawerAnimating(t *testing.T) {
 	// 引き出しの開閉アニメ中は着地まで待つ (レイアウトが動いている最中に本文を差し替えない)。
-	root, path := watchTree(t, "# 001 feat: x\n\n初版。\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n\n初版。\n")
 	v := openedWatchView(t, root, path)
 	v.handleKey("enter", vp(20)) // 引き出しが開くアニメが始まる
 
-	writeIssue(t, path, "# 001 feat: x\n\n第 2 版。\n", time.Now())
+	issuesviewtest.WriteIssue(t, path, "# 001 feat: x\n\n第 2 版。\n", time.Now())
 	changed := v.observe()
 	v.handleWatch(changed)
 	if cmd := v.handleWatch(changed); cmd == nil {
@@ -281,7 +258,7 @@ func TestIssuesWatchDefersWhileDrawerAnimating(t *testing.T) {
 }
 
 func TestIssuesWatchStopsWhenClosed(t *testing.T) {
-	root, path := watchTree(t, "# 001 feat: x\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	v.close()
 	if cmd := v.handleWatch(v.observe()); cmd != nil {
@@ -301,7 +278,7 @@ func TestIssuesWatchStopsWhenClosed(t *testing.T) {
 // 引き継ぐため、閉じ忘れると viewer を開いたまま r 再起動するたびに fsnotify の kqueue fd が
 // 新プロセスへ漏れ続ける (fsnotify v1.9.0 darwin は kqueue fd に CLOEXEC を付けない)。
 func TestCancelAllClosesIssuesWatcher(t *testing.T) {
-	root, _ := watchTree(t, "# 001 feat: x\n")
+	root, _ := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	m := newTestBrowse(t, 1, nil, nil)
 	m.issuesOv.toggle(root)
 	m.issuesOv.receive(scanOf(t, root))
@@ -322,7 +299,7 @@ func TestCancelAllClosesIssuesWatcher(t *testing.T) {
 
 func TestIssuesWatchIsSingleFlight(t *testing.T) {
 	// i の連打・復元と重なっても見張りのチェーンを 2 本にしない (maybeTick と同じ規律)。
-	root, path := watchTree(t, "# 001 feat: x\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	if cmd := v.watchCmd(); cmd != nil {
 		t.Fatal("既に張っているのに 2 本目のチェーンを作った")
@@ -342,7 +319,7 @@ func TestIssuesWatchIsSingleFlight(t *testing.T) {
 // 事後の札は同じ true になる。実際に goroutine を走らせ、watcher を閉じたときに返ってくる
 // closed の数 = 生きているイベント待ちの本数を数える。
 func TestIssuesWatchPollDoesNotStackEventChains(t *testing.T) {
-	root, path := watchTree(t, "# 001 feat: x\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	if v.watch.W == nil {
 		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
@@ -402,7 +379,7 @@ func liveEventChains(v *issuesView, msgs <-chan tea.Msg) int {
 // 結合: viewer を開くと見張りのチェーンが張られ、閉じると止まる。
 func TestIssuesViewerWatchWiredIntoUpdate(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	root, _ := watchTree(t, "# 001 feat: x\n")
+	root, _ := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	m.handleKey("i")
 	m.issuesOv.cwd = root
 	m.Update(scanOf(t, root))
@@ -429,14 +406,14 @@ func TestIssuesViewerWatchWiredIntoUpdate(t *testing.T) {
 //
 // Claude Code のように数秒おきに書くツールでは、取り直し直後の書き込みが普通に起きる。
 func TestIssuesWatchCatchesEditRacingTheBaseline(t *testing.T) {
-	root, path := watchTree(t, "# 001 feat: 編集前\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: 編集前\n")
 	v := newTestIssuesView()
 	if cmd := v.toggle(root); cmd == nil {
 		t.Fatal("toggle が Cmd を返さない")
 	}
 	v.receive(scanOf(t, root)) // スキャンはここまでの内容を読んだ
 
-	writeIssue(t, path, "# 001 feat: 編集後\n", time.Now()) // 基準取りより前に外部が書く
+	issuesviewtest.WriteIssue(t, path, "# 001 feat: 編集後\n", time.Now()) // 基準取りより前に外部が書く
 
 	// 以降どれだけ観測しても指紋は「編集後」で一定なので、基準取りで吸収されると二度と気づけない。
 	for range 3 {
@@ -450,7 +427,7 @@ func TestIssuesWatchCatchesEditRacingTheBaseline(t *testing.T) {
 func TestIssuesWatchReloadsFromRealEvent(t *testing.T) {
 	// イベント経路の結合: 実際に fsnotify のイベントで起こされ、指紋で判定して取り直しへ進む。
 	// 🚨 指紋が正本 (イベントは Create/Rename/Write と嘘をつくので、起こす役だけ)。
-	root, path := watchTree(t, "# 001 feat: 編集前\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: 編集前\n")
 	v := openedWatchView(t, root, path)
 	if v.watch.W == nil {
 		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
@@ -460,7 +437,7 @@ func TestIssuesWatchReloadsFromRealEvent(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("イベント待ちの Cmd が作れない")
 	}
-	writeIssue(t, path, "# 001 feat: 編集後\n", time.Now())
+	issuesviewtest.WriteIssue(t, path, "# 001 feat: 編集後\n", time.Now())
 
 	msg, ok := waitMsg(t, cmd, 5*time.Second).(issuesWatchMsg)
 	if !ok || msg.closed {
@@ -483,7 +460,7 @@ func TestIssuesWatchReloadsFromRealEvent(t *testing.T) {
 func TestIssuesWatchClosingReleasesWatcher(t *testing.T) {
 	// 閉じたら watcher を Close する (fd を残さない)。ブロックしていたイベント待ちの Cmd は
 	// チャネルが閉じることで終わり、closed の観測として戻る。
-	root, path := watchTree(t, "# 001 feat: x\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	if v.watch.W == nil {
 		t.Skip("この環境では fsnotify を作れない")
@@ -506,7 +483,7 @@ func TestIssuesWatchClosingReleasesWatcher(t *testing.T) {
 
 func TestIssuesWatchFallsBackToPollingWhenWatcherDies(t *testing.T) {
 	// watcher が死んでも (fd 回収・NFS 等) 無音にはしない: ポーリングだけで続ける。
-	root, path := watchTree(t, "# 001 feat: x\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	if v.watch.W == nil {
 		t.Skip("この環境では fsnotify を作れない")
@@ -544,7 +521,7 @@ func TestIssuesWatchIgnoresStaleGeneration(t *testing.T) {
 	// 🚨 回帰防止: 閉じてすぐ開き直すと、閉じる前に張ったチェーンの closed が後から届く。世代で
 	// 弾かないと、それが開き直して作った新しい watcher を閉じてしまい、以降イベントが来なくなる
 	// (無音ではないがポーリングだけへ静かに縮退する)。
-	root, path := watchTree(t, "# 001 feat: x\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	if v.watch.W == nil {
 		t.Skip("この環境では fsnotify を作れない")
@@ -576,13 +553,13 @@ func TestIssuesWatchIgnoresStaleGeneration(t *testing.T) {
 // の TestIssuesWatchReAddsRecreatedDirWithoutFsnotify で、こちらは「実 fsnotify と結合しても
 // 落ちない」ことの確認として残している。
 func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
-	root, path := watchTree(t, "# 001 feat: x\n")
+	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	done := filepath.Join(root, "issues", "done")
 	if err := os.MkdirAll(done, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// 🚨 空ディレクトリは watch 対象にならない (FindDirs は markdown を含むものだけ拾う)
-	writeIssue(t, filepath.Join(done, "000-feat-old.md"), "# 000 feat: old\n", time.Now().Add(-time.Hour))
+	issuesviewtest.WriteIssue(t, filepath.Join(done, "000-feat-old.md"), "# 000 feat: old\n", time.Now().Add(-time.Hour))
 	v := openedWatchView(t, root, path)
 	if !slices.Contains(v.watchDirs(), done) {
 		t.Fatalf("前提: done/ が watch 対象に入っていない: %v", v.watchDirs())
@@ -682,10 +659,10 @@ func TestIssuesWatchCatchesEditDuringScan(t *testing.T) {
 		edit       func(t *testing.T, path string)
 	}{
 		{"読み終えた直後に本文を編集", false, func(t *testing.T, path string) {
-			writeIssue(t, path, "# 001 feat: 編集後\n", time.Now())
+			issuesviewtest.WriteIssue(t, path, "# 001 feat: 編集後\n", time.Now())
 		}},
 		{"走査の最中に issue を追加", true, func(t *testing.T, path string) {
-			writeIssue(t, filepath.Join(filepath.Dir(path), "002-feat-y.md"), "# 002 feat: 新規\n", time.Now())
+			issuesviewtest.WriteIssue(t, filepath.Join(filepath.Dir(path), "002-feat-y.md"), "# 002 feat: 新規\n", time.Now())
 		}},
 		{"走査の最中に状態ディレクトリを作って移す", true, func(t *testing.T, path string) {
 			done := filepath.Join(filepath.Dir(path), "done")
@@ -699,7 +676,7 @@ func TestIssuesWatchCatchesEditDuringScan(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			root, path := watchTree(t, "# 001 feat: 編集前\n")
+			root, path := issuesviewtest.WatchTree(t, "# 001 feat: 編集前\n")
 			v := newTestIssuesView()
 			if cmd := v.toggle(root); cmd == nil {
 				t.Fatal("toggle が Cmd を返さない")

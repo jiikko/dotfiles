@@ -1,13 +1,16 @@
 package main
 
 import (
-	"github.com/jiikko/dotfiles/src/tuikit/anim"
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"glogx/issues"
 )
 
@@ -19,7 +22,7 @@ func realIssuesView(t *testing.T) *issuesView {
 	names := []string{"030", "029"}
 	list := make([]*issues.Issue, 0, len(names))
 	for _, n := range names {
-		list = append(list, writeRealIssue(t, dir, n+"-feat-x.md", "# "+n+" feat: x\n\n本文の段落。\n\n- 箇条書き\n"))
+		list = append(list, issuesviewtest.WriteRealIssue(t, dir, n+"-feat-x.md", "# "+n+" feat: x\n\n本文の段落。\n\n- 箇条書き\n"))
 	}
 	return loadedView(list...)
 }
@@ -214,7 +217,7 @@ func TestComposeDrawer(t *testing.T) {
 func TestIssuesViewDrawerIntegration(t *testing.T) {
 	base := time.Date(2026, 7, 31, 12, 0, 0, 0, time.Local)
 	now := base
-	stubClockFrom(t, &now)
+	testenv.StubClockFrom(t, &now)
 
 	v := realIssuesView(t)
 	o := issuesRenderOpts{width: 80, page: 12}
@@ -260,7 +263,7 @@ func TestIssuesViewDrawerIntegration(t *testing.T) {
 func TestIssuesViewDrawerKeepsTickAlive(t *testing.T) {
 	base := time.Date(2026, 7, 31, 12, 0, 0, 0, time.Local)
 	now := base
-	stubClockFrom(t, &now)
+	testenv.StubClockFrom(t, &now)
 
 	v := realIssuesView(t)
 	v.lines(issuesRenderOpts{width: 80, page: 12})
@@ -282,7 +285,7 @@ func TestIssuesViewDrawerKeepsTickAlive(t *testing.T) {
 func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
 	base := time.Date(2026, 7, 31, 12, 0, 0, 0, time.Local)
 	now := base
-	stubClockFrom(t, &now)
+	testenv.StubClockFrom(t, &now)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.width, m.height = 100, 20

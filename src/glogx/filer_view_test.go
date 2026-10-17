@@ -10,6 +10,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
+	"glogx/internal/testenv"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -229,7 +230,7 @@ func TestFilerSearchPlacesCaret(t *testing.T) {
 // s で端末を明け渡すコマンドを組み (作業ディレクトリと $f)、戻ると読み直す (シェルで作ったファイルが出る)。
 func TestFilerShellExecAndRefresh(t *testing.T) {
 	m := newFilerBrowse(t)
-	cmds := stubEditorCapture(t)
+	cmds := testenv.StubEditorCapture(t)
 	m.handleKey("F")
 	_, cmd := m.handleKey("s")
 	if len(*cmds) != 1 {
@@ -317,7 +318,7 @@ func TestFilerFileOpLayersTakeCrossKeys(t *testing.T) {
 // シェルが 0 以外で終わっても「エディタが異常終了しました」を出さない (シェルは最後のコマンドの終了コードで抜けるのが普通)。
 func TestFilerShellNonZeroExitIsQuiet(t *testing.T) {
 	m := newFilerBrowse(t)
-	stubEditorCapture(t)
+	testenv.StubEditorCapture(t)
 	m.handleKey("F")
 	m.handleKey("s")
 	m.Update(extcmd.EditorClosedMsg{Err: &exec.ExitError{}})

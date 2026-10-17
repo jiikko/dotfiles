@@ -12,6 +12,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"glogx/internal/app"
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/issues"
 )
@@ -29,9 +30,9 @@ func caretTestModel(t *testing.T, frame bool) *browseModel {
 	m.showFrame, m.width, m.height = frame, 100, 30
 	m.usageOv.visible = false // 起動時の残量のグランスは左上の入力欄に重なりうるので、caret は隠す (別の主張)
 	m.issuesOv = *loadedView(
-		fakeIssue("123", "feat", "a", issues.StatusOpen),
-		fakeIssue("129", "feat", "b", issues.StatusOpen),
-		fakeIssue("045", "bug", "c", issues.StatusOpen),
+		issuesviewtest.FakeIssue("123", "feat", "a", issues.StatusOpen),
+		issuesviewtest.FakeIssue("129", "feat", "b", issues.StatusOpen),
+		issuesviewtest.FakeIssue("045", "bug", "c", issues.StatusOpen),
 	)
 	return m
 }
@@ -181,7 +182,7 @@ func TestCaretHiddenWhenFieldIsCoveredOrGone(t *testing.T) {
 		{"usage の板", func(m *browseModel) { m.usageOv.visible = true }},
 		{"next の目印の確認", func(m *browseModel) { m.issuesOv.markNext.active = true }},
 		{"本文を開いている", func(m *browseModel) {
-			if !m.issuesOv.openIssue(realIssue(t)) {
+			if !m.issuesOv.openIssue(issuesviewtest.RealIssue(t)) {
 				t.Fatal("前提が崩れた: 本文を開けない")
 			}
 		}},
