@@ -64,14 +64,16 @@ func lastLanScan(t *testing.T) *fakeLanScan {
 	return lanScans[len(lanScans)-1]
 }
 
-// fakeLanOptions は本物の台帳・設定の置き場所 (TestMain が MAC_LAN_MANAGER_CONFIG_DIR で一時領域へ向けた) に、偽の走査と
-// 固定のホスト名をつなぐ。ネットワークの読み取り (networksetup) はしない。
+// fakeLanOptions は本物の台帳・設定・ログの置き場所 (TestMain が MAC_LAN_MANAGER_CONFIG_DIR で一時領域へ向けた) に、偽の走査と
+// 固定のホスト名をつなぐ。
+// 🚨 live.Options() から危ない口を 1 つずつ外す形にしない。本物から写すのは一時領域を指す 4 つだけで、残りは空 (= lanmgr は起こさない)。
+// 外す形だと lanmgr に口が増えるたびに外し忘れが本物のコマンドを起こす (ReadAdvert の launchctl が CI の no-real-commands で 4 回落ちた)。
 func fakeLanOptions() (lanmgr.Options, error) {
-	o, err := live.Options()
+	real, err := live.Options()
 	if err != nil {
-		return o, err
+		return lanmgr.Options{}, err
 	}
-	o.ReadNet = nil
+	o := lanmgr.Options{Ledger: real.Ledger, PrefsPath: real.PrefsPath, SavePrefs: real.SavePrefs, Log: real.Log}
 	o.LocalHost = func() string { return "glogx-test.local" }
 	o.IfName = func(int) string { return "" }
 	o.User = "tester"
