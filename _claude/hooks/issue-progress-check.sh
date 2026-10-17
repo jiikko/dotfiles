@@ -16,22 +16,16 @@
 # 加えて、その番号を参照する open issue (残課題として指しているもの) が未変更なら列挙する。
 #
 # 検出しないもの (承知の上): 未 commit で番号も出していない作業 / 本文の記述が古いだけの漏れ /
-# `git pull` で混ざった他セッションの commit に付いた番号 (誤報になりうるが、1 セッション 1 回で黙る)。
+# サブエージェントだけが触り、親の tool_use の入力に番号が出ていない issue (下の絞り込みで落ちる)。
 #
-# 🚨 上の「他セッションの commit」は **pull だけでなく worktree 経由でも混ざる** (issue 353)。
-# `origin/master` 起点で切った worktree は基準点より先の commit を持つので、その subject の
-# `(NNN)` が「このセッションが関わった issue」に入り、**触っていない issue を指摘する**。
-# 誤報の向きは 2 つあり、両方とも許容する:
-#   - 過少 (抑止): 他セッションの worktree が同じ issue を更新していると、自分の更新漏れが黙る
-#   - 過剰 (誤報): 他セッションの commit が「自分の作業」として指摘される  ← 353 で実際に出た形
-# **直さないと決めた** (2026-09-15): 「自分の worktree」と「他セッションの worktree」は
-# 祖先関係でも reflog でも区別できず、reflog で判別する実装 (cade38ef) は
-# `.claude/rules/worktree-per-session.md` の標準手順 (push → pull --rebase → worktree remove) で
-# **hook が恒久的に無音になる**ため revert した (A-B 実測は issue 353 に在る)。
-# dedup により実害は 1 セッション 1 行。**再評価の trigger**: 1 行では済まない形
-# (毎セッション別の issue で出続ける / 実際の更新漏れが誤報に埋もれる) が観測されたとき。
+# 🚨 commit の subject と next/ の claim は**他セッションのものも混ざる** (pull・`origin/master` から切った
+# worktree の commit・他人の claim。issue 353 / 808)。git の材料 (祖先関係・reflog) では自分と他人を区別できず、
+# reflog は worktree を消すと記録ごと消えて標準手順で hook を恒久的に無音にする (353 の A-B)。
+# そこで「このセッションの transcript の tool_use の入力に、その番号が issue に触る形で出たか」で絞る (`touched_nums`)。
+# transcript は worktree を消しても残る。transcript を読めない・tool_use を 1 件も取れないときは「測れない」として
+# 絞らない (0 件を「どの番号にも触っていない」と読むと、transcript の形式が変わった日に hook が黙って死ぬ)。
 #
-# 入力: Stop の hook JSON (stdin: session_id / cwd / stop_hook_active)。
+# 入力: Stop の hook JSON (stdin: session_id / cwd / stop_hook_active / transcript_path)。
 # 出力: 指摘があれば {"decision":"block","reason":...} (Claude が続きを処理する)。同じ指摘は 1 セッション 1 回。
 # stop_hook_active が true (block からの続き) のときは何もしない (無限ループ防止)。
 
@@ -98,6 +92,34 @@ primary=$( {
   done <<<"$ISSUE_HOOK_DIRS"
 } | sort -u)
 [ -n "$primary" ] || exit 0
+
+# session_tool_inputs: このセッションの tool_use の入力を 1 件 1 行で出す。測れないときは非 0 で返す。
+# 🚨 読むのは assistant の tool_use の入力だけ。tool の結果 (git log の出力) や hook の block 文を混ぜると、
+# 他セッションの番号が「出た」に数えられて絞り込みが効かなくなる。
+# 1 行ずつ `fromjson?` で読むのは、書き込み途中の最終行が 1 行あるだけで全体を「測れない」にしないため。
+session_tool_inputs() {
+  local transcript out
+  transcript=$(issue_progress_json_field "$input" transcript_path)
+  [ -n "$transcript" ] && [ -f "$transcript" ] && [ -r "$transcript" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  out=$(grep -F '"tool_use"' "$transcript" 2>/dev/null | jq -Rr '
+    fromjson? | select(.type == "assistant") | .message.content[]?
+    | select(.type == "tool_use") | .input | tostring' 2>/dev/null) || return 1
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out"
+}
+# touched_nums: tool_use の入力のうち、issue に触る形に出た番号だけを抜く。
+# 🚨 「数字として出たか」で照合しない。行番号 (`sed -n 1092,1199p`)・sha (`c394f5d1`)・scratchpad の `claude-501`・
+# 別 issue の slug の中の番号 (`1114-verify-1107-host`) が当たり、長いセッションでは他人の番号の半数近くが残った
+# (808 の観測元の obaket のセッションを再生した実測)。数えるのは primary の出所と同じ形だけ:
+# issue のパス (`/NNN-`) / commit message の `(NNN)` / `issue NNN` と `issue_claim.sh NNN` の類。
+touched_nums() {
+  grep -oE '/[0-9]{3,}-|\([0-9]{3,}([,/ ]+[0-9]{3,})*\)|issue[_a-z.]* [0-9]{3,}' | grep -oE '[0-9]{3,}' | LC_ALL=C sort -u
+}
+if tool_inputs=$(session_tool_inputs); then
+  primary=$(LC_ALL=C comm -12 <(LC_ALL=C sort -u <<<"$primary") <(touched_nums <<<"$tool_inputs"))
+  [ -n "$primary" ] || exit 0
+fi
 nums="$primary"
 
 # issue_file <NNN>: 実体ファイル (symlink 除外) を 1 つ返す

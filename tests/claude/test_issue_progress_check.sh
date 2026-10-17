@@ -213,4 +213,56 @@ CLAUDE_ISSUE_PROGRESS_DIR="$esc_dir" hook "$START" "7f7c4ee0-5da8-4891-b2fa-e4ec
 [ -f "$esc_dir/7f7c4ee0-5da8-4891-b2fa-e4ecbd1886fa.head" ] || {
   echo "NG: 正常な session_id (UUID) を弾いた"; fails=$((fails+1)); }
 
+# --- issue 808: このセッションの transcript の tool_use に出た番号だけを数える ------------------------
+#
+# 🚨 commit の subject と next/ の claim には他セッションのものも混ざる。transcript の形は作った値で、
+# 本物の transcript (~/.claude/projects/<repo>/<session>.jsonl) で同じ jq が tool_use の入力を取れることを確かめてから写した。
+rm -f "$repo"/issues/next/*
+printf '# 112 mine\n' >"$repo/issues/112-feat-m.md"
+printf '# 113 theirs\n' >"$repo/issues/113-feat-o.md"
+printf '# 114 claimed\n' >"$repo/issues/114-feat-c.md"
+printf '# 115 by msg\n' >"$repo/issues/115-feat-p.md"
+printf '# 116 by claim\n' >"$repo/issues/116-feat-q.md"
+git -C "$repo" add -A && git -C "$repo" commit -qm "chore: 112-116 を起票"
+tu() { printf '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t","name":"Bash","input":{"command":"%s"}}]}}\n' "$1"; }
+tr_res() { printf '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t","content":"%s"}]}}\n' "$1"; }
+mine="$WORK/mine.jsonl"
+{ tu "cat issues/112-feat-m.md"
+  tu "git commit -F - <<M\\nfix(115): 自分の commit\\nM"                # commit message の (NNN) → 数える
+  tu "scripts/issue_claim.sh 116"                                       # claim の道具の引数 → 数える
+  # 113 が数字として出るだけの形 → どれも数えない
+  tu "sed -n 113,1130p src/a.txt; head -c 1113 x; git show c113abcd; ls /tmp/claude-113/; cat issues/117-verify-113-host.md"
+  tr_res "c0ffee fix(113): 他セッションの commit"       # tool の結果に出ただけ → 数えない
+  printf '{"type":"user","message":{"content":"Stop hook: issues/113-feat-o.md"}}\n'
+  # 地の文だけの行も stop_reason に "tool_use" を持ち、grep の前段を通る (本物の transcript で実測) → 数えない
+  printf '{"type":"assistant","message":{"content":[{"type":"text","text":"issues/113-feat-o.md は他セッションの issue"}],"stop_reason":"tool_use"}}\n'
+  printf '{"type":"assistant","message":{"content":[{"type":"tool_use"'   # 書き込み途中の最終行
+} >"$mine"
+for s in s20 s21 s22 s23; do hook "$START" "$s" >/dev/null; done
+echo y1 >"$repo/src/a.txt"; git -C "$repo" commit -qam "fix(112): 自分の作業"
+echo y2 >"$repo/src/a.txt"; git -C "$repo" commit -qam "fix(113): 他セッションの作業"
+echo y3 >"$repo/src/a.txt"; git -C "$repo" commit -qam "fix(115): 自分の作業 2"
+echo y4 >"$repo/src/a.txt"; git -C "$repo" commit -qam "fix(116): 自分の作業 3"
+ln -s ../114-feat-c.md "$repo/issues/next/114-feat-c.md"
+
+got=$(reason s20 ",\"transcript_path\":\"$mine\"")
+check "transcript に出た 112 は指摘する (肯定)" "issues/112-feat-m.md: このセッションで 1 度も変更されていない" "$got"
+check "commit message の (115) を数える (肯定)" "issues/115-feat-p.md: このセッションで 1 度も変更されていない" "$got"
+check "issue_claim.sh の引数 116 を数える (肯定)" "issues/116-feat-q.md: このセッションで 1 度も変更されていない" "$got"
+check "subject にだけ出た他セッションの 113 は指摘しない" "" "$(grep -E '113-feat-o' <<<"$got" || true)"
+check "他人の claim の 114 は指摘しない" "" "$(grep -E '114-feat-c' <<<"$got" || true)"
+
+# 測れないときは絞らない (0 件を「触っていない」と読まない)
+empty="$WORK/empty.jsonl"; tr_res "fix(112)" >"$empty"
+got=$(reason s21 ",\"transcript_path\":\"$empty\"")
+check "tool_use が 0 件の transcript では絞らない" "113-feat-o.md: このセッションで 1 度も変更されていない" "$got"
+got=$(reason s22 ",\"transcript_path\":\"$WORK/no-such.jsonl\"")
+check "transcript が無ければ絞らない" "113-feat-o.md: このセッションで 1 度も変更されていない" "$got"
+check "transcript_path が無ければ絞らない" "114-feat-c.md: このセッションで 1 度も変更されていない" "$(reason s23)"
+
+# 全部を絞り落としたら黙る (他セッションの番号だけの session)
+others="$WORK/others.jsonl"; tu "ls issues/next/" >"$others"
+hook "$START" s24 >/dev/null
+check "自分が触った番号が 1 つも無ければ黙る" "" "$(reason s24 ",\"transcript_path\":\"$others\"")"
+
 if [ "$fails" -eq 0 ]; then echo "OK: issue-progress hooks"; else echo "FAIL: $fails"; exit 1; fi
