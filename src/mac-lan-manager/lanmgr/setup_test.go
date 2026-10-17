@@ -1106,3 +1106,38 @@ func TestSetupLedgerDoesNotResurrectRemovedMac(t *testing.T) {
 		t.Errorf("外された Mac を作り直した: %+v", h.store.hosts)
 	}
 }
+
+// 台帳の手順は、既にある行の user を触らない: 別のプロセスが u で空 (既定) にした値を埋め戻さない。使えない形の user だけは
+// 板に出した user で直す (3 周目の敵対レビュー)。
+func TestSetupLedgerUserHandling(t *testing.T) {
+	for _, c := range []struct{ name, stored, changeTo, want string }{
+		{"空にした user", "admin", "", ""},
+		{"使えない user", "-oProxyCommand=x", "-oProxyCommand=x", "koji"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+			h, ob := setupHarness(t, obs)
+			h.store.hosts = []ledger.Host{{Host: "m2macmini.local", User: c.stored}}
+			h.m.reloadLedger()
+			h.keys("esc", "h")
+			h.cursorTo(t, "m2macmini.local")
+			h.keys("enter")
+			awaitSetup(h.m)
+			setSelfStatic(h.m)
+			runStep(t, h, nil)
+			ip := h.m.conf().static.IP
+			setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"})
+			runStep(t, h, nil)
+			awaitSetup(h.m)
+			h.store.hosts[0].User = c.changeTo // 別のプロセスが変えた
+			h.keys("x")
+			if h.m.ask == nil {
+				t.Fatalf("前提: 板が出ない %s", strings.Join(h.m.View(), "\n"))
+			}
+			h.keys("y")
+			if got := h.store.hosts[0]; got.User != c.want || got.LAN != ip {
+				t.Errorf("台帳 = %+v (user %q / 内部 IP %s のはず)", got, c.want, ip)
+			}
+		})
+	}
+}

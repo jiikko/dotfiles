@@ -244,3 +244,22 @@ func TestObservePeerHostKey(t *testing.T) {
 		}
 	}
 }
+
+// サービスを読み終えた後、I/F の IP の途中で期限が来ても、相手の有線は読めたものとして返す (相手の判定はサービスだけで決まる。
+// 3 周目の敵対レビュー)。
+func TestObservePeerIgnoresIncompleteIPs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	base, _ := fakeRemote(t, nil)
+	run := func(c context.Context, argv []string) (string, error) {
+		if argv[len(argv)-1] == "'ifconfig' '-l'" {
+			cancel()
+			return "", context.Canceled
+		}
+		return base(c, argv)
+	}
+	p := ObservePeer(ctx, run, Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"})
+	if !p.NetKnown || p.Service != "Thunderbolt Ethernet" {
+		t.Errorf("IP の途中の期限で相手の有線を読めない扱いにした: %+v", p)
+	}
+}

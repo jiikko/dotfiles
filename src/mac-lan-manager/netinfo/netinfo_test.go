@@ -388,8 +388,15 @@ func TestReadKeepsServicesWhenDeadlineHitsIPLoop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	base := fakeRunner(t, map[string]string{
-		"networksetup -listnetworkserviceorder": "serviceorder.txt",
-		"ifconfig -l":                           "=lo0 en0 en13",
+		"networksetup -listnetworkserviceorder":      "serviceorder.txt",
+		"networksetup -getinfo Thunderbolt Ethernet": "getinfo_tb_ethernet.txt",
+		"networksetup -getinfo Thunderbolt Bridge":   "getinfo_tb_bridge.txt",
+		"networksetup -getinfo Wi-Fi":                "getinfo_wifi.txt",
+		"ifconfig en13":                              "ifconfig_en13.txt",
+		"ifconfig en18":                              "ifconfig_en18.txt",
+		"ifconfig en0":                               "ifconfig_en0.txt",
+		"ifconfig bridge0":                           "ifconfig_bridge0.txt",
+		"ifconfig -l":                                "=lo0 en0 en13",
 	})
 	run := func(c context.Context, name string, args ...string) (string, error) {
 		out, err := base(c, name, args...)
@@ -398,7 +405,41 @@ func TestReadKeepsServicesWhenDeadlineHitsIPLoop(t *testing.T) {
 		}
 		return out, err
 	}
-	if _, err := Read(ctx, run); err != nil {
-		t.Errorf("サービスは読めたのに、I/F の IP の途中の期限で全体が失敗した: %v", err)
+	snap, err := Read(ctx, run)
+	if !errors.Is(err, ErrIPsIncomplete) {
+		t.Errorf("I/F の IP の途中の期限 = %v (IP が欠けたことを ErrIPsIncomplete で知らせるはず)", err)
+	}
+	if off := snap.Offline(); len(off) != 1 || off[0].Device != "en13" {
+		t.Errorf("読めたサービスを捨てた: Offline = %+v", off)
+	}
+}
+
+// I/F の一覧 (ifconfig -l) そのものが期限で失敗しても、読めたサービスは残し、IP が欠けたことを知らせる (3 周目の敵対レビュー)。
+func TestReadKeepsServicesWhenDeadlineHitsIFList(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	base := fakeRunner(t, map[string]string{
+		"networksetup -listnetworkserviceorder":      "serviceorder.txt",
+		"networksetup -getinfo Thunderbolt Ethernet": "getinfo_tb_ethernet.txt",
+		"networksetup -getinfo Thunderbolt Bridge":   "getinfo_tb_bridge.txt",
+		"networksetup -getinfo Wi-Fi":                "getinfo_wifi.txt",
+		"ifconfig en13":                              "ifconfig_en13.txt",
+		"ifconfig en18":                              "ifconfig_en18.txt",
+		"ifconfig en0":                               "ifconfig_en0.txt",
+		"ifconfig bridge0":                           "ifconfig_bridge0.txt",
+	})
+	run := func(c context.Context, name string, args ...string) (string, error) {
+		if name == "ifconfig" && len(args) == 1 && args[0] == "-l" {
+			cancel()
+			return "", context.Canceled
+		}
+		return base(c, name, args...)
+	}
+	snap, err := Read(ctx, run)
+	if !errors.Is(err, ErrIPsIncomplete) {
+		t.Errorf("I/F の一覧の期限 = %v (ErrIPsIncomplete のはず)", err)
+	}
+	if off := snap.Offline(); len(off) != 1 || off[0].Device != "en13" {
+		t.Errorf("読めたサービスを捨てた: Offline = %+v", off)
 	}
 }

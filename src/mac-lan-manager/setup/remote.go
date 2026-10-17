@@ -149,7 +149,7 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 		return run(ctx, d.SSHArgv(false, true, strings.Join(words, " ")))
 	}
 	snap, err := netinfo.Read(ctx, remote)
-	if err != nil {
+	if err != nil && !errors.Is(err, netinfo.ErrIPsIncomplete) { // IPs は使わない (Offline はサービスだけで決まる)
 		return p
 	}
 	p.NetKnown = true

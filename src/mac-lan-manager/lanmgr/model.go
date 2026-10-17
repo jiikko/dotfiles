@@ -158,18 +158,20 @@ type Model struct {
 	band                      lineedit.Line
 	bandEdit                  bool `layer:"band"`
 
-	self      netinfo.Snapshot
-	selfErr   error
-	host      string // この Mac のホスト名 (台帳の鍵の形)
-	hosts     []ledger.Host
-	peers     []discover.Peer
-	scan      Scanner
-	scanErr   error              // 走査の失敗 (見せた後も持つ。Reload で消す)
-	wantHost  string             // RestorePlace で戻したいカーソルの Mac (見つかるまで持つ。走査が終われば諦める)
-	netCh     <-chan netLoad     // 裏で読んでいるこの Mac のネットワーク (nil = 読んでいない)
-	netReady  bool               // この Mac のネットワークを一度は読み終えた (読み直しの間は前の値のまま描く)
-	netCancel context.CancelFunc // その取り消し
-	pf        prefs.Prefs
+	self    netinfo.Snapshot
+	selfErr error
+	host    string // この Mac のホスト名 (台帳の鍵の形)
+	hosts   []ledger.Host
+	peers   []discover.Peer
+	scan    Scanner
+	scanErr error // 走査の失敗 (見せた後も持つ。Reload で消す)
+	// cursorLost はこのキーの入口の取り込みで、画面で見ていた Mac が一覧から消えた (行に効くキーを断る)
+	cursorLost bool
+	wantHost   string             // RestorePlace で戻したいカーソルの Mac (見つかるまで持つ。走査が終われば諦める)
+	netCh      <-chan netLoad     // 裏で読んでいるこの Mac のネットワーク (nil = 読んでいない)
+	netReady   bool               // この Mac のネットワークを一度は読み終えた (読み直しの間は前の値のまま描く)
+	netCancel  context.CancelFunc // その取り消し
+	pf         prefs.Prefs
 
 	notices           []Notice
 	exec              *ExecRequest
@@ -354,16 +356,17 @@ func (m *Model) cursorHost() string {
 
 // followCursor は行を組み直した後、カーソルを host の行に合わせ直す (行は名前で並ぶので、走査で増えた行の分だけ添字が別の Mac を
 // 指した)。居なくなっていれば添字のまま。
-func (m *Model) followCursor(host string) {
+func (m *Model) followCursor(host string) bool {
 	if host == "" {
-		return
+		return true
 	}
 	for i, r := range m.visible() {
 		if r.host == host && !r.self {
 			m.cur[m.tab] = i
-			return
+			return true
 		}
 	}
+	return false
 }
 
 // seekWantHost は戻したい Mac が一覧に出ていればカーソルを合わせる。走査が終わっても出なければ諦める (居なくなった Mac)。
@@ -870,7 +873,9 @@ func (m *Model) HandleInput(key, text string) Action {
 	held := m.cursorHost()
 	m.takeNetLoad() // 読み終えていれば、次の tick を待たずにこのキーから効かせる
 	m.takeObserve()
-	m.followCursor(held) // 取り込みで行が組み変わっても、このキーは画面で見ていた Mac に効かせる (敵対レビュー)
+	// 取り込みで行が組み変わっても、このキーは画面で見ていた Mac に効かせる。見ていた Mac が消えたら (有線が外れて有線だけの表示から
+	// 落ちた等)、行に効くキーは断る (添字のままだと隣の Mac に繋いだ。敵対レビュー)
+	m.cursorLost = !m.followCursor(held)
 	if key == "ctrl+c" {
 		return Quit
 	}
@@ -981,6 +986,10 @@ func (m *Model) keyList(key string) Action {
 	// 繋ぐ先・登録する内部 IP を誤った分類で決める (fable の敵対レビュー 2026-10-16)
 	if !m.netReady && slices.Contains(needsNet, key) {
 		m.note("この Mac のネットワーク設定を確認中 (少し待ってから)", false)
+		return None
+	}
+	if m.cursorLost && (slices.Contains(needsNet, key) || key == "enter" || key == "m" || key == "u") {
+		m.note("一覧が変わった (カーソルの Mac を見直してから)", false)
 		return None
 	}
 	r := m.current()

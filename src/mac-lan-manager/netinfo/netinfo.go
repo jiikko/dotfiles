@@ -5,6 +5,7 @@ package netinfo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -362,6 +363,9 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 	snap := Snapshot{Services: svcs}
 	list, err := run(ctx, "ifconfig", "-l")
 	if err != nil {
+		if ctx.Err() != nil {
+			return snap, fmt.Errorf("%w: %w", ErrIPsIncomplete, ctx.Err())
+		}
 		return snap, nil // I/F の一覧が読めなくても、サービスは返す
 	}
 	for _, dev := range strings.Fields(list) {
@@ -377,10 +381,16 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 			snap.IPs = append(snap.IPs, IP{Device: dev, Addr: a, Kind: snap.Kind(dev, a)})
 		}
 	}
-	// サービスを読み終えた後の期限切れは失敗にしない: 判定 (有線・メインの網・帯の重なり) はサービスだけで決まり、IPs は表示の補い。
-	// 全体を失敗にすると、I/F の多い相手で読めたサービスまで「読めない」にした (敵対レビュー)
+	if err := ctx.Err(); err != nil {
+		return snap, fmt.Errorf("%w: %w", ErrIPsIncomplete, err)
+	}
 	return snap, nil
 }
+
+// ErrIPsIncomplete は、サービスは読み終えたが I/F ごとの IP (Snapshot.IPs) を読む途中で期限が来た (snap はサービスまで正しい)。
+// 相手の観測 (setup.ObservePeer) はサービスだけで決めるので成功として扱う (全体を失敗にすると、I/F の多い相手で読めたサービスまで
+// 「読めない」にした)。この Mac の側は IPs を内部 IP・避ける番号にも使うので、失敗として知らせる (敵対レビュー)
+var ErrIPsIncomplete = errors.New("I/F の IP を読み切れなかった")
 
 // Main はメインのネットワーク (インターネット側) のサービス。並び順で最初の、繋がっていてルーターのあるもの。
 func (s Snapshot) Main() (Service, bool) {

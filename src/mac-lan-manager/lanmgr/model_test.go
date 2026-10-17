@@ -1920,3 +1920,38 @@ func TestAutoBoardHintOmitsEnter(t *testing.T) {
 		}
 	}
 }
+
+// キーの入口の取り込みで、画面で見ていた Mac が一覧から消えたら (有線だけの表示で、この Mac の USB LAN が外れた等)、行に効くキーは
+// 断る (添字のままだと隣の Mac へ繋いだ。3 周目の敵対レビュー)。
+func TestKeyRefusedWhenShownMacVanishes(t *testing.T) {
+	a := discover.Peer{Host: "aaa.local", Instances: []string{"aaa"}, SSH: true, Addrs: map[int]string{30: "169.254.5.5"}}
+	z := discover.Peer{Host: "zed.local", Instances: []string{"zed"}, SSH: true, Addrs: map[int]string{27: "169.254.6.6"}}
+	h := newHarness(t, nil, []discover.Peer{a, z})
+	h.m.o.IfName = func(i int) string { return map[int]string{14: "en0", 27: "en13", 30: "en18"}[i] }
+	nn := selfNet()
+	nn.Services = append(nn.Services, netinfo.Service{Name: "USB LAN", Device: "en18", Active: true, IP: "169.254.85.235", Method: "DHCP", Read: true})
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return nn, nil }
+	h.keys("r")
+	awaitNetLoad(h.m)
+	h.keys("l")
+	h.m.pf.WiredOnly = true
+	h.cursorTo(t, "aaa.local")
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil } // USB LAN が外れた
+	h.keys("r")
+	h.m.pf.WiredOnly = true
+	h.m.wantHost = ""
+	r := <-h.m.netCh
+	c := make(chan netLoad, 1)
+	c <- r
+	h.m.netCh = c
+	if a := h.keys("s"); a == Exec {
+		x, _ := h.m.TakeExec()
+		t.Fatalf("見ていた aaa が消えたのに s が %q を起こした", x.Argv)
+	}
+	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "一覧が変わった") {
+		t.Errorf("断った理由を出していない: %+v", n)
+	}
+	if a := h.keys("s"); a != Exec { // 次のキーは今のカーソルの Mac に効く (断るのは消えたその 1 回だけ)
+		t.Errorf("次の s も断った: %v", a)
+	}
+}
