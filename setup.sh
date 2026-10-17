@@ -81,7 +81,12 @@ ln -sf ~/dotfiles/_claude/settings.json ~/.claude/settings.json
 ln -sfn ~/dotfiles/_claude/_common ~/.claude/_common
 
 # anyenv: 必要な *env が入っていなければ警告、入っていれば global バージョンを設定
-if command -v anyenv >/dev/null 2>&1; then
+# 🚨 DOTFILES_SKIP_ANYENV_GLOBAL=1 で skip できる: `*env global` は HOME ではなく GOENV_ROOT / NODENV_ROOT の下に書くので、
+#   tests/setup の HOME の差し替えでは隔離されず、実ユーザーの version ファイルを書き換える。2026-10-17 に test_setup.sh を
+#   2 本並列で回したら書き込みが競合し、goenv の version が「1.26.0」2 行になって go が起動しなくなった (issue 816)
+if [ -n "${DOTFILES_SKIP_ANYENV_GLOBAL:-}" ]; then
+  echo "skip: anyenv の global の設定 (DOTFILES_SKIP_ANYENV_GLOBAL)"
+elif command -v anyenv >/dev/null 2>&1; then
   for pair in nodenv:node goenv:go; do
     env=${pair%%:*}
     lang=${pair##*:}

@@ -22,6 +22,9 @@ unset GOENV
 # Terminal プロファイル適用は実ユーザー状態に触れる (defaults/osascript は HOME 隔離が
 # 効かない) ため必ず skip する
 export DOTFILES_SKIP_TERMINAL_PROFILE=1
+# anyenv の `*env global` も HOME の隔離が効かない (GOENV_ROOT などの下に書く)。実ユーザーの version ファイルを書き換え、
+# 並列に回すと書き込みが競合して壊す (issue 816 で goenv の version が 2 行になり go が起動しなくなった) ので skip する
+export DOTFILES_SKIP_ANYENV_GLOBAL=1
 mkdir -p "$HOME"
 ln -s "$ROOT_DIR" "$HOME/dotfiles"
 
