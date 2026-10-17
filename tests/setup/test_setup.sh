@@ -122,7 +122,8 @@ if command -v go >/dev/null 2>&1; then
     exit 1
   fi
   flags=$(GOFLAGS= go env GOFLAGS)
-  n=$(print -r -- " $flags " | grep -o ' -trimpath ' | wc -l | tr -d ' ')
+  # 🚨 語ごとに分けて数える (grep -o ' -trimpath ' は前後の空白を消費するので、並んだ 2 つを 1 つと数える)
+  n=$(print -r -- "$flags" | tr ' ' '\n' | grep -cx -- '-trimpath' || true)
   if [[ "$n" != 1 ]]; then
     print -u2 "go env の GOFLAGS に -trimpath がちょうど 1 つでない (${n} 個): '$flags'"
     exit 1
