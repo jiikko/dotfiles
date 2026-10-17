@@ -16,6 +16,9 @@ cleanup() {
 trap cleanup EXIT
 
 export HOME="$TEST_TMPDIR/home"
+# go env -w の書き先は GOENV (未設定なら $HOME/Library/Application Support/go/env)。親が GOENV を立てていると、
+# setup.sh が実ユーザーの go env を書き換えるので落とす (issue 816)
+unset GOENV
 # Terminal プロファイル適用は実ユーザー状態に触れる (defaults/osascript は HOME 隔離が
 # 効かない) ため必ず skip する
 export DOTFILES_SKIP_TERMINAL_PROFILE=1
@@ -103,6 +106,27 @@ fi
 if [[ -e "$HOME/.bashrc" || -e "$HOME/.bash_profile" ]]; then
   print -u2 "Legacy bash symlinks were not removed"
   exit 1
+fi
+
+# issue 816: go env に -trimpath が入り、setup.sh を 2 回回しても重複しない (上で 2 回回している)
+if command -v go >/dev/null 2>&1; then
+  go_env_file="$HOME/Library/Application Support/go/env"
+  if [[ "$(uname)" != "Darwin" ]]; then
+    go_env_file="${XDG_CONFIG_HOME:-$HOME/.config}/go/env"
+  fi
+  if [[ ! -f "$go_env_file" ]]; then
+    print -u2 "go env のファイルができていない (-trimpath を書いていない): $go_env_file"
+    exit 1
+  fi
+  flags=$(GOFLAGS= go env GOFLAGS)
+  n=$(print -r -- " $flags " | grep -o ' -trimpath ' | wc -l | tr -d ' ')
+  if [[ "$n" != 1 ]]; then
+    print -u2 "go env の GOFLAGS に -trimpath がちょうど 1 つでない (${n} 個): '$flags'"
+    exit 1
+  fi
+  print "[test-setup:zsh] go env GOFLAGS='$flags' (issue 816)"
+else
+  print "[test-setup:zsh] go が無いので -trimpath の検査は飛ばす (issue 816)"
 fi
 
 print "[test-setup:zsh] done"

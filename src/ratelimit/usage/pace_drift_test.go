@@ -29,22 +29,23 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// statuslinePath は statusline スクリプトの絶対パス。テストのソース位置から repo root を
+// statuslinePath は statusline スクリプトの絶対パス。テストの cwd (package のディレクトリ) から repo root を
 // 探して組む (テストの cwd はパッケージディレクトリで、repo root からの相対では届かない)。
 func statuslinePath(t *testing.T) string {
 	t.Helper()
-	_, self, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("テスト自身のパスが取れない (乖離を検査できない)")
+	// 🚨 起点は runtime.Caller ではなく cwd (go test は package のディレクトリで走る)。-trimpath でビルドすると
+	// runtime.Caller のファイル名が module 相対になり、repo root まで辿れない (issue 816)
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("cwd が取れない (乖離を検査できない): %v", err)
 	}
-	dir := filepath.Dir(self)
+	start := dir
 	for range 8 {
 		p := filepath.Join(dir, "_claude", "statusline-command.sh")
 		// 🚨 「見つかった」だけでは採らない。repo root であること (.git が隣にある) も確かめる。
@@ -63,7 +64,7 @@ func statuslinePath(t *testing.T) string {
 		dir = parent
 	}
 	// 🚨 ここで skip しない。見つからない = 乖離を検査できていない、であって合格ではない。
-	t.Fatalf("repo root の _claude/statusline-command.sh が見つからない (%s から上へ探索。.git の隣にあるものだけを採る)", filepath.Dir(self))
+	t.Fatalf("repo root の _claude/statusline-command.sh が見つからない (%s から上へ探索。.git の隣にあるものだけを採る)", start)
 	return ""
 }
 

@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -12,18 +11,21 @@ import (
 )
 
 // repoRootOracle は repoRoot() と**別の手段**で repo root を出す独立オラクル
-// (テストファイルの位置から .git を持つ親を探す)。
+// (テストの cwd = package のディレクトリから .git を持つ親を探す)。
 //
 // 🚨 期待値を production の repoRoot() から作らないこと: 同じ関数を両側で呼ぶ自己言及になり、
 // repoRoot() が壊れても緑のままになる (issue 082)。git に問い合わせる repoRoot() とは
 // 実装経路が違うので、片方の誤りをもう片方が捕まえられる。
 func repoRootOracle(t *testing.T) string {
 	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("テストファイルの位置が取れない")
+	// 🚨 起点は runtime.Caller ではなく cwd (go test は package のディレクトリで走る)。-trimpath でビルドすると
+	// runtime.Caller のファイル名が module 相対 (glogx/open_workspace_test.go) になり、親を辿れない (issue 816)。
+	// 呼ぶ前に t.Chdir しないこと (cwd を起点にしているので、別の場所から辿ってしまう)
+	file, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("cwd が取れない: %v", err)
 	}
-	dir := filepath.Dir(file)
+	dir := file
 	for {
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 			return realPath(t, dir)
