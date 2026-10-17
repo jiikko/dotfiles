@@ -72,6 +72,22 @@ func awaitSetup(m *Model) {
 	}
 }
 
+// holdObserve は次からの観測を、返した release を呼ぶまで止める (偽の観測はすぐ返るので、止めないと「読み込み中に押したキー」の前に
+// 観測が終わりうる。キーの入口の処理が重くなった版で、-race の下で順序が逆になって落ちた)。
+func holdObserve(t *testing.T, h *harness) (release func()) {
+	t.Helper()
+	gate := make(chan struct{})
+	var once sync.Once
+	release = func() { once.Do(func() { close(gate) }) }
+	t.Cleanup(release)
+	prev := h.m.o.Observe
+	h.m.o.Observe = func(ctx context.Context, d setup.Dest) setup.PeerNet {
+		<-gate
+		return prev(ctx, d)
+	}
+	return release
+}
+
 // setSelfStatic はこの Mac の有線を帯の固定 IP にした状態にする (この Mac の網の読み直しも、その状態を返す)。
 func setSelfStatic(m *Model) {
 	awaitNetLoad(m) // 走っている読み直し (手順から戻ったときのもの) が後から届いて上書きしないように、先に取り込む
@@ -753,6 +769,7 @@ func TestSetupProgressModal(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
 	h.m.TakeNotices()
+	release := holdObserve(t, h)
 	h.keys("r", "x")
 	if n := h.m.TakeNotices(); len(n) != 0 {
 		t.Errorf("読み込み中の r / x で toast を出した: %+v", n)
@@ -760,6 +777,7 @@ func TestSetupProgressModal(t *testing.T) {
 	if !h.m.progressShown() || !strings.Contains(strings.Join(h.m.View(), "\n"), "を確認中") {
 		t.Fatal("読み込み中の x で進捗のモーダルを出さない")
 	}
+	release()
 	awaitSetup(h.m)
 	h.m.Advance(t0)
 	if h.m.ov != ovConfirm || h.m.ask == nil {
@@ -811,7 +829,9 @@ func TestRunArgvBanner(t *testing.T) {
 func TestSetupQueuedXRaces(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
+	freeObs := holdObserve(t, h)
 	h.keys("r", "x")
+	freeObs()
 	awaitSetup(h.m) // 読み終えたが、まだ tick が来ていない
 	h.keys("q")
 	if h.m.ov != ovNone || h.m.ask != nil || h.m.su != nil {
@@ -993,7 +1013,9 @@ func TestSetupLedgerKeepsAliasChangedElsewhere(t *testing.T) {
 func TestSetupQueuedBoardIgnoresEnter(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
+	release := holdObserve(t, h)
 	h.keys("r", "x", "enter")
+	release()
 	awaitSetup(h.m)
 	h.m.Advance(t0)
 	if h.m.ov != ovConfirm {
@@ -1011,7 +1033,9 @@ func TestSetupQueuedBoardIgnoresEnter(t *testing.T) {
 func TestSetupManualBoardClearsQueuedX(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
+	release := holdObserve(t, h)
 	h.keys("r", "x")
+	release()
 	awaitSetup(h.m) // 読み終えたが tick はまだ
 	h.keys("x")     // 自分で板を開く
 	h.keys("n")     // 取り消す
