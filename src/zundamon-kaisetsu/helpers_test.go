@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"zundamon-kaisetsu/internal/app"
 	"zundamon-kaisetsu/internal/build"
@@ -52,7 +53,7 @@ func playerDataFromHTML(html string) (build.PlayerData, error) {
 	return d, err
 }
 
-// fakeLabelMeasure は player.html の計測モードの代わり。測るはずのラベル (build.ExpectedLabelKeys) を全部「問題なし」で返し、
+// fakeLabelMeasure は player.html の計測モードの代わり。測るはずのラベル (build.ExpectedLabels) を全部「問題なし」で返し、
 // edit があれば返す前に書き換える (問題のある計測を演じる)
 func fakeLabelMeasure(edit func(d *build.PlayerData, ms []build.LabelMeasure) []build.LabelMeasure) func(string) ([]byte, error) {
 	return func(page string) ([]byte, error) {
@@ -65,8 +66,12 @@ func fakeLabelMeasure(edit func(d *build.PlayerData, ms []build.LabelMeasure) []
 			return nil, err
 		}
 		var ms []build.LabelMeasure
-		for _, k := range build.ExpectedLabelKeys(&d) {
-			ms = append(ms, build.LabelMeasure{Key: k, Kind: "box", Clip: []int{0, 0}})
+		for _, e := range build.ExpectedLabels(&d) {
+			m := build.LabelMeasure{Key: e.Key, Kind: e.Kind, Text: e.Text, Clip: []int{0, 0}}
+			if e.Kind != "box" {
+				m.Lines, m.Glen, m.Breaks = []string{e.Text}, []int{utf8.RuneCountInString(e.Text)}, []bool{}
+			}
+			ms = append(ms, m)
 		}
 		if edit != nil {
 			ms = edit(&d, ms)

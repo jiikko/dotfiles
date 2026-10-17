@@ -12,21 +12,24 @@ import (
 	"zundamon-kaisetsu/internal/show"
 )
 
-// ラベルの改行の判定 (issue 812): 1 行で出す欄の折り返し・語の途中の改行・1 字だけの行・カードのはみ出し・知らない種類・
-// 測れなかったラベルを問題にし、語の境目での折り返しは通す
+// ラベルの改行の判定 (issue 812): 1 行で出す欄の折り返し・語の途中の改行・1 字だけの行 (書記素で数える)・はみ出し・知らない種類・
+// 測れなかったラベル・字の食い違い・壊れた計測を問題にし、語の境目での折り返しは通す
 func TestLabelProblems(t *testing.T) {
 	d := &build.PlayerData{
 		Title: "タイトル", Overlays: []string{"title", "topic"},
 		Chapters: []build.ChapterData{{Title: "はじめに"}, {Title: "まとめ"}},
-		Shows:    []show.Data{{Type: "keyword", Text: "図はフォルダ構成ではない"}, {Type: "image"}},
+		Shows:    []show.Data{{Type: "keyword", Text: "モックだらけのテスト"}, {Type: "image"}},
 		Lines:    []build.TimelineLine{{}, {Show: new(int)}},
 	}
+	line := func(key, kind, text string, lines []string, breaks []bool, glen []int) build.LabelMeasure {
+		return build.LabelMeasure{Key: key, Kind: kind, Text: text, Lines: lines, Breaks: breaks, Glen: glen, Clip: []int{0, 0}}
+	}
 	ok := []build.LabelMeasure{
-		{Key: "title", Kind: "line", Lines: []string{"タイトル"}},
-		{Key: "topic:0", Kind: "line", Lines: []string{"はじめに"}},
-		{Key: "topic:1", Kind: "line", Lines: []string{"まとめ"}},
-		{Key: "show:0", Kind: "box", Clip: []int{0, 0}},
-		{Key: "show:0:text", Kind: "wrap", Lines: []string{"モックだらけの", "テスト"}, Breaks: []bool{true}},
+		line("title", "line", "タイトル", []string{"タイトル"}, []bool{}, []int{4}),
+		line("topic:0", "line", "はじめに", []string{"はじめに"}, []bool{}, []int{4}),
+		line("topic:1", "line", "まとめ", []string{"まとめ"}, []bool{}, []int{3}),
+		{Key: "show:0", Kind: "box", Clip: []int{1, 0}}, // 丸めの 1 px は数えない
+		line("show:0:text", "wrap", "モックだらけのテスト", []string{"モックだらけの", "テスト"}, []bool{true}, []int{7, 3}),
 	}
 	if p := build.LabelProblems(d, ok); len(p) != 0 {
 		t.Fatalf("問題の無い計測で問題が出た: %q", p)
@@ -36,28 +39,47 @@ func TestLabelProblems(t *testing.T) {
 		want string
 	}{
 		"タイトルが 2 行": {func(ms []build.LabelMeasure) []build.LabelMeasure {
-			ms[0].Lines = []string{"そのRepository、本当に要る？", "なぜ"}
+			ms[0] = line("title", "line", "タイトル", []string{"タイト", "ル"}, []bool{false}, []int{3, 1})
 			return ms
-		}, "左上のタイトル: 1 行に収まらず 2 行になる"},
+		}, "左上のタイトル: 1 行に収まらず 2 行になる (タイト / ル)"},
 		"語の途中で改行": {func(ms []build.LabelMeasure) []build.LabelMeasure {
-			ms[4].Lines, ms[4].Breaks = []string{"図は", "フォルダ構成ではな", "いい"}, []bool{true, false}
+			ms[4] = line("show:0:text", "wrap", "モックだらけのテスト", []string{"モックだらけのテ", "スト"}, []bool{false}, []int{8, 2})
 			return ms
-		}, "図解 0 (keyword。lines[1] から) の text: 語の途中で改行する (図は / フォルダ構成ではな / いい)"},
-		"1 字だけの行": {func(ms []build.LabelMeasure) []build.LabelMeasure {
-			ms[4].Lines, ms[4].Breaks = []string{"図はフォルダ構成", "で"}, []bool{true}
+		}, "図解 0 (keyword。lines[1] から) の text: 語の途中で改行する (モックだらけのテ / スト)"},
+		"1 字だけの行 (合成の濁点は 1 字)": {func(ms []build.LabelMeasure) []build.LabelMeasure {
+			ms[4] = line("show:0:text", "wrap", "モックだらけのテスト", []string{"モックだらけのテス", "ト"}, []bool{true}, []int{9, 1})
 			return ms
-		}, "1 字だけの行ができる"},
-		"はみ出し": {func(ms []build.LabelMeasure) []build.LabelMeasure {
+		}, ": 1 字だけの行ができる (モックだらけのテス / ト)"},
+		"カードのはみ出し": {func(ms []build.LabelMeasure) []build.LabelMeasure {
 			ms[3].Clip = []int{0, 12}
 			return ms
-		}, "中身がカードからはみ出して隠れる (横 0 px / 縦 12 px)"},
+		}, "箱か舞台からはみ出して隠れる (横 0 px / 縦 12 px)"},
+		"文字のラベルのはみ出し (改行の位置が無い長い英字)": {func(ms []build.LabelMeasure) []build.LabelMeasure {
+			ms[1].Clip = []int{310, 0}
+			return ms
+		}, "トピック名「はじめに」: 箱か舞台からはみ出して隠れる (横 310 px / 縦 0 px)"},
+		"はみ出しの量を読めない": {func(ms []build.LabelMeasure) []build.LabelMeasure {
+			ms[3].Clip = nil
+			return ms
+		}, "はみ出しの量を読めない"},
 		"知らない種類": {func(ms []build.LabelMeasure) []build.LabelMeasure {
-			ms[1].Kind = "lines"
+			ms[3].Kind = "boxes"
 			return ms
 		}, "計測モードが知らない種類"},
-		"測れなかった": {func(ms []build.LabelMeasure) []build.LabelMeasure {
-			return slices.DeleteFunc(ms, func(m build.LabelMeasure) bool { return m.Key == "topic:1" })
-		}, "トピック名「まとめ」: 測れなかった"},
+		"字が台本と違う (子要素に包まれて直下の字が無い等)": {func(ms []build.LabelMeasure) []build.LabelMeasure {
+			ms[4] = line("show:0:text", "wrap", "", []string{""}, []bool{}, []int{0})
+			return ms
+		}, "が台本 (\"wrap\" \"モックだらけのテスト\") と違う"},
+		"行の測り方が壊れている": {func(ms []build.LabelMeasure) []build.LabelMeasure {
+			ms[2].Breaks = []bool{true}
+			return ms
+		}, "行の測り方が壊れている"},
+		"測れなかった (箱)": {func(ms []build.LabelMeasure) []build.LabelMeasure {
+			return slices.DeleteFunc(ms, func(m build.LabelMeasure) bool { return m.Key == "show:0" })
+		}, "図解 0 (keyword。lines[1] から): 測れなかった"},
+		"測れなかった (項目)": {func(ms []build.LabelMeasure) []build.LabelMeasure {
+			return slices.DeleteFunc(ms, func(m build.LabelMeasure) bool { return m.Key == "show:0:text" })
+		}, "の text: 測れなかった"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := build.LabelProblems(d, c.edit(slices.Clone(ok)))
@@ -66,13 +88,43 @@ func TestLabelProblems(t *testing.T) {
 			}
 		})
 	}
-	// 図は測らない (文字のラベルが無い)。区切りのカードは cards があるときだけ測る
-	if keys := build.ExpectedLabelKeys(d); !slices.Equal(keys, []string{"title", "topic:0", "topic:1", "show:0"}) {
-		t.Errorf("測るはずの鍵: %q", keys)
+}
+
+// 測るはずのラベル: 図は測らず、overlays から外した欄は測らず、区切りのカードは cards があり名前が空白だけでないときだけ測る。
+// 空白の判定は player の trim (JavaScript) と同じ文字で行う (U+FEFF だけの名前のカードは player が描かない)
+func TestExpectedLabels(t *testing.T) {
+	keys := func(d *build.PlayerData) []string {
+		var ks []string
+		for _, e := range build.ExpectedLabels(d) {
+			ks = append(ks, e.Key)
+		}
+		return ks
 	}
-	d.Cards, d.Overlays, d.Title = [][2]int{{0, 1}}, []string{"date"}, "" // タイトルとトピック名を出さない台本
-	if keys := build.ExpectedLabelKeys(d); !slices.Equal(keys, []string{"card:0", "card:1", "show:0"}) {
-		t.Errorf("overlays から外した欄も測ろうとしている: %q", keys)
+	d := &build.PlayerData{
+		Title: "T", Overlays: []string{"title", "topic"},
+		Chapters: []build.ChapterData{{Title: "はじめに"}, {Title: "\ufeff"}},
+		Shows: []show.Data{{Type: "image"}, {Type: "list", Title: "理由", Items: []string{"a", "b"}},
+			{Type: "compare", Left: &show.CompareSide{Title: "前", Items: []string{"x"}}, Right: &show.CompareSide{Title: "後", Items: []string{"y"}}}},
+	}
+	want := []string{"title", "topic:0", "topic:1", "show:1:title", "show:1:items[0]", "show:1:items[1]", "show:1",
+		"show:2:left.title", "show:2:left.items[0]", "show:2:right.title", "show:2:right.items[0]", "show:2"}
+	if got := keys(d); !slices.Equal(got, want) {
+		t.Errorf("測るはずの鍵:\n%q\nwant\n%q", got, want)
+	}
+	d.Cards, d.Overlays, d.Shows = [][2]int{{0, 1}}, []string{"date"}, nil
+	if got := keys(d); !slices.Equal(got, []string{"card:0"}) {
+		t.Errorf("overlays から外した欄・空白だけの名前のカードを測ろうとしている: %q", got)
+	}
+}
+
+// player.html の計測モードの入口と結果の置き場は、Go が決め打ちで使う (MeasureLabelsWithChrome)。字句を固定する
+func TestPlayerMeasureContract(t *testing.T) {
+	b, err := os.ReadFile(testEnv(t).Template())
+	must(t, err)
+	for _, want := range []string{"location.hash === '#measure'", "pre.id = 'measure-out'"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("player.html に %q が無い (Go の MeasureLabelsWithChrome は #measure で開き #measure-out を読む)", want)
+		}
 	}
 }
 
@@ -82,7 +134,7 @@ func TestBuildStopsOnLabelWrap(t *testing.T) {
 	bld := func(t *testing.T, allow bool) (string, string, error) {
 		env := testEnv(t)
 		env.MeasureLabels = fakeLabelMeasure(func(_ *build.PlayerData, ms []build.LabelMeasure) []build.LabelMeasure {
-			ms[0] = build.LabelMeasure{Key: "title", Kind: "line", Lines: []string{"テスト用の台本", "<b>&"}}
+			ms[0].Lines, ms[0].Breaks, ms[0].Glen = []string{"テスト用の台本 ", "<b>&"}, []bool{true}, []int{8, 3}
 			return ms
 		})
 		var stderr strings.Builder
@@ -99,7 +151,7 @@ func TestBuildStopsOnLabelWrap(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "--allow-label-wraps") {
 		t.Fatalf("止まるはず: %v", err)
 	}
-	if !strings.Contains(stderr, "左上のタイトル: 1 行に収まらず 2 行になる (テスト用の台本 / <b>&)") {
+	if !strings.Contains(stderr, "左上のタイトル: 1 行に収まらず 2 行になる (テスト用の台本  / <b>&)") {
 		t.Errorf("問題の一覧が出ていない:\n%s", stderr)
 	}
 	if _, err := os.Stat(out); err == nil {
@@ -136,7 +188,7 @@ func TestMeasureLabelsWithChrome(t *testing.T) {
 func fakeMeasureDump(page string) int {
 	b, err := fakeLabelMeasure(func(_ *build.PlayerData, ms []build.LabelMeasure) []build.LabelMeasure {
 		if os.Getenv("FAKE_MEASURE_BAD") != "" {
-			ms[0] = build.LabelMeasure{Key: "title", Kind: "line", Lines: []string{"テスト用の台本", "<b>&"}}
+			ms[0].Lines, ms[0].Breaks, ms[0].Glen = []string{"テスト用の台本 ", "<b>&"}, []bool{true}, []int{8, 3}
 		}
 		return ms
 	})(page)
@@ -147,4 +199,21 @@ func fakeMeasureDump(page string) int {
 		return 6
 	}
 	return 0
+}
+
+// 計測の Chrome が落ちた (負荷の watchdog など) ときは、台本の問題ではないので、確かめていないことを出して書き出しを続ける
+func TestMeasureLabelsChromeFailureWarns(t *testing.T) {
+	_ = fakeMP4Tools(t)
+	t.Setenv("FAKE_CHROME_RC", "2")
+	env := testEnv(t)
+	env.MeasureLabels = nil
+	var stderr strings.Builder
+	env.Stderr = &stderr
+	out := filepath.Join(t.TempDir(), "out")
+	if err := dispatch([]string{"build", buildFixtureScript(t, nil), "-o", out, "--format", "html", "--allow-fast-captions"}, env); err != nil {
+		t.Fatalf("Chrome が落ちても HTML は書くはず: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "確かめずに続ける (rc=2") {
+		t.Errorf("確かめていないことを出していない:\n%s", stderr.String())
+	}
 }

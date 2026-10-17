@@ -304,7 +304,7 @@ html.render * { transition: none !important; }
   // ラベルの改行の検査用 (build が書き出す前に Chrome の --dump-dom で読む。issue 812): mp4 と同じ大きさの舞台に、タイトル・トピック名・
   // 区切りのカード・図解を 1 つずつ本物の CSS で描き、ラベルごとに 1 字ずつ位置を測って行に分け、#measure-out に JSON で書いて止まる。
   // 判定 (1 行で出す欄が折り返したか・語の途中で切れたか) は Go (label_wrap.go) が持つ。ここは測るだけ。どのラベルを測るかの条件は
-  // Go の ExpectedLabelKeys と揃える (食い違うと build が「測れなかったラベル」で止まる)
+  // Go の ExpectedLabels と揃える (欠け・字の食い違いは build が止める。#measure と measure-out の字句は label_wrap_test.go が固定する)
   if (location.hash === '#measure') {
     const root = document.documentElement;
     root.classList.add('render');
@@ -313,30 +313,40 @@ html.render * { transition: none !important; }
     const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' });
     const words = new Intl.Segmenter('ja', { granularity: 'word' });
     const out = [];
-    // node の直下の文字 (子要素の文字は除く) を、描かれた行ごとに分ける。breaks[i] は i 行目の後の切れ目が語の境目か
+    // a の外接矩形が b からはみ出した量 (px)。[横, 縦]
+    const excess = (a, b) => [Math.max(0, b.left - a.left, a.right - b.right), Math.max(0, b.top - a.top, a.bottom - b.bottom)];
+    const stageRect = () => $('stage').getBoundingClientRect();
+    // node の直下の文字 (子要素の文字は除く) を、描かれた行ごとに分ける。breaks[i] は i 行目の後の切れ目が語の境目か、glen は行ごとの書記素の数。
+    // clip は文字の描画範囲が要素の箱か舞台からはみ出した量 (改行の位置が無い長い英字は折り返さずに箱を突き抜け、舞台の端で黙って切れる)
     const measure = (key, kind, node) => {
       const texts = [...node.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE);
       const full = texts.map((n) => n.data).join('');
       const bounds = new Set([...words.segment(full)].map((s) => s.index));
-      const r = document.createRange(); const lines = []; let line = ''; let top = null; let pos = 0; const breaks = [];
+      const r = document.createRange(); const lines = []; const glen = []; let line = ''; let n = 0; let top = null; let pos = 0; const breaks = [];
       for (const tn of texts) {
         for (const g of graphemes.segment(tn.data)) {
           r.setStart(tn, g.index); r.setEnd(tn, g.index + g.segment.length);
           const rect = r.getClientRects()[0];
-          if (rect && top !== null && rect.top > top + rect.height / 2) { lines.push(line); breaks.push(bounds.has(pos)); line = ''; }
+          if (rect && top !== null && rect.top > top + rect.height / 2) { lines.push(line); glen.push(n); breaks.push(bounds.has(pos)); line = ''; n = 0; }
           if (rect) top = rect.top;
-          line += g.segment; pos += g.segment.length;
+          line += g.segment; n += 1; pos += g.segment.length;
         }
       }
-      lines.push(line);
-      out.push({ key, kind, text: full, lines, breaks });
+      lines.push(line); glen.push(n);
+      let clip = [0, 0];
+      if (texts.length) {
+        r.setStart(texts[0], 0); r.setEnd(texts[texts.length - 1], texts[texts.length - 1].data.length);
+        const t = r.getBoundingClientRect(); const a = excess(t, node.getBoundingClientRect()); const b = excess(t, stageRect());
+        clip = [Math.max(a[0], b[0]), Math.max(a[1], b[1])].map(Math.round);
+      }
+      out.push({ key, kind, text: full, lines, glen, breaks, clip });
     };
     // カードの中身 (文字と子要素) の描画範囲が、カードの外へどれだけ出たか (px)。overflow: hidden で隠れる分。
     // scrollWidth / scrollHeight は余白 (padding) も数えるので使わない (余白に食い込んだだけの 5 項目の箇条書きを、はみ出しと読んだ)
     const overflow = (key, node) => {
       const r = document.createRange(); r.selectNodeContents(node);
-      const c = r.getBoundingClientRect(); const b = node.getBoundingClientRect();
-      out.push({ key, kind: 'box', clip: [Math.max(0, b.left - c.left, c.right - b.right), Math.max(0, b.top - c.top, c.bottom - b.bottom)].map(Math.round) });
+      const c = r.getBoundingClientRect();
+      out.push({ key, kind: 'box', clip: excess(c, node.getBoundingClientRect()).map(Math.round) });
     };
     document.fonts.ready.then(() => {
       if (OV.has('title') && D.title !== '') measure('title', 'line', $('stage-title'));
