@@ -15,7 +15,10 @@ issue 817 (glogx の package main を薄くし、internal のパッケージの�
   pathspec は未追跡のファイルを拾わないので、commit には入らなかった
 - 手元の作業ツリーにはファイルがあるので、go test -race / lint / unused / テスト名の比較はすべて緑だった。
   push した後、G-3 のために origin から新しい worktree を切ったところでビルドが落ちて気づいた (f30ece4a で足した)
-- 同じセッションの前の移設では、新しいディレクトリごと `git add` していたので起きなかった。1 ファイルだけ新しく足した回で漏れた
+- **同じ形が 2 回あった**: D-1 (50d3d760) で新しく作った `internal/app/text.go` (app.CurrentDir) も入っておらず、E の commit (6c70c0fd) に
+  紛れて入った。50d3d760〜8edba755 の 3 commit の間、CI の src/glogx は `undefined: app.CurrentDir` でビルドが落ちていた
+  (d80b1bd0 の run が failure。後の commit で緑に戻ったので、HEAD だけを見ていて気づかなかった)。どちらも、新しいディレクトリごと
+  `git add` した回では起きず、既存のディレクトリに 1 ファイルだけ足した回で漏れた
 - **一般形**: 「検証した木」と「commit した木」は別物。pathspec で commit するなら、commit の後に `git status --short` の `??` に
   自分が作ったファイルが残っていないかを見る (残っていたら、その commit は手元の検証と別の木)
 - 切り出し先: `_claude/rules/commit-with-pathspec.md` の「新規ファイルは事前の `git add` が必要」の項へ、「commit の後に `??` を見る」を追記
