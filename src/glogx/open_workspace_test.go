@@ -49,6 +49,9 @@ func realPath(t *testing.T, path string) string {
 
 // e: nvim が repo root (取れなければ ".") を cwd に `nvim .` で起動される
 func TestOpenEditorAtRoot(t *testing.T) {
+	// 🚨 期待値は処理の前に固定する。オラクルは cwd を起点に辿るので、処理の後に作ると「処理が cwd を別の checkout へ
+	// 移してから repoRoot() を呼ぶ」退行で期待値も一緒に動き、通ってしまう (codex の敵対的レビュー 2026-10-17)
+	want := repoRootOracle(t)
 	m := newTestBrowse(t, 1, nil, nil)
 	cmds := stubEditorCapture(t)
 
@@ -65,7 +68,7 @@ func TestOpenEditorAtRoot(t *testing.T) {
 	// 🚨 `nvim .` は引数でなく **cwd が開く対象**なので、非空チェックでは対象の取り違えを
 	// 通してしまう (実測: cmd.Dir を "/" にしても全テストが green だった)。期待値は
 	// repoRoot() ではなく独立オラクルから作る (repoRootOracle の doc 参照)。
-	if want := repoRootOracle(t); realPath(t, c.Dir) != want {
+	if realPath(t, c.Dir) != want {
 		t.Fatalf("cwd が repo root でない: %q want %q", c.Dir, want)
 	}
 }

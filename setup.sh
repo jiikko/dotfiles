@@ -139,17 +139,10 @@ if [ "$(uname)" = "Darwin" ] && [ -z "${DOTFILES_SKIP_TERMINAL_PROFILE:-}" ]; th
     echo "WARN: Terminal プロファイルの適用に失敗。scripts/terminal_profile_restore.sh を単体で再実行して確認"
 fi
 
-# Go のビルドキャッシュを worktree をまたいで共有する (issue 816)。-trimpath が無いと、コンパイル結果の鍵に package の
-# ディレクトリの絶対パスが入り、同じソースでも worktree ごとに別の項目として GOCACHE に溜まる (2026-10-17 の実測: 同じ commit の
-# 2 つ目の worktree で +54.7 MB → -trimpath で +0.5 MB)。go env のファイル (この機械の全部の go コマンドが読む) に足す。入っていれば何もしない。
-# 🚨 外すときはそのコマンドに -trimpath=false を付ける。GOFLAGS= (空) では外れない (空なら go env のファイルの値に戻る)。
-# 🚨 読むときも GOFLAGS='' を付けて**ファイルの値**を読む (親の環境変数 GOFLAGS が立っていると、その値をファイルへ写してしまう)
+# Go のビルドキャッシュを worktree をまたいで共有する (issue 816)。go env のファイルの GOFLAGS に -trimpath を足す
+# (この機械の全部の go コマンドが読む)。規則 (既に -trimpath=false などがあれば触らない・外し方) は scripts/go_env_trimpath.sh の冒頭
 if command -v go >/dev/null 2>&1; then
-  go_flags_file=$(GOFLAGS='' go env GOFLAGS 2>/dev/null) || go_flags_file=''
-  case " $go_flags_file " in
-    *" -trimpath "*) ;;
-    *) go env -w GOFLAGS="${go_flags_file:+$go_flags_file }-trimpath" || echo "warning: go env -w GOFLAGS=-trimpath に失敗した (issue 816)" >&2 ;;
-  esac
+  ~/dotfiles/scripts/go_env_trimpath.sh || echo "warning: go env に -trimpath を足せなかった (scripts/go_env_trimpath.sh。issue 816)" >&2
 fi
 
 # setup.sh の sha256 を state file に記録する (direnv 風の実行漏れ検出用)。
