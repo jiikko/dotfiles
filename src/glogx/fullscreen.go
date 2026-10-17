@@ -17,7 +17,7 @@ func (m *browseModel) activeFullScreen() app.FullScreenID {
 		return app.FullScreenRatelimit
 	case m.doctorOv.Visible():
 		return app.FullScreenDoctor
-	case m.statusOv.visible():
+	case m.statusOv.Visible():
 		return app.FullScreenStatus
 	case m.issuesOv.Visible():
 		return app.FullScreenIssues
@@ -40,7 +40,7 @@ func (m *browseModel) openFullScreen(id app.FullScreenID) tea.Cmd {
 	case app.FullScreenIssues:
 		return tea.Batch(m.issuesOv.Toggle(app.CurrentDir()), m.maybeTick())
 	case app.FullScreenStatus:
-		return tea.Batch(m.statusOv.toggle(), m.maybeTick())
+		return tea.Batch(m.statusOv.Toggle(), m.maybeTick())
 	case app.FullScreenRatelimit:
 		return m.toggleRatelimitDash()
 	case app.FullScreenDoctor:

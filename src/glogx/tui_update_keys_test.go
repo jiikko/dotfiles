@@ -60,7 +60,7 @@ func TestUpdateKeysReachableFromOverlays(t *testing.T) {
 		// status は行が無いと X (破棄) が何もしないので、1 行持った viewer を直接差し込む
 		// (TestUpdateKeysDoNotLeakIntoStatusViewer と同じ準備)
 		{"status", func(t *testing.T, m *browseModel) { m.statusOv = *newTestStatusView(t, statusRec(" M a.go")) },
-			func(m *browseModel) bool { return m.statusOv.visible() }, true},
+			func(m *browseModel) bool { return m.statusOv.Visible() }, true},
 		{"ratelimit", openByKey("R", func(m *browseModel) bool { return m.rlDash.visible() }),
 			func(m *browseModel) bool { return m.rlDash.visible() }, false},
 		{"doctor", openByKey("D", func(m *browseModel) bool { return m.doctorOv.Visible() }),
@@ -88,8 +88,8 @@ func TestUpdateKeysReachableFromOverlays(t *testing.T) {
 			}
 			press(m, "X")
 			if c.codexIsDiscard {
-				if *codex != 0 || !m.statusOv.discarding {
-					t.Fatalf("status viewer の X は破棄確認のはず (codexCalls=%d discarding=%v)", *codex, m.statusOv.discarding)
+				if *codex != 0 || !m.statusOv.Fixture().Discarding() {
+					t.Fatalf("status viewer の X は破棄確認のはず (codexCalls=%d discarding=%v)", *codex, m.statusOv.Fixture().Discarding())
 				}
 				return
 			}
@@ -128,14 +128,14 @@ func TestUpdateKeysYieldToOverlayInputModes(t *testing.T) {
 	m2.statusOv = *newTestStatusView(t, statusRec(" M a.go"))
 	m2.handleKey("X")
 	releaseKey(m2)
-	if !m2.statusOv.ownsKeys() {
+	if !m2.statusOv.OwnsKeys() {
 		t.Fatal("前提: X で status viewer が破棄確認 (入力モード) に入っていない")
 	}
 	press(m2, "C")
 	if *claude != 0 {
 		t.Fatalf("破棄確認中の C が update を始めた (claude=%d)", *claude)
 	}
-	if m2.statusOv.ownsKeys() {
+	if m2.statusOv.OwnsKeys() {
 		t.Fatal("破棄確認中の C が確認を閉じていない (y/N 以外はキャンセルの語彙)")
 	}
 }

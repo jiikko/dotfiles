@@ -1,4 +1,4 @@
-package main
+package statusview
 
 import (
 	"errors"
@@ -33,7 +33,7 @@ import (
 // 🚨 一覧は毎回 git status から作り直す派生ビューであり、stage の結果をローカルの配列へ書いて
 // 済ませない。glogx は「別プロセス (Claude Code / $EDITOR / git pull) が同じツリーを同時に編集する」
 // 環境で使うため、書き換え型は外部編集が入った瞬間に画面が嘘になる (spec 5 節)。
-type statusView struct {
+type StatusView struct {
 	shown   bool
 	loaded  bool // 一度読み込みを完了したか (取り直し中に前回の結果を出してよいかの判定)
 	loading bool // git status 実行中 (スピナー + 二重発行の防止)
@@ -134,17 +134,17 @@ const (
 )
 
 // statusLoadMsg は git status 1 回分の読み取り結果。
-type statusLoadMsg struct {
+type StatusLoadMsg struct {
 	st  worktreeStatus
 	err error
 	gen int
 }
 
 // statusPollMsg は自動更新の目覚まし (spec 5 節)。
-type statusPollMsg struct{ gen int }
+type StatusPollMsg struct{ gen int }
 
 // statusPreviewMsg はプレビュー / 全画面 diff の取得結果。
-type statusPreviewMsg struct {
+type StatusPreviewMsg struct {
 	// 🚨 gen は必須 (他の 3 メッセージと同じ)。無いと、無効化 (閉じ / r) を跨いで着地した
 	// 取得がキャッシュを**復活させ**、以後 begin() に弾かれて取り直しが二度と走らない
 	// (issue 114 の敵対的レビューで実証。窓は色付け 5000 行で 200ms 超)。
@@ -155,7 +155,7 @@ type statusPreviewMsg struct {
 }
 
 // statusPreviewTickMsg はカーソル移動のデバウンス満了。seq が現在の世代と一致するときだけ取得する。
-type statusPreviewTickMsg struct {
+type StatusPreviewTickMsg struct {
 	seq int
 	gen int
 }
@@ -165,11 +165,11 @@ type statusPreviewTickMsg struct {
 // 🚨 cursorPaint を受け取らない: browseModel の cursorEmphasis は行を contentWidth まで
 // 塗るので、2 カラムではプレビュー側まで背景色が伸びる。カーソル強調は一覧カラムの幅で
 // 完結させる必要があるため、この型が自分で塗る (statusCursorPaint)。
-type statusRenderOpts struct {
-	width   int
-	page    int
-	colored bool
-	spinner string
+type StatusRenderOpts struct {
+	Width   int
+	Page    int
+	Colored bool
+	Spinner string
 }
 
 // statusViewport は「今この窓は何行か」+ 色 (キー処理が取得を発行するのに必要)。
@@ -179,17 +179,17 @@ type statusRenderOpts struct {
 // 🚨 **width は持たない** (issue 316)。桁数を使うのは描画側 (`lines(o statusRenderOpts)`) で、
 // キー処理は行数しか要らない。以前は `width` を詰めていたが読み手が 0 件で、doc の
 // 「何桁 × 何行か」だけが残っていた (`issuesViewport` の方は `vp.width` を読むので紛らわしい)。
-type statusViewport struct {
+type StatusViewport struct {
 	page    int
 	colored bool
 }
 
-func newStatusView() statusView {
-	return statusView{preview: linecache.New()}
+func NewStatusView() StatusView {
+	return StatusView{preview: linecache.New()}
 }
 
 // visible は viewer を表示中か (閉じる演出のあいだも true)。
-func (v *statusView) visible() bool { return v.shown }
+func (v *StatusView) Visible() bool { return v.shown }
 
 // ownsKeys は viewer 自身がキーを解釈し切る状態か (全画面 pager 表示中 / 破棄の y/N 確認中)。
 //
@@ -202,14 +202,14 @@ func (v *statusView) visible() bool { return v.shown }
 //
 // 「どのキーを奪うか」を外側に列挙する形にすると、viewer 側でキーを増やすたびに同じ穴が空くので、
 // 述語 1 つで「今は viewer のもの」を表す (キー名の二重管理を作らない)。
-func (v *statusView) ownsKeys() bool { return v.pagerKey != "" || v.discarding }
+func (v *StatusView) OwnsKeys() bool { return v.pagerKey != "" || v.discarding }
 
 // loading は git status / diff の取得中か (スピナー tick を回し続ける判定用)。
-func (v *statusView) fetching() bool { return v.loading || v.preview.Fetching() }
+func (v *StatusView) Fetching() bool { return v.loading || v.preview.Fetching() }
 
 // slideAnimating は開閉のスライド演出中か。tickInterval が 125fps へ上げる判定に使う
 // (pager glide は含めない: あちらは他の glide と同じ 60fps で足りる)。
-func (v *statusView) slideAnimating() bool {
+func (v *StatusView) SlideAnimating() bool {
 	if v.closing {
 		return true
 	}
@@ -218,17 +218,17 @@ func (v *statusView) slideAnimating() bool {
 
 // animating は開閉の演出中か。spinnerActive (tick チェーンを回すか) がこれを見る
 // (issuesView.animating と同じ契約)。
-func (v *statusView) animating() bool {
+func (v *StatusView) Animating() bool {
 	if v.pager.Animating() {
 		return true // 本文 pager の glide は tick で進むので「アニメ中」に含める
 	}
-	return v.slideAnimating()
+	return v.SlideAnimating()
 }
 
 // toggle は viewer の開閉。開くときは status を読み直し、自動更新チェーンを張る。
-func (v *statusView) toggle() tea.Cmd {
+func (v *StatusView) Toggle() tea.Cmd {
 	if v.closing {
-		v.finishClose() // 閉じる演出の途中の s は「閉じ切ってから開き直す」
+		v.FinishClose() // 閉じる演出の途中の s は「閉じ切ってから開き直す」
 	} else if v.shown {
 		v.close()
 		return nil
@@ -237,23 +237,23 @@ func (v *statusView) toggle() tea.Cmd {
 	if !v.closeAnimOff {
 		v.animStart = app.TimeNow()
 	}
-	return tea.Batch(v.loadCmd(), v.pollCmd(), v.previewTickCmd())
+	return tea.Batch(v.LoadCmd(), v.pollCmd(), v.previewTickCmd())
 }
 
 // close は閉じる演出へ入る (演出を切っているときは即座に畳む)。
-func (v *statusView) close() {
+func (v *StatusView) close() {
 	v.closing = true
 	v.animStart = app.TimeNow()
 	if v.closeAnimOff {
-		v.finishClose()
+		v.FinishClose()
 	}
 }
 
 // settleClose は閉じる演出が終わっていたら畳む (描画・tick のどちらが先でも進むように、
 // 判定は 1 箇所へ寄せる。issuesView.settleClose と同じ作法)。
-func (v *statusView) settleClose() {
+func (v *StatusView) SettleClose() {
 	if v.closing && anim.Elapsed(v.animStart, app.TimeNow(), statusCloseDuration) >= 1 {
-		v.finishClose()
+		v.FinishClose()
 	}
 }
 
@@ -262,7 +262,7 @@ func (v *statusView) settleClose() {
 // viewer に届かせないため) ので、guard が無いと最初のキーで開いている viewer が畳まれる。
 // 🚨 gen を進めるのは、閉じる前に張った自動更新チェーンが開き直した後の状態へ効かないため。
 // 戻り値の意味は issuesView.finishClose と同じ契約 (実際に畳んだか)。
-func (v *statusView) finishClose() bool {
+func (v *StatusView) FinishClose() bool {
 	if !v.closing {
 		return false
 	}
@@ -287,37 +287,37 @@ func (v *statusView) finishClose() bool {
 }
 
 // settleAnim は開く演出が終わっていたら時計を捨てる (animating の判定を軽くする)。
-func (v *statusView) settleAnim() {
+func (v *StatusView) settleAnim() {
 	if !v.closing && !v.animStart.IsZero() && anim.Elapsed(v.animStart, app.TimeNow(), statusOpenDuration) >= 1 {
 		v.animStart = time.Time{}
 	}
 }
 
 // advanceGlide は全画面 diff のスクロール glide を 1 フレーム進める。
-func (v *statusView) advanceGlide() {
+func (v *StatusView) AdvanceGlide() {
 	v.pager.Advance()
 }
 
 // stopGlides は進行中の滑走を全部止める (advanceGlide と対。resize で着地点が古くなったとき)。
-func (v *statusView) stopGlides() {
+func (v *StatusView) StopGlides() {
 	v.pager.Stop()
 }
 
 // setNotice / takeNotice は操作結果の受け渡し (browseModel がトーストにする)。
 // 🚨 ここで無害化する: 通知文はパス・git のエラー出力を素で埋め込む呼び出しが多く、
 // 呼び出しごとに包むと必ずどこかが漏れる (自前の静的文だけの通知は無害化しても変わらない)。
-func (v *statusView) setNotice(text string, kind app.NoticeKind) {
+func (v *StatusView) setNotice(text string, kind app.NoticeKind) {
 	v.notice, v.noticeKind = term.SanitizePlainLine(text), kind
 }
 
-func (v *statusView) takeNotice() (string, app.NoticeKind) {
+func (v *StatusView) TakeNotice() (string, app.NoticeKind) {
 	text, kind := v.notice, v.noticeKind
 	v.notice = ""
 	return text, kind
 }
 
 // loadCmd は git status を読み直す。取得中なら nil (二重発行の防止)。
-func (v *statusView) loadCmd() tea.Cmd {
+func (v *StatusView) LoadCmd() tea.Cmd {
 	if !v.shown || v.loading {
 		return nil
 	}
@@ -325,36 +325,36 @@ func (v *statusView) loadCmd() tea.Cmd {
 	gen := v.gen
 	return func() tea.Msg {
 		st, err := loadWorktreeStatus()
-		return statusLoadMsg{st: st, err: err, gen: gen}
+		return StatusLoadMsg{st: st, err: err, gen: gen}
 	}
 }
 
 // pollCmd は次の自動更新を予約する (自己再アームの独立チェーン)。🚨 フレーム tick に混ぜない:
 // 混ぜると viewer を開いている間ずっと 12.5fps で起きることになり、「動くものがある間だけ tick を
 // 回す」glogx の設計を崩す (issuesWatch と同じ理由)。
-func (v *statusView) pollCmd() tea.Cmd {
+func (v *StatusView) pollCmd() tea.Cmd {
 	if !v.shown || v.pollArmed {
 		return nil
 	}
 	v.pollArmed = true
 	gen := v.gen
-	return tea.Tick(statusPollInterval, func(time.Time) tea.Msg { return statusPollMsg{gen: gen} })
+	return tea.Tick(statusPollInterval, func(time.Time) tea.Msg { return StatusPollMsg{gen: gen} })
 }
 
 // receivePoll は目覚ましを受けて「読み直し + 次の予約」を返す。世代違い (閉じた後に届いた古い
 // チェーン) は何もしない。
-func (v *statusView) receivePoll(msg statusPollMsg) tea.Cmd {
+func (v *StatusView) ReceivePoll(msg StatusPollMsg) tea.Cmd {
 	if msg.gen != v.gen || !v.shown {
 		return nil
 	}
 	v.pollArmed = false
-	return tea.Batch(v.loadCmd(), v.pollCmd())
+	return tea.Batch(v.LoadCmd(), v.pollCmd())
 }
 
 // receive は git status の結果を反映する。返り値は「プレビューを取り直す予約」(内容が変わった
 // ときだけ non-nil)。カーソルは「パスで復元、失われていたらセクション内の
 // 同じ位置」へ落とす (spec 4 節の不変条件 2 / 5 節のカーソル規約)。
-func (v *statusView) receive(msg statusLoadMsg) tea.Cmd {
+func (v *StatusView) Receive(msg StatusLoadMsg) tea.Cmd {
 	if msg.gen != v.gen {
 		return nil // 閉じた後に届いた古い結果 (開き直した画面を上書きしない)
 	}
@@ -395,7 +395,7 @@ func (v *statusView) receive(msg statusLoadMsg) tea.Cmd {
 }
 
 // anchor は現在のカーソルの (セクション, パス, セクション内の位置) を返す。
-func (v *statusView) anchor() (worktreeSection, string, int) {
+func (v *StatusView) anchor() (worktreeSection, string, int) {
 	if v.cursor < 0 || v.cursor >= len(v.rows) {
 		return sectionStaged, "", 0
 	}
@@ -412,7 +412,7 @@ func (v *statusView) anchor() (worktreeSection, string, int) {
 // restoreCursor は anchor の位置へカーソルを戻す。パスが残っていればそこへ、消えていれば
 // 同じセクションの同じ位置 (= stage した次のファイル) へ。セクション自体が空になったら
 // index を丸めるだけにする。
-func (v *statusView) restoreCursor(sec worktreeSection, path string, idx int) {
+func (v *StatusView) restoreCursor(sec worktreeSection, path string, idx int) {
 	if len(v.rows) == 0 {
 		v.cursor = 0
 		return
@@ -464,7 +464,7 @@ func sameRows(a, b []worktreeRow) bool {
 }
 
 // current はカーソル行 (行が無ければ false)。
-func (v *statusView) current() (worktreeRow, bool) {
+func (v *StatusView) current() (worktreeRow, bool) {
 	if v.cursor < 0 || v.cursor >= len(v.rows) {
 		return worktreeRow{}, false
 	}
@@ -478,19 +478,19 @@ func previewKey(r worktreeRow) string {
 }
 
 // previewTickCmd はカーソル移動のデバウンスを張る (満了時に statusPreviewTickMsg)。
-func (v *statusView) previewTickCmd() tea.Cmd {
+func (v *StatusView) previewTickCmd() tea.Cmd {
 	if !v.shown {
 		return nil
 	}
 	v.previewSeq++
 	seq, gen := v.previewSeq, v.gen
 	return tea.Tick(statusPreviewDebounce, func(time.Time) tea.Msg {
-		return statusPreviewTickMsg{seq: seq, gen: gen}
+		return StatusPreviewTickMsg{seq: seq, gen: gen}
 	})
 }
 
 // receivePreviewTick はデバウンス満了を受けて、必要ならカーソル行の diff 取得を発行する。
-func (v *statusView) receivePreviewTick(msg statusPreviewTickMsg, colored bool) tea.Cmd {
+func (v *StatusView) ReceivePreviewTick(msg StatusPreviewTickMsg, colored bool) tea.Cmd {
 	if msg.gen != v.gen || msg.seq != v.previewSeq || !v.shown {
 		return nil
 	}
@@ -502,7 +502,7 @@ func (v *statusView) receivePreviewTick(msg statusPreviewTickMsg, colored bool) 
 }
 
 // fetchDiff はカーソル行の diff を取る (キャッシュヒット / 取得中なら nil)。
-func (v *statusView) fetchDiff(row worktreeRow, colored bool) tea.Cmd {
+func (v *StatusView) fetchDiff(row worktreeRow, colored bool) tea.Cmd {
 	key := previewKey(row)
 	if !v.preview.Begin(key) {
 		return nil // キャッシュ済み / 取得中
@@ -521,10 +521,10 @@ func (v *statusView) fetchDiff(row worktreeRow, colored bool) tea.Cmd {
 	return func() tea.Msg {
 		if untracked {
 			lines, err := untrackedPreview(filePath, isDir)
-			return statusPreviewMsg{gen: gen, key: key, lines: lines, err: err}
+			return StatusPreviewMsg{gen: gen, key: key, lines: lines, err: err}
 		}
 		lines, err := loadWorktreeDiff(paths, staged, colored)
-		return statusPreviewMsg{gen: gen, key: key, lines: lines, err: err}
+		return StatusPreviewMsg{gen: gen, key: key, lines: lines, err: err}
 	}
 }
 
@@ -569,7 +569,7 @@ func untrackedPreview(path string, isDir bool) ([]string, error) {
 
 // receivePreview は diff 取得の結果を反映する。失敗は「取れなかった」ことをプレビュー欄に
 // 出すだけで、トーストにはしない (カーソルを動かすたびに出ると騒がしい)。
-func (v *statusView) receivePreview(msg statusPreviewMsg) {
+func (v *StatusView) ReceivePreview(msg StatusPreviewMsg) {
 	if msg.gen != v.gen {
 		// 無効化 (閉じ / r) を跨いで着地した結果。捨てるが、**札は必ず降ろす** —
 		// 降ろさないと begin() がこのキーを永久に弾き、取り直しが走らなくなる。
@@ -589,19 +589,19 @@ func (v *statusView) receivePreview(msg statusPreviewMsg) {
 }
 
 // storePreview はキャッシュへ入れて上限を超えたぶんを落とす (表示中のキーは残す)。
-func (v *statusView) storePreview(key string, lines []string) {
+func (v *StatusView) storePreview(key string, lines []string) {
 	v.preview.Store(key, lines, v.visibleKey())
 }
 
 // pagerLines は全画面 diff に出す行 (未取得なら nil)。
-func (v *statusView) pagerLines() []string {
+func (v *StatusView) pagerLines() []string {
 	lines, _ := v.preview.Get(v.pagerKey)
 	return lines
 }
 
 // visibleKey は今画面に出ているプレビューのキー (evict から守る対象)。全画面 diff を開いて
 // いればそちら、無ければカーソル行。
-func (v *statusView) visibleKey() string {
+func (v *StatusView) visibleKey() string {
 	if v.pagerKey != "" {
 		return v.pagerKey
 	}
@@ -616,7 +616,7 @@ func (v *statusView) visibleKey() string {
 //
 // 🚨 判定順を変えないこと: 確認モーダル (X) が最優先で、次に全画面 diff (pager)、最後に一覧。
 // 逆にすると確認中の j が一覧を動かして「確認に出した行」と「カーソル行」が食い違う。
-func (v *statusView) handleKey(key string, vp statusViewport) tea.Cmd {
+func (v *StatusView) HandleKey(key string, vp StatusViewport) tea.Cmd {
 	// 開く演出中のキーは即着地させる (issues viewer の finishAnim と同じ契約。spec 7 節)。
 	// 閉じ演出中のキーはここへ届かない (browseModel が finishClose してから routing する)
 	if !v.closing {
@@ -642,7 +642,7 @@ func (v *statusView) handleKey(key string, vp statusViewport) tea.Cmd {
 //	新しい角度を出したが、`Y` を y/N プロンプトで押す行為は「はい」の表明であり**実際の失敗
 //	シナリオにはならない**ため却下を維持した。
 //	→ 再評価するなら「`Y` を押して意図と違う結果になった」実例を先に作ること。
-func (v *statusView) discardKey(key string) tea.Cmd {
+func (v *StatusView) discardKey(key string) tea.Cmd {
 	row := v.discard
 	v.discarding, v.discard = false, worktreeRow{}
 	if !confirm.IsYes(key) {
@@ -654,11 +654,11 @@ func (v *statusView) discardKey(key string) tea.Cmd {
 // runDiscard は「確認に出した行」を捨てる。🚨 実行前に git status を取り直して
 // (パス, XY) の一致を検証する (spec 4 節の不変条件 1): 確認中に別プロセスがそのファイルを
 // 変えていたら、ユーザーが見て判断した対象はもう存在しないので捨てない。
-func (v *statusView) runDiscard(row worktreeRow) tea.Cmd {
+func (v *StatusView) runDiscard(row worktreeRow) tea.Cmd {
 	fresh, err := loadWorktreeStatus()
 	if err != nil {
 		v.setNotice("git status に失敗しました: "+app.FirstLine(err.Error()), app.NoticeError)
-		return v.loadCmd()
+		return v.LoadCmd()
 	}
 	now, ok := fresh.find(row.section, row.path)
 	if !ok || now.x != row.x || now.y != row.y {
@@ -673,15 +673,15 @@ func (v *statusView) runDiscard(row worktreeRow) tea.Cmd {
 	}
 	if err != nil {
 		v.setNotice("捨てられませんでした: "+app.FirstLine(err.Error()), app.NoticeError)
-		return v.loadCmd()
+		return v.LoadCmd()
 	}
 	v.setNotice(row.path+" の変更を捨てました", app.NoticeOK)
-	return v.loadCmd()
+	return v.LoadCmd()
 }
 
 // applyFresh は同期で取り直した status を画面へ反映する (loadCmd を通さない経路。
 // 実行時検証で「変わっていた」と分かった直後に、古い一覧を見せ続けないため)。
-func (v *statusView) applyFresh(st worktreeStatus) {
+func (v *StatusView) applyFresh(st worktreeStatus) {
 	sec, path, idx := v.anchor()
 	v.st, v.rows, v.loaded, v.err = st, st.ordered(), true, ""
 	v.restoreCursor(sec, path, idx)
@@ -689,7 +689,7 @@ func (v *statusView) applyFresh(st worktreeStatus) {
 }
 
 // pagerKeyPress は全画面 diff のキー (スクロールは共有ロジック、閉じるはここ)。
-func (v *statusView) pagerKeyPress(key string, vp statusViewport) tea.Cmd {
+func (v *StatusView) pagerKeyPress(key string, vp StatusViewport) tea.Cmd {
 	switch key {
 	case "q", "esc", "h", "left", "d", "enter":
 		v.pagerKey, v.pagerTitle = "", ""
@@ -708,7 +708,7 @@ func (v *statusView) pagerKeyPress(key string, vp statusViewport) tea.Cmd {
 }
 
 // listKey は一覧のキー。
-func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
+func (v *StatusView) listKey(key string, vp StatusViewport) tea.Cmd {
 	rows := max(vp.page-1, 1)
 	// 横断キー (i / R / D。表は app.CrossTarget)。s は自分自身なので下の toggle (閉じる) に任せる。
 	// 確認中 (X) や pager 中はこの関数まで届かないので誤爆しない (handleKey の判定順)
@@ -739,7 +739,7 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 		// (敵対的レビューで実測)。閉じる側 (finishClose) は元から gen++ している。
 		v.gen++
 		v.preview.ClearEntries()
-		return tea.Batch(v.loadCmd(), v.previewTickCmd())
+		return tea.Batch(v.LoadCmd(), v.previewTickCmd())
 	case "q", "esc":
 		// viewer からの q/esc は glogx ごと終了する (ユーザー要望 2026-08-06: git log 一覧へは
 		// 戻らない)。実際の quit は browseModel が行う (takeWantQuit)。一覧へ戻りたいときは
@@ -757,7 +757,7 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 }
 
 // applyMotion は一覧のカーソル移動を適用する (移動したらプレビューのデバウンスを張り直す)。
-func (v *statusView) applyMotion(m listnav.Motion, rows int) tea.Cmd {
+func (v *StatusView) applyMotion(m listnav.Motion, rows int) tea.Cmd {
 	switch m {
 	case listnav.Down:
 		return v.moveCursor(1)
@@ -777,25 +777,25 @@ func (v *statusView) applyMotion(m listnav.Motion, rows int) tea.Cmd {
 }
 
 // takeWantCross は横断先 (無ければ app.FullScreenNone) を一度だけ取り出す (takeNotice と同じ語彙)。
-func (v *statusView) takeWantCross() app.FullScreenID {
+func (v *StatusView) TakeWantCross() app.FullScreenID {
 	want := v.wantCross
 	v.wantCross = app.FullScreenNone
 	return want
 }
 
 // takeWantQuit は「q/esc で glogx ごと終了したい」を一度だけ取り出す (takeNotice と同じ語彙)。
-func (v *statusView) takeWantQuit() bool {
+func (v *StatusView) TakeWantQuit() bool {
 	want := v.wantQuit
 	v.wantQuit = false
 	return want
 }
 
 // moveCursor / setCursor はカーソル移動 (移動後はプレビューのデバウンスを張り直す)。
-func (v *statusView) moveCursor(delta int) tea.Cmd {
+func (v *StatusView) moveCursor(delta int) tea.Cmd {
 	return v.setCursor(v.cursor + delta)
 }
 
-func (v *statusView) setCursor(i int) tea.Cmd {
+func (v *StatusView) setCursor(i int) tea.Cmd {
 	if len(v.rows) == 0 {
 		return nil
 	}
@@ -808,7 +808,7 @@ func (v *statusView) setCursor(i int) tea.Cmd {
 }
 
 // jumpSection は次の (行のある) セクションの先頭へ飛ぶ。末尾のセクションからは先頭へ回る。
-func (v *statusView) jumpSection() tea.Cmd {
+func (v *StatusView) jumpSection() tea.Cmd {
 	cur, ok := v.current()
 	if !ok {
 		return nil
@@ -824,7 +824,7 @@ func (v *statusView) jumpSection() tea.Cmd {
 
 // toggleStage はカーソル行を「セクションを移す」(spec 3 節)。向きはセクションが決めるので
 // キーは 1 つで足りる。
-func (v *statusView) toggleStage() tea.Cmd {
+func (v *StatusView) toggleStage() tea.Cmd {
 	row, ok := v.current()
 	if !ok {
 		return nil
@@ -842,11 +842,11 @@ func (v *statusView) toggleStage() tea.Cmd {
 	if err != nil {
 		v.setNotice("失敗しました: "+app.FirstLine(err.Error()), app.NoticeError)
 	}
-	return v.loadCmd()
+	return v.LoadCmd()
 }
 
 // stageAll は Unstaged + Untracked をまとめて stage する。
-func (v *statusView) stageAll() tea.Cmd {
+func (v *StatusView) stageAll() tea.Cmd {
 	var paths []string
 	seen := map[string]bool{}
 	for _, r := range v.rows {
@@ -865,10 +865,10 @@ func (v *statusView) stageAll() tea.Cmd {
 	}
 	if err := extcmd.RunGitAdd(paths); err != nil {
 		v.setNotice("stage できませんでした: "+app.FirstLine(err.Error()), app.NoticeError)
-		return v.loadCmd()
+		return v.LoadCmd()
 	}
 	v.setNotice(strconv.Itoa(len(paths))+" 件を stage しました", app.NoticeOK)
-	return v.loadCmd()
+	return v.LoadCmd()
 }
 
 // askDiscard は X の確認へ入る。
@@ -876,7 +876,7 @@ func (v *statusView) stageAll() tea.Cmd {
 // 🚨 Staged 行では受けない: 「staged の変更を捨てる」は unstage + 作業ツリーの破棄という
 // 二段の破壊で、同じキー・同じ文言では意味が変わる。先に Space で降ろさせて、X の意味を
 // 「作業ツリーの変更を捨てる」1 つに保つ (spec 3/4 節)。
-func (v *statusView) askDiscard() {
+func (v *StatusView) askDiscard() {
 	row, ok := v.current()
 	if !ok {
 		return
@@ -892,7 +892,7 @@ func (v *statusView) askDiscard() {
 }
 
 // openPager は全画面 diff を開く (未取得なら取得を発行してスピナーを出す)。
-func (v *statusView) openPager(vp statusViewport) tea.Cmd {
+func (v *StatusView) openPager(vp StatusViewport) tea.Cmd {
 	row, ok := v.current()
 	if !ok {
 		return nil
@@ -905,7 +905,7 @@ func (v *statusView) openPager(vp statusViewport) tea.Cmd {
 
 // openNeighborPager は全画面 diff を開いたまま隣 (delta = ±1) の行の diff へ差し替える。
 // 端では止めて案内する (巻かない。issues / commit diff と同じ)。カーソルは差し替え先へ追従する。
-func (v *statusView) openNeighborPager(delta int, vp statusViewport) tea.Cmd {
+func (v *StatusView) openNeighborPager(delta int, vp StatusViewport) tea.Cmd {
 	ni := v.cursor + delta
 	if ni < 0 || ni >= len(v.rows) {
 		if delta > 0 {
@@ -920,7 +920,7 @@ func (v *statusView) openNeighborPager(delta int, vp statusViewport) tea.Cmd {
 }
 
 // hint は hint 行 (browseModel が枠の下に出す)。
-func (v *statusView) hint(width int) string {
+func (v *StatusView) Hint(width int) string {
 	switch {
 	case v.discarding:
 		return "y/Enter: 捨てる  n/Esc: キャンセル"
@@ -959,24 +959,24 @@ func (v *statusView) hint(width int) string {
 // ---- 描画 ----
 
 // lines は全画面ビューの page 行を返す (issuesView.lines と同じ契約: 常にちょうど page 行)。
-func (v *statusView) lines(o statusRenderOpts) []string {
-	v.settleClose()
+func (v *StatusView) Lines(o StatusRenderOpts) []string {
+	v.SettleClose()
 	v.settleAnim()
 	// ヘッダー (ブランチ + 件数) は 2 カラムに割らず**全幅**で描く。一覧カラムの中に入れると
 	// 幅 48 桁ほどで件数が切り落とされる (実測 2026-08-03: "unstaged 15 / stage…")。
-	head := []string{v.headerLine(o, o.width)}
-	rows := max(o.page-len(head), 1)
+	head := []string{v.headerLine(o, o.Width)}
+	rows := max(o.Page-len(head), 1)
 	inner := o
-	inner.page = rows
-	listW := statusListWidth(o.width)
+	inner.Page = rows
+	listW := statusListWidth(o.Width)
 	var body []string
-	if listW >= o.width {
-		body = layout.PadTo(v.listLines(inner, o.width), rows)
+	if listW >= o.Width {
+		body = layout.PadTo(v.listLines(inner, o.Width), rows)
 	} else {
 		left := layout.PadTo(v.listLines(inner, listW), rows)
-		right := layout.PadTo(v.previewPane(inner, o.width-listW-statusSepWidth), rows)
+		right := layout.PadTo(v.previewPane(inner, o.Width-listW-statusSepWidth), rows)
 		body = make([]string, 0, rows)
-		sep := term.Paint("│ ", term.AnsiDim, o.colored)
+		sep := term.Paint("│ ", term.AnsiDim, o.Colored)
 		for i := range rows {
 			body = append(body, term.FillRight(left[i], listW)+sep+right[i])
 		}
@@ -984,15 +984,15 @@ func (v *statusView) lines(o statusRenderOpts) []string {
 	body = append(head, body...)
 	// 🚨 契約 (ちょうど page 行) をここで必ず満たす。ヘッダー 1 行 + 本文の合成は page が
 	// 極端に小さいとき (0 / 1 行の窓) に page を超える
-	body = layout.PadTo(body, o.page)
+	body = layout.PadTo(body, o.Page)
 	if box := v.pagerBox(o); len(box) > 0 {
-		body = term.OverlayCenteredBox(body, box, o.width, o.page, o.colored)
+		body = term.OverlayCenteredBox(body, box, o.Width, o.Page, o.Colored)
 	}
 	if box := v.discardBox(o); len(box) > 0 {
-		body = term.OverlayCenteredBox(body, box, o.width, o.page, o.colored)
+		body = term.OverlayCenteredBox(body, box, o.Width, o.Page, o.Colored)
 	}
 	if p := v.animProgress(); p < 1 {
-		body = slideLeftWindow(body, p, o.width, v.closing, o.colored)
+		body = slideLeftWindow(body, p, o.Width, v.closing, o.Colored)
 	}
 	return body
 }
@@ -1006,7 +1006,7 @@ func statusListWidth(total int) int {
 }
 
 // animProgress は演出の進み (0..1。演出していないときは 1 = 変形しない)。
-func (v *statusView) animProgress() float64 {
+func (v *StatusView) animProgress() float64 {
 	if v.closing {
 		return 1 - anim.Elapsed(v.animStart, app.TimeNow(), statusCloseDuration)
 	}
@@ -1051,11 +1051,11 @@ func slideLeftWindow(window []string, progress float64, width int, closing, colo
 
 // listLines は一覧カラム (セクション見出し + 行) を組む。ヘッダーは lines が全幅で描くので
 // ここには含めない。
-func (v *statusView) listLines(o statusRenderOpts, width int) []string {
+func (v *StatusView) listLines(o StatusRenderOpts, width int) []string {
 	if msg := v.emptyMessage(o); msg != "" {
-		return []string{term.Paint(term.ClipToWidth(msg, width), term.AnsiDim, o.colored)}
+		return []string{term.Paint(term.ClipToWidth(msg, width), term.AnsiDim, o.Colored)}
 	}
-	rows := max(o.page, 1)
+	rows := max(o.Page, 1)
 	// 🚨 整形するのは窓の中だけ (displayIndex の doc)。全行を整形してから切ると、画面に出る
 	// 行数と無関係に変更ファイル数へ比例したコストになる。
 	index, cursorAt := v.displayIndex()
@@ -1065,11 +1065,11 @@ func (v *statusView) listLines(o statusRenderOpts, width int) []string {
 	for _, dl := range index[v.offset:end] {
 		out = append(out, v.displayLine(dl, o, width-layout.ScrollbarWidth))
 	}
-	return layout.Scrollbar(out, width, len(index), v.offset, o.colored)
+	return layout.Scrollbar(out, width, len(index), v.offset, o.Colored)
 }
 
 // headerLine は最上段 (ブランチ + 件数)。
-func (v *statusView) headerLine(o statusRenderOpts, width int) string {
+func (v *StatusView) headerLine(o StatusRenderOpts, width int) string {
 	left := "status"
 	if v.st.branch != "" {
 		left += " ── " + v.st.branch
@@ -1092,11 +1092,11 @@ func (v *statusView) headerLine(o statusRenderOpts, width int) string {
 		right = fmt.Sprintf("🚨 %d 件解釈不能 / ", v.st.skipped) + right
 	}
 	pad := max(width-term.DispWidth(left)-term.DispWidth(right), 1)
-	return term.Paint(term.ClipToWidth(left+term.PadSpaces(pad)+right, width), term.AnsiBold, o.colored)
+	return term.Paint(term.ClipToWidth(left+term.PadSpaces(pad)+right, width), term.AnsiBold, o.Colored)
 }
 
 // emptyMessage は「一覧に出すものが無い」状態の案内 ("" = 行を描く)。
-func (v *statusView) emptyMessage(o statusRenderOpts) string {
+func (v *StatusView) emptyMessage(o StatusRenderOpts) string {
 	switch {
 	case v.err != "" && !v.loaded:
 		// 🚨 読めた履歴があるときは一覧を消さない (last-good を維持する。usage overlay /
@@ -1104,7 +1104,7 @@ func (v *statusView) emptyMessage(o statusRenderOpts) string {
 		// 消えると「操作しようとした瞬間だけ画面が空になる」ことになる。失敗はヘッダーに出す
 		return "git status に失敗しました: " + v.err
 	case v.loading && !v.loaded:
-		return o.spinner + " git status を読んでいます..."
+		return o.Spinner + " git status を読んでいます..."
 	case v.st.clean() && v.st.skipped > 0:
 		// 🚨 「読めなかった」を「クリーン」と同じ絵にしない (沈黙を成功にしない)。git の出力形式が
 		// 想定と違うとき、変更を見せるための画面が「変更なし」と嘘をつくことになる
@@ -1136,7 +1136,7 @@ type statusDisplayLine struct {
 //
 // 行の数え上げ自体は件数に比例するが、**rows が変わらない間はメモを返す**ので毎フレーム
 // 走らせない (issue 048)。カーソル移動でも作り直さない (cursorAt は idxAt から O(1))。
-func (v *statusView) displayIndex() (index []statusDisplayLine, cursorAt int) {
+func (v *StatusView) displayIndex() (index []statusDisplayLine, cursorAt int) {
 	if !sameRowsBacking(v.idxRows, v.rows) {
 		v.rebuildDisplayIndex()
 	}
@@ -1149,7 +1149,7 @@ func (v *statusView) displayIndex() (index []statusDisplayLine, cursorAt int) {
 }
 
 // rebuildDisplayIndex は行構成のメモを作り直す (rows が差し替わったときだけ)。
-func (v *statusView) rebuildDisplayIndex() {
+func (v *StatusView) rebuildDisplayIndex() {
 	index := make([]statusDisplayLine, 0, len(v.rows)+4)
 	at := make([]int, len(v.rows))
 	for _, sec := range []worktreeSection{sectionStaged, sectionUnstaged, sectionUntracked, sectionConflicted} {
@@ -1187,10 +1187,10 @@ func sameRowsBacking(a, b []worktreeRow) bool {
 }
 
 // displayLine は index の 1 行を実際の文字列へ整形する (可視の窓の分だけ呼ぶ)。
-func (v *statusView) displayLine(dl statusDisplayLine, o statusRenderOpts, width int) string {
+func (v *StatusView) displayLine(dl statusDisplayLine, o StatusRenderOpts, width int) string {
 	if dl.row < 0 {
 		label := fmt.Sprintf("%s (%d)", dl.sec.label(), dl.n)
-		return term.Paint(term.ClipToWidth(label, width), sectionColor(dl.sec)+term.AnsiBold, o.colored)
+		return term.Paint(term.ClipToWidth(label, width), sectionColor(dl.sec)+term.AnsiBold, o.Colored)
 	}
 	return v.rowLine(dl.row, o, width)
 }
@@ -1211,19 +1211,19 @@ func sectionColor(sec worktreeSection) string {
 }
 
 // rowLine は 1 行 (溝 + コード + パス + ◐)。
-func (v *statusView) rowLine(i int, o statusRenderOpts, width int) string {
+func (v *StatusView) rowLine(i int, o StatusRenderOpts, width int) string {
 	r := v.rows[i]
-	code := term.Paint(string(r.code), sectionColor(r.section), o.colored)
+	code := term.Paint(string(r.code), sectionColor(r.section), o.Colored)
 	badge := ""
 	if r.partial {
 		badge = " ◐" // index 側と作業ツリー側の両方に変更がある = 一部だけ staged
 	}
 	pathW := max(width-term.CursorGutterWidth-2-term.DispWidth(badge), 4)
-	text := code + " " + statusPathText(r, pathW, o.colored) + badge
+	text := code + " " + statusPathText(r, pathW, o.Colored) + badge
 	if i != v.cursor {
 		return term.ClipToWidth(term.CursorGutterBlank+text, width)
 	}
-	return statusCursorPaint(term.ClipToWidth(term.CursorGutterMark+text, width), width, o.colored)
+	return statusCursorPaint(term.ClipToWidth(term.CursorGutterMark+text, width), width, o.Colored)
 }
 
 // statusPathText はパスを「ディレクトリ部分を dim、basename を明るく」描く (幅を超える場合は
@@ -1257,7 +1257,7 @@ func statusCursorPaint(text string, width int, colored bool) string {
 
 // previewPane はプレビューカラム (カーソル行の diff の先頭部分)。スクロールは持たない
 // (全文は d。spec 6 節)。
-func (v *statusView) previewPane(o statusRenderOpts, width int) []string {
+func (v *StatusView) previewPane(o StatusRenderOpts, width int) []string {
 	row, ok := v.current()
 	if !ok || width <= 0 {
 		return nil
@@ -1267,20 +1267,20 @@ func (v *statusView) previewPane(o statusRenderOpts, width int) []string {
 		sectionUntracked: "untracked", sectionConflicted: "conflict",
 	}[row.section]
 	head := term.ClipToWidth(row.dispPath()+"  ("+kind+")", width)
-	out := []string{term.Paint(head, term.AnsiBold, o.colored), ""}
+	out := []string{term.Paint(head, term.AnsiBold, o.Colored), ""}
 	key := previewKey(row)
 	body, ok := v.preview.Get(key)
 	switch {
 	case !ok && v.preview.Loading(key):
-		out = append(out, term.Paint(o.spinner+" diff を取得中...", term.AnsiDim, o.colored))
+		out = append(out, term.Paint(o.Spinner+" diff を取得中...", term.AnsiDim, o.Colored))
 	case !ok:
-		out = append(out, term.Paint("(d で全文)", term.AnsiDim, o.colored))
+		out = append(out, term.Paint("(d で全文)", term.AnsiDim, o.Colored))
 	default:
-		rows := max(o.page-len(out), 1)
+		rows := max(o.Page-len(out), 1)
 		body = body[previewSkipDiffHeader(body):]
 		for i, line := range body {
 			if i >= rows {
-				out = append(out, term.Paint("… 続きは d", term.AnsiDim, o.colored))
+				out = append(out, term.Paint("… 続きは d", term.AnsiDim, o.Colored))
 				break
 			}
 			out = append(out, term.ClipToWidth(line, width))
@@ -1311,23 +1311,23 @@ func previewSkipDiffHeader(lines []string) int {
 }
 
 // pagerBox は全画面 diff (d) の枠付き本文。閉じているときは nil。
-func (v *statusView) pagerBox(o statusRenderOpts) []string {
+func (v *StatusView) pagerBox(o StatusRenderOpts) []string {
 	if v.pagerKey == "" {
 		return nil
 	}
 	// 🚨 diffOverlay.boxLines のような width<=0 の下限ガードは置かない: 幅 0 の窓へ重ねる
 	// term.OverlayCenteredBox 自体が何もせず返すため観測できず、テストで壊せない防御になる
 	// (ミューテーション検証 2026-08-03: ガードを外しても TestStatusLinesSurvivesExtremeSizes は green)。
-	width := o.width
-	rows := v.pagerRows(o.page)
+	width := o.Width
+	rows := v.pagerRows(o.Page)
 	lines, ok := v.preview.Get(v.pagerKey)
 	var body []string
 	title := " diff: " + v.pagerTitle + " "
 	switch {
 	case !ok && v.preview.Loading(v.pagerKey):
-		body = []string{term.Paint(o.spinner+" diff を取得中...", term.AnsiDim, o.colored)}
+		body = []string{term.Paint(o.Spinner+" diff を取得中...", term.AnsiDim, o.Colored)}
 	case !ok:
-		body = []string{term.Paint("(diff はありません)", term.AnsiDim, o.colored)}
+		body = []string{term.Paint("(diff はありません)", term.AnsiDim, o.Colored)}
 	default:
 		// 描画で確定した行数・窓で論理 offset を収束させる (理由は listnav.Pager.Clamp の doc)
 		v.pager.Clamp(len(lines), rows)
@@ -1335,17 +1335,17 @@ func (v *statusView) pagerBox(o statusRenderOpts) []string {
 		end := min(start+rows, len(lines))
 		body = append(body, lines[start:end]...)
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] ", v.pagerTitle, start+1, end, len(lines))
-		body = term.WithScrollbar(body, width, len(lines), start, o.colored)
+		body = term.WithScrollbar(body, width, len(lines), start, o.Colored)
 	}
-	return term.BuildShadowPanelBox(title, body, width, o.colored)
+	return term.BuildShadowPanelBox(title, body, width, o.Colored)
 }
 
 // pagerRows は全画面 diff の本文行数 (visibleDiffRows と同じ内訳: 枠 2 + 影 1 + 余白 1 + hint 1)。
-func (v *statusView) pagerRows(page int) int { return max(page-5, 3) }
+func (v *StatusView) pagerRows(page int) int { return max(page-5, 3) }
 
 // discardBox は X の確認モーダル。🚨 untracked は restore ではなく削除なので文言を変える
 // (同じ見た目のキーで意味が変わるものを同じ文言で確認しない。spec 4 節)。
-func (v *statusView) discardBox(o statusRenderOpts) []string {
+func (v *StatusView) discardBox(o StatusRenderOpts) []string {
 	if !v.discarding {
 		return nil
 	}
@@ -1357,5 +1357,10 @@ func (v *statusView) discardBox(o statusRenderOpts) []string {
 		head = "次のファイルを削除します (復元できません)"
 	}
 	body := []string{head, "  " + string(v.discard.code) + " " + v.discard.dispPath()}
-	return confirm.Dialog(" 変更を捨てる ", body, confirm.HintYesNo, o.width, o.colored)
+	return confirm.Dialog(" 変更を捨てる ", body, confirm.HintYesNo, o.Width, o.Colored)
+}
+
+// Viewport は描画情報から「窓の寸法 + 色」を取り出す (キー処理へ渡す形)。
+func (o StatusRenderOpts) Viewport() StatusViewport {
+	return StatusViewport{page: o.Page, colored: o.Colored}
 }

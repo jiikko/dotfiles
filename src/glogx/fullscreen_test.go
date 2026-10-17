@@ -50,9 +50,9 @@ var fullScreenCases = []fullScreenCase{
 	},
 	{
 		id: app.FullScreenStatus, name: "status viewer",
-		show:  func(m *browseModel) { m.statusOv.shown = true },
-		hint:  func(m *browseModel) string { return m.statusOv.hint(m.hintWidth()) },
-		lines: func(m *browseModel) []string { return m.statusOv.lines(m.statusOpts()) },
+		show:  func(m *browseModel) { m.statusOv.Fixture().SetShown(true) },
+		hint:  func(m *browseModel) string { return m.statusOv.Hint(m.hintWidth()) },
+		lines: func(m *browseModel) []string { return m.statusOv.Lines(m.statusOpts()) },
 	},
 	{
 		id: app.FullScreenIssues, name: "issues viewer",
@@ -349,7 +349,7 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 // visibleFullScreens は開いている全画面の枚数 (同時に 1 枚の前提が守られているかを見る)。
 func visibleFullScreens(m *browseModel) int {
 	n := 0
-	for _, v := range []bool{m.issuesOv.Visible(), m.statusOv.visible(), m.rlDash.visible(), m.doctorOv.Visible(), m.filerV.visible(), m.lanV.visible()} {
+	for _, v := range []bool{m.issuesOv.Visible(), m.statusOv.Visible(), m.rlDash.visible(), m.doctorOv.Visible(), m.filerV.visible(), m.lanV.visible()} {
 		if v {
 			n++
 		}

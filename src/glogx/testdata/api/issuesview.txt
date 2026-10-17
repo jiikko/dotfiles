@@ -21,7 +21,6 @@ func FixtureScanDirs
 func FixtureScanMsg
 func LoadIssuesScreen
 func NewIssuesView
-method Fixture.BodyLoaded
 method Fixture.BodyOpen
 method Fixture.BodyPager
 method Fixture.Close
@@ -33,7 +32,6 @@ method Fixture.DrawerTargetWidth
 method Fixture.EditNumberFilter
 method Fixture.FinishAnim
 method Fixture.FinishDrawer
-method Fixture.Load
 method Fixture.MarkNextActive
 method Fixture.Notice
 method Fixture.NumberFilterActive
@@ -48,7 +46,6 @@ method Fixture.RowCount
 method Fixture.Scanning
 method Fixture.Select
 method Fixture.SetCloseAnim
-method Fixture.SetCursor
 method Fixture.SetCwd
 method Fixture.SetMarkNextActive
 method Fixture.SetNumberFilterTyping

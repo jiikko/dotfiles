@@ -150,8 +150,8 @@ func benchStatusBrowse(tb testing.TB, files, w, h int) *browseModel {
 		b.WriteString(r)
 		b.WriteByte(0)
 	}
-	m.statusOv.shown = true
-	m.statusOv.receive(statusLoadMsg{st: parseWorktreeStatus(b.String()), gen: m.statusOv.gen})
+	m.statusOv.Fixture().SetShown(true)
+	m.statusOv.Fixture().ReceivePorcelain(b.String())
 	return m
 }
 

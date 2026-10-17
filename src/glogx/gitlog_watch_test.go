@@ -515,7 +515,7 @@ func TestGitLogReloadDeferredCoversEachState(t *testing.T) {
 		{"push の演出中", func(m *browseModel) { m.pushAnimating = true }},
 		{"job パネル", func(m *browseModel) { m.panelSHA = m.commits[0].SHA }},
 		{"issues viewer", func(m *browseModel) { m.issuesOv.Fixture().SetShown(true) }},
-		{"status viewer", func(m *browseModel) { m.statusOv.shown = true }},
+		{"status viewer", func(m *browseModel) { m.statusOv.Fixture().SetShown(true) }},
 		{"残量ダッシュボード", func(m *browseModel) { m.rlDash.shown = true }},
 		{"doctor", func(m *browseModel) { m.doctorOv.Fixture().Show() }},
 	}

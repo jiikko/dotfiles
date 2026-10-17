@@ -17,7 +17,7 @@
 - `cli_health.go`, `claude_version.go`, `codex_version.go` — claude/codex CLI のログイン状態検査・新版検出
 - `action_modal.go` — push/pull/claude update の確認→実行→結果モーダル
 - `diff_overlay.go`, `pr_status_overlay.go`, `job_detail_overlay.go` — コミットに重ねるポップアップ群 (いずれも「対象 SHA/key を持つ pager」型)
-- `status_view.go`, `worktree_status.go` — status viewer (`s`)。仕様は `docs/status-viewer-spec.md`
+- `internal/statusview/` (`status_view.go`, `worktree_status.go`) — status viewer (`s`)。仕様は `docs/status-viewer-spec.md`。main のテストが状態を置くのは `Fixture()` の口だけ (git status の取得の差し替えは `statusview.FixtureStubWorktree`)
 - `internal/issuesview/` (`issues_view.go`, `issues_drawer.go`, `issues_state.go`, `issues_watch.go`, `issues_number_filter.go`, `issues_linkjump.go`, `issues_group_expansion.go`, `url_picker.go`) — issues viewer (`i`) の画面側 (`issues_group_expansion.go` は epic group の展開状態 3 集合の整合、`issues_linkjump.go` は本文のファイルパスのジャンプモード `Tab`、`url_picker.go` は本文 pager の `u` の URL ピッカー)。仕様は `docs/issues-viewer-spec.md`。ドメイン (探索・parse・表示整形) は独立パッケージ `issues/`。テストは画面の中だけで閉じるものを `package issuesview` に、browseModel と組み合わせる配線のテストを main に置く。両方が使う issue の fixture は `internal/issuesview/issuesviewtest` (issuesview を import しない)
 - `internal/doctorview/` (`doctor_view.go`, `doctor_brew*.go`, `doctor_cache.go`, `doctor_cleanup.go`, `doctor_delete.go`, `doctor_docker.go`, `doctor_keys.go`, `doctor_resume.go`, `doctor_rowcursor.go`, `doctor_ssd.go`) — doctor 画面 (`D`)。テストは 3 か所: 画面の中を直接見るテスト (`package doctorview`)、画面の公開面だけで書けるテスト (`*_ext_test.go` = `package doctorview_test`)、browseModel と組み合わせるテスト (main の `doctor_*_test.go`。キーの振り分け・トースト・終了経路の配線)。後の 2 つが共有する部品 (テスト用の DoctorView・fake) は `internal/doctorview/doctortest` (本番からの import は depguard が止める)。新しい doctor のテストは、browseModel が要らない限り doctorview の中に書く (main のテストを増やすと、tui.go を直すたびの再コンパイルが重くなる。issue 742)。判定は `doctor/disk` `doctor/svc` `doctor/docker` `doctor/ssd` を直接呼ぶ (削除の破壊的操作は `doctor_delete.go` ではなく `doctor/disk.Delete` が持つ)
 - `usage_overlay.go`, `usage_cache.go` — 右上の利用枠オーバーレイ (`U`) とそのキャッシュ
@@ -30,7 +30,7 @@
 - `zoom.go`, `hint_surfaces.go` — 開閉演出・最下行ヒントの共有ロジック
 - `autobuild.go`, `probe.go`, `fullscreen.go` — 自動再ビルド通知・計測フック・全画面ビューアの排他制御 (どれが出ているか・開く口。ID は `internal/app/fullscreen_id.go`)
 - `open_workspace.go` — `e` で nvim を repo root で起動
-- `line_cache.go` — diff / job / status が共有する行キャッシュと取得の単発化
+- `internal/linecache/` — diff / job / status が共有する行キャッシュと取得の単発化 (`linecache.Cache`。他に依存しない道具なので独立のパッケージ)
 - `issues/` — 独立パッケージ。issue markdown の探索・分類・parse・本文整形 (glogx 本体に非依存)
 - `gorules/` — ruleguard のカスタム lint 規則 (`make lint` が `go vet -tags ruleguard` で型検査)
 - `tools/` — 表示のサンプルレンダラ (`border-preview.sh` / `dial-preview` / `width-probe`)。本体へ入れる前にここで見た目を固める

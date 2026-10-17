@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 
@@ -18,6 +17,7 @@ import (
 	"glogx/internal/extcmd"
 	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
+	"glogx/internal/statusview"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 
@@ -354,14 +354,14 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 
 	// status viewer の全画面 diff も同じ規律 (pagerRows = page - 5 なので page 13 で rows 8)
 	sv := newTestStatusView(t, "")
-	sv.pagerKey, sv.pagerTitle = "k", "t"
-	sv.preview.Store("k", lines, "k")
-	sv.pager.Offset = 49
-	if title := sv.pagerBox(statusRenderOpts{width: width, page: rows + 5})[0]; !strings.Contains(title, "[43-50/50]") {
+	sv.Fixture().SetPager("k", "t")
+	sv.Fixture().Preview().Store("k", lines, "k")
+	sv.Fixture().Pager().Offset = 49
+	if title := sv.Fixture().PagerBox(statusview.StatusRenderOpts{Width: width, Page: rows + 5})[0]; !strings.Contains(title, "[43-50/50]") {
 		t.Errorf("status viewer の pager が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
 	}
-	if sv.pager.Offset != 42 {
-		t.Errorf("status viewer の pager が論理 offset を書き戻していない: offset=%d, want 42", sv.pager.Offset)
+	if sv.Fixture().Pager().Offset != 42 {
+		t.Errorf("status viewer の pager が論理 offset を書き戻していない: offset=%d, want 42", sv.Fixture().Pager().Offset)
 	}
 }
 
@@ -1061,9 +1061,9 @@ func TestIssuesViewerScanKeepsSpinnerAlive(t *testing.T) {
 // (spinnerActive に足すだけでは 12.5fps で点滅して見える回帰の防止)。
 func TestStatusViewerSlideTicksAt60FPS(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statusOv.closeAnimOff = false // newTestBrowse は演出を切っているので戻す (演出そのものの検査)
+	m.statusOv.Fixture().SetCloseAnim(true) // newTestBrowse は演出を切っているので戻す (演出そのものの検査)
 	m.handleKey("s")
-	if !m.statusOv.visible() {
+	if !m.statusOv.Visible() {
 		t.Fatal("s で status viewer が開かない")
 	}
 	if !m.spinnerActive() {
@@ -1072,11 +1072,11 @@ func TestStatusViewerSlideTicksAt60FPS(t *testing.T) {
 	if got := m.tickInterval(); got != zoomInterval {
 		t.Fatalf("開閉スライド中の tick 周期 = %v, want zoomInterval (60fps)", got)
 	}
-	m.statusOv.animStart = time.Time{} // スライド着地後
+	m.statusOv.Fixture().ResetAnim() // スライド着地後
 	if got := m.tickInterval(); got != spinnerInterval {
 		t.Fatalf("スライド後に tick 周期が戻っていない: %v", got)
 	}
-	startPagerGlide(t, &m.statusOv.pager, 0, 1)
+	startPagerGlide(t, m.statusOv.Fixture().Pager(), 0, 1)
 	if !m.spinnerActive() {
 		t.Fatal("pager glide 中にスピナーの tick が回らない")
 	}
@@ -1089,12 +1089,12 @@ func TestStatusViewerSlideTicksAt60FPS(t *testing.T) {
 func TestViewerCrossSwitching(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.handleKey("s")
-	if !m.statusOv.visible() {
+	if !m.statusOv.Visible() {
 		t.Fatal("前提が崩れた: s で status viewer が開かない")
 	}
 	releaseKey(m)
 	m.handleKey("i")
-	if m.statusOv.visible() {
+	if m.statusOv.Visible() {
 		t.Fatal("status viewer の i で status が閉じない")
 	}
 	if !m.issuesOv.Visible() {
@@ -1105,7 +1105,7 @@ func TestViewerCrossSwitching(t *testing.T) {
 	if m.issuesOv.Visible() {
 		t.Fatal("issues viewer の s で issues が閉じない")
 	}
-	if !m.statusOv.visible() {
+	if !m.statusOv.Visible() {
 		t.Fatal("issues viewer の s で status viewer が開かない")
 	}
 }
@@ -1120,7 +1120,7 @@ func TestIssuesRestoreDroppedWhenStatusOpen(t *testing.T) {
 	if m.issuesOv.Visible() {
 		t.Fatal("status viewer 表示中の遅延 restore で issues viewer が開いた")
 	}
-	if !m.statusOv.visible() {
+	if !m.statusOv.Visible() {
 		t.Fatal("前提が崩れた: status viewer が開いていない")
 	}
 }
@@ -1144,8 +1144,8 @@ func TestViewerQuitKeysQuitApp(t *testing.T) {
 	m.handleKey("s")
 	releaseKey(m)
 	m.handleKey("s")
-	if m.done || m.statusOv.visible() {
-		t.Fatalf("s の toggle が壊れた (done=%v visible=%v)", m.done, m.statusOv.visible())
+	if m.done || m.statusOv.Visible() {
+		t.Fatalf("s の toggle が壊れた (done=%v visible=%v)", m.done, m.statusOv.Visible())
 	}
 }
 
@@ -1157,9 +1157,9 @@ func TestIssuesViewerFilterSwallowsSwitchKey(t *testing.T) {
 	m.handleKey("/")
 	releaseKey(m)
 	m.handleKey("s")
-	if !m.issuesOv.Visible() || m.statusOv.visible() {
+	if !m.issuesOv.Visible() || m.statusOv.Visible() {
 		t.Fatalf("番号入力中の s が viewer を切り替えた (issues=%v status=%v)",
-			m.issuesOv.Visible(), m.statusOv.visible())
+			m.issuesOv.Visible(), m.statusOv.Visible())
 	}
 }
 

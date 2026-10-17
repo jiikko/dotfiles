@@ -41,7 +41,7 @@ func TestGlobalChromeShowsInEveryView(t *testing.T) {
 			t.Helper()
 			stubWorktreeStatus(t, statusRec(" M a.go"), nil)
 			m.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
-			if !m.statusOv.visible() {
+			if !m.statusOv.Visible() {
 				t.Fatal("status viewer が開かない")
 			}
 		}},

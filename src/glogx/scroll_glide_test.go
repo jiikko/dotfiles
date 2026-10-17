@@ -110,14 +110,14 @@ func TestResizeStopsAllGlides(t *testing.T) {
 	m.glide.Start(0, 10, term.ScrollAnimFrames)
 	startPagerGlide(t, &m.diffOv.pager, 0, 10)
 	startPagerGlide(t, m.issuesOv.Fixture().BodyPager(), 0, 10)
-	startPagerGlide(t, &m.statusOv.pager, 0, 10)
+	startPagerGlide(t, m.statusOv.Fixture().Pager(), 0, 10)
 	m.issuesOv.Fixture().CursorGlide().Start(0, 10, term.CursorAnimFrames)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	if m.glide.Active() || m.diffOv.pager.Animating() || m.issuesOv.Fixture().BodyPager().Animating() ||
-		m.statusOv.pager.Animating() || m.issuesOv.Fixture().CursorGlide().Active() {
+		m.statusOv.Fixture().Pager().Animating() || m.issuesOv.Fixture().CursorGlide().Active() {
 		t.Errorf("resize で glide が残る: list=%v diff=%v issuesBody=%v status=%v issuesCursor=%v",
 			m.glide.Active(), m.diffOv.pager.Animating(), m.issuesOv.Fixture().BodyPager().Animating(),
-			m.statusOv.pager.Animating(), m.issuesOv.Fixture().CursorGlide().Active())
+			m.statusOv.Fixture().Pager().Animating(), m.issuesOv.Fixture().CursorGlide().Active())
 	}
 }
 

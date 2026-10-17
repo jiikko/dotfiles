@@ -200,13 +200,13 @@ func TestRatelimitDashCrossSwitching(t *testing.T) {
 	}
 	releaseKey(m)
 	m.handleKey("s")
-	if m.rlDash.visible() || !m.statusOv.visible() {
-		t.Fatalf("ダッシュボードの s で status viewer へ移らない (dash=%v status=%v)", m.rlDash.visible(), m.statusOv.visible())
+	if m.rlDash.visible() || !m.statusOv.Visible() {
+		t.Fatalf("ダッシュボードの s で status viewer へ移らない (dash=%v status=%v)", m.rlDash.visible(), m.statusOv.Visible())
 	}
 	releaseKey(m)
 	m.handleKey("R")
-	if !m.rlDash.visible() || m.statusOv.visible() {
-		t.Fatalf("status viewer の R でダッシュボードへ移らない (dash=%v status=%v)", m.rlDash.visible(), m.statusOv.visible())
+	if !m.rlDash.visible() || m.statusOv.Visible() {
+		t.Fatalf("status viewer の R でダッシュボードへ移らない (dash=%v status=%v)", m.rlDash.visible(), m.statusOv.Visible())
 	}
 }
 

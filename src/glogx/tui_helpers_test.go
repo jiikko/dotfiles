@@ -110,7 +110,7 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 	m.issuesOv.Fixture().SetCloseAnim(false)
 	// status viewer の閉じる演出も同じ理由で切る (s の toggle が「即座に閉じている」前提で読める
 	// ように)。演出そのものは status_view_test.go の TestSlideLeftWindow 等が直接検査する。
-	m.statusOv.closeAnimOff = true
+	m.statusOv.Fixture().SetCloseAnim(false)
 	return m
 }
 

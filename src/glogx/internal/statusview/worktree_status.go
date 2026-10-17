@@ -1,4 +1,4 @@
-package main
+package statusview
 
 import (
 	"strings"

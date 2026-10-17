@@ -953,7 +953,7 @@ func TestKeyRepeatIsOneInputStatusViewer(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	stubWorktreeStatus(t, statusRec(" M a.go"), nil)
 	m.handleKey("s")
-	if !m.statusOv.visible() {
+	if !m.statusOv.Visible() {
 		t.Fatal("前提が崩れた: s で viewer が開かない")
 	}
 	advance(225 * time.Millisecond)
@@ -962,12 +962,12 @@ func TestKeyRepeatIsOneInputStatusViewer(t *testing.T) {
 		advance(30 * time.Millisecond)
 		m.handleKey("s")
 	}
-	if !m.statusOv.visible() {
+	if !m.statusOv.Visible() {
 		t.Fatal("押しっぱなしで viewer が開閉を繰り返した (1 回の入力として扱われていない)")
 	}
 	advance(keyRepeatGuard + time.Millisecond)
 	m.handleKey("s")
-	if m.statusOv.visible() {
+	if m.statusOv.Visible() {
 		t.Fatal("押し直しが効かない (離しても 1 回扱いのまま)")
 	}
 }
@@ -1239,7 +1239,7 @@ func TestStatusViewerOwnsKeysBlocksRemoteHijack(t *testing.T) {
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statusOv = *newTestStatusView(t, statusRec(" M a.go"))
-	if !m.statusOv.visible() {
+	if !m.statusOv.Visible() {
 		t.Fatal("前提: status viewer が開いていない")
 	}
 
@@ -1259,8 +1259,8 @@ func TestStatusViewerOwnsKeysBlocksRemoteHijack(t *testing.T) {
 	}
 
 	// --- 全画面 pager 表示中: b は viewer のスクロールへ届き、push 確認は出ない ---
-	m.statusOv.openPager(m.statusOpts().viewport())
-	if !m.statusOv.ownsKeys() {
+	m.statusOv.Fixture().OpenPager(m.statusOpts().Viewport())
+	if !m.statusOv.OwnsKeys() {
 		t.Fatal("前提: pager を開いても ownsKeys が false")
 	}
 	m.handleKey("b")
@@ -1273,9 +1273,9 @@ func TestStatusViewerOwnsKeysBlocksRemoteHijack(t *testing.T) {
 	}
 
 	// --- 破棄確認中: p が pull 確認を重ねない ---
-	m.statusOv.pagerKey = ""
-	m.statusOv.askDiscard()
-	if !m.statusOv.discarding {
+	m.statusOv.Fixture().SetPagerKey("")
+	m.statusOv.Fixture().AskDiscard()
+	if !m.statusOv.Fixture().Discarding() {
 		t.Fatal("前提: 破棄確認に入れていない")
 	}
 	m.handleKey("p")
@@ -1378,21 +1378,21 @@ func TestUpdateKeysDoNotLeakIntoStatusViewer(t *testing.T) {
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statusOv = *newTestStatusView(t, statusRec(" M a.go"))
-	if !m.statusOv.visible() {
+	if !m.statusOv.Visible() {
 		t.Fatal("前提: status viewer が開いていない")
 	}
 	// 陽性対照: update が走っていなければ X は viewer の破棄確認を出す (ガードが広すぎないこと)
 	m.handleKey("X")
-	if !m.statusOv.discarding {
+	if !m.statusOv.Fixture().Discarding() {
 		t.Fatal("通常状態で X が破棄確認を出さない (対照が無意味 = ガードが viewer の外まで殺した)")
 	}
-	m.statusOv.discarding = false
+	m.statusOv.Fixture().SetDiscarding(false)
 
 	// update 走行中は X を actionModal が消費する = viewer へ届かない
 	m.actModal.beginUpdate("claude")
 	for _, key := range []string{"X", "C"} {
 		m.handleKey(key)
-		if m.statusOv.discarding {
+		if m.statusOv.Fixture().Discarding() {
 			t.Fatalf("update 中の %q が viewer の破棄確認を立てた (git restore が着弾する経路)", key)
 		}
 	}

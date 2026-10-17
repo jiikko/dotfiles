@@ -29,13 +29,6 @@ func FixtureScanDir(root string) IssuesScanMsg { return scanIssues(root) }
 // FixtureScanDirs は走査の結果の Msg が見つけた issues ディレクトリ。
 func FixtureScanDirs(msg IssuesScanMsg) []string { return msg.dirs }
 
-// Load は開いた状態で走査の結果を受け取らせる (閉じる演出は切る)。
-func (f Fixture) Load(dirs []string, list []*issues.Issue) {
-	f.v.closeAnimOff = true
-	f.v.shown = true
-	f.v.Receive(IssuesScanMsg{dirs: dirs, issues: list})
-}
-
 // SetShown は開いているかを置く (走査や演出を起こさない)。
 func (f Fixture) SetShown(on bool) { f.v.shown = on }
 
@@ -76,7 +69,6 @@ func (f Fixture) SetScanning(on bool)                { f.v.scanning = on }
 func (f Fixture) Notice() string                     { return f.v.notice }
 func (f Fixture) BodyOpen() bool                     { return f.v.open != nil }
 func (f Fixture) Cursor() int                        { return f.v.cursor }
-func (f Fixture) SetCursor(i int)                    { f.v.cursor = i }
 func (f Fixture) RowCount() int                      { return len(f.v.rows) }
 func (f Fixture) VisibleRows(o IssuesRenderOpts) int { return f.v.visibleRows(o.Viewport()) }
 
@@ -128,6 +120,3 @@ func (f Fixture) Select(cursor, markAt int) bool {
 // EditNumberFilter / ConfirmNumberFilter は番号の入力欄へ s を打つ (受け付けたら true) / 確定する。
 func (f Fixture) EditNumberFilter(s string) bool { return f.v.numFilter.edit(s) }
 func (f Fixture) ConfirmNumberFilter()           { f.v.numFilter.confirm() }
-
-// BodyLoaded は本文を読み込んだか (開いた issue の本文が在るか)。
-func (f Fixture) BodyLoaded() bool { return f.v.body != nil }

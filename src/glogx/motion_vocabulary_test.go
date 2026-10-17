@@ -90,9 +90,9 @@ var motionScreens = []motionScreen{
 			m.statusOv = *statusRowsFixture(t, 40)
 			return motionProbe{
 				press:   func(k string) { m.handleKey(k) },
-				observe: func() string { return fmt.Sprintf("cursor=%d", m.statusOv.cursor) },
-				pos:     func() int { return m.statusOv.cursor },
-				half:    listnav.Half(max(m.statusOpts().viewport().page-1, 1)), // listKey と同じ行数
+				observe: func() string { return fmt.Sprintf("cursor=%d", m.statusOv.Fixture().Cursor()) },
+				pos:     func() int { return m.statusOv.Fixture().Cursor() },
+				half:    listnav.Half(max(m.pageSize()-1, 1)), // listKey と同じ行数
 			}
 		},
 	},

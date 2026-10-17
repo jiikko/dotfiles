@@ -183,8 +183,8 @@ func showOverlayOwning(t *testing.T, m *browseModel, name string) {
 		m.issuesOv.Fixture().SetShown(true)
 		m.issuesOv.Fixture().SetNumberFilterTyping() // 番号入力中はキーを解釈し切る
 	case "statusOv":
-		m.statusOv.shown = true
-		m.statusOv.discarding = true // 破棄の y/N 確認中
+		m.statusOv.Fixture().SetShown(true)
+		m.statusOv.Fixture().SetDiscarding(true) // 破棄の y/N 確認中
 	case "filerV":
 		m.filerV.toggle(t.TempDir())
 		m.filerV.f.HandleKey("/") // 検索欄の入力中
@@ -221,7 +221,7 @@ func overlayOwnsKeys(m *browseModel, name string) bool {
 	case "issuesOv":
 		return m.issuesOv.OwnsKeys()
 	case "statusOv":
-		return m.statusOv.ownsKeys()
+		return m.statusOv.OwnsKeys()
 	case "filerV":
 		return m.filerV.ownsKeys()
 	case "lanV":

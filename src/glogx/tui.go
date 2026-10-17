@@ -28,6 +28,7 @@ import (
 
 	"glogx/internal/extcmd"
 	"glogx/internal/issuesview"
+	"glogx/internal/statusview"
 	"glogx/internal/term"
 
 	"glogx/internal/app"
@@ -356,7 +357,7 @@ type browseModel struct {
 	// status viewer (s キーで開く全画面の作業ツリービュー)。stage / unstage / 変更を捨てる を
 	// 行う write 側の画面で、状態と描画は statusView 型 (status_view.go) に切り出す。
 	// 読み書きの規約の一次情報は docs/status-viewer-spec.md。
-	statusOv statusView
+	statusOv statusview.StatusView
 	// restartPending は「裏ビルドが完成したので再起動を提案したい」= 保留中の印。
 	// 🚨 これは「出したい」であって「出ている」ではない。実際に出すかは restartPromptVisible()
 	// が決める (中断できない処理の最中は出さない)。表示と入力の両方が同じ述語を見る契約。
@@ -430,7 +431,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		usageOv:        usageOverlay{visible: true},
 		issuesOv:       issuesview.NewIssuesView(),
 		zoom:           newAppZoom(),
-		statusOv:       newStatusView(),
+		statusOv:       statusview.NewStatusView(),
 		autobuild:      newAutobuildWatch(selfExePath(), os.Getenv(autobuildPendingEnv) != "", app.TimeNow()),
 	}
 	// 🚨 ここは「取得中か」ではなく **「これから取得を始めるか」** の判定なので、
@@ -637,10 +638,10 @@ func (m *browseModel) maybeTick() tea.Cmd {
 // 演出の有無を導出するので、ここに足せばチェーン維持にも効く。かつては両方へ手で足す規約で、
 // 足し忘れると「回るが 12.5fps」になり点滅に見える再発が実際に 2 回起きた (2026-08-06 まで)。
 func (m *browseModel) tickInterval() time.Duration {
-	if m.zoom.animating(app.TimeNow()) || m.issuesOv.SlideAnimating() || m.statusOv.slideAnimating() {
+	if m.zoom.animating(app.TimeNow()) || m.issuesOv.SlideAnimating() || m.statusOv.SlideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
 	}
-	if m.glide.Active() || m.diffOv.animating() || m.toast.Animating() || m.issuesOv.Animating() || m.statusOv.animating() || m.filerV.animating() {
+	if m.glide.Active() || m.diffOv.animating() || m.toast.Animating() || m.issuesOv.Animating() || m.statusOv.Animating() || m.filerV.animating() {
 		return scrollInterval // スライドを滑らかに (30fps)
 	}
 	return spinnerInterval
@@ -816,7 +817,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.glide.Stop()
 		m.diffOv.stopGlides()
 		m.issuesOv.StopGlides()
-		m.statusOv.stopGlides()
+		m.statusOv.StopGlides()
 		m.ensureCursorVisible()
 		m.filerV.resize(m.contentWidth(), m.pageSize())
 		if m.filerV.animating() {
@@ -850,7 +851,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// より前に置く: animating() は closing のあいだ true を返し続け、この settleClose が
 		// 下ろして初めて false になる。後ろに置くと最後の 1 拍が届かず閉じかけの姿で固まる。
 		m.issuesOv.SettleClose()
-		m.statusOv.settleClose() // status viewer も同じ理由で spinnerActive の判定より前に畳む
+		m.statusOv.SettleClose() // status viewer も同じ理由で spinnerActive の判定より前に畳む
 		// treefiler の動きも spinnerActive の判定より前に進める (後ろだと、動き終わる最後の 1 拍が届かず途中の姿で止まる)
 		m.filerV.advance(app.TimeNow())
 		m.drainFilerNotices()
@@ -869,7 +870,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 手触り (カーブ・フレーム数) は自動的に一覧と揃う (internal/term/scroll_glide.go)。
 		m.diffOv.advanceGlide()
 		m.issuesOv.AdvanceGlide()
-		m.statusOv.advanceGlide()
+		m.statusOv.AdvanceGlide()
 		var pushRefetchCmd tea.Cmd
 		if m.pushAnimating {
 			pushRefetchCmd = m.advancePushAnim() // push 境界の罫線を 1 コミット/フレームで上へ
@@ -1066,19 +1067,19 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmd, m.maybeTick())
 		}
 		return m, cmd
-	case statusLoadMsg:
+	case statusview.StatusLoadMsg:
 		// git status の結果 (status viewer)。返り値はプレビューの取り直し予約 (内容が変わった
 		// ときだけ)。🚨 maybeTick も束ねる: 取得中スピナーを回していた場合、結果到着でそれを
 		// 下ろすフレームが要る (下ろさないと最後のスピナー姿で固まる)。
-		return m, tea.Batch(m.statusOv.receive(msg), m.maybeTick())
-	case statusPollMsg:
+		return m, tea.Batch(m.statusOv.Receive(msg), m.maybeTick())
+	case statusview.StatusPollMsg:
 		// viewer を開いている間だけ回る自動更新チェーン (spec 5 節)。🚨 maybeTick を束ねない:
 		// 反映は読み直しだけでアニメは動かないため (issuesWatchMsg と同じ理由)。
-		return m, m.statusOv.receivePoll(msg)
-	case statusPreviewTickMsg:
-		return m, tea.Batch(m.statusOv.receivePreviewTick(msg, m.colored), m.maybeTick())
-	case statusPreviewMsg:
-		m.statusOv.receivePreview(msg)
+		return m, m.statusOv.ReceivePoll(msg)
+	case statusview.StatusPreviewTickMsg:
+		return m, tea.Batch(m.statusOv.ReceivePreviewTick(msg, m.colored), m.maybeTick())
+	case statusview.StatusPreviewMsg:
+		m.statusOv.ReceivePreview(msg)
 		return m, m.maybeTick()
 	case issuesRestoreMsg:
 		// 🚨 復元の repo 照合 (git fork) が返る前に type-ahead の s で status viewer が開いて
@@ -1238,7 +1239,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// pull で自分のソースが更新されたなら、その場で裏ビルドを始める (autobuildAfterPull)。
 		// status viewer を開いたまま p で pull した場合は、その場で読み直す: 自動更新は 1.5 秒
 		// 周期なので、待たせるとヘッダーの ahead/behind が古いまま残って「効いていない」に見える。
-		return m, tea.Batch(m.reloadAfterPull(), m.maybeTick(), m.autobuildAfterPull(), m.statusOv.loadCmd())
+		return m, tea.Batch(m.reloadAfterPull(), m.maybeTick(), m.autobuildAfterPull(), m.statusOv.LoadCmd())
 	case rerunMsg:
 		m.actModal.rerunning = false
 		if msg.err != nil {
@@ -1333,8 +1334,8 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// status viewer 表示中は演出を出さない (対象のコミット一覧が画面に無く、演出分だけ
 		// 再取得が遅れるだけ)。代わりに viewer を読み直してヘッダーの ahead を即消す
 		// (pull 成功時の statusOv.loadCmd と同じ理由)
-		if m.statusOv.visible() {
-			return m, tea.Batch(m.refetchAfterPush(), m.maybeTick(), m.statusOv.loadCmd())
+		if m.statusOv.Visible() {
+			return m, tea.Batch(m.refetchAfterPush(), m.maybeTick(), m.statusOv.LoadCmd())
 		}
 		if m.startPushAnim() {
 			return m, m.maybeTick() // 演出完了後 (advancePushAnim) に refetchAfterPush へ進む
@@ -1463,7 +1464,7 @@ func (m *browseModel) updateKeyReachable(key string) bool {
 	if m.doctorOv.Visible() && m.doctorOv.OwnsKeys() {
 		return false
 	}
-	if m.statusOv.visible() && (m.statusOv.ownsKeys() || key == "X") {
+	if m.statusOv.Visible() && (m.statusOv.OwnsKeys() || key == "X") {
 		return false
 	}
 	// treefiler は C を「経路以外を全部畳む」に使う (spec §0.1)。入力モード中は X も譲る (どちらも filer の Binds が決める)
@@ -1504,7 +1505,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// q は素通しのまま成立するので、両立させる (issues viewer の e が案内キーになった 2026-08-13
 	// 以降、踏む確率が上がった)。
 	closedIssues := m.issuesOv.FinishClose()
-	closedStatus := m.statusOv.finishClose() // status viewer も同じ契約 (閉じ演出中のキーは viewer に届かない)
+	closedStatus := m.statusOv.FinishClose() // status viewer も同じ契約 (閉じ演出中のキーは viewer に届かない)
 	if (closedIssues || closedStatus) && key == "e" {
 		return m, m.maybeTick()
 	}
@@ -1919,7 +1920,7 @@ func (m *browseModel) routeKeyToStatus(key string) (tea.Model, tea.Cmd) {
 	// `b` (半ページ戻り) が push 確認に化けて続く Enter で実 push が走る (実測 2026-08-21)。
 	// 🚨 ガードは横取りだけに掛けること: この if 自体に付けると委譲も飛んで pager が
 	// キーを受け取れなくなる (実装中に踏んだ)。
-	if !m.statusOv.ownsKeys() {
+	if !m.statusOv.OwnsKeys() {
 		if key == "U" {
 			return m, m.toggleUsage() // viewer の上でも usage は出せる (issues と同じ契約)
 		}
@@ -1944,15 +1945,15 @@ func (m *browseModel) routeKeyToStatus(key string) (tea.Model, tea.Cmd) {
 			return m, m.maybeTick()
 		}
 	}
-	cmd := m.statusOv.handleKey(key, m.statusOpts().viewport())
-	m.deliverNotice(m.statusOv.takeNotice())
+	cmd := m.statusOv.HandleKey(key, m.statusOpts().Viewport())
+	m.deliverNotice(m.statusOv.TakeNotice())
 	// q/esc = glogx ごと終了 (issues 側と同じ契約。ユーザー要望 2026-08-06)
-	if m.statusOv.takeWantQuit() {
+	if m.statusOv.TakeWantQuit() {
 		return m.quit()
 	}
 	// 横断 (i / R / D。issues 側と同じ経路で、即着地も同じ理由)
-	if target := m.statusOv.takeWantCross(); target != app.FullScreenNone {
-		m.statusOv.finishClose()
+	if target := m.statusOv.TakeWantCross(); target != app.FullScreenNone {
+		m.statusOv.FinishClose()
 		return m, tea.Batch(cmd, m.openFullScreen(target))
 	}
 	return m, tea.Batch(cmd, m.maybeTick())
@@ -3484,25 +3485,20 @@ func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
 	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.listHasPending() || m.panelHasPendingJob() || m.usageOv.loading() || m.rlDashLoading() || m.issuesOv.Loading() ||
-		m.statusOv.fetching() || m.doctorOv.Scanning() || m.doctorOv.Deleting() || m.filerV.busy() || m.lanV.busy()
+		m.statusOv.Fetching() || m.doctorOv.Scanning() || m.doctorOv.Deleting() || m.filerV.busy() || m.lanV.busy()
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ
 // cursorLine (溝の矢印 + 暗青 bg) を貸すことで、見た目の語彙を 1 つに保つ。
 // statusOpts は status viewer の描画情報。🚨 cursorPaint は渡さない (contentWidth まで塗る
 // bgLine では 2 カラムのプレビュー側まで背景が伸びる。statusRenderOpts の doc 参照)。
-func (m *browseModel) statusOpts() statusRenderOpts {
-	return statusRenderOpts{
-		width:   m.contentWidth(),
-		page:    m.pageSize(),
-		colored: m.colored,
-		spinner: m.spinner(),
+func (m *browseModel) statusOpts() statusview.StatusRenderOpts {
+	return statusview.StatusRenderOpts{
+		Width:   m.contentWidth(),
+		Page:    m.pageSize(),
+		Colored: m.colored,
+		Spinner: m.spinner(),
 	}
-}
-
-// viewport は描画情報から「窓の寸法 + 色」を取り出す (キー処理へ渡す形)。
-func (o statusRenderOpts) viewport() statusViewport {
-	return statusViewport{page: o.page, colored: o.colored}
 }
 
 // ratelimitOpts は全画面 ratelimit ダッシュボードの描画情報。データは usageOv の Snapshot を
@@ -3816,7 +3812,7 @@ func (m *browseModel) viewLines() string {
 	case app.FullScreenDoctor:
 		return m.finishWithGlobalChrome(m.doctorOv.Lines(m.doctorOpts()), page)
 	case app.FullScreenStatus:
-		return m.finishWithGlobalChrome(m.statusOv.lines(m.statusOpts()), page)
+		return m.finishWithGlobalChrome(m.statusOv.Lines(m.statusOpts()), page)
 	case app.FullScreenIssues:
 		return m.finishWithGlobalChrome(m.issuesOv.Lines(m.issuesOpts()), page)
 	case app.FullScreenFiler:
@@ -4096,7 +4092,7 @@ func (m *browseModel) hintLine() string {
 	case app.FullScreenDoctor:
 		return m.hintLineText(m.doctorOv.Hint(m.hintWidth()))
 	case app.FullScreenStatus:
-		return m.hintLineText(m.statusOv.hint(m.hintWidth()))
+		return m.hintLineText(m.statusOv.Hint(m.hintWidth()))
 	case app.FullScreenIssues:
 		return m.hintLineText(m.issuesOv.Hint(m.hintWidth()))
 	case app.FullScreenFiler:
