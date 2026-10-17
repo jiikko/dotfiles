@@ -23,7 +23,7 @@ issue 817 (glogx の package main を薄くし、internal のパッケージの�
   `git add` した回では起きず、既存のディレクトリに 1 ファイルだけ足した回で漏れた
 - **一般形**: 「検証した木」と「commit した木」は別物。pathspec で commit するなら、commit の後に `git status --short` の `??` に
   自分が作ったファイルが残っていないかを見る (残っていたら、その commit は手元の検証と別の木)
-- 切り出し先: `_claude/rules/commit-with-pathspec.md` の「新規ファイルは事前の `git add` が必要」の項へ、「commit の後に `??` を見る」を追記
+- 切り出し先: `_claude/rules/commit-with-pathspec.md` の「新規ファイルは事前の `git add` が必要」の項へ、「commit の後に `??` を見る」を追記 (済み)
 
 ### 2. 新しく寄せた関数の不変条件を、テストが手で組み立て直していて守っていなかった
 
@@ -31,7 +31,7 @@ issue 817 (glogx の package main を薄くし、internal のパッケージの�
   既存のテスト `TestCapFetchSHAsBoundsChunkSize` が `capFetchSHAs` と `chunkSHAs` を手で繋いでいて、寄せた関数を通っていなかった
 - **一般形**: 散らばった手順を 1 つの関数に寄せたら、その手順を手で組み立てているテストも同じ関数を通す形に書き換える。
   書き換えないと、寄せた関数の退行がテストから見えない
-- 切り出し先: `_claude/rules/survey-receiver-guards-before-passing-new-values.md` の「崩せる経路が 2 つ以上あるなら、更新の責務を 1 つの関数へ寄せてから閉じる」の項へ追記
+- 切り出し先: `_claude/rules/survey-receiver-guards-before-passing-new-values.md` の「崩せる経路が 2 つ以上あるなら、更新の責務を 1 つの関数へ寄せてから閉じる」の項へ追記 (済み)
 
 ### 3. 「週の枠が 50% 前後まで進めて」の指示を、自分の判断で 41% で切り上げた
 
@@ -44,7 +44,7 @@ issue 817 (glogx の package main を薄くし、internal のパッケージの�
 
 - `scripts/check_unused_excluding_tests.sh` が、消した worktree (`dotfiles-wt-817` / `-817b`) のパスを含む結果を出し、2 件の赤になった。
   `STATICCHECK_CACHE` を空の dir にすると緑 (スクリプトはキャッシュを指定せず staticcheck を素で呼ぶ。キャッシュが原因というのは実験からの推定で、仕組みは未確認)。worktree を 1 作業ごとに切って消す運用 (この repo の規約) と相性が悪い
-- 切り出し先: 新規 issue (検査スクリプトがキャッシュを worktree ごとに分けるか、パスの変化で捨てる)。この retro では起票していない (ユーザーの判断待ち)
+- 切り出し先: issue 820 (起票済み)
 
 ### 5. 手元の実コマンドの監視が subset しか回さず、lan の前処理を外した変異でも緑だった
 
@@ -55,8 +55,8 @@ issue 817 (glogx の package main を薄くし、internal のパッケージの�
 
 ## 残課題
 
-- [ ] 1 を `_claude/rules/commit-with-pathspec.md` へ追記する (ユーザーの判断待ち)
-- [ ] 2 を `_claude/rules/survey-receiver-guards-before-passing-new-values.md` へ追記する (ユーザーの判断待ち)
+- [x] 1 を `_claude/rules/commit-with-pathspec.md` へ追記した (2026-10-18。「新規ファイルは事前の git add」の項の下に、commit の後に `??` を見る)
+- [x] 2 を `_claude/rules/survey-receiver-guards-before-passing-new-values.md` へ追記した (2026-10-18。「1 つの関数へ寄せてから閉じる」の項の下)
 - [x] 3 は却下 (既存の規範で足りる)
-- [ ] 4 を issue にする (ユーザーの判断待ち)
+- [x] 4 を issue 820 にした (2026-10-18。起票の前に再現した)
 - [x] 5 は却下 (CI は all で回している)

@@ -5,6 +5,8 @@
 - **commit は必ず `git commit -m "..." -- <path1> <path2>` の形式で、このセッションで変更したファイルを明示して行う**。pathspec なしの `git commit` / `git commit -a` は使わない
 - `git add` も対象ファイルを明示する。`git add .` / `git add -A` は禁止（既存の c skill ルールと同じ）
 - **新規ファイルは pathspec commit でも事前の `git add <path>` が必要**（untracked は pathspec だけでは拾えない）。add するのは自分が作ったファイルだけ
+  - **commit の後に `git status --short` の `??` を見て、自分が作ったファイルが残っていないかを確かめる**。残っていたら、その commit は手元で検証した木と別物で、
+    手元の検査は緑のまま push 先だけが壊れる (retro 819: 既存のディレクトリに 1 ファイルだけ足した回で 2 度漏れ、CI のビルドが 3 commit の間落ちていた)
 - commit 前の `git status` で、自分が触っていないファイルがステージ済み・変更済みでも**巻き込まない・リセットしない**。それは並行セッションの作業中データかもしれない
 
 ## なぜ
