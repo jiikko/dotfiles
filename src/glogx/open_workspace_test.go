@@ -52,6 +52,10 @@ func TestOpenEditorAtRoot(t *testing.T) {
 	// 🚨 期待値は処理の前に固定する。オラクルは cwd を起点に辿るので、処理の後に作ると「処理が cwd を別の checkout へ
 	// 移してから repoRoot() を呼ぶ」退行で期待値も一緒に動き、通ってしまう (codex の敵対的レビュー 2026-10-17)
 	want := repoRootOracle(t)
+	cwdBefore, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
 	m := newTestBrowse(t, 1, nil, nil)
 	cmds := stubEditorCapture(t)
 
@@ -70,6 +74,10 @@ func TestOpenEditorAtRoot(t *testing.T) {
 	// repoRoot() ではなく独立オラクルから作る (repoRootOracle の doc 参照)。
 	if realPath(t, c.Dir) != want {
 		t.Fatalf("cwd が repo root でない: %q want %q", c.Dir, want)
+	}
+	// 処理がプロセスの cwd を動かしていないこと (エディタの起動は cmd.Dir で場所を渡し、glogx 自身の cwd は変えない)
+	if cwdAfter, err := os.Getwd(); err != nil || cwdAfter != cwdBefore {
+		t.Fatalf("処理の後に cwd が変わった: %q -> %q (err=%v)", cwdBefore, cwdAfter, err)
 	}
 }
 

@@ -23,7 +23,7 @@ case_() {
 	# 親の GOFLAGS が立っていても、それをファイルへ写さないこと
 	GOENV=$env GOFLAGS=-x "$SCRIPT" >/dev/null 2>&1
 	rc=$?
-	got=$(GOENV=$env GOFLAGS='' go env GOFLAGS)
+	got=$(GOENV=$env GOFLAGS='' go env GOFLAGS) || { echo "✗ $name: 読み戻しに失敗"; fail=1; return; }
 	ran=$((ran + 1))
 	if [ "$rc" != "$want_rc" ] || [ "$got" != "$want" ]; then
 		echo "✗ $name: rc=$rc (want $want_rc) GOFLAGS='$got' (want '$want')"
@@ -32,9 +32,10 @@ case_() {
 	fi
 	# 2 回目は変わらない (冪等)
 	GOENV=$env "$SCRIPT" >/dev/null 2>&1
-	got=$(GOENV=$env GOFLAGS='' go env GOFLAGS)
-	if [ "$got" != "$want" ]; then
-		echo "✗ $name: 2 回目で変わった: '$got' (want '$want')"
+	rc=$?
+	got=$(GOENV=$env GOFLAGS='' go env GOFLAGS) || { echo "✗ $name: 2 回目の読み戻しに失敗"; fail=1; return; }
+	if [ "$rc" != "$want_rc" ] || [ "$got" != "$want" ]; then
+		echo "✗ $name: 2 回目: rc=$rc (want $want_rc) GOFLAGS='$got' (want '$want')"
 		fail=1
 	fi
 }
