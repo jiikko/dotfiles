@@ -143,9 +143,9 @@ fi
 # ディレクトリの絶対パスが入り、同じソースでも worktree ごとに別の項目として GOCACHE に溜まる (2026-10-17 の実測: 同じ commit の
 # 2 つ目の worktree で +54.7 MB → -trimpath で +0.5 MB)。go env のファイル (この機械の全部の go コマンドが読む) に足す。入っていれば何もしない。
 # 🚨 外すときはそのコマンドに -trimpath=false を付ける。GOFLAGS= (空) では外れない (空なら go env のファイルの値に戻る)。
-# 🚨 読むときも GOFLAGS= を付けて**ファイルの値**を読む (親の環境変数 GOFLAGS が立っていると、その値をファイルへ写してしまう)
+# 🚨 読むときも GOFLAGS='' を付けて**ファイルの値**を読む (親の環境変数 GOFLAGS が立っていると、その値をファイルへ写してしまう)
 if command -v go >/dev/null 2>&1; then
-  go_flags_file=$(GOFLAGS= go env GOFLAGS 2>/dev/null) || go_flags_file=
+  go_flags_file=$(GOFLAGS='' go env GOFLAGS 2>/dev/null) || go_flags_file=''
   case " $go_flags_file " in
     *" -trimpath "*) ;;
     *) go env -w GOFLAGS="${go_flags_file:+$go_flags_file }-trimpath" || echo "warning: go env -w GOFLAGS=-trimpath に失敗した (issue 816)" >&2 ;;
