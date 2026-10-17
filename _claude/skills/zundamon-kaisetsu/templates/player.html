@@ -289,7 +289,7 @@ html.render * { transition: none !important; }
     cur = li; items.forEach((e, i) => e.classList.toggle('current', i === li));
     // トピック名は行の chapter (build が決めた番号) から引く。行が変わるたびに必ず書き直す
     const ch = OV.has('topic') && line && D.chapters.length >= 2 ? D.chapters[line.chapter] : null;
-    $('stage-topic').textContent = ch ? ch.title : '';
+    $('stage-topic').textContent = ch && ch.title.trim() ? ch.title : ''; // 空白だけの名前で中身の無い枠を出さない (区切りのカードと揃える)
     showAt(line && line.show !== undefined ? line.show : -1, line && line.step !== undefined ? line.step : -1);
     const cap = $('caption'); cap.textContent = '';
     if (!line) return;
@@ -334,11 +334,15 @@ html.render * { transition: none !important; }
         }
       }
       lines.push(line); glen.push(n);
-      let clip = [0, 0];
-      if (texts.length && (() => { r.setStart(texts[0], 0); r.setEnd(texts[texts.length - 1], texts[texts.length - 1].data.length); return r.getClientRects().length > 0; })()) { // 空白だけの字は描かれず、外接矩形が (0,0) になる
+      // 字の描画範囲が箱か舞台からはみ出した量。描かれた矩形が無いとき、空白だけの字 (描かれない) は 0、字があるのに描かれていない
+      // (display: none 等で測れていない) は null にして Go に「はみ出しの量を読めない」で止めさせる
+      let clip = full.trim() === '' ? [0, 0] : null;
+      if (texts.length) {
         r.setStart(texts[0], 0); r.setEnd(texts[texts.length - 1], texts[texts.length - 1].data.length);
-        const t = r.getBoundingClientRect(); const a = excess(t, node.getBoundingClientRect()); const b = excess(t, stageRect());
-        clip = [Math.max(a[0], b[0]), Math.max(a[1], b[1])].map(Math.round);
+        if (r.getClientRects().length > 0) {
+          const t = r.getBoundingClientRect(); const a = excess(t, node.getBoundingClientRect()); const b = excess(t, stageRect());
+          clip = [Math.max(a[0], b[0]), Math.max(a[1], b[1])].map(Math.round);
+        }
       }
       out.push({ key, kind, text: full, lines, glen, breaks, clip });
     };
@@ -352,7 +356,7 @@ html.render * { transition: none !important; }
     document.fonts.ready.then(() => {
       if (OV.has('title') && D.title !== '') measure('title', 'line', $('stage-title'));
       D.chapters.forEach((ch, i) => {
-        if (OV.has('topic') && D.chapters.length >= 2 && ch.title !== '') { $('stage-topic').textContent = ch.title; measure(`topic:${i}`, 'line', $('stage-topic')); }
+        if (OV.has('topic') && D.chapters.length >= 2 && ch.title.trim()) { $('stage-topic').textContent = ch.title; measure(`topic:${i}`, 'line', $('stage-topic')); }
         if (D.cards && D.cards.length && ch.title.trim()) {
           const box = $('stage-card'); box.textContent = ''; const d = el('div', null, ch.title);
           box.append(el('small', null, `CHAPTER ${i + 1}`), d); measure(`card:${i}`, 'wrap', d); box.textContent = '';

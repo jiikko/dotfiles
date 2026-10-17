@@ -56,7 +56,7 @@ func ExpectedLabels(d *PlayerData) []ExpectedLabel {
 		add("title", "line", d.Title)
 	}
 	for i, ch := range d.Chapters {
-		if slices.Contains(d.Overlays, "topic") && len(d.Chapters) >= 2 && ch.Title != "" {
+		if slices.Contains(d.Overlays, "topic") && len(d.Chapters) >= 2 && jsTrim(ch.Title) != "" {
 			add(fmt.Sprintf("topic:%d", i), "line", ch.Title)
 		}
 		if len(d.Cards) > 0 && jsTrim(ch.Title) != "" {
@@ -96,7 +96,7 @@ func ExpectedLabels(d *PlayerData) []ExpectedLabel {
 	return out
 }
 
-// jsTrim は JavaScript の String.prototype.trim (player.html がチャプター名の空白だけを判定する) と同じ文字を両端から除く。
+// jsTrim は JavaScript の String.prototype.trim (player.html がチャプター名・トピック名の空白だけを判定する) と同じ文字を両端から除く。
 // Go の strings.TrimSpace とは U+FEFF (除く) と U+0085 (除かない) が違う
 func jsTrim(s string) string {
 	return strings.TrimFunc(s, func(r rune) bool {

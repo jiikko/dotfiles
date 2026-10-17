@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -96,7 +97,7 @@ func TestLabelProblems(t *testing.T) {
 }
 
 // 測るはずのラベル: 図は測らず、overlays から外した欄は測らず、区切りのカードは cards があり名前が空白だけでないときだけ測る。
-// 空白の判定は player の trim (JavaScript) と同じ文字で行う (U+FEFF だけの名前のカードは player が描かない)
+// 空白の判定は player の trim (JavaScript) と同じ文字で行う (U+FEFF だけの名前のトピック名・カードは player が描かない)
 func TestExpectedLabels(t *testing.T) {
 	keys := func(d *build.PlayerData) []string {
 		var ks []string
@@ -111,7 +112,7 @@ func TestExpectedLabels(t *testing.T) {
 		Shows: []show.Data{{Type: "image"}, {Type: "list", Title: "理由", Items: []string{"a", "b"}},
 			{Type: "compare", Left: &show.CompareSide{Title: "前", Items: []string{"x"}}, Right: &show.CompareSide{Title: "後", Items: []string{"y"}}}},
 	}
-	want := []string{"title", "topic:0", "topic:1", "show:1:title", "show:1:items[0]", "show:1:items[1]", "show:1",
+	want := []string{"title", "topic:0", "show:1:title", "show:1:items[0]", "show:1:items[1]", "show:1",
 		"show:2:left.title", "show:2:left.items[0]", "show:2:right.title", "show:2:right.items[0]", "show:2"}
 	if got := keys(d); !slices.Equal(got, want) {
 		t.Errorf("測るはずの鍵:\n%q\nwant\n%q", got, want)
@@ -200,8 +201,13 @@ func fakeMeasureDump(page string) int {
 	if err != nil {
 		return 5
 	}
+	_, _ = os.Stderr.WriteString("[1:2:ERROR:cv_display_link_mac.mm] 偽のログ <pre id=\"measure-out\">{}</pre>\n") // stderr は読まない
 	if _, err := os.Stdout.WriteString(`<html><body><main></main><pre id="measure-out">` + html.EscapeString(string(b)) + "</pre></body></html>\n"); err != nil {
 		return 6
+	}
+	if rc := os.Getenv("FAKE_MEASURE_RC"); rc != "" { // 結果を出した後、終了の処理で落ちる
+		n, _ := strconv.Atoi(rc)
+		return n
 	}
 	return 0
 }
@@ -231,5 +237,20 @@ func TestAllowLabelWrapsDoesNotPassBrokenMeasure(t *testing.T) {
 		"--allow-fast-captions", "--allow-label-wraps"}, env)
 	if err == nil || !strings.Contains(err.Error(), "計測が壊れている") {
 		t.Fatalf("測れなかったラベルがあれば --allow-label-wraps でも止まるはず: %v", err)
+	}
+}
+
+// Chrome が結果を出した後に rc≠0 で終わっても (終了の処理で落ちる)、結果があれば判定に使う (確かめずに続けない)
+func TestMeasureLabelsUsesResultDespiteChromeRC(t *testing.T) {
+	_ = fakeMP4Tools(t)
+	t.Setenv("FAKE_MEASURE_BAD", "1")
+	t.Setenv("FAKE_MEASURE_RC", "2")
+	env := testEnv(t)
+	env.MeasureLabels = nil
+	var stderr strings.Builder
+	env.Stderr = &stderr
+	err := dispatch([]string{"build", buildFixtureScript(t, nil), "-o", filepath.Join(t.TempDir(), "out"), "--format", "html", "--allow-fast-captions"}, env)
+	if err == nil || !strings.Contains(stderr.String(), "左上のタイトル: 1 行に収まらず 2 行になる") || strings.Contains(stderr.String(), "確かめずに続ける") {
+		t.Fatalf("rc≠0 でも結果で止まるはず: %v\n%s", err, stderr.String())
 	}
 }
