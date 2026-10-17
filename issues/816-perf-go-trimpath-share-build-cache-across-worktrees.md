@@ -68,3 +68,37 @@ module cache の中の依存は元から場所に依存しないので、worktre
 ## 反証レビュー (codex 1 本。2026-10-17)
 
 P2 4 件を採用して直した: runtime.Caller に頼るテスト 2 本が実際に壊れる・`GOFLAGS=` では go env の値を外せない (`-trimpath=false` で外す)・B の期待値 (228 MB は初回の総量)・CI のキャッシュの保存の鍵。コンパイルの鍵の引用と、同じ入力を worktree 間で共有する中核の仮説は反証できなかった。
+
+## 進捗
+
+- [x] 2026-10-17: 計測 1 (同じ commit の worktree 2 つ。空の GOCACHE で src/glogx の `go test -race -count=1 -run '^$' ./...`。
+  `tmp/816-trimpath-2026-10-17/measure-share.sh` で回し、結果をここに移した):
+
+  | | A (1 つ目) | B (2 つ目) | A をもう一度 |
+  |---|---|---|---|
+  | -trimpath なし | 235.5 MB | **+54.7 MB** | +0.5 MB |
+  | -trimpath あり | 235.3 MB | **+0.5 MB** | +0.5 MB |
+
+  標準ライブラリと依存はもともと共有されていて、worktree ごとに重複していたのは repo の中の package (glogx の module・テスト版を含む) の分。
+  -trimpath でそれが共有される。計測 2 (1 行の変更の増分が悪化しないか)・3 (今の GOCACHE の worktree 別の内訳) は未実施
+- [x] 2026-10-17: 付ける場所は**この機械の Go 全体** (go env のファイル) に決めた (ユーザー判断)。setup.sh から `scripts/go_env_trimpath.sh` を呼ぶ
+  (setup: go env に GOFLAGS=-trimpath を足し、… (issue 816) / setup: -trimpath を足す処理を scripts/go_env_trimpath.sh へ出し、…)。
+  - 規則: -trimpath がどの形 (=false を含む) でも既にあれば触らない・GOFLAGS は cmd/internal/quoted.Split と同じ規則で語に割る・
+    読むときは GOFLAGS='' でファイルの値を読む。単体テスト tests/scripts/test_go_env_trimpath.sh (GOENV を一時ファイルへ。7 件 + 冪等)
+  - runtime.Caller から repo を辿っていたテスト 2 本 (glogx の repoRootOracle・ratelimit の statuslinePath) を cwd 起点に直した。
+    TestOpenEditorAtRoot は期待値を処理の前に固定する。-trimpath あり/なしの両方で緑
+  - CI には付けない (上の「対応方針」)
+  - 変異: setup.sh の段を消す / 毎回足す / =false の判定を外す / 引用符を無視して割る / オラクルの cmd.Dir を "/" にする、の 5 本で red を確認
+- [x] 2026-10-17: **事故と直し**: 変異の検証で tests/setup/test_setup.sh を 2 本並列に回したら、setup.sh の anyenv の段が
+  実ユーザーの goenv の version ファイルに同時に書き、「1.26.0」が 2 行になって go が起動しなくなった
+  (`go: cannot find GOROOT directory: …/1.26.0:…/1.26.0`)。手で 1 行に戻し、setup.sh に `DOTFILES_SKIP_ANYENV_GLOBAL` を設けて
+  tests/setup で立てた (テストの前後で version の更新時刻が変わらないことを確認)。tests/setup は HOME を差し替えても `*env global`
+  (GOENV_ROOT の下に書く) と ~/dotfiles の git config (core.hooksPath。同じ値) を隔離できていなかった
+- codex の敵対的レビュー: 本文 (P2 4 件採用、上の「反証レビュー」)・実装 1 周目 (P1 1・P2 3・P3 3。P1 と P2 を直した。P3 は下の記録)
+  - 記録 (直さない): statuslinePath は別の checkout の package ディレクトリから実行すると、その checkout の shell と比べてしまう
+    (通常の go test では起きない)・autobuild (`bin/lib/go_autobuild.zsh`) と保存済みの golangci-lint の指紋に GOFLAGS が入らず、
+    -trimpath を入れても既存のバイナリはそのまま使われる (動作は同じでパスの表示だけが違うので害は無い)・`go version -m` から
+    ldflags・CGO のフラグが消える (load/pkg.go)
+- [ ] 実装 2 周目の敵対的レビュー (直した差分に)
+- [ ] push して、この機械の go env に書く (`scripts/go_env_trimpath.sh` を実行する) → `GOFLAGS='' go env GOFLAGS` で読み戻す
+- [ ] 計測 2・3 (残す。trigger: 入れてから 1 週間後に GOCACHE の大きさを見るとき)
