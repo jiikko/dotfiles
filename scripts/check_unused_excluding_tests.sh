@@ -50,6 +50,17 @@ if ! staticcheck --version >/dev/null 2>&1; then
   exit 1
 fi
 
+# 🚨 staticcheck の既定のキャッシュ (~/Library/Caches/staticcheck) を checkout の間で共有しない。共有すると、同じ中身の package の
+# 結果を別の checkout のものから使い回し、消した worktree の絶対パスで報告する (allowlist のキーと合わず、同じ 1 件が「到達できない」と
+# 「stale」の両方に出て赤になる。その checkout で回し直しても古い結果が当たり続ける)。置き場を checkout の git dir の下にするのは、
+# git worktree remove が worktree の git dir ごと消すから。既定のキャッシュとの差は、新しい checkout の最初の 1 回の約 4 秒
+# (22 モジュールで冷 12.3 秒 / 温 8.3 秒。2026-10-18 実測)。呼び出し側が STATICCHECK_CACHE を渡したらそれを使う
+if [ -z "${STATICCHECK_CACHE:-}" ]; then
+  gitdir=$(git rev-parse --absolute-git-dir) || { echo "✗ git dir を取れない (キャッシュの置き場を決められない)" >&2; exit 1; }
+  STATICCHECK_CACHE="$gitdir/staticcheck-cache"
+fi
+export STATICCHECK_CACHE
+
 mods=$(find src -maxdepth 2 -name go.mod | sed 's|/go.mod||' | sort)
 # 🚨 対象 0 件を成功にしない (verify-execution-not-just-exit-code.md)。モジュールの探し方が
 # 壊れると「違反 0 件」で緑になるのが、この手のゲートで最も危ない壊れ方。
