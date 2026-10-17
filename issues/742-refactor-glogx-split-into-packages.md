@@ -25,7 +25,7 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
   1 つの画面を直すときに読む範囲がそのパッケージと土台の層に閉じる
 - 責務を分離できるか: 画面どうしは互いを直接参照せず、`wantCross` / `wantQuit` の信号を `browseModel` が仲介する形なので、変更の波及の
   経路が import の向きとして固定される
-- 探すコストが下がるか: 平場の 151 ファイルから、画面ごとのディレクトリになる。ただしこれ単独では分割の理由にしない (CLAUDE.md の
+- 探すコストが下がるか: 平場の 156 ファイル (2026-10-17) から、画面ごとのディレクトリになる。ただしこれ単独では分割の理由にしない (CLAUDE.md の
   「行数や責務の見た目で割らない」)
 
 ## 既存の判断との関係
@@ -74,6 +74,9 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
   `doctor_view.go` に 1 行足したときの増分を before (27.5 MB) と比べる**。`tui.go` を直したときは main を作り直すので、main に残る量が増分の下限になる
 - 計測の手順 (着手時に使い回す): 使い捨ての worktree と `GOCACHE=$(mktemp -d)` で `go test -race -count=1 -run '^$' .` を 2 回回してから、
   対象のファイルの先頭に `// cache probe` を 1 行足して 3 回目を回し、`du -sk "$GOCACHE"` の差を見る
+- 🚨 27.5 MB の内訳 (パッケージのコンパイル結果か、テストのバイナリのリンクか) は切り分けていない (反証レビューの指摘)。テストを main に残す方針なら、
+  どのパッケージを直しても main のテストのバイナリは作り直しになり、その分が増分の下限として残りうる。着手時の計測では `go test -x` の
+  compile / link の行か、増えた項目の種別を見て内訳を出す
 
 ## 対応方針 (案。着手時に設計のレビューを通して決める)
 
@@ -105,7 +108,7 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
   - `.github/workflows/doctor.yml` の paths filter (`src/glogx/doctor_*.go` / `src/glogx/tui.go`) と `go test -run 'TestDoctor' -v .`
     (カレント = main だけ)。doctor を移すと filter が掛からず、`.` の TestDoctor が減る (本数の下限の検査があるので赤にはなる)
   - `src/glogx/Makefile` の `go test -run '^TestFrameAllocBudget$$' .` と `tests/glogx/bench_budgets.ci` のコメント (`frame_alloc_test.go` が main にある前提)
-  - `.golangci.yml`: depguard の render-pure は `**/render.go` なので名前を変えずに移せば掛かり続ける。forbidigo の `time.Now` の禁止は
+  - `src/glogx/.golangci.yml` (repo の root には無い): depguard の render-pure は `**/render.go` なので名前を変えずに移せば掛かり続ける。forbidigo の `time.Now` の禁止は
     `path-except: tui\.go` で許可しているので、`timeNow` を土台へ移すならこのパスも直す。`path: main\.go` / `_test\.go` の除外も見直す
   - `gorules/` (ruleguard) はパス指定なし
 - **ソースを読む検査のテストの内訳** (反証レビューで数え直した):
@@ -114,7 +117,8 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
   - 🚨 `clock_rollback_test.go` は `parser.ParseDir(".")` で**再帰しない**。移したファイルを黙って見なくなり、下限も無い
     (`len(pkgs)==0` だけ)。移す前に走査を再帰にし、件数の下限を足す (`vs16_literal_test.go` の冒頭に同じ罠の記録がある。issue 283)
   - 固定名で parse / 読む 4 本 (`hint_registry_gate_test.go` / `fullscreen_test.go` の `tui.go`、`notice_kind_test.go` の
-    `issues_view.go` / `issues_linkjump.go` / `status_view.go`、`doctor_cleanup_test.go` の `main.go`)。移すと読めずに赤になるので見落としは
+    `issues_view.go` / `issues_linkjump.go` / `status_view.go`、`doctor_cleanup_test.go` の `main.go` と、同じテストの `tui_helpers_test.go` /
+    `gitlog_watch_test.go`。後の 2 つは 2026-10-17 の反証レビューで見つけた)。移すと読めずに赤になるので見落としは
     起きにくいが、パスを直す
   - `own_sources_test.go` の `ownSourceRoots` (`.` と `../tuikit` などを走査する検査が使う) は `.` から再帰するので `internal/` も見る
 - テストを main に残すか各パッケージへ移すか: issue 741 は cwd 相対の testdata とテストのバイナリの起こし直しのため main に残した。
@@ -122,7 +126,7 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
   (`installInertDoctor(t, *doctorView)` / `newTestBrowse` → `*browseModel`) を使うので、移すならヘルパーが両側から要る
 - 識別子の改名を gopls rename で当てるとき、定義の行を正規表現で探すと別の識別子に当たる (issue 741 で 2 件)。改名の後に語単位の差分で
   「旧名 → 新名」の組を全部数え、想定の組だけであることを確かめる
-- テストが書き換えるパッケージ変数 (時計・外部コマンドの差し替え点など。非テストのトップレベルの `var` が 51 行。2026-10-17) は、テストと同じパッケージに
+- テストが書き換えるパッケージ変数 (時計・外部コマンドの差し替え点など。非テストの `^var ` で始まる行が 51。うち `var (` のブロックが 2 個で、中の変数の数は数えていない。2026-10-17) は、テストと同じパッケージに
   置くか公開変数にする。どれをテストが書き換えるかの表は着手時に作る
 - ビルドタグ付きの `ime_tis_darwin.go` (`darwin && cgo`) / `ime_tis_stub.go` は main に残す前提 (画面の切り出しとは別系統)。
   `init()` と `go:embed` は非テストに無い (2026-10-12 に grep で 0 件)
@@ -145,3 +149,11 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
 - [ ] 土台の層を出す
 - [ ] 画面を 1 つずつ出す
 - [ ] CLAUDE.md / README の構造の記述を直す
+
+## 反証レビュー (sonnet 1 本。2026-10-17 の改訂)
+
+数え直した数字 (ファイル数・行数・テスト関数・`browseModel` のメソッドの内訳・JSON を書くファイル・CI と lint の配線) は反証できなかった。
+採用して直した: 概要の「151 ファイル」の直し損ね・`var` の数え方の明記・`src/glogx/.golangci.yml` のパス・キャッシュの増分の内訳 (コンパイルか
+リンクか) を着手時に切り分けること・`doctor_cleanup_test.go` が固定名で読むテストのファイル。
+却下: 「`wantQuit` は存在しない」(`issues_view.go` の `issuesView.wantQuit` に在る) と「`tui.go` の 3 画面の型の参照は 12 回」
+(数え直すと doctorView 4・issuesView 5・statusView 5 の 14 回で本文どおり)
