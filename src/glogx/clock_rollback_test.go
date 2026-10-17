@@ -10,9 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"doctor/disk"
-	"glogx/internal/doctorview"
 )
 
 // 永続キャッシュの鮮度判定は「未来の時刻」を fresh にしない。
@@ -34,25 +31,6 @@ func TestPersistedCacheRejectsFutureTimestamps(t *testing.T) {
 		ok := cacheEntry{FetchedAt: now, State: StateSuccess}
 		if !ok.fresh(now) {
 			t.Error("現在時刻の entry が fresh でない (ガードが広すぎる)")
-		}
-	})
-
-	t.Run("doctorview.DoctorStartupToast", func(t *testing.T) {
-		// 🚨 Total を直接入れても効かない。sanitizeDiskCache (issue 193) が Entries から
-		// 再計算するので、実在するカタログ ID のエントリを積む必要がある。
-		c := doctorview.DoctorDiskCache{
-			ScannedAt: now.Add(48 * time.Hour),
-			Entries: []doctorview.DoctorDiskCacheEntry{{
-				ID: "xcode-deriveddata", Label: "Xcode DerivedData",
-				Size: doctorview.DoctorToastThreshold * 2, Status: string(disk.StatusOK),
-			}},
-		}
-		got := doctorview.DoctorStartupToast(c, true, now)
-		if strings.Contains(got, "-") && strings.Contains(got, "日前") {
-			t.Errorf("負の日数を出した: %q", got)
-		}
-		if !strings.Contains(got, "未来") {
-			t.Errorf("診断時刻が未来であることを伝えていない: %q", got)
 		}
 	})
 }

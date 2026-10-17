@@ -146,9 +146,7 @@ func TestInitRestoresOnlyOneFullScreen(t *testing.T) {
 	if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := doctorview.SaveDoctorScreen(doctorview.DoctorScreen{Tab: int(doctorview.TabSvc), SavedAt: now}); err != nil {
-		t.Fatal(err)
-	}
+	rememberDoctorShown(now, doctorview.TabSvc)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	installInertDoctor(t, &m.doctorOv)

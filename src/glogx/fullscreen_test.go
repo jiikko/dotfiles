@@ -2,6 +2,7 @@ package main
 
 import (
 	"glogx/internal/app"
+	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/term"
 	"go/ast"
@@ -43,7 +44,7 @@ var fullScreenCases = []fullScreenCase{
 	},
 	{
 		id: app.FullScreenDoctor, name: "doctor",
-		show:  func(m *browseModel) { m.doctorOv.Shown = true },
+		show:  func(m *browseModel) { m.doctorOv.Fixture().Show() },
 		hint:  func(m *browseModel) string { return m.doctorOv.Hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.doctorOv.Lines(m.doctorOpts()) },
 	},
@@ -316,7 +317,7 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 		for to, toKey := range openKey {
 			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 			m.width, m.height = 100, 30
-			m.doctorOv = *doctortest.DoctorTestView(t) // 実ディスクを走査しない
+			m.doctorOv.SetDeps(doctorview.Deps(doctortest.FakeDeps(t))) // 実ディスクを走査しない
 			m.handleKey(fromKey)
 			m.issuesOv.finishAnim()
 			if got := m.activeFullScreen(); got != from {

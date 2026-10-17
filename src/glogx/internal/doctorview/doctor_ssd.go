@@ -33,8 +33,8 @@ const ssdInstallToast = "SSD の摩耗・整合性エラーは smartctl で読�
 
 func (v *DoctorView) ssdCmd(ctx context.Context, gen int) tea.Cmd {
 	opt := ssd.Options{Run: runner.Exec}
-	if v.SsdOpts != nil {
-		opt = v.SsdOpts()
+	if v.deps.SSD != nil {
+		opt = v.deps.SSD()
 	}
 	return func() tea.Msg {
 		var rep ssd.Report

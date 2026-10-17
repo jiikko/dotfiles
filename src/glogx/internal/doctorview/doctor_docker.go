@@ -35,8 +35,8 @@ type DoctorDockerMsg struct {
 // dockerCmd は docker の走査を 1 本の Cmd にする。
 func (v *DoctorView) dockerCmd(ctx context.Context, gen int) tea.Cmd {
 	opt := docker.Options{Run: runner.Exec}
-	if v.DockerOpts != nil {
-		opt = v.DockerOpts()
+	if v.deps.Docker != nil {
+		opt = v.deps.Docker()
 	}
 	return func() tea.Msg {
 		var rep docker.Report

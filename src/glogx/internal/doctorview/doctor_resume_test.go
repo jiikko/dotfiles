@@ -1,8 +1,7 @@
-package doctorview_test
+package doctorview
 
 import (
 	"glogx/internal/app"
-	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
 	"os"
 	"path/filepath"
@@ -13,14 +12,14 @@ import (
 func TestDoctorScreenRoundTrip(t *testing.T) {
 	doctortest.WithDoctorStateDir(t)
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
-	if _, ok := doctorview.LoadDoctorScreen(now); ok {
+	if _, ok := LoadDoctorScreen(now); ok {
 		t.Fatal("記憶が無いのに復元しようとした")
 	}
-	if err := doctorview.SaveDoctorScreen(doctorview.DoctorScreen{Tab: int(doctorview.TabBrew), SavedAt: now}); err != nil {
+	if err := SaveDoctorScreen(DoctorScreen{Tab: int(TabBrew), SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	tb, ok := doctorview.LoadDoctorScreen(now.Add(time.Minute))
-	if !ok || tb != doctorview.TabBrew {
+	tb, ok := LoadDoctorScreen(now.Add(time.Minute))
+	if !ok || tb != TabBrew {
 		t.Fatalf("タブが戻らない: %v ok=%v", tb, ok)
 	}
 }
@@ -31,7 +30,7 @@ func TestDoctorScreenRejectsBadState(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
 	write := func(t *testing.T, body string) {
 		t.Helper()
-		p, err := doctorview.DoctorMemory.Path()
+		p, err := DoctorMemory.Path()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,40 +43,60 @@ func TestDoctorScreenRejectsBadState(t *testing.T) {
 	}
 	t.Run("期限切れ", func(t *testing.T) {
 		doctortest.WithDoctorStateDir(t)
-		if err := doctorview.SaveDoctorScreen(doctorview.DoctorScreen{Tab: int(doctorview.TabSvc), SavedAt: now.Add(-app.ScreenMemoryTTL)}); err != nil {
+		if err := SaveDoctorScreen(DoctorScreen{Tab: int(TabSvc), SavedAt: now.Add(-app.ScreenMemoryTTL)}); err != nil {
 			t.Fatal(err)
 		}
-		if _, ok := doctorview.LoadDoctorScreen(now); ok {
+		if _, ok := LoadDoctorScreen(now); ok {
 			t.Error("期限切れを復元した")
 		}
 	})
 	t.Run("未来の時刻", func(t *testing.T) {
 		doctortest.WithDoctorStateDir(t)
-		if err := doctorview.SaveDoctorScreen(doctorview.DoctorScreen{Tab: int(doctorview.TabSvc), SavedAt: now.Add(time.Hour)}); err != nil {
+		if err := SaveDoctorScreen(DoctorScreen{Tab: int(TabSvc), SavedAt: now.Add(time.Hour)}); err != nil {
 			t.Fatal(err)
 		}
-		if _, ok := doctorview.LoadDoctorScreen(now); ok {
+		if _, ok := LoadDoctorScreen(now); ok {
 			t.Error("未来の時刻を復元した (時計のずれ)")
 		}
 	})
 	t.Run("壊れた JSON", func(t *testing.T) {
 		doctortest.WithDoctorStateDir(t)
 		write(t, "{ not json")
-		if _, ok := doctorview.LoadDoctorScreen(now); ok {
+		if _, ok := LoadDoctorScreen(now); ok {
 			t.Error("壊れた記憶を復元した")
 		}
 	})
 	t.Run("範囲外のタブは既定へ畳む", func(t *testing.T) {
 		doctortest.WithDoctorStateDir(t)
-		if err := doctorview.SaveDoctorScreen(doctorview.DoctorScreen{Tab: 99, SavedAt: now}); err != nil {
+		if err := SaveDoctorScreen(DoctorScreen{Tab: 99, SavedAt: now}); err != nil {
 			t.Fatal(err)
 		}
-		tb, ok := doctorview.LoadDoctorScreen(now)
+		tb, ok := LoadDoctorScreen(now)
 		if !ok {
 			t.Fatal("復元自体はする")
 		}
-		if tb != doctorview.TabDisk {
+		if tb != TabDisk {
 			t.Errorf("範囲外のタブを添字に使った: %v", tb)
 		}
 	})
+}
+
+// 終了時: 開いていたら覚える / 開いていなければ**消す** (main の doctor_resume_test.go から移した。issue 817)。
+// 🚨 消さないと、一覧を見て閉じた次の起動で 2 回前の doctor が蘇る (issues 側と同じ規律)。
+func TestRememberDoctorScreen(t *testing.T) {
+	doctortest.WithDoctorStateDir(t)
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
+
+	var v DoctorView
+	v.Shown, v.Tab = true, TabBrew
+	v.RememberScreen(now)
+	if tb, ok := LoadDoctorScreen(now); !ok || tb != TabBrew {
+		t.Fatalf("開いていたのに覚えていない: %v ok=%v", tb, ok)
+	}
+
+	v.Shown = false
+	v.RememberScreen(now)
+	if _, ok := LoadDoctorScreen(now); ok {
+		t.Error("閉じて終了したのに記憶が残った (次の起動で蘇る)")
+	}
 }

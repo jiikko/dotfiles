@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 
 	"doctor/disk"
 	"doctor/docker"
@@ -494,7 +495,8 @@ func budgetRatelimitModel(tb testing.TB) *browseModel {
 // そのタブの描画が太っても気づけない。件数は disk と揃えて 8 エントリ規模にしてある。
 func budgetDoctorModelFor(tb testing.TB, tab doctorview.DoctorTab) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
-	m.doctorOv = doctorview.DoctorView{Shown: true, Expanded: map[doctorview.RowKey]bool{}, Tab: tab}
+	m.doctorOv = doctorview.DoctorView{}
+	m.doctorOv.Fixture().Show()
 
 	res := make([]disk.Result, 0, 8)
 	for e := range 8 {
@@ -507,7 +509,7 @@ func budgetDoctorModelFor(tb testing.TB, tab doctorview.DoctorTab) *browseModel 
 			Status: disk.StatusOK, Size: 4, Items: items,
 		})
 	}
-	m.doctorOv.DiskRep = &disk.Report{Results: res}
+	diskRep := &disk.Report{Results: res}
 
 	finds := make([]svc.Finding, 0, 8)
 	for i := range 8 {
@@ -522,13 +524,12 @@ func budgetDoctorModelFor(tb testing.TB, tab doctorview.DoctorTab) *browseModel 
 			RestartKeys: []string{"KeepAlive"},
 		})
 	}
-	m.doctorOv.SvcRep = &svc.Report{Findings: finds, Scanned: 64}
+	svcRep := &svc.Report{Findings: finds, Scanned: 64}
 
 	warns := make([]string, 0, 8)
 	for i := range 8 {
 		warns = append(warns, fmt.Sprintf("Warning: unbrewed header files were found in /usr/local/include (%d)", i))
 	}
-	m.doctorOv.Brew = &doctorview.BrewDoctorResult{Warnings: warns}
 
 	kinds := []docker.Kind{docker.KindContainers, docker.KindImages, docker.KindBuildCache, docker.KindVolumes}
 	groups := make([]docker.Group, 0, len(kinds))
@@ -547,7 +548,8 @@ func budgetDoctorModelFor(tb testing.TB, tab doctorview.DoctorTab) *browseModel 
 			Items: items, Size: 1 << 22, Command: fmt.Sprintf("docker %s prune -f", k),
 		})
 	}
-	m.doctorOv.Docker = &docker.Report{Installed: true, Groups: groups, SystemPrune: "docker system prune -a -f", OldAfter: 14 * 24 * time.Hour}
+	dockerRep := &docker.Report{Installed: true, Groups: groups, SystemPrune: "docker system prune -a -f", OldAfter: 14 * 24 * time.Hour}
+	m.doctorOv.Fixture().Reports(tab, diskRep, svcRep, warns, dockerRep, nil)
 
 	return m
 }

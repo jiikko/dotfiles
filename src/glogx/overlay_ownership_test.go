@@ -4,8 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"glogx/internal/doctorview"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // overlay が「自分の語彙を持っている (a)」「中断できない処理を走らせている (b)」を主張する場所は
@@ -176,8 +177,8 @@ func showOverlayOwning(t *testing.T, m *browseModel, name string) {
 	t.Helper()
 	switch name {
 	case "doctorOv":
-		m.doctorOv.Shown = true
-		m.doctorOv.Del = doctorview.DoctorDelete{Confirm: true}
+		m.doctorOv.Fixture().Show()
+		m.doctorOv.Fixture().Delete(doctorview.DeleteConfirm, nil)
 	case "issuesOv":
 		m.issuesOv.shown = true
 		m.issuesOv.numFilter.typing = true // 番号入力中はキーを解釈し切る
@@ -203,9 +204,9 @@ func showOverlayUninterruptible(t *testing.T, m *browseModel, name string) {
 	t.Helper()
 	switch name {
 	case "doctorOv":
-		m.doctorOv.Shown = true
-		m.doctorOv.Del = doctorview.DoctorDelete{Running: true}
-		if !m.doctorOv.Del.Blocking() {
+		m.doctorOv.Fixture().Show()
+		m.doctorOv.Fixture().Delete(doctorview.DeleteRunning, nil)
+		if !m.doctorOv.Deleting() {
 			t.Fatal("前提が作れていない: doctor の削除が blocking でない")
 		}
 	default:

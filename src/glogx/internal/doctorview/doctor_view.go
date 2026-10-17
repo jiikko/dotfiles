@@ -119,20 +119,30 @@ type DoctorView struct {
 	Del              DoctorDelete
 	PendingDeleteCmd tea.Cmd // handleKey が組んだ削除の Cmd (browseModel が取り出して返す)
 
-	// テスト用の差し替え口 (zero value = 本番)
-	DiskOpts   func() disk.Options
-	SvcOpts    func() svc.Options
-	BrewRun    runner.Runner
-	DockerOpts func() docker.Options
-	SsdOpts    func() ssd.Options
-	DeleteOpts func() disk.DeleteOptions
-	DeleteFn   func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
+	// deps は外へ出る口 (zero value = 本番。SetDeps で差し替える)
+	deps Deps
 }
+
+// Deps は doctor 画面が外へ出る口 (走査・brew・docker・SSD・削除)。項目が nil なら本番の実装を使う。
+// 本番の main は差し替えない (zero value のまま)。browseModel と組み合わせる main のテストが fake を差す
+// (fake は internal/doctorview/doctortest の FakeDeps。あちらは同じ形の構造体を持ち、変換して渡す)。
+type Deps struct {
+	Disk       func() disk.Options
+	Svc        func() svc.Options
+	Brew       runner.Runner
+	Docker     func() docker.Options
+	SSD        func() ssd.Options
+	DeleteOpts func() disk.DeleteOptions
+	Delete     func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
+}
+
+// SetDeps は外へ出る口を差し替える。
+func (v *DoctorView) SetDeps(d Deps) { v.deps = d }
 
 // deleteOptions は削除の実行口。走査と同じ Env / Runner を使う (判定の材料を 2 つ持たない)。
 func (v *DoctorView) deleteOptions() disk.DeleteOptions {
-	if v.DeleteOpts != nil {
-		return v.DeleteOpts()
+	if v.deps.DeleteOpts != nil {
+		return v.deps.DeleteOpts()
 	}
 	return disk.DeleteOptions{Env: disk.RealEnv(), Run: runner.Exec}
 }
@@ -192,6 +202,29 @@ func (v *DoctorView) Scanning() bool {
 // 画面が完全に静止する = 文字どおり固まる (ユーザー報告 2026-09-04)。
 func (v *DoctorView) Deleting() bool { return v.Shown && v.Del.Blocking() }
 
+// Receive は doctor の非同期の結果 (走査・削除) を受け取る。doctor の Msg でなければ ok=false。
+// cmd は次に待つもの、toast は画面の外へ出す知らせ ("" = 無し。SSD の警告)。
+func (v *DoctorView) Receive(msg tea.Msg) (cmd tea.Cmd, toast string, ok bool) {
+	switch msg := msg.(type) {
+	case DoctorDiskMsg:
+		return v.ReceiveDisk(msg), "", true
+	case DoctorDeleteMsg:
+		return v.ReceiveDelete(msg), "", true
+	case DoctorSvcMsg:
+		v.ReceiveSvc(msg)
+		return nil, "", true
+	case DoctorDockerMsg:
+		v.ReceiveDocker(msg)
+		return nil, "", true
+	case DoctorSSDMsg:
+		return nil, v.ReceiveSSD(msg), true
+	case DoctorBrewMsg:
+		v.ReceiveBrew(msg)
+		return nil, "", true
+	}
+	return nil, "", false
+}
+
 // toggle は開閉。開くときにスキャンを始める Cmd を返す。
 func (v *DoctorView) Toggle() tea.Cmd {
 	if v.Shown {
@@ -210,8 +243,8 @@ func (v *DoctorView) Open() tea.Cmd { return v.Start(false) }
 // 在るかどうかだけでなく Entry を返すのは、復元した Result の表示文言をカタログ側へ
 // 束ね直すため (issue 229)。
 func (v *DoctorView) catalogLookup() func(string) (disk.Entry, bool) {
-	if v.DiskOpts != nil {
-		if cat := v.DiskOpts().Catalog; len(cat) > 0 {
+	if v.deps.Disk != nil {
+		if cat := v.deps.Disk().Catalog; len(cat) > 0 {
 			byID := make(map[string]disk.Entry, len(cat))
 			for _, e := range cat {
 				byID[e.ID] = e
@@ -276,8 +309,8 @@ func (v *DoctorView) Start(force bool) tea.Cmd {
 	gen := v.Gen
 
 	dOpt := disk.Options{Env: disk.RealEnv(), Run: runner.Exec}
-	if v.DiskOpts != nil {
-		dOpt = v.DiskOpts()
+	if v.deps.Disk != nil {
+		dOpt = v.deps.Disk()
 	}
 	if !force {
 		// TTL を過ぎて走査し直すときも、重かったエントリは前回の値を使う (ディスク I/O を節約)
@@ -303,12 +336,12 @@ func (v *DoctorView) Start(force bool) tea.Cmd {
 	}()
 
 	sOpt := svc.Options{Run: runner.Exec}
-	if v.SvcOpts != nil {
-		sOpt = v.SvcOpts()
+	if v.deps.Svc != nil {
+		sOpt = v.deps.Svc()
 	} else if home, err := os.UserHomeDir(); err == nil {
 		sOpt.Dirs = svc.DefaultDirs(home, os.Getuid())
 	}
-	bRun := v.BrewRun
+	bRun := v.deps.Brew
 	if bRun == nil {
 		bRun = runner.Exec
 	}

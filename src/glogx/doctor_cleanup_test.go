@@ -23,23 +23,25 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 	// 🚨 `doctorOv` は**値フィールド**なので `v := m.doctorOv` だと**コピー**になり、
 	//    m 側に何も伝わらない (実測 2026-09-03: それで配線のテストが緑にならなかった)
 	v := &m.doctorOv
-	v.Shown = true
+	v.Fixture().Show()
 	a := disk.Result{Entry: disk.Entry{ID: "a", Label: "A", Tier: 1}, Size: 300, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/a", Size: 300}}}
 	b := disk.Result{Entry: disk.Entry{ID: "b", Label: "B", Tier: 1}, Size: 200, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/b", Size: 200}}}
 
 	o := doctorview.DoctorRenderOpts{Page: 40, Width: 100}
-	v.DiskResults = []disk.Result{a, b}
+	v.Fixture().DiskResults([]disk.Result{a, b})
 	v.Lines(o)
-	v.Cur.Move(v.Rows, 1)
-	gone := v.Rows[v.Cur.Index].Key
+	v.HandleKey("j", o.Page) // b の行へ
+	if v.Fixture().CursorIndex() == 0 {
+		t.Fatal("前提が作れていない: j でカーソルが動かない")
+	}
 
 	// 再走査で b が落ちた → 描画で寄せる
-	v.DiskResults = []disk.Result{a}
+	v.Fixture().DiskResults([]disk.Result{a})
 	v.Lines(o)
-	if v.Rows[v.Cur.Index].Key == gone {
-		t.Fatal("消えた行を指したまま")
+	if !v.Fixture().CursorFellBack() {
+		t.Fatal("消えた行を指したまま (寄せの印が立っていない)")
 	}
 
 	// 次のキー操作で**画面に**出る。🚨 **browseModel.handleKey 経由**で見る
@@ -59,16 +61,16 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 	// 🚨 **その打鍵が飲まれない**こと (敵対的レビュー 2026-09-03 の P2)。
 	//    以前は handleKey の先頭で doctorview.DoctorToast を返しており、寄せた直後の
 	//    q / esc / d / r / Enter が等しく 1 回空振りしていた
-	v.DiskResults = []disk.Result{a, b}
+	v.Fixture().DiskResults([]disk.Result{a, b})
 	v.Lines(o)
-	v.Cur.Move(v.Rows, 1)
-	v.DiskResults = []disk.Result{a}
+	v.HandleKey("j", o.Page)
+	v.Fixture().DiskResults([]disk.Result{a})
 	v.Lines(o) // ここで再度寄せる
-	if !v.Cur.FellBack {
+	if !v.Fixture().CursorFellBack() {
 		t.Fatal("前提が作れていない: 寄せの印が立っていない")
 	}
 	m.handleKey("q") // 閉じるキー
-	if v.Shown {
+	if v.Visible() {
 		t.Fatal("寄せた直後の q が飲まれた (doctor が閉じない)")
 	}
 }

@@ -1,8 +1,11 @@
 package doctorview
 
 import (
-	"glogx/internal/app"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
+
+	"glogx/internal/app"
 )
 
 // doctor を開いたまま glogx を閉じたら、次の起動でその画面を復元する。
@@ -29,6 +32,27 @@ var DoctorMemory = app.ScreenMemory[DoctorScreen]{File: "doctor-screen.json", Sa
 func SaveDoctorScreen(s DoctorScreen) error { return DoctorMemory.Save(s) }
 
 func RemoveDoctorScreen() { DoctorMemory.Remove() }
+
+// RestoreScreen は前回 doctor を出したまま終了していたら開き直す (見ていたタブも戻す)。開いたら走査の Cmd と true。
+func (v *DoctorView) RestoreScreen(now time.Time) (tea.Cmd, bool) {
+	tb, ok := LoadDoctorScreen(now)
+	if !ok {
+		return nil, false
+	}
+	cmd := v.Toggle()
+	v.Tab = tb
+	return cmd, true
+}
+
+// RememberScreen は終了時の記憶。出していれば保存し、🚨 **出していなければ消す** (issues 側と同じ) — 残すと、
+// 一覧を見て閉じた次の起動で 2 回前の doctor が蘇る。保存の失敗は終了を妨げない。
+func (v *DoctorView) RememberScreen(now time.Time) {
+	if v.Visible() {
+		_ = SaveDoctorScreen(DoctorScreen{Tab: int(v.Tab), SavedAt: now})
+		return
+	}
+	RemoveDoctorScreen()
+}
 
 // LoadDoctorScreen は復元するタブを返す (読めない・壊れている・期限切れ・未来の時刻は「復元しない」。app.ScreenMemory.load)。
 //

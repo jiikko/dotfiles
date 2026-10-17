@@ -493,11 +493,8 @@ func (m *browseModel) Init() tea.Cmd {
 	cliHealth := checkCLIHealthCmd()
 	// doctor の起動時トースト: 前回のスキャン結果 (ファイル読みのみ、fork なし) が閾値を超えていれば
 	// 文言で D へ誘導する。起動時に走査はしない (issue 148 の骨格)。
-	if c, ok := doctorview.LoadDoctorDiskCache(); ok {
-		if text := doctorview.DoctorStartupToast(c, ok, app.TimeNow()); text != "" {
-			m.toast.ShowInfo(text)
-			doctorview.MarkDoctorNotified(app.TimeNow())
-		}
+	if text := doctorview.StartupToast(app.TimeNow()); text != "" {
+		m.toast.ShowInfo(text)
 	}
 	// バックグラウンド再ビルドの監視 (autobuild.go)。shim が GO_AUTOBUILD_PENDING を
 	// 立てていない通常起動では nil = tick が増えない。
@@ -544,9 +541,8 @@ func (m *browseModel) Init() tea.Cmd {
 	// 両方 shown にすると「見えている画面」と「キーを受ける画面」が食い違う。記憶は互いに
 	// 排他 (開いていない方は終了時に消える) なので通常は同時に残らないが、異常終了で片方が
 	// 残ったときにここで倒す。issues 側は issuesRestoreMsg のガードが同じ理由で弾く。
-	if tb, ok := doctorview.LoadDoctorScreen(app.TimeNow()); ok && rlRestore == nil {
-		doctorRestore = m.doctorOv.Toggle()
-		m.doctorOv.Tab = tb
+	if rlRestore == nil {
+		doctorRestore, _ = m.doctorOv.RestoreScreen(app.TimeNow())
 	}
 	// F を出したまま終了していたら、同じ dir で開いたときに同じ場所の F を開き直す (filer_resume.go。issue 710)。
 	// 優先は最下位: 他の全画面の記憶が当たったら開かない (全画面は同時に 1 枚。issues は repo の照合が非同期なので、
@@ -857,6 +853,13 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 「context canceled」警告として出るのを防ぐ)
 		return m, nil
 	}
+	// doctor の非同期の結果 (走査・削除)。doctor が受け取って次の Cmd と知らせを返す
+	if cmd, toast, ok := m.doctorOv.Receive(msg); ok {
+		if toast != "" {
+			m.toast.Show(toast, false)
+		}
+		return m, tea.Batch(cmd, m.maybeTick())
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -1149,24 +1152,6 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.showClaudeUpdate(msg.latest)
 	case codexUpdateAvailableMsg:
 		m.toast.Show("codex v"+msg.latest+" が公開されています (X で更新)", true)
-		return m, m.maybeTick()
-	case doctorview.DoctorDiskMsg:
-		return m, tea.Batch(m.doctorOv.ReceiveDisk(msg), m.maybeTick())
-	case doctorview.DoctorDeleteMsg:
-		return m, tea.Batch(m.doctorOv.ReceiveDelete(msg), m.maybeTick())
-	case doctorview.DoctorSvcMsg:
-		m.doctorOv.ReceiveSvc(msg)
-		return m, m.maybeTick()
-	case doctorview.DoctorDockerMsg:
-		m.doctorOv.ReceiveDocker(msg)
-		return m, m.maybeTick()
-	case doctorview.DoctorSSDMsg:
-		if text := m.doctorOv.ReceiveSSD(msg); text != "" {
-			m.toast.Show(text, false)
-		}
-		return m, m.maybeTick()
-	case doctorview.DoctorBrewMsg:
-		m.doctorOv.ReceiveBrew(msg)
 		return m, m.maybeTick()
 	case cliHealthMsg:
 		for _, issue := range msg.issues {
@@ -1588,16 +1573,16 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			// 終了すると、残った自己更新が孤児のまま進む)。
 			// escape は updateTimeout のみ。モーダルに「完了まで終了できません」を出す。
 			return m, nil
-		case m.doctorOv.Visible() && m.doctorOv.Del.Blocking():
+		case m.doctorOv.Deleting():
 			// doctor の削除も push / pull と同じ 2 段ガード。🚨 ここに case が無いと
 			// **1 回目の Ctrl-C でプロセスごと落ちる**。それは削除の中断を ctx で伝える経路を
 			// 使わないので、記録が executing のまま残り、cli: の子プロセスも孤児化する
 			// (doctor_delete.go 冒頭の不変条件を、UI の配線が破る形。敵対レビュー 2026-09-03 が実測)。
 			// 中断の意味づけ (1 回目は武装 / 2 回目で cancel) は doctorview.DoctorView が持つので、
-			// 判定を 2 箇所に書かず handleDeleteKey へ渡す。**どちらの回でもここで飲む**
+			// 判定を 2 箇所に書かず InterruptDelete へ渡す。**どちらの回でもここで飲む**
 			// (2 回目の cancel は相を落とさない = 相を落とすのは receiveDelete なので、
 			// 回数で戻り値を分けても同じ値になる)
-			m.doctorOv.HandleDeleteKey("ctrl+c")
+			m.doctorOv.InterruptDelete()
 			return m, m.maybeTick()
 		case m.actModal.pushing || m.actModal.pulling:
 			// 途中終了は不整合 (特に pull --rebase の mid-rebase 状態) を招くので 1 回目はブロック。
@@ -2499,7 +2484,7 @@ func (m *browseModel) quitNow() (tea.Model, tea.Cmd) { return m.quitWith(false) 
 // 端末を閉じられても、止めるべきものは止まっている状態にしておく。
 func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 	m.rememberIssuesScreen()
-	m.rememberDoctorScreen()
+	m.doctorOv.RememberScreen(app.TimeNow()) // 出したまま終了したら次の起動で開き直す (出していなければ消す)
 	m.rememberRatelimitScreen()
 	m.rememberFilerScreen()
 	m.rememberLanScreen()
@@ -2699,17 +2684,6 @@ func (m *browseModel) rememberIssuesScreen() {
 		return
 	}
 	removeIssuesScreen()
-}
-
-// rememberDoctorScreen は「doctor を出したまま終了したら次の起動で復元する」ための保存
-// (doctor_resume.go)。🚨 issues 側と同じく、**開いていないまま終了したら消す** — 残すと、
-// 一覧を見て閉じた次の起動で 2 回前の doctor が蘇る。
-func (m *browseModel) rememberDoctorScreen() {
-	if m.doctorOv.Visible() {
-		_ = doctorview.SaveDoctorScreen(doctorview.DoctorScreen{Tab: int(m.doctorOv.Tab), SavedAt: app.TimeNow()}) // 失敗しても終了は妨げない
-		return
-	}
-	doctorview.RemoveDoctorScreen()
 }
 
 // rememberRatelimitScreen は「ratelimit ダッシュボードを出したまま終了したら次の起動で開き直す」

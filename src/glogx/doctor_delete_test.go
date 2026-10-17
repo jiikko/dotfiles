@@ -4,12 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"doctor/disk"
-	"doctor/docker"
-	"doctor/ssd"
-	"doctor/svc"
 	"glogx/internal/doctorview"
-	"glogx/internal/doctorview/doctortest"
 )
 
 // ---- 敵対的レビュー (2026-09-03) が開けた穴を塞ぐテスト ----
@@ -24,17 +19,14 @@ func TestBrowseCtrlCDuringDeleteDoesNotQuit(t *testing.T) {
 	for _, key := range []string{"ctrl+c", "ctrl+g"} {
 		t.Run(key, func(t *testing.T) {
 			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-			m.doctorOv.Shown = true
+			m.doctorOv.Fixture().Show()
 			cancelled := false
-			m.doctorOv.Del = doctorview.DoctorDelete{Running: true, Progress: doctortest.ProgAt(1, 1, "…", disk.PhaseScanning),
-				Cancel: func() { cancelled = true }}
+			m.doctorOv.Fixture().Delete(doctorview.DeleteRunning, func() { cancelled = true })
 			m.handleKey(key)
 			if m.done || m.restartRequested {
 				t.Fatalf("1 回目の %s でアプリを終了した (中断は ctx で伝えること)", key)
 			}
-			if !m.doctorOv.Del.ArmedCC {
-				t.Errorf("1 回目で武装していない")
-			}
+			// 武装したかは「1 回目では中断せず、2 回目で中断する」で見る (武装を経ずに中断する経路は無い)
 			if cancelled {
 				t.Errorf("1 回目で中断した (誤爆を 1 段止める設計)")
 			}
@@ -52,8 +44,8 @@ func TestBrowseCtrlCDuringDeleteDoesNotQuit(t *testing.T) {
 // 削除の実行中は再起動ダイアログを出さない (出るとどのキーも吸われ、r は走行中の削除を殺す)。
 func TestRestartPromptDefersWhileDeleting(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.doctorOv.Shown = true
-	m.doctorOv.Del = doctorview.DoctorDelete{Running: true}
+	m.doctorOv.Fixture().Show()
+	m.doctorOv.Fixture().Delete(doctorview.DeleteRunning, nil)
 	m.restartPending = true
 	if m.restartPromptVisible() {
 		t.Fatal("削除中に再起動ダイアログを出した")
@@ -72,12 +64,12 @@ func TestRestartPromptDefersWhileDeleting(t *testing.T) {
 func TestRestartPromptDefersWhileDeleteConfirm(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		del  doctorview.DoctorDelete
-	}{{"確認中", doctorview.DoctorDelete{Confirm: true}}, {"結果の表示中", doctorview.DoctorDelete{Result: &disk.DeleteReport{}}}} {
+		del  doctorview.DeleteState
+	}{{"確認中", doctorview.DeleteConfirm}, {"結果の表示中", doctorview.DeleteResult}} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-			m.doctorOv.Shown = true
-			m.doctorOv.Del = tc.del
+			m.doctorOv.Fixture().Show()
+			m.doctorOv.Fixture().Delete(tc.del, nil)
 			m.restartPending = true
 			if m.restartPromptVisible() {
 				t.Fatalf("%s に再起動ダイアログを出した", tc.name)
@@ -96,7 +88,9 @@ func TestRestartPromptDefersWhileDeleteConfirm(t *testing.T) {
 // **挙動を独立の出典にする**: 候補キーを 1 つずつ browseModel の入口から押して、実際に
 // 中断できたかを見てから、案内にその名前が出ているかを突き合わせる。
 func TestDeleteAbortGuidanceMatchesKeys(t *testing.T) {
-	panel := doctortest.DoctorPanelText(&doctorview.DoctorView{Del: doctorview.DoctorDelete{Running: true, Progress: doctortest.ProgAt(1, 1, "…", disk.PhaseScanning)}}, 20)
+	var pv doctorview.DoctorView
+	pv.Fixture().Delete(doctorview.DeleteRunning, nil)
+	panel := strings.Join(pv.Lines(doctorview.DoctorRenderOpts{Width: 100, Page: 20, Spinner: "⠋"}), "\n")
 	// 中断に使えそうな候補。実際に使えるかはここでは決めず、押して確かめる
 	for _, tc := range []struct{ key, word string }{
 		{"ctrl+c", "Ctrl-C"},
@@ -104,12 +98,12 @@ func TestDeleteAbortGuidanceMatchesKeys(t *testing.T) {
 	} {
 		t.Run(tc.key, func(t *testing.T) {
 			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-			m.doctorOv.Shown = true
+			m.doctorOv.Fixture().Show()
 			cancelled := false
-			m.doctorOv.Del = doctorview.DoctorDelete{Running: true, Progress: doctortest.ProgAt(1, 1, "…", disk.PhaseScanning),
-				Cancel: func() { cancelled = true }}
+			m.doctorOv.Fixture().Delete(doctorview.DeleteRunning, func() { cancelled = true })
 			m.handleKey(tc.key)
-			armed := m.doctorOv.Del.ArmedCC
+			// 1 回目で中断していない = 武装で止まった (武装を経ずに中断する経路は無い)
+			armed := !cancelled
 			m.handleKey(tc.key)
 			aborts := cancelled
 
@@ -134,12 +128,9 @@ func TestDeleteAbortGuidanceMatchesKeys(t *testing.T) {
 func TestDeleteKeepsRedrawAlive(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.width, m.height = 100, 30
-	tv := doctortest.DoctorTestView(t)
-	m.doctorOv = *tv
-	m.doctorOv.Shown = true
+	m.doctorOv.Fixture().Show()
 	// 走査は終わっている状態を作る (5 つのレポートが揃うと scanning() は false)
-	m.doctorOv.DiskRep, m.doctorOv.SvcRep, m.doctorOv.Brew = &disk.Report{}, &svc.Report{}, &doctorview.BrewDoctorResult{}
-	m.doctorOv.Docker, m.doctorOv.Ssd = &docker.Report{}, &ssd.Report{}
+	m.doctorOv.Fixture().Reports(doctorview.TabDisk, nil, nil, nil, nil, nil)
 	// usage の枠は「開いていて未取得」だと単独で tick を立てるので落とす。
 	// 🚨 これを落とさないと、削除の配線を外す変異を当てても緑のまま = 何も守らないテストになる
 	m.usageOv.visible = false
@@ -151,13 +142,13 @@ func TestDeleteKeepsRedrawAlive(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name string
-		del  doctorview.DoctorDelete
+		del  doctorview.DeleteState
 	}{
-		{"preparing", doctorview.DoctorDelete{Preparing: true}},
-		{"running", doctorview.DoctorDelete{Running: true}},
+		{"preparing", doctorview.DeletePreparing},
+		{"running", doctorview.DeleteRunning},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m.doctorOv.Del = tc.del
+			m.doctorOv.Fixture().Delete(tc.del, nil)
 			if !m.spinnerActive() {
 				t.Error("削除中なのに spinnerActive=false (再描画が止まり、固まって見える)")
 			}
@@ -169,15 +160,15 @@ func TestDeleteKeepsRedrawAlive(t *testing.T) {
 	// 再描画が無限に回り続ける)。敵対レビュー 2026-09-04 が変異で実証した穴
 	for _, tc := range []struct {
 		name string
-		del  doctorview.DoctorDelete
+		del  doctorview.DeleteState
 	}{
-		{"ゼロ値", doctorview.DoctorDelete{}},
-		{"下見の後の確認", doctorview.DoctorDelete{Confirm: true, Plan: &disk.DeleteReport{}}},
-		{"削除の結果", doctorview.DoctorDelete{Result: &disk.DeleteReport{}}},
-		{"失敗の表示", doctorview.DoctorDelete{Err: "だめでした"}},
+		{"ゼロ値", doctorview.DeleteIdle},
+		{"下見の後の確認", doctorview.DeleteConfirmPlan},
+		{"削除の結果", doctorview.DeleteResult},
+		{"失敗の表示", doctorview.DeleteFailed},
 	} {
 		t.Run("止まる/"+tc.name, func(t *testing.T) {
-			m.doctorOv.Del = tc.del
+			m.doctorOv.Fixture().Delete(tc.del, nil)
 			if m.doctorOv.Deleting() {
 				t.Error("走っていないのに deleting() が true")
 			}

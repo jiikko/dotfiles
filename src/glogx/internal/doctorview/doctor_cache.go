@@ -249,6 +249,17 @@ func LoadDoctorDiskCache() (DoctorDiskCache, bool) {
 	return c, true
 }
 
+// StartupToast は起動時のトーストの文面 ("" = 出さない)。前回の走査結果 (ファイル読みのみ、fork なし) から
+// DoctorStartupToast で決め、出すなら再通知の抑止の時刻を記録する。起動時に走査はしない (issue 148 の骨格)。
+func StartupToast(now time.Time) string {
+	c, ok := LoadDoctorDiskCache()
+	text := DoctorStartupToast(c, ok, now)
+	if text != "" {
+		MarkDoctorNotified(now)
+	}
+	return text
+}
+
 // MarkDoctorNotified は再通知抑止の時刻を記録する (トーストを出した直後に呼ぶ)。
 func MarkDoctorNotified(now time.Time) {
 	c, ok := LoadDoctorDiskCache()

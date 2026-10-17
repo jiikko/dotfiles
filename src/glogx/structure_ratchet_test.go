@@ -147,19 +147,44 @@ func TestMainSourceFilesAllowlist(t *testing.T) {
 func TestBrowseModelMethodFilesAllowlist(t *testing.T) {
 	fset := token.NewFileSet()
 	var withMethods []string
-	methods := 0
+	files := map[string]*ast.File{}
 	for _, f := range mainNonTestFiles(t) {
 		file, err := parser.ParseFile(fset, f, nil, parser.SkipObjectResolution)
 		if err != nil {
 			t.Fatal(err)
 		}
+		files[f] = file
+	}
+	// 型の別名 (`type bm = browseModel`) で受けるメソッドも browseModel のメソッド (codex の敵対的レビュー 2026-10-17)。
+	// 別名の別名もあるので、増えなくなるまで集める
+	names := map[string]bool{"browseModel": true}
+	for grew := true; grew; {
+		grew = false
+		for _, file := range files {
+			for _, d := range file.Decls {
+				gd, ok := d.(*ast.GenDecl)
+				if !ok || gd.Tok != token.TYPE {
+					continue
+				}
+				for _, sp := range gd.Specs {
+					ts := sp.(*ast.TypeSpec)
+					if ts.Assign.IsValid() && names[recvTypeName(ts.Type)] && !names[ts.Name.Name] {
+						names[ts.Name.Name] = true
+						grew = true
+					}
+				}
+			}
+		}
+	}
+	methods := 0
+	for f, file := range files {
 		has := false
 		for _, d := range file.Decls {
 			fn, ok := d.(*ast.FuncDecl)
 			if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 {
 				continue
 			}
-			if recvTypeName(fn.Recv.List[0].Type) == "browseModel" {
+			if names[recvTypeName(fn.Recv.List[0].Type)] {
 				has = true
 				methods++
 			}
@@ -258,6 +283,20 @@ func apiSurface(t *testing.T, dir string) string {
 	}
 	var lines []string
 	add := func(format string, a ...any) { lines = append(lines, fmt.Sprintf(format, a...)) }
+	// addFields は構造体の型 (括弧で包んでいても) の公開のフィールドを owner.名前 で数える。埋め込みは数えない
+	addFields := func(owner string, typ ast.Expr) {
+		st, ok := ast.Unparen(typ).(*ast.StructType)
+		if !ok {
+			return
+		}
+		for _, fld := range st.Fields.List {
+			for _, fn := range fld.Names {
+				if fn.IsExported() {
+					add("field %s.%s", owner, fn.Name)
+				}
+			}
+		}
+	}
 	for _, e := range ents {
 		n := e.Name()
 		if e.IsDir() || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
@@ -285,16 +324,9 @@ func apiSurface(t *testing.T, dir string) string {
 						if s.Name.IsExported() {
 							add("type %s", s.Name.Name)
 						}
-						if st, ok := s.Type.(*ast.StructType); ok {
-							for _, fld := range st.Fields.List {
-								for _, fn := range fld.Names {
-									if fn.IsExported() {
-										add("field %s.%s", s.Name.Name, fn.Name)
-									}
-								}
-							}
-						}
-						if it, ok := s.Type.(*ast.InterfaceType); ok {
+						addFields(s.Name.Name, s.Type)
+						// 括弧で包んだ型 (`type T (interface{...})`) も中を見る (codex の敵対的レビュー 2026-10-17)
+						if it, ok := ast.Unparen(s.Type).(*ast.InterfaceType); ok {
 							for _, m := range it.Methods.List {
 								for _, mn := range m.Names {
 									if mn.IsExported() {
@@ -308,9 +340,18 @@ func apiSurface(t *testing.T, dir string) string {
 						if d.Tok == token.CONST {
 							kind = "const"
 						}
-						for _, vn := range s.Names {
-							if vn.IsExported() {
-								add("%s %s", kind, vn.Name)
+						for i, vn := range s.Names {
+							if !vn.IsExported() {
+								continue
+							}
+							add("%s %s", kind, vn.Name)
+							// 公開の変数の型が無名の構造体なら、そのフィールドも外から触れる (codex の敵対的レビュー 2026-10-17)
+							if s.Type != nil {
+								addFields(vn.Name, s.Type)
+							} else if i < len(s.Values) {
+								if cl, ok := ast.Unparen(s.Values[i]).(*ast.CompositeLit); ok {
+									addFields(vn.Name, cl.Type)
+								}
 							}
 						}
 					}
@@ -344,4 +385,47 @@ func lineDiff(want, got string) string {
 	}
 	sort.Strings(out)
 	return strings.Join(out, "\n")
+}
+
+// TestNoFixtureCallsInProduction は画面のパッケージの Fixture() (main のテストが状態を置く口) を本番のコードが
+// 呼んでいないことを確かめる (issue 817。internal/doctorview/fixture.go)。Fixture は状態の不変条件を飛ばして
+// 書き込めるので、本番から呼ぶと画面の状態機械を迂回できる。
+// 止めないもの: 別の名前のメソッド経由の呼び出し・関数値として渡す形 (`f := v.Fixture`)。後者も選択子として数えるので、
+// 実際に漏れるのは別名で包む形だけ (レビューの責務)
+func TestNoFixtureCallsInProduction(t *testing.T) {
+	fset := token.NewFileSet()
+	scanned := 0
+	err := filepath.WalkDir(".", func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if n := d.Name(); n == "testdata" || (strings.HasPrefix(n, ".") && p != ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		f, err := parser.ParseFile(fset, p, nil, parser.SkipObjectResolution)
+		if err != nil {
+			return err
+		}
+		scanned++
+		ast.Inspect(f, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "Fixture" {
+				t.Errorf("%s: 本番のコードが %s を使っている (Fixture は main のテスト専用の口)", fset.Position(sel.Pos()), "Fixture")
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// canary: main の直下と internal/ の非テストの .go は 60 個を超える。走査が空振りしたら緑で通さない
+	if scanned < 50 {
+		t.Fatalf("非テストの .go を %d 個しか読んでいない (走査が壊れている)", scanned)
+	}
 }

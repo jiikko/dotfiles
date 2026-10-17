@@ -7,7 +7,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"doctor/disk"
-	"doctor/svc"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/term"
@@ -20,8 +19,7 @@ import (
 func TestDoctorWiredThroughBrowseModel(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.width, m.height = 100, 30
-	tv := doctortest.DoctorTestView(t)
-	m.doctorOv = *tv
+	m.doctorOv.SetDeps(doctorview.Deps(doctortest.FakeDeps(t)))
 	_, cmd := m.handleKey("D")
 	if !m.doctorOv.Visible() {
 		t.Fatal("D で doctor が開かない")
@@ -35,25 +33,7 @@ func TestDoctorWiredThroughBrowseModel(t *testing.T) {
 	if !m.spinnerActive() {
 		t.Error("走査中なのに spinnerActive が false (進捗が止まって見える)")
 	}
-	pending := []tea.Cmd{cmd}
-	for len(pending) > 0 {
-		c := pending[0]
-		pending = pending[1:]
-		if c == nil {
-			continue
-		}
-		switch msg := c().(type) {
-		case tea.BatchMsg:
-			for _, sub := range msg {
-				pending = append(pending, sub)
-			}
-		case nil:
-		case tickMsg:
-		default:
-			_, next := m.Update(msg)
-			pending = append(pending, next)
-		}
-	}
+	runDoctorCmdsViaUpdate(t, m, cmd)
 	if m.doctorOv.Scanning() {
 		t.Fatal("Update 経由で全セクションが完了しない (case の配線漏れ)")
 	}
@@ -67,7 +47,7 @@ func TestDoctorWiredThroughBrowseModel(t *testing.T) {
 		t.Fatal("r で再スキャンが始まらない")
 	}
 	m.cancelAll()
-	if m.doctorOv.Cancel != nil {
+	if !m.doctorOv.Fixture().ScanStopped() {
 		t.Error("cancelAll が doctor の走査を止めていない")
 	}
 	m.handleKey("esc")
@@ -87,11 +67,10 @@ func TestDoctorCopyThroughBrowseModel(t *testing.T) {
 	orig := copyToClipboard
 	copyToClipboard = func(s string) error { copied = s; return nil }
 	t.Cleanup(func() { copyToClipboard = orig })
-	m.doctorOv = doctorview.DoctorView{Shown: true, Expanded: map[doctorview.RowKey]bool{}}
-	m.doctorOv.DiskRep = &disk.Report{Results: []disk.Result{{Entry: disk.Entry{ID: "a", Label: "A", Risk: disk.RiskSafe, Recover: "r"},
-		Status: disk.StatusOK, Size: 1, Items: []disk.Item{{Path: "/p/a", Size: 1}}}}}
-	m.doctorOv.SvcRep = &svc.Report{}
-	m.doctorOv.Brew = &doctorview.BrewDoctorResult{Clean: true}
+	m.doctorOv = doctorview.DoctorView{}
+	m.doctorOv.Fixture().Show()
+	m.doctorOv.Fixture().Reports(doctorview.TabDisk, &disk.Report{Results: []disk.Result{{Entry: disk.Entry{ID: "a", Label: "A", Risk: disk.RiskSafe, Recover: "r"},
+		Status: disk.StatusOK, Size: 1, Items: []disk.Item{{Path: "/p/a", Size: 1}}}}}, nil, nil, nil, nil)
 	_ = m.View()
 	m.handleKey("y")
 	if copied != "/p/a" {
@@ -103,4 +82,17 @@ func TestDoctorCopyThroughBrowseModel(t *testing.T) {
 	if !strings.Contains(m.hintLine(), "y: パスをコピー") {
 		t.Errorf("hint に y/Y が無い: %q", m.hintLine())
 	}
+}
+
+// runDoctorCmdsViaUpdate は doctor の Cmd を実行し、出た Msg を browseModel.Update へ通す (配線を含めて見る)。
+// 再描画の tick はここでは回さない (走査の Msg だけを届ける)。
+func runDoctorCmdsViaUpdate(t *testing.T, m *browseModel, cmd tea.Cmd) {
+	t.Helper()
+	doctortest.RunCmds(t, cmd, func(msg tea.Msg) (tea.Cmd, bool) {
+		if _, ok := msg.(tickMsg); ok {
+			return nil, true
+		}
+		_, next := m.Update(msg)
+		return next, true
+	})
 }

@@ -1,36 +1,29 @@
-// Package doctortest は doctor 画面のテストが共有する部品 (テスト用の DoctorView・fake の Options・描画の取り出し)。
-// main のテスト (browseModel と組み合わせるもの) と internal/doctorview の外部テスト (doctorview_test) の両方から使う。
-// 🚨 本番のコードから import しない (testing を import する)。doctorview の中のテスト (package doctorview) からは
-// import できない (import の循環)。そちらで使う部品は doctorview の中のテストに置く (issue 742)。
+// Package doctortest は doctor 画面のテストが共有する fake (走査・brew・docker・SSD の外部コマンドの差し替え)。
+// main のテスト (browseModel と組み合わせるもの) と internal/doctorview の中のテスト (package doctorview) の両方から使う。
+// 🚨 本番のコードから import しない (testing を import する。depguard が止める)。
+// 🚨 doctorview を import しない: import すると doctorview の中のテストから使えなくなる (import の循環)。
+// doctorview の型を使う部品 (描画の取り出し・Cmd の実行) は doctorview の中のテスト (testhelpers_test.go) に置く (issue 817)。
 package doctortest
 
 import (
 	"context"
 	"doctor/disk"
 	"doctor/docker"
+	"doctor/runner"
 	"doctor/ssd"
 	"doctor/svc"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"glogx/internal/doctorview"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
-
-// progAt はテスト用の進捗。表示の中身が主題でないテストの穴埋めに使う。
-func ProgAt(i, total int, label string, ph disk.DeletePhase) doctorview.DoctorProgress {
-	return doctorview.DoctorProgress{I: i, Total: total, Label: label, Phase: ph, Known: true}
-}
-
-func DoctorPanelText(v *doctorview.DoctorView, page int) string {
-	return strings.Join(v.Lines(DoctorTestOpts(page)), "\n")
-}
 
 // 記憶の置き場をテスト用に隔離する。
 func WithDoctorStateDir(t *testing.T) {
@@ -68,37 +61,22 @@ func FakeSSDOptions(withSmartctl bool) func() ssd.Options {
 	}
 }
 
-// writeDoctorSnapshot は snapshot をキャッシュ位置へ書く (TTL 内 / 外の前提を作る)。
-// 同じ 4〜10 行がこのファイルに 8 回あったのを 1 行にしたもの (issue 199)。
-//
-// 🚨 壊れた JSON を書くテスト (TestDoctorCacheCorruptAndAtomic) と、書き込み先を
-// 直接触るテスト (os.Remove / os.Chmod) は path 自体が要るので寄せていない。
-// そちらは doctorview.DoctorSnapshotPath() を直接呼ぶ。
-func WriteDoctorSnapshot(t *testing.T, sn doctorview.DoctorSnapshot) {
-	t.Helper()
-	data, err := json.Marshal(sn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeDoctorSnapshotRaw(t, data)
+// Deps は doctorview.Deps と同じ形 (doctorview を import できないので写す。渡すときは doctorview.Deps(d) で変換する。
+// 形がずれると変換がコンパイルで落ちるので、写しが黙ってずれることはない)。
+type Deps struct {
+	Disk       func() disk.Options
+	Svc        func() svc.Options
+	Brew       runner.Runner
+	Docker     func() docker.Options
+	SSD        func() ssd.Options
+	DeleteOpts func() disk.DeleteOptions
+	Delete     func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
 }
 
-// writeDoctorSnapshotRaw は生のバイト列を書く (壊れた JSON を置くテスト用)。
-func writeDoctorSnapshotRaw(t *testing.T, data []byte) {
-	t.Helper()
-	path, err := doctorview.DoctorSnapshotPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func DoctorTestView(t *testing.T) *doctorview.DoctorView {
+// FakeDeps はテスト用の外への口: 一時 HOME に 1 エントリ (Thing キャッシュ) だけのカタログ・空の launchd・
+// 警告を返す brew・docker の fixture・smartctl ありの SSD。削除の口は本番のまま (使うテストが自分で差す)。
+// XDG_CACHE_HOME も一時 HOME の下へ移す。
+func FakeDeps(t *testing.T) Deps {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
@@ -116,8 +94,8 @@ func DoctorTestView(t *testing.T) *doctorview.DoctorView {
 		// detail=6 / 非空行=5 / len(lines)=7
 		return "", "Warning: Some installed casks are deprecated or disabled.\nYou should find replacements:\n  foo\n\nUninstall them with `brew uninstall --cask`\n\nSee also: brew help uninstall\n", 1, nil
 	}
-	v := &doctorview.DoctorView{
-		DiskOpts: func() disk.Options {
+	return Deps{
+		Disk: func() disk.Options {
 			return disk.Options{
 				Env: disk.Env{Home: home, TmpDir: home + "/", Getenv: func(string) string { return "" }, AppDirs: nil},
 				Run: fake,
@@ -126,17 +104,16 @@ func DoctorTestView(t *testing.T) *doctorview.DoctorView {
 				BootTime: func() (time.Time, error) { return time.Now(), nil },
 			}
 		},
-		SvcOpts: func() svc.Options {
+		Svc: func() svc.Options {
 			return svc.Options{Dirs: []svc.LaunchDir{{Path: filepath.Join(home, "LaunchAgents"), Domain: "gui/501"}},
 				Run: func(context.Context, string, ...string) (string, string, int, error) {
 					return "PID\tStatus\tLabel\n", "", 0, nil
 				}}
 		},
-		BrewRun:    fake,
-		DockerOpts: func() docker.Options { return FakeDockerOptions(FakeDockerDF) },
-		SsdOpts:    FakeSSDOptions(true),
+		Brew:   fake,
+		Docker: func() docker.Options { return FakeDockerOptions(FakeDockerDF) },
+		SSD:    FakeSSDOptions(true),
 	}
-	return v
 }
 
 // fakeDockerDF は `docker system df -v` の fixture (実物と同じ形。1 群 1 件ずつ)。
@@ -196,8 +173,10 @@ func NoDockerOptions() docker.Options {
 	}
 }
 
-// runDoctorCmds は Cmd (Batch 含む) を実行して Msg を集め、view へ届ける。disk は完了まで再アームする。
-func RunDoctorCmds(t *testing.T, v *doctorview.DoctorView, cmd tea.Cmd) {
+// RunCmds は Cmd (Batch 含む) を実行して出た Msg を deliver へ渡し、deliver が返した Cmd も続けて実行する
+// (disk の走査は完了まで再アームする)。deliver は doctor の Msg でなければ false を返す (知らない Msg は Fatal)。
+// deliver は doctorview.DoctorView.Receive を包む (doctortest は doctorview を import できないので、型は呼ぶ側が知る)。
+func RunCmds(t *testing.T, cmd tea.Cmd, deliver func(tea.Msg) (tea.Cmd, bool)) {
 	t.Helper()
 	pending := []tea.Cmd{cmd}
 	deadline := time.Now().Add(20 * time.Second)
@@ -210,34 +189,20 @@ func RunDoctorCmds(t *testing.T, v *doctorview.DoctorView, cmd tea.Cmd) {
 		if c == nil {
 			continue
 		}
-		switch msg := c().(type) {
-		case tea.BatchMsg:
-			for _, sub := range msg {
-				pending = append(pending, sub)
-			}
-		case doctorview.DoctorDiskMsg:
-			if next := v.ReceiveDisk(msg); next != nil {
-				pending = append(pending, next)
-			}
-		case doctorview.DoctorSvcMsg:
-			v.ReceiveSvc(msg)
-		case doctorview.DoctorBrewMsg:
-			v.ReceiveBrew(msg)
-		case doctorview.DoctorDockerMsg:
-			v.ReceiveDocker(msg)
-		case doctorview.DoctorSSDMsg:
-			v.ReceiveSSD(msg)
-		case nil:
-		default:
+		msg := c()
+		if b, ok := msg.(tea.BatchMsg); ok {
+			pending = append(pending, b...)
+			continue
+		}
+		if msg == nil {
+			continue
+		}
+		next, ok := deliver(msg)
+		if !ok {
 			t.Fatalf("知らない Msg: %T", msg)
 		}
+		if next != nil {
+			pending = append(pending, next)
+		}
 	}
-}
-
-func DoctorTestOpts(page int) doctorview.DoctorRenderOpts {
-	return doctorview.DoctorRenderOpts{Width: 100, Page: page, Colored: false, Spinner: "⠋", Now: time.Date(2026, 9, 2, 12, 0, 0, 0, time.Local)}
-}
-
-func DoctorText(v *doctorview.DoctorView, page int) string {
-	return strings.Join(v.Lines(DoctorTestOpts(page)), "\n")
 }

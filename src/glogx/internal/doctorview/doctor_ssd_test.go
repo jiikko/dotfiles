@@ -1,35 +1,33 @@
-package doctorview_test
+package doctorview
 
 import (
-	"strings"
-	"testing"
-	"time"
-
 	"doctor/disk"
 	"doctor/docker"
 	"doctor/ssd"
 	"doctor/svc"
-	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/term"
+	"strings"
+	"testing"
+	"time"
 )
 
-func openSSDTab(t *testing.T, withSmartctl bool) *doctorview.DoctorView {
+func openSSDTab(t *testing.T, withSmartctl bool) *DoctorView {
 	t.Helper()
-	v := doctortest.DoctorTestView(t)
-	v.SsdOpts = doctortest.FakeSSDOptions(withSmartctl)
-	doctortest.RunDoctorCmds(t, v, v.Open())
+	v := testView(t)
+	v.deps.SSD = doctortest.FakeSSDOptions(withSmartctl)
+	runCmds(t, v, v.Open())
 	if v.Ssd == nil {
 		t.Fatal("前提が崩れている: SSD の結果が届いていない")
 	}
-	v.Tab = doctorview.TabSSD
+	v.Tab = TabSSD
 	return v
 }
 
 // 見本 (issue 578) どおりに、SMART の各行と APFS の未検査を出す。
 func TestDoctorSSDTabRendersChecks(t *testing.T) {
 	v := openSSDTab(t, true)
-	out := doctortest.DoctorText(v, 30)
+	out := testText(v, 30)
 	for _, want := range []string{
 		"[SSD ✅]", "▌SSD (APPLE SSD AP1024Z / 内蔵)", "SMART: ok / APFS: 未検査",
 		"SMART Status", "✅ ok", "Verified", "予備領域", "100% (閾値 99%)", "摩耗", "7% 使用",
@@ -52,11 +50,11 @@ func TestDoctorSSDTabRendersChecks(t *testing.T) {
 // APFS の行: y は検査コマンド、Y は LLM に渡す解説 (シリアル番号を含まない)。doctor からは実行しない。
 func TestDoctorSSDCopyAPFSCommand(t *testing.T) {
 	v := openSSDTab(t, true)
-	_ = v.Lines(doctortest.DoctorTestOpts(30))
-	if v.Cur.Key != doctorview.SsdAPFSRowKey {
+	_ = v.Lines(testOpts(30))
+	if v.Cur.Key != SsdAPFSRowKey {
 		t.Fatalf("カーソルが APFS の行に無い: %q", v.Cur.Key)
 	}
-	if act := v.HandleKey("y", 30); act != doctorview.DoctorCopyPath || v.CopyPayload() != ssd.APFSCommand {
+	if act := v.HandleKey("y", 30); act != DoctorCopyPath || v.CopyPayload() != ssd.APFSCommand {
 		t.Fatalf("y = %v %q, want %q", act, v.CopyPayload(), ssd.APFSCommand)
 	}
 	v.HandleKey("Y", 30)
@@ -70,23 +68,23 @@ func TestDoctorSSDCopyAPFSCommand(t *testing.T) {
 		t.Errorf("シリアル番号が解説に入った:\n%s", text)
 	}
 	// 実行の手は持たない
-	if act := v.HandleKey("x", 30); act != doctorview.DoctorToast {
-		t.Errorf("x = %v, want doctorview.DoctorToast (SSD タブは実行しない)", act)
+	if act := v.HandleKey("x", 30); act != DoctorToast {
+		t.Errorf("x = %v, want DoctorToast (SSD タブは実行しない)", act)
 	}
 }
 
 // smartctl が無ければ判定不能 (ok に丸めない) + 入れ方を y でコピーできる。
 func TestDoctorSSDWithoutSmartctl(t *testing.T) {
 	v := openSSDTab(t, false)
-	out := doctortest.DoctorText(v, 30)
+	out := testText(v, 30)
 	for _, want := range []string{"[SSD ❓]", "SMART: 判定不能 / APFS: 未検査", "❓ 判定不能", ssd.InstallHint} {
 		if !strings.Contains(out, want) {
 			t.Errorf("%q が出ていない:\n%s", want, out)
 		}
 	}
-	_ = v.Lines(doctortest.DoctorTestOpts(30))
-	v.Cur.Key = doctorview.SsdSmartctlRowKey
-	_ = v.Lines(doctortest.DoctorTestOpts(30))
+	_ = v.Lines(testOpts(30))
+	v.Cur.Key = SsdSmartctlRowKey
+	_ = v.Lines(testOpts(30))
 	if v.HandleKey("y", 30); v.CopyPayload() != ssd.InstallHint {
 		t.Fatalf("y = %q, want %q", v.CopyPayload(), ssd.InstallHint)
 	}
@@ -94,13 +92,13 @@ func TestDoctorSSDWithoutSmartctl(t *testing.T) {
 
 // 🚨 snapshot を復元する経路でも SSD を走らせる (走らせないとタブが永久にスピナーのまま)。
 func TestDoctorSSDRunsOnSnapshotRestore(t *testing.T) {
-	v := doctortest.DoctorTestView(t)
-	doctortest.WriteDoctorSnapshot(t, doctorview.DoctorSnapshot{ScannedAt: time.Now()})
+	v := testView(t)
+	writeTestSnapshot(t, DoctorSnapshot{ScannedAt: time.Now()})
 	cmd := v.Open()
 	if v.SnapshotAt.IsZero() {
 		t.Fatal("前提が崩れている: snapshot から復元していない")
 	}
-	doctortest.RunDoctorCmds(t, v, cmd)
+	runCmds(t, v, cmd)
 	if v.Ssd == nil {
 		t.Fatal("snapshot の復元経路で SSD を走らせていない")
 	}
@@ -118,14 +116,14 @@ func TestDoctorTabBarKeepsAllTabsAtNarrowWidth(t *testing.T) {
 	v := openSSDTab(t, true)
 	v.DiskRep = &disk.Report{Results: []disk.Result{{Status: disk.StatusOK, Size: big}}}
 	v.SvcRep = &svc.Report{Findings: make([]svc.Finding, 99)}
-	v.Brew = &doctorview.BrewDoctorResult{Warnings: make([]string, 99)}
+	v.Brew = &BrewDoctorResult{Warnings: make([]string, 99)}
 	v.Docker = &docker.Report{Installed: true, Groups: []docker.Group{{Reclaimable: big}}}
-	o := doctortest.DoctorTestOpts(20)
+	o := testOpts(20)
 	o.Width = 60
 	// 🚨 期待する印はリテラルで書く (ssdTabSummary から作ると、関数を壊しても期待値が一緒に変わる)。
 	// 行の印 (ssdMark) の先頭と同じ = タブ行の 🚨 を追って開くと 🚨 の行がある
 	wantMark := map[ssd.Status]string{ssd.StatusOK: "✅", ssd.StatusWarn: "🚨", ssd.StatusFail: "⛔", ssd.StatusUnknown: "❓"}
-	for _, active := range []doctorview.DoctorTab{doctorview.TabDisk, doctorview.TabSSD} {
+	for _, active := range []DoctorTab{TabDisk, TabSSD} {
 		for _, st := range []ssd.Status{ssd.StatusOK, ssd.StatusWarn, ssd.StatusFail, ssd.StatusUnknown} {
 			v.Tab = active
 			v.Ssd.SMART = st
@@ -146,11 +144,11 @@ func TestDoctorTabBarKeepsAllTabsAtNarrowWidth(t *testing.T) {
 // SSD の行は開くものを持たないので、hint に Enter を出さない (押せないキーを案内しない)。
 func TestDoctorSSDHintHasNoEnter(t *testing.T) {
 	v := openSSDTab(t, true)
-	_ = v.Lines(doctortest.DoctorTestOpts(30))
+	_ = v.Lines(testOpts(30))
 	if h := v.Hint(200); strings.Contains(h, "Enter") || !strings.Contains(h, "y: コマンドをコピー") {
 		t.Fatalf("SSD タブの hint = %q", h)
 	}
-	v.Tab = doctorview.TabDisk
+	v.Tab = TabDisk
 	if h := v.Hint(200); !strings.Contains(h, "Enter: 開閉") {
 		t.Fatalf("ディスクのタブから Enter が消えた: %q", h)
 	}
@@ -162,15 +160,15 @@ func TestDoctorSSDHintHasNoEnter(t *testing.T) {
 func TestDoctorSSDNarrowHeaderKeepsSummary(t *testing.T) {
 	for _, withSmartctl := range []bool{true, false} {
 		v := openSSDTab(t, withSmartctl)
-		want := "SMART: " + doctorview.SsdWord(v.Ssd.SMART) + " / APFS: 未検査"
+		want := "SMART: " + SsdWord(v.Ssd.SMART) + " / APFS: 未検査"
 		for w := 40; w <= 120; w++ {
-			o := doctortest.DoctorTestOpts(30)
+			o := testOpts(30)
 			o.Width = w
 			if out := strings.Join(v.Lines(o), "\n"); !strings.Contains(out, want) {
 				t.Fatalf("smartctl=%v 幅 %d で要約 %q が消えた:\n%s", withSmartctl, w, want, out)
 			}
 		}
-		o := doctortest.DoctorTestOpts(30)
+		o := testOpts(30)
 		o.Width = 120
 		if out := strings.Join(v.Lines(o), "\n"); !strings.Contains(out, "APPLE SSD AP1024Z") {
 			t.Fatalf("広い幅で型番が消えた:\n%s", out)
@@ -181,8 +179,8 @@ func TestDoctorSSDNarrowHeaderKeepsSummary(t *testing.T) {
 // 空白を詰めれば入る幅では、タブ名を短くしない (段を飛ばさない)。
 func TestDoctorTabBarCompactsBeforeShortNames(t *testing.T) {
 	v := openSSDTab(t, true)
-	v.Tab = doctorview.TabDisk
-	o := doctortest.DoctorTestOpts(20)
+	v.Tab = TabDisk
+	o := testOpts(20)
 	o.Width = 1000
 	padded := strings.TrimSuffix(v.TabBarLine(o), "  (tab / h l で切替)")
 	o.Width = term.DispWidth(padded) - 1 // 空白ありでは入らず、空白を詰めれば入る

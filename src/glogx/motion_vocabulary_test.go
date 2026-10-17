@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"glogx/internal/doctorview"
-	"strconv"
 	"testing"
+
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
 // 移動の語彙 (tuikit の listnav.MotionOf) が各画面へ配線されていることを、ユーザーが触る入口
@@ -101,14 +101,13 @@ var motionScreens = []motionScreen{
 		build: func(t *testing.T) motionProbe {
 			m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 			m.width, m.height = 100, 20
-			m.doctorOv = doctorview.DoctorView{Shown: true}
-			for i := range 40 {
-				m.doctorOv.Rows = append(m.doctorOv.Rows, doctorview.DoctorRow{Text: strconv.Itoa(i), Selectable: true, Key: doctorview.RowKey(strconv.Itoa(i))})
-			}
+			m.doctorOv = doctorview.DoctorView{}
+			m.doctorOv.Fixture().Show()
+			m.doctorOv.Fixture().Rows(40)
 			return motionProbe{
 				press:   func(k string) { m.handleKey(k) },
-				observe: func() string { return fmt.Sprintf("index=%d", m.doctorOv.Cur.Index) },
-				pos:     func() int { return m.doctorOv.Cur.Index },
+				observe: func() string { return fmt.Sprintf("index=%d", m.doctorOv.Fixture().CursorIndex()) },
+				pos:     func() int { return m.doctorOv.Fixture().CursorIndex() },
 				half:    listnav.Half(m.pageSize()), // routeKeyToDoctor が渡す page
 			}
 		},

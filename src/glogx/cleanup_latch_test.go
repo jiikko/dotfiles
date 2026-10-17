@@ -2,7 +2,6 @@ package main
 
 import (
 	"glogx/internal/app"
-	"glogx/internal/doctorview"
 	"runtime"
 	"sync"
 	"testing"
@@ -164,7 +163,5 @@ func TestCleanupLatchWaitIsClosedWhenIdle(t *testing.T) {
 // (敵対的レビューが実験で再現。自然な到達は shuffle 17 seed で出なかったが、
 // glogx のスイート中に本物の doctor 走査が並走する窓は実在する)。
 // 得られる価値は型の pin だけなので、コストのかからない形に寄せた。
-var (
-	_ *app.CleanupLatch = &pullCleanup
-	_ *app.CleanupLatch = &doctorview.DoctorCleanup
-)
+// doctor 側の pin は internal/doctorview の doctor_cleanup_test.go に置く (doctor の latch は package の中の名前。issue 817)。
+var _ *app.CleanupLatch = &pullCleanup

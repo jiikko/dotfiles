@@ -15,13 +15,14 @@ import (
 	"doctor/disk"
 	"doctor/svc"
 	"doctor/testtmp"
-	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 	"glogx/internal/app"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/term"
 	"glogx/issues"
 	"subproc"
+
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
 
 // installInertDoctor は doctor の走査口を**何も触らない fake** に差し替える。
@@ -43,19 +44,21 @@ func installInertDoctor(t *testing.T, v *doctorview.DoctorView) {
 		}
 		return "", "", 0, nil
 	}
-	v.DiskOpts = func() disk.Options {
-		return disk.Options{
-			Env:     disk.Env{Home: home, TmpDir: home + "/", Getenv: func(string) string { return "" }},
-			Run:     inert,
-			Catalog: []disk.Entry{}, // 空 = 走査対象なし (nil にすると本物のカタログが使われる)
-			// 固定時刻 (カタログを足したときに「全部が boot 後」の偏った fixture にしない)
-			BootTime: func() (time.Time, error) { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), nil },
-		}
-	}
-	v.SvcOpts = func() svc.Options { return svc.Options{Run: inert} } // Dirs 空 = 走査対象なし
-	v.BrewRun = inert
-	v.DockerOpts = doctortest.NoDockerOptions // Docker Desktop が入っていない扱い (本物の docker system df を叩かない)
-	v.SsdOpts = doctortest.FakeSSDOptions(true)
+	v.SetDeps(doctorview.Deps{
+		Disk: func() disk.Options {
+			return disk.Options{
+				Env:     disk.Env{Home: home, TmpDir: home + "/", Getenv: func(string) string { return "" }},
+				Run:     inert,
+				Catalog: []disk.Entry{}, // 空 = 走査対象なし (nil にすると本物のカタログが使われる)
+				// 固定時刻 (カタログを足したときに「全部が boot 後」の偏った fixture にしない)
+				BootTime: func() (time.Time, error) { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), nil },
+			}
+		},
+		Svc:    func() svc.Options { return svc.Options{Run: inert} }, // Dirs 空 = 走査対象なし
+		Brew:   inert,
+		Docker: doctortest.NoDockerOptions, // Docker Desktop が入っていない扱い (本物の docker system df を叩かない)
+		SSD:    doctortest.FakeSSDOptions(true),
+	})
 }
 
 // joinDoctorCleanup は走査の終了を**上限つきで**待つ。

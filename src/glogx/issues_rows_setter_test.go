@@ -200,10 +200,12 @@ func zzCanaryVarDecl() { var v = newTestIssuesView(); v.rows = nil }
 	t.Logf("走査 .go=%d 件 / issuesView.rows への代入 %d 件 / 違反 %d 件", scanned, candidates, len(offenders))
 }
 
-// recvTypeName は型の式から型の名前を取る (`*T` / `T[K]` も T)。取れなければ ""。
+// recvTypeName は型の式から型の名前を取る (`*T` / `T[K]` / `(T)` も T)。取れなければ ""。
 func recvTypeName(e ast.Expr) string {
 	for {
 		switch x := e.(type) {
+		case *ast.ParenExpr:
+			e = x.X
 		case *ast.StarExpr:
 			e = x.X
 		case *ast.IndexExpr:

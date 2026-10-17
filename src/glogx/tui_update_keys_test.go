@@ -3,7 +3,6 @@ package main
 import (
 	"testing"
 
-	"doctor/disk"
 	"glogx/internal/doctorview"
 )
 
@@ -151,12 +150,12 @@ func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
 	claude, codex := stubUpdates(t)
 	states := []struct {
 		name string
-		del  doctorview.DoctorDelete
+		del  doctorview.DeleteState
 	}{
-		{"確認中", doctorview.DoctorDelete{Confirm: true}},
-		{"下見中", doctorview.DoctorDelete{Preparing: true}},
-		{"実行中", doctorview.DoctorDelete{Running: true}},
-		{"結果の表示中", doctorview.DoctorDelete{Result: &disk.DeleteReport{}}},
+		{"確認中", doctorview.DeleteConfirm},
+		{"下見中", doctorview.DeletePreparing},
+		{"実行中", doctorview.DeleteRunning},
+		{"結果の表示中", doctorview.DeleteResult},
 	}
 	// 🚨 状態 × キーの直積で、**1 キーだけ**押す。確認や結果は 1 キーで解けるので、
 	// 続けて押すと「解けた後の画面に答えた」ことになり、この分岐の主張と混ざる
@@ -164,8 +163,8 @@ func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
 		for _, key := range []string{"C", "X"} {
 			t.Run(st.name+"/"+key, func(t *testing.T) {
 				m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-				m.doctorOv.Shown = true
-				m.doctorOv.Del = st.del
+				m.doctorOv.Fixture().Show()
+				m.doctorOv.Fixture().Delete(st.del, nil)
 				if !m.doctorOv.OwnsKeys() {
 					t.Fatal("前提: doctor が語彙を持っていない")
 				}
@@ -180,7 +179,7 @@ func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
 	}
 	// 削除の語彙が立っていなければ、doctor の上からでも update は始められる (既存の契約)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.doctorOv.Shown = true
+	m.doctorOv.Fixture().Show()
 	before := *claude
 	press(m, "C")
 	if *claude == before {

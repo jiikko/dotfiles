@@ -1,11 +1,8 @@
-package doctorview_test
+package doctorview
 
 import (
-	"testing"
-
 	"doctor/disk"
-	"glogx/internal/doctorview"
-	"glogx/internal/doctorview/doctortest"
+	"testing"
 )
 
 // hasDetail は「Enter で展開できる行か」を **展開せずに** 答える (270 で detail を遅延化した
@@ -13,16 +10,16 @@ import (
 // 「展開できる」ことになり、Enter が無反応なのに expanded だけ立つ。その状態では
 // **次の q が畳む側に取られて doctor が 1 回目で閉じない**。
 //
-// 🚨 述語 (doctorview.DiskHasDetail) と builder (diskDetail) を別々に育てると、この保証が静かに崩れる。
+// 🚨 述語 (DiskHasDetail) と builder (diskDetail) を別々に育てると、この保証が静かに崩れる。
 // 下の 2 本目がその一致を突き合わせる。
 func TestBlockedDiskRowIsNotExpandable(t *testing.T) {
-	mk := func() *doctorview.DoctorView {
-		v := &doctorview.DoctorView{Shown: true, Expanded: map[doctorview.RowKey]bool{}}
+	mk := func() *DoctorView {
+		v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
 		v.DiskRep = &disk.Report{Results: []disk.Result{{
 			Entry:  disk.Entry{ID: "blocked-x", Label: "blocked", Risk: disk.RiskConfirm, DeleteVia: "rm"},
 			Status: disk.StatusBlocked, Size: 4096, Reason: "今は対象外"}}}
-		v.Tab = doctorview.TabDisk
-		_ = v.Lines(doctortest.DoctorTestOpts(40))
+		v.Tab = TabDisk
+		_ = v.Lines(testOpts(40))
 		return v
 	}
 
@@ -46,18 +43,18 @@ func TestBlockedDiskRowIsNotExpandable(t *testing.T) {
 	if after := len(v.Rows); after != before {
 		t.Fatalf("fixture が想定と違う: Enter で行数が %d -> %d に増えた", before, after)
 	}
-	if act := v.HandleKey("q", 40); act != doctorview.DoctorClosed {
+	if act := v.HandleKey("q", 40); act != DoctorClosed {
 		t.Errorf("Enter の後の q が飲まれた (act=%v)。畳むものが無いので閉じるべき", act)
 	}
 
 	// 対照: Enter を押していなければ 1 回目の q で閉じる (この対照が無いと、q が常に
 	// 閉じるだけの実装でも上の assert が通る)
-	if act := mk().HandleKey("q", 40); act != doctorview.DoctorClosed {
+	if act := mk().HandleKey("q", 40); act != DoctorClosed {
 		t.Fatalf("対照が壊れている: Enter 無しの q でも閉じない (act=%v)", act)
 	}
 }
 
-// doctorview.DiskHasDetail (述語) と diskDetail (builder) が一致すること。
+// DiskHasDetail (述語) と diskDetail (builder) が一致すること。
 // 🚨 builder に行を足したのに述語を直し忘れる / その逆を検出する。片方だけ育てると
 // 「展開できると言うのに 0 行」か「中身があるのに展開できない」のどちらかになる。
 func TestDiskHasDetailMatchesBuilder(t *testing.T) {
@@ -75,13 +72,13 @@ func TestDiskHasDetailMatchesBuilder(t *testing.T) {
 		{"blocked/Inspect", disk.Result{Entry: disk.Entry{ID: "g", Inspect: true}, Status: disk.StatusBlocked}},
 		{"blocked/Contents あり", disk.Result{Entry: disk.Entry{ID: "h"}, Status: disk.StatusBlocked, Contents: []string{"x"}}},
 	}
-	v := &doctorview.DoctorView{Expanded: map[doctorview.RowKey]bool{}}
+	v := &DoctorView{Expanded: map[RowKey]bool{}}
 	empties, nonEmpties := 0, 0
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			built := len(v.DiskDetail(doctortest.DoctorTestOpts(60), c.r)) > 0
-			if got := doctorview.DiskHasDetail(c.r); got != built {
-				t.Errorf("doctorview.DiskHasDetail=%v だが diskDetail は %d 行", got, len(v.DiskDetail(doctortest.DoctorTestOpts(60), c.r)))
+			built := len(v.DiskDetail(testOpts(60), c.r)) > 0
+			if got := DiskHasDetail(c.r); got != built {
+				t.Errorf("DiskHasDetail=%v だが diskDetail は %d 行", got, len(v.DiskDetail(testOpts(60), c.r)))
 			}
 			if built {
 				nonEmpties++

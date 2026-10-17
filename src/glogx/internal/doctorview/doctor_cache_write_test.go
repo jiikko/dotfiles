@@ -2,6 +2,7 @@ package doctorview
 
 import (
 	"context"
+	"doctor/disk"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -124,5 +125,27 @@ func checkWriteFailureCleansTemp(t *testing.T, tmpName string, save func() error
 	}
 	if len(leftovers) != 0 {
 		t.Errorf("write 失敗後に temp が残っている: %v", leftovers)
+	}
+}
+
+// 永続キャッシュの鮮度判定は「未来の時刻」を fresh にしない (main の clock_rollback_test.go の
+// TestPersistedCacheRejectsFutureTimestamps から doctor の分を移した。issue 817)。
+func TestDoctorStartupToastRejectsFutureScan(t *testing.T) {
+	now := time.Now()
+	// 🚨 Total を直接入れても効かない。sanitizeDiskCache (issue 193) が Entries から
+	// 再計算するので、実在するカタログ ID のエントリを積む必要がある。
+	c := DoctorDiskCache{
+		ScannedAt: now.Add(48 * time.Hour),
+		Entries: []DoctorDiskCacheEntry{{
+			ID: "xcode-deriveddata", Label: "Xcode DerivedData",
+			Size: DoctorToastThreshold * 2, Status: string(disk.StatusOK),
+		}},
+	}
+	got := DoctorStartupToast(c, true, now)
+	if strings.Contains(got, "-") && strings.Contains(got, "日前") {
+		t.Errorf("負の日数を出した: %q", got)
+	}
+	if !strings.Contains(got, "未来") {
+		t.Errorf("診断時刻が未来であることを伝えていない: %q", got)
 	}
 }

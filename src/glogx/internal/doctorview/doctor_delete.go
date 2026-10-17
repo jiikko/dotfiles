@@ -273,7 +273,7 @@ func (v *DoctorView) StartDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 		default: // 読み手が詰まっても engine を止めない (進捗と同じ扱い)
 		}
 	}
-	run := v.DeleteFn
+	run := v.deps.Delete
 	if run == nil {
 		run = disk.Delete
 	}
@@ -354,7 +354,7 @@ func (v *DoctorView) startCmdRun(acts []doctorCmdAction) tea.Cmd {
 	done := make(chan DoctorDeleteEvent, 1)
 	v.Del = DoctorDelete{Kind: JobCmd, Cancel: cancel, Ch: ch, progCh: prog, Done: done, Running: true, CmdPlan: acts}
 	gen := v.Gen
-	run := v.BrewRun
+	run := v.deps.Brew
 	if run == nil {
 		run = runner.Exec
 	}
@@ -577,6 +577,10 @@ func (v *DoctorView) ReceiveDelete(msg DoctorDeleteMsg) tea.Cmd {
 	v.Del.Result = &rep
 	return nil
 }
+
+// InterruptDelete は削除の下見・実行中の Ctrl-C (browseModel が Ctrl-C を先に捌かずにここへ渡す)。
+// 1 回目は武装、2 回目で cancel する (HandleDeleteKey の意味づけをそのまま使う)。
+func (v *DoctorView) InterruptDelete() { v.HandleDeleteKey("ctrl+c") }
 
 // handleDeleteKey は削除の語彙。飲んだら true。
 func (v *DoctorView) HandleDeleteKey(key string) (doctorAction, bool) {
