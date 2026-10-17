@@ -438,7 +438,9 @@ func TestEveryTestPackageUsesTestenv(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
-			if n := d.Name(); p != "." && (n == "testdata" || n == "tools" || n == "gorules" || n == "cmd" || n == "issues" || strings.HasPrefix(n, ".")) {
+			// issues/ は glogx 本体に依存しない独立のドメインのパッケージ (キャッシュ・クリップボードに触らない) なので外す。
+			// 外すのは直下の issues/ だけ (internal/issuesview は見る)
+			if n := d.Name(); p != "." && (n == "testdata" || n == "tools" || n == "gorules" || n == "cmd" || p == "issues" || strings.HasPrefix(n, ".")) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -452,7 +454,7 @@ func TestEveryTestPackageUsesTestenv(t *testing.T) {
 		t.Fatal(err)
 	}
 	// canary: main と doctorview・term はテストを持つ
-	for _, want := range []string{".", filepath.Join("internal", "doctorview"), filepath.Join("internal", "term")} {
+	for _, want := range []string{".", filepath.Join("internal", "doctorview"), filepath.Join("internal", "term"), filepath.Join("internal", "issuesview"), filepath.Join("internal", "statusview")} {
 		if !dirs[want] {
 			t.Fatalf("テストを持つパッケージの走査が %s を見つけない: %v", want, dirs)
 		}
@@ -468,7 +470,7 @@ func TestEveryTestPackageUsesTestenv(t *testing.T) {
 			if !strings.HasSuffix(e.Name(), "_test.go") {
 				continue
 			}
-			f, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, parser.SkipObjectResolution)
+			f, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, parser.SkipObjectResolution|parser.ParseComments)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -477,10 +479,20 @@ func TestEveryTestPackageUsesTestenv(t *testing.T) {
 				if !ok || fn.Name.Name != "TestMain" || fn.Recv != nil || fn.Body == nil {
 					continue
 				}
+				// 🚨 build 制約の付いたファイルの TestMain は数えない (`//go:build linux` だと macOS では走らない。
+				// ParseFile は制約を見ないので、字面だけでは通ってしまう。issue 817 の反証レビュー)
+				for _, cg := range f.Comments {
+					if cg.Pos() < f.Package && strings.Contains(cg.Text(), "+build") || cg.Pos() < f.Package && strings.HasPrefix(strings.TrimSpace(cg.List[0].Text), "//go:build") {
+						t.Errorf("%s: TestMain のファイルに build 制約がある (環境によって前処理が掛からない)", filepath.Join(dir, e.Name()))
+					}
+				}
+				// 参照ではなく呼び出しを数える (`_ = testenv.Main` で通さない)
 				ast.Inspect(fn.Body, func(n ast.Node) bool {
-					if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "Main" {
-						if id, ok := sel.X.(*ast.Ident); ok && id.Name == "testenv" {
-							found = true
+					if call, ok := n.(*ast.CallExpr); ok {
+						if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Main" {
+							if id, ok := sel.X.(*ast.Ident); ok && id.Name == "testenv" {
+								found = true
+							}
 						}
 					}
 					return true

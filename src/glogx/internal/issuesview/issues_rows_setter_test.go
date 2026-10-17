@@ -75,6 +75,24 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 				}
 			}
 		}
+		// Fixture (main のテスト用の口) の受け手は `f.v` が issuesView を指す (issue 817 の反証レビュー:
+		// Fixture に setter を足すと素通りしていた)
+		fixtureRecv := map[string]bool{}
+		if fn.Recv != nil && len(fn.Recv.List) > 0 && recvTypeName(fn.Recv.List[0].Type) == "Fixture" {
+			for _, n := range fn.Recv.List[0].Names {
+				fixtureRecv[n.Name] = true
+			}
+		}
+		isOwner := func(x ast.Expr) bool {
+			switch b := x.(type) {
+			case *ast.Ident:
+				return owners[b.Name]
+			case *ast.SelectorExpr:
+				id, ok := b.X.(*ast.Ident)
+				return ok && fixtureRecv[id.Name] && b.Sel.Name == "v"
+			}
+			return false
+		}
 		report := func(pos token.Pos, what string) {
 			candidates++
 			if fn.Name.Name == rowsSetter {
@@ -118,7 +136,7 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 			for _, lhs := range as.Lhs {
 				// v.rows = x
 				if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == rowsField {
-					if base, ok := sel.X.(*ast.Ident); ok && owners[base.Name] {
+					if isOwner(sel.X) {
 						report(sel.Pos(), "直接代入")
 					}
 					continue
@@ -126,7 +144,7 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 				// v.rows[i] = x (要素の書き換え。長さが同じなので世代でも比較でも見えない)
 				if idx, ok := lhs.(*ast.IndexExpr); ok {
 					if sel, ok := idx.X.(*ast.SelectorExpr); ok && sel.Sel.Name == rowsField {
-						if base, ok := sel.X.(*ast.Ident); ok && owners[base.Name] {
+						if isOwner(sel.X) {
 							report(idx.Pos(), "要素の書き換え")
 						}
 					}
@@ -154,15 +172,17 @@ func zzCanaryTestStyle() { v := CTOR(); v.FIELD = nil }
 func zzCanaryParam(v *OWNER) { v.FIELD = nil }
 func zzCanaryParamIndex(v *OWNER) { v.FIELD[0] = nil }
 func zzCanaryVarDecl() { var v = CTOR(); v.FIELD = nil }
+func (f Fixture) zzCanaryFixture() { f.v.FIELD = nil }
+func zzCanaryNew() { v := NewIssuesView(); v.FIELD = nil }
 `)
 	canaryFile, cerr := parser.ParseFile(fset, "zz_canary.go", canarySrc, 0)
 	if cerr != nil {
 		t.Fatalf("canary をパースできない: %v", cerr)
 	}
 	canaryHits, _ := scanIssuesRowsWrites(fset, "zz_canary.go", canaryFile)
-	if len(canaryHits) != 7 {
-		t.Fatalf("canary の検出が %d 件 (期待 7: 直接代入 / 複合リテラル / 要素の書き換え / "+
-			"テストが作った変数経由 / 引数経由 x2 / var 宣言経由)。判定が壊れている:\n  %s",
+	if len(canaryHits) != 9 {
+		t.Fatalf("canary の検出が %d 件 (期待 9: 直接代入 / 複合リテラル / 要素の書き換え / "+
+			"テストが作った変数経由 / 引数経由 x2 / var 宣言経由 / Fixture 経由 / NewIssuesView 経由)。判定が壊れている:\n  %s",
 			len(canaryHits), strings.Join(canaryHits, "\n  "))
 	}
 
@@ -214,7 +234,8 @@ func zzCanaryVarDecl() { var v = CTOR(); v.FIELD = nil }
 func rhsMakesIssuesView(e ast.Expr) bool {
 	switch v := e.(type) {
 	case *ast.CallExpr:
-		if id, ok := v.Fun.(*ast.Ident); ok && id.Name == rowsTestCtor {
+		// テストの作り手と、本番の作り手 (NewIssuesView) / 読み込み済みのテストの作り手 (loadedView)
+		if id, ok := v.Fun.(*ast.Ident); ok && (id.Name == rowsTestCtor || id.Name == "NewIssuesView" || id.Name == "loadedView") {
 			return true
 		}
 	case *ast.UnaryExpr:

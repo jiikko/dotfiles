@@ -61,7 +61,10 @@ nmods=$(printf '%s\n' "$mods" | wc -l | tr -d ' ')
 
 findings=""
 for m in $mods; do
-  out=$( cd "$m" && staticcheck -checks=U1000 -tests=false ./... 2>&1 ) || true
+  # -tags=nofixture: glogx の画面のパッケージの fixture.go (main のテストが状態を置く口。`//go:build !nofixture`) を外す。
+  # 本番のファイルなので -tests=false でも根になり、Fixture からしか呼ばれない非公開の内部を「使われている」と数えてしまう
+  # (issue 817 の反証レビューが、本番の唯一の呼び出しを消しても報告されないことを再現した)
+  out=$( cd "$m" && staticcheck -checks=U1000 -tests=false -tags=nofixture ./... 2>&1 ) || true
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     # `zoom.go:66:19: func (*appZoom).start is unused (U1000)` → `src/glogx/zoom.go:(*appZoom).start`
