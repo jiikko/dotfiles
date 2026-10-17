@@ -174,7 +174,7 @@
   test-runner / swiftui-test-expert の `./tmp/thumbnailthumb-test.log` 等は ThumbnailThumb の `make test-debug` が書く固定パスを読むだけなので変えない。
   smoke-test-runner が詳細を任せる ThumbnailThumb の `.claude/commands/smoke-test.md` (別 repo) は未確認
 - [x] `tmp/` のディレクトリの片付け (ユーザー承認 2026-10-16): 44 件を削除。残したのは issue から参照される `747-mock` / `747-mock2` / `treefiler-mock` / `review-bench`、
-  使用中の `747-mdns`、zundamon の完成物 `it-kaisetsu`。直下のファイルも 1 時間より古い 20 件を追加で削除 (残り 12 件は 747 などの作業中のログ)
+  使用中の `747-mdns`、zundamon の完成物 `it-kaisetsu` (2026-10-17 にユーザー承認で削除。動画はアップロード済み)。直下のファイルも 1 時間より古い 20 件を追加で削除 (残り 12 件は 747 などの作業中のログ)
 - [ ] A の後 2 週間ほどで直下の増え方を測り、B が要るかを決める (waiting。冒頭の注記)
   - 途中経過 (2026-10-16 08:50): 規約の後に直下へ増えたファイルは 23 件 (`747-*`・`bonjour-*`・`flaky-*`・`dump-check.*`)。生きているセッションは
     どれも 11 時間以上前 (規約より前) に始まっていて、新しい規約を読んだセッションの書き込みはまだ 0 件観測できていない (判定に使えない)
