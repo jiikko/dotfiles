@@ -17,6 +17,8 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
+	"glogx/internal/linecache"
 	"glogx/internal/term"
 
 	tea "charm.land/bubbletea/v2"
@@ -67,7 +69,7 @@ type statusView struct {
 	// preview はプレビュー / 全画面 diff が共有する取得結果 (line_cache.go)。キーは previewKey
 	// (パス + XY) なので、外部編集で内容が変わると自然にキャッシュミスになる (古い diff を
 	// 出し続けない)。上限超過分の evict と取得の単発化は lineCache が持つ。
-	preview lineCache
+	preview linecache.Cache
 	// previewSeq はカーソル移動のデバウンス世代。キーリピート中に 1 行ごとに git を起動しない
 	// ため、止まってから statusPreviewDebounce 後の tick だけが取得を発行する。
 	previewSeq int
@@ -183,7 +185,7 @@ type statusViewport struct {
 }
 
 func newStatusView() statusView {
-	return statusView{preview: newLineCache()}
+	return statusView{preview: linecache.New()}
 }
 
 // visible は viewer を表示中か (閉じる演出のあいだも true)。
@@ -203,7 +205,7 @@ func (v *statusView) visible() bool { return v.shown }
 func (v *statusView) ownsKeys() bool { return v.pagerKey != "" || v.discarding }
 
 // loading は git status / diff の取得中か (スピナー tick を回し続ける判定用)。
-func (v *statusView) fetching() bool { return v.loading || v.preview.fetching() }
+func (v *statusView) fetching() bool { return v.loading || v.preview.Fetching() }
 
 // slideAnimating は開閉のスライド演出中か。tickInterval が 125fps へ上げる判定に使う
 // (pager glide は含めない: あちらは他の glide と同じ 60fps で足りる)。
@@ -275,11 +277,11 @@ func (v *statusView) finishClose() bool {
 	// 「取得中」と判断して二度と読み直さない = 古い一覧が永久に居座る。busy も同様に、走行中の
 	// diff 取得が返らない限り fetching() が true のままフレーム tick を回し続ける。
 	v.loading = false
-	v.preview.clearBusy()
+	v.preview.ClearBusy()
 	// 🚨 キャッシュ本体も捨てる。キー (section+XY+path) は内容を一意に決めないので、閉じている
 	// あいだに外部編集されても XY が動かなければキーが一致し、開き直しても**編集前の diff が
 	// 出続ける** (プロセスが生きている限り消えない。issue 114)。
-	v.preview.clearEntries()
+	v.preview.ClearEntries()
 	v.gen++
 	return true
 }
@@ -386,7 +388,7 @@ func (v *statusView) receive(msg statusLoadMsg) tea.Cmd {
 	// 同じ XY のまま中身だけ変わる編集 = 保存し直しでは当たってしまう)。
 	// 🚨 走行中の札は残す (clearEntries): 下で取り直しを予約するので、札まで降ろすと
 	// 走行中の取得と予約が同じキーを二重に取りに行く。
-	v.preview.clearEntries()
+	v.preview.ClearEntries()
 	// 🚨 捨てたら取り直しも予約する。捨てるだけだと、外部編集のたびにプレビュー欄が空になり
 	// 「カーソルを動かすまで戻らない」= 別プロセスに作業させながら眺める用途で画面が死ぬ。
 	return v.previewTickCmd()
@@ -502,7 +504,7 @@ func (v *statusView) receivePreviewTick(msg statusPreviewTickMsg, colored bool) 
 // fetchDiff はカーソル行の diff を取る (キャッシュヒット / 取得中なら nil)。
 func (v *statusView) fetchDiff(row worktreeRow, colored bool) tea.Cmd {
 	key := previewKey(row)
-	if !v.preview.begin(key) {
+	if !v.preview.Begin(key) {
 		return nil // キャッシュ済み / 取得中
 	}
 	gen := v.gen // 無効化を跨いだ結果を捨てるため (loadCmd と同じ形)
@@ -571,7 +573,7 @@ func (v *statusView) receivePreview(msg statusPreviewMsg) {
 	if msg.gen != v.gen {
 		// 無効化 (閉じ / r) を跨いで着地した結果。捨てるが、**札は必ず降ろす** —
 		// 降ろさないと begin() がこのキーを永久に弾き、取り直しが走らなくなる。
-		v.preview.cancel(msg.key)
+		v.preview.Cancel(msg.key)
 		return
 	}
 	if msg.err != nil {
@@ -588,12 +590,12 @@ func (v *statusView) receivePreview(msg statusPreviewMsg) {
 
 // storePreview はキャッシュへ入れて上限を超えたぶんを落とす (表示中のキーは残す)。
 func (v *statusView) storePreview(key string, lines []string) {
-	v.preview.store(key, lines, v.visibleKey())
+	v.preview.Store(key, lines, v.visibleKey())
 }
 
 // pagerLines は全画面 diff に出す行 (未取得なら nil)。
 func (v *statusView) pagerLines() []string {
-	lines, _ := v.preview.get(v.pagerKey)
+	lines, _ := v.preview.Get(v.pagerKey)
 	return lines
 }
 
@@ -665,9 +667,9 @@ func (v *statusView) runDiscard(row worktreeRow) tea.Cmd {
 		return nil
 	}
 	if row.section == sectionUntracked {
-		err = runGitCleanUntracked([]string{worktreePathspec(row.path)})
+		err = extcmd.RunGitCleanUntracked([]string{worktreePathspec(row.path)})
 	} else {
-		err = runGitRestoreWorktree(row.pathspecs())
+		err = extcmd.RunGitRestoreWorktree(row.pathspecs())
 	}
 	if err != nil {
 		v.setNotice("捨てられませんでした: "+app.FirstLine(err.Error()), app.NoticeError)
@@ -683,7 +685,7 @@ func (v *statusView) applyFresh(st worktreeStatus) {
 	sec, path, idx := v.anchor()
 	v.st, v.rows, v.loaded, v.err = st, st.ordered(), true, ""
 	v.restoreCursor(sec, path, idx)
-	v.preview.clearEntries() // 走行中の取得は走行中のまま (clearEntries の doc)
+	v.preview.ClearEntries() // 走行中の取得は走行中のまま (clearEntries の doc)
 }
 
 // pagerKeyPress は全画面 diff のキー (スクロールは共有ロジック、閉じるはここ)。
@@ -736,7 +738,7 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 		// 古い内容を復活させ、r が張った取り直しが begin() に弾かれる = 押しても何も変わらない
 		// (敵対的レビューで実測)。閉じる側 (finishClose) は元から gen++ している。
 		v.gen++
-		v.preview.clearEntries()
+		v.preview.ClearEntries()
 		return tea.Batch(v.loadCmd(), v.previewTickCmd())
 	case "q", "esc":
 		// viewer からの q/esc は glogx ごと終了する (ユーザー要望 2026-08-06: git log 一覧へは
@@ -833,9 +835,9 @@ func (v *statusView) toggleStage() tea.Cmd {
 	}
 	var err error
 	if row.section == sectionStaged {
-		err = runGitRestoreStaged(row.pathspecs())
+		err = extcmd.RunGitRestoreStaged(row.pathspecs())
 	} else {
-		err = runGitAdd(row.pathspecs())
+		err = extcmd.RunGitAdd(row.pathspecs())
 	}
 	if err != nil {
 		v.setNotice("失敗しました: "+app.FirstLine(err.Error()), app.NoticeError)
@@ -861,7 +863,7 @@ func (v *statusView) stageAll() tea.Cmd {
 		v.setNotice("stage するものがありません", app.NoticeOK)
 		return nil
 	}
-	if err := runGitAdd(paths); err != nil {
+	if err := extcmd.RunGitAdd(paths); err != nil {
 		v.setNotice("stage できませんでした: "+app.FirstLine(err.Error()), app.NoticeError)
 		return v.loadCmd()
 	}
@@ -1267,9 +1269,9 @@ func (v *statusView) previewPane(o statusRenderOpts, width int) []string {
 	head := term.ClipToWidth(row.dispPath()+"  ("+kind+")", width)
 	out := []string{term.Paint(head, term.AnsiBold, o.colored), ""}
 	key := previewKey(row)
-	body, ok := v.preview.get(key)
+	body, ok := v.preview.Get(key)
 	switch {
-	case !ok && v.preview.loading(key):
+	case !ok && v.preview.Loading(key):
 		out = append(out, term.Paint(o.spinner+" diff を取得中...", term.AnsiDim, o.colored))
 	case !ok:
 		out = append(out, term.Paint("(d で全文)", term.AnsiDim, o.colored))
@@ -1318,11 +1320,11 @@ func (v *statusView) pagerBox(o statusRenderOpts) []string {
 	// (ミューテーション検証 2026-08-03: ガードを外しても TestStatusLinesSurvivesExtremeSizes は green)。
 	width := o.width
 	rows := v.pagerRows(o.page)
-	lines, ok := v.preview.get(v.pagerKey)
+	lines, ok := v.preview.Get(v.pagerKey)
 	var body []string
 	title := " diff: " + v.pagerTitle + " "
 	switch {
-	case !ok && v.preview.loading(v.pagerKey):
+	case !ok && v.preview.Loading(v.pagerKey):
 		body = []string{term.Paint(o.spinner+" diff を取得中...", term.AnsiDim, o.colored)}
 	case !ok:
 		body = []string{term.Paint("(diff はありません)", term.AnsiDim, o.colored)}

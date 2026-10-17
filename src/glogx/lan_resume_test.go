@@ -91,7 +91,7 @@ func TestInitLanRestoreYieldsToOtherScreens(t *testing.T) {
 func TestInitLanRestoreYieldsToFiler(t *testing.T) {
 	now := withFilerState(t)
 	m := newFilerBrowse(t)
-	if err := saveFilerScreen(filerScreen{Place: filer.Place{Start: currentDir()}, SavedAt: now}); err != nil {
+	if err := saveFilerScreen(filerScreen{Place: filer.Place{Start: app.CurrentDir()}, SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	if err := saveLanScreen(lanScreen{SavedAt: now}); err != nil {

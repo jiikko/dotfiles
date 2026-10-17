@@ -333,7 +333,7 @@ func budgetDiffModel(tb testing.TB) *browseModel {
 		lines[i] = "+ added line with some diff content"
 	}
 	m.diffOv.sha = sha
-	m.diffOv.cache.store(sha, lines, sha)
+	m.diffOv.cache.Store(sha, lines, sha)
 	m.diffOv.pager.Offset = 50
 	return m
 }

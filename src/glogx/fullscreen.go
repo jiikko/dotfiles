@@ -38,7 +38,7 @@ func (m *browseModel) fullScreenActive() bool { return m.activeFullScreen() != a
 func (m *browseModel) openFullScreen(id app.FullScreenID) tea.Cmd {
 	switch id {
 	case app.FullScreenIssues:
-		return tea.Batch(m.issuesOv.Toggle(currentDir()), m.maybeTick())
+		return tea.Batch(m.issuesOv.Toggle(app.CurrentDir()), m.maybeTick())
 	case app.FullScreenStatus:
 		return tea.Batch(m.statusOv.toggle(), m.maybeTick())
 	case app.FullScreenRatelimit:
@@ -48,7 +48,7 @@ func (m *browseModel) openFullScreen(id app.FullScreenID) tea.Cmd {
 		return tea.Batch(m.doctorOv.Toggle(), m.maybeTick())
 	case app.FullScreenFiler:
 		m.usageOv.dismiss()
-		m.filerV.toggle(currentDir())
+		m.filerV.toggle(app.CurrentDir())
 		if e := m.filerV.takeOpenErr(); e != "" {
 			m.showWarning(e)
 		}

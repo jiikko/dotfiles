@@ -20,6 +20,7 @@ func CacheBaseDir
 func ClampIdx
 func ClipboardFailText
 func CrossTarget
+func CurrentDir
 func FirstLine
 func NormalizeSpaceKey
 func WriteAtomic

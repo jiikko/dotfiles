@@ -573,21 +573,11 @@ func (m *browseModel) releaseStartupChecks() tea.Cmd {
 // 前の repo の issue を出さない)。一致しなければ nil Msg = 無音で通常起動。
 func issuesRestoreCmd(s issuesview.IssuesScreen) tea.Cmd {
 	return func() tea.Msg {
-		if issues.RepoRoot(currentDir()) != s.Root {
+		if issues.RepoRoot(app.CurrentDir()) != s.Root {
 			return nil
 		}
 		return issuesRestoreMsg{screen: s}
 	}
-}
-
-// currentDir は探索の起点にする cwd (取れなければカレント相対)。glogx は tmux popup から
-// -d '#{pane_current_path}' で起動されるので、cwd は repo のサブディレクトリになりうる。
-func currentDir() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "." // cwd が取れない環境でも repo 直下として探索を試みる
-	}
-	return cwd
 }
 
 // inputEditsWith は、全画面の入力欄に打っている最中で、key がその入力欄の編集キーか (tmux prefix の分岐が使う)。
@@ -1103,7 +1093,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if id := m.activeFullScreen(); id != app.FullScreenNone && id != app.FullScreenIssues {
 			return m, m.maybeTick()
 		}
-		return m, tea.Batch(m.issuesOv.Restore(currentDir(), msg.screen), m.maybeTick())
+		return m, tea.Batch(m.issuesOv.Restore(app.CurrentDir(), msg.screen), m.maybeTick())
 	case claudeUpdateAvailableMsg:
 		return m, m.showClaudeUpdate(msg.latest)
 	case codexUpdateAvailableMsg:

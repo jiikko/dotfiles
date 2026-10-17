@@ -71,14 +71,14 @@ func TestRememberFilerScreenOnQuit(t *testing.T) {
 			if key == "q" && m.filerV.visible() {
 				t.Error("q で F を閉じていない (hide = 見張りの停止と Remember place の保存が走らない)")
 			}
-			got, ok := loadFilerScreen(now, currentDir())
+			got, ok := loadFilerScreen(now, app.CurrentDir())
 			if !ok || got.Cursor != want.Cursor {
 				t.Fatalf("F を出したまま終えたのに覚えていない: %+v ok=%v (want cursor %s)", got, ok, want.Cursor)
 			}
 
 			m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
 			m2.quit()
-			if _, ok := loadFilerScreen(now, currentDir()); ok {
+			if _, ok := loadFilerScreen(now, app.CurrentDir()); ok {
 				t.Error("F を閉じて終えたのに記憶が残った (次の起動で蘇る)")
 			}
 		})
@@ -89,7 +89,7 @@ func TestRememberFilerScreenOnQuit(t *testing.T) {
 func TestInitRestoresFilerScreen(t *testing.T) {
 	now := withFilerState(t)
 	m := newFilerBrowse(t)
-	dir := currentDir()
+	dir := app.CurrentDir()
 	sub := filepath.Join(dir, "sub")
 	if err := saveFilerScreen(filerScreen{Place: filer.Place{Start: dir, Opened: []string{sub}, Cursor: filepath.Join(sub, "c.txt")}, SavedAt: now}); err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func TestInitRestoresFilerScreen(t *testing.T) {
 func TestInitFilerRestoreYieldsToOtherScreens(t *testing.T) {
 	now := withFilerState(t)
 	m := newFilerBrowse(t)
-	if err := saveFilerScreen(filerScreen{Place: filer.Place{Start: currentDir()}, SavedAt: now}); err != nil {
+	if err := saveFilerScreen(filerScreen{Place: filer.Place{Start: app.CurrentDir()}, SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now}); err != nil {

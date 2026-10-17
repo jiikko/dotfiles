@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -11,8 +9,10 @@ import (
 
 	"subproc"
 
-	"github.com/jiikko/dotfiles/src/tuikit/highlight"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
+
+	"github.com/jiikko/dotfiles/src/tuikit/highlight"
 )
 
 // コミット境界の識別は人間向け出力の正規表現ではなく制御文字レコードで行う (issue の設計)。
@@ -48,14 +48,6 @@ type Commit struct {
 	Body        string // --stat / -p の本文 (ヘッダー行以外)。無ければ空
 }
 
-// GitExitError は git コマンド自体の失敗。stderr と終了コードをそのまま伝播する。
-type GitExitError struct {
-	Stderr string
-	Code   int
-}
-
-func (e *GitExitError) Error() string { return e.Stderr }
-
 // colorArg は git の --color フラグを colored に応じて返す。
 func colorArg(colored bool) string {
 	if colored {
@@ -71,50 +63,7 @@ func colorArg(colored bool) string {
 func runGit(args ...string) (string, error) {
 	// waitdelay-in: WaitDelay は runGitCmd が張る (ctx 有無の両経路が通るので 1 箇所に寄せてある)。
 	// 🚨 no-waitdelay ではない。ここで「不要」と書くと嘘になる。
-	return runGitCmd(exec.Command("git", subproc.GitArgs(args...)...)) // subproc: waitdelay-in runGitCmd
-}
-
-// gitOpTimeout は subproc.GitOpTimeout の別名 (値と理由の正本はそちら)。issues パッケージも
-// 同じ上限で git を起動するため、値は共有の leaf パッケージに置いてある。
-const gitOpTimeout = subproc.GitOpTimeout
-
-// runGitTimeout は runGit の timeout 付き版。TUI の tea.Cmd (goroutine) から呼ぶ git は
-// こちらを使う: ハングしても q で抜けた後に子プロセスが残らない。
-func runGitTimeout(args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitOpTimeout)
-	defer cancel()
-	return runGitCmd(exec.CommandContext(ctx, "git", subproc.GitArgs(args...)...))
-}
-
-func runGitCmd(cmd *exec.Cmd) (string, error) {
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	// ctx の kill は直接の子にしか効かず、hook の孫が pipe を握ると Wait が戻らない
-	// (理由は subproc.WaitDelay の doc)。runGit (ctx 無し) と runGitTimeout の両方が通るので、
-	// subproc.CommandContext ではなくここで 1 度張る
-	cmd.WaitDelay = subproc.WaitDelay
-	if err := cmd.Run(); err != nil {
-		var exitErr *exec.ExitError
-		code := 1
-		if errors.As(err, &exitErr) {
-			code = exitErr.ExitCode()
-		}
-		return "", &GitExitError{Stderr: stderr.String(), Code: code}
-	}
-	return stdout.String(), nil
-}
-
-// runGitReadTimeout は runGitTimeout と同じだが、表示のために作業ツリーを読む呼び出し (status・作業ツリーとの diff) 用。
-// cwd の repo のローカルの設定の filter (clean / process) を止める (issue 732。subproc.GitRepoArgs の doc)。add など書き込む操作には使わない。
-func runGitReadTimeout(args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitOpTimeout)
-	defer cancel()
-	cmd, err := subproc.GitRepoCommand(ctx, "", args...)
-	if err != nil {
-		return "", err
-	}
-	return runGitCmd(cmd)
+	return extcmd.RunGitCmd(exec.Command("git", subproc.GitArgs(args...)...)) // subproc: waitdelay-in runGitCmd
 }
 
 // BuildLogArgs は allowlist 済みオプションから git log の引数列を組み立てる (データ解析用。
@@ -228,10 +177,10 @@ func ParseLog(out string) ([]Commit, error) {
 // 無害化コストを払わない。
 func capGitBody(body, shortSHA string) string {
 	lines := strings.Split(body, "\n")
-	if len(lines) <= maxDiffLines {
+	if len(lines) <= extcmd.MaxDiffLines {
 		return body
 	}
-	lines = append(lines[:maxDiffLines], truncatedNotice(shortSHA))
+	lines = append(lines[:extcmd.MaxDiffLines], truncatedNotice(shortSHA))
 	return strings.Join(lines, "\n")
 }
 
@@ -239,7 +188,7 @@ func capGitBody(body, shortSHA string) string {
 // 同一だったのを一本化)。sha は呼び出し側の手元にある形 (short / full) をそのまま受ける
 // (git show はどちらでも解決できる)。
 func truncatedNotice(sha string) string {
-	return fmt.Sprintf("... (%d 行を超えるため省略。全文: git show %s)", maxDiffLines, sha)
+	return fmt.Sprintf("... (%d 行を超えるため省略。全文: git show %s)", extcmd.MaxDiffLines, sha)
 }
 
 // sanitizeGitText は複数行の git 由来テキストを行ごとに term.SanitizeLineKeepTabs へ通す
@@ -403,27 +352,19 @@ func LoadDecorColors() DecorColors {
 	return dc
 }
 
-// maxDiffLines は diff ポップアップに保持する行数の上限。巨大コミット (自動生成物等) で
-// 描画・保持行数が際限なく増えないための安全弁で、超過時は末尾に省略注記を足す。
-// 🚨 これがバウンドするのは「保持する行数」だけで、ピークメモリは制限しない: runGit は
-// git show の全出力を bytes.Buffer + String() で一旦フルに展開する (diff 全長 × 約2) ため、
-// 数万行 diff の一時スパイクは起きる (popup クローズ後に GC 解放される一時的なもの)。
-// メモリも真にバウンドしたければ git 出力を行ストリームで読み上限で打ち切る必要がある。
-const maxDiffLines = 5000
-
 // LoadCommitDiff は d キーの diff ポップアップ本文 (git show --stat --patch) を取得する。
 // 行は term.SanitizeDetailLine で無害化する (SGR 色は残しタブ/制御文字は枠描画を壊すため潰す)。
 // 色は git に任せず --color=never で受けて github.com/jiikko/dotfiles/src/tuikit/highlight.Diff が付ける (diff 構造色 +
 // chroma のシンタックスハイライト。方式は github.com/jiikko/dotfiles/src/tuikit/highlight の冒頭)。
 func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 	// TUI 対話中の非同期経路 (d キー) なので timeout 付き (runGitTimeout の doc 参照)
-	out, err := runGitTimeout("show", "--stat", "--patch", "--no-textconv", "--no-ext-diff", "--color=never", sha)
+	out, err := extcmd.RunGitTimeout("show", "--stat", "--patch", "--no-textconv", "--no-ext-diff", "--color=never", sha)
 	if err != nil {
 		return nil, err
 	}
-	lines := make([]string, 0, min(strings.Count(out, "\n")+1, maxDiffLines+1))
+	lines := make([]string, 0, min(strings.Count(out, "\n")+1, extcmd.MaxDiffLines+1))
 	for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
-		if len(lines) >= maxDiffLines {
+		if len(lines) >= extcmd.MaxDiffLines {
 			lines = append(lines, truncatedNotice(sha))
 			break
 		}

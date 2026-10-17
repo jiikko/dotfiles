@@ -22,6 +22,7 @@ package main
 import (
 	"fmt"
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -110,7 +111,7 @@ func gitLogWatchDirsCmd() tea.Cmd {
 // 共有ディレクトリにあるので両方見る (実測 2026-09-01: --absolute-git-dir は
 // .git/worktrees/<name>、--git-common-dir は .git を返す)。
 func gitLogWatchDirs() []string {
-	out, err := runGitTimeout("rev-parse", "--absolute-git-dir")
+	out, err := extcmd.RunGitTimeout("rev-parse", "--absolute-git-dir")
 	if err != nil {
 		return nil // repo の外 / git が無い: 見張らない (ポーリングも指紋が取れないので空振りする)
 	}
@@ -121,7 +122,7 @@ func gitLogWatchDirs() []string {
 	// --path-format は git 2.31+。失敗したら共有側を諦めて worktree 側だけ見る
 	// (HEAD の動きは拾えるので無音にはならず、refs の変化は 1 分ポーリングが拾う)。
 	common := gitDir
-	if cOut, cErr := runGitTimeout("rev-parse", "--path-format=absolute", "--git-common-dir"); cErr == nil {
+	if cOut, cErr := extcmd.RunGitTimeout("rev-parse", "--path-format=absolute", "--git-common-dir"); cErr == nil {
 		if p := strings.TrimSpace(cOut); p != "" {
 			common = p
 		}
@@ -242,7 +243,7 @@ func (m *browseModel) gitLogPollCmd() tea.Cmd {
 func (m *browseModel) gitLogMeasureCmd() tea.Cmd {
 	opts, gen := m.opts, m.logWatch.Gen
 	return func() tea.Msg {
-		out, err := runGitTimeout(BuildFingerprintArgs(opts)...)
+		out, err := extcmd.RunGitTimeout(BuildFingerprintArgs(opts)...)
 		if err != nil {
 			return gitLogFPMsg{gen: gen}
 		}

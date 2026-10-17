@@ -56,7 +56,6 @@ var mainSourceFiles = map[string]string{
 	"diff_overlay.go":        "コミットに重ねる overlay (G-2 で置き場所を決める)",
 	"job_detail_overlay.go":  "コミットに重ねる overlay (G-2 で置き場所を決める)",
 	"pr_status_overlay.go":   "コミットに重ねる overlay (G-2 で置き場所を決める)",
-	"line_cache.go":          "diff / job / status が共有する行キャッシュ (D-1 で app へ)",
 	"status_view.go":         "移設待ち (issue 817 の D)",
 	"worktree_status.go":     "移設待ち (issue 817 の D)",
 	"usage_overlay.go":       "移設待ち (issue 817 の E)",

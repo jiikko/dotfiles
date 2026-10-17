@@ -1372,9 +1372,9 @@ func TestQuitBlockedWhileAnyUpdateRuns(t *testing.T) {
 // の鏡像 (方向が「外→viewer」ではなく「actModal→viewer」)。
 func TestUpdateKeysDoNotLeakIntoStatusViewer(t *testing.T) {
 	restores := 0
-	origRestore := runGitRestoreWorktree
-	runGitRestoreWorktree = func([]string) error { restores++; return nil }
-	t.Cleanup(func() { runGitRestoreWorktree = origRestore })
+	origRestore := extcmd.RunGitRestoreWorktree
+	extcmd.RunGitRestoreWorktree = func([]string) error { restores++; return nil }
+	t.Cleanup(func() { extcmd.RunGitRestoreWorktree = origRestore })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statusOv = *newTestStatusView(t, statusRec(" M a.go"))

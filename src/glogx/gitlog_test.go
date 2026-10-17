@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"glogx/internal/extcmd"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,18 +84,18 @@ func TestParseLogSanitizesControlSequences(t *testing.T) {
 // -p / --stat の本文はコミットごとに maxDiffLines で打ち切られる (単一 diff ポップアップと
 // 同じ安全弁。-p × 無制限件数で際限なく保持しない。issue 029)。
 func TestParseLogCapsHugeBody(t *testing.T) {
-	huge := strings.Repeat("+ line\n", maxDiffLines+100)
+	huge := strings.Repeat("+ line\n", extcmd.MaxDiffLines+100)
 	out := rec(strings.Repeat("a", 40), "aaaaaaa", "s", "a", "e", "d", "r", "", "s", "\n"+huge)
 	commits, err := ParseLog(out)
 	if err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(commits[0].Body, "\n")
-	if len(lines) != maxDiffLines+1 {
-		t.Fatalf("Body 行数 = %d; want %d (上限 + 省略注記)", len(lines), maxDiffLines+1)
+	if len(lines) != extcmd.MaxDiffLines+1 {
+		t.Fatalf("Body 行数 = %d; want %d (上限 + 省略注記)", len(lines), extcmd.MaxDiffLines+1)
 	}
-	if !strings.Contains(lines[maxDiffLines], "省略") || !strings.Contains(lines[maxDiffLines], "aaaaaaa") {
-		t.Errorf("末尾が省略注記でない: %q", lines[maxDiffLines])
+	if !strings.Contains(lines[extcmd.MaxDiffLines], "省略") || !strings.Contains(lines[extcmd.MaxDiffLines], "aaaaaaa") {
+		t.Errorf("末尾が省略注記でない: %q", lines[extcmd.MaxDiffLines])
 	}
 }
 
@@ -413,7 +414,7 @@ func TestIntegrationOutsideRepo(t *testing.T) {
 	if err == nil {
 		t.Fatal("リポジトリ外でエラーになっていない")
 	}
-	var gitErr *GitExitError
+	var gitErr *extcmd.GitExitError
 	if !errors.As(err, &gitErr) {
 		t.Fatalf("GitExitError ではない: %T %v", err, err)
 	}
@@ -541,16 +542,16 @@ func TestCapGitBody(t *testing.T) {
 	if got := capGitBody(short, "abc1234"); got != short {
 		t.Errorf("上限内の本文が変更された: %q", got)
 	}
-	long := strings.TrimRight(strings.Repeat("x\n", maxDiffLines+10), "\n")
+	long := strings.TrimRight(strings.Repeat("x\n", extcmd.MaxDiffLines+10), "\n")
 	got := strings.Split(capGitBody(long, "abc1234"), "\n")
-	if len(got) != maxDiffLines+1 {
-		t.Fatalf("打ち切り後の行数 = %d; want %d (本文 maxDiffLines + 案内 1 行)", len(got), maxDiffLines+1)
+	if len(got) != extcmd.MaxDiffLines+1 {
+		t.Fatalf("打ち切り後の行数 = %d; want %d (本文 maxDiffLines + 案内 1 行)", len(got), extcmd.MaxDiffLines+1)
 	}
 	last := got[len(got)-1]
 	if !strings.Contains(last, "省略") || !strings.Contains(last, "git show abc1234") {
 		t.Errorf("案内行に省略の説明と全文の見方が無い: %q", last)
 	}
-	if !strings.Contains(last, fmt.Sprintf("%d 行", maxDiffLines)) {
+	if !strings.Contains(last, fmt.Sprintf("%d 行", extcmd.MaxDiffLines)) {
 		t.Errorf("案内行に打ち切り行数が無い: %q", last)
 	}
 }

@@ -3,9 +3,12 @@ package main
 import (
 	"strings"
 
-	"github.com/jiikko/dotfiles/src/tuikit/highlight"
+	"glogx/internal/app"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
 	"glogx/issues"
+
+	"github.com/jiikko/dotfiles/src/tuikit/highlight"
 )
 
 // 作業ツリーの状態 (git status) の読み取りとセクション分類。status viewer (status_view.go) が
@@ -170,7 +173,7 @@ func rowsFor(x, y byte, path, orig string) []worktreeRow {
 var loadWorktreeStatus = func() (worktreeStatus, error) {
 	// TUI の tea.Cmd (goroutine) から呼ぶので timeout 付き (runGitTimeout の doc 参照)。
 	// --ignore-submodules=dirty: submodule の中の変更を見に子の git を起こさない (子は submodule 自身の設定の filter を読む。issue 732)
-	out, err := runGitReadTimeout("status", "--porcelain", "--branch", "-z", "--ignore-submodules=dirty")
+	out, err := extcmd.RunGitReadTimeout("status", "--porcelain", "--branch", "-z", "--ignore-submodules=dirty")
 	if err != nil {
 		return worktreeStatus{}, err
 	}
@@ -182,7 +185,7 @@ var loadWorktreeStatus = func() (worktreeStatus, error) {
 	// **間違った root を本物として扱う** (サブディレクトリで実行していれば別の場所を指す)。
 	// この違いが出るのは「`git status` は成功するが `rev-parse` だけ失敗する」ときだけなので
 	// テストでは固定できない (seam の新設が要る)。issue 320 の変異検証で green のまま通った項。
-	if root, ok := issues.ResolveRepoRoot(currentDir()); ok {
+	if root, ok := issues.ResolveRepoRoot(app.CurrentDir()); ok {
 		st.root = root
 	}
 	return st, nil
@@ -199,7 +202,7 @@ var loadWorktreeDiff = func(paths []string, staged, colored bool) ([]string, err
 	}
 	args = append(args, "--color=never", "--")
 	args = append(args, paths...)
-	out, err := runGitReadTimeout(args...)
+	out, err := extcmd.RunGitReadTimeout(args...)
 	if err != nil {
 		return nil, err
 	}
@@ -213,9 +216,9 @@ func diffLines(out string, colored bool) []string {
 	if trimmed == "" {
 		return nil
 	}
-	lines := make([]string, 0, min(strings.Count(trimmed, "\n")+1, maxDiffLines+1))
+	lines := make([]string, 0, min(strings.Count(trimmed, "\n")+1, extcmd.MaxDiffLines+1))
 	for line := range strings.SplitSeq(trimmed, "\n") {
-		if len(lines) >= maxDiffLines {
+		if len(lines) >= extcmd.MaxDiffLines {
 			lines = append(lines, "... (これ以降は省略)")
 			break
 		}

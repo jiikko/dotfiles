@@ -1,6 +1,8 @@
-package main
+// Package linecache は「キー → 表示行」のメモリ内キャッシュと取得の単発化 (diff / job 詳細ログ / status のプレビューが共有する)。
+// main と画面のパッケージ (internal/statusview) の両方が使うので、他に依存しない小さなパッケージに置く (issue 817)。
+package linecache
 
-// lineCache は「キー → 表示行」のメモリ内キャッシュと、その取得の単発化 (single-flight) を
+// Cache は「キー → 表示行」のメモリ内キャッシュと、その取得の単発化 (single-flight) を
 // 1 つにまとめた型。diff / job 詳細ログ / status のプレビューが共有する。
 //
 // なぜ型にするか: この 3 つは同じ状態 3 点 (entries / order / busy) と同じ手順
@@ -31,46 +33,52 @@ package main
 // 🚨 caller が clearEntries を呼んでも、**飛んでいる取得が後から着地すれば復活する**。
 // statusView はメッセージに gen を載せて世代違いを捨てることで塞いでいる (この型は
 // 無効化の契機も世代も知らないので、型だけでは守れない)。
-type lineCache struct {
+type Cache struct {
 	entries map[string][]string
 	order   []string // entries への挿入順 (上限超過分を古い順に落とすため)
 	busy    map[string]bool
 }
 
-// lineCacheLimit は 1 つの lineCache が保持するエントリ数の上限。
+// Limit は 1 つの Cache が保持するエントリ数の上限。
 //
 // オンディスクの CI キャッシュには maxCacheEntries + TTL prune があるのに対し、メモリ内は
 // reloadAfterPull の reset() 以外に縮む契機がなく、pull を挟まない長時間セッションで閲覧した
 // SHA/job のぶんだけ無制限に育っていた (issue 029 P2)。diff は 1 エントリ最大 maxDiffLines
 // (5000) 行なので、50 エントリでも高々数十 MB に収まる。
-const lineCacheLimit = 50
+const Limit = 50
 
-func newLineCache() lineCache {
-	return lineCache{entries: map[string][]string{}, busy: map[string]bool{}}
+func New() Cache {
+	return Cache{entries: map[string][]string{}, busy: map[string]bool{}}
 }
 
 // get はキャッシュ済みの行を返す (ok=false = 未取得)。
-func (c *lineCache) get(key string) ([]string, bool) {
+func (c *Cache) Get(key string) ([]string, bool) {
 	lines, ok := c.entries[key]
 	return lines, ok
 }
 
 // has はキャッシュ済みか。
-func (c *lineCache) has(key string) bool {
+func (c *Cache) Has(key string) bool {
 	_, ok := c.entries[key]
 	return ok
 }
 
+// Len は持っているエントリの数。
+func (c *Cache) Len() int { return len(c.entries) }
+
+// Counts はエントリの数と、追い出しの順の記録の数 (2 つが食い違うと捨て漏れ。使う側の回帰テスト用)。
+func (c *Cache) Counts() (entries, order int) { return len(c.entries), len(c.order) }
+
 // loading は取得中か (スピナーを回すかの判定)。
-func (c *lineCache) loading(key string) bool { return c.busy[key] }
+func (c *Cache) Loading(key string) bool { return c.busy[key] }
 
 // fetching は何か 1 つでも取得中か。
-func (c *lineCache) fetching() bool { return len(c.busy) > 0 }
+func (c *Cache) Fetching() bool { return len(c.busy) > 0 }
 
 // begin は取得を予約する。既にキャッシュ済み / 取得中なら false を返す (= 発行しない)。
 // これが single-flight の唯一の入口で、呼び出し側が busy を直接触らないための関門。
-func (c *lineCache) begin(key string) bool {
-	if c.has(key) || c.busy[key] {
+func (c *Cache) Begin(key string) bool {
+	if c.Has(key) || c.busy[key] {
 		return false
 	}
 	c.busy[key] = true
@@ -80,9 +88,9 @@ func (c *lineCache) begin(key string) bool {
 // store は取得結果を格納して取得中を解除し、上限超過分を古い順に落とす。
 // keep は「今表示中のキー」で、これだけは落とさない — 表示中エントリを evict すると画面が
 // 「(内容なし)」へ突然劣化するため。
-func (c *lineCache) store(key string, lines []string, keep string) {
+func (c *Cache) Store(key string, lines []string, keep string) {
 	delete(c.busy, key)
-	if !c.has(key) {
+	if !c.Has(key) {
 		c.order = append(c.order, key)
 	}
 	c.entries[key] = lines
@@ -90,7 +98,7 @@ func (c *lineCache) store(key string, lines []string, keep string) {
 }
 
 // abort は結果を格納せずに取得中だけを解除する (取得が失敗した経路)。
-func (c *lineCache) abort(key string) { delete(c.busy, key) }
+func (c *Cache) Abort(key string) { delete(c.busy, key) }
 
 // clearEntries は中身だけを捨てる (取得中の札は残す)。
 //
@@ -98,26 +106,26 @@ func (c *lineCache) abort(key string) { delete(c.busy, key) }
 // 走行中のまま」という状況で使う (外部編集で作業ツリーが変わった等)。ここで札まで降ろすと、
 // 直後に張り直した取得予約が「誰も取っていない」と判断して同じキーを二重に取りに行く
 // (statusView の外部編集検知で実際に起きた)。
-func (c *lineCache) clearEntries() {
+func (c *Cache) ClearEntries() {
 	c.entries = map[string][]string{}
 	c.order = nil
 }
 
 // cancel は 1 件の取得中の札だけを降ろす (結果を捨てるとき用)。
 // 🚨 降ろさないと fetching() が true のまま残り、そのキーは begin() に永久に弾かれる。
-func (c *lineCache) cancel(key string) { delete(c.busy, key) }
+func (c *Cache) Cancel(key string) { delete(c.busy, key) }
 
 // clearBusy は取得中の札だけを全部降ろす (キャッシュは残す)。
 // viewer を閉じたときに使う: 走行中の取得が返らない限り fetching() が true のままになり、
 // フレーム tick が回り続けるため。
-func (c *lineCache) clearBusy() { c.busy = map[string]bool{} }
+func (c *Cache) ClearBusy() { c.busy = map[string]bool{} }
 
 // reset は中身を捨てる (pull 後の全面リロード等、キャッシュの前提が変わったとき)。
-func (c *lineCache) reset() { *c = newLineCache() }
+func (c *Cache) Reset() { *c = New() }
 
 // evict は上限を超えたぶんを挿入が古い順に落とす (keep は残す)。
-func (c *lineCache) evict(keep string) {
-	for len(c.order) > lineCacheLimit {
+func (c *Cache) evict(keep string) {
+	for len(c.order) > Limit {
 		victim := -1
 		for i, k := range c.order {
 			if k != keep {

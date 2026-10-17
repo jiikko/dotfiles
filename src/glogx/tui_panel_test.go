@@ -622,7 +622,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	m.handleKey("j")
 	m.detailOv.open = true
 	m.panelCursor = 0
-	m.detailOv.cache.store(m.detailKey(), []string{term.AnsiRed + "boom" + term.AnsiReset, "at foo.go:10"}, m.detailKey())
+	m.detailOv.cache.Store(m.detailKey(), []string{term.AnsiRed + "boom" + term.AnsiReset, "at foo.go:10"}, m.detailKey())
 
 	_, cmd := m.handleKey("v")
 	if cmd == nil || len(*cmds) != 1 {
@@ -665,7 +665,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	}
 
 	// ログが空なら起動しない
-	m.detailOv.cache.store(m.detailKey(), nil, m.detailKey())
+	m.detailOv.cache.Store(m.detailKey(), nil, m.detailKey())
 	if _, cmd := m.handleKey("v"); cmd != nil {
 		t.Error("空ログで nvim を起動しようとした")
 	}
@@ -682,7 +682,7 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("l で詳細取得 Cmd が返らない")
 	}
-	if !m.detailOv.open || !m.detailOv.cache.loading(m.detailKey()) {
+	if !m.detailOv.open || !m.detailOv.cache.Loading(m.detailKey()) {
 		t.Fatalf("詳細が開いていない / busy でない")
 	}
 	if !strings.Contains(m.View().Content, "詳細を取得中") {
@@ -850,7 +850,7 @@ func TestBrowseJobDetailFetchKeepsSpinnerActive(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("l") // 未取得なので busy が立つ
-	if !m.detailOv.cache.loading(m.detailKey()) {
+	if !m.detailOv.cache.Loading(m.detailKey()) {
 		t.Fatal("前提: 取得中フラグが立っていない")
 	}
 	if !m.spinnerActive() {
@@ -864,16 +864,16 @@ func TestBrowseReloadAfterPullResetsJobDetailCache(t *testing.T) {
 	newTempRepo(t, []string{"first", "second"})
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.opts = &Options{MaxCount: 20}
-	m.detailOv.cache.store("stale/0", []string{"old log"}, "stale/0")
+	m.detailOv.cache.Store("stale/0", []string{"old log"}, "stale/0")
 	// 🚨 札は未キャッシュのキーで立てる: begin はキャッシュ済みなら何もしないので、
 	// 上と同じキーに対して呼ぶと busy が空のまま = 下の busy 検査が空振りになる
-	if !m.detailOv.cache.begin("inflight/1") {
+	if !m.detailOv.cache.Begin("inflight/1") {
 		t.Fatal("走行中の札を立てられない (前提が崩れた)")
 	}
 	m.reloadAfterPull()
-	if len(m.detailOv.cache.entries) != 0 || len(m.detailOv.cache.busy) != 0 {
-		t.Errorf("reloadAfterPull で job 詳細キャッシュが残った: cache=%d busy=%d",
-			len(m.detailOv.cache.entries), len(m.detailOv.cache.busy))
+	if m.detailOv.cache.Len() != 0 || m.detailOv.cache.Fetching() {
+		t.Errorf("reloadAfterPull で job 詳細キャッシュが残った: cache=%d fetching=%v",
+			m.detailOv.cache.Len(), m.detailOv.cache.Fetching())
 	}
 }
 
@@ -1152,7 +1152,7 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 	o.open = true
 
 	// 溢れる: バー列あり + 幅は均一 + offset に応じて thumb が動く
-	o.cache.store("over", logLines(50), "over")
+	o.cache.Store("over", logLines(50), "over")
 	o.pager.Offset = 20
 	box := o.boxLines(width, false, "", "job", "over", rows)
 	uniformWidth(t, box)
@@ -1182,7 +1182,7 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 	uniformWidth(t, o.boxLines(width, true, "", "job", "over", rows))
 
 	// 収まる: バー列なし (本文幅が戻る)。幅は溢れる場合と同じ (枠幅は不変)
-	o.cache.store("fit", logLines(rows-2), "fit")
+	o.cache.Store("fit", logLines(rows-2), "fit")
 	o.pager.Offset = 0
 	fit := o.boxLines(width, false, "", "job", "fit", rows)
 	if w := uniformWidth(t, fit); w != term.DispWidth(term.StripANSI(box[0])) {

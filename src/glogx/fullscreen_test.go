@@ -62,7 +62,7 @@ var fullScreenCases = []fullScreenCase{
 	},
 	{
 		id: app.FullScreenFiler, name: "treefiler",
-		show:  func(m *browseModel) { m.filerV.toggle(currentDir()) },
+		show:  func(m *browseModel) { m.filerV.toggle(app.CurrentDir()) },
 		hint:  func(m *browseModel) string { return m.filerV.hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.filerV.lines(m.contentWidth(), m.pageSize()) },
 	},

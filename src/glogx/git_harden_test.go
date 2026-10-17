@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/extcmd"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -151,7 +152,7 @@ func TestGlogxGitDoesNotRunRepoFilters(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Chdir(dir)
-			if _, err := runGitTimeout("status", "--porcelain"); err != nil {
+			if _, err := extcmd.RunGitTimeout("status", "--porcelain"); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(marks); err != nil {
@@ -217,7 +218,7 @@ func TestGlogxGitDoesNotRunSubmoduleFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
-	if _, err := runGitTimeout("status", "--porcelain"); err != nil {
+	if _, err := extcmd.RunGitTimeout("status", "--porcelain"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(marks); err != nil {

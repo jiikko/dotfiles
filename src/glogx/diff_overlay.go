@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"glogx/internal/linecache"
 	"glogx/internal/term"
+
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
 // diffOverlay はコミット diff (d キー) を最前面に重ねる pager 型オーバーレイの状態と描画。
@@ -17,19 +19,19 @@ type diffOverlay struct {
 	// term.PagerScrollKey を通す。一覧と同じ手触りにする。ユーザー要望 2026-07-31)。
 	pager listnav.Pager
 	// lines は sha → 整形済み diff 行のキャッシュと取得の単発化 (line_cache.go)。
-	cache lineCache
+	cache linecache.Cache
 }
 
 // newDiffOverlay は map を初期化した diffOverlay を返す。
 func newDiffOverlay() diffOverlay {
-	return diffOverlay{cache: newLineCache()}
+	return diffOverlay{cache: linecache.New()}
 }
 
 // visible は diff ポップアップを表示中か。
 func (o *diffOverlay) visible() bool { return o.sha != "" }
 
 // fetching は diff 取得中の SHA が 1 つでもあるか (スピナー tick を回し続ける判定用)。
-func (o *diffOverlay) fetching() bool { return o.cache.fetching() }
+func (o *diffOverlay) fetching() bool { return o.cache.Fetching() }
 
 // close はポップアップを閉じてスクロール位置を戻す。
 func (o *diffOverlay) close() {
@@ -39,7 +41,7 @@ func (o *diffOverlay) close() {
 
 // reset は pull 後の全面リロードでキャッシュごと破棄する (旧 SHA の残骸を持ち越さない)。
 func (o *diffOverlay) reset() {
-	o.cache.reset()
+	o.cache.Reset()
 	o.close()
 }
 
@@ -53,26 +55,26 @@ func (o *diffOverlay) open(sha string) (needFetch bool) {
 	}
 	o.sha = sha
 	o.pager.Reset() // 開いたまま別 SHA へ差し替える経路 (J/K) で、前の半ページ送りの滑りを持ち越さない
-	return o.cache.begin(sha)
+	return o.cache.Begin(sha)
 }
 
 // receive は取得結果 (diffMsg) を反映する。取得失敗は err を返し (呼び出し側が notice を出す)、
 // その SHA が今表示中なら閉じる。古い別 SHA のエラーは表示中の diff を閉じない。
 func (o *diffOverlay) receive(msg diffMsg) error {
 	if msg.err != nil {
-		o.cache.abort(msg.sha)
+		o.cache.Abort(msg.sha)
 		if o.sha == msg.sha {
 			o.close()
 		}
 		return msg.err
 	}
-	o.cache.store(msg.sha, msg.lines, o.sha)
+	o.cache.Store(msg.sha, msg.lines, o.sha)
 	return nil
 }
 
 // visibleLines は表示中 SHA のキャッシュ行 (未取得なら nil)。
 func (o *diffOverlay) visibleLines() []string {
-	lines, _ := o.cache.get(o.sha)
+	lines, _ := o.cache.Get(o.sha)
 	return lines
 }
 
@@ -104,7 +106,7 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 	var body []string
 	title := fmt.Sprintf(" diff: %s %s ", commit.ShortSHA, commit.Subject)
 	switch {
-	case o.cache.loading(o.sha):
+	case o.cache.Loading(o.sha):
 		body = []string{term.Paint(spinner+" diff を取得中...", term.AnsiDim, colored)}
 	default:
 		lines := o.visibleLines()

@@ -11,6 +11,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
+	"glogx/internal/linecache"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 )
@@ -100,19 +102,19 @@ type gitOpCalls struct {
 func stubGitOps(t *testing.T, err error) *gitOpCalls {
 	t.Helper()
 	calls := &gitOpCalls{}
-	origAdd, origStaged, origWork, origClean := runGitAdd, runGitRestoreStaged, runGitRestoreWorktree, runGitCleanUntracked
-	runGitAdd = func(paths []string) error { calls.add = append(calls.add, paths); return err }
-	runGitRestoreStaged = func(paths []string) error {
+	origAdd, origStaged, origWork, origClean := extcmd.RunGitAdd, extcmd.RunGitRestoreStaged, extcmd.RunGitRestoreWorktree, extcmd.RunGitCleanUntracked
+	extcmd.RunGitAdd = func(paths []string) error { calls.add = append(calls.add, paths); return err }
+	extcmd.RunGitRestoreStaged = func(paths []string) error {
 		calls.restoreStaged = append(calls.restoreStaged, paths)
 		return err
 	}
-	runGitRestoreWorktree = func(paths []string) error {
+	extcmd.RunGitRestoreWorktree = func(paths []string) error {
 		calls.restoreWork = append(calls.restoreWork, paths)
 		return err
 	}
-	runGitCleanUntracked = func(paths []string) error { calls.clean = append(calls.clean, paths); return err }
+	extcmd.RunGitCleanUntracked = func(paths []string) error { calls.clean = append(calls.clean, paths); return err }
 	t.Cleanup(func() {
-		runGitAdd, runGitRestoreStaged, runGitRestoreWorktree, runGitCleanUntracked = origAdd, origStaged, origWork, origClean
+		extcmd.RunGitAdd, extcmd.RunGitRestoreStaged, extcmd.RunGitRestoreWorktree, extcmd.RunGitCleanUntracked = origAdd, origStaged, origWork, origClean
 	})
 	return calls
 }
@@ -683,7 +685,7 @@ func TestStatusPagerOpensAndScrolls(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 	row, _ := v.current()
 	key := previewKey(row)
-	v.preview.store(key, []string{"l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9", "l10",
+	v.preview.Store(key, []string{"l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9", "l10",
 		"l11", "l12", "l13", "l14", "l15", "l16", "l17", "l18", "l19", "l20"}, key)
 	v.handleKey("d", testViewport())
 	if v.pagerKey != key {
@@ -702,7 +704,7 @@ func TestStatusPagerOpensAndScrolls(t *testing.T) {
 func TestStatusPagerKeysDoNotMoveList(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go", " M b.go"))
 	row, _ := v.current()
-	v.preview.store(previewKey(row), []string{"x"}, previewKey(row))
+	v.preview.Store(previewKey(row), []string{"x"}, previewKey(row))
 	v.handleKey("d", testViewport())
 	v.handleKey("j", testViewport())
 	if _, path := cursorPathAt(t, v); path != "a.go" {
@@ -946,14 +948,14 @@ func TestStatusLinesSurvivesExtremeSizes(t *testing.T) {
 // プレビューのキャッシュは無制限に育たない (長時間セッションでファイルを見た数だけ溜まる)。
 func TestStatusPreviewCacheIsBounded(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
-	for i := range lineCacheLimit + 20 {
+	for i := range linecache.Limit + 20 {
 		v.receivePreview(statusPreviewMsg{key: "k" + strconv.Itoa(i), lines: []string{"x"}})
 	}
-	if len(v.preview.entries) > lineCacheLimit+1 { // +1 = 表示中のキー (keep) の分
-		t.Fatalf("キャッシュ数 = %d, want <= %d", len(v.preview.entries), lineCacheLimit+1)
+	if v.preview.Len() > linecache.Limit+1 { // +1 = 表示中のキー (keep) の分
+		t.Fatalf("キャッシュ数 = %d, want <= %d", v.preview.Len(), linecache.Limit+1)
 	}
-	if len(v.preview.order) != len(v.preview.entries) {
-		t.Fatalf("order = %d, cache = %d (捨て漏れ)", len(v.preview.order), len(v.preview.entries))
+	if n, order := v.preview.Counts(); order != n {
+		t.Fatalf("order = %d, cache = %d (捨て漏れ)", order, n)
 	}
 }
 
@@ -975,11 +977,11 @@ func TestStatusExternalEditKeepsInFlightPreview(t *testing.T) {
 
 	// 外部編集で行集合が変わった = 古い diff を捨てる経路 (changed が true になる入力にする)
 	v.receive(statusLoadMsg{st: parseWorktreeStatus(statusRec(" M a.go", " M b.go")), gen: v.gen})
-	if v.preview.has(key) {
+	if v.preview.Has(key) {
 		t.Fatal("前提が崩れた: 古い diff が捨てられていない (この経路を通っていない)")
 	}
 
-	if !v.preview.loading(key) {
+	if !v.preview.Loading(key) {
 		t.Fatal("走行中の取得の札が降りた (直後の取り直し予約と二重に git diff が走る)")
 	}
 	if cmd := v.fetchDiff(row, false); cmd != nil {
@@ -997,14 +999,14 @@ func TestStatusApplyFreshKeepsInFlightPreview(t *testing.T) {
 	if cmd := v.fetchDiff(row, false); cmd == nil {
 		t.Fatal("最初の fetchDiff が nil (前提が崩れた)")
 	}
-	v.preview.store("other", []string{"stale"}, "")
+	v.preview.Store("other", []string{"stale"}, "")
 
 	v.applyFresh(parseWorktreeStatus(statusRec(" M a.go", " M b.go")))
 
-	if v.preview.has("other") {
+	if v.preview.Has("other") {
 		t.Error("古いキャッシュが残った (取り直しの契機が無いまま古い diff を出す)")
 	}
-	if !v.preview.loading(key) {
+	if !v.preview.Loading(key) {
 		t.Fatal("走行中の取得の札が降りた (次の tick 満了で二重に git diff が走る)")
 	}
 }
@@ -1017,14 +1019,14 @@ func TestStatusReceiveSchedulesPreviewRefetchOnChange(t *testing.T) {
 	if same != nil {
 		t.Error("内容が変わっていないのに取り直しを予約した (毎 1.5 秒 git diff が走る)")
 	}
-	if len(v.preview.entries) == 0 {
+	if v.preview.Len() == 0 {
 		t.Error("内容が変わっていないのにキャッシュを捨てた")
 	}
 	changed := v.receive(statusLoadMsg{st: parseWorktreeStatus(statusRec("MM a.go")), gen: v.gen})
 	if changed == nil {
 		t.Fatal("内容が変わったのに取り直しを予約していない")
 	}
-	if len(v.preview.entries) != 0 {
+	if v.preview.Len() != 0 {
 		t.Errorf("古いプレビューが残っている: %v", v.preview)
 	}
 }
@@ -1205,10 +1207,10 @@ func TestStatusReloadKeyDropsPreviewCache(t *testing.T) {
 	v.shown = true
 	applyStatusLoad(t, &v)
 	for _, r := range v.rows {
-		v.preview.store(previewKey(r), []string{"OLD-DIFF"}, "")
+		v.preview.Store(previewKey(r), []string{"OLD-DIFF"}, "")
 	}
-	if len(v.preview.entries) < 2 {
-		t.Fatalf("前提が崩れた: キャッシュに 2 件仕込めていない (%d 件)", len(v.preview.entries))
+	if v.preview.Len() < 2 {
+		t.Fatalf("前提が崩れた: キャッシュに 2 件仕込めていない (%d 件)", v.preview.Len())
 	}
 	// 🚨 予約と再読込は別々に見る。`cmd != nil` では判別力が無い — loadCmd だけでも
 	//   previewTickCmd だけでも非 nil が返るので、どちらを落とす変異も green のまま通る (実測)
@@ -1219,8 +1221,8 @@ func TestStatusReloadKeyDropsPreviewCache(t *testing.T) {
 
 	v.listKey("r", testViewport())
 
-	if len(v.preview.entries) != 0 {
-		t.Errorf("r でプレビューのキャッシュが残った (編集前の diff が出続ける): %v", v.preview.entries)
+	if v.preview.Len() != 0 {
+		t.Errorf("r でプレビューのキャッシュが残った (編集前の diff が出続ける): %d 件", v.preview.Len())
 	}
 	// 🚨 捨てるだけだとプレビュー欄が空のまま残る (receive 側と同じ理由で取り直しを予約する)
 	if v.previewSeq == seqBefore {
@@ -1239,13 +1241,13 @@ func TestStatusReloadKeepsInFlightMark(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 	row, _ := v.current()
 	key := previewKey(row)
-	if !v.preview.begin(key) {
+	if !v.preview.Begin(key) {
 		t.Fatal("前提が崩れた: 取得を始められない")
 	}
 
 	v.listKey("r", testViewport())
 
-	if !v.preview.busy[key] {
+	if !v.preview.Loading(key) {
 		t.Error("r が取得中の札まで降ろした (走行中の取得と予約が同じキーを二重に取りに行く)")
 	}
 }
@@ -1259,7 +1261,7 @@ func TestStatusLatePreviewAfterCloseIsDropped(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 	row, _ := v.current()
 	key := previewKey(row)
-	if !v.preview.begin(key) {
+	if !v.preview.Begin(key) {
 		t.Fatal("前提が崩れた: 取得を始められない")
 	}
 	staleGen := v.gen
@@ -1270,11 +1272,11 @@ func TestStatusLatePreviewAfterCloseIsDropped(t *testing.T) {
 	}
 	v.receivePreview(statusPreviewMsg{gen: staleGen, key: key, lines: []string{"OLD-DIFF"}})
 
-	if len(v.preview.entries) != 0 {
-		t.Errorf("閉じた後に着地した取得がキャッシュを復活させた: %v", v.preview.entries)
+	if v.preview.Len() != 0 {
+		t.Errorf("閉じた後に着地した取得がキャッシュを復活させた: %d 件", v.preview.Len())
 	}
 	// 🚨 捨てるときも札は降ろすこと。残すと begin() がこのキーを永久に弾く
-	if v.preview.busy[key] {
+	if v.preview.Loading(key) {
 		t.Error("捨てた結果の取得中の札が残った (取り直しが二度と走らない)")
 	}
 }
@@ -1284,7 +1286,7 @@ func TestStatusLatePreviewAfterReloadIsDropped(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 	row, _ := v.current()
 	key := previewKey(row)
-	if !v.preview.begin(key) {
+	if !v.preview.Begin(key) {
 		t.Fatal("前提が崩れた: 取得を始められない")
 	}
 	staleGen := v.gen
@@ -1292,13 +1294,13 @@ func TestStatusLatePreviewAfterReloadIsDropped(t *testing.T) {
 	v.listKey("r", testViewport())
 	v.receivePreview(statusPreviewMsg{gen: staleGen, key: key, lines: []string{"OLD-DIFF"}})
 
-	if len(v.preview.entries) != 0 {
-		t.Errorf("r の後に着地した取得が古い内容を復活させた (押しても何も変わらない): %v", v.preview.entries)
+	if v.preview.Len() != 0 {
+		t.Errorf("r の後に着地した取得が古い内容を復活させた (押しても何も変わらない): %d 件", v.preview.Len())
 	}
 	// 🚨 札はここで降ろすこと。r は clearEntries なので札が残っており (それは意図的)、
 	//   捨てた結果の札を降ろさないと begin() がこのキーを永久に弾いて取り直しが走らない。
 	//   閉じる経路は clearBusy が先に走るので、この主張はこちらでしか立たない
-	if v.preview.busy[key] {
+	if v.preview.Loading(key) {
 		t.Error("捨てた結果の取得中の札が残った (取り直しが二度と走らない)")
 	}
 }
@@ -1312,12 +1314,12 @@ func TestStatusCloseDropsPreviewCache(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 	row, _ := v.current()
 	v.receivePreview(statusPreviewMsg{key: previewKey(row), lines: []string{"OLD-DIFF"}})
-	if len(v.preview.entries) == 0 {
+	if v.preview.Len() == 0 {
 		t.Fatal("前提が崩れた: キャッシュに仕込めていない")
 	}
 
 	// 別の行の取得が飛んでいる状態も作る (閉じた瞬間に in-flight があるのが実際の形)
-	if !v.preview.begin("in-flight-key") {
+	if !v.preview.Begin("in-flight-key") {
 		t.Fatal("前提が崩れた: 取得を始められない")
 	}
 
@@ -1326,14 +1328,14 @@ func TestStatusCloseDropsPreviewCache(t *testing.T) {
 		t.Fatal("前提が崩れた: finishClose が閉じ切っていない")
 	}
 
-	if len(v.preview.entries) != 0 {
-		t.Errorf("閉じてもプレビューのキャッシュが残った (開き直しで編集前の diff が出る): %v", v.preview.entries)
+	if v.preview.Len() != 0 {
+		t.Errorf("閉じてもプレビューのキャッシュが残った (開き直しで編集前の diff が出る): %d 件", v.preview.Len())
 	}
 	// 🚨 隣の clearBusy も守る。clearEntries を隣に足したことで「2 行まとめて reset() で
 	//   よくない?」という編集が誘発されやすくなったが、**片方だけ消す編集は無音で通る**。
 	//   札が残ると fetching() が true のままフレーム tick を回し続ける (元の 🚨 コメント)
-	if len(v.preview.busy) != 0 {
-		t.Errorf("閉じても取得中の札が残った (フレーム tick が回り続ける): %v", v.preview.busy)
+	if v.preview.Fetching() {
+		t.Errorf("閉じても取得中の札が残った (フレーム tick が回り続ける)")
 	}
 }
 
@@ -1472,7 +1474,7 @@ func TestStatusPagerNeighborKeysSwapFile(t *testing.T) {
 		long[i] = "l"
 	}
 	for _, r := range v.rows {
-		v.preview.store(previewKey(r), long, previewKey(r))
+		v.preview.Store(previewKey(r), long, previewKey(r))
 	}
 	v.handleKey("k", testViewport()) // 初期カーソルは先頭の unstaged (b.go) なので staged の a.go へ上げる
 	v.handleKey("d", testViewport())

@@ -255,7 +255,7 @@ func TestBrowseQPopsViewStack(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.cache.store(m.detailKey(), []string{"line"}, m.detailKey())
+	m.detailOv.cache.Store(m.detailKey(), []string{"line"}, m.detailKey())
 	m.openJobDetail()
 	m.handleKey("q")
 	if m.detailOv.open || m.panelSHA == "" || m.done {
@@ -278,7 +278,7 @@ func TestBrowseCtrlCQuitsAnywhere(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.cache.store(m.detailKey(), []string{"line"}, m.detailKey())
+	m.detailOv.cache.Store(m.detailKey(), []string{"line"}, m.detailKey())
 	m.openJobDetail()
 	_, cmd := m.handleKey("ctrl+c")
 	if cmd == nil || !m.done {
@@ -334,7 +334,7 @@ func TestJapaneseFullViewStaysInWidth(t *testing.T) {
 	}
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.cache.store(m.detailKey(), []string{
+	m.detailOv.cache.Store(m.detailKey(), []string{
 		strings.Repeat("日本語のログ行です。", 12),
 		"##[error]日本語のエラーメッセージ",
 	}, m.detailKey())
@@ -510,8 +510,8 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"toast.animating", func(m *browseModel) { m.toast.Show("x", true) }}, // 積んだ直後は入場のスライド中
 		{"awaitCI", func(m *browseModel) { m.awaitCI = map[string]bool{"a": true} }},
 		{"detailsLoading", func(m *browseModel) { m.detailsLoading["a"] = true }},
-		{"detailOv.fetching", func(m *browseModel) { m.detailOv.cache.begin("a") }},
-		{"diffOv.fetching", func(m *browseModel) { m.diffOv.cache.begin("a") }},
+		{"detailOv.fetching", func(m *browseModel) { m.detailOv.cache.Begin("a") }},
+		{"diffOv.fetching", func(m *browseModel) { m.diffOv.cache.Begin("a") }},
 		{"prStatusOv.fetching", func(m *browseModel) { m.prStatusOv.busy["a"] = true }},
 		{"panelHasPendingJob (running)", func(m *browseModel) {
 			m.panelSHA = m.commits[0].SHA
@@ -532,7 +532,7 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		// statusOv.fetching の第 2 disjunct で、そこだけ覆えていなかった。
 		{"diffOv.animating", func(m *browseModel) { startPagerGlide(t, &m.diffOv.pager, 0, 1) }},
 		{"issuesOv.bodyPager", func(m *browseModel) { startPagerGlide(t, m.issuesOv.Fixture().BodyPager(), 0, 1) }},
-		{"statusOv.preview.fetching", func(m *browseModel) { m.statusOv.preview.begin("k") }},
+		{"statusOv.preview.fetching", func(m *browseModel) { m.statusOv.preview.Begin("k") }},
 	}
 	// 前提: 何も動いていない model は false (これが false でないと以下の検証が無意味になる)
 	base := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -614,8 +614,8 @@ func TestBrowseJobDetailNeighborKeysSwapJob(t *testing.T) {
 	if m.detailKey() == keyBefore {
 		t.Fatalf("J の後も詳細の cache キーが build のまま: %q", m.detailKey())
 	}
-	if cmd == nil || !m.detailOv.cache.busy[m.detailKey()] {
-		t.Errorf("J で未取得の隣 job を取りに行かない: cmd=%v busy=%v", cmd != nil, m.detailOv.cache.busy[m.detailKey()])
+	if cmd == nil || !m.detailOv.cache.Loading(m.detailKey()) {
+		t.Errorf("J で未取得の隣 job を取りに行かない: cmd=%v busy=%v", cmd != nil, m.detailOv.cache.Loading(m.detailKey()))
 	}
 	m.handleKey("J")
 	if m.panelCursor != 1 || !strings.Contains(m.toast.Text(), "最後") {

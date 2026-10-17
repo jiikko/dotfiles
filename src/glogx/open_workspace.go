@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/app"
 	"glogx/internal/extcmd"
 	"glogx/issues"
 )
@@ -20,7 +21,7 @@ import (
 // 🚨 失敗時に "." を返すのはここの事情 (nvim を「今いる場所」で開く。cwd を返すと
 // 意図がぼやける)。解決そのものは issues.ResolveRepoRoot が唯一の実装 (issue 320)。
 func repoRoot() string {
-	if root, ok := issues.ResolveRepoRoot(currentDir()); ok {
+	if root, ok := issues.ResolveRepoRoot(app.CurrentDir()); ok {
 		return root
 	}
 	return "."

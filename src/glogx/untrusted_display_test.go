@@ -216,9 +216,9 @@ func TestStatusErrorsAreSanitized(t *testing.T) {
 	v.receive(statusLoadMsg{err: errors.New("fatal: " + evil417), gen: v.gen})
 	assertNoTermControl(t, "git status のエラー", v.err)
 
-	v.preview.begin("k")
+	v.preview.Begin("k")
 	v.receivePreview(statusPreviewMsg{gen: v.gen, key: "k", err: errors.New("open " + evil417 + ".txt: permission denied")})
-	lines, ok := v.preview.get("k")
+	lines, ok := v.preview.Get("k")
 	if !ok || len(lines) != 1 {
 		t.Fatalf("プレビューのエラーが保存されていない: ok=%v lines=%q", ok, lines)
 	}

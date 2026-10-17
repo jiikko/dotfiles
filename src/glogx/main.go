@@ -19,8 +19,10 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 	"glogx/internal/doctorview"
+	"glogx/internal/extcmd"
+
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
 
 func main() {
@@ -60,7 +62,7 @@ func run(argv []string) int {
 
 // exitGitError は git 自体の失敗。stderr と終了コードをそのまま返す (issue のエラー方針)。
 func exitGitError(err error) int {
-	var gitErr *GitExitError
+	var gitErr *extcmd.GitExitError
 	if errors.As(err, &gitErr) {
 		fmt.Fprint(os.Stderr, gitErr.Stderr)
 		return gitErr.Code

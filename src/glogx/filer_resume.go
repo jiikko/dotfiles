@@ -56,7 +56,7 @@ func (m *browseModel) rememberFilerScreen() {
 
 // restoreFilerScreen は起動時の復元。他の全画面の復元が当たっていないときだけ呼ぶ (全画面は同時に 1 枚)。
 func (m *browseModel) restoreFilerScreen() tea.Cmd {
-	dir := currentDir()
+	dir := app.CurrentDir()
 	p, ok := loadFilerScreen(app.TimeNow(), dir)
 	if !ok {
 		return nil

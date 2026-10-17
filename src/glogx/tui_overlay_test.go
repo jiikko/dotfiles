@@ -223,14 +223,14 @@ func TestBrowseDiffOpenScrollClose(t *testing.T) {
 	if m.diffOv.sha != m.commits[0].SHA {
 		t.Fatalf("diffSHA = %q; want カーソル位置のコミット", m.diffOv.sha)
 	}
-	if !m.diffOv.cache.loading(m.diffOv.sha) {
+	if !m.diffOv.cache.Loading(m.diffOv.sha) {
 		t.Error("取得中フラグが立っていない")
 	}
 	deliverDiffMsg(t, m, cmd)
 	if len(*calls) != 1 || (*calls)[0] != m.commits[0].SHA {
 		t.Fatalf("loadCommitDiff の呼び出し = %v", *calls)
 	}
-	if m.diffOv.cache.loading(m.diffOv.sha) {
+	if m.diffOv.cache.Loading(m.diffOv.sha) {
 		t.Error("取得完了後も busy のまま")
 	}
 	view := m.View().Content
@@ -270,7 +270,7 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 
 	// 溢れる: バー列あり + 幅は均一 + thumb は比率
 	o.sha = commit.SHA
-	o.cache.store(commit.SHA, diffLines(50), commit.SHA)
+	o.cache.Store(commit.SHA, diffLines(50), commit.SHA)
 	o.pager.Offset = 20
 	box := o.boxLines(width, false, "", commit, rows)
 	uniformWidth(t, box)
@@ -300,7 +300,7 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 	uniformWidth(t, o.boxLines(width, true, "", commit, rows))
 
 	// 収まる: バー列なし (本文幅が戻る)。枠幅は溢れる場合と同じ
-	o.cache.store(commit.SHA, diffLines(rows-2), commit.SHA)
+	o.cache.Store(commit.SHA, diffLines(rows-2), commit.SHA)
 	o.pager.Offset = 0
 	fit := o.boxLines(width, false, "", commit, rows)
 	if w := uniformWidth(t, fit); w != term.DispWidth(term.StripANSI(box[0])) {
@@ -327,7 +327,7 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 	commit := &Commit{SHA: "a", ShortSHA: "abc1234", Subject: "subject"}
 	d := newDiffOverlay()
 	d.sha = commit.SHA
-	d.cache.store(commit.SHA, lines, commit.SHA)
+	d.cache.Store(commit.SHA, lines, commit.SHA)
 	d.pager.Offset = 49 // 旧 rows で G → リサイズで rows が増えた後を想定 (窓上限 42 を越えている)
 	if title := d.boxLines(width, false, "", commit, rows)[0]; !strings.Contains(title, "[43-50/50]") {
 		t.Errorf("diff overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
@@ -343,7 +343,7 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 
 	j := newJobDetailOverlay()
 	j.open = true
-	j.cache.store("key", lines, "key")
+	j.cache.Store("key", lines, "key")
 	j.pager.Offset = 49
 	if title := j.boxLines(width, false, "", "job", "key", rows)[0]; !strings.Contains(title, "[43-50/50]") {
 		t.Errorf("job 詳細 overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
@@ -355,7 +355,7 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 	// status viewer の全画面 diff も同じ規律 (pagerRows = page - 5 なので page 13 で rows 8)
 	sv := newTestStatusView(t, "")
 	sv.pagerKey, sv.pagerTitle = "k", "t"
-	sv.preview.store("k", lines, "k")
+	sv.preview.Store("k", lines, "k")
 	sv.pager.Offset = 49
 	if title := sv.pagerBox(statusRenderOpts{width: width, page: rows + 5})[0]; !strings.Contains(title, "[43-50/50]") {
 		t.Errorf("status viewer の pager が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
@@ -617,7 +617,7 @@ func TestBrowseCopyJobContextCached(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	// 詳細キャッシュ済み → 即コピー (追加 fetch なし)
-	m.detailOv.cache.store(m.detailKey(), []string{"✗ lint (13s)", "", "[failure] a.go:1", "  boom"}, m.detailKey())
+	m.detailOv.cache.Store(m.detailKey(), []string{"✗ lint (13s)", "", "[failure] a.go:1", "  boom"}, m.detailKey())
 	if _, cmd := m.handleKey("Y"); cmd != nil {
 		t.Fatal("キャッシュ済みなのに fetch が走った")
 	}
@@ -801,7 +801,7 @@ func TestBrowseCopyJobContextSanitizesHeader(t *testing.T) {
 	copied := testenv.StubClipboard(t)
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.cache.store(m.detailKey(), []string{"log"}, m.detailKey())
+	m.detailOv.cache.Store(m.detailKey(), []string{"log"}, m.detailKey())
 	m.handleKey("Y")
 	if strings.ContainsRune(*copied, '\x1b') || strings.ContainsRune(*copied, '\x07') {
 		t.Fatalf("コピー内容に端末制御シーケンスが残った: %q", *copied)
@@ -1208,7 +1208,7 @@ func TestSpaceKeyScrollsEverywhere(t *testing.T) {
 	m.handleKey("i") // viewer を閉じる
 
 	// 3. diff pager (同じ綴り落ちで壊れていた既存経路)
-	m.diffOv.cache.store(m.commits[0].SHA, manyLines(100), "")
+	m.diffOv.cache.Store(m.commits[0].SHA, manyLines(100), "")
 	m.diffOv.sha = m.commits[0].SHA
 	m.handleKey("space")
 	if m.diffOv.pager.Offset == 0 {

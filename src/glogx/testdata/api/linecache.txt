@@ -1,0 +1,16 @@
+const Limit
+func New
+method Cache.Abort
+method Cache.Begin
+method Cache.Cancel
+method Cache.ClearBusy
+method Cache.ClearEntries
+method Cache.Counts
+method Cache.Fetching
+method Cache.Get
+method Cache.Has
+method Cache.Len
+method Cache.Loading
+method Cache.Reset
+method Cache.Store
+type Cache
