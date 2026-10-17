@@ -4,7 +4,12 @@
 
 起票日: 2026-10-12
 
-> **2026-10-17 にユーザー判断で open に戻した (着手はユーザーの手が空いたとき)**。理由: 開発中にビルドキャッシュが増えやすいのがペイン。
+> **2026-10-17: 段 3 (描画の土台 term・共有の状態 app・doctor 画面) まで出して止めた (ユーザー判断。下の「進捗」)**。
+> **再開の trigger**: ビルドキャッシュをさらに減らしたくなり、画面のテストを browseModel 抜きに書き分ける (案 C) と決めたとき。
+> 次の段は issues 画面 (下準備: url_picker は issues と一緒に、watch_chain と dirWatcher は app へ、editorCommand など 4 関数と
+> runEditorCmd・openURLMsg は extcmd へ、notice の種類・firstLine・clampIdx・normalizeSpaceKey は app へ。2026-10-17 に数えた)。
+>
+> 2026-10-17 にユーザー判断で open に戻した (着手はユーザーの手が空いたとき)。理由: 開発中にビルドキャッシュが増えやすいのがペイン。
 > glogx は 1 パッケージなので、1 行直すたびにパッケージ全体 (テストの -race 版で 1 つ 26 MB 級) を作り直し、新しい項目として GOCACHE に溜まる
 > (下の「ビルドキャッシュの増え方」)。分割すると、直したパッケージとそれを import する側だけを作り直す。
 >
@@ -271,6 +276,38 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
     internal へ出して公開名にした宣言が「テストからしか使われない」になっても検出されない。2026-10-17 時点で該当は 0 個
     (term・app の公開名を数えた)。**trigger**: 画面のパッケージを出した段で同じ数え方をし、該当が出たら internal の公開名を対象にした検査を足すかを決める
 - [ ] 画面を 1 つずつ出す
+  - [x] 2026-10-17 段 3 (glogx: doctor 画面を internal/doctorview へ出す (issue 742 の段 3)): doctor_*.go を `internal/doctorview` へ。
+    テストは宣言単位で仕分け、doctor だけで閉じる 57 本を一緒に移した (残りは browseModel か main と共有のヘルパーを使うので main)。
+    踏んだ罠: overlay_ownership_test の reflect が非公開の `ownsKeys()` だけを数えていて、別パッケージの `OwnsKeys()` を黙って外す
+    (canary が赤で見えた。両方を数える形にし、表から doctorOv を消す変異で red を確認)・src/doctor の
+    derived_fields_bypass_test が glogx のフィールド名を覚えている・main.go などを固定名で読む 2 本が宣言の参照だけでは
+    doctor 側へ仕分けられる (main へ戻した)。段 1・2 の codex の敵対的レビューの P2 (unparam は package main 以外の公開関数を
+    既定で見ない) を `check-exported: true` で直し、変異で red を確認。同じレビューの P3 (cache の変異の記録が成立しない) は
+    読み違い: 変異は saveClaudeVersionCache の中ではなく、app.CacheBaseDir を呼ぶ checkCLIVersionCmd の中の呼び出しに当てていて、
+    違反に `claude_version.go:170 (checkCLIVersionCmd)` が出た (commit message の書き方が紛らわしかった)
+  - 段 3 の後の実測 (2026-10-17。上の「計測の手順」を `./...` で。分割前 = 2193f895、段 3 = glogx: doctor 画面を internal/doctorview へ出す):
+
+    | 1 行足したファイル | 分割前 | 段 3 の後 |
+    |---|---|---|
+    | `tui.go` | +27.5 MB | +24.7 MB (−10%) |
+    | doctor_view.go | +27.5 MB | +30.2 MB (+10%) |
+    | `internal/term/width.go` | (分割前は tui.go と同じ) | +30.8 MB |
+
+    - doctor を直したときに増えるのは試算の案 B のとおり: doctorview を本体の版とテスト込みの版の 2 回コンパイルし、main の
+      テスト込みの版も作り直す。テストを main に残す案 A なら doctor の変更は分割前と同じ程度、tui.go は −7% 程度の見込み (未実測)
+    - 土台 (term / app) を直すと全部を作り直すので、分割前より増える
+  - 段 3 の codex の敵対的レビュー (gpt-6.1-sol high、1 本): P1 / P2 なし。P3 2 件:
+    - 採用: 移したテストが main の TestMain (幅 env のガード・キャッシュ置き場の隔離) を通らない。`RUNEWIDTH_EASTASIAN=1` で
+      doctorview のテストが緑のまま通ることを再現した。internal/doctorview と internal/term に TestMain を足した
+      (同じ env で両方が理由を言って止まることを確認)。実ユーザーの ~/.cache/glog の doctor のファイルは更新されていなかった
+      (このセッションより前の時刻のまま)
+    - 記録 (受容): 公開名にした関数は unparam の「常に同じ定数の引数」検査 (check-exported でも公開名は飛ばす) と
+      golangci の unused (ExportedIsUsed 固定) から外れる。上の check_unused_excluding_tests の記録と同じ種類の弱まりで、
+      internal の公開名を対象にした検査を足さない限り戻らない。**trigger**: 分割を再開するとき、または internal の公開名で
+      未使用・定数引数の残骸が見つかったとき
+- [x] 2026-10-17: **段 3 で止める** (ユーザー判断)。理由: 画面ごとの分割単独ではビルドキャッシュの効き目が小さい (上の実測。
+  tui.go の変更で −10%、doctor の変更で +10%)。大きく減らすには画面のテストを browseModel 抜きに書き分ける案 C が要り、
+  数千行のテストの書き直しになる。段 1〜3 (term / app / doctor の分割と、移設で外れかけた検査の直し) は master に入れた
 - [ ] CLAUDE.md / README の構造の記述を直す
 
 ## 反証レビュー (sonnet 1 本。2026-10-17 の改訂)
