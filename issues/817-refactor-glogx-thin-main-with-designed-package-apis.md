@@ -198,7 +198,23 @@ P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.
   //go:build !nofixture を要求する (lanview の fixture.go から tag を消すと red)
   C までは opus 2 体で通した。D〜F はまだ誰も攻めていない
 - [x] ratelimitview の SaveRatelimitScreen / RemoveRatelimitScreen を Fixture の関数 (FixtureSaveScreen / FixtureRemoveScreen) へ寄せて非公開にした (2026-10-18)
-- [ ] G-1 / G-2 / G-3 (上の節)。G-3 では src/glogx/CLAUDE.md・README の構造の記述と structure_ratchet_test.go の一覧の「移設待ち」を片付ける
+- [ ] G-1 / G-2 / G-3 (上の節)。G-3 では src/glogx/CLAUDE.md・README の構造の記述と structure_ratchet_test.go の一覧の「移設待ち」を片付ける。
+  2026-10-18 に G-1 / G-2 の判断までは済ませた (下の「G の判断」節)。実装は未着手
+
+### G の判断 (2026-10-18。xref で数えた。移設の実装は未着手)
+
+- **G-1: gitlog.go / github.go / cache.go は `internal/gitdata` へ出す**。3 つとも browseModel のメソッドを 0 個しか持たず、
+  main のほかの部分への依存は 7 個 (options.go の Options とそのフィールド Revs / Paths / MaxCount / Patch / Stat、render.go の StateLoading) だけ。
+  逆に main からは 77 個使われる (Commit / CIState / PRStatus などのデータ型と取得の関数。ほとんどは今も大文字)。
+  先に設計が要るもの 2 つ:
+  1. `LoadCommits` などが CLI の `Options` を丸ごと受け取っている → gitdata 側に取得の条件だけを持つ型 (仮名 LogQuery) を置き、
+     main が Options から組んで渡す。StateLoading (表示専用の擬似状態) は render.go に残すか、CIState の定数として gitdata へ移す
+  2. CI の分割取得の中身 (capFetchSHAs / chunkSHAs / fetchCIChunk / fetchMaxSHAs / fillUnknownFetched / formatDuration / lastLine) を
+     tui.go と external_commands.go が直接組んでいる → 「SHA の列を渡すと分割して取得し、取れなかったものを埋める」1 つの口 (仮名 FetchCIBatch) へ寄せてから移す。
+     機械的に大文字にしない (C 以降と同じ作法)
+- **G-2: diff / job_detail / pr_status の overlay は G-1 の後に移せる** (依存は gitdata の型・tui.go の Msg (diffMsg / jobDetailMsg) と
+  render.go の decorateDetailLine / prStateColor だけ)。**action_modal.go は main に残す**: pull / push / claude・codex の update を起こし、
+  その結果の Msg を受ける配線そのもので、external_commands.go と claude_version.go / codex_version.go に 14 個頼る (移すと main への頼みが公開名に化けるだけ)
 - [ ] 全部済んだら `scripts/issue_done.sh 817` と retro
 
 検証の手順 (各 commit の前): `src/glogx` で `go test -race ./...` / `make lint` / repo root で `scripts/check_unused_excluding_tests.sh` /
