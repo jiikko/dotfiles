@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
-	"glogx/internal/term"
 )
 
 // hintLine は面ごとの hint を**レジストリからしか**取らない (issue 289)。
@@ -170,7 +169,7 @@ func TestEveryHintSurfaceHasPrioOne(t *testing.T) {
 			t.Errorf("%s: hint 項目が空", hintSurfaceSetup[id].name)
 			continue
 		}
-		if hintfit.ShortestExit(term.HintfitItems(items)) == "" {
+		if hintfit.ShortestExit(items) == "" {
 			t.Errorf("%s: 優先度 1 の項目が無い (狭い幅で案内が丸ごと消える)", hintSurfaceSetup[id].name)
 		}
 		checked++

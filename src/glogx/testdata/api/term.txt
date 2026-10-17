@@ -15,8 +15,6 @@ const CursorGutterBlank
 const CursorGutterMark
 const CursorGutterWidth
 const ScrollAnimFrames
-field HintItem.Prio
-field HintItem.Text
 func BuildPanelBoxImpl
 func BuildShadowPanelBox
 func ClipToWidth
@@ -26,7 +24,6 @@ func DropEmojiVS16
 func DropToColumn
 func FillRight
 func FitHintItems
-func HintfitItems
 func IsCopySafe
 func OverlayBox
 func OverlayCenteredBox

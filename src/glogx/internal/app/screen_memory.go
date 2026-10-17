@@ -10,6 +10,12 @@ import (
 // ScreenMemory は全画面 (issues / doctor / ratelimit / F / L) を閉じたときの画面の記憶 (1 画面 1 ファイル)。
 // C-g で閉じてすぐ開き直したときに同じ画面へ戻すためのもの。保存・読み込み・削除の作法は全画面で同じなので、
 // ここに 1 つだけ置く (issue 777)。照合 (別 repo・別の dir・範囲外のタブ) は画面ごとに load の後で行う。
+//
+// フィールドを公開しているのは、各画面がパッケージ変数として「どのファイルに・どの時刻で」を宣言する形だから
+// (`var doctorMemory = app.ScreenMemory[doctorScreen]{File: ..., SavedAt: ...}`。宣言の後に書き換える呼び出しは無い)。
+// 画面のパッケージは app の外にあるので、非公開にすると宣言のためだけのコンストラクタが要る。宣言の後に
+// 書き換える呼び出しが現れたら、コンストラクタにして非公開に戻すことを再評価する (issue 817 の B-2)。
+// ScreenMemoryTTL と Path は画面のテストが「期限切れ」「壊れたファイル」を作るのに使う (どちらも Load の契約の一部)。
 type ScreenMemory[T any] struct {
 	File    string            // CacheBaseDir の下のファイル名
 	SavedAt func(T) time.Time // 記憶の保存時刻 (TTL の判定に使う)
