@@ -11,6 +11,7 @@ import (
 	"ratelimit/usage"
 
 	"glogx/internal/app"
+	"glogx/internal/gitdata"
 	"glogx/internal/ratelimitview"
 	"glogx/internal/term"
 	"glogx/internal/usageview"
@@ -89,7 +90,7 @@ func TestUsageOverlayDismiss(t *testing.T) {
 
 // U は push 確認モーダルを素通りせず、通常キー = キャンセルとして扱われる (footgun 回帰)。
 func TestUsageToggleDoesNotBypassConfirmModal(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.actModal.pushConfirm = true
 	visBefore := m.usageOv.Visible
 	m.handleKey("U")
@@ -166,7 +167,7 @@ func TestUsageBoxLines(t *testing.T) {
 // usageRefreshMsg はバックグラウンド再取得を仕掛け、次回リフレッシュを再予約する
 // (cmd 非 nil = チェーンが継続。fetchCmd 起動で cancel がセットされる)。
 func TestUsageRefreshMsgReschedulesAndFetches(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd := m.Update(usageRefreshMsg{})
 	if cmd == nil {
 		t.Fatal("usageRefreshMsg が nil を返した (再取得も再予約もされない = リフレッシュ停止)")
@@ -179,7 +180,7 @@ func TestUsageRefreshMsgReschedulesAndFetches(t *testing.T) {
 // 非表示中の定期リフレッシュは subprocess を起こさない (見えないもののために claude を
 // 60 秒ごとに起動しない) が、tick チェーンは維持する (再表示後に周期取得が復活する)。
 func TestUsageRefreshSkipsFetchWhileHidden(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Dismiss()
 	_, cmd := m.Update(usageRefreshMsg{})
 	if cmd == nil {
@@ -194,7 +195,7 @@ func TestUsageRefreshSkipsFetchWhileHidden(t *testing.T) {
 // 非表示中にリフレッシュを止めた分の鮮度をここで回収する。
 func TestUsageToggleRefetchesOnlyWhenStale(t *testing.T) {
 	t.Run("stale なら取り直す", func(t *testing.T) {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		m.usageOv.Dismiss()
 		m.usageOv.Snap = &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 1}}}
 		m.usageOv.Fixture().SetFetchedAt(time.Now().Add(-2 * app.UsageRefreshInterval))
@@ -207,7 +208,7 @@ func TestUsageToggleRefetchesOnlyWhenStale(t *testing.T) {
 		}
 	})
 	t.Run("fresh なら取り直さない", func(t *testing.T) {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		m.usageOv.Dismiss()
 		m.usageOv.Snap = &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 1}}}
 		m.usageOv.Fixture().SetFetchedAt(time.Now())
@@ -301,7 +302,7 @@ esac
 		return strings.Count(string(b), "\n")
 	}
 
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
 	m.rlDash.Fixture().SetShown(true)
 	runCmdTree(m.usageOv.FetchCmd(false))  // 共有ゲートに 5 分以内の結果を作る
 	m.usageOv.Fixture().SetInFlight(false) // handle を通していないので手で下ろす

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 
+	"glogx/internal/gitdata"
 	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
@@ -77,7 +78,7 @@ func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
 	now := base
 	testenv.StubClockFrom(t, &now)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 100, 20
 	m.usageOv.Dismiss()
 	m.issuesOv = *realIssuesView(t)

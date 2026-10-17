@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"glogx/internal/app"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"glogx/internal/usageview"
 	"ratelimit/usage"
@@ -26,7 +27,7 @@ func rlTestSnap() *usage.Snapshot {
 // ダッシュボード ⇄ viewer の往復 (ダッシュボードの i/s と viewer の R。ユーザー要望 2026-09-01)。
 // 全画面は同時に 1 枚なので、横断のたびに「相手が開く」と「自分が閉じる」の両方を見る。
 func TestRatelimitDashCrossSwitching(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("R")
 	if !m.rlDash.Visible() {
 		t.Fatal("前提が崩れた: R でダッシュボードが開かない")
@@ -56,7 +57,7 @@ func TestRatelimitDashCrossSwitching(t *testing.T) {
 // 起動時 restore が返る前に R が押されていたら復元を捨てる (status viewer と同じ理由。
 // 捨てないと裏に issues viewer が開き、ダッシュボードの i が toggle で「閉じる」に化ける)。
 func TestIssuesRestoreDroppedWhenRatelimitDashOpen(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("R")
 	m.Update(issuesRestoreMsg{})
 	if m.issuesOv.Visible() {
@@ -167,7 +168,7 @@ func TestRatelimitDashPlaceholdersBeforeAnyArrives(t *testing.T) {
 // R でダッシュボードが開き、開いている間は移動キーが裏の一覧へ届かない (全画面の契約)。
 // 届くと、閉じたときにカーソルが知らない場所へ動いている。
 func TestRatelimitDashKeyRouting(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.handleKey("j")
 	if m.cursor != 1 {
 		t.Fatalf("前提: j でカーソルが動くこと (cursor=%d)", m.cursor)
@@ -193,7 +194,7 @@ func TestRatelimitDashKeyRouting(t *testing.T) {
 
 // R を開くと右上の usage オーバーレイは引っ込む (同じ値を 2 か所に出さない)。
 func TestRatelimitDashDismissesUsageOverlay(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Visible = true
 	m.usageOv.Snap = rlTestSnap()
 	m.handleKey("R")
@@ -207,7 +208,7 @@ func TestRatelimitDashDismissesUsageOverlay(t *testing.T) {
 // 🚨 「端末の既定へ戻す」では足りない場面のための固定色。scratch popup は display-popup 自身が
 // 濃紺を敷いており、その popup では既定の背景が濃紺になる (ユーザー要望 2026-09-01)。
 func TestRatelimitDashPaintsScreenBackground(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.colored = true
 	m.width, m.height = 100, 30
 	m.handleKey("R")
@@ -236,7 +237,7 @@ func TestRatelimitDashPaintsScreenBackground(t *testing.T) {
 // 面塗りはダッシュボードだけ。一覧や色なし (NO_COLOR) では敷かない — 面塗りは環境の配色
 // 次第で視認性を落とすため、既定では増やさないというのが repo の判断 (bgLine の doc)。
 func TestScreenBackgroundOnlyForDashboard(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.colored = true
 	m.width, m.height = 100, 30
 	if got := m.screenBg(); got != "" {

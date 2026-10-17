@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"glogx/internal/gitdata"
 	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
 
@@ -59,7 +60,7 @@ func TestCancelAllClosesIssuesWatcher(t *testing.T) {
 
 // 結合: viewer を開くと見張りのチェーンが張られ、閉じると止まる。
 func TestIssuesViewerWatchWiredIntoUpdate(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	root, _ := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	m.handleKey("i")
 	m.issuesOv.Fixture().SetCwd(root)

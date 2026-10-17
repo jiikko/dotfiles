@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 
@@ -37,11 +39,11 @@ func realRepoBrowse(t *testing.T, height int, subjects ...string) (*browseModel,
 	t.Helper()
 	dir := newTempRepo(t, subjects)
 	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts.LogQuery(), false)
+	commits, err := gitdata.LoadCommits(opts.LogQuery(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, height)
+	m := newBrowseModel(commits, map[string]gitdata.CIState{}, nil, gitdata.Repo{}, false, opts, false, 80, height)
 	// ⚠️ browseModel を作る工場は newTestBrowse と**ここの 2 つ**。両方に同じ後始末を通す
 	// (片方だけだと、doctor に触れるテストがこちらに書かれた瞬間に実マシンを叩く。issue 216)
 	installInertDoctor(t, &m.doctorOv)
@@ -53,33 +55,18 @@ func realRepoBrowse(t *testing.T, height int, subjects ...string) (*browseModel,
 	return m, dir, opts
 }
 
-func TestBuildFingerprintArgsSkipsBodyAndColor(t *testing.T) {
-	opts := &Options{MaxCount: 7, Stat: true, Patch: true, Revs: []string{"HEAD"}, Paths: []string{"a.go"}}
-	args := BuildFingerprintArgs(opts.LogQuery())
-	for _, bad := range []string{"--stat", "--patch", "--color=always"} {
-		if slices.Contains(args, bad) {
-			t.Errorf("指紋の問い合わせに %s が混ざっている (本文まで読むと -p の巨大 patch を毎分取る): %v", bad, args)
-		}
-	}
-	for _, want := range []string{fingerprintFormat, "--max-count=7", "--color=never", "HEAD", "--", "a.go"} {
-		if !slices.Contains(args, want) {
-			t.Errorf("指紋の問い合わせに %s が無い: %v", want, args)
-		}
-	}
-}
-
 func TestFingerprintSHAsMatchesCommits(t *testing.T) {
 	fp := func(lines ...string) string { return strings.Join(lines, "\n") }
-	commits := []Commit{{SHA: "aaa"}, {SHA: "bbb"}}
+	commits := []gitdata.Commit{{SHA: "aaa"}, {SHA: "bbb"}}
 	cases := []struct {
 		name string
 		fp   string
 		want bool
 	}{
-		{"一致 (decoration つき)", fp("aaa"+fieldSep+"HEAD -> main", "bbb"+fieldSep+""), true},
-		{"末尾改行つきでも一致", fp("aaa"+fieldSep, "bbb"+fieldSep) + "\n", true},
-		{"順序が違う", fp("bbb"+fieldSep, "aaa"+fieldSep), false},
-		{"件数が違う", fp("aaa" + fieldSep), false},
+		{"一致 (decoration つき)", fp("aaa"+gitdata.FieldSep+"HEAD -> main", "bbb"+gitdata.FieldSep+""), true},
+		{"末尾改行つきでも一致", fp("aaa"+gitdata.FieldSep, "bbb"+gitdata.FieldSep) + "\n", true},
+		{"順序が違う", fp("bbb"+gitdata.FieldSep, "aaa"+gitdata.FieldSep), false},
+		{"件数が違う", fp("aaa" + gitdata.FieldSep), false},
 		{"空 (コミットがある)", "", false},
 	}
 	for _, c := range cases {
@@ -95,7 +82,7 @@ func TestFingerprintSHAsMatchesCommits(t *testing.T) {
 // ポップアップを開いている間は測らない (見送り)。測ると reloadLog が開いている内容の
 // キャッシュを消すため、気づいても反映できない = fork が無駄になる。
 func TestGitLogProbeSkipsMeasureWhileOverlayOpen(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.diffOv.open(m.commits[0].SHA)
 	if !m.gitLogReloadDeferred() {
 		t.Fatal("diff ポップアップを開いても見送り状態にならない")
@@ -124,7 +111,7 @@ func TestGitLogProbeSkipsMeasureWhileOverlayOpen(t *testing.T) {
 // 届けたチェーンの札だけを降ろす。両方降ろすと、まだブロックしている goroutine が居るのに
 // 札が空いて 2 本目が張られる (観測 1 回ごとに goroutine が 1 本積み上がる)。
 func TestGitLogProbeDropsOnlyDeliveringChain(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.diffOv.open(m.commits[0].SHA) // 測定を挟まず札の扱いだけを見る
 	m.logWatch.W = nil              // イベント経路は張り直せない = 札の変化がそのまま見える
 	m.logWatch.EvArmed, m.logWatch.PollArmed = true, true
@@ -142,7 +129,7 @@ func TestGitLogProbeDropsOnlyDeliveringChain(t *testing.T) {
 }
 
 func TestGitLogWatchIgnoresStaleGeneration(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.logWatch.Gen = 2
 	m.logWatch.seen, m.logWatch.hasSeen = "base", true
 	if cmd := m.handleGitLogProbe(gitLogProbeMsg{gen: 1}); cmd != nil {
@@ -162,7 +149,7 @@ func TestGitLogWatchIgnoresStaleGeneration(t *testing.T) {
 // watcher が死んだらイベントを諦めてポーリングだけで続ける (無音にしない)。
 func TestGitLogWatchClosedFallsBackToPolling(t *testing.T) {
 	fw := testenv.FakeWatcherSeam(t)
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.logWatch.dirs = []string{t.TempDir()}
 	m.startGitLogWatch()
 	if m.logWatch.W != fw {
@@ -191,7 +178,7 @@ func TestGitLogWatchClosedFallsBackToPolling(t *testing.T) {
 
 // 測れなかった (git の失敗 / timeout) は「変化なし」でも「変化あり」でもない: 基準を汚さない。
 func TestGitLogFPUnmeasuredKeepsBaseline(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.logWatch.seen, m.logWatch.hasSeen, m.logWatch.measuring = "base", true, true
 	if cmd := m.handleGitLogFP(gitLogFPMsg{}); cmd != nil {
 		t.Error("測れなかった結果で何か起きた")
@@ -209,7 +196,7 @@ func TestGitLogFPUnmeasuredKeepsBaseline(t *testing.T) {
 func TestGitLogFingerprintBaselineCatchesStartupWindow(t *testing.T) {
 	m, dir, opts := realRepoBrowse(t, 10, "c1", "c2")
 
-	fp, err := runGit(BuildFingerprintArgs(opts.LogQuery())...)
+	fp, err := extcmd.RunGitTimeout(gitdata.BuildFingerprintArgs(opts.LogQuery())...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +213,7 @@ func TestGitLogFingerprintBaselineCatchesStartupWindow(t *testing.T) {
 
 	// 「読み込みの後に commit された」= 基準がまだ無い状態で、手元と食い違う指紋が届く
 	commitLines(t, dir, 3, "c3")
-	fp2, err := runGit(BuildFingerprintArgs(opts.LogQuery())...)
+	fp2, err := extcmd.RunGitTimeout(gitdata.BuildFingerprintArgs(opts.LogQuery())...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -524,7 +511,7 @@ func TestGitLogReloadDeferredCoversEachState(t *testing.T) {
 	// (mutation-verify-new-tests.md「テーブル駆動なら全ケースが red になるか」)。
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 			if m.gitLogReloadDeferred() {
 				t.Fatal("何も開いていないのに見送り状態")
 			}
@@ -592,7 +579,7 @@ func TestGitLogWatchDirsCoversNestedRefs(t *testing.T) {
 // コミット 0 件 (revs が空範囲) の指紋は正当に "" になる。これを「基準なし」と混同すると
 // 変化の判定が狂う。
 func TestGitLogEmptyFingerprintIsNotSentinel(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.logWatch.seen, m.logWatch.hasSeen, m.logWatch.measuring = "", true, true
 	if cmd := m.handleGitLogFP(gitLogFPMsg{fp: "", ok: true}); cmd != nil {
 		t.Error("基準 (空の指紋) と同じ測定値で反映が走った")
@@ -670,11 +657,11 @@ func TestGitLogReloadDefersWhenOverlayOpensDuringReload(t *testing.T) {
 func TestGitLogProbeSkipsMeasureWhileReloading(t *testing.T) {
 	newTempRepo(t, []string{"c1"})
 	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts.LogQuery(), false)
+	commits, err := gitdata.LoadCommits(opts.LogQuery(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
+	m := newBrowseModel(commits, map[string]gitdata.CIState{}, nil, gitdata.Repo{}, false, opts, false, 80, 10)
 	t.Cleanup(m.cancel)
 	_ = m.reflectGitLogChange() // Cmd は実行しない = in-flight のまま
 	if !m.logWatch.reloading {
@@ -692,11 +679,11 @@ func TestGitLogProbeSkipsMeasureWhileReloading(t *testing.T) {
 func TestGitLogReflectRunsGitInsideCmd(t *testing.T) {
 	newTempRepo(t, []string{"c1"})
 	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts.LogQuery(), false)
+	commits, err := gitdata.LoadCommits(opts.LogQuery(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
+	m := newBrowseModel(commits, map[string]gitdata.CIState{}, nil, gitdata.Repo{}, false, opts, false, 80, 10)
 	t.Cleanup(m.cancel)
 	cmd := m.reflectGitLogChange()
 	t.Setenv("PATH", "") // ここから git は起動できない

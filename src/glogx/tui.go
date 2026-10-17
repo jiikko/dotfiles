@@ -28,6 +28,7 @@ import (
 
 	"glogx/internal/extcmd"
 	"glogx/internal/filerview"
+	"glogx/internal/gitdata"
 	"glogx/internal/issuesview"
 	"glogx/internal/lanview"
 	"glogx/internal/ratelimitview"
@@ -82,8 +83,8 @@ func usageRefreshTick() tea.Cmd {
 // 差し引きをチャンクの範囲に閉じるために要る (全 toFetch を使うと、まだ飛んでいるチャンクの
 // SHA を「応答に無かった」と誤判定して unknown に落としてしまう)。
 type ciResultMsg struct {
-	batch CIBatch
-	ghErr *GHError
+	batch gitdata.CIBatch
+	ghErr *gitdata.GHError
 	shas  []string
 	epoch int // 発行時点の fetchEpoch (世代不一致の遅延チャンクを捨てるため)
 }
@@ -91,8 +92,8 @@ type ciResultMsg struct {
 // detailMsg はパネル表示時のオンデマンド取得 (キャッシュヒットで詳細が無い SHA) の結果。
 type detailMsg struct {
 	sha   string
-	batch CIBatch
-	ghErr *GHError
+	batch gitdata.CIBatch
+	ghErr *gitdata.GHError
 }
 
 // basisMsg は実行中 job の ETA 用に「同名完了 job の Duration」を補うための、表示中
@@ -100,8 +101,8 @@ type detailMsg struct {
 // (レスポンスに現れなかったものも loading 解除する)。詳細は maybeFetchETABasis。
 type basisMsg struct {
 	targets []string
-	batch   CIBatch
-	ghErr   *GHError
+	batch   gitdata.CIBatch
+	ghErr   *gitdata.GHError
 }
 
 type tickMsg struct{}
@@ -114,7 +115,7 @@ type issuesRestoreMsg struct{ screen issuesview.IssuesScreen }
 type jobDetailMsg struct {
 	key   string // sha/jobIdx (取得中表示とキャッシュのキー)
 	lines []string
-	ghErr *GHError
+	ghErr *gitdata.GHError
 }
 
 // pushMsg は git push の実行結果 (b → y 確認後)。glogx の独自機能で、
@@ -136,8 +137,8 @@ type ciPollMsg struct{ gen int }
 // ので解除する対象が無い。以前は詰めるだけ詰めて受け側が一度も読まなかった。
 type ciPollResultMsg struct {
 	gen   int
-	batch CIBatch
-	ghErr *GHError
+	batch gitdata.CIBatch
+	ghErr *gitdata.GHError
 }
 
 const (
@@ -206,15 +207,15 @@ type prefixMsg struct{ key string }
 // prMsg は commit に紐づく PR のオンデマンド取得の結果 (p キー)。
 type prMsg struct {
 	sha   string
-	pr    *PRRef // nil = PR なし
-	ghErr *GHError
+	pr    *gitdata.PRRef // nil = PR なし
+	ghErr *gitdata.GHError
 }
 
 // prStatusMsg は PR 詳細状態のオンデマンド取得の結果 (P キー, issue 021)。
 type prStatusMsg struct {
 	sha    string
-	status *PRStatus // nil = PR なし
-	ghErr  *GHError
+	status *gitdata.PRStatus // nil = PR なし
+	ghErr  *gitdata.GHError
 }
 
 // diffMsg はコミット diff のオンデマンド取得の結果 (d キー)。
@@ -225,7 +226,7 @@ type diffMsg struct {
 }
 
 // loadCommitDiff はテストで実 git を叩かないための差し替え点。
-var loadCommitDiff = LoadCommitDiff
+var loadCommitDiff = gitdata.LoadCommitDiff
 
 // browseModel のメソッドを塊ごと (CI の取得とポーリング / push・pull と演出 / パネルと重ねる板 / 全画面への振り分け / 描画) に
 // 別ファイルへ分けて tui.go への変更の集中を減らす案は、issue 743 で実測して見送った。直近 90 日に tui.go を触った 262 commit の
@@ -234,10 +235,10 @@ var loadCommitDiff = LoadCommitDiff
 // 絡んでいて、分けても往復が増える (issue 018 の却下理由と同じ)。再提起するなら、移した後に tui.go へ触らずに済む commit の
 // 割合を同じ方法 (git log -p -U0 の hunk の関数見出し) で数え直して添えること。
 type browseModel struct {
-	commits        []Commit
-	statuses       map[string]CIState // 表示用 (キャッシュ + 取得結果のマージ)
-	fetched        map[string]CIState // API から取得した分 (終了後のキャッシュ保存用)
-	details        map[string][]CheckDetail
+	commits        []gitdata.Commit
+	statuses       map[string]gitdata.CIState // 表示用 (キャッシュ + 取得結果のマージ)
+	fetched        map[string]gitdata.CIState // API から取得した分 (終了後のキャッシュ保存用)
+	details        map[string][]gitdata.CheckDetail
 	detailsLoading map[string]bool
 	// detailsWaiting は detailsLoading のうち「**Cmd を出さずに**一括取得の結果を待っている」
 	// SHA (issue 272)。fetchPanelDetails の待機分岐だけがここへ入る。
@@ -264,10 +265,10 @@ type browseModel struct {
 	// カウンタを誤減算し (スピナー早期消灯)、取得中 SHA を toFetch から誤って間引く
 	// (同一 SHA 並行リクエストのガード無効化) ため、世代不一致の ciResultMsg は捨てる
 	fetchEpoch int
-	repo       Repo
+	repo       gitdata.Repo
 	hasRepo    bool
-	ghErr      *GHError
-	decor      *DecorColors
+	ghErr      *gitdata.GHError
+	decor      *gitdata.DecorColors
 	oneline    bool
 	colored    bool
 	// showFrame は最外周フレーム (板 + ドロップシャドウ) 描画の有効フラグ (issue 025)。起動時固定
@@ -288,8 +289,8 @@ type browseModel struct {
 	// CI 取得は details/statuses/commits と構造的に結合するため browseModel に残す (詳細は同ファイル)。
 	// cache キー (detailKey) はパネルのカーソル座標から借りる (identity 非所有) ので呼び出し側で注入。
 	detailOv jobDetailOverlay
-	prCache  map[string]*PRRef // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
-	prBusy   map[string]bool   // PR 取得中の sha
+	prCache  map[string]*gitdata.PRRef // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
+	prBusy   map[string]bool           // PR 取得中の sha
 	// PR 状態ポップアップ (P キー) の状態と描画は prStatusOverlay 型 (pr_status_overlay.go) に
 	// 切り出し、ここは 1 フィールドだけ持つ。CI 行の整形はコミット状態を知る browseModel 側。
 	prStatusOv prStatusOverlay
@@ -387,21 +388,21 @@ type browseModel struct {
 	linesValid bool
 }
 
-func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, opts *Options, colored bool, width, height int) *browseModel {
+func newBrowseModel(commits []gitdata.Commit, statuses map[string]gitdata.CIState, toFetch []string, repo gitdata.Repo, hasRepo bool, opts *Options, colored bool, width, height int) *browseModel {
 	// 上限超過分は問い合わせず StateUnknown 表示のまま (capFetchSHAs のポリシー)。
 	// toFetch に残すと「取得中」のまま永遠に解決しない
-	toFetch, chunks := planCIChunks(toFetch)
+	toFetch, chunks := gitdata.PlanCIChunks(toFetch)
 	ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 	m := &browseModel{
 		toast:          toast.Stack{Shadow: term.AnsiShadowFg}, // 落ち影は他の板と同じ近黒 (term.BuildPanelBoxImpl と同じ)
 		commits:        commits,
 		statuses:       statuses,
-		fetched:        map[string]CIState{},
-		details:        map[string][]CheckDetail{},
+		fetched:        map[string]gitdata.CIState{},
+		details:        map[string][]gitdata.CheckDetail{},
 		detailsLoading: map[string]bool{},
 		detailsWaiting: map[string]bool{},
 		detailOv:       newJobDetailOverlay(),
-		prCache:        map[string]*PRRef{},
+		prCache:        map[string]*gitdata.PRRef{},
 		prBusy:         map[string]bool{},
 		prStatusOv:     newPRStatusOverlay(),
 		diffOv:         newDiffOverlay(),
@@ -438,7 +439,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		cmds := make([]tea.Cmd, 0, len(chunks))
 		for _, chunk := range chunks {
 			cmds = append(cmds, func() tea.Msg {
-				batch, ghErr := fetchCIChunk(ctx, ExecRunner, repo, chunk)
+				batch, ghErr := gitdata.FetchCIChunk(ctx, gitdata.ExecRunner, repo, chunk)
 				return ciResultMsg{batch: batch, ghErr: ghErr, shas: chunk, epoch: epoch}
 			})
 		}
@@ -639,11 +640,11 @@ func (m *browseModel) tickInterval() time.Duration {
 // (レビュー U1)。同一 SHA 並行取得を避ける注意 (ciPollMsg / fetchPanelDetails のコメント)
 // は呼び出し側のガードが担う。newBrowseModel の初期 fetch だけは m.cancel と ctx を共有して
 // q 中断に使う意図的例外なので、この helper を通さず据え置く。
-func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError) tea.Msg) tea.Cmd {
+func fetchCIStatusesCmd(repo gitdata.Repo, targets []string, wrap func(gitdata.CIBatch, *gitdata.GHError) tea.Msg) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
-		batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, targets)
+		batch, ghErr := gitdata.FetchCIStatuses(ctx, gitdata.ExecRunner, repo, targets)
 		return wrap(batch, ghErr)
 	}
 }
@@ -666,8 +667,8 @@ func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError
 func (m *browseModel) fetching() bool { return m.pendingFetches > 0 }
 
 func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
-	shas, chunks := planCIChunks(shas) // 超過分は StateUnknown のまま (newBrowseModel と同じポリシー)
-	m.fetchEpoch++                     // 旧世代の未着チャンクを無効化 (ciResultMsg ハンドラの世代ガード)
+	shas, chunks := gitdata.PlanCIChunks(shas) // 超過分は StateUnknown のまま (newBrowseModel と同じポリシー)
+	m.fetchEpoch++                             // 旧世代の未着チャンクを無効化 (ciResultMsg ハンドラの世代ガード)
 	// 🚨 世代を進めると、旧世代のチャンクは ciResultMsg の epoch ガードで**丸ごと捨てられる**
 	// = そこにあった「札を降ろす」処理も一緒に捨てられる。降ろす責任を負っていた札を、
 	// 世代を進めるこの 1 箇所で解放する (issue 272。gitlog_watch.go:handleGitLogProbe の
@@ -702,11 +703,11 @@ func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
 // 🚨 FetchCIStatuses を通さないこと: あちらも内部で chunkSHAs するので、既に割ったチャンクを
 // 渡すともう一段割られて同時リクエスト数が fetchConcurrency の二乗側 (最大 16 本) へ膨らむ。
 // 分割はここ (startCIFetch) の 1 段だけに保つ。
-func fetchCIChunkCmd(repo Repo, chunk []string, epoch int) tea.Cmd {
+func fetchCIChunkCmd(repo gitdata.Repo, chunk []string, epoch int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
-		batch, ghErr := fetchCIChunk(ctx, ExecRunner, repo, chunk)
+		batch, ghErr := gitdata.FetchCIChunk(ctx, gitdata.ExecRunner, repo, chunk)
 		return ciResultMsg{batch: batch, ghErr: ghErr, shas: chunk, epoch: epoch}
 	}
 }
@@ -717,7 +718,7 @@ func fetchCIChunkCmd(repo Repo, chunk []string, epoch int) tea.Cmd {
 // 3 ハンドラから 1 箇所へ局所化する (第 5 の co-update map が増えても touch は 1 箇所)。PR は
 // コミット行のバッジ表示と p キーの両方で使う。site 固有の invalidateLines / ghErr クリア /
 // detailsLoading 解除 / panelCursor クランプ / awaitCI 掃除は各ハンドラに残す (吸収の関心事ではない)。
-func (m *browseModel) mergeCIBatch(statuses map[string]CIState, details map[string][]CheckDetail, prs map[string]*PRRef) {
+func (m *browseModel) mergeCIBatch(statuses map[string]gitdata.CIState, details map[string][]gitdata.CheckDetail, prs map[string]*gitdata.PRRef) {
 	maps.Copy(m.fetched, statuses)
 	maps.Copy(m.statuses, statuses)
 	maps.Copy(m.details, details)
@@ -913,7 +914,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// される 30 秒の負キャッシュ)。q での中断 (fillUnknown) と違い、こちらは API の
 		// 実際の返答に基づく確定。範囲はこのチャンクの SHA だけ — 全 toFetch で埋めると
 		// まだ飛んでいるチャンクの SHA を「応答に無かった」と誤判定する
-		filled := fillUnknownFetched(msg.batch.Statuses, msg.shas)
+		filled := gitdata.FillUnknownFetched(msg.batch.Statuses, msg.shas)
 		m.mergeCIBatch(filled, msg.batch.Details, msg.batch.PRs)
 		// 未着チャンクが残っている間は fetching() が true のまま (スピナー・invalidate gate・
 		// パネルガードの出典)。toFetch は着弾ぶんを差し引き、パネルが既に結果の来た SHA で
@@ -963,7 +964,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, sha := range msg.targets {
 			m.clearDetailsFlags(sha)
 			if _, ok := m.details[sha]; !ok {
-				m.details[sha] = []CheckDetail{}
+				m.details[sha] = []gitdata.CheckDetail{}
 			}
 		}
 		return m, nil
@@ -1191,7 +1192,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.ciPollInFlight = true
 		gen := m.ciPollGen
-		fetch := ciPollFetch(m.repo, targets, func(b CIBatch, e *GHError) tea.Msg {
+		fetch := ciPollFetch(m.repo, targets, func(b gitdata.CIBatch, e *gitdata.GHError) tea.Msg {
 			return ciPollResultMsg{gen: gen, batch: b, ghErr: e}
 		})
 		return m, tea.Batch(fetch, next, m.maybeTick())
@@ -1960,11 +1961,11 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 
 // logData は git log の読み直しで取り直すもの一式 (Update の外で集め、applyLogData でモデルへ入れる)。
 type logData struct {
-	commits  []Commit
+	commits  []gitdata.Commit
 	raw      []string // 表示用 verbatim (oneline では nil)
-	statuses map[string]CIState
+	statuses map[string]gitdata.CIState
 	toFetch  []string
-	repo     Repo
+	repo     gitdata.Repo
 	hasRepo  bool
 }
 
@@ -1973,7 +1974,7 @@ type logData struct {
 // rev-parse) ので、Update の中では呼ばず Cmd に出す (reflectGitLogChange)。pull 後の全面リロード
 // (reloadLog) は利用者の操作なので同期のまま。
 func loadLogData(opts *Options, colored, oneline bool) (logData, error) {
-	commits, err := LoadCommits(opts.LogQuery(), colored)
+	commits, err := gitdata.LoadCommits(opts.LogQuery(), colored)
 	if err != nil {
 		return logData{}, err
 	}
@@ -1984,7 +1985,7 @@ func loadLogData(opts *Options, colored, oneline bool) (logData, error) {
 	d := logData{commits: commits}
 	d.statuses, d.toFetch, d.repo, d.hasRepo, _ = planStatuses(opts, shas)
 	if !oneline {
-		if raw, dispErr := LoadLogDisplay(opts.LogQuery(), colored); dispErr == nil {
+		if raw, dispErr := gitdata.LoadLogDisplay(opts.LogQuery(), colored); dispErr == nil {
 			d.raw = raw // 照合失敗は applyLogData 側で nil = 自前レンダリングへ
 		}
 	}
@@ -2045,10 +2046,10 @@ func (m *browseModel) applyLogData(d logData, keepView bool) (added int, cmd tea
 	}
 	m.commits = commits
 	m.statuses, m.toFetch, m.repo, m.hasRepo = d.statuses, d.toFetch, d.repo, d.hasRepo
-	m.details = map[string][]CheckDetail{}
+	m.details = map[string][]gitdata.CheckDetail{}
 	m.detailsLoading, m.detailsWaiting = map[string]bool{}, map[string]bool{}
 	m.detailOv.reset() // job 詳細ログキャッシュも破棄 (旧 SHA の残骸を持ち越さない)
-	m.prCache = map[string]*PRRef{}
+	m.prCache = map[string]*gitdata.PRRef{}
 	m.prBusy = map[string]bool{}
 	m.prStatusOv.reset() // 旧 SHA の PR 詳細キャッシュも破棄
 	m.diffOv.reset()
@@ -2112,7 +2113,7 @@ func (m *browseModel) applyLogData(d logData, keepView bool) (added int, cmd tea
 }
 
 // indexOfCommit は sha のコミットの index (無ければ -1)。sha == "" は常に -1 (錨なし)。
-func indexOfCommit(commits []Commit, sha string) int {
+func indexOfCommit(commits []gitdata.Commit, sha string) int {
 	if sha == "" {
 		return -1
 	}
@@ -2125,7 +2126,7 @@ func indexOfCommit(commits []Commit, sha string) int {
 }
 
 // countNewCommits は先頭へ増えた新規コミット数 (既知 SHA に当たるまで)。
-func countNewCommits(commits []Commit, oldSHAs map[string]struct{}) int {
+func countNewCommits(commits []gitdata.Commit, oldSHAs map[string]struct{}) int {
 	n := 0
 	for _, c := range commits {
 		if _, ok := oldSHAs[c.SHA]; ok {
@@ -2203,7 +2204,7 @@ const pushSlideDuration = 500 * time.Millisecond
 func (m *browseModel) startPushAnim() bool {
 	var unpushed []string // 新しい順
 	for _, c := range m.commits {
-		if m.statuses[c.SHA] == StateUnpushed {
+		if m.statuses[c.SHA] == gitdata.StateUnpushed {
 			unpushed = append(unpushed, c.SHA)
 		}
 	}
@@ -2231,7 +2232,7 @@ func (m *browseModel) advancePushAnim() tea.Cmd {
 	}
 	m.pushAnimNext = app.TimeNow().Add(pushAnimStep)
 	for i := len(m.commits) - 1; i >= 0; i-- {
-		if m.statuses[m.commits[i].SHA] == StateUnpushed {
+		if m.statuses[m.commits[i].SHA] == gitdata.StateUnpushed {
 			delete(m.statuses, m.commits[i].SHA)
 			if m.pushSlides == nil {
 				m.pushSlides = map[string]time.Time{}
@@ -2324,7 +2325,7 @@ func (m *browseModel) refetchAfterPush() tea.Cmd {
 	}
 	all := make([]string, 0, len(m.commits))
 	for _, c := range m.commits {
-		if len(m.awaitCI) == 0 && m.statuses[c.SHA] == StateUnpushed {
+		if len(m.awaitCI) == 0 && m.statuses[c.SHA] == gitdata.StateUnpushed {
 			m.awaitCI[c.SHA] = true // commits は新しい順なので最初の unpushed = tip
 		}
 		all = append(all, c.SHA)
@@ -2363,7 +2364,7 @@ func (m *browseModel) startScrollAnim(prev int) tea.Cmd {
 func (m *browseModel) unpushedCount() int {
 	n := 0
 	for _, st := range m.statuses {
-		if st == StateUnpushed {
+		if st == gitdata.StateUnpushed {
 			n++
 		}
 	}
@@ -2745,7 +2746,7 @@ func (m *browseModel) copyJobContext() tea.Cmd {
 // term.SanitizeDetailLine を先に通す順を崩さないこと。
 // c.Subject は %q が制御文字を Go エスケープするため安全。本文 lines は取得時に
 // term.SanitizeDetailLine 済みなので jobLogText の term.StripANSI だけで足りる。
-func (m *browseModel) copyJobContextLines(job CheckDetail, lines []string) {
+func (m *browseModel) copyJobContextLines(job gitdata.CheckDetail, lines []string) {
 	plain := func(s string) string { return term.StripANSI(term.SanitizeDetailLine(s)) }
 	var b strings.Builder
 	b.WriteString("## CI job: ")
@@ -2776,7 +2777,7 @@ func (m *browseModel) askRerun() {
 		m.toast.Show("GitHub Actions の job ではないため再実行できません", false)
 		return
 	}
-	if job.State != StateFailure {
+	if job.State != gitdata.StateFailure {
 		m.toast.Show("再実行できるのは失敗した job だけです", false)
 		return
 	}
@@ -2795,10 +2796,10 @@ func (m *browseModel) detailKey() string {
 
 // focusedJob はパネルでフォーカス中の job を返す (タイトル行フォーカス・範囲外・
 // パネル非表示は ok=false)。境界条件の実装をここ 1 箇所に集約する。
-func (m *browseModel) focusedJob() (CheckDetail, bool) {
+func (m *browseModel) focusedJob() (gitdata.CheckDetail, bool) {
 	jobs := m.details[m.panelSHA]
 	if m.panelCursor < 0 || m.panelCursor >= len(jobs) {
-		return CheckDetail{}, false
+		return gitdata.CheckDetail{}, false
 	}
 	return jobs[m.panelCursor], true
 }
@@ -2830,7 +2831,7 @@ func (m *browseModel) etaBasis(name, excludeSHA string) (time.Duration, bool) {
 				continue
 			}
 			for _, det := range m.details[m.commits[j].SHA] {
-				if det.Name == name && det.Duration > 0 && det.State != StateNeutral {
+				if det.Name == name && det.Duration > 0 && det.State != gitdata.StateNeutral {
 					return det.Duration, true
 				}
 			}
@@ -2844,24 +2845,24 @@ func (m *browseModel) etaBasis(name, excludeSHA string) (time.Duration, bool) {
 //   - 完了: 所要時間 (従来どおり)
 //
 // 実行中判定は State で行う (Duration==0 は StatusContext / 未取得も含むため出典にしない)。
-func (m *browseModel) jobTimeSuffix(job CheckDetail) string {
-	if job.running() {
+func (m *browseModel) jobTimeSuffix(job gitdata.CheckDetail) string {
+	if job.Running() {
 		elapsed := app.TimeNow().Sub(job.StartedAt)
-		el := formatDuration(elapsed)
+		el := gitdata.FormatDuration(elapsed)
 		if el == "" { // 開始直後 (<1s) / わずかな時計ずれ
 			el = "0s"
 		}
 		suffix := el + " 経過"
 		if basis, ok := m.etaBasis(job.Name, m.panelSHA); ok {
 			if remain := basis - elapsed; remain > 0 {
-				suffix += ", 残り ~" + formatDuration(remain)
+				suffix += ", 残り ~" + gitdata.FormatDuration(remain)
 			} else {
 				suffix += ", 予定超過"
 			}
 		}
 		return suffix
 	}
-	return formatDuration(job.Duration)
+	return gitdata.FormatDuration(job.Duration)
 }
 
 // jobDetailRows は詳細ポップアップに一度に表示する行数の上限。実際の行数は
@@ -2890,7 +2891,7 @@ func (m *browseModel) openJobDetail() tea.Cmd {
 	cmd := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
-		lines, ghErr := FetchJobDetail(ctx, ExecRunner, repo, check)
+		lines, ghErr := gitdata.FetchJobDetail(ctx, gitdata.ExecRunner, repo, check)
 		return jobDetailMsg{key: key, lines: lines, ghErr: ghErr}
 	}
 	return tea.Batch(cmd, m.maybeTick())
@@ -2979,14 +2980,14 @@ func (m *browseModel) ciPollTargets() []string {
 		targets = append(targets, sha)
 	}
 	for _, c := range m.commits {
-		if m.statuses[c.SHA] == StatePending || m.awaitCI[c.SHA] || m.hasRunningJob(c.SHA) {
+		if m.statuses[c.SHA] == gitdata.StatePending || m.awaitCI[c.SHA] || m.hasRunningJob(c.SHA) {
 			add(c.SHA)
 		}
 	}
 	if m.panelGrace > 0 {
 		add(m.panelSHA)
 	}
-	return capFetchSHAs(targets)
+	return gitdata.CapFetchSHAs(targets)
 }
 
 // ciPollFetch は ciPoll の再取得を張る差し替え点 (本体は fetchCIStatusesCmd)。並行取得を
@@ -3017,7 +3018,7 @@ func (m *browseModel) ensureCIPoll() tea.Cmd {
 // 外してファイルキャッシュへ「checks なし」を負キャッシュとして残さない)。上限に達したら諦める。
 // hasCommitSHA は sha が今の commits に在るか (awaitCI の不変条件の判定に使う)。
 func (m *browseModel) hasCommitSHA(sha string) bool {
-	return slices.ContainsFunc(m.commits, func(c Commit) bool { return c.SHA == sha })
+	return slices.ContainsFunc(m.commits, func(c gitdata.Commit) bool { return c.SHA == sha })
 }
 
 func (m *browseModel) settleAwaitCI() {
@@ -3034,7 +3035,7 @@ func (m *browseModel) settleAwaitCI() {
 			continue
 		}
 		switch m.statuses[sha] {
-		case StatePending, StateSuccess, StateFailure, StateNeutral:
+		case gitdata.StatePending, gitdata.StateSuccess, gitdata.StateFailure, gitdata.StateNeutral:
 			delete(m.awaitCI, sha) // CI が見えた: 以降は statuses 起点の通常の追従へ
 		default:
 			delete(m.statuses, sha)
@@ -3063,9 +3064,9 @@ func (m *browseModel) fetchPanelDetails(sha string) tea.Cmd {
 	if _, ok := m.details[sha]; ok || m.detailsLoading[sha] {
 		return nil
 	}
-	if !m.hasRepo || m.statuses[sha] == StateUnpushed {
+	if !m.hasRepo || m.statuses[sha] == gitdata.StateUnpushed {
 		// remote が GitHub でない / 未 push の SHA は取得先が無い
-		m.details[sha] = []CheckDetail{}
+		m.details[sha] = []gitdata.CheckDetail{}
 		return nil
 	}
 	// 進行中の一括取得に含まれる SHA は、その結果 (details 込み) を待つ。
@@ -3078,7 +3079,7 @@ func (m *browseModel) fetchPanelDetails(sha string) tea.Cmd {
 		return nil
 	}
 	m.detailsLoading[sha] = true
-	cmd := fetchCIStatusesCmd(m.repo, []string{sha}, func(b CIBatch, e *GHError) tea.Msg {
+	cmd := fetchCIStatusesCmd(m.repo, []string{sha}, func(b gitdata.CIBatch, e *gitdata.GHError) tea.Msg {
 		return detailMsg{sha: sha, batch: b, ghErr: e}
 	})
 	return tea.Batch(cmd, m.maybeTick())
@@ -3103,7 +3104,7 @@ func (m *browseModel) maybeFetchETABasis() tea.Cmd {
 	// basis を必要とする実行中 job があり、かつ現状 basis が取れないときだけ補充する
 	need := false
 	for _, j := range jobs {
-		if j.running() {
+		if j.Running() {
 			if _, ok := m.etaBasis(j.Name, m.panelSHA); !ok {
 				need = true
 				break
@@ -3118,14 +3119,14 @@ func (m *browseModel) maybeFetchETABasis() tea.Cmd {
 		switch {
 		case c.SHA == m.panelSHA:
 		case m.detailsLoading[c.SHA]:
-		case m.statuses[c.SHA] == StateUnpushed:
+		case m.statuses[c.SHA] == gitdata.StateUnpushed:
 		case m.fetching() && slices.Contains(m.toFetch, c.SHA): // 進行中の一括取得を待つ
 		default:
 			if _, ok := m.details[c.SHA]; !ok { // Details 未取得のものだけ
 				targets = append(targets, c.SHA)
 			}
 		}
-		if len(targets) >= fetchMaxSHAs {
+		if len(targets) >= gitdata.FetchMaxSHAs {
 			break
 		}
 	}
@@ -3135,7 +3136,7 @@ func (m *browseModel) maybeFetchETABasis() tea.Cmd {
 	for _, sha := range targets {
 		m.detailsLoading[sha] = true
 	}
-	cmd := fetchCIStatusesCmd(m.repo, targets, func(b CIBatch, e *GHError) tea.Msg {
+	cmd := fetchCIStatusesCmd(m.repo, targets, func(b gitdata.CIBatch, e *gitdata.GHError) tea.Msg {
 		return basisMsg{targets: targets, batch: b, ghErr: e}
 	})
 	return tea.Batch(cmd, m.maybeTick())
@@ -3230,7 +3231,7 @@ func (m *browseModel) prTargetSHA() (sha string, ok bool) {
 		return "", false
 	}
 	sha = m.commits[m.cursor].SHA
-	if m.statuses[sha] == StateUnpushed {
+	if m.statuses[sha] == gitdata.StateUnpushed {
 		m.toast.Show("未 push のコミットに PR はありません", false)
 		return "", false
 	}
@@ -3262,7 +3263,7 @@ func (m *browseModel) openPR() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
-		pr, ghErr := FetchCommitPR(ctx, ExecRunner, repo, sha)
+		pr, ghErr := gitdata.FetchCommitPR(ctx, gitdata.ExecRunner, repo, sha)
 		return prMsg{sha: sha, pr: pr, ghErr: ghErr}
 	}
 }
@@ -3282,7 +3283,7 @@ func (m *browseModel) openPRStatus() tea.Cmd {
 	cmd := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
-		status, ghErr := FetchPRStatus(ctx, ExecRunner, repo, sha)
+		status, ghErr := gitdata.FetchPRStatus(ctx, gitdata.ExecRunner, repo, sha)
 		return prStatusMsg{sha: sha, status: status, ghErr: ghErr}
 	}
 	return tea.Batch(cmd, m.maybeTick())
@@ -3324,10 +3325,10 @@ func (m *browseModel) prStatusCILine() string {
 		return ""
 	}
 	line := StatusGlyph(st, m.colored, m.spinner()) + " " + string(st)
-	if st == StateFailure {
+	if st == gitdata.StateFailure {
 		n := 0
 		for _, d := range m.details[sha] {
-			if d.State == StateFailure {
+			if d.State == gitdata.StateFailure {
 				n++
 			}
 		}
@@ -3374,7 +3375,7 @@ func (m *browseModel) fetchDiffCmd(sha string) tea.Cmd {
 // 「隣」が見ている diff の隣にならない)。移った先へはカーソルも追従させる。
 // 端では止めて案内する (巻かない。issues viewer の openNeighbor と同じ)。
 func (m *browseModel) openNeighborDiff(delta int) tea.Cmd {
-	idx := slices.IndexFunc(m.commits, func(c Commit) bool { return c.SHA == m.diffOv.sha })
+	idx := slices.IndexFunc(m.commits, func(c gitdata.Commit) bool { return c.SHA == m.diffOv.sha })
 	if idx < 0 {
 		idx = m.cursor
 	}
@@ -3436,7 +3437,7 @@ func (m *browseModel) diffBoxLines() []string {
 func (m *browseModel) fillUnknown() {
 	for _, sha := range m.toFetch {
 		if _, ok := m.statuses[sha]; !ok {
-			m.statuses[sha] = StateUnknown
+			m.statuses[sha] = gitdata.StateUnknown
 		}
 	}
 }
@@ -3503,7 +3504,7 @@ func (m *browseModel) issuesOpts() issuesview.IssuesRenderOpts {
 // listHasPending は一覧に CI 実行中のコミットがあるか (その header 行はスピナーを描く)。
 func (m *browseModel) listHasPending() bool {
 	for _, c := range m.commits {
-		if m.statuses[c.SHA] == StatePending {
+		if m.statuses[c.SHA] == gitdata.StatePending {
 			return true
 		}
 	}
@@ -3518,7 +3519,7 @@ func (m *browseModel) panelHasPendingJob() bool {
 		return false
 	}
 	for _, job := range m.details[m.panelSHA] {
-		if job.State == StatePending {
+		if job.State == gitdata.StatePending {
 			return true
 		}
 	}
@@ -3533,7 +3534,7 @@ func (m *browseModel) hasRunningJob(sha string) bool {
 		return false
 	}
 	for _, job := range m.details[sha] {
-		if job.running() {
+		if job.Running() {
 			return true
 		}
 	}
@@ -3930,7 +3931,7 @@ func (m *browseModel) boxAnchor(lines []Line, offset int, sha string) int {
 
 // commitBySHA は SHA に一致するコミットを線形探索で返す (無ければ nil)。パネル/diff の
 // 描画で同一ループが重複していたのを 1 本化 (レビュー C5)。表示件数は既定 20 で O(n) は無害。
-func (m *browseModel) commitBySHA(sha string) *Commit {
+func (m *browseModel) commitBySHA(sha string) *gitdata.Commit {
 	for i := range m.commits {
 		if m.commits[i].SHA == sha {
 			return &m.commits[i]

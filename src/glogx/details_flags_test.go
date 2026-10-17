@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/gitdata"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -20,7 +21,7 @@ import (
 // 272 のコメントはこの形を名指しで禁じていたが、detailMsg / basisMsg が loading しか
 // 消していなかったため実際に起きた (敵対的レビュー 2026-09-06)。
 func TestDetailsFlagsStayPaired(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Snap = rlTestSnap()
 	m.hasRepo = true
 	sha := m.commits[0].SHA
@@ -29,8 +30,8 @@ func TestDetailsFlagsStayPaired(t *testing.T) {
 		name string
 		msg  tea.Msg
 	}{
-		{"detailMsg", detailMsg{sha: sha, batch: CIBatch{}}},
-		{"basisMsg", basisMsg{targets: []string{sha}, batch: CIBatch{}}},
+		{"detailMsg", detailMsg{sha: sha, batch: gitdata.CIBatch{}}},
+		{"basisMsg", basisMsg{targets: []string{sha}, batch: gitdata.CIBatch{}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m.detailsLoading, m.detailsWaiting = map[string]bool{}, map[string]bool{}

@@ -12,6 +12,7 @@ import (
 	"doctor/svc"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
+	"glogx/internal/gitdata"
 	"glogx/internal/lanview"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
@@ -77,12 +78,12 @@ func TestMain(m *testing.M) {
 	testenv.Main(m, "glogx-cache", func(string) { lanview.FixtureSetOptions(fakeLanOptions) })
 }
 
-func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []string) *browseModel {
+func newTestBrowse(t *testing.T, n int, statuses map[string]gitdata.CIState, toFetch []string) *browseModel {
 	t.Helper()
-	commits := make([]Commit, n)
+	commits := make([]gitdata.Commit, n)
 	for i := range commits {
 		sha := strings.Repeat(string(rune('a'+i)), 40)
-		commits[i] = Commit{
+		commits[i] = gitdata.Commit{
 			SHA: sha, ShortSHA: sha[:7], Subject: "subject", Author: "koji", AuthorEmail: "k@x",
 			Date: "Thu Jul 16 19:12:47 2026 +0900", RelDate: "now", Message: "subject",
 		}
@@ -90,7 +91,7 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 	// NoFrame: true = 最外周フレームを明示 OFF (issue 025)。既存の View/overlay/panel テストの
 	// 期待値を変えない。現行 80×10 は frameMinHeight 未満で自動 OFF だが、途中で width/height を
 	// 大きくするテストが誤ってフレームを踏まないよう明示 OFF を決定的にする。
-	m := newBrowseModel(commits, statuses, toFetch, Repo{Owner: "o", Name: "r"}, true,
+	m := newBrowseModel(commits, statuses, toFetch, gitdata.Repo{Owner: "o", Name: "r"}, true,
 		&Options{NoFrame: true}, false, 80, 10)
 	installInertDoctor(t, &m.doctorOv)
 	t.Cleanup(func() {
@@ -122,8 +123,8 @@ func releaseKey(m *browseModel) {
 	m.lastKey, m.lastKeyAt = "", time.Time{}
 }
 
-func statusesFor(m *browseModel, state CIState) map[string]CIState {
-	s := map[string]CIState{}
+func statusesFor(m *browseModel, state gitdata.CIState) map[string]gitdata.CIState {
+	s := map[string]gitdata.CIState{}
 	for _, c := range m.commits {
 		s[c.SHA] = state
 	}
@@ -148,9 +149,9 @@ func deliverMsgs(m *browseModel, msg tea.Msg, match func(tea.Msg) bool) {
 
 // withJobs は commit idx の details を job 2 件で埋めるテストヘルパー。
 func withJobs(m *browseModel, idx int) {
-	m.details[m.commits[idx].SHA] = []CheckDetail{
-		{Name: "build", State: StateSuccess, URL: "https://github.com/o/r/runs/1"},
-		{Name: "lint", State: StateFailure, URL: ""},
+	m.details[m.commits[idx].SHA] = []gitdata.CheckDetail{
+		{Name: "build", State: gitdata.StateSuccess, URL: "https://github.com/o/r/runs/1"},
+		{Name: "lint", State: gitdata.StateFailure, URL: ""},
 	}
 }
 
@@ -164,7 +165,7 @@ const testPopupTermWidth = testenv.PopupWidth + frameHOverhead
 // hint を 1 つ足したとき「どのテストが正本か」で迷う。
 func testHintBudget(t *testing.T) int {
 	t.Helper()
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.showFrame, m.width, m.height = true, testPopupTermWidth, 40
 	if !m.frameActive() {
 		t.Fatal("前提が崩れた: popup 幅でフレームが有効にならない")
@@ -221,8 +222,8 @@ func runCmdTree(cmd tea.Cmd) {
 }
 
 // withFailedJob は commit idx の details を「失敗 job (CheckID あり)」1 件で埋める。
-func withFailedJob(m *browseModel, idx int, checkID int64, state CIState) {
-	m.details[m.commits[idx].SHA] = []CheckDetail{
+func withFailedJob(m *browseModel, idx int, checkID int64, state gitdata.CIState) {
+	m.details[m.commits[idx].SHA] = []gitdata.CheckDetail{
 		{Name: "lint", State: state, URL: "https://github.com/o/r/runs/9", CheckID: checkID},
 	}
 }

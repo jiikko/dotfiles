@@ -1,4 +1,4 @@
-package main
+package gitdata
 
 import (
 	"glogx/internal/statusview"

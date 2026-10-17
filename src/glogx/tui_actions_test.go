@@ -14,6 +14,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 
@@ -24,8 +25,8 @@ import (
 // push/pull 確認は Enter を y と同じ「実行」として扱う (ユーザー要望 2026-07-21)。
 func TestBrowseConfirmEnterConfirms(t *testing.T) {
 	// push: Enter で実行
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses[m.commits[0].SHA] = StateUnpushed
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
 	var pushed int
 	origPush := runGitPush
 	runGitPush = func(context.Context) error { pushed++; return nil }
@@ -38,7 +39,7 @@ func TestBrowseConfirmEnterConfirms(t *testing.T) {
 		t.Fatalf("Enter で push が実行されない: cmd=%v pushing=%v confirm=%v", cmd != nil, m.actModal.pushing, m.actModal.pushConfirm)
 	}
 	// pull: Enter で実行
-	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	origPull := runGitPullRebase
 	runGitPullRebase = func(context.Context) error { return nil }
 	t.Cleanup(func() { runGitPullRebase = origPull })
@@ -53,7 +54,7 @@ func TestBrowseConfirmEnterConfirms(t *testing.T) {
 
 // C → claude update (確認なし即実行。glogx の独自機能)。
 func TestBrowseUpdateFlow(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	var calls int
 	orig := runClaudeUpdate
 	runClaudeUpdate = func() (string, string, string, error) { calls++; return "2.1.216", "2.2.0", "", nil }
@@ -133,7 +134,7 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	// update が走った上で before == after なのは「CLI が更新しなかった」であって、
 	// 「これが最新である」は glogx には言えない (CLI は stale なキャッシュを見て
 	// 更新不要と判断しても exit 0 で成功する)。CLI の言い分 (note) を添えて事実だけ出す。
-	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	runClaudeUpdate = func() (string, string, string, error) {
 		return "2.2.0", "2.2.0", "claude is already up to date.", nil
 	}
@@ -154,7 +155,7 @@ func TestBrowseUpdateFlow(t *testing.T) {
 // エラー理由が出る。updateTimeout 超過時のエラーもこの経路を通るため、無限ブロックからの
 // 復帰 (updating 解除 → q/Ctrl-C が再び効く) を保証する回帰テスト。
 func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	orig := runClaudeUpdate
 	runClaudeUpdate = func() (string, string, string, error) {
 		return "2.1.216", "", "", errors.New("claude update がタイムアウトしました (5m0s)")
@@ -219,9 +220,9 @@ func TestActionModalStopCancelsRunningPush(t *testing.T) {
 // pushAnimStep 進むまでは段が進まない」ことでシーム経由を守る。
 func TestPushAnimUsesClockSeam(t *testing.T) {
 	advance := testenv.StubClock(t)
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
-	m.statuses[m.commits[0].SHA] = StateUnpushed
-	m.statuses[m.commits[1].SHA] = StateUnpushed
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
+	m.statuses[m.commits[1].SHA] = gitdata.StateUnpushed
 	if !m.startPushAnim() {
 		t.Fatal("未 push が 2 件あるのに startPushAnim が始まらない")
 	}
@@ -246,9 +247,9 @@ func TestPushAnimUsesClockSeam(t *testing.T) {
 }
 
 func TestBrowsePushFlow(t *testing.T) {
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
-	m.statuses[m.commits[0].SHA] = StateUnpushed
-	m.statuses[m.commits[1].SHA] = StateUnpushed // 2 コミットまとめて push するケース
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
+	m.statuses[m.commits[1].SHA] = gitdata.StateUnpushed // 2 コミットまとめて push するケース
 	var pushed int
 	orig := runGitPush
 	runGitPush = func(context.Context) error { pushed++; return nil }
@@ -296,7 +297,7 @@ func TestBrowsePushFlow(t *testing.T) {
 	if _, ok := m.statuses[m.commits[1].SHA]; ok {
 		t.Fatal("1 tick 目で最古の unpushed が消えない")
 	}
-	if m.statuses[m.commits[0].SHA] != StateUnpushed {
+	if m.statuses[m.commits[0].SHA] != gitdata.StateUnpushed {
 		t.Fatal("tip が先に消えた (演出は古い順のはず)")
 	}
 	m.pushAnimNext = time.Time{}
@@ -325,8 +326,8 @@ func TestBrowsePushFlow(t *testing.T) {
 	}
 	// tip の「CI がまだ見えない (none)」応答は捨てられ、ネガティブキャッシュに乗らず
 	// 再ポーリング。途中コミットの none は本物なので通常どおり残る
-	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: []string{newSHA, m.commits[1].SHA}, batch: CIBatch{Statuses: map[string]CIState{
-		newSHA: StateNone, m.commits[1].SHA: StateNone,
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: []string{newSHA, m.commits[1].SHA}, batch: gitdata.CIBatch{Statuses: map[string]gitdata.CIState{
+		newSHA: gitdata.StateNone, m.commits[1].SHA: gitdata.StateNone,
 	}}})
 	if _, ok := m.statuses[newSHA]; ok {
 		t.Fatal("CI が見えない応答が statuses に残った (スピナーに戻るべき)")
@@ -337,7 +338,7 @@ func TestBrowsePushFlow(t *testing.T) {
 	if !m.awaitCI[newSHA] {
 		t.Fatal("CI が見えないのに出現待ちが止まった")
 	}
-	if m.statuses[m.commits[1].SHA] != StateNone || m.fetched[m.commits[1].SHA] != StateNone {
+	if m.statuses[m.commits[1].SHA] != gitdata.StateNone || m.fetched[m.commits[1].SHA] != gitdata.StateNone {
 		t.Fatal("途中コミットの none (本物) まで捨てられた")
 	}
 	// ciPollMsg で再取得が走る (CI 未出現の SHA は追従対象)
@@ -345,19 +346,19 @@ func TestBrowsePushFlow(t *testing.T) {
 	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil || !m.ciPollInFlight {
 		t.Fatal("ciPollMsg で再取得が始まらない")
 	}
-	m.Update(ciPollResultMsg{batch: CIBatch{Statuses: map[string]CIState{newSHA: StateNone}}})
+	m.Update(ciPollResultMsg{batch: gitdata.CIBatch{Statuses: map[string]gitdata.CIState{newSHA: gitdata.StateNone}}})
 	if !m.awaitCI[newSHA] || m.ciPollInFlight {
 		t.Fatalf("ciPollResultMsg の後始末が効いていない: awaitCI=%v inFlight=%v", m.awaitCI, m.ciPollInFlight)
 	}
 	// CI が見えたら (pending) 出現待ちを卒業し、以降は statuses 起点で完了まで追う
-	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: []string{newSHA}, batch: CIBatch{Statuses: map[string]CIState{newSHA: StatePending}}})
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: []string{newSHA}, batch: gitdata.CIBatch{Statuses: map[string]gitdata.CIState{newSHA: gitdata.StatePending}}})
 	if m.awaitCI[newSHA] {
 		t.Fatal("CI が見えても出現待ちから外れない")
 	}
 	if !m.ciPolling {
 		t.Fatal("pending が見えたのに追従チェーンが張られていない")
 	}
-	if m.statuses[newSHA] != StatePending {
+	if m.statuses[newSHA] != gitdata.StatePending {
 		t.Fatalf("pending が反映されない: %v", m.statuses[newSHA])
 	}
 	if !m.toast.Visible() || !m.toast.OK() || !strings.Contains(m.toast.Text(), "push") {
@@ -368,7 +369,7 @@ func TestBrowsePushFlow(t *testing.T) {
 // u → y/N → git pull --rebase → 一覧の全面リロード (glogx の独自機能)。
 func TestBrowsePullFlow(t *testing.T) {
 	newTempRepo(t, []string{"first", "second"}) // reloadAfterPull が実 git を読むため
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.opts = &Options{MaxCount: 20}
 	var pulled int
 	orig := runGitPullRebase
@@ -393,7 +394,7 @@ func TestBrowsePullFlow(t *testing.T) {
 	if cmd == nil || !m.actModal.pulling {
 		t.Fatal("y で pull が始まらない")
 	}
-	m.details["stale"] = []CheckDetail{{Name: "old"}}
+	m.details["stale"] = []gitdata.CheckDetail{{Name: "old"}}
 	m.cursor = 0
 	var deliver func(msg tea.Msg)
 	deliver = func(msg tea.Msg) {
@@ -422,7 +423,7 @@ func TestBrowsePullFlow(t *testing.T) {
 		t.Fatal("pull 後に旧 SHA の details キャッシュが残っている")
 	}
 	// 失敗は notice に出す (リロードしない)
-	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	runGitPullRebase = func(context.Context) error {
 		return errors.New("conflict のため rebase を中断して元に戻しました")
 	}
@@ -438,7 +439,7 @@ func TestBrowsePullFlow(t *testing.T) {
 // (prefixMsg の配達まで済ませる。prefix="" を渡せば tmux 外 = 機能オフの状態)。
 func newTestBrowseWithPrefix(t *testing.T, prefix string) *browseModel {
 	t.Helper()
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 80, 20
 	m.Update(prefixMsg{key: prefix})
 	return m
@@ -483,7 +484,7 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 	// prefix 検知は発動しない (続く y が飲み込まれる事故の防止)
 	t.Run("確認モーダル中はキャンセル語彙が優先", func(t *testing.T) {
 		m := newTestBrowseWithPrefix(t, "ctrl+t")
-		m.statuses[m.commits[0].SHA] = StateUnpushed
+		m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
 		m.handleKey("b")
 		if !m.actModal.pushConfirm {
 			t.Fatal("b で push 確認に入らない")
@@ -521,9 +522,9 @@ func TestParseTmuxPrefix(t *testing.T) {
 
 // 未 push が 1 件も無いときは確認に入らない。
 func TestBrowsePushNoUnpushed(t *testing.T) {
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
-	m.statuses[m.commits[0].SHA] = StateSuccess
-	m.statuses[m.commits[1].SHA] = StateSuccess
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = gitdata.StateSuccess
+	m.statuses[m.commits[1].SHA] = gitdata.StateSuccess
 	m.handleKey("b")
 	if m.actModal.pushConfirm {
 		t.Fatal("未 push なしで push 確認に入った")
@@ -555,8 +556,8 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 // Ctrl-C はブロックし、2 回目で強制終了する。update は自己更新中断が危険なので常にブロック。
 func TestBrowseRunningQuitGuard(t *testing.T) {
 	// pushing 中: 一般キー (j) は飲まれてカーソルは動かない
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	m.actModal.pushing = true
 	m.handleKey("j")
 	if m.cursor != 0 {
@@ -575,7 +576,7 @@ func TestBrowseRunningQuitGuard(t *testing.T) {
 	}
 
 	// pulling も同じ (1 回目ブロック → 2 回目で終了)
-	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m2.actModal.pulling = true
 	if _, _ = m2.handleKey("ctrl+c"); m2.done {
 		t.Error("pulling 中の 1 回目 Ctrl-C で終了してしまった")
@@ -585,7 +586,7 @@ func TestBrowseRunningQuitGuard(t *testing.T) {
 	}
 
 	// updating 中: Ctrl-C は何回押しても終了しない (自己更新中断が危険。escape は updateTimeout のみ)
-	m3 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m3 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m3.actModal.beginUpdate("claude")
 	m3.handleKey("ctrl+c")
 	if _, _ = m3.handleKey("ctrl+c"); m3.done {
@@ -615,13 +616,13 @@ func TestPullBlockedByDirtyTree(t *testing.T) {
 }
 
 func TestBrowseRerunFlow(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
-	withFailedJob(m, 0, 7, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
+	withFailedJob(m, 0, 7, gitdata.StateFailure)
 	var gotJobID int64
-	var gotRepo Repo
+	var gotRepo gitdata.Repo
 	orig := runJobRerun
-	runJobRerun = func(_ context.Context, repo Repo, jobID int64) error {
+	runJobRerun = func(_ context.Context, repo gitdata.Repo, jobID int64) error {
 		gotRepo, gotJobID = repo, jobID
 		return nil
 	}
@@ -664,12 +665,12 @@ func TestBrowseRerunFlow(t *testing.T) {
 func TestBrowseRerunGuards(t *testing.T) {
 	orig := runJobRerun
 	called := false
-	runJobRerun = func(context.Context, Repo, int64) error { called = true; return nil }
+	runJobRerun = func(context.Context, gitdata.Repo, int64) error { called = true; return nil }
 	t.Cleanup(func() { runJobRerun = orig })
 	// StatusContext (CheckID=0) は再実行不可
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
-	withFailedJob(m, 0, 0, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
+	withFailedJob(m, 0, 0, gitdata.StateFailure)
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("r")
@@ -677,9 +678,9 @@ func TestBrowseRerunGuards(t *testing.T) {
 		t.Fatalf("StatusContext job で確認に入った / トーストが出ない: %q", m.toast.Text())
 	}
 	// 失敗以外の job は再実行不可
-	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m2.statuses = statusesFor(m2, StateSuccess)
-	withFailedJob(m2, 0, 7, StateSuccess)
+	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m2.statuses = statusesFor(m2, gitdata.StateSuccess)
+	withFailedJob(m2, 0, 7, gitdata.StateSuccess)
 	m2.openPanel()
 	m2.handleKey("j")
 	m2.handleKey("r")
@@ -709,11 +710,11 @@ func TestBrowseRerunGuards(t *testing.T) {
 }
 
 func TestBrowseRerunFailureShowsToast(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
-	withFailedJob(m, 0, 7, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
+	withFailedJob(m, 0, 7, gitdata.StateFailure)
 	orig := runJobRerun
-	runJobRerun = func(context.Context, Repo, int64) error { return errors.New("run cannot be rerun") }
+	runJobRerun = func(context.Context, gitdata.Repo, int64) error { return errors.New("run cannot be rerun") }
 	t.Cleanup(func() { runJobRerun = orig })
 	m.openPanel()
 	m.handleKey("j")
@@ -739,14 +740,14 @@ func TestBrowseRerunFailureShowsToast(t *testing.T) {
 // (ユーザー要望 2026-07-31)。
 func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 	// 空きトースト → version 通知 (成功色) を表示
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.Update(claudeUpdateAvailableMsg{latest: "9.9.9"})
 	if !m.toast.Visible() || !m.toast.OK() || !strings.Contains(m.toast.Text(), "9.9.9") {
 		t.Fatalf("空きトーストで version 通知が出ない: visible=%v ok=%v text=%q", m.toast.Visible(), m.toast.OK(), m.toast.Text())
 	}
 
 	// 先行 error トースト表示中 → 上に積まれ、先行も残る (どちらも読める)
-	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m2.height = 24 // 🚨 2 枚出すには窓の高さが要る (低い窓では行数上限で古い方を出さない。toast の doc)
 	m2.toast.Show("先行警告: ...", false)
 	m2.Update(claudeUpdateAvailableMsg{latest: "9.9.9"})
@@ -776,7 +777,7 @@ func TestBrowseCopyLastWarning(t *testing.T) {
 	stubbed := false
 	testenv.StubClipboardFunc(t, func(text string) error { copied = text; stubbed = true; return nil })
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 
 	// 警告がまだ無い → コピーせず error トースト (ユーザー要望 2026-07-23)。lastWarning は汚さない
 	m.handleKey("w")
@@ -807,7 +808,7 @@ func TestBrowseCopyLastWarning(t *testing.T) {
 // コピー失敗時は理由を error トーストに出す。lastWarning は汚さない (コピー対象の警告を保持)。
 func TestBrowseCopyLastWarningError(t *testing.T) {
 	testenv.StubClipboardFunc(t, func(string) error { return errors.New("clipboard down") })
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.showWarning("なにか失敗")
 	m.handleKey("w")
 	if m.toast.OK() || !strings.Contains(m.toast.Text(), "コピーに失敗しました") {
@@ -820,7 +821,7 @@ func TestBrowseCopyLastWarningError(t *testing.T) {
 
 // 成功トースト (toast.show(…, true)) は showWarning を通さないので lastWarning を汚さない。
 func TestBrowseSuccessToastDoesNotClobberLastWarning(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.showWarning("失敗A")
 	m.toast.Show("push しました", true) // 成功トースト (showWarning 非経由)
 	if m.lastWarning != "失敗A" {
@@ -831,8 +832,8 @@ func TestBrowseSuccessToastDoesNotClobberLastWarning(t *testing.T) {
 // ghErr (CI 取得失敗の sticky 警告) は lastWarning に無くても w で fallback コピーできる (issue 026 #1)。
 func TestBrowseCopyWarningGhErrFallback(t *testing.T) {
 	copied := testenv.StubClipboard(t)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.ghErr = &GHError{Kind: GHOther, Detail: "boom detail"}
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.ghErr = &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom detail"}
 	m.handleKey("w")
 	if !strings.Contains(*copied, "取得に失敗") {
 		t.Fatalf("ghErr fallback で w がコピーしない: copied=%q", *copied)
@@ -842,7 +843,7 @@ func TestBrowseCopyWarningGhErrFallback(t *testing.T) {
 // 取得失敗系エラー (showWarning 経由) は表示トーストが消えても w でコピーできる (issue 026 #1)。
 func TestBrowseCopyWarningFromShowWarning(t *testing.T) {
 	copied := testenv.StubClipboard(t)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.showWarning("diff の取得に失敗しました: boom")
 	if m.lastWarning != "diff の取得に失敗しました: boom" {
 		t.Fatalf("showWarning が lastWarning に残さない: %q", m.lastWarning)
@@ -858,8 +859,8 @@ func TestBrowseCopyWarningFromShowWarning(t *testing.T) {
 func newFramedBrowse(t *testing.T, w, h int) *browseModel {
 	t.Helper()
 	sha := strings.Repeat("a", 40)
-	commits := []Commit{{SHA: sha, ShortSHA: sha[:7], Subject: "subject", Author: "koji", AuthorEmail: "k@x", Date: "Thu Jul 16 19:12:47 2026 +0900", RelDate: "now", Message: "subject"}}
-	m := newBrowseModel(commits, map[string]CIState{sha: StateSuccess}, nil, Repo{Owner: "o", Name: "r"}, true, &Options{}, false, w, h)
+	commits := []gitdata.Commit{{SHA: sha, ShortSHA: sha[:7], Subject: "subject", Author: "koji", AuthorEmail: "k@x", Date: "Thu Jul 16 19:12:47 2026 +0900", RelDate: "now", Message: "subject"}}
+	m := newBrowseModel(commits, map[string]gitdata.CIState{sha: gitdata.StateSuccess}, nil, gitdata.Repo{Owner: "o", Name: "r"}, true, &Options{}, false, w, h)
 	t.Cleanup(m.cancel)
 	return m
 }
@@ -923,7 +924,7 @@ func TestBrowseFrameAutoOffAndNoFrame(t *testing.T) {
 func TestKeyRepeatIsOneInput(t *testing.T) {
 	advance := testenv.StubClock(t)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("i")
 	if !m.issuesOv.Visible() {
 		t.Fatal("前提が崩れた: i で viewer が開かない")
@@ -950,7 +951,7 @@ func TestKeyRepeatIsOneInput(t *testing.T) {
 func TestKeyRepeatIsOneInputStatusViewer(t *testing.T) {
 	advance := testenv.StubClock(t)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	stubWorktreeStatus(t, statusRec(" M a.go"), nil)
 	m.handleKey("s")
 	if !m.statusOv.Visible() {
@@ -977,7 +978,7 @@ func TestKeyRepeatIsOneInputStatusViewer(t *testing.T) {
 func TestKeyRepeatDoesNotBlockMovement(t *testing.T) {
 	advance := testenv.StubClock(t)
 
-	m := newTestBrowse(t, 5, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 5, map[string]gitdata.CIState{}, nil)
 	for range 3 {
 		advance(30 * time.Millisecond) // 自動リピートの間隔
 		m.handleKey("j")
@@ -1065,7 +1066,7 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 	runClaudeUpdate = func() (string, string, string, error) { runCalls++; return "2.2.0", "2.2.0", "", nil }
 	t.Cleanup(func() { runClaudeUpdate = origRun })
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd := m.handleKey("C")
 	// C 直後にモーダルが立たない (判定前に立てると早期リターン時に一瞬光る。ユーザー指摘 2026-08-12)
 	if m.actModal.anyUpdating() {
@@ -1093,7 +1094,7 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 	runCodexUpdate = func() (string, string, string, error) { codexCalls++; return "0.144.6", "0.144.6", "", nil }
 	t.Cleanup(func() { runCodexUpdate = origCodexRun })
 
-	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd2 := m2.handleKey("X")
 	deliverUpdateMsg(m2, cmd2)
 	if codexCalls != 0 {
@@ -1117,7 +1118,7 @@ func TestBrowseUpdateRunsWhenNotConfirmedLatest(t *testing.T) {
 	// installed が cached latest より古い → 実行される
 	writeVersionCache(t, claudeVersionCacheFile, "2.2.0", time.Now())
 	fetchInstalledClaudeVersion = func(context.Context) string { return "2.1.0" }
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd := m.handleKey("C")
 	deliverUpdateMsg(m, cmd)
 	if runCalls != 1 {
@@ -1127,7 +1128,7 @@ func TestBrowseUpdateRunsWhenNotConfirmedLatest(t *testing.T) {
 	// キャッシュが stale (TTL 切れ) → latest 不明扱いで実行される (オフライン等で塞がない)
 	writeVersionCache(t, claudeVersionCacheFile, "2.2.0", time.Now().Add(-2*claudeVersionTTL))
 	fetchInstalledClaudeVersion = func(context.Context) string { return "2.2.0" }
-	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd2 := m2.handleKey("C")
 	deliverUpdateMsg(m2, cmd2)
 	if runCalls != 2 {
@@ -1137,7 +1138,7 @@ func TestBrowseUpdateRunsWhenNotConfirmedLatest(t *testing.T) {
 	// installed 取得失敗 ("") → 実行される
 	writeVersionCache(t, claudeVersionCacheFile, "2.2.0", time.Now())
 	fetchInstalledClaudeVersion = func(context.Context) string { return "" }
-	m3 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m3 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd3 := m3.handleKey("C")
 	deliverUpdateMsg(m3, cmd3)
 	if runCalls != 3 {
@@ -1159,7 +1160,7 @@ func TestBrowseUpdateRunsWhenVersionsIncomparable(t *testing.T) {
 	runClaudeUpdate = func() (string, string, string, error) { runCalls++; return "2.1.0", "2.2.0", "", nil }
 	t.Cleanup(func() { runClaudeUpdate = origRun })
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd := m.handleKey("C")
 	deliverUpdateMsg(m, cmd)
 	if runCalls != 1 {
@@ -1237,7 +1238,7 @@ func TestStatusViewerOwnsKeysBlocksRemoteHijack(t *testing.T) {
 	runGitPush = func(context.Context) error { pushes++; return nil }
 	t.Cleanup(func() { runGitPush = origPush })
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.statusOv = *newTestStatusView(t, statusRec(" M a.go"))
 	if !m.statusOv.Visible() {
 		t.Fatal("前提: status viewer が開いていない")
@@ -1245,7 +1246,7 @@ func TestStatusViewerOwnsKeysBlocksRemoteHijack(t *testing.T) {
 
 	// --- 陽性対照: 通常状態 (ownsKeys=false) では b が push 確認を出す ---
 	// confirmPush は未 push が 0 件だとトーストで断るので、1 件だけ未 push を作る
-	m.statuses[m.commits[0].SHA] = StateUnpushed
+	m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
 	if m.unpushedCount() == 0 {
 		t.Fatal("前提: 未 push を作れていない (対照が無意味化する)")
 	}
@@ -1300,7 +1301,7 @@ func TestUpdateDoesNotOverlapConfirmModal(t *testing.T) {
 		{"rerun 確認中", func(m *browseModel) { m.actModal.rerunConfirm = true }, "再実行"},
 	} {
 		t.Run(st.name, func(t *testing.T) {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			var pushed int
 			origPush := runGitPush
 			runGitPush = func(context.Context) error { pushed++; return nil }
@@ -1347,7 +1348,7 @@ func TestUpdateDoesNotOverlapConfirmModal(t *testing.T) {
 // 並走中の Ctrl-C は「どちらか 1 つでも走っていればブロック」。片方だけ終わった状態で
 // 終了できてしまうと、残った自己更新が孤児のまま進む。
 func TestQuitBlockedWhileAnyUpdateRuns(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.actModal.beginUpdate("claude")
 	m.actModal.beginUpdate("codex")
 	for _, key := range []string{"ctrl+c", "ctrl+g"} {
@@ -1376,7 +1377,7 @@ func TestUpdateKeysDoNotLeakIntoStatusViewer(t *testing.T) {
 	extcmd.RunGitRestoreWorktree = func([]string) error { restores++; return nil }
 	t.Cleanup(func() { extcmd.RunGitRestoreWorktree = origRestore })
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.statusOv = *newTestStatusView(t, statusRec(" M a.go"))
 	if !m.statusOv.Visible() {
 		t.Fatal("前提: status viewer が開いていない")
@@ -1409,7 +1410,7 @@ func TestUpdateKeysDoNotLeakIntoStatusViewer(t *testing.T) {
 // red team 2026-08-21 の実測: C 連打で判定 Cmd が並走すると、その早期リターンが走行中の
 // claude を集合から外し、モーダルが閉じて Ctrl-C が通り、runClaudeUpdate が 2 本走った。
 func TestEarlyLatestJudgmentDoesNotDropRunningUpdate(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.actModal.beginUpdate("claude")
 	m.actModal.beginUpdate("codex")
 
@@ -1473,7 +1474,7 @@ func TestLatestJudgmentMarksMsgEarly(t *testing.T) {
 			writeVersionCache(t, tc.cacheFile, "9.9.9", time.Now())
 			t.Cleanup(tc.setFetch(func(context.Context) string { return "9.9.9" }))
 
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			_, cmd := m.handleKey(tc.startKey)
 			if cmd == nil {
 				t.Fatalf("%s の判定 Cmd が返らない", tc.startKey)
@@ -1497,7 +1498,7 @@ func TestLatestJudgmentMarksMsgEarly(t *testing.T) {
 // ヒント行が走行中の CLI 名を出すことも併せて固定する (codex 単独更新中に「claude update...」と
 // 嘘をつく退行を捕まえる)。
 func TestBrowseParallelUpdateThroughKeys(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.actModal.beginUpdate("claude")
 
 	// codex 単独ではないので、まずは claude だけの表示を確認
@@ -1525,7 +1526,7 @@ func TestBrowseParallelUpdateThroughKeys(t *testing.T) {
 // red team 2026-08-21 が「共存させると anyUpdating 分岐が常時ブロックに化け、push の
 // 強制終了が不可能になる」ことを状態直組みで実測した。
 func TestForceQuitSurvivesUpdateCoexistence(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.actModal.pushing = true
 	m.actModal.beginUpdate("claude") // 共存 (通常は起きないが構造として許してはいけない)
 

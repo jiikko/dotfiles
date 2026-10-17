@@ -10,6 +10,7 @@ import (
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/extcmd"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 )
 
@@ -18,7 +19,7 @@ import (
 
 // browseModel への配線: D で開く / Msg が届く / cancelAll で走査が止まる / hint と viewLines が doctor になる。
 func TestDoctorWiredThroughBrowseModel(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 100, 30
 	m.doctorOv.SetDeps(doctorview.Deps(doctortest.FakeDeps(t)))
 	_, cmd := m.handleKey("D")
@@ -62,7 +63,7 @@ func TestDoctorWiredThroughBrowseModel(t *testing.T) {
 
 // browseModel 経由: y がクリップボード (差し替え) に届き、トーストが出る。
 func TestDoctorCopyThroughBrowseModel(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 100, 30
 	var copied string
 	orig := extcmd.CopyToClipboard

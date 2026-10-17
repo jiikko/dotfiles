@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"glogx/internal/gitdata"
 	"strings"
 	"testing"
 )
@@ -25,7 +26,7 @@ const phantomSHA = "0123456789012345678901234567890123456789"
 // 踏む筋: push 演出中に u で pull → applyLogData が awaitCI を nil にするが pushAnimTip は
 // 残る → その pull で履歴が書き換わり tip の SHA が消える → 演出の着地でここへ来る。
 func TestRefetchAfterPushRejectsShaOutsideCommits(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.pushAnimTip = phantomSHA // commits に無い SHA (履歴が書き換わって消えた tip)
 	m.refetchAfterPush()
 
@@ -37,7 +38,7 @@ func TestRefetchAfterPushRejectsShaOutsideCommits(t *testing.T) {
 	}
 
 	// 対照: commits に在る SHA なら入る (上の assert が「常に空」で通らないことの確認)
-	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m2.pushAnimTip = m2.commits[0].SHA
 	m2.refetchAfterPush()
 	if !m2.awaitCI[m2.commits[0].SHA] {
@@ -47,7 +48,7 @@ func TestRefetchAfterPushRejectsShaOutsideCommits(t *testing.T) {
 
 // 掃除: settleAwaitCI は commits に無い SHA を毎周期落とす (入口をすり抜けた分の最後の砦)。
 func TestSettleAwaitCIDropsShaOutsideCommits(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	live := m.commits[0].SHA
 	m.awaitCI = map[string]bool{phantomSHA: true, live: true}
 
@@ -66,7 +67,7 @@ func TestSettleAwaitCIDropsShaOutsideCommits(t *testing.T) {
 // ⚠️ 打ち切り (awaitAttempts) を早期 return の前へ動かしても効かない。この分岐は
 // ciPolling=false でチェーンごと止めるので、1 回数えても次の周期が来ないため。
 func TestCIPollClearsPhantomAwaitCIWhenNoTargets(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.awaitCI = map[string]bool{phantomSHA: true}
 	m.awaitAttempts = 1
 	m.ciPolling = true
@@ -108,7 +109,7 @@ func TestSpinnerActiveBothDirectionsForAwaitCI(t *testing.T) {
 		}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 			// 🚨 **観測点を飽和させない**。newTestBrowse は usageOv を visible で作るので
 			// usageOv.loading() が常に true になり、spinnerActive() は awaitCI に関わらず
 			// true のまま = この表は何も測れない (最初に書いたときはこれで 3 ケースが
@@ -124,7 +125,7 @@ func TestSpinnerActiveBothDirectionsForAwaitCI(t *testing.T) {
 
 // phantomSHA が fixture の SHA と衝突していないこと (衝突すると全部のテストが無意味になる)。
 func TestPhantomSHAIsNotInFixtureCommits(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	for _, c := range m.commits {
 		if c.SHA == phantomSHA {
 			t.Fatalf("fixture の SHA と衝突している: %s", phantomSHA)

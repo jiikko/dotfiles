@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"glogx/internal/doctorview"
+	"glogx/internal/gitdata"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -88,7 +89,7 @@ func TestOverlayOwnsKeysMatchesUpdateKeyReachable(t *testing.T) {
 			continue // actModal は overlay の visible() を持たないので別経路 (下のテスト)
 		}
 		t.Run(p.name, func(t *testing.T) {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			showOverlayOwning(t, m, p.name)
 			if m.updateKeyReachable("X") {
 				t.Fatalf("%s が語彙を持っているのに updateKeyReachable が true (X が横取りされる)", p.name)
@@ -104,7 +105,7 @@ func TestOverlayUninterruptibleMatchesCtrlCAndRestartPrompt(t *testing.T) {
 			continue
 		}
 		t.Run(p.name, func(t *testing.T) {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			showOverlayUninterruptible(t, m, p.name)
 
 			// 1 回目の Ctrl-C でプロセスが落ちない (quit へ行かない)

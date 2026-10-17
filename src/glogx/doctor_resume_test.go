@@ -4,6 +4,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
+	"glogx/internal/gitdata"
 	"testing"
 	"time"
 )
@@ -17,7 +18,7 @@ func TestInitRestoresDoctorScreen(t *testing.T) {
 	t.Cleanup(func() { app.TimeNow = orig })
 	rememberDoctorShown(now, doctorview.TabSvc)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	// 🚨 実スキャンを起こさない (start は同期で goroutine を起こす。issue 216)
 	installInertDoctor(t, &m.doctorOv)
 	_ = m.Init()
@@ -32,7 +33,7 @@ func TestInitRestoresDoctorScreen(t *testing.T) {
 // 記憶が無ければ素の画面から始まる (勝手に doctor を出さない)。
 func TestInitWithoutMemoryStaysOnLog(t *testing.T) {
 	doctortest.WithDoctorStateDir(t)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	installInertDoctor(t, &m.doctorOv)
 	_ = m.Init()
 	if m.doctorOv.Visible() {

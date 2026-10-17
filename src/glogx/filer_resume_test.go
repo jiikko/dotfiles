@@ -8,6 +8,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/filerview"
+	"glogx/internal/gitdata"
 	"glogx/internal/ratelimitview"
 	"treefiler/filer"
 )
@@ -43,7 +44,7 @@ func TestRememberFilerScreenOnQuit(t *testing.T) {
 				t.Fatalf("F を出したまま終えたのに覚えていない: %+v ok=%v (want cursor %s)", got, ok, want.Cursor)
 			}
 
-			m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
+			m2 := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 			m2.quit()
 			if _, ok := filerview.LoadFilerScreen(now, app.CurrentDir()); ok {
 				t.Error("F を閉じて終えたのに記憶が残った (次の起動で蘇る)")
@@ -90,7 +91,7 @@ func TestInitFilerRestoreYieldsToOtherScreens(t *testing.T) {
 
 	filerview.FixtureRemoveScreen()
 	ratelimitview.FixtureRemoveScreen()
-	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	_ = m2.Init()
 	if m2.activeFullScreen() != app.FullScreenNone {
 		t.Errorf("記憶が無いのに全画面が開いた: %v", m2.activeFullScreen())

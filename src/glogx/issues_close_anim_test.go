@@ -6,6 +6,7 @@ package main
 // 畳まれている前提で書かれているため)。ここだけ明示的に on にして演出そのものを見る。
 
 import (
+	"glogx/internal/gitdata"
 	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/testenv"
@@ -170,7 +171,7 @@ func TestBrowseCloseAnimStillPassesQuitKey(t *testing.T) {
 // openAnimBrowse は閉じる演出を有効にした issues viewer を開いた browseModel を返す (開く演出は着地済み)。
 func openAnimBrowse(t *testing.T) *browseModel {
 	t.Helper()
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.issuesOv.Fixture().SetCloseAnim(true)
 	m.issuesOv.Toggle(t.TempDir())
 	m.issuesOv.Fixture().FinishAnim()

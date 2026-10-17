@@ -16,6 +16,7 @@ import (
 	"doctor/svc"
 	"glogx/internal/app"
 	"glogx/internal/doctorview"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 )
 
@@ -341,9 +342,9 @@ func budgetDiffModel(tb testing.TB) *browseModel {
 func budgetPanelModel(tb testing.TB) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
 	m.panelSHA = m.commits[3].SHA
-	m.details[m.panelSHA] = []CheckDetail{
-		{Name: "build", State: StateSuccess, URL: "https://github.com/o/r/runs/1"},
-		{Name: "lint", State: StateFailure, URL: "https://github.com/o/r/runs/2"},
+	m.details[m.panelSHA] = []gitdata.CheckDetail{
+		{Name: "build", State: gitdata.StateSuccess, URL: "https://github.com/o/r/runs/1"},
+		{Name: "lint", State: gitdata.StateFailure, URL: "https://github.com/o/r/runs/2"},
 	}
 	return m
 }

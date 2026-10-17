@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/gitdata"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -156,7 +157,7 @@ func (m *browseModel) hintLine() string {
 // レジストリの面がすべて「幅が足りなくても消えない語」を持つこと。
 // term.FitHintItems は入らない項目を落とすので、優先度 1 が無い面は狭い幅で丸ごと消える。
 func TestEveryHintSurfaceHasPrioOne(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.actModal.updating = map[string]bool{"claude": true} // updating 面の項目を非空にする
 	checked := 0
 	for id := hintSurfaceID(0); id < hintSurfaceCount; id++ {
@@ -255,7 +256,7 @@ func TestActiveHintSurfacePrecedence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			m.showFrame, m.width, m.height = true, 100, 40
 			tc.setup(m)
 			if got := m.activeHintSurface(); got != tc.want {

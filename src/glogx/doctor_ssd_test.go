@@ -7,6 +7,7 @@ import (
 	"doctor/ssd"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
+	"glogx/internal/gitdata"
 )
 
 // smartctl が無ければ、doctor を開いた直後に toast で入れ方を出す (ユーザー指定 2026-09-29)。
@@ -18,7 +19,7 @@ func TestDoctorSSDMissingSmartctlShowsToast(t *testing.T) {
 	}{{"無い", true, true}, {"在る", false, false}} {
 		t.Run(tc.name, func(t *testing.T) {
 			fresh := func(missing bool) *browseModel {
-				m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+				m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 				d := doctortest.FakeDeps(t)
 				d.SSDOpts = doctortest.FakeSSDOptions(!missing)
 				m.doctorOv.SetDeps(doctorview.Deps(d))

@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"glogx/internal/gitdata"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -140,5 +142,14 @@ func TestUsageHasNoVS16(t *testing.T) {
 	const vs16 = "️"
 	if strings.Contains(Usage(), vs16) {
 		t.Error("Usage() に VS16 (U+FE0F) 付き絵文字がある。bare 記号 (⚠ / ✔ など) を使うこと")
+	}
+}
+
+// LogQuery は git log の取得が読む 5 つ (MaxCount / Stat / Patch / Revs / Paths) を写す (issue 817 の G-1 で取得の層へ渡す型を分けた)。
+func TestOptionsLogQueryCarriesFetchFields(t *testing.T) {
+	o := &Options{MaxCount: 7, Stat: true, Patch: true, Revs: []string{"HEAD"}, Paths: []string{"a.go"}, Oneline: true, NoFrame: true}
+	want := gitdata.LogQuery{MaxCount: 7, Stat: true, Patch: true, Revs: []string{"HEAD"}, Paths: []string{"a.go"}}
+	if got := o.LogQuery(); !reflect.DeepEqual(got, want) {
+		t.Errorf("LogQuery() = %+v, want %+v", got, want)
 	}
 }

@@ -15,6 +15,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
+	"glogx/internal/gitdata"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
@@ -25,9 +26,9 @@ import (
 // pending なコミットは「どんな状況でも」追い続ける: パネルを閉じても、そもそも一度も開いて
 // いなくても、glogx が開いている間はポーリングが続く (追従条件は statuses だけが決める)。
 func TestCIPollFollowsPendingWithoutPanel(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StatePending
+	m.statuses[sha] = gitdata.StatePending
 	// パネルを一度も開かずに追従チェーンが張れる
 	if cmd := m.ensureCIPoll(); cmd == nil || !m.ciPolling {
 		t.Fatal("pending なのにパネル無しで追従チェーンが張られない")
@@ -47,14 +48,14 @@ func TestCIPollFollowsPendingWithoutPanel(t *testing.T) {
 // 追従結果 (ciPollResultMsg) の着地では、生きているチェーンに 2 本目を張らない (ポーリング倍化の防止)。
 // n=1 で maybeFetchETABasis を nil に隔離し、返り Cmd が poll 決定だけを反映するようにする。
 func TestCIPollResultDoesNotDoubleSchedule(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StatePending
+	m.statuses[sha] = gitdata.StatePending
 	if cmd := m.ensureCIPoll(); cmd == nil {
 		t.Fatal("前提: チェーンが張れない")
 	}
 	// pending のままの結果が着地。チェーンは生きているので新しい timer は張らない
-	_, cmd := m.Update(ciPollResultMsg{batch: CIBatch{Statuses: map[string]CIState{sha: StatePending}}})
+	_, cmd := m.Update(ciPollResultMsg{batch: gitdata.CIBatch{Statuses: map[string]gitdata.CIState{sha: gitdata.StatePending}}})
 	if cmd != nil {
 		t.Error("結果着地で二重に poll を張った (single-flight の契約)")
 	}
@@ -67,9 +68,9 @@ func TestCIPollResultDoesNotDoubleSchedule(t *testing.T) {
 // その場でチェーンが張られる (追従条件は statuses だけが決める)。details が後から届いても
 // single-flight で 2 本目は張らない。
 func TestCIPollStartsAtOpenPanelWithoutDetails(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StatePending
+	m.statuses[sha] = gitdata.StatePending
 	m.openPanel()
 	if m.hasRunningJob(m.panelSHA) {
 		t.Fatal("前提: details 未取得なので running 判定は false のはず")
@@ -77,9 +78,9 @@ func TestCIPollStartsAtOpenPanelWithoutDetails(t *testing.T) {
 	if !m.ciPolling {
 		t.Error("details 未取得の pending でチェーンが張られない (details 到着を待ってしまっている)")
 	}
-	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
+	running := []gitdata.CheckDetail{{Name: "build", State: gitdata.StatePending, StartedAt: time.Now().Add(-time.Minute)}}
 	// n=1 で maybeFetchETABasis=nil。details 到着で返る Cmd が nil = 2 本目を張っていない証跡。
-	if _, cmd := m.Update(detailMsg{sha: sha, batch: CIBatch{Details: map[string][]CheckDetail{sha: running}}}); cmd != nil {
+	if _, cmd := m.Update(detailMsg{sha: sha, batch: gitdata.CIBatch{Details: map[string][]gitdata.CheckDetail{sha: running}}}); cmd != nil {
 		t.Error("details 到着で 2 本目のチェーンを張った (single-flight の契約)")
 	}
 }
@@ -89,8 +90,8 @@ func TestCIPollStartsAtOpenPanelWithoutDetails(t *testing.T) {
 // 🚨 追従対象 (pending) を残しておくのが要: 対象が無いと世代比較の後の「対象なしで停止」経路で
 // 先に return し、世代ガードを消しても PASS してしまう。
 func TestCIPollGenGuardDiscardsStaleGeneration(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StatePending)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StatePending)
 	oldGen := m.ciPollGen
 	m.ciPollGen++ // reloadAfterPull 相当
 	if len(m.ciPollTargets()) == 0 {
@@ -105,10 +106,10 @@ func TestCIPollGenGuardDiscardsStaleGeneration(t *testing.T) {
 }
 
 func TestBrowseCIPolling(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StatePending
-	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
+	m.statuses[sha] = gitdata.StatePending
+	running := []gitdata.CheckDetail{{Name: "build", State: gitdata.StatePending, StartedAt: time.Now().Add(-time.Minute)}}
 	m.details[sha] = running
 	// pending のコミットがあるパネルを開く → ポーリング timer が仕掛かる
 	if cmd := m.openPanel(); cmd == nil {
@@ -126,9 +127,9 @@ func TestBrowseCIPolling(t *testing.T) {
 	}
 	// 結果の到着: in-flight が解除され、job 縮小でカーソルがクランプされる
 	m.panelCursor = 0
-	m.Update(ciPollResultMsg{batch: CIBatch{
-		Statuses: map[string]CIState{sha: StatePending},
-		Details:  map[string][]CheckDetail{sha: {}},
+	m.Update(ciPollResultMsg{batch: gitdata.CIBatch{
+		Statuses: map[string]gitdata.CIState{sha: gitdata.StatePending},
+		Details:  map[string][]gitdata.CheckDetail{sha: {}},
 	}})
 	if m.ciPollInFlight {
 		t.Fatal("ciPollResultMsg で in-flight が解除されない")
@@ -137,7 +138,7 @@ func TestBrowseCIPolling(t *testing.T) {
 		t.Fatalf("job 0 件への縮小でカーソルがクランプされない: %d", m.panelCursor)
 	}
 	// 決着 (success) の poll はポーリングを止める
-	m.statuses[sha] = StateSuccess
+	m.statuses[sha] = gitdata.StateSuccess
 	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd != nil {
 		t.Fatal("CI 決着後も poll が続く")
 	}
@@ -149,10 +150,10 @@ func TestBrowseCIPolling(t *testing.T) {
 // パネルの queued / 実行中の job は、一覧と同じく今のフレームのスピナーで回る
 // (固定の記号やフレーム 0 で止まらない)。
 func TestBrowsePanelPendingJobSpins(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Visible = false // usage の取得中表示も同じスピナーを使うので隔離する
-	m.statuses = statusesFor(m, StateFailure)
-	m.details[m.commits[0].SHA] = []CheckDetail{{Name: "queued-job", State: StatePending}}
+	m.statuses = statusesFor(m, gitdata.StateFailure)
+	m.details[m.commits[0].SHA] = []gitdata.CheckDetail{{Name: "queued-job", State: gitdata.StatePending}}
 	m.openPanel()
 	m.frame = 3
 	want := spinner.Frame(3) + "  queued-job"
@@ -162,8 +163,8 @@ func TestBrowsePanelPendingJobSpins(t *testing.T) {
 }
 
 func TestBrowsePanelOpenClose(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0)
 	if cmd := m.openPanel(); cmd != nil {
 		t.Errorf("詳細取得済みなのに fetch Cmd が返った")
@@ -192,8 +193,8 @@ func TestBrowsePanelOpenClose(t *testing.T) {
 
 func TestBrowsePanelEnterToggles(t *testing.T) {
 	// Enter は popup の表示・非表示の toggle (ユーザー要望)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	withJobs(m, 0)
 	m.handleKey("enter")
 	if m.panelSHA == "" {
@@ -207,9 +208,9 @@ func TestBrowsePanelEnterToggles(t *testing.T) {
 
 func TestBrowsePanelAnchoredAtCommit(t *testing.T) {
 	// パネルは一律上部でなく、対象コミットのヘッダー行直下に出る (ユーザー要望)
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.height = 40 // 3 コミットが全部見える高さ
-	m.statuses = statusesFor(m, StateSuccess)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	withJobs(m, 1)
 	m.handleKey("j") // 2 番目のコミットへ
 	m.openPanel()
@@ -233,8 +234,8 @@ func TestBrowsePanelAnchoredAtCommit(t *testing.T) {
 
 func TestBrowsePanelClampedToViewport(t *testing.T) {
 	// 対象コミットが画面下部でも、パネルはビューポート内へ収まる位置に出る
-	m := newTestBrowse(t, 5, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 5, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	withJobs(m, 4)
 	m.handleKey("G") // 末尾コミットへ (ヘッダーはビューポート下端付近)
 	m.openPanel()
@@ -250,8 +251,8 @@ func TestBrowsePanelClampedToViewport(t *testing.T) {
 func TestBrowsePanelKeepsListHeight(t *testing.T) {
 	// パネルはリストへ行を差し込まず上へ重ねるため、View の行数は開閉で変わらない
 	// (高さのガタつき防止: ユーザー要望の回帰テスト)
-	m := newTestBrowse(t, 5, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 5, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	withJobs(m, 0)
 	before := strings.Count(m.View().Content, "\n")
 	m.openPanel()
@@ -262,8 +263,8 @@ func TestBrowsePanelKeepsListHeight(t *testing.T) {
 }
 
 func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0)
 	m.openPanel()
 	if m.panelCursor != -1 {
@@ -312,8 +313,8 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 
 func TestBrowseEnterOpensDetailAndToggles(t *testing.T) {
 	// job 行の Enter は TUI 内の詳細ポップアップの開閉 toggle (ブラウザは o)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
@@ -333,14 +334,14 @@ func TestBrowseEnterOpensDetailAndToggles(t *testing.T) {
 
 func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
 	// キャッシュヒットで詳細が無い SHA のパネルはオンデマンド取得になる
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	// usage オーバーレイ (取得中は自身が "取得中..." を描く) を隔離しないと、パネルの
 	// ローディング指標が壊れても overlay の "取得中" で下の曖昧 assert が通ってしまう
 	// (マスク。レビュー指摘 2026-07-21)。openPanel を handleKey 経由で呼ばないため overlay が
 	// 自動 dismiss されないので明示的に消す。
 	m.usageOv.Visible = false
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateSuccess // キャッシュ由来 (details なし)
+	m.statuses[sha] = gitdata.StateSuccess // キャッシュ由来 (details なし)
 	cmd := m.openPanel()
 	if cmd == nil {
 		t.Fatalf("詳細未取得なのに fetch Cmd が返らない")
@@ -352,16 +353,16 @@ func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
 		t.Errorf("取得中表示がない:\n%s", m.View().Content)
 	}
 	// 取得完了メッセージで反映される
-	m.Update(detailMsg{sha: sha, batch: CIBatch{
-		Statuses: map[string]CIState{sha: StateSuccess},
-		Details:  map[string][]CheckDetail{sha: {{Name: "build", State: StateSuccess}}}}})
+	m.Update(detailMsg{sha: sha, batch: gitdata.CIBatch{
+		Statuses: map[string]gitdata.CIState{sha: gitdata.StateSuccess},
+		Details:  map[string][]gitdata.CheckDetail{sha: {{Name: "build", State: gitdata.StateSuccess}}}}})
 	if m.detailsLoading[sha] {
 		t.Errorf("取得完了後も loading のまま")
 	}
 	if !strings.Contains(m.View().Content, "✅ build") {
 		t.Errorf("取得した詳細がパネルに出ていない:\n%s", m.View().Content)
 	}
-	if m.fetched[sha] != StateSuccess {
+	if m.fetched[sha] != gitdata.StateSuccess {
 		t.Errorf("詳細取得の状態がキャッシュ保存対象 (fetched) に入っていない")
 	}
 }
@@ -369,7 +370,7 @@ func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
 func TestBrowsePanelDuringBatchFetchWaits(t *testing.T) {
 	// 一括取得中にその対象 SHA のパネルを開いても、重複リクエストは打たず結果を待つ
 	shas := []string{strings.Repeat("a", 40)}
-	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, shas)
 	if cmd := m.openPanel(); cmd != nil {
 		t.Errorf("一括取得中の SHA に重複 fetch Cmd が返った")
 	}
@@ -377,9 +378,9 @@ func TestBrowsePanelDuringBatchFetchWaits(t *testing.T) {
 		t.Errorf("待機中の loading 表示が立っていない")
 	}
 	// 一括取得の完了で loading が解除され details が表示される
-	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: shas, batch: CIBatch{
-		Statuses: map[string]CIState{shas[0]: StateSuccess},
-		Details:  map[string][]CheckDetail{shas[0]: {{Name: "build", State: StateSuccess}}},
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: shas, batch: gitdata.CIBatch{
+		Statuses: map[string]gitdata.CIState{shas[0]: gitdata.StateSuccess},
+		Details:  map[string][]gitdata.CheckDetail{shas[0]: {{Name: "build", State: gitdata.StateSuccess}}},
 	}})
 	if m.detailsLoading[shas[0]] {
 		t.Errorf("一括取得完了後も loading のまま")
@@ -391,18 +392,18 @@ func TestBrowsePanelDuringBatchFetchWaits(t *testing.T) {
 
 func TestBrowseCIResultMergesAndStopsSpinner(t *testing.T) {
 	shas := []string{strings.Repeat("a", 40)}
-	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, shas)
 	if !m.fetching() {
 		t.Fatalf("toFetch ありで fetching が立っていない")
 	}
-	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: shas, batch: CIBatch{
-		Statuses: map[string]CIState{shas[0]: StateFailure},
-		Details:  map[string][]CheckDetail{shas[0]: {{Name: "lint", State: StateFailure}}},
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: shas, batch: gitdata.CIBatch{
+		Statuses: map[string]gitdata.CIState{shas[0]: gitdata.StateFailure},
+		Details:  map[string][]gitdata.CheckDetail{shas[0]: {{Name: "lint", State: gitdata.StateFailure}}},
 	}})
 	if m.fetching() {
 		t.Errorf("取得完了後も fetching のまま")
 	}
-	if m.statuses[shas[0]] != StateFailure || m.fetched[shas[0]] != StateFailure {
+	if m.statuses[shas[0]] != gitdata.StateFailure || m.fetched[shas[0]] != gitdata.StateFailure {
 		t.Errorf("statuses/fetched に反映されていない: %+v", m.statuses)
 	}
 }
@@ -412,22 +413,22 @@ func TestBrowseCIResultMergesAndStopsSpinner(t *testing.T) {
 // 着弾ぶんだけ toFetch を縮めること。
 func TestBrowseCIResultChunksLandIncrementally(t *testing.T) {
 	const n = 20 // chunkSHAs が複数チャンクへ割る件数
-	m := newTestBrowse(t, n, map[string]CIState{}, nil)
+	m := newTestBrowse(t, n, map[string]gitdata.CIState{}, nil)
 	shas := make([]string, n)
 	for i, c := range m.commits {
 		shas[i] = c.SHA
 	}
 	m.startCIFetch(shas)
-	chunks := chunkSHAs(shas)
+	_, chunks := gitdata.PlanCIChunks(shas)
 	if len(chunks) < 2 {
 		t.Fatalf("チャンク数 = %d; このテストは複数チャンク前提", len(chunks))
 	}
 	for i, chunk := range chunks {
-		statuses := map[string]CIState{}
+		statuses := map[string]gitdata.CIState{}
 		for _, sha := range chunk {
-			statuses[sha] = StateSuccess
+			statuses[sha] = gitdata.StateSuccess
 		}
-		m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunk, batch: CIBatch{Statuses: statuses}})
+		m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunk, batch: gitdata.CIBatch{Statuses: statuses}})
 
 		last := i == len(chunks)-1
 		if m.fetching() == last {
@@ -438,7 +439,7 @@ func TestBrowseCIResultChunksLandIncrementally(t *testing.T) {
 			if slices.Contains(m.toFetch, sha) {
 				t.Errorf("着弾済み SHA が toFetch に残っている (パネルが無駄に待つ)")
 			}
-			if m.statuses[sha] != StateSuccess {
+			if m.statuses[sha] != gitdata.StateSuccess {
 				t.Errorf("チャンク %d の SHA が反映されていない: %q", i+1, m.statuses[sha])
 			}
 		}
@@ -453,13 +454,13 @@ func TestBrowseCIResultChunksLandIncrementally(t *testing.T) {
 // 「まだ飛んでいるチャンク」の SHA が空文字へ潰れ、その結果が届いても反映されなくなる。
 func TestBrowseCIResultKeepsPendingChunkSHAs(t *testing.T) {
 	const n = 20
-	m := newTestBrowse(t, n, map[string]CIState{}, nil)
+	m := newTestBrowse(t, n, map[string]gitdata.CIState{}, nil)
 	shas := make([]string, n)
 	for i, c := range m.commits {
 		shas[i] = c.SHA
 	}
 	m.startCIFetch(shas)
-	chunks := chunkSHAs(shas)
+	_, chunks := gitdata.PlanCIChunks(shas)
 	if len(chunks) < 2 {
 		t.Fatalf("チャンク数 = %d; このテストは複数チャンク前提", len(chunks))
 	}
@@ -468,11 +469,11 @@ func TestBrowseCIResultKeepsPendingChunkSHAs(t *testing.T) {
 	for i, c := range chunks {
 		want[i] = slices.Clone(c)
 	}
-	first := map[string]CIState{}
+	first := map[string]gitdata.CIState{}
 	for _, sha := range chunks[0] {
-		first[sha] = StateSuccess
+		first[sha] = gitdata.StateSuccess
 	}
-	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunks[0], batch: CIBatch{Statuses: first}})
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunks[0], batch: gitdata.CIBatch{Statuses: first}})
 	for i := 1; i < len(chunks); i++ {
 		if !slices.Equal(chunks[i], want[i]) {
 			t.Fatalf("未着チャンク %d の SHA 列が壊れた:\n got  %q\n want %q", i+1, chunks[i], want[i])
@@ -480,13 +481,13 @@ func TestBrowseCIResultKeepsPendingChunkSHAs(t *testing.T) {
 	}
 	// 壊れていなければ、後続チャンクの着弾も従来どおり反映される
 	for i := 1; i < len(chunks); i++ {
-		statuses := map[string]CIState{}
+		statuses := map[string]gitdata.CIState{}
 		for _, sha := range chunks[i] {
-			statuses[sha] = StateFailure
+			statuses[sha] = gitdata.StateFailure
 		}
-		m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunks[i], batch: CIBatch{Statuses: statuses}})
+		m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunks[i], batch: gitdata.CIBatch{Statuses: statuses}})
 		for _, sha := range chunks[i] {
-			if m.statuses[sha] != StateFailure {
+			if m.statuses[sha] != gitdata.StateFailure {
 				t.Errorf("チャンク %d の SHA %q が反映されていない: %q", i+1, sha[:7], m.statuses[sha])
 			}
 		}
@@ -499,7 +500,7 @@ func TestBrowseCIResultKeepsPendingChunkSHAs(t *testing.T) {
 // 同一 SHA 並行リクエストガードの無効化)、取得中 SHA を toFetch から誤って間引く。
 func TestBrowseCIResultDiscardsStaleEpoch(t *testing.T) {
 	const n = 20
-	m := newTestBrowse(t, n, map[string]CIState{}, nil)
+	m := newTestBrowse(t, n, map[string]gitdata.CIState{}, nil)
 	shas := make([]string, n)
 	for i, c := range m.commits {
 		shas[i] = c.SHA
@@ -511,11 +512,11 @@ func TestBrowseCIResultDiscardsStaleEpoch(t *testing.T) {
 		t.Fatal("前提: startCIFetch で世代が進んでいない")
 	}
 	pending, toFetch := m.pendingFetches, slices.Clone(m.toFetch)
-	stale := map[string]CIState{}
-	for _, sha := range chunkSHAs(shas)[0] {
-		stale[sha] = StateSuccess
+	stale := map[string]gitdata.CIState{}
+	for _, sha := range firstChunk(shas) {
+		stale[sha] = gitdata.StateSuccess
 	}
-	m.Update(ciResultMsg{epoch: oldEpoch, shas: chunkSHAs(shas)[0], batch: CIBatch{Statuses: stale}})
+	m.Update(ciResultMsg{epoch: oldEpoch, shas: firstChunk(shas), batch: gitdata.CIBatch{Statuses: stale}})
 	if m.pendingFetches != pending || !m.fetching() {
 		t.Errorf("旧世代チャンクが pendingFetches を減算した: %d → %d", pending, m.pendingFetches)
 	}
@@ -526,7 +527,7 @@ func TestBrowseCIResultDiscardsStaleEpoch(t *testing.T) {
 		t.Errorf("旧世代チャンクのデータが反映された (新世代が取り直す契約): %v", m.statuses)
 	}
 	// 新世代のチャンクは従来どおり反映される
-	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunkSHAs(shas)[0], batch: CIBatch{Statuses: stale}})
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: firstChunk(shas), batch: gitdata.CIBatch{Statuses: stale}})
 	if len(m.statuses) == 0 {
 		t.Error("新世代のチャンクまで捨てられた")
 	}
@@ -534,19 +535,19 @@ func TestBrowseCIResultDiscardsStaleEpoch(t *testing.T) {
 
 func TestBrowseCIResultKeepsChunkError(t *testing.T) {
 	const n = 20
-	m := newTestBrowse(t, n, map[string]CIState{}, nil)
+	m := newTestBrowse(t, n, map[string]gitdata.CIState{}, nil)
 	shas := make([]string, n)
 	for i, c := range m.commits {
 		shas[i] = c.SHA
 	}
 	m.startCIFetch(shas)
-	chunks := chunkSHAs(shas)
-	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunks[0], batch: emptyBatch(), ghErr: &GHError{Kind: GHOther, Detail: "chunk 1 failed"}})
-	ok := map[string]CIState{}
+	_, chunks := gitdata.PlanCIChunks(shas)
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunks[0], batch: gitdata.EmptyBatch(), ghErr: &gitdata.GHError{Kind: gitdata.GHOther, Detail: "chunk 1 failed"}})
+	ok := map[string]gitdata.CIState{}
 	for _, sha := range chunks[1] {
-		ok[sha] = StateSuccess
+		ok[sha] = gitdata.StateSuccess
 	}
-	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunks[1], batch: CIBatch{Statuses: ok}})
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunks[1], batch: gitdata.CIBatch{Statuses: ok}})
 	if m.ghErr == nil || !strings.Contains(m.ghErr.Detail, "chunk 1 failed") {
 		t.Errorf("成功チャンクが失敗チャンクの警告を消した: %+v", m.ghErr)
 	}
@@ -560,21 +561,21 @@ func TestBrowseCIResultKeepsChunkError(t *testing.T) {
 func TestBrowseCIResultNegativeCachesUnknown(t *testing.T) {
 	// API から結果が返らなかった SHA は unknown 表示 + 負キャッシュ対象 (fetched) に入る
 	shas := []string{strings.Repeat("a", 40)}
-	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
-	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: shas, batch: emptyBatch()})
-	if m.statuses[shas[0]] != StateUnknown {
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, shas)
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: shas, batch: gitdata.EmptyBatch()})
+	if m.statuses[shas[0]] != gitdata.StateUnknown {
 		t.Errorf("statuses = %v; want unknown", m.statuses[shas[0]])
 	}
-	if m.fetched[shas[0]] != StateUnknown {
+	if m.fetched[shas[0]] != gitdata.StateUnknown {
 		t.Errorf("unknown が負キャッシュ対象 (fetched) に入っていない")
 	}
 }
 
 func TestBrowsePanelUnpushedNoFetch(t *testing.T) {
 	// 未 push の SHA のパネルは GitHub へ問い合わせない
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateUnpushed
+	m.statuses[sha] = gitdata.StateUnpushed
 	if cmd := m.openPanel(); cmd != nil {
 		t.Errorf("未 push SHA で fetch Cmd が返った")
 	}
@@ -585,10 +586,10 @@ func TestBrowsePanelUnpushedNoFetch(t *testing.T) {
 
 func TestBrowseOpenJobRejectsNonHTTP(t *testing.T) {
 	// targetUrl は外部 CI が任意に設定できるため http(s) 以外は開かない
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateSuccess
-	m.details[sha] = []CheckDetail{{Name: "evil", State: StateSuccess, URL: "file:///etc/passwd"}}
+	m.statuses[sha] = gitdata.StateSuccess
+	m.details[sha] = []gitdata.CheckDetail{{Name: "evil", State: gitdata.StateSuccess, URL: "file:///etc/passwd"}}
 	m.openPanel()
 	m.handleKey("j")
 	called := false
@@ -615,8 +616,8 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	// v キー: 詳細表示中に nvim 起動コマンドを組む (実起動はスタブで捕捉)
 	cmds := testenv.StubEditorCapture(t)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
@@ -672,8 +673,8 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 }
 
 func TestBrowseJobDetailPopup(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j") // job0 へ
@@ -738,8 +739,8 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 // キャッシュ済み job 詳細を開き直すと offset がログ末尾へ飛ぶ (先頭ではない)。抽出で
 // startOpen() を diffOv.open (offset=0) の clone にすると『開いた瞬間に最新ログ』が壊れる。
 func TestBrowseJobDetailReopenScrollsToTail(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
@@ -771,8 +772,8 @@ func TestBrowseJobDetailReopenScrollsToTail(t *testing.T) {
 // のときだけ発火する。別 key の遅延結果・詳細非表示中の結果は offset を動かさない (identity
 // 非所有なので、抽出で receive が live key を受け取らないと誤発火/不発火する)。
 func TestBrowseJobDetailStaleMsgDoesNotMoveOffset(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0) // job0=build, job1=lint
 	m.openPanel()
 	m.handleKey("j") // job0 (key = panelSHA/0)
@@ -803,8 +804,8 @@ func TestBrowseJobDetailStaleMsgDoesNotMoveOffset(t *testing.T) {
 // job 詳細ポップアップ表示中の Space は「閉じる」(diff の Space=半ページ下スクロールとは逆)。
 // tig 流の「詳細→job 一覧へ戻る」。抽出で diffOv.scroll を素朴コピーすると Space が化ける。
 func TestBrowseJobDetailSpaceCloses(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
@@ -823,8 +824,8 @@ func TestBrowseJobDetailSpaceCloses(t *testing.T) {
 // まま閉じる経路 (reloadAfterPull 等) で detailOpen/detailOffset が確実に落ちる。抽出で
 // closePanel の detailOv.close() 化を漏らすと、次に開いたパネルの下に前 job のログが stale 表示。
 func TestBrowseClosePanelClosesOpenDetail(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
@@ -844,8 +845,8 @@ func TestBrowseClosePanelClosesOpenDetail(t *testing.T) {
 // job 詳細取得中 (jobDetailBusy に key) は spinnerActive() が true を返し tick が回り続ける。
 // 抽出で spinnerActive を detailOv.fetching() 参照に変え忘れると取得中スピナーが固まる。
 func TestBrowseJobDetailFetchKeepsSpinnerActive(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
@@ -862,7 +863,7 @@ func TestBrowseJobDetailFetchKeepsSpinnerActive(t *testing.T) {
 // detailOv.reset() の配線を漏らすと、pull 後 (SHA 不変のコミット) に旧ログ残骸が残る。
 func TestBrowseReloadAfterPullResetsJobDetailCache(t *testing.T) {
 	newTempRepo(t, []string{"first", "second"})
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.opts = &Options{MaxCount: 20}
 	m.detailOv.cache.Store("stale/0", []string{"old log"}, "stale/0")
 	// 🚨 札は未キャッシュのキーで立てる: begin はキャッシュ済みなら何もしないので、
@@ -878,10 +879,10 @@ func TestBrowseReloadAfterPullResetsJobDetailCache(t *testing.T) {
 }
 
 func TestBrowsePanelShowsJobDuration(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateFailure
-	m.details[sha] = []CheckDetail{{Name: "dotfiles-tests", State: StateFailure, Duration: 2*time.Minute + 39*time.Second}}
+	m.statuses[sha] = gitdata.StateFailure
+	m.details[sha] = []gitdata.CheckDetail{{Name: "dotfiles-tests", State: gitdata.StateFailure, Duration: 2*time.Minute + 39*time.Second}}
 	m.openPanel()
 	if !strings.Contains(m.View().Content, "(2m39s)") {
 		t.Errorf("job 行に所要時間が出ていない:\n%s", m.View().Content)
@@ -891,12 +892,12 @@ func TestBrowsePanelShowsJobDuration(t *testing.T) {
 func TestBrowsePanelShowsRunningElapsed(t *testing.T) {
 	testenv.StubClock(t)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Visible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StatePending
+	m.statuses[sha] = gitdata.StatePending
 	// 開始 90 秒前・ETA basis なし (履歴が画面に無い) → 経過時間だけ出る
-	m.details[sha] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(910, 0)}}
+	m.details[sha] = []gitdata.CheckDetail{{Name: "build", State: gitdata.StatePending, StartedAt: time.Unix(910, 0)}}
 	m.openPanel()
 	view := m.View().Content
 	if !strings.Contains(view, "1m30s 経過") {
@@ -913,13 +914,13 @@ func TestBrowsePanelShowsRunningElapsed(t *testing.T) {
 func TestBrowsePanelShowsRunningETA(t *testing.T) {
 	testenv.StubClock(t)
 
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
 	running, prev := m.commits[0].SHA, m.commits[1].SHA
-	m.statuses[running] = StatePending
-	m.statuses[prev] = StateSuccess
+	m.statuses[running] = gitdata.StatePending
+	m.statuses[prev] = gitdata.StateSuccess
 	// 実行中 job: 開始 60 秒前。直近の同名完了 job は 100 秒 → 残り ~40s
-	m.details[running] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(940, 0)}}
-	m.details[prev] = []CheckDetail{{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}
+	m.details[running] = []gitdata.CheckDetail{{Name: "build", State: gitdata.StatePending, StartedAt: time.Unix(940, 0)}}
+	m.details[prev] = []gitdata.CheckDetail{{Name: "build", State: gitdata.StateSuccess, Duration: 100 * time.Second}}
 	m.openPanel()
 	view := m.View().Content
 	if !strings.Contains(view, "1m00s 経過") {
@@ -933,12 +934,12 @@ func TestBrowsePanelShowsRunningETA(t *testing.T) {
 func TestBrowsePanelRunningETAOverrun(t *testing.T) {
 	testenv.StubClock(t)
 
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
 	running, prev := m.commits[0].SHA, m.commits[1].SHA
-	m.statuses[running] = StatePending
+	m.statuses[running] = gitdata.StatePending
 	// 経過 120 秒 > 前回 100 秒 → 予定超過
-	m.details[running] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(880, 0)}}
-	m.details[prev] = []CheckDetail{{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}
+	m.details[running] = []gitdata.CheckDetail{{Name: "build", State: gitdata.StatePending, StartedAt: time.Unix(880, 0)}}
+	m.details[prev] = []gitdata.CheckDetail{{Name: "build", State: gitdata.StateSuccess, Duration: 100 * time.Second}}
 	m.openPanel()
 	if !strings.Contains(m.View().Content, "予定超過") {
 		t.Errorf("前回所要時間を超えたら予定超過を出すべき:\n%s", m.View().Content)
@@ -948,15 +949,15 @@ func TestBrowsePanelRunningETAOverrun(t *testing.T) {
 func TestBrowseRunningETASkipsCancelled(t *testing.T) {
 	testenv.StubClock(t)
 
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	running := m.commits[0].SHA
-	m.statuses[running] = StatePending
+	m.statuses[running] = gitdata.StatePending
 	// 実行中: 開始 60 秒前
-	m.details[running] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(940, 0)}}
+	m.details[running] = []gitdata.CheckDetail{{Name: "build", State: gitdata.StatePending, StartedAt: time.Unix(940, 0)}}
 	// 直近 (近い側): cancel された同名 job (Duration>0 だが StateNeutral) → basis に使わない
-	m.details[m.commits[1].SHA] = []CheckDetail{{Name: "build", State: StateNeutral, Duration: 3 * time.Second}}
+	m.details[m.commits[1].SHA] = []gitdata.CheckDetail{{Name: "build", State: gitdata.StateNeutral, Duration: 3 * time.Second}}
 	// その先: 正常完了 100 秒 → こちらを basis にして残り ~40s
-	m.details[m.commits[2].SHA] = []CheckDetail{{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}
+	m.details[m.commits[2].SHA] = []gitdata.CheckDetail{{Name: "build", State: gitdata.StateSuccess, Duration: 100 * time.Second}}
 	m.openPanel()
 	view := m.View().Content
 	if strings.Contains(view, "予定超過") {
@@ -970,13 +971,13 @@ func TestBrowseRunningETASkipsCancelled(t *testing.T) {
 func TestBrowseRunningETAFetchesMissingBasis(t *testing.T) {
 	testenv.StubClock(t)
 
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Visible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
 	running, prev := m.commits[0].SHA, m.commits[1].SHA
-	m.statuses[running] = StatePending
-	m.statuses[prev] = StateSuccess // 完了コミット: cache ヒット相当で Details 未取得
+	m.statuses[running] = gitdata.StatePending
+	m.statuses[prev] = gitdata.StateSuccess // 完了コミット: cache ヒット相当で Details 未取得
 	// 開き直し後の状態: pending は再取得され details あり、完了コミットは Details 無し
-	m.details[running] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(940, 0)}}
+	m.details[running] = []gitdata.CheckDetail{{Name: "build", State: gitdata.StatePending, StartedAt: time.Unix(940, 0)}}
 
 	cmd := m.openPanel()
 	if cmd == nil {
@@ -989,10 +990,10 @@ func TestBrowseRunningETAFetchesMissingBasis(t *testing.T) {
 		t.Errorf("basis 未着なのに ETA が出ている:\n%s", m.View().Content)
 	}
 	// basis (prev の完了 job 100s) が届く → 残り ~40s
-	m.Update(basisMsg{targets: []string{prev}, batch: CIBatch{
-		Statuses: map[string]CIState{prev: StateSuccess},
-		Details:  map[string][]CheckDetail{prev: {{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}},
-		PRs:      map[string]*PRRef{},
+	m.Update(basisMsg{targets: []string{prev}, batch: gitdata.CIBatch{
+		Statuses: map[string]gitdata.CIState{prev: gitdata.StateSuccess},
+		Details:  map[string][]gitdata.CheckDetail{prev: {{Name: "build", State: gitdata.StateSuccess, Duration: 100 * time.Second}}},
+		PRs:      map[string]*gitdata.PRRef{},
 	}})
 	if !strings.Contains(m.View().Content, "残り ~40s") {
 		t.Errorf("basis 補充後に ETA が出ていない:\n%s", m.View().Content)
@@ -1003,15 +1004,15 @@ func TestBrowseRunningETAFetchesMissingBasis(t *testing.T) {
 }
 
 func TestBrowseETABasisFillsEmptyToStopRefetch(t *testing.T) {
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
 	prev := m.commits[1].SHA
 	// target を要求したが応答に details が無い (GitHub 上に無い等) → 空スライスで確定させ、
 	// 同じ target を無限に取り直さないこと
 	m.detailsLoading[prev] = true
-	m.Update(basisMsg{targets: []string{prev}, batch: CIBatch{
-		Statuses: map[string]CIState{},
-		Details:  map[string][]CheckDetail{},
-		PRs:      map[string]*PRRef{},
+	m.Update(basisMsg{targets: []string{prev}, batch: gitdata.CIBatch{
+		Statuses: map[string]gitdata.CIState{},
+		Details:  map[string][]gitdata.CheckDetail{},
+		PRs:      map[string]*gitdata.PRRef{},
 	}})
 	if _, ok := m.details[prev]; !ok {
 		t.Error("応答に無かった target の Details が確定されず、再取得ループの余地が残る")
@@ -1022,10 +1023,10 @@ func TestBrowseETABasisFillsEmptyToStopRefetch(t *testing.T) {
 }
 
 func TestBrowseNonGitHubRepoPanel(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.hasRepo = false
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateNone
+	m.statuses[sha] = gitdata.StateNone
 	if cmd := m.openPanel(); cmd != nil {
 		t.Errorf("GitHub 以外の remote で fetch Cmd が返った")
 	}
@@ -1036,10 +1037,10 @@ func TestBrowseNonGitHubRepoPanel(t *testing.T) {
 
 func TestBrowsePanelHomeKeyOnEmptyJobs(t *testing.T) {
 	// job 0 件のパネルで g を押してもタイトル行 (-1) から動かず、Enter で閉じられる
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateNone
-	m.details[sha] = []CheckDetail{}
+	m.statuses[sha] = gitdata.StateNone
+	m.details[sha] = []gitdata.CheckDetail{}
 	m.openPanel()
 	m.handleKey("g")
 	if m.panelCursor != -1 {
@@ -1054,10 +1055,10 @@ func TestBrowsePanelHomeKeyOnEmptyJobs(t *testing.T) {
 // 猶予ポーリング: rerun 直後は状態がまだ pending に映らないので、panelGrace の残回数だけ
 // パネル SHA を追従対象に留め、尽きたら止まる。pending が映れば通常追従へ引き継がれる。
 func TestCIPollRerunGrace(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses = statusesFor(m, StateFailure) // pending でない = 通常は追従対象外
-	withFailedJob(m, 0, 7, StateFailure)
+	m.statuses = statusesFor(m, gitdata.StateFailure) // pending でない = 通常は追従対象外
+	withFailedJob(m, 0, 7, gitdata.StateFailure)
 	m.openPanel()
 	m.panelGrace = 2
 	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil {
@@ -1072,7 +1073,7 @@ func TestCIPollRerunGrace(t *testing.T) {
 		t.Fatal("猶予が尽きたのにポーリングが続いた")
 	}
 	// rerun が GraphQL に映った (pending) 後は猶予に依らず追従が続く
-	m.statuses[sha] = StatePending
+	m.statuses[sha] = gitdata.StatePending
 	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil || !m.ciPollInFlight {
 		t.Fatal("pending が見えたのに追従されない")
 	}
@@ -1088,13 +1089,13 @@ func TestCIPollRerunGrace(t *testing.T) {
 // (起動時の ciResultMsg / detailMsg / refetchAfterPush / rerunMsg / openPanel) あっても
 // 二重チェーンを張らない (GraphQL ポーリング倍化の防止)。追従対象が無いときは張らない。
 func TestEnsureCIPollSingleFlight(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateSuccess
+	m.statuses[sha] = gitdata.StateSuccess
 	if cmd := m.ensureCIPoll(); cmd != nil || m.ciPolling {
 		t.Fatal("追従対象が無いのにチェーンを張った")
 	}
-	m.statuses[sha] = StatePending
+	m.statuses[sha] = gitdata.StatePending
 	if cmd := m.ensureCIPoll(); cmd == nil || !m.ciPolling {
 		t.Fatal("初回 ensureCIPoll がチェーンを張らない")
 	}
@@ -1102,12 +1103,12 @@ func TestEnsureCIPollSingleFlight(t *testing.T) {
 		t.Fatal("チェーンが生きているのに 2 本目を張った (二重化)")
 	}
 	// 決着でチェーンが止まった後は再アームできる
-	m.statuses[sha] = StateSuccess
+	m.statuses[sha] = gitdata.StateSuccess
 	m.Update(ciPollMsg{gen: m.ciPollGen})
 	if m.ciPolling {
 		t.Fatal("決着後もチェーンが生きている")
 	}
-	m.statuses[sha] = StatePending
+	m.statuses[sha] = gitdata.StatePending
 	if cmd := m.ensureCIPoll(); cmd == nil {
 		t.Fatal("停止後に再アームできない")
 	}
@@ -1116,14 +1117,14 @@ func TestEnsureCIPollSingleFlight(t *testing.T) {
 // 回帰 (レビュー確定 medium): 実行中 job があるパネルで rerun しても、既存の polling チェーンに
 // 加えて 2 本目を張らない。
 func TestBrowseRerunNoDoublePoll(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
-	m.details[m.commits[0].SHA] = []CheckDetail{
-		{Name: "test", State: StatePending, CheckID: 1, StartedAt: app.TimeNow()},
-		{Name: "lint", State: StateFailure, CheckID: 7},
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
+	m.details[m.commits[0].SHA] = []gitdata.CheckDetail{
+		{Name: "test", State: gitdata.StatePending, CheckID: 1, StartedAt: app.TimeNow()},
+		{Name: "lint", State: gitdata.StateFailure, CheckID: 7},
 	}
-	m.statuses[m.commits[0].SHA] = StatePending // 実行中 = 追従対象
-	m.openPanel()                               // chain #1 が張られる
+	m.statuses[m.commits[0].SHA] = gitdata.StatePending // 実行中 = 追従対象
+	m.openPanel()                                       // chain #1 が張られる
 	if !m.ciPolling {
 		t.Fatal("pending で openPanel がチェーンを張らない")
 	}
@@ -1232,12 +1233,12 @@ func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 // 並行取得ガード: in-flight 中 / 一括取得中の周期発火は timer だけ繋いで fetch を重ねない
 // (同一 SHA への GraphQL 並行は完了順で statuses/details が上書きされるため)。
 func TestCIPollSkipsFetchWhileBusy(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StatePending
+	m.statuses[sha] = gitdata.StatePending
 	calls := 0
 	orig := ciPollFetch
-	ciPollFetch = func(Repo, []string, func(CIBatch, *GHError) tea.Msg) tea.Cmd {
+	ciPollFetch = func(gitdata.Repo, []string, func(gitdata.CIBatch, *gitdata.GHError) tea.Msg) tea.Cmd {
 		calls++
 		return nil
 	}
@@ -1269,12 +1270,12 @@ func TestCIPollSkipsFetchWhileBusy(t *testing.T) {
 // CI が 1 つも現れない (workflow を持たない repo で push した) ケースは ciAwaitMaxAttempts で
 // 諦める。諦めた後は追従対象が無くなるのでチェーンも止まる (永久ポーリングしない)。
 func TestCIPollAwaitCapGivesUp(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
 	m.awaitCI = map[string]bool{sha: true}
-	none := CIBatch{Statuses: map[string]CIState{sha: StateNone}}
+	none := gitdata.CIBatch{Statuses: map[string]gitdata.CIState{sha: gitdata.StateNone}}
 	orig := ciPollFetch
-	ciPollFetch = func(Repo, []string, func(CIBatch, *GHError) tea.Msg) tea.Cmd { return nil }
+	ciPollFetch = func(gitdata.Repo, []string, func(gitdata.CIBatch, *gitdata.GHError) tea.Msg) tea.Cmd { return nil }
 	t.Cleanup(func() { ciPollFetch = orig })
 
 	// 打ち切りは周期 (ciPollMsg) で数える = ciPollInterval × ciAwaitMaxAttempts の時間予算。
@@ -1304,8 +1305,8 @@ func TestCIPollAwaitCapGivesUp(t *testing.T) {
 // ciResultMsg 起点の開始点をどれも踏まないため、Init 自身が張らないと「pending なのに追わない」
 // 状態になる (pending の cache TTL 内に再起動した場合に踏む)。
 func TestCIPollArmedAtInitFromCachedPending(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses[m.commits[0].SHA] = StatePending
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = gitdata.StatePending
 	m.pendingFetches = 0 // キャッシュヒットで取得なし (fetching() はここから導出。issue 224)
 	m.Init()
 	if !m.ciPolling {
@@ -1317,12 +1318,12 @@ func TestCIPollArmedAtInitFromCachedPending(t *testing.T) {
 // StateFailure になり、pending 判定だけでは追従から漏れる (パネルの経過時間・job 状態が固まる)。
 // 複数失敗のうち 1 つを rerun した直後もこの形になるので、猶予 (panelGrace) では代替できない。
 func TestCIPollFollowsRunningJobUnderFailureRollup(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateFailure
-	m.details[sha] = []CheckDetail{
-		{Name: "lint", State: StateFailure, CheckID: 7},
-		{Name: "test", State: StatePending, CheckID: 8, StartedAt: time.Now().Add(-time.Minute)},
+	m.statuses[sha] = gitdata.StateFailure
+	m.details[sha] = []gitdata.CheckDetail{
+		{Name: "lint", State: gitdata.StateFailure, CheckID: 7},
+		{Name: "test", State: gitdata.StatePending, CheckID: 8, StartedAt: time.Now().Add(-time.Minute)},
 	}
 	if !m.hasRunningJob(sha) {
 		t.Fatal("前提: 実行中 job が居ない (この形を作れていないとテストが無意味化する)")
@@ -1336,9 +1337,9 @@ func TestCIPollFollowsRunningJobUnderFailureRollup(t *testing.T) {
 		t.Fatal("実行中 job があるのに周期で再取得されない")
 	}
 	// 全 job が決着したら対象から外れる (永久ポーリングしない)
-	m.details[sha] = []CheckDetail{
-		{Name: "lint", State: StateFailure, CheckID: 7},
-		{Name: "test", State: StateSuccess, CheckID: 8},
+	m.details[sha] = []gitdata.CheckDetail{
+		{Name: "lint", State: gitdata.StateFailure, CheckID: 7},
+		{Name: "test", State: gitdata.StateSuccess, CheckID: 8},
 	}
 	if got := m.ciPollTargets(); len(got) != 0 {
 		t.Fatalf("決着後も追従対象に残っている: %v", got)
@@ -1349,20 +1350,26 @@ func TestCIPollFollowsRunningJobUnderFailureRollup(t *testing.T) {
 // 入れ替わった statuses を古い観測で巻き戻す。ただし in-flight は必ず下ろす — 下ろさないと
 // 以降の周期が永久に fetch を見送る (reloadAfterPull は「結果着弾まで in-flight 維持」が前提)。
 func TestCIPollResultFromStaleGenerationDropped(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateSuccess // リロード後に取り直した新しい観測
+	m.statuses[sha] = gitdata.StateSuccess // リロード後に取り直した新しい観測
 	m.ciPollInFlight = true
 	staleGen := m.ciPollGen
 	m.ciPollGen++ // reloadAfterPull 相当
 
-	m.Update(ciPollResultMsg{gen: staleGen, batch: CIBatch{
-		Statuses: map[string]CIState{sha: StatePending}, // 古い観測
+	m.Update(ciPollResultMsg{gen: staleGen, batch: gitdata.CIBatch{
+		Statuses: map[string]gitdata.CIState{sha: gitdata.StatePending}, // 古い観測
 	}})
-	if m.statuses[sha] != StateSuccess {
+	if m.statuses[sha] != gitdata.StateSuccess {
 		t.Fatalf("古い結果で statuses が巻き戻った: %v", m.statuses[sha])
 	}
 	if m.ciPollInFlight {
 		t.Fatal("世代不一致で in-flight が下りない (以降の周期が永久に fetch を見送る)")
 	}
+}
+
+// firstChunk は一括取得の最初のチャンク (本番と同じ planCIChunks で割る)。
+func firstChunk(shas []string) []string {
+	_, chunks := gitdata.PlanCIChunks(shas)
+	return chunks[0]
 }

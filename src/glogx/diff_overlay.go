@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"glogx/internal/gitdata"
 	"glogx/internal/linecache"
 	"glogx/internal/term"
 
@@ -96,7 +97,7 @@ func (o *diffOverlay) scroll(key string, rows int) {
 // boxLines は diff ポップアップの描画行 (枠付き)。非表示・コミット解決不能なら nil。
 // commit は呼び出し側が SHA から解決して渡す (この型はコミット列を知らない)。rows は本文の
 // 表示行数。spinner / width / colored は browseModel 側の状態を受け取る (usageOverlay と同様)。
-func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *Commit, rows int) []string {
+func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *gitdata.Commit, rows int) []string {
 	if o.sha == "" || commit == nil {
 		return nil
 	}

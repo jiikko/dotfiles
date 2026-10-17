@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"glogx/internal/doctorview"
+	"glogx/internal/gitdata"
 	"glogx/internal/issuesview/issuesviewtest"
 	"testing"
 
@@ -56,7 +57,7 @@ var motionScreens = []motionScreen{
 		name: "コミット一覧",
 		skip: map[string]string{"b": "push", " ": "パネルを開く", "space": "パネルを開く"},
 		build: func(t *testing.T) motionProbe {
-			m := newTestBrowse(t, 40, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 40, map[string]gitdata.CIState{}, nil)
 			m.width, m.height = 100, 20
 			return motionProbe{
 				press:   func(k string) { m.handleKey(k) },
@@ -70,7 +71,7 @@ var motionScreens = []motionScreen{
 		name: "issues 一覧",
 		build: func(t *testing.T) motionProbe {
 			t.Setenv("XDG_CACHE_HOME", t.TempDir())
-			m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 			m.width, m.height = 100, 20
 			m.issuesOv = *loadedView(issuesviewtest.ManyIssues(40)...)
 			return motionProbe{
@@ -85,7 +86,7 @@ var motionScreens = []motionScreen{
 		name: "status viewer",
 		skip: map[string]string{" ": "stage", "space": "stage", "b": "push (routeKeyToStatus が先に捌く)"},
 		build: func(t *testing.T) motionProbe {
-			m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 			m.width, m.height = 100, 20
 			m.statusOv = *statusRowsFixture(t, 40)
 			return motionProbe{
@@ -100,7 +101,7 @@ var motionScreens = []motionScreen{
 		name: "doctor",
 		skip: map[string]string{" ": "選択", "space": "選択"},
 		build: func(t *testing.T) motionProbe {
-			m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 			m.width, m.height = 100, 20
 			m.doctorOv = doctorview.DoctorView{}
 			m.doctorOv.Fixture().Show()

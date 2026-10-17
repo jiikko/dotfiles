@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/gitdata"
 	"strings"
 	"testing"
 )
@@ -32,9 +33,9 @@ func TestPRTargetSHANoRepo(t *testing.T) {
 }
 
 func TestPRTargetSHAUnpushed(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateUnpushed
+	m.statuses[sha] = gitdata.StateUnpushed
 	if _, ok := m.prTargetSHA(); ok {
 		t.Error("未 push コミットで ok=true (GitHub 上に存在しない SHA を問い合わせてしまう)")
 	}
@@ -44,7 +45,7 @@ func TestPRTargetSHAUnpushed(t *testing.T) {
 }
 
 func TestPRTargetSHAOK(t *testing.T) {
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
 	m.cursor = 1
 	sha, ok := m.prTargetSHA()
 	if !ok || sha != m.commits[1].SHA {

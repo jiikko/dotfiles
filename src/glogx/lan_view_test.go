@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"glogx/internal/app"
+	"glogx/internal/gitdata"
 	"glogx/internal/lanview"
 	"glogx/internal/term"
 	"mac-lan-manager/discover"
@@ -92,7 +93,7 @@ func fakeLanOptions() (lanmgr.Options, error) {
 
 func openLan(t *testing.T) *browseModel {
 	t.Helper()
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40}) // 80×10 では一覧の行が窓に入らない
 	m.handleKey("L")
 	if m.activeFullScreen() != app.FullScreenLan {

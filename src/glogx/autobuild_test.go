@@ -7,9 +7,11 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"glogx/internal/app"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestClassifyAutobuild(t *testing.T) {
@@ -219,7 +221,7 @@ func TestAutobuildToast(t *testing.T) {
 // Update 経路の結合: ビルド完了は消えるトーストでなく再起動ダイアログで出す
 // (ユーザー要望 2026-08-01)。🚨 トーストだと目を離している間に行動の機会だけが消える。
 func TestAutobuildMsgInstalledOpensRestartPrompt(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.toast.Clear()
 	m.autobuild = autobuildWatch{active: true, until: app.TimeNow().Add(autobuildWatchTimeout)}
 
@@ -264,7 +266,7 @@ func TestRestartPromptDefersWhileBlockingOperation(t *testing.T) {
 		{"pull 確認中", func(m *browseModel) { m.actModal.pullConfirm = true }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			tc.apply(m)
 			m.restartPending = true
 
@@ -290,7 +292,7 @@ func TestRestartPromptDefersWhileBlockingOperation(t *testing.T) {
 // 「その他のキー: 後で」に従って押した y が push を実行した (無反応より悪い: 画面の指示に
 // 従うと破壊的操作が走る)。ダイアログを出さないことで「見えている選択肢 = 効く選択肢」を保つ。
 func TestRestartPromptDoesNotShadowPushConfirm(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.actModal.pushConfirm = true
 	m.restartPending = true
 
@@ -305,7 +307,7 @@ func TestRestartPromptDoesNotShadowPushConfirm(t *testing.T) {
 
 // 走行中の処理が終われば、保留していたダイアログが出て答えられる。
 func TestRestartPromptAppearsAfterOperationFinishes(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.actModal.beginUpdate("claude")
 	m.restartPending = true
 
@@ -327,7 +329,7 @@ func TestRestartPromptAppearsAfterOperationFinishes(t *testing.T) {
 // r で確認なしに再起動 (ユーザー要望)。exec は main.go が行うので、ここでは印と終了を見る。
 func TestRestartPromptKeys(t *testing.T) {
 	t.Run("r で再起動を予約して終了", func(t *testing.T) {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		m.restartPending = true
 		m.handleKey("r")
 		if !m.restartRequested {
@@ -344,7 +346,7 @@ func TestRestartPromptKeys(t *testing.T) {
 	// 出ている間は 1 キーで必ず閉じ、r 以外では再起動しない ("再読込のつもりが再起動" を防ぐ)。
 	for _, key := range []string{"j", "q", "esc", "i", "R"} {
 		t.Run(key+" は再起動しない", func(t *testing.T) {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			m.restartPending = true
 			m.handleKey(key)
 			if m.restartRequested {
@@ -357,7 +359,7 @@ func TestRestartPromptKeys(t *testing.T) {
 	}
 	// viewer は全画面で全キーを飲むが、ダイアログには答えられる (答えられないと再起動できない)
 	t.Run("issues viewer を開いていても r が届く", func(t *testing.T) {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		m.handleKey("i")
 		m.restartPending = true
 		m.handleKey("r")
@@ -373,7 +375,7 @@ func TestRestartPromptKeys(t *testing.T) {
 // tickCmd を捨てると監視チェーンが切れ、その後のビルド失敗が二度と通知されない (監視は失敗を
 // 検出する唯一の経路)。Batch の要素数で「通知の tick と監視の tick が両方束ねられている」を見る。
 func TestAutobuildMsgKeepsWatchingWhileNotifying(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.toast.Clear()
 	m.ticking = false // single-flight で maybeTick が nil を返すと Batch の要素が減る
 	m.autobuild = autobuildWatch{
@@ -406,7 +408,7 @@ func TestPullStartsAutobuildAndOffersRestart(t *testing.T) {
 	spawnAutobuild = func(exe string) bool { asked = append(asked, exe); return true }
 	t.Cleanup(func() { spawnAutobuild = orig })
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.toast.Clear()
 	m.actModal.pulling = true
 	// 🚨 pullMsg の Batch をそのまま走らせる (配線ごと固定する)。deliverMsgs は Batch を
@@ -446,7 +448,7 @@ func TestPullWithoutSourceChangeIsQuiet(t *testing.T) {
 	spawnAutobuild = func(string) bool { return false }
 	t.Cleanup(func() { spawnAutobuild = orig })
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.toast.Clear()
 	m.Update(autobuildSpawnMsg{spawned: false})
 	if m.autobuild.active {
@@ -460,7 +462,7 @@ func TestPullWithoutSourceChangeIsQuiet(t *testing.T) {
 // 起動時に spawn された分をまだ監視中なら、pull で二重に問い合わせない
 // (shim の lock で二重ビルドは起きないが、トーストが重複する)。
 func TestPullDoesNotStackAutobuildWatch(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.autobuild = newAutobuildWatch("/some/dir/glogx", true, app.TimeNow())
 	if cmd := m.autobuildAfterPull(); cmd != nil {
 		t.Error("監視中なのに 2 本目の問い合わせを出した")
@@ -468,7 +470,7 @@ func TestPullDoesNotStackAutobuildWatch(t *testing.T) {
 }
 
 func TestAutobuildNotifiesAtStartup(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.toast.Clear()
 	m.autobuild = newAutobuildWatch("/some/dir/glogx", true, app.TimeNow())
 	m.Init()
@@ -486,7 +488,7 @@ func TestAutobuildNotifiesAtStartup(t *testing.T) {
 }
 
 func TestAutobuildMsgShowsFailureToast(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.toast.Clear()
 	m.autobuild = autobuildWatch{active: true, until: app.TimeNow().Add(autobuildWatchTimeout)}
 
@@ -502,7 +504,7 @@ func TestAutobuildMsgShowsFailureToast(t *testing.T) {
 // env が無い通常起動では監視しない = tick を 1 本も増やさない (恒久 wakeup を足さない)。
 func TestAutobuildNotWatchedWithoutEnv(t *testing.T) {
 	t.Setenv(autobuildPendingEnv, "")
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	if m.autobuild.active {
 		t.Error("env 無しで監視が有効になっている")
 	}
@@ -518,7 +520,7 @@ func TestAutobuildNotWatchedWithoutEnv(t *testing.T) {
 // 動き続ける」ことに誰も気づけない (実例 2026-07-31: 13 分間 stale なバイナリで操作していた)。
 func TestAutobuildStaleWarnsAtStartup(t *testing.T) {
 	stubSelfExe(t, staleWorkdir(t, true))
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.toast.Clear()
 	m.Init()
 	if !m.toast.Visible() {
@@ -559,7 +561,7 @@ func TestAutobuildStaleSilentWhenNotStale(t *testing.T) {
 			writeStamp(t, exe, time.Now())
 			stubSelfExe(t, exe)
 
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			m.toast.Clear()
 			m.autobuild = autobuildWatch{} // 監視もしていない通常起動
 			m.Init()
@@ -579,7 +581,7 @@ func TestAutobuildRunningWinsOverStaleStamp(t *testing.T) {
 	writeStamp(t, filepath.Join(dir, autobuildFailedStamp), time.Now()) // 前回失敗が残っている
 	stubSelfExe(t, exe)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.toast.Clear()
 	m.autobuild = newAutobuildWatch(exe, true, app.TimeNow()) // 再挑戦が走っている
 	m.Init()

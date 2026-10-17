@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"strings"
 	"testing"
@@ -24,7 +25,7 @@ func swapCodexVersionFetchers(t *testing.T, latest, installed string) {
 
 // X → codex update (C の codex 版。確認なし即実行・モーダル題字と結果トーストが codex 表記)。
 func TestBrowseCodexUpdateFlow(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	var calls int
 	orig := runCodexUpdate
 	runCodexUpdate = func() (string, string, string, error) { calls++; return "0.144.6", "0.150.0", "", nil }
@@ -118,7 +119,7 @@ func TestCodexUpdateThatDidNotUpdateIsNotReportedAsLatest(t *testing.T) {
 	}
 	t.Cleanup(func() { runCodexUpdate = origRun })
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd := m.handleKey("X")
 	deliverUpdateMsg(m, cmd)
 

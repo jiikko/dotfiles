@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"glogx/internal/extcmd"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"glogx/internal/usageview"
 
@@ -549,7 +550,7 @@ func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
 	start := func(t *testing.T) (*browseModel, tea.Cmd) {
 		t.Helper()
 		t.Setenv("XDG_CACHE_HOME", t.TempDir()) // usage のキャッシュは外れる
-		m := newTestBrowse(t, 2, map[string]CIState{}, []string{shaA, shaB})
+		m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, []string{shaA, shaB})
 		m.ticking = true
 		m.fetch = func() tea.Msg { return nil } // 本物の gh を起こさない
 		m.pendingFetches = 2                    // チャンク 2 つ: 途中では放さないことを見る
@@ -601,7 +602,7 @@ func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
 		if err := usageview.FixtureSaveCache(usageSnapFixture(t), time.Now()); err != nil {
 			t.Fatal(err)
 		}
-		m := newTestBrowse(t, 2, map[string]CIState{}, []string{shaA, shaB})
+		m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, []string{shaA, shaB})
 		m.ticking = true
 		m.fetch = func() tea.Msg { return nil }
 		m.pendingFetches = 2

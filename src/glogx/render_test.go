@@ -1,14 +1,16 @@
 package main
 
 import (
-	"github.com/jiikko/dotfiles/src/tuikit/spinner"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"strings"
 	"testing"
+
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 )
 
-func testCommits() []Commit {
-	return []Commit{
+func testCommits() []gitdata.Commit {
+	return []gitdata.Commit{
 		{SHA: "a", ShortSHA: "aaaaaaa", Subject: "Fix invoice calculation", Author: "koji", AuthorEmail: "koji@example.com",
 			Date: "Thu Jul 16 19:12:47 2026 +0900", RelDate: "2 hours ago", Decoration: "HEAD -> master",
 			Message: "Fix invoice calculation\n\ndetail line"},
@@ -19,7 +21,7 @@ func testCommits() []Commit {
 
 func TestRenderStaticMediumFormat(t *testing.T) {
 	// 既定は git log 標準 (medium) 形式に寄せる
-	statuses := map[string]CIState{"a": StateSuccess, "b": StateFailure}
+	statuses := map[string]gitdata.CIState{"a": gitdata.StateSuccess, "b": gitdata.StateFailure}
 	out := RenderStatic(testCommits(), statuses, RenderOpts{})
 	for _, want := range []string{
 		"✅ commit a (HEAD -> master)",
@@ -36,7 +38,7 @@ func TestRenderStaticMediumFormat(t *testing.T) {
 }
 
 func TestRenderStaticOneline(t *testing.T) {
-	statuses := map[string]CIState{"a": StateSuccess, "b": StateFailure}
+	statuses := map[string]gitdata.CIState{"a": gitdata.StateSuccess, "b": gitdata.StateFailure}
 	out := RenderStatic(testCommits(), statuses, RenderOpts{Oneline: true})
 	lines := strings.Split(out, "\n")
 	if len(lines) != 2 {
@@ -55,7 +57,7 @@ func TestRenderStaticOneline(t *testing.T) {
 
 func TestRenderLinesPushBoundary(t *testing.T) {
 	// 未 push と push 済みの間に ── origin ── の境界線が入る (どこまで push したかの視覚化)
-	statuses := map[string]CIState{"a": StateUnpushed, "b": StateSuccess}
+	statuses := map[string]gitdata.CIState{"a": gitdata.StateUnpushed, "b": gitdata.StateSuccess}
 	lines := RenderLines(testCommits(), statuses, RenderOpts{})
 	ruleIdx, headerB := -1, -1
 	for i, l := range lines {
@@ -77,16 +79,16 @@ func TestRenderLinesPushBoundary(t *testing.T) {
 		t.Errorf("oneline で境界線が入らない:\n%s", out)
 	}
 	// 全部未 push / repo 不明では入らない
-	for name, st := range map[string]map[string]CIState{
-		"全部未 push":       {"a": StateUnpushed, "b": StateUnpushed},
-		"repo 不明 (全部済み)": {"a": StateSuccess, "b": StateSuccess},
+	for name, st := range map[string]map[string]gitdata.CIState{
+		"全部未 push":       {"a": gitdata.StateUnpushed, "b": gitdata.StateUnpushed},
+		"repo 不明 (全部済み)": {"a": gitdata.StateSuccess, "b": gitdata.StateSuccess},
 	} {
 		if out := RenderStatic(testCommits(), st, RenderOpts{}); strings.Contains(out, " origin ") {
 			t.Errorf("%s で境界線が入った:\n%s", name, out)
 		}
 	}
 	// 全部 push 済み (HasRepo) なら先頭に all pushed マークが入る (ユーザー要望)
-	all := map[string]CIState{"a": StateSuccess, "b": StateSuccess}
+	all := map[string]gitdata.CIState{"a": gitdata.StateSuccess, "b": gitdata.StateSuccess}
 	out := RenderLines(testCommits(), all, RenderOpts{HasRepo: true})
 	if len(out) == 0 || !strings.Contains(term.StripANSI(out[0].Text), "origin (all pushed ✓)") {
 		t.Fatalf("全部 push 済みの先頭マークが無い: %q", out[0].Text)
@@ -97,7 +99,7 @@ func TestRenderLinesPushBoundary(t *testing.T) {
 		t.Fatal("混在時に先頭へ all pushed マークが出た")
 	}
 	// 全部未 push は HasRepo でも何も出ない
-	un := map[string]CIState{"a": StateUnpushed, "b": StateUnpushed}
+	un := map[string]gitdata.CIState{"a": gitdata.StateUnpushed, "b": gitdata.StateUnpushed}
 	if out := RenderStatic(testCommits(), un, RenderOpts{HasRepo: true}); strings.Contains(out, " origin ") {
 		t.Fatalf("全部未 push で境界線が入った:\n%s", out)
 	}
@@ -105,7 +107,7 @@ func TestRenderLinesPushBoundary(t *testing.T) {
 
 func TestRenderLinesLoadingSpinner(t *testing.T) {
 	// statuses に無い SHA は取得中としてスピナーを出す
-	out := RenderStatic(testCommits(), map[string]CIState{}, RenderOpts{Oneline: true, Spinner: "⠋"})
+	out := RenderStatic(testCommits(), map[string]gitdata.CIState{}, RenderOpts{Oneline: true, Spinner: "⠋"})
 	if !strings.HasPrefix(out, "⠋  aaaaaaa") {
 		t.Errorf("スピナー行 = %q", out)
 	}
@@ -113,7 +115,7 @@ func TestRenderLinesLoadingSpinner(t *testing.T) {
 
 func TestRenderStaticNoANSIWhenUncolored(t *testing.T) {
 	// 非 TTY (Colored=false) では ANSI を一切出さない (issue の完了条件)
-	statuses := map[string]CIState{"a": StateSuccess, "b": StatePending}
+	statuses := map[string]gitdata.CIState{"a": gitdata.StateSuccess, "b": gitdata.StatePending}
 	for _, oneline := range []bool{false, true} {
 		out := RenderStatic(testCommits(), statuses, RenderOpts{Oneline: oneline})
 		if strings.Contains(out, "\x1b") {
@@ -123,7 +125,7 @@ func TestRenderStaticNoANSIWhenUncolored(t *testing.T) {
 }
 
 func TestRenderStaticColored(t *testing.T) {
-	statuses := map[string]CIState{"a": StateSuccess, "b": StateFailure}
+	statuses := map[string]gitdata.CIState{"a": gitdata.StateSuccess, "b": gitdata.StateFailure}
 	out := RenderStatic(testCommits(), statuses, RenderOpts{Colored: true})
 	// 絵文字は色を自前で持つので ANSI で包まない (包んでも色は変わらず、端末によっては崩れる)
 	if !strings.HasPrefix(out, "✅ ") {
@@ -134,7 +136,7 @@ func TestRenderStaticColored(t *testing.T) {
 func TestRenderStaticWithDiffBody(t *testing.T) {
 	commits := testCommits()
 	commits[0].Body = " file.go | 2 +-\n 1 file changed"
-	statuses := map[string]CIState{"a": StateSuccess, "b": StateSuccess}
+	statuses := map[string]gitdata.CIState{"a": gitdata.StateSuccess, "b": gitdata.StateSuccess}
 	out := RenderStatic(commits, statuses, RenderOpts{})
 	// CI 記号はヘッダー行にだけ付く (issue の設計)
 	var glyphLines int
@@ -153,7 +155,7 @@ func TestRenderStaticWithDiffBody(t *testing.T) {
 
 func TestRenderLinesHeaderMapping(t *testing.T) {
 	// TUI のカーソル位置決めに使う Header/CommitIdx が正しく付く
-	lines := RenderLines(testCommits(), map[string]CIState{"a": StateSuccess, "b": StateSuccess}, RenderOpts{})
+	lines := RenderLines(testCommits(), map[string]gitdata.CIState{"a": gitdata.StateSuccess, "b": gitdata.StateSuccess}, RenderOpts{})
 	var headers []int
 	for i, l := range lines {
 		if l.Header {
@@ -173,12 +175,12 @@ func TestRenderLinesHeaderMapping(t *testing.T) {
 
 func TestPRBadge(t *testing.T) {
 	// PR バッジ: medium は記号の直後 (decoration で長いヘッダーが幅で切られても残る)、oneline は行末 (列揃えを崩さない)
-	prs := map[string]*PRRef{
+	prs := map[string]*gitdata.PRRef{
 		"a": {Number: 12, State: "OPEN"},
 		"b": nil, // 確認済みで PR なし
 	}
 	// medium: ヘッダー行に #12
-	lines := RenderLines(testCommits(), map[string]CIState{"a": StateSuccess, "b": StateSuccess},
+	lines := RenderLines(testCommits(), map[string]gitdata.CIState{"a": gitdata.StateSuccess, "b": gitdata.StateSuccess},
 		RenderOpts{PRs: prs})
 	if !strings.HasPrefix(lines[0].Text, "✅ #12 commit a (HEAD -> master)") {
 		t.Errorf("medium ヘッダーの PR バッジが記号の直後に無い: %q", lines[0].Text)
@@ -190,7 +192,7 @@ func TestPRBadge(t *testing.T) {
 		}
 	}
 	// oneline: 行末に #12
-	one := RenderLines(testCommits(), map[string]CIState{"a": StateSuccess, "b": StateSuccess},
+	one := RenderLines(testCommits(), map[string]gitdata.CIState{"a": gitdata.StateSuccess, "b": gitdata.StateSuccess},
 		RenderOpts{Oneline: true, PRs: prs})
 	if !strings.HasSuffix(one[0].Text, "#12") {
 		t.Errorf("oneline 行末に PR バッジがない: %q", one[0].Text)
@@ -200,7 +202,7 @@ func TestPRBadge(t *testing.T) {
 	if !strings.Contains(colored, term.AnsiGreen) {
 		t.Errorf("OPEN が緑でない: %q", colored)
 	}
-	merged := prBadge("m", RenderOpts{Colored: true, PRs: map[string]*PRRef{"m": {Number: 9, State: "MERGED"}}})
+	merged := prBadge("m", RenderOpts{Colored: true, PRs: map[string]*gitdata.PRRef{"m": {Number: 9, State: "MERGED"}}})
 	if !strings.Contains(merged, term.AnsiMagenta) {
 		t.Errorf("MERGED がマゼンタでない: %q", merged)
 	}
@@ -209,7 +211,7 @@ func TestPRBadge(t *testing.T) {
 func TestRenderDecorationGitStyle(t *testing.T) {
 	// git log の配色を尊重: HEAD=cyan / ローカル=green / remote=red / tag=yellow
 	o := RenderOpts{Colored: true}
-	dc := DefaultDecorColors()
+	dc := gitdata.DefaultDecorColors()
 	out := renderDecoration("HEAD -> master, origin/master, origin/HEAD, tag: v1.0, feature/x", o)
 	for _, want := range []string{
 		dc.HEAD + "HEAD" + term.AnsiReset,
@@ -232,7 +234,7 @@ func TestRenderDecorationGitStyle(t *testing.T) {
 
 func TestRenderDecorationCustomColors(t *testing.T) {
 	// git config color.decorate.* の上書き (RenderOpts.Decor 経由) が効く
-	dc := DecorColors{HEAD: "[H]", Branch: "[B]", RemoteBranch: "[R]", Tag: "[T]", Remotes: []string{"upstream"}}
+	dc := gitdata.DecorColors{HEAD: "[H]", Branch: "[B]", RemoteBranch: "[R]", Tag: "[T]", Remotes: []string{"upstream"}}
 	o := RenderOpts{Colored: true, Decor: &dc}
 	out := renderDecoration("upstream/main, origin/main", o)
 	if !strings.Contains(out, "[R]upstream/main") {
@@ -248,7 +250,7 @@ func TestRenderLinesWrapsMessage(t *testing.T) {
 	// Width > 0 (TUI) ではメッセージ行を切り詰めず端末幅で折り返す (git log と同じ見え方)
 	commits := testCommits()[:1]
 	commits[0].Message = strings.Repeat("あ", 50) // 表示幅 100
-	lines := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{Width: 44})
+	lines := RenderLines(commits, map[string]gitdata.CIState{"a": gitdata.StateSuccess}, RenderOpts{Width: 44})
 	var msgLines []string
 	for _, l := range lines {
 		if strings.HasPrefix(l.Text, "    ") {
@@ -268,7 +270,7 @@ func TestRenderLinesWrapsMessage(t *testing.T) {
 		}
 	}
 	// Width=0 (静的出力) は折り返さない (端末/パイプに任せる = git log と同じ)
-	static := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{})
+	static := RenderLines(commits, map[string]gitdata.CIState{"a": gitdata.StateSuccess}, RenderOpts{})
 	var staticMsg int
 	for _, l := range static {
 		if strings.HasPrefix(l.Text, "    あ") {
@@ -285,13 +287,13 @@ func TestRenderLinesExpandsBodyTabsInTUI(t *testing.T) {
 	// 表示が崩壊するのを防ぐ)。静的出力 (Width=0) は git log と同じ素通し
 	commits := testCommits()[:1]
 	commits[0].Body = "+\tfunc main() {\n+\t\treturn\n"
-	tui := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{Width: 80})
+	tui := RenderLines(commits, map[string]gitdata.CIState{"a": gitdata.StateSuccess}, RenderOpts{Width: 80})
 	for _, l := range tui {
 		if strings.Contains(l.Text, "\t") {
 			t.Errorf("TUI 描画にタブが残っている: %q", l.Text)
 		}
 	}
-	static := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{})
+	static := RenderLines(commits, map[string]gitdata.CIState{"a": gitdata.StateSuccess}, RenderOpts{})
 	found := false
 	for _, l := range static {
 		if strings.Contains(l.Text, "\t") {
@@ -310,14 +312,14 @@ func TestRenderLinesExpandsMessageTabsInTUI(t *testing.T) {
 	commits := testCommits()[:1]
 	commits[0].Message = "subject\n\n\tindented body of the message"
 	commits[0].Body = "" // Verbatim==nil の mediumLines 経路でメッセージ行を通す
-	tui := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{Width: 80})
+	tui := RenderLines(commits, map[string]gitdata.CIState{"a": gitdata.StateSuccess}, RenderOpts{Width: 80})
 	for _, l := range tui {
 		if strings.Contains(l.Text, "\t") {
 			t.Errorf("TUI 描画でメッセージ行のタブが残っている: %q", l.Text)
 		}
 	}
 	// 静的出力 (Width=0) は git log と同じくタブ素通し
-	static := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{})
+	static := RenderLines(commits, map[string]gitdata.CIState{"a": gitdata.StateSuccess}, RenderOpts{})
 	foundTab := false
 	for _, l := range static {
 		if strings.Contains(l.Text, "\t") {
@@ -332,11 +334,11 @@ func TestRenderLinesExpandsMessageTabsInTUI(t *testing.T) {
 func TestJapaneseOnelineAlignment(t *testing.T) {
 	// 全角 (幅 2) の subject/author が混ざっても列が揃う (幅計算が rune 数でなく
 	// 表示幅ベースであることの検証)
-	commits := []Commit{
+	commits := []gitdata.Commit{
 		{SHA: "a", ShortSHA: "aaaaaaa", Subject: "日本語のコミットメッセージ", Author: "川口", RelDate: "2 hours ago"},
 		{SHA: "b", ShortSHA: "bbbbbbb", Subject: "ascii subject", Author: "koji", RelDate: "1 day ago"},
 	}
-	lines := RenderLines(commits, map[string]CIState{"a": StateSuccess, "b": StateFailure}, RenderOpts{Oneline: true})
+	lines := RenderLines(commits, map[string]gitdata.CIState{"a": gitdata.StateSuccess, "b": gitdata.StateFailure}, RenderOpts{Oneline: true})
 	datePos := func(text, marker string) int {
 		idx := strings.Index(text, marker)
 		if idx < 0 {
@@ -353,8 +355,8 @@ func TestJapaneseOnelineAlignment(t *testing.T) {
 
 func TestJapaneseSubjectTruncation(t *testing.T) {
 	// 全角 subject の切り詰めが cap を超えない (全角境界で 1 桁はみ出さない)
-	commits := []Commit{{SHA: "a", ShortSHA: "aaaaaaa", Subject: strings.Repeat("長", 50), Author: "k", RelDate: "now"}}
-	lines := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{Oneline: true})
+	commits := []gitdata.Commit{{SHA: "a", ShortSHA: "aaaaaaa", Subject: strings.Repeat("長", 50), Author: "k", RelDate: "now"}}
+	lines := RenderLines(commits, map[string]gitdata.CIState{"a": gitdata.StateSuccess}, RenderOpts{Oneline: true})
 	if !strings.Contains(lines[0].Text, "…") {
 		t.Fatalf("切り詰めが起きていない: %q", lines[0].Text)
 	}
@@ -443,15 +445,15 @@ func TestClipToWidth(t *testing.T) {
 }
 
 func TestRenderCached(t *testing.T) {
-	head := &Commit{SHA: "a", ShortSHA: "aaaaaaa", Subject: "Fix invoice calculation"}
-	out := RenderCached(head, StateSuccess, " 3 files changed", false, "")
+	head := &gitdata.Commit{SHA: "a", ShortSHA: "aaaaaaa", Subject: "Fix invoice calculation"}
+	out := RenderCached(head, gitdata.StateSuccess, " 3 files changed", false, "")
 	if !strings.HasPrefix(out, "HEAD CI: ✅ aaaaaaa Fix invoice calculation") {
 		t.Errorf("ヘッダー = %q", out)
 	}
 	if !strings.Contains(out, "Staged changes:\n 3 files changed") {
 		t.Errorf("staged diff がない:\n%s", out)
 	}
-	empty := RenderCached(head, StateNone, "", false, "")
+	empty := RenderCached(head, gitdata.StateNone, "", false, "")
 	if !strings.Contains(empty, "staged な変更はありません") {
 		t.Errorf("空 diff の表示 = %q", empty)
 	}
@@ -460,18 +462,18 @@ func TestRenderCached(t *testing.T) {
 // BenchmarkRenderLinesLargePatch は -p の巨大出力での行構築コストの観測用
 // (browseModel.lines() のメモ化が効く前提の 1 回分のコスト)。
 func BenchmarkRenderLinesLargePatch(b *testing.B) {
-	commits := make([]Commit, 20)
+	commits := make([]gitdata.Commit, 20)
 	patch := strings.Repeat("+added line of a reasonably long diff body text\n", 500)
 	for i := range commits {
-		commits[i] = Commit{
+		commits[i] = gitdata.Commit{
 			SHA: strings.Repeat("a", 39) + string(rune('a'+i)), ShortSHA: "aaaaaaa",
 			Subject: "subject", Author: "koji", AuthorEmail: "k@x", Date: "d", RelDate: "now",
 			Message: "subject", Body: patch,
 		}
 	}
-	statuses := map[string]CIState{}
+	statuses := map[string]gitdata.CIState{}
 	for _, c := range commits {
-		statuses[c.SHA] = StateSuccess
+		statuses[c.SHA] = gitdata.StateSuccess
 	}
 	for b.Loop() {
 		RenderLines(commits, statuses, RenderOpts{Width: 120})
@@ -479,19 +481,19 @@ func BenchmarkRenderLinesLargePatch(b *testing.B) {
 }
 
 func TestStatusGlyphAllStates(t *testing.T) {
-	want := map[CIState]string{
-		StateSuccess: "✅", StateFailure: "❌", StatePending: "⠋ ",
-		StateNeutral: "🚫", StateNone: "⬜", StateUnknown: "❓", StateUnpushed: "🔼",
+	want := map[gitdata.CIState]string{
+		gitdata.StateSuccess: "✅", gitdata.StateFailure: "❌", gitdata.StatePending: "⠋ ",
+		gitdata.StateNeutral: "🚫", gitdata.StateNone: "⬜", gitdata.StateUnknown: "❓", gitdata.StateUnpushed: "🔼",
 	}
 	for state, glyph := range want {
 		if got := StatusGlyph(state, false, ""); got != glyph {
 			t.Errorf("StatusGlyph(%s) = %q; want %q", state, got, glyph)
 		}
 	}
-	if got := StatusGlyph(StatePending, false, "⠙"); got != "⠙ " {
+	if got := StatusGlyph(gitdata.StatePending, false, "⠙"); got != "⠙ " {
 		t.Errorf("pending = %q; want 渡したスピナーのフレーム", got)
 	}
-	if got := StatusGlyph(StateLoading, false, "⠙"); got != "⠙ " {
+	if got := StatusGlyph(gitdata.StateLoading, false, "⠙"); got != "⠙ " {
 		t.Errorf("loading = %q; want spinner padded to width 2", got)
 	}
 }
@@ -499,7 +501,7 @@ func TestStatusGlyphAllStates(t *testing.T) {
 // TestStatusGlyphWidthIsUniform は記号の列が縦に揃うこと (どの状態も表示幅 2)。
 // 1 つでも幅 1 の記号が混ざると、その行だけ SHA と件名が 1 桁左へずれる。
 func TestStatusGlyphWidthIsUniform(t *testing.T) {
-	states := []CIState{StateSuccess, StateFailure, StatePending, StateNeutral, StateNone, StateUnpushed, StateUnknown, StateLoading}
+	states := []gitdata.CIState{gitdata.StateSuccess, gitdata.StateFailure, gitdata.StatePending, gitdata.StateNeutral, gitdata.StateNone, gitdata.StateUnpushed, gitdata.StateUnknown, gitdata.StateLoading}
 	for _, colored := range []bool{false, true} {
 		for _, st := range states {
 			if w := term.DispWidth(StatusGlyph(st, colored, spinner.Frame(0))); w != 2 {
@@ -511,8 +513,8 @@ func TestStatusGlyphWidthIsUniform(t *testing.T) {
 
 // --- verbatim 方式 (git log 実出力の取り込み) ---
 
-func verbatimFixture() ([]string, []Commit) {
-	commits := []Commit{
+func verbatimFixture() ([]string, []gitdata.Commit) {
+	commits := []gitdata.Commit{
 		{SHA: strings.Repeat("a", 40), ShortSHA: "aaaaaaa", Subject: "first"},
 		{SHA: strings.Repeat("b", 40), ShortSHA: "bbbbbbb", Subject: "second"},
 	}
@@ -567,9 +569,9 @@ func TestVerbatimLinesMismatchFallsBack(t *testing.T) {
 func TestRenderLinesVerbatimDecoratesHeaderOnly(t *testing.T) {
 	raw, commits := verbatimFixture()
 	v := VerbatimLines(raw, commits)
-	statuses := map[string]CIState{commits[0].SHA: StateSuccess, commits[1].SHA: StateFailure}
+	statuses := map[string]gitdata.CIState{commits[0].SHA: gitdata.StateSuccess, commits[1].SHA: gitdata.StateFailure}
 	o := RenderOpts{Colored: true, Width: 80, Verbatim: v,
-		PRs: map[string]*PRRef{commits[0].SHA: {Number: 7, State: "OPEN"}}}
+		PRs: map[string]*gitdata.PRRef{commits[0].SHA: {Number: 7, State: "OPEN"}}}
 	lines := RenderLines(commits, statuses, o)
 	if !strings.HasPrefix(lines[0].Text, "✅ ") {
 		t.Errorf("ヘッダーに CI 記号が前置されていない: %q", lines[0].Text)

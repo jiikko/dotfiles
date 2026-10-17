@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"glogx/internal/gitdata"
 	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
@@ -32,7 +33,7 @@ func renderOpts(page int) issuesview.IssuesRenderOpts {
 // TestStatusHintUsesRenderBudget の issues viewer 版 (issue 264)。
 func TestIssuesHintUsesRenderBudget(t *testing.T) {
 	for w := frameMinWidth; w <= 140; w++ {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		m.showFrame, m.width, m.height = true, w, 40
 		if !m.frameActive() {
 			t.Fatalf("w=%d: 前提が崩れた (フレームが有効でない)", w)
@@ -57,7 +58,7 @@ func TestIssuesHintUsesRenderBudget(t *testing.T) {
 // 🚨 testenv.NoticeOKOf(v.takeNotice()) を直接 assert しない: それは配達経路 (browseModel の Update) を通らず、
 // 配達ブロックを丸ごと削っても green のままになる (この issue 自身が見つけた false green)。
 func TestIssuesScanMsgDeliversRebindNotice(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("i")
 	root := t.TempDir()
 	dir := filepath.Join(root, "issues")

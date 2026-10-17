@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"glogx/internal/app"
+	"glogx/internal/gitdata"
 	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
 )
@@ -13,7 +14,7 @@ import (
 func TestQuitRemembersOnlyWhenViewerVisible(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.issuesOv = *loadedView(issuesviewtest.SampleIssues()...)
 	m.issuesOv.Fixture().SetRoot("/repo")
 	m.quit()
@@ -26,7 +27,7 @@ func TestQuitRemembersOnlyWhenViewerVisible(t *testing.T) {
 		t.Fatalf("記憶の root が違う: %q", s.Root)
 	}
 
-	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m2.quit() // 一覧から終了
 	if _, ok := issuesview.LoadIssuesScreen(app.TimeNow()); ok {
 		t.Fatal("一覧から終了したのに記憶が残っている")

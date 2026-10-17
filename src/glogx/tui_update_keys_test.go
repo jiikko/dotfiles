@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"glogx/internal/doctorview"
+	"glogx/internal/gitdata"
 )
 
 // C / X (claude / codex update) が git log 一覧以外の画面からも始められることの配線テスト。
@@ -74,7 +75,7 @@ func TestUpdateKeysReachableFromOverlays(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			claude, codex := stubUpdates(t)
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			c.open(t, m)
 			if !c.visible(m) {
 				t.Fatalf("前提: %s が開いていない", c.name)
@@ -109,7 +110,7 @@ func TestUpdateKeysYieldToOverlayInputModes(t *testing.T) {
 	claude, codex := stubUpdates(t)
 
 	// issues viewer の番号絞り込み (/) 中
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("i")
 	releaseKey(m)
 	m.handleKey("/")
@@ -124,7 +125,7 @@ func TestUpdateKeysYieldToOverlayInputModes(t *testing.T) {
 	}
 
 	// status viewer の破棄確認 (X → y/N) 中の C は確認への回答 (= キャンセル) で、update ではない
-	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m2.statusOv = *newTestStatusView(t, statusRec(" M a.go"))
 	m2.handleKey("X")
 	releaseKey(m2)
@@ -162,7 +163,7 @@ func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
 	for _, st := range states {
 		for _, key := range []string{"C", "X"} {
 			t.Run(st.name+"/"+key, func(t *testing.T) {
-				m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+				m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 				m.doctorOv.Fixture().Show()
 				m.doctorOv.Fixture().Delete(st.del, nil)
 				if !m.doctorOv.OwnsKeys() {
@@ -178,7 +179,7 @@ func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
 		}
 	}
 	// 削除の語彙が立っていなければ、doctor の上からでも update は始められる (既存の契約)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.doctorOv.Fixture().Show()
 	before := *claude
 	press(m, "C")

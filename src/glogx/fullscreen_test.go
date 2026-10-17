@@ -4,6 +4,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"go/ast"
 	"go/parser"
@@ -100,7 +101,7 @@ func TestFullScreenCasesCoverEveryID(t *testing.T) {
 	// (片方だけ shown の状態で比べるため)。ケース単位の取り違えは上の assert 3 が受け持つ
 	seen := map[string]app.FullScreenID{}
 	for _, c := range fullScreenCases {
-		m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 		c.show(m)
 		mark := firstMeaningfulLine(c.lines(m))
 		if mark == "" {
@@ -148,7 +149,7 @@ func frameWindow(content string) string {
 func TestFullScreenSurfacesWireEverySite(t *testing.T) {
 	for _, c := range fullScreenCases {
 		t.Run(c.name, func(t *testing.T) {
-			m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 			listSHA := m.commits[0].ShortSHA // 一覧だけが描くもの (viewer の窓には出ない)
 			listHint := m.hintLine()
 			if !strings.Contains(m.View().Content, listSHA) {
@@ -213,7 +214,7 @@ func TestFullScreenSurfacesWireEverySite(t *testing.T) {
 	// ガードを「常に捨てる」へ変える変異 (= 起動時の復元が二度と効かない) が全テストを
 	// 素通りする (敵対レビュー 2026-09-04 が実測)
 	t.Run("全画面が無ければ復元は通る", func(t *testing.T) {
-		m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 		if m.activeFullScreen() != app.FullScreenNone {
 			t.Fatal("前提が作れていない")
 		}
@@ -315,7 +316,7 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 	}
 	for from, fromKey := range openKey {
 		for to, toKey := range openKey {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			m.width, m.height = 100, 30
 			m.doctorOv.SetDeps(doctorview.Deps(doctortest.FakeDeps(t))) // 実ディスクを走査しない
 			m.handleKey(fromKey)

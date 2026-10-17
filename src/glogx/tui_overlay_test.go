@@ -15,6 +15,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
+	"glogx/internal/gitdata"
 	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/statusview"
@@ -26,8 +27,8 @@ import (
 
 func TestBrowseCopyURL(t *testing.T) {
 	copied := testenv.StubClipboard(t)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0)
 	// コミット一覧では commit URL
 	m.handleKey("y")
@@ -56,11 +57,11 @@ func TestBrowseCopyURL(t *testing.T) {
 func TestBrowseBatchPRsFeedPCache(t *testing.T) {
 	// 一括取得の PR は p キーのキャッシュとコミット行バッジの両方に合流する
 	shas := []string{strings.Repeat("a", 40)}
-	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
-	m.Update(ciResultMsg{shas: shas, batch: CIBatch{
-		Statuses: map[string]CIState{shas[0]: StateSuccess},
-		Details:  map[string][]CheckDetail{},
-		PRs:      map[string]*PRRef{shas[0]: {Number: 7, URL: "https://github.com/o/r/pull/7", State: "MERGED"}},
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, shas)
+	m.Update(ciResultMsg{shas: shas, batch: gitdata.CIBatch{
+		Statuses: map[string]gitdata.CIState{shas[0]: gitdata.StateSuccess},
+		Details:  map[string][]gitdata.CheckDetail{},
+		PRs:      map[string]*gitdata.PRRef{shas[0]: {Number: 7, URL: "https://github.com/o/r/pull/7", State: "MERGED"}},
 	}})
 	opened := testenv.StubBrowser(t)
 	// 再取得なしで即 open
@@ -80,16 +81,16 @@ func TestBrowseBatchPRsFeedPCache(t *testing.T) {
 
 func TestBrowseOpenPR(t *testing.T) {
 	opened := testenv.StubBrowser(t)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateSuccess
+	m.statuses[sha] = gitdata.StateSuccess
 	// p → 取得 Cmd (実行はしない) と busy
 	_, cmd := m.handleKey("p")
 	if cmd == nil || !m.prBusy[sha] {
 		t.Fatalf("p で PR 取得が始まらない (cmd=%v busy=%v)", cmd, m.prBusy[sha])
 	}
 	// 取得結果 (PR あり) → ブラウザで開く Cmd が返る
-	_, cmd = m.Update(prMsg{sha: sha, pr: &PRRef{Number: 12, URL: "https://github.com/o/r/pull/12", State: "OPEN"}})
+	_, cmd = m.Update(prMsg{sha: sha, pr: &gitdata.PRRef{Number: 12, URL: "https://github.com/o/r/pull/12", State: "OPEN"}})
 	if cmd == nil {
 		t.Fatalf("prMsg (PR あり) で open Cmd が返らない")
 	}
@@ -111,14 +112,14 @@ func TestBrowseOpenPR(t *testing.T) {
 // しない。離れたコミットの PR がいきなりブラウザで開く回帰の防止 (2026-07-29)。
 func TestBrowsePRResultAfterCursorMoveDoesNotOpen(t *testing.T) {
 	opened := testenv.StubBrowser(t)
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateSuccess
+	m.statuses[sha] = gitdata.StateSuccess
 	if _, cmd := m.handleKey("p"); cmd == nil {
 		t.Fatal("p で PR 取得が始まらない")
 	}
 	m.handleKey("j") // 取得中にカーソル移動
-	_, cmd := m.Update(prMsg{sha: sha, pr: &PRRef{Number: 7, URL: "https://github.com/o/r/pull/7", State: "OPEN"}})
+	_, cmd := m.Update(prMsg{sha: sha, pr: &gitdata.PRRef{Number: 7, URL: "https://github.com/o/r/pull/7", State: "OPEN"}})
 	runCmdTree(cmd)
 	if *opened != "" {
 		t.Errorf("カーソル移動後の遅延 PR がブラウザで開いた: %q", *opened)
@@ -131,7 +132,7 @@ func TestBrowsePRResultAfterCursorMoveDoesNotOpen(t *testing.T) {
 	}
 	// stale なエラーも警告を出さない (無関係な失敗 notice を被せない)
 	m.prBusy[sha] = true
-	m.Update(prMsg{sha: sha, ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
+	m.Update(prMsg{sha: sha, ghErr: &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom"}})
 	if m.lastWarning != "" {
 		t.Errorf("stale なエラーで警告が出た: %q", m.lastWarning)
 	}
@@ -140,26 +141,26 @@ func TestBrowsePRResultAfterCursorMoveDoesNotOpen(t *testing.T) {
 // detail/basis/jobDetail の一過性エラーは、後続の成功結果で hint 警告がクリアされる
 // (set-only だとセッション中ずっと張り付いていた・レビュー C4)。
 func TestBrowseGhErrClearedOnSuccess(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
 	// パネル対象の detail 取得が一過性エラー → 警告が出る
 	m.panelSHA = sha
-	m.Update(detailMsg{sha: sha, batch: emptyBatch(), ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
+	m.Update(detailMsg{sha: sha, batch: gitdata.EmptyBatch(), ghErr: &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom"}})
 	if m.ghErr == nil || !strings.Contains(m.hintLine(), "取得に失敗") {
 		t.Fatalf("detail エラーで警告が出ない: ghErr=%v hint=%q", m.ghErr, m.hintLine())
 	}
 	// 成功 detail が届くと警告はクリアされる (set-only なら残ってしまう)
-	m.Update(detailMsg{sha: sha, batch: emptyBatch(), ghErr: nil})
+	m.Update(detailMsg{sha: sha, batch: gitdata.EmptyBatch(), ghErr: nil})
 	if m.ghErr != nil {
 		t.Fatalf("成功 detail 後も ghErr が残っている: %v", m.ghErr)
 	}
 	// basis / jobDetail も同様に成功でクリアする
-	m.ghErr = &GHError{Kind: GHOther, Detail: "boom2"}
-	m.Update(basisMsg{batch: emptyBatch(), ghErr: nil})
+	m.ghErr = &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom2"}
+	m.Update(basisMsg{batch: gitdata.EmptyBatch(), ghErr: nil})
 	if m.ghErr != nil {
 		t.Errorf("成功 basis 後も ghErr が残っている: %v", m.ghErr)
 	}
-	m.ghErr = &GHError{Kind: GHOther, Detail: "boom3"}
+	m.ghErr = &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom3"}
 	m.Update(jobDetailMsg{key: "k", lines: []string{"x"}, ghErr: nil})
 	if m.ghErr != nil {
 		t.Errorf("成功 jobDetail 後も ghErr が残っている: %v", m.ghErr)
@@ -168,10 +169,10 @@ func TestBrowseGhErrClearedOnSuccess(t *testing.T) {
 
 func TestBrowseOpenPRErrorNotCached(t *testing.T) {
 	// 一時エラーは「PR なし」としてキャッシュしない (次の p で再試行できる)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateSuccess
-	m.Update(prMsg{sha: sha, pr: nil, ghErr: &GHError{Kind: GHOther, Detail: "network down"}})
+	m.statuses[sha] = gitdata.StateSuccess
+	m.Update(prMsg{sha: sha, pr: nil, ghErr: &gitdata.GHError{Kind: gitdata.GHOther, Detail: "network down"}})
 	if _, ok := m.prCache[sha]; ok {
 		t.Fatalf("エラー結果がキャッシュされている")
 	}
@@ -186,9 +187,9 @@ func TestBrowseOpenPRErrorNotCached(t *testing.T) {
 }
 
 func TestBrowseOpenPRNotFound(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateSuccess
+	m.statuses[sha] = gitdata.StateSuccess
 	m.Update(prMsg{sha: sha, pr: nil})
 	if !strings.Contains(m.toast.Text(), "PR はありません") {
 		t.Errorf("PR なしのトーストが出ない: %q", m.toast.Text())
@@ -201,8 +202,8 @@ func TestBrowseOpenPRNotFound(t *testing.T) {
 }
 
 func TestBrowseOpenPRUnpushed(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses[m.commits[0].SHA] = StateUnpushed
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
 	if _, cmd := m.handleKey("p"); cmd != nil {
 		t.Errorf("未 push コミットで PR 取得が走った")
 	}
@@ -265,7 +266,7 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 		return out
 	}
 	const width, rows = 50, 8
-	commit := &Commit{SHA: "a", ShortSHA: "abc1234", Subject: "subject"}
+	commit := &gitdata.Commit{SHA: "a", ShortSHA: "abc1234", Subject: "subject"}
 	o := newDiffOverlay()
 
 	// 溢れる: バー列あり + 幅は均一 + thumb は比率
@@ -324,7 +325,7 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 	}
 	const width, rows = 50, 8 // 期待窓: start=42 → タイトル [43-50/50]
 
-	commit := &Commit{SHA: "a", ShortSHA: "abc1234", Subject: "subject"}
+	commit := &gitdata.Commit{SHA: "a", ShortSHA: "abc1234", Subject: "subject"}
 	d := newDiffOverlay()
 	d.sha = commit.SHA
 	d.cache.Store(commit.SHA, lines, commit.SHA)
@@ -610,9 +611,9 @@ func TestBrowseListOpenCommitURLNoRepo(t *testing.T) {
 }
 
 func TestBrowseCopyJobContextCached(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
-	withFailedJob(m, 0, 7, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
+	withFailedJob(m, 0, 7, gitdata.StateFailure)
 	copied := testenv.StubClipboard(t)
 	m.openPanel()
 	m.handleKey("j")
@@ -635,9 +636,9 @@ func TestBrowseCopyJobContextCached(t *testing.T) {
 }
 
 func TestBrowseCopyJobContextFetchesThenCopies(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
-	withFailedJob(m, 0, 7, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
+	withFailedJob(m, 0, 7, gitdata.StateFailure)
 	copied := testenv.StubClipboard(t)
 	m.openPanel()
 	m.handleKey("j")
@@ -660,7 +661,7 @@ func TestBrowseCopyJobContextFetchesThenCopies(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("Y")
-	m.Update(jobDetailMsg{key: m.detailKey(), ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
+	m.Update(jobDetailMsg{key: m.detailKey(), ghErr: &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom"}})
 	if *copied != "" || m.copyOnDetail != "" {
 		t.Fatalf("取得失敗でコピーされた / 予約が残った: copied=%q pending=%q", *copied, m.copyOnDetail)
 	}
@@ -678,8 +679,8 @@ func TestBrowseCopyJobContextFetchesThenCopies(t *testing.T) {
 }
 
 func TestBrowsePRStatusFlow(t *testing.T) {
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	sha := m.commits[0].SHA
 	// P で開いて取得に入る
 	_, cmd := m.handleKey("P")
@@ -687,12 +688,12 @@ func TestBrowsePRStatusFlow(t *testing.T) {
 		t.Fatalf("P で PR 取得に入らない: cmd=%v visible=%v fetching=%v", cmd != nil, m.prStatusOv.visible(), m.prStatusOv.fetching())
 	}
 	// 取得結果が描画される (state / レビュー / conflict / CI)
-	m.Update(prStatusMsg{sha: sha, status: &PRStatus{
-		PRRef: PRRef{Number: 12, URL: "https://github.com/o/r/pull/12", State: "OPEN"},
+	m.Update(prStatusMsg{sha: sha, status: &gitdata.PRStatus{
+		PRRef: gitdata.PRRef{Number: 12, URL: "https://github.com/o/r/pull/12", State: "OPEN"},
 		Title: "new feature", ReviewDecision: "APPROVED", Mergeable: "CONFLICTING",
 		BaseRefName: "master", HeadRefName: "f/new",
 	}})
-	m.details[sha] = []CheckDetail{{Name: "lint", State: StateFailure}}
+	m.details[sha] = []gitdata.CheckDetail{{Name: "lint", State: gitdata.StateFailure}}
 	v := term.StripANSI(m.View().Content)
 	for _, want := range []string{"PR #12: new feature", "OPEN", "f/new → master", "APPROVED", "CONFLICTING", "CI: ❌", "1 job 失敗"} {
 		if !strings.Contains(v, want) {
@@ -728,8 +729,8 @@ func TestBrowsePRStatusFlow(t *testing.T) {
 }
 
 func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateUnpushed)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateUnpushed)
 	// 未 push は取得しない
 	// 未 push は取得コマンドを返さないが、理由の失敗トーストは出す (cmd は maybeTick を含む)
 	if m.handleKey("P"); m.prStatusOv.visible() {
@@ -739,11 +740,11 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 		t.Fatalf("未 push トーストが出ない: %q", m.toast.Text())
 	}
 	// 取得エラーはキャッシュせず閉じ、失敗トーストを出す (次の P で再試行できる)
-	m.statuses = statusesFor(m, StateSuccess)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	releaseKey(m) // 直前の P から続けて押すのは実機ではリピート扱い
 	m.handleKey("P")
 	sha := m.commits[0].SHA
-	m.Update(prStatusMsg{sha: sha, ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
+	m.Update(prStatusMsg{sha: sha, ghErr: &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom"}})
 	if m.prStatusOv.visible() || m.toast.OK() || !strings.Contains(m.toast.Text(), "PR の取得に失敗") {
 		t.Fatalf("エラーで閉じない / 失敗トーストが出ない: visible=%v toast=%q", m.prStatusOv.visible(), m.toast.Text())
 	}
@@ -762,11 +763,11 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 // 回帰 (レビュー確定 high): Y でコピー予約後にフォーカスが別 job へ動いたら、旧 job の詳細到着で
 // コピーしない (別 job のヘッダに旧 job 本文を貼る silent 誤コピーの防止)。
 func TestBrowseCopyJobContextFocusMovedDropsCopy(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
-	m.details[m.commits[0].SHA] = []CheckDetail{
-		{Name: "build", State: StateSuccess, CheckID: 1},
-		{Name: "lint", State: StateFailure, CheckID: 7},
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
+	m.details[m.commits[0].SHA] = []gitdata.CheckDetail{
+		{Name: "build", State: gitdata.StateSuccess, CheckID: 1},
+		{Name: "lint", State: gitdata.StateFailure, CheckID: 7},
 	}
 	copied := testenv.StubClipboard(t)
 	m.openPanel()
@@ -793,10 +794,10 @@ func TestBrowseCopyJobContextFocusMovedDropsCopy(t *testing.T) {
 // 回帰 (レビュー確定 medium security): コピー時に job 名/URL の端末制御シーケンス (OSC52 等) を
 // 除去する。term.StripANSI 単体は OSC を残すため term.SanitizeDetailLine と併用している。
 func TestBrowseCopyJobContextSanitizesHeader(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
-	m.details[m.commits[0].SHA] = []CheckDetail{
-		{Name: "li\x1b[31mnt", State: StateFailure, CheckID: 7, URL: "https://x/\x1b]0;pwn\x07ok"},
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
+	m.details[m.commits[0].SHA] = []gitdata.CheckDetail{
+		{Name: "li\x1b[31mnt", State: gitdata.StateFailure, CheckID: 7, URL: "https://x/\x1b]0;pwn\x07ok"},
 	}
 	copied := testenv.StubClipboard(t)
 	m.openPanel()
@@ -821,7 +822,7 @@ func TestPRStatusOverlayNoDoubleFetch(t *testing.T) {
 	if o.open("A") {
 		t.Fatal("in-flight 中の reopen が二重 fetch を要求した")
 	}
-	o.receive("A", &PRStatus{PRRef: PRRef{Number: 1}}, nil) // 応答 → busy 解除 + cache
+	o.receive("A", &gitdata.PRStatus{PRRef: gitdata.PRRef{Number: 1}}, nil) // 応答 → busy 解除 + cache
 	o.close()
 	if o.open("A") {
 		t.Fatal("cache 済みなのに再 fetch を要求した")
@@ -831,8 +832,8 @@ func TestPRStatusOverlayNoDoubleFetch(t *testing.T) {
 // 回帰 (レビュー確定 low): 別 sha へ移った後に届く PR 取得エラーで、表示中 (別 sha) に無関係な
 // 失敗トーストを被せない。
 func TestBrowsePRStatusStaleErrorNoToast(t *testing.T) {
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	shaA := m.commits[0].SHA
 	shaB := m.commits[1].SHA
 	m.handleKey("P") // A を開く (fetch A)
@@ -841,9 +842,9 @@ func TestBrowsePRStatusStaleErrorNoToast(t *testing.T) {
 	m.cursor = 1
 	releaseKey(m)
 	m.handleKey("P") // B を開く (fetch B)
-	m.Update(prStatusMsg{sha: shaB, status: &PRStatus{PRRef: PRRef{Number: 2, State: "OPEN"}, Title: "b"}})
+	m.Update(prStatusMsg{sha: shaB, status: &gitdata.PRStatus{PRRef: gitdata.PRRef{Number: 2, State: "OPEN"}, Title: "b"}})
 	m.toast.Clear()
-	m.Update(prStatusMsg{sha: shaA, ghErr: &GHError{Kind: GHOther, Detail: "boom"}}) // A の遅延エラー
+	m.Update(prStatusMsg{sha: shaA, ghErr: &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom"}}) // A の遅延エラー
 	if m.toast.Visible() {
 		t.Fatalf("別 sha の遅延エラーでトーストが出た: %q", m.toast.Text())
 	}
@@ -856,7 +857,7 @@ func TestBrowsePRStatusStaleErrorNoToast(t *testing.T) {
 // browseModel 側の配線 (キー経路の判定順・全画面差し替え・hint・スピナー) だけを見る。
 
 func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd := m.handleKey("i")
 	if cmd == nil {
 		t.Fatal("i でスキャンの Cmd が返らない")
@@ -904,7 +905,7 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 }
 
 func TestIssuesViewerReplacesWholeScreen(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.handleKey("i")
 	m.Update(issuesview.FixtureScanMsg(
 		"",
@@ -931,10 +932,10 @@ func TestIssuesViewerReplacesWholeScreen(t *testing.T) {
 func TestIssuesViewerHintIsNotPrefixed(t *testing.T) {
 	// viewer の hint は popup の実幅ぴったりに詰めてある。CI 進捗や GH 警告を前置すると
 	// 末尾のキー案内が黙って切り落とされる (issues_view.go の hint の不変条件が結合点で壊れる)。
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("i")
 	m.pendingFetches = 1 // 一括取得中 (fetching() はここから導出。issue 224)
-	m.ghErr = &GHError{Kind: GHOther, Detail: "boom"}
+	m.ghErr = &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom"}
 	hint := m.hintLine()
 	if strings.Contains(hint, "CI 状態を取得中") || strings.Contains(hint, "🚨") {
 		t.Fatalf("viewer の hint に前置が入った: %q", hint)
@@ -948,7 +949,7 @@ func TestIssuesViewerHintIsNotPrefixed(t *testing.T) {
 func TestIssuesViewerReloadsAfterEditorCloses(t *testing.T) {
 	// v で nvim を開いて編集して戻ったとき、取り直さないと編集結果 (H1・status・チェックボックス)
 	// が一覧にも本文にも出ず、viewer が古い内容を最新として表示する。
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("i")
 	// 取り直しは cwd から探索し直すので、issues ディレクトリを持つ木を作ってそこを起点にする
 	root := t.TempDir()
@@ -1025,8 +1026,8 @@ func drainScanMsg(t *testing.T, cmd tea.Cmd) issuesview.IssuesScanMsg {
 }
 
 func TestIssuesViewerNotOpenedWhilePanelOpen(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("i")
@@ -1036,7 +1037,7 @@ func TestIssuesViewerNotOpenedWhilePanelOpen(t *testing.T) {
 }
 
 func TestIssuesViewerScanKeepsSpinnerAlive(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("i")
 	if !m.spinnerActive() {
 		t.Fatal("スキャン中にスピナーの tick が回らない")
@@ -1060,7 +1061,7 @@ func TestIssuesViewerScanKeepsSpinnerAlive(t *testing.T) {
 // status viewer の開閉スライドは 60fps、pager glide は 30fps で tick する
 // (spinnerActive に足すだけでは 12.5fps で点滅して見える回帰の防止)。
 func TestStatusViewerSlideTicksAt60FPS(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.statusOv.Fixture().SetCloseAnim(true) // newTestBrowse は演出を切っているので戻す (演出そのものの検査)
 	m.handleKey("s")
 	if !m.statusOv.Visible() {
@@ -1087,7 +1088,7 @@ func TestStatusViewerSlideTicksAt60FPS(t *testing.T) {
 
 // status ⇔ issues の相互切り替え (i / s の横断キー。ユーザー要望 2026-08-06)。
 func TestViewerCrossSwitching(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("s")
 	if !m.statusOv.Visible() {
 		t.Fatal("前提が崩れた: s で status viewer が開かない")
@@ -1114,7 +1115,7 @@ func TestViewerCrossSwitching(t *testing.T) {
 // (両 viewer 同時 shown だと「見えている status」と「キーを受ける issues」が食い違う。
 // 敵対レビューで再現 2026-08-06)。
 func TestIssuesRestoreDroppedWhenStatusOpen(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("s")
 	m.Update(issuesRestoreMsg{})
 	if m.issuesOv.Visible() {
@@ -1131,7 +1132,7 @@ func TestViewerQuitKeysQuitApp(t *testing.T) {
 	for _, tc := range []struct{ open, quit string }{
 		{"s", "q"}, {"s", "esc"}, {"i", "q"}, {"i", "esc"},
 	} {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		m.handleKey(tc.open)
 		releaseKey(m)
 		m.handleKey(tc.quit)
@@ -1140,7 +1141,7 @@ func TestViewerQuitKeysQuitApp(t *testing.T) {
 		}
 	}
 	// toggle キーは従来どおり一覧へ戻る (終了しない)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("s")
 	releaseKey(m)
 	m.handleKey("s")
@@ -1151,7 +1152,7 @@ func TestViewerQuitKeysQuitApp(t *testing.T) {
 
 // 番号入力中 (/) の s は検索語の入力へ飲まれ、viewer を切り替えない。
 func TestIssuesViewerFilterSwallowsSwitchKey(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("i")
 	releaseKey(m)
 	m.handleKey("/")
@@ -1172,7 +1173,7 @@ func TestSpaceKeyScrollsEverywhere(t *testing.T) {
 	}
 
 	// 1. issues viewer の本文 pager
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("i")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "001-feat-x.md")
@@ -1231,7 +1232,7 @@ func manyLines(n int) []string {
 // (ユーザー報告 2026-07-31)。色あり/なしの両方で見る (cursorEmphasis が分岐するため)。
 func TestIssuesViewerCursorArrowNotDoubled(t *testing.T) {
 	for _, colored := range []bool{false, true} {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		m.width, m.height = 100, 16
 		m.colored = colored
 		m.handleKey("i")
@@ -1270,7 +1271,7 @@ func TestIssuesViewerCursorArrowNotDoubled(t *testing.T) {
 func TestIssuesViewerNotifiesViaToast(t *testing.T) {
 	testenv.StubClipboardFunc(t, func(string) error { return nil })
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 100, 16
 	m.handleKey("i")
 	m.issuesOv.Receive(issuesview.FixtureScanMsg(
@@ -1311,7 +1312,7 @@ func TestIssuesViewerNotifiesViaToast(t *testing.T) {
 func TestIssuesViewerCopyFailureToast(t *testing.T) {
 	testenv.StubClipboardFunc(t, func(string) error { return errors.New("pbcopy が見つかりません") })
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 100, 16
 	m.handleKey("i")
 	m.issuesOv.Receive(issuesview.FixtureScanMsg(
@@ -1336,7 +1337,7 @@ func TestIssuesViewerCopyFailureToast(t *testing.T) {
 // viewer の断りの文 (末尾で J など) も lastWarning を汚さない (issue 663)。エラー詳細を含む
 // 通知 (app.NoticeError) だけが積まれる。
 func TestIssuesViewerRefusalKeepsLastWarning(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 100, 16
 	m.handleKey("i")
 	m.issuesOv.Receive(issuesview.FixtureScanMsg(
@@ -1423,10 +1424,10 @@ func TestBrowseDiffNeighborStartsFromShownSHA(t *testing.T) {
 // issue 417: パネルの y (focus 中の job の URL をコピー) が、外部 CI が設定した url を生のまま
 // クリップボードへ入れていた。detailsOf を通らずに組んだ CheckDetail でも漏れないことを見る。
 func TestBrowseCopyFocusURLSanitizes(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
-	m.details[m.commits[0].SHA] = []CheckDetail{
-		{Name: "lint", State: StateFailure, CheckID: 7, URL: "https://x/\x1b]52;c;cHduZWQ=\x07ok"},
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateFailure)
+	m.details[m.commits[0].SHA] = []gitdata.CheckDetail{
+		{Name: "lint", State: gitdata.StateFailure, CheckID: 7, URL: "https://x/\x1b]52;c;cHduZWQ=\x07ok"},
 	}
 	copied := testenv.StubClipboard(t)
 	m.openPanel()
@@ -1442,11 +1443,11 @@ func TestBrowseCopyFocusURLSanitizes(t *testing.T) {
 
 // PR ポップアップの y も同じ (PR の url は取得の段階で無害化していない)。
 func TestBrowseCopyPRURLSanitizes(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
 	copied := testenv.StubClipboard(t)
 	m.prStatusOv.open(sha)
-	m.prStatusOv.receive(sha, &PRStatus{PRRef: PRRef{Number: 1, State: "OPEN", URL: "https://github.com/o/r/pull/1\x1b]52;c;eA==\x07"}}, nil)
+	m.prStatusOv.receive(sha, &gitdata.PRStatus{PRRef: gitdata.PRRef{Number: 1, State: "OPEN", URL: "https://github.com/o/r/pull/1\x1b]52;c;eA==\x07"}}, nil)
 	m.handlePRStatusKey("y")
 	if *copied != "https://github.com/o/r/pull/1" {
 		t.Fatalf("コピー内容 = %q, want %q", *copied, "https://github.com/o/r/pull/1")

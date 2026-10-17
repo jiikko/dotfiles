@@ -10,6 +10,7 @@ import (
 
 	"doctor/disk"
 	"glogx/internal/doctorview"
+	"glogx/internal/gitdata"
 )
 
 // 選んでいた行が消えたら近傍へ寄せ、**寄せたことを画面に出す** (issue 210 の敵対レビュー P1)。
@@ -19,7 +20,7 @@ import (
 // **browseModel 経由でトーストが出ることまで**見ないと、配線の穴を守れない (実測: 初版は
 // フィールド代入しか見ておらず、本番では一度も出ない状態で緑だった)。
 func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	// 🚨 `doctorOv` は**値フィールド**なので `v := m.doctorOv` だと**コピー**になり、
 	//    m 側に何も伝わらない (実測 2026-09-03: それで配線のテストが緑にならなかった)
 	v := &m.doctorOv

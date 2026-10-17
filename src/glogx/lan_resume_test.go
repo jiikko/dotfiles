@@ -5,6 +5,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/filerview"
+	"glogx/internal/gitdata"
 	"glogx/internal/lanview"
 	"glogx/internal/ratelimitview"
 	"mac-lan-manager/lanmgr"
@@ -26,7 +27,7 @@ func TestLanScreenRememberedAndRestored(t *testing.T) {
 		t.Fatalf("L を出したまま終えたのに覚えていない: %+v ok=%v", got, ok)
 	}
 
-	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	_ = m2.Init()
 	if m2.activeFullScreen() != app.FullScreenLan {
 		t.Fatalf("記憶があるのに L が開いていない: active=%v", m2.activeFullScreen())
@@ -35,7 +36,7 @@ func TestLanScreenRememberedAndRestored(t *testing.T) {
 		t.Errorf("場所が戻らない: %+v, want %+v", p, got)
 	}
 
-	m3 := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m3 := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m3.quit()
 	if _, ok := lanview.LoadLanScreen(now); ok {
 		t.Error("L を閉じて終えたのに記憶が残った")
@@ -51,7 +52,7 @@ func TestInitLanRestoreYieldsToOtherScreens(t *testing.T) {
 	if err := ratelimitview.FixtureSaveScreen(now); err != nil {
 		t.Fatal(err)
 	}
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	_ = m.Init()
 	if m.lanV.Visible() {
 		t.Error("ratelimit の記憶があるのに L も開いた")

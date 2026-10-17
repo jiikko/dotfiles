@@ -16,6 +16,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
+	"glogx/internal/gitdata"
 )
 
 // 外部プロセス (git / tmux / claude / ブラウザ / クリップボード) を叩くラッパー群。
@@ -213,7 +214,7 @@ func runCLIUpdate(name string, fetchVersion func(context.Context) string) (befor
 		if ctx.Err() == context.DeadlineExceeded {
 			return before, "", "", fmt.Errorf("%s update がタイムアウトしました (%s)", name, updateTimeout)
 		}
-		return before, "", "", errors.New(lastLine(strings.TrimSpace(string(out))))
+		return before, "", "", errors.New(gitdata.LastLine(strings.TrimSpace(string(out))))
 	}
 	after = fetchVersion(ctx)
 	// 成功時も出力の末尾行を返す。🚨 捨てないこと: CLI は「更新しなかった」ときも exit 0 で
@@ -221,7 +222,7 @@ func runCLIUpdate(name string, fetchVersion func(context.Context) string) (befor
 	// 出して終わる。実測 2026-09-03 / ~/.codex/version.json が 44 日前で止まっていた)、
 	// before == after だけでは「最新だった」のか「CLI が更新をサボった」のかを区別できない。
 	// この行が唯一その理由を持っている。
-	return before, after, lastLine(strings.TrimSpace(string(out))), nil
+	return before, after, gitdata.LastLine(strings.TrimSpace(string(out))), nil
 }
 
 // runClaudeUpdate はテストで実 update しないための差し替え点。
@@ -236,18 +237,18 @@ var runCodexUpdate = func() (before, after, note string, err error) {
 }
 
 // runJobRerun はテストで実 rerun しないための差し替え点 (本体は jobRerun)。
-var runJobRerun = func(ctx context.Context, repo Repo, jobID int64) error {
-	return jobRerun(ctx, ExecRunner, repo, jobID)
+var runJobRerun = func(ctx context.Context, repo gitdata.Repo, jobID int64) error {
+	return jobRerun(ctx, gitdata.ExecRunner, repo, jobID)
 }
 
 // jobRerun は失敗 job を GitHub Actions 上で再実行する (`gh run rerun --job <id>`)。
 // run 全体でなく job 単位なのは、パネルのフォーカス単位が job であり run id を
 // 保持していないため (issue 019)。認証は gh へ委譲。
-func jobRerun(ctx context.Context, run CommandRunner, repo Repo, jobID int64) error {
+func jobRerun(ctx context.Context, run gitdata.CommandRunner, repo gitdata.Repo, jobID int64) error {
 	_, stderr, err := run(ctx, "gh", "run", "rerun",
 		"--job", strconv.FormatInt(jobID, 10), "-R", repo.Owner+"/"+repo.Name)
 	if err != nil {
-		detail := lastLine(string(stderr))
+		detail := gitdata.LastLine(string(stderr))
 		if detail == "" {
 			detail = err.Error()
 		}

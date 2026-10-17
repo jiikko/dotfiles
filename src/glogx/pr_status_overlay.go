@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 )
 
@@ -11,13 +12,13 @@ import (
 // CI 行はコミット側の statuses が出典なので、boxLines へ整形済みの 1 行 (ciLine) を注入する
 // (この型は CI 状態を知らない)。
 type prStatusOverlay struct {
-	sha   string               // 表示対象コミットの SHA ("" = 非表示)
-	busy  map[string]bool      // 取得中の sha (close 後も保持し、close→reopen での二重発火を防ぐ = diffOverlay と同型)
-	cache map[string]*PRStatus // sha → PR 詳細 (nil 格納 = 確認済みで PR なし)
+	sha   string                       // 表示対象コミットの SHA ("" = 非表示)
+	busy  map[string]bool              // 取得中の sha (close 後も保持し、close→reopen での二重発火を防ぐ = diffOverlay と同型)
+	cache map[string]*gitdata.PRStatus // sha → PR 詳細 (nil 格納 = 確認済みで PR なし)
 }
 
 func newPRStatusOverlay() prStatusOverlay {
-	return prStatusOverlay{cache: map[string]*PRStatus{}, busy: map[string]bool{}}
+	return prStatusOverlay{cache: map[string]*gitdata.PRStatus{}, busy: map[string]bool{}}
 }
 
 // visible はポップアップ表示中か。
@@ -34,7 +35,7 @@ func (o *prStatusOverlay) close() {
 
 // reset は pull 後の全面リロードで cache ごと破棄する (旧 SHA の残骸を持ち越さない)。
 func (o *prStatusOverlay) reset() {
-	o.cache = map[string]*PRStatus{}
+	o.cache = map[string]*gitdata.PRStatus{}
 	o.busy = map[string]bool{}
 	o.close()
 }
@@ -60,7 +61,7 @@ func (o *prStatusOverlay) open(sha string) (needFetch bool) {
 // receive は取得結果を反映する。エラー時はキャッシュせず、その sha が今表示中なら閉じる
 // (呼び出し側が notice を出す。一時エラーで「PR なし」を固定しない = prMsg と同じ方針)。
 // 表示対象が変わった後の遅延到着はキャッシュだけ更新する。
-func (o *prStatusOverlay) receive(sha string, status *PRStatus, ghErr *GHError) {
+func (o *prStatusOverlay) receive(sha string, status *gitdata.PRStatus, ghErr *gitdata.GHError) {
 	delete(o.busy, sha)
 	if ghErr != nil {
 		if sha == o.sha {
@@ -72,7 +73,7 @@ func (o *prStatusOverlay) receive(sha string, status *PRStatus, ghErr *GHError) 
 }
 
 // current は表示中 PR の詳細 (未取得 / PR なしは nil)。o (ブラウザ) / y (コピー) の URL 解決用。
-func (o *prStatusOverlay) current() *PRStatus {
+func (o *prStatusOverlay) current() *gitdata.PRStatus {
 	if o.sha == "" {
 		return nil
 	}
@@ -80,7 +81,7 @@ func (o *prStatusOverlay) current() *PRStatus {
 }
 
 // prStateLabel は PR の状態行 ("OPEN" / "OPEN (draft)" / "MERGED" ...) を色付きで返す。
-func prStateLabel(pr *PRStatus, colored bool) string {
+func prStateLabel(pr *gitdata.PRStatus, colored bool) string {
 	label := pr.State
 	if pr.IsDraft {
 		label += " (draft)"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"glogx/internal/app"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 	"strings"
@@ -93,7 +94,7 @@ func TestAppZoomOpensAndSettles(t *testing.T) {
 func TestAppZoomCloseThenQuit(t *testing.T) {
 	advance := testenv.StubClock(t)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.zoom.off = false // このテストだけ演出を有効にする (ヘルパーは既定で切る)
 
 	model, cmd := m.quit()
@@ -124,7 +125,7 @@ func TestAppZoomCloseThenQuit(t *testing.T) {
 func TestAppZoomCloseFinishesOnKey(t *testing.T) {
 	testenv.StubClock(t)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.zoom.off = false
 	m.quit()
 	if m.done {
@@ -138,7 +139,7 @@ func TestAppZoomCloseFinishesOnKey(t *testing.T) {
 
 // Ctrl-C は演出なしで即終了する (緊急脱出は最短)。
 func TestCtrlCSkipsZoom(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.zoom.off = false
 	m.handleKey("ctrl+c")
 	if !m.done {
@@ -170,7 +171,7 @@ func TestZoomWindowMatchesFrameState(t *testing.T) {
 func TestZoomRendersEnoughFrames(t *testing.T) {
 	testenv.StubClock(t)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.zoom.off = false
 	m.zoom.start(app.TimeNow())
 
@@ -194,7 +195,7 @@ func TestZoomRendersEnoughFrames(t *testing.T) {
 func TestZoomFrameRateDropsAfterSettle(t *testing.T) {
 	advance := testenv.StubClock(t)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.zoom.off = false
 	m.zoom.start(app.TimeNow())
 	advance(appZoomDuration)
@@ -240,7 +241,7 @@ func TestZoomStepsAreSmall(t *testing.T) {
 		{"閉じる", func(z *appZoom) { z.startClose(app.TimeNow()) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			m.zoom.off = false
 			tc.begin(&m.zoom)
 			interval := m.tickInterval()

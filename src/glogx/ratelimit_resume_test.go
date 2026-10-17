@@ -3,6 +3,7 @@ package main
 import (
 	"glogx/internal/app"
 	"glogx/internal/doctorview"
+	"glogx/internal/gitdata"
 	"glogx/internal/ratelimitview"
 	"path/filepath"
 	"testing"
@@ -23,7 +24,7 @@ func TestRememberRatelimitScreen(t *testing.T) {
 	app.TimeNow = func() time.Time { return now }
 	t.Cleanup(func() { app.TimeNow = orig })
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.rlDash.Fixture().SetShown(true)
 	m.rlDash.RememberScreen(now)
 	if !ratelimitview.LoadRatelimitScreen(now) {
@@ -48,7 +49,7 @@ func TestInitRestoresRatelimitScreen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	installInertDoctor(t, &m.doctorOv)
 	_ = m.Init()
 	if !m.rlDash.Visible() {
@@ -62,7 +63,7 @@ func TestInitRestoresRatelimitScreen(t *testing.T) {
 // 記憶が無ければ素の画面から始まる (勝手にダッシュボードを出さない)。
 func TestInitWithoutRatelimitMemoryStaysOnLog(t *testing.T) {
 	withRatelimitStateDir(t)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	installInertDoctor(t, &m.doctorOv)
 	_ = m.Init()
 	if m.rlDash.Visible() {
@@ -83,7 +84,7 @@ func TestInitRestoresOnlyOneFullScreen(t *testing.T) {
 	}
 	rememberDoctorShown(now, doctorview.TabSvc)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	installInertDoctor(t, &m.doctorOv)
 	_ = m.Init()
 	if !m.rlDash.Visible() {

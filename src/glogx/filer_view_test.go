@@ -11,6 +11,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
 	"glogx/internal/filerview"
+	"glogx/internal/gitdata"
 	"glogx/internal/testenv"
 
 	tea "charm.land/bubbletea/v2"
@@ -35,7 +36,7 @@ func filerDir(t *testing.T) string {
 func newFilerBrowse(t *testing.T) *browseModel {
 	t.Helper()
 	t.Chdir(filerDir(t))
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 100, 30
 	return m
 }

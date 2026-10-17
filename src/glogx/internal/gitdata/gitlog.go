@@ -1,4 +1,4 @@
-package main
+package gitdata
 
 import (
 	"errors"
@@ -26,7 +26,7 @@ import (
 // 区別できないための既知の制限。0x1F を含むコミットメッセージは実運用でほぼ発生しない。
 const (
 	recordSep    = "\x1e"
-	fieldSep     = "\x1f"
+	FieldSep     = "\x1f"
 	prettyFormat = "--pretty=format:%x1e%H%x1f%h%x1f%s%x1f%an%x1f%ae%x1f%ad%x1f%ar%x1f%D%x1f%B%x1f"
 	numFields    = 9
 	// fingerprintFormat は「表示が変わったか」だけを測るための最小フォーマット (gitlog_watch.go)。
@@ -66,17 +66,17 @@ func runGit(args ...string) (string, error) {
 	return extcmd.RunGitCmd(exec.Command("git", subproc.GitArgs(args...)...)) // subproc: waitdelay-in runGitCmd
 }
 
-// BuildLogArgs は allowlist 済みオプションから git log の引数列を組み立てる (データ解析用。
+// buildLogArgs は allowlist 済みオプションから git log の引数列を組み立てる (データ解析用。
 // prettyFormat の制御文字レコードで機械 parse する)。colored は --stat / -p の本文にのみ効く。
-func BuildLogArgs(q LogQuery, colored bool) []string {
+func buildLogArgs(q LogQuery, colored bool) []string {
 	return buildLogArgsWith(prettyFormat, q, colored, true)
 }
 
-// BuildDisplayArgs は表示用 (verbatim) の git log 引数列。format を指定せず git の素の
+// buildDisplayArgs は表示用 (verbatim) の git log 引数列。format を指定せず git の素の
 // 出力 (medium 形式) をそのまま得る = 見た目は git log と機械的に一致する。
 // --decorate=short は明示が要る: log.decorate の既定 (auto) は出力先が端末のときだけ
 // ブランチ名を付けるので、パイプで受けるここでは消える (端末の git log とずれる)。
-func BuildDisplayArgs(q LogQuery, colored bool) []string {
+func buildDisplayArgs(q LogQuery, colored bool) []string {
 	return buildLogArgsWith("--decorate=short", q, colored, true)
 }
 
@@ -114,7 +114,7 @@ func buildLogArgsWith(shape string, q LogQuery, colored, withBody bool) []string
 
 // LoadLogDisplay は表示用の git log 実出力を行列で返す (verbatim 方式の入力)。
 func LoadLogDisplay(q LogQuery, colored bool) ([]string, error) {
-	out, err := runGit(BuildDisplayArgs(q, colored)...)
+	out, err := runGit(buildDisplayArgs(q, colored)...)
 	if err != nil {
 		return nil, err
 	}
@@ -129,8 +129,8 @@ func LoadLogDisplay(q LogQuery, colored bool) ([]string, error) {
 	return lines, nil
 }
 
-// ParseLog は prettyFormat 付き git log の出力をコミット列へ解析する。
-func ParseLog(out string) ([]Commit, error) {
+// parseLog は prettyFormat 付き git log の出力をコミット列へ解析する。
+func parseLog(out string) ([]Commit, error) {
 	if out == "" {
 		return nil, nil
 	}
@@ -139,7 +139,7 @@ func ParseLog(out string) ([]Commit, error) {
 		if rec == "" {
 			continue // 先頭レコード前の空文字列
 		}
-		parts := strings.SplitN(rec, fieldSep, numFields+1)
+		parts := strings.SplitN(rec, FieldSep, numFields+1)
 		if len(parts) != numFields+1 {
 			return nil, fmt.Errorf("glogx: git log の出力を解析できません (フィールド数 %d)", len(parts))
 		}
@@ -218,13 +218,13 @@ func sanitizeGitText(s string) string {
 
 // LoadCommits は git log を実行して解析まで行う。
 func LoadCommits(q LogQuery, colored bool) ([]Commit, error) {
-	out, err := runGit(BuildLogArgs(q, colored)...)
+	out, err := runGit(buildLogArgs(q, colored)...)
 	if err != nil {
 		return nil, err
 	}
 	// Subject/Message/Body に VS16 付き絵文字が残ると描画エンジンと端末で幅が食い違い
 	// ガタつくため、解析前に正規化する (term.DropEmojiVS16 参照)。
-	return ParseLog(term.DropEmojiVS16(out))
+	return parseLog(term.DropEmojiVS16(out))
 }
 
 // LoadHeadCommit は --cached モード用に HEAD 1 件を取得する。
@@ -233,7 +233,7 @@ func LoadHeadCommit() (*Commit, error) {
 	if err != nil {
 		return nil, err
 	}
-	commits, err := ParseLog(out)
+	commits, err := parseLog(out)
 	if err != nil {
 		return nil, err
 	}
@@ -391,4 +391,14 @@ func LoadStagedDiff(q LogQuery, colored bool) (string, error) {
 		return "", err
 	}
 	return strings.TrimRight(out, "\n"), nil
+}
+
+// LogQuery は git log の取得の条件 (gitlog.go の取得の関数が読むものだけ)。CLI の Options を丸ごと渡さないのは、
+// 取得の層を internal/gitdata へ出すときに CLI の型を持ち込まないため (issue 817 の G-1)。
+type LogQuery struct {
+	MaxCount int // 負数 = 無制限 (git log と同じ)
+	Stat     bool
+	Patch    bool
+	Revs     []string // revision 指定
+	Paths    []string // "--" 以降の pathspec
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 
@@ -14,8 +15,8 @@ import (
 )
 
 func TestBrowseCursorNavigation(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	m.handleKey("j")
 	if m.cursor != 1 {
 		t.Errorf("j 後の cursor = %d; want 1", m.cursor)
@@ -47,9 +48,9 @@ func TestBrowseCursorNavigation(t *testing.T) {
 func TestBrowseWrapUsesFullWidth(t *testing.T) {
 	// カーソル溝の廃止 (git log と左マージンを揃える) 後は端末の全幅で折り返す。
 	// 折り返し幅と clip 幅がずれると全幅の行の末尾が「…」に食われる
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateSuccess
+	m.statuses[sha] = gitdata.StateSuccess
 	m.commits[0].Message = strings.Repeat("あ", 38) // 表示幅 76 (旧実装だと 1 行に収まり溝で溢れる)
 	m.height = 30
 	view := m.View().Content
@@ -65,8 +66,8 @@ func TestBrowseWrapUsesFullWidth(t *testing.T) {
 
 func TestBrowseCursorScrollsViewport(t *testing.T) {
 	// medium 形式 1 コミット ≈ 6 行 × 5 件 > 高さ 10 なので、下へ移動すると offset が進む
-	m := newTestBrowse(t, 5, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 5, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	for range 4 {
 		m.handleKey("j")
 	}
@@ -77,8 +78,8 @@ func TestBrowseCursorScrollsViewport(t *testing.T) {
 
 // j/k でビューポートがコミット単位に動くとき、表示 offset を glide させる (ユーザー要望)。
 func TestBrowseScrollAnim(t *testing.T) {
-	m := newTestBrowse(t, 6, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 6, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	m.height = 10 // pageSize 9。medium 1 コミット ~5 行 + 行間で数 j 目にスクロールが起きる
 	scrolled := false
 	for range 5 {
@@ -111,8 +112,8 @@ func TestBrowseScrollAnim(t *testing.T) {
 // 背高コミット (大きな offset ジャンプ) でも 1 コミット移動なら glide する
 // (行数キャップ撤去の回帰: 以前は >12 行で snap してコミット高で挙動が変わっていた)。
 func TestBrowseScrollAnimNoHeightCap(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	m.offset = 40 // ensureCursorVisible が背高コミットで飛ばした後を想定した大ジャンプ
 	cmd := m.startScrollAnim(0)
 	if !m.glide.Active() || m.glide.Offset(m.offset) != 0 || cmd == nil {
@@ -123,7 +124,7 @@ func TestBrowseScrollAnimNoHeightCap(t *testing.T) {
 
 // 80ms tick は single-flight: チェーンは常に高々 1 本 (レビュー C1)。
 func TestBrowseTickSingleFlight(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Visible = false // usage 取得中も spinnerActive になるため、tick 単体の検証から隔離する
 	if m.maybeTick() == nil || !m.ticking {
 		t.Fatal("初回 maybeTick が tick を返さない / ticking が立たない")
@@ -145,7 +146,7 @@ func TestBrowseTickSingleFlight(t *testing.T) {
 
 // pull アニメは 1 tickMsg = offset 1 減算 (複数チェーン併存による 2 倍速化の回帰・C1)。
 func TestBrowseTickPullAnimOncePerTick(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.height = 6 // 短すぎない (offset を持てる)
 	m.pullAnimating = true
 	m.offset = 3
@@ -162,7 +163,7 @@ func TestBrowseTickPullAnimOncePerTick(t *testing.T) {
 // tickMsg の list 無効化は fetch/awaitCI のときだけ (レビュー C7)。
 func TestBrowseTickInvalidateGate(t *testing.T) {
 	// fetching 中はリストの loading スピナーが動くので無効化する
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.pendingFetches = 1
 	m.linesValid = true
 	m.Update(tickMsg{})
@@ -170,15 +171,15 @@ func TestBrowseTickInvalidateGate(t *testing.T) {
 		t.Error("fetching 中の tickMsg でリストが無効化されない")
 	}
 	// CI 実行中のコミットは header 行がスピナーなので、fetch が終わっていても無効化する
-	mp := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	mp.statuses = statusesFor(mp, StatePending)
+	mp := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	mp.statuses = statusesFor(mp, gitdata.StatePending)
 	mp.linesValid = true
 	mp.Update(tickMsg{})
 	if mp.linesValid {
 		t.Error("CI 実行中のコミットがあるのに tickMsg でリストが無効化されない (スピナーが止まる)")
 	}
 	// pullAnimating だけ (fetch/awaitCI 無し) では list 内容は不変なので無効化しない
-	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m2 := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m2.height = 6
 	m2.pullAnimating = true
 	m2.offset = 3
@@ -191,7 +192,7 @@ func TestBrowseTickInvalidateGate(t *testing.T) {
 
 func TestBrowseQuitFillsUnknown(t *testing.T) {
 	shas := []string{strings.Repeat("a", 40)}
-	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, shas)
 	_, cmd := m.handleKey("q")
 	if cmd == nil {
 		t.Fatalf("q で Quit が返らない")
@@ -202,7 +203,7 @@ func TestBrowseQuitFillsUnknown(t *testing.T) {
 	if !m.done {
 		t.Errorf("done が立っていない")
 	}
-	if m.statuses[shas[0]] != StateUnknown {
+	if m.statuses[shas[0]] != gitdata.StateUnknown {
 		t.Errorf("取得中断で unknown に落ちていない: %v", m.statuses[shas[0]])
 	}
 	if m.View().Content != "" {
@@ -213,8 +214,8 @@ func TestBrowseQuitFillsUnknown(t *testing.T) {
 func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 	// 高速連打で複数キーが 1 つのキーイベント (Text="hhq") にまとまっても 1 文字ずつ
 	// 処理される (未対応だと q が無視されて終了できない: pty スモークで実測した回帰)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
@@ -238,8 +239,8 @@ func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 func TestBrowseBatchedRunesArmsTick(t *testing.T) {
 	testenv.StubClipboardFunc(t, func(string) error { return nil })
 
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	m.ticking = false
 	m.Update(tea.KeyPressMsg{Text: "yy"}) // y = コピー (結果トーストが出る)
 	if !m.ticking {
@@ -250,8 +251,8 @@ func TestBrowseBatchedRunesArmsTick(t *testing.T) {
 func TestBrowseQPopsViewStack(t *testing.T) {
 	// q はビューのスタックを 1 段戻る (詳細 → job 一覧 → コミット一覧 → 終了)。
 	// 即終了は Ctrl-C (ユーザー要望: tig 流)
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
@@ -273,8 +274,8 @@ func TestBrowseQPopsViewStack(t *testing.T) {
 
 func TestBrowseCtrlCQuitsAnywhere(t *testing.T) {
 	// Ctrl-C はどの階層からでも即終了
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
@@ -289,8 +290,8 @@ func TestBrowseCtrlCQuitsAnywhere(t *testing.T) {
 func TestBrowseLinesMemoized(t *testing.T) {
 	// 行リストはカーソル移動やパネル開閉で再構築しない (メモ化)。-p の巨大 patch で
 	// キー 1 打ごとに全行を組み直す計算量爆発を防ぐ
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	first := m.lines()
 	m.handleKey("j")
 	m.handleKey("ctrl+d")
@@ -301,7 +302,7 @@ func TestBrowseLinesMemoized(t *testing.T) {
 	}
 	// 状態を変える更新 (CI 結果のマージ) では再構築される
 	sha := m.commits[0].SHA
-	m.Update(ciResultMsg{shas: []string{sha}, batch: CIBatch{Statuses: map[string]CIState{sha: StateFailure}}})
+	m.Update(ciResultMsg{shas: []string{sha}, batch: gitdata.CIBatch{Statuses: map[string]gitdata.CIState{sha: gitdata.StateFailure}}})
 	rebuilt := m.lines()
 	if &first[0] == &rebuilt[0] {
 		t.Errorf("CI 結果反映後も古い行リストのまま")
@@ -321,16 +322,16 @@ func TestBrowseLinesMemoized(t *testing.T) {
 
 func TestJapaneseFullViewStaysInWidth(t *testing.T) {
 	// subject・message・diff 本文・job 名・詳細ログの全部が日本語でも View の全行が幅内
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.height = 40
 	sha := m.commits[0].SHA
-	m.statuses[sha] = StateFailure
+	m.statuses[sha] = gitdata.StateFailure
 	m.commits[0].Subject = "日本語のサブジェクト: 表示崩れの検証"
 	m.commits[0].Message = "日本語のサブジェクト: 表示崩れの検証\n\n" + strings.Repeat("本文の長い日本語テキスト。", 20)
 	m.commits[0].Body = "+\t日本語のコード行 := \"値\"\n-\tもう一行の日本語\n"
-	m.details[sha] = []CheckDetail{
-		{Name: "テスト (ユニット)", State: StateFailure, URL: "https://github.com/o/r/runs/1"},
-		{Name: strings.Repeat("長いジョブ名", 15), State: StateSuccess},
+	m.details[sha] = []gitdata.CheckDetail{
+		{Name: "テスト (ユニット)", State: gitdata.StateFailure, URL: "https://github.com/o/r/runs/1"},
+		{Name: strings.Repeat("長いジョブ名", 15), State: gitdata.StateSuccess},
 	}
 	m.openPanel()
 	m.handleKey("j")
@@ -352,7 +353,7 @@ func TestJapaneseFullViewStaysInWidth(t *testing.T) {
 // git log --color は短縮形リセット "\x1b[m" を使う。bgLine (カーソル行の bg 塗り) は
 // これでも bg を張り直して行末まで塗れる (literal "\x1b[0m" 一致だけだと途切れる回帰の防止)。
 func TestBgLineReappliesAfterShortReset(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.colored = true
 	got := m.bgLine("\x1b[33mcommit abc\x1b[m subject", term.AnsiCursorBg)
 	if !strings.Contains(got, "\x1b[m"+term.AnsiCursorBg) {
@@ -382,9 +383,9 @@ func TestBrowseEmacsHorizontalAliases(t *testing.T) {
 // カーソル溝の廃止 (2026-07-19): 行頭 2 桁の溝を足さず git log と左マージンが一致し、
 // カーソルはヘッダー行全体の bg 塗りで示す。
 func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Visible = false // 右上 usage モーダルは上部行を覆うため、カーソル強調の検証から隔離する
-	m.statuses = statusesFor(m, StateSuccess)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	m.colored = true
 	view := strings.Split(m.View().Content, "\n")
 	var authorLine, cursorHeader, otherHeader string
@@ -433,7 +434,7 @@ func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
 // 実 header index と一致することで検証する。
 func TestEnsureCursorVisibleScrollsUp(t *testing.T) {
 	m := newTestBrowse(t, 10, nil, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	m.height = 8 // 小さい page で list をスクロール可能に
 	m.cursor = 0
 	m.offset = 12 // カーソル (先頭) より下へスクロールした状態
@@ -458,7 +459,7 @@ func TestEnsureCursorVisibleScrollsUp(t *testing.T) {
 // invariant を対で固定する (offset=1 は 1 回、offset=2 は 2 回で終端)。
 func TestAdvancePullAnimTerminates(t *testing.T) {
 	m := newTestBrowse(t, 5, nil, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 
 	m.pullAnimating, m.offset = true, 1
 	m.advancePullAnim()
@@ -515,13 +516,13 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"prStatusOv.fetching", func(m *browseModel) { m.prStatusOv.busy["a"] = true }},
 		{"panelHasPendingJob (running)", func(m *browseModel) {
 			m.panelSHA = m.commits[0].SHA
-			m.details[m.panelSHA] = []CheckDetail{{Name: "job", State: StatePending, StartedAt: time.Now()}}
+			m.details[m.panelSHA] = []gitdata.CheckDetail{{Name: "job", State: gitdata.StatePending, StartedAt: time.Now()}}
 		}},
 		{"panelHasPendingJob (queued)", func(m *browseModel) {
 			m.panelSHA = m.commits[0].SHA
-			m.details[m.panelSHA] = []CheckDetail{{Name: "job", State: StatePending}}
+			m.details[m.panelSHA] = []gitdata.CheckDetail{{Name: "job", State: gitdata.StatePending}}
 		}},
-		{"listHasPending", func(m *browseModel) { m.statuses = statusesFor(m, StatePending) }},
+		{"listHasPending", func(m *browseModel) { m.statuses = statusesFor(m, gitdata.StatePending) }},
 		{"usageOv.loading", func(m *browseModel) { m.usageOv.Visible = true; m.usageOv.Snap = nil; m.usageOv.Err = nil }},
 		// 🚨 以下 2 つは spinnerActive へ後から入った源で、テーブルへの追記が漏れていた
 		// (issue 028 P3 が予測した「追記漏れ」が実際に起きていた形)。
@@ -535,13 +536,13 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"statusOv.preview.fetching", func(m *browseModel) { m.statusOv.Fixture().Preview().Begin("k") }},
 	}
 	// 前提: 何も動いていない model は false (これが false でないと以下の検証が無意味になる)
-	base := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	base := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	base.usageOv.Visible = false
 	if base.spinnerActive() {
 		t.Fatal("前提: idle な model で spinnerActive() が true")
 	}
 	for _, s := range sources {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		m.usageOv.Visible = false // usage は既定で取得中になりうるので隔離する
 		s.set(m)
 		if !m.spinnerActive() {
@@ -596,8 +597,8 @@ func TestMainListScrollbar(t *testing.T) {
 // job 詳細を開いたまま J/K で隣の job へ差し替える (docs/glogx-ui-guide.md §6)。
 // パネルのフォーカスが追従し、端では止まって案内する。
 func TestBrowseJobDetailNeighborKeysSwapJob(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.statuses = statusesFor(m, gitdata.StateSuccess)
 	withJobs(m, 0) // build / lint の 2 job
 	m.openPanel()
 	m.handleKey("j") // job 0 (build)
@@ -638,7 +639,7 @@ func TestBrowseJobDetailNeighborKeysSwapJob(t *testing.T) {
 // 処理も一緒に捨てられ、パネルが「CI job を取得中...」で永久に固まっていた。
 // 223 が awaitCI で直したのと同じ失敗モードの、兄弟の掃き漏れ。
 func TestDetailsLoadingReleasedAcrossEpochBump(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	// 🚨 フィクスチャ既定では usageOv.loading() が真で、spinnerActive() が札と無関係に
 	// 真になる。この交絡を先に潰しておかないと、下の assert が何も測らない。
 	m.usageOv.Snap = rlTestSnap()
@@ -665,7 +666,7 @@ func TestDetailsLoadingReleasedAcrossEpochBump(t *testing.T) {
 	}
 
 	// 旧世代のチャンクが遅れて着弾しても壊れない (epoch ガードで捨てられるだけ)
-	m.Update(ciResultMsg{epoch: epochBefore, shas: []string{stale}, batch: CIBatch{}})
+	m.Update(ciResultMsg{epoch: epochBefore, shas: []string{stale}, batch: gitdata.CIBatch{}})
 	if m.detailsLoading[stale] {
 		t.Errorf("旧世代の着弾で札が戻った: %v", m.detailsLoading)
 	}
@@ -673,7 +674,7 @@ func TestDetailsLoadingReleasedAcrossEpochBump(t *testing.T) {
 	// 🚨 spinnerActive() は**新しい取得を着地させてから**見る。startCIFetch の直後は
 	// pendingFetches > 0 なので fetching() が正当に真で、札の有無に関わらず真になる
 	// (この交絡に気づかず「spinnerActive が下りない」を札の証拠にしかけた)。
-	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: []string{"other-sha"}, batch: CIBatch{}})
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: []string{"other-sha"}, batch: gitdata.CIBatch{}})
 	if m.fetching() {
 		t.Fatalf("新しい取得が着地していない (pendingFetches=%d)", m.pendingFetches)
 	}
@@ -689,7 +690,7 @@ func TestDetailsLoadingReleasedAcrossEpochBump(t *testing.T) {
 // fetchPanelDetails の 1 行目ガードが外れて同一 SHA へ 2 本目の GraphQL が飛ぶ
 // (fetchPanelDetails のコメントが名指しで避けている事故)。
 func TestDetailsLoadingKeepsInFlightFetchAcrossEpochBump(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Snap = rlTestSnap()
 	m.hasRepo = true
 

@@ -106,7 +106,7 @@ golangci には「main を薄く」をそのまま表す規則が無いので、
 
 ### G. main に残すものを整理する
 
-- [ ] G-1 git log の取得と CI の取得 (gitlog.go / github.go / cache.go) を `internal/gitdata` へ出すか決める (render.go のコミット行の描画が使う)
+- [x] G-1 git log の取得と CI の取得 (gitlog.go / github.go / cache.go) を `internal/gitdata` へ出すか決める (render.go のコミット行の描画が使う)
 - [ ] G-2 overlay 類 (diff / job / pr_status / action_modal) の置き場所を決める
 - [ ] G-3 main に残るのが「起動・配線・browseModel の状態機械」だけになったら、src/glogx/CLAUDE.md・README の構造の記述を直して閉じる
 
@@ -224,4 +224,9 @@ P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.
 公開名の golden は `GLOGX_API_UPDATE=1 go test -run TestInternalAPIGolden .` で作り直し、増えた名前が main から頼む口だけかを見てから commit する。
 罠: gopls rename は長さが変わる名前を 1 つずつ (位置がずれる)。外のパッケージが使う名前は gopls が拒むので、main 側を先に書き換えてから非公開にする。
 JSON のタグ付きのフィールドは小文字にしない。unparam (check-exported) は他パッケージの利用を数えないので `//nolint:unparam // 理由` で受ける。
+- [x] 2026-10-18 G-1 (glogx: git log と CI の取得を internal/gitdata へ移す): 準備 2 つ (LogQuery / planCIChunks) の後に gitlog.go / github.go / cache.go と
+  中だけで閉じるテスト 69 宣言を移した。main のテストだけが使っていた 7 個 (chunkSHAs / runGit / fingerprintFormat / buildLogArgs / parseLog /
+  parseGitHubURL / buildDisplayArgs) は非公開に戻した (main のテストは PlanCIChunks・extcmd.RunGitTimeout を使う)。golden の gitdata は 114 行
+  (データ型とフィールドが大半)。EmptyBatch は main のテストだけが使うが、空の map を持つ CIBatch を作る口として残した。
+  Options → LogQuery の写しは main の TestOptionsLogQueryCarriesFetchFields が守る (テスト名は移設前 +1 の 1253)
 

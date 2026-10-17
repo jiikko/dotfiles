@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"glogx/internal/gitdata"
 	"glogx/internal/issuesview"
 	"glogx/internal/usageview"
 	"glogx/issues"
@@ -38,7 +39,7 @@ func benchBrowse(tb testing.TB, n, w, h int) *browseModel {
 // 2026-08-14 の敵対的レビュー R2 の指摘で追加。
 func benchBrowseSubjects(tb testing.TB, n, w, h int, ja bool) *browseModel {
 	tb.Helper()
-	commits := make([]Commit, n)
+	commits := make([]gitdata.Commit, n)
 	raw := make([]string, 0, n*6)
 	for i := range commits {
 		sha := strings.Repeat(strconv.Itoa(i%10), 40)
@@ -49,7 +50,7 @@ func benchBrowseSubjects(tb testing.TB, n, w, h int, ja bool) *browseModel {
 			// 小さくなり、効果を過大評価する (2026-08-14 の R3 レビューで実測差 4〜5%)
 			subject = "fix(glogx): 請求計算の境界条件を是正し、回帰を実測で固定する (レビュー反映) " + strconv.Itoa(i)
 		}
-		commits[i] = Commit{
+		commits[i] = gitdata.Commit{
 			SHA: sha, ShortSHA: sha[:7], Subject: subject, Author: "koji",
 			AuthorEmail: "k@example.com", Date: "Thu Jul 16 19:12:47 2026 +0900",
 			RelDate: "3 hours ago", Message: subject,
@@ -64,15 +65,15 @@ func benchBrowseSubjects(tb testing.TB, n, w, h int, ja bool) *browseModel {
 			"",
 		)
 	}
-	statuses := make(map[string]CIState, n)
+	statuses := make(map[string]gitdata.CIState, n)
 	for i, c := range commits {
 		if i%2 == 0 {
-			statuses[c.SHA] = StateSuccess
+			statuses[c.SHA] = gitdata.StateSuccess
 		} else {
-			statuses[c.SHA] = StateFailure
+			statuses[c.SHA] = gitdata.StateFailure
 		}
 	}
-	m := newBrowseModel(commits, statuses, nil, Repo{Owner: "o", Name: "r"}, true,
+	m := newBrowseModel(commits, statuses, nil, gitdata.Repo{Owner: "o", Name: "r"}, true,
 		&Options{}, true, w, h)
 	tb.Cleanup(m.cancel)
 	m.verbatim = VerbatimLines(raw, commits)
@@ -98,10 +99,10 @@ func benchPanelBrowse(tb testing.TB, ja bool) *browseModel {
 	tb.Helper()
 	m := benchBrowseSubjects(tb, 20, 120, 40, ja)
 	m.panelSHA = m.commits[3].SHA
-	m.details[m.panelSHA] = []CheckDetail{
-		{Name: "build", State: StateSuccess, URL: "https://github.com/o/r/runs/1"},
-		{Name: "lint", State: StateFailure, URL: "https://github.com/o/r/runs/2"},
-		{Name: "test", State: StatePending, URL: "https://github.com/o/r/runs/3"},
+	m.details[m.panelSHA] = []gitdata.CheckDetail{
+		{Name: "build", State: gitdata.StateSuccess, URL: "https://github.com/o/r/runs/1"},
+		{Name: "lint", State: gitdata.StateFailure, URL: "https://github.com/o/r/runs/2"},
+		{Name: "test", State: gitdata.StatePending, URL: "https://github.com/o/r/runs/3"},
 	}
 	return m
 }

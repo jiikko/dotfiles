@@ -5,34 +5,33 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/jiikko/dotfiles/src/tuikit/spinner"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
+
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 )
 
 // 状態記号は絵文字ではなく 1 カラム記号を使う (端末幅とフォント差異の影響を抑える: issue の設計)。
-
-// StateLoading は表示専用の擬似状態。statuses map に SHA が無いとき render 側で使う。
-const StateLoading CIState = "loading"
 
 // StatusGlyph は状態 1 つ分の記号。どの状態も表示幅 2 に揃える: 幅 1 の文字と幅 2 の絵文字を
 // 同じ列に混ぜると、桁数が合っていても縦に揃って見えない。絵文字は色を自前で持つので ANSI 色を
 // 付けない。実行中と取得中は回るスピナー (幅 1 の点字なので空白で埋める)。色で見分ける:
 // 実行中は黄、取得中はシアン。glyph (今のコマ) を渡さない経路 (静的出力) では先頭のフレームで止まって出る。
-func StatusGlyph(state CIState, colored bool, glyph string) string {
+func StatusGlyph(state gitdata.CIState, colored bool, glyph string) string {
 	switch state {
-	case StateSuccess:
+	case gitdata.StateSuccess:
 		return "✅"
-	case StateFailure:
+	case gitdata.StateFailure:
 		return "❌"
-	case StatePending:
+	case gitdata.StatePending:
 		return term.Paint(term.FillRight(spinnerOr(glyph), 2), term.AnsiYellow, colored)
-	case StateNeutral:
+	case gitdata.StateNeutral:
 		return "🚫"
-	case StateNone:
+	case gitdata.StateNone:
 		return "⬜"
-	case StateUnpushed:
+	case gitdata.StateUnpushed:
 		return "🔼"
-	case StateUnknown:
+	case gitdata.StateUnknown:
 		return "❓"
 	default:
 		return term.Paint(term.FillRight(glyph, 2), term.AnsiCyan, colored)
@@ -46,11 +45,11 @@ func spinnerOr(glyph string) string {
 	return glyph
 }
 
-func stateFor(statuses map[string]CIState, sha string) CIState {
+func stateFor(statuses map[string]gitdata.CIState, sha string) gitdata.CIState {
 	if state, ok := statuses[sha]; ok {
 		return state
 	}
-	return StateLoading
+	return gitdata.StateLoading
 }
 
 // Line は描画 1 行分。TUI のビューポートとカーソル位置決めが CommitIdx/Header を使う。
@@ -65,9 +64,9 @@ type RenderOpts struct {
 	Oneline bool
 	Colored bool
 	Spinner string
-	Width   int               // >0 ならコミットメッセージを端末幅で折り返す (TUI 用)。
-	Decor   *DecorColors      // decoration の色 (nil = git 既定色)
-	PRs     map[string]*PRRef // コミット行末尾の PR バッジ (#123)。nil 値 = PR なし
+	Width   int                       // >0 ならコミットメッセージを端末幅で折り返す (TUI 用)。
+	Decor   *gitdata.DecorColors      // decoration の色 (nil = git 既定色)
+	PRs     map[string]*gitdata.PRRef // コミット行末尾の PR バッジ (#123)。nil 値 = PR なし
 	// Verbatim は git log 実出力の取り込み行 (VerbatimLines の結果)。非 nil なら
 	// medium 形式の自前再構築 (mediumLines) の代わりにこれを装飾して使う = 見た目が
 	// git log と機械的に一致する (ユーザー要望 2026-07-19「人力で寄せるのはめんどい」)。
@@ -82,11 +81,11 @@ type RenderOpts struct {
 	HasRepo bool
 }
 
-func (o RenderOpts) decorColors() DecorColors {
+func (o RenderOpts) decorColors() gitdata.DecorColors {
 	if o.Decor != nil {
 		return *o.Decor
 	}
-	return DefaultDecorColors()
+	return gitdata.DefaultDecorColors()
 }
 
 // subjectWidthCap は --oneline で subject 列を揃える幅の上限。極端に長い subject 1 件で
@@ -99,7 +98,7 @@ const defaultBoundaryWidth = 60
 
 // RenderLines はコミット列を描画行へ展開する。既定は git log 標準 (medium) 形式、
 // --oneline はコンパクト 1 行形式。CI 記号はコミットヘッダー行にだけ付く (issue の設計)。
-func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []Line {
+func RenderLines(commits []gitdata.Commit, statuses map[string]gitdata.CIState, o RenderOpts) []Line {
 	var lines []Line
 	switch {
 	case o.Oneline:
@@ -136,14 +135,14 @@ func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []
 //
 // 全部未 push / push 状態不明 (HasRepo=false) のときは何も挿さない。push/pull で
 // statuses が変わると lines は再構築されるため、マークは常に現状を反映する。
-func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CIState, o RenderOpts) []Line {
+func insertPushBoundary(lines []Line, commits []gitdata.Commit, statuses map[string]gitdata.CIState, o RenderOpts) []Line {
 	if len(commits) == 0 {
 		return lines
 	}
 	boundary := -1 // push 済み先頭のコミット index
 	unpushed := 0
 	for _, c := range commits {
-		if stateFor(statuses, c.SHA) == StateUnpushed {
+		if stateFor(statuses, c.SHA) == gitdata.StateUnpushed {
 			unpushed++
 		}
 	}
@@ -199,7 +198,7 @@ func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CISt
 // 「term.StripANSI 後に "commit <次に期待する SHA>" で始まる行」なので、コミットメッセージ内の
 // "commit ..." 行 (インデント 4 だが --color 無しでは理論上先頭に来ない) を誤認しない。
 // ヘッダー数が commits と一致しない場合は nil (呼び出し側が自前レンダリングへ fallback)。
-func VerbatimLines(raw []string, commits []Commit) []Line {
+func VerbatimLines(raw []string, commits []gitdata.Commit) []Line {
 	lines := make([]Line, 0, len(raw))
 	next := 0
 	for _, line := range raw {
@@ -219,7 +218,7 @@ func VerbatimLines(raw []string, commits []Commit) []Line {
 // decorateVerbatim は verbatim 行へ glog の付加情報だけを足す: ヘッダー行の CI 記号前置と
 // PR バッジ後置。それ以外の行は git log の出力そのまま (TUI では色なし行のみ幅で折り返し、
 // タブは幅計算のため展開する)。
-func decorateVerbatim(commits []Commit, statuses map[string]CIState, o RenderOpts) []Line {
+func decorateVerbatim(commits []gitdata.Commit, statuses map[string]gitdata.CIState, o RenderOpts) []Line {
 	out := make([]Line, 0, len(o.Verbatim))
 	for _, l := range o.Verbatim {
 		if l.Header {
@@ -249,7 +248,7 @@ func decorateVerbatim(commits []Commit, statuses map[string]CIState, o RenderOpt
 }
 
 // RenderStatic は静的出力 (非 TTY / TUI 終了後の最終表示) 用に行を結合する。
-func RenderStatic(commits []Commit, statuses map[string]CIState, o RenderOpts) string {
+func RenderStatic(commits []gitdata.Commit, statuses map[string]gitdata.CIState, o RenderOpts) string {
 	lines := RenderLines(commits, statuses, o)
 	texts := make([]string, len(lines))
 	for i, l := range lines {
@@ -262,7 +261,7 @@ func RenderStatic(commits []Commit, statuses map[string]CIState, o RenderOpts) s
 // (short SHA / "commit <full>") を呼び出し側が渡す。lead は記号の直後に置く付加情報 (medium の PR バッジ。
 // prBadgeLead)。subject は含めない (列揃えの都合で呼び出し側が付ける)。3 つのレンダラ間で共通化し、SHA 表記や
 // decoration の表示条件を 1 箇所で変えられるようにする。
-func commitHeaderPrefix(lead, shaText, decoration string, state CIState, o RenderOpts) string {
+func commitHeaderPrefix(lead, shaText, decoration string, state gitdata.CIState, o RenderOpts) string {
 	var b strings.Builder
 	b.WriteString(StatusGlyph(state, o.Colored, o.Spinner))
 	b.WriteString(" ")
@@ -276,7 +275,7 @@ func commitHeaderPrefix(lead, shaText, decoration string, state CIState, o Rende
 }
 
 // renderOnelineRow は --oneline の 1 行。列: 記号 / short SHA / (decorations) / subject / author / 相対日時。
-func renderOnelineRow(c Commit, state CIState, subjectWidth, authorWidth int, o RenderOpts) string {
+func renderOnelineRow(c gitdata.Commit, state gitdata.CIState, subjectWidth, authorWidth int, o RenderOpts) string {
 	var b strings.Builder
 	b.WriteString(commitHeaderPrefix("", c.ShortSHA, c.Decoration, state, o))
 	b.WriteString(" ")
@@ -341,7 +340,7 @@ func prStateColor(state string) string {
 //	    message...
 //
 //	[--stat / -p の本文]
-func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
+func mediumLines(c gitdata.Commit, idx int, state gitdata.CIState, o RenderOpts) []Line {
 	var lines []Line
 	var h strings.Builder
 	h.WriteString(commitHeaderPrefix(prBadgeLead(c.SHA, o), "commit "+c.SHA, c.Decoration, state, o))
@@ -380,7 +379,7 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 
 // RenderCached は --cached モードの出力 (HEAD の CI 状態 + staged diff)。
 // staged 変更自体に CI 結果は存在しないため「HEAD の状態」であることを明示する (issue の設計)。
-func RenderCached(head *Commit, state CIState, diff string, colored bool, glyph string) string {
+func RenderCached(head *gitdata.Commit, state gitdata.CIState, diff string, colored bool, glyph string) string {
 	var b strings.Builder
 	b.WriteString("HEAD CI: ")
 	// staged 変更に decoration は無い。RenderOpts は表記共通化のための最小構築。
@@ -418,7 +417,7 @@ func renderDecoration(deco string, o RenderOpts) string {
 	return b.String()
 }
 
-func decorItem(item string, dc DecorColors) string {
+func decorItem(item string, dc gitdata.DecorColors) string {
 	if name, ok := strings.CutPrefix(item, "HEAD -> "); ok {
 		return dc.HEAD + "HEAD" + term.AnsiReset + " -> " + refColor(name, dc) + name + term.AnsiReset
 	}
@@ -434,7 +433,7 @@ func decorItem(item string, dc DecorColors) string {
 // refColor はブランチ名がリポジトリの remote 配下 (<remote>/...) なら remote branch 色、
 // それ以外はローカルブランチ色。名前に / を含むローカルブランチ (feature/x) を
 // 誤判定しないよう、先頭セグメントが実在する remote 名のときだけ remote 扱いにする。
-func refColor(name string, dc DecorColors) string {
+func refColor(name string, dc gitdata.DecorColors) string {
 	if remote, _, ok := strings.Cut(name, "/"); ok && slices.Contains(dc.Remotes, remote) {
 		return dc.RemoteBranch
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"glogx/internal/extcmd"
+	"glogx/internal/gitdata"
 	"os/exec"
 	"strings"
 	"sync"
@@ -37,7 +38,7 @@ const cliHealthTimeout = 5 * time.Second
 
 // cliHealthRunner は health 検査用の差し替え点。claude の判定材料は stdout、codex の判定材料は
 // stderr に出るという実測を保つため、stdout と stderr を分けた既存の契約をそのまま使う。
-var cliHealthRunner CommandRunner = ExecRunner
+var cliHealthRunner gitdata.CommandRunner = gitdata.ExecRunner
 
 type claudeAuthStatus struct {
 	LoggedIn *bool `json:"loggedIn"`

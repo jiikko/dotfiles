@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
+	"glogx/internal/gitdata"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -243,7 +244,7 @@ func (m *browseModel) gitLogPollCmd() tea.Cmd {
 func (m *browseModel) gitLogMeasureCmd() tea.Cmd {
 	opts, gen := m.opts, m.logWatch.Gen
 	return func() tea.Msg {
-		out, err := extcmd.RunGitTimeout(BuildFingerprintArgs(opts.LogQuery())...)
+		out, err := extcmd.RunGitTimeout(gitdata.BuildFingerprintArgs(opts.LogQuery())...)
 		if err != nil {
 			return gitLogFPMsg{gen: gen}
 		}
@@ -423,7 +424,7 @@ func gitLogChangeToast(added int) string {
 // decoration は比べない: 表示用の読み込みは --color=always なので %D に ANSI が入りうる
 // 一方、指紋は --color=never で測る (BuildFingerprintArgs) ため、文字列として比べると
 // 色付き表示では常に不一致になる。SHA だけなら両者で同じ表現になる。
-func gitLogFPMatchesCommits(fp string, commits []Commit) bool {
+func gitLogFPMatchesCommits(fp string, commits []gitdata.Commit) bool {
 	shas := fingerprintSHAs(fp)
 	if len(shas) != len(commits) {
 		return false
@@ -445,7 +446,7 @@ func fingerprintSHAs(fp string) []string {
 	lines := strings.Split(fp, "\n")
 	shas := make([]string, 0, len(lines))
 	for _, line := range lines {
-		sha, _, _ := strings.Cut(line, fieldSep)
+		sha, _, _ := strings.Cut(line, gitdata.FieldSep)
 		shas = append(shas, sha)
 	}
 	return shas

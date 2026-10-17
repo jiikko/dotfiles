@@ -413,8 +413,8 @@ go test -run '^$' -bench BenchmarkView -benchmem .
 - 実装は `package main` を中心に、描画の土台 `internal/term` と `issues/` サブパッケージ (画面ごとの切り出しは issue 742 で進行中)。利用枠の取得・整形 (`usage`) と外部プロセス起動の
   安全弁 (`subproc`)・atomic 書き込み (`atomicfile`) は独立 module ([`../ratelimit`](../ratelimit/README.md) /
   [`../subproc`](../subproc/README.md) / [`../atomicfile`](../atomicfile/README.md)) から replace で取り込む。主な境界:
-  `options.go` (引数 allowlist) / `gitlog.go` (git 実行と %x1e/%x1f レコード解析) /
-  `github.go` (repo 解決・GraphQL・集約) / `cache.go` (XDG キャッシュ) /
+  `options.go` (引数 allowlist) / `internal/gitdata/gitlog.go` (git 実行と %x1e/%x1f レコード解析) /
+  `internal/gitdata/github.go` (repo 解決・GraphQL・集約) / `internal/gitdata/cache.go` (XDG キャッシュ) /
   `external_commands.go` (git/tmux/claude/browser/clipboard の外部プロセスラッパー) /
   `internal/term` (ANSI 色・`Paint`・幅の別名・枠と影 (`box.go`)・端末サニタイズ (`terminal.go`)・glide のキー語彙・最下行の案内の詰め) / `render.go` (コミット行の生成) / `tui.go` (Bubble Tea ブラウズの中核・状態遷移) /
   `internal/term/box.go` は枠と影の本体 (tuikit の `layout.Panel` / `OverlayCentered`) に glogx のテーマ色を渡すラッパ (確認ダイアログは tuikit の `confirm`) /

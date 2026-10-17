@@ -22,7 +22,7 @@ var execCmdAllow = map[string]string{
 	"internal/filerview/filer_view.go": "treefiler の ! / s / e の前景実行 (filerExecCommand。issue 817 で画面ごと移した)",
 	"internal/lanview/lan_view.go":     "mac-lan-manager の s / o の前景実行 (lanExecCommand。issue 817 で画面ごと移した)",
 	"internal/extcmd/extcmd.go":        "ブラウザ / エディタ / クリップボードの起動口 (main と画面のパッケージが共有する。issue 817)",
-	"gitlog.go":                        "git log の取得の Cmd を組む (WaitDelay は extcmd.RunGitCmd が張る)",
+	"internal/gitdata/gitlog.go":       "git log の取得の Cmd を組む (WaitDelay は extcmd.RunGitCmd が張る)",
 	"internal/extcmd/git.go":           "git 実行の共通入口 (WaitDelay は RunGitCmd が張る。issue 817 で gitlog.go から移した)",
 	"open_workspace.go":                "e / E の前景エディタ・ファイラー起動 (runEditorCmd = tea.Exec + foreground.Exec)",
 	"tui.go":                           "job ログを nvim の scratch で開く前景実行",

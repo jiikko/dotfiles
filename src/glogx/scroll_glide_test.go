@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
@@ -15,8 +16,8 @@ import (
 // 以前は j/k の 1 行移動だけがアニメで、半ページは snap していた。
 func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 	t.Run("コミット一覧 (ctrl+d)", func(t *testing.T) {
-		m := newTestBrowse(t, 30, map[string]CIState{}, nil)
-		m.statuses = statusesFor(m, StateSuccess)
+		m := newTestBrowse(t, 30, map[string]gitdata.CIState{}, nil)
+		m.statuses = statusesFor(m, gitdata.StateSuccess)
 		m.height = 12
 		prev := m.offset
 		_, cmd := m.handleKey("ctrl+d")
@@ -71,7 +72,7 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 // 表示がスクロール前の位置で固まって「キーが効かない」ように見える。敵対的レビュー P1 の回帰)。
 func TestGlideKeyPathsScheduleTick(t *testing.T) {
 	t.Run("diff pager", func(t *testing.T) {
-		m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 		m.usageOv.Dismiss()
 		lines := make([]string, 200)
 		for i := range lines {
@@ -91,8 +92,8 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 	})
 
 	t.Run("コミット一覧", func(t *testing.T) {
-		m := newTestBrowse(t, 30, map[string]CIState{}, nil)
-		m.statuses = statusesFor(m, StateSuccess)
+		m := newTestBrowse(t, 30, map[string]gitdata.CIState{}, nil)
+		m.statuses = statusesFor(m, gitdata.StateSuccess)
 		m.usageOv.Dismiss()
 		m.height = 12
 		m.ticking = false
@@ -106,7 +107,7 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 // resize は glide を持つ面すべて (一覧・diff・issues の本文とカーソル・status の pager) で捨てる (幅で行数が変わり着地点が古くなるため)。
 // issues の一覧は glide を持たない (issue 031)。
 func TestResizeStopsAllGlides(t *testing.T) {
-	m := newTestBrowse(t, 10, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 10, map[string]gitdata.CIState{}, nil)
 	m.glide.Start(0, 10, term.ScrollAnimFrames)
 	startPagerGlide(t, &m.diffOv.pager, 0, 10)
 	startPagerGlide(t, m.issuesOv.Fixture().BodyPager(), 0, 10)
@@ -129,8 +130,8 @@ func TestResizeStopsAllGlides(t *testing.T) {
 // docs/issues-viewer-spec.md「半ページ移動はカーソルが滑る (窓は滑らせない)」の末尾。
 func TestShiftSpaceScrollsUp(t *testing.T) {
 	t.Run("コミット一覧", func(t *testing.T) {
-		m := newTestBrowse(t, 40, map[string]CIState{}, nil)
-		m.statuses = statusesFor(m, StateSuccess)
+		m := newTestBrowse(t, 40, map[string]gitdata.CIState{}, nil)
+		m.statuses = statusesFor(m, gitdata.StateSuccess)
 		m.usageOv.Dismiss()
 		m.height = 12
 		m.handleKey("ctrl+d") // まず下へ

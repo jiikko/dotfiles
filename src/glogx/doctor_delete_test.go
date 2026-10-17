@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"glogx/internal/doctorview"
+	"glogx/internal/gitdata"
 )
 
 // ---- 敵対的レビュー (2026-09-03) が開けた穴を塞ぐテスト ----
@@ -18,7 +19,7 @@ import (
 func TestBrowseCtrlCDuringDeleteDoesNotQuit(t *testing.T) {
 	for _, key := range []string{"ctrl+c", "ctrl+g"} {
 		t.Run(key, func(t *testing.T) {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			m.doctorOv.Fixture().Show()
 			cancelled := false
 			m.doctorOv.Fixture().Delete(doctorview.DeleteRunning, func() { cancelled = true })
@@ -43,7 +44,7 @@ func TestBrowseCtrlCDuringDeleteDoesNotQuit(t *testing.T) {
 
 // 削除の実行中は再起動ダイアログを出さない (出るとどのキーも吸われ、r は走行中の削除を殺す)。
 func TestRestartPromptDefersWhileDeleting(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.doctorOv.Fixture().Show()
 	m.doctorOv.Fixture().Delete(doctorview.DeleteRunning, nil)
 	m.restartPending = true
@@ -67,7 +68,7 @@ func TestRestartPromptDefersWhileDeleteConfirm(t *testing.T) {
 		del  doctorview.DeleteState
 	}{{"確認中", doctorview.DeleteConfirm}, {"結果の表示中", doctorview.DeleteResult}} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			m.doctorOv.Fixture().Show()
 			m.doctorOv.Fixture().Delete(tc.del, nil)
 			m.restartPending = true
@@ -97,7 +98,7 @@ func TestDeleteAbortGuidanceMatchesKeys(t *testing.T) {
 		{"ctrl+g", "Ctrl-G"},
 	} {
 		t.Run(tc.key, func(t *testing.T) {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			m.doctorOv.Fixture().Show()
 			cancelled := false
 			m.doctorOv.Fixture().Delete(doctorview.DeleteRunning, func() { cancelled = true })
@@ -126,7 +127,7 @@ func TestDeleteAbortGuidanceMatchesKeys(t *testing.T) {
 // 🚨 scanning() では代用できないことも同時に pin する: あちらは 3 つのレポートが nil のあいだ
 // (= 初回スキャン中) しか true にならないので、削除に入る頃には必ず false になっている。
 func TestDeleteKeepsRedrawAlive(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 100, 30
 	m.doctorOv.Fixture().Show()
 	// 走査は終わっている状態を作る (5 つのレポートが揃うと scanning() は false)

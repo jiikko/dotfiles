@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/gitdata"
 	"glogx/internal/statusview"
 	"glogx/internal/term"
 )
@@ -167,8 +168,8 @@ func TestPullReloadsOpenStatusViewer(t *testing.T) {
 
 // b で push の確認を開く (ユーザー要望 2026-08-07。pull の p と同じく確認は viewer の上に重ねる)。
 func TestStatusViewerPushKeyOpensConfirm(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-	m.statuses[m.commits[0].SHA] = StateUnpushed
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
 	m.statusOv.Fixture().SetShown(true)
 	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	if !m.actModal.pushConfirm {
@@ -204,8 +205,8 @@ func TestStatusViewerPushKeyNoUnpushedShowsToast(t *testing.T) {
 // push の成功で status viewer をその場で読み直し、push 演出は出さない (viewer が全画面で
 // コミット一覧が見えないため。ヘッダーの ahead を即消すのは pull と同じ理由)。
 func TestPushReloadsOpenStatusViewerWithoutAnim(t *testing.T) {
-	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-	m.statuses[m.commits[0].SHA] = StateUnpushed
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
 	stubWorktreeStatus(t, statusRec("## master...origin/master [ahead 1]", " M a.go"), nil)
 	m.statusOv.Fixture().SetShown(true)
 	m.Update(pushMsg{})
@@ -262,7 +263,7 @@ func TestStatusHintUsesRenderBudget(t *testing.T) {
 	// 表に出ない。ずれが「切り詰めの …」として現れる幅は幅の刻みでしか見つからない
 	// (変異検証で実測 2026-09-01: 1 点だけの検査は、組む側だけ予算をずらす変異を素通りした)。
 	for w := frameMinWidth; w <= 140; w++ {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		// newTestBrowse は NoFrame なので、フレームぶん 2 桁引く経路を明示的に有効化する
 		m.showFrame, m.width, m.height = true, w, 40
 		if !m.frameActive() {

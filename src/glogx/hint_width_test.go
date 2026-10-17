@@ -3,6 +3,7 @@ package main
 import (
 	"glogx/internal/app"
 	"glogx/internal/doctorview"
+	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"strings"
 	"testing"
@@ -35,7 +36,7 @@ func TestHintsFitPopupWidth(t *testing.T) {
 	})
 
 	t.Run("job パネル (カーソルあり)", func(t *testing.T) {
-		m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 		m.width = testPopupTermWidth
 		m.panelSHA = m.commits[0].SHA
 		m.panelCursor = 0
@@ -83,7 +84,7 @@ func assertFits(t *testing.T, name, hint string, width int) {
 // 幅を掃くのは TestStatusHintUsesRenderBudget と同じ理由 (1 点では予算のずれが余白に吸われる)。
 func TestDiffHintUsesRenderBudget(t *testing.T) {
 	for w := frameMinWidth; w <= 140; w++ {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		m.showFrame, m.width, m.height = true, w, 40
 		m.diffOv.open(m.commits[0].SHA)
 		line := m.hintLine()
@@ -194,7 +195,7 @@ func hintSurfaces() []hintSurface {
 	// 🚨 m.ghErr は次の取得開始までクリアされないので、gh 未導入の環境では常時この状態。
 	out = append(out,
 		hintSurface{name: "基底一覧 + gh 警告", open: func(m *browseModel) {
-			m.ghErr = &GHError{Kind: GHOther, Detail: "gh が未認証のため CI 状態を取得できません (gh auth login)"}
+			m.ghErr = &gitdata.GHError{Kind: gitdata.GHOther, Detail: "gh が未認証のため CI 状態を取得できません (gh auth login)"}
 		}, exit: "q: 終了", prefixed: true, id: hintSurfaceBase, checkID: true},
 		hintSurface{name: "基底一覧 + 取得中", open: func(m *browseModel) {
 			m.toFetch = []string{m.commits[0].SHA}
@@ -269,7 +270,7 @@ func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
 			}
 			// 🚨 同一性と配線は**幅に依存しない**ので、幅のループの外で 1 回だけ見る。
 			if s.checkID {
-				m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+				m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 				m.showFrame, m.width, m.height = true, 200, 40
 				s.open(m)
 				if got := m.activeHintSurface(); got != s.id {
@@ -277,7 +278,7 @@ func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
 				}
 			}
 			for w := frameMinWidth; w <= 140; w++ {
-				m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+				m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 				m.showFrame, m.width, m.height = true, w, 40
 				s.open(m)
 				got := term.StripANSI(m.hintLine())

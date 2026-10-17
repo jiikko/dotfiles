@@ -9,9 +9,9 @@
 - `main.go` / `options.go` — エントリポイント・CLI フラグ (`Options`)
 - `tui.go` — Bubble Tea の状態機械本体 (`browseModel`)。git log の対話ブラウズ
 - `internal/term/` — 描画の土台 (画面のパッケージと main の両方が使う)。`render.go` は ANSI 色と `Paint` / 切り詰め・折り返しの純関数、`width.go` は幅計算 (`term.DispWidth`。tuikit termwidth の別名)、`box.go` は枠のレイアウト純関数、`terminal.go` は termsafe の入口、`scroll_glide.go` は glide のキー語彙、`hint_items.go` は最下行の案内の詰め (`term.FitHintItems`)。🚨 main の宣言を import できない (main は下位から import できない) ので、ここへ main の型を持ち込まない
-- `render.go` — コミット行の整形 (git log の行。`gitlog.go` / `github.go` の型を使うので main に残す)
-- `gitlog.go`, `gitlog_watch.go` — git log の取得 (制御文字レコードでコミット境界を識別) と外部変更の監視
-- `github.go`, `cache.go` — CI 状態の GraphQL 取得とローカルキャッシュ
+- `render.go` — コミット行の整形 (git log の行。`internal/gitdata` の型を使う)
+- `gitlog_watch.go` — git log の外部変更の監視 (取得は `internal/gitdata`)
+- `internal/gitdata/` (`gitlog.go`, `github.go`, `cache.go`) — git log の取得 (制御文字レコードでコミット境界を識別)、CI 状態の GraphQL 取得とローカルキャッシュ。取得の条件は CLI の Options ではなく `LogQuery` で受け取る。一括取得は `PlanCIChunks` で丸めてから割る (issue 817 の G-1)
 - `external_commands.go` — git/tmux/claude を叩くラッパー群 (テストの差し替え点)
 - `internal/extcmd/` — 画面と main が共有する外部コマンドの口 (エディタ・ブラウザ・クリップボード) と結果の Msg (`extcmd.RunEditorCmd` などテストの差し替え点)
 - `cli_health.go`, `claude_version.go`, `codex_version.go` — claude/codex CLI のログイン状態検査・新版検出

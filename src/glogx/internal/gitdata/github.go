@@ -1,4 +1,4 @@
-package main
+package gitdata
 
 import (
 	"bytes"
@@ -34,7 +34,7 @@ const (
 
 // fetchMaxSHAs は 1 回の GraphQL で問い合わせる SHA 数の上限。alias 100 × contexts 100 で
 // ノード数を抑える。超過分は StateUnknown のまま表示する (表示件数の既定 20 では届かない)。
-const fetchMaxSHAs = 100
+const FetchMaxSHAs = 100
 
 // GHErrorKind は gh 呼び出し失敗の分類。表示メッセージの出し分けに使う。
 type GHErrorKind int
@@ -70,7 +70,7 @@ func (e *GHError) Warning() string {
 }
 
 // lastLine は最後の非空行を返す (末尾に要約が来るコマンド出力の notice 用)。全行空なら "".
-func lastLine(s string) string {
+func LastLine(s string) string {
 	lines := strings.Split(s, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		if t := strings.TrimSpace(lines[i]); t != "" {
@@ -118,13 +118,13 @@ func ResolveRepo() (Repo, bool) {
 	// upstream remote (非 origin) を最優先で解決。origin と同じ/未設定なら投機取得を使う。
 	if upstreamRemote != "" && upstreamRemote != "origin" {
 		if out, err := runGit("remote", "get-url", upstreamRemote); err == nil {
-			if repo, ok := ParseGitHubURL(strings.TrimSpace(out)); ok {
+			if repo, ok := parseGitHubURL(strings.TrimSpace(out)); ok {
 				return repo, true
 			}
 		}
 	}
 	// upstream が無い/非 GitHub/get-url 失敗 → origin へ fallback (元コードと同じ優先順)。
-	if repo, ok := ParseGitHubURL(originURL); ok {
+	if repo, ok := parseGitHubURL(originURL); ok {
 		return repo, true
 	}
 	return Repo{}, false
@@ -136,8 +136,8 @@ var githubURLPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`^ssh://git@github\.com(?::\d+)?/([^/]+)/([^/]+?)(?:\.git)?$`),
 }
 
-// ParseGitHubURL は remote URL から owner/name を取り出す。GitHub 以外は ok=false。
-func ParseGitHubURL(url string) (Repo, bool) {
+// parseGitHubURL は remote URL から owner/name を取り出す。GitHub 以外は ok=false。
+func parseGitHubURL(url string) (Repo, bool) {
 	for _, re := range githubURLPatterns {
 		if m := re.FindStringSubmatch(url); m != nil {
 			return Repo{Owner: m[1], Name: m[2]}, true
@@ -194,7 +194,7 @@ type CheckDetail struct {
 // running は「実行中 (経過時間が意味を持つ) job」か。pending でも StartedAt が zero のものは
 // queued / StatusContext であって実行中ではない。経過時間表示・ETA basis 取得・パネルの
 // ライブ更新判定が共有する (同じ式が 3 箇所に直書きされていた。issue 030)。
-func (j CheckDetail) running() bool { return j.State == StatePending && !j.StartedAt.IsZero() }
+func (j CheckDetail) Running() bool { return j.State == StatePending && !j.StartedAt.IsZero() }
 
 type rollupPayload struct {
 	State    string `json:"state"`
@@ -228,23 +228,23 @@ type CIBatch struct {
 // 件数が多いときは複数チャンクへ割って並列に投げる (chunkSHAs / fetchCIChunk 参照)。
 func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []string) (CIBatch, *GHError) {
 	if len(shas) == 0 {
-		return emptyBatch(), nil
+		return EmptyBatch(), nil
 	}
-	_, chunks := planCIChunks(shas)
+	_, chunks := PlanCIChunks(shas)
 	if len(chunks) == 1 {
-		return fetchCIChunk(ctx, run, repo, chunks[0])
+		return FetchCIChunk(ctx, run, repo, chunks[0])
 	}
 	batches := make([]CIBatch, len(chunks))
 	errs := make([]*GHError, len(chunks))
 	var wg sync.WaitGroup
 	for i, chunk := range chunks {
-		wg.Go(func() { batches[i], errs[i] = fetchCIChunk(ctx, run, repo, chunk) })
+		wg.Go(func() { batches[i], errs[i] = FetchCIChunk(ctx, run, repo, chunk) })
 	}
 	wg.Wait()
 	// 取れた分は全部マージし、エラーはチャンク順で最初のものを返す (部分成功の既存契約と同じ:
 	// 取得できなかった SHA は Statuses に現れず、呼び出し側の fillUnknownFetched が unknown で
 	// 埋める = 失敗チャンクの SHA だけが `?` に落ちる)。
-	merged := emptyBatch()
+	merged := EmptyBatch()
 	for _, b := range batches {
 		maps.Copy(merged.Statuses, b.Statuses)
 		maps.Copy(merged.Details, b.Details)
@@ -259,12 +259,12 @@ func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []s
 }
 
 // fetchCIChunk は SHA 1 チャンク分を 1 リクエストの GraphQL で問い合わせる。
-func fetchCIChunk(ctx context.Context, run CommandRunner, repo Repo, shas []string) (CIBatch, *GHError) {
+func FetchCIChunk(ctx context.Context, run CommandRunner, repo Repo, shas []string) (CIBatch, *GHError) {
 	query := buildStatusQuery(shas)
 	stdout, stderr, err := run(ctx, "gh", "api", "graphql",
 		"-F", "owner="+repo.Owner, "-F", "name="+repo.Name, "-f", "query="+query)
 	if err != nil {
-		return emptyBatch(), classifyGHError(err, string(stderr))
+		return EmptyBatch(), classifyGHError(err, string(stderr))
 	}
 	return parseStatusResponse(stdout, shas)
 }
@@ -290,13 +290,13 @@ const (
 // fetchTotalSHAs は 1 回の一括取得で問い合わせる SHA 数の総上限 (1 クエリ上限 × チャンク
 // 並列度)。超過分は問い合わせず StateUnknown のまま表示する (fetchMaxSHAs の切り詰め
 // ポリシーをチャンク並列の全体へ広げたもの)。
-const fetchTotalSHAs = fetchMaxSHAs * fetchConcurrency
+const fetchTotalSHAs = FetchMaxSHAs * fetchConcurrency
 
 // capFetchSHAs は一括取得の対象を fetchTotalSHAs 件へ丸める。chunkSHAs を呼ぶ前に必ず
 // これを通すこと: 丸めずに渡すと 1 チャンクが fetchMaxSHAs を超え、alias 100 超の
 // GraphQL クエリがノード数制限で丸ごと失敗する (TUI の起動/再取得経路が FetchCIStatuses の
 // 上限を素通りしていた実バグ 2026-07-29)。
-func capFetchSHAs(shas []string) []string {
+func CapFetchSHAs(shas []string) []string {
 	if len(shas) > fetchTotalSHAs {
 		return shas[:fetchTotalSHAs]
 	}
@@ -306,8 +306,8 @@ func capFetchSHAs(shas []string) []string {
 // planCIChunks は一括取得の対象を上限で丸め (capFetchSHAs)、チャンクへ割る (chunkSHAs)。丸めた後の対象も返す
 // (呼び手は「取得中」の集合として持つ。丸めで落ちた SHA を残すと「取得中」のまま解決しない)。
 // 一括取得の経路はここだけを通す: 丸めずに割ると 1 チャンクが fetchMaxSHAs を超える (capFetchSHAs の注記)。
-func planCIChunks(shas []string) (capped []string, chunks [][]string) {
-	capped = capFetchSHAs(shas)
+func PlanCIChunks(shas []string) (capped []string, chunks [][]string) {
+	capped = CapFetchSHAs(shas)
 	return capped, chunkSHAs(capped)
 }
 
@@ -334,7 +334,7 @@ func chunkSHAs(shas []string) [][]string {
 	return chunks
 }
 
-func emptyBatch() CIBatch {
+func EmptyBatch() CIBatch {
 	return CIBatch{
 		Statuses: map[string]CIState{},
 		Details:  map[string][]CheckDetail{},
@@ -378,7 +378,7 @@ fragment ciStatus on Commit {
 }
 
 func parseStatusResponse(stdout []byte, shas []string) (CIBatch, *GHError) {
-	batch := emptyBatch()
+	batch := EmptyBatch()
 	var resp struct {
 		Data struct {
 			Repository map[string]json.RawMessage `json:"repository"`
@@ -456,7 +456,7 @@ func pickBestPR(nodes []PRRef) *PRRef {
 // fillUnknownFetched は一括取得の応答に無かった SHA を unknown で埋めて返す
 // (表示と 30 秒の負キャッシュの両方に載る)。静的経路 (fetchStatic) と TUI 経路
 // (ciResultMsg) で共通の仕様をここに一本化する。
-func fillUnknownFetched(fetched map[string]CIState, toFetch []string) map[string]CIState {
+func FillUnknownFetched(fetched map[string]CIState, toFetch []string) map[string]CIState {
 	if fetched == nil {
 		fetched = map[string]CIState{}
 	}
@@ -716,7 +716,7 @@ func fetchJobSteps(ctx context.Context, run CommandRunner, repo Repo, jobID stri
 			duration = s.CompletedAt.Sub(s.StartedAt)
 		}
 		line := glyph + " " + term.SanitizeDetailLine(s.Name)
-		if d := formatDuration(duration); d != "" {
+		if d := FormatDuration(duration); d != "" {
 			line += " (" + d + ")"
 		}
 		lines = append(lines, line)
@@ -753,7 +753,7 @@ func stepGlyph(status, conclusion string) string {
 }
 
 // formatDuration は所要時間の短い表記 ("42s" / "2m39s" / "1h2m")。0 以下は空。
-func formatDuration(d time.Duration) string {
+func FormatDuration(d time.Duration) string {
 	if d <= 0 {
 		return ""
 	}
@@ -926,3 +926,6 @@ func classifyGHError(err error, stderr string) *GHError {
 		return &GHError{Kind: GHOther, Detail: detail}
 	}
 }
+
+// StateLoading は表示専用の擬似状態。statuses map に SHA が無いとき render 側で使う。
+const StateLoading CIState = "loading"
