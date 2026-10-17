@@ -382,3 +382,23 @@ func TestWiredIFRejectsEmptyDevice(t *testing.T) {
 		t.Error("I/F の無いサービスを有線と読んだ")
 	}
 }
+
+// サービスを読み終えた後の、I/F ごとの IP の途中の期限では全体を失敗にしない (判定はサービスで決まる。2 周目の敵対レビュー)。
+func TestReadKeepsServicesWhenDeadlineHitsIPLoop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	base := fakeRunner(t, map[string]string{
+		"networksetup -listnetworkserviceorder": "serviceorder.txt",
+		"ifconfig -l":                           "=lo0 en0 en13",
+	})
+	run := func(c context.Context, name string, args ...string) (string, error) {
+		out, err := base(c, name, args...)
+		if name == "ifconfig" && len(args) == 1 && args[0] == "-l" {
+			cancel()
+		}
+		return out, err
+	}
+	if _, err := Read(ctx, run); err != nil {
+		t.Errorf("サービスは読めたのに、I/F の IP の途中の期限で全体が失敗した: %v", err)
+	}
+}

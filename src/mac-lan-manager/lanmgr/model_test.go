@@ -1809,3 +1809,114 @@ func TestCursorFollowsMacAcrossScanUpdate(t *testing.T) {
 		t.Errorf("走査で行が増えた後のカーソル = %s (zed.local のはず)", got)
 	}
 }
+
+func cursorPeer(host, ip string) discover.Peer {
+	return discover.Peer{Host: host, Instances: []string{strings.TrimSuffix(host, ".local")}, SSH: true, Addrs: map[int]string{14: ip}}
+}
+
+// r で戻したい Mac が見つかった tick で、直前の Mac へ合わせ直してそれを打ち消さない (2 周目の敵対レビュー)。
+func TestCursorReturnsToMacAfterReload(t *testing.T) {
+	a, mm, z := cursorPeer("aaa.local", "192.168.50.21"), cursorPeer("mmm.local", "192.168.50.22"), cursorPeer("zed.local", "192.168.50.20")
+	h := newHarness(t, nil, []discover.Peer{a, mm, z})
+	h.keys("l")
+	h.cursorTo(t, "zed.local")
+	h.scan.peers, h.scan.busy = []discover.Peer{a}, true // 走査を起こし直すと最初は一部だけ
+	h.keys("r")
+	awaitNetLoad(h.m)
+	h.m.Advance(t0)
+	h.scan.peers = []discover.Peer{a, mm, z}
+	h.m.Advance(t0.Add(time.Second))
+	if got := h.m.current().host; got != "zed.local" {
+		t.Errorf("r の後、zed が見つかったのにカーソル = %s", got)
+	}
+}
+
+// 戻したい Mac を待っている間も、キーを押していないのにカーソルが別の Mac へ移らない (2 周目の敵対レビュー)。
+func TestCursorHoldsWhileWaitingForMac(t *testing.T) {
+	a, mm, z := cursorPeer("aaa.local", "192.168.50.21"), cursorPeer("mmm.local", "192.168.50.22"), cursorPeer("zed.local", "192.168.50.20")
+	h := newHarness(t, nil, []discover.Peer{a, mm, z})
+	h.keys("l")
+	h.cursorTo(t, "zed.local")
+	h.scan.peers, h.scan.busy = []discover.Peer{mm}, true
+	h.keys("r")
+	awaitNetLoad(h.m)
+	h.m.Advance(t0)
+	shown := h.m.current().host
+	h.scan.peers = []discover.Peer{a, mm}
+	h.m.Advance(t0.Add(time.Second))
+	if got := h.m.current().host; got != shown {
+		t.Errorf("キーを押していないのにカーソルが %s → %s へ移った", shown, got)
+	}
+}
+
+// キーの入口で取り込んだ網の読み直しで行が組み変わっても、そのキーは画面で見ていた Mac に効く (2 周目の敵対レビュー)。
+func TestKeyAfterNetLoadActsOnShownMac(t *testing.T) {
+	a := discover.Peer{Host: "aaa.local", Instances: []string{"aaa"}, SSH: true, Addrs: map[int]string{30: "169.254.5.5"}}
+	z := discover.Peer{Host: "zed.local", Instances: []string{"zed"}, SSH: true, Addrs: map[int]string{27: "169.254.6.6"}}
+	h := newHarness(t, nil, []discover.Peer{a, z})
+	h.m.o.IfName = func(i int) string { return map[int]string{14: "en0", 27: "en13", 30: "en18"}[i] }
+	h.keys("l")
+	h.m.pf.WiredOnly = true
+	h.cursorTo(t, "zed.local")
+	if n := len(h.m.visible()); n != 2 {
+		t.Fatalf("前提: aaa は有線に見えない (visible=%d)", n)
+	}
+	nn := selfNet()
+	nn.Services = append(nn.Services, netinfo.Service{Name: "USB LAN", Device: "en18", Active: true, IP: "169.254.85.235", Method: "DHCP", Read: true})
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return nn, nil }
+	h.keys("r")
+	h.m.pf.WiredOnly = true // Reload が設定を読み直すので戻す
+	h.m.wantHost = ""       // r で積んだ戻したい Mac を外し、キーの入口の取り込みだけを見る
+	// 読み終えた結果を、tick より先にキーの入口が取り込む形にする (受け取って、取り込み前のチャネルへ戻す)
+	r := <-h.m.netCh
+	c := make(chan netLoad, 1)
+	c <- r
+	h.m.netCh = c
+	shown := h.m.current().host
+	if a := h.keys("s"); a == Exec {
+		x, _ := h.m.TakeExec()
+		if !strings.Contains(strings.Join(x.Argv, " "), "HostKeyAlias="+shown) {
+			t.Errorf("画面のカーソルは %s なのに s が %q を起こした", shown, x.Argv)
+		}
+	} else {
+		t.Fatalf("前提: s が実行にならない: %v", a)
+	}
+}
+
+// lan_if 未設定のとき、I/F の無いサービス (VPN) に一致させず「(未設定)」と出す (2 周目の敵対レビュー)。
+func TestSelfLanUnsetIFIgnoresEmptyDevice(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	h.m.pf.LanByBand, h.m.pf.LanIF = false, ""
+	h.m.self.Services = append(h.m.self.Services, netinfo.Service{Name: "VPN (L2TP)", Device: "", Read: true, Method: "DHCP"})
+	if n := h.m.selfLan().Note; !strings.Contains(n, "(未設定)") {
+		t.Errorf("selfLan note = %q (I/F 未設定と出すはず)", n)
+	}
+}
+
+// 走査が終わってこの Mac の網だけを読み直している間は、見出しにそれを出す (確認待ちと出さない。2 周目の敵対レビュー)。
+func TestHeaderWhileOnlyNetReload(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	block := make(chan struct{})
+	defer close(block)
+	h.m.o.ReadNet = func(ctx context.Context) (netinfo.Snapshot, error) { <-block; return selfNet(), nil }
+	h.scan.busy = false
+	h.keys("r")
+	h.m.Advance(t0)
+	if hd := h.m.header(200); !strings.Contains(hd, "この Mac のネットワーク設定を確認中") {
+		t.Errorf("網の読み直しの間の見出し = %q", hd)
+	}
+}
+
+// 自動で出た板は、実行の無い板 (台帳) でも案内に Enter を出さない (Enter では実行しない。2 周目の敵対レビュー)。
+func TestAutoBoardHintOmitsEnter(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	for _, a := range []*ask{
+		{title: "台帳に内部 IP 付きで載せる", body: []string{"x"}, yes: func() Notice { return Notice{"ok", true} }, auto: true},
+		{title: "実行", body: []string{"x"}, exec: &ExecRequest{Argv: []string{"true"}}, auto: true},
+	} {
+		h.m.ask, h.m.ov = a, ovConfirm
+		if box, _, _ := h.m.overlayBox(); strings.Contains(box, "Enter") {
+			t.Errorf("自動で出た板 %q の案内に Enter がある", a.title)
+		}
+	}
+}

@@ -434,8 +434,17 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		}, yes: func() Notice {
 			// 既に載っている行は user と内部 IP だけを書き換える (古い一覧の行で Upsert すると、別のプロセスが変えた別名を古い値に戻した。
 			// 敵対レビュー)。無いときだけ足す
-			err := m.o.Ledger.Update(h.Host, func(x *ledger.Host) { x.User, x.LAN = h.User, h.LAN })
+			// user は台帳に無いときだけ書く (別のプロセスが u で変えた値を、開いた時の値に戻さない)
+			err := m.o.Ledger.Update(h.Host, func(x *ledger.Host) {
+				x.LAN = h.LAN
+				if x.User == "" {
+					x.User = h.User
+				}
+			})
 			if errors.Is(err, ledger.ErrNotFound) {
+				if r.managed { // 開いた時は載っていたのに、別のプロセスが外した: 古い一覧の値で作り直さない
+					return Notice{"台帳から外されている (一覧を開き直して登録し直す)", false}
+				}
 				err = m.o.Ledger.Upsert(h)
 			}
 			if err != nil {

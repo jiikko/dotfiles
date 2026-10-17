@@ -977,13 +977,13 @@ func TestSetupLedgerKeepsAliasChangedElsewhere(t *testing.T) {
 	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"})
 	runStep(t, h, nil) // 確認
 	awaitSetup(h.m)
-	h.store.hosts[0].Alias = "新しい別名" // 別のプロセスが変えた
+	h.store.hosts[0].Alias, h.store.hosts[0].User = "新しい別名", "admin" // 別のプロセスが変えた (別名と u のユーザー名)
 	h.keys("x")
 	if h.m.ov != ovConfirm || h.m.ask == nil || h.m.ask.yes == nil {
 		t.Fatalf("前提: 台帳の手順の確認の板が出ない: %s", strings.Join(h.m.View(), "\n"))
 	}
 	h.keys("y")
-	if len(h.store.hosts) != 1 || h.store.hosts[0].LAN != ip || h.store.hosts[0].Alias != "新しい別名" {
+	if len(h.store.hosts) != 1 || h.store.hosts[0].LAN != ip || h.store.hosts[0].Alias != "新しい別名" || h.store.hosts[0].User != "admin" {
 		t.Errorf("台帳 = %+v (内部 IP %s と別のプロセスの別名を残すはず)", h.store.hosts, ip)
 	}
 }
@@ -1081,5 +1081,28 @@ func TestSetupHeaderSaysWhatItWaitsFor(t *testing.T) {
 	}
 	if hd := h.m.header(200); strings.Contains(hd, "Bonjour で探しています") {
 		t.Errorf("走査が終わっているのに Bonjour で探していると出した: %q", hd)
+	}
+}
+
+// 開いた後に別のプロセスが台帳から外した Mac を、開いた時の一覧の値で作り直さない (2 周目の敵対レビュー)。
+func TestSetupLedgerDoesNotResurrectRemovedMac(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, ob := setupHarness(t, obs)
+	h.store.hosts = []ledger.Host{{Host: "m2macmini.local", User: "koji", Alias: "旧い別名"}}
+	h.m.reloadLedger()
+	setSelfStatic(h.m)
+	runStep(t, h, nil)
+	ip := h.m.conf().static.IP
+	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"})
+	runStep(t, h, nil)
+	awaitSetup(h.m)
+	h.store.hosts = nil // 別のプロセスが外した
+	h.keys("x")
+	if h.m.ask == nil {
+		t.Fatalf("前提: 板が出ない %s", strings.Join(h.m.View(), "\n"))
+	}
+	h.keys("y")
+	if len(h.store.hosts) != 0 {
+		t.Errorf("外された Mac を作り直した: %+v", h.store.hosts)
 	}
 }

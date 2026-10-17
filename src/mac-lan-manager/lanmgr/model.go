@@ -353,9 +353,9 @@ func (m *Model) cursorHost() string {
 }
 
 // followCursor は行を組み直した後、カーソルを host の行に合わせ直す (行は名前で並ぶので、走査で増えた行の分だけ添字が別の Mac を
-// 指した)。居なくなっていれば添字のまま。戻したい Mac (wantHost) を探している間は seekWantHost に任せる。
+// 指した)。居なくなっていれば添字のまま。
 func (m *Model) followCursor(host string) {
-	if host == "" || m.wantHost != "" {
+	if host == "" {
 		return
 	}
 	for i, r := range m.visible() {
@@ -387,7 +387,6 @@ func (m *Model) seekWantHost() {
 func (m *Model) Advance(now time.Time) {
 	m.now = now
 	held := m.cursorHost()
-	defer m.followCursor(held)
 	m.takeNetLoad()
 	m.takeObserve()
 	m.settleProgress(true)
@@ -399,6 +398,9 @@ func (m *Model) Advance(now time.Time) {
 			m.note("Bonjour で探せない: "+err.Error(), false) // 1 回だけ (毎 tick 出さない)
 		}
 	}
+	// 先に今の Mac へ合わせ直し、戻したい Mac が出ていればそちらが上書きする (逆順だと、見つけて合わせたカーソルを直前の Mac へ戻した。
+	// 戻したい Mac を待つ間も今の Mac には合わせる。待つ間だけ添字のままにすると、その間に増えた行の分だけ別の Mac に移った。敵対レビュー)
+	m.followCursor(held)
 	m.seekWantHost()
 }
 
@@ -643,7 +645,7 @@ func (m *Model) selfLan() selfLanInfo {
 		return selfLanInfo{Note: "帯に入る IP が無い"}
 	}
 	for _, s := range m.self.Enabled() {
-		if s.Device == m.pf.LanIF {
+		if m.pf.LanIF != "" && s.Device == m.pf.LanIF { // 未設定 ("") を I/F の無いサービス (VPN) に一致させない
 			if !m.self.WiredIF(s.Device) { // 設定が読めない・ルーターがある I/F の IP を内部 IP として出さない (I/F の候補と同じ判定)
 				return selfLanInfo{Note: "I/F " + s.Device + " がルーターの無い有線として読めない"}
 			}
@@ -865,8 +867,10 @@ func (m *Model) HandleKey(key string) Action { return m.HandleInput(key, lineedi
 func (m *Model) HandleInput(key, text string) Action {
 	m.logKey(key)
 	key = canonKey(key)
+	held := m.cursorHost()
 	m.takeNetLoad() // 読み終えていれば、次の tick を待たずにこのキーから効かせる
 	m.takeObserve()
+	m.followCursor(held) // 取り込みで行が組み変わっても、このキーは画面で見ていた Mac に効かせる (敵対レビュー)
 	if key == "ctrl+c" {
 		return Quit
 	}

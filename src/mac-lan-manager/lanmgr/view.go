@@ -142,7 +142,9 @@ func (m *Model) header(w int) string {
 			what = fmt.Sprintf(" Bonjour で探しています (%d 台)", len(m.peers))
 		case m.su != nil && m.su.ch != nil:
 			what = " 相手に接続して確認中"
-		default:
+		case m.netCh != nil:
+			what = " この Mac のネットワーク設定を確認中"
+		default: // 残る Busy は確認待ち (pending / awaitingUnconf) だけ
 			what = " 固定 IP の確認待ち"
 		}
 		left += "   " + lipgloss.NewStyle().Foreground(cPink).Render(spinner.At(m.now, spinStep)) + sDim.Render(what)
@@ -573,11 +575,13 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	case ovConfirm:
 		if m.ask != nil {
 			hint := confirm.HintYesNo
-			if m.ask.exec != nil {
+			switch {
+			case m.ask.exec != nil && m.ask.auto:
+				hint = "y: 実行   c: コマンドをコピー   n/Esc: キャンセル"
+			case m.ask.exec != nil:
 				hint = "y/Enter: 実行   c: コマンドをコピー   n/Esc: キャンセル"
-				if m.ask.auto {
-					hint = "y: 実行   c: コマンドをコピー   n/Esc: キャンセル"
-				}
+			case m.ask.auto: // 自動で出た板は Enter では実行しない (HandleInput)
+				hint = "y: 実行   n/Esc: キャンセル"
 			}
 			return modal(m.ask.title, m.ask.body, hint, m.w), -1, 0
 		}

@@ -362,7 +362,7 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 	snap := Snapshot{Services: svcs}
 	list, err := run(ctx, "ifconfig", "-l")
 	if err != nil {
-		return snap, ctx.Err() // I/F の一覧が読めなくても、サービスは返す (期限切れは除く)
+		return snap, nil // I/F の一覧が読めなくても、サービスは返す
 	}
 	for _, dev := range strings.Fields(list) {
 		if dev == "lo0" {
@@ -377,7 +377,9 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 			snap.IPs = append(snap.IPs, IP{Device: dev, Addr: a, Kind: snap.Kind(dev, a)})
 		}
 	}
-	return snap, ctx.Err()
+	// サービスを読み終えた後の期限切れは失敗にしない: 判定 (有線・メインの網・帯の重なり) はサービスだけで決まり、IPs は表示の補い。
+	// 全体を失敗にすると、I/F の多い相手で読めたサービスまで「読めない」にした (敵対レビュー)
+	return snap, nil
 }
 
 // Main はメインのネットワーク (インターネット側) のサービス。並び順で最初の、繋がっていてルーターのあるもの。
