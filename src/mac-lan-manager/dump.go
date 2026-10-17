@@ -124,6 +124,9 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 		if !x.Listed {
 			fmt.Fprintln(w, "    hidden: 有線だけの表示で一覧に出ない")
 		}
+		if x.Pending {
+			fmt.Fprintln(w, "    初期設定: 途中 (一覧の !)")
+		}
 		if x.WiredName != "" {
 			fmt.Fprintf(w, "    有線の名前: %s %s\n", x.WiredName, map[bool]string{true: "✓ 引ける", false: or(x.WiredNote, "引けない")}[x.WiredOK])
 		}

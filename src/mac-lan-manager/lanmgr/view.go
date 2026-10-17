@@ -315,7 +315,12 @@ func pill(on bool, s string, st lipgloss.Style) string {
 
 func (m *Model) columns() []col {
 	cols := []col{
-		{" ", 1, func(row) string { return " " }, nil},
+		{" ", 1, func(r row) string {
+			if m.setupPending(r) {
+				return "!"
+			}
+			return " "
+		}, func(s lipgloss.Style, r row) lipgloss.Style { return s.Foreground(cWarn).Bold(true) }},
 		{"別名", fitWidth, func(r row) string { return or(r.alias, or(r.instance, "-")) }, func(s lipgloss.Style, r row) lipgloss.Style {
 			s = s.Bold(true)
 			switch {
@@ -462,6 +467,7 @@ func (m *Model) listTable(width, maxRows int) string {
 	}
 	render := func(i int, r *row) string {
 		out := make([]string, 0, len(cols))
+		pending := r != nil && m.setupPending(*r)
 		for ci, c := range cols {
 			cw := c.width
 			if cw == 0 {
@@ -479,12 +485,13 @@ func (m *Model) listTable(width, maxRows int) string {
 				if c.style != nil {
 					s = c.style(s, *r)
 				}
-				if i == cur {
-					if ci == 0 {
-						s = s.Background(cAccent)
-					} else {
-						s = s.Background(cSel)
-					}
+				switch {
+				case i == cur && ci == 0:
+					s = s.Background(cAccent).Foreground(cBg) // 印 (!) を橙の上でも読めるように地の色で描く
+				case i == cur:
+					s = s.Background(cSel)
+				case pending:
+					s = s.Background(cPendBg)
 				}
 			}
 			out = append(out, s.Render(termwidth.Truncate(txt, cw-s.GetHorizontalPadding(), "…")))
@@ -681,6 +688,8 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 		for _, k := range keys {
 			body = append(body, lipgloss.NewStyle().Foreground(cPink).Bold(true).Width(34).Render(k[0])+sText.Render(k[1]))
 		}
+		// 一覧の印 (キーではないが、ほかに説明する場所が無い)
+		body = append(body, "", lipgloss.NewStyle().Foreground(cWarn).Bold(true).Width(34).Render("! (管理対象の行)")+sText.Render("初期設定が途中 (enter で開く)"))
 		return modal("キーの一覧", body, "どのキーでも閉じる", m.w), -1, 0
 	case ovNone:
 	}

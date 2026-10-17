@@ -14,6 +14,7 @@ import (
 var (
 	cBg      = lipgloss.Color("#1F1E1D") // 端末の地 (ClaudeWarm)
 	cSel     = lipgloss.Color("#3E3346") // 選んだ行の地
+	cPendBg  = lipgloss.Color("#2E2719") // 初期設定が途中の行の地 (setupPending。地より少しだけ黄に寄せる)
 	cCode    = lipgloss.Color("#171615") // コマンドの面 (地より一段暗い)
 	cShadow  = lipgloss.Color("#0B0A09") // 落ち影
 	cText    = lipgloss.Color("#EBDBBC")

@@ -2462,3 +2462,97 @@ func TestReportShowsTarget(t *testing.T) {
 	}
 	t.Fatal("Report に m2macmini が無い")
 }
+
+// 管理対象の行の初期設定の印 (! と黄の地。ユーザー選定 2026-10-17)。途中と言い切れる行だけに付け、確かめていない・Wi-Fi で繋ぐ相手には
+// 付けない (判定できていない行を途中と言わない)。未管理の行には付けない。
+func TestSetupPendingMark(t *testing.T) {
+	row := func(h *harness, host string) row {
+		t.Helper()
+		for _, r := range h.m.rows() {
+			if r.host == host {
+				return r
+			}
+		}
+		t.Fatalf("%s の行が無い", host)
+		return row{}
+	}
+	// 有線の名前がその内部 IP に引ける = 完了
+	done := wiredHarness(t, map[string][]string{"m2macmini.wired.local": {"169.254.217.100"}})
+	if done.m.setupPending(row(done, "m2macmini.local")) {
+		t.Error("有線の名前が引けるのに途中にした")
+	}
+	// 広告されていない (引いて 0 件) = 途中
+	missing := wiredHarness(t, map[string][]string{})
+	if !missing.m.setupPending(row(missing, "m2macmini.local")) {
+		t.Error("有線の名前が広告されていないのに途中にしない")
+	}
+	// 別の IP に向いている = 途中
+	other := wiredHarness(t, map[string][]string{"m2macmini.wired.local": {"169.254.1.2"}})
+	if !other.m.setupPending(row(other, "m2macmini.local")) {
+		t.Error("有線の名前が別の IP に向いているのに途中にしない")
+	}
+	// 確かめていない (名前を引く口が無い) = 分からない
+	unknown := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "169.254.217.100"}}, []discover.Peer{mini})
+	if unknown.m.setupPending(row(unknown, "m2macmini.local")) {
+		t.Error("有線の名前を確かめていないのに途中にした")
+	}
+	// 台帳には帯の番号があるのに、相手は有線で 169.254 (自動割り当て) のまま = 名前がその番号に引けない = 途中
+	unfixed := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "192.168.100.13"}}, []discover.Peer{mini})
+	setSelfStatic(unfixed.m) // この Mac は帯の固定 (169.254 のままだと台帳の番号と網が分かれ、Wi-Fi で繋ぐ = 分からない、になる)
+	unfixed.m.o.LookupHost = func(context.Context, string) ([]string, error) { return nil, nil }
+	unfixed.m.startWiredLookups()
+	awaitWired(t, unfixed.m)
+	if r := row(unfixed, "m2macmini.local"); !unfixed.m.setupPending(r) {
+		t.Errorf("台帳の番号に相手が居ないのに途中にしない (lan=%s)", r.lanIP)
+	}
+	// この Mac が 169.254 のままで台帳の番号と網が分かれる = Wi-Fi で繋ぐ相手 = 有線の名前を確かめられない = 分からない
+	split := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "192.168.100.13"}}, []discover.Peer{mini})
+	split.m.o.LookupHost = func(context.Context, string) ([]string, error) { return nil, nil }
+	split.m.startWiredLookups()
+	awaitWired(t, split.m)
+	if split.m.setupPending(row(split, "m2macmini.local")) {
+		t.Error("網が分かれて有線の名前を確かめられないのに途中にした")
+	}
+	// 台帳に内部 IP が無い = 途中 (見えていなくても)
+	noLAN := newHarness(t, []ledger.Host{{Host: "away.local", User: "koji"}}, nil)
+	if !noLAN.m.setupPending(row(noLAN, "away.local")) {
+		t.Error("台帳に内部 IP が無いのに途中にしない")
+	}
+	// 未管理の行・この Mac の行には付けない
+	unmanaged := newHarness(t, nil, []discover.Peer{mini})
+	for _, r := range unmanaged.m.rows() {
+		if unmanaged.m.setupPending(r) {
+			t.Errorf("%s (self=%v managed=%v) に印を付けた", r.host, r.self, r.managed)
+		}
+	}
+
+	// 画面: 途中の行は先頭が ! で地が黄、完了の行は印も地も無い (カーソルは別の管理対象 zz.local に置き、カーソルの地と重ねない)
+	for _, c := range []struct {
+		answers map[string][]string
+		want    bool
+	}{{map[string][]string{}, true}, {map[string][]string{"m2macmini.wired.local": {"169.254.217.100"}}, false}} {
+		h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "169.254.217.100"}, {Host: "zz.local", User: "koji", LAN: "192.168.100.20"}}, []discover.Peer{mini})
+		h.m.o.LookupHost = func(_ context.Context, name string) ([]string, error) { return c.answers[name], nil }
+		h.m.startWiredLookups()
+		awaitWired(t, h.m)
+		h.m.Resize(120, 40)
+		h.cursorTo(t, "zz.local")
+		var line string
+		for _, l := range h.m.View() {
+			if strings.Contains(termwidth.StripSGR(l), "m2macmini.local") {
+				line = l
+				break
+			}
+		}
+		if line == "" {
+			t.Fatal("一覧に m2macmini の行が無い")
+		}
+		plain := strings.TrimLeft(termwidth.StripSGR(line), " ▐") // 一覧の枠 (▐) と余白を剥がす
+		if got := strings.HasPrefix(plain, "!"); got != c.want {
+			t.Errorf("先頭の ! = %v, want %v: %q", got, c.want, plain)
+		}
+		if got := strings.Contains(line, "48;2;46;39;25"); got != c.want { // cPendBg (#2E2719)
+			t.Errorf("黄の地 = %v, want %v", got, c.want)
+		}
+	}
+}
