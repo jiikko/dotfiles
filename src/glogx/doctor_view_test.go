@@ -9,6 +9,7 @@ import (
 	"doctor/disk"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
 )
 
@@ -64,9 +65,9 @@ func TestDoctorCopyThroughBrowseModel(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.width, m.height = 100, 30
 	var copied string
-	orig := copyToClipboard
-	copyToClipboard = func(s string) error { copied = s; return nil }
-	t.Cleanup(func() { copyToClipboard = orig })
+	orig := extcmd.CopyToClipboard
+	extcmd.CopyToClipboard = func(s string) error { copied = s; return nil }
+	t.Cleanup(func() { extcmd.CopyToClipboard = orig })
 	m.doctorOv = doctorview.DoctorView{}
 	m.doctorOv.Fixture().Show()
 	m.doctorOv.Fixture().Reports(doctorview.TabDisk, &disk.Report{Results: []disk.Result{{Entry: disk.Entry{ID: "a", Label: "A", Risk: disk.RiskSafe, Recover: "r"},

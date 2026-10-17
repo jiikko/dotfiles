@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"glogx/internal/app"
 	"glogx/internal/term"
 
 	tea "charm.land/bubbletea/v2"
@@ -124,24 +125,24 @@ func TestGitLogProbeSkipsMeasureWhileOverlayOpen(t *testing.T) {
 func TestGitLogProbeDropsOnlyDeliveringChain(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.diffOv.open(m.commits[0].SHA) // 測定を挟まず札の扱いだけを見る
-	m.logWatch.w = nil              // イベント経路は張り直せない = 札の変化がそのまま見える
-	m.logWatch.evArmed, m.logWatch.pollArmed = true, true
+	m.logWatch.W = nil              // イベント経路は張り直せない = 札の変化がそのまま見える
+	m.logWatch.EvArmed, m.logWatch.PollArmed = true, true
 	if cmd := m.handleGitLogProbe(gitLogProbeMsg{fromEvent: true}); cmd != nil {
 		t.Error("イベント経路の観測でポーリングのチェーンが二重に張られた")
 	}
-	if m.logWatch.evArmed {
+	if m.logWatch.EvArmed {
 		t.Error("届けたチェーン (イベント) の札が降りていない")
 	}
-	m.logWatch.evArmed, m.logWatch.pollArmed = true, true
+	m.logWatch.EvArmed, m.logWatch.PollArmed = true, true
 	m.handleGitLogProbe(gitLogProbeMsg{})
-	if !m.logWatch.evArmed {
+	if !m.logWatch.EvArmed {
 		t.Error("ポーリングの観測でイベント経路の札まで降ろした")
 	}
 }
 
 func TestGitLogWatchIgnoresStaleGeneration(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-	m.logWatch.gen = 2
+	m.logWatch.Gen = 2
 	m.logWatch.seen, m.logWatch.hasSeen = "base", true
 	if cmd := m.handleGitLogProbe(gitLogProbeMsg{gen: 1}); cmd != nil {
 		t.Error("古い世代の合図で観測が張り直された")
@@ -163,23 +164,23 @@ func TestGitLogWatchClosedFallsBackToPolling(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.logWatch.dirs = []string{t.TempDir()}
 	m.startGitLogWatch()
-	if m.logWatch.w != fw {
-		t.Fatalf("startGitLogWatch が newDirWatcher seam を通っていない (w=%T)", m.logWatch.w)
+	if m.logWatch.W != fw {
+		t.Fatalf("startGitLogWatch が newDirWatcher seam を通っていない (w=%T)", m.logWatch.W)
 	}
-	m.logWatch.evArmed, m.logWatch.pollArmed = true, true
+	m.logWatch.EvArmed, m.logWatch.PollArmed = true, true
 	m.logWatch.measuring = true // 測定が飛んでいる最中に watcher が死んだ
-	gen := m.logWatch.gen
+	gen := m.logWatch.Gen
 	cmd := m.handleGitLogProbe(gitLogProbeMsg{fromEvent: true, closed: true, gen: gen})
 	if cmd == nil {
 		t.Fatal("watcher が死んだ後に観測が予約されない (以降ずっと無音になる)")
 	}
-	if m.logWatch.w != nil {
+	if m.logWatch.W != nil {
 		t.Error("死んだ watcher を掴んだまま")
 	}
-	if m.logWatch.gen == gen {
+	if m.logWatch.Gen == gen {
 		t.Error("世代を進めていない (旧チェーンの観測が新しい状態へ効く)")
 	}
-	if !m.logWatch.pollArmed {
+	if !m.logWatch.PollArmed {
 		t.Error("ポーリングのチェーンが張り直されていない")
 	}
 	if m.logWatch.measuring {
@@ -314,7 +315,7 @@ func TestGitLogReflectAtTopFallsToPullAnim(t *testing.T) {
 // 即時性を失うだけなので、gitLogWatchDirs の対象漏れは他のどの検査でも観測できない。
 // 🚨 fsnotify を作れない環境では skip する (その環境ではポーリングが唯一の経路)。
 func TestIntegrationGitLogWatchSeesCommitEvent(t *testing.T) {
-	w, err := newDirWatcher()
+	w, err := app.NewDirWatcher()
 	if err != nil {
 		t.Skipf("この環境では fsnotify を作れない (%v)。実 fsnotify との結合は未検証", err)
 	}
@@ -352,7 +353,7 @@ func TestIntegrationGitLogWatchSeesCommitEvent(t *testing.T) {
 func TestGitLogWatchWiredThroughUpdate(t *testing.T) {
 	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2")
 	m.Init() // 返す Cmd は実行しない (札の副作用だけを見る)
-	if !m.logWatch.pollArmed {
+	if !m.logWatch.PollArmed {
 		t.Error("Init が保険のポーリングを張っていない (イベントが来ない環境で永久に気づけない)")
 	}
 
@@ -366,7 +367,7 @@ func TestGitLogWatchWiredThroughUpdate(t *testing.T) {
 	}
 
 	commitLines(t, dir, 9, "c3")
-	m.logWatch.pollArmed = false // Init が張った tick は実行しないので札だけ空ける
+	m.logWatch.PollArmed = false // Init が張った tick は実行しないので札だけ空ける
 	m.Update(gitLogProbeMsg{})
 	if !m.logWatch.measuring {
 		t.Fatal("Update が gitLogProbeMsg を受けていない (case の配線漏れ)")
@@ -401,12 +402,12 @@ func TestCancelAllClosesGitLogWatcher(t *testing.T) {
 	dir := t.TempDir()
 	m.logWatch.dirs = []string{dir}
 	m.startGitLogWatch()
-	fw, ok := m.logWatch.w.(*fakeWatcher)
+	fw, ok := m.logWatch.W.(*fakeWatcher)
 	if !ok {
-		t.Fatalf("startGitLogWatch が newDirWatcher seam を通っていない (w=%T)", m.logWatch.w)
+		t.Fatalf("startGitLogWatch が newDirWatcher seam を通っていない (w=%T)", m.logWatch.W)
 	}
 	m.cancelAll()
-	if m.logWatch.w != nil {
+	if m.logWatch.W != nil {
 		t.Fatal("cancelAll 後も watcher が開いたまま (restart の exec で fd が漏れる)")
 	}
 	// スロットの nil 化だけでなく実体が Close されたことを固定する (Close を消して nil 代入

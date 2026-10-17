@@ -1,0 +1,10 @@
+field EditorClosedMsg.Err
+field EditorClosedMsg.ReclaimErr
+field OpenURLMsg.Err
+func EditorCommand
+func ReadonlyCommand
+type EditorClosedMsg
+type OpenURLMsg
+var CopyToClipboard
+var OpenInBrowser
+var RunEditorCmd

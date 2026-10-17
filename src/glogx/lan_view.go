@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/live"
@@ -36,8 +37,8 @@ func newLanModel() (*lanmgr.Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	o.Copy = func(s string) error { return copyToClipboard(s) } // glogx のクリップボードの口 (テストは stubClipboard で差し替える)
-	o.Now = func() time.Time { return app.TimeNow() }           // 呼ぶたびに読む (値をつかむとテストが差し替えた時計に追従しない)
+	o.Copy = func(s string) error { return extcmd.CopyToClipboard(s) } // glogx のクリップボードの口 (テストは stubClipboard で差し替える)
+	o.Now = func() time.Time { return app.TimeNow() }                  // 呼ぶたびに読む (値をつかむとテストが差し替えた時計に追従しない)
 	return lanmgr.New(o), nil
 }
 
@@ -86,7 +87,7 @@ func (v *lanView) toggle() {
 	if v.m == nil {
 		m, err := newLanModel()
 		if err != nil {
-			v.openErr = "mac-lan-manager を開けません: " + firstLine(err.Error())
+			v.openErr = "mac-lan-manager を開けません: " + app.FirstLine(err.Error())
 			return
 		}
 		v.m = m
@@ -231,9 +232,9 @@ func (m *browseModel) drainLanNotices() {
 		return
 	}
 	for _, n := range lm.TakeNotices() {
-		kind := noticeRefused // 押したキーが効かなかった理由 (lastWarning を汚さない)
+		kind := app.NoticeRefused // 押したキーが効かなかった理由 (lastWarning を汚さない)
 		if n.OK {
-			kind = noticeOK
+			kind = app.NoticeOK
 		}
 		m.deliverNotice(n.Text, kind)
 	}
@@ -252,7 +253,7 @@ func (m *browseModel) routeKeyToLan(key string) (tea.Model, tea.Cmd) {
 	case lanExec:
 		if r, ok := m.lanV.m.TakeExec(); ok && len(r.Argv) > 0 {
 			m.lanV.execPending = true
-			return m, runEditorCmd(lanExecCommand(r)) // 戻ると editorClosedMsg で ExecDone を呼ぶ
+			return m, extcmd.RunEditorCmd(lanExecCommand(r)) // 戻ると extcmd.EditorClosedMsg で ExecDone を呼ぶ
 		}
 	case lanClosed, lanSwallow:
 	}

@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
 	"treefiler/filer"
 )
@@ -78,7 +79,7 @@ func (v *filerView) toggle(dir string) {
 		// app.TimeNow を呼ぶたびに読む (値をつかむと、テストが差し替えた時計に追従しない)
 		f, err := filer.New(dir, filer.Options{Now: func() time.Time { return app.TimeNow() }})
 		if err != nil {
-			v.openErr = "ファイラーを開けません: " + firstLine(err.Error())
+			v.openErr = "ファイラーを開けません: " + app.FirstLine(err.Error())
 			return
 		}
 		v.f, v.dir = f, dir
@@ -212,9 +213,9 @@ func (m *browseModel) drainFilerNotices() {
 		return
 	}
 	for _, n := range f.TakeNotices() {
-		kind := noticeRefused // 押したキーが効かなかった理由 (lastWarning を汚さない)
+		kind := app.NoticeRefused // 押したキーが効かなかった理由 (lastWarning を汚さない)
 		if n.OK {
-			kind = noticeOK
+			kind = app.NoticeOK
 		}
 		m.deliverNotice(n.Text, kind)
 	}
@@ -239,7 +240,7 @@ func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 	case filerExec:
 		if r, ok := m.filerV.f.TakeExec(); ok && len(r.Argv) > 0 {
 			m.filerV.execPending = true
-			return m, runEditorCmd(filerExecCommand(r)) // 戻ると editorClosedMsg で読み直す
+			return m, extcmd.RunEditorCmd(filerExecCommand(r)) // 戻ると extcmd.EditorClosedMsg で読み直す
 		}
 	case filerClosed, filerSwallow:
 	}

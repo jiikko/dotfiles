@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"subproc"
 )
@@ -62,18 +63,10 @@ func (e *GHError) Warning() string {
 	case GHNotAuthenticated:
 		return "glogx: gh が未認証のため CI 状態を取得できません (gh auth login)"
 	case GHRateLimited:
-		return "glogx: GitHub API の rate limit に達しています: " + term.SanitizePlainLine(firstLine(e.Detail))
+		return "glogx: GitHub API の rate limit に達しています: " + term.SanitizePlainLine(app.FirstLine(e.Detail))
 	default:
-		return "glogx: CI 状態の取得に失敗しました: " + term.SanitizePlainLine(firstLine(e.Detail))
+		return "glogx: CI 状態の取得に失敗しました: " + term.SanitizePlainLine(app.FirstLine(e.Detail))
 	}
-}
-
-func firstLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
 }
 
 // lastLine は最後の非空行を返す (末尾に要約が来るコマンド出力の notice 用)。全行空なら "".

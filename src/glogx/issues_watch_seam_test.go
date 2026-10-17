@@ -4,7 +4,7 @@ package main
 //
 // なぜ別建てか: CI (ubuntu-slim) では fsnotify.NewWatcher が通らず、watcher を前提にした
 // 検査は全部 skip される。issues_watch_test.go 側の検査は「実 fsnotify との結合」を見る
-// 価値があるので残したまま、**不変条件そのもの**は newDirWatcher seam へフェイクを差して
+// 価値があるので残したまま、**不変条件そのもの**は app.NewDirWatcher seam へフェイクを差して
 // どの環境でも走る形で固定する (skip を消して「CI で走っている」ことにはしない)。
 //
 // 🚨 各検査は v.watch.w がフェイクであることを最初に確かめる。将来 startWatch が seam を
@@ -12,6 +12,7 @@ package main
 
 import (
 	"errors"
+	"glogx/internal/app"
 	"os"
 	"path/filepath"
 	"slices"
@@ -23,7 +24,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// fakeWatcher は dirWatcher のフェイク。Add の履歴と watch 集合を観測できる。
+// fakeWatcher は app.DirWatcher のフェイク。Add の履歴と watch 集合を観測できる。
 //
 // 実 fsnotify に合わせている点:
 //   - 存在しないパスの Add は失敗する (watch も張られない)
@@ -117,7 +118,7 @@ func (f *fakeWatcher) emit(ev fsnotify.Event) {
 	f.events <- ev
 }
 
-// fakeWatcherSeam は newDirWatcher をフェイクへ差し替え、そのフェイクを返す。
+// fakeWatcherSeam は app.NewDirWatcher をフェイクへ差し替え、そのフェイクを返す。
 //
 // 🚨 seam は 2 つの見張り (issues / git log) の共用なので、1 つのテストで両方を起動すると
 // **同じフェイクを 2 つが掴んでイベントチャネルを取り合う**。両方を動かすテストを書くなら
@@ -125,10 +126,10 @@ func (f *fakeWatcher) emit(ev fsnotify.Event) {
 func fakeWatcherSeam(t *testing.T) *fakeWatcher {
 	t.Helper()
 	fw := newFakeWatcher()
-	prev := newDirWatcher
-	newDirWatcher = func() (dirWatcher, error) { return fw, nil }
+	prev := app.NewDirWatcher
+	app.NewDirWatcher = func() (app.DirWatcher, error) { return fw, nil }
 	t.Cleanup(func() {
-		newDirWatcher = prev
+		app.NewDirWatcher = prev
 		_ = fw.Close()
 	})
 	return fw
@@ -138,9 +139,9 @@ func fakeWatcherSeam(t *testing.T) *fakeWatcher {
 // 戻っていたら、この検査は CI では走らなくなっているので停止させる)。
 func requireFake(t *testing.T, v *issuesView) *fakeWatcher {
 	t.Helper()
-	fw, ok := v.watch.w.(*fakeWatcher)
+	fw, ok := v.watch.W.(*fakeWatcher)
 	if !ok {
-		t.Fatalf("startWatch が newDirWatcher seam を通っていない (w=%T)。この検査は実 fsnotify に依存している", v.watch.w)
+		t.Fatalf("startWatch が newDirWatcher seam を通っていない (w=%T)。この検査は実 fsnotify に依存している", v.watch.W)
 	}
 	return fw
 }
@@ -195,7 +196,7 @@ func TestIssuesWatchEventPathWithoutFsnotify(t *testing.T) {
 	v := openedWatchView(t, root, path)
 	fw := requireFake(t, v)
 
-	v.watch.evArmed = false // 既に張られているチェーンをテストが引き取る
+	v.watch.EvArmed = false // 既に張られているチェーンをテストが引き取る
 	cmd := v.eventCmd()
 	if cmd == nil {
 		t.Fatal("イベント待ちの Cmd が作れない")
@@ -256,7 +257,7 @@ func TestIssuesWatchPollDoesNotStackEventChainsWithoutFsnotify(t *testing.T) {
 	requireFake(t, v)
 
 	msgs := make(chan tea.Msg, 64)
-	v.watch.evArmed = false // 既に張られている札をテストが引き取り、実体の goroutine を作る
+	v.watch.EvArmed = false // 既に張られている札をテストが引き取り、実体の goroutine を作る
 	runWatchChains(t, v.eventCmd(), msgs)
 
 	for range 3 {
@@ -278,7 +279,7 @@ func TestCancelAllClosesIssuesWatcherWithoutFsnotify(t *testing.T) {
 	fw := requireFake(t, &m.issuesOv)
 
 	m.cancelAll()
-	if m.issuesOv.watch.w != nil {
+	if m.issuesOv.watch.W != nil {
 		t.Fatal("cancelAll 後も watcher が開いたまま (restart の exec で fd が漏れる)")
 	}
 	// スロットの nil 化だけでなく実体が Close されたことを直接固定する (Close を消して

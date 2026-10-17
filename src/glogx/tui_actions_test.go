@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/jiikko/dotfiles/src/tuikit/toast"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -11,9 +10,13 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/toast"
+
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // b → y/N → git push (glogx の独自機能)。
@@ -1163,7 +1166,7 @@ func TestBrowseUpdateRunsWhenVersionsIncomparable(t *testing.T) {
 	}
 }
 
-// editorCommand は $VISUAL → $EDITOR → nvim の順に解決し、値の引数部分を保つ。
+// extcmd.EditorCommand は $VISUAL → $EDITOR → nvim の順に解決し、値の引数部分を保つ。
 // issue を開く経路 (issuesView.editCmd) だけがこれを使う。
 func TestEditorCommand(t *testing.T) {
 	for _, tt := range []struct {
@@ -1202,7 +1205,7 @@ func TestEditorCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("VISUAL", tt.visual)
 			t.Setenv("EDITOR", tt.editor)
-			cmd := editorCommand("/tmp/a.md")
+			cmd := extcmd.EditorCommand("/tmp/a.md")
 			// exec.Command は PATH 解決するので Path は絶対パスになりうる。🚨 HasSuffix で見ると
 			// want="vim" が ".../bin/nvim" にも一致して別物を通すので、Base の完全一致で見る。
 			if got, want := filepath.Base(cmd.Path), filepath.Base(tt.wantPath); got != want {

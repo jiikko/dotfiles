@@ -12,11 +12,14 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/app"
+	"glogx/internal/extcmd"
+	"glogx/internal/term"
+	"glogx/issues"
+
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/markdown"
-	"glogx/internal/term"
-	"glogx/issues"
 )
 
 // linkJump はジャンプモードの状態。zero value = モード外。
@@ -94,7 +97,7 @@ func (v *issuesView) selectLink(fl []issues.FileLink, i, rows int) {
 func (v *issuesView) startLinkJump(vp issuesViewport, rows int) {
 	fl := v.jumpLinks(vp)
 	if len(fl) == 0 {
-		v.setNotice("この issue に開けるファイルパスはありません", noticeRefused)
+		v.setNotice("この issue に開けるファイルパスはありません", app.NoticeRefused)
 		return
 	}
 	top := v.bodyPager.Offset
@@ -159,24 +162,24 @@ func (v *issuesView) linkJumpKey(key string, vp issuesViewport, rows int) (cmd t
 // openLink は選択中のファイルを開く。readonly=true は Enter、false は $EDITOR (e)。
 // Enter で開く先は種類で分ける (ユーザー選定 2026-09-28): **.md は viewer の本文 pager に積んで開く**
 // (整形して読め、h/Esc で元の本文へ戻る。TUI を中断して別アプリへ移らない)。それ以外のファイルと
-// ディレクトリは nvim -R (readonlyCommand。コードはシンタックスと検索、ディレクトリはファイラーが要る)。
+// ディレクトリは nvim -R (extcmd.ReadonlyCommand。コードはシンタックスと検索、ディレクトリはファイラーが要る)。
 //
 // 🚨 開く直前に解決をやり直す (Body.Recheck): 一覧を作った後に消えた・ディレクトリに化けた・repo の外への
 // symlink に差し替わった (git pull) ものを開かない。消えたものを開くと nvim は空の新規バッファを
 // 「そのファイル」として見せる。
 func (v *issuesView) openLink(l issues.FileLink, readonly bool) tea.Cmd {
 	if !v.body.Recheck(l, v.jumpRepos()) {
-		v.setNotice("ファイルが見つかりません: "+v.linkLabel(l), noticeRefused)
+		v.setNotice("ファイルが見つかりません: "+v.linkLabel(l), app.NoticeRefused)
 		return nil
 	}
 	if !readonly {
-		return runEditorCmd(editorCommand(l.Path))
+		return extcmd.RunEditorCmd(extcmd.EditorCommand(l.Path))
 	}
 	if !l.Dir && isMarkdownPath(l.Path) {
 		v.openDoc(l)
 		return nil
 	}
-	return runEditorCmd(readonlyCommand(l.Path, l.Line))
+	return extcmd.RunEditorCmd(extcmd.ReadonlyCommand(l.Path, l.Line))
 }
 
 // maxDocDepth は docStack に積める段数 (相互リンクした doc を往復して積み続けないため)。
@@ -209,13 +212,13 @@ func isMarkdownPath(p string) bool {
 func (v *issuesView) openDoc(l issues.FileLink) {
 	if len(v.docStack) >= maxDocDepth {
 		// 相互リンクした doc を Enter で往復すると際限なく積まれ、抜けるのに h を何回も押すことになる
-		v.setNotice("これ以上は積めません ("+strconv.Itoa(maxDocDepth)+" 段)。h で戻ってから開いてください", noticeRefused)
+		v.setNotice("これ以上は積めません ("+strconv.Itoa(maxDocDepth)+" 段)。h で戻ってから開いてください", app.NoticeRefused)
 		return
 	}
 	doc := &issues.Issue{Path: l.Path, Dir: v.open.Dir, Rel: v.pathLabel(l.Path)}
 	body, err := doc.ReadBody()
 	if err != nil {
-		v.setNotice("開けませんでした: "+firstLine(err.Error()), noticeError)
+		v.setNotice("開けませんでした: "+app.FirstLine(err.Error()), app.NoticeError)
 		return
 	}
 	v.docStack = append(v.docStack, bodyFrame{open: v.open, body: v.body, offset: v.bodyPager.Offset, jump: v.linkJump})

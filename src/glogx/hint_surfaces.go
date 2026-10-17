@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"strings"
 )
@@ -172,7 +173,7 @@ func (m *browseModel) hintPrefix(maxWidth int) string {
 		prefix = m.spinner() + " CI 状態を取得中...  "
 	}
 	if m.ghErr != nil {
-		prefix = "🚨 " + firstLine(m.ghErr.Warning()) + "  " + prefix
+		prefix = "🚨 " + app.FirstLine(m.ghErr.Warning()) + "  " + prefix
 	}
 	if term.DispWidth(prefix) > maxWidth {
 		prefix = term.ClipToWidth(prefix, maxWidth)

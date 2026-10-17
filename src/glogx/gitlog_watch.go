@@ -21,6 +21,7 @@ package main
 
 import (
 	"fmt"
+	"glogx/internal/app"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -77,9 +78,9 @@ type gitLogReloadMsg struct {
 
 // gitLogWatch は見張りの状態。zero value は「まだ何も張っていない」。
 type gitLogWatch struct {
-	// watchChain は watcher・世代・2 本のチェーンの札 (watch_chain.go)。世代は watcher を閉じるたびに
+	// app.WatchChain は watcher・世代・2 本のチェーンの札 (watch_chain.go)。世代は watcher を閉じるたびに
 	// 増え、古いチェーンの観測を弾く。
-	watchChain
+	app.WatchChain
 	dirs []string // 見張るディレクトリ (空 = 解決できなかった → ポーリングのみ)
 	seen string   // 反映済みの指紋
 	// hasSeen は seen が有効か。🚨 空文字列を「基準なし」のセンチネルにしないこと: コミット 0 件
@@ -195,11 +196,11 @@ func (m *browseModel) startGitLogWatch() {
 	if len(m.logWatch.dirs) == 0 {
 		return
 	}
-	if !m.logWatch.ensureWatcher() {
+	if !m.logWatch.EnsureWatcher() {
 		return
 	}
 	for _, dir := range m.logWatch.dirs {
-		_ = m.logWatch.w.Add(dir) // 失敗は次の周期で再挑戦 (存在しない refs/tags 等)
+		_ = m.logWatch.W.Add(dir) // 失敗は次の周期で再挑戦 (存在しない refs/tags 等)
 	}
 }
 
@@ -210,9 +211,9 @@ func (m *browseModel) startGitLogWatch() {
 // cancelAll の doc)。この見張りは起動から終了まで開き続けるので、閉じ忘れると r で再起動する
 // たびに kqueue fd が 1 本ずつ新プロセスへ継承される。
 func (m *browseModel) stopGitLogWatch() {
-	m.logWatch.close()
+	m.logWatch.Close()
 	// dirs は残す (解決し直す必要がない)。世代を進めて古いチェーンの観測を弾く。
-	m.logWatch = gitLogWatch{watchChain: watchChain{gen: m.logWatch.gen + 1}, dirs: m.logWatch.dirs}
+	m.logWatch = gitLogWatch{WatchChain: app.WatchChain{Gen: m.logWatch.Gen + 1}, dirs: m.logWatch.dirs}
 }
 
 // gitLogWatchCmd は次の観測を予約する (イベント待ち + 保険のポーリング)。
@@ -223,23 +224,23 @@ func (m *browseModel) gitLogWatchCmd() tea.Cmd {
 // gitLogEventCmd は fsnotify のイベントを 1 回待ち、バーストを畳んでから合図を返す。
 // ブロックする Cmd にするのは、外から Msg を送る口を持たずに済むため (bubbletea の定石)。
 func (m *browseModel) gitLogEventCmd() tea.Cmd {
-	return m.logWatch.eventCmd(gitLogWatchDebounce, func() func(bool) tea.Msg {
-		gen := m.logWatch.gen
+	return m.logWatch.EventCmd(gitLogWatchDebounce, func() func(bool) tea.Msg {
+		gen := m.logWatch.Gen
 		return func(closed bool) tea.Msg { return gitLogProbeMsg{fromEvent: true, closed: closed, gen: gen} }
 	})
 }
 
 // gitLogPollCmd は保険のポーリング。イベントを取りこぼしても必ず追いつく。
 func (m *browseModel) gitLogPollCmd() tea.Cmd {
-	return m.logWatch.pollCmd(gitLogWatchPoll, func() func() tea.Msg {
-		gen := m.logWatch.gen
+	return m.logWatch.PollCmd(gitLogWatchPoll, func() func() tea.Msg {
+		gen := m.logWatch.Gen
 		return func() tea.Msg { return gitLogProbeMsg{gen: gen} }
 	})
 }
 
 // gitLogMeasureCmd は表示中の git log の指紋を測る (git fork 1 本)。
 func (m *browseModel) gitLogMeasureCmd() tea.Cmd {
-	opts, gen := m.opts, m.logWatch.gen
+	opts, gen := m.opts, m.logWatch.Gen
 	return func() tea.Msg {
 		out, err := runGitTimeout(BuildFingerprintArgs(opts)...)
 		if err != nil {
@@ -258,21 +259,21 @@ func (m *browseModel) handleGitLogDirs(msg gitLogDirsMsg) tea.Cmd {
 
 // handleGitLogProbe は合図を受けて、測るかどうかを決める (常に次の観測を予約する)。
 func (m *browseModel) handleGitLogProbe(msg gitLogProbeMsg) tea.Cmd {
-	if msg.gen != m.logWatch.gen {
+	if msg.gen != m.logWatch.Gen {
 		return nil // 世代が進む前に張った古いチェーン (札も触らない)
 	}
 	if msg.closed {
 		// watcher が死んだ (fd 回収等)。閉じてポーリングだけで続ける (無音にはしない)
-		m.logWatch.dropDeadWatcher()
-		m.logWatch.gen++
+		m.logWatch.DropDeadWatcher()
+		m.logWatch.Gen++
 		// 🚨 飛んでいる測定の札もここで降ろす: 世代を進めた後に届く結果は gen 違いで捨てられるので、
 		// 降ろさないと measuring が永久に true のまま = 以降ひとつも測らなくなる (静かに機能停止)。
 		m.logWatch.measuring = false
 		m.logWatch.reloading = false // 同じ理由 (gen 違いで捨てられる読み直しを待ち続けない)
-		m.logWatch.pollArmed = false // 旧世代の tick は捨てられるので張り直す
+		m.logWatch.PollArmed = false // 旧世代の tick は捨てられるので張り直す
 		return m.gitLogWatchCmd()
 	}
-	m.logWatch.release(msg.fromEvent)
+	m.logWatch.Release(msg.fromEvent)
 	if !msg.fromEvent {
 		m.startGitLogWatch() // 消えて戻ったディレクトリを取り戻す (Add は冪等)
 	}
@@ -286,7 +287,7 @@ func (m *browseModel) handleGitLogProbe(msg gitLogProbeMsg) tea.Cmd {
 
 // handleGitLogFP は測定結果を受けて、変わっていれば反映する。
 func (m *browseModel) handleGitLogFP(msg gitLogFPMsg) tea.Cmd {
-	if msg.gen != m.logWatch.gen {
+	if msg.gen != m.logWatch.Gen {
 		return nil
 	}
 	if !m.logWatch.measuring {
@@ -365,7 +366,7 @@ func (m *browseModel) gitLogReloadDeferred() bool {
 func (m *browseModel) reflectGitLogChange() tea.Cmd {
 	m.logWatch.reloading = true
 	opts, colored, oneline := m.opts, m.colored, m.oneline
-	gen, seq := m.logWatch.gen, m.logWatch.reloadSeq
+	gen, seq := m.logWatch.Gen, m.logWatch.reloadSeq
 	return func() tea.Msg {
 		d, err := loadLogData(opts, colored, oneline)
 		return gitLogReloadMsg{data: d, err: err, gen: gen, seq: seq}
@@ -387,12 +388,12 @@ func (m *browseModel) reflectGitLogChange() tea.Cmd {
 // ずらさない)。「先頭を見ている」の判定と錨は**ここ**で (= 行集合を入れ替える直前に) 測る:
 // Cmd を出してから届くまでに利用者はスクロールしている。
 func (m *browseModel) handleGitLogReload(msg gitLogReloadMsg) tea.Cmd {
-	if msg.gen != m.logWatch.gen || msg.seq != m.logWatch.reloadSeq {
+	if msg.gen != m.logWatch.Gen || msg.seq != m.logWatch.reloadSeq {
 		return nil
 	}
 	m.logWatch.reloading = false
 	if msg.err != nil {
-		m.showWarning("git log の再読込に失敗しました: " + firstLine(msg.err.Error()))
+		m.showWarning("git log の再読込に失敗しました: " + app.FirstLine(msg.err.Error()))
 		return nil
 	}
 	if m.gitLogReloadDeferred() {

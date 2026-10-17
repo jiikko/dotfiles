@@ -19,17 +19,16 @@ package main
 // 同じく、自分の周期で自己再アームする独立チェーンにして viewer を閉じたら止める。
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-	"github.com/fsnotify/fsnotify"
 	"glogx/internal/app"
 	"glogx/issues"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 const (
@@ -60,56 +59,9 @@ type issuesWatchMsg struct {
 	gen int
 }
 
-// dirWatcher は fsnotify.Watcher のうち見張りが使う面だけを切った seam (issue の見張りと
-// git log の見張り (gitlog_watch.go) で共用する)。
-//
-// 🚨 実装を差し替えるためではなく、**CI で不変条件を観測できるようにするため**にある。
-// CI (ubuntu-slim) では fsnotify.NewWatcher が通らず watch.w が nil になるので、実 watcher を
-// 前提にしたテストはすべて skip され、「消えて戻ったディレクトリを再 Add する」のような配線の
-// 退行が CI では一度も検査されない (issue 087)。フェイクを差せば実 fsnotify 無しで startWatch /
-// eventCmd の本体をそのまま走らせられる。
-// Events/Errors をメソッドにしているのは fsnotify.Watcher がチャネルを**フィールド**で公開して
-// いてインタフェースに乗らないため (fsWatcher が薄く包む)。
-type dirWatcher interface {
-	Add(string) error
-	Close() error
-	WatchList() []string
-	Events() <-chan fsnotify.Event
-	Errors() <-chan error
-}
-
-// fsWatcher は *fsnotify.Watcher を dirWatcher へ合わせるだけのアダプタ (ロジックを持たない)。
-type fsWatcher struct{ w *fsnotify.Watcher }
-
-func (f fsWatcher) Add(dir string) error          { return f.w.Add(dir) }
-func (f fsWatcher) Close() error                  { return f.w.Close() }
-func (f fsWatcher) WatchList() []string           { return f.w.WatchList() }
-func (f fsWatcher) Events() <-chan fsnotify.Event { return f.w.Events }
-func (f fsWatcher) Errors() <-chan error          { return f.w.Errors }
-
-// newDirWatcher は watcher を作る唯一の経路 (テストがフェイクへ差し替える口)。
-//
-// 🚨 production ではここを分岐させない。差し替えはテストだけの都合。
-// 🚨 差し替えは package 変数の書き換えなので、この seam を使うテストで t.Parallel() を呼ばないこと
-// (-race が「テスト基盤のデータレース」として落ち、検証対象と無関係な形で失敗する)。
-// 🚨 包む前に nil を弾く: interface に nil ポインタを入れると `w == nil` が false になり
-// (typed nil)、「watcher を作れない環境ではポーリングへ縮退する」という startWatch / eventCmd /
-// pollInterval / handleWatch の nil ガード全部が panic に変わる。fsnotify v1.10.1 は成功時に
-// 必ず非 nil を返すので今は起きないが、その契約 1 つに縮退の正しさを乗せない。
-var newDirWatcher = func() (dirWatcher, error) {
-	w, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, err
-	}
-	if w == nil {
-		return nil, errors.New("fsnotify.NewWatcher が nil を返した")
-	}
-	return fsWatcher{w: w}, nil
-}
-
 // issuesWatch は見張りの状態。zero value は「見張っていない」。
 type issuesWatch struct {
-	// watchChain は watcher・世代・2 本のチェーンの札 (watch_chain.go)。世代は閉じるたびに増え、
+	// app.WatchChain は watcher・世代・2 本のチェーンの札 (watch_chain.go)。世代は閉じるたびに増え、
 	// 古いチェーンの観測を弾く。
 	// 🚨 「Add 済み」を自前で覚えて skip しないこと。fsnotify の watch は**ディレクトリが
 	// 消えると黙って失われる**ので、印だけが残って二度と Add されない状態になる (実測
@@ -117,7 +69,7 @@ type issuesWatch struct {
 	// セッション中は done/ 内の変更が恒久的に無音。手動の取り直し 3 回でも復帰せず、
 	// 指紋ポーリング 30s も done/ の未知の新規ファイルは見ないので代替にならない)。
 	// Add は冪等 (同一パスの重複配送は起きないことを実測) なので、毎回無条件に Add する。
-	watchChain
+	app.WatchChain
 
 	seen    string // 反映済みの指紋 ("" = 次の観測を基準にする)
 	pending string // 変化を検出したが、書きかけを避けるため安定を待っている指紋
@@ -141,21 +93,21 @@ func (v *issuesView) startWatch() {
 	if !v.shown {
 		return
 	}
-	if !v.watch.ensureWatcher() {
+	if !v.watch.EnsureWatcher() {
 		return
 	}
 	for _, dir := range v.watchDirs() {
 		// 失敗は無視して次の取り直しで再挑戦する (消えたディレクトリ等)。成功しても印を
 		// 残さない = 消えて戻ったディレクトリが再び watch される (上のフィールドコメント参照)。
-		_ = v.watch.w.Add(dir)
+		_ = v.watch.W.Add(dir)
 	}
 }
 
 // stopWatch は watcher を閉じて状態を畳む (fd を残さない)。世代を 1 つ進めて、閉じる前に
 // 張ってあったチェーンの観測が開き直した後の状態へ効かないようにする。
 func (v *issuesView) stopWatch() {
-	v.watch.close()
-	v.watch = issuesWatch{watchChain: watchChain{gen: v.watch.gen + 1}}
+	v.watch.Close()
+	v.watch = issuesWatch{WatchChain: app.WatchChain{Gen: v.watch.Gen + 1}}
 }
 
 // watchDirs は fsnotify へ Add するディレクトリ (issue ディレクトリ + ファイルが居るサブ + epic/ と
@@ -174,8 +126,8 @@ func (v *issuesView) eventCmd() tea.Cmd {
 	if !v.shown {
 		return nil
 	}
-	return v.watch.eventCmd(issuesWatchDebounce, func() func(bool) tea.Msg {
-		gen := v.watch.gen
+	return v.watch.EventCmd(issuesWatchDebounce, func() func(bool) tea.Msg {
+		gen := v.watch.Gen
 		dirs, paths := v.watchTargets()
 		return func(closed bool) tea.Msg {
 			if closed {
@@ -186,34 +138,13 @@ func (v *issuesView) eventCmd() tea.Cmd {
 	})
 }
 
-// drainWatchEvents は quiet の間イベントが来なくなるまで吸う (バーストの畳み込み)。
-func drainWatchEvents(w dirWatcher, quiet time.Duration) {
-	timer := time.NewTimer(quiet)
-	defer timer.Stop()
-	for {
-		select {
-		case _, ok := <-w.Events():
-			if !ok {
-				return
-			}
-			if !timer.Stop() {
-				<-timer.C
-			}
-			timer.Reset(quiet) // まだ書いている: 静まるまで待つ
-		case <-w.Errors():
-		case <-timer.C:
-			return
-		}
-	}
-}
-
 // pollCmd は保険のポーリング。イベントを取りこぼしても必ず追いつく。
 func (v *issuesView) pollCmd() tea.Cmd {
 	if !v.shown {
 		return nil
 	}
-	return v.watch.pollCmd(v.pollInterval(), func() func() tea.Msg {
-		gen := v.watch.gen
+	return v.watch.PollCmd(v.pollInterval(), func() func() tea.Msg {
+		gen := v.watch.Gen
 		dirs, paths := v.watchTargets()
 		return func() tea.Msg { return issuesWatchMsg{fp: issuesFingerprint(dirs, paths), gen: gen} }
 	})
@@ -225,7 +156,7 @@ func (v *issuesView) pollInterval() time.Duration {
 	switch {
 	case v.watch.pending != "":
 		return issuesWatchVerifyPoll
-	case v.watch.w == nil:
+	case v.watch.W == nil:
 		return issuesWatchBlindPoll
 	default:
 		return issuesWatchIdlePoll
@@ -329,7 +260,7 @@ func issuesWatchPaths(all []*issues.Issue) []string {
 // 「変化を検出した次の周期でも同じ指紋なら読む」= 書きかけのファイルを掴まない。エディタの
 // tmp+rename なら atomic だが、`>>` で追記するツール (シェルスクリプト・ログ追記) もあるため。
 func (v *issuesView) handleWatch(msg issuesWatchMsg) tea.Cmd {
-	if msg.gen != v.watch.gen {
+	if msg.gen != v.watch.Gen {
 		return nil // 閉じる前に張った古いチェーンの観測 (札も触らない)
 	}
 	if msg.closed {
@@ -340,13 +271,13 @@ func (v *issuesView) handleWatch(msg issuesWatchMsg) tea.Cmd {
 		// watcher が死んだ (fd 回収・NFS 等)。閉じてポーリングだけで続ける (無音にはしない)。
 		// 世代は進めない: 指紋は goroutine の中で測り終えて届くので、捨てるべき飛行中の測定が無く、
 		// 旧世代のポーリングもそのまま有効 (git log の見張りは測定を後段に持つので進める。gitlog_watch.go)
-		v.watch.dropDeadWatcher()
+		v.watch.DropDeadWatcher()
 		return v.watchCmd()
 	}
 	// 指紋つきの観測はイベント経路とポーリング経路の両方から来る。降ろすのは届けたチェーンの札だけ
-	// (理由は watchChain.release。平常時のポーリングは 30s 周期なので、両方降ろすと viewer を
+	// (理由は app.WatchChain.release。平常時のポーリングは 30s 周期なので、両方降ろすと viewer を
 	// 開きっぱなしにするだけで goroutine が増え続ける)
-	v.watch.release(msg.fromEvent)
+	v.watch.Release(msg.fromEvent)
 	if !v.shown {
 		v.stopWatch() // 閉じたら watcher ごと畳む (fd を残さない)
 		return nil

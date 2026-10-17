@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // filerDir は treefiler で開く小さな木 (pwd の代わりに t.Chdir する)。
@@ -250,7 +252,7 @@ func TestFilerShellExecAndRefresh(t *testing.T) {
 	if err := os.WriteFile("made-in-shell.txt", []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m.Update(cmd()) // editorClosedMsg (シェルから戻った)
+	m.Update(cmd()) // extcmd.EditorClosedMsg (シェルから戻った)
 	settleFiler(m)
 	if !strings.Contains(strings.Join(m.filerV.lines(100, 29), "\n"), "made-in-shell.txt") {
 		t.Fatal("シェルから戻っても読み直さない")
@@ -318,7 +320,7 @@ func TestFilerShellNonZeroExitIsQuiet(t *testing.T) {
 	stubEditorCapture(t)
 	m.handleKey("F")
 	m.handleKey("s")
-	m.Update(editorClosedMsg{err: &exec.ExitError{}})
+	m.Update(extcmd.EditorClosedMsg{Err: &exec.ExitError{}})
 	if strings.Contains(m.toast.Text(), "エディタ") {
 		t.Fatalf("シェルから戻ったのにエディタの文言: %q", m.toast.Text())
 	}

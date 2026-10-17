@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"math"
 	"os"
 	"os/exec"
@@ -13,12 +12,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+
 	"time"
 
-	"github.com/jiikko/dotfiles/src/tuikit/editor"
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
 	"glogx/issues"
+
+	"github.com/jiikko/dotfiles/src/tuikit/editor"
 )
 
 // atProgress は演出の進みを p (0..1) に固定した viewer を返す (壁時計を巻き戻して作る)。
@@ -1606,7 +1609,7 @@ func TestIssuesViewURLPicker(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Enter で開く Cmd が返らない")
 	}
-	if msg, ok := cmd().(openURLMsg); !ok || msg.err != nil {
+	if msg, ok := cmd().(extcmd.OpenURLMsg); !ok || msg.Err != nil {
 		t.Fatalf("openURLMsg でない/失敗: %#v", msg)
 	}
 	if len(opened) != 1 || opened[0] != "https://example.com/beta" {
@@ -2232,7 +2235,7 @@ func TestIssuesViewKeepsSelectionAcrossRescan(t *testing.T) {
 func TestIssuesNoticeIsSanitized(t *testing.T) {
 	const esc, bel = "\x1b", "\a"
 	v := newTestIssuesView()
-	v.setNotice("URL を開きます: https://example.com/"+esc+"]0;pwned"+bel+"x", noticeOK)
+	v.setNotice("URL を開きます: https://example.com/"+esc+"]0;pwned"+bel+"x", app.NoticeOK)
 	if hasTerminalControl(v.notice) {
 		t.Errorf("通知に制御シーケンスが残った: %q", v.notice)
 	}

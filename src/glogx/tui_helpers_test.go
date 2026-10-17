@@ -18,6 +18,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
 	"glogx/issues"
 	"subproc"
@@ -129,10 +130,10 @@ func TestMain(m *testing.M) {
 	// テストは実クリップボードを書き換え・ブラウザを開き、しかも「何も起きなかった」を検査できない
 	// (issue 667: 親行の N のテストが退行すると実際に pbcopy を走らせる形だった)。stubClipboard /
 	// stubBrowser は終了時にこの既定へ戻す
-	copyToClipboard = func(text string) error {
+	extcmd.CopyToClipboard = func(text string) error {
 		panic("テストが copyToClipboard を差し替えずに呼んだ (stubClipboard を使う): " + text)
 	}
-	openInBrowser = func(url string) error {
+	extcmd.OpenInBrowser = func(url string) error {
 		panic("テストが openInBrowser を差し替えずに呼んだ (stubBrowser を使う): " + url)
 	}
 	code := m.Run() // 🚨 os.Exit は defer を走らせないので、片付けは Run の後に手で書く
@@ -237,15 +238,15 @@ func withJobs(m *browseModel, idx int) {
 	}
 }
 
-// stubClipboardFunc は copyToClipboard を fn に差し替え、テスト終了時に戻す (失敗系・独自記録用)。
+// stubClipboardFunc は extcmd.CopyToClipboard を fn に差し替え、テスト終了時に戻す (失敗系・独自記録用)。
 func stubClipboardFunc(t *testing.T, fn func(string) error) {
 	t.Helper()
-	orig := copyToClipboard
-	copyToClipboard = fn
-	t.Cleanup(func() { copyToClipboard = orig })
+	orig := extcmd.CopyToClipboard
+	extcmd.CopyToClipboard = fn
+	t.Cleanup(func() { extcmd.CopyToClipboard = orig })
 }
 
-// stubClipboard は copyToClipboard を「記録して成功する」実装に差し替え、記録先を返す (多数派の形)。
+// stubClipboard は extcmd.CopyToClipboard を「記録して成功する」実装に差し替え、記録先を返す (多数派の形)。
 func stubClipboard(t *testing.T) *string {
 	t.Helper()
 	var copied string
@@ -253,15 +254,15 @@ func stubClipboard(t *testing.T) *string {
 	return &copied
 }
 
-// stubBrowserFunc は openInBrowser を fn に差し替え、テスト終了時に戻す (ガード・複数記録用)。
+// stubBrowserFunc は extcmd.OpenInBrowser を fn に差し替え、テスト終了時に戻す (ガード・複数記録用)。
 func stubBrowserFunc(t *testing.T, fn func(string) error) {
 	t.Helper()
-	orig := openInBrowser
-	openInBrowser = fn
-	t.Cleanup(func() { openInBrowser = orig })
+	orig := extcmd.OpenInBrowser
+	extcmd.OpenInBrowser = fn
+	t.Cleanup(func() { extcmd.OpenInBrowser = orig })
 }
 
-// stubBrowser は openInBrowser を「最後に開いた URL を記録して成功する」実装に差し替え、記録先を返す。
+// stubBrowser は extcmd.OpenInBrowser を「最後に開いた URL を記録して成功する」実装に差し替え、記録先を返す。
 func stubBrowser(t *testing.T) *string {
 	t.Helper()
 	var opened string
@@ -293,9 +294,9 @@ func testHintBudget(t *testing.T) int {
 	return m.hintWidth()
 }
 
-// pinFallbackEditor は $VISUAL / $EDITOR を空にして editorCommand の fallback (nvim) を固定する。
+// pinFallbackEditor は $VISUAL / $EDITOR を空にして extcmd.EditorCommand の fallback (nvim) を固定する。
 //
-// 🚨 起動コマンドを**完全一致**で検証するテストはこれを呼ぶ。editorCommand は環境変数を読むので、
+// 🚨 起動コマンドを**完全一致**で検証するテストはこれを呼ぶ。extcmd.EditorCommand は環境変数を読むので、
 // 開発者の環境 (EDITOR="code -w" 等) がそのまま期待値に混ざる。末尾引数だけ見る形にすれば環境に
 // 強いが、それだと前に引数を挿し込む変異 (例: -R を足して実ファイルを readonly で開く =
 // editCmd の doc が禁じている) を通してしまうので、環境を固定して完全一致で見る方を選ぶ。
@@ -305,11 +306,11 @@ func pinFallbackEditor(t *testing.T) {
 	t.Setenv("EDITOR", "")
 }
 
-// stubEditorCapture は runEditorCmd を「起動せず *exec.Cmd を記録する」実装へ差し替える。
+// stubEditorCapture は extcmd.RunEditorCmd を「起動せず *exec.Cmd を記録する」実装へ差し替える。
 //
 // 🚨 エディタ連携のテストは全部これを使う。回数だけ数える stub も昔あったが、それだと
 // 「何を開いたか」が見えず、渡す対象を取り違えた実装 (iss.Path → iss.Dir 等) を通してしまう。
-// 差し替え点を 1 つに保つのは、runEditorCmd の契約 (非 nil な Cmd を返す) が変わったときに
+// 差し替え点を 1 つに保つのは、extcmd.RunEditorCmd の契約 (非 nil な Cmd を返す) が変わったときに
 // 直す箇所を 1 箇所にするため。
 //
 // エディタを起動するキーは 3 系統ある: issues viewer の e (別名 v) = その issue の実ファイル /
@@ -317,12 +318,12 @@ func pinFallbackEditor(t *testing.T) {
 func stubEditorCapture(t *testing.T) *[]*exec.Cmd {
 	t.Helper()
 	var cmds []*exec.Cmd
-	orig := runEditorCmd
-	runEditorCmd = func(c *exec.Cmd) tea.Cmd {
+	orig := extcmd.RunEditorCmd
+	extcmd.RunEditorCmd = func(c *exec.Cmd) tea.Cmd {
 		cmds = append(cmds, c)
-		return func() tea.Msg { return editorClosedMsg{} }
+		return func() tea.Msg { return extcmd.EditorClosedMsg{} }
 	}
-	t.Cleanup(func() { runEditorCmd = orig })
+	t.Cleanup(func() { extcmd.RunEditorCmd = orig })
 	return &cmds
 }
 
@@ -362,7 +363,7 @@ func deliverDiffMsg(t *testing.T, m *browseModel, cmd tea.Cmd) {
 }
 
 // runCmdTree は cmd を再帰実行する。tea.Batch (BatchMsg) は各要素を辿るので、開く Cmd が
-// maybeTick と束ねられていても副作用 (openInBrowser など) が発火する。
+// maybeTick と束ねられていても副作用 (extcmd.OpenInBrowser など) が発火する。
 func runCmdTree(cmd tea.Cmd) {
 	if cmd == nil {
 		return
@@ -396,9 +397,9 @@ func uniformWidth(t *testing.T, box []string) int {
 }
 
 // noticeOKOf は takeNotice の戻りを (文言, 成功か) に読み替える (成功 / 失敗だけを見るテスト用)。
-// 失敗の種類 (noticeRefused / noticeError) を見るテストは takeNotice を直接読む。
-func noticeOKOf(text string, kind noticeKind) (string, bool) {
-	return text, kind == noticeOK
+// 失敗の種類 (app.NoticeRefused / app.NoticeError) を見るテストは takeNotice を直接読む。
+func noticeOKOf(text string, kind app.NoticeKind) (string, bool) {
+	return text, kind == app.NoticeOK
 }
 
 // writeRealIssue は dir/rel に本文 body の issue ファイルを実際に置き、対応する Issue を返す

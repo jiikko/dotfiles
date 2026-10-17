@@ -287,7 +287,7 @@ func TestIssuesWatchStopsWhenClosed(t *testing.T) {
 	if cmd := v.handleWatch(v.observe()); cmd != nil {
 		t.Fatal("閉じた後も見張りのチェーンが続いている (tick が残る)")
 	}
-	if v.watch.w != nil || v.watch.seen != "" || v.watch.evArmed || v.watch.pollArmed {
+	if v.watch.W != nil || v.watch.seen != "" || v.watch.EvArmed || v.watch.PollArmed {
 		t.Fatalf("閉じたのに見張りの状態が残っている (watcher の fd も残る): %+v", v.watch)
 	}
 	// 閉じている間は張り直しもしない
@@ -305,12 +305,12 @@ func TestCancelAllClosesIssuesWatcher(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	m.issuesOv.toggle(root)
 	m.issuesOv.receive(scanOf(t, root))
-	w := m.issuesOv.watch.w
+	w := m.issuesOv.watch.W
 	if w == nil {
 		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
 	}
 	m.cancelAll()
-	if m.issuesOv.watch.w != nil {
+	if m.issuesOv.watch.W != nil {
 		t.Fatal("cancelAll 後も fsnotify watcher が開いたまま (restart の exec で fd が漏れる)")
 	}
 	// スロットの nil 化だけでなく実体が Close されたことを直接固定する (Close を消して
@@ -328,7 +328,7 @@ func TestIssuesWatchIsSingleFlight(t *testing.T) {
 		t.Fatal("既に張っているのに 2 本目のチェーンを作った")
 	}
 	v.handleWatch(v.observe()) // 1 拍消費すれば張り直せる
-	if !v.watch.pollArmed {
+	if !v.watch.PollArmed {
 		t.Fatal("消費後に張り直していない")
 	}
 }
@@ -344,11 +344,11 @@ func TestIssuesWatchIsSingleFlight(t *testing.T) {
 func TestIssuesWatchPollDoesNotStackEventChains(t *testing.T) {
 	root, path := watchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
-	if v.watch.w == nil {
+	if v.watch.W == nil {
 		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
 	}
 	msgs := make(chan tea.Msg, 64)
-	v.watch.evArmed = false // 既に張られている札をテストが引き取り、実体の goroutine を作る
+	v.watch.EvArmed = false // 既に張られている札をテストが引き取り、実体の goroutine を作る
 	runWatchChains(t, v.eventCmd(), msgs)
 
 	for range 3 {
@@ -407,7 +407,7 @@ func TestIssuesViewerWatchWiredIntoUpdate(t *testing.T) {
 	m.issuesOv.cwd = root
 	m.Update(scanOf(t, root))
 	m.issuesOv.finishAnim()
-	if !m.issuesOv.watch.pollArmed {
+	if !m.issuesOv.watch.PollArmed {
 		t.Fatal("viewer を開いても見張りが張られていない")
 	}
 	_, cmd := m.Update(m.issuesOv.observe())
@@ -452,10 +452,10 @@ func TestIssuesWatchReloadsFromRealEvent(t *testing.T) {
 	// 🚨 指紋が正本 (イベントは Create/Rename/Write と嘘をつくので、起こす役だけ)。
 	root, path := watchTree(t, "# 001 feat: 編集前\n")
 	v := openedWatchView(t, root, path)
-	if v.watch.w == nil {
+	if v.watch.W == nil {
 		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
 	}
-	v.watch.evArmed = false // 既に張られているチェーンをテストが引き取る
+	v.watch.EvArmed = false // 既に張られているチェーンをテストが引き取る
 	cmd := v.eventCmd()
 	if cmd == nil {
 		t.Fatal("イベント待ちの Cmd が作れない")
@@ -485,10 +485,10 @@ func TestIssuesWatchClosingReleasesWatcher(t *testing.T) {
 	// チャネルが閉じることで終わり、closed の観測として戻る。
 	root, path := watchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
-	if v.watch.w == nil {
+	if v.watch.W == nil {
 		t.Skip("この環境では fsnotify を作れない")
 	}
-	v.watch.evArmed = false // 既に張られているチェーンをテストが引き取る
+	v.watch.EvArmed = false // 既に張られているチェーンをテストが引き取る
 	cmd := v.eventCmd()
 	if cmd == nil {
 		t.Fatal("イベント待ちの Cmd が作れない")
@@ -508,17 +508,17 @@ func TestIssuesWatchFallsBackToPollingWhenWatcherDies(t *testing.T) {
 	// watcher が死んでも (fd 回収・NFS 等) 無音にはしない: ポーリングだけで続ける。
 	root, path := watchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
-	if v.watch.w == nil {
+	if v.watch.W == nil {
 		t.Skip("この環境では fsnotify を作れない")
 	}
 	if got := v.pollInterval(); got != issuesWatchIdlePoll {
 		t.Fatalf("イベントがある間の保険は低頻度でよい: %v", got)
 	}
 	v.handleWatch(issuesWatchMsg{closed: true})
-	if v.watch.w != nil {
+	if v.watch.W != nil {
 		t.Fatal("死んだ watcher を掴んだままにしている")
 	}
-	if !v.watch.pollArmed {
+	if !v.watch.PollArmed {
 		t.Fatal("イベントが死んだのにポーリングも止まっている (無音になる)")
 	}
 	if got := v.pollInterval(); got != issuesWatchBlindPoll {
@@ -546,21 +546,21 @@ func TestIssuesWatchIgnoresStaleGeneration(t *testing.T) {
 	// (無音ではないがポーリングだけへ静かに縮退する)。
 	root, path := watchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
-	if v.watch.w == nil {
+	if v.watch.W == nil {
 		t.Skip("この環境では fsnotify を作れない")
 	}
-	stale := issuesWatchMsg{closed: true, gen: v.watch.gen} // 閉じる前のチェーンが持っている世代
+	stale := issuesWatchMsg{closed: true, gen: v.watch.Gen} // 閉じる前のチェーンが持っている世代
 
 	v.close()
 	v.shown = true
 	v.receive(scanOf(t, root)) // 開き直し (新しい watcher)
-	if v.watch.w == nil {
+	if v.watch.W == nil {
 		t.Fatal("開き直しで watcher が作られていない")
 	}
 	if v.handleWatch(stale) != nil {
 		t.Fatal("古い世代の観測でチェーンを張り直した")
 	}
-	if v.watch.w == nil {
+	if v.watch.W == nil {
 		t.Fatal("古い世代の closed が新しい watcher を閉じた")
 	}
 }
@@ -603,7 +603,7 @@ func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
 	// 経路だけで通っていた (この検査を素で書くと nil 参照で panic する。2026-08-21 に CI で踏んだ)。
 	// 「環境が対応していない」は SKIP として**出力に見えるように**落とし、「作れるのに張って
 	// いない」は配線の退行なので FAIL にする (検査できなかったことを緑にしない)。
-	if v.watch.w == nil {
+	if v.watch.W == nil {
 		probe, err := fsnotify.NewWatcher()
 		if err != nil {
 			t.Skipf("この環境では fsnotify watcher を作れない (%v)。実 fsnotify との結合は未検証 (不変条件は issues_watch_seam_test.go が固定)", err)
@@ -612,8 +612,8 @@ func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
 		t.Fatal("watcher は作れるのに startWatch が張っていない (配線の退行)")
 	}
 	// 再 Add されたかを watcher の登録一覧で直接見る (イベント配送のタイミングに依存させない)
-	if !slices.Contains(v.watch.w.WatchList(), done) {
-		t.Fatalf("消えて戻った done/ が再 Add されていない: %v", v.watch.w.WatchList())
+	if !slices.Contains(v.watch.W.WatchList(), done) {
+		t.Fatalf("消えて戻った done/ が再 Add されていない: %v", v.watch.W.WatchList())
 	}
 }
 

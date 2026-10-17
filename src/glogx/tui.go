@@ -15,7 +15,6 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/caret"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
-	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
@@ -27,12 +26,14 @@ import (
 	"glogx/issues"
 	"subproc"
 
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
+
+	"glogx/internal/app"
+	"glogx/internal/doctorview"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
-	"glogx/internal/app"
-	"glogx/internal/doctorview"
 )
 
 // Bubble Tea による less 風の対話ブラウズ (カーソル移動 + CI job 表示)。
@@ -115,24 +116,9 @@ type basisMsg struct {
 
 type tickMsg struct{}
 
-// openURLMsg は job 詳細ページをブラウザで開いた結果。
-type openURLMsg struct{ err error }
-
 // issuesRestoreMsg は前回終了時の issues viewer の画面を復元する合図 (起動時。issues_state.go)。
 // repo の照合まで済んでいるので、受け取り側は開くだけ。
 type issuesRestoreMsg struct{ screen issuesScreen }
-
-// editorClosedMsg は job ログを開いた nvim を閉じた結果 (e キー)。reclaimErr は戻ったときに外れていた端末の前面を
-// 取り戻せなかった理由。
-type editorClosedMsg struct{ err, reclaimErr error }
-
-// runEditorCmd はテストで実 nvim を起動しないための差し替え点。tea.Exec は bubbletea の描画を一旦止め、端末を nvim へ
-// 明け渡し、終了後に復帰する (エディタ起動用途の標準経路)。foreground.Exec は、戻った後に前面が外れていたら
-// 入れ直しの前に取り戻す (treefiler の ! の `$SHELL -ic` が前面を持ち去ったまま終わる形。issue 707)。
-var runEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
-	x := foreground.NewExec(cmd)
-	return tea.Exec(x, func(err error) tea.Msg { return editorClosedMsg{err: err, reclaimErr: x.Err} })
-}
 
 // jobDetailMsg は job 詳細 (annotations / ログ tail) のオンデマンド取得の結果。
 type jobDetailMsg struct {
@@ -630,20 +616,6 @@ func isLineEditKey(key string) bool {
 	return probe.Key(key, "")
 }
 
-// normalizeSpaceKey は Space の表記ゆれを " " へ揃える。キー switch は " " だけを見ればよい。
-//
-// なぜ 2 表記あるか: bubbletea v2 の KeyPressMsg.String() は Space を "space" と綴る (v1 は
-// " ")。一方、複数ルーンが 1 イベントで届いたときの分解経路 (Update の KeyPressMsg 処理) は
-// 生のルーン文字列を渡すので " " が来る。v2 移行時にこの綴りの変化を拾い落として、Space の
-// 割当 5 箇所 (issues viewer の半ページ / diff pager / job 詳細を閉じる / パネルを開く) が
-// 全て無反応になっていた (ユーザー報告 2026-07-31)。入口で正規化して 1 箇所に閉じる。
-func normalizeSpaceKey(key string) string {
-	if key == "space" {
-		return " "
-	}
-	return key
-}
-
 func tickEvery(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(time.Time) tea.Msg { return tickMsg{} })
 }
@@ -796,41 +768,24 @@ func (m *browseModel) showWarning(text string) {
 	m.toast.Show(text, false)
 }
 
-// noticeKind は viewer の操作結果の種類。showWarning の 3 分類 (showWarning の doc) を viewer からも
-// 表せるようにする: 以前は ok bool の 2 値で、断りの文やクリップボード失敗まで lastWarning を
-// 上書きし、直前のエラーを w でコピーできなくしていた (issue 663)。
-type noticeKind uint8
-
-const (
-	noticeOK      noticeKind = iota // 成功 (トーストのみ)
-	noticeRefused                   // 操作を拒否した理由の案内・クリップボード失敗 (失敗トーストのみ。lastWarning を汚さない)
-	noticeError                     // エラー詳細を含み、後で w でコピーする価値があるもの (showWarning)
-)
-
 // deliverNotice は viewer の操作結果 (takeNotice の戻り) をトーストへ流す。lastWarning に積むのは
-// noticeError だけ。戻り値は「流したか」で、呼び出し側がトーストを動かす tick を束ねるかの判断に使う。
+// app.NoticeError だけ。戻り値は「流したか」で、呼び出し側がトーストを動かす tick を束ねるかの判断に使う。
 // 🚨 setNotice は打鍵経路 (handleKey 直後) だけでなく Msg 経路 (issuesScanMsg → rebindOpen)
 // からも置かれる。Msg 経路の呼び出し側でもこれを通すこと。通さないと「置いたが誰も取り出さず、
 // 次の打鍵まで画面に出ない」黙殺になる (issue 059: 本文が無言で畳まれた)。
-func (m *browseModel) deliverNotice(text string, kind noticeKind) bool {
+func (m *browseModel) deliverNotice(text string, kind app.NoticeKind) bool {
 	if text == "" {
 		return false
 	}
 	switch kind {
-	case noticeOK:
+	case app.NoticeOK:
 		m.toast.Show(text, true)
-	case noticeRefused:
+	case app.NoticeRefused:
 		m.toast.Show(text, false)
-	case noticeError:
+	case app.NoticeError:
 		m.showWarning(text)
 	}
 	return true
-}
-
-// clipboardFailText はクリップボードへのコピーが失敗したときの通知文 (copyWithToast と viewer で共有)。
-// 通知の種類は noticeRefused (lastWarning を汚さない。showWarning の doc の 3 分類)。
-func clipboardFailText(err error) string {
-	return "コピーに失敗しました: " + firstLine(err.Error())
 }
 
 // showClaudeUpdate は「新バージョンあり」の通知を出す。
@@ -1063,7 +1018,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// 一時エラーをキャッシュすると「PR はありません」という誤答が固定される
 			// (次の p で再試行させる) ため、キャッシュは成功時のみ
 			if wasCurrent {
-				m.showWarning("PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning()))
+				m.showWarning("PR の取得に失敗しました: " + app.FirstLine(msg.ghErr.Warning()))
 			}
 			return m, m.maybeTick()
 		}
@@ -1086,7 +1041,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prStatusOv.receive(msg.sha, msg.status, msg.ghErr)
 		if msg.ghErr != nil && wasCurrent {
 			// 一時エラーはキャッシュしない (receive 側)。理由はトーストで伝える
-			m.showWarning("PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning()))
+			m.showWarning("PR の取得に失敗しました: " + app.FirstLine(msg.ghErr.Warning()))
 		}
 		return m, m.maybeTick()
 	case diffMsg:
@@ -1095,7 +1050,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// sha が表示中ならエラー時に close するため、一致は receive の前に捕捉する)
 		wasCurrent := msg.sha == m.diffOv.sha
 		if err := m.diffOv.receive(msg); err != nil && wasCurrent {
-			m.showWarning("diff の取得に失敗しました: " + firstLine(err.Error()))
+			m.showWarning("diff の取得に失敗しました: " + app.FirstLine(err.Error()))
 		}
 		return m, m.maybeTick()
 	case prefixMsg:
@@ -1284,7 +1239,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pullMsg:
 		m.actModal.pulling = false
 		if msg.err != nil {
-			m.showWarning("pull に失敗: " + firstLine(msg.err.Error()))
+			m.showWarning("pull に失敗: " + app.FirstLine(msg.err.Error()))
 			return m, m.maybeTick()
 		}
 		// 成功トーストを右下にせり上げつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
@@ -1296,7 +1251,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case rerunMsg:
 		m.actModal.rerunning = false
 		if msg.err != nil {
-			m.showWarning("再実行に失敗: " + firstLine(msg.err.Error()))
+			m.showWarning("再実行に失敗: " + app.FirstLine(msg.err.Error()))
 			return m, m.maybeTick()
 		}
 		m.toast.Show("CI を再実行します", true)
@@ -1349,7 +1304,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		name := msg.target + " "
 		switch {
 		case msg.err != nil:
-			m.showWarning(name + "更新に失敗: " + firstLine(msg.err.Error()))
+			m.showWarning(name + "更新に失敗: " + app.FirstLine(msg.err.Error()))
 		case msg.before != "" && msg.after != "" && msg.before != msg.after:
 			m.toast.Show(name+"v"+msg.before+" → v"+msg.after+" に更新しました", true)
 		case msg.before != "" && msg.before == msg.after && msg.early:
@@ -1377,7 +1332,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pushMsg:
 		m.actModal.pushing = false
 		if msg.err != nil {
-			m.showWarning("push に失敗: " + firstLine(msg.err.Error()))
+			m.showWarning("push に失敗: " + app.FirstLine(msg.err.Error()))
 			return m, m.maybeTick()
 		}
 		m.toast.Show("push しました", true)
@@ -1394,22 +1349,22 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.maybeTick() // 演出完了後 (advancePushAnim) に refetchAfterPush へ進む
 		}
 		return m, tea.Batch(m.refetchAfterPush(), m.maybeTick())
-	case openURLMsg:
-		if msg.err != nil {
-			m.showWarning("ブラウザを開けませんでした: " + firstLine(msg.err.Error()))
+	case extcmd.OpenURLMsg:
+		if msg.Err != nil {
+			m.showWarning("ブラウザを開けませんでした: " + app.FirstLine(msg.Err.Error()))
 		}
 		return m, m.maybeTick()
-	case editorClosedMsg:
-		if msg.reclaimErr != nil {
-			m.showWarning("端末の前面を取り戻せませんでした (" + firstLine(msg.reclaimErr.Error()) + ")。止まったら fg で戻してください")
+	case extcmd.EditorClosedMsg:
+		if msg.ReclaimErr != nil {
+			m.showWarning("端末の前面を取り戻せませんでした (" + app.FirstLine(msg.ReclaimErr.Error()) + ")。止まったら fg で戻してください")
 		}
 		// treefiler の ! / s / e から戻ったとき: 読み直す (シェルやエディタで作った・消したファイルを出す)。「エディタが異常終了しました」
 		// は出さない: シェルは最後のコマンドの終了コードで抜けるのが普通 (e のエディタも filer.ExecDone の判断に揃える)
 		if m.filerV.execPending {
 			m.filerV.execPending = false
 			if f := m.filerV.live(); m.filerV.visible() && f != nil { // 前景で起こしている間は閉じられないので、ここで見えていないことは無い
-				if w := f.ExecDone(msg.err); w != "" {
-					m.showWarning(firstLine(w))
+				if w := f.ExecDone(msg.Err); w != "" {
+					m.showWarning(app.FirstLine(w))
 				}
 			}
 			return m, m.maybeTick()
@@ -1418,8 +1373,8 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.lanV.execPending {
 			m.lanV.execPending = false
 			if lm := m.lanV.live(); lm != nil {
-				if w := lm.ExecDone(msg.err); w != "" {
-					m.showWarning(firstLine(w))
+				if w := lm.ExecDone(msg.Err); w != "" {
+					m.showWarning(app.FirstLine(w))
 				}
 			}
 			return m, m.maybeTick()
@@ -1431,7 +1386,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 🚨 viewer 表示中でも issuesView.notice へ回さない: notice はどのヘッダーも描かず、
 		// 次の打鍵で takeNotice されるまで画面に出ない (キーを押すまで失敗が黙殺される)。
 		// viewLines が viewer の窓にもトーストを合成するので、ここは常にトーストでよい。
-		// 🚨 起動対象は $VISUAL/$EDITOR で変わる (editorCommand) ので、文言でツール名を名指し
+		// 🚨 起動対象は $VISUAL/$EDITOR で変わる (extcmd.EditorCommand) ので、文言でツール名を名指し
 		// しない。job ログ・repo root だけは nvim 固定だが、失敗の主因は可変側 (typo した
 		// $EDITOR・PATH に無いエディタ) なので総称で出す。
 		//
@@ -1440,12 +1395,12 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// (復帰の境界で取り直す) が破れ、保存済みの編集が出ないまま古い内容を最新として表示する。
 		var exitErr *exec.ExitError
 		switch {
-		case msg.err == nil:
-		case errors.As(msg.err, &exitErr):
-			m.showWarning("エディタが異常終了しました: " + firstLine(msg.err.Error()))
+		case msg.Err == nil:
+		case errors.As(msg.Err, &exitErr):
+			m.showWarning("エディタが異常終了しました: " + app.FirstLine(msg.Err.Error()))
 		default:
 			// 起動失敗はファイルが変わっていないので取り直さない
-			m.showWarning("エディタを開けませんでした: " + firstLine(msg.err.Error()))
+			m.showWarning("エディタを開けませんでした: " + app.FirstLine(msg.Err.Error()))
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.issuesOv.reloadAfterEdit(), m.maybeTick())
@@ -1639,7 +1594,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "ctrl+f" {
 		key = "right"
 	}
-	key = normalizeSpaceKey(key)
+	key = app.NormalizeSpaceKey(key)
 	// バックグラウンドビルドの完成ダイアログ。r で確認なしに再起動する (ユーザー要望 2026-08-01)。
 	//
 	// 🚨 出ている間はキーを 1 つ飲んで必ず閉じる (r 以外は「今はしない」)。素通しにすると、
@@ -1756,7 +1711,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// w = 直近の警告/エラーをクリップボードへコピー (issue 026)。トーストは数秒で消えるが
 	// lastWarning は保持しているので消えた後でもコピーできる。ghErr (CI 取得失敗の sticky
 	// 警告) は lastWarning に無くても hint に出続けているので fallback で拾う。tmux popup 内では
-	// copy-mode に入れないため、pbcopy 直書きの copyToClipboard が唯一の取り出し口 (y/Y と同じ)。
+	// copy-mode に入れないため、pbcopy 直書きの extcmd.CopyToClipboard が唯一の取り出し口 (y/Y と同じ)。
 	if key == "w" {
 		warn := m.lastWarning
 		if warn == "" && m.ghErr != nil {
@@ -1820,10 +1775,10 @@ func (m *browseModel) applyListMotion(mo listnav.Motion) tea.Cmd {
 	prev := m.offset
 	switch mo {
 	case listnav.Down:
-		m.cursor = clampIdx(m.cursor+1, len(m.commits))
+		m.cursor = app.ClampIdx(m.cursor+1, len(m.commits))
 		m.ensureCursorVisible()
 	case listnav.Up:
-		m.cursor = clampIdx(m.cursor-1, len(m.commits))
+		m.cursor = app.ClampIdx(m.cursor-1, len(m.commits))
 		m.ensureCursorVisible()
 	case listnav.HalfDown:
 		m.offset = m.clampOffset(m.offset + listnav.Half(m.pageSize()))
@@ -1834,7 +1789,7 @@ func (m *browseModel) applyListMotion(mo listnav.Motion) tea.Cmd {
 		m.glide.Stop()
 		return nil
 	case listnav.Bottom:
-		m.cursor = clampIdx(len(m.commits)-1, len(m.commits))
+		m.cursor = app.ClampIdx(len(m.commits)-1, len(m.commits))
 		m.ensureCursorVisible()
 		m.glide.Stop()
 		return nil
@@ -2073,7 +2028,7 @@ func loadLogData(opts *Options, colored, oneline bool) (logData, error) {
 func (m *browseModel) reloadLog(keepView bool, failPrefix string) (added int, cmd tea.Cmd, ok bool) {
 	d, err := loadLogData(m.opts, m.colored, m.oneline)
 	if err != nil {
-		m.showWarning(failPrefix + firstLine(err.Error()))
+		m.showWarning(failPrefix + app.FirstLine(err.Error()))
 		return 0, nil, false
 	}
 	added, cmd = m.applyLogData(d, keepView)
@@ -2157,7 +2112,7 @@ func (m *browseModel) applyLogData(d logData, keepView bool) (added int, cmd tea
 		if newCursor >= 0 {
 			m.cursor = newCursor
 		} else {
-			m.cursor = clampIdx(newTop, len(commits)) // カーソルのコミットだけ消えた (amend 等)
+			m.cursor = app.ClampIdx(newTop, len(commits)) // カーソルのコミットだけ消えた (amend 等)
 		}
 	case newCursor >= 0:
 		// 画面先頭は消えたがカーソルのコミットは残っている: 選択を保って画面内へ収める
@@ -3015,8 +2970,8 @@ func (m *browseModel) openCommitURL() tea.Cmd {
 // 4 箇所で複製されていたのを一本化)。失敗トーストは lastWarning を汚さない (コピー対象の
 // 警告を上書きして w の再試行を潰さないため、showWarning は通さない)。
 func (m *browseModel) copyWithToast(text, successMsg string) {
-	if err := copyToClipboard(text); err != nil {
-		m.toast.Show(clipboardFailText(err), false)
+	if err := extcmd.CopyToClipboard(text); err != nil {
+		m.toast.Show(app.ClipboardFailText(err), false)
 		return
 	}
 	m.toast.Show(successMsg, true)
@@ -3255,7 +3210,7 @@ func (m *browseModel) openURLCmd(url string) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		return openURLMsg{err: openInBrowser(url)}
+		return extcmd.OpenURLMsg{Err: extcmd.OpenInBrowser(url)}
 	}
 }
 
@@ -3286,7 +3241,7 @@ func (m *browseModel) openJobLogInEditor() tea.Cmd {
 	//
 	// 🚨 ここは $EDITOR を見ずに nvim 固定にする: 開くのが実ファイルでなく標準入力 (`-`) で、
 	// scratch 化も vim 系の -c/-R に依存しているため、任意のエディタでは成立しない
-	// (code - / nano - は不可)。実ファイルを開く経路の $EDITOR 対応は editorCommand の doc を参照。
+	// (code - / nano - は不可)。実ファイルを開く経路の $EDITOR 対応は extcmd.EditorCommand の doc を参照。
 	cmd := exec.Command("nvim", "-R", "-c", "setlocal buftype=nofile noswapfile nomodifiable", "-")
 	cmd.Stdin = strings.NewReader(jobLogText(lines))
 	// 🚨 ここは注記で免除しない。Stdin が *os.File でない (strings.Reader) ため os/exec は
@@ -3294,7 +3249,7 @@ func (m *browseModel) openJobLogInEditor() tea.Cmd {
 	// 違い「パイプが無いから安全」が成り立たず、nvim の孫が読み口を握ったまま nvim だけ終わると
 	// Wait が戻らない。ctx が無く kill する主体もいないので、上限は WaitDelay しかない。
 	cmd.WaitDelay = subproc.WaitDelay
-	return runEditorCmd(cmd)
+	return extcmd.RunEditorCmd(cmd)
 }
 
 // openJob はパネルで選択中の job の詳細ページをブラウザで開く。
@@ -4214,13 +4169,6 @@ func (m *browseModel) hintWidth() int {
 		return max(m.width-2, 1)
 	}
 	return m.width
-}
-
-func clampIdx(i, total int) int {
-	if total <= 0 {
-		return 0
-	}
-	return min(max(i, 0), total-1)
 }
 
 // RunBrowse は TUI を実行し、最終状態のモデルを返す。Alt Screen を使うため、

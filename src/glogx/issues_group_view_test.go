@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"glogx/issues"
 )
@@ -106,7 +107,7 @@ func TestIssuesViewGroupParentActionsAreNoopWithNotice(t *testing.T) {
 		if *copied != "" || len(opened) > 0 {
 			t.Fatalf("親行で %q がコピー・起動した: copied=%q opened=%v", key, *copied, opened)
 		}
-		if text, kind := v.takeNotice(); text == "" || kind != noticeRefused {
+		if text, kind := v.takeNotice(); text == "" || kind != app.NoticeRefused {
 			t.Fatalf("親行で %q が断りの notice を出していない: %q (kind=%v)", key, text, kind)
 		}
 	}
@@ -612,7 +613,7 @@ func TestIssuesViewMergedParentRowOpensBodyWithO(t *testing.T) {
 	if v.body == nil || !strings.Contains(strings.Join(v.body.Lines(80, false), "\n"), "001 body") {
 		t.Fatalf("開いた本文が親 issue のものでない")
 	}
-	if text, kind := v.takeNotice(); kind == noticeRefused || kind == noticeError {
+	if text, kind := v.takeNotice(); kind == app.NoticeRefused || kind == app.NoticeError {
 		t.Fatalf("o が断り / 失敗の notice を出した: %q (kind=%v)", text, kind)
 	}
 	if v.groups.manual[parent.GroupKey] != expanded {

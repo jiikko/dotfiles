@@ -19,15 +19,16 @@ import (
 // 増やすときは、そのファイルが本当に外部プロセスの起動口であるべきかを考える
 // (既存の入口 = external_commands.go / subproc に寄せられないか)。
 var execCmdAllow = map[string]string{
-	"external_commands.go": "ブラウザ / エディタ / クリップボードの起動口",
-	"gitlog.go":            "git 実行の共通入口 (WaitDelay は runGitCmd が張る)",
-	"open_workspace.go":    "e / E の前景エディタ・ファイラー起動 (runEditorCmd = tea.Exec + foreground.Exec)",
-	"tui.go":               "job ログを nvim の scratch で開く前景実行",
+	"external_commands.go":      "filer / lan の前景実行と git の起動口",
+	"internal/extcmd/extcmd.go": "ブラウザ / エディタ / クリップボードの起動口 (main と画面のパッケージが共有する。issue 817)",
+	"gitlog.go":                 "git 実行の共通入口 (WaitDelay は runGitCmd が張る)",
+	"open_workspace.go":         "e / E の前景エディタ・ファイラー起動 (runEditorCmd = tea.Exec + foreground.Exec)",
+	"tui.go":                    "job ログを nvim の scratch で開く前景実行",
 }
 
 // 下限は実件数のすぐ下に置く (0 や 1 だと「走査が壊れて対象を取りこぼした」が緑で通る)。
 // 実測 2026-09-09: seen=9、enforced=2 (tui.go の job ログ nvim / gitlog.go の runGitTimeout)。
-// 実測 2026-09-24: seen=7、enforced=2。editorCommand の exec.Command 2 か所を github.com/jiikko/dotfiles/src/tuikit/editor へ移した
+// 実測 2026-09-24: seen=7、enforced=2。extcmd.EditorCommand の exec.Command 2 か所を github.com/jiikko/dotfiles/src/tuikit/editor へ移した
 // (glogx と pro-con でエディタの解決を 1 実装にするため) ので seen だけが 2 減った。
 // 🚨 enforced の 2 件は**注記を付けてはいけない** (理由は boundarycheck.Spec の EnforcedFloor の doc)。
 const (

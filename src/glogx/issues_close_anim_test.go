@@ -6,11 +6,12 @@ package main
 // 畳まれている前提で書かれているため)。ここだけ明示的に on にして演出そのものを見る。
 
 import (
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"glogx/internal/app"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 )
 
 // openAnimView は演出を on にしたまま viewer を開いた状態を作る。
@@ -175,15 +176,15 @@ func TestIssuesCloseDefersTeardownUntilSettled(t *testing.T) {
 	root, path := watchTree(t, "# a\n")
 	v := openedWatchView(t, root, path)
 	v.closeAnimOff = false // このテストだけ演出を on に戻す
-	gen := v.watch.gen
+	gen := v.watch.Gen
 
 	v.close()
-	if v.watch.gen != gen {
+	if v.watch.Gen != gen {
 		t.Fatal("演出中に見張りを畳んだ (逆再生の途中で中身が死ぬ)")
 	}
 	advance(issuesCloseDuration)
 	v.settleClose()
-	if v.watch.gen == gen {
+	if v.watch.Gen == gen {
 		t.Fatal("着地しても見張りが畳まれていない (watcher が残る)")
 	}
 }
@@ -261,7 +262,7 @@ func TestIssuesReopenDuringCloseDoesNotDoubleWatch(t *testing.T) {
 	root, path := watchTree(t, "# a\n")
 	v := openedWatchView(t, root, path)
 	v.closeAnimOff = false
-	gen := v.watch.gen
+	gen := v.watch.Gen
 
 	v.close()
 	v.toggle(root) // 逆再生の途中で開き直す
@@ -271,7 +272,7 @@ func TestIssuesReopenDuringCloseDoesNotDoubleWatch(t *testing.T) {
 	if v.closing {
 		t.Fatal("閉じる演出が残ったまま開き直した (次の settleClose が開いた viewer を畳む)")
 	}
-	if v.watch.gen == gen {
+	if v.watch.Gen == gen {
 		t.Fatal("前の見張りを畳まずに開き直した (watcher が二重に居座る)")
 	}
 }

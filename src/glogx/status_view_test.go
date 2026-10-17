@@ -10,9 +10,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
 	"glogx/internal/app"
 	"glogx/internal/term"
+
+	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
 )
 
 // --- ヘルパー ---
@@ -356,7 +357,7 @@ func TestStatusPathIsSanitizedForDisplayOnly(t *testing.T) {
 func TestStatusNoticeIsSanitized(t *testing.T) {
 	const esc, bel = "\x1b", "\a"
 	v := newTestStatusView(t, statusRec("## master", "?? a.txt"))
-	v.setNotice("evil"+esc+"]0;pwned"+bel+".txt の変更を捨てました", noticeOK)
+	v.setNotice("evil"+esc+"]0;pwned"+bel+".txt の変更を捨てました", app.NoticeOK)
 	if hasTerminalControl(v.notice) {
 		t.Errorf("通知に制御シーケンスが残った: %q", v.notice)
 	}

@@ -6,16 +6,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"ratelimit/usage"
 
-	"github.com/jiikko/dotfiles/src/tuikit/editor"
 	"subproc"
-	"subproc/clipboard"
 
 	"glogx/internal/app"
 	"mac-lan-manager/lanmgr"
@@ -169,7 +166,7 @@ func gitDirMarker(markers ...string) (string, error) {
 // abort 自体が失敗したら「元に戻した」とは主張せず (壊れた状態が残っている可能性がある)、
 // 手動復旧を促す。out は pull --rebase の出力 (conflict 内容の提示用)。
 func abortRebase(out []byte) error {
-	conflict := firstLine(strings.TrimSpace(string(out)))
+	conflict := app.FirstLine(strings.TrimSpace(string(out)))
 	if _, err := runGitTimeout("rebase", "--abort"); err != nil {
 		return fmt.Errorf("conflict のため rebase 中断を試みましたが失敗しました。手動で `git rebase --abort` してください: %s", conflict)
 	}
@@ -331,80 +328,8 @@ func parseTmuxPrefix(out string) string {
 	return ""
 }
 
-// openInBrowser はテストで実ブラウザを開かないための差し替え点。
-var openInBrowser = func(url string) error {
-	switch runtime.GOOS {
-	case "darwin":
-		// open は URL を LaunchServices へ渡して即 detach する (ブラウザの終了を待たない) ので
-		// timeout も WaitDelay も要らない。Run() なので stdout/stderr は /dev/null 直結でパイプも無い。
-		return exec.Command("open", url).Run() // subproc: no-waitdelay — 即 detach・パイプ無し
-	default:
-		// xdg-open は環境によってブラウザプロセスへ直接 exec して終了まで戻らないことが
-		// ある (既知挙動)。tea.Cmd の goroutine で同期 Run するため時間で区切る (issue 029 P3)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		// subproc: no-waitdelay — Run() は stdout/stderr が /dev/null 直結でパイプを作らないため、
-		// 「孫がパイプを握って Wait が戻らない」形が起きない (ctx の kill だけで足りる)。
-		return exec.CommandContext(ctx, "xdg-open", url).Run() // subproc: no-waitdelay
-	}
-}
-
-// copyToClipboard はテストで実クリップボードを触らないための差し替え点。本体と失敗モード (OSC52 の exit 0・xclip のハング・
-// timeout の分け方) は subproc/clipboard の doc。
-var copyToClipboard = clipboard.Copy
-
-// editorCommand は実ファイルを開くエディタのコマンドを組む。**解決の規則 ($VISUAL → $EDITOR → nvim、
-// 値は空白で語分割、quote は解釈しない) は github.com/jiikko/dotfiles/src/tuikit/editor が持つ** (pro-con と共有。2 実装にしない)。
-// 起動に失敗したときは tui.go の editorClosedMsg がトーストで理由を出す。
-//
-// 🚨 この経路は「実ファイルを 1 つ開く」ものにだけ使う。nvim を直に呼んでいる他の 2 箇所
-// (tui.go の job ログ = 標準入力 + -c の scratch バッファ / open_workspace.go の `nvim .` =
-// ディレクトリを開く) は nvim 固有の機能に依存しており、任意の $EDITOR では成立しない。
-//
-// 🚨 **前提: 起動したプロセスの終了 = 編集の完了**。glogx は tea.Exec (foreground.Exec) で TUI を中断して
-// 子プロセスを待ち、戻った境界で一覧と本文を取り直す (tui.go の editorClosedMsg)。GUI エディタを
-// `-w` / `--wait` なしで指定すると即座に戻るので、この前提が破れる。git の GIT_EDITOR と同じ要求で、
-// 直し方も同じ (EDITOR="code -w" のように待たせる)。
-//
-// 破れたときの劣化は「壊れる」ではなく「反映が遅れる」に留まる — issues viewer を開いている間は
-// issues_watch.go が別プロセスの編集も拾うため (閉じている間は次に開いた時点で必ず読み直す)。
-//
-// 🚨 遅れは「気づくまで」+「確かめるまで」の 2 段でできている。handleWatch は変化を見つけた
-// 1 回目では pending に置くだけで読まず (書きかけを読まないため)、次の観測で安定を確かめてから
-// 反映する。2 回目の周期は issuesWatchVerifyPoll = 300ms なので、どの経路でも +300ms 乗る:
-//   - fsnotify が動く: イベント (issuesWatchDebounce = 200ms でバーストを畳む) + 300ms ≒ 0.5s。
-//     取りこぼしの保険が issuesWatchIdlePoll = 30s
-//   - watcher を作れない (fsnotify.NewWatcher 失敗 / 死んで閉じた後): issuesWatchBlindPoll = 1s
-//     が唯一の経路 → ≒ 1.3s
-//   - watcher はあるがイベントが届かない (FS が無音 / 監視ディレクトリの Add が全滅): 保険の
-//     30s が唯一の経路 ≒ 30.3s = 最悪ケース。🚨 Add 失敗でも watcher は nil にならないので
-//     「生きているが聾」になる。ただし 30s の観測が変化を拾えば取り直し → startWatch が Add を
-//     再試行するので、露出は永久ではなく「≤30s 聾、その後回復」
-//
-// 🚨 検出して警告する案は採らない。「子プロセスが早く終わった」の閾値がマジックナンバーになり、
-// 正当に速いケース (既に開いているウィンドウへ渡すだけ) を誤検知する。
-func editorCommand(path string) *exec.Cmd {
-	// 返した Cmd は runEditorCmd (tea.Exec + foreground.Exec) が前景で起動する。ctx が無く、端末を継承する
-	// ので os/exec はパイプも copy goroutine も作らない (Wait が孫に握られる形が起きない)。
-	return editor.Command(path, nil) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
-}
-
-// readonlyCommand は path を読み取り専用で開く nvim (issues viewer のジャンプモードの Enter)。
-// 🚨 nvim 固定: 読み取り専用は vim 系の -R に依存する (openJobLogInEditor と同じ判断)。
-// line>0 ならその行へ。
-// 🚨 path の前に "--" を置く: 以降を必ずファイル名として読ませる (解決済みの絶対パスなので "-" / "+" で
-// 始まることは無いが、引数の解釈を path の中身に依存させない)。
-func readonlyCommand(path string, line int) *exec.Cmd {
-	args := []string{"-R"}
-	if line > 0 {
-		args = append(args, "+"+strconv.Itoa(line))
-	}
-	args = append(args, "--", path)
-	return exec.Command("nvim", args...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
-}
-
 // filerExecCommand は treefiler の ! / s / e が頼んだプロセス (選んだフォルダで、$f に選んだパスを入れて起こす)。
-// 返した Cmd は runEditorCmd (tea.Exec + foreground.Exec) が前景で起動する。免除の理由は editorCommand と同じ
+// 返した Cmd は extcmd.RunEditorCmd (tea.Exec + foreground.Exec) が前景で起動する。免除の理由は extcmd.EditorCommand と同じ
 // (前景の対話プロセスで ctx が無く、端末を継承するのでパイプも copy goroutine も作らない)。
 func filerExecCommand(r filer.ExecRequest) *exec.Cmd {
 	cmd := exec.Command(r.Argv[0], r.Argv[1:]...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
@@ -413,8 +338,8 @@ func filerExecCommand(r filer.ExecRequest) *exec.Cmd {
 	return cmd
 }
 
-// lanExecCommand は mac-lan-manager の s (ssh) / o (画面共有) が頼んだプロセス。返した Cmd は runEditorCmd (tea.Exec + foreground.Exec) が
-// 前景で起動する。免除の理由は editorCommand と同じ (ssh はパスワードとホスト鍵の確認に端末が要る。ctx が無く、端末を継承するのでパイプも
+// lanExecCommand は mac-lan-manager の s (ssh) / o (画面共有) が頼んだプロセス。返した Cmd は extcmd.RunEditorCmd (tea.Exec + foreground.Exec) が
+// 前景で起動する。免除の理由は extcmd.EditorCommand と同じ (ssh はパスワードとホスト鍵の確認に端末が要る。ctx が無く、端末を継承するのでパイプも
 // copy goroutine も作らない)。
 func lanExecCommand(r lanmgr.ExecRequest) *exec.Cmd {
 	argv := r.RunArgv()                       // 初期設定の手順は、端末を渡す前に板を出す

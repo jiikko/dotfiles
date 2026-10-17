@@ -3,8 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
-	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"io"
 	"os/exec"
 	"slices"
@@ -12,9 +10,14 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/spinner"
+
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // pending なコミットは「どんな状況でも」追い続ける: パネルを閉じても、そもそも一度も開いて
@@ -274,8 +277,8 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("job フォーカス中の o で Cmd が返らない")
 	}
-	if msg := cmd(); msg.(openURLMsg).err != nil {
-		t.Fatalf("openURLMsg.err = %v", msg.(openURLMsg).err)
+	if msg := cmd(); msg.(extcmd.OpenURLMsg).Err != nil {
+		t.Fatalf("openURLMsg.err = %v", msg.(extcmd.OpenURLMsg).Err)
 	}
 	if *opened != "https://github.com/o/r/runs/1" {
 		t.Errorf("開いた URL = %q", *opened)
@@ -652,8 +655,8 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	}
 	// エラーで閉じたら失敗トースト、成功なら無し。🚨 文言はツール名を名指ししない
 	// (起動対象は $VISUAL/$EDITOR で変わる。ここの job ログ経路だけは nvim 固定だが、
-	// トーストは editorClosedMsg で共通なので総称になる)。原因は err がそのまま載る
-	m.Update(editorClosedMsg{err: errors.New("nvim: not found")})
+	// トーストは extcmd.EditorClosedMsg で共通なので総称になる)。原因は err がそのまま載る
+	m.Update(extcmd.EditorClosedMsg{Err: errors.New("nvim: not found")})
 	if m.toast.OK() || !strings.Contains(m.toast.Text(), "エディタを開けません") ||
 		!strings.Contains(m.toast.Text(), "nvim: not found") {
 		t.Errorf("起動失敗の失敗トーストが出ない: %q ok=%v", m.toast.Text(), m.toast.OK())
@@ -1192,7 +1195,7 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 
 // エディタが 0 以外で終了したとき (nvim の :cq 等) は、ファイルが保存済みなので取り直す。
 // 🚨 起動失敗 (PATH に無い等) と分けるのが要点。混ぜて「エラーなら reload しない」にすると、
-// 保存済みの編集が出ないまま古い内容を最新として表示する (editorClosedMsg の doc)。
+// 保存済みの編集が出ないまま古い内容を最新として表示する (extcmd.EditorClosedMsg の doc)。
 func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	m.issuesOv = *loadedView(realIssue(t))
@@ -1204,7 +1207,7 @@ func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	}
 	// 🚨 戻り値の cmd != nil では検証にならない (maybeTick も Cmd を返すので、reload を
 	// 飛ばす変異が通ってしまった)。取り直しが実際に走ったか = scanning が立ったかを見る。
-	m.Update(editorClosedMsg{err: exitErr})
+	m.Update(extcmd.EditorClosedMsg{Err: exitErr})
 	if !m.issuesOv.scanning {
 		t.Error("異常終了で取り直しが走らない (保存済みの編集が反映されない)")
 	}
@@ -1215,7 +1218,7 @@ func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	// 起動失敗はファイルが変わっていないので取り直さない (分岐が効いていること)
 	m2 := newTestBrowse(t, 1, nil, nil)
 	m2.issuesOv = *loadedView(realIssue(t))
-	m2.Update(editorClosedMsg{err: errors.New("exec: \"zz\": executable file not found in $PATH")})
+	m2.Update(extcmd.EditorClosedMsg{Err: errors.New("exec: \"zz\": executable file not found in $PATH")})
 	if m2.issuesOv.scanning {
 		t.Error("起動失敗で取り直しが走った (ファイルは変わっていないので不要)")
 	}

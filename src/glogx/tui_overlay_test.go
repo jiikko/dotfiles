@@ -3,18 +3,22 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+
 	"glogx/issues"
 	"ratelimit/usage"
 
-	tea "charm.land/bubbletea/v2"
+	"glogx/internal/app"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestBrowseCopyURL(t *testing.T) {
@@ -967,7 +971,7 @@ func TestIssuesViewerReloadsAfterEditorCloses(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# 001 feat: 編集後\n\n- [x] やった\n- [ ] まだ\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, cmd := m.Update(editorClosedMsg{})
+	_, cmd := m.Update(extcmd.EditorClosedMsg{})
 	if cmd == nil {
 		t.Fatal("editorClosedMsg で取り直しの Cmd が返らない")
 	}
@@ -1322,7 +1326,7 @@ func TestIssuesViewerCopyFailureToast(t *testing.T) {
 }
 
 // viewer の断りの文 (末尾で J など) も lastWarning を汚さない (issue 663)。エラー詳細を含む
-// 通知 (noticeError) だけが積まれる。
+// 通知 (app.NoticeError) だけが積まれる。
 func TestIssuesViewerRefusalKeepsLastWarning(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.width, m.height = 100, 16
@@ -1342,7 +1346,7 @@ func TestIssuesViewerRefusalKeepsLastWarning(t *testing.T) {
 			t.Fatalf("%s: 断りの文が直前の警告を上書きした: %q", key, m.lastWarning)
 		}
 	}
-	m.deliverNotice("本文を読めませんでした: EACCES", noticeError)
+	m.deliverNotice("本文を読めませんでした: EACCES", app.NoticeError)
 	if !strings.Contains(m.lastWarning, "本文を読めませんでした") {
 		t.Errorf("noticeError が lastWarning に積まれていない: %q", m.lastWarning)
 	}
