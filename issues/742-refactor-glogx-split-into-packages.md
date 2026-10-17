@@ -70,15 +70,111 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
 - 手元の `~/Library/Caches/go-build` は 2026-10-17 に 54 GB (今日 15 GB・昨日 23 GB の項目)。最大級の項目は glogx のテスト版の
   コンパイル結果 (1 つ 26 MB 前後。worktree のパスが中に埋まっている)。並行セッションが worktree ごとに glogx を直すと、この単位で溜まる
 - **分割で減る量は未実測**。画面のパッケージだけを直したときに main (`tui.go` など) を作り直すかは、依存先の export data が変わるかで
-  決まる (行がずれるだけで export data が変わらなければ、main は作り直さない見込み)。**着手時に、土台と doctor を出した段で同じ計測を回し、
+  決まる、と書いていたが、下の「実測 2」で依存先が変われば main は必ず作り直しになると分かった (2026-10-17)。**着手時に、土台と doctor を出した段で同じ計測を回し、
   `doctor_view.go` に 1 行足したときの増分を before (27.5 MB) と比べる**。`tui.go` を直したときは main を作り直すので、main に残る量が増分の下限になる
 - 計測の手順 (着手時に使い回す): 使い捨ての worktree と `GOCACHE=$(mktemp -d)` で `go test -race -count=1 -run '^$' .` を 2 回回してから、
   対象のファイルの先頭に `// cache probe` を 1 行足して 3 回目を回し、`du -sk "$GOCACHE"` の差を見る
-- 🚨 27.5 MB の内訳 (パッケージのコンパイル結果か、テストのバイナリのリンクか) は切り分けていない (反証レビューの指摘)。テストを main に残す方針なら、
-  どのパッケージを直しても main のテストのバイナリは作り直しになり、その分が増分の下限として残りうる。着手時の計測では `go test -x` の
-  compile / link の行か、増えた項目の種別を見て内訳を出す
+- 27.5 MB の内訳: 増えた項目の最大のもの (27,549,862 B) を含む上位 3 つは `!<arch>` のアーカイブ (パッケージのコンパイル結果) で、
+  リンクの結果は GOCACHE に入っていない (2026-10-17 の 2 回目の反証レビューが `go test -race -run '^$' -x .` で確かめた)。増分の実体は
+  コンパイル結果なので、作り直すパッケージの大きさで決まる
 
-## 対応方針 (案。着手時に設計のレビューを通して決める)
+## 試算と設計 (2026-10-17。目的: 開発中のビルドキャッシュの増え方を減らす)
+
+### 実測 1: `make test` が glogx で作る版ごとの増分
+
+使い捨ての worktree と空の GOCACHE で、`src/glogx/Makefile` の `test:` と同じ 3 種を回し、`doctor_view.go` の先頭に 1 行足して回し直した:
+
+| 版 | 空の GOCACHE から | 1 行の変更で |
+|---|---|---|
+| `go test -race` (Makefile の 1 本目) | 228 MB | +27.5 MB |
+| `go test` (-race なし。2 本目の `TestFrameAllocBudget` の 1 本のため) | 207 MB | +24.2 MB |
+| `go vet` | 2.4 MB | +0.0 MB |
+| **1 行の変更ごとの計** | | **+51.7 MB** |
+
+- 2 本目は `-run '^TestFrameAllocBudget$$'` の 1 本のために、パッケージ全体を -race なしでもう一度コンパイルしている。1 行の変更ごとの増分の
+  **47% がこの 1 本の分**。予算の検査は「1 フレームの確保の回数」が -race の計装で揺れるので -race なしで判定している (Makefile のコメント)。
+  1 フレームの**バイト数**の予算は 1 本目 (-race) の側で判定していて、2 本目が見るのは**回数**だけ (`frame_alloc_test.go` の TestFrameAllocBudget)
+- CI も同じ Makefile を通す (`.github/workflows/_go-project.yml` の `make -C ${{ inputs.dir }} test`)。2 本目を外すと CI からも回数の判定が消える
+- 測り方は上の節と同じ (`tmp/742-cache2-2026-10-17/measure.sh` で回し、結果をここに移して消した)
+
+### 実測 2: Go は依存先が変わると、import する側を必ず作り直す
+
+小さな module (パッケージ `a` と、それを import する main) で、`a` に 1 行足す・インライン化されない関数 (`//go:noinline`) の本体の
+文字列だけを変える、のどちらでも `go build -race -x` の compile は 2 回 (a と main) だった。つまり**分割しても main は毎回作り直しになり、
+減るのは「直していないパッケージ」の分だけ**。import の連鎖の上にいるパッケージほど、作り直しの範囲が広い
+
+### 実測 3: 束ごとの大きさと依存 (go/types で非テストのファイル間の参照を数えた。使い捨ての道具)
+
+| 束 (ファイル) | 非テスト | テスト | 計 (全体比) |
+|---|---|---|---|
+| main (`tui.go`・`gitlog*`・`github.go`・`fullscreen.go`・overlay 類・`main.go` など) | 9,962 | 16,918 | 26,880 (44%) |
+| doctor (`doctor_*.go`) | 5,152 | 7,076 | 12,228 (20%) |
+| issues (`issues_*.go`) | 3,959 | 7,219 | 11,178 (18%) |
+| status (`status_view.go`・`worktree_status.go`) | 1,712 | 1,985 | 3,697 (6%) |
+| 描画の部品 (`render`・`width`・`box`・`terminal`・`scroll_glide`・`line_cache`) | 898 | 1,444 | 2,342 (4%) |
+| usage (`usage_*.go`) | 594 | 1,185 | 1,779 (3%) |
+| ratelimit / filer / lan / `external_commands.go` | 241 / 313 / 315 / 421 | 675 / 469 / 425 / 0 | 各 1〜2% |
+
+- 画面 → main の参照は、ほとんどが少数の共通の部品: `timeNow`・通知の種類 (`notice*`)・全画面の ID (`fullScreenID` / `crossTarget`)・
+  再開の記憶 (`screenMemory`)・後片付けの待ち (`cleanupLatch`)・キャッシュの書き込み (`writeAtomic` / `cacheBaseDir`)・小さな道具
+  (`firstLine` / `clampIdx` / `normalizeSpaceKey`)・`watchChain`・`urlPicker`、と最下行の案内 (`status_view.go` の `hintItem` / `fitHintItems`)
+- 🚨 **`render.go` は純粋な描画の部品ではない**: git log の行の描画のために `gitlog.go` / `github.go` の型とそのフィールド・定数 (`Commit` / `CIState` / `State*` /
+  `DecorColors` など。フィールドまで数えて 29 種、render.go と土台だけでコンパイルしたときの未定義の名前は 12 種・34 回) を参照する。土台へ出すには、ANSI・`paint`・幅の部品と、log の行の描画を割る必要がある
+- filer と lan は `browseModel` のメソッド (`quit` / `toggleUsage` / `deliverNotice` / `maybeTick` / `openFullScreen`) と、`tui.go` の関数・差し替え点
+  (`currentDir` / `runEditorCmd`) を直接呼ぶので、画面から main へ頼む口 (interface) を作るまで切り出せない
+- **画面のテストの大半は `browseModel` を作る**: doctor 7,076 行のうち 5,543 行、issues 7,219 行のうち 4,915 行、status 1,985 行のうち 1,512 行
+  (`worktree_status` のテストは作らない)、usage 1,185 行のうち 984 行、ratelimit・filer・lan は全部 (ファイル単位で `browseModel` / `newTestBrowse` を含むかを数えた。
+  ファイルの一部だけが作る場合も全部を数えているので、上限の見積もり)。これらは画面のパッケージへ移せない (main の型を使う) ので、
+  テストを各パッケージへ移すなら「画面だけのテスト」と「main と組み合わせるテスト」に書き分ける必要がある
+
+### 試算: 1 行の変更ごとの増分 (-race 版。行数に比例すると仮定した見積もりで、実測ではない)
+
+今は 60,963 行で +27.5 MB (1 行あたり約 0.45 KB)。依存先が変わると main が作り直しになる (実測 2) ので、作り直すものの行数の和で
+見積もる。直した画面は「本体の版」(main が import する) と、テストを持つなら「テスト込みの版」の 2 回コンパイルされる。main はテスト込みの 1 回:
+
+| 案 | doctor を直したとき | `tui.go` を直したとき |
+|---|---|---|
+| 今 | 27.5 MB | 27.5 MB |
+| A: 画面を分け、テストは main に残す (issue 741 と同じ) | 約 24 MB (−13%。doctor 5,152 + main 47,986 行) | 約 22 MB (−21%。main 47,986 行) |
+| B: A に加えて、`browseModel` を作らない画面のテスト (約 4,500 行) を各パッケージへ移す | 約 25 MB (−9%。doctor が 2 回コンパイルされ、A より悪い) | 約 20 MB (−29%) |
+| C: 画面のテストを全部、画面のパッケージへ移す (main と組み合わせるテストは書き分ける) | 約 21 MB (−25%。doctor 5,152 + 12,228 + main 28,402 行) | 約 13 MB (−53%。main 28,402 行) |
+| D: 2 本目の -race なしの run を毎回の `make test` から外す (分割と独立) | 1 行ごとの計 51.7 MB → 27.5 MB (−47%) | 同じ |
+
+- main の行数の内訳: A の 47,986 = main の非テスト 9,962 + 後回しの filer 313・lan 315 + テスト全部 37,396。C の 28,402 = 9,962 + 313 + 315 +
+  main のテスト 16,918 + filer・lan のテスト 894
+- 🚨 C は楽観側: 画面のテストのうち `browseModel` と組み合わせる部分 (doctor 5,543 行・issues 4,915 行など) は書き分けても main に残るものがあり、
+  main は 28,402 行より大きくなる。どれだけ画面だけのテストに書き直せるかは、着手時に数える
+- A〜C は -race 版だけの数字。-race なしの版 (2 本目) が残る限り、同じ割合でもう 1 つ乗る
+- **費用に対する効き目は D が最大で、分割 (A) 単独の効き目は小さい**。分割でキャッシュを大きく減らすには、テストを画面ごとに書き分ける (C) まで要る。
+  中途半端にテストを移す (B) と、移した画面を直したときはかえって増える (その画面を 2 回コンパイルするのに、main 側はあまり減らない)
+- D で素通りになるもの: 1 フレームの確保の**回数**の上限だけ (バイト数の上限は -race の 1 本目に残る)。回数の余裕は 3 回前後と小さく
+  (`fullscreen.go` の issues-40 は 2 回)、小さな確保が増える退行は、バイト数の余裕 (数%) に吸収されて回数の側でしか見えないことがある。
+  CI も同じ Makefile を通すので、外すと CI からも消える。外すなら回数の判定を別の口 (例: 新設の `make test-budget` を CI のジョブにだけ置く) へ移す。
+  `make test-budget` は今は無い。issue 323 の変異 (doctor の `lines()` に行ごとの確保を足す) が、外した後もバイト数の判定だけで red になるかは未確認。
+  検査を外す判断なので、採るかはユーザーが決める (`~/.claude/rules/list-masked-failure-modes-before-removing-guard.md`)
+- 見積もりの前提 (行数に比例) は確かめていない。着手したら、段ごとに上の「計測の手順」で実測して置き換える
+
+### 設計 (案)
+
+| 層 | パッケージ (案) | 持つもの | 出すときの注意 |
+|---|---|---|---|
+| 0 | `internal/term` | ANSI と `paint` / `clipToWidth` / `stripANSI` / `wrapToWidth` (`render.go` の純粋な部分)・`width.go`・`box.go`・`terminal.go`・`scroll_glide.go`・`line_cache.go`・最下行の案内 (`hintItem` / `fitHintItems`) | `render.go` の log の行の描画は main に残す。depguard の render-pure (`**/render.go`) の掛かり方を確かめる |
+| 0 | `internal/gitdata` | `gitlog.go` / `github.go` の型 (`Commit` / `CIState` / `PRRef` …) と git・gh の実行 (`runGitTimeout` / `CommandRunner`) | そのままでは main 抜きで成り立たない: `Options` (`options.go`)・`sanitize*` / `dropEmojiVS16` (`terminal.go` → term へ出す)・`StateLoading` を参照する。`Options` を渡す形にするか、型だけを先に出す |
+| 0 | `internal/app` (名前は要検討) | `timeNow`・通知の種類・全画面の ID (ID だけ。開く処理 `openFullScreen` は main)・`screenMemory`・`cleanupLatch` (この 2 つは単独でコンパイルが通る)・キャッシュの書き込み・`firstLine` などの小さな道具・`watchChain` (先に `dirWatcher` の interface を `issues_watch.go` から出す) | forbidigo の `time.Now` の許可 (`path-except: tui\.go`) を `timeNow` の行き先に合わせる。`urlPicker` は `issuesRenderOpts` を使うので app ではなく issues へ |
+| 0 | `internal/extcmd` | `external_commands.go` と `codex_version.go` (`fetchInstalledCodexVersion` を使われる) | `cleanupLatch` (app)・`firstLine` / `lastLine`・`Repo` / `CommandRunner` (gitdata) を参照するので app と gitdata の後。テストの差し替え点 (パッケージ変数) をどちらに置くか |
+| 1 | `internal/doctor` → `internal/issues` → `internal/status` → `internal/usage` / `internal/ratelimit` | 各画面 | 大きい順 (=効き目の順) で、doctor は依存も最も少ない (main へは共通の部品だけ) |
+| — | 後回し | filer / lan | `browseModel` へ頼む口 (interface) を作ってから |
+| — | main | `tui.go` (`browseModel`)・git log の取得と監視・overlay 類・`fullscreen.go`・`main.go` / `options.go` | |
+
+- 段ごとの費用の目安 (main から呼ばれる名前 = 公開名にする数): 描画の部品 67 種・doctor 59・issues 49・status 35・ratelimit 26・
+  usage 21・extcmd 11 (filer 24・lan 23)。逆向き (画面から共通の部品へ) は doctor 31 種・issues 65 種ほど
+- 順番: 土台 (term → gitdata → app / extcmd) → doctor → issues → status → usage / ratelimit。1 段ごとに「計測の手順」で増分を測り、
+  見積もりと比べる。効き目が見積もりより小さければ、その段で止める判断もありうる
+- 下の「対応方針」「着手前に潰す罠」は 2026-10-12 の案。上の設計とは、`internal/ui` を term / app に分けた点だけが違う (土台を先に出す順・`hintItem` を先に出す・
+  JSON の罠・CI と lint の配線はそのまま使う)
+- 公開名の数 (67 / 59 / 49 …) は、main から各束の宣言を参照している名前 (フィールド・メソッドを含む) の種類の数で、検証は着手時に gopls rename の結果で行う
+
+## 対応方針 (2026-10-12 の案。着手時に上の設計と合わせて設計のレビューを通して決める)
 
 | 層 | パッケージ (案) | 持つもの |
 |---|---|---|
@@ -157,3 +253,13 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
 リンクか) を着手時に切り分けること・`doctor_cleanup_test.go` が固定名で読むテストのファイル。
 却下: 「`wantQuit` は存在しない」(`issues_view.go` の `issuesView.wantQuit` に在る) と「`tui.go` の 3 画面の型の参照は 12 回」
 (数え直すと doctorView 4・issuesView 5・statusView 5 の 14 回で本文どおり)
+
+## 反証レビュー (sonnet 1 本。2026-10-17 の「試算と設計」)
+
+束の行数・`browseModel` を作るテストの行数・D の 47%・A と C の算術・「画面は本体とテスト込みの 2 回、main はテスト込みの 1 回」の前提は
+反証できなかった。採用して直した: `urlPicker` (issues の型を使う) と `watchChain` (`dirWatcher` が要る) は app に置けない・gitdata と extcmd の
+未定義 (`Options` / `codex_version.go` ほか)・C は楽観側 (組み合わせのテストは main に残る)・A と C の main の行数の内訳・D は CI からも外れ、
+`make test-budget` は今は無い、素通りになるのは回数の上限だけ・status と usage のテストの数え直し・render.go の数え方・前の節の
+「main は作り直さない見込み」の否定・27.5 MB の内訳 (コンパイル結果。リンクは入らない)。
+却下: 「A の main は 47,358 行」(後回しの filer・lan の 628 行を main に数えるかの違い。本文に内訳を書いた)・「`runEditorCmd` は関数」は
+差し替え点のパッケージ変数 (`var runEditorCmd = func…`、tui.go) で、メソッドではない点は採った
