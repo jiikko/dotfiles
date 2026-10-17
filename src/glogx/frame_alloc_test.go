@@ -111,8 +111,8 @@ func FuzzReapplyAfterReset(f *testing.F) {
 // 🚨 **回数は -race なしの run で判定する** (2026-10-03)。-race の計装は描画と無関係の確保を呼ぶたびに違う数だけ
 // 足すので、同じモデルを続けて測っても doctor-svc は 450〜460 と揺れた (-race なしは 15 回とも 380)。5 回の最小値を
 // 採っても 577〜583 (doctor-disk) と揺れが残り、上限を揺れの上に置くと退行を通し、下に置くと `make test` の負荷の下で
-// 偽の赤になる (doctor-svc 459 / 上限 458 で落ちた)。そこで `make test` (Makefile の test) に -race なしでこのテストだけを
-// 回す行を置き、回数はその run でだけ判定する。バイトは -race 付きの run でだけ判定する (benchmark で 1 ケース約 1 秒かかり、
+// 偽の赤になる (doctor-svc 459 / 上限 458 で落ちた)。そこで Makefile の test-budget で -race なしでこのテストだけを
+// 回し、回数はその run でだけ判定する (手元の make test は回さず CI でだけ回す。手元の GOCACHE の増え方のため。issue 742)。バイトは -race 付きの run でだけ判定する (benchmark で 1 ケース約 1 秒かかり、
 // 両方で回すと make test が 16 秒延びるため。バイトは -race でほぼ揺れない)。どちらの run かは raceEnabled (build tag)。
 // 上限は -race なしの実測 + 3 (-race なしは 3 回とも全ケースで完全に一致した)。
 // 上限を上げるときは「実測がいくらだったか」を必ずここに書き足すこと (黙って緩めない)。
@@ -218,7 +218,7 @@ func TestFrameAllocBudget(t *testing.T) {
 		// 見るのは「そのフレームが実際に描いたか」= alt screen を埋めたか。
 		assertFrameDrawn(t, c.name, m)
 
-		// 回数は -race なしの run で、バイトは -race 付きの run で判定する (上の doc。Makefile の test が両方を回す)
+		// 回数は -race なしの run (Makefile の test-budget) で、バイトは -race 付きの run (test) で判定する (上の doc)
 		if !raceEnabled {
 			got := int(testing.AllocsPerRun(50, func() { _ = m.View().Content }))
 			if got > c.allocs {

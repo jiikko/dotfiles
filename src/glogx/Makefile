@@ -5,7 +5,7 @@
 # バージョンは .golangci.yml (version: "2") と整合させること。
 GOLANGCI_LINT_VERSION := v2.5.0
 
-.PHONY: lint test
+.PHONY: lint test test-budget
 
 lint: vet-gorules
 	../../scripts/go_module_graph.sh
@@ -17,8 +17,15 @@ lint: vet-gorules
 vet-gorules:
 	go vet -tags ruleguard ./gorules
 
-# 2 行目: 1 フレームの確保の回数は -race の計装で揺れるので、その予算だけ -race なしで判定する (バイトは 1 行目で判定)
-# (frame_alloc_test.go の TestFrameAllocBudget の doc)。-race 付きの run は回数の判定を飛ばす
+# test-budget: 1 フレームの確保の回数は -race の計装で揺れるので、その予算だけ -race なしで判定する (バイトは test の -race で判定)
+# (frame_alloc_test.go の TestFrameAllocBudget の doc)。-race 付きの run は回数の判定を飛ばす。
+# -race なしの run はパッケージ全体をもう一度コンパイルし、手元の GOCACHE を 1 行の変更ごとに約 24 MB 増やす (issue 742 の実測 1) ので、
+# 手元の make test では回さず、CI (GitHub Actions が環境変数 CI を立てる) でだけ回す。描画を触ったら手元でも make test-budget を回す
 test:
 	go test -race ./...
+ifneq ($(CI),)
+	$(MAKE) test-budget
+endif
+
+test-budget:
 	go test -count=1 -run '^TestFrameAllocBudget$$' .
