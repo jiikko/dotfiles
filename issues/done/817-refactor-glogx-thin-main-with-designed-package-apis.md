@@ -197,9 +197,9 @@ P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.
   C までは opus 2 体で通した。D〜F はまだ誰も攻めていない
 - [x] ratelimitview の SaveRatelimitScreen / RemoveRatelimitScreen を Fixture の関数 (FixtureSaveScreen / FixtureRemoveScreen) へ寄せて非公開にした (2026-10-18)
 - [x] G-1 / G-2 / G-3 (上の節。2026-10-18 に済ませた)
-  2026-10-18 に G-1 / G-2 の判断までは済ませた (下の「G の判断」節)。実装は未着手
+  2026-10-18 に G-1 / G-2 の判断を済ませ (下の「G の判断」節)、同じ日に実装も済ませた (末尾の進捗)
 
-### G の判断 (2026-10-18。xref で数えた。移設の実装は未着手)
+### G の判断 (2026-10-18。xref で数えた。実装は下の G-1 / G-2 の進捗で済ませた)
 
 - **G-1: gitlog.go / github.go / cache.go は `internal/gitdata` へ出す**。3 つとも browseModel のメソッドを 0 個しか持たず、
   main のほかの部分への依存は 7 個 (options.go の Options とそのフィールド Revs / Paths / MaxCount / Patch / Stat、render.go の StateLoading) だけ。
@@ -215,7 +215,7 @@ P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.
 - **G-2: diff / job_detail / pr_status の overlay は G-1 の後に移せる** (依存は gitdata の型・tui.go の Msg (diffMsg / jobDetailMsg) と
   render.go の decorateDetailLine / prStateColor だけ)。**action_modal.go は main に残す**: pull / push / claude・codex の update を起こし、
   その結果の Msg を受ける配線そのもので、external_commands.go と claude_version.go / codex_version.go に 14 個頼る (移すと main への頼みが公開名に化けるだけ)
-- [ ] 全部済んだら `scripts/issue_done.sh 817` と retro
+- [x] 全部済んだら `scripts/issue_done.sh 817` と retro (retro は 819)
 
 検証の手順 (各 commit の前): `src/glogx` で `go test -race ./...` / `make lint` / repo root で `scripts/check_unused_excluding_tests.sh` /
 `bash tests/glogx/test_no_real_commands_in_tests.sh`、テスト名の集合 (`go test -list '.*' ./...`) を移設の前後で比べる。
@@ -242,4 +242,29 @@ JSON のタグ付きのフィールドは小文字にしない。unparam (check-
   structure_ratchet_test.go の一覧に残っていた「C-1 で extcmd へ」「G-2 で置き場所を決める」の仮の理由を確定の理由に直した
 - [x] 2026-10-18 G-2 の 2 段目の漏れ (glogx: commitview の fixture.go を入れ忘れていたので足す): 新規の fixture.go を git add せずに
   pathspec で commit し、master の main のテストが 1 commit の間ビルドできなかった。G-3 の作業で新しい worktree を切って気づいた
+
+## CI の赤の修正 (2026-10-18。done へ送った後に見つけた)
+
+done へ送った時点で、repo 全体の Tests は D (statusview の移設) の commit から、Lint は G-2 の後から赤のままだった
+(`src/glogx` の workflow は緑だったので、その緑だけを見て閉じていた)。落ちていた検査は 3 つ:
+
+- Lint の `test-go-packages-index`: この issue で新設した internal の 8 パッケージ (commitview / filerview / gitdata / issuesview /
+  lanview / ratelimitview / statusview / usageview) に package doc が無かった (検査は最初の 1 件で止まるので、CI には commitview だけが出ていた)。
+  doc を足し、`src/PACKAGES.md` を作り直した (extcmd / linecache / testenv などの行も欠けていた)
+- Tests の `tests/scripts/test_git_tests_unset_location_env.sh` と `tests/scripts/test_widthenv_guarded.sh`: TestMain の前処理を
+  `internal/testenv` の Main に寄せた commit (glogx: テストの TestMain の前処理を internal/testenv に寄せ…) の後、2 本が `_test.go` に
+  guard の直接の呼び出しを字面で探していたので、glogx の 12 パッケージが「呼ばない」と判定された (前処理そのものは testenv.Main で効いていた)。
+  判定を `tests/lib/go_testmain_guard.sh` に寄せ、「`<module>/internal/testenv` の Main が m.Run の前に guard を呼び、パッケージがそれを呼ぶ」も合格にした
+- 変異で red を確認: testenv の Main から widthenv の行を消す (widthenv の検査が red)・UnsetGitLocationEnv を m.Run の後へ動かす (git の検査が red)・
+  gitdata の TestMain から testenv.Main を外す (両方 red)・`//go:build ignore` の別ファイルに guard 付きの Main を置き本物から guard を消す (red)
+- 敵対的レビュー (opus 2 体。①素通り ②壊れ・回帰):
+  - 採用 3 件: build 制約の付いたファイルの Main を数えていた (除外した)・helper が cwd に依存し判定不能が「呼んでいない」に化ける (repo root を
+    helper の置き場所から引く)・guard が m.Run の後に走る形 (defer・m.Run を別の関数で呼ぶ) を字面の検査が通す → UnsetGitLocationEnv は
+    `internal/testenv/main_test.go` が実行時に確かめる (継承した GIT_DIR を置いて Main を通す。defer に変えた変異で red)
+  - 記録のみ: widthenv.ExitIfUnsupported はプロセスを終えるので実行時に確かめられない・コメント / 文字列 / `if false` の中の呼び出し・
+    TestMain 以外の関数の中の呼び出し・`xtestenv.Main(` の形 (どれも字面で見る検査の元からの限界。脅威モデルはうっかりの漏れ)。helper の冒頭に書いた
+  - 壊せなかった: bash 3.2 / 5 の両方・`set -u` と空配列・BSD の awk / grep・test runner の発見規則 (helper は拾われない)・package doc の記述と実コード
+- 手元の検証 (最後の編集の後): `make test-lint` 緑・2 本の検査 緑・`src/glogx` の `make lint` と `go test ./...` 緑・`test_no_real_commands_in_tests.sh` 緑。
+  `make test-runtime-rest` は helper の最終の修正の前に回し、上の 2 本は緑。落ちた 2 本はこの変更と無関係 (`test_dangling_symlinks.sh` は手元の
+  `~/.config/nvim/coc-settings.json` の dangling で本体の checkout でも落ちる・`test_claude_bin.sh` は単独では本体でも worktree でも緑)。`make test-discovered-heavy` 緑
 

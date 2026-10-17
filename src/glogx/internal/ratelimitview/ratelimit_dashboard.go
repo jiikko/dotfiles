@@ -1,3 +1,5 @@
+// Package ratelimitview は glogx の全画面 ratelimit ダッシュボード (R) と、閉じたときの画面の記憶。
+// 取得・整形は ratelimit/usage が持つ。
 package ratelimitview
 
 // 全画面 ratelimit ダッシュボード (R キー)。右上の usage オーバーレイ (U) と同じ Snapshot を、

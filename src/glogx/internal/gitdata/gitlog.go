@@ -1,3 +1,5 @@
+// Package gitdata は glogx が描くデータの取得: git log (制御文字レコードでコミット境界を識別)・CI 状態の GraphQL 取得と
+// ローカルキャッシュ。取得の条件は CLI の Options ではなく LogQuery で受け取る (issue 817 の G-1)。
 package gitdata
 
 import (

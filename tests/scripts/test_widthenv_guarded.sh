@@ -4,6 +4,7 @@
 # なぜ: RUNEWIDTH_EASTASIAN=1 では幅の数え方が変わり、幅を見るテストが大量に落ちる (pro-con/ui で「行の幅 131 が画面の幅 120 を
 # 超える」)。検査を呼ばないパッケージでは、落ちた理由が環境だと分からない。
 # 脅威モデル: うっかりの漏れ (tuikit を使うパッケージにテストを足したが TestMain で呼ばない) を止める。
+# 呼んだと認める形 (直接 / internal/testenv の Main 経由) は tests/lib/go_testmain_guard.sh の冒頭。
 # 拾う形: src/<module> の .go のどれかが github.com/jiikko/dotfiles/src/tuikit/ を import しているディレクトリで、_test.go を持つもの。
 # 検出しない形: 呼んでいるが m.Run の後 (効かない)・TestMain 以外の関数の中・`//go:build ignore` などで外れる _test.go の中・
 # コメントの中の文字列・testdata の下・tuikit 自身 (部品どうしの import は数えない)
@@ -11,6 +12,8 @@ set -uo pipefail
 unset CDPATH
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR" || exit 1
+# shellcheck source=tests/lib/go_testmain_guard.sh
+. "$ROOT_DIR/tests/lib/go_testmain_guard.sh"
 
 pkgs=0; bad=0
 while IFS= read -r dir; do
@@ -25,7 +28,7 @@ while IFS= read -r dir; do
   [ "$rc" -le 1 ] || { printf '✗ %s の .go を読めない (判定できない)\n' "$dir" >&2; exit 1; }
   [ "$rc" -eq 0 ] || continue
   pkgs=$((pkgs + 1))
-  grep -lq 'widthenv\.ExitIfUnsupported()' "${tests[@]}"; rc=$?
+  go_testmain_guard_present "$dir" 'widthenv\.ExitIfUnsupported\(\)'; rc=$?
   [ "$rc" -le 1 ] || { printf '✗ %s の _test.go を読めない (判定できない)\n' "$dir" >&2; exit 1; }
   if [ "$rc" -ne 0 ]; then
     printf '✗ %s: tuikit を使うのに、テストが widthenv.ExitIfUnsupported を呼ばない (TestMain で呼ぶ)\n' "$dir" >&2

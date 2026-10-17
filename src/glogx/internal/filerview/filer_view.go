@@ -1,3 +1,5 @@
+// Package filerview は glogx の全画面 treefiler (F) と、F を出したまま閉じたときの場所の記憶。
+// 画面の部品は src/treefiler の filer パッケージ。開閉・横断・前景実行は main の browseModel が仲介する (issue 817 の F)。
 package filerview
 
 // treefiler (F) の全画面。画面の部品は src/treefiler の filer パッケージで、ここは glogx への配線だけを持つ

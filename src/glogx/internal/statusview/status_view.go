@@ -1,3 +1,5 @@
+// Package statusview は glogx の status viewer (s): git status の読み取りと worktree の区画分け・描画。
+// 仕様は docs/status-viewer-spec.md。
 package statusview
 
 import (

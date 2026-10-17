@@ -1,3 +1,5 @@
+// Package issuesview は glogx の issues viewer (i) の画面側: 一覧と drawer・本文 pager・番号の絞り込み・リンクのジャンプ・
+// URL ピッカー・ファイルの見張り。探索・parse・表示整形のドメインは独立パッケージ issues が持つ。
 package issuesview
 
 import (

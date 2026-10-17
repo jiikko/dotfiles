@@ -1,3 +1,5 @@
+// Package lanview は glogx の全画面 mac-lan-manager (L) と、L を出したまま閉じたときの画面の記憶。
+// 画面の部品は src/mac-lan-manager の lanmgr、本物へのつなぎは live。開閉・横断・前景実行は main の browseModel が仲介する。
 package lanview
 
 // mac-lan-manager (L) の全画面。画面の部品は src/mac-lan-manager の lanmgr パッケージで、ここは glogx への配線だけを持つ

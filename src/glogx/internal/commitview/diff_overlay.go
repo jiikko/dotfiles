@@ -1,3 +1,5 @@
+// Package commitview は glogx のコミットに重ねるポップアップ群: diff (d)・PR 状態 (P)・CI の job 詳細。
+// どれも「対象の SHA / key を持つ pager」の状態と描画で、取得の起動と対象の選定は main の browseModel が持つ (issue 817 の G-2)。
 package commitview
 
 import (

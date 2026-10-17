@@ -1,3 +1,5 @@
+// Package usageview は glogx の右上の利用枠オーバーレイ (U) と、その取得結果のキャッシュ
+// (claude -p /usage は 1 回 ≈ 2 秒かかるので、起動のたびには取らない)。
 package usageview
 
 import (
