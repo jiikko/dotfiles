@@ -28,9 +28,9 @@ func TestWaitDoctorCleanupWaitsForTrackedScan(t *testing.T) {
 	var finished bool
 	var mu sync.Mutex
 
-	doctorCleanup.add()
+	doctorCleanup.Add()
 	go func() {
-		defer doctorCleanup.done()
+		defer doctorCleanup.Done()
 		<-release
 		mu.Lock()
 		finished = true
@@ -397,7 +397,7 @@ func TestRescanCancelsPreviousGeneration(t *testing.T) {
 func drainDoctorCleanup(t *testing.T) {
 	t.Helper()
 	done := make(chan struct{})
-	go func() { <-doctorCleanup.wait(); close(done) }()
+	go func() { <-doctorCleanup.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(30 * time.Second):

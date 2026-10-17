@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"ratelimit/usage"
 )
@@ -153,8 +154,8 @@ func TestRatelimitDashHandleKey(t *testing.T) {
 	// 開いたまま viewer を開くと「見えている画面」と「キーを受ける画面」が食い違う。
 	for _, tc := range []struct {
 		key  string
-		want fullScreenID
-	}{{"i", fullScreenIssues}, {"s", fullScreenStatus}, {"D", fullScreenDoctor}} {
+		want app.FullScreenID
+	}{{"i", app.FullScreenIssues}, {"s", app.FullScreenStatus}, {"D", app.FullScreenDoctor}} {
 		var d ratelimitDash
 		d.toggle()
 		if got := d.handleKey(tc.key); got != rlDashCross {
@@ -272,7 +273,7 @@ func TestRatelimitDashShowsWaitingSource(t *testing.T) {
 	m.usageOv.fetchCmd(false)
 	defer m.usageOv.stop()
 	m.usageOv.handle(usageMsg{part: &usage.Part{Source: usage.SourceCodex,
-		Windows: []usage.Window{{Label: "cx7d", Source: usage.SourceCodex, Percent: 7, WindowMins: 10080, ResetAt: timeNow().Add(time.Hour)}}}})
+		Windows: []usage.Window{{Label: "cx7d", Source: usage.SourceCodex, Percent: 7, WindowMins: 10080, ResetAt: app.TimeNow().Add(time.Hour)}}}})
 	if !m.rlDashLoading() {
 		t.Error("Claude を待っている間にスピナーが止まる")
 	}

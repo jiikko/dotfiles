@@ -16,6 +16,7 @@ import (
 	"doctor/svc"
 	"doctor/testtmp"
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"glogx/issues"
 	"subproc"
@@ -172,7 +173,7 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 	return m
 }
 
-// stubClock は timeNow を固定時刻 Unix(1000, 0) に差し替え、テスト終了時に戻す。返す advance で
+// stubClock は app.TimeNow を固定時刻 Unix(1000, 0) に差し替え、テスト終了時に戻す。返す advance で
 // 時計を進める (演出の進捗・経過時間の判定を決定的にする)。実時間に戻したいテストは従来どおり
 // 自前で退避する。🚨 基準時刻を変えないこと: tui_panel_test.go の ETA fixture (StartedAt に
 // Unix(880/910/940) 等) が「Unix(1000) から見た相対時間」で組まれている。
@@ -183,13 +184,13 @@ func stubClock(t *testing.T) (advance func(time.Duration)) {
 	return func(d time.Duration) { now = now.Add(d) }
 }
 
-// stubClockFrom は timeNow を *now を返す時計に差し替え、テスト終了時に戻す。呼び出し側は *now を
+// stubClockFrom は app.TimeNow を *now を返す時計に差し替え、テスト終了時に戻す。呼び出し側は *now を
 // 書き換えて時刻を進める (絶対時刻や実時刻を起点にしたいとき用。起点を固定でよいなら stubClock)。
 func stubClockFrom(t *testing.T, now *time.Time) {
 	t.Helper()
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	timeNow = func() time.Time { return *now }
+	orig := app.TimeNow
+	t.Cleanup(func() { app.TimeNow = orig })
+	app.TimeNow = func() time.Time { return *now }
 }
 
 // releaseKey は「指を離した」ことにする (キーリピート判定をリセットする。swallowKeyRepeat)。

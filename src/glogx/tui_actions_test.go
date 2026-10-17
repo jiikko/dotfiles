@@ -12,6 +12,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -208,7 +209,7 @@ func TestActionModalStopCancelsRunningPush(t *testing.T) {
 	}
 }
 
-// push 演出の時間経過が timeNow シームを通ることを固定時計で pin する (issue 038)。上の
+// push 演出の時間経過が app.TimeNow シームを通ることを固定時計で pin する (issue 038)。上の
 // TestBrowsePushFlow は pushAnimNext のゼロ値書き換えで段を進めるため、実装が time.Now 直呼びに
 // 退行しても green のままになる。こちらは時計を凍結し「実時間がいくら経っても、凍結時計が
 // pushAnimStep 進むまでは段が進まない」ことでシーム経由を守る。
@@ -1035,7 +1036,7 @@ func deliverUpdateMsg(m *browseModel, cmd tea.Cmd) {
 // writeVersionCache は latest キャッシュを fetchedAt 時点の取得としてテスト用に書く。
 func writeVersionCache(t *testing.T, cacheFile, latest string, fetchedAt time.Time) {
 	t.Helper()
-	base, err := cacheBaseDir()
+	base, err := app.CacheBaseDir()
 	if err != nil {
 		t.Fatal(err)
 	}

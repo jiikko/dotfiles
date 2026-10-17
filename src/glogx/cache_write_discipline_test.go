@@ -11,10 +11,10 @@ import (
 	"testing"
 )
 
-// `~/.cache/glog` (cacheBaseDir 配下) への書き込みは writeAtomic を通す (issue 219 / 286)。
+// `~/.cache/glog` (app.CacheBaseDir 配下) への書き込みは app.WriteAtomic を通す (issue 219 / 286)。
 //
 // 素の os.WriteFile は O_TRUNC なので、書き込み中に落ちると**途中まで書けた JSON** が残り、
-// 次回起動の復元が黙って失敗する。writeAtomic は temp + rename で、write / Close / rename の
+// 次回起動の復元が黙って失敗する。app.WriteAtomic は temp + rename で、write / Close / rename の
 // 3 分岐すべてで temp を掃除する。
 //
 // 🚨 なぜ機械で縛るか: issue 219 は 2026-09-03 にこの規約を確立したが「ruleguard は構文しか
@@ -23,12 +23,12 @@ import (
 // 規約の外側で生えた。trigger が発火したので、ここで機械化する。
 //
 // 🚨 **脅威モデルと射程** (adversarial-review-own-safeguards §8):
-//   - 止めるのは「cacheBaseDir / CachePath 由来のパスへ os.WriteFile する」典型形だけ
-//   - 判定は 2 段: ①「cacheBaseDir / cachedir.Base を呼ぶ関数」= パス提供関数を集める
-//     ②「パス提供関数 (または cacheBaseDir 系) を呼び、かつ os.WriteFile も呼ぶ関数」を違反にする
+//   - 止めるのは「app.CacheBaseDir / CachePath 由来のパスへ os.WriteFile する」典型形だけ
+//   - 判定は 2 段: ①「app.CacheBaseDir / cachedir.Base を呼ぶ関数」= パス提供関数を集める
+//     ②「パス提供関数 (または app.CacheBaseDir 系) を呼び、かつ os.WriteFile も呼ぶ関数」を違反にする
 //   - 🚨 **1 段の近似では実際の違反を 1 件も捕まえられなかった**。saveIssuesScreen 等は
 //     `path, _ := issuesMemory.path()` と**別関数からパスを受け取る**形なので、
-//     「同じ関数内に cacheBaseDir と os.WriteFile が両方ある」では 0 件になる (実測で踏んだ)
+//     「同じ関数内に app.CacheBaseDir と os.WriteFile が両方ある」では 0 件になる (実測で踏んだ)
 //   - **検出しない**: 提供関数を 2 段以上辿る / io.WriteString / os.Create + Write /
 //     パスを引数で受け取るだけの関数 / 別 module 経由。これらは review の責務
 func TestCacheWritesGoThroughWriteAtomic(t *testing.T) {
@@ -95,10 +95,11 @@ func TestCacheWritesGoThroughWriteAtomic(t *testing.T) {
 		t.Fatalf("走査できない: %v", err)
 	}
 
-	// ① パス提供関数を集める (cacheBaseDir / cachedir.Base を直接呼ぶもの)
-	providers := map[string]bool{"cacheBaseDir": true, "cachedir.Base": true, "CachePath": true}
+	// ① パス提供関数を集める (app.CacheBaseDir / cachedir.Base を直接呼ぶもの)
+	// 🚨 app.CacheBaseDir は internal/app へ移した (issue 742)。main からは app.CacheBaseDir、app の中からは CacheBaseDir と呼ぶ
+	providers := map[string]bool{"app.CacheBaseDir": true, "CacheBaseDir": true, "cachedir.Base": true, "CachePath": true}
 	for _, f := range fns {
-		if f.calls["cacheBaseDir"] || f.calls["cachedir.Base"] {
+		if f.calls["app.CacheBaseDir"] || f.calls["CacheBaseDir"] || f.calls["cachedir.Base"] {
 			providers[f.decl.Name.Name] = true
 		}
 	}
@@ -127,19 +128,19 @@ func TestCacheWritesGoThroughWriteAtomic(t *testing.T) {
 	}
 
 	// 🚨 抽出が空でも緑にならないよう下限を置く (issue 280 / 283 と同じ形)。
-	// 2026-09-06 実測: 非テストの .go 75 件を走査し、cacheBaseDir 系に届く関数は 14 件。
+	// 2026-09-06 実測: 非テストの .go 75 件を走査し、app.CacheBaseDir 系に届く関数は 14 件。
 	if scanned < 40 {
 		t.Fatalf("走査した .go が %d 件しかない (下限 40)。WalkDir の除外が壊れている", scanned)
 	}
 	if cacheFuncs < 8 {
-		t.Fatalf("cacheBaseDir 系に届く関数を %d 件しか見つけられなかった (下限 8)。判定が壊れている", cacheFuncs)
+		t.Fatalf("app.CacheBaseDir 系に届く関数を %d 件しか見つけられなかった (下限 8)。判定が壊れている", cacheFuncs)
 	}
 	if len(offenders) > 0 {
-		t.Errorf("~/.cache/glog へ素の os.WriteFile で書いている (writeAtomic を使うこと。"+
+		t.Errorf("~/.cache/glog へ素の os.WriteFile で書いている (app.WriteAtomic を使うこと。"+
 			"O_TRUNC なので途中書きの JSON が残る。issue 219 / 286):\n  %s\n"+
 			"意図的な例外は関数内に `%s` + 理由を書く", strings.Join(offenders, "\n  "), marker)
 	}
-	t.Logf("走査 .go=%d 件 / cacheBaseDir 系に届く関数 %d 件 / 違反 %d 件", scanned, cacheFuncs, len(offenders))
+	t.Logf("走査 .go=%d 件 / app.CacheBaseDir 系に届く関数 %d 件 / 違反 %d 件", scanned, cacheFuncs, len(offenders))
 }
 
 // funcHasComment は関数の範囲内にその語を含むコメントがあるか。

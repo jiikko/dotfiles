@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/app"
 	"time"
 )
 
@@ -19,14 +20,14 @@ type ratelimitScreen struct {
 	SavedAt time.Time `json:"saved_at"`
 }
 
-var ratelimitMemory = screenMemory[ratelimitScreen]{file: "ratelimit-screen.json", savedAt: func(s ratelimitScreen) time.Time { return s.SavedAt }}
+var ratelimitMemory = app.ScreenMemory[ratelimitScreen]{File: "ratelimit-screen.json", SavedAt: func(s ratelimitScreen) time.Time { return s.SavedAt }}
 
-func saveRatelimitScreen(s ratelimitScreen) error { return ratelimitMemory.save(s) }
+func saveRatelimitScreen(s ratelimitScreen) error { return ratelimitMemory.Save(s) }
 
-func removeRatelimitScreen() { ratelimitMemory.remove() }
+func removeRatelimitScreen() { ratelimitMemory.Remove() }
 
-// loadRatelimitScreen は「復元するか」を返す (読めない・壊れている・期限切れ・未来の時刻は「復元しない」。screenMemory.load)。
+// loadRatelimitScreen は「復元するか」を返す (読めない・壊れている・期限切れ・未来の時刻は「復元しない」。app.ScreenMemory.load)。
 func loadRatelimitScreen(now time.Time) bool {
-	_, ok := ratelimitMemory.load(now)
+	_, ok := ratelimitMemory.Load(now)
 	return ok
 }

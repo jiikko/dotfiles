@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/app"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,7 +34,7 @@ func TestRatelimitScreenRejectsBadState(t *testing.T) {
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
 	write := func(t *testing.T, body string) {
 		t.Helper()
-		p, err := ratelimitMemory.path()
+		p, err := ratelimitMemory.Path()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -46,7 +47,7 @@ func TestRatelimitScreenRejectsBadState(t *testing.T) {
 	}
 	t.Run("期限切れ", func(t *testing.T) {
 		withRatelimitStateDir(t)
-		if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now.Add(-screenMemoryTTL)}); err != nil {
+		if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now.Add(-app.ScreenMemoryTTL)}); err != nil {
 			t.Fatal(err)
 		}
 		if loadRatelimitScreen(now) {
@@ -82,9 +83,9 @@ func TestRatelimitScreenRejectsBadState(t *testing.T) {
 func TestRememberRatelimitScreen(t *testing.T) {
 	withRatelimitStateDir(t)
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
-	orig := timeNow
-	timeNow = func() time.Time { return now }
-	t.Cleanup(func() { timeNow = orig })
+	orig := app.TimeNow
+	app.TimeNow = func() time.Time { return now }
+	t.Cleanup(func() { app.TimeNow = orig })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.rlDash.shown = true
@@ -104,9 +105,9 @@ func TestRememberRatelimitScreen(t *testing.T) {
 func TestInitRestoresRatelimitScreen(t *testing.T) {
 	withRatelimitStateDir(t)
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
-	orig := timeNow
-	timeNow = func() time.Time { return now }
-	t.Cleanup(func() { timeNow = orig })
+	orig := app.TimeNow
+	app.TimeNow = func() time.Time { return now }
+	t.Cleanup(func() { app.TimeNow = orig })
 	if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func TestInitRestoresRatelimitScreen(t *testing.T) {
 	if !m.rlDash.visible() {
 		t.Fatal("記憶があるのに ratelimit ダッシュボードが開いていない")
 	}
-	if id := m.activeFullScreen(); id != fullScreenRatelimit {
+	if id := m.activeFullScreen(); id != app.FullScreenRatelimit {
 		t.Errorf("全画面が ratelimit になっていない: %v", id)
 	}
 }
@@ -138,9 +139,9 @@ func TestInitWithoutRatelimitMemoryStaysOnLog(t *testing.T) {
 func TestInitRestoresOnlyOneFullScreen(t *testing.T) {
 	withRatelimitStateDir(t)
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
-	orig := timeNow
-	timeNow = func() time.Time { return now }
-	t.Cleanup(func() { timeNow = orig })
+	orig := app.TimeNow
+	app.TimeNow = func() time.Time { return now }
+	t.Cleanup(func() { app.TimeNow = orig })
 	if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}

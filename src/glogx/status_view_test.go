@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -662,7 +663,7 @@ func TestStatusOpenAnimationThenSettles(t *testing.T) {
 	advance := stubClock(t)
 	v := newStatusView()
 	v.shown = true
-	v.animStart = timeNow()
+	v.animStart = app.TimeNow()
 	// 経過 0 だけでなく「開いて僅かに経った」正の経過でも見る (0 は境界の退化ケースで、
 	// 「経過 > 0 で即 1 に跳ぶ」型のミスを素通りさせる)
 	advance(time.Millisecond)
@@ -1381,10 +1382,10 @@ func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 
 	v.handleKey("R", statusViewport{page: 20})
 
-	if v.takeWantCross() != fullScreenRatelimit {
+	if v.takeWantCross() != app.FullScreenRatelimit {
 		t.Error("R でダッシュボードへの横断を要求しない")
 	}
-	if v.takeWantCross() != fullScreenNone {
+	if v.takeWantCross() != app.FullScreenNone {
 		t.Error("takeWantCross が 2 回横断先を返す (横断が二重に起きる)")
 	}
 	if !v.closing && v.shown {

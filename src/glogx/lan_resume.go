@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/app"
 	"mac-lan-manager/lanmgr"
 )
 
@@ -19,15 +20,15 @@ type lanScreen struct {
 	SavedAt time.Time    `json:"saved_at"`
 }
 
-var lanMemory = screenMemory[lanScreen]{file: "lan-screen.json", savedAt: func(s lanScreen) time.Time { return s.SavedAt }}
+var lanMemory = app.ScreenMemory[lanScreen]{File: "lan-screen.json", SavedAt: func(s lanScreen) time.Time { return s.SavedAt }}
 
-func saveLanScreen(s lanScreen) error { return lanMemory.save(s) }
+func saveLanScreen(s lanScreen) error { return lanMemory.Save(s) }
 
-func removeLanScreen() { lanMemory.remove() }
+func removeLanScreen() { lanMemory.Remove() }
 
-// loadLanScreen は記憶を返す。読めない / 壊れている / 期限切れ / 未来の時刻は「復元しない」に倒す (screenMemory.load)。
+// loadLanScreen は記憶を返す。読めない / 壊れている / 期限切れ / 未来の時刻は「復元しない」に倒す (app.ScreenMemory.load)。
 func loadLanScreen(now time.Time) (lanmgr.Place, bool) {
-	s, ok := lanMemory.load(now)
+	s, ok := lanMemory.Load(now)
 	if !ok {
 		return lanmgr.Place{}, false
 	}
@@ -37,7 +38,7 @@ func loadLanScreen(now time.Time) (lanmgr.Place, bool) {
 // rememberLanScreen は終了時の保存。L を出していれば覚え、出していなければ消す (消さないと、一覧を見て閉じた次の起動で前の L が蘇る)。
 func (m *browseModel) rememberLanScreen() {
 	if lm := m.lanV.live(); lm != nil {
-		_ = saveLanScreen(lanScreen{Place: lm.Place(), SavedAt: timeNow()}) // 保存できなくても終了は妨げない
+		_ = saveLanScreen(lanScreen{Place: lm.Place(), SavedAt: app.TimeNow()}) // 保存できなくても終了は妨げない
 		return
 	}
 	removeLanScreen()
@@ -45,11 +46,11 @@ func (m *browseModel) rememberLanScreen() {
 
 // restoreLanScreen は起動時の復元。他の全画面の復元が当たっていないときだけ呼ぶ (全画面は同時に 1 枚)。
 func (m *browseModel) restoreLanScreen() tea.Cmd {
-	p, ok := loadLanScreen(timeNow())
+	p, ok := loadLanScreen(app.TimeNow())
 	if !ok {
 		return nil
 	}
-	cmd := m.openFullScreen(fullScreenLan)
+	cmd := m.openFullScreen(app.FullScreenLan)
 	if lm := m.lanV.live(); lm != nil {
 		lm.RestorePlace(p)
 	}

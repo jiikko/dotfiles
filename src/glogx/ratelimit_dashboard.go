@@ -15,6 +15,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"time"
 
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"ratelimit/usage"
 )
@@ -23,7 +24,7 @@ import (
 type ratelimitDash struct {
 	shown bool
 	// wantCross は横断先 (rlDashCross を返したときだけ意味を持つ。takeWantCross で取り出す)
-	wantCross fullScreenID
+	wantCross app.FullScreenID
 	// 盤の描画結果のメモ (issue 275)。viewLines は毎 View で lines を呼び、
 	// usage.RenderDashboard はセル数 (幅 x 高) に比例して braille のスライスを確保し直すので、
 	// 12.5fps で回ると 1 フレーム 1065 allocs / 239KB (120x40 実測) がそのまま乗る。
@@ -161,7 +162,7 @@ const (
 
 // handleKey はダッシュボードが飲むキー。
 //
-// i / s / D は他の全画面への横断 (ユーザー要望 2026-09-01。表は crossTarget)。viewer 側の R と対で、
+// i / s / D は他の全画面への横断 (ユーザー要望 2026-09-01。表は app.CrossTarget)。viewer 側の R と対で、
 // 全画面どうしを往復できる。🚨 横断でも自分は必ず閉じる: 全画面は同時に 1 枚の前提で、
 // 重ねると「見えている画面」と「キーを受ける画面」が食い違う (issues ↔ status と同じ作法)。
 func (d *ratelimitDash) handleKey(key string) rlDashAction {
@@ -172,8 +173,8 @@ func (d *ratelimitDash) handleKey(key string) rlDashAction {
 	case "r":
 		return rlDashRefresh
 	}
-	// 横断キー (i / s / D。表は crossTarget)。R は自分自身なので上の「閉じる」に任せる
-	if target, ok := crossTarget(key); ok && target != fullScreenRatelimit {
+	// 横断キー (i / s / D。表は app.CrossTarget)。R は自分自身なので上の「閉じる」に任せる
+	if target, ok := app.CrossTarget(key); ok && target != app.FullScreenRatelimit {
 		d.close()
 		d.wantCross = target
 		return rlDashCross
@@ -181,10 +182,10 @@ func (d *ratelimitDash) handleKey(key string) rlDashAction {
 	return rlDashSwallow
 }
 
-// takeWantCross は横断先 (無ければ fullScreenNone) を一度だけ取り出す (viewer と同じ語彙)。
-func (d *ratelimitDash) takeWantCross() fullScreenID {
+// takeWantCross は横断先 (無ければ app.FullScreenNone) を一度だけ取り出す (viewer と同じ語彙)。
+func (d *ratelimitDash) takeWantCross() app.FullScreenID {
 	want := d.wantCross
-	d.wantCross = fullScreenNone
+	d.wantCross = app.FullScreenNone
 	return want
 }
 

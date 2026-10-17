@@ -13,6 +13,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/app"
 	"ratelimit/usage"
 )
 
@@ -141,7 +142,7 @@ func saveClaudeVersionCache(path, latest string, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(path, data)
+	return app.WriteAtomic(path, data)
 }
 
 // checkCLIVersionCmd は「latest 照会 (TTL キャッシュ) → インストール済みと比較 → 新しければ
@@ -155,7 +156,7 @@ func checkCLIVersionCmd(cacheFile string, fetchLatest, fetchInstalled func(conte
 		ctx, cancel := context.WithTimeout(context.Background(), claudeVersionFetchTimeout)
 		defer cancel()
 		now := time.Now()
-		base, err := cacheBaseDir()
+		base, err := app.CacheBaseDir()
 		if err != nil {
 			return nil
 		}
@@ -191,7 +192,7 @@ func versionCacheFileFor(target string) string {
 // キャッシュ基点が引けない場合は "" (= latest 不明)。registry へは出ない — 呼び出し元はどちらも
 // 打鍵に同期した経路 (C / X の判定と結果トースト) なので、ここでネットワークを待たせない。
 func cachedLatestVersion(cacheFile string) string {
-	base, err := cacheBaseDir()
+	base, err := app.CacheBaseDir()
 	if err != nil {
 		return ""
 	}

@@ -203,7 +203,7 @@ for p in "$@"; do
       add_test_dir "tests"; add_target test-lint-tests ;;
     # theme/colors.yml は色の単一ソースで、消費者が 4 つに分かれている:
     # shell (生成物の drift) / _tmux.conf / nvim palette.lua は tests/theme が、
-    # glogx の ansiFrameBorder は Go 側の TestFrameBorderMatchesThemeYML が、pro-con の ui の col* は TestThemeColorsMatchYML が突き合わせる。
+    # glogx の term.AnsiFrameBorder は Go 側の TestFrameBorderMatchesThemeYML が、pro-con の ui の col* は TestThemeColorsMatchYML が突き合わせる。
     # 🚨 *.yml の写像 (test-yaml だけ) に落とすと、色を変えても文法検査しか走らない。
     theme/*)
       add_target test-yaml; add_test_dir "tests/theme"; add_go_dir "src/glogx"; add_go_dir "src/pro-con" ;;

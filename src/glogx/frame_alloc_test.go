@@ -13,6 +13,7 @@ import (
 	"doctor/disk"
 	"doctor/docker"
 	"doctor/svc"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -308,7 +309,7 @@ func budgetFilerModel(tb testing.TB) *browseModel {
 	m.filerV.toggle(dir)
 	m.filerV.handleKey("l") // alpha を開いて中へ
 	// 止まった画面を測る: 固定の時計を 50ms ずつ進め、動きと裏の処理 (走査・git) が止まるまで回す。
-	// 🚨 実時計 (timeNow) を渡さない: Advance は 1 回の経過を 0.05 秒で頭打ちにするので、毎回「今 + 1 秒」を渡すと 2 回目以降は
+	// 🚨 実時計 (app.TimeNow) を渡さない: Advance は 1 回の経過を 0.05 秒で頭打ちにするので、毎回「今 + 1 秒」を渡すと 2 回目以降は
 	// 呼び出しの間の実時間しか進まず、途中の画面を測る。CI の遅さで進み方が変わり、確保が 156 → 164 回と揺れた (2745215c の CI)
 	at := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
 	for deadline := time.Now().Add(10 * time.Second); m.filerV.animating() || m.filerV.busy(); {
@@ -478,9 +479,9 @@ func budgetRatelimitModel(tb testing.TB) *browseModel {
 	// 測定窓 (-race で ~41ms) が**秒境界をまたいだときだけ 1 回ミス**し、その 1069 allocs が
 	// 50 で割られて平均に乗る (実測: 175 → 最大 193。145 窓中 5 回が上限 177 を超えた
 	// = 1 実行あたり ~4% で flake する)。固定クロックでは 148 窓すべて 175 だった。
-	orig := timeNow
-	timeNow = func() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC) }
-	tb.Cleanup(func() { timeNow = orig })
+	orig := app.TimeNow
+	app.TimeNow = func() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC) }
+	tb.Cleanup(func() { app.TimeNow = orig })
 	return m
 }
 

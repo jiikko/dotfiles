@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
@@ -93,7 +94,7 @@ func openLan(t *testing.T) *browseModel {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40}) // 80×10 では一覧の行が窓に入らない
 	m.handleKey("L")
-	if m.activeFullScreen() != fullScreenLan {
+	if m.activeFullScreen() != app.FullScreenLan {
 		t.Fatalf("L で開かない (active=%v)", m.activeFullScreen())
 	}
 	return m
@@ -108,7 +109,7 @@ func TestLanOpensAndClosesWithL(t *testing.T) {
 		t.Errorf("見えた Mac が出ていない:\n%s", view)
 	}
 	m.handleKey("L")
-	if m.activeFullScreen() != fullScreenNone {
+	if m.activeFullScreen() != app.FullScreenNone {
 		t.Fatalf("L で閉じない (active=%v)", m.activeFullScreen())
 	}
 	if !scan.closed {
@@ -121,7 +122,7 @@ func TestLanQuitKeysGoBackToList(t *testing.T) {
 	for _, k := range []string{"q", "esc"} {
 		m := openLan(t)
 		_, cmd := m.handleKey(k)
-		if m.activeFullScreen() != fullScreenNone {
+		if m.activeFullScreen() != app.FullScreenNone {
 			t.Errorf("%s で閉じない", k)
 		}
 		if isQuitCmd(cmd) || m.done {
@@ -136,7 +137,7 @@ func TestLanBindsBeatCrossKeys(t *testing.T) {
 	m := openLan(t)
 	m.handleKey("l") // 未管理のタブ (相手の Mac だけ。この Mac は自分のタブ)
 	m.handleKey("s")
-	if m.activeFullScreen() != fullScreenLan {
+	if m.activeFullScreen() != app.FullScreenLan {
 		t.Errorf("s で板を離れた (active=%v)。ssh のはず", m.activeFullScreen())
 	}
 	if !m.lanV.execPending {
@@ -146,12 +147,12 @@ func TestLanBindsBeatCrossKeys(t *testing.T) {
 	m = openLan(t)
 	m.handleKey("/")
 	m.handleKey("i")
-	if m.activeFullScreen() != fullScreenLan {
+	if m.activeFullScreen() != app.FullScreenLan {
 		t.Fatalf("絞り込みの入力中に i で横断した (active=%v)", m.activeFullScreen())
 	}
 	m.handleKey("esc")
 	m.handleKey("i")
-	if m.activeFullScreen() != fullScreenIssues {
+	if m.activeFullScreen() != app.FullScreenIssues {
 		t.Errorf("i で issues へ横断しない (active=%v)", m.activeFullScreen())
 	}
 	if m.lanV.visible() {

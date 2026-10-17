@@ -448,7 +448,7 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	if m.diffOv.pager.Offset != maxOffset {
 		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOv.pager.Offset, maxOffset)
 	}
-	// 半ページ移動は glide (scroll_glide.go) で数フレームかけて着地する。🚨 ここで手で
+	// 半ページ移動は glide (internal/term/scroll_glide.go) で数フレームかけて着地する。🚨 ここで手で
 	// advanceGlide を呼ぶ前に「キー処理が tick を返している」ことを必ず確かめる: 手で進める
 	// だけのテストは、tick を張り忘れて実機で永久に固まるバグ (敵対的レビュー P1) を隠す。
 	// 🚨 cmd の nil 判定では足りない: maybeTick は single-flight で、既にチェーンが生きていれば

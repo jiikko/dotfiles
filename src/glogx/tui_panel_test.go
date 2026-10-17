@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -1113,7 +1114,7 @@ func TestBrowseRerunNoDoublePoll(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
 	m.details[m.commits[0].SHA] = []CheckDetail{
-		{Name: "test", State: StatePending, CheckID: 1, StartedAt: timeNow()},
+		{Name: "test", State: StatePending, CheckID: 1, StartedAt: app.TimeNow()},
 		{Name: "lint", State: StateFailure, CheckID: 7},
 	}
 	m.statuses[m.commits[0].SHA] = StatePending // 実行中 = 追従対象

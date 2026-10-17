@@ -1,8 +1,8 @@
-package main
+package app
 
 import "sync"
 
-// cleanupLatch は「終了前に看取るべき走行中の仕事の本数」を数える latch。
+// CleanupLatch は「終了前に看取るべき走行中の仕事の本数」を数える latch。
 // 2 か所が別インスタンスとして使う: doctor の走査 (doctor_cleanup.go の doctorCleanup) と
 // pull の後始末 (external_commands.go の pullCleanup)。
 //
@@ -14,19 +14,19 @@ import "sync"
 // 遅れた登録を Wait が取りこぼすのは**許容する**: まだ始まっていない Cmd は子プロセスを
 // 起こしていないので、その時点で終了・再起動しても孤児は生まれない (closure が始まれば、
 // 子を起こす前に add が済んでいる)。
-type cleanupLatch struct {
+type CleanupLatch struct {
 	mu    sync.Mutex
 	n     int
 	waitC chan struct{} // 誰かが待っている間だけ非 nil。n が 0 になった時点で閉じる
 }
 
-func (l *cleanupLatch) add() {
+func (l *CleanupLatch) Add() {
 	l.mu.Lock()
 	l.n++
 	l.mu.Unlock()
 }
 
-func (l *cleanupLatch) done() {
+func (l *CleanupLatch) Done() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	// 🚨 **n を負にしない**。`sync.WaitGroup` は done 過多で大声で落ちる
@@ -50,7 +50,7 @@ func (l *cleanupLatch) done() {
 
 // wait は「今走っている走査が全部帰った」ときに閉じる channel を返す。
 // 走査が無ければ閉じ済みの channel を返す (呼び出し側は常に受信できる)。
-func (l *cleanupLatch) wait() <-chan struct{} {
+func (l *CleanupLatch) Wait() <-chan struct{} {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.n <= 0 {

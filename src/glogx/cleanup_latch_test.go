@@ -1,13 +1,14 @@
 package main
 
 import (
+	"glogx/internal/app"
 	"runtime"
 	"sync"
 	"testing"
 	"time"
 )
 
-// cleanupLatch が守る中心の不変条件: **カウント 0 での登録が、看取りと同時に走っても壊れない**。
+// app.CleanupLatch が守る中心の不変条件: **カウント 0 での登録が、看取りと同時に走っても壊れない**。
 //
 // これが sync.WaitGroup を使えない理由そのもの。WaitGroup はカウント 0 のときの Add と Wait の
 // 同時実行を禁じており、`sync: WaitGroup misuse: Add called concurrently with Wait` で panic する。
@@ -28,12 +29,12 @@ func TestCleanupLatchAddAtZeroConcurrentWithWait(t *testing.T) {
 		runtime.GOMAXPROCS(2)
 	}
 	for range 200 {
-		var l cleanupLatch
+		var l app.CleanupLatch
 		start := make(chan struct{})
 		var wg sync.WaitGroup // ハーネス側の同期 (被検体ではない)
 		wg.Add(2)
-		go func() { defer wg.Done(); <-start; <-l.wait() }()
-		go func() { defer wg.Done(); <-start; l.add(); l.done() }()
+		go func() { defer wg.Done(); <-start; <-l.Wait() }()
+		go func() { defer wg.Done(); <-start; l.Add(); l.Done() }()
 		close(start)
 		done := make(chan struct{})
 		go func() { wg.Wait(); close(done) }()
@@ -52,22 +53,22 @@ func TestCleanupLatchAddAtZeroConcurrentWithWait(t *testing.T) {
 // park 側は**最も壊れやすい経路** (waitC の生成・close・nil 化が全部ここで動く) なので、
 // 運任せにせず名指しで通す。
 func TestCleanupLatchAddAndDoneWhileWaiterIsParked(t *testing.T) {
-	var l cleanupLatch
-	l.add() // 走行中の仕事を 1 本作り、待ち手を park させる
-	w := l.wait()
+	var l app.CleanupLatch
+	l.Add() // 走行中の仕事を 1 本作り、待ち手を park させる
+	w := l.Wait()
 	select {
 	case <-w:
 		t.Fatal("仕事が走っているのに wait が閉じている (park していない)")
 	case <-time.After(20 * time.Millisecond):
 	}
-	l.add() // park 中に 2 本目が登録される
-	l.done()
+	l.Add() // park 中に 2 本目が登録される
+	l.Done()
 	select {
 	case <-w:
 		t.Fatal("まだ 1 本走っているのに wait が閉じた")
 	case <-time.After(20 * time.Millisecond):
 	}
-	l.done() // 最後の 1 本が帰る
+	l.Done() // 最後の 1 本が帰る
 	select {
 	case <-w:
 	case <-time.After(5 * time.Second):
@@ -80,16 +81,16 @@ func TestCleanupLatchAddAndDoneWhileWaiterIsParked(t *testing.T) {
 // 実測 (敵対的レビュー): `done()` の `l.waitC = nil` を落とす変異は、latch のテストだけでは
 // 緑のまま通り、**無関係な doctor のテストが偶然 panic で落として**いた。
 func TestCleanupLatchIsReusableAcrossCycles(t *testing.T) {
-	var l cleanupLatch
+	var l app.CleanupLatch
 	for cycle := range 3 {
-		l.add()
-		w := l.wait()
+		l.Add()
+		w := l.Wait()
 		select {
 		case <-w:
 			t.Fatalf("%d 周目: 仕事が走っているのに wait が閉じている", cycle)
 		case <-time.After(20 * time.Millisecond):
 		}
-		l.done()
+		l.Done()
 		select {
 		case <-w:
 		case <-time.After(5 * time.Second):
@@ -105,19 +106,19 @@ func TestCleanupLatchIsReusableAcrossCycles(t *testing.T) {
 // sync.WaitGroup は同じ操作で大声で落ちる (`panic: sync: negative WaitGroup counter`) ので、
 // 対策しないと載せ替えが「うるさい失敗」を「静かな取りこぼし」に交換することになる。
 func TestCleanupLatchDoesNotGoNegative(t *testing.T) {
-	var l cleanupLatch
-	l.add()
-	l.done()
-	l.done() // 余分な done。WaitGroup ならここで panic する
-	l.add()  // 本物の走行中の仕事
+	var l app.CleanupLatch
+	l.Add()
+	l.Done()
+	l.Done() // 余分な done。WaitGroup ならここで panic する
+	l.Add()  // 本物の走行中の仕事
 	select {
-	case <-l.wait():
+	case <-l.Wait():
 		t.Fatal("走行中の仕事があるのに wait が即座に閉じた (n が負に沈んでいる)")
 	case <-time.After(50 * time.Millisecond):
 	}
-	l.done()
+	l.Done()
 	select {
-	case <-l.wait():
+	case <-l.Wait():
 	case <-time.After(5 * time.Second):
 		t.Fatal("全部帰ったのに wait が閉じない")
 	}
@@ -125,15 +126,15 @@ func TestCleanupLatchDoesNotGoNegative(t *testing.T) {
 
 // 看取りは「今走っている仕事が帰るまで」戻らない。
 func TestCleanupLatchWaitBlocksUntilDone(t *testing.T) {
-	var l cleanupLatch
-	l.add()
-	w := l.wait()
+	var l app.CleanupLatch
+	l.Add()
+	w := l.Wait()
 	select {
 	case <-w:
 		t.Fatal("仕事が走っているのに wait が閉じている")
 	case <-time.After(30 * time.Millisecond):
 	}
-	l.done()
+	l.Done()
 	select {
 	case <-w:
 	case <-time.After(5 * time.Second):
@@ -143,9 +144,9 @@ func TestCleanupLatchWaitBlocksUntilDone(t *testing.T) {
 
 // 仕事が無ければ閉じ済みの channel を返す (呼び出し側が常に受信できる契約)。
 func TestCleanupLatchWaitIsClosedWhenIdle(t *testing.T) {
-	var l cleanupLatch
+	var l app.CleanupLatch
 	select {
-	case <-l.wait():
+	case <-l.Wait():
 	case <-time.After(time.Second):
 		t.Fatal("仕事が無いのに wait が閉じていない")
 	}
@@ -163,6 +164,6 @@ func TestCleanupLatchWaitIsClosedWhenIdle(t *testing.T) {
 // glogx のスイート中に本物の doctor 走査が並走する窓は実在する)。
 // 得られる価値は型の pin だけなので、コストのかからない形に寄せた。
 var (
-	_ *cleanupLatch = &pullCleanup
-	_ *cleanupLatch = &doctorCleanup
+	_ *app.CleanupLatch = &pullCleanup
+	_ *app.CleanupLatch = &doctorCleanup
 )

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"glogx/internal/app"
 	"treefiler/filer"
 )
 
@@ -15,9 +16,9 @@ func withFilerState(t *testing.T) time.Time {
 	t.Helper()
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "cache"))
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.Local)
-	orig := timeNow
-	timeNow = func() time.Time { return now }
-	t.Cleanup(func() { timeNow = orig })
+	orig := app.TimeNow
+	app.TimeNow = func() time.Time { return now }
+	t.Cleanup(func() { app.TimeNow = orig })
 	return now
 }
 
@@ -33,7 +34,7 @@ func TestFilerScreenRejectsBadState(t *testing.T) {
 		s    filerScreen
 		dir  string
 	}{
-		{"期限切れ", filerScreen{Place: p, SavedAt: now.Add(-screenMemoryTTL)}, "/a"},
+		{"期限切れ", filerScreen{Place: p, SavedAt: now.Add(-app.ScreenMemoryTTL)}, "/a"},
 		{"未来の時刻", filerScreen{Place: p, SavedAt: now.Add(time.Minute)}, "/a"},
 		{"別の dir", filerScreen{Place: p, SavedAt: now}, "/a/sub"},
 		{"時刻なし", filerScreen{Place: p}, "/a"},
@@ -46,7 +47,7 @@ func TestFilerScreenRejectsBadState(t *testing.T) {
 			t.Errorf("%s: 復元しようとした", c.name)
 		}
 	}
-	path, _ := filerMemory.path()
+	path, _ := filerMemory.Path()
 	if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +95,7 @@ func TestInitRestoresFilerScreen(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = m.Init()
-	if m.activeFullScreen() != fullScreenFiler {
+	if m.activeFullScreen() != app.FullScreenFiler {
 		t.Fatalf("記憶があるのに F が開いていない: active=%v", m.activeFullScreen())
 	}
 	if got := m.filerV.f.Place().Cursor; got != filepath.Join(sub, "c.txt") {
@@ -124,7 +125,7 @@ func TestInitFilerRestoreYieldsToOtherScreens(t *testing.T) {
 	removeRatelimitScreen()
 	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	_ = m2.Init()
-	if m2.activeFullScreen() != fullScreenNone {
+	if m2.activeFullScreen() != app.FullScreenNone {
 		t.Errorf("記憶が無いのに全画面が開いた: %v", m2.activeFullScreen())
 	}
 }

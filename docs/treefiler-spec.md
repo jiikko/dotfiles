@@ -75,7 +75,7 @@
 
 ### 0.3 glogx への組み込み (2026-10-07 にコードで確かめた事実)
 
-- **全画面の板として足す**: `src/glogx/fullscreen.go` の `fullScreenCount` の直前に ID を足す。足すと `exhaustive` の lint と
+- **全画面の板として足す**: `src/glogx/internal/app/fullscreen_id.go` の `app.FullScreenCount` の直前に ID を足す。足すと `exhaustive` の lint と
   `TestFullScreenSurfacesWireEverySite` が配線の漏れを捕まえる。描画は `finishWithGlobalChrome` を通す (通さないと toast・usage が載らない)
 - **`F` をどの画面からでも受ける**: `tui.go` の `handleKey` で、`C` / `X` (update) と同じく**全画面の dispatch より前**に置く
   (後ろに置くと各 viewer がキーを飲む)。他の viewer から開くときはその viewer を閉じてから開く (全画面は同時に 1 枚)
@@ -182,7 +182,7 @@
 - 外へ出す面 (案): `New(root string, opts) *Model` / `Update(tea.Msg) (Result, tea.Cmd)` (Result = 何もしない / 閉じたい / 終了したい) /
   `View(w, h int) string` / `OwnsKeys() bool` (入力モード中。§0.3) / `Animating() bool` (glogx の `tickInterval` が周期を上げるのに使う)。
   時刻は `opts.Now` で注入する (熱の色が「今」に依存するので、テストと撮影で固定するため)
-- glogx 側: `fullscreen.go` に ID、`handleKey` の `C`/`X` の位置に `F` (§0.3)、`overlayOwnershipTable`、`tickInterval`、`TestFrameAllocBudget` の行
+- glogx 側: `internal/app/fullscreen_id.go` に ID、`handleKey` の `C`/`X` の位置に `F` (§0.3)、`overlayOwnershipTable`、`tickInterval`、`TestFrameAllocBudget` の行
 
 #### 0.8.3 テスト (段ごとに書き、変異を当てて red を確かめてから commit する)
 

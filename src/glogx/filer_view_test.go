@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/app"
 )
 
 // filerDir は treefiler で開く小さな木 (pwd の代わりに t.Chdir する)。
@@ -39,19 +40,19 @@ func newFilerBrowse(t *testing.T) *browseModel {
 func TestFilerOpensWithFAndClosesWithF(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
-	if m.activeFullScreen() != fullScreenFiler {
+	if m.activeFullScreen() != app.FullScreenFiler {
 		t.Fatalf("F で開かない: active=%v", m.activeFullScreen())
 	}
 	if !strings.Contains(strings.Join(m.filerV.lines(100, 29), "\n"), "a.txt") {
 		t.Fatal("pwd の中身が描かれていない")
 	}
 	m.handleKey("F")
-	if m.activeFullScreen() != fullScreenNone {
+	if m.activeFullScreen() != app.FullScreenNone {
 		t.Fatal("F で閉じない")
 	}
 	m.diffOv.sha = m.commits[0].SHA
 	m.handleKey("F")
-	if m.activeFullScreen() != fullScreenFiler {
+	if m.activeFullScreen() != app.FullScreenFiler {
 		t.Fatal("diff の上から F で開かない")
 	}
 }
@@ -108,9 +109,9 @@ func TestFilerBackgroundNoticeShowsOnTick(t *testing.T) {
 // (回らないと透明のまま次のキーまで何も見えない) も、ここで固定する。
 func TestFilerAnimationAdvancesOnTickAndStops(t *testing.T) {
 	clock := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
-	orig := timeNow
-	timeNow = func() time.Time { clock = clock.Add(20 * time.Millisecond); return clock }
-	t.Cleanup(func() { timeNow = orig })
+	orig := app.TimeNow
+	app.TimeNow = func() time.Time { clock = clock.Add(20 * time.Millisecond); return clock }
+	t.Cleanup(func() { app.TimeNow = orig })
 	m := newFilerBrowse(t)
 	m.handleKey("F")
 	if !m.spinnerActive() {
@@ -167,7 +168,7 @@ func TestFilerResizeTicksAndUToggles(t *testing.T) {
 
 // settleFiler はファイラーの動きを止まるまで進める (時刻を 20ms ずつ進めて Advance を呼ぶ)。
 func settleFiler(m *browseModel) {
-	at := timeNow()
+	at := app.TimeNow()
 	for i := range 200 {
 		m.filerV.advance(at.Add(time.Duration(i) * 20 * time.Millisecond))
 	}
@@ -264,7 +265,7 @@ func TestFilerSearchTakesFUAndRepeats(t *testing.T) {
 	for _, k := range []string{"F", "U", "s", "s"} {
 		m.handleKey(k)
 	}
-	if m.activeFullScreen() != fullScreenFiler || m.usageOv.visible {
+	if m.activeFullScreen() != app.FullScreenFiler || m.usageOv.visible {
 		t.Fatal("入力中の F / U で閉じた / 利用枠が開いた")
 	}
 	if got := m.filerV.f.SearchQuery(); got != "FUss" {
@@ -279,7 +280,7 @@ func TestFilerHelpSwallowsCrossKeys(t *testing.T) {
 		m.handleKey("F")
 		m.handleKey("?")
 		m.handleKey(k)
-		if m.activeFullScreen() != fullScreenFiler || m.usageOv.visible || m.filerV.f.OwnsKeys() {
+		if m.activeFullScreen() != app.FullScreenFiler || m.usageOv.visible || m.filerV.f.OwnsKeys() {
 			t.Fatalf("キー一覧の中の %s: filer に留まって一覧だけ閉じるはず (全画面 %v・利用枠 %v・入力中 %v)",
 				k, m.activeFullScreen(), m.usageOv.visible, m.filerV.f.OwnsKeys())
 		}
@@ -297,13 +298,13 @@ func TestFilerFileOpLayersTakeCrossKeys(t *testing.T) {
 			t.Fatal("F の中の d で確認の板が開かない (glogx の d に取られた)")
 		}
 		m.handleKey(k)
-		if m.activeFullScreen() != fullScreenFiler || m.filerV.f.OwnsKeys() {
+		if m.activeFullScreen() != app.FullScreenFiler || m.filerV.f.OwnsKeys() {
 			t.Fatalf("確認の板の中の %s: filer に留まって板だけ閉じるはず (全画面 %v)", k, m.activeFullScreen())
 		}
 		for _, open := range []string{"a", "m"} {
 			m.handleKey(open)
 			m.handleKey(k)
-			if m.activeFullScreen() != fullScreenFiler || !m.filerV.f.OwnsKeys() {
+			if m.activeFullScreen() != app.FullScreenFiler || !m.filerV.f.OwnsKeys() {
 				t.Fatalf("%s の入力欄の %s: 字として入るはず (全画面 %v)", open, k, m.activeFullScreen())
 			}
 			m.handleKey("esc")
@@ -328,7 +329,7 @@ func TestFilerPasteGoesToSearch(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
 	m.Update(tea.PasteMsg{Content: "q"})
-	if m.done || m.activeFullScreen() != fullScreenFiler {
+	if m.done || m.activeFullScreen() != app.FullScreenFiler {
 		t.Fatal("入力していないときの貼り付けがキーとして走った")
 	}
 	m.handleKey("/")

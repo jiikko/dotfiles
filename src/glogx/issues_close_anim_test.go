@@ -7,6 +7,7 @@ package main
 
 import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"glogx/internal/app"
 	"strings"
 	"testing"
 	"time"
@@ -192,11 +193,11 @@ func TestIssuesClosingIsNotRemembered(t *testing.T) {
 	stubClock(t)
 
 	v := openAnimView(t)
-	if _, ok := v.screen(timeNow()); !ok {
+	if _, ok := v.screen(app.TimeNow()); !ok {
 		t.Fatal("前提が崩れた: 開いているのに覚えない")
 	}
 	v.close()
-	if _, ok := v.screen(timeNow()); ok {
+	if _, ok := v.screen(app.TimeNow()); ok {
 		t.Fatal("閉じる演出の途中を「開いている」として覚えた (次の起動で蘇る)")
 	}
 }

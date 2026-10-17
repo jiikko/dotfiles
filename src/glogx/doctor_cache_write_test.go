@@ -13,7 +13,7 @@ import (
 
 // doctor のキャッシュ書き込みで **write が失敗したとき** に temp が残らないこと (issue 219)。
 //
-// 🚨 このテストが見ているのは `writeAtomic` の **write 分岐** (Write 失敗時の os.Remove)。
+// 🚨 このテストが見ているのは `app.WriteAtomic` の **write 分岐** (Write 失敗時の os.Remove)。
 // rename 分岐は `TestSaveCacheCleansTempOnRenameFailure` が pin しており、そちらを外しても
 // 本テストは緑のまま = 別の分岐を見ている証拠になる
 // (mutation-verify-new-tests.md「スイートの red を効いていると読まない」)。

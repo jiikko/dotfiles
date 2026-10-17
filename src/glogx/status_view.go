@@ -17,6 +17,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -83,9 +84,9 @@ type statusView struct {
 	notice     string
 	noticeKind noticeKind
 
-	// wantCross は横断キー (crossTarget) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
-	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。fullScreenNone = 無し
-	wantCross fullScreenID
+	// wantCross は横断キー (app.CrossTarget) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
+	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。app.FullScreenNone = 無し
+	wantCross app.FullScreenID
 	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
 	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
@@ -209,7 +210,7 @@ func (v *statusView) slideAnimating() bool {
 	if v.closing {
 		return true
 	}
-	return v.shown && anim.Elapsed(v.animStart, timeNow(), statusOpenDuration) < 1
+	return v.shown && anim.Elapsed(v.animStart, app.TimeNow(), statusOpenDuration) < 1
 }
 
 // animating は開閉の演出中か。spinnerActive (tick チェーンを回すか) がこれを見る
@@ -231,7 +232,7 @@ func (v *statusView) toggle() tea.Cmd {
 	}
 	v.shown = true
 	if !v.closeAnimOff {
-		v.animStart = timeNow()
+		v.animStart = app.TimeNow()
 	}
 	return tea.Batch(v.loadCmd(), v.pollCmd(), v.previewTickCmd())
 }
@@ -239,7 +240,7 @@ func (v *statusView) toggle() tea.Cmd {
 // close は閉じる演出へ入る (演出を切っているときは即座に畳む)。
 func (v *statusView) close() {
 	v.closing = true
-	v.animStart = timeNow()
+	v.animStart = app.TimeNow()
 	if v.closeAnimOff {
 		v.finishClose()
 	}
@@ -248,7 +249,7 @@ func (v *statusView) close() {
 // settleClose は閉じる演出が終わっていたら畳む (描画・tick のどちらが先でも進むように、
 // 判定は 1 箇所へ寄せる。issuesView.settleClose と同じ作法)。
 func (v *statusView) settleClose() {
-	if v.closing && anim.Elapsed(v.animStart, timeNow(), statusCloseDuration) >= 1 {
+	if v.closing && anim.Elapsed(v.animStart, app.TimeNow(), statusCloseDuration) >= 1 {
 		v.finishClose()
 	}
 }
@@ -284,7 +285,7 @@ func (v *statusView) finishClose() bool {
 
 // settleAnim は開く演出が終わっていたら時計を捨てる (animating の判定を軽くする)。
 func (v *statusView) settleAnim() {
-	if !v.closing && !v.animStart.IsZero() && anim.Elapsed(v.animStart, timeNow(), statusOpenDuration) >= 1 {
+	if !v.closing && !v.animStart.IsZero() && anim.Elapsed(v.animStart, app.TimeNow(), statusOpenDuration) >= 1 {
 		v.animStart = time.Time{}
 	}
 }
@@ -706,9 +707,9 @@ func (v *statusView) pagerKeyPress(key string, vp statusViewport) tea.Cmd {
 // listKey は一覧のキー。
 func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 	rows := max(vp.page-1, 1)
-	// 横断キー (i / R / D。表は crossTarget)。s は自分自身なので下の toggle (閉じる) に任せる。
+	// 横断キー (i / R / D。表は app.CrossTarget)。s は自分自身なので下の toggle (閉じる) に任せる。
 	// 確認中 (X) や pager 中はこの関数まで届かないので誤爆しない (handleKey の判定順)
-	if target, ok := crossTarget(key); ok && target != fullScreenStatus {
+	if target, ok := app.CrossTarget(key); ok && target != app.FullScreenStatus {
 		v.close()
 		v.wantCross = target
 		return nil
@@ -772,10 +773,10 @@ func (v *statusView) applyMotion(m listnav.Motion, rows int) tea.Cmd {
 	return nil
 }
 
-// takeWantCross は横断先 (無ければ fullScreenNone) を一度だけ取り出す (takeNotice と同じ語彙)。
-func (v *statusView) takeWantCross() fullScreenID {
+// takeWantCross は横断先 (無ければ app.FullScreenNone) を一度だけ取り出す (takeNotice と同じ語彙)。
+func (v *statusView) takeWantCross() app.FullScreenID {
 	want := v.wantCross
-	v.wantCross = fullScreenNone
+	v.wantCross = app.FullScreenNone
 	return want
 }
 
@@ -1004,9 +1005,9 @@ func statusListWidth(total int) int {
 // animProgress は演出の進み (0..1。演出していないときは 1 = 変形しない)。
 func (v *statusView) animProgress() float64 {
 	if v.closing {
-		return 1 - anim.Elapsed(v.animStart, timeNow(), statusCloseDuration)
+		return 1 - anim.Elapsed(v.animStart, app.TimeNow(), statusCloseDuration)
 	}
-	return anim.Elapsed(v.animStart, timeNow(), statusOpenDuration)
+	return anim.Elapsed(v.animStart, app.TimeNow(), statusOpenDuration)
 }
 
 // slideLeftWindow は窓を「板が左端から生えてくる」途中の姿にする (closing なら左へ縮んで消える

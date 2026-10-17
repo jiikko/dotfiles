@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 
+	"glogx/internal/app"
 	"glogx/issues"
 )
 
@@ -43,19 +44,19 @@ type issuesScreen struct {
 }
 
 // issuesMemory は issues viewer の記憶 ($XDG_CACHE_HOME/glog/issues-last-screen.json)。作法は screen_memory.go。
-var issuesMemory = screenMemory[issuesScreen]{file: "issues-last-screen.json", savedAt: func(s issuesScreen) time.Time { return s.SavedAt }}
+var issuesMemory = app.ScreenMemory[issuesScreen]{File: "issues-last-screen.json", SavedAt: func(s issuesScreen) time.Time { return s.SavedAt }}
 
-func saveIssuesScreen(s issuesScreen) error { return issuesMemory.save(s) }
+func saveIssuesScreen(s issuesScreen) error { return issuesMemory.Save(s) }
 
 // removeIssuesScreen は記憶を捨てる (git log 一覧から終了したとき)。
-func removeIssuesScreen() { issuesMemory.remove() }
+func removeIssuesScreen() { issuesMemory.Remove() }
 
-// loadIssuesScreen は TTL 内の記憶を返す (読めない・壊れている・期限切れ・未来の時刻は「記憶なし」。screenMemory.load)。
+// loadIssuesScreen は TTL 内の記憶を返す (読めない・壊れている・期限切れ・未来の時刻は「記憶なし」。app.ScreenMemory.load)。
 //
 // repo の照合はここではしない: 呼び出し側が Root と実際の repo root を突き合わせる
 // (root の解決は git fork なので、記憶があるときだけ非同期で行う)。
 func loadIssuesScreen(now time.Time) (issuesScreen, bool) {
-	s, ok := issuesMemory.load(now)
+	s, ok := issuesMemory.Load(now)
 	if !ok || s.Root == "" {
 		return issuesScreen{}, false
 	}

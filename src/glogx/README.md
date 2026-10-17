@@ -447,7 +447,7 @@ go test -run '^$' -bench BenchmarkView -benchmem .
 - `tui.go` のテストは機能クラスタで分割: `tui_helpers_test.go` (共有ヘルパー) /
   `tui_nav_test.go` (カーソル/スクロール/アニメ/View) / `tui_panel_test.go` (job パネル/詳細/ETA/CI 取得) /
   `tui_actions_test.go` (push/pull/rerun/update) / `tui_overlay_test.go` (diff/PR 状態/コピー) /
-  `box_test.go` (枠描画)
+  `internal/term/box_test.go` (枠描画)
 
 ## 設計メモ
 

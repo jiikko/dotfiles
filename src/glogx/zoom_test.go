@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"strings"
 	"testing"
@@ -170,7 +171,7 @@ func TestZoomRendersEnoughFrames(t *testing.T) {
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.zoom.off = false
-	m.zoom.start(timeNow())
+	m.zoom.start(app.TimeNow())
 
 	interval := m.tickInterval()
 	if interval >= spinnerInterval {
@@ -179,7 +180,7 @@ func TestZoomRendersEnoughFrames(t *testing.T) {
 	// 実画面へ寄り切る (appZoomSnap) までに何フレーム出るかを数える
 	shown := 0
 	for tt := time.Duration(0); tt < appZoomDuration; tt += interval {
-		if m.zoom.scale(timeNow().Add(tt)) < appZoomSnap {
+		if m.zoom.scale(app.TimeNow().Add(tt)) < appZoomSnap {
 			shown++
 		}
 	}
@@ -194,7 +195,7 @@ func TestZoomFrameRateDropsAfterSettle(t *testing.T) {
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.zoom.off = false
-	m.zoom.start(timeNow())
+	m.zoom.start(app.TimeNow())
 	advance(appZoomDuration)
 	if got := m.tickInterval(); got == zoomInterval {
 		t.Fatal("演出が終わっても 60fps で回り続けている (CPU を無駄に食う)")
@@ -234,8 +235,8 @@ func TestZoomStepsAreSmall(t *testing.T) {
 		name  string
 		begin func(*appZoom)
 	}{
-		{"開く", func(z *appZoom) { z.start(timeNow()) }},
-		{"閉じる", func(z *appZoom) { z.startClose(timeNow()) }},
+		{"開く", func(z *appZoom) { z.start(app.TimeNow()) }},
+		{"閉じる", func(z *appZoom) { z.startClose(app.TimeNow()) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -249,7 +250,7 @@ func TestZoomStepsAreSmall(t *testing.T) {
 			const rows = 40
 			prev, total, steps := -1, 0, 0
 			for tt := time.Duration(0); tt <= appZoomDuration; tt += interval {
-				s := m.zoom.scale(timeNow().Add(tt))
+				s := m.zoom.scale(app.TimeNow().Add(tt))
 				if s >= appZoomSnap {
 					if prev < 0 {
 						continue // 閉じ始めの 1 フレームは実画面 (ここが起点)

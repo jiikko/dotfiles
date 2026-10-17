@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"glogx/internal/app"
 	"os"
 	"time"
 )
@@ -17,11 +18,11 @@ import (
 // 消える**。子は Setpgid で別プロセスグループなので端末の SIGINT も届かず、走り続ける
 // (pid は保たれるので厳密には「孤児」ではなく、誰も wait しないゾンビになる)。
 //
-// 形は pullCleanup (external_commands.go) と同じで、**同じ cleanupLatch を使う**
+// 形は pullCleanup (external_commands.go) と同じで、**同じ app.CleanupLatch を使う**
 // (issue 217 で pull 側も WaitGroup から載せ替えた)。登録は走査を起こす側
 // (doctorView.start)、看取りは main.go。**pull 用とは別のインスタンスを持つ**: 待ちの上限も
 // 出すメッセージも別で、片方の遅れをもう片方の理由として表示すると診断を誤らせる。
-var doctorCleanup cleanupLatch
+var doctorCleanup app.CleanupLatch
 
 // doctorTrack は走査 1 本を latch に登録して走らせる。goroutine は呼び出し側が作る
 // (tea.Cmd の closure からも使うため)。
@@ -29,8 +30,8 @@ var doctorCleanup cleanupLatch
 // 🚨 **add は f を呼ぶ前に済ませる**。子プロセスを起こすのは f の中なので、この順序が
 // 「子が生まれる前に登録されている」を保証する。
 func doctorTrack(f func()) {
-	doctorCleanup.add()
-	defer doctorCleanup.done()
+	doctorCleanup.Add()
+	defer doctorCleanup.Done()
 	f()
 }
 
@@ -38,7 +39,7 @@ func doctorTrack(f func()) {
 // 待ちは runner.Exec の ctx cancel + WaitDelay (2 秒) で構造的に有限。すぐ終わらないときだけ
 // 理由を出す (無言で固まったように見せない。waitPullCleanup と同じ作法)。
 func waitDoctorCleanup() {
-	done := doctorCleanup.wait()
+	done := doctorCleanup.Wait()
 	select {
 	case <-done:
 		return

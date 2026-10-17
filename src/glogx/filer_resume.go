@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/app"
 	"treefiler/filer"
 )
 
@@ -27,16 +28,16 @@ type filerScreen struct {
 	SavedAt time.Time   `json:"saved_at"`
 }
 
-var filerMemory = screenMemory[filerScreen]{file: "filer-screen.json", savedAt: func(s filerScreen) time.Time { return s.SavedAt }}
+var filerMemory = app.ScreenMemory[filerScreen]{File: "filer-screen.json", SavedAt: func(s filerScreen) time.Time { return s.SavedAt }}
 
-func saveFilerScreen(s filerScreen) error { return filerMemory.save(s) }
+func saveFilerScreen(s filerScreen) error { return filerMemory.Save(s) }
 
-func removeFilerScreen() { filerMemory.remove() }
+func removeFilerScreen() { filerMemory.Remove() }
 
-// loadFilerScreen は dir で開いた F の記憶を返す。読めない / 壊れている / 期限切れ / 未来の時刻 (screenMemory.load) と
+// loadFilerScreen は dir で開いた F の記憶を返す。読めない / 壊れている / 期限切れ / 未来の時刻 (app.ScreenMemory.load) と
 // 別の dir はすべて「復元しない」に倒す (勝手に全画面を出さない方が安全側)。
 func loadFilerScreen(now time.Time, dir string) (filer.Place, bool) {
-	s, ok := filerMemory.load(now)
+	s, ok := filerMemory.Load(now)
 	if !ok || s.Place.Start == "" || s.Place.Start != dir {
 		return filer.Place{}, false
 	}
@@ -47,7 +48,7 @@ func loadFilerScreen(now time.Time, dir string) (filer.Place, bool) {
 // 2 回前の F が蘇る)。🚨 F の q / Esc は hide の前にここを通る (routeKeyToFiler。hide の後だと「出していない」になる)。
 func (m *browseModel) rememberFilerScreen() {
 	if p, ok := m.filerV.place(); ok {
-		_ = saveFilerScreen(filerScreen{Place: p, SavedAt: timeNow()}) // 保存できなくても終了は妨げない
+		_ = saveFilerScreen(filerScreen{Place: p, SavedAt: app.TimeNow()}) // 保存できなくても終了は妨げない
 		return
 	}
 	removeFilerScreen()
@@ -56,11 +57,11 @@ func (m *browseModel) rememberFilerScreen() {
 // restoreFilerScreen は起動時の復元。他の全画面の復元が当たっていないときだけ呼ぶ (全画面は同時に 1 枚)。
 func (m *browseModel) restoreFilerScreen() tea.Cmd {
 	dir := currentDir()
-	p, ok := loadFilerScreen(timeNow(), dir)
+	p, ok := loadFilerScreen(app.TimeNow(), dir)
 	if !ok {
 		return nil
 	}
-	cmd := m.openFullScreen(fullScreenFiler)
+	cmd := m.openFullScreen(app.FullScreenFiler)
 	if f := m.filerV.live(); f != nil {
 		f.RestorePlace(p)
 	}

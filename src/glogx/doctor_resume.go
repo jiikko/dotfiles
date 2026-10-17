@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/app"
 	"time"
 )
 
@@ -23,18 +24,18 @@ type doctorScreen struct {
 	SavedAt time.Time `json:"saved_at"`
 }
 
-var doctorMemory = screenMemory[doctorScreen]{file: "doctor-screen.json", savedAt: func(s doctorScreen) time.Time { return s.SavedAt }}
+var doctorMemory = app.ScreenMemory[doctorScreen]{File: "doctor-screen.json", SavedAt: func(s doctorScreen) time.Time { return s.SavedAt }}
 
-func saveDoctorScreen(s doctorScreen) error { return doctorMemory.save(s) }
+func saveDoctorScreen(s doctorScreen) error { return doctorMemory.Save(s) }
 
-func removeDoctorScreen() { doctorMemory.remove() }
+func removeDoctorScreen() { doctorMemory.Remove() }
 
-// loadDoctorScreen は復元するタブを返す (読めない・壊れている・期限切れ・未来の時刻は「復元しない」。screenMemory.load)。
+// loadDoctorScreen は復元するタブを返す (読めない・壊れている・期限切れ・未来の時刻は「復元しない」。app.ScreenMemory.load)。
 //
 // 🚨 **範囲外のタブは既定へ畳む。** このファイルは一般ユーザー権限で書き換えられるので、
 // 保存値をそのまま添字に使わない (doctor-snapshot.json と同じ信頼境界)。
 func loadDoctorScreen(now time.Time) (doctorTab, bool) {
-	s, ok := doctorMemory.load(now)
+	s, ok := doctorMemory.Load(now)
 	if !ok {
 		return tabDisk, false
 	}

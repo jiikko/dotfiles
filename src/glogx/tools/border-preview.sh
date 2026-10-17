@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # glogx 最外周フレームの罫線色 候補プレビュー (実端末で実行)
-# 採用したい色が決まったら src/glogx/render.go の ansiFrameBorder を差し替える。
+# 採用したい色が決まったら src/glogx/internal/term/render.go の AnsiFrameBorder を差し替える。
 set -u
 demo() {
   local name="$1" c="$2" R=$'\033[0m' D=$'\033[2m' G=$'\033[32m'

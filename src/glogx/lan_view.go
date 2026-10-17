@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/live"
@@ -36,7 +37,7 @@ func newLanModel() (*lanmgr.Model, error) {
 		return nil, err
 	}
 	o.Copy = func(s string) error { return copyToClipboard(s) } // glogx のクリップボードの口 (テストは stubClipboard で差し替える)
-	o.Now = func() time.Time { return timeNow() }               // 呼ぶたびに読む (値をつかむとテストが差し替えた時計に追従しない)
+	o.Now = func() time.Time { return app.TimeNow() }           // 呼ぶたびに読む (値をつかむとテストが差し替えた時計に追従しない)
 	return lanmgr.New(o), nil
 }
 
@@ -61,7 +62,7 @@ type lanView struct {
 	execPending bool
 	shown       bool
 	m           *lanmgr.Model
-	wantCross   fullScreenID
+	wantCross   app.FullScreenID
 	openErr     string
 }
 
@@ -172,7 +173,7 @@ func (v *lanView) advance(now time.Time) {
 	}
 }
 
-// handleKey は lanmgr が飲むキー。L で閉じ、横断キー (表は crossTarget) で他の全画面へ移る。lanmgr が意味を持つキー (Binds) は
+// handleKey は lanmgr が飲むキー。L で閉じ、横断キー (表は app.CrossTarget) で他の全画面へ移る。lanmgr が意味を持つキー (Binds) は
 // 横断しない: s は ssh、入力中・確認・設定は全部のキー (横断で閉じると打っている文字が消える)。
 func (v *lanView) handleKey(key string) lanAction {
 	if !v.m.Binds(key) {
@@ -180,7 +181,7 @@ func (v *lanView) handleKey(key string) lanAction {
 			v.hide()
 			return lanClosed
 		}
-		if target, ok := crossTarget(key); ok && target != fullScreenLan {
+		if target, ok := app.CrossTarget(key); ok && target != app.FullScreenLan {
 			v.hide()
 			v.wantCross = target
 			return lanCross
@@ -197,9 +198,9 @@ func (v *lanView) handleKey(key string) lanAction {
 	return lanSwallow
 }
 
-func (v *lanView) takeWantCross() fullScreenID {
+func (v *lanView) takeWantCross() app.FullScreenID {
 	want := v.wantCross
-	v.wantCross = fullScreenNone
+	v.wantCross = app.FullScreenNone
 	return want
 }
 

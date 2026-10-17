@@ -1,10 +1,8 @@
 package main
 
 import (
-	"doctor/cachedir"
-
-	"atomicfile"
 	"encoding/json"
+	"glogx/internal/app"
 	"os"
 	"path/filepath"
 	"slices"
@@ -52,15 +50,10 @@ func (e cacheEntry) fresh(now time.Time) bool {
 	return age >= 0 && age < cacheTTL(e.State)
 }
 
-// cacheBaseDir は glogx のキャッシュ置き場 ($XDG_CACHE_HOME/glog、未設定時は ~/.cache/glog)。
-// CI キャッシュと claude バージョンキャッシュ (claude_version.go) で共有する。
-// 実体は doctor module の cachedir (doctor のスキャン結果も同じ置き場に保存するため。issue 148)。
-func cacheBaseDir() (string, error) { return cachedir.Base() }
-
 // CachePath はリポジトリごとのキャッシュファイルパス。
 // $XDG_CACHE_HOME/glog/github.com/<owner>/<name>.json (未設定時は ~/.cache/glog/...)。
 func CachePath(repo Repo) (string, error) {
-	base, err := cacheBaseDir()
+	base, err := app.CacheBaseDir()
 	if err != nil {
 		return "", err
 	}
@@ -114,7 +107,7 @@ func SaveCache(path string, fetched map[string]CIState, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(path, data)
+	return app.WriteAtomic(path, data)
 }
 
 // pruneToLimit はエントリ数を maxCacheEntries に抑える (取得時刻の新しい順に残す)。
@@ -136,13 +129,4 @@ func pruneToLimit(statuses map[string]cacheEntry) {
 	for _, e := range entries[maxCacheEntries:] {
 		delete(statuses, e.sha)
 	}
-}
-
-// writeAtomic は atomicfile.Write の薄いラッパー (親ディレクトリを作り、0600 で書く)。
-// temp の命名・掃除の契約と既知の射程外は atomicfile.Write の doc が正本。
-func writeAtomic(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return atomicfile.Write(path, data, 0o600)
 }

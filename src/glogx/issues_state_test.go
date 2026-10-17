@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"glogx/internal/app"
 	"glogx/issues"
 )
 
@@ -35,7 +36,7 @@ func TestIssuesScreenRoundTrip(t *testing.T) {
 	// 🚨 段階は名前で保存する。序数に戻すと、段階を増減・並べ替えた瞬間に保存済みの画面が
 	// 黙って別の段階で復元される (issues.StatusFilter.String の注記)。往復テストだけでは
 	// 同じコードが書いて読むので気づけないため、ファイルの中身を直接見る。
-	path, err := issuesMemory.path()
+	path, err := issuesMemory.Path()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +134,7 @@ func TestIssuesScreenIgnoresStaleAndBroken(t *testing.T) {
 			if err := saveIssuesScreen(issuesScreen{Root: "/repo", SavedAt: now}); err != nil {
 				t.Fatal(err)
 			}
-		}, now.Add(screenMemoryTTL)},
+		}, now.Add(app.ScreenMemoryTTL)},
 		{"未来の時刻 (時計のずれ)", func(t *testing.T, _ string) {
 			t.Helper()
 			if err := saveIssuesScreen(issuesScreen{Root: "/repo", SavedAt: now.Add(time.Hour)}); err != nil {
@@ -195,7 +196,7 @@ func TestQuitRemembersOnlyWhenViewerVisible(t *testing.T) {
 	m.issuesOv.root = "/repo"
 	m.quit()
 	// 読むのは保存より後の時刻で (SavedAt が読み取り時刻より未来なら時計のずれとして捨てる仕様)
-	s, ok := loadIssuesScreen(timeNow())
+	s, ok := loadIssuesScreen(app.TimeNow())
 	if !ok {
 		t.Fatal("viewer を出したまま終了したのに記憶が無い")
 	}
@@ -205,7 +206,7 @@ func TestQuitRemembersOnlyWhenViewerVisible(t *testing.T) {
 
 	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m2.quit() // 一覧から終了
-	if _, ok := loadIssuesScreen(timeNow()); ok {
+	if _, ok := loadIssuesScreen(app.TimeNow()); ok {
 		t.Fatal("一覧から終了したのに記憶が残っている")
 	}
 }
@@ -214,7 +215,7 @@ func TestQuitRemembersOnlyWhenViewerVisible(t *testing.T) {
 func TestScreenNotSavedBeforeScan(t *testing.T) {
 	v := newTestIssuesView()
 	v.shown = true
-	if _, ok := v.screen(timeNow()); ok {
+	if _, ok := v.screen(app.TimeNow()); ok {
 		t.Fatal("スキャン前の viewer を覚えてしまった")
 	}
 }
@@ -224,9 +225,9 @@ func TestScreenDoesNotRememberClosingBody(t *testing.T) {
 	v := loadedView(sampleIssues()...)
 	v.root = "/repo"
 	v.open = v.rows[0]
-	v.drawer.open(timeNow())
+	v.drawer.open(app.TimeNow())
 	v.closeBody()
-	s, ok := v.screen(timeNow())
+	s, ok := v.screen(app.TimeNow())
 	if !ok {
 		t.Fatal("覚えられていない")
 	}
@@ -253,7 +254,7 @@ func TestIssuesViewRestoreAppliesScreen(t *testing.T) {
 
 	v := newTestIssuesView()
 	cmd := v.restore(dir, issuesScreen{
-		Root: dir, SavedAt: timeNow(), Tab: "feat", Filter: issues.FilterAll.String(),
+		Root: dir, SavedAt: app.TimeNow(), Tab: "feat", Filter: issues.FilterAll.String(),
 		Cursor: target.Path, Open: target.Path, BodyOff: 7,
 	})
 	if cmd == nil || !v.visible() {
@@ -302,7 +303,7 @@ func TestIssuesViewRestoreMissingIssueFallsBack(t *testing.T) {
 		Rel: "028-refactor-c.md", Number: "028", Category: "refactor", Slug: "c"}
 	v := newTestIssuesView()
 	v.restore(dir, issuesScreen{
-		Root: dir, SavedAt: timeNow(), Cursor: filepath.Join(dir, "消えた.md"),
+		Root: dir, SavedAt: app.TimeNow(), Cursor: filepath.Join(dir, "消えた.md"),
 		Open: filepath.Join(dir, "消えた.md"),
 	})
 	v.receive(issuesScanMsg{root: dir, dirs: []string{dir}, issues: []*issues.Issue{alive}})
@@ -318,7 +319,7 @@ func TestIssuesViewRestoreMissingIssueFallsBack(t *testing.T) {
 func TestIssuesViewRestoreDoesNotClobberOpenViewer(t *testing.T) {
 	v := loadedView(sampleIssues()...)
 	before := v.currentTab()
-	if cmd := v.restore("/repo", issuesScreen{Root: "/repo", SavedAt: timeNow(), Tab: "feat"}); cmd != nil {
+	if cmd := v.restore("/repo", issuesScreen{Root: "/repo", SavedAt: app.TimeNow(), Tab: "feat"}); cmd != nil {
 		t.Fatal("既に開いている viewer に復元のスキャンを走らせた")
 	}
 	if v.pending != nil || v.currentTab() != before {

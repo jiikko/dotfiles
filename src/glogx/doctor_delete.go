@@ -29,6 +29,7 @@ import (
 
 	"doctor/disk"
 	"doctor/runner"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -547,7 +548,7 @@ func (v *doctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 		if next.sameStep(v.del.progress) {
 			next.since = v.del.progress.since
 		} else {
-			next.since = timeNow()
+			next.since = app.TimeNow()
 		}
 		v.del.progress = next
 		return v.waitDeleteCmd(msg.gen)

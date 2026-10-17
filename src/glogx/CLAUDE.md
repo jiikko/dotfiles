@@ -24,12 +24,12 @@
 - `ratelimit_dashboard.go`, `ratelimit_resume.go` — 全画面 ratelimit ダッシュボード (`R`)。取得・整形は `ratelimit/usage`
 - `filer_view.go`, `filer_resume.go` — 全画面 treefiler (`F`)。`filer_resume.go` は F を出したまま終えたときの場所の記憶 (C-g で開き直すと戻る)。画面の部品は `src/treefiler` の `filer` パッケージ (replace で取り込む)。仕様は `docs/treefiler-spec.md`
 - `lan_view.go`, `lan_resume.go` — 全画面 mac-lan-manager (`L`)。画面の部品は `src/mac-lan-manager` の `lanmgr` パッケージ、本物へのつなぎは `live` (replace で取り込む)。要件は issue 747
-- `screen_memory.go` — 全画面 (issues / doctor / ratelimit / F / L) を閉じたときの記憶の保存・読み込み (30 分で失効)。照合は各画面の `*_resume.go`
+- `internal/app/` — 画面のパッケージと main が共有する状態・道具。`clock.go` は時刻のシーム (`app.TimeNow`。テストが差し替える)、`fullscreen_id.go` は全画面ビューアの ID と横断キーの表 (`app.CrossTarget`)、`screen_memory.go` は全画面 (issues / doctor / ratelimit / F / L) を閉じたときの記憶の保存・読み込み (30 分で失効。照合は各画面の `*_resume.go`)、`cleanup_latch.go` は終了前の完了待ち latch、`cache_io.go` はキャッシュの置き場 (`app.CacheBaseDir`) と atomic 書き込み (`app.WriteAtomic`)
 - `cmd/issue-claim/` — `bin/issue-claim` の main (claim の目印とバナーを付ける。本体は `issues.MoveToSubdir` = viewer の `n` と同じ)
 - `ime.go`, `ime_tis_darwin.go`, `ime_tis_stub.go` — ブラウズ中の IME 英数切替 (macOS TIS 直接呼び出し)
 - `url_picker.go` — issue 本文 URL のピッカー (本文 pager で `u`)
 - `zoom.go`, `hint_surfaces.go` — 開閉演出・最下行ヒントの共有ロジック
-- `autobuild.go`, `cleanup_latch.go`, `probe.go`, `fullscreen.go` — 自動再ビルド通知・終了前の完了待ち latch・計測フック・全画面ビューアの排他制御
+- `autobuild.go`, `probe.go`, `fullscreen.go` — 自動再ビルド通知・計測フック・全画面ビューアの排他制御 (どれが出ているか・開く口。ID は `internal/app/fullscreen_id.go`)
 - `open_workspace.go` — `e` で nvim を repo root で起動
 - `line_cache.go` — diff / job / status が共有する行キャッシュと取得の単発化
 - `issues/` — 独立パッケージ。issue markdown の探索・分類・parse・本文整形 (glogx 本体に非依存)

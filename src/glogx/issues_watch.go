@@ -28,6 +28,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/fsnotify/fsnotify"
+	"glogx/internal/app"
 	"glogx/issues"
 )
 
@@ -375,7 +376,7 @@ func (v *issuesView) handleWatch(msg issuesWatchMsg) tea.Cmd {
 //
 // どちらも数百 ms で終わるので、pollInterval が短くなって次の周期で反映される。
 func (v *issuesView) reloadDeferred() bool {
-	return v.urlPick.active || v.drawer.animating(timeNow())
+	return v.urlPick.active || v.drawer.animating(app.TimeNow())
 }
 
 // issuesFingerprint は監視対象の状態を 1 本の文字列にする。

@@ -19,6 +19,7 @@ import (
 	"doctor/runner"
 	"doctor/ssd"
 	"doctor/svc"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -63,7 +64,7 @@ const numDoctorTabs = 5
 type doctorView struct {
 	shown bool
 	// wantCross は横断先 (doctorCross を返したときだけ意味を持つ。takeWantCross で取り出す)
-	wantCross fullScreenID
+	wantCross app.FullScreenID
 	// tab は表示中のタブ。tabCur はタブごとのカーソル (切り替えても位置が戻る)
 	tab    doctorTab
 	tabCur [numDoctorTabs]rowCursor
@@ -246,10 +247,10 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	v.rows, v.enterDetail, v.pendingCopy, v.pendingToast, v.pendingDeleteCmd = nil, "", "", "", nil
 	v.del.reset()
 	v.diskResults, v.diskRep, v.svcRep, v.brew, v.docker, v.ssd = nil, nil, nil, nil, nil, nil
-	v.startedAt = timeNow()
+	v.startedAt = app.TimeNow()
 	v.snapshotAt = time.Time{}
 	if !force {
-		if sn, ok := loadDoctorSnapshot(timeNow()); ok {
+		if sn, ok := loadDoctorSnapshot(app.TimeNow()); ok {
 			rep := sn.Disk
 			// 実効カタログに無い ID は落とす (snapshot は書き換えられる。issue 178)
 			rep = rep.WithResults(doctorSnapshotInCatalog(rep.Results, v.catalogLookup()))
@@ -278,7 +279,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	if !force {
 		// TTL を過ぎて走査し直すときも、重かったエントリは前回の値を使う (ディスク I/O を節約)
 		sn, ok := loadDoctorSnapshotAny()
-		dOpt.Reuse = doctorReuseFrom(sn, ok, timeNow())
+		dOpt.Reuse = doctorReuseFrom(sn, ok, app.TimeNow())
 	}
 	catalogN := len(dOpt.Catalog)
 	if catalogN == 0 {
@@ -291,9 +292,9 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	dOpt.OnResult = func(r disk.Result) { ch <- doctorDiskEvent{r: &r} }
 	// latch へ登録する (issue 211): 再起動・終了の直前に子プロセスの帰還を看取るため。
 	// doctorTrack は Add を呼び出し元の goroutine で済ませるので、Wait が登録を追い越さない
-	doctorCleanup.add()
+	doctorCleanup.Add()
 	go func() {
-		defer doctorCleanup.done()
+		defer doctorCleanup.Done()
 		rep := disk.Scan(ctx, dOpt)
 		ch <- doctorDiskEvent{rep: &rep}
 	}()
@@ -354,7 +355,7 @@ func (v *doctorView) close() {
 	if v.diskRep == nil && len(v.diskResults) > 0 {
 		results := append([]disk.Result(nil), v.diskResults...)
 		sort.SliceStable(results, func(a, b int) bool { return results[a].Size > results[b].Size })
-		rep := disk.Report{ScannedAt: timeNow(), Partial: true}.WithResults(results)
+		rep := disk.Report{ScannedAt: app.TimeNow(), Partial: true}.WithResults(results)
 		v.saveCache(rep)
 	}
 }
@@ -446,7 +447,7 @@ func (v *doctorView) maybeSaveSnapshot() {
 	if v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.diskRep.Partial {
 		return
 	}
-	_ = saveDoctorSnapshot(doctorSnapshot{ScannedAt: timeNow(), Disk: *v.diskRep, Svc: *v.svcRep, Brew: *v.brew})
+	_ = saveDoctorSnapshot(doctorSnapshot{ScannedAt: app.TimeNow(), Disk: *v.diskRep, Svc: *v.svcRep, Brew: *v.brew})
 }
 
 // doctorAction は handleKey の結果 (rlDash と同じ語彙)。
@@ -573,10 +574,10 @@ func (v *doctorView) takeToast() string {
 	return t
 }
 
-// takeWantCross は横断先 (無ければ fullScreenNone) を一度だけ取り出す (viewer と同じ語彙)。
-func (v *doctorView) takeWantCross() fullScreenID {
+// takeWantCross は横断先 (無ければ app.FullScreenNone) を一度だけ取り出す (viewer と同じ語彙)。
+func (v *doctorView) takeWantCross() app.FullScreenID {
 	want := v.wantCross
-	v.wantCross = fullScreenNone
+	v.wantCross = app.FullScreenNone
 	return want
 }
 
@@ -589,9 +590,9 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 	if act, taken := v.handleDeleteKey(key); taken {
 		return act
 	}
-	// 横断キー (i / s / R。表は crossTarget)。D は自分自身なので下の「閉じる」に任せる。
+	// 横断キー (i / s / R。表は app.CrossTarget)。D は自分自身なので下の「閉じる」に任せる。
 	// 削除の確認・実行中は上で飲まれるのでここまで届かない
-	if target, ok := crossTarget(key); ok && target != fullScreenDoctor {
+	if target, ok := app.CrossTarget(key); ok && target != app.FullScreenDoctor {
 		v.close()
 		v.wantCross = target
 		return doctorCross
@@ -864,7 +865,7 @@ func (v *doctorView) headerLine(o doctorRenderOpts) string {
 	left := " doctor"
 	switch {
 	case v.scanning():
-		left += "  " + o.spinner + " スキャン中 " + timeNow().Sub(v.startedAt).Round(time.Second).String()
+		left += "  " + o.spinner + " スキャン中 " + app.TimeNow().Sub(v.startedAt).Round(time.Second).String()
 	case !v.snapshotAt.IsZero():
 		left += fmt.Sprintf("  %d 分前の結果 (r で再スキャン)", int(o.now.Sub(v.snapshotAt).Minutes()))
 	}

@@ -12,6 +12,7 @@ import (
 	"ratelimit/usage"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -551,7 +552,7 @@ printf '%s\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":69,"wind
 // usagePart は出所 src の取得の成功を作る。残りは実際の値に近い長さにする (5h は時間と分・weekly は日も出る。
 // 箱の幅の比較が値の長さを見るので、値を短くすると幅の差が隠れる)。
 func usagePart(src string, pct int) *usage.Part {
-	now := timeNow()
+	now := app.TimeNow()
 	if src == usage.SourceCodex {
 		return &usage.Part{Source: src, Version: "0.144.6", Windows: []usage.Window{
 			{Label: "cx7d", Source: src, Percent: pct, WindowMins: 10080, ResetAt: now.Add(6*24*time.Hour + 23*time.Hour + 59*time.Minute)}}}
@@ -767,7 +768,7 @@ func TestUsageClaudeFailureFirstWaitsForCodex(t *testing.T) {
 // 何も無いところからの全滅は「取得失敗」。
 func TestUsageBothFailRound(t *testing.T) {
 	base := &usage.Snapshot{Windows: []usage.Window{{Label: "5h"}, {Label: "cx7d", Source: usage.SourceCodex}}}
-	o := usageOverlay{visible: true, snap: base, fetchedAt: timeNow()}
+	o := usageOverlay{visible: true, snap: base, fetchedAt: app.TimeNow()}
 	o.fetchCmd(false)
 	o.handle(usageMsg{part: &usage.Part{Source: usage.SourceCodex, Err: errors.New("codex 起動失敗")}})
 	o.handle(usageMsg{part: &usage.Part{Err: errors.New("claude 失敗")}})
@@ -808,7 +809,7 @@ func TestUsageRecoversFromInitialErrorViaParts(t *testing.T) {
 // (まだ届いていない出所の枠は前回の値のまま)。
 func TestUsageStaleNoteKeptUntilRoundEnds(t *testing.T) {
 	base := (*usage.Snapshot)(nil).With(*usagePart("", 1)).With(*usagePart(usage.SourceCodex, 1))
-	o := usageOverlay{visible: true, snap: base, fetchedAt: timeNow(), staleErr: errors.New("前の周の全滅")}
+	o := usageOverlay{visible: true, snap: base, fetchedAt: app.TimeNow(), staleErr: errors.New("前の周の全滅")}
 	o.fetchCmd(false)
 	o.handle(usageMsg{part: usagePart(usage.SourceCodex, 7)})
 	if o.staleErr == nil {
@@ -825,7 +826,7 @@ func TestUsageCacheExcludesLastGoodOfFailedSource(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("PATH", "") // codex が無い環境として読む (codex 欠損のキャッシュを miss にしない。usage_cache.go)
 	base := (*usage.Snapshot)(nil).With(*usagePart("", 1)).With(*usagePart(usage.SourceCodex, 1))
-	o := usageOverlay{visible: true, snap: base, fetchedAt: timeNow()}
+	o := usageOverlay{visible: true, snap: base, fetchedAt: app.TimeNow()}
 	o.fetchCmd(false)
 	o.handle(usageMsg{part: usagePart("", 5)})
 	c := o.handle(usageMsg{part: &usage.Part{Source: usage.SourceCodex, Err: errors.New("codex 起動失敗")}})
@@ -847,7 +848,7 @@ func TestUsageCacheExcludesLastGoodOfFailedSource(t *testing.T) {
 // (codex 未導入) でも、毎分「codex 取得中」を点滅させない。
 func TestUsageRefreshDoesNotShowWaiting(t *testing.T) {
 	base := (*usage.Snapshot)(nil).With(*usagePart("", 1))
-	o := usageOverlay{visible: true, snap: base, fetchedAt: timeNow()}
+	o := usageOverlay{visible: true, snap: base, fetchedAt: app.TimeNow()}
 	o.fetchCmd(false)
 	defer o.stop()
 	o.handle(usageMsg{part: usagePart("", 9)})
@@ -909,9 +910,9 @@ func TestUsageBoxShowsClaudeFetchError(t *testing.T) {
 func TestUsageLastGoodShowsStaleReason(t *testing.T) {
 	// 描画キャッシュの鍵には秒が入る。時刻を止めないと、失敗時と回復後の描画が秒をまたいだときに
 	// 鍵の秒の違いでキャッシュが外れ、鍵に理由を載せ忘れた退行を素通りする
-	orig := timeNow
-	timeNow = func() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC) }
-	t.Cleanup(func() { timeNow = orig })
+	orig := app.TimeNow
+	app.TimeNow = func() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { app.TimeNow = orig })
 	m := newTestBrowse(t, 5, nil, nil)
 	m.usageOv.visible = true
 	good := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 4, ResetAt: time.Now().Add(time.Hour)}}}

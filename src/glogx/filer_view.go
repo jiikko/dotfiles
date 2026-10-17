@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"treefiler/filer"
 )
@@ -53,7 +54,7 @@ type filerView struct {
 	shown       bool
 	f           *filer.Model
 	dir         string
-	wantCross   fullScreenID
+	wantCross   app.FullScreenID
 	openErr     string
 }
 
@@ -74,8 +75,8 @@ func (v *filerView) toggle(dir string) {
 		return
 	}
 	if v.f == nil || v.dir != dir {
-		// timeNow を呼ぶたびに読む (値をつかむと、テストが差し替えた時計に追従しない)
-		f, err := filer.New(dir, filer.Options{Now: func() time.Time { return timeNow() }})
+		// app.TimeNow を呼ぶたびに読む (値をつかむと、テストが差し替えた時計に追従しない)
+		f, err := filer.New(dir, filer.Options{Now: func() time.Time { return app.TimeNow() }})
 		if err != nil {
 			v.openErr = "ファイラーを開けません: " + firstLine(err.Error())
 			return
@@ -157,7 +158,7 @@ func (v *filerView) advance(now time.Time) {
 	}
 }
 
-// handleKey は filer が飲むキー。F で閉じ、横断キー (i / R / D。表は crossTarget) で他の全画面へ移る。
+// handleKey は filer が飲むキー。F で閉じ、横断キー (i / R / D。表は app.CrossTarget) で他の全画面へ移る。
 // filer が意味を持つキー (Binds) は横断しない: s は treebeard の「シェルを開く」(spec §0.1。ユーザー回答 2026-10-07)、
 // 入力中 (検索・! のコマンド行・設定の板・キー一覧) は全部のキー (F で閉じると打っている文字が消える。レビューの指摘 2026-10-09)
 func (v *filerView) handleKey(key string) filerAction {
@@ -166,7 +167,7 @@ func (v *filerView) handleKey(key string) filerAction {
 			v.hide()
 			return filerClosed
 		}
-		if target, ok := crossTarget(key); ok && target != fullScreenFiler {
+		if target, ok := app.CrossTarget(key); ok && target != app.FullScreenFiler {
 			v.hide()
 			v.wantCross = target
 			return filerCross
@@ -182,9 +183,9 @@ func (v *filerView) handleKey(key string) filerAction {
 	return filerSwallow
 }
 
-func (v *filerView) takeWantCross() fullScreenID {
+func (v *filerView) takeWantCross() app.FullScreenID {
 	want := v.wantCross
-	v.wantCross = fullScreenNone
+	v.wantCross = app.FullScreenNone
 	return want
 }
 

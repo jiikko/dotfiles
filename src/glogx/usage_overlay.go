@@ -11,6 +11,7 @@ import (
 	"ratelimit/usage"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -211,7 +212,7 @@ func (o *usageOverlay) handle(msg usageMsg) tea.Cmd {
 		o.snap = msg.snap
 		o.err = msg.err
 		if msg.err == nil {
-			o.fetchedAt = timeNow()
+			o.fetchedAt = app.TimeNow()
 		}
 		return nil
 	}
@@ -252,7 +253,7 @@ func (o *usageOverlay) handle(msg usageMsg) tea.Cmd {
 		return nil
 	}
 	o.staleErr = nil
-	o.fetchedAt = timeNow()
+	o.fetchedAt = app.TimeNow()
 	// キャッシュは今回取れた Claude 枠を完全性の必須条件にする (Claude 必須・codex best-effort。usage_cache.go)
 	if !fresh.HasClaude() {
 		return nil
@@ -333,7 +334,7 @@ func (o *usageOverlay) waitingNote(spinner string) string {
 // stale は今の表示が許容陳腐度 (usageRefreshInterval) を超えているか。未取得も stale 扱い。
 // 非表示中はリフレッシュを止めるため、再表示 (U) のときにこれで取り直しを判断する。
 func (o *usageOverlay) stale() bool {
-	return o.fetchedAt.IsZero() || timeNow().Sub(o.fetchedAt) >= usageRefreshInterval
+	return o.fetchedAt.IsZero() || app.TimeNow().Sub(o.fetchedAt) >= usageRefreshInterval
 }
 
 // toggle は U キーで表示/非表示を反転する。

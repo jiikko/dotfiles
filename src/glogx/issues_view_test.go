@@ -16,13 +16,14 @@ import (
 	"time"
 
 	"github.com/jiikko/dotfiles/src/tuikit/editor"
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"glogx/issues"
 )
 
 // atProgress は演出の進みを p (0..1) に固定した viewer を返す (壁時計を巻き戻して作る)。
 func atProgress(v *issuesView, p float64) *issuesView {
-	v.animStart = timeNow().Add(-time.Duration(float64(issuesAnimDuration) * p))
+	v.animStart = app.TimeNow().Add(-time.Duration(float64(issuesAnimDuration) * p))
 	return v
 }
 
@@ -500,7 +501,7 @@ func TestIssuesViewEnterTogglesBody(t *testing.T) {
 	if v.bodyPager.Offset != 1 {
 		t.Fatalf("本文の Enter が行送りとして効いた: bodyOff=%d", v.bodyPager.Offset)
 	}
-	landed := timeNow().Add(issuesDrawerDuration + time.Millisecond) // 演出の起点は実時刻なので、そこから進める
+	landed := app.TimeNow().Add(issuesDrawerDuration + time.Millisecond) // 演出の起点は実時刻なので、そこから進める
 	stubClockFrom(t, &landed)
 	v.lines(renderOpts(20)) // 閉じる演出を着地させる
 	if v.open != nil {
@@ -665,7 +666,7 @@ func TestIssuesViewNextTabSurvivesRestore(t *testing.T) {
 	v.tabIdx = tabIdxNext
 	v.refresh()
 	v.root = "/repo"
-	s, ok := v.screen(timeNow())
+	s, ok := v.screen(app.TimeNow())
 	if !ok || s.Tab != tabNextName {
 		t.Fatalf("[next] の選択が保存されない: %+v ok=%v", s, ok)
 	}
@@ -913,7 +914,7 @@ func TestIssuesViewBodyModeOpensAndCloses(t *testing.T) {
 	if v.open == nil {
 		t.Fatal("h の直後に本文が消えた (閉じる演出に何も映らない)")
 	}
-	landed := timeNow().Add(issuesDrawerDuration + time.Millisecond) // 演出の起点は実時刻なので、そこから進める
+	landed := app.TimeNow().Add(issuesDrawerDuration + time.Millisecond) // 演出の起点は実時刻なので、そこから進める
 	stubClockFrom(t, &landed)
 	v.lines(renderOpts(20)) // 演出の着地を反映させる
 	if v.open != nil {
@@ -2622,7 +2623,7 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 			t.Fatal("前提が崩れた: 一覧モードでない")
 		}
 		v.handleKey("R", vp(20))
-		if v.takeWantCross() != fullScreenRatelimit {
+		if v.takeWantCross() != app.FullScreenRatelimit {
 			t.Error("一覧モードの R でダッシュボードへの横断を要求しない")
 		}
 		if !v.closing && v.shown {
@@ -2636,7 +2637,7 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 			t.Fatal("前提が崩れた: 本文が開いていない")
 		}
 		v.handleKey("R", vp(20))
-		if v.takeWantCross() != fullScreenRatelimit {
+		if v.takeWantCross() != app.FullScreenRatelimit {
 			t.Error("本文モードの R でダッシュボードへの横断を要求しない (--help の案内が嘘になる)")
 		}
 		if !v.closing && v.shown {
@@ -2647,7 +2648,7 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 	v := loadedView(realIssue(t))
 	v.handleKey("R", vp(20))
 	v.takeWantCross()
-	if v.takeWantCross() != fullScreenNone {
+	if v.takeWantCross() != app.FullScreenNone {
 		t.Error("takeWantCross が 2 回横断先を返す (横断が二重に起きる)")
 	}
 }

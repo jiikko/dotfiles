@@ -4,6 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"math"
+	"os"
+	"os/exec"
+	"slices"
+	"strings"
+	"time"
+
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/caret"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
@@ -14,21 +22,16 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"github.com/jiikko/dotfiles/src/tuikit/termcolor"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
-	"maps"
-	"math"
-	"os"
-	"os/exec"
-	"slices"
-	"strings"
-	"time"
 
 	"doctor/disk"
 	"glogx/issues"
 	"subproc"
 
+	"glogx/internal/term"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
-	"glogx/internal/term"
+	"glogx/internal/app"
 )
 
 // Bubble Tea による less 風の対話ブラウズ (カーソル移動 + CI job 表示)。
@@ -337,7 +340,7 @@ type browseModel struct {
 	usageOv usageOverlay
 
 	// コミット一覧のスクロール glide (表示 offset を論理 offset へ滑らせる)。実体は
-	// scroll_glide.go の共有型で、diff pager / issues viewer も同じ型を持つ (手触りを揃える)。
+	// internal/term/scroll_glide.go の共有型で、diff pager / issues viewer も同じ型を持つ (手触りを揃える)。
 	glide anim.ScrollGlide
 
 	// バックグラウンド再ビルド (bin/lib/go_autobuild.zsh --async) の決着監視。zero value は
@@ -440,7 +443,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		issuesOv:       newIssuesView(),
 		zoom:           newAppZoom(),
 		statusOv:       newStatusView(),
-		autobuild:      newAutobuildWatch(selfExePath(), os.Getenv(autobuildPendingEnv) != "", timeNow()),
+		autobuild:      newAutobuildWatch(selfExePath(), os.Getenv(autobuildPendingEnv) != "", app.TimeNow()),
 	}
 	// 🚨 ここは「取得中か」ではなく **「これから取得を始めるか」** の判定なので、
 	// fetching() (= pendingFetches > 0) を使ってはいけない。pendingFetches はこの下の
@@ -475,7 +478,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// CI の取得中は usage の取得を預ける (下の deferredStartup) が、ディスクキャッシュを読むだけなら fork しないので
 	// 先に済ませて数字を出す。預けると CI の取得の間ずっと右上がスピナーになる (issue 570 の敵対的レビュー)
 	var u tea.Cmd
-	if !m.fetching() || !m.usageOv.showCached(timeNow()) {
+	if !m.fetching() || !m.usageOv.showCached(app.TimeNow()) {
 		// 🚨 fetchCmd は呼んだ時点で inFlight を立てるので、預けている間の usageRefreshMsg は重ねて取得しない
 		u = m.usageOv.fetchCmd(true)
 	}
@@ -490,9 +493,9 @@ func (m *browseModel) Init() tea.Cmd {
 	// doctor の起動時トースト: 前回のスキャン結果 (ファイル読みのみ、fork なし) が閾値を超えていれば
 	// 文言で D へ誘導する。起動時に走査はしない (issue 148 の骨格)。
 	if c, ok := loadDoctorDiskCache(); ok {
-		if text := doctorStartupToast(c, ok, timeNow()); text != "" {
+		if text := doctorStartupToast(c, ok, app.TimeNow()); text != "" {
 			m.toast.ShowInfo(text)
-			markDoctorNotified(timeNow())
+			markDoctorNotified(app.TimeNow())
 		}
 	}
 	// バックグラウンド再ビルドの監視 (autobuild.go)。shim が GO_AUTOBUILD_PENDING を
@@ -500,7 +503,7 @@ func (m *browseModel) Init() tea.Cmd {
 	//
 	// 「ビルド中」はここで即出す: 完成を待つと数十秒遅れ、その間ユーザーは自分が旧版を触って
 	// いることを知らない (ユーザー要望 2026-07-31)。
-	if res, notify, _ := m.autobuild.handle(autobuildRunning, timeNow()); notify {
+	if res, notify, _ := m.autobuild.handle(autobuildRunning, app.TimeNow()); notify {
 		text, ok := autobuildToast(res)
 		m.toast.Show(text, ok)
 	} else if autobuildStaleBinary(selfExePath()) {
@@ -516,13 +519,13 @@ func (m *browseModel) Init() tea.Cmd {
 	// appZoomDuration 待たされる方が体感を損ねる、という判断。**終了の演出は残す**
 	// (閉じる方は「押した結果が見える」ので待ちに感じにくい)。
 	// 開く演出そのものの実装は zoom.go に残してある (戻すならこの行を復活させるだけ)。
-	// m.zoom.start(timeNow()) // 画面を中央から開く (zoom.go)
+	// m.zoom.start(app.TimeNow()) // 画面を中央から開く (zoom.go)
 	ab := m.autobuild.tickCmd()
 	// issues viewer を出したまま終了していたら、その画面を復元する (issues_state.go)。
 	// ファイル読みだけ同期で済ませ、repo の照合 (git fork) は記憶があるときだけ非同期で行う
 	// = 記憶が無い通常の起動では fork が増えない。
 	var restore tea.Cmd
-	if s, ok := loadIssuesScreen(timeNow()); ok {
+	if s, ok := loadIssuesScreen(app.TimeNow()); ok {
 		restore = issuesRestoreCmd(s)
 	}
 	// doctor を出したまま終了していたら、その画面を復元する (doctor_resume.go)。
@@ -532,7 +535,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// ratelimit ダッシュボードを出したまま終了していたら開き直す (ratelimit_resume.go)。
 	// 取得の起こし方 (キャッシュ優先 / stale 判定) は R と同じ経路に委ねる。
 	var rlRestore tea.Cmd
-	if loadRatelimitScreen(timeNow()) {
+	if loadRatelimitScreen(app.TimeNow()) {
 		rlRestore = m.toggleRatelimitDash()
 	}
 	var doctorRestore tea.Cmd
@@ -540,7 +543,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// 両方 shown にすると「見えている画面」と「キーを受ける画面」が食い違う。記憶は互いに
 	// 排他 (開いていない方は終了時に消える) なので通常は同時に残らないが、異常終了で片方が
 	// 残ったときにここで倒す。issues 側は issuesRestoreMsg のガードが同じ理由で弾く。
-	if tb, ok := loadDoctorScreen(timeNow()); ok && rlRestore == nil {
+	if tb, ok := loadDoctorScreen(app.TimeNow()); ok && rlRestore == nil {
 		doctorRestore = m.doctorOv.toggle()
 		m.doctorOv.tab = tb
 	}
@@ -610,15 +613,15 @@ func (m *browseModel) inputEditsWith(key string) bool {
 		return false
 	}
 	switch m.activeFullScreen() {
-	case fullScreenIssues:
+	case app.FullScreenIssues:
 		return m.issuesOv.typingInput()
-	case fullScreenFiler:
+	case app.FullScreenFiler:
 		_, _, ok := m.filerV.caretPos()
 		return ok
-	case fullScreenLan:
+	case app.FullScreenLan:
 		_, _, ok := m.lanV.caretPos()
 		return ok
-	case fullScreenNone, fullScreenRatelimit, fullScreenDoctor, fullScreenStatus, fullScreenCount:
+	case app.FullScreenNone, app.FullScreenRatelimit, app.FullScreenDoctor, app.FullScreenStatus, app.FullScreenCount:
 	}
 	return false
 }
@@ -674,7 +677,7 @@ func (m *browseModel) maybeTick() tea.Cmd {
 // 演出の有無を導出するので、ここに足せばチェーン維持にも効く。かつては両方へ手で足す規約で、
 // 足し忘れると「回るが 12.5fps」になり点滅に見える再発が実際に 2 回起きた (2026-08-06 まで)。
 func (m *browseModel) tickInterval() time.Duration {
-	if m.zoom.animating(timeNow()) || m.issuesOv.slideAnimating() || m.statusOv.slideAnimating() {
+	if m.zoom.animating(app.TimeNow()) || m.issuesOv.slideAnimating() || m.statusOv.slideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
 	}
 	if m.glide.Active() || m.diffOv.animating() || m.toast.Animating() || m.issuesOv.animating() || m.statusOv.animating() || m.filerV.animating() {
@@ -875,7 +878,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !msg.ok {
 			return m, nil
 		}
-		m.filerV.advance(timeNow())
+		m.filerV.advance(app.TimeNow())
 		m.drainFilerNotices()
 		return m, tea.Batch(m.filerV.rearm(msg), m.maybeTick())
 	case lanChangedMsg:
@@ -883,13 +886,13 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !msg.ok {
 			return m, nil
 		}
-		m.lanV.advance(timeNow())
+		m.lanV.advance(app.TimeNow())
 		m.drainLanNotices()
 		return m, tea.Batch(m.lanV.rearm(msg), m.maybeTick())
 	case tickMsg:
 		m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
 		// 閉じる演出が着地したらここで初めて終了する (演出の間はまだ描き続ける)
-		if m.zoom.settle(timeNow()) {
+		if m.zoom.settle(app.TimeNow()) {
 			m.done = true
 			return m, tea.Quit
 		}
@@ -899,9 +902,9 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issuesOv.settleClose()
 		m.statusOv.settleClose() // status viewer も同じ理由で spinnerActive の判定より前に畳む
 		// treefiler の動きも spinnerActive の判定より前に進める (後ろだと、動き終わる最後の 1 拍が届かず途中の姿で止まる)
-		m.filerV.advance(timeNow())
+		m.filerV.advance(app.TimeNow())
 		m.drainFilerNotices()
-		m.lanV.advance(timeNow()) // 走査の途中の結果を取り込む (spinnerActive の判定より前: 走査が終わる最後の 1 拍を取りこぼさない)
+		m.lanV.advance(app.TimeNow()) // 走査の途中の結果を取り込む (spinnerActive の判定より前: 走査が終わる最後の 1 拍を取りこぼさない)
 		m.drainLanNotices()
 		if !m.spinnerActive() {
 			return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
@@ -913,7 +916,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.glide.Advance(m.offset) // 一覧のスクロールを表示 offset で滑らせる
 		}
 		// pager 側 (diff / issues 一覧・本文) の glide も同じ tick で進める。共有型なので
-		// 手触り (カーブ・フレーム数) は自動的に一覧と揃う (scroll_glide.go)。
+		// 手触り (カーブ・フレーム数) は自動的に一覧と揃う (internal/term/scroll_glide.go)。
 		m.diffOv.advanceGlide()
 		m.issuesOv.advanceGlide()
 		m.statusOv.advanceGlide()
@@ -922,7 +925,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			pushRefetchCmd = m.advancePushAnim() // push 境界の罫線を 1 コミット/フレームで上へ
 		}
 		for sha, start := range m.pushSlides {
-			if timeNow().Sub(start) >= pushSlideDuration {
+			if app.TimeNow().Sub(start) >= pushSlideDuration {
 				delete(m.pushSlides, sha) // 沈み込みが終わった区画は通常表示へ戻す
 			}
 		}
@@ -1137,7 +1140,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 「開く」ではなく「閉じる」に化ける。
 		// 🚨 判定は activeFullScreen から導出する (issue 227): 全画面ビューアを 1 枚足した
 		// ときにここへ書き足すのを忘れると、復元で 2 枚同時 shown になる。
-		if id := m.activeFullScreen(); id != fullScreenNone && id != fullScreenIssues {
+		if id := m.activeFullScreen(); id != app.FullScreenNone && id != app.FullScreenIssues {
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.issuesOv.restore(currentDir(), msg.screen), m.maybeTick())
@@ -1177,7 +1180,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 🚨 notify と keep は同時に立つ (handle は「開始を伝えた後も失敗を拾うため監視を続ける」を
 		// この組み合わせで表す)。通知したときに tickCmd を張り直さないと監視チェーンが切れ、
 		// その後のビルド失敗が二度と通知されない (監視は失敗を検出する唯一の経路。issue 032)。
-		res, notify, keep := m.autobuild.handle(msg.result, timeNow())
+		res, notify, keep := m.autobuild.handle(msg.result, app.TimeNow())
 		var watch tea.Cmd
 		if keep {
 			watch = m.autobuild.tickCmd()
@@ -1202,8 +1205,8 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !msg.spawned || m.autobuild.active {
 			return m, nil
 		}
-		m.autobuild = newAutobuildWatch(selfExePath(), true, timeNow())
-		if res, notify, _ := m.autobuild.handle(autobuildRunning, timeNow()); notify {
+		m.autobuild = newAutobuildWatch(selfExePath(), true, app.TimeNow())
+		if res, notify, _ := m.autobuild.handle(autobuildRunning, app.TimeNow()); notify {
 			text, ok := autobuildToast(res)
 			m.toast.Show(text, ok)
 		}
@@ -1467,13 +1470,13 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 貼り付け (bracketed paste。bubbletea v2 は既定で有効) は入力欄にだけ入れる。入力欄が無いときは捨てる:
 		// キー操作として解釈すると、貼った文字列が 1 字ずつ一覧のキーとして走る (docs/glogx-ui-guide.md §7)。
 		// 板が入力欄の上に出ている間 (action モーダル・再起動の確認) もキーは板が先に取るので、貼り付けも入れない
-		if m.activeFullScreen() == fullScreenIssues && m.issuesOv.typingInput() && !m.actModal.active() && !m.restartPromptVisible() {
+		if m.activeFullScreen() == app.FullScreenIssues && m.issuesOv.typingInput() && !m.actModal.active() && !m.restartPromptVisible() {
 			m.issuesOv.paste(msg.Content)
 		}
-		if m.activeFullScreen() == fullScreenFiler && !m.actModal.active() && !m.restartPromptVisible() {
+		if m.activeFullScreen() == app.FullScreenFiler && !m.actModal.active() && !m.restartPromptVisible() {
 			m.filerV.paste(msg.Content) // 入力中 (検索・! のコマンド) だけ入る。filer が捨てる
 		}
-		if m.activeFullScreen() == fullScreenLan && !m.actModal.active() && !m.restartPromptVisible() {
+		if m.activeFullScreen() == app.FullScreenLan && !m.actModal.active() && !m.restartPromptVisible() {
 			m.lanV.paste(msg.Content) // 入力中 (絞り込み・別名・帯) だけ入る。lanmgr が捨てる
 		}
 		return m, m.maybeTick()
@@ -1693,20 +1696,20 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// b / u = push / pull、U / R / D) へ動かすと viewer を見ている最中の u が
 	// git pull --rebase の確認を開く footgun になる。
 	switch m.activeFullScreen() {
-	case fullScreenDoctor:
+	case app.FullScreenDoctor:
 		return m.routeKeyToDoctor(key)
-	case fullScreenRatelimit:
+	case app.FullScreenRatelimit:
 		return m.routeKeyToRatelimitDash(key)
-	case fullScreenIssues:
+	case app.FullScreenIssues:
 		return m.routeKeyToIssues(key)
-	case fullScreenStatus:
+	case app.FullScreenStatus:
 		return m.routeKeyToStatus(key)
-	case fullScreenFiler:
+	case app.FullScreenFiler:
 		return m.routeKeyToFiler(key)
-	case fullScreenLan:
+	case app.FullScreenLan:
 		return m.routeKeyToLan(key)
-	case fullScreenNone, fullScreenCount:
-		// 一覧を見ている (fullScreenCount は番兵で activeFullScreen は返さない)。下へ落とす
+	case app.FullScreenNone, app.FullScreenCount:
+		// 一覧を見ている (app.FullScreenCount は番兵で activeFullScreen は返さない)。下へ落とす
 	}
 	// usage オーバーレイのトグル / dismiss。モーダル (push/pull 確認)・prefix・
 	// 実行中ガードを素通りしないよう必ずそれらの後に置く: 先頭に置くと U が push 確認を
@@ -1719,20 +1722,20 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// R = 全画面 ratelimit ダッシュボード。U と同じ判定位置に置く (モーダル・prefix・実行中
 	// ガードの後) — 先頭に置くと push/pull 確認を素通りする footgun が同じ形で起きる。
 	if key == "R" {
-		return m, m.openFullScreen(fullScreenRatelimit)
+		return m, m.openFullScreen(app.FullScreenRatelimit)
 	}
 	// D = 全画面 doctor (issue 148)。R と同じ判定位置 (モーダル・prefix・実行中ガードの後)。
 	// 開いた時にスキャンが始まる (起動時には走査しない)。
 	if key == "D" {
-		return m, m.openFullScreen(fullScreenDoctor)
+		return m, m.openFullScreen(app.FullScreenDoctor)
 	}
 	// F = 全画面 treefiler (issue 662)。R / D と同じ判定位置なので、diff・PR status・job パネルの上からも開く
 	if key == "F" {
-		return m, m.openFullScreen(fullScreenFiler)
+		return m, m.openFullScreen(app.FullScreenFiler)
 	}
 	// L = 全画面 mac-lan-manager (issue 747)。F と同じ判定位置
 	if key == "L" {
-		return m, m.openFullScreen(fullScreenLan)
+		return m, m.openFullScreen(app.FullScreenLan)
 	}
 	m.usageOv.dismiss()
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
@@ -1747,12 +1750,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// だけ受ける: job パネル/詳細を開いているときはそちらの語彙を優先する。初回だけ非同期で
 	// スキャンし、以降は結果を保持したまま開閉する (再スキャンは viewer 内の r)。
 	if key == "i" && m.panelSHA == "" {
-		return m, m.openFullScreen(fullScreenIssues)
+		return m, m.openFullScreen(app.FullScreenIssues)
 	}
 	// s = status viewer を開く (全画面。規約は docs/status-viewer-spec.md)。i と同じく一覧表示中
 	// だけ受ける: job パネル/詳細を開いているときはそちらの語彙を優先する。
 	if key == "s" && m.panelSHA == "" {
-		return m, m.openFullScreen(fullScreenStatus)
+		return m, m.openFullScreen(app.FullScreenStatus)
 	}
 	// b = push / u = pull --rebase (どちらも y/N 確認へ)。glogx の独自機能。
 	// diff 表示中は b = 半ページ戻るなので、diff のディスパッチより後で拾う
@@ -1967,9 +1970,9 @@ func (m *browseModel) routeKeyToIssues(key string) (tea.Model, tea.Cmd) {
 	if m.issuesOv.takeWantQuit() {
 		return m.quit()
 	}
-	// 横断 (s / R / D。表は crossTarget。ユーザー要望 2026-08-06 / 2026-09-01)。閉じる演出は待たず即着地させる:
+	// 横断 (s / R / D。表は app.CrossTarget。ユーザー要望 2026-08-06 / 2026-09-01)。閉じる演出は待たず即着地させる:
 	// 全画面 viewer は同時に 1 枚の前提で、閉じ演出と次の開き演出を重ねない
-	if target := m.issuesOv.takeWantCross(); target != fullScreenNone {
+	if target := m.issuesOv.takeWantCross(); target != app.FullScreenNone {
 		m.issuesOv.finishClose()
 		return m, tea.Batch(cmd, m.openFullScreen(target))
 	}
@@ -2016,7 +2019,7 @@ func (m *browseModel) routeKeyToStatus(key string) (tea.Model, tea.Cmd) {
 		return m.quit()
 	}
 	// 横断 (i / R / D。issues 側と同じ経路で、即着地も同じ理由)
-	if target := m.statusOv.takeWantCross(); target != fullScreenNone {
+	if target := m.statusOv.takeWantCross(); target != app.FullScreenNone {
 		m.statusOv.finishClose()
 		return m, tea.Batch(cmd, m.openFullScreen(target))
 	}
@@ -2302,7 +2305,7 @@ func (m *browseModel) startPushAnim() bool {
 	}
 	m.invalidateLines()
 	m.pushAnimating = true
-	m.pushAnimNext = timeNow().Add(pushAnimStep)
+	m.pushAnimNext = app.TimeNow().Add(pushAnimStep)
 	return true
 }
 
@@ -2310,17 +2313,17 @@ func (m *browseModel) startPushAnim() bool {
 // 最も古い StateUnpushed を消すと境界が 1 コミット上がる。全部消えたら演出終了で、
 // 本来の後処理 (CI 全件再取得) へ進む cmd を返す。
 func (m *browseModel) advancePushAnim() tea.Cmd {
-	if timeNow().Before(m.pushAnimNext) {
+	if app.TimeNow().Before(m.pushAnimNext) {
 		return nil
 	}
-	m.pushAnimNext = timeNow().Add(pushAnimStep)
+	m.pushAnimNext = app.TimeNow().Add(pushAnimStep)
 	for i := len(m.commits) - 1; i >= 0; i-- {
 		if m.statuses[m.commits[i].SHA] == StateUnpushed {
 			delete(m.statuses, m.commits[i].SHA)
 			if m.pushSlides == nil {
 				m.pushSlides = map[string]time.Time{}
 			}
-			m.pushSlides[m.commits[i].SHA] = timeNow() // 通過した区画の沈み込みを開始
+			m.pushSlides[m.commits[i].SHA] = app.TimeNow() // 通過した区画の沈み込みを開始
 			m.invalidateLines()
 			return nil
 		}
@@ -2345,7 +2348,7 @@ func (m *browseModel) slideColumns(lines []Line) map[int]int {
 		if !ok {
 			continue
 		}
-		p := float64(timeNow().Sub(start)) / float64(pushSlideDuration)
+		p := float64(app.TimeNow().Sub(start)) / float64(pushSlideDuration)
 		if p < 0 || p >= 1 {
 			continue
 		}
@@ -2506,7 +2509,7 @@ func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 	if m.fetching() {
 		m.fillUnknown()
 	}
-	if animate && m.zoom.startClose(timeNow()) {
+	if animate && m.zoom.startClose(app.TimeNow()) {
 		return m, m.maybeTick()
 	}
 	m.done = true
@@ -2616,20 +2619,20 @@ var repeatGuardedKeys = map[string]bool{
 func (m *browseModel) swallowKeyRepeat(key string) bool {
 	// 🚨 入力欄に打っている間は抑止しない: 印字キーはすべて検索語で、https の ss のように同じ字を素早く続けて打つと
 	// 2 字目が飲まれていた。y/N の確認 (n の目印) は入力欄ではないので抑止を残す (n のリピートが確認を取り消すため)
-	if m.activeFullScreen() == fullScreenIssues && m.issuesOv.typingInput() {
+	if m.activeFullScreen() == app.FullScreenIssues && m.issuesOv.typingInput() {
 		return false
 	}
-	if m.activeFullScreen() == fullScreenFiler && m.filerV.ownsKeys() {
+	if m.activeFullScreen() == app.FullScreenFiler && m.filerV.ownsKeys() {
 		return false // treefiler の検索・! の入力中も同じ (ss / dd の 2 字目が飲まれていた。レビューの指摘 2026-10-09)
 	}
-	if m.activeFullScreen() == fullScreenLan && m.lanV.ownsKeys() {
+	if m.activeFullScreen() == app.FullScreenLan && m.lanV.ownsKeys() {
 		return false // mac-lan-manager の絞り込み・別名の入力中も同じ
 	}
 	if !repeatGuardedKeys[key] {
 		m.lastKey, m.lastKeyAt = "", time.Time{} // 別のキーが来たら押しっぱなしは切れている
 		return false
 	}
-	now := timeNow()
+	now := app.TimeNow()
 	repeat := key == m.lastKey && now.Sub(m.lastKeyAt) < keyRepeatGuard
 	// 🚨 飲んだときも基準を更新する: これが「離すまで 1 回扱い」の実体で、押し続けている限り
 	// 窓が伸び続ける。更新しないと keyRepeatGuard ごとに 1 回ずつ通ってしまう。
@@ -2690,7 +2693,7 @@ func (m *browseModel) toggleUsage() tea.Cmd {
 // 保存 (issues_state.go)。🚨 一覧から終了したときは消す — 残すと、一覧を見て閉じた次の起動で
 // 2 回前の viewer が蘇る (ユーザー指定: git log 一覧のときは復元しない)。
 func (m *browseModel) rememberIssuesScreen() {
-	if s, ok := m.issuesOv.screen(timeNow()); ok {
+	if s, ok := m.issuesOv.screen(app.TimeNow()); ok {
 		_ = saveIssuesScreen(s) // 保存できなくても終了は妨げない
 		return
 	}
@@ -2702,7 +2705,7 @@ func (m *browseModel) rememberIssuesScreen() {
 // 一覧を見て閉じた次の起動で 2 回前の doctor が蘇る。
 func (m *browseModel) rememberDoctorScreen() {
 	if m.doctorOv.visible() {
-		_ = saveDoctorScreen(doctorScreen{Tab: int(m.doctorOv.tab), SavedAt: timeNow()}) // 失敗しても終了は妨げない
+		_ = saveDoctorScreen(doctorScreen{Tab: int(m.doctorOv.tab), SavedAt: app.TimeNow()}) // 失敗しても終了は妨げない
 		return
 	}
 	removeDoctorScreen()
@@ -2713,7 +2716,7 @@ func (m *browseModel) rememberDoctorScreen() {
 // 消す** — 残すと、一覧を見て閉じた次の起動で 2 回前のダッシュボードが蘇る。
 func (m *browseModel) rememberRatelimitScreen() {
 	if m.rlDash.visible() {
-		_ = saveRatelimitScreen(ratelimitScreen{SavedAt: timeNow()}) // 失敗しても終了は妨げない
+		_ = saveRatelimitScreen(ratelimitScreen{SavedAt: app.TimeNow()}) // 失敗しても終了は妨げない
 		return
 	}
 	removeRatelimitScreen()
@@ -2963,7 +2966,7 @@ func (m *browseModel) etaBasis(name, excludeSHA string) (time.Duration, bool) {
 // 実行中判定は State で行う (Duration==0 は StatusContext / 未取得も含むため出典にしない)。
 func (m *browseModel) jobTimeSuffix(job CheckDetail) string {
 	if job.running() {
-		elapsed := timeNow().Sub(job.StartedAt)
+		elapsed := app.TimeNow().Sub(job.StartedAt)
 		el := formatDuration(elapsed)
 		if el == "" { // 開始直後 (<1s) / わずかな時計ずれ
 			el = "0s"
@@ -2980,9 +2983,6 @@ func (m *browseModel) jobTimeSuffix(job CheckDetail) string {
 	}
 	return formatDuration(job.Duration)
 }
-
-// timeNow は経過時間・ETA 算出の現在時刻。テストで固定するため差し替え可能にしている。
-var timeNow = time.Now //nolint:forbidigo // シームの定義点そのもの (ここ以外の time.Now を lint が禁止する)
 
 // jobDetailRows は詳細ポップアップに一度に表示する行数の上限。実際の行数は
 // 端末の高さに合わせて visibleDetailRows が縮める。
@@ -3530,7 +3530,7 @@ func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openNeighborDiff(-1)
 	}
 	m.diffOv.scroll(key, m.visibleDiffRows())
-	// 半ページ移動は glide (scroll_glide.go) で進むので tick を張る。張らないと advanceGlide を
+	// 半ページ移動は glide (internal/term/scroll_glide.go) で進むので tick を張る。張らないと advanceGlide を
 	// 呼ぶ者がおらず、表示位置がスクロール前で固まったまま「キーが効かない」ように見える
 	// (敵対的レビュー P1 2026-07-31: Space 後に j を何度押しても先頭行が出続ける実測)。
 	// 1 行移動・閉じるは glide を使わないので tick を増やさない。
@@ -3598,7 +3598,7 @@ func (o statusRenderOpts) viewport() statusViewport {
 // ratelimitOpts は全画面 ratelimit ダッシュボードの描画情報。データは usageOv の Snapshot を
 // そのまま渡す (取得経路を 1 本に保つ。ratelimit_dashboard.go 冒頭)。
 func (m *browseModel) doctorOpts() doctorRenderOpts {
-	return doctorRenderOpts{env: disk.RealEnv(), width: m.contentWidth(), page: m.pageSize(), colored: m.colored, spinner: m.spinner(), now: timeNow()}
+	return doctorRenderOpts{env: disk.RealEnv(), width: m.contentWidth(), page: m.pageSize(), colored: m.colored, spinner: m.spinner(), now: app.TimeNow()}
 }
 
 func (m *browseModel) ratelimitOpts() ratelimitRenderOpts {
@@ -3611,7 +3611,7 @@ func (m *browseModel) ratelimitOpts() ratelimitRenderOpts {
 		err:      m.usageOv.err,
 		staleErr: m.usageOv.staleErr,
 		waiting:  m.usageOv.waitingNote(m.spinner()),
-		now:      timeNow(),
+		now:      app.TimeNow(),
 	}
 }
 
@@ -3799,7 +3799,7 @@ func (m *browseModel) View() tea.View {
 // (action モーダル・再起動・usage は左上の入力欄に重なりうる) は置かない。
 func (m *browseModel) caret() *tea.Cursor {
 	active := m.activeFullScreen()
-	if m.done || (active != fullScreenIssues && active != fullScreenFiler && active != fullScreenLan) || m.zoom.scale(timeNow()) < appZoomSnap {
+	if m.done || (active != app.FullScreenIssues && active != app.FullScreenFiler && active != app.FullScreenLan) || m.zoom.scale(app.TimeNow()) < appZoomSnap {
 		return nil
 	}
 	// toast は見ない: 右下に積む板で、入力欄のある 0 行目に届くのは窓が 4 行以下 (端末の高さ 5 以下) のときだけ
@@ -3810,13 +3810,13 @@ func (m *browseModel) caret() *tea.Cursor {
 	var x, y int
 	var ok bool
 	switch active {
-	case fullScreenFiler:
+	case app.FullScreenFiler:
 		x, y, ok = m.filerV.caretPos() // treefiler の検索欄 (最下行)
-	case fullScreenLan:
+	case app.FullScreenLan:
 		x, y, ok = m.lanV.caretPos() // mac-lan-manager の絞り込み・別名・帯の入力欄
-	case fullScreenIssues:
+	case app.FullScreenIssues:
 		x, ok = m.issuesOv.caretCol(m.issuesOpts())
-	case fullScreenNone, fullScreenRatelimit, fullScreenDoctor, fullScreenStatus, fullScreenCount:
+	case app.FullScreenNone, app.FullScreenRatelimit, app.FullScreenDoctor, app.FullScreenStatus, app.FullScreenCount:
 		return nil // 入力欄が無い (上の判定で弾いている)
 	}
 	if !ok {
@@ -3901,19 +3901,19 @@ func (m *browseModel) viewLines() string {
 	// 高々 1 枚しか shown にならない (起動時 restore は開いていれば捨てる — issuesRestoreMsg
 	// の注記)。開いている間の他のキーは handleKey が飲む。
 	switch m.activeFullScreen() {
-	case fullScreenRatelimit:
+	case app.FullScreenRatelimit:
 		return m.finishWithGlobalChrome(m.rlDash.lines(m.ratelimitOpts()), page)
-	case fullScreenDoctor:
+	case app.FullScreenDoctor:
 		return m.finishWithGlobalChrome(m.doctorOv.lines(m.doctorOpts()), page)
-	case fullScreenStatus:
+	case app.FullScreenStatus:
 		return m.finishWithGlobalChrome(m.statusOv.lines(m.statusOpts()), page)
-	case fullScreenIssues:
+	case app.FullScreenIssues:
 		return m.finishWithGlobalChrome(m.issuesOv.lines(m.issuesOpts()), page)
-	case fullScreenFiler:
+	case app.FullScreenFiler:
 		return m.finishWithGlobalChrome(m.filerV.lines(m.contentWidth(), page), page)
-	case fullScreenLan:
+	case app.FullScreenLan:
 		return m.finishWithGlobalChrome(m.lanV.lines(m.contentWidth(), page), page)
-	case fullScreenNone, fullScreenCount:
+	case app.FullScreenNone, app.FullScreenCount:
 		// 全画面ビューアが出ていない = 下でコミット一覧を組む
 	}
 	lines := m.lines()
@@ -3990,7 +3990,7 @@ func (m *browseModel) finishWindow(window []string, page int) string {
 	// 開閉の演出中は画面全体 (枠 + hint) を中央から開く / 中央へ吸い込む姿へ変換する (zoom.go)。
 	// 🚨 hint も含めて 1 枚として扱う: hint だけ最下行に残ると「板は縮んだのに文字が浮いている」
 	// 見え方になる。
-	if scale := m.zoom.scale(timeNow()); scale < appZoomSnap {
+	if scale := m.zoom.scale(app.TimeNow()); scale < appZoomSnap {
 		all := make([]string, 0, len(window)+1)
 		all = append(all, window...)
 		all = append(all, hint)
@@ -4181,19 +4181,19 @@ func (m *browseModel) hintLine() string {
 	// ぴったりに詰めてあり (issues_view.go の hint)、前置すると末尾のキー案内 = 抜ける手段が
 	// 黙って切り落とされる。CI は viewer を閉じれば見える。
 	switch m.activeFullScreen() {
-	case fullScreenRatelimit:
+	case app.FullScreenRatelimit:
 		return m.hintLineText(m.rlDash.hint(m.hintWidth()))
-	case fullScreenDoctor:
+	case app.FullScreenDoctor:
 		return m.hintLineText(m.doctorOv.hint(m.hintWidth()))
-	case fullScreenStatus:
+	case app.FullScreenStatus:
 		return m.hintLineText(m.statusOv.hint(m.hintWidth()))
-	case fullScreenIssues:
+	case app.FullScreenIssues:
 		return m.hintLineText(m.issuesOv.hint(m.hintWidth()))
-	case fullScreenFiler:
+	case app.FullScreenFiler:
 		return m.hintLineText(m.filerV.hint(m.hintWidth()))
-	case fullScreenLan:
+	case app.FullScreenLan:
 		return m.hintLineText(m.lanV.hint(m.hintWidth()))
-	case fullScreenNone, fullScreenCount:
+	case app.FullScreenNone, app.FullScreenCount:
 		// 全画面ビューアが出ていない = 下の一覧の hint
 	}
 	// 🚨 前置 (取得中 / gh の警告) は hint と**同じ予算**に載せる (issue 279)。以前は

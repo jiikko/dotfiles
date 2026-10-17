@@ -16,6 +16,7 @@ import (
 	"glogx/issues"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -175,7 +176,7 @@ type issuesView struct {
 	drawer    issuesDrawer
 	bodyPager listnav.Pager // 本文のスクロール (論理 offset = 着地点 + 半ページの glide)
 
-	// curGlide は一覧の半ページ移動でカーソルを滑らせる演出 (scroll_glide.go)。論理カーソルは
+	// curGlide は一覧の半ページ移動でカーソルを滑らせる演出 (internal/term/scroll_glide.go)。論理カーソルは
 	// 即着地するので、描画だけが遅れる。
 	curGlide anim.CursorGlide
 
@@ -184,9 +185,9 @@ type issuesView struct {
 	// pushSlides と同じ方式)。演出中の tick 周期は tickInterval が上げる (slideAnimating)。
 	// 閉じる演出 (closing) でも同じ時計を使う — 開く演出の逆再生なので所要も同じ。
 	animStart time.Time
-	// wantCross は横断キー (crossTarget) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
-	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。fullScreenNone = 無し
-	wantCross fullScreenID
+	// wantCross は横断キー (app.CrossTarget) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
+	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。app.FullScreenNone = 無し
+	wantCross app.FullScreenID
 	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
 	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
@@ -257,10 +258,10 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 		return nil
 	}
 	v.shown = true
-	// 右から左へ流し込む演出を開始 (lines が窓を変形する)。🚨 時計は timeNow で取る:
+	// 右から左へ流し込む演出を開始 (lines が窓を変形する)。🚨 時計は app.TimeNow で取る:
 	// 引き出し (drawer) と同じ差し替え点に揃えないと、この 1 つのビューの中で
 	// 「止められる時計」と「止められない時計」が混在する。
-	v.animStart = timeNow()
+	v.animStart = app.TimeNow()
 	return tea.Batch(v.scanCmd(cwd), v.watchCmd())
 }
 
@@ -365,7 +366,7 @@ func (v *issuesView) close() {
 	// 閉じたらカーソルの滑走を残さない (本文 pager の glide と同じ理由: 再表示の一瞬だけ古い位置から滑るのを
 	// 防ぐ)。close は toggle 経由だと handleKey を通らないので finishAnim が効かない。
 	v.curGlide.Stop()
-	v.animStart = timeNow()
+	v.animStart = app.TimeNow()
 	if v.closeAnimOff {
 		v.finishClose() // 演出なしの設定では同じ出口を即座に通す (片付けの経路を分けない)
 	}
@@ -373,7 +374,7 @@ func (v *issuesView) close() {
 
 // settleClose は閉じる演出が着地していれば片付ける (browseModel の tick から毎拍呼ばれる)。
 func (v *issuesView) settleClose() {
-	if !v.closing || anim.Elapsed(v.animStart, timeNow(), issuesCloseDuration) < 1 {
+	if !v.closing || anim.Elapsed(v.animStart, app.TimeNow(), issuesCloseDuration) < 1 {
 		return
 	}
 	v.finishClose()
@@ -430,7 +431,7 @@ func (v *issuesView) slideAnimating() bool {
 	if v.closing {
 		return true
 	}
-	return v.shown && anim.Elapsed(v.animStart, timeNow(), issuesAnimDuration) < 1
+	return v.shown && anim.Elapsed(v.animStart, app.TimeNow(), issuesAnimDuration) < 1
 }
 
 // animating は演出の途中か (tick チェーンを回し続ける spinnerActive の判定に使う)。
@@ -441,16 +442,16 @@ func (v *issuesView) animating() bool {
 	if v.curGlide.Active() {
 		return true // 一覧のカーソル滑走も tick で進む
 	}
-	if v.drawer.animating(timeNow()) {
+	if v.drawer.animating(app.TimeNow()) {
 		return true // 本文の引き出しの開閉も tick で進む
 	}
 	return v.slideAnimating()
 }
 
-// takeWantCross は横断先 (無ければ fullScreenNone) を一度だけ取り出す (takeNotice と同じ語彙)。
-func (v *issuesView) takeWantCross() fullScreenID {
+// takeWantCross は横断先 (無ければ app.FullScreenNone) を一度だけ取り出す (takeNotice と同じ語彙)。
+func (v *issuesView) takeWantCross() app.FullScreenID {
 	want := v.wantCross
-	v.wantCross = fullScreenNone
+	v.wantCross = app.FullScreenNone
 	return want
 }
 
@@ -1171,7 +1172,7 @@ func (v *issuesView) closeBody() {
 	if v.open == nil {
 		return
 	}
-	v.drawer.startClose(timeNow())
+	v.drawer.startClose(app.TimeNow())
 }
 
 // discardBody は本文の状態を実際に捨てる (演出の着地後・viewer を閉じるとき)。
@@ -1187,7 +1188,7 @@ func (v *issuesView) discardBody() {
 // settleDrawer は引き出しの演出が終わっていれば静止状態へ進め、閉じ切っていれば本文を捨てる。
 // 描画とキー処理の両方から呼ぶ (どちらが先に来ても状態が進む)。
 func (v *issuesView) settleDrawer() {
-	if v.drawer.settle(timeNow()) {
+	if v.drawer.settle(app.TimeNow()) {
 		v.discardBody()
 	}
 }
@@ -1220,7 +1221,7 @@ func (v *issuesView) openIssue(iss *issues.Issue) bool {
 	v.urlPick.close() // 別の issue を開いたら前の URL 一覧を持ち越さない
 	v.linkJump = linkJump{}
 	v.docStack, v.docLine = nil, 0 // 別の issue を開いたら積んだ doc は捨てる (戻り先が別の issue になる)
-	v.drawer.open(timeNow())
+	v.drawer.open(app.TimeNow())
 	return true
 }
 
@@ -1441,10 +1442,10 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 			return cmd
 		}
 	}
-	// 横断キー (s / R / D) は一覧・本文のどちらからも効く (表は crossTarget)。選択・絞り込みの 1 段戻りは
+	// 横断キー (s / R / D) は一覧・本文のどちらからも効く (表は app.CrossTarget)。選択・絞り込みの 1 段戻りは
 	// しない (別の画面を見たい意図が明確なため)。i は自分自身なので下の toggle (閉じる) に任せる。
 	// 確認モーダル・URL ピッカー・番号入力中はここまで届かないので誤爆しない
-	if target, ok := crossTarget(key); ok && target != fullScreenIssues {
+	if target, ok := app.CrossTarget(key); ok && target != app.FullScreenIssues {
 		v.close()
 		v.wantCross = target
 		return nil
@@ -1690,7 +1691,7 @@ func (v *issuesView) handleBodyKey(key string, vp issuesViewport, rows int) tea.
 		v.openNeighbor(-1, rows)
 	default:
 		// スクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は diffOverlay・status viewer の
-		// 全画面 diff と共有する (scroll_glide.go の term.PagerScrollKey)。手触りを 1 箇所に集約するため。
+		// 全画面 diff と共有する (internal/term/scroll_glide.go の term.PagerScrollKey)。手触りを 1 箇所に集約するため。
 		term.PagerScrollKey(key, &v.bodyPager, rows, v.body.Len())
 	}
 	return nil
@@ -2092,7 +2093,7 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 	case v.open != nil:
 		// 本文は「一覧の上に左から開く引き出し」として重ねる。全画面で置き換えると、どの一覧の
 		// どこから開いたかが画面から消える (ユーザー要望 2026-07-31: Notion の peek のように)。
-		w := v.drawer.width(o.width, timeNow())
+		w := v.drawer.width(o.width, app.TimeNow())
 		inner := o
 		// 整形は最終幅で行い、演出中は切るだけにする (途中幅で整形し直すと毎フレーム折り返しが
 		// 変わって文字が踊る。詳細は composeDrawer の doc)
@@ -2120,9 +2121,9 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 // (理由は tuikit layout.RowOffsetRatio の doc)。
 func (v *issuesView) animProgress() float64 {
 	if v.closing {
-		return 1 - anim.Elapsed(v.animStart, timeNow(), issuesCloseDuration)
+		return 1 - anim.Elapsed(v.animStart, app.TimeNow(), issuesCloseDuration)
 	}
-	return anim.Elapsed(v.animStart, timeNow(), issuesAnimDuration)
+	return anim.Elapsed(v.animStart, app.TimeNow(), issuesAnimDuration)
 }
 
 // headLines は現在のモードのヘッダー行 (一覧ならタブ行 + 通知、本文ならパス + 状態)。
@@ -2342,7 +2343,7 @@ func (v *issuesView) tabLine(o issuesRenderOpts) string {
 }
 
 // tabScrollMark は「この向きにまだタブがある」ことを示す印 (幅 1 の bare 記号に限る。
-// 絵文字は層ごとに幅解釈が割れる。width.go の VS16 の議論と同じ理由)。
+// 絵文字は層ごとに幅解釈が割れる。internal/term/width.go の VS16 の議論と同じ理由)。
 const (
 	tabScrollLeft  = "‹"
 	tabScrollRight = "›"

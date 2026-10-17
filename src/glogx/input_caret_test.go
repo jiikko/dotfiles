@@ -11,6 +11,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
+	"glogx/internal/app"
 	"glogx/internal/term"
 	"glogx/issues"
 )
@@ -107,7 +108,7 @@ func TestCaretHiddenWhileIssuesViewerAnimates(t *testing.T) {
 	if m.caret() == nil {
 		t.Fatal("前提が崩れた: 入力中なのにカーソルが無い")
 	}
-	m.issuesOv.animStart = timeNow()
+	m.issuesOv.animStart = app.TimeNow()
 	if c := m.caret(); c != nil {
 		t.Errorf("演出の最中にカーソルを置いている: %+v", c)
 	}
@@ -174,7 +175,7 @@ func TestCaretHiddenWhenFieldIsCoveredOrGone(t *testing.T) {
 	}{
 		{"glogx を終える", func(m *browseModel) { m.done = true }},
 		{"issues viewer を閉じた", func(m *browseModel) { m.issuesOv.shown = false }},
-		{"窓の zoom の演出中", func(m *browseModel) { m.zoom.off = false; m.zoom.start(timeNow()) }},
+		{"窓の zoom の演出中", func(m *browseModel) { m.zoom.off = false; m.zoom.start(app.TimeNow()) }},
 		{"action モーダル", func(m *browseModel) { m.actModal.pullConfirm = true }},
 		{"再起動の確認", func(m *browseModel) { m.restartPending = true }},
 		{"usage の板", func(m *browseModel) { m.usageOv.visible = true }},

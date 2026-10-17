@@ -48,7 +48,7 @@ type probe struct {
 // 端末が Unicode Core (mode 2027) を報告したときだけ GraphemeWidth へ切り替わる。
 // 3 つ並べないと「端末がどのモデルと一致するか」= 揃える先が決められない。
 type widths struct {
-	grapheme int // ansi.StringWidth        — glogx の dispWidth (termwidth.Of) がこれ
+	grapheme int // ansi.StringWidth        — glogx の term.DispWidth (termwidth.Of) がこれ
 	wc       int // ansi.StringWidthWc      — v2 描画エンジンの既定
 	uniseg   int // uniseg.StringWidth      — 分割に使っているライブラリの幅モデル
 }
@@ -184,7 +184,7 @@ func main() {
 		depVersion("github.com/charmbracelet/x/ansi"),
 		depVersion("github.com/rivo/uniseg"),
 		depVersion("github.com/mattn/go-runewidth"))
-	fmt.Printf("  grapheme = ansi.StringWidth (glogx の dispWidth) / wc = ansi.StringWidthWc\n")
+	fmt.Printf("  grapheme = ansi.StringWidth (glogx の term.DispWidth) / wc = ansi.StringWidthWc\n")
 	fmt.Printf("  (v2 描画エンジンの既定) / uniseg = 分割に使っているライブラリ / got = 端末の実測\n\n")
 	// ⚠️ ラベルは全角と半角が混ざるので %-24s (バイト幅) では揃わない。表示幅で詰める
 	//    (幅の道具が自分の表を揃えられていないのは説得力を欠く)
@@ -234,10 +234,10 @@ func main() {
 
 	fmt.Printf("\n食い違い (glogx が実際に出す文字のみ): %d 件\n", mismatch)
 	if mismatch > 0 {
-		fmt.Println("→ 食い違った文字は width.go の正規化対象 (bare / VS15 へ倒す・使用をやめる) を検討する。")
+		fmt.Println("→ 食い違った文字は internal/term/width.go の正規化対象 (bare / VS15 へ倒す・使用をやめる) を検討する。")
 	}
 	fmt.Println("→ 「診断用」の行は幅モデルの判別だけが目的 (glogx は出さない)。got がどの列と一致したかを見る:")
-	fmt.Println("   grapheme と一致 = 今の dispWidth のままでよい / wc と一致 = 描画エンジンの既定側へ揃える議論 (issue 124)。")
+	fmt.Println("   grapheme と一致 = 今の term.DispWidth のままでよい / wc と一致 = 描画エンジンの既定側へ揃える議論 (issue 124)。")
 	if inTmux {
 		fmt.Println("→ tmux の外でも実行して got を比べること (差があれば tmux が幅を書き換えている)。")
 	} else {

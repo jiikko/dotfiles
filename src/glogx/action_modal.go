@@ -180,8 +180,8 @@ func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 			// SIGINT/SIGTERM 経路は **0 打鍵**で Run を抜ける (bubbletea は Update を呼ばない)。
 			// 結論は変わらないが、根拠は打鍵数ではなく上の「まだ始まっていない」の方
 			return true, func() tea.Msg {
-				pullCleanup.add()
-				defer pullCleanup.done()
+				pullCleanup.Add()
+				defer pullCleanup.Done()
 				defer cancel()
 				return pullMsg{err: runGitPullRebase(ctx)}
 			}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/app"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,7 +35,7 @@ func TestDoctorScreenRejectsBadState(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
 	write := func(t *testing.T, body string) {
 		t.Helper()
-		p, err := doctorMemory.path()
+		p, err := doctorMemory.Path()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -47,7 +48,7 @@ func TestDoctorScreenRejectsBadState(t *testing.T) {
 	}
 	t.Run("期限切れ", func(t *testing.T) {
 		withDoctorStateDir(t)
-		if err := saveDoctorScreen(doctorScreen{Tab: int(tabSvc), SavedAt: now.Add(-screenMemoryTTL)}); err != nil {
+		if err := saveDoctorScreen(doctorScreen{Tab: int(tabSvc), SavedAt: now.Add(-app.ScreenMemoryTTL)}); err != nil {
 			t.Fatal(err)
 		}
 		if _, ok := loadDoctorScreen(now); ok {
@@ -90,9 +91,9 @@ func TestDoctorScreenRejectsBadState(t *testing.T) {
 func TestRememberDoctorScreen(t *testing.T) {
 	withDoctorStateDir(t)
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
-	orig := timeNow
-	timeNow = func() time.Time { return now }
-	t.Cleanup(func() { timeNow = orig })
+	orig := app.TimeNow
+	app.TimeNow = func() time.Time { return now }
+	t.Cleanup(func() { app.TimeNow = orig })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.doctorOv.shown, m.doctorOv.tab = true, tabBrew
@@ -112,9 +113,9 @@ func TestRememberDoctorScreen(t *testing.T) {
 func TestInitRestoresDoctorScreen(t *testing.T) {
 	withDoctorStateDir(t)
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
-	orig := timeNow
-	timeNow = func() time.Time { return now }
-	t.Cleanup(func() { timeNow = orig })
+	orig := app.TimeNow
+	app.TimeNow = func() time.Time { return now }
+	t.Cleanup(func() { app.TimeNow = orig })
 	if err := saveDoctorScreen(doctorScreen{Tab: int(tabSvc), SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}

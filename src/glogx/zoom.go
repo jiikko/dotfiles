@@ -58,7 +58,7 @@ func newAppZoom() appZoom { return appZoom{t: anim.NewOpen()} }
 // start は開く演出を最初から始める (今の状態によらず、閉じ切った姿から開く)。
 //
 // 🚨 **production からは呼ばれていない** (issue 316 で確認)。`tui.go` の Init が
-// `// m.zoom.start(timeNow())` とコメントアウトしており、「開く演出は入れない
+// `// m.zoom.start(app.TimeNow())` とコメントアウトしており、「開く演出は入れない
 // (起動が appZoomDuration 待たされる方が体感を損ねる)」という判断がそこに書いてある。
 // **終了の演出 (startClose) は生きている**ので、この関数を消すと対の実装が片方だけになる。
 // 開く演出を戻すときはそのコメントアウトを外す。

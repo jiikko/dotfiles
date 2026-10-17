@@ -60,18 +60,42 @@ func TestPersistedCacheRejectsFutureTimestamps(t *testing.T) {
 // 走査を併せて持つ (列挙表は持たない。issue 117 の「列挙すると兄弟を足したときに追随を忘れる =
 // この検査が守りたい事故を検査自身が踏む」を適用)。
 //
-// 対象は `now.Sub(x)` / `timeNow().Sub(x)` を **TTL 系の定数と比較している関数**だけ。
+// 対象は `now.Sub(x)` / `app.TimeNow().Sub(x)` を **TTL 系の定数と比較している関数**だけ。
 // アニメーションの経過 (statusOpenDuration 等) は比較先が Duration 系なので対象外になる。
 func TestFreshnessChecksGuardAgainstClockRollback(t *testing.T) {
+	// 🚨 main (".") と internal/ の下を再帰で読む。parser.ParseDir(".") は再帰しないので、internal/ へ移した
+	// 鮮度判定 (screen_memory.go など) を黙って見なくなる (issue 742)。issues/ など別の package は前から対象外
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, parser.ParseComments)
-	if err != nil {
-		t.Fatalf("パースできない: %v", err)
+	var files []*ast.File
+	var paths []string
+	for _, root := range []string{".", "internal"} {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if root == "." && path != "." {
+					return filepath.SkipDir // "." は直下だけ (internal は 2 本目の根で読む)
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+			if err != nil {
+				return err
+			}
+			files = append(files, f)
+			paths = append(paths, path)
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("%s を走査できない: %v", root, err)
+		}
 	}
-	if len(pkgs) == 0 {
-		t.Fatal("走査対象の package が 0 件 (ParseDir のフィルタが壊れている)")
+	if len(files) == 0 {
+		t.Fatal("走査対象のファイルが 0 件 (走査が壊れている)")
 	}
 
 	// TTL 系の名前 (この語を含む定数と比較していたら「鮮度判定」とみなす)
@@ -102,7 +126,7 @@ func TestFreshnessChecksGuardAgainstClockRollback(t *testing.T) {
 	// 意図的に持たない関数は `// clock: elapsed-only` + 理由で明示する (doctor_cache.go:carryFresh)。
 	guarded := func(body string) bool {
 		body = stripComments(body)
-		for _, tok := range []string{"age < 0", "age >= 0", ".After(now)", ".After(timeNow())"} {
+		for _, tok := range []string{"age < 0", "age >= 0", ".After(now)", ".After(app.TimeNow())", ".After(app.TimeNow())", ".After(TimeNow())"} {
 			if strings.Contains(body, tok) {
 				return true
 			}
@@ -111,44 +135,43 @@ func TestFreshnessChecksGuardAgainstClockRollback(t *testing.T) {
 	}
 
 	checked := 0
-	for _, pkg := range pkgs {
-		for path, file := range pkg.Files {
-			ast.Inspect(file, func(n ast.Node) bool {
-				fn, ok := n.(*ast.FuncDecl)
-				if !ok || fn.Body == nil {
-					return true
-				}
-				var b strings.Builder
-				ast.Inspect(fn.Body, func(m ast.Node) bool {
-					if id, ok := m.(*ast.Ident); ok {
-						b.WriteString(id.Name)
-						b.WriteString(" ")
-					}
-					return true
-				})
-				names := b.String()
-				// 鮮度判定か: Sub( があり、TTL 系の定数名が同じ関数に出る
-				if !strings.Contains(names, "Sub ") || !ttlish(names) {
-					return true
-				}
-				start := fset.Position(fn.Pos()).Offset
-				end := fset.Position(fn.End()).Offset
-				src, err := readRange(path, start, end)
-				if err != nil {
-					t.Fatalf("%s を読めない: %v", path, err)
-				}
-				if strings.Contains(src, "// clock: elapsed-only") {
-					return true
-				}
-				checked++
-				if !guarded(src) {
-					t.Errorf("%s:%s に巻き戻しガードが無い (age < 0 / age >= 0 / .After(now) のいずれか、"+
-						"または理由つきの `// clock: elapsed-only` が要る)",
-						filepath.Base(path), fn.Name.Name)
+	for i, file := range files {
+		path := paths[i]
+		ast.Inspect(file, func(n ast.Node) bool {
+			fn, ok := n.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				return true
+			}
+			var b strings.Builder
+			ast.Inspect(fn.Body, func(m ast.Node) bool {
+				if id, ok := m.(*ast.Ident); ok {
+					b.WriteString(id.Name)
+					b.WriteString(" ")
 				}
 				return true
 			})
-		}
+			names := b.String()
+			// 鮮度判定か: Sub( があり、TTL 系の定数名が同じ関数に出る
+			if !strings.Contains(names, "Sub ") || !ttlish(names) {
+				return true
+			}
+			start := fset.Position(fn.Pos()).Offset
+			end := fset.Position(fn.End()).Offset
+			src, err := readRange(path, start, end)
+			if err != nil {
+				t.Fatalf("%s を読めない: %v", path, err)
+			}
+			if strings.Contains(src, "// clock: elapsed-only") {
+				return true
+			}
+			checked++
+			if !guarded(src) {
+				t.Errorf("%s:%s に巻き戻しガードが無い (age < 0 / age >= 0 / .After(now) のいずれか、"+
+					"または理由つきの `// clock: elapsed-only` が要る)",
+					filepath.Base(path), fn.Name.Name)
+			}
+			return true
+		})
 	}
 	// 🚨 下限は 0 でなく実件数の近くに置く (issue 280 と同じ形)。走査条件が壊れて対象が
 	// 数件まで縮んでも `checked == 0` では落ちず、「違反 0 件 = 緑」になる。

@@ -16,6 +16,7 @@ import (
 	"doctor/docker"
 	"doctor/ssd"
 	"doctor/svc"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -1834,10 +1835,10 @@ func TestDeleteProgressLines(t *testing.T) {
 // 同じ相が続くあいだ経過の基準を据え置く。毎イベントで打ち直すと経過が 0 に戻り続け、
 // 「どこまで進んだか」が読めなくなる (固まって見える元の症状に戻る)。
 func TestDeleteProgressElapsedSurvivesSameStep(t *testing.T) {
-	orig := timeNow
+	orig := app.TimeNow
 	now := time.Date(2026, 9, 4, 1, 0, 0, 0, time.Local)
-	timeNow = func() time.Time { return now }
-	t.Cleanup(func() { timeNow = orig })
+	app.TimeNow = func() time.Time { return now }
+	t.Cleanup(func() { app.TimeNow = orig })
 
 	v := deleteTestView(t, &fakeDelete{})
 	v.del = doctorDelete{running: true, ch: make(chan doctorDeleteEvent, 1), done: make(chan doctorDeleteEvent, 1)}

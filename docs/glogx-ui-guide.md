@@ -93,7 +93,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 | `a` | all / 巡回 | status で全部 stage、issues で状態フィルタ巡回。**例外: treefiler では新規作成 (add)** (ファイラーの慣習。ユーザー確認 2026-10-12。issue 722) |
 | `n` | next (次にやる目印) | issues の claim |
 | `N` | 次の番号 | issues の採番コピー |
-| `i` `s` `R` `D` `F` `L` `U` | 板の toggle (横断キー) | どの画面からも同じ板へ飛べる (`F` = treefiler。treefiler の中では `s` がシェルなので status へは飛ばない。docs/treefiler-spec.md §0.1。`L` = mac-lan-manager。中では `s` が ssh なので同じく status へは飛ばない)。割当の表は `crossTarget` (fullscreen.go) の 1 本で、各画面はそれを引く (`U` は重ねる箱なので別経路)。**画面が自分でキーを解釈し切るモード (確認の y/N・status の全画面 diff・URL ピッカー・番号入力・doctor の削除の確認と実行) では効かない** (issues の本文 pager では効く) (誤爆防止。issue 664) |
+| `i` `s` `R` `D` `F` `L` `U` | 板の toggle (横断キー) | どの画面からも同じ板へ飛べる (`F` = treefiler。treefiler の中では `s` がシェルなので status へは飛ばない。docs/treefiler-spec.md §0.1。`L` = mac-lan-manager。中では `s` が ssh なので同じく status へは飛ばない)。割当の表は `app.CrossTarget` (`src/glogx/internal/app/fullscreen_id.go`) の 1 本で、各画面はそれを引く (`U` は重ねる箱なので別経路)。**画面が自分でキーを解釈し切るモード (確認の y/N・status の全画面 diff・URL ピッカー・番号入力・doctor の削除の確認と実行) では効かない** (issues の本文 pager では効く) (誤爆防止。issue 664) |
 | `C` `X` | update (claude / codex) | どの画面からも。**status では `X` = 変更を捨てる**なので例外 |
 | `Space` | 選択 / stage | 「対象に印を付ける」。一覧では半ページ (less)。mac-lan-manager は台帳への登録 / 削除 (管理対象の印。y/N 確認) |
 

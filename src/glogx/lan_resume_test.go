@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"glogx/internal/app"
 	"mac-lan-manager/lanmgr"
 	"treefiler/filer"
 )
@@ -19,7 +20,7 @@ func TestLanScreenRejectsBadState(t *testing.T) {
 		name string
 		s    lanScreen
 	}{
-		{"期限切れ", lanScreen{SavedAt: now.Add(-screenMemoryTTL)}},
+		{"期限切れ", lanScreen{SavedAt: now.Add(-app.ScreenMemoryTTL)}},
 		{"未来の時刻", lanScreen{SavedAt: now.Add(time.Minute)}},
 		{"時刻なし", lanScreen{}},
 	} {
@@ -30,7 +31,7 @@ func TestLanScreenRejectsBadState(t *testing.T) {
 			t.Errorf("%s: 復元しようとした", c.name)
 		}
 	}
-	path, _ := lanMemory.path()
+	path, _ := lanMemory.Path()
 	if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +57,7 @@ func TestLanScreenRememberedAndRestored(t *testing.T) {
 
 	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	_ = m2.Init()
-	if m2.activeFullScreen() != fullScreenLan {
+	if m2.activeFullScreen() != app.FullScreenLan {
 		t.Fatalf("記憶があるのに L が開いていない: active=%v", m2.activeFullScreen())
 	}
 	if p := m2.lanV.m.Place(); p != got {
@@ -97,7 +98,7 @@ func TestInitLanRestoreYieldsToFiler(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = m.Init()
-	if m.activeFullScreen() != fullScreenFiler || m.lanV.visible() {
+	if m.activeFullScreen() != app.FullScreenFiler || m.lanV.visible() {
 		t.Errorf("F の記憶もあるのに L を開いた: active=%v lan=%v", m.activeFullScreen(), m.lanV.visible())
 	}
 }

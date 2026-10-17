@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"glogx/internal/app"
 	"ratelimit/usage"
 )
 
@@ -18,7 +19,7 @@ import (
 //
 // キャッシュ層をここ (package main) に置く理由: usage パッケージは「glogx / bubbletea に
 // 一切依存しない自己完結」という契約を持つ (usage/usage.go の doc)。キャッシュ置き場は
-// cacheBaseDir() = glogx 側の関心事なので、usage には持ち込まない。claude_version.go の
+// app.CacheBaseDir() = glogx 側の関心事なので、usage には持ち込まない。claude_version.go の
 // バージョンキャッシュと同じ構図。
 
 // usageCacheFile は usageCachePath のファイル部。リポジトリ非依存なので CI キャッシュ
@@ -37,7 +38,7 @@ type usageCacheEntry struct {
 }
 
 func usageCachePath() (string, error) {
-	base, err := cacheBaseDir()
+	base, err := app.CacheBaseDir()
 	if err != nil {
 		return "", err
 	}
@@ -124,5 +125,5 @@ func saveUsageCache(path string, snap *usage.Snapshot, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(path, data)
+	return app.WriteAtomic(path, data)
 }

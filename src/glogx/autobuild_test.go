@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/internal/app"
 	"glogx/internal/term"
 )
 
@@ -220,7 +221,7 @@ func TestAutobuildToast(t *testing.T) {
 func TestAutobuildMsgInstalledOpensRestartPrompt(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.Clear()
-	m.autobuild = autobuildWatch{active: true, until: timeNow().Add(autobuildWatchTimeout)}
+	m.autobuild = autobuildWatch{active: true, until: app.TimeNow().Add(autobuildWatchTimeout)}
 
 	m.Update(autobuildMsg{result: autobuildInstalled})
 	if !m.restartPending {
@@ -377,7 +378,7 @@ func TestAutobuildMsgKeepsWatchingWhileNotifying(t *testing.T) {
 	m.ticking = false // single-flight で maybeTick が nil を返すと Batch の要素が減る
 	m.autobuild = autobuildWatch{
 		binPath: "/x/glogx", failedPath: "/x/" + autobuildFailedStamp,
-		active: true, until: timeNow().Add(autobuildWatchTimeout), pending: autobuildStarted,
+		active: true, until: app.TimeNow().Add(autobuildWatchTimeout), pending: autobuildStarted,
 	}
 	_, cmd := m.Update(autobuildMsg{result: autobuildRunning})
 	if !strings.Contains(m.toast.Text(), "ビルド中") {
@@ -460,7 +461,7 @@ func TestPullWithoutSourceChangeIsQuiet(t *testing.T) {
 // (shim の lock で二重ビルドは起きないが、トーストが重複する)。
 func TestPullDoesNotStackAutobuildWatch(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.autobuild = newAutobuildWatch("/some/dir/glogx", true, timeNow())
+	m.autobuild = newAutobuildWatch("/some/dir/glogx", true, app.TimeNow())
 	if cmd := m.autobuildAfterPull(); cmd != nil {
 		t.Error("監視中なのに 2 本目の問い合わせを出した")
 	}
@@ -469,7 +470,7 @@ func TestPullDoesNotStackAutobuildWatch(t *testing.T) {
 func TestAutobuildNotifiesAtStartup(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.Clear()
-	m.autobuild = newAutobuildWatch("/some/dir/glogx", true, timeNow())
+	m.autobuild = newAutobuildWatch("/some/dir/glogx", true, app.TimeNow())
 	m.Init()
 	if !m.toast.Visible() {
 		t.Fatal("起動直後に「ビルド中」トーストが出ていない")
@@ -487,7 +488,7 @@ func TestAutobuildNotifiesAtStartup(t *testing.T) {
 func TestAutobuildMsgShowsFailureToast(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.Clear()
-	m.autobuild = autobuildWatch{active: true, until: timeNow().Add(autobuildWatchTimeout)}
+	m.autobuild = autobuildWatch{active: true, until: app.TimeNow().Add(autobuildWatchTimeout)}
 
 	m.Update(autobuildMsg{result: autobuildFailed})
 	if !m.toast.Visible() || m.toast.OK() {
@@ -580,7 +581,7 @@ func TestAutobuildRunningWinsOverStaleStamp(t *testing.T) {
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.Clear()
-	m.autobuild = newAutobuildWatch(exe, true, timeNow()) // 再挑戦が走っている
+	m.autobuild = newAutobuildWatch(exe, true, app.TimeNow()) // 再挑戦が走っている
 	m.Init()
 	if !strings.Contains(m.toast.Text(), "ビルド中") {
 		t.Fatalf("ビルド中が出ていない: %q", m.toast.Text())

@@ -17,6 +17,7 @@ import (
 	"subproc"
 	"subproc/clipboard"
 
+	"glogx/internal/app"
 	"mac-lan-manager/lanmgr"
 	"treefiler/filer"
 )
@@ -60,14 +61,14 @@ var runGitPush = func(ctx context.Context) error {
 // abort (runGitPullRebase 内) が走り切る前にプロセスごと消え、repo に rebase-merge が残る。
 // 登録は tea.Cmd の closure 側 (actionModal.handleKey)、看取りは main.go の waitPullCleanup。
 //
-// 🚨 **sync.WaitGroup ではなく cleanupLatch を使う** (issue 217 で載せ替えた)。登録が
+// 🚨 **sync.WaitGroup ではなく app.CleanupLatch を使う** (issue 217 で載せ替えた)。登録が
 // tea.Cmd の closure 側なので、**カウント 0 での Add が Wait と同時に走りうる**形になっている。
 // WaitGroup はそれを禁じており、`race.Enabled` に囲まれていない panic
 // (`sync: WaitGroup misuse: Add called concurrently with Wait`) なので **production でも落ちうる**。
 // 現状は登録地点が 1 か所で pull も `a.pulling` が二重起動を塞ぐため発火経路は未確認だったが、
 // 同じ形の doctor 側 (doctorCleanup) は登録地点が 3 つあり `-race` で実際に赤くなった。
 // 「今は当たらない」に依存せず、構造で閉じる。
-var pullCleanup cleanupLatch
+var pullCleanup app.CleanupLatch
 
 // waitPullCleanup は走行中の pull 後始末を看取ってから戻る (main の終了直前用)。
 // 待ちは runGitTimeout (gitOpTimeout) と WaitDelay で構造的に有限。すぐ終わらないときだけ
@@ -76,7 +77,7 @@ func waitPullCleanup() {
 	// wait() は channel を返すだけでブロックしないので、goroutine を挟まず同期に取る
 	// (waitDoctorCleanup と同じ形。WaitGroup 時代は Wait() がブロックしたので goroutine が
 	// 要ったが、載せ替えで不要になった。残すと latch を読む瞬間だけ非決定になる。issue 217)
-	done := pullCleanup.wait()
+	done := pullCleanup.Wait()
 	select {
 	case <-done:
 		return

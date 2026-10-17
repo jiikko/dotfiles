@@ -24,8 +24,8 @@ on:
       # issues/banner_test.go が module の外の CI 検査を実行して書式の一致を見る (issue 403 の続き)
       - tests/issues/test_next_claims_have_banner.sh
       - scripts/lib/claim_banner.awk
-      # 🚨 色の単一ソース。box_test.go の TestFrameBorderMatchesThemeYML が
-      # ansiFrameBorder と blink_magenta の一致を検査するが、この Go テストを CI で
+      # 🚨 色の単一ソース。internal/term/box_test.go の TestFrameBorderMatchesThemeYML が
+      # term.AnsiFrameBorder と blink_magenta の一致を検査するが、この Go テストを CI で
       # 走らせるのはこの workflow だけ (tests.yml は test-src を含まない)。ここに
       # 含めないと「yml だけ変えた push」で glogx が無言でずれる。
       - theme/colors.yml
@@ -50,8 +50,8 @@ on:
       # issues/banner_test.go が module の外の CI 検査を実行して書式の一致を見る (issue 403 の続き)
       - tests/issues/test_next_claims_have_banner.sh
       - scripts/lib/claim_banner.awk
-      # 🚨 色の単一ソース。box_test.go の TestFrameBorderMatchesThemeYML が
-      # ansiFrameBorder と blink_magenta の一致を検査するが、この Go テストを CI で
+      # 🚨 色の単一ソース。internal/term/box_test.go の TestFrameBorderMatchesThemeYML が
+      # term.AnsiFrameBorder と blink_magenta の一致を検査するが、この Go テストを CI で
       # 走らせるのはこの workflow だけ (tests.yml は test-src を含まない)。ここに
       # 含めないと「yml だけ変えた push」で glogx が無言でずれる。
       - theme/colors.yml
