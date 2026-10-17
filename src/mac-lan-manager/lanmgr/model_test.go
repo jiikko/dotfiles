@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -752,6 +753,10 @@ func TestLoadingKeepsSelfSingleAndRefusesActions(t *testing.T) {
 // Place はカーソルが「この Mac」の行なら Host を空にする (戻すときに自分の行を探さない)。
 func TestPlaceOnSelfHasNoHost(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini})
+	h.keys("l", "l") // この Mac のタブ (管理対象のタブは空で、この Mac の行を通らなかった)
+	if !h.m.current().self {
+		t.Fatal("前提: カーソルがこの Mac の行に無い")
+	}
 	if p := h.m.Place(); p.Host != "" {
 		t.Errorf("この Mac の行で Host = %q", p.Host)
 	}
@@ -1746,6 +1751,7 @@ func TestSelfLanByIFUsesMethod(t *testing.T) {
 		t.Errorf("DHCP の有線を固定と見た: %+v", sl)
 	}
 	h.m.self.Services[0].Method = "manual"
+	h.m.pf.Band = "169.254.0.0/16" // 帯の中の手動 (帯の外の手動は未固定。TestSelfFixedAgreesWithPlan)
 	if sl := h.m.selfLan(); sl.Unfixed {
 		t.Errorf("手動の固定を未固定と見た: %+v", sl)
 	}
@@ -2354,4 +2360,77 @@ func TestWiredNameRelookupAfterNetReload(t *testing.T) {
 	if _, ok, note := h.m.wiredState(h.m.rows()[0]); !ok {
 		t.Errorf("網を読み直したのに名前を引き直さない: %q", note)
 	}
+}
+
+// この Mac の「固定」は、画面 (selfLan / lanFixed) と初期設定 (setup.Plan の self) で同じ結論になる: I/F で決める設定でも、手動で
+// 帯の外の番号は未固定 (整合の監査: 札は固定なのに、初期設定は帯へ固定し直そうとした)。
+func TestSelfFixedAgreesWithPlan(t *testing.T) {
+	for _, ip := range []string{"10.0.0.5", "192.168.100.10"} {
+		h := newHarness(t, nil, nil)
+		nn := selfNet()
+		nn.Services[0].Method, nn.Services[0].IP = "manual", ip
+		h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return nn, nil }
+		awaitNetLoad(h.m)
+		h.m.startNetLoad()
+		awaitNetLoad(h.m)
+		h.m.pf.LanByBand, h.m.pf.LanIF = false, "en13"
+		o := setup.Observed{Band: h.m.pf.Band, SelfIP: ip, SelfMethod: "manual", SelfService: "Thunderbolt Ethernet"}
+		var planDone bool
+		for _, st := range setup.Plan(o) {
+			if st.ID == setup.StepSelfStatic {
+				planDone = st.Done
+			}
+		}
+		if got := h.m.lanFixed(h.m.rows()[0]); got != planDone {
+			t.Errorf("%s: 画面の固定=%v / 初期設定の済み=%v", ip, got, planDone)
+		}
+	}
+}
+
+// 整合の監査で揃えた案内と効くキー: この Mac の行では Y / y / o を断る (自分宛ての ssh をコピーしていた)。ユーザー名が分からないときは
+// s / Y を案内しない (最下行・詳細のカード)。初期設定 (enter) は詳細のカードと ? の板に出る。
+func TestGuidanceMatchesKeys(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini})
+	h.keys("h") // この Mac のタブ
+	for _, k := range []string{"Y", "y", "o"} {
+		h.copied = nil
+		if a := h.keys(k); a == Exec || len(h.copied) != 0 {
+			t.Errorf("この Mac の行で %s が効いた: %v %v", k, a, h.copied)
+		}
+	}
+	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "この Mac には繋がない") {
+		t.Errorf("断った理由を出さない: %+v", n)
+	}
+
+	h = newHarness(t, nil, []discover.Peer{mini})
+	h.m.o.User = ""
+	h.keys("l")
+	v := stripView(strings.Join(h.m.View(), "\n"))
+	if strings.Contains(v, "ssh @") || regexp.MustCompile(`(^|\s)s\s+繋ぐ`).MatchString(v) || regexp.MustCompile(`Y\s+コピー`).MatchString(v) {
+		t.Errorf("ユーザー名が分からないのに ssh を案内した:\n%s", v)
+	}
+	if !regexp.MustCompile(`enter\s+初期設定`).MatchString(v) {
+		t.Errorf("詳細のカードに初期設定の入口が無い:\n%s", v)
+	}
+	h.keys("?")
+	if v := stripView(strings.Join(h.m.View(), "\n")); !strings.Contains(v, "初期設定") {
+		t.Errorf("? の板に初期設定が無い:\n%s", v)
+	}
+}
+
+// stripView は描画から色を落とす (案内の文字列を探すため)。
+func stripView(s string) string { return termwidth.StripSGR(s) }
+
+// dump の Report は、画面と同じ宛先 (有線の名前) を target に出す (connect_ip だけだと実際に繋ぐ先と食い違った)。
+func TestReportShowsTarget(t *testing.T) {
+	h := wiredHarness(t, map[string][]string{"m2macmini.wired.local": {"169.254.217.100"}})
+	for _, r := range h.m.Report().Rows {
+		if r.Host == "m2macmini.local" {
+			if r.Target != "m2macmini.wired.local" || !r.WiredOK || !r.LanFixed || !r.Listed {
+				t.Errorf("Report の行 = %+v", r)
+			}
+			return
+		}
+	}
+	t.Fatal("Report に m2macmini が無い")
 }

@@ -184,6 +184,7 @@ func main() {
 				if err != nil {
 					return nil, err
 				}
+				o.Log = nil // dump は読むだけ: 操作のログ (~/Library/Logs) に reload や知らせを書かない
 				return lanmgr.New(o), nil
 			}, live.Observe)
 			cancel()

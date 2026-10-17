@@ -226,7 +226,7 @@ func (k Kind) Key() string {
 // Kinds は種類の全部 (設定の読み替えと検査に使う)。
 var Kinds = []Kind{KindUnknown, KindWired, KindInternet, KindLinkLocal, KindVirtual, KindVPN}
 
-// IsLinkLocal は ip がリンクローカル (169.254.0.0/16) か。固定の帯も 169.254 の中に置ける (既定) ので、これだけで「固定していない」とは
+// IsLinkLocal は ip がリンクローカル (169.254.0.0/16) か。固定の帯は設定で 169.254 の中にも置ける (既定は 192.168.100.0/24) ので、これだけで「固定していない」とは
 // 決めない (固定かは方式か台帳で決める)。判定はここ 1 か所 (5 か所に写っていた。監査の指摘)。
 func IsLinkLocal(ip string) bool {
 	a, err := netip.ParseAddr(ip)

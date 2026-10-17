@@ -14,8 +14,8 @@ import (
 // LogMax はログのファイルの上限 (超えたら新しい方の半分だけを残す)。
 const LogMax = 1 << 20
 
-// DefaultLogPath は操作のログの置き場所 (~/Library/Logs/mac-lan-manager.log。台帳の置き場所を環境変数で差し替えているとき (テスト・
-// dump) はその中: 本物のログを汚さない)。
+// DefaultLogPath は操作のログの置き場所 (~/Library/Logs/mac-lan-manager.log。台帳の置き場所を環境変数 MAC_LAN_MANAGER_CONFIG_DIR で
+// 差し替えているとき (テスト) はその中: 本物のログを汚さない。dump はログを持たない (main.go))。
 func DefaultLogPath() (string, error) {
 	if d := os.Getenv(ledger.EnvDir); d != "" {
 		return filepath.Join(d, "mac-lan-manager.log"), nil

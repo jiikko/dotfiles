@@ -1424,7 +1424,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.maybeTick()
 		}
-		// mac-lan-manager の s (ssh) / o から戻ったとき。起こせなかったときだけ知らせる (ssh の終了コードは相手のシェルのもの)
+		// mac-lan-manager の s (ssh) / o / 初期設定の手順から戻ったとき。起こせなかったときだけ知らせる (ssh の終了コードは相手のシェルのもの)
 		if m.lanV.execPending {
 			m.lanV.execPending = false
 			if lm := m.lanV.live(); lm != nil {

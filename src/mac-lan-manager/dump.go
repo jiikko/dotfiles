@@ -109,7 +109,7 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 	for _, s := range r.Services {
 		fmt.Fprintf(w, "  %-24s %-8s active=%-5v ip=%-16s method=%-6s router=%-14s read=%-5v disabled=%v\n", s.Name, s.Device, s.Active, or(s.IP, "-"), or(s.Method, "-"), or(s.Router, "-"), s.Read, s.Disabled)
 	}
-	fmt.Fprintln(w, "\n# 一覧 (画面と同じ判定。connect = s / y / o が繋ぐ先)")
+	fmt.Fprintln(w, "\n# 一覧 (画面と同じ判定。target = s / Y / y / o が使う宛先、connect = その IP。hidden = 有線だけの表示で隠れる)")
 	for _, x := range r.Rows {
 		mark := " "
 		switch {
@@ -118,8 +118,15 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 		case x.Managed:
 			mark = "M"
 		}
-		fmt.Fprintf(w, "%s %-28s alias=%-14s main=%-16s lan=%-16s connect=%-16s ssh=%v vnc=%v smb=%v seen=%v user=%s\n",
-			mark, x.Host, or(or(x.Alias, x.Instance), "-"), or(x.MainIP, "-"), or(x.LanIP, "-"), or(x.ConnectIP, "-"), x.SSH, x.VNC, x.SMB, x.Seen, or(x.User, "?"))
+		fmt.Fprintf(w, "%s %-28s alias=%-14s main=%-16s lan=%-16s fixed=%v connect=%-16s target=%-24s ssh=%v vnc=%v smb=%v seen=%v user=%s\n",
+			mark, x.Host, or(or(x.Alias, x.Instance), "-"), or(x.MainIP, "-"), or(x.LanIP, "-"), x.LanFixed, or(x.ConnectIP, "-"), or(x.Target, "-"),
+			x.SSH, x.VNC, x.SMB, x.Seen, or(x.User, "?"))
+		if !x.Listed {
+			fmt.Fprintln(w, "    hidden: 有線だけの表示で一覧に出ない")
+		}
+		if x.WiredName != "" {
+			fmt.Fprintf(w, "    有線の名前: %s %s\n", x.WiredName, map[bool]string{true: "✓ 引ける", false: or(x.WiredNote, "引けない")}[x.WiredOK])
+		}
 		for _, o := range x.Others {
 			fmt.Fprintf(w, "    その他: %s %s (%s)\n", o.Device, o.Addr, o.Kind)
 		}

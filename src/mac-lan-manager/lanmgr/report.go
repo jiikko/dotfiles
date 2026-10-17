@@ -37,7 +37,13 @@ type ReportRow struct {
 	SMB       bool       `json:"smb"`
 	MainIP    string     `json:"main_ip,omitempty"`
 	LanIP     string     `json:"lan_ip,omitempty"`
-	ConnectIP string     `json:"connect_ip,omitempty"` // s / y / o が繋ぐ先
+	ConnectIP string     `json:"connect_ip,omitempty"` // 繋ぐ IP (有線か Wi-Fi か)
+	Target    string     `json:"target,omitempty"`     // s / Y / y / o が実際に使う宛先 (有線の名前が引ければ名前。wiredname.go)
+	Listed    bool       `json:"listed"`               // 一覧に出る (有線だけに絞る設定で隠れていない)
+	LanFixed  bool       `json:"lan_fixed"`            // 内部 IP が固定 (未固定の札・有線の名前を持つかを決める)
+	WiredName string     `json:"wired_name,omitempty"` // 有線の名前 (内部 IP が固定のときだけ)
+	WiredOK   bool       `json:"wired_ok,omitempty"`   // 有線の名前が今その内部 IP だけに引ける
+	WiredNote string     `json:"wired_note,omitempty"` // 引けない理由 (詳細のカードと同じ文言)
 	Others    []ReportIP `json:"others,omitempty"`
 }
 
@@ -61,7 +67,9 @@ func (m *Model) Report() Report {
 	}
 	for _, x := range m.rows() {
 		row := ReportRow{Self: x.self, Host: x.host, Alias: x.alias, Instance: x.instance, User: x.user, Managed: x.managed, Seen: x.seen,
-			SSH: x.ssh, VNC: x.vnc, SMB: x.smb, MainIP: x.mainIP, LanIP: x.lanIP, ConnectIP: x.connectIP()}
+			SSH: x.ssh, VNC: x.vnc, SMB: x.smb, MainIP: x.mainIP, LanIP: x.lanIP, ConnectIP: x.connectIP(), Target: m.target(x),
+			Listed: x.self || m.listed(x), LanFixed: m.lanFixed(x)}
+		row.WiredName, row.WiredOK, row.WiredNote = m.wiredState(x)
 		for _, o := range x.others {
 			row.Others = append(row.Others, ReportIP{Device: o.Device, Addr: o.Addr, Kind: o.Kind.String()})
 		}

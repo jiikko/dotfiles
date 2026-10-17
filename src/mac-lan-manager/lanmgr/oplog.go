@@ -52,8 +52,8 @@ func (m *Model) logKey(key string) {
 		where += fmt.Sprintf(" 板=%d", m.ov)
 	}
 	if m.sc == scList {
-		if r := m.current(); !r.self {
-			where += " 行=" + r.host
+		if h := m.cursorHost(); h != "" { // 読むだけ (current() はカーソルの添字を詰めて書き換える。毎キー呼ぶ)
+			where += " 行=" + h
 		}
 	}
 	m.logf("key %s  [%s]", k, where)

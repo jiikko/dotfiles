@@ -130,7 +130,7 @@ const stepConfirm setup.StepID = "confirm"
 // openSetup は r の初期設定の画面を開く。
 func (m *Model) openSetup(r row) {
 	if r.self {
-		m.note("初期設定は相手の行で Enter (この Mac の固定 IP は、その 1 つ目の手順)", false)
+		m.note("初期設定は相手の行で Enter (この Mac の固定 IP・有線の名前も、その手順の中にある)", false)
 		return
 	}
 	d, err := m.destFor(r)
@@ -347,7 +347,7 @@ func (m *Model) usedIPs() []string {
 	}
 	for _, r := range rows {
 		used = append(used, r.lanIP, r.mainIP)
-		for _, x := range r.others { // 他の I/F に見えた番号も避ける (固定の帯は 169.254 の中にあり、自動で付いた番号と同じ網に居る)
+		for _, x := range r.others { // 他の I/F に見えた番号も避ける (帯を 169.254 の中に置く設定では、自動で付いた番号と同じ網に居る)
 			used = append(used, x.Addr)
 		}
 	}

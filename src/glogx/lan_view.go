@@ -3,7 +3,8 @@ package main
 // mac-lan-manager (L) の全画面。画面の部品は src/mac-lan-manager の lanmgr パッケージで、ここは glogx への配線だけを持つ
 // (単体の bin/mac-lan-manager と同じ画面。要件と決定は issue 747)。形は treefiler の F (filer_view.go) にそろえる。
 //
-// lanmgr はタイマーを張らない。glogx の tick で Advance を呼び、Busy (Bonjour の走査中) の間だけ spinnerActive が tick を回す。
+// lanmgr はタイマーを張らない。glogx の tick で Advance を呼び、Busy (走査・網の読み込み・相手の確認・確認待ち・裏の後始末・名前の引き直し)
+// の間だけ spinnerActive が tick を回す。
 // 走査が落ち着いた後に見つかった Mac は Changed の合図で取り込む (Busy の間しか tick を張らないため)。
 
 import (
@@ -209,6 +210,11 @@ func (v *lanView) lines(width, page int) []string {
 
 // hint は最下行の案内。抜ける手段 (L / q) を先に置き、幅で切る (glogx-ui-guide §5: 抜ける手段は必ず残す)。
 func (v *lanView) hint(width int) string {
+	// 層 (初期設定・設定・確認の板・入力欄) が開いている間は L も ? も lanmgr が取り、q / esc は 1 段戻るだけ (Binds)。そのときに
+	// 「L/q: 閉じる」を出すと嘘になった (整合の監査)
+	if lm := v.live(); lm != nil && lm.OwnsKeys() {
+		return fitHintItems(width, []hintItem{{text: "esc: 戻る", prio: 1}})
+	}
 	return fitHintItems(width, []hintItem{
 		{text: "L/q: 閉じる", prio: 1},
 		{text: "?: キーの一覧", prio: 2},

@@ -131,8 +131,7 @@ func TestLanQuitKeysGoBackToList(t *testing.T) {
 // 絞り込みの入力中は i も文字として入る (横断で閉じると打っている文字が消える)。
 func TestLanBindsBeatCrossKeys(t *testing.T) {
 	m := openLan(t)
-	m.handleKey("l")
-	m.handleKey("j") // 先頭はこの Mac の行
+	m.handleKey("l") // 未管理のタブ (相手の Mac だけ。この Mac は自分のタブ)
 	m.handleKey("s")
 	if m.activeFullScreen() != fullScreenLan {
 		t.Errorf("s で板を離れた (active=%v)。ssh のはず", m.activeFullScreen())
@@ -298,5 +297,17 @@ func TestLanOpensWithoutWaitingForNetwork(t *testing.T) {
 		}
 		m.Update(tickMsg{})
 		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は上の条件)
+	}
+}
+
+// 層 (設定・初期設定・板) が開いている間の最下行は「esc: 戻る」(L も ? も lanmgr が取り、q / esc は 1 段戻るだけ。「L/q: 閉じる」は嘘になる)。
+func TestLanHintFollowsLayers(t *testing.T) {
+	m := openLan(t)
+	if h := stripANSI(m.lanV.hint(80)); !strings.Contains(h, "L/q: 閉じる") {
+		t.Fatalf("一覧の最下行 = %q", h)
+	}
+	m.handleKey(",") // 設定
+	if h := stripANSI(m.lanV.hint(80)); strings.Contains(h, "L/q") || !strings.Contains(h, "esc: 戻る") {
+		t.Errorf("設定の画面の最下行 = %q", h)
 	}
 }

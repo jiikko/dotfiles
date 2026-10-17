@@ -96,7 +96,7 @@ func (m *Model) footer() string {
 	var hs []keyHint
 	switch {
 	case m.sc == scSetup:
-		hs = []keyHint{{"x", "実行", 2}, {"r", "リロード", 3}, {"q/esc", "戻る", 1}}
+		hs = []keyHint{{"x", "実行", 2}, {"r", "リロード", 3}, {"e", "メッセージ", 4}, {"q/esc", "戻る", 1}} // e: 1 行に切った接続の失敗の全文
 	case m.sc == scSettings:
 		hs = []keyHint{{"j/k", "項目", 2}, {"space", "入/切", 3}, {"←/→", "選ぶ", 4}, {"enter", "編集", 5}, {"q/esc/,", "閉じる", 1}}
 	case m.filtering:
@@ -104,10 +104,12 @@ func (m *Model) footer() string {
 	default:
 		hs = []keyHint{{"j/k", "移動", 7}}
 		if r := m.current(); !r.self && r.connectIP() != "" {
-			if r.shellRefusal() == "" {
+			if m.sshRefusal(r) == "" {
 				hs = append(hs, keyHint{"s", "繋ぐ", 3})
 			}
-			hs = append(hs, keyHint{"Y", "コピー", 4})
+			if user, _ := m.userFor(r); user != "" {
+				hs = append(hs, keyHint{"Y", "コピー", 4})
+			}
 			if r.vnc {
 				hs = append(hs, keyHint{"o", "画面共有", 5})
 			}
@@ -536,8 +538,12 @@ func (m *Model) detail(r row, width int) string {
 	ip := m.target(r) // 有線の名前が引ければ名前 (wiredname.go)
 	lines := []string{title, gradRule(width-7, cTeal, cPurple, cPink, lipgloss.Color(surfDetail)), ""}
 	if !r.self {
-		if ip != "" {
-			lines = append(lines, label("ssh")+sCode.Render(fmt.Sprintf("ssh %s@%s", user, ip))+"  "+keycap("Y", "コピー")+"  "+keycap("s", "繋ぐ"))
+		if ip != "" && user != "" {
+			keys := keycap("Y", "コピー")
+			if m.sshRefusal(r) == "" { // 最下行と s のキーと同じ述語 (ssh が閉じた相手に s を案内しない)
+				keys += "  " + keycap("s", "繋ぐ")
+			}
+			lines = append(lines, label("ssh")+sCode.Render(fmt.Sprintf("ssh %s@%s", user, ip))+"  "+keys)
 		}
 		if r.smb && ip != "" {
 			lines = append(lines, label("smb")+link("smb://"+ip)+"   "+keycap("y", "コピー"))
@@ -580,11 +586,11 @@ func (m *Model) detail(r row, width int) string {
 	case r.self:
 		lines = append(lines, sOK.Render("✓ 台帳に登録済み"))
 	case !r.managed:
-		lines = append(lines, sDim.Render("未管理: ")+keycap("space", "台帳に登録")+"   "+sMuted.Render("初期設定は次の段で入る"))
+		lines = append(lines, sDim.Render("未管理: ")+keycap("space", "台帳に登録")+"   "+keycap("enter", "初期設定"))
 	case !r.seen:
 		lines = append(lines, sWarn.Render("今は Bonjour で見えていない")+"   "+keycap("m", "別名")+"   "+keycap("space", "台帳から外す"))
 	default:
-		lines = append(lines, keycap("m", "別名")+"   "+keycap("space", "台帳から外す"))
+		lines = append(lines, keycap("m", "別名")+"   "+keycap("space", "台帳から外す")+"   "+keycap("enter", "初期設定"))
 	}
 	return shadow(card(strings.Join(lines, "\n"), width-1, surfDetail, cTeal, cPurple, cPink))
 }
@@ -666,7 +672,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	case ovHelp:
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理 / この Mac のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"o", "画面共有を開く"},
-			{"c", "この Mac の IP をコピー"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
+			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "初期設定 (相手の行)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
 			{"r", "リロード"}, {"q / esc", "閉じる"}}
 		body := make([]string, 0, len(keys)+3)
 		if m.scanErr != nil { // 見出しの「✗ 探せない」の理由 (知らせは数秒で消え、glogx の中からは dump を起こせない。監査の指摘)

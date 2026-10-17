@@ -81,13 +81,13 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 | `o` | 外のアプリで開く (ブラウザ・Preview) | コミット / job / PR / pro-con のカードの添付 |
 | `O` | Finder で選んだ状態で見せる (`open -R`)。大文字が小文字の強い版ではない例外 (`o` の「開く」の代わりに「置き場所を見せる」) | treefiler (木・タイル) |
 | `e` (`v`) | エディタで開く | repo root / issue 本文 / job ログ |
-| `y` | コピー (素の値: URL / パス / group 名) | issues の**合成の** group 親行だけ group 名 (親 issue のある行はパス)。treefiler は項目の絶対パス (`Y` で root からの相対パス)。mac-lan-manager は `smb://<IP>` (`Y` で `ssh <user>@<IP>`) |
+| `y` | コピー (素の値: URL / パス / group 名) | issues の**合成の** group 親行だけ group 名 (親 issue のある行はパス)。treefiler は項目の絶対パス (`Y` で root からの相対パス)。mac-lan-manager は `smb://<宛先>` (`Y` で `ssh <user>@<宛先>`。宛先は有線の名前 `<ホスト名>.wired.local` が引ければ名前、それ以外は IP) |
 | `Y` | コピー (整形した参照: Markdown / 番号+タイトル+パス) | |
 | `S` | 並び (sort) の巡回 | treefiler (名前順 → 更新の新しい順 → 大きい順)。小文字の `s` (シェル) の強い版ではない例外 |
 | `p` | PR または番号 | 一覧では PR を開く、issues では番号コピー (「PR / number」の頭文字) |
 | `d` | diff | コミット / status のファイル / treefiler のタイル。**treefiler の木の上では「ゴミ箱へ移す」**(§4 の `d` 削除と同じ。y/N 確認) |
 | `m` | 名前の変更 (move / rename) | treefiler (同じフォルダの中だけ)。mac-lan-manager は台帳の別名 |
-| `c` | この Mac の IP をコピー | mac-lan-manager (選んでいる行に関係なく。板で内部 / メインを選ぶ)。**pro-con では「止めた dispatcher を起こす」** (画面ごとに意味が違う。glogx には無い) |
+| `c` | この Mac の IP をコピー | mac-lan-manager (選んでいる行に関係なく。板で内部 / メイン / 有線の名前を選ぶ)。**pro-con では「止めた dispatcher を起こす」** (画面ごとに意味が違う。glogx には無い) |
 | `,` | 設定 | treefiler・mac-lan-manager (macOS の ⌘, に合わせた字)。pro-con の設定は `s` |
 | `r` | 再読込 / 再実行 | issues の再読込、job の rerun |
 | `a` | all / 巡回 | status で全部 stage、issues で状態フィルタ巡回。**例外: treefiler では新規作成 (add)** (ファイラーの慣習。ユーザー確認 2026-10-12。issue 722) |

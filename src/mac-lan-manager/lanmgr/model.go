@@ -1,8 +1,11 @@
-// Package lanmgr は mac-lan-manager の画面 (一覧・詳細カード・設定・この Mac の IP のコピー) を持つ。
+// Package lanmgr は mac-lan-manager の画面を持つ。
+//
+// 画面は一覧 (管理対象 / 未管理 / この Mac のタブ)・詳細カード・設定・この Mac の IP と有線の名前のコピー・初期設定 (setup.go)・
+// メッセージ一覧 (msglog.go)。有線の名前を引いて宛先に使う (wiredname.go)。
 //
 // 単体の bin/mac-lan-manager と glogx の L の板の両方から使う (treefiler の filer と同じ分担)。描画の tick は張らない:
 // 時間は呼び出し側が Advance(now) で進め、Busy の間は遅い周期で呼ぶ。外へ出す口は New / Resize / HandleKey / HandleInput / Advance / View / Changed / Reload /
-// Busy / OwnsKeys / Binds / CaretPos / Paste / TakeExec / ExecDone / TakeNotices / Close。
+// Busy / OwnsKeys / Binds / CaretPos / Paste / TakeExec / ExecDone / TakeNotices / Close / Place / RestorePlace / Report。
 // キーの語彙は docs/glogx-ui-guide.md に従う (issue 747 の「枠の見た目とキー」節の表)。
 package lanmgr
 
@@ -611,7 +614,7 @@ type selfLanInfo struct {
 	Unfixed  bool
 }
 
-// lanFixed は行の内部 IP が固定か。固定の帯は 169.254 の中に置ける (既定) ので「169.254 なら未固定」とは決めない:
+// lanFixed は行の内部 IP が固定か。固定の帯は設定で 169.254 の中にも置ける (既定は 192.168.100.0/24) ので「169.254 なら未固定」とは決めない:
 // この Mac はサービスの方式、相手は台帳に書いた固定の番号 (初期設定で確かめてから書く) で決める。台帳に無い 169.254 は自動割り当てと見る
 // (相手の方式は Bonjour からは分からない)。169.254 でない番号は前から固定の扱い。
 func (m *Model) lanFixed(r row) bool {
@@ -665,7 +668,7 @@ func (m *Model) selfLan() selfLanInfo {
 		}
 		for _, x := range m.self.IPs {
 			if netinfo.InBand(m.pf.Band, x.Addr) {
-				// 帯に入っても、手動の固定でなければ未固定 (帯は 169.254 の中にあり、自動の番号が帯を引くことがある)
+				// 帯に入っても、手動の固定でなければ未固定 (帯を 169.254 の中に置く設定では、自動の番号が帯を引くことがある)
 				return selfLanInfo{IP: x.Addr, Note: "帯 " + m.pf.Band, Unfixed: unfixedBy(m.serviceMethod(x.Device, x.Addr), x.Addr)}
 			}
 		}
@@ -679,7 +682,14 @@ func (m *Model) selfLan() selfLanInfo {
 			if !m.self.WiredIF(s.Device) { // 設定が読めない・ルーターがある I/F の IP を内部 IP として出さない (I/F の候補と同じ判定)
 				return selfLanInfo{Note: "I/F " + s.Device + " がルーターの無い有線として読めない"}
 			}
-			return selfLanInfo{IP: s.IP, Note: "I/F " + s.Device, Unfixed: unfixedBy(s.Method, s.IP)} // 方式で決める (自動の 169.254 を固定と見て台帳に書けた。敵対レビュー)
+			// 方式で決める (自動の 169.254 を固定と見て台帳に書けた。敵対レビュー)。帯の外の手動も未固定: 初期設定 (setup.Plan の self) は
+			// 「手動で帯の中」を済みと見るので、方式だけで固定と出すと、札は固定なのに初期設定は帯へ固定し直そうとした (整合の監査)
+			note := "I/F " + s.Device
+			outside := s.Method == "manual" && !netinfo.InBand(m.pf.Band, s.IP)
+			if outside {
+				note += " (帯 " + m.pf.Band + " の外)"
+			}
+			return selfLanInfo{IP: s.IP, Note: note, Unfixed: unfixedBy(s.Method, s.IP) || outside}
 		}
 	}
 	return selfLanInfo{Note: "I/F " + or(m.pf.LanIF, "(未設定)") + " が無い"}
@@ -839,6 +849,18 @@ func (r row) shellRefusal() string {
 		return "ssh が閉じている (相手の画面でリモートログインをオンにしてから)"
 	case r.connectIP() == "":
 		return or(r.awayReason(), "繋ぐ IP が分からない")
+	}
+	return ""
+}
+
+// sshRefusal は s を断る理由 (行の理由に、ユーザー名が分からないことを足す)。最下行・詳細のカード・s のキーが同じ述語を見る
+// (行だけを見ていたので、$USER が使えないときに s と Y を案内しながら断り、カードは "ssh @<IP>" を描いた。整合の監査)。
+func (m *Model) sshRefusal(r row) string {
+	if why := r.shellRefusal(); why != "" {
+		return why
+	}
+	if user, _ := m.userFor(r); user == "" {
+		return "ssh のユーザー名が分からない ($USER が使えない。u で台帳に書く)"
 	}
 	return ""
 }
@@ -1051,6 +1073,10 @@ func (m *Model) keyList(key string) Action {
 	if guessed {
 		guessNote = "  (ユーザー名は推測)"
 	}
+	if r.self && (key == "Y" || key == "y" || key == "o") { // この Mac 自身には繋がない (s は shellRefusal が断る)。最下行・カードも出さない
+		m.note("この Mac には繋がない (この Mac の IP・名前は c でコピー)", false)
+		return None
+	}
 	if user == "" && (key == "s" || key == "Y") {
 		m.note("ssh のユーザー名が分からない ($USER が使えない。u で台帳に書く)", false)
 		return None
@@ -1092,7 +1118,7 @@ func (m *Model) keyList(key string) Action {
 	case "enter":
 		m.openSetup(r)
 	case "s": // シェル (treefiler の s と同じ動詞)
-		if why := r.shellRefusal(); why != "" {
+		if why := m.sshRefusal(r); why != "" {
 			m.note(why, false)
 		} else {
 			// known_hosts を IP でなく台帳の鍵に結び付ける (IP を付け替えても「鍵が変わった」にしない)
@@ -1322,6 +1348,7 @@ type copyItem struct{ label, value, shown, note string }
 func (m *Model) copySelf(i int) {
 	items := m.selfCopyItems()
 	if i < 0 || i >= len(items) {
+		m.note(fmt.Sprintf("%d 行目は無い (この Mac の有線の名前は、内部 IP を固定すると出る)", i+1), false) // 黙って閉じない
 		return
 	}
 	it := items[i]
@@ -1356,7 +1383,7 @@ var (
 // openEdit は台帳に載っている Mac の 1 欄の入力欄を開く。
 func (m *Model) openEdit(r row, e hostEdit, cur string) {
 	if r.self {
-		m.note("この Mac は台帳に載せない", false)
+		m.note("この Mac の別名・ユーザー名はここでは変えない", false)
 		return
 	}
 	if !r.managed {
