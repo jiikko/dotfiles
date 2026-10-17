@@ -52,13 +52,15 @@ SHIMEOF
 done
 
 cd "$ROOT/src/glogx" || exit 1
+# 🚨 main (.) だけでなく internal/ の画面のパッケージも回す。doctor のテストは issue 742 で internal/doctorview へ移した
+# (. だけだと移したテストがこの監視から黙って外れる。codex の敵対的レビューの P2)
 scope="${GLOGX_SHIM_SCOPE:-subset}"
 if [ "$scope" = all ]; then
   min_pass=300
-  set -- -count=1 -v .
+  set -- -count=1 -v . ./internal/...
 else
   min_pass=40
-  set -- -count=1 -v -run 'TestUpdateKeys|TestDoctor|TestRestartPrompt|TestBrowse|TestDelete' .
+  set -- -count=1 -v -run 'TestUpdateKeys|TestDoctor|TestRestartPrompt|TestBrowse|TestDelete' . ./internal/...
 fi
 if ! PATH="$SHIM:$PATH" go test "$@" > "$TMP/test.out" 2>&1; then
   echo "✗ go test が落ちた (このテストの前提が崩れている):" >&2
