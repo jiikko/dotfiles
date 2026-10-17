@@ -57,7 +57,7 @@ root の `make test` (`test-src` → `test-go`) は、`Makefile` の `run_go_pro
 
 ## 進捗
 
-- 2026-10-16 起票。計測ログは `tmp/go-build-timeline-2026-10-16/` (gitignore。結論は上の表に移した)
+- 2026-10-16 起票。計測ログは `tmp/go-build-timeline-2026-10-16/` (gitignore。結論は上の表に移した。2026-10-17 に `tmp/807-measure-2026-10-16/`・`tmp/go-build-dup*-2026-10-16/` と一緒に削除)
 - 2026-10-17 実装。`Makefile` の `go_test_warm_std` を `test-go` の先頭の (`+` の付かない) レシピ行で走らせる。
   `tests/scripts/test_no_failfast_entrypoints.sh` のスタブの go が引数を記録し、test-go では一斉起動より前に `go build -race std` を 1 回だけ /
   test-go-lint では呼ばない / `make -n test-go` では表示だけで呼ばない / 失敗を出して一斉起動へ進む、を assert する
