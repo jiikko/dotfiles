@@ -867,6 +867,17 @@ red を確認 (外部 I/O 側 6 本・画面 6 本・2 周目 9 本・3 周目 6
   番号が内部 IP に入りうる (初期設定の候補 (Offline) は無線を外すので、画面と食い違う)。実機で確かめていない。trigger: ルーターの無い
   Wi-Fi で lan-manager を開いたとき
 
+### 整合の監査の結果 (2026-10-17 ユーザー依頼「全体の実装が整合しているか確認して」)
+
+- opus の監査で 20 件 (実害 5・誤解 7・体裁 8)。19 件を直した。commit「mac-lan-manager: 整合の監査の食い違いを直す (dump は書かず実際の宛先を出す・…) (747)」
+  - 実害の 5 件: dump が操作のログに書いていた / dump の connect_ip が実際の宛先と違った / 初期設定の入口 (Enter) の案内が無かった /
+    glogx の L の最下行「L/q: 閉じる」が層の間は嘘 / この Mac の固定の判定が画面と初期設定で食い違った
+  - 記録だけの 1 件: ルーターの無い Wi-Fi の WiredIF (上の「今の実装との差分」節の最後の行)
+- その修正への opus の敵対レビュー (P1 なし・P2 3 件・P3 1 件) を直した。commit「mac-lan-manager: この Mac の固定を setup.SelfFixed の 1 つの述語に寄せ、…」
+  - P2: 足りない画面で L の最下行を「esc: 戻る」にした退行 / 帯で決める設定でブリッジの帯の番号を内部 IP と出した・方式が分からない番号で
+    画面と初期設定が逆の結論 (→ `setup.SelfFixed` を画面と Plan の両方が呼ぶ) / 設定の画面の帯の注記
+- 変異: 固定を方式だけで決める → TestSelfFixedAgreesWithPlan red、最下行の Binds("L") を外す → TestLanHintFollowsLayers red、ほか 2 本
+
 ### `O` で Finder で smb に繋ぐコマンドをコピー (2026-10-17 ユーザー依頼)
 
 - [x] `O` が `open smb://<宛先>` をコピーする (宛先は `y` と同じ。断り方は `smbURL` に寄せて `y` と共有)。commit「mac-lan-manager: O で Finder で smb に繋ぐコマンド (open smb://<宛先>) をコピーする (747)」
