@@ -1,0 +1,1 @@
+../820-bug-unused-check-stale-staticcheck-cache-after-worktree-removal.md
