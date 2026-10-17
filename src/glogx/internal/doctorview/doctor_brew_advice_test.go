@@ -8,8 +8,8 @@ import (
 
 // 未知のパターンは英語のまま出す (無理に訳して誤った誘導をしない)。
 func TestBrewAdviceUnknownStaysRaw(t *testing.T) {
-	a := BrewAdviceFor("Warning: Something we have never seen.\nblah")
-	if a.Known || a.Title != "" || len(a.Actions) != 0 {
+	a := brewAdviceFor("Warning: Something we have never seen.\nblah")
+	if a.known || a.title != "" || len(a.actions) != 0 {
 		t.Errorf("未知のパターンを既知として扱った: %+v", a)
 	}
 }
@@ -24,15 +24,15 @@ func TestBrewAdviceRejectsUnsafeNames(t *testing.T) {
 		"node\x1b]52;c;cHduZWQ=\x07",
 	} {
 		w := "Warning: You have unlinked kegs in your Cellar.\nRun `brew link` on these:\n  " + bad + "\n  ruby"
-		a := BrewAdviceFor(w)
-		for _, act := range a.Actions {
+		a := brewAdviceFor(w)
+		for _, act := range a.actions {
 			for _, tok := range []string{";", "$(", "`", "..", "\x1b"} {
-				if strings.Contains(act.Cmd, tok) {
-					t.Errorf("危険な語がコマンドへ通った (%q): %q", bad, act.Cmd)
+				if strings.Contains(act.cmd, tok) {
+					t.Errorf("危険な語がコマンドへ通った (%q): %q", bad, act.cmd)
 				}
 			}
 		}
-		if a.Dropped == 0 && len(a.Actions) > 0 && strings.Contains(a.Actions[0].Cmd, strings.Fields(bad)[0]) {
+		if a.dropped == 0 && len(a.actions) > 0 && strings.Contains(a.actions[0].cmd, strings.Fields(bad)[0]) {
 			// 先頭トークンだけが通るケース (node; rm -rf /) は「落とした」と数えていること
 			t.Errorf("落とした名前を数えていない: %q → %+v", bad, a)
 		}
@@ -46,18 +46,18 @@ func TestBrewAdviceCaskVariant(t *testing.T) {
 	w := "Warning: Some installed casks are deprecated or disabled.\n" +
 		"You should find replacements:\n  foo\n\n" +
 		"Uninstall them with `brew uninstall --cask`\n\nSee also: brew help uninstall\n"
-	a := BrewAdviceFor(w)
-	if !a.Known || a.Title != "非推奨 / 無効になった cask があります" {
+	a := brewAdviceFor(w)
+	if !a.known || a.title != "非推奨 / 無効になった cask があります" {
 		t.Fatalf("cask 版を認識していない: %+v", a)
 	}
-	if len(a.Actions) != 2 || a.Actions[1].Cmd != "brew uninstall --cask foo" {
-		t.Fatalf("cask の削除コマンドに --cask が無い: %+v", a.Actions)
+	if len(a.actions) != 2 || a.actions[1].cmd != "brew uninstall --cask foo" {
+		t.Fatalf("cask の削除コマンドに --cask が無い: %+v", a.actions)
 	}
 	// 🚨 名前の列の後ろの散文 (Uninstall them with... / See also:) を名前として拾わない
-	for _, act := range a.Actions {
+	for _, act := range a.actions {
 		for _, bad := range []string{"Uninstall", "them", "with", "See", "also", "help"} {
-			if strings.Contains(act.Cmd, " "+bad) {
-				t.Errorf("散文の語を名前として拾った: %q", act.Cmd)
+			if strings.Contains(act.cmd, " "+bad) {
+				t.Errorf("散文の語を名前として拾った: %q", act.cmd)
 			}
 		}
 	}
@@ -73,23 +73,23 @@ func TestBrewAdviceNameListIsIndentedAndContiguous(t *testing.T) {
 		w := "Warning: You have unlinked kegs in your Cellar.\n" +
 			"Run `brew link` on these:\n  node\n" +
 			"These kegs were installed earlier\n"
-		a := BrewAdviceFor(w)
-		if len(a.Actions) == 0 {
+		a := brewAdviceFor(w)
+		if len(a.actions) == 0 {
 			t.Fatal("手が出ていない")
 		}
-		if a.Actions[0].Cmd != "brew link node" {
-			t.Errorf("散文の語を名前として拾った: %q", a.Actions[0].Cmd)
+		if a.actions[0].cmd != "brew link node" {
+			t.Errorf("散文の語を名前として拾った: %q", a.actions[0].cmd)
 		}
 	})
 	t.Run("空行で打ち切る", func(t *testing.T) {
 		w := "Warning: You have unlinked kegs in your Cellar.\n" +
 			"Run `brew link` on these:\n  node\n\n  ruby extra note\n"
-		a := BrewAdviceFor(w)
-		if len(a.Actions) == 0 {
+		a := brewAdviceFor(w)
+		if len(a.actions) == 0 {
 			t.Fatal("手が出ていない")
 		}
-		if a.Actions[0].Cmd != "brew link node" {
-			t.Errorf("空行の先を名前として拾った: %q", a.Actions[0].Cmd)
+		if a.actions[0].cmd != "brew link node" {
+			t.Errorf("空行の先を名前として拾った: %q", a.actions[0].cmd)
 		}
 	})
 }
@@ -125,22 +125,22 @@ func TestBrewAdviceKnownPatterns(t *testing.T) {
 			[]string{"brew install ada-url c-ares fmt hdrhistogram_c icu4c@78 llhttp simdjson uvwasi", "brew missing"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			a := BrewAdviceFor(tc.warning)
-			if !a.Known {
+			a := brewAdviceFor(tc.warning)
+			if !a.known {
 				t.Fatalf("パターンを認識していない")
 			}
-			if a.Title != tc.title {
-				t.Errorf("見出し = %q", a.Title)
+			if a.title != tc.title {
+				t.Errorf("見出し = %q", a.title)
 			}
 			var got []string
-			for _, act := range a.Actions {
-				got = append(got, act.Cmd)
+			for _, act := range a.actions {
+				got = append(got, act.cmd)
 			}
 			if strings.Join(got, " / ") != strings.Join(tc.cmds, " / ") {
 				t.Errorf("コマンド = %v\n期待 = %v", got, tc.cmds)
 			}
-			if a.Dropped != 0 {
-				t.Errorf("正常な入力で名前を落とした: %d", a.Dropped)
+			if a.dropped != 0 {
+				t.Errorf("正常な入力で名前を落とした: %d", a.dropped)
 			}
 		})
 	}
@@ -148,36 +148,36 @@ func TestBrewAdviceKnownPatterns(t *testing.T) {
 
 // 画面: 見出しが日本語になり、手の行が選べて y でコマンドがコピーできる。
 func TestBrewSectionShowsAdviceRows(t *testing.T) {
-	v := &DoctorView{Shown: true, Tab: TabBrew, Expanded: map[RowKey]bool{}}
-	v.Brew = &BrewDoctorResult{Warnings: []string{brewWarnUnlinked}}
+	v := &DoctorView{shown: true, tab: TabBrew, expanded: map[rowKey]bool{}}
+	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
 	o := testOpts(60)
 	o.Width = 96
 	_ = v.Lines(o)
-	var key RowKey
-	for _, r := range v.Rows {
-		if strings.HasPrefix(string(r.Key), "brew:") {
-			key = r.Key
-			if !strings.Contains(r.Text, "リンクされていない keg があります") {
-				t.Errorf("見出しが日本語になっていない: %q", r.Text)
+	var key rowKey
+	for _, r := range v.rows {
+		if strings.HasPrefix(string(r.key), "brew:") {
+			key = r.key
+			if !strings.Contains(r.text, "リンクされていない keg があります") {
+				t.Errorf("見出しが日本語になっていない: %q", r.text)
 			}
 		}
 	}
 	if key == "" {
 		t.Fatal("brew の行が無い")
 	}
-	v.Expanded[key] = true
+	v.expanded[key] = true
 	_ = v.Lines(o)
-	var acts []DoctorRow
-	for _, r := range v.Rows {
-		if strings.HasPrefix(string(r.Key), "brewact:") {
+	var acts []doctorRow
+	for _, r := range v.rows {
+		if strings.HasPrefix(string(r.key), "brewact:") {
 			acts = append(acts, r)
 		}
 	}
 	if len(acts) != 2 {
 		t.Fatalf("手の行が選べる形で出ていない: %d 件", len(acts))
 	}
-	if !acts[0].Selectable || acts[0].CopyPath != "brew link node ruby" {
-		t.Errorf("1 つ目の手 = selectable:%v copyPath:%q", acts[0].Selectable, acts[0].CopyPath)
+	if !acts[0].selectable || acts[0].copyPath != "brew link node ruby" {
+		t.Errorf("1 つ目の手 = selectable:%v copyPath:%q", acts[0].selectable, acts[0].copyPath)
 	}
 	out := testText(v, 60)
 	if !strings.Contains(out, "原文 (brew doctor)") {
@@ -191,48 +191,48 @@ func TestBrewSectionShowsAdviceRows(t *testing.T) {
 // 「印」で片方は「即実行」だと、身についた期待のまま副作用を起こす形になる。
 func TestBrewActionSelectRunAndReport(t *testing.T) {
 	var ran [][]string
-	v := &DoctorView{Shown: true, Tab: TabBrew, Expanded: map[RowKey]bool{}}
-	v.deps.Brew = func(_ context.Context, name string, args ...string) (string, string, int, error) {
+	v := &DoctorView{shown: true, tab: TabBrew, expanded: map[rowKey]bool{}}
+	v.deps.BrewRun = func(_ context.Context, name string, args ...string) (string, string, int, error) {
 		ran = append(ran, append([]string{name}, args...))
 		if name == "brew" && len(args) > 0 && args[0] == "info" {
 			return "", "not found", 1, nil // 1 件だけ失敗させる
 		}
 		return "linked\n", "", 0, nil
 	}
-	v.Brew = &BrewDoctorResult{Warnings: []string{brewWarnUnlinked}}
+	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
 	o := testOpts(40)
 	o.Width = 96
 	_ = v.Lines(o)
 
 	// 手の行まで降りて Space で選ぶ
-	var actKey RowKey
-	for _, r := range v.Rows {
-		if strings.HasPrefix(string(r.Key), "brew:") {
-			v.Expanded[r.Key] = true
+	var actKey rowKey
+	for _, r := range v.rows {
+		if strings.HasPrefix(string(r.key), "brew:") {
+			v.expanded[r.key] = true
 		}
 	}
 	_ = v.Lines(o)
-	for _, r := range v.Rows {
-		if strings.HasPrefix(string(r.Key), "brewact:") {
-			actKey = r.Key
+	for _, r := range v.rows {
+		if strings.HasPrefix(string(r.key), "brewact:") {
+			actKey = r.key
 			break
 		}
 	}
 	if actKey == "" {
 		t.Fatal("手の行が無い")
 	}
-	v.Cur.JumpTo(v.Rows, actKey)
+	v.cur.jumpTo(v.rows, actKey)
 	if act := v.HandleKey(" ", 40); act != DoctorSwallow {
-		t.Fatalf("Space で選べない: %v (%s)", act, v.PendingToast)
+		t.Fatalf("Space で選べない: %v (%s)", act, v.pendingToast)
 	}
-	if len(v.SelectedActions) != 1 {
-		t.Fatalf("選択が入っていない: %v", v.SelectedActions)
+	if len(v.selectedActions) != 1 {
+		t.Fatalf("選択が入っていない: %v", v.selectedActions)
 	}
 	// 選んだ印が行に出る
 	_ = v.Lines(o)
 	var marked bool
-	for _, r := range v.Rows {
-		if r.Key == actKey && strings.Contains(r.Text, "*") {
+	for _, r := range v.rows {
+		if r.key == actKey && strings.Contains(r.text, "*") {
 			marked = true
 		}
 	}
@@ -245,7 +245,7 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 
 	// x で確認画面へ。**実行するコマンドがそのまま出る**
 	if act := v.HandleKey("x", 40); act != DoctorSwallow {
-		t.Fatalf("x が効かない: %v (%s)", act, v.PendingToast)
+		t.Fatalf("x が効かない: %v (%s)", act, v.pendingToast)
 	}
 	out := testText(v, 30)
 	if !strings.Contains(out, "これを実行しますか?") || !strings.Contains(out, "$ brew link node ruby") {
@@ -263,8 +263,8 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 	if len(ran) != 1 || strings.Join(ran[0], " ") != "brew link node ruby" {
 		t.Fatalf("実行したコマンド = %v", ran)
 	}
-	if v.Del.CmdRep == nil {
-		t.Fatalf("結果が出ていない: %+v", v.Del)
+	if v.del.cmdRep == nil {
+		t.Fatalf("結果が出ていない: %+v", v.del)
 	}
 	out = testText(v, 30)
 	for _, want := range []string{"実行の結果", "1 件すべて成功しました", "$ brew link node ruby", "exit 0"} {
@@ -276,16 +276,16 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 
 // x は何も選んでいないと実行しない (押し間違いで走らせない)。
 func TestBrewRunNeedsSelection(t *testing.T) {
-	v := &DoctorView{Shown: true, Tab: TabBrew, Expanded: map[RowKey]bool{}}
-	v.Brew = &BrewDoctorResult{Warnings: []string{brewWarnUnlinked}}
+	v := &DoctorView{shown: true, tab: TabBrew, expanded: map[rowKey]bool{}}
+	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
 	_ = v.Lines(testOpts(40))
 	if act := v.HandleKey("x", 40); act != DoctorToast {
 		t.Fatalf("何も選んでいないのに実行へ入った: %v", act)
 	}
-	if !strings.Contains(v.PendingToast, "Space") {
-		t.Errorf("選び方を案内していない: %q", v.PendingToast)
+	if !strings.Contains(v.pendingToast, "Space") {
+		t.Errorf("選び方を案内していない: %q", v.pendingToast)
 	}
-	if v.Del.Active() {
+	if v.del.active() {
 		t.Error("パネルが立ってしまった")
 	}
 	// 🚨 選んでいないときは hint に x を出さない。常設すると幅の予算を食い、
@@ -298,30 +298,30 @@ func TestBrewRunNeedsSelection(t *testing.T) {
 // 🚨 タブが違えば実行キーは効かない。**「印を付けた後にやること」をタブごとに 1 つに保つ**のが
 // タブ分割の目的なので、ディスクのタブで x を押しても brew は走らない (逆も同じ)。
 func TestExecuteKeysAreTabScoped(t *testing.T) {
-	v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
-	v.Brew = &BrewDoctorResult{Warnings: []string{brewWarnUnlinked}}
-	v.SelectedActions = map[CmdKey]bool{"brew link node ruby": true}
+	v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
+	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
+	v.selectedActions = map[cmdKey]bool{"brew link node ruby": true}
 	_ = v.Lines(testOpts(40))
 
-	v.Tab = TabDisk
-	if act := v.HandleKey("x", 40); act != DoctorToast || !strings.Contains(v.PendingToast, "タブ") {
-		t.Errorf("ディスクのタブで x が走った: %v (%q)", act, v.PendingToast)
+	v.tab = TabDisk
+	if act := v.HandleKey("x", 40); act != DoctorToast || !strings.Contains(v.pendingToast, "タブ") {
+		t.Errorf("ディスクのタブで x が走った: %v (%q)", act, v.pendingToast)
 	}
-	if v.Del.Active() {
+	if v.del.active() {
 		t.Fatal("ディスクのタブで brew の実行パネルが立った")
 	}
-	v.Tab = TabBrew
+	v.tab = TabBrew
 	// 🚨 「ディスク」だけを見ない: ゲートを外しても beginDelete が
 	// 「ディスクのスキャンが終わるまで待ってください」を返すので素通りする (変異で実測)
-	if act := v.HandleKey("d", 40); act != DoctorToast || !strings.Contains(v.PendingToast, "タブ") {
-		t.Errorf("Homebrew のタブで d が削除へ入った: %v (%q)", act, v.PendingToast)
+	if act := v.HandleKey("d", 40); act != DoctorToast || !strings.Contains(v.pendingToast, "タブ") {
+		t.Errorf("Homebrew のタブで d が削除へ入った: %v (%q)", act, v.pendingToast)
 	}
 	// hint も押せないキーを案内しない
-	v.Tab = TabBrew
+	v.tab = TabBrew
 	if h := v.Hint(120); strings.Contains(h, "d: 削除") {
 		t.Errorf("Homebrew のタブで削除を案内した: %q", h)
 	}
-	v.Tab = TabDisk
+	v.tab = TabDisk
 	if h := v.Hint(120); strings.Contains(h, "x:") {
 		t.Errorf("ディスクのタブで brew の実行を案内した: %q", h)
 	}

@@ -21,7 +21,7 @@ import (
 // 大きい結果が後から届くと既存の行の上に入る。下に挿入する形では index が偶然一致して
 // 素通りする (issue 210 のテスト観点)。
 func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
-	v := &DoctorView{Expanded: map[RowKey]bool{}, Selected: map[EntryID]bool{}, inspected: map[EntryID]bool{}}
+	v := &DoctorView{expanded: map[rowKey]bool{}, selected: map[entryID]bool{}, inspected: map[entryID]bool{}}
 	small := disk.Result{Entry: disk.Entry{ID: "small", Label: "小", Tier: 1}, Size: 100, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/small", Size: 100}}}
 	mid := disk.Result{Entry: disk.Entry{ID: "mid", Label: "中", Tier: 1}, Size: 200, Status: disk.StatusOK,
@@ -30,21 +30,21 @@ func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
 		Items: []disk.Item{{Path: "/tmp/huge", Size: 999999}}}
 
 	o := DoctorRenderOpts{Page: 40, Width: 100}
-	v.DiskResults = []disk.Result{small, mid}
+	v.diskResults = []disk.Result{small, mid}
 	v.Lines(o) // 1 度描いて rows を組む
 
 	// 一番上の選べる行から 1 つ下へ動く (= 2 番目のエントリを選ぶ)
-	v.Cur.Move(v.Rows, 1)
-	before := v.Rows[v.Cur.Index].Key
+	v.cur.move(v.rows, 1)
+	before := v.rows[v.cur.index].key
 	if before == "" {
 		t.Fatal("判定不能: 選択行に key が無い")
 	}
 
 	// 走査中に「もっと大きい結果」が届く = 並べ替えでカーソルより上に入る
-	v.DiskResults = append(v.DiskResults, huge)
+	v.diskResults = append(v.diskResults, huge)
 	v.Lines(o)
 
-	after := v.Rows[v.Cur.Index].Key
+	after := v.rows[v.cur.index].key
 	if after != before {
 		t.Fatalf("走査中に選択が別の行へ移った: before=%s after=%s (y / Y が別エントリをコピーする)", before, after)
 	}
@@ -56,25 +56,25 @@ func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
 // 古い key の行へ cursor を戻す。実測された症状: after G cursor=6 / cursorKey="disk:b" →
 // repaint で cursor=4 へ巻き戻る。
 func TestCursorEndKeySurvivesRepaint(t *testing.T) {
-	v := &DoctorView{Expanded: map[RowKey]bool{}, Selected: map[EntryID]bool{}, inspected: map[EntryID]bool{}}
+	v := &DoctorView{expanded: map[rowKey]bool{}, selected: map[entryID]bool{}, inspected: map[entryID]bool{}}
 	mk := func(id string, size int64) disk.Result {
 		return disk.Result{Entry: disk.Entry{ID: id, Label: id, Tier: 1}, Size: size, Status: disk.StatusOK,
 			Items: []disk.Item{{Path: "/tmp/" + id, Size: size}}}
 	}
 	o := DoctorRenderOpts{Page: 40, Width: 100}
-	v.DiskResults = []disk.Result{mk("a", 300), mk("b", 200), mk("c", 100)}
+	v.diskResults = []disk.Result{mk("a", 300), mk("b", 200), mk("c", 100)}
 	v.Lines(o)
 
 	// G 相当: 末尾へ飛んで寄せる
-	v.Cur.Index = len(v.Rows) - 1
-	v.Cur.Move(v.Rows, 0)
-	atEnd := v.Rows[v.Cur.Index].Key
+	v.cur.index = len(v.rows) - 1
+	v.cur.move(v.rows, 0)
+	atEnd := v.rows[v.cur.index].key
 	if atEnd == "" {
 		t.Fatal("判定不能: 末尾の選べる行に key が無い")
 	}
 
 	v.Lines(o) // 次の描画
-	if got := v.Rows[v.Cur.Index].Key; got != atEnd {
+	if got := v.rows[v.cur.index].key; got != atEnd {
 		t.Fatalf("G の後の描画で巻き戻った: at end=%s after repaint=%s", atEnd, got)
 	}
 }
@@ -82,22 +82,22 @@ func TestCursorEndKeySurvivesRepaint(t *testing.T) {
 // 選べる行が 0 件のフレームを挟んでも key を捨てない (issue 210 の敵対レビュー P2)。
 // 捨てると index 保持へ退行する。
 func TestCursorKeySurvivesFrameWithoutSelectableRows(t *testing.T) {
-	v := &DoctorView{Expanded: map[RowKey]bool{}, Selected: map[EntryID]bool{}, inspected: map[EntryID]bool{}}
+	v := &DoctorView{expanded: map[rowKey]bool{}, selected: map[entryID]bool{}, inspected: map[entryID]bool{}}
 	a := disk.Result{Entry: disk.Entry{ID: "a", Label: "A", Tier: 1}, Size: 300, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/a", Size: 300}}}
 	b := disk.Result{Entry: disk.Entry{ID: "b", Label: "B", Tier: 1}, Size: 200, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/b", Size: 200}}}
 	o := DoctorRenderOpts{Page: 40, Width: 100}
-	v.DiskResults = []disk.Result{a, b}
+	v.diskResults = []disk.Result{a, b}
 	v.Lines(o)
-	v.Cur.Move(v.Rows, 1)
-	want := v.Cur.Key
+	v.cur.move(v.rows, 1)
+	want := v.cur.key
 	if want == "" {
 		t.Fatal("判定不能: key を覚えていない")
 	}
 
 	// 選べる行が 1 つも無いフレーム (結果が消えた瞬間)
-	v.DiskResults = nil
+	v.diskResults = nil
 	v.Lines(o)
 
 	// 結果が戻ってきたら元の行へ復帰する。
@@ -105,10 +105,10 @@ func TestCursorKeySurvivesFrameWithoutSelectableRows(t *testing.T) {
 	//    index が偶然一致して緑になる (変異検証 2026-09-03 で実際に素通りした)
 	huge := disk.Result{Entry: disk.Entry{ID: "huge", Label: "H", Tier: 1}, Size: 999999, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/huge", Size: 999999}}}
-	v.DiskResults = []disk.Result{a, b, huge}
+	v.diskResults = []disk.Result{a, b, huge}
 	v.Lines(o)
-	if v.Rows[v.Cur.Index].Key != want {
-		t.Fatalf("空フレームを挟んだら別の行へ移った: want=%s got=%s", want, v.Rows[v.Cur.Index].Key)
+	if v.rows[v.cur.index].key != want {
+		t.Fatalf("空フレームを挟んだら別の行へ移った: want=%s got=%s", want, v.rows[v.cur.index].key)
 	}
 }
 
@@ -121,9 +121,9 @@ func TestWaitDoctorCleanupWaitsForTrackedScan(t *testing.T) {
 	var finished bool
 	var mu sync.Mutex
 
-	DoctorCleanup.Add()
+	doctorCleanup.Add()
 	go func() {
-		defer DoctorCleanup.Done()
+		defer doctorCleanup.Done()
 		<-release
 		mu.Lock()
 		finished = true
@@ -205,15 +205,15 @@ func TestEachDoctorScanIsTrackedUntilItReturns(t *testing.T) {
 			case "ssd":
 				ssdRun = slow
 			}
-			v.deps.Disk = func() disk.Options { return disk.Options{Catalog: diskCatalog, Run: diskRun} }
-			v.deps.Svc = func() svc.Options { return svc.Options{Dirs: nil, Run: svcRun} }
-			v.deps.Brew = brewRun
-			v.deps.Docker = doctortest.NoDockerOptions // 本物の docker system df を叩かない (issue 419)
-			v.deps.SSD = func() ssd.Options {
+			v.deps.DiskOpts = func() disk.Options { return disk.Options{Catalog: diskCatalog, Run: diskRun} }
+			v.deps.SvcOpts = func() svc.Options { return svc.Options{Dirs: nil, Run: svcRun} }
+			v.deps.BrewRun = brewRun
+			v.deps.DockerOpts = doctortest.NoDockerOptions // 本物の docker system df を叩かない (issue 419)
+			v.deps.SSDOpts = func() ssd.Options {
 				return ssd.Options{Run: ssdRun, LookPath: func(string) (string, error) { return "/opt/homebrew/bin/smartctl", nil }}
 			}
 
-			cmd := v.Start(true)
+			cmd := v.start(true)
 			if cmd == nil {
 				t.Fatal("start が Cmd を返さない")
 			}
@@ -264,7 +264,7 @@ func TestDeleteIsTrackedAndCancelled(t *testing.T) {
 			var finished bool
 
 			v := &DoctorView{}
-			v.deps.Delete = func(ctx context.Context, targets []disk.Result, opt disk.DeleteOptions) (disk.DeleteReport, error) {
+			v.deps.DeleteFn = func(ctx context.Context, targets []disk.Result, opt disk.DeleteOptions) (disk.DeleteReport, error) {
 				ctxCh <- ctx
 				<-ctx.Done() // cancel されるまで帰らない (実際の rm / brew cleanup の代わり)
 				mu.Lock()
@@ -273,7 +273,7 @@ func TestDeleteIsTrackedAndCancelled(t *testing.T) {
 				return disk.DeleteReport{}, ctx.Err()
 			}
 
-			cmd := v.StartDelete([]disk.Result{{}}, dryRun)
+			cmd := v.startDelete([]disk.Result{{}}, dryRun)
 			if cmd == nil {
 				t.Fatal("startDelete が Cmd を返さない")
 			}
@@ -345,9 +345,9 @@ func TestRescanCancelsPreviousGeneration(t *testing.T) {
 	}
 
 	v := &DoctorView{}
-	v.deps.Disk = func() disk.Options { return disk.Options{Catalog: []disk.Entry{}, Run: quiet} }
-	v.deps.Svc = func() svc.Options { return svc.Options{Dirs: nil, Run: quiet} }
-	v.deps.Brew = blocking
+	v.deps.DiskOpts = func() disk.Options { return disk.Options{Catalog: []disk.Entry{}, Run: quiet} }
+	v.deps.SvcOpts = func() svc.Options { return svc.Options{Dirs: nil, Run: quiet} }
+	v.deps.BrewRun = blocking
 
 	runCmd := func(c tea.Cmd) {
 		if c == nil {
@@ -362,7 +362,7 @@ func TestRescanCancelsPreviousGeneration(t *testing.T) {
 		}
 	}
 
-	runCmd(v.Start(true))
+	runCmd(v.start(true))
 	select {
 	case <-started:
 	case <-time.After(10 * time.Second):
@@ -381,13 +381,13 @@ func TestRescanCancelsPreviousGeneration(t *testing.T) {
 }
 
 // drainDoctorCleanup は前のテストが残した latch のカウントを吸う。
-// 🚨 `DoctorCleanup` は **package 変数**なので glogx パッケージのテスト全体で共有される
+// 🚨 `doctorCleanup` は **package 変数**なので glogx パッケージのテスト全体で共有される
 // (敵対的レビュー 2026-09-03 のぼやき)。前のテストの走査が残っていると、こちらの Wait が
 // それを待って誤判定する (実測 -count=2 で落ちた)。**この共有ゆえに `t.Parallel()` を足せない**。
 func drainDoctorCleanup(t *testing.T) {
 	t.Helper()
 	done := make(chan struct{})
-	go func() { <-DoctorCleanup.Wait(); close(done) }()
+	go func() { <-doctorCleanup.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(30 * time.Second):
@@ -397,4 +397,4 @@ func drainDoctorCleanup(t *testing.T) {
 
 // doctor の後始末も latch に載っていることを型で固定する (main の cleanup_latch_test.go の pull 側の pin と対。
 // 型が sync.WaitGroup へ戻るとここがコンパイルできない。issue 217)。
-var _ *app.CleanupLatch = &DoctorCleanup
+var _ *app.CleanupLatch = &doctorCleanup

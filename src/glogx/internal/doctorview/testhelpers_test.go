@@ -25,8 +25,8 @@ func testView(t *testing.T) *DoctorView {
 }
 
 // testProg はテスト用の進捗。表示の中身が主題でないテストの穴埋めに使う。
-func testProg(i, total int, label string, ph disk.DeletePhase) DoctorProgress {
-	return DoctorProgress{I: i, Total: total, Label: label, Phase: ph, Known: true}
+func testProg(i, total int, label string, ph disk.DeletePhase) doctorProgress {
+	return doctorProgress{i: i, total: total, label: label, phase: ph, known: true}
 }
 
 func testOpts(page int) DoctorRenderOpts {
@@ -42,14 +42,14 @@ func testText(v *DoctorView, page int) string {
 //
 // 🚨 壊れた JSON を書くテスト (TestDoctorCacheCorruptAndAtomic) と、書き込み先を
 // 直接触るテスト (os.Remove / os.Chmod) は path 自体が要るので寄せていない。
-// そちらは DoctorSnapshotPath() を直接呼ぶ。
-func writeTestSnapshot(t *testing.T, sn DoctorSnapshot) {
+// そちらは doctorSnapshotPath() を直接呼ぶ。
+func writeTestSnapshot(t *testing.T, sn doctorSnapshot) {
 	t.Helper()
 	data, err := json.Marshal(sn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := DoctorSnapshotPath()
+	path, err := doctorSnapshotPath()
 	if err != nil {
 		t.Fatal(err)
 	}

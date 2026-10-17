@@ -15,7 +15,7 @@ package doctorview
 // エラーのパネルは「何も消えていません」と断言してよい。
 //
 // 進捗の Msg は走査 goroutine から並行に届くので、channel に載せて Cmd で 1 件ずつ Msg にする
-// (Update の外で状態を触らない)。ディスク走査 (DoctorDiskEvent) と同じ形。
+// (Update の外で状態を触らない)。ディスク走査 (doctorDiskEvent) と同じ形。
 
 import (
 	"context"
@@ -33,44 +33,44 @@ import (
 	"glogx/internal/term"
 )
 
-// DoctorDelete は削除の状態機械。confirm → running → result の 3 相。
-type DoctorDelete struct {
+// doctorDelete は削除の状態機械。confirm → running → result の 3 相。
+type doctorDelete struct {
 	// preparing は d を押した直後の下見 (DryRun) 中。engine が削除の直前と同じ走査を通すので
 	// 重いエントリでは数秒かかる = 無言で固まらないよう進捗を出す
-	Preparing bool
-	Plan      *disk.DeleteReport // 下見の結果 (確認プロンプトの材料)
-	Confirm   bool               // y/N の確認中
-	Running   bool               // 削除の実行中 (キーを飲む)
-	Result    *disk.DeleteReport
-	Kind      doctorJob         // 何の仕事か (既定 = jobDisk)
-	CmdPlan   []doctorCmdAction // JobCmd: 実行するコマンド (確認画面の材料)
-	CmdRep    *cmdRunReport     // JobCmd: 実行の結果
-	Err       string
-	Progress  DoctorProgress // 「2/3 Xcode DerivedData」+「走査中 12s」
+	preparing bool
+	plan      *disk.DeleteReport // 下見の結果 (確認プロンプトの材料)
+	confirm   bool               // y/N の確認中
+	running   bool               // 削除の実行中 (キーを飲む)
+	result    *disk.DeleteReport
+	kind      doctorJob         // 何の仕事か (既定 = jobDisk)
+	cmdPlan   []doctorCmdAction // jobCmd: 実行するコマンド (確認画面の材料)
+	cmdRep    *cmdRunReport     // jobCmd: 実行の結果
+	err       string
+	progress  doctorProgress // 「2/3 Xcode DerivedData」+「走査中 12s」
 
 	// log は実行したコマンドとその出力 (実行中は垂れ流し、終わった後も残す)。
 	// 失敗したときに LLM へ投げられるよう、y でまるごとコピーできる
-	Log []string
+	log []string
 
-	Cancel context.CancelFunc
+	cancel context.CancelFunc
 	// ch は進捗とコマンドの出力 (落としてよい)。done は**完了**専用の 1 バッファ。
 	// 🚨 完了を取りこぼすと UI が「実行中」のまま永久に止まる。進捗で埋まった ch に
 	// 完了を載せると詰まり、ctx で諦めると今度は届かない (2026-09-03 に実測: テストが 10 秒で
 	// タイムアウトした)。**落としてよいもの**と**落としてはいけないもの**を別の口にする
-	Ch chan DoctorDeleteEvent
+	ch chan doctorDeleteEvent
 	// progCh は**相だけ**の 1 バッファ。溢れたら古い相を捨てて新しい相を入れる。
 	// 🚨 ch と同じ「落としてよい」口に相を載せると、速いエントリが 16 件溜まった直後の
 	// 重いエントリの相が捨てられ、**古いエントリ番号に伸び続ける経過秒が付く** =
 	// 「16 番目の走査が 97 秒続いている」という具体的な嘘になる (敵対レビュー 2026-09-04 が実測)。
 	// 落としてよいのは「古い相」であって「最新の相」ではない
-	progCh  chan DoctorDeleteEvent
-	Done    chan DoctorDeleteEvent
-	ArmedCC bool // 実行中に Ctrl-C が 1 回押された (2 回目で cancel)
+	progCh  chan doctorDeleteEvent
+	done    chan doctorDeleteEvent
+	armedCC bool // 実行中に Ctrl-C が 1 回押された (2 回目で cancel)
 
 	// confirmScroll は確認パネルの縦位置。**破壊的操作の確認で「対象が見えない」を作らない**ため
 	// (issue 241)。以前は入り切らない塊を落として「端末を広げてください」と言うだけで、
 	// 送ろうとして押したキーは下の default に落ちて確認ごと無言で閉じていた
-	ConfirmScroll deleteScroll
+	confirmScroll deleteScroll
 }
 
 // deleteScroll は確認パネルの縦位置。total / view は**最後に描いたとき**の値で、
@@ -78,32 +78,32 @@ type DoctorDelete struct {
 // 🚨 描画は状態を持たない方が望ましいが、この 2 つは「今の画面で何行見えているか」なので
 // 描画側にしか無い。同 package の rowCursor も同じ形 (restore が index を描画時に寄せる)。
 type deleteScroll struct {
-	Offset int // 本文の先頭から何行送ったか
-	Total  int // 本文の全行数
-	View   int // 実際に見えている行数
+	offset int // 本文の先頭から何行送ったか
+	total  int // 本文の全行数
+	view   int // 実際に見えている行数
 }
 
 // window は本文を今の位置で切り出し、入り切らないぶんを注記で伝える。
 // 入り切るときは注記を出さない (常に出すと、送る必要が無い画面でも送れると誤解させる)。
 func (s *deleteScroll) window(o DoctorRenderOpts, all []string, avail int) []string {
-	s.Total = len(all)
+	s.total = len(all)
 	if avail <= 0 {
 		// 本文に使える行が無い (極端に低い画面)。注記も出さない:
 		// 1 行でも返すと末尾 (合計と操作の説明) が押し出される。
 		// 🚨 offset は**捨てない**。捨てると、端末が一瞬縮んだだけで送った位置が失われる
 		// (敵対レビュー 2026-09-04 の P3-2 が実測: page20 で G → page3 を 1 フレーム → page20 に
 		// 戻しても末尾が見えない)
-		s.View = 0
+		s.view = 0
 		return nil
 	}
 	if len(all) <= avail {
-		s.Offset, s.View = 0, len(all)
+		s.offset, s.view = 0, len(all)
 		return all
 	}
 	view := max(avail-1, 0) // 位置の注記 1 行を先に確保する
-	s.View = view
-	s.Offset = min(max(s.Offset, 0), len(all)-view)
-	above, below := s.Offset, len(all)-s.Offset-view
+	s.view = view
+	s.offset = min(max(s.offset, 0), len(all)-view)
+	above, below := s.offset, len(all)-s.offset-view
 	var parts []string
 	if above > 0 {
 		parts = append(parts, fmt.Sprintf("上に %d 行", above))
@@ -112,30 +112,30 @@ func (s *deleteScroll) window(o DoctorRenderOpts, all []string, avail int) []str
 		parts = append(parts, fmt.Sprintf("下に %d 行", below))
 	}
 	out := make([]string, 0, view+1)
-	out = append(out, all[s.Offset:s.Offset+view]...)
+	out = append(out, all[s.offset:s.offset+view]...)
 	return append(out, doctorColor(o.Colored, term.AnsiDim,
 		fmt.Sprintf(" … %s (j/k で送る)", strings.Join(parts, " / "))))
 }
 
 // scroll は最後に描いた画面の高さを基準に位置を動かす。
 func (s *deleteScroll) scroll(key string) {
-	maxOff := max(s.Total-s.View, 0)
-	half := max(s.View/2, 1)
+	maxOff := max(s.total-s.view, 0)
+	half := max(s.view/2, 1)
 	switch key {
 	case "j", "down":
-		s.Offset++
+		s.offset++
 	case "k", "up":
-		s.Offset--
+		s.offset--
 	case "ctrl+d", "pgdown":
-		s.Offset += half
+		s.offset += half
 	case "ctrl+u", "pgup":
-		s.Offset -= half
+		s.offset -= half
 	case "g", "home":
-		s.Offset = 0
+		s.offset = 0
 	case "G", "end":
-		s.Offset = maxOff
+		s.offset = maxOff
 	}
-	s.Offset = min(max(s.Offset, 0), maxOff)
+	s.offset = min(max(s.offset, 0), maxOff)
 }
 
 // deleteScrollKeys は確認パネルで**中止に落とさない**キー (送るだけ)。
@@ -151,21 +151,21 @@ var deleteScrollKeys = map[string]bool{
 }
 
 // active は削除の語彙がキーを持っているか (裏の一覧にも C/X にも渡さない)。
-func (d *DoctorDelete) Active() bool {
-	return d.Preparing || d.Confirm || d.Running || d.Result != nil || d.CmdRep != nil || d.Err != ""
+func (d *doctorDelete) active() bool {
+	return d.preparing || d.confirm || d.running || d.result != nil || d.cmdRep != nil || d.err != ""
 }
 
 // blocking は実行中で、抜ける以外のキーを飲む状態か。
-func (d *DoctorDelete) Blocking() bool { return d.Preparing || d.Running }
+func (d *doctorDelete) blocking() bool { return d.preparing || d.running }
 
-func (d *DoctorDelete) reset() {
-	if d.Cancel != nil {
-		d.Cancel()
+func (d *doctorDelete) reset() {
+	if d.cancel != nil {
+		d.cancel()
 	}
-	*d = DoctorDelete{}
+	*d = doctorDelete{}
 }
 
-// DoctorDeleteEvent は削除の進捗 / 完了 (channel 経由で Update へ運ぶ)。
+// doctorDeleteEvent は削除の進捗 / 完了 (channel 経由で Update へ運ぶ)。
 // doctorJob は確認 → 実行 → 結果のパネルが今どの仕事を運んでいるか。
 //
 // 🚨 **削除エンジンの経路は触らない。** 分岐するのは「何を確認するか」「何を走らせるか」
@@ -176,7 +176,7 @@ type doctorJob int
 
 const (
 	jobDisk doctorJob = iota // ディスクの削除 (既存)
-	JobCmd                   // 提示したコマンドを実行する (brew の手 / docker の回収)
+	jobCmd                   // 提示したコマンドを実行する (brew の手 / docker の回収)
 )
 
 // doctorCmdAction は「画面が提示し、x で実行できる 1 コマンド」。
@@ -185,20 +185,20 @@ const (
 // 確認 → 実行 → 結果の相の機械もこの型の列だけを見ており、提示元を知らない。
 // 2 つ目の状態機械を作らないための共有点なので、提示元に固有の情報をここへ足さないこと。
 type doctorCmdAction struct {
-	Label string // 日本語のラベル (何をする手か)
-	Cmd   string // 実行するコマンド
-	Note  string // 打つ前に知っておくこと ("" = 無し)
+	label string // 日本語のラベル (何をする手か)
+	cmd   string // 実行するコマンド
+	note  string // 打つ前に知っておくこと ("" = 無し)
 }
 
 // cmdRunReport は提示したコマンドを実行した結果。1 コマンド 1 レコード。
 type cmdRunReport struct {
-	Records []disk.CommandRecord
+	records []disk.CommandRecord
 }
 
 // failed は 0 でない終了コード / 起動できなかったものの数。
 func (r cmdRunReport) failed() int {
 	n := 0
-	for _, rec := range r.Records {
+	for _, rec := range r.records {
 		if rec.RC != 0 || rec.Err != "" {
 			n++
 		}
@@ -206,17 +206,17 @@ func (r cmdRunReport) failed() int {
 	return n
 }
 
-// DoctorProgress は「今どこまで進んだか」。
+// doctorProgress は「今どこまで進んだか」。
 //
 // 🚨 **文字列 1 本で持たない**。2 行に割れず (エントリ名と相を別行にできない)、経過秒を
 // 後から足せない。相が変わった時刻 (since) は receiveDelete が入れる = 時計を読むのは
 // Update の中だけ、という既存の規律を守る (engine の goroutine で時計を読まない)。
-type DoctorProgress struct {
-	I, Total int              // 何番目 / 全体 (表示は 1 始まり)
-	Label    string           // エントリ名
-	Phase    disk.DeletePhase // 走査中 / 削除中 / 確認中
-	Since    time.Time        // この相に入った時刻 (経過の基準)
-	Known    bool             // 一度でも相が届いたか (false なら「準備中」)
+type doctorProgress struct {
+	i, total int              // 何番目 / 全体 (表示は 1 始まり)
+	label    string           // エントリ名
+	phase    disk.DeletePhase // 走査中 / 削除中 / 確認中
+	since    time.Time        // この相に入った時刻 (経過の基準)
+	known    bool             // 一度でも相が届いたか (false なら「準備中」)
 	// verb は相の語の上書き ("" = phase から引く)。brew の実行は disk の相語彙 (走査中 /
 	// 削除中 / 確認中) に当てはまらないので、"実行中" を直接渡す
 	verb string
@@ -224,56 +224,56 @@ type DoctorProgress struct {
 
 // sameStep は「同じ相の続き」か。経過秒の基準を据え置くかの判定に使う
 // (毎イベントで since を更新すると経過が常に 0 に戻り、止まって見える元に戻る)。
-func (p DoctorProgress) sameStep(q DoctorProgress) bool {
-	return p.Known && q.Known && p.I == q.I && p.Total == q.Total && p.Label == q.Label && p.Phase == q.Phase
+func (p doctorProgress) sameStep(q doctorProgress) bool {
+	return p.known && q.known && p.i == q.i && p.total == q.total && p.label == q.label && p.phase == q.phase
 }
 
-type DoctorDeleteEvent struct {
-	Prog   *DoctorProgress     // 相が変わった (落としてよい)
+type doctorDeleteEvent struct {
+	prog   *doctorProgress     // 相が変わった (落としてよい)
 	cmdRep *cmdRunReport       // 提示したコマンドの実行が終わった
-	Cmd    *disk.CommandRecord // cli: の 1 コマンドが終わった
-	Rep    *disk.DeleteReport
+	cmd    *disk.CommandRecord // cli: の 1 コマンドが終わった
+	rep    *disk.DeleteReport
 	err    string
 	dryRun bool
 }
 
-type DoctorDeleteMsg struct {
-	Gen int
-	Ev  DoctorDeleteEvent
+type doctorDeleteMsg struct {
+	gen int
+	ev  doctorDeleteEvent
 }
 
 // startDelete は下見 (dryRun) か本番の削除を走らせる。どちらも同じ経路で、
 // 違うのは DryRun フラグだけ (確認プロンプトに出す内容を UI 側で組み直さないため)。
-func (v *DoctorView) StartDelete(targets []disk.Result, dryRun bool) tea.Cmd {
-	if v.Del.Cancel != nil {
-		v.Del.Cancel() // 前の相 (下見) の ctx を残さない
+func (v *DoctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
+	if v.del.cancel != nil {
+		v.del.cancel() // 前の相 (下見) の ctx を残さない
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	ch := make(chan DoctorDeleteEvent, 16)
-	prog := make(chan DoctorDeleteEvent, 1)
-	done := make(chan DoctorDeleteEvent, 1)
+	ch := make(chan doctorDeleteEvent, 16)
+	prog := make(chan doctorDeleteEvent, 1)
+	done := make(chan doctorDeleteEvent, 1)
 	// 相は 1 つだけ立てる。🚨 confirm を落とし忘れると confirm && running の非正規状態になり、
 	// 今は switch の並び順だけで無害になっている (並べ替えた瞬間に黙って壊れる)。
 	// armedCC も引き継がない: 下見の最中に押した Ctrl-C が、本番の 1 回目で即中断に化ける
 	// progress はゼロ値 (known:false) から始める = 最初の相が届くまで「準備中」を出す
-	v.Del = DoctorDelete{Cancel: cancel, Ch: ch, progCh: prog, Done: done,
-		Preparing: dryRun, Running: !dryRun}
-	gen := v.Gen
+	v.del = doctorDelete{cancel: cancel, ch: ch, progCh: prog, done: done,
+		preparing: dryRun, running: !dryRun}
+	gen := v.gen
 	opt := v.deleteOptions()
 	opt.DryRun = dryRun
 	opt.OnPhase = func(i, total int, label string, p disk.DeletePhase) {
 		// 🚨 ノンブロッキング。読み手 (receiveDelete の再アーム) が止まると、engine が
 		// **削除の途中で** channel 待ちに入る。進捗は落としてよい情報なので捨てる方へ倒す
-		sendLatestProgress(prog, DoctorDeleteEvent{Prog: &DoctorProgress{
-			I: i + 1, Total: total, Label: label, Phase: p, Known: true}})
+		sendLatestProgress(prog, doctorDeleteEvent{prog: &doctorProgress{
+			i: i + 1, total: total, label: label, phase: p, known: true}})
 	}
 	opt.OnCommand = func(rec disk.CommandRecord) {
 		select {
-		case ch <- DoctorDeleteEvent{Cmd: &rec}:
+		case ch <- doctorDeleteEvent{cmd: &rec}:
 		default: // 読み手が詰まっても engine を止めない (進捗と同じ扱い)
 		}
 	}
-	run := v.deps.Delete
+	run := v.deps.DeleteFn
 	if run == nil {
 		run = disk.Delete
 	}
@@ -284,7 +284,7 @@ func (v *DoctorView) StartDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 		var rep disk.DeleteReport
 		var err error
 		doctorTrack(func() { rep, err = run(ctx, targets, opt) })
-		ev := DoctorDeleteEvent{Rep: &rep, dryRun: dryRun}
+		ev := doctorDeleteEvent{rep: &rep, dryRun: dryRun}
 		if err != nil {
 			ev.err = err.Error()
 		}
@@ -300,22 +300,22 @@ func (v *DoctorView) StartDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 func (v *DoctorView) beginBrewRun() doctorAction {
 	acts := v.selectedBrewActions()
 	if len(acts) == 0 {
-		v.PendingToast = "Space で実行する手を選んでください"
+		v.pendingToast = "Space で実行する手を選んでください"
 		return DoctorToast
 	}
-	v.Del = DoctorDelete{Kind: JobCmd, Confirm: true, CmdPlan: acts}
+	v.del = doctorDelete{kind: jobCmd, confirm: true, cmdPlan: acts}
 	return DoctorSwallow
 }
 
 // beginDockerRun は選んだ Docker の回収コマンドを確認画面へ出す (x)。
-// 相の機械は brew と共有する (JobCmd)。2 つ目の状態機械を作らない。
+// 相の機械は brew と共有する (jobCmd)。2 つ目の状態機械を作らない。
 func (v *DoctorView) beginDockerRun() doctorAction {
 	acts := v.selectedDockerActions()
 	if len(acts) == 0 {
-		v.PendingToast = "Space で実行するコマンドを選んでください"
+		v.pendingToast = "Space で実行するコマンドを選んでください"
 		return DoctorToast
 	}
-	v.Del = DoctorDelete{Kind: JobCmd, Confirm: true, CmdPlan: acts}
+	v.del = doctorDelete{kind: jobCmd, confirm: true, cmdPlan: acts}
 	return DoctorSwallow
 }
 
@@ -323,20 +323,20 @@ func (v *DoctorView) beginDockerRun() doctorAction {
 // 🚨 選択は map (コマンド文字列) なので、そのまま回すと順序が実行ごとに変わる。
 // 確認画面に出した順と実行の順が違うと、途中で中断したときに「どこまで走ったか」が読めない。
 func (v *DoctorView) selectedBrewActions() []doctorCmdAction {
-	if len(v.SelectedActions) == 0 {
+	if len(v.selectedActions) == 0 {
 		return nil
 	}
-	out := make([]doctorCmdAction, 0, len(v.SelectedActions))
-	seen := map[CmdKey]bool{}
-	for _, r := range v.Rows {
-		cmd := CmdKey(r.CopyPath)
-		if !r.Key.isBrewAction() || !v.SelectedActions[cmd] || seen[cmd] {
+	out := make([]doctorCmdAction, 0, len(v.selectedActions))
+	seen := map[cmdKey]bool{}
+	for _, r := range v.rows {
+		cmd := cmdKey(r.copyPath)
+		if !r.key.isBrewAction() || !v.selectedActions[cmd] || seen[cmd] {
 			continue
 		}
 		seen[cmd] = true
 		act, ok := v.actionByCmd[cmd]
 		if !ok {
-			act = doctorCmdAction{Label: "(不明な手)", Cmd: r.CopyPath}
+			act = doctorCmdAction{label: "(不明な手)", cmd: r.copyPath}
 		}
 		out = append(out, act)
 	}
@@ -345,16 +345,16 @@ func (v *DoctorView) selectedBrewActions() []doctorCmdAction {
 
 // startCmdRun は手を 1 つずつ実行し、コマンドと出力を垂れ流す。
 func (v *DoctorView) startCmdRun(acts []doctorCmdAction) tea.Cmd {
-	if v.Del.Cancel != nil {
-		v.Del.Cancel()
+	if v.del.cancel != nil {
+		v.del.cancel()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	ch := make(chan DoctorDeleteEvent, 16)
-	prog := make(chan DoctorDeleteEvent, 1)
-	done := make(chan DoctorDeleteEvent, 1)
-	v.Del = DoctorDelete{Kind: JobCmd, Cancel: cancel, Ch: ch, progCh: prog, Done: done, Running: true, CmdPlan: acts}
-	gen := v.Gen
-	run := v.deps.Brew
+	ch := make(chan doctorDeleteEvent, 16)
+	prog := make(chan doctorDeleteEvent, 1)
+	done := make(chan doctorDeleteEvent, 1)
+	v.del = doctorDelete{kind: jobCmd, cancel: cancel, ch: ch, progCh: prog, done: done, running: true, cmdPlan: acts}
+	gen := v.gen
+	run := v.deps.BrewRun
 	if run == nil {
 		run = runner.Exec
 	}
@@ -367,9 +367,9 @@ func (v *DoctorView) startCmdRun(acts []doctorCmdAction) tea.Cmd {
 				if ctx.Err() != nil {
 					break // 中断: ここまでの結果を返す (何が走ったかは残す)
 				}
-				sendLatestProgress(prog, DoctorDeleteEvent{Prog: &DoctorProgress{
-					I: i + 1, Total: len(acts), Label: a.Label, verb: "実行中", Known: true}})
-				fields := strings.Fields(a.Cmd)
+				sendLatestProgress(prog, doctorDeleteEvent{prog: &doctorProgress{
+					i: i + 1, total: len(acts), label: a.label, verb: "実行中", known: true}})
+				fields := strings.Fields(a.cmd)
 				if len(fields) == 0 {
 					continue
 				}
@@ -380,19 +380,19 @@ func (v *DoctorView) startCmdRun(acts []doctorCmdAction) tea.Cmd {
 				}
 				recs = append(recs, rec)
 				select {
-				case ch <- DoctorDeleteEvent{Cmd: &rec}:
+				case ch <- doctorDeleteEvent{cmd: &rec}:
 				default:
 				}
 			}
 		})
-		done <- DoctorDeleteEvent{cmdRep: &cmdRunReport{Records: recs}}
+		done <- doctorDeleteEvent{cmdRep: &cmdRunReport{records: recs}}
 		return nil
 	})
 }
 
 // sendLatestProgress は相を 1 バッファへ「最新優先」で入れる (古い相は捨てる)。
 // 単一の生産者 (engine の goroutine) から呼ばれる前提。
-func sendLatestProgress(prog chan DoctorDeleteEvent, ev DoctorDeleteEvent) {
+func sendLatestProgress(prog chan doctorDeleteEvent, ev doctorDeleteEvent) {
 	select {
 	case prog <- ev:
 		return
@@ -408,9 +408,9 @@ func sendLatestProgress(prog chan DoctorDeleteEvent, ev DoctorDeleteEvent) {
 	}
 }
 
-// CommandLogLines は 1 コマンドの記録を、そのまま貼れる形の行にする。
+// commandLogLines は 1 コマンドの記録を、そのまま貼れる形の行にする。
 // **stdout と stderr を混ぜない** (どちらに出たかが判定材料なので、印で分ける)。
-func CommandLogLines(rec disk.CommandRecord) []string {
+func commandLogLines(rec disk.CommandRecord) []string {
 	out := []string{"$ " + strings.TrimSpace(rec.Name+" "+strings.Join(rec.Args, " "))}
 	switch {
 	case rec.Err != "":
@@ -431,7 +431,7 @@ func CommandLogLines(rec disk.CommandRecord) []string {
 	return out
 }
 
-func DoctorPhaseWord(p disk.DeletePhase) string {
+func doctorPhaseWord(p disk.DeletePhase) string {
 	switch p {
 	case disk.PhaseScanning:
 		return "走査中"
@@ -443,7 +443,7 @@ func DoctorPhaseWord(p disk.DeletePhase) string {
 	return string(p)
 }
 
-// DeleteProgressLines は進捗を 2 行で描く (1 行目: 何番目のエントリか / 2 行目: 相 + 経過)。
+// deleteProgressLines は進捗を 2 行で描く (1 行目: 何番目のエントリか / 2 行目: 相 + 経過)。
 //
 // 🚨 **スピナーと経過秒を 2 行目に置くのは幅のため。** 1 行に詰めると、エントリ名が長い +
 // 端末が狭いときに term.TruncateDisp が**末尾から**削るので、「動いている」ことを示す手がかり
@@ -452,30 +452,30 @@ func DoctorPhaseWord(p disk.DeletePhase) string {
 //
 // 経過は 1 秒未満のあいだ出さない。押した直後に「0s」が見えると、止まっているのか
 // 始まっていないのか区別が付かない (スピナーが先に生存を示す)。
-func DeleteProgressLines(o DoctorRenderOpts, p DoctorProgress) []string {
-	if !p.Known {
+func deleteProgressLines(o DoctorRenderOpts, p doctorProgress) []string {
+	if !p.known {
 		return []string{o.Spinner + " 準備中"}
 	}
 	word := p.verb
 	if word == "" {
-		word = DoctorPhaseWord(p.Phase)
+		word = doctorPhaseWord(p.phase)
 	}
 	sub := "  " + o.Spinner + " " + word
-	if !p.Since.IsZero() {
-		if el := o.Now.Sub(p.Since); el >= time.Second {
+	if !p.since.IsZero() {
+		if el := o.Now.Sub(p.since); el >= time.Second {
 			sub += "  " + strconv.Itoa(int(el.Seconds())) + "s"
 		}
 	}
-	head := strconv.Itoa(p.I) + "/" + strconv.Itoa(p.Total)
-	if p.Label != "" {
-		head += "  " + p.Label // ラベルが空のときに末尾の空白を残さない
+	head := strconv.Itoa(p.i) + "/" + strconv.Itoa(p.total)
+	if p.label != "" {
+		head += "  " + p.label // ラベルが空のときに末尾の空白を残さない
 	}
 	return []string{head, sub}
 }
 
 // waitDeleteCmd は channel から 1 件だけ受けて Msg にする (Update の外で状態を触らない)。
 func (v *DoctorView) waitDeleteCmd(gen int) tea.Cmd {
-	ch, prog, done := v.Del.Ch, v.Del.progCh, v.Del.Done
+	ch, prog, done := v.del.ch, v.del.progCh, v.del.done
 	if ch == nil || prog == nil || done == nil {
 		return nil
 	}
@@ -483,9 +483,9 @@ func (v *DoctorView) waitDeleteCmd(gen int) tea.Cmd {
 		// 溜まっている進捗を先に出す (両方 ready のときに select が完了を選ぶと、
 		// 直前のコマンドの出力が画面に出ないまま結果へ飛ぶ)
 		if ev, ok := pendingDeleteEvent(ch, prog); ok {
-			return DoctorDeleteMsg{Gen: gen, Ev: ev}
+			return doctorDeleteMsg{gen: gen, ev: ev}
 		}
-		return DoctorDeleteMsg{Gen: gen, Ev: awaitDeleteEvent(ch, prog, done)}
+		return doctorDeleteMsg{gen: gen, ev: awaitDeleteEvent(ch, prog, done)}
 	}
 }
 
@@ -496,7 +496,7 @@ func (v *DoctorView) waitDeleteCmd(gen int) tea.Cmd {
 // (y でコピーする記録) を誰も読まない (1000 回に 8 回の実測)。残っていれば先に返し、完了は
 // done へ戻して次の待ち受けで受ける。done は cap 1 で、書き手は仕事 1 本につき 1 回しか
 // 書かない (今空けたので詰まらない)
-func awaitDeleteEvent(ch, prog, done chan DoctorDeleteEvent) DoctorDeleteEvent {
+func awaitDeleteEvent(ch, prog, done chan doctorDeleteEvent) doctorDeleteEvent {
 	select {
 	case ev := <-ch:
 		return ev
@@ -512,7 +512,7 @@ func awaitDeleteEvent(ch, prog, done chan DoctorDeleteEvent) DoctorDeleteEvent {
 }
 
 // pendingDeleteEvent は溜まっている出力 (ch) と相 (prog) を、この順に 1 件だけ待たずに取り出す。
-func pendingDeleteEvent(ch, prog chan DoctorDeleteEvent) (DoctorDeleteEvent, bool) {
+func pendingDeleteEvent(ch, prog chan doctorDeleteEvent) (doctorDeleteEvent, bool) {
 	select {
 	case ev := <-ch:
 		return ev, true
@@ -523,92 +523,92 @@ func pendingDeleteEvent(ch, prog chan DoctorDeleteEvent) (DoctorDeleteEvent, boo
 		return ev, true
 	default:
 	}
-	return DoctorDeleteEvent{}, false
+	return doctorDeleteEvent{}, false
 }
 
 // receiveDelete は進捗 / 完了を取り込む。次の 1 件を待つ Cmd を返す。
-func (v *DoctorView) ReceiveDelete(msg DoctorDeleteMsg) tea.Cmd {
-	if !v.Shown || msg.Gen != v.Gen || !v.Del.Active() {
+func (v *DoctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
+	if !v.shown || msg.gen != v.gen || !v.del.active() {
 		return nil // 閉じた後に届いた古い Msg
 	}
 	// 🚨 **ここも live 経路の関門** (issue 228)。削除の記録に乗るのは対象パス (ファイル名由来) と
 	// OS のエラー文、そして `cli:` で起こしたコマンドの stdout / stderr = どれも自分以外が
 	// 書いた文字列。パネルに描くだけでなく `y` でまるごとコピーできるので、無害化せずに
 	// 持つと**貼った先の端末**で発火する。CLI と同じ関数を通す。
-	ev := msg.Ev
-	if ev.Cmd != nil {
-		rec := disk.SanitizeCommandRecordForDisplay(*ev.Cmd)
-		v.Del.Log = append(v.Del.Log, CommandLogLines(rec)...)
-		return v.waitDeleteCmd(msg.Gen)
+	ev := msg.ev
+	if ev.cmd != nil {
+		rec := disk.SanitizeCommandRecordForDisplay(*ev.cmd)
+		v.del.log = append(v.del.log, commandLogLines(rec)...)
+		return v.waitDeleteCmd(msg.gen)
 	}
-	if ev.Prog != nil {
-		next := *ev.Prog
-		next.Label = term.SanitizePlainLine(next.Label) // エントリ名は Result 由来 = 外部の文字列
+	if ev.prog != nil {
+		next := *ev.prog
+		next.label = term.SanitizePlainLine(next.label) // エントリ名は Result 由来 = 外部の文字列
 		// 同じ相の続きなら基準を据え置く (経過が 0 に戻らないように)
-		if next.sameStep(v.Del.Progress) {
-			next.Since = v.Del.Progress.Since
+		if next.sameStep(v.del.progress) {
+			next.since = v.del.progress.since
 		} else {
-			next.Since = app.TimeNow()
+			next.since = app.TimeNow()
 		}
-		v.Del.Progress = next
-		return v.waitDeleteCmd(msg.Gen)
+		v.del.progress = next
+		return v.waitDeleteCmd(msg.gen)
 	}
 	if ev.cmdRep != nil {
-		v.Del.Preparing, v.Del.Running = false, false
-		v.Del.CmdRep = ev.cmdRep
+		v.del.preparing, v.del.running = false, false
+		v.del.cmdRep = ev.cmdRep
 		return nil
 	}
-	if ev.Rep == nil {
-		return v.waitDeleteCmd(msg.Gen) // 何も載っていない event は捨てて待ち直す
+	if ev.rep == nil {
+		return v.waitDeleteCmd(msg.gen) // 何も載っていない event は捨てて待ち直す
 	}
-	v.Del.Preparing, v.Del.Running = false, false
+	v.del.preparing, v.del.running = false, false
 	if ev.err != "" {
-		v.Del.Err = term.SanitizePlainLine(ev.err)
+		v.del.err = term.SanitizePlainLine(ev.err)
 		return nil
 	}
-	rep := disk.SanitizeDeleteReportForDisplay(*ev.Rep)
+	rep := disk.SanitizeDeleteReportForDisplay(*ev.rep)
 	if ev.dryRun {
 		// 🚨 plan は表示だけでなく**実行対象の絞り込み**にも使われる (plannedTargets → Entry.ID。
 		// issue 245)。無害化が触るのは表示に出る文字列 (Label / Reason / パス) だけで **ID は
 		// 触らない**ので、絞り込みも実際に消す対象 (selectedResults 側の実パス) も変わらない
-		v.Del.Plan, v.Del.Confirm = &rep, true
+		v.del.plan, v.del.confirm = &rep, true
 		return nil
 	}
-	v.Del.Result = &rep
+	v.del.result = &rep
 	return nil
 }
 
 // InterruptDelete は削除の下見・実行中の Ctrl-C (browseModel が Ctrl-C を先に捌かずにここへ渡す)。
 // 1 回目は武装、2 回目で cancel する (HandleDeleteKey の意味づけをそのまま使う)。
-func (v *DoctorView) InterruptDelete() { v.HandleDeleteKey("ctrl+c") }
+func (v *DoctorView) InterruptDelete() { v.handleDeleteKey("ctrl+c") }
 
 // handleDeleteKey は削除の語彙。飲んだら true。
-func (v *DoctorView) HandleDeleteKey(key string) (doctorAction, bool) {
-	d := &v.Del
+func (v *DoctorView) handleDeleteKey(key string) (doctorAction, bool) {
+	d := &v.del
 	switch {
-	case d.Blocking():
+	case d.blocking():
 		// 実行中は抜ける手段だけ残す。1 回目の Ctrl-C はブロックし、2 回目で cancel する
 		// (途中終了は「消したのに記録に残らない」を作りうるので、誤爆を 1 段止める)
 		if key == "ctrl+c" {
-			if !d.ArmedCC {
-				d.ArmedCC = true
+			if !d.armedCC {
+				d.armedCC = true
 				return DoctorSwallow, true
 			}
-			if d.Cancel != nil {
-				d.Cancel()
+			if d.cancel != nil {
+				d.cancel()
 			}
 		}
 		return DoctorSwallow, true
-	case d.Result != nil || d.CmdRep != nil || d.Err != "":
+	case d.result != nil || d.cmdRep != nil || d.err != "":
 		// y / Y は出力をコピー (失敗したときに LLM へそのまま投げられる形)。閉じない
 		if key == "y" || key == "Y" {
-			v.PendingCopy = v.DeleteLogText() // 見出しを必ず書くので空にならない
+			v.pendingCopy = v.deleteLogText() // 見出しを必ず書くので空にならない
 			return DoctorCopyLog, true
 		}
 		// それ以外はどのキーでも閉じる。閉じたら再スキャンして表示を実体に合わせる
 		d.reset()
 		return DoctorRescan, true
-	case d.Confirm:
+	case d.confirm:
 		// 🚨 送るキーは**中止に落とさない** (issue 241)。窓に入り切らない対象を見ようとした
 		// 打鍵で確認が消えるのを塞ぐ。ここに無いキーは既定どおり中止側 (安全側) へ落ちる。
 		// 🚨 **「消せるものがありません」の画面でも送れること**: あちらもパネルに
@@ -616,7 +616,7 @@ func (v *DoctorView) HandleDeleteKey(key string) (doctorAction, bool) {
 		// (敵対レビュー 2026-09-04 の P1。塞いだはずの形を自分で作っていた)。
 		// 消せない理由 (skipped の Reason) こそ読みたいので、読む手段を先に確保する
 		if deleteScrollKeys[key] {
-			d.ConfirmScroll.scroll(key)
+			d.confirmScroll.scroll(key)
 			return DoctorSwallow, true
 		}
 		// 🚨 Enter は飲む (実行もキャンセルもしない。issue 243、ユーザー判断 2026-09-05)。
@@ -624,18 +624,18 @@ func (v *DoctorView) HandleDeleteKey(key string) (doctorAction, bool) {
 		// 押されるが、ディスクから実体を消す既定を実行側へ倒さない。かといって既定の中止側へ
 		// 落とすと「押したら無言で閉じた」になる。どちらにも倒さず、案内に非対称を書く。
 		// 「消せるものがありません」の画面は「何かキーで戻る」と案内しているので除く。
-		if key == "enter" && (d.Kind == JobCmd || planHasWork(d.Plan)) {
+		if key == "enter" && (d.kind == jobCmd || planHasWork(d.plan)) {
 			return DoctorSwallow, true
 		}
-		if d.Kind == JobCmd {
+		if d.kind == jobCmd {
 			if key == "y" || key == "Y" {
-				v.PendingDeleteCmd = v.startCmdRun(d.CmdPlan)
+				v.pendingDeleteCmd = v.startCmdRun(d.cmdPlan)
 				return DoctorRunDelete, true
 			}
 			d.reset() // それ以外はやめる (安全側)
 			return DoctorSwallow, true
 		}
-		if !planHasWork(d.Plan) {
+		if !planHasWork(d.plan) {
 			d.reset() // 消せるものが無いので、送るキー以外はどれでも戻る
 			return DoctorSwallow, true
 		}
@@ -648,21 +648,21 @@ func (v *DoctorView) HandleDeleteKey(key string) (doctorAction, bool) {
 			// selectedResults は元の走査結果しか見ないので y で消えてしまう。
 			// 「見せた量より多く消える」= 破壊的操作の同意を実際より小さい数字で取る形。
 			// plan の Planned だけに絞れば、確認画面と実行が同じソースを見る。
-			targets := plannedTargets(d.Plan, v.SelectedResults())
+			targets := plannedTargets(d.plan, v.selectedResults())
 			if len(targets) == 0 {
 				d.reset()
-				v.PendingToast = "削除する対象がありません"
+				v.pendingToast = "削除する対象がありません"
 				return DoctorToast, true
 			}
 			// 入口 (beginDelete) だけで検査すると非対称になる。押す瞬間にもう一度見る
 			for _, r := range targets {
-				if ok, why := v.Deletable(r); !ok {
+				if ok, why := v.deletable(r); !ok {
 					d.reset()
-					v.PendingToast = r.Entry.Label + ": " + why
+					v.pendingToast = r.Entry.Label + ": " + why
 					return DoctorToast, true
 				}
 			}
-			v.PendingDeleteCmd = v.StartDelete(targets, false)
+			v.pendingDeleteCmd = v.startDelete(targets, false)
 			return DoctorRunDelete, true
 		default: // n / esc / その他はすべて中止 (既定は中止側)
 			d.reset()
@@ -704,39 +704,39 @@ func abortKeysWord(keys []string) string {
 
 // deleteLogText は「別セッションの LLM にそのまま投げられる」形の実行記録。
 // 実行したコマンド・終了コード・stdout・stderr を**分けたまま**入れる。
-func (v *DoctorView) DeleteLogText() string {
-	d := &v.Del
+func (v *DoctorView) deleteLogText() string {
+	d := &v.del
 	var b strings.Builder
 	// 見出しは仕事ごとに変える。LLM へ投げたときに「何をした記録か」が最初の行で分かるように
-	if d.Kind == JobCmd {
+	if d.kind == jobCmd {
 		b.WriteString("glogx doctor から実行したコマンドの記録 (macOS)\n")
 	} else {
 		b.WriteString("glogx doctor の削除の記録 (macOS)\n")
 	}
-	if d.Err != "" {
-		b.WriteString("\n中止した理由: " + d.Err + "\n")
+	if d.err != "" {
+		b.WriteString("\n中止した理由: " + d.err + "\n")
 	}
-	if rep := d.Result; rep != nil {
+	if rep := d.result; rep != nil {
 		for _, e := range rep.Entries {
-			fmt.Fprintf(&b, "\n[%s] %s", e.Label, DoctorOutcomeWord(e.Outcome))
+			fmt.Fprintf(&b, "\n[%s] %s", e.Label, doctorOutcomeWord(e.Outcome))
 			if e.Reason != "" {
 				b.WriteString(" — " + e.Reason)
 			}
 			b.WriteString("\n")
 			for _, it := range e.Items {
-				fmt.Fprintf(&b, "  %s  %s %s\n", DoctorOutcomeWord(it.Outcome), it.Path, it.Reason)
+				fmt.Fprintf(&b, "  %s  %s %s\n", doctorOutcomeWord(it.Outcome), it.Path, it.Reason)
 			}
 		}
 		if rep.HistoryPath != "" {
 			b.WriteString("\n記録: " + rep.HistoryPath + "\n")
 		}
 	}
-	if rep := d.CmdRep; rep != nil {
-		fmt.Fprintf(&b, "\n%d 件を実行し、%d 件が失敗しました\n", len(rep.Records), rep.failed())
+	if rep := d.cmdRep; rep != nil {
+		fmt.Fprintf(&b, "\n%d 件を実行し、%d 件が失敗しました\n", len(rep.records), rep.failed())
 	}
-	if len(d.Log) > 0 {
+	if len(d.log) > 0 {
 		b.WriteString("\n実行したコマンド (1| = stdout / 2| = stderr):\n")
-		for _, l := range d.Log {
+		for _, l := range d.log {
 			b.WriteString(l + "\n")
 		}
 	}
@@ -748,7 +748,7 @@ func (v *DoctorView) DeleteLogText() string {
 //
 // engine (disk.Delete) は渡された Items を「今回の走査でも候補だったか」で照合するので、
 // **部分集合をそのまま渡してよい** (UI 側で消す対象を組み直す必要はない)。
-func (v *DoctorView) SelectedResults() []disk.Result {
+func (v *DoctorView) selectedResults() []disk.Result {
 	// 🚨 選択が空なら即返す (issue 274)。hint は毎フレーム selectionSummary 経由でここへ来るが、
 	// 条件 (`n > 0 && v.tab == TabDisk`) は**呼び出しの後**にあるので、選択していない間も
 	// 全エントリの全 Item を舐め、Item ごとに diskItemKey で文字列を 1 本確保していた
@@ -757,18 +757,18 @@ func (v *DoctorView) SelectedResults() []disk.Result {
 	//
 	// 呼び出し側 (hint) で `v.tab == TabDisk` を先に見る形にしないのは、次に別の場所から
 	// 呼ぶ人が同じ書き忘れをするため。本体側で閉じる。
-	if len(v.Selected) == 0 && len(v.SelectedItems) == 0 {
+	if len(v.selected) == 0 && len(v.selectedItems) == 0 {
 		return nil
 	}
-	out := make([]disk.Result, 0, len(v.Selected)+len(v.SelectedItems))
+	out := make([]disk.Result, 0, len(v.selected)+len(v.selectedItems))
 	for _, r := range v.currentDiskResults() {
-		if v.Selected[resultEntryID(r)] {
+		if v.selected[resultEntryID(r)] {
 			out = append(out, r)
 			continue
 		}
 		var items []disk.Item
 		for _, it := range r.Items {
-			if v.SelectedItems[diskItemKey(resultEntryID(r), it.Path)] {
+			if v.selectedItems[diskItemKey(resultEntryID(r), it.Path)] {
 				items = append(items, it)
 			}
 		}
@@ -781,17 +781,17 @@ func (v *DoctorView) SelectedResults() []disk.Result {
 }
 
 func (v *DoctorView) currentDiskResults() []disk.Result {
-	if v.DiskRep != nil {
-		return v.DiskRep.Results
+	if v.diskRep != nil {
+		return v.diskRep.Results
 	}
-	return v.DiskResults
+	return v.diskResults
 }
 
 // deletable は「その行を選べるか」と、選べない理由。
 //
 // 🚨 走査していない行 (Reused / FromSnapshot) をここで止める。engine も拒否するが、
 // 押した後に失敗するより、押す前に理由を出す方が親切。
-func (v *DoctorView) Deletable(r disk.Result) (bool, string) {
+func (v *DoctorView) deletable(r disk.Result) (bool, string) {
 	switch {
 	case r.Status == disk.StatusBlocked:
 		// blocked は「走査**できた上で**今は対象外」。走査できなかったのと混ぜない (issue 182 の語彙)
@@ -819,10 +819,10 @@ func (v *DoctorView) Deletable(r disk.Result) (bool, string) {
 // 後者は Enter で開いた中の対象パス。どちらも同じ `deletable` のゲートを通す
 // (ゲートはエントリの性質 = 走査の新しさ・危険度で決まるので、粒度で緩めない)。
 func (v *DoctorView) toggleSelect() (string, bool) {
-	if v.Cur.Index < 0 || v.Cur.Index >= len(v.Rows) {
+	if v.cur.index < 0 || v.cur.index >= len(v.rows) {
 		return "", false
 	}
-	key := v.Rows[v.Cur.Index].Key
+	key := v.rows[v.cur.index].key
 	if item, ok := key.diskItemKey(); ok {
 		return v.toggleItem(item)
 	}
@@ -840,18 +840,18 @@ func (v *DoctorView) toggleSelect() (string, bool) {
 	if !ok {
 		return "この行の結果が見つかりません (r で取り直してください)", false
 	}
-	if ok, why := v.Deletable(r); !ok {
+	if ok, why := v.deletable(r); !ok {
 		return why, false
 	}
-	if v.Selected == nil {
-		v.Selected = map[EntryID]bool{}
+	if v.selected == nil {
+		v.selected = map[entryID]bool{}
 	}
-	v.Selected[id] = !v.Selected[id]
-	if !v.Selected[id] {
-		delete(v.Selected, id)
+	v.selected[id] = !v.selected[id]
+	if !v.selected[id] {
+		delete(v.selected, id)
 	}
 	// エントリ全体を選んだら、その中の個別選択は畳む (二重に数えない)
-	if v.Selected[id] {
+	if v.selected[id] {
 		v.clearItemsOf(id)
 	}
 	return "", true
@@ -861,17 +861,17 @@ func (v *DoctorView) toggleSelect() (string, bool) {
 // toggleCmdAction は brew の手の選択を切り替える。**コマンド文字列**で覚える
 // (行の key は警告の並びに依存するので、再スキャンで別の手を指す)。
 func (v *DoctorView) toggleCmdAction() (string, bool) {
-	cmd := CmdKey(v.Rows[v.Cur.Index].CopyPath)
+	cmd := cmdKey(v.rows[v.cur.index].copyPath)
 	if cmd == "" {
 		return "この行には実行するコマンドがありません", false
 	}
-	if v.SelectedActions == nil {
-		v.SelectedActions = map[CmdKey]bool{}
+	if v.selectedActions == nil {
+		v.selectedActions = map[cmdKey]bool{}
 	}
-	if v.SelectedActions[cmd] {
-		delete(v.SelectedActions, cmd)
+	if v.selectedActions[cmd] {
+		delete(v.selectedActions, cmd)
 	} else {
-		v.SelectedActions[cmd] = true
+		v.selectedActions[cmd] = true
 	}
 	return "", true
 }
@@ -885,24 +885,24 @@ func (v *DoctorView) toggleItem(item itemKey) (string, bool) {
 	if !ok {
 		return "この行の結果が見つかりません (r で取り直してください)", false
 	}
-	if ok, why := v.Deletable(r); !ok {
+	if ok, why := v.deletable(r); !ok {
 		return why, false
 	}
-	if v.SelectedItems == nil {
-		v.SelectedItems = map[itemKey]bool{}
+	if v.selectedItems == nil {
+		v.selectedItems = map[itemKey]bool{}
 	}
-	v.SelectedItems[item] = !v.SelectedItems[item]
-	if !v.SelectedItems[item] {
-		delete(v.SelectedItems, item)
+	v.selectedItems[item] = !v.selectedItems[item]
+	if !v.selectedItems[item] {
+		delete(v.selectedItems, item)
 	}
 	// 個別に選んだら、エントリ全体の選択は畳む (「全部」と「一部」を同時に立てない)
-	if v.SelectedItems[item] {
-		delete(v.Selected, id)
+	if v.selectedItems[item] {
+		delete(v.selected, id)
 	}
 	return "", true
 }
 
-func (v *DoctorView) findDiskResult(id EntryID) (disk.Result, bool) {
+func (v *DoctorView) findDiskResult(id entryID) (disk.Result, bool) {
 	for _, r := range v.currentDiskResults() {
 		if resultEntryID(r) == id {
 			return r, true
@@ -912,8 +912,8 @@ func (v *DoctorView) findDiskResult(id EntryID) (disk.Result, bool) {
 }
 
 // hasSelectedItems はそのエントリの中で個別に選ばれたものがあるか (行頭の印に使う)。
-func (v *DoctorView) hasSelectedItems(id EntryID) bool {
-	for k := range v.SelectedItems {
+func (v *DoctorView) hasSelectedItems(id entryID) bool {
+	for k := range v.selectedItems {
 		if k.belongsTo(id) {
 			return true
 		}
@@ -921,10 +921,10 @@ func (v *DoctorView) hasSelectedItems(id EntryID) bool {
 	return false
 }
 
-func (v *DoctorView) clearItemsOf(id EntryID) {
-	for k := range v.SelectedItems {
+func (v *DoctorView) clearItemsOf(id entryID) {
+	for k := range v.selectedItems {
 		if k.belongsTo(id) {
-			delete(v.SelectedItems, k)
+			delete(v.selectedItems, k)
 		}
 	}
 }
@@ -932,10 +932,10 @@ func (v *DoctorView) clearItemsOf(id EntryID) {
 // selectionSummary は選択中の**ディレクトリ数**と合計。
 // 🚨 エントリ数で数えない: 確認画面が「N 件を削除」を Item 数で出すので、hint だけ
 // エントリ数だと「hint は 1 件、確認は 3 件」になる (敵対レビュー 2026-09-03)。
-func (v *DoctorView) SelectionSummary() (int, int64) {
+func (v *DoctorView) selectionSummary() (int, int64) {
 	var n int
 	var total int64
-	for _, r := range v.SelectedResults() {
+	for _, r := range v.selectedResults() {
 		n += len(r.Items)
 		total += r.Size
 	}
@@ -943,12 +943,12 @@ func (v *DoctorView) SelectionSummary() (int, int64) {
 }
 
 // ownsKeys は削除の語彙がキーを持っているか (browseModel の updateKeyReachable が見る)。
-func (v *DoctorView) OwnsKeys() bool { return v.Del.Active() }
+func (v *DoctorView) OwnsKeys() bool { return v.del.active() }
 
 // takeDeleteCmd は handleKey が組んだ Cmd を取り出す (1 回だけ返す)。
 func (v *DoctorView) TakeDeleteCmd() tea.Cmd {
-	cmd := v.PendingDeleteCmd
-	v.PendingDeleteCmd = nil
+	cmd := v.pendingDeleteCmd
+	v.pendingDeleteCmd = nil
 	return cmd
 }
 
@@ -960,18 +960,18 @@ func (v *DoctorView) TakeDeleteCmd() tea.Cmd {
 // 選べない)。ヘッダーに「N 分前の結果 (r で再スキャン)」とは出ているが、**削除しようとした
 // その瞬間**に気づける形ではなかった。押した意図 (これを消したい) は再スキャンで果たせる。
 func (v *DoctorView) snapshotRescan() (doctorAction, bool) {
-	if v.SnapshotAt.IsZero() {
+	if v.snapshotAt.IsZero() {
 		return DoctorSwallow, false
 	}
 	// 🚨 削除に関係ない行 (brew の警告 / svc) の上では起こさない。押した意図
 	// (この行を消したい) が存在しないので、全体の再スキャンは驚きにしかならない
-	if v.Cur.Index >= 0 && v.Cur.Index < len(v.Rows) {
-		k := v.Rows[v.Cur.Index].Key
+	if v.cur.index >= 0 && v.cur.index < len(v.rows) {
+		k := v.rows[v.cur.index].key
 		if !k.isDiskRelated() {
 			return DoctorSwallow, false
 		}
 	}
-	v.PendingToast = "前回の結果を表示していたので、取り直します (終わったら選び直してください)"
+	v.pendingToast = "前回の結果を表示していたので、取り直します (終わったら選び直してください)"
 	return DoctorRescan, true
 }
 
@@ -981,50 +981,50 @@ func (v *DoctorView) beginDelete() doctorAction {
 		return act
 	}
 	switch {
-	case v.DiskRep == nil:
+	case v.diskRep == nil:
 		// 🚨 v.scanning() ではない: あれは svc / brew も見るので、ディスクが完走していても
 		// brew doctor (最大 60 秒) の間ずっと d が通らなくなる。削除に要るのはディスクの結果だけ。
 		// 助言も「r で取り直す」と言わない (全部を最初からやり直すので待ち時間が増えるだけ)
-		v.PendingToast = "ディスクのスキャンが終わるまで待ってください"
+		v.pendingToast = "ディスクのスキャンが終わるまで待ってください"
 		return DoctorToast
-	case len(v.SelectedResults()) == 0:
-		v.PendingToast = "Space で削除するものを選んでください"
+	case len(v.selectedResults()) == 0:
+		v.pendingToast = "Space で削除するものを選んでください"
 		return DoctorToast
 	}
 	// 🚨 走査していない行は engine が拒否する。押す前にここで止める
-	for _, r := range v.SelectedResults() {
-		if ok, why := v.Deletable(r); !ok {
-			v.PendingToast = r.Entry.Label + ": " + why
+	for _, r := range v.selectedResults() {
+		if ok, why := v.deletable(r); !ok {
+			v.pendingToast = r.Entry.Label + ": " + why
 			return DoctorToast
 		}
 	}
-	v.PendingDeleteCmd = v.StartDelete(v.SelectedResults(), true) // 下見 (何も壊さない)
+	v.pendingDeleteCmd = v.startDelete(v.selectedResults(), true) // 下見 (何も壊さない)
 	return DoctorRunDelete
 }
 
 // deletePanel は確認 / 進捗 / 結果の全画面パネル。doctor 自体が全画面なので、重ねずに差し替える
 // (重ねると狭い幅で下の行が透けて「どれを消すのか」が読めなくなる)。
 func (v *DoctorView) deletePanel(o DoctorRenderOpts) []string {
-	d := &v.Del
+	d := &v.del
 	switch {
-	case d.Err != "":
-		body := []string{d.Err, "", "何も消えていません。"}
-		if len(d.Log) > 0 {
+	case d.err != "":
+		body := []string{d.err, "", "何も消えていません。"}
+		if len(d.log) > 0 {
 			body = append(body, "", " 実行したコマンド:")
-			body = append(body, d.Log...)
+			body = append(body, d.log...)
 		}
 		return doctorPanel(o, "削除できませんでした", append(body, "", "y: 出力をコピー   他のキー: 閉じてもう一度スキャン"))
-	case d.Result != nil:
-		blocks, tail := doctorDeleteResultLines(o, *d.Result, d.Log)
+	case d.result != nil:
+		blocks, tail := doctorDeleteResultLines(o, *d.result, d.log)
 		return assembleDeletePanel(o, "削除の結果", blocks, tail, nil)
-	case d.CmdRep != nil:
-		return doctorPanel(o, "実行の結果", cmdResultLines(o, *d.CmdRep, d.CmdPlan, d.Log))
-	case d.Blocking():
+	case d.cmdRep != nil:
+		return doctorPanel(o, "実行の結果", cmdResultLines(o, *d.cmdRep, d.cmdPlan, d.log))
+	case d.blocking():
 		head := "削除しています"
 		switch {
-		case d.Kind == JobCmd:
+		case d.kind == jobCmd:
 			head = "実行しています"
-		case d.Preparing:
+		case d.preparing:
 			head = "削除できるか確認しています"
 		}
 		// 🚨 極小の端末では**抜ける手段を優先して**進捗を 1 行へ畳む。
@@ -1032,13 +1032,13 @@ func (v *DoctorView) deletePanel(o DoctorRenderOpts) []string {
 		// 「このパネルから出る方法がどこにも書いていない」状態になる。
 		// 実測 (敵対レビュー 2026-09-04): 2 行にしたことで案内が出る下限が
 		// running は page 5 → 6、preparing は 6 → 7 へ上がっていた。7 未満で畳めば元に戻る
-		prog := DeleteProgressLines(o, d.Progress)
+		prog := deleteProgressLines(o, d.progress)
 		if o.Page < 7 && len(prog) > 1 {
 			prog = []string{strings.TrimSpace(prog[0]) + "  " + strings.TrimSpace(prog[1])}
 		}
 		prog = append(prog, "")
 		body := prog
-		if d.Preparing {
+		if d.preparing {
 			body = append(body, "対象を走査し直しています (消してよいかを測り直します)")
 		}
 		// 🚨 中断の案内は相に依らず出す。下見中も handleDeleteKey の blocking 分岐が
@@ -1052,29 +1052,29 @@ func (v *DoctorView) deletePanel(o DoctorRenderOpts) []string {
 		// 逆に Ctrl-G 2 回で中断したときは案内を読んでいた人に理由が分からない。
 		// glogx の他の全画面 (issues viewer / url picker) でも ctrl+g は esc と同じ「やめる」なので、
 		// **挙動を正として案内を直す**向きで揃えた。
-		if d.ArmedCC {
+		if d.armedCC {
 			body = append(body, "もう一度 "+deleteAbortKeysWord+" を押すと中断します")
 		} else {
 			body = append(body, deleteAbortKeysWord+" を 2 回押すと中断します")
 		}
 		// 実行したコマンドと出力を垂れ流す (何が起きているかを見せる)。入る分だけ末尾を出す
-		if len(d.Log) > 0 {
+		if len(d.log) > 0 {
 			body = append(body, "")
-			body = append(body, tailLines(d.Log, max(o.Page-len(body)-3, 1))...)
+			body = append(body, tailLines(d.log, max(o.Page-len(body)-3, 1))...)
 		}
 		return doctorPanel(o, head, body)
-	case d.Confirm && d.Kind == JobCmd:
-		blocks, tail := cmdConfirmLines(o, d.CmdPlan)
-		return assembleDeletePanel(o, "これを実行しますか?", blocks, tail, &d.ConfirmScroll)
-	case d.Confirm:
+	case d.confirm && d.kind == jobCmd:
+		blocks, tail := cmdConfirmLines(o, d.cmdPlan)
+		return assembleDeletePanel(o, "これを実行しますか?", blocks, tail, &d.confirmScroll)
+	case d.confirm:
 		blocks, tail := v.confirmLines(o)
 		title := "本当に削除しますか?"
-		if !planHasWork(d.Plan) {
+		if !planHasWork(d.plan) {
 			// 下見の結果、消せるものが 1 件も無かった。**「削除しますか?」と聞かない**
 			// (y に意味が無いのに押させる形になる)
 			title = "消せるものがありません"
 		}
-		return assembleDeletePanel(o, title, blocks, tail, &d.ConfirmScroll)
+		return assembleDeletePanel(o, title, blocks, tail, &d.confirmScroll)
 	}
 	return nil
 }
@@ -1083,9 +1083,9 @@ func (v *DoctorView) deletePanel(o DoctorRenderOpts) []string {
 // (同意の対象と実行の対象を一致させる。削除側が issue 245 で学んだのと同じ規律)。
 func cmdConfirmLines(o DoctorRenderOpts, acts []doctorCmdAction) (blocks [][]string, tail []string) {
 	for _, a := range acts {
-		b := []string{"▸ " + doctorColor(o.Colored, term.AnsiBold, a.Label), "  $ " + a.Cmd}
-		if a.Note != "" {
-			for i, w := range term.WrapToWidth(a.Note, max(20, o.Width-8)) {
+		b := []string{"▸ " + doctorColor(o.Colored, term.AnsiBold, a.label), "  $ " + a.cmd}
+		if a.note != "" {
+			for i, w := range term.WrapToWidth(a.note, max(20, o.Width-8)) {
 				pre := "  🚨 "
 				if i > 0 {
 					pre = "     "
@@ -1101,11 +1101,11 @@ func cmdConfirmLines(o DoctorRenderOpts, acts []doctorCmdAction) (blocks [][]str
 
 // cmdResultLines は実行の結果。**失敗の有無を先に言い切る** (ログを読む前に分かるように)。
 func cmdResultLines(o DoctorRenderOpts, rep cmdRunReport, plan []doctorCmdAction, log []string) []string {
-	head := fmt.Sprintf("%d 件すべて成功しました", len(rep.Records))
+	head := fmt.Sprintf("%d 件すべて成功しました", len(rep.records))
 	if f := rep.failed(); f > 0 {
-		head = doctorColor(o.Colored, term.AnsiYellow, fmt.Sprintf("%d 件中 %d 件が失敗しました", len(rep.Records), f))
+		head = doctorColor(o.Colored, term.AnsiYellow, fmt.Sprintf("%d 件中 %d 件が失敗しました", len(rep.records), f))
 	}
-	if n := len(plan) - len(rep.Records); n > 0 {
+	if n := len(plan) - len(rep.records); n > 0 {
 		// 中断で走らなかったぶん。0 件に畳まず「走っていない」と言う
 		head += fmt.Sprintf(" (%d 件は実行していません)", n)
 	}
@@ -1124,14 +1124,14 @@ func planHasWork(plan *disk.DeleteReport) bool {
 // 🚨 **確認画面と実行対象の唯一の出典** (issue 245)。以前は「消せるものが在るか」の判定
 // (planHasWork) と「何を消すか」の判定 (case "y" の selectedResults) が別ソースで、
 // **確認画面が何を約束しても実行が従わない**構造だった。述語をここに 1 つ置く。
-func plannedIDs(plan *disk.DeleteReport) map[EntryID]bool {
+func plannedIDs(plan *disk.DeleteReport) map[entryID]bool {
 	if plan == nil {
 		return nil
 	}
-	ids := make(map[EntryID]bool, len(plan.Entries))
+	ids := make(map[entryID]bool, len(plan.Entries))
 	for _, e := range plan.Entries {
 		if e.Outcome == disk.OutcomePlanned {
-			ids[EntryID(e.ID)] = true
+			ids[entryID(e.ID)] = true
 		}
 	}
 	return ids
@@ -1158,16 +1158,16 @@ func plannedTargets(plan *disk.DeleteReport, sel []disk.Result) []disk.Result {
 // 並びは一覧の行と同じ「サイズ / ラベル / 語」。🚨 記号を先頭に置く形は採らない:
 // `・` (全角) と絵文字と `—` が同じ列に来て、幅は合っていても目には揃わない
 // (~/.claude/rules/no-mixed-width-columns-in-terminal-ui.md)。
-// 🚨 結末の語は **DoctorOutcomeWord から取る** (結果画面と同じ語)。ここで別の語を作ると
+// 🚨 結末の語は **doctorOutcomeWord から取る** (結果画面と同じ語)。ここで別の語を作ると
 // Skipped「触らなかった」と Failed「実行できなかった」が 1 語に畳まれ、しかも `🚫 対象外` は
 // 一覧 (disk.Mark) では StatusBlocked の語なので、同じ記号が 3 つの意味を持つ。
 //
 // ⚠️ 記号は**単独で幅 2 のもの**だけを使う。`🗑` は実測で幅 1、`🗑️` (VS16 付き) は 2 で、
-// 端末によって右端が動く。既存の DoctorRiskMark と同じ語彙 (✅ 🚨 🚫 ⛔ ❓) に `🚮` `📋` `❌` を足した。
+// 端末によって右端が動く。既存の doctorRiskMark と同じ語彙 (✅ 🚨 🚫 ⛔ ❓) に `🚮` `📋` `❌` を足した。
 func (v *DoctorView) confirmLines(o DoctorRenderOpts) (blocks [][]string, tail []string) {
-	labelW := deleteLabelWidth(v.Del.Plan.Entries, o.Width)
+	labelW := deleteLabelWidth(v.del.plan.Entries, o.Width)
 	var freeing, trashing int64
-	for _, e := range v.Del.Plan.Entries {
+	for _, e := range v.del.plan.Entries {
 		var out []string
 		size, word := disk.HumanSize(e.BeforeSize), deleteMethodWord(e.Method)
 		skipped := e.Outcome == disk.OutcomeSkipped || e.Outcome == disk.OutcomeFailed
@@ -1214,7 +1214,7 @@ func (v *DoctorView) confirmLines(o DoctorRenderOpts) (blocks [][]string, tail [
 	if sum := deleteTotalsLine("解放される見込み", freeing, trashing); sum != "" {
 		tail = append(tail, sum)
 	}
-	if !planHasWork(v.Del.Plan) {
+	if !planHasWork(v.del.plan) {
 		return blocks, append(tail, " 何かキーを押すと戻ります")
 	}
 	return blocks, append(tail, " y: 削除する      n / Esc: やめる      (Enter は何もしない)")
@@ -1326,7 +1326,7 @@ func doctorDeleteResultLines(o DoctorRenderOpts, rep disk.DeleteReport, log []st
 	labelW := deleteLabelWidth(rep.Entries, o.Width)
 	for _, e := range rep.Entries {
 		out := []string{fmt.Sprintf(" %8s  %s  %s",
-			deleteResultSize(e), padLabel(e.Label, labelW), DoctorOutcomeWord(e.Outcome))}
+			deleteResultSize(e), padLabel(e.Label, labelW), doctorOutcomeWord(e.Outcome))}
 		if e.Reason != "" {
 			out = append(out, deleteNote(o, e.Reason))
 		}
@@ -1389,9 +1389,9 @@ func deleteResultSize(e disk.EntryOutcome) string {
 	return "---"
 }
 
-// DoctorOutcomeWord は結末の固定語彙 (記号 + 語)。一覧の DoctorRiskMark と同じ作り:
+// doctorOutcomeWord は結末の固定語彙 (記号 + 語)。一覧の doctorRiskMark と同じ作り:
 // NO_COLOR で色が消えても語で区別できるようにする。
-func DoctorOutcomeWord(o disk.Outcome) string {
+func doctorOutcomeWord(o disk.Outcome) string {
 	switch o {
 	case disk.OutcomeDeleted:
 		return "✅ 削除した"
@@ -1411,7 +1411,7 @@ func DoctorOutcomeWord(o disk.Outcome) string {
 	return string(o)
 }
 
-// doctorPlanOutcomeWord は**下見 (確認画面) の**結末語。結果画面 (DoctorOutcomeWord) と
+// doctorPlanOutcomeWord は**下見 (確認画面) の**結末語。結果画面 (doctorOutcomeWord) と
 // 分けているのは、同じ Outcome でも指している状態が違うため:
 //
 //   - 下見の Skipped は「この行は今回消さない」で、一覧が同じ行に付ける語と揃える必要がある。
@@ -1427,7 +1427,7 @@ func doctorPlanOutcomeWord(o disk.Outcome) string {
 	if o == disk.OutcomeSkipped {
 		return "🚫 対象外"
 	}
-	return DoctorOutcomeWord(o)
+	return doctorOutcomeWord(o)
 }
 
 func deleteMethodWord(method string) string {
@@ -1452,7 +1452,7 @@ func deleteLabelWidth(entries []disk.EntryOutcome, width int) int {
 }
 
 // deleteWordW は行の最後の列 (語) に充てている幅。
-// 🚨 語の出典は deleteMethodWord **と** doctorPlanOutcomeWord / DoctorOutcomeWord の両方。
+// 🚨 語の出典は deleteMethodWord **と** doctorPlanOutcomeWord / doctorOutcomeWord の両方。
 // 今の最長は「📋 コマンド」= 2+1+10 = 13 で収まっているが、これを超える語を足すと
 // ラベルの予算が破れ、行末の term.TruncateDisp が**語そのもの**を切る (語が最後の列なので)。
 // 全語彙が収まっているかは TestDeleteVocabulary が見る

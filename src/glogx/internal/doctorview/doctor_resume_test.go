@@ -12,13 +12,13 @@ import (
 func TestDoctorScreenRoundTrip(t *testing.T) {
 	doctortest.WithDoctorStateDir(t)
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
-	if _, ok := LoadDoctorScreen(now); ok {
+	if _, ok := loadDoctorScreen(now); ok {
 		t.Fatal("記憶が無いのに復元しようとした")
 	}
-	if err := SaveDoctorScreen(DoctorScreen{Tab: int(TabBrew), SavedAt: now}); err != nil {
+	if err := saveDoctorScreen(doctorScreen{Tab: int(TabBrew), SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	tb, ok := LoadDoctorScreen(now.Add(time.Minute))
+	tb, ok := loadDoctorScreen(now.Add(time.Minute))
 	if !ok || tb != TabBrew {
 		t.Fatalf("タブが戻らない: %v ok=%v", tb, ok)
 	}
@@ -30,7 +30,7 @@ func TestDoctorScreenRejectsBadState(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
 	write := func(t *testing.T, body string) {
 		t.Helper()
-		p, err := DoctorMemory.Path()
+		p, err := doctorMemory.Path()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -43,35 +43,35 @@ func TestDoctorScreenRejectsBadState(t *testing.T) {
 	}
 	t.Run("期限切れ", func(t *testing.T) {
 		doctortest.WithDoctorStateDir(t)
-		if err := SaveDoctorScreen(DoctorScreen{Tab: int(TabSvc), SavedAt: now.Add(-app.ScreenMemoryTTL)}); err != nil {
+		if err := saveDoctorScreen(doctorScreen{Tab: int(TabSvc), SavedAt: now.Add(-app.ScreenMemoryTTL)}); err != nil {
 			t.Fatal(err)
 		}
-		if _, ok := LoadDoctorScreen(now); ok {
+		if _, ok := loadDoctorScreen(now); ok {
 			t.Error("期限切れを復元した")
 		}
 	})
 	t.Run("未来の時刻", func(t *testing.T) {
 		doctortest.WithDoctorStateDir(t)
-		if err := SaveDoctorScreen(DoctorScreen{Tab: int(TabSvc), SavedAt: now.Add(time.Hour)}); err != nil {
+		if err := saveDoctorScreen(doctorScreen{Tab: int(TabSvc), SavedAt: now.Add(time.Hour)}); err != nil {
 			t.Fatal(err)
 		}
-		if _, ok := LoadDoctorScreen(now); ok {
+		if _, ok := loadDoctorScreen(now); ok {
 			t.Error("未来の時刻を復元した (時計のずれ)")
 		}
 	})
 	t.Run("壊れた JSON", func(t *testing.T) {
 		doctortest.WithDoctorStateDir(t)
 		write(t, "{ not json")
-		if _, ok := LoadDoctorScreen(now); ok {
+		if _, ok := loadDoctorScreen(now); ok {
 			t.Error("壊れた記憶を復元した")
 		}
 	})
 	t.Run("範囲外のタブは既定へ畳む", func(t *testing.T) {
 		doctortest.WithDoctorStateDir(t)
-		if err := SaveDoctorScreen(DoctorScreen{Tab: 99, SavedAt: now}); err != nil {
+		if err := saveDoctorScreen(doctorScreen{Tab: 99, SavedAt: now}); err != nil {
 			t.Fatal(err)
 		}
-		tb, ok := LoadDoctorScreen(now)
+		tb, ok := loadDoctorScreen(now)
 		if !ok {
 			t.Fatal("復元自体はする")
 		}
@@ -88,15 +88,15 @@ func TestRememberDoctorScreen(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
 
 	var v DoctorView
-	v.Shown, v.Tab = true, TabBrew
+	v.shown, v.tab = true, TabBrew
 	v.RememberScreen(now)
-	if tb, ok := LoadDoctorScreen(now); !ok || tb != TabBrew {
+	if tb, ok := loadDoctorScreen(now); !ok || tb != TabBrew {
 		t.Fatalf("開いていたのに覚えていない: %v ok=%v", tb, ok)
 	}
 
-	v.Shown = false
+	v.shown = false
 	v.RememberScreen(now)
-	if _, ok := LoadDoctorScreen(now); ok {
+	if _, ok := loadDoctorScreen(now); ok {
 		t.Error("閉じて終了したのに記憶が残った (次の起動で蘇る)")
 	}
 }

@@ -32,8 +32,8 @@ func TestSaveDoctorCachesCleanTempOnWriteFailure(t *testing.T) {
 		tmpName string // err に載る temp 名 (出所が読めることの検証)
 		save    func() error
 	}{
-		"disk-cache": {"doctor-disk.json.tmp.", func() error { return SaveDoctorDiskCache(DoctorDiskCache{Total: 1}) }},
-		"snapshot":   {"doctor-snapshot.json.tmp.", func() error { return SaveDoctorSnapshot(DoctorSnapshot{}) }},
+		"disk-cache": {"doctor-disk.json.tmp.", func() error { return saveDoctorDiskCache(doctorDiskCache{Total: 1}) }},
+		"snapshot":   {"doctor-snapshot.json.tmp.", func() error { return saveDoctorSnapshot(doctorSnapshot{}) }},
 	}
 	// 子プロセス側: 自分の枠を落として実際に検査する
 	if name := os.Getenv(rlimitChildEnv); name != "" {
@@ -134,14 +134,14 @@ func TestDoctorStartupToastRejectsFutureScan(t *testing.T) {
 	now := time.Now()
 	// 🚨 Total を直接入れても効かない。sanitizeDiskCache (issue 193) が Entries から
 	// 再計算するので、実在するカタログ ID のエントリを積む必要がある。
-	c := DoctorDiskCache{
+	c := doctorDiskCache{
 		ScannedAt: now.Add(48 * time.Hour),
-		Entries: []DoctorDiskCacheEntry{{
+		Entries: []doctorDiskCacheEntry{{
 			ID: "xcode-deriveddata", Label: "Xcode DerivedData",
-			Size: DoctorToastThreshold * 2, Status: string(disk.StatusOK),
+			Size: doctorToastThreshold * 2, Status: string(disk.StatusOK),
 		}},
 	}
-	got := DoctorStartupToast(c, true, now)
+	got := doctorStartupToast(c, true, now)
 	if strings.Contains(got, "-") && strings.Contains(got, "日前") {
 		t.Errorf("負の日数を出した: %q", got)
 	}

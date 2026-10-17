@@ -64,13 +64,13 @@ func FakeSSDOptions(withSmartctl bool) func() ssd.Options {
 // Deps は doctorview.Deps と同じ形 (doctorview を import できないので写す。渡すときは doctorview.Deps(d) で変換する。
 // 形がずれると変換がコンパイルで落ちるので、写しが黙ってずれることはない)。
 type Deps struct {
-	Disk       func() disk.Options
-	Svc        func() svc.Options
-	Brew       runner.Runner
-	Docker     func() docker.Options
-	SSD        func() ssd.Options
+	DiskOpts   func() disk.Options
+	SvcOpts    func() svc.Options
+	BrewRun    runner.Runner
+	DockerOpts func() docker.Options
+	SSDOpts    func() ssd.Options
 	DeleteOpts func() disk.DeleteOptions
-	Delete     func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
+	DeleteFn   func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
 }
 
 // FakeDeps はテスト用の外への口: 一時 HOME に 1 エントリ (Thing キャッシュ) だけのカタログ・空の launchd・
@@ -95,7 +95,7 @@ func FakeDeps(t *testing.T) Deps {
 		return "", "Warning: Some installed casks are deprecated or disabled.\nYou should find replacements:\n  foo\n\nUninstall them with `brew uninstall --cask`\n\nSee also: brew help uninstall\n", 1, nil
 	}
 	return Deps{
-		Disk: func() disk.Options {
+		DiskOpts: func() disk.Options {
 			return disk.Options{
 				Env: disk.Env{Home: home, TmpDir: home + "/", Getenv: func(string) string { return "" }, AppDirs: nil},
 				Run: fake,
@@ -104,15 +104,15 @@ func FakeDeps(t *testing.T) Deps {
 				BootTime: func() (time.Time, error) { return time.Now(), nil },
 			}
 		},
-		Svc: func() svc.Options {
+		SvcOpts: func() svc.Options {
 			return svc.Options{Dirs: []svc.LaunchDir{{Path: filepath.Join(home, "LaunchAgents"), Domain: "gui/501"}},
 				Run: func(context.Context, string, ...string) (string, string, int, error) {
 					return "PID\tStatus\tLabel\n", "", 0, nil
 				}}
 		},
-		Brew:   fake,
-		Docker: func() docker.Options { return FakeDockerOptions(FakeDockerDF) },
-		SSD:    FakeSSDOptions(true),
+		BrewRun:    fake,
+		DockerOpts: func() docker.Options { return FakeDockerOptions(FakeDockerDF) },
+		SSDOpts:    FakeSSDOptions(true),
 	}
 }
 

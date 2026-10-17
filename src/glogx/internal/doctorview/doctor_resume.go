@@ -21,26 +21,26 @@ import (
 // 作法は issues viewer の記憶 (issues_state.go) に揃えてある: 同じ TTL / 未来の時刻を弾く /
 // **開いていないまま終了したら消す**。片方だけ違う規律にすると、どちらかの理由が腐る。
 
-// DoctorScreen は閉じたときの doctor の画面。
-type DoctorScreen struct {
+// doctorScreen は閉じたときの doctor の画面。
+type doctorScreen struct {
 	Tab     int       `json:"tab"`
 	SavedAt time.Time `json:"saved_at"`
 }
 
-var DoctorMemory = app.ScreenMemory[DoctorScreen]{File: "doctor-screen.json", SavedAt: func(s DoctorScreen) time.Time { return s.SavedAt }}
+var doctorMemory = app.ScreenMemory[doctorScreen]{File: "doctor-screen.json", SavedAt: func(s doctorScreen) time.Time { return s.SavedAt }}
 
-func SaveDoctorScreen(s DoctorScreen) error { return DoctorMemory.Save(s) }
+func saveDoctorScreen(s doctorScreen) error { return doctorMemory.Save(s) }
 
-func RemoveDoctorScreen() { DoctorMemory.Remove() }
+func removeDoctorScreen() { doctorMemory.Remove() }
 
 // RestoreScreen は前回 doctor を出したまま終了していたら開き直す (見ていたタブも戻す)。開いたら走査の Cmd と true。
 func (v *DoctorView) RestoreScreen(now time.Time) (tea.Cmd, bool) {
-	tb, ok := LoadDoctorScreen(now)
+	tb, ok := loadDoctorScreen(now)
 	if !ok {
 		return nil, false
 	}
 	cmd := v.Toggle()
-	v.Tab = tb
+	v.tab = tb
 	return cmd, true
 }
 
@@ -48,22 +48,22 @@ func (v *DoctorView) RestoreScreen(now time.Time) (tea.Cmd, bool) {
 // 一覧を見て閉じた次の起動で 2 回前の doctor が蘇る。保存の失敗は終了を妨げない。
 func (v *DoctorView) RememberScreen(now time.Time) {
 	if v.Visible() {
-		_ = SaveDoctorScreen(DoctorScreen{Tab: int(v.Tab), SavedAt: now})
+		_ = saveDoctorScreen(doctorScreen{Tab: int(v.tab), SavedAt: now})
 		return
 	}
-	RemoveDoctorScreen()
+	removeDoctorScreen()
 }
 
-// LoadDoctorScreen は復元するタブを返す (読めない・壊れている・期限切れ・未来の時刻は「復元しない」。app.ScreenMemory.load)。
+// loadDoctorScreen は復元するタブを返す (読めない・壊れている・期限切れ・未来の時刻は「復元しない」。app.ScreenMemory.load)。
 //
 // 🚨 **範囲外のタブは既定へ畳む。** このファイルは一般ユーザー権限で書き換えられるので、
 // 保存値をそのまま添字に使わない (doctor-snapshot.json と同じ信頼境界)。
-func LoadDoctorScreen(now time.Time) (DoctorTab, bool) {
-	s, ok := DoctorMemory.Load(now)
+func loadDoctorScreen(now time.Time) (DoctorTab, bool) {
+	s, ok := doctorMemory.Load(now)
 	if !ok {
 		return TabDisk, false
 	}
-	if s.Tab < 0 || s.Tab >= NumDoctorTabs {
+	if s.Tab < 0 || s.Tab >= numDoctorTabs {
 		return TabDisk, true // 復元はするが、タブは既定へ
 	}
 	return DoctorTab(s.Tab), true

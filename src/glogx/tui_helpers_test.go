@@ -45,7 +45,7 @@ func installInertDoctor(t *testing.T, v *doctorview.DoctorView) {
 		return "", "", 0, nil
 	}
 	v.SetDeps(doctorview.Deps{
-		Disk: func() disk.Options {
+		DiskOpts: func() disk.Options {
 			return disk.Options{
 				Env:     disk.Env{Home: home, TmpDir: home + "/", Getenv: func(string) string { return "" }},
 				Run:     inert,
@@ -54,10 +54,10 @@ func installInertDoctor(t *testing.T, v *doctorview.DoctorView) {
 				BootTime: func() (time.Time, error) { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), nil },
 			}
 		},
-		Svc:    func() svc.Options { return svc.Options{Run: inert} }, // Dirs 空 = 走査対象なし
-		Brew:   inert,
-		Docker: doctortest.NoDockerOptions, // Docker Desktop が入っていない扱い (本物の docker system df を叩かない)
-		SSD:    doctortest.FakeSSDOptions(true),
+		SvcOpts:    func() svc.Options { return svc.Options{Run: inert} }, // Dirs 空 = 走査対象なし
+		BrewRun:    inert,
+		DockerOpts: doctortest.NoDockerOptions, // Docker Desktop が入っていない扱い (本物の docker system df を叩かない)
+		SSDOpts:    doctortest.FakeSSDOptions(true),
 	})
 }
 
@@ -162,7 +162,7 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 		// 組み合わさると**パッケージ全体がハングする** (敵対レビュー 2026-09-03 が再現)。
 		// production の quit / main.go と同じ後始末にすることで fidelity も上がる
 		m.cancelAll()
-		// ⚠️ cancel は**子の死を待たない** (doctorview.DoctorView.stop() のコメントが正本。issue 211)。
+		// ⚠️ cancel は**子の死を待たない** (doctorview.DoctorView.Stop() のコメントが正本。issue 211)。
 		// join しないと走査 goroutine が次のテストへ跨ぎ、package 変数を踏む (issue 214 / 216)
 		joinDoctorCleanup(t)
 	})

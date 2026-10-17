@@ -16,11 +16,11 @@ import "strings"
 
 // brewAdvice は警告 1 件の訳と手。Known=false なら未知のパターン (英語のまま出す)。
 type brewAdvice struct {
-	Known   bool
-	Title   string // 日本語の見出し
-	Detail  string // 何が起きているか / 放っておくとどうなるか
-	Actions []doctorCmdAction
-	Dropped int // allowlist に落ちた名前の数 (0 でなければ画面に出す)
+	known   bool
+	title   string // 日本語の見出し
+	detail  string // 何が起きているか / 放っておくとどうなるか
+	actions []doctorCmdAction
+	dropped int // allowlist に落ちた名前の数 (0 でなければ画面に出す)
 }
 
 // safeBrewName は formula / cask 名として受け入れてよい形か。
@@ -89,23 +89,23 @@ func brewNamesAfter(body, marker string) (names []string, dropped int) {
 	return names, dropped
 }
 
-// BrewAdviceFor は警告 1 件 (Warning: で始まる塊) を訳と手に落とす。
-func BrewAdviceFor(warning string) brewAdvice {
+// brewAdviceFor は警告 1 件 (Warning: で始まる塊) を訳と手に落とす。
+func brewAdviceFor(warning string) brewAdvice {
 	head := strings.SplitN(warning, "\n", 2)[0]
 	join := func(ns []string) string { return strings.Join(ns, " ") }
 
 	switch {
 	case strings.Contains(head, "unlinked kegs"):
 		ns, dropped := brewNamesAfter(warning, "brew link` on these:")
-		a := brewAdvice{Known: true, Dropped: dropped,
-			Title:  "リンクされていない keg があります",
-			Detail: "インストール済みだが symlink が張られていない状態です。これに依存する formula は、ビルドは通っても実行時に壊れることがあります。"}
+		a := brewAdvice{known: true, dropped: dropped,
+			title:  "リンクされていない keg があります",
+			detail: "インストール済みだが symlink が張られていない状態です。これに依存する formula は、ビルドは通っても実行時に壊れることがあります。"}
 		if len(ns) > 0 {
-			a.Detail += "\n対象: " + join(ns)
-			a.Actions = append(a.Actions, doctorCmdAction{Label: "リンクを張り直す", Cmd: "brew link " + join(ns)})
-			a.Actions = append(a.Actions, doctorCmdAction{
-				Label: "使っていないなら削除する", Cmd: "brew uninstall " + join(ns),
-				Note: "他の formula が依存していると壊れます。先に brew uses --installed で確認してください"})
+			a.detail += "\n対象: " + join(ns)
+			a.actions = append(a.actions, doctorCmdAction{label: "リンクを張り直す", cmd: "brew link " + join(ns)})
+			a.actions = append(a.actions, doctorCmdAction{
+				label: "使っていないなら削除する", cmd: "brew uninstall " + join(ns),
+				note: "他の formula が依存していると壊れます。先に brew uses --installed で確認してください"})
 		}
 		return a
 
@@ -129,27 +129,27 @@ func BrewAdviceFor(warning string) brewAdvice {
 		if cask {
 			kind, uninstall = "cask", "brew uninstall --cask "
 		}
-		a := brewAdvice{Known: true, Dropped: dropped,
-			Title:  "非推奨 / 無効になった " + kind + " があります",
-			Detail: "今後は更新されず、いずれ入らなくなります。代替に乗り換えるか、使っていないなら削除します。"}
+		a := brewAdvice{known: true, dropped: dropped,
+			title:  "非推奨 / 無効になった " + kind + " があります",
+			detail: "今後は更新されず、いずれ入らなくなります。代替に乗り換えるか、使っていないなら削除します。"}
 		if len(ns) > 0 {
-			a.Detail += "\n対象: " + join(ns)
-			a.Actions = append(a.Actions,
-				doctorCmdAction{Label: "代替と非推奨の理由を調べる", Cmd: "brew info " + join(ns)},
-				doctorCmdAction{Label: "使っていないなら削除する", Cmd: uninstall + join(ns),
-					Note: "代替を決めてから。依存元は brew uses --installed で確認できます"})
+			a.detail += "\n対象: " + join(ns)
+			a.actions = append(a.actions,
+				doctorCmdAction{label: "代替と非推奨の理由を調べる", cmd: "brew info " + join(ns)},
+				doctorCmdAction{label: "使っていないなら削除する", cmd: uninstall + join(ns),
+					note: "代替を決めてから。依存元は brew uses --installed で確認できます"})
 		}
 		return a
 
 	case strings.Contains(head, "missing dependencies"):
 		ns, dropped := brewNamesAfter(warning, "the missing dependencies:")
-		a := brewAdvice{Known: true, Dropped: dropped,
-			Title:  "依存が欠けている formula / cask があります",
-			Detail: "依存先が削除されたか、インストールが途中で終わっています。足りないものを入れれば直ります。"}
+		a := brewAdvice{known: true, dropped: dropped,
+			title:  "依存が欠けている formula / cask があります",
+			detail: "依存先が削除されたか、インストールが途中で終わっています。足りないものを入れれば直ります。"}
 		if len(ns) > 0 {
-			a.Actions = append(a.Actions,
-				doctorCmdAction{Label: "足りない依存を入れる", Cmd: "brew install " + join(ns)},
-				doctorCmdAction{Label: "どれが欠けているか確認する", Cmd: "brew missing"})
+			a.actions = append(a.actions,
+				doctorCmdAction{label: "足りない依存を入れる", cmd: "brew install " + join(ns)},
+				doctorCmdAction{label: "どれが欠けているか確認する", cmd: "brew missing"})
 		}
 		return a
 	}

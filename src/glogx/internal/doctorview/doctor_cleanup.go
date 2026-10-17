@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-// DoctorCleanup は走行中の doctor 走査 (disk / svc / brew) の完了 latch。
+// doctorCleanup は走行中の doctor 走査 (disk / svc / brew) の完了 latch。
 //
-// なぜ要るか (issue 211): `DoctorView.stop()` は ctx を cancel するだけで、**子プロセスの死を
+// なぜ要るか (issue 211): `DoctorView.Stop()` は ctx を cancel するだけで、**子プロセスの死を
 // 待たない**。`runner.Exec` の kill は `exec.CommandContext` が起こす watchdog goroutine が
 // `Kill(-pgid)` を打つ形なので、cancel が戻った時点では brew の子孫 (bash → ruby → git) は
 // まだ生きている (red team 実測 3/3: cancel 直後 alive=true / 2 秒後 alive=false)。
@@ -22,7 +22,7 @@ import (
 // (issue 217 で pull 側も WaitGroup から載せ替えた)。登録は走査を起こす側
 // (DoctorView.start)、看取りは main.go。**pull 用とは別のインスタンスを持つ**: 待ちの上限も
 // 出すメッセージも別で、片方の遅れをもう片方の理由として表示すると診断を誤らせる。
-var DoctorCleanup app.CleanupLatch
+var doctorCleanup app.CleanupLatch
 
 // doctorTrack は走査 1 本を latch に登録して走らせる。goroutine は呼び出し側が作る
 // (tea.Cmd の closure からも使うため)。
@@ -30,8 +30,8 @@ var DoctorCleanup app.CleanupLatch
 // 🚨 **add は f を呼ぶ前に済ませる**。子プロセスを起こすのは f の中なので、この順序が
 // 「子が生まれる前に登録されている」を保証する。
 func doctorTrack(f func()) {
-	DoctorCleanup.Add()
-	defer DoctorCleanup.Done()
+	doctorCleanup.Add()
+	defer doctorCleanup.Done()
 	f()
 }
 
@@ -39,7 +39,7 @@ func doctorTrack(f func()) {
 // 待ちは runner.Exec の ctx cancel + WaitDelay (2 秒) で構造的に有限。すぐ終わらないときだけ
 // 理由を出す (無言で固まったように見せない。waitPullCleanup と同じ作法)。
 func WaitDoctorCleanup() {
-	done := DoctorCleanup.Wait()
+	done := doctorCleanup.Wait()
 	select {
 	case <-done:
 		return

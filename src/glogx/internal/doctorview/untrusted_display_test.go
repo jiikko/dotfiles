@@ -2,24 +2,30 @@ package doctorview
 
 import (
 	"context"
-	"doctor/disk"
-	"doctor/docker"
-	"doctor/svc"
 	"encoding/json"
-	"glogx/internal/doctorview/doctortest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"doctor/disk"
+	"doctor/docker"
+	"doctor/svc"
 	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
+	"glogx/internal/doctorview/doctortest"
 )
 
 // 外部由来の文字列が「無害化を通らずに端末へ出る」sink が doctor 画面に残っていないことを、sink ごとに固定する
 // (main の untrusted_display_test.go から doctor の分を移した。issue 817)。
+//
+// doctor は「走査したて (live)」と「保存から復元」の 2 経路を持つが、無害化は復元側にしか
+// 無かった。この節は **live 経路**を固定する。fixture は実際に制御文字入りのディレクトリを
+// 作って走査させる: 復元経路からしか制御文字を入れないテストは、今回の穴 (live) を
+// **構造的に一度も踏まない**まま緑になる (既存の TestDoctorSnapshotTrustBoundaryFreeText が
+// まさにその形だった)。
 
-// 細工した値の部品 (main の untrusted_display_test.go と同じもの。テストの fixture なので写す)
+// 細工した値の部品 (端末への制御シーケンス)
 const (
 	escSeq   = "\x1b"
 	belSeq   = "\a"
@@ -34,11 +40,11 @@ func hasControlExceptNewline(s string) bool { return ctlprobe.HasControlExceptNe
 
 // doctorAllRows は detail (畳まれている行) まで含めた全 row。
 // 🚨 見えている行だけを見ると、Enter で開く中身 (Contents = ReadDir の名前) が検査から漏れる。
-func doctorAllRows(rows []DoctorRow) []DoctorRow {
-	out := make([]DoctorRow, 0, len(rows))
+func doctorAllRows(rows []doctorRow) []doctorRow {
+	out := make([]doctorRow, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, r)
-		out = append(out, doctorAllRows(r.Detail)...)
+		out = append(out, doctorAllRows(r.detail)...)
 	}
 	return out
 }
@@ -67,7 +73,7 @@ func TestDoctorLiveDiskScanSanitizesRealFileNames(t *testing.T) {
 	}
 
 	v := &DoctorView{deps: Deps{
-		Disk: func() disk.Options {
+		DiskOpts: func() disk.Options {
 			return disk.Options{
 				Env: disk.Env{Home: home, TmpDir: home + "/", Getenv: func(string) string { return "" }},
 				Run: func(context.Context, string, ...string) (string, string, int, error) { return "", "", 0, nil },
@@ -77,22 +83,22 @@ func TestDoctorLiveDiskScanSanitizesRealFileNames(t *testing.T) {
 				BootTime: func() (time.Time, error) { return time.Now(), nil },
 			}
 		},
-		Svc: func() svc.Options {
+		SvcOpts: func() svc.Options {
 			return svc.Options{Dirs: []svc.LaunchDir{{Path: filepath.Join(home, "LaunchAgents"), Domain: "gui/501"}},
 				Run: func(context.Context, string, ...string) (string, string, int, error) {
 					return "PID\tStatus\tLabel\n", "", 0, nil
 				}}
 		},
-		Brew:   func(context.Context, string, ...string) (string, string, int, error) { return "", "", 0, nil },
-		Docker: doctortest.NoDockerOptions, // 本物の docker system df を叩かない (issue 419)
-		SSD:    doctortest.FakeSSDOptions(true),
+		BrewRun:    func(context.Context, string, ...string) (string, string, int, error) { return "", "", 0, nil },
+		DockerOpts: doctortest.NoDockerOptions, // 本物の docker system df を叩かない (issue 419)
+		SSDOpts:    doctortest.FakeSSDOptions(true),
 	}}
-	runCmds(t, v, v.Open())
+	runCmds(t, v, v.open())
 
-	if len(v.DiskResults) != 1 {
-		t.Fatalf("前提が作れていない: Result が %d 件", len(v.DiskResults))
+	if len(v.diskResults) != 1 {
+		t.Fatalf("前提が作れていない: Result が %d 件", len(v.diskResults))
 	}
-	r := v.DiskResults[0]
+	r := v.diskResults[0]
 	// 制御文字入りのパスは**書き換えずに落とす** (書き換えると削除の照合から外れて
 	// 「見えているものと消えるものが違う」になる)。落としたことは Failures に残る
 	// 🚨 パスは t.TempDir() の /var → /private/var 解決を挟むので末尾で見る
@@ -122,15 +128,15 @@ func TestDoctorLiveDiskScanSanitizesRealFileNames(t *testing.T) {
 			t.Errorf("doctor の行に制御シーケンスが残った: %q", line)
 		}
 	}
-	for _, row := range doctorAllRows(v.Rows) {
-		if hasTerminalControl(row.Text) {
-			t.Errorf("row の text に制御シーケンスが残った: %q", row.Text)
+	for _, row := range doctorAllRows(v.rows) {
+		if hasTerminalControl(row.text) {
+			t.Errorf("row の text に制御シーケンスが残った: %q", row.text)
 		}
-		if hasControlExceptNewline(row.CopyPath) {
-			t.Errorf("y のコピー (pbcopy へ生で渡る) に制御シーケンスが残った: %q", row.CopyPath)
+		if hasControlExceptNewline(row.copyPath) {
+			t.Errorf("y のコピー (pbcopy へ生で渡る) に制御シーケンスが残った: %q", row.copyPath)
 		}
-		if hasControlExceptNewline(row.CopyText) {
-			t.Errorf("Y のコピー (pbcopy へ生で渡る) に制御シーケンスが残った: %q", row.CopyText)
+		if hasControlExceptNewline(row.copyText) {
+			t.Errorf("Y のコピー (pbcopy へ生で渡る) に制御シーケンスが残った: %q", row.copyText)
 		}
 	}
 }
@@ -140,8 +146,8 @@ func TestDoctorLiveDiskScanSanitizesRealFileNames(t *testing.T) {
 // 出ない、という形にしてある。
 func TestDoctorLiveSvcAndBrewAreSanitized(t *testing.T) {
 	v := testView(t)
-	v.Shown, v.Gen = true, 1
-	v.ReceiveSvc(DoctorSvcMsg{Gen: 1, Rep: svc.Report{
+	v.shown, v.gen = true, 1
+	v.receiveSvc(doctorSvcMsg{gen: 1, rep: svc.Report{
 		Scanned: 2,
 		Findings: []svc.Finding{{
 			// ① 識別子が細工されている = **落とす** (書き換えて出すと、提示する
@@ -165,43 +171,43 @@ func TestDoctorLiveSvcAndBrewAreSanitized(t *testing.T) {
 	// 🚨 Warnings と Unavailable を**同時に立てない**。brewSection は Unavailable != "" で
 	// 早期 return するので、両方立てると警告に触れる row が 0 個になり、Warnings 側の
 	// 無害化を外しても緑のまま通る (敵対レビュー 2026-09-04 が実測した false green)。
-	v.ReceiveBrew(DoctorBrewMsg{Gen: 1, Res: BrewDoctorResult{
+	v.receiveBrew(doctorBrewMsg{gen: 1, res: brewDoctorResult{
 		Warnings: []string{"Warning: 危険" + osc52Seq + "\n2 行目は正常" + clearSeq},
 	}})
 
 	// 🚨 **全タブを描いて集める。** タブ分割後は 1 回の描画で 1 タブぶんの行しか出ないので、
 	// 1 タブだけ見ると残りの節 (disk / svc / brew) が検査対象から外れる = 穴になる。
 	// この検査の主題は「どの節の外部由来文字列も無害化されているか」なので全部通す
-	var rows []DoctorRow
-	for tb := DoctorTab(0); tb < NumDoctorTabs; tb++ {
-		v.Tab = tb
+	var rows []doctorRow
+	for tb := DoctorTab(0); tb < numDoctorTabs; tb++ {
+		v.tab = tb
 		for _, line := range strings.Split(testText(v, 60), "\n") {
 			if hasTerminalControl(line) {
 				t.Errorf("doctor の行に制御シーケンスが残った (tab=%d): %q", tb, line)
 			}
 		}
-		rows = append(rows, doctorAllRows(v.Rows)...)
+		rows = append(rows, doctorAllRows(v.rows)...)
 	}
 	for _, row := range rows {
-		if hasTerminalControl(row.Text) {
-			t.Errorf("row の text に制御シーケンスが残った: %q", row.Text)
+		if hasTerminalControl(row.text) {
+			t.Errorf("row の text に制御シーケンスが残った: %q", row.text)
 		}
-		if hasControlExceptNewline(row.CopyPath) || hasControlExceptNewline(row.CopyText) {
-			t.Errorf("row のコピーに制御シーケンスが残った: %q / %q", row.CopyPath, row.CopyText)
+		if hasControlExceptNewline(row.copyPath) || hasControlExceptNewline(row.copyText) {
+			t.Errorf("row のコピーに制御シーケンスが残った: %q / %q", row.copyPath, row.copyText)
 		}
 	}
 	// brew の警告は**複数行が正常**なので改行は残す (1 行に潰すと段落が読めなくなる)
-	if v.Brew == nil || len(v.Brew.Warnings) != 1 || !strings.Contains(v.Brew.Warnings[0], "\n") {
-		t.Fatalf("brew の改行まで落ちた: %+v", v.Brew)
+	if v.brew == nil || len(v.brew.Warnings) != 1 || !strings.Contains(v.brew.Warnings[0], "\n") {
+		t.Fatalf("brew の改行まで落ちた: %+v", v.brew)
 	}
-	if hasControlExceptNewline(v.Brew.Warnings[0]) {
-		t.Errorf("brew の警告本文に制御シーケンスが残った: %q", v.Brew.Warnings[0])
+	if hasControlExceptNewline(v.brew.Warnings[0]) {
+		t.Errorf("brew の警告本文に制御シーケンスが残った: %q", v.brew.Warnings[0])
 	}
 	// 🚨 警告本文が**実際に row として描かれている**ことを確かめる (描かれていなければ
 	// 上の assert は「モデルの値」しか見ておらず、表示 sink を 1 つも守っていない)
 	var sawWarning bool
 	for _, row := range rows {
-		if strings.Contains(row.Text, "危険") {
+		if strings.Contains(row.text, "危険") {
 			sawWarning = true
 		}
 	}
@@ -210,31 +216,31 @@ func TestDoctorLiveSvcAndBrewAreSanitized(t *testing.T) {
 	}
 
 	// svc: 識別子が細工された Finding は落とし、件数を残す。自由文だけの Finding は残して無害化する
-	if v.SvcRep == nil {
+	if v.svcRep == nil {
 		t.Fatal("svc の結果が入っていない")
 	}
-	if len(v.SvcRep.Findings) != 1 || v.SvcRep.Findings[0].Label != "com.ok" {
-		t.Fatalf("識別子が細工された Finding を落としていない: %+v", v.SvcRep.Findings)
+	if len(v.svcRep.Findings) != 1 || v.svcRep.Findings[0].Label != "com.ok" {
+		t.Fatalf("識別子が細工された Finding を落としていない: %+v", v.svcRep.Findings)
 	}
-	if len(v.SvcRep.Undiagnosed) != 0 {
-		t.Errorf("識別子が細工された Undiagnosed を落としていない: %+v", v.SvcRep.Undiagnosed)
+	if len(v.svcRep.Undiagnosed) != 0 {
+		t.Errorf("識別子が細工された Undiagnosed を落としていない: %+v", v.svcRep.Undiagnosed)
 	}
 	var noted bool
-	for _, e := range v.SvcRep.DirErrs {
+	for _, e := range v.svcRep.DirErrs {
 		if strings.Contains(e, "制御文字") {
 			noted = true
 		}
 	}
 	if !noted {
-		t.Errorf("落としたことが DirErrs に残っていない (CLI の終了コードにも出なくなる): %+v", v.SvcRep.DirErrs)
+		t.Errorf("落としたことが DirErrs に残っていない (CLI の終了コードにも出なくなる): %+v", v.svcRep.DirErrs)
 	}
-	f := v.SvcRep.Findings[0]
+	f := v.svcRep.Findings[0]
 	// 🚨 フィールドごとに見る (連結して 1 回の assert にすると、どれか 1 つの無害化を外した
 	// 変異でも red になり、**どのフィールドが守られているか**が区別できない)
 	assertNoControl(t, map[string]string{
-		"svc StatusErr":           v.SvcRep.StatusErr,
-		"svc BrewErr":             v.SvcRep.BrewErr,
-		"svc DirErrs[0]":          v.SvcRep.DirErrs[0],
+		"svc StatusErr":           v.svcRep.StatusErr,
+		"svc BrewErr":             v.svcRep.BrewErr,
+		"svc DirErrs[0]":          v.svcRep.DirErrs[0],
 		"Finding.Reasons[0]":      f.Reasons[0],
 		"Finding.MissingExec":     f.MissingExec,
 		"Finding.BrewFormula":     f.BrewFormula,
@@ -261,12 +267,12 @@ func assertNoControl(t *testing.T, fields map[string]string) {
 // いけない (固定高パネルの行数が狂う)。
 func TestDoctorBrewUnavailableIsSingleLine(t *testing.T) {
 	v := testView(t)
-	v.Shown, v.Gen = true, 1
-	v.ReceiveBrew(DoctorBrewMsg{Gen: 1, Res: BrewDoctorResult{
+	v.shown, v.gen = true, 1
+	v.receiveBrew(doctorBrewMsg{gen: 1, res: brewDoctorResult{
 		Unavailable: "brew 無し" + clearSeq + "\n ⛔ 偽の行 (これは brew の出力ではない)",
 	}})
-	if v.Brew == nil || strings.Contains(v.Brew.Unavailable, "\n") {
-		t.Errorf("1 行として描く値に改行が残った: %q", v.Brew.Unavailable)
+	if v.brew == nil || strings.Contains(v.brew.Unavailable, "\n") {
+		t.Errorf("1 行として描く値に改行が残った: %q", v.brew.Unavailable)
 	}
 	const page = 20
 	lines := v.Lines(testOpts(page))
@@ -283,18 +289,18 @@ func TestDoctorBrewUnavailableIsSingleLine(t *testing.T) {
 // パネルに描かれるだけでなく `y` でまるごとコピーできる = 貼った先の端末で発火する。
 func TestDoctorDeleteLogAndReportAreSanitized(t *testing.T) {
 	v := testView(t)
-	v.Shown, v.Gen = true, 1
-	v.Del.Running = true
+	v.shown, v.gen = true, 1
+	v.del.running = true
 
-	v.ReceiveDelete(DoctorDeleteMsg{Gen: 1, Ev: DoctorDeleteEvent{
-		Prog: &DoctorProgress{I: 2, Total: 3, Label: "細工されたラベル" + clearSeq, Known: true},
+	v.receiveDelete(doctorDeleteMsg{gen: 1, ev: doctorDeleteEvent{
+		prog: &doctorProgress{i: 2, total: 3, label: "細工されたラベル" + clearSeq, known: true},
 	}})
-	v.ReceiveDelete(DoctorDeleteMsg{Gen: 1, Ev: DoctorDeleteEvent{Cmd: &disk.CommandRecord{
+	v.receiveDelete(doctorDeleteMsg{gen: 1, ev: doctorDeleteEvent{cmd: &disk.CommandRecord{
 		Name: "xcrun" + clearSeq, Args: []string{"simctl", "delete", "id" + clearSeq},
 		RC: 0, Stdout: "消しました" + osc52Seq + "\n2 行目", Stderr: "警告" + clearSeq,
 		Err: "起動できず" + osc52Seq,
 	}}})
-	v.ReceiveDelete(DoctorDeleteMsg{Gen: 1, Ev: DoctorDeleteEvent{Rep: &disk.DeleteReport{
+	v.receiveDelete(doctorDeleteMsg{gen: 1, ev: doctorDeleteEvent{rep: &disk.DeleteReport{
 		HistoryPath: "/tmp/hist" + clearSeq + ".json",
 		// HistoryError は err.Error() (= ファイルシステムのエラー文字列) がそのまま入り、
 		// 削除パネルの tail に「記録を書けませんでした: 」と続けて出る (issue 251)
@@ -308,14 +314,14 @@ func TestDoctorDeleteLogAndReportAreSanitized(t *testing.T) {
 		}},
 	}}})
 
-	if v.Del.Result == nil || len(v.Del.Log) == 0 {
+	if v.del.result == nil || len(v.del.log) == 0 {
 		t.Fatal("前提が作れていない: 記録が入っていない")
 	}
 	assertNoControl(t, map[string]string{
-		"del.progress.label": v.Del.Progress.Label,
-		"CommandRecord":      strings.Join(v.Del.Log, "\x00"),
+		"del.progress.label": v.del.progress.label,
+		"CommandRecord":      strings.Join(v.del.log, "\x00"),
 	})
-	for _, l := range v.Del.Log {
+	for _, l := range v.del.log {
 		if hasTerminalControl(l) {
 			t.Errorf("実行の記録に制御シーケンスが残った: %q", l)
 		}
@@ -326,12 +332,12 @@ func TestDoctorDeleteLogAndReportAreSanitized(t *testing.T) {
 			t.Errorf("削除パネルに制御シーケンスが残った: %q", line)
 		}
 	}
-	if hasControlExceptNewline(v.DeleteLogText()) {
-		t.Errorf("y のコピー (pbcopy へ生で渡る) に制御シーケンスが残った: %q", v.DeleteLogText())
+	if hasControlExceptNewline(v.deleteLogText()) {
+		t.Errorf("y のコピー (pbcopy へ生で渡る) に制御シーケンスが残った: %q", v.deleteLogText())
 	}
 	// 🚨 削除の**記録**ではパスを落とさずに書き換える (落とすと「触ったのに一覧に出ない対象」が
 	// できて記録として嘘になる。照合にはもう使わない)
-	if got := v.Del.Result.Entries[0].Items[0].Path; !strings.HasPrefix(got, "/tmp/ev") {
+	if got := v.del.result.Entries[0].Items[0].Path; !strings.HasPrefix(got, "/tmp/ev") {
 		t.Errorf("触った対象が記録から消えた: %q", got)
 	}
 }
@@ -341,8 +347,8 @@ func TestDoctorDeleteLogAndReportAreSanitized(t *testing.T) {
 // 作れないので、Reason / Entry の各文字列 / Ref はそちらの視界に入らない。
 func TestDoctorLiveDiskMsgSanitizesEveryDisplayedField(t *testing.T) {
 	v := testView(t)
-	v.Shown, v.Gen = true, 1
-	v.ReceiveDisk(DoctorDiskMsg{Gen: 1, Ev: DoctorDiskEvent{R: &disk.Result{
+	v.shown, v.gen = true, 1
+	v.receiveDisk(doctorDiskMsg{gen: 1, ev: doctorDiskEvent{r: &disk.Result{
 		Entry: disk.Entry{
 			ID: "thing", Label: "ラベル" + osc52Seq, Risk: disk.Risk("safe" + clearSeq),
 			Recover: "戻せます" + clearSeq, Detail: "補足" + osc52Seq,
@@ -358,10 +364,10 @@ func TestDoctorLiveDiskMsgSanitizesEveryDisplayedField(t *testing.T) {
 		Contents: []string{"child" + osc52Seq},
 	}}})
 
-	if len(v.DiskResults) != 1 {
-		t.Fatalf("Result が入っていない: %d", len(v.DiskResults))
+	if len(v.diskResults) != 1 {
+		t.Fatalf("Result が入っていない: %d", len(v.diskResults))
 	}
-	r := v.DiskResults[0]
+	r := v.diskResults[0]
 	if len(r.Items) != 1 || r.Items[0].Path != "/tmp/ok" {
 		t.Fatalf("残った Item が想定と違う (不正 UTF-8 のパスだけ落ちること): %+v", r.Items)
 	}
@@ -387,12 +393,12 @@ func TestDoctorLiveDiskMsgSanitizesEveryDisplayedField(t *testing.T) {
 			t.Errorf("doctor の行に制御シーケンスが残った: %q", line)
 		}
 	}
-	if len(v.Rows) == 0 {
+	if len(v.rows) == 0 {
 		t.Fatal("row が 1 つも組まれていない (以下の検査が空回りする)")
 	}
-	for _, row := range doctorAllRows(v.Rows) {
-		if hasTerminalControl(row.Text) {
-			t.Errorf("row の text に制御シーケンスが残った: %q", row.Text)
+	for _, row := range doctorAllRows(v.rows) {
+		if hasTerminalControl(row.text) {
+			t.Errorf("row の text に制御シーケンスが残った: %q", row.text)
 		}
 	}
 
@@ -401,27 +407,27 @@ func TestDoctorLiveDiskMsgSanitizesEveryDisplayedField(t *testing.T) {
 	// — 落ちた瞬間に反映されるので緑になる (敵対レビュー 2026-09-04 の P3 を、当初のテストは
 	// 素通りさせた)。
 	v2 := testView(t)
-	v2.Shown, v2.Gen = true, 1
-	v2.ReceiveDisk(DoctorDiskMsg{Gen: 1, Ev: DoctorDiskEvent{R: &disk.Result{
+	v2.shown, v2.gen = true, 1
+	v2.receiveDisk(doctorDiskMsg{gen: 1, ev: doctorDiskEvent{r: &disk.Result{
 		Entry: disk.Entry{ID: "thing", Label: "ラベル"}, Status: disk.StatusOK, Size: 4096,
 		Items: []disk.Item{{Path: "/tmp/ok", Size: 4096, Ref: "id" + clearSeq}},
 	}}})
-	if len(v2.DiskResults) != 1 || len(v2.DiskResults[0].Items) != 1 {
-		t.Fatalf("前提が作れていない: %+v", v2.DiskResults)
+	if len(v2.diskResults) != 1 || len(v2.diskResults[0].Items) != 1 {
+		t.Fatalf("前提が作れていない: %+v", v2.diskResults)
 	}
-	if got := v2.DiskResults[0].Items[0].Ref; hasTerminalControl(got) {
+	if got := v2.diskResults[0].Items[0].Ref; hasTerminalControl(got) {
 		t.Errorf("落とす対象が無いときに Ref の無害化が捨てられている: %q", got)
 	}
 }
 
 // 保存から復元する経路も同じ関門を通る。
 // 🚨 **Entry は復元では JSON 由来 = 攻撃者が決められる** (live ではカタログの写しなので無害)。
-// DoctorRiskMark は `string(Entry.Risk)` を、行は Label / Recover をそのまま描く。
+// doctorRiskMark は `string(Entry.Risk)` を、行は Label / Recover をそのまま描く。
 // 🚨 svc の PlistPath は `validPlistPath` が文字種を絞らないので、以前はここだけ素通りしていた。
 func TestDoctorSnapshotRestoreSanitizesEntryAndPlistPath(t *testing.T) {
 	v := testView(t)
 	now := time.Now()
-	writeTestSnapshot(t, DoctorSnapshot{ScannedAt: now.Add(-time.Minute),
+	writeTestSnapshot(t, doctorSnapshot{ScannedAt: now.Add(-time.Minute),
 		Disk: disk.Report{Results: []disk.Result{{
 			Entry: disk.Entry{
 				ID: "thing", Label: "ラベル" + osc52Seq, Risk: disk.Risk("safe" + clearSeq),
@@ -443,14 +449,14 @@ func TestDoctorSnapshotRestoreSanitizesEntryAndPlistPath(t *testing.T) {
 	})
 	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていない)。
 	// 主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
-	runCmds(t, v, v.Open())
-	if v.SnapshotAt.IsZero() {
+	runCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
 		t.Fatal("TTL 内なのに走査した (前提が作れていない)")
 	}
-	if len(v.DiskResults) != 1 {
-		t.Fatalf("復元できていない: %+v", v.DiskResults)
+	if len(v.diskResults) != 1 {
+		t.Fatalf("復元できていない: %+v", v.diskResults)
 	}
-	e := v.DiskResults[0].Entry
+	e := v.diskResults[0].Entry
 	assertNoControl(t, map[string]string{
 		"Entry.Label":      e.Label,
 		"Entry.Risk":       string(e.Risk),
@@ -460,47 +466,47 @@ func TestDoctorSnapshotRestoreSanitizesEntryAndPlistPath(t *testing.T) {
 		"Entry.Unverified": e.Unverified,
 	})
 	// 識別子 (提示コマンドが指す先) が細工されたものは落とす
-	if v.SvcRep == nil {
+	if v.svcRep == nil {
 		t.Fatal("svc が復元されていない")
 	}
-	if len(v.SvcRep.Findings) != 0 || len(v.SvcRep.Undiagnosed) != 0 {
-		t.Errorf("制御文字入りの PlistPath が復元された: %+v / %+v", v.SvcRep.Findings, v.SvcRep.Undiagnosed)
+	if len(v.svcRep.Findings) != 0 || len(v.svcRep.Undiagnosed) != 0 {
+		t.Errorf("制御文字入りの PlistPath が復元された: %+v / %+v", v.svcRep.Findings, v.svcRep.Undiagnosed)
 	}
 	for _, line := range strings.Split(testText(v, 60), "\n") { // rows を組ませる (下の検査の前提)
 		if hasTerminalControl(line) {
 			t.Errorf("doctor の行に制御シーケンスが残った: %q", line)
 		}
 	}
-	if len(v.Rows) == 0 {
+	if len(v.rows) == 0 {
 		t.Fatal("row が 1 つも組まれていない (以下の検査が空回りする)")
 	}
-	for _, row := range doctorAllRows(v.Rows) {
-		if hasTerminalControl(row.Text) {
-			t.Errorf("row の text に制御シーケンスが残った: %q", row.Text)
+	for _, row := range doctorAllRows(v.rows) {
+		if hasTerminalControl(row.text) {
+			t.Errorf("row の text に制御シーケンスが残った: %q", row.text)
 		}
-		if hasControlExceptNewline(row.CopyPath) || hasControlExceptNewline(row.CopyText) {
-			t.Errorf("コピーに制御シーケンスが残った: %q / %q", row.CopyPath, row.CopyText)
+		if hasControlExceptNewline(row.copyPath) || hasControlExceptNewline(row.copyText) {
+			t.Errorf("コピーに制御シーケンスが残った: %q / %q", row.copyPath, row.copyText)
 		}
 	}
 }
 
-// FlattenDoctorRows は「1 row = 1 行」を出口 1 箇所で守る保険。
+// flattenDoctorRows は「1 row = 1 行」を出口 1 箇所で守る保険。
 // 🚨 **現時点で到達経路は無い** (外部由来の値は 1 行の場所では PlainLine を通るため)。
 // それでも置くのは、無害化の使い分けを間違えた 1 行が入った瞬間に固定高の契約が壊れ、
 // かつ行数を数えないテストでは気づけないため (敵対レビュー 2026-09-04 が brew の
 // Unavailable でその形を実測した)。到達経路が無い以上、検査はこの直接テストが持つ。
 func TestFlattenDoctorRowsEnforcesSingleLine(t *testing.T) {
-	rows := FlattenDoctorRows([]DoctorRow{{
-		Text: "親\n偽の行", CopyText: "コピーは\n複数行が正常",
-		Detail: []DoctorRow{{Text: "子\n偽の行"}},
+	rows := flattenDoctorRows([]doctorRow{{
+		text: "親\n偽の行", copyText: "コピーは\n複数行が正常",
+		detail: []doctorRow{{text: "子\n偽の行"}},
 	}})
-	if got := rows[0].Text; got != "親 偽の行" {
+	if got := rows[0].text; got != "親 偽の行" {
 		t.Errorf("親の改行が残った: %q", got)
 	}
-	if got := rows[0].Detail[0].Text; got != "子 偽の行" {
+	if got := rows[0].detail[0].text; got != "子 偽の行" {
 		t.Errorf("detail の改行が残った (畳まれた行も Enter で開くと描かれる): %q", got)
 	}
-	if got := rows[0].CopyText; got != "コピーは\n複数行が正常" {
+	if got := rows[0].copyText; got != "コピーは\n複数行が正常" {
 		t.Errorf("コピー文の改行まで落ちた: %q", got)
 	}
 }
@@ -524,7 +530,7 @@ func TestDoctorLiveDockerScanIsSanitized(t *testing.T) {
 	// 🚨 fixture は **JSON エスケープ**して埋める。docker の `--format json` は制御文字を
 	// \u001b で出すので、生の ESC を JSON 文字列に置くと「実物では起きない形」を検査してしまう
 	osc, clear := jsonEscaped(t, osc52Seq), jsonEscaped(t, clearSeq)
-	v.deps.Docker = func() docker.Options {
+	v.deps.DockerOpts = func() docker.Options {
 		return doctortest.FakeDockerOptions(`{"Images":[` +
 			// ① 識別子が細工されている = **落とす** (書き換えて出すと `docker rmi` が別のものを指す)
 			`{"ID":"sha256:abcabcabcabc","Repository":"ev` + osc + `il","Tag":"1","Containers":"0","Size":"2GB","UniqueSize":"2GB","CreatedAt":"2020-01-01 00:00:00 +0000 UTC"}],` +
@@ -534,15 +540,15 @@ func TestDoctorLiveDockerScanIsSanitized(t *testing.T) {
 			`"Volumes":[{"Name":"ok_data","Links":"0","Size":"3GB"}],` +
 			`"BuildCache":[{"ID":"bc1","InUse":"false","Size":"1GB","Description":"[2/3] COPY` + clear + ` . /app","LastUsedAt":"2020-01-01 00:00:00 +0000 UTC","CreatedAt":"2020-01-01 00:00:00 +0000 UTC"}]}`)
 	}
-	runCmds(t, v, v.Open())
-	if v.Docker == nil || !v.Docker.Installed || v.Docker.Unavailable != "" {
-		t.Fatalf("前提が作れていない: %+v", v.Docker)
+	runCmds(t, v, v.open())
+	if v.docker == nil || !v.docker.Installed || v.docker.Unavailable != "" {
+		t.Fatalf("前提が作れていない: %+v", v.docker)
 	}
 	// 🚨 細工されたイメージ名は**書き換えて出さない**。repo:tag が識別子として読めないので
 	// 短い ID へ落とし、提示コマンドも ID を指す (無害化した名前で出すと、攻撃者が
 	// 無害化後の名前のイメージを別に置くだけで「別のものを消せ」と案内できる)
 	var img docker.Group
-	for _, g := range v.Docker.Groups {
+	for _, g := range v.docker.Groups {
 		if g.Kind == docker.KindImages {
 			img = g
 		}
@@ -551,11 +557,11 @@ func TestDoctorLiveDockerScanIsSanitized(t *testing.T) {
 		t.Errorf("細工された repo:tag が提示に載った: %+v", img.Items)
 	}
 
-	v.Tab = TabDocker
+	v.tab = TabDocker
 	// 全群を開いて内訳まで描く (畳んだままだと候補の行が検査対象から外れる)
-	v.Expanded = map[RowKey]bool{}
-	for _, g := range v.Docker.Groups {
-		v.Expanded[DockerGroupRowKey(string(g.Kind))] = true
+	v.expanded = map[rowKey]bool{}
+	for _, g := range v.docker.Groups {
+		v.expanded[dockerGroupRowKey(string(g.Kind))] = true
 	}
 	for _, line := range strings.Split(testText(v, 60), "\n") {
 		if hasTerminalControl(line) {
@@ -566,14 +572,14 @@ func TestDoctorLiveDockerScanIsSanitized(t *testing.T) {
 		}
 	}
 	var sawItem bool
-	for _, row := range doctorAllRows(v.Rows) {
-		if hasTerminalControl(row.Text) {
-			t.Errorf("row の text に制御シーケンスが残った: %q", row.Text)
+	for _, row := range doctorAllRows(v.rows) {
+		if hasTerminalControl(row.text) {
+			t.Errorf("row の text に制御シーケンスが残った: %q", row.text)
 		}
-		if hasControlExceptNewline(row.CopyPath) || hasControlExceptNewline(row.CopyText) {
-			t.Errorf("row のコピーに制御シーケンスが残った: %q / %q", row.CopyPath, row.CopyText)
+		if hasControlExceptNewline(row.copyPath) || hasControlExceptNewline(row.copyText) {
+			t.Errorf("row のコピーに制御シーケンスが残った: %q / %q", row.copyPath, row.copyText)
 		}
-		if strings.Contains(row.Text, "ok-web") {
+		if strings.Contains(row.text, "ok-web") {
 			sawItem = true
 		}
 	}

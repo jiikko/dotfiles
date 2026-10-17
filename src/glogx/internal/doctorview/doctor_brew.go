@@ -17,25 +17,25 @@ import (
 
 const brewDoctorTimeout = 60 * time.Second
 
-// BrewDoctorResult は 1 回の実行結果。Unavailable は brew 不在 / タイムアウト / 起動できず (= 診断できず)。
-type BrewDoctorResult struct {
+// brewDoctorResult は 1 回の実行結果。Unavailable は brew 不在 / タイムアウト / 起動できず (= 診断できず)。
+type brewDoctorResult struct {
 	Warnings    []string // "Warning: ..." 見出しごとの本文 (前置きを落とし、空行で区切る)
 	Clean       bool     // 警告なし (rc=0)
 	Unavailable string   // 診断できなかった理由 ("" = 診断できた)
 }
 
 // runBrewDoctor は brew doctor を 1 回だけ ctx 付きで実行する。修復コマンドの提示だけで、実行はしない。
-func runBrewDoctor(ctx context.Context, run runner.Runner) BrewDoctorResult {
+func runBrewDoctor(ctx context.Context, run runner.Runner) brewDoctorResult {
 	stdout, stderr, rc, err := runner.WithTimeout(ctx, run, brewDoctorTimeout, "brew", "doctor")
 	if err != nil {
-		return BrewDoctorResult{Unavailable: err.Error()}
+		return brewDoctorResult{Unavailable: err.Error()}
 	}
-	return ParseBrewDoctor(stdout, stderr, rc)
+	return parseBrewDoctor(stdout, stderr, rc)
 }
 
-// ParseBrewDoctor は出力を見出し単位にまとめる。rc=0 は警告なし。それ以外は本文を写す
+// parseBrewDoctor は出力を見出し単位にまとめる。rc=0 は警告なし。それ以外は本文を写す
 // (rc が 0 でも stderr に Warning があれば写す。rc だけで決めない)。
-func ParseBrewDoctor(stdout, stderr string, rc int) BrewDoctorResult {
+func parseBrewDoctor(stdout, stderr string, rc int) brewDoctorResult {
 	// stdout と stderr は連結して読む (片方だけを選ぶと、前置きだけの stderr に負けて stdout の警告を落とす。
 	// 敵対レビュー 2026-09-02)
 	body := stdout + "\n" + stderr
@@ -83,9 +83,9 @@ func ParseBrewDoctor(stdout, stderr string, rc int) BrewDoctorResult {
 			}
 		}
 		if len(warns) == 0 {
-			return BrewDoctorResult{Clean: true}
+			return brewDoctorResult{Clean: true}
 		}
-		return BrewDoctorResult{Warnings: warns}
+		return brewDoctorResult{Warnings: warns}
 	}
 	var warns, others []string
 	for _, b := range blocks {
@@ -101,7 +101,7 @@ func ParseBrewDoctor(stdout, stderr string, rc int) BrewDoctorResult {
 		if len(others) > 0 {
 			reason += ": " + strings.Split(others[0], "\n")[0]
 		}
-		return BrewDoctorResult{Unavailable: reason}
+		return brewDoctorResult{Unavailable: reason}
 	}
-	return BrewDoctorResult{Warnings: warns}
+	return brewDoctorResult{Warnings: warns}
 }

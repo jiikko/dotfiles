@@ -19,7 +19,7 @@ import (
 //  2. **表に載っていない参加者が現れたら red にする** (reflect で ownsKeys の実装を数え上げる)
 //
 // 🚨 production の述語を新しく発明しない (issue 213 の判断)。`actModal.active()` /
-// `running()` と `doctorview.DoctorDelete.active()` / `blocking()` が既に 2 軸そのもので、doc も
+// `running()` と `doctorview の doctorDelete.active()` / `blocking()` が既に 2 軸そのもので、doc も
 // 一致テストの前例 (`TestActionModalActiveMatchesHandleKey`) も在る。ここは**参照側の
 // 網羅**だけを守る。
 //

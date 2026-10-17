@@ -3,7 +3,7 @@ package app
 import "sync"
 
 // CleanupLatch は「終了前に看取るべき走行中の仕事の本数」を数える latch。
-// 2 か所が別インスタンスとして使う: doctor の走査 (doctor_cleanup.go の doctorview.DoctorCleanup) と
+// 2 か所が別インスタンスとして使う: doctor の走査 (doctor_cleanup.go の doctorCleanup) と
 // pull の後始末 (external_commands.go の pullCleanup)。
 //
 // 🚨 **sync.WaitGroup は使えない**。svc / brew / 削除は tea.Cmd の closure から登録するので、

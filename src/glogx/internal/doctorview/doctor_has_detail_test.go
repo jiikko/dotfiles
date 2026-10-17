@@ -10,25 +10,25 @@ import (
 // 「展開できる」ことになり、Enter が無反応なのに expanded だけ立つ。その状態では
 // **次の q が畳む側に取られて doctor が 1 回目で閉じない**。
 //
-// 🚨 述語 (DiskHasDetail) と builder (diskDetail) を別々に育てると、この保証が静かに崩れる。
+// 🚨 述語 (diskHasDetail) と builder (diskDetail) を別々に育てると、この保証が静かに崩れる。
 // 下の 2 本目がその一致を突き合わせる。
 func TestBlockedDiskRowIsNotExpandable(t *testing.T) {
 	mk := func() *DoctorView {
-		v := &DoctorView{Shown: true, Expanded: map[RowKey]bool{}}
-		v.DiskRep = &disk.Report{Results: []disk.Result{{
+		v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
+		v.diskRep = &disk.Report{Results: []disk.Result{{
 			Entry:  disk.Entry{ID: "blocked-x", Label: "blocked", Risk: disk.RiskConfirm, DeleteVia: "rm"},
 			Status: disk.StatusBlocked, Size: 4096, Reason: "今は対象外"}}}
-		v.Tab = TabDisk
+		v.tab = TabDisk
 		_ = v.Lines(testOpts(40))
 		return v
 	}
 
 	v := mk()
 	var found bool
-	for _, r := range v.Rows {
-		if r.Key == "disk:blocked-x" {
+	for _, r := range v.rows {
+		if r.key == "disk:blocked-x" {
 			found = true
-			if r.HasDetail {
+			if r.hasDetail {
 				t.Errorf("展開しても 0 行の行に hasDetail が立っている (Enter が無反応なのに expanded が立つ)")
 			}
 		}
@@ -38,9 +38,9 @@ func TestBlockedDiskRowIsNotExpandable(t *testing.T) {
 	}
 
 	// 本題: Enter を押しても、その次の q は doctor を閉じること
-	before := len(v.Rows)
+	before := len(v.rows)
 	v.HandleKey("enter", 40)
-	if after := len(v.Rows); after != before {
+	if after := len(v.rows); after != before {
 		t.Fatalf("fixture が想定と違う: Enter で行数が %d -> %d に増えた", before, after)
 	}
 	if act := v.HandleKey("q", 40); act != DoctorClosed {
@@ -54,7 +54,7 @@ func TestBlockedDiskRowIsNotExpandable(t *testing.T) {
 	}
 }
 
-// DiskHasDetail (述語) と diskDetail (builder) が一致すること。
+// diskHasDetail (述語) と diskDetail (builder) が一致すること。
 // 🚨 builder に行を足したのに述語を直し忘れる / その逆を検出する。片方だけ育てると
 // 「展開できると言うのに 0 行」か「中身があるのに展開できない」のどちらかになる。
 func TestDiskHasDetailMatchesBuilder(t *testing.T) {
@@ -72,13 +72,13 @@ func TestDiskHasDetailMatchesBuilder(t *testing.T) {
 		{"blocked/Inspect", disk.Result{Entry: disk.Entry{ID: "g", Inspect: true}, Status: disk.StatusBlocked}},
 		{"blocked/Contents あり", disk.Result{Entry: disk.Entry{ID: "h"}, Status: disk.StatusBlocked, Contents: []string{"x"}}},
 	}
-	v := &DoctorView{Expanded: map[RowKey]bool{}}
+	v := &DoctorView{expanded: map[rowKey]bool{}}
 	empties, nonEmpties := 0, 0
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			built := len(v.DiskDetail(testOpts(60), c.r)) > 0
-			if got := DiskHasDetail(c.r); got != built {
-				t.Errorf("DiskHasDetail=%v だが diskDetail は %d 行", got, len(v.DiskDetail(testOpts(60), c.r)))
+			built := len(v.diskDetail(testOpts(60), c.r)) > 0
+			if got := diskHasDetail(c.r); got != built {
+				t.Errorf("DiskHasDetail=%v だが diskDetail は %d 行", got, len(v.diskDetail(testOpts(60), c.r)))
 			}
 			if built {
 				nonEmpties++

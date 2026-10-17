@@ -19,8 +19,8 @@ func TestDoctorShowsRebootNoteForTmpdirEntries(t *testing.T) {
 		Recover: "元ファイルが残っているか確認してください", DeleteVia: "trash", Paths: []string{"$TMPDIR/y-*"}}
 	keep := disk.Entry{ID: "k", Label: "永続する置き場", Risk: disk.RiskSafe, Recover: "再生成されません",
 		DeleteVia: "rm", Paths: []string{"/private/var/tmp/w-*"}}
-	v := &DoctorView{Shown: true, DiskTotal: 3}
-	v.DiskRep = &disk.Report{Results: []disk.Result{
+	v := &DoctorView{shown: true, diskTotal: 3}
+	v.diskRep = &disk.Report{Results: []disk.Result{
 		{Entry: blocked, Status: disk.StatusBlocked, Reason: "アプリ起動中のため対象外"},
 		{Entry: confirm, Status: disk.StatusOK, Size: 30, Items: []disk.Item{{Path: "/tmpdir/y-1", Size: 30}}},
 		{Entry: keep, Status: disk.StatusOK, Size: 20, Items: []disk.Item{{Path: "/private/var/tmp/w-1", Size: 20}}},
@@ -70,8 +70,8 @@ func TestRebootNoteIsTruncatedOnNarrowWidth(t *testing.T) {
 	env := disk.Env{Home: "/Users/x", TmpDir: "/var/folders/k2/abc/T"}
 	e := disk.Entry{ID: "b", Label: "揮発ブロック", Risk: disk.RiskSafe, Recover: "再生成されます",
 		DeleteVia: "rm", Paths: []string{"$TMPDIR/x-*"}}
-	v := &DoctorView{Shown: true, DiskTotal: 1}
-	v.DiskRep = &disk.Report{Results: []disk.Result{{Entry: e, Status: disk.StatusBlocked, Reason: "アプリ起動中のため対象外"}}}
+	v := &DoctorView{shown: true, diskTotal: 1}
+	v.diskRep = &disk.Report{Results: []disk.Result{{Entry: e, Status: disk.StatusBlocked, Reason: "アプリ起動中のため対象外"}}}
 	o := testOpts(40)
 	o.Env, o.Width = env, 40
 	out := strings.Join(v.Lines(o), "\n")

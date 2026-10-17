@@ -19,7 +19,7 @@ type Fixture struct{ v *DoctorView }
 func (v *DoctorView) Fixture() Fixture { return Fixture{v} }
 
 // Show は走査を始めずに開く。
-func (f Fixture) Show() { f.v.Shown = true }
+func (f Fixture) Show() { f.v.shown = true }
 
 // DeleteState は Delete で置く削除の相。
 type DeleteState int
@@ -36,22 +36,22 @@ const (
 
 // Delete は削除の相を置く。下見中・実行中は進捗 (1/1 件目) も置き、cancel は Ctrl-C の 2 回目で呼ばれる中断。
 func (f Fixture) Delete(st DeleteState, cancel func()) {
-	prog := DoctorProgress{I: 1, Total: 1, Label: "…", Phase: disk.PhaseScanning, Known: true}
+	prog := doctorProgress{i: 1, total: 1, label: "…", phase: disk.PhaseScanning, known: true}
 	switch st {
 	case DeleteIdle:
-		f.v.Del = DoctorDelete{}
+		f.v.del = doctorDelete{}
 	case DeleteConfirm:
-		f.v.Del = DoctorDelete{Confirm: true}
+		f.v.del = doctorDelete{confirm: true}
 	case DeleteConfirmPlan:
-		f.v.Del = DoctorDelete{Confirm: true, Plan: &disk.DeleteReport{}}
+		f.v.del = doctorDelete{confirm: true, plan: &disk.DeleteReport{}}
 	case DeletePreparing:
-		f.v.Del = DoctorDelete{Preparing: true, Progress: prog, Cancel: cancel}
+		f.v.del = doctorDelete{preparing: true, progress: prog, cancel: cancel}
 	case DeleteRunning:
-		f.v.Del = DoctorDelete{Running: true, Progress: prog, Cancel: cancel}
+		f.v.del = doctorDelete{running: true, progress: prog, cancel: cancel}
 	case DeleteResult:
-		f.v.Del = DoctorDelete{Result: &disk.DeleteReport{}}
+		f.v.del = doctorDelete{result: &disk.DeleteReport{}}
 	case DeleteFailed:
-		f.v.Del = DoctorDelete{Err: "だめでした"}
+		f.v.del = doctorDelete{err: "だめでした"}
 	}
 }
 
@@ -69,34 +69,34 @@ func (f Fixture) Reports(tab DoctorTab, d *disk.Report, s *svc.Report, brewWarni
 	if sd == nil {
 		sd = &ssd.Report{}
 	}
-	f.v.Tab = tab
-	f.v.Expanded = map[RowKey]bool{}
-	f.v.DiskRep, f.v.DiskResults, f.v.SvcRep, f.v.Docker, f.v.Ssd = d, d.Results, s, dk, sd
-	f.v.Brew = &BrewDoctorResult{Warnings: brewWarnings, Clean: len(brewWarnings) == 0}
+	f.v.tab = tab
+	f.v.expanded = map[rowKey]bool{}
+	f.v.diskRep, f.v.diskResults, f.v.svcRep, f.v.docker, f.v.ssd = d, d.Results, s, dk, sd
+	f.v.brew = &brewDoctorResult{Warnings: brewWarnings, Clean: len(brewWarnings) == 0}
 }
 
 // Rows は n 行の選べる行を置く (描画を経ずにキーの動きだけを見るテスト用)。
 func (f Fixture) Rows(n int) {
-	f.v.Rows = f.v.Rows[:0]
+	f.v.rows = f.v.rows[:0]
 	for i := range n {
-		f.v.Rows = append(f.v.Rows, DoctorRow{Text: strconv.Itoa(i), Selectable: true, Key: RowKey(strconv.Itoa(i))})
+		f.v.rows = append(f.v.rows, doctorRow{text: strconv.Itoa(i), selectable: true, key: rowKey(strconv.Itoa(i))})
 	}
 }
 
 // CursorIndex はカーソルの位置 (Rows の添字)。
-func (f Fixture) CursorIndex() int { return f.v.Cur.Index }
+func (f Fixture) CursorIndex() int { return f.v.cur.index }
 
 // Tab は表示中のタブ。
-func (f Fixture) Tab() DoctorTab { return f.v.Tab }
+func (f Fixture) Tab() DoctorTab { return f.v.tab }
 
 // SetTab は表示中のタブを置く。
-func (f Fixture) SetTab(tab DoctorTab) { f.v.Tab = tab }
+func (f Fixture) SetTab(tab DoctorTab) { f.v.tab = tab }
 
 // DiskResults はディスクの走査の途中の結果を置く (描画で行を組み直させるテスト用)。
-func (f Fixture) DiskResults(rs []disk.Result) { f.v.DiskResults = rs }
+func (f Fixture) DiskResults(rs []disk.Result) { f.v.diskResults = rs }
 
 // CursorFellBack は選んでいた行が消えてカーソルを寄せた印が立っているか (取り出さずに見る)。
-func (f Fixture) CursorFellBack() bool { return f.v.Cur.FellBack }
+func (f Fixture) CursorFellBack() bool { return f.v.cur.fellBack }
 
 // ScanStopped は走査の ctx を手放したか (Stop の後は真)。
-func (f Fixture) ScanStopped() bool { return f.v.Cancel == nil }
+func (f Fixture) ScanStopped() bool { return f.v.cancel == nil }

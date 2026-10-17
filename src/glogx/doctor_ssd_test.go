@@ -20,7 +20,7 @@ func TestDoctorSSDMissingSmartctlShowsToast(t *testing.T) {
 			fresh := func(missing bool) *browseModel {
 				m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 				d := doctortest.FakeDeps(t)
-				d.SSD = doctortest.FakeSSDOptions(!missing)
+				d.SSDOpts = doctortest.FakeSSDOptions(!missing)
 				m.doctorOv.SetDeps(doctorview.Deps(d))
 				return m
 			}

@@ -66,7 +66,7 @@ var runGitPush = func(ctx context.Context) error {
 // WaitGroup はそれを禁じており、`race.Enabled` に囲まれていない panic
 // (`sync: WaitGroup misuse: Add called concurrently with Wait`) なので **production でも落ちうる**。
 // 現状は登録地点が 1 か所で pull も `a.pulling` が二重起動を塞ぐため発火経路は未確認だったが、
-// 同じ形の doctor 側 (doctorview.DoctorCleanup) は登録地点が 3 つあり `-race` で実際に赤くなった。
+// 同じ形の doctor 側 (doctorview の doctorCleanup) は登録地点が 3 つあり `-race` で実際に赤くなった。
 // 「今は当たらない」に依存せず、構造で閉じる。
 var pullCleanup app.CleanupLatch
 

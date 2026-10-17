@@ -160,13 +160,13 @@ func TestDeleteKeyYPassesOnlyPlannedTargetsToEngine(t *testing.T) {
 		Status: disk.StatusOK, Size: 1 << 30,
 		Items: []disk.Item{{Path: filepath.Join(t.TempDir(), "other"), Size: 1 << 30}},
 	}
-	if v.DiskRep != nil {
-		*v.DiskRep = v.DiskRep.WithResults(append(v.DiskRep.Results, other))
+	if v.diskRep != nil {
+		*v.diskRep = v.diskRep.WithResults(append(v.diskRep.Results, other))
 	} else {
-		v.DiskResults = append(v.DiskResults, other)
+		v.diskResults = append(v.diskResults, other)
 	}
-	v.Selected["other"] = true
-	if got := len(v.SelectedResults()); got != 2 {
+	v.selected["other"] = true
+	if got := len(v.selectedResults()); got != 2 {
 		t.Fatalf("前提が作れていない: 選択 %d 件 (2 件にならないと、この test は何も守らない)", got)
 	}
 

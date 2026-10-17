@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
-
 	"glogx/internal/term"
 	"glogx/issues"
 	"ratelimit/usage"
@@ -175,24 +173,6 @@ func TestUsageCacheSanitizesCodexLabel(t *testing.T) {
 		t.Fatalf("RenderTableGroups が codex のラベルを描いていない。観測面が的を外している:\n%s", joined)
 	}
 }
-
-// --- doctor (issue 228) ---
-//
-// doctor は「走査したて (live)」と「保存から復元」の 2 経路を持つが、無害化は復元側にしか
-// 無かった。この節は **live 経路**を固定する。fixture は実際に制御文字入りのディレクトリを
-// 作って走査させる: 復元経路からしか制御文字を入れないテストは、今回の穴 (live) を
-// **構造的に一度も踏まない**まま緑になる (既存の TestDoctorSnapshotTrustBoundaryFreeText が
-// まさにその形だった)。
-
-const (
-	escSeq   = "\x1b"
-	belSeq   = "\a"
-	osc52Seq = escSeq + "]52;c;cHduZWQ=" + belSeq // クリップボード書き込み (貼った先で発火する)
-	clearSeq = escSeq + "[2J"                     // 画面消去
-)
-
-// hasControlExceptNewline は「1 件が複数行の塊」用 (コピー文は改行が正常)。
-func hasControlExceptNewline(s string) bool { return ctlprobe.HasControlExceptNewline(s) }
 
 // assertSanitizedAndVisible は無害化テストの 2 つの主張を対で確かめる (issue 284):
 //

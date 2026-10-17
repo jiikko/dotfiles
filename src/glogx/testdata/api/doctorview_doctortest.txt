@@ -1,11 +1,11 @@
 const FakeDockerDF
-field Deps.Brew
-field Deps.Delete
+field Deps.BrewRun
+field Deps.DeleteFn
 field Deps.DeleteOpts
-field Deps.Disk
-field Deps.Docker
-field Deps.SSD
-field Deps.Svc
+field Deps.DiskOpts
+field Deps.DockerOpts
+field Deps.SSDOpts
+field Deps.SvcOpts
 func FakeDeps
 func FakeDockerOptions
 func FakeSSDOptions

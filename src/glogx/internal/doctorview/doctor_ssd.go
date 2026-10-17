@@ -18,14 +18,14 @@ import (
 // 2026-09-29) なので開くたびに取り直せばよく、保存すると「古い値が今の値に見える」形と
 // 復元経路の無害化を新設することになる。snapshot を復元する経路でも走らせる (uncachedCmds)。
 
-type DoctorSSDMsg struct {
-	Gen int
-	Rep ssd.Report
+type doctorSSDMsg struct {
+	gen int
+	rep ssd.Report
 }
 
 const (
-	SsdAPFSRowKey     RowKey = "ssd:apfs"
-	SsdSmartctlRowKey RowKey = "ssd:smartctl"
+	ssdAPFSRowKey     rowKey = "ssd:apfs"
+	ssdSmartctlRowKey rowKey = "ssd:smartctl"
 )
 
 // ssdInstallToast は smartctl が無いときに doctor を開いた直後に出す案内。
@@ -33,13 +33,13 @@ const ssdInstallToast = "SSD の摩耗・整合性エラーは smartctl で読�
 
 func (v *DoctorView) ssdCmd(ctx context.Context, gen int) tea.Cmd {
 	opt := ssd.Options{Run: runner.Exec}
-	if v.deps.SSD != nil {
-		opt = v.deps.SSD()
+	if v.deps.SSDOpts != nil {
+		opt = v.deps.SSDOpts()
 	}
 	return func() tea.Msg {
 		var rep ssd.Report
 		doctorTrack(func() { rep = ssd.Scan(ctx, opt) })
-		return DoctorSSDMsg{Gen: gen, Rep: rep}
+		return doctorSSDMsg{gen: gen, rep: rep}
 	}
 }
 
@@ -47,12 +47,12 @@ func (v *DoctorView) ssdCmd(ctx context.Context, gen int) tea.Cmd {
 //
 // toast は smartctl が無いときだけ。**開くたびに出す** (ユーザー指定 2026-09-29) — 入れるまで
 // SSD の判定が「判定不能」のままなので、黙って放置させない。
-func (v *DoctorView) ReceiveSSD(msg DoctorSSDMsg) string {
-	if msg.Gen != v.Gen || !v.Shown {
+func (v *DoctorView) receiveSSD(msg doctorSSDMsg) string {
+	if msg.gen != v.gen || !v.shown {
 		return ""
 	}
-	rep := msg.Rep
-	v.Ssd = &rep
+	rep := msg.rep
+	v.ssd = &rep
 	if rep.SmartctlMissing {
 		return ssdInstallToast
 	}
@@ -79,8 +79,8 @@ func ssdMark(s ssd.Status) string {
 	return string(s)
 }
 
-// SsdWord は見出しの要約に使う語 (印なし)。
-func SsdWord(s ssd.Status) string {
+// ssdWord は見出しの要約に使う語 (印なし)。
+func ssdWord(s ssd.Status) string {
 	mark := ssdMark(s)
 	if _, word, ok := strings.Cut(mark, " "); ok {
 		return word
@@ -100,14 +100,14 @@ func ssdTabSummary(s ssd.Status) string {
 	return mark
 }
 
-func (v *DoctorView) ssdSection(o DoctorRenderOpts) []DoctorRow {
-	if v.Ssd == nil {
+func (v *DoctorView) ssdSection(o DoctorRenderOpts) []doctorRow {
+	if v.ssd == nil {
 		return sectionHeader(o, "SSD", o.Spinner+" diskutil / smartctl を実行中")
 	}
-	rep := *v.Ssd
+	rep := *v.ssd
 	// 🚨 SMART と APFS を**必ず並べて**出す。SMART が ok でも「ディスクが正常」とは総括しない。
 	// sectionHeader は幅が足りないと要約を落とすので、そのときは型番の方を削る
-	summary := "SMART: " + SsdWord(rep.SMART) + " / APFS: " + SsdWord(rep.APFS)
+	summary := "SMART: " + ssdWord(rep.SMART) + " / APFS: " + ssdWord(rep.APFS)
 	title := "SSD"
 	if rep.Model != "" {
 		full := title + " (" + rep.Model
@@ -138,25 +138,25 @@ func (v *DoctorView) ssdSection(o DoctorRenderOpts) []DoctorRow {
 		if c.Note != "" && c.Status != ssd.StatusOK && c.Status != ssd.StatusInfo {
 			text += doctorColor(o.Colored, term.AnsiDim, "  "+c.Note)
 		}
-		row := DoctorRow{Text: text}
+		row := doctorRow{text: text}
 		if c.Label == "smartctl" && rep.SmartctlMissing {
 			// 入れ方をコピーできる行にする (doctor からは入れない)
-			row.Selectable, row.Key = true, SsdSmartctlRowKey
-			row.CopyPath = ssd.InstallHint
-			row.CopyText = "SSD の摩耗・整合性エラーを読む smartctl が入っていません。次で入れられます:\n" + ssd.InstallHint
+			row.selectable, row.key = true, ssdSmartctlRowKey
+			row.copyPath = ssd.InstallHint
+			row.copyText = "SSD の摩耗・整合性エラーを読む smartctl が入っていません。次で入れられます:\n" + ssd.InstallHint
 		}
 		rows = append(rows, row)
 	}
-	rows = append(rows, DoctorRow{
-		Text: cell("APFS (Data)", rep.APFS) +
+	rows = append(rows, doctorRow{
+		text: cell("APFS (Data)", rep.APFS) +
 			doctorColor(o.Colored, term.AnsiDim, "y で検査コマンドをコピー (doctor は実行しません。数分かかります)"),
-		Selectable: true,
-		Key:        SsdAPFSRowKey,
-		CopyPath:   ssd.APFSCommand,
-		CopyText:   ssdCopyText(rep),
+		selectable: true,
+		key:        ssdAPFSRowKey,
+		copyPath:   ssd.APFSCommand,
+		copyText:   ssdCopyText(rep),
 	})
 	for _, n := range rep.Notes {
-		rows = append(rows, DoctorRow{Text: doctorColor(o.Colored, term.AnsiDim, "  "+n)})
+		rows = append(rows, doctorRow{text: doctorColor(o.Colored, term.AnsiDim, "  "+n)})
 	}
 	return rows
 }
@@ -182,10 +182,10 @@ func ssdCopyText(rep ssd.Report) string {
 	if rep.Model != "" {
 		b.WriteString(": " + rep.Model)
 	}
-	b.WriteString("\nSMART: " + SsdWord(rep.SMART) + " / APFS: " + SsdWord(rep.APFS) + "\n")
+	b.WriteString("\nSMART: " + ssdWord(rep.SMART) + " / APFS: " + ssdWord(rep.APFS) + "\n")
 	for _, c := range rep.Checks {
 		b.WriteString("- " + c.Label + ": " + c.Value)
-		if w := SsdWord(c.Status); w != "" {
+		if w := ssdWord(c.Status); w != "" {
 			b.WriteString(" [" + w + "]")
 		}
 		if c.Note != "" {

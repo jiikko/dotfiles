@@ -63,9 +63,9 @@ import (
 //     この検査が「衝突」と誤診して赤くなる) / **短い名前 (4 文字未満) は採らない** /
 //     **名前が衝突したら落とす**。誤検出を出さない側へ倒しているぶん、
 //     採らなかった名前は**盲点**になる。黙って増減しないよう、下で
-//     (a) 実在する owner (`Disk` / `DiskRep` / `DiskResults`) が表に居ること
+//     (a) 実在する owner (`Disk` / `diskRep` / `diskResults`) が表に居ること
 //     (b) 衝突で落ちた名前が 0 件 (c) 短くて採らなかった名前が既知の一覧と一致すること、を assert する。
-//     🚨 **今の盲点は 2 つ** (`Rep` / `R` = `DoctorDiskEvent.{Rep,R}`。走査 goroutine から
+//     🚨 **今の盲点は 2 つ** (`rep` / `r` = `doctorDiskEvent.{rep,r}`。走査 goroutine から
 //     model へ Report / Result を運ぶ production の口) なので、`msg.Ev.Rep.Results = …` は
 //     素通りする。採ると `h.r.Size = 0` のような無関係な型への書き込みを誤検出するため、
 //     盲点として引き受ける
@@ -930,10 +930,10 @@ func TestDerivedFieldsGoThroughOwner(t *testing.T) {
 	// 🚨 **短くて採らなかった owner 名 = 宣言された盲点**。増減したら落ちる (双方向)。
 	// これらを経由した書き込み (`msg.ev.rep.Results = …` / `ev.r.Items = …`) は素通りする。
 	// 採ると誤検出になる (ownerFieldMinLen のコメント参照) ので、盲点として引き受ける。
-	//   Rep: doctorDiskEvent.Rep *disk.Report  (走査 goroutine から model へ運ぶ production の口)
-	//   R  : doctorDiskEvent.R   *disk.Result  (同上)
-	// (glogx issue 742 で doctor 画面を internal/doctorview へ出したとき、main から読むために rep / r から公開名に変わった)
-	knownShort := []string{"R", "Rep"}
+	//   rep: doctorDiskEvent.rep *disk.Report  (走査 goroutine から model へ運ぶ production の口)
+	//   r  : doctorDiskEvent.r   *disk.Result  (同上)
+	// (glogx issue 742 で一度 Rep / R に公開名にしたが、issue 817 で doctorview の公開面を絞って小文字に戻した)
+	knownShort := []string{"r", "rep"}
 	gotShort := make([]string, 0, len(short))
 	for n := range short {
 		gotShort = append(gotShort, n)
@@ -947,7 +947,7 @@ func TestDerivedFieldsGoThroughOwner(t *testing.T) {
 
 	// 🚨 実在する owner が表に居ることを固定する。フィールド名が衝突すると表から落ちて
 	// **検査が黙って弱くなる**ので、そのときはここで落ちて気づける (issue 372)。
-	for name, want := range map[string]ownerKind{"Disk": ownerReport, "DiskRep": ownerReport, "DiskResults": ownerResultSlice} {
+	for name, want := range map[string]ownerKind{"Disk": ownerReport, "diskRep": ownerReport, "diskResults": ownerResultSlice} {
 		if fields[name] != want {
 			names := make([]string, 0, len(fields))
 			for n := range fields {
