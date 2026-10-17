@@ -97,7 +97,7 @@ zundamon-kaisetsu check
 - 自動で起動したエンジンは、最後に使ってから 10 分で止まる (印・最後に使った時刻・見張りのログは `~/Library/Caches/zundamon-kaisetsu/`)。
   起動したままにしたいときだけ `zundamon-kaisetsu up` / `down`
 - 声の利用規約: キャラクターごとに VOICEVOX 公式サイトで確認する。動画には `VOICEVOX:四国めたん` `VOICEVOX:ずんだもん` の
-  クレジットが必須 (HTML はクレジット欄に build が自動で入れる。mp4 の映像には入らないので、概要欄などに自分で書く)
+  クレジットが必須 (HTML はクレジット欄に build が自動で入れる。mp4 の映像には入らないので、build が mp4 のときに標準出力へ出す一覧を概要欄などに貼る)
 
 ### 3. 立ち絵 (任意。後回しにするなら手順 4 へ)
 

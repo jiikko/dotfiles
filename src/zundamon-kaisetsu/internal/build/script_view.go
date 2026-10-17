@@ -96,10 +96,10 @@ func showSummary(sd *show.Data) string {
 func stepLabel(sd *show.Data, step int) string {
 	n := sd.StepCount()
 	head := fmt.Sprintf("段 %d/%d: ", step+1, n)
-	switch {
-	case sd.Type == "list":
+	switch sd.Type {
+	case "list":
 		return head + sd.Items[step] + " を強調"
-	case sd.Type == "compare":
+	case "compare":
 		return head + sd.Left.Items[step] + " ｜ " + sd.Right.Items[step] + " を出す"
 	default:
 		return head + "強調 " + intList(sd.Steps[step])
