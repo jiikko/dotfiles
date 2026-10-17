@@ -37,13 +37,13 @@ glogx は `package main` に約 6 万行 (非テストの 62 ファイル・テ�
 
 ### 0. 共通の準備
 
-- [ ] 0-1 公開面の棚卸しの道具: package ごとに、公開名と「どこから使われているか」(main の本体 / main のテスト / 外部テスト /
+- [x] 0-1 公開面の棚卸しの道具: package ごとに、公開名と「どこから使われているか」(main の本体 / main のテスト / 外部テスト /
       package の中だけ) を出す。2026-10-17 の概数: main の本体が使う doctorview の名前 48 種、main のテストを含めると 76 種
       (grep で `doctorview.X` を数えた。メソッド・フィールドは数えていない)
-- [ ] 0-2 「main が画面に頼むこと」の型を決める: 開く / 閉じる / キーを渡す / 描く (lines・hint) / 非同期の結果を渡す (receive) /
+- [x] 0-2 「main が画面に頼むこと」の型を決める: 開く / 閉じる / キーを渡す / 描く (lines・hint) / 非同期の結果を渡す (receive) /
       画面からの合図を受け取る (通知・横断・終了・コピー)。画面ごとに名前と戻り値の語彙がばらばらなので (742 の fullscreen_id.go の
       注記: interface のレジストリは 1 フレームの確保が増えるので採らなかった)、interface にするかは確保の予算 (TestFrameAllocBudget) を見て決める
-- [ ] 0-3 公開面を守る検査を置くか決める (package ごとの公開名の一覧を golden にする・増えたら落とす、など)。置かないなら理由を書く
+- [x] 0-3 公開面を守る検査を置くか決める (package ごとの公開名の一覧を golden にする・増えたら落とす、など)。置かないなら理由を書く
 
 ### H. 再発防止 (main が太るのを機械で止める。ユーザー要望 2026-10-17。0 と並べて最初にやる)
 
@@ -51,15 +51,15 @@ golangci には「main を薄く」をそのまま表す規則が無いので、
 理由つきで書かせる形にする。どれも入れるときに変異で red を確かめる (`~/.claude/rules/mutation-verify-new-tests.md`)。
 入口は src/glogx/CLAUDE.md の「構造の判断」に 1 行足す。
 
-- [ ] H-1 main の非テストのファイルの許可リスト (ラチェット): `src/glogx` 直下の非テストの .go の集合を一覧と突き合わせ、一覧に無い
+- [x] H-1 main の非テストのファイルの許可リスト (ラチェット): `src/glogx` 直下の非テストの .go の集合を一覧と突き合わせ、一覧に無い
       ファイルが増えたら落とす。足すには一覧に理由を書く (レビューで見える)。移して減ったら一覧からも消す (消し忘れも落とす)。
       2026-10-17 時点で 45 ファイル
-- [ ] H-2 browseModel のメソッドを持つ非テストのファイルの許可リスト: 2026-10-17 時点で 9 ファイル (tui.go・gitlog_watch.go・
+- [x] H-2 browseModel のメソッドを持つ非テストのファイルの許可リスト: 2026-10-17 時点で 9 ファイル (tui.go・gitlog_watch.go・
       fullscreen.go・hint_surfaces.go・open_workspace.go・filer_view.go・filer_resume.go・lan_view.go・lan_resume.go)。新しい画面が
       browseModel にメソッドを生やす形 (filer / lan が辿った形) を止める。F を済ませたら filer / lan を一覧から消す
-- [ ] H-3 internal の package の公開面の golden (0-3 と同じもの): package ごとの公開名の一覧を置き、増えたら落とす。742 で doctorview が
+- [x] H-3 internal の package の公開面の golden (0-3 と同じもの): package ごとの公開名の一覧を置き、増えたら落とす。742 で doctorview が
       機械的に 201 個を公開した形を止める。画面ごとに公開面を絞ったステップ (A-2・C-2 など) で、その package の一覧を足す
-- [ ] H-4 main の非テストの総行数の上限 (下げる方向だけ動かすラチェット) を採るか決める。H-1 / H-2 は既存のファイル (tui.go など) が
+- [x] H-4 main の非テストの総行数の上限 (下げる方向だけ動かすラチェット) を採るか決める。H-1 / H-2 は既存のファイル (tui.go など) が
       太るのを止めないので、それを止める唯一の形。ただし正当な機能追加も止め、「行数や責務の見た目で割らない」(src/glogx/CLAUDE.md) と
       緊張する。採らないなら、止めない形として H-1 の検査のコメントに書く
 - 止めない形 (検査の冒頭に書く): 既存ファイルの中での肥大 (H-4 を採らない場合)・一覧を更新して通す変更 (レビューの責務)・
@@ -124,3 +124,25 @@ golangci には「main を薄く」をそのまま表す規則が無いので、
 ## 反証レビュー (codex 1 本。2026-10-17)
 
 P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.go が本番で使う・C-1 の下準備の漏れ (editorClosedMsg・openInBrowser・copyToClipboard・clipboardFailText・newDirWatcher・drainWatchEvents)・app の公開名の数 (26)・キャッシュの測定段階の混在。分割済みの構成・テストの置き分け・depguard・lint の説明・742 / 815 への参照は反証できなかった。
+
+## 進捗
+
+- [x] 2026-10-17 H と 0 (glogx: main を薄く保つ構造の検査を足す (issue 817 の H)):
+  - H-1 / H-2 / H-3 は `src/glogx/structure_ratchet_test.go` の 3 本 (`TestMainSourceFilesAllowlist` / `TestBrowseModelMethodFilesAllowlist` /
+    `TestInternalAPIGolden`)。一覧は「移設待ち (issue 817 の C)」のように行き先を理由に書いたので、この issue の進み具合の表にもなる。
+    golden は `src/glogx/testdata/api/<package>.txt` (公開の func / type / const / var・メソッド (受け手が非公開でも)・公開のフィールド)。
+    internal の下に golden の無いパッケージができても落ちる (「画面ごとに足す」ではなく全パッケージに要求した)
+  - 変異で red を確認: main の直下に .go を足す・一覧の行を消す・一覧に実在しないファイルを足す・一覧に無いファイルに
+    browseModel のメソッドを足す・internal/app に公開の関数を足す (5 本とも red、戻して緑)
+  - H-4 (総行数の上限) は採らなかった: 正当な機能追加も止め、通すために行数のためだけの移設を誘う (CLAUDE.md「行数や責務の見た目で割らない」と逆向き)。
+    止めない形として検査の冒頭に書いた
+  - 0-1: 棚卸しは golang.org/x/tools/go/packages で型を解いて「公開名 × 使う側 (main の本体 / main のテスト / 外部テスト / 中だけ /
+    別の internal)」を出す使い捨ての道具で行った (repo に置くと module が 1 つ増え、CI のレーンの検査 (check_go_project_lanes) と
+    workflow が要るので置かない。golden が恒常の検査を担う)。2026-10-17 の doctorview: 公開名 287 (フィールド・メソッド込み) のうち
+    main の本体が使う 59・main のテストだけ 89・外部テストだけ 79・doctortest だけ 56・中だけ 4
+  - 0-2: interface にはしない。画面ごとの具体型に共通の動詞のメソッドを持たせる (Visible / Toggle / Close / OwnsKeys / HandleKey /
+    Lines / Hint / Receive… / TakeWantCross / TakeWantQuit / TakeNotice / Animating / Busy)。理由: 引数の型 (描画の opts・ページ幅)
+    と戻り値 (doctor は結果の enum、issues は tea.Cmd) が画面ごとに違い、共通の interface に寄せると変換の層が要る。
+    interface のレジストリは 1 フレームの確保が増える (742 の fullscreen_id.go の注記)。動詞は main の issuesView / statusView /
+    filerView / lanView と doctorview に既にある名前を採った
+  - 0-3: H-3 と同じもの (golden)

@@ -48,7 +48,8 @@ render.go (main と `internal/term` の両方) の純粋描画層・幅計算の
 
 ## 構造の判断 (lint では守れないもの)
 
-- サブパッケージを切る基準は「実在する第二消費者」か「明示的な分離要望」(issues/ の前例。usage / subproc / atomicfile は第二消費者 = ratelimit ができたので独立 module へ出した)。行数や責務の見た目で割らない (README「glog との共通コード分離について」)。`internal/` への画面ごとの分割は明示的な分離要望 (issue 742。ビルドキャッシュの増え方を減らすため。順番・罠・計測は issue 742 が正本)
+- サブパッケージを切る基準は「実在する第二消費者」か「明示的な分離要望」(issues/ の前例。usage / subproc / atomicfile は第二消費者 = ratelimit ができたので独立 module へ出した)。行数や責務の見た目で割らない (README「glog との共通コード分離について」)。`internal/` への画面ごとの分割は明示的な分離要望 (issue 742 で始め、issue 817 で「main は起動・配線・browseModel の状態機械だけ」を設計として続けた。移設の罠は issue 742 と retro 815)
+- main を薄く保つのは `structure_ratchet_test.go` が検査する: main の直下の非テストのファイルと browseModel のメソッドを持つファイルの一覧 (足すには理由を書く)、internal の各パッケージの公開名の golden (`testdata/api/`。更新は `GLOGX_API_UPDATE=1`)。画面を足すときは internal/ のパッケージに置き、公開名は main が画面に頼む口 (開く・閉じる・キー・描く・非同期の結果・画面からの合図) だけにする。テストを書くためだけに公開名を足さず、テストは検査する package の中に置く (issue 817)
 - 🚨 移したファイルを cwd 相対で読むテストは、移すと読めずに **Skip / 0 件で緑** になりうる (`internal/term/box_test.go` の theme/colors.yml は `../../` → `../../../../` に直した)。移す前に `".."` と `testdata` を grep する
 - main から下位パッケージへ値・規律を共有したくなったら独立パッケージへ出す。main は下位から import できず、置くと「値を写す」運用になる (subproc がその教訓: issue 105)
 - 外部由来の文字列 (git / CI ログ / issue markdown / ファイル名) は表示前に termsafe を入口で 1 回通す。出所ごとに書き分けると漏れる (issue markdown と git status のパスが実際に漏れた / doctor の live 経路が 1 度も通っていなかった = issue 228)
