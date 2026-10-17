@@ -1,7 +1,5 @@
 # 819 (retro): glogx の main を薄くする (issue 817) の振り返り
 
-> 🚨 **担当中: M4Pro-MacBook-Pro (glogx)**（2026-10-18〜）
-
 起票日: 2026-10-18
 
 ## 概要
