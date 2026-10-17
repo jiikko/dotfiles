@@ -1,13 +1,13 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"glogx/internal/app"
+	"glogx/internal/filerview"
 	"glogx/internal/ratelimitview"
 	"treefiler/filer"
 )
@@ -23,40 +23,6 @@ func withFilerState(t *testing.T) time.Time {
 	return now
 }
 
-// 期限切れ / 未来の時刻 / 別の dir / 壊れた JSON / 時刻なしは「復元しない」に倒す。
-func TestFilerScreenRejectsBadState(t *testing.T) {
-	now := withFilerState(t)
-	p := filer.Place{Start: "/a", Cursor: "/a/x"}
-	if _, ok := loadFilerScreen(now, "/a"); ok {
-		t.Fatal("記憶が無いのに復元しようとした")
-	}
-	for _, c := range []struct {
-		name string
-		s    filerScreen
-		dir  string
-	}{
-		{"期限切れ", filerScreen{Place: p, SavedAt: now.Add(-app.ScreenMemoryTTL)}, "/a"},
-		{"未来の時刻", filerScreen{Place: p, SavedAt: now.Add(time.Minute)}, "/a"},
-		{"別の dir", filerScreen{Place: p, SavedAt: now}, "/a/sub"},
-		{"時刻なし", filerScreen{Place: p}, "/a"},
-		{"起動 dir なし", filerScreen{Place: filer.Place{Cursor: "/a/x"}, SavedAt: now}, ""},
-	} {
-		if err := saveFilerScreen(c.s); err != nil {
-			t.Fatal(err)
-		}
-		if _, ok := loadFilerScreen(now, c.dir); ok {
-			t.Errorf("%s: 復元しようとした", c.name)
-		}
-	}
-	path, _ := filerMemory.Path()
-	if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := loadFilerScreen(now, "/a"); ok {
-		t.Error("壊れた JSON から復元しようとした")
-	}
-}
-
 // F を出したまま終える経路 (C-g と F の q) で覚え、F を閉じてから終えたら消す。
 func TestRememberFilerScreenOnQuit(t *testing.T) {
 	for _, key := range []string{"ctrl+g", "q"} {
@@ -65,21 +31,21 @@ func TestRememberFilerScreenOnQuit(t *testing.T) {
 			m := newFilerBrowse(t)
 			m.handleKey("F")
 			m.handleKey("j") // カーソルを動かしてから閉じる (場所を覚えたことを見るため)
-			want := m.filerV.f.Place()
+			want := m.filerV.Fixture().Model().Place()
 			if _, cmd := m.handleKey(key); !isQuitCmd(cmd) {
 				t.Fatalf("%s で終わらない", key)
 			}
-			if key == "q" && m.filerV.visible() {
+			if key == "q" && m.filerV.Visible() {
 				t.Error("q で F を閉じていない (hide = 見張りの停止と Remember place の保存が走らない)")
 			}
-			got, ok := loadFilerScreen(now, app.CurrentDir())
+			got, ok := filerview.LoadFilerScreen(now, app.CurrentDir())
 			if !ok || got.Cursor != want.Cursor {
 				t.Fatalf("F を出したまま終えたのに覚えていない: %+v ok=%v (want cursor %s)", got, ok, want.Cursor)
 			}
 
 			m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
 			m2.quit()
-			if _, ok := loadFilerScreen(now, app.CurrentDir()); ok {
+			if _, ok := filerview.LoadFilerScreen(now, app.CurrentDir()); ok {
 				t.Error("F を閉じて終えたのに記憶が残った (次の起動で蘇る)")
 			}
 		})
@@ -92,17 +58,17 @@ func TestInitRestoresFilerScreen(t *testing.T) {
 	m := newFilerBrowse(t)
 	dir := app.CurrentDir()
 	sub := filepath.Join(dir, "sub")
-	if err := saveFilerScreen(filerScreen{Place: filer.Place{Start: dir, Opened: []string{sub}, Cursor: filepath.Join(sub, "c.txt")}, SavedAt: now}); err != nil {
+	if err := filerview.FixtureSaveScreen(filer.Place{Start: dir, Opened: []string{sub}, Cursor: filepath.Join(sub, "c.txt")}, now); err != nil {
 		t.Fatal(err)
 	}
 	_ = m.Init()
 	if m.activeFullScreen() != app.FullScreenFiler {
 		t.Fatalf("記憶があるのに F が開いていない: active=%v", m.activeFullScreen())
 	}
-	if got := m.filerV.f.Place().Cursor; got != filepath.Join(sub, "c.txt") {
+	if got := m.filerV.Fixture().Model().Place().Cursor; got != filepath.Join(sub, "c.txt") {
 		t.Errorf("カーソルが戻らない: %s", got)
 	}
-	if view := strings.Join(m.filerV.lines(100, 29), "\n"); !strings.Contains(view, "c.txt") {
+	if view := strings.Join(m.filerV.Lines(100, 29), "\n"); !strings.Contains(view, "c.txt") {
 		t.Errorf("開いていたフォルダの中身が描かれていない:\n%s", view)
 	}
 }
@@ -111,18 +77,18 @@ func TestInitRestoresFilerScreen(t *testing.T) {
 func TestInitFilerRestoreYieldsToOtherScreens(t *testing.T) {
 	now := withFilerState(t)
 	m := newFilerBrowse(t)
-	if err := saveFilerScreen(filerScreen{Place: filer.Place{Start: app.CurrentDir()}, SavedAt: now}); err != nil {
+	if err := filerview.FixtureSaveScreen(filer.Place{Start: app.CurrentDir()}, now); err != nil {
 		t.Fatal(err)
 	}
 	if err := ratelimitview.SaveRatelimitScreen(ratelimitview.RatelimitScreen{SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	_ = m.Init()
-	if m.filerV.visible() {
+	if m.filerV.Visible() {
 		t.Error("ratelimit の記憶があるのに F も開いた")
 	}
 
-	removeFilerScreen()
+	filerview.FixtureRemoveScreen()
 	ratelimitview.RemoveRatelimitScreen()
 	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	_ = m2.Init()

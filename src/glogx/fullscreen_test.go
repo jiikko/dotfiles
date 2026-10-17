@@ -62,15 +62,15 @@ var fullScreenCases = []fullScreenCase{
 	},
 	{
 		id: app.FullScreenFiler, name: "treefiler",
-		show:  func(m *browseModel) { m.filerV.toggle(app.CurrentDir()) },
-		hint:  func(m *browseModel) string { return m.filerV.hint(m.hintWidth()) },
-		lines: func(m *browseModel) []string { return m.filerV.lines(m.contentWidth(), m.pageSize()) },
+		show:  func(m *browseModel) { m.filerV.Toggle(app.CurrentDir()) },
+		hint:  func(m *browseModel) string { return m.filerV.Hint(m.hintWidth()) },
+		lines: func(m *browseModel) []string { return m.filerV.Lines(m.contentWidth(), m.pageSize()) },
 	},
 	{
 		id: app.FullScreenLan, name: "mac-lan-manager",
-		show:  func(m *browseModel) { m.lanV.toggle() },
-		hint:  func(m *browseModel) string { return m.lanV.hint(m.hintWidth()) },
-		lines: func(m *browseModel) []string { return m.lanV.lines(m.contentWidth(), m.pageSize()) },
+		show:  func(m *browseModel) { m.lanV.Toggle() },
+		hint:  func(m *browseModel) string { return m.lanV.Hint(m.hintWidth()) },
+		lines: func(m *browseModel) []string { return m.lanV.Lines(m.contentWidth(), m.pageSize()) },
 	},
 }
 
@@ -349,7 +349,7 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 // visibleFullScreens は開いている全画面の枚数 (同時に 1 枚の前提が守られているかを見る)。
 func visibleFullScreens(m *browseModel) int {
 	n := 0
-	for _, v := range []bool{m.issuesOv.Visible(), m.statusOv.Visible(), m.rlDash.Visible(), m.doctorOv.Visible(), m.filerV.visible(), m.lanV.visible()} {
+	for _, v := range []bool{m.issuesOv.Visible(), m.statusOv.Visible(), m.rlDash.Visible(), m.doctorOv.Visible(), m.filerV.Visible(), m.lanV.Visible()} {
 		if v {
 			n++
 		}

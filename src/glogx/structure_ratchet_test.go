@@ -56,10 +56,6 @@ var mainSourceFiles = map[string]string{
 	"diff_overlay.go":       "コミットに重ねる overlay (G-2 で置き場所を決める)",
 	"job_detail_overlay.go": "コミットに重ねる overlay (G-2 で置き場所を決める)",
 	"pr_status_overlay.go":  "コミットに重ねる overlay (G-2 で置き場所を決める)",
-	"filer_view.go":         "移設待ち (issue 817 の F)",
-	"filer_resume.go":       "移設待ち (issue 817 の F)",
-	"lan_view.go":           "移設待ち (issue 817 の F)",
-	"lan_resume.go":         "移設待ち (issue 817 の F)",
 }
 
 // browseModelMethodFiles は browseModel のメソッドを持ってよい非テストのファイル (H-2)。
@@ -70,10 +66,6 @@ var browseModelMethodFiles = map[string]string{
 	"fullscreen.go":     "全画面の排他と開く口",
 	"hint_surfaces.go":  "面ごとの最下行の案内",
 	"open_workspace.go": "e のキーの処理",
-	"filer_view.go":     "移設待ち (issue 817 の F)",
-	"filer_resume.go":   "移設待ち (issue 817 の F)",
-	"lan_view.go":       "移設待ち (issue 817 の F)",
-	"lan_resume.go":     "移設待ち (issue 817 の F)",
 }
 
 func mainNonTestFiles(t *testing.T) []string {

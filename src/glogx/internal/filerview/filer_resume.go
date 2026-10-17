@@ -1,9 +1,7 @@
-package main
+package filerview
 
 import (
 	"time"
-
-	tea "charm.land/bubbletea/v2"
 
 	"glogx/internal/app"
 	"treefiler/filer"
@@ -36,7 +34,7 @@ func removeFilerScreen() { filerMemory.Remove() }
 
 // loadFilerScreen は dir で開いた F の記憶を返す。読めない / 壊れている / 期限切れ / 未来の時刻 (app.ScreenMemory.load) と
 // 別の dir はすべて「復元しない」に倒す (勝手に全画面を出さない方が安全側)。
-func loadFilerScreen(now time.Time, dir string) (filer.Place, bool) {
+func LoadFilerScreen(now time.Time, dir string) (filer.Place, bool) { //nolint:unparam // main の restoreFilerScreen が Place を使う (check-exported はパッケージの外の利用を数えない)
 	s, ok := filerMemory.Load(now)
 	if !ok || s.Place.Start == "" || s.Place.Start != dir {
 		return filer.Place{}, false
@@ -44,26 +42,12 @@ func loadFilerScreen(now time.Time, dir string) (filer.Place, bool) {
 	return s.Place, true
 }
 
-// rememberFilerScreen は終了時の保存。F を出していれば覚え、出していなければ消す (消さないと、一覧を見て閉じた次の起動で
-// 2 回前の F が蘇る)。🚨 F の q / Esc は hide の前にここを通る (routeKeyToFiler。hide の後だと「出していない」になる)。
-func (m *browseModel) rememberFilerScreen() {
-	if p, ok := m.filerV.place(); ok {
-		_ = saveFilerScreen(filerScreen{Place: p, SavedAt: app.TimeNow()}) // 保存できなくても終了は妨げない
+// RememberScreen は終了時の保存。F を出していれば覚え、出していなければ消す (消さないと、一覧を見て閉じた次の起動で
+// 2 回前の F が蘇る)。🚨 F の q / Esc は hide の前にここを通す (hide の後だと「出していない」になる)。
+func (v *FilerView) RememberScreen(now time.Time) {
+	if p, ok := v.Place(); ok {
+		_ = saveFilerScreen(filerScreen{Place: p, SavedAt: now}) // 保存できなくても終了は妨げない
 		return
 	}
 	removeFilerScreen()
-}
-
-// restoreFilerScreen は起動時の復元。他の全画面の復元が当たっていないときだけ呼ぶ (全画面は同時に 1 枚)。
-func (m *browseModel) restoreFilerScreen() tea.Cmd {
-	dir := app.CurrentDir()
-	p, ok := loadFilerScreen(app.TimeNow(), dir)
-	if !ok {
-		return nil
-	}
-	cmd := m.openFullScreen(app.FullScreenFiler)
-	if f := m.filerV.live(); f != nil {
-		f.RestorePlace(p)
-	}
-	return cmd
 }

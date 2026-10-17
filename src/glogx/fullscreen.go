@@ -21,9 +21,9 @@ func (m *browseModel) activeFullScreen() app.FullScreenID {
 		return app.FullScreenStatus
 	case m.issuesOv.Visible():
 		return app.FullScreenIssues
-	case m.filerV.visible():
+	case m.filerV.Visible():
 		return app.FullScreenFiler
-	case m.lanV.visible():
+	case m.lanV.Visible():
 		return app.FullScreenLan
 	}
 	return app.FullScreenNone
@@ -48,19 +48,19 @@ func (m *browseModel) openFullScreen(id app.FullScreenID) tea.Cmd {
 		return tea.Batch(m.doctorOv.Toggle(), m.maybeTick())
 	case app.FullScreenFiler:
 		m.usageOv.Dismiss()
-		m.filerV.toggle(app.CurrentDir())
-		if e := m.filerV.takeOpenErr(); e != "" {
+		m.filerV.Toggle(app.CurrentDir())
+		if e := m.filerV.TakeOpenErr(); e != "" {
 			m.showWarning(e)
 		}
-		return tea.Batch(m.filerV.watchCmd(), m.maybeTick())
+		return tea.Batch(m.filerV.WatchCmd(), m.maybeTick())
 	case app.FullScreenLan:
 		m.usageOv.Dismiss()
-		m.lanV.toggle()
-		if e := m.lanV.takeOpenErr(); e != "" {
+		m.lanV.Toggle()
+		if e := m.lanV.TakeOpenErr(); e != "" {
 			m.showWarning(e)
 		}
 		m.drainLanNotices() // 開いたときの読み込みの失敗 (台帳が読めない等)
-		return tea.Batch(m.lanV.watchCmd(), m.maybeTick())
+		return tea.Batch(m.lanV.WatchCmd(), m.maybeTick())
 	case app.FullScreenNone, app.FullScreenCount:
 	}
 	return nil

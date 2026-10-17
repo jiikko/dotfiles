@@ -12,6 +12,7 @@ import (
 	"doctor/svc"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
+	"glogx/internal/lanview"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 )
@@ -73,7 +74,7 @@ func joinDoctorCleanup(t *testing.T) {
 // main のパッケージ固有の前処理: mac-lan-manager (L) の本物のネットワークの読み取り (networksetup) と Bonjour の走査
 // (終わらない dns-sd) を起こさない (fullscreen_test は横断キーで全部の板を開く。issue 747)。
 func TestMain(m *testing.M) {
-	testenv.Main(m, "glogx-cache", func(string) { lanOptions = fakeLanOptions })
+	testenv.Main(m, "glogx-cache", func(string) { lanview.FixtureSetOptions(fakeLanOptions) })
 }
 
 func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []string) *browseModel {

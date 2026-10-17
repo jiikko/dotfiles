@@ -16,8 +16,6 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
-	"mac-lan-manager/lanmgr"
-	"treefiler/filer"
 )
 
 // 外部プロセス (git / tmux / claude / ブラウザ / クリップボード) を叩くラッパー群。
@@ -296,22 +294,4 @@ func parseTmuxPrefix(out string) string {
 		return "ctrl+" + strings.ToLower(p[2:])
 	}
 	return ""
-}
-
-// filerExecCommand は treefiler の ! / s / e が頼んだプロセス (選んだフォルダで、$f に選んだパスを入れて起こす)。
-// 返した Cmd は extcmd.RunEditorCmd (tea.Exec + foreground.Exec) が前景で起動する。免除の理由は extcmd.EditorCommand と同じ
-// (前景の対話プロセスで ctx が無く、端末を継承するのでパイプも copy goroutine も作らない)。
-func filerExecCommand(r filer.ExecRequest) *exec.Cmd {
-	cmd := exec.Command(r.Argv[0], r.Argv[1:]...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
-	cmd.Dir = r.Dir
-	cmd.Env = r.Env
-	return cmd
-}
-
-// lanExecCommand は mac-lan-manager の s (ssh) / o (画面共有) が頼んだプロセス。返した Cmd は extcmd.RunEditorCmd (tea.Exec + foreground.Exec) が
-// 前景で起動する。免除の理由は extcmd.EditorCommand と同じ (ssh はパスワードとホスト鍵の確認に端末が要る。ctx が無く、端末を継承するのでパイプも
-// copy goroutine も作らない)。
-func lanExecCommand(r lanmgr.ExecRequest) *exec.Cmd {
-	argv := r.RunArgv()                       // 初期設定の手順は、端末を渡す前に板を出す
-	return exec.Command(argv[0], argv[1:]...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 }

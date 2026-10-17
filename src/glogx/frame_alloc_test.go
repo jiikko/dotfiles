@@ -308,18 +308,18 @@ func budgetFilerModel(tb testing.TB) *browseModel {
 			}
 		}
 	}
-	m.filerV.toggle(dir)
-	m.filerV.handleKey("l") // alpha を開いて中へ
+	m.filerV.Toggle(dir)
+	m.filerV.HandleKey("l") // alpha を開いて中へ
 	// 止まった画面を測る: 固定の時計を 50ms ずつ進め、動きと裏の処理 (走査・git) が止まるまで回す。
 	// 🚨 実時計 (app.TimeNow) を渡さない: Advance は 1 回の経過を 0.05 秒で頭打ちにするので、毎回「今 + 1 秒」を渡すと 2 回目以降は
 	// 呼び出しの間の実時間しか進まず、途中の画面を測る。CI の遅さで進み方が変わり、確保が 156 → 164 回と揺れた (2745215c の CI)
 	at := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
-	for deadline := time.Now().Add(10 * time.Second); m.filerV.animating() || m.filerV.busy(); {
+	for deadline := time.Now().Add(10 * time.Second); m.filerV.Animating() || m.filerV.Busy(); {
 		if time.Now().After(deadline) {
 			tb.Fatal("treefiler の動き・裏の処理が 10 秒で止まらない")
 		}
 		at = at.Add(50 * time.Millisecond)
-		m.filerV.advance(at)
+		m.filerV.Advance(at)
 		time.Sleep(time.Millisecond) // sleep-ok: tick: 裏の goroutine (走査・git) の完了を条件で待つループの刻み
 	}
 	return m

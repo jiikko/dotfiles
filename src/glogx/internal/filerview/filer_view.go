@@ -1,4 +1,4 @@
-package main
+package filerview
 
 // treefiler (F) の全画面。画面の部品は src/treefiler の filer パッケージで、ここは glogx への配線だけを持つ
 // (単体の bin/treefiler と同じ画面。仕様は docs/treefiler-spec.md §0.3)。
@@ -6,6 +6,7 @@ package main
 // filer はタイマーを張らない。glogx の tick で Advance を呼び、Animating の間だけ tickInterval が周期を上げる。
 
 import (
+	"os/exec"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -19,38 +20,41 @@ import (
 type filerAction int
 
 const (
-	filerSwallow filerAction = iota // filer がキーを使った (裏の一覧へは流さない)
-	filerClosed                     // F で閉じた (git log 一覧へ戻る)
-	filerCross                      // 別の全画面へ横断 (閉じ済み。行き先は takeWantCross)
-	filerQuit                       // q / Esc = glogx ごと終える (issues viewer と同じ。spec §0.1)
-	filerExec                       // ! / s / e = プロセスを起こす (中身は f.TakeExec)
+	FilerSwallow filerAction = iota // filer がキーを使った (裏の一覧へは流さない)
+	FilerClosed                     // F で閉じた (git log 一覧へ戻る)
+	FilerCross                      // 別の全画面へ横断 (閉じ済み。行き先は takeWantCross)
+	FilerQuit                       // q / Esc = glogx ごと終える (issues viewer と同じ。spec §0.1)
+	FilerExec                       // ! / s / e = プロセスを起こす (中身は f.TakeExec)
 )
 
 // execPending は ! / s / e で起こしたプロセスから戻るのを待っているか (戻ったときにエディタ向けの文言を出さないため)。
 
 // filerChangedMsg は treefiler のライブ更新の合図。ch はどのチャネルからか (ok=false はそのチャネルが閉じた)。
-type filerChangedMsg struct {
+type FilerChangedMsg struct {
 	ch <-chan struct{}
 	ok bool
 }
 
+// Open は合図のチャネルがまだ開いているか (閉じた = 画面を閉じた・走査を止めた。取り込まずに捨てる)。
+func (m FilerChangedMsg) Open() bool { return m.ok }
+
 func waitFilerChange(ch <-chan struct{}) tea.Cmd {
 	return func() tea.Msg {
 		_, ok := <-ch
-		return filerChangedMsg{ch: ch, ok: ok}
+		return FilerChangedMsg{ch: ch, ok: ok}
 	}
 }
 
 // rearm は合図を受けた後の待ち直し。今のチャネルからの合図のときだけ待ち直す
 // (閉じる直前の合図が古い待ちを ok=true で返すと、新しいチャネルに待ちが 2 本張られて戻らない。レビューの指摘 2026-10-08)。
-func (v *filerView) rearm(msg filerChangedMsg) tea.Cmd {
-	if f := v.live(); !msg.ok || f == nil || f.WatchingChan() != msg.ch {
+func (v *FilerView) Rearm(msg FilerChangedMsg) tea.Cmd {
+	if f := v.Live(); !msg.ok || f == nil || f.WatchingChan() != msg.ch {
 		return nil
 	}
 	return waitFilerChange(msg.ch)
 }
 
-type filerView struct {
+type FilerView struct {
 	execPending bool
 	shown       bool
 	f           *filer.Model
@@ -59,20 +63,20 @@ type filerView struct {
 	openErr     string
 }
 
-func (v *filerView) visible() bool { return v.shown }
+func (v *FilerView) Visible() bool { return v.shown }
 
 // place は開いている F の場所 (開いていなければ ok=false)。終了時の記憶 (filer_resume.go) が使う。
-func (v *filerView) place() (filer.Place, bool) {
-	if f := v.live(); f != nil {
+func (v *FilerView) Place() (filer.Place, bool) {
+	if f := v.Live(); f != nil {
 		return f.Place(), true
 	}
 	return filer.Place{}, false
 }
 
 // toggle は開く / 閉じる。開くときは pwd を root にする (spec §0.1)。同じ dir なら前の状態 (カーソル・開いたフォルダ) を使う。
-func (v *filerView) toggle(dir string) {
+func (v *FilerView) Toggle(dir string) {
 	if v.shown {
-		v.hide()
+		v.Hide()
 		return
 	}
 	if v.f == nil || v.dir != dir {
@@ -90,7 +94,7 @@ func (v *filerView) toggle(dir string) {
 }
 
 // hide は閉じる。ライブ更新のポーリングも止める (閉じた後も 1 秒ごとにディスクを読み続けない)。
-func (v *filerView) hide() {
+func (v *FilerView) Hide() {
 	v.shown = false
 	if v.f != nil {
 		v.f.Close()
@@ -98,7 +102,7 @@ func (v *filerView) hide() {
 }
 
 // live は見えている間の filer (閉じていれば nil)。「見えているなら f がある」をメソッドごとに確かめ直さず、ここ 1 本で読む (issue 734)。
-func (v *filerView) live() *filer.Model {
+func (v *FilerView) Live() *filer.Model {
 	if !v.shown {
 		return nil
 	}
@@ -106,55 +110,55 @@ func (v *filerView) live() *filer.Model {
 }
 
 // watchCmd は開いている間のライブ更新の待ち (開いた直後と、合図を受けるたびに張り直す)。
-func (v *filerView) watchCmd() tea.Cmd {
-	if f := v.live(); f != nil {
+func (v *FilerView) WatchCmd() tea.Cmd {
+	if f := v.Live(); f != nil {
 		return waitFilerChange(f.Changed())
 	}
 	return nil
 }
 
-func (v *filerView) takeOpenErr() string {
+func (v *FilerView) TakeOpenErr() string {
 	e := v.openErr
 	v.openErr = ""
 	return e
 }
 
 // ownsKeys は filer が入力モード中か (overlayOwnershipTable)。
-func (v *filerView) ownsKeys() bool { f := v.live(); return f != nil && f.OwnsKeys() }
+func (v *FilerView) OwnsKeys() bool { f := v.Live(); return f != nil && f.OwnsKeys() }
 
 // binds は key が filer の意味を持つか (持つキーは glogx の横断キー・C の update・U に取らない。filer.Model.Binds が正本)。
-func (v *filerView) binds(key string) bool { f := v.live(); return f != nil && f.Binds(key) }
+func (v *FilerView) Binds(key string) bool { f := v.Live(); return f != nil && f.Binds(key) }
 
 // paste は貼り付けを filer へ渡す (入力中だけ入る。そうでなければ filer が捨てる)。
-func (v *filerView) paste(text string) {
-	if f := v.live(); f != nil {
+func (v *FilerView) Paste(text string) {
+	if f := v.Live(); f != nil {
 		f.Paste(text)
 	}
 }
 
 // caretPos は filer の入力欄のキャレット (filer の画面の座標)。
-func (v *filerView) caretPos() (x, y int, ok bool) {
-	if f := v.live(); f != nil {
+func (v *FilerView) CaretPos() (x, y int, ok bool) {
+	if f := v.Live(); f != nil {
 		return f.CaretPos()
 	}
 	return 0, 0, false
 }
 
-func (v *filerView) animating() bool { f := v.live(); return f != nil && f.Animating() }
+func (v *FilerView) Animating() bool { f := v.Live(); return f != nil && f.Animating() }
 
 // busy は filer の裏の走査・git の取得が走っているか (その間は spinnerActive が tick を回し、結果を取り込む)。
-func (v *filerView) busy() bool { f := v.live(); return f != nil && f.Busy() }
+func (v *FilerView) Busy() bool { f := v.Live(); return f != nil && f.Busy() }
 
 // resize は画面の大きさを伝える。描くときではなく大きさが変わったときに伝えないと、カメラの目標が変わっても
 // tick が回らず、次のキーまで古い位置のまま残る (レビューの指摘 2026-10-08)。
-func (v *filerView) resize(width, page int) {
-	if f := v.live(); f != nil {
+func (v *FilerView) Resize(width, page int) {
+	if f := v.Live(); f != nil {
 		f.Resize(width, page)
 	}
 }
 
-func (v *filerView) advance(now time.Time) {
-	if f := v.live(); f != nil {
+func (v *FilerView) Advance(now time.Time) {
+	if f := v.Live(); f != nil {
 		f.Advance(now)
 	}
 }
@@ -162,42 +166,42 @@ func (v *filerView) advance(now time.Time) {
 // handleKey は filer が飲むキー。F で閉じ、横断キー (i / R / D。表は app.CrossTarget) で他の全画面へ移る。
 // filer が意味を持つキー (Binds) は横断しない: s は treebeard の「シェルを開く」(spec §0.1。ユーザー回答 2026-10-07)、
 // 入力中 (検索・! のコマンド行・設定の板・キー一覧) は全部のキー (F で閉じると打っている文字が消える。レビューの指摘 2026-10-09)
-func (v *filerView) handleKey(key string) filerAction {
+func (v *FilerView) HandleKey(key string) filerAction {
 	if !v.f.Binds(key) {
 		if key == "F" {
-			v.hide()
-			return filerClosed
+			v.Hide()
+			return FilerClosed
 		}
 		if target, ok := app.CrossTarget(key); ok && target != app.FullScreenFiler {
-			v.hide()
+			v.Hide()
 			v.wantCross = target
-			return filerCross
+			return FilerCross
 		}
 	}
 	switch v.f.HandleKey(key) {
 	case filer.Quit:
-		return filerQuit
+		return FilerQuit
 	case filer.Exec:
-		return filerExec
+		return FilerExec
 	case filer.None:
 	}
-	return filerSwallow
+	return FilerSwallow
 }
 
-func (v *filerView) takeWantCross() app.FullScreenID {
+func (v *FilerView) TakeWantCross() app.FullScreenID {
 	want := v.wantCross
 	v.wantCross = app.FullScreenNone
 	return want
 }
 
 // lines は page 行の画面 (最下行は filer のステータスバー)。
-func (v *filerView) lines(width, page int) []string {
+func (v *FilerView) Lines(width, page int) []string {
 	v.f.Resize(width, page)
 	return v.f.View()
 }
 
 // hint は最下行の案内。抜ける手段 (F / q) を先に置き、幅で切る (glogx-ui-guide §5: 抜ける手段は必ず残す)。
-func (v *filerView) hint(width int) string {
+func (v *FilerView) Hint(width int) string {
 	return term.FitHintItems(width, []term.HintItem{
 		{Text: "F: 閉じる", Prio: 1},
 		{Text: "q: glogx を終了", Prio: 2},
@@ -205,44 +209,40 @@ func (v *filerView) hint(width int) string {
 	})
 }
 
-// drainFilerNotices は filer に溜まった知らせを toast へ出す。🚨 キーの後だけでなく Advance の後にも呼ぶ: explode の完了や `o` の失敗は
-// Advance の中で積まれるので、キーの後だけだと次のキーまで出ない (issue 731)。
-func (m *browseModel) drainFilerNotices() {
-	f := m.filerV.live() // 閉じた filer の知らせは出さない
-	if f == nil {
-		return
-	}
-	for _, n := range f.TakeNotices() {
-		kind := app.NoticeRefused // 押したキーが効かなかった理由 (lastWarning を汚さない)
-		if n.OK {
-			kind = app.NoticeOK
-		}
-		m.deliverNotice(n.Text, kind)
-	}
+// filerExecCommand は treefiler の ! / s / e が頼んだプロセス (選んだフォルダで、$f に選んだパスを入れて起こす)。
+// 返した Cmd は extcmd.RunEditorCmd (tea.Exec + foreground.Exec) が前景で起動する。免除の理由は extcmd.EditorCommand と同じ
+// (前景の対話プロセスで ctx が無く、端末を継承するのでパイプも copy goroutine も作らない)。
+func filerExecCommand(r filer.ExecRequest) *exec.Cmd {
+	cmd := exec.Command(r.Argv[0], r.Argv[1:]...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
+	cmd.Dir = r.Dir
+	cmd.Env = r.Env
+	return cmd
 }
 
-// routeKeyToFiler は filer 表示中のキー処理 (全画面なのでキーは全部 filer が飲む)。
-func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
-	// U は他の viewer と同じく利用枠を重ねる (spec §0.3: R D U X は filer の中でも効かせる)
-	if key == "U" && !m.filerV.binds(key) {
-		return m, m.toggleUsage()
+// TakeExecCmd は ! / s / e が頼んだプロセスを前景で起こす Cmd (頼みが無ければ nil)。戻ると extcmd.EditorClosedMsg が
+// 届くので、受け手は ExecReturned を呼ぶ。
+func (v *FilerView) TakeExecCmd() tea.Cmd {
+	if v.f == nil {
+		return nil
 	}
-	act := m.filerV.handleKey(key)
-	m.drainFilerNotices()
-	switch act {
-	case filerQuit:
-		// quit (記憶の保存) を hide より先に: hide の後だと「F を出していない」と判定されて記憶が消える (issue 710)
-		mm, cmd := m.quit()
-		m.filerV.hide()
-		return mm, cmd
-	case filerCross:
-		return m, m.openFullScreen(m.filerV.takeWantCross())
-	case filerExec:
-		if r, ok := m.filerV.f.TakeExec(); ok && len(r.Argv) > 0 {
-			m.filerV.execPending = true
-			return m, extcmd.RunEditorCmd(filerExecCommand(r)) // 戻ると extcmd.EditorClosedMsg で読み直す
-		}
-	case filerClosed, filerSwallow:
+	r, ok := v.f.TakeExec()
+	if !ok || len(r.Argv) == 0 {
+		return nil
 	}
-	return m, m.maybeTick()
+	v.execPending = true
+	return extcmd.RunEditorCmd(filerExecCommand(r)) // 戻ると extcmd.EditorClosedMsg で読み直す
+}
+
+// ExecReturned は前景のプロセスから戻ったときに呼ぶ。この画面が起こしたものでなければ handled=false。
+// 戻ったら読み直す (シェルやエディタで作った・消したファイルを出す)。warning は知らせる文 (空なら無し)。
+// 「エディタが異常終了しました」は出さない: シェルは最後のコマンドの終了コードで抜けるのが普通 (e のエディタも filer.ExecDone の判断に揃える)。
+func (v *FilerView) ExecReturned(err error) (warning string, handled bool) {
+	if !v.execPending {
+		return "", false
+	}
+	v.execPending = false
+	if f := v.Live(); v.Visible() && f != nil { // 前景で起こしている間は閉じられないので、ここで見えていないことは無い
+		return f.ExecDone(err), true
+	}
+	return "", true
 }

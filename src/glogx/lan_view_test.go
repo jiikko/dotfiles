@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"glogx/internal/app"
+	"glogx/internal/lanview"
 	"glogx/internal/term"
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
@@ -105,7 +106,7 @@ func TestLanOpensAndClosesWithL(t *testing.T) {
 	m := openLan(t)
 	scan := lastLanScan(t)
 	m.handleKey("l") // 未管理のタブ (見えた Mac は台帳に無いのでこちら)
-	if view := term.StripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "m2macmini") {
+	if view := term.StripANSI(strings.Join(m.lanV.Lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "m2macmini") {
 		t.Errorf("見えた Mac が出ていない:\n%s", view)
 	}
 	m.handleKey("L")
@@ -140,7 +141,7 @@ func TestLanBindsBeatCrossKeys(t *testing.T) {
 	if m.activeFullScreen() != app.FullScreenLan {
 		t.Errorf("s で板を離れた (active=%v)。ssh のはず", m.activeFullScreen())
 	}
-	if !m.lanV.execPending {
+	if !m.lanV.Fixture().ExecPending() {
 		t.Error("s で ssh を頼んでいない")
 	}
 
@@ -155,7 +156,7 @@ func TestLanBindsBeatCrossKeys(t *testing.T) {
 	if m.activeFullScreen() != app.FullScreenIssues {
 		t.Errorf("i で issues へ横断しない (active=%v)", m.activeFullScreen())
 	}
-	if m.lanV.visible() {
+	if m.lanV.Visible() {
 		t.Error("横断元の板が開いたまま")
 	}
 }
@@ -170,10 +171,10 @@ func TestLanReopenRestartsScanAndRearmsOnlyCurrent(t *testing.T) {
 	if first == second || second.closed {
 		t.Fatal("開き直しで走査を起こし直していない")
 	}
-	if m.lanV.rearm(lanChangedMsg{ch: first.changed, ok: true}) != nil {
+	if m.lanV.Rearm(lanview.FixtureChangedMsg(first.changed, true)) != nil {
 		t.Error("古い走査の合図で待ち直した (待ちが 2 本になる)")
 	}
-	if m.lanV.rearm(lanChangedMsg{ch: second.changed, ok: true}) == nil {
+	if m.lanV.Rearm(lanview.FixtureChangedMsg(second.changed, true)) == nil {
 		t.Error("今の走査の合図で待ち直さない (後から見つかった Mac が出ない)")
 	}
 }
@@ -196,18 +197,18 @@ func TestLanChangedMsgRearms(t *testing.T) {
 	m := openLan(t)
 	scan := lastLanScan(t)
 	cur := (<-chan struct{})(scan.changed)
-	if m.lanV.watching != cur {
+	if m.lanV.Fixture().Watching() != cur {
 		t.Fatal("開いたときに今の走査の合図を待っていない")
 	}
-	cmd := m.lanV.rearm(lanChangedMsg{ch: cur, ok: true})
+	cmd := m.lanV.Rearm(lanview.FixtureChangedMsg(cur, true))
 	if cmd == nil {
 		t.Fatal("合図の後に待ち直さない (後から見つかった Mac が出ない)")
 	}
 	scan.Close()
-	if got, ok := cmd().(lanChangedMsg); !ok || got.ch != cur || got.ok {
+	if got, ok := cmd().(lanview.LanChangedMsg); !ok || got != lanview.FixtureChangedMsg(cur, false) {
 		t.Errorf("待ち直した待ちが今の走査のチャネルを読んでいない: %#v", got)
 	}
-	if m.lanV.rearm(lanChangedMsg{ch: cur, ok: false}) != nil {
+	if m.lanV.Rearm(lanview.FixtureChangedMsg(cur, false)) != nil {
 		t.Error("閉じた走査の合図で待ち直した")
 	}
 }
@@ -219,7 +220,7 @@ func TestLanRealSpaceKeyOpensLedgerConfirm(t *testing.T) {
 	m.handleKey("l")
 	m.handleKey("j")
 	m.Update(tea.KeyPressMsg{Code: ' ', Text: " "})
-	if !m.lanV.ownsKeys() {
+	if !m.lanV.OwnsKeys() {
 		t.Error("Space で台帳の登録の確認が開かない (半ページ送りに化けている)")
 	}
 }
@@ -233,7 +234,7 @@ func TestLanReloadKeyRearmsWatch(t *testing.T) {
 	if first == second {
 		t.Fatal("r で走査を起こし直していない")
 	}
-	if m.lanV.watching != (<-chan struct{})(second.changed) {
+	if m.lanV.Fixture().Watching() != (<-chan struct{})(second.changed) {
 		t.Error("r の後も古い走査の合図を待っている")
 	}
 }
@@ -246,8 +247,8 @@ func TestLanTypingDoesNotSwallowRepeats(t *testing.T) {
 	m.handleKey("s")
 	m.handleKey("i")
 	m.handleKey("i")
-	m.lanV.m.HandleKey("enter")
-	if view := term.StripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "ssii") {
+	m.lanV.Fixture().Model().HandleKey("enter")
+	if view := term.StripANSI(strings.Join(m.lanV.Lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "ssii") {
 		t.Errorf("絞り込みに ssii が入っていない (連打が飲まれた):\n%s", view)
 	}
 }
@@ -259,8 +260,8 @@ func TestLanTmuxPrefixReachesFilterWhileTyping(t *testing.T) {
 	for _, k := range []string{"/", "i", "n", "ctrl+a", "m"} { // 先頭へ動いてから m
 		m.handleKey(k)
 	}
-	m.lanV.m.HandleKey("enter")
-	if view := term.StripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "/ min") { // 絞り込みの欄 ("min" だけだと Mac mini の行でも満たせた)
+	m.lanV.Fixture().Model().HandleKey("enter")
+	if view := term.StripANSI(strings.Join(m.lanV.Lines(m.contentWidth(), m.pageSize()), "\n")); !strings.Contains(view, "/ min") { // 絞り込みの欄 ("min" だけだと Mac mini の行でも満たせた)
 		t.Errorf("入力中の C-a (prefix と同じ) が編集として効かない:\n%s", view)
 	}
 	if strings.Contains(m.toast.Text(), "tmux prefix") {
@@ -276,8 +277,7 @@ func TestLanTmuxPrefixReachesFilterWhileTyping(t *testing.T) {
 // 読み終えたら tick で取り込む (Update の中で同期に読むと、L を押すたびに glogx が止まった。ユーザー報告 2026-10-15)。
 func TestLanOpensWithoutWaitingForNetwork(t *testing.T) {
 	release := make(chan struct{})
-	orig := lanOptions
-	lanOptions = func() (lanmgr.Options, error) {
+	restore := lanview.FixtureSetOptions(func() (lanmgr.Options, error) {
 		o, err := fakeLanOptions()
 		o.ReadNet = func(ctx context.Context) (netinfo.Snapshot, error) {
 			select {
@@ -287,12 +287,12 @@ func TestLanOpensWithoutWaitingForNetwork(t *testing.T) {
 			return netinfo.Snapshot{}, nil
 		}
 		return o, err
-	}
-	t.Cleanup(func() { lanOptions = orig })
+	})
+	t.Cleanup(restore)
 	m := openLan(t) // ReadNet が止まっていても戻る
-	view := func() string { return term.StripANSI(strings.Join(m.lanV.lines(m.contentWidth(), m.pageSize()), "\n")) }
-	if !m.lanV.busy() || !m.spinnerActive() || !strings.Contains(view(), "ネットワーク設定を確認中") {
-		t.Fatalf("読み込み中なのに tick が回らない / 読んでいる印が無い: busy=%v\n%s", m.lanV.busy(), view())
+	view := func() string { return term.StripANSI(strings.Join(m.lanV.Lines(m.contentWidth(), m.pageSize()), "\n")) }
+	if !m.lanV.Busy() || !m.spinnerActive() || !strings.Contains(view(), "ネットワーク設定を確認中") {
+		t.Fatalf("読み込み中なのに tick が回らない / 読んでいる印が無い: busy=%v\n%s", m.lanV.Busy(), view())
 	}
 	close(release)
 	for deadline := time.Now().Add(5 * time.Second); strings.Contains(view(), "ネットワーク設定を確認中"); {
@@ -307,18 +307,18 @@ func TestLanOpensWithoutWaitingForNetwork(t *testing.T) {
 // 層 (設定・初期設定・板) が開いている間の最下行は「esc: 戻る」(L も ? も lanmgr が取り、q / esc は 1 段戻るだけ。「L/q: 閉じる」は嘘になる)。
 func TestLanHintFollowsLayers(t *testing.T) {
 	m := openLan(t)
-	if h := term.StripANSI(m.lanV.hint(80)); !strings.Contains(h, "L/q: 閉じる") {
+	if h := term.StripANSI(m.lanV.Hint(80)); !strings.Contains(h, "L/q: 閉じる") {
 		t.Fatalf("一覧の最下行 = %q", h)
 	}
 	m.handleKey(",") // 設定
-	if h := term.StripANSI(m.lanV.hint(80)); strings.Contains(h, "L/q") || !strings.Contains(h, "esc: 戻る") {
+	if h := term.StripANSI(m.lanV.Hint(80)); strings.Contains(h, "L/q") || !strings.Contains(h, "esc: 戻る") {
 		t.Errorf("設定の画面の最下行 = %q", h)
 	}
 	// 足りない画面では q / esc が L ごと閉じ、L も glogx に渡る: 層が開いていても「L/q: 閉じる」
-	lm := m.lanV.live()
+	lm := m.lanV.Live()
 	lm.Resize(20, 6)
 	lm.View()
-	if h := term.StripANSI(m.lanV.hint(80)); !strings.Contains(h, "L/q: 閉じる") {
+	if h := term.StripANSI(m.lanV.Hint(80)); !strings.Contains(h, "L/q: 閉じる") {
 		t.Errorf("足りない画面の最下行 = %q", h)
 	}
 }

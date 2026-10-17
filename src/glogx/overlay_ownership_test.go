@@ -186,11 +186,11 @@ func showOverlayOwning(t *testing.T, m *browseModel, name string) {
 		m.statusOv.Fixture().SetShown(true)
 		m.statusOv.Fixture().SetDiscarding(true) // 破棄の y/N 確認中
 	case "filerV":
-		m.filerV.toggle(t.TempDir())
-		m.filerV.f.HandleKey("/") // 検索欄の入力中
+		m.filerV.Toggle(t.TempDir())
+		m.filerV.Fixture().Model().HandleKey("/") // 検索欄の入力中
 	case "lanV":
-		m.lanV.toggle()
-		m.lanV.m.HandleKey("/") // 絞り込みの入力中
+		m.lanV.Toggle()
+		m.lanV.Fixture().Model().HandleKey("/") // 絞り込みの入力中
 	default:
 		t.Fatalf("showOverlayOwning: 未知の参加者 %s (表に足したらここも足す)", name)
 	}
@@ -223,9 +223,9 @@ func overlayOwnsKeys(m *browseModel, name string) bool {
 	case "statusOv":
 		return m.statusOv.OwnsKeys()
 	case "filerV":
-		return m.filerV.ownsKeys()
+		return m.filerV.OwnsKeys()
 	case "lanV":
-		return m.lanV.ownsKeys()
+		return m.lanV.OwnsKeys()
 	}
 	return false
 }

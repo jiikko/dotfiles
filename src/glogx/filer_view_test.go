@@ -10,6 +10,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
+	"glogx/internal/filerview"
 	"glogx/internal/testenv"
 
 	tea "charm.land/bubbletea/v2"
@@ -46,7 +47,7 @@ func TestFilerOpensWithFAndClosesWithF(t *testing.T) {
 	if m.activeFullScreen() != app.FullScreenFiler {
 		t.Fatalf("F で開かない: active=%v", m.activeFullScreen())
 	}
-	if !strings.Contains(strings.Join(m.filerV.lines(100, 29), "\n"), "a.txt") {
+	if !strings.Contains(strings.Join(m.filerV.Lines(100, 29), "\n"), "a.txt") {
 		t.Fatal("pwd の中身が描かれていない")
 	}
 	m.handleKey("F")
@@ -126,10 +127,10 @@ func TestFilerAnimationAdvancesOnTickAndStops(t *testing.T) {
 		}
 		m.Update(tickMsg{})
 	}
-	if m.filerV.animating() {
+	if m.filerV.Animating() {
 		t.Fatal("tick を 200 回回しても止まらない")
 	}
-	if !strings.Contains(strings.Join(m.filerV.lines(100, 29), "\n"), "a.txt") {
+	if !strings.Contains(strings.Join(m.filerV.Lines(100, 29), "\n"), "a.txt") {
 		t.Fatal("tick で動きが進んでいない (項目が見えない)")
 	}
 }
@@ -144,7 +145,7 @@ func TestFilerReopenRefreshes(t *testing.T) {
 	}
 	m.handleKey("F")
 	settleFiler(m)
-	if !strings.Contains(strings.Join(m.filerV.lines(100, 29), "\n"), "late.txt") {
+	if !strings.Contains(strings.Join(m.filerV.Lines(100, 29), "\n"), "late.txt") {
 		t.Fatal("開き直しても新しいファイルが出ない")
 	}
 }
@@ -153,13 +154,13 @@ func TestFilerReopenRefreshes(t *testing.T) {
 func TestFilerResizeTicksAndUToggles(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
-	m.filerV.resize(m.contentWidth(), m.pageSize())
+	m.filerV.Resize(m.contentWidth(), m.pageSize())
 	settleFiler(m)
-	if m.filerV.animating() {
+	if m.filerV.Animating() {
 		t.Fatal("前提: 止まっていない")
 	}
 	m.ticking = false // 止まった後は tick のチェーンも終わっている (テストの中では tickMsg を流していないので手で戻す)
-	if _, cmd := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40}); cmd == nil || !m.filerV.animating() {
+	if _, cmd := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40}); cmd == nil || !m.filerV.Animating() {
 		t.Fatal("大きさが変わっても tick が回らない")
 	}
 	before := m.usageOv.Visible
@@ -173,7 +174,7 @@ func TestFilerResizeTicksAndUToggles(t *testing.T) {
 func settleFiler(m *browseModel) {
 	at := app.TimeNow()
 	for i := range 200 {
-		m.filerV.advance(at.Add(time.Duration(i) * 20 * time.Millisecond))
+		m.filerV.Advance(at.Add(time.Duration(i) * 20 * time.Millisecond))
 	}
 }
 
@@ -181,10 +182,10 @@ func settleFiler(m *browseModel) {
 func TestFilerCloseStopsWatching(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
-	if m.filerV.watchCmd() == nil {
+	if m.filerV.WatchCmd() == nil {
 		t.Fatal("開いているのにライブ更新を待たない")
 	}
-	ch := m.filerV.f.Changed()
+	ch := m.filerV.Fixture().Model().Changed()
 	m.handleKey("F")
 	select {
 	case _, ok := <-ch:
@@ -200,12 +201,12 @@ func TestFilerCloseStopsWatching(t *testing.T) {
 func TestFilerRearmsOnlyForCurrentChannel(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
-	cur := m.filerV.f.WatchingChan()
-	if m.filerV.rearm(filerChangedMsg{ch: cur, ok: true}) == nil {
+	cur := m.filerV.Fixture().Model().WatchingChan()
+	if m.filerV.Rearm(filerview.FixtureChangedMsg(cur, true)) == nil {
 		t.Fatal("今のチャネルの合図で待ち直さない")
 	}
 	old := make(chan struct{})
-	if m.filerV.rearm(filerChangedMsg{ch: old, ok: true}) != nil {
+	if m.filerV.Rearm(filerview.FixtureChangedMsg(old, true)) != nil {
 		t.Fatal("古いチャネルの合図で待ち直した (待ちが 2 本になる)")
 	}
 }
@@ -255,7 +256,7 @@ func TestFilerShellExecAndRefresh(t *testing.T) {
 	}
 	m.Update(cmd()) // extcmd.EditorClosedMsg (シェルから戻った)
 	settleFiler(m)
-	if !strings.Contains(strings.Join(m.filerV.lines(100, 29), "\n"), "made-in-shell.txt") {
+	if !strings.Contains(strings.Join(m.filerV.Lines(100, 29), "\n"), "made-in-shell.txt") {
 		t.Fatal("シェルから戻っても読み直さない")
 	}
 }
@@ -271,7 +272,7 @@ func TestFilerSearchTakesFUAndRepeats(t *testing.T) {
 	if m.activeFullScreen() != app.FullScreenFiler || m.usageOv.Visible {
 		t.Fatal("入力中の F / U で閉じた / 利用枠が開いた")
 	}
-	if got := m.filerV.f.SearchQuery(); got != "FUss" {
+	if got := m.filerV.Fixture().Model().SearchQuery(); got != "FUss" {
 		t.Fatalf("検索語 = %q (F U と連打の s s がそのまま入るはず)", got)
 	}
 }
@@ -283,9 +284,9 @@ func TestFilerHelpSwallowsCrossKeys(t *testing.T) {
 		m.handleKey("F")
 		m.handleKey("?")
 		m.handleKey(k)
-		if m.activeFullScreen() != app.FullScreenFiler || m.usageOv.Visible || m.filerV.f.OwnsKeys() {
+		if m.activeFullScreen() != app.FullScreenFiler || m.usageOv.Visible || m.filerV.Fixture().Model().OwnsKeys() {
 			t.Fatalf("キー一覧の中の %s: filer に留まって一覧だけ閉じるはず (全画面 %v・利用枠 %v・入力中 %v)",
-				k, m.activeFullScreen(), m.usageOv.Visible, m.filerV.f.OwnsKeys())
+				k, m.activeFullScreen(), m.usageOv.Visible, m.filerV.Fixture().Model().OwnsKeys())
 		}
 	}
 }
@@ -297,17 +298,17 @@ func TestFilerFileOpLayersTakeCrossKeys(t *testing.T) {
 		m := newFilerBrowse(t)
 		m.handleKey("F")
 		m.handleKey("d")
-		if !m.filerV.f.OwnsKeys() {
+		if !m.filerV.Fixture().Model().OwnsKeys() {
 			t.Fatal("F の中の d で確認の板が開かない (glogx の d に取られた)")
 		}
 		m.handleKey(k)
-		if m.activeFullScreen() != app.FullScreenFiler || m.filerV.f.OwnsKeys() {
+		if m.activeFullScreen() != app.FullScreenFiler || m.filerV.Fixture().Model().OwnsKeys() {
 			t.Fatalf("確認の板の中の %s: filer に留まって板だけ閉じるはず (全画面 %v)", k, m.activeFullScreen())
 		}
 		for _, open := range []string{"a", "m"} {
 			m.handleKey(open)
 			m.handleKey(k)
-			if m.activeFullScreen() != app.FullScreenFiler || !m.filerV.f.OwnsKeys() {
+			if m.activeFullScreen() != app.FullScreenFiler || !m.filerV.Fixture().Model().OwnsKeys() {
 				t.Fatalf("%s の入力欄の %s: 字として入るはず (全画面 %v)", open, k, m.activeFullScreen())
 			}
 			m.handleKey("esc")
@@ -337,7 +338,7 @@ func TestFilerPasteGoesToSearch(t *testing.T) {
 	}
 	m.handleKey("/")
 	m.Update(tea.PasteMsg{Content: "sub"})
-	if got := m.filerV.f.SearchQuery(); got != "sub" {
+	if got := m.filerV.Fixture().Model().SearchQuery(); got != "sub" {
 		t.Fatalf("検索語 = %q", got)
 	}
 }

@@ -27,7 +27,9 @@ import (
 	"subproc"
 
 	"glogx/internal/extcmd"
+	"glogx/internal/filerview"
 	"glogx/internal/issuesview"
+	"glogx/internal/lanview"
 	"glogx/internal/ratelimitview"
 	"glogx/internal/statusview"
 	"glogx/internal/term"
@@ -335,9 +337,9 @@ type browseModel struct {
 	// ratelimit_dashboard.go 冒頭)。
 	rlDash ratelimitview.RatelimitDash
 	// filerV は F の全画面 treefiler (filer_view.go)。画面の部品は src/treefiler の filer パッケージ
-	filerV filerView
+	filerV filerview.FilerView
 	// lanV は L の全画面 mac-lan-manager (lan_view.go)。画面の部品は src/mac-lan-manager の lanmgr パッケージ
-	lanV lanView
+	lanV lanview.LanView
 	// doctorOv は D の全画面 doctor (doctor_view.go)。rlDash と同じ薄い器で、開くと走査を始める
 	doctorOv doctorview.DoctorView
 	// status viewer (s キーで開く全画面の作業ツリービュー)。stage / unstage / 変更を捨てる を
@@ -577,10 +579,10 @@ func (m *browseModel) inputEditsWith(key string) bool {
 	case app.FullScreenIssues:
 		return m.issuesOv.TypingInput()
 	case app.FullScreenFiler:
-		_, _, ok := m.filerV.caretPos()
+		_, _, ok := m.filerV.CaretPos()
 		return ok
 	case app.FullScreenLan:
-		_, _, ok := m.lanV.caretPos()
+		_, _, ok := m.lanV.CaretPos()
 		return ok
 	case app.FullScreenNone, app.FullScreenRatelimit, app.FullScreenDoctor, app.FullScreenStatus, app.FullScreenCount:
 	}
@@ -627,7 +629,7 @@ func (m *browseModel) tickInterval() time.Duration {
 	if m.zoom.animating(app.TimeNow()) || m.issuesOv.SlideAnimating() || m.statusOv.SlideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
 	}
-	if m.glide.Active() || m.diffOv.animating() || m.toast.Animating() || m.issuesOv.Animating() || m.statusOv.Animating() || m.filerV.animating() {
+	if m.glide.Active() || m.diffOv.animating() || m.toast.Animating() || m.issuesOv.Animating() || m.statusOv.Animating() || m.filerV.Animating() {
 		return scrollInterval // スライドを滑らかに (30fps)
 	}
 	return spinnerInterval
@@ -805,27 +807,27 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issuesOv.StopGlides()
 		m.statusOv.StopGlides()
 		m.ensureCursorVisible()
-		m.filerV.resize(m.contentWidth(), m.pageSize())
-		if m.filerV.animating() {
+		m.filerV.Resize(m.contentWidth(), m.pageSize())
+		if m.filerV.Animating() {
 			return m, m.maybeTick()
 		}
 		return m, nil
-	case filerChangedMsg:
+	case filerview.FilerChangedMsg:
 		// treefiler のライブ更新の合図。取り込んで、今のチャネルからの合図なら次の合図を待ち直す
-		if !msg.ok {
+		if !msg.Open() {
 			return m, nil
 		}
-		m.filerV.advance(app.TimeNow())
+		m.filerV.Advance(app.TimeNow())
 		m.drainFilerNotices()
-		return m, tea.Batch(m.filerV.rearm(msg), m.maybeTick())
-	case lanChangedMsg:
+		return m, tea.Batch(m.filerV.Rearm(msg), m.maybeTick())
+	case lanview.LanChangedMsg:
 		// mac-lan-manager の走査の合図。取り込んで、今のチャネルからの合図なら次の合図を待ち直す
-		if !msg.ok {
+		if !msg.Open() {
 			return m, nil
 		}
-		m.lanV.advance(app.TimeNow())
+		m.lanV.Advance(app.TimeNow())
 		m.drainLanNotices()
-		return m, tea.Batch(m.lanV.rearm(msg), m.maybeTick())
+		return m, tea.Batch(m.lanV.Rearm(msg), m.maybeTick())
 	case tickMsg:
 		m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
 		// 閉じる演出が着地したらここで初めて終了する (演出の間はまだ描き続ける)
@@ -839,9 +841,9 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issuesOv.SettleClose()
 		m.statusOv.SettleClose() // status viewer も同じ理由で spinnerActive の判定より前に畳む
 		// treefiler の動きも spinnerActive の判定より前に進める (後ろだと、動き終わる最後の 1 拍が届かず途中の姿で止まる)
-		m.filerV.advance(app.TimeNow())
+		m.filerV.Advance(app.TimeNow())
 		m.drainFilerNotices()
-		m.lanV.advance(app.TimeNow()) // 走査の途中の結果を取り込む (spinnerActive の判定より前: 走査が終わる最後の 1 拍を取りこぼさない)
+		m.lanV.Advance(app.TimeNow()) // 走査の途中の結果を取り込む (spinnerActive の判定より前: 走査が終わる最後の 1 拍を取りこぼさない)
 		m.drainLanNotices()
 		if !m.spinnerActive() {
 			return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
@@ -1338,22 +1340,16 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// treefiler の ! / s / e から戻ったとき: 読み直す (シェルやエディタで作った・消したファイルを出す)。「エディタが異常終了しました」
 		// は出さない: シェルは最後のコマンドの終了コードで抜けるのが普通 (e のエディタも filer.ExecDone の判断に揃える)
-		if m.filerV.execPending {
-			m.filerV.execPending = false
-			if f := m.filerV.live(); m.filerV.visible() && f != nil { // 前景で起こしている間は閉じられないので、ここで見えていないことは無い
-				if w := f.ExecDone(msg.Err); w != "" {
-					m.showWarning(app.FirstLine(w))
-				}
+		// treefiler の ! / s / e、mac-lan-manager の s / o / 初期設定の手順から戻ったとき (知らせる文の判断は各画面の ExecReturned)
+		if w, ok := m.filerV.ExecReturned(msg.Err); ok {
+			if w != "" {
+				m.showWarning(app.FirstLine(w))
 			}
 			return m, m.maybeTick()
 		}
-		// mac-lan-manager の s (ssh) / o / 初期設定の手順から戻ったとき。起こせなかったときだけ知らせる (ssh の終了コードは相手のシェルのもの)
-		if m.lanV.execPending {
-			m.lanV.execPending = false
-			if lm := m.lanV.live(); lm != nil {
-				if w := lm.ExecDone(msg.Err); w != "" {
-					m.showWarning(app.FirstLine(w))
-				}
+		if w, ok := m.lanV.ExecReturned(msg.Err); ok {
+			if w != "" {
+				m.showWarning(app.FirstLine(w))
 			}
 			return m, m.maybeTick()
 		}
@@ -1393,10 +1389,10 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.issuesOv.Paste(msg.Content)
 		}
 		if m.activeFullScreen() == app.FullScreenFiler && !m.actModal.active() && !m.restartPromptVisible() {
-			m.filerV.paste(msg.Content) // 入力中 (検索・! のコマンド) だけ入る。filer が捨てる
+			m.filerV.Paste(msg.Content) // 入力中 (検索・! のコマンド) だけ入る。filer が捨てる
 		}
 		if m.activeFullScreen() == app.FullScreenLan && !m.actModal.active() && !m.restartPromptVisible() {
-			m.lanV.paste(msg.Content) // 入力中 (絞り込み・別名・帯) だけ入る。lanmgr が捨てる
+			m.lanV.Paste(msg.Content) // 入力中 (絞り込み・別名・帯) だけ入る。lanmgr が捨てる
 		}
 		return m, m.maybeTick()
 	case tea.KeyPressMsg:
@@ -1454,10 +1450,10 @@ func (m *browseModel) updateKeyReachable(key string) bool {
 		return false
 	}
 	// treefiler は C を「経路以外を全部畳む」に使う (spec §0.1)。入力モード中は X も譲る (どちらも filer の Binds が決める)
-	if m.filerV.visible() && m.filerV.binds(key) {
+	if m.filerV.Visible() && m.filerV.Binds(key) {
 		return false
 	}
-	if m.lanV.visible() && m.lanV.binds(key) {
+	if m.lanV.Visible() && m.lanV.Binds(key) {
 		return false // mac-lan-manager の入力中・確認・設定も全部のキーを譲る (lanmgr の Binds が決める)
 	}
 	return true
@@ -2401,7 +2397,7 @@ func (m *browseModel) cancelAll() {
 	m.issuesOv.StopWatch()
 	m.stopGitLogWatch() // git log の見張りも同じ理由で閉じる (gitlog_watch.go)
 	m.doctorOv.Stop()   // doctor の走査 goroutine / 子プロセス (brew / simctl) を止める (popup の開閉で残さない)
-	m.lanV.stop()       // mac-lan-manager の Bonjour の走査 (終わらない dns-sd) を止める
+	m.lanV.Stop()       // mac-lan-manager の Bonjour の走査 (終わらない dns-sd) を止める
 }
 
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
@@ -2419,8 +2415,8 @@ func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 	m.issuesOv.RememberScreen(app.TimeNow()) // 出したまま終了したら次の起動で開き直す (出していなければ消す)
 	m.doctorOv.RememberScreen(app.TimeNow()) // 出したまま終了したら次の起動で開き直す (出していなければ消す)
 	m.rlDash.RememberScreen(app.TimeNow())   // 出したまま終了したら次の起動で開き直す (出していなければ消す)
-	m.rememberFilerScreen()
-	m.rememberLanScreen()
+	m.filerV.RememberScreen(app.TimeNow())
+	m.lanV.RememberScreen(app.TimeNow())
 	m.cancelAll()
 	// 預けた起動時の検査は捨てる: 閉じる演出の間は done が立たないので、取り消された CI 取得の結果が届くと
 	// releaseStartupChecks を通り、終了直前に claude / codex を起こして孤児にする (issue 570 の敵対的レビュー)
@@ -2541,10 +2537,10 @@ func (m *browseModel) swallowKeyRepeat(key string) bool {
 	if m.activeFullScreen() == app.FullScreenIssues && m.issuesOv.TypingInput() {
 		return false
 	}
-	if m.activeFullScreen() == app.FullScreenFiler && m.filerV.ownsKeys() {
+	if m.activeFullScreen() == app.FullScreenFiler && m.filerV.OwnsKeys() {
 		return false // treefiler の検索・! の入力中も同じ (ss / dd の 2 字目が飲まれていた。レビューの指摘 2026-10-09)
 	}
-	if m.activeFullScreen() == app.FullScreenLan && m.lanV.ownsKeys() {
+	if m.activeFullScreen() == app.FullScreenLan && m.lanV.OwnsKeys() {
 		return false // mac-lan-manager の絞り込み・別名の入力中も同じ
 	}
 	if !repeatGuardedKeys[key] {
@@ -3460,7 +3456,7 @@ func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
 	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.listHasPending() || m.panelHasPendingJob() || m.usageOv.Loading() || m.rlDashLoading() || m.issuesOv.Loading() ||
-		m.statusOv.Fetching() || m.doctorOv.Scanning() || m.doctorOv.Deleting() || m.filerV.busy() || m.lanV.busy()
+		m.statusOv.Fetching() || m.doctorOv.Scanning() || m.doctorOv.Deleting() || m.filerV.Busy() || m.lanV.Busy()
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ
@@ -3692,9 +3688,9 @@ func (m *browseModel) caret() *tea.Cursor {
 	var ok bool
 	switch active {
 	case app.FullScreenFiler:
-		x, y, ok = m.filerV.caretPos() // treefiler の検索欄 (最下行)
+		x, y, ok = m.filerV.CaretPos() // treefiler の検索欄 (最下行)
 	case app.FullScreenLan:
-		x, y, ok = m.lanV.caretPos() // mac-lan-manager の絞り込み・別名・帯の入力欄
+		x, y, ok = m.lanV.CaretPos() // mac-lan-manager の絞り込み・別名・帯の入力欄
 	case app.FullScreenIssues:
 		x, ok = m.issuesOv.CaretCol(m.issuesOpts())
 	case app.FullScreenNone, app.FullScreenRatelimit, app.FullScreenDoctor, app.FullScreenStatus, app.FullScreenCount:
@@ -3791,9 +3787,9 @@ func (m *browseModel) viewLines() string {
 	case app.FullScreenIssues:
 		return m.finishWithGlobalChrome(m.issuesOv.Lines(m.issuesOpts()), page)
 	case app.FullScreenFiler:
-		return m.finishWithGlobalChrome(m.filerV.lines(m.contentWidth(), page), page)
+		return m.finishWithGlobalChrome(m.filerV.Lines(m.contentWidth(), page), page)
 	case app.FullScreenLan:
-		return m.finishWithGlobalChrome(m.lanV.lines(m.contentWidth(), page), page)
+		return m.finishWithGlobalChrome(m.lanV.Lines(m.contentWidth(), page), page)
 	case app.FullScreenNone, app.FullScreenCount:
 		// 全画面ビューアが出ていない = 下でコミット一覧を組む
 	}
@@ -4071,9 +4067,9 @@ func (m *browseModel) hintLine() string {
 	case app.FullScreenIssues:
 		return m.hintLineText(m.issuesOv.Hint(m.hintWidth()))
 	case app.FullScreenFiler:
-		return m.hintLineText(m.filerV.hint(m.hintWidth()))
+		return m.hintLineText(m.filerV.Hint(m.hintWidth()))
 	case app.FullScreenLan:
-		return m.hintLineText(m.lanV.hint(m.hintWidth()))
+		return m.hintLineText(m.lanV.Hint(m.hintWidth()))
 	case app.FullScreenNone, app.FullScreenCount:
 		// 全画面ビューアが出ていない = 下の一覧の hint
 	}
@@ -4144,4 +4140,106 @@ func RunBrowse(m *browseModel) (*browseModel, error) {
 		return fm, nil
 	}
 	return m, nil
+}
+
+// drainFilerNotices は filer に溜まった知らせを toast へ出す。🚨 キーの後だけでなく Advance の後にも呼ぶ: explode の完了や `o` の失敗は
+// Advance の中で積まれるので、キーの後だけだと次のキーまで出ない (issue 731)。
+func (m *browseModel) drainFilerNotices() {
+	f := m.filerV.Live() // 閉じた filer の知らせは出さない
+	if f == nil {
+		return
+	}
+	for _, n := range f.TakeNotices() {
+		kind := app.NoticeRefused // 押したキーが効かなかった理由 (lastWarning を汚さない)
+		if n.OK {
+			kind = app.NoticeOK
+		}
+		m.deliverNotice(n.Text, kind)
+	}
+}
+
+// routeKeyToFiler は filer 表示中のキー処理 (全画面なのでキーは全部 filer が飲む)。
+func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
+	// U は他の viewer と同じく利用枠を重ねる (spec §0.3: R D U X は filer の中でも効かせる)
+	if key == "U" && !m.filerV.Binds(key) {
+		return m, m.toggleUsage()
+	}
+	act := m.filerV.HandleKey(key)
+	m.drainFilerNotices()
+	switch act {
+	case filerview.FilerQuit:
+		// quit (記憶の保存) を hide より先に: hide の後だと「F を出していない」と判定されて記憶が消える (issue 710)
+		mm, cmd := m.quit()
+		m.filerV.Hide()
+		return mm, cmd
+	case filerview.FilerCross:
+		return m, m.openFullScreen(m.filerV.TakeWantCross())
+	case filerview.FilerExec:
+		if cmd := m.filerV.TakeExecCmd(); cmd != nil {
+			return m, cmd
+		}
+	case filerview.FilerClosed, filerview.FilerSwallow:
+	}
+	return m, m.maybeTick()
+}
+
+// restoreFilerScreen は起動時の復元。他の全画面の復元が当たっていないときだけ呼ぶ (全画面は同時に 1 枚)。
+func (m *browseModel) restoreFilerScreen() tea.Cmd {
+	dir := app.CurrentDir()
+	p, ok := filerview.LoadFilerScreen(app.TimeNow(), dir)
+	if !ok {
+		return nil
+	}
+	cmd := m.openFullScreen(app.FullScreenFiler)
+	if f := m.filerV.Live(); f != nil {
+		f.RestorePlace(p)
+	}
+	return cmd
+}
+
+// drainLanNotices は lanmgr に溜まった知らせを toast へ出す (キーの後と Advance の後。走査の結果で積まれる知らせもある)。
+func (m *browseModel) drainLanNotices() {
+	lm := m.lanV.Live()
+	if lm == nil {
+		return
+	}
+	for _, n := range lm.TakeNotices() {
+		kind := app.NoticeRefused // 押したキーが効かなかった理由 (lastWarning を汚さない)
+		if n.OK {
+			kind = app.NoticeOK
+		}
+		m.deliverNotice(n.Text, kind)
+	}
+}
+
+// routeKeyToLan は mac-lan-manager 表示中のキー処理 (全画面なのでキーは全部 lanmgr が飲む)。
+func (m *browseModel) routeKeyToLan(key string) (tea.Model, tea.Cmd) {
+	if key == "U" && !m.lanV.Binds(key) {
+		return m, m.toggleUsage() // 他の全画面と同じく利用枠を重ねる
+	}
+	act := m.lanV.HandleKey(key)
+	m.drainLanNotices()
+	switch act {
+	case lanview.LanCross:
+		return m, m.openFullScreen(m.lanV.TakeWantCross())
+	case lanview.LanExec:
+		if cmd := m.lanV.TakeExecCmd(); cmd != nil {
+			return m, cmd
+		}
+	case lanview.LanClosed, lanview.LanSwallow:
+	}
+	return m, tea.Batch(m.lanV.WatchCmd(), m.maybeTick())
+}
+
+// restoreLanScreen は起動時の復元。他の全画面の復元が当たっていないときだけ呼ぶ (全画面は同時に 1 枚)。
+func (m *browseModel) restoreLanScreen() tea.Cmd {
+	p, ok := lanview.LoadLanScreen(app.TimeNow())
+	if !ok {
+		return nil
+	}
+	cmd := m.openFullScreen(app.FullScreenLan)
+	if lm := m.lanV.Live(); lm != nil {
+		lm.RestorePlace(p)
+	}
+	return cmd
 }
