@@ -7,8 +7,6 @@ import (
 	"glogx/issues"
 	"go/ast"
 	"math"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -43,43 +41,6 @@ func newTestIssuesView() IssuesView {
 	v.CloseAnimOff = true
 	return v
 }
-
-// bodyKeyEnv は本文モードのキーを押せる状態 (長い本文 + URL + 実ファイル + 各種スタブ)。
-type bodyKeyEnv struct {
-	v      *IssuesView
-	cmds   *[]*exec.Cmd
-	copied *string
-	page   int // キー処理へ渡す窓の高さ (実際の pager 行数は rows())
-}
-
-func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
-	t.Helper()
-	cmds := testenv.StubEditorCapture(t)
-	copied := testenv.StubClipboard(t)
-	testenv.PinFallbackEditor(t)
-
-	dir := t.TempDir()
-	rel := "001-feat-hintkeys.md"
-	path := filepath.Join(dir, rel)
-	// 🚨 本文は窓より十分長くする (短いと j / Space / G が「動かない」ので効果を観測できない)。
-	// URL を 1 つ入れるのは u (ピッカー) の観測のため。
-	// 🚨 空行で区切る。連続行は markdown で 1 段落に畳まれ、body.Len() が窓より短くなって
-	// j / Space / G の効果が観測できない (実測: 80 行が 1 段落になり bodyOff が 0 のまま)
-	// 自分自身の絶対パスを 1 つ入れるのは Tab (ジャンプモード) の観測のため (実在するファイルしかリンクにしない)
-	body := "# 001 feat: hint keys\n\nhttps://example.com/x `" + path + "`\n\n" + strings.Repeat("本文の行。\n\n", 60)
-	v := loadedView(issuesviewtest.WriteRealIssue(t, dir, rel, body))
-	v.Root = dir // Tab (ジャンプモード) は「repo の中」の範囲が決まらないとパスを開かない (fail-closed)
-	landBody(t, v, 10)
-	// 🚨 行数は描画で確定する (未描画だと body.Len() = 0 でスクロール上限が 0 になり、
-	// j / Space / G が「動かない」ので効果を観測できない)
-	v.Lines(renderOpts(20))
-	if v.Body.Len() <= 10 {
-		t.Fatalf("前提が崩れた: 本文が窓より短くスクロールできない (Len=%d)", v.Body.Len())
-	}
-	return &bodyKeyEnv{v: v, cmds: cmds, copied: copied, page: 10}
-}
-
-func (e *bodyKeyEnv) press(key string) { e.v.HandleKey(key, vp(e.page)) }
 
 // assertSanitizedAndVisible は無害化テストの 2 つの主張を対で確かめる (issue 284):
 //

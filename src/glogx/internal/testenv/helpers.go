@@ -215,3 +215,9 @@ const (
 
 // HasControlExceptNewline は「1 件が複数行の塊」用 (コピー文は改行が正常)。
 func HasControlExceptNewline(s string) bool { return ctlprobe.HasControlExceptNewline(s) }
+
+// PopupHintBudget は popup の幅 (PopupWidth の content 幅を出す端末) で browseModel.hintWidth が返す最下行の案内の予算。
+// 画面のパッケージのテストが「代表幅の端末で案内が欠けない」を browseModel 抜きで見るのに使う。
+// 🚨 正本は main の hintWidth (描画側が切る幅と同じ 1 か所)。main の TestPopupHintBudgetMatchesBrowse が
+// この値と実物の一致を固定する (frame の寸法や hint の余白を変えたら、そちらが落ちてここを直す。issue 817)。
+const PopupHintBudget = 89

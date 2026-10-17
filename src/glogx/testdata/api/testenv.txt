@@ -4,6 +4,7 @@ const ClearSeq
 const EscSeq
 const OSC52Seq
 const OSC8
+const PopupHintBudget
 const PopupWidth
 const ST8
 func FakeWatcherSeam

@@ -252,3 +252,11 @@ func landBody(t *testing.T, v *issuesview.IssuesView, page int) {
 	}
 	v.Drawer.Finish()
 }
+
+// 画面のパッケージのテストが使う hint の予算 (testenv.PopupHintBudget) は、main の hintWidth と同じ値 (issue 817)。
+// 🚨 frame の寸法や hint の余白を変えてここが落ちたら、testenv の定数を直す (画面のテストが古い予算で緑のまま通らないように)。
+func TestPopupHintBudgetMatchesBrowse(t *testing.T) {
+	if got := testHintBudget(t); got != testenv.PopupHintBudget {
+		t.Fatalf("popup 幅の hint の予算が %d (testenv.PopupHintBudget = %d)。testenv の定数を直す", got, testenv.PopupHintBudget)
+	}
+}
