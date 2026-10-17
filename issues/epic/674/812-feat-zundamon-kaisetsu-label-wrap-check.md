@@ -51,4 +51,24 @@ mp4 の撮影と同じ Chrome の描画で測り、build が書き出す前に�
   - P3: 1 字だけの行を rune で数えていた → 書記素 (JS の glen) / 空白の判定が JS の trim と違う → jsTrim / clip が読めないと問題なし → 問題にする / 中断が失敗に見える → 中断として返す
   - 回帰 P2: HTML だけの build が Chrome の不調で止まる → 警告して続ける / P3: SKILL.md の箇条書きの項目の扱い
   - 採らなかったもの: 本物の Chrome を使う opt-in のテスト (規約でテストは本物の Chrome に触れない。手順は src の CLAUDE.md に書いた)
-- [ ] 2 周目の敵対的レビュー
+- [x] 2 周目の敵対的レビュー (opus) の指摘を直した (zundamon-kaisetsu: ラベルの改行の検査を 2 周目の敵対的レビューの指摘で直す (812))
+  - P2 (再現あり): 空白だけの字のラベルで、ありもしないはみ出しで止まった → 描かれた矩形が無ければ clip を測らない
+  - P3: `--allow-label-wraps` が計測の契約違反まで通す → layout と broken に分け、broken は止める / Chrome の stderr が結果に割り込みうる →
+    `extcmd.RunSplit` で stdout だけを読む (`RunQuietCtx` と共通の `run` に寄せた) / rc≠0 の結果を捨てる → 結果があれば判定に使う /
+    「合成の濁点」のテストが結合文字を含んでいなかった → 本物の U+3099 で書き直す
+  - メモの対応: トピック名の `max-width: 70%` が効かず 16 字ほどで折り返していた → `width: max-content`
+  - 変異: 1 字だけの行を書記素でなく rune で数える → TestLabelProblems の「1 字だけの行」が red / broken を allow で通す →
+    TestAllowLabelWrapsDoesNotPassBrokenMeasure が red (どちらも mutate-verify rc=0)
+- [x] 3 周目の敵対的レビュー (opus) の指摘を直した (zundamon-kaisetsu: ラベルの改行の検査を 3 周目の敵対的レビューの指摘で直す (812))
+  - 中 (再現あり): 2 周目の空白の判定が、描かれていないラベル (display: none) も黙って通した → 字があるのに矩形が無ければ clip を null にして止める
+    (本物の Chrome で `.stage-topic { display: none }` を足した player が「はみ出しの量を読めない」で止まることを確認)
+  - 低: rc≠0 で結果を使う経路のテスト (TestMeasureLabelsUsesResultDespiteChromeRC) / 空白だけの章名のトピック名の枠を出さない
+  - 壊せなかった観点 (3 周目): RunQuietCtx の寄せ替えで返す rc・文字列は全経路で同じ / 途中で切れた DOM・measure-out の偽装 / 長いトピック名のはみ出し / broken と layout の振り分け
+  - 4 周目は回していない: 3 周目の差分は判定を変えず (null を返す 1 分岐・trim の 1 条件・テスト)、本物の Chrome と変異のテストで確かめた範囲に収まるため
+- `make test` rc=0 / `make lint` rc=0 (最後の編集の後)
+
+## 結果
+
+- 本物の Chrome で: クリーンアーキテクチャの元の台本はタイトルと重要語の 2 件、シャボン玉の台本は比較の項目 1 件 (CSS の auto-phrase で解消) を拾った。
+  直した台本は両方とも通る
+- 残る未確認リスク: player の計測の JS はテストから実行されない (規約で本物の Chrome に触れない)。JS を変えたら src の CLAUDE.md の手順で本物の Chrome の build を通す
