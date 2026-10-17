@@ -2,17 +2,19 @@
 
 起票日: 2026-10-12
 
-> **保留中 (2026-10-12 ユーザー判断)。着手条件: 次に doctor 画面 (`doctor_*.go`) へまとまった機能を足すとき、doctor だけを先に切り出す
-> (doctor 系 10 ファイルで自己完結していて境界が最もはっきりし、キャッシュ・削除・スナップショットと事故の入口も多い)。効果が見えたら他の画面へ広げる。**
+> **2026-10-17 にユーザー判断で open に戻した (着手はユーザーの手が空いたとき)**。理由: 開発中にビルドキャッシュが増えやすいのがペイン。
+> glogx は 1 パッケージなので、1 行直すたびにパッケージ全体 (テストの -race 版で 1 つ 26 MB 級) を作り直し、新しい項目として GOCACHE に溜まる
+> (下の「ビルドキャッシュの増え方」)。分割すると、直したパッケージとそれを import する側だけを作り直す。
 >
-> 保留の理由: 画面どうしは今も直接参照せず `browseModel` が仲介する規律が守られているので、分割で新しく得るのは「その規律の機械での強制」まで。
-> いちばん複雑な `tui.go` (4,186 行・`browseModel` のメソッド 124 個) は main に残るので分割では軽くならない。テストを main に残すとテストから
-> 触る名前が公開名になり境界が弱まる。対して費用 (約 6 万行・テスト関数 1,093 本の移動、CI / Makefile / lint のパスの張り替え、
-> `clock_rollback_test.go` のように移設で黙って外れる検査) が大きい。`tui.go` を軽くしたいなら、`browseModel` の責務の分け方として別の issue で扱う
+> 2026-10-12 の保留の理由 (記録として残す): 画面どうしは今も直接参照せず `browseModel` が仲介する規律が守られているので、分割で新しく
+> 得るのは「その規律の機械での強制」まで。いちばん複雑な `tui.go` は main に残るので分割では軽くならない。テストを main に残すとテストから
+> 触る名前が公開名になり境界が弱まる。対して費用 (約 6 万行・テスト関数 1,100 本の移動、CI / Makefile / lint のパスの張り替え、
+> `clock_rollback_test.go` のように移設で黙って外れる検査) が大きい。当時の着手条件は「doctor 画面へまとまった機能を足すとき、doctor だけを
+> 先に切り出す」で、doctor を最初に切り出す順はそのまま使える。ビルドキャッシュの観点はこの時は検討に入っていなかった
 
 ## 概要
 
-`src/glogx` は `package main` の 1 パッケージで、非テストの 59 ファイル・テストの 92 ファイル (計 60,484 行、テスト関数 1,093 本) が
+`src/glogx` は `package main` の 1 パッケージで、非テストの 62 ファイル・テストの 94 ファイル (計 60,963 行、テスト関数 1,111 本。2026-10-17 に数え直した) が
 平場に並んでいる (main に残っている部分の数字。描画の部品・doctor の判定・ratelimit・treefiler などは既に別 module
 `src/tuikit` / `src/doctor` / `src/ratelimit` / `src/treefiler` … に出ている)。ユーザー依頼 (2026-10-12「glogx も同じように平場に並んでいるのね。パッケージごとに分割して欲しいところ」)。
 zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面ごとに `internal/` のパッケージへ割る。
@@ -33,10 +35,10 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
   この基準の内側にある (基準を覆すのではない)。着手したら CLAUDE.md と README の「flat を維持する」の記述を新しい構成に合わせて直す
 - 「行数や責務の見た目で割らない」(CLAUDE.md) は守る。割る単位は、下の実測で依存の向きが一方向にできる所に限る
 
-## 現状 (2026-10-12 に実測)
+## 現状 (2026-10-12 に実測。数字は 2026-10-17 に数え直した)
 
-- 大きいファイル: `tui.go` 4,186 行 / `issues_view.go` 2,816 / `doctor_view.go` 1,700 / `doctor_delete.go` 1,550 / `status_view.go` 1,442 / `github.go` 927
-- 状態機械 `browseModel` にメソッドを持つ非テストのファイルは 7 個 (`tui.go` に 124、`gitlog_watch.go` に 12)。
+- 大きいファイル: `tui.go` 4,272 行 / `issues_view.go` 2,879 / `doctor_view.go` 1,700 / `doctor_delete.go` 1,550 / `status_view.go` 1,379 / `github.go` 927
+- 状態機械 `browseModel` にメソッドを持つ非テストのファイルは 9 個 (`tui.go` に 124、`gitlog_watch.go` に 12、`fullscreen.go` に 3、`filer_view.go` / `filer_resume.go` / `lan_view.go` / `lan_resume.go` / `hint_surfaces.go` に 2、`open_workspace.go` に 1。2026-10-17)。
   issues viewer (`issuesView`)・doctor 画面・status viewer は **`browseModel` とは別の型**で、切り出しの候補になる
 - go/ast でファイル間のトップレベルの宣言の参照を数えた (使い捨ての道具。issue 741 で使ったもの)。各画面が本体から使っているのは:
   - 描画の土台: `render.go` (`paint` / `ansi*` / `clipToWidth`)・`width.go` (`dispWidth` / `padSpaces` …)・`box.go` (`cursorGutter*` / `overlayCenteredBox` …)・`terminal.go` (`sanitize*Line`)
@@ -46,8 +48,32 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
   - 外部コマンド: `external_commands.go` (`copyToClipboard` / `runGit*` …)・`scroll_glide.go`・`line_cache.go`
 - 依存の多い側: `tui.go` は 36 ファイルの宣言を、`issues_view.go` は 18、`doctor_view.go` は 16、`status_view.go` は 13 を参照する
 - 画面どうしは直接参照しない (`wantCross` / `wantQuit` の信号を `browseModel` が仲介。`tui.go` は 3 画面の型を 14 回参照する)
-- 例外: `filer_view.go` (2)・`filer_resume.go` (2)・`fullscreen.go` (3) は `browseModel` のメソッドを持つので、filer の全画面は
-  型を分けてからでないと切り出せない (usage / ratelimit の全画面のファイルは `browseModel` のメソッドを持たない。2026-10-12 に数えた)
+- 例外: `filer_view.go` (2)・`filer_resume.go` (2)・`lan_view.go` (2)・`lan_resume.go` (2)・`hint_surfaces.go` (2)・`open_workspace.go` (1)・`fullscreen.go` (3) は
+  `browseModel` のメソッドを持つので、filer と LAN (mac-lan-manager。2026-10-12 の後に足された) の全画面は型を分けてからでないと切り出せない (usage / ratelimit の全画面のファイルは `browseModel` のメソッドを持たない。2026-10-12 に数えた)
+
+## ビルドキャッシュの増え方 (2026-10-17 に実測)
+
+使い捨ての worktree (origin/master) と空の GOCACHE で、`src/glogx` の `go test -race -count=1 -run '^$' .` を回し、各ファイルの先頭に
+1 行足してビルドし直したときの GOCACHE の増分を測った (Go 1.26.0、14 コア):
+
+| 変更 | GOCACHE の増分 |
+|---|---|
+| 空の GOCACHE から 1 回目 (std と依存を含む) | 228 MB |
+| そのまま 2 回目 | +0.4 MB |
+| `tui.go` に 1 行 | +27.5 MB |
+| `doctor_view.go` に 1 行 | +27.5 MB |
+| `issues_view.go` に 1 行 | +27.5 MB |
+
+- どのファイルを直しても同じ量になる (1 パッケージなので、どこを直してもパッケージ全体を作り直す)
+- 母集合: `-race` のテストのビルドだけ。`src/glogx/Makefile` の 2 本目 (-race なしの予算検査)・`go vet`・golangci-lint の分は数えていない
+  (-race なしの版は同じだけ別に増えるはず。未実測)。GOCACHE は 5 日使われなかった項目を消すので、増えた分は 5 日で消える
+- 手元の `~/Library/Caches/go-build` は 2026-10-17 に 54 GB (今日 15 GB・昨日 23 GB の項目)。最大級の項目は glogx のテスト版の
+  コンパイル結果 (1 つ 26 MB 前後。worktree のパスが中に埋まっている)。並行セッションが worktree ごとに glogx を直すと、この単位で溜まる
+- **分割で減る量は未実測**。画面のパッケージだけを直したときに main (`tui.go` など) を作り直すかは、依存先の export data が変わるかで
+  決まる (行がずれるだけで export data が変わらなければ、main は作り直さない見込み)。**着手時に、土台と doctor を出した段で同じ計測を回し、
+  `doctor_view.go` に 1 行足したときの増分を before (27.5 MB) と比べる**。`tui.go` を直したときは main を作り直すので、main に残る量が増分の下限になる
+- 計測の手順 (着手時に使い回す): 使い捨ての worktree と `GOCACHE=$(mktemp -d)` で `go test -race -count=1 -run '^$' .` を 2 回回してから、
+  対象のファイルの先頭に `// cache probe` を 1 行足して 3 回目を回し、`du -sk "$GOCACHE"` の差を見る
 
 ## 対応方針 (案。着手時に設計のレビューを通して決める)
 
@@ -69,8 +95,9 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
 ## 着手前に潰す罠 (issue 741 で踏んだもの + glogx 固有)
 
 - 🚨 **非公開のフィールドを公開名にすると encoding/json に出るようになる**。issue 741 では golden のテストが混入を捕まえた。
-  glogx は JSON を書くファイルが 8 本ある (`cache.go` / `claude_version.go` / `doctor_cache.go` / `doctor_resume.go` / `filer_resume.go` /
-  `issues_state.go` / `ratelimit_resume.go` / `usage_cache.go`。CI 状態・doctor・利用枠のキャッシュと、全画面の再開の記憶)。公開名にした
+  glogx で JSON を書くのは `cache.go` / `claude_version.go` / `doctor_cache.go` / `usage_cache.go` と、全画面の再開の記憶を 1 か所で書く
+  `screen_memory.go` (2026-10-17 に数え直した。`doctor_resume.go` / `filer_resume.go` / `issues_state.go` / `ratelimit_resume.go` / `lan_resume.go` は
+  `screen_memory.go` を通して書く)。公開名にした
   フィールドが永続化の形を変えないかを、書く構造体ごとに確かめる (`json:"-"` を付けるか、型を分ける)。読む側 (`cli_health.go` /
   `github.go` の `json:` タグ付きの構造体) も、公開名にしたフィールドが余計に埋まらないかを見る
 - **パスで掛かっている CI・lint の配線が移設で外れる** (`~/.claude/rules/list-masked-failure-modes-before-removing-guard.md` の「コードを別の
@@ -95,7 +122,7 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
   (`installInertDoctor(t, *doctorView)` / `newTestBrowse` → `*browseModel`) を使うので、移すならヘルパーが両側から要る
 - 識別子の改名を gopls rename で当てるとき、定義の行を正規表現で探すと別の識別子に当たる (issue 741 で 2 件)。改名の後に語単位の差分で
   「旧名 → 新名」の組を全部数え、想定の組だけであることを確かめる
-- テストが書き換えるパッケージ変数 (時計・外部コマンドの差し替え点など。非テストに `var x = …` の形が 38 件) は、テストと同じパッケージに
+- テストが書き換えるパッケージ変数 (時計・外部コマンドの差し替え点など。非テストのトップレベルの `var` が 51 行。2026-10-17) は、テストと同じパッケージに
   置くか公開変数にする。どれをテストが書き換えるかの表は着手時に作る
 - ビルドタグ付きの `ime_tis_darwin.go` (`darwin && cgo`) / `ime_tis_stub.go` は main に残す前提 (画面の切り出しとは別系統)。
   `init()` と `go:embed` は非テストに無い (2026-10-12 に grep で 0 件)
@@ -113,6 +140,7 @@ zundamon-kaisetsu を同じ形で割った (issue 741) のに続けて、画面�
 
 ## 進捗
 
+- [x] 2026-10-17: open に戻し、現状の数字を数え直し、ビルドキャッシュの増え方を測った (上の節)
 - [ ] 設計 (層と置き場所) を決めて反証レビューを通す
 - [ ] 土台の層を出す
 - [ ] 画面を 1 つずつ出す
