@@ -192,6 +192,9 @@ type ask struct {
 	exec   *ExecRequest
 	step   setup.StepID
 	static *setup.StaticIP
+	// auto は読み込み中に押した x の予約で、読み終えたときに自動で出した板。Enter では実行しない (進捗のモーダルの間に押し続けた
+	// Enter が、裏で開いた板をそのまま実行した。この Mac の固定は自動では戻らない。敵対レビュー)
+	auto bool
 }
 
 // New は画面を作り、この Mac のネットワーク・台帳・設定を読み、Bonjour の走査を起こす。
@@ -210,6 +213,11 @@ func New(o Options) *Model {
 // Reload はこの Mac のネットワーク・台帳・設定を読み直し、走査を起こし直す (r と、glogx の板を開き直したとき。Close の後でも使える)。
 func (m *Model) Reload() {
 	m.logf("reload")
+	// 走査を起こし直すと行が空に近い所から増え直すので、カーソルの Mac を戻したい Mac として持つ (添字のままだと、増えた行の分だけ
+	// 別の Mac に移り、s / o がそのまま別の相手へ繋いだ。敵対レビュー)
+	if m.wantHost == "" {
+		m.wantHost = m.cursorHost()
+	}
 	// 走査の settle の起点は今。最後の Advance の時刻のままだと、閉じていた間の分だけ settle が過ぎた扱いになり、開き直した直後に
 	// 走査中の印が消えて tick が止まる (red team の指摘 2026-10-15)
 	m.now = m.o.Now()
@@ -333,6 +341,31 @@ func (m *Model) RestorePlace(p Place) {
 	m.seekWantHost()
 }
 
+// cursorHost はカーソルのある相手の Mac (この Mac の行・行が無いときは "")。
+func (m *Model) cursorHost() string {
+	if len(m.visible()) == 0 {
+		return ""
+	}
+	if r := m.current(); !r.self {
+		return r.host
+	}
+	return ""
+}
+
+// followCursor は行を組み直した後、カーソルを host の行に合わせ直す (行は名前で並ぶので、走査で増えた行の分だけ添字が別の Mac を
+// 指した)。居なくなっていれば添字のまま。戻したい Mac (wantHost) を探している間は seekWantHost に任せる。
+func (m *Model) followCursor(host string) {
+	if host == "" || m.wantHost != "" {
+		return
+	}
+	for i, r := range m.visible() {
+		if r.host == host && !r.self {
+			m.cur[m.tab] = i
+			return
+		}
+	}
+}
+
 // seekWantHost は戻したい Mac が一覧に出ていればカーソルを合わせる。走査が終わっても出なければ諦める (居なくなった Mac)。
 func (m *Model) seekWantHost() {
 	if m.wantHost == "" {
@@ -353,6 +386,8 @@ func (m *Model) seekWantHost() {
 // Advance は時間を進め、走査の途中の結果を取り込む。
 func (m *Model) Advance(now time.Time) {
 	m.now = now
+	held := m.cursorHost()
+	defer m.followCursor(held)
 	m.takeNetLoad()
 	m.takeObserve()
 	m.settleProgress(true)
@@ -850,6 +885,9 @@ func (m *Model) HandleInput(key, text string) Action {
 		if a != nil && a.exec != nil && key == "c" { // 実行するコマンドの全文をコピーする (板は閉じない。うまくいかないときに相談できるように。ユーザー要望)
 			m.copyAs(shellLine(a.exec.Argv), "実行するコマンド (全文)")
 			return None
+		}
+		if a != nil && a.auto && key == "enter" {
+			return None // 自動で出した板は y でだけ実行する (板は閉じない)
 		}
 		m.ov, m.ask = ovNone, nil
 		if a != nil && confirm.IsYes(key) {

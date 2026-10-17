@@ -1794,3 +1794,18 @@ func TestAwayPeerWithoutWifiRefuses(t *testing.T) {
 		t.Error("有線で網が分かれた相手の画面共有を開いた")
 	}
 }
+
+// 走査で行が増えても、カーソルは同じ Mac に残る (添字のままだと、名前で前に並ぶ行が増えた分だけ別の Mac に移り、s がそのまま
+// 別の相手へ ssh した。敵対レビュー)。
+func TestCursorFollowsMacAcrossScanUpdate(t *testing.T) {
+	zed := discover.Peer{Host: "zed.local", Instances: []string{"zed"}, SSH: true, Addrs: map[int]string{14: "192.168.50.20"}}
+	h := newHarness(t, nil, []discover.Peer{zed})
+	h.keys("l")
+	h.cursorTo(t, "zed.local")
+	abc := discover.Peer{Host: "abc.local", Instances: []string{"abc"}, SSH: true, Addrs: map[int]string{14: "192.168.50.21"}}
+	h.scan.peers = []discover.Peer{zed, abc}
+	h.m.Advance(t0.Add(time.Second))
+	if got := h.m.current().host; got != "zed.local" {
+		t.Errorf("走査で行が増えた後のカーソル = %s (zed.local のはず)", got)
+	}
+}

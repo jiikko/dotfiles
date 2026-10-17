@@ -36,6 +36,9 @@ func (m *Model) settleProgress(runQueued bool) {
 		m.su.queuedX = false
 		if m.ov == ovNone {
 			m.setupX()
+			if m.ov == ovConfirm && m.ask != nil {
+				m.ask.auto = true
+			}
 		}
 	}
 }

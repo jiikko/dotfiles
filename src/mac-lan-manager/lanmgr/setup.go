@@ -314,6 +314,17 @@ func (m *Model) usedIPs() []string {
 	for _, h := range m.hosts {
 		used = append(used, h.LAN)
 	}
+	// 他の相手に試した番号も避ける: 失敗で戻った固定 (相手の上では変わっていることがある) や、期限が切れて戻している最中・戻せなかった
+	// (電源断) 相手は、claimed にも台帳にも行にも無いまま、その番号を持ちうる (別の相手に同じ番号を出した。敵対レビュー)。
+	// 今の相手の試した番号は避けない (同じ Mac に同じ番号を出し直すのは重ならない)
+	for host, ips := range m.tried {
+		if m.su != nil && host == m.su.host {
+			continue
+		}
+		for ip := range ips {
+			used = append(used, ip)
+		}
+	}
 	for _, x := range m.self.IPs {
 		used = append(used, x.Addr)
 	}
@@ -472,6 +483,7 @@ func (m *Model) keySetup(key string) Action {
 
 // setupX は次の手順の確認の板を出す (x。読み込み中に押した x も、読み終えたときにここを通る)。
 func (m *Model) setupX() {
+	m.su.queuedX = false // 自分で板を開いたら予約は済み (残すと、取り消した板を次の tick で開き直した。敵対レビュー)
 	{
 		if !m.su.seen && m.conf() == nil {
 			// 観測の口が無い (live が相手を読まない版) か、まだ一度も読めていない: 何も分からないまま本物の sudo / ssh-copy-id を起こさない (敵対レビュー)

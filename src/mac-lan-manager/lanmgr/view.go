@@ -133,9 +133,17 @@ func (m *Model) header(w int) string {
 	left := logo()
 	switch {
 	case m.Busy():
-		what := fmt.Sprintf(" Bonjour で探しています (%d 台)", len(m.peers))
-		if !m.netReady {
+		// 何を待っているかを出す (Busy は走査の他に相手の確認・確認待ちも含む。走査が終わった後も「Bonjour で探しています」と出た。敵対レビュー)
+		var what string
+		switch {
+		case !m.netReady:
 			what = " この Mac のネットワーク設定を確認中"
+		case m.scan != nil && m.scan.Busy(m.now):
+			what = fmt.Sprintf(" Bonjour で探しています (%d 台)", len(m.peers))
+		case m.su != nil && m.su.ch != nil:
+			what = " 相手に接続して確認中"
+		default:
+			what = " 固定 IP の確認待ち"
 		}
 		left += "   " + lipgloss.NewStyle().Foreground(cPink).Render(spinner.At(m.now, spinStep)) + sDim.Render(what)
 	case m.scanErr != nil:
@@ -567,6 +575,9 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 			hint := confirm.HintYesNo
 			if m.ask.exec != nil {
 				hint = "y/Enter: 実行   c: コマンドをコピー   n/Esc: キャンセル"
+				if m.ask.auto {
+					hint = "y: 実行   c: コマンドをコピー   n/Esc: キャンセル"
+				}
 			}
 			return modal(m.ask.title, m.ask.body, hint, m.w), -1, 0
 		}

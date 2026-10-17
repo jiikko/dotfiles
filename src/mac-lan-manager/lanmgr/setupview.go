@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/jiikko/dotfiles/src/termsafe"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"mac-lan-manager/setup"
 )
@@ -34,7 +35,10 @@ func (m *Model) viewSetup(w int) string {
 		// 期限の後の観測が読めずに印が残ると tick が止まる (読み直しは r だけ)。断りの文言を読んだ人にしか届かなかった (敵対レビュー)
 		b.WriteString(sWarn.Render("固定 IP にした後の確認が済んでいない: 相手が元に戻った頃なので r でリロード") + "\n")
 	case errors.Is(su.obs.KeyErr, setup.ErrUnknown):
-		b.WriteString(sWarn.Render(su.label+" に接続できない: "+su.obs.KeyErr.Error()) + "\n")
+		// ssh の stderr は複数行・長い行でありうる。そのまま入れると行を食って画面が「高さが足りない」に落ち、確認の x に届かないまま
+		// 期限が切れた (敵対レビュー)。最初の 1 行を幅で切って出す (全文はメッセージ一覧の e)
+		why, _, _ := strings.Cut(termsafe.PlainBlock(su.obs.KeyErr.Error()), "\n")
+		b.WriteString(sWarn.Render(termwidth.Truncate(su.label+" に接続できない: "+why, inner, "…")) + "\n")
 	case su.seen && su.obs.HostKeyUnknown:
 		b.WriteString(sDim.Render("初めての相手 (ホスト鍵をまだ知らない): 公開鍵を置く手順で、ssh が出す指紋を確かめて受け入れる") + "\n")
 	case su.seen && !su.obs.KeyOK:

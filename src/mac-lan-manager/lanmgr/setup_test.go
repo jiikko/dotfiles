@@ -987,3 +987,99 @@ func TestSetupLedgerKeepsAliasChangedElsewhere(t *testing.T) {
 		t.Errorf("台帳 = %+v (内部 IP %s と別のプロセスの別名を残すはず)", h.store.hosts, ip)
 	}
 }
+
+// 読み込み中に押した x の予約で自動で出た板は、Enter では実行しない (進捗のモーダルの間に押し続けた Enter が、裏で開いた板を
+// そのまま実行した。敵対レビュー)。y では実行する。
+func TestSetupQueuedBoardIgnoresEnter(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	h.keys("r", "x", "enter")
+	awaitSetup(h.m)
+	h.m.Advance(t0)
+	if h.m.ov != ovConfirm {
+		t.Fatal("前提: 予約した x の板が出ない")
+	}
+	if a := h.keys("enter"); a == Exec || h.m.ov != ovConfirm {
+		t.Fatalf("自動で出た板を Enter で実行した / 閉じた: action=%v ov=%v", a, h.m.ov)
+	}
+	if a := h.keys("y"); a != Exec {
+		t.Errorf("自動で出た板を y で実行しない: %v", a)
+	}
+}
+
+// 自分で板を開いたら予約は済み: 取り消した板を次の tick で開き直さない (敵対レビュー)。
+func TestSetupManualBoardClearsQueuedX(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	h.keys("r", "x")
+	awaitSetup(h.m) // 読み終えたが tick はまだ
+	h.keys("x")     // 自分で板を開く
+	h.keys("n")     // 取り消す
+	h.m.Advance(t0)
+	if h.m.ov == ovConfirm {
+		t.Error("取り消した板を次の tick で開き直した")
+	}
+}
+
+// 失敗で戻った固定 (相手の上では変わっていうる) の番号を、別の相手に出さない (敵対レビュー)。
+func TestSetupDoesNotOfferIPTriedOnOtherPeer(t *testing.T) {
+	air := discover.Peer{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}
+	h := newHarness(t, nil, []discover.Peer{mini, air})
+	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet {
+		return setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.1.1"}
+	}
+	setSelfStatic(h.m)
+	h.keys("l")
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("enter")
+	awaitSetup(h.m)
+	runStep(t, h, errors.New("exit status 1"))
+	var tried string
+	for ip := range h.m.tried["m2macmini.local"] {
+		tried = ip
+	}
+	if tried == "" {
+		t.Fatal("前提: 試した番号が無い")
+	}
+	h.keys("q")
+	h.cursorTo(t, "air.local")
+	h.keys("enter")
+	awaitSetup(h.m)
+	h.keys("x")
+	if h.m.ask == nil {
+		t.Fatal("前提: 板が出ない")
+	}
+	if strings.Contains(strings.Join(h.m.ask.body, "\n"), tried+" ") {
+		t.Errorf("別の相手で試した %s を出した: %q", tried, h.m.ask.body[0])
+	}
+}
+
+// ssh の stderr が複数行でも、初期設定の画面は 1 行に収め、狭い端末で「高さが足りない」に落ちない (敵対レビュー)。
+func TestSetupKeyErrFitsOneLine(t *testing.T) {
+	msg := "exit status 255: ssh: connect to host 169.254.217.100 port 22: Operation timed out" +
+		strings.Repeat("\nWarning: Permanently added '169.254.217.100' (ED25519) to the list of known hosts.", 3)
+	obs := &setup.PeerNet{KeyErr: fmt.Errorf("%w: %w", setup.ErrUnknown, errors.New(msg))}
+	h, _ := setupHarness(t, obs)
+	h.m.Resize(80, 24)
+	v := strings.Join(h.m.View(), "\n")
+	if h.m.small || strings.Contains(v, "Warning: Permanently") {
+		t.Errorf("stderr の 2 行目以降を出した / 足りない画面になった: small=%v", h.m.small)
+	}
+}
+
+// 見出しは何を待っているかを出す: 走査が終わった後の確認待ちを「Bonjour で探しています」と出さない (敵対レビュー)。
+func TestSetupHeaderSaysWhatItWaitsFor(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	runStep(t, h, nil)
+	awaitNetLoad(h.m)
+	h.scan.busy = false
+	h.m.Advance(t0.Add(30 * time.Second))
+	if !h.m.Busy() {
+		t.Fatal("前提: 確認待ちで Busy でない")
+	}
+	if hd := h.m.header(200); strings.Contains(hd, "Bonjour で探しています") {
+		t.Errorf("走査が終わっているのに Bonjour で探していると出した: %q", hd)
+	}
+}
