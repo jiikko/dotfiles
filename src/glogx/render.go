@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"glogx/internal/commitview"
 	"glogx/internal/gitdata"
 	"glogx/internal/term"
 
@@ -313,22 +314,7 @@ func prBadgeText(sha string, o RenderOpts) string {
 	if pr == nil {
 		return ""
 	}
-	return term.Paint(fmt.Sprintf("#%d", pr.Number), prStateColor(pr.State), o.Colored)
-}
-
-// prStateColor は PR 状態の表示色 (GitHub の慣例: OPEN=緑 / MERGED=マゼンタ / CLOSED=赤)。
-// コミット行のバッジ (prBadge) と PR 状態ポップアップ (prStateLabel) が共有する — 独立に
-// 2 箇所へ書くと状態語彙の変更で片方だけ直して食い違う (issue 030)。
-func prStateColor(state string) string {
-	switch state {
-	case "OPEN":
-		return term.AnsiGreen
-	case "MERGED":
-		return term.AnsiMagenta
-	case "CLOSED":
-		return term.AnsiRed
-	}
-	return term.AnsiDim
+	return term.Paint(fmt.Sprintf("#%d", pr.Number), commitview.PrStateColor(pr.State), o.Colored)
 }
 
 // mediumLines は git log 標準形式の 1 コミット分。
@@ -438,26 +424,4 @@ func refColor(name string, dc gitdata.DecorColors) string {
 		return dc.RemoteBranch
 	}
 	return dc.Branch
-}
-
-// decorateDetailLine は job 詳細の GitHub Actions マーカー行 (##[error] 等) と
-// annotations のレベル見出し ([failure] 等) を Web UI 風に着色する。raw ログに
-// これらの色情報は無い (Web の配色は UI 側の後付け) ため glog 側で再現する。
-// キャッシュには焼き込まず描画時に付ける (colored 判定と将来の色変更を尊重)。
-func decorateDetailLine(line string, colored bool) string {
-	if !colored {
-		return line
-	}
-	switch {
-	case strings.HasPrefix(line, "##[error]"), strings.HasPrefix(line, "[failure]"):
-		return term.AnsiRed + line + term.AnsiReset
-	case strings.HasPrefix(line, "##[warning]"), strings.HasPrefix(line, "[warning]"):
-		return term.AnsiYellow + line + term.AnsiReset
-	case strings.HasPrefix(line, "##[notice]"), strings.HasPrefix(line, "[notice]"):
-		return term.AnsiCyan + line + term.AnsiReset
-	case strings.HasPrefix(line, "##[group]"), strings.HasPrefix(line, "##[endgroup]"),
-		strings.HasPrefix(line, "##[command]"), strings.HasPrefix(line, "##[debug]"):
-		return term.Paint(line, term.AnsiDim, true)
-	}
-	return line
 }

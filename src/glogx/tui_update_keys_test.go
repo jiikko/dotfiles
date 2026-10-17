@@ -67,10 +67,10 @@ func TestUpdateKeysReachableFromOverlays(t *testing.T) {
 		{"doctor", openByKey("D", func(m *browseModel) bool { return m.doctorOv.Visible() }),
 			func(m *browseModel) bool { return m.doctorOv.Visible() }, false},
 		// diff / PR status のポップアップも同じ (以前は未知キーとして飲んでいた)
-		{"diff", func(t *testing.T, m *browseModel) { m.diffOv.open(m.commits[0].SHA) },
-			func(m *browseModel) bool { return m.diffOv.visible() }, false},
-		{"pr-status", func(t *testing.T, m *browseModel) { m.prStatusOv.open(m.commits[0].SHA) },
-			func(m *browseModel) bool { return m.prStatusOv.visible() }, false},
+		{"diff", func(t *testing.T, m *browseModel) { m.diffOv.Open(m.commits[0].SHA) },
+			func(m *browseModel) bool { return m.diffOv.Visible() }, false},
+		{"pr-status", func(t *testing.T, m *browseModel) { m.prStatusOv.Open(m.commits[0].SHA) },
+			func(m *browseModel) bool { return m.prStatusOv.Visible() }, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

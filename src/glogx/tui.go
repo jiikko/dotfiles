@@ -26,6 +26,7 @@ import (
 	"glogx/issues"
 	"subproc"
 
+	"glogx/internal/commitview"
 	"glogx/internal/extcmd"
 	"glogx/internal/filerview"
 	"glogx/internal/gitdata"
@@ -110,13 +111,6 @@ type tickMsg struct{}
 // issuesRestoreMsg は前回終了時の issues viewer の画面を復元する合図 (起動時。issues_state.go)。
 // repo の照合まで済んでいるので、受け取り側は開くだけ。
 type issuesRestoreMsg struct{ screen issuesview.IssuesScreen }
-
-// jobDetailMsg は job 詳細 (annotations / ログ tail) のオンデマンド取得の結果。
-type jobDetailMsg struct {
-	key   string // sha/jobIdx (取得中表示とキャッシュのキー)
-	lines []string
-	ghErr *gitdata.GHError
-}
 
 // pushMsg は git push の実行結果 (b → y 確認後)。glogx の独自機能で、
 // 本家 glog (read-only) には無い。
@@ -218,13 +212,6 @@ type prStatusMsg struct {
 	ghErr  *gitdata.GHError
 }
 
-// diffMsg はコミット diff のオンデマンド取得の結果 (d キー)。
-type diffMsg struct {
-	sha   string
-	lines []string
-	err   error
-}
-
 // loadCommitDiff はテストで実 git を叩かないための差し替え点。
 var loadCommitDiff = gitdata.LoadCommitDiff
 
@@ -288,16 +275,16 @@ type browseModel struct {
 	// (job_detail_overlay.go) に切り出す。panel-frame (panelSHA/panelCursor/panelGrace) と ETA・
 	// CI 取得は details/statuses/commits と構造的に結合するため browseModel に残す (詳細は同ファイル)。
 	// cache キー (detailKey) はパネルのカーソル座標から借りる (identity 非所有) ので呼び出し側で注入。
-	detailOv jobDetailOverlay
+	detailOv commitview.JobDetailOverlay
 	prCache  map[string]*gitdata.PRRef // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
 	prBusy   map[string]bool           // PR 取得中の sha
 	// PR 状態ポップアップ (P キー) の状態と描画は prStatusOverlay 型 (pr_status_overlay.go) に
 	// 切り出し、ここは 1 フィールドだけ持つ。CI 行の整形はコミット状態を知る browseModel 側。
-	prStatusOv prStatusOverlay
+	prStatusOv commitview.PrStatusOverlay
 	// diff ポップアップ (d キー) の状態と描画は diffOverlay 型 (diff_overlay.go) に切り出し、
 	// ここは 1 フィールドだけ持つ。ターゲット選定・非同期取得・URL コピーは境界をまたぐため
 	// openDiff / handleDiffKey に薄く残す。
-	diffOv diffOverlay
+	diffOv commitview.DiffOverlay
 	// git push / pull --rebase / claude update の確認〜実行〜結果モーダルの状態機械は
 	// actionModal 型 (action_modal.go) に切り出す。実行の orchestration (awaitCI 編成・
 	// reloadAfterPull・結果整形) は CI/コミット状態と密結合なので browseModel 側に残す。
@@ -401,11 +388,11 @@ func newBrowseModel(commits []gitdata.Commit, statuses map[string]gitdata.CIStat
 		details:        map[string][]gitdata.CheckDetail{},
 		detailsLoading: map[string]bool{},
 		detailsWaiting: map[string]bool{},
-		detailOv:       newJobDetailOverlay(),
+		detailOv:       commitview.NewJobDetailOverlay(),
 		prCache:        map[string]*gitdata.PRRef{},
 		prBusy:         map[string]bool{},
-		prStatusOv:     newPRStatusOverlay(),
-		diffOv:         newDiffOverlay(),
+		prStatusOv:     commitview.NewPRStatusOverlay(),
+		diffOv:         commitview.NewDiffOverlay(),
 		toFetch:        toFetch,
 		repo:           repo,
 		hasRepo:        hasRepo,
@@ -629,7 +616,7 @@ func (m *browseModel) tickInterval() time.Duration {
 	if m.zoom.animating(app.TimeNow()) || m.issuesOv.SlideAnimating() || m.statusOv.SlideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
 	}
-	if m.glide.Active() || m.diffOv.animating() || m.toast.Animating() || m.issuesOv.Animating() || m.statusOv.Animating() || m.filerV.Animating() {
+	if m.glide.Active() || m.diffOv.Animating() || m.toast.Animating() || m.issuesOv.Animating() || m.statusOv.Animating() || m.filerV.Animating() {
 		return scrollInterval // スライドを滑らかに (30fps)
 	}
 	return spinnerInterval
@@ -802,7 +789,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// resize 中の glide は破棄して即時にする (表示 offset が stale になるため)。一覧だけでなく
 		// pager 側も止める: 幅で行数が変わり、glide の着地点が resize 前の行数基準で古くなる。
 		m.glide.Stop()
-		m.diffOv.stopGlides()
+		m.diffOv.StopGlides()
 		m.issuesOv.StopGlides()
 		m.statusOv.StopGlides()
 		m.ensureCursorVisible()
@@ -855,7 +842,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// pager 側 (diff / issues 一覧・本文) の glide も同じ tick で進める。共有型なので
 		// 手触り (カーブ・フレーム数) は自動的に一覧と揃う (internal/term/scroll_glide.go)。
-		m.diffOv.advanceGlide()
+		m.diffOv.AdvanceGlide()
 		m.issuesOv.AdvanceGlide()
 		m.statusOv.AdvanceGlide()
 		var pushRefetchCmd tea.Cmd
@@ -968,22 +955,22 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case jobDetailMsg:
-		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)。
+	case commitview.JobDetailMsg:
+		m.ghErr = msg.GhErr // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)。
 		// 🚨 ghErr は共有 sticky 警告なので detailOv.receive に閉じず browseModel で無条件代入する。
 		// receive は busy 落とし・cache 格納・(今開いている詳細なら) 末尾スクロールを担う。currentKey は
 		// live な detailKey() を渡す (snapshot 禁止: リフレッシュで panelCursor がクランプされ得るため)。
-		m.detailOv.receive(msg, m.detailKey(), m.visibleDetailRows())
+		m.detailOv.Receive(msg, m.detailKey(), m.visibleDetailRows())
 		// Y で詳細取得を待っていたら、到着したこの内容をコピーする (issue 020)。取得失敗
 		// (ghErr) は上の sticky 警告に任せ、予約だけ静かに破棄する。
 		// 🚨 予約後にフォーカスが動いていたら (detailKey() != msg.key) コピーしない: msg.lines は
 		// 予約時の job のログだが、focusedJob() は現フォーカスを返すため、貼ると「別 job のヘッダに
 		// 旧 job の本文」という silent 誤コピーになる。詳細ポップアップを閉じただけ (closePanel を
 		// 経ない) でカーソル移動できる経路があり、copyOnDetail が残るため起きる (レビュー確定 high)。
-		if m.copyOnDetail == msg.key {
+		if m.copyOnDetail == msg.Key {
 			m.copyOnDetail = ""
-			if job, ok := m.focusedJob(); ok && m.detailKey() == msg.key && msg.ghErr == nil && len(msg.lines) > 0 {
-				m.copyJobContextLines(job, msg.lines)
+			if job, ok := m.focusedJob(); ok && m.detailKey() == msg.Key && msg.GhErr == nil && len(msg.Lines) > 0 {
+				m.copyJobContextLines(job, msg.Lines)
 			}
 		}
 		return m, nil
@@ -1016,19 +1003,19 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// receive は当該 sha が表示中ならエラー時に close するため、sha 一致は receive の前に捕捉する。
 		// notice は「今表示中の対象」の失敗のときだけ出す: 別 sha へ移った後に届く遅延エラーで
 		// 無関係な失敗 notice を被せない (レビュー確定 low)。
-		wasCurrent := msg.sha == m.prStatusOv.sha
-		m.prStatusOv.receive(msg.sha, msg.status, msg.ghErr)
+		wasCurrent := msg.sha == m.prStatusOv.Sha
+		m.prStatusOv.Receive(msg.sha, msg.status, msg.ghErr)
 		if msg.ghErr != nil && wasCurrent {
 			// 一時エラーはキャッシュしない (receive 側)。理由はトーストで伝える
 			m.showWarning("PR の取得に失敗しました: " + app.FirstLine(msg.ghErr.Warning()))
 		}
 		return m, m.maybeTick()
-	case diffMsg:
+	case commitview.DiffMsg:
 		// 警告は「今表示中の対象」の失敗のときだけ出す: 別 SHA へ移った後に届く遅延エラーで
 		// 無関係な失敗 notice を被せない (prStatusMsg の wasCurrent と同型。receive は当該
 		// sha が表示中ならエラー時に close するため、一致は receive の前に捕捉する)
-		wasCurrent := msg.sha == m.diffOv.sha
-		if err := m.diffOv.receive(msg); err != nil && wasCurrent {
+		wasCurrent := msg.Sha == m.diffOv.Sha
+		if err := m.diffOv.Receive(msg); err != nil && wasCurrent {
 			m.showWarning("diff の取得に失敗しました: " + app.FirstLine(err.Error()))
 		}
 		return m, m.maybeTick()
@@ -1653,11 +1640,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 	m.usageOv.Dismiss()
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
-	if m.diffOv.visible() {
+	if m.diffOv.Visible() {
 		return m.handleDiffKey(key)
 	}
 	// PR 状態ポップアップ表示中も同様にモーダル (o/y/閉じるだけを受ける)
-	if m.prStatusOv.visible() {
+	if m.prStatusOv.Visible() {
 		return m.handlePRStatusKey(key)
 	}
 	// i = issues viewer を開く (全画面。読む規約は docs/issues-viewer-spec.md)。一覧表示中
@@ -1703,8 +1690,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// コミット一覧、と閉じていき、最上位でだけ終了。即終了したいときは Ctrl-C
 	if key == "q" {
 		switch {
-		case m.detailOv.visible():
-			m.detailOv.close()
+		case m.detailOv.Visible():
+			m.detailOv.Close()
 		case m.panelSHA != "":
 			m.closePanel()
 		default:
@@ -2048,11 +2035,11 @@ func (m *browseModel) applyLogData(d logData, keepView bool) (added int, cmd tea
 	m.statuses, m.toFetch, m.repo, m.hasRepo = d.statuses, d.toFetch, d.repo, d.hasRepo
 	m.details = map[string][]gitdata.CheckDetail{}
 	m.detailsLoading, m.detailsWaiting = map[string]bool{}, map[string]bool{}
-	m.detailOv.reset() // job 詳細ログキャッシュも破棄 (旧 SHA の残骸を持ち越さない)
+	m.detailOv.Reset() // job 詳細ログキャッシュも破棄 (旧 SHA の残骸を持ち越さない)
 	m.prCache = map[string]*gitdata.PRRef{}
 	m.prBusy = map[string]bool{}
-	m.prStatusOv.reset() // 旧 SHA の PR 詳細キャッシュも破棄
-	m.diffOv.reset()
+	m.prStatusOv.Reset() // 旧 SHA の PR 詳細キャッシュも破棄
+	m.diffOv.Reset()
 	m.closePanel()
 	m.awaitCI, m.awaitAttempts = nil, 0
 	m.ciPollGen++       // 旧世代の残タイマーを無効化する (リロードで対象そのものが入れ替わる)
@@ -2608,7 +2595,7 @@ func (m *browseModel) toggleUsage() tea.Cmd {
 // 開閉 toggle)、job 行 = 詳細 (annotations / ログ tail) ポップアップを開く。
 // ブラウザで開くのは o (ユーザー要望)。
 func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
-	if m.detailOv.visible() {
+	if m.detailOv.Visible() {
 		return m.handleDetailKey(key)
 	}
 	jobs := m.details[m.panelSHA]
@@ -2698,7 +2685,7 @@ func (m *browseModel) handleDetailKey(key string) (tea.Model, tea.Cmd) {
 	case "K", "shift+up":
 		return m, m.openNeighborJobDetail(-1)
 	}
-	m.detailOv.scroll(key, m.detailKey(), m.visibleDetailRows())
+	m.detailOv.Scroll(key, m.detailKey(), m.visibleDetailRows())
 	return m, nil
 }
 
@@ -2729,7 +2716,7 @@ func (m *browseModel) copyJobContext() tea.Cmd {
 		m.toast.Show("job を選択してから Y で詳細をコピーします", false)
 		return nil
 	}
-	if lines := m.detailOv.lines(m.detailKey()); len(lines) > 0 {
+	if lines := m.detailOv.Lines(m.detailKey()); len(lines) > 0 {
 		m.copyJobContextLines(job, lines)
 		return nil
 	}
@@ -2884,7 +2871,7 @@ func (m *browseModel) openJobDetail() tea.Cmd {
 		return nil
 	}
 	key := m.detailKey()
-	if !m.detailOv.startOpen(key, m.visibleDetailRows()) {
+	if !m.detailOv.StartOpen(key, m.visibleDetailRows()) {
 		return nil // cache ヒット (offset は末尾へ) / 取得中: 追加取得は不要
 	}
 	repo := m.repo
@@ -2892,7 +2879,7 @@ func (m *browseModel) openJobDetail() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
 		lines, ghErr := gitdata.FetchJobDetail(ctx, gitdata.ExecRunner, repo, check)
-		return jobDetailMsg{key: key, lines: lines, ghErr: ghErr}
+		return commitview.JobDetailMsg{Key: key, Lines: lines, GhErr: ghErr}
 	}
 	return tea.Batch(cmd, m.maybeTick())
 }
@@ -3149,7 +3136,7 @@ func (m *browseModel) closePanel() {
 	// 閉じるのはパネル固有の状態だけ。
 	m.panelGrace = 0    // rerun 直後の猶予はパネルと一緒に終える (パネル SHA を狙う猶予なので)
 	m.copyOnDetail = "" // Y のコピー予約も破棄 (閉じた後の到着で意図しないコピーをしない)
-	m.detailOv.close()  // 詳細ポップアップも閉じる (panel/detail 両クラスタの choke point)
+	m.detailOv.Close()  // 詳細ポップアップも閉じる (panel/detail 両クラスタの choke point)
 }
 
 // openURLCmd は URL をブラウザで開く Cmd。StatusContext の targetUrl 等、外部が任意に
@@ -3181,7 +3168,7 @@ func jobLogText(lines []string) string {
 // (`nvim -`) で渡すのでディスクにファイルを残さず、nvim を閉じればバッファごと破棄される
 // (ユーザー要望 2026-07-21: ログのテキストをコピーしたいが後に残したくない)。
 func (m *browseModel) openJobLogInEditor() tea.Cmd {
-	lines := m.detailOv.lines(m.detailKey())
+	lines := m.detailOv.Lines(m.detailKey())
 	if len(lines) == 0 {
 		m.toast.Show("開けるログがありません", false)
 		return nil
@@ -3276,7 +3263,7 @@ func (m *browseModel) openPRStatus() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	if !m.prStatusOv.open(sha) {
+	if !m.prStatusOv.Open(sha) {
 		return nil // toggle 閉 / キャッシュヒット
 	}
 	repo := m.repo
@@ -3294,16 +3281,16 @@ func (m *browseModel) openPRStatus() tea.Cmd {
 func (m *browseModel) handlePRStatusKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q", "h", "left", "esc", "P", "enter":
-		m.prStatusOv.close()
+		m.prStatusOv.Close()
 	// current()==nil の 2 状態 (取得中 / PR なし) はどちらもポップアップ自身が spinner・
 	// 「(紐づく PR はありません)」で可視化済みなので、o/y は無言 no-op でよい (取得中に
 	// 「PR がありません」トーストを出すと誤報になる)。
 	case "o":
-		if pr := m.prStatusOv.current(); pr != nil {
+		if pr := m.prStatusOv.Current(); pr != nil {
 			return m, m.openURLCmd(pr.URL)
 		}
 	case "y":
-		if pr := m.prStatusOv.current(); pr != nil {
+		if pr := m.prStatusOv.Current(); pr != nil {
 			// PR の url は取得の段階で無害化していない (表示する欄だけを無害化している)。
 			// クリップボードは最後の関門なので、入れる直前に平文にする (issue 417)
 			url := term.SanitizePlainLine(pr.URL)
@@ -3316,7 +3303,7 @@ func (m *browseModel) handlePRStatusKey(key string) (tea.Model, tea.Cmd) {
 // prStatusCILine は PR ポップアップに出すコミット CI 状態の 1 行 (出典はコミット行と同じ
 // statuses/details)。失敗時は取得済み details から失敗 job 数を添える。
 func (m *browseModel) prStatusCILine() string {
-	sha := m.prStatusOv.sha
+	sha := m.prStatusOv.Sha
 	if sha == "" {
 		return ""
 	}
@@ -3351,7 +3338,7 @@ func (m *browseModel) openDiff() tea.Cmd {
 		sha = m.panelSHA
 	}
 	m.closePanel()
-	if !m.diffOv.open(sha) {
+	if !m.diffOv.Open(sha) {
 		return nil // toggle 閉 / キャッシュヒット / 取得中: 追加取得は不要
 	}
 	return m.fetchDiffCmd(sha)
@@ -3362,7 +3349,7 @@ func (m *browseModel) fetchDiffCmd(sha string) tea.Cmd {
 	colored := m.colored
 	cmd := func() tea.Msg {
 		lines, err := loadCommitDiff(sha, colored)
-		return diffMsg{sha: sha, lines: lines, err: err}
+		return commitview.DiffMsg{Sha: sha, Lines: lines, Err: err}
 	}
 	return tea.Batch(cmd, m.maybeTick())
 }
@@ -3375,7 +3362,7 @@ func (m *browseModel) fetchDiffCmd(sha string) tea.Cmd {
 // 「隣」が見ている diff の隣にならない)。移った先へはカーソルも追従させる。
 // 端では止めて案内する (巻かない。issues viewer の openNeighbor と同じ)。
 func (m *browseModel) openNeighborDiff(delta int) tea.Cmd {
-	idx := slices.IndexFunc(m.commits, func(c gitdata.Commit) bool { return c.SHA == m.diffOv.sha })
+	idx := slices.IndexFunc(m.commits, func(c gitdata.Commit) bool { return c.SHA == m.diffOv.Sha })
 	if idx < 0 {
 		idx = m.cursor
 	}
@@ -3391,7 +3378,7 @@ func (m *browseModel) openNeighborDiff(delta int) tea.Cmd {
 	m.cursor = ni
 	m.ensureCursorVisible()
 	// 🚨 open は同じ SHA だと toggle で閉じるが、隣は必ず別 SHA なのでここでは閉じない
-	if !m.diffOv.open(m.commits[ni].SHA) {
+	if !m.diffOv.Open(m.commits[ni].SHA) {
 		return nil // キャッシュヒット / 取得中
 	}
 	return m.fetchDiffCmd(m.commits[ni].SHA)
@@ -3410,12 +3397,12 @@ func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
 	case "K", "shift+up":
 		return m, m.openNeighborDiff(-1)
 	}
-	m.diffOv.scroll(key, m.visibleDiffRows())
+	m.diffOv.Scroll(key, m.visibleDiffRows())
 	// 半ページ移動は glide (internal/term/scroll_glide.go) で進むので tick を張る。張らないと advanceGlide を
 	// 呼ぶ者がおらず、表示位置がスクロール前で固まったまま「キーが効かない」ように見える
 	// (敵対的レビュー P1 2026-07-31: Space 後に j を何度押しても先頭行が出続ける実測)。
 	// 1 行移動・閉じるは glide を使わないので tick を増やさない。
-	if m.diffOv.pager.Animating() {
+	if m.diffOv.Pager.Animating() {
 		return m, m.maybeTick()
 	}
 	return m, nil
@@ -3430,7 +3417,7 @@ func (m *browseModel) visibleDiffRows() int {
 
 // diffBoxLines は diff ポップアップの描画行 (枠付き)。SHA からコミットを解決して diffOv へ渡す。
 func (m *browseModel) diffBoxLines() []string {
-	return m.diffOv.boxLines(m.contentWidth(), m.colored, m.spinner(), m.commitBySHA(m.diffOv.sha), m.visibleDiffRows())
+	return m.diffOv.BoxLines(m.contentWidth(), m.colored, m.spinner(), m.commitBySHA(m.diffOv.Sha), m.visibleDiffRows())
 }
 
 // fillUnknown は結果が得られなかった SHA を「取得中」のまま残さず unknown へ落とす。
@@ -3454,7 +3441,7 @@ func (m *browseModel) fillUnknown() {
 func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
-	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.listHasPending() || m.panelHasPendingJob() || m.usageOv.Loading() || m.rlDashLoading() || m.issuesOv.Loading() ||
+	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.Fetching() || m.diffOv.Fetching() || m.prStatusOv.Fetching() || m.listHasPending() || m.panelHasPendingJob() || m.usageOv.Loading() || m.rlDashLoading() || m.issuesOv.Loading() ||
 		m.statusOv.Fetching() || m.doctorOv.Scanning() || m.doctorOv.Deleting() || m.filerV.Busy() || m.lanV.Busy()
 }
 
@@ -3831,12 +3818,12 @@ func (m *browseModel) viewLines() string {
 	// diff ポップアップは job パネルよりさらに前面 (openDiff がパネルを閉じるため
 	// 実際に同時表示になることはないが、重ね順の契約としてパネルの後に描く)
 	if diffBox := m.diffBoxLines(); len(diffBox) > 0 {
-		window = term.OverlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffOv.sha)+1, page)
+		window = term.OverlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffOv.Sha)+1, page)
 	}
 	// PR 状態ポップアップも対象コミット直下へ重ねる (job パネルとは同時表示にならない:
 	// P は一覧のみで受け、表示中は handlePRStatusKey がモーダルに捌く)
-	if prBox := m.prStatusOv.boxLines(m.contentWidth(), m.colored, m.spinner(), m.prStatusCILine()); len(prBox) > 0 {
-		window = term.OverlayBox(window, prBox, m.boxAnchor(lines, offset, m.prStatusOv.sha)+1, page)
+	if prBox := m.prStatusOv.BoxLines(m.contentWidth(), m.colored, m.spinner(), m.prStatusCILine()); len(prBox) > 0 {
+		window = term.OverlayBox(window, prBox, m.boxAnchor(lines, offset, m.prStatusOv.Sha)+1, page)
 	}
 	// ここから先 (action モーダル → 再起動 → usage → トースト) は全ビュー共通なので
 	// finishWithGlobalChrome が持つ。一覧固有のオーバーレイ (スクロールバー / job パネル /
@@ -3989,7 +3976,7 @@ func (m *browseModel) panelLines() []string {
 		title = fmt.Sprintf(" CI jobs: %s (%d 件) %s ", commit.ShortSHA, len(jobs), commit.Subject)
 	}
 	box := term.BuildShadowPanelBox(title, rows, width, m.colored)
-	if m.detailOv.visible() {
+	if m.detailOv.Visible() {
 		// 詳細ボックスは job パネルの「子」であることが分かるよう段差を付ける (ユーザー要望)
 		for _, line := range m.detailBoxLines(width - len(detailIndent)) {
 			box = append(box, detailIndent+line)
@@ -4008,7 +3995,7 @@ func (m *browseModel) detailBoxLines(width int) []string {
 	if job, ok := m.focusedJob(); ok {
 		name = job.Name
 	}
-	return m.detailOv.boxLines(width, m.colored, m.spinner(), name, m.detailKey(), m.visibleDetailRows())
+	return m.detailOv.BoxLines(width, m.colored, m.spinner(), name, m.detailKey(), m.visibleDetailRows())
 }
 
 // cursorLine はカーソル位置のコミットヘッダー行を強調する。溝の「→ 」に加え、色ありでは

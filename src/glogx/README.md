@@ -418,8 +418,8 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `external_commands.go` (git/tmux/claude/browser/clipboard の外部プロセスラッパー) /
   `internal/term` (ANSI 色・`Paint`・幅の別名・枠と影 (`box.go`)・端末サニタイズ (`terminal.go`)・glide のキー語彙・最下行の案内の詰め) / `render.go` (コミット行の生成) / `tui.go` (Bubble Tea ブラウズの中核・状態遷移) /
   `internal/term/box.go` は枠と影の本体 (tuikit の `layout.Panel` / `OverlayCentered`) に glogx のテーマ色を渡すラッパ (確認ダイアログは tuikit の `confirm`) /
-  各種オーバーレイ・モーダル (`diff_overlay.go` / `job_detail_overlay.go` /
-  `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go`。右下の通知スタック (新しい通知は上に積まれ
+  各種オーバーレイ・モーダル (`internal/commitview/` の diff / job 詳細 / PR 状態、
+  `internal/usageview/usage_overlay.go` / `action_modal.go`。右下の通知スタック (新しい通知は上に積まれ
   古い通知は下から抜ける。最大 3 枚) は tuikit の `toast`) /
   **新しい外部コマンド実行は `subproc.CommandContext` を使う** — 素の `exec.CommandContext` は
   `waitdelay_discipline_test.go` が落とす /

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/commitview"
 	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"strings"
@@ -409,16 +410,16 @@ func TestDecorateDetailLine(t *testing.T) {
 		{"##[endgroup]", term.AnsiDim},
 	}
 	for _, tt := range tests {
-		got := decorateDetailLine(tt.line, true)
+		got := commitview.DecorateDetailLine(tt.line, true)
 		if !strings.HasPrefix(got, tt.want) || !strings.HasSuffix(got, term.AnsiReset) {
 			t.Errorf("decorate(%q) = %q; want %s で着色", tt.line, got, tt.want)
 		}
 	}
 	// マーカー無しの行と非カラーはそのまま
-	if got := decorateDetailLine("plain log line", true); got != "plain log line" {
+	if got := commitview.DecorateDetailLine("plain log line", true); got != "plain log line" {
 		t.Errorf("素の行が着色された: %q", got)
 	}
-	if got := decorateDetailLine("##[error]x", false); got != "##[error]x" {
+	if got := commitview.DecorateDetailLine("##[error]x", false); got != "##[error]x" {
 		t.Errorf("非カラーで着色された: %q", got)
 	}
 }

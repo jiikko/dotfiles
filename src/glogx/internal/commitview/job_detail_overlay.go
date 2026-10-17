@@ -1,4 +1,4 @@
-package main
+package commitview
 
 import (
 	"fmt"
@@ -23,62 +23,62 @@ import (
 // ではない。(3) toggle しない (open 中は handlePanelKey が handleDetailKey へ委譲するため常に閉状態
 // から呼ばれる)。(4) ghErr (共有 sticky 警告) は触らない — browseModel の jobDetailMsg ハンドラが
 // 無条件代入して C4 契約 (成功時 nil クリア) を維持する。
-type jobDetailOverlay struct {
-	open  bool          // 詳細ポップアップ表示中か
-	pager listnav.Pager // スクロール位置 (滑らせないので glide は使わない)
+type JobDetailOverlay struct {
+	Open  bool          // 詳細ポップアップ表示中か
+	Pager listnav.Pager // スクロール位置 (滑らせないので glide は使わない)
 	// logs は key (detailKey) → ログ行のキャッシュと取得の単発化 (line_cache.go)。
-	cache linecache.Cache
+	Cache linecache.Cache
 }
 
 // newJobDetailOverlay は map を初期化した jobDetailOverlay を返す。
-func newJobDetailOverlay() jobDetailOverlay {
-	return jobDetailOverlay{cache: linecache.New()}
+func NewJobDetailOverlay() JobDetailOverlay {
+	return JobDetailOverlay{Cache: linecache.New()}
 }
 
 // visible は詳細ポップアップを表示中か。
-func (o *jobDetailOverlay) visible() bool { return o.open }
+func (o *JobDetailOverlay) Visible() bool { return o.Open }
 
 // fetching は詳細取得中の key が 1 つでもあるか (スピナー tick を回し続ける判定用)。
-func (o *jobDetailOverlay) fetching() bool { return o.cache.Fetching() }
+func (o *JobDetailOverlay) Fetching() bool { return o.Cache.Fetching() }
 
 // close は詳細ポップアップを閉じてスクロール位置を戻す。cache は保持する (閉じ直しで再取得
 // しないため)。全パネル退出経路 (handleKey q / closePanel) と handleDetailKey の閉じキーが呼ぶ。
-func (o *jobDetailOverlay) close() {
-	o.open = false
-	o.pager.Reset()
+func (o *JobDetailOverlay) Close() {
+	o.Open = false
+	o.Pager.Reset()
 }
 
 // reset は pull 後の全面リロードで cache ごと破棄する (旧 SHA のログ残骸を持ち越さない)。
-func (o *jobDetailOverlay) reset() {
-	o.cache.Reset()
-	o.close()
+func (o *JobDetailOverlay) Reset() {
+	o.Cache.Reset()
+	o.Close()
 }
 
 // startOpen はフォーカス job のポップアップを開く。cache ヒットなら offset をログ末尾へ
 // (rows = 表示可能行数)、未ヒットかつ未 busy なら busy を立てて needFetch=true を返す。
 // 呼び出し側は needFetch のときだけ FetchJobDetail を発行する (openDiff と対称)。
-func (o *jobDetailOverlay) startOpen(key string, rows int) (needFetch bool) {
-	o.open = true
-	o.pager.Reset()
-	if lines, ok := o.cache.Get(key); ok {
-		o.pager.Offset = max(len(lines)-rows, 0) // ログ末尾 (直近出力) を表示
+func (o *JobDetailOverlay) StartOpen(key string, rows int) (needFetch bool) {
+	o.Open = true
+	o.Pager.Reset()
+	if lines, ok := o.Cache.Get(key); ok {
+		o.Pager.Offset = max(len(lines)-rows, 0) // ログ末尾 (直近出力) を表示
 		return false
 	}
-	return o.cache.Begin(key)
+	return o.Cache.Begin(key)
 }
 
 // receive は取得結果 (jobDetailMsg) を反映する。busy を落とし lines を cache へ格納し、今まさに
 // 開いている詳細 (open かつ currentKey == msg.key) なら offset をログ末尾へ合わせる。currentKey は
 // 呼び出し時に detailKey() から取り直した live な値を渡すこと (snapshot 禁止: リフレッシュで
 // job 数が縮み panelCursor がクランプされ key が変わる経路に追従するため)。
-func (o *jobDetailOverlay) receive(msg jobDetailMsg, currentKey string, rows int) {
-	if msg.lines == nil {
-		o.cache.Abort(msg.key)
+func (o *JobDetailOverlay) Receive(msg JobDetailMsg, currentKey string, rows int) {
+	if msg.Lines == nil {
+		o.Cache.Abort(msg.Key)
 		return
 	}
-	o.cache.Store(msg.key, msg.lines, currentKey)
-	if o.open && currentKey == msg.key {
-		o.pager.Offset = max(len(msg.lines)-rows, 0)
+	o.Cache.Store(msg.Key, msg.Lines, currentKey)
+	if o.Open && currentKey == msg.Key {
+		o.Pager.Offset = max(len(msg.Lines)-rows, 0)
 	}
 }
 
@@ -86,42 +86,42 @@ func (o *jobDetailOverlay) receive(msg jobDetailMsg, currentKey string, rows int
 // cache キー、rows は表示可能行数 (どちらもレイアウト/パネル状態依存なので呼び出し側が渡す)。
 // 🚨 閉じキーは enter/space/esc/h/left (diffOverlay と異なる)。o/v/y の越境キーは呼び出し側
 // (handleDetailKey) が処理し、ここには渡らない。
-func (o *jobDetailOverlay) scroll(key, contentKey string, rows int) {
+func (o *JobDetailOverlay) Scroll(key, contentKey string, rows int) {
 	switch key {
 	case "enter", " ", "esc", "h", "left":
-		o.close()
+		o.Close()
 		return
 	}
-	o.pager.Move(listnav.MotionOf(key), len(o.lines(contentKey)), rows, 0)
+	o.Pager.Move(listnav.MotionOf(key), len(o.Lines(contentKey)), rows, 0)
 }
 
 // lines は key の cache 済みログ行を返す (nvim で開く v キー用の getter)。
-func (o *jobDetailOverlay) lines(key string) []string {
-	lines, _ := o.cache.Get(key)
+func (o *JobDetailOverlay) Lines(key string) []string {
+	lines, _ := o.Cache.Get(key)
 	return lines
 }
 
 // boxLines は詳細ポップアップの描画行 (枠付き)。name は job 名 (title 用)、key は cache キー、
 // rows は本文の表示行数。spinner / width / colored は browseModel の状態を受け取る。
-func (o *jobDetailOverlay) boxLines(width int, colored bool, spinner, name, key string, rows int) []string {
+func (o *JobDetailOverlay) BoxLines(width int, colored bool, spinner, name, key string, rows int) []string {
 	var body []string
 	title := " " + name + " "
 	switch {
-	case o.cache.Loading(key):
+	case o.Cache.Loading(key):
 		body = []string{term.Paint(spinner+" 詳細を取得中...", term.AnsiDim, colored)}
 	default:
-		lines := o.lines(key)
+		lines := o.Lines(key)
 		if len(lines) == 0 {
 			body = []string{term.Paint("(詳細なし)", term.AnsiDim, colored)}
 			break
 		}
 		// 描画で確定した行数・窓で論理 offset を収束させる (理由は listnav.Pager.Clamp の doc)
-		o.pager.Clamp(len(lines), rows)
-		start := o.pager.DrawOffset(len(lines), rows)
+		o.Pager.Clamp(len(lines), rows)
+		start := o.Pager.DrawOffset(len(lines), rows)
 		end := min(start+rows, len(lines))
 		body = make([]string, 0, end-start)
 		for _, l := range lines[start:end] {
-			body = append(body, decorateDetailLine(l, colored))
+			body = append(body, DecorateDetailLine(l, colored))
 		}
 		title = fmt.Sprintf(" %s [%d-%d/%d] ", name, start+1, end, len(lines))
 		// j/k スクロール中の現在位置を視覚化する (term.WithScrollbar が影付き枠の本文幅を補正する)。

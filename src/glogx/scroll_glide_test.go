@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"glogx/internal/commitview"
 	"glogx/internal/gitdata"
 	"glogx/internal/term"
 
@@ -38,30 +39,30 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 	})
 
 	t.Run("diff pager (Space)", func(t *testing.T) {
-		o := newDiffOverlay()
-		o.sha = "abc"
+		o := commitview.NewDiffOverlay()
+		o.Sha = "abc"
 		lines := make([]string, 100)
 		for i := range lines {
 			lines[i] = "line"
 		}
-		o.cache.Store("abc", lines, "abc")
-		o.scroll(" ", 20)
-		if !o.pager.Animating() {
+		o.Cache.Store("abc", lines, "abc")
+		o.Scroll(" ", 20)
+		if !o.Pager.Animating() {
 			t.Error("Space の半ページが glide に載っていない")
 		}
-		if got := pagerShown(&o.pager); got != 0 {
+		if got := pagerShown(&o.Pager); got != 0 {
 			t.Errorf("glide 開始位置 = %d, want 0", got)
 		}
 		// 1 行移動は glide 対象外 (距離 1 で滑らせる意味がない)
-		o.pager.Stop()
-		o.scroll("j", 20)
-		if o.pager.Animating() {
+		o.Pager.Stop()
+		o.Scroll("j", 20)
+		if o.Pager.Animating() {
 			t.Error("1 行移動が glide に載っている")
 		}
 		// 端ジャンプは即時
-		o.scroll(" ", 20)
-		o.scroll("G", 20)
-		if o.pager.Animating() {
+		o.Scroll(" ", 20)
+		o.Scroll("G", 20)
+		if o.Pager.Animating() {
 			t.Error("端ジャンプ (G) で glide が残っている")
 		}
 	})
@@ -79,11 +80,11 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 			lines[i] = "line"
 		}
 		sha := m.commits[0].SHA
-		m.diffOv.sha = sha
-		m.diffOv.cache.Store(sha, lines, sha)
+		m.diffOv.Sha = sha
+		m.diffOv.Cache.Store(sha, lines, sha)
 		m.ticking = false
 		m.handleKey(" ")
-		if !m.diffOv.pager.Animating() {
+		if !m.diffOv.Pager.Animating() {
 			t.Fatal("Space で glide が立たない (テスト前提の破れ)")
 		}
 		if !m.ticking {
@@ -109,15 +110,15 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 func TestResizeStopsAllGlides(t *testing.T) {
 	m := newTestBrowse(t, 10, map[string]gitdata.CIState{}, nil)
 	m.glide.Start(0, 10, term.ScrollAnimFrames)
-	startPagerGlide(t, &m.diffOv.pager, 0, 10)
+	startPagerGlide(t, &m.diffOv.Pager, 0, 10)
 	startPagerGlide(t, m.issuesOv.Fixture().BodyPager(), 0, 10)
 	startPagerGlide(t, m.statusOv.Fixture().Pager(), 0, 10)
 	m.issuesOv.Fixture().CursorGlide().Start(0, 10, term.CursorAnimFrames)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	if m.glide.Active() || m.diffOv.pager.Animating() || m.issuesOv.Fixture().BodyPager().Animating() ||
+	if m.glide.Active() || m.diffOv.Pager.Animating() || m.issuesOv.Fixture().BodyPager().Animating() ||
 		m.statusOv.Fixture().Pager().Animating() || m.issuesOv.Fixture().CursorGlide().Active() {
 		t.Errorf("resize で glide が残る: list=%v diff=%v issuesBody=%v status=%v issuesCursor=%v",
-			m.glide.Active(), m.diffOv.pager.Animating(), m.issuesOv.Fixture().BodyPager().Animating(),
+			m.glide.Active(), m.diffOv.Pager.Animating(), m.issuesOv.Fixture().BodyPager().Animating(),
 			m.statusOv.Fixture().Pager().Animating(), m.issuesOv.Fixture().CursorGlide().Active())
 	}
 }
@@ -151,21 +152,21 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 	})
 
 	t.Run("diff pager", func(t *testing.T) {
-		o := newDiffOverlay()
-		o.sha = "abc"
+		o := commitview.NewDiffOverlay()
+		o.Sha = "abc"
 		lines := make([]string, 200)
 		for i := range lines {
 			lines[i] = "line"
 		}
-		o.cache.Store("abc", lines, "abc")
-		o.scroll(" ", 20)
-		down := o.pager.Offset
+		o.Cache.Store("abc", lines, "abc")
+		o.Scroll(" ", 20)
+		down := o.Pager.Offset
 		if down == 0 {
 			t.Fatal("Space で下スクロールしない (テスト前提の破れ)")
 		}
-		o.scroll("shift+space", 20)
-		if o.pager.Offset >= down {
-			t.Errorf("shift+space で上に戻らない: offset %d -> %d", down, o.pager.Offset)
+		o.Scroll("shift+space", 20)
+		if o.Pager.Offset >= down {
+			t.Errorf("shift+space で上に戻らない: offset %d -> %d", down, o.Pager.Offset)
 		}
 	})
 

@@ -229,4 +229,9 @@ JSON のタグ付きのフィールドは小文字にしない。unparam (check-
   parseGitHubURL / buildDisplayArgs) は非公開に戻した (main のテストは PlanCIChunks・extcmd.RunGitTimeout を使う)。golden の gitdata は 114 行
   (データ型とフィールドが大半)。EmptyBatch は main のテストだけが使うが、空の map を持つ CIBatch を作る口として残した。
   Options → LogQuery の写しは main の TestOptionsLogQueryCarriesFetchFields が守る (テスト名は移設前 +1 の 1253)
+- [x] 2026-10-18 G-2 の 1 段目 (glogx: diff / job 詳細 / PR 状態の overlay を internal/commitview へ移す): 3 つともコミット 1 件の詳細を重ねる
+  overlay なので 1 パッケージにした。render.go と共有する decorateDetailLine / prStateColor と、tui.go の diffMsg / jobDetailMsg も一緒に移した。
+  テスト名は前後で一致 (1253)。**公開名はまだ絞っていない** (golden 53 行。フィールド Cache / Pager / Sha / Open / Busy と Msg のフィールドが公開)。
+  main のテストがフィールドを 100 か所以上、tui.go が 20 か所ほど直接触るので、C と同じく Fixture の口へ書き換えてから非公開に戻すのが 2 段目 (未着手)。
+  action_modal.go は main に残す (上の「G の判断」)
 

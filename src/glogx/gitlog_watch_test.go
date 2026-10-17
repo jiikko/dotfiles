@@ -83,7 +83,7 @@ func TestFingerprintSHAsMatchesCommits(t *testing.T) {
 // キャッシュを消すため、気づいても反映できない = fork が無駄になる。
 func TestGitLogProbeSkipsMeasureWhileOverlayOpen(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
-	m.diffOv.open(m.commits[0].SHA)
+	m.diffOv.Open(m.commits[0].SHA)
 	if !m.gitLogReloadDeferred() {
 		t.Fatal("diff ポップアップを開いても見送り状態にならない")
 	}
@@ -96,7 +96,7 @@ func TestGitLogProbeSkipsMeasureWhileOverlayOpen(t *testing.T) {
 	if m.logWatch.hasSeen {
 		t.Error("見送りで基準を触った (触ると閉じた後の観測で変化を見落とす)")
 	}
-	m.diffOv.close()
+	m.diffOv.Close()
 	m.handleGitLogProbe(gitLogProbeMsg{})
 	if !m.logWatch.measuring {
 		t.Error("ポップアップを閉じた後の観測で測定が始まらない")
@@ -112,7 +112,7 @@ func TestGitLogProbeSkipsMeasureWhileOverlayOpen(t *testing.T) {
 // 札が空いて 2 本目が張られる (観測 1 回ごとに goroutine が 1 本積み上がる)。
 func TestGitLogProbeDropsOnlyDeliveringChain(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
-	m.diffOv.open(m.commits[0].SHA) // 測定を挟まず札の扱いだけを見る
+	m.diffOv.Open(m.commits[0].SHA) // 測定を挟まず札の扱いだけを見る
 	m.logWatch.W = nil              // イベント経路は張り直せない = 札の変化がそのまま見える
 	m.logWatch.EvArmed, m.logWatch.PollArmed = true, true
 	if cmd := m.handleGitLogProbe(gitLogProbeMsg{fromEvent: true}); cmd != nil {
@@ -415,7 +415,7 @@ func TestGitLogFPDefersWhenOverlayOpensDuringMeasure(t *testing.T) {
 		t.Fatal("測定が始まらない")
 	}
 	commitLines(t, dir, 9, "c3")
-	m.diffOv.open(m.commits[0].SHA) // 測定中に開かれた
+	m.diffOv.Open(m.commits[0].SHA) // 測定中に開かれた
 	if cmd := m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true}); cmd != nil {
 		t.Error("ポップアップを開いている状態で反映した (開いている内容のキャッシュが消える)")
 	}
@@ -495,9 +495,9 @@ func TestGitLogReloadDeferredCoversEachState(t *testing.T) {
 	}{
 		{"push 確認モーダル", func(m *browseModel) { m.actModal.pushConfirm = true }},
 		{"pull 実行中", func(m *browseModel) { m.actModal.pulling = true }},
-		{"diff ポップアップ", func(m *browseModel) { m.diffOv.open(m.commits[0].SHA) }},
-		{"PR 状態ポップアップ", func(m *browseModel) { m.prStatusOv.open(m.commits[0].SHA) }},
-		{"job 詳細ログ", func(m *browseModel) { m.detailOv.startOpen("k", 5) }},
+		{"diff ポップアップ", func(m *browseModel) { m.diffOv.Open(m.commits[0].SHA) }},
+		{"PR 状態ポップアップ", func(m *browseModel) { m.prStatusOv.Open(m.commits[0].SHA) }},
+		{"job 詳細ログ", func(m *browseModel) { m.detailOv.StartOpen("k", 5) }},
 		{"pull の演出中", func(m *browseModel) { m.pullAnimating = true }},
 		{"push の演出中", func(m *browseModel) { m.pushAnimating = true }},
 		{"job パネル", func(m *browseModel) { m.panelSHA = m.commits[0].SHA }},
@@ -638,7 +638,7 @@ func TestGitLogReloadDefersWhenOverlayOpensDuringReload(t *testing.T) {
 	commitLines(t, dir, 9, "c3")
 	cmd := m.reflectGitLogChange()
 	msg := cmd()
-	m.diffOv.open(m.commits[0].SHA) // 読み直し中に開かれた
+	m.diffOv.Open(m.commits[0].SHA) // 読み直し中に開かれた
 	if cmd := m.handleGitLogReload(msg.(gitLogReloadMsg)); cmd != nil {
 		t.Error("ポップアップを開いている状態で反映した")
 	}

@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 
 	"glogx/internal/app"
+	"glogx/internal/commitview"
 	"glogx/internal/extcmd"
 	"glogx/internal/gitdata"
 	"glogx/internal/issuesview/issuesviewtest"
@@ -319,12 +319,12 @@ func TestBrowseEnterOpensDetailAndToggles(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	_, cmd := m.handleKey("enter")
-	if cmd == nil || !m.detailOv.open {
-		t.Fatalf("job 行の Enter で詳細が開かない (cmd=%v detailOpen=%v)", cmd, m.detailOv.open)
+	if cmd == nil || !m.detailOv.Open {
+		t.Fatalf("job 行の Enter で詳細が開かない (cmd=%v detailOpen=%v)", cmd, m.detailOv.Open)
 	}
-	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"line"}})
+	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: []string{"line"}})
 	m.handleKey("enter")
-	if m.detailOv.open {
+	if m.detailOv.Open {
 		t.Errorf("詳細表示中の Enter で閉じない (toggle)")
 	}
 	if m.panelSHA == "" || m.panelCursor != 0 {
@@ -621,9 +621,9 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.open = true
+	m.detailOv.Open = true
 	m.panelCursor = 0
-	m.detailOv.cache.Store(m.detailKey(), []string{term.AnsiRed + "boom" + term.AnsiReset, "at foo.go:10"}, m.detailKey())
+	m.detailOv.Cache.Store(m.detailKey(), []string{term.AnsiRed + "boom" + term.AnsiReset, "at foo.go:10"}, m.detailKey())
 
 	_, cmd := m.handleKey("v")
 	if cmd == nil || len(*cmds) != 1 {
@@ -666,7 +666,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	}
 
 	// ログが空なら起動しない
-	m.detailOv.cache.Store(m.detailKey(), nil, m.detailKey())
+	m.detailOv.Cache.Store(m.detailKey(), nil, m.detailKey())
 	if _, cmd := m.handleKey("v"); cmd != nil {
 		t.Error("空ログで nvim を起動しようとした")
 	}
@@ -683,7 +683,7 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("l で詳細取得 Cmd が返らない")
 	}
-	if !m.detailOv.open || !m.detailOv.cache.Loading(m.detailKey()) {
+	if !m.detailOv.Open || !m.detailOv.Cache.Loading(m.detailKey()) {
 		t.Fatalf("詳細が開いていない / busy でない")
 	}
 	if !strings.Contains(m.View().Content, "詳細を取得中") {
@@ -694,10 +694,10 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	for i := range lines {
 		lines[i] = fmt.Sprintf("log line %d", i)
 	}
-	m.Update(jobDetailMsg{key: m.detailKey(), lines: lines})
+	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: lines})
 	rows := m.visibleDetailRows()
-	if m.detailOv.pager.Offset != 30-rows {
-		t.Errorf("detailOffset = %d; want 末尾表示 %d", m.detailOv.pager.Offset, 30-rows)
+	if m.detailOv.Pager.Offset != 30-rows {
+		t.Errorf("detailOffset = %d; want 末尾表示 %d", m.detailOv.Pager.Offset, 30-rows)
 	}
 	if !strings.Contains(m.View().Content, "log line 29") {
 		t.Errorf("末尾行が見えていない (低い端末でも末尾は見える):\n%s", m.View().Content)
@@ -715,23 +715,23 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	}
 	// k で上へスクロール、g で先頭
 	m.handleKey("k")
-	if m.detailOv.pager.Offset != 30-rows-1 {
-		t.Errorf("k 後の offset = %d", m.detailOv.pager.Offset)
+	if m.detailOv.Pager.Offset != 30-rows-1 {
+		t.Errorf("k 後の offset = %d", m.detailOv.Pager.Offset)
 	}
 	m.handleKey("g")
-	if m.detailOv.pager.Offset != 0 {
-		t.Errorf("g 後の offset = %d", m.detailOv.pager.Offset)
+	if m.detailOv.Pager.Offset != 0 {
+		t.Errorf("g 後の offset = %d", m.detailOv.Pager.Offset)
 	}
 	// h で job フォーカスへ戻る (パネルは開いたまま)
 	m.handleKey("h")
-	if m.detailOv.open || m.panelSHA == "" || m.panelCursor != 0 {
-		t.Errorf("h 後の状態: detailOpen=%v panelSHA=%q cursor=%d", m.detailOv.open, m.panelSHA, m.panelCursor)
+	if m.detailOv.Open || m.panelSHA == "" || m.panelCursor != 0 {
+		t.Errorf("h 後の状態: detailOpen=%v panelSHA=%q cursor=%d", m.detailOv.Open, m.panelSHA, m.panelCursor)
 	}
 	// 再度 l → キャッシュ済みなので fetch なしで即表示
 	if _, cmd := m.handleKey("l"); cmd != nil {
 		t.Errorf("キャッシュ済み詳細で再 fetch した")
 	}
-	if !m.detailOv.open {
+	if !m.detailOv.Open {
 		t.Errorf("2 回目の l で開かない")
 	}
 }
@@ -749,19 +749,19 @@ func TestBrowseJobDetailReopenScrollsToTail(t *testing.T) {
 	for i := range lines {
 		lines[i] = fmt.Sprintf("log line %d", i)
 	}
-	m.Update(jobDetailMsg{key: m.detailKey(), lines: lines})
+	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: lines})
 	m.handleKey("g") // 先頭へ
-	if m.detailOv.pager.Offset != 0 {
-		t.Fatalf("g で先頭に来ていない: offset=%d", m.detailOv.pager.Offset)
+	if m.detailOv.Pager.Offset != 0 {
+		t.Fatalf("g で先頭に来ていない: offset=%d", m.detailOv.Pager.Offset)
 	}
 	m.handleKey("h") // 閉じる (cache は残る)
-	if m.detailOv.open {
+	if m.detailOv.Open {
 		t.Fatal("h で閉じていない")
 	}
 	m.handleKey("l") // 再オープン (キャッシュヒット)
 	rows := m.visibleDetailRows()
-	if m.detailOv.pager.Offset != 30-rows {
-		t.Errorf("再オープン時の offset = %d; want 末尾 %d (最新ログを表示)", m.detailOv.pager.Offset, 30-rows)
+	if m.detailOv.Pager.Offset != 30-rows {
+		t.Errorf("再オープン時の offset = %d; want 末尾 %d (最新ログを表示)", m.detailOv.Pager.Offset, 30-rows)
 	}
 	if !strings.Contains(m.View().Content, "log line 29") {
 		t.Errorf("再オープンで末尾行が見えない:\n%s", m.View().Content)
@@ -778,10 +778,10 @@ func TestBrowseJobDetailStaleMsgDoesNotMoveOffset(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j") // job0 (key = panelSHA/0)
 	m.handleKey("l")
-	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"a", "b", "c"}})
+	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: []string{"a", "b", "c"}})
 	m.handleKey("g") // offset=0
-	if m.detailOv.pager.Offset != 0 {
-		t.Fatalf("前提: offset=0 でない (%d)", m.detailOv.pager.Offset)
+	if m.detailOv.Pager.Offset != 0 {
+		t.Fatalf("前提: offset=0 でない (%d)", m.detailOv.Pager.Offset)
 	}
 	// 別 job (job1) 宛の遅延結果が届いても、今開いている job0 の offset は動かない
 	staleKey := m.panelSHA + "/1"
@@ -789,15 +789,15 @@ func TestBrowseJobDetailStaleMsgDoesNotMoveOffset(t *testing.T) {
 	for i := range longLines {
 		longLines[i] = fmt.Sprintf("stale %d", i)
 	}
-	m.Update(jobDetailMsg{key: staleKey, lines: longLines})
-	if m.detailOv.pager.Offset != 0 {
-		t.Errorf("別 key の遅延結果で offset が動いた: %d; want 0", m.detailOv.pager.Offset)
+	m.Update(commitview.JobDetailMsg{Key: staleKey, Lines: longLines})
+	if m.detailOv.Pager.Offset != 0 {
+		t.Errorf("別 key の遅延結果で offset が動いた: %d; want 0", m.detailOv.Pager.Offset)
 	}
 	// 詳細を閉じた状態でも jobDetailMsg は offset を動かさない
 	m.handleKey("h")
-	m.Update(jobDetailMsg{key: m.detailKey(), lines: longLines})
-	if m.detailOv.pager.Offset != 0 {
-		t.Errorf("詳細非表示中に offset が動いた: %d; want 0", m.detailOv.pager.Offset)
+	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: longLines})
+	if m.detailOv.Pager.Offset != 0 {
+		t.Errorf("詳細非表示中に offset が動いた: %d; want 0", m.detailOv.Pager.Offset)
 	}
 }
 
@@ -810,9 +810,9 @@ func TestBrowseJobDetailSpaceCloses(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("l")
-	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"x", "y", "z"}})
+	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: []string{"x", "y", "z"}})
 	m.handleKey(" ")
-	if m.detailOv.open {
+	if m.detailOv.Open {
 		t.Error("Space で詳細が閉じない (job 詳細では Space=閉じる)")
 	}
 	if m.panelSHA == "" {
@@ -830,15 +830,15 @@ func TestBrowseClosePanelClosesOpenDetail(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("l")
-	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"a", "b", "c", "d", "e"}})
+	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: []string{"a", "b", "c", "d", "e"}})
 	m.handleKey("G") // offset を非 0 に
-	if !m.detailOv.open {
+	if !m.detailOv.Open {
 		t.Fatal("前提: 詳細が開いていない")
 	}
 	m.closePanel()
-	if m.detailOv.open || m.detailOv.pager.Offset != 0 || m.panelSHA != "" {
+	if m.detailOv.Open || m.detailOv.Pager.Offset != 0 || m.panelSHA != "" {
 		t.Errorf("closePanel が詳細を落とさない: detailOpen=%v detailOffset=%d panelSHA=%q",
-			m.detailOv.open, m.detailOv.pager.Offset, m.panelSHA)
+			m.detailOv.Open, m.detailOv.Pager.Offset, m.panelSHA)
 	}
 }
 
@@ -851,7 +851,7 @@ func TestBrowseJobDetailFetchKeepsSpinnerActive(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("l") // 未取得なので busy が立つ
-	if !m.detailOv.cache.Loading(m.detailKey()) {
+	if !m.detailOv.Cache.Loading(m.detailKey()) {
 		t.Fatal("前提: 取得中フラグが立っていない")
 	}
 	if !m.spinnerActive() {
@@ -865,16 +865,16 @@ func TestBrowseReloadAfterPullResetsJobDetailCache(t *testing.T) {
 	newTempRepo(t, []string{"first", "second"})
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.opts = &Options{MaxCount: 20}
-	m.detailOv.cache.Store("stale/0", []string{"old log"}, "stale/0")
+	m.detailOv.Cache.Store("stale/0", []string{"old log"}, "stale/0")
 	// 🚨 札は未キャッシュのキーで立てる: begin はキャッシュ済みなら何もしないので、
 	// 上と同じキーに対して呼ぶと busy が空のまま = 下の busy 検査が空振りになる
-	if !m.detailOv.cache.Begin("inflight/1") {
+	if !m.detailOv.Cache.Begin("inflight/1") {
 		t.Fatal("走行中の札を立てられない (前提が崩れた)")
 	}
 	m.reloadAfterPull()
-	if m.detailOv.cache.Len() != 0 || m.detailOv.cache.Fetching() {
+	if m.detailOv.Cache.Len() != 0 || m.detailOv.Cache.Fetching() {
 		t.Errorf("reloadAfterPull で job 詳細キャッシュが残った: cache=%d fetching=%v",
-			m.detailOv.cache.Len(), m.detailOv.cache.Fetching())
+			m.detailOv.Cache.Len(), m.detailOv.Cache.Fetching())
 	}
 }
 
@@ -1134,65 +1134,6 @@ func TestBrowseRerunNoDoublePoll(t *testing.T) {
 	}
 	if m.ensureCIPoll() != nil {
 		t.Fatal("rerun 後もチェーンは 1 本のはず (二重化した)")
-	}
-}
-
-// job 詳細ポップアップの本文にスクロールバー列が出ても枠が崩れない (全行が同じ表示幅) ことと、
-// 全行が収まるときはバー列が出ないこと。term.WithScrollbar の単体テストではなく描画経路 (boxLines)
-// で幅の均一性を見る (rows と len(lines) の噛み合わせが崩れる回帰を捕まえる)。
-func TestJobDetailBoxLinesScrollbar(t *testing.T) {
-	logLines := func(n int) []string {
-		out := make([]string, n)
-		for i := range out {
-			out[i] = "log line"
-		}
-		return out
-	}
-	const width, rows = 50, 8
-	o := newJobDetailOverlay()
-	o.open = true
-
-	// 溢れる: バー列あり + 幅は均一 + offset に応じて thumb が動く
-	o.cache.Store("over", logLines(50), "over")
-	o.pager.Offset = 20
-	box := o.boxLines(width, false, "", "job", "over", rows)
-	uniformWidth(t, box)
-	// 影付き箱: 末尾 2 行は下辺 (▖▁▗+影) と下端影なので本文から除く。本文行の行末は
-	// 右影 1 桁 (NO_COLOR は ░/▒) が付く
-	body := box[1 : len(box)-2]
-	thumbs := 0
-	for i, l := range body {
-		shade := layout.ShadowMono
-		if i == 0 {
-			shade = layout.ShadowMonoEdge
-		}
-		trimmed := strings.TrimSuffix(strings.TrimSuffix(l, shade), " "+layout.BorderLight.V)
-		switch {
-		case strings.HasSuffix(trimmed, layout.ScrollbarThumb):
-			thumbs++
-		case strings.HasSuffix(trimmed, layout.ScrollbarTrack):
-		default:
-			t.Fatalf("本文行 %d にバー列が無い: %q", i, l)
-		}
-	}
-	if thumbs == 0 || thumbs == len(body) {
-		t.Fatalf("thumb 行数 = %d (本文 %d 行) — 比率になっていない", thumbs, len(body))
-	}
-
-	// colored でも幅は均一 (SGR 入りの影・バー列が幅計算を狂わせない)
-	uniformWidth(t, o.boxLines(width, true, "", "job", "over", rows))
-
-	// 収まる: バー列なし (本文幅が戻る)。幅は溢れる場合と同じ (枠幅は不変)
-	o.cache.Store("fit", logLines(rows-2), "fit")
-	o.pager.Offset = 0
-	fit := o.boxLines(width, false, "", "job", "fit", rows)
-	if w := uniformWidth(t, fit); w != term.DispWidth(term.StripANSI(box[0])) {
-		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, term.DispWidth(term.StripANSI(box[0])))
-	}
-	for i, l := range fit[1 : len(fit)-2] {
-		if strings.Contains(l, layout.ScrollbarThumb) {
-			t.Fatalf("収まるのに thumb が出ている (行 %d): %q", i, l)
-		}
 	}
 }
 

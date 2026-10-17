@@ -8,17 +8,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
-
 	"glogx/issues"
 	"ratelimit/usage"
 
 	"glogx/internal/app"
+	"glogx/internal/commitview"
 	"glogx/internal/extcmd"
 	"glogx/internal/gitdata"
 	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
-	"glogx/internal/statusview"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 
@@ -161,7 +159,7 @@ func TestBrowseGhErrClearedOnSuccess(t *testing.T) {
 		t.Errorf("成功 basis 後も ghErr が残っている: %v", m.ghErr)
 	}
 	m.ghErr = &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom3"}
-	m.Update(jobDetailMsg{key: "k", lines: []string{"x"}, ghErr: nil})
+	m.Update(commitview.JobDetailMsg{Key: "k", Lines: []string{"x"}, GhErr: nil})
 	if m.ghErr != nil {
 		t.Errorf("成功 jobDetail 後も ghErr が残っている: %v", m.ghErr)
 	}
@@ -221,17 +219,17 @@ func TestBrowseDiffOpenScrollClose(t *testing.T) {
 	calls := stubDiff(t, diffLines, nil)
 
 	_, cmd := m.handleKey("d")
-	if m.diffOv.sha != m.commits[0].SHA {
-		t.Fatalf("diffSHA = %q; want カーソル位置のコミット", m.diffOv.sha)
+	if m.diffOv.Sha != m.commits[0].SHA {
+		t.Fatalf("diffSHA = %q; want カーソル位置のコミット", m.diffOv.Sha)
 	}
-	if !m.diffOv.cache.Loading(m.diffOv.sha) {
+	if !m.diffOv.Cache.Loading(m.diffOv.Sha) {
 		t.Error("取得中フラグが立っていない")
 	}
 	deliverDiffMsg(t, m, cmd)
 	if len(*calls) != 1 || (*calls)[0] != m.commits[0].SHA {
 		t.Fatalf("loadCommitDiff の呼び出し = %v", *calls)
 	}
-	if m.diffOv.cache.Loading(m.diffOv.sha) {
+	if m.diffOv.Cache.Loading(m.diffOv.Sha) {
 		t.Error("取得完了後も busy のまま")
 	}
 	view := m.View().Content
@@ -240,129 +238,17 @@ func TestBrowseDiffOpenScrollClose(t *testing.T) {
 	}
 	// スクロール: j で 1 行、G で末尾
 	m.handleKey("j")
-	if m.diffOv.pager.Offset != 1 {
-		t.Errorf("j 後の offset = %d; want 1", m.diffOv.pager.Offset)
+	if m.diffOv.Pager.Offset != 1 {
+		t.Errorf("j 後の offset = %d; want 1", m.diffOv.Pager.Offset)
 	}
 	m.handleKey("G")
-	if m.diffOv.pager.Offset != len(diffLines)-m.visibleDiffRows() {
-		t.Errorf("G 後の offset = %d", m.diffOv.pager.Offset)
+	if m.diffOv.Pager.Offset != len(diffLines)-m.visibleDiffRows() {
+		t.Errorf("G 後の offset = %d", m.diffOv.Pager.Offset)
 	}
 	// q で閉じる (アプリは終了しない)
 	m.handleKey("q")
-	if m.diffOv.sha != "" || m.done {
-		t.Errorf("q: diffSHA=%q done=%v; want 閉じるのみ", m.diffOv.sha, m.done)
-	}
-}
-
-// diff ポップアップの本文にスクロールバー列が出ても枠が崩れない (全行が同じ表示幅) ことと、
-// 全行が収まるときはバー列が出ないこと (TestJobDetailBoxLinesScrollbar の diff 版。
-// term.WithScrollbar の単体テストではなく描画経路 boxLines で幅の均一性を見る)。
-func TestDiffBoxLinesScrollbar(t *testing.T) {
-	diffLines := func(n int) []string {
-		out := make([]string, n)
-		for i := range out {
-			out[i] = "diff line"
-		}
-		return out
-	}
-	const width, rows = 50, 8
-	commit := &gitdata.Commit{SHA: "a", ShortSHA: "abc1234", Subject: "subject"}
-	o := newDiffOverlay()
-
-	// 溢れる: バー列あり + 幅は均一 + thumb は比率
-	o.sha = commit.SHA
-	o.cache.Store(commit.SHA, diffLines(50), commit.SHA)
-	o.pager.Offset = 20
-	box := o.boxLines(width, false, "", commit, rows)
-	uniformWidth(t, box)
-	// 影付き箱: 末尾 2 行は下辺 (▖▁▗+影) と下端影なので本文から除く。本文行の行末は
-	// 右影 1 桁 (NO_COLOR は ░/▒) が付く
-	body := box[1 : len(box)-2]
-	thumbs := 0
-	for i, l := range body {
-		shade := layout.ShadowMono
-		if i == 0 {
-			shade = layout.ShadowMonoEdge
-		}
-		trimmed := strings.TrimSuffix(strings.TrimSuffix(l, shade), " "+layout.BorderLight.V)
-		switch {
-		case strings.HasSuffix(trimmed, layout.ScrollbarThumb):
-			thumbs++
-		case strings.HasSuffix(trimmed, layout.ScrollbarTrack):
-		default:
-			t.Fatalf("本文行 %d にバー列が無い: %q", i, l)
-		}
-	}
-	if thumbs == 0 || thumbs == len(body) {
-		t.Fatalf("thumb 行数 = %d (本文 %d 行) — 比率になっていない", thumbs, len(body))
-	}
-
-	// colored でも幅は均一 (SGR 入りの影・バー列が幅計算を狂わせない)
-	uniformWidth(t, o.boxLines(width, true, "", commit, rows))
-
-	// 収まる: バー列なし (本文幅が戻る)。枠幅は溢れる場合と同じ
-	o.cache.Store(commit.SHA, diffLines(rows-2), commit.SHA)
-	o.pager.Offset = 0
-	fit := o.boxLines(width, false, "", commit, rows)
-	if w := uniformWidth(t, fit); w != term.DispWidth(term.StripANSI(box[0])) {
-		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, term.DispWidth(term.StripANSI(box[0])))
-	}
-	for i, l := range fit[1 : len(fit)-2] {
-		if strings.Contains(l, layout.ScrollbarThumb) {
-			t.Fatalf("収まるのに thumb が出ている (行 %d): %q", i, l)
-		}
-	}
-}
-
-// pager overlay の描画は offset を「窓 (total-rows)」へ再クランプすること。offset はキー処理側
-// (term.PagerScrollKey 等) がその時点の rows でクランプするが、G で末尾へ行った後にリサイズで rows が
-// 増えると保存済み offset が窓の上限を越えたまま残る。描画側で clampScrollOffset を通さないと、
-// 広がった分の行を使わず末尾数行だけの箱になる (status viewer の pagerBox と同じ規律)。
-func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
-	lines := make([]string, 50)
-	for i := range lines {
-		lines[i] = "line"
-	}
-	const width, rows = 50, 8 // 期待窓: start=42 → タイトル [43-50/50]
-
-	commit := &gitdata.Commit{SHA: "a", ShortSHA: "abc1234", Subject: "subject"}
-	d := newDiffOverlay()
-	d.sha = commit.SHA
-	d.cache.Store(commit.SHA, lines, commit.SHA)
-	d.pager.Offset = 49 // 旧 rows で G → リサイズで rows が増えた後を想定 (窓上限 42 を越えている)
-	if title := d.boxLines(width, false, "", commit, rows)[0]; !strings.Contains(title, "[43-50/50]") {
-		t.Errorf("diff overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
-	}
-
-	// 🚨 描画 (title) だけでなく **論理 offset フィールドが収束したか**も見る。描画は毎回
-	// clamp するので title は書き戻しが無くても正しく、上スクロールだけが死ぬ (k / up /
-	// ctrl+p は max(offset-n, 0) しか見ないため rows_new - rows_old 打鍵ぶん無反応。
-	// 実測 2026-08-21: diff 33 打鍵 / job 詳細 11 打鍵)。title だけの検査ではこの退行が緑になる。
-	if d.pager.Offset != 42 {
-		t.Errorf("diff overlay が論理 offset を書き戻していない: offset=%d, want 42 (上スクロールが死ぬ)", d.pager.Offset)
-	}
-
-	j := newJobDetailOverlay()
-	j.open = true
-	j.cache.Store("key", lines, "key")
-	j.pager.Offset = 49
-	if title := j.boxLines(width, false, "", "job", "key", rows)[0]; !strings.Contains(title, "[43-50/50]") {
-		t.Errorf("job 詳細 overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
-	}
-	if j.pager.Offset != 42 {
-		t.Errorf("job 詳細 overlay が論理 offset を書き戻していない: offset=%d, want 42", j.pager.Offset)
-	}
-
-	// status viewer の全画面 diff も同じ規律 (pagerRows = page - 5 なので page 13 で rows 8)
-	sv := newTestStatusView(t, "")
-	sv.Fixture().SetPager("k", "t")
-	sv.Fixture().Preview().Store("k", lines, "k")
-	sv.Fixture().Pager().Offset = 49
-	if title := sv.Fixture().PagerBox(statusview.StatusRenderOpts{Width: width, Page: rows + 5})[0]; !strings.Contains(title, "[43-50/50]") {
-		t.Errorf("status viewer の pager が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
-	}
-	if sv.Fixture().Pager().Offset != 42 {
-		t.Errorf("status viewer の pager が論理 offset を書き戻していない: offset=%d, want 42", sv.Fixture().Pager().Offset)
+	if m.diffOv.Sha != "" || m.done {
+		t.Errorf("q: diffSHA=%q done=%v; want 閉じるのみ", m.diffOv.Sha, m.done)
 	}
 }
 
@@ -373,7 +259,7 @@ func TestBrowseDiffToggleAndCache(t *testing.T) {
 	deliverDiffMsg(t, m, cmd)
 	releaseKey(m)    // 指を離してから押し直す (キーリピート判定を跨ぐ)
 	m.handleKey("d") // toggle 閉
-	if m.diffOv.sha != "" {
+	if m.diffOv.Sha != "" {
 		t.Fatal("d の再押下で閉じていない")
 	}
 	releaseKey(m)
@@ -384,7 +270,7 @@ func TestBrowseDiffToggleAndCache(t *testing.T) {
 	if len(*calls) != 1 {
 		t.Errorf("loadCommitDiff 呼び出し回数 = %d; want 1 (キャッシュ)", len(*calls))
 	}
-	if m.diffOv.sha == "" {
+	if m.diffOv.Sha == "" {
 		t.Error("キャッシュヒット時に開いていない")
 	}
 }
@@ -398,8 +284,8 @@ func TestBrowseDiffFromPanelUsesPanelSHA(t *testing.T) {
 	}
 	stubDiff(t, []string{"x"}, nil)
 	m.handleKey("d")
-	if m.diffOv.sha != m.commits[0].SHA {
-		t.Errorf("diffSHA = %q; want panel のコミット", m.diffOv.sha)
+	if m.diffOv.Sha != m.commits[0].SHA {
+		t.Errorf("diffSHA = %q; want panel のコミット", m.diffOv.Sha)
 	}
 	if m.panelSHA != "" {
 		t.Error("diff を開いたら panel は閉じる契約")
@@ -411,7 +297,7 @@ func TestBrowseDiffErrorShowsToastAndCloses(t *testing.T) {
 	stubDiff(t, nil, errors.New("boom"))
 	_, cmd := m.handleKey("d")
 	deliverDiffMsg(t, m, cmd)
-	if m.diffOv.sha != "" {
+	if m.diffOv.Sha != "" {
 		t.Error("取得失敗時にポップアップが開いたまま")
 	}
 	if m.toast.OK() || !strings.Contains(m.toast.Text(), "diff の取得に失敗") {
@@ -436,38 +322,38 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	maxOffset := len(diffLines) - m.visibleDiffRows()
 
 	m.handleKey(" ")
-	if m.diffOv.sha == "" {
+	if m.diffOv.Sha == "" {
 		t.Fatal("Space で閉じた (半ページスクロールのはず)")
 	}
-	if m.diffOv.pager.Offset == 0 {
+	if m.diffOv.Pager.Offset == 0 {
 		t.Error("Space でスクロールしていない")
 	}
 	m.handleKey("enter")
-	if m.diffOv.sha == "" {
+	if m.diffOv.Sha == "" {
 		t.Fatal("Enter で閉じた (1 行スクロールのはず)")
 	}
 	// 末尾を大きく超えて送っても最終行位置で止まり、開いたまま
 	for range 100 {
 		m.handleKey(" ")
 	}
-	if m.diffOv.sha == "" {
+	if m.diffOv.Sha == "" {
 		t.Fatal("末尾到達後のスクロールで閉じた")
 	}
-	if m.diffOv.pager.Offset != maxOffset {
-		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOv.pager.Offset, maxOffset)
+	if m.diffOv.Pager.Offset != maxOffset {
+		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOv.Pager.Offset, maxOffset)
 	}
 	// 半ページ移動は glide (internal/term/scroll_glide.go) で数フレームかけて着地する。🚨 ここで手で
 	// advanceGlide を呼ぶ前に「キー処理が tick を返している」ことを必ず確かめる: 手で進める
 	// だけのテストは、tick を張り忘れて実機で永久に固まるバグ (敵対的レビュー P1) を隠す。
 	// 🚨 cmd の nil 判定では足りない: maybeTick は single-flight で、既にチェーンが生きていれば
 	// nil を返す。不変条件は「glide 中は tick チェーンが生きている (m.ticking)」。
-	if m.handleKey(" "); m.diffOv.pager.Animating() && !m.ticking {
+	if m.handleKey(" "); m.diffOv.Pager.Animating() && !m.ticking {
 		t.Fatal("glide 中なのに tick チェーンが無い (実機では中途位置で固まる)")
 	}
 	for range term.ScrollAnimFrames {
-		m.diffOv.advanceGlide()
+		m.diffOv.AdvanceGlide()
 	}
-	if m.diffOv.pager.Animating() {
+	if m.diffOv.Pager.Animating() {
 		t.Errorf("%d フレームで glide が着地しない", term.ScrollAnimFrames)
 	}
 	view := m.View().Content
@@ -476,8 +362,8 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	}
 	// 閉じるのは q
 	m.handleKey("q")
-	if m.diffOv.sha != "" || m.done {
-		t.Errorf("q: diffSHA=%q done=%v", m.diffOv.sha, m.done)
+	if m.diffOv.Sha != "" || m.done {
+		t.Errorf("q: diffSHA=%q done=%v", m.diffOv.Sha, m.done)
 	}
 }
 
@@ -487,7 +373,7 @@ func TestBrowseDiffEmptyShowsMessage(t *testing.T) {
 	stubDiff(t, []string{}, nil)
 	_, cmd := m.handleKey("d")
 	deliverDiffMsg(t, m, cmd)
-	if m.diffOv.sha == "" {
+	if m.diffOv.Sha == "" {
 		t.Fatal("空 diff でポップアップが閉じてしまった (エラーではないので開いたままが仕様)")
 	}
 	if v := term.StripANSI(m.View().Content); !strings.Contains(v, "diff はありません") {
@@ -507,7 +393,7 @@ func TestBrowseDiffCopyURLWhileOpen(t *testing.T) {
 	if *copied != want {
 		t.Errorf("diff 表示中の y でコピーされた URL = %q; want %q", *copied, want)
 	}
-	if m.diffOv.sha == "" {
+	if m.diffOv.Sha == "" {
 		t.Error("y でポップアップが閉じた (コピーのみが仕様)")
 	}
 }
@@ -524,21 +410,21 @@ func TestBrowseDiffScrollUpClampAndReset(t *testing.T) {
 	deliverDiffMsg(t, m, cmd)
 
 	m.handleKey("G") // 末尾へ
-	end := m.diffOv.pager.Offset
+	end := m.diffOv.Pager.Offset
 	if end == 0 {
 		t.Fatal("G で末尾へ動いていない")
 	}
 	m.handleKey("b") // 半ページ戻る
-	if m.diffOv.pager.Offset >= end || m.diffOv.pager.Offset < 0 {
-		t.Errorf("b (半ページ上) 後の offset = %d; want 0<=x<%d", m.diffOv.pager.Offset, end)
+	if m.diffOv.Pager.Offset >= end || m.diffOv.Pager.Offset < 0 {
+		t.Errorf("b (半ページ上) 後の offset = %d; want 0<=x<%d", m.diffOv.Pager.Offset, end)
 	}
 	m.handleKey("g") // 先頭
-	if m.diffOv.pager.Offset != 0 {
-		t.Errorf("g 後の offset = %d; want 0", m.diffOv.pager.Offset)
+	if m.diffOv.Pager.Offset != 0 {
+		t.Errorf("g 後の offset = %d; want 0", m.diffOv.Pager.Offset)
 	}
 	m.handleKey("k") // 先頭で k は 0 に張り付く
-	if m.diffOv.pager.Offset != 0 {
-		t.Errorf("先頭での k 後の offset = %d; want 0 (クランプ)", m.diffOv.pager.Offset)
+	if m.diffOv.Pager.Offset != 0 {
+		t.Errorf("先頭での k 後の offset = %d; want 0 (クランプ)", m.diffOv.Pager.Offset)
 	}
 }
 
@@ -549,8 +435,8 @@ func TestBrowseDiffEscCloses(t *testing.T) {
 	_, cmd := m.handleKey("d")
 	deliverDiffMsg(t, m, cmd)
 	m.handleKey("esc")
-	if m.diffOv.sha != "" || m.done {
-		t.Errorf("esc: diffSHA=%q done=%v; want 閉じるのみ", m.diffOv.sha, m.done)
+	if m.diffOv.Sha != "" || m.done {
+		t.Errorf("esc: diffSHA=%q done=%v; want 閉じるのみ", m.diffOv.Sha, m.done)
 	}
 }
 
@@ -561,21 +447,21 @@ func TestBrowseDiffStaleErrorDoesNotCloseCurrent(t *testing.T) {
 	stubDiff(t, []string{"x"}, nil)
 	_, cmd := m.handleKey("d") // commit[0] の diff を開く
 	deliverDiffMsg(t, m, cmd)
-	current := m.diffOv.sha
+	current := m.diffOv.Sha
 	if current == "" {
 		t.Fatal("diff が開いていない")
 	}
 	// commit[1] 宛の古いエラーが遅れて到着 (直接 Update へ流す)
-	m.Update(diffMsg{sha: m.commits[1].SHA, err: errors.New("stale boom")})
-	if m.diffOv.sha != current {
-		t.Errorf("別 SHA のエラーで現在の diff が閉じた: diffSHA=%q; want %q", m.diffOv.sha, current)
+	m.Update(commitview.DiffMsg{Sha: m.commits[1].SHA, Err: errors.New("stale boom")})
+	if m.diffOv.Sha != current {
+		t.Errorf("別 SHA のエラーで現在の diff が閉じた: diffSHA=%q; want %q", m.diffOv.Sha, current)
 	}
 	// 表示中でない SHA の遅延エラーは警告トーストも出さない (2026-07-29)
 	if m.lastWarning != "" {
 		t.Errorf("stale な diff エラーで警告が出た: %q", m.lastWarning)
 	}
 	// 表示中の SHA のエラーは従来どおり警告する
-	m.Update(diffMsg{sha: current, err: errors.New("current boom")})
+	m.Update(commitview.DiffMsg{Sha: current, Err: errors.New("current boom")})
 	if !strings.Contains(m.lastWarning, "diff の取得に失敗") {
 		t.Errorf("表示中 diff のエラーで警告が出ない: %q", m.lastWarning)
 	}
@@ -618,7 +504,7 @@ func TestBrowseCopyJobContextCached(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	// 詳細キャッシュ済み → 即コピー (追加 fetch なし)
-	m.detailOv.cache.Store(m.detailKey(), []string{"✗ lint (13s)", "", "[failure] a.go:1", "  boom"}, m.detailKey())
+	m.detailOv.Cache.Store(m.detailKey(), []string{"✗ lint (13s)", "", "[failure] a.go:1", "  boom"}, m.detailKey())
 	if _, cmd := m.handleKey("Y"); cmd != nil {
 		t.Fatal("キャッシュ済みなのに fetch が走った")
 	}
@@ -644,11 +530,11 @@ func TestBrowseCopyJobContextFetchesThenCopies(t *testing.T) {
 	m.handleKey("j")
 	// 未取得 → 詳細ポップアップを開いて取得し、到着時にコピーされる
 	_, cmd := m.handleKey("Y")
-	if cmd == nil || !m.detailOv.visible() || m.copyOnDetail != m.detailKey() {
+	if cmd == nil || !m.detailOv.Visible() || m.copyOnDetail != m.detailKey() {
 		t.Fatalf("Y で詳細取得+コピー予約に入らない: cmd=%v open=%v pending=%q",
-			cmd != nil, m.detailOv.visible(), m.copyOnDetail)
+			cmd != nil, m.detailOv.Visible(), m.copyOnDetail)
 	}
-	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"✗ step", "log line"}})
+	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: []string{"✗ step", "log line"}})
 	if !strings.Contains(*copied, "log line") || !strings.Contains(*copied, "## CI job: lint") {
 		t.Fatalf("到着時にコピーされない:\n%s", *copied)
 	}
@@ -657,22 +543,22 @@ func TestBrowseCopyJobContextFetchesThenCopies(t *testing.T) {
 	}
 	// 取得失敗 (ghErr) では予約破棄のみでコピーされない
 	*copied = ""
-	m.detailOv.reset()
+	m.detailOv.Reset()
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("Y")
-	m.Update(jobDetailMsg{key: m.detailKey(), ghErr: &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom"}})
+	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), GhErr: &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom"}})
 	if *copied != "" || m.copyOnDetail != "" {
 		t.Fatalf("取得失敗でコピーされた / 予約が残った: copied=%q pending=%q", *copied, m.copyOnDetail)
 	}
 	// closePanel で予約破棄 (閉じた後の到着でコピーしない)
-	m.detailOv.reset()
+	m.detailOv.Reset()
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("Y")
 	key := m.detailKey()
 	m.closePanel()
-	m.Update(jobDetailMsg{key: key, lines: []string{"late"}})
+	m.Update(commitview.JobDetailMsg{Key: key, Lines: []string{"late"}})
 	if *copied != "" {
 		t.Fatal("パネルを閉じた後の到着でコピーされた")
 	}
@@ -684,8 +570,8 @@ func TestBrowsePRStatusFlow(t *testing.T) {
 	sha := m.commits[0].SHA
 	// P で開いて取得に入る
 	_, cmd := m.handleKey("P")
-	if cmd == nil || !m.prStatusOv.visible() || !m.prStatusOv.fetching() {
-		t.Fatalf("P で PR 取得に入らない: cmd=%v visible=%v fetching=%v", cmd != nil, m.prStatusOv.visible(), m.prStatusOv.fetching())
+	if cmd == nil || !m.prStatusOv.Visible() || !m.prStatusOv.Fetching() {
+		t.Fatalf("P で PR 取得に入らない: cmd=%v visible=%v fetching=%v", cmd != nil, m.prStatusOv.Visible(), m.prStatusOv.Fetching())
 	}
 	// 取得結果が描画される (state / レビュー / conflict / CI)
 	m.Update(prStatusMsg{sha: sha, status: &gitdata.PRStatus{
@@ -711,19 +597,19 @@ func TestBrowsePRStatusFlow(t *testing.T) {
 		t.Fatalf("開いた URL が違う: %q", *opened)
 	}
 	m.handleKey("q")
-	if m.prStatusOv.visible() {
+	if m.prStatusOv.Visible() {
 		t.Fatal("q で閉じない")
 	}
 	// キャッシュ済みなので開き直しは fetch なし、P の再押下で toggle 閉
 	if _, cmd := m.handleKey("P"); cmd != nil {
 		t.Fatal("キャッシュ済みなのに再取得した")
 	}
-	if !m.prStatusOv.visible() {
+	if !m.prStatusOv.Visible() {
 		t.Fatal("開き直せない")
 	}
 	releaseKey(m) // 指を離してから押し直す
 	m.handleKey("P")
-	if m.prStatusOv.visible() {
+	if m.prStatusOv.Visible() {
 		t.Fatal("P の再押下で toggle 閉しない")
 	}
 }
@@ -733,7 +619,7 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 	m.statuses = statusesFor(m, gitdata.StateUnpushed)
 	// 未 push は取得しない
 	// 未 push は取得コマンドを返さないが、理由の失敗トーストは出す (cmd は maybeTick を含む)
-	if m.handleKey("P"); m.prStatusOv.visible() {
+	if m.handleKey("P"); m.prStatusOv.Visible() {
 		t.Fatalf("未 push で PR 取得に入った: %q", m.toast.Text())
 	}
 	if !strings.Contains(m.toast.Text(), "未 push") {
@@ -745,10 +631,10 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 	m.handleKey("P")
 	sha := m.commits[0].SHA
 	m.Update(prStatusMsg{sha: sha, ghErr: &gitdata.GHError{Kind: gitdata.GHOther, Detail: "boom"}})
-	if m.prStatusOv.visible() || m.toast.OK() || !strings.Contains(m.toast.Text(), "PR の取得に失敗") {
-		t.Fatalf("エラーで閉じない / 失敗トーストが出ない: visible=%v toast=%q", m.prStatusOv.visible(), m.toast.Text())
+	if m.prStatusOv.Visible() || m.toast.OK() || !strings.Contains(m.toast.Text(), "PR の取得に失敗") {
+		t.Fatalf("エラーで閉じない / 失敗トーストが出ない: visible=%v toast=%q", m.prStatusOv.Visible(), m.toast.Text())
 	}
-	if _, ok := m.prStatusOv.cache[sha]; ok {
+	if _, ok := m.prStatusOv.Cache[sha]; ok {
 		t.Fatal("エラーがキャッシュされた (PR なし誤答が固定される)")
 	}
 	// PR なしは nil キャッシュ + その旨の表示
@@ -782,7 +668,7 @@ func TestBrowseCopyJobContextFocusMovedDropsCopy(t *testing.T) {
 		t.Fatal("esc でパネルまで閉じた")
 	}
 	m.handleKey("j") // job1 (lint) へフォーカス移動
-	m.Update(jobDetailMsg{key: key0, lines: []string{"build log line"}})
+	m.Update(commitview.JobDetailMsg{Key: key0, Lines: []string{"build log line"}})
 	if *copied != "" {
 		t.Fatalf("フォーカス移動後に旧 job をコピーした: %q", *copied)
 	}
@@ -802,30 +688,13 @@ func TestBrowseCopyJobContextSanitizesHeader(t *testing.T) {
 	copied := testenv.StubClipboard(t)
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.cache.Store(m.detailKey(), []string{"log"}, m.detailKey())
+	m.detailOv.Cache.Store(m.detailKey(), []string{"log"}, m.detailKey())
 	m.handleKey("Y")
 	if strings.ContainsRune(*copied, '\x1b') || strings.ContainsRune(*copied, '\x07') {
 		t.Fatalf("コピー内容に端末制御シーケンスが残った: %q", *copied)
 	}
 	if !strings.Contains(*copied, "lint") || !strings.Contains(*copied, "https://x/ok") {
 		t.Fatalf("無害化で本来の文字まで欠けた: %q", *copied)
-	}
-}
-
-// 回帰 (レビュー確定 medium): close→reopen 連打で in-flight の PR 取得を二重発火しない。
-func TestPRStatusOverlayNoDoubleFetch(t *testing.T) {
-	o := newPRStatusOverlay()
-	if !o.open("A") {
-		t.Fatal("初回 open が fetch を要求しない")
-	}
-	o.close() // 応答前に閉じる (busy[A] は保持されるべき)
-	if o.open("A") {
-		t.Fatal("in-flight 中の reopen が二重 fetch を要求した")
-	}
-	o.receive("A", &gitdata.PRStatus{PRRef: gitdata.PRRef{Number: 1}}, nil) // 応答 → busy 解除 + cache
-	o.close()
-	if o.open("A") {
-		t.Fatal("cache 済みなのに再 fetch を要求した")
 	}
 }
 
@@ -848,7 +717,7 @@ func TestBrowsePRStatusStaleErrorNoToast(t *testing.T) {
 	if m.toast.Visible() {
 		t.Fatalf("別 sha の遅延エラーでトーストが出た: %q", m.toast.Text())
 	}
-	if !m.prStatusOv.visible() {
+	if !m.prStatusOv.Visible() {
 		t.Fatal("別 sha の遅延エラーで B の表示が閉じられた")
 	}
 }
@@ -1209,10 +1078,10 @@ func TestSpaceKeyScrollsEverywhere(t *testing.T) {
 	m.handleKey("i") // viewer を閉じる
 
 	// 3. diff pager (同じ綴り落ちで壊れていた既存経路)
-	m.diffOv.cache.Store(m.commits[0].SHA, manyLines(100), "")
-	m.diffOv.sha = m.commits[0].SHA
+	m.diffOv.Cache.Store(m.commits[0].SHA, manyLines(100), "")
+	m.diffOv.Sha = m.commits[0].SHA
 	m.handleKey("space")
-	if m.diffOv.pager.Offset == 0 {
+	if m.diffOv.Pager.Offset == 0 {
 		t.Fatal("diff pager で Space が半ページ送りしていない")
 	}
 }
@@ -1374,16 +1243,16 @@ func TestBrowseDiffNeighborKeysSwapCommit(t *testing.T) {
 	_, cmd := m.handleKey("d") // commit[0]
 	deliverDiffMsg(t, m, cmd)
 	m.handleKey(" ") // 半ページ送り = glide 中 + offset > 0 の状態を作る
-	if !m.diffOv.pager.Animating() || m.diffOv.pager.Offset == 0 {
-		t.Fatalf("前提: Space で glide に載っていない: active=%v offset=%d", m.diffOv.pager.Animating(), m.diffOv.pager.Offset)
+	if !m.diffOv.Pager.Animating() || m.diffOv.Pager.Offset == 0 {
+		t.Fatalf("前提: Space で glide に載っていない: active=%v offset=%d", m.diffOv.Pager.Animating(), m.diffOv.Pager.Offset)
 	}
 
 	_, cmd = m.handleKey("J")
-	if m.diffOv.sha != m.commits[1].SHA || m.cursor != 1 {
-		t.Fatalf("J で次のコミットへ移らない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
+	if m.diffOv.Sha != m.commits[1].SHA || m.cursor != 1 {
+		t.Fatalf("J で次のコミットへ移らない: sha=%.7s cursor=%d", m.diffOv.Sha, m.cursor)
 	}
-	if m.diffOv.pager.Offset != 0 || m.diffOv.pager.Animating() {
-		t.Errorf("J でスクロール位置が先頭へ戻らない / 前の滑りを持ち越した: offset=%d glide=%v", m.diffOv.pager.Offset, m.diffOv.pager.Animating())
+	if m.diffOv.Pager.Offset != 0 || m.diffOv.Pager.Animating() {
+		t.Errorf("J でスクロール位置が先頭へ戻らない / 前の滑りを持ち越した: offset=%d glide=%v", m.diffOv.Pager.Offset, m.diffOv.Pager.Animating())
 	}
 	deliverDiffMsg(t, m, cmd)
 	if len(*calls) != 2 || (*calls)[1] != m.commits[1].SHA {
@@ -1391,20 +1260,20 @@ func TestBrowseDiffNeighborKeysSwapCommit(t *testing.T) {
 	}
 	_, cmd = m.handleKey("shift+down")
 	deliverDiffMsg(t, m, cmd)
-	if m.diffOv.sha != m.commits[2].SHA || m.cursor != 2 {
-		t.Fatalf("shift+↓ で末尾のコミットへ移らない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
+	if m.diffOv.Sha != m.commits[2].SHA || m.cursor != 2 {
+		t.Fatalf("shift+↓ で末尾のコミットへ移らない: sha=%.7s cursor=%d", m.diffOv.Sha, m.cursor)
 	}
 	m.handleKey("J")
-	if m.diffOv.sha != m.commits[2].SHA || !strings.Contains(m.toast.Text(), "最後") {
-		t.Errorf("末尾の J で止まらない / 案内が出ない: sha=%.7s toast=%q", m.diffOv.sha, m.toast.Text())
+	if m.diffOv.Sha != m.commits[2].SHA || !strings.Contains(m.toast.Text(), "最後") {
+		t.Errorf("末尾の J で止まらない / 案内が出ない: sha=%.7s toast=%q", m.diffOv.Sha, m.toast.Text())
 	}
 	if _, cmd = m.handleKey("K"); cmd != nil {
 		t.Errorf("キャッシュ済みの隣へ戻るのに取得コマンドが出た")
 	}
-	if m.diffOv.sha != m.commits[1].SHA || m.cursor != 1 {
-		t.Fatalf("K で前のコミットへ戻らない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
+	if m.diffOv.Sha != m.commits[1].SHA || m.cursor != 1 {
+		t.Fatalf("K で前のコミットへ戻らない: sha=%.7s cursor=%d", m.diffOv.Sha, m.cursor)
 	}
-	if !m.diffOv.visible() {
+	if !m.diffOv.Visible() {
 		t.Fatal("差し替えの途中で diff が閉じた (open の toggle が効いた)")
 	}
 }
@@ -1414,10 +1283,10 @@ func TestBrowseDiffNeighborStartsFromShownSHA(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
 	stubDiff(t, []string{"x"}, nil)
 	m.cursor = 0
-	m.diffOv.open(m.commits[2].SHA) // カーソルと違う SHA を表示中 (パネル経由の形)
+	m.diffOv.Open(m.commits[2].SHA) // カーソルと違う SHA を表示中 (パネル経由の形)
 	m.handleKey("K")
-	if m.diffOv.sha != m.commits[1].SHA || m.cursor != 1 {
-		t.Fatalf("開いている SHA の隣にならない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
+	if m.diffOv.Sha != m.commits[1].SHA || m.cursor != 1 {
+		t.Fatalf("開いている SHA の隣にならない: sha=%.7s cursor=%d", m.diffOv.Sha, m.cursor)
 	}
 }
 
@@ -1446,8 +1315,8 @@ func TestBrowseCopyPRURLSanitizes(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	sha := m.commits[0].SHA
 	copied := testenv.StubClipboard(t)
-	m.prStatusOv.open(sha)
-	m.prStatusOv.receive(sha, &gitdata.PRStatus{PRRef: gitdata.PRRef{Number: 1, State: "OPEN", URL: "https://github.com/o/r/pull/1\x1b]52;c;eA==\x07"}}, nil)
+	m.prStatusOv.Open(sha)
+	m.prStatusOv.Receive(sha, &gitdata.PRStatus{PRRef: gitdata.PRRef{Number: 1, State: "OPEN", URL: "https://github.com/o/r/pull/1\x1b]52;c;eA==\x07"}}, nil)
 	m.handlePRStatusKey("y")
 	if *copied != "https://github.com/o/r/pull/1" {
 		t.Fatalf("コピー内容 = %q, want %q", *copied, "https://github.com/o/r/pull/1")

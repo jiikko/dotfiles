@@ -201,11 +201,11 @@ func (m *browseModel) activeHintSurface() hintSurfaceID {
 		return hintSurfaceRerunning
 	case m.actModal.anyUpdating():
 		return hintSurfaceUpdating
-	case m.diffOv.visible():
+	case m.diffOv.Visible():
 		return hintSurfaceDiff
-	case m.prStatusOv.visible():
+	case m.prStatusOv.Visible():
 		return hintSurfacePRStatus
-	case m.detailOv.visible():
+	case m.detailOv.Visible():
 		return hintSurfaceJobDetail
 	case m.panelSHA != "" && m.panelCursor >= 0:
 		return hintSurfacePanelCursor

@@ -350,8 +350,8 @@ func (m *browseModel) handleGitLogFP(msg gitLogFPMsg) tea.Cmd {
 // silent に壊れる。membership の出典は activeFullScreen (fullscreen.go) 1 箇所だけにして、
 // 「足したらここへも足す」を人の記憶に頼らせない。
 func (m *browseModel) gitLogReloadDeferred() bool {
-	return m.actModal.active() || m.diffOv.visible() || m.prStatusOv.visible() ||
-		m.detailOv.visible() || m.panelSHA != "" || m.pullAnimating || m.pushAnimating ||
+	return m.actModal.active() || m.diffOv.Visible() || m.prStatusOv.Visible() ||
+		m.detailOv.Visible() || m.panelSHA != "" || m.pullAnimating || m.pushAnimating ||
 		m.fullScreenActive()
 }
 
