@@ -11,10 +11,10 @@ field RatelimitRenderOpts.Spinner
 field RatelimitRenderOpts.StaleErr
 field RatelimitRenderOpts.Waiting
 field RatelimitRenderOpts.Width
-field RatelimitScreen.SavedAt
+field ratelimitScreen.SavedAt
+func FixtureRemoveScreen
+func FixtureSaveScreen
 func LoadRatelimitScreen
-func RemoveRatelimitScreen
-func SaveRatelimitScreen
 method Fixture.SetShown
 method RatelimitDash.Fixture
 method RatelimitDash.HandleKey
@@ -27,4 +27,3 @@ method RatelimitDash.Visible
 type Fixture
 type RatelimitDash
 type RatelimitRenderOpts
-type RatelimitScreen

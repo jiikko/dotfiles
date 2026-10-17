@@ -44,7 +44,7 @@ func TestInitRestoresRatelimitScreen(t *testing.T) {
 	orig := app.TimeNow
 	app.TimeNow = func() time.Time { return now }
 	t.Cleanup(func() { app.TimeNow = orig })
-	if err := ratelimitview.SaveRatelimitScreen(ratelimitview.RatelimitScreen{SavedAt: now}); err != nil {
+	if err := ratelimitview.FixtureSaveScreen(now); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,7 +78,7 @@ func TestInitRestoresOnlyOneFullScreen(t *testing.T) {
 	orig := app.TimeNow
 	app.TimeNow = func() time.Time { return now }
 	t.Cleanup(func() { app.TimeNow = orig })
-	if err := ratelimitview.SaveRatelimitScreen(ratelimitview.RatelimitScreen{SavedAt: now}); err != nil {
+	if err := ratelimitview.FixtureSaveScreen(now); err != nil {
 		t.Fatal(err)
 	}
 	rememberDoctorShown(now, doctorview.TabSvc)

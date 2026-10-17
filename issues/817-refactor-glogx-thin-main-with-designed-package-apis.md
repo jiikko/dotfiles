@@ -191,7 +191,7 @@ P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.
 残り (上から順に):
 - [ ] D / E / F の反証レビュー (codex が使えれば codex。観点は ①挙動が変わっていないか ②検査の素通り (Fixture の抜け道・golden・allowlist))。
   C までは opus 2 体で通した。D〜F はまだ誰も攻めていない
-- [ ] ratelimitview の SaveRatelimitScreen / RemoveRatelimitScreen は main のテストだけが使う。filerview と同じく Fixture の関数へ寄せて非公開にする
+- [x] ratelimitview の SaveRatelimitScreen / RemoveRatelimitScreen を Fixture の関数 (FixtureSaveScreen / FixtureRemoveScreen) へ寄せて非公開にした (2026-10-18)
 - [ ] G-1 / G-2 / G-3 (上の節)。G-3 では src/glogx/CLAUDE.md・README の構造の記述と structure_ratchet_test.go の一覧の「移設待ち」を片付ける
 - [ ] 全部済んだら `scripts/issue_done.sh 817` と retro
 

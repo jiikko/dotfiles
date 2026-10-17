@@ -48,7 +48,7 @@ func TestInitLanRestoreYieldsToOtherScreens(t *testing.T) {
 	if err := lanview.FixtureSaveScreen(lanmgr.Place{}, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := ratelimitview.SaveRatelimitScreen(ratelimitview.RatelimitScreen{SavedAt: now}); err != nil {
+	if err := ratelimitview.FixtureSaveScreen(now); err != nil {
 		t.Fatal(err)
 	}
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)

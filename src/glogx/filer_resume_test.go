@@ -80,7 +80,7 @@ func TestInitFilerRestoreYieldsToOtherScreens(t *testing.T) {
 	if err := filerview.FixtureSaveScreen(filer.Place{Start: app.CurrentDir()}, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := ratelimitview.SaveRatelimitScreen(ratelimitview.RatelimitScreen{SavedAt: now}); err != nil {
+	if err := ratelimitview.FixtureSaveScreen(now); err != nil {
 		t.Fatal(err)
 	}
 	_ = m.Init()
@@ -89,7 +89,7 @@ func TestInitFilerRestoreYieldsToOtherScreens(t *testing.T) {
 	}
 
 	filerview.FixtureRemoveScreen()
-	ratelimitview.RemoveRatelimitScreen()
+	ratelimitview.FixtureRemoveScreen()
 	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	_ = m2.Init()
 	if m2.activeFullScreen() != app.FullScreenNone {

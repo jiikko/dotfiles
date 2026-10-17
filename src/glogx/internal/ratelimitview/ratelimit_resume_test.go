@@ -14,7 +14,7 @@ func TestRatelimitScreenRoundTrip(t *testing.T) {
 	if LoadRatelimitScreen(now) {
 		t.Fatal("記憶が無いのに復元しようとした")
 	}
-	if err := SaveRatelimitScreen(RatelimitScreen{SavedAt: now}); err != nil {
+	if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	if !LoadRatelimitScreen(now.Add(time.Minute)) {
@@ -41,7 +41,7 @@ func TestRatelimitScreenRejectsBadState(t *testing.T) {
 	}
 	t.Run("期限切れ", func(t *testing.T) {
 		withRatelimitStateDir(t)
-		if err := SaveRatelimitScreen(RatelimitScreen{SavedAt: now.Add(-app.ScreenMemoryTTL)}); err != nil {
+		if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now.Add(-app.ScreenMemoryTTL)}); err != nil {
 			t.Fatal(err)
 		}
 		if LoadRatelimitScreen(now) {
@@ -50,7 +50,7 @@ func TestRatelimitScreenRejectsBadState(t *testing.T) {
 	})
 	t.Run("未来の時刻", func(t *testing.T) {
 		withRatelimitStateDir(t)
-		if err := SaveRatelimitScreen(RatelimitScreen{SavedAt: now.Add(time.Hour)}); err != nil {
+		if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now.Add(time.Hour)}); err != nil {
 			t.Fatal(err)
 		}
 		if LoadRatelimitScreen(now) {
