@@ -243,7 +243,7 @@ func (m *browseModel) gitLogPollCmd() tea.Cmd {
 func (m *browseModel) gitLogMeasureCmd() tea.Cmd {
 	opts, gen := m.opts, m.logWatch.Gen
 	return func() tea.Msg {
-		out, err := extcmd.RunGitTimeout(BuildFingerprintArgs(opts)...)
+		out, err := extcmd.RunGitTimeout(BuildFingerprintArgs(opts.LogQuery())...)
 		if err != nil {
 			return gitLogFPMsg{gen: gen}
 		}

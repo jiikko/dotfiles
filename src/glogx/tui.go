@@ -1975,7 +1975,7 @@ type logData struct {
 // rev-parse) ので、Update の中では呼ばず Cmd に出す (reflectGitLogChange)。pull 後の全面リロード
 // (reloadLog) は利用者の操作なので同期のまま。
 func loadLogData(opts *Options, colored, oneline bool) (logData, error) {
-	commits, err := LoadCommits(opts, colored)
+	commits, err := LoadCommits(opts.LogQuery(), colored)
 	if err != nil {
 		return logData{}, err
 	}
@@ -1986,7 +1986,7 @@ func loadLogData(opts *Options, colored, oneline bool) (logData, error) {
 	d := logData{commits: commits}
 	d.statuses, d.toFetch, d.repo, d.hasRepo, _ = planStatuses(opts, shas)
 	if !oneline {
-		if raw, dispErr := LoadLogDisplay(opts, colored); dispErr == nil {
+		if raw, dispErr := LoadLogDisplay(opts.LogQuery(), colored); dispErr == nil {
 			d.raw = raw // 照合失敗は applyLogData 側で nil = 自前レンダリングへ
 		}
 	}

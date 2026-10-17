@@ -114,7 +114,7 @@ func TestParseLogMalformed(t *testing.T) {
 
 func TestBuildLogArgs(t *testing.T) {
 	opts := &Options{MaxCount: 5, Stat: true, Revs: []string{"main"}, Paths: []string{"src/"}}
-	args := BuildLogArgs(opts, false)
+	args := BuildLogArgs(opts.LogQuery(), false)
 	joined := strings.Join(args, " ")
 	for _, want := range []string{"--max-count=5", "--stat", "--color=never", "main", "-- src/"} {
 		if !strings.Contains(joined, want) {
@@ -165,7 +165,7 @@ func commitLines(t *testing.T, dir string, lines int, subject string) {
 
 func TestIntegrationLoadCommitsOrderAndCount(t *testing.T) {
 	newTempRepo(t, []string{"first", "second", "third"})
-	commits, err := LoadCommits(&Options{MaxCount: defaultMaxCount}, false)
+	commits, err := LoadCommits(LogQuery{MaxCount: defaultMaxCount}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestIntegrationLoadCommitsOrderAndCount(t *testing.T) {
 	if commits[0].Subject != "third" || commits[2].Subject != "first" {
 		t.Errorf("順序が git log と一致しない: %v, %v", commits[0].Subject, commits[2].Subject)
 	}
-	one, err := LoadCommits(&Options{MaxCount: 1}, false)
+	one, err := LoadCommits(LogQuery{MaxCount: 1}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestIntegrationLoadCommitsOrderAndCount(t *testing.T) {
 
 func TestIntegrationStatBodyIntact(t *testing.T) {
 	newTempRepo(t, []string{"first", "second"})
-	commits, err := LoadCommits(&Options{MaxCount: defaultMaxCount, Stat: true}, false)
+	commits, err := LoadCommits(LogQuery{MaxCount: defaultMaxCount, Stat: true}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestIntegrationStatBodyIntact(t *testing.T) {
 
 func TestIntegrationPatchBodyIntact(t *testing.T) {
 	newTempRepo(t, []string{"first"})
-	commits, err := LoadCommits(&Options{MaxCount: defaultMaxCount, Patch: true}, false)
+	commits, err := LoadCommits(LogQuery{MaxCount: defaultMaxCount, Patch: true}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestIntegrationStagedDiff(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git add: %v\n%s", err, out)
 	}
-	diff, err := LoadStagedDiff(&Options{}, false)
+	diff, err := LoadStagedDiff(LogQuery{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +239,7 @@ func TestIntegrationStagedDiff(t *testing.T) {
 
 func TestIntegrationMediumFields(t *testing.T) {
 	newTempRepo(t, []string{"multi line\n\nmessage body here"})
-	commits, err := LoadCommits(&Options{MaxCount: 1}, false)
+	commits, err := LoadCommits(LogQuery{MaxCount: 1}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestIntegrationResolveRepoNonGitHub(t *testing.T) {
 
 func TestIntegrationUnpushedSHAs(t *testing.T) {
 	newTempRepo(t, []string{"pushed", "local-only"})
-	commits, err := LoadCommits(&Options{MaxCount: defaultMaxCount}, false)
+	commits, err := LoadCommits(LogQuery{MaxCount: defaultMaxCount}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestIntegrationOutsideRepo(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	t.Setenv("GIT_CEILING_DIRECTORIES", dir)
-	_, err := LoadCommits(&Options{MaxCount: 1}, false)
+	_, err := LoadCommits(LogQuery{MaxCount: 1}, false)
 	if err == nil {
 		t.Fatal("リポジトリ外でエラーになっていない")
 	}
@@ -486,11 +486,11 @@ func TestLoadLogDisplayVerbatimRealRepo(t *testing.T) {
 		run("commit", "-q", "-m", msg)
 	}
 	opts := &Options{MaxCount: 20}
-	commits, err := LoadCommits(opts, false)
+	commits, err := LoadCommits(opts.LogQuery(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := LoadLogDisplay(opts, false)
+	raw, err := LoadLogDisplay(opts.LogQuery(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

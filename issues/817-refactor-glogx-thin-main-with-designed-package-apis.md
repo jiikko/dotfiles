@@ -207,7 +207,7 @@ P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.
   main のほかの部分への依存は 7 個 (options.go の Options とそのフィールド Revs / Paths / MaxCount / Patch / Stat、render.go の StateLoading) だけ。
   逆に main からは 77 個使われる (Commit / CIState / PRStatus などのデータ型と取得の関数。ほとんどは今も大文字)。
   先に設計が要るもの 2 つ:
-  1. `LoadCommits` などが CLI の `Options` を丸ごと受け取っている → gitdata 側に取得の条件だけを持つ型 (仮名 LogQuery) を置き、
+  1. ✅ 2026-10-18 済み (glogx: git log の取得の関数が CLI の Options でなく LogQuery を受け取る)。`LoadCommits` などが CLI の `Options` を丸ごと受け取っている → gitdata 側に取得の条件だけを持つ型 (仮名 LogQuery) を置き、
      main が Options から組んで渡す。StateLoading (表示専用の擬似状態) は render.go に残すか、CIState の定数として gitdata へ移す
   2. CI の分割取得の中身 (capFetchSHAs / chunkSHAs / fetchCIChunk / fetchMaxSHAs / fillUnknownFetched / formatDuration / lastLine) を
      tui.go と external_commands.go が直接組んでいる → 「SHA の列を渡すと分割して取得し、取れなかったものを埋める」1 つの口 (仮名 FetchCIBatch) へ寄せてから移す。

@@ -86,10 +86,10 @@ func TestGlogxGitDoesNotRunRepoConfigCommands(t *testing.T) {
 	if _, err := LoadCommitDiff(sha, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadStagedDiff(&Options{Patch: true}, false); err != nil {
+	if _, err := LoadStagedDiff(LogQuery{Patch: true}, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadLogDisplay(&Options{Patch: true, MaxCount: 5}, false); err != nil {
+	if _, err := LoadLogDisplay(LogQuery{Patch: true, MaxCount: 5}, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := statusview.FixtureLoadWorktree(); err != nil {

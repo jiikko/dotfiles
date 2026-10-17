@@ -107,7 +107,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	if !opts.Oneline {
 		displayCh = make(chan []string, 1)
 		go func() {
-			raw, err := LoadLogDisplay(opts, colored)
+			raw, err := LoadLogDisplay(opts.LogQuery(), colored)
 			if err != nil {
 				raw = nil // 失敗は自前レンダリングへ fallback (エラーにしない)
 			}
@@ -115,7 +115,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 		}()
 	}
 
-	commits, err := LoadCommits(opts, colored)
+	commits, err := LoadCommits(opts.LogQuery(), colored)
 	if err != nil {
 		return exitGitError(err)
 	}
@@ -257,7 +257,7 @@ func runCached(opts *Options, colored bool) int {
 	if err != nil {
 		return exitGitError(err)
 	}
-	diff, err := LoadStagedDiff(opts, colored)
+	diff, err := LoadStagedDiff(opts.LogQuery(), colored)
 	if err != nil {
 		return exitGitError(err)
 	}

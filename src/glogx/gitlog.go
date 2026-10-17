@@ -68,53 +68,53 @@ func runGit(args ...string) (string, error) {
 
 // BuildLogArgs は allowlist 済みオプションから git log の引数列を組み立てる (データ解析用。
 // prettyFormat の制御文字レコードで機械 parse する)。colored は --stat / -p の本文にのみ効く。
-func BuildLogArgs(opts *Options, colored bool) []string {
-	return buildLogArgsWith(prettyFormat, opts, colored, true)
+func BuildLogArgs(q LogQuery, colored bool) []string {
+	return buildLogArgsWith(prettyFormat, q, colored, true)
 }
 
 // BuildDisplayArgs は表示用 (verbatim) の git log 引数列。format を指定せず git の素の
 // 出力 (medium 形式) をそのまま得る = 見た目は git log と機械的に一致する。
 // --decorate=short は明示が要る: log.decorate の既定 (auto) は出力先が端末のときだけ
 // ブランチ名を付けるので、パイプで受けるここでは消える (端末の git log とずれる)。
-func BuildDisplayArgs(opts *Options, colored bool) []string {
-	return buildLogArgsWith("--decorate=short", opts, colored, true)
+func BuildDisplayArgs(q LogQuery, colored bool) []string {
+	return buildLogArgsWith("--decorate=short", q, colored, true)
 }
 
 // BuildFingerprintArgs は表示中の git log が変わったかを測る引数列 (gitlog_watch.go)。
 // 表示と同じ revs / max-count / paths のまま --stat / -p を外す: 本文は SHA で決まるので、
 // SHA と decoration が同じなら表示も同じ = 空振りの再読込 (CI の再取得を伴う) を出さない。
 // 色は常に付けない (比較しかしないので ANSI は無駄。装飾の揺れを偽の変化にしない)。
-func BuildFingerprintArgs(opts *Options) []string {
-	return buildLogArgsWith(fingerprintFormat, opts, false, false)
+func BuildFingerprintArgs(q LogQuery) []string {
+	return buildLogArgsWith(fingerprintFormat, q, false, false)
 }
 
 // buildLogArgsWith は 3 つの入口の共通部 (revs / max-count / paths の組み立ての単一の出典)。
 // shape は出力の形を決める引数 (--pretty か --decorate)。withBody は --stat / -p を通すか
 // (指紋は本文を読まないので false)。
-func buildLogArgsWith(shape string, opts *Options, colored, withBody bool) []string {
+func buildLogArgsWith(shape string, q LogQuery, colored, withBody bool) []string {
 	args := []string{"log", shape}
-	args = append(args, fmt.Sprintf("--max-count=%d", opts.MaxCount))
+	args = append(args, fmt.Sprintf("--max-count=%d", q.MaxCount))
 	args = append(args, colorArg(colored))
 	if withBody {
-		if opts.Stat {
+		if q.Stat {
 			args = append(args, "--stat")
 		}
-		if opts.Patch {
+		if q.Patch {
 			// --no-textconv --no-ext-diff: 開いた repo の設定のコマンドを差分の表示で走らせない (issue 692。subproc.GitArgs の doc)
 			args = append(args, "--patch", "--no-textconv", "--no-ext-diff")
 		}
 	}
-	args = append(args, opts.Revs...)
-	if len(opts.Paths) > 0 {
+	args = append(args, q.Revs...)
+	if len(q.Paths) > 0 {
 		args = append(args, "--")
-		args = append(args, opts.Paths...)
+		args = append(args, q.Paths...)
 	}
 	return args
 }
 
 // LoadLogDisplay は表示用の git log 実出力を行列で返す (verbatim 方式の入力)。
-func LoadLogDisplay(opts *Options, colored bool) ([]string, error) {
-	out, err := runGit(BuildDisplayArgs(opts, colored)...)
+func LoadLogDisplay(q LogQuery, colored bool) ([]string, error) {
+	out, err := runGit(BuildDisplayArgs(q, colored)...)
 	if err != nil {
 		return nil, err
 	}
@@ -217,8 +217,8 @@ func sanitizeGitText(s string) string {
 }
 
 // LoadCommits は git log を実行して解析まで行う。
-func LoadCommits(opts *Options, colored bool) ([]Commit, error) {
-	out, err := runGit(BuildLogArgs(opts, colored)...)
+func LoadCommits(q LogQuery, colored bool) ([]Commit, error) {
+	out, err := runGit(BuildLogArgs(q, colored)...)
 	if err != nil {
 		return nil, err
 	}
@@ -378,10 +378,10 @@ func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 
 // LoadStagedDiff は --cached モードの本文 (git diff --cached) を取得する。
 // フラグ未指定時は --stat 相当を出す (staged 変更の一覧が目的で、既定でフル patch は過剰なため)。
-func LoadStagedDiff(opts *Options, colored bool) (string, error) {
+func LoadStagedDiff(q LogQuery, colored bool) (string, error) {
 	args := []string{"diff", "--cached", "--no-textconv", "--no-ext-diff"}
 	args = append(args, colorArg(colored))
-	if opts.Patch {
+	if q.Patch {
 		// -p: フル patch (git diff --cached の既定出力)
 	} else {
 		args = append(args, "--stat")

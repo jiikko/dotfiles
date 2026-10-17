@@ -350,3 +350,18 @@ git log の全引数への互換は目標にしていません。
 上記以外の引数はエラーになります。その場合は git log を直接使ってください。
 詳細: ~/dotfiles/src/glogx/README.md`
 }
+
+// LogQuery は git log の取得の条件 (gitlog.go の取得の関数が読むものだけ)。CLI の Options を丸ごと渡さないのは、
+// 取得の層を internal/gitdata へ出すときに CLI の型を持ち込まないため (issue 817 の G-1)。
+type LogQuery struct {
+	MaxCount int // 負数 = 無制限 (git log と同じ)
+	Stat     bool
+	Patch    bool
+	Revs     []string // revision 指定
+	Paths    []string // "--" 以降の pathspec
+}
+
+// LogQuery は取得の条件を取り出す。
+func (o *Options) LogQuery() LogQuery {
+	return LogQuery{MaxCount: o.MaxCount, Stat: o.Stat, Patch: o.Patch, Revs: o.Revs, Paths: o.Paths}
+}

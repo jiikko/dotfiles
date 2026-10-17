@@ -37,7 +37,7 @@ func realRepoBrowse(t *testing.T, height int, subjects ...string) (*browseModel,
 	t.Helper()
 	dir := newTempRepo(t, subjects)
 	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
+	commits, err := LoadCommits(opts.LogQuery(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func realRepoBrowse(t *testing.T, height int, subjects ...string) (*browseModel,
 
 func TestBuildFingerprintArgsSkipsBodyAndColor(t *testing.T) {
 	opts := &Options{MaxCount: 7, Stat: true, Patch: true, Revs: []string{"HEAD"}, Paths: []string{"a.go"}}
-	args := BuildFingerprintArgs(opts)
+	args := BuildFingerprintArgs(opts.LogQuery())
 	for _, bad := range []string{"--stat", "--patch", "--color=always"} {
 		if slices.Contains(args, bad) {
 			t.Errorf("指紋の問い合わせに %s が混ざっている (本文まで読むと -p の巨大 patch を毎分取る): %v", bad, args)
@@ -209,7 +209,7 @@ func TestGitLogFPUnmeasuredKeepsBaseline(t *testing.T) {
 func TestGitLogFingerprintBaselineCatchesStartupWindow(t *testing.T) {
 	m, dir, opts := realRepoBrowse(t, 10, "c1", "c2")
 
-	fp, err := runGit(BuildFingerprintArgs(opts)...)
+	fp, err := runGit(BuildFingerprintArgs(opts.LogQuery())...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestGitLogFingerprintBaselineCatchesStartupWindow(t *testing.T) {
 
 	// 「読み込みの後に commit された」= 基準がまだ無い状態で、手元と食い違う指紋が届く
 	commitLines(t, dir, 3, "c3")
-	fp2, err := runGit(BuildFingerprintArgs(opts)...)
+	fp2, err := runGit(BuildFingerprintArgs(opts.LogQuery())...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -670,7 +670,7 @@ func TestGitLogReloadDefersWhenOverlayOpensDuringReload(t *testing.T) {
 func TestGitLogProbeSkipsMeasureWhileReloading(t *testing.T) {
 	newTempRepo(t, []string{"c1"})
 	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
+	commits, err := LoadCommits(opts.LogQuery(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -692,7 +692,7 @@ func TestGitLogProbeSkipsMeasureWhileReloading(t *testing.T) {
 func TestGitLogReflectRunsGitInsideCmd(t *testing.T) {
 	newTempRepo(t, []string{"c1"})
 	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
+	commits, err := LoadCommits(opts.LogQuery(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
