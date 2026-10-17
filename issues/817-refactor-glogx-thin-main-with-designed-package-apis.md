@@ -43,6 +43,26 @@ glogx は `package main` に約 6 万行 (非テストの 62 ファイル・テ�
       注記: interface のレジストリは 1 フレームの確保が増えるので採らなかった)、interface にするかは確保の予算 (TestFrameAllocBudget) を見て決める
 - [ ] 0-3 公開面を守る検査を置くか決める (package ごとの公開名の一覧を golden にする・増えたら落とす、など)。置かないなら理由を書く
 
+### H. 再発防止 (main が太るのを機械で止める。ユーザー要望 2026-10-17。0 と並べて最初にやる)
+
+golangci には「main を薄く」をそのまま表す規則が無いので、この repo の他の検査と同じく、テストで構造を検査し、例外は許可リストに
+理由つきで書かせる形にする。どれも入れるときに変異で red を確かめる (`~/.claude/rules/mutation-verify-new-tests.md`)。
+入口は src/glogx/CLAUDE.md の「構造の判断」に 1 行足す。
+
+- [ ] H-1 main の非テストのファイルの許可リスト (ラチェット): `src/glogx` 直下の非テストの .go の集合を一覧と突き合わせ、一覧に無い
+      ファイルが増えたら落とす。足すには一覧に理由を書く (レビューで見える)。移して減ったら一覧からも消す (消し忘れも落とす)。
+      2026-10-17 時点で 45 ファイル
+- [ ] H-2 browseModel のメソッドを持つ非テストのファイルの許可リスト: 2026-10-17 時点で 9 ファイル (tui.go・gitlog_watch.go・
+      fullscreen.go・hint_surfaces.go・open_workspace.go・filer_view.go・filer_resume.go・lan_view.go・lan_resume.go)。新しい画面が
+      browseModel にメソッドを生やす形 (filer / lan が辿った形) を止める。F を済ませたら filer / lan を一覧から消す
+- [ ] H-3 internal の package の公開面の golden (0-3 と同じもの): package ごとの公開名の一覧を置き、増えたら落とす。742 で doctorview が
+      機械的に 201 個を公開した形を止める。画面ごとに公開面を絞ったステップ (A-2・C-2 など) で、その package の一覧を足す
+- [ ] H-4 main の非テストの総行数の上限 (下げる方向だけ動かすラチェット) を採るか決める。H-1 / H-2 は既存のファイル (tui.go など) が
+      太るのを止めないので、それを止める唯一の形。ただし正当な機能追加も止め、「行数や責務の見た目で割らない」(src/glogx/CLAUDE.md) と
+      緊張する。採らないなら、止めない形として H-1 の検査のコメントに書く
+- 止めない形 (検査の冒頭に書く): 既存ファイルの中での肥大 (H-4 を採らない場合)・一覧を更新して通す変更 (レビューの責務)・
+  internal の package どうしの依存の向き (Go のコンパイラは main の import だけを禁じる。必要になったら depguard で足す)
+
 ### A. doctorview の公開面を絞る (済んだ画面で型を固める)
 
 - [ ] A-1 0-1 の道具で doctorview の公開名を分類する (main の本体が使う / main のテストだけが使う / 外部テストだけが使う / 中だけ)
