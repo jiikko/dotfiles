@@ -108,7 +108,7 @@ golangci には「main を薄く」をそのまま表す規則が無いので、
 
 - [x] G-1 git log の取得と CI の取得 (gitlog.go / github.go / cache.go) を `internal/gitdata` へ出すか決める (render.go のコミット行の描画が使う)
 - [x] G-2 overlay 類 (diff / job / pr_status / action_modal) の置き場所を決める
-- [ ] G-3 main に残るのが「起動・配線・browseModel の状態機械」だけになったら、src/glogx/CLAUDE.md・README の構造の記述を直して閉じる
+- [x] G-3 main に残るのが「起動・配線・browseModel の状態機械」だけになったら、src/glogx/CLAUDE.md・README の構造の記述を直して閉じる
 
 ## 参考: キャッシュへの効き目 (742 の実測。動機ではない)
 
@@ -198,7 +198,7 @@ P2 2 件・P3 2 件を採用して直した: B-1 の BuildPanelBoxImpl は zoom.
   //go:build !nofixture を要求する (lanview の fixture.go から tag を消すと red)
   C までは opus 2 体で通した。D〜F はまだ誰も攻めていない
 - [x] ratelimitview の SaveRatelimitScreen / RemoveRatelimitScreen を Fixture の関数 (FixtureSaveScreen / FixtureRemoveScreen) へ寄せて非公開にした (2026-10-18)
-- [ ] G-1 / G-2 / G-3 (上の節)。G-3 では src/glogx/CLAUDE.md・README の構造の記述と structure_ratchet_test.go の一覧の「移設待ち」を片付ける。
+- [x] G-1 / G-2 / G-3 (上の節。2026-10-18 に済ませた)
   2026-10-18 に G-1 / G-2 の判断までは済ませた (下の「G の判断」節)。実装は未着手
 
 ### G の判断 (2026-10-18。xref で数えた。移設の実装は未着手)
@@ -238,4 +238,10 @@ JSON のタグ付きのフィールドは小文字にしない。unparam (check-
   本番の口は SHA() / NewDiffMsg / NewJobDetailMsg / JobDetailMsg の Key()・Lines()・Err()。main のテストは overlay ごとの Fixture
   (DiffFixture / JobDetailFixture / PrStatusFixture。フィールドへのポインタを返す) を使う。golden は 61 行 (フィールドは 0)。
   テスト名は前後で一致 (1253)。変異: JobDetailMsg.Key が "" を返すと TestBrowseCopyJobContext… の 2 本が red
+- [x] 2026-10-18 G-3 (glogx: main に残すものを確定させ、CLAUDE.md・README・許可表の理由を直す): main の非テストのファイルは 19 本で、
+  どれも起動・配線・browseModel の状態機械 (tui.go / fullscreen.go / hint_surfaces.go / gitlog_watch.go / open_workspace.go) か、
+  起動時の配線 (probe / autobuild / ime / cli_health / claude_version / codex_version / external_commands / action_modal / zoom / render)。
+  structure_ratchet_test.go の一覧に残っていた「C-1 で extcmd へ」「G-2 で置き場所を決める」の仮の理由を確定の理由に直した
+- [x] 2026-10-18 G-2 の 2 段目の漏れ (glogx: commitview の fixture.go を入れ忘れていたので足す): 新規の fixture.go を git add せずに
+  pathspec で commit し、master の main のテストが 1 commit の間ビルドできなかった。G-3 の作業で新しい worktree を切って気づいた
 

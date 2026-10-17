@@ -43,13 +43,13 @@ var mainSourceFiles = map[string]string{
 	"ime_tis_darwin.go":    "IME の macOS 実装 (ビルドタグ)",
 	"ime_tis_stub.go":      "IME の macOS 以外の空実装 (ビルドタグ)",
 	"open_workspace.go":    "e で nvim を開く (browseModel のメソッド)",
-	"render.go":            "コミット行の描画 (gitlog / github の型を使う)",
+	"render.go":            "コミット行の描画 (internal/gitdata の型を使う)",
 	"gitlog_watch.go":      "git log の外部変更の監視 (browseModel のメソッド)",
-	"external_commands.go": "外部コマンドのラッパーと差し替え点 (C-1 で extcmd へ)",
+	"external_commands.go": "git / tmux / claude を叩くラッパーと差し替え点 (エディタ・ブラウザ・クリップボードは internal/extcmd)",
 	"cli_health.go":        "claude / codex CLI のログイン状態の検査",
 	"claude_version.go":    "claude CLI の新版の検出",
 	"codex_version.go":     "codex CLI の新版の検出",
-	"action_modal.go":      "push / pull / claude update の確認モーダル (G-2 で置き場所を決める)",
+	"action_modal.go":      "push / pull / claude update の確認モーダル (それらを起こす配線そのものなので main に残す。issue 817 の G-2)",
 }
 
 // browseModelMethodFiles は browseModel のメソッドを持ってよい非テストのファイル (H-2)。

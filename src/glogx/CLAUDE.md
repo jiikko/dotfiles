@@ -4,7 +4,7 @@
 
 ## ファイルの地図
 
-`package main` が中心で、画面ごとに `internal/` のパッケージへ割っている途中 (issue 742。下の「構造の判断」)。責務のまとまりごとに:
+画面とデータの取得は `internal/` のパッケージに割ってあり、`package main` に残すのは起動・配線・browseModel の状態機械だけ (issue 742 で始め issue 817 で仕上げた。下の「構造の判断」)。責務のまとまりごとに:
 
 - `main.go` / `options.go` — エントリポイント・CLI フラグ (`Options`)
 - `tui.go` — Bubble Tea の状態機械本体 (`browseModel`)。git log の対話ブラウズ
@@ -15,8 +15,8 @@
 - `external_commands.go` — git/tmux/claude を叩くラッパー群 (テストの差し替え点)
 - `internal/extcmd/` — 画面と main が共有する外部コマンドの口 (エディタ・ブラウザ・クリップボード) と結果の Msg (`extcmd.RunEditorCmd` などテストの差し替え点)
 - `cli_health.go`, `claude_version.go`, `codex_version.go` — claude/codex CLI のログイン状態検査・新版検出
-- `action_modal.go` — push/pull/claude update の確認→実行→結果モーダル
-- `internal/commitview/` (`diff_overlay.go`, `pr_status_overlay.go`, `job_detail_overlay.go`) — コミットに重ねるポップアップ群 (いずれも「対象 SHA/key を持つ pager」型。issue 817 の G-2)
+- `action_modal.go` — push/pull/claude update の確認→実行→結果モーダル (それらを起こす配線そのものなので main に残す。issue 817 の G-2)
+- `internal/commitview/` (`diff_overlay.go`, `pr_status_overlay.go`, `job_detail_overlay.go`) — コミットに重ねるポップアップ群 (いずれも「対象 SHA/key を持つ pager」型。issue 817 の G-2)。main のテストの口は overlay ごとの `Fixture()` (`fixture.go`)
 - `internal/statusview/` (`status_view.go`, `worktree_status.go`) — status viewer (`s`)。仕様は `docs/status-viewer-spec.md`。main のテストが状態を置くのは `Fixture()` の口だけ (git status の取得の差し替えは `statusview.FixtureStubWorktree`)
 - `internal/issuesview/` (`issues_view.go`, `issues_drawer.go`, `issues_state.go`, `issues_watch.go`, `issues_number_filter.go`, `issues_linkjump.go`, `issues_group_expansion.go`, `url_picker.go`) — issues viewer (`i`) の画面側 (`issues_group_expansion.go` は epic group の展開状態 3 集合の整合、`issues_linkjump.go` は本文のファイルパスのジャンプモード `Tab`、`url_picker.go` は本文 pager の `u` の URL ピッカー)。仕様は `docs/issues-viewer-spec.md`。ドメイン (探索・parse・表示整形) は独立パッケージ `issues/`。テストは画面の中だけで閉じるものを `package issuesview` に、browseModel と組み合わせる配線のテストを main に置く。両方が使う issue の fixture は `internal/issuesview/issuesviewtest` (issuesview を import しない)
 - `internal/doctorview/` (`doctor_view.go`, `doctor_brew*.go`, `doctor_cache.go`, `doctor_cleanup.go`, `doctor_delete.go`, `doctor_docker.go`, `doctor_keys.go`, `doctor_resume.go`, `doctor_rowcursor.go`, `doctor_ssd.go`) — doctor 画面 (`D`)。テストは 3 か所: 画面の中を直接見るテスト (`package doctorview`)、画面の公開面だけで書けるテスト (`*_ext_test.go` = `package doctorview_test`)、browseModel と組み合わせるテスト (main の `doctor_*_test.go`。キーの振り分け・トースト・終了経路の配線)。後の 2 つが共有する部品 (テスト用の DoctorView・fake) は `internal/doctorview/doctortest` (本番からの import は depguard が止める)。新しい doctor のテストは、browseModel が要らない限り doctorview の中に書く (main のテストを増やすと、tui.go を直すたびの再コンパイルが重くなる。issue 742)。判定は `doctor/disk` `doctor/svc` `doctor/docker` `doctor/ssd` を直接呼ぶ (削除の破壊的操作は `doctor_delete.go` ではなく `doctor/disk.Delete` が持つ)

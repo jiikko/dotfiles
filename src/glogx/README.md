@@ -15,7 +15,8 @@ src/glog の完全コピーから出発しており、当時 github.go / render.
 「実在する第二消費者」か「明示的な分離要望」— issues/ の前例。termsafe は
 `src/termsafe` の独立 module へ出した = doctor module も同じ関門を通すため。issue 228。usage / subproc /
 atomicfile も第二消費者 (bin/ratelimit) ができたので `src/ratelimit` / `src/subproc` / `src/atomicfile` へ出した)。2026-10-17 にユーザーの明示的な分離要望 (issue 742。
-開発中のビルドキャッシュの増え方を減らす) で、描画の土台から順に `internal/` のパッケージへ割り始めた。
+開発中のビルドキャッシュの増え方を減らす) で、描画の土台から順に `internal/` のパッケージへ割り始め、issue 817 で画面とデータの取得を
+全部 `internal/` へ出した (main に残すのは起動・配線・browseModel の状態機械だけ。公開名は main が頼む口だけに絞り、`structure_ratchet_test.go` が守る)。
 
 GitHub Actions / GitHub Checks の結果をコミットごとに添える `git log` ラッパー。
 
@@ -410,12 +411,12 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `_go-project.yml` を呼び、lint と test を回す (src/glogx を触った push/PR のときだけ起動)
 - Bubble Tea は v2 (`charm.land/bubbletea/v2`)。移行で変えた点・採らなかった v2 機能・上げるときに
   測り直すこと (幅モデルの一致) は [`docs/glogx-bubbletea-v2.md`](../../docs/glogx-bubbletea-v2.md)
-- 実装は `package main` を中心に、描画の土台 `internal/term` と `issues/` サブパッケージ (画面ごとの切り出しは issue 742 で進行中)。利用枠の取得・整形 (`usage`) と外部プロセス起動の
+- 実装は `package main` (起動・配線・状態機械) と `internal/` の画面・データ取得のパッケージ (地図は [CLAUDE.md](CLAUDE.md))、`issues/` サブパッケージ。利用枠の取得・整形 (`usage`) と外部プロセス起動の
   安全弁 (`subproc`)・atomic 書き込み (`atomicfile`) は独立 module ([`../ratelimit`](../ratelimit/README.md) /
   [`../subproc`](../subproc/README.md) / [`../atomicfile`](../atomicfile/README.md)) から replace で取り込む。主な境界:
   `options.go` (引数 allowlist) / `internal/gitdata/gitlog.go` (git 実行と %x1e/%x1f レコード解析) /
   `internal/gitdata/github.go` (repo 解決・GraphQL・集約) / `internal/gitdata/cache.go` (XDG キャッシュ) /
-  `external_commands.go` (git/tmux/claude/browser/clipboard の外部プロセスラッパー) /
+  `external_commands.go` (git/tmux/claude の外部プロセスラッパー。エディタ・ブラウザ・クリップボードは `internal/extcmd`) /
   `internal/term` (ANSI 色・`Paint`・幅の別名・枠と影 (`box.go`)・端末サニタイズ (`terminal.go`)・glide のキー語彙・最下行の案内の詰め) / `render.go` (コミット行の生成) / `tui.go` (Bubble Tea ブラウズの中核・状態遷移) /
   `internal/term/box.go` は枠と影の本体 (tuikit の `layout.Panel` / `OverlayCentered`) に glogx のテーマ色を渡すラッパ (確認ダイアログは tuikit の `confirm`) /
   各種オーバーレイ・モーダル (`internal/commitview/` の diff / job 詳細 / PR 状態、
