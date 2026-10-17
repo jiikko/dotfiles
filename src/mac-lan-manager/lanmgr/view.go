@@ -144,7 +144,11 @@ func (m *Model) header(w int) string {
 			what = " 相手に接続して確認中"
 		case m.netCh != nil:
 			what = " この Mac のネットワーク設定を確認中"
-		default: // 残る Busy は確認待ち (pending / awaitingUnconf) だけ
+		case len(m.pending) == 0 && !m.awaitingUnconf() && len(m.bg) > 0:
+			what = " 有線の名前の広告を止めている"
+		case len(m.pending) == 0 && !m.awaitingUnconf():
+			what = " 有線の名前を確かめている"
+		default: // 残る Busy は確認待ち (pending / awaitingUnconf)
 			what = " 固定 IP の確認待ち"
 		}
 		left += "   " + lipgloss.NewStyle().Foreground(cPink).Render(spinner.At(m.now, spinStep)) + sDim.Render(what)
@@ -525,11 +529,11 @@ func (m *Model) detail(r row, width int) string {
 	if name != r.host && r.host != "" {
 		title += sDim.Render("  " + r.host)
 	}
-	label := func(s string) string { return sDim.Width(10).Render(s) }
+	label := func(s string) string { return sDim.Width(12).Render(s) } // 一番長い「有線の名前」(10 桁) の後に 2 桁空ける
 	link := func(url string) string {
 		return lipgloss.NewStyle().Foreground(cInfo).Underline(true).Hyperlink(url).Render(url)
 	}
-	ip := r.connectIP()
+	ip := m.target(r) // 有線の名前が引ければ名前 (wiredname.go)
 	lines := []string{title, gradRule(width-7, cTeal, cPurple, cPink, lipgloss.Color(surfDetail)), ""}
 	if !r.self {
 		if ip != "" {
@@ -555,6 +559,13 @@ func (m *Model) detail(r row, width int) string {
 	}
 	if m.pf.ShowLan {
 		lines = append(lines, label("内部")+sText.Render(or(r.lanIP, "-"))+"  "+lanState)
+		if name, ok, note := m.wiredState(r); name != "" {
+			state := sOK.Render("✓ 引ける")
+			if !ok {
+				state = sMuted.Render(note)
+			}
+			lines = append(lines, label("有線の名前")+sText.Render(name)+"  "+state)
+		}
 	}
 	if m.pf.ShowOthers && len(r.others) > 0 {
 		lines = append(lines, "", sDim.Render("その他の IP"))
@@ -615,21 +626,37 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	case ovLog:
 		return m.logBox(), -1, 0
 	case ovCopyIP:
-		ips := m.selfIPs()
 		unfixed := m.selfLan().Unfixed
-		body := make([]string, 0, 2)
-		for i, label := range []string{"内部", "メイン"} {
+		items := m.selfCopyItems()
+		body := make([]string, 0, len(items))
+		width := 0
+		for _, it := range items {
+			width = max(width, termwidth.Of(or(it.value, it.shown)))
+		}
+		for i, it := range items {
 			extra := ""
-			if i == 0 && unfixed {
+			switch {
+			case i == 0 && unfixed:
 				extra = pillWrn.Render("未固定")
+			case it.value == "" && it.note != "":
+				extra = sMuted.Render(it.note)
 			}
-			row := sKeycap.Render(strconv.Itoa(i+1)) + "  " + sDim.Width(8).Render(label) + sText.Bold(true).Width(18).Render(or(ips[i], "-")) + extra
-			if i == m.copyC {
-				row = lipgloss.NewStyle().Background(cSel).Width(44).Render(row)
+			val := sText.Bold(true)
+			if it.value == "" {
+				val = sMuted
+			}
+			row := sKeycap.Render(strconv.Itoa(i+1)) + "  " + sDim.Width(12).Render(it.label) + val.Width(max(width, 15)+2).Render(or(or(it.value, it.shown), "-")) + extra
+			row = termwidth.Truncate(row, max(m.w-8, 12), "…") // 板の内側 (modal は幅 w-1 から縁と余白の 6 桁を引く) に収める。狭い端末で行がはみ出した
+			if i == min(m.copyC, len(items)-1) {
+				row = lipgloss.NewStyle().Background(cSel).Render(row)
 			}
 			body = append(body, row)
 		}
-		return modal("この Mac の IP をコピー", body, "1 / 2 すぐコピー   j/k + enter 選んでコピー   esc やめる", m.w), -1, 0
+		keys := "1 / 2"
+		if len(items) > 2 {
+			keys = "1 / 2 / 3"
+		}
+		return modal("この Mac の IP・名前をコピー", body, keys+" すぐコピー   j/k + enter 選んでコピー   esc やめる", m.w), -1, 0
 	case ovAlias:
 		txt, col := m.alias.Window(24)
 		prefix := sDim.Render(m.edit.label + "  ")

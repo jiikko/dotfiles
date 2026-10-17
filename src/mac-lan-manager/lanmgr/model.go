@@ -81,6 +81,8 @@ type Scanner interface {
 // Options は外とのつなぎ。nil のものは使わない (本物のつなぎは live パッケージ。テストは偽物を渡す)。
 type Options struct {
 	ReadNet func(ctx context.Context) (netinfo.Snapshot, error) // この Mac のネットワーク
+	// LookupHost は名前を引く (有線の名前が今その Mac の内部 IP に引けるか。wiredname.go。nil なら引かない = いつも IP で繋ぐ)
+	LookupHost func(ctx context.Context, name string) ([]string, error)
 	// RunQuiet は端末を渡さずにコマンドを起こす (台帳から外した相手の名前の広告を止める ssh。nil なら止めない)
 	RunQuiet func(ctx context.Context, argv []string) error
 	// ReadAdvert はこの Mac の有線の名前の広告の状態 (setup.ReadNameState。nil なら読まない = 初期設定の手順は「読めていない」で止まる)
@@ -168,11 +170,15 @@ type Model struct {
 	selfAdvert      setup.NameState
 	selfAdvertKnown bool
 	bg              []<-chan Notice // 裏で走らせている後始末 (台帳から外した相手の名前の広告を止める) の結果
-	host            string          // この Mac のホスト名 (台帳の鍵の形)
-	hosts           []ledger.Host
-	peers           []discover.Peer
-	scan            Scanner
-	scanErr         error // 走査の失敗 (見せた後も持つ。Reload で消す)
+	// wired は有線の名前を引いた結果 (台帳の鍵 → 結果。wiredname.go)。wiredCh / wiredWait は引いている途中の回
+	wired     map[string]wiredLookup
+	wiredCh   <-chan wiredResult
+	wiredWait int
+	host      string // この Mac のホスト名 (台帳の鍵の形)
+	hosts     []ledger.Host
+	peers     []discover.Peer
+	scan      Scanner
+	scanErr   error // 走査の失敗 (見せた後も持つ。Reload で消す)
 	// cursorLost はこのキーの入口の取り込みで、画面で見ていた Mac が一覧から消えた (行に効くキーを断る)
 	cursorLost bool
 	wantHost   string             // RestorePlace で戻したいカーソルの Mac (見つかるまで持つ。走査が終われば諦める)
@@ -320,6 +326,7 @@ func (m *Model) applyNetLoad(r netLoad) {
 	m.self, m.selfErr = r.self, r.err
 	m.selfAdvert, m.selfAdvertKnown = r.advert, r.advertErr == nil
 	m.netReady = true
+	m.startWiredLookups() // この Mac の内部 IP が分かってから引く (固定かどうかで名前を持つかが決まる。netReady の後: 前だと行の内部 IP が分類されなかった)
 	m.netCh, m.netCancel = nil, nil
 }
 
@@ -409,6 +416,8 @@ func (m *Model) Advance(now time.Time) {
 	m.takeNetLoad()
 	m.takeObserve()
 	m.takeBG()
+	m.takeWired()
+	m.refreshWired()
 	m.settleProgress(true)
 	m.expireConfirms()
 	if m.scan != nil {
@@ -437,7 +446,7 @@ func (m *Model) Changed() <-chan struct{} {
 // この Mac のネットワークを裏で読んでいる間も Busy (読み終わりを Advance で取り込むため)。
 func (m *Model) Busy() bool {
 	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && m.su.ch != nil) || len(m.pending) > 0 || m.awaitingUnconf() ||
-		len(m.bg) > 0
+		len(m.bg) > 0 || m.wiredWait > 0
 }
 
 // OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定) が開いているか (glogx は横断キーも渡す)。
@@ -908,6 +917,7 @@ func (m *Model) HandleInput(key, text string) Action {
 	held := m.cursorHost()
 	m.takeNetLoad() // 読み終えていれば、次の tick を待たずにこのキーから効かせる
 	m.takeObserve()
+	m.refreshWired() // 放置した後は tick が回っていない: 引き直す時期を過ぎていればここで始める (取り込みは、引いている間は Busy で回る tick が行う)
 	// 取り込みで行が組み変わっても、このキーは画面で見ていた Mac に効かせる。見ていた Mac が消えたら (有線が外れて有線だけの表示から
 	// 落ちた等)、行に効くキーは断る (添字のままだと隣の Mac に繋いだ。敵対レビュー)
 	m.cursorLost = !m.followCursor(held)
@@ -1086,7 +1096,7 @@ func (m *Model) keyList(key string) Action {
 			m.note(why, false)
 		} else {
 			// known_hosts を IP でなく台帳の鍵に結び付ける (IP を付け替えても「鍵が変わった」にしない)
-			m.handOff(ExecRequest{Argv: []string{"ssh", "-o", "HostKeyAlias=" + r.host, "--", user + "@" + r.connectIP()}}, nil)
+			m.handOff(ExecRequest{Argv: []string{"ssh", "-o", "HostKeyAlias=" + r.host, "--", user + "@" + m.target(r)}}, nil)
 			return Exec
 		}
 	case "Y": // コピー (整形した参照 = コマンド)
@@ -1094,7 +1104,7 @@ func (m *Model) keyList(key string) Action {
 			m.note("繋ぐ IP が分からない", false)
 			break
 		}
-		m.copy(fmt.Sprintf("ssh %s@%s", user, r.connectIP()), guessNote)
+		m.copy(fmt.Sprintf("ssh %s@%s", user, m.target(r)), guessNote)
 	case "y": // コピー (素の値 = URL)
 		if !r.smb {
 			m.note("ファイル共有 (smb / 445) を開いていない", false)
@@ -1104,7 +1114,7 @@ func (m *Model) keyList(key string) Action {
 			m.note("繋ぐ IP が分からない", false)
 			break
 		}
-		m.copy("smb://"+r.connectIP(), "")
+		m.copy("smb://"+m.target(r), "")
 	case "o": // 外のアプリで開く (§2)
 		if !r.vnc {
 			m.note("画面共有を広告していない", false)
@@ -1114,7 +1124,7 @@ func (m *Model) keyList(key string) Action {
 			m.note(or(r.awayReason(), "繋ぐ IP が分からない"), false)
 			break
 		}
-		m.handOff(ExecRequest{Argv: []string{"open", "vnc://" + r.connectIP()}, ExitIsFailure: true}, nil)
+		m.handOff(ExecRequest{Argv: []string{"open", "vnc://" + m.target(r)}, ExitIsFailure: true}, nil)
 		return Exec
 	case "m": // 名前の変更 (treefiler と同じ動詞)
 		m.openEdit(r, aliasEdit, r.alias)
@@ -1195,6 +1205,7 @@ func (m *Model) askLedger(r row) {
 			if err := m.o.Ledger.Remove(r.host); err != nil {
 				return Notice{"外せない: " + err.Error(), false}
 			}
+			delete(m.wired, r.host) // 外す前に引いた「引ける」を使い続けない (戻したときに引き直す)
 			m.reloadLedger()
 			if stop {
 				m.unadvertise(r.host, name, argv)
@@ -1237,6 +1248,7 @@ func (m *Model) askLedger(r row) {
 func (m *Model) reloadLedger() {
 	if hs, err := m.o.Ledger.Load(); err == nil {
 		m.setHosts(hs, false) // 知らせは Reload で出している (別名・登録のたびに繰り返さない)
+		m.startWiredLookups() // 台帳の内部 IP が変わると、名前を持つ Mac と引く先が変わる
 	}
 }
 
@@ -1261,11 +1273,13 @@ func (m *Model) setHosts(hs []ledger.Host, tell bool) {
 }
 
 func (m *Model) keyCopyIP(key string) Action {
-	if move(&m.copyC, 2, key, 2) {
+	n := len(m.selfCopyItems())
+	m.copyC = min(m.copyC, n-1) // 板を開いている間に行が減った (この Mac が未固定に戻った) ら、残った最後の行を選ぶ
+	if move(&m.copyC, n, key, n) {
 		return None
 	}
 	switch key {
-	case "1", "2":
+	case "1", "2", "3":
 		m.ov = ovNone
 		m.copySelf(int(key[0] - '1'))
 	case "enter", "c": // 開いたキーでもう一度押すと、選んでいる方をコピー
@@ -1287,14 +1301,35 @@ func (m *Model) selfIPs() [2]string {
 	return [2]string{lan, main}
 }
 
+// selfCopyItems は c の板に並べるもの (この Mac の内部 IP・メイン IP・有線の名前)。板の表示とコピーは同じ並びを見る。
+func (m *Model) selfCopyItems() []copyItem {
+	ips := m.selfIPs()
+	items := []copyItem{{label: "内部", value: ips[0]}, {label: "メイン", value: ips[1]}}
+	if name, ok, note := m.wiredState(m.rows()[0]); name != "" {
+		it := copyItem{label: "有線の名前", value: name, note: note}
+		if !ok {
+			it.value = "" // 引けない名前はコピーさせない (渡しても繋がらない)
+			it.shown = name
+		}
+		items = append(items, it)
+	}
+	return items
+}
+
+// copyItem は c の板の 1 行。value が空ならコピーできない (shown は代わりに見せる値、note は理由)。
+type copyItem struct{ label, value, shown, note string }
+
 func (m *Model) copySelf(i int) {
-	ip := m.selfIPs()[i]
-	label := []string{"内部", "メイン"}[i]
-	if ip == "" {
-		m.note("この Mac の"+label+"の IP が無い", false)
+	items := m.selfCopyItems()
+	if i < 0 || i >= len(items) {
 		return
 	}
-	m.copy(ip, "  (この Mac の"+label+")")
+	it := items[i]
+	if it.value == "" {
+		m.note("この Mac の"+it.label+"が無い"+map[bool]string{true: " (" + it.note + ")", false: ""}[it.note != ""], false)
+		return
+	}
+	m.copy(it.value, "  (この Mac の"+it.label+")")
 }
 
 // hostEdit は入力欄で書き換える台帳の 1 欄。host は開いたときの Mac (確定の時点のカーソル行ではない。入力中に走査で行が増えると

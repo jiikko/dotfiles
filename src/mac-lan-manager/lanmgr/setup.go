@@ -604,6 +604,9 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 	if m.su != nil && m.su.host == host {
 		m.su.after, m.su.waitSince = m.stepTitle(string(step)), now // その結果を確かめている間、進捗のモーダルを出す
 	}
+	if step == setup.StepPeerName {
+		m.startWiredLookups() // 広告した名前を一覧の宛先に使えるか引き直す (この Mac の側は網の読み直しの後に引く)
+	}
 	if step == setup.StepSelfStatic || step == setup.StepSelfName {
 		// この Mac の網も読み直す (相手だけを読み直していたので、固定 IP にしても「未固定」のまま次の手順へ進まなかった。ユーザー報告)
 		m.startNetLoad()

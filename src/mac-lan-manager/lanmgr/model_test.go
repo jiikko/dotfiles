@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
@@ -2035,3 +2036,322 @@ func (otherNameError) Error() string {
 	return "exit status 4: mac-lan-manager: 別の名前 (air6.wired.local) を広告している (止めない)"
 }
 func (otherNameError) ExitCode() int { return setup.ExitOtherName }
+
+// awaitWired は裏で引いている有線の名前を全部取り込む。
+func awaitWired(t *testing.T, m *Model) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); m.wiredWait > 0; {
+		if time.Now().After(deadline) {
+			t.Fatal("有線の名前を引き終えない")
+		}
+		m.takeWired()
+		runtime.Gosched()
+	}
+}
+
+// wiredHarness は内部 IP を台帳で固定した mini (169.254.217.100) と、名前を引く偽物 (answers の名前 → IP)。
+func wiredHarness(t *testing.T, answers map[string][]string) *harness {
+	t.Helper()
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "169.254.217.100"}}, []discover.Peer{mini})
+	h.m.o.LookupHost = func(_ context.Context, name string) ([]string, error) { return answers[name], nil }
+	h.m.startWiredLookups()
+	awaitWired(t, h.m)
+	return h
+}
+
+// 有線の名前が内部 IP だけに引けるなら、繋ぐ・コピー・画面共有の宛先を名前にする (ホスト鍵の照合は台帳の鍵のまま)。
+func TestWiredNameUsedAsTarget(t *testing.T) {
+	h := wiredHarness(t, map[string][]string{"m2macmini.wired.local": {"169.254.217.100"}})
+	h.cursorTo(t, "m2macmini.local")
+	if v := strings.Join(h.m.View(), "\n"); !strings.Contains(v, "m2macmini.wired.local") || !strings.Contains(v, "✓ 引ける") {
+		t.Errorf("詳細に有線の名前と状態が出ない:\n%s", v)
+	}
+	h.keys("Y", "y")
+	if want := []string{"ssh koji@m2macmini.wired.local", "smb://m2macmini.wired.local"}; !slices.Equal(h.copied, want) {
+		t.Errorf("copied = %v, want %v", h.copied, want)
+	}
+	if a := h.keys("s"); a != Exec {
+		t.Fatalf("s = %v", a)
+	}
+	r, _ := h.m.TakeExec()
+	if !slices.Contains(r.Argv, "koji@m2macmini.wired.local") || !slices.Contains(r.Argv, "HostKeyAlias=m2macmini.local") {
+		t.Errorf("s = %q (名前で繋ぎ、ホスト鍵は台帳の鍵で照合する)", r.Argv)
+	}
+	if a := h.keys("o"); a != Exec {
+		t.Fatalf("o = %v", a)
+	}
+	if r, _ := h.m.TakeExec(); !slices.Contains(r.Argv, "vnc://m2macmini.wired.local") {
+		t.Errorf("o = %q", r.Argv)
+	}
+}
+
+// 名前が引けない・別の IP に向いているなら、宛先は IP のまま (渡しても繋がらない・別の Mac に繋がる名前を使わない) で、理由を詳細に出す。
+func TestWiredNameNotUsedUnlessItMatches(t *testing.T) {
+	for want, answers := range map[string]map[string][]string{
+		"まだ広告されていない":   nil,
+		"違う IP に向いている": {"m2macmini.wired.local": {"169.254.99.99"}},
+		"違う IP に向いてい":  {"m2macmini.wired.local": {"169.254.217.100", "192.168.50.7"}}, // Wi-Fi の IP も混ざる
+	} {
+		h := wiredHarness(t, answers)
+		h.cursorTo(t, "m2macmini.local")
+		h.keys("Y")
+		if !slices.Equal(h.copied, []string{"ssh koji@169.254.217.100"}) {
+			t.Errorf("%s: copied = %v (IP のまま)", want, h.copied)
+		}
+		if v := strings.Join(h.m.View(), "\n"); !strings.Contains(v, want) {
+			t.Errorf("%s: 詳細に理由が出ない:\n%s", want, v)
+		}
+	}
+}
+
+// c の板に、この Mac の有線の名前が引けるときだけコピーできる行を足す。
+func TestCopySelfWiredName(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	nn := selfNet()
+	nn.Services[0].Method, nn.Services[0].IP = "manual", "192.168.100.10"
+	nn.IPs[1] = netinfo.IP{Device: "en13", Addr: "192.168.100.10", Kind: netinfo.KindWired} // 固定は I/F の IP でも見る (selfLan)
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return nn, nil }
+	awaitNetLoad(h.m)
+	h.m.startNetLoad()
+	awaitNetLoad(h.m)
+	name, err := setup.WiredName(h.m.host)
+	if err != nil {
+		t.Fatalf("前提: この Mac の名前を作れない (%q): %v", h.m.host, err)
+	}
+	h.m.o.LookupHost = func(_ context.Context, n string) ([]string, error) {
+		if n == name {
+			return []string{"192.168.100.10"}, nil
+		}
+		return nil, nil
+	}
+	h.m.startWiredLookups()
+	awaitWired(t, h.m)
+	h.keys("c")
+	if v := strings.Join(h.m.View(), "\n"); !strings.Contains(v, name) {
+		t.Fatalf("c の板に有線の名前が無い:\n%s", v)
+	}
+	h.keys("3")
+	if len(h.copied) != 1 || h.copied[0] != name {
+		t.Errorf("3 で有線の名前をコピーしない: %v", h.copied)
+	}
+
+	// 引けない名前は板に理由つきで出すが、コピーさせない (渡しても繋がらない)
+	h.copied = nil
+	h.m.o.LookupHost = func(context.Context, string) ([]string, error) { return nil, nil }
+	h.m.startWiredLookups()
+	awaitWired(t, h.m)
+	h.m.TakeNotices()
+	h.keys("c", "3")
+	if len(h.copied) != 0 {
+		t.Errorf("引けない名前をコピーした: %v", h.copied)
+	}
+	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "広告されていない") {
+		t.Errorf("コピーしない理由を出さない: %+v", n)
+	}
+
+	// 板を開いている間に行が減って選択が範囲外に残っても、enter で黙って何もしないことにしない (残った最後の行を選ぶ)
+	h.keys("c")
+	h.m.copyC = 9
+	h.keys("enter")
+	if n := h.m.TakeNotices(); len(h.copied) == 0 && len(n) == 0 {
+		t.Error("範囲外の選択で enter が何もしない")
+	}
+}
+
+// Wi-Fi で繋ぐ相手 (この Mac が 169.254 のままで、相手だけ帯の固定 = 網が分かれる) には、名前が引けても有線の名前を渡さない
+// (有線で届かないので、名前で繋ぐと失敗する)。
+func TestWiredNameNotUsedOverWifi(t *testing.T) {
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "192.168.100.12"}}, []discover.Peer{mini})
+	h.m.o.LookupHost = func(context.Context, string) ([]string, error) { return []string{"192.168.100.12"}, nil }
+	h.m.startWiredLookups()
+	awaitWired(t, h.m)
+	h.cursorTo(t, "m2macmini.local")
+	if r := h.m.current(); r.connectIP() != "192.168.50.7" {
+		t.Fatalf("前提: Wi-Fi で繋ぐ相手でない (connectIP=%s)", r.connectIP())
+	}
+	h.keys("Y")
+	if !slices.Equal(h.copied, []string{"ssh koji@192.168.50.7"}) {
+		t.Errorf("copied = %v (Wi-Fi の IP のはず)", h.copied)
+	}
+	if v := strings.Join(h.m.View(), "\n"); !strings.Contains(v, "網が分かれている") || strings.Contains(v, "✓ 引ける") {
+		t.Errorf("詳細が宛先 (Wi-Fi の IP) と食い違う:\n%s", v)
+	}
+}
+
+// advanceUntil は cond が真になるまで tick を進める (本番と同じ Advance の経路で取り込ませる)。
+func advanceUntil(t *testing.T, m *Model, at time.Time, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); !cond(); {
+		if time.Now().After(deadline) {
+			t.Fatal("tick を進めても成り立たない")
+		}
+		m.Advance(at)
+		runtime.Gosched()
+	}
+}
+
+// r → この Mac の網の読み込み → 名前を引く → tick で取り込む、の配線を通して、宛先が名前になる。引いている間は Busy (tick を回す)。
+func TestWiredNameWiredThroughReload(t *testing.T) {
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "169.254.217.100"}}, []discover.Peer{mini})
+	gate := make(chan struct{})
+	h.m.o.LookupHost = func(_ context.Context, name string) ([]string, error) {
+		<-gate
+		if name == "m2macmini.wired.local" {
+			return []string{"169.254.217.100"}, nil
+		}
+		return nil, nil
+	}
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("r")
+	awaitNetLoad(h.m)
+	if h.m.wiredWait == 0 || !h.m.Busy() {
+		t.Fatalf("網を読み終えたのに名前を引き始めない / Busy でない (wait=%d)", h.m.wiredWait)
+	}
+	close(gate)
+	advanceUntil(t, h.m, t0, func() bool { return h.m.wiredWait == 0 })
+	if got := h.m.target(h.m.current()); got != "m2macmini.wired.local" {
+		t.Errorf("宛先 = %s (名前のはず)", got)
+	}
+}
+
+// 引いた結果は wiredRefreshAge を過ぎたら引き直し、引き直しの間は前の結果を使う (宛先がちらつかない)。広告が止まっていれば、引き直した
+// 結果で IP に戻る。キーの入口でも引き直しを始める (放置した後は tick が回っていない)。wiredMaxAge を過ぎた結果は使わない。
+func TestWiredNameRefreshAndExpiry(t *testing.T) {
+	var mu sync.Mutex
+	answer, gate := []string{"169.254.217.100"}, chan struct{}(nil)
+	now := t0
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "169.254.217.100"}}, []discover.Peer{mini})
+	h.m.o.Now = func() time.Time { return now }
+	h.m.o.LookupHost = func(context.Context, string) ([]string, error) {
+		mu.Lock()
+		a, g := answer, gate
+		mu.Unlock()
+		if g != nil {
+			<-g
+		}
+		return a, nil
+	}
+	h.m.startWiredLookups()
+	advanceUntil(t, h.m, now, func() bool { return h.m.wiredWait == 0 })
+	h.cursorTo(t, "m2macmini.local")
+	if got := h.m.target(h.m.current()); got != "m2macmini.wired.local" {
+		t.Fatalf("前提: 宛先 = %s", got)
+	}
+	// 広告が止まり、引き直す時期が来た。引き直しの答えは止めておく
+	g := make(chan struct{})
+	mu.Lock()
+	answer, gate = nil, g
+	mu.Unlock()
+	now = now.Add(wiredRefreshAge + time.Second)
+	h.keys("j") // 放置の後の最初のキー: tick が回っていなくても引き直しを始める
+	if h.m.wiredWait == 0 {
+		t.Fatal("引き直す時期を過ぎたのに、キーで引き直しを始めない")
+	}
+	if got := h.m.target(h.m.current()); got != "m2macmini.wired.local" {
+		t.Errorf("引き直しの間に IP へ戻った (ちらつく): %s", got)
+	}
+	close(g)
+	advanceUntil(t, h.m, now, func() bool { return h.m.wiredWait == 0 })
+	if _, ok, note := h.m.wiredState(h.m.current()); ok || !strings.Contains(note, "広告されていない") {
+		t.Errorf("引き直した後の状態 = ok=%v %q", ok, note)
+	}
+	// 引けた結果も、wiredMaxAge を過ぎたら (引き直しが届かないまま) 使わない
+	mu.Lock()
+	answer, gate = []string{"169.254.217.100"}, nil
+	mu.Unlock()
+	h.m.startWiredLookups()
+	advanceUntil(t, h.m, now, func() bool { return h.m.wiredWait == 0 })
+	now = now.Add(wiredMaxAge + time.Second)
+	if got := h.m.target(h.m.current()); got != "169.254.217.100" {
+		t.Errorf("使える長さを過ぎた結果で名前を使った: %s", got)
+	}
+}
+
+// 台帳から外した Mac の結果は消す (戻したとき、外す前の「引ける」を引き直さずに使った)。名前を確かめている間の見出しはそれを出す。
+func TestWiredEntryDroppedOnLedgerRemove(t *testing.T) {
+	h := wiredHarness(t, map[string][]string{"m2macmini.wired.local": {"169.254.217.100"}})
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("space", "y")
+	if _, ok := h.m.wired["m2macmini.local"]; ok {
+		t.Error("台帳から外した Mac の名前の結果が残った")
+	}
+
+	h2 := wiredHarness(t, nil)
+	gate := make(chan struct{})
+	defer close(gate)
+	h2.m.o.LookupHost = func(context.Context, string) ([]string, error) { <-gate; return nil, nil }
+	h2.scan.busy = false
+	h2.m.startWiredLookups()
+	if h2.m.wiredWait == 0 {
+		t.Fatal("前提: 名前を引いていない")
+	}
+	if hd := h2.m.header(200); !strings.Contains(hd, "有線の名前を確かめている") {
+		t.Errorf("名前を確かめている間の見出し = %q", hd)
+	}
+}
+
+// 引き直しが重なったら、前の回の結果は遅れて届いても使わない (新しい回の数に数えない)。
+func TestWiredLookupRoundsDoNotMix(t *testing.T) {
+	first, second := make(chan struct{}), make(chan struct{})
+	round := 0
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "169.254.217.100"}}, []discover.Peer{mini})
+	var mu sync.Mutex
+	h.m.o.LookupHost = func(context.Context, string) ([]string, error) {
+		mu.Lock()
+		round++
+		r := round
+		mu.Unlock()
+		if r == 1 {
+			<-first
+			return []string{"169.254.217.100"}, nil // 古い回: 引けた
+		}
+		<-second
+		return nil, nil // 新しい回: 引けない
+	}
+	h.m.startWiredLookups()
+	for { // 1 回目の問い合わせが始まるのを待ってから 2 回目を起こす
+		mu.Lock()
+		r := round
+		mu.Unlock()
+		if r == 1 {
+			break
+		}
+		runtime.Gosched()
+	}
+	h.m.startWiredLookups()
+	close(first) // 古い回が先に届く
+	close(second)
+	advanceUntil(t, h.m, t0, func() bool { return h.m.wiredWait == 0 })
+	h.cursorTo(t, "m2macmini.local")
+	if got := h.m.target(h.m.current()); got != "169.254.217.100" {
+		t.Errorf("古い回の結果を使った: %s", got)
+	}
+}
+
+// この Mac の網を読み直したら (固定し直して IP が変わった)、結果の期限を待たずに名前を引き直す (期限まで「違う IP」と出し続けない)。
+func TestWiredNameRelookupAfterNetReload(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	ip := "192.168.100.10"
+	net := func() netinfo.Snapshot {
+		nn := selfNet()
+		nn.Services[0].Method, nn.Services[0].IP = "manual", ip
+		nn.IPs[1] = netinfo.IP{Device: "en13", Addr: ip, Kind: netinfo.KindWired}
+		return nn
+	}
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return net(), nil }
+	h.m.o.LookupHost = func(context.Context, string) ([]string, error) { return []string{ip}, nil }
+	awaitNetLoad(h.m)
+	h.m.startNetLoad()
+	awaitNetLoad(h.m)
+	advanceUntil(t, h.m, t0, func() bool { return h.m.wiredWait == 0 })
+	if _, ok, note := h.m.wiredState(h.m.rows()[0]); !ok {
+		t.Fatalf("前提: この Mac の名前が引けない: %q", note)
+	}
+	ip = "192.168.100.20" // 固定し直した
+	h.m.startNetLoad()
+	awaitNetLoad(h.m)
+	advanceUntil(t, h.m, t0, func() bool { return h.m.wiredWait == 0 })
+	if _, ok, note := h.m.wiredState(h.m.rows()[0]); !ok {
+		t.Errorf("網を読み直したのに名前を引き直さない: %q", note)
+	}
+}

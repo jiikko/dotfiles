@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,15 +43,16 @@ func Options() (lanmgr.Options, error) {
 		ReadAdvert: func(ctx context.Context) (setup.NameState, error) {
 			return setup.ReadNameState(ctx, func(ctx context.Context, argv []string) (string, error) { return RunOut(ctx, argv[0], argv[1:]...) })
 		},
-		LocalHost: localHost,
-		StartScan: func(now time.Time) lanmgr.Scanner { return discover.Start(discover.ExecStarter, now) },
-		IfName:    ifName,
-		Ledger:    ledger.FileStore{Path: ledgerPath},
-		PrefsPath: prefsPath,
-		SavePrefs: prefs.Save,
-		Copy:      clipboard.Copy, // pbcopy (tmux の中では tmux バッファへもおまけ)。上限は clipboard.Timeout
-		User:      os.Getenv("USER"),
-		Observe:   Observe,
+		LocalHost:  localHost,
+		StartScan:  func(now time.Time) lanmgr.Scanner { return discover.Start(discover.ExecStarter, now) },
+		IfName:     ifName,
+		Ledger:     ledger.FileStore{Path: ledgerPath},
+		PrefsPath:  prefsPath,
+		SavePrefs:  prefs.Save,
+		Copy:       clipboard.Copy, // pbcopy (tmux の中では tmux バッファへもおまけ)。上限は clipboard.Timeout
+		User:       os.Getenv("USER"),
+		Observe:    Observe,
+		LookupHost: lookupHost,
 		RunQuiet: func(ctx context.Context, argv []string) error {
 			_, err := RunOut(ctx, argv[0], argv[1:]...)
 			var ee *exec.ExitError
@@ -83,4 +85,20 @@ func ifName(index int) string {
 		return i.Name
 	}
 	return ""
+}
+
+// lookupHost は名前を引く (Bonjour の .local も引ける dscacheutil を使う。Go の素の DNS の解決は mDNS を引かないことがある)。
+// IPv4 だけを返す。引けなければ空 (dscacheutil は知らない名前でも 0 で抜ける)。
+func lookupHost(ctx context.Context, name string) ([]string, error) {
+	out, err := RunOut(ctx, "dscacheutil", "-q", "host", "-a", "name", name)
+	if err != nil {
+		return nil, err
+	}
+	var ips []string
+	for _, l := range strings.Split(out, "\n") {
+		if ip, ok := strings.CutPrefix(strings.TrimSpace(l), "ip_address: "); ok && net.ParseIP(ip).To4() != nil && !slices.Contains(ips, ip) {
+			ips = append(ips, ip)
+		}
+	}
+	return ips, nil
 }
