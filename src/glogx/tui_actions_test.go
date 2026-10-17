@@ -15,6 +15,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -773,7 +774,7 @@ func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 func TestBrowseCopyLastWarning(t *testing.T) {
 	var copied string
 	stubbed := false
-	stubClipboardFunc(t, func(text string) error { copied = text; stubbed = true; return nil })
+	testenv.StubClipboardFunc(t, func(text string) error { copied = text; stubbed = true; return nil })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 
@@ -805,7 +806,7 @@ func TestBrowseCopyLastWarning(t *testing.T) {
 
 // コピー失敗時は理由を error トーストに出す。lastWarning は汚さない (コピー対象の警告を保持)。
 func TestBrowseCopyLastWarningError(t *testing.T) {
-	stubClipboardFunc(t, func(string) error { return errors.New("clipboard down") })
+	testenv.StubClipboardFunc(t, func(string) error { return errors.New("clipboard down") })
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.showWarning("なにか失敗")
 	m.handleKey("w")
@@ -829,7 +830,7 @@ func TestBrowseSuccessToastDoesNotClobberLastWarning(t *testing.T) {
 
 // ghErr (CI 取得失敗の sticky 警告) は lastWarning に無くても w で fallback コピーできる (issue 026 #1)。
 func TestBrowseCopyWarningGhErrFallback(t *testing.T) {
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.ghErr = &GHError{Kind: GHOther, Detail: "boom detail"}
 	m.handleKey("w")
@@ -840,7 +841,7 @@ func TestBrowseCopyWarningGhErrFallback(t *testing.T) {
 
 // 取得失敗系エラー (showWarning 経由) は表示トーストが消えても w でコピーできる (issue 026 #1)。
 func TestBrowseCopyWarningFromShowWarning(t *testing.T) {
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.showWarning("diff の取得に失敗しました: boom")
 	if m.lastWarning != "diff の取得に失敗しました: boom" {

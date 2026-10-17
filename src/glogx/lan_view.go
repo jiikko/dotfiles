@@ -31,13 +31,13 @@ const (
 // lanOptions は本物へのつなぎ (テストは走査とネットワークの読み取りを偽物に差し替える。tui_helpers_test.go の TestMain)。
 var lanOptions = live.Options
 
-// newLanModel は板の中身を作る。クリップボードと時計は glogx の口を使う (テストの stubClipboard と時計の差し替えに従う)。
+// newLanModel は板の中身を作る。クリップボードと時計は glogx の口を使う (テストの testenv.StubClipboard と時計の差し替えに従う)。
 func newLanModel() (*lanmgr.Model, error) {
 	o, err := lanOptions()
 	if err != nil {
 		return nil, err
 	}
-	o.Copy = func(s string) error { return extcmd.CopyToClipboard(s) } // glogx のクリップボードの口 (テストは stubClipboard で差し替える)
+	o.Copy = func(s string) error { return extcmd.CopyToClipboard(s) } // glogx のクリップボードの口 (テストは testenv.StubClipboard で差し替える)
 	o.Now = func() time.Time { return app.TimeNow() }                  // 呼ぶたびに読む (値をつかむとテストが差し替えた時計に追従しない)
 	return lanmgr.New(o), nil
 }

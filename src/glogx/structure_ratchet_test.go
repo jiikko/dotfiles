@@ -437,3 +437,70 @@ func TestNoFixtureCallsInProduction(t *testing.T) {
 		t.Fatalf("非テストの .go を %d 個しか読んでいない (走査が壊れている)", scanned)
 	}
 }
+
+// TestEveryTestPackageUsesTestenv はテストを持つ main と internal の各パッケージが、TestMain で testenv.Main を呼ぶことを
+// 確かめる。TestMain の前処理 (隔離・幅 env のガード・外部作用の既定) はパッケージ単位でしか掛からないので、テストを
+// 新しいパッケージへ移すと黙って外れる (retro 815。issue 742 で doctor のテストを移したとき、幅 env のガードと
+// キャッシュの隔離が外れて緑のまま通った)。前処理の中身は internal/testenv が正本 (issue 817)。
+// 止めないもの: TestMain の中で testenv.Main 以外の前処理を足す形・testenv.Main を呼ぶ前に何かを走らせる形 (レビューの責務)
+func TestEveryTestPackageUsesTestenv(t *testing.T) {
+	dirs := map[string]bool{}
+	err := filepath.WalkDir(".", func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if n := d.Name(); p != "." && (n == "testdata" || n == "tools" || n == "gorules" || n == "cmd" || n == "issues" || strings.HasPrefix(n, ".")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(p, "_test.go") {
+			dirs[filepath.Dir(p)] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// canary: main と doctorview・term はテストを持つ
+	for _, want := range []string{".", filepath.Join("internal", "doctorview"), filepath.Join("internal", "term")} {
+		if !dirs[want] {
+			t.Fatalf("テストを持つパッケージの走査が %s を見つけない: %v", want, dirs)
+		}
+	}
+	fset := token.NewFileSet()
+	for dir := range dirs {
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, e := range ents {
+			if !strings.HasSuffix(e.Name(), "_test.go") {
+				continue
+			}
+			f, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, parser.SkipObjectResolution)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, d := range f.Decls {
+				fn, ok := d.(*ast.FuncDecl)
+				if !ok || fn.Name.Name != "TestMain" || fn.Recv != nil || fn.Body == nil {
+					continue
+				}
+				ast.Inspect(fn.Body, func(n ast.Node) bool {
+					if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "Main" {
+						if id, ok := sel.X.(*ast.Ident); ok && id.Name == "testenv" {
+							found = true
+						}
+					}
+					return true
+				})
+			}
+		}
+		if !found {
+			t.Errorf("%s: テストを持つのに TestMain で testenv.Main を呼んでいない (隔離・幅 env のガード・外部作用の既定が掛からない)", dir)
+		}
+	}
+}

@@ -1,13 +1,16 @@
 package main
 
 import (
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"strings"
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+
 	"glogx/internal/term"
+	"glogx/internal/testenv"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestBrowseCursorNavigation(t *testing.T) {
@@ -233,7 +236,7 @@ func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 // 判定は cmd != nil ではなく m.ticking で見る: single-flight なので、別経路が先に張っていると
 // cmd は nil になりうる (それでは不変条件を確かめられない)。
 func TestBrowseBatchedRunesArmsTick(t *testing.T) {
-	stubClipboardFunc(t, func(string) error { return nil })
+	testenv.StubClipboardFunc(t, func(string) error { return nil })
 
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateSuccess)

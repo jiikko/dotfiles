@@ -19,6 +19,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"glogx/issues"
 
 	"github.com/jiikko/dotfiles/src/tuikit/editor"
@@ -309,7 +310,7 @@ func TestIssuesViewTabLineNoMarksWhenAllFit(t *testing.T) {
 
 // shift+↑/↓ で範囲を選び、y / p / Y がその範囲へ効く (ユーザー要望 2026-08-01)。
 func TestIssuesViewMultiSelectYank(t *testing.T) {
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 
 	v := loadedView(sampleIssues()...)
 	v.filter = issues.FilterAll
@@ -968,7 +969,7 @@ func TestIssuesViewCursorStaysVisibleAfterRowSetChanges(t *testing.T) {
 	// 🚨 回帰防止: カーソルは常に窓の中にいる。行数やヘッダー高が変わる経路 (a / Tab /
 	// 通知行の増加) で窓だけ先頭へ飛ぶと、カーソル行がどこにも描かれないまま
 	// current() が見えない行を返し、Enter / v (nvim) / y が別の issue を対象にする。
-	stubClipboardFunc(t, func(string) error { return nil })
+	testenv.StubClipboardFunc(t, func(string) error { return nil })
 
 	list := make([]*issues.Issue, 0, 50)
 	for i := 50; i > 0; i-- {
@@ -1069,7 +1070,7 @@ func realIssue(t *testing.T) *issues.Issue {
 }
 
 func TestIssuesViewCopyPathAndEditor(t *testing.T) {
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	cmds := stubEditorCapture(t)
 	pinFallbackEditor(t)
 
@@ -1097,7 +1098,7 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 	// v / y / p / Y / N は一覧でも本文でも同じ対象 (target) に効く。モードごとの switch へ
 	// 写すと、追加時に片方へ入れ忘れても「そのモードでだけ効かない」形で静かに壊れる。
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	cmds := stubEditorCapture(t)
 	pinFallbackEditor(t)
 
@@ -1199,7 +1200,7 @@ func TestIssuesViewShowsScanWarning(t *testing.T) {
 func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
 	// 🚨 回帰防止: notice に寿命が無いと、コピーを 1 回した時点でスキャン警告
 	// (同名ファイルの二重化 = conflict も error も出ない静かな内容喪失) が二度と出なくなる。
-	stubClipboardFunc(t, func(string) error { return nil })
+	testenv.StubClipboardFunc(t, func(string) error { return nil })
 
 	v := newTestIssuesView()
 	v.shown = true
@@ -1227,7 +1228,7 @@ func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
 func TestIssuesViewBodyModeShowsCopyResult(t *testing.T) {
 	// 本文モードのコピーの成否も通知に載る (browseModel がトーストへ流す)。以前はヘッダーの
 	// 行に出していたが、viewer の上にもトーストを合成するようにして共通の語彙へ寄せた。
-	stubClipboardFunc(t, func(string) error { return errors.New("pbcopy が見つかりません") })
+	testenv.StubClipboardFunc(t, func(string) error { return errors.New("pbcopy が見つかりません") })
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "028-refactor-x.md")
@@ -1271,7 +1272,7 @@ func TestIssuesViewHintChangesByMode(t *testing.T) {
 }
 
 func TestIssuesViewCopyActions(t *testing.T) {
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 
 	v := loadedView(sampleIssues()...)
 	v.root = "/repo"
@@ -1581,7 +1582,7 @@ func TestReorderTabsByCount(t *testing.T) {
 // (ユーザー要望 2026-07-31: 順送りだと 24 本の issue で目的の 1 本に辿り着けない)。
 func TestIssuesViewURLPicker(t *testing.T) {
 	var opened []string
-	stubBrowserFunc(t, func(url string) error { opened = append(opened, url); return nil })
+	testenv.StubBrowserFunc(t, func(url string) error { opened = append(opened, url); return nil })
 
 	v := newTestIssuesView()
 	v.shown, v.loaded = true, true
@@ -2079,7 +2080,7 @@ func TestIssuesViewURLPickerNone(t *testing.T) {
 
 // 一覧モードでは u は効かない (本文を読んでいないため)。
 func TestIssuesViewOpenURLListModeIsNoop(t *testing.T) {
-	stubBrowserFunc(t, func(string) error { t.Fatal("一覧モードでブラウザを開いた"); return nil })
+	testenv.StubBrowserFunc(t, func(string) error { t.Fatal("一覧モードでブラウザを開いた"); return nil })
 
 	v := loadedView(sampleIssues()...)
 	if cmd := v.handleKey("u", vp(20)); cmd != nil {
@@ -2430,7 +2431,7 @@ type bodyKeyEnv struct {
 func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
 	t.Helper()
 	cmds := stubEditorCapture(t)
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	pinFallbackEditor(t)
 
 	dir := t.TempDir()
@@ -2835,7 +2836,7 @@ func TestIssuesViewRefusesToCopyControlChars(t *testing.T) {
 		t.Fatalf("前提が崩れた: 制御文字を含む名前の issue が走査に乗らない (%d 件)", len(found))
 	}
 	for _, key := range []string{"y", "Y"} { // パス / 参照 (どちらも生のパスを含む)
-		copied := stubClipboard(t)
+		copied := testenv.StubClipboard(t)
 		v := loadedView(found...)
 		v.root = filepath.Dir(dir)
 		v.handleKey(key, vp(10))
@@ -2847,14 +2848,14 @@ func TestIssuesViewRefusesToCopyControlChars(t *testing.T) {
 		}
 	}
 	// 複数件をまとめてコピーする経路も同じく断る
-	multi := stubClipboard(t)
+	multi := testenv.StubClipboard(t)
 	mv := loadedView(found...)
 	mv.copyLines([]string{"/ok/002-feat-c.md", found[0].Path}, "パス")
 	if *multi != "" || !strings.Contains(mv.notice, "制御文字") {
 		t.Fatalf("複数件: 制御文字を含む値をコピーした: %q (通知 %q)", *multi, mv.notice)
 	}
 	// 普通の名前は今までどおりコピーする (断る判定が広すぎないこと)
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	v := loadedView(path2issue(dir, "002-feat-c.md"))
 	v.handleKey("y", vp(10))
 	if *copied != filepath.Join(dir, "002-feat-c.md") {

@@ -16,6 +16,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -267,7 +268,7 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 	if m.panelCursor != -1 {
 		t.Fatalf("開いた直後のフォーカスはタイトル行 (-1) のはず: %d", m.panelCursor)
 	}
-	opened := stubBrowser(t)
+	opened := testenv.StubBrowser(t)
 	// j で job0 にフォーカスして o → ブラウザで開く (Enter は TUI 内の詳細に使う)
 	m.handleKey("j")
 	if m.panelCursor != 0 {
@@ -590,7 +591,7 @@ func TestBrowseOpenJobRejectsNonHTTP(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	called := false
-	stubBrowserFunc(t, func(string) error { called = true; return nil })
+	testenv.StubBrowserFunc(t, func(string) error { called = true; return nil })
 	if _, cmd := m.handleKey("o"); cmd != nil {
 		t.Errorf("file:// URL で Cmd が返った")
 	}

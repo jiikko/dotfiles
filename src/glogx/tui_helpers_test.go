@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,16 +13,13 @@ import (
 
 	"doctor/disk"
 	"doctor/svc"
-	"doctor/testtmp"
 	"glogx/internal/app"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/extcmd"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"glogx/issues"
-	"subproc"
-
-	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
 
 // installInertDoctor は doctor の走査口を**何も触らない fake** に差し替える。
@@ -79,66 +75,11 @@ func joinDoctorCleanup(t *testing.T) {
 	}
 }
 
-// TestMain はパッケージ全体のキャッシュ置き場を一時ディレクトリへ逃がす。
-//
-// 🚨 実ユーザーの ~/.cache/glog を触らせないため: quit() は「最後に見ていた画面」を保存/削除する
-// (issues_state.go) ので、隔離しないと make test が開発者の記憶を消す。CI キャッシュ
-// (cache.go) と claude バージョンキャッシュも同じ base を使う。個別テストの
-// t.Setenv("XDG_CACHE_HOME", ...) は従来どおり上書きできる。
-//
-// 幅 env のガードもここに置く: RUNEWIDTH_EASTASIAN が真だと幅系テストが 20 本以上まとめて
-// 落ち、しかも「term.DispWidth(\"→\") = 2; want 1」のような期待値の話に見えるが、実体は glogx が
-// この env を支持していないこと (罫線・ブロックが幅 2 になり枠が 2 倍近くに膨らむ。issue 054)。
-// 意味の分からない赤を量産する代わりに、理由を 1 度だけ言って止める (env をわざと立てる
-// TestDispWidthAgreesUnderEastAsianEnv は termwidth パッケージ側にあり、そちらの TestMain が除外する)。
+// TestMain は隔離した環境でテストを走らせる (前処理の中身と理由は internal/testenv の Main が正本)。
+// main のパッケージ固有の前処理: mac-lan-manager (L) の本物のネットワークの読み取り (networksetup) と Bonjour の走査
+// (終わらない dns-sd) を起こさない (fullscreen_test は横断キーで全部の板を開く。issue 747)。
 func TestMain(m *testing.M) {
-	if err := subproc.UnsetGitLocationEnv(); err != nil { // 継承した GIT_DIR などで、一時 dir に作る repo の git が別の repo を書かない (issue 740)
-		panic(err)
-	}
-	widthenv.ExitIfUnsupported()
-	// 🚨 **後始末は下の RemoveAll だけに預けない** (issue 305)。`m.Run()` から戻らない終了
-	// (SIGKILL / -timeout の SIGQUIT / panic) では末尾に到達せず、残骸が永久に残る
-	// (実測 2026-09-06 に 40 件)。testtmp.Setup が**起動時に前回の残骸を回収する**。
-	dir, swept, cleanup, err := testtmp.Setup("glogx-cache")
-	if err != nil {
-		panic(err) // 隔離できないまま走らせると実ユーザーのキャッシュを触る (Setenv 失敗と同じ扱い)
-	}
-	if swept > 0 {
-		fmt.Fprintf(os.Stderr, "[testtmp] 前回の残骸を %d 件回収した\n", swept)
-	}
-	if err := os.Setenv("XDG_CACHE_HOME", dir); err != nil {
-		panic(err)
-	}
-	// treefiler (F) の設定と前回の場所は ~/.config/treefiler に書く。テストは本物を読み書きしない
-	// (読むと利用者の設定でテストの結果が変わり、書くと利用者の設定を書き換える。2026-10-09 に実際に書いた)
-	if err := os.Setenv("TREEFILER_CONFIG_DIR", filepath.Join(dir, "treefiler-config")); err != nil {
-		panic(err)
-	}
-	// mac-lan-manager (L) の台帳と設定も同じ理由で一時領域へ。加えて本物のネットワークの読み取り (networksetup) と
-	// Bonjour の走査 (終わらない dns-sd) を起こさない: fullscreen_test は横断キーで全部の板を開く (issue 747)
-	if err := os.Setenv("MAC_LAN_MANAGER_CONFIG_DIR", filepath.Join(dir, "mac-lan-manager-config")); err != nil {
-		panic(err)
-	}
-	lanOptions = fakeLanOptions
-	// Go 1.26 の testing.T.TempDir は GOTMPDIR を優先する。呼び出し側が sandbox 用に
-	// repo 内のパスを指定しても、そこを TempDir の起点にすると「repo 外」を検査するテストが
-	// glogx の git root を誤って拾うため、テスト用の一時領域へ隔離する。
-	if err := os.Setenv("GOTMPDIR", dir); err != nil {
-		panic(err)
-	}
-	// 🚨 外部作用 (クリップボード・ブラウザ) の既定は「呼ばれたら落ちる」。差し替えを書き忘れた
-	// テストは実クリップボードを書き換え・ブラウザを開き、しかも「何も起きなかった」を検査できない
-	// (issue 667: 親行の N のテストが退行すると実際に pbcopy を走らせる形だった)。stubClipboard /
-	// stubBrowser は終了時にこの既定へ戻す
-	extcmd.CopyToClipboard = func(text string) error {
-		panic("テストが copyToClipboard を差し替えずに呼んだ (stubClipboard を使う): " + text)
-	}
-	extcmd.OpenInBrowser = func(url string) error {
-		panic("テストが openInBrowser を差し替えずに呼んだ (stubBrowser を使う): " + url)
-	}
-	code := m.Run() // 🚨 os.Exit は defer を走らせないので、片付けは Run の後に手で書く
-	cleanup()
-	os.Exit(code)
+	testenv.Main(m, "glogx-cache", func(string) { lanOptions = fakeLanOptions })
 }
 
 func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []string) *browseModel {
@@ -236,38 +177,6 @@ func withJobs(m *browseModel, idx int) {
 		{Name: "build", State: StateSuccess, URL: "https://github.com/o/r/runs/1"},
 		{Name: "lint", State: StateFailure, URL: ""},
 	}
-}
-
-// stubClipboardFunc は extcmd.CopyToClipboard を fn に差し替え、テスト終了時に戻す (失敗系・独自記録用)。
-func stubClipboardFunc(t *testing.T, fn func(string) error) {
-	t.Helper()
-	orig := extcmd.CopyToClipboard
-	extcmd.CopyToClipboard = fn
-	t.Cleanup(func() { extcmd.CopyToClipboard = orig })
-}
-
-// stubClipboard は extcmd.CopyToClipboard を「記録して成功する」実装に差し替え、記録先を返す (多数派の形)。
-func stubClipboard(t *testing.T) *string {
-	t.Helper()
-	var copied string
-	stubClipboardFunc(t, func(text string) error { copied = text; return nil })
-	return &copied
-}
-
-// stubBrowserFunc は extcmd.OpenInBrowser を fn に差し替え、テスト終了時に戻す (ガード・複数記録用)。
-func stubBrowserFunc(t *testing.T, fn func(string) error) {
-	t.Helper()
-	orig := extcmd.OpenInBrowser
-	extcmd.OpenInBrowser = fn
-	t.Cleanup(func() { extcmd.OpenInBrowser = orig })
-}
-
-// stubBrowser は extcmd.OpenInBrowser を「最後に開いた URL を記録して成功する」実装に差し替え、記録先を返す。
-func stubBrowser(t *testing.T) *string {
-	t.Helper()
-	var opened string
-	stubBrowserFunc(t, func(url string) error { opened = url; return nil })
-	return &opened
 }
 
 // testPopupWidth は tmux popup で glogx が実際に使う幅の代表値。🚨 production はこの値を持たない

@@ -10,6 +10,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"glogx/issues"
 )
 
@@ -88,9 +89,9 @@ func TestIssuesViewGroupParentActionsAreNoopWithNotice(t *testing.T) {
 	// 🚨 外部作用を差し替える: 退行すると実クリップボード・ブラウザを書き換える (issue 667)。
 	// 「何もコピー・起動しなかった」も assert する。notice の有無だけだと、退行した操作自身が出す
 	// 成功の notice (N の採番コピー等) で緑になった
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	var opened []string
-	stubBrowserFunc(t, func(url string) error { opened = append(opened, url); return nil })
+	testenv.StubBrowserFunc(t, func(url string) error { opened = append(opened, url); return nil })
 	group := fakeEpicIssue("/repo/issues", "cloud", "710", "drive", issues.StatusOpen)
 	v := loadedView(group)
 	if !v.currentIsGroup() {
@@ -116,7 +117,7 @@ func TestIssuesViewGroupParentActionsAreNoopWithNotice(t *testing.T) {
 // 合成の group 親行の y は group 名をコピーする (ユーザー要望 2026-09-08)。
 // no-op のままだと、epic のパスを組むときに画面の名前を目で読んで打ち直すことになる。
 func TestIssuesViewGroupParentCopiesGroupName(t *testing.T) {
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 
 	// 🚨 番号と group 名を**違えて**作る: 一致させると groupHead (実体が issue の親行) になり、
 	// 今書いた分岐へ一度も入らないまま緑になる。前提は下の Fatal で固定する
@@ -146,7 +147,7 @@ func TestIssuesViewGroupParentCopiesGroupName(t *testing.T) {
 // `issues/epic/<name>/` のパスや grep なので、書き換えると別物になる)。通知の方は
 // setNotice が無害化するので、1 行の枠は壊れない。
 func TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice(t *testing.T) {
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 
 	name := "drive\tsync"
 	group := fakeEpicIssue("/repo/issues", name, "710", "drive", issues.StatusOpen)
@@ -168,7 +169,7 @@ func TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice(t *testing.T)
 // 統合した親 issue 行 (groupHead) の y は従来どおりパス。親行の判定を isGroupParent へ
 // 広げると、実体のある親 issue のパスコピーが group 名に化ける。
 func TestIssuesViewGroupHeadRowStillCopiesPath(t *testing.T) {
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 
 	parent := fakeEpicIssue("/repo/issues", "467", "467", "asset-library", issues.StatusOpen)
 	child := fakeEpicIssue("/repo/issues", "467", "468", "child", issues.StatusOpen)

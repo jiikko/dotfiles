@@ -3,12 +3,9 @@ package term
 import (
 	"testing"
 
-	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
+	"glogx/internal/testenv"
 )
 
-// TestMain は支持しない幅 env (RUNEWIDTH_EASTASIAN) では理由を 1 度だけ言って止める (issue 054)。main パッケージ
-// (tui_helpers_test.go) の TestMain と同じガードで、issue 742 で枠のテストをここへ移したとき通らなくなっていた。
-func TestMain(m *testing.M) {
-	widthenv.ExitIfUnsupported()
-	m.Run()
-}
+// TestMain は隔離した環境でテストを走らせる (前処理の中身と理由は internal/testenv の Main が正本。issue 742 でテストを
+// このパッケージへ移したとき、main の TestMain の前処理が外れた。issue 817 で 1 か所に寄せた)。
+func TestMain(m *testing.M) { testenv.Main(m, "glogx-term", nil) }

@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"glogx/internal/testenv"
 	"glogx/issues"
+
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
 )
 
 // jumpEnv は repo root + issues/ + 実在するファイルを持つ本文を開いた viewer。
@@ -261,7 +263,7 @@ func TestLinkJumpDocLineAndDirectory(t *testing.T) {
 // e / y は選択中のリンクへ効く (issue 自体を開く・コピーしない)。
 func TestLinkJumpActionKeysTargetLink(t *testing.T) {
 	cmds := stubEditorCapture(t)
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	pinFallbackEditor(t)
 	e := newJumpEnv(t, jumpBody)
 	e.press("tab")

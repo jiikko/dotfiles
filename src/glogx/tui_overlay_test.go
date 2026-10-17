@@ -17,12 +17,13 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 
 	tea "charm.land/bubbletea/v2"
 )
 
 func TestBrowseCopyURL(t *testing.T) {
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
 	withJobs(m, 0)
@@ -59,7 +60,7 @@ func TestBrowseBatchPRsFeedPCache(t *testing.T) {
 		Details:  map[string][]CheckDetail{},
 		PRs:      map[string]*PRRef{shas[0]: {Number: 7, URL: "https://github.com/o/r/pull/7", State: "MERGED"}},
 	}})
-	opened := stubBrowser(t)
+	opened := testenv.StubBrowser(t)
 	// 再取得なしで即 open
 	_, cmd := m.handleKey("p")
 	if cmd == nil || m.prBusy[shas[0]] {
@@ -76,7 +77,7 @@ func TestBrowseBatchPRsFeedPCache(t *testing.T) {
 }
 
 func TestBrowseOpenPR(t *testing.T) {
-	opened := stubBrowser(t)
+	opened := testenv.StubBrowser(t)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StateSuccess
@@ -107,7 +108,7 @@ func TestBrowseOpenPR(t *testing.T) {
 // 取得中にカーソルが動いたら、届いた PR は反映 (キャッシュ・バッジ) だけして自動オープン
 // しない。離れたコミットの PR がいきなりブラウザで開く回帰の防止 (2026-07-29)。
 func TestBrowsePRResultAfterCursorMoveDoesNotOpen(t *testing.T) {
-	opened := stubBrowser(t)
+	opened := testenv.StubBrowser(t)
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StateSuccess
@@ -493,7 +494,7 @@ func TestBrowseDiffEmptyShowsMessage(t *testing.T) {
 
 // diff ポップアップ表示中の y はカーソル位置コミットの URL をコピーする。
 func TestBrowseDiffCopyURLWhileOpen(t *testing.T) {
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	m := newTestBrowse(t, 1, nil, nil)
 	stubDiff(t, []string{"x"}, nil)
 	_, cmd := m.handleKey("d")
@@ -580,7 +581,7 @@ func TestBrowseDiffStaleErrorDoesNotCloseCurrent(t *testing.T) {
 func TestBrowseListOpenCommitURL(t *testing.T) {
 	m := newTestBrowse(t, 2, nil, nil)
 	var opened []string
-	stubBrowserFunc(t, func(url string) error { opened = append(opened, url); return nil })
+	testenv.StubBrowserFunc(t, func(url string) error { opened = append(opened, url); return nil })
 
 	m.handleKey("j") // 2 番目のコミットへ
 	_, cmd := m.handleKey("o")
@@ -610,7 +611,7 @@ func TestBrowseCopyJobContextCached(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
 	withFailedJob(m, 0, 7, StateFailure)
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	m.openPanel()
 	m.handleKey("j")
 	// 詳細キャッシュ済み → 即コピー (追加 fetch なし)
@@ -635,7 +636,7 @@ func TestBrowseCopyJobContextFetchesThenCopies(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
 	withFailedJob(m, 0, 7, StateFailure)
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	m.openPanel()
 	m.handleKey("j")
 	// 未取得 → 詳細ポップアップを開いて取得し、到着時にコピーされる
@@ -697,7 +698,7 @@ func TestBrowsePRStatusFlow(t *testing.T) {
 		}
 	}
 	// 表示中はモーダル: o でブラウザ、q で閉じる
-	opened := stubBrowser(t)
+	opened := testenv.StubBrowser(t)
 	_, cmd = m.handleKey("o")
 	if cmd == nil {
 		t.Fatal("o でブラウザ Cmd が返らない")
@@ -765,7 +766,7 @@ func TestBrowseCopyJobContextFocusMovedDropsCopy(t *testing.T) {
 		{Name: "build", State: StateSuccess, CheckID: 1},
 		{Name: "lint", State: StateFailure, CheckID: 7},
 	}
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	m.openPanel()
 	m.handleKey("j") // job0 (build) にフォーカス
 	key0 := m.detailKey()
@@ -795,7 +796,7 @@ func TestBrowseCopyJobContextSanitizesHeader(t *testing.T) {
 	m.details[m.commits[0].SHA] = []CheckDetail{
 		{Name: "li\x1b[31mnt", State: StateFailure, CheckID: 7, URL: "https://x/\x1b]0;pwn\x07ok"},
 	}
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	m.openPanel()
 	m.handleKey("j")
 	m.detailOv.cache.store(m.detailKey(), []string{"log"}, m.detailKey())
@@ -1262,7 +1263,7 @@ func TestIssuesViewerCursorArrowNotDoubled(t *testing.T) {
 // 🚨 viewer は全画面で viewLines が早期 return するため、トーストを合成し忘れると通知が
 // 画面に一切出ない (それが以前ヘッダー行に出していた理由)。ここは実 View の出力まで見る。
 func TestIssuesViewerNotifiesViaToast(t *testing.T) {
-	stubClipboardFunc(t, func(string) error { return nil })
+	testenv.StubClipboardFunc(t, func(string) error { return nil })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.width, m.height = 100, 16
@@ -1302,7 +1303,7 @@ func TestIssuesViewerNotifiesViaToast(t *testing.T) {
 
 // 失敗は失敗色のトーストで出し、w でコピーできるよう lastWarning にも残す。
 func TestIssuesViewerCopyFailureToast(t *testing.T) {
-	stubClipboardFunc(t, func(string) error { return errors.New("pbcopy が見つかりません") })
+	testenv.StubClipboardFunc(t, func(string) error { return errors.New("pbcopy が見つかりません") })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.width, m.height = 100, 16
@@ -1419,7 +1420,7 @@ func TestBrowseCopyFocusURLSanitizes(t *testing.T) {
 	m.details[m.commits[0].SHA] = []CheckDetail{
 		{Name: "lint", State: StateFailure, CheckID: 7, URL: "https://x/\x1b]52;c;cHduZWQ=\x07ok"},
 	}
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	m.openPanel()
 	m.handleKey("j") // focus を job へ (開いた直後はコミットの url が対象)
 	m.copyFocusURL()
@@ -1435,7 +1436,7 @@ func TestBrowseCopyFocusURLSanitizes(t *testing.T) {
 func TestBrowseCopyPRURLSanitizes(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
-	copied := stubClipboard(t)
+	copied := testenv.StubClipboard(t)
 	m.prStatusOv.open(sha)
 	m.prStatusOv.receive(sha, &PRStatus{PRRef: PRRef{Number: 1, State: "OPEN", URL: "https://github.com/o/r/pull/1\x1b]52;c;eA==\x07"}}, nil)
 	m.handlePRStatusKey("y")
