@@ -1,8 +1,9 @@
-package main
+package doctorview_test
 
 import (
 	"context"
 	"glogx/internal/doctorview"
+	"glogx/internal/doctorview/doctortest"
 	"strings"
 	"testing"
 )
@@ -63,7 +64,7 @@ func TestBrewAdviceKnownPatterns(t *testing.T) {
 func TestBrewSectionShowsAdviceRows(t *testing.T) {
 	v := &doctorview.DoctorView{Shown: true, Tab: doctorview.TabBrew, Expanded: map[doctorview.RowKey]bool{}}
 	v.Brew = &doctorview.BrewDoctorResult{Warnings: []string{brewWarnUnlinked}}
-	o := doctorTestOpts(60)
+	o := doctortest.DoctorTestOpts(60)
 	o.Width = 96
 	_ = v.Lines(o)
 	var key doctorview.RowKey
@@ -92,7 +93,7 @@ func TestBrewSectionShowsAdviceRows(t *testing.T) {
 	if !acts[0].Selectable || acts[0].CopyPath != "brew link node ruby" {
 		t.Errorf("1 つ目の手 = selectable:%v copyPath:%q", acts[0].Selectable, acts[0].CopyPath)
 	}
-	out := doctorText(v, 60)
+	out := doctortest.DoctorText(v, 60)
 	if !strings.Contains(out, "原文 (brew doctor)") {
 		t.Error("原文が残っていない (英語のまま LLM へ投げる導線が消える)")
 	}
@@ -113,7 +114,7 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 		return "linked\n", "", 0, nil
 	}
 	v.Brew = &doctorview.BrewDoctorResult{Warnings: []string{brewWarnUnlinked}}
-	o := doctorTestOpts(40)
+	o := doctortest.DoctorTestOpts(40)
 	o.Width = 96
 	_ = v.Lines(o)
 
@@ -160,7 +161,7 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 	if act := v.HandleKey("x", 40); act != doctorview.DoctorSwallow {
 		t.Fatalf("x が効かない: %v (%s)", act, v.PendingToast)
 	}
-	out := doctorPanelText(v, 30)
+	out := doctortest.DoctorPanelText(v, 30)
 	if !strings.Contains(out, "これを実行しますか?") || !strings.Contains(out, "$ brew link node ruby") {
 		t.Fatalf("確認画面に実行するコマンドが出ていない:\n%s", out)
 	}
@@ -179,7 +180,7 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 	if v.Del.CmdRep == nil {
 		t.Fatalf("結果が出ていない: %+v", v.Del)
 	}
-	out = doctorPanelText(v, 30)
+	out = doctortest.DoctorPanelText(v, 30)
 	for _, want := range []string{"実行の結果", "1 件すべて成功しました", "$ brew link node ruby", "exit 0"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("結果に %q が無い:\n%s", want, out)
@@ -191,7 +192,7 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 func TestBrewRunNeedsSelection(t *testing.T) {
 	v := &doctorview.DoctorView{Shown: true, Tab: doctorview.TabBrew, Expanded: map[doctorview.RowKey]bool{}}
 	v.Brew = &doctorview.BrewDoctorResult{Warnings: []string{brewWarnUnlinked}}
-	_ = v.Lines(doctorTestOpts(40))
+	_ = v.Lines(doctortest.DoctorTestOpts(40))
 	if act := v.HandleKey("x", 40); act != doctorview.DoctorToast {
 		t.Fatalf("何も選んでいないのに実行へ入った: %v", act)
 	}
@@ -214,7 +215,7 @@ func TestExecuteKeysAreTabScoped(t *testing.T) {
 	v := &doctorview.DoctorView{Shown: true, Expanded: map[doctorview.RowKey]bool{}}
 	v.Brew = &doctorview.BrewDoctorResult{Warnings: []string{brewWarnUnlinked}}
 	v.SelectedActions = map[doctorview.CmdKey]bool{"brew link node ruby": true}
-	_ = v.Lines(doctorTestOpts(40))
+	_ = v.Lines(doctortest.DoctorTestOpts(40))
 
 	v.Tab = doctorview.TabDisk
 	if act := v.HandleKey("x", 40); act != doctorview.DoctorToast || !strings.Contains(v.PendingToast, "タブ") {

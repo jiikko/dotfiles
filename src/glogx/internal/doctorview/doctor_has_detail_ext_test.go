@@ -1,10 +1,11 @@
-package main
+package doctorview_test
 
 import (
 	"testing"
 
 	"doctor/disk"
 	"glogx/internal/doctorview"
+	"glogx/internal/doctorview/doctortest"
 )
 
 // hasDetail は「Enter で展開できる行か」を **展開せずに** 答える (270 で detail を遅延化した
@@ -21,7 +22,7 @@ func TestBlockedDiskRowIsNotExpandable(t *testing.T) {
 			Entry:  disk.Entry{ID: "blocked-x", Label: "blocked", Risk: disk.RiskConfirm, DeleteVia: "rm"},
 			Status: disk.StatusBlocked, Size: 4096, Reason: "今は対象外"}}}
 		v.Tab = doctorview.TabDisk
-		_ = v.Lines(doctorTestOpts(40))
+		_ = v.Lines(doctortest.DoctorTestOpts(40))
 		return v
 	}
 
@@ -78,9 +79,9 @@ func TestDiskHasDetailMatchesBuilder(t *testing.T) {
 	empties, nonEmpties := 0, 0
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			built := len(v.DiskDetail(doctorTestOpts(60), c.r)) > 0
+			built := len(v.DiskDetail(doctortest.DoctorTestOpts(60), c.r)) > 0
 			if got := doctorview.DiskHasDetail(c.r); got != built {
-				t.Errorf("doctorview.DiskHasDetail=%v だが diskDetail は %d 行", got, len(v.DiskDetail(doctorTestOpts(60), c.r)))
+				t.Errorf("doctorview.DiskHasDetail=%v だが diskDetail は %d 行", got, len(v.DiskDetail(doctortest.DoctorTestOpts(60), c.r)))
 			}
 			if built {
 				nonEmpties++

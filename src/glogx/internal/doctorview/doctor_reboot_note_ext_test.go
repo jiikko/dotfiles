@@ -1,4 +1,4 @@
-package main
+package doctorview_test
 
 import (
 	"strings"
@@ -6,6 +6,7 @@ import (
 
 	"doctor/disk"
 	"glogx/internal/doctorview"
+	"glogx/internal/doctorview/doctortest"
 )
 
 // TUI 側の配線。disk.RebootNote が正しいことと、doctor の画面がそれを描くことは別の主張。
@@ -27,7 +28,7 @@ func TestDoctorShowsRebootNoteForTmpdirEntries(t *testing.T) {
 		{Entry: confirm, Status: disk.StatusOK, Size: 30, Items: []disk.Item{{Path: "/tmpdir/y-1", Size: 30}}},
 		{Entry: keep, Status: disk.StatusOK, Size: 20, Items: []disk.Item{{Path: "/private/var/tmp/w-1", Size: 20}}},
 	}}
-	o := doctorTestOpts(100)
+	o := doctortest.DoctorTestOpts(100)
 	o.Env = env
 	out := strings.Join(v.Lines(o), "\n")
 	if n := strings.Count(out, disk.RebootClearsNote); n != 1 {
@@ -59,7 +60,7 @@ func TestDoctorShowsRebootNoteForTmpdirEntries(t *testing.T) {
 	}
 
 	// 実効 TMPDIR が dirhelper の担当外なら 1 件も出さない (判定は文字列でなく実効値)
-	o2 := doctorTestOpts(100)
+	o2 := doctortest.DoctorTestOpts(100)
 	o2.Env = disk.Env{Home: "/Users/x", TmpDir: "/Users/x/tmp"}
 	if out2 := strings.Join(v.Lines(o2), "\n"); strings.Contains(out2, disk.RebootClearsNote) || strings.Contains(out2, disk.RebootLosesNote) {
 		t.Errorf("TMPDIR が /var/folders の外なのに注記を出した:\n%s", out2)
@@ -74,7 +75,7 @@ func TestRebootNoteIsTruncatedOnNarrowWidth(t *testing.T) {
 		DeleteVia: "rm", Paths: []string{"$TMPDIR/x-*"}}
 	v := &doctorview.DoctorView{Shown: true, DiskTotal: 1}
 	v.DiskRep = &disk.Report{Results: []disk.Result{{Entry: e, Status: disk.StatusBlocked, Reason: "アプリ起動中のため対象外"}}}
-	o := doctorTestOpts(40)
+	o := doctortest.DoctorTestOpts(40)
 	o.Env, o.Width = env, 40
 	out := strings.Join(v.Lines(o), "\n")
 	if strings.Contains(out, disk.RebootClearsNote) {

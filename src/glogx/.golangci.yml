@@ -106,6 +106,16 @@ linters:
           deny:
             - pkg: github.com/rivo/uniseg
               desc: 分割も幅も termwidth に一本化した (termwidth.FirstCluster / term.DispWidth)。uniseg は使わない (issue 124)
+        test-support-only-in-tests:
+          # doctortest はテストが共有する部品 (testing を import する)。本番のコードから import すると
+          # テスト用の fake と testing が glogx のバイナリに入る (issue 742)
+          files:
+            - "**/*.go"
+            - "!**/*_test.go"
+            - "!**/internal/doctorview/doctortest/*.go"
+          deny:
+            - pkg: glogx/internal/doctorview/doctortest
+              desc: doctortest はテスト専用 (本番のコードから import しない)
         render-pure:
           # render.go は「状態 → 文字列」の純粋な描画層。I/O・プロセス起動・非同期を
           # 持ち込むと TUI (毎フレーム呼ばれる) の性能とテスト容易性が壊れる

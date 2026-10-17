@@ -2,6 +2,7 @@ package main
 
 import (
 	"glogx/internal/app"
+	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/term"
 	"go/ast"
 	"go/parser"
@@ -315,7 +316,7 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 		for to, toKey := range openKey {
 			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 			m.width, m.height = 100, 30
-			m.doctorOv = *doctorTestView(t) // 実ディスクを走査しない
+			m.doctorOv = *doctortest.DoctorTestView(t) // 実ディスクを走査しない
 			m.handleKey(fromKey)
 			m.issuesOv.finishAnim()
 			if got := m.activeFullScreen(); got != from {

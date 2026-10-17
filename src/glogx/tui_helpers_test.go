@@ -18,6 +18,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 	"glogx/internal/app"
 	"glogx/internal/doctorview"
+	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/term"
 	"glogx/issues"
 	"subproc"
@@ -53,8 +54,8 @@ func installInertDoctor(t *testing.T, v *doctorview.DoctorView) {
 	}
 	v.SvcOpts = func() svc.Options { return svc.Options{Run: inert} } // Dirs 空 = 走査対象なし
 	v.BrewRun = inert
-	v.DockerOpts = noDockerOptions // Docker Desktop が入っていない扱い (本物の docker system df を叩かない)
-	v.SsdOpts = fakeSSDOptions(true)
+	v.DockerOpts = doctortest.NoDockerOptions // Docker Desktop が入っていない扱い (本物の docker system df を叩かない)
+	v.SsdOpts = doctortest.FakeSSDOptions(true)
 }
 
 // joinDoctorCleanup は走査の終了を**上限つきで**待つ。

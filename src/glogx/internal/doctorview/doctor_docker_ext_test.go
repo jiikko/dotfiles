@@ -1,4 +1,4 @@
-package main
+package doctorview_test
 
 import (
 	"context"
@@ -7,15 +7,16 @@ import (
 
 	"doctor/docker"
 	"glogx/internal/doctorview"
+	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/term"
 )
 
 // Docker タブに 4 群が並び、docker 申告の回収可能量が見出しに出る。
 func TestDoctorDockerTabListsGroups(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	out := doctorText(v, 40)
+	out := doctortest.DoctorText(v, 40)
 	for _, want := range []string{"▌Docker", "停止したコンテナ", "使われていないイメージ", "ビルドキャッシュ", "参照されていないボリューム"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("Docker タブに %q が出ていない:\n%s", want, out)
@@ -34,22 +35,22 @@ func TestDoctorDockerTabListsGroups(t *testing.T) {
 // Enter で内訳 (注記・コマンド・候補) が開く。この画面は docker を実行しないので、
 // 出るのは「コピーして自分で叩くコマンド」だけ。
 func TestDoctorDockerDetailShowsCommandAndItems(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	for range 20 {
 		if v.Cur.Key == "docker:containers" {
 			break
 		}
 		v.HandleKey("j", 40)
-		_ = doctorText(v, 40)
+		_ = doctortest.DoctorText(v, 40)
 	}
 	if v.Cur.Key != "docker:containers" {
 		t.Fatalf("コンテナの行へ行けない: %q", v.Cur.Key)
 	}
 	v.HandleKey("enter", 40)
-	out := doctorText(v, 40)
+	out := doctortest.DoctorText(v, 40)
 	if !strings.Contains(out, "docker container prune --filter until=336h") {
 		t.Errorf("回収コマンドが出ていない:\n%s", out)
 	}
@@ -60,11 +61,11 @@ func TestDoctorDockerDetailShowsCommandAndItems(t *testing.T) {
 
 // 🚨 ボリュームは「まとめて消すコマンド」を出さない (docker volume prune -a は戻せない)。
 func TestDoctorDockerVolumesHaveNoBulkCommand(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
 	v.Expanded = map[doctorview.RowKey]bool{"docker:volumes": true}
-	out := doctorText(v, 40)
+	out := doctortest.DoctorText(v, 40)
 	if strings.Contains(out, "docker volume prune -a\n") {
 		t.Errorf("まとめて消すコマンドを提示している:\n%s", out)
 	}
@@ -75,13 +76,13 @@ func TestDoctorDockerVolumesHaveNoBulkCommand(t *testing.T) {
 
 // Docker Desktop が入っていない環境ではタブごと出さず、tab の送りも飛ばす。
 func TestDoctorDockerTabHiddenWhenNotInstalled(t *testing.T) {
-	v := doctorTestView(t)
-	v.DockerOpts = noDockerOptions
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	v.DockerOpts = doctortest.NoDockerOptions
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	if v.Docker == nil || v.Docker.Installed {
 		t.Fatalf("前提が作れていない: %+v", v.Docker)
 	}
-	out := doctorText(v, 40)
+	out := doctortest.DoctorText(v, 40)
 	if strings.Contains(out, "Docker") {
 		t.Errorf("入っていないのにタブが出ている:\n%s", out)
 	}
@@ -96,9 +97,9 @@ func TestDoctorDockerTabHiddenWhenNotInstalled(t *testing.T) {
 
 // 🚨 診断できなかったときに「候補なし」と同じ見え方にしない (false green)。
 func TestDoctorDockerUnavailableIsShown(t *testing.T) {
-	v := doctorTestView(t)
+	v := doctortest.DoctorTestView(t)
 	v.DockerOpts = func() docker.Options {
-		o := fakeDockerOptions(fakeDockerDF)
+		o := doctortest.FakeDockerOptions(doctortest.FakeDockerDF)
 		run := o.Run
 		o.Run = func(ctx context.Context, name string, args ...string) (string, string, int, error) {
 			if len(args) >= 2 && args[0] == "system" && args[1] == "df" {
@@ -108,9 +109,9 @@ func TestDoctorDockerUnavailableIsShown(t *testing.T) {
 		}
 		return o
 	}
-	runDoctorCmds(t, v, v.Open())
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	out := doctorText(v, 40)
+	out := doctortest.DoctorText(v, 40)
 	if !strings.Contains(out, "診断できず") || !strings.Contains(out, "Cannot connect") {
 		t.Errorf("診断できなかったことが出ていない:\n%s", out)
 	}
@@ -122,10 +123,10 @@ func TestDoctorDockerUnavailableIsShown(t *testing.T) {
 // 🚨 記号の表示幅は語ごとに違う ("✅ 安全" と "⛔ 要確認")。揃えないと後ろのラベルが
 // 行ごとにずれる (幅の計算では気づけず、人が見るまで分からない類)。
 func TestDoctorDockerMarksAreAligned(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	var offsets []int
 	for _, row := range v.Rows {
 		for _, label := range []string{"停止したコンテナ", "使われていないイメージ", "ビルドキャッシュ", "参照されていないボリューム"} {
@@ -147,11 +148,11 @@ func TestDoctorDockerMarksAreAligned(t *testing.T) {
 // 群のまとめコマンドが無いボリュームでも、1 件ずつのコマンドを y でコピーできる
 // (選べないと「1 件ずつ選んでください」と言うだけで手段が無い)。
 func TestDoctorDockerItemRowCopiesItsCommand(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
 	v.Expanded = map[doctorview.RowKey]bool{"docker:volumes": true}
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	var found *doctorview.DoctorRow
 	for i, row := range v.Rows {
 		if row.Key == "dockeritem:volumes:old_data" {
@@ -183,24 +184,24 @@ func rowKeys(rows []doctorview.DoctorRow) []string {
 // 閉じ、次の起動で Docker が無い環境になっていると**どの節も返さない空画面**になりうる。
 // 走査結果が届いた時点で既定のタブへ戻す。
 func TestDoctorDockerTabFallsBackWhenRestoredButNotInstalled(t *testing.T) {
-	v := doctorTestView(t)
-	v.DockerOpts = noDockerOptions
+	v := doctortest.DoctorTestView(t)
+	v.DockerOpts = doctortest.NoDockerOptions
 	v.Tab = doctorview.TabDocker // 前回の画面を復元した状態
-	runDoctorCmds(t, v, v.Open())
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	if v.Tab != doctorview.TabDisk {
 		t.Fatalf("消えたタブに留まっている: %v", v.Tab)
 	}
-	if out := doctorText(v, 20); !strings.Contains(out, "▌ディスク占有") {
+	if out := doctortest.DoctorText(v, 20); !strings.Contains(out, "▌ディスク占有") {
 		t.Errorf("空画面になっている:\n%s", out)
 	}
 }
 
 // Space で選んで x → 確認画面。実行の相の機械は brew と共有する (doctorview.JobCmd)。
 func TestDoctorDockerSelectAndRun(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	if act := v.HandleKey(" ", 40); act != doctorview.DoctorSwallow {
 		t.Fatalf("先頭の群を選べない: %v", act)
 	}
@@ -224,16 +225,16 @@ func TestDoctorDockerSelectAndRun(t *testing.T) {
 
 // 🚨 ボリュームはこの画面から消さない。断る理由を出す (無言で何もしない、にしない)。
 func TestDoctorDockerVolumesCannotBeSelectedForRun(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	for range 20 {
 		if v.Cur.Key == "docker:volumes" {
 			break
 		}
 		v.HandleKey("j", 40)
-		_ = doctorText(v, 40)
+		_ = doctortest.DoctorText(v, 40)
 	}
 	if v.Cur.Key != "docker:volumes" {
 		t.Fatalf("ボリュームの行へ行けない: %q", v.Cur.Key)
@@ -252,35 +253,35 @@ func TestDoctorDockerVolumesCannotBeSelectedForRun(t *testing.T) {
 // 🚨 選択の map は brew と共有している。件数を len(selectedActions) で数えると、
 // 別のタブの選択まで数えて hint が嘘になる。
 func TestDoctorSelectedRunCountIsPerTab(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	v.HandleKey(" ", 40)
 	v.Tab = doctorview.TabBrew
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	if n := v.SelectedRunCount(); n != 0 {
 		t.Fatalf("Homebrew タブが Docker の選択を数えている: %d", n)
 	}
 	v.HandleKey("enter", 40) // 警告を開くと手の行が出る
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	for range 20 {
 		if strings.HasPrefix(string(v.Cur.Key), "brewact:") {
 			break
 		}
 		v.HandleKey("j", 40)
-		_ = doctorText(v, 40)
+		_ = doctortest.DoctorText(v, 40)
 	}
 	if !strings.HasPrefix(string(v.Cur.Key), "brewact:") {
 		t.Fatalf("brew の手の行へ行けない: %q", v.Cur.Key)
 	}
 	v.HandleKey(" ", 40) // brew の手を 1 つ選ぶ
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	if n := v.SelectedRunCount(); n != 1 {
 		t.Fatalf("Homebrew タブの件数が %d", n)
 	}
 	v.Tab = doctorview.TabDocker
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	if n := v.SelectedRunCount(); n != 1 {
 		t.Fatalf("Docker タブの件数が %d (brew の分まで数えている)", n)
 	}
@@ -288,11 +289,11 @@ func TestDoctorSelectedRunCountIsPerTab(t *testing.T) {
 
 // ディスク / サービスのタブで x を押したら、どこで押すかを案内する。
 func TestDoctorRunKeyOnWrongTabExplains(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	for _, tb := range []doctorview.DoctorTab{doctorview.TabDisk, doctorview.TabSvc} {
 		v.Tab = tb
-		_ = doctorText(v, 40)
+		_ = doctortest.DoctorText(v, 40)
 		if act := v.HandleKey("x", 40); act != doctorview.DoctorToast {
 			t.Fatalf("tab=%v で x が無言: %v", tb, act)
 		}
@@ -305,30 +306,30 @@ func TestDoctorRunKeyOnWrongTabExplains(t *testing.T) {
 // 🚨 群を畳んでも選択は消えない (選択の集計を「今出ている行」から作ると、無関係な開閉で
 // 0 件になったり戻ったりする。敵対レビュー 2 周目 P2-2)。
 func TestDoctorDockerSelectionSurvivesCollapse(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	v.HandleKey("enter", 40) // 先頭の群を開く
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	for range 20 {
 		if strings.HasPrefix(string(v.Cur.Key), "dockeritem:") {
 			break
 		}
 		v.HandleKey("j", 40)
-		_ = doctorText(v, 40)
+		_ = doctortest.DoctorText(v, 40)
 	}
 	if !strings.HasPrefix(string(v.Cur.Key), "dockeritem:") {
 		t.Fatalf("候補の行へ行けない: %q", v.Cur.Key)
 	}
 	v.HandleKey(" ", 40)
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	if n := v.SelectedRunCount(); n != 1 {
 		t.Fatalf("選べていない: %d", n)
 	}
 	// 群を畳む (カーソルは親へ戻る)
 	v.HandleKey("enter", 40)
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	if n := v.SelectedRunCount(); n != 1 {
 		t.Fatalf("畳んだら選択が %d 件になった (開閉で増減している)", n)
 	}
@@ -337,18 +338,18 @@ func TestDoctorDockerSelectionSurvivesCollapse(t *testing.T) {
 // 🚨 doctor を閉じて開き直したら選択は消える (ディスク側と揃える。残すと `*` が付いたまま
 // 「x: 1 件を実行」で復帰する。敵対レビュー 2 周目 P2-3)。
 func TestDoctorDockerSelectionClearedOnReopen(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	v.HandleKey(" ", 40)
 	if v.SelectedRunCount() != 1 {
 		t.Fatal("前提が作れていない")
 	}
 	v.Close()
-	runDoctorCmds(t, v, v.Open())
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	if n := v.SelectedRunCount(); n != 0 {
 		t.Fatalf("開き直しても選択が %d 件残っている", n)
 	}
@@ -356,10 +357,10 @@ func TestDoctorDockerSelectionClearedOnReopen(t *testing.T) {
 
 // 群のまとめコマンドが無い行でも y が無言にならない (hint は「y: コマンドをコピー」と言っている)。
 func TestDoctorDockerVolumeGroupRowCopiesPerItemCommands(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	for _, row := range v.Rows {
 		if row.Key != "docker:volumes" {
 			continue
@@ -375,21 +376,21 @@ func TestDoctorDockerVolumeGroupRowCopiesPerItemCommands(t *testing.T) {
 // Enter で群に入ったら Enter で出られる (disk と同じ作法。出られないとカーソルが中に
 // 居たまま畳めない)。
 func TestDoctorDockerEnterOnItemCollapsesGroup(t *testing.T) {
-	v := doctorTestView(t)
-	runDoctorCmds(t, v, v.Open())
+	v := doctortest.DoctorTestView(t)
+	doctortest.RunDoctorCmds(t, v, v.Open())
 	v.Tab = doctorview.TabDocker
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	v.HandleKey("enter", 40)
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	for range 20 {
 		if strings.HasPrefix(string(v.Cur.Key), "dockeritem:") {
 			break
 		}
 		v.HandleKey("j", 40)
-		_ = doctorText(v, 40)
+		_ = doctortest.DoctorText(v, 40)
 	}
 	v.HandleKey("enter", 40)
-	_ = doctorText(v, 40)
+	_ = doctortest.DoctorText(v, 40)
 	if len(v.Expanded) != 0 || v.Cur.Key != "docker:containers" {
 		t.Fatalf("畳めていない: expanded=%v cur=%q", v.Expanded, v.Cur.Key)
 	}

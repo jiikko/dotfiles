@@ -23,6 +23,7 @@
 - `src/glogx/gorules` (`glogx/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml の settings.gocritic.settings.ruleguard.rules から参照)。 (build tags: ruleguard)
 - `src/glogx/internal/app` (`glogx/internal/app`) — Package app は glogx の画面のパッケージと main が共有する状態・道具を持つ: 現在時刻のシーム (TimeNow)・ 全画面ビューアの ID と横断キーの表・全画面を閉じたときの記憶 (ScreenMemory)・終了前の完了待ち (CleanupLatch)・ キャッシュの置き場と atomic 書き込み。 (internal)
 - `src/glogx/internal/doctorview` (`glogx/internal/doctorview`) — Package doctorview は glogx の doctor 画面 (D): ディスク・サービス・brew・docker・SSD の診断の表示と、 選んだ項目の削除の確認と実行。 (internal)
+- `src/glogx/internal/doctorview/doctortest` (`glogx/internal/doctorview/doctortest`) — Package doctortest は doctor 画面のテストが共有する部品 (テスト用の DoctorView・fake の Options・描画の取り出し)。 (internal)
 - `src/glogx/internal/term` (`glogx/internal/term`) — Package term は glogx の描画の土台: ANSI 色と Paint・切り詰め / 折り返しの純関数・幅計算の別名・枠と影・ 端末サニタイズの入口・glide のキー語彙・最下行の案内の詰めを持つ。 (internal)
 - `src/glogx/issues` (`glogx/issues`) — Package issues は repo 内の issue markdown ファイルの探索・分類と、端末表示用の整形を担う。
 - `src/glogx/tools/dial-preview` (`glogx/tools/dial-preview`) — dial-preview は全画面 ratelimit ダッシュボード (usage.RenderDashboard) の見た目プレビュー。 (main)

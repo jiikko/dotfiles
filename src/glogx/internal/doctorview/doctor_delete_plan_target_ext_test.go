@@ -1,4 +1,4 @@
-package main
+package doctorview_test
 
 import (
 	"path/filepath"
