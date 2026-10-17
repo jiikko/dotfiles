@@ -389,8 +389,8 @@ func lineDiff(want, got string) string {
 // TestNoFixtureCallsInProduction は画面のパッケージの Fixture() (main のテストが状態を置く口) を本番のコードが
 // 呼んでいないことを確かめる (issue 817。internal/doctorview/fixture.go)。Fixture は状態の不変条件を飛ばして
 // 書き込めるので、本番から呼ぶと画面の状態機械を迂回できる。
-// 止めないもの: 別の名前のメソッド経由の呼び出し・関数値として渡す形 (`f := v.Fixture`)。後者も選択子として数えるので、
-// 実際に漏れるのは別名で包む形だけ (レビューの責務)
+// 止めるもの: `.Fixture` の選択子 (呼び出しも関数値も) と、fixture.go の外での `Fixture{...}` の直接構築。
+// 止めないもの: fixture.go の中に本番から呼ぶ別名の関数を足して包む形・型の別名 (`type f = Fixture`) で作る形 (レビューの責務)
 func TestNoFixtureCallsInProduction(t *testing.T) {
 	fset := token.NewFileSet()
 	scanned := 0
@@ -412,9 +412,18 @@ func TestNoFixtureCallsInProduction(t *testing.T) {
 			return err
 		}
 		scanned++
+		isDef := filepath.Base(p) == "fixture.go" // Fixture を定義するファイル (`return Fixture{v}` は定義の一部)
 		ast.Inspect(f, func(n ast.Node) bool {
-			if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "Fixture" {
-				t.Errorf("%s: 本番のコードが %s を使っている (Fixture は main のテスト専用の口)", fset.Position(sel.Pos()), "Fixture")
+			switch n := n.(type) {
+			case *ast.SelectorExpr:
+				if n.Sel.Name == "Fixture" {
+					t.Errorf("%s: 本番のコードが Fixture を使っている (Fixture は main のテスト専用の口)", fset.Position(n.Pos()))
+				}
+			case *ast.CompositeLit:
+				// 画面のパッケージの中では `Fixture{v}.Show()` と直接作れる (codex の敵対的レビュー 2026-10-17)
+				if id, ok := n.Type.(*ast.Ident); ok && id.Name == "Fixture" && !isDef {
+					t.Errorf("%s: 本番のコードが Fixture を作っている (Fixture は main のテスト専用の口)", fset.Position(n.Pos()))
+				}
 			}
 			return true
 		})

@@ -34,9 +34,10 @@ const (
 	DeleteFailed                         // 失敗の表示中
 )
 
-// Delete は削除の相を置く。下見中・実行中は進捗 (1/1 件目) も置き、cancel は Ctrl-C の 2 回目で呼ばれる中断。
+// Delete は削除の相を置く。cancel は下見中・実行中の Ctrl-C の 2 回目で呼ばれる中断。
+// 🚨 進捗は置かない (known=false)。本物の削除も進捗が届く前の状態から始まる (StartDelete)。進捗を「既知」で置くと、
+// 進捗の届く前の削除中を見落とす退行 (Deleting が progress.known を見る等) をテストが区別できない (codex の敵対的レビュー 2026-10-17)。
 func (f Fixture) Delete(st DeleteState, cancel func()) {
-	prog := doctorProgress{i: 1, total: 1, label: "…", phase: disk.PhaseScanning, known: true}
 	switch st {
 	case DeleteIdle:
 		f.v.del = doctorDelete{}
@@ -45,9 +46,9 @@ func (f Fixture) Delete(st DeleteState, cancel func()) {
 	case DeleteConfirmPlan:
 		f.v.del = doctorDelete{confirm: true, plan: &disk.DeleteReport{}}
 	case DeletePreparing:
-		f.v.del = doctorDelete{preparing: true, progress: prog, cancel: cancel}
+		f.v.del = doctorDelete{preparing: true, cancel: cancel}
 	case DeleteRunning:
-		f.v.del = doctorDelete{running: true, progress: prog, cancel: cancel}
+		f.v.del = doctorDelete{running: true, cancel: cancel}
 	case DeleteResult:
 		f.v.del = doctorDelete{result: &disk.DeleteReport{}}
 	case DeleteFailed:
