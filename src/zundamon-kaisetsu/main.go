@@ -344,8 +344,9 @@ const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speake
               (mp4 から図解の行を切り出して確かめるとき・HTML を #t=開始秒 で開くときに使う)
   view      台本をユーザーに見せる一覧 (チャプター・話者 (表情)・字幕と、図解を出す・段を進める・消す行) を出す。合成は要らない。view 台本.json
   build     合成済みの wav を連結し、HTML プレイヤーか mp4 (か両方) を書き出す
-              build 台本.json -o 出力 [--format html|mp4|both] [--jobs N] [--bitrate 64k] [--allow-fast-captions]
-              (字幕が速すぎる行があれば書き出す前に止まる。--allow-fast-captions で続ける)
+              build 台本.json -o 出力 [--format html|mp4|both] [--jobs N] [--bitrate 64k] [--allow-fast-captions] [--allow-label-wraps]
+              (字幕が速すぎる行・意図しない改行のあるラベル (タイトル・図解など。Chrome の描画で測る) があれば書き出す前に止まる。
+               --allow-fast-captions / --allow-label-wraps で続ける)
 
   --engine URL  VOICEVOX エンジンの URL (既定 http://127.0.0.1:50021、環境変数 VOICEVOX_URL)
 `
@@ -417,6 +418,7 @@ func dispatch(args []string, env *app.Env) error {
 			{names: []string{"--jobs"}, dest: "jobs", takes: true, check: jobsArg},
 			{names: []string{"--bitrate"}, dest: "bitrate", takes: true, check: kbpsArg},
 			{names: []string{"--allow-fast-captions"}, dest: "allow_fast_captions"},
+			{names: []string{"--allow-label-wraps"}, dest: "allow_label_wraps"},
 		},
 	}
 	spec, ok := specs[sub]
@@ -501,7 +503,7 @@ func dispatch(args []string, env *app.Env) error {
 		if v, ok := p.opts["bitrate"]; ok {
 			kbps, _ = kbpsValue(v)
 		}
-		return build.CmdBuild(env, p.pos[0], output, format, jobs, kbps, p.opts["allow_fast_captions"] == "true")
+		return build.CmdBuild(env, p.pos[0], output, format, jobs, kbps, p.opts["allow_fast_captions"] == "true", p.opts["allow_label_wraps"] == "true")
 	}
 	return nil
 }

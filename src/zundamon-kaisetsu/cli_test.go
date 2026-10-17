@@ -189,14 +189,8 @@ func TestRenderHTML(t *testing.T) {
 	if !strings.Contains(html, "<title>A&amp;B &lt;__DATA_JSON__&gt;</title>") {
 		t.Error("タイトルのエスケープが違う (印をタイトルの中まで置き換えていないか)")
 	}
-	start := strings.Index(html, `<script type="application/json" id="data">`)
-	end := strings.Index(html[start:], "</script>")
-	if start < 0 || end < 0 {
-		t.Fatal("データの script が見つからない")
-	}
-	payload := html[start+len(`<script type="application/json" id="data">`) : start+end]
-	var back build.PlayerData
-	if err := json.Unmarshal([]byte(payload), &back); err != nil || back.Lines[0].Text != "</script><b>" {
+	back, err := playerDataFromHTML(html)
+	if err != nil || back.Lines[0].Text != "</script><b>" {
 		t.Errorf("埋め込んだデータが元に戻らない: %v", err)
 	}
 }

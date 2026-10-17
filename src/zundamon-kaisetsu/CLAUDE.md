@@ -18,7 +18,11 @@
   舞台に重ねるメタデータの名前 (`script.OverlayKeys` と、player の `OV` の既定と出し分け) は、Go と
   `_claude/skills/zundamon-kaisetsu/templates/player.html` の 2 か所にある。テストが突き合わせるのは字句まで:
   **字面を残したまま意味だけ変える書き換え** (まとめ撮りの分解で欄を並べ替える・`paint` の引数の順を変える) は検出しない
+- ラベルの改行の計測 (`#measure`。issue 812) は、どのラベルを測るかの条件を Go (`build.ExpectedLabelKeys`) と player の 2 か所に持つ。
+  player が測らないラベルは build が「測れなかった」で止めるので、条件を片方だけ変えると止まる (黙って測らなくなることはない)。
+  逆向き (player だけが余分に測る) は止まらない。判定 (1 行か・語の境目か・はみ出し) は Go の `LabelProblems` だけが持つ
 - プレイヤーの描画そのものに自動テストは無い (issue 645)。見た目を変えたら、HTML を作って Chrome で開いて確かめる
+  (CSS を変えたら、`build --format html` を通すとラベルの改行の検査も本物の Chrome で走る)
 
 ## 外部プロセス
 

@@ -41,6 +41,9 @@ type Env struct {
 	StateDir    string
 	Sleep       func(time.Duration)
 	LoadAvg     func() (float64, bool)
+	// MeasureLabels はラベルの改行の計測 (build.CheckLabelLayout。issue 812) を差し替える口。計測モードの HTML のパスを受け取り、
+	// player.html の #measure が書く JSON ({"labels": [...]}) を返す。nil なら本物の Chrome で測る (テストは本物の Chrome を起こさない)
+	MeasureLabels func(page string) ([]byte, error)
 }
 
 // Template はプレイヤーのテンプレート。

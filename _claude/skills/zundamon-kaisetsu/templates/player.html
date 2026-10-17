@@ -69,7 +69,8 @@ h1 { font-size: 1.25rem; margin: 0 0 12px; }
    (internal/show/show_image.go の ImageBoxW / ImageBoxH は、この padding を引いた箱の大きさ) */
 .show-image { background: #fff; padding: .8cqw; line-height: 0; }
 .show-image img { display: block; max-width: calc(46cqw - 1.6cqw); max-height: calc(29.25cqw - 1.6cqw); object-fit: contain; }
-.show-compare ul { margin: 0; padding-left: 1.1em; font-size: 1.7cqw; font-weight: 700; line-height: 1.5; }
+/* 項目は 1 列 8 字ほどで折り返すので、文節の切れ目で折る (無いと「本人の記 / 録が要る」と語の途中で切れた。issue 812) */
+.show-compare ul { margin: 0; padding-left: 1.1em; font-size: 1.7cqw; font-weight: 700; line-height: 1.5; word-break: auto-phrase; }
 /* 段 (行の step) でまだ見せていない項目。場所は取ったまま隠し、段が進んでもカードの大きさが変わらないようにする */
 .show-card .pending { visibility: hidden; }
 /* 箇条書き (issue 680)。段 (build) があれば今の項目を強調し、前の項目は濃く、後の項目は薄く出す */
@@ -298,6 +299,76 @@ html.render * { transition: none !important; }
   function render(t) {
     const [li, speaking, lv, blinks, card] = stateAt(t); paint(li, speaking, lv, blinks, card, !audio.paused);
     $('seek').value = t; $('time').textContent = `${fmt(t)} / ${fmt(D.duration)}`;
+  }
+
+  // ラベルの改行の検査用 (build が書き出す前に Chrome の --dump-dom で読む。issue 812): mp4 と同じ大きさの舞台に、タイトル・トピック名・
+  // 区切りのカード・図解を 1 つずつ本物の CSS で描き、ラベルごとに 1 字ずつ位置を測って行に分け、#measure-out に JSON で書いて止まる。
+  // 判定 (1 行で出す欄が折り返したか・語の途中で切れたか) は Go (label_wrap.go) が持つ。ここは測るだけ。どのラベルを測るかの条件は
+  // Go の ExpectedLabelKeys と揃える (食い違うと build が「測れなかったラベル」で止まる)
+  if (location.hash === '#measure') {
+    const root = document.documentElement;
+    root.classList.add('render');
+    root.dataset.theme = 'light';
+    const stage = $('stage'); const sheet = el('div', 'sheet'); stage.replaceWith(sheet); sheet.append(stage);
+    const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' });
+    const words = new Intl.Segmenter('ja', { granularity: 'word' });
+    const out = [];
+    // node の直下の文字 (子要素の文字は除く) を、描かれた行ごとに分ける。breaks[i] は i 行目の後の切れ目が語の境目か
+    const measure = (key, kind, node) => {
+      const texts = [...node.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE);
+      const full = texts.map((n) => n.data).join('');
+      const bounds = new Set([...words.segment(full)].map((s) => s.index));
+      const r = document.createRange(); const lines = []; let line = ''; let top = null; let pos = 0; const breaks = [];
+      for (const tn of texts) {
+        for (const g of graphemes.segment(tn.data)) {
+          r.setStart(tn, g.index); r.setEnd(tn, g.index + g.segment.length);
+          const rect = r.getClientRects()[0];
+          if (rect && top !== null && rect.top > top + rect.height / 2) { lines.push(line); breaks.push(bounds.has(pos)); line = ''; }
+          if (rect) top = rect.top;
+          line += g.segment; pos += g.segment.length;
+        }
+      }
+      lines.push(line);
+      out.push({ key, kind, text: full, lines, breaks });
+    };
+    // カードの中身 (文字と子要素) の描画範囲が、カードの外へどれだけ出たか (px)。overflow: hidden で隠れる分。
+    // scrollWidth / scrollHeight は余白 (padding) も数えるので使わない (余白に食い込んだだけの 5 項目の箇条書きを、はみ出しと読んだ)
+    const overflow = (key, node) => {
+      const r = document.createRange(); r.selectNodeContents(node);
+      const c = r.getBoundingClientRect(); const b = node.getBoundingClientRect();
+      out.push({ key, kind: 'box', clip: [Math.max(0, b.left - c.left, c.right - b.right), Math.max(0, b.top - c.top, c.bottom - b.bottom)].map(Math.round) });
+    };
+    document.fonts.ready.then(() => {
+      if (OV.has('title') && D.title !== '') measure('title', 'line', $('stage-title'));
+      D.chapters.forEach((ch, i) => {
+        if (OV.has('topic') && D.chapters.length >= 2 && ch.title !== '') { $('stage-topic').textContent = ch.title; measure(`topic:${i}`, 'line', $('stage-topic')); }
+        if (D.cards && D.cards.length && ch.title.trim()) {
+          const box = $('stage-card'); box.textContent = ''; const d = el('div', null, ch.title);
+          box.append(el('small', null, `CHAPTER ${i + 1}`), d); measure(`card:${i}`, 'wrap', d); box.textContent = '';
+        }
+      });
+      $('stage-topic').textContent = '';
+      (D.shows || []).forEach((sd, n) => {
+        if (sd.type === 'image') return;
+        drawShow(n); const card = $('stage-show').firstElementChild; const k = `show:${n}`;
+        overflow(k, card);
+        if (sd.type === 'keyword') {
+          measure(`${k}:text`, 'wrap', card);
+          if (sd.sub) measure(`${k}:sub`, 'wrap', card.querySelector('.sub'));
+        } else if (sd.type === 'list') {
+          if (sd.title) measure(`${k}:title`, 'line', card.querySelector('h3'));
+          card.querySelectorAll('li').forEach((e, j) => measure(`${k}:items[${j}]`, 'line', e));
+        } else if (sd.type === 'compare') {
+          card.querySelectorAll('.side').forEach((col, s) => {
+            const side = s ? 'right' : 'left';
+            measure(`${k}:${side}.title`, 'line', col.querySelector('h3'));
+            col.querySelectorAll('li').forEach((e, j) => measure(`${k}:${side}.items[${j}]`, 'wrap', e));
+          });
+        }
+      });
+      const pre = el('pre', null, JSON.stringify({ labels: out })); pre.id = 'measure-out'; document.body.append(pre);
+    });
+    return;
   }
 
   // mp4 の書き出し用: #sheet=行,話し中,口,まばたき,区切りのカード;... の各状態を 1 枚ずつ舞台に描いて複製し、縦に並べて止まる。

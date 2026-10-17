@@ -488,7 +488,7 @@ func TestBuildChecksOutputDirFirst(t *testing.T) {
 			env.LoadAvg = func() (float64, bool) { return 0, true }
 			env.Now, env.Sleep = time.Now, func(time.Duration) {}
 			out := tc.setup(t.TempDir())
-			err := build.CmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 1, 64, true)
+			err := build.CmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 1, 64, true, false)
 			if err == nil || !strings.Contains(err.Error(), "書けない") {
 				t.Fatalf("書けない出力先で止まるはず: %v", err)
 			}

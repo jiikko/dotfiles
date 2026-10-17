@@ -79,6 +79,12 @@ func fakeMP4Tool(tool string, args []string) int {
 		if err != nil {
 			return 3
 		}
+		if slices.Contains(args, "--dump-dom") { // ラベルの改行の計測 (issue 812)
+			if u.Fragment != "measure" {
+				return 12
+			}
+			return fakeMeasureDump(u.Path)
+		}
 		// 本物のプレイヤーが受け取る書式か (player.html から抜き出した正規表現で見る。偽物の Sscanf は空白などを許すので頼らない)
 		if re, err := regexp.Compile(os.Getenv("FAKE_SHEET_RE")); err != nil || os.Getenv("FAKE_SHEET_RE") == "" || !re.MatchString("#"+u.EscapedFragment()) { // Chrome の location.hash はデコードしない
 			fmt.Fprintf(os.Stderr, "偽の Chrome: player.html が受け取らない断片 %q\n", u.EscapedFragment())
@@ -312,7 +318,7 @@ func buildMP4From(t *testing.T, scr string) (out string, log string, err error) 
 	env.LoadAvg = func() (float64, bool) { return 0, true }
 	env.Now, env.Sleep = time.Now, func(time.Duration) {}
 	out = filepath.Join(t.TempDir(), "out")
-	err = build.CmdBuild(env, scr, out, "mp4", 2, 64, true)
+	err = build.CmdBuild(env, scr, out, "mp4", 2, 64, true, false)
 	return out + ".mp4", log, err
 }
 
@@ -461,7 +467,7 @@ func TestWriteMP4KeepsOutputOnMuxFailure(t *testing.T) {
 	env.Now, env.Sleep = time.Now, func(time.Duration) {}
 	out := filepath.Join(t.TempDir(), "out")
 	must(t, os.WriteFile(out+".mp4", []byte("previous"), 0o644))
-	err := build.CmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 2, 64, true)
+	err := build.CmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 2, 64, true, false)
 	if err == nil || !strings.Contains(err.Error(), "mp4 の書き出しに失敗") {
 		t.Fatalf("mux の失敗で止まるはず: %v", err)
 	}

@@ -66,7 +66,7 @@ func TestInterruptStopsChildThenRemovesTemp(t *testing.T) {
 	env := testEnv(t)
 	done := make(chan error, 1)
 	go func() {
-		done <- build.CmdBuild(env, filepath.Join("testdata", "build", "script.json"), filepath.Join(t.TempDir(), "out"), "html", 1, 64, true)
+		done <- build.CmdBuild(env, filepath.Join("testdata", "build", "script.json"), filepath.Join(t.TempDir(), "out"), "html", 1, 64, true, false)
 	}()
 	waitUntil(t, "偽の ffmpeg の起動", func() bool { return paths.IsFile(marker) })
 	cancel()

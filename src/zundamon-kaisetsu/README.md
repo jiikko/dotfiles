@@ -28,7 +28,7 @@ zundamon-kaisetsu check | up | down | speakers | kana … | lint script.json | s
 | 0 | `wav` / `outfile` / `extcmd` | wav の入出力 / 出力ファイルの置き換え / 外部コマンドの探索 (Chrome・ffmpeg のエンコーダ) と時間の上限付きの実行 (`RunQuiet`) |
 | 1 | `show` | 台本の `show` (図解: keyword / compare / list / code / image / mermaid) |
 | 2 | `script` | 台本の読み込みと検証・キャラの設定 (`CastOrder`)・合成のキャッシュの鍵 (`Params` / `CacheSerialize`)・読み替え・`overlays` |
-| 3 | `build` | 組み立て (`Assemble`: wav の連結・口の開き・プレイヤーのデータ)・`CmdBuild`・HTML への埋め込み・mp4 の書き出し (`mp4.go`: まとめ撮りを Chrome で撮り ffmpeg で切り分けてつなぐ)・行の時刻 (`line_times.go`: wav の長さと間から行の開始・終了を出す。synth の字幕の速さの警告と `times` が使い、`Assemble` と同じ値になることをテストで固定。issue 745)・字幕の速さの警告 (`caption_speed.go`)・まばたき (`blink.go`)・区切りのカード (`chapter_card.go`)・台本をユーザーに見せる一覧 `view` (`script_view.go`。issue 810) |
+| 3 | `build` | 組み立て (`Assemble`: wav の連結・口の開き・プレイヤーのデータ)・`CmdBuild`・HTML への埋め込み・mp4 の書き出し (`mp4.go`: まとめ撮りを Chrome で撮り ffmpeg で切り分けてつなぐ)・行の時刻 (`line_times.go`: wav の長さと間から行の開始・終了を出す。synth の字幕の速さの警告と `times` が使い、`Assemble` と同じ値になることをテストで固定。issue 745)・字幕の速さの警告 (`caption_speed.go`)・まばたき (`blink.go`)・区切りのカード (`chapter_card.go`)・台本をユーザーに見せる一覧 `view` (`script_view.go`。issue 810)・ラベルの意図しない改行の検査 (`label_wrap.go`。Chrome の描画を player.html の `#measure` で測る。issue 812) |
 | 3 | `engine` | エンジンのコンテナの起動・停止 (`engine.go`) / 自動起動と、使われなくなったら止める見張り (`engine_auto.go`) |
 | 3 | `lint` | `lint`: 台本の校正のうち文字列と構造だけで決まるもの (`lint.go`。issue 675 / 686。試験用の台本は skill の `examples/review-bench/`)・`lint --source 資料` の突き合わせの候補 (`source_check.go`。issue 685) |
 | 4 | `synth` | エンジンへの要求 (audio_query / synthesis)・キャッシュ・`kana` (`synth.go`)・`kana --script --check` の英字の語の警告 (`reading_check.go`。略語の一覧は skill の `acronyms.json`。issue 673) |

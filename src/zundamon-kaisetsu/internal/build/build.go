@@ -582,7 +582,7 @@ func RenderHTML(data *PlayerData, env *app.Env) (string, error) {
 }
 
 // CmdBuild は合成済みの wav を連結し、HTML プレイヤーか mp4 (か両方) を書き出す。
-func CmdBuild(env *app.Env, scriptArg, output, format string, jobs, kbps int, allowFastCaptions bool) error {
+func CmdBuild(env *app.Env, scriptArg, output, format string, jobs, kbps int, allowFastCaptions, allowLabelWraps bool) error {
 	s, err := script.LoadScript(paths.ResolvePath(scriptArg), env)
 	if err != nil {
 		return err
@@ -624,6 +624,10 @@ func CmdBuild(env *app.Env, scriptArg, output, format string, jobs, kbps int, al
 	// 字幕が速すぎる行があれば、音声の圧縮と書き出し (mp4 の撮影) の前に止める。pause_after は合成の鍵に入らないので、直して build し直すだけで済む
 	if n := WarnFastCaptions(env.Stderr, "build", data.Lines, data.Duration); n > 0 && !allowFastCaptions {
 		return app.Fail("字幕が速すぎる行が %d 行あるので、書き出す前に止めた (行を分けるか pause_after で間を足す。このまま書き出すなら --allow-fast-captions)", n)
+	}
+	// ラベル (タイトル・図解など) の意図しない改行も、音声の圧縮と書き出しの前に止める (台本の字を直して build し直すだけで済む。issue 812)
+	if err := CheckLabelLayout(env, data, td, allowLabelWraps); err != nil {
+		return err
 	}
 	joined := filepath.Join(td, "joined.wav")
 	if err := wav.Write(joined, pcm); err != nil {

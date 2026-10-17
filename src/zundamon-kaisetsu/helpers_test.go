@@ -2,12 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/build"
 )
 
 // テストとベンチマークが共有する helper (issue 655 で各ファイルからまとめた)。
@@ -29,7 +32,47 @@ func testEnv(t testing.TB) *app.Env {
 	e := &app.Env{Stdout: io.Discard, Stderr: io.Discard}
 	e.SetSkillDir(skill)
 	e.AssetsFaces = filepath.Join(t.TempDir(), "no-assets")
+	e.MeasureLabels = fakeLabelMeasure(nil) // 本物の Chrome を起こさない (ラベルの改行は全部問題なしと答える)
 	return e
+}
+
+// playerDataFromHTML は build が書いた HTML に埋め込んだプレイヤーのデータを取り出す
+func playerDataFromHTML(html string) (build.PlayerData, error) {
+	const open = `<script type="application/json" id="data">`
+	var d build.PlayerData
+	start := strings.Index(html, open)
+	if start < 0 {
+		return d, errors.New("データの script が見つからない")
+	}
+	end := strings.Index(html[start:], "</script>")
+	if end < 0 {
+		return d, errors.New("データの script が閉じていない")
+	}
+	err := json.Unmarshal([]byte(html[start+len(open):start+end]), &d)
+	return d, err
+}
+
+// fakeLabelMeasure は player.html の計測モードの代わり。測るはずのラベル (build.ExpectedLabelKeys) を全部「問題なし」で返し、
+// edit があれば返す前に書き換える (問題のある計測を演じる)
+func fakeLabelMeasure(edit func(d *build.PlayerData, ms []build.LabelMeasure) []build.LabelMeasure) func(string) ([]byte, error) {
+	return func(page string) ([]byte, error) {
+		b, err := os.ReadFile(page)
+		if err != nil {
+			return nil, err
+		}
+		d, err := playerDataFromHTML(string(b))
+		if err != nil {
+			return nil, err
+		}
+		var ms []build.LabelMeasure
+		for _, k := range build.ExpectedLabelKeys(&d) {
+			ms = append(ms, build.LabelMeasure{Key: k, Kind: "box", Clip: []int{0, 0}})
+		}
+		if edit != nil {
+			ms = edit(&d, ms)
+		}
+		return json.Marshal(map[string]any{"labels": ms})
+	}
 }
 
 // writeScript は台本を一時 dir の s.json に書いてパスを返す

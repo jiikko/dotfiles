@@ -57,7 +57,7 @@ func TestBuildMP4PrintsCredits(t *testing.T) {
 	var stdout bytes.Buffer
 	env.Stdout = &stdout
 	scr := filepath.Join("testdata", "build", "script.json")
-	must(t, build.CmdBuild(env, scr, filepath.Join(t.TempDir(), "out"), "mp4", 2, 64, true))
+	must(t, build.CmdBuild(env, scr, filepath.Join(t.TempDir(), "out"), "mp4", 2, 64, true, false))
 	s, err := script.LoadScript(scr, testEnv(t))
 	must(t, err)
 	data, _, err := build.Assemble(s, testEnv(t))
