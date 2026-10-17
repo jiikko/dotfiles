@@ -24,33 +24,33 @@ import (
 // から呼ばれる)。(4) ghErr (共有 sticky 警告) は触らない — browseModel の jobDetailMsg ハンドラが
 // 無条件代入して C4 契約 (成功時 nil クリア) を維持する。
 type JobDetailOverlay struct {
-	Open  bool          // 詳細ポップアップ表示中か
-	Pager listnav.Pager // スクロール位置 (滑らせないので glide は使わない)
+	open  bool          // 詳細ポップアップ表示中か
+	pager listnav.Pager // スクロール位置 (滑らせないので glide は使わない)
 	// logs は key (detailKey) → ログ行のキャッシュと取得の単発化 (line_cache.go)。
-	Cache linecache.Cache
+	cache linecache.Cache
 }
 
 // newJobDetailOverlay は map を初期化した jobDetailOverlay を返す。
 func NewJobDetailOverlay() JobDetailOverlay {
-	return JobDetailOverlay{Cache: linecache.New()}
+	return JobDetailOverlay{cache: linecache.New()}
 }
 
 // visible は詳細ポップアップを表示中か。
-func (o *JobDetailOverlay) Visible() bool { return o.Open }
+func (o *JobDetailOverlay) Visible() bool { return o.open }
 
 // fetching は詳細取得中の key が 1 つでもあるか (スピナー tick を回し続ける判定用)。
-func (o *JobDetailOverlay) Fetching() bool { return o.Cache.Fetching() }
+func (o *JobDetailOverlay) Fetching() bool { return o.cache.Fetching() }
 
 // close は詳細ポップアップを閉じてスクロール位置を戻す。cache は保持する (閉じ直しで再取得
 // しないため)。全パネル退出経路 (handleKey q / closePanel) と handleDetailKey の閉じキーが呼ぶ。
 func (o *JobDetailOverlay) Close() {
-	o.Open = false
-	o.Pager.Reset()
+	o.open = false
+	o.pager.Reset()
 }
 
 // reset は pull 後の全面リロードで cache ごと破棄する (旧 SHA のログ残骸を持ち越さない)。
 func (o *JobDetailOverlay) Reset() {
-	o.Cache.Reset()
+	o.cache.Reset()
 	o.Close()
 }
 
@@ -58,13 +58,13 @@ func (o *JobDetailOverlay) Reset() {
 // (rows = 表示可能行数)、未ヒットかつ未 busy なら busy を立てて needFetch=true を返す。
 // 呼び出し側は needFetch のときだけ FetchJobDetail を発行する (openDiff と対称)。
 func (o *JobDetailOverlay) StartOpen(key string, rows int) (needFetch bool) {
-	o.Open = true
-	o.Pager.Reset()
-	if lines, ok := o.Cache.Get(key); ok {
-		o.Pager.Offset = max(len(lines)-rows, 0) // ログ末尾 (直近出力) を表示
+	o.open = true
+	o.pager.Reset()
+	if lines, ok := o.cache.Get(key); ok {
+		o.pager.Offset = max(len(lines)-rows, 0) // ログ末尾 (直近出力) を表示
 		return false
 	}
-	return o.Cache.Begin(key)
+	return o.cache.Begin(key)
 }
 
 // receive は取得結果 (jobDetailMsg) を反映する。busy を落とし lines を cache へ格納し、今まさに
@@ -72,13 +72,13 @@ func (o *JobDetailOverlay) StartOpen(key string, rows int) (needFetch bool) {
 // 呼び出し時に detailKey() から取り直した live な値を渡すこと (snapshot 禁止: リフレッシュで
 // job 数が縮み panelCursor がクランプされ key が変わる経路に追従するため)。
 func (o *JobDetailOverlay) Receive(msg JobDetailMsg, currentKey string, rows int) {
-	if msg.Lines == nil {
-		o.Cache.Abort(msg.Key)
+	if msg.lines == nil {
+		o.cache.Abort(msg.key)
 		return
 	}
-	o.Cache.Store(msg.Key, msg.Lines, currentKey)
-	if o.Open && currentKey == msg.Key {
-		o.Pager.Offset = max(len(msg.Lines)-rows, 0)
+	o.cache.Store(msg.key, msg.lines, currentKey)
+	if o.open && currentKey == msg.key {
+		o.pager.Offset = max(len(msg.lines)-rows, 0)
 	}
 }
 
@@ -92,12 +92,12 @@ func (o *JobDetailOverlay) Scroll(key, contentKey string, rows int) {
 		o.Close()
 		return
 	}
-	o.Pager.Move(listnav.MotionOf(key), len(o.Lines(contentKey)), rows, 0)
+	o.pager.Move(listnav.MotionOf(key), len(o.Lines(contentKey)), rows, 0)
 }
 
 // lines は key の cache 済みログ行を返す (nvim で開く v キー用の getter)。
 func (o *JobDetailOverlay) Lines(key string) []string {
-	lines, _ := o.Cache.Get(key)
+	lines, _ := o.cache.Get(key)
 	return lines
 }
 
@@ -107,7 +107,7 @@ func (o *JobDetailOverlay) BoxLines(width int, colored bool, spinner, name, key 
 	var body []string
 	title := " " + name + " "
 	switch {
-	case o.Cache.Loading(key):
+	case o.cache.Loading(key):
 		body = []string{term.Paint(spinner+" 詳細を取得中...", term.AnsiDim, colored)}
 	default:
 		lines := o.Lines(key)
@@ -116,8 +116,8 @@ func (o *JobDetailOverlay) BoxLines(width int, colored bool, spinner, name, key 
 			break
 		}
 		// 描画で確定した行数・窓で論理 offset を収束させる (理由は listnav.Pager.Clamp の doc)
-		o.Pager.Clamp(len(lines), rows)
-		start := o.Pager.DrawOffset(len(lines), rows)
+		o.pager.Clamp(len(lines), rows)
+		start := o.pager.DrawOffset(len(lines), rows)
 		end := min(start+rows, len(lines))
 		body = make([]string, 0, end-start)
 		for _, l := range lines[start:end] {

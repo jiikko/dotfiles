@@ -319,12 +319,12 @@ func TestBrowseEnterOpensDetailAndToggles(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	_, cmd := m.handleKey("enter")
-	if cmd == nil || !m.detailOv.Open {
-		t.Fatalf("job 行の Enter で詳細が開かない (cmd=%v detailOpen=%v)", cmd, m.detailOv.Open)
+	if cmd == nil || !(*m.detailOv.Fixture().Open()) {
+		t.Fatalf("job 行の Enter で詳細が開かない (cmd=%v detailOpen=%v)", cmd, (*m.detailOv.Fixture().Open()))
 	}
-	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: []string{"line"}})
+	m.Update(commitview.NewJobDetailMsg(m.detailKey(), []string{"line"}, nil))
 	m.handleKey("enter")
-	if m.detailOv.Open {
+	if *m.detailOv.Fixture().Open() {
 		t.Errorf("詳細表示中の Enter で閉じない (toggle)")
 	}
 	if m.panelSHA == "" || m.panelCursor != 0 {
@@ -621,9 +621,9 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.Open = true
+	(*m.detailOv.Fixture().Open()) = true
 	m.panelCursor = 0
-	m.detailOv.Cache.Store(m.detailKey(), []string{term.AnsiRed + "boom" + term.AnsiReset, "at foo.go:10"}, m.detailKey())
+	m.detailOv.Fixture().Cache().Store(m.detailKey(), []string{term.AnsiRed + "boom" + term.AnsiReset, "at foo.go:10"}, m.detailKey())
 
 	_, cmd := m.handleKey("v")
 	if cmd == nil || len(*cmds) != 1 {
@@ -666,7 +666,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	}
 
 	// ログが空なら起動しない
-	m.detailOv.Cache.Store(m.detailKey(), nil, m.detailKey())
+	m.detailOv.Fixture().Cache().Store(m.detailKey(), nil, m.detailKey())
 	if _, cmd := m.handleKey("v"); cmd != nil {
 		t.Error("空ログで nvim を起動しようとした")
 	}
@@ -683,7 +683,7 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("l で詳細取得 Cmd が返らない")
 	}
-	if !m.detailOv.Open || !m.detailOv.Cache.Loading(m.detailKey()) {
+	if !(*m.detailOv.Fixture().Open()) || !m.detailOv.Fixture().Cache().Loading(m.detailKey()) {
 		t.Fatalf("詳細が開いていない / busy でない")
 	}
 	if !strings.Contains(m.View().Content, "詳細を取得中") {
@@ -694,10 +694,10 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	for i := range lines {
 		lines[i] = fmt.Sprintf("log line %d", i)
 	}
-	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: lines})
+	m.Update(commitview.NewJobDetailMsg(m.detailKey(), lines, nil))
 	rows := m.visibleDetailRows()
-	if m.detailOv.Pager.Offset != 30-rows {
-		t.Errorf("detailOffset = %d; want 末尾表示 %d", m.detailOv.Pager.Offset, 30-rows)
+	if m.detailOv.Fixture().Pager().Offset != 30-rows {
+		t.Errorf("detailOffset = %d; want 末尾表示 %d", m.detailOv.Fixture().Pager().Offset, 30-rows)
 	}
 	if !strings.Contains(m.View().Content, "log line 29") {
 		t.Errorf("末尾行が見えていない (低い端末でも末尾は見える):\n%s", m.View().Content)
@@ -715,23 +715,23 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	}
 	// k で上へスクロール、g で先頭
 	m.handleKey("k")
-	if m.detailOv.Pager.Offset != 30-rows-1 {
-		t.Errorf("k 後の offset = %d", m.detailOv.Pager.Offset)
+	if m.detailOv.Fixture().Pager().Offset != 30-rows-1 {
+		t.Errorf("k 後の offset = %d", m.detailOv.Fixture().Pager().Offset)
 	}
 	m.handleKey("g")
-	if m.detailOv.Pager.Offset != 0 {
-		t.Errorf("g 後の offset = %d", m.detailOv.Pager.Offset)
+	if m.detailOv.Fixture().Pager().Offset != 0 {
+		t.Errorf("g 後の offset = %d", m.detailOv.Fixture().Pager().Offset)
 	}
 	// h で job フォーカスへ戻る (パネルは開いたまま)
 	m.handleKey("h")
-	if m.detailOv.Open || m.panelSHA == "" || m.panelCursor != 0 {
-		t.Errorf("h 後の状態: detailOpen=%v panelSHA=%q cursor=%d", m.detailOv.Open, m.panelSHA, m.panelCursor)
+	if (*m.detailOv.Fixture().Open()) || m.panelSHA == "" || m.panelCursor != 0 {
+		t.Errorf("h 後の状態: detailOpen=%v panelSHA=%q cursor=%d", (*m.detailOv.Fixture().Open()), m.panelSHA, m.panelCursor)
 	}
 	// 再度 l → キャッシュ済みなので fetch なしで即表示
 	if _, cmd := m.handleKey("l"); cmd != nil {
 		t.Errorf("キャッシュ済み詳細で再 fetch した")
 	}
-	if !m.detailOv.Open {
+	if !(*m.detailOv.Fixture().Open()) {
 		t.Errorf("2 回目の l で開かない")
 	}
 }
@@ -749,19 +749,19 @@ func TestBrowseJobDetailReopenScrollsToTail(t *testing.T) {
 	for i := range lines {
 		lines[i] = fmt.Sprintf("log line %d", i)
 	}
-	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: lines})
+	m.Update(commitview.NewJobDetailMsg(m.detailKey(), lines, nil))
 	m.handleKey("g") // 先頭へ
-	if m.detailOv.Pager.Offset != 0 {
-		t.Fatalf("g で先頭に来ていない: offset=%d", m.detailOv.Pager.Offset)
+	if m.detailOv.Fixture().Pager().Offset != 0 {
+		t.Fatalf("g で先頭に来ていない: offset=%d", m.detailOv.Fixture().Pager().Offset)
 	}
 	m.handleKey("h") // 閉じる (cache は残る)
-	if m.detailOv.Open {
+	if *m.detailOv.Fixture().Open() {
 		t.Fatal("h で閉じていない")
 	}
 	m.handleKey("l") // 再オープン (キャッシュヒット)
 	rows := m.visibleDetailRows()
-	if m.detailOv.Pager.Offset != 30-rows {
-		t.Errorf("再オープン時の offset = %d; want 末尾 %d (最新ログを表示)", m.detailOv.Pager.Offset, 30-rows)
+	if m.detailOv.Fixture().Pager().Offset != 30-rows {
+		t.Errorf("再オープン時の offset = %d; want 末尾 %d (最新ログを表示)", m.detailOv.Fixture().Pager().Offset, 30-rows)
 	}
 	if !strings.Contains(m.View().Content, "log line 29") {
 		t.Errorf("再オープンで末尾行が見えない:\n%s", m.View().Content)
@@ -778,10 +778,10 @@ func TestBrowseJobDetailStaleMsgDoesNotMoveOffset(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j") // job0 (key = panelSHA/0)
 	m.handleKey("l")
-	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: []string{"a", "b", "c"}})
+	m.Update(commitview.NewJobDetailMsg(m.detailKey(), []string{"a", "b", "c"}, nil))
 	m.handleKey("g") // offset=0
-	if m.detailOv.Pager.Offset != 0 {
-		t.Fatalf("前提: offset=0 でない (%d)", m.detailOv.Pager.Offset)
+	if m.detailOv.Fixture().Pager().Offset != 0 {
+		t.Fatalf("前提: offset=0 でない (%d)", m.detailOv.Fixture().Pager().Offset)
 	}
 	// 別 job (job1) 宛の遅延結果が届いても、今開いている job0 の offset は動かない
 	staleKey := m.panelSHA + "/1"
@@ -789,15 +789,15 @@ func TestBrowseJobDetailStaleMsgDoesNotMoveOffset(t *testing.T) {
 	for i := range longLines {
 		longLines[i] = fmt.Sprintf("stale %d", i)
 	}
-	m.Update(commitview.JobDetailMsg{Key: staleKey, Lines: longLines})
-	if m.detailOv.Pager.Offset != 0 {
-		t.Errorf("別 key の遅延結果で offset が動いた: %d; want 0", m.detailOv.Pager.Offset)
+	m.Update(commitview.NewJobDetailMsg(staleKey, longLines, nil))
+	if m.detailOv.Fixture().Pager().Offset != 0 {
+		t.Errorf("別 key の遅延結果で offset が動いた: %d; want 0", m.detailOv.Fixture().Pager().Offset)
 	}
 	// 詳細を閉じた状態でも jobDetailMsg は offset を動かさない
 	m.handleKey("h")
-	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: longLines})
-	if m.detailOv.Pager.Offset != 0 {
-		t.Errorf("詳細非表示中に offset が動いた: %d; want 0", m.detailOv.Pager.Offset)
+	m.Update(commitview.NewJobDetailMsg(m.detailKey(), longLines, nil))
+	if m.detailOv.Fixture().Pager().Offset != 0 {
+		t.Errorf("詳細非表示中に offset が動いた: %d; want 0", m.detailOv.Fixture().Pager().Offset)
 	}
 }
 
@@ -810,9 +810,9 @@ func TestBrowseJobDetailSpaceCloses(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("l")
-	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: []string{"x", "y", "z"}})
+	m.Update(commitview.NewJobDetailMsg(m.detailKey(), []string{"x", "y", "z"}, nil))
 	m.handleKey(" ")
-	if m.detailOv.Open {
+	if *m.detailOv.Fixture().Open() {
 		t.Error("Space で詳細が閉じない (job 詳細では Space=閉じる)")
 	}
 	if m.panelSHA == "" {
@@ -830,15 +830,15 @@ func TestBrowseClosePanelClosesOpenDetail(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("l")
-	m.Update(commitview.JobDetailMsg{Key: m.detailKey(), Lines: []string{"a", "b", "c", "d", "e"}})
+	m.Update(commitview.NewJobDetailMsg(m.detailKey(), []string{"a", "b", "c", "d", "e"}, nil))
 	m.handleKey("G") // offset を非 0 に
-	if !m.detailOv.Open {
+	if !(*m.detailOv.Fixture().Open()) {
 		t.Fatal("前提: 詳細が開いていない")
 	}
 	m.closePanel()
-	if m.detailOv.Open || m.detailOv.Pager.Offset != 0 || m.panelSHA != "" {
+	if (*m.detailOv.Fixture().Open()) || m.detailOv.Fixture().Pager().Offset != 0 || m.panelSHA != "" {
 		t.Errorf("closePanel が詳細を落とさない: detailOpen=%v detailOffset=%d panelSHA=%q",
-			m.detailOv.Open, m.detailOv.Pager.Offset, m.panelSHA)
+			(*m.detailOv.Fixture().Open()), m.detailOv.Fixture().Pager().Offset, m.panelSHA)
 	}
 }
 
@@ -851,7 +851,7 @@ func TestBrowseJobDetailFetchKeepsSpinnerActive(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("l") // 未取得なので busy が立つ
-	if !m.detailOv.Cache.Loading(m.detailKey()) {
+	if !m.detailOv.Fixture().Cache().Loading(m.detailKey()) {
 		t.Fatal("前提: 取得中フラグが立っていない")
 	}
 	if !m.spinnerActive() {
@@ -865,16 +865,16 @@ func TestBrowseReloadAfterPullResetsJobDetailCache(t *testing.T) {
 	newTempRepo(t, []string{"first", "second"})
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.opts = &Options{MaxCount: 20}
-	m.detailOv.Cache.Store("stale/0", []string{"old log"}, "stale/0")
+	m.detailOv.Fixture().Cache().Store("stale/0", []string{"old log"}, "stale/0")
 	// 🚨 札は未キャッシュのキーで立てる: begin はキャッシュ済みなら何もしないので、
 	// 上と同じキーに対して呼ぶと busy が空のまま = 下の busy 検査が空振りになる
-	if !m.detailOv.Cache.Begin("inflight/1") {
+	if !m.detailOv.Fixture().Cache().Begin("inflight/1") {
 		t.Fatal("走行中の札を立てられない (前提が崩れた)")
 	}
 	m.reloadAfterPull()
-	if m.detailOv.Cache.Len() != 0 || m.detailOv.Cache.Fetching() {
+	if m.detailOv.Fixture().Cache().Len() != 0 || m.detailOv.Fixture().Cache().Fetching() {
 		t.Errorf("reloadAfterPull で job 詳細キャッシュが残った: cache=%d fetching=%v",
-			m.detailOv.Cache.Len(), m.detailOv.Cache.Fetching())
+			m.detailOv.Fixture().Cache().Len(), m.detailOv.Fixture().Cache().Fetching())
 	}
 }
 

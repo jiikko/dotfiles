@@ -12,49 +12,49 @@ import (
 // CI 行はコミット側の statuses が出典なので、boxLines へ整形済みの 1 行 (ciLine) を注入する
 // (この型は CI 状態を知らない)。
 type PrStatusOverlay struct {
-	Sha   string                       // 表示対象コミットの SHA ("" = 非表示)
-	Busy  map[string]bool              // 取得中の sha (close 後も保持し、close→reopen での二重発火を防ぐ = diffOverlay と同型)
-	Cache map[string]*gitdata.PRStatus // sha → PR 詳細 (nil 格納 = 確認済みで PR なし)
+	sha   string                       // 表示対象コミットの SHA ("" = 非表示)
+	busy  map[string]bool              // 取得中の sha (close 後も保持し、close→reopen での二重発火を防ぐ = diffOverlay と同型)
+	cache map[string]*gitdata.PRStatus // sha → PR 詳細 (nil 格納 = 確認済みで PR なし)
 }
 
 func NewPRStatusOverlay() PrStatusOverlay {
-	return PrStatusOverlay{Cache: map[string]*gitdata.PRStatus{}, Busy: map[string]bool{}}
+	return PrStatusOverlay{cache: map[string]*gitdata.PRStatus{}, busy: map[string]bool{}}
 }
 
 // visible はポップアップ表示中か。
-func (o *PrStatusOverlay) Visible() bool { return o.Sha != "" }
+func (o *PrStatusOverlay) Visible() bool { return o.sha != "" }
 
 // fetching は取得中の sha が 1 つでもあるか (スピナー tick を回す判定用)。
-func (o *PrStatusOverlay) Fetching() bool { return len(o.Busy) > 0 }
+func (o *PrStatusOverlay) Fetching() bool { return len(o.busy) > 0 }
 
 // close はポップアップを閉じる。cache と busy は保持する (busy を消すと、応答前に閉じた
 // in-flight fetch を open が「未取得」と見なして二重発火する。diffOverlay と同型)。
 func (o *PrStatusOverlay) Close() {
-	o.Sha = ""
+	o.sha = ""
 }
 
 // reset は pull 後の全面リロードで cache ごと破棄する (旧 SHA の残骸を持ち越さない)。
 func (o *PrStatusOverlay) Reset() {
-	o.Cache = map[string]*gitdata.PRStatus{}
-	o.Busy = map[string]bool{}
+	o.cache = map[string]*gitdata.PRStatus{}
+	o.busy = map[string]bool{}
 	o.Close()
 }
 
 // open は sha のポップアップを開く。同じ sha なら閉じる (toggle)。cache 未ヒットかつ未取得の
 // ときだけ needFetch=true を返す (呼び出し側が FetchPRStatus を発行する)。
 func (o *PrStatusOverlay) Open(sha string) (needFetch bool) {
-	if o.Sha == sha {
+	if o.sha == sha {
 		o.Close()
 		return false
 	}
-	o.Sha = sha
-	if _, ok := o.Cache[sha]; ok {
+	o.sha = sha
+	if _, ok := o.cache[sha]; ok {
 		return false
 	}
-	if o.Busy[sha] {
+	if o.busy[sha] {
 		return false // 既に in-flight (close→reopen 連打): 二重発火しない
 	}
-	o.Busy[sha] = true
+	o.busy[sha] = true
 	return true
 }
 
@@ -62,22 +62,22 @@ func (o *PrStatusOverlay) Open(sha string) (needFetch bool) {
 // (呼び出し側が notice を出す。一時エラーで「PR なし」を固定しない = prMsg と同じ方針)。
 // 表示対象が変わった後の遅延到着はキャッシュだけ更新する。
 func (o *PrStatusOverlay) Receive(sha string, status *gitdata.PRStatus, ghErr *gitdata.GHError) {
-	delete(o.Busy, sha)
+	delete(o.busy, sha)
 	if ghErr != nil {
-		if sha == o.Sha {
+		if sha == o.sha {
 			o.Close()
 		}
 		return
 	}
-	o.Cache[sha] = status
+	o.cache[sha] = status
 }
 
 // current は表示中 PR の詳細 (未取得 / PR なしは nil)。o (ブラウザ) / y (コピー) の URL 解決用。
 func (o *PrStatusOverlay) Current() *gitdata.PRStatus {
-	if o.Sha == "" {
+	if o.sha == "" {
 		return nil
 	}
-	return o.Cache[o.Sha]
+	return o.cache[o.sha]
 }
 
 // prStateLabel は PR の状態行 ("OPEN" / "OPEN (draft)" / "MERGED" ...) を色付きで返す。
@@ -118,16 +118,16 @@ func mergeableRow(mergeable string, colored bool) string {
 // boxLines はポップアップの描画行 (枠付き)。非表示なら nil。ciLine はコミットの CI 状態の
 // 整形済み 1 行 ("" = 出さない)。spinner / width / colored は browseModel の状態を受け取る。
 func (o *PrStatusOverlay) BoxLines(width int, colored bool, spinner, ciLine string) []string {
-	if o.Sha == "" {
+	if o.sha == "" {
 		return nil
 	}
 	if width <= 0 {
 		width = 80
 	}
-	if o.Busy[o.Sha] {
+	if o.busy[o.sha] {
 		return term.BuildShadowPanelBox(" PR ", []string{term.Paint(spinner+" PR を取得中...", term.AnsiDim, colored)}, width, colored)
 	}
-	pr := o.Cache[o.Sha]
+	pr := o.cache[o.sha]
 	if pr == nil {
 		// receive で PR なしが確定したケース (呼び出し側は notice も出すが、開いたままなら枠で示す)
 		return term.BuildShadowPanelBox(" PR ", []string{term.Paint("(紐づく PR はありません)", term.AnsiDim, colored)}, width, colored)
@@ -146,3 +146,6 @@ func (o *PrStatusOverlay) BoxLines(width int, colored bool, spinner, ciLine stri
 	}
 	return term.BuildShadowPanelBox(title, rows, width, colored)
 }
+
+// SHA は表示対象のコミットの SHA ("" = 非表示)。
+func (o *PrStatusOverlay) SHA() string { return o.sha }

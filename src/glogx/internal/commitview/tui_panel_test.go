@@ -21,11 +21,11 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 	}
 	const width, rows = 50, 8
 	o := NewJobDetailOverlay()
-	o.Open = true
+	o.open = true
 
 	// 溢れる: バー列あり + 幅は均一 + offset に応じて thumb が動く
-	o.Cache.Store("over", logLines(50), "over")
-	o.Pager.Offset = 20
+	o.cache.Store("over", logLines(50), "over")
+	o.pager.Offset = 20
 	box := o.BoxLines(width, false, "", "job", "over", rows)
 	uniformWidth(t, box)
 	// 影付き箱: 末尾 2 行は下辺 (▖▁▗+影) と下端影なので本文から除く。本文行の行末は
@@ -54,8 +54,8 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 	uniformWidth(t, o.BoxLines(width, true, "", "job", "over", rows))
 
 	// 収まる: バー列なし (本文幅が戻る)。幅は溢れる場合と同じ (枠幅は不変)
-	o.Cache.Store("fit", logLines(rows-2), "fit")
-	o.Pager.Offset = 0
+	o.cache.Store("fit", logLines(rows-2), "fit")
+	o.pager.Offset = 0
 	fit := o.BoxLines(width, false, "", "job", "fit", rows)
 	if w := uniformWidth(t, fit); w != term.DispWidth(term.StripANSI(box[0])) {
 		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, term.DispWidth(term.StripANSI(box[0])))

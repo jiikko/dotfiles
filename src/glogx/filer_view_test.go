@@ -55,7 +55,7 @@ func TestFilerOpensWithFAndClosesWithF(t *testing.T) {
 	if m.activeFullScreen() != app.FullScreenNone {
 		t.Fatal("F で閉じない")
 	}
-	m.diffOv.Sha = m.commits[0].SHA
+	(*m.diffOv.Fixture().Sha()) = m.commits[0].SHA
 	m.handleKey("F")
 	if m.activeFullScreen() != app.FullScreenFiler {
 		t.Fatal("diff の上から F で開かない")

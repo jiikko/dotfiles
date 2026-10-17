@@ -222,7 +222,7 @@ func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 	m.openJobDetail()
 	_, cmd := m.Update(tea.KeyPressMsg{Text: "hhq"})
 	if !m.done {
-		t.Fatalf("hhq のまとめ配送で終了しない (detailOpen=%v panelSHA=%q)", m.detailOv.Open, m.panelSHA)
+		t.Fatalf("hhq のまとめ配送で終了しない (detailOpen=%v panelSHA=%q)", (*m.detailOv.Fixture().Open()), m.panelSHA)
 	}
 	if cmd == nil {
 		t.Errorf("q の Quit Cmd が返らない")
@@ -256,11 +256,11 @@ func TestBrowseQPopsViewStack(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.Cache.Store(m.detailKey(), []string{"line"}, m.detailKey())
+	m.detailOv.Fixture().Cache().Store(m.detailKey(), []string{"line"}, m.detailKey())
 	m.openJobDetail()
 	m.handleKey("q")
-	if m.detailOv.Open || m.panelSHA == "" || m.done {
-		t.Fatalf("q 1回目: 詳細だけ閉じるべき (detailOpen=%v panelSHA=%q done=%v)", m.detailOv.Open, m.panelSHA, m.done)
+	if (*m.detailOv.Fixture().Open()) || m.panelSHA == "" || m.done {
+		t.Fatalf("q 1回目: 詳細だけ閉じるべき (detailOpen=%v panelSHA=%q done=%v)", (*m.detailOv.Fixture().Open()), m.panelSHA, m.done)
 	}
 	m.handleKey("q")
 	if m.panelSHA != "" || m.done {
@@ -279,7 +279,7 @@ func TestBrowseCtrlCQuitsAnywhere(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.Cache.Store(m.detailKey(), []string{"line"}, m.detailKey())
+	m.detailOv.Fixture().Cache().Store(m.detailKey(), []string{"line"}, m.detailKey())
 	m.openJobDetail()
 	_, cmd := m.handleKey("ctrl+c")
 	if cmd == nil || !m.done {
@@ -335,7 +335,7 @@ func TestJapaneseFullViewStaysInWidth(t *testing.T) {
 	}
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.Cache.Store(m.detailKey(), []string{
+	m.detailOv.Fixture().Cache().Store(m.detailKey(), []string{
 		strings.Repeat("日本語のログ行です。", 12),
 		"##[error]日本語のエラーメッセージ",
 	}, m.detailKey())
@@ -511,9 +511,9 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"toast.animating", func(m *browseModel) { m.toast.Show("x", true) }}, // 積んだ直後は入場のスライド中
 		{"awaitCI", func(m *browseModel) { m.awaitCI = map[string]bool{"a": true} }},
 		{"detailsLoading", func(m *browseModel) { m.detailsLoading["a"] = true }},
-		{"detailOv.fetching", func(m *browseModel) { m.detailOv.Cache.Begin("a") }},
-		{"diffOv.fetching", func(m *browseModel) { m.diffOv.Cache.Begin("a") }},
-		{"prStatusOv.fetching", func(m *browseModel) { m.prStatusOv.Busy["a"] = true }},
+		{"detailOv.fetching", func(m *browseModel) { m.detailOv.Fixture().Cache().Begin("a") }},
+		{"diffOv.fetching", func(m *browseModel) { m.diffOv.Fixture().Cache().Begin("a") }},
+		{"prStatusOv.fetching", func(m *browseModel) { (*m.prStatusOv.Fixture().Busy())["a"] = true }},
 		{"panelHasPendingJob (running)", func(m *browseModel) {
 			m.panelSHA = m.commits[0].SHA
 			m.details[m.panelSHA] = []gitdata.CheckDetail{{Name: "job", State: gitdata.StatePending, StartedAt: time.Now()}}
@@ -531,7 +531,7 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		// 🚨 以下 3 つは「全テストスイートを生き残る」ことを変異で実測した無防備な源
 		// (2026-08-13 の敵対的レビュー)。前 2 つは tickInterval 経由、3 つ目は上の
 		// statusOv.fetching の第 2 disjunct で、そこだけ覆えていなかった。
-		{"diffOv.animating", func(m *browseModel) { startPagerGlide(t, &m.diffOv.Pager, 0, 1) }},
+		{"diffOv.animating", func(m *browseModel) { startPagerGlide(t, m.diffOv.Fixture().Pager(), 0, 1) }},
 		{"issuesOv.bodyPager", func(m *browseModel) { startPagerGlide(t, m.issuesOv.Fixture().BodyPager(), 0, 1) }},
 		{"statusOv.preview.fetching", func(m *browseModel) { m.statusOv.Fixture().Preview().Begin("k") }},
 	}
@@ -604,19 +604,19 @@ func TestBrowseJobDetailNeighborKeysSwapJob(t *testing.T) {
 	m.handleKey("j") // job 0 (build)
 	m.openJobDetail()
 	if !m.detailOv.Visible() || m.panelCursor != 0 {
-		t.Fatalf("前提: build の詳細が開いていない: open=%v cursor=%d", m.detailOv.Open, m.panelCursor)
+		t.Fatalf("前提: build の詳細が開いていない: open=%v cursor=%d", (*m.detailOv.Fixture().Open()), m.panelCursor)
 	}
 	keyBefore := m.detailKey()
 
 	_, cmd := m.handleKey("J")
 	if m.panelCursor != 1 || !m.detailOv.Visible() {
-		t.Fatalf("J で lint へ移らない / 詳細が閉じた: cursor=%d open=%v", m.panelCursor, m.detailOv.Open)
+		t.Fatalf("J で lint へ移らない / 詳細が閉じた: cursor=%d open=%v", m.panelCursor, (*m.detailOv.Fixture().Open()))
 	}
 	if m.detailKey() == keyBefore {
 		t.Fatalf("J の後も詳細の cache キーが build のまま: %q", m.detailKey())
 	}
-	if cmd == nil || !m.detailOv.Cache.Loading(m.detailKey()) {
-		t.Errorf("J で未取得の隣 job を取りに行かない: cmd=%v busy=%v", cmd != nil, m.detailOv.Cache.Loading(m.detailKey()))
+	if cmd == nil || !m.detailOv.Fixture().Cache().Loading(m.detailKey()) {
+		t.Errorf("J で未取得の隣 job を取りに行かない: cmd=%v busy=%v", cmd != nil, m.detailOv.Fixture().Cache().Loading(m.detailKey()))
 	}
 	m.handleKey("J")
 	if m.panelCursor != 1 || !strings.Contains(m.toast.Text(), "最後") {
@@ -624,7 +624,7 @@ func TestBrowseJobDetailNeighborKeysSwapJob(t *testing.T) {
 	}
 	m.handleKey("shift+up")
 	if m.panelCursor != 0 || m.detailKey() != keyBefore || !m.detailOv.Visible() {
-		t.Fatalf("shift+↑ で build へ戻らない: cursor=%d key=%q open=%v", m.panelCursor, m.detailKey(), m.detailOv.Open)
+		t.Fatalf("shift+↑ で build へ戻らない: cursor=%d key=%q open=%v", m.panelCursor, m.detailKey(), (*m.detailOv.Fixture().Open()))
 	}
 	m.handleKey("K")
 	if m.panelCursor != 0 || !strings.Contains(m.toast.Text(), "最初") {

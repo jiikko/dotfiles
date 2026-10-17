@@ -956,7 +956,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case commitview.JobDetailMsg:
-		m.ghErr = msg.GhErr // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)。
+		m.ghErr = msg.Err() // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)。
 		// 🚨 ghErr は共有 sticky 警告なので detailOv.receive に閉じず browseModel で無条件代入する。
 		// receive は busy 落とし・cache 格納・(今開いている詳細なら) 末尾スクロールを担う。currentKey は
 		// live な detailKey() を渡す (snapshot 禁止: リフレッシュで panelCursor がクランプされ得るため)。
@@ -967,10 +967,10 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 予約時の job のログだが、focusedJob() は現フォーカスを返すため、貼ると「別 job のヘッダに
 		// 旧 job の本文」という silent 誤コピーになる。詳細ポップアップを閉じただけ (closePanel を
 		// 経ない) でカーソル移動できる経路があり、copyOnDetail が残るため起きる (レビュー確定 high)。
-		if m.copyOnDetail == msg.Key {
+		if m.copyOnDetail == msg.Key() {
 			m.copyOnDetail = ""
-			if job, ok := m.focusedJob(); ok && m.detailKey() == msg.Key && msg.GhErr == nil && len(msg.Lines) > 0 {
-				m.copyJobContextLines(job, msg.Lines)
+			if job, ok := m.focusedJob(); ok && m.detailKey() == msg.Key() && msg.Err() == nil && len(msg.Lines()) > 0 {
+				m.copyJobContextLines(job, msg.Lines())
 			}
 		}
 		return m, nil
@@ -1003,7 +1003,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// receive は当該 sha が表示中ならエラー時に close するため、sha 一致は receive の前に捕捉する。
 		// notice は「今表示中の対象」の失敗のときだけ出す: 別 sha へ移った後に届く遅延エラーで
 		// 無関係な失敗 notice を被せない (レビュー確定 low)。
-		wasCurrent := msg.sha == m.prStatusOv.Sha
+		wasCurrent := msg.sha == m.prStatusOv.SHA()
 		m.prStatusOv.Receive(msg.sha, msg.status, msg.ghErr)
 		if msg.ghErr != nil && wasCurrent {
 			// 一時エラーはキャッシュしない (receive 側)。理由はトーストで伝える
@@ -1014,7 +1014,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 警告は「今表示中の対象」の失敗のときだけ出す: 別 SHA へ移った後に届く遅延エラーで
 		// 無関係な失敗 notice を被せない (prStatusMsg の wasCurrent と同型。receive は当該
 		// sha が表示中ならエラー時に close するため、一致は receive の前に捕捉する)
-		wasCurrent := msg.Sha == m.diffOv.Sha
+		wasCurrent := msg.SHA() == m.diffOv.SHA()
 		if err := m.diffOv.Receive(msg); err != nil && wasCurrent {
 			m.showWarning("diff の取得に失敗しました: " + app.FirstLine(err.Error()))
 		}
@@ -2879,7 +2879,7 @@ func (m *browseModel) openJobDetail() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
 		lines, ghErr := gitdata.FetchJobDetail(ctx, gitdata.ExecRunner, repo, check)
-		return commitview.JobDetailMsg{Key: key, Lines: lines, GhErr: ghErr}
+		return commitview.NewJobDetailMsg(key, lines, ghErr)
 	}
 	return tea.Batch(cmd, m.maybeTick())
 }
@@ -3303,7 +3303,7 @@ func (m *browseModel) handlePRStatusKey(key string) (tea.Model, tea.Cmd) {
 // prStatusCILine は PR ポップアップに出すコミット CI 状態の 1 行 (出典はコミット行と同じ
 // statuses/details)。失敗時は取得済み details から失敗 job 数を添える。
 func (m *browseModel) prStatusCILine() string {
-	sha := m.prStatusOv.Sha
+	sha := m.prStatusOv.SHA()
 	if sha == "" {
 		return ""
 	}
@@ -3349,7 +3349,7 @@ func (m *browseModel) fetchDiffCmd(sha string) tea.Cmd {
 	colored := m.colored
 	cmd := func() tea.Msg {
 		lines, err := loadCommitDiff(sha, colored)
-		return commitview.DiffMsg{Sha: sha, Lines: lines, Err: err}
+		return commitview.NewDiffMsg(sha, lines, err)
 	}
 	return tea.Batch(cmd, m.maybeTick())
 }
@@ -3362,7 +3362,7 @@ func (m *browseModel) fetchDiffCmd(sha string) tea.Cmd {
 // 「隣」が見ている diff の隣にならない)。移った先へはカーソルも追従させる。
 // 端では止めて案内する (巻かない。issues viewer の openNeighbor と同じ)。
 func (m *browseModel) openNeighborDiff(delta int) tea.Cmd {
-	idx := slices.IndexFunc(m.commits, func(c gitdata.Commit) bool { return c.SHA == m.diffOv.Sha })
+	idx := slices.IndexFunc(m.commits, func(c gitdata.Commit) bool { return c.SHA == m.diffOv.SHA() })
 	if idx < 0 {
 		idx = m.cursor
 	}
@@ -3402,7 +3402,7 @@ func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
 	// 呼ぶ者がおらず、表示位置がスクロール前で固まったまま「キーが効かない」ように見える
 	// (敵対的レビュー P1 2026-07-31: Space 後に j を何度押しても先頭行が出続ける実測)。
 	// 1 行移動・閉じるは glide を使わないので tick を増やさない。
-	if m.diffOv.Pager.Animating() {
+	if m.diffOv.Animating() {
 		return m, m.maybeTick()
 	}
 	return m, nil
@@ -3417,7 +3417,7 @@ func (m *browseModel) visibleDiffRows() int {
 
 // diffBoxLines は diff ポップアップの描画行 (枠付き)。SHA からコミットを解決して diffOv へ渡す。
 func (m *browseModel) diffBoxLines() []string {
-	return m.diffOv.BoxLines(m.contentWidth(), m.colored, m.spinner(), m.commitBySHA(m.diffOv.Sha), m.visibleDiffRows())
+	return m.diffOv.BoxLines(m.contentWidth(), m.colored, m.spinner(), m.commitBySHA(m.diffOv.SHA()), m.visibleDiffRows())
 }
 
 // fillUnknown は結果が得られなかった SHA を「取得中」のまま残さず unknown へ落とす。
@@ -3818,12 +3818,12 @@ func (m *browseModel) viewLines() string {
 	// diff ポップアップは job パネルよりさらに前面 (openDiff がパネルを閉じるため
 	// 実際に同時表示になることはないが、重ね順の契約としてパネルの後に描く)
 	if diffBox := m.diffBoxLines(); len(diffBox) > 0 {
-		window = term.OverlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffOv.Sha)+1, page)
+		window = term.OverlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffOv.SHA())+1, page)
 	}
 	// PR 状態ポップアップも対象コミット直下へ重ねる (job パネルとは同時表示にならない:
 	// P は一覧のみで受け、表示中は handlePRStatusKey がモーダルに捌く)
 	if prBox := m.prStatusOv.BoxLines(m.contentWidth(), m.colored, m.spinner(), m.prStatusCILine()); len(prBox) > 0 {
-		window = term.OverlayBox(window, prBox, m.boxAnchor(lines, offset, m.prStatusOv.Sha)+1, page)
+		window = term.OverlayBox(window, prBox, m.boxAnchor(lines, offset, m.prStatusOv.SHA())+1, page)
 	}
 	// ここから先 (action モーダル → 再起動 → usage → トースト) は全ビュー共通なので
 	// finishWithGlobalChrome が持つ。一覧固有のオーバーレイ (スクロールバー / job パネル /

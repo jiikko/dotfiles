@@ -107,7 +107,7 @@ golangci には「main を薄く」をそのまま表す規則が無いので、
 ### G. main に残すものを整理する
 
 - [x] G-1 git log の取得と CI の取得 (gitlog.go / github.go / cache.go) を `internal/gitdata` へ出すか決める (render.go のコミット行の描画が使う)
-- [ ] G-2 overlay 類 (diff / job / pr_status / action_modal) の置き場所を決める
+- [x] G-2 overlay 類 (diff / job / pr_status / action_modal) の置き場所を決める
 - [ ] G-3 main に残るのが「起動・配線・browseModel の状態機械」だけになったら、src/glogx/CLAUDE.md・README の構造の記述を直して閉じる
 
 ## 参考: キャッシュへの効き目 (742 の実測。動機ではない)
@@ -234,4 +234,8 @@ JSON のタグ付きのフィールドは小文字にしない。unparam (check-
   テスト名は前後で一致 (1253)。**公開名はまだ絞っていない** (golden 53 行。フィールド Cache / Pager / Sha / Open / Busy と Msg のフィールドが公開)。
   main のテストがフィールドを 100 か所以上、tui.go が 20 か所ほど直接触るので、C と同じく Fixture の口へ書き換えてから非公開に戻すのが 2 段目 (未着手)。
   action_modal.go は main に残す (上の「G の判断」)
+- [x] 2026-10-18 G-2 の 2 段目 (glogx: commitview の公開名を main へ頼む口だけに絞る): overlay と Msg のフィールド 15 個を非公開にした。
+  本番の口は SHA() / NewDiffMsg / NewJobDetailMsg / JobDetailMsg の Key()・Lines()・Err()。main のテストは overlay ごとの Fixture
+  (DiffFixture / JobDetailFixture / PrStatusFixture。フィールドへのポインタを返す) を使う。golden は 61 行 (フィールドは 0)。
+  テスト名は前後で一致 (1253)。変異: JobDetailMsg.Key が "" を返すと TestBrowseCopyJobContext… の 2 本が red
 

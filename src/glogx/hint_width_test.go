@@ -125,9 +125,9 @@ var hintSurfaceSetup = [hintSurfaceCount]struct {
 	hintSurfaceUpdating: {"self-update 中", func(m *browseModel) {
 		m.actModal.updating = map[string]bool{"claude": true, "codex": true}
 	}, "claude + codex update..."},
-	hintSurfaceDiff:      {"diff overlay", func(m *browseModel) { m.diffOv.Sha = m.commits[0].SHA }, "q/h: 閉じる"},
-	hintSurfacePRStatus:  {"PR 状態", func(m *browseModel) { m.prStatusOv.Sha = m.commits[0].SHA }, "P/q/h: 閉じる"},
-	hintSurfaceJobDetail: {"job 詳細", func(m *browseModel) { m.detailOv.Open = true }, "Enter/h/q: 戻る"},
+	hintSurfaceDiff:      {"diff overlay", func(m *browseModel) { (*m.diffOv.Fixture().Sha()) = m.commits[0].SHA }, "q/h: 閉じる"},
+	hintSurfacePRStatus:  {"PR 状態", func(m *browseModel) { (*m.prStatusOv.Fixture().Sha()) = m.commits[0].SHA }, "P/q/h: 閉じる"},
+	hintSurfaceJobDetail: {"job 詳細", func(m *browseModel) { (*m.detailOv.Fixture().Open()) = true }, "Enter/h/q: 戻る"},
 	hintSurfacePanelCursor: {"job パネル(カーソルあり)", func(m *browseModel) {
 		m.panelSHA, m.panelCursor = m.commits[0].SHA, 0
 	}, "h/q: 閉じる"},

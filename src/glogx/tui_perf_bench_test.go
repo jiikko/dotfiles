@@ -75,9 +75,9 @@ func benchDiffBrowse(tb testing.TB, ja bool) *browseModel {
 	for i := range lines {
 		lines[i] = fmt.Sprintf("+ added line %d with some diff content", i)
 	}
-	m.diffOv.Sha = sha
-	m.diffOv.Cache.Store(sha, lines, sha)
-	m.diffOv.Pager.Offset = 50
+	(*m.diffOv.Fixture().Sha()) = sha
+	m.diffOv.Fixture().Cache().Store(sha, lines, sha)
+	m.diffOv.Fixture().Pager().Offset = 50
 	return m
 }
 

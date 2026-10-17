@@ -202,7 +202,7 @@ func TestActiveHintSurfacePrecedence(t *testing.T) {
 	}{
 		// actModal は overlay より先 (確認・進行中の案内が最優先)
 		{"job 詳細 + 再実行確認", func(m *browseModel) {
-			m.detailOv.Open = true
+			(*m.detailOv.Fixture().Open()) = true
 			m.actModal.rerunConfirm = true
 		}, hintSurfaceRerunConfirm},
 		{"job パネル + 再実行確認", func(m *browseModel) {
@@ -210,11 +210,11 @@ func TestActiveHintSurfacePrecedence(t *testing.T) {
 			m.actModal.rerunConfirm = true
 		}, hintSurfaceRerunConfirm},
 		{"job 詳細 + 再実行中", func(m *browseModel) {
-			m.detailOv.Open = true
+			(*m.detailOv.Fixture().Open()) = true
 			m.actModal.rerunning = true
 		}, hintSurfaceRerunning},
 		{"diff + push 確認", func(m *browseModel) {
-			m.diffOv.Sha = m.commits[0].SHA
+			(*m.diffOv.Fixture().Sha()) = m.commits[0].SHA
 			m.actModal.pushConfirm = true
 		}, hintSurfacePushConfirm},
 		{"job パネル + pull 中", func(m *browseModel) {
@@ -230,21 +230,21 @@ func TestActiveHintSurfacePrecedence(t *testing.T) {
 			m.actModal.updating = map[string]bool{"claude": true}
 		}, hintSurfaceUpdating},
 		{"job 詳細 + self-update", func(m *browseModel) {
-			m.detailOv.Open = true
+			(*m.detailOv.Fixture().Open()) = true
 			m.actModal.updating = map[string]bool{"codex": true}
 		}, hintSurfaceUpdating},
 		{"diff + self-update", func(m *browseModel) {
-			m.diffOv.Sha = m.commits[0].SHA
+			(*m.diffOv.Fixture().Sha()) = m.commits[0].SHA
 			m.actModal.updating = map[string]bool{"claude": true}
 		}, hintSurfaceUpdating},
 		// overlay どうしの前後 (深い方が勝つ)
 		{"job パネル + job 詳細", func(m *browseModel) {
 			m.panelSHA, m.panelCursor = m.commits[0].SHA, 0
-			m.detailOv.Open = true
+			(*m.detailOv.Fixture().Open()) = true
 		}, hintSurfaceJobDetail},
 		{"job パネル + diff", func(m *browseModel) {
 			m.panelSHA, m.panelCursor = m.commits[0].SHA, 0
-			m.diffOv.Sha = m.commits[0].SHA
+			(*m.diffOv.Fixture().Sha()) = m.commits[0].SHA
 		}, hintSurfaceDiff},
 		// panel の 2 case (カーソルの有無)
 		{"パネル カーソルあり", func(m *browseModel) {

@@ -26,9 +26,9 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 	o := NewDiffOverlay()
 
 	// 溢れる: バー列あり + 幅は均一 + thumb は比率
-	o.Sha = commit.SHA
-	o.Cache.Store(commit.SHA, diffLines(50), commit.SHA)
-	o.Pager.Offset = 20
+	o.sha = commit.SHA
+	o.cache.Store(commit.SHA, diffLines(50), commit.SHA)
+	o.pager.Offset = 20
 	box := o.BoxLines(width, false, "", commit, rows)
 	uniformWidth(t, box)
 	// 影付き箱: 末尾 2 行は下辺 (▖▁▗+影) と下端影なので本文から除く。本文行の行末は
@@ -57,8 +57,8 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 	uniformWidth(t, o.BoxLines(width, true, "", commit, rows))
 
 	// 収まる: バー列なし (本文幅が戻る)。枠幅は溢れる場合と同じ
-	o.Cache.Store(commit.SHA, diffLines(rows-2), commit.SHA)
-	o.Pager.Offset = 0
+	o.cache.Store(commit.SHA, diffLines(rows-2), commit.SHA)
+	o.pager.Offset = 0
 	fit := o.BoxLines(width, false, "", commit, rows)
 	if w := uniformWidth(t, fit); w != term.DispWidth(term.StripANSI(box[0])) {
 		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, term.DispWidth(term.StripANSI(box[0])))
@@ -83,9 +83,9 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 
 	commit := &gitdata.Commit{SHA: "a", ShortSHA: "abc1234", Subject: "subject"}
 	d := NewDiffOverlay()
-	d.Sha = commit.SHA
-	d.Cache.Store(commit.SHA, lines, commit.SHA)
-	d.Pager.Offset = 49 // 旧 rows で G → リサイズで rows が増えた後を想定 (窓上限 42 を越えている)
+	d.sha = commit.SHA
+	d.cache.Store(commit.SHA, lines, commit.SHA)
+	d.pager.Offset = 49 // 旧 rows で G → リサイズで rows が増えた後を想定 (窓上限 42 を越えている)
 	if title := d.BoxLines(width, false, "", commit, rows)[0]; !strings.Contains(title, "[43-50/50]") {
 		t.Errorf("diff overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
 	}
@@ -94,19 +94,19 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 	// clamp するので title は書き戻しが無くても正しく、上スクロールだけが死ぬ (k / up /
 	// ctrl+p は max(offset-n, 0) しか見ないため rows_new - rows_old 打鍵ぶん無反応。
 	// 実測 2026-08-21: diff 33 打鍵 / job 詳細 11 打鍵)。title だけの検査ではこの退行が緑になる。
-	if d.Pager.Offset != 42 {
-		t.Errorf("diff overlay が論理 offset を書き戻していない: offset=%d, want 42 (上スクロールが死ぬ)", d.Pager.Offset)
+	if d.pager.Offset != 42 {
+		t.Errorf("diff overlay が論理 offset を書き戻していない: offset=%d, want 42 (上スクロールが死ぬ)", d.pager.Offset)
 	}
 
 	j := NewJobDetailOverlay()
-	j.Open = true
-	j.Cache.Store("key", lines, "key")
-	j.Pager.Offset = 49
+	j.open = true
+	j.cache.Store("key", lines, "key")
+	j.pager.Offset = 49
 	if title := j.BoxLines(width, false, "", "job", "key", rows)[0]; !strings.Contains(title, "[43-50/50]") {
 		t.Errorf("job 詳細 overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
 	}
-	if j.Pager.Offset != 42 {
-		t.Errorf("job 詳細 overlay が論理 offset を書き戻していない: offset=%d, want 42", j.Pager.Offset)
+	if j.pager.Offset != 42 {
+		t.Errorf("job 詳細 overlay が論理 offset を書き戻していない: offset=%d, want 42", j.pager.Offset)
 	}
 
 	// status viewer の全画面 diff も同じ規律 (pagerRows = page - 5 なので page 13 で rows 8)

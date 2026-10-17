@@ -11,8 +11,8 @@ import (
 // 8bit の OSC/CSI が実際に入ってくる (直上の Title は無害化していたのにここだけ抜けていた)。
 func TestPRStatusBoxSanitizesBranchNames(t *testing.T) {
 	o := NewPRStatusOverlay()
-	o.Sha = "deadbeef"
-	o.Cache["deadbeef"] = &gitdata.PRStatus{
+	o.sha = "deadbeef"
+	o.cache["deadbeef"] = &gitdata.PRStatus{
 		PRRef: gitdata.PRRef{Number: 12, State: "OPEN"}, Title: "PR タイトル",
 		HeadRefName: "feat/" + testenv.OSC8 + "0;PWNED" + testenv.ST8 + "x",
 		BaseRefName: "master" + testenv.CSI8 + "2J",
