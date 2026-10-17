@@ -102,3 +102,6 @@ func ReadonlyCommand(path string, line int) *exec.Cmd {
 	args = append(args, "--", path)
 	return exec.Command("nvim", args...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 }
+
+// LookPath はテストで PATH 探索を差し替えるための注入点。
+var LookPath = exec.LookPath

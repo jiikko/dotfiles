@@ -1,4 +1,4 @@
-package main
+package ratelimitview
 
 import (
 	"glogx/internal/app"
@@ -16,18 +16,28 @@ import (
 
 // ratelimitScreen は閉じたときのダッシュボードの画面。ダッシュボードはタブもカーソルも
 // 持たないので、覚えるのは保存時刻だけ (TTL 判定に要る)。
-type ratelimitScreen struct {
+type RatelimitScreen struct {
 	SavedAt time.Time `json:"saved_at"`
 }
 
-var ratelimitMemory = app.ScreenMemory[ratelimitScreen]{File: "ratelimit-screen.json", SavedAt: func(s ratelimitScreen) time.Time { return s.SavedAt }}
+var ratelimitMemory = app.ScreenMemory[RatelimitScreen]{File: "ratelimit-screen.json", SavedAt: func(s RatelimitScreen) time.Time { return s.SavedAt }}
 
-func saveRatelimitScreen(s ratelimitScreen) error { return ratelimitMemory.Save(s) }
+func SaveRatelimitScreen(s RatelimitScreen) error { return ratelimitMemory.Save(s) }
 
-func removeRatelimitScreen() { ratelimitMemory.Remove() }
+func RemoveRatelimitScreen() { ratelimitMemory.Remove() }
 
 // loadRatelimitScreen は「復元するか」を返す (読めない・壊れている・期限切れ・未来の時刻は「復元しない」。app.ScreenMemory.load)。
-func loadRatelimitScreen(now time.Time) bool {
+func LoadRatelimitScreen(now time.Time) bool {
 	_, ok := ratelimitMemory.Load(now)
 	return ok
+}
+
+// RememberScreen は終了時の記憶。ダッシュボードを出していれば保存し、🚨 出していなければ消す (issues / doctor と同じ) —
+// 残すと、一覧を見て閉じた次の起動で 2 回前のダッシュボードが蘇る。保存の失敗は終了を妨げない。
+func (d *RatelimitDash) RememberScreen(now time.Time) {
+	if d.Visible() {
+		_ = SaveRatelimitScreen(RatelimitScreen{SavedAt: now})
+		return
+	}
+	RemoveRatelimitScreen()
 }

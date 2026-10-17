@@ -38,9 +38,9 @@ type fullScreenCase struct {
 var fullScreenCases = []fullScreenCase{
 	{
 		id: app.FullScreenRatelimit, name: "残量ダッシュボード",
-		show:  func(m *browseModel) { m.rlDash.shown = true },
-		hint:  func(m *browseModel) string { return m.rlDash.hint(m.hintWidth()) },
-		lines: func(m *browseModel) []string { return m.rlDash.lines(m.ratelimitOpts()) },
+		show:  func(m *browseModel) { m.rlDash.Fixture().SetShown(true) },
+		hint:  func(m *browseModel) string { return m.rlDash.Hint(m.hintWidth()) },
+		lines: func(m *browseModel) []string { return m.rlDash.Lines(m.ratelimitOpts()) },
 	},
 	{
 		id: app.FullScreenDoctor, name: "doctor",
@@ -349,7 +349,7 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 // visibleFullScreens は開いている全画面の枚数 (同時に 1 枚の前提が守られているかを見る)。
 func visibleFullScreens(m *browseModel) int {
 	n := 0
-	for _, v := range []bool{m.issuesOv.Visible(), m.statusOv.Visible(), m.rlDash.visible(), m.doctorOv.Visible(), m.filerV.visible(), m.lanV.visible()} {
+	for _, v := range []bool{m.issuesOv.Visible(), m.statusOv.Visible(), m.rlDash.Visible(), m.doctorOv.Visible(), m.filerV.visible(), m.lanV.visible()} {
 		if v {
 			n++
 		}

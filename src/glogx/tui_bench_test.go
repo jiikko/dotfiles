@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"glogx/internal/issuesview"
+	"glogx/internal/usageview"
 	"glogx/issues"
 )
 
@@ -78,8 +79,8 @@ func benchBrowseSubjects(tb testing.TB, n, w, h int, ja bool) *browseModel {
 	if m.verbatim == nil {
 		tb.Fatal("verbatim の構築に失敗 (ヘッダー照合がずれている)")
 	}
-	m.usageOv = usageOverlay{} // 起動時グランスは測定対象外 (dismiss 後の定常状態を測る)
-	m.lines()                  // linesCache を温める = 毎フレーム走る分だけを測る
+	m.usageOv = usageview.UsageOverlay{} // 起動時グランスは測定対象外 (dismiss 後の定常状態を測る)
+	m.lines()                            // linesCache を温める = 毎フレーム走る分だけを測る
 	return m
 }
 

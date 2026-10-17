@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/term"
 
+	"glogx/internal/app"
 	"glogx/internal/doctorview"
 	"glogx/internal/extcmd"
 
@@ -363,7 +364,7 @@ func fetchStatic(statuses map[string]CIState, toFetch []string, repo Repo, hasRe
 	if !hasRepo || len(toFetch) == 0 {
 		return nil, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 	defer cancel()
 	batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, toFetch)
 	fetched := fillUnknownFetched(batch.Statuses, toFetch)

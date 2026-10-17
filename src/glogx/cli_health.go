@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"glogx/internal/extcmd"
 	"os/exec"
 	"strings"
 	"sync"
@@ -81,11 +82,8 @@ func commandExitCode(err error) (int, bool) {
 	return exitCode, true
 }
 
-// lookPathFn はテストで PATH 探索を差し替えるための注入点。
-var lookPathFn = exec.LookPath
-
 func checkClaudeHealth(ctx context.Context) cliHealthState {
-	path, err := lookPathFn("claude")
+	path, err := extcmd.LookPath("claude")
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			return cliMissing
@@ -108,7 +106,7 @@ func checkClaudeHealth(ctx context.Context) cliHealthState {
 }
 
 func checkCodexHealth(ctx context.Context) cliHealthState {
-	path, err := lookPathFn("codex")
+	path, err := extcmd.LookPath("codex")
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			return cliMissing

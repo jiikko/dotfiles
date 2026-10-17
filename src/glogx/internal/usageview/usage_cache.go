@@ -1,4 +1,4 @@
-package main
+package usageview
 
 import (
 	"encoding/json"
@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/jiikko/dotfiles/src/termsafe"
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
 	"ratelimit/usage"
+
+	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
 // usage スナップショット (Claude /usage + codex rateLimits の併合結果) のディスクキャッシュ。
@@ -26,11 +28,11 @@ import (
 // (github.com/<owner>/<name>.json) とは別階層に置く。
 const usageCacheFile = "claude-usage.json"
 
-// usageCacheTTL は表示の許容陳腐度。usageRefreshInterval と同値にしてあるのは意図的で、
-// 「表示は最大 usageRefreshInterval だけ古い」という単一の契約を起動時とセッション中で
+// usageCacheTTL は表示の許容陳腐度。app.UsageRefreshInterval と同値にしてあるのは意図的で、
+// 「表示は最大 app.UsageRefreshInterval だけ古い」という単一の契約を起動時とセッション中で
 // 揃えるため (セッション中は定期リフレッシュ、起動時はこの TTL が同じ上限を与える)。
 // 周期を変えたら陳腐度の上限も自動で追従する。
-const usageCacheTTL = usageRefreshInterval
+const usageCacheTTL = app.UsageRefreshInterval
 
 type usageCacheEntry struct {
 	Snapshot  *usage.Snapshot `json:"snapshot"`
@@ -93,7 +95,7 @@ func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
 	// する環境 (未ログイン等) では同じ理由でキャッシュが効かなくなるが、取得は起動の
 	// クリティカルパス外の background なので、失敗の固定化より安い方を取る
 	if !entry.Snapshot.HasCodex() {
-		if _, err := lookPathFn("codex"); err == nil {
+		if _, err := extcmd.LookPath("codex"); err == nil {
 			return nil, false
 		}
 	}

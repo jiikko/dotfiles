@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"glogx/internal/app"
+	"glogx/internal/ratelimitview"
 	"mac-lan-manager/lanmgr"
 	"treefiler/filer"
 )
@@ -77,7 +78,7 @@ func TestInitLanRestoreYieldsToOtherScreens(t *testing.T) {
 	if err := saveLanScreen(lanScreen{SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now}); err != nil {
+	if err := ratelimitview.SaveRatelimitScreen(ratelimitview.RatelimitScreen{SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)

@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/jiikko/dotfiles/src/tuikit/toast"
 	"testing"
 	"time"
+
+	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -37,7 +38,7 @@ func TestToastLeavingReachesHiddenViaTick(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newTestBrowse(t, 5, nil, nil)
-			m.usageOv.visible = tc.usageGlance
+			m.usageOv.Visible = tc.usageGlance
 			m.toast.Show("pulled", true)
 			m.maybeTick()
 

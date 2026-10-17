@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"glogx/internal/app"
+	"glogx/internal/ratelimitview"
 	"treefiler/filer"
 )
 
@@ -113,7 +114,7 @@ func TestInitFilerRestoreYieldsToOtherScreens(t *testing.T) {
 	if err := saveFilerScreen(filerScreen{Place: filer.Place{Start: app.CurrentDir()}, SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now}); err != nil {
+	if err := ratelimitview.SaveRatelimitScreen(ratelimitview.RatelimitScreen{SavedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	_ = m.Init()
@@ -122,7 +123,7 @@ func TestInitFilerRestoreYieldsToOtherScreens(t *testing.T) {
 	}
 
 	removeFilerScreen()
-	removeRatelimitScreen()
+	ratelimitview.RemoveRatelimitScreen()
 	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	_ = m2.Init()
 	if m2.activeFullScreen() != app.FullScreenNone {

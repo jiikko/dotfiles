@@ -516,7 +516,7 @@ func TestGitLogReloadDeferredCoversEachState(t *testing.T) {
 		{"job パネル", func(m *browseModel) { m.panelSHA = m.commits[0].SHA }},
 		{"issues viewer", func(m *browseModel) { m.issuesOv.Fixture().SetShown(true) }},
 		{"status viewer", func(m *browseModel) { m.statusOv.Fixture().SetShown(true) }},
-		{"残量ダッシュボード", func(m *browseModel) { m.rlDash.shown = true }},
+		{"残量ダッシュボード", func(m *browseModel) { m.rlDash.Fixture().SetShown(true) }},
 		{"doctor", func(m *browseModel) { m.doctorOv.Fixture().Show() }},
 	}
 	// 🚨 t.Run でケースごとに分ける (issue 227)。1 つの loop で回して t.Fatalf を使うと、

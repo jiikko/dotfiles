@@ -29,7 +29,7 @@ func caretTestModel(t *testing.T, frame bool) *browseModel {
 	t.Helper()
 	m := newTestBrowse(t, 1, nil, nil)
 	m.showFrame, m.width, m.height = frame, 100, 30
-	m.usageOv.visible = false // 起動時の残量のグランスは左上の入力欄に重なりうるので、caret は隠す (別の主張)
+	m.usageOv.Visible = false // 起動時の残量のグランスは左上の入力欄に重なりうるので、caret は隠す (別の主張)
 	m.issuesOv = *loadedView(
 		issuesviewtest.FakeIssue("123", "feat", "a", issues.StatusOpen),
 		issuesviewtest.FakeIssue("129", "feat", "b", issues.StatusOpen),
@@ -180,7 +180,7 @@ func TestCaretHiddenWhenFieldIsCoveredOrGone(t *testing.T) {
 		{"窓の zoom の演出中", func(m *browseModel) { m.zoom.off = false; m.zoom.start(app.TimeNow()) }},
 		{"action モーダル", func(m *browseModel) { m.actModal.pullConfirm = true }},
 		{"再起動の確認", func(m *browseModel) { m.restartPending = true }},
-		{"usage の板", func(m *browseModel) { m.usageOv.visible = true }},
+		{"usage の板", func(m *browseModel) { m.usageOv.Visible = true }},
 		{"next の目印の確認", func(m *browseModel) { m.issuesOv.Fixture().SetMarkNextActive() }},
 		{"本文を開いている", func(m *browseModel) {
 			if !m.issuesOv.Fixture().OpenIssue(issuesviewtest.RealIssue(t)) {

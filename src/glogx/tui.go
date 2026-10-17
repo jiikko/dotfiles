@@ -28,8 +28,10 @@ import (
 
 	"glogx/internal/extcmd"
 	"glogx/internal/issuesview"
+	"glogx/internal/ratelimitview"
 	"glogx/internal/statusview"
 	"glogx/internal/term"
+	"glogx/internal/usageview"
 
 	"glogx/internal/app"
 	"glogx/internal/doctorview"
@@ -49,7 +51,6 @@ import (
 // で表示する。展開方式だと開閉のたびに後続行がずれて高さがガタつくため (ユーザー要望)。
 
 const (
-	fetchTimeout    = 10 * time.Second
 	spinnerInterval = 80 * time.Millisecond // スピナー等の通常 tick (12.5fps。CPU 節約)
 	scrollInterval  = 16 * time.Millisecond // scroll glide 中の高 FPS tick (~60fps。滑らかさ優先)
 	// zoomInterval は開閉演出中の tick (~125fps)。他より速いのは、この演出だけが「短い所要
@@ -60,32 +61,17 @@ const (
 	zoomInterval = 8 * time.Millisecond
 	// maxPanelJobs は job パネルに一度に表示する行数。超過分はパネル内でスクロールする。
 	maxPanelJobs = 10
-	// usageRefreshInterval は usage オーバーレイをバックグラウンド再取得する周期 (ユーザー要望
-	// 2026-07-22)。トークン課金は発生しないが「安価」ではない: 1 回 ≈ 2.0s wall / 1.8s CPU
-	// (実測 2026-07-25)。この値は「表示の許容陳腐度」の単一の出典で、周期以外に 2 つの派生が
-	// ぶら下がる: usageCacheTTL (起動時のキャッシュ有効期間) と usageOverlay.stale
-	// (非表示中に止めたリフレッシュを U の再表示で取り戻す閾値)。どちらも定数を参照しているので
-	// 値を変えれば自動で追従する — が、下記は追従しないので手で揃えること。
-	// 🚨 実装で強制できない 2 つの制約 (変更時に再評価すること):
-	//  1. fetchTimeout より必ず大きく保つ。小さくすると fetch が overlap し、fetchCmd の
-	//     o.cancel 上書きで前回 fetch の cancel を取りこぼす (現状 10s < 60s で overlap しない)。
-	//  2. usage_overlay.go のフッター (usageFooter) はこの値ではなく usage.SharedFresh から作る
-	//     (値が新しくなる間隔はそちらで決まる)。この周期をそれより長くするならフッターも見直すこと。
-	// 🚨 この周期で claude を起こすわけではない: Claude 側の取得は usage.Fetch の全プロセス共有ゲート
-	//    (src/ratelimit/usage/shared.go) を通り、5 分以内の結果があればそれを返す。以前は毎回起こしていて、
-	//    表示を開いたまま 17 分で /api/oauth/usage が 429 になった (issue 627)。
-	usageRefreshInterval = time.Minute
 )
 
-// usageRefreshMsg は usage オーバーレイの定期リフレッシュ発火 (usageRefreshInterval ごと)。
+// usageRefreshMsg は usage オーバーレイの定期リフレッシュ発火 (app.UsageRefreshInterval ごと)。
 type usageRefreshMsg struct{}
 
-// usageRefreshTick は次回の usage リフレッシュを usageRefreshInterval 後に予約する tea.Cmd。
+// usageRefreshTick は次回の usage リフレッシュを app.UsageRefreshInterval 後に予約する tea.Cmd。
 // Init で 1 本起動し、usageRefreshMsg ハンドラが毎回 1 本張り直すことで cron 型の単一チェーンに
 // なる (発火ごとに +1 予約なので二重化しない)。
 // 非フォーカス中に止める案の判断は spinnerActive のコメント参照 (このチェーンも同じ扱い)。
 func usageRefreshTick() tea.Cmd {
-	return tea.Tick(usageRefreshInterval, func(time.Time) tea.Msg { return usageRefreshMsg{} })
+	return tea.Tick(app.UsageRefreshInterval, func(time.Time) tea.Msg { return usageRefreshMsg{} })
 }
 
 // ciResultMsg は一括取得 1 チャンク分の結果。一括取得は chunkSHAs で複数チャンクへ割って
@@ -326,7 +312,7 @@ type browseModel struct {
 
 	// usage オーバーレイ (右上に Claude Code の /usage 残量を重ねる)。ユーザー要望 2026-07-21。
 	// 状態と描画は usageOverlay 型 (usage_overlay.go) に切り出し、ここは 1 フィールドだけ持つ。
-	usageOv usageOverlay
+	usageOv usageview.UsageOverlay
 
 	// コミット一覧のスクロール glide (表示 offset を論理 offset へ滑らせる)。実体は
 	// internal/term/scroll_glide.go の共有型で、diff pager / issues viewer も同じ型を持つ (手触りを揃える)。
@@ -347,7 +333,7 @@ type browseModel struct {
 	// ratelimit ダッシュボード (R キーで開く全画面の残量ビュー)。usage オーバーレイと同じ
 	// Snapshot を枠ごとのアナログ盤にして描く (取得経路は usageOv のものを共用。
 	// ratelimit_dashboard.go 冒頭)。
-	rlDash ratelimitDash
+	rlDash ratelimitview.RatelimitDash
 	// filerV は F の全画面 treefiler (filer_view.go)。画面の部品は src/treefiler の filer パッケージ
 	filerV filerView
 	// lanV は L の全画面 mac-lan-manager (lan_view.go)。画面の部品は src/mac-lan-manager の lanmgr パッケージ
@@ -403,7 +389,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 	// 上限超過分は問い合わせず StateUnknown 表示のまま (capFetchSHAs のポリシー)。
 	// toFetch に残すと「取得中」のまま永遠に解決しない
 	toFetch = capFetchSHAs(toFetch)
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 	m := &browseModel{
 		toast:          toast.Stack{Shadow: term.AnsiShadowFg}, // 落ち影は他の板と同じ近黒 (term.BuildPanelBoxImpl と同じ)
 		commits:        commits,
@@ -428,7 +414,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		width:          width,
 		height:         height,
 		cancel:         cancel,
-		usageOv:        usageOverlay{visible: true},
+		usageOv:        usageview.UsageOverlay{Visible: true},
 		issuesOv:       issuesview.NewIssuesView(),
 		zoom:           newAppZoom(),
 		statusOv:       statusview.NewStatusView(),
@@ -467,9 +453,9 @@ func (m *browseModel) Init() tea.Cmd {
 	// CI の取得中は usage の取得を預ける (下の deferredStartup) が、ディスクキャッシュを読むだけなら fork しないので
 	// 先に済ませて数字を出す。預けると CI の取得の間ずっと右上がスピナーになる (issue 570 の敵対的レビュー)
 	var u tea.Cmd
-	if !m.fetching() || !m.usageOv.showCached(app.TimeNow()) {
+	if !m.fetching() || !m.usageOv.ShowCached(app.TimeNow()) {
 		// 🚨 fetchCmd は呼んだ時点で inFlight を立てるので、預けている間の usageRefreshMsg は重ねて取得しない
-		u = m.usageOv.fetchCmd(true)
+		u = m.usageOv.FetchCmd(true)
 	}
 	// usage を起動時に取得するため tick を常に起動する (取得中スピナーを回す。取得完了で
 	// spinnerActive が false になり tick は自然に止まる)。CI fetch の有無に依らず起動する。
@@ -521,7 +507,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// ratelimit ダッシュボードを出したまま終了していたら開き直す (ratelimit_resume.go)。
 	// 取得の起こし方 (キャッシュ優先 / stale 判定) は R と同じ経路に委ねる。
 	var rlRestore tea.Cmd
-	if loadRatelimitScreen(app.TimeNow()) {
+	if ratelimitview.LoadRatelimitScreen(app.TimeNow()) {
 		rlRestore = m.toggleRatelimitDash()
 	}
 	var doctorRestore tea.Cmd
@@ -654,7 +640,7 @@ func (m *browseModel) tickInterval() time.Duration {
 // q 中断に使う意図的例外なので、この helper を通さず据え置く。
 func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError) tea.Msg) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
 		batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, targets)
 		return wrap(batch, ghErr)
@@ -718,7 +704,7 @@ func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
 // 分割はここ (startCIFetch) の 1 段だけに保つ。
 func fetchCIChunkCmd(repo Repo, chunk []string, epoch int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
 		batch, ghErr := fetchCIChunk(ctx, ExecRunner, repo, chunk)
 		return ciResultMsg{batch: batch, ghErr: ghErr, shas: chunk, epoch: epoch}
@@ -1048,8 +1034,8 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prefixMsg:
 		m.tmuxPrefix = msg.key
 		return m, nil
-	case usageMsg:
-		return m, m.usageOv.handle(msg)
+	case usageview.UsageMsg:
+		return m, m.usageOv.Handle(msg)
 	case issuesview.IssuesWatchMsg:
 		// viewer を開いている間だけ回る独立チェーン (issues_watch.go)。別プロセスの編集を
 		// その場で反映する。🚨 maybeTick を束ねない: 反映は再スキャン (scanCmd) で、アニメは
@@ -1161,7 +1147,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.wantsUsageRefresh() {
 			return m, usageRefreshTick() // チェーンは維持 (再表示後に周期取得が復活する)
 		}
-		return m, tea.Batch(m.usageOv.fetchCmd(false), usageRefreshTick())
+		return m, tea.Batch(m.usageOv.FetchCmd(false), usageRefreshTick())
 	case gitLogDirsMsg:
 		return m, m.handleGitLogDirs(msg)
 	case gitLogProbeMsg:
@@ -1617,7 +1603,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// issues / status の上からも開始したい)。overlay 自身の語彙が先に立つ場面だけ updateKeyReachable
 	// が譲る (入力・確認モード中、status viewer の X = 変更を捨てる)。
 	if target, ok := updateKeyTarget(key); ok && m.updateKeyReachable(key) {
-		m.usageOv.dismiss() // 一覧の他のキーと同じ語彙 (U で出し、次のキーで消える)
+		m.usageOv.Dismiss() // 一覧の他のキーと同じ語彙 (U で出し、次のキーで消える)
 		return m, tea.Batch(m.actModal.startUpdateFor(target), m.maybeTick())
 	}
 	// 全画面ビューア (doctor / 残量ダッシュボード / issues / status) が出ている間は、キーを
@@ -1670,7 +1656,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "L" {
 		return m, m.openFullScreen(app.FullScreenLan)
 	}
-	m.usageOv.dismiss()
+	m.usageOv.Dismiss()
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
 	if m.diffOv.visible() {
 		return m.handleDiffKey(key)
@@ -1809,7 +1795,7 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 		if key == "U" {
 			return m, m.toggleUsage()
 		}
-		m.usageOv.dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
+		m.usageOv.Dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
 	}
 	switch m.doctorOv.HandleKey(key, m.pageSize()) {
 	case doctorview.DoctorClosed:
@@ -1849,11 +1835,11 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 // 右上に小さい方を重ねると同じ値が 2 か所に出る (toggleRatelimitDash が開くときに
 // usageOv.dismiss() しているのと同じ判断)。issues / status が U を受けるのとはここが違う。
 func (m *browseModel) routeKeyToRatelimitDash(key string) (tea.Model, tea.Cmd) {
-	switch m.rlDash.handleKey(key) {
-	case rlDashClosed:
+	switch m.rlDash.HandleKey(key) {
+	case ratelimitview.RlDashClosed:
 		return m, m.maybeTick()
-	case rlDashRefresh:
-		return m, tea.Batch(m.usageOv.fetchNowCmd(), m.maybeTick())
+	case ratelimitview.RlDashRefresh:
+		return m, tea.Batch(m.usageOv.FetchNowCmd(), m.maybeTick())
 	// i / s / D = 他の全画面へ横断 (viewer 側の R と対。ユーザー要望 2026-09-01)。handleKey が
 	// 既に閉じているので、issues ↔ status の横断と同じく閉じ演出は待たずに即着地する。
 	// 🚨 toggle を呼ぶので、ここへ来る時点で相手の viewer が開いていないこと (全画面は
@@ -1867,9 +1853,9 @@ func (m *browseModel) routeKeyToRatelimitDash(key string) (tea.Model, tea.Cmd) {
 	// した状態で、閉じれば元のパネルがそのまま描き直される。🚨 逆にガードを付けると、
 	// パネルを開いたまま R → i が無音の no-op になる (issue 122 が禁じた形)。
 	// パネル側の状態を viewer が読むようになったら、この判断を再評価すること。
-	case rlDashCross:
-		return m, m.openFullScreen(m.rlDash.takeWantCross())
-	case rlDashSwallow:
+	case ratelimitview.RlDashCross:
+		return m, m.openFullScreen(m.rlDash.TakeWantCross())
+	case ratelimitview.RlDashSwallow:
 		// 閉じる / 更新 / 横断以外は握り潰す (下の return へ落ちる)
 	}
 	return m, nil
@@ -1891,7 +1877,7 @@ func (m *browseModel) routeKeyToIssues(key string) (tea.Model, tea.Cmd) {
 		if key == "U" {
 			return m, m.toggleUsage()
 		}
-		m.usageOv.dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
+		m.usageOv.Dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
 	}
 	cmd := m.issuesOv.HandleKey(key, m.issuesOpts().Viewport())
 	// viewer の操作結果 (コピー・URL 起動・読み込み失敗) は glogx 共通の右下トーストで出す
@@ -1924,7 +1910,7 @@ func (m *browseModel) routeKeyToStatus(key string) (tea.Model, tea.Cmd) {
 		if key == "U" {
 			return m, m.toggleUsage() // viewer の上でも usage は出せる (issues と同じ契約)
 		}
-		m.usageOv.dismiss()
+		m.usageOv.Dismiss()
 		if key == "p" {
 			// pull は viewer の中からも打てる (ユーザー要望 2026-08-05)。🚨 一覧の u とキーを
 			// 分けているのは spec 3 節の判断を残すため: staging 中に「隣のキー」で remote 操作へ
@@ -2405,7 +2391,7 @@ func (m *browseModel) centerModalLines() []string {
 // (issue 029 P1)。
 func (m *browseModel) cancelAll() {
 	m.cancel()
-	m.usageOv.stop()  // 走行中の usage fetch subprocess を中断 (オーファン化防止)
+	m.usageOv.Stop()  // 走行中の usage fetch subprocess を中断 (オーファン化防止)
 	m.actModal.stop() // 走行中の push/pull git subprocess を中断 (stall 中の孤児化防止)
 	// issues viewer の fsnotify watcher を閉じる。通常終了ではプロセス終了が fd を回収するが、
 	// 再起動 (restartSelf の syscall.Exec) は fd テーブルを引き継ぐため明示的に閉じないと漏れる:
@@ -2432,7 +2418,7 @@ func (m *browseModel) quitNow() (tea.Model, tea.Cmd) { return m.quitWith(false) 
 func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 	m.issuesOv.RememberScreen(app.TimeNow()) // 出したまま終了したら次の起動で開き直す (出していなければ消す)
 	m.doctorOv.RememberScreen(app.TimeNow()) // 出したまま終了したら次の起動で開き直す (出していなければ消す)
-	m.rememberRatelimitScreen()
+	m.rlDash.RememberScreen(app.TimeNow())   // 出したまま終了したら次の起動で開き直す (出していなければ消す)
 	m.rememberFilerScreen()
 	m.rememberLanScreen()
 	m.cancelAll()
@@ -2577,30 +2563,30 @@ func (m *browseModel) swallowKeyRepeat(key string) bool {
 // ダッシュボードのどちらかが見えていれば回す (どちらも同じ Snapshot を描くので、取得経路は
 // 1 本のまま)。見えていないときに回さない理由は usageRefreshMsg ハンドラの注記。
 func (m *browseModel) wantsUsageRefresh() bool {
-	return m.usageOv.visible || m.rlDash.visible()
+	return m.usageOv.Visible || m.rlDash.Visible()
 }
 
 // rlDashLoading はダッシュボードが取得待ち (スピナーを回す) か。usageOverlay.loading() は
 // 右上オーバーレイの表示状態を見るので、ダッシュボードだけが開いているときは false になる。
 func (m *browseModel) rlDashLoading() bool {
-	return m.rlDash.visible() && m.usageOv.awaiting()
+	return m.rlDash.Visible() && m.usageOv.Awaiting()
 }
 
 // toggleRatelimitDash は全画面 ratelimit ダッシュボードの開閉 (R)。開くときは右上の usage
 // オーバーレイを引っ込め (同じ値を 2 か所に出さない)、Snapshot が無い / 古ければ取得を起こす。
 // 🚨 取得の判定は usageOv に委ねる (single-flight ガードと cancel を 1 か所に保つため)。
 func (m *browseModel) toggleRatelimitDash() tea.Cmd {
-	m.rlDash.toggle()
-	if !m.rlDash.visible() {
+	m.rlDash.Toggle()
+	if !m.rlDash.Visible() {
 		return m.maybeTick()
 	}
-	m.usageOv.dismiss()
-	if m.usageOv.snap == nil {
+	m.usageOv.Dismiss()
+	if m.usageOv.Snap == nil {
 		// 初回はディスクキャッシュを使う (fresh なら subprocess を起こさず即描ける)
-		return tea.Batch(m.usageOv.fetchCmd(true), m.maybeTick())
+		return tea.Batch(m.usageOv.FetchCmd(true), m.maybeTick())
 	}
-	if m.usageOv.stale() {
-		return tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
+	if m.usageOv.Stale() {
+		return tea.Batch(m.usageOv.FetchCmd(false), m.maybeTick())
 	}
 	return m.maybeTick()
 }
@@ -2612,25 +2598,14 @@ func (m *browseModel) toggleRatelimitDash() tea.Cmd {
 // を出したまま静かに差し替わる (snap があれば loading() は false のままでスピナーに落ちない =
 // 開いた瞬間に数字が消えない)。
 func (m *browseModel) toggleUsage() tea.Cmd {
-	m.usageOv.toggle()
-	if !m.usageOv.visible {
+	m.usageOv.Toggle()
+	if !m.usageOv.Visible {
 		return nil
 	}
-	if m.usageOv.stale() {
-		return tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
+	if m.usageOv.Stale() {
+		return tea.Batch(m.usageOv.FetchCmd(false), m.maybeTick())
 	}
 	return m.maybeTick()
-}
-
-// rememberRatelimitScreen は「ratelimit ダッシュボードを出したまま終了したら次の起動で開き直す」
-// ための保存 (ratelimit_resume.go)。🚨 issues / doctor と同じく、**開いていないまま終了したら
-// 消す** — 残すと、一覧を見て閉じた次の起動で 2 回前のダッシュボードが蘇る。
-func (m *browseModel) rememberRatelimitScreen() {
-	if m.rlDash.visible() {
-		_ = saveRatelimitScreen(ratelimitScreen{SavedAt: app.TimeNow()}) // 失敗しても終了は妨げない
-		return
-	}
-	removeRatelimitScreen()
 }
 
 // handlePanelKey は job パネル表示中のキー操作。j/k はパネル内のフォーカス移動になる。
@@ -2813,7 +2788,7 @@ func (m *browseModel) askRerun() {
 	}
 	repo, sha, id := m.repo, m.panelSHA, job.CheckID
 	m.actModal.askRerun(job.Name, func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
 		return rerunMsg{sha: sha, err: runJobRerun(ctx, repo, id)}
 	})
@@ -2919,7 +2894,7 @@ func (m *browseModel) openJobDetail() tea.Cmd {
 	}
 	repo := m.repo
 	cmd := func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
 		lines, ghErr := FetchJobDetail(ctx, ExecRunner, repo, check)
 		return jobDetailMsg{key: key, lines: lines, ghErr: ghErr}
@@ -3291,7 +3266,7 @@ func (m *browseModel) openPR() tea.Cmd {
 	m.toast.ShowInfo("PR を検索中...")
 	repo := m.repo
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
 		pr, ghErr := FetchCommitPR(ctx, ExecRunner, repo, sha)
 		return prMsg{sha: sha, pr: pr, ghErr: ghErr}
@@ -3311,7 +3286,7 @@ func (m *browseModel) openPRStatus() tea.Cmd {
 	}
 	repo := m.repo
 	cmd := func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), app.FetchTimeout)
 		defer cancel()
 		status, ghErr := FetchPRStatus(ctx, ExecRunner, repo, sha)
 		return prStatusMsg{sha: sha, status: status, ghErr: ghErr}
@@ -3484,7 +3459,7 @@ func (m *browseModel) fillUnknown() {
 func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
-	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.listHasPending() || m.panelHasPendingJob() || m.usageOv.loading() || m.rlDashLoading() || m.issuesOv.Loading() ||
+	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.listHasPending() || m.panelHasPendingJob() || m.usageOv.Loading() || m.rlDashLoading() || m.issuesOv.Loading() ||
 		m.statusOv.Fetching() || m.doctorOv.Scanning() || m.doctorOv.Deleting() || m.filerV.busy() || m.lanV.busy()
 }
 
@@ -3507,17 +3482,17 @@ func (m *browseModel) doctorOpts() doctorview.DoctorRenderOpts {
 	return doctorview.DoctorRenderOpts{Env: disk.RealEnv(), Width: m.contentWidth(), Page: m.pageSize(), Colored: m.colored, Spinner: m.spinner(), Now: app.TimeNow()}
 }
 
-func (m *browseModel) ratelimitOpts() ratelimitRenderOpts {
-	return ratelimitRenderOpts{
-		width:    m.contentWidth(),
-		page:     m.pageSize(),
-		colored:  m.colored,
-		spinner:  m.spinner(),
-		snap:     m.usageOv.view(m.spinner()),
-		err:      m.usageOv.err,
-		staleErr: m.usageOv.staleErr,
-		waiting:  m.usageOv.waitingNote(m.spinner()),
-		now:      app.TimeNow(),
+func (m *browseModel) ratelimitOpts() ratelimitview.RatelimitRenderOpts {
+	return ratelimitview.RatelimitRenderOpts{
+		Width:    m.contentWidth(),
+		Page:     m.pageSize(),
+		Colored:  m.colored,
+		Spinner:  m.spinner(),
+		Snap:     m.usageOv.View(m.spinner()),
+		Err:      m.usageOv.Err,
+		StaleErr: m.usageOv.StaleErr,
+		Waiting:  m.usageOv.WaitingNote(m.spinner()),
+		Now:      app.TimeNow(),
 	}
 }
 
@@ -3710,7 +3685,7 @@ func (m *browseModel) caret() *tea.Cursor {
 	}
 	// toast は見ない: 右下に積む板で、入力欄のある 0 行目に届くのは窓が 4 行以下 (端末の高さ 5 以下) のときだけ
 	// (toastDrawBudget の下限)。その高さでは入力欄そのものがほぼ使えないので、判定を足して毎フレーム箱を組み直すより安い
-	if len(m.centerModalLines()) > 0 || len(m.restartPromptLines()) > 0 || len(m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner())) > 0 {
+	if len(m.centerModalLines()) > 0 || len(m.restartPromptLines()) > 0 || len(m.usageOv.BoxLines(m.contentWidth(), m.colored, m.spinner())) > 0 {
 		return nil
 	}
 	var x, y int
@@ -3761,11 +3736,11 @@ func (m *browseModel) finishWithGlobalChrome(window []string, page int) string {
 	if box := m.restartPromptLines(); len(box) > 0 {
 		window = term.OverlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
 	}
-	if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
-		window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
+	if box := m.usageOv.BoxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
+		window = usageview.OverlayBoxTopRight(window, box, m.contentWidth(), m.colored)
 	}
 	if box := m.toast.BoxLines(m.colored, toastDrawBudget(page, m.toast.ReservedHeight(2, m.contentWidth())), m.contentWidth()); len(box) > 0 {
-		window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
+		window = usageview.OverlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
 	}
 	return m.finishWindow(window, page)
 }
@@ -3808,7 +3783,7 @@ func (m *browseModel) viewLines() string {
 	// の注記)。開いている間の他のキーは handleKey が飲む。
 	switch m.activeFullScreen() {
 	case app.FullScreenRatelimit:
-		return m.finishWithGlobalChrome(m.rlDash.lines(m.ratelimitOpts()), page)
+		return m.finishWithGlobalChrome(m.rlDash.Lines(m.ratelimitOpts()), page)
 	case app.FullScreenDoctor:
 		return m.finishWithGlobalChrome(m.doctorOv.Lines(m.doctorOpts()), page)
 	case app.FullScreenStatus:
@@ -3930,7 +3905,7 @@ func (m *browseModel) finishWindow(window []string, page int) string {
 // 生きている (面塗りを自発的に増やさない)。ここが例外なのは、全画面の残量表示だけは地色を
 // 固定したいという明示要望があるため (2026-09-01。理由は term.AnsiScreenBg の doc)。
 func (m *browseModel) screenBg() string {
-	if !m.colored || !m.rlDash.visible() {
+	if !m.colored || !m.rlDash.Visible() {
 		return ""
 	}
 	return term.AnsiScreenBg
@@ -4088,7 +4063,7 @@ func (m *browseModel) hintLine() string {
 	// 黙って切り落とされる。CI は viewer を閉じれば見える。
 	switch m.activeFullScreen() {
 	case app.FullScreenRatelimit:
-		return m.hintLineText(m.rlDash.hint(m.hintWidth()))
+		return m.hintLineText(m.rlDash.Hint(m.hintWidth()))
 	case app.FullScreenDoctor:
 		return m.hintLineText(m.doctorOv.Hint(m.hintWidth()))
 	case app.FullScreenStatus:

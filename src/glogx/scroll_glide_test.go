@@ -72,7 +72,7 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 func TestGlideKeyPathsScheduleTick(t *testing.T) {
 	t.Run("diff pager", func(t *testing.T) {
 		m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-		m.usageOv.dismiss()
+		m.usageOv.Dismiss()
 		lines := make([]string, 200)
 		for i := range lines {
 			lines[i] = "line"
@@ -93,7 +93,7 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 	t.Run("コミット一覧", func(t *testing.T) {
 		m := newTestBrowse(t, 30, map[string]CIState{}, nil)
 		m.statuses = statusesFor(m, StateSuccess)
-		m.usageOv.dismiss()
+		m.usageOv.Dismiss()
 		m.height = 12
 		m.ticking = false
 		m.handleKey("ctrl+d")
@@ -131,7 +131,7 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 	t.Run("コミット一覧", func(t *testing.T) {
 		m := newTestBrowse(t, 40, map[string]CIState{}, nil)
 		m.statuses = statusesFor(m, StateSuccess)
-		m.usageOv.dismiss()
+		m.usageOv.Dismiss()
 		m.height = 12
 		m.handleKey("ctrl+d") // まず下へ
 		for range term.ScrollAnimFrames {

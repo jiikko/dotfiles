@@ -133,7 +133,7 @@ func TestDeleteKeepsRedrawAlive(t *testing.T) {
 	m.doctorOv.Fixture().Reports(doctorview.TabDisk, nil, nil, nil, nil, nil)
 	// usage の枠は「開いていて未取得」だと単独で tick を立てるので落とす。
 	// 🚨 これを落とさないと、削除の配線を外す変異を当てても緑のまま = 何も守らないテストになる
-	m.usageOv.visible = false
+	m.usageOv.Visible = false
 	if m.doctorOv.Scanning() {
 		t.Fatal("前提が崩れている: 走査は終わっているはず")
 	}

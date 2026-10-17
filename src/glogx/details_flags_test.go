@@ -21,7 +21,7 @@ import (
 // 消していなかったため実際に起きた (敵対的レビュー 2026-09-06)。
 func TestDetailsFlagsStayPaired(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-	m.usageOv.snap = rlTestSnap()
+	m.usageOv.Snap = rlTestSnap()
 	m.hasRepo = true
 	sha := m.commits[0].SHA
 

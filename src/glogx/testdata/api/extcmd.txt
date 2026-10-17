@@ -14,6 +14,7 @@ type EditorClosedMsg
 type GitExitError
 type OpenURLMsg
 var CopyToClipboard
+var LookPath
 var OpenInBrowser
 var RunEditorCmd
 var RunGitAdd

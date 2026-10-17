@@ -1,3 +1,4 @@
+const FetchTimeout
 const FullScreenCount
 const FullScreenDoctor
 const FullScreenFiler
@@ -10,6 +11,7 @@ const NoticeError
 const NoticeOK
 const NoticeRefused
 const ScreenMemoryTTL
+const UsageRefreshInterval
 field ScreenMemory.File
 field ScreenMemory.SavedAt
 field WatchChain.EvArmed

@@ -7,8 +7,9 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 
-	tea "charm.land/bubbletea/v2"
 	"glogx/internal/term"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // actionModal は glogx 独自の「実行を伴う操作」= git push / git pull --rebase / claude update の
@@ -126,7 +127,7 @@ func (a *actionModal) active() bool {
 
 // running は remote/自己更新の実行中か (spinner tick を回し、確認以外のキーを飲む)。
 // rerunning も含める (実行中の誤操作防止)。ただし quit 側の Ctrl-C ブロック対象は
-// push/pull のみ: rerun は fetchTimeout 付きの短い API 呼び出しで、中断しても
+// push/pull のみ: rerun は app.FetchTimeout 付きの短い API 呼び出しで、中断しても
 // 不整合 (mid-rebase のような) を残さないため即終了を許す。
 func (a *actionModal) running() bool {
 	return a.pushing || a.pulling || a.rerunning || a.anyUpdating()

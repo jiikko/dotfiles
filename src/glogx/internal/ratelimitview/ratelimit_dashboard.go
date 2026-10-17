@@ -1,4 +1,4 @@
-package main
+package ratelimitview
 
 // 全画面 ratelimit ダッシュボード (R キー)。右上の usage オーバーレイ (U) と同じ Snapshot を、
 // 枠ごとのアナログ盤にして画面いっぱいに描く。
@@ -12,16 +12,18 @@ package main
 // 「開いているか」と「窓をどう埋めるか」だけを持つ。
 
 import (
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"time"
+
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 
 	"glogx/internal/app"
 	"glogx/internal/term"
+	"glogx/internal/usageview"
 	"ratelimit/usage"
 )
 
 // ratelimitDash は全画面ダッシュボードの表示状態。
-type ratelimitDash struct {
+type RatelimitDash struct {
 	shown bool
 	// wantCross は横断先 (rlDashCross を返したときだけ意味を持つ。takeWantCross で取り出す)
 	wantCross app.FullScreenID
@@ -53,40 +55,40 @@ type ratelimitCacheKey struct {
 	waiting     string // 「取得中」の行 (スピナーのコマを含む。待っている間だけ毎フレーム外れる)
 }
 
-func (d *ratelimitDash) visible() bool { return d.shown }
-func (d *ratelimitDash) toggle()       { d.shown = !d.shown }
-func (d *ratelimitDash) close()        { d.shown = false; d.dropCache() }
+func (d *RatelimitDash) Visible() bool { return d.shown }
+func (d *RatelimitDash) Toggle()       { d.shown = !d.shown }
+func (d *RatelimitDash) close()        { d.shown = false; d.dropCache() }
 
 // dropCache は盤のメモを捨てる (Snapshot を握り続けない)。
-func (d *ratelimitDash) dropCache() { d.cache, d.cacheKey, d.cacheOK = nil, ratelimitCacheKey{}, false }
+func (d *RatelimitDash) dropCache() { d.cache, d.cacheKey, d.cacheOK = nil, ratelimitCacheKey{}, false }
 
 // ratelimitRenderOpts はダッシュボードの描画情報 (窓の寸法 + 色 + 描くデータ)。
-type ratelimitRenderOpts struct {
-	width    int
-	page     int
-	colored  bool
-	spinner  string
-	snap     *usage.Snapshot // nil = 未取得 (取得中の表示に落ちる)
-	err      error           // 取得失敗 (snap があれば last-good を優先する)
-	staleErr error           // last-good を保持したまま失敗した理由 (usageOverlay.staleErr)
-	waiting  string          // まだ届いていない出所の「取得中」(usageOverlay.waitingNote。空 = 待っていない)
-	now      time.Time
+type RatelimitRenderOpts struct {
+	Width    int
+	Page     int
+	Colored  bool
+	Spinner  string
+	Snap     *usage.Snapshot // nil = 未取得 (取得中の表示に落ちる)
+	Err      error           // 取得失敗 (snap があれば last-good を優先する)
+	StaleErr error           // last-good を保持したまま失敗した理由 (usageOverlay.staleErr)
+	Waiting  string          // まだ届いていない出所の「取得中」(usageOverlay.waitingNote。空 = 待っていない)
+	Now      time.Time
 }
 
 // lines はダッシュボードをちょうど page 行で返す (全画面 viewer 共通の契約)。
-func (d *ratelimitDash) lines(o ratelimitRenderOpts) []string {
+func (d *RatelimitDash) Lines(o RatelimitRenderOpts) []string {
 	head := []string{d.headerLine(o), ""}
-	if note := fetchNote(o.snap, o.staleErr); note != "" {
-		head[1] = term.Paint(centerLine(note, o.width), term.AnsiYellow, o.colored)
-	} else if o.waiting != "" {
-		head[1] = term.Paint(centerLine(o.waiting, o.width), term.AnsiDim, o.colored)
+	if note := usageview.FetchNote(o.Snap, o.StaleErr); note != "" {
+		head[1] = term.Paint(centerLine(note, o.Width), term.AnsiYellow, o.Colored)
+	} else if o.Waiting != "" {
+		head[1] = term.Paint(centerLine(o.Waiting, o.Width), term.AnsiDim, o.Colored)
 	}
-	body := max(o.page-len(head), 1)
+	body := max(o.Page-len(head), 1)
 	switch {
-	case o.snap != nil:
+	case o.Snap != nil:
 		key := ratelimitCacheKey{
-			width: o.width, page: o.page, colored: o.colored, snap: o.snap, sec: o.now.Unix(),
-			stale: errString(o.staleErr), waiting: o.waiting,
+			width: o.Width, page: o.Page, colored: o.Colored, snap: o.Snap, sec: o.Now.Unix(),
+			stale: errString(o.StaleErr), waiting: o.Waiting,
 		}
 		if d.cacheOK && d.cacheKey == key {
 			// 🚨 コピーを返す。呼び出し側 (finishWithGlobalChrome) が append する経路があると、
@@ -99,35 +101,35 @@ func (d *ratelimitDash) lines(o ratelimitRenderOpts) []string {
 		// 変わった環境では「パースは成功しているが描く枠が無い」が起こる。無言の白画面に
 		// せず理由を出す (全画面なので、ユーザーには壊れたようにしか見えない)。
 		var out []string
-		if rows := usage.RenderDashboard(o.snap, o.now, o.width, body, o.colored); rows != nil {
-			out = layout.PadTo(append(head, rows...), o.page)
+		if rows := usage.RenderDashboard(o.Snap, o.Now, o.Width, body, o.Colored); rows != nil {
+			out = layout.PadTo(append(head, rows...), o.Page)
 		} else {
-			out = layout.PadTo(append(head, centerLine("表示できる利用枠がありません", o.width)), o.page)
+			out = layout.PadTo(append(head, centerLine("表示できる利用枠がありません", o.Width)), o.Page)
 		}
 		d.cache, d.cacheKey, d.cacheOK = append([]string(nil), out...), key, true
 		return out
-	case o.err != nil:
-		return layout.PadTo(append(head, centerLine("取得失敗", o.width)), o.page)
+	case o.Err != nil:
+		return layout.PadTo(append(head, centerLine("取得失敗", o.Width)), o.Page)
 	default:
-		return layout.PadTo(append(head, centerLine(o.spinner+" 取得中...", o.width)), o.page)
+		return layout.PadTo(append(head, centerLine(o.Spinner+" 取得中...", o.Width)), o.Page)
 	}
 }
 
 // headerLine は CLI 名とバージョンの見出し。バージョンは外部バイナリの出力なので無害化して載せる。
-func (d *ratelimitDash) headerLine(o ratelimitRenderOpts) string {
+func (d *RatelimitDash) headerLine(o RatelimitRenderOpts) string {
 	title := "Claude Code"
-	if o.snap != nil {
-		if v := term.SanitizePlainLine(o.snap.Version); v != "" {
+	if o.Snap != nil {
+		if v := term.SanitizePlainLine(o.Snap.Version); v != "" {
 			title += " v" + v
 		}
-		if o.snap.HasCodex() {
+		if o.Snap.HasCodex() {
 			title += " + codex"
-			if v := term.SanitizePlainLine(o.snap.CodexVersion); v != "" {
+			if v := term.SanitizePlainLine(o.Snap.CodexVersion); v != "" {
 				title += " v" + v
 			}
 		}
 	}
-	return term.Paint(centerLine(title+" · ratelimit", o.width), term.AnsiDim, o.colored)
+	return term.Paint(centerLine(title+" · ratelimit", o.Width), term.AnsiDim, o.Colored)
 }
 
 // hint は最下行のキー案内。
@@ -137,7 +139,7 @@ func (d *ratelimitDash) headerLine(o ratelimitRenderOpts) string {
 // 最小サポート幅 (frameMinWidth=60 のとき予算 58) で切り詰められ、さらに狭いと
 // 出口 `R/q/esc/h: 閉じる` が完全に消える。全画面かつ rlDashSwallow で裏へキーを
 // 通さないので、出口が消えると抜け方が分からなくなる。
-func (d *ratelimitDash) hint(width int) string {
+func (d *RatelimitDash) Hint(width int) string {
 	return term.FitHintItems(width, []term.HintItem{
 		{Text: "r: 今すぐ更新", Prio: 3},
 		{Text: "i: issues", Prio: 4},
@@ -154,10 +156,10 @@ type rlDashAction int
 const (
 	// rlDashSwallow = 握り潰す。全画面なので裏の一覧へ素通りさせない (見えないままスクロールし、
 	// 閉じたときにカーソルが移動している状態になる)。
-	rlDashSwallow rlDashAction = iota
-	rlDashClosed               // 閉じた (裏の画面へ戻る)
-	rlDashRefresh              // 今すぐ取り直す (取得は browseModel が起こす)
-	rlDashCross                // 別の全画面へ横断 (このダッシュボードは閉じ済み。行き先は takeWantCross)
+	RlDashSwallow rlDashAction = iota
+	RlDashClosed               // 閉じた (裏の画面へ戻る)
+	RlDashRefresh              // 今すぐ取り直す (取得は browseModel が起こす)
+	RlDashCross                // 別の全画面へ横断 (このダッシュボードは閉じ済み。行き先は takeWantCross)
 )
 
 // handleKey はダッシュボードが飲むキー。
@@ -165,25 +167,25 @@ const (
 // i / s / D は他の全画面への横断 (ユーザー要望 2026-09-01。表は app.CrossTarget)。viewer 側の R と対で、
 // 全画面どうしを往復できる。🚨 横断でも自分は必ず閉じる: 全画面は同時に 1 枚の前提で、
 // 重ねると「見えている画面」と「キーを受ける画面」が食い違う (issues ↔ status と同じ作法)。
-func (d *ratelimitDash) handleKey(key string) rlDashAction {
+func (d *RatelimitDash) HandleKey(key string) rlDashAction {
 	switch key {
 	case "R", "q", "esc", "h", "left":
 		d.close()
-		return rlDashClosed
+		return RlDashClosed
 	case "r":
-		return rlDashRefresh
+		return RlDashRefresh
 	}
 	// 横断キー (i / s / D。表は app.CrossTarget)。R は自分自身なので上の「閉じる」に任せる
 	if target, ok := app.CrossTarget(key); ok && target != app.FullScreenRatelimit {
 		d.close()
 		d.wantCross = target
-		return rlDashCross
+		return RlDashCross
 	}
-	return rlDashSwallow
+	return RlDashSwallow
 }
 
 // takeWantCross は横断先 (無ければ app.FullScreenNone) を一度だけ取り出す (viewer と同じ語彙)。
-func (d *ratelimitDash) takeWantCross() app.FullScreenID {
+func (d *RatelimitDash) TakeWantCross() app.FullScreenID {
 	want := d.wantCross
 	d.wantCross = app.FullScreenNone
 	return want

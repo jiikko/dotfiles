@@ -1,24 +1,27 @@
-package main
+package usageview
 
 import (
 	"context"
 	"errors"
-	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+
 	"ratelimit/usage"
 
-	tea "charm.land/bubbletea/v2"
 	"glogx/internal/app"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // usageMsg は /usage の非同期取得結果 (右上オーバーレイ用)。2 つの形がある:
 //   - part != nil: 出所 (Claude / codex) ごとの 1 本の結果。1 回の取得で 2 通届き、届いた方から表示へ入る (issue 626)
 //   - part == nil: その周の結果を丸ごと持つ (ディスクキャッシュの hit。snap / err)
-type usageMsg struct {
+type UsageMsg struct {
 	snap *usage.Snapshot
 	err  error
 	part *usage.Part
@@ -71,18 +74,18 @@ func (r usageRound) arrived(src string) bool {
 // サブコンポーネント。取得ロジック自体は bubbletea 非依存の usage パッケージにあり、こちらは
 // overlay の UI 状態機械 (bubbletea 結合のため glogx 側に置く)。browseModel は 1 フィールド
 // (usageOv) だけを持ち、キー/メッセージ/描画をこの型へ委譲する。
-type usageOverlay struct {
-	visible bool            // 表示中か (起動時 true = 起動時グランス表示)
-	snap    *usage.Snapshot // 取得済みの /usage スナップショット (nil = 取得中)
-	err     error           // 取得失敗 (表示は "取得失敗" に落とす)
+type UsageOverlay struct {
+	Visible bool            // 表示中か (起動時 true = 起動時グランス表示)
+	Snap    *usage.Snapshot // 取得済みの /usage スナップショット (nil = 取得中)
+	Err     error           // 取得失敗 (表示は "取得失敗" に落とす)
 	// cancel は fetch 専用の cancel。quit で走行中の subprocess を中断する。browseModel の
 	// CI fetch 用 cancel とは別立て: 共有すると CI fetch 完了時の defer cancel() が走行中の
 	// usage fetch を巻き添えキャンセルして "取得失敗" に落ちる (レビュー指摘 2026-07-21)。
 	cancel context.CancelFunc
 	// inFlight は fetch の single-flight ガード (fetchCmd で立て、結果の handle で降ろす)。
 	// cancel が単一スロットのため、fetch を overlap させると先行分の cancel を上書きで取りこぼし、
-	// quit 後も先行 subprocess が fetchTimeout まで残る。定期リフレッシュ同士は
-	// usageRefreshInterval > fetchTimeout で overlap しない (tui.go の定数コメント) が、
+	// quit 後も先行 subprocess が app.FetchTimeout まで残る。定期リフレッシュ同士は
+	// app.UsageRefreshInterval > app.FetchTimeout で overlap しない (tui.go の定数コメント) が、
 	// U 再表示 (toggleUsage の stale 経路) との重なりはこのガードでしか防げない。
 	inFlight bool
 	// fetchedAt は snap を取得した時刻 (zero = 未取得)。非表示中はリフレッシュを止めるので、
@@ -90,7 +93,7 @@ type usageOverlay struct {
 	fetchedAt time.Time
 	// staleErr は last-good を保持したまま失敗した最後の取得の理由 (nil = 表示中の snap が最新の取得)。
 	// 全滅時も前回の枠を出し続けるので、これが無いと古い値が黙って表示される。
-	staleErr error
+	StaleErr error
 	// round は走行中の取得の途中経過 (inFlight の間だけ意味を持つ)。
 	round usageRound
 	// shape は場所取りの枠の形の出典 (前回のキャッシュの枠。最初の取得を始めるときに読む。view)。
@@ -105,23 +108,23 @@ type usageOverlay struct {
 // 0.6〜1.2s) を遅い方 (claude subprocess は 1 回 ≈ 2.0s wall / 1.8s CPU。実測 2026-07-25。支配的なのは node 起動 +
 // Claude Code セッション初期化で、/usage の内部処理は 462ms) に待たせない (issue 626)。どちらもトークン課金は
 // 発生しない。初期描画のクリティカルパスには乗せない。cancel を保持し、quit 時に走行中の
-// subprocess を中断できるようにする (fast-quit での子プロセスのオーファン化を防ぐ)。起動時に 1 回 + 以降 usageRefreshInterval ごとにバックグラウンド再取得で呼ばれる
+// subprocess を中断できるようにする (fast-quit での子プロセスのオーファン化を防ぐ)。起動時に 1 回 + 以降 app.UsageRefreshInterval ごとにバックグラウンド再取得で呼ばれる
 // (U トグルは再 fetch しない)。定期リフレッシュ中も表示は last-good を保つ (handle 参照)。
 //
 // useCache=true (起動時) は fresh なディスクキャッシュがあれば subprocess を起こさず即答する。
 // 定期リフレッシュ側は false — 鮮度を作るのがその役目なので、自分が書いたキャッシュを読み返す
 // のは無意味 (TTL == 周期なので必ず miss する)。キャッシュの保存は周の終わりに handle が行う。
-func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd { return o.fetchCmdWith(useCache, false) }
+func (o *UsageOverlay) FetchCmd(useCache bool) tea.Cmd { return o.fetchCmdWith(useCache, false) }
 
-// usageFooter は箱の末尾の文言。表示は usageRefreshInterval ごとに読み直すが、Claude の枠そのものは
+// usageFooter は箱の末尾の文言。表示は app.UsageRefreshInterval ごとに読み直すが、Claude の枠そのものは
 // 全プロセス共有のゲートの間隔 (usage.SharedFresh) でしか新しくならないので、そちらを出す (issue 627)。
 var usageFooter = strconv.Itoa(int(usage.SharedFresh/time.Minute)) + "分ごとに更新"
 
 // fetchNowCmd は人が「今すぐ取り直す」を押したときの取得。Claude 側は全プロセス共有のゲートの
 // 5 分の間引きを飛ばす (usage.FetchClaudePartNow。間引きのまま返すと、数分前の値が今取った値として入る)。
-func (o *usageOverlay) fetchNowCmd() tea.Cmd { return o.fetchCmdWith(false, true) }
+func (o *UsageOverlay) FetchNowCmd() tea.Cmd { return o.fetchCmdWith(false, true) }
 
-func (o *usageOverlay) fetchCmdWith(useCache, force bool) tea.Cmd {
+func (o *UsageOverlay) fetchCmdWith(useCache, force bool) tea.Cmd {
 	if o.inFlight {
 		return nil // 走行中の fetch がある: overlap させない (inFlight フィールドの doc)
 	}
@@ -131,18 +134,18 @@ func (o *usageOverlay) fetchCmdWith(useCache, force bool) tea.Cmd {
 	parent, cancel := context.WithCancel(context.Background())
 	o.cancel = cancel
 	// last-good の出典は周の始まりの表示。束縛は UI スレッドのここで行う
-	o.round = usageRound{base: o.snap}
+	o.round = usageRound{base: o.Snap}
 	if o.fetchedAt.IsZero() && o.shape == nil {
-		o.shape = loadUsageShape()    // 場所取りを出すのは最初の取得だけ (waitingSources)。小さなファイルを 1 回読むだけ
-		_, err := lookPathFn("codex") // 判定は loadUsageCache の「codex が入っているか」と同じ
+		o.shape = loadUsageShape()         // 場所取りを出すのは最初の取得だけ (waitingSources)。小さなファイルを 1 回読むだけ
+		_, err := extcmd.LookPath("codex") // 判定は loadUsageCache の「codex が入っているか」と同じ
 		o.noCodexPending = !(&usage.Snapshot{Windows: o.shape}).HasCodex() && err != nil
 	}
 	one := func(fetch func(context.Context) usage.Part) tea.Cmd {
 		return func() tea.Msg {
-			ctx, cancelTimeout := context.WithTimeout(parent, fetchTimeout)
+			ctx, cancelTimeout := context.WithTimeout(parent, app.FetchTimeout)
 			defer cancelTimeout()
 			p := fetch(ctx)
-			return usageMsg{part: &p}
+			return UsageMsg{part: &p}
 		}
 	}
 	claude := usage.FetchClaudePart
@@ -156,7 +159,7 @@ func (o *usageOverlay) fetchCmdWith(useCache, force bool) tea.Cmd {
 		if useCache {
 			if path, err := usageCachePath(); err == nil {
 				if snap, ok := loadUsageCache(path, time.Now()); ok {
-					return usageMsg{snap: snap}
+					return UsageMsg{snap: snap}
 				}
 			}
 		}
@@ -166,7 +169,7 @@ func (o *usageOverlay) fetchCmdWith(useCache, force bool) tea.Cmd {
 
 // showCached はディスクキャッシュが当たれば、fork せずにその場で表示へ入れる (当たったか返す)。
 // fetchCmd(true) のキャッシュ経路と同じ判定・同じ格納 (handle) を通す。
-func (o *usageOverlay) showCached(now time.Time) bool {
+func (o *UsageOverlay) ShowCached(now time.Time) bool {
 	path, err := usageCachePath()
 	if err != nil {
 		return false
@@ -175,12 +178,12 @@ func (o *usageOverlay) showCached(now time.Time) bool {
 	if !ok {
 		return false
 	}
-	o.handle(usageMsg{snap: snap})
+	o.Handle(UsageMsg{snap: snap})
 	return true
 }
 
 // endRound は走行中の取得を閉じる (次の fetchCmd を受け付け、ctx を解放する)。
-func (o *usageOverlay) endRound() {
+func (o *UsageOverlay) endRound() {
 	o.inFlight = false
 	o.round = usageRound{}
 	if o.cancel != nil {
@@ -200,17 +203,17 @@ func (o *usageOverlay) endRound() {
 // 🚨 usageMsg は周の番号を持たない。周を閉じる (endRound) のは、2 本がそろったときとキャッシュの hit
 // (part を投げない) だけなので、閉じた後に part が届く経路は今は無い。周の途中で showCached や part の無い
 // usageMsg を入れる経路を足すなら、周の番号を持たせてから足す (敵対的レビュー 2026-10-02 の記録)。
-func (o *usageOverlay) handle(msg usageMsg) tea.Cmd {
+func (o *UsageOverlay) Handle(msg UsageMsg) tea.Cmd {
 	if msg.part == nil {
 		o.endRound()
-		if msg.err != nil && o.snap != nil {
+		if msg.err != nil && o.Snap != nil {
 			// 定期リフレッシュの一時失敗: last-good を保持し表示を崩さない (古いことは注記で伝える)
-			o.staleErr = msg.err
+			o.StaleErr = msg.err
 			return nil
 		}
-		o.staleErr = nil
-		o.snap = msg.snap
-		o.err = msg.err
+		o.StaleErr = nil
+		o.Snap = msg.snap
+		o.Err = msg.err
 		if msg.err == nil {
 			o.fetchedAt = app.TimeNow()
 		}
@@ -220,10 +223,10 @@ func (o *usageOverlay) handle(msg usageMsg) tea.Cmd {
 	if msg.part.Err == nil {
 		// 初回の失敗からの回復は届いた時点で出す。staleErr (前回の値を表示中) は周の終わりまで下ろさない:
 		// まだ届いていない出所の枠は前回の値のままなので、先に届いた方で注記を消すと古い値が黙って出る
-		o.err = nil
+		o.Err = nil
 	}
 	if s := o.round.shown(); s != nil {
-		o.snap = s
+		o.Snap = s
 	}
 	if len(o.round.parts) < len(usageRoundSources) {
 		return nil
@@ -246,13 +249,13 @@ func (o *usageOverlay) handle(msg usageMsg) tea.Cmd {
 	if len(errs) == len(parts) {
 		err := errors.Join(errs...)
 		if base != nil {
-			o.snap, o.staleErr = base, err
+			o.Snap, o.StaleErr = base, err
 			return nil
 		}
-		o.snap, o.err = nil, err
+		o.Snap, o.Err = nil, err
 		return nil
 	}
-	o.staleErr = nil
+	o.StaleErr = nil
 	o.fetchedAt = app.TimeNow()
 	// キャッシュは今回取れた Claude 枠を完全性の必須条件にする (Claude 必須・codex best-effort。usage_cache.go)
 	if !fresh.HasClaude() {
@@ -271,8 +274,8 @@ func (o *usageOverlay) handle(msg usageMsg) tea.Cmd {
 // codex 未導入の環境で毎分 codex の場所取りが出入りしないようにする。
 // 何も届いていない間 (snap が nil) も返す: 返さないと起動直後だけ箱が 1 行の「取得中...」になり、最初の 1 本が届いた瞬間に
 // 幅と段が変わる。初回の全滅の後 (snap が nil で err あり) は返さない (「取得失敗」の表示を場所取りで隠さない)。
-func (o *usageOverlay) waitingSources() []string {
-	if !o.inFlight || (o.snap == nil && o.err != nil) || !o.fetchedAt.IsZero() {
+func (o *UsageOverlay) waitingSources() []string {
+	if !o.inFlight || (o.Snap == nil && o.Err != nil) || !o.fetchedAt.IsZero() {
 		return nil
 	}
 	srcs := make([]string, 0, len(usageRoundSources))
@@ -288,7 +291,7 @@ func (o *usageOverlay) waitingSources() []string {
 }
 
 // waiting は waitingSources の表示名。
-func (o *usageOverlay) waiting() []string {
+func (o *UsageOverlay) waiting() []string {
 	srcs := o.waitingSources()
 	names := make([]string, 0, len(srcs))
 	for _, src := range srcs {
@@ -300,9 +303,9 @@ func (o *usageOverlay) waiting() []string {
 // view は描く Snapshot (U の箱と R の盤の両方がこれを描く。spinner は場所取りに添えるスピナーの今のコマ)。まだ届いていない出所には場所取りの枠
 // (usage.PendingWindows) を入れ、届いた後とレイアウト (行の数・列の幅・盤の段) を揃える (issue 626)。
 // 場所取りは表示だけのもので、o.snap には入れない (キャッシュ・last-good の出典を汚さない)。
-func (o *usageOverlay) view(spinner string) *usage.Snapshot {
+func (o *UsageOverlay) View(spinner string) *usage.Snapshot {
 	srcs := o.waitingSources()
-	s := o.snap
+	s := o.Snap
 	if s == nil && len(srcs) > 0 {
 		// 何も表示できていない間に届いた part (失敗だけ。成功があれば snap がある) を土台に畳む: Claude が先に失敗したとき、
 		// その注記 (ClaudeErr) を codex を待つ間も出す (畳まないと Claude の段が注記なしで消え、codex が届くと注記が増えて形が変わる)
@@ -323,7 +326,7 @@ func (o *usageOverlay) view(spinner string) *usage.Snapshot {
 }
 
 // waitingNote は waiting を 1 行にした表示 (無ければ空)。
-func (o *usageOverlay) waitingNote(spinner string) string {
+func (o *UsageOverlay) WaitingNote(spinner string) string {
 	names := o.waiting()
 	if len(names) == 0 {
 		return ""
@@ -331,31 +334,31 @@ func (o *usageOverlay) waitingNote(spinner string) string {
 	return spinner + " " + strings.Join(names, " / ") + " 取得中..."
 }
 
-// stale は今の表示が許容陳腐度 (usageRefreshInterval) を超えているか。未取得も stale 扱い。
+// stale は今の表示が許容陳腐度 (app.UsageRefreshInterval) を超えているか。未取得も stale 扱い。
 // 非表示中はリフレッシュを止めるため、再表示 (U) のときにこれで取り直しを判断する。
-func (o *usageOverlay) stale() bool {
-	return o.fetchedAt.IsZero() || app.TimeNow().Sub(o.fetchedAt) >= usageRefreshInterval
+func (o *UsageOverlay) Stale() bool {
+	return o.fetchedAt.IsZero() || app.TimeNow().Sub(o.fetchedAt) >= app.UsageRefreshInterval
 }
 
 // toggle は U キーで表示/非表示を反転する。
-func (o *usageOverlay) toggle() { o.visible = !o.visible }
+func (o *UsageOverlay) Toggle() { o.Visible = !o.Visible }
 
 // dismiss は任意のナビゲーションキーで起動時グランス表示を引っ込める。
-func (o *usageOverlay) dismiss() { o.visible = false }
+func (o *UsageOverlay) Dismiss() { o.Visible = false }
 
 // loading は取得待ち (spinner を回す) かどうか。表示中かつ、結果未着 (snap も err も無い) か片方の出所を
 // 待っている (場所取りの行のスピナー) ときだけ true。これが true の間だけ tick を回してスピナーを animate する。
-func (o *usageOverlay) loading() bool {
-	return o.visible && o.awaiting()
+func (o *UsageOverlay) Loading() bool {
+	return o.Visible && o.Awaiting()
 }
 
 // awaiting は表示 (U の箱 / R のダッシュボード) にスピナーが要るか (片方を待つ間も場所取りのスピナーを回す)。
-func (o *usageOverlay) awaiting() bool {
-	return (o.snap == nil && o.err == nil) || len(o.waiting()) > 0
+func (o *UsageOverlay) Awaiting() bool {
+	return (o.Snap == nil && o.Err == nil) || len(o.waiting()) > 0
 }
 
 // stop は quit 時に走行中の usage fetch subprocess を cancel する (オーファン化防止)。
-func (o *usageOverlay) stop() {
+func (o *UsageOverlay) Stop() {
 	if o.cancel != nil {
 		o.cancel()
 	}
@@ -366,17 +369,17 @@ func (o *usageOverlay) stop() {
 // 枠ごとに 1 行整列表示 + 末尾に自動更新の明示フッターを添える。spinner / colored / width は
 // browseModel 側の状態を受け取る (この型は bubbletea の tick や端末幅を直接知らず、描画に
 // 必要な値だけを引数で受ける)。
-func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []string {
-	if !o.visible {
+func (o *UsageOverlay) BoxLines(width int, colored bool, spinner string) []string {
+	if !o.Visible {
 		return nil
 	}
 	// 取得中/失敗でも省略しない "Claude Code · usage" を出す (ユーザー要望 2026-07-23)。箱幅は
 	// 下でこのタイトルが切り詰められない幅を最低確保する。
 	title := " Claude Code · usage "
 	var rows []string
-	snap := o.view(spinner)
+	snap := o.View(spinner)
 	switch {
-	case o.err != nil:
+	case o.Err != nil:
 		rows = []string{term.Paint("取得失敗", term.AnsiDim, colored)}
 	case snap == nil:
 		rows = []string{term.Paint(spinner+" 取得中...", term.AnsiDim, colored)}
@@ -414,7 +417,7 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		}
 		// 自動更新の明示フッターを content 幅に右寄せで添える (ユーザー要望)。値の取得は静かに
 		// 差し替わるので、更新中であることは出さない。
-		if note := fetchNote(snap, o.staleErr); note != "" {
+		if note := FetchNote(snap, o.StaleErr); note != "" {
 			// 右上の小さな箱を理由の長さで横に広げない (全文は R のダッシュボードに出る)
 			rows = append(rows, term.Paint(term.ClipToWidth(note, max(w, term.DispWidth(title))), term.AnsiYellow, colored))
 		}
@@ -433,13 +436,13 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 }
 
 // overlayBoxTopRight は box をウィンドウ上部の右端へ重ねる (usage オーバーレイ用)。
-func overlayBoxTopRight(window, box []string, width int, colored bool) []string {
+func OverlayBoxTopRight(window, box []string, width int, colored bool) []string {
 	return layout.OverlayRight(window, box, width, colored, 0)
 }
 
 // overlayBoxBottomRight は box を window の下端 (末尾 len(box) 行 = hint 行の直上)・右端へ重ねる
 // (トースト用)。
-func overlayBoxBottomRight(window, box []string, width int, colored bool) []string {
+func OverlayBoxBottomRight(window, box []string, width int, colored bool) []string {
 	return layout.OverlayRight(window, box, width, colored, max(len(window)-len(box), 0))
 }
 
@@ -447,7 +450,7 @@ func overlayBoxBottomRight(window, box []string, width int, colored bool) []stri
 // 2 通り: 全滅して last-good を保持した (staleErr。handle) / Claude 側だけ失敗して前回の枠が残った
 // (ClaudeErr。usage.Snapshot.With)。注記が無いと古い残量が黙って出続ける。
 // 理由は外部コマンドの stderr を含むので無害化して載せる。
-func fetchNote(snap *usage.Snapshot, staleErr error) string {
+func FetchNote(snap *usage.Snapshot, staleErr error) string {
 	if snap == nil {
 		return ""
 	}

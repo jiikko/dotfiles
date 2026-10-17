@@ -137,7 +137,7 @@ func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
 		t.Fatal("前提が崩れた: URL ピッカーが開かない")
 	}
 	// 🚨 起動時グランスの既定を継承しないこと。継承すると片方向で vacuous になる (敵対的レビュー)
-	m.usageOv.visible = false
+	m.usageOv.Visible = false
 
 	m.handleKey("U")
 
@@ -147,7 +147,7 @@ func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
 	}
 	// 🚨 こちらは別の主張 (残量モーダルを開かない)。混ぜて 1 つの非難文にすると、dismiss の
 	// 位置を変えただけで「キーを奪っている」と誤診する (敵対的レビューが実測)
-	if m.usageOv.visible {
+	if m.usageOv.Visible {
 		t.Error("URL ピッカー入力中の U が残量モーダルを開いた")
 	}
 }
@@ -164,9 +164,9 @@ func TestIssuesViewerOwnsKeysWhileTypingNumberFilter(t *testing.T) {
 	if !m.issuesOv.OwnsKeys() {
 		t.Fatal("番号入力中に ownsKeys() が false")
 	}
-	m.usageOv.visible = false
+	m.usageOv.Visible = false
 	m.handleKey("U")
-	if m.usageOv.visible {
+	if m.usageOv.Visible {
 		t.Error("番号入力中の U が残量モーダルを開いた (入力モードのキーを外側が奪っている)")
 	}
 
@@ -185,7 +185,7 @@ func TestIssuesViewerOwnsKeysWhileTypingNumberFilter(t *testing.T) {
 	}
 	releaseKey(m) // 指を離す (上の U とキーリピート判定を跨ぐ)
 	m.handleKey("U")
-	if !m.usageOv.visible {
+	if !m.usageOv.Visible {
 		t.Error("絞り込み確定後に U が効かない (typing でなく active を見ている)")
 	}
 }
@@ -202,11 +202,11 @@ func TestIssuesViewerOwnsKeysDuringMarkNextConfirm(t *testing.T) {
 	if !m.issuesOv.OwnsKeys() {
 		t.Fatal("確認中に ownsKeys() が false")
 	}
-	m.usageOv.visible = false
+	m.usageOv.Visible = false
 
 	m.handleKey("U")
 
-	if m.usageOv.visible {
+	if m.usageOv.Visible {
 		t.Error("確認中の U が残量モーダルを開いた (確認が armed のまま裏に残る)")
 	}
 	if m.issuesOv.Fixture().MarkNextActive() {
@@ -223,11 +223,11 @@ func TestIssuesViewerUsageStillWorksWhenNotOwningKeys(t *testing.T) {
 	if m.issuesOv.OwnsKeys() {
 		t.Fatal("前提が崩れた: 一覧モードで ownsKeys() が true")
 	}
-	m.usageOv.visible = false
+	m.usageOv.Visible = false
 
 	m.handleKey("U")
 
-	if !m.usageOv.visible {
+	if !m.usageOv.Visible {
 		t.Error("viewer の一覧モードで U が効かない (横取りを止めすぎている)")
 	}
 }

@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
+	"glogx/internal/extcmd"
 	"glogx/internal/term"
+	"glogx/internal/usageview"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestParseClaudeAuthStatus(t *testing.T) {
@@ -85,9 +88,9 @@ func TestCommandExitCodeSignalIsUnknown(t *testing.T) {
 }
 
 func TestCheckClaudeHealthExitStatus(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
-	t.Cleanup(func() { lookPathFn, cliHealthRunner = origLookPath, origRunner })
-	lookPathFn = func(string) (string, error) { return "/fake/claude", nil }
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
+	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	extcmd.LookPath = func(string) (string, error) { return "/fake/claude", nil }
 
 	tests := []struct {
 		name   string
@@ -115,9 +118,9 @@ func TestCheckClaudeHealthExitStatus(t *testing.T) {
 }
 
 func TestCheckCLIHealthExpiredContextDoesNotUseOutput(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
-	t.Cleanup(func() { lookPathFn, cliHealthRunner = origLookPath, origRunner })
-	lookPathFn = func(name string) (string, error) { return "/fake/" + name, nil }
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
+	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	extcmd.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
 	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 	exitErr := exitOneError(t)
@@ -136,9 +139,9 @@ func TestCheckCLIHealthExpiredContextDoesNotUseOutput(t *testing.T) {
 }
 
 func TestCheckCLIHealthSignalExitWithOutputIsUnknown(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
-	t.Cleanup(func() { lookPathFn, cliHealthRunner = origLookPath, origRunner })
-	lookPathFn = func(name string) (string, error) { return "/fake/" + name, nil }
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
+	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	extcmd.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
 	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 	signalErr := signalExitError(t)
@@ -157,9 +160,9 @@ func TestCheckCLIHealthSignalExitWithOutputIsUnknown(t *testing.T) {
 }
 
 func TestCheckCodexHealthExitZeroLoggedIn(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
-	t.Cleanup(func() { lookPathFn, cliHealthRunner = origLookPath, origRunner })
-	lookPathFn = func(string) (string, error) { return "/fake/codex", nil }
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
+	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	extcmd.LookPath = func(string) (string, error) { return "/fake/codex", nil }
 	cliHealthRunner = func(_ context.Context, _ string, _ ...string) ([]byte, []byte, error) {
 		return nil, []byte("Logged in using ChatGPT\n"), nil
 	}
@@ -169,9 +172,9 @@ func TestCheckCodexHealthExitZeroLoggedIn(t *testing.T) {
 }
 
 func TestCheckCLIHealthRunnerArguments(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
-	t.Cleanup(func() { lookPathFn, cliHealthRunner = origLookPath, origRunner })
-	lookPathFn = func(name string) (string, error) { return "/fake/" + name, nil }
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
+	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	extcmd.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
 	var calls []string
 	cliHealthRunner = func(_ context.Context, name string, args ...string) ([]byte, []byte, error) {
 		calls = append(calls, name+" "+strings.Join(args, " "))
@@ -193,8 +196,8 @@ func TestCheckCLIHealthRunnerArguments(t *testing.T) {
 }
 
 func TestCheckCLIHealthCmdIssues(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
-	t.Cleanup(func() { lookPathFn, cliHealthRunner = origLookPath, origRunner })
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
+	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
 
 	tests := []struct {
 		name        string
@@ -211,7 +214,7 @@ func TestCheckCLIHealthCmdIssues(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lookPathFn = func(name string) (string, error) {
+			extcmd.LookPath = func(name string) (string, error) {
 				if name == tt.missing {
 					return "", exec.ErrNotFound
 				}
@@ -240,9 +243,9 @@ func TestCheckCLIHealthCmdIssues(t *testing.T) {
 }
 
 func TestCheckCLIHealthCmdBothIssuesInSpecOrder(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
-	t.Cleanup(func() { lookPathFn, cliHealthRunner = origLookPath, origRunner })
-	lookPathFn = func(name string) (string, error) { return "/fake/" + name, nil }
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
+	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	extcmd.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
 	claudeErr, codexErr := exitOneError(t), exitOneError(t)
 	cliHealthRunner = func(_ context.Context, name string, _ ...string) ([]byte, []byte, error) {
 		if name == "/fake/claude" {
@@ -261,9 +264,9 @@ func TestCheckCLIHealthCmdBothIssuesInSpecOrder(t *testing.T) {
 }
 
 func TestCheckCLIHealthCmdKeepsCodexIssueWhenClaudeTimesOut(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
-	defer func() { lookPathFn, cliHealthRunner = origLookPath, origRunner }()
-	lookPathFn = func(name string) (string, error) { return "/fake/" + name, nil }
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
+	defer func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner }()
+	extcmd.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
 	codexErr := exitOneError(t)
 	codexReturned := make(chan struct{})
 	cliHealthRunner = func(ctx context.Context, name string, _ ...string) ([]byte, []byte, error) {
@@ -298,9 +301,9 @@ func TestCheckCLIHealthCmdKeepsCodexIssueWhenClaudeTimesOut(t *testing.T) {
 }
 
 func TestCheckCLIHealthCmdUnknownIsSilent(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
-	t.Cleanup(func() { lookPathFn, cliHealthRunner = origLookPath, origRunner })
-	lookPathFn = func(string) (string, error) { return "/fake/cli", nil }
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
+	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	extcmd.LookPath = func(string) (string, error) { return "/fake/cli", nil }
 	cliHealthRunner = func(_ context.Context, name string, _ ...string) ([]byte, []byte, error) {
 		if strings.Contains(name, "claude") {
 			return []byte(`{"loggedIn":false`), nil, errors.New("execution failed")
@@ -322,7 +325,7 @@ func TestCheckCLIHealthCmdUnknownIsSilent(t *testing.T) {
 		t.Fatalf("timeout result = %#v, elapsed = %s", msg.issues, time.Since(started))
 	}
 
-	lookPathFn = func(string) (string, error) { return "", errors.New("permission denied") }
+	extcmd.LookPath = func(string) (string, error) { return "", errors.New("permission denied") }
 	msg = checkCLIHealthCmd()().(cliHealthMsg)
 	if len(msg.issues) != 0 {
 		t.Fatalf("non-NotFound LookPath error produced issues: %#v", msg.issues)
@@ -348,15 +351,15 @@ func TestBrowseUpdateCLIHealth(t *testing.T) {
 }
 
 func TestBrowseInitWiresCLIHealth(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
 	origLatestClaude, origLatestCodex := fetchLatestClaudeVersion, fetchLatestCodexVersion
 	origTmuxPrefix := loadTmuxPrefix
 	t.Cleanup(func() {
-		lookPathFn, cliHealthRunner = origLookPath, origRunner
+		extcmd.LookPath, cliHealthRunner = origLookPath, origRunner
 		fetchLatestClaudeVersion, fetchLatestCodexVersion = origLatestClaude, origLatestCodex
 		loadTmuxPrefix = origTmuxPrefix
 	})
-	lookPathFn = func(name string) (string, error) { return "/fake/" + name, nil }
+	extcmd.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
 	claudeErr := exitOneError(t)
 	cliHealthRunner = func(_ context.Context, name string, _ ...string) ([]byte, []byte, error) {
 		if name == "/fake/claude" {
@@ -369,7 +372,7 @@ func TestBrowseInitWiresCLIHealth(t *testing.T) {
 	loadTmuxPrefix = func() string { return "" }
 	m := newTestBrowse(t, 1, nil, nil)
 	// usage と通常 tick はこの配線テストの対象外なので、長時間 Cmd を作らない。
-	m.usageOv.inFlight = true
+	m.usageOv.Fixture().SetInFlight(true)
 	m.ticking = true
 
 	got, found := initCLIHealthMsg(t, m)
@@ -434,16 +437,16 @@ func initCLIHealthMsg(t *testing.T, m *browseModel) (cliHealthMsg, bool) {
 // Init が検査を積む → 検査が issue を返す → Update が警告を積む → View に文言が出る、
 // の全リンクを繋ぐ (個別に pin してあっても、繋がっていることは別に確かめる必要がある)。
 func TestBrowseStartupShowsCLIHealthWarningsInView(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
 	origLatestClaude, origLatestCodex := fetchLatestClaudeVersion, fetchLatestCodexVersion
 	origTmuxPrefix := loadTmuxPrefix
 	t.Cleanup(func() {
-		lookPathFn, cliHealthRunner = origLookPath, origRunner
+		extcmd.LookPath, cliHealthRunner = origLookPath, origRunner
 		fetchLatestClaudeVersion, fetchLatestCodexVersion = origLatestClaude, origLatestCodex
 		loadTmuxPrefix = origTmuxPrefix
 	})
 	// claude は未インストール (LookPath が ErrNotFound)、codex はログアウト。
-	lookPathFn = func(name string) (string, error) {
+	extcmd.LookPath = func(name string) (string, error) {
 		if name == "claude" {
 			return "", exec.ErrNotFound
 		}
@@ -459,7 +462,7 @@ func TestBrowseStartupShowsCLIHealthWarningsInView(t *testing.T) {
 
 	m := newTestBrowse(t, 3, nil, nil)
 	// usage と通常 tick はこのテストの対象外なので長時間 Cmd を作らせない。
-	m.usageOv.inFlight = true
+	m.usageOv.Fixture().SetInFlight(true)
 	m.ticking = true
 	// newTestBrowse は NoFrame なので page = height-1。height=10 (page=9) は
 	// toastDrawBudget が重要警告 2 枚分を確保する帯 (これを外すと 1 枚しか描かれない)。
@@ -518,22 +521,22 @@ func findMsg(cmd tea.Cmd, want func(tea.Msg) bool) bool {
 }
 
 func isCLIHealthMsg(msg tea.Msg) bool { _, ok := msg.(cliHealthMsg); return ok }
-func isUsageMsg(msg tea.Msg) bool     { _, ok := msg.(usageMsg); return ok }
+func isUsageMsg(msg tea.Msg) bool     { _, ok := msg.(usageview.UsageMsg); return ok }
 
 // 起動時の CI 取得がある間は、usage・バージョン・ログイン検査 (node の claude / codex を起こす) を
 // 預け、取得が終わってから投げる (issue 570)。放すのは「取得中でなくなった」状態で見るので、
 // 最後のチャンクの結果でも、結果を経ずに取得をやめる経路 (pull の後の pendingFetches = 0) でも放す。
 // 閉じる演出の間 (done が立つ前) に届いた結果では放さない。usage のディスクキャッシュが当たれば預けずにすぐ出す。
 func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
-	origLookPath, origRunner := lookPathFn, cliHealthRunner
+	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
 	origLatestClaude, origLatestCodex := fetchLatestClaudeVersion, fetchLatestCodexVersion
 	origTmuxPrefix := loadTmuxPrefix
 	t.Cleanup(func() {
-		lookPathFn, cliHealthRunner = origLookPath, origRunner
+		extcmd.LookPath, cliHealthRunner = origLookPath, origRunner
 		fetchLatestClaudeVersion, fetchLatestCodexVersion = origLatestClaude, origLatestCodex
 		loadTmuxPrefix = origTmuxPrefix
 	})
-	lookPathFn = func(name string) (string, error) { return "", exec.ErrNotFound }
+	extcmd.LookPath = func(name string) (string, error) { return "", exec.ErrNotFound }
 	cliHealthRunner = func(context.Context, string, ...string) ([]byte, []byte, error) { return nil, nil, nil }
 	fetchLatestClaudeVersion = func(context.Context) string { return "" }
 	fetchLatestCodexVersion = func(context.Context) string { return "" }
@@ -595,11 +598,7 @@ func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
 	t.Run("usage のキャッシュが当たれば預けずにすぐ出す", func(t *testing.T) {
 		cache := t.TempDir()
 		t.Setenv("XDG_CACHE_HOME", cache)
-		path, err := usageCachePath()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := saveUsageCache(path, usageSnapFixture(t), time.Now()); err != nil {
+		if err := usageview.FixtureSaveCache(usageSnapFixture(t), time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		m := newTestBrowse(t, 2, map[string]CIState{}, []string{shaA, shaB})
@@ -607,20 +606,20 @@ func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
 		m.fetch = func() tea.Msg { return nil }
 		m.pendingFetches = 2
 		m.Init()
-		if m.usageOv.snap == nil || m.usageOv.inFlight {
-			t.Fatalf("CI の取得中でも、キャッシュの数字は先に出す (snap=%v inFlight=%v)", m.usageOv.snap, m.usageOv.inFlight)
+		if m.usageOv.Snap == nil || m.usageOv.Fixture().InFlight() {
+			t.Fatalf("CI の取得中でも、キャッシュの数字は先に出す (snap=%v inFlight=%v)", m.usageOv.Snap, m.usageOv.Fixture().InFlight())
 		}
 	})
 }
 
 func stubLookPath(t *testing.T, available map[string]string) {
 	t.Helper()
-	orig := lookPathFn
-	lookPathFn = func(name string) (string, error) {
+	orig := extcmd.LookPath
+	extcmd.LookPath = func(name string) (string, error) {
 		if p, ok := available[name]; ok {
 			return p, nil
 		}
 		return "", errors.New("not found")
 	}
-	t.Cleanup(func() { lookPathFn = orig })
+	t.Cleanup(func() { extcmd.LookPath = orig })
 }

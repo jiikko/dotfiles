@@ -61,8 +61,8 @@ func TestUpdateKeysReachableFromOverlays(t *testing.T) {
 		// (TestUpdateKeysDoNotLeakIntoStatusViewer と同じ準備)
 		{"status", func(t *testing.T, m *browseModel) { m.statusOv = *newTestStatusView(t, statusRec(" M a.go")) },
 			func(m *browseModel) bool { return m.statusOv.Visible() }, true},
-		{"ratelimit", openByKey("R", func(m *browseModel) bool { return m.rlDash.visible() }),
-			func(m *browseModel) bool { return m.rlDash.visible() }, false},
+		{"ratelimit", openByKey("R", func(m *browseModel) bool { return m.rlDash.Visible() }),
+			func(m *browseModel) bool { return m.rlDash.Visible() }, false},
 		{"doctor", openByKey("D", func(m *browseModel) bool { return m.doctorOv.Visible() }),
 			func(m *browseModel) bool { return m.doctorOv.Visible() }, false},
 		// diff / PR status のポップアップも同じ (以前は未知キーとして飲んでいた)

@@ -124,7 +124,7 @@ func TestBrowseScrollAnimNoHeightCap(t *testing.T) {
 // 80ms tick は single-flight: チェーンは常に高々 1 本 (レビュー C1)。
 func TestBrowseTickSingleFlight(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.usageOv.visible = false // usage 取得中も spinnerActive になるため、tick 単体の検証から隔離する
+	m.usageOv.Visible = false // usage 取得中も spinnerActive になるため、tick 単体の検証から隔離する
 	if m.maybeTick() == nil || !m.ticking {
 		t.Fatal("初回 maybeTick が tick を返さない / ticking が立たない")
 	}
@@ -383,7 +383,7 @@ func TestBrowseEmacsHorizontalAliases(t *testing.T) {
 // カーソルはヘッダー行全体の bg 塗りで示す。
 func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
-	m.usageOv.visible = false // 右上 usage モーダルは上部行を覆うため、カーソル強調の検証から隔離する
+	m.usageOv.Visible = false // 右上 usage モーダルは上部行を覆うため、カーソル強調の検証から隔離する
 	m.statuses = statusesFor(m, StateSuccess)
 	m.colored = true
 	view := strings.Split(m.View().Content, "\n")
@@ -522,7 +522,7 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 			m.details[m.panelSHA] = []CheckDetail{{Name: "job", State: StatePending}}
 		}},
 		{"listHasPending", func(m *browseModel) { m.statuses = statusesFor(m, StatePending) }},
-		{"usageOv.loading", func(m *browseModel) { m.usageOv.visible = true; m.usageOv.snap = nil; m.usageOv.err = nil }},
+		{"usageOv.loading", func(m *browseModel) { m.usageOv.Visible = true; m.usageOv.Snap = nil; m.usageOv.Err = nil }},
 		// 🚨 以下 2 つは spinnerActive へ後から入った源で、テーブルへの追記が漏れていた
 		// (issue 028 P3 が予測した「追記漏れ」が実際に起きていた形)。
 		{"issuesOv.loading", func(m *browseModel) { m.issuesOv.Fixture().SetScanning(true) }},
@@ -536,13 +536,13 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 	}
 	// 前提: 何も動いていない model は false (これが false でないと以下の検証が無意味になる)
 	base := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	base.usageOv.visible = false
+	base.usageOv.Visible = false
 	if base.spinnerActive() {
 		t.Fatal("前提: idle な model で spinnerActive() が true")
 	}
 	for _, s := range sources {
 		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-		m.usageOv.visible = false // usage は既定で取得中になりうるので隔離する
+		m.usageOv.Visible = false // usage は既定で取得中になりうるので隔離する
 		s.set(m)
 		if !m.spinnerActive() {
 			t.Errorf("%s を立てても spinnerActive() が false (tick が止まりアニメ/経過秒が固まる)", s.name)
@@ -556,7 +556,7 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 func TestMainListScrollbar(t *testing.T) {
 	// medium 形式 ~6 行/コミット × 8 ≫ page (height 10 - hint 1 = 9 行) で必ず溢れる
 	m := newTestBrowse(t, 8, nil, nil)
-	m.usageOv.visible = false // 右上の usage overlay がバー列を覆うので隔離
+	m.usageOv.Visible = false // 右上の usage overlay がバー列を覆うので隔離
 	content := m.View().Content
 	rows := strings.Split(content, "\n")
 	rows = rows[:len(rows)-1] // 最終行は hint
@@ -585,7 +585,7 @@ func TestMainListScrollbar(t *testing.T) {
 
 	// 収まる: バー列なし (1 コミット ~6 行 < 9 行)
 	fit := newTestBrowse(t, 1, nil, nil)
-	fit.usageOv.visible = false
+	fit.usageOv.Visible = false
 	for i, l := range strings.Split(fit.View().Content, "\n") {
 		if strings.HasSuffix(l, layout.ScrollbarThumb) || strings.HasSuffix(l, layout.ScrollbarTrack) {
 			t.Fatalf("収まるのにバー列が出ている (行 %d): %q", i, l)
@@ -641,7 +641,7 @@ func TestDetailsLoadingReleasedAcrossEpochBump(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	// 🚨 フィクスチャ既定では usageOv.loading() が真で、spinnerActive() が札と無関係に
 	// 真になる。この交絡を先に潰しておかないと、下の assert が何も測らない。
-	m.usageOv.snap = rlTestSnap()
+	m.usageOv.Snap = rlTestSnap()
 	const stale = "sha-beyond-cap"
 	m.hasRepo = true
 	m.toFetch = []string{stale}
@@ -690,7 +690,7 @@ func TestDetailsLoadingReleasedAcrossEpochBump(t *testing.T) {
 // (fetchPanelDetails のコメントが名指しで避けている事故)。
 func TestDetailsLoadingKeepsInFlightFetchAcrossEpochBump(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-	m.usageOv.snap = rlTestSnap()
+	m.usageOv.Snap = rlTestSnap()
 	m.hasRepo = true
 
 	// 🚨 **待機と実取得を同時に持つ状態**を作る。片方だけだと

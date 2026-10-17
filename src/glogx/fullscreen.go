@@ -13,7 +13,7 @@ import (
 // 違い、前提が崩れたときにどれが勝つかが場所によって変わった)。
 func (m *browseModel) activeFullScreen() app.FullScreenID {
 	switch {
-	case m.rlDash.visible():
+	case m.rlDash.Visible():
 		return app.FullScreenRatelimit
 	case m.doctorOv.Visible():
 		return app.FullScreenDoctor
@@ -44,17 +44,17 @@ func (m *browseModel) openFullScreen(id app.FullScreenID) tea.Cmd {
 	case app.FullScreenRatelimit:
 		return m.toggleRatelimitDash()
 	case app.FullScreenDoctor:
-		m.usageOv.dismiss()
+		m.usageOv.Dismiss()
 		return tea.Batch(m.doctorOv.Toggle(), m.maybeTick())
 	case app.FullScreenFiler:
-		m.usageOv.dismiss()
+		m.usageOv.Dismiss()
 		m.filerV.toggle(app.CurrentDir())
 		if e := m.filerV.takeOpenErr(); e != "" {
 			m.showWarning(e)
 		}
 		return tea.Batch(m.filerV.watchCmd(), m.maybeTick())
 	case app.FullScreenLan:
-		m.usageOv.dismiss()
+		m.usageOv.Dismiss()
 		m.lanV.toggle()
 		if e := m.lanV.takeOpenErr(); e != "" {
 			m.showWarning(e)

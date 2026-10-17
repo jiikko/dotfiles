@@ -79,7 +79,7 @@ func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.width, m.height = 100, 20
-	m.usageOv.dismiss()
+	m.usageOv.Dismiss()
 	m.issuesOv = *realIssuesView(t)
 	m.issuesOv.Fixture().FinishAnim() // 開く演出は本題でないので着地させる
 
