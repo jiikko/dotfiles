@@ -37,4 +37,16 @@ issue 824・825・826 (lan-manager の画面・初期設定の lock・Bonjour �
 
 ## 進捗
 
-- [ ] A〜C の切り出し (ユーザーの判断待ち)
+- [x] A〜C をやる (ユーザー指示 2026-10-18「831 の A〜C も全部やって」)。commit「hook / rules: 検査の出力をパイプに通したまま && で commit / push する形を止める・表を残す・分岐ごとの変異」
+  - A: 新しい hook は作らず `_claude/hooks/deny-piped-push-then-destroy.sh` に 2 つ目の形を足した (heredoc を落とす処理・上限・pipefail の扱いを共有するため。
+    ファイル名は据え置き: settings.json が実体パスを指すので、改名すると古い版で起動した session が消えたパスを指す)。検査の語の一覧 (CHECK) と
+    検出しない形は hook の冒頭。テストに deny 4 / allow 5 を足し、変異 4 本で red を確かめた
+  - B: `_claude/rules/survey-receiver-guards-before-passing-new-values.md` の「状態 × 読み手」の項に 1 行
+  - C: `_claude/rules-checklists/mutation-verify-new-tests.md` の「到達しているか」に 1 項 (同じ項は無かった)
+  - 常時読み込みの合計は追記の後で 127,004 字 (上限 150k 字)
+  - A の敵対的レビュー (opus、2 周): 1 周目 P1 3 件 (`|&`・`grep -E "a|b"` の引用符の中の |・2 段のパイプ / tee で素通り) と P2 1 件
+    (runtimeout などの前置き・絶対パス) を直した: 終端の道具を問わない・前置きを受ける・commit / push は git の副コマンドの位置で見る。
+    2 周目 P1 無し・P2 1 件 (`|tail&&git commit` の空白の無い形で素通り) と P3 (背景の & を越える・&& の後ろで ; を越える・env -u) を直した。
+    テストは 94 件 (/bin/bash 3.2 でも通る)。受容: `if 検査 | tail; then git commit; fi` (&& を使わない形)・検査の語で始まるが検査でないコマンド
+    (`go version | head && git commit`) の偽陽性・オプションの値に空白を含む `git -C "/a b" commit`・コメントの中の pipefail で通る (前から)。
+    どれも hook の冒頭に書いた
