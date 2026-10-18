@@ -117,7 +117,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 - 実行系 (`b` push / `u` pull / `X` 捨てる / `x` 実行 / `d` 削除 / `r` rerun) は**必ず y/N 確認**。
   `y` と `Enter` だけが実行で、**知らないキーはすべて取り消し**に倒す。判定と板は tuikit の `confirm`
   (`IsYes` = 大文字 `Y` も実行 / `IsYesStrict` = `Y` も取り消し。どちらを使うかは画面ごとの判断で、
-  揃えない理由は glogx の `status_view.go` の `discardKey` の注記)
+  揃えない理由は glogx の `src/glogx/internal/statusview/status_view.go` の `discardKey` の注記)
 - 確認の板 (`confirm.Dialog`) の案内は**定型の `confirm.HintYesNo` (`y/Enter: 実行   n/Esc: キャンセル`) /
   `HintYesOther` (`… その他: キャンセル`) から選ぶ** (glogx の push / pull / rerun / 変更を捨てる / issues の next の目印、restartable)。
   定型なら狭い板で `confirm.Dialog` が短い形 (`y/Enter:実行 n/Esc:取消` → `y/Enter:実行 n:取消`。実行のキーは短くしても全部書く) に替えるので、
@@ -204,7 +204,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 - 🚨 **入力欄には端末のカーソルを `tuikit/caret` の `caret.At` で置く** (棒のカーソル。位置は「欄の左端 +
   `Window` が返すキャレットの桁」)。IME は変換中の文字を端末のカーソルの位置に出すので、置かないと日本語の
   変換中の文字が入力欄の外 (描画を書き終えた位置) に出る (issue 517。pro-con の入力欄・回答フォーム・schedkeys・glogx の入力欄が置く)
-- glogx の入力欄 (issues の番号の絞り込み `issues_number_filter.go` / URL ピッカー `url_picker.go`) も `lineedit` と
+- glogx の入力欄 (issues の番号の絞り込み `src/glogx/internal/issuesview/issues_number_filter.go` / URL ピッカー `src/glogx/internal/issuesview/url_picker.go`) も `lineedit` と
   `caret` を使う (2026-10-02 に寄せた)。番号の絞り込みは数字だけを入れ、URL ピッカーは `Space` を入れない。どちらも
   `ctrl+n` / `ctrl+p` (と `↑` `↓`) は候補の移動に使う (編集キーより先に捌く)
 

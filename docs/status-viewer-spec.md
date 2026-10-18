@@ -2,8 +2,8 @@
 
 glogx の status viewer (`s` キー) が作業ツリーをどう読み、どう書くかの規約。**write する画面**
 なので「何ができるか」より「何を絶対にしないか」に紙面を割く。実装は
-[`src/glogx/worktree_status.go`](../src/glogx/worktree_status.go) (読み取り) と
-[`src/glogx/status_view.go`](../src/glogx/status_view.go) (画面)。
+[`src/glogx/internal/statusview/worktree_status.go`](../src/glogx/internal/statusview/worktree_status.go) (読み取り) と
+[`src/glogx/internal/statusview/status_view.go`](../src/glogx/internal/statusview/status_view.go) (画面)。
 
 glog 本体 (read-only) にこの画面は置かない。write 操作を glogx 側へ隔離する方針は
 [`src/glogx/README.md`](../src/glogx/README.md) 冒頭が正本。
@@ -116,7 +116,7 @@ git の XY は **X = index 側 / Y = 作業ツリー側**。この画面は 1 �
 - **`X` は Staged 行では受けない** (「先に `Space` で unstage してください」と返す)。staged の変更を
   捨てるのは「index から降ろす」+「作業ツリーを破棄する」の二段の破壊で、同じキー・同じ確認文言では
   意味が変わってしまう。`X` の意味を「作業ツリーの変更を捨てる」1 つに保つ
-- 全画面 pager は status viewer が自分で持つ (コミット diff の `diffOverlay` とは別の状態)。
+- 全画面 pager は status viewer が自分で持つ (コミット diff の `commitview.DiffOverlay` とは別の状態)。
   ただしスクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は `internal/term/scroll_glide.go` の
   `term.PagerScrollKey` を共有するので、手触りは `d` のコミット diff と同じになる
 - 操作結果 (成功・失敗) は右下トーストで出す。キー待ちのモーダルは `X` の確認だけが使う

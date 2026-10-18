@@ -53,6 +53,10 @@
 
 - [x] 2026-10-18 起票と上の「直したもの」。glogx の go test -race (14 パッケージ)・make lint・check_comment_provenance・go_packages_index・
   no-real-commands・到達不能の検査が緑。テスト名は 1,254 → 1,255 (TestNoViewImportsAnotherView。TestRatelimitOptsPassesFetchNote を足して 1,256)
+- [x] 2026-10-18 分割でずれたパス・古くなった文書を直した: 移したファイルをパス付きで指していた 11 ファイル (docs の 2 仕様書・open の issue 666・
+  doctor / pro-con のコメント・hook のコメント・rules と rationale の実例) を今の置き場へ。docs のファイル名だけの参照 4 か所にパスを付け、
+  docs に残っていた旧い型の名前 2 か所 (`usageOverlay.dismiss` / `diffOverlay`) を直した。lint と CI の設定は `**/` の glob で当たり続けていた。
+  残したもの: docs/status-viewer-spec.md の画面の見本の図の中のファイル名 (例の git status の行で、参照ではない)・done の issue (書いた時点の記録)
 
 ## 反証レビュー
 

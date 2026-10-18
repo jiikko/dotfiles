@@ -160,7 +160,7 @@ func Format(rep Report, env Env, now time.Time) string {
 	for _, r := range rep.Results {
 		// 候補 0 件は畳む。🚨 **検出条件そのものが未実測のエントリは畳まない**。
 		// 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と同じ見え方になる。
-		// UI 側 (src/glogx/doctor_view.go) と同じ規律。実測で Entry.Unverified が空になれば畳まれる側へ戻る
+		// UI 側 (src/glogx/internal/doctorview/doctor_view.go) と同じ規律。実測で Entry.Unverified が空になれば畳まれる側へ戻る
 		if Foldable(r) {
 			continue
 		}

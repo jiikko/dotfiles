@@ -261,7 +261,7 @@ func (s diskScanner) rhsKind(e ast.Expr, owners map[string]ownerKind) ownerKind 
 	// `rep := *v.diskRep` (StarExpr) / `p := &rep.Results[0]` (IndexExpr) /
 	// `rs := rep.Results` (Results 特例) の 3 つが、rhsKind に枝が無いせいで
 	// すべて未検出になる。実コードに現役の形
-	// (`src/glogx/doctor_delete.go` の `next := *ev.prog`) なので、統合して塞ぐ。
+	// (`src/glogx/internal/doctorview/doctor_delete.go` の `next := *ev.prog`) なので、統合して塞ぐ。
 	return s.kindOf(e, owners)
 }
 

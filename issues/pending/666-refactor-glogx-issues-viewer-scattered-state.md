@@ -66,7 +66,7 @@ issues viewer (`issuesView`) と周辺で、対で更新すべき状態の更新
 
 ## 関連ファイル
 
-- `src/glogx/issues_view.go` / `src/glogx/issues_watch.go` / `src/glogx/gitlog_watch.go` / `src/glogx/url_picker.go` / `src/glogx/tui.go`
+- `src/glogx/internal/issuesview/issues_view.go` / `src/glogx/internal/issuesview/issues_watch.go` / `src/glogx/gitlog_watch.go` / `src/glogx/internal/issuesview/url_picker.go` / `src/glogx/tui.go`
 
 ## 進捗
 

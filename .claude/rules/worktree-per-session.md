@@ -63,7 +63,7 @@
 ## なぜ
 
 **実測 2026-09-03 (1 セッション)**: 共有 working tree が並行セッションの WIP
-(`src/glogx/cleanup_latch.go` 等) で常に dirty だったため、
+(`src/glogx/internal/app/cleanup_latch.go` 等) で常に dirty だったため、
 
 - `git pull --rebase` が `cannot pull with rebase: You have unstaged changes` で 3 回止まった
 - 自分の commit を載せるために **worktree で origin/master を出して cherry-pick → push** を 4 回やった

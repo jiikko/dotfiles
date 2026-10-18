@@ -18,7 +18,7 @@ import (
 	"pro-con/card"
 )
 
-// glogx の issues の引き出しと同じ寸法と所要 (glogx/issues_drawer.go。変えるなら両方の見え方を揃えて決める)。
+// glogx の issues の引き出しと同じ寸法と所要 (glogx/internal/issuesview/issues_drawer.go。変えるなら両方の見え方を揃えて決める)。
 var drawerGeometry = layout.DrawerGeometry{Ratio: 0.8, Extra: 10, MinList: 8, MaxPeek: 18}
 
 // worktreePaint は worktree の節の色 (見本で決めた形): hash は黄、時刻と「ほか」は暗く、index に入った変更は緑・作業ツリーだけの変更は赤。

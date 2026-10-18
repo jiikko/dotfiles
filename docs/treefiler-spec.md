@@ -100,8 +100,8 @@
   名前は `termsafe.PlainLine`、本文は色を付ける前の生テキストに通す
 - **幅**: 全角は 2 桁。幅の計算は `termwidth` (glogx の単一の出典) を使い、treebeard の `truncate_to` の規則 (§3.1) をその上で書く
 - **git**: treebeard は `git --no-optional-locks status --porcelain=v1 -z --branch --ignored --untracked-files=normal` を repo top ごとに 3 秒周期で回す (§5.3)。
-  glogx の status viewer (`worktree_status.go`) は `status --porcelain --branch -z` で、`--ignored` を取らず `--no-optional-locks` も付けないので、そのまま使い回せない
-- **ライブ更新**: treebeard は 1 秒のポーリング (§5.2)。glogx の issues viewer は fsnotify で起こして指紋 (mtime + サイズ) で判定する (`issues_watch.go`)。
+  glogx の status viewer (`src/glogx/internal/statusview/worktree_status.go`) は `status --porcelain --branch -z` で、`--ignored` を取らず `--no-optional-locks` も付けないので、そのまま使い回せない
+- **ライブ更新**: treebeard は 1 秒のポーリング (§5.2)。glogx の issues viewer は fsnotify で起こして指紋 (mtime + サイズ) で判定する (`src/glogx/internal/issuesview/issues_watch.go`)。
   どちらで作るかは実装で決める (`fsnotify` は既に依存にある)
 - **画像のデコード** (画像・PDF ごと後回し。入れるときの判断材料として残す): Go の標準は png / jpeg / gif だけ。webp / bmp / tiff は `golang.org/x/image` (新しい依存)、
   svg / heic / avif / psd などは treebeard と同じく ImageMagick の `convert`、PDF は poppler の `pdfinfo` / `pdftoppm` (外部コマンド)。依存と外部コマンドを足すかは再開するときに決める

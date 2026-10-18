@@ -55,7 +55,7 @@ viewer は「この epic は何件中何件終わったか」を答えられず�
 `find issues -name done -prune` で**深さ非依存**、hook (human-tasks-due / retro-open) は
 元から `epic/*/pending/*.md` を未完了として拾い `epic/*/done/` を見ていない。
 viewer 側は `EpicChildStatus` 1 箇所に状態名の列挙が閉じており、走査・発見・監視の 3 経路が
-そこを通る (`src/glogx/issues_epic_status_dirs_test.go` が 3 経路の一致を固定)。
+そこを通る (`src/glogx/internal/issuesview/issues_epic_status_dirs_test.go` が 3 経路の一致を固定)。
 
 契約の一次情報は `docs/issues-viewer-spec.md` 3 節・6 節。hook (`next-claim-push.sh` /
 `next-claim-unshared.sh`) の検出パターンも `issues/epic/<name>/next/` を含む。

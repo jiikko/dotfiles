@@ -187,7 +187,7 @@ commit `4c824ff2` (2 周目の反映) / `d2dfd70` (1 周目の突合を入れた
 
 ## 実測 6〜8 回目: 変異を全部 red にしても、敵対レビューは想定の外側を出す（2026-09-03, dotfiles 148）
 
-削除エンジン (`src/doctor/disk/delete.go`) と UI 導線 (`src/glogx/doctor_delete.go`) で、
+削除エンジン (`src/doctor/disk/delete.go`) と UI 導線 (`src/glogx/internal/doctorview/doctor_delete.go`) で、
 **変異 26 本を全部 red にした後**に敵対レビュー (opus 7 体) が P1 を 1 周目 3 件・2 周目 1 件出した。
 本文の「実測 6 回」をこれで 8 回に更新した。回数を積み上げても規範は変わらない
 (「変異と敵対レビューは片方で閉じない」) ので、本文の加筆はこの数字だけに留める。

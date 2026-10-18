@@ -78,7 +78,7 @@ report_repo() {
   # **detached HEAD の commit を 1 件も返さない**。この repo は worktree-per-session.md で
   # detached worktree を規範として要求しているため、規範どおりに運用すると
   # 「(none — すべて push 済み)」という**積極的な偽の全クリア**を注入していた。
-  # 正解実装は同じ repo にある (`src/glogx/gitlog.go` の `UnpushedSHAs` は `HEAD --not --remotes`)。
+  # 正解実装は同じ repo にある (`src/glogx/internal/gitdata/gitlog.go` の `UnpushedSHAs` は `HEAD --not --remotes`)。
   # `--all` は stash と他 worktree の commit まで拾うので採らない。
   #
   # 🚨 **判定不能を「push 済み」に丸めない**。remote 未設定なら「どこにも push していない」が

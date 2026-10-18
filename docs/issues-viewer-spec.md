@@ -426,7 +426,7 @@ viewer は全画面だが、`U` の残量モーダルは**トーストと同じ�
 出ず、viewer を閉じた後に突然現れる = 見えない層へ状態を書く経路になる (この理由で以前は
 viewer 表示中の `U` を弾いていた)。前面順は一覧側と同じで usage → トースト。
 
-`U` 以外のキーで引っ込むのも一覧と同じ語彙にする (`usageOverlay.dismiss`)。開閉の実体は
+`U` 以外のキーで引っ込むのも一覧と同じ語彙にする (`usageview.UsageOverlay.Dismiss`)。開閉の実体は
 `browseModel.toggleUsage` 1 箇所で、一覧と viewer の両方がそこを呼ぶ — 2 箇所に書くと
 「片方の画面でだけ取り直しの条件が違う」形でずれる。
 
@@ -743,7 +743,7 @@ viewer は「確信を持って嘘をつく」ことを最も嫌うので、次�
 ディレクトリの mtime だけでは本文の書き換えを検出できない (create/delete/rename でしか動かない)
 ので、ファイルはサイズまで見る。変化を見つけた次の観測でも同じなら読む (書きかけを掴まない)。
 イベントを取りこぼしても追いつけるよう低頻度 (30s) のポーリングも回し、watcher を作れない環境では
-それが唯一の経路になるので周期を上げる。実装は `src/glogx/issues_watch.go`。
+それが唯一の経路になるので周期を上げる。実装は `src/glogx/internal/issuesview/issues_watch.go`。
 
 fsnotify の対象は issue dir と、予約名の状態ディレクトリ (`done/` `pending/` `waiting/` `next/` と
 `closed/` `hold/` 等の別綴り。**空でも**。名前は走査と同じ `issues.IsStatusDir`) に加えて `issues/epic/` と全ての
