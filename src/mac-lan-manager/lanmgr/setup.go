@@ -550,7 +550,8 @@ func (m *Model) setupX() {
 			m.note("相手に届かない (r でリロード): "+m.su.obs.KeyErr.Error(), false)
 			return
 		}
-		if m.selfErr != nil && !errors.Is(m.selfErr, netinfo.ErrIPsIncomplete) {
+		if m.selfErr != nil && !errors.Is(m.selfErr, netinfo.ErrIPsIncomplete) && m.conf() == nil {
+			// 確認待ちの間は掛けない (確認はこの Mac の網を使わない。断ると窓が削れ、期限で相手が元に戻った)
 			// 前に読んだ網は残しているが、それで計画を組まない: この Mac を固定した後の読み直しが失敗すると、固定の前の網で
 			// 「この Mac を固定する」の板 (sudo) がもう一度出た
 			m.note("この Mac のネットワークを読み直せなかった (r で読み直す)", false)

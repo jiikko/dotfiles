@@ -1239,7 +1239,30 @@ func TestSetupRefusesStaleSelfAfterFailedReread(t *testing.T) {
 	if h.m.selfErr != nil {
 		t.Fatalf("r でこの Mac の網を読み直さない: %v", h.m.selfErr)
 	}
-	if h.keys("x"); h.m.ov == ovConfirm && strings.Contains(h.m.ask.title, "この Mac") {
-		t.Errorf("読み直した後もこの Mac の固定の板が出た: %q", h.m.ask.title)
+	// 次の手順 (相手の固定) の板が出る (断り続けて先へ進めない形も見る)
+	if h.keys("x"); h.m.ov != ovConfirm || strings.Contains(h.m.ask.title, "この Mac") {
+		t.Errorf("読み直した後に次の手順の板が出ない: ov=%v ask=%+v notices=%+v", h.m.ov, h.m.ask, h.m.TakeNotices())
+	}
+}
+
+// 確認待ちの間の x は、この Mac の網の読み直しが失敗していても断らない (確認はこの Mac の網を使わない。断ると窓が削れ、期限で相手が元に戻った)。
+func TestSetupConfirmNotBlockedByFailedReread(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	runStep(t, h, nil)
+	if h.m.conf() == nil {
+		t.Fatal("前提: 確認待ちにならない")
+	}
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) {
+		return netinfo.Snapshot{}, errors.New("networksetup が失敗した")
+	}
+	h.m.startNetLoad()
+	awaitNetLoad(h.m)
+	if h.m.selfErr == nil {
+		t.Fatal("前提: 読み直しが失敗していない")
+	}
+	if h.keys("x"); h.m.ov != ovConfirm {
+		t.Errorf("確認待ちの x を読み直しの失敗で断った: %+v", h.m.TakeNotices())
 	}
 }
