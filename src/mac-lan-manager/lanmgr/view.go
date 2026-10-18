@@ -605,6 +605,7 @@ func (m *Model) detail(r row, width int) string {
 			lines = append(lines, label("有線の名前")+sText.Render(name)+"  "+state)
 		}
 	}
+	lines = append(lines, m.speedLine(r, label)...)
 	if others := m.shownOthers(r); m.pf.ShowOthers && len(others) > 0 {
 		lines = append(lines, "", sDim.Render("その他の IP"))
 		for _, x := range others {
@@ -664,7 +665,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 				hint = "y: 実行   c: コマンドをコピー   n/Esc: キャンセル"
 			case m.ask.exec != nil:
 				hint = "y/Enter: 実行   c: コマンドをコピー   n/Esc: キャンセル"
-			case m.ask.auto: // 自動で出た板は Enter では実行しない (HandleInput)
+			case m.ask.auto || m.ask.strict: // 自動で出た板・帯域を使う板は Enter では実行しない (HandleInput)
 				hint = "y: 実行   n/Esc: キャンセル"
 			}
 			return modal(m.ask.title, m.ask.body, hint, m.w), -1, 0
@@ -715,7 +716,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	case ovHelp:
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理 / この Mac のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"O", "Finder で smb に繋ぐコマンド (open smb://…) をコピー"}, {"o", "画面共有を開く"},
-			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "初期設定 (相手の行)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
+			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "初期設定 (相手の行)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"t", "通信速度を測る (管理対象。確認してから帯域を使う)"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
 			{"r", "リロード"}, {"q / esc", "閉じる"}}
 		body := make([]string, 0, len(keys)+3)
 		if m.scanErr != nil { // 見出しの「✗ 探せない」の理由 (知らせは数秒で消え、glogx の中からは dump を起こせない。監査の指摘)

@@ -52,6 +52,7 @@ func Options() (lanmgr.Options, error) {
 		Copy:       clipboard.Copy, // pbcopy (tmux の中では tmux バッファへもおまけ)。上限は clipboard.Timeout
 		User:       os.Getenv("USER"),
 		Observe:    Observe,
+		SpeedTest:  SpeedTest,
 		LookupHost: lookupHost,
 		RunQuiet: func(ctx context.Context, argv []string) error {
 			_, err := RunOut(ctx, argv[0], argv[1:]...)

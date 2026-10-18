@@ -29,6 +29,7 @@ import (
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/prefs"
 	"mac-lan-manager/setup"
+	"mac-lan-manager/speedtest"
 )
 
 // Action は HandleInput の結果 (呼び出し側がすること)。
@@ -103,6 +104,8 @@ type Options struct {
 	User string // 台帳にユーザー名が無い相手に使う推測の名前 (live は $USER を入れる。環境を読むのはつなぎの側)
 	// Observe は相手を ssh で読む (段 4 の初期設定。読むだけ)。live は setup.ObservePeer を本物の ssh で走らせる。nil なら観測しない
 	Observe func(ctx context.Context, d setup.Dest) setup.PeerNet
+	// SpeedTest は相手との通信速度を測る (帯域を使い切るので確認の板の y の後だけ。speed.go)。now は時計。nil なら測らない
+	SpeedTest func(ctx context.Context, d setup.Dest, now func() time.Time) speedtest.Result
 }
 
 type screen int
@@ -172,7 +175,9 @@ type Model struct {
 	// selfAdvert はこの Mac の有線の名前の広告の状態 (selfAdvertKnown のときだけ有効。網と一緒に読む)
 	selfAdvert      setup.NameState
 	selfAdvertKnown bool
-	bg              []<-chan Notice // 裏で走らせている後始末 (台帳から外した相手の名前の広告を止める) の結果
+	bg              []<-chan Notice        // 裏で走らせている後始末 (台帳から外した相手の名前の広告を止める) の結果
+	speedRun        *speedRun              // 測っている途中の通信速度 (speed.go。同時に 1 本)
+	speed           map[string]speedResult // 相手ごとの最後の通信速度 (台帳の鍵 → 結果)
 	// wired は有線の名前を引いた結果 (台帳の鍵 → 結果。wiredname.go)。wiredCh / wiredWait は引いている途中の回
 	wired     map[string]wiredLookup
 	wiredCh   <-chan wiredResult
@@ -217,6 +222,8 @@ type ask struct {
 	// auto は読み込み中に押した x の予約で、読み終えたときに自動で出した板。Enter では実行しない (進捗のモーダルの間に押し続けた
 	// Enter が、裏で開いた板をそのまま実行した。この Mac の固定は自動では戻らない)
 	auto bool
+	// strict は帯域を使う操作の板 (通信速度)。auto と同じく Enter では実行しない
+	strict bool
 }
 
 // New は画面を作り、この Mac のネットワーク・台帳・設定を読み、Bonjour の走査を起こす。
@@ -445,6 +452,7 @@ func (m *Model) Advance(now time.Time) {
 	m.takeNetLoad()
 	m.takeObserve()
 	m.takeBG()
+	m.takeSpeed()
 	m.takeWired()
 	m.refreshWired()
 	m.settleProgress(true)
@@ -475,7 +483,7 @@ func (m *Model) Changed() <-chan struct{} {
 // この Mac のネットワークを裏で読んでいる間も Busy (読み終わりを Advance で取り込むため)。
 func (m *Model) Busy() bool {
 	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && m.su.ch != nil) || len(m.pending) > 0 || m.awaitingUnconf() ||
-		len(m.bg) > 0 || m.wiredWait > 0
+		len(m.bg) > 0 || m.wiredWait > 0 || m.speedRun != nil
 }
 
 // OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定) が開いているか (glogx は横断キーも渡す)。
@@ -499,7 +507,7 @@ func (m *Model) Binds(key string) bool {
 	if m.OwnsKeys() {
 		return true
 	}
-	return slices.Contains([]string{"s", "y", "Y", "o", "O", "m", "u", "e", "c", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
+	return slices.Contains([]string{"s", "y", "Y", "o", "O", "m", "u", "e", "c", "t", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
 		listnav.MotionOf(key) != listnav.None
 }
 
@@ -592,6 +600,7 @@ func (m *Model) Close() {
 	m.setupExec = nil
 	m.sc = scList
 	m.stopNetLoad()
+	m.stopSpeed() // 閉じた板の裏で帯域を使い続けない
 	if m.scan != nil {
 		m.scan.Close()
 		m.scan = nil
@@ -1014,11 +1023,15 @@ func (m *Model) HandleInput(key, text string) Action {
 			m.copyAs(shellLine(a.exec.Argv), "実行するコマンド (全文)")
 			return None
 		}
-		if a != nil && a.auto && key == "enter" {
-			return None // 自動で出した板は y でだけ実行する (板は閉じない)
+		if a != nil && (a.auto || a.strict) && key == "enter" {
+			return None // 自動で出した板・帯域を使う板は y でだけ実行する (板は閉じない)
 		}
 		m.ov, m.ask = ovNone, nil
-		if a != nil && confirm.IsYes(key) {
+		yes := confirm.IsYes(key)
+		if a != nil && a.strict {
+			yes = key == "y" // 帯域を使う板は y だけ (Y は一覧では ssh のコピーで指が慣れている)。他のキーは取り消し
+		}
+		if a != nil && yes {
 			if a.exec != nil {
 				if m.su == nil { // 初期設定の画面の外で手順を起こさない (相手の名前の無い手順は、未確認の印も確認待ちも立たない。敵対レビュー)
 					m.note("初期設定の画面が閉じている (開き直して x)", false)
@@ -1100,10 +1113,10 @@ func move(cur *int, n int, key string, rows int) bool {
 
 // needsNet は、この Mac のネットワークを読めるまで断るキー (最下行の案内もこの間は出さない)。enter (初期設定) も入れる: 読む前に開くと
 // 相手のメイン IP が分からず、宛先が台帳の有線の IP のまま閉じるまで固まった
-var needsNet = []string{"s", "Y", "y", "O", "o", "c", "space", "enter"}
+var needsNet = []string{"s", "Y", "y", "O", "o", "c", "t", "space", "enter"}
 
 // rowKeys はカーソルの行の Mac に効くキー (見ていた Mac が一覧から消えた・タブに行が無いときは断る)。c はこの Mac の IP のコピーで行に効かない
-var rowKeys = []string{"s", "Y", "y", "O", "o", "space", "enter", "m", "u"}
+var rowKeys = []string{"s", "Y", "y", "O", "o", "t", "space", "enter", "m", "u"}
 
 func (m *Model) keyList(key string) Action {
 	// 繋ぐ・コピー・登録は、この Mac のネットワーク (どの I/F が有線か・この Mac の IP) を読み終えてから。読み込み中に受けると
@@ -1209,6 +1222,8 @@ func (m *Model) keyList(key string) Action {
 		return Exec
 	case "m": // 名前の変更 (treefiler と同じ動詞)
 		m.openEdit(r, aliasEdit, r.alias)
+	case "t": // 通信速度を測る (speed.go。確認の板を通す)
+		m.askSpeed(r)
 	case "e": // メッセージ一覧 (msglog.go)
 		m.openLog()
 	case "u": // ssh のユーザー名 (台帳の user)。欄は台帳の値で開く (推測の名前で開くと、そのまま enter で台帳に固定された。敵対レビュー)
