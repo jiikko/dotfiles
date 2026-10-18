@@ -60,7 +60,7 @@ knownHost の終了コードの読み分け / controlPath の長さ / dump の�
   - 受容: 端末の Ctrl-C で ssh の子が先に死に、合図が届く前に observe が返ると 0 になりうる (ssh を別のプロセスグループに置けば消えるが、setup.ObservePeer の
     起こし方を変えるので範囲外)。テストで固定していない
 - [x] 4 .pub の無い / 空の Mac: 秘密鍵から `ssh-keygen -y` で作り直してから ssh-copy-id へ渡す (一時ファイルから移し、失敗で空の .pub を残さない)。
-  ssh-copy-id が .pub を開けないときに失敗することは今も未実測
+  2026-10-19 実測 (OpenSSH_10.3p1・/usr/bin/ssh-copy-id・`-n -f -i k nobody@127.0.0.1`): .pub が無いと rc=1 `ERROR: failed to open ID file 'k.pub'`、空の .pub だと rc=1 `ERROR: No identities found`。どちらも接続の前に失敗するので、直す前は鍵を置く手順が毎回落ちていた (直しは必要だった)
 - 変異で red を確かめたもの: commit message に列挙 (欠けた start / 案内の takeover 2 か所 / 中断 / .pub の作り直し・一時ファイル・空の .pub / 外すのを rm -rf に戻す)
 - 敵対的レビュー (opus): 1 周目 P1 無し・P2 1 件 (上の rm -rf の途中) を直し、P3 のテストの穴 3 件を塞いだ。2 周目 (drop と dump の先読み): P1・P2 無し。
   P3 (受容): 同じ pid の `.gone.<pid>/staticip.lock` まで残っていると mv が黙って失敗し、その回の引き取りは「別の切り替えが先に始まった」で抜ける
@@ -68,5 +68,6 @@ knownHost の終了コードの読み分け / controlPath の長さ / dump の�
   drop がそれを外す (改名の前から在る窓)
 - 未解明: 2026-10-18 に setup のテストを 1 回だけ赤で見た (出力を削って読んだのでどのテストかは残っていない)。その後 lock のテストだけ 8 回・setup 全体を 5 回
   (`go test -count=5 ./setup`、160 秒) 回して全部緑。**trigger**: 次に setup のテストが赤くなったら、出力を全部ファイルに残して落ちたテスト名を記録する
+  - 2026-10-19 再試行: `go test -count=10 -v ./setup` (34 本 × 10、311 秒) と、全 package を並行させた `go test -count=3 -v ./...` (setup 93 秒) の両方で全部緑。出力は全部ファイルに残して読んだ。再現の試行はここで打ち切り、上の trigger を待つ
 
 - 2026-10-18 反証レビュー (sonnet・読み取り専用): P1 なし・「既に直っている / 起きない」なし。記述の不正確さ (P3) を訂正した
