@@ -45,3 +45,11 @@ epic 618 の子を順に進めたセッションの振り返り。619 (土台) /
 - 項目 6: 却下 — 記憶に追記した (serial-agents-only)
 
 > この retro は反証レビューを通していない (振り返りと提案だけで、実装の主張を含まないため)。
+
+## 決着 (2026-10-18)
+
+- [x] 項目 1 → `_claude/rules/measure-external-cli-streams-separately.md` の「外部ソースは仮説」の項に追記
+- [x] 項目 3 → `_claude/rules/perf-claims-need-measurement.md` の「改善の判定は」の次に追記
+- [x] 項目 4 → `_claude/rules-checklists/adversarial-review-own-safeguards.md` の §8 に追記 (§8 は 2026-10-12 に rules から checklists へ切り出されていた)
+- 項目 2・5・6 は起票時に却下済み
+
