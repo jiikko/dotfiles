@@ -36,7 +36,6 @@ func benchBrowse(tb testing.TB, n, w, h int) *browseModel {
 // ansi へ委ねていた (今は受理する。acceptCJK)。日本語の行は ASCII の行と通る経路 (NEON が効かない 3 byte の字の
 // スカラの処理) が違うので、ASCII 固定のフィクスチャだけで測ると効果を見誤る
 // (この repo 自身の commit message は日本語なので、実運用は ja=true 側に近い)。
-// 2026-08-14 の敵対的レビュー R2 の指摘で追加。
 func benchBrowseSubjects(tb testing.TB, n, w, h int, ja bool) *browseModel {
 	tb.Helper()
 	commits := make([]gitdata.Commit, n)
@@ -116,7 +115,7 @@ func BenchmarkViewWithPanel(b *testing.B) {
 	}
 }
 
-// BenchmarkViewWithPanel の日本語 subject 対照 (issue 055)。CI の予算には入れない
+// BenchmarkViewWithPanel の日本語 subject 対照。CI の予算には入れない
 // (回帰検出は ASCII 側で足り、対照はローカルで「効果が内容に依存するか」を見る用)。
 // 入れるなら budgets と bench_glogx.sh の両方を触ること。
 func BenchmarkViewWithPanelJA(b *testing.B) {
@@ -157,10 +156,10 @@ func benchStatusBrowse(tb testing.TB, files, w, h int) *browseModel {
 	return m
 }
 
-// benchIssuesBrowse は issues viewer を開いた定常状態のモデル (issue 062)。
+// benchIssuesBrowse は issues viewer を開いた定常状態のモデル。
 // viewLines が窓ごと差し替える全画面ビューは status と issues の 2 つで、issues 側は
 // これまでどのベンチ・確保ゲートの視界にも入っていなかった。fixture は実ファイルを
-// 一度だけ scan して組む (View 中はファイルを読まない。issue 052 のテストがその不変条件を守る)。
+// 一度だけ scan して組む (View 中はファイルを読まない)。
 func benchIssuesBrowse(tb testing.TB, files, w, h int) *browseModel {
 	tb.Helper()
 	m := benchBrowse(tb, 20, w, h)
@@ -205,7 +204,7 @@ func BenchmarkIssuesViewFrame2000(b *testing.B) {
 	}
 }
 
-// 選択中のフレーム。issue 268 の退行は**ここが一番悪かった** (選択 20 行 / 2000 件で 439µs =
+// 選択中のフレーム。退行は**ここが一番悪くなる** (選択 20 行 / 2000 件で 439µs =
 // 選択なしの 7 倍)。選択なしのベンチだけでは 2.6 倍にしか見えず、修正の効果も過小に見える。
 //
 // 🚨 `v := &m.issuesOv` のポインタ受けにすること。値で受けると marked の設定が本体へ届かず、

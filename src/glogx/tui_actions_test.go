@@ -171,7 +171,7 @@ func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
 	if !m.toast.Visible() || m.toast.OK() || !strings.Contains(m.toast.Text(), "更新に失敗") || !strings.Contains(m.toast.Text(), "タイムアウト") {
 		t.Fatalf("失敗理由が error トーストに出ない: visible=%v ok=%v text=%q", m.toast.Visible(), m.toast.OK(), m.toast.Text())
 	}
-	// 失敗文言は w でコピーできるよう lastWarning にも残る (showWarning 経由。issue 026 の規律)
+	// 失敗文言は w でコピーできるよう lastWarning にも残る (showWarning 経由)
 	if !strings.Contains(m.lastWarning, "更新に失敗") {
 		t.Fatalf("更新失敗が lastWarning に残らない (w でコピーできない): %q", m.lastWarning)
 	}
@@ -214,7 +214,7 @@ func TestActionModalStopCancelsRunningPush(t *testing.T) {
 	}
 }
 
-// push 演出の時間経過が app.TimeNow シームを通ることを固定時計で pin する (issue 038)。上の
+// push 演出の時間経過が app.TimeNow シームを通ることを固定時計で pin する。上の
 // TestBrowsePushFlow は pushAnimNext のゼロ値書き換えで段を進めるため、実装が time.Now 直呼びに
 // 退行しても green のままになる。こちらは時計を凍結し「実時間がいくら経っても、凍結時計が
 // pushAnimStep 進むまでは段が進まない」ことでシーム経由を守る。
@@ -735,8 +735,8 @@ func TestBrowseRerunFailureShowsToast(t *testing.T) {
 	}
 }
 
-// version 通知 (issue 024) は先行トーストを潰さない。🚨 以前は「1 枠を譲り合う」ために専用
-// タイマーで遅延再送していたが、トーストが積めるようになったので両方が同時に出るのが正しい姿
+// version 通知 は先行トーストを潰さない。🚨 「1 枠を譲り合う」ための専用
+// タイマーでの遅延再送はしない。トーストが積めるので両方が同時に出るのが正しい姿
 // (ユーザー要望 2026-07-31)。
 func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 	// 空きトースト → version 通知 (成功色) を表示
@@ -770,7 +770,7 @@ func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 	}
 }
 
-// w で直近の警告をクリップボードへコピー (issue 026)。核となる不変条件は「トーストが消えた後も
+// w で直近の警告をクリップボードへコピー。核となる不変条件は「トーストが消えた後も
 // コピーできる」= lastWarning が表示ライフサイクルと独立に保持されること。
 func TestBrowseCopyLastWarning(t *testing.T) {
 	var copied string
@@ -829,7 +829,7 @@ func TestBrowseSuccessToastDoesNotClobberLastWarning(t *testing.T) {
 	}
 }
 
-// ghErr (CI 取得失敗の sticky 警告) は lastWarning に無くても w で fallback コピーできる (issue 026 #1)。
+// ghErr (CI 取得失敗の sticky 警告) は lastWarning に無くても w で fallback コピーできる。
 func TestBrowseCopyWarningGhErrFallback(t *testing.T) {
 	copied := testenv.StubClipboard(t)
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
@@ -840,7 +840,7 @@ func TestBrowseCopyWarningGhErrFallback(t *testing.T) {
 	}
 }
 
-// 取得失敗系エラー (showWarning 経由) は表示トーストが消えても w でコピーできる (issue 026 #1)。
+// 取得失敗系エラー (showWarning 経由) は表示トーストが消えても w でコピーできる。
 func TestBrowseCopyWarningFromShowWarning(t *testing.T) {
 	copied := testenv.StubClipboard(t)
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
@@ -865,7 +865,7 @@ func newFramedBrowse(t *testing.T, w, h int) *browseModel {
 	return m
 }
 
-// 最外周フレーム有効時の寸法と View 出力 (issue 025)。
+// 最外周フレーム有効時の寸法と View 出力。
 func TestBrowseFrameView(t *testing.T) {
 	m := newFramedBrowse(t, 64, 16)
 	if !m.frameActive() {
@@ -896,7 +896,7 @@ func TestBrowseFrameView(t *testing.T) {
 	}
 }
 
-// --no-frame / 極小端末では自動 OFF し従来寸法へフォールバック (issue 025)。
+// --no-frame / 極小端末では自動 OFF し従来寸法へフォールバック。
 func TestBrowseFrameAutoOffAndNoFrame(t *testing.T) {
 	// --no-frame 相当 (showFrame=false): 従来寸法
 	m := newFramedBrowse(t, 64, 16)
@@ -1147,7 +1147,7 @@ func TestBrowseUpdateRunsWhenNotConfirmedLatest(t *testing.T) {
 }
 
 // 比較不能なバージョン形式 (pre-release 等) が latest キャッシュに入っても「最新扱い」で
-// update を塞がない (敵対レビュー指摘 2026-08-12: versionLess の比較不能=false を否定すると
+// update を塞がない (2026-08-12: versionLess の比較不能=false を否定すると
 // 「比較できない = skip」に反転する罠の回帰テスト)。
 func TestBrowseUpdateRunsWhenVersionsIncomparable(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
@@ -1289,7 +1289,7 @@ func TestStatusViewerOwnsKeysBlocksRemoteHijack(t *testing.T) {
 // モーダルを重ねると、描かれるのは update なのにキーを受け取るのは確認になり、
 // 「完了まで終了できません」の画面で Enter が git push を起動した (audit 2026-08-20 で実測)。
 // update を譲る形で塞いだので、その不変条件を固定する。
-// 本来の直し方は「描画とキー判定を同一の状態値から導出する」(issue 071 に残置)。
+// 本来の直し方は「描画とキー判定を同一の状態値から導出する」(未対応)。
 func TestUpdateDoesNotOverlapConfirmModal(t *testing.T) {
 	for _, st := range []struct {
 		name  string
@@ -1367,7 +1367,7 @@ func TestQuitBlockedWhileAnyUpdateRuns(t *testing.T) {
 }
 
 // update 走行中の C / X が全画面 viewer のキー語彙へ漏れないこと。
-// red team 2026-08-21 の実測: C の判定窓で s を押して status viewer を開き、その上に update
+// 2026-08-21 の実測: C の判定窓で s を押して status viewer を開き、その上に update
 // モーダルが乗った状態で X を押すと statusView の「変更の破棄」確認が立ち、update 完了後の
 // y で git restore が着弾した (作業ツリーの喪失)。TestStatusViewerOwnsKeysBlocksRemoteHijack
 // の鏡像 (方向が「外→viewer」ではなく「actModal→viewer」)。
@@ -1407,7 +1407,7 @@ func TestUpdateKeysDoNotLeakIntoStatusViewer(t *testing.T) {
 }
 
 // 「すでに latest」の早期リターンが、走行中の update を降ろさないこと。
-// red team 2026-08-21 の実測: C 連打で判定 Cmd が並走すると、その早期リターンが走行中の
+// 2026-08-21 の実測: C 連打で判定 Cmd が並走すると、その早期リターンが走行中の
 // claude を集合から外し、モーダルが閉じて Ctrl-C が通り、runClaudeUpdate が 2 本走った。
 func TestEarlyLatestJudgmentDoesNotDropRunningUpdate(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
@@ -1441,7 +1441,7 @@ func TestEarlyLatestJudgmentDoesNotDropRunningUpdate(t *testing.T) {
 
 // 「すでに latest」の判定が返す updateMsg に early 印が付くこと。
 // 🚨 印が付かないと、走行中の update を降ろさないためのガード (early && isUpdating) が
-// 常に偽になり、red team 2026-08-21 が実測した「走行中の自己更新が孤児化 / 二重起動」が
+// 常に偽になり、2026-08-21 に実測した「走行中の自己更新が孤児化 / 二重起動」が
 // 黙って復活する (ガード側のテストだけでは印の脱落を検出できなかった)。
 func TestLatestJudgmentMarksMsgEarly(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
@@ -1494,7 +1494,7 @@ func TestLatestJudgmentMarksMsgEarly(t *testing.T) {
 }
 
 // browseModel のキー経路でも並走できること (actionModal 単体の検査だけでは、tui.go の C / X
-// 分岐に 1 行足すだけで機能が無音で死ぬ。red team 2026-08-21 が実測)。
+// 分岐に 1 行足すだけで機能が無音で死ぬ。2026-08-21 に実測)。
 // ヒント行が走行中の CLI 名を出すことも併せて固定する (codex 単独更新中に「claude update...」と
 // 嘘をつく退行を捕まえる)。
 func TestBrowseParallelUpdateThroughKeys(t *testing.T) {
@@ -1523,7 +1523,7 @@ func TestBrowseParallelUpdateThroughKeys(t *testing.T) {
 
 // push が stall したときの脱出口 (Ctrl-C 2 回) が、update と共存しても消えないこと。
 // 🚨 現状は updateBeginMsg の譲りで共存しないが、その if 1 つに依存させない。
-// red team 2026-08-21 が「共存させると anyUpdating 分岐が常時ブロックに化け、push の
+// 2026-08-21 に「共存させると anyUpdating 分岐が常時ブロックに化け、push の
 // 強制終了が不可能になる」ことを状態直組みで実測した。
 func TestForceQuitSurvivesUpdateCoexistence(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)

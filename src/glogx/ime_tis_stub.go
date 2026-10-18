@@ -3,7 +3,7 @@
 // TIS 直接呼び出し (ime_tis_darwin.go) の非 darwin / 非 cgo スタブ。常に「取れない/失敗」を
 // 返し、IME 自動切替を安全に無効化する。
 //
-// 🚨 **repo は macOS 専用だが、このファイルは消せない** (issue 316 で判定)。
+// 🚨 **repo は macOS 専用だが、このファイルは消せない**。
 // 相方の `ime_tis_darwin.go` は `//go:build darwin && cgo` なので、**`CGO_ENABLED=0` で
 // ビルドすると黙って除外され**、ここが無いと未定義シンボルになる
 // (`.github/workflows/_go-project.yml` が `CGO_ENABLED: "1"` を明示しているのはこの罠のため。

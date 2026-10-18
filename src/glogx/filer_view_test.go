@@ -94,7 +94,7 @@ func TestFilerNoticeGoesToToast(t *testing.T) {
 	}
 }
 
-// 裏で終わった処理の知らせ (explode の完了) は、次のキーを待たずに tick で toast に出る (issue 731。Advance の中で積まれる知らせ)。
+// 裏で終わった処理の知らせ (explode の完了) は、次のキーを待たずに tick で toast に出る (Advance の中で積まれる知らせ)。
 func TestFilerBackgroundNoticeShowsOnTick(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
@@ -136,7 +136,7 @@ func TestFilerAnimationAdvancesOnTickAndStops(t *testing.T) {
 	}
 }
 
-// 閉じて開き直すと、閉じている間に増えたファイルが出る (レビューの指摘 2026-10-08)。
+// 閉じて開き直すと、閉じている間に増えたファイルが出る。
 func TestFilerReopenRefreshes(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
@@ -262,7 +262,7 @@ func TestFilerShellExecAndRefresh(t *testing.T) {
 	}
 }
 
-// 検索の入力中は F / U もそのまま文字として入り、同じ字の連打 (ss) も飲まれない (レビューの指摘 2026-10-09)。
+// 検索の入力中は F / U もそのまま文字として入り、同じ字の連打 (ss) も飲まれない。
 func TestFilerSearchTakesFUAndRepeats(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
@@ -278,7 +278,7 @@ func TestFilerSearchTakesFUAndRepeats(t *testing.T) {
 	}
 }
 
-// キー一覧 (?) を開いている間の F / i / U は一覧を閉じるだけ (glogx が閉じる・横断する・利用枠を開くと、一覧が開いたまま残る。issue 694 の 6)。
+// キー一覧 (?) を開いている間の F / i / U は一覧を閉じるだけ (glogx が閉じる・横断する・利用枠を開くと、一覧が開いたまま残る)。
 func TestFilerHelpSwallowsCrossKeys(t *testing.T) {
 	for _, k := range []string{"F", "i", "U"} { // C は一覧が閉じていても filer の木のキーなので、ここでは判別にならない
 		m := newFilerBrowse(t)
@@ -292,7 +292,7 @@ func TestFilerHelpSwallowsCrossKeys(t *testing.T) {
 	}
 }
 
-// ファイル操作の層 (a / m の名前の入力・d の確認の板) を開いている間、横断キー (R / D / i) は filer が取る (issue 722)。
+// ファイル操作の層 (a / m の名前の入力・d の確認の板) を開いている間、横断キー (R / D / i) は filer が取る。
 // 確認の板は y / Enter 以外で閉じるだけ、名前の入力欄は字として受ける。
 func TestFilerFileOpLayersTakeCrossKeys(t *testing.T) {
 	for _, k := range []string{"R", "D", "i"} {

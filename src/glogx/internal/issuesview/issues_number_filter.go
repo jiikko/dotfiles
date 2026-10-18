@@ -47,7 +47,7 @@ func (f *issuesNumberFilter) start() {
 // confirm は入力を終えて絞り込みを残す。🚨 空の検索語では呼ばない: 空の絞り込みは「全部見えている」=
 // 絞り込んでいないのと同じで、ヘッダーだけが残ると嘘になる。空なら絞り込みごとやめるが、その判断は
 // issuesView.confirmNumberFilter が持つ (やめるときは group の展開も一緒に戻す必要があり、それは
-// この型の外の状態なので。issue 752: 以前はここで clear に落ち、group の後始末を通らない経路があった)。
+// この型の外の状態なので。ここで clear に落とすと group の後始末を通らない経路ができる)。
 func (f *issuesNumberFilter) confirm() { f.typing = false }
 
 // clear は絞り込みを捨てる。
@@ -70,9 +70,9 @@ func (f *issuesNumberFilter) edit(key string) bool {
 
 // paste は貼り付けた文字列のうち、最初に出てくる数字の並びだけを検索語に入れる (検索語が変わったら true)。
 // 「#415」「issue 415」や、glogx の Y でコピーした参照 (「issue 415 タイトル (issues/415-x.md)」) を貼っても 415 で引ける。
-// 数字を全部つなげると参照の番号とパスの番号が重なって 415415 になり、何にも一致しない (敵対レビューが実測)。
+// 数字を全部つなげると参照の番号とパスの番号が重なって 415415 になり、何にも一致しない。
 //
-// 先に termsafe で無害化する (エスケープの中の数字を拾わない: "\x1b[31m415" を 31 と読む。敵対レビューが実測)。
+// 先に termsafe で無害化する (エスケープの中の数字を拾わない: "\x1b[31m415" を 31 と読む)。
 // 最初の数字の並びが番号でない貼り付け (先頭に日付がある等) は外れるが、Y の参照は「issue N …」で始まるので起きない。
 func (f *issuesNumberFilter) paste(s string) bool {
 	s = term.SanitizePlainLine(s)

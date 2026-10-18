@@ -15,12 +15,12 @@ import (
 // (テストの cwd = package のディレクトリから .git を持つ親を探す)。
 //
 // 🚨 期待値を production の repoRoot() から作らないこと: 同じ関数を両側で呼ぶ自己言及になり、
-// repoRoot() が壊れても緑のままになる (issue 082)。git に問い合わせる repoRoot() とは
+// repoRoot() が壊れても緑のままになる。git に問い合わせる repoRoot() とは
 // 実装経路が違うので、片方の誤りをもう片方が捕まえられる。
 func repoRootOracle(t *testing.T) string {
 	t.Helper()
 	// 🚨 起点は runtime.Caller ではなく cwd (go test は package のディレクトリで走る)。-trimpath でビルドすると
-	// runtime.Caller のファイル名が module 相対 (glogx/open_workspace_test.go) になり、親を辿れない (issue 816)。
+	// runtime.Caller のファイル名が module 相対 (glogx/open_workspace_test.go) になり、親を辿れない。
 	// 呼ぶ前に t.Chdir しないこと (cwd を起点にしているので、別の場所から辿ってしまう)
 	file, err := os.Getwd()
 	if err != nil {
@@ -51,7 +51,7 @@ func realPath(t *testing.T, path string) string {
 // e: nvim が repo root (取れなければ ".") を cwd に `nvim .` で起動される
 func TestOpenEditorAtRoot(t *testing.T) {
 	// 🚨 期待値は処理の前に固定する。オラクルは cwd を起点に辿るので、処理の後に作ると「処理が cwd を別の checkout へ
-	// 移してから repoRoot() を呼ぶ」退行で期待値も一緒に動き、通ってしまう (codex の敵対的レビュー 2026-10-17)
+	// 移してから repoRoot() を呼ぶ」退行で期待値も一緒に動き、通ってしまう (2026-10-17)
 	want := repoRootOracle(t)
 	cwdBefore, err := os.Getwd()
 	if err != nil {
@@ -111,7 +111,7 @@ func TestRepoRootReturnsGitToplevelAndFallsBack(t *testing.T) {
 }
 
 // TestRepoRootFailureSemanticsAreCallerSpecific は「解決できなかったとき何を使うか」が
-// 呼び出し側ごとに違うことを固定する (issue 320)。
+// 呼び出し側ごとに違うことを固定する。
 //
 // 🚨 これは**わざと違う 3 値**で、揃えてはいけない:
 //

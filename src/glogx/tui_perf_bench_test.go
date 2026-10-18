@@ -32,7 +32,7 @@ func BenchmarkCursorMoveView(b *testing.B) {
 	}
 }
 
-// BenchmarkCursorMoveView の日本語 subject 対照 (issue 055)。CI の予算には入れない
+// BenchmarkCursorMoveView の日本語 subject 対照。CI の予算には入れない
 // (BenchmarkViewSteadyJA と同じ位置づけ。入れるなら budgets と bench_glogx.sh の両方を触ること)。
 func BenchmarkCursorMoveViewJA(b *testing.B) {
 	m := benchBrowseSubjects(b, 20, 120, 40, true)
@@ -45,7 +45,7 @@ func BenchmarkCursorMoveViewJA(b *testing.B) {
 	}
 }
 
-// BenchmarkCursorMoveViewJA を、bubbletea のレンダラと同じ手順 (tuikit/framebench) で端末への差分まで通して測る (issue 607)。
+// BenchmarkCursorMoveViewJA を、bubbletea のレンダラと同じ手順 (tuikit/framebench) で端末への差分まで通して測る。
 // View の文字列を作るだけのベンチは、レンダラの分 (セルへの書き直しと差分。View より重い) を測らない。termB/op は 1 コマで端末へ出たバイト。
 func BenchmarkCursorMoveViewJARendered(b *testing.B) {
 	m := benchBrowseSubjects(b, 20, 120, 40, true)
@@ -65,7 +65,7 @@ func BenchmarkCursorMoveViewJARendered(b *testing.B) {
 }
 
 // benchDiffBrowse は diff オーバーレイ表示中のモデル (ASCII/JA 対照の共有 fixture)。
-// diff 本文は ASCII のまま (実運用でも diff 本文は ASCII が多い。issue 055)。
+// diff 本文は ASCII のまま (実運用でも diff 本文は ASCII が多い)。
 // ja が変えるのはオーバーレイの下に見えている一覧行の subject。
 func benchDiffBrowse(tb testing.TB, ja bool) *browseModel {
 	tb.Helper()
@@ -90,7 +90,7 @@ func BenchmarkViewWithDiff(b *testing.B) {
 	}
 }
 
-// BenchmarkViewWithDiff の日本語 subject 対照 (issue 055)。CI の予算には入れない (同上)。
+// BenchmarkViewWithDiff の日本語 subject 対照。CI の予算には入れない (同上)。
 func BenchmarkViewWithDiffJA(b *testing.B) {
 	m := benchDiffBrowse(b, true)
 	b.ReportAllocs()
@@ -99,7 +99,7 @@ func BenchmarkViewWithDiffJA(b *testing.B) {
 	}
 }
 
-// BenchmarkViewWithDiffJA のレンダラ込み (issue 607)。同じ画面を描き続けると bubbletea は描かない (viewEquals) ので、
+// BenchmarkViewWithDiffJA のレンダラ込み。同じ画面を描き続けると bubbletea は描かない (viewEquals) ので、
 // 1 コマごとに framebench を作り直して毎回描かせる (diff を開いた直後の 1 コマの重さ)。
 func BenchmarkViewWithDiffJARendered(b *testing.B) {
 	m := benchDiffBrowse(b, true)

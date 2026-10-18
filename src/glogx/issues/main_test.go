@@ -11,7 +11,7 @@ import (
 	"subproc"
 )
 
-// TestMain は「glogx が支持しない幅 env」でテストを走らせない (issue 054)。
+// TestMain は「glogx が支持しない幅 env」でテストを走らせない。
 //
 // RUNEWIDTH_EASTASIAN が真だと x/ansi は罫線 ─ や … を幅 2 として数えるため、markdown の
 // 罫線・表の桁揃えが要求幅を超え、幅の不変条件テストが「行 25 が幅を超えた (w=38)」の形で
@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	widthenv.ExitIfUnsupported()
-	// 後始末を下の RemoveAll だけに預けない理由は tui_helpers_test.go の TestMain と同じ (issue 305)。
+	// 後始末を下の RemoveAll だけに預けない理由は tui_helpers_test.go の TestMain と同じ。
 	dir, swept, cleanup, err := testtmp.Setup("glogx-issues")
 	if err != nil {
 		panic(err)

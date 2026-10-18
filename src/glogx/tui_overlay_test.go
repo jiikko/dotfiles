@@ -344,7 +344,7 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	}
 	// 半ページ移動は glide (internal/term/scroll_glide.go) で数フレームかけて着地する。🚨 ここで手で
 	// advanceGlide を呼ぶ前に「キー処理が tick を返している」ことを必ず確かめる: 手で進める
-	// だけのテストは、tick を張り忘れて実機で永久に固まるバグ (敵対的レビュー P1) を隠す。
+	// だけのテストは、tick を張り忘れて実機で永久に固まるバグ を隠す。
 	// 🚨 cmd の nil 判定では足りない: maybeTick は single-flight で、既にチェーンが生きていれば
 	// nil を返す。不変条件は「glide 中は tick チェーンが生きている (m.ticking)」。
 	if m.handleKey(" "); m.diffOv.Fixture().Pager().Animating() && !m.ticking {
@@ -750,9 +750,9 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 		t.Fatalf("viewer 表示中の C が update を始めない / viewer を閉じた (cmd=%v visible=%v)", cmd != nil, m.issuesOv.Visible())
 	}
 	// 🚨 U (usage) だけは素通りではなく viewer の上でも効く (ユーザー要望 2026-08-01)。
-	// 以前は「全画面 viewer の下では描かれないのに取得だけ走る」ため弾いていたので、
-	// 開けるようにした今は「本当に画面へ出ること」まで見る (出ないなら弾いていた頃と同じ、
-	// 見えない層へ状態を書く経路に戻る)。
+	// 「全画面 viewer の下では描かれないのに取得だけ走る」形にしないため、
+	// 「本当に画面へ出ること」まで見る (出ないなら、
+	// 見えない層へ状態を書く経路になる)。
 	m.usageOv.Snap = &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 42}}}
 	m.usageOv.Visible = false
 	m.handleKey("U")
@@ -809,7 +809,7 @@ func TestIssuesViewerHintIsNotPrefixed(t *testing.T) {
 	if strings.Contains(hint, "CI 状態を取得中") || strings.Contains(hint, "🚨") {
 		t.Fatalf("viewer の hint に前置が入った: %q", hint)
 	}
-	// 🚨 末尾は "q: 終了" (q/esc は glogx ごと終了する。一覧へ戻るのは i)。issue 121
+	// 🚨 末尾は "q: 終了" (q/esc は glogx ごと終了する。一覧へ戻るのは i)。
 	if !strings.Contains(hint, "q: 終了") {
 		t.Fatalf("viewer の hint の末尾が切れている: %q", hint)
 	}
@@ -982,7 +982,7 @@ func TestViewerCrossSwitching(t *testing.T) {
 
 // 起動時 restore が返る前に type-ahead で status viewer が開いていたら復元を捨てる
 // (両 viewer 同時 shown だと「見えている status」と「キーを受ける issues」が食い違う。
-// 敵対レビューで再現 2026-08-06)。
+// 2026-08-06 に再現)。
 func TestIssuesRestoreDroppedWhenStatusOpen(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.handleKey("s")
@@ -1196,14 +1196,14 @@ func TestIssuesViewerCopyFailureToast(t *testing.T) {
 	if !m.toast.Visible() || m.toast.OK() {
 		t.Fatalf("失敗が失敗色のトーストになっていない: visible=%v ok=%v", m.toast.Visible(), m.toast.OK())
 	}
-	// クリップボード失敗は lastWarning を汚さない (showWarning の doc の 3 分類。issue 663: 以前は
-	// viewer 経由だけ上書きし、直前のエラーを w でコピーできなくしていた)
+	// クリップボード失敗は lastWarning を汚さない (showWarning の doc の 3 分類。viewer 経由だけ
+	// 上書きすると、直前のエラーを w でコピーできなくなる)
 	if m.lastWarning != "pull に失敗: rejected" {
 		t.Errorf("コピー失敗が直前の警告を上書きした: %q", m.lastWarning)
 	}
 }
 
-// viewer の断りの文 (末尾で J など) も lastWarning を汚さない (issue 663)。エラー詳細を含む
+// viewer の断りの文 (末尾で J など) も lastWarning を汚さない。エラー詳細を含む
 // 通知 (app.NoticeError) だけが積まれる。
 func TestIssuesViewerRefusalKeepsLastWarning(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
@@ -1290,8 +1290,8 @@ func TestBrowseDiffNeighborStartsFromShownSHA(t *testing.T) {
 	}
 }
 
-// issue 417: パネルの y (focus 中の job の URL をコピー) が、外部 CI が設定した url を生のまま
-// クリップボードへ入れていた。detailsOf を通らずに組んだ CheckDetail でも漏れないことを見る。
+// パネルの y (focus 中の job の URL をコピー) は、外部 CI が設定した url を生のまま
+// クリップボードへ入れない。detailsOf を通らずに組んだ CheckDetail でも漏れないことを見る。
 func TestBrowseCopyFocusURLSanitizes(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.statuses = statusesFor(m, gitdata.StateFailure)

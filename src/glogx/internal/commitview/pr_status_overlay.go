@@ -6,7 +6,7 @@ import (
 	"glogx/internal/term"
 )
 
-// prStatusOverlay は PR 状態ポップアップ (P キー, issue 021) の状態と描画。コミットに紐づく
+// prStatusOverlay は PR 状態ポップアップ (P キー) の状態と描画。コミットに紐づく
 // PR の「マージできるか」(draft / レビュー / conflict) をブラウザを開かずに確認する。
 // diffOverlay と同型: 対象 sha を所有し、open は toggle、取得結果はセッション内キャッシュ。
 // CI 行はコミット側の statuses が出典なので、boxLines へ整形済みの 1 行 (ciLine) を注入する

@@ -13,8 +13,8 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
-// 半ページ移動 (Space / ctrl+d) が 4 面すべてで glide に載る (ユーザー要望 2026-07-31 の回帰)。
-// 以前は j/k の 1 行移動だけがアニメで、半ページは snap していた。
+// 半ページ移動 (Space / ctrl+d) が 4 面すべてで glide に載る (ユーザー要望 2026-07-31)。
+// 半ページだけ snap させない (j/k の 1 行移動だけがアニメだと体験が割れる)。
 func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 	t.Run("コミット一覧 (ctrl+d)", func(t *testing.T) {
 		m := newTestBrowse(t, 30, map[string]gitdata.CIState{}, nil)
@@ -70,7 +70,7 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 }
 
 // glide を立てたキー経路は必ず tick を返す (張り忘れると advanceGlide を呼ぶ者がいなくなり、
-// 表示がスクロール前の位置で固まって「キーが効かない」ように見える。敵対的レビュー P1 の回帰)。
+// 表示がスクロール前の位置で固まって「キーが効かない」ように見える)。
 func TestGlideKeyPathsScheduleTick(t *testing.T) {
 	t.Run("diff pager", func(t *testing.T) {
 		m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
@@ -106,7 +106,7 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 }
 
 // resize は glide を持つ面すべて (一覧・diff・issues の本文とカーソル・status の pager) で捨てる (幅で行数が変わり着地点が古くなるため)。
-// issues の一覧は glide を持たない (issue 031)。
+// issues の一覧は glide を持たない。
 func TestResizeStopsAllGlides(t *testing.T) {
 	m := newTestBrowse(t, 10, map[string]gitdata.CIState{}, nil)
 	m.glide.Start(0, 10, term.ScrollAnimFrames)

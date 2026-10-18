@@ -28,7 +28,7 @@ func statusRowsFixture(t *testing.T, files int) *statusview.StatusView {
 	return v
 }
 
-// フレームの確保**バイト数**がファイル数に比例しないこと (issue 048 の主張)。
+// フレームの確保**バイト数**がファイル数に比例しないこと。
 //
 // 🚨 `AllocsPerRun` (確保の**回数**) では測れない。この最適化が削るのは「1 本の大きな
 // スライス」なので、回数の差は最適化の前後どちらも +5 で動かない — 実際 R1 レビューが

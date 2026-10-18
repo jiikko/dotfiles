@@ -917,7 +917,7 @@ func TestStatusTrailingNulIsNotCountedAsSkipped(t *testing.T) {
 }
 
 // 全行が幅に収まる不変条件を width 1 から全数で掃く (issues 側の
-// TestIssuesViewLinesAlwaysExactlyPageRows と対。issue 053: 掃き始めが広い幅だけだと、
+// TestIssuesViewLinesAlwaysExactlyPageRows と対。掃き始めが広い幅だけだと、
 // 極小幅でしか出ない枠越え (term.ClipToWidth の width<=0 素通し・scrollbarColumn の床上げ) が
 // 眠る)。
 func TestStatusViewLinesFitWidthDownToOne(t *testing.T) {
@@ -942,14 +942,14 @@ func TestStatusViewLinesFitWidthDownToOne(t *testing.T) {
 	}
 }
 
-// 明示的な再読込 (r) はプレビューのキャッシュも捨てる (issue 114)。
+// 明示的な再読込 (r) はプレビューのキャッシュも捨てる。
 //
 // キー (section+XY+path) は内容を一意に決めないので、同じ ` M` のまま中身だけ変わる
 // 「保存し直し」では receive の changed 判定を通り抜ける。自動更新での据え置きは意図的だが、
 // r まで据え置くと「再読込したのに編集前の diff が出続ける」になる (silent)。
 func TestStatusReloadKeyDropsPreviewCache(t *testing.T) {
 	// 🚨 2 行以上の fixture にすること。1 行だと `len(entries) != 0` では
-	//   「全部捨てる」と「カーソル行だけ捨てる」を区別できない (敵対的レビューで実測)
+	//   「全部捨てる」と「カーソル行だけ捨てる」を区別できない
 	stubWorktreeStatus(t, statusRec(" M a.go", " M b.go"), nil)
 	v := NewStatusView()
 	v.closeAnimOff = true
@@ -982,7 +982,7 @@ func TestStatusReloadKeyDropsPreviewCache(t *testing.T) {
 	}
 }
 
-// r と閉じで **reset() でなく clearEntries()** を使うこと (issue 114)。
+// r と閉じで **reset() でなく clearEntries()** を使うこと。
 //
 // reset() は取得中の札まで降ろすので、走行中の取得と、直後に張り直した予約が
 // **同じキーを二重に取りに行く** (lineCache.clearEntries の doc が名指しで禁じている形)。
@@ -1001,7 +1001,7 @@ func TestStatusReloadKeepsInFlightMark(t *testing.T) {
 	}
 }
 
-// 無効化 (閉じ) を跨いで着地した取得が、古い内容を復活させない (issue 114 の敵対的レビュー)。
+// 無効化 (閉じ) を跨いで着地した取得が、古い内容を復活させない。
 //
 // statusPreviewMsg は 4 兄弟で唯一 gen を持っておらず、閉じた瞬間に飛んでいた取得が
 // clearEntries の**後**に着地してキャッシュを復活させていた。復活すると begin() に弾かれ、
@@ -1054,7 +1054,7 @@ func TestStatusLatePreviewAfterReloadIsDropped(t *testing.T) {
 	}
 }
 
-// viewer を閉じるとプレビューのキャッシュを捨てる (issue 114)。
+// viewer を閉じるとプレビューのキャッシュを捨てる。
 //
 // 閉じているあいだに外部編集されても XY が動かなければキーが一致するので、捨てないと
 // **開き直しても編集前の diff が出る**。しかも finishClose は clearBusy しか呼んでおらず、
@@ -1090,7 +1090,7 @@ func TestStatusCloseDropsPreviewCache(t *testing.T) {
 
 // R は ratelimit ダッシュボードへ横断する (i と対。ユーザー要望 2026-09-01)。viewer は閉じ、
 // 実際に開くのは browseModel (takeWantCross)。
-// 🚨 hint の案内は**広い端末でだけ**出る (issue 155 で幅に応じて落とすようにしたため。popup の
+// 🚨 hint の案内は**広い端末でだけ**出る (幅に応じて落とすため。popup の
 // 実幅では優先度の低い R は落ちる)。狭い幅での正本は --help / README。
 func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
@@ -1111,8 +1111,8 @@ func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 	}
 }
 
-// hint は与えられた幅に必ず収まる。🚨 issues viewer と同じ検査を status にも置く (issue 155:
-// 片方だけ無検査だったので、キーを足すたびに末尾が黙って削られていた)。
+// hint は与えられた幅に必ず収まる。🚨 issues viewer と同じ検査を status にも置く (片方だけ無検査だと、
+// キーを足すたびに末尾が黙って削られる)。
 //
 // 🚨 幅を 1 点だけ見ない。popup の実幅 (84) は代表値でしかなく、端末は任意の幅を取る。
 func TestStatusViewHintFitsWidth(t *testing.T) {
@@ -1134,8 +1134,8 @@ func TestStatusViewHintFitsWidth(t *testing.T) {
 	}
 }
 
-// 狭い端末でも「抜ける手段」は必ず案内する。🚨 ここが issue 155 の実害:
-// 末尾から切る実装では、並びの最後にある s/q が幅に関係なく最初に消えていた。
+// 狭い端末でも「抜ける手段」は必ず案内する。🚨 ここが実害になる:
+// 末尾から切る実装では、並びの最後にある s/q が幅に関係なく最初に消える。
 func TestStatusViewHintKeepsExitKeys(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 	for _, w := range []int{40, 60, testenv.PopupWidth, 120} {
@@ -1202,7 +1202,7 @@ func TestStatusPagerNeighborKeysSwapFile(t *testing.T) {
 	}
 }
 
-// hint の語が動作と一致すること (issue 121)。
+// hint の語が動作と一致すること。
 //
 // 一覧モードの q は **glogx ごと終了**する (ユーザー要望 2026-08-06。git log へは戻らない) のに、
 // hint は長らく「q: 閉じる」と出していた。README は「i/s で閉じて一覧へ戻る」「q/Esc は glogx ごと

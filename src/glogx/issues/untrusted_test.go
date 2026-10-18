@@ -20,7 +20,7 @@ const (
 	st8  = "\u009c" // 8bit ST (C1)
 )
 
-// hasTerminalControl は github.com/jiikko/dotfiles/src/termsafe/ctlprobe の薄い別名 (判定の正本はあちら。issue 285)。
+// hasTerminalControl は github.com/jiikko/dotfiles/src/termsafe/ctlprobe の薄い別名 (判定の正本はあちら)。
 func hasTerminalControl(s string) bool { return ctlprobe.HasControl(s) }
 
 // 本文・H1 の端末制御シーケンスは表示に出る前に落ちる。
@@ -72,7 +72,7 @@ func TestIssueBodyAndTitleAreSanitized(t *testing.T) {
 // 8bit の C1 制御文字 (U+009B = CSI / U+009D = OSC) も落ちる。
 //
 // 🚨 最初の実装はここが素通しだった。ESC と BEL しか見ない実装・テストの組み合わせだと
-// 「無害化している」ように見えて 8bit 版が丸ごと通る (敵対的レビュー 2026-08-05)。
+// 「無害化している」ように見えて 8bit 版が丸ごと通る。
 // git のブランチ名は ASCII 制御文字しか禁じられていないので、C1 は実際に外部から入ってくる。
 func TestIssueC1ControlCharsAreDropped(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "issues")

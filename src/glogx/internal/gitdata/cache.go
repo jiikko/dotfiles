@@ -45,7 +45,7 @@ func cacheTTL(state CIState) time.Duration {
 func (e cacheEntry) fresh(now time.Time) bool {
 	// age < 0 (FetchedAt が未来) は fresh にしない。時計を戻した / NTP の大補正 /
 	// 別マシンのキャッシュを持ってきたときに、古い CI 状態を**永久に**使い続けるのを防ぐ
-	// (issue 201。doctor 側は既に同じ規律を持っており、ここが非対称だった)。
+	// (doctor 側と同じ規律)。
 	age := now.Sub(e.FetchedAt)
 	return age >= 0 && age < cacheTTL(e.State)
 }

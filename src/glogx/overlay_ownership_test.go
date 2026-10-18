@@ -11,20 +11,19 @@ import (
 )
 
 // overlay が「自分の語彙を持っている (a)」「中断できない処理を走らせている (b)」を主張する場所は
-// 5 箇所に散っている (issue 213)。148 ④ S2 では doctor に (b) を足したとき **3 箇所を直し忘れ**、
-// 敵対的レビューが独立に同じ P1 を実測した (1 回目の Ctrl-C でアプリが落ちる / 削除中に再起動
+// 5 箇所に散っている。doctor に (b) を足したとき **3 箇所を直し忘れ**た実例がある (1 回目の Ctrl-C でアプリが落ちる / 削除中に再起動
 // ダイアログが出る / 終了で削除の ctx を切らない)。
 //
 // ここでやるのは 2 つ。
 //  1. **参加者 × 2 軸の表**を 1 箇所に置き、表の主張と実装 (browseModel の各経路) の一致を pin する
 //  2. **表に載っていない参加者が現れたら red にする** (reflect で ownsKeys の実装を数え上げる)
 //
-// 🚨 production の述語を新しく発明しない (issue 213 の判断)。`actModal.active()` /
+// 🚨 production の述語を新しく発明しない。`actModal.active()` /
 // `running()` と `doctorview の doctorDelete.active()` / `blocking()` が既に 2 軸そのもので、doc も
 // 一致テストの前例 (`TestActionModalActiveMatchesHandleKey`) も在る。ここは**参照側の
 // 網羅**だけを守る。
 //
-// 🚨 compile error にはできない (issue 213 に明記)。リストへ書き忘れても型は満たされるので、
+// 🚨 compile error にはできない。リストへ書き忘れても型は満たされるので、
 // 「書き忘れ」を捕まえるのは reflect の数え上げだけ。
 
 // overlayParticipant は 2 軸の主張。owns = (a) 自分の語彙を持ちうるか /
@@ -63,7 +62,7 @@ var overlayOwnershipTable = []overlayParticipant{
 		stoppedByCancelAll:    false,
 	},
 	{
-		// mac-lan-manager は絞り込み・別名・帯の入力欄と y/N・設定の間に語彙を持つ (issue 747)。走査 (dns-sd) は cancelAll が止める
+		// mac-lan-manager は絞り込み・別名・帯の入力欄と y/N・設定の間に語彙を持つ。走査 (dns-sd) は cancelAll が止める
 		name: "lanV", owns: true, uninterruptible: false,
 		whyNotUninterruptible: "非同期の処理は読み取りだけの Bonjour の走査 (止めても壊れない)。台帳の書き込みは Update の中で同期に終わる",
 		stoppedByCancelAll:    true,
@@ -74,7 +73,7 @@ var overlayOwnershipTable = []overlayParticipant{
 		// 走るので相を跨がない。非同期は fetchDiff (読み取り専用) だけ。
 		// **status に非同期の破壊的操作を足した瞬間に (b) 側へ移る**
 		whyNotUninterruptible: "破壊的操作は Update 内で同期に完了し、非同期は読み取り専用の fetchDiff だけ",
-		// 🚨 既知の穴 (issue 213 が記録): cancelAll は statusOv を止めていないので、
+		// 🚨 既知の穴: cancelAll は statusOv を止めていないので、
 		// fetchDiff の git diff が終了時に残りうる。ここを true にするなら stop() の実装が要る
 		stoppedByCancelAll: false,
 	},
@@ -82,7 +81,7 @@ var overlayOwnershipTable = []overlayParticipant{
 
 // 表の (a) の主張と `updateKeyReachable` の実装が一致する。
 // 🚨 **overlay の handleKey を直叩きしない**。browseModel 経由で見ないと、
-// 「経路の 1 つを直し忘れた」形は検出できない (issue 213 の発火条件)。
+// 「経路の 1 つを直し忘れた」形は検出できない。
 func TestOverlayOwnsKeysMatchesUpdateKeyReachable(t *testing.T) {
 	for _, p := range overlayOwnershipTable {
 		if !p.owns || p.name == "actModal" {
@@ -121,7 +120,7 @@ func TestOverlayUninterruptibleMatchesCtrlCAndRestartPrompt(t *testing.T) {
 	}
 }
 
-// 表に載っていない参加者が現れたら red にする (issue 213 の受け入れ条件)。
+// 表に載っていない参加者が現れたら red にする。
 //
 // 🚨 **compile error にはできない**ので、`browseModel` のフィールドを reflect で走査し、
 // `ownsKeys()` (internal/ へ出した画面は `OwnsKeys()`) を実装している型が表に在ることを要求する。非公開メソッドの interface は
@@ -157,7 +156,7 @@ func TestOverlayOwnershipTableCoversAllParticipants(t *testing.T) {
 }
 
 // (b) を持たない参加者は**理由が書かれている**こと。「壊れないから」は理由にしない
-// (issue 213: status は「Update を跨ぐ相にならない」が理由で、非同期の破壊的操作を足した
+// (status は「Update を跨ぐ相にならない」が理由で、非同期の破壊的操作を足した
 // 瞬間に (b) 側へ移る)。
 func TestOverlayNonUninterruptibleHasReason(t *testing.T) {
 	for _, p := range overlayOwnershipTable {
@@ -246,11 +245,11 @@ func isQuitCmd(cmd tea.Cmd) bool {
 // **ポインタ / スライス / interface のフィールドを素通りする** (実測 2026-09-03:
 // `*fooView` のフィールドは false、`[]fooView` も false)。既存の値フィールドで
 // 件数 > 0 になるので「判定不能」ガードも鳴らず、**次の overlay をポインタで持たせた瞬間に
-// 静かに無検査になる** (敵対的レビューの P2)。ポインタ / スライスは要素型まで開いて見る。
+// 静かに無検査になる**。ポインタ / スライスは要素型まで開いて見る。
 //
 // 🚨 **非公開の ownsKeys() と公開の OwnsKeys() の両方を数える**。internal/ の package へ出した画面
 // (internal/doctorview の DoctorView など) は main の非公開 interface を満たせないので、公開名の OwnsKeys() を持つ。
-// 片方だけを見ると、出した画面がこの走査から黙って外れる (issue 742 の移設で実際に外れかけた)。
+// 片方だけを見ると、出した画面がこの走査から黙って外れる (画面の移設で実際に外れかけた)。
 func ownsKeysFieldNames(t reflect.Type) []string {
 	type ownsKeyser interface{ ownsKeys() bool }
 	type exportedOwnsKeyser interface{ OwnsKeys() bool }

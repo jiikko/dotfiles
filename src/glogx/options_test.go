@@ -145,7 +145,7 @@ func TestUsageHasNoVS16(t *testing.T) {
 	}
 }
 
-// LogQuery は git log の取得が読む 5 つ (MaxCount / Stat / Patch / Revs / Paths) を写す (issue 817 の G-1 で取得の層へ渡す型を分けた)。
+// LogQuery は git log の取得が読む 5 つ (MaxCount / Stat / Patch / Revs / Paths) を写す 。
 func TestOptionsLogQueryCarriesFetchFields(t *testing.T) {
 	o := &Options{MaxCount: 7, Stat: true, Patch: true, Revs: []string{"HEAD"}, Paths: []string{"a.go"}, Oneline: true, NoFrame: true}
 	want := gitdata.LogQuery{MaxCount: 7, Stat: true, Patch: true, Revs: []string{"HEAD"}, Paths: []string{"a.go"}}

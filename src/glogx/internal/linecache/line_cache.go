@@ -1,5 +1,5 @@
 // Package linecache は「キー → 表示行」のメモリ内キャッシュと取得の単発化 (diff / job 詳細ログ / status のプレビューが共有する)。
-// main と画面のパッケージ (internal/statusview) の両方が使うので、他に依存しない小さなパッケージに置く (issue 817)。
+// main と画面のパッケージ (internal/statusview) の両方が使うので、他に依存しない小さなパッケージに置く。
 package linecache
 
 // Cache は「キー → 表示行」のメモリ内キャッシュと、その取得の単発化 (single-flight) を
@@ -24,7 +24,7 @@ package linecache
 // statusView.preview は **キー (section+XY+path) が内容を一意に決めない** —
 // 同じ ` M` のまま中身だけ変わる保存し直しでキーが動かない。キーに内容の指紋 (mtime+size 等) を
 // 混ぜる案は採らなかった: previewKey は描画経路でも呼ばれるので毎フレーム syscall になる。
-// 代わりに statusView 側が **r / 閉じ** の 2 契機で clearEntries する (issue 114)。
+// 代わりに statusView 側が **r / 閉じ** の 2 契機で clearEntries する。
 // 自動更新 (1.5 秒ポーリング) でも `receive` が clearEntries を呼ぶが、それは
 // **rows が動いたとき (section/XY/path の変化) だけ**で、上に書いた「同じ ` M` のまま中身だけ
 // 変わる保存し直し」では発火しない。そこを据え置くのは意図的
@@ -43,7 +43,7 @@ type Cache struct {
 //
 // オンディスクの CI キャッシュには maxCacheEntries + TTL prune があるのに対し、メモリ内は
 // reloadAfterPull の reset() 以外に縮む契機がなく、pull を挟まない長時間セッションで閲覧した
-// SHA/job のぶんだけ無制限に育っていた (issue 029 P2)。diff は 1 エントリ最大 maxDiffLines
+// SHA/job のぶんだけ無制限に育っていた。diff は 1 エントリ最大 maxDiffLines
 // (5000) 行なので、50 エントリでも高々数十 MB に収まる。
 const Limit = 50
 

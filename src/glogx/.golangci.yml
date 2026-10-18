@@ -11,7 +11,7 @@ version: "2"
 # 書く。書き込み自体は temp+rename ではなく最終名への直接 write で、安全性の根拠は原子性ではなく
 # 内容アドレス) ので、外しても結果の正しさには影響しない。root の Makefile (run_go_projects) が 7 プロジェクトを並列に
 # 回すため、全プロジェクトでこれを true にする (1 つでも false が残ると、その 1 つが他の
-# 6 つの起動タイミング次第で落ちる)。issue 258
+# 6 つの起動タイミング次第で落ちる)。
 run:
   allow-parallel-runners: true
 
@@ -52,7 +52,7 @@ linters:
       threshold: 120
     unparam:
       # 🚨 既定 (false) では package main 以外の公開関数を検査しない。internal/ へ出した画面・土台は
-      # main から呼ぶために公開名になるので、既定のままだと移設で未使用引数の検査から黙って外れる (issue 742)
+      # main から呼ぶために公開名になるので、既定のままだと移設で未使用引数の検査から黙って外れる
       check-exported: true
     exhaustive:
       # default 付き switch は「残りは default で受ける」という意図表明なので網羅を要求しない。
@@ -66,13 +66,13 @@ linters:
         - pattern: ^fmt\.Print(f|ln)?$
           msg: stdout への直接出力は main.go に限定する (TUI 層は tea.Msg 経由で描画)
         # tui.go の時刻はテスト差し替え用シーム (internal/app の var TimeNow) 経由で取る規律。push 演出 6 箇所が
-        # これを迂回して time.Now/Since を直呼びしていた退行 (issue 038) の再発防止。シーム定義
+        # これを迂回して time.Now/Since を直呼びしていた退行 の再発防止。シーム定義
         # 自体 (var TimeNow = time.Now。internal/app/clock.go) は tui.go の外なので対象外。tui.go 以外の
         # 正当な time.Now は下の exclusions (path-except) で許可する。
         - pattern: ^time\.(Now|Since)$
           msg: tui.go の時刻は app.TimeNow シーム経由で取る (テストで固定するため。issue 038)
         # 折り返しは termwidth.Wrap / WordWrap を通す。x/ansi の Hardwrap / Wrap はキーキャップで幅を超える行を返し、
-        # Wrap は書記素も割る (issue 590)。字面で見るので、別名の import・変数経由の呼び出しは検出しない
+        # Wrap は書記素も割る。字面で見るので、別名の import・変数経由の呼び出しは検出しない
         - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
           msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
     depguard:
@@ -80,7 +80,7 @@ linters:
         width-single-source:
           # 幅計算の唯一の出典は termwidth.Of (= ansi.StringWidth。main では term.DispWidth の別名)。runewidth は
           # East Asian ambiguous (罫線・ブロック・…) を locale 依存で 2 桁と数えるため、
-          # 混在すると枠計算とテストのアサートが実行環境依存でずれる (issue 027: LANG=ja_JP で
+          # 混在すると枠計算とテストのアサートが実行環境依存でずれる (LANG=ja_JP で
           # テスト 12 件が落ちていた)。production/テストとも import を禁止して構造的に防ぐ。
           files:
             - "**/*.go"
@@ -88,8 +88,8 @@ linters:
             - pkg: github.com/mattn/go-runewidth
               desc: 幅は termwidth.Of (ansi.StringWidth) で測る (locale 非依存。main では term.DispWidth 別名)
         # uniseg は本体から一切使わない。**幅だけでなく分割も** x/ansi に一本化したため
-        # (termwidth.FirstCluster。issue 124)。以前は「分割にだけ使う」として render.go /
-        # issues/wrap.go を除外していたが、分割器が 2 本ある限り列不変条件は閉じなかった
+        # (termwidth.FirstCluster)。「分割にだけ使う」として render.go /
+        # issues/wrap.go を除外しない。除外すると、分割器が 2 本ある限り列不変条件は閉じない
         # (uniseg=Unicode 15 / x/ansi=16 の版差で 2-rune クラスタの走査に違反 744 件)。
         # import 別名を使った持ち込みもここで止まる。シンボル名の走査は
         # width_test.go:TestNoSecondWidthEngine が担当 (tuikit も走査範囲。own_sources_test.go)。両輪。
@@ -101,14 +101,14 @@ linters:
             - "!**/width_test.go"
             # width-probe は「端末がどの幅モデルと一致するか」を測る道具で、3 モデル
             # (ansi.StringWidth / ansi.StringWidthWc / uniseg.StringWidth) を並べるのが仕事。
-            # 本体からは参照しない (README の tools/ の項)。issue 124
+            # 本体からは参照しない (README の tools/ の項)。
             - "!**/tools/width-probe/main.go"
           deny:
             - pkg: github.com/rivo/uniseg
               desc: 分割も幅も termwidth に一本化した (termwidth.FirstCluster / term.DispWidth)。uniseg は使わない (issue 124)
         test-support-only-in-tests:
           # doctortest / testenv はテストが共有する部品 (testing を import する)。本番のコードから import すると
-          # テスト用の fake と testing が glogx のバイナリに入る (issue 742 / 817)
+          # テスト用の fake と testing が glogx のバイナリに入る
           files:
             - "**/*.go"
             - "!**/*_test.go"
@@ -192,7 +192,7 @@ issues:
   # 戻す) のとき 3 件しか出ず、直しては再実行を繰り返すことになる (実測: 20 箇所の退行で
   # 報告 3 件 → max-same-issues:0 で 20 件)。
   # 🚨 これは false green ではない (除外は上限の**前**に適用されるので make lint は赤のまま
-  # 落ちる。実験で確認済み)。直すのは報告の不完全さだけ。issue 118
+  # 落ちる。実験で確認済み)。直すのは報告の不完全さだけ。
   max-same-issues: 0
   max-issues-per-linter: 0
 

@@ -23,8 +23,8 @@ var bytesRead atomic.Int64
 
 // BytesReadForTest は issue ファイルから読んだ累計バイト数を返す (テスト専用の観測点)。
 //
-// 「一覧の生成 (Scan + 全件 LoadMeta) は全文を読まない」(issue 050) は表示に差が出ない
-// 不変条件で、時間で測ると flaky、内容で測ると vacuous になる (issue 052)。読んだバイト数
+// 「一覧の生成 (Scan + 全件 LoadMeta) は全文を読まない」 は表示に差が出ない
+// 不変条件で、時間で測ると flaky、内容で測ると vacuous になる。読んだバイト数
 // だけが安定した外部観測点なので、テストは前後の差分で「全文より小さい」を assert する。
 // production からは読まないこと (数える以外の責務を足さない)。
 func BytesReadForTest() int64 { return bytesRead.Load() }
@@ -75,10 +75,8 @@ const (
 	// 違うため: pending は自分の判断で `issues/` へ戻して着手する (凍結)、waiting は
 	// 事象が向こうから来るまで動かしようがない (再現待ち・観測待ち・外部イベント待ち)。
 	//
-	// 起源: obaket issue 742 (drop したファイルが読めない件)。段階 1 / 1b の実装と観測ログは
-	// 入れて push 済みで、残るのは「次に同じ失敗が出たときのログ 1 行」を待つことだけだった。
-	// 実装が入っている以上 pending (凍結) ではなく、かといって open に置くと「今やれること」の
-	// 一覧に作業待ちとして並び続ける。同じ状態の issue は起票時点で obaket に 3 件あった (742 / 543 / 546)。
+	// 実装が入っているのに次の観測を待つだけの issue は pending (凍結) ではなく、かといって open に置くと
+	// 「今やれること」の一覧に作業待ちとして並び続ける。同じ状態の issue は起票時点で obaket に 3 件あった。
 	//
 	// 🚨 docs/issues-viewer-spec.md §4 は `ongoing/` を作らない決定をしており、その理由の 1 つ
 	// 「1 ファイル 1 ディレクトリでは表せない (pending の 2 件は着手済み・一部完了・trigger 待ちを
@@ -149,7 +147,7 @@ var statusDirs = map[string]Status{
 
 // IsStatusDir は issue dir 直下のサブディレクトリ名が状態ディレクトリ (statusDirs) か。
 // 走査 (scanDir) と監視 (glogx の issuesWatchDirs) が同じ表を見るための口。監視側に名前を
-// 写すと、空の状態ディレクトリへの最初の md を取りこぼす (issue 665)。
+// 写すと、空の状態ディレクトリへの最初の md を取りこぼす。
 func IsStatusDir(name string) bool {
 	_, ok := StatusOfDir(name)
 	return ok
@@ -172,8 +170,7 @@ const NextDirName = "next"
 //
 // 🚨 group 内の done / pending を global の `issues/done/` へ出さないのは、出した瞬間に
 // **パスから epic 所属が消える**ため (状態の正本はパス)。所属が消えると「この epic は何件中
-// 何件終わったか」を viewer が answers できず、epic が残タスクの減っていくだけの箱になる
-// (issue 291、2026-09-06)。
+// 何件終わったか」を viewer が answers できず、epic が残タスクの減っていくだけの箱になる。
 const EpicDirName = "epic"
 
 // EpicChildStatus は group (`epic/<name>/`) 直下のサブディレクトリ名を状態へ写す。
@@ -235,8 +232,8 @@ type Issue struct {
 }
 
 // EpicGroupKey は issue が epic group の子として親行へ畳まれるときの group の同一性キーを返す。
-// 「epic の group として扱うか」の判定の唯一の出典 (issue 752: viewer と issues の 9 か所が
-// `GroupKind == GroupEpic` (に `GroupKey != ""` が付いたり付かなかったり) を手で書いていた)。
+// 「epic の group として扱うか」の判定の唯一の出典 (viewer と issues で
+// `GroupKind == GroupEpic` (に `GroupKey != ""` が付いたり付かなかったり) を手で書かない)。
 // Scan は GroupEpic の issue に必ず GroupKey を付けるので、空の key は手組みの Issue だけ。
 func (iss *Issue) EpicGroupKey() (string, bool) {
 	if iss.GroupKind != GroupEpic || iss.GroupKey == "" {
@@ -283,7 +280,7 @@ func Scan(dirs []string) (issues []*Issue, warnings []string) {
 }
 
 // readDirWarn は dir の中身を読む。読めなかったとき (無い場合を除く) は warnings に積む: 黙って空にすると
-// 「そのフォルダの issue が全部消えた」と「空」が見分けられず、前回の一覧を置き換える (issue 698 の 2)。
+// 「そのフォルダの issue が全部消えた」と「空」が見分けられず、前回の一覧を置き換える。
 func readDirWarn(dir string, warnings *[]string) ([]os.DirEntry, bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -396,7 +393,7 @@ func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 			// 🚨 EpicChildStatus が受けない名前 (closed / completed …) でも中の md は読む。
 			// 状態には写さず迷子 (Unknown) として見せる — 黙って捨てると、置き場所を間違えた
 			// issue が viewer から消えて誰も気づけない。global の statusDirs は closed 等の
-			// 綴りを受けるので、group 内でも同じ綴りを使う人が必ず出る (issue 291)
+			// 綴りを受けるので、group 内でも同じ綴りを使う人が必ず出る
 			status, known := EpicChildStatus(f.Name())
 			childFiles, ok := readDirWarn(filepath.Join(groupKey, f.Name()), &warnings)
 			if !ok {
@@ -413,7 +410,7 @@ func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 				iss.GroupKey = groupKey
 				if known {
 					// 状態ディレクトリ (next / done / pending) の子は group の一員のまま。
-					// 状態だけが変わる (issue 291)
+					// 状態だけが変わる
 					iss.Status, iss.Group, iss.GroupKind = status, e.Name(), GroupEpic
 				} else {
 					iss.Status, iss.Group, iss.GroupKind = StatusUnknown,
@@ -433,7 +430,7 @@ func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 //
 // 🚨 判定を GroupKind で書かない。group 内の予約外ディレクトリの子 (迷子、GroupUnknown) も
 // GroupKey を持っており、GroupKind で見ると宛先が issue ルートに落ちて epic の外へ運び出される
-// (2026-09-06 に実害。以前は述語が 3 通りに書かれていた: issue 665)。
+// (2026-09-06 に実害。述語を 3 通りに書き分けない)。
 func (iss *Issue) ContainerDir() string {
 	if iss.GroupKey != "" {
 		return iss.GroupKey
@@ -507,7 +504,7 @@ func sortIssues(issues []*Issue) {
 
 // OrderLess は一覧の並び順の唯一の規則: 番号の大きい順、番号ありが先、同順位はキーの昇順。
 // viewer が group の親行を混ぜて並べ直すときもこれを使う (規則を写すと、group の有無で
-// タブごとに並びが変わる。issue 665)。
+// タブごとに並びが変わる)。
 func OrderLess(an int, aok bool, akey string, bn int, bok bool, bkey string) bool {
 	switch {
 	case aok && bok && an != bn:
@@ -620,11 +617,11 @@ func (iss *Issue) StatusLabel() string {
 const loadMetaMaxLine = 1024 * 1024
 
 // isFrontMatterOpen / isFrontMatterClose は front matter の境界の判定の唯一の出典 (LoadMeta と
-// addBanner が共有する。issue 748: addBanner だけが完全一致で比べ、`...` の閉じや末尾の空白で
-// バナーを front matter の前に入れていた)。開きはファイルの 1 行目だけ、閉じは開きの後の最初の行。
+// addBanner が共有する。addBanner だけが完全一致で比べると、`...` の閉じや末尾の空白で
+// バナーを front matter の前に入れる)。開きはファイルの 1 行目だけ、閉じは開きの後の最初の行。
 // tuikit/markdown の skipFrontMatter とも同じ規則 (前後の空白を無視し、閉じは --- か ...)。
 // 🚨 行の無害化 (BOM・制御文字・BiDi を落とす) もここで行う: LoadMeta は無害化した行を、addBanner は生の行を
-// 持っており、呼び手側で揃えると BOM 付きの front matter で判定が割れた (敵対レビュー 2026-10-14)。
+// 持っており、呼び手側で揃えると BOM 付きの front matter で判定が割れた。
 func isFrontMatterOpen(line string) bool { return frontMatterToken(line) == "---" }
 
 func isFrontMatterClose(line string) bool {
@@ -638,9 +635,9 @@ func frontMatterToken(line string) string { return strings.TrimSpace(termsafe.Pl
 //
 // 🚨 scanIssues が**見つかった全 issue に対して**呼ぶ (可視行だけの遅延ではない)。
 // なので「先頭数行で確定するものだけ読み、H1 を取れたら打ち切る」形を守ること。
-// 以前はチェックボックスの数も数えていて、そのために bufio.Scanner が必ず EOF まで走り、
+// チェックボックスの数をここで数えない。数えると bufio.Scanner が必ず EOF まで走り、
 // 一覧を出すたび (起動・外部編集の検知後の再スキャン) に issue 件数 x 行数ぶんの
-// 走査・無害化・正規表現マッチが走っていた。チェックボックスの計数は Body.Progress
+// 走査・無害化・正規表現マッチが走る。チェックボックスの計数は Body.Progress
 // (issues/body.go) へ移した — issue を開いたときだけ、既にメモリにある全文から数える。
 //
 // 🚨 削れるのは **CPU** で read 量ではない。sc.Buffer(64KB, 1MB) を張っているので
@@ -719,7 +716,7 @@ const maxNumberDigits = 6
 // 3 桁の "001"。
 //
 // 数えるのは `NNN-*.md` 形式 (Prefix が空) の番号だけ。接頭辞付きの形式 (Ident が "<接頭辞>-NNN") は
-// 接頭辞ごとの別の列なので、混ぜると 005 の次が接頭辞付きの 120 に引きずられて 121 になる (issue 753)。
+// 接頭辞ごとの別の列なので、混ぜると 005 の次が接頭辞付きの 120 に引きずられて 121 になる。
 // 🚨 issue ディレクトリをまたいで 1 つの最大値にするのは意図どおり: root/issues と root/<sub>/issues を
 // 1 本の連番で使う repo がある (obaket の issues/README.md「採番」節: issues と macOS/issues の 4 dir で
 // 1 本。片方だけ見て採番すると別 dir の同番号を踏む)。ディレクトリごとに独立の列を持つ repo の
@@ -893,7 +890,7 @@ func (f StatusFilter) String() string {
 //
 // 見えすぎるより見えなさすぎる方を選ぶ: a を 1 打すれば広げられるので、伏せ過ぎは回復できる。
 func ParseStatusFilter(name string) (StatusFilter, bool) {
-	// 🚨 段階を手書きで列挙しないこと (issue 115)。String() は default 無しの switch なので
+	// 🚨 段階を手書きで列挙しないこと。String() は default 無しの switch なので
 	// exhaustive linter が新しい段階を強制するが、**スライスリテラルは誰も強制しない**。
 	// 足し忘れると、保存された新段階名が ok=false で既定 (open) へ落ちて「開き直したら伏せて
 	// いたはずの段階に戻っている」になる (String() の doc が序数保存について警告しているのと同じ絵)。
@@ -917,12 +914,12 @@ func (f StatusFilter) Next() StatusFilter {
 // showsIssue はその issue を表示するか。closedGroups は「open な子が 1 件も無い group」の GroupKey 集合。
 //
 // 🚨 epic group の子 (GroupEpic) は状態フィルタの対象外で、done / pending も既定で見える
-// (issue 291、2026-09-06)。epic は「まとまった仕事の器」なので、開いたときに中身が全部
+// (2026-09-06)。epic は「まとまった仕事の器」なので、開いたときに中身が全部
 // 見えないと進捗 (何件中何件終わったか) が読めない。global 側で done を伏せる根拠 (実測で
 // done が全体の 8 割を占める repo があり open が埋もれる) は、子が数件〜十数件の epic 1 つには
 // 効かない。畳んだ親行は 1 行しか占めないので、一覧が done で埋まることもない。
 //
-// 🚨 ただし **終わった epic (open な子が 1 件も無い) はこの例外から外す** (issue 294、2026-09-06)。
+// 🚨 ただし **終わった epic (open な子が 1 件も無い) はこの例外から外す** (2026-09-06)。
 // 例外の目的は「進行中の器の進捗を読ませる」ことなので、終わった器には効かせる理由が無い。
 // 外さないと、終わった epic が既定の一覧に残り続け、しかも親行の位置は子の最大番号で決まるので
 // **番号の大きい epic ほど先頭に居座る**。done な global issue と同じく `a` を進めたときだけ出す。
@@ -966,7 +963,7 @@ func IsGroupParent(iss *Issue) bool {
 //
 // 🚨 closedGroupKeys (既定の一覧に出る子が無い) を流用しない。あちらは pending / waiting の子を
 // 「終わった」側に数えるので、親だけ done で子が pending の group を全段階で隠し、保留中の仕事が
-// 番号フィルタでしか辿れなくなる (2026-10-02 の敵対レビュー P1)。どの段階でも隠す以上、隠してよいのは
+// 番号フィルタでしか辿れなくなる。どの段階でも隠す以上、隠してよいのは
 // 残りの仕事が 1 件も無い (全員 done) group だけ。親の無い group は閉じたと宣言する手段が無いので
 // 入れない (従来どおり `a` で全部を見せる段階で出る)。迷子 (GroupUnknown) は数えない
 // (closedGroupKeys と同じ理由。迷子は単独の行として見え続ける)。
@@ -1055,7 +1052,7 @@ func (f StatusFilter) shows(s Status) bool {
 // 段階が見せているもの (○ / ○⏸ / ○⏸✓) の後ろに、**段階を迂回して見えているもの**を括弧で足す。
 // 迂回は 2 つある: epic group の子は状態フィルタの対象外 (showsIssue)、番号フィルタは
 // 状態を問わず拾う。どちらも「バッジが ○ なのに ✓ の行が並ぶ」形になり、バッジの意味
-// (どこまで見えているか) が嘘になっていた (issue 296。291 の副作用)。
+// (どこまで見えているか) が嘘になる。
 //
 // 🚨 括弧の外 (段階) と中 (迂回で見えているもの) を分けるのは、`a` を押したときの手応えを
 // 残すため。全部を混ぜて 1 列にすると、epic の子が既に ✓ を出している一覧では `a` を押しても
@@ -1080,7 +1077,7 @@ func VisibleBadges(f StatusFilter, rows []*Issue) string {
 }
 
 // badgeOrder はバッジに並べる状態とその順。どれを並べるかは段階ごとに shows で決め、ここに
-// 段階の知識を写さない (写すと waiting を足したときに shows だけ直り、バッジが黙って欠けた。issue 665)。
+// 段階の知識を写さない (写すと waiting を足したときに shows だけ直り、バッジが黙って欠ける)。
 // unknown (?) と next (▶) は段階で伏せない状態なので並べない (spec「unknown はバッジにも出さない」)。
 var badgeOrder = []Status{StatusOpen, StatusPending, StatusWaiting, StatusDone}
 

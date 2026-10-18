@@ -11,13 +11,13 @@ import (
 	"testing"
 )
 
-// `~/.cache/glog` (app.CacheBaseDir 配下) への書き込みは app.WriteAtomic を通す (issue 219 / 286)。
+// `~/.cache/glog` (app.CacheBaseDir 配下) への書き込みは app.WriteAtomic を通す。
 //
 // 素の os.WriteFile は O_TRUNC なので、書き込み中に落ちると**途中まで書けた JSON** が残り、
 // 次回起動の復元が黙って失敗する。app.WriteAtomic は temp + rename で、write / Close / rename の
 // 3 分岐すべてで temp を掃除する。
 //
-// 🚨 なぜ機械で縛るか: issue 219 は 2026-09-03 にこの規約を確立したが「ruleguard は構文しか
+// 🚨 なぜ機械で縛るか: 2026-09-03 にこの規約を確立したが「ruleguard は構文しか
 // 見ないので『どの置き場への書き込みか』を表現できない」としてゲートを見送り、**trigger を
 // 書いて閉じた**。その 1〜2 日後に doctor_resume.go (09-04) と ratelimit_resume.go (09-05) が
 // 規約の外側で生えた。trigger が発火したので、ここで機械化する。
@@ -96,7 +96,7 @@ func TestCacheWritesGoThroughWriteAtomic(t *testing.T) {
 	}
 
 	// ① パス提供関数を集める (app.CacheBaseDir / cachedir.Base を直接呼ぶもの)
-	// 🚨 app.CacheBaseDir は internal/app へ移した (issue 742)。main からは app.CacheBaseDir、app の中からは CacheBaseDir と呼ぶ
+	// 🚨 app.CacheBaseDir は internal/app へ移した。main からは app.CacheBaseDir、app の中からは CacheBaseDir と呼ぶ
 	providers := map[string]bool{"app.CacheBaseDir": true, "CacheBaseDir": true, "cachedir.Base": true, "CachePath": true}
 	for _, f := range fns {
 		if f.calls["app.CacheBaseDir"] || f.calls["CacheBaseDir"] || f.calls["cachedir.Base"] {
@@ -127,7 +127,7 @@ func TestCacheWritesGoThroughWriteAtomic(t *testing.T) {
 			filepath.ToSlash(f.path)+":"+strconv.Itoa(pos.Line)+" ("+f.decl.Name.Name+")")
 	}
 
-	// 🚨 抽出が空でも緑にならないよう下限を置く (issue 280 / 283 と同じ形)。
+	// 🚨 抽出が空でも緑にならないよう下限を置く。
 	// 2026-09-06 実測: 非テストの .go 75 件を走査し、app.CacheBaseDir 系に届く関数は 14 件。
 	if scanned < 40 {
 		t.Fatalf("走査した .go が %d 件しかない (下限 40)。WalkDir の除外が壊れている", scanned)

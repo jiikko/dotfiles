@@ -183,7 +183,7 @@ func TestPullRebaseTellsMergeInProgressBeforeDirtyTree(t *testing.T) {
 }
 
 // 本物の partial clone (clone --filter=blob:none) でも u の pull --rebase が通る。相手が変えたファイルの旧 blob は手元に無く、
-// rebase がそれを取りに行く (git に --no-lazy-fetch を付けたままだと rc=128 で落ちる。issue 739 の敵対的レビューで再現)。
+// rebase がそれを取りに行く (git に --no-lazy-fetch を付けたままだと rc=128 で落ちる)。
 func TestPullRebaseWorksInPartialClone(t *testing.T) {
 	work := pullSandbox(t)
 	base := filepath.Dir(work)

@@ -7,8 +7,7 @@ import (
 	"time"
 )
 
-// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (issue 817 で画面を移したとき、
-// 両方のテストが使っていたもの)。
+// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (両方のテストが使っていたもの)。
 
 // 記憶の置き場を隔離し、時計を固定する。
 func withFilerState(t *testing.T) time.Time {

@@ -314,7 +314,7 @@ func TestDoctorRunKeyOnWrongTabExplains(t *testing.T) {
 }
 
 // 🚨 群を畳んでも選択は消えない (選択の集計を「今出ている行」から作ると、無関係な開閉で
-// 0 件になったり戻ったりする。敵対レビュー 2 周目 P2-2)。
+// 0 件になったり戻ったりする)。
 func TestDoctorDockerSelectionSurvivesCollapse(t *testing.T) {
 	v := testView(t)
 	runCmds(t, v, v.open())
@@ -346,7 +346,7 @@ func TestDoctorDockerSelectionSurvivesCollapse(t *testing.T) {
 }
 
 // 🚨 doctor を閉じて開き直したら選択は消える (ディスク側と揃える。残すと `*` が付いたまま
-// 「x: 1 件を実行」で復帰する。敵対レビュー 2 周目 P2-3)。
+// 「x: 1 件を実行」で復帰する)。
 func TestDoctorDockerSelectionClearedOnReopen(t *testing.T) {
 	v := testView(t)
 	runCmds(t, v, v.open())

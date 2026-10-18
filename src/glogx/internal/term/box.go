@@ -28,15 +28,15 @@ func OverlayCenteredBox(window, box []string, width, page int, colored bool) []s
 // revert した (4fb36a2) が、その後影の描画がフェザー付き近黒に作り直され、ユーザー要望
 // (2026-07-29) で diff / job / PR パネルへ再導入し全ポップアップを統一した。影なしの
 // buildPanelBox 変種はこの統一で呼び出しゼロになったため削除済み (必要になったら git 履歴から
-// 復活させる)。最外周フレームは画面端の余白セルにだけ影を落としコンテンツと重ならない (issue 025)。
+// 復活させる)。最外周フレームは画面端の余白セルにだけ影を落としコンテンツと重ならない。
 // 枠線は AnsiDim (種別色で枠を染める通知の箱は github.com/jiikko/dotfiles/src/tuikit/toast が自分で組む)。
 func BuildShadowPanelBox(title string, rows []string, width int, colored bool) []string {
 	return BuildPanelBoxImpl(title, rows, width, colored, layout.PanelStyle{Border: layout.BorderLight, Color: AnsiDim})
 }
 
 // WrapWindowFrame は画面全体のコンテンツ (リスト + overlay 群を合成済みの window) を、最外周に
-// 余白を残した枠 + 右下ドロップシャドウで包み「板がターミナル地色の上に浮いている」見た目にする
-// (issue 025)。影の幾何は BuildPanelBoxImpl(shadow=true) へ完全委譲する (影の実装は 1 箇所に保つ)。
+// 余白を残した枠 + 右下ドロップシャドウで包み「板がターミナル地色の上に浮いている」見た目にする。
+// 影の幾何は BuildPanelBoxImpl(shadow=true) へ完全委譲する (影の実装は 1 箇所に保つ)。
 // 返す行数 = len(content) + 4 (上余白 + 上辺 + 下辺 + 下影)。左右余白 1 桁ずつ + 影 1 桁で、
 // footprint は termW に収まる (呼び出し側の contentWidth()/frameVOverhead と一致)。
 // 罫線は AnsiFrameBorder (scratch と同じマゼンタ) で染める。落ち影は中立 dim のまま

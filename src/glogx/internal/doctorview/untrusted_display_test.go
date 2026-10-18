@@ -17,7 +17,7 @@ import (
 )
 
 // 外部由来の文字列が「無害化を通らずに端末へ出る」sink が doctor 画面に残っていないことを、sink ごとに固定する
-// (main の untrusted_display_test.go から doctor の分を移した。issue 817)。
+// (main の untrusted_display_test.go から doctor の分を移した)。
 //
 // doctor は「走査したて (live)」と「保存から復元」の 2 経路を持つが、無害化は復元側にしか
 // 無かった。この節は **live 経路**を固定する。fixture は実際に制御文字入りのディレクトリを
@@ -157,7 +157,7 @@ func TestDoctorLiveSvcAndBrewAreSanitized(t *testing.T) {
 	}})
 	// 🚨 Warnings と Unavailable を**同時に立てない**。brewSection は Unavailable != "" で
 	// 早期 return するので、両方立てると警告に触れる row が 0 個になり、Warnings 側の
-	// 無害化を外しても緑のまま通る (敵対レビュー 2026-09-04 が実測した false green)。
+	// 無害化を外しても緑のまま通る (実測 2026-09-04した false green)。
 	v.receiveBrew(doctorBrewMsg{gen: 1, res: brewDoctorResult{
 		Warnings: []string{"Warning: 危険" + testenv.OSC52Seq + "\n2 行目は正常" + testenv.ClearSeq},
 	}})
@@ -239,8 +239,8 @@ func TestDoctorLiveSvcAndBrewAreSanitized(t *testing.T) {
 
 // assertNoControl は「フィールド名 → 値」を 1 つずつ見る。
 // 🚨 連結して 1 回で見ると、どのフィールドの無害化を外しても同じ red になり、
-// **フィールド単位の変異を区別できない** (敵対レビュー 2026-09-04 が、当初のテストで
-// 半分のフィールドが無検査だったことを実測)。
+// **フィールド単位の変異を区別できない** (実測 2026-09-04: 当初のテストは
+// 半分のフィールドが無検査だった)。
 func assertNoControl(t *testing.T, fields map[string]string) {
 	t.Helper()
 	for name, v := range fields {
@@ -290,7 +290,7 @@ func TestDoctorDeleteLogAndReportAreSanitized(t *testing.T) {
 	v.receiveDelete(doctorDeleteMsg{gen: 1, ev: doctorDeleteEvent{rep: &disk.DeleteReport{
 		HistoryPath: "/tmp/hist" + testenv.ClearSeq + ".json",
 		// HistoryError は err.Error() (= ファイルシステムのエラー文字列) がそのまま入り、
-		// 削除パネルの tail に「記録を書けませんでした: 」と続けて出る (issue 251)
+		// 削除パネルの tail に「記録を書けませんでした: 」と続けて出る
 		HistoryError: "書けません" + testenv.OSC52Seq,
 		Entries: []disk.EntryOutcome{{
 			ID: "evil", Label: "細工" + testenv.OSC52Seq, Outcome: disk.OutcomeDeleted,
@@ -391,7 +391,7 @@ func TestDoctorLiveDiskMsgSanitizesEveryDisplayedField(t *testing.T) {
 
 	// 🚨 **落とす対象が 1 件も無いケース**も見る。無害化した Items の反映を
 	// `if dropped > 0` の中でだけ行っていた実装は、上の fixture (1 件落ちる) では検出できない
-	// — 落ちた瞬間に反映されるので緑になる (敵対レビュー 2026-09-04 の P3 を、当初のテストは
+	// — 落ちた瞬間に反映されるので緑になる (実測 2026-09-04: 当初のテストは
 	// 素通りさせた)。
 	v2 := testView(t)
 	v2.shown, v2.gen = true, 1
@@ -410,7 +410,7 @@ func TestDoctorLiveDiskMsgSanitizesEveryDisplayedField(t *testing.T) {
 // 保存から復元する経路も同じ関門を通る。
 // 🚨 **Entry は復元では JSON 由来 = 攻撃者が決められる** (live ではカタログの写しなので無害)。
 // doctorRiskMark は `string(Entry.Risk)` を、行は Label / Recover をそのまま描く。
-// 🚨 svc の PlistPath は `validPlistPath` が文字種を絞らないので、以前はここだけ素通りしていた。
+// 🚨 svc の PlistPath は `validPlistPath` が文字種を絞らないので、ここだけ素通りしやすい。
 func TestDoctorSnapshotRestoreSanitizesEntryAndPlistPath(t *testing.T) {
 	v := testView(t)
 	now := time.Now()
@@ -480,8 +480,8 @@ func TestDoctorSnapshotRestoreSanitizesEntryAndPlistPath(t *testing.T) {
 // flattenDoctorRows は「1 row = 1 行」を出口 1 箇所で守る保険。
 // 🚨 **現時点で到達経路は無い** (外部由来の値は 1 行の場所では PlainLine を通るため)。
 // それでも置くのは、無害化の使い分けを間違えた 1 行が入った瞬間に固定高の契約が壊れ、
-// かつ行数を数えないテストでは気づけないため (敵対レビュー 2026-09-04 が brew の
-// Unavailable でその形を実測した)。到達経路が無い以上、検査はこの直接テストが持つ。
+// かつ行数を数えないテストでは気づけないため (実測 2026-09-04: brew の
+// Unavailable でその形が出た)。到達経路が無い以上、検査はこの直接テストが持つ。
 func TestFlattenDoctorRowsEnforcesSingleLine(t *testing.T) {
 	rows := flattenDoctorRows([]doctorRow{{
 		text: "親\n偽の行", copyText: "コピーは\n複数行が正常",

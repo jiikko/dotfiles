@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// 開いた repo の .git/config の fsmonitor・textconv を、glogx の git (一覧・d の diff・staged の diff) で走らせない (issue 692)。
+// 開いた repo の .git/config の fsmonitor・textconv を、glogx の git (一覧・d の diff・staged の diff) で走らせない。
 func TestGlogxGitDoesNotRunRepoConfigCommands(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git が無い")

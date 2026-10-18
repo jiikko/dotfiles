@@ -11,7 +11,7 @@ import (
 	"glogx/internal/term"
 )
 
-// doctor の SSD タブ (issue 578)。内蔵 SSD の健康状態を**読むだけ**で、修復・sudo・APFS の検査は
+// doctor の SSD タブ。内蔵 SSD の健康状態を**読むだけ**で、修復・sudo・APFS の検査は
 // 実行しない (APFS は手で叩くコマンドを y でコピーさせるだけ)。判定は doctor/ssd が正本。
 //
 // 🚨 **結果はキャッシュに載せない** (Docker と同じ)。diskutil 0.07 秒 / smartctl 0.02 秒 (実測
@@ -89,7 +89,7 @@ func ssdWord(s ssd.Status) string {
 }
 
 // ssdTabSummary はタブ行の印。**SSD の行の印 (ssdMark) の先頭と同じにする** — タブ行の 🚨 を
-// 追って開いた先に 🚨 の行が無い、を作らない (敵対レビュー 2 周目)。どれも 2 桁なので、狭い幅で
+// 追って開いた先に 🚨 の行が無い、を作らない。どれも 2 桁なので、狭い幅で
 // タブ行の末尾が切られても要約が「注…」のように欠けない。
 // 🚨 そのため判定不能は ❓ で、ほかのタブの「診断できず」(🚨) とは印が違う (SSD の 🚨 は注意)
 func ssdTabSummary(s ssd.Status) string {

@@ -14,7 +14,7 @@ func rows(spec ...string) []doctorRow {
 	return out
 }
 
-// 選択は index ではなく key で覚える: 上に行が挿入されても同じ行に留まる (issue 210)。
+// 選択は index ではなく key で覚える: 上に行が挿入されても同じ行に留まる。
 func TestRowCursorKeepsRowWhenRowsInsertedAbove(t *testing.T) {
 	var c rowCursor
 	before := rows("", "a", "b")
@@ -140,7 +140,7 @@ func TestRowCursorResetDropsEverything(t *testing.T) {
 
 // 🚨 行そのものが 0 件のフレームでも key を捨てない (上と同じ規律を全経路で守る)。
 // production では buildRows が必ず区切り行を積むので到達しないが、ここだけ規律を外すと、
-// 次に 0 行のフレームを作った人が index 保持へ黙って退行する (issue 242 P3-5)。
+// 次に 0 行のフレームを作った人が index 保持へ黙って退行する。
 func TestRowCursorKeepsKeyWhenNoRowsAtAll(t *testing.T) {
 	var c rowCursor
 	full := rows("", "a", "b")

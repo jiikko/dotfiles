@@ -11,8 +11,7 @@ import (
 	"time"
 )
 
-// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (issue 817 で画面を移したとき、
-// 両方のテストが使っていたもの)。
+// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (両方のテストが使っていたもの)。
 
 // fakeLanScan は Bonjour の走査の偽物 (dns-sd を起こさない)。closed で「止めたか」を見る。
 type fakeLanScan struct {

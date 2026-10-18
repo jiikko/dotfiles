@@ -2,7 +2,7 @@ package term
 
 import "testing"
 
-// IsCopySafe の境界: タブだけ通し、貼ったときに端末やシェルが解釈するものは断る (issue 753)。
+// IsCopySafe の境界: タブだけ通し、貼ったときに端末やシェルが解釈するものは断る。
 func TestIsCopySafe(t *testing.T) {
 	for s, want := range map[string]bool{
 		"/repo/issues/001-feat-x.md": true,

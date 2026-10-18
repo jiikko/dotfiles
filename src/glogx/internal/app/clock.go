@@ -1,6 +1,6 @@
 // Package app は glogx の画面のパッケージと main が共有する状態・道具を持つ: 現在時刻のシーム (TimeNow)・
 // 全画面ビューアの ID と横断キーの表・全画面を閉じたときの記憶 (ScreenMemory)・終了前の完了待ち (CleanupLatch)・
-// キャッシュの置き場と atomic 書き込み。main の型は import できないので、ここへ持ち込まない (issue 742)。
+// キャッシュの置き場と atomic 書き込み。main の型は import できないので、ここへ持ち込まない。
 package app
 
 import "time"

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// nextlink.go: 目印 symlink の採用条件と、claim / 解除が symlink の作成 / 削除になること (issue 263)。
+// nextlink.go: 目印 symlink の採用条件と、claim / 解除が symlink の作成 / 削除になること。
 
 func writeIssue(t *testing.T, path string) {
 	t.Helper()
@@ -263,7 +263,7 @@ func TestEpicChildClaimPlacesSymlinkInsideGroup(t *testing.T) {
 
 // 解除は「今も目印 (symlink) か」を取り直してから消す。NextLink は前回走査時の値なので、
 // git pull で next/<base> が旧運用の実ファイルに差し替わっていると、無条件の Remove は
-// issue 本体 (直下に同名が無ければ唯一のコピー) を消す (敵対レビュー 2026-09-05 P1)。
+// issue 本体 (直下に同名が無ければ唯一のコピー) を消す。
 func TestUnclaimRefusesToRemoveRegularFileAtNextLink(t *testing.T) {
 	dir := t.TempDir()
 	writeIssue(t, filepath.Join(dir, "001-feat-a.md"))
@@ -332,7 +332,7 @@ func TestScanWarnsOnNextLinkWithoutMatchingEntry(t *testing.T) {
 }
 
 // meta ファイル (README.md 等) は直下でも issue に数えないので、目印にもしない。数えると照合相手が
-// 無く「直下に同じ名前の issue が無い」という偽警告が毎スキャン出続ける (敵対レビュー 2 周目 P2-1)。
+// 無く「直下に同じ名前の issue が無い」という偽警告が毎スキャン出続ける。
 func TestNextLinkToMetaFileIsIgnoredSilently(t *testing.T) {
 	dir := t.TempDir()
 	writeIssue(t, filepath.Join(dir, "001-feat-a.md"))
@@ -348,7 +348,7 @@ func TestNextLinkToMetaFileIsIgnoredSilently(t *testing.T) {
 }
 
 // done/ pending/ へ運ぶときは目印を先に消す。残すと dangling になり、同じ base の issue が直下へ
-// 戻った瞬間に古い目印が成立して偽の claim が共有される (敵対レビュー 2 周目 P3-2)。
+// 戻った瞬間に古い目印が成立して偽の claim が共有される。
 func TestMoveToDoneRemovesNextLinkFirst(t *testing.T) {
 	dir := t.TempDir()
 	writeIssue(t, filepath.Join(dir, "001-feat-a.md"))

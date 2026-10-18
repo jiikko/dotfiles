@@ -12,7 +12,7 @@ import (
 )
 
 // 🚨 このファイルの検査のうち `v.watch.w == nil` で skip するものは**実 fsnotify との結合**を
-// 見ている (CI = ubuntu-slim では NewWatcher が通らないので走らない。issue 087)。不変条件そのものは
+// 見ている (CI = ubuntu-slim では NewWatcher が通らないので走らない)。不変条件そのものは
 // issues_watch_seam_test.go がフェイクを差して環境非依存に固定しているので、そちらを消さないこと。
 // CI でも走る組: 再 Add / イベント経路 / チェーンの積み上がり / cancelAll の Close。
 // CI では未カバーのまま (受け入れ済み): 閉じたときの closed 観測・死んだ後のポーリング縮退・世代の弾き。

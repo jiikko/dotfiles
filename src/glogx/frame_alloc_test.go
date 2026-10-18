@@ -21,7 +21,7 @@ import (
 )
 
 // reapplyAfterResetRe は置き換える前の実装 (正規表現版)。**テスト専用**で、
-// 手書き走査が旧実装と完全に同じ結果を返すことを差分で確かめるために残す。
+// 手書き走査がこの実装と完全に同じ結果を返すことを差分で確かめるために残す。
 // production から regexp を外したのは毎フレームの確保を削るためで、挙動は変えていない
 // という主張を、この 2 実装の一致で機械的に固定する。
 var reapplyAfterResetRe = regexp.MustCompile("\x1b\\[0?m")
@@ -30,8 +30,8 @@ var reapplyAfterResetRe = regexp.MustCompile("\x1b\\[0?m")
 // `"${0}" + $ をエスケープした bg` を使う。bg を置換テンプレートへ埋める形は bg 自身が
 // テンプレートとして解釈されるためで、差分 fuzz が実際に 2 通りの化け方を見つけた:
 //
-//   - bg="0" → `$00` という別の変数参照になり、旧実装が "" を返す
-//   - bg="$0" → bg 内の `$0` がマッチ全体に展開され、旧実装が "\x1b[m\x1b[m" を返す
+//   - bg="0" → `$00` という別の変数参照になり、regexp 版が "" を返す
+//   - bg="$0" → bg 内の `$0` がマッチ全体に展開され、regexp 版が "\x1b[m\x1b[m" を返す
 //
 // production の bg は必ず SGR 定数 (term.AnsiCursorBg = "\x1b[48;5;24m") で `$` も英数字始まりも
 // 含まないため、この 2 つは**実運用では起こらない**。旧挙動の忠実な参照であることは変わらず、
@@ -66,7 +66,7 @@ func TestReapplyAfterResetMatchesRegexpImpl(t *testing.T) {
 		"\x1b[m\x1b[1m\x1b[m",
 		// 🚨 入れ子の ESC。走査の刻み幅 (i += 2) が load-bearing であることを固定する。
 		// 「CSI の終端まで飛ばす」という一見自然な最適化に変えると、この入力でリセットを
-		// 取りこぼす (R1 レビューの指摘。それまでの表 22 件では 1 件も捕まえられていなかった)
+		// 取りこぼす (表の他の 22 件では 1 件も捕まえられない)
 		"\x1b[\x1b[m",
 		"\x1b[\x1b[0m",
 		"a\x1b[\x1b[m b",
@@ -104,8 +104,8 @@ func FuzzReapplyAfterReset(f *testing.F) {
 	})
 }
 
-// フレーム 1 枚の確保回数の上限。issue 047 で「1 行が 1 フレームで 4 回コピーされる」うち
-// 最外周の余白付け (旧 term.WrapWindowFrame の `" "+l`) を組み立てへ織り込み、可視行ぶんの
+// フレーム 1 枚の確保回数の上限。「1 行が 1 フレームで 4 回コピーされる」うち
+// 最外周の余白付け (term.WrapWindowFrame の `" "+l` 相当) を組み立てへ織り込み、可視行ぶんの
 // 確保を落とした。実測 178 → 135 / 40,144 → 30,745 B。内訳は **indent が 38・カーソル行の
 // regexp 撤去が 5** (片方だけ戻して実測。43 は 2 つの変更の合計であって indent 単独ではない)。
 //
@@ -117,12 +117,12 @@ func FuzzReapplyAfterReset(f *testing.F) {
 // 足すので、同じモデルを続けて測っても doctor-svc は 450〜460 と揺れた (-race なしは 15 回とも 380)。5 回の最小値を
 // 採っても 577〜583 (doctor-disk) と揺れが残り、上限を揺れの上に置くと退行を通し、下に置くと `make test` の負荷の下で
 // 偽の赤になる (doctor-svc 459 / 上限 458 で落ちた)。そこで Makefile の test-budget で -race なしでこのテストだけを
-// 回し、回数はその run でだけ判定する (手元の make test は回さず CI でだけ回す。手元の GOCACHE の増え方のため。issue 742)。バイトは -race 付きの run でだけ判定する (benchmark で 1 ケース約 1 秒かかり、
+// 回し、回数はその run でだけ判定する (手元の make test は回さず CI でだけ回す。手元の GOCACHE の増え方のため)。バイトは -race 付きの run でだけ判定する (benchmark で 1 ケース約 1 秒かかり、
 // 両方で回すと make test が 16 秒延びるため。バイトは -race でほぼ揺れない)。どちらの run かは raceEnabled (build tag)。
 // 上限は -race なしの実測 + 3 (-race なしは 3 回とも全ケースで完全に一致した)。
 // 上限を上げるときは「実測がいくらだったか」を必ずここに書き足すこと (黙って緩めない)。
 //
-// バイト側の上限を回数と**別に**持つ理由 (issue 051): `AllocsPerRun` は確保の回数しか
+// バイト側の上限を回数と**別に**持つ理由: `AllocsPerRun` は確保の回数しか
 // 数えないので、「1 回の確保が大きくなる」形の退行を捕まえられない。実際 046 では allocs が
 // 完全一致のまま B/op だけ +0.8〜1.0% 増えており、048 では回数版のガードが
 // **メモ化を丸ごと revert しても PASS** した (R1 レビューが実証)。
@@ -136,11 +136,11 @@ func FuzzReapplyAfterReset(f *testing.F) {
 // 経時比較つきで render_large_patch / model_init_200 など本テストが持たない経路も見る)。
 // 確保が増える変更を意図して入れるときは**両方**を同じ commit で更新すること。
 //
-// 🚨 この上限は `RUNEWIDTH_EASTASIAN=1` の環境では落ちる (issue 054)。実測で
+// 🚨 この上限は `RUNEWIDTH_EASTASIAN=1` の環境では落ちる。実測で
 // list が 135 回 30776 B → 322 回 41139 B になる (幅計算が変わり行の作り直しが増えるため)。
 // その環境で赤くなったら、退行ではなく env 前提の方を疑うこと。
 //
-// 🚨 **上限だけでなく「現在値」も書く** (issue 323)。上限だけだと「どれだけ悪化したら red か」が読めない。
+// 🚨 **上限だけでなく「現在値」も書く**。上限だけだと「どれだけ悪化したら red か」が読めない。
 // 2026-10-03 の実測 (darwin/arm64・GOMAXPROCS=14・120x40。回数は **-race なし**・3 回とも同じ値、バイトは -race):
 //
 //	ケース          回数の現在値  上限   バイト現在値 (-race)  上限
@@ -158,11 +158,11 @@ func FuzzReapplyAfterReset(f *testing.F) {
 //	doctor-brew     179         182    37921                38700
 //	doctor-docker   486         489    56495                57900
 //
-// doctor の 4 ケースは 2026-09-29 の SSD タブ (issue 578) でタブが 1 つ増え、-race なしで +5 (svc 375 → 380 / disk 471 → 476)。
+// doctor の 4 ケースは 2026-09-29 の SSD タブ でタブが 1 つ増え、-race なしで +5 (svc 375 → 380 / disk 471 → 476)。
 //
-// 🚨 **「どれだけ悪化したら red になるか」を実測する** (issue 323 の受け入れ条件)。doctor の `lines()` に
+// 🚨 **「どれだけ悪化したら red になるか」を実測する**。doctor の `lines()` に
 // 「表示行ごとに 1 確保」を足す変異 (太る退行の最小の形) が、doctor の 4 ケースとも red になること。
-// 2026-10-03 (上の上限で) の結果は issue 323 ではなく commit message に残した。上限を動かすときは、この変異を当て直して red を確認すること。
+// 2026-10-03 (上の上限で) の結果は commit message に残した。上限を動かすときは、この変異を当て直して red を確認すること。
 func TestFrameAllocBudget(t *testing.T) {
 	// diff overlay / job パネルを含める理由: これらは term.BuildShadowPanelBox を通る経路で、
 	// 一覧と status だけでは **その経路がテストの視界に入らない**。実際「term.BuildShadowPanelBox の
@@ -179,33 +179,33 @@ func TestFrameAllocBudget(t *testing.T) {
 		{"status-40", func(tb testing.TB) *browseModel { return benchStatusBrowse(tb, 40, 120, 40) }, 282, 44400},
 		{"diff-overlay", budgetDiffModel, 212, 49100},
 		{"job-panel", budgetPanelModel, 154, 37500},
-		// issues viewer / usage グランス / toast (issue 062)。それまで viewLines の全画面ビュー
+		// issues viewer / usage グランス / toast。それまで viewLines の全画面ビュー
 		// 2 つのうち issues 側と、起動直後の実フレーム (usage グランス表示) がどのゲートの
 		// 視界にも入っていなかった。上限の取り方と現在値は上の doc の表
 		{"issues-40", func(tb testing.TB) *browseModel { return benchIssuesBrowse(tb, 40, 120, 40) }, 213, 34900},
 		{"usage-glance", budgetUsageGlanceModel, 156, 36700},
 		{"toast-holding", budgetToastModel, 170, 38000},
 		// 全画面ビューア 4 枚のうち doctor と ratelimit は、予算の枠組み (047 / 051 / 062) より
-		// 後に足されたためどのゲートの視界にも入っていなかった (issue 275 / 270)。
+		// 後に足されたためどのゲートの視界にも入っていなかった。
 		//
-		// ratelimit-dash: メモ化前 1065 allocs / 239319 B → **メモ化後 175 / 82241** (issue 275)。
+		// ratelimit-dash: メモ化前 1065 allocs / 239319 B → **メモ化後 175 / 82241**。
 		// 🚨 時計を固定した fixture での値。実時計のままだと
 		// 測定窓が秒境界をまたいだときだけ 1 回キャッシュミスして平均が 193 まで跳ね、
-		// ~4%/run で flake した (敵対レビューが 145 窓で実測)。
+		// ~4%/run で flake した (145 窓で実測)。
 		// 上限は必ず**今の実測**へ締め直すこと — 締めずに残すと「6 倍悪化しても緑」になり、
-		// issue 269 と同じ「観測できない予算」を新設したことになる。
+		// 「観測できない予算」を新設したことになる。
 		// doctor-disk: 270 の遅延化 (畳まれた行の detail を組まない) で -race の値が 1506 → 601 に落ちたので締め直した。
-		// 締めずに残すと「2.5 倍悪化しても緑」になる (issue 269 と同じ形)。
+		// 締めずに残すと「2.5 倍悪化しても緑」になる。
 		{"ratelimit-dash", budgetRatelimitModel, 178, 84900},
-		// 🚨 issue 321 (doctorMaxMarkWidth のメモ化) の後に**下げた**上限。
+		// 🚨 doctorMaxMarkWidth のメモ化の後に**下げた**上限。
 		// バイトはメモ化前 83100〜83184 B → 後 63152〜63249 B (-race) で **-19,950 B (-24%)**。
-		// 緩いまま残すと「メモ化を revert しても緑」= 改善を守らない予算になる (issue 269 の形)。
+		// 緩いまま残すと「メモ化を revert しても緑」= 改善を守らない予算になる。
 		{"doctor-disk", budgetDoctorModel, 479, 65200},
-		// doctor の残り 3 タブ (issue 323 ②)。それまで disk だけがゲートに載っていた。
+		// doctor の残り 3 タブ (disk だけがゲートに載っていると、残りが見えない)。
 		{"doctor-svc", budgetDoctorSvcModel, 383, 67500},
 		{"doctor-brew", budgetDoctorBrewModel, 182, 38700},
 		{"doctor-docker", budgetDoctorDockerModel, 489, 57900},
-		// treefiler (F。issue 662)。格子を毎フレーム作り直していたときは 330KB/frame だった。使い回して 154 / 43167 B (-race)。
+		// treefiler (F)。格子を毎フレーム作り直していたときは 330KB/frame だった。使い回して 154 / 43167 B (-race)。
 		// 最下行に検索とキー一覧の案内 (/ find  ? keys) を足して 156 / 45601 B。案内を戻すと 43556 B に下がるのを実測した
 		// (増えたのは描く文字列そのもので、確保の無駄ではない)。! cmd / s shell の案内を足して 45861 B
 		// 158 / 46200 は動きの途中の画面の値だった (fixture が実時計で進めていて止まりきらない。budgetFilerModel の注記)。
@@ -216,7 +216,7 @@ func TestFrameAllocBudget(t *testing.T) {
 		m := c.build(t)
 		_ = m.View().Content // 遅延初期化を計測から外す
 
-		// 🚨 下界を先に見る (issue 280)。上界だけだと「何も描かないフレーム」が最良に見え、
+		// 🚨 下界を先に見る。上界だけだと「何も描かないフレーム」が最良に見え、
 		// 描画が丸ごと死んだ状態で 8 ケース全部が 0 allocs / 0 B を出して緑になる
 		// (実測: View を tea.NewView("") にする 1 行の変異で全ケース PASS)。
 		// 下界を**確保回数**で置かないのは、正当な最適化で確保が減ったときに落とさないため。
@@ -243,8 +243,8 @@ func TestFrameAllocBudget(t *testing.T) {
 }
 
 // frameAllocBytes は 1 フレームの確保バイト数を測る。`testing.AllocsPerRun` には B/op に
-// 相当する API が無いので `testing.Benchmark` の AllocedBytesPerOp を使う (issue 048 の
-// TestStatusFrameAllocBytesDoNotScaleWithFileCount と同じ形)。
+// 相当する API が無いので `testing.Benchmark` の AllocedBytesPerOp を使う
+// (TestStatusFrameAllocBytesDoNotScaleWithFileCount と同じ形)。
 //
 // 🚨 `testing.Benchmark` は同じプロセスの `-benchtime` を拾う。`go test -bench=. -benchtime=1x`
 // のように短く回すと b.N=1 の測定 (= 遅延初期化込みの 1 発目) が返り、絶対値の予算と
@@ -270,7 +270,7 @@ func frameAllocBytes(t *testing.T, build func(testing.TB) *browseModel) int64 {
 
 // budgetUsageGlanceModel は起動直後の実フレーム: newBrowseModel は usage グランスを
 // visible で起動する (tui.go の usageOverlay{visible: true}) のに、bench fixture は
-// それを消していた = アプリ起動直後のフレームがどのゲートの外だった (issue 062)。
+// それを消していた = アプリ起動直後のフレームがどのゲートの外だった。
 // データ未着 (loading) の箱を重ねた状態で測る。
 func budgetUsageGlanceModel(tb testing.TB) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
@@ -278,8 +278,8 @@ func budgetUsageGlanceModel(tb testing.TB) *browseModel {
 	return m
 }
 
-// budgetToastModel はトースト全幅表示 (holding) 中のフレーム (issue 062)。
-// entering/leaving はアニメの一過性フレームなので測らず (issue 062 の方針)、静止する
+// budgetToastModel はトースト全幅表示 (holding) 中のフレーム。
+// entering/leaving はアニメの一過性フレームなので測らず、静止する
 // holding を advance で作ってから測る。
 func budgetToastModel(tb testing.TB) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
@@ -472,12 +472,12 @@ func assertFrameDrawn(t *testing.T, name string, m *browseModel) {
 	}
 }
 
-// budgetRatelimitModel は全画面 ratelimit ダッシュボードのフレーム (issue 275)。
+// budgetRatelimitModel は全画面 ratelimit ダッシュボードのフレーム。
 func budgetRatelimitModel(tb testing.TB) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
 	m.rlDash.Fixture().SetShown(true)
 	m.usageOv.Snap = rlTestSnap()
-	// 🚨 時計を固定する (issue 275 のメモ化 + avoid-wall-clock-assertions)。
+	// 🚨 時計を固定する (メモ化 + avoid-wall-clock-assertions)。
 	// 盤のキャッシュ鍵は now.Unix() を含むので、実時計のままだと AllocsPerRun(50) の
 	// 測定窓 (-race で ~41ms) が**秒境界をまたいだときだけ 1 回ミス**し、その 1069 allocs が
 	// 50 で割られて平均に乗る (実測: 175 → 最大 193。145 窓中 5 回が上限 177 を超えた
@@ -488,10 +488,10 @@ func budgetRatelimitModel(tb testing.TB) *browseModel {
 	return m
 }
 
-// budgetDoctorModelFor は全画面 doctor の実フレーム (issue 270 / 323)。
+// budgetDoctorModelFor は全画面 doctor の実フレーム。
 //
-// 🚨 **4 タブすべてに実データを積む。** 以前は disk タブだけを測っており、
-// 残り 3 タブ (svc / brew / docker) はどの予算の視界にも入っていなかった (issue 323 ②)。
+// 🚨 **4 タブすべてに実データを積む。** disk タブだけを測ると、
+// 残り 3 タブ (svc / brew / docker) はどの予算の視界にも入らない。
 // 空の Report を渡したタブを測っても「ほとんど何も描かないフレーム」の値しか出ず、
 // そのタブの描画が太っても気づけない。件数は disk と揃えて 8 エントリ規模にしてある。
 func budgetDoctorModelFor(tb testing.TB, tab doctorview.DoctorTab) *browseModel {

@@ -47,7 +47,7 @@ type StatusView struct {
 	cursor int
 	offset int // 窓の先頭 (表示行 index。セクション見出しを含む数え方)
 
-	// displayIndex のメモ (issue 048)。行構成は rows だけで決まり、cursor は
+	// displayIndex のメモ。行構成は rows だけで決まり、cursor は
 	// 「index 内のどこを指すか」にしか影響しないので、両者を分けて持つ
 	// (カーソル移動で行構成を作り直さない)。
 	//
@@ -149,7 +149,7 @@ type StatusPollMsg struct{ gen int }
 type StatusPreviewMsg struct {
 	// 🚨 gen は必須 (他の 3 メッセージと同じ)。無いと、無効化 (閉じ / r) を跨いで着地した
 	// 取得がキャッシュを**復活させ**、以後 begin() に弾かれて取り直しが二度と走らない
-	// (issue 114 の敵対的レビューで実証。窓は色付け 5000 行で 200ms 超)。
+	// (実測: 窓は色付け 5000 行で 200ms 超)。
 	gen   int
 	key   string
 	lines []string
@@ -178,9 +178,9 @@ type StatusRenderOpts struct {
 //
 // 🚨 colored を含むのは issuesViewport と違う点。diff の色付けは取得時に 1 回だけ行い
 // (毎フレーム chroma を回さない)、取得を発行するのはキー処理なのでここに必要になる。
-// 🚨 **width は持たない** (issue 316)。桁数を使うのは描画側 (`lines(o statusRenderOpts)`) で、
-// キー処理は行数しか要らない。以前は `width` を詰めていたが読み手が 0 件で、doc の
-// 「何桁 × 何行か」だけが残っていた (`issuesViewport` の方は `vp.width` を読むので紛らわしい)。
+// 🚨 **width は持たない**。桁数を使うのは描画側 (`lines(o statusRenderOpts)`) で、
+// キー処理は行数しか要らない。`width` を詰めても読み手が 0 件で、doc の
+// 「何桁 × 何行か」だけが残る (`issuesViewport` の方は `vp.width` を読むので紛らわしい)。
 type StatusViewport struct {
 	page    int
 	colored bool
@@ -282,7 +282,7 @@ func (v *StatusView) FinishClose() bool {
 	v.preview.ClearBusy()
 	// 🚨 キャッシュ本体も捨てる。キー (section+XY+path) は内容を一意に決めないので、閉じている
 	// あいだに外部編集されても XY が動かなければキーが一致し、開き直しても**編集前の diff が
-	// 出続ける** (プロセスが生きている限り消えない。issue 114)。
+	// 出続ける** (プロセスが生きている限り消えない)。
 	v.preview.ClearEntries()
 	v.gen++
 	return true
@@ -579,7 +579,7 @@ func (v *StatusView) ReceivePreview(msg StatusPreviewMsg) {
 		return
 	}
 	if msg.err != nil {
-		// エラー文は git の stderr や os.Open の生のパスを含む (issue 417)
+		// エラー文は git の stderr や os.Open の生のパスを含む
 		v.storePreview(msg.key, []string{"(diff を取得できませんでした: " + term.SanitizePlainLine(app.FirstLine(msg.err.Error())) + ")"})
 		return
 	}
@@ -635,7 +635,7 @@ func (v *StatusView) HandleKey(key string, vp StatusViewport) tea.Cmd {
 
 // discardKey は X の確認中のキー。y/Enter で実行、それ以外はキャンセル (push/pull 確認と同じ語彙)。
 //
-// 🚨 3 経路で述語が違うのは**意図的**で、揃えない (issue 071 で反証済み・issue 123 で再確認):
+// 🚨 3 経路で述語が違うのは**意図的**で、揃えない:
 //
 //	discardKey / actionModal は confirm.IsYes で大文字 `Y` も受理、markNextKey は confirm.IsYesStrict で `Y` は取り消し。
 //	071 の結論は「厳格側の `Y` は安全側で閉じる、寛容側は意図どおり実行で失敗シナリオが作れない。
@@ -734,11 +734,11 @@ func (v *StatusView) listKey(key string, vp StatusViewport) tea.Cmd {
 	case "r":
 		// 🚨 明示的な再読込ではプレビューのキャッシュも捨てる。自動更新での据え置きは意図的
 		// (毎 1.5 秒 git diff を走らせないため。TestStatusReceiveSchedulesPreviewRefetchOnChange が
-		// pin 済み) だが、**r と開き直しまで据え置くとは spec も README も言っていない** (issue 114)。
+		// pin 済み) だが、**r と開き直しまで据え置くとは spec も README も言っていない**。
 		// 捨てるだけだとプレビュー欄が空のまま残るので、receive と同じく取り直しも予約する。
 		// 🚨 gen を進めてから捨てる。進めないと、r を押した時点で飛んでいた取得が着地して
-		// 古い内容を復活させ、r が張った取り直しが begin() に弾かれる = 押しても何も変わらない
-		// (敵対的レビューで実測)。閉じる側 (finishClose) は元から gen++ している。
+		// 古い内容を復活させ、r が張った取り直しが begin() に弾かれる = 押しても何も変わらない。
+		// 閉じる側 (finishClose) は元から gen++ している。
 		v.gen++
 		v.preview.ClearEntries()
 		return tea.Batch(v.LoadCmd(), v.previewTickCmd())
@@ -936,11 +936,11 @@ func (v *StatusView) Hint(width int) string {
 		})
 	}
 	// 🚨 "q: 終了" (glogx ごと終了。一覧へ戻るのは s)。上の pager の "d/q: 閉じる" は
-	//   pager を閉じるので正しい — 直すのはこちらだけ。issue 121
+	//   pager を閉じるので正しい — 直すのはこちらだけ
 	//
 	// 一覧モードの案内は全部で 155 桁あり、popup の実幅 (84 桁前後) には入らない。入らない分は
 	// hintLineText が**末尾から黙って切る**ので、素朴に並べると「抜ける手段 (s/q) だけが
-	// 画面から消える」状態になっていた (issue 155)。幅に応じて優先度の低い順に落とす。
+	// 画面から消える」状態になっていた。幅に応じて優先度の低い順に落とす。
 	return term.FitHintItems(width, []term.HintItem{
 		{Text: "j/k: 移動", Prio: 4},
 		{Text: "Tab: セクション", Prio: 5},
@@ -1131,13 +1131,13 @@ type statusDisplayLine struct {
 // displayIndex は一覧の行構成 (見出し + 行) と、カーソルが何行目かを返す。
 //
 // 🚨 ここで文字列を作らない。整形 (rowLine → パスの切り詰め → 幅計算) は可視の窓の分だけに
-// 掛ける (listLines)。以前は全行を整形してから窓で切っていたため、画面に 40 行しか出ないのに
-// 変更ファイル数に比例して働いていた: 実測で 40 件 103µs / 2000 件 1.65ms (16 倍・627KB/frame)。
+// 掛ける (listLines)。全行を整形してから窓で切ると、画面に 40 行しか出ないのに
+// 変更ファイル数に比例して働く: 実測で 40 件 103µs / 2000 件 1.65ms (16 倍・627KB/frame)。
 // 大きな merge や大量の untracked を抱えた repo で status viewer を開くと、見えない行のために
 // 毎フレーム捨てる文字列を作り続けることになる。
 //
 // 行の数え上げ自体は件数に比例するが、**rows が変わらない間はメモを返す**ので毎フレーム
-// 走らせない (issue 048)。カーソル移動でも作り直さない (cursorAt は idxAt から O(1))。
+// 走らせない。カーソル移動でも作り直さない (cursorAt は idxAt から O(1))。
 func (v *StatusView) displayIndex() (index []statusDisplayLine, cursorAt int) {
 	if !sameRowsBacking(v.idxRows, v.rows) {
 		v.rebuildDisplayIndex()

@@ -1,5 +1,5 @@
 // Package filerview は glogx の全画面 treefiler (F) と、F を出したまま閉じたときの場所の記憶。
-// 画面の部品は src/treefiler の filer パッケージ。開閉・横断・前景実行は main の browseModel が仲介する (issue 817 の F)。
+// 画面の部品は src/treefiler の filer パッケージ。開閉・横断・前景実行は main の browseModel が仲介する。
 package filerview
 
 // treefiler (F) の全画面。画面の部品は src/treefiler の filer パッケージで、ここは glogx への配線だけを持つ
@@ -48,7 +48,7 @@ func waitFilerChange(ch <-chan struct{}) tea.Cmd {
 }
 
 // rearm は合図を受けた後の待ち直し。今のチャネルからの合図のときだけ待ち直す
-// (閉じる直前の合図が古い待ちを ok=true で返すと、新しいチャネルに待ちが 2 本張られて戻らない。レビューの指摘 2026-10-08)。
+// (閉じる直前の合図が古い待ちを ok=true で返すと、新しいチャネルに待ちが 2 本張られて戻らない)。
 func (v *FilerView) Rearm(msg FilerChangedMsg) tea.Cmd {
 	if f := v.Live(); !msg.ok || f == nil || f.WatchingChan() != msg.ch {
 		return nil
@@ -103,7 +103,7 @@ func (v *FilerView) Hide() {
 	}
 }
 
-// live は見えている間の filer (閉じていれば nil)。「見えているなら f がある」をメソッドごとに確かめ直さず、ここ 1 本で読む (issue 734)。
+// live は見えている間の filer (閉じていれば nil)。「見えているなら f がある」をメソッドごとに確かめ直さず、ここ 1 本で読む。
 func (v *FilerView) Live() *filer.Model {
 	if !v.shown {
 		return nil
@@ -152,7 +152,7 @@ func (v *FilerView) Animating() bool { f := v.Live(); return f != nil && f.Anima
 func (v *FilerView) Busy() bool { f := v.Live(); return f != nil && f.Busy() }
 
 // resize は画面の大きさを伝える。描くときではなく大きさが変わったときに伝えないと、カメラの目標が変わっても
-// tick が回らず、次のキーまで古い位置のまま残る (レビューの指摘 2026-10-08)。
+// tick が回らず、次のキーまで古い位置のまま残る。
 func (v *FilerView) Resize(width, page int) {
 	if f := v.Live(); f != nil {
 		f.Resize(width, page)
@@ -167,7 +167,7 @@ func (v *FilerView) Advance(now time.Time) {
 
 // handleKey は filer が飲むキー。F で閉じ、横断キー (i / R / D。表は app.CrossTarget) で他の全画面へ移る。
 // filer が意味を持つキー (Binds) は横断しない: s は treebeard の「シェルを開く」(spec §0.1。ユーザー回答 2026-10-07)、
-// 入力中 (検索・! のコマンド行・設定の板・キー一覧) は全部のキー (F で閉じると打っている文字が消える。レビューの指摘 2026-10-09)
+// 入力中 (検索・! のコマンド行・設定の板・キー一覧) は全部のキー (F で閉じると打っている文字が消える)
 func (v *FilerView) HandleKey(key string) filerAction {
 	if !v.f.Binds(key) {
 		if key == "F" {

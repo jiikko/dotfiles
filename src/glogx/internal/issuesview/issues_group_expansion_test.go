@@ -2,7 +2,7 @@ package issuesview
 
 import "testing"
 
-// groupExpansion の 3 つの集合の整合 (issue 666)。番号フィルタ中に畳んだ (collapsed) 状態は
+// groupExpansion の 3 つの集合の整合。番号フィルタ中に畳んだ (collapsed) 状態は
 // フィルタを解いたら残らず、その後の手動の展開が効く。解く経路は endFilter の 1 本に寄せてある。
 func TestGroupExpansionEndFilterDropsCollapse(t *testing.T) {
 	const a, b = "/repo/issues/epic/a", "/repo/issues/epic/b"

@@ -2,7 +2,7 @@
 // (b → y/N → git push) を足した派生版。glog 本体は「読むだけ」という契約を守るため
 // 拡張せず、write 操作はこちらに隔離する (ユーザー判断 2026-07-19)。
 // CI キャッシュ ($XDG_CACHE_HOME/glog/) は本家と共有する (同一データ・atomic write)。
-// 設計の一次情報: dotfiles の issue 015
+// 設計の一次情報: dotfiles の
 // (対話ブラウズは元 issue の非目標だったが 2026-07-16 のユーザー指示で解禁)
 package main
 
@@ -41,12 +41,12 @@ func run(argv []string) int {
 		fmt.Println(Usage())
 		return 0
 	}
-	// 支持しない幅 env は黙って壊れさせず、起動時に一度警告する (issue 054)。
+	// 支持しない幅 env は黙って壊れさせず、起動時に一度警告する。
 	// 🚨 TUI は alt screen へ入るので、対話モードではこの行は終了後に見えることになる。
 	// 主な発火先である CI / 非 TTY 実行では stderr にそのまま残る。
 	if widthenv.EastAsianAmbiguous() {
 		// 🚨 (U+1F6A8、常に 2 桁) を使う。VS16 付きの警告記号は端末で幅が割れるため
-		// CLAUDE.md が使用を禁じている (実測 2026-09-02 / issue 136: 同じマシンで
+		// CLAUDE.md が使用を禁じている (実測 2026-09-02: 同じマシンで
 		// tmux 内は 2 桁 / Apple Terminal は 1 桁)。外部由来の文字列は
 		// termsafe.DropEmojiVS16 が同じ正規化をしており、自前のリテラルだけ例外にしない。
 		fmt.Fprintln(os.Stderr, "🚨 "+widthenv.Message)
@@ -176,7 +176,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// waitPullCleanup を先に積む (LIFO): cancelAll が pull を中断した後に、その後始末
 	// (rebase --abort) を看取ってから戻る。看取らないと os.Exit が abort ごと消す
 	defer waitPullCleanup()
-	// doctor の走査 (brew / du) も看取る (issue 211)。cancelAll は ctx を切るだけで子の死を
+	// doctor の走査 (brew / du) も看取る。cancelAll は ctx を切るだけで子の死を
 	// 待たないので、これが無いとシグナル終了で brew の子孫が走り続ける (Setpgid のため
 	// 端末の SIGINT も届かない)。LIFO なので cancelAll → doctor → pull の順に走る
 	defer doctorview.WaitDoctorCleanup()
@@ -190,7 +190,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	defer restore()
 	if imeWarn != "" {
 		// RunBrowse (Init) 前に仕込めば起動時トーストで出る。showWarning 経由で
-		// lastWarning にも残し、消えた後も w でコピーできるようにする (issue 026)。
+		// lastWarning にも残し、消えた後も w でコピーできるようにする。
 		browse.showWarning(imeWarn)
 	}
 	model, err := RunBrowse(browse)
@@ -213,7 +213,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 		// 次のプロセスが「英数」を元の入力ソースだと記憶し、最終的に英数へ置き去りにする。
 		restore()
 		browse.cancelAll()
-		// 🚨 **cancelAll と restartSelf の間で看取る** (issue 211)。syscall.Exec はプロセス像を
+		// 🚨 **cancelAll と restartSelf の間で看取る**。syscall.Exec はプロセス像を
 		// 置き換えるので、cancel で起きた kill の watchdog goroutine ごと消える。ここで待たないと
 		// brew の子孫が新しいプロセス像の子として走り続ける。上に積んだ defer
 		// (waitPullCleanup / doctorview.WaitDoctorCleanup) は exec では 1 つも走らないため、明示で呼ぶ

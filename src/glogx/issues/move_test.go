@@ -8,7 +8,7 @@ import (
 )
 
 // 目印の宛先ディレクトリ (next/) は無ければ作る (ユーザー指定 2026-08-01)。直下の issue の claim は
-// rename ではなく symlink の目印 (issue 263)。実ファイルは動かない。
+// rename ではなく symlink の目印。実ファイルは動かない。
 func TestMoveToSubdirCreatesDir(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "001-feat-x.md")
@@ -146,10 +146,10 @@ func TestNextDirIsAStatusAndAlwaysVisible(t *testing.T) {
 }
 
 // TestMoveKeepsStrayGroupChildInsideEpic は group 内の予約外ディレクトリ (`epic/<name>/closed/`) に
-// 居る迷子を動かしても epic の外へ出ないことを固定する (2026-09-06 の敵対的レビュー P2-1)。
+// 居る迷子を動かしても epic の外へ出ないことを固定する。
 //
 // 迷子は GroupKind=Unknown なので、宛先を GroupKind だけで決めると issue ルートへ落ちる。
-// issue 291 で迷子を一覧に出すようにしたことで、`n` からこの経路へ到達できるようになった。
+// 迷子は一覧に出るので、`n` からこの経路へ到達できる。
 func TestMoveKeepsStrayGroupChildInsideEpic(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "issues")
@@ -172,7 +172,7 @@ func TestMoveKeepsStrayGroupChildInsideEpic(t *testing.T) {
 // TestMoveRejectsGroupIssueWithoutGroupKey は GroupKey を持たない group issue (Scan を通って
 // いない手組みの Issue) の移動を拒否することを固定する。通すと destDir が空になり、dest が
 // 相対パス (`next/NNN-x.md`) になって **glogx の CWD 配下**へ issue を rename する
-// (2026-09-06 の敵対的レビュー 2 周目: この guard を消しても全テストが緑だった)。
+// (2026-09-06 に確認: この guard を消しても全テストが緑だった)。
 //
 // 🚨 このテストで guard を外す変異を当てると、fixture が **repo 内の
 // `src/glogx/issues/next/`** に実際に作られる (2026-09-06 に実測)。変異のあとは
@@ -201,8 +201,8 @@ func TestMoveRejectsGroupIssueWithoutGroupKey(t *testing.T) {
 	}
 }
 
-// issue 748: next から出す移動が失敗したら、バナーも目印もファイルも動かない (再実行できる)。
-// 以前は同名の確認がバナーと目印を外した後にあり、失敗しても claim が黙って外れていた。
+// next から出す移動が失敗したら、バナーも目印もファイルも動かない (再実行できる)。
+// 同名の確認をバナーと目印を外した後に置くと、失敗しても claim が黙って外れる。
 func TestMoveOutOfNextChangesNothingOnFailure(t *testing.T) {
 	fixedNow(t)
 	claimed := func(t *testing.T) (*Issue, string) {
@@ -295,7 +295,7 @@ func TestMoveLegacyNextFileKeepsBannerOnConflict(t *testing.T) {
 }
 
 // done などから next へ rename で運ぶ経路で、バナーを書けなければファイルを元の場所へ戻す
-// (目印だけ・バナー無しの claim を残さない)。この戻しは検査されていなかった (issue 751 の 5)。
+// (目印だけ・バナー無しの claim を残さない)。
 func TestMoveIntoNextByRenameRollsBackWhenBannerFails(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "done"), 0o755); err != nil {
@@ -321,7 +321,7 @@ func TestMoveIntoNextByRenameRollsBackWhenBannerFails(t *testing.T) {
 }
 
 // 失敗した移動の戻しは、自分が外した目印だけを戻す。走査の後に他のホスト (git pull) が外した目印を
-// 作り直すと、誰も claim していない issue が Next として共有される (敵対レビュー 2026-10-14)。
+// 作り直すと、誰も claim していない issue が Next として共有される。
 func TestMoveOutOfNextDoesNotResurrectLinkRemovedByOthers(t *testing.T) {
 	fixedNow(t)
 	dir := t.TempDir()
@@ -348,8 +348,8 @@ func TestMoveOutOfNextDoesNotResurrectLinkRemovedByOthers(t *testing.T) {
 	}
 }
 
-// 宛先への rename だけが失敗したときも、外した目印を戻す (敵対レビュー 2 周目: MkdirAll・同名・バナーの
-// 失敗は注入していたが、rename の失敗を注入するテストが無く、戻しを消す変異が緑だった)。
+// 宛先への rename だけが失敗したときも、外した目印を戻す (MkdirAll・同名・バナーの
+// 失敗に加えて、rename の失敗も注入する。無いと戻しを消す変異が緑のまま)。
 func TestMoveOutOfNextRestoresLinkWhenRenameFails(t *testing.T) {
 	fixedNow(t)
 	dir := t.TempDir()

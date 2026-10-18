@@ -13,7 +13,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// 回帰 (2026-08-21 実測 / issue 087): 消えて戻ったディレクトリを再び watch する。
+// 回帰 (2026-08-21 実測): 消えて戻ったディレクトリを再び watch する。
 // issues_watch_test.go の同名検査は実 fsnotify 版で CI では skip されるため、不変条件は
 // ここで環境非依存に固定する。
 func TestIssuesWatchReAddsRecreatedDirWithoutFsnotify(t *testing.T) {
@@ -115,7 +115,7 @@ func TestIssuesWatchEventPathWithoutFsnotify(t *testing.T) {
 //
 // 🚨 liveEventChains の 300ms 窓は、この検査が CI (ubuntu-slim) で初めて無条件に走る箇所になる。
 // 極端な混雑下での flaky は理論上否定できないが、CPU 飽和 + GOMAXPROCS=1 + -race で 80 回
-// 回しても再現しなかった (red team 実測 2026-08-21)。実際に intermittent な失敗が出たら、
+// 回しても再現しなかった (実測 2026-08-21)。実際に intermittent な失敗が出たら、
 // 窓を広げる推測ベースの防御ではなく「チャネル close の完了を ack で同期する」形へ直すこと。
 func TestIssuesWatchPollDoesNotStackEventChainsWithoutFsnotify(t *testing.T) {
 	testenv.FakeWatcherSeam(t)

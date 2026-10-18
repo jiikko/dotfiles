@@ -30,7 +30,7 @@ func renderOpts(page int) issuesview.IssuesRenderOpts {
 }
 
 // hint を組む予算と描画側が切る幅は同じ 1 か所 (browseModel.hintWidth) から取る。
-// TestStatusHintUsesRenderBudget の issues viewer 版 (issue 264)。
+// TestStatusHintUsesRenderBudget の issues viewer 版。
 func TestIssuesHintUsesRenderBudget(t *testing.T) {
 	for w := frameMinWidth; w <= 140; w++ {
 		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
@@ -50,10 +50,10 @@ func TestIssuesHintUsesRenderBudget(t *testing.T) {
 	}
 }
 
-// Msg 経路 (issuesScanMsg) からの notice 配達の回帰テスト (issue 059)。
+// Msg 経路 (issuesScanMsg) からの notice 配達の回帰テスト。
 // rebindOpen が置く「開いていた issue が見つかりません」は、打鍵を待たずスキャン結果を
 // 受けたフレームで配達される (トースト + w でコピーできる lastWarning)。
-// 以前は takeNotice が打鍵経路にしか無く、本文が無言で畳まれて見え、直後に q を押すと
+// takeNotice が打鍵経路にしか無いと、本文が無言で畳まれて見え、直後に q を押すと
 // 理由が 1 度も描かれないままプロセスが終わった。
 // 🚨 testenv.NoticeOKOf(v.takeNotice()) を直接 assert しない: それは配達経路 (browseModel の Update) を通らず、
 // 配達ブロックを丸ごと削っても green のままになる (この issue 自身が見つけた false green)。
@@ -126,7 +126,7 @@ func newTestIssuesView() issuesview.IssuesView {
 	return v
 }
 
-// URL ピッカー入力中は、外側の U 横取りを止めて viewer へ委譲する (issue 113)。
+// URL ピッカー入力中は、外側の U 横取りを止めて viewer へ委譲する。
 //
 // urlPicker は doc で「印字文字はすべて検索語に流す。ここで個別のキーを先に横取りすると、
 // その文字を含む URL を検索できなくなる」と宣言しているのに、tui.go が委譲の 3 行前で
@@ -137,7 +137,7 @@ func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
 	if !m.issuesOv.Fixture().OpenURLPicker([]string{"https://github.com/Ueno/repo", "https://example.com/x"}) {
 		t.Fatal("前提が崩れた: URL ピッカーが開かない")
 	}
-	// 🚨 起動時グランスの既定を継承しないこと。継承すると片方向で vacuous になる (敵対的レビュー)
+	// 🚨 起動時グランスの既定を継承しないこと。継承すると片方向で vacuous になる
 	m.usageOv.Visible = false
 
 	m.handleKey("U")
@@ -147,14 +147,14 @@ func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
 		t.Errorf("U が検索語に届いていない (外側が横取りしている): query=%q (期待 \"U\")", q)
 	}
 	// 🚨 こちらは別の主張 (残量モーダルを開かない)。混ぜて 1 つの非難文にすると、dismiss の
-	// 位置を変えただけで「キーを奪っている」と誤診する (敵対的レビューが実測)
+	// 位置を変えただけで「キーを奪っている」と誤診する
 	if m.usageOv.Visible {
 		t.Error("URL ピッカー入力中の U が残量モーダルを開いた")
 	}
 }
 
 // 🚨 述語の 2 節目 (numFilter.typing) を pin する。これが無いと節ごと削る変異も、
-// typing→active の 1 語変異も**全テスト green のまま通る** (敵対的レビューが実測)。
+// typing→active の 1 語変異も**全テスト green のまま通る**。
 //
 // active でなく typing を見る理由: 絞り込みを確定した後 (typing=false, active=true) は通常の
 // ナビゲーションなので、そこで U を殺すと**絞り込みを解くまで U が恒久的に死ぬ**。
@@ -173,7 +173,7 @@ func TestIssuesViewerOwnsKeysWhileTypingNumberFilter(t *testing.T) {
 
 	// 確定後は通常のナビゲーションに戻る = U は外側で受ける
 	// 🚨 数字を打ってから確定すること。空入力の確定は confirmNumberFilter が解除へ回すので active も
-	//   false になり、typing→active の変異を素通りさせる (敵対的レビューの再現手順は / → 0 → Enter だった)
+	//   false になり、typing→active の変異を素通りさせる (再現手順は / → 0 → Enter)
 	if !m.issuesOv.Fixture().EditNumberFilter("0") {
 		t.Fatal("前提が崩れた: 番号フィルタが数字を受け付けない")
 	}

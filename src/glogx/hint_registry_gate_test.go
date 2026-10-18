@@ -11,7 +11,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
 )
 
-// hintLine は面ごとの hint を**レジストリからしか**取らない (issue 289)。
+// hintLine は面ごとの hint を**レジストリからしか**取らない。
 //
 // なぜ機械で縛るか: 直接 `hint = "..."` と書くと、予算計算 (term.FitHintItems) と幅ゲートの
 // 両方を迂回できる。迂回した分岐は末尾 = 出口が黙って切れるので、279 / 281 の P1 2 本と
@@ -34,7 +34,7 @@ func scanHintLineAssigns(f *ast.File) (assigns, viaFit, returns, prefixAssigns, 
 		}
 		found = true
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			// 🚨 hintLineText の呼び出し数も数える (敵対的レビュー 2026-09-06 の P2)。
+			// 🚨 hintLineText の呼び出し数も数える。
 			// 代入を経ずに `return m.hintLineText(prefix + "...")` と書く形は、
 			// 代入だけを数える判定を素通りする。しかも本体には既に 5 件の
 			// `return m.hintLineText(...)` が並んでいて**コピペの雛形がその場にある**。
@@ -54,7 +54,7 @@ func scanHintLineAssigns(f *ast.File) (assigns, viaFit, returns, prefixAssigns, 
 				if !ok {
 					continue
 				}
-				// 🚨 前置への書き足しも数える (敵対的レビュー 2 周目の P1)。予算を引いた後で
+				// 🚨 前置への書き足しも数える。予算を引いた後で
 				// prefix へ積む形は hint への代入も hintLineText の呼び出しも増やさないので、
 				// 上の 2 つのカウンタが一切見ていない。それが 279 / 281 の**実際の根本原因**。
 				if id.Name == "prefix" {
@@ -187,7 +187,7 @@ func TestEveryHintSurfaceHasPrioOne(t *testing.T) {
 
 // activeHintSurface() の**分岐の順序**が意味を持つことを、対の状態で固定する。
 //
-// 🚨 単独の状態だけを並べたテストでは順序を 1 mm も守らない (敵対的レビュー 2026-09-06 の P1)。
+// 🚨 単独の状態だけを並べたテストでは順序を 1 mm も守らない。
 // 実測: overlay 3 case を actModal 7 case の上へ移す変異を当てても全パッケージ緑だった。
 //
 // 対の状態は理論上の話ではない: askRerun() の呼び出し元は job パネルの `r` (tui.go の
@@ -221,7 +221,7 @@ func TestActiveHintSurfacePrecedence(t *testing.T) {
 			m.panelSHA, m.panelCursor = m.commits[0].SHA, -1
 			m.actModal.pulling = true
 		}, hintSurfacePulling},
-		// 🚨 self-update は overlay / パネルと**共存する** (敵対的レビュー 2 周目の P1)。
+		// 🚨 self-update は overlay / パネルと**共存する**。
 		// C / X は overlay の上からも通る設計 (tui.go の「overlay の分岐より前に置くこと」)。
 		// 順序が下がると、実行中を示す唯一の表示が消えたまま Ctrl-C がブロックされ、
 		// 「効かないのに理由が画面に無い」状態になる。

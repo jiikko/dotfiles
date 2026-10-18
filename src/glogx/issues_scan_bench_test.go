@@ -10,7 +10,7 @@ import (
 	"glogx/issues"
 )
 
-// CI の Bench workflow が回す issue scan ベンチ (issue 065)。一覧生成のホットパス
+// CI の Bench workflow が回す issue scan ベンチ。一覧生成のホットパス
 // (issues.Scan + 全件 LoadMeta) を測る。起動時と issues_watch の外部編集検知のたびに
 // 走る経路で、050 の実測 (50 件 395KB の実 repo) で 2 倍動いた実績がある。
 //
@@ -18,13 +18,13 @@ import (
 // (chroma) と同じ flake 枠になる (bench_glogx.sh ヘッダの判断と同型)。ファイル I/O は
 // 含む (LoadMeta の open + 先頭 read がこの経路のコストの一部なので外さない)。
 //
-// 「全文を読む」形の退行はここではなく TestScanIssuesDoesNotReadFullBody (issue 052) が
+// 「全文を読む」形の退行はここではなく TestScanIssuesDoesNotReadFullBody が
 // read バイト数で守る。ここが守るのは「読む量は同じままコストが緩やかに増える」退行
 // (正規表現の追加・PlainLine の多重適用・sort の劣化など)。
 
 // benchIssuesDir は実測分布 (050: 50 件 計 395KB) を模した合成 issue ディレクトリを作る。
 // 件数 50 (直下 40 + done/ 10)、サイズは index で決まる決定的な散らし (平均 ~8KB)。
-// fixture は ASCII のみ (issue 055 の方針に合わせる)。
+// fixture は ASCII のみ。
 func benchIssuesDir(b *testing.B) string {
 	b.Helper()
 	root := b.TempDir()

@@ -204,8 +204,8 @@ func TestURLPickerWindowFollowsCursor(t *testing.T) {
 	}
 }
 
-// 窓は状態で持ち、カーソルが窓の中で動く間は動かさない (issues 一覧と同じ規律。issue 666)。
-// 以前はカーソルから毎回導出していて、下端を越えて送った後に上へ 1 行戻すと窓も 1 行戻った。
+// 窓は状態で持ち、カーソルが窓の中で動く間は動かさない (issues 一覧と同じ規律)。
+// カーソルから毎回導出すると、下端を越えて送った後に上へ 1 行戻すと窓も 1 行戻る。
 func TestURLPickerWindowStaysWhileCursorInside(t *testing.T) {
 	urls := make([]string, 20)
 	for i := range urls {

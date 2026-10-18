@@ -10,13 +10,13 @@ import (
 )
 
 // viewer の通知の種類 (app.NoticeKind) が、showWarning の doc の 3 分類どおりに付いていることを、
-// setNotice の全呼び出しについて固定する (issue 663 の敵対的レビュー: 分類の誤りは 30 件中 2 件の
-// 経路でしかテストされておらず、「本文を読めませんでした」を app.NoticeRefused にしても緑だった)。
+// setNotice の全呼び出しについて固定する (分類の誤りは 30 件中 2 件の
+// 経路でしかテストされないと、「本文を読めませんでした」を app.NoticeRefused にしても緑だった)。
 //
 //   - エラー詳細 (app.FirstLine(err…)) を含む通知は app.NoticeError (w でコピーできるよう lastWarning に積む)
 //   - クリップボード失敗 (app.ClipboardFailText) は app.NoticeRefused (lastWarning を汚さない)
 //   - それ以外の失敗は app.NoticeRefused。例外は Msg 経路で置く 2 件 (noticeErrorWithoutDetail):
-//     次の打鍵が q だとトーストを読む前に終わるので、理由を lastWarning に残す (issue 059)
+//     次の打鍵が q だとトーストを読む前に終わるので、理由を lastWarning に残す
 func TestSetNoticeKindsFollowWarningClassification(t *testing.T) {
 	noticeErrorWithoutDetail := []string{"開いていた issue が見つかりません", "見出しが変わりました"}
 	counts := map[string]int{}
@@ -35,7 +35,7 @@ func TestSetNoticeKindsFollowWarningClassification(t *testing.T) {
 			if !ok || sel.Sel.Name != "setNotice" {
 				return true
 			}
-			// 種類は app の定数 (`app.NoticeError`)。issue 817 で main から internal/app へ移した
+			// 種類は app の定数 (`app.NoticeError`)。
 			kindSel, ok := call.Args[1].(*ast.SelectorExpr)
 			if !ok {
 				t.Errorf("%s: setNotice の種類が定数でない (検査できない)", fset.Position(call.Pos()))

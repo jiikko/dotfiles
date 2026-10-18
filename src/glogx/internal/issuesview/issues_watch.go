@@ -5,7 +5,7 @@ package issuesview
 //
 // 反映の機構は既にある (reloadAfterEdit)。ここが足すのは「変わったと気づく」ことだけ。
 //
-// 方式は「イベントで起こし、指紋で判定する」(issue 035):
+// 方式は「イベントで起こし、指紋で判定する」:
 //
 //   - fsnotify (Linux=inotify / macOS=kqueue) のイベントで起こす。定期 wakeup が消え、反応も速い
 //   - 🚨 イベントは真偽の正本にしない。1 回の保存で Create/Rename/Write が連続する・エディタの
@@ -186,8 +186,8 @@ func issuesWatchDirs(baseDirs []string, all []*issues.Issue) []string {
 			continue
 		}
 		// 状態ディレクトリ (done/ pending/ waiting/ next/ …) は空でも見張る。issue のパスからしか
-		// 足さないと、空の waiting/ へ新規作成した最初の md を取りこぼす (issue 665)。next/ は目印
-		// (symlink) だけが置かれる場所で issue の Path を持たないので、なおさらここで足す (issue 263)。
+		// 足さないと、空の waiting/ へ新規作成した最初の md を取りこぼす。next/ は目印
+		// (symlink) だけが置かれる場所で issue の Path を持たないので、なおさらここで足す。
 		// 名前は走査と同じ表 (issues.IsStatusDir) で決める。symlink のディレクトリは IsDir が偽なので入らない
 		epicName := ""
 		for _, e := range entries {

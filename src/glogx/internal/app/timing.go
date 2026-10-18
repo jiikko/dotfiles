@@ -19,6 +19,6 @@ const FetchTimeout = 10 * time.Second
 //
 // 🚨 この周期で claude を起こすわけではない: Claude 側の取得は usage.Fetch の全プロセス共有ゲート
 //
-//	(src/ratelimit/usage/shared.go) を通り、5 分以内の結果があればそれを返す。以前は毎回起こしていて、
-//	表示を開いたまま 17 分で /api/oauth/usage が 429 になった (issue 627)。
+//	(src/ratelimit/usage/shared.go) を通り、5 分以内の結果があればそれを返す。毎回起こすと、
+//	表示を開いたまま 17 分で /api/oauth/usage が 429 になる。
 const UsageRefreshInterval = time.Minute

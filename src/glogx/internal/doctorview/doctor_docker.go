@@ -70,9 +70,8 @@ func (v *DoctorView) tabVisible(t DoctorTab) bool {
 // dockerRunnable は「この群のコマンドを x で実行してよいか」。
 //
 // 🚨 **判定の出典は `Group.Confirm` (走査側のデータ) 1 つ**。Kind から独立に導き直さない —
-// 以前は Kind の switch で同じ結論を作っており、走査側が `Confirm: true` の群を足しても
-// こちらは素通しする形だった (敵対レビュー 2 周目 P2-4。`mutation-verify-new-tests.md` の
-// 「同じ判定を 2 箇所で別実装していないか」)。
+// Kind の switch で同じ結論を作ると、走査側が `Confirm: true` の群を足してもこちらは素通しする
+// (`mutation-verify-new-tests.md` の「同じ判定を 2 箇所で別実装していないか」)。
 //
 // 今 false になるのはボリュームだけ: 中身はデータで消すと戻らず、しかも判定は
 // 「今どのコンテナからも参照されていない + 作成日」の近似でしかない (最後にマウントされた
@@ -96,7 +95,7 @@ func dockerRunNote(k docker.Kind) string {
 
 // dockerMarkWidth は記号列の幅。🚨 **記号は語ごとに表示幅が違う** ("✅ 安全" と "⛔ 要確認") ので、
 // 揃えないと後ろのラベルが行ごとにずれる。disk 側の doctorMaxMarkWidth と同じ扱い。
-// 🚨 **ここはメモ化しない** (issue 321 ② を実測して却下、2026-09-08)。disk 側の
+// 🚨 **ここはメモ化しない** (実測して却下、2026-09-08)。disk 側の
 // `doctorMaxMarkWidth` は `sync.OnceValue` にして -19,950 B/frame 減ったが、**こちらは効果 0**:
 //
 //	memo あり  569 / 570 / 571 allocs   56,134〜56,170 B
@@ -246,8 +245,7 @@ func (v *DoctorView) dockerSelectMark(o DoctorRenderOpts, cmd string, runnable b
 //
 // 🚨 **描画順も覚える** (dockerOrder)。選択の集計を「今 v.rows に出ている行」から作ると、
 // 群を畳んだ瞬間に中の選択が 0 件に見え、x が「選んでください」と言い出す
-// (選択自体は残っているので、開き直すと戻る = 同じ選択が開閉で増減する。
-// 敵対レビュー 2 周目 P2-2)。畳まれている行も登録は通るので、こちらを出典にする。
+// (選択自体は残っているので、開き直すと戻る = 同じ選択が開閉で増減する)。畳まれている行も登録は通るので、こちらを出典にする。
 func (v *DoctorView) registerDockerAction(label, cmd, note string) {
 	if cmd == "" {
 		return

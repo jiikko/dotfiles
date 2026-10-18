@@ -9,10 +9,10 @@ import (
 )
 
 // WatchChain は「fsnotify のイベント待ち + 保険のポーリング」の 2 本のチェーンの札と watcher を持つ
-// (issues viewer の見張りと git log の見張りが共有する。issue 666: 以前は同じ機構が 2 実装あり、
-// 札の扱いの修正を片方にだけ入れる形になっていた)。
+// (issues viewer の見張りと git log の見張りが共有する。機構を 2 実装に分けると、
+// 札の扱いの修正を片方にだけ入れる形になる)。
 //
-// 何を見張り、何を指紋にし、いつ反映するかは各見張りが持つ (集合も指紋も別物。issue 271)。
+// 何を見張り、何を指紋にし、いつ反映するかは各見張りが持つ (集合も指紋も別物)。
 // ここが持つのは single-flight の札と、届いたチェーンの札だけを降ろす規律だけ。
 //
 // zero value は「何も張っていない」。gen は watcher を閉じるたびに各見張りが進め、閉じる前に
@@ -114,7 +114,7 @@ func (c *WatchChain) Close() {
 // 🚨 実装を差し替えるためではなく、**CI で不変条件を観測できるようにするため**にある。
 // CI (ubuntu-slim) では fsnotify.NewWatcher が通らず watch.w が nil になるので、実 watcher を
 // 前提にしたテストはすべて skip され、「消えて戻ったディレクトリを再 Add する」のような配線の
-// 退行が CI では一度も検査されない (issue 087)。フェイクを差せば実 fsnotify 無しで startWatch /
+// 退行が CI では一度も検査されない。フェイクを差せば実 fsnotify 無しで startWatch /
 // eventCmd の本体をそのまま走らせられる。
 // Events/Errors をメソッドにしているのは fsnotify.Watcher がチャネルを**フィールド**で公開して
 // いてインタフェースに乗らないため (fsWatcher が薄く包む)。

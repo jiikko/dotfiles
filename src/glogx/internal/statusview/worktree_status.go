@@ -62,7 +62,7 @@ type worktreeRow struct {
 // untracked の削除) を持つため「区別できないまま捨てる」余地が残る。エスケープシーケンスに
 // よる衝突は導入子だけ落とす形にして解消済み (termsafe.skipEscape) で、残るのは単独の制御
 // 文字だけ。直すなら削除でなく可視のプレースホルダ (␛ 等) への置換に変える。実害の報告が
-// 出たか、ファイル名に制御文字を使う運用を実際に見たら着手する (敵対的レビュー 2026-08-05)。
+// 出たか、ファイル名に制御文字を使う運用を実際に見たら着手する。
 func (r worktreeRow) dispPath() string {
 	if r.orig != "" {
 		return term.SanitizePlainLine(r.orig) + " → " + term.SanitizePlainLine(r.path)
@@ -145,7 +145,7 @@ func parseBranchHeader(rec string) (branch, track string) {
 		rest = rest[:i]
 	}
 	// ref 名は ASCII の制御文字しか禁じられておらず、C1 や双方向テキストの制御文字を含む
-	// ブランチは正当に作れる。ヘッダの表示にしか使わないので、ここで平文にする (issue 417)
+	// ブランチは正当に作れる。ヘッダの表示にしか使わないので、ここで平文にする
 	return term.SanitizePlainLine(rest), term.SanitizePlainLine(track)
 }
 
@@ -172,7 +172,7 @@ func rowsFor(x, y byte, path, orig string) []worktreeRow {
 // loadWorktreeStatus はテストで実 git を叩かないための差し替え点。
 var loadWorktreeStatus = func() (worktreeStatus, error) {
 	// TUI の tea.Cmd (goroutine) から呼ぶので timeout 付き (runGitTimeout の doc 参照)。
-	// --ignore-submodules=dirty: submodule の中の変更を見に子の git を起こさない (子は submodule 自身の設定の filter を読む。issue 732)
+	// --ignore-submodules=dirty: submodule の中の変更を見に子の git を起こさない (子は submodule 自身の設定の filter を読む)
 	out, err := extcmd.RunGitReadTimeout("status", "--porcelain", "--branch", "-z", "--ignore-submodules=dirty")
 	if err != nil {
 		return worktreeStatus{}, err
@@ -184,7 +184,7 @@ var loadWorktreeStatus = func() (worktreeStatus, error) {
 	// untracked のプレビューが cwd 相対に落ちるだけで済む。cwd を入れると
 	// **間違った root を本物として扱う** (サブディレクトリで実行していれば別の場所を指す)。
 	// この違いが出るのは「`git status` は成功するが `rev-parse` だけ失敗する」ときだけなので
-	// テストでは固定できない (seam の新設が要る)。issue 320 の変異検証で green のまま通った項。
+	// テストでは固定できない (seam の新設が要る)。
 	if root, ok := issues.ResolveRepoRoot(app.CurrentDir()); ok {
 		st.root = root
 	}
@@ -195,7 +195,7 @@ var loadWorktreeStatus = func() (worktreeStatus, error) {
 // (--cached)、それ以外は作業ツリーとの差分。untracked は git diff の対象外なのでファイルの
 // 中身をそのまま出す (呼び出し側で分岐)。
 var loadWorktreeDiff = func(paths []string, staged, colored bool) ([]string, error) {
-	// repo の設定のコマンドを差分の表示で走らせない (issue 692・732。subproc.GitArgs / GitRepoArgs の doc)
+	// repo の設定のコマンドを差分の表示で走らせない (subproc.GitArgs / GitRepoArgs の doc)
 	args := []string{"diff", "--no-textconv", "--no-ext-diff", "--ignore-submodules=dirty"}
 	if staged {
 		args = append(args, "--cached")

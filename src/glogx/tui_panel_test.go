@@ -36,7 +36,7 @@ func TestCIPollFollowsPendingWithoutPanel(t *testing.T) {
 	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil || !m.ciPollInFlight {
 		t.Fatal("pending の周期で再取得が走らない")
 	}
-	// パネルを開いて閉じても追従は途切れない (旧実装はパネル依存で止まっていた)
+	// パネルを開いて閉じても追従は途切れない (パネル依存にすると止まる)
 	m.ciPollInFlight = false
 	m.openPanel()
 	m.closePanel()
@@ -337,7 +337,7 @@ func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	// usage オーバーレイ (取得中は自身が "取得中..." を描く) を隔離しないと、パネルの
 	// ローディング指標が壊れても overlay の "取得中" で下の曖昧 assert が通ってしまう
-	// (マスク。レビュー指摘 2026-07-21)。openPanel を handleKey 経由で呼ばないため overlay が
+	// (マスク)。openPanel を handleKey 経由で呼ばないため overlay が
 	// 自動 dismiss されないので明示的に消す。
 	m.usageOv.Visible = false
 	sha := m.commits[0].SHA

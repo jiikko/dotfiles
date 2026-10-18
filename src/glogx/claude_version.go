@@ -17,7 +17,7 @@ import (
 	"ratelimit/usage"
 )
 
-// Claude Code CLI の新バージョン検出 (issue 024)。起動時にバックグラウンドで最新公開バージョン
+// Claude Code CLI の新バージョン検出。起動時にバックグラウンドで最新公開バージョン
 // と比較し、更新可能ならトーストで知らせるだけの機能。更新の実行は既存の C (claude update)。
 // バージョン通知は付加情報なので、取得失敗 (オフライン / タイムアウト / パース不能) はすべて
 // 無音でスキップする (usage.FetchVersion の「欠けても主処理は成立」と同じ方針)。
@@ -26,7 +26,7 @@ import (
 type claudeUpdateAvailableMsg struct{ latest string }
 
 // claudeVersionTTL は最新バージョン取得結果のキャッシュ有効期間。リリース頻度に対して
-// 1 時間あれば十分新鮮で、起動のたびに registry へ問い合わせない (issue 024 の要件)。
+// 1 時間あれば十分新鮮で、起動のたびに registry へ問い合わせない。
 const claudeVersionTTL = time.Hour
 
 // claudeVersionFetchTimeout は registry への HTTP と claude --version を合わせた上限。
@@ -43,7 +43,7 @@ type claudeVersionCache struct {
 }
 
 // npmLatestURL は最新公開バージョンの照会先。npm registry の dist-tags は native installer
-// 配布と同一バージョン系列なので比較指標として有効 (issue 024)。`npm view` の exec より依存
+// 配布と同一バージョン系列なので比較指標として有効。`npm view` の exec より依存
 // (npm の有無) が少なく、stdlib だけで足りる。
 const npmLatestURL = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest"
 
@@ -130,7 +130,7 @@ func loadClaudeVersionCache(path string, now time.Time) (latest string, ok bool)
 	if err := json.Unmarshal(data, &c); err != nil {
 		return "", false
 	}
-	// age < 0 (未来) も取り直す (時計の巻き戻しで古い版を永久に使い続けない。issue 201)
+	// age < 0 (未来) も取り直す (時計の巻き戻しで古い版を永久に使い続けない)
 	if age := now.Sub(c.FetchedAt); c.Latest == "" || age < 0 || age >= claudeVersionTTL {
 		return "", false
 	}
@@ -221,7 +221,7 @@ func installedIsLatest(cacheFile string, fetchInstalled func(context.Context) st
 	}
 	// 🚨 !versionLess(installed, latest) にしない: versionLess は比較不能 (セグメント数
 	// 不一致・数値でない) を false に倒すため、否定すると「比較できない = 最新扱い」に
-	// 反転し、形式変更のたび update が無音で塞がる (敵対レビュー指摘 2026-08-12)。
+	// 反転し、形式変更のたび update が無音で塞がる。
 	// 「文字列一致 or latest < installed が証明できた」ときだけ skip する。
 	return installed, installed == latest || versionLess(latest, installed)
 }

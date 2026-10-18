@@ -7,8 +7,8 @@ package app
 // 横断 (viewer の R / ダッシュボードの i・s) は「閉じてから開く」、起動時の復元は
 // 既に 1 枚出ていれば捨てる (issuesRestoreMsg の注記)。
 //
-// 🚨 かつてこの membership は各所の手書き列挙に散っており、doctor を issue 148 で後から
-// 足したとき `gitLogReloadDeferred` が漏れた (issue 227)。漏れると doctor を開いている間の
+// 🚨 この membership を各所の手書き列挙に散らさない。doctor を後から
+// 足したとき `gitLogReloadDeferred` が漏れた。漏れると doctor を開いている間の
 // 外部変更で裏の全面リロード (git 5〜6 fork) + カーソルのリセット + CI の再取得が走るが、
 // build もテストも通るので silent に壊れる。
 //
@@ -30,7 +30,7 @@ package app
 // 🚨 **この 2 段は「ID を足した後」にしか発火しない**。脅威モデルと射程をここに書いておく
 // (`adversarial-review-own-safeguards.md` の節 8):
 //
-//   - **止める形**: ID を足して配線を 1 つ忘れる (issue 148 の doctor が実際に辿った形)
+//   - **止める形**: ID を足して配線を 1 つ忘れる (doctor が実際に辿った形)
 //   - **止める形**: ID を足さずに描画だけ旧来の `if …visible()` で配線する →
 //     `TestFullScreenDrawingGoesThroughTheRegistry` が red にする。全画面ビューアは
 //     `finishWithGlobalChrome` を通らないとトースト・usage・モーダルが載らないので、
@@ -42,18 +42,18 @@ package app
 // 🚨 ここから導出しないもの (概念が別。混ぜると「全画面か」で答えられない問いを持ち込む):
 //
 //   - `updateKeyReachable` / ctrl+c / `restartPromptVisible` — 問いは「今キーの語彙を
-//     持っているか (ownsKeys)」で、全画面かどうかではない。正本は issue 213 の
+//     持っているか (ownsKeys)」で、全画面かどうかではない。正本は
 //     overlayOwnershipTable (overlay_ownership_test.go)
 //   - `spinnerActive` — 問いは「読み込み中か」。見えていないビューアの読み込み
 //     (issues の見張り等) も回すので、可視性から導出すると tick が止まる
 //
-// 🚨 interface + 順序つきスライスのレジストリ (issue 227 の「もう一段」案) は採らない。
+// 🚨 interface + 順序つきスライスのレジストリは採らない。
 // 4 つの lines/hint/routing はシグネチャも戻り値の語彙も別々 (doctorAction / rlDashAction /
 // tea.Cmd) なので、共通化には opts の統一とアダプタが要り、複雑性は下がらないまま
 // **毎フレームの確保が増える** (m を捕まえた closure はスライスへ逃げるので必ずヒープに乗る。
 // viewLines と hintLine は 1 フレームに 1 回ずつ通る)。1 フレームの確保には上限があり
 // (TestFrameAllocBudget)、issues-40 は実測 211 回に対し上限 213 = **余裕 2 回**しかない
-// (敵対レビュー 2026-09-04 の実測。設定当時の 209 を引いて「4 回」と書いていたのは古い)。
+// (実測 2026-09-04。設定当時の 209 を引いて「4 回」と書いていたのは古い)。
 // enum の switch は確保 0 (同レビューが 8 ケースすべてで実測) で同じ「単一の出典」を作れる。
 type FullScreenID int
 
@@ -93,8 +93,8 @@ func (id FullScreenID) String() string {
 }
 
 // CrossTarget は横断キー (どの全画面からも同じ板へ飛ぶキー。docs/glogx-ui-guide.md §2) の表。
-// 🚨 横断キーの割当はここだけに書く。以前は画面・モードごとに手で列挙していて、列挙から漏れた
-// 場所 (全 viewer の D / doctor の i s R) では押しても無言で捨てられた (issue 664)。
+// 🚨 横断キーの割当はここだけに書く。画面・モードごとに手で列挙しない。列挙から漏れた
+// 場所 (全 viewer の D / doctor の i s R) では押しても無言で捨てられた。
 // 各画面は「自分でキーを解釈し切るモード (ownsKeys / 確認 / 入力)」を抜けた後にこれを引き、
 // 行き先が自分なら従来どおり自分の閉じる語彙 (toggle) に任せる。
 func CrossTarget(key string) (FullScreenID, bool) {

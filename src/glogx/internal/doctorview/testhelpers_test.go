@@ -14,7 +14,7 @@ import (
 	"glogx/internal/doctorview/doctortest"
 )
 
-// doctor のテストが共有する部品のうち doctorview の型を使うもの (doctortest は doctorview を import できないので、ここに置く。issue 817)。
+// doctor のテストが共有する部品のうち doctorview の型を使うもの (doctortest は doctorview を import できないので、ここに置く)。
 
 // testView はテスト用の DoctorView (外への口は doctortest.FakeDeps)。
 func testView(t *testing.T) *DoctorView {
@@ -38,7 +38,7 @@ func testText(v *DoctorView, page int) string {
 }
 
 // writeTestSnapshot は snapshot をキャッシュ位置へ書く (TTL 内 / 外の前提を作る)。
-// 同じ 4〜10 行がこのファイルに 8 回あったのを 1 行にしたもの (issue 199)。
+// 同じ 4〜10 行がこのファイルに 8 回あったのを 1 行にしたもの。
 //
 // 🚨 壊れた JSON を書くテスト (TestDoctorCacheCorruptAndAtomic) と、書き込み先を
 // 直接触るテスト (os.Remove / os.Chmod) は path 自体が要るので寄せていない。

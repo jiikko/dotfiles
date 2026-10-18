@@ -10,8 +10,7 @@ import (
 	"testing"
 )
 
-// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (issue 817 で画面を移したとき、
-// 両方のテストが使っていたもの)。
+// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (両方のテストが使っていたもの)。
 
 // newTestStatusView は「開いた状態で porcelain を読み込んだ」viewer を返す。
 // 🚨 toggle() は通さない: 返り値の tea.Batch には tea.Tick (自動更新 1.5s / プレビュー 120ms) が
@@ -66,7 +65,7 @@ func applyStatusLoad(t *testing.T, v *StatusView) {
 	v.Receive(msg)
 }
 
-// assertSanitizedAndVisible は無害化テストの 2 つの主張を対で確かめる (issue 284):
+// assertSanitizedAndVisible は無害化テストの 2 つの主張を対で確かめる:
 //
 //  1. 制御シーケンス / OSC の中身が残っていない (本来の主張)
 //  2. 🚨 **細工した値が実際に描かれている** (陽性対照)
@@ -93,7 +92,7 @@ func assertSanitizedAndVisible(t *testing.T, where string, lines []string, wantV
 	}
 }
 
-// issue 417: 外部由来の文字列が termsafe を通らずに画面 / stderr へ届いていた 4 経路。
+// 外部由来の文字列が termsafe を通らずに画面 / stderr へ届いていた 4 経路。
 // どれも表示にしか使わない値なので、受け取った時点で平文にしている。
 const evil417 = "\x1b]52;c;cHduZWQ=\a\u009b2J\u202eevil"
 

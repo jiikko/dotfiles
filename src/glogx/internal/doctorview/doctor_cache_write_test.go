@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// doctor のキャッシュ書き込みで **write が失敗したとき** に temp が残らないこと (issue 219)。
+// doctor のキャッシュ書き込みで **write が失敗したとき** に temp が残らないこと。
 //
 // 🚨 このテストが見ているのは `app.WriteAtomic` の **write 分岐** (Write 失敗時の os.Remove)。
 // rename 分岐は `TestSaveCacheCleansTempOnRenameFailure` が pin しており、そちらを外しても
@@ -129,10 +129,10 @@ func checkWriteFailureCleansTemp(t *testing.T, tmpName string, save func() error
 }
 
 // 永続キャッシュの鮮度判定は「未来の時刻」を fresh にしない (main の clock_rollback_test.go の
-// TestPersistedCacheRejectsFutureTimestamps から doctor の分を移した。issue 817)。
+// TestPersistedCacheRejectsFutureTimestamps から doctor の分を移した)。
 func TestDoctorStartupToastRejectsFutureScan(t *testing.T) {
 	now := time.Now()
-	// 🚨 Total を直接入れても効かない。sanitizeDiskCache (issue 193) が Entries から
+	// 🚨 Total を直接入れても効かない。sanitizeDiskCache が Entries から
 	// 再計算するので、実在するカタログ ID のエントリを積む必要がある。
 	c := doctorDiskCache{
 		ScannedAt: now.Add(48 * time.Hour),

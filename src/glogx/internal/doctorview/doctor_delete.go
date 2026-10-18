@@ -1,6 +1,6 @@
 package doctorview
 
-// doctor の削除導線 (issue 148 段階 ④ S2)。**破壊的なコードはここに無い**:
+// doctor の削除導線。**破壊的なコードはここに無い**:
 // 判断はすべて `doctor/disk` の Delete が持っていて、この層は「どれを選んだか」を渡し、
 // 進捗と結果を描くだけ。engine が守る不変条件 (issues/148 の ④ 節) のうち、
 // UI が壊しうるのは次の 3 つなので、それをここで担保する:
@@ -61,15 +61,15 @@ type doctorDelete struct {
 	// progCh は**相だけ**の 1 バッファ。溢れたら古い相を捨てて新しい相を入れる。
 	// 🚨 ch と同じ「落としてよい」口に相を載せると、速いエントリが 16 件溜まった直後の
 	// 重いエントリの相が捨てられ、**古いエントリ番号に伸び続ける経過秒が付く** =
-	// 「16 番目の走査が 97 秒続いている」という具体的な嘘になる (敵対レビュー 2026-09-04 が実測)。
+	// 「16 番目の走査が 97 秒続いている」という具体的な嘘になる (実測 2026-09-04)。
 	// 落としてよいのは「古い相」であって「最新の相」ではない
 	progCh  chan doctorDeleteEvent
 	done    chan doctorDeleteEvent
 	armedCC bool // 実行中に Ctrl-C が 1 回押された (2 回目で cancel)
 
 	// confirmScroll は確認パネルの縦位置。**破壊的操作の確認で「対象が見えない」を作らない**ため
-	// (issue 241)。以前は入り切らない塊を落として「端末を広げてください」と言うだけで、
-	// 送ろうとして押したキーは下の default に落ちて確認ごと無言で閉じていた
+	// 入り切らない塊を落として「端末を広げてください」と言うだけにしない。
+	// 送ろうとして押したキーは下の default に落ちて確認ごと無言で閉じる
 	confirmScroll deleteScroll
 }
 
@@ -91,7 +91,7 @@ func (s *deleteScroll) window(o DoctorRenderOpts, all []string, avail int) []str
 		// 本文に使える行が無い (極端に低い画面)。注記も出さない:
 		// 1 行でも返すと末尾 (合計と操作の説明) が押し出される。
 		// 🚨 offset は**捨てない**。捨てると、端末が一瞬縮んだだけで送った位置が失われる
-		// (敵対レビュー 2026-09-04 の P3-2 が実測: page20 で G → page3 を 1 フレーム → page20 に
+		// (実測: page20 で G → page3 を 1 フレーム → page20 に
 		// 戻しても末尾が見えない)
 		s.view = 0
 		return nil
@@ -170,8 +170,7 @@ func (d *doctorDelete) reset() {
 //
 // 🚨 **削除エンジンの経路は触らない。** 分岐するのは「何を確認するか」「何を走らせるか」
 // 「結果をどう描くか」の 3 箇所だけで、相の機械 (Ctrl-C 2 回のガード / コマンドの垂れ流し /
-// 進捗 / スクロール) は共有する。2 つ目の状態機械を作らない
-// (issue 071 が「全画面 viewer 2 枚が状態機械を独立に 2 コピー持つ」を同型の問題として挙げている)。
+// 進捗 / スクロール) は共有する。2 つ目の状態機械を作らない。
 type doctorJob int
 
 const (
@@ -278,7 +277,7 @@ func (v *DoctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 		run = disk.Delete
 	}
 	return tea.Batch(v.waitDeleteCmd(gen), func() tea.Msg {
-		// 🚨 **削除も latch に載せる** (issue 211 の敵対的レビュー P1)。走査 3 本だけ看取っても、
+		// 🚨 **削除も latch に載せる**。走査 3 本だけ看取っても、
 		// いちばん危ない経路 (rm / trash / brew cleanup / simctl delete と、その後のインベントリ
 		// 記録) が終了・再起動で watchdog ごと消えて走り続ける。CmdTimeout は 5 分ある
 		var rep disk.DeleteReport
@@ -360,7 +359,7 @@ func (v *DoctorView) startCmdRun(acts []doctorCmdAction) tea.Cmd {
 	}
 	return tea.Batch(v.waitDeleteCmd(gen), func() tea.Msg {
 		var recs []disk.CommandRecord
-		// 🚨 削除と同じ latch に載せる (issue 211)。brew install は数分かかるので、
+		// 🚨 削除と同じ latch に載せる。brew install は数分かかるので、
 		// 終了・再起動で走行中のプロセスが watchdog ごと消えないようにする
 		doctorTrack(func() {
 			for i, a := range acts {
@@ -531,7 +530,7 @@ func (v *DoctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 	if !v.shown || msg.gen != v.gen || !v.del.active() {
 		return nil // 閉じた後に届いた古い Msg
 	}
-	// 🚨 **ここも live 経路の関門** (issue 228)。削除の記録に乗るのは対象パス (ファイル名由来) と
+	// 🚨 **ここも live 経路の関門**。削除の記録に乗るのは対象パス (ファイル名由来) と
 	// OS のエラー文、そして `cli:` で起こしたコマンドの stdout / stderr = どれも自分以外が
 	// 書いた文字列。パネルに描くだけでなく `y` でまるごとコピーできるので、無害化せずに
 	// 持つと**貼った先の端末**で発火する。CLI と同じ関数を通す。
@@ -568,8 +567,8 @@ func (v *DoctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 	}
 	rep := disk.SanitizeDeleteReportForDisplay(*ev.rep)
 	if ev.dryRun {
-		// 🚨 plan は表示だけでなく**実行対象の絞り込み**にも使われる (plannedTargets → Entry.ID。
-		// issue 245)。無害化が触るのは表示に出る文字列 (Label / Reason / パス) だけで **ID は
+		// 🚨 plan は表示だけでなく**実行対象の絞り込み**にも使われる (plannedTargets → Entry.ID)。
+		// 無害化が触るのは表示に出る文字列 (Label / Reason / パス) だけで **ID は
 		// 触らない**ので、絞り込みも実際に消す対象 (selectedResults 側の実パス) も変わらない
 		v.del.plan, v.del.confirm = &rep, true
 		return nil
@@ -609,17 +608,16 @@ func (v *DoctorView) handleDeleteKey(key string) (doctorAction, bool) {
 		d.reset()
 		return DoctorRescan, true
 	case d.confirm:
-		// 🚨 送るキーは**中止に落とさない** (issue 241)。窓に入り切らない対象を見ようとした
+		// 🚨 送るキーは**中止に落とさない**。窓に入り切らない対象を見ようとした
 		// 打鍵で確認が消えるのを塞ぐ。ここに無いキーは既定どおり中止側 (安全側) へ落ちる。
 		// 🚨 **「消せるものがありません」の画面でも送れること**: あちらもパネルに
 		// 「(j/k で送る)」と出るので、送れないと「案内どおり押したら無言で消えた」形になる
-		// (敵対レビュー 2026-09-04 の P1。塞いだはずの形を自分で作っていた)。
 		// 消せない理由 (skipped の Reason) こそ読みたいので、読む手段を先に確保する
 		if deleteScrollKeys[key] {
 			d.confirmScroll.scroll(key)
 			return DoctorSwallow, true
 		}
-		// 🚨 Enter は飲む (実行もキャンセルもしない。issue 243、ユーザー判断 2026-09-05)。
+		// 🚨 Enter は飲む (実行もキャンセルもしない。ユーザー判断 2026-09-05)。
 		// glogx の他の破壊確認 (status の discard / push / pull) は `y/Enter: 実行` なので手癖で
 		// 押されるが、ディスクから実体を消す既定を実行側へ倒さない。かといって既定の中止側へ
 		// 落とすと「押したら無言で閉じた」になる。どちらにも倒さず、案内に非対称を書く。
@@ -641,7 +639,7 @@ func (v *DoctorView) handleDeleteKey(key string) (doctorAction, bool) {
 		}
 		switch key {
 		case "y", "Y":
-			// 🚨 **実行対象は「確認画面に出した plan」から作る** (issue 245)。
+			// 🚨 **実行対象は「確認画面に出した plan」から作る**。
 			// UI の選択 (selectedResults) をそのまま渡すと、**確認画面が約束した量と
 			// 実際に消える対象がずれる**: 下見が部分的に中断されると 2 件目以降が
 			// OutcomeFailed になり、confirmLines はそれを解放量に足さない (正しい) のに、
@@ -677,7 +675,7 @@ func (v *DoctorView) handleDeleteKey(key string) (doctorAction, bool) {
 // 🚨 **キーの分岐の正本は tui.go:1321** で、ここはその写し。両者が一致していることは
 // TestDeleteAbortGuidanceMatchesKeys が突き合わせるが、**あのテストの候補キーもハードコード**
 // なので、tui.go とここの両方に載っていない 3 つ目のキーを tui.go だけに足しても誰も落ちない
-// (敵対レビュー 2026-09-04 が ctrl+q を足して実測)。tui.go の分岐を触るときは、ここと
+// (実測 2026-09-04: ctrl+q を足した)。tui.go の分岐を触るときは、ここと
 // あのテストの候補表も一緒に見ること。字句で結ぶ検査は書いていない。
 var deleteAbortKeys = []string{"ctrl+c", "ctrl+g"}
 
@@ -749,7 +747,7 @@ func (v *DoctorView) deleteLogText() string {
 // engine (disk.Delete) は渡された Items を「今回の走査でも候補だったか」で照合するので、
 // **部分集合をそのまま渡してよい** (UI 側で消す対象を組み直す必要はない)。
 func (v *DoctorView) selectedResults() []disk.Result {
-	// 🚨 選択が空なら即返す (issue 274)。hint は毎フレーム selectionSummary 経由でここへ来るが、
+	// 🚨 選択が空なら即返す。hint は毎フレーム selectionSummary 経由でここへ来るが、
 	// 条件 (`n > 0 && v.tab == TabDisk`) は**呼び出しの後**にあるので、選択していない間も
 	// 全エントリの全 Item を舐め、Item ごとに diskItemKey で文字列を 1 本確保していた
 	// (合成 6,400 items の memprofile で確保の 88.9%)。下のループは選択が空なら必ず
@@ -794,7 +792,7 @@ func (v *DoctorView) currentDiskResults() []disk.Result {
 func (v *DoctorView) deletable(r disk.Result) (bool, string) {
 	switch {
 	case r.Status == disk.StatusBlocked:
-		// blocked は「走査**できた上で**今は対象外」。走査できなかったのと混ぜない (issue 182 の語彙)
+		// blocked は「走査**できた上で**今は対象外」。走査できなかったのと混ぜない
 		return false, "いまは対象外の行です: " + r.Reason
 	case r.Status != disk.StatusOK:
 		return false, "走査できていない行は削除できません"
@@ -805,7 +803,7 @@ func (v *DoctorView) deletable(r disk.Result) (bool, string) {
 	case r.Reused:
 		return false, "前回の計測を再利用した行です (r で再スキャンしてから削除してください)"
 	case (r.Entry.Inspect || r.Entry.Risk == disk.RiskConfirm) && !v.inspected[resultEntryID(r)]:
-		// ユーザーのファイルでありうる行は、中身を一度見るまで選べない (issue 148 の 3 章)。
+		// ユーザーのファイルでありうる行は、中身を一度見るまで選べない。
 		// 🚨 Inspect だけを見ると、カタログが `RiskConfirm` に `Inspect` を付け忘れた瞬間に
 		// ゲートが消える (今の 5 件はたまたま両方立っている)。危険度そのものも条件にする
 		return false, "中身を確認してから選んでください (Enter で開く)"
@@ -931,7 +929,7 @@ func (v *DoctorView) clearItemsOf(id entryID) {
 
 // selectionSummary は選択中の**ディレクトリ数**と合計。
 // 🚨 エントリ数で数えない: 確認画面が「N 件を削除」を Item 数で出すので、hint だけ
-// エントリ数だと「hint は 1 件、確認は 3 件」になる (敵対レビュー 2026-09-03)。
+// エントリ数だと「hint は 1 件、確認は 3 件」になる。
 func (v *DoctorView) selectionSummary() (int, int64) {
 	var n int
 	var total int64
@@ -1030,7 +1028,7 @@ func (v *DoctorView) deletePanel(o DoctorRenderOpts) []string {
 		// 🚨 極小の端末では**抜ける手段を優先して**進捗を 1 行へ畳む。
 		// blocking 中は handleDeleteKey が全キーを飲むので、中断案内が画面から消えると
 		// 「このパネルから出る方法がどこにも書いていない」状態になる。
-		// 実測 (敵対レビュー 2026-09-04): 2 行にしたことで案内が出る下限が
+		// 実測: 2 行にしたことで案内が出る下限が
 		// running は page 5 → 6、preparing は 6 → 7 へ上がっていた。7 未満で畳めば元に戻る
 		prog := deleteProgressLines(o, d.progress)
 		if o.Page < 7 && len(prog) > 1 {
@@ -1046,7 +1044,7 @@ func (v *DoctorView) deletePanel(o DoctorRenderOpts) []string {
 		// 案内が無いと「このパネルから抜ける手段が無い」に見える
 		// armedCC なら残り 1 回。「2 回押せ」と「もう 1 回押せ」を並べると、あと何回なのか読めない
 		//
-		// 🚨 **Ctrl-G も併記する** (issue 244)。tui.go は ctrl+g を ctrl+c と同じ 2 段ガードへ
+		// 🚨 **Ctrl-G も併記する**。tui.go は ctrl+g を ctrl+c と同じ 2 段ガードへ
 		// 渡すので実際に中断できるが、案内が Ctrl-C しか書いていなかった。Ctrl-G で抜けようと
 		// した人は「効かない」と思って Ctrl-C を探し (実際には 1 回目が消費されている)、
 		// 逆に Ctrl-G 2 回で中断したときは案内を読んでいた人に理由が分からない。
@@ -1080,7 +1078,7 @@ func (v *DoctorView) deletePanel(o DoctorRenderOpts) []string {
 }
 
 // cmdConfirmLines は「これから何を実行するか」。**コマンドをそのまま全部出す**
-// (同意の対象と実行の対象を一致させる。削除側が issue 245 で学んだのと同じ規律)。
+// (同意の対象と実行の対象を一致させる。削除側と同じ規律)。
 func cmdConfirmLines(o DoctorRenderOpts, acts []doctorCmdAction) (blocks [][]string, tail []string) {
 	for _, a := range acts {
 		b := []string{"▸ " + doctorColor(o.Colored, term.AnsiBold, a.label), "  $ " + a.cmd}
@@ -1121,9 +1119,9 @@ func planHasWork(plan *disk.DeleteReport) bool {
 
 // plannedIDs は下見で「これから消す」と出たエントリの ID。
 //
-// 🚨 **確認画面と実行対象の唯一の出典** (issue 245)。以前は「消せるものが在るか」の判定
-// (planHasWork) と「何を消すか」の判定 (case "y" の selectedResults) が別ソースで、
-// **確認画面が何を約束しても実行が従わない**構造だった。述語をここに 1 つ置く。
+// 🚨 **確認画面と実行対象の唯一の出典**。「消せるものが在るか」の判定
+// (planHasWork) と「何を消すか」の判定 (case "y" の selectedResults) を別ソースにしない。
+// 別ソースだと**確認画面が何を約束しても実行が従わない**。述語をここに 1 つ置く。
 func plannedIDs(plan *disk.DeleteReport) map[entryID]bool {
 	if plan == nil {
 		return nil
@@ -1138,7 +1136,7 @@ func plannedIDs(plan *disk.DeleteReport) map[entryID]bool {
 }
 
 // plannedTargets は選択のうち、下見で Planned になったエントリだけを返す
-// (確認画面に出した対象と実行対象を一致させる。issue 245)。
+// (確認画面に出した対象と実行対象を一致させる)。
 func plannedTargets(plan *disk.DeleteReport, sel []disk.Result) []disk.Result {
 	planned := plannedIDs(plan)
 	if len(planned) == 0 {
@@ -1180,7 +1178,7 @@ func (v *DoctorView) confirmLines(o DoctorRenderOpts) (blocks [][]string, tail [
 			freeing += e.BeforeSize
 		}
 		out = append(out, fmt.Sprintf(" %8s  %s  %s", size, padLabel(e.Label, labelW), word))
-		// 🚨 件数は**実際に触る Item だけ**を数える (issue 233)
+		// 🚨 件数は**実際に触る Item だけ**を数える
 		planned, dropped := plannedItems(e)
 		switch {
 		case skipped:
@@ -1206,7 +1204,7 @@ func (v *DoctorView) confirmLines(o DoctorRenderOpts) (blocks [][]string, tail [
 		blocks = append(blocks, out)
 	}
 	// 🚨 合計は**1 行にまとめる**。2 行に割ると、狭い画面で先に落ちて「1 件目のサイズだけが
-	// 見えている状態で y を受ける」形になる (敵対レビュー 2026-09-03: 78GB の削除で 1.0GB しか
+	// 見えている状態で y を受ける」形になる (実測 2026-09-03: 78GB の削除で 1.0GB しか
 	// 見えなかった)。assembleDeletePanel は末尾を後ろから残すので、1 行なら生き残りやすい
 	// 🚨 tail は「**捨ててよい順**」に並べる (assembleDeletePanel は前から削る)。
 	// 空行 → 合計 → 操作の説明。最後の行は必ず残る
@@ -1227,7 +1225,7 @@ func deleteCommandLines(o DoctorRenderOpts, e disk.EntryOutcome) []string {
 	if e.Method == "propose" {
 		return []string{deleteNote(o, "実行しません。手で叩いてください: "+cleanOneLine(e.Command))}
 	}
-	// 🚨 コマンド行も**実際に実行する Item だけ**から作る (issue 233 の敵対レビュー P2-1)。
+	// 🚨 コマンド行も**実際に実行する Item だけ**から作る。
 	// EntryOutcome.CommandLines は全 Item を回すが、execCLI は `Outcome != OutcomePlanned` を
 	// 飛ばす (delete.go)。件数とパスだけ絞ると「1 件にコマンドを実行」の下にコマンドが 2 本
 	// 並ぶ形になり、この関数の doc が言う「確認に出した形と実行する形が同じ」が崩れる
@@ -1251,7 +1249,7 @@ func deleteCommandLines(o DoctorRenderOpts, e disk.EntryOutcome) []string {
 // **中身を確かめずに y を押す**ことになる (ユーザー要望 2026-09-03)。パスは engine が
 // 走査し直して正規化したもの = 実際に触る対象そのもの。
 //
-// plannedItems は下見で**実際に触ると決まった** Item だけを返す (issue 233)。
+// plannedItems は下見で**実際に触ると決まった** Item だけを返す。
 //
 // 🚨 エントリ単位の Outcome だけを見ると、下見で Skipped / Failed になった Item まで
 // 「N 件を削除」に数え、パス一覧にも並ぶ。同じ行のサイズは BeforeSize (照合が取れた分だけ) なので
@@ -1268,7 +1266,7 @@ func plannedItems(e disk.EntryOutcome) (planned []disk.ItemOutcome, dropped []di
 }
 
 // droppedNote は省いた Item を件数**と理由**で伝える。
-// 🚨 固定文言にしない (敵対レビュー 2026-09-04 の P3)。dropped には「対象パスを拒否: …」
+// 🚨 固定文言にしない。dropped には「対象パスを拒否: …」
 // (validateTarget = 細工の兆候) や「実体を識別できません」も落ちてくるので、
 // 「走査時と実体が変わりました」で畳むと**細工の兆候が消える**。理由は重複を畳んで並べる。
 func droppedNote(o DoctorRenderOpts, dropped []disk.ItemOutcome) string {
@@ -1294,12 +1292,10 @@ func droppedNote(o DoctorRenderOpts, dropped []disk.ItemOutcome) string {
 // 🚨 1 エントリあたりの表示は maxConfirmPaths 件で打ち切る。全部並べると 1 エントリで画面を
 // 埋め、**他のエントリが窓の外へ押し出される** (送れば読めるが、最初のフレームに何が出るかは
 // 「どれを消すか」の把握に効く)。打ち切ったことは件数で伝える。
-// 🚨 理由の更新 (issue 241): 以前は「塊単位で落とすので他のエントリが**丸ごと省略される**」と
-// 書いていたが、確認パネルは行単位の窓になったので丸ごと省略はもう起きない。打ち切りを残すのは
-// 「1 エントリで最初の画面を埋めない」ためで、11 件目以降が窓でも読めない点は残っている
-// (issue 241 の決着節に記録)。
+// 🚨 確認パネルは行単位の窓なので、他のエントリが丸ごと省略されることは起きない。打ち切りを残すのは
+// 「1 エントリで最初の画面を埋めない」ためで、11 件目以降が窓でも読めない点は残っている。
 func deletePathLines(o DoctorRenderOpts, e disk.EntryOutcome) []string {
-	// 🚨 並べるのは**実際に触る Item だけ** (issue 233)。下見で対象外になったパスを混ぜると、
+	// 🚨 並べるのは**実際に触る Item だけ**。下見で対象外になったパスを混ぜると、
 	// 上の doc の「実際に触る対象そのもの」が成立しない
 	items, _ := plannedItems(e)
 	out := make([]string, 0, min(len(items), maxConfirmPaths)+1)
@@ -1311,7 +1307,7 @@ func deletePathLines(o DoctorRenderOpts, e disk.EntryOutcome) []string {
 		// 🚨 パスは**ファイル名由来**なので改行や制御文字が入りうる (macOS のファイル名は
 		// `/` と NUL 以外を許す)。1 行 = 1 件の契約を破ると、確認画面に偽の行
 		// (「y: 削除する」等) を差し込めてしまう。印字可能文字だけに絞る
-		// 🚨 パスは**先頭を削って末尾を残す** (issue 239)。確認画面で末尾が落ちると、
+		// 🚨 パスは**先頭を削って末尾を残す**。確認画面で末尾が落ちると、
 		// 同一プロジェクトの旧 DerivedData のように**世代の違いが見分けられない**まま
 		// y を押すことになる。deleteNote が 11 桁字下げするので、その分を引いた予算で詰める
 		out = append(out, deleteNote(o, doctorFitPath(cleanOneLine(it.Path), o.Width-deleteNoteIndent)))
@@ -1350,7 +1346,7 @@ func doctorDeleteResultLines(o DoctorRenderOpts, rep disk.DeleteReport, log []st
 	} else {
 		tail = append(tail, " 解放された容量はありません")
 	}
-	// 🚨 **合計行だけを読んで「全部消えた」と読み違えるのを止める** (issue 316)。
+	// 🚨 **合計行だけを読んで「全部消えた」と読み違えるのを止める**。
 	// 各行には ❌ / 🚨 が出ているが、目に入りやすいのは末尾の合計行で、そこは成功分しか語らない。
 	// `HasFailures` はまさにこの読み違えを防ぐために作られた口 (delete.go の doc) なのに、
 	// production から一度も呼ばれていなかった (= 配線漏れ)。
@@ -1419,7 +1415,7 @@ func doctorOutcomeWord(o disk.Outcome) string {
 //     🚨 **同じ語に 3 つの理由が載る**ので、直下の理由文は状態ごとに違う:
 //     engine の StatusBlocked 分岐なら「いまは対象外です: …」、触る対象 0 件なら
 //     「触れる対象がありませんでした」、下見そのものが中断されたなら
-//     「中断されました (消してよいかを確認できていません)」(issue 246 で 3 つ目が増えた)。
+//     「中断されました (消してよいかを確認できていません)」。
 //     語だけを見て理由文を決め打ちしないこと
 //     🚨 一覧 (disk.Mark) と語が割れていないかは confirmLines のテストが突き合わせる
 //   - Failed は下見でも結果でも「実行できなかった」なので、結果画面の語をそのまま借りる
@@ -1481,7 +1477,7 @@ const deleteNoteIndent = 11
 // なので末尾を先に確保し、入る分だけエントリを載せて、省いた件数を注記する。
 // assembleDeletePanel は見出し + 本文 + 末尾を組む。sc != nil の呼び出し (確認パネル) は
 // 本文を**行単位の窓**で見せる: 塊単位で落とす形だと、1 つの塊が窓より大きいときに
-// 本文が丸ごと消える (issue 241)。sc == nil (結果パネル) は従来どおり塊単位で落とす。
+// 本文が丸ごと消える。sc == nil (結果パネル) は従来どおり塊単位で落とす。
 func assembleDeletePanel(o DoctorRenderOpts, title string, blocks [][]string, tail []string, sc *deleteScroll) []string {
 	head := []string{" " + doctorColor(o.Colored, term.AnsiBold, title), ""}
 	room := max(o.Page-len(head), 1)

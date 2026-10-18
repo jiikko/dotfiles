@@ -13,8 +13,8 @@ import (
 //
 // 🚨 収まらない hint は `term.ClipToWidth` で末尾が切られ、**常に並びの最後が消える**。
 // そこに置かれているのは「どう抜けるか」なので、狭い端末ほど出口が分からなくなる
-// (issue 155 が status viewer で実測し、issue 201 の監査で doctor / job パネル /
-// detailOv の 3 箇所が同じ状態だったことが分かった。doctor は 112 桁 / 予算 82 桁)。
+// (status viewer で実測した。doctor / job パネル /
+// detailOv の 3 箇所も同じ状態だった。doctor は 112 桁 / 予算 82 桁)。
 //
 // 直し方は「切る」ではなく **`term.FitHintItems` で入らない項目を落とす**。優先度 1 に
 // 「抜ける手段」を置けば、幅が狭くてもそれだけは残る。
@@ -80,7 +80,7 @@ func assertFits(t *testing.T, name, hint string, width int) {
 	}
 }
 
-// commit diff の hint は term.FitHintItems で組み、狭い幅でも抜ける手段が残る (issue 264)。
+// commit diff の hint は term.FitHintItems で組み、狭い幅でも抜ける手段が残る。
 // 幅を掃くのは TestStatusHintUsesRenderBudget と同じ理由 (1 点では予算のずれが余白に吸われる)。
 func TestDiffHintUsesRenderBudget(t *testing.T) {
 	for w := frameMinWidth; w <= 140; w++ {
@@ -100,9 +100,8 @@ func TestDiffHintUsesRenderBudget(t *testing.T) {
 
 // hintSurfaceSetup は面 ID → 「その面を出すモデルの作り方」と「消えてはいけない語」。
 //
-// 🚨 **配列にしているのは登録漏れを機械で止めるため** (issue 289)。hintSurfaceID を足すと
-// ここの要素が nil のまま残り、TestHintSurfacesCoverEveryID が落ちる。以前は非全画面ぶんが
-// 手書きのリテラル列で、下限チェックは「登録の削除」しか見ておらず**分岐の追加は素通り**した
+// 🚨 **配列にしているのは登録漏れを機械で止めるため**。hintSurfaceID を足すと
+// ここの要素が nil のまま残り、TestHintSurfacesCoverEveryID が落ちる。手書きのリテラル列にしない。下限チェックは「登録の削除」しか見ておらず**分岐の追加は素通り**した
 // (変異で実測: 溢れる分岐を 1 本足しても幅ゲート 4 本とも緑だった)。
 //
 // exit は「幅が足りなくても最後まで残るべき語」。抜ける手段がある面はその案内、
@@ -119,7 +118,7 @@ var hintSurfaceSetup = [hintSurfaceCount]struct {
 	hintSurfacePulling:      {"pull 実行中", func(m *browseModel) { m.actModal.pulling = true }, "pulling..."},
 	hintSurfaceRerunConfirm: {"再実行 確認", func(m *browseModel) { m.actModal.rerunConfirm = true }, "job を再実行しますか? [Y/n] (Enter=y)"},
 	hintSurfaceRerunning:    {"再実行 中", func(m *browseModel) { m.actModal.rerunning = true }, "rerunning..."},
-	// 🚨 target は 2 件にする (敵対的レビュー 2026-09-06 の P3)。この面だけ項目が
+	// 🚨 target は 2 件にする。この面だけ項目が
 	// 実行時に伸びる (strings.Join の連結) ので、1 件の fixture では最長形を測れない。
 	// updateKeyTarget が返すのは claude / codex の 2 つだけなので、これが実在しうる最長。
 	hintSurfaceUpdating: {"self-update 中", func(m *browseModel) {
@@ -132,7 +131,7 @@ var hintSurfaceSetup = [hintSurfaceCount]struct {
 		m.panelSHA, m.panelCursor = m.commits[0].SHA, 0
 	}, "h/q: 閉じる"},
 	// 🚨 openPanel は panelCursor = -1 から始めるので、Enter を押した直後に必ず通るのは
-	// こちら。そちらだけが幅検査の外にあり、実際に w=60〜69 で出口が切れていた (issue 279)。
+	// こちら。そちらだけが幅検査の外にあり、実際に w=60〜69 で出口が切れていた。
 	hintSurfacePanelNoCursor: {"job パネル(カーソル無し)", func(m *browseModel) {
 		m.panelSHA, m.panelCursor = m.commits[0].SHA, -1
 	}, "Enter/h/q: 閉じる"},
@@ -149,7 +148,7 @@ func hasHintItem(line, item string) bool {
 		// spinner つきの項目 (`⠋ pushing...`) は先頭の 1 文字が毎フレーム変わるので、
 		// 最初の空白より後ろで照合する。
 		// 🚨 これは部分一致には戻らない: `Enter/h/q: 閉じる` の最初の空白より後ろは
-		// `閉じる` なので、`h/q: 閉じる` とは一致しない (P3-2 の向きは塞がったまま)。
+		// `閉じる` なので、`h/q: 閉じる` とは一致しない (この向きは塞がったまま)。
 		if _, rest, ok := strings.Cut(f, " "); ok && rest == item {
 			return true
 		}
@@ -167,7 +166,7 @@ type hintSurface struct {
 	prefixed bool
 	// id は「この setup で出るはずの面」。checkID のときだけ突き合わせる。
 	//
-	// 🚨 **出口の語で面の同一性を判定しないこと** (敵対的レビュー 2026-09-06 の P1)。
+	// 🚨 **出口の語で面の同一性を判定しないこと**。
 	// exit は互いに部分文字列になりうる (`q/h: 閉じる` ⊂ `P/q/h: 閉じる` /
 	// `h/q: 閉じる` ⊂ `Enter/h/q: 閉じる` の 2 組が実在する) ので、
 	// `strings.Contains` は**面を取り違えても緑**になる。実測: activeHintSurface() の
@@ -248,8 +247,8 @@ func TestHintSurfacesCoverEveryID(t *testing.T) {
 // ここで全画面ぶんをまとめて掃く。
 func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
 	surfaces := hintSurfaces()
-	// 🚨 下限が実際に検出するのは **exits map の書き忘れで全画面ビューアが対象から落ちる**形だけ
-	// (敵対的レビュー 2026-09-06 の P3)。レジストリぶんは hintSurfaceCount 件を無条件に
+	// 🚨 下限が実際に検出するのは **exits map の書き忘れで全画面ビューアが対象から落ちる**形だけ。
+	// レジストリぶんは hintSurfaceCount 件を無条件に
 	// append するので、そちらの取りこぼしは TestHintSurfacesCoverEveryID が先に落とす。
 	// 「走査 0 件 = 緑」を塞ぐ役目はその 2 本で分担している。
 	want := int(hintSurfaceCount) + 2 + len(fullScreenCases)
@@ -257,13 +256,13 @@ func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
 		t.Fatalf("検査対象が %d 面しかない (期待 %d)。exits の書き忘れで対象から落ちている",
 			len(surfaces), want)
 	}
-	// 🚨 面ごとに t.Run で分ける (敵対的レビュー 2026-09-06 の P3)。二重ループ + t.Fatalf だと
+	// 🚨 面ごとに t.Run で分ける。二重ループ + t.Fatalf だと
 	// 最初の 1 件で全体が止まり、**面ごとの pass/fail が読めない**。変異を当てたとき
 	// 「どれか 1 面が落ちた」までしか分からず、残りの面が守られているかを示せない
 	// (mutation-verify-new-tests.md の「テーブル駆動なら全ケースが red になるか」)。
 	for _, s := range surfaces {
 		t.Run(s.name, func(t *testing.T) {
-			// 🚨 checkID の書き忘れを検出する (敵対的レビュー 2 周目の P3)。書き忘れると
+			// 🚨 checkID の書き忘れを検出する。書き忘れると
 			// 同一性の突き合わせが黙って外れ、面を取り違えても出口の部分一致だけで緑になる。
 			if !s.checkID && !s.fullScreen {
 				t.Fatalf("checkID も fullScreen も無い面が登録されている (同一性が検査されない)")
@@ -290,7 +289,7 @@ func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
 					t.Errorf("w=%d: 語の途中で切れている: %q", w, got)
 					return
 				}
-				// 🚨 **部分一致で照合しないこと** (敵対的レビュー 2 周目の P3-2)。出口の語は
+				// 🚨 **部分一致で照合しないこと**。出口の語は
 				// 互いに部分文字列になりうる (`h/q: 閉じる` ⊂ `Enter/h/q: 閉じる`) ので、
 				// Contains だと **hintBuilders の配線が入れ替わっても片方向は緑**になる。
 				// 項目は 2 空白で連結されるので、区切って**完全一致**で見る。

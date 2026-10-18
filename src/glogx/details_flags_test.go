@@ -19,7 +19,7 @@ import (
 // 「(CI job 情報なし)」**になり、開き直すと同一 SHA へ 2 本目の GraphQL が飛ぶ。
 //
 // 272 のコメントはこの形を名指しで禁じていたが、detailMsg / basisMsg が loading しか
-// 消していなかったため実際に起きた (敵対的レビュー 2026-09-06)。
+// 消していなかったため実際に起きた。
 func TestDetailsFlagsStayPaired(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Snap = rlTestSnap()

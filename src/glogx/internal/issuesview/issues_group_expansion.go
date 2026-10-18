@@ -7,8 +7,8 @@ package issuesview
 //   - collapsed: 番号フィルタ中に親行を明示的に畳んだときの一時 override (auto を打ち消すためだけにある)
 //
 // 🚨 collapsed は番号フィルタが有効な間だけ意味を持つ。フィルタを解く経路は必ず endFilter を通す
-// (以前は 3 つの map を 7 関数が直接書いていて、解く経路を 1 本足すと collapsed の消し忘れで
-// 「解除後も畳んだまま・手動で展開しても開かない」になる形だった。issue 666)。
+// (3 つの map を複数の関数が直接書くと、解く経路を 1 本足すと collapsed の消し忘れで
+// 「解除後も畳んだまま・手動で展開しても開かない」になる)。
 //
 // GroupKey は絶対パス (issues.Issue.GroupKey)。ゼロ値は「何も展開していない」で、そのまま使える。
 type groupExpansion struct {
@@ -72,7 +72,7 @@ func (g *groupExpansion) toggle(key string) {
 
 // endFilter は番号フィルタを解くときの後始末。collapsed と auto を捨て、keep (解除前の現在行の group) が
 // auto だけで開いていたなら manual へ引き継ぐ (解除後もその子へ着地できるように)。auto もここで捨てるので、
-// 呼ぶ順序の制約 (setAuto(nil) より前) は無い (issue 752)。
+// 呼ぶ順序の制約 (setAuto(nil) より前) は無い。
 func (g *groupExpansion) endFilter(keep string) {
 	g.collapsed = nil
 	if keep != "" && g.auto[keep] && !g.manual[keep] {
@@ -83,7 +83,7 @@ func (g *groupExpansion) endFilter(keep string) {
 
 // prune は今の走査結果に無い GroupKey (alive に無いもの) を手動の展開から落とす。GroupKey は絶対
 // パスなので、group の rename / 削除 / checkout の移動で死にキーが state に溜まり、同名 group を
-// 作り直したとき「畳んだつもり」を無視して勝手に展開する (敵対レビュー round 2)。
+// 作り直したとき「畳んだつもり」を無視して勝手に展開する。
 func (g *groupExpansion) prune(alive map[string]bool) {
 	for key := range g.manual {
 		if !alive[key] {

@@ -8,7 +8,7 @@ import (
 	"glogx/internal/gitdata"
 )
 
-// ---- 敵対的レビュー (2026-09-03) が開けた穴を塞ぐテスト ----
+// ---- 変異で見つかった穴を塞ぐテスト ----
 
 // 🚨 削除の実行中に Ctrl-C / Ctrl-G が **browseModel の側で** 先に捌かれ、1 回目でアプリごと
 // 落ちていた。中断は ctx で伝える契約 (プロセスを殺すと記録が executing のまま残り、
@@ -79,7 +79,7 @@ func TestRestartPromptDefersWhileDeleteConfirm(t *testing.T) {
 	}
 }
 
-// 中断に使えるキーと、案内に書いてあるキーが一致する (issue 244)。
+// 中断に使えるキーと、案内に書いてあるキーが一致する。
 //
 // 🚨 案内は doctor_delete.go、キーの分岐は tui.go と**層が分かれている**ので、片側だけ変えても
 // build も既存テストも通る。
@@ -158,7 +158,7 @@ func TestDeleteKeepsRedrawAlive(t *testing.T) {
 	// 🚨 **削除の後に実際に画面へ出る状態**を全部当てる。ゼロ値だけを試すと、
 	// deleting() を blocking() から active() に取り違える退行を検知できない
 	// (active() は confirm / result / err も真になるので、結果画面の上で 12.5fps の
-	// 再描画が無限に回り続ける)。敵対レビュー 2026-09-04 が変異で実証した穴
+	// 再描画が無限に回り続ける)。変異で実証した穴 (2026-09-04)
 	for _, tc := range []struct {
 		name string
 		del  doctorview.DeleteState

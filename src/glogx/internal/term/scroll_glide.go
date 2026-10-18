@@ -10,7 +10,7 @@ import (
 // scrollGlide はコミット一覧 / diff pager / issues 本文 / status viewer の pager が共有する。
 // 面ごとに状態機械をコピーすると「カーブ・フレーム数・連打時の扱い」が散って必ず食い違う。
 //
-// 🚨 issues の一覧には scrollGlide を載せない (issue 031): あの面は cursor と窓を同時に動かし、
+// 🚨 issues の一覧には scrollGlide を載せない: あの面は cursor と窓を同時に動かし、
 // 窓は「カーソルを含む最小の窓」の導出値なので、遅らせる余地が幾何的にゼロ (載せても瞬時に
 // 着地点へ張り付くだけだった)。一覧は cursorGlide でカーソルの描画位置だけを滑らせる。
 

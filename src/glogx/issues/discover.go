@@ -34,10 +34,10 @@ var skipDirs = map[string]bool{
 }
 
 // ResolveRepoRoot は cwd を起点に git repo の toplevel を解決する。
-// **repo root の解決はここが唯一の実装** (issue 320)。
+// **repo root の解決はここが唯一の実装**。
 //
 // 🚨 **失敗時の値を返さない。** ok=false のとき何を使うかは呼び出し側が決める。
-// 以前は同じ問いに対して失敗時のセマンティクスが **3 通り**に割れていた:
+// 同じ問いに対して失敗時のセマンティクスが **3 通り**に割れうる (呼び出し側の事情):
 //
 //	open_workspace.go:repoRoot   → "."   (nvim を開く先。cwd では意図が違う)
 //	worktree_status.go (インライン) → ""    (untracked プレビューが cwd 相対に落ちるだけ)
@@ -54,7 +54,7 @@ func ResolveRepoRoot(cwd string) (string, bool) {
 	defer cancel()
 	// 🚨 subproc.CommandContext を使うこと (素の exec.CommandContext だと WaitDelay が抜ける)。
 	// 下の Output() は os.Pipe と copy goroutine を作るので、ctx の deadline だけでは
-	// 「子が残した孫がパイプを握って Wait が戻らない」形を防げない (issue 105)。
+	// 「子が残した孫がパイプを握って Wait が戻らない」形を防げない。
 	cmd := subproc.GitCommand(ctx, "rev-parse", "--show-toplevel")
 	cmd.Dir = cwd
 	out, err := cmd.Output()
@@ -240,6 +240,6 @@ func isMarkdown(name string) bool {
 // ブランチを checkout した人の画面にリンク先の中身が出る (実機で再現確認済み)。
 // symlink 先を追う正当な用途は今のところ無いので、静かに無視する。
 func isIssueFile(e os.DirEntry) bool {
-	// 通常のファイルだけ (symlink・FIFO・デバイスは読まない。FIFO の .md を読むと LoadMeta が戻らず一覧が loading のまま。issue 698 の 4)
+	// 通常のファイルだけ (symlink・FIFO・デバイスは読まない。FIFO の .md を読むと LoadMeta が戻らず一覧が loading のまま)
 	return e.Type().IsRegular() && isMarkdown(e.Name())
 }

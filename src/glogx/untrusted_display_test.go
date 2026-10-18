@@ -9,7 +9,7 @@ import (
 )
 
 // 外部由来の文字列が「無害化を通らずに端末へ出る」sink が残っていないことを、sink ごとに固定する。
-// 敵対的レビュー (2026-08-05) が実際に見つけた素通し経路の回帰テスト。
+// 2026-08-05 に実際に見つかった素通し経路の回帰テスト。
 
 // トーストの文言も表示 sink。gh / git のエラー出力や claude のバージョン文字列を素で
 // 埋め込む呼び出しが多いので、setNotice と同じく show 自体を関門にする。
@@ -26,7 +26,7 @@ func TestToastAndWarningAreSanitized(t *testing.T) {
 	if strings.Contains(m.lastWarning, "PWNED") {
 		t.Errorf("OSC の中身が残った: %q", m.lastWarning)
 	}
-	// 陽性対照 (issue 284): 細工した文言が実際に保持されている。無害化が「丸ごと捨てる」形へ
+	// 陽性対照: 細工した文言が実際に保持されている。無害化が「丸ごと捨てる」形へ
 	// 退行すると上の 3 つの assert は全部素通りする。
 	for _, want := range []string{"push に失敗", "remote rejected"} {
 		if !strings.Contains(m.lastWarning, want) {

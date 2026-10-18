@@ -113,7 +113,7 @@ func ParseArgs(argv []string) (*Options, error) {
 }
 
 // setMaxCount は -n <N> / -n<N> / --max-count=<N> の共通処理 (件数パース → エラー整形 →
-// MaxCount/HasCount 代入が 3 分岐へオプション名だけ変えて反復していた。issue 030)。
+// MaxCount/HasCount 代入を 3 分岐へオプション名だけ変えて反復しない)。
 func (o *Options) setMaxCount(raw, flag string) error {
 	n, err := strconv.Atoi(raw)
 	if err != nil {

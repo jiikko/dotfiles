@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// 同名の二重化 (内容の喪失) の警告は、壊れた目印の警告より前に来る (viewer のヘッダーは先頭の 1 本を出す。issue 698 の 1)。
+// 同名の二重化 (内容の喪失) の警告は、壊れた目印の警告より前に来る (viewer のヘッダーは先頭の 1 本を出す)。
 func TestScanPutsConflictsFirst(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "issues")
 	mkFiles(t, dir, "001-a.md")
@@ -23,7 +23,7 @@ func TestScanPutsConflictsFirst(t *testing.T) {
 	}
 }
 
-// 読めない状態のフォルダは警告に出す (黙って空にすると「全部消えた」と見分けられない。issue 698 の 2)。
+// 読めない状態のフォルダは警告に出す (黙って空にすると「全部消えた」と見分けられない)。
 func TestScanWarnsUnreadableDir(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root は権限で読めなくならない")
@@ -50,10 +50,10 @@ func TestScanWarnsUnreadableDir(t *testing.T) {
 	}
 }
 
-// URL は文字の向きを変える制御文字・行の区切りで切る (混ざると一覧の見た目と開く先が食い違う。issue 698 の 3)。
+// URL は文字の向きを変える制御文字・行の区切りで切る (混ざると一覧の見た目と開く先が食い違う)。
 func TestURLsStopAtBidiControls(t *testing.T) {
 	// urlRe が切る範囲の全文字 (U+202A-202E / U+2066-2069 / U+2028 / U+2029)。範囲の端を空振りしないよう
-	// 代表 4 文字ではなく全部回す (issue 751。範囲を 2066-2066 に狭めても緑だった)
+	// 代表 4 文字ではなく全部回す (範囲を 2066-2066 に狭めても緑だった)
 	var all []rune
 	for _, r := range [][2]rune{{0x202a, 0x202e}, {0x2066, 0x2069}, {0x2028, 0x2029}} {
 		for c := r[0]; c <= r[1]; c++ {
@@ -73,7 +73,7 @@ func TestURLsStopAtBidiControls(t *testing.T) {
 	}
 }
 
-// FIFO の NNN-x.md は issue として拾わない (読むと戻らない。issue 698 の 4)。
+// FIFO の NNN-x.md は issue として拾わない (読むと戻らない)。
 func TestScanSkipsFIFO(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "issues")
 	mkFiles(t, dir, "001-a.md")
@@ -87,7 +87,7 @@ func TestScanSkipsFIFO(t *testing.T) {
 }
 
 // front matter のある本文では、バナーを front matter と H1 の後ろに入れる (前に入れると front matter と見なくなり、
-// status の食い違いの 🚨 が消える)。外すと元に戻る。CRLF の本文には CRLF で足す (issue 698 の 5・6)。
+// status の食い違いの 🚨 が消える)。外すと元に戻る。CRLF の本文には CRLF で足す。
 func TestAddBannerAfterFrontMatterAndKeepsCRLF(t *testing.T) {
 	const banner = "> 🚨 **担当中: h (glogx)**（2026-10-09〜）"
 	for _, eol := range []string{"\n", "\r\n"} {
@@ -112,17 +112,17 @@ func TestAddBannerAfterFrontMatterAndKeepsCRLF(t *testing.T) {
 	}
 }
 
-// 日付の名前 (20260101-notes.md) や桁あふれする数字は採番の番号と見なさない (issue 698 の 7)。
+// 日付の名前 (20260101-notes.md) や桁あふれする数字は採番の番号と見なさない。
 func TestNextNumberIgnoresDateLikeNames(t *testing.T) {
 	list := []*Issue{{Number: "041"}, {Number: "20260101"}, {Number: "9223372036854775807"}, {Number: "123456"}}
 	if got := NextNumber(list); got != "123457" {
 		t.Fatalf("次番号 = %q (6 桁までを番号と見て 123457 のはず)", got)
 	}
-	// 接頭辞付きの形式は別の列なので数えない (issue 753)
+	// 接頭辞付きの形式は別の列なので数えない
 	if got := NextNumber([]*Issue{{Number: "005"}, {Number: "120", Prefix: "UI"}}); got != "006" {
 		t.Fatalf("次番号 = %q (接頭辞付きの 120 に引きずられず 006 のはず)", got)
 	}
-	// 境界: 7 桁は番号と見なさない (上限の比較を 1 つずらしても緑だった。issue 751)
+	// 境界: 7 桁は番号と見なさない (上限の比較を 1 つずらしても緑だった)
 	if got := NextNumber([]*Issue{{Number: "041"}, {Number: "1234567"}}); got != "042" {
 		t.Fatalf("次番号 = %q (7 桁は番号と見なさず 042 のはず)", got)
 	}

@@ -15,11 +15,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// 走査中に行が増えても、選択は同じエントリに留まる (issue 210)。
+// 走査中に行が増えても、選択は同じエントリに留まる。
 //
 // 🚨 **カーソルより上に挿入する** fixture を使う。disk 行は Size 降順に並べ替えて描くので、
 // 大きい結果が後から届くと既存の行の上に入る。下に挿入する形では index が偶然一致して
-// 素通りする (issue 210 のテスト観点)。
+// 素通りする。
 func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
 	v := &DoctorView{expanded: map[rowKey]bool{}, selected: map[entryID]bool{}, inspected: map[entryID]bool{}}
 	small := disk.Result{Entry: disk.Entry{ID: "small", Label: "小", Tier: 1}, Size: 100, Status: disk.StatusOK,
@@ -50,7 +50,7 @@ func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
 	}
 }
 
-// G (末尾へ) が次の描画で巻き戻らない (issue 210 の敵対レビュー P1-1。私が入れた回帰)。
+// G (末尾へ) が次の描画で巻き戻らない。
 //
 // 🚨 `moveCursor(0)` を「移動」として使う経路 (G) が key を覚えないと、`restoreCursor` が
 // 古い key の行へ cursor を戻す。実測された症状: after G cursor=6 / cursorKey="disk:b" →
@@ -79,7 +79,7 @@ func TestCursorEndKeySurvivesRepaint(t *testing.T) {
 	}
 }
 
-// 選べる行が 0 件のフレームを挟んでも key を捨てない (issue 210 の敵対レビュー P2)。
+// 選べる行が 0 件のフレームを挟んでも key を捨てない。
 // 捨てると index 保持へ退行する。
 func TestCursorKeySurvivesFrameWithoutSelectableRows(t *testing.T) {
 	v := &DoctorView{expanded: map[rowKey]bool{}, selected: map[entryID]bool{}, inspected: map[entryID]bool{}}
@@ -113,7 +113,7 @@ func TestCursorKeySurvivesFrameWithoutSelectableRows(t *testing.T) {
 }
 
 // WaitDoctorCleanup は登録された走査が帰るまで戻らない。
-// 🚨 判定は**時計ではなく順序**で見る (issue 211 / avoid-wall-clock-assertions)。
+// 🚨 判定は**時計ではなく順序**で見る (avoid-wall-clock-assertions)。
 // 「走査が終わる前に Wait が戻ったか」をフラグの読み書き順で観測する。
 func TestWaitDoctorCleanupWaitsForTrackedScan(t *testing.T) {
 	drainDoctorCleanup(t)
@@ -248,7 +248,7 @@ func TestEachDoctorScanIsTrackedUntilItReturns(t *testing.T) {
 	}
 }
 
-// 削除 (下見・本番) も latch に載り、stop() で ctx が切れる (issue 211 の敵対的レビュー P1)。
+// 削除 (下見・本番) も latch に載り、stop() で ctx が切れる。
 // 🚨 ここが抜けていると、いちばん危ない経路 (rm / trash / brew cleanup と、その後の
 // インベントリ記録) が終了・再起動で watchdog ごと消えて走り続ける。
 func TestDeleteIsTrackedAndCancelled(t *testing.T) {
@@ -316,7 +316,7 @@ func TestDeleteIsTrackedAndCancelled(t *testing.T) {
 	}
 }
 
-// rescan (r) は前世代を止めてから世代を進める (issue 211 の敵対的レビュー P1)。
+// rescan (r) は前世代を止めてから世代を進める。
 // 🚨 止めないと前世代の走査を誰も cancel できず、latch に載ったまま完走するので
 // WaitDoctorCleanup の上限が 2 秒ではなく数分になる (latch を入れる前は即終了だった =
 // この修正が無いと 211 が hang を新設する)。
@@ -382,7 +382,7 @@ func TestRescanCancelsPreviousGeneration(t *testing.T) {
 
 // drainDoctorCleanup は前のテストが残した latch のカウントを吸う。
 // 🚨 `doctorCleanup` は **package 変数**なので glogx パッケージのテスト全体で共有される
-// (敵対的レビュー 2026-09-03 のぼやき)。前のテストの走査が残っていると、こちらの Wait が
+// 前のテストの走査が残っていると、こちらの Wait が
 // それを待って誤判定する (実測 -count=2 で落ちた)。**この共有ゆえに `t.Parallel()` を足せない**。
 func drainDoctorCleanup(t *testing.T) {
 	t.Helper()
@@ -396,5 +396,5 @@ func drainDoctorCleanup(t *testing.T) {
 }
 
 // doctor の後始末も latch に載っていることを型で固定する (main の cleanup_latch_test.go の pull 側の pin と対。
-// 型が sync.WaitGroup へ戻るとここがコンパイルできない。issue 217)。
+// 型が sync.WaitGroup へ戻るとここがコンパイルできない)。
 var _ *app.CleanupLatch = &doctorCleanup

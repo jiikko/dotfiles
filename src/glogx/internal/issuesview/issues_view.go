@@ -63,7 +63,7 @@ type displayRow struct {
 	groupName  string
 	childCount int
 	// childDone は子のうち done の件数 (親行の進捗表示 `(5 ✓2)` の右側)。0 なら出さないので、
-	// done が 1 件も無い group の見た目は従来の `(N)` のまま (issue 291)。
+	// done が 1 件も無い group の見た目は従来の `(N)` のまま。
 	childDone int
 	// inGroup は展開した group 親行の直下に並ぶ子 issue。一覧では groupChildIndent ぶん右へ寄せて
 	// 親との所属を見せる (2026-09-05 のユーザー要望: 親と同じ桁に並ぶと開いたときに所属が読めない)。
@@ -134,10 +134,10 @@ type IssuesView struct {
 	// allCount は従来どおり子 issue 数を持つ。
 	displayRows []displayRow
 	// rowsGen / displayRowsGen は rows と displayRows の同期を O(1) で判定するための世代。
-	// 🚨 rows を書き換えるのは setRows だけ (issue 268)。以前は displayRows の元になった
-	// rows のコピーを持って**毎回全件突き合わせ**ており、rowLine / selection /
+	// 🚨 rows を書き換えるのは setRows だけ。displayRows の元になった
+	// rows のコピーを持って**毎回全件突き合わせ**ると、rowLine / selection /
 	// isIssueDisplayRow が可視行ごとにそれを呼ぶため 1 フレームが
-	// 「可視行数 × 全 issue 件数」で走っていた (2000 件で 62.4µs / 選択 20 行なら 439µs)。
+	// 「可視行数 × 全 issue 件数」で走る (2000 件で 62.4µs / 選択 20 行なら 439µs)。
 	// 直接代入を禁じる規律は issues_rows_setter_test.go がソース走査で強制する。
 	rowsGen        int
 	displayRowsGen int
@@ -153,7 +153,7 @@ type IssuesView struct {
 	// offset は窓の先頭行。🚨 一覧に glide (スクロールアニメ) は載せない: 半ページ移動は
 	// cursor と窓を同時に動かし、windowOffset が「カーソルを含む最小の窓」を導出するので
 	// カーソルは必ず窓の端に来る = 窓を 1 行でも遅らせるとカーソルが画面から出る。遅らせる余地が
-	// 幾何的にゼロで、載せても瞬時に着地点へ張り付くだけだった (実測 issue 031)。窓が動かない
+	// 幾何的にゼロで、載せても瞬時に着地点へ張り付くだけになる。窓が動かない
 	// ケース (カーソルが窓の途中) では glide 自体が始まらないので、条件が排他になっている。
 	offset int
 
@@ -477,7 +477,7 @@ func (v *IssuesView) AdvanceGlide() {
 
 // stopGlides は進行中の滑走を全部止める (advanceGlide と対)。resize では幅で行数が変わり、着地点と
 // 窓の起点が resize 前の行数基準で古くなる。🚨 滑走を足したらここにも足す: 呼び出し側 (tui.go の
-// resize) が viewer の中のフィールドを直接止めていた頃は、足した滑走の止め忘れが tui.go 側に出た (issue 666)
+// resize) が viewer の中のフィールドを直接止めていた頃は、足した滑走の止め忘れが tui.go 側に出た
 func (v *IssuesView) StopGlides() {
 	v.bodyPager.Stop()
 	v.curGlide.Stop()
@@ -519,8 +519,8 @@ func (v *IssuesView) scanAfterChangeCmd() tea.Cmd {
 // scanIssues は探索・メタデータ読み込み・見張りの基準づくりを 1 回で行う (scanCmd の本体)。
 //
 // 🚨 基準 (指紋) は「読んだ内容より古い」側に寄せる。新しい側に寄ると、その差の間に入った外部編集が
-// 基準に焼き込まれ、次の編集が来るまで一覧が古いまま残る (issue 749: 以前は全件の LoadMeta の後に
-// 指紋を取っていた)。古い側に寄れば、次の観測で差が出て取り直すだけで済む。
+// 基準に焼き込まれ、次の編集が来るまで一覧が古いまま残る (全件の LoadMeta の後に
+// 指紋を取ると、その形になる)。古い側に寄れば、次の観測で差が出て取り直すだけで済む。
 //   - ファイルの編集: 指紋を LoadMeta の前に取る (後から入った編集は LoadMeta が読むか、次の観測で差になる)
 //   - ファイルの追加・削除: 見張る集合は Scan の結果から作るので、Scan の前に取ることはできない。
 //     代わりに構造のディレクトリの指紋を Scan の前と指紋を取った後で比べ、違えば基準を
@@ -674,13 +674,13 @@ func (v *IssuesView) anchorCursorInternal(path string) {
 	// 🚨 rows には居るのに displayRows に居ない = 畳んだ group の中に隠れている。その group を
 	// 開いて置き直す。移動で issue が group の中へ入る経路があり (予約外ディレクトリの迷子に n を
 	// 押すと `epic/<name>/next/` = group の子になる)、開かないと「移動しました」と言った直後に
-	// 対象が画面から消え、カーソルは親行に着地する (2026-09-06 の敵対的レビュー 2 周目)。
+	// 対象が画面から消え、カーソルは親行に着地する。
 	//
 	// 🚨 これは**ユーザーが明示的に畳んだ状態 (groups.collapsed) を上書きし、しかも
 	// groups.manual は screen に保存される**ので、再起動を跨いで開いたままになる。
 	// groups.auto は refresh のたびに捨てられるので、再スキャンを跨ぐ移動の
 	// 再アンカーには使えない (置き場が groups.manual しかない)。カーソルの居場所を
-	// 見せる方を優先した意図的な選択 (同 3 周目 P3-5)。
+	// 見せる方を優先した意図的な選択。
 	for _, iss := range v.rows {
 		if iss.Path != path || iss.GroupKey == "" {
 			continue
@@ -705,7 +705,7 @@ func (v *IssuesView) cursorToPath(path string) bool {
 
 // pruneExpandedGroups は今の走査結果に無い GroupKey を展開状態から落とす。GroupKey は絶対
 // パスなので、group の rename / 削除 / checkout の移動で死にキーが state に溜まり、同名 group を
-// 作り直したとき「畳んだつもり」を無視して勝手に展開する (敵対レビュー round 2)。
+// 作り直したとき「畳んだつもり」を無視して勝手に展開する。
 func (v *IssuesView) pruneExpandedGroups() {
 	if len(v.groups.manual) == 0 {
 		return
@@ -813,16 +813,16 @@ func (v *IssuesView) rebindOpenIssue(path string) {
 		dir = v.open.Dir
 	}
 	// 🚨 ここの通知は app.NoticeError (lastWarning に積む)。Msg 経路 (外部の変更) で置かれるので、次の打鍵が q だと
-	// トーストを読む前に終了し、理由が w でしか辿れない (issue 059)
+	// トーストを読む前に終了し、理由が w でしか辿れない
 	moved, ambiguous := v.matchByBase(dir, base)
 	switch {
 	case moved != nil:
-		// 🚨 basename 一致だけで本人と決めない (issue 277)。basename は「番号 + スラッグ」なので
+		// 🚨 basename 一致だけで本人と決めない。basename は「番号 + スラッグ」なので
 		// 番号の一意性 (tests/issues/test_issue_numbers_unique.sh) が守られている限り本人だが、
 		// それが壊れた repo や `issues/epic/<name>/` が増えた状況では**別 issue** でありうる。
 		// 症状は「読んでいた本文が静かに別の issue に差し替わる」で、利用者からは気づけない。
 		//
-		// 🚨 **見出しが違っても本文は捨てないこと** (敵対的レビュー 2026-09-06)。見出しの不一致は
+		// 🚨 **見出しが違っても本文は捨てないこと**。見出しの不一致は
 		// 「別 issue」と「同じ issue を移動と同時に改題した」を区別できない (basename が同じなら
 		// 番号も同じなので、番号でも切れない)。後者は `git pull` / `git checkout` で
 		// 「done/ へ移しつつ H1 も直したコミット」を受けるだけで起き、issuesWatchDebounce の
@@ -850,7 +850,7 @@ func (v *IssuesView) rebindOpenIssue(path string) {
 //
 // 🚨 issue dir を跨いで照合しない。移動 (`n` / done へ送る / git mv) はどれも同じ issue dir の
 // 中で起き、同一性の範囲も issues.conflicts と同じ (Dir, basename)。跨ぐと、root の issues/ と
-// macOS/issues/ を両方持つ repo で、見出しまで同じ別 dir の issue へ黙って繋ぎ直す (issue 665)。
+// macOS/issues/ を両方持つ repo で、見出しまで同じ別 dir の issue へ黙って繋ぎ直す。
 func (v *IssuesView) matchByBase(dir, base string) (found *issues.Issue, ambiguous bool) {
 	for _, iss := range v.all {
 		if filepath.Base(iss.Path) != base || (dir != "" && iss.Dir != dir) {
@@ -986,7 +986,7 @@ func (v *IssuesView) rebuildDisplayRows() {
 // setRows は表示対象の子 issue 集合を差し替える (displayRows の再構築を予約する)。
 //
 // 🚨 `v.rows = ...` と直接書かないこと。世代が進まないと ensureDisplayRows が
-// 「同期済み」と判断し、displayRows が古いまま描かれる (issue 268)。
+// 「同期済み」と判断し、displayRows が古いまま描かれる。
 // production の書き込み口は refresh の 1 箇所だが、テストが行集合を手で作る経路もある
 // (scroll_glide_test)。規律は issues_rows_setter_test.go が走査で強制する。
 func (v *IssuesView) setRows(rows []*issues.Issue) {
@@ -1009,14 +1009,14 @@ func (v *IssuesView) groupExpanded(key string) bool {
 
 // ensureDisplayRows は setRows で予約された再構築を、実際に displayRows が要るところで消化する。
 //
-// 🚨 判定は世代の比較だけ (O(1))。以前は rows の全件突き合わせで、これを可視行ごとに呼ぶ
-// 描画経路が「可視行数 × 全件」で走っていた (issue 268)。
+// 🚨 判定は世代の比較だけ (O(1))。rows の全件突き合わせにしない。これを可視行ごとに呼ぶ
+// 描画経路が「可視行数 × 全件」で走る。
 func (v *IssuesView) ensureDisplayRows() {
 	// 🚨 世代が同じでも「rows が非空なのに displayRows が空」なら作り直す。
 	// 世代だけを見ると、ゼロ値から `&issuesView{rows: list}` のように**複合リテラルで
 	// 直接埋めた**場合に rowsGen も displayRowsGen も 0 のまま = 同期済みと誤判定して
-	// 恒久的に stale になる (敵対レビュー 2026-09-06)。全件比較だった旧実装は
-	// `len(displayRowsSource) != len(rows)` で偶然この形を自己回復していたので、
+	// 恒久的に stale になる。全件比較なら
+	// `len(displayRowsSource) != len(rows)` で偶然この形を自己回復するので、
 	// 世代化でその回復を落とさないよう明示する。rows が非空なら rebuildDisplayRows は
 	// 必ず 1 行以上を作る (issue 行か group 親行) ので、この条件は O(1) で足りる。
 	if v.displayRowsGen == v.rowsGen && (len(v.displayRows) > 0 || len(v.rows) == 0) {
@@ -1333,7 +1333,7 @@ func (v *IssuesView) anchorGroupInternal(key string) {
 // endNumberFilter は番号フィルタを終わらせる唯一の経路 (検索語・group の一時的な展開・行集合を 1 組で戻す)。
 // keep は解除前の現在行の group (その group の展開を手動へ引き継ぐ。"" なら引き継がない)。
 // 🚨 numFilter.clear と groups.endFilter を別々に呼ばない: 片方だけだと解除後も畳んだ状態が残り、
-// 展開しても開かない (issue 666 の E / 752)。
+// 展開しても開かない。
 func (v *IssuesView) endNumberFilter(keep string) {
 	v.groups.endFilter(keep)
 	v.numFilter.clear()
@@ -1367,7 +1367,7 @@ func (v *IssuesView) clearNumberFilter() {
 	// Esc は「1 段戻る」であってカーソル移動の意思表示ではないので、直前の move の再アンカー
 	// 予約 (pendingCursorPath) は捨てない。捨てるのは**カーソルを置く側**で、その責務は
 	// `setCursor` / `g`・`home` / `moveTab` が直接 `clearPendingMoveAnchors()` を呼ぶ形で
-	// 配線されている (issue 316 で `anchorCursor` wrapper を削除。鏡像の `anchorGroup` は
+	// 配線されている (`anchorCursor` wrapper は無い。鏡像の `anchorGroup` は
 	// production 到達可能なので残っている)。
 	switch {
 	case groupKey != "":
@@ -1386,7 +1386,7 @@ func (v *IssuesView) clearNumberFilter() {
 // 止めないと viewer が持つキー語彙を外側が奪う: URL ピッカーは
 // 「印字文字はすべて検索語に流す (個別のキーを先に横取りすると、その文字を含む URL を
 // 検索できなくなる)」と宣言しているのに、大文字 `U` だけが残量モーダルに化けていた
-// (issue 113。`github.com/Ueno/...` のような URL を絞り込めない)。
+// (`github.com/Ueno/...` のような URL を絞り込めない)。
 //
 // 🚨 ガードは横取りだけに掛けること: 委譲ごと飛ばすと viewer がキーを受け取れなくなる
 // (status 側が実装中に踏んだ罠。status_view.go:ownsKeys の注記と同じ)。
@@ -1395,8 +1395,7 @@ func (v *IssuesView) clearNumberFilter() {
 // (数字を打ち終わった後) は通常のナビゲーションなので、U は外側で受けてよい。
 // active を見ると「絞り込みを解くまで U が恒久的に死ぬ」。
 //
-// 🚨 numFilter を入れている理由は URL ピッカーとは別で、**今日の実利ではない** (敵対的レビューの
-// 指摘。numFilter は数字しか受けないので、U が検索語になることは今は無い。むしろ入力中の U は
+// 🚨 numFilter を入れている理由は URL ピッカーとは別で、**今日の実利ではない** (numFilter は数字しか受けないので、U が検索語になることは今は無い。むしろ入力中の U は
 // 無言の no-op になる = 機能が 1 つ減る)。それでも入れているのは、
 // docs/issues-viewer-spec.md が「タイトル検索を足すときは『数字以外を無視する』を外して
 // 検索語へ流す形になる」と予告しているため。実装した日に同じ穴を開け直さないよう、
@@ -1485,7 +1484,7 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 	case "u":
 		// 🚨 黙って無視しない。u は git log 一覧では pull、本文では URL ピッカー、status viewer では
 		// 「pull は p です」を返す — 一覧だけ無音だと「押したのに何も起きない」= 壊れて見える
-		// (status viewer 側で明文化されている規律。issue 122)。
+		// (status viewer 側で明文化されている規律)。
 		// 効かせない理由は openURLPicker の doc: 一覧で押せるようにするとキー 1 打ごとにファイルを
 		// 読むことになり、しかも「その issue に URL があるか」は一覧に出ていない。
 		v.setNotice("URL 一覧は本文を開いてから u で出します", app.NoticeRefused)
@@ -1650,7 +1649,7 @@ func (v *IssuesView) visibleRows(vp IssuesViewport) int {
 
 // headWidth はヘッダーを組む幅。本文は引き出しの内側に描くので、そちらの幅で数える。
 // 本文のヘッダーの行数は今は幅によらない (bodyHeadLines は 3 行固定) が、linkJump の状態文は幅で
-// リンクを組み直すので、描画と同じ幅を渡す (行数がずれる形が足されたときに備える意味もある。issue 751)
+// リンクを組み直すので、描画と同じ幅を渡す (行数がずれる形が足されたときに備える意味もある)
 func (v *IssuesView) headWidth(total int) int {
 	if v.open != nil {
 		return v.bodyWidth(total)
@@ -1676,7 +1675,7 @@ func (v *IssuesView) handleBodyKey(key string, vp IssuesViewport, rows int) tea.
 		v.closeBody()
 	case "i":
 		// i は本文からも効く (一覧の i と同じ toggle。**s と同じ理由**: --help と README が
-		// 「viewer 内のキー」として i を案内しており、本文だけ沈黙すると案内が嘘になる。issue 122)。
+		// 「viewer 内のキー」として i を案内しており、本文だけ沈黙すると案内が嘘になる)。
 		// 🚨 本文だけ畳む 1 段戻りにはしない: それは Enter / q / h が既に持っている語彙で、
 		//   README の「i で閉じて一覧へ戻る」とも食い違う。
 		v.close()
@@ -1801,7 +1800,7 @@ func (v *IssuesView) scrollToCursor(rows int) { v.offset = v.windowOffset(rows) 
 // dispCursor は描画に使うカーソル行 (滑走中は途中位置、それ以外は論理カーソル)。
 //
 // 🚨 窓 (offset) は滑走に載せない。窓は論理カーソルを含む最小の窓の導出値のままで、動かすのは
-// 表示カーソルだけ。だから「窓は論理カーソルを必ず含む」(issue 031 の不変条件) が滑走中も生き、
+// 表示カーソルだけ。だから「窓は論理カーソルを必ず含む」(不変条件) が滑走中も生き、
 // 見えていない行が Enter/y/v の対象になることが構造的に起きない。代わりに表示カーソルの方を窓へ
 // 収める — 半ページ移動では起点も着地点も着地後の窓に入るので通常は素通りし、行き過ぎ
 // (ease-out-back) が窓の端を越えたときだけ端で止まる。
@@ -1970,7 +1969,7 @@ func (v *IssuesView) copyLines(lines []string, label string) {
 // (`issues/epic/<name>/` を組む・grep する) ので、書き換えると別物になるため
 // (termsafe.IsPlain の doc「同一性を持つ値は書き換えず落とす」と同じ理由)。
 //
-// 🚨 制御文字を含む名前は書き換えて入れるのではなく、コピー自体を断る (copyText。issue 753)。
+// 🚨 制御文字を含む名前は書き換えて入れるのではなく、コピー自体を断る (copyText)。
 // 一覧の表示 (無害化) を生表示へ直さないこと (termsafe が防いでいる端末破壊の再導入になる)。
 func (v *IssuesView) copyGroupName() {
 	row, ok := v.currentDisplayRow()
@@ -1993,7 +1992,7 @@ func (v *IssuesView) copyNextNumber() {
 //
 // 🚨 制御文字を含む値はコピーしない (書き換えもしない)。ファイル名や group 名は PR で入りうる外部由来の値で、
 // ESC や bracketed paste の終わり (ESC[201~) をクリップボードへ入れると、貼った先の端末がそれを解釈する。
-// 画面側は無害化されているので、利用者には見えない (issue 753)。書き換えると実在の名前と食い違うので、
+// 画面側は無害化されているので、利用者には見えない。書き換えると実在の名前と食い違うので、
 // 落として断る側に倒す (termsafe.IsPlain の doc。判定は term.IsCopySafe でタブだけは通す)。
 func (v *IssuesView) copyText(text, okPrefix string) {
 	if !term.IsCopySafe(text) {
@@ -2150,8 +2149,8 @@ func (v *IssuesView) headLines(width int, colored bool) []string {
 // bodyHeadLines は本文モードのヘッダー (ファイル名 + 状態)。
 //
 // 操作結果 (コピー・URL 起動) の行はここに持たない: browseModel が takeNotice で取り出して
-// 右下トーストに出す (ユーザー要望 2026-07-31)。以前は「トーストは全画面差し替えの下に隠れる」
-// ためここが唯一の受け皿だったが、viewer の上にもトーストを合成するようにして解消した。
+// 右下トーストに出す (ユーザー要望 2026-07-31)。トーストは viewer の上にも合成するので、
+// 全画面差し替えの下に隠れない。
 func (v *IssuesView) bodyHeadLines(width int, colored bool) []string {
 	status := v.open.StatusLabel()
 	// 進捗は開いている本文から数える (Issue 側で持つと一覧を出すたびに全 issue の全文を
@@ -2160,7 +2159,7 @@ func (v *IssuesView) bodyHeadLines(width int, colored bool) []string {
 	// 🚨 鮮度は v.body と同じで、それ以上ではない: 取り直しが失敗したとき
 	// (reloadAfterEdit は err == nil のときだけ v.body を差し替える) は本文も進捗も
 	// 古いまま残る。本文テキストの stale は以前からある性質で、進捗をここへ移したことで
-	// **本文と進捗の鮮度が揃った** (以前は Issue 側の進捗だけ別経路で更新されていた)
+	// **本文と進捗の鮮度が揃う**
 	if v.body != nil {
 		if p := v.body.Progress(); p != "" {
 			status += "  " + p
@@ -2336,14 +2335,14 @@ func (v *IssuesView) tabLine(o IssuesRenderOpts) string {
 		chips = append(chips, v.tabChip(t.Name, count, v.tabIdx == i+1, o.Colored))
 	}
 	// 🚨 段階 (v.filter) ではなく「実際に見えている状態」を出す。epic group の子は状態フィルタの
-	// 対象外、番号フィルタは状態を問わず拾うので、段階だけを出すとバッジが嘘になる (issue 296)
+	// 対象外、番号フィルタは状態を問わず拾うので、段階だけを出すとバッジが嘘になる
 	filter := issues.VisibleBadges(v.filter, v.rows)
 	avail := max(o.Width-term.DispWidth(filter)-1, 1)
 	left := scrollTabs(chips, v.tabIdx+1, avail, o.Colored) // チップ配列は [next] が 0 番
 	pad := max(o.Width-term.DispWidth(left)-term.DispWidth(filter), 0)
 	// 🚨 組んだ後に必ず切る (scrollTabs 末尾と同じ規律): avail には下限 1 があるので、
 	// バッジ + 印すら入らない極小幅 (o.width ≤ term.DispWidth(filter)) では合成が幅を超える
-	// (issue 053: 幅 1 で「…○」= 2 セルが出ていた。収まる幅では clip は素通りで無 alloc)
+	// (幅 1 で「…○」= 2 セルが出る。収まる幅では clip は素通りで無 alloc)
 	return term.ClipToWidth(left+term.PadSpaces(pad)+term.Paint(filter, term.AnsiDim, o.Colored), o.Width)
 }
 
@@ -2501,7 +2500,6 @@ func (v *IssuesView) rowLine(i, cur int, o IssuesRenderOpts, width int) string {
 	// 進捗は「あると便利」程度で、そのために全件の全文を読むのは釣り合わないと判断した。
 	// 詳細を開いたときは Body が全文を持っているので、そこでは追加の I/O なしに出せる
 	// (bodyHeadLines)。空いた幅はタイトルへ回る。
-	// 一次情報: issue 050
 	// 溝 + "NNN " + バッジ + " " + カテゴリ + " " + タイトル
 	fixed := term.CursorGutterWidth + term.DispWidth(num) + 1 + term.DispWidth(badge) + 1 + term.DispWidth(cat) + 1
 	titleW := max(width-fixed, 4)
@@ -2600,15 +2598,15 @@ func srcGutter(src, width int, colored bool) string {
 // として飲むので、案内したキーが 1 つも案内どおりに動かない。
 func (v *IssuesView) Hint(width int) string {
 	// 🚨 hint は 1 行。全モードを term.FitHintItems で組み、幅に入らない項目は**末尾を切るのではなく
-	// 優先度で落とす** (issue 264。それ以前は固定文字列を予算ぎりぎりに詰めていて、代表幅より
-	// 狭い端末では並びの最後 = 抜ける手段が黙って消えた)。🚨 優先度 1 は「どう抜けるか」**だけ**に
+	// 優先度で落とす** (固定文字列を予算ぎりぎりに詰めると、代表幅より
+	// 狭い端末では並びの最後 = 抜ける手段が黙って消える)。🚨 優先度 1 は「どう抜けるか」**だけ**に
 	// する (同じ優先度は左から採るので、ラベルを 1 に置くと極端な幅で出口の方が落ちる)。
 	// 落とした項目は --help と README が正本 (status viewer と同じ作法)。
 	// nvim を開くキーは e と v の 2 本あるが、案内するのは e だけ (v は打ち慣れのための別名で、
 	// 幅で絞ったのではなく意図的に出さない)。一覧モードはどちらも案内しない。
 	if v.markNext.active {
 		// n の確認中は handleKey が全キーを先に飲む (Enter も実行になる)。一覧の案内 (Enter: 本文 /
-		// q: 終了) を残すと、効かない・逆の意味のキーを案内することになる (issue 750。status viewer の
+		// q: 終了) を残すと、効かない・逆の意味のキーを案内することになる (status viewer の
 		// 確認中と同じ扱い)。語彙は板の中の confirm.HintYesOther と揃える
 		return term.FitHintItems(width, []term.HintItem{
 			{Text: "y/Enter: 実行", Prio: 2},
@@ -2687,18 +2685,18 @@ func (v *IssuesView) Hint(width int) string {
 	// 右端のバッジが示すので、ここで二重に説明しない)。語でなくバッジで書くのは
 	// 幅のため ("a: pending も" は 14 桁)。
 	//
-	// 🚨 ここが出すのは**段階**の話で、epic group の子には効かない (子は状態フィルタの対象外。
-	// issue 291)。バッジ側は迂回して見えているものを括弧で足して区別する (issues.VisibleBadges)
-	// が、hint は 1 行しかないので段階だけを言う (issue 296)。
+	// 🚨 ここが出すのは**段階**の話で、epic group の子には効かない (子は状態フィルタの対象外)。
+	// バッジ側は迂回して見えているものを括弧で足して区別する (issues.VisibleBadges)
+	// が、hint は 1 行しかないので段階だけを言う。
 	// 増える状態は issues.StatusFilter.AddedBadges が段階の正本 (shows) から導出する。ここで
-	// 段階ごとに書き分けると waiting を足したときに置き去りになる (issue 665)
+	// 段階ごとに書き分けると waiting を足したときに置き去りになる
 	next := "a: +" + v.filter.AddedBadges()
 	if v.filter.Next() == issues.FilterOpen {
 		next = "a: " + issues.FilterOpen.Badges() + "のみ"
 	}
 	// 🚨 "q: 終了" であって "閉じる" ではない。q/esc は **glogx ごと終了**する
 	// (ユーザー要望 2026-08-06)。一覧へ戻るのは i (toggle)。README も 2 語を使い分けており、
-	// git log 一覧の hint も同じ動作を "q: 終了" と書いている。issue 121。
+	// git log 一覧の hint も同じ動作を "q: 終了" と書いている。
 	// "i: 一覧へ" は出さない (戻り方は --help と README が正本。足すなら優先度を付けて並べる)。
 	return term.FitHintItems(width, []term.HintItem{
 		{Text: "j/k: 移動", Prio: 2},
@@ -2761,7 +2759,7 @@ func (v *IssuesView) askMarkNext() {
 //
 // 🚨 ここだけ厳密 (大文字 `Y` も取り消し) なのは意図的で、discardKey / actionModal の
 //
-//	ToLower 判定へ揃えない (理由は status_view.go:discardKey の注記。issue 071 / 123)。
+//	ToLower 判定へ揃えない (理由は status_view.go:discardKey の注記)。
 func (v *IssuesView) markNextKey(key string) tea.Cmd {
 	targets, unmark := v.markNext.targets, v.markNext.unmark
 	v.markNext = issuesMarkConfirm{}
@@ -2827,8 +2825,7 @@ func (v *IssuesView) clearPendingMoveAnchors() {
 // unmarkDestLabel は「next を外す」確認モーダルに出す戻り先の呼び名。
 //
 // 🚨 戻り先は issue の居場所で決まる。group issue は epic の外へ出さない (issues.MoveToSubdir)
-// ので、文面を「issues 直下」に固定すると、ファイルを動かす前の唯一の確認画面が嘘をつく
-// (2026-09-06 の敵対的レビュー 2 周目。文面自体は 2026-08-01 から嘘だった)。
+// ので、文面を「issues 直下」に固定すると、ファイルを動かす前の唯一の確認画面が嘘をつく。
 //
 // 🚨 先頭 1 件で決めない。選択には global と group が混在しうる (epic 名が数字の group は
 // 親 issue が issue 行として並ぶので、group 行を挟まずに範囲選択できる)。先頭だけを見ると
@@ -2845,7 +2842,7 @@ func unmarkDestLabel(targets []*issues.Issue) string {
 	// 🚨 skip される対象 (既にその向きに居るもの。markNextKey の (Status==Next) != unmark) も
 	// ここでは数える。「group へ戻る」と言いながら実際に動くのが 0 件になりうる = 誤警告どまりで、
 	// 逆向き (issues 直下と言って group へ入る) は作れない (MoveToSubdir と同じ 1 本の条件で
-	// 決めているため。2026-09-06 の敵対的レビュー 4 周目 P3-5 で確認済み)。件数表示 (`N 件`) も
+	// 決めているため)。件数表示 (`N 件`) も
 	// 同じ集合を数えているので、ここだけ絞ると画面の中で数と宛先の母集合が食い違う
 	switch {
 	case hasGroup && hasGlobal:
@@ -2872,8 +2869,8 @@ func (v *IssuesView) markNextBox(width int, colored bool) []string {
 		// 🚨 宛先は独立した行にする。箱は 44 桁で頭打ち (confirm.MaxWidth) なので、1 行に繋ぐと
 		// 実在する長さのファイル名 (`292-feat-audit-forge-should-hand-each-agent-its-own-worktree.md`)
 		// で宛先が丸ごと切り落とされ、「ファイルを動かす前の唯一の確認画面」に何も出ない
-		// (2026-09-06 の敵対的レビュー 4 周目で実測。3 周目までのテストは短い名前の
-		// fixture を使っていたので、この truncation を検出できていなかった)
+		// (実測 2026-09-06: 短い名前の
+		// fixture ではこの truncation を検出できない)
 		title = " next を外す "
 		lines = []string{
 			what + " を next/ から",

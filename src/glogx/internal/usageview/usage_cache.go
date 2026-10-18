@@ -99,17 +99,17 @@ func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
 			return nil, false
 		}
 	}
-	// age < 0 (未来) も取り直す (issue 201)
+	// age < 0 (未来) も取り直す
 	if age := now.Sub(entry.FetchedAt); age < 0 || age >= usageCacheTTL {
 		return nil, false
 	}
-	// 🚨 **表示に載る文字列は入口で 1 回 termsafe を通す** (src/glogx/CLAUDE.md の規律。issue 230)。
+	// 🚨 **表示に載る文字列は入口で 1 回 termsafe を通す** (src/glogx/CLAUDE.md の規律)。
 	// このファイルは一般ユーザー権限で書き換えられる。live の取得経路は安全 (Claude は
 	// defaultOrder の完全一致でしか描かれず、codex の Label は分から組み立てる) だが、
 	// **codex 枠は Source で拾う**ので、キャッシュに書かれた Label がそのまま表示へ出る。
 	// 出所ごとに書き分けると漏れるので、復元直後にここで閉じる。
 	//
-	// 🚨 **出口の数を数え上げないこと** (issue 317)。以前ここは
+	// 🚨 **出口の数を数え上げないこと**。以前ここは
 	// 「RenderLine / RenderTableGroups / RenderDashboard の 3 経路」と列挙していたが、
 	// 列挙は経路が増減するたびに嘘になる (当時 `RenderLine` は呼び出し 0 件で、今は src/ratelimit の main が使う)。
 	// 守るべき規律は「**表示に載る文字列は入口で 1 回通す**」であって、出口の員数ではない。

@@ -320,7 +320,7 @@ func TestLoadMetaStopsAtH1(t *testing.T) {
 
 // H1 がファイルの深い位置にあっても取れること (打ち切りに行数上限を設けていないこと)。
 //
-// 🚨 「行数上限は設けない」は issue 050 の明示的な決定。実データに H1 が 239 行目にある
+// 🚨 「行数上限は設けない」は明示的な決定。実データに H1 が 239 行目にある
 // issue が存在し (別 repo の 559 行のファイル)、上限を入れるとそのタイトルが無言で消える。
 // 決定を守るテストが無いと、後から「先頭 N 行だけ読む」最適化で静かに壊れる
 // (R3 レビューで上限 5 行の変異が全 green だったため追加)。
@@ -584,7 +584,7 @@ func TestTabsPinHumanFirstRegardlessOfCount(t *testing.T) {
 	}
 }
 
-// 段階の名前は往復すること (issue 115)。
+// 段階の名前は往復すること。
 //
 // 🚨 名前は保存形式そのもの。ParseStatusFilter が引けない段階は ok=false で既定 (open) へ落ち、
 // 「開き直したら伏せていたはずの段階に戻っている」という、原因が保存形式だと気づけない形で出る。
@@ -610,7 +610,7 @@ func TestStatusFilterNameRoundTrip(t *testing.T) {
 
 // 🚨 **全段階**が引けること。段階を増やしたとき、String() 側は default 無しの switch なので
 // exhaustive linter が強制するが、ParseStatusFilter 側は強制されない。ここで範囲を走ることで
-// 「String() には足したが引く側に足し忘れた」を検出する (issue 115 の本題)。
+// 「String() には足したが引く側に足し忘れた」を検出する。
 func TestStatusFilterEveryStageIsParseable(t *testing.T) {
 	n := 0
 	for f := FilterOpen; f <= FilterAll; f++ {
@@ -642,7 +642,7 @@ func TestStatusFilterUnknownNameFallsBackToOpen(t *testing.T) {
 }
 
 // TestFilterExemptsEpicChildrenFromStatusFilter は「global の done/pending は既定で伏せる」を
-// 保ったまま、epic group の子だけが状態フィルタの対象外になることを固定する (issue 291)。
+// 保ったまま、epic group の子だけが状態フィルタの対象外になることを固定する。
 func TestFilterExemptsEpicChildrenFromStatusFilter(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "issues")
@@ -655,7 +655,7 @@ func TestFilterExemptsEpicChildrenFromStatusFilter(t *testing.T) {
 	all, _ := Scan([]string{dir})
 
 	// 🚨 可視性だけでなく状態も見る。done な子が (変更前のように) StatusUnknown に落ちても
-	// 「常に見える」ので可視性の assert だけでは素通りする (2026-09-06 の敵対的レビュー)
+	// 「常に見える」ので可視性の assert だけでは素通りする
 	wantStatus := map[string]Status{"004": StatusOpen, "005": StatusDone, "006": StatusPending}
 	got := make(map[string]bool, len(all))
 	for _, iss := range Filter(all, "", FilterOpen) {
@@ -678,7 +678,7 @@ func TestFilterExemptsEpicChildrenFromStatusFilter(t *testing.T) {
 
 // TestVisibleBadgesMarksFilterBypass はタブ行右端のバッジが「実際に見えている状態」を出すことを
 // 固定する。段階 (○/○⏸◌/○⏸◌✓) を迂回して見えるもの (epic の子 / 番号フィルタ) は括弧で足す。
-// 括弧の外と中を分けるのは `a` の手応えを残すため (issue 296)。
+// 括弧の外と中を分けるのは `a` の手応えを残すため。
 func TestVisibleBadgesMarksFilterBypass(t *testing.T) {
 	epicChild := func(status Status) *Issue {
 		return &Issue{Number: "700", Status: status, Group: "cloud", GroupKind: GroupEpic, GroupKey: "/repo/issues/epic/cloud"}
@@ -698,7 +698,7 @@ func TestVisibleBadgesMarksFilterBypass(t *testing.T) {
 		// 番号フィルタは状態を問わず拾うので、global の done でも括弧が付く
 		{"番号フィルタで global の done が出ている", FilterOpen, []*Issue{global(StatusDone)}, "○(✓)"},
 		// waiting は pending と同じ段で見せる (shows)。段階の外で見えていれば括弧に ◌ が付き、
-		// 段階が見せていれば括弧の外に出る (issue 665: 以前は ◌ がどちらにも出なかった)
+		// 段階が見せていれば括弧の外に出る (どちらにも出ない状態を作らない)
 		{"番号フィルタで global の waiting が出ている", FilterOpen, []*Issue{global(StatusWaiting)}, "○(◌)"},
 		{"epic の waiting が見えている", FilterOpen, []*Issue{epicChild(StatusWaiting)}, "○(◌)"},
 		{"pending の段階は waiting も見せる", FilterPending, []*Issue{global(StatusWaiting)}, "○⏸◌"},
@@ -712,11 +712,11 @@ func TestVisibleBadgesMarksFilterBypass(t *testing.T) {
 }
 
 // TestStatusFilterBadgesFollowShows は段階のバッジ (Badges) と hint の「a で増えるもの」
-// (AddedBadges) が shows と一致することを、全段階 × 全状態で固定する (issue 665: Badges が
-// 状態を手で並べていて、waiting を足したときに shows だけが直った)。
+// (AddedBadges) が shows と一致することを、全段階 × 全状態で固定する (Badges が
+// 状態を手で並べると、waiting を足したときに shows だけが直る)。
 func TestStatusFilterBadgesFollowShows(t *testing.T) {
 	// 🚨 状態は badgeOrder から取らず、定義されている全状態を回す。badgeOrder を回すと、そこへ足し忘れた
-	// 状態が検査に現れない (敵対的レビュー: badgeOrder から waiting を消してもこのループは黙っていた)。
+	// 状態が検査に現れない (badgeOrder から waiting を消してもこのループは黙る)。
 	// バッジに並べないのは unknown (と未定義の値。Badge が "?") と next (段階で伏せない目印) だけ
 	var all []Status
 	for s := range Status(255) {
@@ -747,8 +747,8 @@ func TestStatusFilterBadgesFollowShows(t *testing.T) {
 }
 
 // TestFilterHidesClosedEpicUntilDoneIsShown は「終わった epic (open な子が無い) は既定の一覧から
-// 消え、`a` を進めたときだけ出る」ことを固定する (issue 294)。進行中の epic の子は done でも
-// 既定で見える (issue 291) ので、例外の射程が「終わっていない器」に限られることを見る。
+// 消え、`a` を進めたときだけ出る」ことを固定する。進行中の epic の子は done でも
+// 既定で見える ので、例外の射程が「終わっていない器」に限られることを見る。
 func TestFilterHidesClosedEpicUntilDoneIsShown(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "issues")
@@ -820,7 +820,7 @@ func TestFilterHidesRetiredEpicAtEveryStage(t *testing.T) {
 	mkFiles(t, filepath.Join(dir, "epic", "frozen", "pending"), "800-epic-frozen.md")
 	mkFiles(t, filepath.Join(dir, "epic", "frozen", "done"), "801-feat-done.md")
 	// 親は done だが子が pending (保留) の epic: 残りの仕事があるので隠さない。既定の一覧に出る子は
-	// 無いので終わった epic として扱われ、通常の状態フィルタどおり (2026-10-02 敵対レビュー P1)
+	// 無いので終わった epic として扱われ、通常の状態フィルタどおり
 	mkFiles(t, filepath.Join(dir, "epic", "held", "done"), "900-epic-held.md")
 	mkFiles(t, filepath.Join(dir, "epic", "held", "pending"), "901-feat-held.md")
 	all, _ := Scan([]string{dir})

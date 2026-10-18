@@ -281,7 +281,7 @@ func TestZoomStepsAreSmall(t *testing.T) {
 // 1 行目の中身が最初から見えること。
 // 経緯 (2026-08-13): 左上アンカー導入時、(1) クロームをスキップせず lines[0] から切り出して
 // 上辺が二重罫線に (ユーザー報告)、(2) 上・左のスキップだけでは snap 直前 (scale ~0.95) に
-// 下辺・影へ切り出しが届いて下側で再発 (実フレーム描画の red team 検証)。scale を舐めるのは
+// 下辺・影へ切り出しが届いて下側で再発 (実フレーム描画で検証)。scale を舐めるのは
 // (2) が特定 scale 帯でしか発火しないため。
 func TestZoomWindowFramedInputNoNestedBorder(t *testing.T) {
 	const termW = 60

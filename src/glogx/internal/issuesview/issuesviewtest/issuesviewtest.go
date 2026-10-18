@@ -1,7 +1,7 @@
 // Package issuesviewtest は issues 画面のテストが共有する issue の fixture (issues.Issue を組む・実ファイルを置く)。
 // main のテスト (browseModel と組み合わせるもの) と internal/issuesview の中のテストの両方から使う。
 // 🚨 本番のコードから import しない (testing を import する。depguard が止める)。
-// 🚨 issuesview を import しない: import すると issuesview の中のテストから使えなくなる (import の循環。doctortest と同じ。issue 817)。
+// 🚨 issuesview を import しない: import すると issuesview の中のテストから使えなくなる (import の循環。doctortest と同じ)。
 package issuesviewtest
 
 import (
@@ -107,7 +107,7 @@ func ManyIssuesOf(n int, category string) []*issues.Issue {
 // WriteRealIssue は dir/rel に本文 body の issue ファイルを実際に置き、対応する Issue を返す
 // (番号・カテゴリ・slug はファイル名から取る。状態ディレクトリの下なら Status もそこから)。
 // 実ファイルが要るテスト (editCmd の実体確認・本文の読み込み・移動) の唯一の土台。手組みすると
-// 状態や Dir の付け忘れが黙ってずれる (issue 667)。
+// 状態や Dir の付け忘れが黙ってずれる。
 func WriteRealIssue(t *testing.T, dir, rel, body string) *issues.Issue {
 	t.Helper()
 	path := filepath.Join(dir, rel)

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// 最下行の案内 (hint) を出す「面」のレジストリ。issue 289。
+// 最下行の案内 (hint) を出す「面」のレジストリ。
 //
 // なぜレジストリにするか: hint の不変条件は「**幅に収まる**」と「**抜ける手段が残る**」の 2 つで、
 // これを面ごとに別の人が守っていたのが 279 / 281 の P1 2 本の原因だった。面を足す人が
@@ -54,7 +54,7 @@ const (
 // 🚨 配列にしているのは、ID を足したときに要素が nil のまま残るのを検査で捕まえるため
 // (map だと「まだ足していない」と「意図的に空」が区別できない)。
 var hintBuilders = [hintSurfaceCount]func(*browseModel) []term.HintItem{
-	// 🚨 固定文字列にしないこと (issue 279)。全部つなぐと 174 桁あり、端末 176 桁未満では
+	// 🚨 固定文字列にしないこと。全部つなぐと 174 桁あり、端末 176 桁未満では
 	// 末尾の `q: 終了` が切られて**抜ける手段が案内から消える**。既定の画面・一般的な幅で
 	// 常時そうなっていた。優先度 1 = 出口、2 = 移動と主要操作、以降は幅が許せば出す。
 	hintSurfaceBase: func(*browseModel) []term.HintItem {
@@ -143,7 +143,7 @@ var hintBuilders = [hintSurfaceCount]func(*browseModel) []term.HintItem{
 		}
 	},
 	// カーソル無し (パネルを開いた直後の既定状態。openPanel が panelCursor = -1 にする)。
-	// 🚨 固定文字列にしないこと (issue 279)。63 桁あり、最小サポート幅の帯 (w=60〜69) で
+	// 🚨 固定文字列にしないこと。63 桁あり、最小サポート幅の帯 (w=60〜69) で
 	// 出口 `Enter/h/q: 閉じる` が語中で切れて消えていた。
 	hintSurfacePanelNoCursor: func(*browseModel) []term.HintItem {
 		return []term.HintItem{
@@ -159,7 +159,7 @@ var hintBuilders = [hintSurfaceCount]func(*browseModel) []term.HintItem{
 // hintPrefix は hint の前に積む「今なぜ待っているか」の説明。
 //
 // 🚨 **前置を足すならここに足すこと。hintLine の中で prefix へ書き足さない**
-// (敵対的レビュー 2 周目の P1)。hintLine 側は `prefix := m.hintPrefix()` の 1 行だけを持ち、
+// hintLine 側は `prefix := m.hintPrefix()` の 1 行だけを持ち、
 // その直後に予算を引く。**予算を引いた後で前置を積める形を残さない**のが目的で、
 // それこそが 279 / 281 の根本原因だった (term.FitHintItems が幅ぴったりに収めた後に前置を積み、
 // hintLineText の term.ClipToWidth が末尾 = 出口を落としていた)。

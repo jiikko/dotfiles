@@ -110,7 +110,7 @@ func TestBrowseScrollAnim(t *testing.T) {
 }
 
 // 背高コミット (大きな offset ジャンプ) でも 1 コミット移動なら glide する
-// (行数キャップ撤去の回帰: 以前は >12 行で snap してコミット高で挙動が変わっていた)。
+// (行数キャップを置かない: >12 行で snap するとコミット高で挙動が変わる)。
 func TestBrowseScrollAnimNoHeightCap(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.statuses = statusesFor(m, gitdata.StateSuccess)
@@ -229,7 +229,7 @@ func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 	}
 }
 
-// 複数 rune がまとまって届く経路でも tick チェーンを張る (issue 032)。
+// 複数 rune がまとまって届く経路でも tick チェーンを張る。
 //
 // 🚨 単キー経路のコメントは「ハンドラ内部で出したトーストが return m, nil されても tick が確実に
 // 回る」と不変条件を宣言しているのに、分解ループ側はそこから外れていた。トースト (コピー結果) や
@@ -480,7 +480,7 @@ func TestAdvancePullAnimTerminates(t *testing.T) {
 
 // spinnerActive() は tick チェーンの生存条件そのもの。どれか 1 項を落とすと該当中だけ
 // スピナー/経過秒が固まる (静的には検出されない) ため、「源を 1 つだけ立てたら true」を
-// table で検査して回帰を検出する (issue 028 P3 案 B)。
+// table で検査して回帰を検出する。
 //
 // 🚨 このテストは「既存の項を消した/条件を反転した」回帰は捕まえるが、**新しい非同期源を
 // 足して spinnerActive への追記を忘れた** ケースは捕まえない (テーブルへの追記も同時に
@@ -525,11 +525,11 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"listHasPending", func(m *browseModel) { m.statuses = statusesFor(m, gitdata.StatePending) }},
 		{"usageOv.loading", func(m *browseModel) { m.usageOv.Visible = true; m.usageOv.Snap = nil; m.usageOv.Err = nil }},
 		// 🚨 以下 2 つは spinnerActive へ後から入った源で、テーブルへの追記が漏れていた
-		// (issue 028 P3 が予測した「追記漏れ」が実際に起きていた形)。
+		// (「追記漏れ」が実際に起きていた形)。
 		{"issuesOv.loading", func(m *browseModel) { m.issuesOv.Fixture().SetScanning(true) }},
 		{"statusOv.fetching", func(m *browseModel) { m.statusOv.Fixture().SetLoading(true) }},
-		// 🚨 以下 3 つは「全テストスイートを生き残る」ことを変異で実測した無防備な源
-		// (2026-08-13 の敵対的レビュー)。前 2 つは tickInterval 経由、3 つ目は上の
+		// 🚨 以下 3 つは「全テストスイートを生き残る」ことを変異で実測した無防備な源。
+		// 前 2 つは tickInterval 経由、3 つ目は上の
 		// statusOv.fetching の第 2 disjunct で、そこだけ覆えていなかった。
 		{"diffOv.animating", func(m *browseModel) { startPagerGlide(t, m.diffOv.Fixture().Pager(), 0, 1) }},
 		{"issuesOv.bodyPager", func(m *browseModel) { startPagerGlide(t, m.issuesOv.Fixture().BodyPager(), 0, 1) }},
@@ -634,10 +634,9 @@ func TestBrowseJobDetailNeighborKeysSwapJob(t *testing.T) {
 
 // 一括取得待ちで立てた札は、世代交代 (refetchAfterPush → startCIFetch) を跨いでも降りる。
 //
-// issue 272: 待機分岐は Cmd を 1 本も出さずに札を立てるので、降ろす責任は一括取得側にある。
-// ところが旧世代のチャンクは ciResultMsg の epoch ガードで**丸ごと捨てられる** = 札を降ろす
-// 処理も一緒に捨てられ、パネルが「CI job を取得中...」で永久に固まっていた。
-// 223 が awaitCI で直したのと同じ失敗モードの、兄弟の掃き漏れ。
+// 待機分岐は Cmd を 1 本も出さずに札を立てるので、降ろす責任は一括取得側にある。
+// ところが前の世代のチャンクは ciResultMsg の epoch ガードで**丸ごと捨てられる** = 札を降ろす
+// 処理も一緒に捨てられ、パネルが「CI job を取得中...」で永久に固まる (awaitCI と同じ失敗モードの、兄弟の掃き漏れ)。
 func TestDetailsLoadingReleasedAcrossEpochBump(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	// 🚨 フィクスチャ既定では usageOv.loading() が真で、spinnerActive() が札と無関係に
@@ -684,7 +683,7 @@ func TestDetailsLoadingReleasedAcrossEpochBump(t *testing.T) {
 	}
 }
 
-// 🚨 逆向き: **実取得分岐の札は世代交代で落とさない** (issue 272 の敵対的レビュー)。
+// 🚨 逆向き: **実取得分岐の札は世代交代で落とさない**。
 //
 // 落とすと「取得は飛んでいるのに (CI job 情報なし) を出す」うえ、開き直すと
 // fetchPanelDetails の 1 行目ガードが外れて同一 SHA へ 2 本目の GraphQL が飛ぶ

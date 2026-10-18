@@ -57,7 +57,7 @@ func TestIssuesWatchReloadsAfterExternalEdit(t *testing.T) {
 	if got := v.rows[0].Display(); got != "feat: 編集後" {
 		t.Fatalf("外部の編集が一覧に反映されていない: %q", got)
 	}
-	// 🚨 以前はチェックボックスの進捗も観測点にしていたが、一覧は進捗を出さなくなった
+	// 🚨 チェックボックスの進捗は観測点にしない。一覧は進捗を出さない
 	// (Issue は本文を最後まで読まない。issues/parse.go の LoadMeta の doc)。
 	// タイトルの差し替えで「メタデータが取り直された」は示せている
 	// 取り直した直後の基準は「スキャンが読んだ時点の指紋」= 次の観測と一致する。自分の取り直しを
@@ -172,7 +172,7 @@ func TestIssuesWatchIgnoresUnstableFile(t *testing.T) {
 			t.Fatal("次の観測が予約されない")
 		}
 		// 🚨 「読まなかった」を直接見る: 基準 (seen) が変わらず、変化は安定待ち (pending) に留まる。
-		// seen が空でないことだけを見ていた頃は、安定待ちを外して毎回すぐ読む変異でも緑だった (issue 667)
+		// seen が空でないことだけを見ていた頃は、安定待ちを外して毎回すぐ読む変異でも緑だった
 		if v.watch.seen != seen {
 			t.Fatalf("%d 回目: 書きかけの指紋を基準に採った (取り直しが走った)", i+1)
 		}
@@ -471,14 +471,14 @@ func TestIssuesWatchIgnoresStaleGeneration(t *testing.T) {
 	}
 }
 
-// 回帰 (2026-08-21 実測): 消えて戻ったディレクトリを再び watch する。以前は「Add 済み」を
-// watched マップで覚えて skip していたため、fsnotify の watch がディレクトリ削除で失われた後も
-// 印だけが残り、**同一 viewer セッション中は二度と Add されなかった** (実 repo の git switch で
+// 回帰 (2026-08-21 実測): 消えて戻ったディレクトリを再び watch する。「Add 済み」を
+// watched マップで覚えて skip すると、fsnotify の watch がディレクトリ削除で失われた後も
+// 印だけが残り、**同一 viewer セッション中は二度と Add されない** (実 repo の git switch で
 // issues/done が消えて戻ると、以後 done/ 内の変更が恒久的に無音。手動の取り直し 3 回でも復帰せず)。
 //
 // 🚨 この実 fsnotify 版は**再発の検出力が弱い**: ディレクトリを消しても fsnotify が watch を
 // 落とすまでに間があり、WatchList() が消えた done/ をまだ載せている状態で assert が通りうる
-// (タイミング依存。red team 実測 2026-08-21)。再 Add の不変条件の正本は issues_watch_seam_test.go
+// (タイミング依存。実測 2026-08-21)。再 Add の不変条件の正本は issues_watch_seam_test.go
 // の TestIssuesWatchReAddsRecreatedDirWithoutFsnotify で、こちらは「実 fsnotify と結合しても
 // 落ちない」ことの確認として残している。
 func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
@@ -525,7 +525,7 @@ func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
 
 // global の next/ は目印 (symlink) だけが置かれ、issue の Path を持つものが無いので
 // filepath.Dir(iss.Path) では watch に入らない。他セッション・git pull による付け外しを
-// 反映するために明示的に見張る (敵対レビュー 2026-09-05 P2)。
+// 反映するために明示的に見張る。
 func TestIssuesWatchDirsIncludeGlobalNextDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "001-feat-a.md"), []byte("# 001\n"), 0o644); err != nil {
@@ -543,7 +543,7 @@ func TestIssuesWatchDirsIncludeGlobalNextDir(t *testing.T) {
 
 // 空の global 状態ディレクトリ (waiting/ pending/ done/ と別綴りの hold/ …) も見張る。issue の
 // パスからしか足さないと、空の waiting/ へ新規作成した最初の md が watch にも指紋にも入らず、
-// `r` を押すまで一覧に出なかった (issue 665)。予約外の名前 (notes/) は従来どおり見張らない
+// `r` を押すまで一覧に出なかった。予約外の名前 (notes/) は従来どおり見張らない
 // (spec の「予約された名前だけが空のうちから見張られる」)。
 func TestIssuesWatchDirsIncludeEmptyGlobalStatusDirs(t *testing.T) {
 	dir := t.TempDir()
@@ -575,7 +575,7 @@ func TestIssuesWatchDirsIncludeEmptyGlobalStatusDirs(t *testing.T) {
 	}
 }
 
-// issue 749: 走査の途中 (scanIssues の中) に入った編集も取りこぼさない。基準 (指紋) が読んだ内容より
+// 走査の途中 (scanIssues の中) に入った編集も取りこぼさない。基準 (指紋) が読んだ内容より
 // 新しい側に寄ると、以降の観測が「変化なし」になって一覧が古いまま残る。
 //   - 本文の編集は「読み終えた直後」に起こす (loadAllMeta の差し込み口。読む位置を指紋の後ろから前へ
 //     戻す退行では、差し込み口も一緒に指紋の前へ動くので、編集が基準に焼き込まれて赤になる)

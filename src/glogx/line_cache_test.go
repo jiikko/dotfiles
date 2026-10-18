@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// overlay キャッシュはエントリ上限で古い順に落ち、表示中キーは消えない (issue 029 P2)。
+// overlay キャッシュはエントリ上限で古い順に落ち、表示中キーは消えない。
 func TestOverlayCacheEvictsOldestKeepingCurrent(t *testing.T) {
 	o := commitview.NewDiffOverlay()
 	(*o.Fixture().Sha()) = "sha-0" // 最古を表示中にして「表示中は evict されない」を同時に検証

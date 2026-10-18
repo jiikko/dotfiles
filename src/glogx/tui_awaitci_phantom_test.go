@@ -12,7 +12,7 @@ import (
 var errUsageProbeSettled = errors.New("usage settled (test probe)")
 
 // awaitCI の不変条件は **「awaitCI ⊆ commits の SHA」**。破ると、その要素は
-// **どの経路でも取り除かれない** (issue 223):
+// **どの経路でも取り除かれない**:
 //   - ciPollTargets は commits を走査するので、commits 外の SHA は追従対象にならない
 //   - statuses も永久に現れないので settleAwaitCI の「CI が見えた」分岐に落ちない
 //   - ciPollMsg の打ち切り (awaitAttempts) は targets が空だと早期 return で到達しない
@@ -83,7 +83,7 @@ func TestCIPollClearsPhantomAwaitCIWhenNoTargets(t *testing.T) {
 	}
 }
 
-// 🚨 **両向きを 1 つの表で見る** (issue 223 / 032)。tick チェーンの契約は
+// 🚨 **両向きを 1 つの表で見る**。tick チェーンの契約は
 // 「必要なときに回る」と「不要になったら止まる」の両方で、これまで前者しか守られていなかった。
 // 片側だけのテストは、述語が下りない退行 (= 本件) を通す。
 func TestSpinnerActiveBothDirectionsForAwaitCI(t *testing.T) {

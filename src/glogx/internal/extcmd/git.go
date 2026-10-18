@@ -48,7 +48,7 @@ func RunGitCmd(cmd *exec.Cmd) (string, error) {
 }
 
 // runGitReadTimeout は runGitTimeout と同じだが、表示のために作業ツリーを読む呼び出し (status・作業ツリーとの diff) 用。
-// cwd の repo のローカルの設定の filter (clean / process) を止める (issue 732。subproc.GitRepoArgs の doc)。add など書き込む操作には使わない。
+// cwd の repo のローカルの設定の filter (clean / process) を止める (subproc.GitRepoArgs の doc)。add など書き込む操作には使わない。
 func RunGitReadTimeout(args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitOpTimeout)
 	defer cancel()

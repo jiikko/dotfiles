@@ -83,7 +83,7 @@ func NoticeOKOf(text string, kind app.NoticeKind) (string, bool) {
 
 // HasTerminalControl は github.com/jiikko/dotfiles/src/termsafe/ctlprobe の薄い別名。
 //
-// 🚨 判定そのものをここへ書き戻さないこと (issue 285)。同じオラクルが 5 箇所に複製されており、
+// 🚨 判定そのものをここへ書き戻さないこと。同じオラクルが 5 箇所に複製されており、
 // 無害化の定義を広げるとき 4 箇所を直し忘れても全パッケージ green のままになる。
 func HasTerminalControl(s string) bool { return ctlprobe.HasControl(s) }
 
@@ -176,7 +176,7 @@ func (f *FakeWatcher) AddCount(dir string) int {
 // Emit はイベントを 1 本流す (実 fsnotify の代わり)。
 //
 // 🚨 送信までロックを持ったままにする。closed を読んでから解錠して送ると、その隙間に Close が
-// 入って「閉じたチャネルへの送信」で panic する (red team が 2000 回ループで再現)。events は
+// 入って「閉じたチャネルへの送信」で panic する (2000 回ループで再現)。events は
 // バッファ 16 で、ドレインするのは検査対象のコードだけ (Add/Close/WatchList はチャネルを読まない)
 // なので、ロックを持ったままの送信でデッドロックしない。
 func (f *FakeWatcher) Emit(ev fsnotify.Event) {
@@ -219,5 +219,5 @@ func HasControlExceptNewline(s string) bool { return ctlprobe.HasControlExceptNe
 // PopupHintBudget は popup の幅 (PopupWidth の content 幅を出す端末) で browseModel.hintWidth が返す最下行の案内の予算。
 // 画面のパッケージのテストが「代表幅の端末で案内が欠けない」を browseModel 抜きで見るのに使う。
 // 🚨 正本は main の hintWidth (描画側が切る幅と同じ 1 か所)。main の TestPopupHintBudgetMatchesBrowse が
-// この値と実物の一致を固定する (frame の寸法や hint の余白を変えたら、そちらが落ちてここを直す。issue 817)。
+// この値と実物の一致を固定する (frame の寸法や hint の余白を変えたら、そちらが落ちてここを直す)。
 const PopupHintBudget = 89

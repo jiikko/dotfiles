@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// issue 417: 外部由来の文字列が termsafe を通らずに画面 / stderr へ届いていた 4 経路。
+// 外部由来の文字列が termsafe を通らずに画面 / stderr へ届いていた 4 経路。
 // どれも表示にしか使わない値なので、受け取った時点で平文にしている。
 const evil417 = "\x1b]52;c;cHduZWQ=\a\u009b2J\u202eevil"
 

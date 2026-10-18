@@ -7,7 +7,7 @@ import (
 
 // uniformWidth は box 描画行の表示幅が全行で揃っている (枠が崩れていない) ことを検証して
 // その幅を返す。diff / job 詳細のスクロールバーテストが共有する (同一クロージャが 2 ファイルへ
-// コピーされていた。issue 030)。
+// コピーされていた)。
 func uniformWidth(t *testing.T, box []string) int {
 	t.Helper()
 	w := term.DispWidth(term.StripANSI(box[0]))

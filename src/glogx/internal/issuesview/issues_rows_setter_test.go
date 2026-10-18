@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// issuesView.rows は setRows 経由でしか書き換えない (issue 268)。
+// issuesView.rows は setRows 経由でしか書き換えない。
 //
 // なぜ機械で縛るか: 世代 (rowsGen) が進まないと ensureDisplayRows が「同期済み」と判断し、
 // **displayRows が古いまま描かれる**。build もテストも通るので silent に壊れる。
@@ -24,7 +24,7 @@ import (
 //   - **検出しない**: 別名の変数経由 (`p := v; p.rows = ...`)、reflect、別 struct への埋め込み経由、
 //     issuesView 以外の型に見えるレシーバ経由、`sort.Slice(v.rows, ...)` のような
 //     **関数へ渡してから中で並べ替える**形。これらは review の責務
-//   - 🚨 要素の書き換えと in-place ソートは**長さが変わらない**ので、世代でも旧実装の
+//   - 🚨 要素の書き換えと in-place ソートは**長さが変わらない**ので、世代でも
 //     全件比較でも観測できない。ここで字句的に止めるのが唯一の防御
 //   - 判定は「その代入を含む関数の**レシーバが issuesView**」「**引数の型が *issuesView**」
 //     「同じ関数内で `newTestIssuesView()` / `&issuesView{...}` から得た変数 (代入・var 宣言の
@@ -32,11 +32,11 @@ import (
 //   - 🚨 **この射程は実装後に実物と突き合わせて直したもの** (§8「『検出しない』は実装後に
 //     もう一度突き合わせる」)。初版は owners をレシーバと AssignStmt からしか埋めておらず、
 //     `func seed(v *issuesView, …) { v.rows = … }` と `var v = newTestIssuesView()` を
-//     **「検出しない」に挙げないまま素通し**していた (敵対的レビュー 2026-09-06 が実測)。
+//     **「検出しない」に挙げないまま素通し**していた (実測 2026-09-06)。
 //     どちらも「うっかり書く典型形」なので、除外ではなく検出側へ足した
 //
 // 検査が照合する名前 (型・フィールド・setter・テストの作り手)。🚨 名前を変えたらここも直す: 直し忘れると
-// canary (下) が 7 件を検出できずに落ちる (issue 817 で main から移して公開名になったときに 1 度変わった)。
+// canary (下) が 7 件を検出できずに落ちる。
 const (
 	rowsOwner    = "IssuesView"
 	rowsField    = "rows"
@@ -60,7 +60,7 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 				owners[n.Name] = true
 			}
 		}
-		// 🚨 引数で受け取った *issuesView も owner に数える (敵対的レビュー 2026-09-06)。
+		// 🚨 引数で受け取った *issuesView も owner に数える。
 		// `func seed(v *issuesView, list []*issues.Issue) { v.rows = list }` は
 		// 「うっかり書く典型形」そのものなのに、レシーバと AssignStmt の RHS からしか
 		// owners を埋めていなかったので**素通りしていた** (ヘッダの「検出しない」にも
@@ -75,8 +75,8 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 				}
 			}
 		}
-		// Fixture (main のテスト用の口) の受け手は `f.v` が issuesView を指す (issue 817 の反証レビュー:
-		// Fixture に setter を足すと素通りしていた)
+		// Fixture (main のテスト用の口) の受け手は `f.v` が issuesView を指す (Fixture に setter を足すと
+		// 素通りする)
 		fixtureRecv := map[string]bool{}
 		if fn.Recv != nil && len(fn.Recv.List) > 0 && recvTypeName(fn.Recv.List[0].Type) == "Fixture" {
 			for _, n := range fn.Recv.List[0].Names {
@@ -105,7 +105,7 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			// 複合リテラルで rows を直接埋める形 (&issuesView{rows: ...})。
 			// 🚨 世代が 0 のまま displayRows と食い違うので、ensureDisplayRows の
-			// 自己回復に頼ることになる (敵対レビュー 2026-09-06)
+			// 自己回復に頼ることになる
 			if cl, ok := n.(*ast.CompositeLit); ok && recvTypeName(cl.Type) == rowsOwner {
 				for _, elt := range cl.Elts {
 					if kv, ok := elt.(*ast.KeyValueExpr); ok {
@@ -213,9 +213,9 @@ func zzCanaryNew() { v := NewIssuesView(); v.FIELD = nil }
 		t.Fatalf("走査できない: %v", err)
 	}
 
-	// 🚨 走査が壊れて何も見なくなっても緑にならないよう、下限を置く (issue 280 / 283 と同じ形)。
+	// 🚨 走査が壊れて何も見なくなっても緑にならないよう、下限を置く。
 	// 2026-09-06 実測: .go 167 件 (テスト込み。当時は main) を走査し、issuesView.rows への代入候補は setRows の 1 件。
-	// 2026-10-17: issue 817 で issues 画面を internal/issuesview へ移した後は、このパッケージの 27 件を走査する
+	// 2026-10-17: このパッケージの 27 件を走査する
 	// (rows を触れるのはこのパッケージの中だけ。main からは型の外の名前に見えない)
 	if scanned < 20 {
 		t.Fatalf("走査した .go が %d 件しかない (下限 20)。WalkDir の除外が壊れている", scanned)

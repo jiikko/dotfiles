@@ -5,7 +5,7 @@ import "github.com/jiikko/dotfiles/src/tuikit/termwidth"
 // 表示幅の実装は github.com/jiikko/dotfiles/src/tuikit/termwidth (単一情報源。幅モデルの選択理由・fast-path の設計・実測値も
 // そちらの doc が正本)。main は呼び出し箇所が多い (DispWidth だけで 40 箇所超) ので、
 // gitOpTimeout と同じ形で別名を置き、呼び出し側を termwidth 化のために書き換えない。
-// issues / usage は termwidth を直接呼ぶ (以前はここと同じ関数を各自で写していた。issue 106)。
+// issues / usage は termwidth を直接呼ぶ (ここと同じ関数を各自で写さない)。
 
 func DispWidth(s string) int                               { return termwidth.Of(s) }
 func TruncateDisp(s string, width int, tail string) string { return termwidth.Truncate(s, width, tail) }

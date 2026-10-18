@@ -8,7 +8,7 @@ import (
 )
 
 // C / X (claude / codex update) が git log 一覧以外の画面からも始められることの配線テスト。
-// 以前は各 overlay の分岐が先にキーを飲み、一覧へ戻らないと update できなかった
+// 各 overlay の分岐が先にキーを飲むと、一覧へ戻らないと update できない
 // (ユーザー要望 2026-09-02)。update の中身 (判定 → 実行 → 結果) は tui_actions_test.go /
 // codex_version_test.go が見るので、ここでは「キーが actionModal まで届き、実行関数まで到達するか」と
 // 「overlay の語彙が先に立つ場面では届かないか」だけを pin する。
@@ -16,7 +16,7 @@ import (
 // 🚨 届いた証拠は stub した runClaudeUpdate / runCodexUpdate の呼び出し回数で取る。handleKey の
 // 戻り値が非 nil かでは判定しない (overlay が飲んでも maybeTick が非 nil を返す経路があり、
 // updateBeginMsg を直接 Update へ流す形も「届かなくても updating が立つ」ので証拠にならない。
-// 敵対レビュー 2026-09-02 が変異で実証)。
+// 変異で実証した)。
 
 // stubUpdates は claude / codex の update 実行を差し替え、呼び出し回数を返す。テスト環境は
 // version cache が無いので、キーが届けば判定 → updateBeginMsg → 実行 (stub) まで進む。
@@ -66,7 +66,7 @@ func TestUpdateKeysReachableFromOverlays(t *testing.T) {
 			func(m *browseModel) bool { return m.rlDash.Visible() }, false},
 		{"doctor", openByKey("D", func(m *browseModel) bool { return m.doctorOv.Visible() }),
 			func(m *browseModel) bool { return m.doctorOv.Visible() }, false},
-		// diff / PR status のポップアップも同じ (以前は未知キーとして飲んでいた)
+		// diff / PR status のポップアップも同じ (未知キーとして飲まない)
 		{"diff", func(t *testing.T, m *browseModel) { m.diffOv.Open(m.commits[0].SHA) },
 			func(m *browseModel) bool { return m.diffOv.Visible() }, false},
 		{"pr-status", func(t *testing.T, m *browseModel) { m.prStatusOv.Open(m.commits[0].SHA) },
@@ -144,8 +144,8 @@ func TestUpdateKeysYieldToOverlayInputModes(t *testing.T) {
 // doctor の削除の確認・実行中は C / X を受けない (確認中の X が codex update を始めると、
 // 削除の確認が裏に残る)。
 //
-// 🚨 この検査が無いと `updateKeyReachable` の doctor 節を消す変異が**全テスト green** を通る
-// (敵対レビュー 2026-09-03 の実測)。doctorview.DoctorView 側のテストは `ownsKeys()` の値しか見ておらず、
+// 🚨 この検査が無いと `updateKeyReachable` の doctor 節を消す変異が**全テスト green** を通る。
+// doctorview.DoctorView 側のテストは `ownsKeys()` の値しか見ておらず、
 // **browseModel がそれを見ているか**は守っていなかった。
 func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
 	claude, codex := stubUpdates(t)

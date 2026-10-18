@@ -9,12 +9,12 @@ import (
 
 // ScreenMemory は全画面 (issues / doctor / ratelimit / F / L) を閉じたときの画面の記憶 (1 画面 1 ファイル)。
 // C-g で閉じてすぐ開き直したときに同じ画面へ戻すためのもの。保存・読み込み・削除の作法は全画面で同じなので、
-// ここに 1 つだけ置く (issue 777)。照合 (別 repo・別の dir・範囲外のタブ) は画面ごとに load の後で行う。
+// ここに 1 つだけ置く。照合 (別 repo・別の dir・範囲外のタブ) は画面ごとに load の後で行う。
 //
 // フィールドを公開しているのは、各画面がパッケージ変数として「どのファイルに・どの時刻で」を宣言する形だから
 // (`var doctorMemory = app.ScreenMemory[doctorScreen]{File: ..., SavedAt: ...}`。宣言の後に書き換える呼び出しは無い)。
 // 画面のパッケージは app の外にあるので、非公開にすると宣言のためだけのコンストラクタが要る。宣言の後に
-// 書き換える呼び出しが現れたら、コンストラクタにして非公開に戻すことを再評価する (issue 817 の B-2)。
+// 書き換える呼び出しが現れたら、コンストラクタにして非公開に戻すことを再評価する。
 // ScreenMemoryTTL と Path は画面のテストが「期限切れ」「壊れたファイル」を作るのに使う (どちらも Load の契約の一部)。
 type ScreenMemory[T any] struct {
 	File    string            // CacheBaseDir の下のファイル名
@@ -47,7 +47,7 @@ func (m ScreenMemory[T]) Save(v T) error {
 	if err != nil {
 		return err
 	}
-	// 🚨 素の os.WriteFile を使わないこと (issue 219 / 286)。WriteAtomic は temp + rename で、
+	// 🚨 素の os.WriteFile を使わないこと。WriteAtomic は temp + rename で、
 	// write / Close / rename の 3 分岐すべてで temp を掃除する。素の WriteFile は O_TRUNC なので
 	// 書き込み中に落ちると**途中まで書けた JSON** が残り、次回起動の復元が黙って失敗する。
 	// 規律は cache_write_discipline_test.go がソース走査で強制する。

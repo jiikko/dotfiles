@@ -17,8 +17,8 @@ func NormalizeSpaceKey(key string) string {
 }
 
 // NoticeKind は viewer の操作結果の種類。showWarning の 3 分類 (showWarning の doc) を viewer からも
-// 表せるようにする: 以前は ok bool の 2 値で、断りの文やクリップボード失敗まで lastWarning を
-// 上書きし、直前のエラーを w でコピーできなくしていた (issue 663)。
+// 表せるようにする: ok bool の 2 値にしない。断りの文やクリップボード失敗まで lastWarning を
+// 上書きし、直前のエラーを w でコピーできなくなる。
 type NoticeKind uint8
 
 const (

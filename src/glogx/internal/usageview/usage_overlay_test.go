@@ -72,7 +72,7 @@ func TestOverlayBoxTopRightEmpty(t *testing.T) {
 		t.Errorf("空ウィンドウで nil を返さない: %v", got)
 	}
 	// 空 box / 幅 0 は**ウィンドウをそのまま返す**。戻り値を捨てると「背景を丸ごと落とす」
-	// 退行 (overlayBoxRight の早期 return を nil にする) が素通りする (issue 198 発見 1)。
+	// 退行 (overlayBoxRight の早期 return を nil にする) が素通りする。
 	window := []string{"a", "b"}
 	if got := OverlayBoxTopRight(window, nil, 10, false); !slices.Equal(got, window) {
 		t.Errorf("空 box でウィンドウが変わった: got %v want %v", got, window)
@@ -198,7 +198,7 @@ func TestUsageHandleRecoversFromInitialError(t *testing.T) {
 }
 
 // 成功時の usage box は自動更新を明示するフッター (usageFooter) を末尾に出す
-// (ユーザー要望 2026-07-22。間隔は全プロセス共有のゲートの間隔。issue 627)。
+// (ユーザー要望 2026-07-22。間隔は全プロセス共有のゲートの間隔)。
 func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
 	ov := UsageOverlay{
 		Visible: true,
@@ -370,7 +370,7 @@ func usageLabels(s *usage.Snapshot) string {
 	return strings.Join(ls, ",")
 }
 
-// 先に届いた方をその場で出し、遅い方は場所取りの行 (「取得中...」) で待つ (issue 626)。届く前と後で箱の幅と
+// 先に届いた方をその場で出し、遅い方は場所取りの行 (「取得中...」) で待つ。届く前と後で箱の幅と
 // 行の数は変わらない (場所取りは届いた後と同じ枠・列は最大の幅から)。周の終わりに、取れた両方をキャッシュへ保存する。
 func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
 	plain, width := usageBoxPlain, linesWidth

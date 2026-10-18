@@ -57,7 +57,7 @@ func newAppZoom() appZoom { return appZoom{t: anim.NewOpen()} }
 
 // start は開く演出を最初から始める (今の状態によらず、閉じ切った姿から開く)。
 //
-// 🚨 **production からは呼ばれていない** (issue 316 で確認)。`tui.go` の Init が
+// 🚨 **production からは呼ばれていない**。`tui.go` の Init が
 // `// m.zoom.start(app.TimeNow())` とコメントアウトしており、「開く演出は入れない
 // (起動が appZoomDuration 待たされる方が体感を損ねる)」という判断がそこに書いてある。
 // **終了の演出 (startClose) は生きている**ので、この関数を消すと対の実装が片方だけになる。
@@ -125,7 +125,7 @@ func (z *appZoom) scale(now time.Time) float64 {
 //
 // 🚨 framed のとき lines は term.WrapWindowFrame 適用**後**の画面 (finishWindow の呼び出し順)。
 // 素朴に lines[0] から切り出すと「上余白 + 実画面自身の枠の角 + 左の ║ 列」が演出枠の内側に
-// 入れ子で映る (二重罫線。敵対的レビューで実フレーム描画により検出 2026-08-13)。演出枠が
+// 入れ子で映る (二重罫線。実フレーム描画で検出 2026-08-13)。演出枠が
 // 実枠の代役なので、実枠のクローム分をスキップして中身だけを映す。
 func zoomWindow(lines []string, scale float64, width int, colored, framed bool) []string {
 	h := len(lines)
@@ -145,7 +145,7 @@ func zoomWindow(lines []string, scale float64, width int, colored, framed bool) 
 	//
 	// 🚨 下と右もクランプする: snap 直前 (scale ~0.95) は切り出しが実枠の下辺 (▁ の接地行)・
 	// 影・右の ║ 列まで届き、演出枠の内側に入れ子で映る (上・左のスキップだけでは snap 直前の
-	// 数フレームで再発する。実フレーム描画の red team 検証で検出 2026-08-13)。
+	// 数フレームで再発する。実フレーム描画で検出 2026-08-13)。
 	srcTop, srcLeft, maxRow, maxCols := 0, 0, h, inner
 	if framed {
 		srcTop, srcLeft = 2, 3

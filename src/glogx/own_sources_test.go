@@ -54,7 +54,7 @@ var ownSourceExcluded = map[string]string{
 // ownSourceRoots の正本は go.mod の replace (ローカルの module を取り込んだら、その module は
 // glogx の画面に何かを出しうる)。根を一覧から外す退行と、module を足したときの入れ忘れを止める。
 // 🚨 「根ごとに .go が 0 件なら落とす」(walkOwnSources) は、一覧に**載っている**根しか見ないので
-// これを代わりにできない (tuikit を一覧から消しても 2 つの走査は緑のまま通った。敵対レビュー実測)。
+// これを代わりにできない (tuikit を一覧から消しても 2 つの走査は緑のまま通った)。
 func TestOwnSourceRootsCoverLocalReplaces(t *testing.T) {
 	roots := map[string]bool{}
 	for _, r := range ownSourceRoots {
@@ -88,7 +88,7 @@ type localReplace struct{ mod, path string }
 // localReplaces は go.mod のローカルの replace を返す (同じ module が版違いで複数あれば全部)。
 //
 // 読むのは go 自身 (`go mod edit -json`)。自前で字句を読むと、go が受け付ける形 (空白の無い
-// `replace(`・引用符・絶対パス・末尾の / が無い `..`) を黙って読み落とした (敵対レビュー実測)。
+// `replace(`・引用符・絶対パス・末尾の / が無い `..`) を黙って読み落とした。
 // ローカルの replace = 置き換え先に版が無いもの (go の規則)。パスは glogx からの相対へ揃える。
 func localReplaces(t *testing.T) []localReplace {
 	t.Helper()

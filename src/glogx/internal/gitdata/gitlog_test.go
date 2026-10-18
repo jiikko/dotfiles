@@ -70,7 +70,7 @@ func TestParseLogSanitizesControlSequences(t *testing.T) {
 	if c.Subject != "fix bug" {
 		t.Errorf("Subject = %q; want OSC52 が落ちた \"fix bug\"", c.Subject)
 	}
-	// subject / message は作者が書く欄で git は色を付けないので、SGR も落とす (issue 417。ESC[8m で文字を隠せる)
+	// subject / message は作者が書く欄で git は色を付けないので、SGR も落とす (ESC[8m で文字を隠せる)
 	if want := "fix bug\n\nbody red line"; c.Message != want {
 		t.Errorf("Message = %q; want %q (CSI 消去も SGR も落ちる)", c.Message, want)
 	}
@@ -83,7 +83,7 @@ func TestParseLogSanitizesControlSequences(t *testing.T) {
 }
 
 // -p / --stat の本文はコミットごとに maxDiffLines で打ち切られる (単一 diff ポップアップと
-// 同じ安全弁。-p × 無制限件数で際限なく保持しない。issue 029)。
+// 同じ安全弁。-p × 無制限件数で際限なく保持しない)。
 func TestParseLogCapsHugeBody(t *testing.T) {
 	huge := strings.Repeat("+ line\n", extcmd.MaxDiffLines+100)
 	out := rec(strings.Repeat("a", 40), "aaaaaaa", "s", "a", "e", "d", "r", "", "s", "\n"+huge)

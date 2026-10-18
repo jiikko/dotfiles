@@ -10,9 +10,9 @@ import (
 
 // 一覧の窓は必ずカーソル行を含む (どのスクロールキーの直後も)。
 //
-// 🚨 この不変条件のテストは glide を外した後も残す (issue 031 の決定)。半ページ移動は cursor と
+// 🚨 この不変条件のテストは glide を外した後も残す。半ページ移動は cursor と
 // offset を同時に動かすので、窓の導出を素朴に書き換えると「カーソル行が 1 本も描かれない =
-// 見えない行が Enter・v・y の対象になる」窓が復活する (敵対的レビュー P2 の回帰)。
+// 見えない行が Enter・v・y の対象になる」窓が復活する。
 func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {
 	v := newTestIssuesView()
 	v.shown, v.loaded = true, true
@@ -48,7 +48,7 @@ func TestIssuesCloseStopsBodyGlide(t *testing.T) {
 	}
 }
 
-// 本文 pager の半ページ (Space) は glide に載り、本文を閉じたら glide を残さない (main の TestHalfPageScrollGlidesOnAllSurfaces の issues の分。issue 817)。
+// 本文 pager の半ページ (Space) は glide に載り、本文を閉じたら glide を残さない (main の TestHalfPageScrollGlidesOnAllSurfaces の issues の分)。
 func TestIssuesBodyPagerHalfPageGlides(t *testing.T) {
 	v := newTestIssuesView()
 	v.bodyPager.Offset = 0
@@ -70,9 +70,9 @@ func TestIssuesBodyPagerHalfPageGlides(t *testing.T) {
 	}
 }
 
-// advanceGlide が本文 pager の glide を着地させる (main の TestHalfPageScrollGlidesOnAllSurfaces の issues の分。issue 817)。
+// advanceGlide が本文 pager の glide を着地させる (main の TestHalfPageScrollGlidesOnAllSurfaces の issues の分)。
 func TestIssuesAdvanceGlideLandsBodyPager(t *testing.T) {
-	// 🚨 一覧は glide を持たない (幾何的にアニメしないため削除。issue 031)
+	// 🚨 一覧は glide を持たない (幾何的にアニメしないため削除)
 	v := newTestIssuesView()
 	v.bodyPager.Offset = 10
 	startPagerGlide(t, &v.bodyPager, 0, 10)
@@ -84,7 +84,7 @@ func TestIssuesAdvanceGlideLandsBodyPager(t *testing.T) {
 	}
 }
 
-// 一覧の shift+space は上へ戻る (main の TestShiftSpaceScrollsUp の issues の分。issue 817)。
+// 一覧の shift+space は上へ戻る (main の TestShiftSpaceScrollsUp の issues の分)。
 func TestIssuesListShiftSpaceScrollsUp(t *testing.T) {
 	v := newTestIssuesView()
 	v.shown, v.loaded = true, true
@@ -105,7 +105,7 @@ func TestIssuesListShiftSpaceScrollsUp(t *testing.T) {
 	}
 }
 
-// 本文 pager の shift+space は上へ戻る (main の TestShiftSpaceScrollsUp の issues の分。issue 817)。
+// 本文 pager の shift+space は上へ戻る (main の TestShiftSpaceScrollsUp の issues の分)。
 func TestIssuesBodyShiftSpaceScrollsUp(t *testing.T) {
 	v := newTestIssuesView()
 	// handleBodyKey は body 前提 (本番でも open と同時にセットされる)。行数を稼ぐため

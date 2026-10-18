@@ -118,7 +118,7 @@ var selfExePath = func() string {
 // 2 を見るのは、shim が再ビルドを spawn しない経路が複数あるため: lock 残留で「他がビルド中」と
 // 誤認する / 同期ツール (rsync -a 等) でソースの mtime が巻き戻り shim の -nt が偽になる /
 // shim を経ずバイナリを直接起動する。原因を 1 つずつ塞ぐのではなく「ソースの方が新しい」という
-// 1 つの事実へ還元する (issue 033)。
+// 1 つの事実へ還元する。
 //
 // 🚨 shim の env で判定しない: env が立つのは「backoff が再挑戦を止めている瞬間」だけなので、
 // TTL 超過で再挑戦した経路・shim を経ずバイナリを直接起動した経路・別セッションが撒いた失敗を
@@ -169,8 +169,7 @@ func autobuildSourcesNewer(dir string, binAt time.Time) bool {
 
 // autobuildReplaceDirs は go.mod の `replace X => <相対パス>` の先 (別 module を相対パスで取り込む形。
 // glogx → ../doctor)。取り込み先だけを直しても dir の下は変わらないので、ここを見ないと
-// 「shim は再ビルドするのに glogx は黙る」ではなく**両方が黙る** (shim 側も同じ定義を持つ。
-// 敵対レビュー 2026-09-02 P1)。1 行形式とブロック形式の両方を見る。バージョン指定は無視。
+// 「shim は再ビルドするのに glogx は黙る」ではなく**両方が黙る** (shim 側も同じ定義を持つ)。1 行形式とブロック形式の両方を見る。バージョン指定は無視。
 func autobuildReplaceDirs(dir string) []string {
 	data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
 	if err != nil {
@@ -266,15 +265,15 @@ func (w *autobuildWatch) tickCmd() tea.Cmd {
 // handle は観測結果を状態へ反映し、「今トーストで出すべき結果」を返す。期限切れは無言で監視を
 // 終える。戻り値 keepWatching が true なら呼び出し側は tickCmd を張り直す。
 //
-// 🚨 以前はトーストが塞がっているとき (busy) 結果を保持して次の tick で出し直していた。トーストが
-// 積めるようになった (toast の doc) ので、その調停は不要になり引数から落とした。pending は
+// 🚨 トーストが塞がっているとき (busy) の結果を保持して次の tick で出し直さない。トーストが
+// 積める (toast の doc) ので、その調停は不要。pending は
 // 「起動直後に出す『ビルド中』を Init まで運ぶ」役だけを担う。
 func (w *autobuildWatch) handle(res autobuildResult, now time.Time) (out autobuildResult, notify, keepWatching bool) {
 	if !w.active {
 		return autobuildRunning, false, false
 	}
-	// 完成は伝える。以前は無言だった (開始時に「次回起動で反映」と伝えているため二度言うことに
-	// なる) が、その場で再起動できるようになったので意味が変わった: 「次回起動で反映」は待ちの
+	// 完成は伝える。無言にしない (開始時に「次回起動で反映」と伝えているが、
+	// その場で再起動できるので意味が違う): 「次回起動で反映」は待ちの
 	// 案内、完成は行動できる合図。🚨 出し方はトーストでなく再起動を促すダイアログ (呼び出し側)。
 	// 数秒で消えるトーストだと、目を離している間に行動の機会だけが消える。
 	if res == autobuildInstalled {

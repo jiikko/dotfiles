@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// 確認画面が約束した対象と、`y` が実際に消す対象が一致すること (issue 245)。
+// 確認画面が約束した対象と、`y` が実際に消す対象が一致すること。
 //
 // 🚨 P1 の形: 下見 (DryRun) が**部分的に**中断されると、2 件目以降が OutcomeFailed になる。
 // confirmLines は Failed を解放量に足さない (それ自体は正しい) のに、以前の `case "y"` は
@@ -84,8 +84,8 @@ func TestPlannedTargetsIsEmptyWithoutPlan(t *testing.T) {
 }
 
 // 🚨 **planHasWork と plannedTargets が同じ述語を見ていること**。
-// 以前は「消せるものが在るか」と「何を消すか」が別ソースで、確認画面が何を約束しても
-// 実行が従わない構造だった。片方だけ直すとまた割れるので、両方を同じ入力で突き合わせる。
+// 「消せるものが在るか」と「何を消すか」を別ソースにしない。確認画面が何を約束しても
+// 実行が従わない構造になる。片方だけ直すとまた割れるので、両方を同じ入力で突き合わせる。
 func TestPlanHasWorkAgreesWithPlannedTargets(t *testing.T) {
 	sel := []disk.Result{
 		{Entry: disk.Entry{ID: "a"}}, {Entry: disk.Entry{ID: "b"}},
@@ -131,10 +131,10 @@ func TestPlanEntriesAlwaysCarryID(t *testing.T) {
 	}
 }
 
-// 🚨 **`case "y"` の経路で engine が受け取る対象**を見る (issue 245)。
+// 🚨 **`case "y"` の経路で engine が受け取る対象**を見る。
 //
 // plannedTargets の単体テストだけでは足りない: `y` が plannedTargets を**呼ばない**形へ戻す
-// 変異 (= この issue の症状そのもの) を素通りさせる。issue 217 で同じ穴を踏んだので、
+// 変異を素通りさせる。同じ穴を踏みやすいので、
 // production の入口を通す形で固定する。
 func TestDeleteKeyYPassesOnlyPlannedTargetsToEngine(t *testing.T) {
 	f := &fakeDelete{

@@ -215,7 +215,7 @@ func TestLanChangedMsgRearms(t *testing.T) {
 }
 
 // 本物の Space の打鍵 (KeyPressMsg) で台帳の登録の確認が開く。glogx は Space を " " に書き換えてから板へ渡すので、
-// "space" を直接渡すテストではこの経路を通らない (red team の指摘 2026-10-15)。
+// "space" を直接渡すテストではこの経路を通らない (2026-10-15)。
 func TestLanRealSpaceKeyOpensLedgerConfirm(t *testing.T) {
 	m := openLan(t)
 	m.handleKey("l")

@@ -20,7 +20,7 @@ func TestPRStatusBoxSanitizesBranchNames(t *testing.T) {
 	assertSanitizedAndVisible(t, "PR の枠", o.BoxLines(80, false, "⠋", ""), "feat/", "master")
 }
 
-// assertSanitizedAndVisible は無害化テストの 2 つの主張を対で確かめる (issue 284):
+// assertSanitizedAndVisible は無害化テストの 2 つの主張を対で確かめる:
 //
 //  1. 制御シーケンス / OSC の中身が残っていない (本来の主張)
 //  2. 🚨 **細工した値が実際に描かれている** (陽性対照)

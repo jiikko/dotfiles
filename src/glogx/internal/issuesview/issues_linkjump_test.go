@@ -467,7 +467,7 @@ func TestLinkJumpRepeatedDestStopsTwice(t *testing.T) {
 	}
 }
 
-// 移動の語彙は listnav.MotionOf (ctrl+n / ctrl+p / home / end も効く)。半ページ送り (space) はジャンプを抜けて本文へ渡す (issue 700 の 3)。
+// 移動の語彙は listnav.MotionOf (ctrl+n / ctrl+p / home / end も効く)。半ページ送り (space) はジャンプを抜けて本文へ渡す。
 func TestLinkJumpUsesMotionVocabulary(t *testing.T) {
 	e := newJumpEnv(t, jumpBody)
 	e.press("tab")

@@ -235,7 +235,7 @@ func TestStatusViewerRendersFullScreenAndHint(t *testing.T) {
 	}
 	// remote 操作キー (b/p) は hint に出す (発見性。ユーザー要望 2026-08-07)。
 	// 🚨 view でなく hint() を直接、しかも**広い幅**で見る: hint は幅に応じて優先度の低い項目を
-	// 落とすので (issue 155)、テストの 80 桁では b/p は出ない (出るのは「今の幅で確実に読める
+	// 落とすので、テストの 80 桁では b/p は出ない (出るのは「今の幅で確実に読める
 	// もの」だけ。全キーの正本は --help / README)
 	hint := m.statusOv.Hint(200)
 	if !strings.Contains(hint, "b: push") || !strings.Contains(hint, "p: pull") {
@@ -257,7 +257,7 @@ func TestStatusViewerNoticeBecomesToast(t *testing.T) {
 // --- 頑健性 (壊しにいく観点) ---
 
 // hint を組む予算と、描画側が切る幅は同じ 1 か所から取る (browseModel.hintWidth)。
-// 🚨 2 か所に式を書くと「収まるつもりで組んだ hint が黙って切られる」形でずれる (issue 155)。
+// 🚨 2 か所に式を書くと「収まるつもりで組んだ hint が黙って切られる」形でずれる。
 func TestStatusHintUsesRenderBudget(t *testing.T) {
 	// 🚨 幅を 1 点で見ない。項目単位で採るので、ある幅では予算のずれ 2 桁が余白に吸われて
 	// 表に出ない。ずれが「切り詰めの …」として現れる幅は幅の刻みでしか見つからない

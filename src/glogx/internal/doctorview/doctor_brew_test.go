@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// issue 171: brew の警告は本文に空行を含む (Homebrew の diagnostic.rb は \n\n 入りの heredoc を
+// brew の警告は本文に空行を含む (Homebrew の diagnostic.rb は \n\n 入りの heredoc を
 // 多数持つ)。空行でブロックを切ると 2 塊目以降が Warning: で始まらず others として黙って捨てられ、
 // 「Run `brew link` on these:」のような修復コマンドと対象一覧が消える。
 // fixture は実機 (Homebrew 6.0.20 / rc=1) の stderr。
@@ -52,7 +52,7 @@ func TestParseBrewDoctorKeepsLinesAfterBlankLine(t *testing.T) {
 	}
 }
 
-// 敵対レビュー 2026-09-03: 前置き allowlist に無い行が警告のあいだに現れたとき、直前の警告の本文へ
+// 前置き allowlist に無い行が警告のあいだに現れたとき、直前の警告の本文へ
 // 地続きに繋がって見えないこと (段落の空行を残す)。塊の先頭・末尾に空行は持たない。
 func TestParseBrewDoctorKeepsParagraphBreaks(t *testing.T) {
 	res := parseBrewDoctor("", "Warning: A\ndetail1\n\nstray line not in the allowlist\n\nWarning: B\ndetail2\n\n", 1)

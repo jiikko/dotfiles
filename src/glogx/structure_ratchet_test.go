@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// main を薄く保つための構造の検査 (issue 817 の H)。golangci には「main を薄く」をそのまま表す規則が無いので、
+// main を薄く保つための構造の検査。golangci には「main を薄く」をそのまま表す規則が無いので、
 // 構造をテストで検査し、例外は下の一覧に理由つきで書かせる (一覧の差分がレビューに出る)。
 //
 // 🚨 **脅威モデルと射程** (adversarial-review-own-safeguards §8):
@@ -29,7 +29,7 @@ import (
 //     テストのファイル (main に残るテストは browseModel と組み合わせるものに限る、はレビューの責務)
 
 // mainSourceFiles は main の直下に置いてよい非テストの .go と、置く理由 (H-1)。
-// 足すときは理由を書く。画面の本体なら、まず internal/ のパッケージに置けないかを考える (issue 817)。
+// 足すときは理由を書く。画面の本体なら、まず internal/ のパッケージに置けないかを考える。
 var mainSourceFiles = map[string]string{
 	"main.go":              "起動 (CLI の入口)",
 	"options.go":           "起動 (CLI フラグ)",
@@ -125,7 +125,7 @@ func TestBrowseModelMethodFilesAllowlist(t *testing.T) {
 		}
 		files[f] = file
 	}
-	// 型の別名 (`type bm = browseModel`) で受けるメソッドも browseModel のメソッド (codex の敵対的レビュー 2026-10-17)。
+	// 型の別名 (`type bm = browseModel`) で受けるメソッドも browseModel のメソッド。
 	// 別名の別名もあるので、増えなくなるまで集める
 	names := map[string]bool{"browseModel": true}
 	for grew := true; grew; {
@@ -171,7 +171,7 @@ func TestBrowseModelMethodFilesAllowlist(t *testing.T) {
 }
 
 // TestInternalAPIGolden は internal/ の各パッケージの公開名を testdata/api/ の golden と突き合わせる (H-3)。
-// 公開名は「main が画面に頼むこと」に絞る (issue 817)。増やすときは golden の差分がレビューに出る。
+// 公開名は「main が画面に頼むこと」に絞る。増やすときは golden の差分がレビューに出る。
 // 減ったときも落とす (golden が実体とずれると、次に増えたものが紛れる)。
 // 更新: GLOGX_API_UPDATE=1 go test -run TestInternalAPIGolden .
 //
@@ -295,7 +295,7 @@ func apiSurface(t *testing.T, dir string) string {
 							add("type %s", s.Name.Name)
 						}
 						addFields(s.Name.Name, s.Type)
-						// 括弧で包んだ型 (`type T (interface{...})`) も中を見る (codex の敵対的レビュー 2026-10-17)
+						// 括弧で包んだ型 (`type T (interface{...})`) も中を見る
 						if it, ok := ast.Unparen(s.Type).(*ast.InterfaceType); ok {
 							for _, m := range it.Methods.List {
 								for _, mn := range m.Names {
@@ -315,7 +315,7 @@ func apiSurface(t *testing.T, dir string) string {
 								continue
 							}
 							add("%s %s", kind, vn.Name)
-							// 公開の変数の型が無名の構造体なら、そのフィールドも外から触れる (codex の敵対的レビュー 2026-10-17)
+							// 公開の変数の型が無名の構造体なら、そのフィールドも外から触れる
 							if s.Type != nil {
 								addFields(vn.Name, s.Type)
 							} else if i < len(s.Values) {
@@ -358,7 +358,7 @@ func lineDiff(want, got string) string {
 }
 
 // TestNoFixtureCallsInProduction は画面のパッケージの Fixture() (main のテストが状態を置く口) を本番のコードが
-// 呼んでいないことを確かめる (issue 817。internal/doctorview/fixture.go)。Fixture は状態の不変条件を飛ばして
+// 呼んでいないことを確かめる (internal/doctorview/fixture.go)。Fixture は状態の不変条件を飛ばして
 // 書き込めるので、本番から呼ぶと画面の状態機械を迂回できる。
 // 止めるもの: fixture.go の外の本番のコードでの、名前が Fixture で始まる識別子 (`.Fixture()`・`Fixture{...}`・
 // `issuesview.FixtureScanMsg` のようなパッケージの関数)。
@@ -387,7 +387,7 @@ func TestNoFixtureCallsInProduction(t *testing.T) {
 		isDef := filepath.Base(p) == "fixture.go" // Fixture を定義するファイル (`return Fixture{v}` は定義の一部)
 		if isDef {
 			// 外してよいのは nofixture のビルドから消えるものだけ。build tag の無い fixture.go は本番に残るので、
-			// そこから本番が Fixture を使っても字句の検査も nofixture のビルドも素通りする (opus の敵対的レビュー 2026-10-18)
+			// そこから本番が Fixture を使っても字句の検査も nofixture のビルドも素通りする
 			if !hasNofixtureConstraint(f) {
 				t.Errorf("%s: fixture.go に //go:build !nofixture が無い (本番のビルドに残り、Fixture の検査を素通りする)", p)
 			}
@@ -395,7 +395,7 @@ func TestNoFixtureCallsInProduction(t *testing.T) {
 		}
 		// 名前が Fixture で始まる識別子 (メソッドの `.Fixture()`・`Fixture{v}` の直接構築・パッケージの関数
 		// `issuesview.FixtureScanMsg`) を、Fixture を定義するファイルの外の本番のコードでは使わない
-		// (直接構築の抜け道は codex の敵対的レビュー 2026-10-17)
+		// (直接構築の抜け道を塞ぐ)
 		ast.Inspect(f, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok && strings.HasPrefix(id.Name, "Fixture") {
 				t.Errorf("%s: 本番のコードが %s を使っている (Fixture… は main のテスト専用の口)", fset.Position(id.Pos()), id.Name)
@@ -415,8 +415,8 @@ func TestNoFixtureCallsInProduction(t *testing.T) {
 
 // TestEveryTestPackageUsesTestenv はテストを持つ main と internal の各パッケージが、TestMain で testenv.Main を呼ぶことを
 // 確かめる。TestMain の前処理 (隔離・幅 env のガード・外部作用の既定) はパッケージ単位でしか掛からないので、テストを
-// 新しいパッケージへ移すと黙って外れる (retro 815。issue 742 で doctor のテストを移したとき、幅 env のガードと
-// キャッシュの隔離が外れて緑のまま通った)。前処理の中身は internal/testenv が正本 (issue 817)。
+// 新しいパッケージへ移すと黙って外れる (doctor のテストを移したとき、幅 env のガードと
+// キャッシュの隔離が外れて緑のまま通った)。前処理の中身は internal/testenv が正本。
 // 止めないもの: TestMain の中で testenv.Main 以外の前処理を足す形・testenv.Main を呼ぶ前に何かを走らせる形 (レビューの責務)
 func TestEveryTestPackageUsesTestenv(t *testing.T) {
 	dirs := map[string]bool{}
@@ -467,7 +467,7 @@ func TestEveryTestPackageUsesTestenv(t *testing.T) {
 					continue
 				}
 				// 🚨 build 制約の付いたファイルの TestMain は数えない (`//go:build linux` だと macOS では走らない。
-				// ParseFile は制約を見ないので、字面だけでは通ってしまう。issue 817 の反証レビュー)
+				// ParseFile は制約を見ないので、字面だけでは通ってしまう)
 				for _, cg := range f.Comments {
 					if cg.Pos() < f.Package && strings.Contains(cg.Text(), "+build") || cg.Pos() < f.Package && strings.HasPrefix(strings.TrimSpace(cg.List[0].Text), "//go:build") {
 						t.Errorf("%s: TestMain のファイルに build 制約がある (環境によって前処理が掛からない)", filepath.Join(dir, e.Name()))

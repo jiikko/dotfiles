@@ -1,5 +1,5 @@
 // Package commitview は glogx のコミットに重ねるポップアップ群: diff (d)・PR 状態 (P)・CI の job 詳細。
-// どれも「対象の SHA / key を持つ pager」の状態と描画で、取得の起動と対象の選定は main の browseModel が持つ (issue 817 の G-2)。
+// どれも「対象の SHA / key を持つ pager」の状態と描画で、取得の起動と対象の選定は main の browseModel が持つ。
 package commitview
 
 import (
@@ -160,7 +160,7 @@ type DiffMsg struct {
 
 // prStateColor は PR 状態の表示色 (GitHub の慣例: OPEN=緑 / MERGED=マゼンタ / CLOSED=赤)。
 // コミット行のバッジ (prBadge) と PR 状態ポップアップ (prStateLabel) が共有する — 独立に
-// 2 箇所へ書くと状態語彙の変更で片方だけ直して食い違う (issue 030)。
+// 2 箇所へ書くと状態語彙の変更で片方だけ直して食い違う。
 func PrStateColor(state string) string {
 	switch state {
 	case "OPEN":

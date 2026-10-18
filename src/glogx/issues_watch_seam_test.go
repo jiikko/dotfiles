@@ -1,6 +1,6 @@
 package main
 
-// 実 fsnotify を要さない見張りの検査 (issue 087)。
+// 実 fsnotify を要さない見張りの検査。
 //
 // なぜ別建てか: CI (ubuntu-slim) では fsnotify.NewWatcher が通らず、watcher を前提にした
 // 検査は全部 skip される。issues_watch_test.go 側の検査は「実 fsnotify との結合」を見る

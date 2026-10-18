@@ -3,7 +3,7 @@
 package lanview
 
 // mac-lan-manager (L) の全画面。画面の部品は src/mac-lan-manager の lanmgr パッケージで、ここは glogx への配線だけを持つ
-// (単体の bin/mac-lan-manager と同じ画面。要件と決定は issue 747)。形は treefiler の F (filer_view.go) にそろえる。
+// (単体の bin/mac-lan-manager と同じ画面)。形は treefiler の F (filer_view.go) にそろえる。
 //
 // lanmgr はタイマーを張らない。glogx の tick で Advance を呼び、Busy (走査・網の読み込み・相手の確認・確認待ち・裏の後始末・名前の引き直し)
 // の間だけ spinnerActive が tick を回す。
@@ -118,7 +118,7 @@ func (v *LanView) Stop() {
 }
 
 // watchCmd は走査の合図の待ちを、今の走査のチャネルに張る (まだ張っていなければ)。開いた直後と、キーの後に呼ぶ:
-// r (読み直し) は板の中で走査を起こし直すので、開いたときに張った待ちは古いチャネルを見ている (red team の指摘 2026-10-15)。
+// r (読み直し) は板の中で走査を起こし直すので、開いたときに張った待ちは古いチャネルを見ている。
 // 古いチャネルは走査の Close で閉じるので、古い待ちは ok=false で抜ける。
 func (v *LanView) WatchCmd() tea.Cmd {
 	m := v.Live()
@@ -221,7 +221,7 @@ func (v *LanView) Lines(width, page int) []string {
 func (v *LanView) Hint(width int) string {
 	// 層 (初期設定・設定・確認の板・入力欄) が開いている間は L も ? も lanmgr が取り、q / esc は 1 段戻るだけ (Binds)。そのときに
 	// 「L/q: 閉じる」を出すと嘘になった (整合の監査)
-	// ただし足りない画面では q / esc が L ごと閉じ、L も glogx に渡る (Binds("L") が偽) ので「L/q: 閉じる」が正しい (敵対レビュー)
+	// ただし足りない画面では q / esc が L ごと閉じ、L も glogx に渡る (Binds("L") が偽) ので「L/q: 閉じる」が正しい
 	if lm := v.Live(); lm != nil && lm.OwnsKeys() && lm.Binds("L") {
 		return term.FitHintItems(width, []term.HintItem{{Text: "esc: 戻る", Prio: 1}})
 	}

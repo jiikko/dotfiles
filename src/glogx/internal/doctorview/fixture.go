@@ -1,7 +1,7 @@
 //go:build !nofixture
 
 // fixture.go は main のテスト用の口なので、到達不能のコードの検査 (scripts/check_unused_excluding_tests.sh) は
-// -tags=nofixture でこのファイルを外して走る (ここを根に数えると、Fixture からしか呼ばれない内部を見落とす。issue 817)。
+// -tags=nofixture でこのファイルを外して走る (ここを根に数えると、Fixture からしか呼ばれない内部を見落とす)。
 
 package doctorview
 
@@ -17,7 +17,7 @@ import (
 // Fixture は main のテスト (browseModel と組み合わせる配線・1 フレームの確保の予算・動きの語彙のテスト) が
 // doctor の画面を特定の状態に置く・読むための口。本番のコードは使わない (structure_ratchet_test.go の
 // TestNoFixtureCallsInProduction が止める)。browseModel が要らないテストは package doctorview の中に書き、
-// この口を使わない。ここに足すのは「main のテストが本当に要る状態」だけにする (issue 817)。
+// この口を使わない。ここに足すのは「main のテストが本当に要る状態」だけにする。
 type Fixture struct{ v *DoctorView }
 
 // Fixture はテスト用の口を返す (上の型の注記)。
@@ -41,7 +41,7 @@ const (
 
 // Delete は削除の相を置く。cancel は下見中・実行中の Ctrl-C の 2 回目で呼ばれる中断。
 // 🚨 進捗は置かない (known=false)。本物の削除も進捗が届く前の状態から始まる (StartDelete)。進捗を「既知」で置くと、
-// 進捗の届く前の削除中を見落とす退行 (Deleting が progress.known を見る等) をテストが区別できない (codex の敵対的レビュー 2026-10-17)。
+// 進捗の届く前の削除中を見落とす退行 (Deleting が progress.known を見る等) をテストが区別できない。
 func (f Fixture) Delete(st DeleteState, cancel func()) {
 	switch st {
 	case DeleteIdle:

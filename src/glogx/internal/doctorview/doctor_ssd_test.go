@@ -24,7 +24,7 @@ func openSSDTab(t *testing.T, withSmartctl bool) *DoctorView {
 	return v
 }
 
-// 見本 (issue 578) どおりに、SMART の各行と APFS の未検査を出す。
+// 見本 どおりに、SMART の各行と APFS の未検査を出す。
 func TestDoctorSSDTabRendersChecks(t *testing.T) {
 	v := openSSDTab(t, true)
 	out := testText(v, 30)
@@ -110,7 +110,7 @@ func TestDoctorSSDRunsOnSnapshotRestore(t *testing.T) {
 // 🚨 5 タブで幅 60 に入れるとき、末尾を切って SSD の要約を消さない。
 // 幅を超えないことだけを見ると、末尾切り (最後の手段) でも通ってしまう。fixture の値は
 // **実在しうる最大級** (HumanSize の最長 "1023.9GB"・件数 2 桁) にする: 短い値では詰める段が
-// 1 つも要らず、詰め方を壊しても緑のまま (敵対レビュー 2 周目で実際にそうだった)
+// 1 つも要らず、詰め方を壊しても緑のまま (実際にそうだった)
 func TestDoctorTabBarKeepsAllTabsAtNarrowWidth(t *testing.T) {
 	const big = int64(1023)<<30 + int64(900)<<20 // HumanSize で "1023.9GB" (最長の表記)
 	v := openSSDTab(t, true)

@@ -211,7 +211,7 @@ func TestDiskVerifyCommandsIDsExistInCatalog(t *testing.T) {
 	}
 }
 
-// パスは**末尾を残して**詰める (issue 239)。末尾から切ると DerivedData のハッシュ部が落ち、
+// パスは**末尾を残して**詰める。末尾から切ると DerivedData のハッシュ部が落ち、
 // 同一プロジェクトの旧世代を確認画面で見分けられないまま y を押すことになる。
 func TestDeleteConfirmKeepsPathTail(t *testing.T) {
 	long := "/Users/koji/Library/Developer/Xcode/DerivedData/ThumbnailThumb-cxxbmelbwqqahjagpvzoszkxfvfz"
@@ -253,7 +253,7 @@ func TestDiskItemRowKeepsPathTail(t *testing.T) {
 	}
 }
 
-// 中断キーの表記の組み立ては、壊れた入力でも panic しない (issue 244 の敵対レビュー)。
+// 中断キーの表記の組み立ては、壊れた入力でも panic しない。
 //
 // 🚨 deleteAbortKeysWord は `var … = func(){…}()` なので**パッケージ init で評価される**。
 // ここで panic すると、削除パネルを開くまでもなく glogx が一切起動しない。
@@ -296,7 +296,7 @@ func TestProgressSlotKeepsLatest(t *testing.T) {
 }
 
 // 選択が空のとき、hint の経路 (selectionSummary -> selectedResults) が Item を 1 つも
-// 舐めないことを確かめる (issue 274)。
+// 舐めないことを確かめる。
 //
 // 🚨 判定に**確保回数も時間も使えない**。実測 (2026-09-06):
 //   - diskItemKey の結果は map の添字にしか使われずエスケープしないので、6,400 Item を
@@ -580,7 +580,7 @@ func TestDoctorDeleteShowsDryRunInConfirm(t *testing.T) {
 		t.Fatalf("下見を DryRun で呼んでいない: %+v", f.calls)
 	}
 	// 🚨 この層の唯一の仕事は「選んだ行を engine に渡す」こと。集合そのものを見る
-	// (見ないと、nil を渡す変異が素通りする。敵対レビュー 2026-09-03 の実測)
+	// (見ないと、nil を渡す変異が素通りする。実測 2026-09-03)
 	if got := f.targetIDs(0); len(got) != 1 || got[0] != "thing" {
 		t.Fatalf("engine へ渡した対象 = %v (選んだ 1 件のはず)", got)
 	}
@@ -629,7 +629,7 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 	f := &fakeDelete{
 		phases: []disk.DeletePhase{disk.PhaseScanning, disk.PhaseDeleting, disk.PhaseVerifying},
 		rep: disk.DeleteReport{Entries: []disk.EntryOutcome{
-			// 🚨 ID を入れる: y の対象は plan の Planned な ID で絞る (issue 245)。
+			// 🚨 ID を入れる: y の対象は plan の Planned な ID で絞る。
 			// planDelete は必ず ID を入れるので、省くと production に無い形になる
 			{ID: "thing", Label: "Thing キャッシュ", Outcome: disk.OutcomePlanned, BeforeSize: 4096, Items: plannedItemOutcomes(1)}}},
 	}
@@ -667,8 +667,7 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 		t.Fatalf("結果が出ていない: %+v", v.del)
 	}
 	out := testText(v, 30)
-	// 🚨 最後の警告行は **合計行だけを読んで「全部消えた」と読み違えるのを止める**もの
-	// (issue 316 で `DeleteReport.HasFailures` を配線した。それまで production 参照 0 件だった)。
+	// 🚨 最後の警告行は **合計行だけを読んで「全部消えた」と読み違えるのを止める**もの。
 	// 合計行「解放しました: 4.0KB」と同じ画面に未完了があることを、両方 assert して固定する。
 	for _, want := range []string{"削除の結果", "🚨 未完了", "1 件が残っています", "解放しました: 4.0KB", "/tmp/h.json",
 		"🚨 消せなかった / 未完了の項目があります"} {
@@ -677,7 +676,7 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 		}
 	}
 	// 🚨 パネルと hint が違うことを言わない。**y / Y は閉じずにコピーする**ので「何かキーを押すと
-	// 閉じ」は嘘になる (エラーパネル側と同じ規律。issue 242 の P3-2)
+	// 閉じ」は嘘になる (エラーパネル側と同じ規律)
 	if h := v.Hint(120); !strings.Contains(out, "y: 出力をコピー") || !strings.Contains(h, "y: 出力をコピー") {
 		t.Errorf("結果パネルと hint で案内が食い違う: hint=%q panel=\n%s", h, out)
 	}
@@ -820,7 +819,7 @@ func TestDeleteConfirmKeepsTotalsWhenCramped(t *testing.T) {
 	}
 	v := &DoctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
 	// 🚨 page は**判別できる値**を入れる。6/10/24 だけだと「末尾を後ろから残す」機構を
-	// 丸ごと外しても green だった (敵対レビュー 2026-09-03 の実測: 差が出るのは 4 と 5)
+	// 丸ごと外しても green だった (実測 2026-09-03: 差が出るのは 4 と 5)
 	for _, page := range []int{3, 4, 5, 6, 10, 24} {
 		out := strings.Join(v.Lines(testOpts(page)), "\n")
 		// 操作の説明は**どんなに狭くても**残る (page=3 でも)
@@ -916,7 +915,7 @@ func TestDeleteShowsEngineError(t *testing.T) {
 		}
 	}
 	// 🚨 パネルと hint が違うことを言わない。実挙動は DoctorRescan (閉じて再スキャン) で、
-	// 兄弟の結果パネルは正しく言っているのにエラー経路だけ「閉じる」だった (issue 242 P3-2)
+	// 兄弟の結果パネルは正しく言っているのにエラー経路だけ「閉じる」だった
 	if h := v.Hint(120); !strings.Contains(h, "閉じてもう一度スキャン") {
 		t.Errorf("hint がパネルと違うことを言っている: hint=%q panel=\n%s", h, out)
 	}
@@ -985,7 +984,7 @@ func TestDeleteConfirmPerMethodLines(t *testing.T) {
 	}
 }
 
-// 入りきらないぶんは注記で伝え、**送れることも伝える** (黙って消さない。issue 241)。
+// 入りきらないぶんは注記で伝え、**送れることも伝える** (黙って消さない)。
 func TestDeletePanelElisionNote(t *testing.T) {
 	entries := make([]disk.EntryOutcome, 0, 8)
 	for range 8 {
@@ -1001,8 +1000,8 @@ func TestDeletePanelElisionNote(t *testing.T) {
 	}
 }
 
-// 確認パネルは縦に送れる。**送るキーで確認が閉じない**のが要点 (issue 241):
-// 以前は y/Y 以外がすべて中止だったので、対象を見ようとした打鍵で確認ごと無言で消えていた。
+// 確認パネルは縦に送れる。**送るキーで確認が閉じない**のが要点:
+// y/Y 以外をすべて中止にすると、対象を見ようとした打鍵で確認ごと無言で消える。
 func TestDeleteConfirmScrollKeysDoNotCancel(t *testing.T) {
 	entries := make([]disk.EntryOutcome, 0, 6)
 	for i := range 6 {
@@ -1012,7 +1011,7 @@ func TestDeleteConfirmScrollKeysDoNotCancel(t *testing.T) {
 	v := &DoctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
 	first := strings.Join(v.Lines(testOpts(12)), "\n") // 高さを測らせる (窓は描画で決まる)
 	// 🚨 キーごとに「**本当に動くか**」まで見る。confirm が閉じないことだけを見ていたら、
-	// scroll() から j/k/ctrl+d/… の case を消す変異が緑のまま通った (敵対レビュー 2026-09-04 の実測)。
+	// scroll() から j/k/ctrl+d/… の case を消す変異が緑のまま通った (実測 2026-09-04)。
 	// パネルの注記が "(j/k で送る)" と名指ししているので、動かないのは案内が嘘になる形
 	down := []string{"j", "down", "ctrl+d", "pgdown", "G", "end"}
 	up := []string{"k", "up", "ctrl+u", "pgup", "g", "home"}
@@ -1075,7 +1074,7 @@ func TestDeleteConfirmOtherKeysStillCancel(t *testing.T) {
 	}
 }
 
-// Enter は実行もキャンセルもしない (issue 243)。他の破壊確認 (`y/Enter: 実行`) の手癖で押されるが、
+// Enter は実行もキャンセルもしない。他の破壊確認 (`y/Enter: 実行`) の手癖で押されるが、
 // 削除の既定を実行側へ倒さず、無言で閉じもしない。plan の確認と job コマンドの確認の両方で同じ。
 // 「消せるものがありません」の画面だけは「何かキーで戻る」の案内どおり Enter でも戻る。
 func TestDeleteConfirmEnterIsSwallowed(t *testing.T) {
@@ -1461,9 +1460,9 @@ func TestDoctorStartClearsCarryOverState(t *testing.T) {
 	}
 }
 
-// Inspect のエントリは**中身の一覧があっても**対象パスを選べる (issue 240)。
-// 以前は Contents が非空だと選べる行を出さずに返しており、Inspect の 5 エントリ
-// (どれも RiskConfirm) は「エントリ全体か、何もしないか」しか選べなかった。
+// Inspect のエントリは**中身の一覧があっても**対象パスを選べる。
+// Contents が非空だと選べる行を出さずに返すと、Inspect の 5 エントリ
+// (どれも RiskConfirm) は「エントリ全体か、何もしないか」しか選べない。
 func TestDiskDetailInspectWithContentsStillHasSelectablePaths(t *testing.T) {
 	r := disk.Result{
 		Entry:  disk.Entry{ID: "orphan-container", Label: "孤児コンテナ", Risk: disk.RiskConfirm, Inspect: true, DeleteVia: "trash"},
@@ -1487,7 +1486,7 @@ func TestDiskDetailInspectWithContentsStillHasSelectablePaths(t *testing.T) {
 	}
 	for _, it := range r.Items {
 		// 🚨 期待値は **リテラル**で組む。diskItemRowKey で作ると生成側と同じ関数になり、
-		// prefix を変える退行を素通しする (敵対レビュー 2026-09-14 が実測で GREEN を確認)
+		// prefix を変える退行を素通しする (実測 2026-09-14: GREEN を確認)
 		want := rowKey("diskitem:" + r.Entry.ID + "\x00" + it.Path)
 		found := false
 		for _, k := range sel {
@@ -1509,7 +1508,7 @@ func TestDiskDetailInspectWithContentsStillHasSelectablePaths(t *testing.T) {
 	}
 }
 
-// 「消せるものがありません」の画面でも送れる (issue 241 の敵対レビュー P1)。
+// 「消せるものがありません」の画面でも送れる。
 // パネルは入り切らないときに「(j/k で送る)」と出すので、送れないと**案内どおり押した打鍵で
 // 無言で消える** = 241 が塞いだはずの形をこちらで作ることになる。消せない理由 (Reason) こそ読みたい。
 func TestDeleteNoWorkPanelScrolls(t *testing.T) {
@@ -1546,7 +1545,7 @@ func TestDeleteNoWorkPanelScrolls(t *testing.T) {
 
 // 結果パネル (窓を持たない側) は塊単位で落とし、落としたことを注記で伝える。
 // 🚨 このカバレッジは元々 TestDeletePanelElisionNote が持っていたが、確認パネルが窓へ移った
-// 書き換えで失われていた (敵対レビュー 2026-09-04 の P2-3: elide を false にする変異が全緑だった)。
+// 書き換えで失われていた (elide を false にする変異が全緑だった)。
 func TestDeleteResultPanelElisionNote(t *testing.T) {
 	entries := make([]disk.EntryOutcome, 0, 8)
 	for i := range 8 {
@@ -1573,7 +1572,7 @@ func slicesContains(xs []string, x string) bool {
 }
 
 // 確認の結末語は結果画面と同じ出典 (doctorOutcomeWord) から取る。
-// 「触らなかった (Skipped)」と「実行できなかった (Failed)」を 1 語に畳まない (issue 242 P3-1)。
+// 「触らなかった (Skipped)」と「実行できなかった (Failed)」を 1 語に畳まない。
 func TestDeleteConfirmSeparatesSkippedFromFailed(t *testing.T) {
 	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{
 		{Label: "さわらず", Method: "rm", Outcome: disk.OutcomeSkipped, Reason: "いまは対象外です"},
@@ -1596,7 +1595,7 @@ func TestDeleteConfirmSeparatesSkippedFromFailed(t *testing.T) {
 }
 
 // 下見 (preparing) と実行 (running) を 1 語に畳まない。下見はまだ何も壊していない。
-// 中断の案内は相に依らず出す (下見中も handleDeleteKey の blocking 分岐が Ctrl-C を受ける。issue 242 P3-3)。
+// 中断の案内は相に依らず出す (下見中も handleDeleteKey の blocking 分岐が Ctrl-C を受ける)。
 func TestDeletePhaseWordingSeparatesPreparingFromRunning(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -1647,8 +1646,8 @@ func TestDeletePhaseWordingSeparatesPreparingFromRunning(t *testing.T) {
 // plannedItemOutcomes は下見の結果に載る Item を n 件作る。
 // 🚨 **Outcome を必ず入れる**: production の planDelete / planItem は Item ごとに
 // `Outcome: OutcomePlanned` を入れる (delete.go:331 / :509) ので、zero 値の fixture は
-// 「実際には起こらない状態」を検査することになる。issue 233 で確認画面が Planned だけを
-// 数えるようにしたとき、zero 値の fixture が全部 0 件へ落ちて実際に踏んだ。
+// 「実際には起こらない状態」を検査することになる。確認画面は Planned だけを
+// 数えるので、zero 値の fixture は全部 0 件へ落ちる。
 func plannedItemOutcomes(n int) []disk.ItemOutcome {
 	out := make([]disk.ItemOutcome, 0, n)
 	for i := range n {
@@ -1659,7 +1658,7 @@ func plannedItemOutcomes(n int) []disk.ItemOutcome {
 	return out
 }
 
-// 確認画面は**実際に触る Item だけ**を数え、並べる (issue 233)。
+// 確認画面は**実際に触る Item だけ**を数え、並べる。
 // 下見で Skipped / Failed になった Item を混ぜると、同じ行のサイズ (BeforeSize = 照合が取れた分)
 // と件数が食い違い、「3 件を削除」と出ているのにサイズは 1 件分、という画面になる。
 func TestDeleteConfirmCountsOnlyPlannedItems(t *testing.T) {
@@ -1688,7 +1687,7 @@ func TestDeleteConfirmCountsOnlyPlannedItems(t *testing.T) {
 		}
 	}
 	// 黙って省かない。🚨 **理由も出す** (固定文言に畳むと「対象パスを拒否」= 細工の兆候が
-	// 「実体が変わりました」に化けて消える。敵対レビュー 2026-09-04 の P3)
+	// 「実体が変わりました」に化けて消える)
 	if !strings.Contains(out, "他 1 件は対象外") {
 		t.Errorf("省いた件数を伝えていない:\n%s", out)
 	}
@@ -1697,7 +1696,7 @@ func TestDeleteConfirmCountsOnlyPlannedItems(t *testing.T) {
 	}
 }
 
-// cli 経路は**実行するコマンドだけ**を出す (issue 233 の敵対レビュー P2-1)。
+// cli 経路は**実行するコマンドだけ**を出す。
 // EntryOutcome.CommandLines は全 Item を回すが execCLI は Planned 以外を飛ばすので、
 // 件数とパスだけ絞ると「1 件にコマンドを実行」の下にコマンドが 2 本並ぶ矛盾になっていた。
 func TestDeleteConfirmCommandsMatchPlannedItems(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 
 // 外部コマンドの起動口の規律: Cmd を作ったら WaitDelay を張る (字句走査。注記で免除) / os/exec を別名 import しない /
 // Cmd を作るファイルを execCmdAllow に固定する。検査の本体・脅威モデル・「検出しない形」は subproc/boundarycheck が
-// 正本 (issue 105 / 303。module ごとの写しを寄せたのは issue 777)。glogx 固有なのは下の表と下限だけ。
+// 正本。glogx 固有なのは下の表と下限だけ。
 //
 // execCmdAllow は「*exec.Cmd を作ってよい」非テストファイルと、その理由。
 //
@@ -29,7 +29,7 @@ var execCmdAllow = map[string]string{
 }
 
 // 下限は実件数のすぐ下に置く (0 や 1 だと「走査が壊れて対象を取りこぼした」が緑で通る)。
-// 実測 2026-09-09: seen=9、enforced=2 (tui.go の job ログ nvim / gitlog.go の runGitTimeout。後者は issue 817 で internal/extcmd/git.go へ移った)。
+// 実測 2026-09-09: seen=9、enforced=2 (tui.go の job ログ nvim / gitlog.go の runGitTimeout。後者は internal/extcmd/git.go に移った)。
 // 実測 2026-09-24: seen=7、enforced=2。extcmd.EditorCommand の exec.Command 2 か所を github.com/jiikko/dotfiles/src/tuikit/editor へ移した
 // (glogx と pro-con でエディタの解決を 1 実装にするため) ので seen だけが 2 減った。
 // 🚨 enforced の 2 件は**注記を付けてはいけない** (理由は boundarycheck.Spec の EnforcedFloor の doc)。

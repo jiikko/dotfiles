@@ -2,10 +2,10 @@
 // 外部作用の差し替えのヘルパー。
 //
 // なぜ 1 か所に置くか: TestMain の前処理はパッケージ単位でしか掛からないので、テストを別のパッケージへ移すと
-// 黙って外れる (issue 742 で doctor のテストを移したとき、幅 env のガードとキャッシュの隔離が外れて緑のまま通った。
-// retro 815)。パッケージごとに写すと写しがずれるので、各パッケージの TestMain はここの Main を呼ぶだけにする。
+// 黙って外れる (doctor のテストを移したとき、幅 env のガードとキャッシュの隔離が外れて緑のまま通った)。
+// パッケージごとに写すと写しがずれるので、各パッケージの TestMain はここの Main を呼ぶだけにする。
 // テストを持つ internal のパッケージが Main を呼んでいることは structure_ratchet_test.go の
-// TestEveryTestPackageUsesTestenv が検査する (issue 817)。
+// TestEveryTestPackageUsesTestenv が検査する。
 //
 // 🚨 本番のコードから import しない (testing を import する。depguard が止める)。
 package testenv
@@ -27,8 +27,8 @@ import (
 // setup はパッケージ固有の前処理 (一時領域の dir を受け取る。nil 可)。
 //
 // 隔離するもの:
-//   - 継承した GIT_DIR などを外す: 一時 dir に作る repo の git が別の repo を書かない (issue 740)
-//   - 支持しない幅 env (RUNEWIDTH_EASTASIAN) では理由を 1 度だけ言って止める (issue 054)。真だと幅系のテストが
+//   - 継承した GIT_DIR などを外す: 一時 dir に作る repo の git が別の repo を書かない
+//   - 支持しない幅 env (RUNEWIDTH_EASTASIAN) では理由を 1 度だけ言って止める。真だと幅系のテストが
 //     まとめて落ち、期待値の話に見えるが、実体は glogx がこの env を支持していないこと
 //   - キャッシュ置き場 (XDG_CACHE_HOME) を一時領域へ: 画面の記憶・doctor の走査の記憶・CI のキャッシュは
 //     app.CacheBaseDir の下に書くので、隔離しないと make test が開発者の ~/.cache/glog を書き換える
@@ -37,10 +37,10 @@ import (
 //   - GOTMPDIR も一時領域へ: Go 1.26 の t.TempDir は GOTMPDIR を優先する。repo の中のパスを指定されると「repo の外」を
 //     検査するテストが glogx の git root を拾う
 //   - 外部作用 (クリップボード・ブラウザ) の既定は「呼ばれたら落ちる」: 差し替えを書き忘れたテストは実クリップボードを
-//     書き換え・ブラウザを開き、しかも「何も起きなかった」を検査できない (issue 667)。StubClipboard / StubBrowser は
+//     書き換え・ブラウザを開き、しかも「何も起きなかった」を検査できない。StubClipboard / StubBrowser は
 //     終了時にこの既定へ戻す
 //
-// 🚨 後始末は m.Run の後の cleanup だけに預けない (issue 305)。m.Run から戻らない終了 (SIGKILL / -timeout の SIGQUIT /
+// 🚨 後始末は m.Run の後の cleanup だけに預けない。m.Run から戻らない終了 (SIGKILL / -timeout の SIGQUIT /
 // panic) では末尾に届かず残骸が残る。testtmp.Setup が起動時に前回の残骸を回収する。
 func Main(m *testing.M, name string, setup func(dir string)) {
 	if err := subproc.UnsetGitLocationEnv(); err != nil {

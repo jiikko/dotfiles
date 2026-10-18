@@ -41,10 +41,10 @@ type probe struct {
 	ui bool
 }
 
-// widths は 3 つの幅モデルの答えを並べたもの (issue 124)。
+// widths は 3 つの幅モデルの答えを並べたもの。
 //
-// ⚠️ かつてこのツールは `want` (= ansi.StringWidth) だけを「描画エンジンの幅」として出していたが、
-// **その前提は偽**だった: bubbletea v2 の描画エンジン (ultraviolet) の既定は `ansi.WcWidth` で、
+// ⚠️ `want` (= ansi.StringWidth) だけを「描画エンジンの幅」として出さない。
+// **その前提は偽**:  bubbletea v2 の描画エンジン (ultraviolet) の既定は `ansi.WcWidth` で、
 // 端末が Unicode Core (mode 2027) を報告したときだけ GraphemeWidth へ切り替わる。
 // 3 つ並べないと「端末がどのモデルと一致するか」= 揃える先が決められない。
 type widths struct {
@@ -136,7 +136,7 @@ func main() {
 		{"▖ U+2596", "▖", true},
 		{"⠋ spinner U+280B", "⠋", true},
 		{"❯ U+276F", "❯", true},
-		// ── ここから issue 124: 3 つの幅モデルが割れる範囲 ────────────────────────
+		// ── ここから 3 つの幅モデルが割れる範囲 ────────────────────────
 		// ⚠️ **「絵文字は無情報」ではない**。上の `⚠+VS16` は (grapheme 2 / wc 1 / uniseg 2) で、
 		//    実は一覧中で最も決定力のある probe (実測 2026-08-28)。外さないこと。
 		// 以下は「grapheme と wc が割れる」形を増やすもの。glogx が出す文字ではない (ui=false)。
@@ -196,7 +196,7 @@ func main() {
 			fmt.Printf("%s %9d %4d %7d %5s  応答なし (%v)\n", padDisp(r.label, 26), w.grapheme, w.wc, w.uniseg, "-", r.err)
 			continue
 		}
-		// どのモデルが端末と一致したかを出す (揃える先を決めるのが目的。issue 124)
+		// どのモデルが端末と一致したかを出す (揃える先を決めるのが目的)
 		var agree []string
 		for _, m := range []struct {
 			name string
@@ -311,8 +311,8 @@ func advance(s string) (int, error) {
 // readByte は 1 バイト読む。**タイムアウトは goroutine + select で実装する**。
 //
 // ⚠️ `os.Stdin.SetReadDeadline` は TTY では効かない: darwin/Go 1.25 で
-// `file type does not support deadline` を返す (実測 2026-08-28)。以前はその戻り値を
-// `_ =` で握り潰しており、**CPR が返らない端末では raw mode のまま無限ハングした**
+// `file type does not support deadline` を返す (実測 2026-08-28)。その戻り値を
+// `_ =` で握り潰すと、**CPR が返らない端末では raw mode のまま無限ハングする**
 // (raw mode は ISIG を落とすので Ctrl-C も効かず、defer の Restore にも到達しない)。
 func readByte(timeout time.Duration) (byte, error) {
 	type res struct {
@@ -347,8 +347,8 @@ var errTimeout = errors.New("端末から応答がありません (CPR/DECRQM �
 
 // cursorCol は CPR で現在の列を聞く。
 //
-// ⚠️ **ESC から読み直す (再同期)**。以前は「R が来るまで読む」だけで、stale な応答や
-// ユーザーのキー入力が紛れると**以降すべての測定が 1 つ前の応答を読み続けた**。
+// ⚠️ **ESC から読み直す (再同期)**。「R が来るまで読む」だけだと、stale な応答や
+// ユーザーのキー入力が紛れたとき**以降すべての測定が 1 つ前の応答を読み続ける**。
 // 偽端末の実験で「R を 1 バイト注入するだけで、決定論的な端末に対して『8 文字が揺れた』という
 // 存在しない結論を捏造できる」ことを確認している (2026-08-28)。
 func cursorCol() (int, error) {

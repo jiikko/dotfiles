@@ -145,7 +145,7 @@ func TestScreensShareMotionVocabulary(t *testing.T) {
 }
 
 // 半ページの移動量は、どの画面でも listnav.Half(その画面の表示行数)。「別名 = 一次語彙」だけでは
-// 両方が同じ適用を通るので、移動量そのものを変えても緑のまま通る (敵対レビューで実測)。
+// 両方が同じ適用を通るので、移動量そのものを変えても緑のまま通る。
 func TestScreensHalfPageMovesHalfRows(t *testing.T) {
 	for _, sc := range motionScreens {
 		t.Run(sc.name, func(t *testing.T) {

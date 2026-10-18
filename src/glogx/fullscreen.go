@@ -9,8 +9,8 @@ import (
 // activeFullScreen は今出ている全画面ビューア (無ければ app.FullScreenNone)。
 //
 // 高々 1 枚しか出ない前提なので順序は本来どれでもよいが、**ここを唯一の順序**にすることで
-// 描画・hint・routing が同じ 1 枚を選ぶことが構造的に保証される (以前は場所ごとに順序が
-// 違い、前提が崩れたときにどれが勝つかが場所によって変わった)。
+// 描画・hint・routing が同じ 1 枚を選ぶことが構造的に保証される (場所ごとに順序が違うと、
+// 前提が崩れたときにどれが勝つかが場所によって変わる)。
 func (m *browseModel) activeFullScreen() app.FullScreenID {
 	switch {
 	case m.rlDash.Visible():

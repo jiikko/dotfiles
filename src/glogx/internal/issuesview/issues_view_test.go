@@ -148,7 +148,7 @@ func TestIssuesViewRescanRebindsOpenBody(t *testing.T) {
 	}
 	// 🚨 本文ヘッダーそのもの (bodyHeadLines) を見る。画面全体 (lines) で "pending" を探すと、
 	// 引き出しが着地前 (幅 0) で本文が描かれていなくても、一覧の空表示の案内
-	// 「(a: pending も表示)」に一致して緑になった (issue 667)
+	// 「(a: pending も表示)」に一致して緑になった
 	if head := strings.Join(v.bodyHeadLines(80, false), "\n"); !strings.Contains(head, "pending") {
 		t.Fatalf("本文ヘッダーの状態が古いまま:\n%s", head)
 	}
@@ -468,7 +468,7 @@ func TestIssuesViewMarkNextMovesAfterConfirm(t *testing.T) {
 	if v.markNext.active {
 		t.Fatal("実行後も確認が残っている")
 	}
-	// 直下の issue の claim は symlink の目印 (issues/nextlink.go, issue 263)。実ファイルは動かない
+	// 直下の issue の claim は symlink の目印 (issues/nextlink.go)。実ファイルは動かない
 	dest := filepath.Join(dir, issues.NextDirName, "001-feat-x.md")
 	if target, err := os.Readlink(dest); err != nil || target != "../001-feat-x.md" {
 		t.Fatalf("next/ に目印 symlink が置かれない (ディレクトリ作成も含む): target=%q err=%v", target, err)
@@ -732,7 +732,7 @@ func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 func TestIssuesViewLinesAlwaysExactlyPageRows(t *testing.T) {
 	// 幅は 1 から全数で振る: 狭い幅では固定部分 (溝・番号・バッジ・カテゴリ) だけで幅を
 	// 超えるため、行のクリップが 1 経路でも抜けていると枠を突き破る。掃き始めが 20 だった
-	// 頃は幅 1-2 の取りこぼしが眠っていた (issue 053: term.ClipToWidth の width<=0 素通しと
+	// 頃は幅 1-2 の取りこぼしが眠っていた (term.ClipToWidth の width<=0 素通しと
 	// tabLine のフィルタバッジ後置)。
 	for width := 1; width <= 80; width++ {
 		for _, page := range []int{3, 5, 20, 40} {
@@ -777,7 +777,7 @@ func TestIssuesViewRowShowsNumberBadgeCategoryTitle(t *testing.T) {
 		t.Fatalf("カーソル行の矢印が想定と違う: %q", marked)
 	}
 	// 🚨 行の中身はその行 (カーソル行) で見る。画面全体で探すと、カテゴリ名はタブ行のチップ、
-	// ○ / ⏸ はタブ行のバッジでも満たされ、行からカテゴリ列を消しても緑だった (issue 667)
+	// ○ / ⏸ はタブ行のバッジでも満たされ、行からカテゴリ列を消しても緑だった
 	for _, want := range []string{"030", "○", "feat", "先頭のタイトル"} {
 		if !strings.Contains(marked[0], want) {
 			t.Fatalf("カーソル行に %q が出ない: %q", want, marked[0])
@@ -1104,7 +1104,7 @@ func TestIssuesViewShowsScanWarning(t *testing.T) {
 	if !strings.Contains(strings.Join(v.Lines(renderOpts(10)), "\n"), "同じファイル名") {
 		t.Fatal("スキャンの警告が表示されない")
 	}
-	// 警告が複数あるときは件数も出す (2 本目以降が出ていることを知らせる。issue 698 の 1)
+	// 警告が複数あるときは件数も出す (2 本目以降が出ていることを知らせる)
 	v.Receive(IssuesScanMsg{
 		dirs:     []string{"/repo/issues"},
 		issues:   issuesviewtest.SampleIssues(),
@@ -1133,7 +1133,7 @@ func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
 		t.Fatalf("コピーの結果が通知に載らない: %q ok=%v", text, ok)
 	}
 	// 🚨 操作結果はヘッダーを占めない (トーストへ移した) ので、スキャン警告を一瞬も隠さない。
-	// 以前は通知が警告と同じ 1 行を奪い合っていた (同名ファイルの二重化 = 静かな内容喪失の警告)。
+	// 通知が警告と同じ 1 行を奪い合うと、(同名ファイルの二重化 = 静かな内容喪失の警告) が隠れる。
 	out := strings.Join(v.Lines(renderOpts(10)), "\n")
 	if strings.Contains(out, "コピーしました") {
 		t.Errorf("操作結果がヘッダーに出ている (トーストで出すべき):\n%s", out)
@@ -1144,8 +1144,8 @@ func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
 }
 
 func TestIssuesViewBodyModeShowsCopyResult(t *testing.T) {
-	// 本文モードのコピーの成否も通知に載る (browseModel がトーストへ流す)。以前はヘッダーの
-	// 行に出していたが、viewer の上にもトーストを合成するようにして共通の語彙へ寄せた。
+	// 本文モードのコピーの成否も通知に載る (browseModel がトーストへ流す)。ヘッダーの行には出さず、
+	// viewer の上にもトーストを合成して共通の語彙へ寄せる。
 	testenv.StubClipboardFunc(t, func(string) error { return errors.New("pbcopy が見つかりません") })
 
 	dir := t.TempDir()
@@ -1578,12 +1578,12 @@ func TestIssuesViewRebindOpenDiscardsWhenGone(t *testing.T) {
 	}
 }
 
-// 「一覧の生成 (scanIssues = Scan + 全件 LoadMeta) は issue の全文を読まない」(issue 050) の
-// 回帰テスト (issue 052)。観測点は issues.BytesReadForTest (読んだ累計バイト数の差分)。
+// 「一覧の生成 (scanIssues = Scan + 全件 LoadMeta) は issue の全文を読まない」 の
+// 回帰テスト。観測点は issues.BytesReadForTest (読んだ累計バイト数の差分)。
 // LoadMeta は 64KB バッファの初回 Read で頭だけ読んで H1 で打ち切るため、それより十分
 // 大きい本文を用意し「読んだ量 < ファイルサイズ」を assert する。scanIssues に全文読み
-// (iss.ReadBody() 等) が紛れると読んだ量がサイズを超えて red になる (050 の敵対的レビュー
-// R3 が実証した「表示が変わらないのに全 green」の変異を、この観測点は検出できる)。
+// (iss.ReadBody() 等) が紛れると読んだ量がサイズを超えて red になる
+// (表示が変わらないのに全 green になる変異を、この観測点は検出できる)。
 func TestScanIssuesDoesNotReadFullBody(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "issues")
@@ -1613,7 +1613,7 @@ func TestScanIssuesDoesNotReadFullBody(t *testing.T) {
 
 // 同名が複数ある異常 (spec 3 節が警告する状態) では、どれが本人か決められないので繋ぎ直さない。
 // 🚨 畳むのは「どこにも無い」ときだけなので、ここでは本文モードを維持する。
-// 移動を追う照合は同じ issue dir の中だけ (issue 665)。root の issues/ と macOS/issues/ を両方持つ
+// 移動を追う照合は同じ issue dir の中だけ。root の issues/ と macOS/issues/ を両方持つ
 // repo で、開いていた issue が消え、もう一方の dir に見出しまで同じ basename が 1 件あっても、
 // そちらへ黙って繋ぎ直さない (どこにも無い = 畳んで知らせる)。
 func TestIssuesViewRebindOpenStaysInsideIssueDir(t *testing.T) {
@@ -1810,8 +1810,8 @@ func TestIssuesViewURLPickerResetsOnNewIssue(t *testing.T) {
 // キー処理と描画は同じ幅・同じヘッダーから page を分割する。
 //
 // ずれると半ページ移動の距離やカーソルと窓の関係が静かに食い違う (描画側には収束処理があるので
-// 症状から原因へ辿り着けない)。以前はキー側が幅を知らず幅 0 で数えていたため「ヘッダーは折り返しては
-// いけない」という暗黙の前提を抱えていた。幅を渡すようにしたので、折り返すヘッダーを足しても
+// 症状から原因へ辿り着けない)。キー側が幅を知らず幅 0 で数えると「ヘッダーは折り返しては
+// いけない」という暗黙の前提を抱えることになる。幅を渡しているので、折り返すヘッダーを足しても
 // この一致さえ保てばよい — それをここで固定する。
 func TestIssuesLayoutAgreesBetweenKeysAndRender(t *testing.T) {
 	// 窓を必ず埋める件数にする (足りないと描画の行数が件数で決まり、分割の一致を測れない)
@@ -1852,10 +1852,10 @@ func TestIssuesLayoutAgreesBetweenKeysAndRender(t *testing.T) {
 		})
 	}
 	// 本文側の「キーと描画の一致」はここで見ない: bodyHeadLines は幅によらず 3 行で、期待値を
-	// production と同じ式で作るしかなく、headWidth の本文の分岐を消しても緑のままだった (issue 751)。
+	// production と同じ式で作るしかなく、headWidth の本文の分岐を消しても緑のままだった。
 	// 本文側で残す価値があるのは下の下限クランプだけ
 	// 🚨 上の一覧の比較は期待値を production と同じ式で作っているので、**下限クランプを外す変異を
-	// 検出できない** (issue 198 発見 2)。page がヘッダー行数以下のときに 1 を返すことを、
+	// 検出できない**。page がヘッダー行数以下のときに 1 を返すことを、
 	// 式ではなく**リテラルの 1** で固定する。0 や負を返すとキー処理 (bodyOff の計算・
 	// ページ送り) が空回りするか、末尾を超えてスクロールする。
 	t.Run("page がヘッダー行数以下でも 1 行は残す", func(t *testing.T) {
@@ -1899,7 +1899,7 @@ func TestIssuesViewKeepsSelectionAcrossRescan(t *testing.T) {
 	anchor, head := v.rows[lo].Path, v.rows[hi].Path
 
 	// 🚨 再スキャンでは錨より前に issue を 1 件足す。同じ並びのまま返すと、選択を位置 (index) で
-	// 保つ実装と区別できない (issue 667: 錨を index で保つ変異でも緑だった)
+	// 保つ実装と区別できない (錨を index で保つ変異でも緑になる)
 	rescanned := append([]*issues.Issue{issuesviewtest.FakeIssue("031", "feat", "new", issues.StatusOpen)}, issuesviewtest.SampleIssues()...)
 	v.Receive(IssuesScanMsg{dirs: []string{"/repo/issues"}, issues: rescanned})
 
@@ -1974,7 +1974,7 @@ func TestReorderTabsKeepsHumanPinnedAtZero(t *testing.T) {
 	}
 }
 
-// 本文モードでも i で viewer が閉じる (issue 122)。
+// 本文モードでも i で viewer が閉じる。
 //
 // --help と README は i を「viewer 内のキー」として案内しているのに、handleBodyKey に case が
 // 無く default の term.PagerScrollKey へ落ちて offset 不変で返っていた = **押しても何も起きず理由も
@@ -1996,7 +1996,7 @@ func TestIssuesViewerBodyModeIClosesViewer(t *testing.T) {
 
 // R は一覧モードでも本文モードでも ratelimit ダッシュボードへ横断する (ユーザー要望 2026-09-01)。
 // s (status への横断) と同じ扱いで、viewer は閉じてから browseModel が開く (全画面は同時に 1 枚)。
-// 🚨 本文モードも見る: 横断の表引きが一覧の switch の中にあると、本文は term.PagerScrollKey へ落ちて無音になる (issue 122 と同型)。
+// 🚨 本文モードも見る: 横断の表引きが一覧の switch の中にあると、本文は term.PagerScrollKey へ落ちて無音になる。
 func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 	t.Run("一覧モード", func(t *testing.T) {
 		v := loadedView(issuesviewtest.RealIssue(t))
@@ -2034,7 +2034,7 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 	}
 }
 
-// 一覧モードの u は無音で消えず、理由を返す (issue 122)。
+// 一覧モードの u は無音で消えず、理由を返す。
 //
 // u は git log 一覧では pull、本文では URL ピッカー、status viewer では「pull は p です」を
 // 返すのに、issues 一覧だけが無音だった。効かせない理由は openURLPicker の doc にあるが、
@@ -2125,12 +2125,12 @@ func TestIssuesViewBodyNeighborKeysSwapIssueWithoutReopening(t *testing.T) {
 }
 
 // issuesviewtest.Path2Issue は dir 配下の rel を単独 issue として組む (ファイル名から番号・カテゴリを読む)。
-// 同じ basename でも見出しが違うなら本人とみなさない (issue 277)。
+// 同じ basename でも見出しが違うなら本人とみなさない。
 //
 // basename は「番号 + スラッグ」なので、番号の一意性が守られている限り basename 一致 = 本人。
 // それが壊れた repo や group が増えた状況では別 issue でありうり、そのとき症状は
 // 「読んでいた本文が静かに別の issue に差し替わる」= 利用者からは気づけない形になる。
-// 見出しが変わっていたら **知らせる。ただし本文は捨てない** (issue 277 → 敵対的レビュー 2026-09-06)。
+// 見出しが変わっていたら **知らせる。ただし本文は捨てない**。
 //
 // 🚨 初版は discardBody + 「同名の別 issue が見つかりました (本文は閉じます)」にしていたが、
 // 見出しの不一致は「別 issue」と「同じ issue を移動と同時に改題した」を区別できない。
@@ -2197,7 +2197,7 @@ func TestIssuesRebindOpenWarnsOnDifferentTitle(t *testing.T) {
 	}
 }
 
-// issue 753: 制御文字を含む値 (PR で入りうるファイル名など) はクリップボードへ入れない。ESC や
+// 制御文字を含む値 (PR で入りうるファイル名など) はクリップボードへ入れない。ESC や
 // bracketed paste の終わり (ESC[201~) を入れると、貼った先の端末が解釈する。画面は無害化されているので見えない。
 func TestIssuesViewRefusesToCopyControlChars(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "issues")
@@ -2240,7 +2240,7 @@ func TestIssuesViewRefusesToCopyControlChars(t *testing.T) {
 	}
 }
 
-// 行番号の溝は番号だけを薄くし、区切りの空白は塗らない (issue 757: gutter.Number を塗る形へ変えたときの見た目の約束)。
+// 行番号の溝は番号だけを薄くし、区切りの空白は塗らない (gutter.Number を塗る形でも変わらない見た目の約束)。
 func TestSrcGutterPaintsOnlyTheNumber(t *testing.T) {
 	if got, want := srcGutter(7, 4, true), term.AnsiDim+"  7"+term.AnsiReset+" "; got != want {
 		t.Fatalf("srcGutter(7,4,colored) = %q, want %q", got, want)

@@ -18,7 +18,7 @@ import (
 // 復元の破棄 (issuesRestoreMsg) / キーの routing (handleKey) — は全部そこから導出している。
 //
 // この表は **ID ごとに 5 サイトを 1 回ずつ通す**ので、ビューアを 1 枚足して配線をどれか 1 つ
-// 忘れると red になる。issue 227 の発火条件 (doctor を後から足したとき見送りの列挙から漏れ、
+// 忘れると red になる。発火条件 (doctor を後から足したとき見送りの列挙から漏れ、
 // build もテストも通ったまま silent に壊れた) を機械で塞ぐのがこのテストの役目。
 type fullScreenCase struct {
 	id   app.FullScreenID
@@ -29,7 +29,7 @@ type fullScreenCase struct {
 	// hint はそのビューア自身の最下行 (hintLine の期待値)
 	hint func(m *browseModel) string
 	// lines はそのビューア自身が描く窓。**「一覧が出ていない」だけでなく「このビューアが
-	// 出ている」まで見る**ために使う (敵対レビュー 2026-09-04: viewLines の doctor ↔ status を
+	// 出ている」まで見る**ために使う (2026-09-04: viewLines の doctor ↔ status を
 	// 入れ替える変異が、一覧の SHA だけを見ていた当初のテストを素通りした)
 	lines func(m *browseModel) []string
 }
@@ -212,7 +212,7 @@ func TestFullScreenSurfacesWireEverySite(t *testing.T) {
 
 	// 🚨 対称のケース: **何も出ていなければ復元は通る**。捨てる側だけを固定すると、
 	// ガードを「常に捨てる」へ変える変異 (= 起動時の復元が二度と効かない) が全テストを
-	// 素通りする (敵対レビュー 2026-09-04 が実測)
+	// 素通りする (2026-09-04 に実測)
 	t.Run("全画面が無ければ復元は通る", func(t *testing.T) {
 		m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 		if m.activeFullScreen() != app.FullScreenNone {
@@ -228,7 +228,7 @@ func TestFullScreenSurfacesWireEverySite(t *testing.T) {
 // 全画面ビューアの**描画**はレジストリ (activeFullScreen の switch) を通ること。
 //
 // 🚨 これが無いと、5 枚目を「ID を足さずに switch の前へ `if m.newOv.visible()` を挿す」形で
-// 配線できてしまい、lint も既存テストも緑のまま issue 227 が再発する (敵対レビュー 2026-09-04 が
+// 配線できてしまい、lint も既存テストも緑のまま再発する (2026-09-04 に
 // 複製の上で実測: 描画・hint・routing は効くのに、見送りと復元だけが黙って壊れる)。
 // **全画面ビューアは finishWithGlobalChrome を通らないとトースト・usage・モーダルが載らない**
 // ので、描画をレジストリ経由に縛れば ID を足さざるを得ず、そこから先は lint と上の表が捕まえる。
@@ -304,8 +304,8 @@ func TestFullScreenDrawingGoesThroughTheRegistry(t *testing.T) {
 
 // 横断キー (app.CrossTarget の表) は、どの全画面からも同じ板へ飛ぶ (docs/glogx-ui-guide.md §2)。
 // 全画面 4 枚 × 横断キー 4 本を、一覧から開いた状態で押して確かめる。自分自身のキーは閉じる (toggle)。
-// 🚨 issue 664: 以前は画面ごとの手書きの列挙で、D はどの viewer からも、i / s / R は doctor から
-// 無言で捨てられていた。
+// 🚨 画面ごとに手書きで列挙すると、D はどの viewer からも、i / s / R は doctor から
+// 無言で捨てられる。
 func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 	openKey := map[app.FullScreenID]string{
 		app.FullScreenIssues: "i", app.FullScreenStatus: "s", app.FullScreenRatelimit: "R", app.FullScreenDoctor: "D",
@@ -332,7 +332,7 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 			}
 			if (from == app.FullScreenFiler || from == app.FullScreenLan) && toKey == "s" {
 				// treefiler の s は treebeard の「シェルを開く」に上書きした (docs/treefiler-spec.md §0.1。ユーザー回答 2026-10-07)。
-				// mac-lan-manager の s も ssh (同じ動詞。issue 747)。status viewer へは F / L で閉じてから移る
+				// mac-lan-manager の s も ssh (同じ動詞)。status viewer へは F / L で閉じてから移る
 				want = from
 			}
 			if got := m.activeFullScreen(); got != want {

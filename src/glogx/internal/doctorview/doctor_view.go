@@ -1,6 +1,6 @@
 // Package doctorview は glogx の doctor 画面 (D): ディスク・サービス・brew・docker・SSD の診断の表示と、
 // 選んだ項目の削除の確認と実行。判定は doctor module (doctor/disk・svc・docker・ssd) を直接呼ぶ。
-// 画面の開閉・横断・トーストは main の browseModel が仲介する (この package は main を import できない。issue 742)。
+// 画面の開閉・横断・トーストは main の browseModel が仲介する (この package は main を import できない)。
 package doctorview
 
 import (
@@ -26,7 +26,7 @@ import (
 	"glogx/internal/term"
 )
 
-// doctor (D キー) — 環境の健全性診断を並べる全画面ビュー (issue 148 の 3 章)。
+// doctor (D キー) — 環境の健全性診断を並べる全画面ビュー。
 //
 // 器は「診断項目のセクション列」。doctor 自体はディスクやサービスを知らず、各セクションを
 // 見出し (案 A: 左に縦棒、右端に要約、下に罫線) と行の列で並べるだけ。今回は 3 セクション:
@@ -153,7 +153,7 @@ type doctorRow struct {
 	selectable bool
 	key        rowKey
 	// detail は Enter で展開したときに描く本文。
-	// 🚨 **展開している行だけ**が値を持つ (issue 270)。畳まれている行のぶんまで毎フレーム
+	// 🚨 **展開している行だけ**が値を持つ。畳まれている行のぶんまで毎フレーム
 	// 組むと、1 フレームのコストがカタログ全エントリの Items / Contents の総数に比例する。
 	// 「展開できるか」は len(detail) でなく hasDetail で判定すること。
 	detail []doctorRow
@@ -241,7 +241,7 @@ func (v *DoctorView) open() tea.Cmd { return v.start(false) }
 // catalogHas は「この ID が実効カタログにあるか」を返す (テストは diskOpts で catalog を差し替える)。
 // catalogLookup は ID から**今のカタログの Entry** を引く関数を返す (テストは diskOpts で差し替える)。
 // 在るかどうかだけでなく Entry を返すのは、復元した Result の表示文言をカタログ側へ
-// 束ね直すため (issue 229)。
+// 束ね直すため。
 func (v *DoctorView) catalogLookup() func(string) (disk.Entry, bool) {
 	if v.deps.DiskOpts != nil {
 		if cat := v.deps.DiskOpts().Catalog; len(cat) > 0 {
@@ -262,7 +262,7 @@ func (v *DoctorView) catalogLookup() func(string) (disk.Entry, bool) {
 func (v *DoctorView) Rescan() tea.Cmd { return v.start(true) }
 
 func (v *DoctorView) start(force bool) tea.Cmd {
-	// 🚨 **前世代を止めてから世代を進める** (issue 211 の敵対的レビュー P1)。rescan (r) は
+	// 🚨 **前世代を止めてから世代を進める**。rescan (r) は
 	// start(true) を直接呼ぶので、ここで止めないと前世代の disk goroutine を誰も cancel できず、
 	// latch に載ったまま完走する = WaitDoctorCleanup の上限が「cancel + WaitDelay 2 秒」ではなく
 	// PerEntry 60 秒 × 並列度 (約 6 分) になる。latch を入れる前は即終了だったので、
@@ -275,11 +275,11 @@ func (v *DoctorView) start(force bool) tea.Cmd {
 	v.selected, v.selectedItems, v.inspected = map[entryID]bool{}, map[itemKey]bool{}, map[entryID]bool{}
 	// 🚨 コマンドの選択も捨てる。残すと、doctor を閉じて開き直したときに `*` が付いたまま
 	// 「x: 1 件を実行」で復帰する (ディスク側の選択は毎回消えるので非対称だった。
-	// 共有 map に prune 系が載った時点で意味が変わった。敵対レビュー 2 周目 P2-3)
+	// 共有 map に prune 系が載った時点で意味が変わった)
 	v.selectedActions, v.actionByCmd, v.dockerOrder = map[cmdKey]bool{}, map[cmdKey]doctorCmdAction{}, nil
 	// 🚨 世代をまたいで残る状態をここで**まとめて**捨てる。1 つでも残すと前の世代の行・文言・
 	// Cmd が次の画面に混ざる (pendingToast は実際に漏れて、次の再スキャンの理由として
-	// 再表示されていた。敵対レビュー 2026-09-03)
+	// 再表示されていた)
 	v.rows, v.enterDetail, v.pendingCopy, v.pendingToast, v.pendingDeleteCmd = nil, "", "", "", nil
 	v.del.reset()
 	v.diskResults, v.diskRep, v.svcRep, v.brew, v.docker, v.ssd = nil, nil, nil, nil, nil, nil
@@ -288,7 +288,7 @@ func (v *DoctorView) start(force bool) tea.Cmd {
 	if !force {
 		if sn, ok := loadDoctorSnapshot(app.TimeNow()); ok {
 			rep := sn.Disk
-			// 実効カタログに無い ID は落とす (snapshot は書き換えられる。issue 178)
+			// 実効カタログに無い ID は落とす (snapshot は書き換えられる)
 			rep = rep.WithResults(doctorSnapshotInCatalog(rep.Results, v.catalogLookup()))
 			v.diskRep = &rep
 			v.diskResults = rep.Results
@@ -326,7 +326,7 @@ func (v *DoctorView) start(force bool) tea.Cmd {
 	ch := make(chan doctorDiskEvent, catalogN+1)
 	v.diskCh = ch
 	dOpt.OnResult = func(r disk.Result) { ch <- doctorDiskEvent{r: &r} }
-	// latch へ登録する (issue 211): 再起動・終了の直前に子プロセスの帰還を看取るため。
+	// latch へ登録する: 再起動・終了の直前に子プロセスの帰還を看取るため。
 	// doctorTrack は Add を呼び出し元の goroutine で済ませるので、Wait が登録を追い越さない
 	doctorCleanup.Add()
 	go func() {
@@ -346,7 +346,7 @@ func (v *DoctorView) start(force bool) tea.Cmd {
 		bRun = runner.Exec
 	}
 	// 🚨 svc / brew は tea.Cmd の goroutine で走る。bubbletea は Run を抜けるときに
-	// Cmd の goroutine を待たないので、latch で看取る側を作っておく (issue 211)
+	// Cmd の goroutine を待たないので、latch で看取る側を作っておく
 	return tea.Batch(append([]tea.Cmd{
 		v.waitDiskCmd(gen),
 		func() tea.Msg {
@@ -400,7 +400,7 @@ func (v *DoctorView) close() {
 func (v *DoctorView) Stop() {
 	// 削除の途中で外から終了させられたら、**ctx で中断を伝える** (プロセスを殺すだけだと
 	// 記録が executing のまま残り、cli: の子プロセスが孤児になる)。
-	// 🚨 cancel だけでは**子プロセスの死を待たない** (issue 211)。cancelAll → WaitDoctorCleanup の
+	// 🚨 cancel だけでは**子プロセスの死を待たない**。cancelAll → WaitDoctorCleanup の
 	//    順で看取ること。削除も doctorCleanup latch に載っている (doctor_delete.go)
 	if v.del.cancel != nil {
 		v.del.cancel()
@@ -411,25 +411,24 @@ func (v *DoctorView) Stop() {
 	}
 }
 
-// saveCache は結果をキャッシュへ。**不完全さの種類ごとに扱いを分ける** (issue 172 / 173)。
+// saveCache は結果をキャッシュへ。**不完全さの種類ごとに扱いを分ける**。
 // 時間で区切る形は採らない: 「前回の完全結果の古さ」は「今回の結果が途中経過か」と無関係で、
-// doctor をたまにしか開かない普通の運用が丸ごと無保護になる (敵対レビュー 2026-09-03 で実測:
+// doctor をたまにしか開かない普通の運用が丸ごと無保護になる (実測 2026-09-03:
 // 3 時間前の 45GB が、開いて即 Esc の 1MB で潰れた)。
 //
 //	partial (中断)     : 🚨 完全な結果を潰さない。Esc や r の直後の数件だけの結果で 45GB を 200MB に
-//	                     置き換えると、起動トーストが閾値未満で無期限に沈黙する (敵対レビュー
-//	                     2026-09-02 P2)。**これは doctorCacheFromReport が前回の記録に重ねて書く
-//	                     ことで構造的に防ぐ**。以前は「合計が前回より小さければ書かない」という
-//	                     ガードで守っていたが、重ねるようになった今それは冗長で、しかも
+//	                     置き換えると、起動トーストが閾値未満で無期限に沈黙する。
+//	                     **これは doctorCacheFromReport が前回の記録に重ねて書く
+//	                     ことで構造的に防ぐ**。「合計が前回より小さければ書かない」という
+//	                     ガードは置かない。重ねる今それは冗長で、しかも
 //	                     「今回実際に測り直して縮んだと分かったエントリ」まで古い値へ差し戻す
-//	                     副作用があった (敵対レビュー 2026-09-03)。外したときにマスクしていたものは
-//	                     issue 173 に列挙してある
+//	                     副作用がある
 //	Reused を含む完了  : 書く。ただし再利用したエントリの数字は**前回の実測値を引き継ぐ**
 //	                     (doctorCacheFromReport)。「Reused があれば書かない」にすると、重いエントリが
-//	                     複数あるときに恒久的に凍結する (issue 172)
+//	                     複数あるときに恒久的に凍結する
 //	failed を含む完了  : 書く。走査は完走していて、その環境の現実がそれ。書かないと「1 エントリが
 //	                     恒久的に測れない Mac」でキャッシュが永久に凍結する。沈黙は Failed 件数を
-//	                     キャッシュに持たせ、トースト側で「N 件は診断できず」を出して防ぐ (issue 173)
+//	                     キャッシュに持たせ、トースト側で「N 件は診断できず」を出して防ぐ
 func (v *DoctorView) saveCache(rep disk.Report) {
 	prev, _ := loadDoctorDiskCache()
 	_ = saveDoctorDiskCache(doctorCacheFromReport(rep, prev)) // 保存失敗は表示に影響しない
@@ -440,7 +439,7 @@ func (v *DoctorView) receiveDisk(msg doctorDiskMsg) tea.Cmd {
 	if msg.gen != v.gen || !v.shown {
 		return nil
 	}
-	// 🚨 **ここが live 経路の唯一の関門** (issue 228)。走査した値はパスも Contents も
+	// 🚨 **ここが live 経路の唯一の関門**。走査した値はパスも Contents も
 	// 「自分以外が書いた文字列」で、無害化せずに持つと doctorRow.text と `y` / `Y` の
 	// コピーへ生のまま乗る (コピーは pbcopy 経由なので、貼った先の端末で発火する)。
 	// 出所ごとに書き分けず、モデルへ入る前に 1 回通す。CLI (diskdoctor の Format) と
@@ -520,9 +519,9 @@ func (v *DoctorView) expandableRow() (rowKey, bool) {
 
 // collapseTargetAtCursor は「今このカーソル位置で畳めるもの」を返す。
 //
-// 🚨 **畳めるかの判定はここだけに書く。** 以前は collapsibleAtCursor (hint の文言) と
-// collapseAtCursor (実際に畳む) が `ok && v.expanded[k]` を別々に持っており、片方を直しても
-// 挙動が変わらなかった (敵対的レビュー 2026-09-06 の修正中に実際に踏んだ)。
+// 🚨 **畳めるかの判定はここだけに書く。** collapsibleAtCursor (hint の文言) と
+// collapseAtCursor (実際に畳む) に `ok && v.expanded[k]` を別々に持たせない。片方を直しても
+// 挙動が変わらなくなる。
 //
 // 🚨 ここで `v.rows[i].detail` を見て「本当に中身があるか」を確かめないこと。rows は描画時に
 // 遅延再構築されるので、Enter 直後 (次の lines() の前) は展開済みの行でも detail が nil で、
@@ -590,12 +589,12 @@ func (v *DoctorView) jumpIntoDetail() {
 
 // takeCursorFellBack は「描画中に選択行が消えて寄せた」印を 1 回だけ取り出し、文言を返す。
 //
-// 🚨 **キーを飲まずに知らせる**ための seam。以前は handleKey の先頭で `DoctorToast` を
-// 返していたが、それだと**その打鍵が空振りする** (q / esc / d / r / Enter が等しく 1 回死ぬ)。
+// 🚨 **キーを飲まずに知らせる**ための seam。handleKey の先頭で `DoctorToast` を
+// 返さない。それだと**その打鍵が空振りする** (q / esc / d / r / Enter が等しく 1 回死ぬ)。
 // 呼ぶのは browseModel 側 (tui.go) で、handleKey を呼ぶ**前**にトーストを出す。
 //
 // 🚨 文言は**返り値で渡す**。pendingToast に書くと、それを消すのは takeToast() だけなので、
-// 次の再スキャンの理由として使い回される (敵対レビュー 2026-09-03 が実測)。
+// 次の再スキャンの理由として使い回される (実測 2026-09-03)。
 func (v *DoctorView) TakeCursorFellBack() string {
 	if !v.cur.takeFellBack() {
 		return ""
@@ -748,7 +747,7 @@ func (v *DoctorView) applyMotion(m listnav.Motion, page int) {
 // hint は最下行の案内。**幅に入らない項目は落とす** (切ると語の途中で切れて意味が壊れ、
 // しかも消えるのは常に末尾 = 抜ける手段が消える。status viewer と同じ term.FitHintItems の作法)。
 // 実測 2026-09-03: 固定文字列だと 112 桁あり、popup の予算 82 桁で「D/q/esc: 閉じる」と
-// 「(削除はまだできません)」が画面から消えていた (issue 201)。
+// 「(削除はまだできません)」が画面から消えていた。
 func (v *DoctorView) Hint(width int) string {
 	// 🚨 下見 (preparing) と実行 (running) を 1 語に畳まない。下見はまだ何も壊しておらず、
 	// パネルは「削除できるか確認しています」と言う。ここだけ「実行中」と読ませると、
@@ -765,7 +764,7 @@ func (v *DoctorView) Hint(width int) string {
 		}
 		// 🚨 送り方 (j/k) は**パネルの注記が唯一の出典**。ここに足すと、hint は
 		// 前フレームの高さから scrollable を判断するので 1 フレーム遅れ、
-		// 「パネルと hint が違うことを言う」形になる (issue 242 の P3-2 と同型)
+		// 「パネルと hint が違うことを言う」形になる
 		return " y: 削除する   n/Esc: やめる   (Enter は何もしない)"
 	}
 	if v.del.result != nil || v.del.err != "" {
@@ -881,8 +880,8 @@ func (v *DoctorView) Lines(o DoctorRenderOpts) []string {
 //
 // 🚨 doctorRow は名前のとおり 1 行のつもりだが、それを守っていたのは組み立て側の規律だけだった。
 // 改行が 1 つ混ざると**固定高パネルの行数が増える**のに、行数を数えるテスト
-// (TestDoctorLinesFillsPage) はスライスの要素数しか見ないので素通りする (敵対レビュー
-// 2026-09-04 が brew の Unavailable で実測: 要素 20 個・実際の出力 21 行)。
+// (TestDoctorLinesFillsPage) はスライスの要素数しか見ないので素通りする
+// (実測 2026-09-04: brew の Unavailable で要素 20 個・実際の出力 21 行)。
 // 出口 1 箇所で潰しておけば、無害化の使い分け (PlainLine / PlainBlock) を間違えた将来の
 // 1 行も構造的に止まる。**copyText / copyPath は対象外** (コピー文は複数行が正常)。
 func flattenDoctorRows(rows []doctorRow) []doctorRow {
@@ -906,9 +905,9 @@ func (v *DoctorView) headerLine(o DoctorRenderOpts) string {
 		left += fmt.Sprintf("  %d 分前の結果 (r で再スキャン)", int(o.Now.Sub(v.snapshotAt).Minutes()))
 	}
 	// 🚨 キーの凡例をここに置かない。**hint() が唯一の出典**にする (下段は常に描かれる)。
-	// 以前は右端にも凡例を置いていたが、語も内容も hint と食い違っていた
-	// (「詳細」vs「開閉」/ q が無い / Space と d が無い) うえ、hint が issue 201 で
-	// term.FitHintItems に寄った後もこちらは幅が足りないと凡例ごと消す旧方式のままだった。
+	// 右端にも凡例を置くと、語も内容も hint と食い違う
+	// (「詳細」vs「開閉」/ q が無い / Space と d が無い) うえ、hint が
+	// term.FitHintItems を使うのに、こちらは幅が足りないと凡例ごと消す方式になる。
 	// 状態 (スキャン中 / 前回の結果) はここにしか無いので、そちらだけ残す
 	return left
 }
@@ -956,7 +955,7 @@ func (v *DoctorView) tabBarLine(o DoctorRenderOpts) string {
 	}
 	// 狭い幅では段階的に詰める: ①選んでいないタブの前後の空白を外す ②タブ名を短くする。
 	// 🚨 末尾を切るのは最後の手段: 切られるのは最後のタブ (SSD) の要約で、タブ行の役目
-	// (切り替えずにどこに異常があるか分かる) を失う (敵対レビュー 2 周目。幅 60・実在の値で 63 桁)
+	// (切り替えずにどこに異常があるか分かる) を失う (実測: 幅 60・実在の値で 63 桁)
 	line := build(names, " ")
 	if term.DispWidth(line) > o.Width {
 		line = build(names, "")
@@ -1017,7 +1016,7 @@ func (v *DoctorView) tabSummary(o DoctorRenderOpts, t DoctorTab) string {
 
 // sectionHeaderGap は見出しの題と要約の間の空白。1 未満なら要約は入らない (sectionHeader が落とす)。
 // 🚨 「要約が入るか」を呼び出し側で書き直さず、これを呼ぶ (SSD の見出しが題を削るかの判定で
-// 1 桁食い違い、幅 58 で要約だけが消えた。敵対レビュー 3 周目)
+// 1 桁食い違い、幅 58 で要約だけが消えた)
 func sectionHeaderGap(o DoctorRenderOpts, title, summary string) int {
 	return o.Width - 2 - term.DispWidth("▌"+title) - term.DispWidth(summary) - 1
 }
@@ -1084,7 +1083,7 @@ func (v *DoctorView) diskSection(o DoctorRenderOpts) []doctorRow {
 		results = v.diskRep.Results
 		partial = v.diskRep.Partial
 	}
-	// 🚨 **同一フレームで tabSummary も SumDeletable を呼ぶ (2 回) が、まとめない** (issue 321 ③)。
+	// 🚨 **同一フレームで tabSummary も SumDeletable を呼ぶ (2 回) が、まとめない**。
 	// SumDeletable は Result を舐めて int64 を足すだけで**確保を 1 バイトもしない**ので、
 	// フレーム確保への寄与は 0。まとめるなら `diskRep.Total` を使う形になるが、それは
 	// **Total の鮮度** (削除の後に Report を作り直したか) に依存する — 「消したのに減らない」は
@@ -1098,16 +1097,16 @@ func (v *DoctorView) diskSection(o DoctorRenderOpts) []doctorRow {
 		summary = "(中断: 部分結果) " + summary
 	}
 	rows := sectionHeader(o, "ディスク占有", summary)
-	// 🚨 **毎フレームのコピー + 整列はメモ化しない** (issue 321 ④)。確保は slice 1 本ぶんで、
-	// 321 ①② のメモ化が削った -19,950 B/frame に対して無視できる。メモ化すると
+	// 🚨 **毎フレームのコピー + 整列はメモ化しない**。確保は slice 1 本ぶんで、
+	// 他のメモ化が削った -19,950 B/frame に対して無視できる。メモ化すると
 	// 「results が変わったか」の判定を持つことになり、走査中 (1 件ずつ届く) と削除後に
 	// 無効化し忘れる経路が増える。
 	sorted := append([]disk.Result(nil), results...)
 	sort.SliceStable(sorted, func(a, b int) bool { return sorted[a].Size > sorted[b].Size })
 	shown := 0
 	for _, r := range sorted {
-		// 候補 0 件の行は畳む。🚨 ただし **検出条件そのものが未実測のエントリは畳まない**
-		// (issue 169 / 207)。畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と
+		// 候補 0 件の行は畳む。🚨 ただし **検出条件そのものが未実測のエントリは畳まない**。
+		// 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と
 		// **同じ見え方**になり、探せていないことが画面から永久に消える (false green)。
 		// CLI 側 (src/doctor/disk/report.go) と同じ規律。実測で名前が確定して
 		// Entry.Unverified が空になれば、この行も自動的に畳まれる側へ戻る。
@@ -1122,9 +1121,9 @@ func (v *DoctorView) diskSection(o DoctorRenderOpts) []doctorRow {
 		mark, color := doctorRiskMark(r)
 		// ラベル列は狭い幅で縮める。**マークより先にラベルを削る**のは、切れて困る順が
 		// 「状態 > ラベルの詳細」だから (幅 60 で `⛔ 要…` になると、その行が何なのかは
-		// 分かってもどう扱えばよいかが消える。実測 2026-09-03。issue 182)
+		// 分かってもどう扱えばよいかが消える。実測 2026-09-03)
 		labelW := doctorLabelWidth
-		// 🚨 **カーソル欄 (2 桁) を引く** (issue 238)。lines が行頭に "  " / "▶ " を足してから
+		// 🚨 **カーソル欄 (2 桁) を引く**。lines が行頭に "  " / "▶ " を足してから
 		// 幅で切るので、ここで引かないと最長マーク「❓ 走査できず」(幅 13) が切れる。
 		// 同じファイルの sectionHeader は `o.width - 2` と正しく引いており、非対称だった
 		// (フレーム最小構成の contentWidth 53 では常時 +2 超過。実測 2026-09-04)
@@ -1160,7 +1159,7 @@ func (v *DoctorView) diskSection(o DoctorRenderOpts) []doctorRow {
 			rows = append(rows, doctorRow{text: doctorColor(o.Colored, term.AnsiDim, "           "+note)})
 		}
 		if r.Status == disk.StatusFailed || r.Status == disk.StatusBlocked {
-			// 理由は 1 行下に出す (マーク列に置くと狭い幅で切れる。issue 182)
+			// 理由は 1 行下に出す (マーク列に置くと狭い幅で切れる)
 			rows = append(rows, doctorRow{text: doctorColor(o.Colored, term.AnsiDim, "           "+r.Reason)})
 			continue
 		}
@@ -1177,8 +1176,8 @@ func (v *DoctorView) diskSection(o DoctorRenderOpts) []doctorRow {
 		}
 		if r.Reused {
 			// 🚨 再利用の注記は**行頭**に置く。末尾に足すと狭い幅で真っ先に切れ、
-			// 「その数字は今測ったものではない」が分からなくなる (issue 172 が
-			// 「注記で分かる形にしてある」と書いた前提が幅で崩れる。issue 182)
+			// 「その数字は今測ったものではない」が分からなくなる (「注記で分かる形にしてある」
+			// という前提が幅で崩れる)
 			advice = fmt.Sprintf("%d 分前の計測を再利用 (r で再計測)。%s", int(o.Now.Sub(r.MeasuredAt).Minutes()), advice)
 		}
 		rows = append(rows, doctorRow{text: doctorColor(o.Colored, term.AnsiDim, "           "+advice)})
@@ -1214,7 +1213,7 @@ func (v *DoctorView) diskSection(o DoctorRenderOpts) []doctorRow {
 // 🚨 **diskDetail の空判定と同じものを 2 箇所に書かないための唯一の出典。** 270 で detail を
 // 遅延化したとき、行は `hasDetail: true` を無条件に立てていたので、items の無い blocked /
 // failed の行が「展開できる」ことになった。Enter しても行は増えないのに expanded だけ立ち、
-// **次の q が畳む側に取られて doctor が 1 回目で閉じない** (敵対的レビュー 2026-09-06 が実測)。
+// **次の q が畳む側に取られて doctor が 1 回目で閉じない** (実測 2026-09-06)。
 // 遅延化を捨てずに直すには、展開せずに答えられる述語が要る。
 // 一致は TestDiskHasDetailMatchesBuilder が突き合わせる (片方だけ育てたら red)。
 func diskHasDetail(r disk.Result) bool {
@@ -1229,10 +1228,10 @@ func (v *DoctorView) diskDetail(o DoctorRenderOpts, r disk.Result) []doctorRow {
 	out := make([]doctorRow, 0, 2+len(r.Contents)+len(r.Items))
 	// 走査できなかった行に削除経路を出さない。消せる候補が確定していないのに
 	// 「削除経路: rm」だけ出ると、消してよいものが見つかったように読める
-	// (CLI の Format は failed のとき理由だけを出す。UI もそれに揃える。issue 182)
+	// (CLI の Format は failed のとき理由だけを出す。UI もそれに揃える)
 	// 🚨 **ok の行にだけ**削除の案内を出す。blocked (今は対象外) にも出していたので、
 	// 「Space で選び d で削除」と案内しておいて Space が拒否する形になっていた
-	// (敵対レビュー 2026-09-03 が実測)
+	// (実測 2026-09-03)
 	if r.Status == disk.StatusOK {
 		out = append(out, doctorRow{text: doctorColor(o.Colored, term.AnsiDim,
 			"             削除経路: "+r.Entry.DeleteVia+" (Space で選び d で削除)")})
@@ -1241,14 +1240,13 @@ func (v *DoctorView) diskDetail(o DoctorRenderOpts, r disk.Result) []doctorRow {
 		out = append(out, doctorRow{text: doctorColor(o.Colored, term.AnsiDim, "             "+r.Entry.Detail)})
 	}
 	if r.Entry.Inspect || len(r.Contents) > 0 {
-		// 🚨 **対象パスの行を必ず出す** (issue 240)。以前は Contents があると選べる行を出さずに
-		// 返しており、Inspect の 5 エントリ (どれも RiskConfirm) は「エントリ全体か、何もしないか」
-		// しか選べなかった。README と画面の「ディレクトリ単位で選べる」が嘘になり、
+		// 🚨 **対象パスの行を必ず出す**。Contents があると選べる行を出さずに
+		// 返すと、Inspect の 5 エントリ (どれも RiskConfirm) は「エントリ全体か、何もしないか」
+		// しか選べない。README と画面の「ディレクトリ単位で選べる」が嘘になり、
 		// jumpIntoDetail の飛び先 (diskitem:) も無いのでカーソルも動かない
 		out = append(out, v.diskItemRows(o, r)...)
 		// 🚨 Inspect は「中身を見てから選ばせる」ためのゲートなので、**開いても何も出ない**形を
-		// 作らない (中身が無いのか、走査が拾えなかったのかが区別できないまま選べてしまう。
-		// 敵対レビュー 2026-09-03)
+		// 作らない (中身が無いのか、走査が拾えなかったのかが区別できないまま選べてしまう)
 		if len(r.Contents) == 0 {
 			out = append(out, doctorRow{text: doctorColor(o.Colored, term.AnsiDim,
 				"             (中身の一覧はありません。上の対象パスから選んでください)")})
@@ -1291,7 +1289,7 @@ func (v *DoctorView) diskItemRows(o DoctorRenderOpts, r disk.Result) []doctorRow
 }
 
 // doctorFitPath はパスを予算に収める。🚨 **先頭を削って末尾を残す**。
-// 末尾から切ると「どのディレクトリを消すのか」がまさに消える (issue 239): DerivedData の
+// 末尾から切ると「どのディレクトリを消すのか」がまさに消える: DerivedData の
 // `ThumbnailThumb-cxxbmelbwqqahjagpvzoszkxfvfz` はハッシュ部で世代を見分けるので、
 // そこが落ちると同一プロジェクトの旧世代を区別できない。規律の正本は termwidth.TruncateLeft の
 // doc と status_view.go:statusPathText。
@@ -1308,8 +1306,8 @@ const doctorItemPathFixedW = 8 + 1 + 9 + 2 + term.CursorGutterWidth
 
 func doctorRiskMark(r disk.Result) (string, string) {
 	// 🚨 **語は disk.Mark が唯一の出典**。CLI (diskdoctor の Format) と同じ文字列がここへ来る。
-	// 以前は同じ写像が 2 つあり、「相手と同じ語彙を使うこと」というコメントだけが両者を
-	// 結んでいたので、片側だけ語を変えてもどちらのテストも赤くならなかった (issue 222)。
+	// 同じ写像を 2 つ持たない。「相手と同じ語彙を使うこと」というコメントだけが両者を
+	// 結ぶ形では、片側だけ語を変えてもどちらのテストも赤くならない。
 	// ここが持つのは**色だけ**: doctor module は表示幅・色の依存を持たない方針。
 	//
 	// 記号は表示幅が安定するものだけ使う。⚠️ (U+26A0 + VS16) は端末によって 1 桁と 2 桁で揺れ、
@@ -1345,7 +1343,7 @@ func doctorRiskColor(r disk.Result) string {
 }
 
 // doctorLabelWidth はディスク行のラベル列の表示幅 (リスク記号の列を揃えるため)。
-// 端末が狭いときは doctorMinLabelWidth まで縮める (issue 182)。
+// 端末が狭いときは doctorMinLabelWidth まで縮める。
 const doctorLabelWidth = 40
 
 const (
@@ -1357,13 +1355,13 @@ const (
 )
 
 // doctorMaxMarkWidth はリスク記号の最大表示幅。マークは固定語彙なので測れる
-// (可変長の理由をマーク列へ入れないのは issue 182 の対応)。
+// (可変長の理由をマーク列へ入れない)。
 //
-// 🚨 **語彙から導出する形を保つこと** (issue 238)。以前 5 語をハードコードしていて
+// 🚨 **語彙から導出する形を保つこと**。以前 5 語をハードコードしていて
 // `🔎 未検証` が抜けた事故があり、`disk.MarkVocabulary()` から導く形へ直した経緯がある。
 // メモ化は導出性を壊さない (初回に語彙を全部舐める) が、**定数へ焼き直すのは 238 の回帰**。
 //
-// メモ化の理由は「**プロセス不変の値を毎フレーム再計算しないため**」(issue 321)。
+// メモ化の理由は「**プロセス不変の値を毎フレーム再計算しないため**」。
 // 語彙もその表示幅もプロセス内で変わらないのに、行ループから毎行呼ばれていた。
 // 実測 (darwin/arm64・-race・doctor-disk フレーム): 600 allocs / 83,122 B →
 // hoist 単独 577 / 65,641 → **memo 単独 579 / 63,174** (-19,948 B = **24%**)。
@@ -1517,7 +1515,7 @@ func (v *DoctorView) brewSection(o DoctorRenderOpts) []doctorRow {
 			detail = append(detail, doctorColor(o.Colored, term.AnsiDim, "     "+l))
 		}
 		// 「Enter で何行出てくるか」の予告なので detail の行数をそのまま数える (見出しは既に見えているので
-		// 数えない / 段落の空行は 1 行として表示されるので数える)。敵対レビュー 2026-09-03: 見出しを数えて
+		// 数えない / 段落の空行は 1 行として表示されるので数える)。見出しを数えて
 		// 空行を数えない中間形にすると、段落の数によって実際の展開行数と系統的にずれる。
 		count := fmt.Sprintf("(%d 行)", len(detailRows)+len(detail))
 		inner := o.Width - 2
@@ -1545,18 +1543,17 @@ func diskCopyPath(r disk.Result) string {
 }
 
 // diskCopyText は Y でコピーする解説文。別セッションの LLM に「これは消していいか」を聞ける形にする。
-// diskVerifyCommands は「なぜこの候補が出たか」を人が自分で確かめるコマンド (issue 183)。
+// diskVerifyCommands は「なぜこの候補が出たか」を人が自分で確かめるコマンド。
 //
-// なぜ要るか: `Y` のコピー文は「別セッションの LLM にそのまま投げられる形」と定義されている
-// (issue 148 の ④ 追加要件)。判定・合計・復元方法だけ渡すと、受け手は**判定を鵜呑みにするしかない**。
+// なぜ要るか: `Y` のコピー文は「別セッションの LLM にそのまま投げられる形」と定義されている。
+// 判定・合計・復元方法だけ渡すと、受け手は**判定を鵜呑みにするしかない**。
 //
 // 🚨 **パスは必ず `svc.ShellQuote` を通す**。`Item.Path` も Container 名も攻撃者が置ける値で、
-// 引用しないと doctor 自身が提示するコマンドがインジェクションを運ぶ (issue 178 / 193 が塞いだ穴を
+// 引用しないと doctor 自身が提示するコマンドがインジェクションを運ぶ (塞いだ穴を
 // 新設することになる。`svc.manualCommands` が Label に対して同じ規律を持つ)。
 //
 // 🚨 ここに**既存の出力と重複するコマンドを足さない**。`diskCopyText` は各 Item のサイズ・
-// 最終更新・合計・`Contents` を既に出しているので、`du -sk` や `stat -f %Sm` は情報を増やさない
-// (2026-09-03 の反証レビュー)。
+// 最終更新・合計・`Contents` を既に出しているので、`du -sk` や `stat -f %Sm` は情報を増やさない。
 // 🚨 `orphan-container` に **`mdfind` を出さない**。カタログの Detail が
 // 「Info.plist を実走査して突合 (mdfind は使わない)」と明記した手段で、
 // 裏取り用でも載せると否定された判定材料を復活させる (同レビュー)。
@@ -1665,7 +1662,7 @@ func svcUndiagnosedCopyText(u svc.Undiagnosed) string {
 }
 
 // svcCopyText は Y でコピーする解説文 (壊れた launchd 登録)。
-// svcVerifyCommands は壊れた登録の判定を人が確かめるコマンド (issue 183)。読み取りのみ。
+// svcVerifyCommands は壊れた登録の判定を人が確かめるコマンド。読み取りのみ。
 //
 // 🚨 `f.Commands` (= `svc.manualCommands`) と混ぜない。あちらは `launchctl bootout` / `rm` の
 // **破壊コマンド**で、「消してよいか確かめる」ためのものではない。コピー文では見出しを分ける。
@@ -1719,7 +1716,7 @@ func svcCopyText(f svc.Finding) string {
 	return b.String()
 }
 
-// diskDetailIfExpanded は展開している行の detail だけを組む (issue 270)。
+// diskDetailIfExpanded は展開している行の detail だけを組む。
 //
 // buildRows の add() が detail を並べるのは `v.expanded[r.key]` のときだけなので、
 // 畳まれている行のぶんは**作って捨てていた**。diskDetail は Contents / Items を全件走査して

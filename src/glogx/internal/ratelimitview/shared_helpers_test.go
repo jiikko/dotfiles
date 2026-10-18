@@ -7,8 +7,7 @@ import (
 	"time"
 )
 
-// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (issue 817 で画面を移したとき、
-// 両方のテストが使っていたもの)。
+// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (両方のテストが使っていたもの)。
 
 func rlTestSnap() *usage.Snapshot {
 	now := time.Date(2026, 8, 31, 22, 14, 0, 0, time.Local)

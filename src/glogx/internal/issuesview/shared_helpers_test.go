@@ -14,8 +14,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
-// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (issue 817 で issues 画面を移したとき、
-// 両方のテストが使っていたもの。main の側は公開の口と Fixture へ書き換えて減らしていく)。
+// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (両方のテストが使っていたもの。main の側は公開の口と Fixture へ書き換えて減らしていく)。
 
 // loadedView は receive 済みの viewer を返す。
 func loadedView(list ...*issues.Issue) *IssuesView {
@@ -42,7 +41,7 @@ func newTestIssuesView() IssuesView {
 	return v
 }
 
-// assertSanitizedAndVisible は無害化テストの 2 つの主張を対で確かめる (issue 284):
+// assertSanitizedAndVisible は無害化テストの 2 つの主張を対で確かめる:
 //
 //  1. 制御シーケンス / OSC の中身が残っていない (本来の主張)
 //  2. 🚨 **細工した値が実際に描かれている** (陽性対照)
@@ -91,7 +90,7 @@ func drainScanMsg(t *testing.T, cmd tea.Cmd) IssuesScanMsg {
 
 // landBody は一覧のカーソル行を Enter で開き、引き出しの着地まで済ませる。
 // 🚨 着地させずに描画を検査すると、引き出しの幅が 0 のままで本文が描かれず、一覧側の文字列に
-// 一致して緑になる (issue 667: 本文ヘッダーの状態の assert が一覧の空表示の案内に一致していた)。
+// 一致して緑になる (本文ヘッダーの状態の assert が一覧の空表示の案内に一致する)。
 func landBody(t *testing.T, v *IssuesView, page int) {
 	t.Helper()
 	v.HandleKey("enter", vp(page))

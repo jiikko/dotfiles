@@ -1,5 +1,5 @@
 // Package gitdata は glogx が描くデータの取得: git log (制御文字レコードでコミット境界を識別)・CI 状態の GraphQL 取得と
-// ローカルキャッシュ。取得の条件は CLI の Options ではなく LogQuery で受け取る (issue 817 の G-1)。
+// ローカルキャッシュ。取得の条件は CLI の Options ではなく LogQuery で受け取る。
 package gitdata
 
 import (
@@ -102,7 +102,7 @@ func buildLogArgsWith(shape string, q LogQuery, colored, withBody bool) []string
 			args = append(args, "--stat")
 		}
 		if q.Patch {
-			// --no-textconv --no-ext-diff: 開いた repo の設定のコマンドを差分の表示で走らせない (issue 692。subproc.GitArgs の doc)
+			// --no-textconv --no-ext-diff: 開いた repo の設定のコマンドを差分の表示で走らせない (subproc.GitArgs の doc)
 			args = append(args, "--patch", "--no-textconv", "--no-ext-diff")
 		}
 	}
@@ -153,10 +153,10 @@ func parseLog(out string) ([]Commit, error) {
 		// (静的出力の git log パリティ契約。タブ展開は TUI 描画側 — term.SanitizeLineKeepTabs の doc)。
 		// SGR (色) を残すのは git が --color=always で色を付ける欄 (decoration の %D と、--stat / -p の
 		// body) だけ。subject / author / email / message (%B) に git は色を付けないので、そこにある SGR は
-		// 作者が書いたもので、ESC[8m で文字を隠せる。色も落として平文にする (issue 417)。
+		// 作者が書いたもので、ESC[8m で文字を隠せる。色も落として平文にする。
 		// 🚨 これが効くのは Commit のフィールドを描く --oneline と予備の mediumLines だけ。既定の verbatim
 		// 表示は git の出力を行ごとに LoadLogDisplay で無害化していて、1 行の中の git の色と作者の SGR を
-		// 区別できないので SGR を残している (issue 417 の残課題)
+		// 区別できないので SGR を残している
 		commits = append(commits, Commit{
 			SHA:         parts[0],
 			ShortSHA:    parts[1],
@@ -175,7 +175,7 @@ func parseLog(out string) ([]Commit, error) {
 
 // capGitBody は --stat / -p の本文行数をコミットごとに maxDiffLines で打ち切る (単一 diff
 // ポップアップと同じ安全弁)。-p × 無制限件数 (-n -1) で巨大 patch が全コミット分
-// メモリと描画行数に載り続けるのを防ぐ (issue 029)。sanitize より先に呼び、落とす行の
+// メモリと描画行数に載り続けるのを防ぐ。sanitize より先に呼び、落とす行の
 // 無害化コストを払わない。
 func capGitBody(body, shortSHA string) string {
 	lines := strings.Split(body, "\n")
@@ -396,7 +396,7 @@ func LoadStagedDiff(q LogQuery, colored bool) (string, error) {
 }
 
 // LogQuery は git log の取得の条件 (gitlog.go の取得の関数が読むものだけ)。CLI の Options を丸ごと渡さないのは、
-// 取得の層を internal/gitdata へ出すときに CLI の型を持ち込まないため (issue 817 の G-1)。
+// 取得の層を internal/gitdata へ出すときに CLI の型を持ち込まないため。
 type LogQuery struct {
 	MaxCount int // 負数 = 無制限 (git log と同じ)
 	Stat     bool

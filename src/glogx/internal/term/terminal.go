@@ -27,7 +27,7 @@ func SanitizePlainLine(s string) string     { return termsafe.PlainLine(s) }
 func SanitizePlainKeepTabs(s string) string { return termsafe.PlainLineKeepTabs(s) }
 func DropEmojiVS16(s string) string         { return termsafe.DropEmojiVS16(s) }
 
-// IsCopySafe はクリップボードへ生のまま入れてよいか (issue 753)。タブだけは通す: group 名にタブを含む
+// IsCopySafe はクリップボードへ生のまま入れてよいか。タブだけは通す: group 名にタブを含む
 // 実例を生でコピーする決定があり (TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice)、
 // 貼っても補完が動く程度で端末の解釈を変えない。ESC・改行 (貼った瞬間にコマンドが走る)・C1・BiDi は断る。
 // 🚨 「無害化の結果と一致するか」で判定しない: 無害化は絵文字の VS16 も落とすので、⚠️ を含む名前まで断る。

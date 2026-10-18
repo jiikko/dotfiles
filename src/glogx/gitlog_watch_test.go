@@ -27,7 +27,7 @@ import (
 
 // realRepoBrowse は実 git repo (subjects のコミット付き) を作り、そこへ chdir した状態の
 // browseModel を返す。このファイルの 10 テストが同じ 9 行のプロローグを繰り返していたのを
-// 1 行にしたもの (issue 199)。
+// 1 行にしたもの。
 //
 // 🚨 3 つとも返すこと。dir は追加コミット (commitLines) に、opts は BuildFingerprintArgs /
 // LoadCommits に個別に要る。どれかを隠すと呼び出し側が結局自前で組み直す。
@@ -45,7 +45,7 @@ func realRepoBrowse(t *testing.T, height int, subjects ...string) (*browseModel,
 	}
 	m := newBrowseModel(commits, map[string]gitdata.CIState{}, nil, gitdata.Repo{}, false, opts, false, 80, height)
 	// ⚠️ browseModel を作る工場は newTestBrowse と**ここの 2 つ**。両方に同じ後始末を通す
-	// (片方だけだと、doctor に触れるテストがこちらに書かれた瞬間に実マシンを叩く。issue 216)
+	// (片方だけだと、doctor に触れるテストがこちらに書かれた瞬間に実マシンを叩く)
 	installInertDoctor(t, &m.doctorOv)
 	t.Cleanup(func() {
 		m.cancelAll()
@@ -506,7 +506,7 @@ func TestGitLogReloadDeferredCoversEachState(t *testing.T) {
 		{"残量ダッシュボード", func(m *browseModel) { m.rlDash.Fixture().SetShown(true) }},
 		{"doctor", func(m *browseModel) { m.doctorOv.Fixture().Show() }},
 	}
-	// 🚨 t.Run でケースごとに分ける (issue 227)。1 つの loop で回して t.Fatalf を使うと、
+	// 🚨 t.Run でケースごとに分ける。1 つの loop で回して t.Fatalf を使うと、
 	// 変異を当てたときに「スイートが red」しか分からず、**緑のまま残ったケース**が見えない
 	// (mutation-verify-new-tests.md「テーブル駆動なら全ケースが red になるか」)。
 	for _, c := range cases {
@@ -525,7 +525,7 @@ func TestGitLogReloadDeferredCoversEachState(t *testing.T) {
 
 // ctrl+d でページ送りしている最中に先頭コミットが書き換わっても (`--amend`)、見えている画面は
 // 動かない。🚨 カーソルだけを錨にすると、この状態のカーソルは先頭コミット = amend で最も
-// 消えやすい SHA を指すため「先頭へ倒す」経路に落ちる (敵対レビューで実測 2026-09-01)。
+// 消えやすい SHA を指すため「先頭へ倒す」経路に落ちる (2026-09-01 に実測)。
 func TestGitLogReflectSurvivesAmendOfTopCommit(t *testing.T) {
 	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2", "c3", "c4", "c5", "c6")
 	m.cursor = 0
@@ -593,7 +593,7 @@ func TestGitLogEmptyFingerprintIsNotSentinel(t *testing.T) {
 }
 
 // runGitLogReload は reflectGitLogChange が返した読み直しの Cmd を goroutine の代わりに実行し、
-// その結果を handleGitLogReload へ渡す (反映は Update の外で読み、Msg で受ける契約。issue 146)。
+// その結果を handleGitLogReload へ渡す (反映は Update の外で読み、Msg で受ける契約)。
 func runGitLogReload(t *testing.T, m *browseModel, cmd tea.Cmd) {
 	t.Helper()
 	if cmd == nil {
@@ -674,7 +674,7 @@ func TestGitLogProbeSkipsMeasureWhileReloading(t *testing.T) {
 }
 
 // 読み直しの git fork は Cmd の実行時 (goroutine) に走り、Update の中 (reflectGitLogChange の呼び出し時)
-// では走らない (issue 146)。Cmd を作った後に git を使えなくして、Cmd の実行が初めて失敗することで固定する
+// では走らない。Cmd を作った後に git を使えなくして、Cmd の実行が初めて失敗することで固定する
 // (Update 内で読んでしまう変異は、Cmd を作った時点で結果を握っているので成功してしまう)。
 func TestGitLogReflectRunsGitInsideCmd(t *testing.T) {
 	newTempRepo(t, []string{"c1"})

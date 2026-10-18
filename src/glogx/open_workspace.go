@@ -19,7 +19,7 @@ import (
 // repoRoot は repo root (rev-parse --show-toplevel)。取れないとき (裸 repo 等) は
 // カレントディレクトリのまま開く。
 // 🚨 失敗時に "." を返すのはここの事情 (nvim を「今いる場所」で開く。cwd を返すと
-// 意図がぼやける)。解決そのものは issues.ResolveRepoRoot が唯一の実装 (issue 320)。
+// 意図がぼやける)。解決そのものは issues.ResolveRepoRoot が唯一の実装。
 func repoRoot() string {
 	if root, ok := issues.ResolveRepoRoot(app.CurrentDir()); ok {
 		return root

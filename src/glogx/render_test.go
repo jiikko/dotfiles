@@ -604,7 +604,7 @@ func TestRenderLinesVerbatimDecoratesHeaderOnly(t *testing.T) {
 // 表示色は「意味ごとに違う色」であることが本体で、値そのものは sgr の別名。
 //
 // 🚨 テストの期待値を production の定数から作ると (`strings.HasPrefix(out[0], term.AnsiYellow)` の形)、
-// **定数を書き換えても期待値が一緒に動くので永久に green** になる。実測 (issue 198 発見 4):
+// **定数を書き換えても期待値が一緒に動くので永久に green** になる。実測:
 // `term.AnsiYellow = sgr.Cyan` に変えても全 957 本が green のままで、commit 行と hunk 行が同じ色に
 // なる退行を 1 本も検出しなかった。ここでは値をリテラルで pin し、意味の違う色どうしが
 // 衝突しないことを固定する。

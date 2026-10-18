@@ -1,7 +1,7 @@
 //go:build !nofixture
 
 // fixture.go は main のテスト用の口なので、到達不能のコードの検査 (scripts/check_unused_excluding_tests.sh) は
-// -tags=nofixture でこのファイルを外して走る (ここを根に数えると、Fixture からしか呼ばれない内部を見落とす。issue 817)。
+// -tags=nofixture でこのファイルを外して走る (ここを根に数えると、Fixture からしか呼ばれない内部を見落とす)。
 
 package usageview
 
@@ -12,7 +12,7 @@ import (
 )
 
 // Fixture は main のテスト (browseModel と組み合わせる配線のテスト) が usage の枠を特定の状態に置く・読むための口
-// (doctorview などの Fixture と同じ作法)。本番のコードは使わない (TestNoFixtureCallsInProduction が止める。issue 817)。
+// (doctorview などの Fixture と同じ作法)。本番のコードは使わない (TestNoFixtureCallsInProduction が止める)。
 type Fixture struct{ o *UsageOverlay }
 
 // Fixture はテスト用の口を返す (上の型の注記)。

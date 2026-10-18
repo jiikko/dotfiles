@@ -9,9 +9,9 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
-// 「次にやる」の目印 (next/) を symlink で表す層 (issue 263)。
+// 「次にやる」の目印 (next/) を symlink で表す層。
 //
-// 以前は issue ファイルそのものを `next/` へ rename していた。それだと本文の相対リンク
+// issue ファイルそのものを `next/` へ rename しない。rename すると本文の相対リンク
 // (`done/549-x.md` のように issue ディレクトリ直下を起点に書かれる) が 1 段下がった時点で全部切れ、
 // pre-push のリンク検査に落ちる (obaket で実測 2 回)。リンクを書き換えると claim という状態変更の
 // commit に本文の差分が混ざる。そこで **ファイルは動かさず、`next/<base>` に `../<base>` を指す

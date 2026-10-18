@@ -9,7 +9,7 @@ import (
 	"doctor/runner"
 )
 
-// brew doctor の出力転記 (issue 148 の 3 章、3 つ目のセクション。ユーザー要望 2026-09-02)。
+// brew doctor の出力転記 (ユーザー要望 2026-09-02)。
 //
 // 判定は持たない。brew の出力を写すだけ (器が「自前の判定を持たない項目」も載せられるかの検証)。
 // 実測 (Homebrew 6.0.20): 警告ありは stdout 空 / stderr に本文 / rc=1。先頭に定型の前置き 3 行。
@@ -36,8 +36,7 @@ func runBrewDoctor(ctx context.Context, run runner.Runner) brewDoctorResult {
 // parseBrewDoctor は出力を見出し単位にまとめる。rc=0 は警告なし。それ以外は本文を写す
 // (rc が 0 でも stderr に Warning があれば写す。rc だけで決めない)。
 func parseBrewDoctor(stdout, stderr string, rc int) brewDoctorResult {
-	// stdout と stderr は連結して読む (片方だけを選ぶと、前置きだけの stderr に負けて stdout の警告を落とす。
-	// 敵対レビュー 2026-09-02)
+	// stdout と stderr は連結して読む (片方だけを選ぶと、前置きだけの stderr に負けて stdout の警告を落とす)
 	body := stdout + "\n" + stderr
 	var blocks []string
 	var cur []string
@@ -61,9 +60,9 @@ func parseBrewDoctor(stdout, stderr string, rc int) brewDoctorResult {
 			cur = append(cur, line)
 		case strings.TrimSpace(line) == "":
 			// 空行では切らない: brew の警告は本文に空行を含み (diagnostic.rb の heredoc)、切ると
-			// 2 塊目以降が Warning: で始まらず others として黙って捨てられる (issue 171)。
+			// 2 塊目以降が Warning: で始まらず others として黙って捨てられる。
 			// ただし段落の切れ目としては残す: 前置き allowlist に無い行が警告のあいだに現れたとき、
-			// 直前の警告の本文へ地続きに繋がって見えるのを避ける (敵対レビュー 2026-09-03)。
+			// 直前の警告の本文へ地続きに繋がって見えるのを避ける。
 			// 塊の先頭・末尾の空行は持たない。
 			// 連続する空行は 1 つに畳む (段落区切りとしては 1 行で足り、展開時の余白が増えるだけ)
 			if len(cur) > 0 && cur[len(cur)-1] != "" {

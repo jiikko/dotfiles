@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// 開いた repo の .git/config の filter (clean / process) を、状態ビューの status とプレビューの diff で走らせない (issue 732)。
+// 開いた repo の .git/config の filter (clean / process) を、状態ビューの status とプレビューの diff で走らせない。
 // 対照として、filter を止めない runGitTimeout では同じ罠が走ることを見る (罠が作動しない fixture を緑にしない)。
 func TestGlogxGitDoesNotRunRepoFilters(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
@@ -78,7 +78,7 @@ func TestGlogxGitDoesNotRunRepoFilters(t *testing.T) {
 	}
 }
 
-// submodule の中の設定 (.git/modules/<名前>/config) の filter を、状態ビューの status とプレビューの diff で走らせない (issue 732)。
+// submodule の中の設定 (.git/modules/<名前>/config) の filter を、状態ビューの status とプレビューの diff で走らせない。
 // 子の git は submodule 自身の設定を読むので、親の設定の列挙と -c の上書きは届かない。--ignore-submodules=dirty で子を起こさない
 func TestGlogxGitDoesNotRunSubmoduleFilters(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {

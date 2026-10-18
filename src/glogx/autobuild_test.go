@@ -122,8 +122,8 @@ func TestAutobuildWatchHandle(t *testing.T) {
 		}
 	})
 
-	// 完成は伝えて監視終了 (ユーザー要望 2026-08-01)。🚨 以前は無言だった — 開始時に
-	// 「次回起動で反映」と伝えているため二度言うことになるから。その場で再起動できるように
+	// 完成は伝えて監視終了。🚨 無言にしない — 開始時に
+	// 「次回起動で反映」と伝えているが、その場で再起動できるように
 	// なったので意味が変わった: 完成は「行動できる」合図で、呼び出し側が再起動ダイアログを出す。
 	t.Run("完成は通知して監視終了", func(t *testing.T) {
 		w := newWatch()
@@ -242,8 +242,8 @@ func TestAutobuildMsgInstalledOpensRestartPrompt(t *testing.T) {
 
 // 中断できない処理 (claude update / push / pull) の最中は再起動ダイアログを出さない。
 //
-// 🚨 実際に起きた不具合の回帰防止: 以前は「キーは actModal が先に飲む」「描画は再起動ダイアログを
-// 後に重ねる」と順序を 2 箇所へ別々に書いていたため、update 中に裏ビルドが完成すると
+// 🚨 実際に起きた不具合の回帰防止: 「キーは actModal が先に飲む」「描画は再起動ダイアログを
+// 後に重ねる」の順序を 2 箇所へ別々に書くと、update 中に裏ビルドが完成すると
 // 「最前面のダイアログにどのキーも届かない」= 操作不能になった (実測: r/j/q/esc/enter/ctrl+g の
 // すべてが無反応)。しかもダイアログが更新中モーダルを覆うので、効かない理由も画面から消えていた。
 //
@@ -287,8 +287,8 @@ func TestRestartPromptDefersWhileBlockingOperation(t *testing.T) {
 	}
 }
 
-// 🚨 実際に起きた事故そのものの回帰防止。push 確認 (y/N) 中に裏ビルドが完成すると、以前は
-// 再起動ダイアログが最前面へ重なった。キーの持ち主は確認モーダルのままなので、画面の
+// 🚨 実際に起きた事故そのものの回帰防止。push 確認 (y/N) 中に裏ビルドが完成して
+// 再起動ダイアログが最前面へ重なると、キーの持ち主は確認モーダルのままなので、画面の
 // 「その他のキー: 後で」に従って押した y が push を実行した (無反応より悪い: 画面の指示に
 // 従うと破壊的操作が走る)。ダイアログを出さないことで「見えている選択肢 = 効く選択肢」を保つ。
 func TestRestartPromptDoesNotShadowPushConfirm(t *testing.T) {
@@ -369,7 +369,7 @@ func TestRestartPromptKeys(t *testing.T) {
 	})
 }
 
-// notify と keep が同時に立ったとき、監視の再アームを落とさない (issue 032)。
+// notify と keep が同時に立ったとき、監視の再アームを落とさない。
 //
 // handle は「開始を伝えた後も失敗を拾うため監視を続ける」をこの組み合わせで表す。通知した側で
 // tickCmd を捨てると監視チェーンが切れ、その後のビルド失敗が二度と通知されない (監視は失敗を
@@ -530,7 +530,7 @@ func TestAutobuildStaleWarnsAtStartup(t *testing.T) {
 		t.Error("失敗の警告が成功色になっている")
 	}
 	// 文面は原因 (失敗記録 / 誰もビルドしていない) ではなく次の行動を出す。どちらの根拠でも
-	// 復旧手順は同じで、理由はログにある (issue 033)。
+	// 復旧手順は同じで、理由はログにある。
 	for _, want := range []string{"古い版", "GO_AUTOBUILD_SYNC=1", ".autobuild.log"} {
 		if !strings.Contains(m.toast.Text(), want) {
 			t.Errorf("文面に %q が無い: %q", want, m.toast.Text())
@@ -648,7 +648,7 @@ func TestAutobuildStaleBinary(t *testing.T) {
 
 // ソースが自バイナリより新しい = 誰もビルドしていない、も stale の根拠にする。
 //
-// 🚨 これが無いと無言で旧版に固定される経路が残る (issue 033): lock 残留で shim が
+// 🚨 これが無いと無言で旧版に固定される経路が残る: lock 残留で shim が
 // 「他がビルド中」と誤認する / 同期ツールでソースの mtime が巻き戻り shim の -nt が偽になる /
 // shim を経ずバイナリを直接起動する。失敗記録はどれでも作られない。
 func TestAutobuildStaleFromNewerSources(t *testing.T) {

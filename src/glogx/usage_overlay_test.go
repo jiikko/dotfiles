@@ -278,7 +278,7 @@ func TestUsageLastGoodShowsStaleReason(t *testing.T) {
 
 // R のダッシュボードの `r` は、全プロセス共有のゲートの 5 分の間引きを飛ばして取り直す。定期の取得は
 // 間引きの内側 (claude を起こさない)。`r` が定期と同じ経路に戻ると、数分前の値が「今取った値」として
-// 入り、押しても取り直されない (issue 627 の敵対的レビュー)。
+// 入り、押しても取り直されない。
 func TestRatelimitDashRefreshKeyBypassesSharedGate(t *testing.T) {
 	dir := t.TempDir()
 	calls := filepath.Join(dir, "calls")

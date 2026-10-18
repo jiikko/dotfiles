@@ -264,7 +264,7 @@ func TestUnclaimChangesNothingWhenBannerClearFails(t *testing.T) {
 	}
 }
 
-// issue 748: front matter の境界は LoadMeta と同じ規則 (前後の空白を無視・閉じは --- か ...) で判定し、
+// front matter の境界は LoadMeta と同じ規則 (前後の空白を無視・閉じは --- か ...) で判定し、
 // バナーを front matter の後ろに入れる。前に入れると LoadMeta が front matter と見なくなり、status が消える。
 func TestAddBannerAfterFrontMatterOfEveryForm(t *testing.T) {
 	cases := map[string]string{
@@ -291,7 +291,7 @@ func TestAddBannerAfterFrontMatterOfEveryForm(t *testing.T) {
 			t.Errorf("%s: バナーを入れた後の Declared=%q Title=%q (本文 %q)", name, iss.Declared, iss.Title, got)
 		}
 		// バナーは front matter の外 (閉じの行より後ろ) に入る。Declared だけでは「front matter の中に入った」を
-		// 見分けられない形があるので、位置も見る (敵対レビュー 2 周目)
+		// 見分けられない形があるので、位置も見る
 		lines := strings.Split(got, "\n")
 		closeAt, bannerAt := -1, -1
 		for i, l := range lines {
@@ -312,7 +312,7 @@ func TestAddBannerAfterFrontMatterOfEveryForm(t *testing.T) {
 }
 
 // 除去も 2 実装 (Go の removeBanner と scripts/lib/claim_banner.awk の strip。後者は scripts/issue_done.sh が done へ送るときに使う)
-// が同じ結果を出すことを見る。ずれると viewer で送った issue と issue_done.sh で送った issue で本文が変わる (issue 763)。
+// が同じ結果を出すことを見る。ずれると viewer で送った issue と issue_done.sh で送った issue で本文が変わる。
 func TestRemoveBannerMatchesShellStrip(t *testing.T) {
 	awkPath, err := filepath.Abs("../../../scripts/lib/claim_banner.awk")
 	if err != nil {

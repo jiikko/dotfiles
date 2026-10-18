@@ -151,7 +151,7 @@ func (a *actionModal) runningQuitHint() string {
 func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 	// 確認の「実行」キーは y か Enter (Enter=y はユーザー要望 2026-07-21)。それ以外はキャンセル。
 	// 🚨 大文字 `Y` も受理する (IsYes)。これを markNextKey の厳密判定へ揃えないのは
-	//    意図的 (理由は status_view.go:discardKey の注記。issue 071 / 123)。
+	//    意図的 (理由は status_view.go:discardKey の注記)。
 	confirmYes := confirm.IsYes(key)
 	if a.pushConfirm {
 		a.pushConfirm = false
@@ -205,12 +205,12 @@ func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 		//
 		// 🚨 consumed=false で browseModel へ素通ししないこと。素通しは全画面 viewer の
 		// キー語彙に漏れる: status viewer を開いた状態で X が「変更の破棄」確認を立て、
-		// update 完了後の y で git restore が着弾するのを実測した (red team 2026-08-21)。
+		// update 完了後の y で git restore が着弾するのを実測した。
 		// この型の doc が禁じている「描かれるモーダルとキーを受け取るモーダルのずれ」そのもの。
 		//
 		// 🚨 同じ CLI のキーは消費して何もしない: 判定 Cmd を走らせると、その結果
 		// (「すでに latest」の早期リターン) が走行中の update を降ろしてしまう
-		// (終了ガードが解けて自己更新が孤児化 / 二重起動する。同 red team が実測)。
+		// (終了ガードが解けて自己更新が孤児化 / 二重起動する。2026-08-21 に実測)。
 		// push / pull / rerun 中は update を重ねないので従来どおり飲む。
 		if target, ok := updateKeyTarget(key); ok && a.anyUpdating() &&
 			!a.pushing && !a.pulling && !a.rerunning {
@@ -262,7 +262,7 @@ func (a *actionModal) askPull() { a.pullConfirm = true }
 // 🚨 **その帰結として、C / X を押してから最大 5 秒 (claudeVersionFetchTimeout) 画面が
 //
 //	まったく変化しない** — 判定が `claude --version` の起動待ちだから。これは上の不変条件を
-//	選んだ副作用で、既知 (issue 123 の ux 監査が指摘し、074 の不変条件 4 を根拠に却下)。
+//	選んだ副作用で、既知 (上の不変条件を根拠に受容している)。
 //	埋めるなら「判定が 800ms を超えたときだけ右下トーストで『確認中...』」のように、
 //	spinner モーダルを光らせない形にすること。
 func (a *actionModal) startUpdate() tea.Cmd {

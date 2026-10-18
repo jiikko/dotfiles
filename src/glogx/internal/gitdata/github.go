@@ -55,7 +55,7 @@ type GHError struct {
 func (e *GHError) Error() string { return e.Detail }
 
 // Warning はユーザー向けの 1 行警告文。Detail は gh の stderr (外部の文字列) を含むので平文にしてから出す
-// (hint 行と main の stderr への直接出力の両方がここを通る。issue 417)。
+// (hint 行と main の stderr への直接出力の両方がここを通る)。
 func (e *GHError) Warning() string {
 	switch e.Kind {
 	case GHNotInstalled:
@@ -193,7 +193,7 @@ type CheckDetail struct {
 
 // running は「実行中 (経過時間が意味を持つ) job」か。pending でも StartedAt が zero のものは
 // queued / StatusContext であって実行中ではない。経過時間表示・ETA basis 取得・パネルの
-// ライブ更新判定が共有する (同じ式が 3 箇所に直書きされていた。issue 030)。
+// ライブ更新判定が共有する (同じ式が 3 箇所に直書きされていた)。
 func (j CheckDetail) Running() bool { return j.State == StatePending && !j.StartedAt.IsZero() }
 
 type rollupPayload struct {
@@ -425,7 +425,7 @@ func parseStatusResponse(stdout []byte, shas []string) (CIBatch, *GHError) {
 }
 
 // pickBestByState は複数 PR (cherry-pick 等) から OPEN > MERGED > その他 の優先で 1 件選ぶ。
-// 無ければ nil。PRRef と PRStatus (issue 021) で共用する。
+// 無ければ nil。PRRef と PRStatus で共用する。
 func pickBestByState[T any](nodes []T, state func(*T) string) *T {
 	if len(nodes) == 0 {
 		return nil
@@ -446,7 +446,7 @@ func pickBestPR(nodes []PRRef) *PRRef {
 		return nil
 	}
 	// この url はブラウザで開く経路 (openURLCmd) へ流れる。GitHub が作る値だが、job の url と同じく
-	// 受け取った時点で平文にしておく (issue 417)。PR ポップアップの y (コピー) は FetchPRStatus の
+	// 受け取った時点で平文にしておく。PR ポップアップの y (コピー) は FetchPRStatus の
 	// 別の経路で、そちらはコピーする直前に無害化している
 	pr := *best
 	pr.URL = term.SanitizePlainLine(pr.URL)
@@ -564,7 +564,7 @@ func detailsOf(rollup *rollupPayload) []CheckDetail {
 		// name と url は外部 (StatusContext を作る任意のインテグレーション) が制御できる文字列。
 		// name はパネルと終了後の静的出力へ、url はクリップボード (copyFocusURL / copyJobContextLines) と
 		// ブラウザへ流れるので、ここで 1 回だけ無害化する (コピーする側ごとに無害化すると片方が漏れる。
-		// issue 417: copyFocusURL が生の url をクリップボードへ入れていた)。url は色も要らないので平文にする
+		// copyFocusURL が生の url をクリップボードへ入れていた)。url は色も要らないので平文にする
 		details = append(details, CheckDetail{
 			Name:      term.SanitizeDetailLine(name),
 			State:     nodeState(node),
@@ -728,7 +728,7 @@ func fetchJobSteps(ctx context.Context, run CommandRunner, repo Repo, jobID stri
 // 大文字) と REST (stepGlyph、小文字) の両方が使うため大文字化して比較する (別々の
 // case 列で二重管理すると、片方だけ値を足して食い違う)。API 仕様外の非カノニカル case が
 // 来た場合も判定が成立する堅牢化を含む。success 判定 (EqualFold) も同じ規約で、
-// failure 側だけ case-insensitive という非対称契約にしない (敵対的レビュー 2026-08-13)。
+// failure 側だけ case-insensitive という非対称契約にしない。
 func isFailureConclusion(conclusion string) bool {
 	switch strings.ToUpper(conclusion) {
 	case "FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE":
@@ -811,7 +811,7 @@ func FetchCommitPR(ctx context.Context, run CommandRunner, repo Repo, sha string
 
 // fetchAssociatedPRs は「commit に紐づく PR を単発 GraphQL で取る」骨格の共通実装。
 // FetchCommitPR (PRRef) と FetchPRStatus (PRStatus) は nodes の field list と Node 型だけが
-// 違い、クエリ発行〜レスポンス解析は同一だった (issue 030 の重複除去)。fields は GraphQL の
+// 違い、クエリ発行〜レスポンス解析は同一なので共通化している。fields は GraphQL の
 // nodes フィールド列。commit が見つからない場合は (nil, nil)。
 func fetchAssociatedPRs[T any](ctx context.Context, run CommandRunner, repo Repo, sha, fields string) ([]T, *GHError) {
 	query := fmt.Sprintf(`query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
@@ -843,9 +843,9 @@ func fetchAssociatedPRs[T any](ctx context.Context, run CommandRunner, repo Repo
 	return obj.AssociatedPullRequests.Nodes, nil
 }
 
-// PRStatus は PR 状態ポップアップ (P キー, issue 021) 用の詳細フィールド。一括クエリの
+// PRStatus は PR 状態ポップアップ (P キー) 用の詳細フィールド。一括クエリの
 // PRRef (number/url/state) は変えず、P 押下時のオンデマンド単発 GraphQL でだけ取る
-// (一括クエリの肥大とファイルキャッシュ形式への波及を避ける。詳細は issue 021)。
+// (一括クエリの肥大とファイルキャッシュ形式への波及を避ける)。
 type PRStatus struct {
 	PRRef
 	Title          string `json:"title"`

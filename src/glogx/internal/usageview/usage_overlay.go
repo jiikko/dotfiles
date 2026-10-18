@@ -21,7 +21,7 @@ import (
 )
 
 // usageMsg は /usage の非同期取得結果 (右上オーバーレイ用)。2 つの形がある:
-//   - part != nil: 出所 (Claude / codex) ごとの 1 本の結果。1 回の取得で 2 通届き、届いた方から表示へ入る (issue 626)
+//   - part != nil: 出所 (Claude / codex) ごとの 1 本の結果。1 回の取得で 2 通届き、届いた方から表示へ入る
 //   - part == nil: その周の結果を丸ごと持つ (ディスクキャッシュの hit。snap / err)
 type UsageMsg struct {
 	snap *usage.Snapshot
@@ -82,7 +82,7 @@ type UsageOverlay struct {
 	Err     error           // 取得失敗 (表示は "取得失敗" に落とす)
 	// cancel は fetch 専用の cancel。quit で走行中の subprocess を中断する。browseModel の
 	// CI fetch 用 cancel とは別立て: 共有すると CI fetch 完了時の defer cancel() が走行中の
-	// usage fetch を巻き添えキャンセルして "取得失敗" に落ちる (レビュー指摘 2026-07-21)。
+	// usage fetch を巻き添えキャンセルして "取得失敗" に落ちる。
 	cancel context.CancelFunc
 	// inFlight は fetch の single-flight ガード (fetchCmd で立て、結果の handle で降ろす)。
 	// cancel が単一スロットのため、fetch を overlap させると先行分の cancel を上書きで取りこぼし、
@@ -108,7 +108,7 @@ type UsageOverlay struct {
 // fetchCmd は Claude Code の /usage と codex の rateLimits を非同期取得する tea.Cmd。
 // 2 本を同時に投げ (Cmd が tea.BatchMsg を返す)、出所ごとに usageMsg が届く。速い方 (codex app-server は
 // 0.6〜1.2s) を遅い方 (claude subprocess は 1 回 ≈ 2.0s wall / 1.8s CPU。実測 2026-07-25。支配的なのは node 起動 +
-// Claude Code セッション初期化で、/usage の内部処理は 462ms) に待たせない (issue 626)。どちらもトークン課金は
+// Claude Code セッション初期化で、/usage の内部処理は 462ms) に待たせない。どちらもトークン課金は
 // 発生しない。初期描画のクリティカルパスには乗せない。cancel を保持し、quit 時に走行中の
 // subprocess を中断できるようにする (fast-quit での子プロセスのオーファン化を防ぐ)。起動時に 1 回 + 以降 app.UsageRefreshInterval ごとにバックグラウンド再取得で呼ばれる
 // (U トグルは再 fetch しない)。定期リフレッシュ中も表示は last-good を保つ (handle 参照)。
@@ -119,7 +119,7 @@ type UsageOverlay struct {
 func (o *UsageOverlay) FetchCmd(useCache bool) tea.Cmd { return o.fetchCmdWith(useCache, false) }
 
 // usageFooter は箱の末尾の文言。表示は app.UsageRefreshInterval ごとに読み直すが、Claude の枠そのものは
-// 全プロセス共有のゲートの間隔 (usage.SharedFresh) でしか新しくならないので、そちらを出す (issue 627)。
+// 全プロセス共有のゲートの間隔 (usage.SharedFresh) でしか新しくならないので、そちらを出す。
 var usageFooter = strconv.Itoa(int(usage.SharedFresh/time.Minute)) + "分ごとに更新"
 
 // fetchNowCmd は人が「今すぐ取り直す」を押したときの取得。Claude 側は全プロセス共有のゲートの
@@ -132,7 +132,7 @@ func (o *UsageOverlay) fetchCmdWith(useCache, force bool) tea.Cmd {
 	}
 	o.inFlight = true
 	// 取り消し (stop) は今持つが、timeout の時計は走り出してから刻む: 起動時の取得は CI の取得が終わるまで
-	// 預けられる (issue 570) ので、ここで刻み始めると預けている間に持ち時間を失う
+	// 預けられる ので、ここで刻み始めると預けている間に持ち時間を失う
 	parent, cancel := context.WithCancel(context.Background())
 	o.cancel = cancel
 	// last-good の出典は周の始まりの表示。束縛は UI スレッドのここで行う
@@ -204,7 +204,7 @@ func (o *UsageOverlay) endRound() {
 //
 // 🚨 usageMsg は周の番号を持たない。周を閉じる (endRound) のは、2 本がそろったときとキャッシュの hit
 // (part を投げない) だけなので、閉じた後に part が届く経路は今は無い。周の途中で showCached や part の無い
-// usageMsg を入れる経路を足すなら、周の番号を持たせてから足す (敵対的レビュー 2026-10-02 の記録)。
+// usageMsg を入れる経路を足すなら、周の番号を持たせてから足す。
 func (o *UsageOverlay) Handle(msg UsageMsg) tea.Cmd {
 	if msg.part == nil {
 		o.endRound()
@@ -303,7 +303,7 @@ func (o *UsageOverlay) waiting() []string {
 }
 
 // view は描く Snapshot (U の箱と R の盤の両方がこれを描く。spinner は場所取りに添えるスピナーの今のコマ)。まだ届いていない出所には場所取りの枠
-// (usage.PendingWindows) を入れ、届いた後とレイアウト (行の数・列の幅・盤の段) を揃える (issue 626)。
+// (usage.PendingWindows) を入れ、届いた後とレイアウト (行の数・列の幅・盤の段) を揃える。
 // 場所取りは表示だけのもので、o.snap には入れない (キャッシュ・last-good の出典を汚さない)。
 func (o *UsageOverlay) View(spinner string) *usage.Snapshot {
 	srcs := o.waitingSources()

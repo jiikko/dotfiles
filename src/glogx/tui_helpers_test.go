@@ -22,9 +22,9 @@ import (
 //
 // 🚨 差さないと、キー操作の先で **実マシンに対する走査**が始まる: `D` で開く経路だけでなく、
 // 削除の結果パネルを閉じる (= doctorview.DoctorRescan) のような**間接的な経路**でも起きる。
-// 実測 2026-09-03 (issue 216): glogx のテスト全体で実 `xcrun` / `brew` / `pgrep` を 29 回叩き、
+// 実測 2026-09-03: glogx のテスト全体で実 `xcrun` / `brew` / `pgrep` を 29 回叩き、
 // しかも `t.Cleanup(m.cancel)` は join しないので goroutine が次のテストへ跨いでいた
-// (issue 214 のデータ競合はその跨ぎが踏んだ 1 個)。
+// (データ競合はその跨ぎが踏んだ)。
 //
 // カタログを空にするのが要点: エントリが 0 件なら走査は即座に終わり、Run も呼ばれない。
 // doctor 自体を検査するテストは `doctorTestView` を使うか、この後で seam を上書きする。
@@ -73,7 +73,7 @@ func joinDoctorCleanup(t *testing.T) {
 
 // TestMain は隔離した環境でテストを走らせる (前処理の中身と理由は internal/testenv の Main が正本)。
 // main のパッケージ固有の前処理: mac-lan-manager (L) の本物のネットワークの読み取り (networksetup) と Bonjour の走査
-// (終わらない dns-sd) を起こさない (fullscreen_test は横断キーで全部の板を開く。issue 747)。
+// (終わらない dns-sd) を起こさない (fullscreen_test は横断キーで全部の板を開く)。
 func TestMain(m *testing.M) {
 	testenv.Main(m, "glogx-cache", func(string) { lanview.FixtureSetOptions(fakeLanOptions) })
 }
@@ -88,7 +88,7 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]gitdata.CIState, toF
 			Date: "Thu Jul 16 19:12:47 2026 +0900", RelDate: "now", Message: "subject",
 		}
 	}
-	// NoFrame: true = 最外周フレームを明示 OFF (issue 025)。既存の View/overlay/panel テストの
+	// NoFrame: true = 最外周フレームを明示 OFF。既存の View/overlay/panel テストの
 	// 期待値を変えない。現行 80×10 は frameMinHeight 未満で自動 OFF だが、途中で width/height を
 	// 大きくするテストが誤ってフレームを踏まないよう明示 OFF を決定的にする。
 	m := newBrowseModel(commits, statuses, toFetch, gitdata.Repo{Owner: "o", Name: "r"}, true,
@@ -97,11 +97,11 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]gitdata.CIState, toF
 	t.Cleanup(func() {
 		// 🚨 `m.cancel` ではなく `m.cancelAll`。前者は browseModel 自身の fetch ctx だけで
 		// **doctorOv.stop() を呼ばない**ので、走っている走査は止まらない。上限なしの join と
-		// 組み合わさると**パッケージ全体がハングする** (敵対レビュー 2026-09-03 が再現)。
+		// 組み合わさると**パッケージ全体がハングする** (2026-09-03 に再現)。
 		// production の quit / main.go と同じ後始末にすることで fidelity も上がる
 		m.cancelAll()
-		// ⚠️ cancel は**子の死を待たない** (doctorview.DoctorView.Stop() のコメントが正本。issue 211)。
-		// join しないと走査 goroutine が次のテストへ跨ぎ、package 変数を踏む (issue 214 / 216)
+		// ⚠️ cancel は**子の死を待たない** (doctorview.DoctorView.Stop() のコメントが正本)。
+		// join しないと走査 goroutine が次のテストへ跨ぎ、package 変数を踏む
 		joinDoctorCleanup(t)
 	})
 	// 🚨 開閉の演出はテストでは切る (zoom.go)。View の期待値が「中央から開く途中の姿」に
@@ -160,8 +160,8 @@ func withJobs(m *browseModel, idx int) {
 const testPopupTermWidth = testenv.PopupWidth + frameHOverhead
 
 // testHintBudget は hint 文字列が収まるべき桁数。🚨 production の browseModel.hintWidth() から
-// 導く (数字を書かない)。以前は issues のテストが 84 (content 幅)、hint_width_test が 84-2 と
-// 別々の数字を持っており、実効 (端末 91 桁 - 2 = 89) とも一致していなかった。予算が 3 通りあると
+// 導く (数字を書かない)。テストごとに別の数字 (84 や 84-2) を持つと、実効 (端末 91 桁 - 2 = 89) とも
+// 一致しない。予算が 3 通りあると
 // hint を 1 つ足したとき「どのテストが正本か」で迷う。
 func testHintBudget(t *testing.T) int {
 	t.Helper()
@@ -228,7 +228,7 @@ func withFailedJob(m *browseModel, idx int, checkID int64, state gitdata.CIState
 	}
 }
 
-// 画面のパッケージのテストが使う hint の予算 (testenv.PopupHintBudget) は、main の hintWidth と同じ値 (issue 817)。
+// 画面のパッケージのテストが使う hint の予算 (testenv.PopupHintBudget) は、main の hintWidth と同じ値。
 // 🚨 frame の寸法や hint の余白を変えてここが落ちたら、testenv の定数を直す (画面のテストが古い予算で緑のまま通らないように)。
 func TestPopupHintBudgetMatchesBrowse(t *testing.T) {
 	if got := testHintBudget(t); got != testenv.PopupHintBudget {

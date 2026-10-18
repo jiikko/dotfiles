@@ -9,8 +9,7 @@ import (
 	"testing"
 )
 
-// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (issue 817 で画面を移したとき、
-// 両方のテストが使っていたもの)。
+// main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (両方のテストが使っていたもの)。
 
 // newTempRepo はコミット付きの一時リポジトリを作り、そのディレクトリへ chdir する。
 func newTempRepo(t *testing.T, subjects []string) string {

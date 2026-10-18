@@ -70,15 +70,14 @@ var checkboxRe = regexp.MustCompile(`^\s*[-*+]\s+\[([ xX])\]`)
 // 持つと**一覧を出すたびに全 issue の全文を読む**ことになっていた (LoadMeta の doc)。
 // Body は issue を開いたときだけ作られ、その時点で全文がメモリにあるので追加の I/O が要らない。
 //
-// 🚨 数える範囲が旧 Issue.Progress と 1 点だけ違う: **front matter 内の行も数える**。
-// 旧実装は front matter を別分岐で処理していたため数えなかった (実測差分: 先頭が `---` で
-// 始まり front matter 内に `- [x]` がある入力で旧 1/1 に対し新 2/3 等。2026-08-14 の R1
-// レビューが 426 件の差分入力を提示)。front matter に checkbox を書く issue は
+// 🚨 **front matter 内の行も数える**。
+// front matter を別分岐で処理して除くと、先頭が `---` で始まり front matter 内に
+// `- [x]` がある入力で数が変わる。front matter に checkbox を書く issue は
 // この repo に存在しない (51 件すべて front matter 無し) ため実害は無いと判断して
 // この差を受け入れる。「先頭 `---` ブロック」の規則を Body 側にも複製すると
 // 同じ規則が 2 箇所になるので、そちらは採らない。
 //
-// 🚨 コードフェンス内の `- [ ]` も数える (checkboxRe はフェンス非対応)。これは旧と同じ挙動。
+// 🚨 コードフェンス内の `- [ ]` も数える (checkboxRe はフェンス非対応)。これは意図した挙動。
 // フェンス対応が要るなら別 issue で。
 func (b *Body) Progress() string {
 	if b.progressDone {
@@ -227,7 +226,7 @@ func (b *Body) Len() int { return len(b.lines) }
 // U+009B (CSI) / U+009D (OSC) は端末によっては ESC[ / ESC] と同義に解釈されるので、負クラスから
 // 漏れると URL ピッカーの行 (url_picker.go) まで到達する。
 // 文字の向きを変える制御文字 (U+202A-202E / U+2066-2069) と行・段落の区切り (U+2028 / 2029) でも切る: URL に混ざると
-// 一覧の見た目が並べ替わり、開く先 (実際の URL) と食い違う (issue 698 の 3。termsafe の isBidiControl と同じ範囲)。
+// 一覧の見た目が並べ替わり、開く先 (実際の URL) と食い違う (termsafe の isBidiControl と同じ範囲)。
 var urlRe = regexp.MustCompile(`https?://[^\s)\]>"'` + "`" + `\x00-\x1f\x7f\x{80}-\x{9f}\x{202a}-\x{202e}\x{2066}-\x{2069}\x{2028}\x{2029}]+`)
 
 // URLs は本文に現れる http(s) URL を出現順で返す (重複は最初の 1 つだけ)。

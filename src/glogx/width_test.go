@@ -42,8 +42,7 @@ func TestWrapToWidthKeepsEmojiCluster(t *testing.T) {
 
 // term.DropEmojiVS16 は VS16 (U+FE0F) を除去し bare 記号 (双方幅 1 で端末と食い違わない) へ倒す。
 // term.DropEmojiVS16 は termsafe.DropEmojiVS16 への 1 行 alias なので、**除去そのものの検査は
-// termsafe/termsafe_test.go:TestDropEmojiVS16 が持つ** (1 つの変異で両方が落ちる重複だった。
-// issue 198 発見 5)。ここに残すのは main / termwidth 固有の主張だけ。
+// termsafe/termsafe_test.go:TestDropEmojiVS16 が持つ** (1 つの変異で両方が落ちる重複になる)。ここに残すのは main / termwidth 固有の主張だけ。
 func TestDropEmojiVS16BareWidth(t *testing.T) {
 	// bare 記号は描画エンジンでも幅 1 (端末実測とも一致) — この不変条件が崩れたら再発
 	if w := term.DispWidth("⚠"); w != 1 {
@@ -81,19 +80,19 @@ func TestOverlayCompositeWidthWithEmoji(t *testing.T) {
 	}
 }
 
-// TestNoSecondWidthEngine は「表示幅を測るのは term.DispWidth ただ 1 系統」を強制する (issue 112)。
+// TestNoSecondWidthEngine は「表示幅を測るのは term.DispWidth ただ 1 系統」を強制する。
 //
 // なぜ depguard でなくテストか: depguard は**パッケージ単位**でしか禁止できず、
 // 「同じパッケージの中の 2 本目のモデル」(ansi.StringWidthWc) を止められない。
 // import そのものの禁止は .golangci.yml の depguard (`width-single-source` /
 // `uniseg-split-only`) が担当する。両輪。
-// ⚠️ issue 124 で uniseg は本体から消えた (分割も termwidth.FirstCluster へ寄せた) ので、
+// ⚠️ uniseg は本体から消えた (分割も termwidth.FirstCluster へ寄せた) ので、
 // 下の importsUniseg 分岐が守るのは「uniseg を再び持ち込んだファイル」だけになった。
 // depguard がその import 自体を止めるため二重だが、depguard の除外リストを緩めた瞬間に
 // 効き始める側なので残す。
 //
-// ⚠️ この検査は文字列一致なので万能ではない。敵対的レビュー (2026-08-27) が
-// **識別子 1 語の書き換えで素通りする経路**を実証した:
+// ⚠️ この検査は文字列一致なので万能ではない。
+// **識別子 1 語の書き換えで素通りする経路**がある (2026-08-27 に実証):
 //   - uniseg を既に import しているファイルで `term.DispWidth(c)` を `g.Width()` に変える
 //   - 同じ x/ansi の 2 本目のモデル `ansi.StringWidthWc` を使う
 //
@@ -127,7 +126,7 @@ func TestNoSecondWidthEngine(t *testing.T) {
 		text := string(src)
 		// uniseg を import しているファイルでは、uniseg 側の幅 API (Graphemes.Width) も塞ぐ。
 		// これを入れないと `w: term.DispWidth(c)` を `w: g.Width()` に変えるだけで幅が uniseg へ戻る
-		// (全テスト green のまま通ることを敵対的レビューが実測)。
+		// (全テスト green のまま通ることを実測した)。
 		importsUniseg := strings.Contains(text, `"github.com/rivo/uniseg"`)
 		for i, line := range strings.Split(text, "\n") {
 			trimmed := strings.TrimSpace(line)

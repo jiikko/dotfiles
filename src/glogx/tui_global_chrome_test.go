@@ -1,10 +1,9 @@
 package main
 
 // グローバル chrome (どの画面でも出るべきオーバーレイ) が全ビューで載ることの回帰テスト
-// (issue 085)。
 //
-// なぜ必要か: 以前は合成が「一覧用」と「viewer 用」に逐語 2 コピーあり、viewer が全画面だった頃に
-// 一覧側にしか書いていなかったため「issues を開いている間は通知が画面に一切出ない」時期があった。
+// なぜ必要か: 合成が「一覧用」と「viewer 用」に逐語 2 コピーあると、片方にしか書かず
+// 「issues を開いている間は通知が画面に一切出ない」状態になりうる。
 // 合成は finishWithGlobalChrome に一本化したので、この検査は「一本化が外れて片方の経路が
 // 素の finishWindow に戻る」変異を捕まえる。
 //
@@ -182,7 +181,7 @@ func TestToastLongTextWrapsWithinViewWidth(t *testing.T) {
 	}
 }
 
-// 折り返した長い警告 2 枚も、窓に余裕があれば 2 枚とも描く (予算を 1 行の箱の高さで数えると 2 枚目が落ちる。敵対レビュー P2-1)。
+// 折り返した長い警告 2 枚も、窓に余裕があれば 2 枚とも描く (予算を 1 行の箱の高さで数えると 2 枚目が落ちる)。
 func TestToastDrawBudgetFitsTwoWrappedWarnings(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
 	m.width, m.height = 50, 17 // page=16: 半ページは 8 行 = 1 行の箱なら 2 枚ぶん
@@ -197,7 +196,7 @@ func TestToastDrawBudgetFitsTwoWrappedWarnings(t *testing.T) {
 	}
 }
 
-// 警告の無い 1 行の箱は、中くらいの窓でも 2 枚まで (予算の下限を一律に上げると 3 枚入って窓を覆う。敵対レビュー 2 周目)。
+// 警告の無い 1 行の箱は、中くらいの窓でも 2 枚まで (予算の下限を一律に上げると 3 枚入って窓を覆う)。
 func TestToastShortSuccessesStayWithinHalfPage(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
 	m.width, m.height = 100, 14 // page=13
@@ -214,7 +213,7 @@ func TestToastShortSuccessesStayWithinHalfPage(t *testing.T) {
 }
 
 // 長い警告 2 枚の後に成功が来ても、窓に余裕があれば警告 2 枚とも描く (最新の成功の箱が警告の予算を先に使い、
-// 古い警告が落ちていた。issue 484 の page=20 の再現)。
+// 古い警告が落ちる。page=20 の再現)。
 func TestToastBudgetReservesNewestSuccessAndTwoWarnings(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
 	m.width, m.height = 50, 21 // page=20

@@ -58,7 +58,7 @@ var runGitPush = func(ctx context.Context) error {
 // abort (runGitPullRebase 内) が走り切る前にプロセスごと消え、repo に rebase-merge が残る。
 // 登録は tea.Cmd の closure 側 (actionModal.handleKey)、看取りは main.go の waitPullCleanup。
 //
-// 🚨 **sync.WaitGroup ではなく app.CleanupLatch を使う** (issue 217 で載せ替えた)。登録が
+// 🚨 **sync.WaitGroup ではなく app.CleanupLatch を使う**。登録が
 // tea.Cmd の closure 側なので、**カウント 0 での Add が Wait と同時に走りうる**形になっている。
 // WaitGroup はそれを禁じており、`race.Enabled` に囲まれていない panic
 // (`sync: WaitGroup misuse: Add called concurrently with Wait`) なので **production でも落ちうる**。
@@ -72,8 +72,8 @@ var pullCleanup app.CleanupLatch
 // 理由を出す (無言で固まったように見せない)。
 func waitPullCleanup() {
 	// wait() は channel を返すだけでブロックしないので、goroutine を挟まず同期に取る
-	// (doctorview.WaitDoctorCleanup と同じ形。WaitGroup 時代は Wait() がブロックしたので goroutine が
-	// 要ったが、載せ替えで不要になった。残すと latch を読む瞬間だけ非決定になる。issue 217)
+	// (doctorview.WaitDoctorCleanup と同じ形。WaitGroup のように Wait() をブロックさせないので goroutine は要らない。
+	// goroutine を挟むと latch を読む瞬間だけ非決定になる)
 	done := pullCleanup.Wait()
 	select {
 	case <-done:
@@ -94,7 +94,7 @@ func waitPullCleanup() {
 // しない: 復元 pop の衝突で working tree に壊れた状態を残しうるため。ユーザー選定 2026-07-22)。
 var runGitPullRebase = func(ctx context.Context) error {
 	// 途中状態の検査を作業ツリーの検査より先に回す。conflict で止まった rebase / merge は作業ツリーが汚れているので、
-	// 逆の順だと「commit か stash して」と案内し、rebase の途中で commit を勧めてしまう (2026-10-02 の敵対的レビュー)
+	// 逆の順だと「commit か stash して」と案内し、rebase の途中で commit を勧めてしまう
 	op, opErr := operationInProgress()
 	if opErr == nil && op != "" {
 		return fmt.Errorf("%s の途中なので pull (--rebase) しません。シェルで続けるか中止して片付けてから u で再度 pull してください", op)
@@ -107,9 +107,9 @@ var runGitPullRebase = func(ctx context.Context) error {
 	// 成果を捨てていた (2026-10-02 の監査で前提を再現)。後始末の abort は「pull の前には rebase が無かった」と
 	// 確かめられたときだけにする (確かめられないなら、その rebase が pull の起こしたものだと言えないので触らない)
 	// rebase 以外の途中状態 (cherry-pick / revert / merge / 複数の pick の sequencer) も断る。空になった cherry-pick で止まった状態は
-	// 作業ツリーが clean で、pull --rebase がその CHERRY_PICK_HEAD を消していた (2026-10-02 の敵対的レビュー)
+	// 作業ツリーが clean で、pull --rebase がその CHERRY_PICK_HEAD を消していた
 	// 🚨 検査は fetch の前の 1 回だけ。fetch の最中 (ネットワークの数秒) に別の端末で rebase を始めると、その rebase を
-	// pull のものと区別できず、pull が conflict すると後始末が abort しうる (2026-10-02 の敵対的レビューで指摘。同じ repo で
+	// pull のものと区別できず、pull が conflict すると後始末が abort しうる (2026-10-02 に指摘された。同じ repo で
 	// u を押した数秒のうちに手で rebase を始めた場合だけで、記録に留める)
 	out, err := noPromptGitCmd(ctx, "pull", "--rebase").CombinedOutput()
 	if err == nil {
@@ -243,7 +243,7 @@ var runJobRerun = func(ctx context.Context, repo gitdata.Repo, jobID int64) erro
 
 // jobRerun は失敗 job を GitHub Actions 上で再実行する (`gh run rerun --job <id>`)。
 // run 全体でなく job 単位なのは、パネルのフォーカス単位が job であり run id を
-// 保持していないため (issue 019)。認証は gh へ委譲。
+// 保持していないため。認証は gh へ委譲。
 func jobRerun(ctx context.Context, run gitdata.CommandRunner, repo gitdata.Repo, jobID int64) error {
 	_, stderr, err := run(ctx, "gh", "run", "rerun",
 		"--job", strconv.FormatInt(jobID, 10), "-R", repo.Owner+"/"+repo.Name)
@@ -261,7 +261,7 @@ func jobRerun(ctx context.Context, run gitdata.CommandRunner, repo gitdata.Repo,
 // ハングしても機能が 1 つ欠ける (prefix ガード無効など) だけで済む操作なので、
 // gitOpTimeout (30s) より短く切る。tea.Cmd の goroutine や Update の同期経路から呼ばれる
 // ため、上限が無いと応答しないサーバ (tmux デッドロック) で goroutine と
-// 子プロセスが glogx 終了まで残る (issue 029 P2/P3 と同じ規律)。
+// 子プロセスが glogx 終了まで残る。
 const localCmdTimeout = 5 * time.Second
 
 // loadTmuxPrefix は tmux サーバの現在の prefix を bubbletea キー表記で返す

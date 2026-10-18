@@ -109,7 +109,7 @@ func TestRLDashLoading(t *testing.T) {
 	}
 }
 
-// 片方だけ届いた最初の取得では、届いた分の盤を描き、まだの出所を見出しの下に「取得中」と出す (issue 626)。
+// 片方だけ届いた最初の取得では、届いた分の盤を描き、まだの出所を見出しの下に「取得中」と出す。
 // 盤の描画キャッシュは「取得中」の有無で外れる (同じ snap のまま待ちが終わっても行が残らない)。
 func TestRatelimitDashShowsWaitingSource(t *testing.T) {
 	var m browseModel
@@ -139,7 +139,7 @@ func TestRatelimitDashShowsWaitingSource(t *testing.T) {
 	}
 }
 
-// 何も届いていない最初の取得でも、盤は場所取りのカードで届いた後と同じ段を取る (中央の 1 行の「取得中...」にしない。issue 626)。
+// 何も届いていない最初の取得でも、盤は場所取りのカードで届いた後と同じ段を取る (中央の 1 行の「取得中...」にしない)。
 // 初回の全滅の後の取り直しは「取得失敗」のまま (場所取りで隠さない)。
 func TestRatelimitDashPlaceholdersBeforeAnyArrives(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())

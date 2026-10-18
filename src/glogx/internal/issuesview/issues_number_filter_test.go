@@ -190,7 +190,7 @@ func TestIssuesNumberFilterHeaderReplacesTabLine(t *testing.T) {
 // isDigitKey は番号フィルタ入力の**唯一の関門**。issues_view.go:handleKey は typing 中の
 // 全キーを numberFilterKey へ流し、default が edit(key) を呼ぶので、ここが 1 文字ずれると
 // `/` (フィルタを開くキー自身) や `:` が検索語に入り「番号に『12/』を含む issue はありません」
-// になる。境界を両側で pin する (issue 287。`'0'` を `'/'` へずらす変異が全スイート緑だった)。
+// になる。境界を両側で pin する (`'0'` を `'/'` へずらす変異が全スイート緑だった)。
 func TestIsDigitKeyBoundaries(t *testing.T) {
 	for _, c := range []struct {
 		key  string

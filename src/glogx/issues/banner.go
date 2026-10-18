@@ -17,7 +17,7 @@ import (
 // なぜ viewer が書くか: next/ の目印は next/ を見る入口にしか届かないので、claim ルール
 // (_claude/issue-rules.d/claim-issue-in-next-and-push.md) は本文冒頭にもバナーを要求し、CI
 // (tests/issues/test_next_claims_have_banner.sh) がバナーの無い claim を落とす。`n` が目印だけを
-// 置くと、`n` で付けた claim は必ず CI で赤になる (dotfiles issue 403 の残タスク)。
+// 置くと、`n` で付けた claim は必ず CI で赤になる (dotfiles の next 運用)。
 //
 // 🚨 判定 (bannerLine / fenceLine) と除去 (removeBanner) は scripts/lib/claim_banner.awk (CI の検査と
 // scripts/issue_done.sh が使う) と同じ規則の Go 版。言語が違うので 1 実装に寄せられない。変えるなら両方を
@@ -68,7 +68,7 @@ func ClaimBanner(now time.Time) string {
 // 形は常に「H1・空行・バナー・空行・本文」(H1 が無ければ「バナー・空行・本文」)。H1 と本文の間の
 // 空行は 1 つにまとめる。removeBanner と対で、標準形 (H1 の後に空行 1 つ) は往復で元に戻る。
 // front matter (`---` で始まり `---` で閉じる) があれば、その後ろ (と続く H1 の後ろ) に入れる: 前に入れると LoadMeta が
-// front matter と見なくなる。CRLF の本文には CRLF の行を足す (issue 698 の 5・6)。
+// front matter と見なくなる。CRLF の本文には CRLF の行を足す。
 func addBanner(src, banner string) (string, bool) {
 	lines := strings.Split(src, "\n")
 	if bannerIndex(lines) >= 0 {

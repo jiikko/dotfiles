@@ -138,7 +138,7 @@ func TestCaretStaysInFieldWithLongQuery(t *testing.T) {
 		typeLongNumber(t, m)
 	})
 	// 🚨 枠ありでも見る: 枠なしでは caret.At が画面の右端へ寄せるので、欄で切らない旧い式でも同じ桁になり区別できない
-	// (2 周目の敵対レビューが実測)。枠ありでは旧い式だと右の罫線と影の外に出る。frameMinWidth 以上の幅にする
+	// (実測)。枠ありでは旧い式だと右の罫線と影の外に出る。frameMinWidth 以上の幅にする
 	t.Run("番号・枠あり", func(t *testing.T) {
 		m := caretTestModel(t, true)
 		m.width = 70

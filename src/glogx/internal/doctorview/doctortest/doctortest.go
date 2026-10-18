@@ -2,7 +2,7 @@
 // main のテスト (browseModel と組み合わせるもの) と internal/doctorview の中のテスト (package doctorview) の両方から使う。
 // 🚨 本番のコードから import しない (testing を import する。depguard が止める)。
 // 🚨 doctorview を import しない: import すると doctorview の中のテストから使えなくなる (import の循環)。
-// doctorview の型を使う部品 (描画の取り出し・Cmd の実行) は doctorview の中のテスト (testhelpers_test.go) に置く (issue 817)。
+// doctorview の型を使う部品 (描画の取り出し・Cmd の実行) は doctorview の中のテスト (testhelpers_test.go) に置く。
 package doctortest
 
 import (
@@ -40,7 +40,7 @@ const (
 		`"percentage_used":7,"media_errors":0,"data_units_written":234413480,"power_on_hours":3993,"unsafe_shutdowns":11}}`
 )
 
-// fakeSSDOptions は本物の diskutil / smartctl を叩かない ssd.Options (issue 419 と同じ理由)。
+// fakeSSDOptions は本物の diskutil / smartctl を叩かない ssd.Options。
 // withSmartctl=false は「smartctl が入っていない」。
 func FakeSSDOptions(withSmartctl bool) func() ssd.Options {
 	return func() ssd.Options {
@@ -90,7 +90,7 @@ func FakeDeps(t *testing.T) Deps {
 	fake := func(context.Context, string, ...string) (string, string, int, error) {
 		// 段落 (空行) を 2 箇所入れる: 「(N 行) を len(detail) で数える」と「非空行で数える」と
 		// 「len(lines) で数える」が全部違う数になる形にして、数え方の変異を検出できるようにする
-		// (敵対レビュー 2026-09-03: 空行の無い fixture では 3 つの式が区別できず vacuous だった)。
+		// (空行の無い fixture では 3 つの式が区別できず vacuous になる)。
 		// detail=6 / 非空行=5 / len(lines)=7
 		return "", "Warning: Some installed casks are deprecated or disabled.\nYou should find replacements:\n  foo\n\nUninstall them with `brew uninstall --cask`\n\nSee also: brew help uninstall\n", 1, nil
 	}

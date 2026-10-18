@@ -13,7 +13,7 @@ import (
 	"glogx/internal/gitdata"
 )
 
-// 選んでいた行が消えたら近傍へ寄せ、**寄せたことを画面に出す** (issue 210 の敵対レビュー P1)。
+// 選んでいた行が消えたら近傍へ寄せ、**寄せたことを画面に出す**。
 //
 // 🚨 フィールド (`pendingToast`) を見るだけでは足りない。表示するのは tui.go の
 // `case doctorview.DoctorToast:` = handleKey の戻り値経路だけで、`restoreCursor` は View から呼ばれる。
@@ -59,9 +59,9 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 		t.Fatal("同じ寄せで 2 回目もトーストが出た")
 	}
 
-	// 🚨 **その打鍵が飲まれない**こと (敵対的レビュー 2026-09-03 の P2)。
-	//    以前は handleKey の先頭で doctorview.DoctorToast を返しており、寄せた直後の
-	//    q / esc / d / r / Enter が等しく 1 回空振りしていた
+	// 🚨 **その打鍵が飲まれない**こと。
+	//    handleKey の先頭で doctorview.DoctorToast を返すと、寄せた直後の
+	//    q / esc / d / r / Enter が等しく 1 回空振りする
 	v.Fixture().DiskResults([]disk.Result{a, b})
 	v.Lines(o)
 	v.HandleKey("j", o.Page)
@@ -76,11 +76,11 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 	}
 }
 
-// 再起動経路と終了経路の**配線**を固定する (issue 211)。
+// 再起動経路と終了経路の**配線**を固定する。
 //
 // 🚨 `syscall.Exec` を通る経路は単体テストで走らせられないので、ソースの構造で固定する。
-// **文字列検索では駄目**: `WaitDoctorCleanup()` をコメントに変える変異が素通りした
-// (敵対的レビュー 2026-09-03 の P2)。go/ast で「その関数の呼び出し」だけを見る。
+// **文字列検索では駄目**: `WaitDoctorCleanup()` をコメントに変える変異が素通りした。
+// go/ast で「その関数の呼び出し」だけを見る。
 func TestRestartAndExitPathsWaitForDoctorCleanup(t *testing.T) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "main.go", nil, 0)
@@ -184,7 +184,7 @@ func callName(c *ast.CallExpr) string {
 // ⚠️ 挙動で試すと非決定になる (join の有無は「Cleanup が戻る時点で goroutine が終わっているか」
 // で、遅い fake を挟まないと差が出ず、挟むと join 側が待ちに入る)。**配線を静的に pin する**
 // 形にした (verify-interactive-prompt-with-pty-driver.md の「pty が要る挙動は配線を pin する」と
-// 同じ判断)。敵対レビュー 2026-09-03 の実測: `WaitDoctorCleanup()` を消しても全テストが緑だった。
+// 同じ判断)。実測 2026-09-03: `WaitDoctorCleanup()` を消しても全テストが緑だった。
 func TestBrowseFactoriesInstallInertDoctorAndJoin(t *testing.T) {
 	for _, tc := range []struct{ file, fn string }{
 		{"tui_helpers_test.go", "newTestBrowse"},

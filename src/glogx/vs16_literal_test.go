@@ -12,18 +12,18 @@ import (
 
 // glogx 自身が画面へ出す文字列リテラルに VS16 (U+FE0F) を入れない。
 //
-// VS16 付き記号の表示幅は端末で割れる (実測 2026-09-02 / issue 136: 同じマシンで
+// VS16 付き記号の表示幅は端末で割れる (実測 2026-09-02: 同じマシンで
 // tmux 内は 2 桁、Apple Terminal は 1 桁)。外部由来の文字列は termsafe.DropEmojiVS16 が
 // bare へ正規化しているのに、自前のリテラルだけがその関門を通らないまま残っていた
-// (`main.go` の起動時警告。issue 136 で検出)。
+// (`main.go` の起動時警告で検出)。
 //
-// 「揃える先を grapheme か wc のどちらかに決める」は環境で答えが反転するので成立しない
-// (issue 124)。成立するのは「幅が割れる文字を出さない」side なので、それをここで固定する。
+// 「揃える先を grapheme か wc のどちらかに決める」は環境で答えが反転するので成立しない。
+// 成立するのは「幅が割れる文字を出さない」side なので、それをここで固定する。
 func TestOwnStringLiteralsHaveNoVS16(t *testing.T) {
 	const vs16 = '️'
 	fset := token.NewFileSet()
 	found, checked := 0, 0
-	// 🚨 `parser.ParseDir` を使わないこと (issue 283)。あれは**非再帰**なので走査対象が
+	// 🚨 `parser.ParseDir` を使わないこと。あれは**非再帰**なので走査対象が
 	// `package main` だけになり、issues/ などのサブパッケージ (と tuikit / ratelimit) が
 	// 黙って対象外になる (実測: 当時 glogx 内にあった usage/banner.go に VS16 を置いても緑、box.go (今の internal/term/box.go) だと赤)。
 	// しかも `len(pkgs) == 0` の 0 件ガードは package main が常に在るので**構造的に発火しない**。
@@ -66,7 +66,7 @@ func TestOwnStringLiteralsHaveNoVS16(t *testing.T) {
 	if err != nil {
 		t.Fatalf("走査できない: %v", err)
 	}
-	// 🚨 下限は 0 でなく実件数の近くに置く (issue 280 / 283)。走査が縮んでも
+	// 🚨 下限は 0 でなく実件数の近くに置く。走査が縮んでも
 	// `checked == 0` では落ちず「違反 0 件 = 緑」になる。増える分には落とさない。
 	// 2026-09-06 実測: 再帰 75 件 / トップレベルのみ (= ParseDir へ戻る退行) 53 件。
 	// 下限はその間に置く — 「退行後の値では落ちる」ことが下限の存在意義。

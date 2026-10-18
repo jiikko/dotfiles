@@ -86,7 +86,7 @@ func TestIssuesViewGroupsUseSeparateDisplayRowsAndToggle(t *testing.T) {
 }
 
 func TestIssuesViewGroupParentActionsAreNoopWithNotice(t *testing.T) {
-	// 🚨 外部作用を差し替える: 退行すると実クリップボード・ブラウザを書き換える (issue 667)。
+	// 🚨 外部作用を差し替える: 退行すると実クリップボード・ブラウザを書き換える。
 	// 「何もコピー・起動しなかった」も assert する。notice の有無だけだと、退行した操作自身が出す
 	// 成功の notice (N の採番コピー等) で緑になった
 	copied := testenv.StubClipboard(t)
@@ -325,7 +325,7 @@ func TestIssuesViewMoveReanchorsCursorAndMarkToReturnedPaths(t *testing.T) {
 		t.Fatalf("移動後の再アンカーが予約されていない: cmd=%v cursor=%q mark=%q", cmd != nil, v.pendingCursorPath, v.pendingMarkPath)
 	}
 
-	// claim は symlink の目印なので Path は変わらない (issue 263)。再走査の結果は同じ Path に
+	// claim は symlink の目印なので Path は変わらない。再走査の結果は同じ Path に
 	// Status=Next / NextLink が付いた形になる
 	fresh := make([]*issues.Issue, 0, len(old))
 	for _, iss := range old {
@@ -381,7 +381,7 @@ func TestIssuesViewUserCursorActionsCancelPendingMoveAnchors(t *testing.T) {
 }
 
 func TestIssuesViewPendingMoveAnchorsExpireAfterFreshMissingScan(t *testing.T) {
-	// 🚨 done/ の issue を使う: 直下の issue の claim は symlink の目印で Path が変わらず (issue 263)、
+	// 🚨 done/ の issue を使う: 直下の issue の claim は symlink の目印で Path が変わらず、
 	// 「移動先が消える」状況が作れない。done/ からの claim は従来どおり rename なので、宛先の消失を再現できる
 	iss := realDoneIssue(t)
 	v := loadedView(iss)
@@ -413,7 +413,7 @@ func TestIssuesViewPendingMoveAnchorsExpireAfterFreshMissingScan(t *testing.T) {
 	}
 }
 
-// round 2 の敵対レビュー: 親行のカーソルは state に GroupKey で残り、復元で親行へ戻る。
+// 親行のカーソルは state に GroupKey で残り、復元で親行へ戻る。
 func TestIssuesScreenRoundTripsGroupCursor(t *testing.T) {
 	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
 	global := issuesviewtest.FakeIssue("711", "feat", "global", issues.StatusOpen)
@@ -588,7 +588,7 @@ func TestIssuesViewGroupParentIssueMergesIntoHeaderRow(t *testing.T) {
 // TestIssuesViewMergedParentRowOpensBodyWithO は、統合された親行 (groupHead) の `o` が親 issue の本文を開くことを
 // 固定する。Enter / Space は子リストの開閉なので、epic の親 issue の本文を viewer から開く手段は `o` だけ
 // (docs/issues-viewer-spec.md の親行のキー操作)。openBody が groupHead まで断るようになると、手段が無くなったまま
-// 反対側のテスト (合成の親行の no-op / Enter が開かない) は緑のまま通る (issue 705)。
+// 反対側のテスト (合成の親行の no-op / Enter が開かない) は緑のまま通る。
 func TestIssuesViewMergedParentRowOpensBodyWithO(t *testing.T) {
 	dir := t.TempDir()
 	parent := fakeEpicIssue(dir, "001", "001", "blog", issues.StatusOpen)
@@ -652,7 +652,7 @@ func TestIssuesViewNamedGroupParentMergesAndHidesWhenDone(t *testing.T) {
 
 // TestIssuesViewNumberParentWinsOverNamedForm は 1 つの group に親の 2 つの形が並んだとき、番号の形
 // (旧来の親) が親行に残ることを固定する。v.rows の並び (番号の降順) に任せると、後から足した
-// `470-epic-467.md` が 467 を子へ落とす (2026-10-02 敵対レビュー P2)。
+// `470-epic-467.md` が 467 を子へ落とす。
 func TestIssuesViewNumberParentWinsOverNamedForm(t *testing.T) {
 	dir := "/repo/issues"
 	numbered := fakeEpicIssue(dir, "467", "467", "x", issues.StatusOpen)
@@ -665,7 +665,7 @@ func TestIssuesViewNumberParentWinsOverNamedForm(t *testing.T) {
 }
 
 // TestIssuesViewGroupParentShowsDoneCount は親行の括弧が「子の件数 + done の件数」を出すことと、
-// done な子が既定 (状態フィルタ open) でも group の中に見えることを固定する (issue 291)。
+// done な子が既定 (状態フィルタ open) でも group の中に見えることを固定する。
 func TestIssuesViewGroupParentShowsDoneCount(t *testing.T) {
 	dir := "/repo/issues"
 	open1 := fakeEpicIssue(dir, "alpha", "710", "open-one", issues.StatusOpen)
@@ -734,7 +734,7 @@ func strayIn(dir, group, number string) *issues.Issue {
 
 // TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue は、移動で group の中へ入った issue に
 // カーソルを置き直すとき、畳んだ親行を開いて対象を見せることを固定する
-// (2026-09-06 の敵対的レビュー 2 周目: 「移動しました」と言った直後に対象が画面から消えていた)。
+// (「移動しました」と言った直後に対象が画面から消えない)。
 //
 // 🚨 並び順を 2 通り回す。「最初に見つけた GroupKey の group を開く」誤実装は、無関係な group が
 // 対象より後ろに居ると正解と同じ group に当たって素通りする。production の並びは番号降順
@@ -783,7 +783,7 @@ func TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue(t *testing.T) {
 // TestIssuesViewAnchorIgnoresIssuesOutsideVisibleRows は、今の一覧に居ない issue のために
 // group を開かないことを固定する。走査先を v.rows から v.all へ広げると、Next タブで目印を
 // 外した直後 (対象が可視集合から外れる) に「見えない issue のために group が開き、その展開が
-// screen に保存されて再起動を跨ぐ」形になる (2026-09-06 の敵対的レビュー 4 周目の変異 M7)。
+// screen に保存されて再起動を跨ぐ」形になる。
 func TestIssuesViewAnchorIgnoresIssuesOutsideVisibleRows(t *testing.T) {
 	dir := "/repo/issues"
 	child := fakeEpicIssue(dir, "cloud", "702", "done-child", issues.StatusDone)
@@ -800,8 +800,7 @@ func TestIssuesViewAnchorIgnoresIssuesOutsideVisibleRows(t *testing.T) {
 
 // TestIssuesViewAnchorOverridesExplicitCollapse は、明示的に畳んだ (collapsedGroups) group でも
 // 移動先を見せるために開くこと、そしてその展開が **再スキャンを跨いで残る** ことを固定する。
-// 展開先を autoExpandedGroups にすると refresh のたびに捨てられ、次の再スキャンで畳み直される
-// (2026-09-06 の敵対的レビュー 3 周目 P3-3 / 4 周目 P3-4 の変異 M2)。
+// 展開先を autoExpandedGroups にすると refresh のたびに捨てられ、次の再スキャンで畳み直される。
 func TestIssuesViewAnchorOverridesExplicitCollapse(t *testing.T) {
 	dir := "/repo/issues"
 	child := fakeEpicIssue(dir, "cloud", "702", "moved-in", issues.StatusNext)
@@ -867,7 +866,7 @@ func TestIssuesViewGroupProgressCountsOnlyVisibleChildren(t *testing.T) {
 
 // TestUnmarkDestLabelCoversMixedSelection は「next を外す」確認モーダルの戻り先の呼び名が
 // 選択の中身で決まることを固定する。先頭 1 件で決めていたため、global が先頭で group が
-// 後続の並びだと「issues 直下」と嘘をついていた (敵対レビュー 3 周目 P2-1)。
+// 後続の並びだと「issues 直下」と嘘をついていた。
 func TestUnmarkDestLabelCoversMixedSelection(t *testing.T) {
 	dir := "/repo/issues"
 	global := issuesviewtest.FakeIssue("900", "feat", "global", issues.StatusNext)
@@ -896,8 +895,8 @@ func TestUnmarkDestLabelCoversMixedSelection(t *testing.T) {
 	v := loadedView(global, child)
 	// 箱は幅を詰めるので、短い方 (group のみ) で全文を見る
 	// 🚨 箱は 44 桁で頭打ち (confirm.MaxWidth) なので、**実在する長さのファイル名**で見る。
-	// 短い fixture だけで見ていたため、宛先が丸ごと切り落とされているのを 3 周目まで
-	// 検出できていなかった (2026-09-06 の敵対的レビュー 4 周目)
+	// 短い fixture だけで見ると、宛先が丸ごと切り落とされているのを
+	// 検出できない
 	long := fakeEpicIssue(dir, "cloud", "292", "audit-forge-should-hand-each-agent-its-own-worktree", issues.StatusNext)
 	v.markNext = issuesMarkConfirm{active: true, unmark: true, targets: []*issues.Issue{long}}
 	box := strings.Join(v.markNextBox(80, false), "\n")
@@ -934,7 +933,7 @@ func TestIssuesViewTabLineShowsBypassBadge(t *testing.T) {
 }
 
 // TestIssuesViewHidesClosedEpicFromListAndCounts は、終わった epic が一覧からも件数からも
-// 消えることを固定する (片方だけ消えると「All 3 なのに行が 1 本」になる。issue 294)。
+// 消えることを固定する (片方だけ消えると「All 3 なのに行が 1 本」になる)。
 func TestIssuesViewHidesClosedEpicFromListAndCounts(t *testing.T) {
 	dir := "/repo/issues"
 	v := loadedView(
@@ -957,8 +956,7 @@ func TestIssuesViewHidesClosedEpicFromListAndCounts(t *testing.T) {
 }
 
 // 番号フィルタ中に畳んだ group は、viewer を i で閉じてフィルタごと畳んだ後に開き直しても畳んだまま
-// 残らない (finishClose もフィルタを解く経路なので endFilter を通す。issue 666 の敵対的レビューで
-// 未検査だった経路。再現は red team の probe)。
+// 残らない (finishClose もフィルタを解く経路なので endFilter を通す)。
 func TestIssuesViewCloseDuringFilterDropsCollapse(t *testing.T) {
 	child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
 	v := loadedView(child)
@@ -983,8 +981,8 @@ func TestIssuesViewCloseDuringFilterDropsCollapse(t *testing.T) {
 }
 
 // 番号フィルタを「検索語を全部消して Enter」で解いたときも、フィルタ中に畳んだ状態が残らない
-// (confirmNumberFilter が解除の経路 endNumberFilter を通る。issue 752: 以前は空の確定が clear だけに
-// 落ちうる形で、group の後始末を飛ばす変異が緑のままだった。再現は敵対レビューの probe)。
+// (confirmNumberFilter が解除の経路 endNumberFilter を通る。空の確定が clear だけに
+// 落ちると、group の後始末を飛ばす変異が緑のままになる)。
 func TestIssuesViewEmptyConfirmDropsCollapse(t *testing.T) {
 	child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
 	v := loadedView(child)

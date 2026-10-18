@@ -29,7 +29,7 @@ type RatelimitDash struct {
 	shown bool
 	// wantCross は横断先 (rlDashCross を返したときだけ意味を持つ。takeWantCross で取り出す)
 	wantCross app.FullScreenID
-	// 盤の描画結果のメモ (issue 275)。viewLines は毎 View で lines を呼び、
+	// 盤の描画結果のメモ。viewLines は毎 View で lines を呼び、
 	// usage.RenderDashboard はセル数 (幅 x 高) に比例して braille のスライスを確保し直すので、
 	// 12.5fps で回ると 1 フレーム 1065 allocs / 239KB (120x40 実測) がそのまま乗る。
 	// 12.5fps で回るのは rlDashLoading() ではなく **spinnerActive() の他の項**
@@ -137,7 +137,7 @@ func (d *RatelimitDash) headerLine(o RatelimitRenderOpts) string {
 // hint は最下行のキー案内。
 // hint は最下行の案内。
 //
-// 🚨 width を受けて term.FitHintItems を通すこと (issue 279)。固定文字列だと 70 桁あり、
+// 🚨 width を受けて term.FitHintItems を通すこと。固定文字列だと 70 桁あり、
 // 最小サポート幅 (frameMinWidth=60 のとき予算 58) で切り詰められ、さらに狭いと
 // 出口 `R/q/esc/h: 閉じる` が完全に消える。全画面かつ rlDashSwallow で裏へキーを
 // 通さないので、出口が消えると抜け方が分からなくなる。
@@ -197,7 +197,7 @@ func (d *RatelimitDash) TakeWantCross() app.FullScreenID {
 //
 // 🚨 入らないときは切り詰める。そのまま返すと見出し (CLI 名 + バージョン 2 つで 49 桁固定) が
 // 狭い端末で width を超え、フレームが自動 OFF になる帯 (frameMinWidth 未満) ではクリップも
-// 効かないので折り返して画面が崩れる (セルフレビュー指摘 2026-09-01)。
+// 効かないので折り返して画面が崩れる。
 func centerLine(s string, w int) string {
 	pad := w - term.DispWidth(s)
 	if pad <= 0 {

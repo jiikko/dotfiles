@@ -1,6 +1,6 @@
 // Package extcmd は glogx の画面が外部コマンド (エディタ・ブラウザ・クリップボード) を起こす口と、その結果の Msg。
 // どれもテストが実コマンドを起こさないための差し替え点 (パッケージ変数) を持つ。main と画面のパッケージ
-// (internal/issuesview など) が共有するので internal に置く (main は下位から import できない。issue 817)。
+// (internal/issuesview など) が共有するので internal に置く (main は下位から import できない)。
 package extcmd
 
 import (
@@ -25,7 +25,7 @@ type EditorClosedMsg struct{ Err, ReclaimErr error }
 
 // RunEditorCmd はテストで実 nvim を起動しないための差し替え点。tea.Exec は bubbletea の描画を一旦止め、端末を nvim へ
 // 明け渡し、終了後に復帰する (エディタ起動用途の標準経路)。foreground.Exec は、戻った後に前面が外れていたら
-// 入れ直しの前に取り戻す (treefiler の ! の `$SHELL -ic` が前面を持ち去ったまま終わる形。issue 707)。
+// 入れ直しの前に取り戻す (treefiler の ! の `$SHELL -ic` が前面を持ち去ったまま終わる形)。
 var RunEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
 	x := foreground.NewExec(cmd)
 	return tea.Exec(x, func(err error) tea.Msg { return EditorClosedMsg{Err: err, ReclaimErr: x.Err} })
@@ -40,7 +40,7 @@ var OpenInBrowser = func(url string) error {
 		return exec.Command("open", url).Run() // subproc: no-waitdelay — 即 detach・パイプ無し
 	default:
 		// xdg-open は環境によってブラウザプロセスへ直接 exec して終了まで戻らないことが
-		// ある (既知挙動)。tea.Cmd の goroutine で同期 Run するため時間で区切る (issue 029 P3)
+		// ある (既知挙動)。tea.Cmd の goroutine で同期 Run するため時間で区切る
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		// subproc: no-waitdelay — Run() は stdout/stderr が /dev/null 直結でパイプを作らないため、

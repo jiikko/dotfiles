@@ -1,6 +1,6 @@
 // Package term は glogx の描画の土台: ANSI 色と Paint・切り詰め / 折り返しの純関数・幅計算の別名・枠と影・
 // 端末サニタイズの入口・glide のキー語彙・最下行の案内の詰めを持つ。画面のパッケージと main の両方が使う
-// (main は下位から import できないので、画面が使う部品は main ではなくここに置く。issue 742)。
+// (main は下位から import できないので、画面が使う部品は main ではなくここに置く)。
 package term
 
 import (
@@ -11,7 +11,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
-// 基本色は glogx/sgr の別名 (issues / usage と同じ値を 1 箇所から引く。issue 106)。
+// 基本色は glogx/sgr の別名 (issues / usage と同じ値を 1 箇所から引く)。
 const (
 	AnsiReset   = sgr.Reset
 	AnsiRed     = sgr.Red
@@ -60,7 +60,7 @@ func WrapToWidth(s string, width int) []string {
 		return []string{s}
 	}
 	// 書記素クラスタ単位で折り、各行の幅は termwidth.Of で width 以下を保証する (rune 単位だと ⚠️ を VS16 の手前で
-	// 分断し、ansi.Hardwrap はキーキャップで幅を超えた。issue 590)。単語境界は見ず、折り返しの頭の空白は落とす。
+	// 分断し、ansi.Hardwrap はキーキャップで幅を超えた)。単語境界は見ず、折り返しの頭の空白は落とす。
 	return termwidth.Wrap(s, width, true)
 }
 

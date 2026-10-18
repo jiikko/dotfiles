@@ -13,15 +13,13 @@ import (
 // これが sync.WaitGroup を使えない理由そのもの。WaitGroup はカウント 0 のときの Add と Wait の
 // 同時実行を禁じており、`sync: WaitGroup misuse: Add called concurrently with Wait` で panic する。
 // その panic は `race.Enabled` に囲まれていないので **-race なしの production でも落ちる**
-// (issue 214 / 217)。
 //
 // ⚠️ このテストは latch を**直接**叩く。doctorTrack 経由のテストは「走査が看取られるか」を見て
-// いて、0 件での同時実行という**最も危ない瞬間**を作っていない (issue 217 の敵対レビューが
-// 指摘した取り残しは、まさにこの瞬間が誰にも検査されていなかったことに由来する)。
+// いて、0 件での同時実行という**最も危ない瞬間**を作っていない。
 func TestCleanupLatchAddAtZeroConcurrentWithWait(t *testing.T) {
 	// 🚨 **2 CPU 以上が要る**。この検査は「登録と看取りが**同時に**走る」形を作ることが本体で、
 	// `GOMAXPROCS=1` では 2 つの goroutine が交互にしか動かず、交差が 1 度も起きない。
-	// 実測 (敵対的レビュー, 2026-09-03): 被検体を sync.WaitGroup に差し替えて測ると、
+	// 実測: 被検体を sync.WaitGroup に差し替えて測ると、
 	// GOMAXPROCS=2 / 4 では 1 run 目で DATA RACE を検出するのに、**GOMAXPROCS=1 では
 	// -count=10 (2000 周) でも rc=0** だった。つまり 1 CPU では検査が静かに消える。
 	if old := runtime.GOMAXPROCS(0); old < 2 {
@@ -78,7 +76,7 @@ func TestCleanupLatchAddAndDoneWhileWaiterIsParked(t *testing.T) {
 
 // latch は package グローバルで **pull / 再スキャンのたびに使い回される**。
 // 1 周しか回さないテストは、2 周目で壊れる形 (waitC を nil に戻し忘れる等) を守らない。
-// 実測 (敵対的レビュー): `done()` の `l.waitC = nil` を落とす変異は、latch のテストだけでは
+// 実測: `done()` の `l.waitC = nil` を落とす変異は、latch のテストだけでは
 // 緑のまま通り、**無関係な doctor のテストが偶然 panic で落として**いた。
 func TestCleanupLatchIsReusableAcrossCycles(t *testing.T) {
 	var l app.CleanupLatch
@@ -152,16 +150,16 @@ func TestCleanupLatchWaitIsClosedWhenIdle(t *testing.T) {
 	}
 }
 
-// 🚨 **pull 側も latch に載っていること**を配線として固定する (issue 217)。
+// 🚨 **pull 側も latch に載っていること**を配線として固定する。
 // 型が sync.WaitGroup へ戻るとここがコンパイルできない。doctor 側だけ直して pull 側を
 // 取り残したのが 217 の症状なので、両方を名指しで書く。
 //
-// ⚠️ **宣言で pin する** (テスト関数の中で wait() を読まない)。以前は関数の中で
-// 「仕事が無ければ wait が閉じている」を assert していたが、それは
+// ⚠️ **宣言で pin する** (テスト関数の中で wait() を読まない)。関数の中で
+// 「仕事が無ければ wait が閉じている」を assert しない。それは
 // TestCleanupLatchWaitIsClosedWhenIdle の重複であるうえ、**グローバルを読むので
 // 先行テストが doctorview の doctorCleanup に仕事を残していると 1 秒待って落ちる**
-// (敵対的レビューが実験で再現。自然な到達は shuffle 17 seed で出なかったが、
+// (実験で再現した。自然な到達は shuffle 17 seed で出なかったが、
 // glogx のスイート中に本物の doctor 走査が並走する窓は実在する)。
 // 得られる価値は型の pin だけなので、コストのかからない形に寄せた。
-// doctor 側の pin は internal/doctorview の doctor_cleanup_test.go に置く (doctor の latch は package の中の名前。issue 817)。
+// doctor 側の pin は internal/doctorview の doctor_cleanup_test.go に置く (doctor の latch は package の中の名前)。
 var _ *app.CleanupLatch = &pullCleanup

@@ -58,7 +58,7 @@ func TestIssuesViewHintChangesByMode(t *testing.T) {
 		t.Fatalf("URL ピッカーの hint が想定と違う: %q", h)
 	}
 
-	// n の確認中は全キーを確認が飲む (Enter は実行)。一覧の案内 (Enter: 本文 / q: 終了) を残さない (issue 750)
+	// n の確認中は全キーを確認が飲む (Enter は実行)。一覧の案内 (Enter: 本文 / q: 終了) を残さない
 	l := loadedView(issuesviewtest.SampleIssues()...)
 	l.HandleKey("n", vp(10))
 	if !l.markNext.active {
@@ -70,7 +70,7 @@ func TestIssuesViewHintChangesByMode(t *testing.T) {
 }
 
 func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
-	// hint は term.FitHintItems で組むので「収まる」は構造で保証される (issue 264)。ここで見るのは
+	// hint は term.FitHintItems で組むので「収まる」は構造で保証される。ここで見るのは
 	// ①予算幅では全モードの全項目が入る (= 代表幅の端末で案内が欠けない) ②狭い幅でも
 	// 優先度 1 の「抜ける手段」が最後まで残る、の 2 つ。
 	budget := testenv.PopupHintBudget

@@ -41,7 +41,7 @@ func TestDrawerPhasesAndWidth(t *testing.T) {
 func TestDrawerTargetWidth(t *testing.T) {
 	var d issuesDrawer
 	// 寸法はユーザー要望で決めた値 (80% + 10 桁・覗き見は 8〜18 桁・16 桁以下は全幅) をリテラルで固定する。
-	// 下のループは定数どうしの関係しか見ないので、定数を変えても緑のままだった (issue 751)
+	// 下のループは定数どうしの関係しか見ないので、定数を変えても緑のままだった
 	for total, want := range map[int]int{16: 16, 20: 16, 40: 32, 84: 76, 100: 90, 200: 182, 312: 294} {
 		if got := d.targetWidth(total); got != want {
 			t.Errorf("total=%d: 本文の幅 %d, want %d", total, got, want)

@@ -135,7 +135,7 @@ func gitLogWatchDirs() []string {
 	// refs / logs は入れ子で、fsnotify は再帰しない。🚨 親だけを見張ると、スラッシュ入りの
 	// ブランチ名 (refs/heads/feature/x) や remote ごとの ref (refs/remotes/origin/…)、
 	// reflog (logs/refs/…) の更新がイベントにならない = そこだけポーリング待ちになる
-	// (敵対レビューで指摘 2026-09-01)。ディレクトリを辿って全部登録する。
+	// (2026-09-01 に指摘された)。ディレクトリを辿って全部登録する。
 	for _, root := range []string{filepath.Join(common, "refs"), filepath.Join(common, "logs")} {
 		dirs = appendSubdirs(dirs, root)
 	}
@@ -145,8 +145,8 @@ func gitLogWatchDirs() []string {
 // gitLogWatchMaxDirs は見張る**ディレクトリ数**の上限。溢れた分はイベントが来ないだけで、
 // 1 分ポーリングが受け持つ (無音にはならない)。
 //
-// 🚨 **これは fd の上限ではない** (issue 271。以前ここに「kqueue は 1 ディレクトリにつき fd を
-// 1 本使うので fd を食い潰さないよう頭を止める」と書いてあったが、前提が不完全だった)。
+// 🚨 **これは fd の上限ではない** (「kqueue は 1 ディレクトリにつき fd を
+// 1 本使うので fd を食い潰さないよう頭を止める」という説明は前提が不完全)。
 // kqueue 自体は「監視対象 1 つにつき fd 1 本」で正しいが、fsnotify の kqueue backend は
 // inotify を模すために `watchDirectoryFiles` (backend_kqueue.go) でディレクトリ直下の
 // **全エントリを個別に unix.Open して register する**。つまり `Add(dir)` のコストは
@@ -324,7 +324,7 @@ func (m *browseModel) handleGitLogFP(msg gitLogFPMsg) tea.Cmd {
 	// 反映すると reloadLog が基準を降ろす (hasSeen = false)。🚨 ここで測定値を基準に置き直さない:
 	// reloadLog の読み直しは測定より新しい状態を読むことがあり (連続 commit・rebase 中・
 	// -p で読み直し自体に 100ms 級かかる)、古い測定値を基準にすると次の観測で必ず不一致になって
-	// 「表示は何も変わらないのにトーストだけ出る」再読込が 1 回増える (敵対レビューで実測)。
+	// 「表示は何も変わらないのにトーストだけ出る」再読込が 1 回増える (実測)。
 	// 降りたままにすると、次の測定が手元のコミット列と突き合わせて基準を作る。
 	// 反映に失敗したときは基準が元のまま残る = 次の周期で再挑戦する。
 	return m.reflectGitLogChange()
@@ -340,11 +340,11 @@ func (m *browseModel) handleGitLogFP(msg gitLogFPMsg) tea.Cmd {
 //   - 演出中 (pull / push アニメ) は offset がアニメの進行度なので、錨の画面行を測れない
 //   - 全画面の viewer (activeFullScreen が返すもの) を見ている間は、そもそも git log が
 //     見えていない。反映するとトーストだけが viewer の上に出て、裏でカーソルのリセットと CI の
-//     再取得 (GitHub API) と見えないアニメの tick が走る (敵対レビューで実測 2026-09-01)
+//     再取得 (GitHub API) と見えないアニメの tick が走る (2026-09-01 に実測)
 //
 // いずれも見送るだけで基準は動かさないので、閉じた後の観測で反映される (最悪 1 分後)。
 //
-// 🚨 全画面ビューアは**個別に列挙しない** (issue 227)。doctor は issue 148 で後から
+// 🚨 全画面ビューアは**個別に列挙しない**。doctor は後から
 // 足されたときこの列挙から漏れ、doctor を開いている間に外部で git が動くと裏で全面リロード
 // (git 5〜6 fork) + カーソルのリセット + CI の再取得が走っていた。build もテストも通るので
 // silent に壊れる。membership の出典は activeFullScreen (fullscreen.go) 1 箇所だけにして、
@@ -360,7 +360,7 @@ func (m *browseModel) gitLogReloadDeferred() bool {
 //
 // 読み直しは git を 5-6 本 fork する (loadLogData)。合成 repo (60 コミット × 各 4000 行 patch) での
 // 実測 2026-09-01 は既定 22ms / --stat 45ms / -p 139ms で、Update の中で同期にやると rebase 中は
-// 1 秒ごとにその停止が無操作で入る (issue 146)。pull の全面リロードは利用者の操作なので同期のまま。
+// 1 秒ごとにその停止が無操作で入る。pull の全面リロードは利用者の操作なので同期のまま。
 //
 // 🚨 LoadCommits は timeout なしの runGit を使う (起動時の同期経路と同じ関数)。git が stall しても
 // Update は止まらないが、reloading の札が立ったままになり自動追従だけが止まる (次の観測は全部

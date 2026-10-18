@@ -126,9 +126,9 @@ type ciPollMsg struct{ gen int }
 // fetching / detailsLoading を立てず表示を「取得中」に落とさないため (チラつき防止)。
 // gen は投げた時点の世代で、リロードを跨いで着弾した結果を捨てるために持つ
 // (ciResultMsg の epoch と同じ役目)。
-// 🚨 `targets` は持たない (issue 316)。一括取得 (`ciResultMsg`) は「レスポンスに現れなかった
+// 🚨 `targets` は持たない。一括取得 (`ciResultMsg`) は「レスポンスに現れなかった
 // target も loading 解除する」ために要るが、こちらは **fetching / detailsLoading を立てない**
-// ので解除する対象が無い。以前は詰めるだけ詰めて受け側が一度も読まなかった。
+// ので解除する対象が無い。詰めても受け側が一度も読まない。
 type ciPollResultMsg struct {
 	gen   int
 	batch gitdata.CIBatch
@@ -205,7 +205,7 @@ type prMsg struct {
 	ghErr *gitdata.GHError
 }
 
-// prStatusMsg は PR 詳細状態のオンデマンド取得の結果 (P キー, issue 021)。
+// prStatusMsg は PR 詳細状態のオンデマンド取得の結果 (P キー)。
 type prStatusMsg struct {
 	sha    string
 	status *gitdata.PRStatus // nil = PR なし
@@ -216,10 +216,10 @@ type prStatusMsg struct {
 var loadCommitDiff = gitdata.LoadCommitDiff
 
 // browseModel のメソッドを塊ごと (CI の取得とポーリング / push・pull と演出 / パネルと重ねる板 / 全画面への振り分け / 描画) に
-// 別ファイルへ分けて tui.go への変更の集中を減らす案は、issue 743 で実測して見送った。直近 90 日に tui.go を触った 262 commit の
+// 別ファイルへ分けて tui.go への変更の集中を減らす案は、実測して見送った。直近 90 日に tui.go を触った 262 commit の
 // うち、移した後に tui.go へ触らずに済むのは 2〜3 割だけで、残りはフィールドの追加・handleKey・update の case を同時に触る
 // (並行セッションがぶつかるのも主にフィールドと handleKey)。CI の取得とパネルは panelSHA / mergeCIBatch / settleAwaitCI で
-// 絡んでいて、分けても往復が増える (issue 018 の却下理由と同じ)。再提起するなら、移した後に tui.go へ触らずに済む commit の
+// 絡んでいて、分けても往復が増える。再提起するなら、移した後に tui.go へ触らずに済む commit の
 // 割合を同じ方法 (git log -p -U0 の hunk の関数見出し) で数え直して添えること。
 type browseModel struct {
 	commits        []gitdata.Commit
@@ -228,7 +228,7 @@ type browseModel struct {
 	details        map[string][]gitdata.CheckDetail
 	detailsLoading map[string]bool
 	// detailsWaiting は detailsLoading のうち「**Cmd を出さずに**一括取得の結果を待っている」
-	// SHA (issue 272)。fetchPanelDetails の待機分岐だけがここへ入る。
+	// SHA。fetchPanelDetails の待機分岐だけがここへ入る。
 	//
 	// 🚨 不変条件は「detailsLoading ⊆ toFetch」ではなく「**札には必ず、その SHA を名指して
 	// 届く live Cmd がある**」。実取得分岐の札は自前の detailMsg が降ろすので、世代交代で
@@ -241,9 +241,9 @@ type browseModel struct {
 	// これを見るので、既に着弾したチャンクの SHA で待たされないようにするために縮める必要がある。
 	toFetch []string
 	// pendingFetches は未着の一括取得チャンク数。**取得中かどうかの唯一の出典**で、
-	// fetching() がここから導出する (issue 224。以前は fetching bool を並置し、4 箇所で
-	// 手書き同期していた。1 箇所書き忘れるとスピナーが回りっぱなし / パネルが待たずに
-	// 二重取得する形で silent に狂い、build もテストも通った)。
+	// fetching() がここから導出する (fetching bool を並置して 4 箇所で手書き同期すると、
+	// 1 箇所書き忘れるとスピナーが回りっぱなし / パネルが待たずに
+	// 二重取得する形で silent に狂い、build もテストも通る)。
 	// (スピナー・invalidate gate・パネルガードが fetching を見るので、最後のチャンクが
 	// 着弾するまで下ろせない)。
 	pendingFetches int
@@ -258,7 +258,7 @@ type browseModel struct {
 	decor      *gitdata.DecorColors
 	oneline    bool
 	colored    bool
-	// showFrame は最外周フレーム (板 + ドロップシャドウ) 描画の有効フラグ (issue 025)。起動時固定
+	// showFrame は最外周フレーム (板 + ドロップシャドウ) 描画の有効フラグ。起動時固定
 	// (!opts.NoFrame)。🚨 下の frame (int) はスピナーのフレームカウンタで別物 (名前衝突回避のため
 	// bool 側を showFrame とした)。実際に描くかは frameActive() が端末サイズ下限も見て判定する。
 	showFrame    bool
@@ -363,8 +363,8 @@ type browseModel struct {
 	fetch      tea.Cmd
 	cancel     context.CancelFunc
 	// deferredStartup は起動時の CI 取得が終わるまで預ける検査 (usage・バージョン・ログイン)。
-	// どれも node の claude / codex を起こすので、CI 取得と開いた直後の描画から CPU を奪わないよう後ろへ回す
-	// (issue 570)。放すのは Update の 1 か所だけ (releaseStartupChecks)
+	// どれも node の claude / codex を起こすので、CI 取得と開いた直後の描画から CPU を奪わないよう後ろへ回す。
+	// 放すのは Update の 1 か所だけ (releaseStartupChecks)
 	deferredStartup tea.Cmd
 
 	// lines() のメモ化。行リストの再構築は O(出力全行数) で、-p の巨大 patch では
@@ -412,7 +412,7 @@ func newBrowseModel(commits []gitdata.Commit, statuses map[string]gitdata.CIStat
 	}
 	// 🚨 ここは「取得中か」ではなく **「これから取得を始めるか」** の判定なので、
 	// fetching() (= pendingFetches > 0) を使ってはいけない。pendingFetches はこの下の
-	// チャンク分割で初めて入る (issue 224 で fetching フィールドを消したときの落とし穴)。
+	// チャンク分割で初めて入る (fetching フィールドを消したときの落とし穴)。
 	if len(toFetch) > 0 {
 		// 起動時の一括取得は m.cancel と ctx を共有する意図的例外 (q 中断で走行中の
 		// GraphQL を止めるため)。チャンクへ割って並列に投げるので、画面に映っている先頭
@@ -440,7 +440,7 @@ func (m *browseModel) Init() tea.Cmd {
 	prefix := func() tea.Msg { return prefixMsg{key: loadTmuxPrefix()} }
 	// 起動時はディスクキャッシュ可 (連続起動のたびに claude subprocess を起こさない)
 	// CI の取得中は usage の取得を預ける (下の deferredStartup) が、ディスクキャッシュを読むだけなら fork しないので
-	// 先に済ませて数字を出す。預けると CI の取得の間ずっと右上がスピナーになる (issue 570 の敵対的レビュー)
+	// 先に済ませて数字を出す。預けると CI の取得の間ずっと右上がスピナーになる
 	var u tea.Cmd
 	if !m.fetching() || !m.usageOv.ShowCached(app.TimeNow()) {
 		// 🚨 fetchCmd は呼んだ時点で inFlight を立てるので、預けている間の usageRefreshMsg は重ねて取得しない
@@ -455,7 +455,7 @@ func (m *browseModel) Init() tea.Cmd {
 	ver := tea.Batch(checkClaudeVersionCmd(), checkCodexVersionCmd())
 	cliHealth := checkCLIHealthCmd()
 	// doctor の起動時トースト: 前回のスキャン結果 (ファイル読みのみ、fork なし) が閾値を超えていれば
-	// 文言で D へ誘導する。起動時に走査はしない (issue 148 の骨格)。
+	// 文言で D へ誘導する。起動時に走査はしない。
 	if text := doctorview.StartupToast(app.TimeNow()); text != "" {
 		m.toast.ShowInfo(text)
 	}
@@ -507,7 +507,7 @@ func (m *browseModel) Init() tea.Cmd {
 	if rlRestore == nil {
 		doctorRestore, _ = m.doctorOv.RestoreScreen(app.TimeNow())
 	}
-	// F を出したまま終了していたら、同じ dir で開いたときに同じ場所の F を開き直す (filer_resume.go。issue 710)。
+	// F を出したまま終了していたら、同じ dir で開いたときに同じ場所の F を開き直す (filer_resume.go)。
 	// 優先は最下位: 他の全画面の記憶が当たったら開かない (全画面は同時に 1 枚。issues は repo の照合が非同期なので、
 	// 記憶が在るだけで譲る)
 	var filerRestore tea.Cmd
@@ -533,7 +533,7 @@ func (m *browseModel) Init() tea.Cmd {
 	return tea.Batch(u, ver, cliHealth, prefix, ab, restore, rlRestore, doctorRestore, filerRestore, lanRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 }
 
-// releaseStartupChecks は、起動時の CI 取得が終わっていれば預けた検査を 1 回だけ放す (issue 570)。
+// releaseStartupChecks は、起動時の CI 取得が終わっていれば預けた検査を 1 回だけ放す。
 // 取得が終わる経路は ciResultMsg の最後のチャンクだけでなく、pull の後に取得を始めない分岐
 // (pendingFetches を直接 0 にする) もあるので、出来事ではなく状態 (fetching) で見る。
 func (m *browseModel) releaseStartupChecks() tea.Cmd {
@@ -610,8 +610,8 @@ func (m *browseModel) maybeTick() tea.Cmd {
 // issues / status viewer の開閉スライドはさらに上げる (理由は zoomInterval の doc)。
 //
 // 🚨 高 FPS が要る演出の登録先はここだけ。spinnerActive は「tickInterval が周期を上げているか」で
-// 演出の有無を導出するので、ここに足せばチェーン維持にも効く。かつては両方へ手で足す規約で、
-// 足し忘れると「回るが 12.5fps」になり点滅に見える再発が実際に 2 回起きた (2026-08-06 まで)。
+// 演出の有無を導出するので、ここに足せばチェーン維持にも効く。両方へ手で足す規約にすると、
+// 足し忘れで「回るが 12.5fps」になり点滅に見える再発が実際に 2 回起きた。
 func (m *browseModel) tickInterval() time.Duration {
 	if m.zoom.animating(app.TimeNow()) || m.issuesOv.SlideAnimating() || m.statusOv.SlideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
@@ -647,7 +647,7 @@ func fetchCIStatusesCmd(repo gitdata.Repo, targets []string, wrap func(gitdata.C
 // 失敗チャンクの警告を消してしまう。「新しい取得で警告をリセットする」(レビュー C4 の
 // sticky 警告防止) は開始時にやり、ハンドラ側は非 nil のときだけ立てる。
 // fetching は一括取得のチャンクが 1 つでも未着か。**pendingFetches からの派生**であって
-// 独立した状態ではない (issue 224)。フィールドとして並置すると、新しく「取得を始める /
+// 独立した状態ではない。フィールドとして並置すると、新しく「取得を始める /
 // 終える」経路を足したときに代入を書き忘れ、スピナー (spinnerActive)・再描画ゲート
 // (tickMsg)・パネルの「進行中の一括取得を待つ」ガード・ciPollMsg の並行抑止が
 // **silent に狂う** (build もテストも通る)。導出にすればその失敗モードが構造的に消える。
@@ -658,7 +658,7 @@ func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
 	m.fetchEpoch++                             // 旧世代の未着チャンクを無効化 (ciResultMsg ハンドラの世代ガード)
 	// 🚨 世代を進めると、旧世代のチャンクは ciResultMsg の epoch ガードで**丸ごと捨てられる**
 	// = そこにあった「札を降ろす」処理も一緒に捨てられる。降ろす責任を負っていた札を、
-	// 世代を進めるこの 1 箇所で解放する (issue 272。gitlog_watch.go:handleGitLogProbe の
+	// 世代を進めるこの 1 箇所で解放する (gitlog_watch.go:handleGitLogProbe の
 	// closed 経路が同じ規律を持っている)。
 	//
 	// 落とすのは**待機の札だけ**。実取得分岐の札は自前の detailMsg が降ろすので触らない。
@@ -713,10 +713,10 @@ func (m *browseModel) mergeCIBatch(statuses map[string]gitdata.CIState, details 
 }
 
 // showWarning は失敗/警告トーストを出しつつ lastWarning に残す (w で表示が消えた後もコピー
-// できるように。issue 026)。
+// できるように)。
 //
-// どの失敗をここへ通すかの基準 (🚨 以前は「失敗は必ずこれを経由」と書いてあったが、実際には
-// 素の toast.show(…, false) が 26 箇所あり doc の方が現実より強かった。正しくは 3 分類):
+// どの失敗をここへ通すかの基準 (🚨 「失敗は必ずこれを経由」ではない。
+// 素の toast.show(…, false) を使う場面があり、3 分類):
 //
 //   - エラー詳細を含み、後で見返す価値があるもの (「pull に失敗: …」) → showWarning
 //   - 操作を拒否した理由の案内 (「未 push のコミットはありません」) → 素の toast.show(…, false)。
@@ -738,7 +738,7 @@ func (m *browseModel) showWarning(text string) {
 // app.NoticeError だけ。戻り値は「流したか」で、呼び出し側がトーストを動かす tick を束ねるかの判断に使う。
 // 🚨 setNotice は打鍵経路 (handleKey 直後) だけでなく Msg 経路 (issuesScanMsg → rebindOpen)
 // からも置かれる。Msg 経路の呼び出し側でもこれを通すこと。通さないと「置いたが誰も取り出さず、
-// 次の打鍵まで画面に出ない」黙殺になる (issue 059: 本文が無言で畳まれた)。
+// 次の打鍵まで画面に出ない」黙殺になる (本文が無言で畳まれる)。
 func (m *browseModel) deliverNotice(text string, kind app.NoticeKind) bool {
 	if text == "" {
 		return false
@@ -756,8 +756,8 @@ func (m *browseModel) deliverNotice(text string, kind app.NoticeKind) bool {
 
 // showClaudeUpdate は「新バージョンあり」の通知を出す。
 //
-// 以前は先行トーストを潰さないよう専用タイマーで遅延再送していたが、
-// トーストが積めるようになったので調停は不要になった (toast の doc 参照)。
+// 先行トーストを潰さないための専用タイマーでの遅延再送は要らない。
+// トーストが積めるので調停は不要 (toast の doc 参照)。
 func (m *browseModel) showClaudeUpdate(latest string) tea.Cmd {
 	m.toast.Show("Claude Code v"+latest+" が公開されています (C で更新)", true)
 	return m.maybeTick()
@@ -961,7 +961,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// receive は busy 落とし・cache 格納・(今開いている詳細なら) 末尾スクロールを担う。currentKey は
 		// live な detailKey() を渡す (snapshot 禁止: リフレッシュで panelCursor がクランプされ得るため)。
 		m.detailOv.Receive(msg, m.detailKey(), m.visibleDetailRows())
-		// Y で詳細取得を待っていたら、到着したこの内容をコピーする (issue 020)。取得失敗
+		// Y で詳細取得を待っていたら、到着したこの内容をコピーする。取得失敗
 		// (ghErr) は上の sticky 警告に任せ、予約だけ静かに破棄する。
 		// 🚨 予約後にフォーカスが動いていたら (detailKey() != msg.key) コピーしない: msg.lines は
 		// 予約時の job のログだが、focusedJob() は現フォーカスを返すため、貼ると「別 job のヘッダに
@@ -1035,7 +1035,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.issuesOv.Receive(msg)
 		// receive → rebindOpen が置く notice (開いていた issue の消失) をこのフレームで配達する。
 		// 打鍵経路の takeNotice に任せると、次のキーまで「本文が無言で畳まれた」に見え、
-		// その次のキーが q だと理由が 1 度も描かれずに終了する (issue 059)。
+		// その次のキーが q だと理由が 1 度も描かれずに終了する。
 		// maybeTick はトーストを出したときだけ束ねる (issuesWatchMsg の 1s チェーンの意図を崩さない)
 		if m.deliverNotice(m.issuesOv.TakeNotice()) {
 			return m, tea.Batch(cmd, m.maybeTick())
@@ -1059,11 +1059,11 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 🚨 復元の repo 照合 (git fork) が返る前に type-ahead の s で status viewer が開いて
 		// いたら復元を捨てる。restore は自分の shown しか見ないため、ここで弾かないと両 viewer
 		// 同時 shown になり「見えている status」と「キーを受ける issues」が食い違う
-		// (敵対レビューで再現 2026-08-06)
+		// (2026-08-06 に再現)
 		// 🚨 ratelimit ダッシュボード (R) が先に開いていた場合も同じ理由で捨てる: 復元すると
 		// 裏に issues viewer が開いた状態になり、ダッシュボードの i (横断) が toggle で
 		// 「開く」ではなく「閉じる」に化ける。
-		// 🚨 判定は activeFullScreen から導出する (issue 227): 全画面ビューアを 1 枚足した
+		// 🚨 判定は activeFullScreen から導出する: 全画面ビューアを 1 枚足した
 		// ときにここへ書き足すのを忘れると、復元で 2 枚同時 shown になる。
 		if id := m.activeFullScreen(); id != app.FullScreenNone && id != app.FullScreenIssues {
 			return m, m.maybeTick()
@@ -1086,7 +1086,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//
 		// 🚨 notify と keep は同時に立つ (handle は「開始を伝えた後も失敗を拾うため監視を続ける」を
 		// この組み合わせで表す)。通知したときに tickCmd を張り直さないと監視チェーンが切れ、
-		// その後のビルド失敗が二度と通知されない (監視は失敗を検出する唯一の経路。issue 032)。
+		// その後のビルド失敗が二度と通知されない (監視は失敗を検出する唯一の経路)。
 		res, notify, keep := m.autobuild.handle(msg.result, app.TimeNow())
 		var watch tea.Cmd
 		if keep {
@@ -1126,11 +1126,11 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 消さないので loading() は false のままスピナーに落ちず、表示は last-good を維持する
 		// (handle の不変条件)。
 		//
-		// 表示中だけ取得する。以前は「隠れていても最新値を用意しておく」ため表示/非表示に
-		// 依らず回していたが、その判断は「/usage は ~440ms でゼロコスト」という誤った前提の
-		// 上にあった (実測 2.0s wall / 1.8s CPU。440ms は JSON の duration_ms = 内部処理時間)。
+		// 表示中だけ取得する。「隠れていても最新値を用意しておく」ために表示/非表示に
+		// 依らず回さない。それは「/usage は ~440ms でゼロコスト」という誤った前提の
+		// 上にある (実測 2.0s wall / 1.8s CPU。440ms は JSON の duration_ms = 内部処理時間)。
 		// オーバーレイは起動時グランスの後どのナビゲーションキーでも dismiss されるので、
-		// 実際にはほぼ常に非表示 = 見えないもののために 60 秒ごと永続に node を起こしていた。
+		// 実際にはほぼ常に非表示 = 見えないもののために 60 秒ごと永続に node を起こすことになる。
 		// 「即座に最新が見える」という元の意図は再表示 (U) 時の stale 判定で保つ。
 		if !m.wantsUsageRefresh() {
 			return m, usageRefreshTick() // チェーンは維持 (再表示後に周期取得が復活する)
@@ -1150,7 +1150,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		targets := m.ciPollTargets()
 		if len(targets) == 0 {
-			// 🚨 **ここで awaitCI を空にする** (issue 223)。ciPollTargets は commits を走査して
+			// 🚨 **ここで awaitCI を空にする**。ciPollTargets は commits を走査して
 			// `m.awaitCI[c.SHA]` を targets に入れるので、**targets が空なら残っている awaitCI の
 			// 要素は定義上 commits の外**にいる = どの経路でも取り除かれないファントム。
 			// ⚠️ 打ち切り (awaitAttempts) を早期 return の前へ動かしても効かない: この分岐は
@@ -1242,8 +1242,8 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// (boxLines の switch 順) なのにキーを受け取るのは確認 (handleKey の判定順) になり、
 		// 「完了まで終了できません」の画面で Enter が git push を起動する (audit 2026-08-20 で
 		// runGitPush 1 回を実測)。確認・git 実行中は update を譲り、理由をトーストで伝える。
-		// 🚨 ここに anyUpdating() を足さないこと: 別 CLI の update とは並走させる (issue 074 の主旨)。
-		// 本来の直し方は「描画とキー判定を同一の状態値から導出する」(issue 071 に残置)。
+		// 🚨 ここに anyUpdating() を足さないこと: 別 CLI の update とは並走させる。
+		// 本来の直し方は「描画とキー判定を同一の状態値から導出する」(未対応)。
 		if m.actModal.pushConfirm || m.actModal.pullConfirm || m.actModal.rerunConfirm ||
 			m.actModal.pushing || m.actModal.pulling || m.actModal.rerunning {
 			m.toast.Show(msg.target+" update は確認/実行が終わってから実行してください", true)
@@ -1253,7 +1253,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case updateMsg:
 		// 🚨 早期リターン (「すでに latest」の判定結果) で走行中の update を降ろさないこと。
 		// C の判定 Cmd が並走したとき、その結果が走っている自己更新の追跡を消し、モーダルが
-		// 閉じて終了ガードが解ける (自己更新が孤児化 / 二重起動する。red team 2026-08-21 が
+		// 閉じて終了ガードが解ける (自己更新が孤児化 / 二重起動する。2026-08-21 に
 		// npm 2 本同時と Ctrl-C 脱出を実測)。走行中なら判定結果は捨てる。
 		if msg.early && m.actModal.isUpdating(msg.target) {
 			return m, m.maybeTick()
@@ -1400,7 +1400,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// 🚨 単キー経路と同じく maybeTick を束ねる: 分解したキーが出したトースト・glide は
 			// 他に tick を回す理由が無ければ 1 フレームも進まず、shown=0 のまま凍って見えない。
-			// この経路は「普段は通らないが通ったときだけ壊れる」ので気づきにくい (issue 032)。
+			// この経路は「普段は通らないが通ったときだけ壊れる」ので気づきにくい。
 			// maybeTick は single-flight なのでループ内の Cmd と重ねても二重には走らない。
 			return m, tea.Batch(append(cmds, m.maybeTick())...)
 		}
@@ -1417,17 +1417,17 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // updateKeyReachable は C / X を update の入口として受けてよいかを返す。overlay が自分の語彙を
 // 持っているとき (= ownsKeys) はそちらを優先する。今その状態を持つのは 3 つ:
 // issues の絞り込み・URL ピッカー・目印確認 / status の pager・破棄確認 / **doctor の削除の確認と
-// 実行中** (issue 148 ④)。status viewer では X が「変更を捨てる」(docs/status-viewer-spec.md) なので渡す。
+// 実行中**。status viewer では X が「変更を捨てる」(docs/status-viewer-spec.md) なので渡す。
 // それ以外 (ratelimit / diff / PR status / job パネル) は入力モードも C / X の割り当ても
 // 持たないので常に受ける = どの画面からでも update を始められる (README のキー表が正本)。
 // 🚨 overlay に新しい入力モード (y/N 確認など) や C / X の割り当てを足すときはここも直す。
 // overlay 側は「未知キーは無視」なので、忘れても build もテストも壊れず、update が確認中のキーを
-// 先取りする形で静かに壊れる (doctor に削除確認を足す予定 = issue 148 ④ が最初の該当)。
+// 先取りする形で静かに壊れる (doctor に削除確認を足す予定が最初の該当)。
 func (m *browseModel) updateKeyReachable(key string) bool {
 	if m.issuesOv.Visible() && m.issuesOv.OwnsKeys() {
 		return false
 	}
-	// doctor の削除は y/N の確認と実行中のブロックを持つ (issue 148 ④)。ここで譲らないと
+	// doctor の削除は y/N の確認と実行中のブロックを持つ。ここで譲らないと
 	// 確認中の X が codex update を始め、削除の確認が裏に残る
 	if m.doctorOv.Visible() && m.doctorOv.OwnsKeys() {
 		return false
@@ -1492,7 +1492,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			// doctor の削除も push / pull と同じ 2 段ガード。🚨 ここに case が無いと
 			// **1 回目の Ctrl-C でプロセスごと落ちる**。それは削除の中断を ctx で伝える経路を
 			// 使わないので、記録が executing のまま残り、cli: の子プロセスも孤児化する
-			// (doctor_delete.go 冒頭の不変条件を、UI の配線が破る形。敵対レビュー 2026-09-03 が実測)。
+			// (doctor_delete.go 冒頭の不変条件を、UI の配線が破る形。2026-09-03 に実測)。
 			// 中断の意味づけ (1 回目は武装 / 2 回目で cancel) は doctorview.DoctorView が持つので、
 			// 判定を 2 箇所に書かず InterruptDelete へ渡す。**どちらの回でもここで飲む**
 			// (2 回目の cancel は相を落とさない = 相を落とすのは receiveDelete なので、
@@ -1542,7 +1542,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// (渡しても何も起きず、案内だけが消える)。C-b の利用者が window 移動のつもりで押すとキャレットが動くが、入力欄では
 	// docs/glogx-ui-guide.md §7 の編集の語彙を優先する (案内を出して編集を捨てる方が、C-b を左へ使う人を壊す)。
 	// 入力欄が自分で捌く移動のキー (ctrl+n / ctrl+p) は lineedit の編集キーではないので、prefix にしている人には入力中も
-	// 案内に取られる。救うには入力欄のキーの表をここにもう 1 つ持つことになるので、稀な設定として採らない (2026-10-02 の敵対レビュー)
+	// 案内に取られる。救うには入力欄のキーの表をここにもう 1 つ持つことになるので、稀な設定として採らない
 	if m.tmuxPrefix != "" && key == m.tmuxPrefix && !m.inputEditsWith(key) {
 		// 通知は右下トースト (中央ダイアログは操作を遮って重い)
 		m.toast.Show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
@@ -1589,8 +1589,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.actModal.startUpdateFor(target), m.maybeTick())
 	}
 	// 全画面ビューア (doctor / 残量ダッシュボード / issues / status) が出ている間は、キーを
-	// そのビューアが飲み切る。🚨 **どれが出ているかの出典は activeFullScreen 1 箇所**
-	// (issue 227)。ここで個別に visible() を並べ直さない。
+	// そのビューアが飲み切る。🚨 **どれが出ているかの出典は activeFullScreen 1 箇所**。
+	// ここで個別に visible() を並べ直さない。
 	//
 	// 🚨 この dispatch の位置は動かさないこと。前 (actModal の確認・実行中ガード / tmux prefix /
 	// 再起動ダイアログ / C・X の update) へ動かすと viewer の語彙が外側に奪われ、後ろ (裸の
@@ -1614,7 +1614,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 	// usage オーバーレイのトグル / dismiss。モーダル (push/pull 確認)・prefix・
 	// 実行中ガードを素通りしないよう必ずそれらの後に置く: 先頭に置くと U が push 確認を
-	// キャンセルし損ねて残った確認へ Enter で誤 push する footgun になる (レビュー指摘 2026-07-21)。
+	// キャンセルし損ねて残った確認へ Enter で誤 push する footgun になる。
 	// U は明示トグル (取得中なら spinner を回し直す)。それ以外のナビゲーションキーは「起動時
 	// グランス」を引っ込める副作用だけ持たせ、キー本来の動作は下の dispatch/switch で続行する。
 	if key == "U" {
@@ -1625,16 +1625,16 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "R" {
 		return m, m.openFullScreen(app.FullScreenRatelimit)
 	}
-	// D = 全画面 doctor (issue 148)。R と同じ判定位置 (モーダル・prefix・実行中ガードの後)。
+	// D = 全画面 doctor。R と同じ判定位置 (モーダル・prefix・実行中ガードの後)。
 	// 開いた時にスキャンが始まる (起動時には走査しない)。
 	if key == "D" {
 		return m, m.openFullScreen(app.FullScreenDoctor)
 	}
-	// F = 全画面 treefiler (issue 662)。R / D と同じ判定位置なので、diff・PR status・job パネルの上からも開く
+	// F = 全画面 treefiler。R / D と同じ判定位置なので、diff・PR status・job パネルの上からも開く
 	if key == "F" {
 		return m, m.openFullScreen(app.FullScreenFiler)
 	}
-	// L = 全画面 mac-lan-manager (issue 747)。F と同じ判定位置
+	// L = 全画面 mac-lan-manager。F と同じ判定位置
 	if key == "L" {
 		return m, m.openFullScreen(app.FullScreenLan)
 	}
@@ -1668,7 +1668,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.actModal.askPull()
 		return m, nil
 	}
-	// w = 直近の警告/エラーをクリップボードへコピー (issue 026)。トーストは数秒で消えるが
+	// w = 直近の警告/エラーをクリップボードへコピー。トーストは数秒で消えるが
 	// lastWarning は保持しているので消えた後でもコピーできる。ghErr (CI 取得失敗の sticky
 	// 警告) は lastWarning に無くても hint に出続けているので fallback で拾う。tmux popup 内では
 	// copy-mode に入れないため、pbcopy 直書きの extcmd.CopyToClipboard が唯一の取り出し口 (y/Y と同じ)。
@@ -1763,16 +1763,16 @@ func (m *browseModel) applyListMotion(mo listnav.Motion) tea.Cmd {
 // (裏の一覧をスクロールさせない)。呼ぶのは handleKey の activeFullScreen dispatch 1 箇所で、
 // **dispatch の位置とその理由はそちらに書く** (ここへ再掲しない)。
 func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
-	// 描画中に選択行が消えて寄せていたら、**キーを飲まずに**知らせる (issue 210)。
+	// 描画中に選択行が消えて寄せていたら、**キーを飲まずに**知らせる。
 	// カーソルの寄せは View から起きるので、通知経路はここしか無い
 	if t := m.doctorOv.TakeCursorFellBack(); t != "" {
 		m.toast.Show(t, false)
 	}
-	// U (usage) は doctor の上でも効く (issues / status と同じ契約。issue 227 ③)。usage の箱は
+	// U (usage) は doctor の上でも効く (issues / status と同じ契約)。usage の箱は
 	// finishWithGlobalChrome がどの画面にも重ねるので「取得だけ走って画面に出ない」は起きない。
 	// 🚨 doctor が自分でキーを解釈し切る状態 (削除の y/N 確認・実行中) では横取りごと飛ばして
 	// 委譲へ落とす: 飛ばさないと確認中の U が箱を出し、確認は裏に残ったままになる
-	// (issues の URL ピッカーで実際に起きた形 = issue 113)。
+	// (issues の URL ピッカーで実際に起きた形)。
 	if !m.doctorOv.OwnsKeys() {
 		if key == "U" {
 			return m, m.toggleUsage()
@@ -1828,12 +1828,11 @@ func (m *browseModel) routeKeyToRatelimitDash(key string) (tea.Model, tea.Cmd) {
 	// 同時に 1 枚) が前提。開いていると toggle が「開く」でなく「閉じる」に化ける。起動時
 	// 復元との競合はその前提を守るために issuesRestoreMsg 側で弾いている。
 	//
-	// 🚨 一覧の i/s が持つ `m.panelSHA == ""` ガードは、ここでは**意図的に付けない**
-	// (敵対レビュー指摘 2026-09-01)。あのガードの理由は「job パネルを開いている間はそちらの
+	// 🚨 一覧の i/s が持つ `m.panelSHA == ""` ガードは、ここでは**意図的に付けない**。あのガードの理由は「job パネルを開いている間はそちらの
 	// キー語彙を優先する」= キーの取り合いの解消で、ダッシュボードは全画面で全キーを飲む
 	// ため取り合いが起きない。パネル (panelSHA / panelCursor / details) は viewer とは独立
 	// した状態で、閉じれば元のパネルがそのまま描き直される。🚨 逆にガードを付けると、
-	// パネルを開いたまま R → i が無音の no-op になる (issue 122 が禁じた形)。
+	// パネルを開いたまま R → i が無音の no-op になる (禁じた形)。
 	// パネル側の状態を viewer が読むようになったら、この判断を再評価すること。
 	case ratelimitview.RlDashCross:
 		return m, m.openFullScreen(m.rlDash.TakeWantCross())
@@ -1845,15 +1844,15 @@ func (m *browseModel) routeKeyToRatelimitDash(key string) (tea.Model, tea.Cmd) {
 
 // routeKeyToIssues は issues viewer 表示中のキー処理 (全画面なのでキーは全部 viewer が飲む)。
 //
-// U (usage) はここで受ける: 以前は「viewer が全画面で描かれないのに取得だけ走る」ため
-// 弾いていたが、viewLines が viewer の窓へ usage を合成するようになったので開けてよい。
+// U (usage) はここで受ける: viewLines が viewer の窓へ usage を合成するので開けてよい
+// (「viewer が全画面で描かれないのに取得だけ走る」形にしない)。
 func (m *browseModel) routeKeyToIssues(key string) (tea.Model, tea.Cmd) {
 	// U は viewer の上でも効く (ユーザー要望 2026-08-01)。viewLines が usage を viewer の窓へ
 	// 合成するので「取得だけ走って画面に出ない」問題は起きない (トーストと同じ経路)。
 	//
 	// 🚨 viewer が自分でキーを解釈し切る状態 (URL ピッカー / 番号入力 / y/N 確認) では、この
 	// 横取りを飛ばして下の委譲へ落とす。飛ばさないと URL ピッカーが宣言している
-	// 「印字文字はすべて検索語に流す」が大文字 U だけ破れる (issue 113)。
+	// 「印字文字はすべて検索語に流す」が大文字 U だけ破れる。
 	// 🚨 ガードは横取りだけに掛けること (この if 自体に付けると委譲も飛ぶ)。
 	if !m.issuesOv.OwnsKeys() {
 		if key == "U" {
@@ -2008,7 +2007,7 @@ func (m *browseModel) reloadLog(keepView bool, failPrefix string) (added int, cm
 //
 // 🚨 カーソルだけを錨にしないこと: ctrl+d でページ送りした状態 (cursor == 0 のまま下を読む) では
 // カーソルが指すのは**先頭コミット**で、`--amend` で最も消えやすい SHA になる。消えた瞬間に
-// 「先頭へ倒す」経路へ落ちて読んでいた位置が飛ぶ (敵対レビューで実測 2026-09-01)。
+// 「先頭へ倒す」経路へ落ちて読んでいた位置が飛ぶ (2026-09-01 に実測)。
 // 両方消えていたら (rebase / reset) 先頭へ倒す。
 //
 // 錨は行集合が入れ替わる直前 (この関数の中) で測る。非同期の読み直しでは Cmd を出してから
@@ -2296,7 +2295,7 @@ func (m *browseModel) refetchAfterPush() tea.Cmd {
 	m.awaitCI = map[string]bool{}
 	m.awaitAttempts = 0
 	if m.pushAnimTip != "" {
-		// 🚨 **commits 所属を確かめてから入れる** (issue 223)。awaitCI の不変条件は
+		// 🚨 **commits 所属を確かめてから入れる**。awaitCI の不変条件は
 		// 「awaitCI ⊆ commits の SHA」で、これを破ると**どの経路でも取り除かれない**
 		// 要素が残る: ciPollTargets は commits を走査して targets を組むので commits 外の
 		// SHA は追従対象にならず、statuses も永久に現れないので settleAwaitCI も落とせない。
@@ -2369,8 +2368,7 @@ func (m *browseModel) centerModalLines() []string {
 // main.go の defer の両方が呼ぶ: bubbletea v2 は SIGINT/SIGTERM を InterruptMsg/QuitMsg に
 // 変換するが、この 2 つだけは model.Update を経由せず eventLoop が直接 return するため
 // (tea.go の handleSignals/eventLoop)、シグナル終了では quit() が走らない。defer 側が無いと
-// push/pull 中の SIGTERM (tmux kill-window 等) で deadline なしの git 子プロセスが孤児化する
-// (issue 029 P1)。
+// push/pull 中の SIGTERM (tmux kill-window 等) で deadline なしの git 子プロセスが孤児化する。
 func (m *browseModel) cancelAll() {
 	m.cancel()
 	m.usageOv.Stop()  // 走行中の usage fetch subprocess を中断 (オーファン化防止)
@@ -2405,7 +2403,7 @@ func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 	m.lanV.RememberScreen(app.TimeNow())
 	m.cancelAll()
 	// 預けた起動時の検査は捨てる: 閉じる演出の間は done が立たないので、取り消された CI 取得の結果が届くと
-	// releaseStartupChecks を通り、終了直前に claude / codex を起こして孤児にする (issue 570 の敵対的レビュー)
+	// releaseStartupChecks を通り、終了直前に claude / codex を起こして孤児にする
 	m.deferredStartup = nil
 	if m.fetching() {
 		m.fillUnknown()
@@ -2432,8 +2430,8 @@ func (m *browseModel) restartForNewBinary() (tea.Model, tea.Cmd) {
 
 // autobuildAfterPull は pull で自分のソースが更新されていたら、その場で裏ビルドを起動する。
 //
-// 狙いは「glogx を手で起動し直す手間をなくす」(ユーザー要望 2026-08-05): 以前は pull で新しい
-// glogx が降ってきても、popup を閉じて開き直すまで再ビルドが始まらなかった。
+// 狙いは「glogx を手で起動し直す手間をなくす」: pull で新しい
+// glogx が降ってきても、popup を閉じて開き直すまで再ビルドが始まらないのを避ける。
 //
 // 🚨 「pull が glogx のソースを含んでいたか」は自分で判定しない。glogx はどの repo でも動くので
 // 「今 pull した repo が dotfiles か」の判定が要るように見えるが、shim の指紋比較は自分のソース
@@ -2452,11 +2450,11 @@ func (m *browseModel) autobuildAfterPull() tea.Cmd {
 // restartPromptVisible は再起動ダイアログを今出してよいか。表示 (restartPromptLines) と
 // 入力 (handleKey) の両方がこの 1 つの述語を見る。
 //
-// 🚨 順序を 2 箇所に書かないための関数。以前は「キーは actModal が先に飲む」「描画は
-// restartPrompt を後に重ねる」と別々に書いていたため、claude update 中に裏ビルドが完成すると
-// 「最前面のダイアログにどのキーも届かない」状態になった (実測: r/j/q/esc/enter/ctrl+g の
+// 🚨 順序を 2 箇所に書かないための関数。「キーは actModal が先に飲む」「描画は
+// restartPrompt を後に重ねる」と別々に書くと、claude update 中に裏ビルドが完成すると
+// 「最前面のダイアログにどのキーも届かない」状態になる (実測: r/j/q/esc/enter/ctrl+g の
 // すべてが無反応。しかも更新中モーダルの『完了まで終了できません』をダイアログが覆うので、
-// 効かない理由すら画面から消えていた)。
+// 効かない理由すら画面から消える)。
 //
 // actModal が出ている間は出さない (running() ではなく active())。active() は「描かれる」と
 // 「キーを消費する」を兼ねる 1 つの述語で、running() は実行中だけを指すので足りない。
@@ -2472,7 +2470,7 @@ func (m *browseModel) autobuildAfterPull() tea.Cmd {
 func (m *browseModel) restartPromptVisible() bool {
 	// 🚨 doctor の削除中も出さない。このダイアログの r は cancelAll で走行中の処理を殺すし、
 	// 出ている間はどのキーもダイアログに吸われて doctor に届かない (削除の確認が裏に残る)。
-	// actModal を除外しているのと同じ理由 (敵対レビュー 2026-09-03 が実測)
+	// actModal を除外しているのと同じ理由 (2026-09-03 に実測)
 	return m.restartPending && !m.actModal.active() && (!m.doctorOv.Visible() || !m.doctorOv.OwnsKeys())
 }
 
@@ -2708,8 +2706,7 @@ func (m *browseModel) openNeighborJobDetail(delta int) tea.Cmd {
 }
 
 // copyJobContext はフォーカス中 job の「何が起きたか」(step 一覧 + annotations / ログ末尾) を
-// Markdown 整形でクリップボードへコピーする (job パネル / job 詳細の Y キー。LLM に貼る用。
-// issue 020)。詳細が未取得なら詳細ポップアップを開いて取得し、到着 (jobDetailMsg) 時にコピーする。
+// Markdown 整形でクリップボードへコピーする (job パネル / job 詳細の Y キー。LLM に貼る用)。詳細が未取得なら詳細ポップアップを開いて取得し、到着 (jobDetailMsg) 時にコピーする。
 func (m *browseModel) copyJobContext() tea.Cmd {
 	job, ok := m.focusedJob()
 	if !ok {
@@ -2728,7 +2725,7 @@ func (m *browseModel) copyJobContext() tea.Cmd {
 // クリップボードへ入れる。ヘッダ・本文とも制御コードを除去したプレーンテキストにする。
 // job.URL (= StatusContext の targetUrl 等) は外部 CI が任意に設定できる。detailsOf が受け取った時点で
 // 平文にしているが、クリップボードは描画処理のような後ろ盾の無い最後の関門なので、ここでも通す
-// (受け取る側の 1 箇所だけに頼ると、CheckDetail を別の経路で組んだときに素通りする。issue 417)。
+// (受け取る側の 1 箇所だけに頼ると、CheckDetail を別の経路で組んだときに素通りする)。
 // 🚨 term.StripANSI 単体は OSC を落とせない (英字終端判定のため OSC の途中で誤終了し BEL が残る・実測) ので、
 // term.SanitizeDetailLine を先に通す順を崩さないこと。
 // c.Subject は %q が制御文字を Go エスケープするため安全。本文 lines は取得時に
@@ -2927,7 +2924,7 @@ func (m *browseModel) copyFocusURL() {
 		return
 	}
 	// クリップボードへ入れる直前にも平文にする (copyJobContextLines と同じ理由。job.URL は外部 CI が
-	// 設定できる。issue 417 まではここが生のままクリップボードへ入れていた)
+	// 設定できる)
 	url = term.SanitizePlainLine(url)
 	m.copyWithToast(url, "コピーしました: "+url)
 }
@@ -3013,7 +3010,7 @@ func (m *browseModel) settleAwaitCI() {
 		return
 	}
 	for sha := range m.awaitCI {
-		// 🚨 **commits に無い SHA は毎周期ここで落とす** (issue 223)。入口 (refetchAfterPush)
+		// 🚨 **commits に無い SHA は毎周期ここで落とす**。入口 (refetchAfterPush)
 		// でも弾いているが、awaitCI を張る経路が増えたときにこちらが最後の砦になる。
 		// 落とさないと statuses が永久に現れず、下の switch は default 側を回り続けるだけで
 		// awaitCI から消えない = スピナーと再描画が止まらない。
@@ -3058,10 +3055,10 @@ func (m *browseModel) fetchPanelDetails(sha string) tea.Cmd {
 	}
 	// 進行中の一括取得に含まれる SHA は、その結果 (details 込み) を待つ。
 	// ここで別リクエストを打つと同一 SHA への GraphQL が並行し、完了順で
-	// statuses/details が上書きされる (codex レビュー指摘)
+	// statuses/details が上書きされる
 	if m.fetching() && slices.Contains(m.toFetch, sha) {
 		// Cmd を 1 本も出さない = 降ろす責任は一括取得側にある。世代交代で捨てられたときに
-		// 取り残されないよう、待機であることを覚えておく (issue 272)。
+		// 取り残されないよう、待機であることを覚えておく。
 		m.detailsLoading[sha], m.detailsWaiting[sha] = true, true
 		return nil
 	}
@@ -3255,7 +3252,7 @@ func (m *browseModel) openPR() tea.Cmd {
 	}
 }
 
-// openPRStatus はカーソル位置コミットの PR 状態ポップアップを開く (P キー, issue 021)。
+// openPRStatus はカーソル位置コミットの PR 状態ポップアップを開く (P キー)。
 // 同じコミットで再度 P を押すと閉じる (toggle)。取得はオンデマンド単発 GraphQL
 // (一括クエリと prCache は number/url/state のまま変えない。理由は PRStatus のコメント)。
 func (m *browseModel) openPRStatus() tea.Cmd {
@@ -3292,7 +3289,7 @@ func (m *browseModel) handlePRStatusKey(key string) (tea.Model, tea.Cmd) {
 	case "y":
 		if pr := m.prStatusOv.Current(); pr != nil {
 			// PR の url は取得の段階で無害化していない (表示する欄だけを無害化している)。
-			// クリップボードは最後の関門なので、入れる直前に平文にする (issue 417)
+			// クリップボードは最後の関門なので、入れる直前に平文にする
 			url := term.SanitizePlainLine(pr.URL)
 			m.copyWithToast(url, "コピーしました: "+url)
 		}
@@ -3400,7 +3397,7 @@ func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
 	m.diffOv.Scroll(key, m.visibleDiffRows())
 	// 半ページ移動は glide (internal/term/scroll_glide.go) で進むので tick を張る。張らないと advanceGlide を
 	// 呼ぶ者がおらず、表示位置がスクロール前で固まったまま「キーが効かない」ように見える
-	// (敵対的レビュー P1 2026-07-31: Space 後に j を何度押しても先頭行が出続ける実測)。
+	// (2026-07-31 に実測: Space 後に j を何度押しても先頭行が出続ける実測)。
 	// 1 行移動・閉じるは glide を使わないので tick を増やさない。
 	if m.diffOv.Animating() {
 		return m, m.maybeTick()
@@ -3435,7 +3432,7 @@ func (m *browseModel) fillUnknown() {
 // 🚨 ここに「フォーカスされているか」を足して非フォーカス中の tick を止める案 (bubbletea v2 の
 // FocusMsg/BlurMsg。o/p で別アプリへ移った後も 80ms tick と usage の毎分リフレッシュが
 // 回り続けるのを削る) は実装が小さいが、「今は不要」とのユーザー判断で見送っている (2026-07-25)。
-// CPU が気になると言われたら再評価する。🚨 tmux は focus-events off (issue 568) なので、やるなら
+// CPU が気になると言われたら再評価する。🚨 tmux は focus-events off なので、やるなら
 // 先に on へ戻すか (pane の行き来が遅くなる代償つき) を決める必要がある。
 // 経緯と他の未採用 v2 機能は docs/glogx-bubbletea-v2.md。
 func (m *browseModel) spinnerActive() bool {
@@ -3564,7 +3561,7 @@ func (m *browseModel) invalidateLines() {
 }
 
 // pageSize はビューポートの行数 (最下段のヒント行を除く)。
-// フレーム有効時の寸法オーバーヘッド (issue 025)。
+// フレーム有効時の寸法オーバーヘッド。
 //
 //	横 frameHOverhead = 左余白1 + "│ "2 + " │"2 + 影1 + 右余白1 = 7
 //	縦 frameVOverhead = 上余白1 + 上辺1 + 下辺1 + 下影1 + hint1 = 5
@@ -3695,9 +3692,9 @@ func (m *browseModel) caret() *tea.Cursor {
 // オーバーレイを重ねて窓を仕上げる。全ビューの唯一の出口。
 //
 // 🚨 ここに書く 4 つ (action モーダル → 再起動 → usage → トースト) はビューごとに書かないこと。
-// 過去に viewer が全画面だった頃、この合成を一覧側にしか書いておらず「issues を開いている間は
-// 通知が画面に一切出ない」時期があった。前面順も含めてこの 1 箇所が契約の出典
-// (issue 085: 以前は viewer 用と一覧用に逐語 2 コピーあった)。
+// この合成を一覧側にしか書かないと「issues を開いている間は
+// 通知が画面に一切出ない」状態になる。前面順も含めてこの 1 箇所が契約の出典
+// (viewer 用と一覧用に逐語 2 コピーを置かない)。
 //
 // 各オーバーレイの理由:
 //   - action モーダル (pull 確認・実行中): キーは viewer より先に actModal が捌く (handleKey の
@@ -3741,7 +3738,7 @@ func toastTimers(ts []toast.Timer) tea.Cmd {
 // 下限がないと狭い窓で重要警告が 1 枚に減り、上限がないと 2 箱が窓を覆うため、両方が要る。
 // reserved は最新 + 新しい重要警告 2 枚の実際の行数 (Stack.ReservedHeight)。🚨 下限は 1 行の箱 2 枚ぶん (BoxHeight*2) と
 // これの大きい方: 折り返した警告は 1 行の箱より高く、BoxHeight で数えると 2 枚目が落ちる。最新を数えないと、最新が成功の
-// とき警告の分を先に使う (issue 484)。一律に MaxBoxHeight*2 へ上げると、警告の無い 1 行の箱が 3 枚入って窓を覆う。
+// とき警告の分を先に使う。一律に MaxBoxHeight*2 へ上げると、警告の無い 1 行の箱が 3 枚入って窓を覆う。
 func toastDrawBudget(page, reserved int) int {
 	return min(max(page/2, toast.BoxHeight*2, reserved), max(page-1, toast.BoxHeight))
 }
@@ -3834,7 +3831,7 @@ func (m *browseModel) viewLines() string {
 // finishWindow は組み終わった窓をフレームで包み hint 行を足して 1 フレームの文字列にする。
 // コミット一覧と issues viewer (全画面) の共通の出口 (枠・hint の扱いを 1 箇所に保つ)。
 func (m *browseModel) finishWindow(window []string, page int) string {
-	// フレーム有効時は最外周を余白 + 枠 + 右下ドロップシャドウで包む (issue 025)。板の高さを
+	// フレーム有効時は最外周を余白 + 枠 + 右下ドロップシャドウで包む。板の高さを
 	// 安定させるため、コンテンツが少なくても pageSize 行まで空行でパディングしてから包む
 	// (板が常にビューポート一杯 = リサイズや行数変動で枠が踊らない)。hint は板の外・最下行。
 	if m.frameActive() {
@@ -4036,11 +4033,10 @@ func (m *browseModel) bgLine(text, bg string) string {
 }
 
 func (m *browseModel) hintLine() string {
-	// 全画面ビューアの hint は viewer 自身のものだけを出す (issue 227 で activeFullScreen から
-	// 導出する形に寄せた)。🚨 **actModal の確認より前に return するのは意図**: status viewer の
+	// 全画面ビューアの hint は viewer 自身のものだけを出す (activeFullScreen から導出する)。🚨 **actModal の確認より前に return するのは意図**: status viewer の
 	// 中から `b` / `p` で push / pull の確認を出したとき、hint 行は viewer の語彙のままになる
 	// (中央の確認モーダルが y/N を案内するので、狭い hint 行を奪ってまで二重に出さない)。
-	// この順序は issue 227 の前からのもので、構造が変わっただけ。🚨 CI 進捗・GH 警告の前置はしない: viewer の hint は popup の実幅
+	// 🚨 CI 進捗・GH 警告の前置はしない: viewer の hint は popup の実幅
 	// ぴったりに詰めてあり (issues_view.go の hint)、前置すると末尾のキー案内 = 抜ける手段が
 	// 黙って切り落とされる。CI は viewer を閉じれば見える。
 	switch m.activeFullScreen() {
@@ -4059,22 +4055,22 @@ func (m *browseModel) hintLine() string {
 	case app.FullScreenNone, app.FullScreenCount:
 		// 全画面ビューアが出ていない = 下の一覧の hint
 	}
-	// 🚨 前置 (取得中 / gh の警告) は hint と**同じ予算**に載せる (issue 279)。以前は
-	// term.FitHintItems が幅ぴったりに収めた後で前置を積み、hintLineText の term.ClipToWidth が
-	// 末尾 = **出口**を落としていた。m.ghErr は次の取得開始までクリアされないので、
+	// 🚨 前置 (取得中 / gh の警告) は hint と**同じ予算**に載せる。
+	// term.FitHintItems が幅ぴったりに収めた後で前置を積むと、hintLineText の term.ClipToWidth が
+	// 末尾 = **出口**を落とす。m.ghErr は次の取得開始までクリアされないので、
 	// gh 未導入 / 未認証 / 非 GitHub repo では**常時**その状態になり、幅 60〜200 の全帯で
-	// 出口が消えていた (敵対レビューが実測 2026-09-06)。
+	// 出口が消える (2026-09-06 に実測)。
 	//
 	// 前置は「今なぜ待っているか」の説明で、抜ける手段より優先度が低い。予算の半分を
 	// 超えたら前置の方を切る。
 	hw := m.hintWidth()
 	// 前置は「今なぜ待っているか」の説明で、抜ける手段より優先度が低い。予算の半分を
 	// 超えたら前置の方を切る (頭打ちは hintPrefix の中でやる — ここで prefix に触る形を
-	// 残さないため。敵対的レビュー 2 周目の P1)。
+	// 残さないため)。
 	prefix := m.hintPrefix(hw / 2)
 	hw = max(hw-term.DispWidth(prefix), 0)
 
-	// 面ごとの hint 項目は hint_surfaces.go のレジストリが唯一の出典 (issue 289)。
+	// 面ごとの hint 項目は hint_surfaces.go のレジストリが唯一の出典。
 	// ここで直接文字列を組まないこと — 予算計算 (term.FitHintItems) と幅ゲートの両方を
 	// 迂回でき、末尾 = 出口が黙って切れる形が再生産される (279 / 281 の P1 2 本がその形)。
 	// 迂回は TestHintLineHasNoInlineHintText が字句で止める。
@@ -4096,7 +4092,7 @@ func (m *browseModel) hintLineText(hint string) string {
 
 // hintWidth は hint 行に使える桁数。🚨 hintLineText の clip 幅と、hint を組む側 (statusView.hint)
 // が使う予算はこの 1 か所から取る。2 か所に式を書くと、片方だけ余白を変えた瞬間に「収まる
-// つもりで組んだ hint が黙って切られる」形でずれる (issue 155 はその状態だった)。
+// つもりで組んだ hint が黙って切られる」形でずれる。
 func (m *browseModel) hintWidth() int {
 	if m.frameActive() {
 		return max(m.width-2, 1)
@@ -4129,7 +4125,7 @@ func RunBrowse(m *browseModel) (*browseModel, error) {
 }
 
 // drainFilerNotices は filer に溜まった知らせを toast へ出す。🚨 キーの後だけでなく Advance の後にも呼ぶ: explode の完了や `o` の失敗は
-// Advance の中で積まれるので、キーの後だけだと次のキーまで出ない (issue 731)。
+// Advance の中で積まれるので、キーの後だけだと次のキーまで出ない。
 func (m *browseModel) drainFilerNotices() {
 	f := m.filerV.Live() // 閉じた filer の知らせは出さない
 	if f == nil {
@@ -4154,7 +4150,7 @@ func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 	m.drainFilerNotices()
 	switch act {
 	case filerview.FilerQuit:
-		// quit (記憶の保存) を hide より先に: hide の後だと「F を出していない」と判定されて記憶が消える (issue 710)
+		// quit (記憶の保存) を hide より先に: hide の後だと「F を出していない」と判定されて記憶が消える
 		mm, cmd := m.quit()
 		m.filerV.Hide()
 		return mm, cmd

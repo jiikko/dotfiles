@@ -1,7 +1,7 @@
 //go:build !nofixture
 
 // fixture.go は main のテスト用の口なので、到達不能のコードの検査 (scripts/check_unused_excluding_tests.sh) は
-// -tags=nofixture でこのファイルを外して走る (ここを根に数えると、Fixture からしか呼ばれない内部を見落とす。issue 817)。
+// -tags=nofixture でこのファイルを外して走る (ここを根に数えると、Fixture からしか呼ばれない内部を見落とす)。
 
 package issuesview
 
@@ -17,7 +17,7 @@ import (
 // Fixture は main のテスト (browseModel と組み合わせる配線・入力欄の caret・横断の語彙・1 フレームの予算のテスト) が
 // issues viewer を特定の状態に置く・読むための口 (doctorview の Fixture と同じ作法)。本番のコードは使わない
 // (structure_ratchet_test.go の TestNoFixtureCallsInProduction が止める)。browseModel が要らないテストは
-// package issuesview の中に書き、この口を使わない。ここに足すのは「main のテストが本当に要る状態」だけにする (issue 817)。
+// package issuesview の中に書き、この口を使わない。ここに足すのは「main のテストが本当に要る状態」だけにする。
 type Fixture struct{ v *IssuesView }
 
 // Fixture はテスト用の口を返す (上の型の注記)。

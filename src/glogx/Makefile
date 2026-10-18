@@ -12,14 +12,14 @@ lint: vet-gorules
 	../../scripts/golangci_lint.sh $(GOLANGCI_LINT_VERSION) run ./...
 
 # gorules/ は build tag で通常ビルドから外れるので、golangci-lint も go build も型検査しない。
-# ここで明示的に vet を回さないと、ルールに型エラーを書いても CI は緑のままになる (issue 202)。
+# ここで明示的に vet を回さないと、ルールに型エラーを書いても CI は緑のままになる。
 # 🚨 gorules/ を glogx 直下へ戻すと package 名衝突でこの vet 自体が落ちる (それが元の状態だった)。
 vet-gorules:
 	go vet -tags ruleguard ./gorules
 
 # test-budget: 1 フレームの確保の回数は -race の計装で揺れるので、その予算だけ -race なしで判定する (バイトは test の -race で判定)
 # (frame_alloc_test.go の TestFrameAllocBudget の doc)。-race 付きの run は回数の判定を飛ばす。
-# -race なしの run はパッケージ全体をもう一度コンパイルし、手元の GOCACHE を 1 行の変更ごとに約 24 MB 増やす (issue 742 の実測 1) ので、
+# -race なしの run はパッケージ全体をもう一度コンパイルし、手元の GOCACHE を 1 行の変更ごとに約 24 MB 増やす (実測) ので、
 # 手元の make test では回さず、CI (GitHub Actions が環境変数 CI を立てる) でだけ回す。描画を触ったら手元でも make test-budget を回す
 test:
 	go test -race ./...

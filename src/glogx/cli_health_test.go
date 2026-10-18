@@ -525,7 +525,7 @@ func isCLIHealthMsg(msg tea.Msg) bool { _, ok := msg.(cliHealthMsg); return ok }
 func isUsageMsg(msg tea.Msg) bool     { _, ok := msg.(usageview.UsageMsg); return ok }
 
 // 起動時の CI 取得がある間は、usage・バージョン・ログイン検査 (node の claude / codex を起こす) を
-// 預け、取得が終わってから投げる (issue 570)。放すのは「取得中でなくなった」状態で見るので、
+// 預け、取得が終わってから投げる。放すのは「取得中でなくなった」状態で見るので、
 // 最後のチャンクの結果でも、結果を経ずに取得をやめる経路 (pull の後の pendingFetches = 0) でも放す。
 // 閉じる演出の間 (done が立つ前) に届いた結果では放さない。usage のディスクキャッシュが当たれば預けずにすぐ出す。
 func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {

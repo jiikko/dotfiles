@@ -780,7 +780,7 @@ func TestPickBestPRClosedOnlyFallback(t *testing.T) {
 	}
 }
 
-// FetchPRStatus は PR 詳細フィールドを取り、複数 PR は OPEN 優先で 1 件選ぶ (issue 021)。
+// FetchPRStatus は PR 詳細フィールドを取り、複数 PR は OPEN 優先で 1 件選ぶ。
 func TestFetchPRStatus(t *testing.T) {
 	sha := strings.Repeat("a", 40)
 	fixture := `{"data":{"repository":{"object":{"associatedPullRequests":{"nodes":[
@@ -832,8 +832,8 @@ func TestDetailsOfNormalizesVS16InJobName(t *testing.T) {
 }
 
 // job の url は外部 CI が任意に設定でき、クリップボード (copyFocusURL / copyJobContextLines) と
-// ブラウザへ流れる。detailsOf が受け取った時点で平文にする (issue 417: copyFocusURL が生のまま
-// クリップボードへ入れていた)。コピーする側では無害化しないので、ここが唯一の関門。
+// ブラウザへ流れる。detailsOf が受け取った時点で平文にする (copyFocusURL が生のまま
+// クリップボードへ入れてしまう)。コピーする側では無害化しないので、ここが唯一の関門。
 func TestDetailsOfSanitizesURL(t *testing.T) {
 	const evil = "https://ci.example.com/42\x1b]52;c;cHduZWQ=\a\x1b[2J\u009b31m"
 	rollup := &rollupPayload{State: "FAILURE"}

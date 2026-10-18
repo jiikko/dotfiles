@@ -9,7 +9,7 @@ import (
 
 // CacheBaseDir は glogx のキャッシュ置き場 ($XDG_CACHE_HOME/glog、未設定時は ~/.cache/glog)。
 // CI キャッシュと claude バージョンキャッシュ (claude_version.go) で共有する。
-// 実体は doctor module の cachedir (doctor のスキャン結果も同じ置き場に保存するため。issue 148)。
+// 実体は doctor module の cachedir (doctor のスキャン結果も同じ置き場に保存するため)。
 func CacheBaseDir() (string, error) { return cachedir.Base() }
 
 // WriteAtomic は atomicfile.Write の薄いラッパー (親ディレクトリを作り、0600 で書く)。

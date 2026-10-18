@@ -106,8 +106,8 @@ func TestActionModalStateListCoversAllFlags(t *testing.T) {
 	}
 	// 🚨 「状態フィールドの型」で絞り込まないこと (bool 限定や、名前のハードコードを含む)。
 	// map / slice / 独自型の状態は静かに網羅対象から落ちる (並列化で updating を map へ変えた
-	// 2026-08-21 に実際に落ち、red team が「非 bool の状態を足すと active() との不一致が
-	// 検出されない」ことを実測した)。除外リスト方式にして、**新設フィールドは必ず落ちる**
+	// 2026-08-21 に実際に落ちた: 「非 bool の状態を足すと active() との不一致が
+	// 検出されない」)。除外リスト方式にして、**新設フィールドは必ず落ちる**
 	// ようにする (落ちたら modalStates へ足すか、この除外リストへ理由付きで加える)。
 	notState := map[string]bool{
 		"cancel":         true,  // 走行中の cancel を握るだけ (モーダルの状態ではない)
@@ -128,7 +128,7 @@ func TestActionModalStateListCoversAllFlags(t *testing.T) {
 	}
 }
 
-// claude と codex の自己更新は並走できること (ユーザー要望 2026-08-21、issue 074)。
+// claude と codex の自己更新は並走できること (ユーザー要望 2026-08-21)。
 // 🚨 単数の bool + 対象名に戻すと、片方の実行中に running() がもう片方の C/X を飲んで
 // 直列化する。この test 群がその退行を捕まえる。
 func TestActionModalParallelUpdates(t *testing.T) {
@@ -201,7 +201,7 @@ func TestActionModalParallelUpdates(t *testing.T) {
 
 // update 実行中のキー配分。C / X は「もう片方の CLI の更新開始」として actionModal が
 // **消費する** (Cmd を返す)。browseModel へ素通しすると全画面 viewer のキー語彙に漏れ、
-// status viewer の X = 破棄確認を誤爆させる (red team 2026-08-21 が git restore の着弾を実測)。
+// status viewer の X = 破棄確認を誤爆させる (2026-08-21 に git restore の着弾を実測)。
 func TestActionModalUpdateKeyOwnership(t *testing.T) {
 	t.Run("別 CLI のキーは消費して更新を始める", func(t *testing.T) {
 		for _, tc := range []struct{ running, key, want string }{
@@ -269,8 +269,8 @@ func TestActionModalUpdateKeyOwnership(t *testing.T) {
 }
 
 // 並走モーダルの表示。走行中の CLI が行で分かること / 終了できない理由が画面にあること。
-// 🚨 この 2 つは「並走中に片方の行しか出ない」「並走中だけ案内が消える」変異で緑になっていた
-// (red team 2026-08-21)。Ctrl-C はブロックされ続けるのに理由が画面から消えるのが最悪の形。
+// 🚨 この 2 つは「並走中に片方の行しか出ない」「並走中だけ案内が消える」変異で緑になっていた。
+// Ctrl-C はブロックされ続けるのに理由が画面から消えるのが最悪の形。
 func TestActionModalUpdateBoxLines(t *testing.T) {
 	t.Run("単独走行", func(t *testing.T) {
 		var a actionModal
@@ -301,7 +301,7 @@ func TestActionModalUpdateBoxLines(t *testing.T) {
 
 // 走行中の一覧は決定論的な順で返ること。🚨 2 要素だけで 1 回試す形にしないこと:
 // sort を外しても map の反復順で 8/10 は昇順になり、退行検知として当てにならない
-// (red team 2026-08-21 が 10 回実行で PASS 8 / FAIL 2 を実測)。
+// (2026-08-21 に 10 回実行で PASS 8 / FAIL 2 を実測)。
 func TestUpdatingTargetsIsDeterministic(t *testing.T) {
 	var a actionModal
 	for _, tgt := range []string{"codex", "claude", "gemini", "aider"} {

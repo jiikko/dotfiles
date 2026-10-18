@@ -81,7 +81,7 @@ func TestDoctorScreenRejectsBadState(t *testing.T) {
 	})
 }
 
-// 終了時: 開いていたら覚える / 開いていなければ**消す** (main の doctor_resume_test.go から移した。issue 817)。
+// 終了時: 開いていたら覚える / 開いていなければ**消す** (main の doctor_resume_test.go から移した)。
 // 🚨 消さないと、一覧を見て閉じた次の起動で 2 回前の doctor が蘇る (issues 側と同じ規律)。
 func TestRememberDoctorScreen(t *testing.T) {
 	doctortest.WithDoctorStateDir(t)

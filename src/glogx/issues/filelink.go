@@ -161,8 +161,8 @@ func resolveFrom(p, base string, b LinkBase) (string, bool) {
 // `~/.claude/skills/forge/…` は dotfiles へ向く per-file / ディレクトリの link なので、repo の外に見えて
 // repo の中の symlink を通りうる)。repo の中の symlink を 1 つも通らない絶対パスは書いた人の指定を信じる。
 //
-// 🚨 「どの symlink を通ったか」は近似で選ばない。1〜3 周目の敵対レビューで、最後の成分だけ見る /
-// 書かれた prefix だけ見る / Readlink を Clean して辿る、のいずれも迂回された (途中のディレクトリの
+// 🚨 「どの symlink を通ったか」は近似で選ばない。最後の成分だけ見る /
+// 書かれた prefix だけ見る / Readlink を Clean して辿る、のいずれも迂回される (途中のディレクトリの
 // symlink、symlink 越しの `..`、repo 外のディレクトリ link から repo 内のディレクトリ link へ入る鎖)。
 // ここでは kernel と同じく成分ごとに解決し (resolveObserving)、出会った symlink を全部数える。
 // 解決の終点は filepath.EvalSymlinks の答えと突き合わせ、食い違えば判定できない扱いにする (自前の
