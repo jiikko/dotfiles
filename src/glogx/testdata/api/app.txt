@@ -1,12 +1,4 @@
 const FetchTimeout
-const FullScreenCount
-const FullScreenDoctor
-const FullScreenFiler
-const FullScreenIssues
-const FullScreenLan
-const FullScreenNone
-const FullScreenRatelimit
-const FullScreenStatus
 const NoticeError
 const NoticeOK
 const NoticeRefused
@@ -21,7 +13,6 @@ field WatchChain.W
 func CacheBaseDir
 func ClampIdx
 func ClipboardFailText
-func CrossTarget
 func CurrentDir
 func FirstLine
 func NormalizeSpaceKey
@@ -34,7 +25,6 @@ method DirWatcher.Close
 method DirWatcher.Errors
 method DirWatcher.Events
 method DirWatcher.WatchList
-method FullScreenID.String
 method ScreenMemory.Load
 method ScreenMemory.Path
 method ScreenMemory.Remove
@@ -52,7 +42,6 @@ method fsWatcher.Events
 method fsWatcher.WatchList
 type CleanupLatch
 type DirWatcher
-type FullScreenID
 type NoticeKind
 type ScreenMemory
 type WatchChain

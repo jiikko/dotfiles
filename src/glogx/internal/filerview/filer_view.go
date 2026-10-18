@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"glogx/internal/app"
+	"glogx/internal/crosskey"
 	"glogx/internal/extcmd"
 	"glogx/internal/term"
 	"treefiler/filer"
@@ -61,7 +62,7 @@ type FilerView struct {
 	shown       bool
 	f           *filer.Model
 	dir         string
-	wantCross   app.FullScreenID
+	wantCross   string
 	openErr     string
 }
 
@@ -165,7 +166,7 @@ func (v *FilerView) Advance(now time.Time) {
 	}
 }
 
-// handleKey は filer が飲むキー。F で閉じ、横断キー (i / R / D。表は app.CrossTarget) で他の全画面へ移る。
+// handleKey は filer が飲むキー。F で閉じ、横断キー (i / R / D。判定は crosskey.Is、行き先は main の CrossTarget) で他の全画面へ移る。
 // filer が意味を持つキー (Binds) は横断しない: s は treebeard の「シェルを開く」(spec §0.1。ユーザー回答 2026-10-07)、
 // 入力中 (検索・! のコマンド行・設定の板・キー一覧) は全部のキー (F で閉じると打っている文字が消える)
 func (v *FilerView) HandleKey(key string) filerAction {
@@ -174,9 +175,9 @@ func (v *FilerView) HandleKey(key string) filerAction {
 			v.Hide()
 			return FilerClosed
 		}
-		if target, ok := app.CrossTarget(key); ok && target != app.FullScreenFiler {
+		if crosskey.Is(key) && key != "F" {
 			v.Hide()
-			v.wantCross = target
+			v.wantCross = key
 			return FilerCross
 		}
 	}
@@ -190,9 +191,9 @@ func (v *FilerView) HandleKey(key string) filerAction {
 	return FilerSwallow
 }
 
-func (v *FilerView) TakeWantCross() app.FullScreenID {
+func (v *FilerView) TakeWantCross() string {
 	want := v.wantCross
-	v.wantCross = app.FullScreenNone
+	v.wantCross = ""
 	return want
 }
 

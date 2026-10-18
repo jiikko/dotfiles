@@ -45,19 +45,19 @@ func newFilerBrowse(t *testing.T) *browseModel {
 func TestFilerOpensWithFAndClosesWithF(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
-	if m.activeFullScreen() != app.FullScreenFiler {
+	if m.activeFullScreen() != FullScreenFiler {
 		t.Fatalf("F で開かない: active=%v", m.activeFullScreen())
 	}
 	if !strings.Contains(strings.Join(m.filerV.Lines(100, 29), "\n"), "a.txt") {
 		t.Fatal("pwd の中身が描かれていない")
 	}
 	m.handleKey("F")
-	if m.activeFullScreen() != app.FullScreenNone {
+	if m.activeFullScreen() != FullScreenNone {
 		t.Fatal("F で閉じない")
 	}
 	(*m.diffOv.Fixture().Sha()) = m.commits[0].SHA
 	m.handleKey("F")
-	if m.activeFullScreen() != app.FullScreenFiler {
+	if m.activeFullScreen() != FullScreenFiler {
 		t.Fatal("diff の上から F で開かない")
 	}
 }
@@ -270,7 +270,7 @@ func TestFilerSearchTakesFUAndRepeats(t *testing.T) {
 	for _, k := range []string{"F", "U", "s", "s"} {
 		m.handleKey(k)
 	}
-	if m.activeFullScreen() != app.FullScreenFiler || m.usageOv.Visible() {
+	if m.activeFullScreen() != FullScreenFiler || m.usageOv.Visible() {
 		t.Fatal("入力中の F / U で閉じた / 利用枠が開いた")
 	}
 	if got := m.filerV.Fixture().Model().SearchQuery(); got != "FUss" {
@@ -285,7 +285,7 @@ func TestFilerHelpSwallowsCrossKeys(t *testing.T) {
 		m.handleKey("F")
 		m.handleKey("?")
 		m.handleKey(k)
-		if m.activeFullScreen() != app.FullScreenFiler || m.usageOv.Visible() || m.filerV.Fixture().Model().OwnsKeys() {
+		if m.activeFullScreen() != FullScreenFiler || m.usageOv.Visible() || m.filerV.Fixture().Model().OwnsKeys() {
 			t.Fatalf("キー一覧の中の %s: filer に留まって一覧だけ閉じるはず (全画面 %v・利用枠 %v・入力中 %v)",
 				k, m.activeFullScreen(), m.usageOv.Visible(), m.filerV.Fixture().Model().OwnsKeys())
 		}
@@ -303,13 +303,13 @@ func TestFilerFileOpLayersTakeCrossKeys(t *testing.T) {
 			t.Fatal("F の中の d で確認の板が開かない (glogx の d に取られた)")
 		}
 		m.handleKey(k)
-		if m.activeFullScreen() != app.FullScreenFiler || m.filerV.Fixture().Model().OwnsKeys() {
+		if m.activeFullScreen() != FullScreenFiler || m.filerV.Fixture().Model().OwnsKeys() {
 			t.Fatalf("確認の板の中の %s: filer に留まって板だけ閉じるはず (全画面 %v)", k, m.activeFullScreen())
 		}
 		for _, open := range []string{"a", "m"} {
 			m.handleKey(open)
 			m.handleKey(k)
-			if m.activeFullScreen() != app.FullScreenFiler || !m.filerV.Fixture().Model().OwnsKeys() {
+			if m.activeFullScreen() != FullScreenFiler || !m.filerV.Fixture().Model().OwnsKeys() {
 				t.Fatalf("%s の入力欄の %s: 字として入るはず (全画面 %v)", open, k, m.activeFullScreen())
 			}
 			m.handleKey("esc")
@@ -334,7 +334,7 @@ func TestFilerPasteGoesToSearch(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
 	m.Update(tea.PasteMsg{Content: "q"})
-	if m.done || m.activeFullScreen() != app.FullScreenFiler {
+	if m.done || m.activeFullScreen() != FullScreenFiler {
 		t.Fatal("入力していないときの貼り付けがキーとして走った")
 	}
 	m.handleKey("/")

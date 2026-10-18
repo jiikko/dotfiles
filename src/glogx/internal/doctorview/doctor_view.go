@@ -23,6 +23,7 @@ import (
 	"doctor/ssd"
 	"doctor/svc"
 	"glogx/internal/app"
+	"glogx/internal/crosskey"
 	"glogx/internal/term"
 )
 
@@ -67,7 +68,7 @@ const numDoctorTabs = 5
 type DoctorView struct {
 	shown bool
 	// wantCross は横断先 (DoctorCross を返したときだけ意味を持つ。takeWantCross で取り出す)
-	wantCross app.FullScreenID
+	wantCross string
 	// tab は表示中のタブ。tabCur はタブごとのカーソル (切り替えても位置が戻る)
 	tab    DoctorTab
 	tabCur [numDoctorTabs]rowCursor
@@ -609,10 +610,10 @@ func (v *DoctorView) TakeToast() string {
 	return t
 }
 
-// takeWantCross は横断先 (無ければ app.FullScreenNone) を一度だけ取り出す (viewer と同じ語彙)。
-func (v *DoctorView) TakeWantCross() app.FullScreenID {
+// takeWantCross は押された横断キー (無ければ "") を一度だけ取り出す (viewer と同じ語彙)。
+func (v *DoctorView) TakeWantCross() string {
 	want := v.wantCross
-	v.wantCross = app.FullScreenNone
+	v.wantCross = ""
 	return want
 }
 
@@ -625,11 +626,11 @@ func (v *DoctorView) HandleKey(key string, page int) doctorAction {
 	if act, taken := v.handleDeleteKey(key); taken {
 		return act
 	}
-	// 横断キー (i / s / R。表は app.CrossTarget)。D は自分自身なので下の「閉じる」に任せる。
+	// 横断キー (i / s / R。判定は crosskey.Is、行き先は main の CrossTarget)。D は自分自身なので下の「閉じる」に任せる。
 	// 削除の確認・実行中は上で飲まれるのでここまで届かない
-	if target, ok := app.CrossTarget(key); ok && target != app.FullScreenDoctor {
+	if crosskey.Is(key) && key != "D" {
 		v.close()
-		v.wantCross = target
+		v.wantCross = key
 		return DoctorCross
 	}
 	switch key {

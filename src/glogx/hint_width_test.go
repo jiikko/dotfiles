@@ -1,7 +1,6 @@
 package main
 
 import (
-	"glogx/internal/app"
 	"glogx/internal/doctorview"
 	"glogx/internal/gitdata"
 	"glogx/internal/term"
@@ -204,13 +203,13 @@ func hintSurfaces() []hintSurface {
 	// 全画面ビューアぶんは fullScreenCases から駆動する — あちらは
 	// TestFullScreenCasesCoverEveryID が「ID を足したら 1 行足す」を強制しているので、
 	// **新しい全画面ビューアは自動でこの幅検査の対象になる**。
-	exits := map[app.FullScreenID]string{
-		app.FullScreenRatelimit: "R/q/esc/h: 閉じる",
-		app.FullScreenDoctor:    "D/q/esc: 閉じる",
-		app.FullScreenStatus:    "q: 終了",
-		app.FullScreenIssues:    "q: 終了",
-		app.FullScreenFiler:     "F: 閉じる",
-		app.FullScreenLan:       "L/q: 閉じる",
+	exits := map[FullScreenID]string{
+		FullScreenRatelimit: "R/q/esc/h: 閉じる",
+		FullScreenDoctor:    "D/q/esc: 閉じる",
+		FullScreenStatus:    "q: 終了",
+		FullScreenIssues:    "q: 終了",
+		FullScreenFiler:     "F: 閉じる",
+		FullScreenLan:       "L/q: 閉じる",
 	}
 	for _, c := range fullScreenCases {
 		exit, ok := exits[c.id]

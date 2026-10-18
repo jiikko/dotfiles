@@ -2,7 +2,6 @@ package ratelimitview
 
 import (
 	"errors"
-	"glogx/internal/app"
 	"glogx/internal/term"
 	"glogx/internal/usageview"
 	"ratelimit/usage"
@@ -144,8 +143,8 @@ func TestRatelimitDashHandleKey(t *testing.T) {
 	// 開いたまま viewer を開くと「見えている画面」と「キーを受ける画面」が食い違う。
 	for _, tc := range []struct {
 		key  string
-		want app.FullScreenID
-	}{{"i", app.FullScreenIssues}, {"s", app.FullScreenStatus}, {"D", app.FullScreenDoctor}} {
+		want string
+	}{{"i", "i"}, {"s", "s"}, {"D", "D"}} {
 		var d RatelimitDash
 		d.Toggle()
 		if got := d.HandleKey(tc.key); got != RlDashCross {

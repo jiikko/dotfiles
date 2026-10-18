@@ -2,6 +2,7 @@ package main
 
 import (
 	"glogx/internal/app"
+	"glogx/internal/crosskey"
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/gitdata"
@@ -21,7 +22,7 @@ import (
 // 忘れると red になる。発火条件 (doctor を後から足したとき見送りの列挙から漏れ、
 // build もテストも通ったまま silent に壊れた) を機械で塞ぐのがこのテストの役目。
 type fullScreenCase struct {
-	id   app.FullScreenID
+	id   FullScreenID
 	name string
 	// show はそのビューアが出ている状態を作る (**作り方はここに集約する**。テストごとに
 	// 別々に作ると、片方だけ実装に追従して「別の状態を検査している」ことに気づけない)
@@ -38,68 +39,68 @@ type fullScreenCase struct {
 // TestFullScreenCasesCoverEveryID が red にする)。
 var fullScreenCases = []fullScreenCase{
 	{
-		id: app.FullScreenRatelimit, name: "残量ダッシュボード",
+		id: FullScreenRatelimit, name: "残量ダッシュボード",
 		show:  func(m *browseModel) { m.rlDash.Fixture().SetShown(true) },
 		hint:  func(m *browseModel) string { return m.rlDash.Hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.rlDash.Lines(m.ratelimitOpts()) },
 	},
 	{
-		id: app.FullScreenDoctor, name: "doctor",
+		id: FullScreenDoctor, name: "doctor",
 		show:  func(m *browseModel) { m.doctorOv.Fixture().Show() },
 		hint:  func(m *browseModel) string { return m.doctorOv.Hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.doctorOv.Lines(m.doctorOpts()) },
 	},
 	{
-		id: app.FullScreenStatus, name: "status viewer",
+		id: FullScreenStatus, name: "status viewer",
 		show:  func(m *browseModel) { m.statusOv.Fixture().SetShown(true) },
 		hint:  func(m *browseModel) string { return m.statusOv.Hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.statusOv.Lines(m.statusOpts()) },
 	},
 	{
-		id: app.FullScreenIssues, name: "issues viewer",
+		id: FullScreenIssues, name: "issues viewer",
 		show:  func(m *browseModel) { m.issuesOv.Fixture().SetShown(true) },
 		hint:  func(m *browseModel) string { return m.issuesOv.Hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.issuesOv.Lines(m.issuesOpts()) },
 	},
 	{
-		id: app.FullScreenFiler, name: "treefiler",
+		id: FullScreenFiler, name: "treefiler",
 		show:  func(m *browseModel) { m.filerV.Toggle(app.CurrentDir()) },
 		hint:  func(m *browseModel) string { return m.filerV.Hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.filerV.Lines(m.contentWidth(), m.pageSize()) },
 	},
 	{
-		id: app.FullScreenLan, name: "mac-lan-manager",
+		id: FullScreenLan, name: "mac-lan-manager",
 		show:  func(m *browseModel) { m.lanV.Toggle() },
 		hint:  func(m *browseModel) string { return m.lanV.Hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.lanV.Lines(m.contentWidth(), m.pageSize()) },
 	},
 }
 
-// 表が ID を全部覆っていること。app.FullScreenCount の直前に ID を足した人は、ここが red になって
+// 表が ID を全部覆っていること。FullScreenCount の直前に ID を足した人は、ここが red になって
 // 表へ 1 行足すことになり、その 1 行が下の全サイト検査を連れてくる (これがこの番兵の目的)。
 func TestFullScreenCasesCoverEveryID(t *testing.T) {
-	covered := map[app.FullScreenID]int{}
+	covered := map[FullScreenID]int{}
 	for _, c := range fullScreenCases {
 		covered[c.id]++
 	}
-	for id := app.FullScreenNone + 1; id < app.FullScreenCount; id++ {
+	for id := FullScreenNone + 1; id < FullScreenCount; id++ {
 		switch covered[id] {
 		case 1:
 		case 0:
-			t.Errorf("app.FullScreenID %v (%d) が fullScreenCases に無い"+
+			t.Errorf("FullScreenID %v (%d) が fullScreenCases に無い"+
 				" (見送り / 描画 / hint / 復元の破棄 / routing の配線が無検査になる)", id, int(id))
 		default:
-			t.Errorf("app.FullScreenID %v が %d 行ある (表の重複)", id, covered[id])
+			t.Errorf("FullScreenID %v が %d 行ある (表の重複)", id, covered[id])
 		}
 	}
-	if len(fullScreenCases) != int(app.FullScreenCount)-1 {
-		t.Errorf("表の行数 %d が ID の数 %d と合わない", len(fullScreenCases), int(app.FullScreenCount)-1)
+	if len(fullScreenCases) != int(FullScreenCount)-1 {
+		t.Errorf("表の行数 %d が ID の数 %d と合わない", len(fullScreenCases), int(FullScreenCount)-1)
 	}
 	// 🚨 識別に使う行が**ビューアごとに違う**こと。同じ行になっていると「別のビューアが
 	// 描かれている」を検出できない (識別の assert が黙って vacuous になる)。
 	// 🚨 状態はケースごとに作るので、ここが捕まえるのは「**どの状態でも同じ行になる**」重複だけ
 	// (片方だけ shown の状態で比べるため)。ケース単位の取り違えは上の assert 3 が受け持つ
-	seen := map[string]app.FullScreenID{}
+	seen := map[string]FullScreenID{}
 	for _, c := range fullScreenCases {
 		m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 		c.show(m)
@@ -155,7 +156,7 @@ func TestFullScreenSurfacesWireEverySite(t *testing.T) {
 			if !strings.Contains(m.View().Content, listSHA) {
 				t.Fatalf("前提が作れていない: 一覧に %q が出ていない", listSHA)
 			}
-			if m.activeFullScreen() != app.FullScreenNone {
+			if m.activeFullScreen() != FullScreenNone {
 				t.Fatal("前提が作れていない: 何も開いていないのに全画面ビューア扱い")
 			}
 
@@ -201,7 +202,7 @@ func TestFullScreenSurfacesWireEverySite(t *testing.T) {
 			// 6. 復元の破棄: 既に 1 枚出ているところへ issues の復元を割り込ませない
 			// (2 枚同時 shown = 「見えている画面」と「キーを受ける画面」が食い違う)。
 			// 🚨 issues 自身は対象外 (復元先が自分なので捨てない)
-			if c.id != app.FullScreenIssues {
+			if c.id != FullScreenIssues {
 				m.Update(issuesRestoreMsg{})
 				if m.issuesOv.Visible() {
 					t.Error("別の全画面ビューアが出ているのに issues の復元が通った")
@@ -215,7 +216,7 @@ func TestFullScreenSurfacesWireEverySite(t *testing.T) {
 	// 素通りする (2026-09-04 に実測)
 	t.Run("全画面が無ければ復元は通る", func(t *testing.T) {
 		m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
-		if m.activeFullScreen() != app.FullScreenNone {
+		if m.activeFullScreen() != FullScreenNone {
 			t.Fatal("前提が作れていない")
 		}
 		m.Update(issuesRestoreMsg{})
@@ -291,28 +292,28 @@ func TestFullScreenDrawingGoesThroughTheRegistry(t *testing.T) {
 	// switch の中は **ID の数ちょうど**、外は **1 本だけ** (末尾のコミット一覧の経路)。
 	// 🚨 件数で固定するのが要点: 「0 件でも緑」にすると走査が壊れたときに気づけないし、
 	// 外の 1 本を許すだけの緩い規則にすると 5 枚目の `if` が紛れ込める。
-	if inside != int(app.FullScreenCount)-1 {
+	if inside != int(FullScreenCount)-1 {
 		t.Errorf("switch の中の finishWithGlobalChrome が %d 件 (ID の数 %d と一致しない)",
-			inside, int(app.FullScreenCount)-1)
+			inside, int(FullScreenCount)-1)
 	}
 	if outside != 1 {
 		t.Errorf("switch の外の finishWithGlobalChrome が %d 件 (想定はコミット一覧の 1 本だけ): %v\n"+
-			"全画面ビューアを足すなら app.FullScreenID を足して switch へ入れること (issue 227)",
+			"全画面ビューアを足すなら FullScreenID を足して switch へ入れること (issue 227)",
 			outside, outsideAt)
 	}
 }
 
-// 横断キー (app.CrossTarget の表) は、どの全画面からも同じ板へ飛ぶ (docs/glogx-ui-guide.md §2)。
+// 横断キー (CrossTarget の表) は、どの全画面からも同じ板へ飛ぶ (docs/glogx-ui-guide.md §2)。
 // 全画面 4 枚 × 横断キー 4 本を、一覧から開いた状態で押して確かめる。自分自身のキーは閉じる (toggle)。
 // 🚨 画面ごとに手書きで列挙すると、D はどの viewer からも、i / s / R は doctor から
 // 無言で捨てられる。
 func TestCrossKeysReachEveryFullScreen(t *testing.T) {
-	openKey := map[app.FullScreenID]string{
-		app.FullScreenIssues: "i", app.FullScreenStatus: "s", app.FullScreenRatelimit: "R", app.FullScreenDoctor: "D",
-		app.FullScreenFiler: "F", app.FullScreenLan: "L",
+	openKey := map[FullScreenID]string{
+		FullScreenIssues: "i", FullScreenStatus: "s", FullScreenRatelimit: "R", FullScreenDoctor: "D",
+		FullScreenFiler: "F", FullScreenLan: "L",
 	}
-	if len(openKey) != int(app.FullScreenCount)-1 {
-		t.Fatalf("全画面の ID が増えた (%d 枚): openKey に開くキーを足すこと", int(app.FullScreenCount)-1)
+	if len(openKey) != int(FullScreenCount)-1 {
+		t.Fatalf("全画面の ID が増えた (%d 枚): openKey に開くキーを足すこと", int(FullScreenCount)-1)
 	}
 	for from, fromKey := range openKey {
 		for to, toKey := range openKey {
@@ -328,9 +329,9 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 			m.handleKey(toKey)
 			want := to
 			if to == from {
-				want = app.FullScreenNone // 自分のキーは閉じる
+				want = FullScreenNone // 自分のキーは閉じる
 			}
-			if (from == app.FullScreenFiler || from == app.FullScreenLan) && toKey == "s" {
+			if (from == FullScreenFiler || from == FullScreenLan) && toKey == "s" {
 				// treefiler の s は treebeard の「シェルを開く」に上書きした (docs/treefiler-spec.md §0.1。ユーザー回答 2026-10-07)。
 				// mac-lan-manager の s も ssh (同じ動詞)。status viewer へは F / L で閉じてから移る
 				want = from
@@ -356,4 +357,24 @@ func visibleFullScreens(m *browseModel) int {
 		}
 	}
 	return n
+}
+
+// 横断キーは 2 か所に書く: キーの集合 (internal/crosskey。画面が判定に使う) と行き先 (CrossTarget。main だけが知る)。
+// 片方にだけ足すと、画面はキーを返すのに行き先が無い (押しても無言) か、行き先はあるのに画面がキーを飲む。
+func TestCrossKeysMatchCrossTarget(t *testing.T) {
+	n := 0
+	for c := 0x20; c < 0x7f; c++ {
+		key := string(rune(c))
+		_, ok := CrossTarget(key)
+		if crosskey.Is(key) != ok {
+			t.Errorf("%q: crosskey.Is=%v / CrossTarget の行き先あり=%v (2 か所の横断キーが食い違う)", key, crosskey.Is(key), ok)
+		}
+		if ok {
+			n++
+		}
+	}
+	// canary: 横断キーが 1 つも無ければ走査か表が壊れている
+	if n < 6 {
+		t.Fatalf("横断キーが %d 個しか無い", n)
+	}
 }

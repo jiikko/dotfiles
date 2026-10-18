@@ -63,7 +63,7 @@ func TestInitRestoresFilerScreen(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = m.Init()
-	if m.activeFullScreen() != app.FullScreenFiler {
+	if m.activeFullScreen() != FullScreenFiler {
 		t.Fatalf("記憶があるのに F が開いていない: active=%v", m.activeFullScreen())
 	}
 	if got := m.filerV.Fixture().Model().Place().Cursor; got != filepath.Join(sub, "c.txt") {
@@ -93,7 +93,7 @@ func TestInitFilerRestoreYieldsToOtherScreens(t *testing.T) {
 	ratelimitview.FixtureRemoveScreen()
 	m2 := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	_ = m2.Init()
-	if m2.activeFullScreen() != app.FullScreenNone {
+	if m2.activeFullScreen() != FullScreenNone {
 		t.Errorf("記憶が無いのに全画面が開いた: %v", m2.activeFullScreen())
 	}
 }

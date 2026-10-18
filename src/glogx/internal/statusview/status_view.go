@@ -19,6 +19,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 
 	"glogx/internal/app"
+	"glogx/internal/crosskey"
 	"glogx/internal/extcmd"
 	"glogx/internal/linecache"
 	"glogx/internal/term"
@@ -89,9 +90,9 @@ type StatusView struct {
 	notice     string
 	noticeKind app.NoticeKind
 
-	// wantCross は横断キー (app.CrossTarget) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
-	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。app.FullScreenNone = 無し
-	wantCross app.FullScreenID
+	// wantCross は横断キー (crosskey.Is) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
+	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。"" = 無し
+	wantCross string
 	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
 	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
@@ -712,11 +713,11 @@ func (v *StatusView) pagerKeyPress(key string, vp StatusViewport) tea.Cmd {
 // listKey は一覧のキー。
 func (v *StatusView) listKey(key string, vp StatusViewport) tea.Cmd {
 	rows := max(vp.page-1, 1)
-	// 横断キー (i / R / D。表は app.CrossTarget)。s は自分自身なので下の toggle (閉じる) に任せる。
+	// 横断キー (i / R / D。判定は crosskey.Is、行き先は main の CrossTarget)。s は自分自身なので下の toggle (閉じる) に任せる。
 	// 確認中 (X) や pager 中はこの関数まで届かないので誤爆しない (handleKey の判定順)
-	if target, ok := app.CrossTarget(key); ok && target != app.FullScreenStatus {
+	if crosskey.Is(key) && key != "s" {
 		v.close()
-		v.wantCross = target
+		v.wantCross = key
 		return nil
 	}
 	switch key {
@@ -778,10 +779,10 @@ func (v *StatusView) applyMotion(m listnav.Motion, rows int) tea.Cmd {
 	return nil
 }
 
-// takeWantCross は横断先 (無ければ app.FullScreenNone) を一度だけ取り出す (takeNotice と同じ語彙)。
-func (v *StatusView) TakeWantCross() app.FullScreenID {
+// takeWantCross は押された横断キー (無ければ "") を一度だけ取り出す (takeNotice と同じ語彙)。
+func (v *StatusView) TakeWantCross() string {
 	want := v.wantCross
-	v.wantCross = app.FullScreenNone
+	v.wantCross = ""
 	return want
 }
 

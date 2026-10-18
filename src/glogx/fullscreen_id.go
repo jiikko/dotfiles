@@ -1,4 +1,4 @@
-package app
+package main
 
 // 「今どの全画面ビューアが出ているか」の単一の出典。
 //
@@ -92,11 +92,11 @@ func (id FullScreenID) String() string {
 	return "unknown"
 }
 
-// CrossTarget は横断キー (どの全画面からも同じ板へ飛ぶキー。docs/glogx-ui-guide.md §2) の表。
-// 🚨 横断キーの割当はここだけに書く。画面・モードごとに手で列挙しない。列挙から漏れた
-// 場所 (全 viewer の D / doctor の i s R) では押しても無言で捨てられた。
-// 各画面は「自分でキーを解釈し切るモード (ownsKeys / 確認 / 入力)」を抜けた後にこれを引き、
-// 行き先が自分なら従来どおり自分の閉じる語彙 (toggle) に任せる。
+// CrossTarget は横断キー (どの全画面からも同じ板へ飛ぶキー。docs/glogx-ui-guide.md §2) の行き先の表。
+// 🚨 横断キーの割当はここと internal/crosskey (キーの集合) の 2 か所だけに書き、画面・モードごとに手で列挙しない。
+// 列挙から漏れた場所 (全 viewer の D / doctor の i s R) では押しても無言で捨てられた。2 か所の一致は
+// TestCrossKeysMatchCrossTarget が見る。画面は crosskey.Is でキーを判定して押されたキーを返すだけで、行き先 (全画面の ID) を知らない
+// (画面のパッケージが全画面の一覧に依存すると、画面を 1 つ足すたびに全画面が作り直される)。
 func CrossTarget(key string) (FullScreenID, bool) {
 	switch key {
 	case "i":
@@ -113,4 +113,10 @@ func CrossTarget(key string) (FullScreenID, bool) {
 		return FullScreenLan, true // mac-lan-manager (lan_view.go。issue 747)
 	}
 	return FullScreenNone, false
+}
+
+// crossScreen は画面が返した横断キー (TakeWantCross。"" = 無し) を行き先の全画面へ変える (横断キーでなければ FullScreenNone)。
+func crossScreen(key string) FullScreenID {
+	id, _ := CrossTarget(key)
+	return id
 }

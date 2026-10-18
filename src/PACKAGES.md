@@ -23,6 +23,7 @@
 - `src/glogx/gorules` (`glogx/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml の settings.gocritic.settings.ruleguard.rules から参照)。 (build tags: ruleguard)
 - `src/glogx/internal/app` (`glogx/internal/app`) — Package app は glogx の画面のパッケージと main が共有する状態・道具を持つ: 現在時刻のシーム (TimeNow)・ 全画面ビューアの ID と横断キーの表・全画面を閉じたときの記憶 (ScreenMemory)・終了前の完了待ち (CleanupLatch)・ キャッシュの置き場と atomic 書き込み。 (internal)
 - `src/glogx/internal/commitview` (`glogx/internal/commitview`) — Package commitview は glogx のコミットに重ねるポップアップ群: diff (d)・PR 状態 (P)・CI の job 詳細。 (internal)
+- `src/glogx/internal/crosskey` (`glogx/internal/crosskey`) — Package crosskey は横断キー (どの全画面からも同じ板へ飛ぶキー。 (internal)
 - `src/glogx/internal/doctorview` (`glogx/internal/doctorview`) — Package doctorview は glogx の doctor 画面 (D): ディスク・サービス・brew・docker・SSD の診断の表示と、 選んだ項目の削除の確認と実行。 (internal)
 - `src/glogx/internal/doctorview/doctortest` (`glogx/internal/doctorview/doctortest`) — Package doctortest は doctor 画面のテストが共有する fake (走査・brew・docker・SSD の外部コマンドの差し替え)。 (internal)
 - `src/glogx/internal/extcmd` (`glogx/internal/extcmd`) — Package extcmd は glogx の画面が外部コマンド (エディタ・ブラウザ・クリップボード) を起こす口と、その結果の Msg。 (internal)

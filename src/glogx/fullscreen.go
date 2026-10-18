@@ -6,54 +6,54 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// activeFullScreen は今出ている全画面ビューア (無ければ app.FullScreenNone)。
+// activeFullScreen は今出ている全画面ビューア (無ければ FullScreenNone)。
 //
 // 高々 1 枚しか出ない前提なので順序は本来どれでもよいが、**ここを唯一の順序**にすることで
 // 描画・hint・routing が同じ 1 枚を選ぶことが構造的に保証される (場所ごとに順序が違うと、
 // 前提が崩れたときにどれが勝つかが場所によって変わる)。
-func (m *browseModel) activeFullScreen() app.FullScreenID {
+func (m *browseModel) activeFullScreen() FullScreenID {
 	switch {
 	case m.rlDash.Visible():
-		return app.FullScreenRatelimit
+		return FullScreenRatelimit
 	case m.doctorOv.Visible():
-		return app.FullScreenDoctor
+		return FullScreenDoctor
 	case m.statusOv.Visible():
-		return app.FullScreenStatus
+		return FullScreenStatus
 	case m.issuesOv.Visible():
-		return app.FullScreenIssues
+		return FullScreenIssues
 	case m.filerV.Visible():
-		return app.FullScreenFiler
+		return FullScreenFiler
 	case m.lanV.Visible():
-		return app.FullScreenLan
+		return FullScreenLan
 	}
-	return app.FullScreenNone
+	return FullScreenNone
 }
 
 // fullScreenActive は全画面ビューアが 1 枚でも出ているか。
-func (m *browseModel) fullScreenActive() bool { return m.activeFullScreen() != app.FullScreenNone }
+func (m *browseModel) fullScreenActive() bool { return m.activeFullScreen() != FullScreenNone }
 
 // openFullScreen は全画面ビューア id を開く (一覧からの起動と、横断の着地の両方の唯一の口)。
 // 🚨 呼ぶ時点で他の全画面が閉じていること (全画面は同時に 1 枚。toggle が「開く」でなく
 // 「閉じる」に化ける)。横断元は閉じてから (演出のあるものは finishClose まで済ませてから) 呼ぶ。
-func (m *browseModel) openFullScreen(id app.FullScreenID) tea.Cmd {
+func (m *browseModel) openFullScreen(id FullScreenID) tea.Cmd {
 	switch id {
-	case app.FullScreenIssues:
+	case FullScreenIssues:
 		return tea.Batch(m.issuesOv.Toggle(app.CurrentDir()), m.maybeTick())
-	case app.FullScreenStatus:
+	case FullScreenStatus:
 		return tea.Batch(m.statusOv.Toggle(), m.maybeTick())
-	case app.FullScreenRatelimit:
+	case FullScreenRatelimit:
 		return m.toggleRatelimitDash()
-	case app.FullScreenDoctor:
+	case FullScreenDoctor:
 		m.usageOv.Dismiss()
 		return tea.Batch(m.doctorOv.Toggle(), m.maybeTick())
-	case app.FullScreenFiler:
+	case FullScreenFiler:
 		m.usageOv.Dismiss()
 		m.filerV.Toggle(app.CurrentDir())
 		if e := m.filerV.TakeOpenErr(); e != "" {
 			m.showWarning(e)
 		}
 		return tea.Batch(m.filerV.WatchCmd(), m.maybeTick())
-	case app.FullScreenLan:
+	case FullScreenLan:
 		m.usageOv.Dismiss()
 		m.lanV.Toggle()
 		if e := m.lanV.TakeOpenErr(); e != "" {
@@ -61,7 +61,7 @@ func (m *browseModel) openFullScreen(id app.FullScreenID) tea.Cmd {
 		}
 		m.drainLanNotices() // 開いたときの読み込みの失敗 (台帳が読めない等)
 		return tea.Batch(m.lanV.WatchCmd(), m.maybeTick())
-	case app.FullScreenNone, app.FullScreenCount:
+	case FullScreenNone, FullScreenCount:
 	}
 	return nil
 }

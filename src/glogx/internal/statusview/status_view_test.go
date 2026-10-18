@@ -1097,10 +1097,10 @@ func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 
 	v.HandleKey("R", StatusViewport{page: 20})
 
-	if v.TakeWantCross() != app.FullScreenRatelimit {
+	if v.TakeWantCross() != "R" {
 		t.Error("R でダッシュボードへの横断を要求しない")
 	}
-	if v.TakeWantCross() != app.FullScreenNone {
+	if v.TakeWantCross() != "" {
 		t.Error("takeWantCross が 2 回横断先を返す (横断が二重に起きる)")
 	}
 	if !v.closing && v.shown {

@@ -55,7 +55,7 @@ func TestInitRestoresRatelimitScreen(t *testing.T) {
 	if !m.rlDash.Visible() {
 		t.Fatal("記憶があるのに ratelimit ダッシュボードが開いていない")
 	}
-	if id := m.activeFullScreen(); id != app.FullScreenRatelimit {
+	if id := m.activeFullScreen(); id != FullScreenRatelimit {
 		t.Errorf("全画面が ratelimit になっていない: %v", id)
 	}
 }

@@ -24,11 +24,12 @@
 - `internal/ratelimitview/` (`ratelimit_dashboard.go`, `ratelimit_resume.go`) — 全画面 ratelimit ダッシュボード (`R`)。取得・整形は `ratelimit/usage`
 - `internal/filerview/` (`filer_view.go`, `filer_resume.go`) — 全画面 treefiler (`F`)。main のテストの口は `fixture.go` (issue 817)。`filer_resume.go` は F を出したまま終えたときの場所の記憶 (C-g で開き直すと戻る)。画面の部品は `src/treefiler` の `filer` パッケージ (replace で取り込む)。仕様は `docs/treefiler-spec.md`
 - `internal/lanview/` (`lan_view.go`, `lan_resume.go`) — 全画面 mac-lan-manager (`L`)。main のテストの口は `fixture.go` (issue 817)。画面の部品は `src/mac-lan-manager` の `lanmgr` パッケージ、本物へのつなぎは `live` (replace で取り込む)。要件は issue 747
-- `internal/app/` — 画面のパッケージと main が共有する状態・道具。`clock.go` は時刻のシーム (`app.TimeNow`。テストが差し替える)、`fullscreen_id.go` は全画面ビューアの ID と横断キーの表 (`app.CrossTarget`)、`screen_memory.go` は全画面 (issues / doctor / ratelimit / F / L) を閉じたときの記憶の保存・読み込み (30 分で失効。照合は各画面の `*_resume.go`)、`cleanup_latch.go` は終了前の完了待ち latch、`cache_io.go` はキャッシュの置き場 (`app.CacheBaseDir`) と atomic 書き込み (`app.WriteAtomic`)、`notice.go` は viewer の操作結果の種類 (`app.NoticeKind`) と小さな道具 (`app.FirstLine` / `app.ClampIdx` など)、`watch_chain.go` は fsnotify のイベント待ち + 保険のポーリングの 2 本のチェーンの札 (`app.WatchChain`。git log と issues viewer の見張りが共有) と watcher の seam (`app.DirWatcher` / `app.NewDirWatcher`)
+- `internal/app/` — 画面のパッケージと main が共有する状態・道具。`clock.go` は時刻のシーム (`app.TimeNow`。テストが差し替える)、`screen_memory.go` は全画面 (issues / doctor / ratelimit / F / L) を閉じたときの記憶の保存・読み込み (30 分で失効。照合は各画面の `*_resume.go`)、`cleanup_latch.go` は終了前の完了待ち latch、`cache_io.go` はキャッシュの置き場 (`app.CacheBaseDir`) と atomic 書き込み (`app.WriteAtomic`)、`notice.go` は viewer の操作結果の種類 (`app.NoticeKind`) と小さな道具 (`app.FirstLine` / `app.ClampIdx` など)、`watch_chain.go` は fsnotify のイベント待ち + 保険のポーリングの 2 本のチェーンの札 (`app.WatchChain`。git log と issues viewer の見張りが共有) と watcher の seam (`app.DirWatcher` / `app.NewDirWatcher`)
 - `cmd/issue-claim/` — `bin/issue-claim` の main (claim の目印とバナーを付ける。本体は `issues.MoveToSubdir` = viewer の `n` と同じ)
 - `ime.go`, `ime_tis_darwin.go`, `ime_tis_stub.go` — ブラウズ中の IME 英数切替 (macOS TIS 直接呼び出し)
 - `zoom.go`, `hint_surfaces.go` — 開閉演出・最下行ヒントの共有ロジック
-- `autobuild.go`, `probe.go`, `fullscreen.go` — 自動再ビルド通知・計測フック・全画面ビューアの排他制御 (どれが出ているか・開く口。ID は `internal/app/fullscreen_id.go`)
+- `autobuild.go`, `probe.go`, `fullscreen.go` — 自動再ビルド通知・計測フック・全画面ビューアの排他制御 (どれが出ているか・開く口)
+- `fullscreen_id.go` — 全画面ビューアの ID と横断キーの行き先 (`CrossTarget`)。画面のパッケージは ID を知らず、`internal/crosskey` (横断キーの集合) で判定して押されたキーを返す (画面を足しても他の画面が作り直されない)。2 か所の一致は `TestCrossKeysMatchCrossTarget`
 - `open_workspace.go` — `e` で nvim を repo root で起動
 - `internal/linecache/` — diff / job / status が共有する行キャッシュと取得の単発化 (`linecache.Cache`。他に依存しない道具なので独立のパッケージ)
 - `issues/` — 独立パッケージ。issue markdown の探索・分類・parse・本文整形 (glogx 本体に非依存)

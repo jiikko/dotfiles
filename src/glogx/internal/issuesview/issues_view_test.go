@@ -2004,7 +2004,7 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 			t.Fatal("前提が崩れた: 一覧モードでない")
 		}
 		v.HandleKey("R", vp(20))
-		if v.TakeWantCross() != app.FullScreenRatelimit {
+		if v.TakeWantCross() != "R" {
 			t.Error("一覧モードの R でダッシュボードへの横断を要求しない")
 		}
 		if !v.closing && v.shown {
@@ -2018,7 +2018,7 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 			t.Fatal("前提が崩れた: 本文が開いていない")
 		}
 		v.HandleKey("R", vp(20))
-		if v.TakeWantCross() != app.FullScreenRatelimit {
+		if v.TakeWantCross() != "R" {
 			t.Error("本文モードの R でダッシュボードへの横断を要求しない (--help の案内が嘘になる)")
 		}
 		if !v.closing && v.shown {
@@ -2029,7 +2029,7 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 	v := loadedView(issuesviewtest.RealIssue(t))
 	v.HandleKey("R", vp(20))
 	v.TakeWantCross()
-	if v.TakeWantCross() != app.FullScreenNone {
+	if v.TakeWantCross() != "" {
 		t.Error("takeWantCross が 2 回横断先を返す (横断が二重に起きる)")
 	}
 }

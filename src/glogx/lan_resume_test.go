@@ -29,7 +29,7 @@ func TestLanScreenRememberedAndRestored(t *testing.T) {
 
 	m2 := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	_ = m2.Init()
-	if m2.activeFullScreen() != app.FullScreenLan {
+	if m2.activeFullScreen() != FullScreenLan {
 		t.Fatalf("記憶があるのに L が開いていない: active=%v", m2.activeFullScreen())
 	}
 	if p := m2.lanV.Fixture().Model().Place(); p != got {
@@ -70,7 +70,7 @@ func TestInitLanRestoreYieldsToFiler(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = m.Init()
-	if m.activeFullScreen() != app.FullScreenFiler || m.lanV.Visible() {
+	if m.activeFullScreen() != FullScreenFiler || m.lanV.Visible() {
 		t.Errorf("F の記憶もあるのに L を開いた: active=%v lan=%v", m.activeFullScreen(), m.lanV.Visible())
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"glogx/issues"
 
 	"glogx/internal/app"
+	"glogx/internal/crosskey"
 	"glogx/internal/extcmd"
 	"glogx/internal/term"
 
@@ -190,9 +191,9 @@ type IssuesView struct {
 	// pushSlides と同じ方式)。演出中の tick 周期は tickInterval が上げる (slideAnimating)。
 	// 閉じる演出 (closing) でも同じ時計を使う — 開く演出の逆再生なので所要も同じ。
 	animStart time.Time
-	// wantCross は横断キー (app.CrossTarget) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
-	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。app.FullScreenNone = 無し
-	wantCross app.FullScreenID
+	// wantCross は横断キー (crosskey.Is) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
+	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。"" = 無し
+	wantCross string
 	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
 	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
@@ -453,10 +454,10 @@ func (v *IssuesView) Animating() bool {
 	return v.SlideAnimating()
 }
 
-// takeWantCross は横断先 (無ければ app.FullScreenNone) を一度だけ取り出す (takeNotice と同じ語彙)。
-func (v *IssuesView) TakeWantCross() app.FullScreenID {
+// takeWantCross は押された横断キー (無ければ "") を一度だけ取り出す (takeNotice と同じ語彙)。
+func (v *IssuesView) TakeWantCross() string {
 	want := v.wantCross
-	v.wantCross = app.FullScreenNone
+	v.wantCross = ""
 	return want
 }
 
@@ -1446,12 +1447,12 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 			return cmd
 		}
 	}
-	// 横断キー (s / R / D) は一覧・本文のどちらからも効く (表は app.CrossTarget)。選択・絞り込みの 1 段戻りは
+	// 横断キー (s / R / D) は一覧・本文のどちらからも効く (判定は crosskey.Is、行き先は main の CrossTarget)。選択・絞り込みの 1 段戻りは
 	// しない (別の画面を見たい意図が明確なため)。i は自分自身なので下の toggle (閉じる) に任せる。
 	// 確認モーダル・URL ピッカー・番号入力中はここまで届かないので誤爆しない
-	if target, ok := app.CrossTarget(key); ok && target != app.FullScreenIssues {
+	if crosskey.Is(key) && key != "i" {
 		v.close()
-		v.wantCross = target
+		v.wantCross = key
 		return nil
 	}
 	// モードに依らないアクションキーは先に飲む (対象は target() が一覧/本文で切り替える)

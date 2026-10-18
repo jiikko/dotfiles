@@ -16,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"glogx/internal/app"
+	"glogx/internal/crosskey"
 	"glogx/internal/extcmd"
 	"glogx/internal/term"
 	"mac-lan-manager/lanmgr"
@@ -69,7 +70,7 @@ type LanView struct {
 	execPending bool
 	shown       bool
 	m           *lanmgr.Model
-	wantCross   app.FullScreenID
+	wantCross   string
 	openErr     string
 }
 
@@ -180,7 +181,7 @@ func (v *LanView) Advance(now time.Time) {
 	}
 }
 
-// handleKey は lanmgr が飲むキー。L で閉じ、横断キー (表は app.CrossTarget) で他の全画面へ移る。lanmgr が意味を持つキー (Binds) は
+// handleKey は lanmgr が飲むキー。L で閉じ、横断キー (判定は crosskey.Is、行き先は main の CrossTarget) で他の全画面へ移る。lanmgr が意味を持つキー (Binds) は
 // 横断しない: s は ssh、入力中・確認・設定は全部のキー (横断で閉じると打っている文字が消える)。
 func (v *LanView) HandleKey(key string) lanAction {
 	if !v.m.Binds(key) {
@@ -188,9 +189,9 @@ func (v *LanView) HandleKey(key string) lanAction {
 			v.hide()
 			return LanClosed
 		}
-		if target, ok := app.CrossTarget(key); ok && target != app.FullScreenLan {
+		if crosskey.Is(key) && key != "L" {
 			v.hide()
-			v.wantCross = target
+			v.wantCross = key
 			return LanCross
 		}
 	}
@@ -205,9 +206,9 @@ func (v *LanView) HandleKey(key string) lanAction {
 	return LanSwallow
 }
 
-func (v *LanView) TakeWantCross() app.FullScreenID {
+func (v *LanView) TakeWantCross() string {
 	want := v.wantCross
-	v.wantCross = app.FullScreenNone
+	v.wantCross = ""
 	return want
 }
 

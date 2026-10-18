@@ -35,6 +35,7 @@ var mainSourceFiles = map[string]string{
 	"options.go":           "起動 (CLI フラグ)",
 	"tui.go":               "browseModel の状態機械 (画面の配線)",
 	"fullscreen.go":        "全画面ビューアの排他と開く口 (browseModel のメソッド)",
+	"fullscreen_id.go":     "全画面の ID と横断キーの行き先 (画面のパッケージが全画面の一覧を知らないよう main に置く)",
 	"hint_surfaces.go":     "最下行の案内の面ごとの配線 (browseModel のメソッド)",
 	"zoom.go":              "開閉演出 (browseModel の描画が使う)",
 	"probe.go":             "計測フック (起動時の配線)",

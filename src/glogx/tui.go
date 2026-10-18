@@ -563,15 +563,15 @@ func (m *browseModel) inputEditsWith(key string) bool {
 		return false
 	}
 	switch m.activeFullScreen() {
-	case app.FullScreenIssues:
+	case FullScreenIssues:
 		return m.issuesOv.TypingInput()
-	case app.FullScreenFiler:
+	case FullScreenFiler:
 		_, _, ok := m.filerV.CaretPos()
 		return ok
-	case app.FullScreenLan:
+	case FullScreenLan:
 		_, _, ok := m.lanV.CaretPos()
 		return ok
-	case app.FullScreenNone, app.FullScreenRatelimit, app.FullScreenDoctor, app.FullScreenStatus, app.FullScreenCount:
+	case FullScreenNone, FullScreenRatelimit, FullScreenDoctor, FullScreenStatus, FullScreenCount:
 	}
 	return false
 }
@@ -1065,7 +1065,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 「開く」ではなく「閉じる」に化ける。
 		// 🚨 判定は activeFullScreen から導出する: 全画面ビューアを 1 枚足した
 		// ときにここへ書き足すのを忘れると、復元で 2 枚同時 shown になる。
-		if id := m.activeFullScreen(); id != app.FullScreenNone && id != app.FullScreenIssues {
+		if id := m.activeFullScreen(); id != FullScreenNone && id != FullScreenIssues {
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.issuesOv.Restore(app.CurrentDir(), msg.screen), m.maybeTick())
@@ -1371,13 +1371,13 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 貼り付け (bracketed paste。bubbletea v2 は既定で有効) は入力欄にだけ入れる。入力欄が無いときは捨てる:
 		// キー操作として解釈すると、貼った文字列が 1 字ずつ一覧のキーとして走る (docs/glogx-ui-guide.md §7)。
 		// 板が入力欄の上に出ている間 (action モーダル・再起動の確認) もキーは板が先に取るので、貼り付けも入れない
-		if m.activeFullScreen() == app.FullScreenIssues && m.issuesOv.TypingInput() && !m.actModal.active() && !m.restartPromptVisible() {
+		if m.activeFullScreen() == FullScreenIssues && m.issuesOv.TypingInput() && !m.actModal.active() && !m.restartPromptVisible() {
 			m.issuesOv.Paste(msg.Content)
 		}
-		if m.activeFullScreen() == app.FullScreenFiler && !m.actModal.active() && !m.restartPromptVisible() {
+		if m.activeFullScreen() == FullScreenFiler && !m.actModal.active() && !m.restartPromptVisible() {
 			m.filerV.Paste(msg.Content) // 入力中 (検索・! のコマンド) だけ入る。filer が捨てる
 		}
-		if m.activeFullScreen() == app.FullScreenLan && !m.actModal.active() && !m.restartPromptVisible() {
+		if m.activeFullScreen() == FullScreenLan && !m.actModal.active() && !m.restartPromptVisible() {
 			m.lanV.Paste(msg.Content) // 入力中 (絞り込み・別名・帯) だけ入る。lanmgr が捨てる
 		}
 		return m, m.maybeTick()
@@ -1597,20 +1597,20 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// b / u = push / pull、U / R / D) へ動かすと viewer を見ている最中の u が
 	// git pull --rebase の確認を開く footgun になる。
 	switch m.activeFullScreen() {
-	case app.FullScreenDoctor:
+	case FullScreenDoctor:
 		return m.routeKeyToDoctor(key)
-	case app.FullScreenRatelimit:
+	case FullScreenRatelimit:
 		return m.routeKeyToRatelimitDash(key)
-	case app.FullScreenIssues:
+	case FullScreenIssues:
 		return m.routeKeyToIssues(key)
-	case app.FullScreenStatus:
+	case FullScreenStatus:
 		return m.routeKeyToStatus(key)
-	case app.FullScreenFiler:
+	case FullScreenFiler:
 		return m.routeKeyToFiler(key)
-	case app.FullScreenLan:
+	case FullScreenLan:
 		return m.routeKeyToLan(key)
-	case app.FullScreenNone, app.FullScreenCount:
-		// 一覧を見ている (app.FullScreenCount は番兵で activeFullScreen は返さない)。下へ落とす
+	case FullScreenNone, FullScreenCount:
+		// 一覧を見ている (FullScreenCount は番兵で activeFullScreen は返さない)。下へ落とす
 	}
 	// usage オーバーレイのトグル / dismiss。モーダル (push/pull 確認)・prefix・
 	// 実行中ガードを素通りしないよう必ずそれらの後に置く: 先頭に置くと U が push 確認を
@@ -1623,20 +1623,20 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// R = 全画面 ratelimit ダッシュボード。U と同じ判定位置に置く (モーダル・prefix・実行中
 	// ガードの後) — 先頭に置くと push/pull 確認を素通りする footgun が同じ形で起きる。
 	if key == "R" {
-		return m, m.openFullScreen(app.FullScreenRatelimit)
+		return m, m.openFullScreen(FullScreenRatelimit)
 	}
 	// D = 全画面 doctor。R と同じ判定位置 (モーダル・prefix・実行中ガードの後)。
 	// 開いた時にスキャンが始まる (起動時には走査しない)。
 	if key == "D" {
-		return m, m.openFullScreen(app.FullScreenDoctor)
+		return m, m.openFullScreen(FullScreenDoctor)
 	}
 	// F = 全画面 treefiler。R / D と同じ判定位置なので、diff・PR status・job パネルの上からも開く
 	if key == "F" {
-		return m, m.openFullScreen(app.FullScreenFiler)
+		return m, m.openFullScreen(FullScreenFiler)
 	}
 	// L = 全画面 mac-lan-manager。F と同じ判定位置
 	if key == "L" {
-		return m, m.openFullScreen(app.FullScreenLan)
+		return m, m.openFullScreen(FullScreenLan)
 	}
 	m.usageOv.Dismiss()
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
@@ -1651,12 +1651,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// だけ受ける: job パネル/詳細を開いているときはそちらの語彙を優先する。初回だけ非同期で
 	// スキャンし、以降は結果を保持したまま開閉する (再スキャンは viewer 内の r)。
 	if key == "i" && m.panelSHA == "" {
-		return m, m.openFullScreen(app.FullScreenIssues)
+		return m, m.openFullScreen(FullScreenIssues)
 	}
 	// s = status viewer を開く (全画面。規約は docs/status-viewer-spec.md)。i と同じく一覧表示中
 	// だけ受ける: job パネル/詳細を開いているときはそちらの語彙を優先する。
 	if key == "s" && m.panelSHA == "" {
-		return m, m.openFullScreen(app.FullScreenStatus)
+		return m, m.openFullScreen(FullScreenStatus)
 	}
 	// b = push / u = pull --rebase (どちらも y/N 確認へ)。glogx の独自機能。
 	// diff 表示中は b = 半ページ戻るなので、diff のディスパッチより後で拾う
@@ -1805,7 +1805,7 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.doctorOv.TakeDeleteCmd(), m.maybeTick())
 	case doctorview.DoctorCross:
 		// 横断 (i / s / R)。doctor は handleKey が閉じ済み (演出なし) なので、そのまま開いてよい
-		return m, m.openFullScreen(m.doctorOv.TakeWantCross())
+		return m, m.openFullScreen(crossScreen(m.doctorOv.TakeWantCross()))
 	case doctorview.DoctorSwallow:
 	}
 	return m, m.maybeTick()
@@ -1835,7 +1835,7 @@ func (m *browseModel) routeKeyToRatelimitDash(key string) (tea.Model, tea.Cmd) {
 	// パネルを開いたまま R → i が無音の no-op になる (禁じた形)。
 	// パネル側の状態を viewer が読むようになったら、この判断を再評価すること。
 	case ratelimitview.RlDashCross:
-		return m, m.openFullScreen(m.rlDash.TakeWantCross())
+		return m, m.openFullScreen(crossScreen(m.rlDash.TakeWantCross()))
 	case ratelimitview.RlDashSwallow:
 		// 閉じる / 更新 / 横断以外は握り潰す (下の return へ落ちる)
 	}
@@ -1870,9 +1870,9 @@ func (m *browseModel) routeKeyToIssues(key string) (tea.Model, tea.Cmd) {
 	if m.issuesOv.TakeWantQuit() {
 		return m.quit()
 	}
-	// 横断 (s / R / D。表は app.CrossTarget。ユーザー要望 2026-08-06 / 2026-09-01)。閉じる演出は待たず即着地させる:
+	// 横断 (s / R / D。表は CrossTarget。ユーザー要望 2026-08-06 / 2026-09-01)。閉じる演出は待たず即着地させる:
 	// 全画面 viewer は同時に 1 枚の前提で、閉じ演出と次の開き演出を重ねない
-	if target := m.issuesOv.TakeWantCross(); target != app.FullScreenNone {
+	if target := crossScreen(m.issuesOv.TakeWantCross()); target != FullScreenNone {
 		m.issuesOv.FinishClose()
 		return m, tea.Batch(cmd, m.openFullScreen(target))
 	}
@@ -1919,7 +1919,7 @@ func (m *browseModel) routeKeyToStatus(key string) (tea.Model, tea.Cmd) {
 		return m.quit()
 	}
 	// 横断 (i / R / D。issues 側と同じ経路で、即着地も同じ理由)
-	if target := m.statusOv.TakeWantCross(); target != app.FullScreenNone {
+	if target := crossScreen(m.statusOv.TakeWantCross()); target != FullScreenNone {
 		m.statusOv.FinishClose()
 		return m, tea.Batch(cmd, m.openFullScreen(target))
 	}
@@ -2518,13 +2518,13 @@ var repeatGuardedKeys = map[string]bool{
 func (m *browseModel) swallowKeyRepeat(key string) bool {
 	// 🚨 入力欄に打っている間は抑止しない: 印字キーはすべて検索語で、https の ss のように同じ字を素早く続けて打つと
 	// 2 字目が飲まれていた。y/N の確認 (n の目印) は入力欄ではないので抑止を残す (n のリピートが確認を取り消すため)
-	if m.activeFullScreen() == app.FullScreenIssues && m.issuesOv.TypingInput() {
+	if m.activeFullScreen() == FullScreenIssues && m.issuesOv.TypingInput() {
 		return false
 	}
-	if m.activeFullScreen() == app.FullScreenFiler && m.filerV.OwnsKeys() {
+	if m.activeFullScreen() == FullScreenFiler && m.filerV.OwnsKeys() {
 		return false // treefiler の検索・! の入力中も同じ (ss / dd の 2 字目が飲まれていた。レビューの指摘 2026-10-09)
 	}
-	if m.activeFullScreen() == app.FullScreenLan && m.lanV.OwnsKeys() {
+	if m.activeFullScreen() == FullScreenLan && m.lanV.OwnsKeys() {
 		return false // mac-lan-manager の絞り込み・別名の入力中も同じ
 	}
 	if !repeatGuardedKeys[key] {
@@ -3661,7 +3661,7 @@ func (m *browseModel) View() tea.View {
 // (action モーダル・再起動・usage は左上の入力欄に重なりうる) は置かない。
 func (m *browseModel) caret() *tea.Cursor {
 	active := m.activeFullScreen()
-	if m.done || (active != app.FullScreenIssues && active != app.FullScreenFiler && active != app.FullScreenLan) || m.zoom.scale(app.TimeNow()) < appZoomSnap {
+	if m.done || (active != FullScreenIssues && active != FullScreenFiler && active != FullScreenLan) || m.zoom.scale(app.TimeNow()) < appZoomSnap {
 		return nil
 	}
 	// toast は見ない: 右下に積む板で、入力欄のある 0 行目に届くのは窓が 4 行以下 (端末の高さ 5 以下) のときだけ
@@ -3672,13 +3672,13 @@ func (m *browseModel) caret() *tea.Cursor {
 	var x, y int
 	var ok bool
 	switch active {
-	case app.FullScreenFiler:
+	case FullScreenFiler:
 		x, y, ok = m.filerV.CaretPos() // treefiler の検索欄 (最下行)
-	case app.FullScreenLan:
+	case FullScreenLan:
 		x, y, ok = m.lanV.CaretPos() // mac-lan-manager の絞り込み・別名・帯の入力欄
-	case app.FullScreenIssues:
+	case FullScreenIssues:
 		x, ok = m.issuesOv.CaretCol(m.issuesOpts())
-	case app.FullScreenNone, app.FullScreenRatelimit, app.FullScreenDoctor, app.FullScreenStatus, app.FullScreenCount:
+	case FullScreenNone, FullScreenRatelimit, FullScreenDoctor, FullScreenStatus, FullScreenCount:
 		return nil // 入力欄が無い (上の判定で弾いている)
 	}
 	if !ok {
@@ -3763,19 +3763,19 @@ func (m *browseModel) viewLines() string {
 	// 高々 1 枚しか shown にならない (起動時 restore は開いていれば捨てる — issuesRestoreMsg
 	// の注記)。開いている間の他のキーは handleKey が飲む。
 	switch m.activeFullScreen() {
-	case app.FullScreenRatelimit:
+	case FullScreenRatelimit:
 		return m.finishWithGlobalChrome(m.rlDash.Lines(m.ratelimitOpts()), page)
-	case app.FullScreenDoctor:
+	case FullScreenDoctor:
 		return m.finishWithGlobalChrome(m.doctorOv.Lines(m.doctorOpts()), page)
-	case app.FullScreenStatus:
+	case FullScreenStatus:
 		return m.finishWithGlobalChrome(m.statusOv.Lines(m.statusOpts()), page)
-	case app.FullScreenIssues:
+	case FullScreenIssues:
 		return m.finishWithGlobalChrome(m.issuesOv.Lines(m.issuesOpts()), page)
-	case app.FullScreenFiler:
+	case FullScreenFiler:
 		return m.finishWithGlobalChrome(m.filerV.Lines(m.contentWidth(), page), page)
-	case app.FullScreenLan:
+	case FullScreenLan:
 		return m.finishWithGlobalChrome(m.lanV.Lines(m.contentWidth(), page), page)
-	case app.FullScreenNone, app.FullScreenCount:
+	case FullScreenNone, FullScreenCount:
 		// 全画面ビューアが出ていない = 下でコミット一覧を組む
 	}
 	lines := m.lines()
@@ -4042,19 +4042,19 @@ func (m *browseModel) hintLine() string {
 	// ぴったりに詰めてあり (issues_view.go の hint)、前置すると末尾のキー案内 = 抜ける手段が
 	// 黙って切り落とされる。CI は viewer を閉じれば見える。
 	switch m.activeFullScreen() {
-	case app.FullScreenRatelimit:
+	case FullScreenRatelimit:
 		return m.hintLineText(m.rlDash.Hint(m.hintWidth()))
-	case app.FullScreenDoctor:
+	case FullScreenDoctor:
 		return m.hintLineText(m.doctorOv.Hint(m.hintWidth()))
-	case app.FullScreenStatus:
+	case FullScreenStatus:
 		return m.hintLineText(m.statusOv.Hint(m.hintWidth()))
-	case app.FullScreenIssues:
+	case FullScreenIssues:
 		return m.hintLineText(m.issuesOv.Hint(m.hintWidth()))
-	case app.FullScreenFiler:
+	case FullScreenFiler:
 		return m.hintLineText(m.filerV.Hint(m.hintWidth()))
-	case app.FullScreenLan:
+	case FullScreenLan:
 		return m.hintLineText(m.lanV.Hint(m.hintWidth()))
-	case app.FullScreenNone, app.FullScreenCount:
+	case FullScreenNone, FullScreenCount:
 		// 全画面ビューアが出ていない = 下の一覧の hint
 	}
 	// 🚨 前置 (取得中 / gh の警告) は hint と**同じ予算**に載せる。
@@ -4157,7 +4157,7 @@ func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 		m.filerV.Hide()
 		return mm, cmd
 	case filerview.FilerCross:
-		return m, m.openFullScreen(m.filerV.TakeWantCross())
+		return m, m.openFullScreen(crossScreen(m.filerV.TakeWantCross()))
 	case filerview.FilerExec:
 		if cmd := m.filerV.TakeExecCmd(); cmd != nil {
 			return m, cmd
@@ -4174,7 +4174,7 @@ func (m *browseModel) restoreFilerScreen() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	cmd := m.openFullScreen(app.FullScreenFiler)
+	cmd := m.openFullScreen(FullScreenFiler)
 	if f := m.filerV.Live(); f != nil {
 		f.RestorePlace(p)
 	}
@@ -4205,7 +4205,7 @@ func (m *browseModel) routeKeyToLan(key string) (tea.Model, tea.Cmd) {
 	m.drainLanNotices()
 	switch act {
 	case lanview.LanCross:
-		return m, m.openFullScreen(m.lanV.TakeWantCross())
+		return m, m.openFullScreen(crossScreen(m.lanV.TakeWantCross()))
 	case lanview.LanExec:
 		if cmd := m.lanV.TakeExecCmd(); cmd != nil {
 			return m, cmd
@@ -4221,7 +4221,7 @@ func (m *browseModel) restoreLanScreen() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	cmd := m.openFullScreen(app.FullScreenLan)
+	cmd := m.openFullScreen(FullScreenLan)
 	if lm := m.lanV.Live(); lm != nil {
 		lm.RestorePlace(p)
 	}
