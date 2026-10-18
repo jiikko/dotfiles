@@ -186,16 +186,22 @@ func (s StaticIP) prepare(take bool) string {
 	}
 	fmt.Fprintf(&b, "set -- $(ls -ld %s)\nif [ \"$3\" != %s ]; then echo 'mac-lan-manager: 状態ディレクトリの持ち主が違う' >&2; exit 1; fi\n", dir, Quote(owner))
 	// lock の持ち主が生きているか: pid が居て、その起動時刻が lock に書いた時刻と同じ。pid だけだと、電源断の後の再起動で同じ番号を
-	// 別のプロセスが使い、死んだ lock が永久に「走っている」になった
-	fmt.Fprintf(&b, "alive() { p=$(cat %s/pid 2>/dev/null); st=$(cat %s/start 2>/dev/null); [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null && [ \"$(LC_ALL=C ps -o lstart= -p \"$p\" 2>/dev/null)\" = \"$st\" ]; }\n", lock, lock)
-	fmt.Fprintf(&b, "refuse() { echo \"mac-lan-manager: 固定 IP への切り替えが走っている (pid $p)。止まっているなら sudo rm -rf %s で外す\" >&2; exit 1; }\n", strings.Trim(lock, "'"))
+	// 別のプロセスが使い、死んだ lock が永久に「走っている」になった。
+	// 中身の欠けた lock (pid がまだ無い / pid は生きていて start がまだ無い) は取ったばかりと見て生きている側に倒す: 死んだと読むと、
+	// mkdir から start を書き終えるまで (ps 1 回分) の間に来た 2 本目が lock を外して作り直し、2 本とも変更へ進んだ。
+	// 代わりに、その間に kill -9 / 電源断で止まった lock は引き取らず、refuse の案内で人が外す
+	fmt.Fprintf(&b, "alive() { p=$(cat %s/pid 2>/dev/null); st=$(cat %s/start 2>/dev/null); [ -n \"$p\" ] || return 0; kill -0 \"$p\" 2>/dev/null || return 1; [ -n \"$st\" ] || return 0; [ \"$(LC_ALL=C ps -o lstart= -p \"$p\" 2>/dev/null)\" = \"$st\" ]; }\n", lock, lock)
+	fmt.Fprintf(&b, "refuse() { echo \"mac-lan-manager: 固定 IP への切り替えが走っている (pid ${p:-不明})。止まっているなら sudo rm -rf %s %s で外す\" >&2; exit 1; }\n",
+		strings.Trim(lock, "'"), strings.Trim(takeover, "'"))
 	fmt.Fprintf(&b, "if [ -d %s ] && alive; then refuse; fi\n", lock)
 	if take {
 		// 死んだ lock の引き取りは 1 本ずつ (takeover を mkdir できた 1 本だけが、もう一度生死を見てから外す)。rm -rf と mkdir を
 		// それぞれが打つと、後の rm -rf が先の lock を消して 2 本とも進んだ
 		b.WriteString("tk=0\n")
 		fmt.Fprintf(&b, "if [ -d %s ]; then\n", lock)
-		fmt.Fprintf(&b, "  mkdir %s 2>/dev/null || { echo 'mac-lan-manager: 別の切り替えが止まった lock を引き取っている' >&2; exit 1; }\n  tk=1\n", takeover)
+		// takeover が残ったまま (mkdir と rmdir の間に止まった) だと以後の引き取りを全部断るので、外し方を出す
+		fmt.Fprintf(&b, "  mkdir %s 2>/dev/null || { echo \"mac-lan-manager: 別の切り替えが止まった lock を引き取っている。止まっているなら sudo rm -rf %s %s で外す\" >&2; exit 1; }\n  tk=1\n",
+			takeover, strings.Trim(lock, "'"), strings.Trim(takeover, "'"))
 		fmt.Fprintf(&b, "  if [ -d %s ] && alive; then rmdir %s; refuse; fi\n  rm -rf %s\nfi\n", lock, takeover, lock)
 		fmt.Fprintf(&b, "if ! mkdir %s 2>/dev/null; then [ \"$tk\" = 1 ] && rmdir %s; echo 'mac-lan-manager: 別の切り替えが先に始まった' >&2; exit 1; fi\n", lock, takeover)
 		fmt.Fprintf(&b, "echo $$ > %s/pid\nLC_ALL=C ps -o lstart= -p $$ > %s/start\n", lock, lock)

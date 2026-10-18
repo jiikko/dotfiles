@@ -241,7 +241,10 @@ func KeyArgv(d Dest) ([]string, error) {
 		return nil, err
 	}
 	k := `"$HOME/.ssh/id_ed25519"`
+	// 公開鍵の有無も見る: 秘密鍵だけを見ると、.pub が消えた Mac では鍵を作らずに進み、ssh-copy-id が毎回失敗した。
+	// .pub は秘密鍵から作り直す (一時ファイルから移す: 失敗で空の .pub が残ると、次から「ある」と読んで同じ失敗になる)
 	script := "test -f " + k + " || ssh-keygen -t ed25519 -f " + k + " || exit 1\n" +
+		"test -s " + k + ".pub || { ssh-keygen -y -f " + k + " > " + k + ".pub.tmp && mv " + k + ".pub.tmp " + k + ".pub; } || { rm -f " + k + ".pub.tmp; exit 1; }\n" +
 		"ssh-copy-id -i " + k + ".pub -o " + Quote("HostKeyAlias="+d.HostKeyAlias) + " " + Quote(d.User+"@"+d.IP)
 	return []string{"sh", "-c", script}, nil
 }

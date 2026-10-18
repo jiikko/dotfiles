@@ -153,6 +153,21 @@ func TestDumpPeerText(t *testing.T) {
 	}
 }
 
+// 相手を読む途中で止められたら (SIGINT / SIGTERM) 130 で返す。読めなかった結果 (key: unknown) として 0 を返すと、スクリプトから
+// 中断を区別できない (走査の dump は同じ止め方で 130)。
+func TestDumpPeerStoppedExits130(t *testing.T) {
+	stop := make(chan struct{})
+	close(stop)
+	observe := func(ctx context.Context, _ setup.Dest) setup.PeerNet {
+		<-ctx.Done() // 止められるまで ssh が返らない
+		return setup.PeerNet{KeyErr: fmt.Errorf("%w: %w", setup.ErrUnknown, ctx.Err())}
+	}
+	var out, errb bytes.Buffer
+	if rc := runDump([]string{"--peer", "192.168.50.7"}, &out, &errb, time.Now, stop, noModel(t), observe); rc != 130 {
+		t.Errorf("止めた dump --peer の rc = %d, want 130 (stdout=%q)", rc, out.String())
+	}
+}
+
 // 鍵の 3 通り (入れる / 入れない / 判定できない) を JSON の key で分ける。--user と --host は Dest へそのまま渡る。
 func TestDumpPeerJSONKeyOutcomes(t *testing.T) {
 	unknown := fmt.Errorf("%w: ssh: connect to host 192.168.50.7 port 22: Operation timed out", setup.ErrUnknown)

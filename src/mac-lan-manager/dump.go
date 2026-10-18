@@ -197,6 +197,9 @@ func dumpPeer(d setup.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan s
 		}
 	}()
 	p := observe(ctx, d)
+	if ctx.Err() != nil { // 止められた: 「判定できない」の結果として 0 で返さない (走査の dump と同じく 130。スクリプトから中断を区別する)
+		return 130
+	}
 	r := peerReport{User: d.User, IP: d.IP, HostKeyAlias: d.HostKeyAlias, KeyOK: p.KeyOK, NetKnown: p.NetKnown,
 		Service: p.Service, PeerIP: p.IP, Method: p.Method, Mask: p.Mask, Router: p.Router}
 	switch {

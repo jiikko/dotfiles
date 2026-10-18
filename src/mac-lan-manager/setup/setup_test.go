@@ -572,6 +572,53 @@ func TestStaticIPConcurrentRunsChangeOnce(t *testing.T) {
 	}
 }
 
+// 取ったばかりの lock (mkdir の後・start を書き終える前) に来た 2 本目は、死んだ lock と読んで引き取らない (読むと 2 本とも変更へ進んだ)。
+// 窓は ps 1 回分 (数十 ms) なので、1 本目が最初に打つ ps だけを遅くして窓を広げる。
+func TestStaticIPFreshLockIsNotTakenOver(t *testing.T) {
+	dir, path := sandbox(t)
+	slowPs := "#!/bin/sh\nif mkdir \"" + dir + "/ps-once\" 2>/dev/null; then /bin/sleep 1; fi # sleep-ok: window: start を書き終える前の窓を作る入力\nexec /bin/ps \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "ps"), []byte(slowPs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a, b := staticIP(t, dir), staticIP(t, dir)
+	b.IP, b.Token = "192.168.100.12", "test-token-2"
+	ca := runSh(t, path, a.Script())
+	waitFor(t, "1 本目が lock を取って start を書く手前に居る", func() bool {
+		_, errLock := os.Stat(a.lockPath() + "/pid")
+		_, errOnce := os.Stat(filepath.Join(dir, "ps-once"))
+		return errLock == nil && errOnce == nil
+	})
+	if err := runSh(t, path, b.Script()).Wait(); err == nil {
+		t.Error("取ったばかりの lock を引き取って 2 本目が進んだ")
+	}
+	if err := ca.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(readLog(dir), "-setmanual][Thunderbolt Ethernet][192.168.100.1"); n != 1 {
+		t.Errorf("取ったばかりの lock に 2 本目が来て変更が %d 回: %q", n, readLog(dir))
+	}
+}
+
+// 引き取りの途中で止まった takeover が残ると以後の引き取りを断る。そのとき takeover も含めた外し方を出す。
+func TestStaticIPStaleTakeoverShowsRemedy(t *testing.T) {
+	dir, path := sandbox(t)
+	s := staticIP(t, dir)
+	for _, d := range []string{s.lockPath(), s.lockPath() + ".takeover"} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(s.lockPath()+"/pid", []byte("999999\n"), 0o600); err != nil { // 居ない pid (止まった lock)
+		t.Fatal(err)
+	}
+	cmd := exec.Command("/bin/sh", "-c", s.Script())
+	cmd.Env = []string{"PATH=" + path}
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "rm -rf "+s.lockPath()+" "+s.lockPath()+".takeover") {
+		t.Errorf("止まった takeover の外し方を出さない: err=%v out=%q", err, out)
+	}
+}
+
 // pid が生きていても、起動時刻が lock に書いた時刻と違えば別のプロセス (再起動の後に同じ番号が使われた) なので引き取る。
 // 持ち主が本当に生きているときは断り、外し方を出す。
 func TestStaticIPLockPidReuse(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -260,5 +261,58 @@ func TestObservePeerIgnoresIncompleteIPs(t *testing.T) {
 	p := ObservePeer(ctx, run, Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"})
 	if !p.NetKnown || p.Service != "Thunderbolt Ethernet" {
 		t.Errorf("IP の途中の期限で相手の有線を読めない扱いにした: %+v", p)
+	}
+}
+
+// 秘密鍵はあるが公開鍵 (.pub) が無い Mac では、秘密鍵から .pub を作り直してから ssh-copy-id へ渡す (秘密鍵だけを見ると毎回失敗した)。
+// .pub を作り直せなければ空の .pub を残さずに失敗する。
+func TestKeyArgvRebuildsMissingPub(t *testing.T) {
+	for _, keygenOK := range []bool{true, false} {
+		dir, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		home, bin := filepath.Join(dir, "home"), filepath.Join(dir, "bin")
+		for _, d := range []string{home + "/.ssh", bin} {
+			if err := os.MkdirAll(d, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		key := home + "/.ssh/id_ed25519"
+		if err := os.WriteFile(key, []byte("private\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		keygen := "#!/bin/sh\n[ \"$1\" = -y ] && echo 'ssh-ed25519 AAAAfake' && exit 0\nexit 1\n"
+		if !keygenOK {
+			keygen = "#!/bin/sh\nexit 1\n"
+		}
+		fakes := map[string]string{
+			"ssh-keygen": keygen,
+			// 渡された -i の公開鍵の中身を記録する (本物の ssh-copy-id は .pub を読んで相手へ置く)
+			"ssh-copy-id": "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = -i ] && { cat \"$2\" > \"" + dir + "/copied\" || exit 1; }; shift; done\n",
+		}
+		for name, body := range fakes {
+			if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		argv, err := KeyArgv(dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // 偽の ssh-keygen / ssh-copy-id だけが見える PATH
+		cmd.Env = []string{"PATH=" + bin + ":/bin", "HOME=" + home}
+		out, err := cmd.CombinedOutput()
+		copied, _ := os.ReadFile(filepath.Join(dir, "copied"))
+		pub, pubErr := os.ReadFile(key + ".pub")
+		if keygenOK {
+			if err != nil || string(copied) != "ssh-ed25519 AAAAfake\n" {
+				t.Errorf(".pub の無い Mac で公開鍵を作り直して渡さない: err=%v out=%q copied=%q", err, out, copied)
+			}
+			continue
+		}
+		if err == nil || copied != nil || (pubErr == nil && len(pub) == 0) {
+			t.Errorf(".pub を作り直せないのに進んだ / 空の .pub を残した: err=%v copied=%q pub=%q %v", err, copied, pub, pubErr)
+		}
 	}
 }
