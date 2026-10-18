@@ -303,7 +303,7 @@ func (a *actionModal) runUpdate(target string) tea.Cmd {
 
 // boxLines は action モーダルの描画行 (中央寄せの影付き枠)。どれも非アクティブなら nil。
 // unpushedCount は push 確認の文言用に呼び出し側が渡す (この型はコミット状態を知らない)。
-// spinner / width / colored は browseModel の状態を受け取る (usageOverlay / diffOverlay と同様)。
+// spinner / width / colored は browseModel の状態を受け取る (usageview.UsageOverlay / commitview.DiffOverlay と同様)。
 func (a *actionModal) boxLines(width int, colored bool, spinner string, unpushedCount int) []string {
 	if !a.active() {
 		return nil

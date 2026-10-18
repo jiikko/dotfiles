@@ -4,6 +4,7 @@ const RlDashRefresh
 const RlDashSwallow
 field RatelimitRenderOpts.Colored
 field RatelimitRenderOpts.Err
+field RatelimitRenderOpts.Note
 field RatelimitRenderOpts.Now
 field RatelimitRenderOpts.Page
 field RatelimitRenderOpts.Snap

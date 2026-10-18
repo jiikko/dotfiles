@@ -164,9 +164,9 @@ func TestFilerResizeTicksAndUToggles(t *testing.T) {
 	if _, cmd := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40}); cmd == nil || !m.filerV.Animating() {
 		t.Fatal("大きさが変わっても tick が回らない")
 	}
-	before := m.usageOv.Visible
+	before := m.usageOv.Visible()
 	m.handleKey("U")
-	if m.usageOv.Visible == before {
+	if m.usageOv.Visible() == before {
 		t.Fatal("ファイラーの上で U が利用枠を切り替えない")
 	}
 }
@@ -270,7 +270,7 @@ func TestFilerSearchTakesFUAndRepeats(t *testing.T) {
 	for _, k := range []string{"F", "U", "s", "s"} {
 		m.handleKey(k)
 	}
-	if m.activeFullScreen() != app.FullScreenFiler || m.usageOv.Visible {
+	if m.activeFullScreen() != app.FullScreenFiler || m.usageOv.Visible() {
 		t.Fatal("入力中の F / U で閉じた / 利用枠が開いた")
 	}
 	if got := m.filerV.Fixture().Model().SearchQuery(); got != "FUss" {
@@ -285,9 +285,9 @@ func TestFilerHelpSwallowsCrossKeys(t *testing.T) {
 		m.handleKey("F")
 		m.handleKey("?")
 		m.handleKey(k)
-		if m.activeFullScreen() != app.FullScreenFiler || m.usageOv.Visible || m.filerV.Fixture().Model().OwnsKeys() {
+		if m.activeFullScreen() != app.FullScreenFiler || m.usageOv.Visible() || m.filerV.Fixture().Model().OwnsKeys() {
 			t.Fatalf("キー一覧の中の %s: filer に留まって一覧だけ閉じるはず (全画面 %v・利用枠 %v・入力中 %v)",
-				k, m.activeFullScreen(), m.usageOv.Visible, m.filerV.Fixture().Model().OwnsKeys())
+				k, m.activeFullScreen(), m.usageOv.Visible(), m.filerV.Fixture().Model().OwnsKeys())
 		}
 	}
 }

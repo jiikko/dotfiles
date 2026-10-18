@@ -38,7 +38,7 @@ func TestToastLeavingReachesHiddenViaTick(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newTestBrowse(t, 5, nil, nil)
-			m.usageOv.Visible = tc.usageGlance
+			m.usageOv.Fixture().SetVisible(tc.usageGlance)
 			m.toast.Show("pulled", true)
 			m.maybeTick()
 

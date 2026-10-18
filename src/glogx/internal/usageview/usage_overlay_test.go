@@ -90,10 +90,10 @@ func TestUsageOverlayLoadingStates(t *testing.T) {
 		ov   UsageOverlay
 		want bool
 	}{
-		{"表示中・結果未着", UsageOverlay{Visible: true}, true},
-		{"表示中・snap 到着", UsageOverlay{Visible: true, Snap: &usage.Snapshot{}}, false},
-		{"表示中・err 到着", UsageOverlay{Visible: true, Err: errors.New("boom")}, false},
-		{"非表示・結果未着", UsageOverlay{Visible: false}, false},
+		{"表示中・結果未着", UsageOverlay{visible: true}, true},
+		{"表示中・snap 到着", UsageOverlay{visible: true, snap: &usage.Snapshot{}}, false},
+		{"表示中・err 到着", UsageOverlay{visible: true, err: errors.New("boom")}, false},
+		{"非表示・結果未着", UsageOverlay{visible: false}, false},
 	}
 	for _, c := range cases {
 		if got := c.ov.Loading(); got != c.want {
@@ -104,7 +104,7 @@ func TestUsageOverlayLoadingStates(t *testing.T) {
 
 // 取得失敗時の box は "取得失敗" を表示する (エラー描画パスの回帰ガード)。型単体で検証。
 func TestUsageOverlayBoxLinesError(t *testing.T) {
-	ov := UsageOverlay{Visible: true, Err: errors.New("boom")}
+	ov := UsageOverlay{visible: true, err: errors.New("boom")}
 	box := ov.BoxLines(80, false, "|")
 	if len(box) == 0 {
 		t.Fatal("エラー時に box が空")
@@ -123,43 +123,43 @@ func TestUsageOverlayBoxLinesError(t *testing.T) {
 // 失敗結果が来たら last-good を保持し "取得失敗" へ落とさない (毎分の再取得が瞬断で転けても
 // 右上表示がチラつかない)。
 func TestUsageHandlePreservesLastGoodOnRefreshError(t *testing.T) {
-	o := &UsageOverlay{Visible: true}
+	o := &UsageOverlay{visible: true}
 	good := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 10}}}
 	o.Handle(UsageMsg{snap: good})
 	// 定期リフレッシュが失敗
 	o.Handle(UsageMsg{err: errors.New("boom")})
-	if o.Snap != good {
+	if o.snap != good {
 		t.Error("リフレッシュ失敗で last-good スナップショットが消えた")
 	}
-	if o.Err != nil {
-		t.Errorf("last-good があるのにエラーが表面化した: %v", o.Err)
+	if o.err != nil {
+		t.Errorf("last-good があるのにエラーが表面化した: %v", o.err)
 	}
 }
 
 // 初回取得の失敗 (snap 未取得) はそのままエラー表示する。
 func TestUsageHandleInitialErrorSurfaces(t *testing.T) {
-	o := &UsageOverlay{Visible: true}
+	o := &UsageOverlay{visible: true}
 	o.Handle(UsageMsg{err: errors.New("boom")})
-	if o.Err == nil {
+	if o.err == nil {
 		t.Error("初回取得失敗はエラー表示すべき")
 	}
-	if o.Snap != nil {
+	if o.snap != nil {
 		t.Error("初回失敗で snap が nil でない")
 	}
 }
 
 // リフレッシュ成功は last-good を新値へ置き換える (err はクリア)。
 func TestUsageHandleRefreshSuccessReplaces(t *testing.T) {
-	o := &UsageOverlay{Visible: true}
+	o := &UsageOverlay{visible: true}
 	v1 := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 10}}}
 	v2 := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 42}}}
 	o.Handle(UsageMsg{snap: v1})
 	o.Handle(UsageMsg{snap: v2})
-	if o.Snap != v2 {
+	if o.snap != v2 {
 		t.Error("リフレッシュ成功で新値へ置き換わっていない")
 	}
-	if o.Err != nil {
-		t.Errorf("成功なのに err が残った: %v", o.Err)
+	if o.err != nil {
+		t.Errorf("成功なのに err が残った: %v", o.err)
 	}
 }
 
@@ -167,7 +167,7 @@ func TestUsageHandleRefreshSuccessReplaces(t *testing.T) {
 // させると先行 fetch の cancel を上書きで取りこぼし、quit 後も subprocess が app.FetchTimeout まで
 // 残る (シナリオ: 起動時 fetch の完了前に U を 2 回 = 非表示 → stale 再表示で 2 本目)。
 func TestUsageFetchCmdIsSingleFlight(t *testing.T) {
-	o := &UsageOverlay{Visible: true}
+	o := &UsageOverlay{visible: true}
 	if o.FetchCmd(false) == nil {
 		t.Fatal("最初の fetchCmd が nil (fetch が始まらない)")
 	}
@@ -188,12 +188,12 @@ func TestUsageFetchCmdIsSingleFlight(t *testing.T) {
 
 // 初回失敗 → リフレッシュ成功 で回復する (err クリア + snap セット)。
 func TestUsageHandleRecoversFromInitialError(t *testing.T) {
-	o := &UsageOverlay{Visible: true}
+	o := &UsageOverlay{visible: true}
 	o.Handle(UsageMsg{err: errors.New("boom")}) // 初回失敗
 	good := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 10}}}
 	o.Handle(UsageMsg{snap: good}) // リフレッシュで回復
-	if o.Snap != good || o.Err != nil {
-		t.Errorf("初回失敗から回復していない: snap=%v err=%v", o.Snap, o.Err)
+	if o.snap != good || o.err != nil {
+		t.Errorf("初回失敗から回復していない: snap=%v err=%v", o.snap, o.err)
 	}
 }
 
@@ -201,8 +201,8 @@ func TestUsageHandleRecoversFromInitialError(t *testing.T) {
 // (ユーザー要望 2026-07-22。間隔は全プロセス共有のゲートの間隔)。
 func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
 	ov := UsageOverlay{
-		Visible: true,
-		Snap: &usage.Snapshot{Windows: []usage.Window{
+		visible: true,
+		snap: &usage.Snapshot{Windows: []usage.Window{
 			{Label: "5h", Percent: 20, ResetAt: time.Now().Add(4 * time.Hour)},
 		}},
 	}
@@ -236,7 +236,7 @@ func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
 
 // Claude と codex の枠の間に区切り罫線が入る (ユーザー要望 2026-07-31)。単一出所なら罫線なし。
 func TestUsageBoxLinesCodexDivider(t *testing.T) {
-	o := UsageOverlay{Visible: true, Snap: &usage.Snapshot{Windows: []usage.Window{
+	o := UsageOverlay{visible: true, snap: &usage.Snapshot{Windows: []usage.Window{
 		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(4 * time.Hour)},
 		{Label: "7d", Percent: 29, ResetAt: time.Now().Add(50 * time.Hour)},
 		{Label: "cx7d", Source: usage.SourceCodex, Percent: 69, ResetAt: time.Now().Add(120 * time.Hour)},
@@ -263,7 +263,7 @@ func TestUsageBoxLinesCodexDivider(t *testing.T) {
 	}
 
 	// codex 枠が無ければ罫線は出ない。
-	o.Snap = &usage.Snapshot{Windows: []usage.Window{
+	o.snap = &usage.Snapshot{Windows: []usage.Window{
 		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(4 * time.Hour)},
 	}}
 	for i, line := range o.BoxLines(120, false, "") {
@@ -325,19 +325,19 @@ printf '%s\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":69,"wind
 		{Label: "7d", Percent: 29},
 		{Label: "cx7d", Source: usage.SourceCodex, Percent: 1},
 	}}
-	o := UsageOverlay{Visible: true, Snap: prev}
+	o := UsageOverlay{visible: true, snap: prev}
 	drainUsageFetch(t, &o, o.FetchCmd(false))
-	if o.Err != nil || o.StaleErr != nil || o.inFlight {
-		t.Fatalf("err=%v staleErr=%v inFlight=%v", o.Err, o.StaleErr, o.inFlight)
+	if o.err != nil || o.staleErr != nil || o.inFlight {
+		t.Fatalf("err=%v staleErr=%v inFlight=%v", o.err, o.staleErr, o.inFlight)
 	}
-	if _, found := o.Snap.Find("5h"); !found {
-		t.Errorf("claude 一時失敗で 5h 枠が消えた: %+v", o.Snap.Windows)
+	if _, found := o.snap.Find("5h"); !found {
+		t.Errorf("claude 一時失敗で 5h 枠が消えた: %+v", o.snap.Windows)
 	}
-	if w, _ := o.Snap.Find("cx7d"); w.Percent != 69 {
+	if w, _ := o.snap.Find("cx7d"); w.Percent != 69 {
 		t.Errorf("codex 枠が新値でない: %d, want 69", w.Percent)
 	}
-	if o.Snap.Version != "9.9.9" || o.Snap.ClaudeErr == "" {
-		t.Errorf("Version の last-good / Claude の失敗理由: %q %q", o.Snap.Version, o.Snap.ClaudeErr)
+	if o.snap.Version != "9.9.9" || o.snap.ClaudeErr == "" {
+		t.Errorf("Version の last-good / Claude の失敗理由: %q %q", o.snap.Version, o.snap.ClaudeErr)
 	}
 	// 表示用 snap は last-good で Claude 枠を補完するが、今回取得できたのは codex だけ。
 	// キャッシュ契約を満たさないため、補完済み snap を保存してはならない。
@@ -383,11 +383,11 @@ func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
 			t.Setenv("XDG_CACHE_HOME", t.TempDir())
 			t.Setenv("PATH", "")                                       // 外部コマンドを起こさない
 			stubLookPath(t, map[string]string{"codex": "/fake/codex"}) // codex の入った環境 (codex の場所取りを置く)
-			o := UsageOverlay{Visible: true}
+			o := UsageOverlay{visible: true}
 			o.FetchCmd(false) // closure は走らせない (届く順をテストが決める)
 			none := plain(&o) // 何も届いていない瞬間 (起動直後のグランス)
 			o.Handle(UsageMsg{part: usagePart(first, 7)})
-			if got := usageLabels(o.Snap); got != usageLabels((*usage.Snapshot)(nil).With(*usagePart(first, 7))) {
+			if got := usageLabels(o.snap); got != usageLabels((*usage.Snapshot)(nil).With(*usagePart(first, 7))) {
 				t.Fatalf("先に届いた方が表示へ入らない: %s", got)
 			}
 			before := plain(&o)
@@ -409,7 +409,7 @@ func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
 			if c := o.Handle(UsageMsg{part: usagePart(second, 3)}); c != nil {
 				c() // 周の終わりのキャッシュの保存
 			}
-			if got := usageLabels(o.Snap); got != "5h,7d,cx7d" {
+			if got := usageLabels(o.snap); got != "5h,7d,cx7d" {
 				t.Errorf("届いた順に依らず Claude が先に並ばない: %s", got)
 			}
 			if o.inFlight || len(o.waiting()) != 0 || o.fetchedAt.IsZero() {
@@ -457,7 +457,7 @@ func TestUsageClaudeFailureFirstKeepsNoteWhileWaiting(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("PATH", "")
 	stubLookPath(t, map[string]string{"codex": "/fake/codex"})
-	o := UsageOverlay{Visible: true}
+	o := UsageOverlay{visible: true}
 	o.FetchCmd(false)
 	defer o.Stop()
 	o.Handle(UsageMsg{part: &usage.Part{Err: errors.New("claude /usage 実行失敗")}})
@@ -500,7 +500,7 @@ func TestUsageNoCodexPendingWithoutCodex(t *testing.T) {
 				avail["codex"] = "/fake/codex"
 			}
 			stubLookPath(t, avail)
-			o := UsageOverlay{Visible: true}
+			o := UsageOverlay{visible: true}
 			o.FetchCmd(false)
 			defer o.Stop()
 			none := usageBoxPlain(&o)
@@ -533,7 +533,7 @@ func TestUsagePendingUsesCachedCodexShape(t *testing.T) {
 	if err := saveUsageCache(path, old, time.Now().Add(-24*time.Hour)); err != nil { // TTL を過ぎた前回
 		t.Fatal(err)
 	}
-	o := UsageOverlay{Visible: true}
+	o := UsageOverlay{visible: true}
 	o.FetchCmd(false)
 	defer o.Stop()
 	o.Handle(UsageMsg{part: usagePart("", 3)})
@@ -545,15 +545,15 @@ func TestUsagePendingUsesCachedCodexShape(t *testing.T) {
 // 何も取れていないうちの Claude の失敗は、空の表示を出さずに codex を待つ。codex が取れたら Claude の失敗の注記つきで出す。
 func TestUsageClaudeFailureFirstWaitsForCodex(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	o := UsageOverlay{Visible: true}
+	o := UsageOverlay{visible: true}
 	o.FetchCmd(false)
 	o.Handle(UsageMsg{part: &usage.Part{Err: errors.New("claude /usage 実行失敗: exit status 127")}})
-	if o.Snap != nil || o.Err != nil || !o.Loading() {
-		t.Fatalf("Claude の失敗だけで表示が変わった: snap=%v err=%v", usageLabels(o.Snap), o.Err)
+	if o.snap != nil || o.err != nil || !o.Loading() {
+		t.Fatalf("Claude の失敗だけで表示が変わった: snap=%v err=%v", usageLabels(o.snap), o.err)
 	}
 	o.Handle(UsageMsg{part: usagePart(usage.SourceCodex, 7)})
-	if usageLabels(o.Snap) != "cx7d" || !strings.Contains(FetchNote(o.Snap, o.StaleErr), "Claude Code の取得に失敗") {
-		t.Errorf("codex だけの表示 / Claude の注記: %s %q", usageLabels(o.Snap), FetchNote(o.Snap, o.StaleErr))
+	if usageLabels(o.snap) != "cx7d" || !strings.Contains(FetchNote(o.snap, o.staleErr), "Claude Code の取得に失敗") {
+		t.Errorf("codex だけの表示 / Claude の注記: %s %q", usageLabels(o.snap), FetchNote(o.snap, o.staleErr))
 	}
 	path, _ := usageCachePath()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -565,37 +565,37 @@ func TestUsageClaudeFailureFirstWaitsForCodex(t *testing.T) {
 // 何も無いところからの全滅は「取得失敗」。
 func TestUsageBothFailRound(t *testing.T) {
 	base := &usage.Snapshot{Windows: []usage.Window{{Label: "5h"}, {Label: "cx7d", Source: usage.SourceCodex}}}
-	o := UsageOverlay{Visible: true, Snap: base, fetchedAt: app.TimeNow()}
+	o := UsageOverlay{visible: true, snap: base, fetchedAt: app.TimeNow()}
 	o.FetchCmd(false)
 	o.Handle(UsageMsg{part: &usage.Part{Source: usage.SourceCodex, Err: errors.New("codex 起動失敗")}})
 	o.Handle(UsageMsg{part: &usage.Part{Err: errors.New("claude 失敗")}})
-	if o.Snap != base || o.Err != nil || o.inFlight {
-		t.Errorf("全滅で周の始まりの表示へ戻らない: snap=%p base=%p err=%v", o.Snap, base, o.Err)
+	if o.snap != base || o.err != nil || o.inFlight {
+		t.Errorf("全滅で周の始まりの表示へ戻らない: snap=%p base=%p err=%v", o.snap, base, o.err)
 	}
-	if o.StaleErr == nil || o.StaleErr.Error() != "claude 失敗\ncodex 起動失敗" {
-		t.Errorf("staleErr = %v", o.StaleErr)
+	if o.staleErr == nil || o.staleErr.Error() != "claude 失敗\ncodex 起動失敗" {
+		t.Errorf("staleErr = %v", o.staleErr)
 	}
 
-	o = UsageOverlay{Visible: true}
+	o = UsageOverlay{visible: true}
 	o.FetchCmd(false)
 	o.Handle(UsageMsg{part: &usage.Part{Err: errors.New("a")}})
 	o.Handle(UsageMsg{part: &usage.Part{Source: usage.SourceCodex, Err: errors.New("b")}})
-	if o.Snap != nil || o.Err == nil || o.Loading() {
-		t.Errorf("初回の全滅が「取得失敗」にならない: snap=%v err=%v", usageLabels(o.Snap), o.Err)
+	if o.snap != nil || o.err == nil || o.Loading() {
+		t.Errorf("初回の全滅が「取得失敗」にならない: snap=%v err=%v", usageLabels(o.snap), o.err)
 	}
 }
 
 // 初回の全滅の後、次の周で 1 本でも取れたらその場で「取得失敗」から回復する。
 func TestUsageRecoversFromInitialErrorViaParts(t *testing.T) {
-	o := UsageOverlay{Visible: true}
+	o := UsageOverlay{visible: true}
 	o.FetchCmd(false)
 	o.Handle(UsageMsg{part: &usage.Part{Err: errors.New("a")}})
 	o.Handle(UsageMsg{part: &usage.Part{Source: usage.SourceCodex, Err: errors.New("b")}})
 	o.FetchCmd(false)
 	defer o.Stop()
 	o.Handle(UsageMsg{part: usagePart(usage.SourceCodex, 7)})
-	if o.Err != nil {
-		t.Fatalf("codex が取れたのに「取得失敗」のまま: %v", o.Err)
+	if o.err != nil {
+		t.Fatalf("codex が取れたのに「取得失敗」のまま: %v", o.err)
 	}
 	if box := strings.Join(o.BoxLines(80, false, "*"), "\n"); strings.Contains(box, "取得失敗") {
 		t.Errorf("箱が「取得失敗」のまま:\n%s", box)
@@ -606,15 +606,15 @@ func TestUsageRecoversFromInitialErrorViaParts(t *testing.T) {
 // (まだ届いていない出所の枠は前回の値のまま)。
 func TestUsageStaleNoteKeptUntilRoundEnds(t *testing.T) {
 	base := (*usage.Snapshot)(nil).With(*usagePart("", 1)).With(*usagePart(usage.SourceCodex, 1))
-	o := UsageOverlay{Visible: true, Snap: base, fetchedAt: app.TimeNow(), StaleErr: errors.New("前の周の全滅")}
+	o := UsageOverlay{visible: true, snap: base, fetchedAt: app.TimeNow(), staleErr: errors.New("前の周の全滅")}
 	o.FetchCmd(false)
 	o.Handle(UsageMsg{part: usagePart(usage.SourceCodex, 7)})
-	if o.StaleErr == nil {
+	if o.staleErr == nil {
 		t.Error("Claude の前回の値を出したまま注記を消した")
 	}
 	o.Handle(UsageMsg{part: usagePart("", 7)})
-	if o.StaleErr != nil {
-		t.Errorf("両方取れた周の終わりに注記が消えない: %v", o.StaleErr)
+	if o.staleErr != nil {
+		t.Errorf("両方取れた周の終わりに注記が消えない: %v", o.staleErr)
 	}
 }
 
@@ -623,7 +623,7 @@ func TestUsageCacheExcludesLastGoodOfFailedSource(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("PATH", "") // codex が無い環境として読む (codex 欠損のキャッシュを miss にしない。usage_cache.go)
 	base := (*usage.Snapshot)(nil).With(*usagePart("", 1)).With(*usagePart(usage.SourceCodex, 1))
-	o := UsageOverlay{Visible: true, Snap: base, fetchedAt: app.TimeNow()}
+	o := UsageOverlay{visible: true, snap: base, fetchedAt: app.TimeNow()}
 	o.FetchCmd(false)
 	o.Handle(UsageMsg{part: usagePart("", 5)})
 	c := o.Handle(UsageMsg{part: &usage.Part{Source: usage.SourceCodex, Err: errors.New("codex 起動失敗")}})
@@ -636,8 +636,8 @@ func TestUsageCacheExcludesLastGoodOfFailedSource(t *testing.T) {
 	if !ok || usageLabels(snap) != "5h,7d" {
 		t.Errorf("キャッシュ = ok:%v %s, want 今回の Claude 枠だけ", ok, usageLabels(snap))
 	}
-	if w, _ := o.Snap.Find("cx7d"); w.Percent != 1 {
-		t.Errorf("表示からは前回の codex 枠を消さない: %+v", o.Snap.Windows)
+	if w, _ := o.snap.Find("cx7d"); w.Percent != 1 {
+		t.Errorf("表示からは前回の codex 枠を消さない: %+v", o.snap.Windows)
 	}
 }
 
@@ -645,14 +645,14 @@ func TestUsageCacheExcludesLastGoodOfFailedSource(t *testing.T) {
 // (codex 未導入) でも、毎分「codex 取得中」を点滅させない。
 func TestUsageRefreshDoesNotShowWaiting(t *testing.T) {
 	base := (*usage.Snapshot)(nil).With(*usagePart("", 1))
-	o := UsageOverlay{Visible: true, Snap: base, fetchedAt: app.TimeNow()}
+	o := UsageOverlay{visible: true, snap: base, fetchedAt: app.TimeNow()}
 	o.FetchCmd(false)
 	defer o.Stop()
 	o.Handle(UsageMsg{part: usagePart("", 9)})
 	if o.Loading() || len(o.waiting()) != 0 {
 		t.Errorf("リフレッシュで「取得中」を出した: %v", o.waiting())
 	}
-	if w, _ := o.Snap.Find("5h"); w.Percent != 9 {
+	if w, _ := o.snap.Find("5h"); w.Percent != 9 {
 		t.Errorf("届いた Claude が表示へ入らない: %d", w.Percent)
 	}
 }
@@ -668,7 +668,7 @@ func TestUsageBoxLinesTitleShowsCodexVersion(t *testing.T) {
 			{Label: "cx7d", Source: usage.SourceCodex, Percent: 69, ResetAt: time.Now().Add(48 * time.Hour)},
 		},
 	}
-	ov := UsageOverlay{Visible: true, Snap: snap}
+	ov := UsageOverlay{visible: true, snap: snap}
 	plain := term.StripANSI(strings.Join(ov.BoxLines(120, false, ""), "\n"))
 	if !strings.Contains(plain, "Claude Code v2.1.216 + codex v0.144.6 · usage") {
 		t.Errorf("タイトルに codex バージョンが無い:\n%s", plain)

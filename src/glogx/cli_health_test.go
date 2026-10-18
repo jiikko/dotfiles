@@ -607,8 +607,8 @@ func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
 		m.fetch = func() tea.Msg { return nil }
 		m.pendingFetches = 2
 		m.Init()
-		if m.usageOv.Snap == nil || m.usageOv.Fixture().InFlight() {
-			t.Fatalf("CI の取得中でも、キャッシュの数字は先に出す (snap=%v inFlight=%v)", m.usageOv.Snap, m.usageOv.Fixture().InFlight())
+		if m.usageOv.Snapshot() == nil || m.usageOv.Fixture().InFlight() {
+			t.Fatalf("CI の取得中でも、キャッシュの数字は先に出す (snap=%v inFlight=%v)", m.usageOv.Snapshot(), m.usageOv.Fixture().InFlight())
 		}
 	})
 }

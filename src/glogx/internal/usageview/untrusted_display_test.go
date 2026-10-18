@@ -12,8 +12,8 @@ import (
 // usage の枠タイトルに載る CLI バージョンは外部バイナリの出力。
 func TestUsageBoxSanitizesVersion(t *testing.T) {
 	o := UsageOverlay{
-		Visible: true,
-		Snap: &usage.Snapshot{
+		visible: true,
+		snap: &usage.Snapshot{
 			Version: "1.2.3\a" + testenv.OSC8 + "0;PWNED" + testenv.ST8,
 			Windows: []usage.Window{{Label: "5h", Percent: 20}},
 		},

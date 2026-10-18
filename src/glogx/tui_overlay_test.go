@@ -753,10 +753,10 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	// 「全画面 viewer の下では描かれないのに取得だけ走る」形にしないため、
 	// 「本当に画面へ出ること」まで見る (出ないなら、
 	// 見えない層へ状態を書く経路になる)。
-	m.usageOv.Snap = &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 42}}}
-	m.usageOv.Visible = false
+	m.usageOv.Fixture().SetSnapshot(&usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 42}}})
+	m.usageOv.Fixture().SetVisible(false)
 	m.handleKey("U")
-	if !m.usageOv.Visible {
+	if !m.usageOv.Visible() {
 		t.Fatal("viewer 表示中の U で usage が開かない")
 	}
 	if out := term.StripANSI(m.View().Content); !strings.Contains(out, "5h") {
@@ -764,7 +764,7 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	}
 	// 一覧と同じ語彙: 次のキーで引っ込む
 	m.handleKey("j")
-	if m.usageOv.Visible {
+	if m.usageOv.Visible() {
 		t.Fatal("viewer 表示中の他キーで usage が引っ込まない")
 	}
 	m.handleKey("i") // トグルで閉じる

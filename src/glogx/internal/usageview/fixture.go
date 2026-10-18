@@ -40,3 +40,9 @@ func (f Fixture) Fetching() bool      { return f.o.cancel != nil }
 // SetFetchedAt は最後に取れた時刻を置く (鮮度の判定を動かすテスト用)。EndRound は取得の周を閉じる。
 func (f Fixture) SetFetchedAt(t time.Time) { f.o.fetchedAt = t }
 func (f Fixture) EndRound()                { f.o.endRound() }
+
+// SetVisible / SetSnapshot / SetErr / SetStaleErr は表示と取得の結果を直接置く (取得を通さずに描画・配線を見るテスト用)。
+func (f Fixture) SetVisible(on bool)               { f.o.visible = on }
+func (f Fixture) SetSnapshot(snap *usage.Snapshot) { f.o.snap = snap }
+func (f Fixture) SetErr(err error)                 { f.o.err = err }
+func (f Fixture) SetStaleErr(err error)            { f.o.staleErr = err }

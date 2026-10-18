@@ -22,7 +22,7 @@ import (
 // 消していなかったため実際に起きた。
 func TestDetailsFlagsStayPaired(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
-	m.usageOv.Snap = rlTestSnap()
+	m.usageOv.Fixture().SetSnapshot(rlTestSnap())
 	m.hasRepo = true
 	sha := m.commits[0].SHA
 

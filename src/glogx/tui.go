@@ -271,17 +271,17 @@ type browseModel struct {
 	panelCursor  int    // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
 	panelGrace   int    // rerun 直後、pending が見えなくてもパネル SHA を追従対象に留める残回数
 	copyOnDetail string // Y で詳細未取得だった detailKey。jobDetailMsg 到着時にコピーして消す ("" = 予約なし)
-	// job 詳細ポップアップ (annotations / ログ tail) の pager 状態と描画は jobDetailOverlay 型
-	// (job_detail_overlay.go) に切り出す。panel-frame (panelSHA/panelCursor/panelGrace) と ETA・
+	// job 詳細ポップアップ (annotations / ログ tail) の pager 状態と描画は commitview.JobDetailOverlay
+	// (internal/commitview/job_detail_overlay.go) に切り出す。panel-frame (panelSHA/panelCursor/panelGrace) と ETA・
 	// CI 取得は details/statuses/commits と構造的に結合するため browseModel に残す (詳細は同ファイル)。
 	// cache キー (detailKey) はパネルのカーソル座標から借りる (identity 非所有) ので呼び出し側で注入。
 	detailOv commitview.JobDetailOverlay
 	prCache  map[string]*gitdata.PRRef // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
 	prBusy   map[string]bool           // PR 取得中の sha
-	// PR 状態ポップアップ (P キー) の状態と描画は prStatusOverlay 型 (pr_status_overlay.go) に
+	// PR 状態ポップアップ (P キー) の状態と描画は commitview.PrStatusOverlay (internal/commitview/pr_status_overlay.go) に
 	// 切り出し、ここは 1 フィールドだけ持つ。CI 行の整形はコミット状態を知る browseModel 側。
 	prStatusOv commitview.PrStatusOverlay
-	// diff ポップアップ (d キー) の状態と描画は diffOverlay 型 (diff_overlay.go) に切り出し、
+	// diff ポップアップ (d キー) の状態と描画は commitview.DiffOverlay (internal/commitview/diff_overlay.go) に切り出し、
 	// ここは 1 フィールドだけ持つ。ターゲット選定・非同期取得・URL コピーは境界をまたぐため
 	// openDiff / handleDiffKey に薄く残す。
 	diffOv commitview.DiffOverlay
@@ -301,7 +301,7 @@ type browseModel struct {
 	verbatim       []Line          // git log 実出力の取り込み行 (nil = 自前レンダリング)
 
 	// usage オーバーレイ (右上に Claude Code の /usage 残量を重ねる)。ユーザー要望 2026-07-21。
-	// 状態と描画は usageOverlay 型 (usage_overlay.go) に切り出し、ここは 1 フィールドだけ持つ。
+	// 状態と描画は usageview.UsageOverlay (internal/usageview/usage_overlay.go) に切り出し、ここは 1 フィールドだけ持つ。
 	usageOv usageview.UsageOverlay
 
 	// コミット一覧のスクロール glide (表示 offset を論理 offset へ滑らせる)。実体は
@@ -316,8 +316,8 @@ type browseModel struct {
 	// 見張り。状態と判定は gitLogWatch 型 (gitlog_watch.go) に切り出し、反映は reloadLog を使う。
 	logWatch gitLogWatch
 
-	// issues viewer (i キーで開く全画面の issue ブラウザ)。状態と描画は issuesView 型
-	// (issues_view.go) に切り出し、ここは 1 フィールドだけ持つ。読む規約の一次情報は
+	// issues viewer (i キーで開く全画面の issue ブラウザ)。状態と描画は issuesview.IssuesView
+	// (internal/issuesview/issues_view.go) に切り出し、ここは 1 フィールドだけ持つ。読む規約の一次情報は
 	// docs/issues-viewer-spec.md。
 	issuesOv issuesview.IssuesView
 	// ratelimit ダッシュボード (R キーで開く全画面の残量ビュー)。usage オーバーレイと同じ
@@ -331,7 +331,7 @@ type browseModel struct {
 	// doctorOv は D の全画面 doctor (doctor_view.go)。rlDash と同じ薄い器で、開くと走査を始める
 	doctorOv doctorview.DoctorView
 	// status viewer (s キーで開く全画面の作業ツリービュー)。stage / unstage / 変更を捨てる を
-	// 行う write 側の画面で、状態と描画は statusView 型 (status_view.go) に切り出す。
+	// 行う write 側の画面で、状態と描画は statusview.StatusView (internal/statusview/status_view.go) に切り出す。
 	// 読み書きの規約の一次情報は docs/status-viewer-spec.md。
 	statusOv statusview.StatusView
 	// restartPending は「裏ビルドが完成したので再起動を提案したい」= 保留中の印。
@@ -404,7 +404,7 @@ func newBrowseModel(commits []gitdata.Commit, statuses map[string]gitdata.CIStat
 		width:          width,
 		height:         height,
 		cancel:         cancel,
-		usageOv:        usageview.UsageOverlay{Visible: true},
+		usageOv:        usageview.NewUsageOverlay(),
 		issuesOv:       issuesview.NewIssuesView(),
 		zoom:           newAppZoom(),
 		statusOv:       statusview.NewStatusView(),
@@ -1030,7 +1030,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 動かないため。フレーム tick を足すとこのチェーンの意図 (1s 周期) が崩れる。
 		return m, m.issuesOv.HandleWatch(msg)
 	case issuesview.IssuesScanMsg:
-		// 戻り値は畳まれていた取り直しの予約 (issuesView.receive の doc)。捨てると
+		// 戻り値は畳まれていた取り直しの予約 (issuesview.IssuesView.Receive の doc)。捨てると
 		// 「自分がファイルを動かしたのに一覧が古いまま」が残る
 		cmd := m.issuesOv.Receive(msg)
 		// receive → rebindOpen が置く notice (開いていた issue の消失) をこのフレームで配達する。
@@ -1343,8 +1343,8 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 🚨 issues viewer の e (別名 v) だけは実ファイルを編集可能で開く (メモを足せるように
 		// readonly にしていない) ので、復帰の境界で取り直す。取り直さないと編集結果 (H1・front matter の
 		// status・チェックボックス) が一覧にも本文にも出ず、viewer が古い内容を最新として表示する。
-		// 🚨 viewer 表示中でも issuesView.notice へ回さない: notice はどのヘッダーも描かず、
-		// 次の打鍵で takeNotice されるまで画面に出ない (キーを押すまで失敗が黙殺される)。
+		// 🚨 viewer 表示中でも IssuesView の通知 (TakeNotice で受け取る) へ回さない: 通知はどのヘッダーも描かず、
+		// 次の打鍵で TakeNotice されるまで画面に出ない (キーを押すまで失敗が黙殺される)。
 		// viewLines が viewer の窓にもトーストを合成するので、ここは常にトーストでよい。
 		// 🚨 起動対象は $VISUAL/$EDITOR で変わる (extcmd.EditorCommand) ので、文言でツール名を名指し
 		// しない。job ログ・repo root だけは nvim 固定だが、失敗の主因は可変側 (typo した
@@ -2543,10 +2543,10 @@ func (m *browseModel) swallowKeyRepeat(key string) bool {
 // ダッシュボードのどちらかが見えていれば回す (どちらも同じ Snapshot を描くので、取得経路は
 // 1 本のまま)。見えていないときに回さない理由は usageRefreshMsg ハンドラの注記。
 func (m *browseModel) wantsUsageRefresh() bool {
-	return m.usageOv.Visible || m.rlDash.Visible()
+	return m.usageOv.Visible() || m.rlDash.Visible()
 }
 
-// rlDashLoading はダッシュボードが取得待ち (スピナーを回す) か。usageOverlay.loading() は
+// rlDashLoading はダッシュボードが取得待ち (スピナーを回す) か。usageview.UsageOverlay.Loading() は
 // 右上オーバーレイの表示状態を見るので、ダッシュボードだけが開いているときは false になる。
 func (m *browseModel) rlDashLoading() bool {
 	return m.rlDash.Visible() && m.usageOv.Awaiting()
@@ -2561,7 +2561,7 @@ func (m *browseModel) toggleRatelimitDash() tea.Cmd {
 		return m.maybeTick()
 	}
 	m.usageOv.Dismiss()
-	if m.usageOv.Snap == nil {
+	if m.usageOv.Snapshot() == nil {
 		// 初回はディスクキャッシュを使う (fresh なら subprocess を起こさず即描ける)
 		return tea.Batch(m.usageOv.FetchCmd(true), m.maybeTick())
 	}
@@ -2579,7 +2579,7 @@ func (m *browseModel) toggleRatelimitDash() tea.Cmd {
 // 開いた瞬間に数字が消えない)。
 func (m *browseModel) toggleUsage() tea.Cmd {
 	m.usageOv.Toggle()
-	if !m.usageOv.Visible {
+	if !m.usageOv.Visible() {
 		return nil
 	}
 	if m.usageOv.Stale() {
@@ -3382,7 +3382,7 @@ func (m *browseModel) openNeighborDiff(delta int) tea.Cmd {
 }
 
 // handleDiffKey は diff ポップアップ表示中のキー操作。y (URL コピー) は境界をまたぐのでここで
-// 処理し、スクロール/閉じるは diffOv.scroll へ委譲する (pager 流儀の詳細は diffOverlay 側)。
+// 処理し、スクロール/閉じるは diffOv.Scroll へ委譲する (pager 流儀の詳細は commitview.DiffOverlay 側)。
 func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
 	if key == "y" {
 		m.copyFocusURL()
@@ -3462,14 +3462,16 @@ func (m *browseModel) doctorOpts() doctorview.DoctorRenderOpts {
 }
 
 func (m *browseModel) ratelimitOpts() ratelimitview.RatelimitRenderOpts {
+	snap := m.usageOv.View(m.spinner())
 	return ratelimitview.RatelimitRenderOpts{
 		Width:    m.contentWidth(),
 		Page:     m.pageSize(),
 		Colored:  m.colored,
 		Spinner:  m.spinner(),
-		Snap:     m.usageOv.View(m.spinner()),
-		Err:      m.usageOv.Err,
-		StaleErr: m.usageOv.StaleErr,
+		Snap:     snap,
+		Err:      m.usageOv.Err(),
+		StaleErr: m.usageOv.StaleErr(),
+		Note:     usageview.FetchNote(snap, m.usageOv.StaleErr()),
 		Waiting:  m.usageOv.WaitingNote(m.spinner()),
 		Now:      app.TimeNow(),
 	}
@@ -3654,7 +3656,7 @@ func (m *browseModel) View() tea.View {
 
 // caret は入力欄 (issues の番号の絞り込み・URL ピッカー) のキャレットに置く端末のカーソル。入力欄が無ければ nil (隠す)。
 //
-// 🚨 IME は変換中の文字を端末のカーソルの位置に出す (tuikit/caret・docs/glogx-ui-guide.md §7)。位置は issuesView.caretCol
+// 🚨 IME は変換中の文字を端末のカーソルの位置に出す (tuikit/caret・docs/glogx-ui-guide.md §7)。位置は IssuesView.CaretCol
 // (窓の 0 行目の桁) にフレームの原点を足したもの。窓を変形する演出 (開閉の zoom) の最中と、窓の上に板が重なっている間
 // (action モーダル・再起動・usage は左上の入力欄に重なりうる) は置かない。
 func (m *browseModel) caret() *tea.Cursor {
@@ -4090,7 +4092,7 @@ func (m *browseModel) hintLineText(hint string) string {
 	return term.ClipToWidth(painted, m.hintWidth())
 }
 
-// hintWidth は hint 行に使える桁数。🚨 hintLineText の clip 幅と、hint を組む側 (statusView.hint)
+// hintWidth は hint 行に使える桁数。🚨 hintLineText の clip 幅と、hint を組む側 (StatusView.Hint)
 // が使う予算はこの 1 か所から取る。2 か所に式を書くと、片方だけ余白を変えた瞬間に「収まる
 // つもりで組んだ hint が黙って切られる」形でずれる。
 func (m *browseModel) hintWidth() int {

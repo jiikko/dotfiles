@@ -274,7 +274,7 @@ func frameAllocBytes(t *testing.T, build func(testing.TB) *browseModel) int64 {
 // データ未着 (loading) の箱を重ねた状態で測る。
 func budgetUsageGlanceModel(tb testing.TB) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
-	m.usageOv.Visible = true
+	m.usageOv.Fixture().SetVisible(true)
 	return m
 }
 
@@ -476,7 +476,7 @@ func assertFrameDrawn(t *testing.T, name string, m *browseModel) {
 func budgetRatelimitModel(tb testing.TB) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
 	m.rlDash.Fixture().SetShown(true)
-	m.usageOv.Snap = rlTestSnap()
+	m.usageOv.Fixture().SetSnapshot(rlTestSnap())
 	// 🚨 時計を固定する (メモ化 + avoid-wall-clock-assertions)。
 	// 盤のキャッシュ鍵は now.Unix() を含むので、実時計のままだと AllocsPerRun(50) の
 	// 測定窓 (-race で ~41ms) が**秒境界をまたいだときだけ 1 回ミス**し、その 1069 allocs が

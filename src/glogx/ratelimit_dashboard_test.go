@@ -81,11 +81,11 @@ func TestWantsUsageRefresh(t *testing.T) {
 	if m.wantsUsageRefresh() {
 		t.Error("どちらも非表示なのに再取得する")
 	}
-	m.usageOv.Visible = true
+	m.usageOv.Fixture().SetVisible(true)
 	if !m.wantsUsageRefresh() {
 		t.Error("usage オーバーレイ表示中に再取得しない")
 	}
-	m.usageOv.Visible = false
+	m.usageOv.Fixture().SetVisible(false)
 	m.rlDash.Toggle()
 	if !m.wantsUsageRefresh() {
 		t.Error("ダッシュボード表示中に再取得しない")
@@ -103,7 +103,7 @@ func TestRLDashLoading(t *testing.T) {
 	if !m.rlDashLoading() {
 		t.Error("取得前なのに loading でない")
 	}
-	m.usageOv.Snap = rlTestSnap()
+	m.usageOv.Fixture().SetSnapshot(rlTestSnap())
 	if m.rlDashLoading() {
 		t.Error("取得済みなのに loading")
 	}
@@ -139,6 +139,24 @@ func TestRatelimitDashShowsWaitingSource(t *testing.T) {
 	}
 }
 
+// ratelimitOpts は usage の取得の失敗の注記を組んでダッシュボードへ渡す (ratelimitview は usageview を import しないので、
+// main が渡し忘れると注記が黙って消える)。
+func TestRatelimitOptsPassesFetchNote(t *testing.T) {
+	var m browseModel
+	m.rlDash.Toggle()
+	snap := rlTestSnap()
+	snap.ClaudeErr = "claude /usage 実行失敗: exit status 127"
+	m.usageOv.Fixture().SetSnapshot(snap)
+	o := m.ratelimitOpts()
+	if !strings.Contains(o.Note, "Claude Code の取得に失敗") {
+		t.Fatalf("ratelimitOpts が取得の失敗の注記を渡さない: %q", o.Note)
+	}
+	o.Width, o.Page = 100, 30 // ゼロ値の browseModel は窓の寸法を持たない
+	if got := term.StripANSI(m.rlDash.Lines(o)[1]); !strings.Contains(got, "exit status 127") {
+		t.Errorf("見出しの下に取得の失敗の注記が無い: %q", got)
+	}
+}
+
 // 何も届いていない最初の取得でも、盤は場所取りのカードで届いた後と同じ段を取る (中央の 1 行の「取得中...」にしない)。
 // 初回の全滅の後の取り直しは「取得失敗」のまま (場所取りで隠さない)。
 func TestRatelimitDashPlaceholdersBeforeAnyArrives(t *testing.T) {
@@ -156,7 +174,7 @@ func TestRatelimitDashPlaceholdersBeforeAnyArrives(t *testing.T) {
 		t.Errorf("何も届いていない盤が場所取りのカード %d 枚になっていない:\n%s", want, all)
 	}
 	m.usageOv.Fixture().EndRound()
-	m.usageOv.Err = errors.New("初回の全滅")
+	m.usageOv.Fixture().SetErr(errors.New("初回の全滅"))
 	m.usageOv.FetchCmd(false)
 	o = m.ratelimitOpts()
 	o.Width, o.Page = 100, 30
@@ -195,10 +213,10 @@ func TestRatelimitDashKeyRouting(t *testing.T) {
 // R を開くと右上の usage オーバーレイは引っ込む (同じ値を 2 か所に出さない)。
 func TestRatelimitDashDismissesUsageOverlay(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
-	m.usageOv.Visible = true
-	m.usageOv.Snap = rlTestSnap()
+	m.usageOv.Fixture().SetVisible(true)
+	m.usageOv.Fixture().SetSnapshot(rlTestSnap())
 	m.handleKey("R")
-	if m.usageOv.Visible {
+	if m.usageOv.Visible() {
 		t.Error("ダッシュボードを開いても右上オーバーレイが残っている")
 	}
 }

@@ -151,7 +151,7 @@ func TestBrowseCIPolling(t *testing.T) {
 // (固定の記号やフレーム 0 で止まらない)。
 func TestBrowsePanelPendingJobSpins(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
-	m.usageOv.Visible = false // usage の取得中表示も同じスピナーを使うので隔離する
+	m.usageOv.Fixture().SetVisible(false) // usage の取得中表示も同じスピナーを使うので隔離する
 	m.statuses = statusesFor(m, gitdata.StateFailure)
 	m.details[m.commits[0].SHA] = []gitdata.CheckDetail{{Name: "queued-job", State: gitdata.StatePending}}
 	m.openPanel()
@@ -339,7 +339,7 @@ func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
 	// ローディング指標が壊れても overlay の "取得中" で下の曖昧 assert が通ってしまう
 	// (マスク)。openPanel を handleKey 経由で呼ばないため overlay が
 	// 自動 dismiss されないので明示的に消す。
-	m.usageOv.Visible = false
+	m.usageOv.Fixture().SetVisible(false)
 	sha := m.commits[0].SHA
 	m.statuses[sha] = gitdata.StateSuccess // キャッシュ由来 (details なし)
 	cmd := m.openPanel()
@@ -893,7 +893,7 @@ func TestBrowsePanelShowsRunningElapsed(t *testing.T) {
 	testenv.StubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
-	m.usageOv.Visible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
+	m.usageOv.Fixture().SetVisible(false) // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
 	sha := m.commits[0].SHA
 	m.statuses[sha] = gitdata.StatePending
 	// 開始 90 秒前・ETA basis なし (履歴が画面に無い) → 経過時間だけ出る
@@ -972,7 +972,7 @@ func TestBrowseRunningETAFetchesMissingBasis(t *testing.T) {
 	testenv.StubClock(t)
 
 	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
-	m.usageOv.Visible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
+	m.usageOv.Fixture().SetVisible(false) // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
 	running, prev := m.commits[0].SHA, m.commits[1].SHA
 	m.statuses[running] = gitdata.StatePending
 	m.statuses[prev] = gitdata.StateSuccess // 完了コミット: cache ヒット相当で Details 未取得

@@ -70,20 +70,20 @@ func TestOverlayCenteredBoxPreservesRightColor(t *testing.T) {
 // 起動時は表示、任意キーで非表示、U で再表示 (ユーザー要望の「何か押したら消える」)。
 func TestUsageOverlayDismiss(t *testing.T) {
 	m := newTestBrowse(t, 5, nil, nil)
-	if !m.usageOv.Visible {
+	if !m.usageOv.Visible() {
 		t.Fatal("起動時に usageOv.visible=false")
 	}
 	m.handleKey("j") // 何かキー → 消える
-	if m.usageOv.Visible {
+	if m.usageOv.Visible() {
 		t.Error("キー押下後も usageOv.visible=true (消えていない)")
 	}
 	m.handleKey("U") // U で再表示
-	if !m.usageOv.Visible {
+	if !m.usageOv.Visible() {
 		t.Error("U で再表示されない")
 	}
 	releaseKey(m)    // 指を離してから押し直す (キーリピート判定を跨ぐ)
 	m.handleKey("U") // U でまた非表示 (トグル)
-	if m.usageOv.Visible {
+	if m.usageOv.Visible() {
 		t.Error("U トグルで非表示にならない")
 	}
 }
@@ -92,12 +92,12 @@ func TestUsageOverlayDismiss(t *testing.T) {
 func TestUsageToggleDoesNotBypassConfirmModal(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.actModal.pushConfirm = true
-	visBefore := m.usageOv.Visible
+	visBefore := m.usageOv.Visible()
 	m.handleKey("U")
 	if m.actModal.pushConfirm {
 		t.Error("U が push 確認モーダルをキャンセルしていない (残った確認へ Enter で誤 push する footgun)")
 	}
-	if m.usageOv.Visible != visBefore {
+	if m.usageOv.Visible() != visBefore {
 		t.Error("モーダル中の U が usage をトグルした (モーダルのキャンセル語彙を優先すべき)")
 	}
 }
@@ -112,9 +112,9 @@ func TestUsageLoadingDrivesSpinner(t *testing.T) {
 		t.Error("usage 取得中に spinnerActive=false (tick が回らずスピナーが止まる)")
 	}
 	// 結果到着でローディング終了 → spinner 対象から外れる。
-	m.usageOv.Snap = &usage.Snapshot{Windows: []usage.Window{
+	m.usageOv.Fixture().SetSnapshot(&usage.Snapshot{Windows: []usage.Window{
 		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(time.Hour)},
-	}}
+	}})
 	if m.usageOv.Loading() {
 		t.Error("snap 到着後も usageOv.loading()=true")
 	}
@@ -140,10 +140,10 @@ func TestUsageBoxLines(t *testing.T) {
 		t.Errorf("取得中 box の title が省略されている ('Claude Code' が無い):\n%s", loadingPlain)
 	}
 
-	m.usageOv.Snap = &usage.Snapshot{Windows: []usage.Window{
+	m.usageOv.Fixture().SetSnapshot(&usage.Snapshot{Windows: []usage.Window{
 		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(4 * time.Hour)},
 		{Label: "7d", Percent: 29, ResetAt: time.Now().Add(50 * time.Hour)},
-	}}
+	}})
 	box := m.usageOv.BoxLines(m.width, m.colored, m.spinner())
 	plain := term.StripANSI(strings.Join(box, "\n"))
 	if !strings.Contains(plain, "5h") || !strings.Contains(plain, "7d") {
@@ -156,7 +156,7 @@ func TestUsageBoxLines(t *testing.T) {
 	}
 
 	// 非表示なら nil。
-	m.usageOv.Visible = false
+	m.usageOv.Fixture().SetVisible(false)
 	if m.usageOv.BoxLines(m.width, m.colored, m.spinner()) != nil {
 		t.Error("非表示で nil を返さない")
 	}
@@ -197,10 +197,10 @@ func TestUsageToggleRefetchesOnlyWhenStale(t *testing.T) {
 	t.Run("stale なら取り直す", func(t *testing.T) {
 		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		m.usageOv.Dismiss()
-		m.usageOv.Snap = &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 1}}}
+		m.usageOv.Fixture().SetSnapshot(&usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 1}}})
 		m.usageOv.Fixture().SetFetchedAt(time.Now().Add(-2 * app.UsageRefreshInterval))
 		m.handleKey("U")
-		if !m.usageOv.Visible {
+		if !m.usageOv.Visible() {
 			t.Fatal("U で表示になっていない")
 		}
 		if !m.usageOv.Fixture().Fetching() {
@@ -210,7 +210,7 @@ func TestUsageToggleRefetchesOnlyWhenStale(t *testing.T) {
 	t.Run("fresh なら取り直さない", func(t *testing.T) {
 		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 		m.usageOv.Dismiss()
-		m.usageOv.Snap = &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 1}}}
+		m.usageOv.Fixture().SetSnapshot(&usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 1}}})
 		m.usageOv.Fixture().SetFetchedAt(time.Now())
 		m.handleKey("U")
 		if m.usageOv.Fixture().Fetching() {
@@ -223,15 +223,15 @@ func TestUsageToggleRefetchesOnlyWhenStale(t *testing.T) {
 // (全文はダッシュボードに出る)。
 func TestUsageBoxShowsClaudeFetchError(t *testing.T) {
 	m := newTestBrowse(t, 5, nil, nil)
-	m.usageOv.Visible = true
-	m.usageOv.Snap = &usage.Snapshot{Windows: []usage.Window{
+	m.usageOv.Fixture().SetVisible(true)
+	m.usageOv.Fixture().SetSnapshot(&usage.Snapshot{Windows: []usage.Window{
 		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(time.Hour)},
-	}}
+	}})
 	base := m.usageOv.BoxLines(m.width, m.colored, m.spinner())
 	if strings.Contains(term.StripANSI(strings.Join(base, "\n")), "取得に失敗") {
 		t.Fatalf("取得できているのに注記がある:\n%s", term.StripANSI(strings.Join(base, "\n")))
 	}
-	m.usageOv.Snap.ClaudeErr = "claude /usage 実行失敗: exit status 127: " + strings.Repeat("x", 300)
+	m.usageOv.Snapshot().ClaudeErr = "claude /usage 実行失敗: exit status 127: " + strings.Repeat("x", 300)
 	box := m.usageOv.BoxLines(m.width, m.colored, m.spinner())
 	plain := term.StripANSI(strings.Join(box, "\n"))
 	if !strings.Contains(plain, "Claude Code の取得に失敗 (前回の値を表示中)") {
@@ -250,11 +250,11 @@ func TestUsageLastGoodShowsStaleReason(t *testing.T) {
 	app.TimeNow = func() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC) }
 	t.Cleanup(func() { app.TimeNow = orig })
 	m := newTestBrowse(t, 5, nil, nil)
-	m.usageOv.Visible = true
+	m.usageOv.Fixture().SetVisible(true)
 	good := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 4, ResetAt: time.Now().Add(time.Hour)}}}
 	m.usageOv.Handle(usageview.FixtureUsageMsg(good, nil, nil))
 	m.usageOv.Handle(usageview.FixtureUsageMsg(nil, errors.Join(errors.New("claude /usage 実行失敗: exit status 127"), errors.New("codex 起動失敗")), nil))
-	if m.usageOv.Snap != good {
+	if m.usageOv.Snapshot() != good {
 		t.Fatal("全滅で last-good を捨てた")
 	}
 	box := term.StripANSI(strings.Join(m.usageOv.BoxLines(m.width, m.colored, m.spinner()), "\n"))

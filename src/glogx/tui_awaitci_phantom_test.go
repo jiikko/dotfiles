@@ -114,7 +114,7 @@ func TestSpinnerActiveBothDirectionsForAwaitCI(t *testing.T) {
 			// usageOv.loading() が常に true になり、spinnerActive() は awaitCI に関わらず
 			// true のまま = この表は何も測れない (最初に書いたときはこれで 3 ケースが
 			// 落ちて気づいた)。usage を「取得済み」にして、awaitCI だけが効く状態にする。
-			m.usageOv.Err = errUsageProbeSettled
+			m.usageOv.Fixture().SetErr(errUsageProbeSettled)
 			tc.setup(m)
 			if got := m.spinnerActive(); got != tc.want {
 				t.Errorf("spinnerActive() = %v, want %v (awaitCI=%v)", got, tc.want, m.awaitCI)

@@ -506,3 +506,72 @@ func hasNofixtureConstraint(f *ast.File) bool {
 	}
 	return false
 }
+
+// TestNoViewImportsAnotherView は画面のパッケージ (internal/*view) の本番のコードが、別の画面のパッケージを import しないことを
+// 確かめる。画面どうしが互いを知ると、画面を 1 つ直すたびに別の画面も作り直され、main が仲介するはずの値が 2 本の経路で届く。
+// 画面の間で値を渡すなら main が組んで描画の引数で渡す (ratelimitview の RatelimitRenderOpts.Note)。
+// 止めないもの: テストのファイル (別の画面の部品を借りるテストはある)・画面以外の internal (term / app / gitdata など) への import。
+func TestNoViewImportsAnotherView(t *testing.T) {
+	views, err := filepath.Glob(filepath.Join("internal", "*view"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// canary: 画面のパッケージが見つからなければ走査が壊れている
+	if len(views) < 8 {
+		t.Fatalf("internal/*view が %d 個しか見つからない (走査が壊れている): %v", len(views), views)
+	}
+	fset := token.NewFileSet()
+	checked := 0
+	for _, dir := range views {
+		self := filepath.Base(dir)
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range ents {
+			name := e.Name()
+			if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, parser.ImportsOnly)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checked++
+			for _, im := range f.Imports {
+				path := strings.Trim(im.Path.Value, `"`)
+				rest, ok := strings.CutPrefix(path, "glogx/internal/")
+				if !ok {
+					continue
+				}
+				pkg, _, _ := strings.Cut(rest, "/")
+				if strings.HasSuffix(pkg, "view") && pkg != self {
+					t.Errorf("%s: 画面のパッケージ %s が別の画面 %s を import している (値は main が組んで描画の引数で渡す)", filepath.Join(dir, name), self, path)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("画面のパッケージの本番のファイルを 1 つも読めなかった")
+	}
+}
+
+// recvTypeName は型の式から型の名前を取る (`*T` / `T[K]` / `(T)` も T)。取れなければ ""。
+func recvTypeName(e ast.Expr) string {
+	for {
+		switch x := e.(type) {
+		case *ast.ParenExpr:
+			e = x.X
+		case *ast.StarExpr:
+			e = x.X
+		case *ast.IndexExpr:
+			e = x.X
+		case *ast.IndexListExpr:
+			e = x.X
+		case *ast.Ident:
+			return x.Name
+		default:
+			return ""
+		}
+	}
+}

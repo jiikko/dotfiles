@@ -4,6 +4,7 @@ import (
 	"errors"
 	"glogx/internal/app"
 	"glogx/internal/term"
+	"glogx/internal/usageview"
 	"ratelimit/usage"
 	"strings"
 	"testing"
@@ -98,6 +99,7 @@ func TestRatelimitDashShowsClaudeFetchError(t *testing.T) {
 	snap := rlTestSnap()
 	snap.ClaudeErr = "claude /usage 実行失敗: exit status 127: nodenv: \x1b[31mcommand not found"
 	o := rlTestOpts(snap, nil)
+	o.Note = usageview.FetchNote(snap, nil) // 注記は main が組んで渡す (ratelimitOpts)。ここは渡された注記の出し方を見る
 	lines := d.Lines(o)
 	note := term.StripANSI(lines[1])
 	for _, want := range []string{"Claude Code の取得に失敗", "前回の値を表示中", "exit status 127"} {

@@ -20,7 +20,6 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/term"
-	"glogx/internal/usageview"
 	"ratelimit/usage"
 )
 
@@ -72,15 +71,16 @@ type RatelimitRenderOpts struct {
 	Spinner  string
 	Snap     *usage.Snapshot // nil = 未取得 (取得中の表示に落ちる)
 	Err      error           // 取得失敗 (snap があれば last-good を優先する)
-	StaleErr error           // last-good を保持したまま失敗した理由 (usageOverlay.staleErr)
-	Waiting  string          // まだ届いていない出所の「取得中」(usageOverlay.waitingNote。空 = 待っていない)
+	StaleErr error           // last-good を保持したまま失敗した理由 (usageview.UsageOverlay.StaleErr)
+	Note     string          // 古い値が混じっているときの注記 (usageview.FetchNote。空 = 無い)。画面どうしを import しないよう main が組んで渡す
+	Waiting  string          // まだ届いていない出所の「取得中」(usageview.UsageOverlay.WaitingNote。空 = 待っていない)
 	Now      time.Time
 }
 
 // lines はダッシュボードをちょうど page 行で返す (全画面 viewer 共通の契約)。
 func (d *RatelimitDash) Lines(o RatelimitRenderOpts) []string {
 	head := []string{d.headerLine(o), ""}
-	if note := usageview.FetchNote(o.Snap, o.StaleErr); note != "" {
+	if note := o.Note; note != "" {
 		head[1] = term.Paint(centerLine(note, o.Width), term.AnsiYellow, o.Colored)
 	} else if o.Waiting != "" {
 		head[1] = term.Paint(centerLine(o.Waiting, o.Width), term.AnsiDim, o.Colored)
