@@ -34,3 +34,12 @@ callback をファイルの外側の関数 (actor に属さない場所) に移�
 ## 起票時の反証レビュー
 
 省略した (中身は rule にするかの検討で、コードの事実の主張は screen-share-app の `tapCallback` の 1 か所だけ)。反証されていない記述として扱う
+
+## 決定と結果 (2026-10-18)
+
+- **新しい rule にした**: `_claude/rules/swift-off-actor-callback-outside-actor.md` (`paths: **/*.swift` で、Swift のファイルを Read したときだけ読み込む)。
+  根拠は `_claude/rules-rationale/swift-off-actor-callback-outside-actor.md`。発動点が既存のどの rule とも違うことは上の「決めること」のとおり。
+  `paths:` なので常時読み込みの字数には足さない。「もう 1 回踏むまで待つ」は、落ち方 (起動直後のクラッシュで単体テストは緑) が重いので採らなかった
+- 入口: `_claude/CLAUDE.md` の「不具合対応の原則」の、Apple のプロジェクトで `paths:` 読み込みになる rule の並びに足した
+- iOS の実機・シミュレータの確認は `no-ios-simulator-verification.md` が優先する、と rule の中に書いた (2 本目の項「実物を起動して通す」との衝突を避ける)
+
