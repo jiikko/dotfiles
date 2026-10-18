@@ -153,13 +153,16 @@ fi
 # 2. 検査の出力をパイプに通したまま && で commit / push。検査の語はパイプの左の単純コマンドの先頭の語で見る (git log / git diff --stat を
 # パイプに通して commit するのは止めない)。終端の道具を tail / head / grep に限らない: 検査の後ろにパイプがあれば、終端が何でも rc は隠れる
 # (限ると `| tee log | tail` / `|&` / `grep -E "a|b"` の引用符の中の | で素通りした)。検査と && の間に ; / 改行 / & 1 つを挟んだ形は見ない
-# (成否で止める意図が無い・背景に回した)。前置き (runtimeout <秒> / env / time / nice) と絶対パス・相対パスの検査も見る
+# (成否で止める意図が無い・背景に回した)。&& の後ろで ; / 改行を挟んだ commit も見ない。前置き (runtimeout <秒> / env / time / nice) と絶対パス・相対パスの検査も見る
 CHECK='(make|go|golangci-lint|shellcheck|swift|xcodebuild|npm|pnpm|yarn|npx|pytest|cargo|bats|ruff|mypy|eslint|tsc)'
-PREFIX='(([^[:space:]|;&]*/)?runtimeout[[:blank:]]+[0-9.]+[[:blank:]]+|env([[:blank:]]+-[^[:space:]]+)*([[:blank:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*[[:blank:]]+|time[[:blank:]]+|nice([[:blank:]]+-n[[:blank:]]*[0-9]+)?[[:blank:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:blank:]]+)*'
-PIPED_CHECK="(^|[;&|(\\{${NL}])[[:blank:]]*${PREFIX}([^[:space:]|;&]*/)?${CHECK}([[:blank:]][^|;&${NL}]*)?\\|(&|[^;&${NL}])*&&"
+PREFIX='(([^[:space:]|;&]*/)?runtimeout[[:blank:]]+[0-9.]+[[:blank:]]+|env([[:blank:]]+-u[[:blank:]]+[^[:space:]]+|[[:blank:]]+-[^[:space:]]+)*([[:blank:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*[[:blank:]]+|time([[:blank:]]+-p)?[[:blank:]]+|nice([[:blank:]]+-n?[[:blank:]]*-?[0-9]+)?[[:blank:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:blank:]]+)*'
+# `&` はパイプの `|&` としてだけ越える (背景に回す `&` は越えない)
+PIPED_CHECK="(^|[;&|(\\{${NL}])[[:blank:]]*${PREFIX}([^[:space:]|;&]*/)?${CHECK}([[:blank:]][^|;&${NL}]*)?\\|&?(\\|&|[^;&${NL}])*&&"
 # commit / push は git の副コマンドの位置だけで見る (間に置けるのは - で始まるオプションと -C / -c の値。`git stash push` / `git log -- commit` を止めない)
-COMMIT="(^|[^[:alnum:]_.-])git([[:blank:]]+-[Cc][[:blank:]]+[^[:space:]]+|[[:blank:]]+-[^[:space:]]+)*[[:blank:]]+(commit|push)([^[:alnum:]_-]|\$)"
-if [[ "$text" =~ ${PIPED_CHECK}.*${COMMIT} ]]; then
+# && の後ろで ; / 改行を越えない (`&& echo ok; git commit` の commit は成否で止まらない)。&& の直後の改行 (行の続き) と、空白の無い
+# `&&git commit` は受ける
+COMMIT="([[:blank:]${NL}]*|[^;${NL}]*[^[:alnum:]_.-])git([[:blank:]]+-[Cc][[:blank:]]+[^[:space:]]+|[[:blank:]]+-[^[:space:]]+)*[[:blank:]]+(commit|push)([^[:alnum:]_-]|\$)"
+if [[ "$text" =~ ${PIPED_CHECK}${COMMIT} ]]; then
   hook_deny "検査の出力をパイプに通したまま、&& で git commit / push へ繋いでいます。パイプの rc は終端 (tail 等) のものなので、検査が赤くても commit / push が走ります (retro 831 で lint が赤いまま commit した)。検査の rc を直接取ってから繋いでください: make lint > <log> 2>&1; rc=\$?; tail -2 <log>; [ \$rc -eq 0 ] && git commit … (または set -o pipefail を先に)。規範: _claude/rules/verify-execution-not-just-exit-code.md"
 fi
 

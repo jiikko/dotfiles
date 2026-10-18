@@ -74,6 +74,12 @@ expect deny "絶対パスの検査" '/opt/homebrew/bin/golangci-lint run | tail 
 expect allow "検査と && の間に ; がある形" 'make lint | tail -1; echo done && git commit -m x -- a'
 expect allow "git stash push (commit / push の副コマンドでない)" 'make lint | tail && git stash push -m wip'
 expect allow "git log の引数の commit" 'make lint | tail && git log --oneline -- commit'
+expect deny "&& の直後に空白が無い形" 'make lint|tail -1&&git commit -m x -- a'
+expect deny "&& の後ろで改行して commit" 'make lint | tail -1 &&
+git commit -m x -- a'
+expect deny "env -u の前置き" 'env -u GOFLAGS go test ./... | tail && git commit -m x -- a'
+expect allow "背景に回した検査の後の && commit" 'make test | tail & wait && git commit -m x -- a'
+expect allow "&& の後ろで ; を挟んだ commit (成否で止まらない)" 'make lint | tail -1 && echo ok; git commit -m x -- a'
 expect allow "pipefail を先に立てた形" 'set -o pipefail; make lint | tail -1 && git commit -m x -- a'
 expect allow "rc を直接取ってから繋ぐ形" 'make lint > log 2>&1; rc=$?; tail -2 log; [ $rc -eq 0 ] && git commit -m x -- a'
 expect allow "検査でない git log を head に通して commit" 'git log --oneline | head -3 && git commit -m x -- a'
