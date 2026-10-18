@@ -185,7 +185,7 @@ for p in "$@"; do
     # 名前付きターゲット (test-nvim 等) が無い tests/claude, tests/bin 等も
     # 取りこぼさない。tests/ 直下のファイルは tests 全体
     # テストを持たないディレクトリ (tests/lib の helper) の変更は、その helper を参照しているテストへ振る。
-    # 参照がどこにも無ければ従来どおりそのディレクトリを渡し、runner の「0 件」で気づかせる (issue 063)
+    # 参照がどこにも無ければ従来どおりそのディレクトリを渡し、runner の「0 件」で気づかせる
     tests/*/*)
       _td="tests/$(echo "$p" | cut -d/ -f2)"
       # テストそのもの (test_*.sh) の変更・削除は名前を逆引きせず元のディレクトリへ送る。最後のテストを消したときは
@@ -208,7 +208,7 @@ for p in "$@"; do
     theme/*)
       add_target test-yaml; add_test_dir "tests/theme"; add_go_dir "src/glogx"; add_go_dir "src/pro-con" ;;
     # mods (Claude Code の関数 hook の plugin) の manifest / hooks.json を *.json の写像に落とさない (test-json は Makefile の
-    # JSON_FILES の固定のファイルしか見ない): modules の指す先を間違えても通り、本番では mod が黙って読まれない。.ts もここで拾う (issue 619)
+    # JSON_FILES の固定のファイルしか見ない): modules の指す先を間違えても通り、本番では mod が黙って読まれない。.ts もここで拾う
     _claude/mods/*)
       add_test_dir "tests/claude"
       case "$p" in *.sh) add_shell_targets ;; esac ;;
@@ -225,7 +225,7 @@ for p in "$@"; do
       add_target test-gitconfig ;;
     Brewfile|_pryrc|_gemrc)
       add_target test-ruby-syntax ;;
-    # _claude 配下の shell は lint に加えて tests/claude も回す (issue 060):
+    # _claude 配下の shell は lint に加えて tests/claude も回す:
     # test_deny_bare_tmux_kill.sh が hooks を、test_statusline.sh が
     # statusline-command.sh を実テストしている
     _claude/hooks/*|_claude/*.sh)
@@ -241,7 +241,7 @@ for p in "$@"; do
     bin/*|scripts/*|zshlib/*|*.sh|_z*)
       add_shell_targets
       add_test_dirs_referencing "$p" ;;
-    # _claude の設定群は「テスト対象なし」ではない (issue 060): tests/claude が
+    # _claude の設定群は「テスト対象なし」ではない: tests/claude が
     # skill 参照表 (CLAUDE.md ↔ skills の相互整合) と ~/.claude 側 symlink の
     # dangling (rename/削除の置き去り) を検証している
     _claude/CLAUDE.md|_claude/agents/*|_claude/rules/*|_claude/skills/*|_claude/references/*|_claude/commands/*)
@@ -270,7 +270,7 @@ if [ "$dry_run" -eq 1 ]; then
   exit 0
 fi
 
-# 🚨 **1 本目の失敗で残りを隠さない** (issue 130)。触った範囲の検証が途中で止まると、
+# 🚨 **1 本目の失敗で残りを隠さない**。触った範囲の検証が途中で止まると、
 #   「直したら別の赤が出た」を繰り返すことになる。全部走らせてから、失敗をまとめて返す。
 failed=""
 for t in $targets; do

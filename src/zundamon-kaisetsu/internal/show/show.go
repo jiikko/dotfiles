@@ -14,7 +14,7 @@ import (
 )
 
 // Data は舞台の中央に出す図解 1 つ (台本の行の show)。中身は PlayerData.Shows に 1 回だけ置き、行は番号で指す
-// (行ごとに中身を持たせると、同じ図解が続く行の数だけデータが複製される。画像を足すと HTML が膨らむ。issue 645)。
+// (行ごとに中身を持たせると、同じ図解が続く行の数だけデータが複製される。画像を足すと HTML が膨らむ)。
 type Data struct {
 	Type  string       `json:"type"`
 	Text  string       `json:"text,omitempty"`
@@ -45,7 +45,7 @@ type CompareSide struct {
 }
 
 // 図解に書ける長さ (文字数) と数。カードは収まらない分を隠すので、超えると末尾が黙って切れる。上限は 720p の舞台で撮って
-// 収まった長さ (issue 645 の実測)。player.html の .show-* の文字の大きさや .stage-show の箱を変えたら測り直す。
+// 収まった長さ (実測)。player.html の .show-* の文字の大きさや .stage-show の箱を変えたら測り直す。
 //   - 重要語: 語は全角 9 字・補足は全角 23〜24 字ほどで折り返し、語 2 行と補足 2 行までがカードに収まった (カードは舞台の 52% まで
 //     広がる。.show-keyword の max-width。2026-10-08 に 9・11・13 字の語と 40 字の補足で撮って確かめた)
 //   - 比較: 1 列は全角 8 字ほどで折り返す。見出しは 1 行 (8 字)、項目は 2 行 (16 字) を 3 個までがカードに収まった
@@ -54,10 +54,10 @@ type CompareSide struct {
 //     11 行まで (.show-code pre の padding)。言語名は幅 12 (全角 6 字) までなら 1 行目に重ならない。
 //     全角は半角約 1.7 字分の幅で出るので、codeWidth が 2 と数えるのは上限の側に倒れる
 //   - 箇条書き: 折り返さない。項目は全角 14 字を 5 個、見出しは 16 字で、カードの右端と字幕の上に余白を残して収まった
-//     (2026-10-08。issue 680)
+//     (2026-10-08)
 //
 // 重要語と比較は文字数で数え、コードと言語名は幅 (codeWidth) で数える。どちらも、1 字で何字分も幅を取る文字 (U+FDFD・U+2E3B 等) や
-// 結合文字を重ねた語は上限内でも切れる (2 周目の反証レビューの実測)。台本に出ない文字なので、それ以上の幅の検査は足していない。
+// 結合文字を重ねた語は上限内でも切れる (実測)。台本に出ない文字なので、それ以上の幅の検査は足していない。
 const (
 	KeywordTextMax  = 16
 	KeywordSubMax   = 40
@@ -193,7 +193,7 @@ func parseCompare(path, at string, m map[string]any) (*Data, error) {
 	return sd, nil
 }
 
-// parseList は箇条書きの図解 (issue 680)。項目は大きめの文字で 1 行ずつ出す (折り返さない長さに抑える)。
+// parseList は箇条書きの図解。項目は大きめの文字で 1 行ずつ出す (折り返さない長さに抑える)。
 func parseList(path, at string, m map[string]any) (*Data, error) {
 	if err := onlyKeys(path, at+" (list)", m, "type", "title", "items", "build"); err != nil {
 		return nil, err

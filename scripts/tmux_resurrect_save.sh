@@ -4,8 +4,8 @@
 #
 # 背景（なぜ必要か）:
 #   保存経路は 3 系統あり、それぞれ別々の（または無い）lock で動いていた:
-#     1. window 増減 → scripts/tmux_resurrect_debounced_save.sh（かつて自前 mkdir lock を
-#        持っていたが skip-as-success の取りこぼしバグがあり撤去済み。直列化は本 wrapper に一本化）
+#     1. window 増減 → scripts/tmux_resurrect_debounced_save.sh（自前 mkdir lock は持たない:
+#        持つと skip-as-success の取りこぼしバグになる。直列化は本 wrapper に一本化）
 #     2. continuum の周期 autosave（continuum_save.sh）。これは save を
 #        `save.sh quiet &` と background 起動し、自前の世代 lock を即 trap 解放するため
 #        「保存期間」を保護していない（vendor/.../continuum_save.sh の acquire_lock/
@@ -82,8 +82,8 @@ tt_save_release_lock() {
 
 # owner 行が expected と一致するときだけ解除する conditional release。
 # stale lock の横取り（acquire ループ）と自分の lock 解放（EXIT trap）の両方で使う。
-# 無条件 rmdir だと「判定〜削除の間に別プロセスが取得した新 lock」を消して並行 save.sh を招く
-# （codex 指摘）。owner 一致確認でその窓を大幅に縮める。観測〜削除間の微小 TOCTOU は mkdir lock の
+# 無条件 rmdir だと「判定〜削除の間に別プロセスが取得した新 lock」を消して並行 save.sh を招く。
+# owner 一致確認でその窓を大幅に縮める。観測〜削除間の微小 TOCTOU は mkdir lock の
 # 原理上完全には消せないが、万一すり抜けて並行 save が起きても upstream save.sh は直近 5 世代を
 # 保持するため次回保存で回復する（= 残存リスクは許容範囲）。
 tt_save_release_lock_if_owner() {
@@ -107,11 +107,11 @@ tt_save_lock_older_than() {
 }
 
 # 🚨 起動時刻の指紋は **guards.sh の tt_proc_starttime が唯一の出典**。ここに独立実装を置くと、
-#   片方の書式を変えたときに無音で drift する (issue 068 の直接原因。issue 078 で統合した)。
+#   片方の書式を変えたときに無音で drift する。
 
 # 渡された owner 行（"PID 起動時刻トークン"）が「取り残し」かを判定する。owner 行は呼び出し側が
 # lock の pid から一度だけ読んで渡す。判定と解除で別々に pid を読むと、判定後に別プロセスが取得した
-# 新 owner を解除対象として拾い、その生存 lock を誤って消してしまう（codex 指摘）。
+# 新 owner を解除対象として拾い、その生存 lock を誤って消してしまう。
 # 単純な PID 生存(kill -0)だけだと二律背反に陥る:
 #   (a) 生存中の正当な長時間保存（巨大 pane contents 等）を mtime TTL で奪うと並行 save.sh の競合、
 #   (b) ~/.cache の lock が再起動を跨いで残置し PID が無関係な長命プロセスに再利用されると
@@ -131,7 +131,7 @@ tt_save_owner_is_stale() {
     # 🚨 旧書式の owner 行 (正規化前の生 ps 出力) は上の `read -r` が空白で切るため、
     #   owner_start に先頭語だけが入る。それを新書式と比べると必ず不一致になり、
     #   **生存 owner を奪う**。正規化済みトークンは必ず `_` を含むので、含まないものは
-    #   「同定不能」に落として下の TTL backstop に委ねる (issue 078 の移行ガード)。
+    #   「同定不能」に落として下の TTL backstop に委ねる。
     case "$owner_start" in *_*) : ;; *) owner_start='' ;; esac
     if [ -n "$cur_start" ] && [ -n "$owner_start" ]; then
       # 起動時刻が両方取れた: 一致 = 同一プロセスが進行中（どれだけ長くても奪わない）。
@@ -260,7 +260,7 @@ tt_save_main() {
   wait_until=$(( $(date +%s) + TT_SAVE_LOCK_WAIT_SECONDS ))
   while :; do
     # owner 行は一度だけ読み、その同じ行で stale 判定と解除対象の同定を行う（二度読みすると
-    # 判定後に別プロセスが取得した新 owner を解除対象に拾い、その生存 lock を消す。codex 指摘）。
+    # 判定後に別プロセスが取得した新 owner を解除対象に拾い、その生存 lock を消す）。
     observed="$(cat "$TT_SAVE_LOCK_DIR/pid" 2>/dev/null || true)"
     if tt_save_owner_is_stale "$observed"; then
       tt_save_release_lock_if_owner "$observed"
@@ -296,8 +296,8 @@ tt_save_main() {
   fi
 
   # bootstrap 中 (hold セッションのみ) と第 2 サーバからの保存も choke point で弾く。
-  # かつて debounce 経路だけのガードで、continuum 周期保存・手動 C-s には効いていなかった
-  # (周期保存が hold のみの瞬間に発火すると貧弱状態を保存しうる非対称。レビュー指摘 2026-07-05)。
+  # debounce 経路だけのガードにしない。continuum 周期保存・手動 C-s には効かない
+  # (周期保存が hold のみの瞬間に発火すると貧弱状態を保存しうる非対称)。
   if tt_only_hold_sessions; then
     return 1
   fi
@@ -332,10 +332,10 @@ tt_save_main() {
   # (実測 ~1MB の cp。upstream 自身が毎保存で全 archive を再生成するのに比べ十分軽い)。
   # upstream は `gzip > file` で同一 inode を truncate 上書きするため hardlink 退避は不可＝実コピーする。
   local tt_archive='' tt_archive_bak='' tt_bak_old='' tt_bak_pid=''
-  # 🚨 archive の在処は退行ガードの有無に関わらず決めること。旧実装はこの 2 行がガードの
-  # 内側にあり、正当な bypass (TT_SAVE_ALLOW_REGRESSION=1) では tt_archive が空のままで
-  # archive 検証・修復・archive-broken ログがまるごと skip されていた。bypass を使う場面
-  # (状態が大きく動いた直後) は archive が壊れやすい局面と重なるので、逆を向いていた。
+  # 🚨 archive の在処は退行ガードの有無に関わらず決めること。この 2 行をガードの
+  # 内側に置くと、正当な bypass (TT_SAVE_ALLOW_REGRESSION=1) では tt_archive が空のままで
+  # archive 検証・修復・archive-broken ログがまるごと skip される。bypass を使う場面
+  # (状態が大きく動いた直後) は archive が壊れやすい局面と重なるので、逆を向く。
   tt_rdir="$(tt_resurrect_dir)"
   tt_archive="$tt_rdir/pane_contents.tar.gz"
   if [ "${TT_SAVE_ALLOW_REGRESSION:-}" != "1" ]; then
@@ -386,7 +386,7 @@ tt_save_main() {
   #   - セッション数: 旧 last が 4 以上 かつ 新保存がその 1/3 以下（=2/3 以上喪失）
   #   - window 総数:  旧 last が 8 以上 かつ 新保存がその 1/3 以下
   #     (セッション数だけでは「1 セッション × 多 window」運用で window 壊滅を見逃す。
-  #      レビュー指摘 2026-07-05。tt の基本形は cwd 名の 1 セッション多 window なので実運用で刺さる)
+  #      tt の基本形は cwd 名の 1 セッション多 window なので実運用で刺さる)
   #   - 全喪失: 旧 last が空でないのに新保存の window が 0 件。これは上 2 つのしきい値
   #     (prev 4/8 以上) と独立に「常に」退行扱いにする。window 0 件の保存が正当に発生する
   #     経路は存在しない: 全セッションを kill すると exit-empty でサーバごと落ち、保存自体が
@@ -416,8 +416,8 @@ tt_save_main() {
           tt_save_log "regression-stuck-override prev_sessions=$tt_prev_n new_sessions=$tt_new_n prev_windows=$tt_prev_w new_windows=$tt_new_w streak=$tt_streak accepted=$tt_new_target"
           # last は前進させたまま (= 縮小を受け入れる)。archive も新しいものを残す。
           # 🚨 退避コピーを消す前に検証を通すこと: この経路は「縮小を受け入れる」ので新 archive が
-          # 正になるが、その新 archive が壊れていた場合の復旧手段は退避コピーだけ。旧実装は
-          # 検証せずに消して return していた (finalize が掃除まで面倒を見る)。
+          # 正になるが、その新 archive が壊れていた場合の復旧手段は退避コピーだけ。
+          # 検証せずに消して return しない (finalize が掃除まで面倒を見る)。
           tt_archive_finalize "$tt_archive" "$tt_archive_bak" 0
           return 0
         fi
@@ -433,10 +433,10 @@ tt_save_main() {
         # できない**が、戻した archive 自体が壊れていた場合に `archive-broken` を残せる
         # (残さないと「退行を戻したので安全」と読めてしまい、scrollback が失われた事実が
         # 観測から消える)。finalize は「全 return 経路から呼ぶ」と宣言しており、ここを
-        # 呼んでいなかったのがコメントと実装の食い違いだった (2026-08-21 の敵対レビュー)。
+        # 呼んでいなかったのがコメントと実装の食い違いだった。
         tt_archive_finalize "$tt_archive" "" 1
         # 🚨 reject したら非 0 を返す。rc=0 は「保存した」を意味しなければならない。
-        #   旧実装は rc=0 を返しており、全呼び出し側が虚偽の成功を記録していた
+        #   rc=0 を返すと、全呼び出し側が虚偽の成功を記録する
         #   (periodic-save rc=0 / kill-cmd save=ok / 手動 C-s の「Tmux environment saved!」)。
         #   呼び出し側の扱い: debounce は timestamp を進めず `|| true` で hook 契約を守る /
         #   kill shim は rejected-rcN と記録 / periodic は rc=1 と記録 / 対話 bind は
@@ -445,7 +445,7 @@ tt_save_main() {
       fi
       # last を前進させた保存も 1 行残す。
       # 🚨 reject だけ記録して pass を記録しないのは非対称で、より危険な結果 (しきい値未満の
-      #   部分喪失が last に焼き付く) の方が観測できなかった (レビュー指摘 2026-07-30)。
+      #   部分喪失が last に焼き付く) の方が観測できなかった。
       tt_reject_streak_set 0
       tt_save_log "save-advanced prev_sessions=${tt_prev_n:-0} new_sessions=$tt_new_n prev_windows=${tt_prev_w:-0} new_windows=$tt_new_w target=$tt_new_target"
     fi
@@ -457,17 +457,17 @@ tt_save_main() {
 # archive の完全性検証と退避コピーの掃除。🚨 tt_save_main の**全 return 経路**から呼ぶこと
 # (tt_archive を解決した後の return は通常経路・escape hatch・reject の 3 つ。それより手前の
 # return は tt_archive が空なので finalize は no-op で通る = 呼ばなくても差は出ない)。
-# 旧実装はこのブロックが関数末尾にインラインで置かれていたため、reject streak の escape hatch が
-# `return 0` する経路でまるごと飛ばされていた (しかもその経路は唯一の復旧手段である退避コピーを
-# 先に消してから返っていた)。
+# このブロックを関数末尾にインラインで置かない。置くと reject streak の escape hatch が
+# `return 0` する経路でまるごと飛ばされる (しかもその経路は唯一の復旧手段である退避コピーを
+# 先に消してから返る)。
 #
 # Fix B3: archive の完全性を rc に依らず検証し、壊れていれば退避コピーから復旧する。
-  # 🚨 rc≠0 だけを見ていた旧実装には穴があった (レビューで実証 2026-07-30):
+  # 🚨 rc≠0 だけを見る形には穴がある (実証 2026-07-30):
   #   upstream の save_all は pane_contents の生成失敗を戻り値に反映しない。gzip が失敗しても
   #   save.sh は rc=0 を返すため、「last は健全な layout・archive は 0 byte のゴミ」という
   #   不整合がそのまま残り、復元すると window は全部出るのに全 pane の scrollback が空になる。
   #   しかも復元側は rc=0 / restore-end 成功を記録するので完全に silent なデータ喪失だった。
-  #   さらに旧実装は下の掃除で退避コピーを無条件削除しており、唯一の良い archive を捨てていた。
+  #   さらに下の掃除で退避コピーを無条件削除すると、唯一の良い archive を捨てる。
   # よって判定は「gzip として読めて entry が 1 つ以上あるか」に変え、rc は見ない。
 tt_archive_finalize() {
   local tt_archive="$1" tt_archive_bak="$2" tt_rc="$3"
@@ -486,7 +486,7 @@ tt_archive_finalize() {
     fi
   fi
   # 退避コピーの掃除は「現 archive が健全と確認できたとき」だけ行う。確認できないまま捨てると
-  # 復旧手段が消える (旧実装の無条件削除がまさにそれだった)。
+  # 復旧手段が消える (無条件削除がまさにそれになる)。
   if [ -n "$tt_archive_bak" ] && [ -f "$tt_archive_bak" ]; then
     if [ ! -f "$tt_archive" ] || tt_archive_ok "$tt_archive"; then
       rm -f "$tt_archive_bak" 2>/dev/null

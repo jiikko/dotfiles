@@ -1,7 +1,7 @@
 #!/bin/sh
 # theme/colors.yml (色カタログの単一ソース) から成果物を生成する:
 #   - scripts/lib/theme_colors.sh : shell 定数 (sh スクリプトが source)
-# (かつては src/git-popup/theme_gen.go も生成していたが、git-popup の退役
+# (src/git-popup/theme_gen.go は生成しない。git-popup の退役
 #  2026-08-06 で Go の消費者が消えたため生成ごと畳んだ)
 # 使い方:
 #   scripts/gen_theme_colors.sh              # 生成して上書き

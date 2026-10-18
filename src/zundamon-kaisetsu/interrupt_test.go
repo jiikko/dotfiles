@@ -1,6 +1,6 @@
 package main
 
-// 敵対的レビュー 2 周目で作り直した仕組み (中断・出力の置き換え・パスの解決・引数の分類) のテスト。
+// 中断・出力の置き換え・パスの解決・引数の分類のテスト。
 
 import (
 	"bytes"
@@ -45,7 +45,7 @@ func withAppCtx(t *testing.T) context.CancelFunc {
 	return cancel
 }
 
-// 中断すると、子 (ffmpeg) を止めてから一時ディレクトリを消す (子を止める前に消すと、書き続ける子に消し残される。2 周目 P2-1)。
+// 中断すると、子 (ffmpeg) を止めてから一時ディレクトリを消す (子を止める前に消すと、書き続ける子に消し残される)。
 func TestInterruptStopsChildThenRemovesTemp(t *testing.T) {
 	sleepBin := "/bin/sleep"
 	if !paths.IsFile(sleepBin) {
@@ -306,7 +306,7 @@ func TestWriteOutputUmaskAndReadOnly(t *testing.T) {
 	}
 }
 
-// 合成のキャッシュは rename の意味 (Python 版と同じ): 読み取り専用の既存のファイルも置き換え、パーミッションは umask から決める (4 周目 P2-1)。
+// 合成のキャッシュは rename の意味 (Python 版と同じ): 読み取り専用の既存のファイルも置き換え、パーミッションは umask から決める。
 func TestCacheWriteReplacesReadOnly(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "x.wav")

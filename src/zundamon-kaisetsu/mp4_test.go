@@ -21,12 +21,12 @@ import (
 	"zundamon-kaisetsu/internal/script"
 )
 
-// mp4 の組み立て (writeMP4) を、偽の Chrome と偽の ffmpeg で通す (issue 651)。
+// mp4 の組み立て (writeMP4) を、偽の Chrome と偽の ffmpeg で通す。
 //
 // 偽物はテストのバイナリ自身を FAKE_MP4_TOOL つきで起こす (PNG を書いて切り出すので shell では書けない)。
 // 偽の Chrome は #sheet= の状態ごとに、状態を表す色で 1 枚分の帯を塗った縦長の PNG を書く。偽の ffmpeg は本当に crop する。
 // 切り出した state_*.png の色が状態と合うかで、グループ分け・crop の位置・状態との対応を判定する。
-// プレイヤーの描画そのものは見ない (人が見る。issue 645)。
+// プレイヤーの描画そのものは見ない (人が見る)。
 
 // stateColor は状態を色にする (帯ごとに違う色 = 切り出し位置がずれたら別の状態の色になる)
 func stateColor(st build.VisualState) color.RGBA {
@@ -137,7 +137,7 @@ func fakeMP4Tool(tool string, args []string) int {
 var stateNameRe = regexp.MustCompile(`state_(-?\d+)_(\d+)_(\d+)_(\d+)_(\d+)\.png$`)
 
 // checkFrames は mux に渡された連番 (-framerate 30 -i <dir>/f%06d.png) の各フレームが、symlink の先の状態の色かを確かめ、
-// 結果を記録に書く (build の一時 dir は終わると消えるので、絵は mux の時点で見る)。concat の一覧で渡されたら失敗にする (issue 660)
+// 結果を記録に書く (build の一時 dir は終わると消えるので、絵は mux の時点で見る)。concat の一覧で渡されたら失敗にする
 func checkFrames(args []string) {
 	var pattern string
 	for i := 0; i < len(args)-1; i++ {
@@ -386,11 +386,11 @@ func checkMP4CropsEachState(t *testing.T, scr string) {
 	if _, err := fmt.Sscanf(res, "frames-ok %d %d", &nStates, &nFrames); err != nil || nStates != len(distinct) {
 		t.Errorf("mux の連番の絵の種類が撮った状態の数 %d と合わない: %q", len(distinct), res)
 	}
-	// 総フレーム数は ceil(尺 × fps) (testdata/build の台本は 3.5835 秒 = 108 フレーム。issue 660 で実物の尺を ffprobe で確かめた)
+	// 総フレーム数は ceil(尺 × fps) (testdata/build の台本は 3.5835 秒 = 108 フレーム。実物の尺を ffprobe で確かめた)
 	if nFrames != 108 {
 		t.Errorf("連番のフレーム数: got %d want 108 (ceil(3.5835 × 30))", nFrames)
 	}
-	// フレームごとの状態の並びが FrameStates (プレイヤーの規則: フレーム k は時刻 (k+0.5)/fps の状態) と一致する (issue 660)
+	// フレームごとの状態の並びが FrameStates (プレイヤーの規則: フレーム k は時刻 (k+0.5)/fps の状態) と一致する
 	env := testEnv(t)
 	sc, err := script.LoadScript(paths.ResolvePath(scr), env)
 	must(t, err)

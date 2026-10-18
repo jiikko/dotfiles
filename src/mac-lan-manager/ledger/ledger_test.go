@@ -41,7 +41,7 @@ func TestDefaultPathHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 道具ごとの置き場 (glogx の下ではない。issue 777)
+	// 道具ごとの置き場 (glogx の下ではない)
 	if p != "/Users/someone/.config/mac-lan-manager/hosts.toml" {
 		t.Errorf("DefaultPath() = %s", p)
 	}
@@ -203,7 +203,7 @@ func TestConcurrentUpsertKeepsAll(t *testing.T) {
 	}
 }
 
-// red team の P2-1: ロックファイルが外を指す symlink でも、外に何も作らない。
+// ロックファイルが外を指す symlink でも、外に何も作らない。
 func TestLockFileSymlinkDoesNotEscape(t *testing.T) {
 	s := newStore(t)
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
@@ -222,7 +222,7 @@ func TestLockFileSymlinkDoesNotEscape(t *testing.T) {
 	}
 }
 
-// red team の P2-2: Path が sandbox そのものでも、sandbox の外 (隣) にロックを作らない。
+// Path が sandbox そのものでも、sandbox の外 (隣) にロックを作らない。
 func TestGuardRejectsSandboxItself(t *testing.T) {
 	if err := (FileStore{Path: sandbox}).Upsert(Host{Host: "a.local"}); err == nil {
 		t.Fatal("sandbox そのものへの書き込みを拒否しなかった")
@@ -233,7 +233,7 @@ func TestGuardRejectsSandboxItself(t *testing.T) {
 	}
 }
 
-// red team の P2-3 / P3-1: 書き直すと黙って消える中身がある台帳には書き込まない (ファイルを変えない)。一覧の読み取りは緩く読む。
+// 書き直すと黙って消える中身がある台帳には書き込まない (ファイルを変えない)。一覧の読み取りは緩く読む。
 func TestRefusesLossyRewrite(t *testing.T) {
 	cases := map[string]string{
 		"知らない鍵":         "version = 1\n[[host]]\nhost = \"a.local\"\nnote = \"keep me\"\n",

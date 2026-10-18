@@ -3,7 +3,7 @@
 // 要件と決定は issue 747 の「形」「決定」節。
 //
 // 🚨 テストの偽物の sudo / nohup は SIGHUP も端末の切断も模さない。切り離し (RemoteCommand) の形を変えたら、本物の相手で
-// 「固定 → 新しい IP で確認 → 固定のまま残る」と「確認しなければ戻る」を確かめ直す (issue 789。2026-10-17 に air5 で確認した形は、
+// 「固定 → 新しい IP で確認 → 固定のまま残る」と「確認しなければ戻る」を確かめ直す (2026-10-17 に air5 で確認した形は、
 // 前面が背景の走り出した印を待つもの。待たずに抜けると、背景は SIGHUP で走り出す前に死んでいた)。確認しなければ戻る経路は
 // まだ本物の相手で確かめていない (偽物のテストだけ)。
 package setup
@@ -35,13 +35,13 @@ type Restore struct {
 
 // StaticIP は相手 (またはこの Mac) の有線のサービスを固定 IP にする 1 回分。
 //
-// 形 (デッドマンスイッチ。issue 747 の設計の反証レビュー): 背景で Delay 待ってから変え、Window の間に確認の印が置かれなければ
+// 形 (デッドマンスイッチ): 背景で Delay 待ってから変え、Window の間に確認の印が置かれなければ
 // Restore へ戻す。新しい IP で入り直した側が印を置く (ConfirmCommand)。有線越しに入っていると変えた瞬間に ssh が切れるので、
 // 変更は ssh から切り離して走らせる (sudo -b + nohup)。
 //
 // 🚨 印と lock は root だけが書ける状態ディレクトリ (StateDir。0700) に置く。誰でも書ける /var/tmp に置いていたころは、
 // 相手の Mac の他のユーザーが印を先に置く・FIFO に差し替えて root の read を止める・symlink で確認の書き込みを別のファイルへ
-// 向ける・lock を先に作って以後を全部止める、ができた (fable の敵対レビュー 2 周)。root のディレクトリなら、これらは全部起きない。
+// 向ける・lock を先に作って以後を全部止める、ができた。root のディレクトリなら、これらは全部起きない。
 type StaticIP struct {
 	Service string // networksetup のサービス名 ("Thunderbolt Ethernet")
 	IP      string
@@ -49,7 +49,7 @@ type StaticIP struct {
 	Restore Restore
 	Token   string // 確認の印の名前 (実行ごとに変える)
 	// StateDir は root だけが書ける状態ディレクトリ (空なら DefaultStateDir)。既定以外はテストの差し込み口: 誰でも書ける親の下を
-	// 渡すと、ls -ld で確かめた後にディレクトリごと差し替えられる (既定の /var/db は root の 0755 なので起きない。fable の敵対レビュー)
+	// 渡すと、ls -ld で確かめた後にディレクトリごと差し替えられる (既定の /var/db は root の 0755 なので起きない)
 	StateDir string
 	// StateOwner は状態ディレクトリの持ち主として認めるユーザー (空なら root。テストは自分の名前を渡す。sh の外の道具 (id) を使わない)
 	StateOwner string
@@ -91,7 +91,7 @@ func ipv4(v string) bool {
 // 改行や制御文字は networksetup の引数として意味を持たないので拒む (ログや確認の板に出すときに行を割る)。
 func (s StaticIP) Validate() error {
 	// サービス名は相手が決める値で、確認の板と端末の帯にそのまま出る。C1・双方向の制御文字で板の見た目を偽装できたので、
-	// 端末に安全に出せない名前は使わない (敵対レビュー)
+	// 端末に安全に出せない名前は使わない
 	if s.Service == "" || !termsafe.IsPlain(s.Service) { // IsPlain は C0・DEL (改行を含む) も弾く
 		return fmt.Errorf("サービス名が使えない: %q", s.Service)
 	}
@@ -155,13 +155,13 @@ func (s StaticIP) prepare(take bool) string {
 	}
 	fmt.Fprintf(&b, "set -- $(ls -ld %s)\nif [ \"$3\" != %s ]; then echo 'mac-lan-manager: 状態ディレクトリの持ち主が違う' >&2; exit 1; fi\n", dir, Quote(owner))
 	// lock の持ち主が生きているか: pid が居て、その起動時刻が lock に書いた時刻と同じ。pid だけだと、電源断の後の再起動で同じ番号を
-	// 別のプロセスが使い、死んだ lock が永久に「走っている」になった (fable の敵対レビュー 3 周目)
+	// 別のプロセスが使い、死んだ lock が永久に「走っている」になった
 	fmt.Fprintf(&b, "alive() { p=$(cat %s/pid 2>/dev/null); st=$(cat %s/start 2>/dev/null); [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null && [ \"$(LC_ALL=C ps -o lstart= -p \"$p\" 2>/dev/null)\" = \"$st\" ]; }\n", lock, lock)
 	fmt.Fprintf(&b, "refuse() { echo \"mac-lan-manager: 固定 IP への切り替えが走っている (pid $p)。止まっているなら sudo rm -rf %s で外す\" >&2; exit 1; }\n", strings.Trim(lock, "'"))
 	fmt.Fprintf(&b, "if [ -d %s ] && alive; then refuse; fi\n", lock)
 	if take {
 		// 死んだ lock の引き取りは 1 本ずつ (takeover を mkdir できた 1 本だけが、もう一度生死を見てから外す)。rm -rf と mkdir を
-		// それぞれが打つと、後の rm -rf が先の lock を消して 2 本とも進んだ (fable の敵対レビュー 3 周目 P2)
+		// それぞれが打つと、後の rm -rf が先の lock を消して 2 本とも進んだ
 		b.WriteString("tk=0\n")
 		fmt.Fprintf(&b, "if [ -d %s ]; then\n", lock)
 		fmt.Fprintf(&b, "  mkdir %s 2>/dev/null || { echo 'mac-lan-manager: 別の切り替えが止まった lock を引き取っている' >&2; exit 1; }\n  tk=1\n", takeover)
@@ -188,7 +188,7 @@ func (s StaticIP) Script() string {
 	b.WriteString(s.prepare(true))
 	fmt.Fprintf(&b, "echo $$ > %s\n", Quote(s.startedPath()))
 	// 終わり方を問わず (確認・期限切れ・SIGTERM / SIGHUP)、変えたまま確認が無ければ戻してから lock を外す。shutdown は TERM を配るので、
-	// 待ちの途中で相手を再起動しても新しい IP のまま残らない (fable の敵対レビュー)
+	// 待ちの途中で相手を再起動しても新しい IP のまま残らない
 	fmt.Fprintf(&b, "changed=0\nconfirmed=0\nfinish() { if [ \"$changed\" = 1 ] && [ \"$confirmed\" = 0 ]; then %s; fi; rm -rf %s; }\n", restore, lock)
 	// INT / TERM / HUP の trap は EXIT の trap をシグナルでも走らせるため。macOS の /bin/sh (bash) はこれが無くても EXIT を走らせるので、
 	// この Mac の上のテストでは外しても緑のまま (変異で確かめた)。EXIT をシグナルで走らせない sh (dash など) のために残す
@@ -199,7 +199,7 @@ func (s StaticIP) Script() string {
 	fmt.Fprintf(&b, "changed=1\nnetworksetup -setmanual %s %s %s\n", svc, s.IP, s.Mask)
 	fmt.Fprintf(&b, "i=0\nwhile [ \"$i\" -lt %d ]; do\n", int(s.Window/s.tick()))
 	// 印を認める条件: 通常のファイルで、中身の $SSH_CONNECTION の 3 語目 (ssh を受けた側の IP) が新しい IP。新しい IP に届いた ssh
-	// からしか確認が成り立たない (Wi-Fi 越しの既存の接続から打っても有線を確かめたことにならない。fable の敵対レビュー P1)。
+	// からしか確認が成り立たない (Wi-Fi 越しの既存の接続から打っても有線を確かめたことにならない)。
 	// 印は root の 0700 のディレクトリにしか無いので、差し替え・FIFO・symlink は起きない
 	fmt.Fprintf(&b, "  if [ -f %s ] && [ ! -L %s ]; then\n    read -r c < %s\n    set -- $c\n", mark, mark, mark)
 	fmt.Fprintf(&b, "    if [ \"$3\" = %s ]; then confirmed=1; rm -f %s; exit 0; fi\n  fi\n", s.IP, mark)
@@ -208,16 +208,16 @@ func (s StaticIP) Script() string {
 }
 
 // RemoteCommand は ssh -t で相手に打つ 1 行。前面で sudo -v (パスワードを読む) し、走っているものが無いかを前面で確かめて理由を出し
-// (背景に回すと失敗が見えない。fable の敵対レビュー)、変更は sudo -n -b + nohup で ssh から切り離す (背景の sudo がパスワードを
+// (背景に回すと失敗が見えない)、変更は sudo -n -b + nohup で ssh から切り離す (背景の sudo がパスワードを
 // 読もうとすると止まる。ssh が切れても SIGHUP で止まらない)。
 //
 // 🚨 背景が走り出した印 (startedPath) を前面で待ってから終える。sudo -b はすぐ戻るので、待たずに終えると ssh の端末が閉じた
 // SIGHUP が、nohup が SIGHUP を捨てる前の子に届いて変更が始まらない (air5 で再現: 背景に回してすぐ抜けると死に、1 秒待つと
-// 生き残った。本物の sudo -n -b でも、すぐ抜けると背景は 1 行も書かずに死に、印を待つと切断の後も最後まで走った。issue 789)。
+// 生き残った。本物の sudo -n -b でも、すぐ抜けると背景は 1 行も書かずに死に、印を待つと切断の後も最後まで走った)。
 // 印が StartWait のうちに現れなければ理由を出して非 0 で抜ける (黙って成功にしない)。印は lock の後・変更の前に書く。
 // 受容: 前面が待ちの途中で終わる・背景が StartWait より遅れて走り出すと、印 (数十バイト) が状態ディレクトリに残る。
 //
-// 限界 (受容。issue 747): 前面の確かめと背景の lock の取得の間 (ssh 1 往復) に別の操作者が先に取ると、後の方は背景で黙って抜ける
+// 限界 (受容): 前面の確かめと背景の lock の取得の間 (ssh 1 往復) に別の操作者が先に取ると、後の方は背景で黙って抜ける
 // (変更はしない)。電源断・kill -9 では戻しが走らず新しい IP のまま残る (次の回は止まった lock を引き取るだけ)。
 func (s StaticIP) RemoteCommand() string {
 	return "sudo -v && sudo -n sh -c " + Quote(s.prepare(false)) + " && sudo -n -b nohup sh -c " + Quote(s.Script()) + " >/dev/null 2>&1" +
@@ -244,7 +244,7 @@ func (s StaticIP) waitStarted() string {
 //
 // 印を書いて終わりにしない: Script は認めた印を消すので、消えるまで ConfirmTicks 周待ち、消えなければ印を消して非 0 で抜ける。
 // 印は lock の外に置くので、相手の待ちが終わった後 (期限切れで戻した後・最後の検査と戻しの間) でも書けて 0 で戻り、元に戻った相手を
-// 確認済みとして扱った (敵対レビュー)。待ちの終わりと同時に読まれた印を消して非 0 にすることはありうる (確認していない側に倒れる)
+// 確認済みとして扱った。待ちの終わりと同時に読まれた印を消して非 0 にすることはありうる (確認していない側に倒れる)
 func (s StaticIP) ConfirmCommand() string {
 	return `c="$SSH_CONNECTION"; sudo sh -c 'umask 077; printf "%s\n" "$1" > "$2" || exit 1; i=0; while [ -e "$2" ]; do ` +
 		`if [ "$i" -ge "$3" ]; then rm -f "$2"; echo "mac-lan-manager: 相手が確認を受け取らなかった (期限が過ぎて元に戻ったか、新しい IP に届いていない)" >&2; exit 1; fi; ` +

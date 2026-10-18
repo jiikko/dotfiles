@@ -12,7 +12,7 @@ import (
 	"zundamon-kaisetsu/internal/script"
 )
 
-// view (issue 810) は、チャプターの見出し・行ごとの 行番号 / 話者 (表情) / 字幕と、図解を出す・段を進める・消す行の中身を出す。
+// view は、チャプターの見出し・行ごとの 行番号 / 話者 (表情) / 字幕と、図解を出す・段を進める・消す行の中身を出す。
 // 合成 (wav) が無くても動く (台本を見せるのは synth の前のことがある)
 func TestViewCommand(t *testing.T) {
 	path := buildFixtureScript(t, func(raw map[string]any) {
@@ -48,7 +48,7 @@ func TestViewCommand(t *testing.T) {
 	}
 }
 
-// mp4 を書き出したら、mp4 に入らないクレジットを HTML と同じ一覧 (Assemble の Credits) で標準出力に出す (issue 811)
+// mp4 を書き出したら、mp4 に入らないクレジットを HTML と同じ一覧 (Assemble の Credits) で標準出力に出す
 func TestBuildMP4PrintsCredits(t *testing.T) {
 	_ = fakeMP4Tools(t)
 	env := testEnv(t)

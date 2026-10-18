@@ -195,7 +195,7 @@ func LoadScript(path string, env *app.Env) (*Script, error) {
 			return nil, app.Fail("%s: lines[%d].face=%s が cast.%s.faces の書き出しに無い (psd_faces.py の定義に足す)", path, i, pyjson.StrRepr(fs), who)
 		}
 		// text / read は文字列だけを受ける。Python 版は null や数も str() で通し、キャッシュの鍵には文字列でないまま
-		// 入れていた (Go 版で同じ鍵を作れない)。黙って別の鍵にするより、ここで止める (issue 641 の設計レビュー P2-5)
+		// 入れていた (Go 版で同じ鍵を作れない)。黙って別の鍵にするより、ここで止める
 		for _, key := range []string{"text", "read"} {
 			if v, ok := line[key]; ok && !isString(v) {
 				return nil, app.Fail("%s: lines[%d].%s は文字列で書く (実際: %s)", path, i, key, pyjson.Repr(v))

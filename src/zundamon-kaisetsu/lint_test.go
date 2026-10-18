@@ -80,7 +80,7 @@ func TestLintRules(t *testing.T) {
 			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}),
 			m("metan", "b", "show", nil),
 			m("zundamon", "c", "chapter", "次")}, nil},
-		// 以下は敵対的レビュー (2026-10-08) が壊した入力
+		// 以下は誤判定しやすい入力
 		"のだろう・のだから は数えない": {[]map[string]any{m("zundamon", "どうしてなのだろう？知っているのだから、いいのだ")}, nil},
 		"文末の のだ 2 回":      {[]map[string]any{m("zundamon", "そうなのだ。いいのだ！")}, []string{"0:noda"}},
 		"慣用語を取り除いてから数える":  {[]map[string]any{m("metan", "一日中作業して、一日で終わったわ")}, []string{"0:kanji-number"}},
@@ -135,7 +135,7 @@ func TestLintCommandExitCode(t *testing.T) {
 	}
 }
 
-// issue 684 で足した規則 (警告: duplicate・readings-missing・show-sentence / 目安: sentences・tone・style-long・chapters・shows-per-chapter・chapter-question)
+// 規則 (警告: duplicate・readings-missing・show-sentence / 目安: sentences・tone・style-long・chapters・shows-per-chapter・chapter-question)
 func TestLintMoreRules(t *testing.T) {
 	runAll := func(dict map[string]string, raw map[string]any) []string {
 		env := testEnv(t)
@@ -181,7 +181,7 @@ func TestLintMoreRules(t *testing.T) {
 	}{
 		"同じ話者の同じ字幕が続く":  {nil, lines(l("metan", "同じ"), l("metan", "同じ")), []string{"1:duplicate:false"}},
 		"別の話者の同じ相づちは通す": {nil, lines(l("metan", "うん。"), l("zundamon", "うん。")), nil},
-		// 敵対的レビュー: 部分一致で別の英単語の中に当てていた (STORAGE の中の RAG)。合流すると音声まで壊れる
+		// 部分一致で別の英単語の中に当てていた (STORAGE の中の RAG)。合流すると音声まで壊れる
 		"英字の語は語全体だけ":         {map[string]string{"RAG": "ラグ", "REST": "レスト"}, lines(l("metan", "STORAGEとRESTfulとRESTOREの話")), nil},
 		"記号だけの語は見ない":         {map[string]string{"〜": "から"}, lines(l("zundamon", "すごいのだ〜")), nil},
 		"辞書の語が readings に無い": {map[string]string{"SOLIDWORKS": "ソリッドワークス"}, lines(l("metan", "SOLIDWORKSの話")), []string{"0:readings-missing:true"}},
@@ -234,7 +234,7 @@ func TestLintMoreRules(t *testing.T) {
 	}
 }
 
-// 独自調査のモード (source_mode: public) で、元の資料の存在が分かる語を出す (issue 686)
+// 独自調査のモード (source_mode: public) で、元の資料の存在が分かる語を出す
 func TestLintSourceLeak(t *testing.T) {
 	leaks := func(t *testing.T, name string, raw map[string]any) ([]string, error) {
 		t.Helper()

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check_trigger_log_writers.sh — 共有観測ログへ「直接 append する」書き手が増えるのを落とす。
 #
-# なぜ (issue 079):
+# なぜ:
 #   ~/.cache/tt-restore-trigger.log は watchdog の死因分類 (verdict) の入力で、行の書式と
 #   「誰が書けるか」が判定の前提になっている。書き手が散らばると 2 つ壊れる:
 #     1. 行書式の正本が無くなる (タイムスタンプの書式・タブ区切りが書き手ごとに drift する)

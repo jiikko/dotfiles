@@ -71,7 +71,7 @@ func TestSourceCandidatesShow(t *testing.T) {
 	if !slices.Equal(got, []string{"source-number:8割", "source-number:3倍"}) {
 		t.Errorf("比較の項目・重要語の補足の数字を見ていない: %v", got)
 	}
-	// 箇条書きの見出し・項目も見る (issue 680)
+	// 箇条書きの見出し・項目も見る
 	s, err = script.LoadScript(writeScript(t, map[string]any{"lines": []any{map[string]any{"who": "metan", "text": "理由は 2 つよ",
 		"show": map[string]any{"type": "list", "title": "2018年の調査", "items": []any{"6割", "8割"}}}}}), env)
 	must(t, err)
@@ -120,7 +120,7 @@ func TestSourceCandidatesRules(t *testing.T) {
 		"英字の語は大文字小文字を区別しない": {"windows と mac", []string{"WindowsとMac"}, nil},
 		"英字の語は語の単位で比べる":     {"RESTful API", []string{"RESTの話"}, []string{"source-word:REST"}},
 		"同じ行の同じ語は 1 回":      {"", []string{"VPNとVPN"}, []string{"source-word:VPN"}},
-		// 敵対的レビュー: 部分一致で、資料の数字の中に含まれる別の数字が素通りした
+		// 部分一致で、資料の数字の中に含まれる別の数字が素通りした
 		"95.03% の中の 3% は別の数字": {"95.03%", []string{"3%"}, []string{"source-number:3%"}},
 		"16割 の中の 6割 は別の数字":    {"16割", []string{"6割"}, []string{"source-number:6割"}},
 		"2018年度 と 2018年 は別":   {"2018年度", []string{"2018年"}, []string{"source-number:2018年"}},

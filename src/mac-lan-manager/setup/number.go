@@ -9,7 +9,7 @@ import (
 
 // SuggestIP は帯 (band。"192.168.100.0/24") の中で、used (この Mac・台帳の内部 IP・今見えている IP) に無い最小の番号を返す。
 // .1〜.9 は飛ばす (ルーターや手で振った機器が居がちな番号)。電源の切れた Mac は ping にも Bonjour にも出ないので、台帳の内部 IP も
-// used に入れること (設計の反証レビュー)。
+// used に入れること。
 func SuggestIP(band string, used []string) (string, error) {
 	p, err := netinfo.ParseBand(band)
 	if err != nil {

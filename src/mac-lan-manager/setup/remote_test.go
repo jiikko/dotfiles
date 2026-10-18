@@ -72,7 +72,7 @@ func TestObservePeerReadsNetwork(t *testing.T) {
 }
 
 // ssh の失敗は、stderr の Permission denied のときだけ「鍵で入れない」(判定できた)。届かない (255 で別の理由)・255 以外・期限切れは
-// 判定できない (ErrUnknown)。届かない相手を「鍵が無い」に丸めない (issue 792)。
+// 判定できない (ErrUnknown)。届かない相手を「鍵が無い」に丸めない。
 func TestObservePeerKeyOutcomes(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -181,7 +181,7 @@ func TestStepArgv(t *testing.T) {
 
 // 初めての相手 (ssh が照合に使う known_hosts のどれにも台帳の鍵の名前が無い) は、BatchMode の ssh が "Host key verification failed." で
 // 落ちても「判定できない」にしない (鍵を置く手順の ssh-copy-id で人が指紋を確かめる)。どれかにあるのに落ちたら鍵が変わったので断る (air5 で実測した形)。
-// 照合先は ssh -G で読み、無いファイルは行が無いと数える (known_hosts の無い Mac で ssh-keygen -F が 255 になった。敵対レビュー)。
+// 照合先は ssh -G で読み、無いファイルは行が無いと数える (known_hosts の無い Mac で ssh-keygen -F が 255 になった)。
 func TestObservePeerHostKey(t *testing.T) {
 	hkFail := exitError{255, "exit status 255: Host key verification failed."}
 	const cfg = "hostkeyalias m2macmini.local\nglobalknownhostsfile /etc/ssh/ssh_known_hosts\nuserknownhostsfile /u/.ssh/known_hosts /u/.ssh/known_hosts2\n"
@@ -245,8 +245,7 @@ func TestObservePeerHostKey(t *testing.T) {
 	}
 }
 
-// サービスを読み終えた後、I/F の IP の途中で期限が来ても、相手の有線は読めたものとして返す (相手の判定はサービスだけで決まる。
-// 3 周目の敵対レビュー)。
+// サービスを読み終えた後、I/F の IP の途中で期限が来ても、相手の有線は読めたものとして返す (相手の判定はサービスだけで決まる)。
 func TestObservePeerIgnoresIncompleteIPs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

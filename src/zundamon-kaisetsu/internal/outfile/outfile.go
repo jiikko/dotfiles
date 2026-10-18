@@ -64,7 +64,7 @@ func ReplaceKeepingMode(tmp, dst string) error {
 //
 // 合成のキャッシュは Python 版と同じく「一時ファイルに書いて rename」の意味にする: 既存のファイルが読み取り専用でも置き換え、
 // パーミッションは常に 0666 から umask を引いたもの (既存のものを引き継がない)。出力 (WriteOutput) は Python 版の write_text の
-// 意味 (既存のパーミッションを保ち、書き込めないものは置き換えない) なので分ける (敵対的レビュー 4 周目 P2-1)。
+// 意味 (既存のパーミッションを保ち、書き込めないものは置き換えない) なので分ける。
 func WriteAtomic(path string, data []byte) error {
 	tmp, err := PartPath(path)
 	if err != nil {

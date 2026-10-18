@@ -596,7 +596,7 @@ func TestDispatchWrapsEngineCommands(t *testing.T) {
 func TestNewEnvWiresEngineAuto(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	// Linux では状態の置き場に XDG_CACHE_HOME が HOME より優先される。差し替えないと本物のキャッシュを指す (issue 646 の 5)
+	// Linux では状態の置き場に XDG_CACHE_HOME が HOME より優先される。差し替えないと本物のキャッシュを指す
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 	t.Setenv("PATH", noRuntimePath(t)) // 本物のランタイムを見つけさせない (起動は「無い」で失敗する)
 	t.Setenv("VOICEVOX_URL", "http://127.0.0.1:1")
@@ -719,7 +719,7 @@ func TestWithEngineTouchesLastUseAfterStart(t *testing.T) {
 	}
 }
 
-// TestReaperCommandRunsFromRoot は、見張りを作業ディレクトリ "/" で、端末から切り離して起こすことを確かめる (issue 646 の 3)。
+// TestReaperCommandRunsFromRoot は、見張りを作業ディレクトリ "/" で、端末から切り離して起こすことを確かめる。
 // 呼び出し側の cwd のまま起こすと、外付けディスクから実行したときに見張りが生きている間ディスクを取り出せない。
 func TestReaperCommandRunsFromRoot(t *testing.T) {
 	env := &app.Env{Engine: "http://127.0.0.1:50077"}
@@ -739,14 +739,14 @@ func TestReaperCommandRunsFromRoot(t *testing.T) {
 }
 
 // noRuntimePath は「ランタイム (container / docker) が無い」PATH。空のディレクトリにする: /usr/bin:/bin にすると、docker が
-// /usr/bin にある Linux では本物の docker に届く (issue 646 の 5)。テストの偽物は /bin/sh と絶対パスのコマンドだけを使う
+// /usr/bin にある Linux では本物の docker に届く。テストの偽物は /bin/sh と絶対パスのコマンドだけを使う
 func noRuntimePath(t *testing.T) string {
 	t.Helper()
 	return t.TempDir()
 }
 
 // TestReaperKeepsEngineInUse は、エンジンを使っているコマンドがいる間は、最後に使った時刻から IdleStop を過ぎても
-// 止めないことを確かめる (長い合成の途中でスリープし、復帰直後に見張りが先に動く形。issue 646 の 1)。
+// 止めないことを確かめる (長い合成の途中でスリープし、復帰直後に見張りが先に動く形)。
 func TestReaperKeepsEngineInUse(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, true)
 	writeMarker(t, env, "docker", env.Engine, 0)
@@ -864,7 +864,7 @@ func TestWithEngineHoldsInUseBeforeStart(t *testing.T) {
 	}
 }
 
-// 中断でランタイムの確認や stop が 130 で返ったとき、「サービスが動いていない」「stop が失敗」ではなく中断として返す (issue 652)
+// 中断でランタイムの確認や stop が 130 で返ったとき、「サービスが動いていない」「stop が失敗」ではなく中断として返す
 func TestEngineInterruptIsNotReportedAsFailure(t *testing.T) {
 	sleepBin, err := exec.LookPath("sleep")
 	if err != nil {
@@ -899,7 +899,7 @@ func TestEngineInterruptIsNotReportedAsFailure(t *testing.T) {
 	}
 }
 
-// 見張りは Ctx と別の ctx で止めるので、Ctx が取り消されていても、その ctx の結果 (not found は成功) で判定する (issue 652)
+// 見張りは Ctx と別の ctx で止めるので、Ctx が取り消されていても、その ctx の結果 (not found は成功) で判定する
 func TestStopContainersJudgesByGivenCtx(t *testing.T) {
 	cancel := withAppCtx(t)
 	shims := t.TempDir()

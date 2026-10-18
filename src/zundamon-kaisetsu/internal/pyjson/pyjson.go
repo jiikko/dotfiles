@@ -4,7 +4,7 @@ package pyjson
 // Python 版 (dialogue_video.py) と値・文字列を 1 バイトも違えずに作るための部品。
 //
 // 合成のキャッシュの鍵は Python の json.dumps(params, sort_keys=True, ensure_ascii=False) の sha256 なので、
-// 直列化が 1 文字でも違うと既存の <台本>.work/ の合成結果を全部取りこぼす (issue 641 の不変条件 1)。
+// 直列化が 1 文字でも違うと既存の <台本>.work/ の合成結果を全部取りこぼす。
 // Go の encoding/json は 1.0 を 1 と書き、< > & と U+2028/2029 をエスケープするので使えない。
 // 正解は testdata/cachekey.json (Python 版から生成した golden) で、pyjson_test.go が突き合わせる。
 

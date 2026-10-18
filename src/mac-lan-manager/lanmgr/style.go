@@ -158,7 +158,7 @@ func logo() string {
 
 // modal は確認などの板 (中央に重ねる)。
 // modal は中央の板。maxW (画面の幅) より広くならないよう、中身は板の幅で折り返す (固定の幅のままだと、狭い端末で右の列と
-// 「どのキーでも閉じる」などの案内が切れた。監査の指摘)。
+// 「どのキーでも閉じる」などの案内が切れた)。
 func modal(title string, body []string, hint string, maxW int) string {
 	content := sAccent.Render(title) + "\n\n" + strings.Join(body, "\n") + "\n\n" + sDim.Render(hint)
 	return shadow(card(content, max(min(lipgloss.Width(content)+6, maxW-1), 12), surfModal, cPink, cYellow)) // -1 は落ち影の分

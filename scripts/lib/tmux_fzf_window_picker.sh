@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # tmux 全 window を fzf で曖昧検索して選ぶ共通 picker。
 # 利用者: scripts/tmux_fzf_jump.sh (ジャンプ) / scripts/tmux_fzf_pane_move.sh (pane 移動)。
-# かつて両者に「list-windows 整形 → 相対時刻 → paste/column → fzf」の骨格が verbatim 複製されて
-# いたのを一本化 (2026-07-15)。popup 専用セッション除外パターン TT_POPUP_SESSION_RE は既に
+# 両者に「list-windows 整形 → 相対時刻 → paste/column → fzf」の骨格を複製しない:
+# 複製すると食い違うので一本化した (2026-07-15)。popup 専用セッション除外パターン TT_POPUP_SESSION_RE は既に
 # lib/tmux_popup_sessions.sh へ集約済みで、呼び出し側がそれを source 済みである前提。
 #
 #   tt_fzf_window_picker <prompt> [exclude-current]
@@ -12,8 +12,8 @@
 #   選ばれた window_id を stdout に出力。候補なし / fzf キャンセルは非 0 で返す。
 #
 # 候補は「window_id<TAB>整形済み表示」を fzf に渡し、切り出し/プレビューは空白を含まない
-# 安定キー window_id で行う (セッション名に空白があっても壊れない。旧実装が column 整形後の
-# 空白区切りで target を千切っていた回帰の防止。理由の一次情報はこのコメント)。
+# 安定キー window_id で行う (セッション名に空白があっても壊れない。column 整形後の
+# 空白区切りで target を千切ると壊れるため。理由の一次情報はこのコメント)。
 tt_fzf_window_picker() {
   local prompt="$1" exclude_current="${2:-}"
   local current now rows list selected

@@ -129,7 +129,7 @@ func (s *Scanner) Snapshot() []Peer {
 }
 
 // Close は自分が起こした dns-sd を全部止め、裏の goroutine が終わるのを待ってから Changed を閉じる (待っている側は ok=false で抜ける。
-// 閉じないと、開き直しや r のたびに古いチャネルを待つ goroutine が 1 本ずつ残る。red team の指摘 2026-10-15)。何度呼んでもよい。
+// 閉じないと、開き直しや r のたびに古いチャネルを待つ goroutine が 1 本ずつ残る)。何度呼んでもよい。
 // 🚨 notify は wg が待つ goroutine の中からしか呼ばないので、Wait の後に閉じれば閉じたチャネルへ送らない。
 func (s *Scanner) Close() {
 	s.closing.Do(func() {
@@ -151,7 +151,7 @@ func (s *Scanner) browse(svc string) {
 	defer func() { _ = r.Close() }()
 	sc := bufio.NewScanner(r)
 	// -B は終わらない。取り消していないのに終わったら失敗 (dns-sd が無い・mDNSResponder が止まっている)。黙って抜けると
-	// 「0 台見つかった」と区別が付かなかった (監査の指摘 2026-10-16)
+	// 「0 台見つかった」と区別が付かなかった
 	defer func() {
 		if s.ctx.Err() == nil {
 			s.fail("dns-sd -B " + svc + " が途中で終わった")
@@ -168,8 +168,8 @@ func (s *Scanner) browse(svc string) {
 }
 
 // onBrowse は -B の 1 行を帳簿に付け、引き当てを起こすかを返す。Add は 1 回だけ引く (2 つの I/F で Add されても)。Rmv は帳簿から外し、
-// その後にまた Add されたら引き直す: 相手が再起動すると 169.254 の IP が変わるので、外さないと r を押すまで古い IP のままになる
-// (全体レビューの指摘 2026-10-15)。見えなくなった Mac は一覧に残す (台帳の Mac と同じく「今は見えていない」は r で消える)。
+// その後にまた Add されたら引き直す: 相手が再起動すると 169.254 の IP が変わるので、外さないと r を押すまで古い IP のままになる。
+// 見えなくなった Mac は一覧に残す (台帳の Mac と同じく「今は見えていない」は r で消える)。
 func (s *Scanner) onBrowse(svc string, b Browse) bool {
 	key := svc + "\x00" + b.Instance
 	s.mu.Lock()

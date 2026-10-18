@@ -67,7 +67,7 @@ else
   last_mtime="$(tt_mtime_of "$rdir/$last_target")"
   # 🚨 鮮度の入力は「last の mtime」だけにしないこと。upstream は状態無変化のとき新 layout を
   #   捨てて last を据え置く (dedup) ため、保存が成功していても last の mtime は前進しない。
-  #   構成変化のない夜間・週末に「保存経路が止まっている」と誤検知する (レビュー指摘 2026-07-30)。
+  #   構成変化のない夜間・週末に「保存経路が止まっている」と誤検知する。
   #   保存が走ったことは archive の mtime に現れるので、両者の新しい方を「最後に保存が成功した
   #   時刻」として使う。
   fresh_mtime="${last_mtime:-0}"

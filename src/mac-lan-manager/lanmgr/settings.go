@@ -1,6 +1,6 @@
 package lanmgr
 
-// 設定の画面 (`,` で開閉)。何の IP をどう出すかを、環境の推測に頼らず設定で決める (issue 747 の「IP の出し方を設定で決める」)。
+// 設定の画面 (`,` で開閉)。何の IP をどう出すかを、環境の推測に頼らず設定で決める。
 
 import (
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
@@ -259,13 +259,13 @@ func (m *Model) viewSettings(w int) string {
 	sl := m.selfLan()
 	rows = append(rows, "", sDim.Render("今の設定でのこの Mac の内部 IP: ")+sText.Bold(true).Render(or(sl.IP, "-"))+sMuted.Render("  ("+sl.Note+")"))
 	rows = append(rows, sMuted.Render("保存先 "+or(m.o.PrefsPath, "(保存しない)")))
-	// どの行も板の中の幅で切る (折り返すと行が増え、帯の入力欄のキャレットが別の行に出た。監査の指摘)
+	// どの行も板の中の幅で切る (折り返すと行が増え、帯の入力欄のキャレットが別の行に出た)
 	for i, r := range rows {
 		rows[i] = termwidth.Truncate(r, inner, "…")
 	}
 	// 窓: 画面に入る行だけを、選んでいる項目を含むように描く (24 行以下で「その他の IP に含める種類」が画面の外のまま
-	// カーソルだけ進んだ)。板の枠・余白・影の行数は定数で書かず描いて測る (定数が 1 行少なく、低い画面でキャレットが案内の行に出た。
-	// fable の敵対レビュー)。見出し 3・板の見出し 3 を引く
+	// カーソルだけ進んだ)。板の枠・余白・影の行数は定数で書かず描いて測る (定数が 1 行少なく、低い画面でキャレットが案内の行に出た)。
+	// 見出し 3・板の見出し 3 を引く
 	frame := lipgloss.Height(shadow(card("", w-1, surfPanel, cPink, cPurple, cTeal))) - 1
 	raw := m.bodyHeight() - 3 - frame - 3
 	m.tooShort = raw < 1 // 項目の行が 1 行も入らない: View が抜け方だけの画面にする (見えない項目に space が届いて設定を書き換えた)

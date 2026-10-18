@@ -12,7 +12,7 @@ import (
 	"zundamon-kaisetsu/internal/wav"
 )
 
-// 行の時刻 (issue 745): 合成済みの wav の長さと間 (lead_in / gap / pause_after) から、各行の音声の開始・終了の秒を出す。
+// 行の時刻: 合成済みの wav の長さと間 (lead_in / gap / pause_after) から、各行の音声の開始・終了の秒を出す。
 // Assemble は wav を連結しながら同じ値を作る。間の秒数を標本の数に丸める式 (leadInSamples / pauseSamples) を両方が使い、
 // 値が同じことは TestLineTimesMatchAssemble が固定する。synth の字幕の速さの警告と times サブコマンドは、
 // 立ち絵・図・音声の連結が要らないので、wav の長さだけを読むこちらを使う。

@@ -12,7 +12,7 @@
 #
 # 🚨 この計算を呼び出し側へコピーしないこと。2 箇所に分かれていた間、panel 側だけが
 #    `-gt` + `w=$win_w` で「幅 == window 幅」を許しており、**幅 150 以下の window では
-#    panel が一度も出なかった** (issue 377 の敵対レビューで発覚。toast 側は同じ罠を
+#    panel が一度も出なかった** (toast 側は同じ罠を
 #    2026-08-21 に踏んで直していたが、その知識が panel には伝わっていなかった)。
 #
 # tt_float_geom <win_w> <win_h> <want_w> <want_h> <anchor>

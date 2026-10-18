@@ -46,7 +46,7 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]
 # 自分のものと認識できず掃討も save-hide も掴めない。実測 2026-08-21: 本番 window に孤児
 # panel が 6 枚・6〜7 日累積し、最新スナップショットに pane 行 6 本 + floating layout が
 # 写り込んでいた (worktree 分離は repo の規約自体が要求しているので、必ず踏む形だった)。
-# 判定の出典をここ 1 箇所に集約する (以前は同じ awk が 2 箇所へ逐語コピーされていた)。
+# 判定の出典をここ 1 箇所に集約する (同じ awk を 2 箇所へ逐語コピーしない)。
 render_panes() {
   tmux list-panes -a -F '#{pane_id} #{pane_start_command}' 2>/dev/null |
     awk '$2 ~ /\/tmux_agent_panel\.sh$/ && $3 == "render" {print $1}'
@@ -173,8 +173,8 @@ cmd_toggle() {
   else
     tmux set-option -g @agent_panel_on 1
     # resurrect 保存中 (save-hide が退避した窓) は状態だけ立てて作成しない: ここで作ると
-    # 実行中の save.sh のダンプに写り込み、D 節が防いだ残骸バグが再発する (敵対レビュー
-    # 指摘 2026-08-08)。保存後の save-show / 次の follow が panel_on を見て作る
+    # 実行中の save.sh のダンプに写り込み、D 節が防いだ残骸バグが再発する。
+    # 保存後の save-show / 次の follow が panel_on を見て作る
     panel_saving && return 0
     kill_panel   # 迷子の旧パネルがあれば掃除してから作る
     # popup 専用セッション (scratch 等) の中で on にした場合は作成だけ遅延する
@@ -274,7 +274,7 @@ ensure_unfocused() {
 cmd_unfocus() {
   # 🚨 @agent_panel_pane の記録だけを見ない (kill_panel と同じ掃討方式で render 実行中の
   # pane を全列挙する)。記録依存だと、follow の並走で記録から漏れた孤児 panel に
-  # フォーカスが乗ったとき誰も弾かない (敵対レビュー指摘 2026-08-11)。
+  # フォーカスが乗ったとき誰も弾かない。
   # なお resurrect 復元後の「render 無しの素 shell 残骸」はここでも対象外 (KNOWN LIMITATION)
   local p
   while IFS= read -r p; do
@@ -311,7 +311,7 @@ cmd_save_show() {
   panel_on || exit 0
   [ -n "$w" ] || exit 0
   # 作る前に必ず kill_panel (toggle/follow と同じ規律): 退避窓の間にユーザーの toggle 連打
-  # 等で panel が既に存在していると二重になる (敵対レビュー指摘 2026-08-08)
+  # 等で panel が既に存在していると二重になる
   kill_panel
   create_panel "$w" >/dev/null 2>&1 || true   # window が消えていたら次の follow に任せる
   exit 0
@@ -351,7 +351,7 @@ draw_once() {
   [ "${active:-0}" = "1" ] && [ -n "${TMUX_PANE:-}" ] && ensure_unfocused "$TMUX_PANE"
 
   # 🚨 この関数は 2 秒ごとに回る常駐ループなので、行ごとに $( ) を作らない (fork が表示行数に
-  # 比例して積み上がる。issue 083)。件数の集計・ソート用の feed 作り・行の組み立ては
+  # 比例して積み上がる)。件数の集計・ソート用の feed 作り・行の組み立ては
   # 1 パスの bash 組み込み (printf -v / REPLY 返しのヘルパー) だけで済ませる。
   local feed="" state loc name since cur
   if [ -n "$rows" ]; then

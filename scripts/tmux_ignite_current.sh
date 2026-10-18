@@ -35,7 +35,7 @@ session="${2:-}"
 
 # popup の session (scratch / claude-fork) では点火しない。popup は中身が変わるたびに popup 全体を
 # 描き直すので、1 フレーム (refresh-client -S) ごとに入れ子の画面全体が端末へ送り直され、1 回の
-# window 切替が約 570KB になる (止めると約 30KB。実測は issue 567)
+# window 切替が約 570KB になる (止めると約 30KB。実測)
 if [ -n "$session" ]; then
   # shellcheck source=scripts/lib/tmux_popup_sessions.sh
   . "${0%/*}/lib/tmux_popup_sessions.sh"
@@ -110,7 +110,7 @@ cleanup() {
 trap cleanup EXIT INT TERM HUP
 
 # フレーム = 「世代一致なら set+refresh」を tmux if -F でサーバ側原子実行 (1 フレーム 1 fork)。
-# 旧実装の show(世代確認)+set+refresh の 3 fork/フレームから削減 = フレームを倍にしても
+# show(世代確認)+set+refresh の 3 fork/フレームにしない = フレームを倍にしても
 # 総 fork は減る。preempt された古いアニメは残りフレームが no-op になるだけで無害
 # (最大 ~0.3 秒 sleep して trap の条件付き後始末で終わる)。
 for c in $frames; do

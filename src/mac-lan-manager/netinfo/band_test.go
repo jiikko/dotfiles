@@ -3,7 +3,7 @@ package netinfo
 import "testing"
 
 // 帯に入るかの判定は 1 つ (InBand)。数字でない帯・範囲外の番地・IPv6・広すぎる / 狭すぎる帯は使えない
-// (文字列の前方一致の側は "abc.def.ghi.0/24" や "999.1.1.0/24" を帯として通した。監査の指摘)。
+// (文字列の前方一致の側は "abc.def.ghi.0/24" や "999.1.1.0/24" を帯として通した)。
 func TestParseBandAndInBand(t *testing.T) {
 	for band, ok := range map[string]bool{"192.168.100.0/24": true, "10.0.0.0/16": true, "192.168.100.0/28": true, "192.168.100.0/29": false, "192.168.100.5/24": true,
 		"abc.def.ghi.0/24": false, "999.1.1.0/24": false, "10.0.0.0/8": false, "fd00::/64": false, "": false} {

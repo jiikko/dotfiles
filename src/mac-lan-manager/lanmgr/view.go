@@ -18,7 +18,7 @@ import (
 	"mac-lan-manager/netinfo"
 )
 
-// 画面の外側の余白 (端末の縁とタイルの間)。セルは横約 8px・縦約 17px (Hack 13pt) なので、約 20px = 横 3 桁・縦 1 行 (issue 747)。
+// 画面の外側の余白 (端末の縁とタイルの間)。セルは横約 8px・縦約 17px (Hack 13pt) なので、約 20px = 横 3 桁・縦 1 行。
 const padX, padY = 3, 1
 
 // spinStep は探索中の回る印の 1 コマ (glogx の spinnerInterval と同じ 80ms)。
@@ -30,7 +30,7 @@ func (m *Model) View() []string {
 		return m.viewTooSmall("幅が足りない")
 	}
 	// 幅を 40 桁に固定しない: max(…, 40) にしていたころは、それより狭い端末で枠と列が折り返し、最下行の案内 (抜け方) まで画面の外へ
-	// 出た (fable の敵対レビュー)。狭ければ列を落とし、どの行も幅で切る (下の安全網)
+	// 出た。狭ければ列を落とし、どの行も幅で切る (下の安全網)
 	w := m.w - 2*padX
 	m.caretFY, m.caretMY = -1, -1
 	m.small = false
@@ -135,7 +135,7 @@ func (m *Model) header(w int) string {
 	left := logo()
 	switch {
 	case m.Busy():
-		// 何を待っているかを出す (Busy は走査の他に相手の確認・確認待ちも含む。走査が終わった後も「Bonjour で探しています」と出た。敵対レビュー)
+		// 何を待っているかを出す (Busy は走査の他に相手の確認・確認待ちも含む。走査が終わった後も「Bonjour で探しています」と出た)
 		var what string
 		switch {
 		case !m.netReady:
@@ -183,7 +183,7 @@ func (m *Model) header(w int) string {
 	if !fit() {
 		right = sKeycap.Render("c") + sDim.Render(" 内部 ") + sText.Render(or(ips[0], "-"))
 	}
-	// 詰めても 1 桁超えることがある (左右の間の 2 桁の空白)。超えると全体の行が広がり、影の列が切れた (fable の敵対レビュー)
+	// 詰めても 1 桁超えることがある (左右の間の 2 桁の空白)。超えると全体の行が広がり、影の列が切れた
 	return termwidth.Truncate(left+strings.Repeat(" ", max(w-lipgloss.Width(left)-lipgloss.Width(right), 2))+right, w, "")
 }
 
@@ -206,7 +206,7 @@ func (m *Model) viewList(w int) string {
 	}
 	// 一覧に回せる行数: 画面の高さから、見出し・タブ・枠・表の見出しと (縦に積むときは) 詳細カードを先に引く。詳細カードに動作の
 	// キー (s 繋ぐ・Y コピー・o 開く) があるので、それを押し出さないよう先に取る。全部を描いて下で切っていたころは、狭い画面で
-	// 詳細カードもカーソル行も画面の外に出た (監査の指摘 2026-10-16)
+	// 詳細カードもカーソル行も画面の外に出た
 	frame := lipgloss.Height(shadow(card("", listW-1, surfList, tabColors[m.tab], cPurple))) - 1
 	rows := m.bodyHeight() - lipgloss.Height(head) - lipgloss.Height(tabs) - frame - 2 // 2 = 表の見出しと罫線
 	// 一覧の行 (カーソルの行) まで入らない高さは抜け方だけの画面にする (View)。板の下の余白・枠・影の 3 行は切れてよい
@@ -256,12 +256,12 @@ func (m *Model) tabs(width int) string {
 	if width-lipgloss.Width(row)-3 < 9 {
 		row = pills([]string{fmt.Sprintf("管理 %d", managed), fmt.Sprintf("未管理 %d", unmanaged), "自分"})
 	}
-	// 一覧が空のとき「相手がいない」と区別できるように、設定で絞っていることを出す (敵対レビュー)。ただし右の絞り込みの最小の欄
-	// (前置き 2 + 欄 4 + 間 1 + 余白 2) が残るときだけ (残らない幅で足すと、入力欄とキャレットが消えた。敵対レビュー)
+	// 一覧が空のとき「相手がいない」と区別できるように、設定で絞っていることを出す。ただし右の絞り込みの最小の欄
+	// (前置き 2 + 欄 4 + 間 1 + 余白 2) が残るときだけ (残らない幅で足すと、入力欄とキャレットが消えた)
 	if mark := sMuted.Render("  有線で見えた相手だけ"); m.pf.WiredOnly && width-lipgloss.Width(row)-lipgloss.Width(mark) >= 9 {
 		row += mark
 	}
-	// 右の絞り込みには、タブの残りの幅だけを使う (固定の幅だと狭い端末で行が広がり、下の一覧の板の右辺まで切れた。fable の敵対レビュー)
+	// 右の絞り込みには、タブの残りの幅だけを使う (固定の幅だと狭い端末で行が広がり、下の一覧の板の右辺まで切れた)
 	room := width - lipgloss.Width(row) - 3
 	var search string
 	switch {
@@ -278,7 +278,7 @@ func (m *Model) tabs(width int) string {
 	}
 	gap := max(width-lipgloss.Width(row)-lipgloss.Width(search)-2, 1)
 	out := row + strings.Repeat(" ", gap) + search
-	// キャレットは実際に置いた間の空白から出す (右寄せを仮定すると、間の空白が 1 桁に詰まる幅で左へずれた。opus の敵対レビュー)
+	// キャレットは実際に置いた間の空白から出す (右寄せを仮定すると、間の空白が 1 桁に詰まる幅で左へずれた)
 	m.caretFX += padX + lipgloss.Width(row) + gap
 	if lipgloss.Width(out) > width {
 		m.caretFY = -1 // 入力欄まで切れる幅ではキャレットを出さない
@@ -436,7 +436,7 @@ func (m *Model) listTable(width, maxRows int) string {
 		cols = cols[:len(cols)-1]
 	}
 	// それでも固定の列だけで幅を超えるなら、落とす順に列ごと落とす (落とさないと 1 行が枠の中で折り返し、Mac ごとに 2 行になった。
-	// 幅 75〜89 の既定の列で再現。監査の指摘)。空いた幅は名前の列へ返す
+	// 幅 75〜89 の既定の列で再現)。空いた幅は名前の列へ返す
 	for used > width {
 		best := -1
 		for i, c := range cols {

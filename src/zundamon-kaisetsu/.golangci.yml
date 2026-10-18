@@ -8,7 +8,7 @@ version: "2"
 # 書く。書き込み自体は temp+rename ではなく最終名への直接 write で、安全性の根拠は原子性ではなく
 # 内容アドレス) ので、外しても結果の正しさには影響しない。root の Makefile (run_go_projects) が 7 プロジェクトを並列に
 # 回すため、全プロジェクトでこれを true にする (1 つでも false が残ると、その 1 つが他の
-# 6 つの起動タイミング次第で落ちる)。issue 258
+# 6 つの起動タイミング次第で落ちる)
 run:
   allow-parallel-runners: true
 
@@ -22,13 +22,13 @@ linters:
     - forbidigo
   settings:
     forbidigo:
-      # 字面で見る (別名の import・変数経由の呼び出しは検出しない)。issue 661
+      # 字面で見る (別名の import・変数経由の呼び出しは検出しない)
       forbid:
-        # 子孫を止めるのは proctree に寄せる。グループ宛ての kill では、puppeteer が別のグループで起こした Chrome に届かない (issue 649)。
+        # 子孫を止めるのは proctree に寄せる。グループ宛ての kill では、puppeteer が別のグループで起こした Chrome に届かない。
         # main.go のシグナルでの死に直し (自分への kill) とテストは下の exclusions で許す
         - pattern: ^syscall\.Kill$
           msg: 子孫を止めるのは proctree.Target.Stop を使う (グループ宛ての kill では別のグループの子に届かない。issue 649)
-        # この package のテストはパッケージ変数 (mp4 のテストが縮める videoSize など) を書き換えるので、並列にしない (issue 651)
+        # この package のテストはパッケージ変数 (mp4 のテストが縮める videoSize など) を書き換えるので、並列にしない
         - pattern: \.Parallel$
           msg: この package のテストは並列にしない (videoSize などのパッケージ変数を書き換えるテストがある。issue 651)
     errcheck:

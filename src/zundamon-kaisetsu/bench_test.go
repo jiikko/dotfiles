@@ -12,7 +12,7 @@ import (
 	"zundamon-kaisetsu/internal/wav"
 )
 
-// 性能の確認用 (issue 655)。実時間の律速は Chrome の撮影と x264 で、Go 側は build 全体の 1% 未満 (issue 656 の実測)。
+// 性能の確認用。実時間の律速は Chrome の撮影と x264 で、Go 側は build 全体の 1% 未満 (実測)。
 // ここで測るのは Go 側のメモリと CPU の傾向で、合否には使わない。
 //   go test -run '^$' -bench . -benchmem
 

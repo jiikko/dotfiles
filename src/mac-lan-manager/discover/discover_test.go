@@ -139,7 +139,7 @@ func TestParseAtSingleDigitHour(t *testing.T) {
 }
 
 // -G の否定応答 ("0.0.0.0  1  No Such Record") と lo0 の 127.0.0.1 は IP として読まない (2026-10-16 0 時台に本物の dns-sd から取った出力)。
-// 読むと 0.0.0.0 が「その他の IP」になり、それしか無い相手への s が自分へ ssh した (監査の指摘)。
+// 読むと 0.0.0.0 が「その他の IP」になり、それしか無い相手への s が自分へ ssh した。
 func TestParseAddrSkipsNegativeAndLoopback(t *testing.T) {
 	var got []Addr
 	for _, l := range lines(t, "getaddr_negative.txt") {
@@ -173,7 +173,7 @@ func TestParseAddrSkipsNegativeAndLoopback(t *testing.T) {
 
 // 消えた相手の Rmv を -B と -G の両方で読む (browse_rmv.txt / getaddr_rmv.txt は 2026-10-16 10 時台に、この Mac で _mlmtest._tcp を
 // dns-sd -R / -P で数秒だけ広告して取り消し、本物の dns-sd -B / -G で取った出力)。Rmv を読めないと、相手の再起動で IP を引き直す
-// (Rmv → Add) が黙って死んだ (Rmv の fixture が無く、(Add|Rmv) を (Add) にしても全部緑だった。監査の指摘)。
+// (Rmv → Add) が黙って死んだ (Rmv の fixture が無く、(Add|Rmv) を (Add) にしても全部緑だった)。
 func TestParseRmv(t *testing.T) {
 	var add, rmv int
 	for _, l := range lines(t, "browse_rmv.txt") {

@@ -29,7 +29,7 @@ tt_on_default_server || exit 0
 
 # 出力を持たない (run-shell -b の無音契約)。他 2 本 (tmux_periodic_save.sh /
 # tmux_server_watchdog.sh) と揃える。**同一コミット e089e7e で watchdog にだけ入り、
-# ここへ入れ忘れていた**もので、意図的な非対称ではない (issue 111)。
+# ここへ入れ忘れていた**もので、意図的な非対称ではない。
 #
 # 🚨 効くのは「将来この経路が stdout へ 1 行でも出したとき」への防御。個々の呼び出し側でも
 #   塞いでいる (`bash "$restore" >/dev/null 2>&1` 等) が、**runner 自身は復元の間ずっと
@@ -54,14 +54,14 @@ TT_RESTORE_STATE_DIR="${TT_RESTORE_STATE_DIR:-$HOME/.cache/tt-restore-run}"
 
 
 # ---- 単一実行ガード -------------------------------------------------------------------
-# 🚨 popup 内同期実行だった旧実装は popup が事実上直列化していたが、detach 化で C-t C-r の
+# 🚨 popup 内同期実行では popup が事実上直列化していたが、detach 化で C-t C-r の
 # 連打や auto-restore との重なりで restore.sh が並行実行できるようになった。並行すると
 # 復元中フラグ (@tt-restore-*) と pane 生成が競合する (2026-07-30 セルフレビューで検出)。
 mkdir -p "$TT_RESTORE_STATE_DIR" 2>/dev/null || true
 LOCK_DIR="$TT_RESTORE_STATE_DIR/lock"
 # 🚨 ここでは tt_lock_sweep_stale を呼ばない。この経路の lock は `<dir>/lock` の 1 個だけで
 #   pid を名前に持たず、掃除を後付けすると「今まで掃除しなかった経路が掃除を始める」= 挙動変更に
-#   なる (issue 078 で意図的に分けた)。取り残しは下の「owner 不在なら奪う」で回収される。
+#   なる。取り残しは下の「owner 不在なら奪う」で回収される。
 # `|| tt_lock_rc=$?` の形にしておく (素の `rc=$?` は後から `set -e` が入ると、rc を読む前に
 # スクリプトごと死ぬ = 復元が無音で止まる)。
 tt_lock_rc=0
@@ -99,8 +99,8 @@ fi
 
 # 成否判定の基準を自分の実行に閉じる。@tt-restore-complete はグローバルで sticky なため、
 # 前回成功の 1 が残っている窓で restore.sh が pre-restore-all 到達前に死ぬと「成功」に見え、
-# in-progress フラグの掃除も skip する = runner が消すはずだった silent 途中死そのものになる
-# (レビュー指摘 2026-07-30)。開始時に自分で降ろしてから実行する。
+# in-progress フラグの掃除も skip する = runner が消すはずだった silent 途中死そのものになる。
+# 開始時に自分で降ろしてから実行する。
 tmux set-option -gu @tt-restore-complete 2>/dev/null || true
 
 # サーバ死亡時の SIGTERM でも後始末 (フラグ掃除 + 記録 + lock 解放) を実行してから終わる。

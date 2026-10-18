@@ -64,7 +64,7 @@ func TestSSHRunNotStarted(t *testing.T) {
 	}
 }
 
-// setup.ObservePeer と組んだとき、Permission denied の 255 だけが「鍵で入れない」、届かない 255 は判定できない (issue 792)。
+// setup.ObservePeer と組んだとき、Permission denied の 255 だけが「鍵で入れない」、届かない 255 は判定できない。
 func TestSSHRunWithObservePeer(t *testing.T) {
 	d := setup.Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}
 	cases := []struct {

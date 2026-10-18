@@ -103,7 +103,7 @@ func TestBuildStopsOnFastCaptions(t *testing.T) {
 	fast := func(lines []any) {
 		lines[len(lines)-1].(map[string]any)["text"] = strings.Repeat("字幕だけ長い", 10) // 60 字を約 1 秒で
 	}
-	// 既定では、書き出す前に止まる (警告だけで続けると、mp4 を撮り終えてから気づいて撮り直していた。issue 676)
+	// 既定では、書き出す前に止まる (警告だけで続けると、mp4 を撮り終えてから気づいて撮り直していた)
 	if _, err := bld(t, fast, false); err == nil || !strings.Contains(err.Error(), "--allow-fast-captions") {
 		t.Errorf("速い行があるのに止まらない: %v", err)
 	} else if strings.Contains(calls, "ffmpeg ") {

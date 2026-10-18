@@ -95,7 +95,7 @@ func TestRejectBadShow(t *testing.T) {
 		{code("a", []any{"x\ry"}), "show.lines[0] にタブ・改行を入れない"},
 		{withKey(code("a", []any{"x"}), "lang", 1), "show.lang は文字列"},
 		{withKey(code("a", []any{"x"}), "caption", "x"), "show (code) に書けるのは type/lang/lines/highlight/steps だけ"},
-		// 箇条書き (issue 680)
+		// 箇条書き
 		{map[string]any{"type": "list", "items": []any{"a"}}, "show.items は 2〜5 個"},
 		{map[string]any{"type": "list", "items": []any{"a", "b", "c", "d", "e", "f"}}, "show.items は 2〜5 個"},
 		{map[string]any{"type": "list"}, "show.items は 2〜5 個"},
@@ -417,7 +417,7 @@ func TestShowKeysReadByPlayer(t *testing.T) {
 	}
 }
 
-// TestPlayerPlacesCharsForShowsFromStart は、図解を使う台本では最初から立ち絵を縮めた位置に置くことを確かめる (issue 645)。
+// TestPlayerPlacesCharsForShowsFromStart は、図解を使う台本では最初から立ち絵を縮めた位置に置くことを確かめる。
 // 図解を出すときだけ縮めると、mp4 は場面ごとの静止画をつなぐので立ち絵が瞬間移動する。印はまとめ撮りの分岐より前に付ける
 // (後ろだと、mp4 の絵では図解が出るまで立ち絵が大きいまま)。
 func TestPlayerPlacesCharsForShowsFromStart(t *testing.T) {
@@ -442,14 +442,14 @@ func TestPlayerPlacesCharsForShowsFromStart(t *testing.T) {
 }
 
 // TestSheetFragmentMatchesPlayer は、mp4 のまとめ撮りで Go が作る #sheet= の断片を、player.html の正規表現が受け取ることを確かめる。
-// 合わないとプレイヤーは通常の画面のまま撮られ、動画が黙って壊れる (口の段階を増やす・状態に要素を足す、で起きる。issue 650)
+// 合わないとプレイヤーは通常の画面のまま撮られ、動画が黙って壊れる (口の段階を増やす・状態に要素を足す、で起きる)
 func TestSheetFragmentMatchesPlayer(t *testing.T) {
 	re := playerSheetRegexp(t)
 	tpl := playerTemplate(t)
 	// 欄の意味の対応 (行, 話し中, 口, まばたき, 区切りのカード) も Go と同じ順に分解している (正規表現が合っても、順が違うと話し中と口が入れ替わる)。
 	// 検出しない形: 字面を残したまま意味だけ変える書き換え (map の中で並べ替える・paint の引数の順を変える)。
-	// 確実に見るには JS を node で評価する形が要る (issue 650 の敵対的レビュー 2 周目 P3-a。今はうっかりした編集だけを止める)
-	// 区切りのカード (issue 681): データの cards を読み、カードの間は図解とトピック名を隠す配線
+	// 確実に見るには JS を node で評価する形が要る (今はうっかりした編集だけを止める)
+	// 区切りのカード: データの cards を読み、カードの間は図解とトピック名を隠す配線
 	for _, want := range []string{"for (const [li, sp, lv, bl, cd] of states)", "paint(li, sp, lv, bl, cd, false)",
 		"runAt(D.cards || [], k)", "setCard(card, line);", ".stage.carding .stage-topic, .stage.carding .stage-show { visibility: hidden; }"} {
 		if !strings.Contains(tpl, want) {
@@ -504,7 +504,7 @@ func playerSheetRegexp(t *testing.T) *regexp.Regexp {
 	return re
 }
 
-// 箇条書きの段 (issue 680): build なら項目の数だけ "next" で強調を進められ、build でなければ "next" は止まる
+// 箇条書きの段: build なら項目の数だけ "next" で強調を進められ、build でなければ "next" は止まる
 func TestListShowSteps(t *testing.T) {
 	list := func(bld bool) map[string]any {
 		return map[string]any{"type": "list", "title": "理由", "items": []any{"a", "b", "c"}, "build": bld}

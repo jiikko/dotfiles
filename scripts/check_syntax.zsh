@@ -14,7 +14,7 @@ cleanup() {
 # 🚨 zsh は SIGTERM で EXIT trap を走らせない (実測 2026-09-06、zsh 5.9 / macOS):
 #      zsh : TERM=残る / INT=消える / HUP=消える
 #      bash: TERM/INT/HUP とも消える
-#    bash の感覚で EXIT だけ張ると、zsh では TERM の経路にだけ穴が開く (issue 307)。
+#    bash の感覚で EXIT だけ張ると、zsh では TERM の経路にだけ穴が開く。
 #    先例は scripts/run_make_targets_parallel.sh (同じ 3 シグナルを並べている)。
 trap cleanup EXIT
 trap 'cleanup; exit 143' TERM

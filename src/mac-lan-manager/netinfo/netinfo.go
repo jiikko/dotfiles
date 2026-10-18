@@ -16,7 +16,7 @@ import (
 
 // ParseBand は内部の網の帯 ("192.168.100.0/24") を読む。IPv4 で /16〜/28 だけ (それより広い帯は番号の割り当てで回しきれず、
 // /29 より狭い帯は setup.SuggestIP が飛ばす .1〜.9 で埋まって Mac が入らない)。帯に入るかの判定はすべて InBand を通す (文字列の前方一致と netip の 2 系統があり、"abc.def.ghi.0/24" が
-// 前方一致の側だけを通った。監査の指摘)。
+// 前方一致の側だけを通った)。
 func ParseBand(s string) (netip.Prefix, error) {
 	p, err := netip.ParsePrefix(s)
 	if err != nil || !p.Addr().Is4() || p.Bits() < 16 || p.Bits() > 28 {
@@ -85,8 +85,7 @@ type Service struct {
 	Router string // IPv4 のルーター (無ければ空)
 	Mask   string // サブネットマスク (読めなければ空。手動の設定へ戻すときに要る)
 	Read   bool   // -getinfo を読めた (読めなければルーターの有無は分からない)
-	// Disabled は無効にしたサービス ("(*)")。I/F の分類に数えない (無効にした古い設定のルーターで、本物の有線の内部 IP が消えた。
-	// 監査の第 3 波の敵対レビュー)
+	// Disabled は無効にしたサービス ("(*)")。I/F の分類に数えない (無効にした古い設定のルーターで、本物の有線の内部 IP が消えた)
 	Disabled bool
 }
 
@@ -104,7 +103,7 @@ func (s Service) NotWiredLAN() bool {
 func (s Service) Internet() bool { return s.Router != "" }
 
 // ifClass は I/F 1 つの分類。有線かどうかはサービスではなく I/F で決める (1 つの I/F に複数のサービスが載ると、サービスごとの判定と
-// I/F ごとの判定が食い違った: 未接続の「Wi-Fi 2」が en0 を有線と言い、Wi-Fi の IP が内部 IP の候補に出た。監査の第 3 波の敵対レビュー)。
+// I/F ごとの判定が食い違った: 未接続の「Wi-Fi 2」が en0 を有線と言い、Wi-Fi の IP が内部 IP の候補に出た)。
 type ifClass int
 
 const (
@@ -204,7 +203,7 @@ func (k Kind) String() string {
 	return "不明"
 }
 
-// Key は設定ファイルに書く種類の名前 (画面の名前 String とは分ける: 画面の語を直すと、保存した設定が黙って外れた。監査の指摘)。
+// Key は設定ファイルに書く種類の名前 (画面の名前 String とは分ける: 画面の語を直すと、保存した設定が黙って外れた)。
 func (k Kind) Key() string {
 	switch k {
 	case KindWired:
@@ -227,7 +226,7 @@ func (k Kind) Key() string {
 var Kinds = []Kind{KindUnknown, KindWired, KindInternet, KindLinkLocal, KindVirtual, KindVPN}
 
 // IsLinkLocal は ip がリンクローカル (169.254.0.0/16) か。固定の帯は設定で 169.254 の中にも置ける (既定は 192.168.100.0/24) ので、これだけで「固定していない」とは
-// 決めない (固定かは方式か台帳で決める)。判定はここ 1 か所 (5 か所に写っていた。監査の指摘)。
+// 決めない (固定かは方式か台帳で決める)。判定はここ 1 か所 (5 か所に写っていた)。
 func IsLinkLocal(ip string) bool {
 	a, err := netip.ParseAddr(ip)
 	return err == nil && a.Is4() && a.IsLinkLocalUnicast()
@@ -248,7 +247,7 @@ type Snapshot struct {
 
 var (
 	// サービス名は番号の行 ("(1) 社内の有線" / 無効なら "(*) …") から取る。Hardware Port は I/F の種類の名前で、サービスの名前を
-	// 変えると食い違う (Hardware Port を -getinfo に渡すと、知らないサービスとして rc=4 になった。監査の指摘)
+	// 変えると食い違う (Hardware Port を -getinfo に渡すと、知らないサービスとして rc=4 になった)
 	reService = regexp.MustCompile(`(?m)^\((\d+|\*)\) (.+)\n\(Hardware Port: (.*), Device: (.*)\)`)
 	reInet    = regexp.MustCompile(`(?m)^\s+inet (\S+)`)
 	// 🚨 行頭に固定する: getinfo は "IPv6 Router: none" の行も出すので、固定しないと IPv6 の行に当たる。
@@ -356,7 +355,7 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 		}
 	}
 	// 期限切れ・取り消しで途中から失敗したサービスは「読めない」に畳まれ、最後まで読めたように見える (相手に有線が無い・メインの網が
-	// 無いと断定し、帯の重なりの検査を素通りした。敵対レビュー)。期限が来ていたら読めなかったことにする
+	// 無いと断定し、帯の重なりの検査を素通りした)。期限が来ていたら読めなかったことにする
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, err
 	}
@@ -389,7 +388,7 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 
 // ErrIPsIncomplete は、サービスは読み終えたが I/F ごとの IP (Snapshot.IPs) を読む途中で期限が来た (snap はサービスまで正しい)。
 // 相手の観測 (setup.ObservePeer) はサービスだけで決めるので成功として扱う (全体を失敗にすると、I/F の多い相手で読めたサービスまで
-// 「読めない」にした)。この Mac の側は IPs を内部 IP・避ける番号にも使うので、失敗として知らせる (敵対レビュー)
+// 「読めない」にした)。この Mac の側は IPs を内部 IP・避ける番号にも使うので、失敗として知らせる
 var ErrIPsIncomplete = errors.New("I/F の IP を読み切れなかった")
 
 // Main はメインのネットワーク (インターネット側) のサービス。並び順で最初の、繋がっていてルーターのあるもの。

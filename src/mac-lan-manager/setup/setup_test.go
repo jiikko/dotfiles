@@ -150,7 +150,7 @@ func TestStaticIPKeepsWhenConfirmed(t *testing.T) {
 	}
 }
 
-// 新しい IP 以外に届いた接続 (Wi-Fi 越しの既存の接続) からの確認は認めない (有線を確かめたことにならない。fable の敵対レビュー P1)。
+// 新しい IP 以外に届いた接続 (Wi-Fi 越しの既存の接続) からの確認は認めない (有線を確かめたことにならない)。
 // 印の中身が glob でも展開しない (set -f)。
 func TestStaticIPConfirmMustComeViaNewIP(t *testing.T) {
 	for name, env := range map[string]string{
@@ -182,7 +182,7 @@ func TestStaticIPConfirmMustComeViaNewIP(t *testing.T) {
 }
 
 // 走っている間の 2 本目は前面で理由を出して断り (背景で黙って抜けると、変えたはずが何も変わらないのが見えない)、何もしない。
-// 持ち主の死んだ lock (待ちの途中の電源断・kill -9) は引き取る (fable の敵対レビュー)。
+// 持ち主の死んだ lock (待ちの途中の電源断・kill -9) は引き取る。
 func TestStaticIPLock(t *testing.T) {
 	dir, path := sandbox(t)
 	first := staticIP(t, dir)
@@ -317,14 +317,14 @@ func TestRemoteCommandRunsDetached(t *testing.T) {
 	}
 	waitFor(t, "背景で戻しまで走る", func() bool { return strings.Contains(readLog(dir), "-setdhcp") })
 	// nohup は ssh が切れたときの SIGHUP で止まらないためのもの。SIGHUP は本物の端末が切れないと届かないので、ここでは
-	// 配線だけを固定する (挙動は段 4 の前の人手の確認: ssh が切れても変更が最後まで走るか。issue 747)
+	// 配線だけを固定する (挙動は段 4 の前の人手の確認: ssh が切れても変更が最後まで走るか)
 	if !strings.Contains(s.RemoteCommand(), "sudo -n -b nohup sh -c ") {
 		t.Errorf("背景に回す側が nohup を通っていない: %s", s.RemoteCommand())
 	}
 }
 
 // 背景の本体が走り出さなければ (ssh の端末が閉じた SIGHUP で nohup の前に死んだ等)、前面が理由を出して非 0 で抜ける。
-// sudo -b はすぐ戻るので、印を待たないと何も変わらないまま成功に見えた (issue 789: air5 で固定 IP にならなかった)。
+// sudo -b はすぐ戻るので、印を待たないと何も変わらないまま成功に見えた (air5 で固定 IP にならなかった)。
 func TestRemoteCommandFailsWhenBackgroundDoesNotStart(t *testing.T) {
 	dir, path := sandbox(t)
 	// 背景の子が本体に届かずに死ぬ形を、何も走らせない nohup で作る
@@ -496,7 +496,7 @@ func TestQuote(t *testing.T) {
 	}
 }
 
-// 同時に 2 本走らせても変更は 1 本だけ (背景の lock の取り合い)。止まった lock の引き取りも 1 本だけ (fable の敵対レビュー 3 周目 P2)。
+// 同時に 2 本走らせても変更は 1 本だけ (背景の lock の取り合い)。止まった lock の引き取りも 1 本だけ。
 func TestStaticIPConcurrentRunsChangeOnce(t *testing.T) {
 	for _, stale := range []bool{false, true} {
 		dir, path := sandbox(t)
@@ -506,7 +506,7 @@ func TestStaticIPConcurrentRunsChangeOnce(t *testing.T) {
 		if stale {
 			// 「止まった」と見てから外し終えるまでの窓を広げる (本物の窓は µs 級で、自然な回数では当たらない)。2 本目は 0.25 秒遅れて
 			// 始めるので、1 本目が外して作り直した lock を、2 本目が「止まった lock」として外しにいく形になる。引き取りが 1 本ずつで
-			// なければ 2 本とも進む (fable の敵対レビュー 3 周目で再現した順序)
+			// なければ 2 本とも進む
 			slowRm := "#!/bin/sh\n/bin/sleep 0.5 # sleep-ok: window: 外すまでの窓を作る入力\nexec /bin/rm \"$@\"\n"
 			if err := os.WriteFile(filepath.Join(dir, "rm"), []byte(slowRm), 0o755); err != nil {
 				t.Fatal(err)
@@ -580,7 +580,7 @@ func TestStaticIPLockPidReuse(t *testing.T) {
 }
 
 // 相手の待ちが終わった後 (期限切れで戻した後) の確認は、印を書けても非 0 で戻り、印を残さない
-// (印は lock の外に置くので書けてしまい、0 で戻ると元に戻った相手を確認済みとして扱った。敵対レビュー)。
+// (印は lock の外に置くので書けてしまい、0 で戻ると元に戻った相手を確認済みとして扱った)。
 func TestStaticIPConfirmAfterWindowFails(t *testing.T) {
 	dir, path := sandbox(t)
 	s := staticIP(t, dir)

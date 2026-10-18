@@ -14,7 +14,7 @@ import (
 	"mac-lan-manager/setup"
 )
 
-// 段 4 の初期設定 (issue 747)。一覧の行で Enter を押すと、その相手の手順の画面になる。手順は観測した状態から毎回組み直す
+// 段 4 の初期設定。一覧の行で Enter を押すと、その相手の手順の画面になる。手順は観測した状態から毎回組み直す
 // (setup.Plan。途中で止まっても、観測し直して続きから流せる)。x で次の手順を確認の板 (実際に打つコマンドを見せる) の後に実行する。
 // 端末の要る手順 (sudo・最初の ssh のパスワード) は端末を明け渡す (Exec)。相手を固定 IP にした後は、新しい IP で入り直して確認の印を
 // 置くまでが 1 組 (置かなければ相手の上で元に戻る = デッドマンスイッチ)。
@@ -37,7 +37,7 @@ type setupState struct {
 }
 
 // conf は開いている相手の確認待ち (無ければ nil)。確認待ちは画面ではなく Model が相手ごとに持つ: 画面に持っていたころは、
-// 閉じて開き直すと消え、Plan が「済み」と見て未確認の IP を台帳に書けた (敵対レビュー)。
+// 閉じて開き直すと消え、Plan が「済み」と見て未確認の IP を台帳に書けた。
 // 受容した限界: プロセスの中にしか持たないので、確認待ちの間 (約 185 秒) にプロセスを起こし直すと消え、同じ形で未確認の IP を
 // 台帳に書ける。glogx と単体の mac-lan-manager を同時に使うと、割り当てた番号 (claimed) を互いに知らない。塞ぐなら、相手の状態
 // ディレクトリにある未確認の印を観測で読む (setup.StaticIP の ConfirmPath)。
@@ -81,7 +81,7 @@ type pendingConfirm struct {
 const unconfMargin = 60 * time.Second
 
 // ledgerBlocked は host を台帳に内部 IP 付きで書いてはいけない理由 (空なら書いてよい)。台帳に書く経路 (初期設定の台帳の手順・一覧の space) は
-// どれもこれを通す (一覧の space が未確認の印を見ず、未確認の IP を台帳に書けた。敵対レビュー)。
+// どれもこれを通す (一覧の space が未確認の印を見ず、未確認の IP を台帳に書けた)。
 // ip は書こうとしている内部 IP。
 func (m *Model) ledgerBlocked(host, ip string) string {
 	if _, ok := m.pending[host]; ok {
@@ -106,7 +106,7 @@ func (m *Model) markUnconf(host, ip string) {
 }
 
 // awaitingUnconf は、開いている相手に未確認の印があり、その期限の後の観測をまだしていないか (Busy に含め、tick で期限の頃に読み直す。
-// 含めないと確認待ちが消えた後に tick が止まり、読み直しが次のキーまで遅れた。敵対レビュー)。
+// 含めないと確認待ちが消えた後に tick が止まり、読み直しが次のキーまで遅れた)。
 func (m *Model) awaitingUnconf() bool {
 	if m.su == nil {
 		return false
@@ -202,7 +202,7 @@ func (m *Model) applyObserve(p setup.PeerNet) {
 		m.record("接続できない ("+su.host+"): "+p.KeyErr.Error(), false)
 	}
 	// 未確認の固定 IP は、期限の後に始めた観測で解く (相手は元に戻っているか、確認されて新しい IP のまま: どちらも観測が正しい)
-	// 読めなかった観測 (届かない・netinfo の失敗) では解かない: 次の観測で読み直す (解くと、後で固定が見えても試した番号が外れなかった。敵対レビュー)
+	// 読めなかった観測 (届かない・netinfo の失敗) では解かない: 次の観測で読み直す (解くと、後で固定が見えても試した番号が外れなかった)
 	if dl, ok := m.unconf[su.host]; ok && su.obsAt.After(dl) && p.NetKnown {
 		delete(m.unconf, su.host)
 		// 期限の後にまだ試した番号の手動の固定に見えるなら、相手の上で確定している (Script は確認が無ければ必ず戻す。
@@ -306,7 +306,7 @@ func nextStep(steps []setup.Step) (setup.Step, bool) {
 	for i, s := range steps {
 		if !s.Done {
 			// この Mac の名前の手順が止まっていても (この Mac の広告を読めない等)、相手の名前の手順は進められる (どちらも仕上げで互いに
-			// 依らない。敵対レビュー)。止まっている手順を飛ばすのはここだけ: 鍵が止まっている間にこの Mac の固定へ進むと、人が相手の
+			// 依らない)。止まっている手順を飛ばすのはここだけ: 鍵が止まっている間にこの Mac の固定へ進むと、人が相手の
 			// 指紋を確かめる前に戻らない変更が走る
 			if s.ID == setup.StepSelfName && s.Blocked != "" {
 				for _, t := range steps[i+1:] {
@@ -332,7 +332,7 @@ func (m *Model) usedIPs() []string {
 		used = append(used, h.LAN)
 	}
 	// 他の相手に試した番号も避ける: 失敗で戻った固定 (相手の上では変わっていることがある) や、期限が切れて戻している最中・戻せなかった
-	// (電源断) 相手は、claimed にも台帳にも行にも無いまま、その番号を持ちうる (別の相手に同じ番号を出した。敵対レビュー)。
+	// (電源断) 相手は、claimed にも台帳にも行にも無いまま、その番号を持ちうる (別の相手に同じ番号を出した)。
 	// 今の相手の試した番号は避けない (同じ Mac に同じ番号を出し直すのは重ならない)
 	for host, ips := range m.tried {
 		if m.su != nil && host == m.su.host {
@@ -472,8 +472,8 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 			su.host + " を管理対象にする: user " + h.User + " / 内部 IP " + h.LAN,
 		}, yes: func() Notice {
 			// 既に載っている行は内部 IP だけを書き換え、無いときだけ足す (古い一覧の行で Upsert すると、別のプロセスが変えた別名を古い値に
-			// 戻した。敵対レビュー)。既にある行の user は触らない (この手順の役目は内部 IP。別のプロセスが u で変えた・空 (既定) にした値を、開いた時の値や推測の
-			// $USER で書き戻した。敵対レビュー)。使えない形の user だけは直す (一覧はそれを捨てて推測で入るので、板の user と台帳が食い違った)
+			// 戻した)。既にある行の user は触らない (この手順の役目は内部 IP。別のプロセスが u で変えた・空 (既定) にした値を、開いた時の値や推測の
+			// $USER で書き戻した)。使えない形の user だけは直す (一覧はそれを捨てて推測で入るので、板の user と台帳が食い違った)
 			err := m.o.Ledger.Update(h.Host, func(x *ledger.Host) {
 				x.LAN = h.LAN
 				if x.User != "" && !ledger.ValidUser(x.User) {
@@ -517,7 +517,7 @@ func (m *Model) keySetup(key string) Action {
 		m.openLog()
 	case "x":
 		// 読み込み中 (相手の観測・この Mac の網) は予約する。この Mac の網だけを読んでいる間に通すと、読み直す前の古い網で計画を組み、
-		// この Mac の固定の板がもう一度出た (敵対レビュー)。確認待ちの間は観測を待たない (確認は観測を使わず、待つ分だけ窓を削った)
+		// この Mac の固定の板がもう一度出た。確認待ちの間は観測を待たない (確認は観測を使わず、待つ分だけ窓を削った)
 		if m.setupBusy() && m.conf() == nil {
 			m.su.queuedX, m.su.waitSince = true, m.o.Now() // 読み終えたら次の手順の板を出す (断る toast を出していた。ユーザー報告)
 			return None
@@ -534,14 +534,14 @@ func (m *Model) setupX() {
 	m.su.queuedX = false // 自分で板を開いたら予約は済み (残すと、取り消した板を次の tick で開き直した。敵対レビュー)
 	{
 		if !m.su.seen && m.conf() == nil {
-			// 観測の口が無い (live が相手を読まない版) か、まだ一度も読めていない: 何も分からないまま本物の sudo / ssh-copy-id を起こさない (敵対レビュー)
+			// 観測の口が無い (live が相手を読まない版) か、まだ一度も読めていない: 何も分からないまま本物の sudo / ssh-copy-id を起こさない
 			m.note("まだ接続できていない (r でリロード)", false)
 			return
 		}
 		if errors.Is(m.su.obs.KeyErr, setup.ErrUnknown) && m.conf() == nil {
 			// 読みに行ったが届かない (Bonjour の IP へ ssh が届かない等): 届かない相手に向けて、この Mac の固定 (自動では戻らない) から
 			// 始めない。鍵が無いだけの相手は KeyErr が nil なので止まらない。確認待ちの間は掛けない: 確認は新しい IP へ入るので観測とは
-			// 関係が無く、有線だけの相手は古い IP の観測が届かずに確認まで断られ、期限が切れた (敵対レビュー)
+			// 関係が無く、有線だけの相手は古い IP の観測が届かずに確認まで断られ、期限が切れた
 			m.note("相手に届かない (r でリロード): "+m.su.obs.KeyErr.Error(), false)
 			return
 		}
@@ -575,7 +575,7 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 	if step == setup.StepPeerStatic && static != nil {
 		// 未確認の印は起こした時点で立ててある。戻った時刻から数え直す (失敗で戻っても相手の上では変わっていることがある)。
 		// 確認するか、相手の上の戻しが終わった後に読み直すまで、台帳には書かない (観測だけを信じると、元に戻る相手の新しい IP を
-		// 台帳に書けた。敵対レビュー)。印の期限は確認の期限より unconfMargin だけ後ろ: 相手の上の戻しは、手元の期限より後に終わる。
+		// 台帳に書けた)。印の期限は確認の期限より unconfMargin だけ後ろ: 相手の上の戻しは、手元の期限より後に終わる。
 		// 相手の lock を読んで解く形にしないのは、lock が root だけが読める状態ディレクトリにあり、ssh で読めないため
 		m.markUnconf(host, static.IP)
 	}
@@ -594,7 +594,7 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 		delete(m.unconf, host)
 		delete(m.tried[host], c.static.IP)
 		m.confirmed[host] = c.static.IP
-		// 有線でしか入れない相手は、宛先を新しい IP に替える (古い 169.254 に入りに行き続けた。敵対レビュー)
+		// 有線でしか入れない相手は、宛先を新しい IP に替える (古い 169.254 に入りに行き続けた)
 		if m.su != nil && m.su.host == host {
 			if _, r := m.setupObserved(); r.mainIP == "" {
 				m.su.dest.IP = c.static.IP
@@ -617,7 +617,7 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 }
 
 // selfRestoreLine はこの Mac の固定を戻すコマンド (今の設定へ。手動の固定なら今の IP とマスクへ: 帯を変えた後に -setdhcp と案内すると、
-// 前の帯で固定していた人を元に戻さなかった。敵対レビュー)。
+// 前の帯で固定していた人を元に戻さなかった)。
 func selfRestoreLine(o setup.Observed) string {
 	if o.SelfMethod == "manual" && o.SelfIP != "" && o.SelfMask != "" {
 		return "sudo networksetup -setmanual " + setup.Quote(o.SelfService) + " " + o.SelfIP + " " + o.SelfMask

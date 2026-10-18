@@ -320,7 +320,7 @@ func TestAliasOnlyForManaged(t *testing.T) {
 	if h.m.ov == ovAlias {
 		t.Error("この Mac に別名の欄を開いた")
 	}
-	// 台帳に無い相手 (未管理のタブの air.local) にも開かない (自分の行だけを見ていて、この分岐を消しても緑だった。監査の指摘)
+	// 台帳に無い相手 (未管理のタブの air.local) にも開かない (自分の行だけを見ていて、この分岐を消しても緑だった)
 	h = newHarness(t, nil, []discover.Peer{{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}})
 	h.keys("l")
 	h.cursorTo(t, "air.local")
@@ -333,7 +333,7 @@ func TestAliasOnlyForManaged(t *testing.T) {
 	}
 }
 
-// red team の P2-1 / P2-2: 別名は別名だけを変える。Bonjour の 169.254 を台帳の固定 IP の欄に書かず、別の画面で外した Mac を戻さない。
+// 別名は別名だけを変える。Bonjour の 169.254 を台帳の固定 IP の欄に書かず、別の画面で外した Mac を戻さない。
 func TestAliasDoesNotWriteBonjourIPOrResurrect(t *testing.T) {
 	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2"}}, []discover.Peer{mini})
 	h.keys("j", "m", "x", "enter")
@@ -351,7 +351,7 @@ func TestAliasDoesNotWriteBonjourIPOrResurrect(t *testing.T) {
 	}
 }
 
-// red team の P2-3: この Mac の行の m は断る (台帳の別名・ユーザー名を「この Mac」・$USER で上書きしない)。
+// この Mac の行の m は断る (台帳の別名・ユーザー名を「この Mac」・$USER で上書きしない)。
 func TestAliasRefusedOnSelf(t *testing.T) {
 	h := newHarness(t, []ledger.Host{{Host: "kojim3macbook-pro.local", User: "other", Alias: "mine"}}, nil)
 	h.keys("m", "enter")
@@ -369,7 +369,7 @@ func TestRegisterSkipsLinkLocal(t *testing.T) {
 	}
 }
 
-// red team の P3-5: IP が分からない相手の y は断る (smb:// だけをコピーしない)。
+// IP が分からない相手の y は断る (smb:// だけをコピーしない)。
 func TestCopySMBWithoutIPRefused(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{{Host: "noip.local", SMB: true}})
 	h.keys("l", "j", "y", "O")
@@ -439,8 +439,8 @@ func TestOthersFollowKinds(t *testing.T) {
 	}
 }
 
-// red team の指摘 (テストの穴): 画面の側でも制御文字が落ちるので、画面だけを見るテストは rows() の無害化を検査できなかった。
-// rows() の出力そのものを見る。ホスト名 (鍵) は書き換えず、制御文字を含むものは行ごと捨てる (P3-7: 同じ Mac が 2 行に割れない)。
+// 画面の側でも制御文字が落ちるので、画面だけを見るテストは rows() の無害化を検査できなかった。
+// rows() の出力そのものを見る。ホスト名 (鍵) は書き換えず、制御文字を含むものは行ごと捨てる (同じ Mac が 2 行に割れない)。
 func TestRowsAreSanitizedAndKeysNotRewritten(t *testing.T) {
 	evil := "\x1b]0;pwned\x07evil\u202e"
 	h := newHarness(t, []ledger.Host{{Host: "a.local", Alias: evil, User: evil}, {Host: "bad\u202e.local"}},
@@ -876,7 +876,7 @@ func TestReloadKeepsLedgerOnReadError(t *testing.T) {
 }
 
 // 一覧は画面の高さに収める: 行が多くても、カーソルの行と詳細カード (動作のキーの案内) は画面の中に残る。全部を描いて下で切って
-// いたころは、狭い画面でカーソルの行も詳細カードも画面の外に出た (監査の指摘 2026-10-16)。
+// いたころは、狭い画面でカーソルの行も詳細カードも画面の外に出た。
 func TestListFitsHeightKeepingCursorAndDetail(t *testing.T) {
 	peers := make([]discover.Peer, 0, 40)
 	for i := range 40 {
@@ -953,7 +953,7 @@ func TestViewFitsNarrowWidths(t *testing.T) {
 	}
 }
 
-// 一覧の表のどの行も、渡した幅を超えない (超えると枠の中で折り返し、Mac ごとに 2 行になった。幅 75〜89 の既定の列で再現。監査の指摘)。
+// 一覧の表のどの行も、渡した幅を超えない (超えると枠の中で折り返し、Mac ごとに 2 行になった。幅 75〜89 の既定の列で再現)。
 // 列を全部出す設定・長い名前でも、落とす順に列を落として収める。
 func TestListTableFitsWidth(t *testing.T) {
 	long := discover.Peer{Host: "studio.local", Instances: []string{"小嶋の Mac Studio (仕事用・2 階の奥の部屋)"}, SSH: true, VNC: true, SMB: true,
@@ -1038,7 +1038,7 @@ func TestSettingsCaretAndWindow(t *testing.T) {
 }
 
 // 一覧で何かをするキーは全部 Binds に載っている (載っていないと、glogx の板で同じ字の横断キー・C・X・U に黙って取られる)。
-// Binds は手で持つ表なので、ふるまいから突き合わせる: キーを打って状態か知らせか起こすプロセスが変わったら「使うキー」(監査の指摘)。
+// Binds は手で持つ表なので、ふるまいから突き合わせる: キーを打って状態か知らせか起こすプロセスが変わったら「使うキー」。
 func TestBindsCoversHandledKeys(t *testing.T) {
 	keys := []string{"space", "enter", "tab", "shift+tab", "left", "right", "up", "down", "backspace", "ctrl+d", "ctrl+u"}
 	for c := '!'; c <= '~'; c++ {
@@ -1063,7 +1063,7 @@ func TestBindsCoversHandledKeys(t *testing.T) {
 }
 
 // 帯に入る IP が無く、ルーターの無い有線の IP を仮に出しているときは「未固定」の札が出る (札は判定の結果で出す。文言で判定していたので
-// 文言を直すと札が消えた。監査の指摘)。帯に入る IP があれば出さない。
+// 文言を直すと札が消えた)。帯に入る IP があれば出さない。
 func TestUnfixedBadge(t *testing.T) {
 	h := newHarness(t, nil, nil) // selfNet の有線は 169.254 (帯の外)
 	if !strings.Contains(termwidth.StripSGR(h.m.header(120)), "未固定") {
@@ -1079,7 +1079,7 @@ func TestUnfixedBadge(t *testing.T) {
 }
 
 // 帯の入力欄のキャレットは、欄の文字の直後 (行も桁も) に出る。画面に入らない高さでは出さない (案内や空の行に出ない)。
-// 選んでいる行の左の棒の分 1 桁左に出ていた・低い画面で板の外に出ていた (fable の敵対レビュー)。
+// 選んでいる行の左の棒の分 1 桁左に出ていた・低い画面で板の外に出ていた。
 func TestSettingsCaretExact(t *testing.T) {
 	for _, w := range []int{120, 80, 60, 48, 40} {
 		for hgt := 10; hgt <= 40; hgt++ {
@@ -1138,7 +1138,7 @@ func TestSettingsFrameFitsHeight(t *testing.T) {
 }
 
 // どの幅・高さでも、選んでいる Mac の動作のキー (s 繋ぐ) と q が最下行に残る。名前が長い Mac・広い配置・低い画面を含む
-// (長い名前の 1 行の形が動作のキーを押し出し、広い配置の高さ 10〜13 ではキーがどこにも出なかった。opus の敵対レビュー)。
+// (長い名前の 1 行の形が動作のキーを押し出し、広い配置の高さ 10〜13 ではキーがどこにも出なかった)。
 // カーソルの行まで入らない高さは「高さが足りない」の画面になり、そこでも q は残る。
 func TestFooterKeepsActionKeys(t *testing.T) {
 	long := discover.Peer{Host: "long.local", Instances: []string{strings.Repeat("とても長い名前の Mac ", 6)}, SSH: true,
@@ -1236,7 +1236,7 @@ func TestFilterCaretExact(t *testing.T) {
 }
 
 // 幅・高さが足りない画面 (抜け方だけ) では q だけが効く。隠れた確認の板に y が届いて台帳から外れたり、
-// 絞り込みに q が文字として入ったり、何も無い画面にキャレットが立ったりしない (opus の敵対レビュー)。
+// 絞り込みに q が文字として入ったり、何も無い画面にキャレットが立ったりしない。
 func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
 	for _, size := range [][2]int{{80, 12}, {80, 10}, {30, 40}} {
 		managed := []ledger.Host{{Host: "m2macmini.local"}}
@@ -1296,7 +1296,7 @@ func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
 }
 
 // 閉じる (Close) と、開いていた確認・入力欄・設定を畳む。glogx は Model を使い回すので、残すと L で開き直した直後に
-// 覚えの無い確認の板が y を待ち、y で台帳から外れた (足りない画面の q で抜けたとき。opus の敵対レビュー)。
+// 覚えの無い確認の板が y を待ち、y で台帳から外れた (足りない画面の q で抜けたとき)。
 func TestCloseFoldsLayers(t *testing.T) {
 	band := bandKeys()
 	open := map[string][]string{"確認": {"j", "space"}, "絞り込み": {"/", "z"}, "別名": {"j", "m"}, "設定": {","}, "帯の編集": band}
@@ -1342,7 +1342,7 @@ func TestFooterShellHintFollowsKey(t *testing.T) {
 }
 
 // どの画面でも View は高さちょうどの行を返す。設定の画面で項目の行が入らない高さは「高さが足りない」の画面になり、
-// 見えない項目に space が届いて設定を書き換えない (高さを 10 とみなして描き、端末より多い行を返していた。opus の敵対レビュー)。
+// 見えない項目に space が届いて設定を書き換えない (高さを 10 とみなして描き、端末より多い行を返していた)。
 func TestEveryScreenFitsHeight(t *testing.T) {
 	band := bandKeys()
 	for _, w := range []int{minWidth, 80, 120, 160, 200} {
@@ -1381,7 +1381,7 @@ func TestEveryScreenFitsHeight(t *testing.T) {
 }
 
 // 台帳の user / lan は手で書き換えうる。使えない形なら使わずに知らせ、ssh の引数にもクリップボードにも出さない
-// (user が "-oProxyCommand=…" だと ssh が option として読み、lan に "; echo" が付くとコピーした文字列にそのまま入った。監査の指摘)。
+// (user が "-oProxyCommand=…" だと ssh が option として読み、lan に "; echo" が付くとコピーした文字列にそのまま入った)。
 func TestUnusableLedgerFieldsAreNotUsed(t *testing.T) {
 	bad := []ledger.Host{{Host: "m2macmini.local", User: "-oProxyCommand=touch /tmp/x", LAN: "192.168.100.13; echo pwn"}}
 	h := newHarness(t, bad, []discover.Peer{mini})
@@ -1439,7 +1439,7 @@ func TestBandIsSavedNormalized(t *testing.T) {
 	}
 }
 
-// 設定ファイルが読めない (権限など) 間は、既定で描いて知らせ、切り替えても保存しない (読めなかった本物の設定を既定で上書きした。監査の指摘)。
+// 設定ファイルが読めない (権限など) 間は、既定で描いて知らせ、切り替えても保存しない (読めなかった本物の設定を既定で上書きした)。
 func TestUnreadablePrefsAreNotOverwritten(t *testing.T) {
 	var saved []prefs.Prefs
 	m := New(Options{
@@ -1465,7 +1465,7 @@ func TestUnreadablePrefsAreNotOverwritten(t *testing.T) {
 }
 
 // -getinfo が読めなかったサービスの I/F で見えた 169.254 は、相手の内部 IP にしない。I/F で決める設定でも、読めない I/F の IP を
-// この Mac の内部 IP にしない (有線かどうかは Wired の 1 つで決める。監査の第 3 波の敵対レビュー)。
+// この Mac の内部 IP にしない (有線かどうかは Wired の 1 つで決める)。
 func TestUnreadServiceIsNotLan(t *testing.T) {
 	net := selfNet()
 	net.Services[1].Read, net.Services[1].Router = false, "" // Wi-Fi (en0) の -getinfo が読めなかった
@@ -1492,7 +1492,7 @@ func TestUnreadServiceIsNotLan(t *testing.T) {
 }
 
 // I/F で決める設定の候補: 保存してある I/F が今は候補に無くても、黙って別の I/F に替えて保存しない (先頭に「今は使えない」で残す)。
-// 同じ I/F のサービスが 2 つあっても、→ で次の I/F へ進める (候補は I/F ごとに 1 つ。監査の第 3 波の敵対レビュー)。
+// 同じ I/F のサービスが 2 つあっても、→ で次の I/F へ進める (候補は I/F ごとに 1 つ)。
 func TestLanIFChoicesKeepSavedAndSkipDuplicates(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	net := selfNet()
@@ -1531,7 +1531,7 @@ func TestLanIFChoicesKeepSavedAndSkipDuplicates(t *testing.T) {
 
 // lanmgr 側も I/F ごとの分類で決める: en0 に未接続の「Wi-Fi 2」(ルーター無し) と Wi-Fi (ルーターあり) が載っても、en0 を I/F の候補に
 // 出さず、I/F で決める設定でも Wi-Fi の IP を内部 IP にしない (netinfo の Offline だけが守っていて、lanmgr の 2 か所はサービスごとの判定に
-// 戻しても緑だった。監査の第 3 波の敵対レビュー)。
+// 戻しても緑だった)。
 func TestSharedIFIsNotLanInModel(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	net := selfNet()
@@ -1569,7 +1569,7 @@ func TestDisabledServiceIsNotUsedInModel(t *testing.T) {
 }
 
 // u は台帳の ssh のユーザー名だけを変える (別名・内部 IP は触らない)。使えない名前 (先頭の - は ssh が option として読む) は
-// 書かずに入力欄を開いたまま断り、台帳に無い Mac には開かない (issue 747 の決定 2026-10-16)。
+// 書かずに入力欄を開いたまま断り、台帳に無い Mac には開かない。
 func TestUserEditChangesOnlyUser(t *testing.T) {
 	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2", Alias: "mini", LAN: "192.168.100.13"}}, []discover.Peer{mini})
 	typ := func(s string) {
@@ -1622,7 +1622,7 @@ func TestUserEditChangesOnlyUser(t *testing.T) {
 }
 
 // 設定の「出す相手: 有線で見えた相手だけ」は、この Mac の有線の I/F に見えた相手だけを一覧とタブの件数に出し、設定に保存する
-// (Wi-Fi でだけ見えた相手・台帳にだけある相手は出さない。issue 747 の決定)。消えた行にカーソルが残っていても描ける。
+// (Wi-Fi でだけ見えた相手・台帳にだけある相手は出さない)。消えた行にカーソルが残っていても描ける。
 func TestWiredOnlyHidesWifiOnlyPeers(t *testing.T) {
 	air := discover.Peer{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}
 	h := newHarness(t, nil, []discover.Peer{mini, air})
@@ -1654,7 +1654,7 @@ func TestWiredOnlyHidesWifiOnlyPeers(t *testing.T) {
 	}
 }
 
-// $USER が使えない (空・先頭の -) と、台帳にユーザー名の無い相手への s / Y は断る (宛先が "@<IP>" になった。敵対レビュー)。
+// $USER が使えない (空・先頭の -) と、台帳にユーザー名の無い相手への s / Y は断る (宛先が "@<IP>" になった)。
 // u で空にしたときの知らせには、実際に使う既定の名前を出す。
 func TestUnknownUserRefusesShell(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini})
@@ -1748,7 +1748,7 @@ func TestPeerLanFixedByLedger(t *testing.T) {
 	}
 }
 
-// I/F で決める設定でも、そのサービスが手動の固定でなければ未固定 (自動の 169.254 を固定と見て、一覧の space で台帳に書けた。敵対レビュー)。
+// I/F で決める設定でも、そのサービスが手動の固定でなければ未固定 (自動の 169.254 を固定と見て、一覧の space で台帳に書けた)。
 func TestSelfLanByIFUsesMethod(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	h.m.pf.LanByBand, h.m.pf.LanIF = false, "en13"
@@ -1763,7 +1763,7 @@ func TestSelfLanByIFUsesMethod(t *testing.T) {
 }
 
 // 方式が読めない (-getinfo が読めない等) 有線の帯の番号は前と同じく固定と見る (未固定と見て、前は書けた台帳の内部 IP が書けなくなった)。
-// 固定の対象は、自動の番号が帯を引いた別の I/F ではなく、手動のサービスか先頭の有線 (敵対レビュー)。
+// 固定の対象は、自動の番号が帯を引いた別の I/F ではなく、手動のサービスか先頭の有線。
 func TestSelfLanUnknownMethodAndWiredPick(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	s := selfNet()
@@ -1815,7 +1815,7 @@ func TestLanReachable(t *testing.T) {
 	}
 }
 
-// 有線でしか見えない相手と網が分かれていたら、その他の I/F (VPN 等) へ黙って繋がず、網が分かれている理由で断る (敵対レビュー)。
+// 有線でしか見えない相手と網が分かれていたら、その他の I/F (VPN 等) へ黙って繋がず、網が分かれている理由で断る。
 func TestAwayPeerWithoutWifiRefuses(t *testing.T) {
 	wired := discover.Peer{Host: "wired.local", Instances: []string{"wired"}, SSH: true, VNC: true, Addrs: map[int]string{27: "169.254.9.9", 40: "100.64.0.5"}}
 	h := newHarness(t, nil, []discover.Peer{wired})
@@ -1836,7 +1836,7 @@ func TestAwayPeerWithoutWifiRefuses(t *testing.T) {
 }
 
 // 走査で行が増えても、カーソルは同じ Mac に残る (添字のままだと、名前で前に並ぶ行が増えた分だけ別の Mac に移り、s がそのまま
-// 別の相手へ ssh した。敵対レビュー)。
+// 別の相手へ ssh した)。
 func TestCursorFollowsMacAcrossScanUpdate(t *testing.T) {
 	zed := discover.Peer{Host: "zed.local", Instances: []string{"zed"}, SSH: true, Addrs: map[int]string{14: "192.168.50.20"}}
 	h := newHarness(t, nil, []discover.Peer{zed})
@@ -1854,7 +1854,7 @@ func cursorPeer(host, ip string) discover.Peer {
 	return discover.Peer{Host: host, Instances: []string{strings.TrimSuffix(host, ".local")}, SSH: true, Addrs: map[int]string{14: ip}}
 }
 
-// r で戻したい Mac が見つかった tick で、直前の Mac へ合わせ直してそれを打ち消さない (2 周目の敵対レビュー)。
+// r で戻したい Mac が見つかった tick で、直前の Mac へ合わせ直してそれを打ち消さない。
 func TestCursorReturnsToMacAfterReload(t *testing.T) {
 	a, mm, z := cursorPeer("aaa.local", "192.168.50.21"), cursorPeer("mmm.local", "192.168.50.22"), cursorPeer("zed.local", "192.168.50.20")
 	h := newHarness(t, nil, []discover.Peer{a, mm, z})
@@ -1871,7 +1871,7 @@ func TestCursorReturnsToMacAfterReload(t *testing.T) {
 	}
 }
 
-// 戻したい Mac を待っている間も、キーを押していないのにカーソルが別の Mac へ移らない (2 周目の敵対レビュー)。
+// 戻したい Mac を待っている間も、キーを押していないのにカーソルが別の Mac へ移らない。
 func TestCursorHoldsWhileWaitingForMac(t *testing.T) {
 	a, mm, z := cursorPeer("aaa.local", "192.168.50.21"), cursorPeer("mmm.local", "192.168.50.22"), cursorPeer("zed.local", "192.168.50.20")
 	h := newHarness(t, nil, []discover.Peer{a, mm, z})
@@ -1889,7 +1889,7 @@ func TestCursorHoldsWhileWaitingForMac(t *testing.T) {
 	}
 }
 
-// キーの入口で取り込んだ網の読み直しで行が組み変わっても、そのキーは画面で見ていた Mac に効く (2 周目の敵対レビュー)。
+// キーの入口で取り込んだ網の読み直しで行が組み変わっても、そのキーは画面で見ていた Mac に効く。
 func TestKeyAfterNetLoadActsOnShownMac(t *testing.T) {
 	a := discover.Peer{Host: "aaa.local", Instances: []string{"aaa"}, SSH: true, Addrs: map[int]string{30: "169.254.5.5"}}
 	z := discover.Peer{Host: "zed.local", Instances: []string{"zed"}, SSH: true, Addrs: map[int]string{27: "169.254.6.6"}}
@@ -1923,7 +1923,7 @@ func TestKeyAfterNetLoadActsOnShownMac(t *testing.T) {
 	}
 }
 
-// lan_if 未設定のとき、I/F の無いサービス (VPN) に一致させず「(未設定)」と出す (2 周目の敵対レビュー)。
+// lan_if 未設定のとき、I/F の無いサービス (VPN) に一致させず「(未設定)」と出す。
 func TestSelfLanUnsetIFIgnoresEmptyDevice(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	h.m.pf.LanByBand, h.m.pf.LanIF = false, ""
@@ -1933,7 +1933,7 @@ func TestSelfLanUnsetIFIgnoresEmptyDevice(t *testing.T) {
 	}
 }
 
-// 走査が終わってこの Mac の網だけを読み直している間は、見出しにそれを出す (確認待ちと出さない。2 周目の敵対レビュー)。
+// 走査が終わってこの Mac の網だけを読み直している間は、見出しにそれを出す (確認待ちと出さない)。
 func TestHeaderWhileOnlyNetReload(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	block := make(chan struct{})
@@ -1947,7 +1947,7 @@ func TestHeaderWhileOnlyNetReload(t *testing.T) {
 	}
 }
 
-// 自動で出た板は、実行の無い板 (台帳) でも案内に Enter を出さない (Enter では実行しない。2 周目の敵対レビュー)。
+// 自動で出た板は、実行の無い板 (台帳) でも案内に Enter を出さない (Enter では実行しない)。
 func TestAutoBoardHintOmitsEnter(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	for _, a := range []*ask{
@@ -1962,7 +1962,7 @@ func TestAutoBoardHintOmitsEnter(t *testing.T) {
 }
 
 // キーの入口の取り込みで、画面で見ていた Mac が一覧から消えたら (有線だけの表示で、この Mac の USB LAN が外れた等)、行に効くキーは
-// 断る (添字のままだと隣の Mac へ繋いだ。3 周目の敵対レビュー)。
+// 断る (添字のままだと隣の Mac へ繋いだ)。
 func TestKeyRefusedWhenShownMacVanishes(t *testing.T) {
 	a := discover.Peer{Host: "aaa.local", Instances: []string{"aaa"}, SSH: true, Addrs: map[int]string{30: "169.254.5.5"}}
 	z := discover.Peer{Host: "zed.local", Instances: []string{"zed"}, SSH: true, Addrs: map[int]string{27: "169.254.6.6"}}
@@ -2369,7 +2369,7 @@ func TestWiredNameRelookupAfterNetReload(t *testing.T) {
 
 // この Mac の「固定」は、画面 (selfLan / lanFixed) と初期設定 (setup.Plan の self) で同じ結論になる。初期設定に渡すのと同じ観測
 // (selfWired から組む setupObserved の self の部分) で Plan を組み、帯で決める / I/F で決める の両方で突き合わせる (Observed を手で組むと、
-// 画面と初期設定が別のサービスを見ている食い違いを見られなかった。整合の監査の敵対レビュー)。
+// 画面と初期設定が別のサービスを見ている食い違いを見られなかった)。
 func TestSelfFixedAgreesWithPlan(t *testing.T) {
 	type c struct {
 		name, ip, method string

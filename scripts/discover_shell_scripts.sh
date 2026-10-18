@@ -5,7 +5,7 @@
 #
 # 旧 tests/test_lint_coverage.sh の discover() を移設。
 #
-# 🚨 **ヘッダが実装より強いことを主張していた** (issue 313 ③、2026-09-09 に訂正)。
+# 🚨 **ヘッダが実装より強いことを主張していた** (2026-09-09 に訂正)。
 # 以前ここには「『未登録』は構造的に発生せず、zsh 例外の登録漏れは SC1071 で loud に落ちる」と
 # 書いてあったが、**どちらも実ファイルでは成立していなかった**:
 #   - `LINT_DIRS` の**外**にある shell script は発見されない = 未登録が普通に起きる。実測で
@@ -28,9 +28,9 @@ cd "$(dirname "$0")/.." || exit 1
 # _claude は hooks だけでなく直下も含める (statusline-command.sh が漏れていた。shellcheck の
 # dialect 判定に載らないため #!/bin/sh のまま bash 専用置換を書いても静かに通り、Linux (dash)
 # 実行で初めて Bad substitution になった。2026-07-25)
-# mac / src/glogx/tools は issue 313 ③ で追加 (3 本とも shellcheck 0 件だったので、
+# mac / src/glogx/tools は追加 (3 本とも shellcheck 0 件だったので、
 # 発見漏れを直すコストがゼロだった)。
-# src/lockman は issue 362 で追加 (ab_abandoned.sh = 見捨てた goroutine の副作用を測る A-B
+# src/lockman は追加 (ab_abandoned.sh = 見捨てた goroutine の副作用を測る A-B
 # ハーネス)。**src/glogx/tools と違い tools/ を掘っていない** — 対象が 1 本で、測る相手
 # (src/lockman のコード) と同じ階層に居るほうが見つかるため。増えたら tools/ へ寄せる。
 LINT_DIRS="setup.sh bin scripts zshlib _claude mac src/glogx/tools src/lockman src/pro-con"

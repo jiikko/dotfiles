@@ -1,6 +1,6 @@
 #!/bin/bash
 # 本体の checkout (~/dotfiles) を pull する。同時に pull すると、片方がファイルを書き出している途中をもう片方が見て
-# 「untracked working tree files would be overwritten」で止まる (issue 544。2026-09-26 に 2 つの session が 1.2 秒差で pull した)。
+# 「untracked working tree files would be overwritten」で止まる (2026-09-26 に 2 つの session が 1.2 秒差で pull した)。
 # 本体を pull する人 (取り込みの係・worktree の後始末をする session・人) は全員ここを通し、決まった lock で 1 つずつにする。
 #
 #   scripts/pull_main_checkout.sh            # ~/dotfiles (DOTFILES_DIR があればそこ) を pull --rebase する

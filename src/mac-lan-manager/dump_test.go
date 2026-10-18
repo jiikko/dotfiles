@@ -86,7 +86,7 @@ func TestDumpJSONAndWaitCap(t *testing.T) {
 	}
 }
 
-// 待っている間にシグナル (stop) が来たら、待ちを打ち切って走査を止めてから戻る (止めないと dns-sd が親の外で残った。監査の指摘)。
+// 待っている間にシグナル (stop) が来たら、待ちを打ち切って走査を止めてから戻る (止めないと dns-sd が親の外で残った)。
 func TestDumpStopsScanOnSignal(t *testing.T) {
 	scan := &dumpScan{busy: true} // 走査が終わらない
 	stop := make(chan struct{})

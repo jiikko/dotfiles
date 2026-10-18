@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # check_skip_exit_code.sh — 「丸ごと skip したのに exit 0」を落とす。
 #
-# なぜ (issue 139 が正本。発生源は issue 133):
+# なぜ:
 #   runner (Makefile の run_tests) は **exit 77 を [skip]、0 を [ok]** として数える。
 #   skip を告げてから `exit 0` すると、**assert が 1 本も走っていないのに合格と同じ表示**になり、
 #   検査が消えたことが緑に埋もれる。実害: 2026-08-29 に CI を macOS へ移した時点で
 #   timeout(1) が無くなり、test_deny_bare_tmux_kill.sh の 60 件の assert が丸ごと消えたのに
-#   [ok] と集計されていた (issue 139)。規約は tests/CLAUDE.md の「0 件・skip・沈黙の扱い」。
+#   [ok] と集計されていた。規約は tests/CLAUDE.md の「0 件・skip・沈黙の扱い」。
 #
 # 検出する形: skip を告げる出力の**直後 3 行以内**にある `exit 0`。
 #   print -u2 "[foo] skipped: ..."
@@ -43,7 +43,7 @@ while IFS= read -r f; do
     from=$((lineno > 3 ? lineno - 3 : 1))
     window=$(sed -n "${from},$((lineno + 3))p" "$f")
     # 🚨 パイプで grep -q に渡さない。pipefail 下では一致していても非 0 になりうる
-    # (issue 096 / scripts/check_pipefail_grep_q.sh が落とす形)。herestring で渡す
+    # (scripts/check_pipefail_grep_q.sh が落とす形)。herestring で渡す
     grep -qE '^[[:space:]]*exit 0([[:space:]]|$)' <<< "$window" || continue
     grep -q 'partial-skip: allow' <<< "$window" && continue
     printf '✗ %s:%s 丸ごと skip なのに exit 0 (runner が [ok] と数える。exit 77 にする)\n' "$f" "$lineno"

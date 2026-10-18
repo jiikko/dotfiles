@@ -14,7 +14,7 @@ import (
 	"zundamon-kaisetsu/internal/build"
 )
 
-// テストとベンチマークが共有する helper (issue 655 で各ファイルからまとめた)。
+// テストとベンチマークが共有する helper。
 
 func must(t testing.TB, err error) {
 	t.Helper()

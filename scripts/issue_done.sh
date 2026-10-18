@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# issue_done.sh — issue を done/ へ送る 4 手順を 1 コマンドに寄せる (issue 347)。
+# issue_done.sh — issue を done/ へ送る 4 手順を 1 コマンドに寄せる。
 #
 #   scripts/issue_done.sh <NNN> [<NNN>...]
 #
 # ## なぜ 1 本に寄せるか
 #
 # done/ へ移すには複数の操作が要るのに、**どれも人が覚えているだけ**だった。実測 2026-09-09
-# (retro 345): 1 セッションで 12 件を送り、**4 回**取りこぼした (claim symlink の消し忘れ 2 回 /
-# 相対リンクの depth 調整 2 回)。うち 1 回は CI の Tests を赤くした (issue 313)。
+#: 1 セッションで 12 件を送り、**4 回**取りこぼした (claim symlink の消し忘れ 2 回 /
+# 相対リンクの depth 調整 2 回)。うち 1 回は CI の Tests を赤くした。
 # 検査 (tests/issues/test_*.sh) は「落とした後」にしか気づかせてくれない。
 #
-# ## やること (4 つ。issue 347 は 3 つと書いていたが、実測すると 4 つ目が要る)
+# ## やること (4 つ。実測すると 4 つ目が要る)
 #
 #   1. 実体を見つけて対応する done/ へ `git mv`
-#      (global issue → issues/done/ / group issue → issues/epic/<name>/done/。issue 291)
+#      (global issue → issues/done/ / group issue → issues/epic/<name>/done/)
 #   2. `next/` の claim symlink があれば `git rm` (残すと dangling で test_next_links_valid.sh が赤)
 #   3. 移した本文の相対リンクを**新しい位置から**張り直す (issues/ 起点で書かれているので 1 段ずれる)。
-#      あわせて本文冒頭の担当者バナー (`> 🚨 **担当中: …**`) を外す (規則は scripts/lib/claim_banner.awk。issue 763)
-#   4. 🚨 **他の issue から張られている「この issue へのリンク」も張り直す**。issue 347 の本文には
-#      無いが、実測すると必要 (例: issues/345 が `](347-….md)` で参照しており、347 を動かすと
+#      あわせて本文冒頭の担当者バナー (`> 🚨 **担当中: …**`) を外す (規則は scripts/lib/claim_banner.awk)
+#   4. 🚨 **他の issue から張られている「この issue へのリンク」も張り直す**。
+#      実測すると必要 (例: issues/345 が `](347-….md)` で参照しており、347 を動かすと
 #      その 1 本が切れて test_issue_links_valid.sh が赤くなる)。3 だけでは CI は緑にならない
 #
 # ## 3 と 4 は同じ計算の裏表なので 1 つの awk に寄せた
@@ -38,10 +38,10 @@
 #     (実測 2026-09-10: rc=0 で旧パスのまま残る)
 #   - **`](…)` の形をしていない裸のパス** (`` `issues/226-x.md` `` のような散文・インラインコード)。
 #     テストの fixture (`issues/030-feat-a.md` 等) が同じ形をしているので機械置換は誤検出する。
-#     現存ぶんは手で直した (2026-09-10。恒久対応は issue 348 の気づき 8 で判断待ち)
+#     現存ぶんは手で直した (2026-09-10)
 #   - **本文が binary と判定される issue** (先頭行に NUL 等)。母集合の canary が
 #     「自分自身を見つけられない」で **fail-closed** して着手しない。md に NUL が入っている
-#     時点で異常なので、止める側で正しい (3 周目の敵対レビューが実測)
+#     時点で異常なので、止める側で正しい
 #
 # ## 安全機構 (adversarial-review-own-safeguards.md)
 #
@@ -52,19 +52,19 @@
 #     戻しは `git checkout --` を使わず**逆操作を明示**する (並行セッションの未コミット変更を
 #     巻き込まないため。mutation-verify-new-tests.md「復元の作法」)
 #
-# ## 手順 4 の走査は **repo 全体** (2026-09-10 の敵対レビュー P1-2)
+# ## 手順 4 の走査は **repo 全体**
 #
 # `issues/` の中だけを走査していたら、`docs/nvim-ruby-lsp.md` のように**外から issue を指す
 # 参照**が黙って切れた (実測: 332 を done へ送ったときに切れたリンクが現存していた)。
 # しかも 2 本のリンク検査は `issues/` しか見ないので **rc=0 の ✓ のまま壊れる**。
 # よって走査は repo 全体へ広げ、**「移動前のパスを指す参照が repo に 0 件」**を移動後の
-# 事後条件として自前で確かめる (検査側の射程は issue 293 の判断どおり issues/ に閉じたまま)。
+# 事後条件として自前で確かめる (検査側の射程は issues/ に閉じたまま)。
 #
-# ## 2 周目の敵対レビュー (2026-09-10) で塞いだ 2 件
+# ## 塞いだ 2 件 (2026-09-10)
 #
-#   P1-1 relbase が repo root 直下のファイルで絶対パスを返し、そこからの参照だけが
+#   relbase が repo root 直下のファイルで絶対パスを返し、そこからの参照だけが
 #        書き換えられないまま「stale 0 件」で緑になっていた
-#   P1-2 scan_candidates (母集合) に canary が無く、走査が空振りしても緑だった。
+#   scan_candidates (母集合) に canary が無く、走査が空振りしても緑だった。
 #        オラクル側の awk にだけ canary があり、母集合の破損は誰も見ていなかった
 #
 # ## 変異検証で red を確認した箇所 (2026-09-10)
@@ -78,7 +78,7 @@
 set -euo pipefail
 unset CDPATH
 # 🚨 awk (リンクの張り直し・担当者バナーの除去) は UTF-8 のロケールだと、不正なバイトを含む本文で止まる (rc=2)。張り直しの awk が止まると
-# `|| true` で握り潰されて「リンクが解決しない」という別の理由で落ちる (敵対レビュー 2026-10-15)。判定はどれもバイト列の一致なので C で読む
+# `|| true` で握り潰されて「リンクが解決しない」という別の理由で落ちる。判定はどれもバイト列の一致なので C で読む
 export LC_ALL=C
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -257,7 +257,7 @@ canary() {
     return 1
   fi
   # 動かした issue と無関係なリンクは、冗長な書き方 (`./` 入り) でも触らない。
-  # 触ると移動と無関係な差分が commit に混ざる (敵対レビュー P2-2)
+  # 触ると移動と無関係な差分が commit に混ざる
   got="$(printf '%s\n' '無関係: [z](./done/311-b.md)' \
     | awk -v old_base="issues" -v new_base="issues" \
           -v moved_old="issues/347-x.md" -v moved_new="issues/done/347-x.md" \
@@ -293,13 +293,13 @@ tracked() { git "${GIT_DIR_ARG[@]}" ls-files --error-unmatch -- "$1" >/dev/null 
 # 🚨 末尾スラッシュ付きの prefix で剥がさない。**そのファイルが repo root 直下**だと
 # d == BASE_DIR で `${d#"$BASE_DIR/"}` は一致せず、絶対パスがそのまま old_base に入る。
 # すると normalize が `Users/koji/dotfiles/issues/347-x.md` を作って moved_old と一致せず、
-# **書き換えも HIT 判定も起きないのに「stale 0 件」で緑**になる (2 周目の敵対レビュー P1-1。
+# **書き換えも HIT 判定も起きないのに「stale 0 件」で緑**になる (
 # 実測: repo root の README.md からの参照だけが張り直されず rc=0 だった)。
 # 🚨 **前提: 引数は BASE_DIR 配下のパスであること。** `${d#"$BASE_DIR"}` は
 # `BASE_DIR=/a/b` に対して `/a/bc/x` を渡すと `c/x` を返す (別パスの接頭辞になる形)。
 # 今の呼び出し元は 2 つとも `scan_candidates` の出力 = `$BASE_DIR` を歩いた結果なので
 # 構造的に到達しない。**別の呼び出し元をここへ足すなら、この前提を先に確かめること**
-# (3 周目の敵対レビュー P3-1。到達不能だが、到達不能である理由が呼び出し側にしか無かった)。
+# (到達不能だが、到達不能である理由が呼び出し側にしか無い)。
 relbase() {
   local d
   d="$(cd "$(dirname "$1")" && pwd -P)"
@@ -337,7 +337,7 @@ run_link_tests() {
 
 [ $# -gt 0 ] || { usage; exit 2; }
 # 🚨 --help は番号検証より先に見る。後ろに置くと `issue_done.sh 347 --help` が
-# 「347 を処理せず rc=0」= 成功に見える無操作になる (敵対レビュー P3-3)
+# 「347 を処理せず rc=0」= 成功に見える無操作になる
 for n in "$@"; do
   case "$n" in -h|--help) usage; exit 0 ;; esac
 done
@@ -360,8 +360,8 @@ canary || exit 1
 TESTLOG="$(mktemp -d "${TMPDIR:-/tmp}/issue_done_log.XXXXXX")"
 
 # in_flight は「移動してから判定を通るまで」の間だけ 1。この窓で異常終了 (git の rc=128 /
-# Ctrl+C / kill) すると、rollback を通らずに**半端な状態 + バックアップ消滅**で終わっていた
-# (敵対レビュー P1-1 / P1-3。どちらも実測で再現)。判定の else 節だけでなく trap からも
+# Ctrl+C / kill) すると、rollback を通らずに**半端な状態 + バックアップ消滅**で終わっていた。
+# 判定の else 節だけでなく trap からも
 # 同じ rollback を呼ぶ。
 in_flight=0
 undo_mv=0
@@ -428,7 +428,7 @@ fi
 for num in "$@"; do
   # --- 実体を 1 件に確定させる (done/ に在るものは対象外) ---------------------------------
   # 🚨 `grep -v '/done/'` を絶対パスに当てない。**repo の置き場所**に /done/ が含まれていると
-  # 実体を全部落として「見つからない」になる (敵対レビュー P3-1)。判定は ISSUES_DIR からの相対で行う
+  # 実体を全部落として「見つからない」になる。判定は ISSUES_DIR からの相対で行う
   matches="$(find "$ISSUES_DIR" -type f -name "$num-*.md" -print |
     while IFS= read -r m; do
       rel="${m#"$ISSUES_DIR"/}"
@@ -446,10 +446,10 @@ for num in "$@"; do
   base="$(basename "$src")"
   srcdir="$(dirname "$src")"
 
-  # group root = ISSUES_DIR か ISSUES_DIR/epic/<name>。done は必ずその直下 (issue 291)
+  # group root = ISSUES_DIR か ISSUES_DIR/epic/<name>。done は必ずその直下
   rel_srcdir="${srcdir#"$ISSUES_DIR"}"; rel_srcdir="${rel_srcdir#/}"
   # 🚨 `epic/*)` は `epic/900/blocked` にも一致する。そのまま group_root にすると
-  # `epic/900/blocked/done/` という**契約に無い 1 段深い done** へ黙って入る (敵対レビュー P2-3)。
+  # `epic/900/blocked/done/` という**契約に無い 1 段深い done** へ黙って入る。
   # epic は固定 2 段 (issues/README.md) なので、段数まで見て弾く
   case "$rel_srcdir" in
     '' | pending | waiting | next) group_root="$ISSUES_DIR" ;;
@@ -471,7 +471,7 @@ for num in "$@"; do
   # --- 母集合の canary: 走査が空振りしていないことを**触る前に**確かめる -------------------
   # 🚨 `scan_candidates` が空を返すと、手順 4 も事後条件も「何もせず 0 件 = 緑」になる。
   # awk (report モード) には canary があったが、**母集合の作り方には無かった** ので、
-  # P1-2 のために足したオラクルが P1-2 と同じ壊れ方をしていた (2 周目の敵対レビュー P1-2。
+  # 足したオラクルが走査と同じ壊れ方をしていた (
   # scan_candidates を空にする変異が、参照が issues/ の外だけにある fixture で緑になった)。
   # 既知の入力 = 動かす issue 自身の本文の 1 行。それで引いて自分が出なければ**判定不能**。
   needle="$(grep -m1 -v '^[[:space:]]*$' "$src" 2>/dev/null || true)"
@@ -482,7 +482,7 @@ for num in "$@"; do
   # 🚨 パイプで `grep -Fxq` へ渡さない。`-q` は一致した時点で抜けるので、上流がまだ書いている
   # 最中なら SIGPIPE で死に、`set -o pipefail` の下ではパイプライン全体が非 0 になる。
   # すると `if !` が真に転んで **正常なのに「母集合の走査が壊れている」で着手拒否**する
-  # (issue 096 / scripts/check_pipefail_grep_q.sh が落とす形)。判定は <<< に寄せる。
+  # (scripts/check_pipefail_grep_q.sh が落とす形)。判定は <<< に寄せる。
   if ! grep -Fxq "$src" <<< "$(scan_candidates "$needle")"; then
     printf '✗ 母集合の走査が壊れている (自分自身を見つけられない): %s\n' "$src" >&2
     printf '  手順 4 と事後条件が空振りするので着手しない (何も動かしていない)\n' >&2
@@ -502,7 +502,7 @@ for num in "$@"; do
   # 🚨 claim は **追跡外であるのが通常**。glogx の issues viewer の `n` (src/glogx/issues/move.go
   # の placeNextLink) は os.Symlink するだけで git add しない。追跡外へ `git rm` を打つと
   # rc=128 で落ち、set -e でそのまま死んで **移動済みのまま dangling claim が残る**
-  # (敵対レビュー P1-1 / 実測で再現)。追跡の有無で分ける
+  # (実測で再現)。追跡の有無で分ける
   claim="$group_root/next/$base"
   undo_claim=0
   if [ -L "$claim" ]; then
@@ -514,7 +514,7 @@ for num in "$@"; do
 
   # --- 手順 3: 移した本文のリンクを新しい位置から張り直し、冒頭の担当者バナーを外す ---------------
   # 🚨 バナーの除去は moved.bak を取った後に行う。判定が落ちたときの rollback は moved.bak から本文を戻すので、
-  # 先に外すとバナーだけ戻らない。バナーは next にいる間だけの表示 (glogx の viewer も next から出すときに外す。issue 763)
+  # 先に外すとバナーだけ戻らない。バナーは next にいる間だけの表示 (glogx の viewer も next から出すときに外す)
   cp -- "$dest" "$TESTLOG/moved.bak"
   rebase_file "$dest" "$old_base" "$new_base" "$moved_old" "$moved_new" || true
   banner_removed=0
@@ -523,7 +523,7 @@ for num in "$@"; do
   case "$banner_rc" in
     0)
       # 🚨 書き戻す前に「バナー行 (と直後の空行) を消しただけ」かを確かめる。awk は改行で終わらない最後の行に改行を足し、
-      # NUL を含む行を切り詰める (敵対レビュー 2026-10-15)。それ以外の差があれば本文を書き換えずに中止する (trap が rollback する)
+      # NUL を含む行を切り詰める。それ以外の差があれば本文を書き換えずに中止する (trap が rollback する)
       if ! banner_only_removed "$dest" "$TESTLOG/unbannered"; then
         printf '✗ issue %s: 担当者バナーを外すと本文のほかの部分も変わる (改行で終わらない / NUL を含む等)。手で外すこと\n' "$num" >&2
         exit 1
@@ -535,7 +535,7 @@ for num in "$@"; do
 
   # --- 手順 4: 他の md からの「この issue への参照」を張り直す --------------------------------
   # 🚨 走査は **repo 全体**。issues/ に閉じると、外から issue を指す参照 (docs/ など) が
-  # 黙って切れる (敵対レビュー P1-2。実測: docs/nvim-ruby-lsp.md が 332 の移動で切れていた)。
+  # 黙って切れる (実測: docs/nvim-ruby-lsp.md が 332 の移動で切れていた)。
   # 母集合は「ファイル名を含むファイル」に絞る (awk は `](…)` の形しか書き換えないので、
   # コメント等に名前が出るだけのファイルを通しても無害)
   idx=0
@@ -556,7 +556,7 @@ for num in "$@"; do
   # 事後条件を 2 つ持つ:
   #   ① 2 本のリンク検査 (issues/ の中。合格判定の正本)
   #   ② **移動前のパスを指す参照が repo に 1 件も残っていない** — 検査は issues/ しか見ないので、
-  #      手順 4 を repo 全体へ広げたぶんのオラクルは自前で持つ (敵対レビュー P1-2)
+  #      手順 4 を repo 全体へ広げたぶんのオラクルは自前で持つ
   verdict=0
   run_link_tests || verdict=1
   stale_ref_report "$base" "$moved_old" > "$TESTLOG/stale.txt" || true

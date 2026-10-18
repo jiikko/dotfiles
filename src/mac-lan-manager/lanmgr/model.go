@@ -6,7 +6,7 @@
 // 単体の bin/mac-lan-manager と glogx の L の板の両方から使う (treefiler の filer と同じ分担)。描画の tick は張らない:
 // 時間は呼び出し側が Advance(now) で進め、Busy の間は遅い周期で呼ぶ。外へ出す口は New / Resize / HandleKey / HandleInput / Advance / View / Changed / Reload /
 // Busy / OwnsKeys / Binds / CaretPos / Paste / TakeExec / ExecDone / TakeNotices / Close / Place / RestorePlace / Report。
-// キーの語彙は docs/glogx-ui-guide.md に従う (issue 747 の「枠の見た目とキー」節の表)。
+// キーの語彙は docs/glogx-ui-guide.md に従う。
 package lanmgr
 
 import (
@@ -45,7 +45,7 @@ const (
 type ExecRequest struct {
 	Argv []string
 	// ExitIsFailure は終了コード ≠ 0 を失敗として知らせるか。ssh は相手のシェルの終了コードで抜けるので失敗と言わない。open は
-	// 開けなかったときに rc=1 で戻り、画面は TUI へすぐ戻るので理由も消える (知らせないと何も起きなかったように見えた。監査の指摘)
+	// 開けなかったときに rc=1 で戻り、画面は TUI へすぐ戻るので理由も消える (知らせないと何も起きなかったように見えた)
 	ExitIsFailure bool
 	// Banner は端末を渡す前に出す板 (初期設定の手順。何を起こし、何を聞かれるか)。空なら出さない
 	Banner string
@@ -145,8 +145,8 @@ type Model struct {
 	// unconf は「固定 IP にしたが、まだ確認していない」相手 (値は期限)。ある間は台帳の手順を断る
 	unconf map[string]time.Time
 	// tried は相手ごとに固定 IP にしようとした番号の集合 (確認した番号・期限の後の観測で固定が見えた番号だけ外す。上書きすると、
-	// 2 回目の試行で 1 回目の番号の守りが消えた。敵対レビュー)。期限で unconf が解けた後も残す: Bonjour は相手が戻っても A レコードを
-	// 引き直さず (discover の resolve はサービスの出し直しのときだけ引く)、一覧の行に古い番号が残る (敵対レビュー)
+	// 2 回目の試行で 1 回目の番号の守りが消えた)。期限で unconf が解けた後も残す: Bonjour は相手が戻っても A レコードを
+	// 引き直さず (discover の resolve はサービスの出し直しのときだけ引く)、一覧の行に古い番号が残る
 	tried map[string]map[string]bool
 	// confirmed は期限内に確認した新しい IP (有線だけの相手を開き直したときの宛先)
 	confirmed map[string]string
@@ -212,7 +212,7 @@ type ask struct {
 	step   setup.StepID
 	static *setup.StaticIP
 	// auto は読み込み中に押した x の予約で、読み終えたときに自動で出した板。Enter では実行しない (進捗のモーダルの間に押し続けた
-	// Enter が、裏で開いた板をそのまま実行した。この Mac の固定は自動では戻らない。敵対レビュー)
+	// Enter が、裏で開いた板をそのまま実行した。この Mac の固定は自動では戻らない)
 	auto bool
 }
 
@@ -233,22 +233,22 @@ func New(o Options) *Model {
 func (m *Model) Reload() {
 	m.logf("reload")
 	// 走査を起こし直すと行が空に近い所から増え直すので、カーソルの Mac を戻したい Mac として持つ (添字のままだと、増えた行の分だけ
-	// 別の Mac に移り、s / o がそのまま別の相手へ繋いだ。敵対レビュー)
+	// 別の Mac に移り、s / o がそのまま別の相手へ繋いだ)
 	if m.wantHost == "" {
 		m.wantHost = m.cursorHost()
 	}
 	// 走査の settle の起点は今。最後の Advance の時刻のままだと、閉じていた間の分だけ settle が過ぎた扱いになり、開き直した直後に
-	// 走査中の印が消えて tick が止まる (red team の指摘 2026-10-15)
+	// 走査中の印が消えて tick が止まる
 	m.now = m.o.Now()
 	// ホスト名は同期に読む (scutil 1 回。実測 12 ms)。裏へ回すと読み終わるまで「この Mac」の照合ができず、台帳と Bonjour の自分の
-	// 行が別の Mac として出て、そこへ ssh できた (fable の敵対レビュー 2026-10-16)
+	// 行が別の Mac として出て、そこへ ssh できた
 	// 読めていれば読み直さない (ホスト名はまず変わらない。configd が詰まると scutil は上限の 3 秒まで戻らず、L を押すたびに止まる)
 	if m.o.LocalHost != nil && m.host == "" {
 		m.host = ledger.Key(m.o.LocalHost())
 	}
 	m.startNetLoad()
 	if m.o.Ledger != nil {
-		// 読めなければ前に読んだ一覧を残す (nil で上書きすると、管理対象の Mac が全部「未管理」に化けた。監査の指摘)
+		// 読めなければ前に読んだ一覧を残す (nil で上書きすると、管理対象の Mac が全部「未管理」に化けた)
 		if hs, err := m.o.Ledger.Load(); err != nil {
 			m.note("台帳が読めない: "+err.Error(), false)
 		} else {
@@ -258,7 +258,7 @@ func (m *Model) Reload() {
 	m.pf, m.prefsUnread = prefs.Default(), false
 	if m.o.PrefsPath != "" {
 		if p, err := prefs.Load(m.o.PrefsPath); err != nil {
-			// 読めない (権限など) 間は既定で描くが保存しない: 1 つ切り替えると、読めなかった本物の設定を既定で上書きした (監査の指摘)
+			// 読めない (権限など) 間は既定で描くが保存しない: 1 つ切り替えると、読めなかった本物の設定を既定で上書きした
 			m.prefsUnread = true
 			m.note("設定が読めない (読めるまで変更を保存しない): "+err.Error(), false)
 		} else {
@@ -431,13 +431,13 @@ func (m *Model) Advance(now time.Time) {
 		}
 	}
 	// 先に今の Mac へ合わせ直し、戻したい Mac が出ていればそちらが上書きする (逆順だと、見つけて合わせたカーソルを直前の Mac へ戻した。
-	// 戻したい Mac を待つ間も今の Mac には合わせる。待つ間だけ添字のままにすると、その間に増えた行の分だけ別の Mac に移った。敵対レビュー)
+	// 戻したい Mac を待つ間も今の Mac には合わせる。待つ間だけ添字のままにすると、その間に増えた行の分だけ別の Mac に移った)
 	m.followCursor(held)
 	m.seekWantHost()
 }
 
 // Changed は走査の結果が変わった合図のチャネル (走査が無ければ nil = 待っても来ない)。呼び出し側は合図を受けたら Advance を呼び、また待つ。
-// Busy の間しか tick を張らないので、これを待たないと settle の後に見つかった Mac がキーを押すまで出ない (red team の指摘)。
+// Busy の間しか tick を張らないので、これを待たないと settle の後に見つかった Mac がキーを押すまで出ない。
 func (m *Model) Changed() <-chan struct{} {
 	if m.scan == nil {
 		return nil
@@ -463,7 +463,7 @@ func (m *Model) Binds(key string) bool {
 	key = canonKey(key)
 	// 足りない画面で層が閉じていれば閉じるキーだけを取り、L や横断キーは glogx に渡す (渡さないと L で閉じなかった)。
 	// 層が開いていれば下の OwnsKeys で全部取る (HandleInput は q / esc 以外を捨てる)。渡すと、絞り込みに打った C で
-	// claude update が確認なしに走り、横断キーで閉じて打っていた文字が消えた (opus の敵対レビュー)
+	// claude update が確認なしに走り、横断キーで閉じて打っていた文字が消えた
 	if m.small && !m.OwnsKeys() {
 		return key == "q" || key == "esc"
 	}
@@ -485,7 +485,7 @@ type setupExec struct {
 }
 
 // handOff は起こすプロセスを渡す。se は初期設定の手順の印 (手順でなければ nil)。プロセスと印を 1 か所で決める: 一覧の s / o が
-// 前の印を消し忘れると、閉じた後に届かなかった手順の印が無関係な ssh の戻りに流用され、確認の成功として扱われた (敵対レビュー)
+// 前の印を消し忘れると、閉じた後に届かなかった手順の印が無関係な ssh の戻りに流用され、確認の成功として扱われた
 func (m *Model) handOff(r ExecRequest, se *setupExec) {
 	m.logf("exec %s", argvSummary(r.Argv))
 	m.exec, m.setupExec = &r, se
@@ -504,7 +504,7 @@ func (m *Model) TakeExec() (ExecRequest, bool) {
 
 // ExecDone は起こしたプロセスから戻ったとき。起動できなかったときだけ知らせの文を返す。終了コードは失敗と言わない
 // (ssh は相手のシェルの最後のコマンドの終了コードで抜ける。接続できなかった 255 も ssh 自身が端末に理由を出している。
-// treefiler の filer.Model.ExecDone と同じ判断。全体レビューの指摘 2026-10-15)。
+// treefiler の filer.Model.ExecDone と同じ判断)。
 func (m *Model) ExecDone(err error) string {
 	m.logf("exec done err=%v", err)
 	var exitErr interface{ ExitCode() int } // *exec.ExitError
@@ -552,7 +552,7 @@ func (m *Model) Paste(s string) {
 
 // Close は走査を止める (自分が起こした dns-sd を全部止める)。
 // 開いていた一時的な層 (確認・板・入力欄・設定) も畳む: glogx はこの Model を使い回すので、残すと L で開き直した直後に
-// 覚えの無い確認の板が y を待っていた (足りない画面の q で抜けたとき。opus の敵対レビュー)。
+// 覚えの無い確認の板が y を待っていた (足りない画面の q で抜けたとき)。
 func (m *Model) Close() {
 	m.ov, m.ask = ovNone, nil
 	if m.filtering {
@@ -562,7 +562,7 @@ func (m *Model) Close() {
 	m.bandEdit = false
 	m.closeSetup()
 	// 渡したプロセスの印 (setupExec) も消す: 閉じた後の戻りは届かないことがあり (glogx は閉じた板に ExecDone を渡さない)、残すと後の
-	// 無関係な ssh の戻りが確認の成功として扱われた (敵対レビュー)。未確認の印は起こした時点で立てているので、戻りに頼らない
+	// 無関係な ssh の戻りが確認の成功として扱われた。未確認の印は起こした時点で立てているので、戻りに頼らない
 	m.setupExec = nil
 	m.sc = scList
 	m.stopNetLoad()
@@ -598,7 +598,7 @@ type row struct {
 // ifKind は相手の IP が見えた I/F (この Mac の I/F の名前) の種類。この Mac のサービスとして登録された I/F だけが
 // メイン (ルーターあり) / 内部 (ルーター無しの有線) になる。登録の無い I/F (VM の NAT の bridge100・VPN の utun・
 // 名前を引けなかった I/F) は netinfo.Classify の種類のまま「その他」に回す: 内部 IP にすると「有線・固定」の札が付き、
-// 台帳への登録で固定 IP の欄に書いてしまう (全体レビューの指摘 2026-10-15)。
+// 台帳への登録で固定 IP の欄に書いてしまう。
 func (m *Model) ifKind(dev, addr string) netinfo.Kind {
 	if dev == "" {
 		return netinfo.KindUnknown
@@ -608,7 +608,7 @@ func (m *Model) ifKind(dev, addr string) netinfo.Kind {
 
 // selfLan は設定に従って決めたこの Mac の内部 IP と、その出どころの説明 (推測しない。帯 / I/F で決める)。
 // selfLanInfo はこの Mac の内部 IP と、その出どころの説明。Unfixed は「帯に入る IP が無く、ルーターの無い有線の IP を仮に出している」
-// (画面の「未固定」の札。説明の文言で判定していたので、文言を直すと札が消えた。監査の指摘)。
+// (画面の「未固定」の札。説明の文言で判定していたので、文言を直すと札が消えた)。
 type selfLanInfo struct {
 	IP, Note string
 	Unfixed  bool
@@ -632,7 +632,7 @@ func (m *Model) lanFixed(r row) bool {
 func (m *Model) selfLan() selfLanInfo {
 	// 「固定」は初期設定 (setup.Plan の self) と同じ 1 つの規則: 初期設定が固定するのと同じサービス (selfWired) が、手動で帯の中。
 	// 画面と初期設定で別々に組むと、I/F で決める設定では方式だけで固定と出し、帯で決める設定ではサービスを持たない I/F (VM のブリッジ等) の
-	// 帯の番号を内部 IP と出して、どちらも初期設定は固定し直そうとした (整合の監査・その敵対レビュー)。固定かは setup.SelfFixed
+	// 帯の番号を内部 IP と出して、どちらも初期設定は固定し直そうとした。固定かは setup.SelfFixed
 	_, bandErr := netinfo.ParseBand(m.pf.Band)
 	fixed := func(s netinfo.Service) bool { return setup.SelfFixed(m.pf.Band, s.Method, s.IP) }
 	if m.pf.LanByBand {
@@ -653,7 +653,7 @@ func (m *Model) selfLan() selfLanInfo {
 			if !m.self.WiredIF(s.Device) { // 設定が読めない・ルーターがある I/F の IP を内部 IP として出さない (I/F の候補と同じ判定)
 				return selfLanInfo{Note: "I/F " + s.Device + " がルーターの無い有線として読めない"}
 			}
-			// 方式で決める (自動の 169.254 を固定と見て台帳に書けた。敵対レビュー)。帯は I/F で決めるときも固定の判定と番号の提案に使う
+			// 方式で決める (自動の 169.254 を固定と見て台帳に書けた)。帯は I/F で決めるときも固定の判定と番号の提案に使う
 			note := "I/F " + s.Device
 			switch {
 			case bandErr != nil:
@@ -669,7 +669,7 @@ func (m *Model) selfLan() selfLanInfo {
 
 // rows は台帳・Bonjour・この Mac の網から一覧の行を組む (分類はここと ifKind / selfLan / connectIP / userFor に閉じ、UI の状態を読まない)。
 // inventory 型へ切り出していないのは、読む側 (画面・Report・初期設定) が既にこの関数を共有していて重複が無く、切り出しても
-// 変更の波及も読む範囲もほとんど変わらないため (issue 747 段 4 で測った)。分類の規則が画面と独立に変わり始めたら再評価する
+// 変更の波及も読む範囲もほとんど変わらないため。分類の規則が画面と独立に変わり始めたら再評価する
 func (m *Model) rows() []row {
 	self := row{self: true, host: m.host, alias: "この Mac", user: m.o.User}
 	if s, ok := m.self.Main(); ok {
@@ -721,8 +721,8 @@ func (m *Model) rows() []row {
 			r.instance = clean(p.Instances[0])
 		}
 		// I/F の番号の順に見て、それぞれ最初に見えた IP を採る。map の順で回すと、ルーターの無い I/F が 2 つある相手
-		// (Thunderbolt Ethernet + USB LAN・bridge0) では描くたびに内部 IP が入れ替わり、s の ssh 先が押した瞬間の運で決まった
-		// (全体レビューの指摘 2026-10-15)。台帳の内部 IP があればそちらを採る (固定 IP)
+		// (Thunderbolt Ethernet + USB LAN・bridge0) では描くたびに内部 IP が入れ替わり、s の ssh 先が押した瞬間の運で決まった。
+		// 台帳の内部 IP があればそちらを採る (固定 IP)
 		lanPicked := r.ledgerLAN != ""
 		for _, idx := range slices.Sorted(maps.Keys(p.Addrs)) {
 			ip := p.Addrs[idx]
@@ -896,7 +896,7 @@ func or(a, b string) string {
 // ---- キー ----
 
 // canonKey はキーの表記を 1 つに寄せる。glogx は Space を " " に書き換えてから板へ渡す (tui.go の normalizeSpaceKey) ので、
-// "space" だけを見ると glogx の板で Space が台帳の登録ではなく半ページ送り (listnav は " " も下へ送る) に化ける (red team の指摘 2026-10-15)。
+// "space" だけを見ると glogx の板で Space が台帳の登録ではなく半ページ送り (listnav は " " も下へ送る) に化ける。
 func canonKey(key string) string {
 	if key == " " {
 		return "space"
@@ -916,13 +916,13 @@ func (m *Model) HandleInput(key, text string) Action {
 	m.takeObserve()
 	m.refreshWired() // 放置した後は tick が回っていない: 引き直す時期を過ぎていればここで始める (取り込みは、引いている間は Busy で回る tick が行う)
 	// 取り込みで行が組み変わっても、このキーは画面で見ていた Mac に効かせる。見ていた Mac が消えたら (有線が外れて有線だけの表示から
-	// 落ちた等)、行に効くキーは断る (添字のままだと隣の Mac に繋いだ。敵対レビュー)
+	// 落ちた等)、行に効くキーは断る (添字のままだと隣の Mac に繋いだ)
 	m.cursorLost = !m.followCursor(held)
 	if key == "ctrl+c" {
 		return Quit
 	}
 	// 幅・高さが足りない画面 (抜け方だけ) を出している間は、閉じるキー (q / esc) だけを効かせる。隠れた確認の板に y が届いて
-	// 台帳から外したり、絞り込みに q が文字として入ったりした (opus の敵対レビュー)。開いていた層は Close が畳む
+	// 台帳から外したり、絞り込みに q が文字として入ったりした。開いていた層は Close が畳む
 	if m.small {
 		if key == "q" || key == "esc" {
 			return Quit
@@ -1029,7 +1029,7 @@ var rowKeys = []string{"s", "Y", "y", "O", "o", "space", "enter", "m", "u"}
 
 func (m *Model) keyList(key string) Action {
 	// 繋ぐ・コピー・登録は、この Mac のネットワーク (どの I/F が有線か・この Mac の IP) を読み終えてから。読み込み中に受けると
-	// 繋ぐ先・登録する内部 IP を誤った分類で決める (fable の敵対レビュー 2026-10-16)
+	// 繋ぐ先・登録する内部 IP を誤った分類で決める
 	if !m.netReady && slices.Contains(needsNet, key) {
 		m.note("この Mac のネットワーク設定を確認中 (少し待ってから)", false)
 		return None
@@ -1265,8 +1265,8 @@ func (m *Model) reloadLedger() {
 }
 
 // setHosts は読んだ台帳を一覧に入れる。m.hosts に入れる経路はここだけ (Reload と、別名・登録・外した後の reloadLedger の 2 つが
-// 同じ確かめを通る。Reload の中だけで確かめていたころは、別名を付けた後に不正な user / lan が戻り、コピーした ssh の文字列に入った。
-// 監査の第 3 波の敵対レビュー)。手で書き換えうる欄は使う前に確かめる: user が "-o…" だと ssh が option として読み、lan が IP でないと
+// 同じ確かめを通る。Reload の中だけで確かめていたころは、別名を付けた後に不正な user / lan が戻り、コピーした ssh の文字列に入った)。
+// 手で書き換えうる欄は使う前に確かめる: user が "-o…" だと ssh が option として読み、lan が IP でないと
 // 引数に何でも入った。
 func (m *Model) setHosts(hs []ledger.Host, tell bool) {
 	for i := range hs {

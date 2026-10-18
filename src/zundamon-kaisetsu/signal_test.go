@@ -37,7 +37,7 @@ func isolatedEnv(t *testing.T, extra ...string) []string {
 		}
 	}
 	// PATH は空のディレクトリ (/usr/bin にすると、docker がそこにある Linux では本物に届く)。状態の置き場は Linux では
-	// XDG_CACHE_HOME が HOME より優先されるので、それも差し替える (issue 646 の 5)
+	// XDG_CACHE_HOME が HOME より優先されるので、それも差し替える
 	return append(append(env, "PATH="+t.TempDir(), "HOME="+t.TempDir(), "XDG_CACHE_HOME="+t.TempDir()), extra...)
 }
 

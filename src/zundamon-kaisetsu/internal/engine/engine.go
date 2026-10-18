@@ -24,7 +24,7 @@ const (
 	Image = "voicevox/voicevox_engine:cpu-latest"
 	// ユーザーが自分で立てた同名のコンテナを up / down で巻き込まないよう、この skill 専用の名前にする。
 	// 実際の名前はポートを後ろに付けたもの (ContainerNameFor)。見張りが印のポートのコンテナだけを止められるように
-	// (名前が 1 つだと、別のポートに up したコンテナまで名前で止めてしまう。敵対的レビュー)
+	// (名前が 1 つだと、別のポートに up したコンテナまで名前で止めてしまう)
 	ContainerName = "zundamon-kaisetsu-voicevox"
 	startHint     = "  起動: zundamon-kaisetsu up   (container か docker でエンジンを立てる)"
 )
@@ -309,7 +309,7 @@ var StartRunTimeout = 5 * time.Minute
 //   - Apple container 1.5.0: Error: internalError: "failed to stop container" (cause: "notFound: "container with ID <名前> not found"")
 //   - docker 29.8.0: Error response from daemon: No such container: <名前>
 //
-// docker のデーモンが動いていないときの「接続できない」は合わない (失敗として扱う)。版を上げて文言が変わったら測り直す (issue 646 の 6)
+// docker のデーモンが動いていないときの「接続できない」は合わない (失敗として扱う)。版を上げて文言が変わったら測り直す
 var notFoundRe = regexp.MustCompile(`(?i)not ?found|no such container`)
 
 func CmdDown(env *app.Env) error {

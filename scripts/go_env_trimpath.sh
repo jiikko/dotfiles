@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# go_env_trimpath.sh — go env のファイルの GOFLAGS に -trimpath を足す (issue 816。setup.sh から呼ぶ)。
+# go_env_trimpath.sh — go env のファイルの GOFLAGS に -trimpath を足す (setup.sh から呼ぶ)。
 #
 # なぜ: -trimpath が無いと、コンパイル結果のキャッシュの鍵に package のディレクトリの絶対パスが入り
 # (cmd/go/internal/work/exec.go の buildActionID)、同じソースでも worktree ごとに別の項目として GOCACHE に溜まる。

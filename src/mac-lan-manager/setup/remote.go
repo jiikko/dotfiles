@@ -29,7 +29,7 @@ func (d Dest) Validate() error {
 		return fmt.Errorf("IPv4 でない: %q", d.IP)
 	}
 	// HostKeyAlias は known_hosts の行 (`,` で名前を並べる・`*` `?` `[` はパターン) と ssh の -o の値 (引用と \ を読む) に入る。
-	// ssh が照合する名前と ssh-keygen -F で引く名前が食い違わないよう、ホスト名に使う文字だけを通す (敵対レビュー)
+	// ssh が照合する名前と ssh-keygen -F で引く名前が食い違わないよう、ホスト名に使う文字だけを通す
 	if !reAlias.MatchString(d.HostKeyAlias) {
 		return fmt.Errorf("ホスト名が使えない: %q", d.HostKeyAlias)
 	}
@@ -61,7 +61,7 @@ func (d Dest) SSHArgv(tty, batch bool, remote string) []string {
 
 // controlPath は ssh の接続を使い回す socket の置き場 (%C は宛先から ssh が作る 40 文字の名前。作るとき ssh はさらに 17 文字の
 // 一時の後ろを足す)。socket のパスの上限 (104 バイト) に収まらない・~/.ssh が無いなら使い回さない。
-// 受容 (敵対レビュー P3): %C は HostKeyAlias を含まないので、同じ user@IP に別の名前で 15 秒以内に入ると前の接続を通る
+// 受容: %C は HostKeyAlias を含まないので、同じ user@IP に別の名前で 15 秒以内に入ると前の接続を通る
 // (同じ IP は同じ機械なので実害は小さい)。相手の IP を変えた直後は、旧い IP 宛ての観測が死んだ接続で ObserveTimeout まで待つ。
 func controlPath() string {
 	home, err := os.UserHomeDir()
@@ -112,8 +112,8 @@ type exitCoder interface{ ExitCode() int }
 // ObservePeer は鍵で入れるかを確かめ、入れたら相手の netinfo.Read を ssh 越しに走らせる (読むだけ。設定を変えるコマンドは打たない)。
 // ssh の終了コード 255 は ssh 自身の失敗で、鍵で入れない (Permission denied) と届かない (timeout・経路無し) が混ざる。stderr に
 // 認証の失敗の形 ("Permission denied (publickey,…)") があるときだけ「鍵で入れない」とし (接続の EPERM や鍵のファイルの
-// 読めなさも "Permission denied" を含む。敵対レビュー)、それ以外は判定できない (ErrUnknown) にする (届かない相手を「鍵が無い」に
-// 丸めると、次の手順の ssh-copy-id が同じく届かずに失敗するだけになる。issue 792)。
+// 読めなさも "Permission denied" を含む)、それ以外は判定できない (ErrUnknown) にする (届かない相手を「鍵が無い」に
+// 丸めると、次の手順の ssh-copy-id が同じく届かずに失敗するだけになる)。
 func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 	var p PeerNet
 	if err := d.Validate(); err != nil {
@@ -170,8 +170,8 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 
 // knownHost は、ssh がこの宛先の照合に使う known_hosts のどれかに alias の行があるか (読むだけ)。照合先は ssh -G で読む
 // (~/.ssh/known_hosts だけを見ると、known_hosts2・/etc/ssh/ssh_known_hosts・config の UserKnownHostsFile にある変わった鍵を
-// 「初めての相手」と取り違えた。敵対レビュー)。無いファイルは行が無いと数える (一度も ssh していない Mac には known_hosts が無く、
-// ssh-keygen -F はそのとき 255 で抜けて「読めない」になった。敵対レビュー)。ssh-keygen -F は見つかれば 0、無ければ 1 で抜ける
+// 「初めての相手」と取り違えた)。無いファイルは行が無いと数える (一度も ssh していない Mac には known_hosts が無く、
+// ssh-keygen -F はそのとき 255 で抜けて「読めない」になった)。ssh-keygen -F は見つかれば 0、無ければ 1 で抜ける
 func knownHost(ctx context.Context, run Run, d Dest) (bool, error) {
 	cfg, err := run(ctx, []string{"ssh", "-G", "-o", "HostKeyAlias=" + d.HostKeyAlias, "--", d.User + "@" + d.IP})
 	if err != nil {
@@ -223,7 +223,7 @@ func PeerStatic(p PeerNet, ip, mask, token string) (StaticIP, error) {
 }
 
 // SelfStaticArgv はこの Mac の有線を ip にするコマンド (端末を明け渡して sudo のパスワードを聞く)。ルーターは渡さない
-// (ルーター無しになるかは issue 789 の 1 で確かめる)。
+// (ルーター無しになるかは本物の相手で未確認)。
 func SelfStaticArgv(service, ip, mask string) ([]string, error) {
 	s := StaticIP{Service: service, IP: ip, Mask: mask, Restore: Restore{Method: "DHCP"}, Token: "self-static", Window: time.Second}
 	if err := s.Validate(); err != nil {

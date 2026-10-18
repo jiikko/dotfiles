@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# check_test_sleeps.sh — テストに、理由の印の無い sleep を足させない (issue 615)。
+# check_test_sleeps.sh — テストに、理由の印の無い sleep を足させない。
 #   shell: tests/ の *.sh / *.zsh / *.bats の `sleep`。Go: src/ の *_test.go の `time.Sleep(`
 #
 # なぜ: 何かが起きるのを秒数で待つ sleep は、負荷の日にだけ落ち (速いマシンでは緑のまま)、待つぶん遅い。
-# 規範 (_claude/rules/avoid-wall-clock-assertions.md) を文書だけで持っていたら、直した後も手書きの待ちが増えた (issue 613 / 262)。
+# 規範 (_claude/rules/avoid-wall-clock-assertions.md) を文書だけで持っていたら、直した後も手書きの待ちが増えた。
 # 待つなら条件で待つ: tests/lib/wait_until.sh の tt_wait_until。
 #
 # 規則: `sleep` という語 (`sleep 1` / `sleep "$x"` / `/bin/sleep` / `command sleep` / `sleep() { … }` を含む) が出る行は、
-#   同じ行か直前の行 (コメントだけの行) に `sleep-ok: <分類>: <理由>` の印が無ければ落とす。印のある sleep の行の次の行には効かない。分類は次のどれか (issue 613 の語彙):
+#   同じ行か直前の行 (コメントだけの行) に `sleep-ok: <分類>: <理由>` の印が無ければ落とす。印のある sleep の行の次の行には効かない。分類は次のどれか:
 #     dummy    kill される前提・生かすだけのプロセス (実時間を待たない)
 #     window   競合の窓・遅い処理を演じる入力 (待ちではない。同期点に置き換えられないものだけ)
 #     negative 起きないことの確認 (待つべき成立条件が無い)
 #     stub     PATH 上の sleep の stub / sleep を潰す関数
 #     tick     ポーリングの刻み (tt_wait_until を使えない場所。heredoc の stub の中など)
 #     realtime 本番の時間 (猶予・lease・ticker) を実時間で過ぎさせる / 観測の口が無い事象を秒数で待つ。固定待ちと同じ弱さを持つので、
-#              理由に「なぜ置き換えられないか」を書く (例: issue 614 の 9)
+#              理由に「なぜ置き換えられないか」を書く (例:)
 #     other    文字列・メッセージの中の sleep など、上のどれでもないもの
 #   heredoc の本文 (生成する stub / Makefile) は、heredoc の開始行かその直前のコメント行の印 1 つでまとめて許す
 #   (本文の行末に `#` を書くと生成物の一部になる。継続行 `\` の末尾にも書けない)。
@@ -23,7 +23,7 @@
 #   (`(( … ))` の中) は除く。タグは bash の規則で読む (`<<'A-B'` は引用符の中の任意の文字、素の `<<EOS-A` は区切り文字まで、`<<\EOS` も可)。
 #   awk は LC_ALL=C (バイト単位) で走らせる。規則はすべて ASCII で、UTF-8 のロケールでは 1 文字ずつの切り出しが多バイト文字の途中で
 #   「multibyte conversion failure」で落ちることがある (変異検証で実測)。
-#   字句の近似を足していく形にしない (red team 2 周で、正規表現の継ぎ足しはタグのハイフンで素通りした)
+#   字句の近似を足していく形にしない (正規表現の継ぎ足しはタグのハイフンで素通りする)
 #   終端の行が来ないまま末尾に達したら落とす (開始の判定を誤ると本文がファイルの最後まで続き、印 1 つで後半が素通りするため)
 #   Go は `time.Sleep(` の行に、同じ行か直前の行の `// sleep-ok: <分類>: <理由>` を要求する (分類は同じ)。待つなら各 package の
 #   待ちの helper (pro-con の waitUntil / dispatcher の pollUntil / lockman の waitForCondition) で条件を待ち、helper の中の刻みに印を付ける。
@@ -33,9 +33,9 @@
 # 脅威モデル (adversarial-review-own-safeguards.md §8):
 #   止めるもの: テストを書く人が、秒数で待つ sleep を理由を書かずに**うっかり**足すこと。印の理由が妥当かは検査しない (review が読む)。
 #   意図的な迂回 (印のある行のコメントに `<<TAG` を書いて後ろの同名の heredoc まで飲ませる、のように組み立てた形) は脅威に含めない。
-#   red team 3 周で、素通りの形は周ごとに「組み立てないと起きない」側へ移った (3 周目の 3 形は直したが、ここで打ち切る。issue 615)
+#   素通りの形は検査を直すたびに「組み立てないと起きない」側へ移るので、ここで打ち切る
 #   止めないもの (検出しない形):
-#     - 本番の定数 (猶予・lease・ticker) を実時間で過ぎさせる形。テストに sleep の語が出ない (issue 614 の主因)
+#     - 本番の定数 (猶予・lease・ticker) を実時間で過ぎさせる形。テストに sleep の語が出ない
 #     - `read -t` / `timeout` / `perl -e 'select(undef,undef,undef,0.5)'` など、sleep の語を使わない待ち
 #     - コメント行 (`#` で始まる行) の中の sleep / 別の言語の sleep (`perl -e 'sleep 1'` は語として拾うが、`python3 -c 'time.sleep(1)'` は拾わない)
 #     - 印が文字列の中にある形 (`echo "sleep-ok: …"; sleep 9`)。印の書き方は review が見る

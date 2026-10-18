@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# production から到達できないシンボルを検出する (issue 315)。
+# production から到達できないシンボルを検出する。
 #
 # なぜ golangci-lint の `unused` では足りないか: `unused` は**テストファイルも解析対象に含める**
 # のが既定なので、「production の最後の呼び出し元が消えて、テストだけが呼んでいる関数」は
-# 「使われている」ことになり、**CI は永久に緑**のままになる。issue 316 で消した到達不能シンボルは
+# 「使われている」ことになり、**CI は永久に緑**のままになる。実際に消した到達不能シンボルは
 # 全部このクラスで、個別に消しても次に呼び出しを差し替えた人が同じ状態を作る。
 # `staticcheck -checks=U1000 -tests=false` はテストを母集合から外すのでこのクラスが出る。
 #
@@ -34,7 +34,7 @@ src/schedkeys/editor.go:(*editor).setValue|テストが依存する test seam。
 ALLOWEOF
 )
 
-# 🚨 **存在は `command -v` で見ない。実際に走らせて rc を見る** (issue 405)。
+# 🚨 **存在は `command -v` で見ない。実際に走らせて rc を見る**。
 # goenv / rbenv / nodenv の shim は「**どの版にも実体が無い**」ときでも PATH 上に在り、
 # `command -v` は rc=0 で shim のパスを返す。実測 2026-09-20:
 #   command -v staticcheck  -> rc=0 /Users/…/goenv/shims/staticcheck
@@ -80,7 +80,7 @@ findings=""
 for m in $mods; do
   # -tags=nofixture: glogx の画面のパッケージの fixture.go (main のテストが状態を置く口。`//go:build !nofixture`) を外す。
   # 本番のファイルなので -tests=false でも根になり、Fixture からしか呼ばれない非公開の内部を「使われている」と数えてしまう
-  # (issue 817 の反証レビューが、本番の唯一の呼び出しを消しても報告されないことを再現した)
+  # (本番の唯一の呼び出しを消しても報告されないことを再現した)
   out=$( cd "$m" && staticcheck -checks=U1000 -tests=false -tags=nofixture ./... 2>&1 ) || true
   while IFS= read -r line; do
     [ -n "$line" ] || continue

@@ -3,8 +3,8 @@
 #
 #   scripts/golangci_lint.sh <版 (v2.5.0 など)> <golangci-lint の引数…>
 #
-# src/*/Makefile の lint が呼ぶ (`make -C src/<proj> lint`。CI も同じ入口)。以前は各 Makefile が
-# `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@<版>` を直接呼んでいた。
+# src/*/Makefile の lint が呼ぶ (`make -C src/<proj> lint`。CI も同じ入口)。各 Makefile が
+# `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@<版>` を直接呼ぶ形にしない。
 #
 # ## なぜ go run をやめたか
 #

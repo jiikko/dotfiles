@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# issue_claim.sh — issue に着手の claim を付けて push するまでを 1 コマンドで行う (issue 764)。
+# issue_claim.sh — issue に着手の claim を付けて push するまでを 1 コマンドで行う。
 #
 #   scripts/issue_claim.sh <NNN>      (cwd の repo の issues/ にある issue)
 #
@@ -63,7 +63,7 @@ if [ -z "$branch" ]; then
 fi
 [ -n "$branch" ] || die "push 先のブランチが決まらない (origin/HEAD が無い)。ISSUE_CLAIM_BRANCH で指定する"
 # fetch は push 先のブランチだけに絞る: 関係の無い ref の更新の失敗 (別の fetch が持つ lock 等) で全体が rc≠0 になり、
-# 載ったかを確かめられなくなる (敵対レビュー 2026-10-15 の 3 周目で再現)。設定の refspec が対象を含まない clone でも追跡 ref が新しくなる
+# 載ったかを確かめられなくなる。設定の refspec が対象を含まない clone でも追跡 ref が新しくなる
 fetch_branch() { git -C "$repo" fetch -q origin "+refs/heads/$branch:refs/remotes/origin/$branch"; }
 fetch_branch || die "origin の $branch を fetch できない" 1
 git -C "$repo" rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null || die "origin/$branch が無い"
@@ -84,7 +84,7 @@ drop_worktree() {
 cleanup() { drop_worktree || true; git -C "$repo" worktree prune >/dev/null 2>&1 || true; rm -rf -- "$work"; }
 trap cleanup EXIT
 # シグナルは印だけを立てる。push の最中に受けても push の結果を確かめてから終わる (受けた瞬間に exit すると、
-# claim は origin に載っているのに無言で失敗を返す。敵対レビュー 2026-10-15 で再現)。区切りごとに check_signal で終わる
+# claim は origin に載っているのに無言で失敗を返す)。区切りごとに check_signal で終わる
 sig=""
 trap 'sig=130' INT
 trap 'sig=143' TERM
@@ -107,7 +107,7 @@ for ((i = 1; i <= attempts; i++)); do
 
   check_signal
   # commit に入れるのは issue-claim が置いた 2 つのパス (本文と目印) だけ。`add -A` にすると、新品の checkout でも
-  # 改行コードの正規化や filter で変更扱いになったファイルを巻き込む (敵対レビュー 2026-10-15 で再現)
+  # 改行コードの正規化や filter で変更扱いになったファイルを巻き込む
   paths=()
   while IFS= read -r p; do [ -n "$p" ] && paths+=("issues/$p"); done <"$work/claim.out"
   [ "${#paths[@]}" -eq 2 ] || die "issue-claim の出力が想定 (本文と目印の 2 つ) と違う (何も push していない)" 1
@@ -117,7 +117,7 @@ for ((i = 1; i <= attempts; i++)); do
     die "claim の commit に入る変更が本文と目印の 2 つではない (何も push していない)" 1
   fi
   # Claim-Id: run ごとに sha を一意にする。同じホスト・同じ秒の二重 claim で commit が丸ごと同じになり、後の側の push が
-  # 「up-to-date」で通って両方が claim したと報告するのを防ぐ (敵対レビュー 2026-10-15 の 3 周目で再現)
+  # 「up-to-date」で通って両方が claim したと報告するのを防ぐ
   git -C "$wt" commit -q -F - >/dev/null <<EOF || die "claim を commit できない (何も push していない)" 1
 claim: issue $num に着手
 
@@ -134,7 +134,7 @@ EOF
   git -C "$wt" push origin "HEAD:$branch" >"$work/push.log" 2>&1 || push_rc=$?
   # 🚨 push の rc に関係なく、まず origin の対象のブランチに claim の commit が載ったかを確かめる。rc=0 でも載らない
   # (pushurl が別の repo) ことがあり、rc≠0 でも載っている (ref を更新した後に Ctrl-C や切断で push が死ぬ) ことがある
-  # (敵対レビュー 2026-10-15 の 2 周目で再現)。載ったかで分け、そのあとで中断・再試行・失敗を決める
+  # 載ったかで分け、そのあとで中断・再試行・失敗を決める
   landed=unknown
   pushed=1 # 以降の「載っていない」は「確かめた時点では」(ssh の切断などで後から載ることがある)
   if fetch_branch 2>/dev/null; then

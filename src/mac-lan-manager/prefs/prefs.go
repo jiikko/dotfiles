@@ -34,10 +34,10 @@ func Default() Prefs {
 	return Prefs{ShowMain: true, ShowLan: true, LanByBand: true, Band: "192.168.100.0/24", Kinds: []string{netinfo.KindWired.Key(), netinfo.KindLinkLocal.Key(), netinfo.KindUnknown.Key()}}
 }
 
-// EnvDir は置き場所を差し替える環境変数。台帳と同じ 1 つの名前を使う (別の定数に写していたので、片方の改名で黙ってずれた。監査の指摘)。
+// EnvDir は置き場所を差し替える環境変数。台帳と同じ 1 つの名前を使う (別の定数に写していたので、片方の改名で黙ってずれた)。
 const EnvDir = ledger.EnvDir
 
-// DefaultPath は設定の置き場所 (台帳の隣。前の置き場 ~/.config/glogx/mac-lan-manager にあれば初回に移す。issue 777)。
+// DefaultPath は設定の置き場所 (台帳の隣。前の置き場 ~/.config/glogx/mac-lan-manager にあれば初回に移す)。
 func DefaultPath() (string, error) {
 	if d := os.Getenv(EnvDir); d != "" {
 		return filepath.Join(d, "settings.toml"), nil
@@ -101,7 +101,7 @@ func Load(path string) (Prefs, error) {
 }
 
 // kindKey は保存された種類の名前を Key に揃える。前の版は画面の名前 (「有線」) を書いていたので、それも読む。
-// 知らない名前はそのまま残す (新しい版が足した種類を古い版が読んで Save すると、捨てた分が設定から消えた。opus の敵対レビュー)。
+// 知らない名前はそのまま残す (新しい版が足した種類を古い版が読んで Save すると、捨てた分が設定から消えた)。
 func kindKey(x string) string {
 	for _, k := range netinfo.Kinds {
 		if x == k.Key() || x == k.String() {

@@ -15,7 +15,7 @@ import (
 	"zundamon-kaisetsu/internal/wav"
 )
 
-// 引数の解析は Python 版の argparse と同じ意味にする (issue 641 の設計レビュー P1-3)。
+// 引数の解析は Python 版の argparse と同じ意味にする。
 func TestParseArgsLikeArgparse(t *testing.T) {
 	specs := []optSpec{
 		{names: []string{"-o", "--output"}, dest: "output", takes: true},
@@ -89,7 +89,7 @@ func TestRunExitCodes(t *testing.T) {
 	}
 }
 
-// skill のディレクトリが渡されていなければ、立ち絵の既定の置き場を見ずに進めず止める (設計レビュー P2-10)。
+// skill のディレクトリが渡されていなければ、立ち絵の既定の置き場を見ずに進めず止める。
 func TestRequireSkillDir(t *testing.T) {
 	var errb bytes.Buffer
 	env := &app.Env{Stdout: &errb, Stderr: &errb}
@@ -101,7 +101,7 @@ func TestRequireSkillDir(t *testing.T) {
 	}
 }
 
-// 文字列でない text / read は、Python 版と違うキャッシュの鍵を黙って作らないよう拒否する (設計レビュー P2-5)。
+// 文字列でない text / read は、Python 版と違うキャッシュの鍵を黙って作らないよう拒否する。
 func TestRejectNonStringTextAndRead(t *testing.T) {
 	for _, line := range []map[string]any{
 		{"who": "metan", "text": json.Number("5")},

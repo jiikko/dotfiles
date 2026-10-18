@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# check_handrolled_timeout.sh — 時間の上限付き実行を runtimeout (bin/runtimeout) 以外で新しく書いた箇所を落とす (issue 643)。
+# check_handrolled_timeout.sh — 時間の上限付き実行を runtimeout (bin/runtimeout) 以外で新しく書いた箇所を落とす。
 #
-# なぜ (issue 640):
+# なぜ:
 #   - macOS に timeout(1) は無い。`command -v timeout && …` の形は手元でも CI でも黙って上限なしで走る
 #     (tests/zshrc/bench_zsh.sh がこの形だった)。gtimeout は coreutils を入れた環境にしか無い
 #   - `( sleep N; kill $pid ) &` の見張りは pid だけを持つので、子が先に終わると pid の再利用で別のプロセスを撃つ。
@@ -16,7 +16,7 @@
 #   3. timeout を探す (`command -v` / `type -P` / `which`)
 #   4. 括弧の中の `sleep …; kill` / `sleep … && kill` (見張りの subshell。`{ …; }` も)
 # 検出しない形: 変数経由の起動 ("$TIMEOUT_BIN" 等)・.bats ファイル (発見の対象外)・複数行に分けた見張り (`(` の次の行の sleep)・`kill -0` で回す待ちの手組み (書き方が多様で字句では決まらない。
-#   レビューで見る)・Go の中 (exec.CommandContext は対象外。issue 640)・shell 以外のファイル。
+#   レビューで見る)・Go の中 (exec.CommandContext は対象外)・shell 以外のファイル。
 # 既知の偽の red (安全側。例外の印で逃がす): 行の途中のコメントや文字列の中の gtimeout・`printf "( sleep 1; kill %s )"` の類。
 # 意図的な例外は行内に `handrolled-timeout: allow` を書く (理由を添える)。
 #

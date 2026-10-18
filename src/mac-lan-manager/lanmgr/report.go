@@ -56,7 +56,7 @@ type ReportIP struct {
 }
 
 // Report は今の状態の写し。積んだ知らせは覗くだけで取り出さない (取り出すと、待ちのたびに Report を呼ぶ dump で、開いたときの
-// 「台帳が読めない」などが最後の出力から消えた。監査の指摘 2026-10-16)。
+// 「台帳が読めない」などが最後の出力から消えた)。
 func (m *Model) Report() Report {
 	r := Report{Host: m.host, NetReady: m.netReady, Busy: m.Busy(), Services: m.self.Services, Peers: m.peers,
 		Notices: slices.Clone(m.notices), LedgerSize: len(m.hosts)}

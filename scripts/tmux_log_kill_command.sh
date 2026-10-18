@@ -97,7 +97,7 @@ esac
 # hold セッション (bootstrap 中の一時セッション) しか無い状態では保存しない。
 # wrapper の only-hold ガードは lock の bounded-wait (15s) より後段にあるため、ここで発火させると
 # tt bootstrap の hold 掃除が最大 15s (shim の cap で 20s) 待たされる。どのみち wrapper は
-# reject するので、待たせる価値がない (レビュー指摘 2026-07-30)。
+# reject するので、待たせる価値がない。
 if [ "$do_save" -eq 1 ] && tt_only_hold_sessions; then
   do_save=0
   hold_only=1

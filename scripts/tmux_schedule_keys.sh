@@ -23,7 +23,7 @@
 #    へ出さず exit 0。結果は toast (bin/tmux-toast) で知らせ、失敗はログへ書く。
 # 🚨 .pid の数字だけを信じて kill しない。sleeper が異常死した後に OS が同じ pid を別プロセスへ
 #    再利用しうるので、kill / 生存判定の前に「そのプロセスの command line が自分の fire <id> か」
-#    を ps で確かめる (pid_is_sleeper)。敵対的レビュー 2026-08-27 で無関係な sleep が kill された
+#    を ps で確かめる (pid_is_sleeper)。確かめないと無関係な sleep を kill する
 #
 # 対話 UI は bin/schedkeys (Go / bubbletea v2。実装は src/schedkeys/) が持ち、このスクリプトは
 # 「状態 (job ファイル) と tmux への副作用」だけを持つ。UI を Go に出した理由:
@@ -37,7 +37,7 @@ unset CDPATH  # export された CDPATH の下では、相対パスの cd が解
 
 # 予約の置き場は **tmux サーバ (socket) ごとに分ける**。pane id はサーバごとに振り直されるので、
 # 全サーバで 1 つのディレクトリを共有すると、一覧・取消・失効件数が別サーバの予約を混ぜる
-# (取消は別サーバの sleeper を実際に kill できた。issue 189 で実験で再現)。
+# (取消は別サーバの sleeper を実際に kill できた。実験で再現)。
 # 読む側で socket を照合する形は絞り忘れが 1 箇所でも残ると漏れるので、入れ物で分ける。
 # 🚨 dir の解決は wizard だけが行う。fire は run-shell のコマンド文字列で
 #    TMUX_SCHEDULE_KEYS_DIR を受け取るので、tmux へ問い合わせない (子は $TMUX を持たないことがある)
@@ -45,7 +45,7 @@ unset CDPATH  # export された CDPATH の下では、相対パスの cd が解
 #    見ない)。掃除機構を置かないのは意図的: 残骸は数バイトのテキストで、使い捨ての -L サーバは
 #    popup と UI を経ないので予約をほぼ作らない。掃除は破壊的操作の新設なので、溜まった証拠が
 #    出てから作る。再開の trigger は「予約していないのに
-#    `find "$STATE_ROOT" -name '*.job'` が非空」(issue 189 done の P2-4)
+#    `find "$STATE_ROOT" -name '*.job'` が非空」
 STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-schedule-keys"
 STATE_DIR="${TMUX_SCHEDULE_KEYS_DIR:-}"
 
@@ -53,7 +53,7 @@ STATE_DIR="${TMUX_SCHEDULE_KEYS_DIR:-}"
 # (呼び出し側は予約を作らない = fail-closed。相手の分からない状態を共有 dir に混ぜない)。
 # 🚨 旧版の共有 dir ($STATE_ROOT 直下の *.job) は移さない。移すと眠っている sleeper の
 #    claim (job の rename) が失敗し、予約が黙って発火しなくなる。古い予約はそのまま発火し、
-#    一覧には出なくなる (issue 189 の移行の項)
+#    一覧には出なくなる
 resolve_state_dir() {
   local sock enc
   if [[ -n "$STATE_DIR" ]]; then
@@ -68,7 +68,7 @@ resolve_state_dir() {
   [[ -n "$sock" ]] || return 1
   case "$sock" in *$'\n'*) return 1 ;; esac
   # 🚨 **% を先に逃がしてから / を潰す**。`/` → `%` だけだと `/tmp/a%b` と `/tmp/a/b` が
-  #    同じ dir 名になり、直したはずの混ざりが黙って戻る (敵対的レビュー 2026-09-03 の P3-1)
+  #    同じ dir 名になり、直したはずの混ざりが黙って戻る
   enc="${sock//%/%25}"
   STATE_DIR="$STATE_ROOT/${enc//\//%}"
   return 0
@@ -78,7 +78,7 @@ resolve_state_dir() {
 # tmux_escape は tmux のフォーマット展開を止める (# を ## にする)。
 # 🚨 **両方が必要**。run-shell のコマンド文字列は tmux がフォーマット展開してから sh へ渡すので、
 #    socket path に `#{pane_id}` が入っていると wizard と fire で置き場がズレる
-#    (tmux 3.7b で実測。敵対的レビュー 2026-09-03 の P2-1)
+#    (tmux 3.7b で実測)
 sh_quote() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
 tmux_escape() { printf '%s' "${1//\#/##}"; }
 LOG="${XDG_CACHE_HOME:-$HOME/.cache}/tt-schedule-keys.log"
@@ -104,7 +104,7 @@ mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 # する (scripts/tmux_periodic_save.sh が tt-restore-trigger.log に対して同じことをしている)。
 LOG_MAX_LINES="${TMUX_SCHEDULE_KEYS_LOG_MAX_LINES:-2000}"
 
-# 一時ファイルの後始末を 1 箇所へ寄せる (issue 298 / 299)。
+# 一時ファイルの後始末を 1 箇所へ寄せる。
 #
 # 🚨 trap 本文から local 変数を参照しないこと。関数から**正常復帰した後**の EXIT では
 #    その変数はスコープを抜けており空に展開されるので `rm -f ""` の空振りになる。
@@ -168,7 +168,6 @@ pane_label() {
 # 壊れていれば 1。
 # 🚨 先頭で全ての REPLY_* を空にする: ファイルを開けなかったとき (消えた・権限が無い) は
 #    read が 1 回も走らず前の job の値が残り、「A を取り消す」と表示して B を消す事故になる
-#    (敵対的レビュー 2026-08-28 で再現)
 read_job() {
   local f=$1
   REPLY_PANE='' REPLY_AT='' REPLY_TEXT='' REPLY_SOCK='' REPLY_SRVPID=''
@@ -212,7 +211,7 @@ job_mtime() {
 # 🚨 **pane id の文字列一致だけで数えない**。置き場は socket ごとに分けたが (STATE_ROOT の注記)、
 #    同じ socket にサーバが立ち直ると前任の job が同じ dir に残る。pane id は振り直されているので、
 #    一致だけで絞るとその時刻をこちらの枠に出す。同一性は job に記録した socket + サーバ pid で見る
-#    (fire_claim が送信前に見ているものと同じ。敵対的レビュー 2026-09-02)。
+#    (fire_claim が送信前に見ているものと同じ)。
 #    確かめられないときは何も書かない (fail-closed: 相手が分からない pane を触らない)
 # 🚨 表示は装飾。失敗しても予約の成立・送信・取消には影響させない (fire の無音契約と同じ)
 refresh_pane_indicator() {
@@ -305,7 +304,7 @@ prune_stale() {
   # 🚨 同じ socket にサーバが立ち直ると、前任サーバの job が同じ dir に残る。pane id は
   #    振り直されているので、その job は一覧に**今のサーバの pane 名で**並び、発火時には
   #    fire_claim が拒否する (= 待たされた末に届かない)。入れ物を分けても socket が同じなら
-  #    混ざるので、ここで失効させる (敵対的レビュー 2026-09-03 の P2-3)。
+  #    混ざるので、ここで失効させる。
   #    kill はしない: job を消せば前任の sleeper は claim に失敗して静かに降りる
   nowsrv="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
   for j in "$STATE_DIR"/*.job; do
@@ -386,7 +385,7 @@ new_reservation() {
   sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
   # 🚨 サーバの pid も残す: サーバが異常終了 (SIGKILL) すると sleeper だけが孤児として生き残り、
   #    同じ socket に立った**別のサーバ**の pane へ送ってしまう (pane id は振り直されるので
-  #    「%5 は存在しない」に逃げられない。敵対的レビュー 2026-08-28 で再現)
+  #    「%5 は存在しない」に逃げられない)
   srvpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
   id="$(date +%s)-$$-$RANDOM"
   printf '%s\n%s\n%s\n%s\n%s\n' "$pane" "$at" "$text" "$sock" "$srvpid" > "$STATE_DIR/$id.job" 2>/dev/null \
@@ -489,11 +488,11 @@ cancel_job() {
 # ある (安全側の判断と、tmux へキーを流す作法を混ぜない)
 cmd_fire() {
   local id=$1 job now wait_s
-  # 無音契約 (issue 129)。🚨 **ここに置く。ファイル先頭には置けない**: このスクリプトは対話の
+  # 無音契約。🚨 **ここに置く。ファイル先頭には置けない**: このスクリプトは対話の
   # wizard も兼ねており、先頭で塞ぐと popup の gum が端末を掴めなくなる。
   # fire は run-shell -b の子として最長 30 日生きるので、その間 tmux のパイプを掴んだままにしない
   # (掴んだままだと run-shell がずっと active で、サーバ死亡時に SIGPIPE を受ける)。
-  # 🚨 view-mode を積む支配的な要因は rc≠0 の方で、exec では塞げない (issue 111 の実測)。
+  # 🚨 view-mode を積む支配的な要因は rc≠0 の方で、exec では塞げない (実測)。
   #    この関数が exit 0 以外で抜けないことは、下の各経路 (fire_drop / 失敗時の exit 0) が担う
   exec </dev/null >/dev/null 2>&1
   job="$STATE_DIR/$id.job"
@@ -639,7 +638,7 @@ cmd_wizard() {
     esac
 
     # 🚨 フィールド数ごと検証する。%%/# の展開で切り出すと、区切りが足りない行 ("new<TAB>4600") が
-    #    epoch をそのまま文字列として通してしまう (敵対的レビュー 2026-08-28 で再現)
+    #    epoch をそのまま文字列として通してしまう
     IFS="$tab" read -r f1 f2 f3 extra <<< "$REPLY_UI"
     case "$f1" in
       new)

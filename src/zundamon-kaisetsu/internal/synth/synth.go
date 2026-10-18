@@ -259,7 +259,7 @@ func CmdSynth(env *app.Env, scriptArg string, force bool) error {
 		return app.Fail("%s: 読めない (%v)", wd, err)
 	}
 	// 数えるのは合成のキャッシュ (通常ファイルの *.wav / *.query.json) だけ。build が置く mermaid/ (図のキャッシュ) などを
-	// 「古いファイル」に数えると、案内に従って work/ ごと消し、図を描き直すことになる (issue 652)
+	// 「古いファイル」に数えると、案内に従って work/ ごと消し、図を描き直すことになる
 	unused := 0
 	for _, e := range entries {
 		n := e.Name()
@@ -269,11 +269,11 @@ func CmdSynth(env *app.Env, scriptArg string, force bool) error {
 	}
 	msg := fmt.Sprintf("synth: 合成 %d / キャッシュ %d / 計 %d → %s", made, cached, len(s.Lines), wd)
 	if unused > 0 {
-		// work/ ごと消すよう案内しない (build が置く mermaid/ の図のキャッシュも消えて、描き直すことになる。issue 652)
+		// work/ ごと消すよう案内しない (build が置く mermaid/ の図のキャッシュも消えて、描き直すことになる)
 		msg += fmt.Sprintf(" (台本から外れた古いキャッシュ %d 件。%s/ の中の使われていない *.wav / *.query.json は消してよい)", unused, filepath.Base(wd))
 	}
 	fmt.Fprintln(env.Stderr, msg)
-	// 字幕の速さは音声の長さで決まるので、build を待たずにここで知らせる (issue 745)。止めるのは build (書き出しの前) で、
+	// 字幕の速さは音声の長さで決まるので、build を待たずにここで知らせる。止めるのは build (書き出しの前) で、
 	// synth は警告だけ: 直し方の pause_after は合成の鍵に入らず、synth をやり直さなくても build で効く
 	// 時刻を出せない (キャッシュの wav が壊れている等) ときも synth は失敗にしない: 検査は案内で、壊れた wav は build が止める
 	spans, duration, err := build.LineTimes(s)

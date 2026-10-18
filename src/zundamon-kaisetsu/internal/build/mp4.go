@@ -118,7 +118,7 @@ func WaitForIdleCPU(env *app.Env) {
 
 // SheetFragment は、まとめ撮りの状態 (字幕の行, 話し中か, 口の開き, 目を閉じているキャラのビット, 区切りのカード) の並びを player.html が読む URL の断片にする。
 // 🚨 書式は player.html の `location.hash.match(/^#sheet=…/)` と 1 対 1。片方だけ変えると、プレイヤーは通常の画面のまま撮られる
-// (TestSheetFragmentMatchesPlayer が両者を突き合わせる。issue 650)
+// (TestSheetFragmentMatchesPlayer が両者を突き合わせる)
 func SheetFragment(group []VisualState) string {
 	parts := make([]string, len(group))
 	for i, st := range group {
@@ -241,9 +241,9 @@ func writeMP4(env *app.Env, data *PlayerData, m4a, out, td string, jobs int) err
 		}
 	}
 
-	// フレームごとに状態の絵への symlink を連番で並べ、30fps の連番として読ませる (issue 660)。
+	// フレームごとに状態の絵への symlink を連番で並べ、30fps の連番として読ませる。
 	// 🚨 concat の一覧 (各絵の表示秒数) を -r 30 -fps_mode cfr で 30fps にする形には戻さない: 変換のタイムスタンプの丸めで、
-	//    字幕と口の切り替わりが音声と ±1 フレーム前後し、-shortest と合わせて終わりの映像が欠けた (実測は issue 660)
+	//    字幕と口の切り替わりが音声と ±1 フレーム前後し、-shortest と合わせて終わりの映像が欠けた (実測)
 	seq := filepath.Join(td, "seq")
 	if err := os.MkdirAll(seq, 0o755); err != nil {
 		return app.Fail("%s: 作れない (%v)", seq, err)

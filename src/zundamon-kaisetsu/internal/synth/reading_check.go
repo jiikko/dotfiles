@@ -14,7 +14,7 @@ import (
 	"zundamon-kaisetsu/internal/textx"
 )
 
-// 読みの検査 (kana --script --check。issue 673)。
+// 読みの検査 (kana --script --check)。
 //
 // 見るのは「英字の語を、エンジンが 1 文字ずつ読んだ行」だけ (SOLIDWORKS を エスオーエル… と読む形)。
 // 止めたいのは、台本を書く側が気づかずに残した誤読 (台本の書き手による意図的な迂回は相手にしない)。
@@ -54,7 +54,7 @@ func StripKanaMarks(k string) string { return kanaMarksRe.ReplaceAllString(k, ""
 // longVowelForm は長音の書き方を揃えた形。エンジンは同じ文字名を、単独では「エイ」、文の中では「エエ」と書くことがある (A・K 等)。
 //
 // 🚨 行の読み全体には当てない。文字名の境目をまたいで置き換わり (A の「エ」+ E の「イイ」の「エイ」)、1 文字ずつ読んだ
-// AED・KEY を取りこぼした (issue 673 の敵対的レビュー)。文字名の側に両方の書き方を持たせて照合する。
+// AED・KEY を取りこぼした。文字名の側に両方の書き方を持たせて照合する。
 func longVowelForm(k string) string {
 	return oRowU.ReplaceAllString(eRowI.ReplaceAllString(k, "${1}エ"), "${1}オ")
 }
@@ -125,7 +125,7 @@ func spelledPattern(word string, names map[byte][]string) *regexp.Regexp {
 // 語が先に取る (略語は照合して範囲を取るが、警告はしない)。
 //
 // 🚨 文の順に、読みの前から照合位置を進める形にしない。短い語が後ろの語の読みの途中に当たると位置が進みすぎ、
-// 後ろの本物の 1 文字読み (NOC・SNOWDEN) を黙って取りこぼした (issue 673 の敵対的レビュー 2 周目)。
+// 後ろの本物の 1 文字読み (NOC・SNOWDEN) を黙って取りこぼした。
 func SpelledWords(spoken, kana string, names map[byte][]string, acronyms map[string]bool) []string {
 	k := StripKanaMarks(kana)
 	words := textx.LineWords(spoken)
@@ -148,7 +148,7 @@ func SpelledWords(spoken, kana string, names map[byte][]string, acronyms map[str
 	for _, w := range words {
 		re := spelledPattern(w, names)
 		// 取り分と重なった一致は、その 1 文字後ろから探し直す (FindAll は一致の終わりから次を探すので、「PC、CC」の
-		// C + C の一致に続く CC 本体を拾えなかった。敵対的レビュー 3 周目)
+		// C + C の一致に続く CC 本体を拾えなかった)
 		for pos := 0; pos < len(k); {
 			loc := re.FindStringIndex(k[pos:])
 			if loc == nil {

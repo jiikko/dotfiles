@@ -23,7 +23,7 @@
 # worktree を指し、worktree を消した瞬間に全 link が dangling になる。setup.sh と同じ ~/dotfiles 固定。
 #
 # hooks の link は現状どこからも読まれていない (hook の起動経路は _claude/settings.json の
-# command に書いた dotfiles の実体パスだけ。issue 142 の実測)。それでも張るのは、置き場所に
+# command に書いた dotfiles の実体パスだけ。実測済み)。それでも張るのは、置き場所に
 # 依存しない安定パスを用意しておくため。読む側が現れたら hooks/lib の link も必須になる
 # (hook は lib を dirname "$0" で解決し、$0 は symlink を解決しない)。
 # workflows は Workflow ツールが scriptPath で参照する .js だけ (CLAUDE.md 等は ~/.claude に不要)。
@@ -120,7 +120,7 @@ cmd_apply() {
     # `[ -e ] && [ ! -L ]` の 2 回 stat にしない: 並行 apply の `ln -sfn` は unlink → symlink の
     # 2 段なので、-e を見た (有効な symlink) 直後に相手が unlink すると、-L は「不在」に対しても
     # 偽 = 「symlink でない実ファイル」と誤って refused する。実測 2026-09-05: 8 秒の競合で
-    # 861,981 回中 1,718 回 (0.2%)。`make test` の通しで 1 度だけ落ちた issue 260 の正体
+    # 861,981 回中 1,718 回 (0.2%)。`make test` の通しで 1 度だけ落ちた原因
     case "$(stat -f '%HT' "$link" 2>/dev/null)" in
       '' | 'Symbolic Link') ;;   # 不在 (張る) / symlink (下で指す先を見る)
       *)

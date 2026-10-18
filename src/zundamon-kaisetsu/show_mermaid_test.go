@@ -20,7 +20,7 @@ import (
 // ok なら -o の先へ pngPath を写す / fail なら Parse error で落ちる / hang なら孫 (sleep) を起こして待ち続ける (孫の pid を
 // log と同じ場所の grandchild.pid に書く)。🚨 孫は setsid で別のセッション (= 別のプロセスグループ) に置く: 本物の puppeteer は
 // Chrome を detached で起こす (@puppeteer/browsers の launch.js: `detached ??= platform !== 'win32'`)。同じグループの孫では、
-// グループ宛ての kill だけで止まって見えてしまう (issue 649)。CHROME も偽の実行ファイルにする (本物の Chrome は起こさない)。返り値は log のパス。
+// グループ宛ての kill だけで止まって見えてしまう。CHROME も偽の実行ファイルにする (本物の Chrome は起こさない)。返り値は log のパス。
 func fakeMermaid(t *testing.T, pngPath, mode string) string {
 	t.Helper()
 	bin := t.TempDir()
@@ -248,7 +248,7 @@ func TestMermaidTimeoutMessage(t *testing.T) {
 	if err := <-done; err == nil || !strings.Contains(err.Error(), "終わらない") {
 		t.Fatalf("時間切れで止まるはず (%v)", err)
 	}
-	// 時間切れでも、別のグループに居る孫 (本物では puppeteer の Chrome) が残らない (issue 649)
+	// 時間切れでも、別のグループに居る孫 (本物では puppeteer の Chrome) が残らない
 	b, err := os.ReadFile(pidFile)
 	must(t, err)
 	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))

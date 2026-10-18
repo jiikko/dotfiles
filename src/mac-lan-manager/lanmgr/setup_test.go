@@ -296,7 +296,7 @@ func TestSetupViewFits(t *testing.T) {
 	}
 }
 
-// 相手を一度も読めていない (観測の口が無い版を含む) ときは x で何も起こさない (本物の sudo / ssh-copy-id を、何も分からないまま起こした。敵対レビュー)。
+// 相手を一度も読めていない (観測の口が無い版を含む) ときは x で何も起こさない (本物の sudo / ssh-copy-id を、何も分からないまま起こした)。
 func TestSetupRefusesWithoutObservation(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini})
 	h.keys("l")
@@ -312,7 +312,7 @@ func TestSetupRefusesWithoutObservation(t *testing.T) {
 }
 
 // 確認待ちは画面を閉じて開き直しても残り、期限が過ぎたら片付く (画面に持っていたころは開き直すと消え、未確認の IP を台帳に書けた。
-// 期限切れは抜けられず、Busy が立ちっぱなしだった。敵対レビュー)。
+// 期限切れは抜けられず、Busy が立ちっぱなしだった)。
 func TestSetupConfirmSurvivesReopenAndExpires(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, ob := setupHarness(t, obs)
@@ -335,7 +335,7 @@ func TestSetupConfirmSurvivesReopenAndExpires(t *testing.T) {
 		t.Fatal("期限が過ぎても読み直さない (窓の間の観測のまま次の手順を組む)")
 	}
 	awaitSetup(h.m)
-	// 確認の期限の直後は、相手の上の戻しがまだ終わっていない: その観測 (まだ新しい IP に見える) で未確認の印を解かない (敵対レビュー)
+	// 確認の期限の直後は、相手の上の戻しがまだ終わっていない: その観測 (まだ新しい IP に見える) で未確認の印を解かない
 	if _, ok := h.m.unconf["m2macmini.local"]; !ok {
 		t.Fatal("確認の期限の直後の観測で未確認の印を解いた")
 	}
@@ -361,7 +361,7 @@ func TestSetupConfirmSurvivesReopenAndExpires(t *testing.T) {
 	}
 }
 
-// 2 台目の相手には、1 台目に割り当てた番号を選ばない (台帳に載る前の新しい IP は、台帳にも Bonjour の行にもまだ無い。敵対レビュー)。
+// 2 台目の相手には、1 台目に割り当てた番号を選ばない (台帳に載る前の新しい IP は、台帳にも Bonjour の行にもまだ無い)。
 func TestSetupSecondPeerGetsDifferentIP(t *testing.T) {
 	air := discover.Peer{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}
 	h := newHarness(t, nil, []discover.Peer{mini, air})
@@ -467,7 +467,7 @@ func TestSetupUnreachableAndLateConfirm(t *testing.T) {
 	}
 }
 
-// 有線でしか入れない相手は、確認待ちの間に古い IP の観測が届かなくても、確認の手順は断らない (確認は新しい IP へ入る。敵対レビュー)。
+// 有線でしか入れない相手は、確認待ちの間に古い IP の観測が届かなくても、確認の手順は断らない (確認は新しい IP へ入る)。
 func TestSetupWiredOnlyConfirmNotBlockedByUnreachable(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, ob := setupHarness(t, obs)
@@ -486,7 +486,7 @@ func TestSetupWiredOnlyConfirmNotBlockedByUnreachable(t *testing.T) {
 }
 
 // 固定 IP にした後、確認しないまま期限が切れても、窓の間の古い観測 (新しい IP に見える) で台帳に書かない。失敗で戻ったが相手の上で
-// 変わっていた場合も同じ (台帳の手順が確認を知らずに観測だけを信じた。敵対レビュー)。期限の後の板の y では確認を起こさない。
+// 変わっていた場合も同じ (台帳の手順が確認を知らずに観測だけを信じた)。期限の後の板の y では確認を起こさない。
 func TestSetupLedgerNeedsConfirm(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, ob := setupHarness(t, obs)
@@ -519,7 +519,7 @@ func TestSetupLedgerNeedsConfirm(t *testing.T) {
 	}
 }
 
-// 有線だけの相手は、確認した後に閉じて開き直しても、確認した新しい IP へ入る (行の 169.254 は古い。敵対レビュー)。
+// 有線だけの相手は、確認した後に閉じて開き直しても、確認した新しい IP へ入る (行の 169.254 は古い)。
 func TestSetupWiredOnlyReopenUsesConfirmedIP(t *testing.T) {
 	wired := discover.Peer{Host: "wired.local", Instances: []string{"wired"}, SSH: true, Addrs: map[int]string{27: "169.254.9.9"}}
 	h := newHarness(t, nil, []discover.Peer{wired})
@@ -543,7 +543,7 @@ func TestSetupWiredOnlyReopenUsesConfirmedIP(t *testing.T) {
 	}
 }
 
-// 一覧の space (台帳に登録) も、未確認の固定 IP の相手は登録しない (台帳に書く経路が 2 本あり、片方が未確認の印を見なかった。敵対レビュー)。
+// 一覧の space (台帳に登録) も、未確認の固定 IP の相手は登録しない (台帳に書く経路が 2 本あり、片方が未確認の印を見なかった)。
 // 固定 IP のプロセスの最中に画面を閉じても、戻ったら未確認の印を立てる。
 func TestSetupLedgerGuardsAllPaths(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
@@ -569,7 +569,7 @@ func TestSetupLedgerGuardsAllPaths(t *testing.T) {
 }
 
 // 確認のプロセスを渡した後に閉じられ、その戻りが届かないまま一覧の s (ssh) を起こしても、ssh の戻りを確認の成功として扱わない
-// (閉じたときに exec の印を残していたので、後の無関係な戻りが確認に流れて台帳に書けた。敵対レビュー)。
+// (閉じたときに exec の印を残していたので、後の無関係な戻りが確認に流れて台帳に書けた)。
 func TestSetupStaleExecMarkNotReused(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
@@ -596,7 +596,7 @@ func TestSetupStaleExecMarkNotReused(t *testing.T) {
 }
 
 // 固定 IP にしようとして確認しないまま期限が過ぎた相手を、一覧の space で台帳に書くとき、Bonjour の行に残った試した番号を内部 IP に
-// しない (discover はサービスの出し直しのときしか A レコードを引き直さず、相手が元に戻っても行に古い番号が残る。敵対レビュー)。
+// しない (discover はサービスの出し直しのときしか A レコードを引き直さず、相手が元に戻っても行に古い番号が残る)。
 func TestSetupListSpaceSkipsTriedIP(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
@@ -627,7 +627,7 @@ func TestSetupListSpaceSkipsTriedIP(t *testing.T) {
 }
 
 // 2 回目に別の番号を試した後も、1 回目に試して確認できなかった番号を一覧の space で台帳に書かない
-// (試した番号を 1 つしか持たず、2 回目で上書きされて 1 回目の守りが消えた。敵対レビュー)。
+// (試した番号を 1 つしか持たず、2 回目で上書きされて 1 回目の守りが消えた)。
 func TestSetupTriedIPsSurviveRetry(t *testing.T) {
 	for _, confirm := range []bool{true, false} {
 		t.Run(fmt.Sprintf("2 回目を確認=%v", confirm), func(t *testing.T) { triedIPsSurviveRetry(t, confirm) })
@@ -681,7 +681,7 @@ func triedIPsSurviveRetry(t *testing.T, confirm bool) {
 }
 
 // 確認が非 0 で戻っても (待ちの終わりと同時に読まれた印)、期限の後の観測で試した番号の手動の固定に見えれば、相手の上で確定している:
-// 台帳の手順を断り続けない (試した番号を確認でしか外さず、正しく固定された相手を台帳に書けなくなった。敵対レビュー)。
+// 台帳の手順を断り続けない (試した番号を確認でしか外さず、正しく固定された相手を台帳に書けなくなった)。
 func TestSetupFixedAfterFailedConfirmCanLedger(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, ob := setupHarness(t, obs)
@@ -700,7 +700,7 @@ func TestSetupFixedAfterFailedConfirmCanLedger(t *testing.T) {
 }
 
 // 期限の後の最初の観測が読めなくても未確認の印を解かず、次に読めた観測で固定が見えれば試した番号を外す
-// (読めない観測で印を解き、後で固定が見えても試した番号が外れず、台帳に書けなくなった。敵対レビュー)。
+// (読めない観測で印を解き、後で固定が見えても試した番号が外れず、台帳に書けなくなった)。
 func TestSetupFailedObserveKeepsUnconf(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, ob := setupHarness(t, obs)
@@ -847,7 +847,7 @@ func TestRunArgvBanner(t *testing.T) {
 }
 
 // 読み込み中に予約した x は、読み終わりと同時に押した q / esc で板を一覧に残さない (キーの入口で予約を走らせていたので、板を出した
-// 直後に同じ q が画面を閉じ、一覧に残った板の y が相手の名前の無い手順を起こした。敵対レビュー)。この Mac の網だけを読んでいる間の
+// 直後に同じ q が画面を閉じ、一覧に残った板の y が相手の名前の無い手順を起こした)。この Mac の網だけを読んでいる間の
 // x も予約になる (古い網で計画を組み、この Mac の固定の板がもう一度出た)。
 func TestSetupQueuedXRaces(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
@@ -878,7 +878,7 @@ func TestSetupQueuedXRaces(t *testing.T) {
 	}
 }
 
-// 初期設定の手順の板は、初期設定の画面の外では y で起こさない (閉じる経路が板を残しても、相手の名前の無い手順を起こさない。敵対レビュー)。
+// 初期設定の手順の板は、初期設定の画面の外では y で起こさない (閉じる経路が板を残しても、相手の名前の無い手順を起こさない)。
 func TestSetupBoardNeedsSetupScreen(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
@@ -1008,7 +1008,7 @@ func TestOperationLog(t *testing.T) {
 }
 
 // 台帳に既に載っている相手は、台帳の手順で user と内部 IP だけを書く (開いた時の一覧の行で丸ごと書き戻すと、別のプロセス
-// (単体と glogx の L) がその後に変えた別名を古い値に戻した。敵対レビュー)。
+// (単体と glogx の L) がその後に変えた別名を古い値に戻した)。
 func TestSetupLedgerKeepsAliasChangedElsewhere(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, ob := setupHarness(t, obs)
@@ -1032,7 +1032,7 @@ func TestSetupLedgerKeepsAliasChangedElsewhere(t *testing.T) {
 }
 
 // 読み込み中に押した x の予約で自動で出た板は、Enter では実行しない (進捗のモーダルの間に押し続けた Enter が、裏で開いた板を
-// そのまま実行した。敵対レビュー)。y では実行する。
+// そのまま実行した)。y では実行する。
 func TestSetupQueuedBoardIgnoresEnter(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
@@ -1052,7 +1052,7 @@ func TestSetupQueuedBoardIgnoresEnter(t *testing.T) {
 	}
 }
 
-// 自分で板を開いたら予約は済み: 取り消した板を次の tick で開き直さない (敵対レビュー)。
+// 自分で板を開いたら予約は済み: 取り消した板を次の tick で開き直さない。
 func TestSetupManualBoardClearsQueuedX(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
@@ -1068,7 +1068,7 @@ func TestSetupManualBoardClearsQueuedX(t *testing.T) {
 	}
 }
 
-// 失敗で戻った固定 (相手の上では変わっていうる) の番号を、別の相手に出さない (敵対レビュー)。
+// 失敗で戻った固定 (相手の上では変わっていうる) の番号を、別の相手に出さない。
 func TestSetupDoesNotOfferIPTriedOnOtherPeer(t *testing.T) {
 	air := discover.Peer{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}
 	h := newHarness(t, nil, []discover.Peer{mini, air})
@@ -1101,7 +1101,7 @@ func TestSetupDoesNotOfferIPTriedOnOtherPeer(t *testing.T) {
 	}
 }
 
-// ssh の stderr が複数行でも、初期設定の画面は 1 行に収め、狭い端末で「高さが足りない」に落ちない (敵対レビュー)。
+// ssh の stderr が複数行でも、初期設定の画面は 1 行に収め、狭い端末で「高さが足りない」に落ちない。
 func TestSetupKeyErrFitsOneLine(t *testing.T) {
 	msg := "exit status 255: ssh: connect to host 169.254.217.100 port 22: Operation timed out" +
 		strings.Repeat("\nWarning: Permanently added '169.254.217.100' (ED25519) to the list of known hosts.", 3)
@@ -1114,7 +1114,7 @@ func TestSetupKeyErrFitsOneLine(t *testing.T) {
 	}
 }
 
-// 見出しは何を待っているかを出す: 走査が終わった後の確認待ちを「Bonjour で探しています」と出さない (敵対レビュー)。
+// 見出しは何を待っているかを出す: 走査が終わった後の確認待ちを「Bonjour で探しています」と出さない。
 func TestSetupHeaderSaysWhatItWaitsFor(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
@@ -1131,7 +1131,7 @@ func TestSetupHeaderSaysWhatItWaitsFor(t *testing.T) {
 	}
 }
 
-// 開いた後に別のプロセスが台帳から外した Mac を、開いた時の一覧の値で作り直さない (2 周目の敵対レビュー)。
+// 開いた後に別のプロセスが台帳から外した Mac を、開いた時の一覧の値で作り直さない。
 func TestSetupLedgerDoesNotResurrectRemovedMac(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, ob := setupHarness(t, obs)
@@ -1155,7 +1155,7 @@ func TestSetupLedgerDoesNotResurrectRemovedMac(t *testing.T) {
 }
 
 // 台帳の手順は、既にある行の user を触らない: 別のプロセスが u で空 (既定) にした値を埋め戻さない。使えない形の user だけは
-// 板に出した user で直す (3 周目の敵対レビュー)。
+// 板に出した user で直す。
 func TestSetupLedgerUserHandling(t *testing.T) {
 	for _, c := range []struct{ name, stored, changeTo, want string }{
 		{"空にした user", "admin", "", ""},

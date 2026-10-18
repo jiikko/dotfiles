@@ -3,7 +3,7 @@
 # 引き受ける。tmux オプションの設定 (@tt-restore-in-progress / -duration / -complete) は
 # _tmux.conf 側にインラインで残してある。
 #
-# なぜスクリプトに切り出したか (issue 079):
+# なぜスクリプトに切り出したか:
 #   scripts/CLAUDE.md の不変条件「共有の観測ログ (~/.cache/tt-restore-trigger.log) に書く
 #   スクリプトは default socket ゲート (tt_on_default_server) を通す」に対し、_tmux.conf の
 #   2 つの hook だけが**唯一の例外**として無ゲートで書いていた。-L の隔離テストサーバも同じ

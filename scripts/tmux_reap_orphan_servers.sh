@@ -175,7 +175,7 @@ if [ "$reaped" -gt 0 ] && [ "${DRY_RUN:-0}" != "1" ]; then
   # 🚨 ここだけ共有の tt_trigger_log (lib/tmux_resurrect_guards.sh) を使わない。本ファイルは
   #    #!/bin/sh で、guards.sh は herestring (<<<) を使う **bash 専用**のため source すると
   #    /bin/sh が dash の環境 (Linux CI) で構文エラーになる。代わりに seam (TT_TRIGGER_LOG) は
-  #    尊重する — issue 079 が問題にしていたのは「seam を迂回してテストから観測できない」ことで、
+  #    尊重する — 問題なのは「seam を迂回してテストから観測できない」ことで、
   #    共有関数を通ること自体ではない。guards.sh が POSIX 化されたらここも寄せる。
   { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" \
       && printf '%s\treaped-orphan-servers n=%s escalated=%s\n' \

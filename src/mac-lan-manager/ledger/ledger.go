@@ -1,7 +1,7 @@
 // Package ledger は、管理対象の Mac の台帳を読み書きする (台帳は mac-lan-manager を実行している Mac の中だけに持つ)。
 //
 // 画面と初期設定は Store の口だけを使い、ファイルを直接触らない。共有 (非公開の repo など) を足すときは、この口の裏に
-// 置き場を足すか差し替える (issue 747 の「台帳」節。今は FileStore だけ)。
+// 置き場を足すか差し替える (今は FileStore だけ)。
 package ledger
 
 import (
@@ -34,7 +34,7 @@ type Host struct {
 	UpdatedAt time.Time
 }
 
-// reUser は macOS のアカウント名として使える形 (先頭に - を置けない: ssh の引数にすると option として読まれた。監査の指摘)。
+// reUser は macOS のアカウント名として使える形 (先頭に - を置けない: ssh の引数にすると option として読まれた)。
 var reUser = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$`)
 
 // ValidUser は ssh のユーザー名・chown の持ち主として使ってよい形か。
@@ -83,7 +83,7 @@ func Key(host string) string {
 const EnvDir = "MAC_LAN_MANAGER_CONFIG_DIR"
 
 // DefaultPath は台帳の置き場所 ($XDG_CONFIG_HOME/mac-lan-manager/hosts.toml、未設定なら ~/.config/mac-lan-manager/hosts.toml)。
-// 前の置き場 (~/.config/glogx/mac-lan-manager/hosts.toml) にあれば初回に移す (userdirs.ConfigFile。issue 777)。
+// 前の置き場 (~/.config/glogx/mac-lan-manager/hosts.toml) にあれば初回に移す (userdirs.ConfigFile)。
 func DefaultPath() (string, error) {
 	if d := os.Getenv(EnvDir); d != "" {
 		return filepath.Join(d, "hosts.toml"), nil

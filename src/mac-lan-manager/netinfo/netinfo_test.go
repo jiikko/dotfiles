@@ -106,7 +106,7 @@ func TestKind(t *testing.T) {
 
 // 1 つの I/F に複数のサービスが載っても、I/F ごとに 1 つに決める (ルーターのあるサービスが優先、読めないサービスがあれば分からない)。
 // サービスごとに判定していたころは、未接続の「Wi-Fi 2」(ルーター無し) が en0 を有線と言い、Wi-Fi の IP が内部 IP の候補に出た。
-// Wi-Fi が読めず Wi-Fi 2 だけ読めると、Wi-Fi の上の相手が内部 IP になった (監査の第 3 波の敵対レビュー)。
+// Wi-Fi が読めず Wi-Fi 2 だけ読めると、Wi-Fi の上の相手が内部 IP になった。
 func TestKindWithServicesSharingIF(t *testing.T) {
 	both := Snapshot{Services: []Service{
 		{Name: "Wi-Fi 2", Device: "en0", Active: true, IP: "192.168.50.250", Read: true},
@@ -204,7 +204,7 @@ func TestRead(t *testing.T) {
 }
 
 // サービスの名前を変えた Mac: 名前は番号の行から取り、-getinfo にもその名前を渡す (Hardware Port の名前を渡すと rc=4 で、
-// ルーターが分からないまま Wi-Fi が「有線」に倒れた。監査の指摘)。-getinfo が読めないサービスは有線とも決めない。
+// ルーターが分からないまま Wi-Fi が「有線」に倒れた)。-getinfo が読めないサービスは有線とも決めない。
 // serviceorder_renamed.txt は作った値 (この Mac のサービスは名前を変えていない)。番号の行と Hardware Port の行の形は本物の出力に合わせた。
 func TestReadUsesRenamedServiceNames(t *testing.T) {
 	got := ParseServiceOrder(fixture(t, "serviceorder_renamed.txt"))
@@ -255,7 +255,7 @@ func TestReadFailsWhenServiceOrderFails(t *testing.T) {
 }
 
 // 無効のサービスはサービスを 1 つずつ使う経路 (Main・Offline) にも出さない (無効の古い設定 (ルーターあり) がメインになり、本当の
-// メインの IP が消えた。監査の第 3 波の敵対レビュー)。
+// メインの IP が消えた)。
 func TestDisabledServiceIsNotUsed(t *testing.T) {
 	snap := Snapshot{Services: []Service{
 		{Name: "古い設定", Device: "en13", Active: true, IP: "10.9.9.9", Router: "10.9.9.1", Read: true, Disabled: true},
@@ -357,7 +357,7 @@ func TestOverlaps(t *testing.T) {
 }
 
 // 期限切れ・取り消しで途中から失敗したサービスを「読めない」に畳んで、最後まで読めたように返さない (相手に有線が無い・メインの網が
-// 無いと断定した。敵対レビュー)。
+// 無いと断定した)。
 func TestReadFailsWhenContextEndsMidway(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -383,7 +383,7 @@ func TestWiredIFRejectsEmptyDevice(t *testing.T) {
 	}
 }
 
-// サービスを読み終えた後の、I/F ごとの IP の途中の期限では全体を失敗にしない (判定はサービスで決まる。2 周目の敵対レビュー)。
+// サービスを読み終えた後の、I/F ごとの IP の途中の期限では全体を失敗にしない (判定はサービスで決まる)。
 func TestReadKeepsServicesWhenDeadlineHitsIPLoop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -414,7 +414,7 @@ func TestReadKeepsServicesWhenDeadlineHitsIPLoop(t *testing.T) {
 	}
 }
 
-// I/F の一覧 (ifconfig -l) そのものが期限で失敗しても、読めたサービスは残し、IP が欠けたことを知らせる (3 周目の敵対レビュー)。
+// I/F の一覧 (ifconfig -l) そのものが期限で失敗しても、読めたサービスは残し、IP が欠けたことを知らせる。
 func TestReadKeepsServicesWhenDeadlineHitsIFList(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

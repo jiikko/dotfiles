@@ -14,7 +14,7 @@ import (
 	"zundamon-kaisetsu/internal/synth"
 )
 
-// 読みの fixture は VOICEVOX 0.25.2 が実際に返した kana (2026-10-08 に Mac vs Windows と IT 構造の台本で取った。issue 673)。
+// 読みの fixture は VOICEVOX 0.25.2 が実際に返した kana (2026-10-08 に Mac vs Windows と IT 構造の台本で取った)。
 // エンジンの版で読みが変わったら、取り直してよい (テストが見ているのは照合の規則で、特定の版の読みではない)。
 var engineLetters = map[string]string{
 	"A": "エ'イ", "B": "ビ'イ", "C": "シ'イ", "D": "ディ'イ", "E": "イ'イ", "F": "エ'フ", "G": "ジ'イ", "H": "エ'イチ", "I": "ア'イ",
@@ -35,16 +35,16 @@ var engineLines = []struct {
 	{"認可とIDORって何なのだ？", "ニ'ンカト/イドオ'/ア'アル/ッテ'/ナ'ニナ/ノダ'？", nil},
 	{"元になったのは、SIerの多重下請けのせいでは", "モト'ニ/ナ'ッタ/ノワ'、エ'スイアアノ/タジュウシ'タウケノ/セ'イデワ", nil},
 	{"CPUやGPU、冷却、メモリ", "シイピイユ'ウヤ/ジイピイユ'ウ、レエキャク'、メモリ'", nil}, // 略語の一覧にあるので鳴らない
-	// え段で終わる文字名 (A・K) の後に E (イイ) が続く形。行の読みの長音を揃えると境目をまたいで置き換わり、取りこぼした (敵対的レビュー)
+	// え段で終わる文字名 (A・K) の後に E (イイ) が続く形。行の読みの長音を揃えると境目をまたいで置き換わり、取りこぼした
 	{"AEDを使う", "エエイイディ'イオ/_ツカウ'", []string{"AED"}},
 	{"KEYを押す", "ケ'エイイワイオ/オス'", []string{"KEY"}},
 	// 全角英字もエンジンは同じに読む
 	{"ＳＯＬＩＤＷＯＲＫＳという設計ソフト", "エ'スオオエルアイディイダブリュウオオアアルケエエスト/イウ'/セッケエソ'_フト", []string{"SOLIDWORKS"}},
-	// it は イット と読まれている。前の IT (略語) の読みに当てて誤検出していた (敵対的レビュー)
+	// it は イット と読まれている。前の IT (略語) の読みに当てて誤検出していた
 	{"ITとitの話", "アイティ'イト/イ'ットノ/ハナシ'", nil},
 	{"itとITの話", "イ'ットト/アイティ'イノ/ハナシ'", nil}, // 逆の順も
 	// No は ノオ と読まれている。No の 1 文字読みの並び (エヌオオ) が NOC・SNOWDEN の読みの途中に現れる。
-	// 照合位置を前から進める形では、No を誤検出し NOC・SNOWDEN を取りこぼした (敵対的レビュー 2 周目)
+	// 照合位置を前から進める形では、No を誤検出し NOC・SNOWDEN を取りこぼした
 	{"NoとNOC", "ノ'オト/エヌオオシ'イ", []string{"NOC"}},
 	{"NoのSNOWDENです", "ノ'オノ/エ'スエヌオオダブリュウディイイイエヌデ_ス", []string{"SNOWDEN"}},
 	// 前の語の最後の C と CC の頭の C の一致が取り分と重なる。重なった一致の終わりから探すと、CC 本体を拾えなかった (3 周目)
@@ -143,7 +143,7 @@ func TestKanaCheckCommand(t *testing.T) {
 	if err != nil || !strings.Contains(out, "(なし)") {
 		t.Errorf("略語だけの台本で警告した: %v\n%s", err, out)
 	}
-	// 台本の acronyms に書いた語は警告しない (skill の acronyms.json に置けない社内の略語用。issue 745)。一覧には略語の印が付く
+	// 台本の acronyms に書いた語は警告しない (skill の acronyms.json に置けない社内の略語用)。一覧には略語の印が付く
 	scriptAcronyms = []any{"SOLIDWORKS"}
 	out, err = run(engineLines[0].spoken)
 	if err != nil || !strings.Contains(out, "(なし)") || !strings.Contains(out, "SOLIDWORKS\t1 行\t") || !strings.Contains(out, "(略語)") {
@@ -229,7 +229,7 @@ func TestFlexibleKanaInLine(t *testing.T) {
 	}
 }
 
-// 台本の acronyms の形: 空でない文字列の配列だけを受け入れる (issue 745)
+// 台本の acronyms の形: 空でない文字列の配列だけを受け入れる
 func TestScriptAcronymsShape(t *testing.T) {
 	line := []any{map[string]any{"who": "metan", "text": "あ"}}
 	for _, bad := range []any{"QRO", []any{""}, []any{1}, map[string]any{"QRO": true}} {

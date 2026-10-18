@@ -71,7 +71,7 @@ func TestScannerFindsPeersAndClosesAll(t *testing.T) {
 			"21:28:02.496  Add        3  27 local.               _ssh._tcp.           kojiのMac mini\n" +
 			"21:28:02.496  Add        2  14 local.               _ssh._tcp.           kojiのMac meeini (2)\n",
 		"dns-sd -B _rfb._tcp local": "21:28:02.496  Add        3  27 local.               _rfb._tcp.           kojiのMac mini\n",
-		// 同じインスタンスが Wi-Fi (14) と有線 (27) の 2 つの I/F で Add されても、引き当ては 1 回 (red team の P3-6)
+		// 同じインスタンスが Wi-Fi (14) と有線 (27) の 2 つの I/F で Add されても、引き当ては 1 回
 		"dns-sd -B _smb._tcp local": "21:28:02.496  Add        3  27 local.               _smb._tcp.           kojiのMac mini\n" +
 			"21:28:02.496  Add        3  14 local.               _smb._tcp.           kojiのMac mini\n",
 		"dns-sd -L kojiのMac mini _smb._tcp local": "21:28:48.953  kojiのMac\\032mini._smb._tcp.local. can be reached at m2macmini.local.:445 (interface 27)\n",
@@ -211,7 +211,7 @@ func TestScannerReportsBrowseFailure(t *testing.T) {
 }
 
 // 取り消しの後に起こそうとして失敗したもの (exec.CommandContext は取り消し済みの ctx で起動を断る) は、走査の失敗にしない
-// (Close の直後に Err が「起こせない: context canceled」を返していた。fable の敵対レビュー)。
+// (Close の直後に Err が「起こせない: context canceled」を返していた)。
 func TestScannerCloseIsNotFailure(t *testing.T) {
 	for range 20 {
 		s := Start(func(ctx context.Context, _ string, _ ...string) (io.ReadCloser, error) {
@@ -263,7 +263,7 @@ func (h *hangStarter) start(ctx context.Context, _ string, args ...string) (io.R
 }
 
 // 応えない相手が多くても、同時に起こす -L は maxLookups まで。応えない -L は lookupTimeout で諦めて、引き当て中の数を戻す
-// (上限の select を外しても、待ちの上限を 4 時間にしても全部緑だった。監査の指摘)。
+// (上限の select を外しても、待ちの上限を 4 時間にしても全部緑だった)。
 func TestResolveIsBoundedAndTimesOut(t *testing.T) {
 	old := lookupTimeout
 	lookupTimeout = 100 * time.Millisecond

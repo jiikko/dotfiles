@@ -319,7 +319,7 @@ func TestWriteMP4CropsBothCastBlinkStates(t *testing.T) {
 	checkMP4CropsEachState(t, withZundamonFaces(t, blinkFixture(t, []any{"通常", "説明"}, true)))
 }
 
-// 区切りのカード (issue 681 / 745): チャプターの 1 行目の音声が終わるまで出し (最短 1.5 秒・最長 4 秒)、1 行目に図解が出ていれば
+// 区切りのカード: チャプターの 1 行目の音声が終わるまで出し (最短 1.5 秒・最長 4 秒)、1 行目に図解が出ていれば
 // 最短のまま。次のチャプターが始まったら数え直す。トピック名と同じ条件 (チャプター 2 つ以上・overlays に topic) でだけ出す
 func TestChapterCardRuns(t *testing.T) {
 	chs := []build.ChapterData{{Title: "a", Start: 0.4}, {Title: "b", Start: 3}, {Title: "c", Start: 3.5}, {Title: "d", Start: 9}, {Title: "e", Start: 16}}
@@ -361,9 +361,9 @@ func TestChapterCardRuns(t *testing.T) {
 	}
 }
 
-// 感情の演出 (issue 682) は player.html だけにあり、立ち絵の表情の名前 (data-fx) で出し分ける。
+// 感情の演出 は player.html だけにあり、立ち絵の表情の名前 (data-fx) で出し分ける。
 // 表情の名前は FaceVocab が正本なので、演出が指す名前が語彙にあること・表情を data-fx に渡していることを字句で見る
-// (演出の見た目そのものは人が見る。issue 645)
+// (演出の見た目そのものは人が見る)
 func TestEmotionEffectsWired(t *testing.T) {
 	tpl := playerTemplate(t)
 	for _, want := range []string{"a.box.dataset.fx = face;", "fig.insertAdjacentHTML('beforeend', FX);",

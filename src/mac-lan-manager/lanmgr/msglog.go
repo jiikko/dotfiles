@@ -36,7 +36,7 @@ func (m *Model) record(text string, ok bool) {
 }
 
 // line は 1 件をコピーする形 (時刻・成否・本文を 1 行)。本文は相手の ssh の stderr を含みうる (相手が書ける文字列) ので、改行・
-// 制御文字を落とす (生のまま貼ると複数の行が走り、ESC が bracketed paste を抜けた。敵対レビュー)。1 件 1 行なので Y も行で割れない
+// 制御文字を落とす (生のまま貼ると複数の行が走り、ESC が bracketed paste を抜けた)。1 件 1 行なので Y も行で割れない
 func (e logEntry) line() string {
 	mark := "✗"
 	if e.ok {

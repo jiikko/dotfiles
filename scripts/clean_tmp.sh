@@ -3,25 +3,25 @@
 #
 #   DAYS=30 DRY_RUN=1 scripts/clean_tmp.sh   # 消さずに一覧と理由だけ出す
 #
-# 判定 (issue 729):
+# 判定:
 #   - 対象は <repo の root>/tmp の直下のエントリのうち、自身の mtime が DAYS 日より古いもの
 #   - 🚨 フォルダは**中に DAYS 日以内に更新された子孫 (ファイル・フォルダ) が 1 つでもあれば残す**。フォルダの mtime は直下の出入りでしか
 #     変わらず、中のファイルを書き換えても古いままなので、自身の mtime だけでは使っている中身ごと消す
 #   - 🚨 中を調べる find が失敗したら (読めない子孫など) **判定不能として残す**。出力が空でも「新しいものは無い」と読まない
 #   - 中のどこかに .git (worktree の印のファイル・clone のフォルダ) があるエントリは残す。🚨 worktree をパスで照合しない:
 #     git の登録のパスと実体の照合は、大文字小文字 (APFS)・後から symlink に差し替えた経路・動かしただけの worktree で
-#     2 周続けて外れ、作業ごと消せた (issue 729 の敵対レビュー)。中身の印は場所の書き方に依らない (印の種類は find_git)
+#     2 周続けて外れ、作業ごと消せた。中身の印は場所の書き方に依らない (印の種類は find_git)
 #     🚨 検出しない: 名前に改行を含む git dir・印がまったく無い作業ツリー (外に置いた GIT_DIR で作った・worktree の .git ファイルが消えた)。中身だけでは見分けられない
 #   - 残したものは理由を出す (黙って外さない)。symlink は辿らず、link 自身を消す
-#   - 未確認 (直していない): tmp の下にマウントポイントがあると rm -rf がその先へ入りうる (旧実装から同じ。issue 729 に記録)
-#   - skill の dir (`bin/skill-tmpdir` が tmp/<skill名>/ に印 .skill-tmpdir を置く。issue 774) は丸ごと判定しない。使われ続けて中に
+#   - 未確認 (直していない): tmp の下にマウントポイントがあると rm -rf がその先へ入りうる (これまでと同じ)
+#   - skill の dir (`bin/skill-tmpdir` が tmp/<skill名>/ に印 .skill-tmpdir を置く) は丸ごと判定しない。使われ続けて中に
 #     新しい session の dir がある限り、上の規則では古い session ごと残り続けるので、中の session ごとの dir を 1 件ずつ同じ規則で判定する。
 #     skill の dir と印は残す。印や skill の dir が symlink なら降りない (普通のエントリとして扱う)。🚨 skill の dir の直下に git の印
-#     (.git / HEAD) があるなら降りない: 子だけを見ると、兄弟の .git (worktree の印) や作業ツリーの中身を消す (issue 774 の敵対レビュー)
+#     (.git / HEAD) があるなら降りない: 子だけを見ると、兄弟の .git (worktree の印) や作業ツリーの中身を消す
 #   - 判定の始めにエントリ自身がまだ DAYS 日より古いかを、消す前に skill の dir の子なら親がまだ skill の dir かを取り直す。一覧を取ってから
-#     判定するまでの間に、直下のエントリ全部の判定が挟まる (判定の始めから rm までの間の書き込みは見ない。旧実装と同じ窓)
+#     判定するまでの間に、直下のエントリ全部の判定が挟まる (判定の始めから rm までの間の書き込みは見ない)
 #   - 🚨 rm はパスを解決し直す。消すときはサブシェルで親へ cd し、/bin/pwd -P が想定の実体と一致してから相対名 (./名前) で消す。確認の後に
-#     親や祖先 (tmp 自身を含む) を symlink に差し替えられても、cwd は実体に固定されているので外へ届かない (issue 774 の敵対レビュー 2 周目)。
+#     親や祖先 (tmp 自身を含む) を symlink に差し替えられても、cwd は実体に固定されているので外へ届かない。
 #     🚨 builtin の pwd -P は cwd を見ず $PWD の文字列を解決し直すだけで、cd の後に親を実体へ戻されると外の cwd を「一致」と答える
 #     (3 周目)。getcwd を使う /bin/pwd -P で比べ、基準の root / tmp も同じ /bin/pwd -P で取る (綴りを揃える)
 #   - 1 件ずつ「調べる → すぐ消す」(全部を調べてから消すと、調べた後の書き込みを消す窓が件数ぶん広がる)
@@ -30,7 +30,7 @@
 # (テストは一時ディレクトリに git の repo を作って、その中で走らせる)。
 set -u
 unset CDPATH
-# 🚨 継承した GIT_DIR / GIT_WORK_TREE は cwd と別の repo を root にする (hook・rebase --exec から呼ばれた経路)。cwd だけで決める (issue 774 の 4 周目)
+# 🚨 継承した GIT_DIR / GIT_WORK_TREE は cwd と別の repo を root にする (hook・rebase --exec から呼ばれた経路)。cwd だけで決める
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
 days=${DAYS:-30}
 case $days in '' | *[!0-9]*) echo "clean-tmp: DAYS は 0 以上の整数 ($days)" >&2; exit 2 ;; esac
@@ -93,12 +93,12 @@ in_skilldirs() {
 
 # find_git は $1 の中の git の印を 1 つ出す (無ければ空)。印は 2 種: .git (worktree の印のファイル・clone のフォルダ。大文字小文字を問わない:
 # APFS では .GIT でも git が読む) と、git dir の形 (HEAD (ファイルか symlink。大文字小文字を問わない) と objects/・refs/ が並ぶフォルダ。bare や --separate-git-dir の置き場は
-# .git を持たないので、これが無いと worktree を残して commit の置き場の方を消した。issue 729 の敵対レビュー 3 周目)。find の失敗は rc で返す
+# .git を持たないので、これが無いと worktree を残して commit の置き場の方を消した)。find の失敗は rc で返す
 find_git() {
 	local f d IFS
 	f=$(find "$1" \( -iname .git -o \( \( -type f -o -type l \) -iname HEAD \) \) -print) || return 1
 	# 🚨 here-string (<<<) で回さない: bash 3.2 は一時ファイルに書くので、ディスクが一杯だとリダイレクトが失敗し、
-	# 印を見ないまま rc=0 (= 消す) を返した (issue 729 の敵対レビュー 4 周目、ulimit -f 0 で再現)。変数を改行で割って回す
+	# 印を見ないまま rc=0 (= 消す) を返した (ulimit -f 0 で再現)。変数を改行で割って回す
 	IFS=$'\n'
 	set -f
 	for d in $f; do

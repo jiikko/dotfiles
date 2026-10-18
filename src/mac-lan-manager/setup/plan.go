@@ -60,7 +60,7 @@ type Step struct {
 
 // SelfFixed はこの Mac の有線 (method / ip) が帯の固定か。画面 (lanmgr の selfLan) と初期設定 (Plan の self) が同じ答えを出すための
 // 1 つの述語 (別々に組むと、札は固定なのに初期設定は固定し直そうとした。整合の監査)。手動で帯の中なら固定。方式が読めない (空) ときは、
-// 169.254 でない帯の番号なら固定と見る (分からないまま固定し直さない。未固定と見て、前は書けた台帳の内部 IP が書けなくなった。敵対レビュー)
+// 169.254 でない帯の番号なら固定と見る (分からないまま固定し直さない。未固定と見て、前は書けた台帳の内部 IP が書けなくなった)
 func SelfFixed(band, method, ip string) bool {
 	if _, err := netinfo.ParseBand(band); err != nil || !netinfo.InBand(band, ip) {
 		return false
@@ -87,7 +87,7 @@ func Plan(o Observed) []Step {
 		self.Blocked = "この Mac にルーターの無い有線のサービスが無い (ケーブル・アダプタを確かめる)"
 	case !self.Done && o.Peer.WifiIP == "" && !netinfo.LinkLocalBand(o.Band):
 		// 帯が 169.254 の中なら止めない: マスクは /16 で、固定した後も 169.254 の相手と同じ網に居る
-		// 相手に有線 (169.254) でしか入れないのに、この Mac を先に帯の固定 IP にすると、169.254 の相手に届かなくなる (敵対レビュー)
+		// 相手に有線 (169.254) でしか入れないのに、この Mac を先に帯の固定 IP にすると、169.254 の相手に届かなくなる
 		self.Blocked = "相手に Wi-Fi (メイン) で入れない。この Mac を先に固定すると有線の 169.254 の相手に届かなくなる (相手を Wi-Fi に繋ぐ)"
 	}
 	key := Step{ID: StepKey, Title: "相手に公開鍵を置く", Done: o.Peer.KeyOK, Via: via}
@@ -98,7 +98,7 @@ func Plan(o Observed) []Step {
 	case via == "":
 		key.Blocked = "相手の IP が分からない"
 	}
-	// この Mac と同じ IP は済みにしない (衝突。fable の敵対レビュー)
+	// この Mac と同じ IP は済みにしない (衝突)
 	peerStatic := o.Peer.NetKnown && o.Peer.Method == "manual" && inBand(o.Peer.IP) && o.Peer.IP != o.SelfIP
 	peer := Step{ID: StepPeerStatic, Title: "相手の有線を固定 IP にする", Done: peerStatic, Via: via}
 	switch {
@@ -123,7 +123,7 @@ func Plan(o Observed) []Step {
 	peerName := nameStep(StepPeerName, "相手の", o.Peer.Host, o.Peer.IP, ledger.Done, o.Peer.AdvertKnown, o.Peer.Advert,
 		"先に台帳に内部 IP 付きで載せる", "相手の名前の広告の状態を読めていない (r でリロード)")
 	// 公開鍵を先に置く: 鍵の手順 (端末を持つ ssh-copy-id) で人が相手の指紋を確かめるまで、どちらの Mac の設定も変えない
-	// (この Mac の固定を先にしていたので、初めての相手ではホスト鍵を確かめる前に自動では戻らない変更が走った。敵対レビュー)。
+	// (この Mac の固定を先にしていたので、初めての相手ではホスト鍵を確かめる前に自動では戻らない変更が走った)。
 	// 鍵はこの Mac の固定に依らない (相手の Wi-Fi か 169.254 で入る)
 	// 有線の名前は最後: 仕上げの手順なので、読めない・止まっていても固定 IP と台帳の手順を止めない (x は済んでいない最初の手順を出すので、
 	// 前に置くと「この Mac の名前の広告の状態を読めていない」で相手の固定 IP まで断った)

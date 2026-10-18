@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # check_workflow_action_pins.sh — 同じ GitHub Action が workflow 間で違う版に固定されるのを落とす。
 #
-# なぜ (issue 073 §1 / issue 141):
-#   073 は「shellcheck は版を固定したのに actionlint だけ未固定だった」= **同じ教訓の横展開漏れ**。
-#   141 は brew 導入ブロックが 3 workflow に逐語重複していたのを composite へ集約した。
+# なぜ:
+#   「shellcheck は版を固定したのに actionlint だけ未固定だった」= **同じ教訓の横展開漏れ**。
+#   brew 導入ブロックが 3 workflow に逐語重複していたのを composite へ集約した。
 #   どちらも「同じことを書く場所が複数あり、片方だけ古くなる」形。
 #
 #   実害の出方が地味なのが厄介: 版が割れていても workflow は**動く**ので、actionlint も

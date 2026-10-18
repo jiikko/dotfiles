@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # go_module_graph.sh — 今いるディレクトリの Go module について、go.mod / go.sum が `go mod tidy` の形で、module グラフ全体が
-# 解決できる (`go list -m all` が通る) ことを確かめる (issue 787)。
+# 解決できる (`go list -m all` が通る) ことを確かめる。
 #
 # src/*/Makefile の lint が golangci-lint の前に呼ぶ。手元の `make test` (test-src → test-go-lint)・`make -C src/<proj> lint`・
 # CI の Lint step (`_go-project.yml` の `make -C <dir> lint`) が同じ入口を通る。呼び忘れと workflow の paths の書き忘れは
@@ -8,12 +8,12 @@
 #
 # なぜ要るか: replace は依存元へ伝わらない。依存先の module が別の module を新しく require すると、依存元の go.mod に
 # その replace が無い限り `go list -m all` は `malformed module path "<名前>": missing dot in first path element` で落ちるが、
-# go build / go test / golangci-lint は落ちない (依存元が import する package がその module に届かなければ)。issue 736 と 787 で 2 回、
+# go build / go test / golangci-lint は落ちない (依存元が import する package がその module に届かなければ)。実際に 2 回、
 # CI だけが落ちて手元の make test は緑のまま push された。
 set -uo pipefail
 unset CDPATH
 # 手元の環境で結果を変えない (CI と同じ条件で見る): go.work があると workspace の module が replace の抜けを埋めて素通りする。
-# GOFLAGS=-mod=mod だと go list が go.sum を書き換え、-mod=vendor だと筋違いの red になる (どちらも 2026-10-16 の敵対的レビューで再現)
+# GOFLAGS=-mod=mod だと go list が go.sum を書き換え、-mod=vendor だと筋違いの red になる (どちらも 2026-10-16 に再現)
 export GOWORK=off GOFLAGS=-mod=readonly
 
 if [ ! -f go.mod ]; then

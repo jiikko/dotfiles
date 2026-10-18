@@ -56,25 +56,25 @@
 - `src/pro-con/backend` (`pro-con/backend`) — Package backend は UI と「状態を持つ側」の境界。
 - `src/pro-con/card` (`pro-con/card`) — Package card は pro-con のドメイン (依頼カード・状態・不変条件) を持つ。
 - `src/pro-con/config` (`pro-con/config`) — Package config は pro-con の設定ファイル (~/.config/pro-con/config.toml) と、そこから repo を列挙する処理。
-- `src/pro-con/diskuse` (`pro-con/diskuse`) — Package diskuse は pro-con が作った物のディスクの使用量と内訳を測る (issue 456。
-- `src/pro-con/dispatcher` (`pro-con/dispatcher`) — Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。
-- `src/pro-con/eventlog` (`pro-con/eventlog`) — Package eventlog は dispatcher の出来事の記録 (状態の置き場の events.jsonl。
+- `src/pro-con/diskuse` (`pro-con/diskuse`) — Package diskuse は pro-con が作った物のディスクの使用量と内訳を測る (読むだけ)。
+- `src/pro-con/dispatcher` (`pro-con/dispatcher`) — Package dispatcher は本物のモードの dispatcher。
+- `src/pro-con/eventlog` (`pro-con/eventlog`) — Package eventlog は dispatcher の出来事の記録 (状態の置き場の events.jsonl)。
 - `src/pro-con/fake` (`pro-con/fake`) — Package fake は claude を起動せずに pro-con の画面とつなぎ込みを動かすための模擬 backend。
 - `src/pro-con/flockmark` (`pro-con/flockmark`) — Package flockmark は「開いている間 flock を持ち続ける印」(<id>.lock) の作り方と、作りかけの残りの見分け方を持つ。
 - `src/pro-con/gitx` (`pro-con/gitx`) — Package gitx は pro-con が git を呼ぶときの共通の口 (見張りの読み取り = package monitor と、worktree の片付け = package wtclean)。
-- `src/pro-con/internal/testwait` (`pro-con/internal/testwait`) — Package testwait は pro-con のテストが「何かが起きる」のを待つ helper (issue 777)。 (internal)
-- `src/pro-con/live` (`pro-con/live`) — Package live は本物の backend (issue 424 / 427 の段階 3d)。
-- `src/pro-con/metrics` (`pro-con/metrics`) — Package metrics はカードごとの所要の記録 (issue 516)。
-- `src/pro-con/monitor` (`pro-con/monitor`) — Package monitor は見張り (pro-con monitor。
+- `src/pro-con/internal/testwait` (`pro-con/internal/testwait`) — Package testwait は pro-con のテストが「何かが起きる」のを待つ helper。 (internal)
+- `src/pro-con/live` (`pro-con/live`) — Package live は本物の backend。
+- `src/pro-con/metrics` (`pro-con/metrics`) — Package metrics はカードごとの所要の記録。
+- `src/pro-con/monitor` (`pro-con/monitor`) — Package monitor は見張り (pro-con monitor)。
 - `src/pro-con/presence` (`pro-con/presence`) — Package presence は開いている画面を数える (同じ状態の置き場で複数の画面を開いてよい。
-- `src/pro-con/relay` (`pro-con/relay`) — Package relay は画面の中継 (issue 443): 画面は描くたびに最新の 1 枚を状態の置き場の relay/<id>.frame に置き、 外の Claude が `pro-con screen` で読む。
-- `src/pro-con/schedule` (`pro-con/schedule`) — Package schedule は dispatcher が決まった時刻に回す予定の表 (issue 550)。
-- `src/pro-con/store` (`pro-con/store`) — Package store は本物のモードのカードの記録 (issue 427 の段階 3a)。
-- `src/pro-con/store/storetest` (`pro-con/store/storetest`) — Package storetest は、store / dispatcher / 画面の bench が同じ記録で測るための組み立て (issue 528)。
+- `src/pro-con/relay` (`pro-con/relay`) — Package relay は画面の中継: 画面は描くたびに最新の 1 枚を状態の置き場の relay/<id>.frame に置き、 外の Claude が `pro-con screen` で読む。
+- `src/pro-con/schedule` (`pro-con/schedule`) — Package schedule は dispatcher が決まった時刻に回す予定の表。
+- `src/pro-con/store` (`pro-con/store`) — Package store は本物のモードのカードの記録。
+- `src/pro-con/store/storetest` (`pro-con/store/storetest`) — Package storetest は、store / dispatcher / 画面の bench が同じ記録で測るための組み立て。
 - `src/pro-con/ui` (`pro-con/ui`) — Package ui は pro-con の TUI。
 - `src/pro-con/upgrade` (`pro-con/upgrade`) — Package upgrade は pro-con のライブアップグレード: 動いている間にソースが変わったら裏でビルドし、 人間の合図 (ctrl+r) で自分自身を新しいバイナリへ入れ替える (syscall.Exec。
 - `src/pro-con/wake` (`pro-con/wake`) — Package wake は dispatcher を即時に起こす口 (Unix domain socket)。
-- `src/pro-con/wtclean` (`pro-con/wtclean`) — Package wtclean は閉じたカードの PG の worktree を片付ける (issue 492)。
+- `src/pro-con/wtclean` (`pro-con/wtclean`) — Package wtclean は閉じたカードの PG の worktree を片付ける。
 - `src/process_supervisor` (`process_supervisor`) — Package supervisor は子プロセスを 1 つ起こして見張る (foreman / supervisord の 1 本ぶん。
 - `src/proctree` (`proctree`) — Package proctree はプロセスの子孫を集めて止める。
 - `src/ratelimit` (`ratelimit`) — ratelimit — Claude Code / codex の利用枠 (5h / weekly) を表示・判定する単独コマンド。 (main)

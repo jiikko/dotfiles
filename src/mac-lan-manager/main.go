@@ -208,7 +208,7 @@ func main() {
 	}
 	_, err = tea.NewProgram(&app{m: m}, opts...).Run()
 	// 🚨 err が無くても止める: bubbletea は SIGTERM を「終了」に変えて err=nil で戻すので、err のときだけ止めると
-	// dns-sd が 9 本残った (-B は終わらない。監査の指摘 2026-10-16)
+	// dns-sd が 9 本残った (-B は終わらない)
 	m.Close()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mac-lan-manager:", err)

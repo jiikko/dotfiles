@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 新しい Go プロジェクトが「CI レーン無し」で入るのを止める検査 (issue 203 候補 B)。
+# 新しい Go プロジェクトが「CI レーン無し」で入るのを止める検査。
 #
-# なぜ: 出典は issue 080 / 087。以前は Makefile の GO_PROJECT_DIRS を手で列挙しており、
-# 追記を忘れたプロジェクトが **無音で lint / test から外れた**。Makefile 側は
+# なぜ: Makefile の GO_PROJECT_DIRS を手で列挙する形では、
+# 追記を忘れたプロジェクトが **無音で lint / test から外れる**。Makefile 側は
 # `wildcard src/*/go.mod` で解決済み (Makefile:392) だが、**CI の paths filter と
 # プロジェクト側の Makefile target は今も手で用意する**ので、同じ穴が残っている。
 #
@@ -22,7 +22,7 @@
 #      追加 job の go-version-file / cache-dependency-path / env に残った古い project 名・job id の衝突・
 #      引用符で囲んだ job id や with 以外のキーの下の dir: (後勝ちで上書きされる)・steps の中の uses。
 #      `dir: ./src/<name>` は動くが赤になる (安全側に倒す。今の書き方に揃える)
-#   7. src/<name>/Makefile の lint: の recipe が scripts/go_module_graph.sh を呼ぶ (go mod tidy -diff / go list -m all。issue 787)
+#   7. src/<name>/Makefile の lint: の recipe が scripts/go_module_graph.sh を呼ぶ (go mod tidy -diff / go list -m all)
 #   8. その workflow の paths が make lint の呼ぶ共有の script (scripts/golangci_lint.sh・scripts/go_module_graph.sh) を含む
 #
 # 🚨 検査できなかったときに緑を返さない。依存コマンド不在・発見 0 件はすべて失敗にする
@@ -32,7 +32,7 @@
 #   (誤って通す形は下の quoted/unquoted 両対応で狭めてある)。
 set -uo pipefail
 
-# 一時ファイルの後始末は EXIT trap に載せる (issue 299)。成功パスの rm だけだと、
+# 一時ファイルの後始末は EXIT trap に載せる。成功パスの rm だけだと、
 # 途中で落ちた / 中断されたときに $TMPDIR へ残る (同型が tmux_schedule_keys.sh に 2 つあった)。
 # bash は SIGTERM でも EXIT trap を走らせる (実測 2026-09-06)。
 CGL_TMPFILES=()
@@ -65,9 +65,9 @@ grep -q probe <<< 'probe' || fail "grep が正常に動作しない"
 #
 # 🚨 **`paths:` ブロックの中だけ**を見る。行だけ grep すると `paths-ignore:` の下に書かれた
 #    「その dir を除外する」設定を「含む」と読んでしまい、不変条件が反転したまま緑になる
-#    (敵対的レビュー 2026-09-03 の P2-3 で実測)。指定は quoted / unquoted の両方が使われている
+#    (実測)。指定は quoted / unquoted の両方が使われている
 # 🚨 判定は awk の exit status で返す。`awk … | grep -q` にすると pipefail 下で
-#    「一致しているのに非 0」になりうる (issue 096 / test-pipefail-grep-q が止めている形)
+#    「一致しているのに非 0」になりうる (test-pipefail-grep-q が止めている形)
 # $4 = exact なら、want の後ろが行末・空白・# のときだけ一致にする (scripts/x.sh.bak のような別名の行で通さない)
 paths_has() {
   awk -v want="$2" -v trig="$3" -v exact="${4:-}" '
@@ -192,7 +192,7 @@ rm -f "$gd_probe"
 
 # 🚨 canary: paths_has の壊れ方は**非対称**で、「見つからなくなる」は違反として大声で出るが
 #    「常に見つかる」は完全に無音。負例 (push には無く pull_request にだけ在る / paths-ignore の下 /
-#    コメント行) を pin しないと、トリガーの取り違えを検出できない (敵対的レビュー 2026-09-04)
+#    コメント行) を pin しないと、トリガーの取り違えを検出できない
 ph_probe=$(mktemp) || fail "mktemp できない"
 CGL_TMPFILES+=("$ph_probe")
 cat > "$ph_probe" <<'PHYML'
@@ -228,7 +228,7 @@ canary_got=$(printf 'module x\n\nreplace foo => ../bar\n\nreplace (\n\tbaz => ..
 # 出典は Makefile と同じ `src/*/go.mod` (手で列挙しない)。
 # 🚨 glob + `-f` で見る。`find` は symlink を辿らないので、`src/<name>` が symlink のとき
 #    make の `wildcard` は見えるのに検査は見えない = 「出典は Makefile と同じ」が崩れる
-#    (敵対的レビュー 2026-09-03 の P3-10 で実測)
+#    (実測)
 projects=""
 for d in src/*/; do
   [ -f "$d/go.mod" ] || continue
@@ -250,11 +250,11 @@ while IFS= read -r name; do
   fi
   for t in lint test; do
     # 🚨 行頭の target 定義だけを見る (`.PHONY: lint test` の行や `test-foo:` に当てない)。
-    #    `^$t:` だけだと **make の変数代入 `lint:=x` にも当たる** (敵対的レビュー 2026-09-03 の P2-8)
+    #    `^$t:` だけだと **make の変数代入 `lint:=x` にも当たる**
     if ! grep -qE "^$t:([[:space:]]|\$)" "$mk"; then
       printf '✗ %s: %s に %s: target が無い\n' "$name" "$mk" "$t"; bad=$((bad + 1)); continue
     fi
-    # 🚨 名前だけあって recipe が空だと「lint が走る」を守れない (同 P3-9)。
+    # 🚨 名前だけあって recipe が空だと「lint が走る」を守れない。
     #    target 行の次の行がタブ始まり (recipe) か、依存を持つことを求める
     if ! grep -q ok <<< "$(awk -v t="$t" '
           $0 ~ "^" t ":" { got = 1; deps = $0; sub(/^[^:]*:[[:space:]]*/, "", deps); next }
@@ -263,10 +263,10 @@ while IFS= read -r name; do
       printf '✗ %s: %s の %s: が空 (recipe も依存も無い = 実際には何も走らない)\n' "$name" "$mk" "$t"; bad=$((bad + 1))
     fi
   done
-  # 7. lint の recipe が scripts/go_module_graph.sh を呼ぶ (replace の抜けは go build / go test / golangci-lint では落ちない。issue 787)。
+  # 7. lint の recipe が scripts/go_module_graph.sh を呼ぶ (replace の抜けは go build / go test / golangci-lint では落ちない)。
   #    見るのは lint: の行から、次のタブで始まらない行までの recipe。呼び出しの行は - 前置き (失敗を無視) も後ろ (|| true・コメント) も
   #    付けない形に限る (@ は表示を抑えるだけなので許す)。前の行が \ で終わる行は数えない (前の行の続き = echo の引数などになる)。
-  #    コメントアウト・失敗の無視・echo の中の文字列で通さない (敵対的レビュー 2026-10-16 の 1・2 周目)。
+  #    コメントアウト・失敗の無視・echo の中の文字列で通さない。
   #    検出しない形: lint: の再定義 (make は後の定義を使う)・ifeq の片側だけで呼ぶ形・.IGNORE: lint・target 別の SHELL の差し替え (review の担当)
   if ! awk '/^lint:/ { inl = 1; cont = 0; next }
             inl && !/^\t/ && !cont { inl = 0 }
@@ -310,7 +310,7 @@ while IFS= read -r name; do
     printf '✗ %s: %s に _go-project.yml を呼ぶ job が無い (lint / test が走らない)\n' "$name" "$wf"; bad=$((bad + 1))
   fi
 
-  # 4. replace で取り込む共有 module も paths に入っているか (issue 251)
+  # 4. replace で取り込む共有 module も paths に入っているか
   #    go.mod の `replace X => ../<dir>` は「その dir が変わったらこの project の CI が要る」という依存。
   #    paths に無いと、**共有 module だけを変えた push でこの project の CI が 1 度も起動しない**
   #    (2026-09-04 に termsafe を切り出したときは手で入れており、忘れても誰も止めなかった)

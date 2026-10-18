@@ -1,7 +1,7 @@
 #!/bin/sh
 # scratch popup のトグル (bind t / C-t から `run-shell '... #{q:client_name} #{q:session_name}'`
-# で呼ばれる)。開閉判定ごとここに集約する (旧実装は if-shell -F 込みの 200 文字超の bind
-# 文字列が t / C-t に複製されており、二重エスケープで壊れやすかった)。
+# で呼ばれる)。開閉判定ごとここに集約する (if-shell -F 込みの 200 文字超の bind
+# 文字列を t / C-t に複製しない。二重エスケープで壊れやすい)。
 # 引数: $1 = client_name / $2 = session_name (いずれも run-shell の format 展開で渡る。
 #   🚨 #{q:} でシェル特殊文字をエスケープすること。素の "#{...}" 埋めは値に " が入ると
 #   sh 構文エラーになる)
@@ -29,8 +29,8 @@
 # - status 2 は「作成時に 1 回だけ」設定する (session option はセッションが生きている限り
 #   永続するので毎回叩く必要がない。点滅/スピナーの駆動は global の status-interval=1)
 #
-# 開き側の高速化 (2026-07-04): 旧実装は has-session → set status 2 → attach と popup 内で
-# tmux client を毎回 3 回 fork していた。まず attach を直接試し (通常パス = fork 1 回)、
+# 開き側の高速化 (2026-07-04): has-session → set status 2 → attach と popup 内で
+# tmux client を毎回 3 回 fork する形にしない。まず attach を直接試し (通常パス = fork 1 回)、
 # 失敗した時だけ new-session \; set status 2 → attach で作成する (作成パスのみ 3 回)。
 # 2>/dev/null は attach 失敗時 ("no sessions" 等) のエラー表示の抑止 (直後に作成するので不要)。
 # 通常パスの attach は exec しない (attach の成否で || 分岐する shell が必要なため sh が

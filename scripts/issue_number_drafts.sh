@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# issue_number_drafts.sh — 番号の無い仮の名前で起票された issue に番号を付ける (issue 530)。
+# issue_number_drafts.sh — 番号の無い仮の名前で起票された issue に番号を付ける。
 #
 #   scripts/issue_number_drafts.sh [<数える ref>]     (既定の ref は origin/master)
 #

@@ -20,7 +20,7 @@ wts_init() { # $1=repo root $2=prefix
   # 🚨 TMPDIR は macOS では `/var/folders/…/T/` (末尾スラッシュ + /var は /private/var への symlink)。
   # そのまま繋ぐと `//` を含む未正規化パスになり、`git worktree list` が返す正規化済みパス
   # (`/private/var/…`) と**文字列が一致しない**。sweep が pkill へ渡すのは後者なので、
-  # 前者の形で argv を持つ残存プロセスに当たらなくなる (red team P2-9 が実測)
+  # 前者の形で argv を持つ残存プロセスに当たらなくなる
   local tmpdir; tmpdir="$(CDPATH='' cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpdir="/tmp"
   WTS_PATH="$tmpdir/$WTS_PREFIX.$WTS_ME"
   # 🚨 EXIT trap は 1 本しか持てない。呼び出し側が別の後始末を足すなら、この handler から
@@ -35,7 +35,7 @@ wts_init() { # $1=repo root $2=prefix
 # 続ける。消しながら書かれるので rm が "Directory not empty" で取りこぼし、残骸が固定化する
 # (2026-09-03 実測)。
 # 🚨 パターンは**正規表現の部分一致**なので、パスをそのまま渡すと `…/prefix.452` が並行して走る
-# 別の run の `…/prefix.4521/…` にも当たって、そちらの作成や変異を殺す (red team 4 周目 P2-2 実測)。
+# 別の run の `…/prefix.4521/…` にも当たって、そちらの作成や変異を殺す。
 # メタ文字を escape し、パスの**直後が境界** (末尾 / `/` / 空白 / 引用符 / `;`) のものにだけ当てる。
 # 🚨 argv にパスを持たないプロセス (--verify が起こした `sleep` 等) には当たらない。止められるのは
 # 「この worktree のパスを argv に持つもの」だけ。
@@ -85,10 +85,10 @@ wts_sweep_stale() {
   # 掃除しきれなかったものは黙って放置しない。
   # 🚨 **ただし rc には出さない** (stderr へ出すだけで run は続く)。掃除の失敗で変異検証そのものを
   # 止める方が害が大きいため。「判定不能を緑にしない」と書いていたが実装は警告止まりで、
-  # 宣言の方が広かった (red team 3 周目 P3-3)
+  # 宣言の方が広かった
   # 🚨 **対象は「掃除しようとしたのに残ったもの」だけ**。prefix 一致の全件を見ると、
   # **並行して正常に走っている別 run** を「残骸」として報告する (dotfiles は並行実行が前提。
-  # red team 2 周目 P2-3: 旧形は pipefail 下の `| grep -q` で死んでいて発火せず、
+  # 旧形は pipefail 下の `| grep -q` で死んでいて発火せず、
   # <<< 化した途端に誤報が常態化した。検査を生き返らせるときは対象集合も見直すこと)
   local stuck=""
   while IFS= read -r p; do

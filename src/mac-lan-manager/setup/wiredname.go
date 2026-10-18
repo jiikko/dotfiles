@@ -16,7 +16,7 @@ import (
 // - `.local` で終わらない名前 (`air5.wired`) は Bonjour に問い合わせられない (/etc/resolver を root で書く必要がある。実測)。
 // - 済みの判定は名前の解決ではなく、広告する Mac の launchd が走らせている job の実際の引数で見る: 止めた名前も問い合わせた側の
 //   キャッシュに約 4 分 (TTL 240) 残った (実測)。plist の中身では見ない (入れ直しの bootstrap が失敗すると、新しい plist の横で古い
-//   引数の job が走り続け、新しい IP で済みと読んだ。敵対レビュー)。
+//   引数の job が走り続け、新しい IP で済みと読んだ)。
 // - 受容 (未確認): 同じ名前を別の Mac が広告していると Bonjour が改名する。dns-sd がそのとき落ちるか走り続けるかは確かめていない
 //   (走り続けるなら済みと読む)。帯・IP を変えた後の古い広告は、初期設定を開き直して名前の手順まで進めるまで残る。
 // - dns-sd -P は広告する I/F を選べないので、名前は Wi-Fi 側にも見える (受容。747)。
@@ -86,7 +86,7 @@ func (a NameAdvert) InstallScript() string {
 }
 
 // bootoutLine は読み込まれている job を止める sh の断片 (jobArgs の後で使う。out が空 = 読み込まれていない・GUI のドメインが無い
-// (誰もログインしていない) ときは打たない: 打つと 3 以外で落ち、消すはずの plist を残した。敵対レビュー)。止められなければ理由を出して
+// (誰もログインしていない) ときは打たない: 打つと 3 以外で落ち、消すはずの plist を残した)。止められなければ理由を出して
 // 抜ける (|| true で消すと、止められなかったのに「止めた」と出た)。走っていない (rc 3「No such process」。実測) は成功
 var bootoutLine = fmt.Sprintf(`if [ -n "$out" ]; then rc=0; launchctl bootout "gui/$(id -u)/%s" 2>/dev/null || rc=$?
 if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then echo "mac-lan-manager: 名前の広告を止められない (launchctl bootout rc=$rc)" >&2; exit "$rc"; fi; fi
@@ -101,7 +101,7 @@ ip=$(printf '%%s\n' "$out" | awk '/^\targuments = \{/{a=1;n=0;next} a&&/^\t\}/{e
 `, WiredNameLabel)
 
 // RemoveScript は name を広告している LaunchAgent を止めて消す sh (無ければ何もしない)。別の名前を広告していれば消さずに抜ける
-// (台帳に古い名前の行が残った Mac で、その行を外すと、改名した後の今の広告を止めた。敵対レビュー)。
+// (台帳に古い名前の行が残った Mac で、その行を外すと、改名した後の今の広告を止めた)。
 func RemoveScript(name string) string {
 	return fmt.Sprintf(`p=%s
 %sif [ -z "$nm" ] && [ -f "$p" ]; then nm=$(plutil -extract ProgramArguments.6 raw -o - "$p" 2>/dev/null) || nm=; fi
@@ -111,7 +111,7 @@ if [ -n "$nm" ] && [ "$nm" != %s ]; then echo "mac-lan-manager: 別の名前 ($n
 }
 
 // ExitOtherName は RemoveScript が「別の名前を広告している (止めない)」で抜けるときの終了コード。呼び出し側は手で止める案内を出さない
-// (案内どおりに止めると、守ったはずの今の広告を消した。敵対レビュー)。
+// (案内どおりに止めると、守ったはずの今の広告を消した)。
 const ExitOtherName = 4
 
 // RemoveHint は相手で手で止めるときの 1 行 (ssh が届かなかったときに知らせる。bootout だけだと、次のログインで plist から生き返る)。

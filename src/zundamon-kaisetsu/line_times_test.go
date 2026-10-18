@@ -39,7 +39,7 @@ func buildFixtureScript(t *testing.T, edit func(raw map[string]any)) string {
 	return path
 }
 
-// LineTimes (synth の字幕の速さの警告と times が使う) は、Assemble (build) の timeline と同じ開始・終了と長さを出す (issue 745)。
+// LineTimes (synth の字幕の速さの警告と times が使う) は、Assemble (build) の timeline と同じ開始・終了と長さを出す。
 // 間の秒数の丸めを共有しているので、lead_in / gap / pause_after を既定から外しても一致する
 func TestLineTimesMatchAssemble(t *testing.T) {
 	for name, edit := range map[string]func(map[string]any){
@@ -114,7 +114,7 @@ func TestTimesCommand(t *testing.T) {
 	if c := strings.Split(rows[0], "\t"); c[5] != "" {
 		t.Errorf("show を書いていない行の図解の欄が空でない: %q", rows[0])
 	}
-	// 字幕のタブ・改行は空白にして、欄と行の区切りを崩さない (敵対的レビュー P2)
+	// 字幕のタブ・改行は空白にして、欄と行の区切りを崩さない
 	raw := map[string]any{}
 	b, err := os.ReadFile(path)
 	must(t, err)
@@ -135,7 +135,7 @@ func TestTimesCommand(t *testing.T) {
 	}
 }
 
-// synth は、字幕が速すぎる行を build を待たずに警告する。止めはしない (rc は 0。止めるのは build。issue 745)
+// synth は、字幕が速すぎる行を build を待たずに警告する。止めはしない (rc は 0。止めるのは build)
 func TestSynthWarnsFastCaptions(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -175,7 +175,7 @@ func TestSynthWarnsFastCaptions(t *testing.T) {
 	}
 }
 
-// build は区切りのカードを、チャプターの 1 行目の音声が終わるまで出す (ChapterCardEnds を Assemble に配線している。issue 745)。
+// build は区切りのカードを、チャプターの 1 行目の音声が終わるまで出す (ChapterCardEnds を Assemble に配線している)。
 // testdata の音声は 1 行 1 秒未満で、最短の 1.5 秒と区別できないので、チャプター「はじめに」の 1 行目の wav を 3 秒にして見る
 func TestAssembleCardsLastUntilFirstLineEnds(t *testing.T) {
 	path := buildFixtureScript(t, nil)
@@ -204,7 +204,7 @@ func TestAssembleCardsLastUntilFirstLineEnds(t *testing.T) {
 	}
 }
 
-// 合成済みの wav が壊れていても、synth は字幕の速さの検査を案内に留めて rc=0 で終わる (壊れた wav は build が止める。敵対的レビュー P2)
+// 合成済みの wav が壊れていても、synth は字幕の速さの検査を案内に留めて rc=0 で終わる (壊れた wav は build が止める)
 func TestSynthToleratesBrokenCachedWav(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -270,7 +270,7 @@ func TestImageBombStopsBeforeDecode(t *testing.T) {
 	dir := t.TempDir()
 	// 縦横 20000x20000 を名乗る PNG を、1 行分の画素だけで組む。確かめたいのは「本体を展開する前に縦横で止める」で、
 	// 本体を展開する退行なら画像全体の確保 (TotalAlloc) か、途中で切れる本体のエラーの文言で落ちる。
-	// 本物の 20000x20000 を符号化すると -race の下で 35 秒かかり、CI のこのテストの大半を占めていた (issue 661)
+	// 本物の 20000x20000 を符号化すると -race の下で 35 秒かかり、CI のこのテストの大半を占めていた
 	must(t, os.WriteFile(filepath.Join(dir, "bomb.png"), pngHeaderOnly(20000, 20000), 0o644))
 	runtime.GC()
 	var before, after runtime.MemStats
@@ -326,7 +326,7 @@ func pngHeaderOnly(w, h uint32) []byte {
 	ihdr = binary.BigEndian.AppendUint32(ihdr, h)
 	ihdr = append(ihdr, 8, 0, 0, 0, 0) // 8 bit・グレー・圧縮 0・フィルタ 0・インターレースなし
 	// IDAT は 1 行分 (フィルタの 1 バイト + 横幅ぶんのゼロ) だけ。image/png は IDAT を読み始めた時点で画像全体を確保するので、
-	// 本体を展開する退行は確保量 (TotalAlloc) でも捕まる (IDAT が無いと確保に届かず、エラーの文言でしか捕まらない。issue 661 の敵対的レビュー)
+	// 本体を展開する退行は確保量 (TotalAlloc) でも捕まる (IDAT が無いと確保に届かず、エラーの文言でしか捕まらない)
 	var z bytes.Buffer
 	zw := zlib.NewWriter(&z)
 	_, _ = zw.Write(make([]byte, 1+w))

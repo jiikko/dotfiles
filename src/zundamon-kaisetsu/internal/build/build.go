@@ -28,7 +28,7 @@ const MouthFPS = 30
 
 // MouthLevels は口の開きの段階の数 (立ち絵は表情ごとに <表情>_0〜_<MouthLevels-1>.webp)。
 // 🚨 player.html のまとめ撮りの正規表現 (#sheet= の口の欄 [012]) と setMouth の段階も同じ数で書いている。
-// 変えたら両方を直す (TestSheetFragmentMatchesPlayer が食い違いを落とす。issue 650)
+// 変えたら両方を直す (TestSheetFragmentMatchesPlayer が食い違いを落とす)
 const MouthLevels = 3
 
 // 母音ごとの口の開き (0 閉じ / 1 半開き / 2 開き)。大文字 (無声化母音) は表に無いので 0 = ほぼ音が出ない
@@ -424,7 +424,7 @@ func Assemble(s *script.Script, env *app.Env) (*PlayerData, []byte, error) {
 
 	pcm := make([]byte, 2*leadInSamples(s)) // 間の秒数の丸めは LineTimes と同じ式を使う (line_times.go)
 	// 連結後の大きさを wav のファイルの大きさと間の無音から見積もって先に確保する (行ごとに伸ばすと、20 分の台本で
-	// 400MB を超える確保になっていた。issue 655)。見積もりは確保の量だけに効き、外れても結果は変わらない
+	// 400MB を超える確保になっていた)。見積もりは確保の量だけに効き、外れても結果は変わらない
 	est := len(pcm)
 	for _, line := range s.Lines {
 		if p, err := script.LineParams(s, line); err == nil {
@@ -553,7 +553,7 @@ var templateMarks = regexp.MustCompile(`__DATA_JSON__|__TITLE__`)
 // RenderHTML はデータをプレイヤー (skill の templates/player.html) に差し込む。
 //
 // テンプレートは go:embed で焼き込まない: bin/lib/go_autobuild.zsh の再ビルドの判定は .go と go.mod / go.sum しか
-// 見ないので、焼き込むとテンプレートだけを直したときに古いバイナリが古い見た目で作り続ける (issue 641 の設計レビュー P1)。
+// 見ないので、焼き込むとテンプレートだけを直したときに古いバイナリが古い見た目で作り続ける。
 func RenderHTML(data *PlayerData, env *app.Env) (string, error) {
 	tb, err := os.ReadFile(env.Template())
 	if err != nil {
@@ -587,7 +587,7 @@ func CmdBuild(env *app.Env, scriptArg, output, format string, jobs, kbps int, al
 	if err != nil {
 		return err
 	}
-	// filepath.Abs を通さない (論理パスの $PWD で ".." を字面で畳んでしまう。敵対的レビュー 2 周目 P2-3)
+	// filepath.Abs を通さない (論理パスの $PWD で ".." を字面で畳んでしまう)
 	base := paths.ResolvePath(output)
 	for _, ext := range []string{".html", ".mp4"} { // 付いていれば外す。v1.2 の ".2" のような拡張子でない部分は残す
 		if strings.HasSuffix(strings.ToLower(base), ext) {
@@ -599,7 +599,7 @@ func CmdBuild(env *app.Env, scriptArg, output, format string, jobs, kbps int, al
 		formats = []string{"html", "mp4"}
 	}
 	// 出力先に書けるかを最初に確かめる (確かめないと、音声の圧縮と Chrome の撮影 (CPU の空き待ちで最大 20 分) を
-	// 全部終えてから「一時ファイルを作れない」で止まる。issue 652)
+	// 全部終えてから「一時ファイルを作れない」で止まる)
 	for _, f := range formats {
 		dst := paths.ResolvePath(base + "." + f)
 		if err := outfile.CheckReplaceable(dst); err != nil {
@@ -625,7 +625,7 @@ func CmdBuild(env *app.Env, scriptArg, output, format string, jobs, kbps int, al
 	if n := WarnFastCaptions(env.Stderr, "build", data.Lines, data.Duration); n > 0 && !allowFastCaptions {
 		return app.Fail("字幕が速すぎる行が %d 行あるので、書き出す前に止めた (行を分けるか pause_after で間を足す。このまま書き出すなら --allow-fast-captions)", n)
 	}
-	// ラベル (タイトル・図解など) の意図しない改行も、音声の圧縮と書き出しの前に止める (台本の字を直して build し直すだけで済む。issue 812)
+	// ラベル (タイトル・図解など) の意図しない改行も、音声の圧縮と書き出しの前に止める (台本の字を直して build し直すだけで済む)
 	if err := CheckLabelLayout(env, data, td, allowLabelWraps); err != nil {
 		return err
 	}
@@ -671,7 +671,7 @@ func CmdBuild(env *app.Env, scriptArg, output, format string, jobs, kbps int, al
 	return nil
 }
 
-// printMP4Credits は mp4 に入らないクレジットを、概要欄などに貼れる形で標準出力に出す (issue 811)。
+// printMP4Credits は mp4 に入らないクレジットを、概要欄などに貼れる形で標準出力に出す。
 // VOICEVOX の規約で声のクレジットは必須で、HTML は「クレジット」に自動で入るが mp4 には入らない。中身は HTML と同じ一覧 (Assemble の Credits)。
 func printMP4Credits(env *app.Env, credits []string) {
 	if len(credits) == 0 {

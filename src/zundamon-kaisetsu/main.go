@@ -13,7 +13,7 @@
 // HTML は音声 1 本 + タイムライン JSON をブラウザで再生し、字幕・立ち絵・口パクを audio.currentTime から毎フレーム描く
 // (シークしても音と絵がずれない)。mp4 はそのプレイヤーの描画モードを Chrome で撮って並べる。
 //
-// Python 版 (dialogue_video.py) から書き直した (issue 641)。合成のキャッシュの鍵と build のデータは Python 版と
+// Python 版 (dialogue_video.py) から書き直した。合成のキャッシュの鍵と build のデータは Python 版と
 // 同じ値になるよう作っていて、testdata/ の golden (Python 版から生成) で突き合わせている。
 package main
 
@@ -74,7 +74,7 @@ func main() {
 	app.Ctx = ctx
 	var got atomic.Value
 	sigs := make(chan os.Signal, 2)
-	// 起動時に無視されていた signal (nohup の SIGHUP、背景のジョブの SIGINT) は受けない。Notify は無視を解いてしまう (3 周目 P2-2)
+	// 起動時に無視されていた signal (nohup の SIGHUP、背景のジョブの SIGINT) は受けない。Notify は無視を解いてしまう
 	for _, s := range []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP} {
 		if !signal.Ignored(s) {
 			signal.Notify(sigs, s)
@@ -141,7 +141,7 @@ func exactOpt(specs []optSpec, name string) *optSpec {
 
 // classifyArg は argparse の _parse_optional と同じ順で、a がオプションかを決める。
 // 完全一致 → "名前=値" → 前方一致 (長い名前の略記 / 短い名前に値を続けた -oout) → 負の数 → 空白を含む の順。
-// 空白を含むかは最後に見る (先に見ると --output="my file" を位置引数と取り違える。敵対的レビュー 2 周目 P2-4)。
+// 空白を含むかは最後に見る (先に見ると --output="my file" を位置引数と取り違える)。
 // spec が nil で isOpt が真なら未知のオプション。
 func classifyArg(a string, specs []optSpec) (spec *optSpec, isOpt bool, val string, hasVal bool, err error) {
 	if !strings.HasPrefix(a, "-") || a == "-" {
@@ -194,7 +194,7 @@ func parseArgs(args []string, specs []optSpec, stopAtPositional bool) (*parsed, 
 				return p, args[i+1:], checkUnknown(unknown)
 			}
 			if rest := args[i+1:]; len(rest) > 0 {
-				// "--" の後ろは、オプションを挟んだ位置引数と同じく別のまとまりに数える (kana a --who x -- b は argparse では余り。4 周目 P2-2)
+				// "--" の後ろは、オプションを挟んだ位置引数と同じく別のまとまりに数える (kana a --who x -- b は argparse では余り)
 				if len(p.pos) == 0 || p.lastPos != i-1 {
 					p.posGroups++
 				}
@@ -215,7 +215,7 @@ func parseArgs(args []string, specs []optSpec, stopAtPositional bool) (*parsed, 
 		}
 		if !isOpt {
 			if stopAtPositional {
-				// サブコマンドより前の未知のオプションも捨てない (--enigne=… の打ち間違いを黙って無視しない。3 周目 P2-1)
+				// サブコマンドより前の未知のオプションも捨てない (--enigne=… の打ち間違いを黙って無視しない)
 				return p, args[i:], checkUnknown(unknown)
 			}
 			if len(p.pos) == 0 || p.lastPos != i-1 {

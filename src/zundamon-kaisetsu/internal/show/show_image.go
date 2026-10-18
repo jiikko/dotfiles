@@ -27,7 +27,7 @@ const (
 	imageMaxBytes = 2 << 20
 )
 
-// 小さく視認性の低い図を入れない (issue 645 のユーザーの指示) ための範囲。
+// 小さく視認性の低い図を入れない (ユーザーの指示) ための範囲。
 //   - 縮尺 (箱に収めたときの倍率) が 1 を超える (箱より小さい) と、player.html は引き伸ばさないので小さく表示されて読みにくく、
 //     0.5 を下回る (箱の 2 倍を超える画像を縮める) と中の文字が読めなくなる
 //   - 表示したときに箱の縦と横のそれぞれ半分以上を占めること。1 辺だけ箱に届く細い帯 (569x10 など) を止める
@@ -88,7 +88,7 @@ func LoadShowImage(scriptPath, written, p string) (string, error) {
 		return "", app.Fail("%s: 図の画像 %s が大きすぎる (上限 %d バイト)", scriptPath, name, imageMaxBytes)
 	}
 	// 縦横はヘッダだけで読んで先に検査し、通った画像だけを本体まで読む。先に本体を読むと、ファイルは小さくても縦横の値が
-	// 巨大な画像 (圧縮で 2MB に収まる 20000x20000 など) で、検査より前にピクセル全体を確保してしまう (2 周目の反証レビューの実測)
+	// 巨大な画像 (圧縮で 2MB に収まる 20000x20000 など) で、検査より前にピクセル全体を確保してしまう (実測)
 	cfg, format, err := stdimage.DecodeConfig(bytes.NewReader(b))
 	if err != nil {
 		return "", app.Fail("%s: 図の画像 %s を画像として読めない (PNG か JPEG で書き出す。%v)", scriptPath, name, err)

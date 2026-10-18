@@ -47,7 +47,7 @@ var (
 	reLookup = regexp.MustCompile(stamp + `(.+?)\._[^.]+\._(?:tcp|udp)\.\S*\s+can be reached at (\S+?)\.?:(\d+) \(interface (\d+)\)`)
 	// 例: "21:27:58.076  Add  40000002      27  m2macmini.local.                       169.254.217.100                              4500"
 	// 🚨 行末は TTL の数字だけ。否定応答は "0.0.0.0  1  No Such Record" と後ろに文が付く (2026-10-16 に自分のホスト名を -G して実測。
-	// 読むと 0.0.0.0 を相手の IP にして、s が自分へ ssh した。監査の指摘)。0.0.0.0 は ParseAddr でも落とす (守りは 2 段で、
+	// 読むと 0.0.0.0 を相手の IP にして、s が自分へ ssh した)。0.0.0.0 は ParseAddr でも落とす (守りは 2 段で、
 	// テストは段ごとに 1 本ずつ持つ)
 	reAddr = regexp.MustCompile(stamp + `(Add|Rmv)\s+\S+\s+(\d+)\s+(\S+)\s+(\d+\.\d+\.\d+\.\d+)\s+\d+\s*$`)
 	reDec  = regexp.MustCompile(`\\(\d{3})`)

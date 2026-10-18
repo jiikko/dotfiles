@@ -9,7 +9,7 @@ import (
 
 // captionCPSMax は字幕を読み切れる速さの上限 (1 秒あたりの字数)。YES (yuya-takeyama/agent-plugins) の video の
 // CPS_WARN と同じ値。音声を聞きながら読む前提の目安。build は、超えた行があれば書き出しの前に止まる
-// (--allow-fast-captions で続ける)。警告だけで続けていたころは、mp4 を撮り終えてから気づいて撮り直していた (issue 676)。
+// (--allow-fast-captions で続ける)。警告だけで続けていたころは、mp4 を撮り終えてから気づいて撮り直していた。
 const captionCPSMax = 7.5
 
 // fastCaption は字幕を読み切れないおそれのある行。

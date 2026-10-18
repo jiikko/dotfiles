@@ -2,7 +2,7 @@
 # discover_yaml_files.sh — yamllint の対象を機械的に発見して 1 行ずつ出力する。
 # Makefile が YAML_FILES の導出に使う (`make test-yaml`)。
 #
-# なぜ導出にするか (issue 313 ①): 手書き列挙だと**後から足した yml が黙って検査の外に出る**。
+# なぜ導出にするか: 手書き列挙だと**後から足した yml が黙って検査の外に出る**。
 # 実測 2026-09-09: 実在 25 本に対して列挙は 13 本で、**12 本が yamllint の対象外**だった
 # (`.github/workflows/doctor.yml` / `src_doctor.yml` / `src_termsafe.yml` / `_go-project.yml` /
 # `.github/actions/ensure-toolchain/action.yml` / `src/*/.golangci.yml` 6 本 /
@@ -20,7 +20,7 @@ cd "$(dirname "$0")/.." || exit 1
 #   vendor     : 取り込んだ第三者のコード (こちらの規約を当てる対象ではない)
 #   node_modules / tmp : 生成物・作業領域 (tmp は ~/.gitignore_global で ignore)
 #   .claude/worktrees  : pro-con が作る worktree (.gitignore)。中身は別の checkout の写しで、他のセッションの
-#                        作業途中を含む。CI の checkout には無いので、手元だけ数が膨らむ (issue 616)。中へは降りない (prune)
+#                        作業途中を含む。CI の checkout には無いので、手元だけ数が膨らむ。中へは降りない (prune)
 found=$(find . -path ./.claude/worktrees -prune -o \( -name '*.yml' -o -name '*.yaml' \) -type f \
   -not -path './.git/*' \
   -not -path '*/vendor/*' \

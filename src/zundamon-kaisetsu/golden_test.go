@@ -1,9 +1,9 @@
 package main
 
-// Python 版 (dialogue_video.py) を正解役にした golden との突き合わせ (issue 641)。
+// Python 版 (dialogue_video.py) を正解役にした golden との突き合わせ。
 // testdata/*.json は Python 版の関数を直接呼んで書き出したもので、Python 版を消した後も回帰テストとして残す。
 // 生成に使った Python は 3.14.7 (sum の Neumaier の補正は 3.12 以降、Path.stem の規則は 3.14 の振る舞い。版が違うと golden も変わる)。
-// Python 版は git の履歴 (issue 641 の 39fe8c02 より前) にあり、`git show <その前の commit>:_claude/skills/zundamon-kaisetsu/scripts/dialogue_video.py`
+// Python 版は git の履歴 (39fe8c02 より前) にあり、`git show <その前の commit>:_claude/skills/zundamon-kaisetsu/scripts/dialogue_video.py`
 // で取り出せば、ケースを足すときの正解役として呼べる。
 
 import (
@@ -217,7 +217,7 @@ func TestBuildDataMatchesPython(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// 区切りのカード (issue 681) は golden の後で足した列なので、ここで別に見る: チャプターが 2 つ以上なら載る
+			// 区切りのカード は golden の後で足した列なので、ここで別に見る: チャプターが 2 つ以上なら載る
 			if wantCards := len(data.Chapters) >= 2; (data.Cards != nil) != wantCards {
 				t.Errorf("チャプター %d 個で cards が %v (want 載る=%v)", len(data.Chapters), data.Cards, wantCards)
 			}
@@ -309,7 +309,7 @@ func copyTree(t *testing.T, src, dst string) {
 }
 
 // TestSumMatchesPython は PySum が Python 3.12 以降の sum() (Neumaier の補正つき) と同じ値を返すことを確かめる。
-// 口の開きの伸縮率はこの合計から作るので、素直に足すと境目が 1 フレームずれることがある (設計レビュー P1-4)。
+// 口の開きの伸縮率はこの合計から作るので、素直に足すと境目が 1 フレームずれることがある。
 func TestSumMatchesPython(t *testing.T) {
 	var cases []struct {
 		Xs           []float64 `json:"xs"`

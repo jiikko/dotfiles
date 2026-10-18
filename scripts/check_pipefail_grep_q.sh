@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check_pipefail_grep_q.sh — `… | grep -q` を pipefail 下で判定に使っている箇所を落とす。
 #
-# なぜ (issue 096 / CI run 32570242557 で実測):
+# なぜ (CI run 32570242557 で実測):
 #   `grep -q` は一致した瞬間に exit する。書き手がまだ書き続けていると EPIPE を受け、
 #   `set -o pipefail` (zsh の setopt pipe_fail) 下では**一致していてもパイプライン全体が
 #   非 0** になる。判定が反転し、正しい実装が red になる。しかも「実装の不具合」に見えるので

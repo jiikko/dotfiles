@@ -12,7 +12,7 @@ import (
 	"mac-lan-manager/setup"
 )
 
-// viewSetup は初期設定の画面 (2 枚のカード: 手順 (進捗バー付き) と、この手順で実行するもの)。issue 747 の「charm 版」節の配置。
+// viewSetup は初期設定の画面 (2 枚のカード: 手順 (進捗バー付き) と、この手順で実行するもの)。
 func (m *Model) viewSetup(w int) string {
 	su := m.su
 	inner := max(w-7, 10)
@@ -32,11 +32,11 @@ func (m *Model) viewSetup(w int) string {
 	case su.ch != nil:
 		b.WriteString(sAccent.Render(m.spin()) + sDim.Render(" "+su.label+" に接続して確認中") + "\n")
 	case m.unconfOverdue():
-		// 期限の後の観測が読めずに印が残ると tick が止まる (読み直しは r だけ)。断りの文言を読んだ人にしか届かなかった (敵対レビュー)
+		// 期限の後の観測が読めずに印が残ると tick が止まる (読み直しは r だけ)。断りの文言を読んだ人にしか届かなかった
 		b.WriteString(sWarn.Render("固定 IP にした後の確認が済んでいない: 相手が元に戻った頃なので r でリロード") + "\n")
 	case errors.Is(su.obs.KeyErr, setup.ErrUnknown):
 		// ssh の stderr は複数行・長い行でありうる。そのまま入れると行を食って画面が「高さが足りない」に落ち、確認の x に届かないまま
-		// 期限が切れた (敵対レビュー)。最初の 1 行を幅で切って出す (全文はメッセージ一覧の e)
+		// 期限が切れた。最初の 1 行を幅で切って出す (全文はメッセージ一覧の e)
 		why, _, _ := strings.Cut(termsafe.PlainBlock(su.obs.KeyErr.Error()), "\n")
 		b.WriteString(sWarn.Render(termwidth.Truncate(su.label+" に接続できない: "+why, inner, "…")) + "\n")
 	case su.seen && su.obs.HostKeyUnknown:

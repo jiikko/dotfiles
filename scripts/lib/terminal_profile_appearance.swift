@@ -6,7 +6,7 @@
 //
 // 🚨 出力は「空白区切り 1 行 1 プロパティ」なので、**値に空白や改行が混ざると呼び出し側の
 // パースへ任意の行を注入できる**。フォント名は .terminal (= 外部入力) 由来の任意 String なので、
-// 下で PostScript 名の語彙に限って弾く。実証済み (敵対レビュー 2026-09-23): 改行入りの NSName で
+// 下で PostScript 名の語彙に限って弾く。実証済み: 改行入りの NSName で
 // ①別の色を後勝ちで上書き ②2 本目の Font 行で「利用可否 1」を偽造して在庫ゲートを迂回、の両方が
 // 通り、スクリプトは rc=0 で正常終了していた。
 //
@@ -55,8 +55,8 @@ for key in ["BackgroundColor", "TextColor", "TextBoldColor", "CursorColor"] {
         exit(1)
     }
     // 🚨 成分の有限性を確かめてから Int へ落とす。NaN を `Int(...)` に通すと **SIGTRAP で落ち**、
-    // 呼び出し側には swift のスタックダンプしか届かない (issue 084 が潰した「abort させない」
-    // 不変条件の再来。敵対レビュー 2026-09-23 が NSRGB を `nan nan nan` にして実証)。
+    // 呼び出し側には swift のスタックダンプしか届かない (「abort させない」
+    // 不変条件に反する。NSRGB を `nan nan nan` にして実証)。
     // inf / 負値 / 巨大値は NSColor 側が 0…1 にクランプするので、ここまで来るのは NaN だけ。
     guard c.redComponent.isFinite, c.greenComponent.isFinite, c.blueComponent.isFinite else {
         FileHandle.standardError.write("✗ \(key) の成分が数値でない (NaN)\n".data(using: .utf8)!)
@@ -109,7 +109,7 @@ if let data = dict["Font"] as? Data {
     }
     // 🚨 先頭 `.` の system font (`.AppleSystemUIFont` 等) は弾く。**これは修正前のバグが
     // profile へ書き戻していた当の文字列**で、一度その状態で書き出された .terminal を食わせると
-    // 「在庫ありの正常なフォント」として素通りしてしまう (敵対レビュー 2026-09-23)。
+    // 「在庫ありの正常なフォント」として素通りしてしまう。
     guard !font.name.hasPrefix(".") else {
         FileHandle.standardError.write("✗ Font が system font (\(font.name)) — 壊れたプロファイルの可能性\n".data(using: .utf8)!)
         exit(1)
@@ -119,7 +119,7 @@ if let data = dict["Font"] as? Data {
         exit(1)
     }
     // 🚨 サイズも検証する。inf / Int64 超過を `Int(...)` に通すと **SIGTRAP で落ち**、呼び出し側には
-    // swift のスタックダンプだけが出て診断が届かない (issue 084 が潰した失敗モードの再来)。
+    // swift のスタックダンプだけが出て診断が届かない。
     // 0 や巨大値は「設定できてしまう」ぶん質が悪い (端末が実用不能になり GUI でしか戻せない)。
     // 上限 288 は Terminal のフォントパネルが選べる最大に合わせた。
     guard font.size.isFinite, font.size >= 4, font.size <= 288 else {

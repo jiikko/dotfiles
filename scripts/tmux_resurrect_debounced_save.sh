@@ -28,9 +28,9 @@
 #   3. 保存の直列化（同時に複数の save.sh を走らせない）は本スクリプトでは行わず、
 #      全保存経路の choke point である wrapper（scripts/tmux_resurrect_save.sh、
 #      @resurrect-save-script-path 経由）の bounded-wait lock に委ねる。
-#      かつて自前 mkdir lock を持っていたが、lock 競合時に「skip して成功扱い」で
-#      イベントを取りこぼし損失窓が最大 15 分に退行するバグがあった（wrapper 冒頭
-#      コメントが明文で禁じたのと同一パターン）。撤去により、先行保存と重なった
+#      自前 mkdir lock は持たない: lock 競合時に「skip して成功扱い」で
+#      イベントを取りこぼし損失窓が最大 15 分に退行するため（wrapper 冒頭
+#      コメントが明文で禁じたのと同一パターン）。wrapper に委ねるので、先行保存と重なった
 #      後発 debouncer は wrapper 内で完了を待ってから最新状態を保存する（取りこぼし無し）。
 #   4. イベント連打で保存を多発させない（debounce token: 自分が最後の
 #      イベントでなければ何もしない。最後の 1 つだけが実際に保存する）。
@@ -158,7 +158,7 @@ tt_debounced_save_main() {
 
 # source 時（テスト）は main を実行しない。直接実行時のみ走らせる。
 if [ "${TT_DEBOUNCE_SOURCE_ONLY:-}" != "1" ]; then
-  # 無音契約 (issue 129)。🚨 **この枝に置く。ファイル先頭には置けない**: テストはこの
+  # 無音契約。🚨 **この枝に置く。ファイル先頭には置けない**: テストはこの
   # スクリプトを source して関数だけを使うので、先頭で塞ぐとテスト自身の出力まで消える。
   # debounce は既定 10 秒 sleep する間 tmux のパイプを掴むため、その間 run-shell が active になる
   exec </dev/null >/dev/null 2>&1

@@ -1,6 +1,6 @@
 package main
 
-// 敵対的レビュー (2026-10-06、壊す / 素通り の 2 観点) で見つかった穴を固定するテスト。golden は HEAD にあった Python 版から作った。
+// 穴を固定するテスト。golden は HEAD にあった Python 版から作った。
 
 import (
 	"encoding/binary"
@@ -156,7 +156,7 @@ func TestDefaultFaceAlwaysEmbedded(t *testing.T) {
 	}
 }
 
-// FrameStates はフレームごとの状態を、FrameRuns の区間どおりに総フレーム数 ceil(尺 × fps) まで並べる (issue 660)
+// FrameStates はフレームごとの状態を、FrameRuns の区間どおりに総フレーム数 ceil(尺 × fps) まで並べる
 func TestFrameStates(t *testing.T) {
 	runs := [][4]int{{0, -1, 0, 0}, {12, 0, 1, 2}, {15, 0, 0, 0}}
 	got := build.FrameStates(runs, nil, nil, 0.7) // 0.7 秒 = 21 フレーム
@@ -357,7 +357,7 @@ func TestResolvePathSymlinkThenParent(t *testing.T) {
 	}
 }
 
-// JSON の整数の -0 は、Python では 0 (int) になり float() で 0.0 になる。-0.0 にすると鍵が Python 版と違う (敵対的レビュー P2-1)。
+// JSON の整数の -0 は、Python では 0 (int) になり float() で 0.0 になる。-0.0 にすると鍵が Python 版と違う。
 // golden の cachekey.json の最後の件は、Python に -0 を与えて作った鍵 (golden の line には Python が読んだ後の 0 が書かれている)。
 func TestNegativeZeroIntLiteralKey(t *testing.T) {
 	var cases []struct {
@@ -403,7 +403,7 @@ func TestCreatedDate(t *testing.T) {
 	}
 }
 
-// TestCreatedDateRenderedByPlayer は、player.html が作成日を舞台に出していることを確かめる (issue 646 の 2)。
+// TestCreatedDateRenderedByPlayer は、player.html が作成日を舞台に出していることを確かめる。
 // TestCreatedDate は PlayerData.Date までしか見ないので、要素や代入を消しても緑のままだった。
 // 代入はまとめ撮り (#sheet=) の分岐より前に置く (分岐の後ろだと、mp4 の絵に作成日が写らない)。
 func TestCreatedDateRenderedByPlayer(t *testing.T) {
@@ -428,7 +428,7 @@ func TestCreatedDateRenderedByPlayer(t *testing.T) {
 }
 
 // synth の「台本から外れた古いファイル」は合成のキャッシュだけを数える (build が置く mermaid/ を数えて、
-// work/ ごと消すよう案内しない。issue 652)
+// work/ ごと消すよう案内しない)
 func TestSynthCountsOnlyStaleCache(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -461,7 +461,7 @@ func TestSynthCountsOnlyStaleCache(t *testing.T) {
 	}
 }
 
-// 出力先に書けないなら、音声の圧縮や撮影より前に止まる (issue 652)。無い dir / ディレクトリがある / 読み取り専用の既存のファイル
+// 出力先に書けないなら、音声の圧縮や撮影より前に止まる。無い dir / ディレクトリがある / 読み取り専用の既存のファイル
 func TestBuildChecksOutputDirFirst(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -501,7 +501,7 @@ func TestBuildChecksOutputDirFirst(t *testing.T) {
 	}
 }
 
-// Write のヘッダの各欄を直接見る (自前の parser は byte rate / block align を読まないので、往復では検査されない。issue 653)
+// Write のヘッダの各欄を直接見る (自前の parser は byte rate / block align を読まないので、往復では検査されない)
 func TestWriteWavHeaderFields(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "x.wav")
 	pcm := make([]byte, 480)

@@ -2,8 +2,8 @@
 # tmux-resurrect 保存ガードの共有ライブラリ (source して使う。実行ファイルではないので shebang なし)。
 # 利用者: resurrect 系スクリプト全般 (保存経路の choke point / 観測ログの書き手など。
 #         `grep -rl tmux_resurrect_guards.sh scripts/` が実際の一覧)。
-# かつて両スクリプトに同じ判定式と TTL が二重定義され「変えるなら両方揃えること」
-# 運用だったのを、ここに一本化した (2026-07-05)。
+# 両スクリプトに同じ判定式と TTL を二重定義しない: 「変えるなら両方揃えること」
+# 運用になるので、ここに一本化した (2026-07-05)。
 #
 # 前提: 呼び出し元は bash。tmux コマンドが PATH にあること (テストはスタブで差し替える)。
 
@@ -67,7 +67,7 @@ tt_only_hold_sessions() {
 # 🚨 **空白を潰すのは必須**。owner 行を `read -r pid start` のように空白分割で読む書き手が
 #   いるため、生の `ps` 出力 (例 "火  8/25 17:09:37 2026") を入れると先頭語だけが記録され、
 #   比較が壊れる。ここが**指紋の唯一の出典**で、`scripts/tmux_resurrect_save.sh` にあった
-#   独立実装 (同じ処理を別書式で持っていた) は削除済み (issue 078。二重化は issue 068 の
+#   独立実装 (同じ処理を別書式で持っていた) は削除済み (二重化は
 #   drift の直接原因だった)。
 # 起動時刻トークンの正規化: 空白を `_` に潰し、**前後の `_` を落とす**。
 # 🚨 前後を落とすのは必須。`ps -o lstart=` の末尾パディングは platform 依存で、macOS は
@@ -100,7 +100,7 @@ tt_same_proc() {
   # 起動時刻が取れない環境 (ps 制限等) は pid 生存のみで判定する (fail-open)
   [ -n "$cur" ] || return 0
   # 🚨 記録側も同じ正規化を通してから比較する。指紋の書式を変えた移行期に、旧書式で書かれた
-  #   lock を「別プロセス」と誤判定して**生存 owner を奪う**のを防ぐ (issue 078)。
+  #   lock を「別プロセス」と誤判定して**生存 owner を奪う**のを防ぐ。
   want="$(tt_norm_fp "$want")"
   [ "$cur" = "$want" ]
 }
@@ -131,7 +131,7 @@ tt_lock_owner_alive() {
 
 # pane 内容の保存 (@resurrect-capture-pane-contents) が on か。
 #
-# 🚨 **この判定式を各スクリプトへ書き写さない** (issue 316)。以前は同じ式が 3 箇所にあった:
+# 🚨 **この判定式を各スクリプトへ書き写さない**。同じ式が 3 箇所にあると食い違う:
 # `tmux_resurrect_save.sh` の定義 (呼び出し 0 の born dead) と、`tmux_snapshot_health.sh` /
 # `tmux_restore_runner.sh` のインライン 2 箇所。式が食い違うと片方だけが黙る。
 # 🚨 **利用者はこの 2 本だけ**。`tmux_resurrect_save.sh:tt_archive_finalize` の
@@ -187,7 +187,7 @@ tt_on_default_server() {
 #       正当な取得者の lock も「owner 不在」に見える。ここを猶予なしで奪うと**二重取得**する
 #   (b) 奪取の直列化 lock (`<dir>.steal`) … 奪取は rm+mkdir+write の数ミリ秒で終わるので、
 #       これを超えて残るのは奪取の途中で死んだプロセスの取り残しだけ
-# 短すぎると (a) で生きた lock を奪い、長すぎると復旧が遅れる。issue 103
+# 短すぎると (a) で生きた lock を奪い、長すぎると復旧が遅れる
 TT_LOCK_ORPHAN_STALE_SECONDS="${TT_LOCK_ORPHAN_STALE_SECONDS:-30}"
 
 # dir の mtime が secs より古いか。
@@ -222,7 +222,7 @@ tt_lock_dir_older_than() {
 #   2026-07-30 の監査で実証済み。実害は「二重起動」ではなく「装置不在」側に倒れる)。
 # 🚨 この掃除は **lock 名に pid を持つ経路専用**。単一 lock (`<dir>/lock`) の経路
 #   (tmux_restore_runner.sh) では呼ばないこと。掃除を後付けすると「今まで掃除しなかった
-#   経路が掃除を始める」= 挙動変更で、誤奪の新しい窓を開ける (issue 078 で意図的に分けた)。
+#   経路が掃除を始める」= 挙動変更で、誤奪の新しい窓を開ける。
 tt_lock_sweep_stale() {
   local base="$1" d spid
   for d in "$base"/*.lock; do
@@ -254,7 +254,7 @@ tt_lock_sweep_stale() {
 #   違う (periodic_save / watchdog は無音で exit 0、restore_runner は理由を観測ログへ残す)。
 #   ここが返すのは「取れたか / なぜ取れなかったか」だけで、判断は呼び出し側が持つ。
 #   同じ理由で `tmux_resurrect_save.sh` の stale 判定 (mtime hard TTL backstop を持つ) は
-#   この関数へ寄せていない — 政策が違うものを 1 つにすると保存停止か誤奪を作る (issue 078)。
+#   この関数へ寄せていない — 政策が違うものを 1 つにすると保存停止か誤奪を作る。
 # 🚨 戻り値を読む側は `rc=0; tt_lock_acquire "$d" || rc=$?` の形にすること。素の `rc=$?` は
 #   後から `set -e` が入った瞬間に「rc を読む前にスクリプトごと死ぬ」へ変わる (無音で機能停止)。
 tt_lock_acquire() {
@@ -269,7 +269,7 @@ tt_lock_acquire() {
   #   原子的でない** ので、正当な取得者が `tt_lock_write_owner` の中 (`ps` の fork を挟むため
   #   実測 4.6ms) にいる間、その lock も owner 不在に見える。猶予なしで奪うと**両方が rc=0 に
   #   なり**、さらに遅れて届いた相手の owner 記録が自分の記録を上書きし、相手の
-  #   `tt_lock_release_if_owner` が**走行中の自分の lock を消す** (issue 103 の原症状)。
+  #   `tt_lock_release_if_owner` が**走行中の自分の lock を消す**。
   #   実測 2026-08-28: lock 不在から 2 プロセスが同時に来る形 (= production の全経路) で
   #   二重取得 2/30、`write_owner` を遅らせると 15/15。
   #   区別は owner ファイルの**有無**で付く: 記録済みで死んでいる owner は即奪ってよく
@@ -289,7 +289,7 @@ tt_lock_acquire() {
   # 取り残し (owner 不在) を奪う。
   #
   # 🚨 「owner の生存確認 → rm -rf → mkdir」を素直に書くと**非アトミック**で、2 プロセスが
-  #   1〜5ms 差で来ると**両方が取得に成功する** (issue 103。E2E で restore.sh が 40/40 二重実行)。
+  #   1〜5ms 差で来ると**両方が取得に成功する** (E2E で restore.sh が 40/40 二重実行)。
   #   `mv` へ差し替える案も窓が残る (B の mv が A の作った新しい lock を掴む)。
   #   **奪取そのものを mkdir で直列化する**: 奪取権 lock を取れた 1 プロセスだけが奪う。
   if ! mkdir "$steal" 2>/dev/null; then
@@ -324,7 +324,7 @@ tt_lock_acquire() {
 # tt_lock_release_if_owner は**自分が現 owner のときだけ** lock を解放する (EXIT trap 用)。
 #
 # 🚨 無条件の `rm -rf "$LOCK_DIR"` にしないこと。奪取のレース中は 2 プロセスが同じパスを
-#   保持しうるので、**先に終わった側が、まだ走っている側の lock を消す** (issue 103)。
+#   保持しうるので、**先に終わった側が、まだ走っている側の lock を消す**。
 #   消えた後に来た 3 本目が自由に取れるので、二重どころか多重になる。
 #   同じ理由で tmux_resurrect_save.sh は tt_save_release_lock_if_owner を持っている。
 tt_lock_release_if_owner() {
@@ -376,7 +376,7 @@ tt_save_interval_minutes() {
 # tt_run_resurrect_save: resurrect の保存を 1 回、同期で走らせる (@resurrect-save-script-path = 保存の wrapper を quiet で)。
 # 成功したら continuum の最終保存時刻 (@continuum-save-last-timestamp) を進める。
 # rc: 0 = 保存した / 1 = wrapper が失敗・見送った (復元中 / hold のみ / 退行は wrapper 側が判断する) / 2 = wrapper が未設定・実行できない。
-# 保存の経路 (debounce・周期) はどれもここを通す (簿記の意味を揃える。issue 776)。lock は wrapper の bounded-wait が持つ。
+# 保存の経路 (debounce・周期) はどれもここを通す (簿記の意味を揃える)。lock は wrapper の bounded-wait が持つ。
 # 最終保存時刻を進めると、continuum の周期 autosave (enough_time_since_last_run_passed) が @continuum-save-interval 分 gate され、
 # 「同一秒に save.sh が二重起動して last/archive を競合更新する」稀なレースを実質排除する (頻繁に保存している間 continuum は idle 時のみ保存)。
 # 依存 (変わったら再評価): option 名 @continuum-save-last-timestamp (vendor/.../tmux-continuum/scripts/variables.sh の last_auto_save_option) と
@@ -397,7 +397,7 @@ tt_run_resurrect_save() {
 #
 # 🚨 直接 `>> "$HOME/.cache/tt-restore-trigger.log"` と書かないこと。seam
 #   (`TT_TRIGGER_LOG`) を迂回した経路はテストから観測できず、テストが緑でも実際には
-#   書けていない/別の場所に書いている状態を作れてしまう (issue 079。実際に
+#   書けていない/別の場所に書いている状態を作れてしまう (実際に
 #   tmux_resurrect_save.sh と tmux_reap_orphan_servers.sh が迂回していた)。
 # 🚨 行書式は「ISO8601 <TAB> 本文」。読み手 (tmux_server_watchdog.sh の verdict 判定など) が
 #   この形に依存しているので、変えるならこの 1 箇所を変えて読み手も同時に直す。
@@ -412,7 +412,7 @@ tt_run_resurrect_save() {
 #   ここも直すこと。
 # 置き場の既定はここだけに書く (env の TT_TRIGGER_LOG が seam。テストが渡す。guards.sh を読まない tmux_reap_orphan_servers.sh だけは例外で手書き)。各スクリプトが既定を手で書いていた間、
 # tmux_resurrect_save.sh だけが書き忘れ、set -u の未定義が `|| true` に潰されて save-advanced 等が 2026-08-25 から 1 行も
-# 書かれなかった (issue 776。テストは常に TT_TRIGGER_LOG を渡すので見えなかった)。
+# 書かれなかった (テストは常に TT_TRIGGER_LOG を渡すので見えなかった)。
 : "${TT_TRIGGER_LOG:=${HOME:-}/.cache/tt-restore-trigger.log}"  # HOME が無ければ書けない場所になり、tt_trigger_log が黙って諦める
 # $1=本文 / $2=打刻 (省略時は「今」)。$2 は「イベントの発生時刻と、それを書ける状態になる時刻が
 # ずれる」書き手のためにある (watchdog の server-death は死亡検知時の時刻で打刻し、その後に

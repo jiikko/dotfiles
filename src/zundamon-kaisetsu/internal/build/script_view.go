@@ -12,7 +12,7 @@ import (
 	"zundamon-kaisetsu/internal/show"
 )
 
-// CmdView は台本をユーザーに見せる一覧を出す (issue 810。SKILL.md の手順 3-4)。チャプターの頭の見出しと、行ごとの
+// CmdView は台本をユーザーに見せる一覧を出す (SKILL.md の手順 3-4)。チャプターの頭の見出しと、行ごとの
 // 行番号 / 話者 (表情) / 字幕、図解が変わる行 (出す・段を進める・消す) にはその中身を次の行に字下げして出す。
 // 図解の範囲と段は build と同じ show.LineShows で決めるので、合成 (wav) は要らない。
 func CmdView(env *app.Env, scriptArg string) error {
