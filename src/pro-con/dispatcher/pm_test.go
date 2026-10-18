@@ -403,7 +403,7 @@ func TestCloseDoesNotStopPM(t *testing.T) {
 	}
 }
 
-// 🚨 再開が返った直後 (記録の行はまだ前の PM) に終了しても、今の PM を止める (敵対的レビュー P1-1)。
+// 🚨 再開が返った直後 (記録の行はまだ前の PM) に終了しても、今の PM を止める。
 func TestShutdownRightAfterPMResume(t *testing.T) {
 	r := startedPM(t)
 	r.l.resumeID = "pm2"
@@ -420,7 +420,7 @@ func TestShutdownRightAfterPMResume(t *testing.T) {
 	}
 }
 
-// 落ち続ける PM は、crash の窓の間に pmReviveLimit 回までしか起こし直さない (枠を焼き続けない。敵対的レビュー P2-1)。
+// 落ち続ける PM は、crash の窓の間に pmReviveLimit 回までしか起こし直さない (枠を焼き続けない)。
 func TestPMReviveLimited(t *testing.T) {
 	r := startedPM(t)
 	r.ss = nil // 再開しても一覧に出ない (すぐ落ちる)
@@ -438,7 +438,7 @@ func TestPMReviveLimited(t *testing.T) {
 	}
 }
 
-// 前の PM の worktree が消えたら、再開 (消えた cwd へは再開できない) ではなく新しい worktree で起動する (敵対的レビュー P2-2)。
+// 前の PM の worktree が消えたら、再開 (消えた cwd へは再開できない) ではなく新しい worktree で起動する。
 func TestPMStartsFreshWhenWorktreeGone(t *testing.T) {
 	r := startedPM(t)
 	r.d.Exists = func(string) bool { return false }
@@ -453,7 +453,7 @@ func TestPMStartsFreshWhenWorktreeGone(t *testing.T) {
 	}
 }
 
-// 知らない status の PM は作業中とみなして止めない (敵対的レビュー P3-1)。
+// 知らない status の PM は作業中とみなして止めない。
 func TestPMUnknownStatusNotInterrupted(t *testing.T) {
 	r := startedPM(t)
 	r.ss[0].Status = "compacting"
@@ -467,7 +467,7 @@ func TestPMUnknownStatusNotInterrupted(t *testing.T) {
 	}
 }
 
-// pm.json が壊れても、PG の割り当ては続ける (敵対的レビュー P3-2)。
+// pm.json が壊れても、PG の割り当ては続ける。
 func TestBrokenPMStateDoesNotStopDispatch(t *testing.T) {
 	r := newPMRig(t)
 	planned(t, r.dir, 1)
@@ -589,7 +589,7 @@ func TestPMRejectCountResetsOnOtherOutcomes(t *testing.T) {
 }
 
 // 結果の分からない PM の再開は、同じ作業ディレクトリでも名前の違う session (役の worktree で人間が立てた bg の session) を取り込まない
-// (再開も worktree の名前を渡す = 488。取り込むと終了で人間の session を止める = issue 457)。
+// (再開も worktree の名前を渡す = 488。取り込むと終了で人間の session を止める)。
 func TestPMResumeAdoptNeedsName(t *testing.T) {
 	d := newDispatcher(t, t.TempDir(), &fakeLauncher{}, nil)
 	pm := store.PMState{Launching: "再開", LaunchedAt: t0}
@@ -669,7 +669,7 @@ func TestPMResumesWhenCacheMayBeWarm(t *testing.T) {
 		"transcript が無い":  {read: replyAt(nil)},
 		"応答が無い":           {read: func(string) (live.Transcript, error) { return live.Transcript{LastAt: t0}, nil }},
 		"役の worktree でない": {read: replyAt(map[string]time.Time{"P1": t0}), cwd: "/w/elsewhere/" + pmName},
-		// 生きているが worktree が消えた: 起動し直すと止めた後の chdir で拒否され、起動し直しの拒否の印が立つ (581 の 3 周目 P2-1)
+		// 生きているが worktree が消えた: 起動し直すと止めた後の chdir で拒否され、起動し直しの拒否の印が立つ
 		"worktree が消えた": {read: replyAt(map[string]time.Time{"P1": t0}), gone: true},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -709,8 +709,8 @@ func TestStoppedPMRestartsInPlaceAfterCacheTTL(t *testing.T) {
 	}
 }
 
-// 起動し直しを claude が受け付けなかったら、この dispatcher の間は起動し直さずに再開する (581 の敵対的レビュー P2:
-// 起動し直しだけが通らない形で、再開できる PM を launchRejectLimit まで同じ失敗に当てて止めない)。
+// 起動し直しを claude が受け付けなかったら、この dispatcher の間は起動し直さずに再開する。
+// 起動し直しだけが通らない形で、再開できる PM を launchRejectLimit まで同じ失敗に当てて止めない。
 func TestPMResumesAfterRestartRejected(t *testing.T) {
 	r := startedPM(t)
 	r.d.Transcript = replyAt(map[string]time.Time{"P1": t0})
@@ -734,7 +734,7 @@ func TestPMResumesAfterRestartRejected(t *testing.T) {
 	}
 }
 
-// 起動し直しの前に前の session を止める段で拒否されたのは、起動し直しの拒否ではない (581 の 3 周目 P2-1)。再開と同じく rejects に数え、起動し直しは続ける。
+// 起動し直しの前に前の session を止める段で拒否されたのは、起動し直しの拒否ではない。再開と同じく rejects に数え、起動し直しは続ける。
 func TestPMRestartStopFailureCountsAsReject(t *testing.T) {
 	r := startedPM(t)
 	r.d.Transcript = replyAt(map[string]time.Time{"P1": t0})

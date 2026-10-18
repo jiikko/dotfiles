@@ -94,7 +94,7 @@ func (d *Dispatcher) roleRun(r *role) *roleRun {
 // roleMax は同時に動かす役の数の上限 (PM も取り込みの係も 1 つ。415 の論点 6。数を変えられるようにするのは 456 の後)。
 const roleMax = 1
 
-// roleState は画面と card list に出す役 r の様子 (issue 476。writeState が Tick ごとに書く)。
+// roleState は画面と card list に出す役 r の様子 (writeState が Tick ごとに書く)。
 // 最後の tellRole の値と、役の様子のファイル (起動の印・知らせ済みのカード) から決める。
 // 起動・再開してから launchGrace の間は、一覧にまだ出ない / pid が無いのを「落ちた」と出さない (起動の直後によくある形)。
 func (d *Dispatcher) roleState(r *role, now time.Time) card.RoleState {
@@ -147,7 +147,7 @@ var cardIDRe = regexp.MustCompile(`C-\d{3,}`)
 // afterRe は `card plan` の順番の前のカード (--after <カード>)。扱っているカードではないので数えない。
 var afterRe = regexp.MustCompile(`--after[ =]C-\d{3,}`)
 
-// roleTurn は turn の途中の役が今の turn で扱っているカードと、最後の道具の呼び出し (issue 480)。
+// roleTurn は turn の途中の役が今の turn で扱っているカードと、最後の道具の呼び出し。
 // 今の turn = 最後の起動・再開 (since) か、その後の人の発言・自動の再開のうち最後のものより後 (人が attach して打った turn を、
 // 前の知らせの turn の続きと取り違えない)。🚨 それより前の呼び出しは見ない (再開した session の transcript は前の session の記録を写して始まる = live.CardLog)。
 // 扱っているカードは、呼び出しを新しい方から見て、対象 (コマンド・ファイル) に知らせ済みのカード (cards) が 1 枚だけ出た最初のもの
@@ -470,7 +470,7 @@ func settleRole(pm *store.PMState, id string) {
 	pm.Session, pm.Launching, pm.Telling, pm.DeadSince, pm.Stopped = id, "", nil, time.Time{}, false
 }
 
-// roleCacheTTL は、役の前の応答からこれ以上空いたら再開せずに起動し直す長さ (issue 581)。Claude Code の session の prompt cache は 1 時間 TTL で、
+// roleCacheTTL は、役の前の応答からこれ以上空いたら再開せずに起動し直す長さ。Claude Code の session の prompt cache は 1 時間 TTL で、
 // 切れた後の再開は会話全体 (PM・取り込みの係では 7〜70 万トークン) を書き直す。581 の実測は 56.5 分の再開まで当たり、61 分から外れた。
 // 60 分より手前に置くのは、損が片寄っているため: 当たる再開を起動し直しても指示書の書き込み (PG の起動と同じ約 2.2 万) で済むが、外れる再開は桁で高い
 const roleCacheTTL = 55 * time.Minute
@@ -528,7 +528,7 @@ func (d *Dispatcher) prepareRole(r *role, row live.Owned, hasRow bool, cur agent
 
 // pmAdopt は結果の分からない起動・再開の PM が一覧に出ているかを見る。印を書いた後 (LaunchedAt 以降) に始まったものだけ:
 // 起動は名前と cwd (PM の worktree そのもの)、再開は前の session と同じ session id か、同じ作業ディレクトリと名前 (再開は別の session id を立てる = 427 の 3f。
-// 名前は再開も worktree の名前を渡す = 488。cwd だけだと、役の worktree で人間が立てた bg の session を取り込んで止める = issue 457)。
+// 名前は再開も worktree の名前を渡す = 488。cwd だけだと、役の worktree で人間が立てた bg の session を取り込んで止める)。
 func (d *Dispatcher) adopt(pm store.PMState, row live.Owned, hasRow bool, ss []agents.Session) (string, bool) {
 	for _, s := range ss {
 		if s.ID == "" || s.Kind != "background" || s.Started().Before(pm.LaunchedAt) {

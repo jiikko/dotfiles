@@ -1,6 +1,6 @@
 package wtclean
 
-// 人が決める側 (issue 553)。自動の片付け (Clean) が残すもののうち、理由が「取り込む先に無い commit がある」か「記録に無いカード」だけの
+// 人が決める側。自動の片付け (Clean) が残すもののうち、理由が「取り込む先に無い commit がある」か「記録に無いカード」だけの
 // worktree (Verdict.Ask) を、人が設定画面のディスクのタブで「消す」(Discard) か「残す」(Hold) に決める。
 // 🚨 どちらも Clean と同じく、材料を取り直して Judge で判定し直してから動かす (人が見た一覧の判定をそのまま信じない)。
 // 判定し直して Ask でなくなった (session が動き出した・未 commit の変更ができた・自動で消せるようになった) か、先端が人が見たものから
@@ -101,7 +101,7 @@ func rejudge(ctx context.Context, seen Verdict, opt Options) (Verdict, Result, b
 }
 
 // Unlanded は PG の worktree name (pc-<カード>) の先端とブランチ worktree-<name> のうち、取り込み先 (origin/master。無ければ origin/main) に
-// 中身が無いものがあれば、その理由を返す (無ければ空)。判定は片付けと同じ inBase (近似を別に書かない。issue 553 の close の検査)。
+// 中身が無いものがあれば、その理由を返す (無ければ空)。判定は片付けと同じ inBase (近似を別に書かない)。
 // worktree もブランチも無ければ空 (PG が作業していない・片付け済み)。
 func Unlanded(ctx context.Context, repo, name string) (string, error) {
 	repo, err := filepath.EvalSymlinks(repo)
@@ -147,7 +147,7 @@ func Unlanded(ctx context.Context, repo, name string) (string, error) {
 // NoWorktree は Settle が片付ける worktree が無かったときの Detail (PG が作業していない・片付け済み)。
 const NoWorktree = "worktree が無い"
 
-// Settle はカードを閉じた (取り込まない終わり方)・削除したその場で、PG の worktree を片付ける (issue 553)。材料を取り直して判定し、
+// Settle はカードを閉じた (取り込まない終わり方)・削除したその場で、PG の worktree を片付ける。材料を取り直して判定し、
 // 自動で消せるもの (取り込み済み) は Clean と同じく、人が決めるもの (取り込み先に無い commit・記録に無いカード) は Discard と同じく
 // 取り込み先に無い commit を RemovedRef に残してから消す。それ以外の理由で残すもの (未 commit の変更・session・lock 等) は消さずに
 // Skipped と理由を返す (設定画面のディスクのタブに残る)。worktree が無ければ Skipped。

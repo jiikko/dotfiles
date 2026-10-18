@@ -8,7 +8,7 @@ import (
 	"pro-con/card"
 )
 
-// 設定に無い repo (パスで書いた・知らない名前) のカードを作る依頼は、箱に手で置かれても記録に入れない (issue 511)。
+// 設定に無い repo (パスで書いた・知らない名前) のカードを作る依頼は、箱に手で置かれても記録に入れない。
 // plan が issue の repo をカードの repo にするときも同じ。前から設定に無い repo のカードへの削除は受ける。
 func TestApplyRejectsUnknownRepo(t *testing.T) {
 	repos := map[string]string{"dotfiles": "/Users/k/dotfiles"}
@@ -39,7 +39,7 @@ func TestApplyRejectsUnknownRepo(t *testing.T) {
 	}
 }
 
-// issue を付けて足した依頼は、足した時点でカードに issue が紐づく。PM が plan で同じ issue を付け直しても重ねない (issue 511)。
+// issue を付けて足した依頼は、足した時点でカードに issue が紐づく。PM が plan で同じ issue を付け直しても重ねない。
 func TestAddLinksIssues(t *testing.T) {
 	dir := t.TempDir()
 	ref := card.IssueRef{Repo: "dotfiles", Number: 505, Status: "open"}

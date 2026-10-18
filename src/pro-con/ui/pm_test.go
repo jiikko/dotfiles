@@ -10,7 +10,7 @@ import (
 	"pro-con/card"
 )
 
-// pmSnap は依頼の列に 2 枚 (R1 は PM が分けている最中)・着手待ちに記録の担当が PM のまま 1 枚を置いた画面 (issue 476)。
+// pmSnap は依頼の列に 2 枚 (R1 は PM が分けている最中)・着手待ちに記録の担当が PM のまま 1 枚を置いた画面。
 func pmSnap(t *testing.T, pm card.RoleState) *Model {
 	t.Helper()
 	be := newSpy()

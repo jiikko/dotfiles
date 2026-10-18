@@ -23,7 +23,7 @@ func TestAttachSkipsDoneCard(t *testing.T) {
 	}
 }
 
-// 完了したカードには worktree の場所だけ足す (issue 508。取り込み済みの branch の commit・差分は古い)。
+// 完了したカードには worktree の場所だけ足す (取り込み済みの branch の commit・差分は古い)。
 func TestDerivedAttachDoneCardLocationOnly(t *testing.T) {
 	now := time.Now()
 	d := Derived{Progress: Progress{At: now, Cards: map[string]card.Progress{"C-001": {Worktree: "/r/.claude/worktrees/pc-c-001", NoWorktree: true,

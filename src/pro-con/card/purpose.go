@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Purpose はカードの種類 (issue 531)。作業のカード (PG が付く) か、人に確かめるだけのカード (確認。PG は付かない) か。
+// Purpose はカードの種類。作業のカード (PG が付く) か、人に確かめるだけのカード (確認。PG は付かない) か。
 // 🚨 Wait.Kind (WaitKind。何を待っているか) とは別の軸。名前を Kind にしない
 type Purpose int
 

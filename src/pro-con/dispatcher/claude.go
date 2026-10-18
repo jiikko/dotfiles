@@ -35,7 +35,7 @@ func ResolveClaude(ctx context.Context, dir string) (Claude, error) {
 	return resolveTool(ctx, dir, "claude")
 }
 
-// ResolveCodex は codex の実体を ResolveClaude と同じ形で解決する (issue 514。敵対的レビューを codex に回す設定のとき PG に渡す)。
+// ResolveCodex は codex の実体を ResolveClaude と同じ形で解決する (敵対的レビューを codex に回す設定のとき PG に渡す)。
 // 🚨 対話シェルの codex は zsh の関数 (zshlib/_codex.zsh) で、PG の bash からは見えない。素の名前ではなくこの Path を渡す
 func ResolveCodex(ctx context.Context, dir string) (Tool, error) {
 	return resolveTool(ctx, dir, "codex")

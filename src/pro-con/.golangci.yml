@@ -1,6 +1,6 @@
 # golangci-lint v2 config for pro-con.
 # 既定の linter (errcheck / govet / ineffassign / staticcheck / unused) に、状態の enum の網羅・ctx と error の扱い・
-# パッケージの依存の向き・衛生系を足す。src/glogx/.golangci.yml を下敷きに、pro-con の構成に意味のあるものだけを選んだ (issue 415)。
+# パッケージの依存の向き・衛生系を足す。src/glogx/.golangci.yml を下敷きに、pro-con の構成に意味のあるものだけを選んだ。
 #
 # 入れていないもの (glogx にはある):
 #   - prealloc: pro-con のスライスはカード・PG の本数 (数十) の大きさで、事前確保で測れる差が出ない。導入時に 21 件出たが、
@@ -13,7 +13,7 @@
 version: "2"
 
 # 🚨 root の Makefile (run_go_projects) が全プロジェクトを並列に回すので、全プロジェクトで true にする
-# (1 つでも false が残ると、その 1 つが他の起動タイミング次第で落ちる。理由の詳細は issue 258 と
+# (1 つでも false が残ると、その 1 つが他の起動タイミング次第で落ちる。理由の詳細は
 # src/doctor/.golangci.yml のコメント)。tests/scripts/test_golangci_parallel_runners.sh が検査する
 run:
   allow-parallel-runners: true
@@ -64,15 +64,15 @@ linters:
       forbid:
         - pattern: ^fmt\.Print(f|ln)?$
           msg: stdout への直接出力はしない (CLI の口は io.Writer で受けて書く。画面は bubbletea の描画だけ)
-        # 端末の幅・切り詰め・切り出しは github.com/jiikko/dotfiles/src/tuikit/termwidth を通す (issue 524)。速い道 (と、入れるなら arm64 の実装) を
+        # 端末の幅・切り詰め・切り出しは github.com/jiikko/dotfiles/src/tuikit/termwidth を通す。速い道 (と、入れるなら arm64 の実装) を
         # 置く場所を termwidth の 1 か所にするため。字面で見るので、別名の import・変数経由の呼び出しは検出しない
         - pattern: ^ansi\.(StringWidth|Cut|Truncate|TruncateLeft)$
           msg: 幅は termwidth.Of、切り詰め・切り出しは termwidth.Truncate / Cut / Slice / SliceFrom / SplitAround を使う (issue 524)
-        # 折り返しも同じ。x/ansi の Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る (issue 590)
+        # 折り返しも同じ。x/ansi の Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る
         - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
           msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
-        # 端末を外のコマンドへ渡す実行は、戻った後に端末の前面を取り戻す ui の termExec (foreground.Exec) を通す (issue 707)。
-        # glogx・treefiler は ruleguard で同じことを止めているが、pro-con は ruleguard を持たないので字面で止める (issue 757)。
+        # 端末を外のコマンドへ渡す実行は、戻った後に端末の前面を取り戻す ui の termExec (foreground.Exec) を通す。
+        # glogx・treefiler は ruleguard で同じことを止めているが、pro-con は ruleguard を持たないので字面で止める。
         # 字面で見るので、bubbletea を tea 以外の名前で import すると検出しない (今の import は全部 tea)
         - pattern: ^tea\.ExecProcess$
           msg: 端末を渡す実行は ui の termExec (foreground.Exec) を tea.Exec に渡す (戻った後に前面を取り戻す。issue 707)

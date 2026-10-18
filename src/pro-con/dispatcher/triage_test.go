@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// 要約役には、同じコマンドの最近の結果を渡す: 実際に走って rc が出たものだけを、同じコマンドに絞って、このカードの前回と分かる形で (issue 475)。
+// 要約役には、同じコマンドの最近の結果を渡す: 実際に走って rc が出たものだけを、同じコマンドに絞って、このカードの前回と分かる形で。
 func TestRunFailureGetsRecentResultsOfSameCommand(t *testing.T) {
 	r, fr, _ := runRig(t, 2)
 	var got []SummaryInput

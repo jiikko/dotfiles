@@ -12,7 +12,7 @@ import (
 	"pro-con/card"
 )
 
-// 演出の 1 コマ (View) の時間を、揺れ・カードの移動・枠の滑走に分けて測る (issue 524 / 523 の段 2 の材料)。
+// 演出の 1 コマ (View) の時間を、揺れ・カードの移動・枠の滑走に分けて測る。
 // 幅計算の速い道 (termwidth の ASCII + SGR + 記号) を外れる日本語の題名を各レーンに置く: 実際の画面の形で、
 // ansi の走査へ落ちる行を含める。
 //
@@ -52,7 +52,7 @@ func runFrames(b *testing.B, m *Model, clk *clock, dur time.Duration) {
 	}
 }
 
-// runFramesRendered は runFrames と同じコマを、bubbletea のレンダラと同じ手順 (tuikit/framebench) で端末への差分まで通して測る (issue 607)。
+// runFramesRendered は runFrames と同じコマを、bubbletea のレンダラと同じ手順 (tuikit/framebench) で端末への差分まで通して測る。
 // View の文字列を作るだけの runFrames は、レンダラの分 (このモデルで View の約 2.3 倍) を測らない。termB/op は 1 コマで端末へ出たバイト。
 func runFramesRendered(b *testing.B, m *Model, clk *clock, dur time.Duration) {
 	b.Helper()
@@ -123,7 +123,7 @@ func benchGlide(b *testing.B, run func(*testing.B, *Model, *clock, time.Duration
 	run(b, m, clk, cursorDuration)
 }
 
-// 詳細を開いたカードの活動の件数を振った View (issue 606 / 607)。210 件は実在する最大の PG の session 相当 (応答 70 件)、1000 件は
+// 詳細を開いたカードの活動の件数を振った View。210 件は実在する最大の PG の session 相当 (応答 70 件)、1000 件は
 // 画面が持つ上限 (live.activityKeep)。件数で伸びるなら、見えない行のために描くたびに働いている。
 //
 //	go test -run '^$' -bench BenchmarkDrawerActivity -benchmem -count 10 ./ui/

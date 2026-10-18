@@ -285,12 +285,12 @@ const ensurePolls = 15
 //
 // 照合は session id だけで、記録の pid と kind は見ない: 同じ session id で pid だけ違うのは Claude Code の自動の再開 (pro-con の PG そのもの)。
 // 外の shell の `claude --resume` は別の session id を立てる (427 の 3f で実測) ので、外の session には当たらない。
-// kind で絞ると、claude の版で kind の値が変わったときに生きている PG を止まったと数える (issue 457)
+// kind で絞ると、claude の版で kind の値が変わったときに生きている PG を止まったと数える
 // extra はカードの側で止めようとした session (短い id → カード)。記録に無くても (起動・再開の途中で取り込んだもの) 同じく確かめる。
 // cards が nil でなければ、そのカードの session だけを確かめる (閉じたカードの PG を止める = close.go)。
 // polls は止め直しの周の数 (周の間は shutdownPoll 待つ)。0 なら待たずに 1 周だけ止めて、もう 1 度だけ見る。
 // sent は止める要求が通った回数 (「pro-con が止めた」と「既に止まっていた」を区別する = close.go)。
-// 止め直しの出来事は session ごとに 1 行にまとめて最後に出す (周ごとに積むと、同じ行が同じ時刻で周の数だけ並ぶ = issue 555)。
+// 止め直しの出来事は session ごとに 1 行にまとめて最後に出す (周ごとに積むと、同じ行が同じ時刻で周の数だけ並ぶ)。
 func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string, cards map[string]bool, polls int) (notes []eventlog.Event, left stopLeft, sent int, err error) {
 	list := d.ListAll
 	if list == nil {
@@ -437,13 +437,13 @@ type aliveSession struct {
 	sent   int // 確かめる段で止める要求が通った回数 (0 なら確かめる段の claude stop はすべて失敗した。カードの側の 1 回目は数えない)
 }
 
-// restarting は、Claude Code が落ちた session を自動で再開している途中か (記録が crashed → resuming。issue 551 の実測)。
+// restarting は、Claude Code が落ちた session を自動で再開している途中か (記録が crashed → resuming)。
 func (a aliveSession) restarting() bool {
 	return a.s.PID == 0 && (a.s.JobState == "crashed" || a.s.JobState == "resuming")
 }
 
 // String は、名指しに、そのとき見えている様子 (pid の有無・一覧の state・Claude Code の記録の state) を添えた文
-// (次に読む人が「プロセスは居ない」と分かれば、kill や再起動に進まずに済む = issue 555)。
+// (次に読む人が「プロセスは居ない」と分かれば、kill や再起動に進まずに済む)。
 func (a aliveSession) String() string {
 	s := a.s
 	if s.PID != 0 {
@@ -479,7 +479,7 @@ func (l stopLeft) names() []string {
 	return append(out, l.unproven...)
 }
 
-// advice は、終了で止めきれなかったときの案内。その様子で効く操作だけを挙げる (効かないと分かっている claude stop を並べない = issue 555)。
+// advice は、終了で止めきれなかったときの案内。その様子で効く操作だけを挙げる (効かないと分かっている claude stop を並べない)。
 func (l stopLeft) advice() string {
 	var out []string
 	add := func(s string) {
@@ -637,7 +637,7 @@ func (d *Dispatcher) strayPlan(c card.Card, ss []agents.Session, reg []live.Owne
 	return stopPlan{unproven: unprovenName(c, s)}
 }
 
-// unregistered は、記録 (reg) に無いのに生きているこのカードの PG の session を一覧から探す (issue 457: claude の版で kind が変わった /
+// unregistered は、記録 (reg) に無いのに生きているこのカードの PG の session を一覧から探す (claude の版で kind が変わった /
 // 時計が戻って開始が LaunchedAt より前になった、で register が取り込まなかったもの)。終了 (stopTarget / ensureStopped) と
 // 閉じたとき (close.go) で同じこれを使う。
 //
@@ -659,7 +659,7 @@ func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.
 		}
 		if has && c.Launching == "" {
 			// 記録の行はあるが、カードの短い id が記録に無い別の session を指している (register が「別の session を指している」と知らせる形)。
-			// pro-con が起動したと示せないので止めない。ただし「一覧に無い = 止まっている」とも読まない (issue 457 の残り。PM の判断 2026-09-27)
+			// pro-con が起動したと示せないので止めない。ただし「一覧に無い = 止まっている」とも読まない (PM の判断 2026-09-27)
 			if c.Session != "" && s.ID == c.Session {
 				return s, false, true
 			}
@@ -686,7 +686,7 @@ func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.
 // 対話の session は短い id を持たない: 記録と同じ session id でも (attach 等) 止めない・残りに数えない
 func stoppable(s agents.Session) bool { return s.ID != "" && !s.Stopped() }
 
-// unknownStateNote は、止まったと判定できない session (pid 無しで知らない state = agents.UnknownState) を止めに行くときの警告 (issue 466)。
+// unknownStateNote は、止まったと判定できない session (pid 無しで知らない state = agents.UnknownState) を止めに行くときの警告。
 // 止まったと読んで黙って止めない形を、止めに行く側へ倒したことを残す。who は止める相手の名 (「C-001 の PG」/「PM」)。
 // 1 本の session につき 1 回だけ出す (止めても state が知らない値のまま残る版では、止め直しの周・Tick ごとに重なる)
 func (d *Dispatcher) unknownStateNote(cardID, who string, s agents.Session) []eventlog.Event {
@@ -718,7 +718,7 @@ func StopRequested(dir string) bool {
 	return err == nil
 }
 
-// stopRequestPoll は RequestStop が止めた結果と lock を見直す間隔 (テストで短くする。issue 614)。
+// stopRequestPoll は RequestStop が止めた結果と lock を見直す間隔 (テストで短くする)。
 var stopRequestPoll = 200 * time.Millisecond
 
 // RequestStop は動いている dispatcher に止めるよう頼み、止まる (ロックが外れる) まで待つ。

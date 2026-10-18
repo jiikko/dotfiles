@@ -41,7 +41,7 @@ func gitRepoWithWorktree(t *testing.T) (repo, wt string) {
 	return repo, wt
 }
 
-// outsideShell は pro-con の外の session が、issue 471 に書いた形で repo の lock の置き場を決めて script を走らせる。
+// outsideShell は pro-con の外の session が、決められた形で repo の lock の置き場を決めて script を走らせる。
 func outsideShell(t *testing.T, dir, script string) {
 	t.Helper()
 	cmd := exec.Command("/bin/bash", "-c", `d="$(git rev-parse --path-format=absolute --git-common-dir)/pro-con-locks/test" && mkdir -p "$d" && `+script)
@@ -98,7 +98,7 @@ func TestExecRunnerLockedKillsLeftoverChild(t *testing.T) {
 // (lockman 本体を SIGKILL すると lock が TTL まで残り、repo の次の実行が「外が使用中」で待たされる)。
 func TestExecRunnerLockedCancelKillsStubbornChild(t *testing.T) {
 	_, wt := gitRepoWithWorktree(t)
-	// 猶予は短くする (見るのは止まることと lock の解放で、猶予の長さではない。issue 614)
+	// 猶予は短くする (見るのは止まることと lock の解放で、猶予の長さではない)
 	r := ExecRunner{Lockman: buildLockman(t), KillGrace: 300 * time.Millisecond}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)

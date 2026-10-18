@@ -59,7 +59,7 @@ func TestRunDispatcherWiresSocket(t *testing.T) {
 	}
 	waitFor("箱に置いても待ちを切り上げない", func() bool { return state().Tick.After(first) })
 	waitFor("適用しても画面へ知らせない", func() bool { return changes.Load() > 0 })
-	// 適用した出来事は events.jsonl に残る (pro-con log が読む。issue 444)
+	// 適用した出来事は events.jsonl に残る (pro-con log が読む)
 	waitFor("適用した出来事を events.jsonl に書かない", func() bool {
 		evs, _ := eventlog.Read(dir)
 		for _, e := range evs {
@@ -69,7 +69,7 @@ func TestRunDispatcherWiresSocket(t *testing.T) {
 		}
 		return false
 	})
-	// 画面の出来事は、画面が置いた時刻のまま events.jsonl に入る (dispatcher が居ない間に置いたものを後で書いても、時刻がずれない。issue 445)
+	// 画面の出来事は、画面が置いた時刻のまま events.jsonl に入る (dispatcher が居ない間に置いたものを後で書いても、時刻がずれない)
 	opened := time.Now().Add(-time.Hour).Truncate(time.Second)
 	if _, err := store.Submit(dir, store.Request{Kind: store.KindEvent, Note: "画面 (pid 1): 開いた", At: opened}); err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestRunDispatcherWiresSocket(t *testing.T) {
 	if r := <-rc; r != 0 {
 		t.Fatalf("rc=%d\n%s", r, errOut.String())
 	}
-	// dispatcher 自身が起きた・抜けたも出来事に残る (設定画面のログのタブが出す。issue 512)
+	// dispatcher 自身が起きた・抜けたも出来事に残る (設定画面のログのタブが出す)
 	evs, _ := eventlog.Read(dir)
 	var life []string
 	for _, e := range evs {
@@ -194,7 +194,7 @@ func TestNewDispatcherPassesUserSettingsToLauncher(t *testing.T) {
 }
 
 // 本物の dispatcher の launcher は、状態の置き場の設定 (model / effort) を起動・再開のたびに読む。渡し忘れると設定が効かず、
-// どの PG も既定のモデルで動く (変異で全テストが緑だった。model / effort の敵対的レビュー)。
+// どの PG も既定のモデルで動く (変異で全テストが緑だった)。
 func TestNewDispatcherPassesStateDirToLauncher(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
@@ -234,7 +234,7 @@ func TestRealDispatcherRefusesWithoutClaude(t *testing.T) {
 	}
 }
 
-// dispatcher の transcript の口は、同じ session を何度読んでも変わっていなければ 1 回しか読まない (1 回の tick で何か所からも読む。issue 503)。
+// dispatcher の transcript の口は、同じ session を何度読んでも変わっていなければ 1 回しか読まない (1 回の tick で何か所からも読む)。
 // 探すのは毎回なので、別の project に新しい transcript ができたら (別の cwd で再開した) そちらへ移る。
 func TestTranscriptReaderReusesUnchangedTranscript(t *testing.T) {
 	projects := t.TempDir()

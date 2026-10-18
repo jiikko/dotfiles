@@ -4,7 +4,7 @@ package live
 // (Desktop や他の shell で立ち上げた session は見せず、触れる経路も作らない。2026-09-24 のユーザーの方針)。
 //
 // 🚨 これは「pro-con が外の session に触らない」ための仕組みで、「外から pro-con の session に触らせない」は作れない
-// (claude --bg の session はどの shell からも claude attach / stop できる)。外からの操作の検出は issue 427。
+// (claude --bg の session はどの shell からも claude attach / stop できる)。
 
 import (
 	"encoding/json"
@@ -26,7 +26,7 @@ const RetiredFile = "sessions-retired.json"
 
 // Owned は pro-con が起動した session 1 本。照合は「記録にある欄が全部一致し、PID もある」(owns)。
 // 🚨 PID は必須。PID が無いと、pro-con が起動した session を他の shell で同じ session id のまま再開 (--resume) したものまで
-// 「自分のもの」と見なす (敵対的レビュー 2026-09-24 の P2 / 2 周目の P1)。PID は session ごとの worker (`claude bg-spare …`) で、
+// 「自分のもの」と見なす。PID は session ごとの worker (`claude bg-spare …`) で、
 // 落ちて自動で再開されると変わる (425 の実測)。変わったら pro-con の session も一覧から外れる (失敗側に倒れる)。
 // 自動の再開なら記録を書き直し、外での再開なら書き直さない、の区別は 427 が行う。
 type Owned struct {
@@ -63,11 +63,11 @@ var (
 )
 
 // Register は起動・再開した session を記録する。同じ SessionID の行があれば書き直し、無ければ足す。
-// SessionID と PID は必須 (短い id だけの行で書き直すと、SessionID の制約が消えて照合が緩む。敵対的レビュー 3 周目の P2)。
+// SessionID と PID は必須 (短い id だけの行で書き直すと、SessionID の制約が消えて照合が緩む)。
 // 起動する側は、claude --bg が返す短い id で一覧を引き、SessionID と PID を得てから記録する (427)。
 // 🚨 書き直しは行ごと置き換える。再開のときも CardID を渡すこと (渡し忘れると、どのカードのための session かが消える。照合には影響しない)。
 // 書き込みは一時ファイルからの rename (途中で落ちても壊れた記録を残さない)。
-// 🚨 書き手は dispatcher だけの前提 (issue 426 の決定 1)。複数から同時に書くと、後から書いた方が前の書き込みを消す。
+// 🚨 書き手は dispatcher だけの前提。複数から同時に書くと、後から書いた方が前の書き込みを消す。
 func Register(path string, o Owned) error { return write(path, o, false) }
 
 // ReplaceCard は o.CardID の行を o 1 本に置き換える (再開で session が新しくなったとき。
@@ -111,7 +111,7 @@ func write(path string, o Owned, dropCard bool) error {
 }
 
 // Forget は cardID のカードの行のうち、session id が sessionIDs にあるものを記録 (今の分と退いた分) から消し、消した本数を返す
-// (片付けが transcript を消した session。issue 497)。🚨 書き手は dispatcher だけ (Register と同じ)。
+// (片付けが transcript を消した session)。🚨 書き手は dispatcher だけ (Register と同じ)。
 // 挙げていない session の行 (片付けの後に再開した session) と、ほかのカードの行は残す。
 func Forget(path, cardID string, sessionIDs []string) (int, error) {
 	drop := map[string]bool{}

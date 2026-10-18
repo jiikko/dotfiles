@@ -336,7 +336,7 @@ func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (eventlo
 		if cc.State != card.Running || cc.Run == "" { // 止められた等で、もう結果を待っていない
 			return
 		}
-		// 詳細の「進捗」に残す分 (Resume は PG に渡したら消える。issue 469)。頼んだ場所は DropRun の前に写す
+		// 詳細の「進捗」に残す分 (Resume は PG に渡したら消える)。頼んだ場所は DropRun の前に写す
 		cc.LastRun = &card.RunRecord{Command: job.command, Cwd: cc.RunCwd, RC: r.rc, Took: now.Sub(job.start).Round(time.Second), At: now,
 			Tail: lastLines(logTail(job.logPath), card.RunTailLines), Log: job.logPath}
 		if r.err != nil {
@@ -399,7 +399,7 @@ func logTail(path string) string {
 // runTimeout は 1 本の実行の上限 (長いテストでも超えない長さ。超えたら止めて失敗にする)。
 const runTimeout = time.Hour
 
-// errRunStopped は、実行のグループが止まったまま (全部 STAT T) 続かなかったので止め直したこと (issue 541)。
+// errRunStopped は、実行のグループが止まったまま (全部 STAT T) 続かなかったので止め直したこと。
 var errRunStopped = errors.New("実行のグループが止まったまま (STAT T) 続かなかったので止め直した")
 
 // runStopGrace は止まった (全部 STAT T) グループが続くのを待つ間 / runStopPoll は止まっているかを見る間隔。
@@ -416,7 +416,7 @@ type ExecRunner struct {
 	Lockman string
 	// StopGrace / StopPoll は runStopGrace / runStopPoll の代わり (0 なら既定。テストで短くする)
 	StopGrace, StopPoll time.Duration
-	// KillGrace は runKillGrace の代わり (0 なら既定。テストで SIGTERM → SIGKILL の猶予を実時間で待たないため。issue 614)
+	// KillGrace は runKillGrace の代わり (0 なら既定。テストで SIGTERM → SIGKILL の猶予を実時間で待たないため)
 	KillGrace time.Duration
 }
 
@@ -449,7 +449,7 @@ func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string
 	// 🚨 lockman は子を別のグループに置く (lease を失ったときに止めるため) ので、lockman のグループを撃っても bash の子には届かない。
 	// bash が自分の pgid を書いた pgidFile から、そのグループも撃つ
 	// 別の session にする (グループの先頭は bash 自身なので、グループごと止めるのは同じ)。dispatcher が端末から起こされていても、
-	// make test の中の `zsh -i -c` 等に端末の前面を奪わせない (奪われると前面で端末を読む画面が SIGTTIN で止まる。issue 518)
+	// make test の中の `zsh -i -c` 等に端末の前面を奪わせない (奪われると前面で端末を読む画面が SIGTTIN で止まる)
 	cmd.SysProcAttr = foreground.Detached()
 	exited := make(chan struct{})
 	killGrace := cmp.Or(r.KillGrace, runKillGrace)
@@ -598,7 +598,7 @@ const (
 // runLockDir は dir の repo の lock を置くディレクトリ: <git の共通ディレクトリ>/pro-con-locks/test (無ければ作る)。
 // 共通ディレクトリ (`git rev-parse --git-common-dir`) は同じ repo のどの worktree から見ても同じなので、worktree をまたいで 1 つの lock になり、
 // repo が違えば別の lock になる。.git の中なので working tree に lock の残骸を置かない。
-// pro-con の外から同じ lock を取る形 (issue 471):
+// pro-con の外から同じ lock を取る形:
 //
 //	lockman with "$(git rev-parse --path-format=absolute --git-common-dir)/pro-con-locks/test" -- make test
 func runLockDir(ctx context.Context, dir string) (string, error) {
@@ -658,7 +658,7 @@ func dirTag(dir string) string { return fmt.Sprintf("%x", sha1.Sum([]byte(dir)))
 const RunMark = "pro-con-run:"
 
 // runScript は実行の bash が走らせる台本。頼まれたコマンドは環境変数 (runCommandEnv) で渡して eval する:
-//   - 文字列を連結しない (末尾のバックスラッシュ・閉じていない here-doc で、足した行と繋がって意味が変わった = 427 の敵対的レビューで実測)
+//   - 文字列を連結しない (末尾のバックスラッシュ・閉じていない here-doc で、足した行と繋がって意味が変わった)
 //   - eval (組み込み) を通すので、bash は単純なコマンドに exec で置き換わらない (置き換わると $0 の印が ps から消える。
 //     /bin/bash 3.2 で実測。TestKillStaleByRunMarker が単純なコマンドで固定している)
 //

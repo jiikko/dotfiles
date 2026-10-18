@@ -1,6 +1,6 @@
 package main
 
-// pro-con du — pro-con が作った物のディスクの使用量と内訳 (issue 456。読むだけ。測り方は package diskuse)。
+// pro-con du — pro-con が作った物のディスクの使用量と内訳 (読むだけ。測り方は package diskuse)。
 // 🚨 重い (worktree を全部歩くので数秒)。画面は描くたびに呼ばない。
 
 import (

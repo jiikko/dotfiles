@@ -13,7 +13,7 @@ import (
 	"pro-con/store"
 )
 
-// finishedRecord は終えたカードと動いているカードを混ぜた記録を作る (issue 478 の発火条件: 終えたカードが記録に溜まる)。
+// finishedRecord は終えたカードと動いているカードを混ぜた記録を作る (発火条件: 終えたカードが記録に溜まる)。
 func finishedRecord(t *testing.T, dir string) {
 	t.Helper()
 	done := func(id string, since time.Time) card.Card {
@@ -78,7 +78,7 @@ func TestTickMovesFinishedCardsToArchive(t *testing.T) {
 	}
 }
 
-// BenchmarkTickWithFinishedCards は、終えたカードが 750 枚 (dogfooding の速さで約 50 日) 溜まった記録での空の Tick の所要 (issue 478)。
+// BenchmarkTickWithFinishedCards は、終えたカードが 750 枚 (dogfooding の速さで約 50 日) 溜まった記録での空の Tick の所要。
 // 書庫へ移す前は Tick が毎回 750 枚を読み直す。移した後は動いているカードの数だけで決まる。
 func BenchmarkTickWithFinishedCards(b *testing.B) {
 	dir := b.TempDir()

@@ -2,7 +2,7 @@ package card
 
 import "testing"
 
-// 検索語は題名・カード ID・issue・依頼の原文を引き、空白で区切った語はすべて含むときだけ一致する (issue 532)。
+// 検索語は題名・カード ID・issue・依頼の原文を引き、空白で区切った語はすべて含むときだけ一致する。
 func TestMatches(t *testing.T) {
 	c := Card{ID: "C-085", Title: "カードを検索する", Request: "外から動かす Claude の確認",
 		Issues: []IssueRef{{Repo: "dotfiles", Number: 53}}}

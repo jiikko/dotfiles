@@ -2,7 +2,7 @@ package live
 
 // transcript (~/.claude/projects/*/<sessionId>.jsonl) の末尾から、カードに出す情報を読む。
 //
-// 形式は Claude Code 2.1.281 で実測した (issue 424): Desktop の対話 session と claude --bg の session は同じ形式で、
+// 形式は Claude Code 2.1.281 で実測した: Desktop の対話 session と claude --bg の session は同じ形式で、
 // 1 行 1 レコードの JSON。題名は ai-title (対話) か custom-title (bg の -n)、最後に人間が打った文は last-prompt に、
 // 会話の途中で何度も書き直されるので、末尾だけ読めば最新が取れる (対話の transcript は 14MB を超えるので全体は読まない)。
 // 人間の発言は user レコードの origin.kind == "human"、PG の出力は assistant レコードの text。
@@ -28,7 +28,7 @@ type Transcript struct {
 	Prompts    []Prompt // 人間の発言 (古い順)
 	Outputs    []string // PG の出力の文 (古い順)。改行を残した原文 (markdown。rawText)
 	LastAt     time.Time
-	// LastReply は assistant の行のうち最後のものの時刻 (最後の API の応答。prompt cache の寿命を測る起点 = issue 581)
+	// LastReply は assistant の行のうち最後のものの時刻 (最後の API の応答。prompt cache の寿命を測る起点)
 	LastReply time.Time
 	// LastNew は PG の出力のうち、末尾の中でそれまでに無かった文が最後に出た時刻 (watchdog の「進捗」。同じ出力を繰り返すループは数えない)
 	LastNew time.Time
@@ -36,10 +36,10 @@ type Transcript struct {
 	PendingSince time.Time
 	Restarts     []time.Time // Claude Code がプロセスの死から自動で再開した時刻 (RestartNote を含む user レコード。古い順)
 	// Calls は結果がまだ返っていない道具の呼び出し (呼んだ順)。Agents は裏で走らせたサブエージェントのうち、終わりの知らせ
-	// (task-notification) がまだ末尾に無いもの (起こした順)。どちらも issue 473 の「今走っているもの」
+	// (task-notification) がまだ末尾に無いもの (起こした順)。どちらも「今走っているもの」
 	Calls  []Call
 	Agents []Call
-	// Uses は末尾にある道具の呼び出しすべて (結果が返ったものも。呼んだ順)。PM が今の turn でどのカードを扱っているか (issue 480)
+	// Uses は末尾にある道具の呼び出しすべて (結果が返ったものも。呼んだ順)。PM が今の turn でどのカードを扱っているか
 	Uses []Call
 }
 
@@ -54,7 +54,7 @@ type Call struct {
 	At     time.Time
 }
 
-// RestartNote は、プロセスが死んだ session を Claude Code が自動で再開したときに会話へ足す文の一部 (2.1.281 で実測。issue 425 結果 1)。
+// RestartNote は、プロセスが死んだ session を Claude Code が自動で再開したときに会話へ足す文の一部 (2.1.281 で実測)。
 // origin を実測していないので、発言者を問わず user レコードの文の**先頭**で探す (依頼の原文などに引用された文は数えない)。版が変わって文が変わると、落ちた回数を数えられなくなる
 // (そのときは外から操作された疑いとして知らせる側に倒れる)
 const RestartNote = "Continue from where you left off. Note: this session was automatically restarted after its process exited unexpectedly"
@@ -115,7 +115,7 @@ func ReadTail(path string) (Transcript, error) {
 	return parse(data), nil
 }
 
-// HumanPrompts は path の transcript の**全体**から、from 以降 to 以前の人間の発言を古い順に返す (attach の間に打った指示。issue 428)。
+// HumanPrompts は path の transcript の**全体**から、from 以降 to 以前の人間の発言を古い順に返す (attach の間に打った指示)。
 // 末尾だけ (ReadTail) だと、長く attach していた間の先頭の発言を落とす。
 func HumanPrompts(path string, from, to time.Time) ([]Prompt, error) {
 	f, err := os.Open(path)

@@ -11,7 +11,7 @@ import (
 	"pro-con/store"
 )
 
-// 今走っているもの (issue 473): 結果待ちの道具の呼び出しは引数の要約つきで呼んだ順に、裏のサブエージェントは終わりの知らせ
+// 今走っているもの: 結果待ちの道具の呼び出しは引数の要約つきで呼んだ順に、裏のサブエージェントは終わりの知らせ
 // (task-notification) が来るまで残る。知らせは queue-operation / attachment のどちらに載っても拾い、PG の出力が引用しただけでは消さない。
 // プロセスが死んで再開したら裏のサブエージェントは消えている。
 func TestParseTranscriptCallsAndAgents(t *testing.T) {
@@ -46,7 +46,7 @@ func TestParseTranscriptCallsAndAgents(t *testing.T) {
 	}
 }
 
-// PM が扱っているカード (issue 480): 結果が返った呼び出しも呼んだ順に残し、対象は説明ではなくコマンド・ファイルから取る
+// PM が扱っているカード: 結果が返った呼び出しも呼んだ順に残し、対象は説明ではなくコマンド・ファイルから取る
 // (説明には ID が無いことが多く、書く中身には別のカードの ID が並ぶ)。
 func TestParseTranscriptUses(t *testing.T) {
 	data := `{"type":"assistant","timestamp":"2026-09-26T01:00:00Z","message":{"content":[{"type":"tool_use","id":"u1","name":"Bash","input":{"description":"カードを読む","command":"pro-con card show C-018"}}]}}

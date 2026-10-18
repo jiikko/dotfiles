@@ -94,7 +94,7 @@ func TestArchivedMustBeDone(t *testing.T) {
 	}
 }
 
-// 止めた印は落ちた時刻と対で持つ: 止めた PG は落ちたのではないので、落ちた時刻を外す (issue 560)。
+// 止めた印は落ちた時刻と対で持つ: 止めた PG は落ちたのではないので、落ちた時刻を外す。
 func TestMarkStoppedClearsDeadSince(t *testing.T) {
 	c := Card{DeadSince: time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)}
 	c.MarkStopped()

@@ -1,8 +1,8 @@
 package ui
 
-// 設定画面 (s で開閉。issue 456)。右から入ってくる全幅の板で、中を「設定 / プロセス / ディスク / ログ」のタブに分ける (tab で切り替え。
-// ログのタブは settingslog.go。issue 512)。
-// 変える所 (設定のタブ) は PG の枠と PM の数を ← → で 1 ずつ・敵対的レビューの担い手 (514) を ← → で巡って変え、受付の箱に置く (dispatcher の次の Tick から効く。止めずに変わる)。
+// 設定画面 (s で開閉)。右から入ってくる全幅の板で、中を「設定 / プロセス / ディスク / ログ」のタブに分ける (tab で切り替え。
+// ログのタブは settingslog.go)。
+// 変える所 (設定のタブ) は PG の枠と PM の数を ← → で 1 ずつ・敵対的レビューの担い手を ← → で巡って変え、受付の箱に置く (dispatcher の次の Tick から効く。止めずに変わる)。
 // 見る所 (プロセス・ディスク) は backend.Inspector を裏で読むだけ。見ているだけの画面 (--view) は変える所 (設定のタブ) を出さない。
 // 🚨 見る所は描くたびに読まない (ディスクは数秒かかる)。開いたとき・プロセスのタブへ移ったとき・r で、裏で 1 回だけ読む。
 
@@ -473,7 +473,7 @@ func (m *Model) toggleSettingsRow() {
 }
 
 // splitProcs は動いているもの (と dispatcher・supervisor・見張りの行・カードと食い違う PG) と、止まっている役 (PM・取り込み・テストの係) に分ける
-// (止まっている行は 1 行に畳む)。🚨 止まった PG のうち食い違いの無いもの (終わったカードの止まった session) は出さず、数えもしない (issue 497)。
+// (止まっている行は 1 行に畳む)。🚨 止まった PG のうち食い違いの無いもの (終わったカードの止まった session) は出さず、数えもしない。
 func splitProcs(rows []backend.Proc) (live, stopped []backend.Proc) {
 	for _, p := range rows {
 		if p.Slot == backend.SlotHeld { // 枠に数えた PG は止まっていても出す (作業中の数と行を合わせる。issue 557)
@@ -667,7 +667,7 @@ func (m *Model) procsSummary() string {
 	return m.pgSlotsSummary(waiting) + fmt.Sprintf(" · 動いている %d・食い違い %d", len(live)-odd, odd)
 }
 
-// pgSlotsSummary は PG の枠の要約 (issue 557)。作業中はヘッダの「PG n/枠」と同じく dispatcher が枠に数えたカードの数、
+// pgSlotsSummary は PG の枠の要約。作業中はヘッダの「PG n/枠」と同じく dispatcher が枠に数えたカードの数、
 // 待機はプロセスの一覧で生きていて枠に数えていない PG の数。判定できなければそう出す (0 に見せない)。
 func (m *Model) pgSlotsSummary(waiting int) string {
 	n, ok := m.snap.SlotsUsed()
@@ -779,7 +779,7 @@ func procName(p backend.Proc) string {
 }
 
 // procRow はプロセスの 1 行。カードの列は、画面が知っているカードならタイトルまで出す (前の PG の一覧と同じ cardHeading。
-// タイトルの頭の issue 番号は落とす。issue 491)。
+// タイトルの頭の issue 番号は落とす)。
 func (m *Model) procRow(p backend.Proc, w int) string {
 	pid, age := "-", "-"
 	if p.PID > 0 {
@@ -896,7 +896,7 @@ func clipLeft(s string, n int) string {
 	return "…" + string(r[len(r)-n+1:])
 }
 
-// scheduleLines は予定のタブ (issue 550)。予定ごとに、いつ・dispatcher が起こすコマンドの字面・前回・次回・出力の置き場
+// scheduleLines は予定のタブ。予定ごとに、いつ・dispatcher が起こすコマンドの字面・前回・次回・出力の置き場
 // (pro-con config と同じ行 = backend.ScheduleRows)。
 func (m *Model) scheduleLines(w int) []string {
 	border := fg(colInfo)

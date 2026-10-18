@@ -24,7 +24,7 @@ func joinModel(t *testing.T) (*Model, *joinSpy, *int) {
 	return m, be, &keep
 }
 
-// join の画面の O → y は、暗くしてから終了して持ち主の画面への切り替えを main に頼む (issue 548)。新版への切り替えとは取り違えない。
+// join の画面の O → y は、暗くしてから終了して持ち主の画面への切り替えを main に頼む。新版への切り替えとは取り違えない。
 func TestJoinOwnerSwitchConfirmsThenQuits(t *testing.T) {
 	m, be, keep := joinModel(t)
 	// 80 桁でも帯の O の案内が切れない (帯は幅で切り詰める)
@@ -119,7 +119,7 @@ func TestOwnerlessBandShowsOwnerKeyAt80(t *testing.T) {
 	}
 }
 
-// 持ち主への切り替えは、暗転の文言も、開き直した画面の明転と通知も「新版」と言わない (敵対レビューの P3)。新版の切り替えは今までどおり。
+// 持ち主への切り替えは、暗転の文言も、開き直した画面の明転と通知も「新版」と言わない。新版の切り替えは今までどおり。
 func TestOwnerSwitchLabelsDoNotSayUpgrade(t *testing.T) {
 	m, _, _ := joinModel(t)
 	m.width, m.height = 120, 30
@@ -157,7 +157,7 @@ func TestOwnerSwitchLabelsDoNotSayUpgrade(t *testing.T) {
 	}
 }
 
-// 帯が O を案内している間は、引き出し・設定画面・issue の一覧を開いていても O が効く (黙って飲み込まない。548 の敵対的レビュー 2/3)。
+// 帯が O を案内している間は、引き出し・設定画面・issue の一覧を開いていても O が効く (黙って飲み込まない)。
 func TestOwnerSwitchFromPanels(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -182,7 +182,7 @@ func TestOwnerSwitchFromPanels(t *testing.T) {
 	}
 }
 
-// O の印 (pendingOwner) は、確認を抜けるどの経路でも、別の確認を置くどの経路でも下りる (1 か所ずつ直接見る。敵対的レビュー 3/3 の P3:
+// O の印 (pendingOwner) は、確認を抜けるどの経路でも、別の確認を置くどの経路でも下りる (1 か所ずつ直接見る。
 // 前のテストは取り消しの後に askConfirm を通していたので、どちらか 1 か所を外しても緑だった)。
 func TestPendingOwnerClearedOnEveryPath(t *testing.T) {
 	for _, k := range []string{"n", "esc", "j"} {

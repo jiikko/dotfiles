@@ -1,6 +1,6 @@
 package main
 
-// pro-con card list / show / wait — カードを画面なしで読む口 (issue 442。PM の CLI と、外の Claude が覗くため。親の設計は 441)。
+// pro-con card list / show / wait — カードを画面なしで読む口 (PM の CLI と、外の Claude が覗くため。親の設計は 441)。
 //
 // 🚨 読み取りだけ (441 の守ること 1)。受付の箱・記録・起動の記録に何も書かず、socket へ wake / notify を送らない
 // (wait が送るのは購読の sub だけ。dispatcher は購読の数を判断に使わない)。TestViewCommandsDoNotWrite が固定する。
@@ -71,9 +71,9 @@ type cardSummary struct {
 	Archived bool      `json:"archived,omitempty"`
 	Deleting bool      `json:"deleting,omitempty"` // 削除の依頼を受けて、PG の session を止めてから消えるのを待っている
 	Turn     string    `json:"turn,omitempty"`     // 今誰の番か (card.Turn の Label。人の番は "人")
-	// Assignee は担当 = 今手を動かす者 (card.Assignee。「PG 待ち」「PM 分解中」)。Owner は記録のまま (作った・受けた者。issue 476)
+	// Assignee は担当 = 今手を動かす者 (card.Assignee。「PG 待ち」「PM 分解中」)。Owner は記録のまま (作った・受けた者)
 	Assignee string `json:"assignee,omitempty"`
-	// RoleStep は役の番のカードの、役の側の段階 (「PM 知らせ待ち」「PM 分解中 ▸ Bash: …」。issue 480。画面のバッジと同じ中身)
+	// RoleStep は役の番のカードの、役の側の段階 (「PM 知らせ待ち」「PM 分解中 ▸ Bash: …」。画面のバッジと同じ中身)
 	RoleStep string     `json:"roleStep,omitempty"`
 	state    card.State // 経過の語 (State.SinceText) に使う。JSON には State のラベルを出す
 }
@@ -120,7 +120,7 @@ func waitingIn(dir string, c card.Card, roles card.Roles) (waits, now string) {
 	return waiting(c, cards), c.WaitingOn(cards, roles)
 }
 
-// waiting は何を待っているか。PG の待ち (card.Wait.Label) が無ければ、順番の前のカード (issue 468)。
+// waiting は何を待っているか。PG の待ち (card.Wait.Label) が無ければ、順番の前のカード。
 func waiting(c card.Card, cards []card.Card) string {
 	if l := c.Wait.Label(); l != "" {
 		return l
@@ -144,7 +144,7 @@ type cardDetail struct {
 	Waiting  string       `json:"waiting,omitempty"`  // 何を待っているか (list と同じ。順番の前のカードは記録の全カードから引く)
 	Assignee string       `json:"assignee,omitempty"` // 担当 = 今手を動かす者 (list と同じ。card.Assignee)
 	RoleStep string       `json:"roleStep,omitempty"` // 役の番のカードの、役の側の段階 (list と同じ)
-	// NowWaiting は「今の待ち」(card.WaitingOn。PG の turn の途中・テストの係・利用枠・順番・人の番。issue 469)
+	// NowWaiting は「今の待ち」(card.WaitingOn。PG の turn の途中・テストの係・利用枠・順番・人の番)
 	NowWaiting string `json:"nowWaiting,omitempty"`
 	// Progress は進捗 (dispatcher が集めた commit・未 commit・issue の進捗節)、Conflicts は見張りが見た取り込みの衝突 (store.ProgressFile /
 	// ConflictsFile。Card には記録の形で載らない)。テストの係の最後の結果は Card の LastRun
@@ -168,7 +168,7 @@ const listUsage = "usage: pro-con card list [--state <列>] [--purpose work|ques
 // errListUsage は引数の形そのものが違う (知らないフラグ・位置引数)。使い方だけを出す。
 var errListUsage = errors.New("usage")
 
-// listFilter は card list の絞り込み (issue 532)。条件はすべて AND。
+// listFilter は card list の絞り込み。条件はすべて AND。
 type listFilter struct {
 	state     *card.State
 	purpose   *card.Purpose
@@ -256,7 +256,7 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 			return slices.ContainsFunc(st.Cards, func(c card.Card) bool { return c.ID == a.ID })
 		}), st.Cards...)
 	}
-	// 列の順 (左から)、列の中はレーンの並び (上ほど優先。画面と同じ。issue 470)
+	// 列の順 (左から)、列の中はレーンの並び (上ほど優先。画面と同じ)
 	cards = card.Board(cards)
 	out := []cardSummary{}
 	view := viewDispatcher(env.dir, env.now())
@@ -375,7 +375,7 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	// 🚨 題名・依頼の原文・質問・追加オーダー・履歴はカードの文字列 (人の依頼・PG の card add / ask) で、store は
 	// 制御文字も改行も落とさずに持つ。stdout へ直接書くので、引数の文字列ごとに termsafe で無害化する (card list と同じ理由)。
 	// 改行は残し (依頼の原文や履歴は複数行が正常)、2 行目以降の頭に空白 4 つを付ける。見出しの行は 0 桁目・項目の行は 2 桁目から
-	// 始まるので、続きの行が偽の「状態: 完了」や偽の項目に化けられない (2026-10-02 の敵対的レビュー: 題名の改行で偽の行を差し込めた)
+	// 始まるので、続きの行が偽の「状態: 完了」や偽の項目に化けられない (題名の改行で偽の行を差し込めた)
 	p := func(format string, a ...any) {
 		for i, v := range a {
 			if str, ok := v.(string); ok {
@@ -582,7 +582,7 @@ func waitFor(dir string, timeout time.Duration, warn io.Writer, cond func() (boo
 // watchDir は cond が真になるか ctx が終わるまで、cond を呼び続ける。dispatcher の知らせ (購読) で呼び直し、届かなくても viewPoll ごとに呼び直す。
 // ctx が終わったら nil を返す (呼び出し側が ctx.Err で見分ける)。
 // 🚨 購読は sub を送るだけ (wake / notify は送らない)。dispatcher が居なくてもポーリングで待てる。
-// socket の逃がし先の権限が緩ければ直さずにつながず (直すのは dispatcher だけ。issue 445)、warn に 1 行知らせてポーリングで待つ
+// socket の逃がし先の権限が緩ければ直さずにつながず (直すのは dispatcher だけ)、warn に 1 行知らせてポーリングで待つ
 func watchDir(ctx context.Context, dir string, warn io.Writer, cond func() (bool, error)) error {
 	changed := make(chan struct{}, 1)
 	refused := make(chan error, 1) // 知らせは待ちのループから書く (購読の goroutine から warn へ書くと、呼び出し側の書き込みと競る)
@@ -620,10 +620,10 @@ func watchDir(ctx context.Context, dir string, warn io.Writer, cond func() (bool
 	}
 }
 
-// submitAndWait は依頼を置き (submit)、dispatcher が適用するか除けるまで待つ (issue 542。add だけでなく、箱に置く操作はすべて)。
+// submitAndWait は依頼を置き (submit)、dispatcher が適用するか除けるまで待つ (add だけでなく、箱に置く操作はすべて)。
 // 適用されたら rc=0 で、add はこの依頼から作られたカードの ID、ほかの操作は依頼 ID を出す。除けられた (記録の Rejected に載った) ら rc=1 で理由を出す。
 // 🚨 待てなければ依頼 ID を返して rc=exitNotApplied (そう言う)。rc=0 にしない: `C=$(pro-con card add …)` を続けて `card plan "$C"` に
-// 渡すと、plan も箱には置けて (rc=0)、dispatcher が後で「カードが無い」と除けるまで誰も気づかない (敵対的レビュー 2026-09-25 P2)。
+// 渡すと、plan も箱には置けて (rc=0)、dispatcher が後で「カードが無い」と除けるまで誰も気づかない。
 // 列の合わない close も同じで、rc=0 で返すと打った側は log を見るまで除けられたと気づけない (542)。timeout が 0 なら待たずに依頼 ID (rc=0)
 func submitAndWait(dir, op string, submit func() (string, error), timeout time.Duration, stdout, stderr io.Writer) int {
 	reqID, err := submit()

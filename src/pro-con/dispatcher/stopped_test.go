@@ -38,7 +38,7 @@ func stopFromOutside(t *testing.T, r ExecRunner, dir, runID string) (rc, child i
 		t.Fatal(err)
 	}
 	// 前提: グループの全部が止まっている。fork したばかりの子は、グループへの SIGSTOP を取りこぼすことがある (CI の ps で実測:
-	// bash は T・sleep は S。issue 541)。全部止まるまで送り直す (前提が欠けたまま待つと、見張りは「全部 T」を見ないので止め直さず 20 秒で落ちる)
+	// bash は T・sleep は S)。全部止まるまで送り直す (前提が欠けたまま待つと、見張りは「全部 T」を見ないので止め直さず 20 秒で落ちる)
 	if !testwait.Poll(5*time.Second, func() bool {
 		_ = syscall.Kill(-bash, syscall.SIGSTOP)
 		return groupStopped([]int{bash})

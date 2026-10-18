@@ -1,6 +1,6 @@
 package dispatcher
 
-// 所要の記録 (issue 516)。閉じたカード 1 枚ごとに 1 行を store の metrics.jsonl へ書き、90 日より古い行を消す。書き手は dispatcher だけ。
+// 所要の記録。閉じたカード 1 枚ごとに 1 行を store の metrics.jsonl へ書き、90 日より古い行を消す。書き手は dispatcher だけ。
 //
 // いつ書くか (どれも「書いていないカードを見つけたら書く」形。落ちても次の Tick / 次の予定が書き直す):
 //   - 完了のカード: Apply の直後に記録を見て、PG を止め終えたもの (StopAfterClose が外れた) を書く。書庫へ移す (Archive) より先

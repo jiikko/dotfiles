@@ -439,7 +439,7 @@ func TestLockHolderAlive(t *testing.T) {
 	}
 }
 
-// 敵対的レビュー (2026-09-26) で消えるのを再現できた経路。どれも消さない (autobuild の産物だけは消してよい)。
+// 消えるのを再現できた経路 (2026-09-26)。どれも消さない (autobuild の産物だけは消してよい)。
 func TestJudgeKeepsWhatRemoveWouldLose(t *testing.T) {
 	f := newFixture(t, sandbox)
 	write(t, filepath.Join(f.repo, ".git", "info", "exclude"), ".env\nbuild/\n**/.claude/worktrees/\n")

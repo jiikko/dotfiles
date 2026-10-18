@@ -115,7 +115,7 @@ func TestLogFollowWakesOnNotification(t *testing.T) {
 	}
 }
 
-// --follow --since は、読み始めた後に足された出来事を時刻で落とさない (画面の出来事は画面が置いた時刻のまま後から書かれる。issue 445)。
+// --follow --since は、読み始めた後に足された出来事を時刻で落とさない (画面の出来事は画面が置いた時刻のまま後から書かれる)。
 // 読み始めの分は --since で絞る。
 func TestLogFollowKeepsLateEvents(t *testing.T) {
 	dir := logFixture(t)
@@ -182,7 +182,7 @@ func TestLogDoesNotWrite(t *testing.T) {
 	}
 }
 
-// 🚨 log --follow は、socket の逃がし先の緩い権限を直さず、つながずに読み直しで待ち、そう 1 行知らせる (issue 445)。
+// 🚨 log --follow は、socket の逃がし先の緩い権限を直さず、つながずに読み直しで待ち、そう 1 行知らせる。
 func TestLogDoesNotFixFallbackDir(t *testing.T) {
 	long, fallback := looseFallback(t)
 	dir := logFixtureIn(t, long)

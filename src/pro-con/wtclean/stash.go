@@ -1,6 +1,6 @@
 package wtclean
 
-// tmp/ の退避 (issue 552)。設定の disposable_tmp に書いた repo では、worktree の直下の tmp/ の無視されたファイル (見本・変異のスクリプト・
+// tmp/ の退避。設定の disposable_tmp に書いた repo では、worktree の直下の tmp/ の無視されたファイル (見本・変異のスクリプト・
 // 計測のログ) だけを理由に worktree を残さず、状態の置き場の wtclean-tmp/<repo>/<名前>/ へ移してから消す。
 // 🚨 退避で代えているのは CLAUDE.md の「tmp/ を消す前に issue や doc が指しているパスでないか確かめる」(機械では確かめられない)。
 // 指していたと後で分かっても、TmpKeep の間は退避から戻せる。TmpKeep を過ぎた退避は片付け (PruneTmpStash) のたびに消す。

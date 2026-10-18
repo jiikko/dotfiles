@@ -109,7 +109,7 @@ func TestAttachGuideRechecksSelection(t *testing.T) {
 }
 
 // 外の tmux の prefix は聞いて読む。tmux が応答しなければ上限で諦め、popup も開かずに失敗で戻る (同じサーバへの display-popup も
-// 戻らないので、開きに行くと裏の処理が止まったままになる。issue 783)。
+// 戻らないので、開きに行くと裏の処理が止まったままになる)。
 func TestPopupGivesUpOnHungTmux(t *testing.T) {
 	fake := func(body string) string {
 		p := filepath.Join(t.TempDir(), "tmux")

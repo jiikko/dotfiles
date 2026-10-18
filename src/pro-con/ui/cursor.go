@@ -14,7 +14,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
-// 選択の枠の文字と色 (issue 472: 赤い二重線。ユーザーの指定)。赤は docs/theme-colors.md の 196 (sync の枠と同じ番号。
+// 選択の枠の文字と色 (赤い二重線。ユーザーの指定)。赤は docs/theme-colors.md の 196 (sync の枠と同じ番号。
 // 選んでいるレーンの枠の現在地の色 202 (lanefade.go) とは分けてある)。テストもこの定数で枠を探す。
 const (
 	frameColor = colError
@@ -106,7 +106,7 @@ func (m *Model) overlayCursor(board []string) []string {
 	w := m.cardWidth(n) + 2
 	border := fg(frameColor) + sgrBold
 	top, bottom := row-cardGap, row+cardLines
-	// 滑っている途中も枠を丸ごと描く (2026-09-25 にユーザーが見本の案 B を選んだ。案と経緯は issue 472。空き行と外枠の上だけに描くと、途中で枠がほぼ消えてちらつく)。
+	// 滑っている途中も枠を丸ごと描く (2026-09-25 にユーザーが見本の案 B を選んだ。空き行と外枠の上だけに描くと、途中で枠がほぼ消えてちらつく)。
 	// ただしカードの字の上では線で置き換えず、字を残したまま色だけ変える (同じ日に見本の D。置き換えると、線が字を跨ぐ一瞬その字が消えて見える):
 	// 横の辺は赤の上線 (上辺) / 下線 (下辺)、縦の辺は赤の背景。止まっているときは枠が空き行と外枠 (空白と罫線) の上なので、ふつうの二重線になる
 	for r := top; r <= bottom; r++ {

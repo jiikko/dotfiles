@@ -22,7 +22,7 @@ func submitted(t *testing.T, b *Backend) []store.Result {
 	return res
 }
 
-// 追加オーダー (追記・方針変更) と btw は、そのカードへの依頼として箱に置く。別件は元のカードの子の新しい依頼 (PM への指示つき) にする (issue 438)。
+// 追加オーダー (追記・方針変更) と btw は、そのカードへの依頼として箱に置く。別件は元のカードの子の新しい依頼 (PM への指示つき) にする。
 func TestApplyOrdersAndBtw(t *testing.T) {
 	b, _ := testBackend(t, sessions, nil)
 	runningCard(t, b, "C-001", "bbbbbbbb")

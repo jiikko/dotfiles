@@ -4,7 +4,7 @@
 // 🚨 **ビルドするかの判定とビルドそのものは bin/lib/go_autobuild.zsh (shim) に任せる** (go_autobuild_spawn_if_stale)。
 // 入力の指紋・*_test.go の除外・lock・前回の途中死の掃除・失敗の記録と TTL は shim が正本で、Go 側へ写経しない
 // (glogx の autobuild.go の spawnAutobuild と同じ方針。自前の近似 = mtime の順序比較は、ビルド中の編集・
-// ファイルの削除・未来の mtime を取りこぼし、shim の .autobuild.built ともずれた: 敵対レビュー 2026-09-24)。
+// ファイルの削除・未来の mtime を取りこぼし、shim の .autobuild.built ともずれた)。
 // pro-con がするのは「shim に尋ねる」「バイナリが差し替わったかを見る」「切り替える」だけ。
 //
 // 状態の正本は backend 側 (本番ではファイル。PG は Claude Code の bg session) なので、入れ替えで失うのは

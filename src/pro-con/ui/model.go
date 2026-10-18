@@ -147,7 +147,7 @@ type Model struct {
 
 	// copy はクリップボードへ入れる (既定は subproc/clipboard.Copy。テストは差し替える)。Update から同期で呼ぶので、固まったときは画面が止まる:
 	// 上限は 1 コマンド 5 秒 + WaitDelay で、tmux の中では tmux load-buffer と pbcopy の 2 本 (最悪約 10 秒強。前の自前の pbcopy は 2 秒 + 1 秒)。
-	// glogx・treefiler と同じ形にそろえた (issue 769)。止まるのが問題になったら 3 つとも tea.Cmd で裏に回す
+	// glogx・treefiler と同じ形にそろえた。止まるのが問題になったら 3 つとも tea.Cmd で裏に回す
 	copy       func(string) error
 	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は github.com/jiikko/dotfiles/src/tuikit/editor。テストは差し替える)
 	// execProcess は端末を明け渡して外のコマンドを走らせる (既定は execOnTerminal。テストは戻りの知らせを取り出すために差し替える)
@@ -476,7 +476,7 @@ func (m *Model) moveTab(delta int) {
 }
 
 // visible は選んでいるタブに属するカード。global は全部 (config の外の repo のカードも含む)。
-// showRejected は、この画面が置いた依頼を dispatcher が除けた理由を出す (ほかの画面の依頼は出さない。issue 481)。
+// showRejected は、この画面が置いた依頼を dispatcher が除けた理由を出す (ほかの画面の依頼は出さない)。
 func (m *Model) showRejected() {
 	rr, ok := m.be.(backend.RejectReader)
 	if !ok {
@@ -509,7 +509,7 @@ func (m *Model) setSnap(s backend.Snapshot) {
 	m.dropVanishedDrawer()
 }
 
-// カードは複製せず m.snap.Cards の中を指して渡す (描くたびに呼ぶので、1 枚 960 バイトを複製すると GC が回り続けた。issue 494)。
+// カードは複製せず m.snap.Cards の中を指して渡す (描くたびに呼ぶので、1 枚 960 バイトを複製すると GC が回り続けた)。
 // 🚨 指す先は今の m.snap.Cards なので、setSnap をまたいで持ち越さず、書き換えない
 func (m *Model) visible() iter.Seq[*card.Card] {
 	return func(yield func(*card.Card) bool) {

@@ -23,7 +23,7 @@ var noteKinds = map[string]string{
 func applied(res []store.Result) []eventlog.Event {
 	var out []eventlog.Event
 	for _, r := range res {
-		// 画面の出来事・見張り (issue 475)・supervisor (issue 506) の知らせは、その出来事として書く (「依頼を適用した」を重ねない)
+		// 画面の出来事・見張り・supervisor の知らせは、その出来事として書く (「依頼を適用した」を重ねない)
 		if kind, ok := noteKinds[r.Kind]; ok && r.Err == "" {
 			out = append(out, eventlog.Event{At: r.At, Kind: kind, Card: r.CardID, Reason: r.Note})
 			continue

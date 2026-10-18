@@ -7,7 +7,7 @@ import (
 	"pro-con/card"
 )
 
-// 画面から置いた依頼は、適用で足された履歴の行にだけ画面を残す (issue 481)。前からある行・画面以外が置いた依頼の行には付けない。
+// 画面から置いた依頼は、適用で足された履歴の行にだけ画面を残す。前からある行・画面以外が置いた依頼の行には付けない。
 // attach の指示は時刻の位置に差し込まれる (末尾の差では拾えない) が、それにも付く。
 func TestAppliedHistoryRemembersScreen(t *testing.T) {
 	dir := t.TempDir()

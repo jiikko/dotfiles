@@ -31,8 +31,8 @@ func TestReviewPrecedence(t *testing.T) {
 	check(store.ReviewCodex, ReviewFromConfig)
 }
 
-// 既定 (claude) の PG への指示には codex の行が無く、担い手の出どころや codex の実体の有無で変わらない (514。
-// 以前は 514 の前の Prompt の文と丸ごと比べていたが、PG の規律を直すたびに落ちるので、539 でこの形へ直した)。
+// 既定 (claude) の PG への指示には codex の行が無く、担い手の出どころや codex の実体の有無で変わらない。
+// Prompt の文と丸ごと比べない (PG の規律を直すたびに落ちる)。
 func TestPromptClaudeUnchanged(t *testing.T) {
 	c := card.Card{ID: "C-007", Title: "直す", Request: "色を直して", After: []string{"C-001"}, Issues: []card.IssueRef{{Repo: "dotfiles", Number: 514}}}
 	base := Prompt(c, Review{})

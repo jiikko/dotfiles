@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// issue 638: Hold は置き場が無ければ作ってから印を置く (呼び手が --e2e か本物のモードかに依らない。e2e の分岐でだけ置き場を作る
+// Hold は置き場が無ければ作ってから印を置く (呼び手が --e2e か本物のモードかに依らない。e2e の分岐でだけ置き場を作る
 // 実装では、本物のモードの初めての --stop が印を置けない)。
 func TestHoldCreatesMissingDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "state", "live")

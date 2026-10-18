@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// 経過時間の書式 (issue 772 の案C)。境目ごとに固定する。
+// 経過時間の書式。境目ごとに固定する。
 func TestAge(t *testing.T) {
 	for _, tc := range []struct {
 		d    time.Duration

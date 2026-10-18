@@ -363,7 +363,7 @@ func TestClearDoneArchivesOnlyDoneInRepo(t *testing.T) {
 	}
 }
 
-// 模擬のログの出来事は 1 度だけ返し、入れ替え (Save / Restore) の後はもう 1 度返す (新しい画面はログを空から読む。issue 512)。
+// 模擬のログの出来事は 1 度だけ返し、入れ替え (Save / Restore) の後はもう 1 度返す (新しい画面はログを空から読む)。
 func TestSimEventsOnceAndAgainAfterRestore(t *testing.T) {
 	a := New(time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC))
 	if evs, _ := a.Events(); len(evs) == 0 {

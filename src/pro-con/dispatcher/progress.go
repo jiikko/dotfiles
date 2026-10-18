@@ -1,11 +1,11 @@
 package dispatcher
 
-// カードの作業の進捗を集めて store.ProgressFile に書く (issue 469)。画面と `pro-con card show` はそれを読むだけ
+// カードの作業の進捗を集めて store.ProgressFile に書く。画面と `pro-con card show` はそれを読むだけ
 // (画面が 3 秒ごとに git や issue のファイルを読まない = 441)。
 //
 // 集めるもの (カードごと):
 //   - PG の worktree の git: 取り込む先 (origin/master) より先の commit・未 commit の変更の数・最後の commit の時刻
-//   - 取り込む先との差分の本文 (issue 508): store.DiffPath に書き、progress.json には数と置き場だけ入れる
+//   - 取り込む先との差分の本文: store.DiffPath に書き、progress.json には数と置き場だけ入れる
 //   - カードの issue の本文の「進捗」節: チェックボックスの済み / 残り (無ければ最後の項目)。worktree があれば worktree の本文 (PG が書き足した分)
 //
 // 🚨 git は読むだけ (--no-optional-locks。status が index を書き直さない)。取り込みの衝突は見張り (package monitor) が見て

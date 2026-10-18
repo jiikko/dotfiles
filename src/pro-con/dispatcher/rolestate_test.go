@@ -14,7 +14,7 @@ import (
 	"pro-con/store"
 )
 
-// pmStateIn は dispatcher が最後に書いた PM の様子 (issue 476)。
+// pmStateIn は dispatcher が最後に書いた PM の様子。
 func pmStateIn(t *testing.T, dir string) card.RoleState {
 	t.Helper()
 	ds, _, err := store.LoadDispatcherState(dir)

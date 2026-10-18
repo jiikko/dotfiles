@@ -166,7 +166,7 @@ func openQuit(t *testing.T, m *Model) {
 }
 
 // 持ち主が 2 つ: Q でダイアログが出て、「動いたまま」と、ほかの画面の居場所 (tmux の中なら pane の名前、外なら tty) が読める。
-// 閉じると何が起きるかは入力欄の見出しに書かない (ダイアログと 2 か所に持たない = issue 519)。
+// 閉じると何が起きるかは入力欄の見出しに書かない (ダイアログと 2 か所に持たない)。
 func TestQuitDialogShowsOtherScreens(t *testing.T) {
 	be := &paneSpy{stopSpy: &stopSpy{spy: newSpy()}, panes: map[string]string{"/dev/ttys003": "main:2.1", "/dev/ttys007": "main:0.0"}}
 	now := be.snap.Now

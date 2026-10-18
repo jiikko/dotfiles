@@ -34,7 +34,7 @@ func hasSpin(s string) bool {
 }
 
 // PG が turn の途中 (status が busy) のカードだけに回る印が出る。PG が待っている (waiting) カードと、テストの係の結果を待つカード
-// (実行中の T1 / 頼んだ直後でまだ busy の B1) には出さない (issue 455)。
+// (実行中の T1 / 頼んだ直後でまだ busy の B1) には出さない。
 func TestSpinnerOnlyOnProcessingCards(t *testing.T) {
 	m, _ := spinModel(t)
 	m.snap.Cards = append(m.snap.Cards, card.Card{ID: "B1", State: card.Running, Session: "s-b1", Run: "make test"})

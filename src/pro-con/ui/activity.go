@@ -1,6 +1,6 @@
 package ui
 
-// 詳細の引き出しの「活動」: 作業中のカードの PG の応答の文と道具の呼び出しを時刻の順に出し、新しいものが来たら追う (issue 467)。
+// 詳細の引き出しの「活動」: 作業中のカードの PG の応答の文と道具の呼び出しを時刻の順に出し、新しいものが来たら追う。
 // backend.ActivityReader を持つ backend (本物・--view) だけ。持たない backend (模擬) は「出力」(出力の末尾) のまま。
 // 🚨 読むだけ (--view でも出す)。transcript を読むので裏で呼び、同時に 1 本だけ走らせる。
 
@@ -24,7 +24,7 @@ type activityMsg struct {
 
 // activityView は引き出しに出している活動。card は items を読んだカード (開いているカードと違えば出さない)。
 //
-// 🚨 整形した行を 2 段で保持する (issue 606。活動は最大 1000 件で、描くたびに markdown と折り返しを通すと 1 描画が 7〜8 ms かかっていた):
+// 🚨 整形した行を 2 段で保持する (活動は最大 1000 件で、描くたびに markdown と折り返しを通すと 1 描画が 7〜8 ms かかっていた):
 //   - section: items を全部組んだ活動の節 (sectionW の幅)。items を差し替えるときに一緒に作り直す。items だけを書き換えない
 //   - lines: 活動 1 件ぶんの行 (linesW の幅)。読み直し (tick ごと) で同じ活動が届くので、差し替えをまたいで引き継ぐ
 type activityView struct {
@@ -129,7 +129,7 @@ func (m *Model) activityLines(a backend.Activity, w int) []string {
 		return ls
 	}
 	// 時刻は At.Local() で組んだまま保持する。time.Local は起動時に決まり、pro-con は実行中に書き換えない (書き換えるのはテストだけ) ので
-	// 保持の鍵に入れない。実行中に時間帯を切り替える機能を足すなら、時間帯を linesW と同じく鍵に入れる (issue 606 の codex レビュー)
+	// 保持の鍵に入れない。実行中に時間帯を切り替える機能を足すなら、時間帯を linesW と同じく鍵に入れる
 	stamp := "  " + a.At.Local().Format("15:04") + " "
 	var ls []string
 	if a.Tool != "" {

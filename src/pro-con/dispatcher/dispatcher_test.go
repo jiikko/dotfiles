@@ -228,7 +228,7 @@ func TestAnsweredCardResumesSameSession(t *testing.T) {
 	}
 }
 
-// 差し戻したカードは、回答と同じく新しく起動せず同じ session を再開し、直してほしい点を渡す (issue 446)。
+// 差し戻したカードは、回答と同じく新しく起動せず同じ session を再開し、直してほしい点を渡す。
 func TestReworkedCardResumesSameSession(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
@@ -269,7 +269,7 @@ func TestLaunchFailureKeepsCardPlanned(t *testing.T) {
 	}
 }
 
-// PG への指示には規律 (AskUserQuestion を使わず pro-con card ask / 終えたら review / push しない。CLAUDE.md の push の規律より優先 / 起床を予約しない (issue 554)) とカードの ID が入る。
+// PG への指示には規律 (AskUserQuestion を使わず pro-con card ask / 終えたら review / push しない。CLAUDE.md の push の規律より優先 / 起床を予約しない) とカードの ID が入る。
 func TestPromptCarriesDiscipline(t *testing.T) {
 	p := Prompt(card.Card{ID: "C-007", Title: "直す", Request: "色を直して"}, Review{})
 	for _, want := range []string{"C-007", "AskUserQuestion", "pro-con card ask C-007", "pro-con card review C-007", "pro-con card run C-007 --", "**push しない** (master にも自分のブランチにも", "この規律を優先する", "色を直して", "pro-con card attach C-007 ", "結果が届くまで ask しない", "ScheduleWakeup / CronCreate / Monitor で自分を起こさない"} {
@@ -279,7 +279,7 @@ func TestPromptCarriesDiscipline(t *testing.T) {
 	}
 }
 
-// 関わる issue があるカードの PG には、review の前に受け入れ条件の印と進捗を書かせ、done へは移させない (issue 539)。issue の無いカードには書かない。
+// 関わる issue があるカードの PG には、review の前に受け入れ条件の印と進捗を書かせ、done へは移させない。issue の無いカードには書かない。
 func TestPromptAsksIssueCheckmarksOnlyWithIssues(t *testing.T) {
 	const rule = "確かめた受け入れ条件の印"
 	p := Prompt(card.Card{ID: "C-007", Title: "t", Issues: []card.IssueRef{{Repo: "dotfiles", Number: 539}}}, Review{})
@@ -292,7 +292,7 @@ func TestPromptAsksIssueCheckmarksOnlyWithIssues(t *testing.T) {
 	}
 }
 
-// PG は issue に番号を取らず仮の名前で起票する (issue 530)。関わる issue の無いカードでも起票はするので、どのカードにも書く。
+// PG は issue に番号を取らず仮の名前で起票する。関わる issue の無いカードでも起票はするので、どのカードにも書く。
 func TestPromptAsksDraftIssueNames(t *testing.T) {
 	for _, c := range []card.Card{{ID: "C-007", Title: "t"}, {ID: "C-007", Title: "t", Issues: []card.IssueRef{{Repo: "dotfiles", Number: 530}}}} {
 		p := Prompt(c, Review{})
@@ -1183,7 +1183,7 @@ func TestResumeWithNewSessionReplacesRow(t *testing.T) {
 }
 
 // 再開に「失敗」と返っても、同じ作業ディレクトリで印の後に始まった同じ名前の session が立っていれば取り込む (再開は別の session id になる)。
-// 名前の違う session (PG の worktree で人間が立てた bg の session) は取り込まない (issue 457)。
+// 名前の違う session (PG の worktree で人間が立てた bg の session) は取り込まない。
 func TestFailedResumeAdoptsNewSessionByCwd(t *testing.T) {
 	r := newCrashRig(t)
 	r.l.resumeFail = true

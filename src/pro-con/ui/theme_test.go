@@ -22,7 +22,7 @@ var themeRoles = []struct {
 	{"active_green", colActive}, {"cold_gray", colCold}, {"error_red", colError},
 }
 
-// テーマの色 (style.go の col*) が theme/colors.yml の role の cterm と一致する (issue 770)。
+// テーマの色 (style.go の col*) が theme/colors.yml の role の cterm と一致する。
 // Go の生成器は無いので手で写している。yml を変えたときに黙ってずれないよう、ここで突き合わせる (glogx の TestFrameBorderMatchesThemeYML と同じ形)。
 func TestThemeColorsMatchYML(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "theme", "colors.yml"))
@@ -60,7 +60,7 @@ func ymlCterm(yml, role string) (int, bool) {
 	return 0, false
 }
 
-// テーマの色の番号を col* を通さずに直に書いた所が無い (写しが 2 つになると、上のテストが見ない方がずれる。issue 770)。
+// テーマの色の番号を col* を通さずに直に書いた所が無い (写しが 2 つになると、上のテストが見ない方がずれる)。
 // ui の production の .go を AST で読み、テーマの番号と同じ値の整数リテラル (16 進・8 進・桁区切りも値で比べる) と、
 // 文字列の中の `colour<番号>` / `color<番号>` / `;5;<番号>` / `:5:<番号>` / 番号だけ・`<番号>m` の文字列を拾う。
 // 拾わないもの: style.go の関数の外の const の col* の定義そのもの・`theme-literal-ok: <理由>` の印 (理由は必須) がある行。

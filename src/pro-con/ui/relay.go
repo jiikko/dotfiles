@@ -1,6 +1,6 @@
 package ui
 
-// 画面の中継 (issue 443) の受け口。描いたままの文字と画面の状態を、描くたびに渡す (書き出しは package relay。ui はファイルに触らない)。
+// 画面の中継の受け口。描いたままの文字と画面の状態を、描くたびに渡す (書き出しは package relay。ui はファイルに触らない)。
 
 // FrameSink は描いた 1 枚を受け取る。🚨 待たないこと (View の中で呼ぶ。relay.Writer.Put は最新の 1 枚を置いて戻るだけ)。
 type FrameSink func(ansi string, width, height int, state map[string]string)

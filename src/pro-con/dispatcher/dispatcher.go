@@ -1,9 +1,9 @@
-// Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。1 回の Tick で:
+// Package dispatcher は本物のモードの dispatcher。1 回の Tick で:
 //
-//  1. 受付の箱を記録へ適用する (store.Apply)。閉じたカードの所要を記録する (metrics.go。issue 516)。終えたカードを記録から書庫へ移す (store.Archive。issue 478)。完了から 1 週間たったカードを書庫から消す (store.Purge。issue 497)。記録に無いカードの添付を消す (issue 453)
+//  1. 受付の箱を記録へ適用する (store.Apply)。閉じたカードの所要を記録する (metrics.go)。終えたカードを記録から書庫へ移す (store.Archive)。完了から 1 週間たったカードを書庫から消す (store.Purge)。記録に無いカードの添付を消す
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
-//  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
-//  4. 依頼の列のカードを PM に知らせる (pm.go。issue 437)。PM が居なければ起動し、居れば再開する
+//  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go)。削除のカードは止まったら記録から外す
+//  4. 依頼の列のカードを PM に知らせる (pm.go)。PM が居なければ起動し、居れば再開する
 //  5. 追加オーダーを届けるカードを再開の列へ戻し (orders.go)、btw に答える (btw.go)
 //  6. 着手待ちのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) と追加オーダーを届けるカードは同じ session を再開し、
 //     それ以外は新しく起動する
@@ -43,7 +43,7 @@ type Launcher interface {
 	// (渡さないと、再開の後の名前は AI の付けた題になる。488 で実測)
 	Resume(ctx context.Context, stopID, sessionID, cwd, name, text string) (newID string, err error)
 	// Restart は stopID の session を止めてから (空なら止めない)、cwd (前の session の worktree) で同じ名前の新しい session を prompt で起動し、
-	// claude --bg が返す短い id を返す。前の会話は引き継がない (役の prompt cache が切れた後の再開の代わり = issue 581)
+	// claude --bg が返す短い id を返す。前の会話は引き継がない (役の prompt cache が切れた後の再開の代わり)
 	Restart(ctx context.Context, stopID, cwd, name, prompt string) (id string, err error)
 	// Stop は session を止める (PG・PM・取り込みの係のどれにも使う)
 	Stop(ctx context.Context, id string) error
@@ -119,7 +119,7 @@ type Dispatcher struct {
 	// settingsBroken は設定を読めなかった (予定は回さない: schedule off を読めないまま破壊的な予定を回さない)
 	settingsBroken bool
 	held           string // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
-	// slots は最後に割り当てを回し終えたときに枠に数えたカード、slotsAt はその時刻 (writeState が様子に書く。issue 557)
+	// slots は最後に割り当てを回し終えたときに枠に数えたカード、slotsAt はその時刻 (writeState が様子に書く)
 	slots   []string
 	slotsAt time.Time
 
@@ -138,7 +138,7 @@ type Dispatcher struct {
 	// Changed は記録を変えたときに呼ぶ (画面へ「読み直して」と知らせる。package wake の Broadcast)。nil なら知らせない
 	Changed func()
 
-	// Worktrees は PG の worktree を見る・片付ける口 (worktree.go。issue 553)。nil なら close を検査せず、閉じた・削除したカードの worktree も片付けない
+	// Worktrees は PG の worktree を見る・片付ける口 (worktree.go)。nil なら close を検査せず、閉じた・削除したカードの worktree も片付けない
 	Worktrees WorktreeOps
 
 	// FakePM は e2e モードの偽の PM (Tick の頭で呼ぶ)。本物のモードでは nil
@@ -154,7 +154,7 @@ type Dispatcher struct {
 	// IntegratorOff は取り込みの係を起動も再開もしない (--integrator=off / 設定 integrator = "off")。レビューの列のカードはそのまま置く
 	IntegratorGuide string
 	IntegratorOff   bool
-	// ReviewDefault は config.toml の review (issue 514。空なら claude)。設定 review が勝つ (review.go)
+	// ReviewDefault は config.toml の review (空なら claude)。設定 review が勝つ (review.go)
 	ReviewDefault string
 	// ResolveCodex は codex の実体を解く (本物は ResolveCodex)。担い手が初めて codex になった Tick に 1 回だけ呼ぶ (review.go)。nil なら解かない (e2e・テスト)
 	ResolveCodex func(context.Context) (Tool, error)
@@ -193,7 +193,7 @@ type Dispatcher struct {
 	schedErrsNow map[string]bool
 	schedStart   time.Time // 今の予定を起こした時刻 (入れ替えが待つ上限の起点。scheduleBusy)
 
-	// UpgradeNote は新版への入れ替えの様子 (issue 505。dispupgrade.go が持つ)。Tick ごとに dispatcher-state.json へ書く。nil なら書かない
+	// UpgradeNote は新版への入れ替えの様子 (dispupgrade.go が持つ)。Tick ごとに dispatcher-state.json へ書く。nil なら書かない
 	UpgradeNote func(now time.Time) (string, bool)
 
 	// BootTime はマシンの起動時刻を読む (recover.go の起動時の確かめ。本物は kern.boottime)。nil なら読めない = 再起動で消えたと示せないので復旧しない
@@ -263,7 +263,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	notes = append(notes, d.meter(now, res)...) // 書庫へ移す前 (issue 516)
 	notes = append(notes, d.archive(now)...)
 	notes = append(notes, d.tickSchedule(ctx, now)...) // 一覧の取得より先 (claude の一覧を取れない Tick でも予定は回す。子が自分で読んで失敗を返す)
-	// 書庫へ移した・削除したカードの添付を消す (記録を書いた後に消す。落ちても次の Tick が消し直す。issue 453)
+	// 書庫へ移した・削除したカードの添付を消す (記録を書いた後に消す。落ちても次の Tick が消し直す)
 	if _, err := store.SweepAttachments(d.Dir, now); err != nil {
 		notes = append(notes, ev(eventlog.KindError, "", "", "添付を片付けられない (次の Tick で消し直す): "+err.Error()))
 	}
@@ -487,7 +487,7 @@ func (d *Dispatcher) register(now time.Time, ss []agents.Session) (int, []eventl
 
 // trackDead は、PG の session を持つカードごとに「一覧に無い / pid 無し」を最初に見た時刻を DeadSince に書き、生きているのを見たら外す。
 // 待ちの起点を「落ちた (のを見た) 時刻」にするため (直前の再開や回答の時刻から数えると、長く走ってから落ちた PG を待たずに扱う)。
-// dispatcher が止めた PG (Stopped) は落ちたのではないので付けない。付いていれば外す (issue 560)。
+// dispatcher が止めた PG (Stopped) は落ちたのではないので付けない。付いていれば外す。
 // 止める要求を出しただけ (StopSent) の間は付ける: 止まる前に本当に落ちたなら自動の再開を待つ (削除中のカードを待たずに外して PG を
 // 取り残さない)。止まったのを確かめた Tick で MarkStopped が外す
 func (d *Dispatcher) trackDead(now time.Time, ss []agents.Session) error {
@@ -779,7 +779,7 @@ func (d *Dispatcher) watch(now time.Time) ([]eventlog.Event, error) {
 }
 
 // dispatch は着手待ちのカードに、枠を使うカード (card.HoldsPGSlot: turn の途中の PG) が上限 (利用枠で絞った数。usage.go) に達するまで
-// PG を割り当てる (再開が先、その中はレーンの並び)。テストの係の結果を待って idle の PG は枠を使わない (issue 455)
+// PG を割り当てる (再開が先、その中はレーンの並び)。テストの係の結果を待って idle の PG は枠を使わない
 //   - 起動・再開の前に、印 (Launching) と時刻を記録に書く。結果が分かったら印を外して作業中にする
 //   - 前の Tick の起動・再開の結果が分からないまま (印が残っている) のカードは、一覧で確かめる。立っていれば取り込み、
 //     launchGrace を過ぎても出なければ起動し直す。待っている間は上限に数える
@@ -813,7 +813,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 				slots = append(slots, c.ID)
 			}
 		case card.Planned:
-			// 順番 (issue 468) は初めての起動だけを止める (card.HeldBy)
+			// 順番は初めての起動だけを止める (card.HeldBy)
 			if b := card.HeldBy(st.Cards, c); len(b) > 0 {
 				text := afterWaitPrefix + strings.Join(b, ", ") + " の完了を待つ"
 				if lastAfterWait(c) != text { // 変わったときだけ書く (Tick ごとに記録を伸ばさない)
@@ -829,7 +829,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		}
 	}
 	// 回答を受けた再開の初回を新しい起動より先に (途中まで進んだ作業と、その worktree を待たせない。枠で 1 本に絞ったときに効く)。
-	// その中はレーンの並び (上ほど優先。人が入れ替えられる = issue 470。入れ替えていなければ列に入った順)。
+	// その中はレーンの並び (上ほど優先。人が入れ替えられる。入れ替えていなければ列に入った順)。
 	slices.SortStableFunc(queue, func(a, b card.Card) int {
 		if ra, rb := a.ResumesFirst(), b.ResumesFirst(); ra != rb {
 			if ra {
@@ -953,7 +953,7 @@ func (d *Dispatcher) reject(id string, now time.Time, how string, launchErr erro
 	return ev(eventlog.KindLaunch, id, "", text), err
 }
 
-// afterWaitPrefix は順番で待たせた理由の文の頭 (issue 468)。頭で探す (btw の答えは直近の出来事を文の途中に引用する)。
+// afterWaitPrefix は順番で待たせた理由の文の頭。頭で探す (btw の答えは直近の出来事を文の途中に引用する)。
 const afterWaitPrefix = "順番: "
 
 // lastAfterWait は履歴で最後に書いた順番の待ちの文 (無ければ空)。🚨 最後の 1 行とは比べない: 待っている間に btw・追加オーダーが
@@ -1073,7 +1073,7 @@ func adopt(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) 
 			return s.ID, true
 		}
 		// 再開は別の session id の session を立てる (427 の 3f で実測) ので、同じ作業ディレクトリ (PG の worktree) で印の後に始まったものも取り込む。
-		// 名前も要る: 再開も起動と同じ名前を渡す (488 で実測)。cwd だけだと、PG の worktree で人間が立てた bg の session を取り込んで止める (issue 457)
+		// 名前も要る: 再開も起動と同じ名前を渡す (488 で実測)。cwd だけだと、PG の worktree で人間が立てた bg の session を取り込んで止める
 		if c.Launching == "再開" && hasOwned && (s.SessionID == o.SessionID || (strings.Contains(o.Cwd, worktreeMarker) && s.Cwd == o.Cwd && s.Name == card.SessionName(c))) {
 			return s.ID, true
 		}
@@ -1136,20 +1136,20 @@ func (d *Dispatcher) update(id string, f func(*card.Card)) error {
 	})
 }
 
-// DraftIssueName は PG が起票する issue の仮の名前 (issue 530)。PG は push しないので、PG が採った番号は取り込まれるまで master から見えず衝突する。
+// DraftIssueName は PG が起票する issue の仮の名前。PG は push しないので、PG が採った番号は取り込まれるまで master から見えず衝突する。
 // 番号は取り込みの係が push の直前に scripts/issue_number_drafts.sh で付ける (integrator-guide.md の役目 2。同じ形を書いていることを TestIntegratorGuideNumbersDraftIssues が見る)。
 const DraftIssueName = "new-<type>-<slug>.md"
 
 const draftIssueRule = "- issue を起票するときは番号を取らない (issue 規約の採番より優先する)。`issues/<置き場>/" + DraftIssueName + "` の名前で書き、" +
 	"見出しは `# new (<type>): <題>`、他のファイルや commit の subject からはこのファイル名で指す。next/ で claim しない (番号は取り込みの係が push の直前に付ける)\n"
 
-// CardRCRule は `pro-con card` の rc の読み方 (issue 542)。PG の指示と、PM・取り込みの係の指示書 (目印の行を置き換える) の正本。
+// CardRCRule は `pro-con card` の rc の読み方。PG の指示と、PM・取り込みの係の指示書 (目印の行を置き換える) の正本。
 const CardRCRule = "`pro-con card` の箱に置く操作 (add / plan / ask / answer / run / attach / review / rework / order / close 等) は、dispatcher の適用を待って返る。" +
 	"rc=1 は dispatcher が除けた (stderr に「除けた: <理由>」。カードは変わっていない) か、受付の箱に置けなかった (「受付の箱に置けない」) ので、stderr を読んで扱う " +
 	"(`pro-con card show <カード>` で今の列を見る)。rc=3 は適用を確かめられなかった (まだ箱にあることも、もう適用されたこともある) ので、打ち直す前に `pro-con card show <カード>` で確かめる"
 
 // Prompt は PG に渡す最初の指示。PG の規律 (426 の決定 2・3) を前に置き、依頼の中身を後ろに置く。
-// rv は敵対的レビューの担い手 (issue 514。起動のときの値。起動した後に設定を変えても、動いている PG の指示は変わらない)。
+// rv は敵対的レビューの担い手 (起動のときの値。起動した後に設定を変えても、動いている PG の指示は変わらない)。
 func Prompt(c card.Card, rv Review) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "あなたは pro-con の PG (作業担当) です。担当はカード %s「%s」。\n", c.ID, c.Title)
@@ -1166,7 +1166,7 @@ func Prompt(c card.Card, rv Review) string {
 	fmt.Fprintf(&b, "- 画面の見た目を変えたら撮って `pro-con card attach %s <ファイル> --note \"<一言>\"` で添付する (人間とレビューする側が見る。"+
 		"TUI は隔離した tmux (`-L`) で動かして `tmux capture-pane -e -p` を .ans に書く (色つきの文字)。画像が要るなら vhs の Screenshot で .png。"+
 		"`screencapture` は bg では壁紙しか写らないので使わない)\n", c.ID)
-	// 残った予約は session を working のまま残し、止め終えたと読めなくなる (issue 554)
+	// 残った予約は session を working のまま残し、止め終えたと読めなくなる
 	b.WriteString("- ScheduleWakeup / CronCreate / Monitor で自分を起こさない (再開は dispatcher が、回答・run の結果・差し戻しで行う)。" +
 		"使ったなら turn を終える前に取り消す (ScheduleWakeup は stop / CronCreate は CronDelete / Monitor は TaskStop)\n")
 	b.WriteString("- run を頼んだら、その結果が届くまで ask しない (質問は結果を受け取ってからにする。先に ask すると、頼んだ実行が取り消される)\n")

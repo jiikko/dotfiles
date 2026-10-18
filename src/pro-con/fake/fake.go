@@ -270,7 +270,7 @@ func (s *Sim) stepProgress() {
 
 // stepDispatch は枠が空いていれば着手待ちのカードを上から順に PG へ渡す (模擬の dispatcher)。
 func (s *Sim) stepDispatch() {
-	// 本物の dispatcher と同じ順: 再開 (回答を受けたカード) が先、その中はレーンの並び (上ほど優先。issue 470)
+	// 本物の dispatcher と同じ順: 再開 (回答を受けたカード) が先、その中はレーンの並び (上ほど優先)
 	var queue []card.Card
 	for _, c := range s.cards {
 		if c.State == card.Planned {

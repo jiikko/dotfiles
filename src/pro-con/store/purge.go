@@ -1,7 +1,7 @@
 package store
 
-// 完了から 1 週間たったカードを書庫から消す (issue 497)。ユーザーの決定 (2026-09-26): カードの記録は自動で消し、
-// session (起動の記録の行と transcript) と worktree は pro-con worktree clean --yes だけが消す (dispatcher の予定が毎日 04:00 に回す (issue 550。止めるのは pro-con config set schedule off))。
+// 完了から 1 週間たったカードを書庫から消す。ユーザーの決定 (2026-09-26): カードの記録は自動で消し、
+// session (起動の記録の行と transcript) と worktree は pro-con worktree clean --yes だけが消す (dispatcher の予定が毎日 04:00 に回す (止めるのは pro-con config set schedule off))。
 //
 // 🚨 カードを消すと、片付け (wtclean) が「pro-con が作った・完了した」と示す材料が無くなり、消したカードの worktree と session を
 // 二度と片付けられなくなる。消す前に、片付けに要る最小限の印 (カード ID・完了の時刻・session の id・worktree・ブランチ) を

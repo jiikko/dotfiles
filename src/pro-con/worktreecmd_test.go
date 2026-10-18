@@ -86,7 +86,7 @@ func TestWorktreeCleanYesRemoves(t *testing.T) {
 	}
 }
 
-// issue 552: disposable_tmp の repo では、tmp/ の無視されたファイルだけの worktree を --yes で退避してから消し、退避した先を出す。
+// disposable_tmp の repo では、tmp/ の無視されたファイルだけの worktree を --yes で退避してから消し、退避した先を出す。
 // 30 日を過ぎた退避は同じ --yes で消す (結果の 1 行は最後のまま)。設定に無い repo の tmp/ は今までどおり残す。
 func TestWorktreeCleanYesStashesTmp(t *testing.T) {
 	for _, disposable := range []bool{true, false} {
@@ -158,7 +158,7 @@ func TestDisposableTmpRepos(t *testing.T) {
 	}
 }
 
-// --yes は最後に結果の 1 行を出す (dispatcher の予定はこの行をそのまま記録と画面に出す。issue 550)。
+// --yes は最後に結果の 1 行を出す (dispatcher の予定はこの行をそのまま記録と画面に出す)。
 // 作業中のカード C-002 の worktree は残した側に数える。
 func TestWorktreeCleanYesPrintsResultLine(t *testing.T) {
 	env, _ := worktreeFixture(t)

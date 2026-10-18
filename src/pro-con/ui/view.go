@@ -26,7 +26,7 @@ const (
 	// 下線の開始と終了 (終了だけを戻すので、帯の背景色や太字を消さない)
 	sgrUnderline   = "\x1b[4m"
 	sgrNoUnderline = "\x1b[24m"
-	// sgrPink は確認のカードの印 (issue 531。2026-09-27 にユーザーが見本の案 A を選んだ)。状態の色・人の番の黄と紛れない色
+	// sgrPink は確認のカードの印 (2026-09-27 にユーザーが見本の案 A を選んだ)。状態の色・人の番の黄と紛れない色
 	sgrPink = "\x1b[38;5;213m"
 	minColW = 14
 )
@@ -121,7 +121,7 @@ func (m *Model) render() string {
 const limitWhyCells = 40
 
 // pgGauge は枠を使っている PG (turn の途中。テストの係の結果を待って idle の PG は数えない) の数 / 今の同時実行数。利用枠で上限より絞っていれば上限と理由も出す。
-// 使っている数は dispatcher が枠に数えたカードで、判定できなければ ? (dispatcher が止まっている・古い。読めないのを 0 に見せない。issue 557)。
+// 使っている数は dispatcher が枠に数えたカードで、判定できなければ ? (dispatcher が止まっている・古い。読めないのを 0 に見せない)。
 func (m *Model) pgGauge() string {
 	used := "?"
 	if n, ok := m.snap.SlotsUsed(); ok {
@@ -143,7 +143,7 @@ func (m *Model) pgGauge() string {
 // pmCardsShown はゲージに PM が手元に持つカードを並べる枚数 (超えた分は「ほか N」)。
 const pmCardsShown = 2
 
-// pmGauge は PM の数 / 上限と様子 (issue 476。PG のゲージの隣に同じ書式で)。dispatcher が様子を書いていなければ (古い dispatcher) 出さない。
+// pmGauge は PM の数 / 上限と様子 (PG のゲージの隣に同じ書式で)。dispatcher が様子を書いていなければ (古い dispatcher) 出さない。
 // 止まった dispatcher の最後の様子は今の様子として出さない (PM の session は dispatcher と別に生きていることがある)。
 func (m *Model) pmGauge() string {
 	s, ok := card.FindRole(m.snap.RoleStates, card.PMName)
@@ -190,7 +190,7 @@ func (m *Model) dispatcherStopped() bool {
 // screenGaugeMax はヘッダに画面を 1 つずつ並べる上限 (超えたら数だけにして、一覧は s の板に出す)。
 const screenGaugeMax = 3
 
-// screensGauge は開いている画面 (issue 481)。1 つだけの持ち主の画面なら出さない。少なければ 1 つずつ (「a1b2c3 持ち主 (この画面)」)、
+// screensGauge は開いている画面。1 つだけの持ち主の画面なら出さない。少なければ 1 つずつ (「a1b2c3 持ち主 (この画面)」)、
 // 多ければ持ち主と join の数だけ出す。
 func (m *Model) screensGauge() string {
 	ss := m.snap.Screens
@@ -224,8 +224,8 @@ func screenMode(s backend.Screen) string {
 }
 
 // dispatcherGauge は dispatcher が最後に回ってからの時間。1 度も回っていない / 長く回っていなければ赤で出す。
-// 人が止めた (印がある) なら、止まっているのは意図どおりなので黄で「止めてある」と出す (画面は起こさない。issue 459)。
-// join の画面は dispatcher を起こさないので、止まっているときは起こし方を添える (issue 481)
+// 人が止めた (印がある) なら、止まっているのは意図どおりなので黄で「止めてある」と出す (画面は起こさない)。
+// join の画面は dispatcher を起こさないので、止まっているときは起こし方を添える
 func (m *Model) dispatcherGauge() string {
 	if m.snap.DispatcherHeld {
 		if m.joined() {
@@ -250,8 +250,8 @@ func (m *Model) dispatcherGauge() string {
 	return fmt.Sprintf("dispatcher %s前", card.Age(d))
 }
 
-// ownerlessBand は、持ち主の画面が 1 つも無い join の画面に出す全幅の帯 (issue 543。無ければ空)。
-// 持ち主が居ないと、dispatcher が止まったとき (落ちた・人が止めた) 誰も起こし直さない: join は起こさず (issue 481)、supervisor も
+// ownerlessBand は、持ち主の画面が 1 つも無い join の画面に出す全幅の帯 (無ければ空)。
+// 持ち主が居ないと、dispatcher が止まったとき (落ちた・人が止めた) 誰も起こし直さない: join は起こさず、supervisor も
 // 持ち主が居なければ起こし直さずに PG を止めて抜ける (supervise.go の haltReason)。動いている間は黄で、止まったら赤で出す。
 // 画面を数えられない (Screens が空) ときは出さない (持ち主が居ないと言い切れない)。
 func (m *Model) ownerlessBand() string {
@@ -261,7 +261,7 @@ func (m *Model) ownerlessBand() string {
 	if owners, _ := m.snap.ScreenTally(); owners > 0 {
 		return ""
 	}
-	// O の案内は見出しのすぐ後ろに置く (帯は画面の幅で切り詰めるので、末尾に置くと 80 桁ほどの端末では切れる。issue 548)
+	// O の案内は見出しのすぐ後ろに置く (帯は画面の幅で切り詰めるので、末尾に置くと 80 桁ほどの端末では切れる)
 	var text string
 	switch {
 	case m.snap.DispatcherHeld: // 持ち主の画面にしても、人が止めた印があれば起こさない (c で外す)
@@ -339,7 +339,7 @@ func (m *Model) tabBar() string {
 }
 
 // gauge は溜まり具合の 1 行 (要件 4)。人の番・待ちは選んでいるタブの分、PG の数と上限は全体。
-// レーンごとの枚数は出さない (枠の見出し「3 作業中 (2)」と同じ数。issue 558)。
+// レーンごとの枚数は出さない (枠の見出し「3 作業中 (2)」と同じ数)。
 func (m *Model) gauge() string {
 	var oldest time.Duration
 	pending, stalled, humans := 0, 0, 0
@@ -523,7 +523,7 @@ const (
 
 // columnCells は列の中身を 1 枚 cardLines 行のセルで並べる。移動中のカード (motion.go) は、移動先では空けて待ち、
 // 移動元には点線の枠を残す (どちらも着地まで。周りのカードが途中で詰まってずれないように)。
-// 組むのは top 番目からの limit 個だけ (見えないカードの文字列を毎コマ組まない。issue 494)。並びは laneOrder (lanescroll.go)。
+// 組むのは top 番目からの limit 個だけ (見えないカードの文字列を毎コマ組まない)。並びは laneOrder (lanescroll.go)。
 func (m *Model) columnCells(col int, cs []*card.Card, inner, top, limit int) (cells [][]string) {
 	items := m.laneOrder(col, len(cs))
 	top = min(top, len(items))
@@ -562,7 +562,7 @@ func (m *Model) cardCell(c card.Card, w int) []string {
 	case c.State == card.Done:
 		pre, badgePre, badge = sgrDim, sgrDim, m.badge(c)
 	}
-	// 右上に見積もり (issue 490。2026-09-26 のユーザーの決定: ポイントだけを薄く)。タイトルの 1 行目を minTitleHead より短くするなら出さない
+	// 右上に見積もり (2026-09-26 のユーザーの決定: ポイントだけを薄く)。タイトルの 1 行目を minTitleHead より短くするなら出さない
 	pts := card.PointsLabel(c)
 	if pts != "" && w-1-(termwidth.Of(pts)+1) < minTitleHead {
 		pts = ""
@@ -616,7 +616,7 @@ func wrapLines(s string, w, n int) []string {
 	return out
 }
 
-// humanMark は人の番の印 (issue 452。カードのバッジ行の先頭・列の見出し・ゲージで同じ形。2026-09-26 に見本の案 C をユーザーが選んだ)。
+// humanMark は人の番の印 (カードのバッジ行の先頭・列の見出し・ゲージで同じ形。2026-09-26 に見本の案 C をユーザーが選んだ)。
 // 🚨 幅の揺れる記号 (⚠️ 等) を使わない (no-mixed-width-columns-in-terminal-ui)
 const humanMark = "!人"
 
@@ -657,7 +657,7 @@ func (m *Model) handling(c card.Card) string { return c.Handling(m.snap.Roles, m
 // assignee は詳細に出す担当 (card.Assignee)。
 func (m *Model) assignee(c card.Card) string { return orDash(c.Assignee(m.snap.Roles, m.roleStates())) }
 
-// roleProgress は役の番のカードの、役の側の段階と今扱っているカードの最後の道具の呼び出し (issue 480)。
+// roleProgress は役の番のカードの、役の側の段階と今扱っているカードの最後の道具の呼び出し。
 // 止まった dispatcher では段階を決められないので出さない。
 func (m *Model) roleProgress(c card.Card) string {
 	if m.dispatcherStopped() {
@@ -704,7 +704,7 @@ func (m *Model) badge(c card.Card) string {
 		parts = append(parts, "▶ "+cmd+" "+card.Age(m.snap.Now.Sub(e.Since)))
 	} else if c.State != card.Done {
 		parts = append(parts, card.Age(m.snap.Now.Sub(c.Since)))
-		// PG が今走らせているもの (issue 473)。集め直されていない古い様子はボードには出さない (詳細は古いと添えて出す)
+		// PG が今走らせているもの。集め直されていない古い様子はボードには出さない (詳細は古いと添えて出す)
 		if label, since, ok := c.DoingHeadline(); ok && m.snap.Now.Sub(c.DoingAt) <= card.DoingStale {
 			parts = append(parts, "▸ "+label+" "+card.Age(m.snap.Now.Sub(since)))
 		}
@@ -722,7 +722,7 @@ func (m *Model) badge(c card.Card) string {
 	return strings.Join(parts, " ")
 }
 
-// blockedBy は着手待ちのカードが順番で待っている前のカード (完了していないもの。issue 468)。待っていなければ空。
+// blockedBy は着手待ちのカードが順番で待っている前のカード (完了していないもの)。待っていなければ空。
 func (m *Model) blockedBy(c card.Card) string {
 	if c.State != card.Planned {
 		return ""

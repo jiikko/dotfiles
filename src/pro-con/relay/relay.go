@@ -1,4 +1,4 @@
-// Package relay は画面の中継 (issue 443): 画面は描くたびに最新の 1 枚を状態の置き場の relay/<id>.frame に置き、
+// Package relay は画面の中継: 画面は描くたびに最新の 1 枚を状態の置き場の relay/<id>.frame に置き、
 // 外の Claude が `pro-con screen` で読む。
 //
 //   - 画面は開いている間 relay/<id>.lock を flock で持つ。読む側は flock が持たれている画面だけを「開いている」とみなす
@@ -38,7 +38,7 @@ const Dir = "relay"
 var minInterval = 100 * time.Millisecond
 
 // busyInterval は変化が続いているあいだ (作業中の PG のスピナーは 100ms ごとに画面を変える・演出の途中) の書き出しの間隔。
-// minInterval のままだと、見る人がいなくても 83KB の 1 枚を毎秒約 8 回書き直していた (issue 504)。1 回きりの変化 (操作) は待たずに書く。
+// minInterval のままだと、見る人がいなくても 83KB の 1 枚を毎秒約 8 回書き直していた。1 回きりの変化 (操作) は待たずに書く。
 var busyInterval = time.Second
 
 // Frame は画面 1 枚。
@@ -141,7 +141,7 @@ func (w *Writer) loop() {
 			f.Plain = ansi.Strip(f.ANSI) // 描画の側でやらない (画面を待たせない)
 			if data, err := json.Marshal(f); err == nil && w.write(filepath.Join(w.dir, w.id+".frame"), data) == nil {
 				// 🚨 書けたときだけ「最後に書いた 1 枚」にする。書く前に置くと、書き出しに失敗した 1 枚と同じ中身の描き直しを
-				// 「もう書いた」と飛ばし、古い 1 枚が次に中身が変わるまで残る (敵対的レビュー 2026-09-25 2 周目 P2)
+				// 「もう書いた」と飛ばし、古い 1 枚が次に中身が変わるまで残る
 				w.written = f
 			} // 書けなくても画面は止めない (中継は見るための口。次の描き直しで書き直す)
 		}

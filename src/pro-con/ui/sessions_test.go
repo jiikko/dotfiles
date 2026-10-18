@@ -35,7 +35,7 @@ func TestUIDoesNotListSessionsItself(t *testing.T) {
 	}
 }
 
-// 「開いた」の欄は 1 時間以上の経過を時間・日に丸め、出る形はどれも欄の幅に区切りを残して収まる (issue 780。案C の「23時間59分前」は切れていた)。
+// 「開いた」の欄は 1 時間以上の経過を時間・日に丸め、出る形はどれも欄の幅に区切りを残して収まる (案C の「23時間59分前」は切れていた)。
 func TestOpenedTextFitsColumn(t *testing.T) {
 	now := time.Date(2026, 10, 16, 15, 30, 0, 0, time.Local)
 	for d, want := range map[time.Duration]string{
@@ -56,7 +56,7 @@ func TestOpenedTextFitsColumn(t *testing.T) {
 	}
 }
 
-// 開いた時刻を持たない印 (中身を読めない) は「-」、時計のずれで未来になったものは「0秒前」(隣の欄とくっつかない。issue 780 の 2 周目のレビュー)。
+// 開いた時刻を持たない印 (中身を読めない) は「-」、時計のずれで未来になったものは「0秒前」(隣の欄とくっつかない)。
 func TestOpenedTextOddTimes(t *testing.T) {
 	now := time.Date(2026, 10, 16, 15, 30, 0, 0, time.Local)
 	if got := openedText(time.Time{}, now); got != "-" {

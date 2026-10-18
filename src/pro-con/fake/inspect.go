@@ -13,7 +13,7 @@ import (
 	"pro-con/store"
 )
 
-// 設定画面 (issue 456) の模擬。変える所は模擬の枠を変え、見る所のプロセスは模擬の PG を出す。ディスクは測らない (模擬の記録は小さく、
+// 設定画面の模擬。変える所は模擬の枠を変え、見る所のプロセスは模擬の PG を出す。ディスクは測らない (模擬の記録は小さく、
 // 本物の worktree を数えると模擬が本物の置き場を読むことになる)。
 
 var (
@@ -77,7 +77,7 @@ func (s *Sim) Schedule() ([]backend.ScheduleRow, error) {
 	return rows, nil
 }
 
-// Events は模擬の出来事 (ログのタブの見本。issue 512)。最初の 1 回だけ返し、後から足さない (模擬の刻みは出来事を書かない)。
+// Events は模擬の出来事 (ログのタブの見本)。最初の 1 回だけ返し、後から足さない (模擬の刻みは出来事を書かない)。
 func (s *Sim) Events() ([]eventlog.Event, error) {
 	if s.eventsSent {
 		return nil, nil

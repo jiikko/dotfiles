@@ -1,6 +1,6 @@
 package dispatcher
 
-// 追加オーダーの届け方 (issue 438。426 の決定 3):
+// 追加オーダーの届け方 (426 の決定 3):
 //   - dispatcher は SendMessage を呼べない (Claude Code のツールで、CLI の口が無い) ので、回答と同じ「止めて同じ session を再開」で届ける
 //   - 追記は PG の turn の区切りを待つ: 作業中のまま session が idle になった (turn を終えた) ときに再開する。PG が `pro-con card ask / run / review`
 //     で turn を終えたときは、その先の再開 (回答・テストの結果・差し戻し) に添えて届ける (再開の文に積む。resumeText)
@@ -42,7 +42,7 @@ func (d *Dispatcher) deliverOrders(now time.Time, ss []agents.Session) ([]eventl
 	var notes []eventlog.Event
 	for _, c := range st.Cards {
 		pending := c.Pending()
-		// 削除の依頼を受けたカードは戻さない (PG を止めて消すのを待っている。issue 451)
+		// 削除の依頼を受けたカードは戻さない (PG を止めて消すのを待っている)
 		// 入力待ちで質問待ちへ移したカード (WaitsOnPrompt) も見る: 方針変更は問いを待たずに止めて再開する (作業中のまま入力待ちだった頃と同じ)
 		if (c.State != card.Running && c.State != card.Review && !c.WaitsOnPrompt()) || c.Launching != "" || c.Deleting() || len(pending) == 0 {
 			continue

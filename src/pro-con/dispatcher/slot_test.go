@@ -11,7 +11,7 @@ import (
 	"pro-con/store"
 )
 
-// PG の枠は turn の途中の PG だけを数える (issue 455)。テストの係の結果を待って idle と一覧で確かめた PG は枠を使わないので、
+// PG の枠は turn の途中の PG だけを数える。テストの係の結果を待って idle と一覧で確かめた PG は枠を使わないので、
 // 着手待ちのカードを起動する。idle と確かめられない (まだ busy / 一覧に居ない) うちは数える。
 func TestSlotSkipsIdlePGAwaitingRun(t *testing.T) {
 	for _, tc := range []struct {
@@ -59,7 +59,7 @@ func TestSlotSkipsIdlePGAwaitingRun(t *testing.T) {
 			if got := cs["C-002"].State == card.Running; got != tc.start {
 				t.Fatalf("C-002 を起動した=%v、期待=%v (starts=%v C-001=%v)", got, tc.start, l.starts, cs["C-001"].State)
 			}
-			// 枠に数えたカードを様子に書く (一覧とヘッダが読む。issue 557): 起動した C-002 か、枠を使い続ける C-001
+			// 枠に数えたカードを様子に書く (一覧とヘッダが読む): 起動した C-002 か、枠を使い続ける C-001
 			want := []string{"C-001"}
 			if tc.start {
 				want = []string{"C-002"}

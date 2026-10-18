@@ -1,4 +1,4 @@
-// Package storetest は、store / dispatcher / 画面の bench が同じ記録で測るための組み立て (issue 528)。テストからだけ import する。
+// Package storetest は、store / dispatcher / 画面の bench が同じ記録で測るための組み立て。テストからだけ import する。
 package storetest
 
 import (

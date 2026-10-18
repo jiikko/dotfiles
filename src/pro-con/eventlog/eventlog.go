@@ -1,4 +1,4 @@
-// Package eventlog は dispatcher の出来事の記録 (状態の置き場の events.jsonl。issue 444)。
+// Package eventlog は dispatcher の出来事の記録 (状態の置き場の events.jsonl)。
 //
 // 1 行 1 出来事の JSON (時刻・種類・カード・session・理由)。書くのは dispatcher の lock を持つプロセスだけ
 // (カードの記録と同じく書き手は 1 つ = 426 の決定 1。追記と回しが書き手どうしで競らない)。読む側 (pro-con log) は読むだけ。
@@ -61,17 +61,17 @@ const (
 	// KindScreen は画面の側の出来事 (開いた・quit で閉じた・止めた / 止めなかった)。画面が受付の箱に置き、dispatcher が書く
 	// (時刻は画面が置いた時刻。dispatcher が居ない間に置いたものは次の dispatcher が書くので、ファイルの中で時刻の順が前後しうる)
 	KindScreen = "screen"
-	// KindMonitor は見張り (pro-con monitor。issue 475) の知らせ (取り込みの衝突・テストの順番の長さ) と、見張りを起こした・落ちた。
+	// KindMonitor は見張り (pro-con monitor) の知らせ (取り込みの衝突・テストの順番の長さ) と、見張りを起こした・落ちた。
 	// 知らせは見張りが受付の箱に置き、dispatcher が書く (時刻は見張りが置いた時刻)
 	KindMonitor = "monitor"
-	// KindSupervisor は supervisor (pro-con supervise。issue 506) の知らせ (dispatcher が落ちた・起こし直す・諦めた)。
+	// KindSupervisor は supervisor (pro-con supervise) の知らせ (dispatcher が落ちた・起こし直す・諦めた)。
 	// supervisor が受付の箱に置き、次の dispatcher が書く (時刻は supervisor が置いた時刻)
 	KindSupervisor = "supervisor"
-	// KindUpgrade は dispatcher の新版への入れ替え (issue 505。新版ができた・区切りを待っている・切り替えた・切り替えられない)
+	// KindUpgrade は dispatcher の新版への入れ替え (新版ができた・区切りを待っている・切り替えた・切り替えられない)
 	KindUpgrade = "upgrade"
-	// KindDispatcher は dispatcher 自身が起きた・抜けた (issue 512。新版への入れ替えは KindUpgrade)
+	// KindDispatcher は dispatcher 自身が起きた・抜けた (新版への入れ替えは KindUpgrade)
 	KindDispatcher = "dispatcher"
-	// KindSchedule は予定 (issue 550。決まった時刻に回すコマンド) を起こした・終わった。失敗は KindError
+	// KindSchedule は予定 (決まった時刻に回すコマンド) を起こした・終わった。失敗は KindError
 	KindSchedule = "schedule"
 )
 

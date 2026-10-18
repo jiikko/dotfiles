@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-// 切り替え (exec) の間に元のシェルの画面を見せない (issue 509)。bubbletea は終了のときに alt screen を抜け (\e[?1049l)、
+// 切り替え (exec) の間に元のシェルの画面を見せない。bubbletea は終了のときに alt screen を抜け (\e[?1049l)、
 // カーソルを出す (\e[?25h)。この 2 つが書かれると、新版が alt screen に入り直すまでの間 (exec と起動と最初の読み込み)
 // シェルの画面が見える。切り替えのときだけ 2 つを落とし、旧版が最後に描いた画面を出したまま新版へ渡す。
 // 新版が alt screen に入る列 (\e[?1049h) は、既に alt screen にいれば tmux は何もしない (screen_alternate_on が早く戻る)。
@@ -97,7 +97,7 @@ func (s *Screen) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// LeaveAltScreen は、旧版から alt screen のまま受け取った新版が、画面を出せずに終わるときに書く (issue 509)。
+// LeaveAltScreen は、旧版から alt screen のまま受け取った新版が、画面を出せずに終わるときに書く。
 // 書かないと、シェルへ戻っても alt screen に閉じ込められ、エラーの文も暗い画面の上に紛れる。
 func LeaveAltScreen(f *os.File) {
 	_, _ = f.WriteString("\x1b[0m" + string(showCursor) + string(leaveAltScreen))

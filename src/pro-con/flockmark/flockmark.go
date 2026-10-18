@@ -25,8 +25,8 @@ var beforeRename func(tmp, lock string)
 // body が nil でなければ、印の名前にする前にその中身を書く (数える側には書き終えた印しか見えない)。
 //
 // 🚨 数える対象にならない名前 (.tmp-<id>) で作って flock してから、印の名前へ rename する。印の名前で作ってから flock すると、その間は
-// 読む側に「誰も持っていない印」に見え、消される (presence: 敵対的レビューで 20000 回中 146 回再現。O_EXLOCK でも open の中で作成と lock の
-// 間に割り込まれて再現した) か、読む側が共有の flock を取ってこちらの flock が EWOULDBLOCK で失敗する (relay: 敵対的レビュー 2026-09-25 P2)。
+// 読む側に「誰も持っていない印」に見え、消される (presence: 20000 回中 146 回再現。O_EXLOCK でも open の中で作成と lock の
+// 間に割り込まれて再現した) か、読む側が共有の flock を取ってこちらの flock が EWOULDBLOCK で失敗する (relay)。
 func Create(d string, idBytes int, body func(id string) ([]byte, error)) (*os.File, string, string, error) {
 	b := make([]byte, idBytes)
 	if _, err := rand.Read(b); err != nil {

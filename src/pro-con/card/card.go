@@ -62,7 +62,7 @@ func (s State) Label() string {
 	return fmt.Sprintf("State(%d)", int(s))
 }
 
-// SinceText は今の列に入ってからの経過 age (呼び出し側で整形した長さ) に、何の経過かの語を付ける (issue 562)。
+// SinceText は今の列に入ってからの経過 age (呼び出し側で整形した長さ) に、何の経過かの語を付ける。
 // 裸の「(17分)」は、完了のカードでは依頼から完了までの所要と読み違えられた。所要とは別物なので、起点を語で示す。
 func (s State) SinceText(age string) string {
 	if s == Requested || s == Done { // 列に入った瞬間の出来事 (依頼を受けた / 完了した) から数える
@@ -82,7 +82,7 @@ const (
 	EndPendingIssue        // issue 化待ち (放置されると行方不明になる典型なので UI で目立たせる)
 )
 
-// Discards は、PG の作業を取り込まずに閉じると明示した終わり方か (issue 553)。これで閉じたカードは、取り込み先に無い commit を
+// Discards は、PG の作業を取り込まずに閉じると明示した終わり方か。これで閉じたカードは、取り込み先に無い commit を
 // refs/pro-con/removed/ に残してから worktree とブランチを消す。issue 化待ちは後で取り込むかもしれないので含めない。
 func (e Ending) Discards() bool {
 	return e == EndAnswered || e == EndResearchOnly || e == EndRejected
@@ -132,14 +132,14 @@ type Wait struct {
 	Resource string // WaitResource のときのリソース名 (device / xcode 等)
 	Position int    // WaitResource のときの列の順番 (1 始まり)
 	Question string // WaitQuestion / WaitPermission のときの質問文。WaitCrashed のときは止めた理由
-	// Questions は選択肢つきの質問の問い (WaitQuestion のときだけ。issue 493)。Question には前置きと、問いを文にしたもの
+	// Questions は選択肢つきの質問の問い (WaitQuestion のときだけ)。Question には前置きと、問いを文にしたもの
 	// (QuestionsText) も入れる。回答で質問待ちを離れたら Wait ごと消える
 	Questions []Question `json:",omitempty"`
-	// AskedBy は質問した役 (WaitQuestion のときだけ)。空は PG、PMName は PM が依頼の列のカードについて人に聞いた問い (issue 498)
+	// AskedBy は質問した役 (WaitQuestion のときだけ)。空は PG、PMName は PM が依頼の列のカードについて人に聞いた問い
 	AskedBy string `json:",omitempty"`
 }
 
-// FromPM は PM が人に聞いている問いか (issue 498)。人の番で、回答すると依頼の列へ戻る (PG の session は無い)。
+// FromPM は PM が人に聞いている問いか。人の番で、回答すると依頼の列へ戻る (PG の session は無い)。
 func (w Wait) FromPM() bool { return w.Kind == WaitQuestion && w.AskedBy == PMName }
 
 // IssueRef は repo + 番号で issue を指す (パスで持たない。done への移動や改番で切れないように)。
@@ -215,7 +215,7 @@ func (e Exec) Active() bool { return e.Command != "" }
 // AwaitsRun はテストの係に頼んだコマンドの結果を待っているか (頼みが列にある / 実行中)。
 func (c Card) AwaitsRun() bool { return c.Run != "" || c.Exec.Active() }
 
-// HoldsPGSlot は作業中のカードが PG の枠 (--limit) を使っているか (issue 455)。枠は turn の途中の PG だけを数える:
+// HoldsPGSlot は作業中のカードが PG の枠 (--limit) を使っているか。枠は turn の途中の PG だけを数える:
 // テストの係の結果を待つ PG は turn を終えて idle で、トークンを使わない (重い処理はテストの係が 1 本ずつ回す) ので数えない。
 // idle と確かめられないうち (頼んだ直後で turn の途中 / 一覧に居ない) は数える。結果が届くと着手待ちへ戻り、枠の空きを待って再開する (再開が先)。
 // idle は、このカードの PG が一覧で idle と出ているか。
@@ -278,7 +278,7 @@ type Event struct {
 	Screen string `json:",omitempty"` // 打った画面 (画面から受付の箱に置いた依頼だけ。「a1b2c3 join review」。issue 481)
 }
 
-// AttachKind は添付の種類 (人間がどう見るかを決める。issue 453)。
+// AttachKind は添付の種類 (人間がどう見るかを決める)。
 type AttachKind string
 
 const (
@@ -287,7 +287,7 @@ const (
 	AttachFile  AttachKind = "ファイル" // それ以外。open に渡す
 )
 
-// Attachment は PG がカードに付けた証拠 1 件 (作った画面の見た目・コマンドの出力。issue 453)。
+// Attachment は PG がカードに付けた証拠 1 件 (作った画面の見た目・コマンドの出力)。
 // ファイルは dispatcher が状態の置き場の attachments/<カード>/ へ移したもの (Path は絶対パス)。カードが記録から外れたら dispatcher が消す
 type Attachment struct {
 	Path string
@@ -302,7 +302,7 @@ type Card struct {
 	ID       string
 	ParentID string // 1 つの依頼を分けたとき / 別件の追加オーダーの元
 	Title    string
-	// Purpose は作業か確認 (問いだけ) か (issue 531。purpose.go)
+	// Purpose は作業か確認 (問いだけ) か (purpose.go)
 	Purpose Purpose `json:",omitempty"`
 	Request string  // 依頼の原文 (人間が書いたまま)
 	Prompt  string  // PM に渡した指示の全文 (スコープの前置き + 原文)。TUI から出した依頼だけが持つ
@@ -311,9 +311,9 @@ type Card struct {
 	Session string // 担当 PG の session id (claude --bg の id)
 	State   State
 	Since   time.Time // 今の State に入った時刻
-	// Rank は人が入れ替えたレーンの中の並び (issue 470。rank.go)。Since が変わる (列を移る) と効かなくなる
+	// Rank は人が入れ替えたレーンの中の並び (rank.go)。Since が変わる (列を移る) と効かなくなる
 	Rank Rank `json:",omitzero"`
-	// PromptLaneKey は入力待ちに入る前の、作業中の列での位置 (LaneKey)。入力待ちの 1 往復で並べた順が外れないよう、戻るときに Rank を付け直す (issue 545)
+	// PromptLaneKey は入力待ちに入る前の、作業中の列での位置 (LaneKey)。入力待ちの 1 往復で並べた順が外れないよう、戻るときに Rank を付け直す
 	PromptLaneKey time.Time `json:",omitzero"`
 	Wait          Wait
 	Stalled       bool // watchdog が停滞と判定した
@@ -323,33 +323,33 @@ type Card struct {
 	Orders        []Order
 	Btws          []Btw `json:",omitempty"`
 	History       []Event
-	// Trail は列を移った足跡 (issue 516。trail.go)。列を移すのは Enter だけ
+	// Trail は列を移った足跡 (trail.go)。列を移すのは Enter だけ
 	Trail []Step `json:",omitempty"`
-	// Attachments は PG が `pro-con card attach` で付けた添付 (付けた順。issue 453)
+	// Attachments は PG が `pro-con card attach` で付けた添付 (付けた順)
 	Attachments []Attachment `json:",omitempty"`
 	Log         []string     // PG の出力の末尾 (本番は transcript から読む)
-	// Doing は PG が今走らせているもの、DoingAt は dispatcher がそれを集めた時刻 (issue 473)。読む側 (画面・card show) が store.DoingFile から足す。
+	// Doing は PG が今走らせているもの、DoingAt は dispatcher がそれを集めた時刻。読む側 (画面・card show) が store.DoingFile から足す。
 	// 🚨 記録 (cards.json) には書かない: 書き手は dispatcher の Apply だけで、数秒で古くなる様子を記録の差分に混ぜない
 	Doing   []Doing   `json:"-"`
 	DoingAt time.Time `json:"-"`
-	// Progress は作業の進捗 (commit・未 commit・issue の進捗節)、ProgressAt は dispatcher がそれを集めた時刻 (issue 469。store.ProgressFile)。
+	// Progress は作業の進捗 (commit・未 commit・issue の進捗節)、ProgressAt は dispatcher がそれを集めた時刻 (store.ProgressFile)。
 	// Conflicts は見張りが見た取り込みの衝突の文、ConflictsAt は見張りが見た時刻 (store.ConflictsFile)。どれも Doing と同じく記録には書かない
 	Progress    *Progress `json:"-"`
 	ProgressAt  time.Time `json:"-"`
 	Conflicts   []string  `json:"-"`
 	ConflictsAt time.Time `json:"-"`
-	// LastRun はテストの係が最後に返した結果 (issue 469。結果は Resume で PG に渡して消えるので、詳細に残す分)
+	// LastRun はテストの係が最後に返した結果 (結果は Resume で PG に渡して消えるので、詳細に残す分)
 	LastRun *RunRecord `json:",omitempty"`
 	// Resume は次に PG を再開するときに渡す文 (質問への回答)。dispatcher が渡したら空にする (本物のモードだけ。426 の決定 2)
 	Resume string `json:",omitempty"`
-	// PMAnswer は PM の問い (Wait.FromPM) への人の回答 (issue 498)。依頼の列へ戻ったカードで PM に知らせ、依頼の列を離れたら空にする
+	// PMAnswer は PM の問い (Wait.FromPM) への人の回答。依頼の列へ戻ったカードで PM に知らせ、依頼の列を離れたら空にする
 	PMAnswer string `json:",omitempty"`
 	// Launching は dispatcher が PG の起動・再開を始めて、結果をまだ確かめていない印 ("起動" / "再開")。起動の前に記録へ書く
 	// (claude が「失敗」と返しても session が立っていることがあり、dispatcher が途中で落ちることもある。次の Tick が一覧で確かめる)
 	Launching string `json:",omitempty"`
 	// LaunchedAt は dispatcher が最後に起動・再開を始めた時刻。これより前に始まった session は、このカードの PG として取り込まない
 	LaunchedAt time.Time `json:",omitzero"`
-	// ReviewBy は最後に PG を起動したときの敵対的レビューの担い手 (issue 514。store.ReviewModes)。PG の指示は起動のときに決まるので、
+	// ReviewBy は最後に PG を起動したときの敵対的レビューの担い手 (store.ReviewModes)。PG の指示は起動のときに決まるので、
 	// 取り込みの係は今の設定ではなくこれで確かめる (claude で起動した PG を、後で codex に変えた設定で差し戻さない)
 	ReviewBy string `json:",omitempty"`
 	// Rejects は claude が起動・再開を受け付けなかった (rc≠0 がすぐ返った) のが続いた回数。起動・再開が済んだか、人の番へ回したら 0 に戻す (462)
@@ -365,18 +365,18 @@ type Card struct {
 	// DeadSince は dispatcher が、このカードの PG の session が一覧に無い / pid 無し (落ちて自動の再開を待っている) のを最初に見た時刻。
 	// 生きているのを見たら外す。止める・再開する前の待ち (restartWait) はここから数える
 	DeadSince time.Time `json:",omitzero"`
-	// StopAfterClose はカードを閉じた (close) かレビューの列に入った (review。issue 536) が、dispatcher がまだ PG の session を止め終えていない印
+	// StopAfterClose はカードを閉じた (close) かレビューの列に入った (review) が、dispatcher がまだ PG の session を止め終えていない印
 	// (適用と同時に付く。dispatcher が落ちても次の Tick で止める)。止まったのを確かめたか、closeStopWait を過ぎて諦めたら外す。
 	// 差し戻し (rework) でも外す。🚨 記録の名前は 447 のときのまま (動いている記録を読めるように)
 	StopAfterClose bool `json:",omitempty"`
 	// StopSent は StopAfterClose / DeleteAt の間に、dispatcher が PG の session へ止める要求を出した印 (止まったのを後の Tick で見たとき、
 	// 「止めた」と「既に止まっていた」を取り違えない)。印と一緒に外す。🚨 記録の名前は 447 のときのまま (動いている記録を読めるように)
 	StopSent bool `json:"CloseStopSent,omitempty"`
-	// DeleteAt は削除の依頼を受けた時刻 (issue 451。依頼の列のカードは印を付けずにすぐ消す)。付いている間、dispatcher は PG を起動・再開せず、
+	// DeleteAt は削除の依頼を受けた時刻 (依頼の列のカードは印を付けずにすぐ消す)。付いている間、dispatcher は PG を起動・再開せず、
 	// PG の session が止まったのを確かめてからカードを記録から外す。止められずに諦めたら外す (カードは残る)。DeleteBy は依頼した人
 	DeleteAt time.Time `json:",omitzero"`
 	DeleteBy string    `json:",omitempty"`
-	// Stopped は pro-con の終了か、レビューの列に入ったこと (issue 536) で dispatcher が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す。
+	// Stopped は pro-con の終了か、レビューの列に入ったことで dispatcher が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す。
 	// 付けるのは MarkStopped だけ (DeadSince と対で持つ)
 	Stopped bool `json:",omitempty"`
 	// Revived は、落ちた・消えた PG を人の判断なしに再開へ回した印 (458 の消えた PG・483 の再起動の復旧)。再開 (settle) で落ちた回数の
@@ -389,17 +389,17 @@ type Card struct {
 	// RunCwd は頼んだ側 (`pro-con card run` を打ったシェル) の作業ディレクトリ。dispatcher はそのカードの PG の worktree と一致するときだけ実行する
 	// (別のカードの名前で頼まれた実行を、そのカードの worktree で走らせない)
 	RunCwd string `json:",omitempty"`
-	// RunRetried は、実行の途中で dispatcher が止まった Run を 1 度頼み直した印 (issue 483)。また中断したら頼み直さずに rc=-1 を返す
+	// RunRetried は、実行の途中で dispatcher が止まった Run を 1 度頼み直した印。また中断したら頼み直さずに rc=-1 を返す
 	// (実行そのものがマシンか dispatcher を落としている疑い)。Run を外すときに外す
 	RunRetried bool `json:",omitempty"`
 	// Archived は完了のレーンから片付けた (x・完了から 24 時間の自動)。ボードには出さない。dispatcher が記録から書庫へ移す (store.Archive)
 	Archived bool
-	// FromRequest はこのカードを作った受付の箱の依頼 (add) の ID。`pro-con card add` が、置いた依頼から振られたカード ID を引く (issue 442)
+	// FromRequest はこのカードを作った受付の箱の依頼 (add) の ID。`pro-con card add` が、置いた依頼から振られたカード ID を引く
 	FromRequest string `json:",omitempty"`
-	// After はこのカードより先に完了させるカード (PM が `card plan --after` で付ける。issue 468)。dispatcher はこれらが完了するまで起動しない。
+	// After はこのカードより先に完了させるカード (PM が `card plan --after` で付ける)。dispatcher はこれらが完了するまで起動しない。
 	// 同じ判断・不変条件を変えるカードを並べない (並べると、合わせた結果が片方のテストでしか守られない)
 	After []string `json:",omitempty"`
-	// Points は見積もりのポイント (PM が `card plan --points` で付ける。PointScale のどれか。0 = 見積もり無し。issue 490)
+	// Points は見積もりのポイント (PM が `card plan --points` で付ける。PointScale のどれか。0 = 見積もり無し)
 	Points int `json:",omitempty"`
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)
 	LastProgress time.Time
@@ -409,7 +409,7 @@ type Card struct {
 func (c Card) Deleting() bool { return !c.DeleteAt.IsZero() }
 
 // MarkStopped は dispatcher が PG を止めた印を付ける。止めた PG は落ちたのではない (claude stop が自動の再開も抑える) ので、
-// 落ちたのを見た時刻 (DeadSince) を外す。残すと、終了や再開が「自動の再開の途中かもしれない」と restartWait まで待つ (issue 560)。
+// 落ちたのを見た時刻 (DeadSince) を外す。残すと、終了や再開が「自動の再開の途中かもしれない」と restartWait まで待つ。
 func (c *Card) MarkStopped() { c.Stopped, c.DeadSince = true, time.Time{} }
 
 // Children は id を親に持つカードの ID (親を消すと子が親を失う = Check の違反)。
@@ -437,7 +437,7 @@ const handoffMark = " が人に回した: "
 // HandoffText は質問を人に回したときに履歴へ残す文 (理由は原文のまま)。
 func HandoffText(by, why string) string { return by + handoffMark + why }
 
-// Turn はそのカードを今先へ進めるのが誰か (issue 452。画面の目印・`pro-con card list` が読む。判定はここだけに置く)。
+// Turn はそのカードを今先へ進めるのが誰か (画面の目印・`pro-con card list` が読む。判定はここだけに置く)。
 type Turn int
 
 const (

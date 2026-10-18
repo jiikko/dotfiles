@@ -18,7 +18,7 @@ import (
 
 var t0ps = time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
 
-// PG の行には、カードと session の食い違いだけを印す: 作業中なのに止まっている / 完了・片付け済みなのに動いている (issue 497)。
+// PG の行には、カードと session の食い違いだけを印す: 作業中なのに止まっている / 完了・片付け済みなのに動いている。
 // 完了したカードの止まった session と、作業中のカードの動いている session は食い違いではない。
 func TestPSMarksMismatch(t *testing.T) {
 	dir := t.TempDir()
@@ -62,7 +62,7 @@ func TestPSMarksMismatch(t *testing.T) {
 	}
 }
 
-// 着手待ちの列で再開を待つ PG の状態の欄は、列の名前ではなく「再開待ち (訳)」(issue 535)。
+// 着手待ちの列で再開を待つ PG の状態の欄は、列の名前ではなく「再開待ち (訳)」。
 // 利用枠で同時に動かす数を絞っているなら枠のせい、そうでなければ PG の空き待ち。ほかの列は列の名前のまま。
 func TestPGStateShowsResumeWait(t *testing.T) {
 	planned := card.Card{State: card.Planned}
@@ -113,7 +113,7 @@ func TestPSShowsMonitor(t *testing.T) {
 }
 
 // 表の列は表示幅で揃う: 役が全角 (見張り) の行と ASCII (supervisor) の行で、後ろの列が同じ桁から始まる。
-// fmt の %-10s は rune 数で詰めるので、全角の行だけが 3 桁右へずれていた (issue 524)。
+// fmt の %-10s は rune 数で詰めるので、全角の行だけが 3 桁右へずれていた。
 func TestPSRowsAlignByDisplayWidth(t *testing.T) {
 	var rows []string
 	for _, role := range []string{"見張り", "supervisor", "dispatcher"} {

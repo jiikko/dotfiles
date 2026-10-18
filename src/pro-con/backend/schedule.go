@@ -8,7 +8,7 @@ import (
 	"pro-con/store"
 )
 
-// ScheduleRow は予定 (issue 550) の 1 行 (設定画面の予定のタブと pro-con config が同じ行を出す)。
+// ScheduleRow は予定の 1 行 (設定画面の予定のタブと pro-con config が同じ行を出す)。
 type ScheduleRow struct {
 	When    string // 「毎日 04:00」
 	Command string // dispatcher が起こすコマンドの字面 (schedule.Job.Command。起こす argv と同じ引数から作る)

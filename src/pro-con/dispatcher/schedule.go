@@ -1,7 +1,7 @@
 package dispatcher
 
-// 予定 (package schedule。issue 550): 決まった時刻に、表 (schedule.Jobs) の argv どおりに pro-con を子として起こす。
-// 中で回す行 (schedule.Job.Internal。issue 497 の書庫の削除) は子を起こさず、この Tick の中で回して同じ記録に書く (runInternal)。
+// 予定 (package schedule): 決まった時刻に、表 (schedule.Jobs) の argv どおりに pro-con を子として起こす。
+// 中で回す行 (schedule.Job.Internal。書庫の削除) は子を起こさず、この Tick の中で回して同じ記録に書く (runInternal)。
 //
 // 起こす前に始めた時刻を記録 (store.ScheduleFile) に書く (途中で落ちて起き直しても、同じ枠で 2 回回さない)。記録を書けない・読めないなら回さない。
 // 子は裏の goroutine で待ち、結果は次の Tick で記録と出来事にする (出来事と記録の書き手を Tick の goroutine だけにする)。
@@ -53,7 +53,7 @@ func (d *Dispatcher) tickSchedule(ctx context.Context, now time.Time) []eventlog
 	// 🚨 busy を先に見る: goroutine は結果を置いてから busy を下ろすので、下りていれば結果は必ず置かれている
 	// (逆の順に読むと、2 手の間に終わった自分の予定を「待てなかった」と読む)
 	// 子を待っている間 (busy) は、子の行を新しく起こさず、中で回す行は進める
-	// (子が戻らなくても 1 週間の削除は止めない。以前の purge も子と関係なく回っていた = 子と同時に走るのは今までどおり。issue 497)
+	// (子が戻らなくても 1 週間の削除は止めない。以前の purge も子と関係なく回っていた = 子と同時に走るのは今までどおり)
 	var notes []eventlog.Event
 	busy := d.schedBusy.Load()
 	if busy {

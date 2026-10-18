@@ -1,6 +1,6 @@
 package main
 
-// pro-con supervise — 画面が起こすワンショットの supervisor (issue 506。内部用)。dispatcher を子として起こし、落ちたら間を空けて
+// pro-con supervise — 画面が起こすワンショットの supervisor (内部用)。dispatcher を子として起こし、落ちたら間を空けて
 // 起こし直し、落ち続けたら諦めて PG を止める。dispatcher が自分の判断で抜けたら (rc=0) 一緒に抜ける (常駐しない = foreman の形)。
 // 起こし直しの仕組みは process_supervisor、止める条件 (人が止めた印・画面の quit / --stop・持ち主の画面) はここに置く。
 //
@@ -15,7 +15,7 @@ package main
 //   - 落ちた後に止め終えた (stop-result が落ちた時刻より新しい = 起こし直しの待ちの間に最後の持ち主の画面が quit した) → 起こさずに抜ける
 //   - 別の dispatcher が lock を持っている → 起こさずに抜ける (その dispatcher が抜けたら画面の keeper が supervisor を起こす)。
 //     🚨 起こし直し続けない: dispatcher は lock を取る前に claude --version を引くので、10 秒ごとに起こすと手で起動した dispatcher が動く間ずっと続く
-//   - 持ち主の画面が ownerGrace の間ずっと無い → PG を止めて抜ける (画面が起こした dispatcher が画面の無いときに抜ける形と同じ。join は起こさない = issue 481)。
+//   - 持ち主の画面が ownerGrace の間ずっと無い → PG を止めて抜ける (画面が起こした dispatcher が画面の無いときに抜ける形と同じ。join は起こさない)。
 //     一瞬で決めない: 画面の ctrl+r (exec) の間は、presence の flock が外れて持ち主が 0 に見える
 //
 // 起こせなかった (実行ファイルが消えた・fork の失敗) ときは、人が止めた印を置かずに抜ける (印は置き場で共有なので、別のバイナリで開いた

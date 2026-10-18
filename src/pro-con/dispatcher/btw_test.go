@@ -34,7 +34,7 @@ func answered(t *testing.T, r *crashRig) card.Btw {
 	return card.Btw{}
 }
 
-// btw は PG を止めず (再開も止めもしない)、別のプロセス (Ask) が PG の出力の末尾と質問から答え、答えを記録に書く (415 要件 9 / issue 438)。
+// btw は PG を止めず (再開も止めもしない)、別のプロセス (Ask) が PG の出力の末尾と質問から答え、答えを記録に書く。
 func TestBtwAnswersWithoutTouchingPG(t *testing.T) {
 	r := newCrashRig(t)
 	r.ss[0].Status = "busy"

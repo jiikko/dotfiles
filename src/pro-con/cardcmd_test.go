@@ -48,7 +48,7 @@ func TestCardCommandRoundTrip(t *testing.T) {
 	}
 }
 
-// add --purpose question で確認のカード (問いだけ。issue 531) になり、card list --purpose で作業のカードと分けて読める。
+// add --purpose question で確認のカード (問いだけ) になり、card list --purpose で作業のカードと分けて読める。
 func TestCardAddQuestionPurpose(t *testing.T) {
 	dir := t.TempDir()
 	for _, args := range [][]string{
@@ -113,7 +113,7 @@ func TestCardCommandRejectsBadUsage(t *testing.T) {
 	}
 }
 
-// 設定に無い repo (パスで書いた・知らない名前) の add と plan --issue は、箱に置く前に rc≠0 で断る (issue 511)。設定は repo を書いた依頼のときだけ読む。
+// 設定に無い repo (パスで書いた・知らない名前) の add と plan --issue は、箱に置く前に rc≠0 で断る。設定は repo を書いた依頼のときだけ読む。
 func TestCardCommandRejectsUnknownRepo(t *testing.T) {
 	reads := 0
 	env := func(dir string) viewEnv {
@@ -173,7 +173,7 @@ func TestCardCommandAskAnswer(t *testing.T) {
 	}
 }
 
-// 追加オーダー (issue 507): 画面の + と同じ依頼を箱に置く。既定は人間の追記、--redirect で方針変更、--from で出した人。
+// 追加オーダー: 画面の + と同じ依頼を箱に置く。既定は人間の追記、--redirect で方針変更、--from で出した人。
 // 断るか (完了のカード・空の本文) は CLI では決めず、store の適用が画面と同じ規則で決める (--wait 0 なら箱には置いて rc=0)。
 func TestCardCommandOrder(t *testing.T) {
 	dir := t.TempDir()
@@ -213,7 +213,7 @@ func TestCardCommandOrder(t *testing.T) {
 	}
 }
 
-// 選択肢つきの ask は --json で AskUserQuestion と同じ形を受ける。前置きは省ける。知らない項目は無視する (issue 493)。
+// 選択肢つきの ask は --json で AskUserQuestion と同じ形を受ける。前置きは省ける。知らない項目は無視する。
 func TestCardCommandAskWithChoices(t *testing.T) {
 	js := `{"questions":[{"question":"形は","header":"形","multiSelect":true,"options":[{"label":"丸","recommended":true},{"label":"角","description":"四角"}]}],"annotations":{}}`
 	for _, tc := range []struct {
@@ -234,7 +234,7 @@ func TestCardCommandAskWithChoices(t *testing.T) {
 	}
 }
 
-// move は向き (up / down) を位置引数で、画面のタブに当たる repo を --repo で受ける (issue 470)。
+// move は向き (up / down) を位置引数で、画面のタブに当たる repo を --repo で受ける。
 func TestCardCommandMove(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
@@ -256,7 +256,7 @@ func TestPMGuideCommandsParse(t *testing.T) { guideCommandsParse(t, pmGuide) }
 // 取り込みの係の指示書 (487) も同じ: 書いてあるコマンドがパーサに通る。
 func TestIntegratorGuideCommandsParse(t *testing.T) { guideCommandsParse(t, integratorGuide) }
 
-// PG への指示が書く仮の名前 (dispatcher.DraftIssueName) に、取り込みの係の指示書が番号を付ける (issue 530)。形を 2 か所で別々に変えない。
+// PG への指示が書く仮の名前 (dispatcher.DraftIssueName) に、取り込みの係の指示書が番号を付ける。形を 2 か所で別々に変えない。
 func TestIntegratorGuideNumbersDraftIssues(t *testing.T) {
 	for _, want := range []string{dispatcher.DraftIssueName, "scripts/issue_number_drafts.sh"} {
 		if !strings.Contains(integratorGuide, want) {
@@ -390,7 +390,7 @@ func runApplied(t *testing.T, dir string, args ...string) (rc int, out, errOut s
 	return r.rc, r.out, r.err
 }
 
-// add 以外の操作も適用を待つ (issue 542): 除けられたら理由つきで rc=1、適用されたら依頼 ID を出して rc=0。
+// add 以外の操作も適用を待つ: 除けられたら理由つきで rc=1、適用されたら依頼 ID を出して rc=0。
 // 実例 2026-09-27: 質問待ちのカードへの close が rc=0 で返り、打った側は log を見るまで除けられたと気づけなかった。
 func TestCardOperationsReportRejection(t *testing.T) {
 	dir := viewDir(t)
@@ -444,7 +444,7 @@ func TestCardRunWaitFlag(t *testing.T) {
 	}
 }
 
-// PM は人に聞く前に、問題が起きない形を問い、見た目・好みの質問には答えるための基準を添える (issue 561)。
+// PM は人に聞く前に、問題が起きない形を問い、見た目・好みの質問には答えるための基準を添える。
 // 人に聞く 2 つの場面 (card ask / card handoff) の両方から、規律の 1 か所を指す。
 func TestPMGuideCarriesQuestionDiscipline(t *testing.T) {
 	for _, want := range []string{"その問題がそもそも起きない形", "答えるための基準", "問いは規律の「人に聞く前に」に沿って立てる", "規律の「人に聞く前に」に沿って問いを立て直す"} {
@@ -454,7 +454,7 @@ func TestPMGuideCarriesQuestionDiscipline(t *testing.T) {
 	}
 }
 
-// PM・取り込みの係・PG の指示は、rc の読み方 (除けられたら rc=1。issue 542) を同じ正本 (dispatcher.CardRCRule) から持つ。目印の行は残さない。
+// PM・取り込みの係・PG の指示は、rc の読み方 (除けられたら rc=1) を同じ正本 (dispatcher.CardRCRule) から持つ。目印の行は残さない。
 func TestGuidesCarryCardRCRule(t *testing.T) {
 	for name, text := range map[string]string{
 		"PM の指示書":    pmGuide,

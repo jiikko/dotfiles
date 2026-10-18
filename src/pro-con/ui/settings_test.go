@@ -180,7 +180,7 @@ func TestSettingsViewOnlyShowsInspectOnly(t *testing.T) {
 	}
 }
 
-// 終わったカードの止まった PG は出さず数えもしない。カードと食い違う PG は出し、止まっている役は 1 行に畳んで Enter で開く (issue 497)。
+// 終わったカードの止まった PG は出さず数えもしない。カードと食い違う PG は出し、止まっている役は 1 行に畳んで Enter で開く。
 func TestSettingsProcsShowOnlyLiveAndMismatch(t *testing.T) {
 	be := newInspSpy()
 	be.snap.Cards[0].Title, be.snap.Cards[0].Issues = "491: 番号が二重に出る", []card.IssueRef{{Number: 491}} // R1
@@ -191,7 +191,7 @@ func TestSettingsProcsShowOnlyLiveAndMismatch(t *testing.T) {
 	m := openSettingsFor(t, be)
 	toTab(t, m, tabProcs)
 	out := setScreen(m)
-	// カードの列は前の PG の一覧と同じ cardHeading (タイトルの頭の issue 番号を落とす。issue 491)
+	// カードの列は前の PG の一覧と同じ cardHeading (タイトルの頭の issue 番号を落とす)
 	if !strings.Contains(out, "R1 #491 番号が二重に出る") || strings.Contains(out, "491: ") {
 		t.Fatalf("カードの列がタイトルを出さない / issue 番号を二重に出す:\n%s", out)
 	}
@@ -212,7 +212,7 @@ func TestSettingsProcsShowOnlyLiveAndMismatch(t *testing.T) {
 	}
 }
 
-// PG は枠を使うもの (dispatcher が枠に数えたカード) と待機中のものを別の区分に出し、要約は「作業中 / 枠 · 待機」(issue 557)。
+// PG は枠を使うもの (dispatcher が枠に数えたカード) と待機中のものを別の区分に出し、要約は「作業中 / 枠 · 待機」。
 // dispatcher が数え直していなければ分けずに「判定できない」と出す (読めないのを 0 に見せない)。
 func TestSettingsProcsSplitsPGsBySlot(t *testing.T) {
 	be := newInspSpy()
@@ -273,7 +273,7 @@ func TestSettingsDiskBreakdown(t *testing.T) {
 }
 
 // 設定画面から Q で終了の入力欄を開いて取り消しても、演出の tick が止まったままにならない (閉じる演出の tick を捨てると framing が
-// 立ったまま残り、以後の演出がすべて止まっていた。敵対的レビュー 2026-09-26)。
+// 立ったまま残り、以後の演出がすべて止まっていた)。
 func TestQuitFromSettingsKeepsFrames(t *testing.T) {
 	m := openSettingsFor(t, newInspSpy())
 	m.framing = false // 開く演出の tick は終わった
@@ -286,7 +286,7 @@ func TestQuitFromSettingsKeepsFrames(t *testing.T) {
 	}
 }
 
-// 揺れの途中で設定画面を開いても、揺れたレーンが全幅の板の上 (ヘッダの行) にはみ出さない (揺れの帯はヘッダの上にも乗る。issue 436)。
+// 揺れの途中で設定画面を開いても、揺れたレーンが全幅の板の上 (ヘッダの行) にはみ出さない (揺れの帯はヘッダの上にも乗る)。
 func TestSettingsCoversBump(t *testing.T) {
 	m, clk := cursorModel(t)
 	start := clk.t
@@ -301,7 +301,7 @@ func TestSettingsCoversBump(t *testing.T) {
 	}
 }
 
-// 利用枠で絞るかはチェックボックス: Enter でも ← → でも入れ替え、on / off を受付の箱に置く (issue 536)。
+// 利用枠で絞るかはチェックボックス: Enter でも ← → でも入れ替え、on / off を受付の箱に置く。
 func TestSettingsTogglesUsageCheckbox(t *testing.T) {
 	be := newInspSpy()
 	m := openSettingsFor(t, be)
@@ -324,7 +324,7 @@ func TestSettingsTogglesUsageCheckbox(t *testing.T) {
 	}
 }
 
-// 敵対的レビューの担い手 (514) は ← → で claude / codex を巡り、受付の箱に置く。設定が無ければ dispatcher が使っている値 (config.toml) を出す。
+// 敵対的レビューの担い手は ← → で claude / codex を巡り、受付の箱に置く。設定が無ければ dispatcher が使っている値 (config.toml) を出す。
 func TestSettingsStepsReview(t *testing.T) {
 	be := newInspSpy()
 	m := openSettingsFor(t, be) // dispatcher がまだ回っていない: config.toml の値は分からないので claude と出さない
@@ -368,7 +368,7 @@ func newSchedSpy() *schedSpy {
 		Out: "/state/schedule/worktree-clean.out"}}}
 }
 
-// 予定のタブ (issue 550): dispatcher が起こすコマンドの字面 (--yes まで) と、いつ・前回・次回を出す。開いたときと r で読み、描き直しでは読まない。
+// 予定のタブ: dispatcher が起こすコマンドの字面 (--yes まで) と、いつ・前回・次回を出す。開いたときと r で読み、描き直しでは読まない。
 func TestSettingsScheduleTab(t *testing.T) {
 	be := newSchedSpy()
 	m := openSettingsFor(t, be)
@@ -406,7 +406,7 @@ func TestSettingsScheduleTab(t *testing.T) {
 	}
 }
 
-// 予定を回すかは設定のタブのチェックボックス: Enter でも ← → でも入れ替え、schedule=on / off を受付の箱に置く (issue 550)。
+// 予定を回すかは設定のタブのチェックボックス: Enter でも ← → でも入れ替え、schedule=on / off を受付の箱に置く。
 func TestSettingsTogglesScheduleCheckbox(t *testing.T) {
 	be := newSchedSpy()
 	m := openSettingsFor(t, be)

@@ -4,7 +4,7 @@ package wtclean
 // その直後に消して、消えたかを確かめる (検査と実行の距離を 1 個の処理時間に縮める。sandbox-real-destructive-test-apis)。
 // 窓は 0 にできないので、git の側にも止め具を残す:
 //   - worktree は `git worktree remove` を --force なしで呼ぶ (未 commit の変更・追跡していないファイルがあれば git が断る)。
-//     使い捨てと決めた tmp/ のファイル (Verdict.Tmp) は、その前に状態の置き場へ退避する (stash.go。issue 552)
+//     使い捨てと決めた tmp/ のファイル (Verdict.Tmp) は、その前に状態の置き場へ退避する (stash.go)
 //     Claude Code が残した lock は、判定し直して外してよいと見た直後に外し、消せなければ同じ理由で掛け直す
 //   - ブランチは `git update-ref -d <ref> <確かめた先端>` で消す (取り直してから先端が動いていれば git が断る)
 // 消すと worktree の HEAD とブランチの reflog も消える。reflog にしか無い commit (PG が rebase・amend・reset で外した前の版) は、

@@ -260,7 +260,7 @@ func TestListSkipsNonRegularLock(t *testing.T) {
 }
 
 // 書き出しの後に空ける時間: 1 回きりの変化の後は minInterval (次の操作もすぐ出る)。空けている間に次の描き直しが来ていたら
-// (スピナー・演出で変化が続いている) busyInterval ごとにまとめる。変化が止まれば minInterval に戻る (issue 504)。
+// (スピナー・演出で変化が続いている) busyInterval ごとにまとめる。変化が止まれば minInterval に戻る。
 // 空けた時間は差し替えた after が受け取った間隔で見る (壁時計で測らない)。
 func TestWriterSpacesWritesWhileChangesContinue(t *testing.T) {
 	dir := t.TempDir()

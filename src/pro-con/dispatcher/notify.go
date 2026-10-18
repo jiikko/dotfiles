@@ -2,7 +2,7 @@ package dispatcher
 
 // 知らせ (426 の決定 10): 件数を tmux のユーザー option に書き (status が読む)、人の番 (card.Turn) になったカードは macOS の通知でも知らせる。
 // 数える・知らせるのは人の番だけ (PM が先に受ける質問・取り込みの係のレビューは人に知らせない。452 で 2026-09-26 にユーザーが決めた)
-// 🚨 status のどこにどう出すかは未配線 (見た目はユーザーと決める。issue 427 の 3c-2c)。option の名前は StatusOption
+// 🚨 status のどこにどう出すかは未配線 (見た目はユーザーと決める)。option の名前は StatusOption
 
 import (
 	"cmp"

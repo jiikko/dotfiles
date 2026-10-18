@@ -33,7 +33,7 @@ type simState struct {
 	NextIssue     int                    `json:"nextIssue"`
 	NextSess      int                    `json:"nextSess"`
 	// EventsSent は引き継がない (Save で書かず、Restore で偽のまま)。入れ替えた後の画面はログのタブを空から読み直すので、
-	// 新しい Sim は模擬の出来事をもう 1 度返す (真で引き継ぐと、入れ替えた後のログのタブが空になる。issue 512)。欄の数を Sim と揃えるために置く
+	// 新しい Sim は模擬の出来事をもう 1 度返す (真で引き継ぐと、入れ替えた後のログのタブが空になる)。欄の数を Sim と揃えるために置く
 	EventsSent bool `json:"-"`
 }
 

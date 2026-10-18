@@ -44,10 +44,10 @@ type Snapshot struct {
 	Screens        []Screen  // 開いている画面 (持ち主と join。自分を含む。開いた順。package presence。空なら数えられなかった / 模擬)
 	DispatcherHeld bool      // 人が dispatcher を止めた印がある (pro-con dispatcher --stop。画面は起こさない。issue 459)
 	DispatcherGone bool      // 最後に動いた dispatcher のプロセスが居ない (ロックの pid。Tick の古さを待たずに出す。issue 483)
-	// Startup は dispatcher の起動時の確かめの要約 (起動から 10 分だけ。issue 483)。StartupAlert は復旧した・判定できないものがある
+	// Startup は dispatcher の起動時の確かめの要約 (起動から 10 分だけ)。StartupAlert は復旧した・判定できないものがある
 	Startup      string
 	StartupAlert bool
-	// Upgrade は dispatcher の新版への入れ替えの様子 (issue 505。無ければ空)。UpgradeAlert は切り替えられない・待ちすぎ
+	// Upgrade は dispatcher の新版への入れ替えの様子 (無ければ空)。UpgradeAlert は切り替えられない・待ちすぎ
 	Upgrade      string
 	UpgradeAlert bool
 	Roles        card.Roles       // dispatcher が起こさない役 (最後に回ったときの値)。人の番の目印 (card.Turn) に使う
@@ -60,7 +60,7 @@ type Snapshot struct {
 // 止まった dispatcher の最後の様子 (役の様子・絞りの理由) は、画面も card list も今の様子として出さない。
 const DispatcherStale = 2 * time.Minute
 
-// Screen は開いている画面 1 つ (package presence の印。見ているだけの画面 = --view は入らない。issue 481)。
+// Screen は開いている画面 1 つ (package presence の印。見ているだけの画面 = --view は入らない)。
 type Screen struct {
 	ID     string // 短い画面 ID
 	Join   bool   // 加わった画面 (pro-con --join)。偽なら持ち主
@@ -94,7 +94,7 @@ type Consumer struct {
 // Idle は PG が turn を終えて次の入力を待っているか (一覧の status が idle)。
 func (c Consumer) Idle() bool { return c.Status == agents.StatusIdle }
 
-// SlotsUsed は dispatcher が枠に数えたカードの数 (issue 557。dispatcher が書いた値を読むだけで、画面の側で card.HoldsPGSlot を組み直さない。
+// SlotsUsed は dispatcher が枠に数えたカードの数 (dispatcher が書いた値を読むだけで、画面の側で card.HoldsPGSlot を組み直さない。
 // 組み直すと母数が dispatcher と違う: 一覧に居ない作業中の PG と、起動の結果が分からない (Launching) カードを数え損ねる)。
 // ok = false は判定できない (CountedSlots。読めないのを 0 に見せない)。
 func (s Snapshot) SlotsUsed() (int, bool) {
@@ -104,12 +104,12 @@ func (s Snapshot) SlotsUsed() (int, bool) {
 
 // AttachRecorder は attach の間に人間が PG へ打った指示をカードの履歴へ残す backend (任意。持たない backend は残さない)。
 // 画面は attach から戻ったら、明け渡した時刻 from と戻った時刻 to を渡して裏で呼ぶ。返すのは残すよう頼んだ指示の数。
-// 🚨 要約しない (人間の発言を原文で残す。issue 428)。
+// 🚨 要約しない (人間の発言を原文で残す)。
 type AttachRecorder interface {
 	RecordAttach(cardID, sessionID string, from, to time.Time) (int, error)
 }
 
-// Activity は PG の活動 1 つ (応答の文か道具の呼び出し。transcript から読む。issue 467)。
+// Activity は PG の活動 1 つ (応答の文か道具の呼び出し。transcript から読む)。
 // 思考 (thinking) は Claude Code が中身をほぼ保存しないので無い。道具の結果も持たない (長い。何をしたかは呼び出しで分かる)。
 type Activity struct {
 	At      time.Time `json:"at"`
@@ -136,10 +136,10 @@ type ActivityReader interface {
 // ReadOnly は読み取りだけの backend (pro-con --view)。画面は終了の見出しを「見ているだけ」にする (止める口・書く口は持たない)。
 type ReadOnly interface{ ReadOnly() }
 
-// Joiner は加わった画面 (pro-con --join) の backend。読み書きするが、dispatcher を起こさず、quit で閉じても止めない (issue 481)。
+// Joiner は加わった画面 (pro-con --join) の backend。読み書きするが、dispatcher を起こさず、quit で閉じても止めない。
 type Joiner interface{ Joined() }
 
-// Rejected は、この画面が受付の箱に置いた依頼を dispatcher が除けたこと (理由は dispatcher が書いたまま。issue 481)。
+// Rejected は、この画面が受付の箱に置いた依頼を dispatcher が除けたこと (理由は dispatcher が書いたまま)。
 type Rejected struct {
 	Kind   string // 依頼の種類 (answer / delete …)
 	CardID string // 対象のカード (無ければ空)
@@ -262,9 +262,9 @@ func IssuePrompt(t IssueTarget, extra string) string {
 	return b.String()
 }
 
-// IssueRequest は issue を選んで出した依頼のカードの題名・依頼の原文・紐づける issue (issue 511)。
+// IssueRequest は issue を選んで出した依頼のカードの題名・依頼の原文・紐づける issue。
 // 原文は「issue の本文に書かれていることを進める」の 1 文 (補足があれば人間が書いたまま後ろに置く)。PM は原文と紐づいた issue を依頼として読むので、
-// 補足が無くても原文を空にしない。題名に番号を付けない (番号は紐づけた issue から出る。issue 491)。epic は親 issue を紐づける。
+// 補足が無くても原文を空にしない。題名に番号を付けない (番号は紐づけた issue から出る)。epic は親 issue を紐づける。
 func IssueRequest(repo string, t IssueTarget, extra string) (title, request string, issues []card.IssueRef) {
 	request = fmt.Sprintf("issue #%03d の本文に書かれていることを進める", t.Number)
 	if t.Epic != "" {
@@ -300,14 +300,14 @@ type ClearDone struct {
 	Repo string
 }
 
-// DeleteCard はカードを消す (issue 451)。依頼の列のカードはすぐ消え、それ以外は PG の session を止めてから消える
+// DeleteCard はカードを消す。依頼の列のカードはすぐ消え、それ以外は PG の session を止めてから消える
 // (それまでカードは「削除中」で残る)。🚨 PG の worktree とブランチは消さない。
 type DeleteCard struct {
 	CardID string
 	From   string // 人間 / PM
 }
 
-// MoveCard はカードをレーンの中で 1 つ上 (Delta = -1) / 下 (+1) の隣と入れ替える (issue 470。上ほど優先)。Repo は画面のタブ
+// MoveCard はカードをレーンの中で 1 つ上 (Delta = -1) / 下 (+1) の隣と入れ替える (上ほど優先)。Repo は画面のタブ
 // (空なら global = 全 repo の並びの中の隣)。隣は backend が適用の時点の並びで決める (押した回数だけ動く)。
 type MoveCard struct {
 	CardID string
@@ -318,7 +318,7 @@ type MoveCard struct {
 
 func (MoveCard) isCommand() {}
 
-// ResumeDispatcher は人が止めた dispatcher を起こす (止めた印を外して起こす。issue 459)。
+// ResumeDispatcher は人が止めた dispatcher を起こす (止めた印を外して起こす)。
 type ResumeDispatcher struct{}
 
 func (ResumeDispatcher) isCommand() {}

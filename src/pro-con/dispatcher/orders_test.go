@@ -20,7 +20,7 @@ func order(t *testing.T, dir, id string, k card.OrderKind, text string) {
 	}
 }
 
-// 作業中 (busy) の PG へは追記を届けない (止めない)。turn を終えて idle になったら同じ session を再開して届け、届いた印を付ける (issue 438)。
+// 作業中 (busy) の PG へは追記を届けない (止めない)。turn を終えて idle になったら同じ session を再開して届け、届いた印を付ける。
 func TestAppendWaitsForIdleThenResumes(t *testing.T) {
 	r := newCrashRig(t)
 	r.ss[0].Status = "busy"
@@ -161,7 +161,7 @@ func TestReviewWithPendingOrderGoesBackToPG(t *testing.T) {
 	}
 }
 
-// 削除の依頼を受けたカードは、未達のオーダーがあっても再開の列へ戻さない (PG を止めて消すのを待っている間は列を動かさない。issue 451)。
+// 削除の依頼を受けたカードは、未達のオーダーがあっても再開の列へ戻さない (PG を止めて消すのを待っている間は列を動かさない)。
 func TestNoDeliveryToDeletingCard(t *testing.T) {
 	r := newCrashRig(t)
 	r.ss[0].Status = agents.StatusIdle

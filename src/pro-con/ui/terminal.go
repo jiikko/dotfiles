@@ -17,7 +17,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 )
 
-// 端末を外のコマンドへ渡して戻る処理と、裏に回されても (止められても) 壊れないための処理 (issue 518)。
+// 端末を外のコマンドへ渡して戻る処理と、裏に回されても (止められても) 壊れないための処理。
 //
 // 画面は前面で端末を読み続け、端末を raw・alt screen にしている。何もしないと、止まり方ごとに次のように壊れる:
 //   - 前面が外れて端末を読む → SIGTTIN で止まる。止まっている間にシェルが端末を cooked に戻すので、fg で続けても
@@ -99,7 +99,7 @@ func (s *stopState) takeExpectedCont() bool {
 
 // StopWatcher は SIGTSTP・SIGTTIN・SIGTTOU・SIGCONT の見張り。main がプロセスに 1 つ置き、Program を走らせる間だけ Attach する。
 // 🚨 外さない (signal.Stop しない): Go の runtime は Stop の後もこれらの信号の handler を残し、誰も受けていない信号を捨てる
-// (既定の動作 = 止まる、に戻らない。敵対的レビューで実測)。Program の外 (509 の切り替え中・終わる間際) では見張りが自分で止まる。
+// (既定の動作 = 止まる、に戻らない。実測済み)。Program の外 (509 の切り替え中・終わる間際) では見張りが自分で止まる。
 type StopWatcher struct {
 	m    *Model
 	send atomic.Pointer[func(tea.Msg)] // 走っている Program へ知らせる (nil = Program の外)

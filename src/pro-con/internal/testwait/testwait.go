@@ -1,4 +1,4 @@
-// Package testwait は pro-con のテストが「何かが起きる」のを待つ helper (issue 777)。
+// Package testwait は pro-con のテストが「何かが起きる」のを待つ helper。
 // 秒数で待たず、条件を上限つきで見ながら待つ (_claude/rules/avoid-wall-clock-assertions.md)。テストからだけ使う。
 package testwait
 

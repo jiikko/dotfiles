@@ -1,7 +1,7 @@
 // Package agents は `claude agents --json` で、今動いている Claude Code の session を一覧する。
 // 対話 session (Desktop / 端末) と裏で動く session (claude --bg) の両方が出る。
 //
-// 出力の形は Claude Code 2.1.281 で実測した (issue 415 の論点 2)。版の保証は無いので、読めなかったときは
+// 出力の形は Claude Code 2.1.281 で実測した。版の保証は無いので、読めなかったときは
 // 「0 本」として扱わず、エラーとして返す (UI は失敗の理由をそのまま出す)。
 package agents
 
@@ -48,7 +48,7 @@ var ErrEmptyOutput = errors.New("claude agents --json の出力が空")
 
 // List は session の一覧を返す。コマンドの失敗・timeout・空の出力・壊れた JSON はすべてエラー (0 本と区別する)。
 // jobsDir は Claude Code が session ごとに様子を書く置き場 (~/.claude/jobs)。pid 無しで state だけでは止まったと読めない session
-// (working と、知らない state) の JobState を読む (working の Stopped の判定と、止めきれなかったときの案内に使う = issue 555。
+// (working と、知らない state) の JobState を読む (working の Stopped の判定と、止めきれなかったときの案内に使う。
 // 空なら読まない = 今までどおり、pid 無し・working は自動の再開の途中として止まっていない扱い)。
 func List(ctx context.Context, run Runner, jobsDir string) ([]Session, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
@@ -145,19 +145,19 @@ const stateDone = "done"
 
 // stateFailed は turn が落ちた session の State。pid があれば API エラーで止まった turn (プロセスは生きている)、
 // pid 無しならプロセスごと消えた (マシンのクラッシュ・再起動の後。2.1.282 で実測 2026-09-26: 再起動から 30 分たっても
-// pid 無し・failed のままで自動で再開しない。issue 482)
+// pid 無し・failed のままで自動で再開しない)
 const stateFailed = "failed"
 
 // Stopped は止まっている session か: プロセスが無く (pid 無し)、state が止まった形 (stopped / done / failed) の許可リストにある。
 // 🚨 state の名前だけで決めない: 作業を終えた session (done) を claude stop すると、state は done のまま pid が無くなる
 // (2.1.282 で実測 2026-09-25。dogfooding で、stopped だけを見ていた判定が止まったものを止め直し続けた)。
 // 🚨 「working でない」で決めない: 再開の途中を表す state の名前が変わる / state の欄が無くなる版では、再開の途中の PG を
-// 止まったと読み、閉じても終了でも止めない (issue 466)。許可リストに無い pid 無しは UnknownState (止めに行く側)
+// 止まったと読み、閉じても終了でも止めない。許可リストに無い pid 無しは UnknownState (止めに行く側)
 // 425 の実測: 正常に終えた (pid あり・blocked) / API エラー (pid あり・failed) / claude stop (pid 無し・stopped) /
 // kill -9 (数秒 pid 無し・working のまま自動で再開)
 // 🚨 例外: pid 無し・working でも、Claude Code の記録 (JobState) が done なら止まっている。作業を終える前に起床を予約した session
 // (ScheduleWakeup の session_cron が残る) は、プロセスが無くても claude stop の後も agents が working を返し続ける
-// (2.1.283 で実測 2026-09-27。issue 551)。kill -9 の直後の自動の再開の途中は、記録が crashed → resuming なので区別できる (同日の実測)。
+// (2.1.283 で実測 2026-09-27)。kill -9 の直後の自動の再開の途中は、記録が crashed → resuming なので区別できる (同日の実測)。
 func (s Session) Stopped() bool {
 	if s.PID != 0 {
 		return false

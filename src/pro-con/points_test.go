@@ -9,7 +9,7 @@ import (
 	"pro-con/store"
 )
 
-// plan --points は 1 / 2 / 3 / 5 / 8 だけを受ける。0 を含むほかの値・値の無い --points は使い方の誤り (issue 490)。
+// plan --points は 1 / 2 / 3 / 5 / 8 だけを受ける。0 を含むほかの値・値の無い --points は使い方の誤り。
 func TestCardPlanPointsParse(t *testing.T) {
 	r, _, err := parseCardWait([]string{"plan", "C-003", "--issue", "dotfiles#1", "--points", "8"})
 	if err != nil || r.Points != 8 {

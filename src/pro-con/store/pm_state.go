@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// PMStateFile は dispatcher が起こした PM の様子 (issue 437)。書き手は dispatcher だけ (記録と同じ。426 の決定 1)。
+// PMStateFile は dispatcher が起こした PM の様子。書き手は dispatcher だけ (記録と同じ。426 の決定 1)。
 const PMStateFile = "pm.json"
 
 // PMState は PMStateFile の中身。PM の session id と pid は起動の記録 (live の sessions.json。カード ID は dispatcher.PMCardID) に置き、ここには持たない。
@@ -33,7 +33,7 @@ type PMState struct {
 	Stopped bool `json:"stopped,omitempty"`
 }
 
-// IntegratorStateFile は dispatcher が起こした取り込みの係の様子 (issue 487)。中身は PMState と同じ型。
+// IntegratorStateFile は dispatcher が起こした取り込みの係の様子。中身は PMState と同じ型。
 const IntegratorStateFile = "integrator.json"
 
 // LoadPM は PM の様子を読む (LoadRole の PM 版)。

@@ -1,6 +1,6 @@
 package main
 
-// pro-con dispatcher — 本物のモードの dispatcher を常駐させる (issue 427 の段階 3c-3)。3 秒ごとに dispatcher.Tick し、何をしたかを時刻つきで出す。
+// pro-con dispatcher — 本物のモードの dispatcher を常駐させる。3 秒ごとに dispatcher.Tick し、何をしたかを時刻つきで出す。
 // 2 つ起動しない (dispatcher.Lock)。🚨 本物の claude で PG を起動するので、週の利用枠を使う。
 
 import (
@@ -35,7 +35,7 @@ const fromScreenFlag = "from-screen"
 var dispatcherInterval = 3 * time.Second // テストが延ばす (Poke でだけ起きることを見る)
 
 // projects は transcript の置き場 (~/.claude/projects。PG が落ちて自動で再開したかを読む)。
-// pm は PM の設定 (issue 437)。
+// pm は PM の設定。
 func runDispatcher(args []string, dir, projects string, repos map[string]string, pm pmConfig, stdout, stderr io.Writer) int {
 	upgradedFrom, notified := takeUpgradedFrom() // 入れ替え (505) で起きたなら前の版の名前と知らせ済みの鍵。lock は下の AdoptLock で受け取る
 	selfStart, selfErr := selfBinary()           // 動いている版 (shim が差し替える前に取る)
@@ -85,7 +85,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		return 0
 	}
 	if *stopAll {
-		// 印を置けなくても止める処理は続け (止めたい人が止められなくならないように)、最後に rc 1 で知らせる (issue 638)
+		// 印を置けなくても止める処理は続け (止めたい人が止められなくならないように)、最後に rc 1 で知らせる
 		holdFailed := false
 		if !*fromScreen { // 人が止めた: 印を置く (画面の keeper が起こし直さない。issue 459)。止める前に置く (止め終えた直後の keeper に先を越されない)
 			if err := store.Hold(dir, time.Now()); err != nil {
@@ -98,7 +98,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		// 止めている間に SIGTERM / SIGHUP / SIGINT が来ても (画面の終了・ログアウトと重なる)、1 回目は止めるのをもう 1 度だけ試してから抜ける。
 		// 2 回目ですぐ抜ける (止まらない形でも kill -9 無しで止められる)。
 		// 🚨 signal.Ignore にしない: 1 回目と 2 回目を数えられない。無視は exec した子に引き継がれ、claude 以外の子は止められなくなる
-		// (Notify で受けた分は引き継がれない)。claude 自身は無視を引き継いでも SIGTERM で rc=143 で抜ける (2.1.283 で実測。issue 439)
+		// (Notify で受けた分は引き継がれない)。claude 自身は無視を引き継いでも SIGTERM で rc=143 で抜ける (2.1.283 で実測)
 		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 2)
 		signal.Notify(sigs, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)
@@ -150,7 +150,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	}
 	d := newDispatcherFor(dir, projects, repos, pm.Repo, pmOff, *limit, cl, e2e, pm.DisposableTmp)
 	d.Record = eventSink(dir, stdout, stderr)
-	// 予定 (issue 550)。e2e モードの偽の置き場と、1 回だけの dispatcher では回さない (--once の後に子を置き去りにする)
+	// 予定。e2e モードの偽の置き場と、1 回だけの dispatcher では回さない (--once の後に子を置き去りにする)
 	if e2e == nil && !*once {
 		exe, err := os.Executable()
 		var warn string
@@ -207,7 +207,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		defer func() { _ = srv.Close() }()
 		wakes, d.Changed = srv.Wakes(), srv.Broadcast
 	}
-	// 見張り (issue 475)。e2e モードの偽の worktree と、1 回だけの dispatcher では起こさない。
+	// 見張り。e2e モードの偽の worktree と、1 回だけの dispatcher では起こさない。
 	// 🚨 d の欄 (Record / Changed) を書き終えてから起こす (起こし直しの goroutine が say で読む)
 	stopMonitor := func() {}
 	startMonitor := func() {
@@ -295,7 +295,7 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 		_, err := d.Tick(ctx) // 出来事は Tick が d.Record (eventSink) へ渡す
 		if err != nil {
 			sayOr(d, stderr, eventlog.KindError, "Tick が失敗したので抜ける: "+err.Error())
-			// 画面が起こした dispatcher は、抜ける前に PG を止める (持ち主の画面が無ければ見張る者が居なくなる。join は起こし直さない = issue 481)
+			// 画面が起こした dispatcher は、抜ける前に PG を止める (持ち主の画面が無ければ見張る者が居なくなる。join は起こし直さない)
 			if o.alone > 0 && !ownersOpen(dir) {
 				stopUntilDone(ctx, d, dir, nil, serveOpts{}, stderr)
 			}
@@ -311,7 +311,7 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 		case <-ctx.Done():
 			// 画面が起こした dispatcher は、画面が無ければ PG を止めてから抜ける (SIGTERM / SIGHUP でも pro-con が起動した PG を残さない)。
 			// 持ち主の画面が開いていれば止めない (持ち主の画面が dispatcher を起こし直し、PG はそのまま続く。止めて再開すると枠を使う)。
-			// 🚨 join の画面しか無ければ止める: join は dispatcher を起こさないので、止めずに抜けると PG を見張る者が居なくなる (issue 481)
+			// 🚨 join の画面しか無ければ止める: join は dispatcher を起こさないので、止めずに抜けると PG を見張る者が居なくなる
 			// 🚨 画面にも同時に SIGTERM が届いている (ログアウト・pkill) かもしれないので、画面が消えるのを少し待ってから決める
 			// (待たずに見ると、閉じる途中の画面を「開いている」と数えて止めずに抜け、画面も quit を通らずに抜けて PG が残る)
 			if o.alone > 0 && !ownersStayOpen(dir, signalGrace) {
@@ -328,7 +328,7 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 }
 
 // screensOpen は開いている画面 (持ち主と join) があるか (数えられなければ無いとみなす: 止める側に倒す)。
-// 無画面で抜ける判定はこちら: 持ち主が落ちても、join の画面が開いている間は PG を止めない (issue 481)
+// 無画面で抜ける判定はこちら: 持ち主が落ちても、join の画面が開いている間は PG を止めない
 func screensOpen(dir string) bool {
 	n, err := presence.Count(dir)
 	return err == nil && n > 0
@@ -336,7 +336,7 @@ func screensOpen(dir string) bool {
 
 // ownersOpen は開いている持ち主の画面があるか (数えられなければ無いとみなす: 止める側に倒す)。
 // 「画面が dispatcher を起こし直してくれる」前提の判定はこちら (止めている途中でやめる・止めずに抜ける): join の画面は dispatcher を
-// 起こさないので、join が開いている・残っているだけで止めずにおくと、止めたはずの PG・見張る者の居ない PG が動き続ける (issue 481)
+// 起こさないので、join が開いている・残っているだけで止めずにおくと、止めたはずの PG・見張る者の居ない PG が動き続ける
 func ownersOpen(dir string) bool {
 	n, err := presence.Owners(dir)
 	return err == nil && n > 0
@@ -371,7 +371,7 @@ var stopRetryEvery = 10 * time.Second
 
 // stopUntilDone は PG を止める。止めきれなければ結果 (頼んだ画面が読む) を書いてから、止まるまで止め直す。止め終えたら真。
 // 止めている間に持ち主の画面が開いたら (presence) 止めるのをやめて偽を返す (カードは続きから再開できる形になっている)。
-// join の画面 (pro-con --join) では取り消さない (開いた持ち主は dispatcher を起こすが、join は起こさない。issue 481)。
+// join の画面 (pro-con --join) では取り消さない (開いた持ち主は dispatcher を起こすが、join は起こさない)。
 // 人が止めた印 (store.Held) があれば、画面が開いても止めきる (印がある間、画面は dispatcher を起こさないので、続ける者が居ない)。
 // 🚨 止めきれないまま抜けない: 抜けると、pro-con が起動した PG を見張る者が居なくなる。o.retries が正なら、その回数で諦める (取り消された ctx の中の最後の試み)
 func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-chan struct{}, o serveOpts, stderr io.Writer) bool {
@@ -440,7 +440,7 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 }
 
 // eventSink は dispatcher の出来事を、時刻つきの 1 行で out へ出し (dispatcher.log / nohup の先)、状態の置き場の events.jsonl へ足す
-// (pro-con log が読む。issue 444)。🚨 呼んでよいのは dispatcher の lock を持つプロセスだけ (書き手を 1 つにする = 426 の決定 1)。
+// (pro-con log が読む)。🚨 呼んでよいのは dispatcher の lock を持つプロセスだけ (書き手を 1 つにする = 426 の決定 1)。
 // 🚨 並行に呼ばれる (Tick と、見張りを起こし直す goroutine = monitorsup.go)。1 つずつ書く (追記と回しを競わせない)
 func eventSink(dir string, out, errOut io.Writer) func([]eventlog.Event) {
 	var mu sync.Mutex
@@ -509,7 +509,7 @@ type pmConfig struct {
 	Mode string // 設定の pm ("on" / "off" / 空)
 	// IntegratorMode は設定の integrator ("on" / "off" / 空。487)
 	IntegratorMode string
-	// Review は設定の review (敵対的レビューの担い手。空なら claude。514)
+	// Review は設定の review (敵対的レビューの担い手。空なら claude)
 	Review string
 	// DisposableTmp は設定の disposable_tmp の repo の名前 (閉じたカードの worktree の片付けで tmp/ を使い捨てとみなす。552)
 	DisposableTmp map[string]bool
@@ -560,7 +560,7 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 	list := func(ctx context.Context) ([]agents.Session, error) {
 		return agents.List(ctx, agents.ExecRunner(cl.Path), jobs)
 	}
-	// 閉じた・削除したカードの worktree を見る・片付ける口 (issue 553)。材料は pro-con worktree clean と同じ集め方
+	// 閉じた・削除したカードの worktree を見る・片付ける口。材料は pro-con worktree clean と同じ集め方
 	wt := worktreeOps{worktreeEnv{dir: dir, repos: repos, disposableTmp: disposable, sessions: list, procCwds: lsofCwds, projects: projects, jobsDir: jobs}}
 	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath(home), StateDir: dir},
 		PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff, IntegratorGuide: integratorGuide,
@@ -577,7 +577,7 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 }
 
 // transcriptReader は dispatcher が session の transcript を読む口。1 回の tick で同じ session を何か所からも読む
-// (watch・進捗・役・btw) ので、読んだ結果を使い回す (issue 503)。探すのは毎回 (別の cwd で再開したら新しい方へ移る)。
+// (watch・進捗・役・btw) ので、読んだ結果を使い回す。探すのは毎回 (別の cwd で再開したら新しい方へ移る)。
 func transcriptReader(projects string, c *live.TranscriptCache) func(string) (live.Transcript, error) {
 	return func(sessionID string) (live.Transcript, error) {
 		p, err := live.FindTranscript(projects, sessionID)

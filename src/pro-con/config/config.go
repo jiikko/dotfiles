@@ -2,11 +2,11 @@
 //
 //	repo_roots = ["~/src"]      # この直下の git repo を列挙する (深くは掘らない)
 //	repos      = ["~/dotfiles"] # root の外にある repo を個別に足す
-//	pm_repo    = "~/dotfiles"   # PM (依頼を受けてカードを分ける session) を起動する repo。PM はその下の worktree で動く (issue 437)
+//	pm_repo    = "~/dotfiles"   # PM (依頼を受けてカードを分ける session) を起動する repo。PM はその下の worktree で動く
 //	pm         = "on"           # "off" なら dispatcher は PM を起こさない (人か外の Claude が PM をする運用)。dispatcher の --pm が勝つ
-//	integrator = "on"           # "off" なら dispatcher は取り込みの係 (issue 487) を起こさない。dispatcher の --integrator が勝つ
-//	review     = "claude"       # 敵対的レビューの担い手: "claude" (既定) / "codex" (issue 514)。pro-con config set review (設定画面) が勝つ
-//	disposable_tmp = ["~/dotfiles"] # worktree の片付けで tmp/ の無視されたファイルを使い捨てとみなす repo (issue 552)。書かなければ既定の ~/dotfiles、[] ならどれも見なさない
+//	integrator = "on"           # "off" なら dispatcher は取り込みの係を起こさない。dispatcher の --integrator が勝つ
+//	review     = "claude"       # 敵対的レビューの担い手: "claude" (既定) / "codex"。pro-con config set review (設定画面) が勝つ
+//	disposable_tmp = ["~/dotfiles"] # worktree の片付けで tmp/ の無視されたファイルを使い捨てとみなす repo。書かなければ既定の ~/dotfiles、[] ならどれも見なさない
 package config
 
 import (
@@ -35,7 +35,7 @@ type Config struct {
 	Integrator string `toml:"integrator"`
 	// Review は敵対的レビューの担い手 (store.ReviewModes / 空 = claude)。dispatcher の起動時に読む既定で、pro-con config set review が勝つ
 	Review string `toml:"review"`
-	// DisposableTmp は worktree の片付け (wtclean) で、worktree の直下の tmp/ にある無視されたファイルを使い捨て (退避してから消してよい) とみなす repo のパス (issue 552)。
+	// DisposableTmp は worktree の片付け (wtclean) で、worktree の直下の tmp/ にある無視されたファイルを使い捨て (退避してから消してよい) とみなす repo のパス。
 	// nil (キーを書いていない) なら defaultDisposableTmp、空の列なら どの repo も見なさない (DisposableTmpPaths)。
 	// 🚨 tmp/ を使い捨てとするのは dotfiles の決まり (CLAUDE.md「一時ファイルの配置」)。ほかの repo の tmp/ に本物のデータがありうるので、repo ごとに人が書く
 	DisposableTmp []string `toml:"disposable_tmp"`

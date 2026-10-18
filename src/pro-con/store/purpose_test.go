@@ -8,7 +8,7 @@ import (
 	"pro-con/card"
 )
 
-// 確認のカード (問いだけ。issue 531) は種類を記録に残し、PG を付けない (plan を受けない)。人に聞いて、答えを受けたら依頼の列から閉じられる。
+// 確認のカード (問いだけ) は種類を記録に残し、PG を付けない (plan を受けない)。人に聞いて、答えを受けたら依頼の列から閉じられる。
 // 知らない種類の add は受けない (箱に手で置かれた依頼)。
 func TestQuestionCardTakesNoPG(t *testing.T) {
 	dir := t.TempDir()

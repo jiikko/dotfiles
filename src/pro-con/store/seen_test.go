@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// 画面が dispatcher の一覧を今の様子として使う境目: 間引いていなければ SeenFresh、間引いていれば次の取得までの間 (Keep) を足す (issue 559)。
+// 画面が dispatcher の一覧を今の様子として使う境目: 間引いていなければ SeenFresh、間引いていれば次の取得までの間 (Keep) を足す。
 func TestSeenFresh(t *testing.T) {
 	at := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {

@@ -7,7 +7,7 @@ import (
 	"pro-con/card"
 )
 
-// 順番で起動を待っているカードは、バッジに「前のカードの後」が出る (issue 468)。前が完了したら出さない。
+// 順番で起動を待っているカードは、バッジに「前のカードの後」が出る。前が完了したら出さない。
 func TestBadgeShowsAfter(t *testing.T) {
 	be := newSpy()
 	now := be.snap.Now

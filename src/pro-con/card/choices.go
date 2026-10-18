@@ -8,7 +8,7 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
-// 選択肢つきの質問 (issue 493)。PG が `card ask --json` で渡し、画面の `r` が radio / checkbox の回答フォームにする。
+// 選択肢つきの質問。PG が `card ask --json` で渡し、画面の `r` が radio / checkbox の回答フォームにする。
 // 形は Claude Code の AskUserQuestion の入力にそろえる (PG に教える形が 1 つで済む)。推奨 (Recommended) だけが足した項目。
 // 答えは自由文 (FormatAnswer) にして今の `card answer` で届ける: PG・PM・dispatcher は構造を知らなくてよい。
 
@@ -25,7 +25,7 @@ type Option struct {
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
 	Recommended bool   `json:"recommended,omitempty"` // 推奨。回答フォームで初めから選んでおく
-	// Sample はこの案の見本 (PG が `card attach` で付けたファイルの名前。issue 495)。回答フォームの v で、同じ名前の一番新しい添付を開く。
+	// Sample はこの案の見本 (PG が `card attach` で付けたファイルの名前)。回答フォームの v で、同じ名前の一番新しい添付を開く。
 	// 🚨 名前は完全一致で結ぶ (大文字小文字を区別し、Unicode の正規化 NFC / NFD もしない)。attach と ask で違う形の名前を書くと
 	// 「まだ添付されていない」と出る。正規化するなら、この欄と store の attach が名前に掛ける関数の両方に同じものを入れること
 	// 名前で結ぶのは、添付は dispatcher が状態の置き場へ移してから記録に載るので、ask の時点で PG が知っているのは元の名前だけだから

@@ -11,7 +11,7 @@ import (
 )
 
 // 詳細に、今の待ちと進捗 (dispatcher が集めた commit・未 commit・issue の進捗節、テストの係の最後の結果) を出す。
-// 指示の見出しは中身どおり「PG への指示」(issue 469)。画面は集めたものを読むだけで、git もファイルも読まない。
+// 指示の見出しは中身どおり「PG への指示」。画面は集めたものを読むだけで、git もファイルも読まない。
 func TestDrawerShowsProgress(t *testing.T) {
 	be := newSpy()
 	now := be.snap.Now
@@ -63,7 +63,7 @@ func TestDrawerWaitingOnHighlightsHumansTurn(t *testing.T) {
 	}
 }
 
-// worktree の節は字下げを保って折り返す (続きの行が行頭へ戻らない。issue 508)。
+// worktree の節は字下げを保って折り返す (続きの行が行頭へ戻らない)。
 func TestHangWrapKeepsIndent(t *testing.T) {
 	got := hangWrap("    a1 2分前 "+strings.Repeat("あ", 20), 24)
 	if len(got) < 2 || !strings.HasPrefix(got[0], "    a1") || !strings.HasPrefix(got[1], "      あ") {
@@ -76,7 +76,7 @@ func TestHangWrapKeepsIndent(t *testing.T) {
 	}
 }
 
-// 入力待ちで止まった PG のカードで r を押すと、回答の入力欄を開かずに「a で attach して答える」と断る (issue 545)。
+// 入力待ちで止まった PG のカードで r を押すと、回答の入力欄を開かずに「a で attach して答える」と断る。
 func TestAnswerRefusesPromptWaitingCard(t *testing.T) {
 	be := newSpy()
 	be.snap.Cards = []card.Card{{ID: "C-001", State: card.Waiting, Since: be.snap.Now, Wait: card.Wait{Kind: card.WaitPermission, Question: "Bash を許す?"}}}

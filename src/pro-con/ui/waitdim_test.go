@@ -10,7 +10,7 @@ import (
 	"pro-con/card"
 )
 
-// 待っているカード (テストの係の結果待ち・再開待ち) は、そのカード固有の色のまま明度を waitDim 倍にした地で描く (issue 455)。
+// 待っているカード (テストの係の結果待ち・再開待ち) は、そのカード固有の色のまま明度を waitDim 倍にした地で描く。
 // 動いているカード・まだ起動していない着手待ちのカードは、固有の 256 色の地のまま。選択中でも暗さは変えない。
 func TestWaitingCardDimsOwnColor(t *testing.T) {
 	m := New(newSpy(), nil)

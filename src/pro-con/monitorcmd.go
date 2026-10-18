@@ -1,6 +1,6 @@
 package main
 
-// pro-con monitor — 見張り (issue 475。判定は package monitor)。dispatcher が子として起こして止める (monitorsup.go の superviseMonitor)。
+// pro-con monitor — 見張り (判定は package monitor)。dispatcher が子として起こして止める (monitorsup.go の superviseMonitor)。
 // 手で起動してもよい (--once で 1 回だけ見る)。2 つ起動しない (dispatcher.LockMonitor)。読むだけで、見つけたことは受付の箱に置く。
 
 import (

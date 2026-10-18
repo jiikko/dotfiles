@@ -226,7 +226,7 @@ func TestParsePSTabSeparated(t *testing.T) {
 	}
 }
 
-// tick は画面のために、取った一覧と pro-con が起動した session の出力の末尾 (新しい live.LogOutputs 個) を store.Seen に書く (issue 502 / 503)。
+// tick は画面のために、取った一覧と pro-con が起動した session の出力の末尾 (新しい live.LogOutputs 個) を store.Seen に書く。
 // 外の session の出力は載せない (transcript も読まない。newDoingRig の Transcript が外の session を読んだら落とす)。
 func TestTickPublishesSeenForScreens(t *testing.T) {
 	r := newDoingRig(t)

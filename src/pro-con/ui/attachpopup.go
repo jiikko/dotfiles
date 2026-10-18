@@ -14,7 +14,7 @@ import (
 	"subproc"
 )
 
-// tmux の中の attach (issue 527 の案 A。2026-09-26 にユーザーが決めた): 端末を丸ごと claude attach に渡さず、pro-con の画面の上に
+// tmux の中の attach (案 A。2026-09-26 にユーザーが決めた): 端末を丸ごと claude attach に渡さず、pro-con の画面の上に
 // tmux の popup (display-popup) の窓を開いて、その中で attach する。窓の枠の見出しに pro-con が用意した戻る操作を出す。
 //
 // 🚨 popup の中では tmux の bind が効かない (root も prefix も、キーは全部 popup の中身へ渡る。隔離 tmux 3.7b で確かめた)。
@@ -45,7 +45,7 @@ type PopupAttach struct {
 }
 
 // prefixTimeout は外の tmux へ prefix を聞く上限 (glogx の loadTmuxPrefix と同じ 5 秒)。tmux が応答しないと、上限が無ければ
-// attach の裏の処理が戻らず、数え上がったままの裏の処理が ctrl+r の切り替え (PrepareSwitch) も止める (issue 783)。
+// attach の裏の処理が戻らず、数え上がったままの裏の処理が ctrl+r の切り替え (PrepareSwitch) も止める。
 // 上限を超えたら popup を開かずに失敗で戻る (同じサーバへの display-popup も戻らないので、開きに行くと結局止まる)。
 const prefixTimeout = 5 * time.Second
 

@@ -1,6 +1,6 @@
 package live
 
-// カードの PG の活動 (応答の文と道具の呼び出し) を transcript から時刻の順に読む (issue 467)。
+// カードの PG の活動 (応答の文と道具の呼び出し) を transcript から時刻の順に読む。
 // 画面の詳細 (Backend.Activity) と `pro-con card log` が使う。🚨 読むだけ (transcript も記録も開いて読むだけ)。
 //
 // 読むのは pro-con の起動の記録 (sessions.json と、再開で入れ替わった前の session の sessions-retired.json) にある

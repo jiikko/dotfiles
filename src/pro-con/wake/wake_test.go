@@ -216,7 +216,7 @@ func TestFallbackDirMustBeOwn(t *testing.T) {
 	if err := os.Chmod(fallbackDir(), 0o777); err != nil { // umask を越えて緩める
 		t.Fatal(err)
 	}
-	// 繋ぐ側 (Poke・購読) は緩い権限を直さず、つながない (読む口が状態の置き場の外を書かない。issue 445)
+	// 繋ぐ側 (Poke・購読) は緩い権限を直さず、つながない (読む口が状態の置き場の外を書かない)
 	if err := Poke(long); !errors.Is(err, ErrUnsafeDir) {
 		t.Fatalf("権限の緩い逃がし先へ繋ぎに行った: %v", err)
 	}

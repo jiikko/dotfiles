@@ -1,6 +1,6 @@
 package ui
 
-// ? で出すヘルプ。「流れ / レーン / 印とポイント / 役」のタブに分ける (tab で切り替え。設定画面 456 と同じキー。issue 515)。
+// ? で出すヘルプ。「流れ / レーン / 印とポイント / 役」のタブに分ける (tab で切り替え。設定画面 456 と同じキー)。
 // 説明の正本は card の側 (流れ = card.MainFlow / card.FlowDetours / card.AfterDone、レーン = card.State.Meaning、
 // ポイント = card.PointsMeaning) と、この下の roleMeanings / HumansTurnMeaning (ここは並べて見せるだけ)。
 

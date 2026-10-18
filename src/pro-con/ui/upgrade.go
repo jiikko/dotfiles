@@ -79,7 +79,7 @@ func (m *Model) SwitchFailed(err error) {
 	m.switchRequested, m.switchTo = false, switchNone
 	m.cancelLeaving()
 	// 前の Program が予約していた tick (演出のコマ・処理中の印) は、終了で捨てられている。回っている印を下ろさないと、
-	// 起こし直した Program で二度と予約されない (2 回目の ctrl+r の暗転が進まず暗いまま止まった: issue 509 の実機確認)
+	// 起こし直した Program で二度と予約されない (2 回目の ctrl+r の暗転が進まず暗いまま止まった)
 	m.framing, m.spinning = false, false
 	if err == nil {
 		err = errors.New("exec が戻ってきた")
@@ -96,7 +96,7 @@ func upgradeTick() tea.Cmd {
 }
 
 // checkUpgrade は裏で「差し替わったか」を見て、まだなら毎回 shim に尋ねる (再挑戦するかは shim が決める。
-// 失敗の記録を見て尋ねるのをやめると、ソースを直しても二度とビルドされない: 敵対レビュー 2 周目 P1)。
+// 失敗の記録を見て尋ねるのをやめると、ソースを直しても二度とビルドされない)。
 // 失敗と表示するのは、最後に頼んだビルドより後に失敗が記録されたときだけ。
 func (m *Model) checkUpgrade() tea.Cmd {
 	u := *m.up
@@ -181,8 +181,8 @@ func (m *Model) upgradeSummary() string {
 
 // child は裏で外部コマンドを起こす処理 (tea.Cmd) を包み、走っている数を数える。数え始めは Cmd の関数が
 // 実際に走り始めたとき (作ったときに数えると、終了の直前に作られて bubbletea に捨てられた Cmd が永久に数に残り、
-// 以後の切り替えが毎回待ち切れなくなる: 敵対レビュー 2 周目 P2)。exec の前に WaitChildren で 0 を待つ
-// (syscall.Exec はプロセス像を置き換えるので、待たないと走行中の子と ctx の見張りが消えて取り残される。glogx issue 211)。
+// 以後の切り替えが毎回待ち切れなくなる)。exec の前に WaitChildren で 0 を待つ
+// (syscall.Exec はプロセス像を置き換えるので、待たないと走行中の子と ctx の見張りが消えて取り残される)。
 func (m *Model) child(f func() tea.Msg) tea.Cmd {
 	n := m.children
 	return func() tea.Msg {
@@ -208,7 +208,7 @@ func (m *Model) WaitChildren(timeout time.Duration) bool {
 const SwitchWait = 5 * time.Second
 
 // PrepareSwitch は切り替え (exec) の前の後始末と、引き継ぐ UI の状態の書き出し。裏の処理が終わらなければ
-// 書き出さずにエラー (exec すると走行中の子と ctx の見張りが消えて取り残される。glogx issue 211)。
+// 書き出さずにエラー (exec すると走行中の子と ctx の見張りが消えて取り残される)。
 func (m *Model) PrepareSwitch(wait time.Duration) ([]byte, error) {
 	if !m.WaitChildren(wait) {
 		return nil, fmt.Errorf("裏の処理が %v 以内に終わらない (もう一度 ctrl+r)", wait)
@@ -252,7 +252,7 @@ type uiState struct {
 	Cursor       int                  `json:"cursor"`
 	Target       *backend.IssueTarget `json:"target,omitempty"`
 	TargetRepo   backend.Repo         `json:"targetRepo"`
-	// Owner は join の画面を持ち主の画面として開き直した (O。新版への切り替えと文言を分ける。issue 548)
+	// Owner は join の画面を持ち主の画面として開き直した (O。新版への切り替えと文言を分ける)
 	Owner bool `json:"owner,omitempty"`
 	// Frame は旧版が最後に描いた画面 (暗くなりきった 1 枚。新版は最初の読み込みまでこれを出してから明るく戻す: switchfade.go)
 	Frame string `json:"frame,omitempty"`

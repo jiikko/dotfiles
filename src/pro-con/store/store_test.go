@@ -68,7 +68,7 @@ func setState(t *testing.T, dir, id string, s card.State) {
 
 // 依頼の流れ: add → plan → (dispatcher が作業中へ) → ask → answer (着手待ちへ戻る) / review → close。どの時点でも不変条件を破らない。
 // 選択肢つきの ask は問いを記録に持ち、質問の文にも選択肢を並べる。回答で質問待ちを離れたら問いも消える。
-// 箱に手で置かれた誤った問い (選択肢 1 個) は記録に入れない (issue 493)。
+// 箱に手で置かれた誤った問い (選択肢 1 個) は記録に入れない。
 func TestAskWithChoicesKeepsQuestionsUntilAnswered(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "色を直す"})
@@ -425,7 +425,7 @@ func TestSubmitPokesDispatcher(t *testing.T) {
 }
 
 // attach の間の指示は、どの列のカードにも原文と打った時刻で履歴に残す。状態は変えない。空の指示・時刻の無い指示は受けない。
-// 後から届いても、打った時刻の位置へ差し込む (同じ時刻なら先に在る出来事の後ろ。issue 489)。
+// 後から届いても、打った時刻の位置へ差し込む (同じ時刻なら先に在る出来事の後ろ)。
 func TestAttachInsertsSaidVerbatimByTime(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "x"})

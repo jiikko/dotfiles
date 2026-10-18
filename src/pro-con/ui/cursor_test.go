@@ -45,7 +45,7 @@ func TestCursorFramesSelectedCard(t *testing.T) {
 	}
 }
 
-// 選択の枠はユーザーが指定した赤い二重線 (issue 472)。定数で枠を探す他のテストでは、定数の値そのものが戻っても気づけないので、ここで字面と色を固定する。
+// 選択の枠はユーザーが指定した赤い二重線。定数で枠を探す他のテストでは、定数の値そのものが戻っても気づけないので、ここで字面と色を固定する。
 func TestCursorFrameIsRedDoubleLine(t *testing.T) {
 	m, _ := cursorModel(t)
 	raw := m.render()

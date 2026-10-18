@@ -7,7 +7,7 @@ import (
 	"pro-con/card"
 )
 
-// PM は依頼の列のカードについて人に聞ける (issue 498): 質問待ちの列の人の番になり、PM は自分の問いに答えられない。
+// PM は依頼の列のカードについて人に聞ける: 質問待ちの列の人の番になり、PM は自分の問いに答えられない。
 // 人の回答は PG の再開の文 (Resume) にせず、依頼の列へ戻して PMAnswer と履歴に原文で残す。分けたら PMAnswer は消える。
 // 着手待ちの列のカードには聞けない (PM が聞くのは分ける前。作業の後は PG が聞く)。
 func TestPMAsksOnRequestedCard(t *testing.T) {

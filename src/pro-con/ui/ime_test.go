@@ -42,7 +42,7 @@ func TestCaretFollowsInputForIME(t *testing.T) {
 }
 
 // どの送る欄でも、全角の文字を欄の幅より長く書いても、端末のカーソルは画面の中で、書いた最後の文字の直後に居る
-// (前を切って欄に収める。カーソルが欄の外や文字とずれた所に居ると、IME の変換中の文字もそこに出る。issue 517)。
+// (前を切って欄に収める。カーソルが欄の外や文字とずれた所に居ると、IME の変換中の文字もそこに出る)。
 func TestCaretStaysAfterLastCharForLongText(t *testing.T) {
 	for _, f := range sendFields() {
 		t.Run(f.name, func(t *testing.T) {

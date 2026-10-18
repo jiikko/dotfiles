@@ -47,7 +47,7 @@ func ticked(dir string) bool {
 	return !s.Tick.IsZero()
 }
 
-// issue 459: 画面が開いている間に人が `pro-con dispatcher --stop` で止めたら、画面は dispatcher を起こし直さない
+// 画面が開いている間に人が `pro-con dispatcher --stop` で止めたら、画面は dispatcher を起こし直さない
 // (開いたときも keeper も)。画面が起こした dispatcher (--from-screen) も、印があれば回らずに抜ける (画面が印を見てから起こすまでの窓)。
 // 手で dispatcher を起動すると印が外れ、画面はまた起こす。
 func TestManualStopHoldsScreenKeeper(t *testing.T) {
@@ -90,7 +90,7 @@ func TestScreenQuitStopDoesNotHold(t *testing.T) {
 	}
 }
 
-// issue 638: 置き場 (state/) がまだ無いところで人が --stop を打っても、止めた印を置く (印は止める処理より前に置くので、
+// 置き場 (state/) がまだ無いところで人が --stop を打っても、止めた印を置く (印は止める処理より前に置くので、
 // lock が置き場を作るのを待てない)。heldRoot は置き場を先に作るので、このテストは作らない置き場で試す (本番の初期状態)。
 func TestManualStopHoldsWithoutStateDir(t *testing.T) {
 	root, err := os.MkdirTemp("/tmp", "pchn")
@@ -108,7 +108,7 @@ func TestManualStopHoldsWithoutStateDir(t *testing.T) {
 	}
 }
 
-// issue 638: 止めた印を置けなくても止める処理は続け (止めたい人が止められなくならない)、rc 1 で知らせる。
+// 止めた印を置けなくても止める処理は続け (止めたい人が止められなくならない)、rc 1 で知らせる。
 // 印のパスをディレクトリにして、lock は取れるが印だけ置けない形を作る (置き場を書けなくすると lock も取れず、印の失敗と区別できない)。
 func TestManualStopReportsHoldFailure(t *testing.T) {
 	root, dir := heldRoot(t)

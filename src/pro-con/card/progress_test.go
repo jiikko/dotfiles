@@ -112,7 +112,7 @@ func TestProgressLines(t *testing.T) {
 	}
 }
 
-// worktree の節 (issue 508): 絶対パスを 1 行に単独で置き、ブランチ・先の commit (相対の時刻)・未 commit のファイル・差分の数を並べる。
+// worktree の節: 絶対パスを 1 行に単独で置き、ブランチ・先の commit (相対の時刻)・未 commit のファイル・差分の数を並べる。
 // 上限を越えた分は「ほか」。色は Paint で渡したものだけ (card show は素の文字)。
 func TestWorktreeLines(t *testing.T) {
 	now := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)

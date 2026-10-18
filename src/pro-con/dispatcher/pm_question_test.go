@@ -60,7 +60,7 @@ func TestPMToldOfSecondQuestion(t *testing.T) {
 	}
 }
 
-// PM が依頼の列のカードについて人に聞いた問い (issue 498) は PM 自身には知らせない (人の番)。人が答えると依頼の列へ戻り、回答の文を添えて PM に知らせる。
+// PM が依頼の列のカードについて人に聞いた問いは PM 自身には知らせない (人の番)。人が答えると依頼の列へ戻り、回答の文を添えて PM に知らせる。
 func TestPMToldOfHumanAnswerToPMQuestion(t *testing.T) {
 	r := startedPM(t)
 	submitAndTick := func(req store.Request) {

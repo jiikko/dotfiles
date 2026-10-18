@@ -9,7 +9,7 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
-// Doing は PG が今走らせているもの 1 つ (issue 473)。dispatcher が集めて store.DoingFile に書き、画面と `pro-con card show` が読む
+// Doing は PG が今走らせているもの 1 つ。dispatcher が集めて store.DoingFile に書き、画面と `pro-con card show` が読む
 // (記録 cards.json には入れない)。テストの係に頼んだコマンドはカードの Run / Exec にあるので、ここには入れない (DoingLines が足す)。
 type Doing struct {
 	Kind  DoingKind `json:"kind"`

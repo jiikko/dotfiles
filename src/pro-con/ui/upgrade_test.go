@@ -242,7 +242,7 @@ func TestImportClampsCursor(t *testing.T) {
 }
 
 // 書きかけの入力に複数の rune でできた文字 (肌色の絵文字) があっても、カーソルは保存した位置に戻る
-// (left を差の回数だけ押す形だと、left が書記素単位で動くぶん戻りすぎていた。issue 589 の敵対的レビュー)。
+// (left を差の回数だけ押す形だと、left が書記素単位で動くぶん戻りすぎていた)。
 func TestImportRestoresCursorPastMultiRuneCluster(t *testing.T) {
 	m := New(newSpy(), nil)
 	data := []byte(`{"input":true,"inputKind":3,"line":"a👍🏽b👍🏽","cursor":3}`)
@@ -332,7 +332,7 @@ func TestFailureBeforeLastSpawnIsIgnored(t *testing.T) {
 }
 
 // 捨てた書きかけの文は、消すまで残る欄 (sticky) に置く。後から来る通知 (設定の警告・ビルドの失敗など) で消えず、
-// ボードの esc で消える (3 周目 P2-2 / 4 周目 P2-1)。
+// ボードの esc で消える。
 func TestDroppedInputSurvivesNotify(t *testing.T) {
 	m := New(newSpy(), nil)
 	_ = m.ImportState([]byte(`{"selected":"GONE","input":true,"inputKind":0,"line":"遅延ロードで"}`))

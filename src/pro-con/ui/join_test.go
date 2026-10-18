@@ -24,7 +24,7 @@ func (j *joinSpy) TakeRejected() []backend.Rejected {
 	return out
 }
 
-// join の画面 (issue 481): quit のダイアログは「この画面だけ閉じる」。人が止めた dispatcher は起こさない (c を出さず、押すと理由つきで断る)。
+// join の画面: quit のダイアログは「この画面だけ閉じる」。人が止めた dispatcher は起こさない (c を出さず、押すと理由つきで断る)。
 // 止まっているときは起こし方を出す。
 func TestJoinScreenQuitAndNoResume(t *testing.T) {
 	be := &joinSpy{stopSpy: &stopSpy{spy: newSpy()}}
@@ -51,7 +51,7 @@ func TestJoinScreenQuitAndNoResume(t *testing.T) {
 	}
 }
 
-// この画面が置いて除けられた依頼は、dispatcher が書いた理由を 1 度だけ出す (issue 481)。
+// この画面が置いて除けられた依頼は、dispatcher が書いた理由を 1 度だけ出す。
 func TestRejectedRequestShownOnce(t *testing.T) {
 	be := &joinSpy{stopSpy: &stopSpy{spy: newSpy()}}
 	m := New(be, nil)
@@ -65,7 +65,7 @@ func TestRejectedRequestShownOnce(t *testing.T) {
 	}
 }
 
-// 持ち主の画面が無い join の画面 (issue 543): 罫線の上に全幅の帯を出す。dispatcher が動いている間は「止まっても誰も起こさない」、
+// 持ち主の画面が無い join の画面: 罫線の上に全幅の帯を出す。dispatcher が動いている間は「止まっても誰も起こさない」、
 // 止まったら「カードは進まない」。持ち主が居る・画面を数えられない・持ち主の画面では出さない。
 func TestOwnerlessJoinBand(t *testing.T) {
 	be := &joinSpy{stopSpy: &stopSpy{spy: newSpy()}}

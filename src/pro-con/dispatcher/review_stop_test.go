@@ -12,7 +12,7 @@ import (
 	"pro-con/store"
 )
 
-// レビューの列に入ったカードの PG の session を止める (issue 536)。
+// レビューの列に入ったカードの PG の session を止める。
 
 // reviewRig は C-001 の PG が turn を終えて (idle) `card review` を打った形を作る。
 func reviewRig(t *testing.T) *crashRig {
@@ -161,8 +161,8 @@ func TestReviewStopFailureGivesUp(t *testing.T) {
 	}
 }
 
-// レビュー待ちで止めた PG は、一覧から消えても落ちたのではない: 落ちたのを見た時刻 (DeadSince) を付けず、終了は自動の再開を待たない (issue 560。
-// 付けると stopTarget が restartWait の間「自動の再開の途中かもしれない」と shutdownPolls 回 (約 46 秒) 待っていた)。
+// レビュー待ちで止めた PG は、一覧から消えても落ちたのではない: 落ちたのを見た時刻 (DeadSince) を付けず、終了は自動の再開を待たない。
+// 付けると stopTarget が restartWait の間「自動の再開の途中かもしれない」と shutdownPolls 回 (約 46 秒) 待つ。
 func TestShutdownDoesNotWaitForReviewStoppedPG(t *testing.T) {
 	r := reviewRig(t)
 	r.tick(t) // 止める

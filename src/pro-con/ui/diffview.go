@@ -1,6 +1,6 @@
 package ui
 
-// 詳細から D で開く差分の板 (issue 508): 取り込む先 (origin/master) との merge-base から作業ツリーまでの差分を、ファイルごとに畳める
+// 詳細から D で開く差分の板: 取り込む先 (origin/master) との merge-base から作業ツリーまでの差分を、ファイルごとに畳める
 // 全幅の板で読む。本文は dispatcher が裏で集めて store.DiffPath に書いたもの (画面は git を叩かない = 441)。読むのと色付け
 // (github.com/jiikko/dotfiles/src/tuikit/highlight)・板の行への組み立ては開いたときに 1 回だけ、裏の tea.Cmd で回す (毎フレームは窓の行を描くだけ = 529)。
 // 🚨 本文は PG の worktree の中身 = untrusted。dispatcher が termsafe.PlainLine で無害化してから書き、ここは色を足すだけ。
@@ -25,7 +25,7 @@ const sgrReverse = "\x1b[7m" // 選んでいるファイルの見出し (見本�
 
 // diffView は差分の板の状態。
 // 板の行は「ファイルの見出し 1 行 + (畳んでいなければ) 本文の行」をファイル順に並べたもの (+ 切った知らせの 1 行)。
-// 全行を並べた列は持たない: 描く (毎フレーム) のは窓の数十行だけなので、行 r は starts から引く (issue 529)。
+// 全行を並べた列は持たない: 描く (毎フレーム) のは窓の数十行だけなので、行 r は starts から引く。
 type diffView struct {
 	open    bool
 	cardID  string

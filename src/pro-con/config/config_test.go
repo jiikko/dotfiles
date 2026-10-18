@@ -40,7 +40,7 @@ func TestLoadReadsKeys(t *testing.T) {
 	}
 }
 
-// disposable_tmp (issue 552): 書かなければ既定の ~/dotfiles、[] ならどの repo の tmp/ も使い捨てと見ない (既定に戻さない)。
+// disposable_tmp: 書かなければ既定の ~/dotfiles、[] ならどの repo の tmp/ も使い捨てと見ない (既定に戻さない)。
 func TestDisposableTmpPaths(t *testing.T) {
 	home := "/h"
 	for name, c := range map[string]struct {

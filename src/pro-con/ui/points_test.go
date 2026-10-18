@@ -10,7 +10,7 @@ import (
 )
 
 // 見積もりはカードの 1 行目の右端に薄く出る。タイトルは 1 行目で切らずに 2 行目へ続く。見積もり無しは出さない。
-// 1 行目のタイトルが minTitleHead より短くなる幅なら出さない (issue 490)。
+// 1 行目のタイトルが minTitleHead より短くなる幅なら出さない。
 func TestCardCellPoints(t *testing.T) {
 	m := New(newSpy(), nil)
 	c := card.Card{ID: "C-047", State: card.Planned, Title: "カードの右上に見積もりのポイントを出す", Points: 3}

@@ -1,4 +1,4 @@
-// Package schedule は dispatcher が決まった時刻に回す予定の表 (issue 550)。
+// Package schedule は dispatcher が決まった時刻に回す予定の表。
 //
 // 🚨 表 (Jobs) は、dispatcher が起こす argv と、画面・pro-con config に出す字面の両方の唯一の出典。
 // 字面を別の文字列で持たない (持つと、表示と実際に呼ぶものがずれても誰も気づかない)。
@@ -49,7 +49,7 @@ type Job struct {
 	Min  int      // 0〜59
 	Args []string // pro-con に渡す引数 (argv[1:])。中で回す行は持たない
 	// Internal は子を起こさずに dispatcher が中で回す処理の説明 (画面の字面)。書き手を dispatcher 1 つに保つ処理 (426) に使う:
-	// 子に書庫を書かせると書き手が 2 つになり、子から受付の箱で頼むと、箱の「適用した」が消し終えたことを意味しない (issue 497)
+	// 子に書庫を書かせると書き手が 2 つになり、子から受付の箱で頼むと、箱の「適用した」が消し終えたことを意味しない
 	Internal string
 	// Lock はコマンドが走っている間 flock で持つファイル (状態の置き場の下)。dispatcher が待てなかった実行 (抜けた・入れ替わった) の
 	// 終わりを、次の dispatcher がこの lock が空いたことで知る
@@ -59,14 +59,14 @@ type Job struct {
 // WorktreeCleanLock は pro-con worktree clean --yes が持つ lock (dispatcher の予定と人の手の実行を重ねない)。
 const WorktreeCleanLock = "worktree-clean.lock"
 
-// CardPurge は完了から 1 週間たったカードを書庫から消す、dispatcher の中で回す予定の名前 (dispatcher/forget.go の purge。issue 497)。
+// CardPurge は完了から 1 週間たったカードを書庫から消す、dispatcher の中で回す予定の名前 (dispatcher/forget.go の purge)。
 const CardPurge = "card-purge"
 
 // Jobs は dispatcher が回す予定 (同じ Tick に回すのは 1 つだけなので、並びの順に回る)。
 var Jobs = []Job{
 	// 書庫のカードを消す (session・worktree は消さない。片付けの印を残し、04:00 の worktree clean がそれを読んで片付ける)
 	{Name: CardPurge, Hour: 3, Min: 30, Internal: "完了から 1 週間たったカードを書庫から消す"},
-	// 閉じたカードの PG の worktree・ブランチ・session を片付ける (issue 492)。消す判定は worktree clean が 1 個ずつ取り直してする
+	// 閉じたカードの PG の worktree・ブランチ・session を片付ける。消す判定は worktree clean が 1 個ずつ取り直してする
 	{Name: "worktree-clean", Hour: 4, Min: 0, Args: []string{"worktree", "clean", "--yes"}, Lock: WorktreeCleanLock},
 }
 

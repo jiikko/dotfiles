@@ -1,6 +1,6 @@
-// Package store は本物のモードのカードの記録 (issue 427 の段階 3a)。
+// Package store は本物のモードのカードの記録。
 //
-// 書き手は dispatcher だけ (issue 426 の決定 1)。PM / PG / 画面は受付の箱 (inbox) に依頼を 1 件 1 ファイルで置き (Submit)、
+// 書き手は dispatcher だけ。PM / PG / 画面は受付の箱 (inbox) に依頼を 1 件 1 ファイルで置き (Submit)、
 // dispatcher が Apply でまとめて記録 (cards.json) へ適用する。採番と、状態の遷移の規則・不変条件 (card.Check) の検査も Apply の中の 1 か所。
 //
 // 失敗モード:
@@ -47,16 +47,16 @@ const (
 // 🚨 --view の画面は置かない (受付の箱にも書かない = 読むだけ)
 const KindEvent = "event"
 
-// KindMonitor は見張り (pro-con monitor。issue 475) が見つけたこと (取り込みの衝突・テストの順番の長さ) の依頼の種類。
+// KindMonitor は見張り (pro-con monitor) が見つけたこと (取り込みの衝突・テストの順番の長さ) の依頼の種類。
 // event と同じく記録 (カード) は変えず、dispatcher が出来事の記録へ書くだけ (見張りは読むだけ。書き手は dispatcher 1 つ = 426 の決定 1)
 const KindMonitor = "monitor"
 
-// KindSupervisor は supervisor (pro-con supervise。issue 506) の知らせ (dispatcher が落ちた・起こし直す・諦めた)。
+// KindSupervisor は supervisor (pro-con supervise) の知らせ (dispatcher が落ちた・起こし直す・諦めた)。
 // 見張りと同じく記録 (カード) は変えず、dispatcher が出来事の記録へ書くだけ (書き手は dispatcher 1 つ = 426 の決定 1)。
 // 🚨 dispatcher が落ちている間に置くので、書かれるのは次の dispatcher が箱を読んだとき (時刻は supervisor が置いた時刻)
 const KindSupervisor = "supervisor"
 
-// KindForget は片付け (pro-con worktree clean --yes。issue 497) が worktree と transcript を消し終えたカードの、起動の記録の行と
+// KindForget は片付け (pro-con worktree clean --yes) が worktree と transcript を消し終えたカードの、起動の記録の行と
 // 片付けの印を消す依頼の種類。記録 (カード) は変えない。起動の記録と印の書き手は dispatcher だけなので、片付けは箱に置いて頼む
 // (dispatcher/forget.go)。🚨 消すのは Sessions に挙げた session の行だけ (適用までに再開した session の行を巻き込まない)
 const KindForget = "forget"
@@ -90,7 +90,7 @@ type Request struct {
 	After    []string        `json:"after,omitempty"`  // plan: このカードより先に完了させるカード (issue 468)
 	Points   int             `json:"points,omitempty"` // plan: 見積もりのポイント (card.PointScale のどれか。0 = 付けない。issue 490)
 	Question string          `json:"question,omitempty"`
-	// Questions は ask: 選択肢つきの問い (issue 493。`card ask --json`)。Question はその前置き (空でよい)
+	// Questions は ask: 選択肢つきの問い (`card ask --json`)。Question はその前置き (空でよい)
 	Questions []card.Question `json:"questions,omitempty"`
 	Command   string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
 	Cwd       string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (dispatcher が PG の worktree と照らす)
@@ -142,7 +142,7 @@ type Result struct {
 	Note             string
 	At               time.Time // event: 画面が出来事を置いた時刻 (dispatcher が出来事の記録へ書く。適用した時刻ではない)
 	Sessions         []string  // forget: 起動の記録から消す session id (dispatcher が消す)
-	// Dropped は delete ですぐ記録から外したカード (依頼の列。外す前の姿)。dispatcher が所要の記録に 1 行書く (issue 516)
+	// Dropped は delete ですぐ記録から外したカード (依頼の列。外す前の姿)。dispatcher が所要の記録に 1 行書く
 	Dropped *card.Card
 }
 
@@ -227,7 +227,7 @@ func inbox(dir string) []Request {
 }
 
 // Apply は受付の箱の依頼を置いた順に記録へ適用する (dispatcher だけが呼ぶ)。記録を書いてから箱のファイルを片付ける。
-// repos は設定の repo (名前 → パス)。カードの repo をそれ以外にする依頼 (add / plan) は除ける (CheckRepo。issue 511)。nil なら repo を見ない (設定を持たない呼び手)。
+// repos は設定の repo (名前 → パス)。カードの repo をそれ以外にする依頼 (add / plan) は除ける (CheckRepo)。nil なら repo を見ない (設定を持たない呼び手)。
 func Apply(dir string, now time.Time, repos map[string]string) ([]Result, error) {
 	return ApplyChecked(dir, now, repos, nil)
 }
@@ -237,7 +237,7 @@ func Apply(dir string, now time.Time, repos map[string]string) ([]Result, error)
 type Check func(st State, r Request) error
 
 // ApplyChecked は Apply に、当てる直前の検査 check (nil なら検査しない) を足したもの
-// (issue 553: 取り込み先に無い commit のあるカードを、取り込まない終わり方を付けずに閉じない)。
+// (取り込み先に無い commit のあるカードを、取り込まない終わり方を付けずに閉じない)。
 func ApplyChecked(dir string, now time.Time, repos map[string]string, check Check) ([]Result, error) {
 	box := filepath.Join(dir, InboxDir)
 	names, err := filepath.Glob(filepath.Join(box, "*.json"))
@@ -480,7 +480,7 @@ func apply(st State, r Request, now time.Time, repos map[string]string) (State, 
 		c := card.Card{ID: id, ParentID: r.ParentID, Title: firstNonEmpty(r.Title, clip(r.Request, 40)), Purpose: r.Purpose, Request: r.Request, Prompt: r.Prompt, Repo: r.Repo,
 			Issues: r.Issues, Owner: firstNonEmpty(r.Owner, "PM"), State: card.Requested, Since: now, FromRequest: r.ID,
 			History: []card.Event{{At: now, Text: "依頼を受けた"}}}
-		// 足跡の最初 (依頼の列に入った時刻。issue 516)
+		// 足跡の最初 (依頼の列に入った時刻)
 		c.Mark(now)
 		if p := indexOf(next.Cards, r.ParentID); r.ParentID != "" { // 親が無ければ不変条件 (親カードが存在しない) が弾く
 			c.History[0].Text = r.ParentID + " の追加オーダー (別件) から分けた"
@@ -583,7 +583,7 @@ func apply(st State, r Request, now time.Time, repos map[string]string) (State, 
 }
 
 // addIssues は issue をカードに紐づける。紐づいている issue (同じ repo と番号) は重ねない
-// (issue の一覧から足したカードは add の時点で紐づいていて、PM が plan で同じ issue を付け直す。issue 511)。
+// (issue の一覧から足したカードは add の時点で紐づいていて、PM が plan で同じ issue を付け直す)。
 func addIssues(c *card.Card, refs []card.IssueRef) {
 	for _, r := range refs {
 		if !slices.ContainsFunc(c.Issues, func(o card.IssueRef) bool { return o.Repo == r.Repo && o.Number == r.Number }) {
@@ -592,7 +592,7 @@ func addIssues(c *card.Card, refs []card.IssueRef) {
 	}
 }
 
-// CheckRepo はカードの repo が設定の repo (repos の名前) かを見る (issue 511)。空 (repo 未指定。PM が plan で決める) は通す。
+// CheckRepo はカードの repo が設定の repo (repos の名前) かを見る。空 (repo 未指定。PM が plan で決める) は通す。
 // パスは名前ではないので通さない (設定の repo はパスの末尾の名前で呼ぶ)。
 func CheckRepo(repos map[string]string, name string) error {
 	if _, ok := repos[name]; name == "" || ok {
@@ -602,7 +602,7 @@ func CheckRepo(repos map[string]string, name string) error {
 	return fmt.Errorf("repo %q は設定に無い (repo は名前で書く: %s)", name, strings.Join(names, " / "))
 }
 
-// remove は削除の依頼 (issue 451)。依頼の列のカード (PG が付いていない) はすぐ記録から外す。それ以外は印 (DeleteAt) を付けるだけで、
+// remove は削除の依頼。依頼の列のカード (PG が付いていない) はすぐ記録から外す。それ以外は印 (DeleteAt) を付けるだけで、
 // dispatcher が PG の session を止めたのを確かめてから外す (dispatcher/close.go)。返すのは記録に残す出来事。
 // 🚨 PG の worktree とブランチには触らない (取り込み前の作業が入っている)。
 func remove(st *State, i int, r Request, now time.Time) (string, error) {
@@ -736,7 +736,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			return errors.New("人に回す理由が空")
 		}
 		c.History = append(c.History, card.Event{At: now, Text: card.HandoffText(firstNonEmpty(r.From, "PM"), r.Text)}) // 原文のまま
-		// 人の番へ移った足跡 (issue 516)
+		// 人の番へ移った足跡
 		c.Mark(now)
 	case "run": // PG がテストの係にコマンドの実行を頼んで turn を終えた (426 の決定 5)。結果は dispatcher が再開のときに渡す
 		if c.State != card.Running {
@@ -803,7 +803,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())
 		}
-		// PG の session は dispatcher が止める (issue 536。閉じたときと同じ印。差し戻し・追加オーダーは同じ session を --resume で続きから起こす)
+		// PG の session は dispatcher が止める (閉じたときと同じ印。差し戻し・追加オーダーは同じ session を --resume で続きから起こす)
 		c.StopAfterClose = c.Session != ""
 		move(card.Review, "PG が終えた。レビュー待ち")
 	case "close": // 取り込みの係 (487) がレビューを通して完了にした。PM は依頼の列からも閉じられる (その場で回答した・却下した。Ending を付ける)
@@ -826,7 +826,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 }
 
 // checkAfter は plan --after の相手が、振った番号のカードか (記録に在る・書庫へ移った・削除した)。まだ振っていない番号 (打ち間違い) は除ける。
-// 🚨 記録に在るかだけで判定しない: 完了から 24 時間で書庫へ移ったカードの後に積めなくなる (issue 478)。循環は card.Check が見る
+// 🚨 記録に在るかだけで判定しない: 完了から 24 時間で書庫へ移ったカードの後に積めなくなる。循環は card.Check が見る
 func checkAfter(st State, after []string) error {
 	for _, a := range after {
 		if indexOf(st.Cards, a) >= 0 {
@@ -867,7 +867,7 @@ func firstNonEmpty(xs ...string) string {
 	return ""
 }
 
-// insertByTime は e を、時刻が e より後の出来事の直前へ差し込む (同じ時刻なら後ろへ。issue 489)。
+// insertByTime は e を、時刻が e より後の出来事の直前へ差し込む (同じ時刻なら後ろへ)。
 // 履歴は起きた順の記録で、attach の間の指示だけが過去の時刻 (打った時刻) で後から届く。末尾へ足すと、その間に足した
 // 出来事 (テストの係の結果・質問) より後ろに並び、表示の順と時刻が食い違う。後ろから探すのは、ふつうは末尾の数件で止まるため。
 // 🚨 apply はカードを浅くコピーするので、h の配列は適用前の state と共有している。Clip して、ずらす先を新しい配列にする
@@ -880,7 +880,7 @@ func insertByTime(h []card.Event, e card.Event) []card.Event {
 }
 
 // clip は履歴・題名に入れる 1 行にする: 改行と空白の並びを 1 つの空白に潰してから n 字で切る
-// (選択肢つきの質問・フォームの答えは複数行。そのまま入れると card show の履歴の行が崩れる。issue 493)。
+// (選択肢つきの質問・フォームの答えは複数行。そのまま入れると card show の履歴の行が崩れる)。
 func clip(s string, n int) string {
 	return termsafe.ClipRunes(strings.Join(strings.Fields(s), " "), n)
 }

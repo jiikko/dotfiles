@@ -1,6 +1,6 @@
 package main
 
-// dispatcher のライブアップグレード (issue 505)。dispatcher は長く走り続けるので、master に入った変更は手で起動し直すまで効かなかった
+// dispatcher のライブアップグレード。dispatcher は長く走り続けるので、master に入った変更は手で起動し直すまで効かなかった
 // (見張りの係 475・起動時の復旧 483 の実例)。画面の ctrl+r (package upgrade) と同じ口で、新版のバイナリができたら安全な区切りで
 // 自分を syscall.Exec で入れ替える。PID はそのまま、dispatcher の lock も外さずに引き継ぐ (dispatcher.HeldLock.Exec)。
 //

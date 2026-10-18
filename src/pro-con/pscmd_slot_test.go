@@ -15,8 +15,8 @@ import (
 	"pro-con/store"
 )
 
-// pro-con ps は PG を、dispatcher が枠に数えたカード (様子の Slots) の「作業中」と、生きていて数えていない「待機中」に分けて出す
-// (issue 557)。待機中の行には待っている訳 (pgState)。枠に数えたが起動の記録にまだ無いカードも作業中に行を出す (数と行を合わせる)。
+// pro-con ps は PG を、dispatcher が枠に数えたカード (様子の Slots) の「作業中」と、生きていて数えていない「待機中」に分けて出す。
+// 待機中の行には待っている訳 (pgState)。枠に数えたが起動の記録にまだ無いカードも作業中に行を出す (数と行を合わせる)。
 // dispatcher が数え直していない (古い) ときは分けずに「判定できない」と出す。
 func TestPSSplitsPGsBySlot(t *testing.T) {
 	now := time.Now()

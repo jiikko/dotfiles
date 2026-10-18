@@ -33,7 +33,7 @@ func drawerModel(t *testing.T) (*Model, *spy, *clock) {
 
 func screen(m *Model) string { return ansi.Strip(m.render()) }
 
-// drawerBody は詳細の本文 (drawerLines) を 1 本につないだもの。描く経路は drawerLines を使う (活動の節をコピーしない。issue 606)。
+// drawerBody は詳細の本文 (drawerLines) を 1 本につないだもの。描く経路は drawerLines を使う (活動の節をコピーしない)。
 func (m *Model) drawerBody() []string {
 	d := m.drawerLines()
 	return slices.Concat(d.head, d.act)
@@ -156,7 +156,7 @@ func TestDrawerClosesAndKeepsContentWhileClosing(t *testing.T) {
 	}
 }
 
-// 履歴の時刻は手元の時間帯で出す (attach の指示の時刻は transcript の UTC のまま記録に入る。issue 428)。
+// 履歴の時刻は手元の時間帯で出す (attach の指示の時刻は transcript の UTC のまま記録に入る)。
 func TestDrawerHistoryInLocalTime(t *testing.T) {
 	orig := time.Local
 	time.Local = time.FixedZone("JST", 9*60*60)
@@ -189,7 +189,7 @@ func TestDrawerClosesWhenCardVanishes(t *testing.T) {
 	}
 }
 
-// 詳細の状態の経過は、何の経過かを語で添える (issue 562。card list / show と同じ State.SinceText)。
+// 詳細の状態の経過は、何の経過かを語で添える (card list / show と同じ State.SinceText)。
 func TestDrawerStateAgeSaysWhatItMeasures(t *testing.T) {
 	be := newSpy()
 	be.snap.Cards = []card.Card{{ID: "C-001", State: card.Done, Since: be.snap.Now.Add(-17 * time.Minute)}}

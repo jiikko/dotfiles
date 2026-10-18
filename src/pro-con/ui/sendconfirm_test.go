@@ -10,7 +10,7 @@ import (
 	"pro-con/backend"
 )
 
-// sendField は送る欄の 1 つ: 開いて中身を書いたモデルと、確認に出るはずの中身 (issue 517 の欄の一覧)。
+// sendField は送る欄の 1 つ: 開いて中身を書いたモデルと、確認に出るはずの中身。
 type sendField struct {
 	name  string
 	open  func(t *testing.T) (*Model, *spy)

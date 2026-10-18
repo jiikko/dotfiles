@@ -1,6 +1,6 @@
 package main
 
-// pro-con log — dispatcher の出来事の記録 (状態の置き場の events.jsonl) を読む口 (issue 444。親の設計は 441)。
+// pro-con log — dispatcher の出来事の記録 (状態の置き場の events.jsonl) を読む口 (親の設計は 441)。
 //
 // 🚨 読むだけ (441 の守ること 1)。受付の箱・記録・events.jsonl に何も書かず、socket へ wake / notify を送らない
 // (--follow が送るのは購読の sub だけ)。TestLogDoesNotWrite が固定する。
@@ -81,7 +81,7 @@ func runLog(ctx context.Context, args []string, dir string, now func() time.Time
 		return 0
 	}
 	// 読み始めた後に足された出来事は、時刻で絞らない: 画面の出来事は画面が置いた時刻のまま後から書かれる (dispatcher が居ない間に
-	// 置いたものは次の dispatcher が書く) ので、--since より前の時刻でも今足された出来事として出す (issue 445)
+	// 置いたものは次の dispatcher が書く) ので、--since より前の時刻でも今足された出来事として出す
 	since = time.Time{}
 	// dispatcher は出来事を書いてから知らせる (Tick・Shutdown・serve の say のどれも Record → Changed) ので、知らせで読み直せば即時に出る
 	err = watchDir(ctx, dir, stderr, func() (bool, error) {
@@ -101,7 +101,7 @@ func runLog(ctx context.Context, args []string, dir string, now func() time.Time
 // formatEvent は人が読む 1 行 (種類・カード・session は ASCII なので桁で揃う)。
 func formatEvent(e eventlog.Event) string {
 	// 理由はカードの題名を含むことがある (削除の出来事は「<題名>」を削除した)。題名は制御文字も改行も残りうるので、
-	// stdout へ書く前に 1 行に無害化する (card list / show と同じ理由。2026-10-02 の敵対的レビュー)
+	// stdout へ書く前に 1 行に無害化する (card list / show と同じ理由)
 	return termsafe.PlainLine(fmt.Sprintf("%s  %-8s  %-6s  %-12s  %s", e.At.Local().Format("01-02 15:04:05"), e.Kind, orDashCLI(e.Card), orDashCLI(e.Session), e.Reason))
 }
 

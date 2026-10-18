@@ -1,10 +1,10 @@
 package wtclean
 
-// session の片付け (issue 497)。worktree とブランチを消し終えた、完了したカードについて、pro-con が起動した session の
+// session の片付け。worktree とブランチを消し終えた、完了したカードについて、pro-con が起動した session の
 //   - transcript (~/.claude/projects/<置き場>/<session id>.jsonl と、サブエージェントの <session id>/)
 //   - claude の job (~/.claude/jobs/<短い id>。claude agents --all の行。消す口は `claude rm <短い id>`)
 //   - 起動の記録の行 (sessions.json / sessions-retired.json。書き手は dispatcher なので、受付の箱に forget を置いて頼む)
-// を消す。消すのは pro-con worktree clean --yes だけ (人が打つか、dispatcher の予定が毎日 04:00 に回す (issue 550。止めるのは pro-con config set schedule off)。
+// を消す。消すのは pro-con worktree clean --yes だけ (人が打つか、dispatcher の予定が毎日 04:00 に回す (止めるのは pro-con config set schedule off)。
 // 2026-09-27 のユーザーの決定で自動にした。それまでは人が打ったときだけ)。
 //
 // 消してよいのは、次を全部満たすカードの session だけ:
@@ -282,7 +282,7 @@ func transcriptsOf(projects, sid, wt string) (paths []string, bytes int64, why s
 }
 
 // ranIn は transcript の cwd の記録 (各行の最上位の "cwd") が 1 つ以上あり、どれも wt (かその下) か。
-// 🚨 1 つ合えば通す形にしない: PG が止まった後に人が同じ session を別の場所で続けると、その後の会話まで消す (敵対的レビュー)。
+// 🚨 1 つ合えば通す形にしない: PG が止まった後に人が同じ session を別の場所で続けると、その後の会話まで消す。
 // 🚨 全体を一度に読まない (transcript は数十 MB になる)。bufio.Scanner にしない (行の長さに上限がある。transcript.go と同じ)
 func ranIn(path, wt string) (bool, error) {
 	f, err := os.Open(path)

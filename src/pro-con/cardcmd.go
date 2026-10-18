@@ -1,8 +1,8 @@
 package main
 
-// pro-con card — PM / PG が使うカードの操作の口 (issue 427 の段階 3b)。受付の箱に依頼を置くだけで、記録への適用は dispatcher (store.Apply)。
+// pro-con card — PM / PG が使うカードの操作の口。受付の箱に依頼を置くだけで、記録への適用は dispatcher (store.Apply)。
 // どの操作も既定で dispatcher の適用を待ち、置いた依頼の ID を stdout に出す (add はカード ID)。使い方の誤りは rc=2、箱に置けなかった・
-// dispatcher が除けたら rc=1 (除けた理由を stderr に出す)、待てなかったら依頼 ID を出して rc=3 (issue 542。submitAndWait)。
+// dispatcher が除けたら rc=1 (除けた理由を stderr に出す)、待てなかったら依頼 ID を出して rc=3 (submitAndWait)。
 // 読むだけの口 (list / show / wait) は cardview.go、log は cardlog.go。
 
 import (
@@ -135,7 +135,7 @@ func runCardSubmit(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	return submitAndWait(env.dir, req.Kind, func() (string, error) { return store.Submit(env.dir, req) }, wait, stdout, stderr)
 }
 
-// checkCardRepos は add の --repo と plan の --issue の repo が設定の repo かを、受付の箱に置く前に見る (issue 511。正本は store.CheckRepo で、
+// checkCardRepos は add の --repo と plan の --issue の repo が設定の repo かを、受付の箱に置く前に見る (正本は store.CheckRepo で、
 // 箱に手で置かれた依頼は dispatcher の適用が同じ検査で除ける)。repos が nil なら見ない (設定を持たない呼び手)。設定は repo を書いた依頼のときだけ読む。
 func checkCardRepos(r store.Request, repos func() (map[string]string, error)) error {
 	var names []string
@@ -162,7 +162,7 @@ func checkCardRepos(r store.Request, repos func() (map[string]string, error)) er
 	return nil
 }
 
-// runCardAttach はファイルを受付の箱に写して添付の依頼を置く (移して記録に載せるのは dispatcher。issue 453)。
+// runCardAttach はファイルを受付の箱に写して添付の依頼を置く (移して記録に載せるのは dispatcher)。
 func runCardAttach(args []string, dir string, stdout, stderr io.Writer) int {
 	id, file, note, wait, err := parseAttach(args)
 	if err != nil {
@@ -211,7 +211,7 @@ func (l *issueList) Set(v string) error {
 	return nil
 }
 
-// afterList は --after <カード> を複数受ける (issue 468)。
+// afterList は --after <カード> を複数受ける。
 type afterList []string
 
 func (l *afterList) String() string { return strings.Join(*l, ",") }
@@ -223,7 +223,7 @@ func (l *afterList) Set(v string) error {
 	return nil
 }
 
-// pointsFlag は --points <1|2|3|5|8> (見積もり。issue 490)。付けなければ 0 = 見積もり無し。0 を含むほかの値は使い方の誤り。
+// pointsFlag は --points <1|2|3|5|8> (見積もり)。付けなければ 0 = 見積もり無し。0 を含むほかの値は使い方の誤り。
 type pointsFlag int
 
 func (p *pointsFlag) String() string { return strconv.Itoa(int(*p)) }

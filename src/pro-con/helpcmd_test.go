@@ -11,7 +11,7 @@ import (
 	"pro-con/ui"
 )
 
-// 引数なしの pro-con help は話題の一覧を出す。知らない話題は一覧を stderr に出して rc=2 (issue 510)。
+// 引数なしの pro-con help は話題の一覧を出す。知らない話題は一覧を stderr に出して rc=2。
 func TestHelpIndexAndUnknownTopic(t *testing.T) {
 	var out strings.Builder
 	if rc := runHelp(nil, &out, io.Discard); rc != 0 {
@@ -73,7 +73,7 @@ func TestHelpTermsFromCanonicalSources(t *testing.T) {
 	}
 }
 
-// flow は流れを正本 (card.MainFlow / card.FlowDetours / card.AfterDone) から、画面の ? と同じ順で出す (issue 515)。
+// flow は流れを正本 (card.MainFlow / card.FlowDetours / card.AfterDone) から、画面の ? と同じ順で出す。
 func TestHelpFlowFromCanonicalSources(t *testing.T) {
 	var out strings.Builder
 	runHelp([]string{"流れ"}, &out, io.Discard)

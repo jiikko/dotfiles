@@ -1,6 +1,6 @@
 package main
 
-// pro-con help — pro-con を外から動かす人と Claude 向けの話題ごとの説明 (issue 510)。
+// pro-con help — pro-con を外から動かす人と Claude 向けの話題ごとの説明。
 // 本文は help/<話題>.md が正本 (README は実装側の事情だけを持ち、使い方はここを指す)。
 // 役・レーン・人の番・流れの説明は画面の ? の表と同じ正本 (ui.RoleMeanings / card.State.Meaning / ui.HumansTurnMeaning /
 // card.MainFlow・card.FlowDetours・card.AfterDone) から差し込む。

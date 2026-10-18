@@ -62,7 +62,7 @@ func TestConfigSetSubmits(t *testing.T) {
 	}
 }
 
-// show は予定 (issue 550) ごとに、dispatcher が起こすコマンドの字面 (--yes まで)・いつ・前回・次回を出す。schedule off も set で置き、show に出す。
+// show は予定ごとに、dispatcher が起こすコマンドの字面 (--yes まで)・いつ・前回・次回を出す。schedule off も set で置き、show に出す。
 func TestConfigShowSchedule(t *testing.T) {
 	dir := t.TempDir()
 	rc, out, _ := configCmd(t, dir, "show")

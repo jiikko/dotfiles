@@ -1,6 +1,6 @@
 package store
 
-// 添付 (issue 453)。PG が `pro-con card attach` で付けたファイル (作った画面の見た目・コマンドの出力) を、dispatcher が
+// 添付。PG が `pro-con card attach` で付けたファイル (作った画面の見た目・コマンドの出力) を、dispatcher が
 // 状態の置き場の attachments/<カード>/ (0700 / 0600) へ移して記録に載せる。
 // 書き手は dispatcher だけ (426 の決定 1): 付ける側は受付の箱の files/ にファイルを置いてから依頼を置く (SubmitAttachment)。
 //

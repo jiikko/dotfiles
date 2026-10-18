@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// issue 552: disposable_tmp の repo では、worktree の直下の tmp/ の無視されたファイルだけなら消してよい側にする。
+// disposable_tmp の repo では、worktree の直下の tmp/ の無視されたファイルだけなら消してよい側にする。
 // tmp/ の外の無視されたファイル・入れ子の tmp/・追跡していない tmp/ のファイルは今までどおり残す。
 func TestJudgeDisposableTmp(t *testing.T) {
 	f := newFixture(t, sandbox)

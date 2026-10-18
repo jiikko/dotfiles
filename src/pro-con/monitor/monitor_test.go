@@ -372,7 +372,7 @@ func TestPairKeyIgnoresCardOrder(t *testing.T) {
 	}
 }
 
-// 今見えている衝突を ConflictsFile に写す (カードの詳細が読む。issue 469)。PG どうしの組は両方のカードに載せ、
+// 今見えている衝突を ConflictsFile に写す (カードの詳細が読む)。PG どうしの組は両方のカードに載せ、
 // 見られなかった回は前の結果を残し、直したら消す。
 func TestConflictsFileMirrorsCurrentFindings(t *testing.T) {
 	r := newRig(t)

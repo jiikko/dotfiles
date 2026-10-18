@@ -161,7 +161,7 @@ func TestAttachUsesSelectedSession(t *testing.T) {
 	}
 }
 
-// レビュー待ちで止めた PG (issue 536) には attach を頼まず、追加オーダーで話す案内を出す。止めていなければ今までどおり attach する。
+// レビュー待ちで止めた PG には attach を頼まず、追加オーダーで話す案内を出す。止めていなければ今までどおり attach する。
 func TestAttachRefusesStoppedReviewPG(t *testing.T) {
 	be := newSpy()
 	m := New(be, nil)
@@ -423,7 +423,7 @@ func TestAttachDoneCarriesHandOverTime(t *testing.T) {
 	}
 }
 
-// attach から戻ったら、明け渡した時刻から戻った時刻までの指示をカードに残すよう裏で頼む。残せなければ消えない通知で出す (issue 428)。
+// attach から戻ったら、明け渡した時刻から戻った時刻までの指示をカードに残すよう裏で頼む。残せなければ消えない通知で出す。
 func TestAttachDoneRecordsInstructions(t *testing.T) {
 	rec := &recorder{spy: newSpy(), n: 2}
 	m := New(rec, nil)
@@ -450,7 +450,7 @@ func TestAttachDoneRecordsInstructions(t *testing.T) {
 }
 
 // popup を開く前に失敗したら (tmux が応答しない・起動できない) attach していないので、attach の間の指示を探しに行かない。
-// 失敗は出す (issue 783 の 2 周目の敵対的レビュー: 窓の間に別の経路で入った発言をこのカードに残しえた)。
+// 失敗は出す (窓の間に別の経路で入った発言をこのカードに残しえた)。
 func TestAttachNotOpenedSkipsRecording(t *testing.T) {
 	rec := &recorder{spy: newSpy()}
 	m := New(rec, nil)

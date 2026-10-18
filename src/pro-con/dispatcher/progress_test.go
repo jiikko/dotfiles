@@ -89,7 +89,7 @@ func TestGatherProgress(t *testing.T) {
 		c1.Dirty != 2 || c1.LastCommit.IsZero() {
 		t.Fatalf("worktree の git を読まない: %+v", c1)
 	}
-	// worktree の場所・ブランチ・未 commit のファイルの名前 (issue 508)
+	// worktree の場所・ブランチ・未 commit のファイルの名前
 	if c1.Worktree != wt || c1.NoWorktree || c1.Branch != "worktree-pc-c-001" || strings.Join(c1.DirtyFiles, "|") != " M issues/042-old.md|?? a.go" {
 		t.Fatalf("worktree の場所・ブランチ・未 commit の名前を集めない: %+v", c1)
 	}
@@ -135,7 +135,7 @@ func TestParseProgress(t *testing.T) {
 			done: 2, total: 4, left: []string{"二", "三"}},
 		{name: "bullets", body: "# t\n## 進捗（2026-09-09）\n- 起票\n  続きの行\n- 段階 1\n  - 子の項目\n## 次\n- 別の節\n", last: "段階 1"},
 		{name: "none", body: "# t\n## 概要\n- [ ] 進捗の節ではない\n"},
-		// 題 (H1) に「進捗」があっても節にしない (issue 469 自身の題がこの形)
+		// 題 (H1) に「進捗」があっても節にしない (実在の issue の題がこの形)
 		{name: "title", body: "# 469: 作業の進捗を確かめられる\n## 概要\n- [ ] 概要の項目\n## 関連\n- 関連の項目\n## 進捗\n"},
 		// 節の中の深い見出しが「進捗」を含んでも節を縮めない
 		{name: "nested", body: "## 進捗\n### 進捗メモ\n- [ ] a\n### 次\n- [ ] b\n## 関連\n- [ ] c\n", total: 2, left: []string{"a", "b"}},

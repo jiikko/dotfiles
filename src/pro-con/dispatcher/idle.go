@@ -12,7 +12,7 @@ import (
 	"pro-con/store"
 )
 
-// defaultQuietListEvery は暇な間に session の一覧を取る間隔 (issue 559)。一覧の取得は毎回 claude 本体を起こす
+// defaultQuietListEvery は暇な間に session の一覧を取る間隔。一覧の取得は毎回 claude 本体を起こす
 // (1 回 CPU 約 0.13 秒。3 秒ごとだと 1 日 約 2.9 万回)。暇な間でも、外で起きたこと (完了したカードの PG が残っている・
 // 知らない session) はこの間隔で拾う。
 const defaultQuietListEvery = 30 * time.Second
@@ -45,7 +45,7 @@ func (d *Dispatcher) quietListEvery() time.Duration {
 // 一覧を使う経路 (tick の register 〜 collectDoing) が扱うのは、完了していないカード・止める途中 / 削除待ちのカード・
 // 起動の結果待ち・生きている (または起こし直す) 役だけ。どれも無ければ、一覧を間引いても遅れるものは無い。
 // 生きている役は、tellRole が一覧で入力待ち (人への知らせ) と落ちた時刻 (DeadSince。終了の stopRole が自動の再開を待つかをこれで決める) を
-// 見張っているので、一覧を取り直す合図を持てる役 (watchable) だけを暇の妨げから外す (issue 576。559 の敵対的レビュー 2 周目で外さなかった理由)。
+// 見張っているので、一覧を取り直す合図を持てる役 (watchable) だけを暇の妨げから外す。
 func (d *Dispatcher) quiet() bool {
 	st, err := store.Load(d.Dir)
 	if err != nil {
@@ -75,7 +75,7 @@ func (d *Dispatcher) quiet() bool {
 }
 
 // jobMark は Claude Code が session ごとに書く JobsDir/<id>/state.json の様子。session の様子 (入力待ちに入る・抜ける) が変わると
-// 書き換わる (issue 576 の観測。起動・権限の確認で止まる・自動の再開のたびに同じ秒に書かれた)。中身は読まない: 一覧の取り直しの合図にだけ使い、
+// 書き換わる (起動・権限の確認で止まる・自動の再開のたびに同じ秒に書かれた)。中身は読まない: 一覧の取り直しの合図にだけ使い、
 // 様子の出典は claude agents のまま
 type jobMark struct {
 	exists bool
@@ -102,7 +102,7 @@ func (d *Dispatcher) watchable(r *role, pm store.PMState) bool {
 }
 
 // rolesMoved は、見張っている役の様子が前に一覧を取ったときから動いた合図があるか: state.json が書き換わった・消えた / pid が生きていない。
-// 🚨 落ちたのは state.json に出ない (SIGKILL の後 約 12 秒、自動の再開まで何も書かれなかった。issue 576 の観測) ので pid を見る
+// 🚨 落ちたのは state.json に出ない (SIGKILL の後 約 12 秒、自動の再開まで何も書かれなかった) ので pid を見る
 func (d *Dispatcher) rolesMoved() bool {
 	for _, r := range roles() {
 		rr := d.roleRun(r)

@@ -1,11 +1,11 @@
-// Package monitor は見張り (pro-con monitor。issue 475)。dispatcher とは別のプロセスで、決まった手順で判定できることを見る。
+// Package monitor は見張り (pro-con monitor)。dispatcher とは別のプロセスで、決まった手順で判定できることを見る。
 //
 //   - 取り込みの衝突: PG の commit 済みの分を git merge-tree で master と、PG どうしで突き合わせる
 //   - テストの順番の長さ: テストの係に頼まれてまだ始まっていない本数と、先頭の待ち時間
 //
 // 見張りは読むだけ (cards.json・各 PG の worktree の git)。見つけたことは受付の箱に置き (依頼の種類 store.KindMonitor)、
 // dispatcher が出来事の記録へ書く (書き手は dispatcher 1 つ = 426 の決定 1)。記録の外に書くのは、今見えている衝突の写し
-// (store.ConflictsFile。カードの詳細が読む。issue 469) だけ。
+// (store.ConflictsFile。カードの詳細が読む) だけ。
 // 知らせるのは「現れた」「消えた」(と、衝突したファイルが変わった) ときだけ。前に知らせた結果はメモリだけに持つので、
 // 見張りを起こし直すと、残っている衝突をもう 1 度だけ知らせる。
 // 🚨 git fetch はしない (見張りは ref を動かさない)。origin/master は、取り込みの係が worktree から push するたびに手元で更新される。
@@ -190,7 +190,7 @@ func (m *Monitor) conflicts(ctx context.Context, repo string, cards []card.Card,
 			ts = append(ts, target{c.ID, head})
 		}
 	}
-	// 組の鍵をカードの ID の順にする (レーンの並べ替え = issue 470 で cards.json の順が変わっても、同じ組を別の鍵にしない)
+	// 組の鍵をカードの ID の順にする (レーンの並べ替えで cards.json の順が変わっても、同じ組を別の鍵にしない)
 	sort.Slice(ts, func(i, j int) bool { return ts[i].id < ts[j].id })
 	out := map[string]finding{}
 	for _, t := range ts {
@@ -306,7 +306,7 @@ func (m *Monitor) repoNames(cards []card.Card) []string {
 func conflictPrefix(repo string) string { return "conflict:" + repo + ":" }
 
 // saveConflicts は今見えている衝突 (見つけた物と、見られずに前の結果を残す物) を store.ConflictsFile に書く (カードの詳細の「進捗」が
-// 読む。issue 469)。知らせたかどうか (told) には依らない: 受付の箱に置けなかった回も、詳細には今の結果を出す。
+// 読む)。知らせたかどうか (told) には依らない: 受付の箱に置けなかった回も、詳細には今の結果を出す。
 // 見られなかったカードの前の結果は、知らせた物 (told) と前に書いたファイルの両方から残す (見張りを起こし直した直後は told が空。
 // 受付の箱に置けなかった衝突も told に入っていない)。
 func (m *Monitor) saveConflicts(now time.Time, cards []card.Card, found map[string]finding, keep unseen) error {

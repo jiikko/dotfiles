@@ -1,6 +1,6 @@
 package main
 
-// pro-con ps — 役ごとのプロセスの一覧 (issue 456。読むだけ)。dispatcher / PM / PG / テストの係 / 画面を、pid・起動からの経過・状態・
+// pro-con ps — 役ごとのプロセスの一覧 (読むだけ)。dispatcher / PM / PG / テストの係 / 画面を、pid・起動からの経過・状態・
 // 担当のカード・今のコマンドで並べる。
 //
 // 🚨 出すのは pro-con が起動したものだけ: dispatcher は lock の pid、PM と PG は起動の記録 (sessions.json)、テストの係はカードの実行の印
@@ -110,7 +110,7 @@ func runPS(args []string, dir string, now func() time.Time, list procLister, std
 }
 
 // formatProcRow は ps の表の 1 行。役と状態には全角 (見張り・動いている) が入るので、fmt の %-Ns (rune 数で詰める。
-// 全角 1 字を 1 桁と数えて列がずれる) ではなく表示幅で詰める (issue 524)。列の幅は表示の桁で、はみ出した値は後ろを押す
+// 全角 1 字を 1 桁と数えて列がずれる) ではなく表示幅で詰める。列の幅は表示の桁で、はみ出した値は後ろを押す
 func formatProcRow(p Proc) string {
 	pid := "-"
 	if p.PID > 0 {
@@ -135,14 +135,14 @@ func formatProcRow(p Proc) string {
 	return b.String()
 }
 
-// procSlots は PG の枠の読めた様子 (issue 557)。known は dispatcher が枠に数えたカードを読めたか (backend.CountedSlots)、limit は今の枠。
+// procSlots は PG の枠の読めた様子。known は dispatcher が枠に数えたカードを読めたか (backend.CountedSlots)、limit は今の枠。
 type procSlots struct {
 	known bool
 	limit int
 }
 
 // collectProcs は状態の置き場と procs から役ごとの行を組む (読むだけ)。読めなかったものは warns に出す (0 本と区別する)。
-// PG の行には、dispatcher が枠に数えたカードかどうかを付ける (Proc.Slot。一覧の側で card.HoldsPGSlot を組み直さない。issue 557)。
+// PG の行には、dispatcher が枠に数えたカードかどうかを付ける (Proc.Slot。一覧の側で card.HoldsPGSlot を組み直さない)。
 func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc, slots procSlots, warns []string) {
 	alive := func(pid int) bool { _, ok := procs[pid]; return pid > 0 && ok }
 
@@ -279,7 +279,7 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 	return rows, slots, warns
 }
 
-// pgState は session が動いている PG の状態の欄 (issue 535)。着手待ちの列のカードの PG は、回答・結果・差し戻しを受けて
+// pgState は session が動いている PG の状態の欄。着手待ちの列のカードの PG は、回答・結果・差し戻しを受けて
 // 同じ session の再開を待っている。列の名前 (カードの欄で分かる) ではなく PG 自身の状態を、待っている訳と一緒に出す。
 func pgState(c card.Card, ds store.DispatcherState) string {
 	if c.State == card.Running && c.AwaitsRun() { // 枠に数えないことがある (turn を終えて idle なら。issue 455)。待機中の区分に訳を出す
@@ -295,7 +295,7 @@ func pgState(c card.Card, ds store.DispatcherState) string {
 }
 
 // mismatch はカードと PG の session の食い違いの文 (無ければ空)。known はカードが記録にあるか (無ければ完了して書庫へ移したか削除した)。
-// 食い違いは issue 497 の 2 つだけ: 作業中なのに止まっている / 完了 (か片付け済み) なのに動いている。
+// 食い違いは次の 2 つだけ: 作業中なのに止まっている / 完了 (か片付け済み) なのに動いている。
 // 質問待ち・レビュー待ちなどで止まっているのは食い違いにしない (dispatcher を止めた後に全部が並ぶと、497 が消したい雑音に戻る)。
 func mismatch(alive bool, c card.Card, known bool) string {
 	switch {

@@ -23,7 +23,7 @@ func setDone(t *testing.T, dir, id string) {
 }
 
 // 追加オーダー (追記・方針変更) はカードに未達で積む。完了のカード・別件・空の本文は除ける。レビュー待ちは受ける
-// (PG の review と同じ Apply で来たオーダーを捨てない。issue 438)。
+// (PG の review と同じ Apply で来たオーダーを捨てない)。
 func TestOrderIsQueuedOnCard(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "a"})

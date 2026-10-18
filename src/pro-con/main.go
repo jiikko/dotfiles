@@ -1,5 +1,5 @@
 // pro-con — PM (producer) と PG (consumer) を分けて Claude Code を並列に回すための TUI。
-// 設計は issues/ の 415 (epic)。本物の backend は今は読み取り専用 (live。issue 424)、模擬 (fake) は動作確認用に残す。
+// 設計は issues/ の 415 (epic)。本物の backend は今は読み取り専用 (live)、模擬 (fake) は動作確認用に残す。
 //
 //	pro-con              TUI を起動する (本物: 今の Claude Code の session を読み取り専用で出す)
 //	pro-con --mock       模擬データで起動する (claude は起動しない。動作確認用)
@@ -60,7 +60,7 @@ func main() {
 func runInherited() int {
 	var stderr io.Writer = os.Stderr
 	// 引き継ぎの印は何かを起こす前に環境変数から消す (残すと、画面が起こす supervisor・dispatcher・claude まで受け継ぎ、
-	// 子の pro-con が alt screen の見張りを張って SIGTERM で止める処理を飛ばす。issue 548 の敵対的レビュー)
+	// 子の pro-con が alt screen の見張りを張って SIGTERM で止める処理を飛ばす)
 	inheritedResume = takeResumeEnv()
 	if inheritedResume != "" { // ctrl+r / O で旧版から渡された: alt screen の中で起動している (issue 509)
 		inheritedAlt = &altGuard{w: os.Stderr, stop: upgrade.GuardAltScreen(os.Stdout)} // 画面を出す前の ctrl+c 等でも抜ける
@@ -77,7 +77,7 @@ func runInherited() int {
 	return code
 }
 
-// inheritedAlt は、旧版から alt screen のまま渡された新版が、画面を出す前に終わるときに alt screen を抜ける見張り (issue 509)。
+// inheritedAlt は、旧版から alt screen のまま渡された新版が、画面を出す前に終わるときに alt screen を抜ける見張り。
 // nil なら渡されていない。
 var inheritedAlt *altGuard
 
@@ -158,9 +158,9 @@ type stateful interface {
 // screenFlags は画面の起動に付ける、画面の種類のフラグ (--view / --join / --as <ラベル>。サブコマンドの前には付けない)。
 type screenFlags struct {
 	// view は見ているだけの画面 (dispatcher を起こさない・止めない・受付の箱にも記録にも書かない。書くのは画面の中継 relay/ と、
-	// ctrl+r の引き継ぎ・落ちた画面の印の後始末だけ = issue 445)。--e2e と重ねてよい
+	// ctrl+r の引き継ぎ・落ちた画面の印の後始末だけ)。--e2e と重ねてよい
 	view bool
-	// join は加わった画面 (読み書きするが、dispatcher を起こさず、quit で閉じても止めない。issue 481)。--e2e と重ねてよい
+	// join は加わった画面 (読み書きするが、dispatcher を起こさず、quit で閉じても止めない)。--e2e と重ねてよい
 	join bool
 	// label は画面の一覧に出す名前 (--as。任意。持ち主と join の画面だけ)
 	label string
@@ -195,7 +195,7 @@ func parseScreen(args []string) (screenFlags, []string, error) {
 func (f screenFlags) check() error {
 	switch {
 	case f.view && f.join:
-		// 読むだけのつもりが書ける形を作らない (issue 481)
+		// 読むだけのつもりが書ける形を作らない
 		return errors.New("--join と --view は併用しない (--view は見るだけ、--join は読み書きする画面)")
 	case f.view && f.label != "":
 		return errors.New("--as は --view と組まない (見ているだけの画面は画面の一覧に入らない)")
@@ -378,7 +378,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		scopes, warnings = []backend.Repo{{Name: dispatcher.E2ERepo, Path: e2e.RepoDir()}}, nil
 	}
 	var notes []string // 起動時に画面へ出す知らせ
-	// 模擬と本物で状態ファイルの置き場所を分ける (模擬のカードが本物の記録に混ざらないように。issue 424)
+	// 模擬と本物で状態ファイルの置き場所を分ける (模擬のカードが本物の記録に混ざらないように)
 	var be backend.Backend
 	var termEvent func(string) // 端末の前面が外れた・止められた後に入れ直した、を出来事に残す (issue 518。--view と模擬は残さない)
 	dir := liveDir(home)
@@ -458,11 +458,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if exe, err := os.Executable(); err == nil {
 		_ = m.EnableUpgrade(exe, upgrade.ExecRunner) // bin/pro-con 以外から起動していれば無効 (ctrl+r で理由を出す)
 	}
-	// 画面の出力。切り替えのときだけ alt screen を抜けずに終わる (新版へ exec する間にシェルの画面を見せない。issue 509)
+	// 画面の出力。切り替えのときだけ alt screen を抜けずに終わる (新版へ exec する間にシェルの画面を見せない)
 	scr := upgrade.NewScreen(os.Stdout)
 	m.OnSwitch(scr.Keep)
 	m.OnFirstView(inheritedAlt.markShown) // ここから先の alt screen は bubbletea が持つ
-	// 画面の中継 (issue 443。外の Claude が pro-con screen で読む)。本物のモードと e2e モードだけ (--view の画面も中継する)
+	// 画面の中継 (外の Claude が pro-con screen で読む)。本物のモードと e2e モードだけ (--view の画面も中継する)
 	var rw *relay.Writer
 	openRelay := func() {
 		if mock {
@@ -535,12 +535,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 // startDispatcherIfIdle は、dispatcher も supervisor も動いていなければ spawn で supervisor を起動する (動いていれば何もしない)。
 // 確かめてから起動するまでの間に別の画面が起動しても、2 つ目の supervisor はロックを取れずに抜けるだけ。
-// 人が止めた印 (store.Held。issue 459) があれば起こさない。確かめてから起こすまでに印が置かれても、起こされた側 (--from-screen) が抜ける
+// 人が止めた印 (store.Held) があれば起こさない。確かめてから起こすまでに印が置かれても、起こされた側 (--from-screen) が抜ける
 func startDispatcherIfIdle(dir string, spawn func(dir string) error) (bool, error) {
 	if store.Held(dir) {
 		return false, nil
 	}
-	// supervisor が居れば任せる (dispatcher を起こし直すのは supervisor だけ = 二重に起こさない。issue 506)
+	// supervisor が居れば任せる (dispatcher を起こし直すのは supervisor だけ = 二重に起こさない)
 	unlockSup, err := dispatcher.LockSupervisor(dir)
 	if errors.Is(err, dispatcher.ErrSupervisorRunning) {
 		return false, nil
@@ -563,7 +563,7 @@ func startDispatcherIfIdle(dir string, spawn func(dir string) error) (bool, erro
 }
 
 // wireLive は本物の画面の backend をつなぐ (Start の前)。view なら見ているだけ: 止める口・起こす口をつながず、dispatcher も起こさない。
-// join なら加わるだけ: 書く口は持つが、止める口・起こす口をつながず、dispatcher も起こさない (居なければ・止めてあればそう出す。issue 481)。
+// join なら加わるだけ: 書く口は持つが、止める口・起こす口をつながず、dispatcher も起こさない (居なければ・止めてあればそう出す)。
 // そうでなければ、画面を閉じるときに止める口 (stop) と、画面が開いている間 dispatcher を動かし続ける口 (spawn) をつなぎ、
 // 居なければ今 dispatcher を起こす。起動のときに画面へ出す知らせを返す。
 func wireLive(lb *live.Backend, screen screenFlags, dir string, spawn func(dir string) error, stop func(context.Context) error) (backend.Backend, []string) {
@@ -627,12 +627,12 @@ func dispatcherCmd(exe string, extra []string) *exec.Cmd {
 	return subproc.Command(exe, append([]string{"dispatcher", "--" + fromScreenFlag, "--exit-without-screens", "1m"}, extra...)...)
 }
 
-// spawnSupervisor は supervisor (`pro-con supervise`。dispatcher を子として持つ。issue 506) を画面とは別の session で起動する (制御端末を持たせない。spawnDetached)
+// spawnSupervisor は supervisor (`pro-con supervise`。dispatcher を子として持つ) を画面とは別の session で起動する (制御端末を持たせない。spawnDetached)
 // (画面を閉じても、ctrl+c が届いても道連れにしない。止めるのは終了のときの `dispatcher --stop`。dispatcher が抜ければ supervisor も抜ける)。
 // 出力は状態の置き場の dispatcher.log へ足す (画面より長く生きるのでパイプにしない。supervisor の子の dispatcher も同じ先へ書く)。
 // 🚨 画面の子にしない: 中継 (spawnDetached) を挟み、中継だけを待つ。supervisor は launchd の子になり、抜けたら launchd が刈り取る
 // (画面の子のままだと、抜けた子が画面を閉じるまでゾンビで残り、keeper が起こし直すたびに溜まる。Wait の goroutine は
-// ctrl+r の exec で消えるので足りない。issue 477)。
+// ctrl+r の exec で消えるので足りない)。
 func spawnSupervisor(dir string, extra []string) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -659,7 +659,7 @@ const spawnDetachedCmd = "spawn-detached"
 // spawnDetached は中継: 自分のバイナリを args で別の session に起動し、待たずに抜ける (起こした子は launchd の子になる)。
 // 子の出力は中継の stdout / stderr (spawnSupervisor が渡した dispatcher.log) をそのまま引き継ぐ。
 // 🚨 別のプロセスグループでは足りない: 同じ session のままだと子孫 (テストの係の make test の中の `zsh -i -c` 等) が
-// 画面の端末の前面を奪い、前面で端末を読む画面が SIGTTIN で止まる (issue 518)。session を分けて制御端末を持たせない
+// 画面の端末の前面を奪い、前面で端末を読む画面が SIGTTIN で止まる。session を分けて制御端末を持たせない
 func spawnDetached(args []string, stderr io.Writer) int {
 	exe, err := os.Executable()
 	if err != nil {
@@ -676,7 +676,7 @@ func spawnDetached(args []string, stderr io.Writer) int {
 	return 0
 }
 
-// stopCmd は画面の quit (と e2e の後始末) が dispatcher と PG を止めるコマンド。人が止めた印を置かない (--from-screen。issue 459):
+// stopCmd は画面の quit (と e2e の後始末) が dispatcher と PG を止めるコマンド。人が止めた印を置かない (--from-screen):
 // 最後の画面の quit で止めても、次に開いた画面は今までどおり dispatcher を起こす。
 func stopCmd(exe string, extra []string) *exec.Cmd {
 	return subproc.Command(exe, append([]string{"dispatcher", "--stop", "--" + fromScreenFlag}, extra...)...)
@@ -744,7 +744,7 @@ func switchToNew(m *ui.Model, be backend.Backend, exe func() (string, error), ar
 			return resume, err
 		}
 	}
-	// 🚨 --view の画面もここで状態の置き場に resume-*.json を書く (読むだけの例外 (a)。issue 445): 中身はこの画面自身の表示の状態
+	// 🚨 --view の画面もここで状態の置き場に resume-*.json を書く (読むだけの例外 (a)): 中身はこの画面自身の表示の状態
 	// (選んでいるカード・開いている板) だけで、カード・受付の箱・dispatcher・PG の状態は変えず、新版が読んだら消す
 	saved, err := upgrade.Save(dir, resume, upgrade.State{UI: uiData, Backend: beData})
 	if err != nil {
@@ -760,7 +760,7 @@ func switchToNew(m *ui.Model, be backend.Backend, exe func() (string, error), ar
 }
 
 // switchPlan は画面が終了した後に exec する先と画面の引数を決める。切り替えを頼まれていなければ switching=false (普通の終了)。
-// 新版 (ctrl+r) は同じ種類の画面のまま新版のバイナリ (upgradeExe) を、持ち主への切り替え (O。issue 548) は同じバイナリ (self) を
+// 新版 (ctrl+r) は同じ種類の画面のまま新版のバイナリ (upgradeExe) を、持ち主への切り替え (O) は同じバイナリ (self) を
 // --join を外して開き直す。upgradeExe は持ち主への切り替えでは呼ばない (bin/pro-con 以外から起動した画面には新版の情報が無い)。
 func switchPlan(upgrade, owner bool, upgradeExe, self func() (string, error), screenArgs []string) (exe func() (string, error), args []string, switching bool) {
 	switch {
@@ -836,7 +836,7 @@ func repoPaths(home string) (map[string]string, error) {
 	return discoverPaths(cfg, home), nil
 }
 
-// disposableTmpRepos は repos (名前 → パス) のうち、設定の disposable_tmp に書いた repo の名前 (worktree の片付けで tmp/ を使い捨てとみなす。issue 552)。
+// disposableTmpRepos は repos (名前 → パス) のうち、設定の disposable_tmp に書いた repo の名前 (worktree の片付けで tmp/ を使い捨てとみなす)。
 // パスは symlink を解いて同じファイルかで比べる (~/dotfiles が別の場所への link でも拾う)。
 func disposableTmpRepos(cfg config.Config, home string, repos map[string]string) map[string]bool {
 	out := map[string]bool{}

@@ -1,6 +1,6 @@
 package main
 
-// pro-con card log — カードの PG の活動 (応答の文と道具の呼び出し) を時刻の順に読む口 (issue 467。画面の詳細の「活動」と同じ中身)。
+// pro-con card log — カードの PG の活動 (応答の文と道具の呼び出し) を時刻の順に読む口 (画面の詳細の「活動」と同じ中身)。
 //
 // 🚨 読むだけ (cardview.go の list / show / wait と同じ。TestViewCommandsDoNotWrite が固定する)。
 // 読むのは pro-con が起動したそのカードの session (再開で入れ替わった前の session も) の transcript だけ。

@@ -1,6 +1,6 @@
 package dispatcher
 
-// PG の worktree を、カードを閉じる・消すその場で片付ける (issue 553)。残り物 (「master に無い commit」「記録に無いカード」で
+// PG の worktree を、カードを閉じる・消すその場で片付ける。残り物 (「master に無い commit」「記録に無いカード」で
 // 自動の片付けが永久に残す worktree) を作らない:
 //   - close: PG の worktree・ブランチに取り込み先 (origin/master) に無い commit があれば、完了を除ける (理由を出す)。
 //     取り込まない終わり方 (card.Ending.Discards。--ending rejected / answered / investigated) を付けたときだけ通す

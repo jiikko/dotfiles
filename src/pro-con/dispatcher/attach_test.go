@@ -9,7 +9,7 @@ import (
 	"pro-con/store"
 )
 
-// Tick は記録に無いカード (削除した・書庫へ移した) の添付を消し、記録にあるカードの添付は残す (issue 453)。
+// Tick は記録に無いカード (削除した・書庫へ移した) の添付を消し、記録にあるカードの添付は残す。
 func TestTickSweepsAttachmentsOfGoneCards(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)

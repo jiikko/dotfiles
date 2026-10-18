@@ -1,6 +1,6 @@
 package dispatcher
 
-// 敵対的レビューの担い手 (issue 514)。設定 review が codex なら、PG は commit 前の最終ゲートの敵対的レビューを codex exec で回す。
+// 敵対的レビューの担い手。設定 review が codex なら、PG は commit 前の最終ゲートの敵対的レビューを codex exec で回す。
 // 担い手を PG への指示と取り込みの係への知らせに書くのはここだけ (設定の値を差し込む)。レビューの作法の正本は
 // ~/.claude/skills/codex-review/SKILL.md の「敵対的モード」で、ここには書き写さない。
 // 🚨 claude (既定) のときは何も足さない: 514 の前の動き (PG が自分のサブエージェントで回す) のまま

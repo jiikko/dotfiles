@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Progress はカードの作業がどこまで進んだか (issue 469)。dispatcher が集めて store.ProgressFile に書き、画面と `pro-con card show` が読む
+// Progress はカードの作業がどこまで進んだか。dispatcher が集めて store.ProgressFile に書き、画面と `pro-con card show` が読む
 // (記録 cards.json には入れない。Doing と同じく、画面が git やファイルを数秒ごとに重く読まない = 441)。
 type Progress struct {
 	Worktree   string          `json:"worktree,omitempty"`   // PG の worktree の絶対パス (issue 508。無くても置くはずの場所を入れる)
@@ -24,7 +24,7 @@ type Progress struct {
 	Err        string          `json:"err,omitempty"`        // 読めなかったもの (読めた分は出す)
 }
 
-// DiffSummary は取り込む先との差分 (merge-base から作業ツリーまで = commit 済みと未 commit の分。issue 508) の数と、本文の置き場。
+// DiffSummary は取り込む先との差分 (merge-base から作業ツリーまで = commit 済みと未 commit の分) の数と、本文の置き場。
 // 本文は大きいので progress.json には入れず、dispatcher が store.DiffPath に書く (画面は開いたときにだけ読む)。
 type DiffSummary struct {
 	Path  string `json:"path"`          // 本文 (git diff --no-color の出力を無害化したもの)
@@ -59,7 +59,7 @@ type IssueProgress struct {
 	Last  string   `json:"last,omitempty"` // チェックボックスが無いときの最後の項目
 }
 
-// RunRecord はテストの係が最後に返した結果 (dispatcher が結果を渡すときに記録へ書く。issue 469)。
+// RunRecord はテストの係が最後に返した結果 (dispatcher が結果を渡すときに記録へ書く)。
 type RunRecord struct {
 	Command string        `json:"command"`
 	Cwd     string        `json:"cwd"` // 頼んだ場所 (PG の worktree かその下)
@@ -171,7 +171,7 @@ func (pt Paint) wrap(style, s string) string {
 	return style + s + pt.Reset
 }
 
-// WorktreeLines は「worktree」の節の行 (issue 508): 絶対パス (コピーしてそのまま cd できるよう 1 行に単独で置く)・ブランチ・
+// WorktreeLines は「worktree」の節の行: 絶対パス (コピーしてそのまま cd できるよう 1 行に単独で置く)・ブランチ・
 // 取り込む先より先の commit (新しい順・相対の時刻)・未 commit のファイル・差分の数。diffHint は差分の行の後ろに足す文 (開き方)。
 // 集めていなければ nil。
 func (c Card) WorktreeLines(now time.Time, dur func(time.Duration) string, pt Paint, diffHint string) []string {
@@ -313,7 +313,7 @@ func (w Wait) Label() string {
 	return ""
 }
 
-// WaitingOn は今そのカードが何を待っているか (詳細の「今の待ち」。issue 469)。誰の番かは Turn (452) を読み、ここで別に判じない。
+// WaitingOn は今そのカードが何を待っているか (詳細の「今の待ち」)。誰の番かは Turn (452) を読み、ここで別に判じない。
 // cards は順番 (468) の前のカードを引く記録の全カード。完了・片付けたカードは空。
 func (c Card) WaitingOn(cards []Card, r Roles) string {
 	if c.Deleting() {

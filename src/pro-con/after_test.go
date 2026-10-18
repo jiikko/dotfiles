@@ -10,7 +10,7 @@ import (
 	"pro-con/store"
 )
 
-// plan --after <カード> は複数受け、依頼に順番を載せる (issue 468)。値の無い --after は使い方の誤り。
+// plan --after <カード> は複数受け、依頼に順番を載せる。値の無い --after は使い方の誤り。
 func TestCardPlanAfterParse(t *testing.T) {
 	r, _, err := parseCardWait([]string{"plan", "C-003", "--issue", "dotfiles#1", "--after", "C-001", "--after", "C-002"})
 	if err != nil || r.Kind != "plan" || r.CardID != "C-003" || !slices.Equal(r.After, []string{"C-001", "C-002"}) || len(r.Issues) != 1 {

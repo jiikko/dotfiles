@@ -1,6 +1,6 @@
 package metrics
 
-// PG の枠 (issue 516。数え方は 449 の「測り方」): PG の transcript の各応答の message.usage を、同じ message.id の重複を除いて足す。
+// PG の枠 (数え方は 449 の「測り方」): PG の transcript の各応答の message.usage を、同じ message.id の重複を除いて足す。
 // 再開した session の transcript は前の会話の応答を同じ message.id のまま写して持つ (2026-09-26 に C-070 の 2 本で実測) ので、
 // カードの transcript をまとめて id で重複を除けば、写しを二重に数えない。1 つの応答が複数の行に分かれていれば後の行を正とする
 // (同じ値で書かれるのを 2.1.282 で見たが、途中の値を先に書く版があっても少なく数えない)。止めたときの <synthetic> の記録は数えない。

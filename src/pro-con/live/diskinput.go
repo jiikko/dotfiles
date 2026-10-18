@@ -8,7 +8,7 @@ import (
 	"pro-con/store"
 )
 
-// DiskInput は pro-con の使うディスクを測る対象を、起動の記録 (今の分と退いた分) とカードの記録から組む (issue 456。読むだけ)。
+// DiskInput は pro-con の使うディスクを測る対象を、起動の記録 (今の分と退いた分) とカードの記録から組む (読むだけ)。
 // root は状態の置き場の根 (~/.local/state/pro-con)、dir はその下の本物のモードの置き場 (root/live)。読めなかった記録は warns に出す。
 func DiskInput(root, dir, projects, binary string) (in diskuse.Input, warns []string) {
 	in = diskuse.Input{StateDir: root, Projects: projects, Binary: binary, Done: map[string]bool{}}

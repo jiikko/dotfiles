@@ -1,6 +1,6 @@
 package main
 
-// dispatcher が見張り (pro-con monitor。issue 475) を子として起こし、落ちたら起こし直し、抜けるときに止める (起こし直しの仕組みは process_supervisor)。
+// dispatcher が見張り (pro-con monitor) を子として起こし、落ちたら起こし直し、抜けるときに止める (起こし直しの仕組みは process_supervisor)。
 // 見張りが落ちても dispatcher と PG は止めない (見張りは知らせるだけ。落ち続けたら起こし直すのをやめて出来事にする)。
 //
 // 失敗モード:

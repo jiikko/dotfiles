@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// 役 (PM / 取り込みの係) の様子と、カードの担当の出し方 (issue 476)。
+// 役 (PM / 取り込みの係) の様子と、カードの担当の出し方。
 
 // RolePhase は dispatcher が起こす役の今の様子。
 type RolePhase string
@@ -32,7 +32,7 @@ type RoleState struct {
 	Session string    `json:"session,omitempty"` // 今の session の短い id
 	Cards   []string  `json:"cards,omitempty"`   // 知らせ済みで、まだ役の列に残っているカード (上ほど優先)
 	Why     string    `json:"why,omitempty"`     // 起こせない・起こさない理由 / 様子を読めない理由
-	// Current は役が今の turn で扱っている Cards のカード (transcript で最後に対象に ID が出たもの。issue 480)。turn の途中でなければ空
+	// Current は役が今の turn で扱っている Cards のカード (transcript で最後に対象に ID が出たもの)。turn の途中でなければ空
 	Current string `json:"current,omitempty"`
 	// Last / LastAt は今の turn の最後の道具の呼び出し (「Bash: pro-con card show C-018」) と、呼んだ時刻。Current のカードに添える
 	Last   string    `json:"last,omitempty"`
@@ -72,7 +72,7 @@ func (c Card) roleOf(r Roles, ss []RoleState) (RoleState, bool) {
 
 // Handling は役が今カード c を扱っていれば、その仕事の名前 (分解中 / 回答中 / レビュー中)。扱っていなければ空。
 // 扱っている = 役が turn の途中で、今の turn で扱っているカード (RoleState.Current) が c。🚨 知らせ済みのカードを全部「分解中」にしない:
-// PM は 1 回の turn で知らせた数枚を順に扱う (2026-09-25 22:12:16 は 3 枚まとめて知らせた。issue 480)。
+// PM は 1 回の turn で知らせた数枚を順に扱う (2026-09-25 22:12:16 は 3 枚まとめて知らせた)。
 func (c Card) Handling(r Roles, ss []RoleState) string {
 	s, ok := c.roleOf(r, ss)
 	if !ok || s.Phase != RoleBusy || s.Current != c.ID { // 入力待ちの役は手を止めている (人が attach して答えるまで動かない。RoleStep が入力待ちと出す)
@@ -90,7 +90,7 @@ func (c Card) Handling(r Roles, ss []RoleState) string {
 	return ""
 }
 
-// RoleStep は役の番のカードが役の側のどの段階にあるか (issue 480。依頼の列・質問待ち・レビュー待ちのバッジと card list)。
+// RoleStep は役の番のカードが役の側のどの段階にあるか (依頼の列・質問待ち・レビュー待ちのバッジと card list)。
 //   - 知らせ待ち: 役がまだ知らない (知らせ済みの Cards に無い。役が落ちている・枠で起こさないときも。理由はゲージ)
 //   - 知らせた: 知らせを渡している最中か、役の turn に入ったがまだ扱っていない
 //   - 知らせた (手を止めた): 役が turn を終えたのにまだ列に残っている

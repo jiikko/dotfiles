@@ -103,7 +103,7 @@ func TestHuman(t *testing.T) {
 	}
 }
 
-// 記録の cwd が整っていない (./ や .. や // を含む) と、整える前の添字で切って範囲の外になり、画面ごと落ちていた (敵対的レビュー 2026-09-26)。
+// 記録の cwd が整っていない (./ や .. や // を含む) と、整える前の添字で切って範囲の外になり、画面ごと落ちていた。
 func TestMeasureUncleanCwd(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "repo", ".claude", "worktrees", "pc-a", "f"), 10)

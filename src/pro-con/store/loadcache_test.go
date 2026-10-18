@@ -96,7 +96,7 @@ func scribble(v reflect.Value) {
 	}
 }
 
-// 読むだけの呼び手が後で読んだ記録は、前に (キャッシュから) 読んだ State を呼び手がどう書き換えても、ファイルの中身のまま (issue 528)。
+// 読むだけの呼び手が後で読んだ記録は、前に (キャッシュから) 読んだ State を呼び手がどう書き換えても、ファイルの中身のまま。
 // キャッシュの State をそのまま返す・浅く写して返すと、書き換えが次の呼び手に漏れて落ちる。
 func TestLoadResultIsNotShared(t *testing.T) {
 	dir := t.TempDir()

@@ -10,7 +10,7 @@ import (
 )
 
 // 本物の partial clone (clone --filter=blob:none) でも MergeTree が衝突を衝突として返す (エラーにしない)。相手 (origin/master) が変えた
-// ファイルの blob は手元に無く、merge-tree がそれを取りに行く (git に --no-lazy-fetch を付けたままだと rc=128 で落ちる。issue 739)。
+// ファイルの blob は手元に無く、merge-tree がそれを取りに行く (git に --no-lazy-fetch を付けたままだと rc=128 で落ちる)。
 func TestMergeTreeInPartialClone(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git が無い")

@@ -1,6 +1,6 @@
 package dispatcher
 
-// 入れ替え (issue 505。dispatcher が新版のバイナリへ syscall.Exec する) のための dispatcher 側の口。
+// 入れ替え (dispatcher が新版のバイナリへ syscall.Exec する) のための dispatcher 側の口。
 // 安全な区切り (Busy) と、新版が今の記録を読めるかの確かめ (Preflight)。入れ替えそのものは main (dispupgrade.go)。
 // exec はプロセス像を置き換えるので、このプロセスのメモリにしか無いもの (裏で走る子・結果の分からない起動) が残っていれば待つ。
 // PG・PM・取り込みの係は Claude Code の bg の session で、dispatcher の子ではない (入れ替えで止まらない)。

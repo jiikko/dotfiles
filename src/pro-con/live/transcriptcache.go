@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// TranscriptCache は transcript の末尾を読んだ結果を、ファイルの大きさと更新時刻が変わるまで使い回す (issue 503)。
+// TranscriptCache は transcript の末尾を読んだ結果を、ファイルの大きさと更新時刻が変わるまで使い回す。
 // 画面の読み直し (Backend.transcript) と dispatcher の tick (dispatchercmd.go の Transcript) が使う。複数の goroutine から呼んでよい。
 // 🚨 返す Transcript のスライスは呼び元どうしで共有する (書き換えない)。
 type TranscriptCache struct {

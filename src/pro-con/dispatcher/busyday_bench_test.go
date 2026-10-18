@@ -9,7 +9,7 @@ import (
 	"pro-con/store/storetest"
 )
 
-// BenchmarkTickBusyDay は完了して 24 時間以内のカードが溜まった日の記録での Tick 1 回の所要 (issue 528)。
+// BenchmarkTickBusyDay は完了して 24 時間以内のカードが溜まった日の記録での Tick 1 回の所要。
 // 組み立ては BenchmarkTickWithFinishedCards と同じ (偽の launcher・session 一覧は空)。最初の Tick (起動・状態の変化) は測らない。
 // 本物の写しで測るときは PRO_CON_BENCH_CARDS に cards.json の写しのパスを渡す。
 func BenchmarkTickBusyDay(b *testing.B) {

@@ -16,7 +16,7 @@ import (
 // DispatcherLockFile は dispatcher の排他のロックのファイル (dispatcher.Lock が flock し、持っているプロセスの pid を書く)。
 const DispatcherLockFile = "dispatcher.lock"
 
-// DispatcherGone は、ロックのファイルに書かれた pid のプロセスが居ない (= 最後に動いた dispatcher が終わっている) と言えるか (issue 483)。
+// DispatcherGone は、ロックのファイルに書かれた pid のプロセスが居ない (= 最後に動いた dispatcher が終わっている) と言えるか。
 // ファイルが無い・pid を読めない・プロセスが居る (pid が使い回された別のプロセスでも) は偽 (言えない。画面は Tick の古さで判じる)。
 // 🚨 flock を試して確かめない: 画面が一瞬ロックを持つと、その間に起動した dispatcher が「既に動いている」で抜ける
 func DispatcherGone(dir string) bool {
@@ -41,14 +41,14 @@ type DispatcherState struct {
 	Limit int       `json:"limit"` // 同時に動かす PG の人の上限 (設定か --limit。LimitFrom)
 	// LimitFrom は Limit がどこから来たか ("設定" = pro-con config set / "起動の引数" = --limit か既定)
 	LimitFrom string `json:"limit_from,omitempty"`
-	// Review は今の敵対的レビューの担い手 (issue 514。claude / codex)、ReviewFrom はその出どころ ("設定" / "config.toml" / "既定")
+	// Review は今の敵対的レビューの担い手 (claude / codex)、ReviewFrom はその出どころ ("設定" / "config.toml" / "既定")
 	Review     string `json:"review,omitempty"`
 	ReviewFrom string `json:"review_from,omitempty"`
 	// Codex は PG に渡す codex の実体 (解決できなければ空で、CodexErr が理由)
 	Codex    string `json:"codex,omitempty"`
 	CodexErr string `json:"codex_err,omitempty"`
 	Cap      int    `json:"cap"` // 今の同時に動かす数 (利用枠の残量で絞る。dispatcher/usage.go)
-	// Slots は最後に割り当て (dispatch) を回したときに PG の枠に数えたカード (issue 557。card.HoldsPGSlot を通したもの・起動や再開の結果が
+	// Slots は最後に割り当て (dispatch) を回したときに PG の枠に数えたカード (card.HoldsPGSlot を通したもの・起動や再開の結果が
 	// 分からないもの・その Tick に起動したもの)。SlotsAt はそれを数えた時刻 (zero なら数えたことが無い)。一覧を取れない Tick は数え直さないので、
 	// Tick より古いことがある。🚨 一覧 (pro-con ps・画面) はこれを読むだけにし、枠の判定を組み直さない (backend.CountedSlots)
 	Slots   []string  `json:"slots,omitempty"`
@@ -58,15 +58,15 @@ type DispatcherState struct {
 	UsageSession int       `json:"usage_session"`
 	UsageWeek    int       `json:"usage_week"`
 	UsageAt      time.Time `json:"usage_at"`
-	// Startup は起動時の確かめの要約 (issue 483。起動から 10 分だけ。無ければ空)。StartupAlert は復旧した・判定できないものがある
+	// Startup は起動時の確かめの要約 (起動から 10 分だけ。無ければ空)。StartupAlert は復旧した・判定できないものがある
 	Startup      string `json:"startup,omitempty"`
 	StartupAlert bool   `json:"startup_alert,omitempty"`
-	// Upgrade は新版への入れ替えの様子 (issue 505。切り替えた旧版 → 新版 / 区切りを待っている / 切り替えられない。無ければ空)。UpgradeAlert は知らせるべきもの
+	// Upgrade は新版への入れ替えの様子 (切り替えた旧版 → 新版 / 区切りを待っている / 切り替えられない。無ければ空)。UpgradeAlert は知らせるべきもの
 	Upgrade      string `json:"upgrade,omitempty"`
 	UpgradeAlert bool   `json:"upgrade_alert,omitempty"`
 	// Roles は dispatcher が起こさない役 (設定 pm / integrator = "off")。画面と card list が人の番 (card.Turn) を決めるのに読む
 	Roles card.Roles `json:"roles"`
-	// RoleStates は dispatcher が起こす役 (PM → 取り込みの係) の様子 (issue 476)。画面のゲージ・依頼の列の印と card list が読む
+	// RoleStates は dispatcher が起こす役 (PM → 取り込みの係) の様子。画面のゲージ・依頼の列の印と card list が読む
 	RoleStates []card.RoleState `json:"role_states,omitempty"`
 }
 

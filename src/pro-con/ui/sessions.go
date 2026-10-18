@@ -7,7 +7,7 @@ import (
 	"pro-con/card"
 )
 
-// screensBlock は開いている画面の一覧 (設定画面のプロセスのタブの下段。issue 481)。持ち主の画面が 1 つだけなら出さない (ヘッダと同じ)。
+// screensBlock は開いている画面の一覧 (設定画面のプロセスのタブの下段)。持ち主の画面が 1 つだけなら出さない (ヘッダと同じ)。
 // 見ているだけの画面 (--view) は画面の印を置かないので入らない。w は板の幅。
 func (m *Model) screensBlock(w int) []string {
 	ss := m.snap.Screens
@@ -38,7 +38,7 @@ func (m *Model) screensBlock(w int) []string {
 const openedWidth = 18
 
 // openedText は「開いた」の欄の中身。経過は 1 時間以上を時間・日に丸める (この欄だけ。案C の「1時間5分」の形は欄に収まらず切れていた。
-// 2026-10-16 に見本からユーザーが選んだ案 B。issue 780)。端数は時刻の側で読める。
+// 2026-10-16 に見本からユーザーが選んだ案 B)。端数は時刻の側で読める。
 func openedText(opened, now time.Time) string {
 	if opened.IsZero() { // 中身を読めない印 (presence.readInfo) は開いた時刻を持たない
 		return "-"

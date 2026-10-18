@@ -1,6 +1,6 @@
 package main
 
-// pro-con attach --leave — 戻れなくなった attach の接続だけを外から終わらせる口 (issue 527)。
+// pro-con attach --leave — 戻れなくなった attach の接続だけを外から終わらせる口。
 // 2026-09-26 にユーザーが attach から戻れず、外から attach の接続 (pro-con の画面の子の claude attach) に SIGTERM を送って戻した。
 // その手順を道具にする。終わらせるのは attach の接続だけで、PG の session (claude --bg の本体) には触らない。
 //

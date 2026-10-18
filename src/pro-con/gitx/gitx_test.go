@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// 開いた repo の .git/config の fsmonitor を、status で走らせない (issue 692。subproc.GitArgs)。
+// 開いた repo の .git/config の fsmonitor を、status で走らせない (subproc.GitArgs)。
 func TestRunDoesNotRunRepoFsmonitor(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git が無い")
@@ -35,7 +35,7 @@ func TestRunDoesNotRunRepoFsmonitor(t *testing.T) {
 }
 
 // 開いた repo が partial clone を名乗り blob が消えていても、Run (RunLazyFetch でない口) は遅延 fetch から repo の core.sshCommand を
-// 走らせない (issue 739)。RunLazyFetch を対照にする (罠が作動しない fixture を緑にしない。run の分岐を取り違えた退行も見える)。
+// 走らせない。RunLazyFetch を対照にする (罠が作動しない fixture を緑にしない。run の分岐を取り違えた退行も見える)。
 func TestRunDoesNotLazyFetch(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git が無い")

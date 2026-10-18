@@ -1,6 +1,6 @@
 package store
 
-// 動いている dispatcher を止めずに変える設定 (issue 456)。人間・PM・外の Claude は受付の箱に「設定を変える」依頼 (KindConfig) を置き、
+// 動いている dispatcher を止めずに変える設定。人間・PM・外の Claude は受付の箱に「設定を変える」依頼 (KindConfig) を置き、
 // dispatcher が Apply の中で SettingsFile に書く (書き手は dispatcher だけ = 426 の決定 1)。dispatcher は Tick ごとに読み直す。
 //
 // 優先: 設定 (pro-con config set) > 起動の引数 --limit > 既定。--limit は「設定が無いときの値」で、設定を消す (unset) と戻る。
@@ -29,9 +29,9 @@ const (
 	SettingLimit = "limit" // 同時に動かす PG の上限
 	SettingUsage = "usage" // 利用枠 (5 時間・週) を見て同時に動かす PG を絞るか (on = 既定 / off)
 	SettingPM    = "pm"    // PM の数。🚨 受けるのは 1 だけなので dispatcher はまだ読まない (2 以上を受けるのは 415 の論点 6 の後。そのとき dispatcher に配線する)
-	// SettingReview は敵対的レビューの担い手 (ReviewModes。issue 514)。~/.config/pro-con/config.toml の review より勝つ
+	// SettingReview は敵対的レビューの担い手 (ReviewModes)。~/.config/pro-con/config.toml の review より勝つ
 	SettingReview = "review"
-	// SettingSchedule は予定 (issue 550。決まった時刻に pro-con worktree clean --yes 等を回す) を回すか (on = 既定 / off)
+	// SettingSchedule は予定 (決まった時刻に pro-con worktree clean --yes 等を回す) を回すか (on = 既定 / off)
 	SettingSchedule = "schedule"
 	// SettingModel / SettingEffort は PG・PM・取り込みの係の claude に渡す --model / --effort (Models / Efforts。次の起動・再開から効く)
 	SettingModel  = "model"
@@ -51,7 +51,7 @@ var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
 // DefaultEffort は effort の既定。
 const DefaultEffort = "medium"
 
-// 敵対的レビューの担い手 (issue 514)。claude = PG が自分のサブエージェントで回す (既定。514 の前の動き) / codex = PG が codex exec で回す。
+// 敵対的レビューの担い手。claude = PG が自分のサブエージェントで回す (既定) / codex = PG が codex exec で回す。
 const (
 	ReviewClaude = "claude"
 	ReviewCodex  = "codex"
@@ -74,7 +74,7 @@ type Settings struct {
 	PMs   int `json:"pms,omitempty"`
 	// UsageOff は利用枠で絞らない (人が「枠を気にせず使う」と決めたとき。既定の false = 絞る)。
 	UsageOff bool `json:"usage_off,omitempty"`
-	// Review は敵対的レビューの担い手 (issue 514。空 = 設定なし = config.toml か既定)
+	// Review は敵対的レビューの担い手 (空 = 設定なし = config.toml か既定)
 	Review string `json:"review,omitempty"`
 	// ScheduleOff は予定を回さない (既定の false = 回す)
 	ScheduleOff bool `json:"schedule_off,omitempty"`

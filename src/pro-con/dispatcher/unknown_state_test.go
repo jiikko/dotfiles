@@ -10,7 +10,7 @@ import (
 	"pro-con/eventlog"
 )
 
-// unknownStates は、pid 無しで止まった state (stopped / done / failed) でも自動の再開の途中 (working) でもない形 (issue 466 の発火条件:
+// unknownStates は、pid 無しで止まった state (stopped / done / failed) でも自動の再開の途中 (working) でもない形 (発火条件:
 // 再開の途中を表す state の名前が変わった版 / state の欄が無くなった版)。
 var unknownStates = []string{"resuming", ""}
 

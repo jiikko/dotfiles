@@ -104,7 +104,7 @@ func TestParseModeKeepsModeArgs(t *testing.T) {
 }
 
 // 画面を開いたとき、dispatcher も supervisor も動いていなければ (supervisor を) 起動し、どちらかが動いていれば起動しない
-// (dispatcher を起こし直すのは supervisor だけ = keeper と二重に起こさない。issue 506)。
+// (dispatcher を起こし直すのは supervisor だけ = keeper と二重に起こさない)。
 func TestStartDispatcherIfIdle(t *testing.T) {
 	dir := t.TempDir()
 	spawned := 0
@@ -167,8 +167,8 @@ func TestWireLiveViewStopsAndStartsNothing(t *testing.T) {
 }
 
 // 画面が起こした supervisor と dispatcher は画面の子にしない: spawn は dispatcher が居る間に戻り、dispatcher の親は supervisor
-// (画面ではない) で、抜けても画面の子にゾンビで残らない (keeper が起こし直すたびに溜まる。goroutine で Wait する形は ctrl+r の exec で漏れる。issue 477)。
-// dispatcher が自分の判断で抜けたら (rc=0) supervisor も抜ける (ワンショット。issue 506)。
+// (画面ではない) で、抜けても画面の子にゾンビで残らない (keeper が起こし直すたびに溜まる。goroutine で Wait する形は ctrl+r の exec で漏れる)。
+// dispatcher が自分の判断で抜けたら (rc=0) supervisor も抜ける (ワンショット)。
 func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir()) // supervisor は置き場を家から決める (本物の置き場の supervisor の lock を取らない)
 	dir := liveDir(t.TempDir())
@@ -240,7 +240,7 @@ func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
 	}
 }
 
-// --join は --view / --mock と組まない (読むだけのつもりが書ける形を作らない)。サブコマンドの前にも付けない。--as には名前が要る (issue 481)。
+// --join は --view / --mock と組まない (読むだけのつもりが書ける形を作らない)。サブコマンドの前にも付けない。--as には名前が要る。
 func TestJoinFlagMisuseIsUsageError(t *testing.T) {
 	for _, args := range [][]string{
 		{"--join", "--view"}, {"--view", "--join"}, {"--join", "--mock"}, {"--join", "dispatcher", "--stop"},
@@ -310,7 +310,7 @@ func TestAltGuardLeavesOnlyBeforeScreen(t *testing.T) {
 	}
 }
 
-// join の画面を持ち主の画面として開き直す引数は --join だけを外す (--as の名前と、その後ろのフラグは残す。issue 548)。
+// join の画面を持ち主の画面として開き直す引数は --join だけを外す (--as の名前と、その後ろのフラグは残す)。
 func TestWithoutJoinKeepsLabel(t *testing.T) {
 	got := withoutJoin([]string{"--join", "--as", "review"})
 	if strings.Join(got, " ") != "--as review" {
@@ -322,7 +322,7 @@ func TestWithoutJoinKeepsLabel(t *testing.T) {
 	}
 }
 
-// 終了の後の切り替え先 (issue 548): O は同じバイナリを --join を外して、ctrl+r は新版を同じ種類の画面のまま開く。どちらでもなければ普通の終了。
+// 終了の後の切り替え先: O は同じバイナリを --join を外して、ctrl+r は新版を同じ種類の画面のまま開く。どちらでもなければ普通の終了。
 // O では新版のバイナリを尋ねない (bin/pro-con 以外から起動した画面には新版の情報が無い)。
 func TestSwitchPlan(t *testing.T) {
 	upgradeAsked := false

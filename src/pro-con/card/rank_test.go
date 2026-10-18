@@ -96,7 +96,7 @@ func TestMoveKeepsLaterArrivalsBelow(t *testing.T) {
 	}
 }
 
-// 入力待ちの 1 往復 (EnterPrompt → LeavePrompt) で、作業中の列の中の位置が変わらない。人が並べた順も、入った順も (issue 545)。
+// 入力待ちの 1 往復 (EnterPrompt → LeavePrompt) で、作業中の列の中の位置が変わらない。人が並べた順も、入った順も。
 func TestPromptRoundTripKeepsLanePosition(t *testing.T) {
 	t0 := time.Date(2026, 9, 27, 8, 0, 0, 0, time.UTC)
 	ids := func(cs []Card) string {

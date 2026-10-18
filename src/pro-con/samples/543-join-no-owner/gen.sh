@@ -1,5 +1,5 @@
 #!/bin/bash
-# sample.py の見本を .ans に書き出す (issue 543。使い捨て)
+# sample.py の見本を .ans に書き出す (使い捨て)
 set -eu
 cd "$(dirname "$0")"
 for p in A B C; do

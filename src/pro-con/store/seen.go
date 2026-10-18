@@ -6,7 +6,7 @@ import (
 	"pro-con/agents"
 )
 
-// SeenFile は dispatcher が tick で取った session の一覧と、pro-con が起動した session の出力の末尾 (issue 502 / 503)。
+// SeenFile は dispatcher が tick で取った session の一覧と、pro-con が起動した session の出力の末尾。
 // 画面はこれが新しければ使い、自分では `claude agents --json` (1 回 CPU 約 0.3 秒) も transcript (1 回 5.7 ms / 2.9 MB) も読まない。
 const SeenFile = "seen.json"
 
@@ -17,13 +17,13 @@ type Seen struct {
 	Logs     map[string][]string `json:"logs,omitempty"` // 短い session id → PG の出力の末尾 (古い順)
 	// Err は dispatcher が一覧を取れなかった理由 (空でなければ Sessions は空。画面は使わずに自分で読み、取れなければその理由を出す)
 	Err string `json:"err,omitempty"`
-	// Keep は dispatcher が次に一覧を取るまでの最長の間 (暇な間は一覧を間引く。issue 559)。0 は間引いていない (SeenFresh)
+	// Keep は dispatcher が次に一覧を取るまでの最長の間 (暇な間は一覧を間引く)。0 は間引いていない (SeenFresh)
 	Keep time.Duration `json:"keep,omitempty"`
 }
 
 // SeenFresh は間引いていない一覧を今の様子として使う古さの上限。dispatcher の tick (3 秒) と、一覧の取得の上限
 // (agents.Timeout = 10 秒) を足した余裕。WaitDelay (subproc.WaitDelay = 2 秒) は数えない: 効くのは子孫が出力を握ったまま
-// 上限を過ぎたときだけで、その一覧は Err つきになり今の様子として使われない (issue 782 で 1 秒から 2 秒にした)。
+// 上限を過ぎたときだけで、その一覧は Err つきになり今の様子として使われない。
 const SeenFresh = 15 * time.Second
 
 // seenKeepMax は Keep の上限 (壊れた値で、画面がいつまでも自分で読まなくなるのを防ぐ)。

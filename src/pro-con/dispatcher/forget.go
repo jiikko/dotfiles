@@ -1,8 +1,8 @@
 package dispatcher
 
-// 完了から 1 週間たったカードを記録から消し (store.Purge。その前に所要の記録を書き、90 日より古い所要の行を消す = metrics.go)、片付けが済んだカードの起動の記録の行と片付けの印を消す (issue 497)。
+// 完了から 1 週間たったカードを記録から消し (store.Purge。その前に所要の記録を書き、90 日より古い所要の行を消す = metrics.go)、片付けが済んだカードの起動の記録の行と片付けの印を消す。
 // どちらも dispatcher が書き手 (書庫・印・起動の記録。426 の決定 1)。
-// 🚨 ここで消すのはカードの記録だけ。session・transcript・worktree・ブランチは pro-con worktree clean --yes が消す (schedule.go の予定が毎日回す。issue 550)。
+// 🚨 ここで消すのはカードの記録だけ。session・transcript・worktree・ブランチは pro-con worktree clean --yes が消す (schedule.go の予定が毎日回す)。
 // 書庫を消すのも予定の 1 行 (schedule.CardPurge。毎日 03:30。dispatcher の中で回す)。予定のタブに出て、schedule off で止まる。
 
 import (

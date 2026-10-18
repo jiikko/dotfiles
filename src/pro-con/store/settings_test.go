@@ -93,7 +93,7 @@ func TestApplyConfigRejectKeepsBroken(t *testing.T) {
 	}
 }
 
-// usage は on / off (空は on に戻す)。それ以外は断る (issue 536)。
+// usage は on / off (空は on に戻す)。それ以外は断る。
 func TestCheckSettingUsage(t *testing.T) {
 	for _, tc := range []struct {
 		v   string

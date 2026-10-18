@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Matches はカードが検索語 q に一致するか (画面の / と `card list --grep` が同じこれを使う。issue 532)。
+// Matches はカードが検索語 q に一致するか (画面の / と `card list --grep` が同じこれを使う)。
 // q を空白で区切った語が**すべて**、題名・カード ID・issue (dotfiles#532 / #532)・依頼の原文のどれかに含まれれば一致。
 // 大文字と小文字は区別しない (c-085 でも C-085 を引ける)。空の q はすべてに一致する (打ち始めでボードを空にしない)。
 func (c Card) Matches(q string) bool {
@@ -28,7 +28,7 @@ func (c Card) searchText() string {
 	return strings.Join(parts, "\n")
 }
 
-// HasIssue はカードが issue を指しているか。repo が空なら番号だけで見る (`card list --issue 532`)。
+// HasIssue はカードが issue を指しているか。repo が空なら番号だけで見る (`card list --issue 7`)。
 func (c Card) HasIssue(repo string, number int) bool {
 	for _, r := range c.Issues {
 		if r.Number == number && (repo == "" || r.Repo == repo) {

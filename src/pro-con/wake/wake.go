@@ -91,7 +91,7 @@ var ErrUnsafeDir = errors.New("socket の逃がし先を使えない")
 
 // ensureFallbackDir は fallbackDir を自分だけのディレクトリとして用意する (Listen = dispatcher だけが呼ぶ)。
 // 🚨 /tmp は誰でも書けるので、他のユーザーが先に作った (持ち主が違う・symlink) ものは使わない (dispatcher に成りすまされる)。
-// 自分のもので権限だけ緩い (テストが落ちて戻し損ねた等) なら 0700 に直す。直すのは listen する側だけ (繋ぐ側 = 読む口は直さない。issue 445)
+// 自分のもので権限だけ緩い (テストが落ちて戻し損ねた等) なら 0700 に直す。直すのは listen する側だけ (繋ぐ側 = 読む口は直さない)
 func ensureFallbackDir() error {
 	d := fallbackDir()
 	if err := os.Mkdir(d, 0o700); err != nil && !errors.Is(err, os.ErrExist) {

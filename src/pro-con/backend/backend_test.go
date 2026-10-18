@@ -39,7 +39,7 @@ func TestIssuePrompt(t *testing.T) {
 }
 
 // issue から出した依頼の原文は、補足が無くても「issue の本文を進める」の 1 文で空にしない。補足は書いたまま後ろに置く。
-// 題名に番号を付けず (紐づけた issue から出る。issue 491)、issue を紐づける。epic は親 issue を紐づける (issue 511)。
+// 題名に番号を付けず (紐づけた issue から出る)、issue を紐づける。epic は親 issue を紐づける。
 func TestIssueRequest(t *testing.T) {
 	title, req, issues := IssueRequest("dotfiles", IssueTarget{Number: 505, Title: "入れ替わりを直す", Path: "/r/issues/505.md"}, "")
 	if title != "入れ替わりを直す" || req != "issue #505 の本文に書かれていることを進める" || len(issues) != 1 || issues[0].Repo != "dotfiles" || issues[0].Number != 505 {

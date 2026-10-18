@@ -245,7 +245,7 @@ func TestMeasuredTableMatchesWaiting(t *testing.T) {
 }
 
 // 入力待ちの PG が落ちて、自動の再開でまた入力待ちへ戻るのを繰り返しても、落ちた回数の上限で止めて人の番 (WaitCrashed) にする
-// (作業中の列だけを見ると、入力待ちの Tick で数えても止め損ねる。敵対レビュー C-054 の 1)。
+// (作業中の列だけを見ると、入力待ちの Tick で数えても止め損ねる)。
 func TestCrashingWhilePromptWaitStops(t *testing.T) {
 	r := newCrashRig(t)
 	r.be(t, "権限の確認")

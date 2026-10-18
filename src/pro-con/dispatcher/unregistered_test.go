@@ -16,7 +16,7 @@ import (
 	"pro-con/store"
 )
 
-// unregisteredRig は、作業中の C-001 の PG が一覧に出ているのに記録 (sessions.json) に取り込まれないまま launchGrace を過ぎた形を作る (issue 457)。
+// unregisteredRig は、作業中の C-001 の PG が一覧に出ているのに記録 (sessions.json) に取り込まれないまま launchGrace を過ぎた形を作る。
 // broken が一覧の session を取り込まれない形に変える。取り込まなかった Tick の出来事を返す。
 func unregisteredRig(t *testing.T, broken func(*agents.Session)) (*crashRig, []eventlog.Event) {
 	t.Helper()
@@ -39,7 +39,7 @@ func unregisteredRig(t *testing.T, broken func(*agents.Session)) (*crashRig, []e
 	return r, notes
 }
 
-// unregisteredForms は、一覧に出ている PG が register に取り込まれない形 (issue 457 の発火条件)。
+// unregisteredForms は、一覧に出ている PG が register に取り込まれない形。
 var unregisteredForms = []struct {
 	name   string
 	broken func(*agents.Session)

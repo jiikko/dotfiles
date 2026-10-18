@@ -31,7 +31,7 @@ func TestInputEditKeysReachSubmittedText(t *testing.T) {
 	}
 }
 
-// 方針変更は y / Enter でだけ送る。知らないキーは取り消しで、書いた文のまま入力欄へ戻る (§4。issue 517)。
+// 方針変更は y / Enter でだけ送る。知らないキーは取り消しで、書いた文のまま入力欄へ戻る (§4)。
 func TestRedirectNeedsConfirmation(t *testing.T) {
 	for _, tc := range []struct {
 		key  tea.KeyPressMsg

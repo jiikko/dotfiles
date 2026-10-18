@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// 見積もりのポイント (issue 490)。PM が積むとき (`card plan --points`) に付け、ボードのカードの右上に出す。
+// 見積もりのポイント。PM が積むとき (`card plan --points`) に付け、ボードのカードの右上に出す。
 
 // PointScale は見積もりのポイントに使える値。0 は「見積もり無し」。
 var PointScale = []int{1, 2, 3, 5, 8}

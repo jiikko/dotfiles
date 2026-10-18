@@ -88,7 +88,7 @@ func TestSessionStopped(t *testing.T) {
 		{"failed", 0, true},    // マシンのクラッシュ・再起動でプロセスごと消えた (issue 482)
 		{"working", 0, false},  // kill -9 の直後 (Claude Code が自動で再開する)
 		{"working", 42, false}, // 作業中
-		// 知らない state で pid 無し (再開の途中の名前が変わった版 / state の欄が無くなった版) は止まったと読まない (issue 466)
+		// 知らない state で pid 無し (再開の途中の名前が変わった版 / state の欄が無くなった版) は止まったと読まない
 		{"resuming", 0, false},
 		{"", 0, false},
 	} {
@@ -99,8 +99,8 @@ func TestSessionStopped(t *testing.T) {
 }
 
 // pid 無し・working の session だけ、Claude Code の記録 (<jobsDir>/<id>/state.json) を読む。記録が done なら止まっている
-// (起床を予約したまま終えた session。issue 551)。kill -9 の直後の自動の再開の途中 (crashed / resuming)・記録が無い・壊れているは止まっていない。
-// pid のある session・止まった形の session と、置き場の外を指す id の記録は読まない。知らない state は読む (案内に出す。issue 555)。
+// (起床を予約したまま終えた session)。kill -9 の直後の自動の再開の途中 (crashed / resuming)・記録が無い・壊れているは止まっていない。
+// pid のある session・止まった形の session と、置き場の外を指す id の記録は読まない。知らない state は読む (案内に出す)。
 func TestListReadsJobStateForPidlessWorking(t *testing.T) {
 	root := t.TempDir()
 	jobs := filepath.Join(root, "jobs")

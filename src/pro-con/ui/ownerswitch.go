@@ -2,7 +2,7 @@ package ui
 
 import tea "charm.land/bubbletea/v2"
 
-// join の画面から持ち主の画面への切り替え (issue 548)。O → y/N で確かめ、y なら ctrl+r と同じ暗転で終了して
+// join の画面から持ち主の画面への切り替え。O → y/N で確かめ、y なら ctrl+r と同じ暗転で終了して
 // main に切り替えを任せる (main が --join を外した引数で同じバイナリを exec する。状態は ctrl+r と同じく引き継ぐ)。
 // 持ち主の画面は起動のときに dispatcher を起こす (人が止めた印があれば起こさない。main.go の wireLive)。
 

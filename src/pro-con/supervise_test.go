@@ -174,7 +174,7 @@ func TestSupervisorHaltsWhenStoppedAfterCrash(t *testing.T) {
 	}
 }
 
-// 持ち主の画面が無ければ起こし直さず、PG を止めて抜ける (join の画面は起こさない = issue 481。人が止めた印は置かない)。
+// 持ち主の画面が無ければ起こし直さず、PG を止めて抜ける (join の画面は起こさない。人が止めた印は置かない)。
 func TestSupervisorStopsPGsWithoutOwners(t *testing.T) {
 	dir := t.TempDir()
 	scr, err := presence.OpenAs(dir, presence.Info{Mode: presence.Join})

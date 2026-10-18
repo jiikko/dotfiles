@@ -10,7 +10,7 @@ import (
 	"pro-con/backend"
 )
 
-// 人が dispatcher を止めた印があれば、ゲージに「止めてある」と出し、c → y/N で起こす (issue 459)。N なら何も送らない。
+// 人が dispatcher を止めた印があれば、ゲージに「止めてある」と出し、c → y/N で起こす。N なら何も送らない。
 // 印が無ければ c は確認を出さない (動いている dispatcher を起こす確認に y を押させない)。
 func TestResumeHeldDispatcher(t *testing.T) {
 	be := newSpy()

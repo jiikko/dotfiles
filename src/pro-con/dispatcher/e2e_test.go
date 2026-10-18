@@ -74,7 +74,7 @@ func TestE2EFakePM(t *testing.T) {
 	}
 }
 
-// 書けなかったとき (置き場の名前が dir で rename できない) に一時ファイルを残さない (issue 767。前は固定名の .tmp が残った)。
+// 書けなかったとき (置き場の名前が dir で rename できない) に一時ファイルを残さない (前は固定名の .tmp が残った)。
 func TestE2ESaveLeavesNoTmpOnFailure(t *testing.T) {
 	e := E2E{Root: t.TempDir()}
 	if err := os.MkdirAll(e.sessionsPath(), 0o700); err != nil { // rename の先を dir にして失敗させる

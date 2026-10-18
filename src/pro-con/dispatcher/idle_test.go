@@ -93,7 +93,7 @@ func doneCard(id string) card.Card {
 	return card.Card{ID: id, State: card.Done, Ending: card.EndAnswered, Session: "s-" + id}
 }
 
-// 暇な間 (カードが全部完了・役を回さない) は、一覧を QuietListEvery に 1 回だけ取り、画面にはその間使える一覧を渡す (issue 559)。
+// 暇な間 (カードが全部完了・役を回さない) は、一覧を QuietListEvery に 1 回だけ取り、画面にはその間使える一覧を渡す。
 func TestQuietTicksThinOutList(t *testing.T) {
 	r := newQuietRig(t, doneCard("C-001"))
 	if !r.tickAt(t, 0) {
@@ -248,7 +248,7 @@ func TestQuietTickKeepsRoleState(t *testing.T) {
 	}
 }
 
-// pmWatchRig は生きている PM (pid つき) が居て、カードが全部完了している dispatcher (issue 576)。
+// pmWatchRig は生きている PM (pid つき) が居て、カードが全部完了している dispatcher。
 type pmWatchRig struct {
 	*quietRig
 	jobs  string

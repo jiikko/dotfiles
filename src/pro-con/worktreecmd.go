@@ -1,8 +1,8 @@
 package main
 
-// pro-con worktree clean — 閉じたカードの PG の worktree を片付ける (issue 492)。既定は一覧を出すだけで、--yes で消してよいものを
+// pro-con worktree clean — 閉じたカードの PG の worktree を片付ける。既定は一覧を出すだけで、--yes で消してよいものを
 // 1 個ずつ取り直して消す。worktree とブランチを消し終えたカードは、pro-con が起動した session (transcript・claude の job・起動の記録の行)
-// も消す (issue 497)。dispatcher の予定が毎日 04:00 にこの --yes を回す (issue 550。止めるのは pro-con config set schedule off)。判定と消し方は package wtclean。
+// も消す。dispatcher の予定が毎日 04:00 にこの --yes を回す (止めるのは pro-con config set schedule off)。判定と消し方は package wtclean。
 
 import (
 	"context"
@@ -43,7 +43,7 @@ const worktreeUsage = `usage: pro-con worktree clean [--yes]
 type worktreeEnv struct {
 	dir   string            // 状態の置き場 (記録・書庫・片付けの印・起動の記録を読む。書くのは受付の箱の forget だけ)
 	repos map[string]string // 設定の repo の名前 → パス
-	// disposableTmp は worktree の直下の tmp/ の無視されたファイルを退避してから消してよい repo の名前 (設定の disposable_tmp。issue 552)
+	// disposableTmp は worktree の直下の tmp/ の無視されたファイルを退避してから消してよい repo の名前 (設定の disposable_tmp)
 	disposableTmp map[string]bool
 	sessions      func(ctx context.Context) ([]agents.Session, error)
 	procCwds      func(ctx context.Context) ([]string, error) // 動いているプロセスの作業ディレクトリ (lsof)
@@ -378,7 +378,7 @@ func realWorktreeEnv(home string) (worktreeEnv, error) {
 	}, procCwds: lsofCwds, projects: filepath.Join(home, ".claude", "projects"), jobsDir: jobs, removeJob: wtclean.ClaudeRemover(cl.Path, jobs)}, nil
 }
 
-// worktreeOps は dispatcher が閉じた・削除したカードの PG の worktree を見る・片付ける口 (dispatcher.WorktreeOps。issue 553)。
+// worktreeOps は dispatcher が閉じた・削除したカードの PG の worktree を見る・片付ける口 (dispatcher.WorktreeOps)。
 // 判定の材料は pro-con worktree clean と同じ集め方 (worktreeInputs)。
 type worktreeOps struct{ env worktreeEnv }
 
@@ -401,7 +401,7 @@ func (o worktreeOps) Settle(ctx context.Context, repoName string, c card.Card) w
 	return wtclean.Settle(ctx, repoName, path, o.options())
 }
 
-// Decide は人が設定画面で決めた worktree を消す (remove) か残す (issue 553 の受け皿)。worktree-clean.lock を取ってから動かす。
+// Decide は人が設定画面で決めた worktree を消す (remove) か残す。worktree-clean.lock を取ってから動かす。
 func (o worktreeOps) Decide(v wtclean.Verdict, remove bool) (wtclean.Result, error) {
 	unlock, err := dispatcher.LockWorktreeClean(o.env.dir)
 	if err != nil {

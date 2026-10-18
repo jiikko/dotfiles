@@ -2,7 +2,7 @@ package dispatcher
 
 // dispatcher の排他 (2 つ起動しない。記録の書き手は 1 つだけ。426 の決定 1)。flock はプロセスが終われば OS が外すので、落ちても取り残されない。
 //
-// 新版への入れ替え (issue 505。syscall.Exec) では lock を**外さずに**新しいプロセス像へ引き継ぐ (HeldLock.Exec / AdoptLock)。
+// 新版への入れ替え (syscall.Exec) では lock を**外さずに**新しいプロセス像へ引き継ぐ (HeldLock.Exec / AdoptLock)。
 // 外して取り直す形にすると、その隙に画面の keeper が起こした 2 つ目の dispatcher が lock を取る。
 // flock は開いたファイル (open file description) に付くので、fd を exec に持ち越せば PID と一緒に lock も続く。
 
@@ -21,7 +21,7 @@ import (
 )
 
 // LockFile はロックのファイル名 (状態の置き場の下)。画面は pid だけを読む (store.DispatcherGone)。
-// MonitorLockFile は見張り (pro-con monitor。issue 475) のロック。SupervisorLockFile は supervisor (pro-con supervise。issue 506) のロック。
+// MonitorLockFile は見張り (pro-con monitor) のロック。SupervisorLockFile は supervisor (pro-con supervise) のロック。
 const (
 	LockFile           = store.DispatcherLockFile
 	MonitorLockFile    = "monitor.lock"

@@ -1,6 +1,6 @@
 package card
 
-// カードの流れ (issue 515)。どの順にレーンを渡り、誰が何で動かすかの正本。画面の ? の「流れ」のタブと pro-con help flow がこれを並べる
+// カードの流れ。どの順にレーンを渡り、誰が何で動かすかの正本。画面の ? の「流れ」のタブと pro-con help flow がこれを並べる
 // (文面を写さない。直すのはここだけ)。遷移の規則そのものの正本は store の transition で、ここはその説明。
 
 // FlowEnd は移り変わりの端。Other が空ならレーン (Lane)、空でなければレーンでない端 (依頼を出す人・どこからでも・削除)。
@@ -60,7 +60,7 @@ var FlowDetours = []FlowStep{
 	{FlowEnd{Other: "どこからでも"}, FlowEnd{Other: "削除"}, "人", "d・card delete (依頼の列はすぐ。ほかは PG を止めてから。worktree とブランチは残る)"},
 }
 
-// AfterDone は完了の後に起きること (片付けの時間は store.AutoClearAfter / store.PurgeAfter。issue 497)。
+// AfterDone は完了の後に起きること (片付けの時間は store.AutoClearAfter / store.PurgeAfter)。
 var AfterDone = []string{
 	"24 時間 (か x) で書庫へ移り、完了から 1 週間で記録から消える",
 	"worktree・ブランチ・session は残る。消すのは pro-con worktree clean --yes (dispatcher の予定が毎日 04:00 に回す。人が打ってもよい)",

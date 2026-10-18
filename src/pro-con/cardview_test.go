@@ -139,7 +139,7 @@ func TestCardList(t *testing.T) {
 	}
 }
 
-// list の --grep (画面の / と同じ一致) / --issue / --repo で絞れる。条件は --state と AND、--all の書庫にも効く (issue 532)。
+// list の --grep (画面の / と同じ一致) / --issue / --repo で絞れる。条件は --state と AND、--all の書庫にも効く。
 func TestCardListFilters(t *testing.T) {
 	env := viewFixture(t) // C-001 色を直す (dotfiles#415) / C-002 別件 (README) / C-003 片付け済み
 	mustSubmit(t, env.dir, store.Request{Kind: "add", Title: "obaket の色", Request: "色を揃えて", Repo: "obaket"})
@@ -205,7 +205,7 @@ func TestCardListMarksHumansTurn(t *testing.T) {
 	}
 }
 
-// 担当は今手を動かす者 (issue 476): 着手待ちは記録の Owner (PM) ではなく PG 待ち、PM が分けている依頼は「PM 分解中」。
+// 担当は今手を動かす者: 着手待ちは記録の Owner (PM) ではなく PG 待ち、PM が分けている依頼は「PM 分解中」。
 // 止まった dispatcher の最後の様子では分解中と出さない。
 func TestCardListShowsAssignee(t *testing.T) {
 	env := viewFixture(t)
@@ -321,7 +321,7 @@ func TestCardShow(t *testing.T) {
 	}
 }
 
-// show は画面の詳細と同じ進捗 (dispatcher が集めた progress.json・見張りが見た conflicts.json・テストの係の最後の結果) と今の待ちを出す (issue 469)。
+// show は画面の詳細と同じ進捗 (dispatcher が集めた progress.json・見張りが見た conflicts.json・テストの係の最後の結果) と今の待ちを出す。
 func TestCardShowProgress(t *testing.T) {
 	env := viewFixture(t) // C-001 は質問待ち
 	now := time.Now()
@@ -474,7 +474,7 @@ func TestCardWaitWakesOnNotification(t *testing.T) {
 
 // socket が無くても (dispatcher が居ない)、ポーリングで待てる。時間切れは rc=1。
 // 🚨 socket を置かない: 置くと購読が繋がった直後の読み直し (wake.Subscriber は繋がるたびに 1 度 onChange を呼ぶ) が
-// ポーリングの代わりに返してしまい、ポーリングを消しても緑になる (敵対的レビュー 2026-09-25 P3)
+// ポーリングの代わりに返してしまい、ポーリングを消しても緑になる
 func TestCardWaitPollsAndTimesOut(t *testing.T) {
 	env := viewFixture(t)
 	old := viewPoll
@@ -735,7 +735,7 @@ func stillLoose(t *testing.T, fallback string) {
 }
 
 // 🚨 読む口 (card wait) は、socket の逃がし先 (/tmp/pro-con-<uid>/) の緩い権限を直さず (状態の置き場の外も書かない)、
-// つながずに読み直しで待ち、そう 1 行知らせる (issue 445)。
+// つながずに読み直しで待ち、そう 1 行知らせる。
 func TestViewCommandsDoNotFixFallbackDir(t *testing.T) {
 	long, fallback := looseFallback(t)
 	env := viewFixtureIn(t, long)
@@ -753,7 +753,7 @@ func TestViewCommandsDoNotFixFallbackDir(t *testing.T) {
 	}
 }
 
-// 書庫へ移した終えたカード (issue 478) も、show / list --all / wait で読める。記録と書庫の両方にあっても 1 枚として出す。
+// 書庫へ移した終えたカードも、show / list --all / wait で読める。記録と書庫の両方にあっても 1 枚として出す。
 func TestCardViewReadsArchive(t *testing.T) {
 	env := viewFixture(t)
 	if moved, err := store.Archive(env.dir, time.Now()); err != nil || len(moved) != 1 || moved[0].ID != "C-003" {
@@ -782,7 +782,7 @@ func TestCardViewReadsArchive(t *testing.T) {
 	}
 }
 
-// list と show の経過は、何の経過かを語で添える (issue 562)。裸の「(17 分)」は、完了のカードで依頼から完了までの所要と読み違えられた。
+// list と show の経過は、何の経過かを語で添える。裸の「(17 分)」は、完了のカードで依頼から完了までの所要と読み違えられた。
 func TestCardListAgeSaysWhatItMeasures(t *testing.T) {
 	env := viewFixture(t)
 	env.now = func() time.Time { return time.Now().Add(17 * time.Minute) }

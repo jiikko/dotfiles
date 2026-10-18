@@ -15,7 +15,7 @@ import (
 )
 
 // mixedActivity は応答 : 道具 = 1 : 2、応答の一部に code block を含む活動 n 件 (後半で session が入れ替わる)。
-// 実データの形 (issue 606: 直近 30 transcript の応答のうち code block を含むのは 4%) に寄せ、code block は 8 件に 1 件にする。
+// 実データの形 (直近 30 transcript の応答のうち code block を含むのは 4%) に寄せ、code block は 8 件に 1 件にする。
 func mixedActivity(now time.Time, n int) []backend.Activity {
 	items := make([]backend.Activity, n)
 	for i := range items {
@@ -63,7 +63,7 @@ func oneViewBytes(m *Model) uint64 {
 	return b.TotalAlloc - a.TotalAlloc
 }
 
-// 詳細を開いた画面の 1 描画の確保量は、活動の件数で増えない (issue 606)。描くたびに全件を markdown と折り返しに通していた
+// 詳細を開いた画面の 1 描画の確保量は、活動の件数で増えない。描くたびに全件を markdown と折り返しに通していた
 // (1000 件で 1 描画 7〜8 ms)。整形は届いたときに 1 回だけ。時間ではなく確保量の伸び率で見る。
 // 見ていないもの: 確保せずに件数に比例して走査する形 (行の数え直し等)。届いたとき (onActivity) の重さ。
 func TestDrawerActivityViewAllocDoesNotGrowWithItems(t *testing.T) {
@@ -79,7 +79,7 @@ func TestDrawerActivityViewAllocDoesNotGrowWithItems(t *testing.T) {
 	}
 }
 
-// 保持した活動の節は、保持を捨てて組み直したものと同じ (issue 606)。届き直し・頭の切り捨て・幅の変更・読めない印のどれでも古い行を出さない。
+// 保持した活動の節は、保持を捨てて組み直したものと同じ。届き直し・頭の切り捨て・幅の変更・読めない印のどれでも古い行を出さない。
 func TestDrawerActivitySectionMatchesRebuild(t *testing.T) {
 	m, be := openedActivity(t, 60)
 	check := func(step string) {
@@ -132,7 +132,7 @@ func deliverBytes(m *Model, be *activitySpy) uint64 {
 	return b.TotalAlloc - a.TotalAlloc
 }
 
-// 読み直し (tick ごと) で同じ活動が届いたら、活動 1 件ずつの整形は作り直さない (issue 606)。作り直すと詳細を開いているあいだ毎秒全件を整形する。
+// 読み直し (tick ごと) で同じ活動が届いたら、活動 1 件ずつの整形は作り直さない。作り直すと詳細を開いているあいだ毎秒全件を整形する。
 // 初めて届いたときの確保量と比べる (同じ 1000 件)。
 func TestDrawerActivityRedeliverReusesLines(t *testing.T) {
 	m, be, clk := activityModel(t, 0)

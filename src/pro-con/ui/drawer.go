@@ -21,7 +21,7 @@ import (
 // glogx の issues の引き出しと同じ寸法と所要 (glogx/issues_drawer.go。変えるなら両方の見え方を揃えて決める)。
 var drawerGeometry = layout.DrawerGeometry{Ratio: 0.8, Extra: 10, MinList: 8, MaxPeek: 18}
 
-// worktreePaint は worktree の節の色 (見本で決めた形。issue 508): hash は黄、時刻と「ほか」は暗く、index に入った変更は緑・作業ツリーだけの変更は赤。
+// worktreePaint は worktree の節の色 (見本で決めた形): hash は黄、時刻と「ほか」は暗く、index に入った変更は緑・作業ツリーだけの変更は赤。
 var worktreePaint = card.Paint{Hash: sgrYellow, Dim: sgrDim, Staged: fg(colActive), Unstaged: sgrRed, Reset: sgrReset}
 
 const (
@@ -141,8 +141,8 @@ func (m *Model) drawerTextWidth() int {
 }
 
 // drawerLines は本文の全行 (開ききった幅で折り返し済み)。履歴と出力 (活動を読める backend では活動) は切り出さずに全部出す。
-// 活動の節 (act) は保持した行をそのまま指す: 描くたびに全行を組み直したり、head と結合してコピーしたりしない (issue 606。
-// 活動は最大 1000 件・数千行になり、毎回組むと 1 描画が 7〜8 ms かかっていた)。
+// 活動の節 (act) は保持した行をそのまま指す: 描くたびに全行を組み直したり、head と結合してコピーしたりしない
+// (活動は最大 1000 件・数千行になり、毎回組むと 1 描画が 7〜8 ms かかる)。
 type drawerLines struct{ head, act []string }
 
 func (d drawerLines) Len() int { return len(d.head) + len(d.act) }

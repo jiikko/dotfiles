@@ -1,6 +1,6 @@
 package dispatcher
 
-// 「PG が今走らせているもの」を集めて store.DoingFile に書く (issue 473)。画面と `pro-con card show` はそれを読むだけ
+// 「PG が今走らせているもの」を集めて store.DoingFile に書く。画面と `pro-con card show` はそれを読むだけ
 // (画面が数秒ごとに ps や transcript を重く読まない = 441)。
 //
 // 集めるのは pro-con が起動した PG の分だけ:
@@ -294,7 +294,7 @@ func orName(s, alt string) string {
 }
 
 // publishSeen は画面のために、取った一覧と pro-con が起動した session の出力の末尾を書く (store.Seen。画面が 3 秒ごとに
-// claude agents と transcript を読まずに済む。issue 502 / 503)。起動の記録を読めない・書けないときは書かない (画面は古いと見て自分で読む)。
+// claude agents と transcript を読まずに済む)。起動の記録を読めない・書けないときは書かない (画面は古いと見て自分で読む)。
 // 出力の末尾を選ぶ判定 (live.OwnedSessions) と数 (live.LogOutputs) は、画面が自分で読むときと同じ。
 // keep は次に一覧を取るまでの最長の間 (暇な間。0 は毎 Tick 取る)。
 func (d *Dispatcher) publishSeen(now time.Time, ss []agents.Session, keep time.Duration) {

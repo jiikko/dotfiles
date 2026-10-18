@@ -16,7 +16,7 @@ import (
 	"pro-con/upgrade"
 )
 
-// 本物の pro-con のバイナリで、動いている dispatcher が新版へ自分で切り替わる (issue 505)。shim は偽物 (呼ばれたら新版を置く)、
+// 本物の pro-con のバイナリで、動いている dispatcher が新版へ自分で切り替わる。shim は偽物 (呼ばれたら新版を置く)、
 // claude と tmux も偽物 (本物の session・tmux に触らない)。状態の置き場は一時の HOME / XDG_STATE_HOME の下。
 // 確かめること: PID のまま引数も引き継いで新版に入れ替わる / 入れ替えの前から後まで 2 つ目の dispatcher は lock を取れない /
 // 抜けた後は lock が外れる (入れ替えの前後に起こした子が握っていない)。

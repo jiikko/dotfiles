@@ -1,6 +1,6 @@
 package monitor
 
-// 見張りが使う git の読み取り。🚨 ref・作業ツリー・index を動かすコマンドを足さない (見張りは読むだけ。issue 475)。
+// 見張りが使う git の読み取り。🚨 ref・作業ツリー・index を動かすコマンドを足さない (見張りは読むだけ)。
 // merge-tree --write-tree は object database に tree を書くが、ref は動かさない (どこからも指されない object は後の gc で消える)。
 
 import (

@@ -1,4 +1,4 @@
-// Package wtclean は閉じたカードの PG の worktree を片付ける (issue 492)。447 の決まりでカードを閉じても PG の worktree と
+// Package wtclean は閉じたカードの PG の worktree を片付ける。447 の決まりでカードを閉じても PG の worktree と
 // ブランチは残すので、消す仕組みが無いと溜まる一方になる。
 //
 // 判定 (Judge) は 1 か所だけに置く: `pro-con worktree clean` の一覧と、消す直前の取り直しと、後で設定画面 (456) の内訳が同じ関数を呼ぶ。
@@ -6,7 +6,7 @@
 // 消してよいのは、次を全部満たす worktree だけ:
 //   - <repo>/.claude/worktrees/pc-<カード> で、git の worktree として登録されている (PM・取り込みの係の pc-pm-* / pc-int-* は除く)
 //   - そのカードが記録か書庫にあり、同じ repo のカードで、完了して PG を止め終えたもの (削除の途中でない)。
-//     完了から 1 週間で記録から消したカードは、片付けの印 (store.Purged。issue 497) にあれば完了したカードと見る
+//     完了から 1 週間で記録から消したカードは、片付けの印 (store.Purged) にあれば完了したカードと見る
 //   - その中 (かその下) を cwd にした session もプロセス (人の shell・エディタ・テスト) も居ない。このコマンドもその中で走っていない
 //   - git worktree lock が無いか、Claude Code が session に掛けた lock (claude session pc-<カード> (pid N …)) で、その pid の claude が居ない。
 //     🚨 Claude Code はこの lock を session が終わっても外さず、pid も生きている session のものと一致しない (2.1.282 で実測 2026-09-26:
@@ -14,14 +14,14 @@
 //   - 未 commit の変更・追跡していないファイル・skip-worktree / assume-unchanged の印が無く、その下に別の worktree も無い
 //   - 無視されたファイルは、中身の無いディレクトリか、作り直せる go_autobuild の産物 (.autobuild.* とその隣の実行ファイル) だけ
 //     (🚨 git worktree remove は --force なしでも無視されたファイルを黙って消す。tmp/ のレポート・.env・settings.local.json・入れ子の repo を失わない)。
-//     例外は設定の disposable_tmp に書いた repo の、worktree の直下の tmp/ の下の無視されたファイル (issue 552): 使い捨てとみなし、
+//     例外は設定の disposable_tmp に書いた repo の、worktree の直下の tmp/ の下の無視されたファイル: 使い捨てとみなし、
 //     状態の置き場の wtclean-tmp/<repo>/<名前>/ へ退避してから消す (Verdict.Tmp。退避は TmpKeep の間残す。stash.go)
 //   - 先端が取り込む先 (origin/master。無ければ origin/main) の祖先か、`git cherry` が全部 - で、かつ空白まで同じ patch
 //     (git patch-id --verbatim) が取り込む先にある (rebase / cherry-pick で入った。🚨 git cherry の patch-id は空白の違いを無視する)
 //
 // ブランチを消すのはそのうえで、pro-con が作った名前 (worktree-pc-<カード>) で、ほかの worktree が使っていないときだけ。
 // master に無い commit があるもの・記録に無いカードのものは worktree もブランチも消さない。ほかの止め具を全部通っていれば
-// Verdict.Ask を立て、人が設定画面で「消す」「残す」を決める (decide.go。issue 553)。
+// Verdict.Ask を立て、人が設定画面で「消す」「残す」を決める (decide.go)。
 //
 // worktree とブランチを消した後のカードは、pro-con が起動した session (起動の記録の行・transcript・claude の job) も消す (sessions.go)。
 package wtclean
@@ -67,10 +67,10 @@ type Verdict struct {
 	BranchWhy string `json:"branchWhy,omitempty"`
 	// Lock は Claude Code が掛けたまま残した lock の理由 (消すときに外す。外した後に消せなければ掛け直す)
 	Lock string `json:"lock,omitempty"`
-	// Ask は、自動では消さないが人が「消す」(Discard)・「残す」(Hold) を決められるもの (issue 553)。消さない理由が
+	// Ask は、自動では消さないが人が「消す」(Discard)・「残す」(Hold) を決められるもの。消さない理由が
 	// 「取り込む先に無い commit がある」か「記録に無いカード」だけで、ほかの止め具 (session・プロセス・未 commit の変更・lock 等) を全部通ったもの
 	Ask bool `json:"ask,omitempty"`
-	// Tmp は消す前に退避する tmp/ の無視されたファイル (worktree からの相対。Inputs.DisposableTmp の repo だけ。issue 552)
+	// Tmp は消す前に退避する tmp/ の無視されたファイル (worktree からの相対。Inputs.DisposableTmp の repo だけ)
 	Tmp []string `json:"tmp,omitempty"`
 }
 
@@ -91,7 +91,7 @@ type Inputs struct {
 	// Projects は transcript の置き場 (~/.claude/projects)。JobsDir は claude の job の置き場 (~/.claude/jobs。空なら job を見ない)
 	Projects string
 	JobsDir  string
-	// DisposableTmp は worktree の直下の tmp/ の無視されたファイルを使い捨て (退避してから消してよい) とみなす repo の名前 (設定の disposable_tmp。issue 552)
+	// DisposableTmp は worktree の直下の tmp/ の無視されたファイルを使い捨て (退避してから消してよい) とみなす repo の名前 (設定の disposable_tmp)
 	DisposableTmp map[string]bool
 }
 

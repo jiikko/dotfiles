@@ -73,7 +73,7 @@ func TestLockExecHelper(t *testing.T) {
 }
 
 // 🚨 dispatcher が新版へ入れ替わる (syscall.Exec) 間、lock は一瞬も外れない: 入れ替えの前から後まで、2 つ目の dispatcher は lock を取れない。
-// PID は変わらない。入れ替わった後に起こした子は lock を握らず、dispatcher が抜ければ次が取れる (issue 505)。
+// PID は変わらない。入れ替わった後に起こした子は lock を握らず、dispatcher が抜ければ次が取れる。
 func TestLockSurvivesExec(t *testing.T) {
 	dir := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestLockExecHelper$")

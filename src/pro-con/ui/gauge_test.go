@@ -173,7 +173,7 @@ func TestScreensShownAndQuitLabel(t *testing.T) {
 	}
 }
 
-// ゲージの「PG n/m」は、dispatcher が枠に数えたカード (様子の Slots) の数を読むだけ (issue 557)。画面の側で一覧 (Consumers) から
+// ゲージの「PG n/m」は、dispatcher が枠に数えたカード (様子の Slots) の数を読むだけ。画面の側で一覧 (Consumers) から
 // card.HoldsPGSlot を組み直さない (母数が dispatcher と違う)。dispatcher が数え直していなければ ? (読めないのを 0 に見せない)。
 func TestGaugeCountsOnlyPGsHoldingSlot(t *testing.T) {
 	be := newSpy()
@@ -197,7 +197,7 @@ func TestGaugeCountsOnlyPGsHoldingSlot(t *testing.T) {
 	}
 }
 
-// join の画面は持ち主の数に入れない: 最後の持ち主の quit は、join が残っていても止めると案内し、join が残ることを添える (issue 481)。
+// join の画面は持ち主の数に入れない: 最後の持ち主の quit は、join が残っていても止めると案内し、join が残ることを添える。
 // 画面が多ければゲージは数だけにする。
 func TestJoinScreensNotCountedAsOwners(t *testing.T) {
 	be := &stopSpy{spy: newSpy()}
@@ -217,7 +217,7 @@ func TestJoinScreensNotCountedAsOwners(t *testing.T) {
 	}
 }
 
-// ゲージの行にレーンごとの枚数を出さない (枠の見出し「3 作業中 (2)」と同じ数。issue 558)。行は残りの項目から始まり、
+// ゲージの行にレーンごとの枚数を出さない (枠の見出し「3 作業中 (2)」と同じ数)。行は残りの項目から始まり、
 // 頭に余分な │ が付かない。狭い端末でも頭の項目 (人の番・最古の待ち・PG) は画面に入る。
 func TestGaugeOmitsLaneCounts(t *testing.T) {
 	m := humanSnap(t)

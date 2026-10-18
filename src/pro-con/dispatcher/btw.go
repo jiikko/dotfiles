@@ -1,6 +1,6 @@
 package dispatcher
 
-// btw (415 要件 9 / issue 438): 人間が「今どうなってる?」と聞いたら、PG は止めず、その文脈も汚さずに答える
+// btw: 人間が「今どうなってる?」と聞いたら、PG は止めず、その文脈も汚さずに答える
 // (Claude Code の /btw と同じ性質)。PG へは届けない: dispatcher は SendMessage を呼べず、届けるには PG を止めて再開するしかない。
 // 答えは別のプロセス (Ask。本物は haiku) が、カードの記録と PG の出力の末尾 (transcript) だけを材料に作る。
 // 1 本ずつ裏で答え、Tick を止めない。dispatcher が答えの途中で落ちたら、次の dispatcher が答え直す (答えの印が記録に無いので)。

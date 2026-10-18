@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// 引き継ぎの印 (PRO_CON_RESUME) は、プロセスの入口 (runInherited) で何かを起こす前に環境変数から消す (issue 548 の敵対的レビュー)。
+// 引き継ぎの印 (PRO_CON_RESUME) は、プロセスの入口 (runInherited) で何かを起こす前に環境変数から消す。
 // run の中で消すと、画面が先に起こす supervisor・dispatcher・claude が印を受け継ぎ、子の pro-con が alt screen の見張りを張って
 // SIGTERM で止める処理を飛ばす (実機で確認: dispatcher が rc 143 で落ち、PG を止めずに抜ける)。exec の順序は単体のテストで作れないので、
 // 呼び出しの置き場と順序を固定する。

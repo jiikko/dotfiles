@@ -7,7 +7,7 @@ import (
 	"pro-con/card"
 )
 
-// plan --points は見積もりをカードに載せ、履歴に残す。使えない値は除ける (箱に手で置いた依頼も。issue 490)。
+// plan --points は見積もりをカードに載せ、履歴に残す。使えない値は除ける (箱に手で置いた依頼も)。
 func TestPlanPoints(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "a", Repo: "dotfiles"})

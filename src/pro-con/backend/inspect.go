@@ -10,7 +10,7 @@ import (
 	"pro-con/wtclean"
 )
 
-// 設定画面 (issue 456) の「見る所」と「変える所」の境界。
+// 設定画面の「見る所」と「変える所」の境界。
 
 // Proc は役ごとのプロセスの一覧の 1 行 (pro-con ps と設定画面のプロセスのタブで同じ型)。
 type Proc struct {
@@ -21,22 +21,22 @@ type Proc struct {
 	Card    string        `json:"card,omitempty"`
 	Session string        `json:"session,omitempty"`
 	Command string        `json:"command,omitempty"`
-	// Mismatch はカードと PG の session の食い違い (カードは作業中なのに session が止まっている / カードは完了なのに動いている。issue 497)。
+	// Mismatch はカードと PG の session の食い違い (カードは作業中なのに session が止まっている / カードは完了なのに動いている)。
 	// 空なら食い違いは無い。設定画面は、止まった PG の行のうち食い違いのあるものだけを出す
 	Mismatch string `json:"mismatch,omitempty"`
-	// Slot は PG の行が枠を使っているか (issue 557。SlotHeld / SlotIdle / SlotUnknown。止まっていて枠にも数えていない PG と、PG でない行は空)。
+	// Slot は PG の行が枠を使っているか (SlotHeld / SlotIdle / SlotUnknown。止まっていて枠にも数えていない PG と、PG でない行は空)。
 	// dispatcher が様子に書いた「枠に数えたカード」を読んで決める (CountedSlots)
 	Slot string `json:"slot,omitempty"`
 }
 
-// Proc.Slot の値 (issue 557)。
+// Proc.Slot の値。
 const (
 	SlotHeld    = "作業中"    // dispatcher が枠に数えた (turn の途中・入力待ち・起動や再開の結果を確かめている)
 	SlotIdle    = "待機中"    // 生きているが枠に数えていない (質問・テストの係の結果・再開の空きを待っている)
 	SlotUnknown = "判定できない" // dispatcher が止まっている・古い
 )
 
-// CountedSlots は dispatcher が枠に数えたカード (store.DispatcherState.Slots と数えた時刻 at。issue 557)。dispatcher が人に止められている (held)・
+// CountedSlots は dispatcher が枠に数えたカード (store.DispatcherState.Slots と数えた時刻 at)。dispatcher が人に止められている (held)・
 // 居ない (gone)・数えたことが無い・数えてから DispatcherStale より経ったなら ok = false (判定できない。止まった dispatcher の最後の数を今の値に見せない)。
 // 🚨 古さは Tick ではなく数えた時刻で見る: 一覧を取れない Tick は割り当てを回さず数え直さないので、Tick が新しくても数は古いことがある
 func CountedSlots(slots []string, at time.Time, held, gone bool, now time.Time) ([]string, bool) {
@@ -46,7 +46,7 @@ func CountedSlots(slots []string, at time.Time, held, gone bool, now time.Time) 
 	return slots, true
 }
 
-// PGSection は一覧の PG の区分 1 つ (issue 557。pro-con ps と設定画面のプロセスのタブで同じ分け方・同じ見出し)。
+// PGSection は一覧の PG の区分 1 つ (pro-con ps と設定画面のプロセスのタブで同じ分け方・同じ見出し)。
 type PGSection struct {
 	Slot string // SlotHeld / SlotIdle / SlotUnknown / 空 (止まっている)
 	Rows []Proc
@@ -99,7 +99,7 @@ func SplitPGs(rows []Proc, known bool) (head []Proc, secs []PGSection, tail []Pr
 	return head, secs, tail
 }
 
-// EventLog は設定画面のログのタブが読む backend (任意。持たない backend はタブに「読めない」と出す。issue 512)。
+// EventLog は設定画面のログのタブが読む backend (任意。持たない backend はタブに「読めない」と出す)。
 // Events は前に呼んだ後に足された出来事を返す (最初の 1 回は全部)。出どころは pro-con log と同じ (eventlog.Follower)。
 // 🚨 読むだけ (--view でも使う)。画面は描くたびに呼ばず、変化の知らせ (Notifier) で裏で呼ぶ。
 type EventLog interface {
@@ -131,7 +131,7 @@ type Config struct {
 	// (設定なしなら config.toml か既定。1 度も回っていなければ空)。Codex / CodexErr は PG に渡す codex の実体と、解けなかった理由 (514)
 	Review, ReviewNow, ReviewFrom string
 	Codex, CodexErr               string
-	// ScheduleOff は予定 (issue 550) を回さない設定 (既定は回す)
+	// ScheduleOff は予定を回さない設定 (既定は回す)
 	ScheduleOff bool
 	// Model / Effort は PG・PM・取り込みの係の --model / --effort の設定 (空なら設定なし = store.Models の先頭 / store.DefaultEffort)
 	Model, Effort string
@@ -143,7 +143,7 @@ const (
 	ConfigPM     = store.SettingPM
 	ConfigUsage  = store.SettingUsage // チェックボックス (1 = 枠で絞る / 0 = 絞らない。SetConfig の Value は on / off)
 	ConfigReview = store.SettingReview
-	// ConfigSchedule は予定を回すか (チェックボックス。SetConfig の Value は on / off。issue 550)
+	// ConfigSchedule は予定を回すか (チェックボックス。SetConfig の Value は on / off)
 	ConfigSchedule = store.SettingSchedule
 	// ConfigModel / ConfigEffort は PG・PM・取り込みの係の --model / --effort (Models / Efforts を巡る)
 	ConfigModel  = store.SettingModel
@@ -188,7 +188,7 @@ const OpConfig Op = "config"
 func (SetConfig) isCommand() {}
 
 // WorktreeReader は設定画面のディスクのタブが読む「自動の片付けが残した worktree と理由」(pro-con worktree clean の一覧と同じ
-// wtclean.Scan。issue 553)。任意 (持たない backend はディスクのタブに「読めない」と出す)。
+// wtclean.Scan)。任意 (持たない backend はディスクのタブに「読めない」と出す)。
 // 🚨 読むだけ (--view でも使う)。重い (worktree ごとの git・claude agents・lsof) ので、ディスクを測るときに裏で呼ぶ。
 type WorktreeReader interface {
 	Worktrees() ([]wtclean.Verdict, error)
@@ -198,7 +198,7 @@ type WorktreeReader interface {
 const OpWorktree Op = "worktree"
 
 // WorktreeDecider は、人が決める worktree (wtclean.Verdict.Ask) を人が「消す」(remove。wtclean.Discard) か「残す」(wtclean.Hold)
-// に決める口 (issue 553)。🚨 git の worktree とブランチを動かすので、見ているだけの画面 (--view) は型の上で持たない。
+// に決める口。🚨 git の worktree とブランチを動かすので、見ているだけの画面 (--view) は型の上で持たない。
 // 数秒かかるので画面は裏で呼ぶ。pro-con worktree clean --yes (dispatcher の予定) とは worktree-clean.lock で重ねない。
 type WorktreeDecider interface {
 	DecideWorktree(v wtclean.Verdict, remove bool) (wtclean.Result, error)

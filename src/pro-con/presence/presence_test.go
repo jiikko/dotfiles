@@ -128,7 +128,7 @@ func TestOpenIsAtomicAgainstConcurrentCount(t *testing.T) {
 	}
 }
 
-// 持ち主と join を分けて数える。持ち主の Leave は、join が残っていても持ち主が 0 なら最後を受ける (issue 481)。
+// 持ち主と join を分けて数える。持ち主の Leave は、join が残っていても持ち主が 0 なら最後を受ける。
 func TestTallyByMode(t *testing.T) {
 	dir := t.TempDir()
 	owner := open(t, dir)
@@ -172,7 +172,7 @@ func TestUnreadableInfoCountsAsOwner(t *testing.T) {
 	}
 }
 
-// 普通のファイルでない印 (FIFO 等) は flock できない。1 つあっても、ほかの画面は数えられる (issue 779)。
+// 普通のファイルでない印 (FIFO 等) は flock できない。1 つあっても、ほかの画面は数えられる。
 func TestScanSkipsNonRegularLock(t *testing.T) {
 	dir := t.TempDir()
 	s := open(t, dir)

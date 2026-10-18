@@ -149,7 +149,7 @@ func TestOnlyOwnedSessionsShowActivity(t *testing.T) {
 }
 
 // 入力待ちで止まった PG (質問待ちの列の WaitPermission) も、生きている PG として出す (C-054)。
-// 枠に数えたかは画面の側で組み直さず、dispatcher が様子に書いたカード (Slots) をそのまま読む (issue 557)。
+// 枠に数えたかは画面の側で組み直さず、dispatcher が様子に書いたカード (Slots) をそのまま読む。
 func TestPromptWaitingPGIsConsumer(t *testing.T) {
 	b, _ := testBackend(t, sessions[:1], nil)
 	b.list = func(context.Context) ([]agents.Session, error) { return sessions, nil }
@@ -204,7 +204,7 @@ func TestTranscriptIsCached(t *testing.T) {
 	}
 }
 
-// 書き込みは受付の箱に置く (記録へ適用するのは dispatcher)。操作はすべて受ける (issue 438)。attach できるのは裏の session だけ。
+// 書き込みは受付の箱に置く (記録へ適用するのは dispatcher)。操作はすべて受ける。attach できるのは裏の session だけ。
 func TestApplySubmitsToInbox(t *testing.T) {
 	b, _ := testBackend(t, sessions, nil)
 	if _, err := b.Apply(backend.NewRequest{Repo: backend.Repo{Name: "dotfiles", Path: "/w/dotfiles"}, Text: "色を直して\n詳しく"}); err != nil {
@@ -244,7 +244,7 @@ func TestApplySubmitsToInbox(t *testing.T) {
 	}
 }
 
-// issue の一覧から補足なしで足した依頼は、カードに原文 (意図の 1 文) と issue が載り、題名に番号が付かない (issue 511)。
+// issue の一覧から補足なしで足した依頼は、カードに原文 (意図の 1 文) と issue が載り、題名に番号が付かない。
 func TestIssueRequestLinksCard(t *testing.T) {
 	b, _ := testBackend(t, nil, nil)
 	target := &backend.IssueTarget{Number: 505, Title: "入れ替わりを直す", Path: "/w/dotfiles/issues/505.md"}
@@ -319,7 +319,7 @@ func TestRegisterAppendsAtomically(t *testing.T) {
 }
 
 // 照合は記録の 1 行にある欄が全部一致したときだけ。どれか 1 つの一致で通すと、短い id の衝突や、
-// pro-con が起動した session を外で同じ session id のまま再開したもの (pid が違う) を拾う (敵対的レビューの P2)。
+// pro-con が起動した session を外で同じ session id のまま再開したもの (pid が違う) を拾う。
 func TestOwnsRequiresEveryRecordedField(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -631,8 +631,8 @@ func inboxEvents(t *testing.T, dir string) []string {
 	return out
 }
 
-// 画面の出来事 (開いた・quit で閉じた・止めた / 止めなかった / 止めきれなかった) は受付の箱に置く (events.jsonl へ書くのは dispatcher。
-// issue 445)。止めるときは止める前に置く (止める dispatcher が Shutdown の前に箱を適用して書く)。
+// 画面の出来事 (開いた・quit で閉じた・止めた / 止めなかった / 止めきれなかった) は受付の箱に置く (events.jsonl へ書くのは dispatcher)。
+// 止めるときは止める前に置く (止める dispatcher が Shutdown の前に箱を適用して書く)。
 func TestScreenEventsGoToInbox(t *testing.T) {
 	a, b := shortState(t), shortState(t)
 	b.dir, b.registry = a.dir, a.registry
@@ -805,7 +805,7 @@ func TestStartKeepsDispatcher(t *testing.T) {
 	t.Fatal("dispatcher が居ないのに、読み直しのループが起こさない")
 }
 
-// attach の間 (from〜to) に人間が打った指示だけを、受付の箱に置く。dispatcher が適用すると原文のまま履歴に入る (issue 428)。
+// attach の間 (from〜to) に人間が打った指示だけを、受付の箱に置く。dispatcher が適用すると原文のまま履歴に入る。
 // transcript は全体を読む (末尾を読む ReadTail だと、長い attach の先頭の発言を落とす)。
 func TestRecordAttachSubmitsHumanPromptsInWindow(t *testing.T) {
 	b, _ := testBackend(t, sessions, nil)
@@ -901,7 +901,7 @@ func TestViewOnlyBackend(t *testing.T) {
 }
 
 // 🚨 見ているだけの画面 (--view) は、socket の逃がし先 (/tmp/pro-con-<uid>/) の緩い権限を直さず、つながずに読み直しで出し、
-// 違反の行に 1 行知らせる (直すのは dispatcher だけ。issue 445)。
+// 違反の行に 1 行知らせる (直すのは dispatcher だけ)。
 func TestViewDoesNotFixFallbackDir(t *testing.T) {
 	root, err := os.MkdirTemp("/tmp", "pcfb")
 	if err != nil {
@@ -975,7 +975,7 @@ func TestScreenEventWithoutPresence(t *testing.T) {
 	}
 }
 
-// 人が止めた印 (issue 459) は Snapshot に出る。c (ResumeDispatcher) は印を外してから dispatcher を起こし、外したことを出来事に残す。
+// 人が止めた印は Snapshot に出る。c (ResumeDispatcher) は印を外してから dispatcher を起こし、外したことを出来事に残す。
 func TestResumeReleasesHoldThenStarts(t *testing.T) {
 	b := shortState(t)
 	var heldAtStart []bool
@@ -1002,7 +1002,7 @@ func TestResumeReleasesHoldThenStarts(t *testing.T) {
 	}
 }
 
-// dispatcher が書いた一覧と出力の末尾 (store.Seen) が新しければ、画面は自分で claude agents も transcript も読まない (issue 502 / 503)。
+// dispatcher が書いた一覧と出力の末尾 (store.Seen) が新しければ、画面は自分で claude agents も transcript も読まない。
 // 古ければ (dispatcher が回っていない) 自分で読む。境目は store.SeenFresh。
 func TestRefreshUsesFreshSeenFromDispatcher(t *testing.T) {
 	for _, tc := range []struct {
@@ -1083,7 +1083,7 @@ func TestNotifiedRefreshRelistsWhenSeenGoesStale(t *testing.T) {
 	}
 }
 
-// 予定 (issue 550): schedule off の設定を画面の Config に載せ、予定の行の「次回」も回さないと出す。
+// 予定: schedule off の設定を画面の Config に載せ、予定の行の「次回」も回さないと出す。
 func TestScheduleOffReachesScreen(t *testing.T) {
 	b, _ := testBackend(t, nil, nil)
 	if _, err := store.Submit(b.dir, store.Request{Kind: store.KindConfig, Key: store.SettingSchedule, Value: "off"}); err != nil {

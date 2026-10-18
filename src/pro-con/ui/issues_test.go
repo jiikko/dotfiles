@@ -113,7 +113,7 @@ func TestCardDropsDuplicateIssueNumberOnBoard(t *testing.T) {
 	}
 }
 
-// タイトルの頭の「<最初の issue の番号>: 」はバッジと二重なので、1 行目では落とす (issue 491)。
+// タイトルの頭の「<最初の issue の番号>: 」はバッジと二重なので、1 行目では落とす。
 // 番号が違う・「の続き」のように番号に言葉が続く・issue が無い、ときはそのまま出す。
 func TestCardHeadingDropsDuplicateIssueNumber(t *testing.T) {
 	iss := []card.IssueRef{{Repo: "dotfiles", Number: 452}}

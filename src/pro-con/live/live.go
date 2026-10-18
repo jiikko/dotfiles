@@ -1,9 +1,9 @@
-// Package live は本物の backend (issue 424 / 427 の段階 3d)。カードは dispatcher が書く記録 (store) から読み、作業中のカードには
+// Package live は本物の backend。カードは dispatcher が書く記録 (store) から読み、作業中のカードには
 // **pro-con が起動した session** (registry.go の記録にあるもの) の様子 (PG の出力の末尾・pid) を `claude agents --json` と transcript から足す。
 // Desktop や他の shell で立ち上げた session は出さない (選べると、pro-con の外の session に入力・停止できてしまう)。
 //
 // 書き込みは受付の箱に置くだけ (store.Submit)。記録へ適用するのは dispatcher (426 の決定 1)。新しい依頼・回答・追加オーダー・btw・
-// 片付けを受ける。PG へ届ける・答えるのは dispatcher (dispatcher/orders.go・btw.go。issue 438)。
+// 片付けを受ける。PG へ届ける・答えるのは dispatcher (dispatcher/orders.go・btw.go)。
 package live
 
 import (
@@ -72,11 +72,11 @@ type Backend struct {
 	leaving atomic.Bool
 	// viewOnly は読み取りだけで開く (pro-con --view)。画面の印を置かない (数えない) / ほかの画面へ知らせない
 	viewOnly bool
-	// join は加わった画面で開く (pro-con --join。issue 481)。印は join として置き、quit で閉じても止めない (keeper・stopAll をつながない)
+	// join は加わった画面で開く (pro-con --join)。印は join として置き、quit で閉じても止めない (keeper・stopAll をつながない)
 	join bool
 	// label / tty は画面の印に書く見分け (--as <ラベル> と端末。空でよい)
 	label, tty string
-	// mine はこの画面が受付の箱に置いた依頼 (依頼 ID → 中身の要点)。dispatcher が除けたら理由をこの画面にだけ出す (issue 481)。mu で守る
+	// mine はこの画面が受付の箱に置いた依頼 (依頼 ID → 中身の要点)。dispatcher が除けたら理由をこの画面にだけ出す。mu で守る
 	mine     map[string]mineReq
 	rejected []backend.Rejected // 除けられて、まだ画面に渡していないもの。mu で守る
 	changed  chan struct{}      // 読み直したら値が入る (画面が 1 秒の tick を待たずに描き直す。backend.Notifier)
@@ -86,7 +86,7 @@ type Backend struct {
 	// procs / disk は設定画面の見る所を読む口 (SetInspector。main がつなぐ)
 	procs func() ([]backend.Proc, error)
 	disk  func() (diskuse.Usage, error)
-	// worktrees / decide は残した worktree を読む口と、人が決める口 (SetWorktrees。main がつなぐ。issue 553)
+	// worktrees / decide は残した worktree を読む口と、人が決める口 (SetWorktrees。main がつなぐ)
 	worktrees func() ([]wtclean.Verdict, error)
 	decide    func(wtclean.Verdict, bool) (wtclean.Result, error)
 	// events は設定画面のログのタブが読み進める記録 (Events。evMu で守る。最初に呼ばれたときに作る)
@@ -182,7 +182,7 @@ func (b *Backend) DiskUsage() (diskuse.Usage, error) {
 	return b.disk()
 }
 
-// SetWorktrees は残した worktree を読む口 (read) と、人が「消す」「残す」を決める口 (decide) をつなぐ (Start の前に呼ぶ。issue 553)。
+// SetWorktrees は残した worktree を読む口 (read) と、人が「消す」「残す」を決める口 (decide) をつなぐ (Start の前に呼ぶ)。
 // どちらも main が持つ (pro-con worktree clean と同じ材料の集め方と worktree-clean.lock)。つながなければ ErrNoInspector を返す。
 func (b *Backend) SetWorktrees(read func() ([]wtclean.Verdict, error), decide func(wtclean.Verdict, bool) (wtclean.Result, error)) {
 	b.worktrees, b.decide = read, decide
@@ -215,7 +215,7 @@ func (b *Backend) Events() ([]eventlog.Event, error) {
 	return b.events.Next()
 }
 
-// Schedule は予定の行 (backend.ScheduleReader。dispatcher が書いた schedule.json を読むだけ。issue 550)。
+// Schedule は予定の行 (backend.ScheduleReader。dispatcher が書いた schedule.json を読むだけ)。
 func (b *Backend) Schedule() ([]backend.ScheduleRow, error) {
 	return backend.ScheduleRows(b.dir, time.Now())
 }
@@ -255,7 +255,7 @@ func (v viewOnly) AttachCommand(string) (*exec.Cmd, error) { return nil, ErrView
 // ErrViewOnly は読み取りだけの画面で書く操作をしたとき。
 var ErrViewOnly = errors.New("見ているだけの画面 (pro-con --view) なので受けない")
 
-// Join は加わった画面 (pro-con --join) の backend を返す (Start の前に呼ぶ。issue 481)。依頼・回答・attach などは持ち主の画面と同じく
+// Join は加わった画面 (pro-con --join) の backend を返す (Start の前に呼ぶ)。依頼・回答・attach などは持ち主の画面と同じく
 // 受けるが、dispatcher を起こさない (c も受けない) し、quit で閉じても止めない。画面の印は join として置く (持ち主の「最後の画面か」の
 // 数えには入らないが、dispatcher の「画面が無ければ抜ける」の数えには入る)。
 // 🚨 SetStopper / SetKeeper をつながないこと (つながっていても join の StopAll は止めず、keeper は起こさない)
@@ -327,7 +327,7 @@ func (b *Backend) SetStopper(f func(context.Context) error) { b.stopAll = f }
 
 // StopAll は dispatcher と、pro-con が起動した PG を止める (backend.Stopper)。
 // ほかの持ち主の画面が開いていれば止めずに backend.KeptRunning を返す (止めるのは最後に閉じる持ち主の画面だけ。package presence が
-// 数えるので、dispatcher が居なくても数えられる。join の画面は数えない = join が残っていても止める。issue 481)。
+// 数えるので、dispatcher が居なくても数えられる。join の画面は数えない = join が残っていても止める)。
 // この画面の印を置けなかった・数えられなければ、最後の画面として止める。join の画面は何も止めずに閉じる。
 func (b *Backend) StopAll(ctx context.Context) error {
 	b.leaving.Store(true) // この後は dispatcher を起こし直さない (最後の画面なら、これから止める)
@@ -372,7 +372,7 @@ func (b *Backend) StopAll(ctx context.Context) error {
 	return err
 }
 
-// Event は画面の出来事を受付の箱に置く (出来事の記録 events.jsonl へ書くのは dispatcher。書き手を 1 つに保つ = issue 445)。
+// Event は画面の出来事を受付の箱に置く (出来事の記録 events.jsonl へ書くのは dispatcher。書き手を 1 つに保つ)。
 // dispatcher が居なければ次に起動した dispatcher が書く。画面が quit を通らずに消えた (落ちた・端末を閉じた) ときは何も残らない
 // (dispatcher の「画面が無い」の出来事 (screens) が代わりになる)。置けなくても画面の動きは変えない。
 // 🚨 --view の画面からは呼ばない (受付の箱にも書かない。Start は viewOnly なら呼ばず、StopAll は View の backend から呼べない)
@@ -490,7 +490,7 @@ func (b *Backend) Start(ctx context.Context) {
 		default:
 		}
 	}).OnRefused(func(err error) {
-		// 🚨 画面は逃がし先の権限を直さない (--view は読むだけ。直すのは dispatcher だけ。issue 445)。つながずに 3 秒の読み直しで出す
+		// 🚨 画面は逃がし先の権限を直さない (--view は読むだけ。直すのは dispatcher だけ)。つながずに 3 秒の読み直しで出す
 		b.mu.Lock()
 		b.refused = "dispatcher の知らせを受けずに " + b.interval.String() + " ごとの読み直しで出す: " + err.Error()
 		b.mu.Unlock()
@@ -548,7 +548,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	}
 	now := b.now()
 	var extra []card.Violation
-	// dispatcher が書いた一覧と出力の末尾が新しければ使い、自分では claude agents も transcript も読まない (issue 502 / 503)。
+	// dispatcher が書いた一覧と出力の末尾が新しければ使い、自分では claude agents も transcript も読まない。
 	// 古い・無い (dispatcher が回っていない・一覧を取れていない) ときだけ自分で読む (正しさを dispatcher に預けない)
 	seen, seenErr := store.LoadSeen(b.dir)
 	fresh := seenErr == nil && seen.Fresh(now)
@@ -590,7 +590,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	}
 	// 数えられなければ 0 (「画面 N」を出さず、終了は止める側の案内になる)。
 	// 数えるとき落ちた画面の印を消す (screens/ を書く)。--view の画面も消してよい: どの画面が数えても同じ後始末で、
-	// 画面・dispatcher・PG の状態を変えない (読むだけの例外 (b)。issue 445)
+	// 画面・dispatcher・PG の状態を変えない (読むだけの例外 (b))
 	infos, _ := presence.List(b.dir)
 	screens := make([]backend.Screen, len(infos))
 	for i, in := range infos {
@@ -758,7 +758,7 @@ func (b *Backend) moveAhead(r store.Request) {
 	}
 }
 
-// resume は人が止めた印を外して dispatcher を起こす (c。issue 459)。印が無くても、居なければ起こす。
+// resume は人が止めた印を外して dispatcher を起こす (c)。印が無くても、居なければ起こす。
 func (b *Backend) resume() (string, error) {
 	if b.keeper == nil {
 		return "", errors.New("dispatcher を起こす口がつながっていない")

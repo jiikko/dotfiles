@@ -53,7 +53,7 @@ func TestExecRunnerCancelKillsStubbornChild(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
 	go func() {
-		// 猶予は短くする: 見るのは「SIGTERM を無視する子も最後は止まる」ことで、猶予の長さではない (issue 614)
+		// 猶予は短くする: 見るのは「SIGTERM を無視する子も最後は止まる」ことで、猶予の長さではない
 		rc, _ := ExecRunner{KillGrace: 300 * time.Millisecond}.Run(ctx, dir, `trap "" TERM; sleep 60 & echo $! > child.pid; wait`, filepath.Join(dir, "log"), "t1")
 		done <- rc
 	}()
@@ -183,7 +183,7 @@ func runOnTerminal(string) string {
 }
 
 // テストの係の実行は制御端末を持たない: dispatcher が端末から起こされていても、make test の中の `zsh -i -c` 等に
-// 端末の前面を奪わせない (奪われると前面で端末を読む画面が SIGTTIN で止まる。issue 518)。
+// 端末の前面を奪わせない (奪われると前面で端末を読む画面が SIGTTIN で止まる)。
 func TestExecRunnerHasNoControllingTerminal(t *testing.T) {
 	if got := ptytest.Run(t, "run"); got != "tty-closed" {
 		t.Fatalf("実行の中から端末を開けた: %q", got)

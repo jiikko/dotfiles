@@ -1,6 +1,6 @@
 package main
 
-// pro-con config — 動いている dispatcher を止めずに PG の枠と PM の数を変える口 (issue 456)。受付の箱に「設定を変える」依頼を置くだけで、
+// pro-con config — 動いている dispatcher を止めずに PG の枠と PM の数を変える口。受付の箱に「設定を変える」依頼を置くだけで、
 // 状態の置き場 (settings.json) へ書くのは dispatcher (store.Apply)。show は読むだけ。優先の順は store/settings.go の doc。
 
 import (
@@ -77,7 +77,7 @@ func runConfig(args []string, dir string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// showSchedule は予定 (issue 550) ごとに、いつ・dispatcher が起こすコマンドの字面・前回・次回を出す (設定画面の予定のタブと同じ行)。
+// showSchedule は予定ごとに、いつ・dispatcher が起こすコマンドの字面・前回・次回を出す (設定画面の予定のタブと同じ行)。
 func showSchedule(dir string, s store.Settings, serr error, now time.Time, w io.Writer) error {
 	rows, err := backend.ScheduleRows(dir, now)
 	state := "on (dispatcher が回す。既定)"

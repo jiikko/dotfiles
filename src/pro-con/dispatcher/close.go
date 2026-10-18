@@ -1,11 +1,11 @@
 package dispatcher
 
-// PG を止めてから片付けるカード: 閉じたカード (issue 447。StopAfterClose) と、削除の依頼を受けたカード (issue 451。DeleteAt)。
-// レビューの列に入ったカード (issue 536) も同じ印で止める (idle の PG を残しても、差し戻しの再開は止めてから --resume するので効かない)。
+// PG を止めてから片付けるカード: 閉じたカード (StopAfterClose) と、削除の依頼を受けたカード (DeleteAt)。
+// レビューの列に入ったカードも同じ印で止める (idle の PG を残しても、差し戻しの再開は止めてから --resume するので効かない)。
 // 止めたら Stopped を付ける (差し戻し・追加オーダーの再開が、落ちた PG の自動の再開を待たずに --resume する)。
 // 印は依頼の適用と同時に付き、dispatcher が Tick ごとに止める。止めた・止まったかの判定は終了のとき (shutdown.go の ensureStopped) と同じ部品を使う。
 // PG の worktree とブランチは、取り込みの係が merge で取り込むので閉じても残す。取り込まない終わり方で閉じたカードと削除したカードだけ、
-// 止め終えた直後に取り込み先に無い commit を残してから片付ける (worktree.go。issue 553)。
+// 止め終えた直後に取り込み先に無い commit を残してから片付ける (worktree.go)。
 
 import (
 	"context"

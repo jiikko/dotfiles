@@ -1,6 +1,6 @@
 package ui
 
-// 設定画面のディスクのタブの「残した worktree」(issue 553)。主の経路 (閉じる・消すその場で片付ける = dispatcher/worktree.go) で
+// 設定画面のディスクのタブの「残した worktree」。主の経路 (閉じる・消すその場で片付ける = dispatcher/worktree.go) で
 // 片付かなかったもの (前からの残り物・退避や削除に失敗したもの・未 commit の変更があるもの) の受け皿。一覧と理由を出し、
 // 人が決められるもの (wtclean.Verdict.Ask) は D (消す。取り込み先に無い commit を残してから) / L (残す) で決める。
 // 🚨 D は 2 回押して確定する (消すのは戻せない)。決める口 (backend.WorktreeDecider) は、材料を取り直して判定し直してから動かす

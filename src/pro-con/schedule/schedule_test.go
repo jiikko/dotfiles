@@ -71,7 +71,7 @@ func TestJobsCommandMatchesArgs(t *testing.T) {
 	}
 }
 
-// 1 週間の削除は dispatcher の中で回す行で、画面にはそう分かる字面で出る (子を起こすコマンドに見せない。issue 497)。
+// 1 週間の削除は dispatcher の中で回す行で、画面にはそう分かる字面で出る (子を起こすコマンドに見せない)。
 func TestJobsCardPurgeIsInternal(t *testing.T) {
 	i := slices.IndexFunc(Jobs, func(j Job) bool { return j.Name == CardPurge })
 	if i < 0 {

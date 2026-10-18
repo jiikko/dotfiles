@@ -38,7 +38,7 @@ func TestMoveAppliesEachRequest(t *testing.T) {
 	}
 }
 
-// 順番 (--after) の前のカードが終わっていないカードを上げると、並びより順番が勝つことを履歴に書く (issue 468 と食い違ったとき)。
+// 順番 (--after) の前のカードが終わっていないカードを上げると、並びより順番が勝つことを履歴に書く (順番と食い違ったとき)。
 func TestMoveBlockedCardSaysItWaits(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "前"})

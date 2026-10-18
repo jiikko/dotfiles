@@ -22,7 +22,7 @@ import (
 	"sync"
 )
 
-// listEveryTick は暇な間の一覧の間引き (issue 559) を切る。この file のテストは空の状態 (暇) で回し、一覧を取った回数で Tick を数える
+// listEveryTick は暇な間の一覧の間引きを切る。この file のテストは空の状態 (暇) で回し、一覧を取った回数で Tick を数える
 const listEveryTick = time.Nanosecond
 
 // dispatcher は interval を待たずに、依頼を置いた側の Poke ですぐ次の Tick を回す (interval は 1 時間にして、起きるのは Poke だけにする)。
@@ -62,7 +62,7 @@ func TestServeWakesOnPoke(t *testing.T) {
 
 // 画面が起こした dispatcher (alone) は、開いている画面がある間は回り続け、1 つも無い状態が続いたら PG を止めて抜ける
 // (最後の画面が quit を通らずに消えても PG を残さない)。止めた結果も書く。
-// join の画面も数える (持ち主が落ちても、join が開いている間は PG を止めない。issue 481)。
+// join の画面も数える (持ち主が落ちても、join が開いている間は PG を止めない)。
 func TestServeExitsWithoutScreens(t *testing.T) {
 	for _, mode := range []presence.Mode{presence.Owner, presence.Join} {
 		t.Run(string(mode), func(t *testing.T) { serveExitsWithoutScreens(t, mode) })
@@ -111,7 +111,7 @@ func TestSpawnedDispatcherExitsWithoutScreens(t *testing.T) {
 	}
 }
 
-// 画面の quit の停止は「画面が止めた」と付ける (人が止めた印を置かない。issue 459)。
+// 画面の quit の停止は「画面が止めた」と付ける (人が止めた印を置かない)。
 func TestScreenStopCmdIsFromScreen(t *testing.T) {
 	if got := strings.Join(stopCmd("/bin/pro-con", []string{"--e2e", "/x"}).Args[1:], " "); got != "dispatcher --stop --from-screen --e2e /x" {
 		t.Fatalf("args=%q", got)
@@ -184,8 +184,8 @@ func (f *stopFlaky) Stop(context.Context, string) error {
 }
 
 // 止めきれなければ抜けずに止め直し、止まったら抜けて結果を ok で書き直す。止めている間に持ち主の画面が開いたら、止めるのをやめて続ける。
-// ただし人が止めた印 (issue 459) があれば、画面が開いていても止めきる (画面は印がある間 dispatcher を起こさないので、続ける者が居ない)。
-// join の画面 (issue 481) が開いていても止めきる (join は dispatcher を起こさないので、持ち主の quit の停止を取り消すと PG が残る)。
+// ただし人が止めた印があれば、画面が開いていても止めきる (画面は印がある間 dispatcher を起こさないので、続ける者が居ない)。
+// join の画面が開いていても止めきる (join は dispatcher を起こさないので、持ち主の quit の停止を取り消すと PG が残る)。
 func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 	old := stopRetryEvery
 	stopRetryEvery = time.Millisecond
@@ -255,9 +255,9 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 // いない ctx で行う (取り消された ctx のままでは claude の呼び出しが即座に失敗する。偽物も ctx を見る)。画面が開いていれば止めない
 // (画面が dispatcher を起こし直し、PG はそのまま続く)。
 func TestServeStopsOnSignalWhenSpawnedByScreen(t *testing.T) {
-	// join の画面しか無ければ止める (join は dispatcher を起こし直さないので、止めずに抜けると見張る者の居ない PG が残る。issue 481)
+	// join の画面しか無ければ止める (join は dispatcher を起こし直さないので、止めずに抜けると見張る者の居ない PG が残る)
 	// 持ち主の画面は猶予の間ずっと開いたままなので、既定 (5 秒) のままだと満額を実時間で待つ。見るのは止める / 止めないの分岐で、
-	// 猶予の長さではないので縮める (issue 614)。🚨 package の変数なのでこの package のテストに t.Parallel を足すときは注入へ移す
+	// 猶予の長さではないので縮める。🚨 package の変数なのでこの package のテストに t.Parallel を足すときは注入へ移す
 	old := signalGrace
 	signalGrace = 200 * time.Millisecond
 	t.Cleanup(func() { signalGrace = old })

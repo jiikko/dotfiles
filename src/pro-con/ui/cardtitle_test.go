@@ -75,7 +75,7 @@ func TestCardTitleWrapsOnBoard(t *testing.T) {
 	}
 }
 
-// 確認のカード (issue 531) は 1 行目の番号の後に印を色つきで出す。作業のカードには出さない。
+// 確認のカードは 1 行目の番号の後に印を色つきで出す。作業のカードには出さない。
 func TestQuestionCardMarkOnBoard(t *testing.T) {
 	be := newSpy()
 	be.snap.Cards = []card.Card{

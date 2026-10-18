@@ -58,7 +58,7 @@ func viewBytes(m *Model) uint64 {
 	return (b.TotalAlloc - a.TotalAlloc) / n
 }
 
-// 差分の板を開いた画面の 1 描画の確保量は本文の行数で増えない (issue 529)。出すのは窓の数十行なのに、描くたびに全行
+// 差分の板を開いた画面の 1 描画の確保量は本文の行数で増えない。出すのは窓の数十行なのに、描くたびに全行
 // (最大 card.DiffMaxLines) へ ansi.Strip と結合をかけていた。時間ではなく確保量の伸び率で見る。
 // 見ていないもの: ファイルの数への比例 (畳みの位置は O(ファイル数) で持つ。ここでは両方 50 ファイル) / キー操作の経路
 func TestDiffBoardViewAllocDoesNotGrowWithLines(t *testing.T) {
@@ -68,7 +68,7 @@ func TestDiffBoardViewAllocDoesNotGrowWithLines(t *testing.T) {
 	}
 }
 
-// 差分の板を閉じた / 開いた画面の View (issue 529 の前後を測る。本文は 82 ファイル・card.DiffMaxLines 行)。
+// 差分の板を閉じた / 開いた画面の View (直す前後を測る。本文は 82 ファイル・card.DiffMaxLines 行)。
 //
 //	go test -run '^$' -bench BenchmarkDiffBoardView -benchmem -count 10 ./ui/
 func BenchmarkDiffBoardView(b *testing.B) {

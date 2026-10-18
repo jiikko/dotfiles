@@ -1,7 +1,7 @@
 package ui
 
 // 終了。Q (または ctrl+c) で終了の入力欄を開き、quit と打って enter したときだけ閉じる。入力欄の上には、閉じると何が動き続けるか・
-// 何を止めるかと、ほかに開いている画面の居場所 (tmux の pane / tty) をダイアログで出す (issue 519)。
+// 何を止めるかと、ほかに開いている画面の居場所 (tmux の pane / tty) をダイアログで出す。
 // 本物のモード (backend.Stopper を持つ backend) は、終了のときに dispatcher と pro-con が起動した PG を止めてから閉じる
 // (次に dispatcher を起動したら続きから再開する)。止めている間は「止めています」を出す。
 // ライブアップグレード (ctrl+r) の終了は入れ替えであって終了ではないので、ここを通さない (upgrade.go)。
@@ -112,7 +112,7 @@ func (m *Model) submitQuit() tea.Cmd {
 }
 
 // quitLabel は終了の入力欄の見出し。閉じると何が起きるかは見出しに書かず、ダイアログ (quitBody) にだけ出す
-// (文を作る所を 1 つにする = issue 519)。
+// (文を作る所を 1 つにする)。
 func (m *Model) quitLabel() string { return "終了するには quit と打って enter" }
 
 // runningParts は dispatcher が動かしているもの (PG の本数は別の行に出す)。
@@ -135,7 +135,7 @@ func (m *Model) quitBody() []string {
 	case m.joined():
 		body = keep("join の画面 (--join)")
 	case stopper:
-		// 最後に閉じる持ち主の画面だけが止める (join の画面は数えない = issue 481)
+		// 最後に閉じる持ち主の画面だけが止める (join の画面は数えない)
 		if owners, _ := m.snap.ScreenTally(); owners > 1 {
 			body = keep(fmt.Sprintf("ほかに持ち主の画面が %d 開いている", owners-1))
 		} else {

@@ -1,6 +1,6 @@
 package store
 
-// 予定 (package schedule。issue 550) を回した記録。書くのは dispatcher だけ、読むのは pro-con config と画面。
+// 予定 (package schedule) を回した記録。書くのは dispatcher だけ、読むのは pro-con config と画面。
 
 import (
 	"path/filepath"

@@ -1,6 +1,6 @@
 package ui
 
-// PG がカードに付けた添付 (issue 453) の見せ方。画像は o で Preview に渡し、文字の添付 (tmux の capture-pane -e の色つきの画面など) は
+// PG がカードに付けた添付の見せ方。画像は o で Preview に渡し、文字の添付 (tmux の capture-pane -e の色つきの画面など) は
 // 詳細の中にそのまま出す。それ以外 (ファイル) は開かずにパスだけ見せる。
 // 🚨 画像も既定のアプリには渡さない (open -a Preview)。PG が用意したファイルを人間の権限で開くので、.terminal / .webloc のような
 // 開くと動くファイルを o で動かさない

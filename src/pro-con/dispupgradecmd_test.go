@@ -13,7 +13,7 @@ import (
 	"pro-con/store"
 )
 
-// issue 505: 入れ替え (exec) で起きた dispatcher は前のプロセス像の続き。入れ替えの隙に --stop が置いた止める印を捨てず (頼んだ --stop が
+// 入れ替え (exec) で起きた dispatcher は前のプロセス像の続き。入れ替えの隙に --stop が置いた止める印を捨てず (頼んだ --stop が
 // 時間切れまで待たない)、人が止めた印があっても回らずに抜けない・印を外さない (起動のときの扱いをしない)。
 func TestUpgradedDispatcherKeepsStopMarks(t *testing.T) {
 	root, dir := heldRoot(t)

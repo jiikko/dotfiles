@@ -79,7 +79,7 @@ func TestCardAttachRejects(t *testing.T) {
 }
 
 // PG への指示 (dispatcher.Prompt) の attach のコマンドは、今のパーサに通る (指示だけが古くなる形を止める)。
-// 敵対的レビューを codex に回す設定 (514) で足す attach (証拠・代わりに回した記録) も同じ。
+// 敵対的レビューを codex に回す設定で足す attach (証拠・代わりに回した記録) も同じ。
 func TestPromptAttachCommandParses(t *testing.T) {
 	for _, rv := range []dispatcher.Review{
 		{},

@@ -40,7 +40,7 @@ func doneLaneRows(m *Model) []string {
 	return out
 }
 
-// 選択を下へ進めると完了のレーンが追ってスクロールし、選択中のカードと枠が見えている (issue 499)。
+// 選択を下へ進めると完了のレーンが追ってスクロールし、選択中のカードと枠が見えている。
 func TestDoneLaneScrollsToSelection(t *testing.T) {
 	m := doneLaneModel(t, 30)
 	shown := m.shownCards()

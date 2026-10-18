@@ -62,7 +62,7 @@ func TestShutdownTouchesOnlyOwnSessions(t *testing.T) {
 	if len(r2.l.stopTries) != 0 {
 		t.Fatalf("別の session id の session を止めた: %v", r2.l.stopTries)
 	}
-	// 記録の session が一覧に無くても、カードの短い id で別の session が生きていれば「止まっている」と読まず名指しする (issue 457)
+	// 記録の session が一覧に無くても、カードの短い id で別の session が生きていれば「止まっている」と読まず名指しする
 	if err == nil || !strings.Contains(err.Error(), "C-001 (id-pc-c-001") {
 		t.Fatalf("短い id が別の session を指す形を名指ししない: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestShutdownReportsSessionsThatDoNotStop(t *testing.T) {
 	}
 }
 
-// 止め直しの出来事は PG ごとに 1 行 (周ごとに積むと、同じ行が同じ時刻で周の数だけ並ぶ = issue 555 の 14 行)。
+// 止め直しの出来事は PG ごとに 1 行 (周ごとに積むと、同じ行が同じ時刻で周の数だけ並ぶ)。
 // 止まらなかったときの名指しには、pid の有無と一覧の state を添える。
 func TestShutdownRestopNoteIsOneLinePerPG(t *testing.T) {
 	r := newCrashRig(t)
@@ -392,7 +392,7 @@ func TestShutdownRestopNoteMergesPartialFailure(t *testing.T) {
 	}
 }
 
-// 止まらなかったときの案内は、そのとき見えている様子 (pid の有無・一覧・記録の state) を添え、その様子で効く操作だけを挙げる (issue 555)。
+// 止まらなかったときの案内は、そのとき見えている様子 (pid の有無・一覧・記録の state) を添え、その様子で効く操作だけを挙げる。
 func TestShutdownAdviceFollowsSessionState(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -442,7 +442,7 @@ func TestShutdownAdviceFollowsSessionState(t *testing.T) {
 }
 
 // 起床の予約 (ScheduleWakeup) が残ったまま終えた PG は、止めた後も一覧では pid 無し・working のまま (Claude Code の記録は done)。
-// 止まったと読み、「止めきれなかった」にしない (issue 551。2.1.283 で実測)。
+// 止まったと読み、「止めきれなかった」にしない (2.1.283 で実測)。
 func TestShutdownAcceptsPidlessWorkingWithDoneJob(t *testing.T) {
 	r := newCrashRig(t)
 	r.d.ListAll = func(ctx context.Context) ([]agents.Session, error) {

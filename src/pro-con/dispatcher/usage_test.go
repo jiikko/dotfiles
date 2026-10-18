@@ -53,7 +53,7 @@ func TestUsageOf(t *testing.T) {
 	}
 }
 
-// 枠は全プロセス共有のゲート越しに読む: 5 分以内に 2 回読んでも claude は 1 回しか起こさない (issue 627)。
+// 枠は全プロセス共有のゲート越しに読む: 5 分以内に 2 回読んでも claude は 1 回しか起こさない。
 func TestReadUsageGoesThroughSharedGate(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	dir := t.TempDir()
@@ -447,7 +447,7 @@ func TestChangedAfterFirstTick(t *testing.T) {
 	}
 }
 
-// 人が「枠で絞らない」と決めたら (pro-con config set usage off)、週の枠が 96% でも上限まで起動し、絞った理由を出さない (issue 536)。
+// 人が「枠で絞らない」と決めたら (pro-con config set usage off)、週の枠が 96% でも上限まで起動し、絞った理由を出さない。
 func TestUsageOffIgnoresUsage(t *testing.T) {
 	r := newUsageRig(t)
 	r.sess, r.pct = 23, 96

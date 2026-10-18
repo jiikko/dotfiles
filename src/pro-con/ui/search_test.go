@@ -154,7 +154,7 @@ func TestMarkHitsSkipsSGR(t *testing.T) {
 }
 
 // SGR 以外のエスケープ列 (OSC 8 のリンク) も丸ごと写す。「次の m まで」で読むと URL の "exam" の m で切れ、
-// 残りの URL を本文と見なして語を浮かせ、OSC の中に SGR を差し込んで列を壊していた (issue 757)。
+// 残りの URL を本文と見なして語を浮かせ、OSC の中に SGR を差し込んで列を壊していた。
 func TestMarkHitsSkipsOSCLink(t *testing.T) {
 	open := "\x1b]8;;https://example.com/\x1b\\"
 	closeLink := "\x1b]8;;\x1b\\"
@@ -199,7 +199,7 @@ func TestSearchDoesNotMarkPoints(t *testing.T) {
 	}
 }
 
-// / で絞っていても、issue の一覧 (i) の札は隠れたカードも出す (札は記録の全カードから作る。issue 537 の issueCards)。
+// / で絞っていても、issue の一覧 (i) の札は隠れたカードも出す (札は記録の全カードから作る。issueCards)。
 // 一覧を閉じたら絞り込みは残り、絞っている間に届いたスナップショットでも札と絞り込みの両方が保たれる。
 func TestSearchKeepsPickerCardTags(t *testing.T) {
 	m, be := linkedPicker(t)

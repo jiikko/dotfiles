@@ -25,7 +25,7 @@ func openAs(t *testing.T, be *Backend, mode presence.Mode) {
 	be.screen = sc
 }
 
-// join の画面 (issue 481) は quit で閉じても止めない。持ち主の画面は、join が残っていても最後の持ち主なら止める
+// join の画面は quit で閉じても止めない。持ち主の画面は、join が残っていても最後の持ち主なら止める
 // (join を数えると、加わった人の画面が開いているだけで持ち主の quit が PG を止めなくなる)。
 func TestJoinQuitStopsNothingAndOwnerIgnoresJoins(t *testing.T) {
 	owner, j := shortState(t), shortState(t)
@@ -73,7 +73,7 @@ func TestJoinNeverWakesDispatcher(t *testing.T) {
 	}
 }
 
-// 除けた理由は、その依頼を置いた画面にだけ出す (画面 ID と依頼 ID を結ぶ。issue 481)。理由は dispatcher が書いたもの。
+// 除けた理由は、その依頼を置いた画面にだけ出す (画面 ID と依頼 ID を結ぶ)。理由は dispatcher が書いたもの。
 // 適用された依頼は知らせない。依頼の履歴には置いた画面が残る。
 func TestRejectedReasonGoesOnlyToSubmittingScreen(t *testing.T) {
 	a, b := shortState(t), shortState(t)

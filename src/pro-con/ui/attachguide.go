@@ -1,6 +1,6 @@
 package ui
 
-// tmux の外の attach の前の案内 (issue 527)。tmux の外では端末を丸ごと claude attach に渡すので、attach の間は pro-con が何も描けない。
+// tmux の外の attach の前の案内。tmux の外では端末を丸ごと claude attach に渡すので、attach の間は pro-con が何も描けない。
 // そこで渡す前に、戻り方 (Ctrl+Z) を中央の枠で出し、enter / y で attach へ進む (他のキーではやめる)。
 // Ctrl+Z で claude attach が終わる (止まらない) ことは、隔離 tmux で本物の claude attach を動かして確かめた (rc=0 で終わる)。
 // ← は Claude Code の agent の一覧へ行くだけで pro-con には戻らないので、そう書く。

@@ -79,7 +79,7 @@ func TestLegendRowsFitPanel(t *testing.T) {
 	}
 }
 
-// ? は流れのタブで開き、tab で次・shift+tab で前のタブへ (端で回る)。閉じて開き直すと流れのタブの頭から (issue 515)。
+// ? は流れのタブで開き、tab で次・shift+tab で前のタブへ (端で回る)。閉じて開き直すと流れのタブの頭から。
 func TestLegendTabs(t *testing.T) {
 	m := New(newSpy(), nil)
 	m.width, m.height = 120, 40
@@ -149,7 +149,7 @@ func TestLegendShowsEveryRole(t *testing.T) {
 	}
 }
 
-// 凡例の送りは listnav.MotionOf の語彙 (ctrl+n / end / ctrl+d も効く。issue 700 の 3)。
+// 凡例の送りは listnav.MotionOf の語彙 (ctrl+n / end / ctrl+d も効く)。
 func TestLegendScrollUsesMotionVocabulary(t *testing.T) {
 	m := New(newSpy(), nil)
 	m.width, m.height = 120, 12 // 送りが要るほど低い画面

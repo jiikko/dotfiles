@@ -1,4 +1,4 @@
-// Package diskuse は pro-con が作った物のディスクの使用量と内訳を測る (issue 456。読むだけ)。
+// Package diskuse は pro-con が作った物のディスクの使用量と内訳を測る (読むだけ)。
 //
 // 数えるのは pro-con が作った物だけ: 起動の記録 (sessions.json と sessions-retired.json) にある session の worktree
 // (<repo>/.claude/worktrees/pc-*) と transcript の置き場、状態の置き場、pro-con のバイナリ。repo の本体や pro-con の外の
