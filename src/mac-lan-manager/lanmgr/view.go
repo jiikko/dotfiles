@@ -116,7 +116,7 @@ func (m *Model) footer() string {
 			if r.smb {
 				hs = append(hs, keyHint{"y", "smb", 6}, keyHint{"O", "Finder で繋ぐ", 12})
 			}
-			if m.o.SpeedTest != nil && m.speedTarget(r).Refusal == "" { // 案内と効くキーを同じ述語にする (t は speedTarget で断る)
+			if m.o.SpeedTest != nil && m.speedRun == nil && m.speedTarget(r).Refusal == "" { // 案内と効くキーを同じ述語にする (askSpeed と同じ条件)
 				hs = append(hs, keyHint{"t", "速度", 9})
 			}
 		}

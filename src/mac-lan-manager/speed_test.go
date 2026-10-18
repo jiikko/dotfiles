@@ -29,6 +29,11 @@ func (s *speedLedger) Update(string, func(*ledger.Host)) error { return errors.N
 // speedModel は管理対象 3 台の画面: mini (有線で見える。台帳の内部 IP は固定) / air (Wi-Fi だけで見える) / nouser (台帳の user が使えない
 // 形ではないが、$USER も空にして ssh のユーザー名が分からない)。
 func speedModel(readErr error) func() (*lanmgr.Model, error) {
+	return speedModelWith(readErr, false, nil)
+}
+
+// speedModelWith は speedModel に、走査が終わらない (busy) と台帳に足す行を渡せる形。
+func speedModelWith(readErr error, busy bool, more []ledger.Host) func() (*lanmgr.Model, error) {
 	return func() (*lanmgr.Model, error) {
 		return lanmgr.New(lanmgr.Options{
 			ReadNet: func(context.Context) (netinfo.Snapshot, error) {
@@ -42,17 +47,17 @@ func speedModel(readErr error) func() (*lanmgr.Model, error) {
 			},
 			LocalHost: func() string { return "me.local" },
 			StartScan: func(time.Time) lanmgr.Scanner {
-				return &dumpScan{peers: []discover.Peer{
+				return &dumpScan{busy: busy, peers: []discover.Peer{
 					{Host: "m2macmini.local", Instances: []string{"mini"}, SSH: true, Addrs: map[int]string{14: "192.168.50.7", 27: "192.168.100.12"}},
 					{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}},
 				}}
 			},
 			IfName: func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
-			Ledger: &speedLedger{hosts: []ledger.Host{
+			Ledger: &speedLedger{hosts: append([]ledger.Host{
 				{Host: "m2macmini.local", User: "koji", LAN: "192.168.100.12", Alias: "mini"},
 				{Host: "air.local", User: "koji"},
 				{Host: "gone.local", User: "koji"}, // 見えず内部 IP も無い: 繋ぐ IP が分からない
-			}},
+			}, more...)},
 			User: "koji",
 		}), nil
 	}
@@ -161,5 +166,54 @@ func TestSpeedtestStopCancelsMeasurement(t *testing.T) {
 	var out, errb bytes.Buffer
 	if rc := runSpeed(nil, &out, &errb, time.Now, stop, speedModel(nil), test); rc != 130 || calls != 1 {
 		t.Errorf("rc=%d 測った %d 回, want 130 / 1", rc, calls)
+	}
+}
+
+// 名前が 2 台に当たる (別名と .local を落としたホスト名が別の Mac で重なる) なら、黙って片方を測らず rc=2 で断る。ホスト名にちょうど
+// 一致すればそれを測る。同じ相手を 2 回渡しても 1 回だけ測る。
+func TestSpeedtestAmbiguousName(t *testing.T) {
+	more := []ledger.Host{{Host: "air2.local", User: "koji", LAN: "192.168.100.15", Alias: "air"}} // 別名 "air" が air.local の短い名前と重なる
+	f := &fakeSpeed{res: map[string]speedtest.Result{"192.168.50.9": {UpBps: 1e8, DownBps: 1e8}, "192.168.100.15": {UpBps: 1e8, DownBps: 1e8}}}
+	var out, errb bytes.Buffer
+	if rc := runSpeed([]string{"air"}, &out, &errb, time.Now, nil, speedModelWith(nil, false, more), f.test); rc != 2 || len(f.dests) != 0 ||
+		!strings.Contains(errb.String(), "air.local") || !strings.Contains(errb.String(), "air2.local") {
+		t.Errorf("曖昧な名前: rc=%d 測った %d 回 stderr=%q", rc, len(f.dests), errb.String())
+	}
+	f.dests = nil
+	if rc := runSpeed([]string{"air.local", "air.local"}, &out, &errb, time.Now, nil, speedModelWith(nil, false, more), f.test); rc != 0 ||
+		len(f.dests) != 1 || f.dests[0].IP != "192.168.50.9" {
+		t.Errorf("ホスト名で指定: rc=%d 宛先 %+v", rc, f.dests)
+	}
+}
+
+// 走査が --wait までに終わらなければ、途中の一覧で測ったことを出す (JSON の scan_settled=false・文字なら stderr の注記)。
+func TestSpeedtestReportsUnsettledScan(t *testing.T) {
+	f := &fakeSpeed{res: map[string]speedtest.Result{"192.168.100.12": {UpBps: 9e8, DownBps: 9e8}}}
+	var out, errb bytes.Buffer
+	if rc := runSpeed([]string{"--json", "--wait", "100ms", "mini"}, &out, &errb, time.Now, nil, speedModelWith(nil, true, nil), f.test); rc != 0 {
+		t.Fatalf("rc=%d stderr=%s", rc, errb.String())
+	}
+	var rs []speedReport
+	if err := json.Unmarshal(out.Bytes(), &rs); err != nil || len(rs) != 1 || rs[0].ScanSettled {
+		t.Errorf("走査が終わっていないのに scan_settled = %+v %v", rs, err)
+	}
+	out.Reset()
+	if runSpeed([]string{"--wait", "100ms", "mini"}, &out, &errb, time.Now, nil, speedModelWith(nil, true, nil), f.test); !strings.Contains(errb.String(), "終わらなかった") {
+		t.Errorf("文字の出力で走査が終わっていないことを知らせない: %q", errb.String())
+	}
+	out.Reset()
+	if runSpeed([]string{"--json", "mini"}, &out, &errb, time.Now, nil, speedModel(nil), f.test); !strings.Contains(out.String(), `"scan_settled": true`) {
+		t.Errorf("走査が終わったのに scan_settled が true でない: %s", out.String())
+	}
+}
+
+// 走査を待っている間に止められたら、何も測らずに 130 で返す。
+func TestSpeedtestStopWhileSettling(t *testing.T) {
+	stop := make(chan struct{})
+	close(stop)
+	f := &fakeSpeed{}
+	var out, errb bytes.Buffer
+	if rc := runSpeed([]string{"--wait", "10s"}, &out, &errb, time.Now, stop, speedModelWith(nil, true, nil), f.test); rc != 130 || len(f.dests) != 0 || out.Len() != 0 {
+		t.Errorf("rc=%d 測った %d 回 out=%q", rc, len(f.dests), out.String())
 	}
 }

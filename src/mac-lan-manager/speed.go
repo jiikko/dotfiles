@@ -27,6 +27,9 @@ type speedReport struct {
 	Capped100M bool    `json:"capped_100m"` // 有線で 100 Mbps 付近の頭打ち (途中に 100M の機器・ケーブルの疑い)
 	Error      string  `json:"error,omitempty"`
 	Skipped    string  `json:"skipped,omitempty"` // 測らなかった理由 (鍵で入れない・ユーザー名が分からない等)
+	// ScanSettled は Bonjour の走査が --wait までに終わったか。false なら途中の一覧で宛先を決めた (有線の IP がまだ見えず Wi-Fi で
+	// 測った・経路が分からない、がありうる。link を見る)
+	ScanSettled bool `json:"scan_settled"`
 }
 
 // runSpeed は `mac-lan-manager speedtest`: 管理対象の相手 (引数を渡せばその相手だけ) との通信速度を ssh 越しに 1 台ずつ測る。
@@ -47,8 +50,12 @@ func runSpeed(args []string, stdout, stderr io.Writer, now func() time.Time, sto
 		return 1
 	}
 	defer m.Close()
-	if !settle(m, now, now().Add(*wait), stop, nil) {
+	ok, settled := settle(m, now, now().Add(*wait), stop, nil)
+	if !ok {
 		return 130
+	}
+	if !settled && !*asJSON {
+		fmt.Fprintln(stderr, "mac-lan-manager speedtest: 🚨 Bonjour の走査が --wait までに終わらなかった (途中の一覧で宛先を決めた。経路を確かめる / --wait を延ばす)")
 	}
 	targets, err := m.SpeedTargets()
 	if err != nil {
@@ -58,14 +65,14 @@ func runSpeed(args []string, stdout, stderr io.Writer, now func() time.Time, sto
 	if want := fs.Args(); len(want) > 0 {
 		picked := make([]lanmgr.SpeedTarget, 0, len(want))
 		for _, w := range want {
-			i := slices.IndexFunc(targets, func(t lanmgr.SpeedTarget) bool {
-				return t.Host == w || t.Name == w || strings.TrimSuffix(t.Host, ".local") == w
-			})
-			if i < 0 {
-				fmt.Fprintf(stderr, "mac-lan-manager speedtest: 管理対象に %q が無い (台帳のホスト名か別名で指定する)\n", w)
+			t, why := pickTarget(targets, w)
+			if why != "" {
+				fmt.Fprintln(stderr, "mac-lan-manager speedtest:", why)
 				return 2
 			}
-			picked = append(picked, targets[i])
+			if !slices.ContainsFunc(picked, func(p lanmgr.SpeedTarget) bool { return p.Host == t.Host }) { // 同じ相手を 2 回測らない
+				picked = append(picked, t)
+			}
 		}
 		targets = picked
 	}
@@ -76,7 +83,7 @@ func runSpeed(args []string, stdout, stderr io.Writer, now func() time.Time, sto
 	rc := 0
 	reports := make([]speedReport, 0, len(targets))
 	for _, t := range targets { // 1 台ずつ (同時に流すと互いの帯域を食って値が意味を失う)
-		r := speedReport{Host: t.Host, Name: t.Name, IP: t.Dest.IP, Link: t.Link.Label()}
+		r := speedReport{Host: t.Host, Name: t.Name, IP: t.Dest.IP, Link: t.Link.Label(), ScanSettled: settled}
 		switch {
 		case t.Refusal != "":
 			r.Skipped, rc = t.Refusal, 1
@@ -118,6 +125,31 @@ func runSpeed(args []string, stdout, stderr io.Writer, now func() time.Time, sto
 		}
 	}
 	return rc
+}
+
+// pickTarget は名前 w の相手を選ぶ。ホスト名にちょうど一致すればそれ。そうでなければ .local を落とした名前か別名で選び、2 台以上に
+// 当たれば断る (先に当たった方を黙って測ると、別名と短いホスト名が別の Mac で重なったときに違う相手を測った)。
+func pickTarget(targets []lanmgr.SpeedTarget, w string) (lanmgr.SpeedTarget, string) {
+	if i := slices.IndexFunc(targets, func(t lanmgr.SpeedTarget) bool { return t.Host == w }); i >= 0 {
+		return targets[i], ""
+	}
+	var hit []lanmgr.SpeedTarget
+	for _, t := range targets {
+		if t.Name == w || strings.TrimSuffix(t.Host, ".local") == w {
+			hit = append(hit, t)
+		}
+	}
+	switch len(hit) {
+	case 0:
+		return lanmgr.SpeedTarget{}, fmt.Sprintf("管理対象に %q が無い (台帳のホスト名か別名で指定する)", w)
+	case 1:
+		return hit[0], ""
+	}
+	hosts := make([]string, len(hit))
+	for i, t := range hit {
+		hosts[i] = t.Host
+	}
+	return lanmgr.SpeedTarget{}, fmt.Sprintf("%q は %s に当たる (ホスト名で指定する)", w, strings.Join(hosts, " / "))
 }
 
 func printSpeed(w io.Writer, r speedReport) {

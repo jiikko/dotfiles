@@ -46,6 +46,7 @@ type SpeedTarget struct {
 // speedTarget は r を測るときの宛先と経路 (測れなければ Refusal)。測るのは管理対象の相手だけ (未管理は初期設定の前で鍵で入れないことが
 // 多い。ユーザー決定 2026-10-18)。
 func (m *Model) speedTarget(r row) SpeedTarget {
+	// この Mac のネットワークを読めていない間はここで断らない: 呼び出し側が先に断る (画面の t は needsNet、CLI は SpeedTargets)
 	t := SpeedTarget{Host: r.host, Name: or(r.alias, r.host)}
 	switch {
 	case r.self:

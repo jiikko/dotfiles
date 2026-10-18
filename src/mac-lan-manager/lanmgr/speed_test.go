@@ -210,3 +210,24 @@ func TestSpeedFooterHint(t *testing.T) {
 		t.Errorf("測る口が無いのに t を案内した: %q", foot)
 	}
 }
+
+// 測定中は最下行に t を出さない (押しても「測定中」で断るので、案内と効くキーを揃える)。この Mac のネットワークを読めていない画面では
+// t を断る (CLI と同じ規則。宛先と経路を決められない)。
+func TestSpeedFooterAndRefusalFollowState(t *testing.T) {
+	h, _ := speedHarness(t) // 偽の測定は結果を送るまで測定中のまま
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("t", "y")
+	if h.m.speedRun == nil {
+		t.Fatal("前提: 測定が始まらない")
+	}
+	if foot := termwidth.StripSGR(h.m.footer()); strings.Contains(foot, "t 速度") {
+		t.Errorf("測定中に t を案内した: %q", foot)
+	}
+	h.m.stopSpeed()
+	h.m.selfOK = false
+	h.m.TakeNotices()
+	h.keys("t")
+	if n := h.m.TakeNotices(); h.m.ov == ovConfirm || len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "ネットワークを読め") {
+		t.Errorf("網を読めていないのに測ろうとした: ov=%v notices=%+v", h.m.ov, n)
+	}
+}
