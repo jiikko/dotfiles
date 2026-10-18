@@ -107,6 +107,8 @@
 - **計算ヘルパーの純関数テストだけで「配線済み」としていないか**。呼び出し側を旧実装に戻す変異で red を見るまでが 1 セット
 
 **fake / stub**
+- **本物の依存の束 (Options・config・client) から偽物を作るなら、ゼロ値から組み、安全と確かめた口だけを本物から写しているか**。本物を丸ごと受け取って
+  危ない口を外す形 (deny-list) は、束に口が増えるたびに外し忘れが本物を起こす (retro 814: 足した口 1 つを外し忘れ、テストが launchctl を起こした)
 - **fake / stub が外部コマンドの exit code を模しているか**
   ([`survey-receiver-guards-before-passing-new-values.md`](../rules/survey-receiver-guards-before-passing-new-values.md) の外部コマンド版)
 - **スタブが引数を受け取っているか** (捨てると「何を渡すか」を変える変異が全部緑)。渡された値を記録して assert する

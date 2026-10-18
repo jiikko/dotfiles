@@ -40,16 +40,16 @@
    次の push・完了報告へ進む。待たないなら CI の範囲を手元で 1 回回す**
    - 既にあるもの: 「関係しそうな suite だけを選んで回すのも代用」(verify-execution の同じ項)、待ち方と報告前の引数なしの `ci-log`
      (`.claude/rules/use-ci-log-for-ci-inspection.md`)。足すのは「待たずに次の push へ進まない」の 1 点 (これを止める規範は無かった)
-   - 切り出し先: `_claude/rules/verify-execution-not-just-exit-code.md` の「最後の編集の後に、変更したファイルを実際に検査する gate を回す」の項へ追記
+   - 切り出し先: `_claude/rules/verify-execution-not-just-exit-code.md` の「最後の編集の後に、変更したファイルを実際に検査する gate を回す」の項へ追記 (2026-10-18 に実行)
 2. **本物の依存の束 (Options・config・client) からテストの偽物を作るときは、ゼロ値から組み、安全と確かめた口だけを本物から写す。
    本物を丸ごと受け取って危ない口を外す形にしない** (束に口が増えるたびに、外し忘れが本物を起こす)
-   - 切り出し先: `_claude/rules-checklists/mutation-verify-new-tests.md` の fake / stub の節へ追記
+   - 切り出し先: `_claude/rules-checklists/mutation-verify-new-tests.md` の fake / stub の節へ追記 (2026-10-18 に実行)
 3. 「空いているキー / 名前 / 番号」を選択肢として出すのは不在の主張なので、出す前に定義側 (キーの割り当て・名前の一覧) を読む
    - 却下: `~/.claude/CLAUDE.md`「ぼやきも事実の主張なら裏を取る (特に不在の主張)」と同じ規範で、新しく書き足すことが無い
 4. **読み取りのみを頼む指示には、作業者が自分で書くシェルのリダイレクト (`> /tmp/x`) も「どこにも書かない」と名指しで入れる**
    - 既にあるもの: `_claude/rules/subagent-model-tiering.md`「指示を書くとき」の、道具が黙って書く副作用 (go.sum・lock) を名指しで止める項。
      作業者が自分で書くリダイレクトはこの文言では読めない (反証レビューで却下を撤回)
-   - 切り出し先: 同じ項へ 1 行追記
+   - 切り出し先: 同じ項へ 1 行追記 (2026-10-18 に実行)
 
 ## 局所 (その場で直した / 直さない)
 
