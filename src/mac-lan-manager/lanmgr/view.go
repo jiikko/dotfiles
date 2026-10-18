@@ -35,12 +35,26 @@ func (m *Model) View() []string {
 	w := m.w - 2*padX
 	m.caretFY, m.caretMY = -1, -1
 	m.small = false
-	var body string
+	var body, tile string
+	var slot listSlot
 	switch {
 	case m.sc == scSetup && m.su != nil:
-		body = lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", m.viewSetup(w))
+		// 初期設定は一覧を消さず、一覧のカードの内側 (タブも枠も見えたまま) に浮かせる。全画面に切り替えると、どの相手を
+		// 設定しているかが一覧から読めなかった。操作は初期設定が取るので、背景の一覧は選んだ行のまま動かない
+		body = m.viewList(w)
 		if m.tooShort {
 			return m.viewTooSmall("高さが足りない")
+		}
+		if slot = m.listSlot; slot.w >= setupTileMinW {
+			tile = m.viewSetup(slot.w, slot.h)
+		}
+		if tile == "" || m.tooShort {
+			// 枠の内側に入らない (狭い・低い端末): 従来どおり全画面で出す
+			tile = ""
+			body = lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", m.viewSetup(w, m.bodyHeight()-4))
+			if m.tooShort {
+				return m.viewTooSmall("高さが足りない")
+			}
 		}
 	case m.sc == scSettings:
 		body = lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", m.viewSettings(w))
@@ -73,17 +87,26 @@ func (m *Model) View() []string {
 	body = lipgloss.NewStyle().Height(inner).MaxHeight(inner).Render(strings.Join(bl, "\n"))
 	base := lipgloss.NewStyle().Width(m.w).Height(h).MaxHeight(h).Padding(padY, padX).Render(lipgloss.JoinVertical(lipgloss.Left, body, "", foot))
 	layers := []*lipgloss.Layer{lipgloss.NewLayer(base)}
+	if tile != "" {
+		layers = append(layers, lipgloss.NewLayer(tile).X(slot.x).Y(slot.y).Z(1))
+	}
 	if box, fieldRow, fieldX := m.overlayBox(); box != "" {
 		box = lipgloss.NewStyle().MaxHeight(h).MaxWidth(m.w).Render(box) // 板が画面より高い・広いと View が画面からはみ出した (? の板は 22 行・66 桁)
 		bw, bh := lipgloss.Width(box), lipgloss.Height(box)
 		x, y := max((m.w-bw)/2, 0), max((h-bh)/2, 0)
-		layers = append(layers, lipgloss.NewLayer(box).X(x).Y(y).Z(1))
+		layers = append(layers, lipgloss.NewLayer(box).X(x).Y(y).Z(2)) // 初期設定のタイル (Z 1) の上
 		if fieldRow >= 0 {
 			m.caretMX, m.caretMY = x+fieldX, y+fieldRow
 		}
 	}
 	return strings.Split(lipgloss.NewCompositor(layers...).Render(), "\n")
 }
+
+// setupTileMinW は初期設定のタイルを一覧の枠の内側に浮かせる最小の幅 (手順の行が切れずに読める)。足りない端末では全画面で出す。
+const setupTileMinW = 60
+
+// listSlot は一覧のカードの内側 (表の領域) の、画面上の位置と大きさ。初期設定のタイルをここへ浮かせる。
+type listSlot struct{ x, y, w, h int }
 
 // keyHint は最下行の案内の 1 つ。prio は小さいほど残す (1 = 抜ける手段。tuikit/hintfit の尺度)。
 type keyHint struct {
@@ -224,7 +247,11 @@ func (m *Model) viewList(w int) string {
 	// 一覧の行 (カーソルの行) まで入らない高さは抜け方だけの画面にする (View)。板の下の余白・枠・影の 3 行は切れてよい
 	// (行が見える方が、空の画面より役に立つ)。高さ 12 以下で、カーソルの行ごと板が切れていた
 	m.tooShort = rows < -2
-	if !wide {
+	if !wide && m.sc == scSetup {
+		// 初期設定のタイルが一覧のカードの内側に浮く間は、下の詳細カードを出さず、その高さを窓に回す (タイルの見出しに相手の
+		// 名前と宛先が出る。詳細カードを残すと、窓が低くなって「この手順で実行するもの」の 2 枚目が先に省かれた)
+		detail = ""
+	} else if !wide {
 		// 縦に積むときは、一覧に min(3, 行数) 行を残せなければ詳細カードを 1 行 (名前だけ) に畳み、それも入らなければ出さない。
 		// 動作のキーは最下行の案内にいつも載せている (footer) ので、ここで何を出しても消えない。
 		// 🚨 引く高さは選んだ行ではなく全行の最大で見積もる。選んだ行の分だけ引くと、詳細カードの高い行 (IP が多い相手) を選んだときだけ
@@ -248,7 +275,10 @@ func (m *Model) viewList(w int) string {
 			rows -= h + 1
 		}
 	}
-	list := lipgloss.JoinVertical(lipgloss.Left, tabs, shadow(card(m.listTable(listW-7, max(rows, 1)), listW-1, surfList, tabColors[m.tab], cPurple)))
+	table := m.listTable(listW-7, max(rows, 1))
+	// カードの内側は、左に枠 1 + 余白 2、上に 縁の行 1 + 余白 1 (card)
+	m.listSlot = listSlot{x: padX + 3, y: padY + lipgloss.Height(head) + lipgloss.Height(tabs) + 2, w: listW - 7, h: lipgloss.Height(table)}
+	list := lipgloss.JoinVertical(lipgloss.Left, tabs, shadow(card(table, listW-1, surfList, tabColors[m.tab], cPurple)))
 	var main string
 	switch {
 	case detail == "":
@@ -565,6 +595,11 @@ func (m *Model) listTable(width, maxRows int) string {
 	body := make([]string, 0, to-from)
 	for i := from; i < to; i++ {
 		body = append(body, render(i, &vis[i]))
+	}
+	if m.sc == scSetup { // 初期設定のタイルを浮かせる枠 (listSlot) の高さを、件数が少なくても窓いっぱいに取る
+		for len(body) < maxRows {
+			body = append(body, termwidth.PadSpaces(outer))
+		}
 	}
 	if scroll {
 		body = layout.Scrollbar(body, outer, len(vis), from, true)

@@ -13,7 +13,7 @@ import (
 )
 
 // viewSetup は初期設定の画面 (2 枚のカード: 手順 (進捗バー付き) と、この手順で実行するもの)。
-func (m *Model) viewSetup(w int) string {
+func (m *Model) viewSetup(w, maxH int) string {
 	su := m.su
 	inner := max(w-7, 10)
 	steps := m.setupSteps()
@@ -90,13 +90,13 @@ func (m *Model) viewSetup(w int) string {
 		}
 	}
 	codeCard := shadow(card(strings.TrimRight(c.String(), "\n"), w-1, surfDetail, cTeal, cPurple))
-	// 見出し 3 行 + 余白 1 行の下に置く。2 枚が入らなければ「実行するもの」を省く (同じ中身は x の確認の板に出る)。
-	// 手順のカードも入らなければ抜け方だけの画面にする
+	// maxH 行に収める。2 枚が入らなければ「実行するもの」を省く (同じ中身は x の確認の板に出る)。
+	// 手順のカードも入らなければ tooShort (呼び出し側が、全画面にするか抜け方だけの画面にする)
 	out := lipgloss.JoinVertical(lipgloss.Left, stepsCard, "", codeCard)
-	if lipgloss.Height(out)+4 > m.bodyHeight() {
+	if lipgloss.Height(out) > maxH {
 		out = stepsCard
 	}
-	m.tooShort = lipgloss.Height(out)+4 > m.bodyHeight()
+	m.tooShort = lipgloss.Height(out) > maxH
 	return out
 }
 
