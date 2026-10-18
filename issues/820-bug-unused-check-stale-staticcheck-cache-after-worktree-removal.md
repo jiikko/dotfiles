@@ -27,7 +27,7 @@
 
 1. (済み。上の「再現した」) worktree をまたいだ再利用で赤くなる
 2. (済み) `STATICCHECK_CACHE` を分けると緑
-3. 同じ worktree で 2 回続けて回す所要を、キャッシュ共有のときと分けたときで比べる (分けるとキャッシュの効きがどれだけ落ちるか)
+3. (済み。下の「結果」) 同じ worktree で 2 回続けて回す所要を、キャッシュ共有のときと分けたときで比べる
 
 ## 対応方針 (測ってから決める)
 
@@ -43,3 +43,23 @@
 ## 反証レビュー
 
 省略した。中心の主張 (worktree をまたいだキャッシュの再利用で赤くなる / キャッシュを分けると緑) は起票の前に実測で再現したため。対応方針はまだ反証されていない
+
+## 結果 (2026-10-18)
+
+- 測定 (この Mac。staticcheck v0.7.0 を入れて測った。22 モジュール):
+  - 別のマシンの観測と同じ形を再現した: 一時 worktree で回して消した後、別の worktree で回すと allowlist の 2 件が「到達できない」と「stale」の両方に出て rc=1
+  - GOFLAGS の `-trimpath` (issue 816) は原因ではない: `GOFLAGS=` にしても同じ rc=1
+  - 既定のキャッシュのまま、その worktree で 2 回回し直しても rc=1 のまま (古い結果が当たり続ける)
+  - 所要: キャッシュを分けた 1 回目 (冷) 12.3 秒 / 2 回目 (温) 8.3 秒、共有のキャッシュ (温) 8.4 秒。差は新しい checkout の最初の 1 回だけ
+- 直したこと (`scripts/check_unused_excluding_tests.sh`): `STATICCHECK_CACHE` を `<git dir>/staticcheck-cache/<checkout の場所のハッシュ>` にする
+  (呼び出し側が渡したらそれを使う)。git dir は `git worktree remove` で一緒に消える (実測)。場所でも分けるのは、`git worktree move` や
+  本体の mv では git dir が変わらず、前の場所のパスで返るから。git を呼ぶときは継承した `GIT_DIR` / `GIT_WORK_TREE` を外す
+- 確認: 修正後の木で「worktree で回して消す → 別の worktree で回す」と「worktree で回す → `git worktree move` → 回す」がどちらも rc=0
+- 回帰テスト `tests/scripts/test_unused_check_cache_per_checkout.sh` (偽の staticcheck で渡った置き場を見る。期待値は `.git` を直接読んで出す)。
+  変異: 場所ごとに分けない / GIT_DIR を外さない / export しない の 3 本で red
+- 敵対的レビュー (opus 1 体): 採用 2 件 = git dir だけで分けると move の後に古い結果が当たる (場所のハッシュで分けた)・継承した GIT_DIR で
+  置き場がずれる (外した)。テストの期待値を実装と同じ式で出していた点も直した。記録のみ: git の外 (git archive の木) で回すと rc=1 で止まる
+  (CI の checkout は git なので影響なし)・本体の `.git/staticcheck-cache` は消えないので増えうる (staticcheck が自分で刈り込むかは未確認)。
+  壊せなかった: 同じ checkout の中の rename・同じパスへの作り直し・`.git` がファイルの形・書き込めない git dir (赤に倒れる)・CI (unused.yml は
+  actions/cache を使わず毎回冷えた状態)
+
