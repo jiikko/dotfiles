@@ -137,7 +137,7 @@ type Model struct {
 	tab         int          // tabManaged / tabUnmanaged / tabSelf
 	cur         [numTabs]int // タブごとのカーソル
 	listOff     [numTabs]int // タブごとの一覧の窓の先頭 (描画で WindowOffset から導く)
-	listSlot    listSlot     // 一覧のカードの内側の位置と大きさ (最後に描いたとき。初期設定のタイルを浮かせる view.go)
+	listTop     int          // 一覧のタブの下の画面上の行 (最後に描いたとき。初期設定のタイルを重ねる起点 view.go)
 	listRows    int          // 一覧の窓の行数 (最後に描いたとき。半ページ送りの量)
 	tooShort    bool         // 一覧の板に 1 行も入らない高さ (描いたとき)
 	prefsUnread bool         // 設定ファイルが読めなかった (既定で描き、保存しない)

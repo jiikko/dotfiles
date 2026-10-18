@@ -1029,19 +1029,21 @@ func TestListWindowDoesNotDependOnSelectedRow(t *testing.T) {
 	}
 }
 
-// 初期設定は一覧を消さず、一覧のカードの内側に浮く (背景にタブと枠が見え、2 枚のカードが入る)。枠の内側に入らない狭い端末では
-// 従来どおり全画面で出す。
-func TestSetupFloatsInsideListCard(t *testing.T) {
+// 初期設定は全画面に切り替えず、通常の一覧を背景に残してその上に重なる (一覧のカードを広げて内側に入れる形ではない)。
+func TestSetupOverlaysUnchangedList(t *testing.T) {
 	var ps []discover.Peer
 	for i := 0; i < 4; i++ {
 		ps = append(ps, discover.Peer{Host: fmt.Sprintf("mac%02d.local", i), SSH: true, Addrs: map[int]string{14: fmt.Sprintf("192.168.50.%d", i+2)}})
 	}
-	view := func(w, hh int) []string {
+	view := func(w, hh int, open bool) []string {
 		h := newHarness(t, nil, ps)
 		h.m.Resize(w, hh)
-		h.keys("l", "j", "enter")
-		if h.m.sc != scSetup {
-			t.Fatalf("初期設定が開かない: sc=%d", h.m.sc)
+		h.keys("l", "j")
+		if open {
+			h.keys("enter")
+			if h.m.sc != scSetup {
+				t.Fatalf("初期設定が開かない: sc=%d", h.m.sc)
+			}
 		}
 		lines := h.m.View()
 		for i, l := range lines {
@@ -1049,28 +1051,34 @@ func TestSetupFloatsInsideListCard(t *testing.T) {
 		}
 		return lines
 	}
-	lineWith := func(lines []string, sub string) string {
-		for _, l := range lines {
-			if strings.Contains(l, sub) {
-				return l
-			}
-		}
-		return ""
-	}
-	// 広くて高い端末: 背景の一覧のタブが見え、タイルの行には背景の枠とタイルの枠の両方が出る。2 枚目 (実行するもの) も入る
-	lines := view(100, 46)
-	all := strings.Join(lines, "\n")
+	// 広くて高い端末: タブ・一覧の別の行が背景に見え、中央にタイルが重なる。一覧の高さは開く前と変わらない (広がらない)
+	before, after := view(100, 46, false), view(100, 46, true)
+	all := strings.Join(after, "\n")
 	for _, want := range []string{"未管理  4", "初期設定  mac01.local", "この手順で実行するもの"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("100x46: %q が画面に無い", want)
 		}
 	}
-	if l := lineWith(lines, "初期設定  mac01.local"); strings.Count(l, "▐") < 2 {
-		t.Errorf("100x46: タイルの行に背景の枠とタイルの枠が並ばない (枠の内側に浮いていない): %q", l)
+	rowOf := func(lines []string, sub string) int {
+		for i, l := range lines {
+			if strings.Contains(l, sub) {
+				return i
+			}
+		}
+		return -1
+	}
+	if a, b := rowOf(after, "未管理  4"), rowOf(before, "未管理  4"); a != b || a < 0 {
+		t.Errorf("タブの位置が動いた: 開く前 %d, 開いた後 %d", b, a)
+	}
+	if rowOf(after, "初期設定  mac01.local") <= rowOf(after, "未管理  4") {
+		t.Errorf("タイルがタブの下に重なっていない")
+	}
+	// 背景の一覧はタイルの左右に覗く (一覧の行の左の棒と別名の列の見出し)。重ねずに一覧を消すと出ない
+	if l := after[rowOf(after, "初期設定  mac01.local")]; !strings.Contains(l, "▐") || !strings.Contains(l, "別名") && !strings.Contains(l, "-") {
+		t.Errorf("タイルの行に背景の一覧が覗かない: %q", l)
 	}
 	// 枠の内側に入らない狭い端末: 全画面 (一覧のタブは出ない)
-	lines = view(70, 40)
-	all = strings.Join(lines, "\n")
+	all = strings.Join(view(70, 40, true), "\n")
 	if !strings.Contains(all, "初期設定  mac01.local") || strings.Contains(all, "未管理  4") {
 		t.Errorf("70x40: 全画面にならない:\n%s", all)
 	}
