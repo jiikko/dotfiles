@@ -184,11 +184,14 @@ type Model struct {
 	scanErr   error // 走査の失敗 (見せた後も持つ。Reload で消す)
 	// cursorLost はこのキーの入口の取り込みで、画面で見ていた Mac が一覧から消えた (行に効くキーを断る)
 	cursorLost bool
-	wantHost   string             // RestorePlace で戻したいカーソルの Mac (見つかるまで持つ。走査が終われば諦める)
-	netCh      <-chan netLoad     // 裏で読んでいるこの Mac のネットワーク (nil = 読んでいない)
-	netReady   bool               // この Mac のネットワークを一度は読み終えた (読み直しの間は前の値のまま描く)
-	netCancel  context.CancelFunc // その取り消し
-	pf         prefs.Prefs
+	wantHost   string         // RestorePlace で戻したいカーソルの Mac (見つかるまで持つ。走査が終われば諦める)
+	netCh      <-chan netLoad // 裏で読んでいるこの Mac のネットワーク (nil = 読んでいない)
+	netReady   bool           // この Mac のネットワークを一度は読み終えた (読み直しの間は前の値のまま描く)
+	// selfOK は self が使える (サービスまで読めた) か。読めなかった回は前の self を残す: 空の Snapshot で上書きすると、相手の IP が
+	// 全部「その他」に落ち、s が VPN の IP へ繋いだ
+	selfOK    bool
+	netCancel context.CancelFunc // その取り消し
+	pf        prefs.Prefs
 
 	notices           []Notice
 	exec              *ExecRequest
@@ -290,7 +293,7 @@ func (m *Model) startNetLoad() {
 	m.stopNetLoad()
 	readNet, readAdvert := m.o.ReadNet, m.o.ReadAdvert
 	if readNet == nil {
-		m.netReady = true // 読むものが無い (テスト・ネットワークを見ない呼び出し側)
+		m.netReady, m.selfOK = true, true // 読むものが無い (テスト・ネットワークを見ない呼び出し側)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -326,7 +329,20 @@ func (m *Model) takeNetLoad() {
 }
 
 func (m *Model) applyNetLoad(r netLoad) {
-	m.self, m.selfErr = r.self, r.err
+	// I/F の IP を読み切れなかった回 (ErrIPsIncomplete) はサービスまで正しいので採る (相手の分類はサービスだけで決まる)
+	if r.err == nil || errors.Is(r.err, netinfo.ErrIPsIncomplete) {
+		m.self, m.selfOK = r.self, true
+	}
+	m.selfErr = r.err
+	switch {
+	case r.err == nil:
+	case errors.Is(r.err, netinfo.ErrIPsIncomplete):
+		m.note("この Mac の I/F の IP を読み切れなかった (r で読み直す): "+r.err.Error(), false)
+	case m.selfOK:
+		m.note("この Mac のネットワークを読めない (前に読んだ値で分ける。r で読み直す): "+r.err.Error(), false)
+	default:
+		m.note("この Mac のネットワークを読めない (繋ぐ・コピー・登録・初期設定は読めるまで断る。r で読み直す): "+r.err.Error(), false)
+	}
 	m.selfAdvert, m.selfAdvertKnown = r.advert, r.advertErr == nil
 	m.netReady = true
 	m.startWiredLookups() // この Mac の内部 IP が分かってから引く (固定かどうかで名前を持つかが決まる。netReady の後: 前だと行の内部 IP が分類されなかった)
@@ -378,6 +394,16 @@ func (m *Model) cursorHost() string {
 		return r.host
 	}
 	return ""
+}
+
+// visibleHosts は今のタブの行の Mac (画面に出ている行の集合)。
+func (m *Model) visibleHosts() []string {
+	vis := m.visible()
+	out := make([]string, len(vis))
+	for i, r := range vis {
+		out[i] = r.host
+	}
+	return out
 }
 
 // followCursor は行を組み直した後、カーソルを host の行に合わせ直す (行は名前で並ぶので、走査で増えた行の分だけ添字が別の Mac を
@@ -733,8 +759,8 @@ func (m *Model) rows() []row {
 			if m.o.IfName != nil {
 				dev = m.o.IfName(idx)
 			}
-			if !m.netReady {
-				break // この Mac のどの I/F が有線かを読み終えるまで分けない (分けると全部「その他」になり、s がその先頭へ繋いだ)
+			if !m.selfOK {
+				break // この Mac のどの I/F が有線かを読めるまで分けない (分けると全部「その他」になり、s がその先頭へ繋いだ)
 			}
 			k := m.ifKind(dev, ip)
 			link := m.self.Link(dev)
@@ -862,6 +888,12 @@ func (r row) awayReason() string {
 	return ""
 }
 
+// shownOthers は画面に出す「その他の IP」(設定の種類で絞る)。r.others は絞らない: 繋ぐ先の最後の手段 (connectIP) と、初期設定で
+// 避ける番号にも使う (種類を切った VM の網のゲストへ繋げなくなる・重なる番号を提案する)。この Mac の行は rows で絞ってある
+func (m *Model) shownOthers(r row) []netinfo.IP {
+	return slices.DeleteFunc(slices.Clone(r.others), func(x netinfo.IP) bool { return !slices.Contains(m.pf.Kinds, x.Kind.Key()) })
+}
+
 // connectIP は繋ぐ先 (内部 IP があればそちら = 有線を通す。無ければメイン。どちらも無ければその他の I/F で見えた IP。
 // VM のゲストは VM の網にしか居ないので、その他を最後の手段に残す)。
 func (r row) connectIP() string {
@@ -948,12 +980,18 @@ func (m *Model) HandleInput(key, text string) Action {
 	m.logKey(key)
 	key = canonKey(key)
 	held := m.cursorHost()
+	var shown []string // カーソルが相手の行に無い (空のタブ等) とき、画面に出ていた行
+	if held == "" {
+		shown = m.visibleHosts()
+	}
 	m.takeNetLoad() // 読み終えていれば、次の tick を待たずにこのキーから効かせる
 	m.takeObserve()
 	m.refreshWired() // 放置した後は tick が回っていない: 引き直す時期を過ぎていればここで始める (取り込みは、引いている間は Busy で回る tick が行う)
 	// 取り込みで行が組み変わっても、このキーは画面で見ていた Mac に効かせる。見ていた Mac が消えたら (有線が外れて有線だけの表示から
 	// 落ちた等)、行に効くキーは断る (添字のままだと隣の Mac に繋いだ)
-	m.cursorLost = !m.followCursor(held)
+	// カーソルが相手の行に無かったなら、行の集合が変わったことで断る (空のタブを見ている間に読み込みが終わると、一度も描かれていない
+	// 先頭の Mac へ s が繋いだ)
+	m.cursorLost = !m.followCursor(held) || (held == "" && !slices.Equal(shown, m.visibleHosts()))
 	if key == "ctrl+c" {
 		return Quit
 	}
@@ -1057,8 +1095,9 @@ func move(cur *int, n int, key string, rows int) bool {
 	return true
 }
 
-// needsNet は、この Mac のネットワークを読み終えるまで断るキー (最下行の案内もこの間は出さない)。
-var needsNet = []string{"s", "Y", "y", "O", "o", "c", "space"}
+// needsNet は、この Mac のネットワークを読めるまで断るキー (最下行の案内もこの間は出さない)。enter (初期設定) も入れる: 読む前に開くと
+// 相手のメイン IP が分からず、宛先が台帳の有線の IP のまま閉じるまで固まった
+var needsNet = []string{"s", "Y", "y", "O", "o", "c", "space", "enter"}
 
 // rowKeys はカーソルの行の Mac に効くキー (見ていた Mac が一覧から消えた・タブに行が無いときは断る)。c はこの Mac の IP のコピーで行に効かない
 var rowKeys = []string{"s", "Y", "y", "O", "o", "space", "enter", "m", "u"}
@@ -1066,8 +1105,12 @@ var rowKeys = []string{"s", "Y", "y", "O", "o", "space", "enter", "m", "u"}
 func (m *Model) keyList(key string) Action {
 	// 繋ぐ・コピー・登録は、この Mac のネットワーク (どの I/F が有線か・この Mac の IP) を読み終えてから。読み込み中に受けると
 	// 繋ぐ先・登録する内部 IP を誤った分類で決める
-	if !m.netReady && slices.Contains(needsNet, key) {
-		m.note("この Mac のネットワーク設定を確認中 (少し待ってから)", false)
+	if !m.selfOK && slices.Contains(needsNet, key) {
+		if m.netReady && m.netCh == nil {
+			m.note("この Mac のネットワークを読めなかった (r で読み直す)", false)
+		} else {
+			m.note("この Mac のネットワーク設定を確認中 (少し待ってから)", false)
+		}
 		return None
 	}
 	if m.cursorLost && slices.Contains(rowKeys, key) {
@@ -1283,7 +1326,15 @@ func (m *Model) askLedger(r row) {
 			r.host + " を管理対象にする (Mac には何もしない。初期設定は別)",
 			"user " + or(h.User, "(無し。繋ぐときはこの Mac のユーザー名)") + " / 内部 IP " + or(h.LAN, "-"),
 		}, yes: func() Notice {
-			if err := m.o.Ledger.Upsert(h); err != nil {
+			// 板を出している間に別のプロセス (glogx の L・単体のコマンド) が同じ Mac を載せていたら、その行を残す (古い一覧の値で
+			// Upsert すると別名・内部 IP を消した)。空の欄だけ埋める
+			err := m.o.Ledger.Update(h.Host, func(x *ledger.Host) {
+				x.User, x.LAN = or(x.User, h.User), or(x.LAN, h.LAN)
+			})
+			if errors.Is(err, ledger.ErrNotFound) {
+				err = m.o.Ledger.Upsert(h)
+			}
+			if err != nil {
 				return Notice{"登録できない: " + err.Error(), false}
 			}
 			m.reloadLedger()
@@ -1294,10 +1345,13 @@ func (m *Model) askLedger(r row) {
 }
 
 func (m *Model) reloadLedger() {
-	if hs, err := m.o.Ledger.Load(); err == nil {
-		m.setHosts(hs, false) // 知らせは Reload で出している (別名・登録のたびに繰り返さない)
-		m.startWiredLookups() // 台帳の内部 IP が変わると、名前を持つ Mac と引く先が変わる
+	hs, err := m.o.Ledger.Load()
+	if err != nil { // 黙ると、書けたのに一覧は古いまま (「未管理」のまま) で理由が出ない
+		m.note("台帳を読み直せない (一覧は古いまま。r でリロード): "+err.Error(), false)
+		return
 	}
+	m.setHosts(hs, false) // 知らせは Reload で出している (別名・登録のたびに繰り返さない)
+	m.startWiredLookups() // 台帳の内部 IP が変わると、名前を持つ Mac と引く先が変わる
 }
 
 // setHosts は読んだ台帳を一覧に入れる。m.hosts に入れる経路はここだけ (Reload と、別名・登録・外した後の reloadLedger の 2 つが

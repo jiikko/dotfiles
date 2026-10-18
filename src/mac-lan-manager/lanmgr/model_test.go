@@ -737,8 +737,8 @@ func TestLoadingKeepsSelfSingleAndRefusesActions(t *testing.T) {
 		}
 	}
 	m.TakeNotices()
-	for _, k := range []string{"s", "Y", "y", "O", "o", "c", "space"} {
-		if a := m.HandleKey(k); a != None || m.ov != ovNone {
+	for _, k := range []string{"s", "Y", "y", "O", "o", "c", "space", "enter"} {
+		if a := m.HandleKey(k); a != None || m.ov != ovNone || m.sc == scSetup {
 			t.Errorf("読み込み中の %s を受けた (action=%v ov=%v)", k, a, m.ov)
 		}
 		// 断った理由は読み込み中だから (行の事情 = smb が無い等で断ったのでは、needsNet から漏れても緑になる)
@@ -2704,5 +2704,246 @@ func TestConnectLinkFallsBackToMainForLedgerIP(t *testing.T) {
 	}
 	if r.connectIP() != "169.254.9.9" || r.lanLink != netinfo.LinkUnknown || h.m.connectLink(r) != netinfo.LinkWireless {
 		t.Errorf("繋ぐ先 %q / 内部の線 %v / 繋ぐ線 %v, want 無線", r.connectIP(), r.lanLink, h.m.connectLink(r))
+	}
+}
+
+// vpnPeer は Wi-Fi (14) と VPN (5。en0 より小さい番号) で見える未管理の Mac。分類できないと VPN の IP が「その他」の先頭に来る。
+var vpnPeer = discover.Peer{Host: "vpn.local", Instances: []string{"vpn"}, SSH: true, Addrs: map[int]string{5: "100.64.0.20", 14: "192.168.50.7"}}
+
+func vpnIfName(i int) string { return map[int]string{5: "utun4", 14: "en0", 27: "en13"}[i] }
+
+// この Mac のネットワークを読み直して失敗したら、前に読んだ値で分け続け (空の Snapshot で上書きしない)、読めなかったことを知らせる。
+// 上書きすると相手の IP が全部「その他」に落ち、s が VPN の IP へ繋いだ。
+func TestNetReadFailureKeepsPreviousSelf(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{vpnPeer})
+	h.m.o.IfName = vpnIfName
+	h.keys("l")
+	h.cursorTo(t, "vpn.local")
+	if ip := h.m.current().connectIP(); ip != "192.168.50.7" {
+		t.Fatalf("前提: 読めたときの宛先 = %q", ip)
+	}
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return netinfo.Snapshot{}, context.DeadlineExceeded }
+	h.m.TakeNotices()
+	h.keys("r")
+	awaitNetLoad(h.m)
+	h.cursorTo(t, "vpn.local")
+	if ip := h.m.current().connectIP(); ip != "192.168.50.7" {
+		t.Errorf("読み直しに失敗した後の宛先 = %q (前に読んだ値で分けていない)", ip)
+	}
+	if n := h.m.TakeNotices(); !slices.ContainsFunc(n, func(x Notice) bool { return strings.Contains(x.Text, "読めない") }) {
+		t.Errorf("読めなかったことを知らせない: %+v", n)
+	}
+}
+
+// 最初の読み込みから失敗したら、相手の IP を分けず、繋ぐ・初期設定を「読めなかった」で断る (「確認中」と出し続けない)。
+func TestNetReadFailureFirstRefusesActions(t *testing.T) {
+	m := New(Options{
+		ReadNet: func(context.Context) (netinfo.Snapshot, error) {
+			return netinfo.Snapshot{}, errors.New("networksetup が失敗した")
+		},
+		LocalHost: func() string { return "me.local" },
+		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{vpnPeer}} },
+		IfName:    vpnIfName,
+		Now:       func() time.Time { return t0 },
+		User:      "koji",
+	})
+	awaitNetLoad(m)
+	m.HandleKey("l")
+	if r := m.current(); r.host != "vpn.local" || len(r.others) != 0 || r.mainIP != "" {
+		t.Fatalf("読めないのに相手の IP を分けた: %+v", r)
+	}
+	m.TakeNotices()
+	for _, k := range []string{"s", "enter"} {
+		if a := m.HandleKey(k); a != None || m.sc == scSetup {
+			t.Errorf("読めないのに %s を受けた", k)
+		}
+		if n := m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "読めなかった") {
+			t.Errorf("%s を「読めなかった」で断らない: %+v", k, n)
+		}
+	}
+}
+
+// I/F の IP を読み切れなかった回 (サービスは読めた) は、その Snapshot で相手を分ける (サービスだけで分類は決まる)。
+func TestNetReadIPsIncompleteStillClassifies(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{vpnPeer})
+	h.m.o.IfName = vpnIfName
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) {
+		s := selfNet()
+		s.IPs = nil
+		return s, fmt.Errorf("%w: %w", netinfo.ErrIPsIncomplete, context.DeadlineExceeded)
+	}
+	h.keys("r")
+	awaitNetLoad(h.m)
+	if len(h.m.self.IPs) != 0 {
+		t.Errorf("サービスまで読めた回の Snapshot を採らない")
+	}
+	h.keys("l")
+	h.cursorTo(t, "vpn.local")
+	if ip := h.m.current().connectIP(); ip != "192.168.50.7" {
+		t.Errorf("宛先 = %q", ip)
+	}
+}
+
+// 空のタブを見ている間に裏の読み込みが終わって行が現れたら、次のキーは一度も描かれていない Mac に効かせない
+// (カーソルは相手の行に無かったので、見ていた Mac が消えたかでは判定できない)。
+func TestKeyRefusedWhenRowsAppearUnderEmptyTab(t *testing.T) {
+	release := make(chan struct{})
+	m := New(Options{
+		ReadNet: func(ctx context.Context) (netinfo.Snapshot, error) {
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return selfNet(), nil
+		},
+		LocalHost: func() string { return "me.local" },
+		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{mini}} },
+		IfName:    func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
+		Now:       func() time.Time { return t0 },
+		User:      "koji",
+	})
+	m.pf.WiredOnly = true // 読み終えるまで有線かが分からないので、未管理のタブは空
+	m.HandleKey("l")
+	if len(m.visible()) != 0 {
+		t.Fatalf("前提: 未管理のタブが空でない: %v", m.visibleHosts())
+	}
+	close(release)
+	for deadline := time.Now().Add(5 * time.Second); len(m.netCh) == 0; { // 結果が届くまで (取り込みはキーの入口で)
+		if time.Now().After(deadline) {
+			t.Fatal("読み込みの結果が届かない")
+		}
+		time.Sleep(time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は上の条件)
+	}
+	m.TakeNotices()
+	if a := m.HandleKey("s"); a == Exec {
+		t.Fatal("一度も描かれていない Mac へ s が繋いだ")
+	}
+	if n := m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "一覧が変わった") {
+		t.Errorf("行が変わったことで断らない: %+v", n)
+	}
+	if a := m.HandleKey("s"); a != Exec { // 描かれた後 (次のキー) は効く
+		t.Errorf("行が出た後の s が効かない: %v %+v", a, m.TakeNotices())
+	}
+}
+
+// 「その他の IP に含める種類」は相手の行の +N の札と詳細カードにも効く (この Mac の行だけを絞っていた)。
+// 繋ぐ先の最後の手段 (connectIP) は絞らない。
+func TestPeerOthersFollowKinds(t *testing.T) {
+	vm := discover.Peer{Host: "vm.local", Instances: []string{"vm"}, SSH: true, Addrs: map[int]string{5: "100.64.0.20"}}
+	h := newHarness(t, nil, []discover.Peer{vm})
+	h.m.o.IfName = vpnIfName
+	h.m.pf.ShowOthers = true
+	h.keys("l")
+	h.cursorTo(t, "vm.local")
+	r := h.m.current()
+	if len(h.m.shownOthers(r)) != 0 || r.connectIP() != "100.64.0.20" {
+		t.Errorf("既定 (VPN を含めない) で相手の VPN を出した / 繋ぐ先まで絞った: shown=%v connect=%q", h.m.shownOthers(r), r.connectIP())
+	}
+	if v := termwidth.StripSGR(strings.Join(h.m.View(), "\n")); strings.Contains(v, "+1") || strings.Contains(v, "100.64.0.20  ") && strings.Contains(v, "その他の IP") {
+		t.Errorf("画面に絞った種類が出た:\n%s", v)
+	}
+	h.m.pf.Kinds = append(h.m.pf.Kinds, netinfo.KindVPN.Key())
+	if v := termwidth.StripSGR(strings.Join(h.m.View(), "\n")); !strings.Contains(v, "+1") || !strings.Contains(v, "その他の IP") {
+		t.Errorf("VPN を含めたのに出ない:\n%s", v)
+	}
+}
+
+// I/F で決める設定でも、帯の行は値を描き、編集中は入力欄を出す (薄い行は値の代わりに説明を描き、入力欄もキャレットの文字も消えた)。
+func TestBandRowEditableWhenLanByIF(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	h.m.pf.LanByBand = false
+	h.m.Resize(120, 40)
+	h.keys(bandKeys()...)
+	if !h.m.bandEdit {
+		t.Fatal("前提: 帯の編集に入っていない")
+	}
+	lines := h.m.View()
+	x, y, ok := h.m.CaretPos()
+	if !ok {
+		t.Fatal("帯の入力欄にキャレットが無い")
+	}
+	line := termwidth.StripSGR(lines[y])
+	if i := strings.Index(line, "0/24"); i < 0 || x != termwidth.Of(line[:i])+termwidth.Of("0/24") {
+		t.Errorf("キャレットの行に入力欄が無い / 欄の文字の直後に無い: x=%d %q", x, line)
+	}
+}
+
+// 帯の行で space / ← → を押したら enter での編集を案内する (互いを指して堂々巡りにしない)。
+func TestBandRowRefusalPointsToEnter(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	h.keys(",")
+	for h.m.setC != setBand {
+		h.keys("j")
+	}
+	for _, k := range []string{"space", "right", "left"} {
+		h.m.TakeNotices()
+		h.keys(k)
+		if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "enter で編集") {
+			t.Errorf("帯の行の %s の案内 = %+v", k, n)
+		}
+	}
+}
+
+// 狭い端末 (幅 36〜41) でも、別名・ユーザー名の入力の板は前置きと欄を 1 行に収め、キャレットを欄の中に立てる。
+func TestAliasFieldFitsNarrowWidths(t *testing.T) {
+	for _, key := range []string{"m", "u"} {
+		for w := minWidth; w <= 44; w++ {
+			h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2"}}, []discover.Peer{mini})
+			h.m.Resize(w, 30)
+			h.keys("j", key)
+			h.m.alias.Reset()
+			for range 24 {
+				h.m.HandleInput("a", "a")
+			}
+			lines := h.m.View()
+			x, y, ok := h.m.CaretPos()
+			if !ok {
+				t.Fatalf("%s w=%d: キャレットが無い", key, w)
+			}
+			line := termwidth.StripSGR(lines[y])
+			if !strings.Contains(line, h.m.edit.label) || !strings.Contains(line, "aaaa") {
+				t.Errorf("%s w=%d: キャレットの行に前置きと欄が無い (割れた): %q", key, w, line)
+			}
+			if x >= w || termwidth.Of(line) < x {
+				t.Errorf("%s w=%d: キャレット x=%d が画面か行の外: %q", key, w, x, line)
+			}
+		}
+	}
+}
+
+// space の確認の板を出している間に別のプロセスが同じ Mac を載せたら、y はその行を残す (古い一覧の値で上書きして別名・内部 IP を消した)。
+func TestSpaceRegisterKeepsRowWrittenMeanwhile(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini})
+	h.keys("l")
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("space")
+	if h.m.ov != ovConfirm {
+		t.Fatal("前提: 確認の板が出ない")
+	}
+	h.store.hosts = append(h.store.hosts, ledger.Host{Host: "m2macmini.local", User: "k2", Alias: "mini", LAN: "192.168.100.12"})
+	h.keys("y")
+	if len(h.store.hosts) != 1 || h.store.hosts[0] != (ledger.Host{Host: "m2macmini.local", User: "k2", Alias: "mini", LAN: "192.168.100.12"}) {
+		t.Errorf("別のプロセスが載せた行を上書きした: %+v", h.store.hosts)
+	}
+	h = newHarness(t, nil, []discover.Peer{mini}) // 誰も載せていなければ今どおり足す
+	h.keys("l")
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("space", "y")
+	if len(h.store.hosts) != 1 || h.store.hosts[0].Host != "m2macmini.local" || h.store.hosts[0].User != "koji" {
+		t.Errorf("登録しない: %+v", h.store.hosts)
+	}
+}
+
+// 書いた後の台帳の読み直しに失敗したら知らせる (黙ると一覧は古いまま「未管理」で、理由が出なかった)。
+func TestReloadLedgerFailureIsNoticed(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini})
+	h.keys("l")
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("space")
+	h.store.loadErr = errors.New("permission denied")
+	h.m.TakeNotices()
+	h.keys("y")
+	if n := h.m.TakeNotices(); !slices.ContainsFunc(n, func(x Notice) bool { return strings.Contains(x.Text, "読み直せない") }) {
+		t.Errorf("読み直しの失敗を知らせない: %+v", n)
 	}
 }

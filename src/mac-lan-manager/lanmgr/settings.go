@@ -100,6 +100,9 @@ func (m *Model) keySettings(key, text string) Action {
 			} else {
 				m.pf.Kinds = append(m.pf.Kinds, k)
 			}
+		case m.setC == setBand:
+			m.note("この項目は enter で編集", false)
+			return None
 		default:
 			m.note("この項目は ← → で変える", false)
 			return None
@@ -126,6 +129,9 @@ func (m *Model) keySettings(key, text string) Action {
 			if i < 0 { // まだ決めていない: 先頭から選ぶ
 				m.pf.LanIF = ifs[0].Device
 			}
+		case setBand:
+			m.note("この項目は enter で編集", false)
+			return None
 		default:
 			m.note("この項目は space で入 / 切", false)
 			return None
@@ -203,9 +209,7 @@ func (m *Model) viewSettings(w int) string {
 			}
 			val = choice([]string{"帯で決める", "I/F で決める"}, cur)
 		case setBand:
-			if !m.pf.LanByBand {
-				dim = "(I/F で決めるときも、固定の判定と番号の提案に使う)"
-			}
+			// I/F で決めるときも使うので薄くしない (薄い行は値の代わりに説明を描き、編集中の入力欄も消えた)
 			if m.bandEdit {
 				// 入力欄の幅は板に入る分だけ (固定の 21 桁だと、幅 50 未満で欄の右が切れ、キャレットが「…」の上や画面の外に出た)
 				fw := min(21, max(inner-m.setLabelW-1-2, 4))
@@ -214,6 +218,9 @@ func (m *Model) viewSettings(w int) string {
 				m.bandCol, m.bandRow = col, len(rows) // カーソルの位置は View が板の位置から決める (窓で切った後の行に直す)
 			} else {
 				val = sText.Render(m.pf.Band) + sMuted.Render("   enter で編集")
+				if !m.pf.LanByBand {
+					val += sMuted.Render("  (I/F で決めるときも、固定の判定と番号の提案に使う)")
+				}
 			}
 		case setIF:
 			if m.pf.LanByBand {

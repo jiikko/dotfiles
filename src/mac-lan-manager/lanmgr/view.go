@@ -120,7 +120,7 @@ func (m *Model) footer() string {
 		hs = append(hs, keyHint{"h/l", "タブ", 10}, keyHint{"space", "台帳", 8}, keyHint{"c", "この Mac の IP", 9},
 			keyHint{",", "設定", 11}, keyHint{"?", "全部のキー", 2}, keyHint{"q", "閉じる", 1})
 	}
-	if m.sc != scSettings && !m.filtering && !m.netReady { // 読み終えるまで断るキーは案内にも出さない (出すと押しても断られた)
+	if m.sc != scSettings && !m.filtering && !m.selfOK { // 読めるまで断るキーは案内にも出さない (出すと押しても断られた)
 		hs = slices.DeleteFunc(hs, func(h keyHint) bool { return slices.Contains(needsNet, h.key) })
 	}
 	items := make([]hintfit.Item, 0, len(hs))
@@ -345,8 +345,8 @@ func (m *Model) columns() []col {
 	}
 	if m.pf.ShowOthers {
 		cols = append(cols, col{"他", 6, func(r row) string {
-			if len(r.others) > 0 {
-				return lipgloss.NewStyle().Foreground(cPurple).Bold(true).Render(fmt.Sprintf("+%d", len(r.others)))
+			if n := len(m.shownOthers(r)); n > 0 {
+				return lipgloss.NewStyle().Foreground(cPurple).Bold(true).Render(fmt.Sprintf("+%d", n))
 			}
 			return sMuted.Render("-")
 		}, nil})
@@ -603,9 +603,9 @@ func (m *Model) detail(r row, width int) string {
 			lines = append(lines, label("有線の名前")+sText.Render(name)+"  "+state)
 		}
 	}
-	if m.pf.ShowOthers && len(r.others) > 0 {
+	if others := m.shownOthers(r); m.pf.ShowOthers && len(others) > 0 {
 		lines = append(lines, "", sDim.Render("その他の IP"))
-		for _, x := range r.others {
+		for _, x := range others {
 			lines = append(lines, "  "+lipgloss.NewStyle().Width(16).Render(kindPill(x.Kind))+sMuted.Width(11).Render(x.Device)+sText.Render(x.Addr)+tagAfter(m.self.Link(x.Device)))
 		}
 	}
@@ -702,9 +702,12 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 		}
 		return modal("この Mac の IP・名前をコピー", body, keys+" すぐコピー   j/k + enter 選んでコピー   esc やめる", m.w), -1, 0
 	case ovAlias:
-		txt, col := m.alias.Window(24)
 		prefix := sDim.Render(m.edit.label + "  ")
-		field := lipgloss.NewStyle().Background(cCode).Render(termwidth.FillRight(txt, 25))
+		// 欄の幅は板に入る分だけ (板は幅 w-1 から縁と余白の 6 桁を引いた中に描く)。固定の 25 桁だと、狭い端末で前置きと欄が 2 行に割れ、
+		// キャレットが欄の外に立った
+		fw := min(25, max(m.w-1-6-lipgloss.Width(prefix), 4))
+		txt, col := m.alias.Window(fw - 1)
+		field := lipgloss.NewStyle().Background(cCode).Render(termwidth.FillRight(txt, fw))
 		// 板の中の位置: 上の辺 1 + 余白 1 + 題 1 + 空行 1 = 4 行目、左の辺 1 + 余白 2 + 前置き
 		return modal(m.edit.title, []string{prefix + field}, "enter 決める   esc やめる", m.w), 4, 3 + lipgloss.Width(prefix) + col
 	case ovHelp:
