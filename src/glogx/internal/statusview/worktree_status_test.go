@@ -1,9 +1,12 @@
 package statusview
 
-import "testing"
+import (
+	"glogx/internal/testenv"
+	"testing"
+)
 
 func TestParseWorktreeStatusMapsXYToSections(t *testing.T) {
-	out := statusRec(
+	out := testenv.StatusRec(
 		"## master...origin/master [ahead 1]",
 		"M  staged.go",   // index だけ
 		" M unstaged.go", // 作業ツリーだけ
@@ -49,7 +52,7 @@ func TestParseWorktreeStatusMapsXYToSections(t *testing.T) {
 }
 
 func TestParseWorktreeStatusCounts(t *testing.T) {
-	st := parseWorktreeStatus(statusRec("M  a", " M b", "?? c", "UU d"))
+	st := parseWorktreeStatus(testenv.StatusRec("M  a", " M b", "?? c", "UU d"))
 	staged, unstaged, untracked, conflicted := st.counts()
 	if staged != 1 || unstaged != 1 || untracked != 1 || conflicted != 1 {
 		t.Fatalf("counts = %d/%d/%d/%d, want 1/1/1/1", staged, unstaged, untracked, conflicted)
@@ -65,7 +68,7 @@ func TestParseWorktreeStatusCounts(t *testing.T) {
 // -z は空白を含むパスをクォートしないので、そのまま 1 つのパスとして読めること。
 // (既定の LF 区切りだと "a b.txt" のように引用されて、素朴な分割ではずれる)
 func TestParseWorktreeStatusKeepsPathWithSpaces(t *testing.T) {
-	st := parseWorktreeStatus(statusRec("?? tmp/a b c.txt", " M src/日本語 ファイル.go"))
+	st := parseWorktreeStatus(testenv.StatusRec("?? tmp/a b c.txt", " M src/日本語 ファイル.go"))
 	got := st.ordered()
 	if len(got) != 2 {
 		t.Fatalf("行数 = %d, want 2: %+v", len(got), got)
@@ -80,7 +83,7 @@ func TestParseWorktreeStatusKeepsPathWithSpaces(t *testing.T) {
 
 // rename は 2 レコード使う (新 → 旧)。orig を拾い、git へ渡すパスは両方になること。
 func TestParseWorktreeStatusRename(t *testing.T) {
-	st := parseWorktreeStatus(statusRec("R  new.go", "old.go", " M other.go"))
+	st := parseWorktreeStatus(testenv.StatusRec("R  new.go", "old.go", " M other.go"))
 	got := st.ordered()
 	if len(got) != 2 {
 		t.Fatalf("行数 = %d, want 2 (rename の旧パスを行として数えていないか): %+v", len(got), got)
@@ -100,7 +103,7 @@ func TestParseWorktreeStatusRename(t *testing.T) {
 
 func TestParseWorktreeStatusSkipsBrokenRecords(t *testing.T) {
 	// 2 文字未満 / セパレータが空白でない / 空レコード は捨てて、読めた分だけ返す
-	st := parseWorktreeStatus(statusRec("M", "MMnospace", "", " M ok.go"))
+	st := parseWorktreeStatus(testenv.StatusRec("M", "MMnospace", "", " M ok.go"))
 	got := st.ordered()
 	if len(got) != 1 || got[0].path != "ok.go" {
 		t.Fatalf("ordered() = %+v, want ok.go の 1 行だけ", got)
@@ -130,14 +133,14 @@ func TestParseBranchHeader(t *testing.T) {
 // conflict の XY は片側だけ見て判定できない (AA / DD のように X と Y が同じ文字でも unmerged)。
 func TestConflictCodesAreClassifiedByPair(t *testing.T) {
 	for _, code := range []string{"DD", "AU", "UD", "UA", "DU", "AA", "UU"} {
-		st := parseWorktreeStatus(statusRec(code + " f.go"))
+		st := parseWorktreeStatus(testenv.StatusRec(code + " f.go"))
 		got := st.ordered()
 		if len(got) != 1 || got[0].section != sectionConflicted {
 			t.Errorf("%s → %+v, want Conflicted の 1 行", code, got)
 		}
 	}
 	// 似ているが conflict ではない組み合わせ (A + D) は通常の 2 区画へ
-	st := parseWorktreeStatus(statusRec("AD f.go"))
+	st := parseWorktreeStatus(testenv.StatusRec("AD f.go"))
 	got := st.ordered()
 	if len(got) != 2 || got[0].section != sectionStaged || got[1].section != sectionUnstaged {
 		t.Errorf("AD → %+v, want Staged + Unstaged", got)
@@ -145,7 +148,7 @@ func TestConflictCodesAreClassifiedByPair(t *testing.T) {
 }
 
 func TestWorktreeRowIsDirOnlyForUntracked(t *testing.T) {
-	st := parseWorktreeStatus(statusRec("?? tmp/", "?? tmp/f.txt", " M dir/"))
+	st := parseWorktreeStatus(testenv.StatusRec("?? tmp/", "?? tmp/f.txt", " M dir/"))
 	rows := st.ordered()
 	want := map[string]bool{"tmp/": true, "tmp/f.txt": false, "dir/": false}
 	for _, r := range rows {
@@ -156,7 +159,7 @@ func TestWorktreeRowIsDirOnlyForUntracked(t *testing.T) {
 }
 
 func TestWorktreeStatusFind(t *testing.T) {
-	st := parseWorktreeStatus(statusRec("MM a.go"))
+	st := parseWorktreeStatus(testenv.StatusRec("MM a.go"))
 	if r, ok := st.find(sectionUnstaged, "a.go"); !ok || r.x != 'M' || r.y != 'M' {
 		t.Fatalf("find(Unstaged, a.go) = (%+v, %v)", r, ok)
 	}

@@ -37,7 +37,7 @@ import (
 // このファイルだけで、共有語彙に見せると読み手が「全 main テストの前提」と誤解する。
 func realRepoBrowse(t *testing.T, height int, subjects ...string) (*browseModel, string, *Options) {
 	t.Helper()
-	dir := newTempRepo(t, subjects)
+	dir := testenv.NewTempRepo(t, subjects)
 	opts := &Options{MaxCount: 20, NoFrame: true}
 	commits, err := gitdata.LoadCommits(opts.LogQuery(), false)
 	if err != nil {
@@ -212,7 +212,7 @@ func TestGitLogFingerprintBaselineCatchesStartupWindow(t *testing.T) {
 	}
 
 	// 「読み込みの後に commit された」= 基準がまだ無い状態で、手元と食い違う指紋が届く
-	commitLines(t, dir, 3, "c3")
+	testenv.CommitLines(t, dir, 3, "c3")
 	fp2, err := extcmd.RunGitTimeout(gitdata.BuildFingerprintArgs(opts.LogQuery())...)
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +242,7 @@ func TestGitLogReflectKeepsAnchorRow(t *testing.T) {
 	anchor := m.commits[2].SHA // ヘルパー化前は LoadCommits の戻り値を直接見ていた (同じもの)
 	rowBefore := headerLineIndex(m.lines(), m.cursor) - m.offset
 
-	commitLines(t, dir, 9, "c5")
+	testenv.CommitLines(t, dir, 9, "c5")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
 	m.handleGitLogProbe(gitLogProbeMsg{})
 	cmd := m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true})
@@ -285,7 +285,7 @@ func TestGitLogReflectAtTopFallsToPullAnim(t *testing.T) {
 	m, dir, _ := realRepoBrowse(t, 24, "c1", "c2", "c3", "c4")
 	m.cursor, m.offset = 0, 0
 
-	commitLines(t, dir, 9, "c5")
+	testenv.CommitLines(t, dir, 9, "c5")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
 	m.handleGitLogProbe(gitLogProbeMsg{})
 	runGitLogReload(t, m, m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true}))
@@ -308,7 +308,7 @@ func TestIntegrationGitLogWatchSeesCommitEvent(t *testing.T) {
 		t.Skipf("この環境では fsnotify を作れない (%v)。実 fsnotify との結合は未検証", err)
 	}
 	t.Cleanup(func() { _ = w.Close() })
-	dir := newTempRepo(t, []string{"c1"})
+	dir := testenv.NewTempRepo(t, []string{"c1"})
 	dirs := gitLogWatchDirs()
 	if len(dirs) == 0 {
 		t.Fatal("見張り対象のディレクトリを解決できない")
@@ -322,7 +322,7 @@ func TestIntegrationGitLogWatchSeesCommitEvent(t *testing.T) {
 	if added == 0 {
 		t.Fatalf("1 つも watch を張れなかった: %v", dirs)
 	}
-	commitLines(t, dir, 5, "c2")
+	testenv.CommitLines(t, dir, 5, "c2")
 	select {
 	case ev, ok := <-w.Events():
 		if !ok {
@@ -354,7 +354,7 @@ func TestGitLogWatchWiredThroughUpdate(t *testing.T) {
 		t.Error("Update が対象ディレクトリを受け取っていない")
 	}
 
-	commitLines(t, dir, 9, "c3")
+	testenv.CommitLines(t, dir, 9, "c3")
 	m.logWatch.PollArmed = false // Init が張った tick は実行しないので札だけ空ける
 	m.Update(gitLogProbeMsg{})
 	if !m.logWatch.measuring {
@@ -414,7 +414,7 @@ func TestGitLogFPDefersWhenOverlayOpensDuringMeasure(t *testing.T) {
 	if !m.logWatch.measuring {
 		t.Fatal("測定が始まらない")
 	}
-	commitLines(t, dir, 9, "c3")
+	testenv.CommitLines(t, dir, 9, "c3")
 	m.diffOv.Open(m.commits[0].SHA) // 測定中に開かれた
 	if cmd := m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true}); cmd != nil {
 		t.Error("ポップアップを開いている状態で反映した (開いている内容のキャッシュが消える)")
@@ -439,7 +439,7 @@ func TestGitLogFPDiscardsMeasurementTakenBeforeSelfReload(t *testing.T) {
 	m.handleGitLogProbe(gitLogProbeMsg{})
 	staleFP := "measured-before-pull"
 
-	commitLines(t, dir, 9, "c3") // 自分の pull が持ってきた分に相当
+	testenv.CommitLines(t, dir, 9, "c3") // 自分の pull が持ってきた分に相当
 	m.reloadAfterPull()
 	if len(m.commits) != 3 {
 		t.Fatalf("pull の読み直しが効いていない: %d 件", len(m.commits))
@@ -472,7 +472,7 @@ func TestGitLogReflectKeepsViewportScrolledWithCursorAtTop(t *testing.T) {
 	}
 	offsetBefore := m.offset
 
-	commitLines(t, dir, 9, "c6")
+	testenv.CommitLines(t, dir, 9, "c6")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
 	m.handleGitLogProbe(gitLogProbeMsg{})
 	runGitLogReload(t, m, m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true}))
@@ -539,7 +539,7 @@ func TestGitLogReflectSurvivesAmendOfTopCommit(t *testing.T) {
 	}
 	topSHA := m.commits[topIdx].SHA
 
-	gitInRepo(t, dir, "commit", "-q", "--amend", "-m", "c6 amended")
+	testenv.GitInRepo(t, dir, "commit", "-q", "--amend", "-m", "c6 amended")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
 	m.handleGitLogProbe(gitLogProbeMsg{})
 	runGitLogReload(t, m, m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true}))
@@ -559,9 +559,9 @@ func TestGitLogReflectSurvivesAmendOfTopCommit(t *testing.T) {
 // 見張り対象は refs / logs の入れ子まで辿る (スラッシュ入りのブランチ名・remote ごとの ref・
 // reflog はサブディレクトリの中にあり、fsnotify は再帰しない)。
 func TestGitLogWatchDirsCoversNestedRefs(t *testing.T) {
-	dir := newTempRepo(t, []string{"c1"})
-	gitInRepo(t, dir, "switch", "-q", "-c", "feature/x")
-	commitLines(t, dir, 3, "c2")
+	dir := testenv.NewTempRepo(t, []string{"c1"})
+	testenv.GitInRepo(t, dir, "switch", "-q", "-c", "feature/x")
+	testenv.CommitLines(t, dir, 3, "c2")
 	dirs := gitLogWatchDirs()
 	// 🚨 t.TempDir() のパスと git が返す --absolute-git-dir は macOS では symlink の解決で
 	// 食い違う (/var/folders と /private/var/folders) ので、末尾で照合する。
@@ -609,10 +609,10 @@ func runGitLogReload(t *testing.T, m *browseModel, cmd tea.Cmd) {
 // 読み直している間に pull が入ったら、届いた古い logData で pull の結果を上書きしない。
 func TestGitLogReloadDiscardsWhenSelfReloadHappenedMeanwhile(t *testing.T) {
 	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2")
-	commitLines(t, dir, 9, "c3")
+	testenv.CommitLines(t, dir, 9, "c3")
 	cmd := m.reflectGitLogChange()
 	staleMsg := cmd() // c3 まで読んだ結果 (まだ届いていない)
-	commitLines(t, dir, 10, "c4")
+	testenv.CommitLines(t, dir, 10, "c4")
 	m.reloadAfterPull() // 利用者の pull が先に反映された (c4 まで)
 	m.pullAnimating = false
 	m.toast.Clear()
@@ -635,7 +635,7 @@ func TestGitLogReloadDiscardsWhenSelfReloadHappenedMeanwhile(t *testing.T) {
 func TestGitLogReloadDefersWhenOverlayOpensDuringReload(t *testing.T) {
 	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
-	commitLines(t, dir, 9, "c3")
+	testenv.CommitLines(t, dir, 9, "c3")
 	cmd := m.reflectGitLogChange()
 	msg := cmd()
 	m.diffOv.Open(m.commits[0].SHA) // 読み直し中に開かれた
@@ -655,7 +655,7 @@ func TestGitLogReloadDefersWhenOverlayOpensDuringReload(t *testing.T) {
 
 // 読み直しが飛んでいる間は測らない (結果は読み直しが基準を降ろした後に捨てられるだけの fork)。
 func TestGitLogProbeSkipsMeasureWhileReloading(t *testing.T) {
-	newTempRepo(t, []string{"c1"})
+	testenv.NewTempRepo(t, []string{"c1"})
 	opts := &Options{MaxCount: 20, NoFrame: true}
 	commits, err := gitdata.LoadCommits(opts.LogQuery(), false)
 	if err != nil {
@@ -677,7 +677,7 @@ func TestGitLogProbeSkipsMeasureWhileReloading(t *testing.T) {
 // では走らない。Cmd を作った後に git を使えなくして、Cmd の実行が初めて失敗することで固定する
 // (Update 内で読んでしまう変異は、Cmd を作った時点で結果を握っているので成功してしまう)。
 func TestGitLogReflectRunsGitInsideCmd(t *testing.T) {
-	newTempRepo(t, []string{"c1"})
+	testenv.NewTempRepo(t, []string{"c1"})
 	opts := &Options{MaxCount: 20, NoFrame: true}
 	commits, err := gitdata.LoadCommits(opts.LogQuery(), false)
 	if err != nil {

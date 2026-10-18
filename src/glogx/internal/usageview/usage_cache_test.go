@@ -1,6 +1,7 @@
 package usageview
 
 import (
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
 	"ratelimit/usage"
@@ -14,10 +15,10 @@ import (
 // fixture は codex 枠を含まないため、実行マシンの codex 有無で結果が揺れないよう
 // lookPath を「codex なし」に固定する (codex 欠損 miss 規則は専用テストが担う)。
 func TestUsageCacheRoundTripAndTTL(t *testing.T) {
-	stubLookPath(t, nil)
+	testenv.StubLookPath(t, nil)
 	path := filepath.Join(t.TempDir(), usageCacheFile)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.Local)
-	if err := saveUsageCache(path, usageSnapFixture(t), now); err != nil {
+	if err := saveUsageCache(path, testenv.UsageSnapFixture(t), now); err != nil {
 		t.Fatalf("saveUsageCache: %v", err)
 	}
 
@@ -26,7 +27,7 @@ func TestUsageCacheRoundTripAndTTL(t *testing.T) {
 		t.Fatal("TTL 内なのにキャッシュが読めない")
 	}
 	// 全フィールドの往復を突き合わせる (どれか 1 つ欠けても表示が静かに劣化する)
-	want := usageSnapFixture(t)
+	want := testenv.UsageSnapFixture(t)
 	if got.Version != want.Version {
 		t.Errorf("Version = %q, want %q", got.Version, want.Version)
 	}
@@ -74,7 +75,7 @@ func TestUsageCacheFallsBackToMiss(t *testing.T) {
 
 // キャッシュ契約は Claude 枠が必須、codex 枠は best-effort (codex 未インストール環境)。
 func TestUsageCacheRequiresClaude(t *testing.T) {
-	stubLookPath(t, nil) // codex 未インストールの環境として評価する
+	testenv.StubLookPath(t, nil) // codex 未インストールの環境として評価する
 	dir := t.TempDir()
 	now := time.Now()
 
@@ -104,7 +105,7 @@ func TestUsageCacheRequiresClaude(t *testing.T) {
 // 出ない「失敗の固定化」になる (ユーザー報告 2026-08-09)。codex 枠を含むスナップショットは
 // 従来どおり hit する。
 func TestUsageCacheRequiresCodexWhenInstalled(t *testing.T) {
-	stubLookPath(t, map[string]string{"codex": "/opt/bin/codex"})
+	testenv.StubLookPath(t, map[string]string{"codex": "/opt/bin/codex"})
 	dir := t.TempDir()
 	now := time.Now()
 
@@ -138,7 +139,7 @@ func TestFetchCmdUsesCacheOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := saveUsageCache(path, usageSnapFixture(t), time.Now()); err != nil {
+	if err := saveUsageCache(path, testenv.UsageSnapFixture(t), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	// PATH を空にして claude を見つけられなくする: subprocess 経路へ落ちたら err になる
@@ -165,7 +166,7 @@ func TestFetchCmdRefreshIgnoresCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := saveUsageCache(path, usageSnapFixture(t), time.Now()); err != nil {
+	if err := saveUsageCache(path, testenv.UsageSnapFixture(t), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", "") // subprocess 経路に入ったことを err で観測する

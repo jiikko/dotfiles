@@ -5,6 +5,8 @@ import (
 
 	"glogx/internal/doctorview"
 	"glogx/internal/gitdata"
+	"glogx/internal/statusview/statusviewtest"
+	"glogx/internal/testenv"
 )
 
 // C / X (claude / codex update) が git log 一覧以外の画面からも始められることの配線テスト。
@@ -60,7 +62,9 @@ func TestUpdateKeysReachableFromOverlays(t *testing.T) {
 			func(m *browseModel) bool { return m.issuesOv.Visible() }, false},
 		// status は行が無いと X (破棄) が何もしないので、1 行持った viewer を直接差し込む
 		// (TestUpdateKeysDoNotLeakIntoStatusViewer と同じ準備)
-		{"status", func(t *testing.T, m *browseModel) { m.statusOv = *newTestStatusView(t, statusRec(" M a.go")) },
+		{"status", func(t *testing.T, m *browseModel) {
+			m.statusOv = *statusviewtest.NewView(t, testenv.StatusRec(" M a.go"))
+		},
 			func(m *browseModel) bool { return m.statusOv.Visible() }, true},
 		{"ratelimit", openByKey("R", func(m *browseModel) bool { return m.rlDash.Visible() }),
 			func(m *browseModel) bool { return m.rlDash.Visible() }, false},
@@ -126,7 +130,7 @@ func TestUpdateKeysYieldToOverlayInputModes(t *testing.T) {
 
 	// status viewer の破棄確認 (X → y/N) 中の C は確認への回答 (= キャンセル) で、update ではない
 	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
-	m2.statusOv = *newTestStatusView(t, statusRec(" M a.go"))
+	m2.statusOv = *statusviewtest.NewView(t, testenv.StatusRec(" M a.go"))
 	m2.handleKey("X")
 	releaseKey(m2)
 	if !m2.statusOv.OwnsKeys() {

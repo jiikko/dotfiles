@@ -35,6 +35,7 @@
 - `src/glogx/internal/linecache` (`glogx/internal/linecache`) — Package linecache は「キー → 表示行」のメモリ内キャッシュと取得の単発化 (diff / job 詳細ログ / status のプレビューが共有する)。 (internal)
 - `src/glogx/internal/ratelimitview` (`glogx/internal/ratelimitview`) — Package ratelimitview は glogx の全画面 ratelimit ダッシュボード (R) と、閉じたときの画面の記憶。 (internal)
 - `src/glogx/internal/statusview` (`glogx/internal/statusview`) — Package statusview は glogx の status viewer (s): git status の読み取りと worktree の区画分け・描画。 (internal)
+- `src/glogx/internal/statusview/statusviewtest` (`glogx/internal/statusview/statusviewtest`) — Package statusviewtest は status 画面と組み合わせるテストが共有する部品 (開いた status viewer を作る・git status の取得を差し替える)。 (internal)
 - `src/glogx/internal/term` (`glogx/internal/term`) — Package term は glogx の描画の土台: ANSI 色と Paint・切り詰め / 折り返しの純関数・幅計算の別名・枠と影・ 端末サニタイズの入口・glide のキー語彙・最下行の案内の詰めを持つ。 (internal)
 - `src/glogx/internal/testenv` (`glogx/internal/testenv`) — Package testenv は glogx のテストを持つパッケージ (main と internal の各パッケージ) が共有する TestMain の前処理と、 外部作用の差し替えのヘルパー。 (internal)
 - `src/glogx/internal/usageview` (`glogx/internal/usageview`) — Package usageview は glogx の右上の利用枠オーバーレイ (U) と、その取得結果のキャッシュ (claude -p /usage は 1 回 ≈ 2 秒かかるので、起動のたびには取らない)。 (internal)

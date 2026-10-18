@@ -11,7 +11,7 @@ import (
 
 func realRepo(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp(repoTmpDir(t), "glogx-status-real") //nolint:usetesting // 使い捨て repo は ./tmp 規約 (このファイル冒頭の doc)。t.TempDir はシステム TMPDIR に置くため使わない
+	dir, err := os.MkdirTemp(testenv.RepoTmpDir(t), "glogx-status-real") //nolint:usetesting // 使い捨て repo は ./tmp 規約 (このファイル冒頭の doc)。t.TempDir はシステム TMPDIR に置くため使わない
 	if err != nil {
 		t.Fatal(err)
 	}

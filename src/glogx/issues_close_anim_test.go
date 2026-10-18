@@ -30,12 +30,12 @@ func TestIssuesCloseMovesOnFirstFrame(t *testing.T) {
 	// tick 1 拍 (scrollInterval) ぶん進んだ時点の進捗。閉じるので 1 から落ちる
 	p := 1 - float64(scrollInterval)/float64(issuesview.IssuesCloseDuration)
 
-	closing := maxRowShift(layout.SlideIn(window, p, width, true, issuesview.IssuesAnimStagger))
+	closing := testenv.MaxRowShift(layout.SlideIn(window, p, width, true, issuesview.IssuesAnimStagger))
 	if closing < width/20 {
 		t.Fatalf("閉じ始めの 1 フレームで %d 桁しか動いていない (立ち上がりが潰れている)", closing)
 	}
 	// 開く側は右外から入ってくる = 1 フレーム目はまだ大きくずれている (逆向きの回帰よけ)
-	if opening := maxRowShift(layout.SlideIn(window, 1-p, width, false, issuesview.IssuesAnimStagger)); opening <= closing {
+	if opening := testenv.MaxRowShift(layout.SlideIn(window, 1-p, width, false, issuesview.IssuesAnimStagger)); opening <= closing {
 		t.Fatalf("開き始めが右外から入ってきていない (ずれ %d 桁)", opening)
 	}
 }
@@ -61,18 +61,6 @@ func TestIssuesCloseLeavesNoBlankFrame(t *testing.T) {
 		advance(scrollInterval)
 	}
 	t.Fatal("演出が終わらない")
-}
-
-// maxRowShift は窓の各行の右へのずれ (先頭の空白幅) の最大値。空行は演出で消えた行なので除く。
-func maxRowShift(window []string) int {
-	shift := 0
-	for _, ln := range window {
-		if strings.TrimSpace(ln) == "" {
-			continue
-		}
-		shift = max(shift, len(ln)-len(strings.TrimLeft(ln, " ")))
-	}
-	return shift
 }
 
 // キーは演出を即着地させ、かつ飲み込まれない (q で閉じた直後の q が効かない時間を作らない)。

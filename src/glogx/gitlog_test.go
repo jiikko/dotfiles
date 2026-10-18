@@ -3,6 +3,7 @@ package main
 import (
 	"glogx/internal/extcmd"
 	"glogx/internal/gitdata"
+	"glogx/internal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,43 +13,8 @@ import (
 
 // ---- integration: 一時 Git リポジトリで実際の git log を解析する ----
 
-// newTempRepo はコミット付きの一時リポジトリを作り、そのディレクトリへ chdir する。
-func newTempRepo(t *testing.T, subjects []string) string {
-	t.Helper()
-	dir := t.TempDir()
-	t.Chdir(dir)
-	gitInRepo(t, dir, "init", "-q", "-b", "main")
-	for i, subject := range subjects {
-		commitLines(t, dir, i+1, subject)
-	}
-	return dir
-}
-
-// gitInRepo は dir を作業ディレクトリとして git を走らせる (author / committer を固定)。
-func gitInRepo(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=tester", "GIT_AUTHOR_EMAIL=t@example.com",
-		"GIT_COMMITTER_NAME=tester", "GIT_COMMITTER_EMAIL=t@example.com")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-}
-
-// commitLines は file.txt を lines 行にして subject でコミットする (コミットを 1 本足す)。
-func commitLines(t *testing.T, dir string, lines int, subject string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte(strings.Repeat("line\n", lines)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitInRepo(t, dir, "add", ".")
-	gitInRepo(t, dir, "commit", "-q", "-m", subject)
-}
-
 func TestIntegrationLoadCommitsOrderAndCount(t *testing.T) {
-	newTempRepo(t, []string{"first", "second", "third"})
+	testenv.NewTempRepo(t, []string{"first", "second", "third"})
 	commits, err := gitdata.LoadCommits(gitdata.LogQuery{MaxCount: defaultMaxCount}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +36,7 @@ func TestIntegrationLoadCommitsOrderAndCount(t *testing.T) {
 }
 
 func TestIntegrationStatBodyIntact(t *testing.T) {
-	newTempRepo(t, []string{"first", "second"})
+	testenv.NewTempRepo(t, []string{"first", "second"})
 	commits, err := gitdata.LoadCommits(gitdata.LogQuery{MaxCount: defaultMaxCount, Stat: true}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +49,7 @@ func TestIntegrationStatBodyIntact(t *testing.T) {
 }
 
 func TestIntegrationPatchBodyIntact(t *testing.T) {
-	newTempRepo(t, []string{"first"})
+	testenv.NewTempRepo(t, []string{"first"})
 	commits, err := gitdata.LoadCommits(gitdata.LogQuery{MaxCount: defaultMaxCount, Patch: true}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +63,7 @@ func TestIntegrationPatchBodyIntact(t *testing.T) {
 }
 
 func TestIntegrationUnpushedSHAs(t *testing.T) {
-	newTempRepo(t, []string{"pushed", "local-only"})
+	testenv.NewTempRepo(t, []string{"pushed", "local-only"})
 	commits, err := gitdata.LoadCommits(gitdata.LogQuery{MaxCount: defaultMaxCount}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -164,15 +130,15 @@ func TestIntegrationUnpushedSHAsPathspec(t *testing.T) {
 	write("a.txt", "base\n")
 	git("add", ".")
 	git("commit", "-q", "-m", "base")
-	baseSHA := headSHA(t)
+	baseSHA := testenv.HeadSHA(t)
 	write("a.txt", "a change\n")
 	git("add", ".")
 	git("commit", "-q", "-m", "touch a")
-	aSHA := headSHA(t)
+	aSHA := testenv.HeadSHA(t)
 	write("b.txt", "b change\n")
 	git("add", ".")
 	git("commit", "-q", "-m", "touch b")
-	bSHA := headSHA(t)
+	bSHA := testenv.HeadSHA(t)
 	// base までを origin に push 済みと偽装 (a/b は未 push)
 	git("remote", "add", "origin", "git@github.com:o/r.git")
 	git("update-ref", "refs/remotes/origin/master", baseSHA)
@@ -191,16 +157,6 @@ func TestIntegrationUnpushedSHAsPathspec(t *testing.T) {
 	if onlyA[bSHA] {
 		t.Errorf("a.txt 指定なのに b.txt のみ触る bSHA が未 push 集合に混入: %v", onlyA)
 	}
-}
-
-// headSHA は現在の HEAD の完全 SHA を返すテストヘルパー。
-func headSHA(t *testing.T) string {
-	t.Helper()
-	out, err := exec.Command("git", "rev-parse", "HEAD").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return strings.TrimSpace(string(out))
 }
 
 // verbatim 方式の統合: 実リポジトリで LoadLogDisplay + VerbatimLines の照合が成立し、

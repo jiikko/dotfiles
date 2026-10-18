@@ -72,7 +72,7 @@ func cursorPathAt(t *testing.T, v *StatusView) (worktreeSection, string) {
 }
 
 func TestStatusSpaceStagesUnstagedRow(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	calls := stubGitOps(t, nil)
 	applyCmd(t, v, v.HandleKey(" ", testViewport()))
 	if len(calls.add) != 1 || calls.add[0][0] != worktreePathspec("a.go") {
@@ -84,7 +84,7 @@ func TestStatusSpaceStagesUnstagedRow(t *testing.T) {
 }
 
 func TestStatusSpaceUnstagesStagedRow(t *testing.T) {
-	v := newTestStatusView(t, statusRec("M  a.go"))
+	v := newTestStatusView(t, testenv.StatusRec("M  a.go"))
 	calls := stubGitOps(t, nil)
 	applyCmd(t, v, v.HandleKey(" ", testViewport()))
 	if len(calls.restoreStaged) != 1 || calls.restoreStaged[0][0] != worktreePathspec("a.go") {
@@ -96,7 +96,7 @@ func TestStatusSpaceUnstagesStagedRow(t *testing.T) {
 }
 
 func TestStatusSpaceStagesUntrackedRow(t *testing.T) {
-	v := newTestStatusView(t, statusRec("?? new.txt"))
+	v := newTestStatusView(t, testenv.StatusRec("?? new.txt"))
 	calls := stubGitOps(t, nil)
 	applyCmd(t, v, v.HandleKey(" ", testViewport()))
 	if len(calls.add) != 1 || calls.add[0][0] != worktreePathspec("new.txt") {
@@ -105,7 +105,7 @@ func TestStatusSpaceStagesUntrackedRow(t *testing.T) {
 }
 
 func TestStatusConflictRowRejectsStageAndDiscard(t *testing.T) {
-	v := newTestStatusView(t, statusRec("UU c.go"))
+	v := newTestStatusView(t, testenv.StatusRec("UU c.go"))
 	calls := stubGitOps(t, nil)
 	applyCmd(t, v, v.HandleKey(" ", testViewport()))
 	if len(calls.add) != 0 || len(calls.restoreStaged) != 0 {
@@ -121,7 +121,7 @@ func TestStatusConflictRowRejectsStageAndDiscard(t *testing.T) {
 }
 
 func TestStatusStageAllStagesUnstagedAndUntracked(t *testing.T) {
-	v := newTestStatusView(t, statusRec("M  staged.go", " M a.go", "?? b.txt"))
+	v := newTestStatusView(t, testenv.StatusRec("M  staged.go", " M a.go", "?? b.txt"))
 	calls := stubGitOps(t, nil)
 	applyCmd(t, v, v.HandleKey("a", testViewport()))
 	if len(calls.add) != 1 {
@@ -135,7 +135,7 @@ func TestStatusStageAllStagesUnstagedAndUntracked(t *testing.T) {
 }
 
 func TestStatusStageAllOnCleanTreeDoesNothing(t *testing.T) {
-	v := newTestStatusView(t, statusRec("M  staged.go"))
+	v := newTestStatusView(t, testenv.StatusRec("M  staged.go"))
 	calls := stubGitOps(t, nil)
 	v.HandleKey("a", testViewport())
 	if len(calls.add) != 0 {
@@ -149,7 +149,7 @@ func TestStatusStageAllOnCleanTreeDoesNothing(t *testing.T) {
 // stage したファイルは別セクションへ移るが、カーソルは追いかけず「同じ位置の次のファイル」に
 // 留まる (Space 連打で上から順に stage できる)。
 func TestStatusCursorStaysInSectionAfterStage(t *testing.T) {
-	state := stubWorktreeStatus(t, statusRec(" M a.go", " M b.go", " M c.go"), nil)
+	state := stubWorktreeStatus(t, testenv.StatusRec(" M a.go", " M b.go", " M c.go"), nil)
 	v := NewStatusView()
 	v.closeAnimOff = true
 	v.shown = true
@@ -159,7 +159,7 @@ func TestStatusCursorStaysInSectionAfterStage(t *testing.T) {
 		t.Fatalf("移動後のカーソル = %q, want b.go", path)
 	}
 	stubGitOps(t, nil)
-	state.out = statusRec("M  b.go", " M a.go", " M c.go") // b.go が staged へ移った後の状態
+	state.out = testenv.StatusRec("M  b.go", " M a.go", " M c.go") // b.go が staged へ移った後の状態
 	applyCmd(t, &v, v.HandleKey(" ", testViewport()))
 	sec, path := cursorPathAt(t, &v)
 	if sec != sectionUnstaged || path != "c.go" {
@@ -170,7 +170,7 @@ func TestStatusCursorStaysInSectionAfterStage(t *testing.T) {
 // 外部編集で行が増えても、カーソルは同じパスに残る (index 保持だと隣のファイルへ滑り、
 // X が「見ていたのとは別のファイル」を捨てる事故になる)。
 func TestStatusCursorFollowsPathOnExternalEdit(t *testing.T) {
-	state := stubWorktreeStatus(t, statusRec(" M b.go"), nil)
+	state := stubWorktreeStatus(t, testenv.StatusRec(" M b.go"), nil)
 	v := NewStatusView()
 	v.closeAnimOff = true
 	v.shown = true
@@ -179,7 +179,7 @@ func TestStatusCursorFollowsPathOnExternalEdit(t *testing.T) {
 		t.Fatalf("初期カーソル = %q", path)
 	}
 	// 別プロセスが a.go を編集して b.go の上に挿入された
-	state.out = statusRec(" M a.go", " M b.go")
+	state.out = testenv.StatusRec(" M a.go", " M b.go")
 	applyStatusLoad(t, &v)
 	if _, path := cursorPathAt(t, &v); path != "b.go" {
 		t.Fatalf("外部編集後のカーソル = %q, want b.go (パスで保持していない)", path)
@@ -187,7 +187,7 @@ func TestStatusCursorFollowsPathOnExternalEdit(t *testing.T) {
 }
 
 func TestStatusJumpSectionMovesToNextSection(t *testing.T) {
-	v := newTestStatusView(t, statusRec("M  s.go", " M u.go", "?? n.txt"))
+	v := newTestStatusView(t, testenv.StatusRec("M  s.go", " M u.go", "?? n.txt"))
 	v.HandleKey("tab", testViewport()) // Unstaged (初期位置) → Untracked
 	if sec, path := cursorPathAt(t, v); sec != sectionUntracked || path != "n.txt" {
 		t.Fatalf("Tab 後 = (section %d, %q), want (Untracked, n.txt)", sec, path)
@@ -204,13 +204,13 @@ func TestStatusJumpSectionMovesToNextSection(t *testing.T) {
 
 // 開いた直後に触りたいのは「まだ stage していない変更」(spec 2 節)。
 func TestStatusInitialCursorIsFirstUnstagedRow(t *testing.T) {
-	v := newTestStatusView(t, statusRec("M  s.go", " M u.go", "?? n.txt"))
+	v := newTestStatusView(t, testenv.StatusRec("M  s.go", " M u.go", "?? n.txt"))
 	sec, path := cursorPathAt(t, v)
 	if sec != sectionUnstaged || path != "u.go" {
 		t.Fatalf("初期カーソル = (section %d, %q), want (Unstaged, u.go)", sec, path)
 	}
 	// Unstaged が無ければ先頭の行 (Staged) から始める
-	v2 := newTestStatusView(t, statusRec("M  s.go"))
+	v2 := newTestStatusView(t, testenv.StatusRec("M  s.go"))
 	if sec, path := cursorPathAt(t, v2); sec != sectionStaged || path != "s.go" {
 		t.Fatalf("Unstaged 無しの初期カーソル = (section %d, %q), want (Staged, s.go)", sec, path)
 	}
@@ -219,7 +219,7 @@ func TestStatusInitialCursorIsFirstUnstagedRow(t *testing.T) {
 // 閉じた時点で走行中だった取得の札を降ろさないと、次に開いたとき loadCmd が「取得中」と判断して
 // 二度と読み直さない (古い一覧が永久に居座る)。
 func TestStatusReopenAfterCloseDuringLoadCanReload(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	if cmd := v.LoadCmd(); cmd == nil { // 走行中にする (結果は届けない)
 		t.Fatal("2 回目の loadCmd が nil")
 	}
@@ -232,7 +232,7 @@ func TestStatusReopenAfterCloseDuringLoadCanReload(t *testing.T) {
 
 // 取得に失敗しても、一度読めた一覧は消さない (last-good。spec 5 節)。
 func TestStatusLoadErrorAfterLoadedKeepsLastGood(t *testing.T) {
-	state := stubWorktreeStatus(t, statusRec(" M a.go"), nil)
+	state := stubWorktreeStatus(t, testenv.StatusRec(" M a.go"), nil)
 	v := NewStatusView()
 	v.closeAnimOff = true
 	v.shown = true
@@ -283,7 +283,7 @@ func TestStatusPathIsSanitizedForDisplayOnly(t *testing.T) {
 // (呼び出しごとに包む方式だと必ずどこかが漏れる)。
 func TestStatusNoticeIsSanitized(t *testing.T) {
 	const esc, bel = "\x1b", "\a"
-	v := newTestStatusView(t, statusRec("## master", "?? a.txt"))
+	v := newTestStatusView(t, testenv.StatusRec("## master", "?? a.txt"))
 	v.setNotice("evil"+esc+"]0;pwned"+bel+".txt の変更を捨てました", app.NoticeOK)
 	if testenv.HasTerminalControl(v.notice) {
 		t.Errorf("通知に制御シーケンスが残った: %q", v.notice)
@@ -303,7 +303,7 @@ func TestStatusPathTextKeepsBasename(t *testing.T) {
 }
 
 func TestStatusDiscardRejectsStagedRow(t *testing.T) {
-	v := newTestStatusView(t, statusRec("M  a.go"))
+	v := newTestStatusView(t, testenv.StatusRec("M  a.go"))
 	v.HandleKey("X", testViewport())
 	if v.discarding {
 		t.Fatal("staged 行で X の確認が開いた (先に Space で unstage させる契約)")
@@ -314,7 +314,7 @@ func TestStatusDiscardRejectsStagedRow(t *testing.T) {
 }
 
 func TestStatusDiscardConfirmRunsRestore(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	calls := stubGitOps(t, nil)
 	v.HandleKey("X", testViewport())
 	if !v.discarding {
@@ -332,7 +332,7 @@ func TestStatusDiscardConfirmRunsRestore(t *testing.T) {
 // 大文字 Y も実行する (confirm.IsYes)。issues viewer の next 目印は Y で取り消す側で、
 // 揃えない理由は discardKey の注記。
 func TestStatusDiscardConfirmAcceptsUpperY(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	calls := stubGitOps(t, nil)
 	v.HandleKey("X", testViewport())
 	applyCmd(t, v, v.HandleKey("Y", testViewport()))
@@ -342,7 +342,7 @@ func TestStatusDiscardConfirmAcceptsUpperY(t *testing.T) {
 }
 
 func TestStatusDiscardCancelKeepsFile(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	calls := stubGitOps(t, nil)
 	v.HandleKey("X", testViewport())
 	v.HandleKey("n", testViewport())
@@ -355,7 +355,7 @@ func TestStatusDiscardCancelKeepsFile(t *testing.T) {
 }
 
 func TestStatusDiscardUsesCleanForUntracked(t *testing.T) {
-	v := newTestStatusView(t, statusRec("?? new.txt"))
+	v := newTestStatusView(t, testenv.StatusRec("?? new.txt"))
 	calls := stubGitOps(t, nil)
 	v.HandleKey("X", testViewport())
 	applyCmd(t, v, v.HandleKey("y", testViewport()))
@@ -369,7 +369,7 @@ func TestStatusDiscardUsesCleanForUntracked(t *testing.T) {
 
 // spec 4 節の不変条件 1: 確認に出した (パス, XY) と実行時の状態が違えば捨てない。
 func TestStatusDiscardAbortsWhenStateChangedDuringConfirm(t *testing.T) {
-	state := stubWorktreeStatus(t, statusRec(" M a.go"), nil)
+	state := stubWorktreeStatus(t, testenv.StatusRec(" M a.go"), nil)
 	v := NewStatusView()
 	v.closeAnimOff = true
 	v.shown = true
@@ -377,7 +377,7 @@ func TestStatusDiscardAbortsWhenStateChangedDuringConfirm(t *testing.T) {
 	calls := stubGitOps(t, nil)
 	v.HandleKey("X", testViewport())
 	// 確認中に別プロセスが a.go を stage した (XY が " M" → "MM" へ変わる)
-	state.out = statusRec("MM a.go")
+	state.out = testenv.StatusRec("MM a.go")
 	applyCmd(t, &v, v.HandleKey("y", testViewport()))
 	if len(calls.restoreWork) != 0 || len(calls.clean) != 0 {
 		t.Fatalf("状態が変わったのに捨ててしまった: restore=%v clean=%v", calls.restoreWork, calls.clean)
@@ -389,14 +389,14 @@ func TestStatusDiscardAbortsWhenStateChangedDuringConfirm(t *testing.T) {
 }
 
 func TestStatusDiscardAbortsWhenFileDisappeared(t *testing.T) {
-	state := stubWorktreeStatus(t, statusRec(" M a.go"), nil)
+	state := stubWorktreeStatus(t, testenv.StatusRec(" M a.go"), nil)
 	v := NewStatusView()
 	v.closeAnimOff = true
 	v.shown = true
 	applyStatusLoad(t, &v)
 	calls := stubGitOps(t, nil)
 	v.HandleKey("X", testViewport())
-	state.out = statusRec() // 確認中に別プロセスが commit した
+	state.out = testenv.StatusRec() // 確認中に別プロセスが commit した
 	applyCmd(t, &v, v.HandleKey("y", testViewport()))
 	if len(calls.restoreWork) != 0 {
 		t.Fatalf("対象が消えたのに restore が走った: %v", calls.restoreWork)
@@ -404,7 +404,7 @@ func TestStatusDiscardAbortsWhenFileDisappeared(t *testing.T) {
 }
 
 func TestStatusPollDropsStaleGeneration(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	gen := v.gen
 	if cmd := v.ReceivePoll(StatusPollMsg{gen: gen}); cmd == nil {
 		t.Fatal("同世代の poll が読み直しを返さない")
@@ -416,8 +416,8 @@ func TestStatusPollDropsStaleGeneration(t *testing.T) {
 }
 
 func TestStatusReceiveIgnoresStaleGeneration(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
-	stale := StatusLoadMsg{st: parseWorktreeStatus(statusRec(" M zzz.go")), gen: v.gen - 1}
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	stale := StatusLoadMsg{st: parseWorktreeStatus(testenv.StatusRec(" M zzz.go")), gen: v.gen - 1}
 	v.Receive(stale)
 	if _, path := cursorPathAt(t, v); path != "a.go" {
 		t.Fatalf("古い世代の結果で上書きされた: カーソル = %q", path)
@@ -442,7 +442,7 @@ func TestStatusLoadErrorShowsMessageAndKeepsViewOpen(t *testing.T) {
 func TestStatusLinesTwoColumnsWhenWide(t *testing.T) {
 	// 🚨 ブランチ名は長いものを使う: 短いとヘッダーが一覧カラム幅 (48 桁ほど) に収まってしまい、
 	// 「全幅で描く」ことの検証にならない (件数が切れる条件を作れない)
-	v := newTestStatusView(t, statusRec("## feature/a-very-long-branch-name-for-header-width...origin/x", " M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec("## feature/a-very-long-branch-name-for-header-width...origin/x", " M a.go"))
 	lines := v.Lines(testStatusOpts(120, 20))
 	if len(lines) != 20 {
 		t.Fatalf("行数 = %d, want 20 (常にちょうど page 行)", len(lines))
@@ -461,7 +461,7 @@ func TestStatusLinesTwoColumnsWhenWide(t *testing.T) {
 }
 
 func TestStatusLinesOneColumnWhenNarrow(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	lines := v.Lines(testStatusOpts(70, 20))
 	body := strings.Join(lines, "\n")
 	if strings.Contains(body, "│") {
@@ -485,7 +485,7 @@ func TestStatusListWidthFallsBackToOneColumn(t *testing.T) {
 }
 
 func TestStatusLinesShowsSectionsAndPartialBadge(t *testing.T) {
-	v := newTestStatusView(t, statusRec("MM both.go", "?? new.txt"))
+	v := newTestStatusView(t, testenv.StatusRec("MM both.go", "?? new.txt"))
 	body := strings.Join(v.Lines(testStatusOpts(120, 20)), "\n")
 	for _, want := range []string{"Staged (1)", "Unstaged (1)", "Untracked (1)", "◐"} {
 		if !strings.Contains(body, want) {
@@ -495,7 +495,7 @@ func TestStatusLinesShowsSectionsAndPartialBadge(t *testing.T) {
 }
 
 func TestStatusLinesCleanTreeMessage(t *testing.T) {
-	v := newTestStatusView(t, statusRec())
+	v := newTestStatusView(t, testenv.StatusRec())
 	body := strings.Join(v.Lines(testStatusOpts(120, 20)), "\n")
 	if !strings.Contains(body, "クリーン") {
 		t.Fatalf("クリーンの案内が無い:\n%s", body)
@@ -503,7 +503,7 @@ func TestStatusLinesCleanTreeMessage(t *testing.T) {
 }
 
 func TestStatusHeaderShowsBranchAndCounts(t *testing.T) {
-	v := newTestStatusView(t, statusRec("## topic...origin/topic [ahead 2]", "M  a.go", " M b.go"))
+	v := newTestStatusView(t, testenv.StatusRec("## topic...origin/topic [ahead 2]", "M  a.go", " M b.go"))
 	head := term.StripANSI(v.Lines(testStatusOpts(120, 20))[0])
 	for _, want := range []string{"topic", "ahead 2", "staged 1", "unstaged 1"} {
 		if !strings.Contains(head, want) {
@@ -606,7 +606,7 @@ func TestStatusOpenAnimationThenSettles(t *testing.T) {
 }
 
 func TestStatusPagerOpensAndScrolls(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	row, _ := v.current()
 	key := previewKey(row)
 	v.preview.Store(key, []string{"l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9", "l10",
@@ -626,7 +626,7 @@ func TestStatusPagerOpensAndScrolls(t *testing.T) {
 }
 
 func TestStatusPagerKeysDoNotMoveList(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go", " M b.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go", " M b.go"))
 	row, _ := v.current()
 	v.preview.Store(previewKey(row), []string{"x"}, previewKey(row))
 	v.HandleKey("d", testViewport())
@@ -637,7 +637,7 @@ func TestStatusPagerKeysDoNotMoveList(t *testing.T) {
 }
 
 func TestStatusDiscardConfirmSwallowsListKeys(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go", " M b.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go", " M b.go"))
 	stubGitOps(t, nil)
 	v.HandleKey("X", testViewport())
 	v.HandleKey("j", testViewport()) // 確認中の j は「キャンセル」で、カーソルは動かない
@@ -659,7 +659,7 @@ func TestStatusListFormatsOnlyVisibleWindow(t *testing.T) {
 		for i := range files {
 			recs = append(recs, " M file"+strconv.Itoa(i)+".go")
 		}
-		v := newTestStatusView(t, statusRec(recs...))
+		v := newTestStatusView(t, testenv.StatusRec(recs...))
 		o := testStatusOpts(120, 10) // 10 行ぶんの窓
 		if out := strings.Join(v.listLines(o, 120), "\n"); !strings.Contains(out, "file0.go") {
 			t.Fatalf("窓の先頭が出ていない (前提が崩れた):\n%s", out)
@@ -677,7 +677,7 @@ func TestStatusListFormatsOnlyVisibleWindow(t *testing.T) {
 
 // 極端な端末サイズ (resize 直後・1 桁 pane) でも panic せず、契約どおり page 行を返すこと。
 func TestStatusLinesSurvivesExtremeSizes(t *testing.T) {
-	v := newTestStatusView(t, statusRec("M  s.go", " M src/very/deep/path/render.go", "?? tmp/"))
+	v := newTestStatusView(t, testenv.StatusRec("M  s.go", " M src/very/deep/path/render.go", "?? tmp/"))
 	for _, size := range [][2]int{{0, 0}, {1, 1}, {2, 3}, {20, 3}, {70, 2}, {200, 60}} {
 		width, page := size[0], size[1]
 		lines := v.Lines(testStatusOpts(width, page))
@@ -696,7 +696,7 @@ func TestStatusLinesSurvivesExtremeSizes(t *testing.T) {
 
 // プレビューのキャッシュは無制限に育たない (長時間セッションでファイルを見た数だけ溜まる)。
 func TestStatusPreviewCacheIsBounded(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	for i := range linecache.Limit + 20 {
 		v.ReceivePreview(StatusPreviewMsg{key: "k" + strconv.Itoa(i), lines: []string{"x"}})
 	}
@@ -717,7 +717,7 @@ func TestStatusPreviewCacheIsBounded(t *testing.T) {
 // (previewTickCmd) ので、札が無いと同じキーへ git diff が 2 本走る。移行前は cache と order
 // だけを捨てていたので、移行で入れた挙動変化だった。
 func TestStatusExternalEditKeepsInFlightPreview(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	row, _ := v.current()
 	key := previewKey(row)
 	if cmd := v.fetchDiff(row, false); cmd == nil {
@@ -725,7 +725,7 @@ func TestStatusExternalEditKeepsInFlightPreview(t *testing.T) {
 	}
 
 	// 外部編集で行集合が変わった = 古い diff を捨てる経路 (changed が true になる入力にする)
-	v.Receive(StatusLoadMsg{st: parseWorktreeStatus(statusRec(" M a.go", " M b.go")), gen: v.gen})
+	v.Receive(StatusLoadMsg{st: parseWorktreeStatus(testenv.StatusRec(" M a.go", " M b.go")), gen: v.gen})
 	if v.preview.Has(key) {
 		t.Fatal("前提が崩れた: 古い diff が捨てられていない (この経路を通っていない)")
 	}
@@ -742,7 +742,7 @@ func TestStatusExternalEditKeepsInFlightPreview(t *testing.T) {
 // 走行中の取得の札を降ろさない — プレビューの tick チェーンは張られたままなので、降ろすと
 // 次の満了で同じキーを二重に取りに行く。
 func TestStatusApplyFreshKeepsInFlightPreview(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	row, _ := v.current()
 	key := previewKey(row)
 	if cmd := v.fetchDiff(row, false); cmd == nil {
@@ -750,7 +750,7 @@ func TestStatusApplyFreshKeepsInFlightPreview(t *testing.T) {
 	}
 	v.preview.Store("other", []string{"stale"}, "")
 
-	v.applyFresh(parseWorktreeStatus(statusRec(" M a.go", " M b.go")))
+	v.applyFresh(parseWorktreeStatus(testenv.StatusRec(" M a.go", " M b.go")))
 
 	if v.preview.Has("other") {
 		t.Error("古いキャッシュが残った (取り直しの契機が無いまま古い diff を出す)")
@@ -761,17 +761,17 @@ func TestStatusApplyFreshKeepsInFlightPreview(t *testing.T) {
 }
 
 func TestStatusReceiveSchedulesPreviewRefetchOnChange(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	row, _ := v.current()
 	v.ReceivePreview(StatusPreviewMsg{key: previewKey(row), lines: []string{"old"}})
-	same := v.Receive(StatusLoadMsg{st: parseWorktreeStatus(statusRec(" M a.go")), gen: v.gen})
+	same := v.Receive(StatusLoadMsg{st: parseWorktreeStatus(testenv.StatusRec(" M a.go")), gen: v.gen})
 	if same != nil {
 		t.Error("内容が変わっていないのに取り直しを予約した (毎 1.5 秒 git diff が走る)")
 	}
 	if v.preview.Len() == 0 {
 		t.Error("内容が変わっていないのにキャッシュを捨てた")
 	}
-	changed := v.Receive(StatusLoadMsg{st: parseWorktreeStatus(statusRec("MM a.go")), gen: v.gen})
+	changed := v.Receive(StatusLoadMsg{st: parseWorktreeStatus(testenv.StatusRec("MM a.go")), gen: v.gen})
 	if changed == nil {
 		t.Fatal("内容が変わったのに取り直しを予約していない")
 	}
@@ -860,7 +860,7 @@ func TestStatusOpsUseTopLevelLiteralPathspec(t *testing.T) {
 // プレビュー欄は狭いので diff のファイルヘッダーを飛ばして最初の hunk から見せる
 // (全画面 diff では飛ばさない: 全文を読む場なので mode 変更等も情報)。
 func TestStatusPreviewSkipsDiffHeader(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	row, _ := v.current()
 	full := []string{
 		"diff --git a/a.go b/a.go", "index 111..222 100644", "--- a/a.go", "+++ b/a.go",
@@ -892,7 +892,7 @@ func TestPreviewSkipDiffHeaderKeepsHunklessDiff(t *testing.T) {
 
 // 解釈できない出力を「クリーン」と同じ絵にしない (沈黙を成功にしない)。
 func TestStatusUnparsableOutputIsNotReportedAsClean(t *testing.T) {
-	v := newTestStatusView(t, statusRec("garbage-line", "another-garbage"))
+	v := newTestStatusView(t, testenv.StatusRec("garbage-line", "another-garbage"))
 	body := term.StripANSI(strings.Join(v.Lines(testStatusOpts(70, 20)), "\n"))
 	if strings.Contains(body, "クリーン") {
 		t.Fatalf("解釈できなかったのに「クリーン」と表示した:\n%s", body)
@@ -901,7 +901,7 @@ func TestStatusUnparsableOutputIsNotReportedAsClean(t *testing.T) {
 		t.Fatalf("解釈できなかったことが画面に出ていない:\n%s", body)
 	}
 	// 一部だけ読めたときは一覧を出しつつヘッダーで取りこぼしを知らせる
-	v2 := newTestStatusView(t, statusRec(" M a.go", "garbage"))
+	v2 := newTestStatusView(t, testenv.StatusRec(" M a.go", "garbage"))
 	head := term.StripANSI(v2.Lines(testStatusOpts(120, 20))[0])
 	if !strings.Contains(head, "解釈不能") {
 		t.Fatalf("取りこぼしがヘッダーに出ていない: %q", head)
@@ -910,7 +910,7 @@ func TestStatusUnparsableOutputIsNotReportedAsClean(t *testing.T) {
 
 // -z の末尾 NUL が生む空要素は「解釈できなかった」に数えない (常に警告が出てしまう)。
 func TestStatusTrailingNulIsNotCountedAsSkipped(t *testing.T) {
-	st := parseWorktreeStatus(statusRec(" M a.go"))
+	st := parseWorktreeStatus(testenv.StatusRec(" M a.go"))
 	if st.skipped != 0 {
 		t.Fatalf("skipped = %d, want 0 (末尾の空要素を数えている)", st.skipped)
 	}
@@ -930,7 +930,7 @@ func TestStatusViewLinesFitWidthDownToOne(t *testing.T) {
 			recs = append(recs, " M "+p)
 		}
 	}
-	v := newTestStatusView(t, statusRec(recs...))
+	v := newTestStatusView(t, testenv.StatusRec(recs...))
 	for width := 1; width <= 80; width++ {
 		for _, page := range []int{3, 12} {
 			for _, ln := range v.Lines(testStatusOpts(width, page)) {
@@ -950,7 +950,7 @@ func TestStatusViewLinesFitWidthDownToOne(t *testing.T) {
 func TestStatusReloadKeyDropsPreviewCache(t *testing.T) {
 	// 🚨 2 行以上の fixture にすること。1 行だと `len(entries) != 0` では
 	//   「全部捨てる」と「カーソル行だけ捨てる」を区別できない
-	stubWorktreeStatus(t, statusRec(" M a.go", " M b.go"), nil)
+	stubWorktreeStatus(t, testenv.StatusRec(" M a.go", " M b.go"), nil)
 	v := NewStatusView()
 	v.closeAnimOff = true
 	v.shown = true
@@ -987,7 +987,7 @@ func TestStatusReloadKeyDropsPreviewCache(t *testing.T) {
 // reset() は取得中の札まで降ろすので、走行中の取得と、直後に張り直した予約が
 // **同じキーを二重に取りに行く** (lineCache.clearEntries の doc が名指しで禁じている形)。
 func TestStatusReloadKeepsInFlightMark(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	row, _ := v.current()
 	key := previewKey(row)
 	if !v.preview.Begin(key) {
@@ -1007,7 +1007,7 @@ func TestStatusReloadKeepsInFlightMark(t *testing.T) {
 // clearEntries の**後**に着地してキャッシュを復活させていた。復活すると begin() に弾かれ、
 // 開き直しても取り直しが一度も走らない = 編集前の diff が永久に出続ける。
 func TestStatusLatePreviewAfterCloseIsDropped(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	row, _ := v.current()
 	key := previewKey(row)
 	if !v.preview.Begin(key) {
@@ -1032,7 +1032,7 @@ func TestStatusLatePreviewAfterCloseIsDropped(t *testing.T) {
 
 // r でも同じ (r は gen を進めるので、飛んでいた取得は世代違いで捨てられる)。
 func TestStatusLatePreviewAfterReloadIsDropped(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	row, _ := v.current()
 	key := previewKey(row)
 	if !v.preview.Begin(key) {
@@ -1060,7 +1060,7 @@ func TestStatusLatePreviewAfterReloadIsDropped(t *testing.T) {
 // **開き直しても編集前の diff が出る**。しかも finishClose は clearBusy しか呼んでおらず、
 // プロセスが生きている限り消えなかった。
 func TestStatusCloseDropsPreviewCache(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	row, _ := v.current()
 	v.ReceivePreview(StatusPreviewMsg{key: previewKey(row), lines: []string{"OLD-DIFF"}})
 	if v.preview.Len() == 0 {
@@ -1093,7 +1093,7 @@ func TestStatusCloseDropsPreviewCache(t *testing.T) {
 // 🚨 hint の案内は**広い端末でだけ**出る (幅に応じて落とすため。popup の
 // 実幅では優先度の低い R は落ちる)。狭い幅での正本は --help / README。
 func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 
 	v.HandleKey("R", StatusViewport{page: 20})
 
@@ -1116,7 +1116,7 @@ func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 //
 // 🚨 幅を 1 点だけ見ない。popup の実幅 (84) は代表値でしかなく、端末は任意の幅を取る。
 func TestStatusViewHintFitsWidth(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	for w := 10; w <= 200; w++ {
 		for _, mode := range []struct {
 			name  string
@@ -1137,7 +1137,7 @@ func TestStatusViewHintFitsWidth(t *testing.T) {
 // 狭い端末でも「抜ける手段」は必ず案内する。🚨 ここが実害になる:
 // 末尾から切る実装では、並びの最後にある s/q が幅に関係なく最初に消える。
 func TestStatusViewHintKeepsExitKeys(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 	for _, w := range []int{40, 60, testenv.PopupWidth, 120} {
 		h := v.Hint(w)
 		for _, want := range []string{"s: 一覧へ", "q: 終了"} {
@@ -1158,7 +1158,7 @@ func TestStatusViewHintKeepsExitKeys(t *testing.T) {
 // 全画面 diff を開いたまま J/K で隣のファイルへ差し替える (docs/glogx-ui-guide.md §6)。
 // セクションをまたいでも一覧と同じ順で進み、端では止まって案内する。
 func TestStatusPagerNeighborKeysSwapFile(t *testing.T) {
-	v := newTestStatusView(t, statusRec("M  a.go", " M b.go", "?? c.txt")) // staged / unstaged / untracked
+	v := newTestStatusView(t, testenv.StatusRec("M  a.go", " M b.go", "?? c.txt")) // staged / unstaged / untracked
 	if len(v.rows) != 3 {
 		t.Fatalf("前提: 3 行でない: %d", len(v.rows))
 	}
@@ -1211,7 +1211,7 @@ func TestStatusPagerNeighborKeysSwapFile(t *testing.T) {
 // 🚨 全画面 pager の「d/q: 閉じる」は**正しい** (そこでの q は pager を閉じる)。両方を pin して
 // 取り違えを防ぐ — 片方だけ見ていると「まとめて閉じるに戻す」変更が通ってしまう。
 func TestStatusHintWordsMatchBehavior(t *testing.T) {
-	v := newTestStatusView(t, statusRec(" M a.go"))
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
 
 	list := v.Hint(testenv.PopupHintBudget)
 	if !strings.Contains(list, "q: 終了") {

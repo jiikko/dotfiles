@@ -40,8 +40,10 @@ const (
 
 func TestEveryCommandContextSetsWaitDelay(t *testing.T) {
 	boundarycheck.Run(t, boundarycheck.Spec{
-		Root:     ".",
-		SkipDirs: []string{"tools"}, // 本体から参照しない調査ツール
+		Root: ".",
+		// tools は本体から参照しない調査ツール。testenv はテスト専用のパッケージ (テストの fixture の repo に git を打つ。
+		// 本番のバイナリには入らない: .golangci.yml の depguard の test-support-only-in-tests が本番からの import を止める)
+		SkipDirs: []string{"tools", "testenv"},
 		Allow:    execCmdAllow, SeenFloor: waitDelaySeenFloor, EnforcedFloor: waitDelayEnforcedFloor,
 	})
 }

@@ -8,58 +8,12 @@ import (
 
 	"glogx/internal/gitdata"
 	"glogx/internal/statusview"
+	"glogx/internal/statusview/statusviewtest"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 )
 
 // --- ヘルパー ---
-
-// newTestStatusView は「開いた状態で porcelain を読み込んだ」viewer を返す。
-// 🚨 toggle() は通さない: 返り値の tea.Batch には tea.Tick (自動更新 1.5s / プレビュー 120ms) が
-// 混ざっており、テストで実行すると本当に待つことになる。読み込みは loadCmd だけを同期実行する。
-func newTestStatusView(t *testing.T, porcelain string) *statusview.StatusView {
-	t.Helper()
-	v := statusview.NewStatusView()
-	v.Fixture().SetCloseAnim(false)
-	v.Fixture().SetShown(true)
-	stubWorktreeStatus(t, porcelain, nil)
-	applyStatusLoad(t, &v)
-	return &v
-}
-
-// stubWorktreeStatus は loadWorktreeStatus を差し替える (返す porcelain を後から差し替えられる
-// ように、ポインタ経由で読む)。返り値のポインタへ書くと次の読み込みの結果が変わる。
-func stubWorktreeStatus(t *testing.T, porcelain string, err error) *struct {
-	out   string
-	err   error
-	calls int
-} {
-	t.Helper()
-	state := &struct {
-		out   string
-		err   error
-		calls int
-	}{out: porcelain, err: err}
-	t.Cleanup(statusview.FixtureStubWorktree(func() (string, error) {
-		state.calls++
-		return state.out, state.err
-	}))
-	return state
-}
-
-// applyStatusLoad は v.loadCmd() を同期実行して結果を receive へ渡す (tick を含まない Cmd なので
-// そのまま実行できる)。
-func applyStatusLoad(t *testing.T, v *statusview.StatusView) {
-	t.Helper()
-	cmd := v.LoadCmd()
-	if cmd == nil {
-		t.Fatal("loadCmd() = nil (取得中のまま?)")
-	}
-	msg, ok := cmd().(statusview.StatusLoadMsg)
-	if !ok {
-		t.Fatalf("loadCmd() の msg = %T, want statusLoadMsg", msg)
-	}
-	v.Receive(msg)
-}
 
 // deliverStatus は「git status が返ってきた」ことにして viewer へ流す (browseModel 経由の
 // テスト用)。🚨 Update から返った Cmd を実行する経路は使えない: toggle の Batch には tick が
@@ -85,7 +39,7 @@ func deliverStatus(t *testing.T, v *statusview.StatusView, porcelain string) {
 
 func TestStatusViewerKeyTogglesFromList(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
-	stubWorktreeStatus(t, statusRec(" M a.go"), nil)
+	statusviewtest.StubWorktree(t, testenv.StatusRec(" M a.go"), nil)
 	m.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
 	if !m.statusOv.Visible() {
 		t.Fatal("s で status viewer が開かない")
@@ -101,7 +55,7 @@ func TestStatusViewerNotOpenedWhileJobPanelOpen(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
 	withJobs(m, 0)
 	m.panelSHA = m.commits[0].SHA
-	stubWorktreeStatus(t, statusRec(" M a.go"), nil)
+	statusviewtest.StubWorktree(t, testenv.StatusRec(" M a.go"), nil)
 	m.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
 	if m.statusOv.Visible() {
 		t.Fatal("job パネル表示中に s で status viewer が開いた (パネルの語彙を優先する契約)")
@@ -158,7 +112,7 @@ func TestStatusViewerPullKeyOpensConfirm(t *testing.T) {
 // ヘッダーの ahead/behind が古いまま残り「p が効いていない」ように見える。
 func TestPullReloadsOpenStatusViewer(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
-	stubWorktreeStatus(t, statusRec("## master...origin/master [behind 1]", " M a.go"), nil)
+	statusviewtest.StubWorktree(t, testenv.StatusRec("## master...origin/master [behind 1]", " M a.go"), nil)
 	m.statusOv.Fixture().SetShown(true)
 	m.Update(pullMsg{})
 	if !m.statusOv.Fixture().Loading() {
@@ -207,7 +161,7 @@ func TestStatusViewerPushKeyNoUnpushedShowsToast(t *testing.T) {
 func TestPushReloadsOpenStatusViewerWithoutAnim(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
-	stubWorktreeStatus(t, statusRec("## master...origin/master [ahead 1]", " M a.go"), nil)
+	statusviewtest.StubWorktree(t, testenv.StatusRec("## master...origin/master [ahead 1]", " M a.go"), nil)
 	m.statusOv.Fixture().SetShown(true)
 	m.Update(pushMsg{})
 	if !m.statusOv.Fixture().Loading() {
@@ -220,9 +174,9 @@ func TestPushReloadsOpenStatusViewerWithoutAnim(t *testing.T) {
 
 func TestStatusViewerRendersFullScreenAndHint(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
-	stubWorktreeStatus(t, statusRec(" M a.go"), nil)
+	statusviewtest.StubWorktree(t, testenv.StatusRec(" M a.go"), nil)
 	m.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
-	deliverStatus(t, &m.statusOv, statusRec(" M a.go"))
+	deliverStatus(t, &m.statusOv, testenv.StatusRec(" M a.go"))
 	view := m.View().Content
 	if !strings.Contains(view, "a.go") {
 		t.Fatalf("status viewer の内容が描かれていない:\n%s", view)
@@ -245,9 +199,9 @@ func TestStatusViewerRendersFullScreenAndHint(t *testing.T) {
 
 func TestStatusViewerNoticeBecomesToast(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
-	stubWorktreeStatus(t, statusRec("M  a.go"), nil)
+	statusviewtest.StubWorktree(t, testenv.StatusRec("M  a.go"), nil)
 	m.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
-	deliverStatus(t, &m.statusOv, statusRec("M  a.go"))
+	deliverStatus(t, &m.statusOv, testenv.StatusRec("M  a.go"))
 	m.Update(tea.KeyPressMsg{Code: 'X', Text: "X", Mod: tea.ModShift})
 	if !m.toast.Visible() && m.lastWarning == "" {
 		t.Fatal("viewer の notice がトースト/警告に出ていない")

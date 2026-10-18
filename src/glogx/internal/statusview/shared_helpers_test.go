@@ -1,10 +1,6 @@
 package statusview
 
 import (
-	"glogx/internal/testenv"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -65,75 +61,9 @@ func applyStatusLoad(t *testing.T, v *StatusView) {
 	v.Receive(msg)
 }
 
-// assertSanitizedAndVisible は無害化テストの 2 つの主張を対で確かめる:
-//
-//  1. 制御シーケンス / OSC の中身が残っていない (本来の主張)
-//  2. 🚨 **細工した値が実際に描かれている** (陽性対照)
-//
-// 2 が無いと、箱が空を返した瞬間に 1 の assert が 1 つも実行されず vacuous に緑を返す
-// (実測: markNextBox の先頭に `return nil` を入れても PASS した)。
-// 同じ罠は TestDoctorLiveDockerScanIsSanitized が sawItem で 1 本だけ塞いでいたもの。
-func assertSanitizedAndVisible(t *testing.T, where string, lines []string, wantVisible ...string) {
-	t.Helper()
-	for _, line := range lines {
-		if testenv.HasTerminalControl(line) {
-			t.Errorf("%s に制御シーケンスが残った: %q", where, line)
-		}
-		if strings.Contains(line, "PWNED") {
-			t.Errorf("%s に OSC の中身が残った: %q", where, line)
-		}
-	}
-	joined := strings.Join(lines, "\n")
-	for _, w := range wantVisible {
-		if !strings.Contains(joined, w) {
-			t.Fatalf("%s に %q が描かれていない (検査対象が空 = 上の assert は 1 つも sink を守っていない)",
-				where, w)
-		}
-	}
-}
-
 // 外部由来の文字列が termsafe を通らずに画面 / stderr へ届いていた 4 経路。
 // どれも表示にしか使わない値なので、受け取った時点で平文にしている。
 const evil417 = "\x1b]52;c;cHduZWQ=\a\u009b2J\u202eevil"
-
-func assertNoTermControl(t *testing.T, what, got string) {
-	t.Helper()
-	if strings.ContainsAny(got, "\x1b\a\u009b\u202e") {
-		t.Errorf("%s に制御シーケンスが残っている: %q", what, got)
-	}
-	if !strings.Contains(got, "evil") {
-		t.Errorf("%s の本文まで落ちている: %q", what, got)
-	}
-}
-
-// repoTmpDir は使い捨て repo の置き場 (dotfiles の ./tmp)。
-//
-// 🚨 無ければ作る。tmp/ は gitignore なので**新品チェックアウトには存在しない**: 開発マシンには
-// 常にあるため絶対に再現しない条件で、CI だけが落ちた (run 30823977760 "stat ../../tmp: no such
-// file or directory")。相対パスで決め打ちせず repo root から引くのは、テストが t.Chdir で cwd を
-// 移すため (ヘルパーの呼び出し順に依存させない)。
-func repoTmpDir(t *testing.T) string {
-	t.Helper()
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		t.Fatalf("repo root を解決できない: %v", err)
-	}
-	dir := filepath.Join(strings.TrimSpace(string(out)), "tmp")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return dir
-}
-
-// statusRec は `git status --porcelain -z` の 1 レコード (NUL 終端) を組む。
-func statusRec(parts ...string) string {
-	var b strings.Builder
-	for _, p := range parts {
-		b.WriteString(p)
-		b.WriteByte(0)
-	}
-	return b.String()
-}
 
 // statusRowsFixture は st を組んで receive まで通した statusView を返す。
 func statusRowsFixture(t *testing.T, files int) *StatusView {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"glogx/internal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,7 +26,7 @@ func pullSandbox(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	base, err := os.MkdirTemp(repoTmpDir(t), "glogx-pull-real") //nolint:usetesting // 使い捨て repo は ./tmp 規約 (worktree_status_real_test.go 冒頭の doc)
+	base, err := os.MkdirTemp(testenv.RepoTmpDir(t), "glogx-pull-real") //nolint:usetesting // 使い捨て repo は ./tmp 規約 (worktree_status_real_test.go 冒頭の doc)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"glogx/internal/testenv"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -139,7 +140,7 @@ func TestBrowseModelMethodFilesAllowlist(t *testing.T) {
 				}
 				for _, sp := range gd.Specs {
 					ts := sp.(*ast.TypeSpec)
-					if ts.Assign.IsValid() && names[recvTypeName(ts.Type)] && !names[ts.Name.Name] {
+					if ts.Assign.IsValid() && names[testenv.RecvTypeName(ts.Type)] && !names[ts.Name.Name] {
 						names[ts.Name.Name] = true
 						grew = true
 					}
@@ -155,7 +156,7 @@ func TestBrowseModelMethodFilesAllowlist(t *testing.T) {
 			if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 {
 				continue
 			}
-			if names[recvTypeName(fn.Recv.List[0].Type)] {
+			if names[testenv.RecvTypeName(fn.Recv.List[0].Type)] {
 				has = true
 				methods++
 			}
@@ -287,7 +288,7 @@ func apiSurface(t *testing.T, dir string) string {
 					add("func %s", d.Name.Name)
 					continue
 				}
-				add("method %s.%s", recvTypeName(d.Recv.List[0].Type), d.Name.Name)
+				add("method %s.%s", testenv.RecvTypeName(d.Recv.List[0].Type), d.Name.Name)
 			case *ast.GenDecl:
 				for _, s := range d.Specs {
 					switch s := s.(type) {
@@ -372,7 +373,9 @@ func TestNoFixtureCallsInProduction(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
-			if n := d.Name(); n == "testdata" || (strings.HasPrefix(n, ".") && p != ".") {
+			// テスト専用のパッケージ (testenv・doctortest・issuesviewtest・statusviewtest) は本番のバイナリに入らない
+			// (.golangci.yml の depguard の test-support-only-in-tests が本番からの import を止める) ので見ない
+			if n := d.Name(); n == "testdata" || n == "testenv" || (strings.HasSuffix(n, "test") && strings.HasPrefix(p, "internal"+string(filepath.Separator))) || (strings.HasPrefix(n, ".") && p != ".") {
 				return filepath.SkipDir
 			}
 			return nil
@@ -554,25 +557,5 @@ func TestNoViewImportsAnotherView(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("画面のパッケージの本番のファイルを 1 つも読めなかった")
-	}
-}
-
-// recvTypeName は型の式から型の名前を取る (`*T` / `T[K]` / `(T)` も T)。取れなければ ""。
-func recvTypeName(e ast.Expr) string {
-	for {
-		switch x := e.(type) {
-		case *ast.ParenExpr:
-			e = x.X
-		case *ast.StarExpr:
-			e = x.X
-		case *ast.IndexExpr:
-			e = x.X
-		case *ast.IndexListExpr:
-			e = x.X
-		case *ast.Ident:
-			return x.Name
-		default:
-			return ""
-		}
 	}
 }

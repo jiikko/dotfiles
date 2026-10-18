@@ -8,6 +8,7 @@ import (
 
 	"glogx/internal/commitview"
 	"glogx/internal/gitdata"
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
@@ -110,9 +111,9 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 func TestResizeStopsAllGlides(t *testing.T) {
 	m := newTestBrowse(t, 10, map[string]gitdata.CIState{}, nil)
 	m.glide.Start(0, 10, term.ScrollAnimFrames)
-	startPagerGlide(t, m.diffOv.Fixture().Pager(), 0, 10)
-	startPagerGlide(t, m.issuesOv.Fixture().BodyPager(), 0, 10)
-	startPagerGlide(t, m.statusOv.Fixture().Pager(), 0, 10)
+	issuesviewtest.StartPagerGlide(t, m.diffOv.Fixture().Pager(), 0, 10)
+	issuesviewtest.StartPagerGlide(t, m.issuesOv.Fixture().BodyPager(), 0, 10)
+	issuesviewtest.StartPagerGlide(t, m.statusOv.Fixture().Pager(), 0, 10)
 	m.issuesOv.Fixture().CursorGlide().Start(0, 10, term.CursorAnimFrames)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	if m.glide.Active() || m.diffOv.Fixture().Pager().Animating() || m.issuesOv.Fixture().BodyPager().Animating() ||
@@ -170,24 +171,6 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		}
 	})
 
-}
-
-// startPagerGlide は p を from から to への半ページ glide の途中に置く (テスト用)。
-// 本番と同じ入口 (Pager.Move の半ページ移動) を通すので、Offset は着地点 to になる。
-func startPagerGlide(t *testing.T, p *listnav.Pager, from, to int) {
-	t.Helper()
-	d := to - from
-	m := listnav.HalfDown
-	if d < 0 {
-		d, m = -d, listnav.HalfUp
-	}
-	rows := 2 * d // listnav.Half(rows) == d
-	p.Offset = from
-	p.Stop()
-	p.Move(m, max(from, to)+rows+1, rows, term.ScrollAnimFrames)
-	if p.Offset != to || !p.Animating() {
-		t.Fatalf("startPagerGlide の前提の破れ: offset=%d (want %d) animating=%v", p.Offset, to, p.Animating())
-	}
 }
 
 // pagerShown は p の今の表示位置 (glide 中は途中位置)。行数の上限で丸めない。

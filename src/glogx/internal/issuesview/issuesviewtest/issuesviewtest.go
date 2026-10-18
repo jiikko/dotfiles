@@ -6,12 +6,15 @@ package issuesviewtest
 
 import (
 	"fmt"
+	"glogx/internal/term"
 	"glogx/issues"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
 // FakeIssue はファイルシステムを使わずに Issue を作る (一覧の表示・フィルタのテスト用)。
@@ -118,4 +121,22 @@ func WriteRealIssue(t *testing.T, dir, rel, body string) *issues.Issue {
 		t.Fatal(err)
 	}
 	return Path2Issue(dir, rel)
+}
+
+// StartPagerGlide は p を from から to への半ページ glide の途中に置く (テスト用)。
+// 本番と同じ入口 (Pager.Move の半ページ移動) を通すので、Offset は着地点 to になる。
+func StartPagerGlide(t *testing.T, p *listnav.Pager, from, to int) {
+	t.Helper()
+	d := to - from
+	m := listnav.HalfDown
+	if d < 0 {
+		d, m = -d, listnav.HalfUp
+	}
+	rows := 2 * d // listnav.Half(rows) == d
+	p.Offset = from
+	p.Stop()
+	p.Move(m, max(from, to)+rows+1, rows, term.ScrollAnimFrames)
+	if p.Offset != to || !p.Animating() {
+		t.Fatalf("StartPagerGlide の前提の破れ: offset=%d (want %d) animating=%v", p.Offset, to, p.Animating())
+	}
 }

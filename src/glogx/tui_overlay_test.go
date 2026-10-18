@@ -946,7 +946,7 @@ func TestStatusViewerSlideTicksAt60FPS(t *testing.T) {
 	if got := m.tickInterval(); got != spinnerInterval {
 		t.Fatalf("スライド後に tick 周期が戻っていない: %v", got)
 	}
-	startPagerGlide(t, m.statusOv.Fixture().Pager(), 0, 1)
+	issuesviewtest.StartPagerGlide(t, m.statusOv.Fixture().Pager(), 0, 1)
 	if !m.spinnerActive() {
 		t.Fatal("pager glide 中にスピナーの tick が回らない")
 	}

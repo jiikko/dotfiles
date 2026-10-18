@@ -8,6 +8,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 
 	"glogx/internal/gitdata"
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 
@@ -531,8 +532,8 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		// 🚨 以下 3 つは「全テストスイートを生き残る」ことを変異で実測した無防備な源。
 		// 前 2 つは tickInterval 経由、3 つ目は上の
 		// statusOv.fetching の第 2 disjunct で、そこだけ覆えていなかった。
-		{"diffOv.animating", func(m *browseModel) { startPagerGlide(t, m.diffOv.Fixture().Pager(), 0, 1) }},
-		{"issuesOv.bodyPager", func(m *browseModel) { startPagerGlide(t, m.issuesOv.Fixture().BodyPager(), 0, 1) }},
+		{"diffOv.animating", func(m *browseModel) { issuesviewtest.StartPagerGlide(t, m.diffOv.Fixture().Pager(), 0, 1) }},
+		{"issuesOv.bodyPager", func(m *browseModel) { issuesviewtest.StartPagerGlide(t, m.issuesOv.Fixture().BodyPager(), 0, 1) }},
 		{"statusOv.preview.fetching", func(m *browseModel) { m.statusOv.Fixture().Preview().Begin("k") }},
 	}
 	// 前提: 何も動いていない model は false (これが false でないと以下の検証が無意味になる)
@@ -641,7 +642,7 @@ func TestDetailsLoadingReleasedAcrossEpochBump(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	// 🚨 フィクスチャ既定では usageOv.loading() が真で、spinnerActive() が札と無関係に
 	// 真になる。この交絡を先に潰しておかないと、下の assert が何も測らない。
-	m.usageOv.Fixture().SetSnapshot(rlTestSnap())
+	m.usageOv.Fixture().SetSnapshot(testenv.RatelimitTestSnap())
 	const stale = "sha-beyond-cap"
 	m.hasRepo = true
 	m.toFetch = []string{stale}
@@ -690,7 +691,7 @@ func TestDetailsLoadingReleasedAcrossEpochBump(t *testing.T) {
 // (fetchPanelDetails のコメントが名指しで避けている事故)。
 func TestDetailsLoadingKeepsInFlightFetchAcrossEpochBump(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
-	m.usageOv.Fixture().SetSnapshot(rlTestSnap())
+	m.usageOv.Fixture().SetSnapshot(testenv.RatelimitTestSnap())
 	m.hasRepo = true
 
 	// 🚨 **待機と実取得を同時に持つ状態**を作る。片方だけだと

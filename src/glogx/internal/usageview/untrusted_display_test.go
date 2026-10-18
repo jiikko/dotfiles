@@ -18,7 +18,7 @@ func TestUsageBoxSanitizesVersion(t *testing.T) {
 			Windows: []usage.Window{{Label: "5h", Percent: 20}},
 		},
 	}
-	assertSanitizedAndVisible(t, "usage の枠", o.BoxLines(80, false, "⠋"), "1.2.3")
+	testenv.AssertSanitizedAndVisible(t, "usage の枠", o.BoxLines(80, false, "⠋"), "1.2.3")
 }
 
 // usage の **codex 枠の Label** はキャッシュ由来 (`~/.cache/glog/claude-usage.json` は一般ユーザー
@@ -27,10 +27,10 @@ func TestUsageBoxSanitizesVersion(t *testing.T) {
 // 🚨 fixture は **codex 枠**で作ること: Claude 枠だと defaultOrder の allowlist に阻まれて
 // 退行しても最初から不可視になり、何も守らないテストになる。
 func TestUsageCacheSanitizesCodexLabel(t *testing.T) {
-	stubLookPath(t, nil)
+	testenv.StubLookPath(t, nil)
 	path := filepath.Join(t.TempDir(), usageCacheFile)
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
-	snap := usageSnapFixture(t)
+	snap := testenv.UsageSnapFixture(t)
 	snap.Windows = append(snap.Windows, usage.Window{
 		Label:   "cx7d\a" + testenv.OSC8 + "0;PWNED" + testenv.ST8,
 		Percent: 20, Source: usage.SourceCodex, ResetAt: now.Add(time.Hour),

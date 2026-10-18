@@ -64,7 +64,7 @@ func TestIssuesCloseCurveReachesRender(t *testing.T) {
 	// stagger で最下行しか動かない。そこは一覧の外なので空行 = ずれは数桁で止まる
 	advance(IssuesCloseDuration / 2)
 
-	shift := maxRowShift(v.Lines(renderOpts(12)))
+	shift := testenv.MaxRowShift(v.Lines(renderOpts(12)))
 	if shift < renderOpts(12).Width/4 {
 		t.Fatalf("閉じる向きが描画へ届いていない (中間フレームのずれが %d 桁。開く向きの式なら数桁で止まる)", shift)
 	}
@@ -80,9 +80,9 @@ func TestIssuesCloseMovesAllRowsTogether(t *testing.T) {
 	}
 
 	out := layout.SlideIn(window, 0.5, width, true, IssuesAnimStagger)
-	head := maxRowShift(out[:1])
+	head := testenv.MaxRowShift(out[:1])
 	for i, ln := range out {
-		if shift := maxRowShift([]string{ln}); shift != head {
+		if shift := testenv.MaxRowShift([]string{ln}); shift != head {
 			t.Fatalf("行 %d のずれが %d 桁で最上行 (%d 桁) と違う (行ごとにずれている)", i, shift, head)
 		}
 	}

@@ -3,7 +3,9 @@ package testenv
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -221,3 +223,40 @@ func HasControlExceptNewline(s string) bool { return ctlprobe.HasControlExceptNe
 // 🚨 正本は main の hintWidth (描画側が切る幅と同じ 1 か所)。main の TestPopupHintBudgetMatchesBrowse が
 // この値と実物の一致を固定する (frame の寸法や hint の余白を変えたら、そちらが落ちてここを直す)。
 const PopupHintBudget = 89
+
+// AssertSanitizedAndVisible は lines に端末の制御列と OSC の中身 (PWNED) が残っていないこと、wantVisible が全部描かれていることを見る。
+// wantVisible が描かれていないときは止める: 検査対象が空だと、制御列の assert は 1 つも sink を守っていない。
+func AssertSanitizedAndVisible(t *testing.T, where string, lines []string, wantVisible ...string) {
+	t.Helper()
+	for _, line := range lines {
+		if HasTerminalControl(line) {
+			t.Errorf("%s に制御シーケンスが残った: %q", where, line)
+		}
+		if strings.Contains(line, "PWNED") {
+			t.Errorf("%s に OSC の中身が残った: %q", where, line)
+		}
+	}
+	joined := strings.Join(lines, "\n")
+	for _, w := range wantVisible {
+		if !strings.Contains(joined, w) {
+			t.Fatalf("%s に %q が描かれていない (検査対象が空 = 上の assert は 1 つも sink を守っていない)",
+				where, w)
+		}
+	}
+}
+
+// IsolateCache はキャッシュの置き場 (XDG_CACHE_HOME。画面の記憶もここ) をこのテストの一時領域へ向ける。
+func IsolateCache(t *testing.T) {
+	t.Helper()
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "cache"))
+}
+
+// IsolateScreenMemory はキャッシュの置き場を一時領域へ向け、時計を固定した時刻 (2026-10-11 12:00 の現地時刻) に止めて返す
+// (画面の記憶の保存と 30 分の失効を決定的に見る)。
+func IsolateScreenMemory(t *testing.T) time.Time {
+	t.Helper()
+	IsolateCache(t)
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.Local)
+	StubClockFrom(t, &now)
+	return now
+}

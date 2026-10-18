@@ -2,6 +2,7 @@ package ratelimitview
 
 import (
 	"glogx/internal/app"
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestRatelimitScreenRoundTrip(t *testing.T) {
-	withRatelimitStateDir(t)
+	testenv.IsolateCache(t)
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
 	if LoadRatelimitScreen(now) {
 		t.Fatal("記憶が無いのに復元しようとした")
@@ -40,7 +41,7 @@ func TestRatelimitScreenRejectsBadState(t *testing.T) {
 		}
 	}
 	t.Run("期限切れ", func(t *testing.T) {
-		withRatelimitStateDir(t)
+		testenv.IsolateCache(t)
 		if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now.Add(-app.ScreenMemoryTTL)}); err != nil {
 			t.Fatal(err)
 		}
@@ -49,7 +50,7 @@ func TestRatelimitScreenRejectsBadState(t *testing.T) {
 		}
 	})
 	t.Run("未来の時刻", func(t *testing.T) {
-		withRatelimitStateDir(t)
+		testenv.IsolateCache(t)
 		if err := saveRatelimitScreen(ratelimitScreen{SavedAt: now.Add(time.Hour)}); err != nil {
 			t.Fatal(err)
 		}
@@ -58,14 +59,14 @@ func TestRatelimitScreenRejectsBadState(t *testing.T) {
 		}
 	})
 	t.Run("壊れた JSON", func(t *testing.T) {
-		withRatelimitStateDir(t)
+		testenv.IsolateCache(t)
 		write(t, "{ not json")
 		if LoadRatelimitScreen(now) {
 			t.Error("壊れた記憶を復元した")
 		}
 	})
 	t.Run("時刻なし", func(t *testing.T) {
-		withRatelimitStateDir(t)
+		testenv.IsolateCache(t)
 		write(t, "{}")
 		if LoadRatelimitScreen(now) {
 			t.Error("保存時刻の無い記憶を復元した (TTL が効かない)")

@@ -13,5 +13,5 @@ func TestMarkNextBoxSanitizesFilename(t *testing.T) {
 	v.markNext = issuesMarkConfirm{active: true, targets: []*issues.Issue{
 		{Rel: "036-bug-" + testenv.OSC8 + "0;PWNED" + testenv.ST8 + testenv.CSI8 + "2J.md"},
 	}}
-	assertSanitizedAndVisible(t, "markNext 確認モーダル", v.markNextBox(80, false), "036-bug-", ".md")
+	testenv.AssertSanitizedAndVisible(t, "markNext 確認モーダル", v.markNextBox(80, false), "036-bug-", ".md")
 }

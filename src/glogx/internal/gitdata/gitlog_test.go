@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"glogx/internal/extcmd"
+	"glogx/internal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -114,7 +115,7 @@ func TestParseLogMalformed(t *testing.T) {
 }
 
 func TestIntegrationStagedDiff(t *testing.T) {
-	dir := newTempRepo(t, []string{"first"})
+	dir := testenv.NewTempRepo(t, []string{"first"})
 	if err := os.WriteFile(filepath.Join(dir, "staged.txt"), []byte("new\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +140,7 @@ func TestIntegrationStagedDiff(t *testing.T) {
 }
 
 func TestIntegrationMediumFields(t *testing.T) {
-	newTempRepo(t, []string{"multi line\n\nmessage body here"})
+	testenv.NewTempRepo(t, []string{"multi line\n\nmessage body here"})
 	commits, err := LoadCommits(LogQuery{MaxCount: 1}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -160,14 +161,14 @@ func TestIntegrationMediumFields(t *testing.T) {
 // 並列化リファクタ後も元の意味論を保つことを検証する (github.go の ResolveRepo は
 // runGit 直呼びで unit test 不可なので実 repo で確認)。
 func TestIntegrationResolveRepoPriority(t *testing.T) {
-	newTempRepo(t, []string{"c1"})
+	testenv.NewTempRepo(t, []string{"c1"})
 	git := func(args ...string) {
 		t.Helper()
 		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	head := headSHA(t)
+	head := testenv.HeadSHA(t)
 	git("remote", "add", "origin", "git@github.com:o/r.git")
 	git("remote", "add", "up", "git@github.com:up/r.git")
 	git("update-ref", "refs/remotes/up/main", head)
@@ -187,7 +188,7 @@ func TestIntegrationResolveRepoPriority(t *testing.T) {
 
 // 非 GitHub の remote だけなら ok=false (誤って GitHub 扱いしない)。
 func TestIntegrationResolveRepoNonGitHub(t *testing.T) {
-	newTempRepo(t, []string{"c1"})
+	testenv.NewTempRepo(t, []string{"c1"})
 	git := func(args ...string) {
 		t.Helper()
 		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {

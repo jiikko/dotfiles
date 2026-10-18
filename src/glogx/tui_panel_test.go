@@ -862,7 +862,7 @@ func TestBrowseJobDetailFetchKeepsSpinnerActive(t *testing.T) {
 // reloadAfterPull は job 詳細ログキャッシュ (jobDetail/jobDetailBusy) も破棄する。抽出で
 // detailOv.reset() の配線を漏らすと、pull 後 (SHA 不変のコミット) に旧ログ残骸が残る。
 func TestBrowseReloadAfterPullResetsJobDetailCache(t *testing.T) {
-	newTempRepo(t, []string{"first", "second"})
+	testenv.NewTempRepo(t, []string{"first", "second"})
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.opts = &Options{MaxCount: 20}
 	m.detailOv.Fixture().Cache().Store("stale/0", []string{"old log"}, "stale/0")

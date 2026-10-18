@@ -4,6 +4,7 @@ func ManyIssuesOf
 func Path2Issue
 func RealIssue
 func SampleIssues
+func StartPagerGlide
 func WatchTree
 func WriteIssue
 func WriteRealIssue

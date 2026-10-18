@@ -1,0 +1,3 @@
+func ApplyLoad
+func NewView
+func StubWorktree

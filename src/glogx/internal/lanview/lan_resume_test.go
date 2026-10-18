@@ -2,6 +2,7 @@ package lanview
 
 import (
 	"glogx/internal/app"
+	"glogx/internal/testenv"
 	"os"
 	"testing"
 	"time"
@@ -9,7 +10,7 @@ import (
 
 // 期限切れ / 未来の時刻 / 時刻なし / 壊れた JSON は「復元しない」に倒す。
 func TestLanScreenRejectsBadState(t *testing.T) {
-	now := withFilerState(t) // 記憶の置き場の隔離と時計の固定 (F と同じ)
+	now := testenv.IsolateScreenMemory(t) // 記憶の置き場の隔離と時計の固定 (F と同じ)
 	if _, ok := LoadLanScreen(now); ok {
 		t.Fatal("記憶が無いのに復元しようとした")
 	}

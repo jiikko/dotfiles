@@ -15,6 +15,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
 	"glogx/internal/gitdata"
+	"glogx/internal/statusview/statusviewtest"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 
@@ -368,7 +369,7 @@ func TestBrowsePushFlow(t *testing.T) {
 
 // u → y/N → git pull --rebase → 一覧の全面リロード (glogx の独自機能)。
 func TestBrowsePullFlow(t *testing.T) {
-	newTempRepo(t, []string{"first", "second"}) // reloadAfterPull が実 git を読むため
+	testenv.NewTempRepo(t, []string{"first", "second"}) // reloadAfterPull が実 git を読むため
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.opts = &Options{MaxCount: 20}
 	var pulled int
@@ -952,7 +953,7 @@ func TestKeyRepeatIsOneInputStatusViewer(t *testing.T) {
 	advance := testenv.StubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
-	stubWorktreeStatus(t, statusRec(" M a.go"), nil)
+	statusviewtest.StubWorktree(t, testenv.StatusRec(" M a.go"), nil)
 	m.handleKey("s")
 	if !m.statusOv.Visible() {
 		t.Fatal("前提が崩れた: s で viewer が開かない")
@@ -1239,7 +1240,7 @@ func TestStatusViewerOwnsKeysBlocksRemoteHijack(t *testing.T) {
 	t.Cleanup(func() { runGitPush = origPush })
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
-	m.statusOv = *newTestStatusView(t, statusRec(" M a.go"))
+	m.statusOv = *statusviewtest.NewView(t, testenv.StatusRec(" M a.go"))
 	if !m.statusOv.Visible() {
 		t.Fatal("前提: status viewer が開いていない")
 	}
@@ -1378,7 +1379,7 @@ func TestUpdateKeysDoNotLeakIntoStatusViewer(t *testing.T) {
 	t.Cleanup(func() { extcmd.RunGitRestoreWorktree = origRestore })
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
-	m.statusOv = *newTestStatusView(t, statusRec(" M a.go"))
+	m.statusOv = *statusviewtest.NewView(t, testenv.StatusRec(" M a.go"))
 	if !m.statusOv.Visible() {
 		t.Fatal("前提: status viewer が開いていない")
 	}

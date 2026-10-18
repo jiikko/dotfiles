@@ -1,6 +1,7 @@
 package issuesview
 
 import (
+	"glogx/internal/testenv"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -55,7 +56,7 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 			continue
 		}
 		owners := map[string]bool{}
-		if fn.Recv != nil && len(fn.Recv.List) > 0 && recvTypeName(fn.Recv.List[0].Type) == rowsOwner {
+		if fn.Recv != nil && len(fn.Recv.List) > 0 && testenv.RecvTypeName(fn.Recv.List[0].Type) == rowsOwner {
 			for _, n := range fn.Recv.List[0].Names {
 				owners[n.Name] = true
 			}
@@ -67,7 +68,7 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 		// 挙げていなかった = 宣言した射程と実射程のズレ)。
 		if fn.Type != nil && fn.Type.Params != nil {
 			for _, f := range fn.Type.Params.List {
-				if recvTypeName(f.Type) != rowsOwner {
+				if testenv.RecvTypeName(f.Type) != rowsOwner {
 					continue
 				}
 				for _, n := range f.Names {
@@ -78,7 +79,7 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 		// Fixture (main のテスト用の口) の受け手は `f.v` が issuesView を指す (Fixture に setter を足すと
 		// 素通りする)
 		fixtureRecv := map[string]bool{}
-		if fn.Recv != nil && len(fn.Recv.List) > 0 && recvTypeName(fn.Recv.List[0].Type) == "Fixture" {
+		if fn.Recv != nil && len(fn.Recv.List) > 0 && testenv.RecvTypeName(fn.Recv.List[0].Type) == "Fixture" {
 			for _, n := range fn.Recv.List[0].Names {
 				fixtureRecv[n.Name] = true
 			}
@@ -106,7 +107,7 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 			// 複合リテラルで rows を直接埋める形 (&issuesView{rows: ...})。
 			// 🚨 世代が 0 のまま displayRows と食い違うので、ensureDisplayRows の
 			// 自己回復に頼ることになる
-			if cl, ok := n.(*ast.CompositeLit); ok && recvTypeName(cl.Type) == rowsOwner {
+			if cl, ok := n.(*ast.CompositeLit); ok && testenv.RecvTypeName(cl.Type) == rowsOwner {
 				for _, elt := range cl.Elts {
 					if kv, ok := elt.(*ast.KeyValueExpr); ok {
 						if k, ok := kv.Key.(*ast.Ident); ok && k.Name == rowsField {
@@ -117,7 +118,7 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 			}
 			// var v = newTestIssuesView() / var v *issuesView — AssignStmt ではないので別に拾う
 			if vs, ok := n.(*ast.ValueSpec); ok {
-				owned := recvTypeName(vs.Type) == rowsOwner
+				owned := testenv.RecvTypeName(vs.Type) == rowsOwner
 				for i, name := range vs.Names {
 					if owned || (i < len(vs.Values) && rhsMakesIssuesView(vs.Values[i])) {
 						owners[name.Name] = true
@@ -241,7 +242,7 @@ func rhsMakesIssuesView(e ast.Expr) bool {
 	case *ast.UnaryExpr:
 		return rhsMakesIssuesView(v.X)
 	case *ast.CompositeLit:
-		return recvTypeName(v.Type) == rowsOwner
+		return testenv.RecvTypeName(v.Type) == rowsOwner
 	}
 	return false
 }

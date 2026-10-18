@@ -16,20 +16,20 @@ func TestDiscardBoxSanitizesPath(t *testing.T) {
 		path: "notes" + testenv.OSC8 + "0;PWNED" + testenv.ST8 + ".txt",
 		orig: "old" + testenv.CSI8 + "2J.txt",
 	}
-	assertSanitizedAndVisible(t, "discard 確認モーダル",
+	testenv.AssertSanitizedAndVisible(t, "discard 確認モーダル",
 		v.discardBox(StatusRenderOpts{Width: 80, Page: 20}), "notes", ".txt")
 }
 
 func TestStatusBranchHeaderIsSanitized(t *testing.T) {
 	branch, track := parseBranchHeader("## main" + evil417 + "...origin/main [ahead 1" + evil417 + "]")
-	assertNoTermControl(t, "branch", branch)
-	assertNoTermControl(t, "track", track)
+	testenv.AssertNoTermControl(t, "branch", branch)
+	testenv.AssertNoTermControl(t, "track", track)
 }
 
 func TestStatusErrorsAreSanitized(t *testing.T) {
 	v := newTestStatusView(t, "")
 	v.Receive(StatusLoadMsg{err: errors.New("fatal: " + evil417), gen: v.gen})
-	assertNoTermControl(t, "git status のエラー", v.err)
+	testenv.AssertNoTermControl(t, "git status のエラー", v.err)
 
 	v.preview.Begin("k")
 	v.ReceivePreview(StatusPreviewMsg{gen: v.gen, key: "k", err: errors.New("open " + evil417 + ".txt: permission denied")})
@@ -37,5 +37,5 @@ func TestStatusErrorsAreSanitized(t *testing.T) {
 	if !ok || len(lines) != 1 {
 		t.Fatalf("プレビューのエラーが保存されていない: ok=%v lines=%q", ok, lines)
 	}
-	assertNoTermControl(t, "プレビューのエラー", lines[0])
+	testenv.AssertNoTermControl(t, "プレビューのエラー", lines[0])
 }

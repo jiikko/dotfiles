@@ -8,6 +8,7 @@ import (
 	"glogx/internal/gitdata"
 	"glogx/internal/lanview"
 	"glogx/internal/ratelimitview"
+	"glogx/internal/testenv"
 	"mac-lan-manager/lanmgr"
 	"treefiler/filer"
 )
@@ -15,7 +16,7 @@ import (
 // L を出したまま glogx を終えたら (C-g) タブとカーソルの Mac を覚え、次の起動で L を開き直してそこへ戻る。
 // L を閉じてから終えたら消す (次の起動で蘇らない)。
 func TestLanScreenRememberedAndRestored(t *testing.T) {
-	now := withFilerState(t)
+	now := testenv.IsolateScreenMemory(t)
 	m := openLan(t)
 	m.handleKey("l") // 未管理のタブ
 	m.handleKey("j") // テストの Mac mini
@@ -45,7 +46,7 @@ func TestLanScreenRememberedAndRestored(t *testing.T) {
 
 // 他の全画面の記憶 (F) が当たったら L は開かない (全画面は同時に 1 枚)。
 func TestInitLanRestoreYieldsToOtherScreens(t *testing.T) {
-	now := withFilerState(t)
+	now := testenv.IsolateScreenMemory(t)
 	if err := lanview.FixtureSaveScreen(lanmgr.Place{}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +62,7 @@ func TestInitLanRestoreYieldsToOtherScreens(t *testing.T) {
 
 // F と L の記憶が両方残っていたら (異常終了)、F を開いて L は開かない (全画面は同時に 1 枚。L の優先は F より下)。
 func TestInitLanRestoreYieldsToFiler(t *testing.T) {
-	now := withFilerState(t)
+	now := testenv.IsolateScreenMemory(t)
 	m := newFilerBrowse(t)
 	if err := filerview.FixtureSaveScreen(filer.Place{Start: app.CurrentDir()}, now); err != nil {
 		t.Fatal(err)

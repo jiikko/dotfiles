@@ -12,6 +12,7 @@ import (
 	"glogx/internal/extcmd"
 	"glogx/internal/gitdata"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"glogx/internal/usageview"
 
 	tea "charm.land/bubbletea/v2"
@@ -599,7 +600,7 @@ func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
 	t.Run("usage のキャッシュが当たれば預けずにすぐ出す", func(t *testing.T) {
 		cache := t.TempDir()
 		t.Setenv("XDG_CACHE_HOME", cache)
-		if err := usageview.FixtureSaveCache(usageSnapFixture(t), time.Now()); err != nil {
+		if err := usageview.FixtureSaveCache(testenv.UsageSnapFixture(t), time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, []string{shaA, shaB})
@@ -611,16 +612,4 @@ func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
 			t.Fatalf("CI の取得中でも、キャッシュの数字は先に出す (snap=%v inFlight=%v)", m.usageOv.Snapshot(), m.usageOv.Fixture().InFlight())
 		}
 	})
-}
-
-func stubLookPath(t *testing.T, available map[string]string) {
-	t.Helper()
-	orig := extcmd.LookPath
-	extcmd.LookPath = func(name string) (string, error) {
-		if p, ok := available[name]; ok {
-			return p, nil
-		}
-		return "", errors.New("not found")
-	}
-	t.Cleanup(func() { extcmd.LookPath = orig })
 }

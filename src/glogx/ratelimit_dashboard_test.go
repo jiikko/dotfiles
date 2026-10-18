@@ -9,20 +9,10 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/gitdata"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"glogx/internal/usageview"
 	"ratelimit/usage"
 )
-
-func rlTestSnap() *usage.Snapshot {
-	now := time.Date(2026, 8, 31, 22, 14, 0, 0, time.Local)
-	return &usage.Snapshot{
-		Version: "2.1.216",
-		Windows: []usage.Window{
-			{Label: "5h", Percent: 62, ResetAt: now.Add(108 * time.Minute), WindowMins: 300},
-			{Label: "7d", Percent: 78, ResetAt: now.Add(3420 * time.Minute), WindowMins: 7 * 24 * 60},
-		},
-	}
-}
 
 // ダッシュボード ⇄ viewer の往復 (ダッシュボードの i/s と viewer の R。ユーザー要望 2026-09-01)。
 // 全画面は同時に 1 枚なので、横断のたびに「相手が開く」と「自分が閉じる」の両方を見る。
@@ -103,7 +93,7 @@ func TestRLDashLoading(t *testing.T) {
 	if !m.rlDashLoading() {
 		t.Error("取得前なのに loading でない")
 	}
-	m.usageOv.Fixture().SetSnapshot(rlTestSnap())
+	m.usageOv.Fixture().SetSnapshot(testenv.RatelimitTestSnap())
 	if m.rlDashLoading() {
 		t.Error("取得済みなのに loading")
 	}
@@ -144,7 +134,7 @@ func TestRatelimitDashShowsWaitingSource(t *testing.T) {
 func TestRatelimitOptsPassesFetchNote(t *testing.T) {
 	var m browseModel
 	m.rlDash.Toggle()
-	snap := rlTestSnap()
+	snap := testenv.RatelimitTestSnap()
 	snap.ClaudeErr = "claude /usage 実行失敗: exit status 127"
 	m.usageOv.Fixture().SetSnapshot(snap)
 	o := m.ratelimitOpts()
@@ -162,7 +152,7 @@ func TestRatelimitOptsPassesFetchNote(t *testing.T) {
 func TestRatelimitDashPlaceholdersBeforeAnyArrives(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("PATH", "")
-	stubLookPath(t, map[string]string{"codex": "/fake/codex"}) // codex あり・前回のキャッシュ無し = codex の場所取りは既定の 1 枠
+	testenv.StubLookPath(t, map[string]string{"codex": "/fake/codex"}) // codex あり・前回のキャッシュ無し = codex の場所取りは既定の 1 枠
 	var m browseModel
 	m.rlDash.Toggle()
 	m.usageOv.FetchCmd(false)
@@ -214,7 +204,7 @@ func TestRatelimitDashKeyRouting(t *testing.T) {
 func TestRatelimitDashDismissesUsageOverlay(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Fixture().SetVisible(true)
-	m.usageOv.Fixture().SetSnapshot(rlTestSnap())
+	m.usageOv.Fixture().SetSnapshot(testenv.RatelimitTestSnap())
 	m.handleKey("R")
 	if m.usageOv.Visible() {
 		t.Error("ダッシュボードを開いても右上オーバーレイが残っている")

@@ -2,6 +2,7 @@ package issuesview
 
 import (
 	"fmt"
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/issues"
 	"strings"
@@ -41,7 +42,7 @@ func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {
 func TestIssuesCloseStopsBodyGlide(t *testing.T) {
 	v := newTestIssuesView()
 	v.shown = true
-	startPagerGlide(t, &v.bodyPager, 0, 10)
+	issuesviewtest.StartPagerGlide(t, &v.bodyPager, 0, 10)
 	v.close()
 	if v.bodyPager.Animating() {
 		t.Error("close で本文の glide が残る")
@@ -56,7 +57,7 @@ func TestIssuesBodyPagerHalfPageGlides(t *testing.T) {
 	// body が nil でも maxOffset=0 になり動かないため、offset を直接動かす経路で検証する
 	prev := 3
 	v.bodyPager.Offset = 10
-	startPagerGlide(t, &v.bodyPager, prev, v.bodyPager.Offset)
+	issuesviewtest.StartPagerGlide(t, &v.bodyPager, prev, v.bodyPager.Offset)
 	if !v.bodyPager.Animating() {
 		t.Error("本文の半ページが glide に載らない")
 	}
@@ -75,7 +76,7 @@ func TestIssuesAdvanceGlideLandsBodyPager(t *testing.T) {
 	// 🚨 一覧は glide を持たない (幾何的にアニメしないため削除)
 	v := newTestIssuesView()
 	v.bodyPager.Offset = 10
-	startPagerGlide(t, &v.bodyPager, 0, 10)
+	issuesviewtest.StartPagerGlide(t, &v.bodyPager, 0, 10)
 	for range term.ScrollAnimFrames {
 		v.AdvanceGlide()
 	}

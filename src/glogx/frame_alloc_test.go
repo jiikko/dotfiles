@@ -18,6 +18,7 @@ import (
 	"glogx/internal/doctorview"
 	"glogx/internal/gitdata"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 )
 
 // reapplyAfterResetRe は置き換える前の実装 (正規表現版)。**テスト専用**で、
@@ -476,7 +477,7 @@ func assertFrameDrawn(t *testing.T, name string, m *browseModel) {
 func budgetRatelimitModel(tb testing.TB) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
 	m.rlDash.Fixture().SetShown(true)
-	m.usageOv.Fixture().SetSnapshot(rlTestSnap())
+	m.usageOv.Fixture().SetSnapshot(testenv.RatelimitTestSnap())
 	// 🚨 時計を固定する (メモ化 + avoid-wall-clock-assertions)。
 	// 盤のキャッシュ鍵は now.Unix() を含むので、実時計のままだと AllocsPerRun(50) の
 	// 測定窓 (-race で ~41ms) が**秒境界をまたいだときだけ 1 回ミス**し、その 1069 allocs が

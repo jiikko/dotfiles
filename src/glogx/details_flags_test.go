@@ -2,6 +2,7 @@ package main
 
 import (
 	"glogx/internal/gitdata"
+	"glogx/internal/testenv"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -22,7 +23,7 @@ import (
 // 消していなかったため実際に起きた。
 func TestDetailsFlagsStayPaired(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
-	m.usageOv.Fixture().SetSnapshot(rlTestSnap())
+	m.usageOv.Fixture().SetSnapshot(testenv.RatelimitTestSnap())
 	m.hasRepo = true
 	sha := m.commits[0].SHA
 

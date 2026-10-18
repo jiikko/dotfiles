@@ -2,6 +2,7 @@ package filerview
 
 import (
 	"glogx/internal/app"
+	"glogx/internal/testenv"
 	"os"
 	"testing"
 	"time"
@@ -10,7 +11,7 @@ import (
 
 // 期限切れ / 未来の時刻 / 別の dir / 壊れた JSON / 時刻なしは「復元しない」に倒す。
 func TestFilerScreenRejectsBadState(t *testing.T) {
-	now := withFilerState(t)
+	now := testenv.IsolateScreenMemory(t)
 	p := filer.Place{Start: "/a", Cursor: "/a/x"}
 	if _, ok := LoadFilerScreen(now, "/a"); ok {
 		t.Fatal("記憶が無いのに復元しようとした")

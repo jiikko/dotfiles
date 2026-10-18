@@ -4,6 +4,7 @@ import (
 	"errors"
 	"glogx/internal/app"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
 	"ratelimit/usage"
@@ -381,8 +382,8 @@ func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
 		}
 		t.Run(usageSourceName(first)+" が先", func(t *testing.T) {
 			t.Setenv("XDG_CACHE_HOME", t.TempDir())
-			t.Setenv("PATH", "")                                       // 外部コマンドを起こさない
-			stubLookPath(t, map[string]string{"codex": "/fake/codex"}) // codex の入った環境 (codex の場所取りを置く)
+			t.Setenv("PATH", "")                                               // 外部コマンドを起こさない
+			testenv.StubLookPath(t, map[string]string{"codex": "/fake/codex"}) // codex の入った環境 (codex の場所取りを置く)
 			o := UsageOverlay{visible: true}
 			o.FetchCmd(false) // closure は走らせない (届く順をテストが決める)
 			none := plain(&o) // 何も届いていない瞬間 (起動直後のグランス)
@@ -456,7 +457,7 @@ func linesWidth(lines []string) int {
 func TestUsageClaudeFailureFirstKeepsNoteWhileWaiting(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("PATH", "")
-	stubLookPath(t, map[string]string{"codex": "/fake/codex"})
+	testenv.StubLookPath(t, map[string]string{"codex": "/fake/codex"})
 	o := UsageOverlay{visible: true}
 	o.FetchCmd(false)
 	defer o.Stop()
@@ -499,7 +500,7 @@ func TestUsageNoCodexPendingWithoutCodex(t *testing.T) {
 			if tc.installed {
 				avail["codex"] = "/fake/codex"
 			}
-			stubLookPath(t, avail)
+			testenv.StubLookPath(t, avail)
 			o := UsageOverlay{visible: true}
 			o.FetchCmd(false)
 			defer o.Stop()

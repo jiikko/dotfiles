@@ -5,20 +5,14 @@ import (
 	"glogx/internal/doctorview"
 	"glogx/internal/gitdata"
 	"glogx/internal/ratelimitview"
-	"path/filepath"
+	"glogx/internal/testenv"
 	"testing"
 	"time"
 )
 
-// 記憶の置き場をテスト用に隔離する。
-func withRatelimitStateDir(t *testing.T) {
-	t.Helper()
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "cache"))
-}
-
 // 終了時: 開いていたら覚える / 開いていなければ**消す**。
 func TestRememberRatelimitScreen(t *testing.T) {
-	withRatelimitStateDir(t)
+	testenv.IsolateCache(t)
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
 	orig := app.TimeNow
 	app.TimeNow = func() time.Time { return now }
@@ -40,7 +34,7 @@ func TestRememberRatelimitScreen(t *testing.T) {
 
 // 起動時: 記憶があればダッシュボードを開いた状態で始まる (ユーザー要望 2026-09-05)。
 func TestInitRestoresRatelimitScreen(t *testing.T) {
-	withRatelimitStateDir(t)
+	testenv.IsolateCache(t)
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
 	orig := app.TimeNow
 	app.TimeNow = func() time.Time { return now }
@@ -62,7 +56,7 @@ func TestInitRestoresRatelimitScreen(t *testing.T) {
 
 // 記憶が無ければ素の画面から始まる (勝手にダッシュボードを出さない)。
 func TestInitWithoutRatelimitMemoryStaysOnLog(t *testing.T) {
-	withRatelimitStateDir(t)
+	testenv.IsolateCache(t)
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	installInertDoctor(t, &m.doctorOv)
 	_ = m.Init()
@@ -74,7 +68,7 @@ func TestInitWithoutRatelimitMemoryStaysOnLog(t *testing.T) {
 // 両方の記憶が (異常終了などで) 残っていても、全画面は 1 枚だけ開く。
 // 2 枚 shown になると「見えている画面」と「キーを受ける画面」が食い違う (fullscreen.go)。
 func TestInitRestoresOnlyOneFullScreen(t *testing.T) {
-	withRatelimitStateDir(t)
+	testenv.IsolateCache(t)
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
 	orig := app.TimeNow
 	app.TimeNow = func() time.Time { return now }

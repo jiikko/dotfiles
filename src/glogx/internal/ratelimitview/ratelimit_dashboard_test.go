@@ -3,6 +3,7 @@ package ratelimitview
 import (
 	"errors"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"glogx/internal/usageview"
 	"ratelimit/usage"
 	"strings"
@@ -24,7 +25,7 @@ func TestRatelimitDashLinesFillsPage(t *testing.T) {
 	var d RatelimitDash
 	d.Toggle()
 	states := map[string]RatelimitRenderOpts{
-		"取得済み": rlTestOpts(rlTestSnap(), nil),
+		"取得済み": rlTestOpts(testenv.RatelimitTestSnap(), nil),
 		"取得中":  rlTestOpts(nil, nil),
 		"失敗":   rlTestOpts(nil, errors.New("boom")),
 	}
@@ -60,7 +61,7 @@ func TestRatelimitDashLoadingAndError(t *testing.T) {
 func TestRatelimitDashKeepsLastGoodOnError(t *testing.T) {
 	var d RatelimitDash
 	d.Toggle()
-	got := strings.Join(d.Lines(rlTestOpts(rlTestSnap(), errors.New("x"))), "\n")
+	got := strings.Join(d.Lines(rlTestOpts(testenv.RatelimitTestSnap(), errors.New("x"))), "\n")
 	if strings.Contains(got, "取得失敗") {
 		t.Errorf("last-good があるのに失敗表示へ落ちた:\n%s", got)
 	}
@@ -73,7 +74,7 @@ func TestRatelimitDashKeepsLastGoodOnError(t *testing.T) {
 func TestRatelimitDashHeaderShowsVersions(t *testing.T) {
 	var d RatelimitDash
 	d.Toggle()
-	snap := rlTestSnap()
+	snap := testenv.RatelimitTestSnap()
 	snap.CodexVersion = "0.144.6"
 	snap.Windows = append(snap.Windows, usage.Window{
 		Label: "cx5h", Source: usage.SourceCodex, Percent: 10,
@@ -92,10 +93,10 @@ func TestRatelimitDashHeaderShowsVersions(t *testing.T) {
 func TestRatelimitDashShowsClaudeFetchError(t *testing.T) {
 	var d RatelimitDash
 	d.Toggle()
-	if got := d.Lines(rlTestOpts(rlTestSnap(), nil))[1]; got != "" {
+	if got := d.Lines(rlTestOpts(testenv.RatelimitTestSnap(), nil))[1]; got != "" {
 		t.Fatalf("取得できているのに注記行がある: %q", got)
 	}
-	snap := rlTestSnap()
+	snap := testenv.RatelimitTestSnap()
 	snap.ClaudeErr = "claude /usage 実行失敗: exit status 127: nodenv: \x1b[31mcommand not found"
 	o := rlTestOpts(snap, nil)
 	o.Note = usageview.FetchNote(snap, nil) // 注記は main が組んで渡す (ratelimitOpts)。ここは渡された注記の出し方を見る
@@ -188,7 +189,7 @@ func TestRatelimitDashNoRenderableWindows(t *testing.T) {
 func TestRatelimitDashHeaderFitsWidth(t *testing.T) {
 	var d RatelimitDash
 	d.Toggle()
-	snap := rlTestSnap()
+	snap := testenv.RatelimitTestSnap()
 	snap.CodexVersion = "0.144.6"
 	snap.Windows = append(snap.Windows, usage.Window{
 		Label: "cx5h", Source: usage.SourceCodex, Percent: 10,
@@ -211,7 +212,7 @@ func TestRatelimitDashHeaderFitsWidth(t *testing.T) {
 // 各ケースで dropCache() した結果 (= 素の描画) と、キャッシュを温めた結果を突き合わせる。
 func TestRatelimitDashCacheMatchesUncached(t *testing.T) {
 	base := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
-	snapA, snapB := rlTestSnap(), rlTestSnap()
+	snapA, snapB := testenv.RatelimitTestSnap(), testenv.RatelimitTestSnap()
 	cases := []struct {
 		name string
 		o    RatelimitRenderOpts

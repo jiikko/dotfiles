@@ -3,6 +3,7 @@ package commitview
 import (
 	"glogx/internal/gitdata"
 	"glogx/internal/statusview"
+	"glogx/internal/statusview/statusviewtest"
 	"glogx/internal/term"
 	"strings"
 	"testing"
@@ -110,7 +111,7 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 	}
 
 	// status viewer の全画面 diff も同じ規律 (pagerRows = page - 5 なので page 13 で rows 8)
-	sv := newTestStatusView(t, "")
+	sv := statusviewtest.NewView(t, "")
 	sv.Fixture().SetPager("k", "t")
 	sv.Fixture().Preview().Store("k", lines, "k")
 	sv.Fixture().Pager().Offset = 49

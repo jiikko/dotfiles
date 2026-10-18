@@ -14,7 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"glogx/internal/statusview/statusviewtest"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -38,7 +40,7 @@ func TestGlobalChromeShowsInEveryView(t *testing.T) {
 		}},
 		{name: "status viewer", open: func(t *testing.T, m *browseModel) {
 			t.Helper()
-			stubWorktreeStatus(t, statusRec(" M a.go"), nil)
+			statusviewtest.StubWorktree(t, testenv.StatusRec(" M a.go"), nil)
 			m.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
 			if !m.statusOv.Visible() {
 				t.Fatal("status viewer が開かない")
