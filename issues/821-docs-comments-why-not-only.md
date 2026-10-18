@@ -105,4 +105,4 @@ src/pro-con → src/glogx → tests → src/lockman → src/treefiler → src/do
     貼り付ける参照文字列の例 (`issue 415`) 1 行
   - 検査が数えない形で残っているもの (未対応): 語彙の外の経緯 (「2026-09-01 に指摘された」「前の版では」など)・行末のコメント・
     裸の番号 (`438 の「記録からは消さない」` の形)。必要になったら語彙を広げる
-
+- [x] 2026-10-18 CI: 書き直しの最後の commit (a1835748) で各 module の workflow 22 本・unused・doctor が緑、その後の d905fb36 で Lint と Tests が緑。完了
