@@ -135,25 +135,173 @@ func TestCloseClosesChanged(t *testing.T) {
 	}
 }
 
-// Add は 1 回だけ引き、Rmv の後にまた Add されたら引き直す (相手の再起動で IP が変わる)。Rmv だけでは引かない。
+// 同じ I/F の重複の Add は引かず、全部の I/F で Rmv された後の Add は引き直す (相手の再起動で IP が変わる)。Rmv だけでは引かない。
+// 1 つの I/F だけの Rmv では外さない (もう 1 つの I/F ではまだ見えている)。
 func TestOnBrowseReresolvesAfterRemove(t *testing.T) {
-	s := &Scanner{seen: map[string]bool{}, readded: map[string]bool{}, peers: map[string]*Peer{}}
-	add := Browse{Add: true, Instance: "mini"}
-	rmv := Browse{Add: false, Instance: "mini"}
-	if !s.onBrowse("_ssh._tcp", add) {
+	s := &Scanner{seen: map[string]map[int]bool{}, readded: map[string]bool{}, hostOf: map[string]string{}, gathering: map[string]bool{}, regather: map[string]bool{}, peers: map[string]*Peer{}}
+	add := func(ifn int) Browse { return Browse{Add: true, If: ifn, Instance: "mini"} }
+	rmv := func(ifn int) Browse { return Browse{Add: false, If: ifn, Instance: "mini"} }
+	if act, _ := s.onBrowse("_ssh._tcp", add(14)); act != actResolve {
 		t.Fatal("最初の Add で引かない")
 	}
-	if s.onBrowse("_ssh._tcp", add) {
-		t.Error("同じ Add (別の I/F) でもう一度引いた")
+	if act, _ := s.onBrowse("_ssh._tcp", add(14)); act != actNone {
+		t.Error("同じ I/F の重複の Add でもう一度引いた")
 	}
-	if s.onBrowse("_ssh._tcp", rmv) {
+	if act, _ := s.onBrowse("_ssh._tcp", add(27)); act != actNone {
+		t.Error("ホストを引いている途中に別の I/F の Add で引いた (起動の直後に 2 つの I/F で Add されると引き当てが二重になる)")
+	}
+	if act, _ := s.onBrowse("_ssh._tcp", rmv(14)); act != actNone || s.readded["_ssh._tcp\x00mini"] {
+		t.Error("1 つの I/F の Rmv で外した (もう 1 つの I/F ではまだ見えている)")
+	}
+	if act, _ := s.onBrowse("_ssh._tcp", rmv(27)); act != actNone {
 		t.Error("Rmv で引いた")
 	}
-	if !s.onBrowse("_ssh._tcp", add) {
-		t.Fatal("Rmv の後の Add で引き直さない (再起動で変わった IP が古いまま残る)")
+	if act, _ := s.onBrowse("_ssh._tcp", add(27)); act != actResolve {
+		t.Fatal("全部の I/F の Rmv の後の Add で引き直さない (再起動で変わった IP が古いまま残る)")
 	}
 	if !s.readded["_ssh._tcp\x00mini"] {
 		t.Error("引き直しの印が無い (resolve が -G を起こさず、IP を取り直さない)")
+	}
+}
+
+// 起動の後に上がった I/F (後から挿したケーブル) で同じ Mac が Add されたら、-G を引き直してその I/F の IP を載せる。
+// -L は引き直さない (ホストは分かっている)。Add が -G の終わった後に来る形と、-G の途中に来る形 (走っている -G は有線の IP を返さずに
+// 終わる) の両方を見る。
+func TestScannerPicksUpLateInterface(t *testing.T) {
+	for _, during := range []bool{false, true} {
+		t.Run(fmt.Sprintf("during=%v", during), func(t *testing.T) { scanLateInterface(t, during) })
+	}
+}
+
+func scanLateInterface(t *testing.T, during bool) {
+	var mu sync.Mutex
+	gCalls, lCalls := 0, 0
+	var s *Scanner
+	gStarted := make(chan struct{})
+	// state はスキャナの帳簿を条件が立つまで見る (待ちの実体は条件。上限で諦めて先へ進め、結果の assert で落とす)
+	state := func(cond func() bool) {
+		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+			s.mu.Lock()
+			ok := cond()
+			s.mu.Unlock()
+			if ok {
+				return
+			}
+			time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は cond)
+		}
+	}
+	start := func(ctx context.Context, _ string, args ...string) (io.ReadCloser, error) {
+		pr, pw := io.Pipe()
+		switch {
+		case args[0] == "-B" && args[1] == "_ssh._tcp":
+			go func() {
+				_, _ = io.WriteString(pw, "21:28:02.496  Add        3  14 local.               _ssh._tcp.           mini\n")
+				select {
+				case <-gStarted:
+				case <-ctx.Done():
+				}
+				if !during { // 有線が上がるのは、Wi-Fi の -G が終わった後
+					state(func() bool { return len(s.gathering) == 0 && len(s.peers) == 1 })
+				}
+				_, _ = io.WriteString(pw, "21:28:03.000  Add        3  27 local.               _ssh._tcp.           mini\n")
+				<-ctx.Done()
+				_ = pw.Close()
+			}()
+		case args[0] == "-B":
+			go func() { <-ctx.Done(); _ = pw.Close() }()
+		case args[0] == "-L":
+			mu.Lock()
+			lCalls++
+			mu.Unlock()
+			go func() {
+				_, _ = io.WriteString(pw, "21:28:48.953  mini._ssh._tcp.local. can be reached at m2macmini.local.:22 (interface 14)\n")
+				_ = pw.Close()
+			}()
+		case args[0] == "-G":
+			mu.Lock()
+			gCalls++
+			n := gCalls
+			mu.Unlock()
+			go func() {
+				_, _ = io.WriteString(pw, "21:27:58.076  Add  40000002      14  m2macmini.local.                       192.168.50.7                                 4500\n")
+				if n == 1 {
+					close(gStarted)
+					if during { // 有線の Add を受けてから、有線の IP を返さずに終わる
+						state(func() bool { return s.seen["_ssh._tcp\x00mini"][27] })
+					}
+				} else { // 有線が上がった後の -G だけが有線の IP を返す
+					_, _ = io.WriteString(pw, "21:27:58.076  Add  40000003      27  m2macmini.local.                       192.168.100.12                               4500\n")
+				}
+				_ = pw.Close()
+			}()
+		}
+		return pr, nil
+	}
+	s = Start(start, time.Now())
+	deadline := time.Now().Add(5 * time.Second)
+	var peers []Peer
+	for time.Now().Before(deadline) {
+		if peers = s.Snapshot(); len(peers) == 1 && peers[0].Addrs[27] != "" {
+			break
+		}
+		select {
+		case <-s.Changed():
+		case <-time.After(50 * time.Millisecond): // sleep-ok: 条件のポーリングの刻み (待ちの実体は上の条件)
+		}
+	}
+	s.Close()
+	if len(peers) != 1 || peers[0].Addrs[27] != "192.168.100.12" || peers[0].Addrs[14] != "192.168.50.7" {
+		t.Fatalf("後から上がった有線の IP を拾わない: %+v", peers)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if lCalls != 1 || gCalls != 2 {
+		t.Errorf("-L %d 回 / -G %d 回, want 1 / 2", lCalls, gCalls)
+	}
+}
+
+// -L / -G が上限までに答えなかったら、もう 1 度引く (1 度の無応答で、その走査の間ずっと一覧から欠ける・IP の無い行になるのを避ける)。
+func TestResolveRetriesWhenLookupsTimeOut(t *testing.T) {
+	var mu sync.Mutex
+	calls := map[string]int{}
+	start := func(ctx context.Context, _ string, args ...string) (io.ReadCloser, error) {
+		pr, pw := io.Pipe()
+		mu.Lock()
+		calls[args[0]]++
+		n := calls[args[0]]
+		mu.Unlock()
+		go func() {
+			switch {
+			case args[0] == "-B" && args[1] == "_ssh._tcp":
+				_, _ = io.WriteString(pw, "21:28:02.496  Add        3  14 local.               _ssh._tcp.           mini\n")
+				<-ctx.Done()
+			case args[0] == "-B":
+				<-ctx.Done()
+			case n == 1: // 1 回目の -L / -G は答えない (上限で止まって何も出さずに終わったのと同じ)
+			case args[0] == "-L":
+				_, _ = io.WriteString(pw, "21:28:48.953  mini._ssh._tcp.local. can be reached at m2macmini.local.:22 (interface 14)\n")
+			case args[0] == "-G":
+				_, _ = io.WriteString(pw, "21:27:58.076  Add  40000002      14  m2macmini.local.                       192.168.50.7                                 4500\n")
+			}
+			_ = pw.Close()
+		}()
+		return pr, nil
+	}
+	s := Start(start, time.Now())
+	deadline := time.Now().Add(5 * time.Second)
+	var peers []Peer
+	for time.Now().Before(deadline) {
+		if peers = s.Snapshot(); len(peers) == 1 && peers[0].Addrs[14] != "" {
+			break
+		}
+		select {
+		case <-s.Changed():
+		case <-time.After(50 * time.Millisecond): // sleep-ok: 条件のポーリングの刻み (待ちの実体は上の条件)
+		}
+	}
+	s.Close()
+	if len(peers) != 1 || peers[0].Addrs[14] != "192.168.50.7" {
+		t.Fatalf("1 度答えなかった -L / -G を引き直さない: %+v (calls %v)", peers, calls)
 	}
 }
 
@@ -234,6 +382,7 @@ type hangStarter struct {
 	mu        sync.Mutex
 	browse    string
 	live, max int
+	lookups   int // 起こした -L の数
 }
 
 func (h *hangStarter) start(ctx context.Context, _ string, args ...string) (io.ReadCloser, error) {
@@ -246,6 +395,7 @@ func (h *hangStarter) start(ctx context.Context, _ string, args ...string) (io.R
 	if lookup {
 		h.mu.Lock()
 		h.live++
+		h.lookups++
 		h.max = max(h.max, h.live)
 		h.mu.Unlock()
 	}
@@ -281,11 +431,15 @@ func TestResolveIsBoundedAndTimesOut(t *testing.T) {
 		s.mu.Lock()
 		p, seen := s.pending, len(s.seen)
 		s.mu.Unlock()
-		if seen == 20 && p == 0 {
+		h.mu.Lock()
+		n := h.lookups
+		h.mu.Unlock()
+		// 諦めたインスタンスは帳簿から外す (後で別の I/F で Add されたら引き直す)
+		if n == 20*lookupAttempts && p == 0 && seen == 0 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("応えない -L が諦められない (seen %d pending %d)", seen, p)
+			t.Fatalf("応えない -L が諦められない (-L %d 回 seen %d pending %d)", n, seen, p)
 		}
 		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は上の条件)
 	}

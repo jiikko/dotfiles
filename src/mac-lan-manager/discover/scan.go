@@ -42,9 +42,14 @@ type Scanner struct {
 	settle  time.Time
 	changed chan struct{}
 	closing sync.Once
-	seen    map[string]bool // 引き当てを起こしたサービス + インスタンス (同じものが Wi-Fi と有線の 2 つの I/F で Add されても 1 回だけ引く)
-	readded map[string]bool // Rmv の後にもう一度 Add されたもの (相手の再起動など。IP が変わりうるので引き直す)
-	sem     chan struct{}   // 同時に起こす引き当ての上限 (LAN 上の広告の数だけ dns-sd を起こさない)
+	// seen は Add を受けたサービス + インスタンスごとの I/F の番号。I/F を捨ててサービス + インスタンスだけで覚えない: 起動の後に
+	// 上がった有線の Add を「知っている」と読んで捨て、有線の IP が r まで載らない
+	seen      map[string]map[int]bool
+	readded   map[string]bool   // 全部の I/F で Rmv された後にもう一度 Add されたもの (相手の再起動など。IP が変わりうるので -G を引き直す)
+	hostOf    map[string]string // サービス + インスタンス → -L で引いたホスト名
+	gathering map[string]bool   // -G を引いている途中のホスト (重ねて起こさない)
+	regather  map[string]bool   // -G の途中に IP の無い I/F で見えたホスト (終わったらもう 1 度引く)
+	sem       chan struct{}     // 同時に起こす引き当ての上限 (LAN 上の広告の数だけ dns-sd を起こさない)
 }
 
 // maxLookups は同時に起こす -L / -G の上限。
@@ -60,7 +65,7 @@ const settleWindow = 3 * time.Second
 func Start(start Starter, now time.Time) *Scanner {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Scanner{start: start, ctx: ctx, cancel: cancel, peers: map[string]*Peer{}, settle: now.Add(settleWindow), changed: make(chan struct{}, 1),
-		seen: map[string]bool{}, readded: map[string]bool{}, sem: make(chan struct{}, maxLookups)}
+		seen: map[string]map[int]bool{}, readded: map[string]bool{}, hostOf: map[string]string{}, gathering: map[string]bool{}, regather: map[string]bool{}, sem: make(chan struct{}, maxLookups)}
 	for _, svc := range Services {
 		s.wg.Add(1)
 		go s.browse(svc)
@@ -159,65 +164,119 @@ func (s *Scanner) browse(svc string) {
 	}()
 	for sc.Scan() {
 		b, ok := ParseBrowse(sc.Text())
-		if !ok || !s.onBrowse(svc, b) {
+		if !ok {
 			continue
 		}
-		s.wg.Add(1)
-		go s.resolve(svc, b.Instance)
+		switch act, host := s.onBrowse(svc, b); act {
+		case actResolve:
+			s.wg.Add(1)
+			go s.resolve(svc, b.Instance)
+		case actAddrs:
+			s.wg.Add(1)
+			go func() {
+				defer s.wg.Done()
+				defer s.done()
+				s.addrs(host)
+			}()
+		case actNone:
+		}
 	}
 }
 
-// onBrowse は -B の 1 行を帳簿に付け、引き当てを起こすかを返す。Add は 1 回だけ引く (2 つの I/F で Add されても)。Rmv は帳簿から外し、
-// その後にまた Add されたら引き直す: 相手が再起動すると 169.254 の IP が変わるので、外さないと r を押すまで古い IP のままになる。
+// browseAct は -B の 1 行を受けて起こすもの。
+type browseAct int
+
+const (
+	actNone    browseAct = iota
+	actResolve           // -L でホストを引き、要るなら -G も引く
+	actAddrs             // ホストは分かっている。-G だけ引き直す (別の I/F で見えた)
+)
+
+// onBrowse は -B の 1 行を帳簿に付け、起こすものを返す。同じ I/F の重複の Add は何も起こさない (2 つの I/F で同時に Add されても
+// 引き当ては 1 回)。全部の I/F で Rmv された後の Add は引き直す: 相手が再起動すると 169.254 の IP が変わるので、外さないと r を押すまで
+// 古い IP のままになる。知っているホストが IP の無い I/F で見えたら -G だけ引き直す: 起動の後に上がった有線の IP を r まで拾わなかった。
 // 見えなくなった Mac は一覧に残す (台帳の Mac と同じく「今は見えていない」は r で消える)。
-func (s *Scanner) onBrowse(svc string, b Browse) bool {
+func (s *Scanner) onBrowse(svc string, b Browse) (browseAct, string) {
 	key := svc + "\x00" + b.Instance
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	ifs := s.seen[key]
 	if !b.Add {
-		if s.seen[key] {
-			delete(s.seen, key)
-			s.readded[key] = true // 次の Add は引き直し
+		if ifs[b.If] {
+			delete(ifs, b.If)
+			if len(ifs) == 0 {
+				delete(s.seen, key)
+				delete(s.hostOf, key)
+				s.readded[key] = true // 次の Add は引き直し
+			}
 		}
-		return false
+		return actNone, ""
 	}
-	if s.seen[key] {
-		return false
+	if ifs[b.If] {
+		return actNone, ""
 	}
-	s.seen[key] = true
+	if ifs == nil {
+		s.seen[key] = map[int]bool{b.If: true}
+		s.pending++
+		return actResolve, ""
+	}
+	ifs[b.If] = true
+	// ホストがまだ分からない (-L の途中) なら、resolve が -L の後に I/F の帳簿を見て -G を引く
+	host := s.hostOf[key]
+	if p := s.peers[host]; host == "" || p == nil || p.Addrs[b.If] != "" {
+		return actNone, ""
+	}
+	if s.gathering[host] {
+		// 走っている -G が終わったらもう 1 度引かせる (終わる間際に来た Add を「走っている -G が拾う」と読んで捨てていた)
+		s.regather[host] = true
+		return actNone, ""
+	}
+	s.gathering[host] = true
 	s.pending++
-	return true
+	return actAddrs, host
 }
 
-// resolve はインスタンスをホスト名に引き当て (-L)、初めてのホストなら IP も引く (-G)。
+func (s *Scanner) done() {
+	s.mu.Lock()
+	s.pending--
+	s.mu.Unlock()
+	s.notify()
+}
+
+// lookupAttempts は -L / -G が上限までに答えなかったときに打つ回数 (1 度の無応答で、その走査の間ずっと欠けないように)。
+const lookupAttempts = 2
+
+// resolve はインスタンスをホスト名に引き当て (-L)、IP の分からない I/F があれば IP も引く (-G)。
 func (s *Scanner) resolve(svc, inst string) {
 	defer s.wg.Done()
-	defer func() {
-		s.mu.Lock()
-		s.pending--
-		s.mu.Unlock()
-		s.notify()
-	}()
+	defer s.done()
 	select { // 同時に起こす数の上限
 	case s.sem <- struct{}{}:
 		defer func() { <-s.sem }()
 	case <-s.ctx.Done():
 		return
 	}
-	host := s.first(func(line string) (string, bool) {
-		r, ok := ParseLookup(line)
-		return r.Host, ok
-	}, "dns-sd", "-L", inst, svc, "local")
+	key := svc + "\x00" + inst
+	var host string
+	for i := 0; i < lookupAttempts && host == "" && s.ctx.Err() == nil; i++ {
+		host = s.first(func(line string) (string, bool) {
+			r, ok := ParseLookup(line)
+			return r.Host, ok
+		}, "dns-sd", "-L", inst, svc, "local")
+	}
 	if host == "" {
+		// 帳簿から外す: 外さないと、この後に別の I/F で Add されても「知っている」と読んで引かない
+		s.mu.Lock()
+		delete(s.seen, key)
+		s.mu.Unlock()
 		return
 	}
 	s.mu.Lock()
-	key := svc + "\x00" + inst
 	refresh := s.readded[key]
 	delete(s.readded, key)
+	s.hostOf[key] = host
 	p := s.peers[host]
-	newHost := p == nil
-	if newHost {
+	if p == nil {
 		p = &Peer{Host: host, Addrs: map[int]string{}}
 		s.peers[host] = p
 	}
@@ -232,27 +291,62 @@ func (s *Scanner) resolve(svc, inst string) {
 	case "_smb._tcp":
 		p.SMB = true
 	}
+	missing := len(p.Addrs) == 0
+	for ifn := range s.seen[key] {
+		if p.Addrs[ifn] == "" {
+			missing = true
+		}
+	}
+	// 同じ I/F の IP は I/F の番号で上書きされる (Addrs は I/F の番号が鍵)
+	gather := (refresh || missing) && !s.gathering[host]
+	if gather {
+		s.gathering[host] = true
+	}
 	s.mu.Unlock()
-	if newHost || refresh { // 同じ I/F の IP は I/F の番号で上書きされる (Addrs は I/F の番号が鍵)
+	if gather {
 		s.addrs(host)
 	}
 }
 
-// addrs は -G v4 で IP を集める (lookupTimeout まで。Wi-Fi 側と有線側で別々の行が来る)。
+// addrs は -G v4 で IP を集める (lookupTimeout まで。Wi-Fi 側と有線側で別々の行が来る)。1 行も来なければもう 1 度引く。
+// 呼ぶ側が gathering[host] を立ててから呼ぶ (同じホストの -G を重ねない)。
 func (s *Scanner) addrs(host string) {
+	for {
+		for i := 0; i < lookupAttempts && s.ctx.Err() == nil; i++ {
+			if s.gatherOnce(host) {
+				break
+			}
+		}
+		s.mu.Lock()
+		again := s.regather[host] && s.ctx.Err() == nil
+		delete(s.regather, host)
+		if !again {
+			delete(s.gathering, host)
+		}
+		s.mu.Unlock()
+		if !again {
+			return
+		}
+	}
+}
+
+// gatherOnce は -G v4 を 1 回引き、IP を 1 つでも受けたかを返す。
+func (s *Scanner) gatherOnce(host string) bool {
 	ctx, cancel := context.WithTimeout(s.ctx, lookupTimeout)
 	defer cancel()
 	r, err := s.start(ctx, "dns-sd", "-G", "v4", host)
 	if err != nil {
-		return
+		return false
 	}
 	defer func() { _ = r.Close() }()
+	got := false
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		a, ok := ParseAddr(sc.Text())
 		if !ok || !a.Add {
 			continue
 		}
+		got = true
 		s.mu.Lock()
 		if p := s.peers[host]; p != nil {
 			p.Addrs[a.If] = a.IP
@@ -260,6 +354,7 @@ func (s *Scanner) addrs(host string) {
 		s.mu.Unlock()
 		s.notify()
 	}
+	return got
 }
 
 // first はコマンドを起こし、parse が ok を返した最初の値で止める (lookupTimeout まで)。

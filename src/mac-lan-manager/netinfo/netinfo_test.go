@@ -57,6 +57,16 @@ func TestParseGetInfo(t *testing.T) {
 			t.Errorf("%s: got (%q, %q, %q), want (%q, %q, %q)", c.file, m, ip, r, c.method, c.ip, c.router)
 		}
 	}
+	// 手動 (ルーターだけ DHCP) と BOOTP は作った値 (1 行目の文字列は networksetup の本体に在る。この Mac には該当するサービスが無く実出力は採れていない)。
+	// "" に読むと、相手を固定 IP にする手順が「戻す方式が分からない」で止まる
+	for out, want := range map[string]string{
+		"Manually Using DHCP Router Configuration\nIP address: 192.168.100.12\nSubnet mask: 255.255.255.0\nRouter: (null)\n": MethodManualDHCPRouter,
+		"BOOTP Configuration\nIP address: 192.168.100.12\nSubnet mask: 255.255.255.0\nRouter: (null)\n":                      MethodBOOTP,
+	} {
+		if m, ip, _ := ParseGetInfo(out); m != want || ip != "192.168.100.12" {
+			t.Errorf("%q: got (%q, %q), want %q", strings.SplitN(out, "\n", 2)[0], m, ip, want)
+		}
+	}
 }
 
 func TestParseIfconfig(t *testing.T) {

@@ -250,6 +250,20 @@ func Parse(s string) (version int, hosts []Host, err error) { return parse(s, tr
 // 鍵が重複したら先の節を採る。後の版が足した項目を古い版でも表示できるように。形の壊れた行 (= が無い・値の引用が読めない) は err。
 func ParseLenient(s string) (version int, hosts []Host, err error) { return parse(s, false) }
 
+// quoted は値の先頭の引用された文字列を戻し、後ろに残った行末のコメント ("# …") を返す。コメント以外が残れば err。
+func quoted(v string) (val, comment string, err error) {
+	q, err := strconv.QuotedPrefix(v)
+	if err != nil {
+		return "", "", err
+	}
+	rest := strings.TrimSpace(v[len(q):])
+	if rest != "" && !strings.HasPrefix(rest, "#") {
+		return "", "", fmt.Errorf("値の後ろに余計なもの: %q", rest)
+	}
+	val, err = strconv.Unquote(q)
+	return val, rest, err
+}
+
 func parse(s string, strict bool) (version int, hosts []Host, err error) {
 	version = 1
 	sawVersion := false
@@ -278,6 +292,10 @@ func parse(s string, strict bool) (version int, hosts []Host, err error) {
 					return 0, nil, fmt.Errorf("台帳の %d 行目: version が 2 回ある", n+1)
 				}
 				sawVersion = true
+				if !strict { // 緩い読みは行末のコメントを外す (厳しい読みは下の値と同じく、書き戻すと消えるので断る)
+					v, _, _ = strings.Cut(v, "#")
+					v = strings.TrimSpace(v)
+				}
 				if version, err = strconv.Atoi(v); err != nil {
 					return 0, nil, fmt.Errorf("台帳の版が読めない: %q", v)
 				}
@@ -286,9 +304,13 @@ func parse(s string, strict bool) (version int, hosts []Host, err error) {
 			}
 			continue
 		}
-		val, err := strconv.Unquote(v)
+		val, rest, err := quoted(v)
 		if err != nil {
 			return 0, nil, fmt.Errorf("台帳の %d 行目の値が読めない: %q", n+1, line)
+		}
+		// 行末のコメントは手で書いた台帳では合法 (TOML)。緩い読みで断ると、一覧の表示ごと止まった。厳しい読みは書き戻すと消えるので断る
+		if rest != "" && strict {
+			return 0, nil, fmt.Errorf("台帳の %d 行目: 行末のコメントは書き戻すと消える: %q", n+1, line)
 		}
 		if strict && seen[k] {
 			return 0, nil, fmt.Errorf("台帳の %d 行目: 鍵 %q が同じ節に 2 回ある", n+1, k)

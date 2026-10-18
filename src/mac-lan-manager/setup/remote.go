@@ -215,8 +215,11 @@ const (
 // PeerStatic は相手の有線を ip にする 1 回分 (確認が来なければ今の設定へ戻す)。
 func PeerStatic(p PeerNet, ip, mask, token string) (StaticIP, error) {
 	r := Restore{Method: p.Method}
-	if p.Method == "manual" {
+	switch p.Method {
+	case netinfo.MethodManual:
 		r.IP, r.Mask, r.Router = p.IP, p.Mask, p.Router
+	case netinfo.MethodManualDHCPRouter:
+		r.IP = p.IP
 	}
 	s := StaticIP{Service: p.Service, IP: ip, Mask: mask, Restore: r, Token: token, Delay: PeerDelay, Window: PeerWindow}
 	return s, s.Validate()
@@ -225,7 +228,7 @@ func PeerStatic(p PeerNet, ip, mask, token string) (StaticIP, error) {
 // SelfStaticArgv はこの Mac の有線を ip にするコマンド (端末を明け渡して sudo のパスワードを聞く)。ルーターは渡さない
 // (ルーター無しになるかは本物の相手で未確認)。
 func SelfStaticArgv(service, ip, mask string) ([]string, error) {
-	s := StaticIP{Service: service, IP: ip, Mask: mask, Restore: Restore{Method: "DHCP"}, Token: "self-static", Window: time.Second}
+	s := StaticIP{Service: service, IP: ip, Mask: mask, Restore: Restore{Method: netinfo.MethodDHCP}, Token: "self-static", Window: time.Second}
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}

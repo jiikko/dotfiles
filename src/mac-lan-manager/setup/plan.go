@@ -28,7 +28,7 @@ type PeerObs struct {
 	NetKnown  bool   // 相手のネットワーク (サービス・方式) を読めた
 	Service   string // 相手の有線のサービス名 (ルーターの無いもの)
 	IP        string // そのサービスの今の IP
-	Method    string // "DHCP" / "manual"
+	Method    string // netinfo.MethodDHCP など
 	Managed   bool   // 台帳に載っている
 	LedgerLAN string // 台帳の内部 IP
 	// AdvertKnown / Advert は相手の有線の名前の広告の状態 (観測で読めたときだけ)
@@ -65,7 +65,7 @@ func SelfFixed(band, method, ip string) bool {
 	if _, err := netinfo.ParseBand(band); err != nil || !netinfo.InBand(band, ip) {
 		return false
 	}
-	return method == "manual" || (method == "" && !netinfo.IsLinkLocal(ip))
+	return netinfo.FixedIP(method) || (method == "" && !netinfo.IsLinkLocal(ip))
 }
 
 // Plan は観測から手順を組む。何度呼んでも、済んだ手順は Done で返す (途中で止まっても、観測し直して続きから流せる)。
@@ -99,7 +99,7 @@ func Plan(o Observed) []Step {
 		key.Blocked = "相手の IP が分からない"
 	}
 	// この Mac と同じ IP は済みにしない (衝突)
-	peerStatic := o.Peer.NetKnown && o.Peer.Method == "manual" && inBand(o.Peer.IP) && o.Peer.IP != o.SelfIP
+	peerStatic := o.Peer.NetKnown && netinfo.FixedIP(o.Peer.Method) && inBand(o.Peer.IP) && o.Peer.IP != o.SelfIP
 	peer := Step{ID: StepPeerStatic, Title: "相手の有線を固定 IP にする", Done: peerStatic, Via: via}
 	switch {
 	case peer.Done:

@@ -243,6 +243,8 @@ func TestRefusesLossyRewrite(t *testing.T) {
 		"version の重複":   "version = 2\nversion = 1\n[[host]]\nhost = \"a.local\"\n",
 		"鍵の重複 (正規化で同じ)": "version = 1\n[[host]]\nhost = \"X.local\"\n[[host]]\nhost = \"x.local.\"\n",
 		"節の中の鍵の重複":      "version = 1\n[[host]]\nhost = \"a.local\"\nuser = \"u\"\nuser = \"v\"\n",
+		"値の行末のコメント":     "version = 1\n[[host]]\nhost = \"a.local\"\nalias = \"x # y\" # メモ\n",
+		"版の行末のコメント":     "version = 1 # 手で書いた\n[[host]]\nhost = \"a.local\"\n",
 	}
 	for name, orig := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -263,6 +265,17 @@ func TestRefusesLossyRewrite(t *testing.T) {
 				t.Errorf("一覧のための読み取りまで失敗した: %v", err)
 			}
 		})
+	}
+}
+
+// 行末のコメントは一覧の表示で読み飛ばす (引用の中の # はコメントではない)。引用の後ろにコメント以外が残る行は読めない。
+func TestParseLenientTrailingComment(t *testing.T) {
+	_, hs, err := ParseLenient("version = 1 # 版\n[[host]]\nhost = \"a.local\"   # 有線\nalias = \"x # y\"#メモ\n")
+	if err != nil || len(hs) != 1 || hs[0].Host != "a.local" || hs[0].Alias != "x # y" {
+		t.Fatalf("行末のコメントのある台帳 = %+v %v", hs, err)
+	}
+	if _, _, err := ParseLenient("version = 1\n[[host]]\nhost = \"a.local\" junk\n"); err == nil {
+		t.Error("値の後ろのコメントでないものを読み飛ばした")
 	}
 }
 

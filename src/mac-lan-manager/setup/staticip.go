@@ -20,6 +20,7 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 
 	"mac-lan-manager/ledger"
+	"mac-lan-manager/netinfo"
 )
 
 // Quote は s を sh の 1 つの語にする (単引用符で包み、中の単引用符は「閉じて \' を挟んで開き直す」)。
@@ -27,10 +28,46 @@ func Quote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + 
 
 // Restore は固定 IP にする前の設定 (確認が来なければここへ戻す)。
 type Restore struct {
-	Method string // "DHCP" / "manual"
-	IP     string // manual のとき
-	Mask   string
-	Router string // 空ならルーター無し
+	Method string // netinfo.MethodDHCP / MethodManual / MethodManualDHCPRouter / MethodBOOTP
+	IP     string // 手動の 2 つの方式のとき
+	Mask   string // MethodManual のとき
+	Router string // MethodManual で、空ならルーター無し
+}
+
+// Validate は戻し方に埋め込む値を確かめる (方式の分からないものは戻せないので断る)。
+func (r Restore) Validate() error {
+	switch r.Method {
+	case netinfo.MethodDHCP, netinfo.MethodBOOTP:
+	case netinfo.MethodManual:
+		if !ipv4(r.IP) || !ipv4(r.Mask) || (r.Router != "" && !ipv4(r.Router)) {
+			return fmt.Errorf("戻す先が IPv4 でない: %+v", r)
+		}
+	case netinfo.MethodManualDHCPRouter:
+		if !ipv4(r.IP) {
+			return fmt.Errorf("戻す先が IPv4 でない: %+v", r)
+		}
+	default:
+		return fmt.Errorf("戻す方式が分からない: %q", r.Method)
+	}
+	return nil
+}
+
+// Line は service をこの設定へ戻す networksetup の 1 行 (Validate の後に呼ぶ)。
+func (r Restore) Line(service string) string {
+	svc := Quote(service)
+	switch r.Method {
+	case netinfo.MethodManual:
+		line := "networksetup -setmanual " + svc + " " + r.IP + " " + r.Mask
+		if r.Router != "" {
+			line += " " + r.Router
+		}
+		return line
+	case netinfo.MethodManualDHCPRouter:
+		return "networksetup -setmanualwithdhcprouter " + svc + " " + r.IP
+	case netinfo.MethodBOOTP:
+		return "networksetup -setbootp " + svc
+	}
+	return "networksetup -setdhcp " + svc
 }
 
 // StaticIP は相手 (またはこの Mac) の有線のサービスを固定 IP にする 1 回分。
@@ -98,14 +135,8 @@ func (s StaticIP) Validate() error {
 	if !ipv4(s.IP) || !ipv4(s.Mask) {
 		return fmt.Errorf("IPv4 でない: %q / %q", s.IP, s.Mask)
 	}
-	switch s.Restore.Method {
-	case "DHCP":
-	case "manual":
-		if !ipv4(s.Restore.IP) || !ipv4(s.Restore.Mask) || (s.Restore.Router != "" && !ipv4(s.Restore.Router)) {
-			return fmt.Errorf("戻す先が IPv4 でない: %+v", s.Restore)
-		}
-	default:
-		return fmt.Errorf("戻す方式が分からない: %q", s.Restore.Method)
+	if err := s.Restore.Validate(); err != nil {
+		return err
 	}
 	if !reToken.MatchString(s.Token) {
 		return errors.New("確認の印の名前が使えない")
@@ -177,13 +208,7 @@ func (s StaticIP) prepare(take bool) string {
 func (s StaticIP) Script() string {
 	mark, lock := Quote(s.ConfirmPath()), Quote(s.lockPath())
 	svc := Quote(s.Service)
-	restore := "networksetup -setdhcp " + svc
-	if s.Restore.Method == "manual" {
-		restore = "networksetup -setmanual " + svc + " " + s.Restore.IP + " " + s.Restore.Mask
-		if s.Restore.Router != "" {
-			restore += " " + s.Restore.Router
-		}
-	}
+	restore := s.Restore.Line(s.Service)
 	var b strings.Builder
 	b.WriteString(s.prepare(true))
 	fmt.Fprintf(&b, "echo $$ > %s\n", Quote(s.startedPath()))

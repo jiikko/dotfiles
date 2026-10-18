@@ -81,7 +81,7 @@ type Service struct {
 	Device string // I/F の名前 ("en13")
 	Active bool   // ifconfig の status が active
 	IP     string // IPv4 (無ければ空)
-	Method string // "DHCP" / "manual" / "" (読めなかった)
+	Method string // MethodDHCP / MethodManual / MethodManualDHCPRouter / MethodBOOTP / "" (読めなかった)
 	Router string // IPv4 のルーター (無ければ空)
 	Mask   string // サブネットマスク (読めなければ空。手動の設定へ戻すときに要る)
 	Read   bool   // -getinfo を読めた (読めなければルーターの有無は分からない)
@@ -325,13 +325,30 @@ func ParseServiceOrder(out string) []Service {
 	return svcs
 }
 
+// 方式 (`networksetup -getinfo` の "… Configuration" の行。4 つの文字列は /usr/sbin/networksetup の本体に在ることを確かめた。
+// 手動 (ルーターだけ DHCP) と BOOTP の実出力はこの Mac では採れていない)。
+const (
+	MethodDHCP             = "DHCP"
+	MethodManual           = "manual"
+	MethodManualDHCPRouter = "manual-dhcp-router" // IP は手で決め、ルーターだけ DHCP で受ける
+	MethodBOOTP            = "BOOTP"
+)
+
+// FixedIP は方式が IP を手で決めているか (ルーターだけ DHCP の形も含む。IP は動かない)。
+func FixedIP(method string) bool { return method == MethodManual || method == MethodManualDHCPRouter }
+
 // ParseGetInfo は `networksetup -getinfo <サービス名>` の出力から、方式・IPv4・ルーターを読む。
 func ParseGetInfo(out string) (method, ip, router string) {
+	// 部分一致の順を変えない: "Manually Using DHCP Router Configuration" は "DHCP Router Configuration" を含む
 	switch {
+	case strings.Contains(out, "Manually Using DHCP Router Configuration"):
+		method = MethodManualDHCPRouter
 	case strings.Contains(out, "Manual Configuration"):
-		method = "manual"
+		method = MethodManual
+	case strings.Contains(out, "BOOTP Configuration"):
+		method = MethodBOOTP
 	case strings.Contains(out, "DHCP Configuration"):
-		method = "DHCP"
+		method = MethodDHCP
 	}
 	if m := reIP.FindStringSubmatch(out); m != nil && m[1] != "none" {
 		ip = strings.TrimSpace(m[1])

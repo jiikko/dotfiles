@@ -207,7 +207,7 @@ func (m *Model) applyObserve(p setup.PeerNet) {
 		delete(m.unconf, su.host)
 		// 期限の後にまだ試した番号の手動の固定に見えるなら、相手の上で確定している (Script は確認が無ければ必ず戻す。
 		// 戻せないのは電源断・kill -9 だけで、そのときも相手はその番号にいる)
-		if p.Method == "manual" {
+		if netinfo.FixedIP(p.Method) {
 			delete(m.tried[su.host], p.IP)
 		}
 	}
@@ -267,7 +267,7 @@ func (m *Model) selfWired() (netinfo.Service, bool) {
 	}
 	off := m.self.Offline()
 	for _, s := range off { // 帯に入る番号を持つ有線を先に (一覧の内部 IP (selfLan) と同じサービスを見る。食い違うと札と手順の済みがずれた。敵対レビュー)
-		if netinfo.InBand(m.pf.Band, s.IP) && s.Method == "manual" { // 自動の番号が帯を引いた別の I/F を固定しにいかない (帯が 169.254 の中のとき。敵対レビュー)
+		if netinfo.InBand(m.pf.Band, s.IP) && netinfo.FixedIP(s.Method) { // 自動の番号が帯を引いた別の I/F を固定しにいかない (帯が 169.254 の中のとき。敵対レビュー)
 			return s, true
 		}
 	}
@@ -616,13 +616,14 @@ func (m *Model) setupExecDone(host string, step setup.StepID, static *setup.Stat
 	}
 }
 
-// selfRestoreLine はこの Mac の固定を戻すコマンド (今の設定へ。手動の固定なら今の IP とマスクへ: 帯を変えた後に -setdhcp と案内すると、
-// 前の帯で固定していた人を元に戻さなかった)。
+// selfRestoreLine はこの Mac の固定を戻すコマンド (今の設定へ。-setdhcp に決め打ちしない: 帯を変えた後に前の帯で固定していた人を
+// 元に戻さない)。今の設定が戻し方を組めない形 (マスクが読めない手動など) なら DHCP へ。
 func selfRestoreLine(o setup.Observed) string {
-	if o.SelfMethod == "manual" && o.SelfIP != "" && o.SelfMask != "" {
-		return "sudo networksetup -setmanual " + setup.Quote(o.SelfService) + " " + o.SelfIP + " " + o.SelfMask
+	r := setup.Restore{Method: o.SelfMethod, IP: o.SelfIP, Mask: o.SelfMask}
+	if r.Validate() != nil {
+		r = setup.Restore{Method: netinfo.MethodDHCP}
 	}
-	return "sudo networksetup -setdhcp " + setup.Quote(o.SelfService)
+	return "sudo " + r.Line(o.SelfService)
 }
 
 // shellLine は argv を確認の板に出す 1 行にする (語ごとに sh の引用)。

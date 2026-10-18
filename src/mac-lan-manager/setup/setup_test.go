@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"mac-lan-manager/netinfo"
 )
 
 // sandbox は偽の networksetup / sudo / nohup だけが見える PATH を作る。偽の networksetup は引数を 1 つずつ [..] で囲んで log に書く。
@@ -279,6 +281,30 @@ func TestStaticIPRestoresManual(t *testing.T) {
 	}
 }
 
+// 戻す先が手動 (ルーターだけ DHCP) / BOOTP なら、その方式へ戻す (DHCP へ倒さない)。
+func TestStaticIPRestoresOtherMethods(t *testing.T) {
+	for r, want := range map[Restore]string{
+		{Method: netinfo.MethodManualDHCPRouter, IP: "10.0.0.5"}: "[-setmanualwithdhcprouter][Thunderbolt Ethernet][10.0.0.5]\n",
+		{Method: netinfo.MethodBOOTP}:                            "[-setbootp][Thunderbolt Ethernet]\n",
+	} {
+		dir, path := sandbox(t)
+		s := staticIP(t, dir)
+		s.Restore = r
+		if err := s.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if err := runSh(t, path, s.Script()).Wait(); err != nil {
+			t.Fatal(err)
+		}
+		if got := readLog(dir); !strings.HasSuffix(got, want) {
+			t.Errorf("%s: log = %q", r.Method, got)
+		}
+	}
+	if err := (Restore{Method: netinfo.MethodManualDHCPRouter}).Validate(); err == nil {
+		t.Error("IP の分からない手動 (ルーターだけ DHCP) を戻し先にした")
+	}
+}
+
 // サービス名は相手の networksetup の出力 (外から来た値)。引用・$()・; を含んでも 1 つの引数のまま渡り、sh に解釈されない。
 func TestStaticIPServiceNameIsOneWord(t *testing.T) {
 	dir, path := sandbox(t)
@@ -349,7 +375,7 @@ func TestStaticIPValidate(t *testing.T) {
 		"空のサービス名":      func(s *StaticIP) { s.Service = "" },
 		"IPv6":         func(s *StaticIP) { s.IP = "fe80::1" },
 		"IP でない":       func(s *StaticIP) { s.Mask = "255.255.255" },
-		"戻し方":          func(s *StaticIP) { s.Restore.Method = "BOOTP" },
+		"戻し方":          func(s *StaticIP) { s.Restore.Method = "" },
 		"戻す IP":        func(s *StaticIP) { s.Restore = Restore{Method: "manual", IP: "x", Mask: "255.0.0.0"} },
 		"印の名前":         func(s *StaticIP) { s.Token = "a b" },
 		"相対の置き場所":      func(s *StaticIP) { s.StateDir = "tmp" },
@@ -415,6 +441,12 @@ func TestPlan(t *testing.T) {
 	s := byID(Plan(ready))
 	if !s[StepSelfStatic].Done || !s[StepKey].Done || s[StepPeerStatic].Done || s[StepPeerStatic].Blocked != "" || s[StepPeerStatic].Via != "192.168.50.7" {
 		t.Errorf("相手を固定する手前: %+v", s)
+	}
+	mdr := ready
+	mdr.SelfMethod = netinfo.MethodManualDHCPRouter
+	mdr.Peer.Method, mdr.Peer.IP = netinfo.MethodManualDHCPRouter, "192.168.100.12"
+	if s := byID(Plan(mdr)); !s[StepSelfStatic].Done || !s[StepPeerStatic].Done {
+		t.Errorf("手動 (ルーターだけ DHCP) で帯の IP を固定と見ない: %+v", s)
 	}
 
 	o := ready
