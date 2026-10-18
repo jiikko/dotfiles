@@ -515,3 +515,12 @@ func TestLinkUnknownWithoutPort(t *testing.T) {
 		t.Errorf("Link = %v, want LinkUnknown", l)
 	}
 }
+
+// 確認の板に出す方式の名前 (内部の名前 manual-dhcp-router を出さない)。
+func TestMethodLabel(t *testing.T) {
+	for m, want := range map[string]string{MethodManual: "手動", MethodManualDHCPRouter: "手動 (ルーターだけ DHCP)", MethodDHCP: "DHCP", MethodBOOTP: "BOOTP", "": "不明"} {
+		if got := MethodLabel(m); got != want {
+			t.Errorf("MethodLabel(%q) = %q, want %q", m, got, want)
+		}
+	}
+}

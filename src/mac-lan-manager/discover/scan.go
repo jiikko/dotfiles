@@ -220,6 +220,11 @@ func (s *Scanner) onBrowse(svc string, b Browse) (browseAct, string) {
 			// 次にその I/F で Add されたら -G を引き直す
 			s.dropped[key+"\x00"+strconv.Itoa(b.If)] = true
 			if len(ifs) == 0 {
+				for k := range s.dropped { // 次の Add は全部引き直すので、I/F ごとの印は要らない (残すと後で余計な -G を引く)
+					if strings.HasPrefix(k, key+"\x00") {
+						delete(s.dropped, k)
+					}
+				}
 				delete(s.seen, key)
 				delete(s.hostOf, key)
 				s.readded[key] = true // 次の Add は引き直し

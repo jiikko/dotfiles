@@ -268,6 +268,15 @@ func TestRefusesLossyRewrite(t *testing.T) {
 	}
 }
 
+// 緩い読みが読む鍵 (ledgerKeys) は、書く鍵を全部含む (switch にだけ鍵を足すと、緩い読みが黙ってその欄を捨てる)。
+func TestLenientReadsEveryWrittenKey(t *testing.T) {
+	h := Host{Host: "a.local", User: "u", LAN: "192.168.100.9", Alias: "x", UpdatedAt: time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)}
+	_, hs, err := ParseLenient(Format([]Host{h}))
+	if err != nil || len(hs) != 1 || hs[0] != h {
+		t.Errorf("緩い読みが書いた欄を落とした: %+v %v", hs, err)
+	}
+}
+
 // 行末のコメントは一覧の表示で読み飛ばす (引用の中の # はコメントではない)。引用の後ろにコメント以外が残る行は読めない。
 func TestParseLenientTrailingComment(t *testing.T) {
 	_, hs, err := ParseLenient("version = 1 # 版\n[[host]]\nhost = \"a.local\"   # 有線\nalias = \"x # y\"#メモ\n")

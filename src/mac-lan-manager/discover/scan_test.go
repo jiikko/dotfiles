@@ -343,6 +343,48 @@ func TestResolveGathersForInterfaceWithoutIP(t *testing.T) {
 	}
 }
 
+// -L の途中 (ホストがまだ分からない) に片方の I/F で Rmv → Add が来たら、引き直しの印を立てる (resolve が -G を引き直す)。
+// 全部の I/F で Rmv されたら、I/F ごとの印は消す。
+func TestOnBrowseMarksReaddedDuringLookup(t *testing.T) {
+	s := &Scanner{seen: map[string]map[int]bool{}, readded: map[string]bool{}, hostOf: map[string]string{}, gathering: map[string]bool{},
+		regather: map[string]bool{}, dropped: map[string]bool{}, peers: map[string]*Peer{}}
+	key := "_ssh._tcp\x00mini"
+	s.seen[key] = map[int]bool{14: true, 27: true}
+	s.onBrowse("_ssh._tcp", Browse{Add: false, If: 27, Instance: "mini"})
+	if act, _ := s.onBrowse("_ssh._tcp", Browse{Add: true, If: 27, Instance: "mini"}); act != actNone || !s.readded[key] {
+		t.Errorf("-L の途中の片方の I/F の Rmv → Add で引き直しの印を立てない: act=%v readded=%v", act, s.readded[key])
+	}
+	s.onBrowse("_ssh._tcp", Browse{Add: false, If: 27, Instance: "mini"})
+	s.onBrowse("_ssh._tcp", Browse{Add: false, If: 14, Instance: "mini"})
+	if len(s.dropped) != 0 {
+		t.Errorf("全部の I/F で Rmv された後に I/F ごとの印が残った: %v", s.dropped)
+	}
+}
+
+// 引き直し (再起動の後の Add) の resolve で同じホストの -G が走っていたら、終わった後にもう 1 度引かせる
+// (走っている -G は IP が変わる前に引き始めたかもしれない)。
+func TestResolveRegathersWhenRefreshOverlapsGather(t *testing.T) {
+	f := &fakeStarter{out: map[string]string{
+		"dns-sd -L mini _ssh._tcp local": "21:28:48.953  mini._ssh._tcp.local. can be reached at m2macmini.local.:22 (interface 27)\n",
+	}}
+	s := Start(f.start, time.Now())
+	defer s.Close()
+	s.mu.Lock()
+	s.peers["m2macmini.local"] = &Peer{Host: "m2macmini.local", Addrs: map[int]string{27: "169.254.1.1"}, Instances: []string{"mini"}}
+	s.seen["_ssh._tcp\x00mini"] = map[int]bool{27: true}
+	s.readded["_ssh._tcp\x00mini"] = true
+	s.gathering["m2macmini.local"] = true // 別のサービスの -G が走っている
+	s.pending++
+	s.mu.Unlock()
+	s.wg.Add(1)
+	s.resolve("_ssh._tcp", "mini")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.regather["m2macmini.local"] {
+		t.Error("走っている -G と重なった引き直しを、終わった後に引かせない")
+	}
+}
+
 // 引き直しの印のあるインスタンスは、知っているホストでも -G を起こし直し、同じ I/F の古い IP を新しい IP で上書きする。
 func TestResolveRefreshesAddrsWhenReadded(t *testing.T) {
 	f := &fakeStarter{out: map[string]string{
