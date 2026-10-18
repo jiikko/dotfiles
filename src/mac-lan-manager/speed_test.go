@@ -227,9 +227,11 @@ func TestSpeedtestExactHostWinsAndKeyIsNormalized(t *testing.T) {
 		f.dests[0].IP != "192.168.50.9" {
 		t.Errorf("ホスト名の完全一致を優先しない: rc=%d 宛先 %+v stderr=%q", rc, f.dests, errb.String())
 	}
-	f.dests = nil
-	if rc := runSpeed([]string{"M2MacMini.local."}, &out, &errb, time.Now, nil, speedModel(nil), f.test); rc != 0 || len(f.dests) != 1 {
-		t.Errorf("台帳の鍵の形に揃えない: rc=%d 測った %d 回 stderr=%q", rc, len(f.dests), errb.String())
+	for _, name := range []string{"M2MacMini.local.", "M2MacMini"} { // 完全一致の経路と、.local を落とした名前の経路の両方
+		f.dests = nil
+		if rc := runSpeed([]string{name}, &out, &errb, time.Now, nil, speedModel(nil), f.test); rc != 0 || len(f.dests) != 1 {
+			t.Errorf("%s: 台帳の鍵の形に揃えない: rc=%d 測った %d 回 stderr=%q", name, rc, len(f.dests), errb.String())
+		}
 	}
 }
 
