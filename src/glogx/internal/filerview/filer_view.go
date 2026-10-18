@@ -51,7 +51,7 @@ func waitFilerChange(ch <-chan struct{}) tea.Cmd {
 // rearm は合図を受けた後の待ち直し。今のチャネルからの合図のときだけ待ち直す
 // (閉じる直前の合図が古い待ちを ok=true で返すと、新しいチャネルに待ちが 2 本張られて戻らない)。
 func (v *FilerView) Rearm(msg FilerChangedMsg) tea.Cmd {
-	if f := v.Live(); !msg.ok || f == nil || f.WatchingChan() != msg.ch {
+	if f := v.live(); !msg.ok || f == nil || f.WatchingChan() != msg.ch {
 		return nil
 	}
 	return waitFilerChange(msg.ch)
@@ -70,7 +70,7 @@ func (v *FilerView) Visible() bool { return v.shown }
 
 // place は開いている F の場所 (開いていなければ ok=false)。終了時の記憶 (filer_resume.go) が使う。
 func (v *FilerView) Place() (filer.Place, bool) {
-	if f := v.Live(); f != nil {
+	if f := v.live(); f != nil {
 		return f.Place(), true
 	}
 	return filer.Place{}, false
@@ -104,8 +104,31 @@ func (v *FilerView) Hide() {
 	}
 }
 
+// DrainNotices は見えている間に溜まった知らせを deliver へ渡す (閉じていれば何もしない)。押したキーが効かなかった理由は
+// NoticeRefused にする (lastWarning を汚さない)。
+func (v *FilerView) DrainNotices(deliver func(text string, kind app.NoticeKind) bool) {
+	f := v.live()
+	if f == nil {
+		return
+	}
+	for _, n := range f.TakeNotices() {
+		kind := app.NoticeRefused
+		if n.OK {
+			kind = app.NoticeOK
+		}
+		deliver(n.Text, kind)
+	}
+}
+
+// RestorePlace は起動時の復元で、開いた画面を記憶の場所へ戻す (閉じていれば何もしない)。
+func (v *FilerView) RestorePlace(p filer.Place) {
+	if f := v.live(); f != nil {
+		f.RestorePlace(p)
+	}
+}
+
 // live は見えている間の filer (閉じていれば nil)。「見えているなら f がある」をメソッドごとに確かめ直さず、ここ 1 本で読む。
-func (v *FilerView) Live() *filer.Model {
+func (v *FilerView) live() *filer.Model {
 	if !v.shown {
 		return nil
 	}
@@ -114,7 +137,7 @@ func (v *FilerView) Live() *filer.Model {
 
 // watchCmd は開いている間のライブ更新の待ち (開いた直後と、合図を受けるたびに張り直す)。
 func (v *FilerView) WatchCmd() tea.Cmd {
-	if f := v.Live(); f != nil {
+	if f := v.live(); f != nil {
 		return waitFilerChange(f.Changed())
 	}
 	return nil
@@ -127,41 +150,41 @@ func (v *FilerView) TakeOpenErr() string {
 }
 
 // ownsKeys は filer が入力モード中か (overlayOwnershipTable)。
-func (v *FilerView) OwnsKeys() bool { f := v.Live(); return f != nil && f.OwnsKeys() }
+func (v *FilerView) OwnsKeys() bool { f := v.live(); return f != nil && f.OwnsKeys() }
 
 // binds は key が filer の意味を持つか (持つキーは glogx の横断キー・C の update・U に取らない。filer.Model.Binds が正本)。
-func (v *FilerView) Binds(key string) bool { f := v.Live(); return f != nil && f.Binds(key) }
+func (v *FilerView) Binds(key string) bool { f := v.live(); return f != nil && f.Binds(key) }
 
 // paste は貼り付けを filer へ渡す (入力中だけ入る。そうでなければ filer が捨てる)。
 func (v *FilerView) Paste(text string) {
-	if f := v.Live(); f != nil {
+	if f := v.live(); f != nil {
 		f.Paste(text)
 	}
 }
 
 // caretPos は filer の入力欄のキャレット (filer の画面の座標)。
 func (v *FilerView) CaretPos() (x, y int, ok bool) {
-	if f := v.Live(); f != nil {
+	if f := v.live(); f != nil {
 		return f.CaretPos()
 	}
 	return 0, 0, false
 }
 
-func (v *FilerView) Animating() bool { f := v.Live(); return f != nil && f.Animating() }
+func (v *FilerView) Animating() bool { f := v.live(); return f != nil && f.Animating() }
 
 // busy は filer の裏の走査・git の取得が走っているか (その間は spinnerActive が tick を回し、結果を取り込む)。
-func (v *FilerView) Busy() bool { f := v.Live(); return f != nil && f.Busy() }
+func (v *FilerView) Busy() bool { f := v.live(); return f != nil && f.Busy() }
 
 // resize は画面の大きさを伝える。描くときではなく大きさが変わったときに伝えないと、カメラの目標が変わっても
 // tick が回らず、次のキーまで古い位置のまま残る。
 func (v *FilerView) Resize(width, page int) {
-	if f := v.Live(); f != nil {
+	if f := v.live(); f != nil {
 		f.Resize(width, page)
 	}
 }
 
 func (v *FilerView) Advance(now time.Time) {
-	if f := v.Live(); f != nil {
+	if f := v.live(); f != nil {
 		f.Advance(now)
 	}
 }
@@ -244,7 +267,7 @@ func (v *FilerView) ExecReturned(err error) (warning string, handled bool) {
 		return "", false
 	}
 	v.execPending = false
-	if f := v.Live(); v.Visible() && f != nil { // 前景で起こしている間は閉じられないので、ここで見えていないことは無い
+	if f := v.live(); v.Visible() && f != nil { // 前景で起こしている間は閉じられないので、ここで見えていないことは無い
 		return f.ExecDone(err), true
 	}
 	return "", true

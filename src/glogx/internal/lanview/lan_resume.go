@@ -35,7 +35,7 @@ func LoadLanScreen(now time.Time) (lanmgr.Place, bool) { //nolint:unparam // mai
 
 // RememberScreen は終了時の保存。L を出していれば覚え、出していなければ消す (消さないと、一覧を見て閉じた次の起動で前の L が蘇る)。
 func (v *LanView) RememberScreen(now time.Time) {
-	if lm := v.Live(); lm != nil {
+	if lm := v.live(); lm != nil {
 		_ = saveLanScreen(lanScreen{Place: lm.Place(), SavedAt: now}) // 保存できなくても終了は妨げない
 		return
 	}

@@ -315,7 +315,7 @@ func TestLanHintFollowsLayers(t *testing.T) {
 		t.Errorf("設定の画面の最下行 = %q", h)
 	}
 	// 足りない画面では q / esc が L ごと閉じ、L も glogx に渡る: 層が開いていても「L/q: 閉じる」
-	lm := m.lanV.Live()
+	lm := m.lanV.Fixture().Model()
 	lm.Resize(20, 6)
 	lm.View()
 	if h := term.StripANSI(m.lanV.Hint(80)); !strings.Contains(h, "L/q: 閉じる") {

@@ -59,7 +59,7 @@ func (m *browseModel) openFullScreen(id FullScreenID) tea.Cmd {
 		if e := m.lanV.TakeOpenErr(); e != "" {
 			m.showWarning(e)
 		}
-		m.drainLanNotices() // 開いたときの読み込みの失敗 (台帳が読めない等)
+		m.lanV.DrainNotices(m.deliverNotice) // 開いたときの読み込みの失敗 (台帳が読めない等)
 		return tea.Batch(m.lanV.WatchCmd(), m.maybeTick())
 	case FullScreenNone, FullScreenCount:
 	}

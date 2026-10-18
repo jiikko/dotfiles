@@ -76,8 +76,31 @@ type LanView struct {
 
 func (v *LanView) Visible() bool { return v.shown }
 
+// DrainNotices は見えている間に溜まった知らせを deliver へ渡す (閉じていれば何もしない)。押したキーが効かなかった理由は
+// NoticeRefused にする (lastWarning を汚さない)。
+func (v *LanView) DrainNotices(deliver func(text string, kind app.NoticeKind) bool) {
+	lm := v.live()
+	if lm == nil {
+		return
+	}
+	for _, n := range lm.TakeNotices() {
+		kind := app.NoticeRefused
+		if n.OK {
+			kind = app.NoticeOK
+		}
+		deliver(n.Text, kind)
+	}
+}
+
+// RestorePlace は起動時の復元で、開いた画面を記憶の場所へ戻す (閉じていれば何もしない)。
+func (v *LanView) RestorePlace(p lanmgr.Place) {
+	if lm := v.live(); lm != nil {
+		lm.RestorePlace(p)
+	}
+}
+
 // live は見えている間の画面 (閉じていれば nil)。
-func (v *LanView) Live() *lanmgr.Model {
+func (v *LanView) live() *lanmgr.Model {
 	if !v.shown {
 		return nil
 	}
@@ -122,7 +145,7 @@ func (v *LanView) Stop() {
 // r (読み直し) は板の中で走査を起こし直すので、開いたときに張った待ちは古いチャネルを見ている。
 // 古いチャネルは走査の Close で閉じるので、古い待ちは ok=false で抜ける。
 func (v *LanView) WatchCmd() tea.Cmd {
-	m := v.Live()
+	m := v.live()
 	if m == nil {
 		return nil
 	}
@@ -141,7 +164,7 @@ func (v *LanView) WatchCmd() tea.Cmd {
 // 4 か所で違い、部品にすると各画面の前提を引数で表すだけになる (tuikit は bubbletea を import できないので tea.Cmd も返せない)。
 // 4 か所のどれかで穴を直したら、残りの 3 か所も同じ穴を grep で探す。
 func (v *LanView) Rearm(msg LanChangedMsg) tea.Cmd {
-	if !msg.ok || v.Live() == nil || msg.ch != v.watching {
+	if !msg.ok || v.live() == nil || msg.ch != v.watching {
 		return nil
 	}
 	return waitLanChange(msg.ch)
@@ -154,29 +177,29 @@ func (v *LanView) TakeOpenErr() string {
 }
 
 // ownsKeys は lanmgr が全部のキーを持つ層 (入力欄・確認・板・設定) を開いているか (overlayOwnershipTable)。
-func (v *LanView) OwnsKeys() bool { m := v.Live(); return m != nil && m.OwnsKeys() }
+func (v *LanView) OwnsKeys() bool { m := v.live(); return m != nil && m.OwnsKeys() }
 
 // binds は key が lanmgr の意味を持つか (持つキーは glogx の横断キー・C の update・U に取らない。lanmgr.Model.Binds が正本)。
-func (v *LanView) Binds(key string) bool { m := v.Live(); return m != nil && m.Binds(key) }
+func (v *LanView) Binds(key string) bool { m := v.live(); return m != nil && m.Binds(key) }
 
 func (v *LanView) Paste(text string) {
-	if m := v.Live(); m != nil {
+	if m := v.live(); m != nil {
 		m.Paste(text)
 	}
 }
 
 func (v *LanView) CaretPos() (x, y int, ok bool) {
-	if m := v.Live(); m != nil {
+	if m := v.live(); m != nil {
 		return m.CaretPos()
 	}
 	return 0, 0, false
 }
 
 // busy は Bonjour の走査が続いているか (その間は spinnerActive が tick を回し、途中の結果を取り込む)。
-func (v *LanView) Busy() bool { m := v.Live(); return m != nil && m.Busy() }
+func (v *LanView) Busy() bool { m := v.live(); return m != nil && m.Busy() }
 
 func (v *LanView) Advance(now time.Time) {
-	if m := v.Live(); m != nil {
+	if m := v.live(); m != nil {
 		m.Advance(now)
 	}
 }
@@ -223,7 +246,7 @@ func (v *LanView) Hint(width int) string {
 	// 層 (初期設定・設定・確認の板・入力欄) が開いている間は L も ? も lanmgr が取り、q / esc は 1 段戻るだけ (Binds)。そのときに
 	// 「L/q: 閉じる」を出すと嘘になった (整合の監査)
 	// ただし足りない画面では q / esc が L ごと閉じ、L も glogx に渡る (Binds("L") が偽) ので「L/q: 閉じる」が正しい
-	if lm := v.Live(); lm != nil && lm.OwnsKeys() && lm.Binds("L") {
+	if lm := v.live(); lm != nil && lm.OwnsKeys() && lm.Binds("L") {
 		return term.FitHintItems(width, []term.HintItem{{Text: "esc: 戻る", Prio: 1}})
 	}
 	return term.FitHintItems(width, []term.HintItem{
@@ -261,7 +284,7 @@ func (v *LanView) ExecReturned(err error) (warning string, handled bool) {
 		return "", false
 	}
 	v.execPending = false
-	if lm := v.Live(); lm != nil {
+	if lm := v.live(); lm != nil {
 		return lm.ExecDone(err), true
 	}
 	return "", true

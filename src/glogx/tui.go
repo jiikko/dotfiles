@@ -804,7 +804,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.filerV.Advance(app.TimeNow())
-		m.drainFilerNotices()
+		m.filerV.DrainNotices(m.deliverNotice)
 		return m, tea.Batch(m.filerV.Rearm(msg), m.maybeTick())
 	case lanview.LanChangedMsg:
 		// mac-lan-manager の走査の合図。取り込んで、今のチャネルからの合図なら次の合図を待ち直す
@@ -812,7 +812,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.lanV.Advance(app.TimeNow())
-		m.drainLanNotices()
+		m.lanV.DrainNotices(m.deliverNotice)
 		return m, tea.Batch(m.lanV.Rearm(msg), m.maybeTick())
 	case tickMsg:
 		m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
@@ -828,9 +828,9 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusOv.SettleClose() // status viewer も同じ理由で spinnerActive の判定より前に畳む
 		// treefiler の動きも spinnerActive の判定より前に進める (後ろだと、動き終わる最後の 1 拍が届かず途中の姿で止まる)
 		m.filerV.Advance(app.TimeNow())
-		m.drainFilerNotices()
+		m.filerV.DrainNotices(m.deliverNotice)
 		m.lanV.Advance(app.TimeNow()) // 走査の途中の結果を取り込む (spinnerActive の判定より前: 走査が終わる最後の 1 拍を取りこぼさない)
-		m.drainLanNotices()
+		m.lanV.DrainNotices(m.deliverNotice)
 		if !m.spinnerActive() {
 			return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
 		}
@@ -4126,22 +4126,6 @@ func RunBrowse(m *browseModel) (*browseModel, error) {
 	return m, nil
 }
 
-// drainFilerNotices は filer に溜まった知らせを toast へ出す。🚨 キーの後だけでなく Advance の後にも呼ぶ: explode の完了や `o` の失敗は
-// Advance の中で積まれるので、キーの後だけだと次のキーまで出ない。
-func (m *browseModel) drainFilerNotices() {
-	f := m.filerV.Live() // 閉じた filer の知らせは出さない
-	if f == nil {
-		return
-	}
-	for _, n := range f.TakeNotices() {
-		kind := app.NoticeRefused // 押したキーが効かなかった理由 (lastWarning を汚さない)
-		if n.OK {
-			kind = app.NoticeOK
-		}
-		m.deliverNotice(n.Text, kind)
-	}
-}
-
 // routeKeyToFiler は filer 表示中のキー処理 (全画面なのでキーは全部 filer が飲む)。
 func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 	// U は他の viewer と同じく利用枠を重ねる (spec §0.3: R D U X は filer の中でも効かせる)
@@ -4149,7 +4133,7 @@ func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 		return m, m.toggleUsage()
 	}
 	act := m.filerV.HandleKey(key)
-	m.drainFilerNotices()
+	m.filerV.DrainNotices(m.deliverNotice)
 	switch act {
 	case filerview.FilerQuit:
 		// quit (記憶の保存) を hide より先に: hide の後だと「F を出していない」と判定されて記憶が消える
@@ -4175,34 +4159,19 @@ func (m *browseModel) restoreFilerScreen() tea.Cmd {
 		return nil
 	}
 	cmd := m.openFullScreen(FullScreenFiler)
-	if f := m.filerV.Live(); f != nil {
-		f.RestorePlace(p)
-	}
+	m.filerV.RestorePlace(p)
 	return cmd
 }
 
-// drainLanNotices は lanmgr に溜まった知らせを toast へ出す (キーの後と Advance の後。走査の結果で積まれる知らせもある)。
-func (m *browseModel) drainLanNotices() {
-	lm := m.lanV.Live()
-	if lm == nil {
-		return
-	}
-	for _, n := range lm.TakeNotices() {
-		kind := app.NoticeRefused // 押したキーが効かなかった理由 (lastWarning を汚さない)
-		if n.OK {
-			kind = app.NoticeOK
-		}
-		m.deliverNotice(n.Text, kind)
-	}
-}
-
 // routeKeyToLan は mac-lan-manager 表示中のキー処理 (全画面なのでキーは全部 lanmgr が飲む)。
+// routeKeyToFiler と同じ形だが 1 本に寄せない: 返る合図の種類 (filerview.FilerAction / lanview.LanAction) と、抜けたときの後処理
+// (filer は終了で記憶を保存、lan は監視を張り直す) が違い、寄せても違いを引数で渡すだけになる。
 func (m *browseModel) routeKeyToLan(key string) (tea.Model, tea.Cmd) {
 	if key == "U" && !m.lanV.Binds(key) {
 		return m, m.toggleUsage() // 他の全画面と同じく利用枠を重ねる
 	}
 	act := m.lanV.HandleKey(key)
-	m.drainLanNotices()
+	m.lanV.DrainNotices(m.deliverNotice)
 	switch act {
 	case lanview.LanCross:
 		return m, m.openFullScreen(crossScreen(m.lanV.TakeWantCross()))
@@ -4222,8 +4191,6 @@ func (m *browseModel) restoreLanScreen() tea.Cmd {
 		return nil
 	}
 	cmd := m.openFullScreen(FullScreenLan)
-	if lm := m.lanV.Live(); lm != nil {
-		lm.RestorePlace(p)
-	}
+	m.lanV.RestorePlace(p)
 	return cmd
 }
