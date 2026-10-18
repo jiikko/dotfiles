@@ -27,7 +27,7 @@ var gitDiffCommand = func(ctx context.Context, top, rel string, unborn bool) ([]
 			return nil, err
 		}
 	}
-	// GitRepoCommand: 作業ツリーとの diff は clean filter を通すので、repo のローカルの設定の filter を止める (issue 732)
+	// GitRepoCommand: 作業ツリーとの diff は clean filter を通すので、repo のローカルの設定の filter を止める
 	cmd, err := subproc.GitRepoCommand(ctx, top, gitDiffArgs(rel, base)...)
 	if err != nil {
 		return nil, err
@@ -70,7 +70,7 @@ var gitHeadExists = func(ctx context.Context, top string) (bool, error) {
 // gitDiffArgs は diff の引数。
 // 🚨 --literal-pathspecs: `--` の後ろも pathspec なので、名前の * ? [ が glob になり、他のファイルの diff が混ざる
 // (`*` という名前で repo 全体が出た。レビューで再現 2026-10-09)。--no-ext-diff: diff.external (difftastic 等) の出力は
-// unified でなく、tuikit/highlight.Diff が読めない。--ignore-submodules=dirty: submodule の中の filter を走らせない (fetchRepo の status と同じ。issue 732)
+// unified でなく、tuikit/highlight.Diff が読めない。--ignore-submodules=dirty: submodule の中の filter を走らせない (fetchRepo の status と同じ)
 // base は比べる先 (HEAD か、HEAD が無い repo では空の tree。どちらも作業ツリーと比べるので、未 stage の変更も出る)。
 func gitDiffArgs(rel, base string) []string {
 	return []string{"--no-optional-locks", "--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", "--color=never", "--ignore-submodules=dirty", base, "--", rel}
@@ -132,7 +132,7 @@ func fetchDiff(parent context.Context, path string) []string {
 	defer cancel()
 	out, err := gitDiffCommand(ctx, top, rel, false)
 	// HEAD がまだ無い repo (最初の commit の前) だけ、空の tree と作業ツリーを比べる。🚨 失敗を全部「HEAD が無い」と読まない: HEAD が在るのに
-	// timeout で失敗したときに別の差を出すと、未 stage の変更が隠れる (issue 731)。index との差 (--cached) にも落とさない: HEAD が無い repo でも
+	// timeout で失敗したときに別の差を出すと、未 stage の変更が隠れる。index との差 (--cached) にも落とさない: HEAD が無い repo でも
 	// 未 stage の変更を隠す。空の tree との差は作業ツリーの中身を全部出すので、ref が壊れて「HEAD が無い」と見えた repo でも何も隠さない
 	if err != nil {
 		if exists, herr := gitHeadExists(ctx, top); herr == nil && !exists {

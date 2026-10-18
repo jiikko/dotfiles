@@ -71,7 +71,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case filer.Exec:
 			if r, ok := a.f.TakeExec(); ok && len(r.Argv) > 0 {
 				// 前景で端末を明け渡す。ctx は持たない (ユーザーのシェルが終わるまで待つのが仕様)。パイプは張らない。
-				// 戻った後に前面が外れていたら取り戻す (foreground.Exec。シェルによらず treefiler が端末を読めるように。issue 707)
+				// 戻った後に前面が外れていたら取り戻す (foreground.Exec。シェルによらず treefiler が端末を読めるように)
 				cmd := subproc.CommandContext(context.Background(), r.Argv[0], r.Argv[1:]...)
 				cmd.Dir = r.Dir
 				cmd.Env = r.Env

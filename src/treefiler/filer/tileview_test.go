@@ -161,7 +161,7 @@ func fakeDiff(t *testing.T, noHead bool, out string) *[]bool {
 	return &calls
 }
 
-// HEAD が在るのに HEAD との diff が失敗したら、index との差に落とさず失敗を出す (未 stage の変更を隠さない。issue 731)。
+// HEAD が在るのに HEAD との diff が失敗したら、index との差に落とさず失敗を出す (未 stage の変更を隠さない)。
 func TestDiffHeadFailureIsNotTakenAsUnborn(t *testing.T) {
 	orig, origHead := gitDiffCommand, gitHeadExists
 	t.Cleanup(func() { gitDiffCommand, gitHeadExists = orig, origHead })
@@ -189,7 +189,7 @@ func TestDiffHeadFailureIsNotTakenAsUnborn(t *testing.T) {
 	}
 }
 
-// HEAD が無い repo (最初の commit の前) でも、作業ツリーの未 stage の変更が出る (空の tree との差。index との差では出なかった。issue 731)。
+// HEAD が無い repo (最初の commit の前) でも、作業ツリーの未 stage の変更が出る (空の tree との差。index との差では出ない)。
 func TestUnbornDiffShowsUnstagedChanges(t *testing.T) {
 	needGit(t)
 	dir := t.TempDir()
@@ -356,7 +356,7 @@ func TestFetchDiffStopsAtByteCap(t *testing.T) {
 	}
 }
 
-// d で取り直した diff が前と同じ行の数でも、新しい中身を出す (描かずに d d と押したとき。2 周目のレビューの指摘)。
+// d で取り直した diff が前と同じ行の数でも、新しい中身を出す (描かずに d d と押したとき)。
 func TestDiffToggleShowsRefetchedContent(t *testing.T) {
 	var mu sync.Mutex
 	n := 0
@@ -417,7 +417,7 @@ func TestScrollbarIsInsideBorder(t *testing.T) {
 	}
 }
 
-// d を連打しても git を重ねない: 本体へ戻すと取得中の diff の git を止める (issue 693)。
+// d を連打しても git を重ねない: 本体へ戻すと取得中の diff の git を止める。
 func TestDiffToggleCancelsInflightFetch(t *testing.T) {
 	started := make(chan struct{}, 4)
 	canceled := make(chan struct{}, 4)

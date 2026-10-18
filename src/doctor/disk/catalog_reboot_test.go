@@ -41,7 +41,7 @@ func TestRebootNoteNeedsBothTemplateAndEffectiveTmpDir(t *testing.T) {
 
 // 既定カタログに対する期待値を **ID で名指しする** canary。
 // 🚨 判定式をコピーして期待値を作らない (本走査と同じ式で期待値を作ると、受理集合を
-// 変える変異が両側で同じに動いて red にならない。敵対レビュー 2026-09-04 の指摘)。
+// 変える変異が両側で同じに動いて red にならない)。
 func TestCatalogRebootNotePerEntry(t *testing.T) {
 	want := map[string]string{
 		"chrome-tmp":   RebootClearsNote,

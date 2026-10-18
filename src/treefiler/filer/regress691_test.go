@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// issue 691 の回帰テスト (2026-10-09 の監査で再現した不具合)。
+// 2026-10-09 に再現した不具合の回帰テスト。
 
 // 続きのバイト (0x80〜0xBF) だけが改行なしに続く不正な UTF-8 でも、読み込みが進む (固まらない)。
 func TestFeedInvalidContinuationDoesNotHang(t *testing.T) {
@@ -297,7 +297,7 @@ func TestSearchSkipsVanishedMatch(t *testing.T) {
 	}
 }
 
-// 大きいフォルダは mtime が同じなら毎周は読まない。mtime が変われば (項目の増減) すぐ読む。小さいフォルダは毎周読む (issue 693)。
+// 大きいフォルダは mtime が同じなら毎周は読まない。mtime が変われば (項目の増減) すぐ読む。小さいフォルダは毎周読む。
 func TestBigDirPollThrottle(t *testing.T) {
 	t0 := time.Unix(1000, 0)
 	small := dirMeta{mtime: t0, entries: 10}
@@ -322,7 +322,7 @@ func TestBigDirPollThrottle(t *testing.T) {
 	}
 }
 
-// 線の格子は画面に出る行の分だけ作る (5 万件のフォルダで 1 フレームの描画が 25ms → 13.8ms。issue 693)。
+// 線の格子は画面に出る行の分だけ作る (5 万件のフォルダで 1 フレームの描画が 25ms → 13.8ms)。
 func TestLinesClippedToViewport(t *testing.T) {
 	isolateConfig(t)
 	dir := t.TempDir()

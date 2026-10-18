@@ -1,5 +1,5 @@
 #!/bin/bash
-# issue 362 の A-B 計測ハーネス (**手動実行**。make test からは走らない)。
+# 見捨てた goroutine の副作用を比べる A-B 計測ハーネス (**手動実行**。make test からは走らない)。
 #
 # 何を測るか: 「--io-timeout で見捨てた goroutine が、失敗を報告した後に副作用を置いていくか」を
 # 修正前後の**実バイナリ**で比べる。in-process の go test は goroutine が必ず完走しプロセスも
@@ -9,7 +9,7 @@
 #   ./ab_abandoned.sh <修正前の revision> [修正後の revision]   # 既定の修正後は HEAD
 #   N=300 ./ab_abandoned.sh a75ffe3d 5804776d
 #
-# 🚨 **落とし穴 3 つ** (どれも実際に踏んだ。issue 362 の「実装後の A-B」節が正本):
+# 🚨 **落とし穴 3 つ** (どれも実際に踏んだ):
 #  1. `--io-timeout 1ms` は使えないし、使っても何も測れない。製品の下限は 100ms で CLI が弾く。
 #     両腕へ同じ 1 行を当てて通しても、**タイムアウトが早すぎて goroutine が link() へ到達しない**
 #     ので両腕とも漏れ 0 になる。下の sweep が有効な窓を毎回探すのはこのため

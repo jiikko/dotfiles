@@ -36,13 +36,13 @@ func run() int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	// HOME が解決できなければ**走査せず即エラー**にする (ユーザー判断 2026-09-03 / issue 191)。
+	// HOME が解決できなければ**走査せず即エラー**にする (ユーザー判断 2026-09-03)。
 	//
 	// 🚨 これは意図的に diskdoctor と非対称。`svc.DefaultDirs` の 3 つのうち HOME が要るのは
 	// `$HOME/Library/LaunchAgents` だけで、`/Library/LaunchAgents` と `/Library/LaunchDaemons` は
 	// 絶対パスなので走査を続けることは**できる**。それでも中止するのは、HOME も引けない環境で
 	// 出した部分的な診断を「その環境の全体像」と読まれる方が危ないため。
-	// (diskdoctor 側はエントリ単位で弾く形にしてある = issue 175。あちらはカタログの大半が
+	// (diskdoctor 側はエントリ単位で弾く形にしてある。あちらはカタログの大半が
 	// HOME 非依存なので、残る診断の情報量が違う)
 	//
 	// 再評価の条件: HOME 非依存の 2 ディレクトリだけでも診断を残したくなったとき。
@@ -58,10 +58,10 @@ func run() int {
 }
 
 // emit は出力して終了コードを返す。**出力の分岐の外**で終了コードを決めるのが要点:
-// 分岐の中で return / os.Exit すると、片方の経路だけ判定を飛ばす形 (issue 177 (b) の -json) が
+// 分岐の中で return / os.Exit すると、片方の経路だけ判定を飛ばす形 (-json など) が
 // 再び書けてしまう。構造でそれを禁じる。
 func emit(rep svc.Report, jsonOut bool, stdout, stderr io.Writer) int {
-	// 🚨 終了コードは**人が見た内容**から決める (diskdoctor 側の emit と同じ理由。issue 228)。
+	// 🚨 終了コードは**人が見た内容**から決める (diskdoctor 側の emit と同じ理由)。
 	// 無害化は名前に制御文字を含む Finding を落とし、その件数を DirErrs に残す。svcExitCode は
 	// DirErrs を見て「診断できず」へ倒すので、落としたことが終了コードにも出る。
 	// 🚨 -json は生の Report (encoder が escape する。機械の読み手から何も欠けない)。

@@ -485,7 +485,7 @@ func TestDeleteFailsClosedWhenHistoryUnwritable(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.opt.HistoryDir = filepath.Join(blocker, "history") // ファイルの下にはディレクトリを作れない
-	// 記録の置き場も検査点を通るようになった (issue 234 (c))。一時領域配下なので登録してよい
+	// 記録の置き場も検査点を通る。一時領域配下なので登録してよい
 	sandboxAllow(t, f.opt.HistoryDir)
 	if _, err := Delete(context.Background(), []Result{f.scan(t)}, f.opt); err == nil {
 		t.Fatal("記録を残せないのに削除を続けた")
@@ -510,7 +510,7 @@ func TestDeleteDryRunTouchesNothing(t *testing.T) {
 	}
 }
 
-// ---- 敵対的レビュー (2026-09-03) が開けた穴を塞ぐテスト ----
+// ---- 追加の穴を塞ぐテスト ----
 
 // 🚨 細工した Result: ID だけ本物で Items のパスがそのエントリのものでない。
 // Reused / FromSnapshot の 3 フラグを立てなければ素通りしていた (任意パスの削除が成立した)。
@@ -980,7 +980,7 @@ func TestCatalogPathEntriesHavePaths(t *testing.T) {
 	}
 }
 
-// ---- 2 周目の敵対的レビューが開けた穴を塞ぐテスト ----
+// ---- 追加の穴 (中断・記録失敗) を塞ぐテスト ----
 
 // 記録が**途中で**書けなくなったら、残りのエントリを触らずに止める
 // (fail-closed は最初の 1 回だけでなく途中でも成り立たせる)。
@@ -1176,7 +1176,7 @@ func TestEntryOutcomeCommandLines(t *testing.T) {
 	}
 }
 
-// 記録が途中で書けなくなって止めた run を `done` (= 最後まで行った) と記録しない (issue 236 の P3-1)。
+// 記録が途中で書けなくなって止めた run を `done` (= 最後まで行った) と記録しない。
 //
 // 🚨 `ctx.Err()` だけで phase を決めていたので、**書込失敗が一時的なら** (ENOSPC → 削除で
 // 空きが戻る、はディスク掃除ツールでは現実的) 最後の write が成功し、記録は「最後まで行った」と
@@ -1185,7 +1185,7 @@ func TestDeleteRecordsAbortedWhenHistoryFailsMidRun(t *testing.T) {
 	f := newDeleteFixture(t, rmEntry, 64)
 	t.Cleanup(func() { _ = os.Chmod(f.opt.HistoryDir, 0o700) })
 
-	// 🚨 **書込失敗は一時的**にする (それが issue 236 の P3-1 の条件)。恒久的に書けないと
+	// 🚨 **書込失敗は一時的**にする (それが条件)。恒久的に書けないと
 	// 最後の write も失敗して記録が executing のまま残り、phase の誤りを観測できない。
 	// h.at() は opt.Now を通るので、Now の呼び出し回数で窓を作る。実測した順序:
 	//   #1 StartedAt / #2 write(planned) / #3〜#4 走査と write(executing) / #5 FinishedAt / #6 最終 write
@@ -1222,8 +1222,8 @@ func TestDeleteRecordsAbortedWhenHistoryFailsMidRun(t *testing.T) {
 	}
 }
 
-// 記録の置き場は**経路全体**の symlink を見る (issue 236 の P3-2)。
-// 以前は os.Lstat(dir) で最終要素しか見ておらず、ゴミ箱側 (noSymlinkInPath) と非対称だった。
+// 記録の置き場は**経路全体**の symlink を見る。
+// os.Lstat(dir) で最終要素しか見ないと、ゴミ箱側 (noSymlinkInPath) と非対称になる。
 func TestHistoryDirRejectsSymlinkInPath(t *testing.T) {
 	base := sandboxTempDir(t, "hist-symlink")
 	real := filepath.Join(base, "real")
@@ -1240,7 +1240,7 @@ func TestHistoryDirRejectsSymlinkInPath(t *testing.T) {
 	}
 }
 
-// 対象が全部消えた後は、cli の非 ref 版でもコマンドを実行しない (issue 231)。
+// 対象が全部消えた後は、cli の非 ref 版でもコマンドを実行しない。
 //
 // 🚨 assert は **fake が呼ばれた回数**で行う。結末語 (Skipped) は修正前も同じなので、
 // 語だけを見ると修正の有無で結果が変わらず、何も守らないテストになる。
@@ -1264,7 +1264,7 @@ func TestDeleteCLISkipsCommandWhenNothingToTouch(t *testing.T) {
 }
 
 // ディレクトリ単位で一部だけ選んで消したとき、解放量と結末は**選んだ対象だけ**で数える
-// (issue 232)。残した兄弟がエントリ全体の再走査に載るせいで incomplete になり、
+// 残した兄弟がエントリ全体の再走査に載るせいで incomplete になり、
 // Freed = BeforeSize - AfterSize が別物になっていた。
 func TestDeletePartialSelectionCountsOnlySelected(t *testing.T) {
 	// 🚨 兄弟が選んだ側より**大きい場合と小さい場合の両方**を通す。片方だけだと
@@ -1328,12 +1328,12 @@ func TestDeletePartialSelectionCountsOnlySelected(t *testing.T) {
 	}
 }
 
-// 削除後の再走査に対象が**残っていたら** incomplete にする (issue 232)。
+// 削除後の再走査に対象が**残っていたら** incomplete にする。
 //
 // 🚨 このテストが要るのは、232 が「エントリ全体が残っているか」という粗い判定を外して
 // 「触った対象が残っているか」に絞ったから。粗い判定は rm / trash の取り残しも巻き添えで
 // 検出していたので、絞り込みが壊れても cli 経路のテストしか落ちない状態になっていた
-// (敵対レビュー 2026-09-04 が変異で実測: cli 以外で残存を記録しない変異が緑のまま通った)。
+// (変異で実測 2026-09-04: cli 以外で残存を記録しない変異が緑のまま通った)。
 func TestDeleteRmResidueIsIncomplete(t *testing.T) {
 	env := testEnv(t)
 	sandboxAllow(t, env.Home)
@@ -1382,10 +1382,10 @@ func TestDeleteRmResidueIsIncomplete(t *testing.T) {
 
 // 対象が全部「いまは削除の候補ではない」(実体は在る) になったときも、cli のコマンドを実行しない。
 //
-// 🚨 issue 231 のゲートは planned == 0 で発火し、結末語は failed の有無で 2 通りに分かれる。
+// 🚨 ゲートは planned == 0 で発火し、結末語は failed の有無で 2 通りに分かれる。
 // 危険なのは**こちら (failed > 0)** で、実体が残っているのに `brew cleanup` /
 // `go clean -modcache` を走らせる形になる。既存の Skipped 側のテストはこの半分を守らない
-// (敵対レビュー 2026-09-04 が変異で実測)。
+// (変異で実測 2026-09-04)。
 func TestDeleteCLISkipsCommandWhenTargetsAreNoLongerCandidates(t *testing.T) {
 	f := newDeleteFixture(t, cliEntry, 64)
 	f.run.resp = map[string]cmdResp{"faketool purge": {rc: 0}}
@@ -1410,7 +1410,7 @@ func TestDeleteCLISkipsCommandWhenTargetsAreNoLongerCandidates(t *testing.T) {
 	}
 }
 
-// 下見 (DryRun) の走査中に中断されたら、その事実が結末に出る (issue 246)。
+// 下見 (DryRun) の走査中に中断されたら、その事実が結末に出る。
 //
 // 🚨 ctx を**最初から**閉じたテストでは planDelete に届かない (Delete の DryRun ループが
 // 手前で打ち切るため)。実際の中断は「走査している最中に Ctrl-C」なので、guard の呼び出しを
@@ -1418,9 +1418,9 @@ func TestDeleteCLISkipsCommandWhenTargetsAreNoLongerCandidates(t *testing.T) {
 // 分岐を消す変異が green のまま通った (ループ側の打ち切りが影になっていた)。
 //
 // 中断で真になるのは fresh.Partial の側で、そのとき cur.Status は ok のまま Reason も空。
-// 以前は「削除の前に走査し直せませんでした: 」という理由がコロンの後で切れた文言になり、
+// 「削除の前に走査し直せませんでした: 」という理由がコロンの後で切れた文言になると、
 // しかも Outcome が Failed なので planHasWork が false になり、確認画面の見出しが
-// 「消せるものがありません」= 中断した事実がどこにも出ない形だった。
+// 「消せるものがありません」= 中断した事実がどこにも出ない形になる。
 func TestDryRunAbortDuringScanSaysAborted(t *testing.T) {
 	env := testEnv(t)
 	sandboxAllow(t, env.Home)
@@ -1461,10 +1461,10 @@ func TestDryRunAbortDuringScanSaysAborted(t *testing.T) {
 	}
 }
 
-// 中断後は残りのエントリを走査し直さない (issue 246)。
+// 中断後は残りのエントリを走査し直さない。
 //
 // 🚨 assert は **走査が走った証拠 (guard の pgrep 呼び出し)** で行う。結末語だけを見ると、
-// 「1 件ずつ Scan が個別に落ちる」旧実装でも同じ Skipped になるので何も守らない。
+// 「1 件ずつ Scan が個別に落ちる」実装でも同じ Skipped になるので何も守らない。
 func TestDryRunAbortStopsScanningRest(t *testing.T) {
 	env := testEnv(t)
 	sandboxAllow(t, env.Home)
@@ -1500,8 +1500,8 @@ func TestDryRunAbortStopsScanningRest(t *testing.T) {
 	}
 }
 
-// ゴミ箱の**宛先**も検査点を通る (issue 234 (b))。以前は src だけを見ていたので、
-// 登録済みの src から未登録のディレクトリへの移動が err == nil で成功し、違反記録も 0 件だった。
+// ゴミ箱の**宛先**も検査点を通る。src だけを見ると、
+// 登録済みの src から未登録のディレクトリへの移動が err == nil で成功し、違反記録も 0 件になる。
 // TrashDir はテストが自由に渡せるので、1 行間違えると実データの場所へファイルが移る。
 func TestTrashDestGoesThroughHook(t *testing.T) {
 	f := newDeleteFixture(t, Entry{ID: "testcache", Label: "テストキャッシュ", Tier: 1,
@@ -1528,7 +1528,7 @@ func TestTrashDestGoesThroughHook(t *testing.T) {
 	}
 }
 
-// 記録の置き場も**作る前に**検査点を通る (issue 234 (c))。AST ゲートは「消す・動かす」だけを
+// 記録の置き場も**作る前に**検査点を通る。AST ゲートは「消す・動かす」だけを
 // 見る設計なので、ここが無いと実ディレクトリと 0 バイトの JSON を作れてしまう。
 func TestHistoryCreateGoesThroughHook(t *testing.T) {
 	f := newDeleteFixture(t, rmEntry, 64)
@@ -1548,7 +1548,7 @@ func TestHistoryCreateGoesThroughHook(t *testing.T) {
 	}
 }
 
-// 差し替わり・識別不能の文言は doctor の操作 (再スキャン) を案内する (本体は safefs。文言は trashMove が付け直す。issue 722)。
+// 差し替わり・識別不能の文言は doctor の操作 (再スキャン) を案内する (本体は safefs。文言は trashMove が付け直す)。
 func TestTrashMoveKeepsDoctorWording(t *testing.T) {
 	dir := t.TempDir()
 	sandboxAllow(t, dir)

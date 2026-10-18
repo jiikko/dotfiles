@@ -30,7 +30,7 @@ type node struct {
 	mtime    time.Time
 	size     int64
 	// 表示の名前と幅の覚え (label / labelCells)。名前は作ったときに決まり、変わるのは列の最大幅 (labelMax。設定) だけなので、
-	// 覚えたときの labelMax と組で持つ。配置と描画は全ノードの幅を毎 tick 引く (5 万件のフォルダの layout で 3.6 → 3.1 ms。issue 711)
+	// 覚えたときの labelMax と組で持つ。配置と描画は全ノードの幅を毎 tick 引く (5 万件のフォルダの layout で 3.6 → 3.1 ms)
 	labMax int
 	lab    string
 	labW   int
@@ -74,7 +74,7 @@ var (
 	order    = sortOrder{natural: true, by: "name"}
 )
 
-// sortOrder は並べ方 (設定の板の ORDER: Folders first / Natural sort / Sort by / Reverse。issue 720)。
+// sortOrder は並べ方 (設定の板の ORDER: Folders first / Natural sort / Sort by / Reverse)。
 type sortOrder struct {
 	foldersFirst, natural, reverse bool
 	by                             string // name / modified (新しい順) / size (大きい順)
@@ -82,7 +82,7 @@ type sortOrder struct {
 
 // less は a を b より上に置くか。Folders first は Reverse の外 (フォルダは常に上)。modified / size で同じなら名前で決める。
 // フォルダは自身の値で比べる: modified はフォルダの mtime、size ではフォルダの大きさに意味が無いので 0 (フォルダどうしは名前順)。
-// 裏の走査 (walk.go) の結果は使わない: 走査は配置されたフォルダにしか頼まず、巨大なフォルダで並びが揺れる (issue 720 のユーザー確認)。
+// 裏の走査 (walk.go) の結果は使わない: 走査は配置されたフォルダにしか頼まず、巨大なフォルダで並びが揺れる。
 func (o sortOrder) less(a, b *node) bool {
 	if o.foldersFirst && a.dir != b.dir {
 		return a.dir
@@ -212,7 +212,7 @@ func (n *node) reload() {
 	}
 }
 
-// sortKids は o の並べ方で並べる (spec §5.6・issue 720)。
+// sortKids は o の並べ方で並べる (spec §5.6)。
 func sortKids(kids []*node, o sortOrder) {
 	sort.SliceStable(kids, func(i, j int) bool { return o.less(kids[i], kids[j]) })
 }

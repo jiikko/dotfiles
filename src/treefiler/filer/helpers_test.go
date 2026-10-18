@@ -9,7 +9,7 @@ import (
 )
 
 // needGit は git の無い環境ではテストを飛ばす。CI (macos runner には git がある) で無いのは環境の壊れなので落とす
-// (Skip のまま緑にすると、git を使う検査が CI で 1 本も走らないことが見えない。issue 695 の 3)。
+// (Skip のまま緑にすると、git を使う検査が CI で 1 本も走らないことが見えない)。
 func needGit(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -86,7 +86,7 @@ func initRepo(t *testing.T, dir, branch string) {
 }
 
 // isolateConfig はこのテストの設定の置き場を自分だけの一時ディレクトリにする (TestMain の置き場は全テストで共有なので、`.` などで保存する
-// テストの後に読むと結果が順序に依存する。issue 735)。
+// テストの後に読むと結果が順序に依存する)。
 func isolateConfig(t *testing.T) {
 	t.Helper()
 	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())

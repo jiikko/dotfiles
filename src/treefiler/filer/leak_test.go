@@ -10,7 +10,7 @@ import (
 	"weak"
 )
 
-// leak_test.go は、消したフォルダの部分木が Model から外れて GC に回収されることを固定する (issue 726 / 727)。
+// leak_test.go は、消したフォルダの部分木が Model から外れて GC に回収されることを固定する。
 // 回収は weak pointer で見る (掴んでいる経路が 1 つでも残ると nil にならない)。
 
 func mkEmptyFiles(t *testing.T, dir string, n int) {
@@ -121,7 +121,7 @@ func TestRemovedBigFolderIsCollected(t *testing.T) {
 	runtime.KeepAlive(m) // 🚨 m が先に回収されると、掴んでいても weak pointer は nil になる (検査が素通りする)
 }
 
-// 名前の違うフォルダを作っては消すのを繰り返しても、走査の結果 (recs と walker の記録) は木の中のフォルダの数を超えて伸びない (issue 727)。
+// 名前の違うフォルダを作っては消すのを繰り返しても、走査の結果 (recs と walker の記録) は木の中のフォルダの数を超えて伸びない。
 func TestWalkResultsDropRemovedDirs(t *testing.T) {
 	isolateConfig(t)
 	root := t.TempDir()
@@ -194,7 +194,7 @@ func TestWalkResultsKeepUnexpandedDescendants(t *testing.T) {
 	}
 }
 
-// 検索で巨大なフォルダの中の一致へ移って閉じた後、そのフォルダを消しても、検索の一致と起点は部分木を掴まない (issue 726 / 728 の 3)。
+// 検索で巨大なフォルダの中の一致へ移って閉じた後、そのフォルダを消しても、検索の一致と起点は部分木を掴まない。
 func TestRemovedFolderIsCollectedAfterSearch(t *testing.T) {
 	isolateConfig(t)
 	root := t.TempDir()
@@ -225,7 +225,7 @@ func TestRemovedFolderIsCollectedAfterSearch(t *testing.T) {
 	runtime.KeepAlive(m)
 }
 
-// 巨大なフォルダの中のファイルをタイルで開いて閉じた後、そのフォルダを消しても、閉じたタイルは部分木を掴まない (issue 726)。
+// 巨大なフォルダの中のファイルをタイルで開いて閉じた後、そのフォルダを消しても、閉じたタイルは部分木を掴まない。
 func TestRemovedFolderIsCollectedAfterTileClosed(t *testing.T) {
 	isolateConfig(t)
 	root := t.TempDir()

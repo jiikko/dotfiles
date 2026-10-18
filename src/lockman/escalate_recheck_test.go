@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// 猶予が切れた**後**でも、SIGKILL の直前に「もう終わったか」を見直すこと (issue 384 項目 2)。
+// 猶予が切れた**後**でも、SIGKILL の直前に「もう終わったか」を見直すこと。
 //
 // 🚨 この窓は本番では `select` の一様ランダム選択 (実測 50.1% が timer 枝) に依存していて、
 // テストから作れない。`escalateBeforeKillHook` の seam で「timer 枝を取った後に子が終わった」
@@ -101,7 +101,7 @@ func startIgnoringTermGroup(t *testing.T) (int, <-chan struct{}) {
 	return pgid, waitDone
 }
 
-// TERM が届かないとき、警告が「子が走り続けている可能性」まで言うこと (issue 384 項目 1)。
+// TERM が届かないとき、警告が「子が走り続けている可能性」まで言うこと。
 //
 // 🚨 昇格は `sync.Once` なので、ここで返ると**二度と走らない**。`kill(2)` の失敗は
 // EPERM / ESRCH / EINVAL しか無く一過性が無いため再試行に意味は無く、効くのは報告だけ。
@@ -142,7 +142,7 @@ func awaitFile(path string) error {
 	return errors.New(path + " が 5 秒で現れない")
 }
 
-// 🚨 **関数冒頭の guard も検査する** (敵対レビュー P2-4)。
+// 🚨 **関数冒頭の guard も検査する**。
 //
 // 384 はこの guard を「同じ guard が SIGKILL の直前にも要る」と load-bearing として
 // 再文書化したが、変異で確かめたのは新しい方 (SIGKILL 側) だけだった。
@@ -176,7 +176,7 @@ func TestEscalateSendsTermWhenChildIsAlive(t *testing.T) {
 	// に間に合わなければ記録が永遠に現れず赤くなる (レビューの実測: 素のレイテンシは
 	// 0.32〜2.58ms で今は 4 倍の余裕だが、負荷の高い runner では詰まる)。
 	// しかも落ち方が最悪で、**赤は「冒頭 guard が退行した」に見える** (実際は fixture の競走)。
-	// 猶予の満額は待たない: TERM の記録を見たら「子が終わった」を知らせて昇格を打ち切る (issue 614)。
+	// 猶予の満額は待たない: TERM の記録を見たら「子が終わった」を知らせて昇格を打ち切る。
 	// 子は fixture の Cleanup が SIGKILL で片付ける
 	exited := make(chan struct{})
 	done := make(chan struct{})

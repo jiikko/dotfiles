@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// goto.go は `:` (入力したパスへカーソルを飛ばす。issue 746)。入力は `!` / `a` / `m` と同じ足元の欄で受ける。
+// goto.go は `:` (入力したパスへカーソルを飛ばす)。入力は `!` / `a` / `m` と同じ足元の欄で受ける。
 
 func (m *Model) startGoto() { m.openPrompt(promptGoto, nil, "") }
 
@@ -29,7 +29,7 @@ func (m *Model) gotoPath(text string) {
 	}
 	abs = m.rootSpelling(abs)
 	// 在っても木に載るとは限らない (大文字小文字の違う綴り・途中の symlink のフォルダ)。上げてから見つからなければ、上げる前へ戻す
-	// (戻さないと「無いパスでは動かさない」が破れる。大文字小文字の違いは / まで上がっていた。issue 746 の敵対レビュー)
+	// (戻さないと「無いパスでは動かさない」が破れる。大文字小文字の違いは / まで上がる)
 	undo := m.rootUndo()
 	for !under(abs, m.root.abs) {
 		before := m.root

@@ -77,7 +77,7 @@ func TestHumanSizeMatchesDockerBase1000(t *testing.T) {
 
 // 🚨 見出しに出す数字を取り違えないための錨。Estimate は候補の単純合計 (共有レイヤーを
 // 重複計上して上振れする)、DockerReclaimable は docker 自身の申告。入れ替えても
-// 気づかない状態にしない (敵対レビュー 2026-09-04: どちらもテストに一度も出ていなかった)。
+// 気づかない状態にしない。
 func TestEstimateAndDockerReclaimableAreDifferentNumbers(t *testing.T) {
 	rep := Report{Groups: []Group{
 		{Kind: KindImages, Size: 38_300_000_000, Reclaimable: 27_120_000_000},

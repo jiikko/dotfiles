@@ -9,7 +9,7 @@ import (
 //   - 再生成されるキャッシュ → 放置してよい (急いで消さなくてよい)
 //   - ユーザーファイルかもしれないもの (Inspect / RiskConfirm) → 放置すると**失われる**。
 //     ここに「急がなくてよい」と出すのは有害で、finder-nsird の Recover
-//     (「唯一のコピーである可能性を否定できません」) と正面から矛盾する (敵対レビュー 2026-09-04)
+//     (「唯一のコピーである可能性を否定できません」) と正面から矛盾する。
 const (
 	RebootClearsNote = "再起動すると消える置き場です (急いで消さなくても構いません)"
 	RebootLosesNote  = "再起動すると失われる置き場です (要るものは先に取り出してください)"
@@ -32,7 +32,7 @@ const dirhelperRoot = "/private/var/folders/"
 // 🚨 **判定に `$TMPDIR` という文字列を使わない**。テンプレートが `$TMPDIR/...` でも、
 // 実効の TMPDIR が `/var/folders` の外を指していれば dirhelper は掃除しない
 // (`TMPDIR=$HOME/tmp glogx doctor` で成立する)。文字列だけを見ると、**永久に残る
-// ユーザーデータへ「放置してよい」と表示する** (敵対レビュー 2026-09-04 の P1)。
+// ユーザーデータへ「放置してよい」と表示する**。
 // 判定の出典は走査と同じ実効値 (env.TmpDir) に寄せる。
 func RebootNote(e Entry, env Env) string {
 	if len(e.Paths) == 0 {
@@ -86,7 +86,7 @@ const (
 	GuardVMRoot        Guard = "vm-root"        // <TOOL>_ROOT の実効値と一致しないものだけ
 	GuardSimRuntime    Guard = "sim-runtime"    // simctl runtime list から取る (走査しない)
 	// go env GOMODCACHE と一致するものだけ / しないものだけ。`go clean -modcache` は
-	// GOMODCACHE の 1 世代しか消さないので、走査の範囲を削除の範囲に合わせる (issue 235)
+	// GOMODCACHE の 1 世代しか消さないので、走査の範囲を削除の範囲に合わせる
 	GuardGoModcacheCurrent Guard = "go-modcache-current"
 	GuardGoModcacheOld     Guard = "go-modcache-old"
 	// Chromium 由来のキャッシュだけを残し、そのアプリが起動中のものを落とす (guard.go)
@@ -110,14 +110,14 @@ type Entry struct {
 	// 走査は正常に終わっているので Status は ok のままだが、**0 件を「候補なし」と読んではいけない**
 	// エントリを区別する。表示側は 0 件でもこの行を隠さない (隠すと「探せていない」が
 	// 「きれいです」と同じ見え方になる = false green)。
-	// 実測で名前を確定したらこのフィールドを消す (issue 169)。
+	// 実測で名前を確定したらこのフィールドを消す。
 	Unverified string
 }
 
-// catalog はカタログ本体 (issue 148 の 1 章の写し)。載せる条件は「消したまま戻らないこと」を
+// catalog はカタログ本体。載せる条件は「消したまま戻らないこと」を
 // 実測で確認したもの。サイズだけで拾わない (sleepimage / unified log / Chrome cache は対象外)。
 //
-// 🚨 **意図的に載せていないもの** (issue 218 で判断。次の audit が同じ提案を再生成しないため):
+// 🚨 **意図的に載せていないもの** (次の audit が同じ提案を再生成しないため):
 //
 //   - `~/.Trash` — このカタログの `DeleteVia: "trash"` の**避難先そのもの**。同じ画面に
 //     「ゴミ箱へ移す」と「ゴミ箱を空にする」を並べるのは危険で、空にすると復元不可。
@@ -126,7 +126,7 @@ type Entry struct {
 //   - `~/Downloads/*.crdownload` — **ユーザーデータ領域**で、中断した DL の再開情報を持つ。
 //     消すと DL のやり直しが要るので登録条件「消したまま戻る」を満たさない。実測 0 件
 //   - `~/src/**` のビルド成果物 / `node_modules` — プロジェクト単位の判断が要り、
-//     allowlist の枠組みに合わない (issue 220)
+//     allowlist の枠組みに合わない
 //   - **Docker の VM ディスクイメージ** (`Docker.raw`) — 2026-09-04 に一度足して撤回した。
 //     ツールは触れない (`rm` も `trash` も不可) ので出せるのは `propose` だけ。しかも
 //     `docker system prune` はイメージの**中**を空けるだけで .raw は縮まないため、
@@ -146,7 +146,7 @@ var catalog = []Entry{
 	{ID: "xcode-deriveddata", Label: "Xcode DerivedData", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "次回ビルドで再生成されます", Detail: "初回ビルドが遅くなるだけ",
 		Paths: []string{"~/Library/Developer/Xcode/DerivedData/*"}},
-	// iOS 限定にしていないのは watchOS / tvOS DeviceSupport も同型のため。他 OS 版は未実測 (issue 148 未決)
+	// iOS 限定にしていないのは watchOS / tvOS DeviceSupport も同型のため。他 OS 版は未実測 (未決)
 	{ID: "xcode-devicesupport", Label: "Xcode DeviceSupport", Tier: 1, Risk: RiskCaution, DeleteVia: "rm",
 		Recover: "実機を再接続すると自動で再取得されます (数分かかります)",
 		Paths:   []string{"~/Library/Developer/Xcode/* DeviceSupport/*"}},
@@ -154,7 +154,7 @@ var catalog = []Entry{
 		Recover: "次回 npm install 時に再取得されます", Paths: []string{"~/.npm/_cacache"}},
 	// `npm-cache` と分けてあるのは復元の契機が違うため (install ではなく次の npx 実行)。
 	// 実測 2026-09-04: 108MB / 9 エントリ。
-	// 🚨 **`_cacache` と同じ「安全」にしない** (敵対レビュー 2026-09-04)。_cacache は
+	// 🚨 **`_cacache` と同じ「安全」にしない**。_cacache は
 	// content-addressed の読み取り専用アーカイブで、消しても走行中のプロセスに影響しないが、
 	// _npx は**展開済みの node_modules で、そこから直接 require されている**。
 	// `npx` で起動した常駐プロセス (MCP サーバ / dev サーバ / watcher) が動いている間に消すと、
@@ -183,7 +183,7 @@ var catalog = []Entry{
 	// (5.2 が 122MB / 5.8 が 91.6MB / 4.9 が 2.8MB)。**5.2 は 2023-11 から触られていない**。
 	// 登録条件 (消したまま戻ることを実測) の根拠: 各ディレクトリに package.json と
 	// package-lock.json があり中身は npm から復元できる。4.9 の更新日が 2026-07-15 で、
-	// tsserver が実際に作り直していることも確認済み (issue 218)。
+	// tsserver が実際に作り直していることも確認済み。
 	{ID: "typescript-ata", Label: "TypeScript 型キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "エディタが型を必要としたときに npm 経由で再取得されます", Detail: "TypeScript のバージョンごとに溜まる。古い版の分は使われない",
 		Paths: []string{"~/Library/Caches/typescript/*"}},
@@ -195,7 +195,7 @@ var catalog = []Entry{
 	{ID: "simulator-runtimes", Label: "シミュレータランタイム", Tier: 1, Risk: RiskCaution, DeleteVia: "cli:xcrun simctl runtime delete <id>",
 		Recover: "Xcode か `simctl runtime add` で再取得 (数GB/個)", Detail: "SIP 配下なので rm できない。削除後は `xcrun simctl delete unavailable` で孤児デバイスも掃除する",
 		Guard: GuardSimRuntime},
-	// 🚨 **2 エントリに分けてある** (issue 235)。`go clean -modcache` が消すのは
+	// 🚨 **2 エントリに分けてある**。`go clean -modcache` が消すのは
 	// `go env GOMODCACHE` の 1 世代だけなのに、`~/go/*/pkg/mod` は複数世代 (goenv / asdf 等) に
 	// 当たる。1 エントリのままだと削除後の再走査に他の世代が残り、**毎回必ず「未完了」**になって
 	// 時間をおいても消えなかった。走査の範囲を削除の範囲へ合わせ、残りは別エントリで見せる。
@@ -231,7 +231,7 @@ var catalog = []Entry{
 	// 🚨 `Unverified` を付けてある = **0 件でも行を畳まない**。目印 (Chromium 由来かの判定) は
 	// この機の 6 件で確かめただけの経験則なので、Electron がプロファイルの形を変えたら
 	// **全アプリが目印で落ちて候補 0 件**になる。畳むとそれが「候補なし = きれい」と
-	// 同じ見え方になり、2.3GB が画面から消える (敵対レビュー 2 周目)。
+	// 同じ見え方になり、2.3GB が画面から消える。
 	// 起動中で全滅したときは blocked (guard 側) が受けるが、**形状で全滅した場合はここが受ける**
 	{ID: "chromium-cache", Label: "Electron アプリのキャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "アプリが次に必要としたとき再取得されます", Detail: "起動中のアプリのぶんは候補から外れる (終了して r で再スキャン)",
@@ -240,20 +240,20 @@ var catalog = []Entry{
 			"~/Library/Application Support/*/Cache",
 			"~/Library/Application Support/*/Code Cache",
 			"~/Library/Application Support/*/GPUCache",
-			// 🚨 `Service Worker/CacheStorage` は**意図的に載せない** (敵対レビュー 2026-09-04。
-			// この機では Slack の 408MB が該当するが見送る): Cache API は**アプリが任意のデータを
+			// 🚨 `Service Worker/CacheStorage` は**意図的に載せない**
+			// (この機では Slack の 408MB が該当するが見送る): Cache API は**アプリが任意のデータを
 			// 置ける場所**で、認証が要る資産やもう配信されていないメディアが入りうる。
 			// 「アプリが次に必要としたとき再取得されます」を無条件には言えないので、
 			// Risk: safe / rm の枠に入れられない。載せるなら別エントリ (caution) にして、
 			// 中身が再取得できることを実測してから
 		}, Guard: GuardChromiumCache},
-	// 現在このカタログを作った機には**存在しない**が、性質で登録する (issue 218 の「不在を却下理由に
+	// 現在このカタログを作った機には**存在しない**が、性質で登録する (「不在を却下理由に
 	// しない」。実測 2026-09-04 時点で 0 件 = 畳まれる)。どちらも Xcode が再生成する純キャッシュで、
 	// 溜まるときは GB 単位になる
 	{ID: "xcode-doccache", Label: "Xcode ドキュメントキャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "Xcode がドキュメントを開いたとき再取得されます",
 		Paths:   []string{"~/Library/Developer/Xcode/DocumentationCache/*"}},
-	// 🚨 起動中のシミュレータがあるときは触らない (敵対レビュー 2026-09-04)。dyld キャッシュは
+	// 🚨 起動中のシミュレータがあるときは触らない。dyld キャッシュは
 	// 再生成されるのでデータは失わないが、走行中のシミュレータではアプリの起動が失敗しうる。
 	// 他のシミュレータ系エントリが guard を持つのにここだけ素通しだった
 	{ID: "coresimulator-caches", Label: "シミュレータの dyld キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
@@ -264,7 +264,7 @@ var catalog = []Entry{
 	{ID: "xctest-logarchive", Label: "XCTest ログ (/var/tmp/*.logarchive)", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "特定のテストセッションの産物。再生成されません (不要)", Detail: "最終起動より古いものだけ。/var/tmp は再起動で消えない",
 		// `sudo log collect --output /var/tmp/x.logarchive` で人が採った証跡と区別するため、XCTest 由来の名前に限る。
-		// 🚨 **この glob 自体が未実測** (issue 169): 元の実測記録 (issue 148) は `/var/tmp/*.logarchive` が
+		// 🚨 **この glob 自体が未実測**: 元の実測記録は `/var/tmp/*.logarchive` が
 		// 1.8GB あったという**サイズだけ**でファイル名が残っておらず、`XCTestTesting.*` / `xctest-*` は推定。
 		// Xcode 26 のバイナリを grep しても `XCTestTesting` は 0 件で、実機にも現物が無い (2026-09-03 再確認)。
 		// 🚨 **静的探索は尽きている** (2026-09-03。同じ grep を繰り返さないこと):
@@ -281,7 +281,7 @@ var catalog = []Entry{
 		Unverified: "ファイル名が未実測 (issue 169)"},
 	{ID: "xctest-spindump", Label: "XCTest spindump", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "再生成されません (不要)",
-		// ✅ **接頭辞は実測で確定した** (2026-09-04。issue 169 のうちこのエントリぶんは解決)。
+		// ✅ **接頭辞は実測で確定した** (2026-09-04)。
 		// この機の /private/var/tmp に `XCTestTesting.<日時>.spindump.txt` が **12 件 92MB** 在る
 		// (`XCTestTesting.2026-04-08-00:37:03.spindump.txt` 等)。glob はそのまま当たる。
 		// 🚨 **上の xctest-logarchive の未実測は解決していない**: `.logarchive` は同じ時点で
@@ -295,13 +295,13 @@ var catalog = []Entry{
 		Paths: []string{"/private/var/tmp/com.apple.CoreSimulator.SimDevice.*"}, Guard: GuardSimDevice},
 	{ID: "launchd-tmp", Label: "launchd の一時ディレクトリ残骸", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "容量はほぼ 0。件数削減が目的", Paths: []string{"/private/var/tmp/com.apple.launchd.*"}, Guard: GuardBoottime},
-	// 音声認識モデル (BNNS の推論グラフ) の置き場。issue 218 は「この機に存在しない」を理由に
-	// 載せていなかったが、**探した場所が違った** (~/Library/Caches ではなく /private/var/tmp)。
+	// 音声認識モデル (BNNS の推論グラフ) の置き場。「この機に存在しない」を理由に外さない:
+	// **探す場所は** (~/Library/Caches ではなく /private/var/tmp)。
 	// 実測 2026-09-04: **841MB / 12 ファイル**、所有者は本人 (koji:wheel)、mtime は 2026-01-28〜02-12。
 	// 🚨 **再生成されるかは未実測**なので `trash` にしてある (rm ではない): 音声入力が壊れても
 	// ゴミ箱から戻せる状態でだけ触ってよい。rm へ格上げするなら「消した後に音声入力を使って
 	// 再ダウンロードされる」ことを実測してから。
-	// 🚨 **GuardBoottime は「使われていない」を意味しない** (敵対レビュー 2026-09-04 の指摘で訂正)。
+	// 🚨 **GuardBoottime は「使われていない」を意味しない**。
 	// mtime は書き込み時刻で、**読み出しでは更新されない**ので、現に今日使っているモデルも
 	// mtime が古ければ候補に入る。この guard が落とすのは「起動後に新規ダウンロードされた分」だけ。
 	// 実測 2026-09-04 のこの機では 12 件すべてが起動より古く、**1 件も落ちていない**。
@@ -319,13 +319,13 @@ var catalog = []Entry{
 		Recover: "アプリを再インストールしても設定は戻りません", Detail: "/Applications と ~/Applications の Info.plist を実走査して突合 (mdfind は使わない)",
 		Paths: []string{"~/Library/Containers/*"}, Guard: GuardOrphanApp},
 	// 🚨 Label は表示幅 40 桁に収める (ディスク行のラベル列幅)。超えると UI で末尾が切れ、
-	// 括弧の補足だけが「(/o…」のように残る (実測 2026-09-03。issue 182)。場所は Detail へ
+	// 括弧の補足だけが「(/o…」のように残る (実測 2026-09-03)。場所は Detail へ
 	{ID: "brew-orphan-state", Label: "アンインストール済み formula の状態", Tier: 2, Risk: RiskConfirm, DeleteVia: "trash", Inspect: true,
 		Recover: "DB データ等の本体。formula が無くても中身は価値を持ちうる", Detail: "brew prefix の var 配下。同名の launchd 登録が残っていれば svcdoctor にも出る",
 		// etc は対象にしない: ImageMagick-7 / certs / fonts / openldap のように formula 名と一致しない共有
 		// ディレクトリが並び、台帳突合が雑音になる (2026-09-02 実測)。容量も小さい
 		// prefix は brew --prefix から解決する (Apple Silicon /opt/homebrew と Intel /usr/local で違い、
-		// 直書きすると Intel で「候補なし」に化ける: issue 176)
+		// 直書きすると Intel で「候補なし」に化ける)
 		Paths: []string{"$BREW_PREFIX/var/*"}, Guard: GuardBrewOrphan},
 	{ID: "brew-cleanup-residue", Label: "brew cleanup が消す対象", Tier: 2, Risk: RiskSafe, DeleteVia: "cli:brew cleanup",
 		Recover: "brew cleanup で消えるもの (古い portable-ruby / ダウンロード等)", Detail: "~/Library/Caches/Homebrew の外 (vendor/portable-ruby) も含む",
@@ -341,13 +341,13 @@ var catalog = []Entry{
 		//     マッチする (実測 2026-09-04) ので、`.git` / `.DS_Store` / 手で退避した `nodenv-backup` が
 		//     流れ込み、`filepath.Base` 由来の tool 名 (`.git` → `git`) が `~/.git` と比較されて
 		//     不一致 = 孤児になる。「そのマネージャで入れた言語の全世代が消えます」の説明つきで
-		//     ゴミ箱候補に出る (敵対レビュー 2026-09-04 の P1)
+		//     ゴミ箱候補に出る
 		//   再開の trigger: anyenv 配下の残骸で実際に容量を食っているのを見たとき。そのときは
 		//   このカタログではなく「anyenv の台帳 (`anyenv versions`) と突合する」別の判定が要る
 		Paths: []string{"~/.rbenv", "~/.nodenv", "~/.goenv"}, Guard: GuardVMRoot},
 	// --- Tier 3: アプリ起動中は触らない ---
 	// glob は Canary / Beta / Dev の tmp (.com.google.Chrome.canary.* 等) にも当たるので、プロセス判定も全系列を見る
-	// (Stable 終了・Canary 起動中に Canary の生きた tmp を消さない。敵対レビュー 2026-09-02)
+	// (Stable 終了・Canary 起動中に Canary の生きた tmp を消さない)
 	{ID: "chrome-tmp", Label: "Chrome 一時ファイル", Tier: 3, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "Chrome が再生成します", Paths: []string{"$TMPDIR/.com.google.Chrome.*"}, Guard: GuardProcessAbsent,
 		Processes: []string{"Google Chrome", "Google Chrome Canary", "Google Chrome Beta", "Google Chrome Dev"}},
@@ -355,7 +355,7 @@ var catalog = []Entry{
 
 // containerExcludePrefixes は orphan-container で決して孤児にしない bundle id の接頭辞。
 // 自作・開発中アプリは「実体が見つからない」状態を頻繁に通過し (ビルド前 / TestFlight 版のみ)、
-// コンテナの中身は entitlement・トライアル状態などの検証用 state (issue 148 で偽陽性の実例)。
+// コンテナの中身は entitlement・トライアル状態などの検証用 state (偽陽性の実例がある)。
 // com.apple.* は /Applications に無い (System/Applications や daemon のコンテナ) ので突合の対象外。
 // CloudDocs 等は TCC で読めもしない (2026-09-02 実測: operation not permitted)。
 var containerExcludePrefixes = []string{"com.jiikko.", "com.apple."}
@@ -373,7 +373,7 @@ func CatalogSize() int { return len(catalog) }
 // CatalogEntry は既定カタログの ID からエントリを引く。復元した Result の Entry を
 // **カタログの今の定義へ束ね直す**ために使う: snapshot / キャッシュには Entry が丸ごと保存されるので、
 // そのまま使うと (a) カタログを直しても古い文言が出続け (b) 一般ユーザー権限で書き換えた
-// 文言がそのまま画面と y のコピーに載る (issue 229)。
+// 文言がそのまま画面と y のコピーに載る。
 func CatalogEntry(id string) (Entry, bool) {
 	for _, e := range catalog {
 		if e.ID == id {
@@ -385,7 +385,7 @@ func CatalogEntry(id string) (Entry, bool) {
 
 // CatalogHasID は既定カタログにその ID があるか。キャッシュ / snapshot から復元した Result が
 // 「今のカタログに実在するエントリか」を確かめるために使う。snapshot は一般ユーザー権限で
-// 書き換えられるので、そこに書かれた ID をそのまま行にしない (issue 178)。
+// 書き換えられるので、そこに書かれた ID をそのまま行にしない。
 func CatalogHasID(id string) bool {
 	for _, e := range catalog {
 		if e.ID == id {

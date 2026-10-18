@@ -18,7 +18,7 @@ func rowWidths(t *testing.T, lines []string, w int, what string) {
 	}
 }
 
-// 全角の片割れを上書きしても、行の幅は画面の幅のまま (左半分・右半分のどちらを上書きしても。issue 731)。
+// 全角の片割れを上書きしても、行の幅は画面の幅のまま (左半分・右半分のどちらを上書きしても)。
 func TestOverwritingHalfOfWideKeepsRowWidth(t *testing.T) {
 	for _, x := range []int{2, 3} { // 全角は 2〜3 桁目。2 = 左半分、3 = 右半分
 		c := newCanvas(8, 1)
@@ -36,7 +36,7 @@ func TestOverwritingHalfOfWideKeepsRowWidth(t *testing.T) {
 	}
 }
 
-// 画面の外・空・逆向きの範囲の clear は、範囲の外の全角を割らない (敵対レビューで再現: 左半分だけが残って 1 桁長くなった)。
+// 画面の外・空・逆向きの範囲の clear は、範囲の外の全角を割らない (左半分だけが残って 1 桁長くなる)。
 func TestClearOutsideRangeKeepsWide(t *testing.T) {
 	for _, r := range [][2]int{{-5, -2}, {4, 2}, {10, 12}} {
 		for _, x := range []int{0, 2, 4} {
@@ -82,7 +82,7 @@ func TestRealFramesKeepRowWidthWithWideNames(t *testing.T) {
 	}
 }
 
-// 低い端末でキー一覧が収まらないときは、黙って切らずに残りの行数を出す (issue 731)。
+// 低い端末でキー一覧が収まらないときは、黙って切らずに残りの行数を出す。
 func TestHelpShowsRestWhenTooShort(t *testing.T) {
 	m := newTest(t)
 	m.Resize(100, 20)

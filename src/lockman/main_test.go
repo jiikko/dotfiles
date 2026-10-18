@@ -96,8 +96,8 @@ func TestWithRequiresCommand(t *testing.T) {
 // SMB の readdir が重い)。掃除済みの目印が付くかどうかで観測する。
 // ★ 掃除が走るのは状態を変える 4 コマンドちょうど。
 //
-// 🚨 かつて正の側は `acquire` しか見ておらず、**`with` / `break` を配線から外す変異が
-// 緑で通った** (5 周目の実測)。テスト名は集合の契約を主張しているので、集合の全要素を
+// 🚨 正の側が `acquire` しか見ないと、**`with` / `break` を配線から外す変異が
+// 緑で通る** (実測)。テスト名は集合の契約を主張しているので、集合の全要素を
 // 正の側でも負の側でも pin する。
 func TestCleanupRunsOnlyForMutatingCommands(t *testing.T) {
 	// 正の側: 4 コマンドそれぞれで打刻が現れる。
@@ -167,7 +167,7 @@ func TestUnknownCommandAndHelp(t *testing.T) {
 }
 
 // 終了コードの番号が互いに衝突していないこと。with 系は子プロセスの終了コードと
-// 区別できる必要があるため 120 より上に置く (issue 091 の表)。
+// 区別できる必要があるため 120 より上に置く。
 func TestExitCodesDoNotCollide(t *testing.T) {
 	seen := map[int]string{}
 	for name, code := range map[string]int{
@@ -191,8 +191,7 @@ func TestExitCodesDoNotCollide(t *testing.T) {
 
 // ★ 掃除の失敗は verbose でなくても stderr に出る。件数も一緒に出す。
 //
-// 🚨 この分岐は変異で丸ごと消しても、`o.verbose` に戻しても緑だった (issue 358 の
-// 敵対レビュー 4 周目が実測)。commit の見出しにしていた挙動が無検査だったので足す。
+// 🚨 この分岐は変異で丸ごと消しても、`o.verbose` に戻しても緑になる (実測)。
 func TestDispatchWarnsOnCleanupFailureWithoutVerbose(t *testing.T) {
 	l := newTestLocker(t)
 	if err := l.ensureDirs(); err != nil {

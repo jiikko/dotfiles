@@ -51,7 +51,7 @@ func processRunning(ctx context.Context, run runner.Runner, name string) (bool, 
 
 // simDeviceUDIDs は現存デバイスの UDID。既定のデバイスセットに加え、Xcode Previews のセット
 // (~/Library/Developer/Xcode/UserData/Previews/Simulator Devices) も見る: Previews のデバイスは既定セットに
-// 出ないので、そこだけ見ると Preview 中の生きた作業領域を孤児にする (敵対レビュー 2026-09-02 P1)。
+// 出ないので、そこだけ見ると Preview 中の生きた作業領域を孤児にする。
 // どちらかが失敗したら error (孤児判定を全件「孤児でない」に倒す)。
 func simDeviceUDIDs(ctx context.Context, run runner.Runner, env Env) (map[string]bool, error) {
 	set := map[string]bool{}
@@ -73,13 +73,13 @@ func simDeviceUDIDs(ctx context.Context, run runner.Runner, env Env) (map[string
 // simDeviceSetDirs は既定セット以外の実在するデバイスセット。**列挙で持つ**: セットは増える
 // (実測 2026-09-03: Xcode Previews に加え ~/Library/Developer/XCTestDevices と XCPGDevices が実在し、
 // どちらも simctl --set が rc=0 で応答する)。名前を直書きすると新しいセットが増えるたびに、
-// そこのデバイスの作業領域が孤児と判定される (issue 168)。
+// そこのデバイスの作業領域が孤児と判定される。
 //
 // 拾い方は ~/Library/Developer 直下の `*Devices` ディレクトリ + Xcode Previews の固定パス。
 // 前者は「並列テストの clone (XCTestDevices)」「Playground (XCPGDevices)」を名前を知らずに拾える。
 // ~/Library/Developer が読めない場合は error (fail-closed)。無視して空を返すと「セットが無い」と
 // 同じ結果になり、そこに生きたデバイスがあっても孤児と判定してしまう — この関数が防いでいる
-// 失敗モードそのものを、診断の痕跡を出さずに再現する (敵対レビュー 2026-09-03 で実測:
+// 失敗モードそのものを、診断の痕跡を出さずに再現する (実測 2026-09-03:
 // chmod 000 で dirs が黙って空になった)。ディレクトリが無い場合だけは正常 (Xcode 未使用)。
 func simDeviceSetDirs(env Env) ([]string, error) {
 	var dirs []string
@@ -179,7 +179,7 @@ func simRuntimes(ctx context.Context, run runner.Runner) ([]simRuntime, error) {
 // CFBundleIdentifier を集める。mdfind (Spotlight) は使わない: インデックス欠落で実在するアプリを「無い」と
 // 答えた実例がある。
 //
-// 🚨 直下の .app だけを見ると偽陽性になる (敵対レビュー 2026-09-02 P1): `/Applications/Adobe Acrobat DC/
+// 🚨 直下の .app だけを見ると偽陽性になる: `/Applications/Adobe Acrobat DC/
 // Adobe Acrobat.app` のようにフォルダに入った app、app 内蔵の appex / XPC / LoginItems は別の bundle id で
 // コンテナを持つ。走査は深さ上限つきで bundle の中にも入る。
 // 走査できないディレクトリがあれば error (fail-closed: 孤児判定をしない)。存在しない dir は無視。
@@ -206,10 +206,10 @@ func installedBundleIDs(env Env) (map[string]bool, error) {
 const bundleMaxDepth = 8
 
 // 🚨 **セットアップを 2 箇所に書かない**。この関数は collectBundleIDsCounted へ委譲する。
-// 以前は両方が `map[[2]uint64]struct{}{}` と `var visits int64` を独立に組み立てており、
-// テストは Counted 側だけを呼んでいた。その結果 **production が通る側 (この関数) に
-// 共有状態を入れる変異が doctor 全体で素通り**した (敵対的レビューが実験で証明。
-// 走査の並行性と巡回検出が production 経路では機械的に未検査だった)。
+// 両方が `map[[2]uint64]struct{}{}` と `var visits int64` を独立に組み立てると、
+// テストは Counted 側だけを呼ぶことになり、**production が通る側 (この関数) に
+// 共有状態を入れる変異が doctor 全体で素通り**する (実験で確認済み。
+// 走査の並行性と巡回検出が production 経路では機械的に未検査になる)。
 // 委譲にすれば、Counted を検査するテストがそのまま production 経路を守る。
 func collectBundleIDs(dir string, depth int, ids map[string]bool) error {
 	_, err := collectBundleIDsCounted(dir, depth, ids)
@@ -219,9 +219,9 @@ func collectBundleIDs(dir string, depth int, ids map[string]bool) error {
 // collectBundleIDsCounted は collectBundleIDs の実体で、「実際に降りたディレクトリ数」も返す。
 // 巡回検出が効いているかを**壁時計でなく回数**で判定するために要る (avoid-wall-clock-assertions)。
 //
-// 🚨 **数え上げは呼び出しごとに持つ** (issue 217)。以前は package 変数 (`atomic.Int64`) に
-// 数えており、テストは `Store(0)` してから絶対値を見ていた。そのため「同 package に並行して
-// 走る走査が無い」ことを暗黙に前提にしており、`t.Parallel()` を 1 つ足した瞬間に flaky になる
+// 🚨 **数え上げは呼び出しごとに持つ**。package 変数 (`atomic.Int64`) には
+// 数えない。数えると、テストは `Store(0)` してから絶対値を見ることになり、「同 package に並行して
+// 走る走査が無い」ことを暗黙に前提にするので、`t.Parallel()` を 1 つ足した瞬間に flaky になる
 // (幅が 9 しかないので当たりやすい)。呼び出しごとに数えれば前提そのものが消える。
 func collectBundleIDsCounted(dir string, depth int, ids map[string]bool) (int64, error) {
 	var visits int64
@@ -240,10 +240,10 @@ func dirKey(fi os.FileInfo) ([2]uint64, bool) {
 
 // collectBundleIDsSeen は seen で巡回を止める。
 //
-// 🚨 **symlink を辿るなら巡回検出が要る**: 旧コードの `e.IsDir()` は symlink に false を返すので
-// 「symlink を辿らない」= 循環しない、を副次的に保証していた。issue 167 (c) でそれを外したとき、
-// 循環防止をノーガードで捨てていた。`bundleMaxDepth` は深さしか縛らず**幅は無制限**なので、
-// 同じディレクトリを指す symlink を n 個並べると n^8 に膨らむ。実測 (敵対レビュー 2026-09-03、
+// 🚨 **symlink を辿るなら巡回検出が要る**: `e.IsDir()` は symlink に false を返すので
+// 「symlink を辿らない」= 循環しない、を副次的に保証する。symlink を辿るようにするなら、
+// 循環防止をノーガードで捨ててはいけない。`bundleMaxDepth` は深さしか縛らず**幅は無制限**なので、
+// 同じディレクトリを指す symlink を n 個並べると n^8 に膨らむ。実測 (2026-09-03、
 // ユーザー書き込み可能な ~/Applications で成立): n=2 で 67ms / n=3 で 1.32s / n=4 は 8 秒でも
 // 終わらない。ここには ctx が無いのでキャンセルもできない。
 func collectBundleIDsSeen(dir string, depth int, ids map[string]bool, seen map[[2]uint64]struct{}, visits *int64) error {
@@ -260,7 +260,7 @@ func collectBundleIDsSeen(dir string, depth int, ids map[string]bool, seen map[[
 	for _, e := range entries {
 		p := filepath.Join(dir, e.Name())
 		// e.IsDir() で絞らない: DirEntry.IsDir は symlink に false を返すので、symlink の .app が
-		// 走査から落ちる (issue 167 (c))。os.Stat で解決先を見る。解決先が AppDirs の外でも
+		// 走査から落ちる。os.Stat で解決先を見る。解決先が AppDirs の外でも
 		// bundle id は集める (集めすぎても「実在するアプリ」が増えるだけで、孤児の見落とし = 安全側)
 		fi, err := os.Stat(p)
 		if err != nil || !fi.IsDir() {
@@ -286,13 +286,13 @@ func collectBundleIDsSeen(dir string, depth int, ids map[string]bool, seen map[[
 //   - Wrapper/*/Info.plist         : iOS-on-Mac (flat 配置。X.app/Wrapper/Y.app/Info.plist)
 //   - Versions/*/Resources/Info.plist : framework (実機に 1Password の Electron Framework 等)
 //
-// issue 167 (b): Contents/ しか読んでいなかったので、後ろ 2 つの bundle id が集まらず、
-// そのアプリのコンテナが孤児と判定されていた。
+// Contents/ しか読まないと、後ろ 2 つの bundle id が集まらず、
+// そのアプリのコンテナが孤児と判定される。
 func readBundleID(bundle string, ids map[string]bool) {
 	// 🚨 **bundle のパスを glob パターンに素で埋めない**。`MyApp [Beta].app` のように名前に
 	// メタ文字が入ると `[Beta]` が文字クラスとして解釈され、そのアプリの bundle id が集まらない。
 	// 結果は「拾いすぎ」(安全側) ではなく**拾わなすぎ**で、実在するアプリのコンテナが孤児候補に
-	// 出る = issue 167 が塞ごうとした症状の再発 (敵対レビュー 2026-09-03 で実測)。
+	// 出る = 孤児の誤判定の再発 (実測 2026-09-03)。
 	// 固定パスは Glob を通さず、可変部があるものだけ prefix を escape して Glob する。
 	esc := escapeGlobMeta(bundle)
 	paths := []string{filepath.Join(bundle, "Contents", "Info.plist")}
@@ -334,8 +334,8 @@ func isBundleName(name string) bool {
 // containerUUIDNameRe は bundle id ではなく UUID を名前に持つコンテナ (iOS-on-Mac アプリのデータ
 // コンテナはこの形)。bundle id は `.com.apple.containermanagerd.metadata.plist` にしか無く、その
 // plist は TCC で読めない (plutil が operation not permitted)。名前で突合する仕組みでは**構造的に
-// 素通りする**ので、孤児判定をせず候補から外す (issue 167 (a): 実在する /Applications/やくそく帳.app の
-// データコンテナが RiskConfirm trash の候補に出ていた)。
+// 素通りする**ので、孤児判定をせず候補から外す (実在する /Applications/やくそく帳.app の
+// データコンテナが RiskConfirm trash の候補に出てしまう)。
 var containerUUIDNameRe = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
 
 // containerIsUndiagnosable は「名前から bundle id を決められないコンテナ」か。
@@ -362,11 +362,11 @@ func brewFormulae(ctx context.Context, run runner.Runner) (map[string]bool, erro
 
 // brewPrefix は `brew --prefix` の実測値を返す。取れない / 空 / 絶対パスでない / 実在しないは
 // すべて error にする (fail-closed)。ここを既定値 (/opt/homebrew) に fallback させると、
-// Intel Mac や非標準 prefix の環境で「候補なし」という false green に化ける (issue 176)。
+// Intel Mac や非標準 prefix の環境で「候補なし」という false green に化ける。
 // goModcache は `go env GOMODCACHE` の実効値 (今の go が使う 1 世代)。
 //
 // 🚨 **`go clean -modcache` が消せるのはここだけ**。カタログの `~/go/*/pkg/mod` は複数世代に
-// 当たるので、削除の範囲と走査の範囲を一致させるためにこの値で分ける (issue 235)。
+// 当たるので、削除の範囲と走査の範囲を一致させるためにこの値で分ける。
 // brewPrefix と同じ作法で、解決できない / 絶対パスでない / "/" は**エラーにして fail-closed**
 // (解決できないまま「一致しない = 古い世代」と読むと、現役のキャッシュが削除候補に出る)。
 func goModcache(ctx context.Context, run runner.Runner) (string, error) {
@@ -406,7 +406,7 @@ func brewPrefix(ctx context.Context, run runner.Runner) (string, error) {
 		return "", fmt.Errorf("brew --prefix が絶対パスでない: %s", p)
 	}
 	// "/" を弾く: expand の TrimRight で空に潰れ、$BREW_PREFIX/var/* が /var/* に化ける
-	// (深さ 3 なので validateTarget の minDepth も素通りする)。敵対レビュー 2026-09-03
+	// (深さ 3 なので validateTarget の minDepth も素通りする)
 	if filepath.Clean(p) == "/" {
 		return "", errors.New("brew --prefix がルート (/) を返した")
 	}
@@ -421,7 +421,7 @@ func brewPrefix(ctx context.Context, run runner.Runner) (string, error) {
 }
 
 // brewSharedVarDirs は formula の状態ではない brew prefix の var 直下の共有ディレクトリ。台帳に名前が無いのは
-// 当然で、孤児判定の対象外 (db は現役 redis の dump 置き場だった。敵対レビュー 2026-09-02 P1)。
+// 当然で、孤児判定の対象外 (db は現役 redis の dump 置き場だった)。
 var brewSharedVarDirs = map[string]bool{"homebrew": true, "log": true, "cache": true, "run": true, "db": true, "www": true,
 	"lib": true, "spool": true, "mail": true, "tmp": true, "lock": true, "state": true}
 
@@ -458,7 +458,7 @@ func brewCleanupTargets(ctx context.Context, run runner.Runner) ([]string, error
 			continue
 		}
 		// 相対表記は prefix 配下として解決する。prefix が取れないなら**黙って捨てない**
-		// (捨てると「brew cleanup が消す対象は無い」という false green になる: issue 176)
+		// (捨てると「brew cleanup が消す対象は無い」という false green になる)
 		pre, err := resolvePrefix()
 		if err != nil {
 			return nil, fmt.Errorf("brew cleanup の相対表記 %q を解決できず (brew --prefix): %w", strings.TrimSpace(rest), err)
@@ -470,14 +470,14 @@ func brewCleanupTargets(ctx context.Context, run runner.Runner) ([]string, error
 
 // effectiveVMRoot は <TOOL>_ROOT の実効値。環境変数があればそれ。無ければ .zshrc の lazy loader と
 // 同じ規則 (anyenv 側 ~/.anyenv/envs/<tool> があればそちら、無ければ ~/.<tool> へ fallback)。
-// 「ディレクトリの存在」で判定しない: ~/.rbenv は同じ形で現役だった (issue 148 実測)。
+// 「ディレクトリの存在」で判定しない: ~/.rbenv は同じ形で現役だった (実測)。
 func effectiveVMRoot(env Env, tool string) (string, error) {
 	if v := env.Getenv(strings.ToUpper(tool) + "_ROOT"); v != "" {
 		got, err := canonicalPath(env, v)
 		if err != nil {
 			return "", err
 		}
-		// 🚨 **環境変数と anyenv 側が食い違うなら「診断できず」へ倒す** (敵対レビュー 2026-09-04 の P2)。
+		// 🚨 **環境変数と anyenv 側が食い違うなら「診断できず」へ倒す**。
 		// `_zshrc:15-31` のローダは既存の <TOOL>_ROOT を**見ずに** anyenv 側で上書き export する。
 		// つまりこの機の真の規則は「anyenv 側が在ればそれが現役」で、環境変数を最優先する
 		// ここの順序とは**逆**。`anyenv install <tool>` より前に起動した shell から glogx を
@@ -515,7 +515,7 @@ func effectiveVMRoot(env Env, tool string) (string, error) {
 
 // canonicalPath は比較用の正規化 (~ 展開 / 絶対化 / symlink 解決)。🚨 削除対象の決定には使わない
 // (EvalSymlinks はリンク先を指す。ここは「同じ場所か」の比較にだけ使う)。環境変数が相対や ~ 付きでも
-// 現役 root を孤児にしない (敵対レビュー 2026-09-02 P3)。
+// 現役 root を孤児にしない。
 //
 // 🚨 **HOME が空なら error を返す**。空のまま展開すると `~/y` が `/y` に、相対パスが
 // ルート直下に化ける (実測 2026-09-03: `canonicalPath(Env{Home:""}, "~/y")` が `/y` を返した)。
@@ -572,7 +572,7 @@ func appSupportChild(env Env, p string) (string, bool) {
 // `Cache` を持つ 6 アプリ (Slack / Dropbox / Docker Desktop / Electron / Multi-Video Player 2 種)
 // すべてで 2 点とも在り、型 (Preferences = ファイル / Local Storage = ディレクトリ) も揃っていた。
 //
-// 🚨 **`Code Cache` は目印に使わない** (敵対レビュー 2026-09-04)。これは**削除対象そのもの**なので、
+// 🚨 **`Code Cache` は目印に使わない**。これは**削除対象そのもの**なので、
 // 目印に混ぜると「消した瞬間にそのアプリが検出圏外へ落ちる」— アプリを再起動するまで
 // `Cache` / `GPUCache` が候補から消え、「もう溜まっていない」ように見える。
 // 目印は**消さないもの**から選ぶ。
@@ -606,7 +606,7 @@ func isChromiumProfile(app string) bool {
 
 // livenessProbes は「そのアプリが動いていれば開いているはず」のファイル。
 //
-// 🚨 **削除対象の内側にあるものを probe にしない** (敵対レビュー 2 周目 2026-09-04)。
+// 🚨 **削除対象の内側にあるものを probe にしない**。
 // 目印について「削除対象を目印に使わない」と決めたのと同じ理由で、probe も同じ規律に従う:
 // `GPUCache/index` や `Cache/Cache_Data/index` を probe にすると、**1 回削除した時点で
 // probe が消えて `appIsLive` が永久に true** になり、そのアプリのキャッシュが二度と
@@ -623,8 +623,8 @@ var livenessProbes = []string{
 
 // appIsLive は app のプロファイルを使っているプロセスが居るか。
 //
-// 🚨 **プロセス名を一切見ない**。以前はディレクトリ名 = プロセス名の完全一致を先読みに
-// 使っていたが、**その前提はこの機の実アプリで既に破れていた** (敵対レビュー 1 周目が実測):
+// 🚨 **プロセス名を一切見ない**。ディレクトリ名 = プロセス名の完全一致を先読みに
+// 使わない。**その前提はこの機の実アプリで既に破れている** (実測):
 // `/Applications/VLC Multi-Video Player.app` は CFBundleExecutable が `VLCMultiVideoPlayer` で、
 // 置き場は `Multi-Video Player for Dropbox` / `Dropbox Multi-Video Player` / `Electron`。
 // `pgrep -x "Multi-Video Player for Dropbox"` は走行中でも rc=1 を返し、その 1 は
@@ -668,7 +668,7 @@ func appIsLive(ctx context.Context, run runner.Runner, app string) (bool, error)
 //
 // 🚨 **比較は展開・正規化した絶対パスで行う**。`excludedRoots` はテンプレート (`~/...`) なので、
 // 文字列のまま比べると必ず外れる。HOME が空なら判定できない = error (fail-closed)。
-// 🚨 **正規化結果をキャッシュしない** (issue 321 ⑤ の据え置き判断、2026-09-08)。
+// 🚨 **正規化結果をキャッシュしない** (据え置き判断、2026-09-08)。
 // path 1 本ごとに 10 root すべてを `EvalSymlinks` し直すのは確かに重いが、これは
 // **破壊的操作のガード**の一部で、`_claude/rules/sandbox-real-destructive-test-apis.md` の
 // 「実行の直前に取り直した値で判定する」に真っ向から当たる。キャッシュは

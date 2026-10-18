@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// virt.go は巨大なフォルダの子を、画面の近くのものだけ配置しアニメを持たせる仕組み (issue 712)。
+// virt.go は巨大なフォルダの子を、画面の近くのものだけ配置しアニメを持たせる仕組み。
 //
 // 子の位置は「列の x」「ブロックの先頭の行 y0」「行の間隔 stride」と自分の順位 (vidx) で決まるので、全部を map に入れなくても
 // 誰がどこへ行くかは計算で出せる。画面の近く (画面 + 上下の windowMargin) の子だけを pos に入れてアニメを持たせ、外へ出た子の
@@ -43,7 +43,7 @@ type virtBlock struct {
 func (b *virtBlock) targetY(k *node) int { return (b.y0 + k.vidx) * b.stride }
 
 // virtMin は仮想化する子の数の下限 (これ以下は全部を動かす)。🚨 画面の高さに依らない定数にする: 高さで変わると、窓の大きさ
-// (glogx は View の度に Resize する) だけで仮想化する・しないが切り替わり、切り替わりのたびに戻ってくる子の扱いが要る (敵対レビュー)。
+// (glogx は View の度に Resize する) だけで仮想化する・しないが切り替わり、切り替わりのたびに戻ってくる子の扱いが要る。
 // 一度仮想化したブロックは、子が半分を下回るまで仮想化を続ける (閾値の前後を行き来しない)。
 const virtMinDefault = 1024
 
@@ -66,20 +66,20 @@ func (m *Model) virtualizes(p *node, n int) bool {
 	return n > o
 }
 
-// windowMargin は画面の上下に足す余白の行数 (画面の高さの 4 倍)。issue 712 の当時の実測で決めた: 乱数の操作列のテスト 300 本で、
+// windowMargin は画面の上下に足す余白の行数 (画面の高さの 4 倍)。当時の実測で決めた: 乱数の操作列のテスト 300 本で、
 // 1 倍だと 3 本 (種 118 / 214 / 241) で画面を高くした直後に薄く描かれる子が仮想化した側に無かった (原因は未特定)。
-// 🚨 2026-10-12 の HEAD では 1 倍でも 300 本が全部通り、倍率を固定するテストが無い (issue 735 の監査で実測。後の直しで原因が消えたかは未確認)。
-// 縮めるなら、倍率で結果が変わる場面をテストで作ってから (issue 738)。
+// 🚨 2026-10-12 の HEAD では 1 倍でも 300 本が全部通り、倍率を固定するテストが無い (実測。後の直しで原因が消えたかは未確認)。
+// 縮めるなら、倍率で結果が変わる場面をテストで作ってから。
 func windowMargin(ch int) float64 { return 4 * float64(ch) }
 
 // spawnHold は全部の子を動かしておく時間 (秒。速さの設定を掛ける前)。湧く動き (moveDur) とフェードイン (fadeInDur) が終わるまで。
 const spawnHold = moveDur * 1.2
 
 // holdClock は spawnHold の起点。🚨 起点は「記した後の最初の Advance」: glogx はキー → View → (後の tick で) Advance の順に呼ぶので、
-// 記した時点はまだ動きが始まっていない (敵対レビュー)。かつ、問い合わせた時点でもない (問い合わせは子が生まれるときにしか起きないので、
+// 記した時点はまだ動きが始まっていない。かつ、問い合わせた時点でもない (問い合わせは子が生まれるときにしか起きないので、
 // 何十フレームも後に初めて問われて期間が始まり直した。乱数の操作列のテストで再現)。
 // 🚨 経過は壁時計ではなく animClock (Advance の dt の和) で測る: 動きは 1 回の Advance の進みを 0.05 秒で頭打ちにするので、Advance の
-// 間隔が 50ms を超えると壁時計の 0.6 秒では動きが終わっておらず、兄弟のずれがばらばらなまま仮想化に戻った (敵対レビュー 3 周目)。
+// 間隔が 50ms を超えると壁時計の 0.6 秒では動きが終わっておらず、兄弟のずれがばらばらなまま仮想化に戻った。
 type holdClock struct {
 	ok  bool
 	adv int // 記した時点の Advance の回数
@@ -113,8 +113,8 @@ type blockGeo struct {
 // いない) とき、順位の付け方 (見せる子の覚え) か行の間隔が変わったとき。仮想化のまま扱うのは、子が全員同じだけずれる変化
 // (カーソルの移動・ブロックの寄せ直し・カメラ) だけ: そのときだけ「近い兄弟の動きを写す」が厳密に成り立つ。
 // 🚨 「ばらばらかどうか」を細かい条件 (順位の差の変化の回数・大きな跳躍・動いている途中か) で見分けて仮想化を続ける形は採らない:
-// 条件を足すたびに別の組み合わせで破られた (敵対レビュー 2 周と、乱数の操作列のテストの 300 本中 7 本)。読み直し・隠しファイル・
-// 並び替え・ライブ更新の直後は spawnHold の間だけ全部を動かす (712 より前は常に全部を動かしていた)。
+// 条件を足すたびに別の組み合わせで破られた (別の入力での破れ 2 回と、乱数の操作列のテストの 300 本中 7 本)。読み直し・隠しファイル・
+// 並び替え・ライブ更新の直後は spawnHold の間だけ全部を動かす。
 func (m *Model) noteGeo(p *node, v *visKids, y0, stride, nx int) {
 	if p.geo.seq == m.layoutSeq {
 		return
@@ -186,7 +186,7 @@ func (m *Model) placeVirtual(pos map[*node]place, p *node, v *visKids, y0, strid
 		put(spKid)
 	}
 	// 先頭と末尾の子は遠くても置く: 縦棒の端と、親からブロックへ降りる肘 (lines) はブロックの両端の位置で決まる。ブロックが丸ごと
-	// 画面の外でも、肘は画面の中の親から画面を縦に貫く (敵対レビュー)
+	// 画面の外でも、肘は画面の中の親から画面を縦に貫く
 	put(ks[0])
 	put(ks[len(ks)-1])
 	for k := range m.ripples {
@@ -247,7 +247,7 @@ func (m *Model) resetVirt() {
 
 // compactAnims は anims が最近の最多の 1/4 を切ったら map を作り直す。🚨 Go の map は要素を消しても容量が残り、反復
 // (sync が毎 tick 舐める) は容量に比例する: 巨大なフォルダを開いた直後に全部の子へアニメを持たせ、仮想化で捨てた後も 5 万件ぶんの
-// 空の map を舐め続けた (j 1 回 170 ms。issue 712)。
+// 空の map を舐め続けた (j 1 回 170 ms)。
 func (m *Model) compactAnims() {
 	n := len(m.anims)
 	m.animsPeak = max(m.animsPeak, n)
@@ -324,7 +324,7 @@ func (m *Model) continuous(p *node) bool { return p.geoPrev.seq == m.layoutSeq-1
 // 仮想化している間、アニメを持たない子の状態は「アニメを持つ兄弟の状態を、アニメが進んだ置き方 (直前の step の配置) での行の差
 // だけずらしたもの」と定める。ブロックの子は全員が同じ瞬間に同じだけ目標が変わるので、全部を動かしていた場合の状態と一致する
 // (anyRef の doc)。作り直した後の目標の変化 (並び替え・行の間隔・飛ぶ動き) は、次の step で全部を動かした場合と同じく今の位置から
-// 始まる。🚨 行の差は前の置き方の順位 (oldIdx) で取る: 今の順位で取ると、並び替えの後は前の位置と食い違う (敵対レビュー 2 周目)。
+// 始まる。🚨行の差は前の置き方の順位 (oldIdx) で取る: 今の順位で取ると、並び替えの後は前の位置と食い違う。
 func (m *Model) reviveAnim(n *node) *anim {
 	p := n.parent
 	if p == nil || p.virtSeq == 0 || m.isFresh(n) {
@@ -332,7 +332,7 @@ func (m *Model) reviveAnim(n *node) *anim {
 	}
 	// アニメの状態が進んだ置き方: step の中なら前の step のもの、描く直前ならこのフレームの step のもの。🚨 直前の layout ではない
 	// (step と step の間に描くための layout が挟まり、そこで新しい行の間隔を記すと、古い位置のアニメに新しい間隔でずらし幅を
-	// 掛けてしまう。敵対レビュー 2 周目の直しの検証で再現)
+	// 掛けてしまう)
 	g, want := p.geoStep, m.stepN
 	if m.inStep {
 		g, want = p.geoStepPrev, m.stepN-1
@@ -400,7 +400,7 @@ func (m *Model) noteStepVirt() {
 		m.stepVirt = append(m.stepVirt, p)
 	}
 	// 外れた子 (覚えの removed) を読むのは、次の step で stepVirt に居る親だけ (ghostCulled・realizeVirtual)。この step で仮想化しなかった親の
-	// removed はもう誰も読まないので捨てる (残すと、消えた部分木をその親の覚えを次に作り直すまで掴む。issue 726)
+	// removed はもう誰も読まないので捨てる (残すと、消えた部分木をその親の覚えを次に作り直すまで掴む)
 	held := m.remHolders[:0]
 	for _, p := range m.remHolders {
 		if p.vis == nil || len(p.vis.removed) == 0 {
@@ -416,7 +416,7 @@ func (m *Model) noteStepVirt() {
 }
 
 // compactTail は s を詰めた結果 kept (s の先頭を使い回した slice。nil なら空) を返し、s の後ろに残った古いポインタを nil で埋める
-// (len を縮めるだけでは cap の先に消えた node・閉じたタイルが残り、GC に回収されない。issue 726)。
+// (len を縮めるだけでは cap の先に消えた node・閉じたタイルが残り、GC に回収されない)。
 func compactTail[T any](s, kept []T) []T {
 	clear(s[len(kept):])
 	if kept == nil {
@@ -428,8 +428,8 @@ func compactTail[T any](s, kept []T) []T {
 // ghostCulled は、直前の step で仮想化していたブロックの子が見せる子から外れた (ライブ更新で消えた・隠した) とき、またはブロックが
 // この step で置かれなくなった (畳んだ・祖先を畳んだ・root を変えた) とき、
 // 画面から遠いので捨てていた子にもアニメを作り直し、縮んで消える側に回す。全部を動かす側では全部の子が縮んで消え、遠くの子も
-// 縮む途中で画面を横切る (畳んだ後に画面を高くすると、透明度 25% で届いた。敵対レビュー 3 周目の後の乱数の操作列のテスト)。
-// 全部の子にアニメを持たせるのは消える動きの間 (fadeOutDur) だけ (712 より前は常に全部を動かしていた)。
+// 縮む途中で画面を横切る (畳んだ後に画面を高くすると、透明度 25% で届いた。乱数の操作列のテストで再現)。
+// 全部の子にアニメを持たせるのは消える動きの間 (fadeOutDur) だけ。
 func (m *Model) ghostCulled() {
 	added := false
 	// 覚えの作り直しで外れた子 (ライブ更新で消えた・隠した) も同じ: 全部を動かす側では縮んで消える
@@ -515,12 +515,12 @@ func (m *Model) realizeVirtual(pos map[*node]place) {
 			added = true
 		}
 	}
-	// 読み直しで外れた子も、次の step まではまだ縮んでいない (全部を動かす側では前の位置に描かれる。敵対レビュー 4 周目)。
+	// 読み直しで外れた子も、次の step まではまだ縮んでいない (全部を動かす側では前の位置に描かれる)。
 	// 🚨 前提: 覚えの鍵 (kidsVer / ShowHidden / 経路上の隠しファイル / labelMax) を変えた後に覚えを引くのは layout (View か step) だけで、
 	// キーの処理の中で覚えを引く所 (siblings / moveSibling / descend / nextFile / isKidOf) は鍵を変える前に引く。だから Advance を挟まずに
 	// 2 回作り直しても、その間の View でここを通る (外れた子は 1 回目の View で作り直され、前の順位も 1 回目の世代のもので足りる)。
 	// キーの処理の中で鍵を変えた後に覚えを引くようになったら、2 回目の作り直しが前の順位 (pvidx) を中間の世代で上書きし、遠くで捨てた子が
-	// 滑らずに湧く (敵対レビュー 5 周目の読み。今は到達しない)
+	// 滑らずに湧く (今は到達しない)
 	for _, p := range m.stepVirt {
 		if p.vis == nil {
 			continue

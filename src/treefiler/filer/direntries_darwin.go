@@ -26,7 +26,7 @@ import (
 // 🚨 大きさの欄は種類で片方しか入らない (返った属性の dirattr / fileattr で見分ける)。どちらも返らない項目と、ERROR が 0 でない項目は
 // その項目だけ lstat で読み直す (並びの位置を推測しない)。記録が壊れて見えたら全体を errNoBulk にして今の形へ戻る。
 // 🚨 フォルダの項目は全部 lstat で読み直す: マウントポイント・ファームリンク (/ の Users・Applications 等)・autofs では、bulk は覆われた側
-// (元の空のフォルダ) の mtime と大きさを返し、lstat (= 今の形) は mount した先の root の値を返す (issue 714 の敵対レビューで実測。
+// (元の空のフォルダ) の mtime と大きさを返し、lstat (= 今の形) は mount した先の root の値を返す (実測。
 // / で 9 件・/Volumes・自分で mount した HFS+ / ExFAT / FAT)。フォルダは普通は項目の一部なので、まとめて読む得はほぼ残る。
 const (
 	attrBitMapCount      = 5
@@ -73,7 +73,7 @@ func readEntriesBulk(dir string) ([]dirEntry, error) {
 	for {
 		// 🚨 番号で直接呼ぶのは x/sys が非推奨にしている (Apple は syscall の番号を約束しない。libSystem を通すなら cgo が要る)。
 		// 失敗は errno で今の形へ戻り、崩れた記録は parseBulkRecord が errNoBulk にする。macOS で bulk が動かなくなったら
-		// TestBulkMatchesReadDirLstat が落ちる (黙って遅い経路に戻らない)。そのときは cgo で libc の getattrlistbulk を呼ぶ形 (issue 714 の ①) へ移す
+		// TestBulkMatchesReadDirLstat が落ちる (黙って遅い経路に戻らない)。そのときは cgo で libc の getattrlistbulk を呼ぶ形へ移す
 		n, _, errno := unix.Syscall6(unix.SYS_GETATTRLISTBULK, uintptr(fd), uintptr(unsafe.Pointer(&al)), //nolint:staticcheck // 上の注記 (番号を直接呼ぶ)
 			uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), fsoptPackInvalAttrs, 0)
 		if errno != 0 {

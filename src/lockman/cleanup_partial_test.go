@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// 期限切れした掃除は「どこまで進んだか」を報告すること (issue 393)。
+// 期限切れした掃除は「どこまで進んだか」を報告すること。
 //
 // 🚨 旧版は `withTimeout` が返したエラーだけを見て `CleanupResult{Errors: ...}` を返しており、
 // **実際には数千件を消しているのに `removed=0`** と報告していた (実測 2026-09-18: 残骸 10,000 件で
@@ -44,7 +44,7 @@ func TestCleanupTimedReportsPartialProgress(t *testing.T) {
 
 	// 🚨 **窓の内側で止める**。`.cleanup_at` を FIFO にする形 (sweep の**後**で詰まる) だと、
 	// 「sweep の途中で期限切れ」を構造的に再現できず、**カウンタを一括で足す変異
-	// (= issue 393 の症状そのもの) が全スイート緑で通る** (敵対レビュー P1-1 が実測)。
+	// (= 消したのに 0 件と報告する症状) が全スイート緑で通る** (実測)。
 	// ここでは 1 件消すごとに待たせ、期限内に一部しか進めない状態を作る。
 	pause := func() { time.Sleep(testIOTimeout / 4) } // sleep-ok: window: sweep の途中で期限切れになる遅い処理を演じる入力
 	hook := &sweepPauseHook
@@ -70,12 +70,12 @@ func TestCleanupTimedReportsPartialProgress(t *testing.T) {
 			t.Errorf("途中で止まっていない (removed=%d / 全 %d 件)。窓を再現できていないので"+
 				"このテストは一括カウントの変異を検出できない", res.Removed, residue)
 		}
-		// 🚨 **報告が実態を上回っていないこと** (3 周目 P1-1)。ここは**片側 assert** で、
+		// 🚨 **報告が実態を上回っていないこと**。ここは**片側 assert** で、
 		// 見捨てた goroutine が消し続けるぶんは `got` を増やす方向にしか効かないので
 		// 偽の赤にはならない。2 周目はこれを「ほとんど何も検査しない」として消したが、
 		// **変異を当てずに vacuous と判定していた**のが誤りで、実際は期限切れ枝で
 		// 「報告 > 実態」を守る**唯一の上限**だった (実測: `removed` を 2 倍に水増しする
-		// 変異が、消した後は全スイート緑で通る)。issue 393 が直した嘘の**鏡像**
+		// 変異が、消した後は全スイート緑で通る)。「消したのに 0 件と言う」嘘の**鏡像**
 		// (「消していないのに消したと言う」) がここに当たる。
 		// 🚨 **待ちの前に置くこと**。待った後だと goroutine が全部消し終えているので
 		// 上限が緩みきって何も検出しない。
@@ -83,7 +83,7 @@ func TestCleanupTimedReportsPartialProgress(t *testing.T) {
 			t.Errorf("報告 (%d) が実際に消えた数 (%d) を上回っている", res.Removed, residue-left)
 		}
 
-		// 🚨 **見捨てた goroutine が終わるのを待ってからテストを終える** (2 周目 P1-2)。
+		// 🚨 **見捨てた goroutine が終わるのを待ってからテストを終える**。
 		// 待たないと、`t.Cleanup` の `TempDir` 削除と、掃除を続けている goroutine の
 		// **`stampCleanup` による `.cleanup_at` の再作成**が競合し、
 		// `TempDir RemoveAll cleanup: ... directory not empty` で**無関係な赤**が出る
@@ -93,7 +93,7 @@ func TestCleanupTimedReportsPartialProgress(t *testing.T) {
 		hook.Store(nil) // 残りは全速で消させる
 		// 🚨 待つ対象は「打刻が現れること」= 掃除の完了。**打刻はエラーが 0 件のときしか
 		// 起きない**ので、この fixture (エラーを作らない) 専用の条件である
-		// (3 周目 P3-1。将来この fixture がエラーを持つと 10 秒待って落ちる)。
+		// (将来この fixture がエラーを持つと 10 秒待って落ちる)。
 		waitForFile(t, filepath.Join(l.metaDir, cleanupStampName))
 
 		// 見捨てられた後も掃除は続き、最後まで消し切ること
@@ -106,12 +106,12 @@ func TestCleanupTimedReportsPartialProgress(t *testing.T) {
 	}
 }
 
-// 期限切れで 0 件のときは「進んでいる」と言わないこと (敵対レビュー 393 の P2-2)。
+// 期限切れで 0 件のときは「進んでいる」と言わないこと。
 //
 // 🚨 「期限切れ + 0 件」は**判定不能**で、「排水中だから待てばよい」でも
-// 「1 件も進まない」でもない。旧文面は「掃除は途中で、次回の続きから減る」と
-// **偽の肯定**を足しており、issue 393 が動機に挙げた誤診 (「掃除が進んでいない」→ `rm -rf`) を
-// 逆向きに作っていた (「進んでいるから待とう」)。
+// 「1 件も進まない」でもない。「掃除は途中で、次回の続きから減る」と書く文面は
+// **偽の肯定**を足し、ありうる誤診 (「掃除が進んでいない」→ `rm -rf`) を
+// 逆向きに作る (「進んでいるから待とう」)。
 func TestCleanupCLISaysIndeterminateWhenNothingRemoved(t *testing.T) {
 	l := fifoLocker(t, stampFile) // 残骸ゼロ。打刻で詰まる
 	var out string
@@ -127,7 +127,7 @@ func TestCleanupCLISaysIndeterminateWhenNothingRemoved(t *testing.T) {
 	case <-time.After(20 * time.Second):
 		t.Fatal("cleanup が 20s 以内に戻らない")
 	}
-	// 🚨 **行の構造を丸ごと固定する** (2 周目 P2-1)。部分一致 + 「悪い語」の否定リストでは、
+	// 🚨 **行の構造を丸ごと固定する**。部分一致 + 「悪い語」の否定リストでは、
 	// ①同じ偽の肯定を**別の言い回し**で書けば素通りし ②否定リストの語は
 	// production から消えているので**一字一句戻したときしか鳴らない**。
 	// `main_test.go` の `TestDispatchWarnsOnCleanupFailureWithoutVerbose` が
@@ -141,11 +141,11 @@ func TestCleanupCLISaysIndeterminateWhenNothingRemoved(t *testing.T) {
 	}
 }
 
-// sweep 中に起きたエラーも期限切れで捨てないこと (敵対レビュー 393 の P2-3)。
+// sweep 中に起きたエラーも期限切れで捨てないこと。
 //
 // 🚨 エラーは「排水中」と「権限ドリフトで恒久的に詰まっている」を分ける情報で、
-// issue 393 の動機 2 に対しては件数より効く。旧版は期限切れ時に `CleanupResult` を
-// 組み立て直してタイムアウト 1 本だけを入れており、sweep 中のエラーを捨てていた。
+// 件数より効く。期限切れ時に `CleanupResult` を
+// 組み立て直してタイムアウト 1 本だけを入れると、sweep 中のエラーを捨てる。
 func TestCleanupTimedKeepsSweepErrorsOnTimeout(t *testing.T) {
 	l, err := NewLocker(t.TempDir(), testIOTimeout)
 	if err != nil {
@@ -267,7 +267,7 @@ func TestCleanupCLIDistinguishesPartialFromComplete(t *testing.T) {
 	}
 	// 🚨 こちらも**完全一致**。部分一致 (`Contains(out, "removed>=1")`) だと、
 	// 括弧の中身に「掃除は途中で、次回の続きから減る」のような**偽の断定**を戻す変異が
-	// 素通りする (2 周目 P2-1 が実測: その変異は全スイート緑だった)。
+	// 素通りする (実測: その変異は全スイート緑だった)。
 	want := regexp.MustCompile(
 		`^lockman: cleanup: removed>=\d+ \(期限切れ。ここまでは確認済み\) ` +
 			`skipped=false errors=\[.*I/O timeout.*\]\n$`)

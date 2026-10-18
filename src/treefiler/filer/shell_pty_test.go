@@ -144,7 +144,7 @@ func runBangOnPTY(t *testing.T, c bangCase) {
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestBangHelperOnPTY$")
-	// GORACE: -race のバイナリは終わる前に既定で 1 秒待ち、helper は 1 ケースで 1〜2 回終わる (42 秒 → 7 秒。issue 708)。
+	// GORACE: -race のバイナリは終わる前に既定で 1 秒待ち、helper は 1 ケースで 1〜2 回終わる (42 秒 → 7 秒)。
 	// helper の終了コードは見ていないので、helper の中の race は待っても待たなくても出力にしか出ない
 	cmd.Env = append(os.Environ(), bangHelperEnv+"="+string(req), bangShapeEnv+"="+c.shape, bangRawEnv+"="+strconv.FormatBool(c.raw),
 		"GORACE=atexit_sleep_ms=0")

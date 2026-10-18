@@ -33,7 +33,7 @@ func newCanvas(w, h int) *canvas {
 }
 
 // reset は格子を地の色の空白に戻す (毎フレーム作り直さず使い回すため。glogx の TestFrameAllocBudget で
-// 作り直しは 1 フレーム 330KB だった)。セルごとに代入せず見本からまとめて写す (issue 724)。
+// 作り直しは 1 フレーム 330KB だった)。セルごとに代入せず見本からまとめて写す。
 func (c *canvas) reset() { copy(c.cells, c.blank) }
 
 func (c *canvas) at(x, y int) *cell {
@@ -179,7 +179,7 @@ func (c *canvas) fillBg(x0, y0, x1, y1 int, bg rgb) {
 }
 
 // unpair は (x, y) にまたがる全角を割る: 上書きする前に、相方のセルを空白にする (左半分を上書きすると右半分の cont が残って
-// lines() がその行を 1 桁短く出し、右半分を上書きすると左の全角が残って 1 桁長く出る。issue 731)。
+// lines() がその行を 1 桁短く出し、右半分を上書きすると左の全角が残って 1 桁長く出る)。
 func (c *canvas) unpair(x, y int) {
 	p := c.at(x, y)
 	if p == nil {
@@ -254,7 +254,7 @@ func appendRGB(b []byte, sel string, c rgb) []byte {
 	return b
 }
 
-// decimals は 0..255 の 10 進の文字列 (色の成分を毎回 strconv で組まない。issue 724)。
+// decimals は 0..255 の 10 進の文字列 (色の成分を毎回 strconv で組まない)。
 var decimals = func() [256]string {
 	var t [256]string
 	for i := range t {

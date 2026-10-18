@@ -1,4 +1,4 @@
-// Package svc は svcdoctor: 壊れた launchd 登録の検出 (issue 148 の 4 章)。
+// Package svc は svcdoctor: 壊れた launchd 登録の検出。
 //
 // 「使っていないこと」ではなく「壊れていること」で拾う。判定は構造的に確定する事実だけ:
 //

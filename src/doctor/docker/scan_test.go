@@ -529,7 +529,7 @@ func TestPerItemCommandsArePinnedExactly(t *testing.T) {
 
 // 🚨 `docker volume inspect` は名前をまとめて渡すので、走査中に 1 個消えただけで rc=1 になる。
 // **stdout を捨てない** — 捨てると他の全ボリュームが「作成日不明」= 候補 0 件に落ち、
-// ボリューム群が常時空になる (敵対レビュー 2 周目 P3-3)。
+// ボリューム群が常時空になる。
 func TestVolumeInspectPartialFailureKeepsOthers(t *testing.T) {
 	f := &fakeDocker{
 		df: dfJSON("", "", `{"Name":"old_a","Links":"0","Size":"1GB"},{"Name":"gone_b","Links":"0","Size":"2GB"}`, ""),

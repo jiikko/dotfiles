@@ -77,7 +77,7 @@ type ItemOutcome struct {
 	Dest    string  `json:"dest,omitempty"` // ゴミ箱の移動先
 	// Staged は rm の直前に付けた予測不能名 (`.glogx-delete-<hex>`)。改名と RemoveAll の
 	// あいだにプロセスが死ぬと、この名前の残骸が親ディレクトリに残る。**名前を記録に残さないと
-	// 後から掃除も追跡もできない** (issue 236 の P3-3)。削除まで進めば残骸は無いが、
+	// 後から掃除も追跡もできない**。削除まで進めば残骸は無いが、
 	// 記録は「この名前を使った」ことを示す (phase が executing で止まっていたら候補)
 	Staged string `json:"staged,omitempty"`
 	// Ref は cli: の `<id>` に入れる識別子 (simctl のランタイム識別子)。走査時の Item から取る。
@@ -111,7 +111,7 @@ type EntryOutcome struct {
 	// BeforeSize は走査時の占有量、AfterSize は削除後の再走査の値。Freed は**引き算の実測**で、
 	// 「コマンドが成功したから消えたはず」では数えない。
 	// 🚨 どちらも**このエントリで触ろうとした対象**に閉じた量で、エントリ全体の占有量ではない
-	// (ディレクトリ単位で一部だけ選べるため。issue 232)。エントリ全体を選んだときは一致する。
+	// (ディレクトリ単位で一部だけ選べるため)。エントリ全体を選んだときは一致する。
 	// 記録 (JSON) を読む側もこの意味で読むこと。
 	BeforeSize int64    `json:"before_size"`
 	AfterSize  int64    `json:"after_size"`
@@ -218,9 +218,9 @@ func withDeleteDefaults(opt DeleteOptions) DeleteOptions {
 
 // DefaultHistoryDir は削除インベントリの既定の置き場。
 //
-// 🚨 **prune / TTL を置かないのは意図的** (issue 308 の未決着 4、2026-09-10 に決着)。
-// resource-leaks 監査 (2026-09-06) が「無限に増える」として prune の新設を提案したが、
-// 採らなかった理由:
+// 🚨 **prune / TTL を置かないのは意図的**。
+// 「無限に増える」として prune の新設を提案されうるが、
+// 採らない理由:
 //
 //   - **production の読み手が 0 件**。ここは forensics 専用で、増えても誰の処理も遅くしない
 //   - **増加が年単位で KB**。実測 2026-09-10: **4 ファイル / 16K** (`~/.cache/glog` 全体で 84K)。
@@ -242,12 +242,10 @@ func DefaultHistoryDir() (string, error) {
 
 // 中断の語は**下見 (DryRun) と実削除で分ける**。同じ「中断された」でも読み手が次に取る行動が違う。
 //
-// 🚨 最初は 1 つの定数に寄せたが、敵対レビュー (2026-09-04) が誤読を示した: 下見の結果は
+// 🚨 1 つの定数に寄せない (誤読を生む)。下見の結果は
 // **その直後に「本当に削除しますか?」の確認画面になる**ので、そこで言うべきは「触ったか」
 // ではなく「消してよいか確かめられたか」。DryRun は元から何も触らないので「触っていません」は
 // 情報量がなく、「この行は消えない」という別の意味に読まれる。
-// (レビュー時点では y が plan を無視して選択全件を消したので実害もあった。issue 245 が
-// 69f96ba8 で plannedTargets に絞ったため、今は誤読だけが残る。)
 const (
 	// abortedEntryReason は実削除の打ち切り。ここでは「触っていない」が読み手の知りたいこと
 	abortedEntryReason = "中断されました (このエントリは触っていません)"
@@ -267,7 +265,7 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 	targets = dedupeTargets(targets)
 	if opt.DryRun {
 		for i, t := range targets {
-			// 🚨 中断されたら残りを走査し直さない (issue 246)。planDelete は 1 件ごとに
+			// 🚨中断されたら残りを走査し直さない。planDelete は 1 件ごとに
 			// Scan を通すので、打ち切らないと中断後も全エントリぶんの走査が個別に落ちるまで回る。
 			// 非 DryRun のループ (下) が同じ位置で同じことをしている
 			if ctx.Err() != nil {
@@ -292,7 +290,7 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 	for _, t := range targets {
 		rep.Entries = append(rep.Entries, intent(t))
 	}
-	// aborted は「記録を残せなくなって残りを触らずに止めた」印 (phase の決定に使う。issue 236)
+	// aborted は「記録を残せなくなって残りを触らずに止めた」印 (phase の決定に使う)
 	aborted := false
 	if err := hist.write(rep, phasePlanned); err != nil {
 		hist.discard()
@@ -301,7 +299,7 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 
 	for i, t := range targets {
 		// 🚨 破壊的操作の前に必ず中断を見る。os.RemoveAll / trashMove は ctx を取らないので、
-		// ここで見ないと「中止したのに残り全部が消える」になる (敵対レビュー 2026-09-03 で実測)
+		// ここで見ないと「中止したのに残り全部が消える」になる (実測 2026-09-03)
 		if ctx.Err() != nil {
 			rep.Entries[i].Outcome = OutcomeSkipped
 			rep.Entries[i].Reason = abortedEntryReason
@@ -309,7 +307,7 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 		}
 		// plan (実体の同一性検査) と exec を**隣接**させる。全件を先に plan すると、
 		// 最後のエントリは検査から実行までの間に再走査 (最大 PerEntry) を何度も挟むことになり、
-		// TOCTOU の窓が分単位で開く (敵対レビュー 2026-09-03 で親ディレクトリ差し替えを実測)
+		// TOCTOU の窓が分単位で開く (実測 2026-09-03: 親ディレクトリ差し替え)
 		opt.phase(i, len(targets), t.Entry.Label, PhaseScanning)
 		out := planDelete(ctx, t, opt)
 		opt.phase(i, len(targets), out.Label, PhaseDeleting)
@@ -341,7 +339,7 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 	rep.FinishedAt = opt.Now()
 	// 中断で終わった run に done (= 最後まで行った) と書かない
 	//
-	// 🚨 **`ctx.Err()` だけを見ない** (issue 236 の P3-1)。記録が書けなくなって残りを
+	// 🚨 **`ctx.Err()` だけを見ない**。記録が書けなくなって残りを
 	// Skipped にした run は ctx が生きているので、**書込失敗が一時的なら** (ENOSPC →
 	// 削除で空きが戻る、はディスク掃除ツールでは現実的) 最後の write が成功して
 	// 記録が「最後まで行った」と言う。中断した事実は変数で持ち回る。
@@ -446,7 +444,7 @@ func planDelete(ctx context.Context, t Result, opt DeleteOptions) EntryOutcome {
 	// 渡された Result の Items / Size は「画面に出すための申告値」で、測り直した値ではない。
 	// glob だけを突き合わせても足りない: guard (Chrome 起動中 / mtime が起動時刻より古い /
 	// 孤児判定) こそが「そのパスは今消してよいか」を決めているので、guard を通さない突合は
-	// 「エントリの glob の内側」しか守らない (敵対レビュー 2026-09-03 が実測: Chrome 起動中に
+	// 「エントリの glob の内側」しか守らない (実測 2026-09-03: Chrome 起動中に
 	// ライブなテンポラリを消せた / 走査後に mtime が更新された対象を警告なしで消せた)。
 	// 走査を通せば集合の作り方が 1 つになり (走査側と削除側で 2 実装しない)、サイズと
 	// (dev, ino) も実測値になる。
@@ -461,7 +459,7 @@ func planDelete(ctx context.Context, t Result, opt DeleteOptions) EntryOutcome {
 	}
 	switch {
 	case ctx.Err() != nil:
-		// 🚨 **中断を先に見る** (issue 246)。中断で真になるのは fresh.Partial の側で、そのとき
+		// 🚨 **中断を先に見る**。中断で真になるのは fresh.Partial の側で、そのとき
 		// cur.Status は ok のまま Reason も空。下の分岐へ落とすと「削除の前に走査し直せません
 		// でした: 」という**理由がコロンの後で切れた文言**になり、しかも planHasWork が false に
 		// なるのでパネルの見出しが「消せるものがありません」になって、中断した事実が画面の
@@ -488,7 +486,7 @@ func planDelete(ctx context.Context, t Result, opt DeleteOptions) EntryOutcome {
 		out.Items = append(out.Items, planItem(method, argv, it, opt))
 		out.BeforeSize += it.Size // 申告値ではなく測り直した値
 	}
-	// 🚨 **触る対象が 1 件も無いなら Planned にしない** (issue 231)。rm / trash / cli の ref 版は
+	// 🚨 **触る対象が 1 件も無いなら Planned にしない**。rm / trash / cli の ref 版は
 	// exec が Item 単位で非 Planned を弾くので実害が出ないが、cli の非 ref 版
 	// (`go clean -modcache` / `brew cleanup`) は Item を 1 つも見ずにコマンドを 1 回実行する。
 	// その後 verifyEntry は touched == 0 を見て「触れる対象がありませんでした」と書くので、
@@ -518,7 +516,7 @@ func planDelete(ctx context.Context, t Result, opt DeleteOptions) EntryOutcome {
 	return out
 }
 
-// untouchedOutcome は「触った Item が 1 件も無い」ときの結末語。plan の時点 (issue 231) と
+// untouchedOutcome は「触った Item が 1 件も無い」ときの結末語。plan の時点と
 // exec 後の verify が**同じ語**を使うための出典 (2 箇所で別の語を作らない)。
 func untouchedOutcome(failed int) (Outcome, string) {
 	if failed > 0 {
@@ -646,7 +644,7 @@ func execEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 
 // removeItem は 1 対象を消す。**親ディレクトリを fd で掴んでから**同一性を確かめ、同じ fd 経由で
 // 消す (os.Root)。パスで再解決すると、検査と削除のあいだに親ディレクトリを差し替えられて
-// 別の木が消える (敵対レビュー 2026-09-03 が実測)。
+// 別の木が消える (実測 2026-09-03)。
 //
 // 🚨 os.RemoveAll は木の途中で失敗してもそこまでの削除を取り消さない。失敗を OutcomeFailed に
 // すると「何も消えていない」と読まれるので、OutcomeIncomplete (一部消えている) にする。
@@ -678,11 +676,11 @@ func removeItem(o *ItemOutcome) error {
 	}
 	// 🚨 消す前に**予測できない名前へ改名する**。Lstat と RemoveAll は base を 2 回名前解決するので、
 	// そのあいだに同じ親ディレクトリ内で rename を当てられると、検査していない木が消える
-	// (敵対レビュー 2026-09-03 の実測: 4464 試行中 121 回 = 2.7% で成立した)。改名してしまえば、
+	// (実測 2026-09-03: 4464 試行中 121 回 = 2.7% で成立した)。改名してしまえば、
 	// 相手は自分が置けない名前を狙うことになる。
 	// 🚨 改名と削除のあいだにプロセスが死ぬと、この名前の残骸が親ディレクトリに残る
 	// (対象はキャッシュの中なので実害は小さいが、次の走査の glob には出ないことがある)。
-	// **使った名前を o.Staged に残す** (issue 236 の P3-3): 記録が phase: executing で
+	// **使った名前を o.Staged に残す**: 記録が phase: executing で
 	// 止まっていたら、その run の Staged が残骸の候補になる。名前が無いと追跡できない。
 	staged, err := stagingName()
 	if err != nil {
@@ -822,8 +820,8 @@ func verifyEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 		after = rep.Results[0]
 	}
 	// 🚨 ok 以外は「消えた」の根拠にならない。blocked (guard で対象外になった) は Items が nil /
-	// Size 0 で返るので、素通りさせると「消えた + 全額 freed」に化ける (敵対レビュー 2026-09-03 が
-	// cli: + guard の組み合わせで実測)。blocked は「消えた」でも「残っている」でもない第 3 の値
+	// Size 0 で返るので、素通りさせると「消えた + 全額 freed」に化ける (実測 2026-09-03:
+	// cli: + guard の組み合わせ)。blocked は「消えた」でも「残っている」でもない第 3 の値
 	if after.Status != StatusOK {
 		out.Outcome = OutcomeIncomplete
 		out.Reason = "削除後の再走査で確認できませんでした (消えたか分かりません): " + after.Reason
@@ -834,7 +832,7 @@ func verifyEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 		out.Reason = "削除後の再走査が途中で終わりました (消えたか分かりません)"
 		return
 	}
-	// 🚨 **数える範囲を「触ろうとした対象」に閉じる** (issue 232)。after はエントリ全体の
+	// 🚨 **数える範囲を「触ろうとした対象」に閉じる**。after はエントリ全体の
 	// 再走査なので、部分選択 (Enter で開いて Space でディレクトリを選ぶ正規の経路) では
 	// 残した兄弟がそのまま after に載る。BeforeSize は渡された Item のぶんしか足していないので、
 	// 閉じないと引き算の両辺でスコープが違い、①兄弟が残っているだけで
@@ -850,8 +848,8 @@ func verifyEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 			continue // 触っていない兄弟。自分の成否の材料にしない
 		}
 		// 🚨 既知の非対称: touchedKeys は unmatchedItem 由来 (BeforeSize に入っていない) も含む。
-		// その対象が残ると AfterSize にだけ載り、Freed を**過小**に見せる。旧実装 (after.Size) でも
-		// 同じ向きにずれており、安全側 (解放量を多く申告しない) なのでこのまま。直すなら
+		// その対象が残ると AfterSize にだけ載り、Freed を**過小**に見せる。after.Size で数えても
+		// 同じ向きにずれる。安全側 (解放量を多く申告しない) なのでこのまま。直すなら
 		// 「BeforeSize に寄与した Item」の印を plan 側で持つ必要がある
 		out.AfterSize += it.Size
 		out.Remaining = append(out.Remaining, it.Path)
@@ -898,7 +896,7 @@ func verifyEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 		// 第 3 の状態: 実行したのに残っている (simctl の非同期削除 / 部分削除がこの形)。
 		// 一部でも消えているので「失敗」に畳まない (再試行の可否が変わる)。
 		// 🚨 残存は out.Remaining (触った対象に閉じた集合) で数える。after.Items 全部で数えると
-		// 部分選択のたびに incomplete になる (issue 232)
+		// 部分選択のたびに incomplete になる
 		out.Outcome = OutcomeIncomplete
 		out.Reason = fmt.Sprintf("削除を要求しましたが %d 件が残っています (時間をおいて再スキャンしてください)", len(out.Remaining))
 		if failed+partial > 0 {
@@ -1014,7 +1012,7 @@ func validateRef(ref string) error {
 // ---- ゴミ箱 ----
 
 // trashMove は src を trashDir へ移す。本体 (上書きしない・経路を差し替えられない・半端なコピーを作らない) は
-// safefs.TrashMove (treefiler と共有。issue 722)。検査点は allowDestructive をそのまま渡す (op 名 trash-dest / trash は変わらない)。
+// safefs.TrashMove (treefiler と共有)。検査点は allowDestructive をそのまま渡す (op 名 trash-dest / trash は変わらない)。
 func trashMove(src, trashDir string, dev, ino uint64) (string, error) {
 	dst, err := safefs.TrashMove(src, trashDir, safefs.ID{Dev: dev, Ino: ino}, allowDestructive) // destructive-op: allow allowDestructive を検査点として渡す
 	switch {
@@ -1077,7 +1075,7 @@ func newHistory(opt DeleteOptions) (*history, error) {
 		}
 		dir = d
 	}
-	// 🚨 **作る前に検査点を通す** (issue 234 (c))。AST ゲートは「消す・動かす」だけを見る設計なので、
+	// 🚨 **作る前に検査点を通す**。AST ゲートは「消す・動かす」だけを見る設計なので、
 	// ここは素通りして実ディレクトリと 0 バイトの JSON を作れてしまう。しかも後段の write が
 	// 拒否されると discard も拒否されるので、0 バイトの記録が残る (次に読む処理がパースエラー)
 	if err := allowDestructive("history-create", dir); err != nil {
@@ -1087,8 +1085,8 @@ func newHistory(opt DeleteOptions) (*history, error) {
 		return nil, err
 	}
 	// 置き場が symlink なら記録は別の場所に書かれる。
-	// 🚨 **最終要素だけでなく経路全体を見る** (issue 236 の P3-2)。以前は os.Lstat(dir) で
-	// dir 自身しか検査しておらず、ゴミ箱側 (noSymlinkInPath) と非対称だった。
+	// 🚨 **最終要素だけでなく経路全体を見る**。os.Lstat(dir) では
+	// dir 自身しか検査できず、ゴミ箱側 (noSymlinkInPath) と非対称になる。
 	// 途中のディレクトリが symlink なら、置き場ごと別の場所へ差し替えられる。
 	if err := noSymlinkInPath(dir); err != nil {
 		return nil, fmt.Errorf("記録の置き場を検査できません (%s): %w", dir, err)
@@ -1142,7 +1140,7 @@ type inventory struct {
 // 開くと **symlink を辿る**ので、置き場に書ける立場の相手が `<stamp>.json.tmp` を任意ファイルへの
 // symlink として撒いておくだけで、そのファイルが truncate + 上書きされる。しかも rename は
 // symlink 自体を差し替えるので、**記録は残ったつもりで実体を持たない** = fail-closed が
-// 無音で破れる (敵対レビュー 2026-09-03 が実測)。名前は秒粒度で予測できるので現実的な穴だった。
+// 無音で破れる (実測 2026-09-03)。名前は秒粒度で予測できるので現実的な穴になる。
 // newHistory 側が O_EXCL を使っている規律を、この置き場への**全部の書き込み**に通すこと。
 func (h *history) write(rep DeleteReport, phase string) error {
 	// 置き場は呼び出し側が決められる (opt.HistoryDir)。実ファイルを上書きしうるので検査点を通す

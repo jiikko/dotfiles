@@ -5,7 +5,7 @@
 // 注入して受け取るので、os/exec を import するのは非テストではこのファイルのみ。
 // glogx 側には同じ規律を機械で強制するゲート (src/glogx/waitdelay_discipline_test.go) が
 // あるが、doctor は**別 module** (doctor/go.mod) なのであちらの走査は原理的にここへ届かない。
-// 起動口を増やすなら、注入で済まないかを先に検討すること (issue 303)。
+// 起動口を増やすなら、注入で済まないかを先に検討すること。
 //
 // Runner 型をここ (leaf) に置いて disk / svc / docker から import させているのは意図的。
 // 消費側に func 型を宣言すれば依存は切れるが、実行バックエンドが 1 つのうちは先回りしない。
@@ -37,8 +37,8 @@ func Exec(ctx context.Context, name string, args ...string) (string, string, int
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	// 子を自分のプロセスグループにし、cancel ではグループごと殺す。CommandContext の既定は直接の子だけ
 	// なので、brew (bash → ruby → git) のような多段の孫が親を失って残る。pipe に書かない孫は WaitDelay
-	// でも回収されない (敵対レビュー 2026-09-02 の未確認リスクを構造で潰す)。
-	// 実機で確認済み (2026-09-03 / issue 206 (a))。glogx を隔離 tmux で動かし doctor を開くと、
+	// でも回収されない (未確認リスクを構造で潰す)。
+	// 実機で確認済み (2026-09-03)。glogx を隔離 tmux で動かし doctor を開くと、
 	// brew の ruby と simctl が **それぞれ自分の pgid** を持ち (pid == pgid)、その子 (curl) が
 	// 同じ pgid を継いでいた。つまり -pgid の kill が孫まで届く。5 試行すべてで、閉じてから
 	// **0.05 秒**で子孫が baseline へ戻った (brew doctor の timeout 60 秒を待たない)。
@@ -78,5 +78,5 @@ func WithTimeout(ctx context.Context, run Runner, timeout time.Duration, name st
 // LookPath は $PATH から実行ファイルを探す (exec.LookPath そのもの)。
 //
 // 起動はしないが runner に置くのは、os/exec を import してよいのがこの package だけだから
-// (depguard の exec-via-runner)。以前は docker が同じ意味論を自前で書き直していた。
+// (depguard の exec-via-runner)。
 func LookPath(name string) (string, error) { return exec.LookPath(name) }

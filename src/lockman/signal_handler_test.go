@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// 🚨 **`TestMain` の guard は置かない** (敵対レビュー 363 の 2 周目 P3-2)。
+// 🚨 **`TestMain` の guard は置かない**。
 //
 // 1 周目は「自分へシグナルを撃つので、修正が無い版ではランナーごと死ぬ」対策として
 // `TestMain` で INT / TERM を `signal.Notify` していたが、**subtest 側が `runWith` を呼ぶ前に
@@ -19,19 +19,19 @@ import (
 // 中断に SIGKILL が要る** (レビュー実測)。
 // 削除しても ①全スイート緑 ②変異 A で 2 subtest とも red ③ランナーは生存 を確認済み。
 
-// 子が存在し始める瞬間から、シグナルを `runWith` が受け取って子へ転送すること (issue 363)。
+// 子が存在し始める瞬間から、シグナルを `runWith` が受け取って子へ転送すること。
 //
 // 旧版は `signal.Notify` が `cmd.Start()` の**後**にあったので、その窓のシグナルは既定処理で
 // lockman を即死させ、**子は別プロセスグループで孤児として走り続けた** (出典の実測: 漏れ
 // 20/120 のうち 9 件がこの形。全件 stdout 0B / stderr 0B の無言)。
 //
-// 🚨 **窓は `cmd.Start()` の直前で作る** (敵対レビュー P1-1)。seam を Start の**後ろ**に置くと
+// 🚨 **窓は `cmd.Start()` の直前で作る**。seam を Start の**後ろ**に置くと
 // 「Start と Notify のあいだ」に Notify を戻す変異 (= 同じ退行) が判別の外に落ち、**緑で通る**
 // (実測)。Start の前なら判別境界が「子が存在し始める瞬間」に一致する。
 func TestSignalIsHandledFromTheMomentChildExists(t *testing.T) {
 	// 🚨 production が中継するのは INT / TERM / **HUP** の 3 つ (`notifiableSignals`)。
 	// 1 周目に「主題は Ctrl-C = INT なのに TERM しか通していない」を採用したのと**同じ論拠**で
-	// HUP も通す (2 周目 P3-3)。
+	// HUP も通す。
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP} {
 		t.Run(sig.String(), func(t *testing.T) {
 			l := newTestLocker(t)
@@ -39,7 +39,7 @@ func TestSignalIsHandledFromTheMomentChildExists(t *testing.T) {
 			finished := filepath.Join(dir, "finished")
 
 			// 🚨 **撃つだけでは足りない。配送されたことを確かめてから seam を抜ける**
-			// (敵対レビュー前の実測)。`Kill` からランタイムがチャネルへ配送するまでは非同期なので、
+			// (実測)。`Kill` からランタイムがチャネルへ配送するまでは非同期なので、
 			// 「撃って即 return」だと変異の窓が数 ns しかなく、配送が変異後の登録に間に合う =
 			// 現行と変異がどちらも同じ結果になって区別できない。
 			observed := make(chan os.Signal, 4)
@@ -86,10 +86,10 @@ func TestSignalIsHandledFromTheMomentChildExists(t *testing.T) {
 	}
 }
 
-// 🚨 **既に無視されているシグナルは `Notify` に渡さない** (敵対レビュー 363 の P1-2)。
+// 🚨 **既に無視されているシグナルは `Notify` に渡さない**。
 //
 // 渡すと Go が自前ハンドラを入れ、`exec` で子の disposition が SIG_IGN → SIG_DFL に変わる
-// (`nohup` / cron で端末が切れたとき、以前は生き延びたジョブが死ぬ)。
+// (`nohup` / cron で端末が切れたとき、素で実行すれば生き延びるジョブが死ぬ)。
 // 🚨 **空になったら `Notify` を呼んではいけない** — `signal.Notify(c)` は**シグナルを 1 つも
 // 渡さないと全シグナルを中継する**ので、意味が反転する。
 func TestNotifiableSignalsRespectsInheritedIgnore(t *testing.T) {
@@ -125,13 +125,13 @@ func TestNotifiableSignalsRespectsInheritedIgnore(t *testing.T) {
 	}
 }
 
-// 🚨 **`signal.Stop` は解放より"後"に走ること** (敵対レビュー 363 の 2 周目 P2-1)。
+// 🚨 **`signal.Stop` は解放より"後"に走ること**。
 //
 // 1 周目は「死を再現できないので in-process では pin できない」と記録したが、**守りたい不変条件は
 // 順序であって死ではない**。`signalStop` の指標を差し替えれば、Stop が呼ばれた瞬間に
 // **lock がもう消えているか**を見るだけで決定論的に固定できる。
 // (Stop が先に走ると既定処理が戻り、解放中の TERM/INT がプロセスを殺して lock が残る =
-// issue 363 が漏れと定義した signature そのもの。レビューが out-of-process で 3/3 再現)
+// 漏れの signature そのもの。out-of-process で 3/3 再現)
 func TestSignalStopRunsAfterRelease(t *testing.T) {
 	l := newTestLocker(t)
 	orig := signalStop
@@ -157,7 +157,7 @@ func TestSignalStopRunsAfterRelease(t *testing.T) {
 	}
 }
 
-// 🚨 **全部無視されている環境では `signal.Notify` を呼ばないこと** (2 周目 P2-1)。
+// 🚨 **全部無視されている環境では `signal.Notify` を呼ばないこと**。
 //
 // シグナルを 1 つも渡さない `Notify` は**全シグナルを中継する**ので、意味が反転して
 // SIGURG のような内部シグナルまで子へ転送しにいく。production に指標を増やさずに固定できるよう、

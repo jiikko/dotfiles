@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// --on-lost の値検証 (issue 409)。着手時点で **0 件**だった。
+// --on-lost の値検証。着手時点で **0 件**だった。
 //
 // 判定が `o.onLost != "warn"` の否定形なので、検証が無いと `warm` のような綴り間違いが
 // 黙って kill 側に倒れる。warn のつもりの人に SIGTERM が撃たれる向きなので危険側。
@@ -51,7 +51,7 @@ func TestOnLostValueIsValidated(t *testing.T) {
 }
 
 // 091:397「with の終了コードは子と衝突させない」— 引数が不正なときの rc は 125 で、
-// 子が返しうる 1 と区別できること (issue 409 の「同じ commit で揃えたい」節)。
+// 子が返しうる 1 と区別できること。
 //
 // 🚨 with 側だけを見ると、失敗の rc が 125 なのは failCode のおかげか、たまたま別経路に
 // 落ちたからか区別できない。check 側 (1 のまま) と対にして初めて failCode が効いたと言える。
@@ -77,7 +77,7 @@ func TestWithInvalidArgsExitWithInvalid(t *testing.T) {
 	}
 }
 
-// エラー文が**受け付ける値を全部**出すこと (人がその場で直せる。issue 409 の受け入れ条件)。
+// エラー文が**受け付ける値を全部**出すこと (人がその場で直せる)。
 // onLostModes から作っているので、値を足したら文面も自動で追従する — それをここで固定する。
 func TestOnLostErrorListsAllModes(t *testing.T) {
 	dir := t.TempDir()

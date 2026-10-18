@@ -32,7 +32,7 @@ type walker struct {
 	mu      sync.Mutex
 	results map[string]walkResult // walker の中だけで持つ (公開しない)
 	// delta は取り込み側がまだ取っていない結果。取り込み側は自分の map へ足す
-	// 🚨 全体の map を結果ごとに写して公開しない: 子フォルダが多いと 2 乗で伸び、直下 8000 フォルダで 1.87 秒かかった (issue 693)
+	// 🚨全体の map を結果ごとに写して公開しない: 子フォルダが多いと 2 乗で伸び、直下 8000 フォルダで 1.87 秒かかった
 	delta     map[string]walkResult
 	queue     []string // 末尾が新しい依頼。末尾から取る (新しく頼んだものから先に処理する)
 	asked     map[string]bool
@@ -116,7 +116,7 @@ func (w *walker) forget(dir string, force bool) {
 	w.version++
 }
 
-// drop は消えたフォルダ (と配下) の結果と記録を捨てる (forget は古い印を付けるだけで消さないので、作っては消すフォルダで伸び続けた。issue 727)。
+// drop は消えたフォルダ (と配下) の結果と記録を捨てる (forget は古い印を付けるだけで消さないので、作っては消すフォルダで伸び続ける)。
 // 走査中のものは終わったときに結果が 1 件戻りうる (次に消えたと分かったときにまた落ちる)。
 func (w *walker) drop(dirs []string) {
 	if len(dirs) == 0 {

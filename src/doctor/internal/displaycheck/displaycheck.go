@@ -1,5 +1,5 @@
 // Package displaycheck は「表示用の構造体へ新しい文字列フィールドを足したのに
-// `Sanitize*ForDisplay` へ通し忘れる」を止める検査の本体 (issue 251 / 252)。
+// `Sanitize*ForDisplay` へ通し忘れる」を止める検査の本体。
 //
 // disk / svc / docker の 3 つが同じ脅威を持つので、**判定を 1 実装に寄せる**
 // (写経すると片方だけ直る形ができる。`mutation-verify-new-tests.md` の
@@ -293,7 +293,7 @@ func sanitizingRHS(e ast.Expr) bool {
 //
 // 🚨 **fail-closed**。文字列を含みうるのに検査の仕組みが扱えない型式 (ポインタ / map /
 // 匿名構造体 / 他 package の named type) は unknown で返し、呼び出し側が違反にする。
-// false を返すと「新しい文字列フィールドを足したのに無音で緑」になる (敵対的レビュー 2026-09-04)。
+// false を返すと「新しい文字列フィールドを足したのに無音で緑」になる。
 func stringish(e ast.Expr, strNamed map[string]bool) (yes, unknown bool) {
 	switch t := e.(type) {
 	case *ast.Ident:

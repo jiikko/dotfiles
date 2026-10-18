@@ -27,7 +27,7 @@ func TestExecReturnsAfterTimeoutEvenIfGrandchildHoldsPipe(t *testing.T) {
 
 // cancel で孫まで死ぬ (プロセスグループ)。孫が pipe に書かなくても残らない。
 //
-// 🚨 **判定を時計に依存させない** (issue 212)。旧版は「300ms 待って cancel し、2 秒後に marker が
+// 🚨 **判定を時計に依存させない**。旧版は「300ms 待って cancel し、2 秒後に marker が
 // 無ければ合格」だったので、**孫が fork される前に cancel が届いた run では何も検査していない**
 // (marker が無いのは当たり前で、緑の側から観測できない)。CI が高負荷のときだけ vacuous になる形。
 // 今の形は「孫が自分の pid を書く」→「読めるまで待つ (= 孫が確かに生まれた)」→「cancel」→

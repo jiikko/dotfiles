@@ -11,7 +11,7 @@ import (
 //
 // 🚨 **この表に載っていない型は検査されない**。新しい表示用の構造体を足したら、ここにも足すこと。
 // 検査の本体・脅威モデル・「検出しない形」は `doctor/internal/displaycheck` が正本
-// (disk / svc / docker で 1 実装を共有する。issue 252)。
+// (disk / svc / docker で 1 実装を共有する)。
 var sanitizeGate = map[string]displaycheck.Gate{
 	"Report":        {Func: "SanitizeForDisplay", Recv: "out"},
 	"Result":        {Func: "SanitizeResultForDisplay", Recv: "r"},

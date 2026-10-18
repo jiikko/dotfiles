@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// graveyard の retention は **退避した時刻**から測ること (issue 364 の 2)。
+// graveyard の retention は **退避した時刻**から測ること。
 //
 // 🚨 `os.Rename` は mtime を保つので、打ち直さないと「死んだマシンが何日も放置した lock」=
 // **最も記録する価値のあるもの**だけが、退避した直後の掃除で即座に消える。
@@ -71,8 +71,7 @@ func TestGraveyardRetentionIsMeasuredFromEviction(t *testing.T) {
 // 🚨 これが無いと **「打刻しすぎ」を 1 本も検出できない**。上のテストと
 // TestGraveyardStillExpiresAfterRetention は、どちらも打刻後に自分で mtime を
 // 上書きするか「消えないこと」しか見ないので、`now.Add(100*24*time.Hour)` へ
-// 打つ変異が **full suite 全緑**で通っていた (実測 2026-09-19 の反証レビュー P2。
-// issue 364 の本文が「対照を置いた」と書いていたのは誤りだった)。
+// 打つ変異が **full suite 全緑**で通る (実測 2026-09-19)。
 // 打刻しすぎは graveyard が retention を無視して無限に育つ形なので、上限も見る。
 func TestGraveyardStampIsTheEvictionTime(t *testing.T) {
 	for _, tc := range []struct {
@@ -129,7 +128,7 @@ func TestGraveyardStampIsTheEvictionTime(t *testing.T) {
 	}
 }
 
-// 退避の打刻に使う時刻は、**不可逆な rename より前**に取得すること (反証レビュー P1)。
+// 退避の打刻に使う時刻は、**不可逆な rename より前**に取得すること。
 //
 // 🚨 `serverNow` は probe の実 I/O (作成 + stat + 削除)。これが rename の**後ろ**にあると、
 // 応答の鈍いマウントでその I/O が `--io-timeout` を食い切り、打刻が着地しないまま
@@ -229,7 +228,7 @@ func forEachGraveyard(t *testing.T, l *Locker, fn func(string)) {
 	}
 }
 
-// 🚨 **鈍いマウントでも、退避の記録が消えないこと** (issue 400)。
+// 🚨 **鈍いマウントでも、退避の記録が消えないこと**。
 //
 // 364 の P1 は「**不可逆な操作 (`os.Rename`) のあとに残した I/O が `--io-timeout` を食い切ると、
 // その I/O が前提の不変条件が黙って壊れる**」形だった (実測 A-B: 速いマウントでは graveyard に

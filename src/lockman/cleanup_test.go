@@ -39,9 +39,9 @@ func TestCleanupNeverRemovesLock(t *testing.T) {
 
 	// 期限切れの lock も cleanup は消さない (回収は Acquire の引き継ぎだけが行う)。
 	//
-	// 🚨 lock を **retention より古くする**。かつては `Sleep(100ms)` で期限切れに
-	// していたが、それだと mtime が新しいままなので「.lockman 直下も掃く」変異に
-	// 対して**構造的に盲目**だった (5 周目の実測: その変異で全テストが緑のまま通った)。
+	// 🚨 lock を **retention より古くする**。`Sleep(100ms)` で期限切れにする形にしない。
+	// それだと mtime が新しいままなので「.lockman 直下も掃く」変異に
+	// 対して**構造的に盲目**になる (実測: その変異で全テストが緑のまま通った)。
 	// `Chtimes` なら壁時計も待たない (`avoid-wall-clock-assertions.md`)。
 	l2 := newTestLocker(t)
 	if _, err := l2.Acquire(30*time.Millisecond, "dead"); err != nil {
@@ -97,7 +97,7 @@ func TestCleanupRemovesOldScratchOnly(t *testing.T) {
 	oldTmp := filepath.Join(l.metaDir, tmpDirName, "old.json")
 	freshTmp := filepath.Join(l.metaDir, tmpDirName, "fresh.json")
 	// probe/ も対象。ここに fixture を置かないと「probe の sweep を丸ごと消す」変異が
-	// 緑で通る (issue 358 の敵対レビューが実測)。
+	// 緑で通る。
 	oldProbe := filepath.Join(l.metaDir, probeDirName, "old")
 	freshProbe := filepath.Join(l.metaDir, probeDirName, "fresh")
 	oldGrave := filepath.Join(l.metaDir, graveyardDirName, "old")
@@ -167,8 +167,8 @@ func TestCleanupFailureDoesNotBreakAcquire(t *testing.T) {
 // ★ 保持期間には下限があり、割った値で呼ばれたら **何も消さずに** エラーを返す。
 //
 // 縛っているのは定数ではなく sweepDir に渡る値。定数に対する検査は「別の定数を作って
-// 渡す」「下限も一緒に下げる」で静かに迂回されることを issue 358 の敵対レビューが
-// 実測しており、そのどちらもここでは通らない。
+// 渡す」「下限も一緒に下げる」で静かに迂回されることが
+// 実測で分かっており、そのどちらもここでは通らない。
 func TestSweepRefusesRetentionBelowFloor(t *testing.T) {
 	l := newTestLocker(t)
 	if err := l.ensureDirs(); err != nil {
@@ -250,7 +250,7 @@ func TestCleanupDoesNotStampWhenRemoveFails(t *testing.T) {
 		t.Fatal("前提が作れていない: 削除が拒否されなかった (root 実行なら、このテストは" +
 			"守りとして成立していないので環境を変えること)")
 	}
-	// 🚨 **削除に失敗したものを「消した」に数えない** (敵対レビュー 393 の 3 周目 P2-1)。
+	// 🚨 **削除に失敗したものを「消した」に数えない**。
 	// `p.add()` を `os.Remove` の**前**へ動かす変異 (削除の「試行」を数える形。実装者が
 	// 自然に書きうる) は、これが無いと全スイート緑で通る — `Removed` を exact equality で
 	// pin しているテストは 4 本あるが、**どれも fixture に削除失敗を持っていない**。
@@ -307,11 +307,11 @@ func TestCleanupDoesNotStampWhenInfoFails(t *testing.T) {
 }
 
 // ★ 逆に「サブ dir がまるごと消えている」は良性 (掃除の目的が達成された状態)。
-// 失敗に数えると打刻が飛び、正常系で警告が鳴る (4 周目 P2-1 と同型)。
+// 失敗に数えると打刻が飛び、正常系で警告が鳴る。
 //
-// 🚨 issue 358 の脅威モデル表は当初「ENOENT フィルタは seam が無いので決定論的に
-// 書けない」と書いていたが、**それが当てはまるのは `os.Remove` と `e.Info()` だけ**。
-// ReadDir 側は dir を消すだけで決定論的に作れる (5 周目の実測)。
+// 🚨 「ENOENT フィルタは seam が無いので決定論的に
+// 書けない」は誤りで、**当てはまるのは `os.Remove` と `e.Info()` だけ**。
+// ReadDir 側は dir を消すだけで決定論的に作れる (実測)。
 func TestCleanupQuietWhenSubdirMissing(t *testing.T) {
 	l := newTestLocker(t)
 	if err := l.ensureDirs(); err != nil {
@@ -474,7 +474,7 @@ func TestCleanupDoesNotTreatUnreadableMetaDirAsBenign(t *testing.T) {
 //     利用者ファイルを消した** (`acquire` も symlink を辿って外部 dir を 0777 にした)。
 //     採らないのは到達不能だからではなく、**脅威モデルの外**だから — `.lockman` 配下に
 //     symlink を仕込める者は lock を直接消せるので、ゲートは敷居を上げない
-//     (issue 358 の「検出しないと決めた形」: 想定する敵はいない)。
+//     (「検出しないと決めた形」: 想定する敵はいない)。
 //     **再評価の trigger**: lockman を敵対的な共有 (第三者が `.lockman` に書ける場所) で
 //     使う要求が出たとき。そのときは EvalSymlinks ベースで閉じる
 func TestScratchDirNamesAreDirectChildren(t *testing.T) {
@@ -522,8 +522,8 @@ func assertNoStamp(t *testing.T, l *Locker, res CleanupResult) {
 
 // ★ 逆向き: 失敗していないときは打刻する (レート制限が進む)。
 //
-// 🚨 かつてここには「これが無いと『常に打刻しない』変異が緑で通る」と書いてあったが、
-// **実測で偽だった** (5 周目)。その変異は `TestCleanupIsRateLimited` と
+// 🚨 「これが無いと『常に打刻しない』変異が緑で通る」とは言えない。
+// **実測で偽**。その変異は `TestCleanupIsRateLimited` と
 // `TestCleanupRunsOnlyForMutatingCommands` が拾うので、本テストの検出力の増分は
 // 上記 11 変異に対してゼロ。それでも残すのは「掃除が成功したら打刻する」を
 // 名指しで読める場所が他に無いため (`mutation-verify-new-tests.md` が戒めるのは

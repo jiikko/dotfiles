@@ -25,7 +25,7 @@ func placesPath() string {
 }
 
 // Place は開いている場所: 起動したフォルダ・開いていたフォルダ (root 以外の展開済み)・カーソル (どれも絶対パス)。
-// Remember place の記録と、glogx が C-g で閉じて開き直したときの記憶 (glogx の filer_resume.go。issue 710) が同じ形を使う。
+// Remember place の記録と、glogx が C-g で閉じて開き直したときの記憶 (glogx の filer_resume.go) が同じ形を使う。
 type Place struct {
 	Start  string   `json:"start"`
 	Opened []string `json:"opened,omitempty"`
@@ -33,7 +33,7 @@ type Place struct {
 }
 
 // oneLine は 1 行に書いて同じ値で読み戻せるか。\r も外す: bufio.Scanner は行末の \r を落とすので、\r で終わるパスは
-// 別のパスとして読み戻される (issue 696 の 14)。
+// 別のパスとして読み戻される。
 func oneLine(s string) bool { return !strings.ContainsAny(s, "\r\n") }
 
 // readPlaces は記録を読む。ok=false は読み切れなかった (書き戻すと読めなかった残りを消すので、呼び出し側は書かない)。

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// レイアウト。issue 091「ロックの実体」と一致させること。
+// レイアウト。「ロックの実体」の仕様と一致させること。
 //
 //	<dir>/.lockman/
 //	├── lock               存在 = ロック中。中身は取得時に 1 度だけ書く
@@ -49,7 +49,7 @@ const (
 	// (2 つが一致することは TestTakeoverClaimGraceBounds が固定する)。
 	//
 	// 🚨 これを超える申告をする host と共有すると、その host がまだ飛行しているうちに
-	// 目印を回収しうる。該当するのは `--io-timeout` の範囲検証が入る前のビルド (issue 357 以前)
+	// 目印を回収しうる。該当するのは `--io-timeout` の範囲検証が入る前のビルド
 	// と、将来この上限を広げたビルド。再評価の trigger: 異なる版の lockman が同じ共有を
 	// 触る運用が出たとき。
 	maxTakeoverClaimTimeout = 5 * time.Minute
@@ -73,11 +73,11 @@ var (
 	// errBusy は他者が保持中。異常ではなくスキップの合図。
 	errBusy = errors.New("locked by someone else")
 	// errUnreadableLock は **errBusy のうち「lock の中身を読めなかった」方**。
-	// 🚨 正常な busy と**機械で見分けられる差**にしておく (敵対レビュー 2 周目 P2):
+	// 🚨正常な busy と**機械で見分けられる差**にしておく:
 	// 散文の文面だけで区別させると、cron が `2>/dev/null` を足した瞬間に区別が消える。
 	// errBusy を包むので、既存の `errors.Is(err, errBusy)` の分岐はそのまま動く。
 	//
-	// 🚨 **「人が動くまで解けない」とは名乗らない** (敵対レビュー 3 周目 P2-1)。同じ観測が
+	// 🚨 **「人が動くまで解けない」とは名乗らない**。同じ観測が
 	// **一過性** (健全な保持者の `Renew` が O_TRUNC している一瞬。毎 Renew ごとに窓が開く) と
 	// **恒久** (書きかけの残骸) の両方から出る。1 回の観測では区別できない。
 	// 🚨 したがって **`lockman break` を促さない**: 一過性の側でその助言に従うと、
@@ -90,7 +90,7 @@ var (
 	// errLeaseExpired は「token は一致するが lease が切れている」。**errNotOwner を包む**ので
 	// 既存の `errors.Is(err, errNotOwner)` はそのまま通る (終了コードの API は変えない)。
 	// 区別が要るのは `undoAbandonedPlace` だけ — 「自分のものではない」(消すものが無い) と
-	// 「自分のものだが消せず、**lock が残る**」を分けて報告するため (issue 362 の敵対レビュー P3)。
+	// 「自分のものだが消せず、**lock が残る**」を分けて報告するため。
 	errLeaseExpired = fmt.Errorf("%w: lease が切れている", errNotOwner)
 	// errClaimReplaced は「回収しようとした目印が、途中で別の観測者に置き直された」。
 	// errBusy を流用しないこと: 流用すると「譲ってよい失敗」の集合が、将来 errBusy を
@@ -170,13 +170,13 @@ func (l *Locker) ensureDirs() error {
 // mtime を読むことで、どのマシンから見ても同じ時刻の出典になる。
 //
 // 🚨 **`defer` の Remove は `os.Exit` に負けることがあり、probe が残る**。見捨てられた
-// goroutine (issue 362) はプロセス終了と競走しているため。**放置してよいと判断した**
-// (issue 391)。根拠は**現在の唯一の実運用経路の形**:
+// goroutine はプロセス終了と競走しているため。**放置してよいと判断した**
+// 根拠は**現在の唯一の実運用経路の形**:
 // `zshlib/_av1ify_lock.zsh` は ①ロックを `~/.lockman/av1c/<key>/` = **key ごとに別 dir**
 // (滞留が 1 箇所に集まらない) ②`--io-timeout` を渡さない = **既定の 10s** (残骸が出るには
 // まず 10s の I/O が要る) の 2 点を満たす。`sweepDir(probe, 1h)` が回収することも実測済み。
 //
-// 🚨 **「遅いマウントでしか問題にならない」は誤り** (issue 391 の反証レビューで実測)。
+// 🚨 **「遅いマウントでしか問題にならない」は誤り**。
 // 滞留が増えるだけで掃除は期限を超える — **ローカル APFS でも tmp/ が 1 万件あると
 // `--io-timeout 100ms` の掃除が期限切れし、打刻しないのでレート制限が死ぬ**
 // (3 千件なら完走する。削除を伴う走査は約 35µs/件で、走査だけの 16 倍かかる)。
@@ -200,7 +200,7 @@ func (l *Locker) serverNow() (time.Time, error) {
 }
 
 // readLock は現在の lock を読む。存在しなければ (nil, zero, nil) を返す。
-// 🚨 **mtime と中身は同じ fd から取る** (issue 383)。旧版は `os.Stat` → `os.ReadFile` の
+// 🚨 **mtime と中身は同じ fd から取る**。旧版は `os.Stat` → `os.ReadFile` の
 // 2 syscall で、あいだに別プロセスが lock を**差し替える** (temp + rename) と
 // 「古い mtime + 新しい中身」を観測できた。open して Fstat すれば、返す mtime と
 // バイト列は**同じ inode**のものになる。
@@ -208,7 +208,7 @@ func (l *Locker) serverNow() (time.Time, error) {
 // 🚨 **これは truncate による torn read を消さない** (実測 2026-09-16: 同じ fd でも、Fstat の後に
 // 外から `O_TRUNC` されると「古い mtime + 0 バイト」が返る)。そちらを実際に無害化しているのは
 // `tryTakeover` の fail-closed (中身を読めない lock は期限切れと判定しない) であって、
-// この関数ではない。issue 383 の候補 (c) は**単独では効かない**。
+// この関数ではない。
 // readLock は readLockInfo の薄い包み (mtime だけが要る呼び出し側のため)。
 func (l *Locker) readLock() (*Meta, time.Time, error) {
 	m, fi, err := l.readLockInfo()
@@ -220,7 +220,7 @@ func (l *Locker) readLock() (*Meta, time.Time, error) {
 
 // readLockInfo は現在の lock を読み、**読んだ実体そのものの `os.FileInfo`** も返す。
 //
-// 🚨 identity の土台を**別の syscall から取り直さない** (敵対レビュー 380 P1-1)。
+// 🚨 identity の土台を**別の syscall から取り直さない**。
 // `readLock` の後で `os.Lstat` し直すと、そのあいだ (中に `io.ReadAll` = SMB 1 往復が入る) に
 // 引き継がれたとき、**照合した対象と guard する対象が別の実体**になる。
 // それだと「照合した lock を消す」guard が、**引き継いだ側の lock を消す許可**として働く。
@@ -268,7 +268,7 @@ var tryPlaceAfterCreateHook = func(*os.File) {}
 
 // renewBeforeWriteHook は「照合を通った後・書き込む前」に割り込む seam。既定は何もしない。
 // **テストが「照合してから書くまでのあいだに引き継がれた」状態を決定論で作る**ために使う
-// (issue 380。本番ではこの窓は µs で、外から狙って作れない)。
+// (本番ではこの窓は µs で、外から狙って作れない)。
 var renewBeforeWriteHook = func() {}
 
 // releaseBeforeRemoveHook は「照合を通った後・消す前」に割り込む seam。既定は何もしない。
@@ -288,7 +288,7 @@ func expired(now, mtime time.Time, ttl time.Duration) bool {
 //
 // 🚨 **`m == nil` (中身を読めない lock) をここへ渡してはいけない。** 既定へ倒すと、
 // `--ttl 2h` を宣言した保持者が生きていても 30 分で「期限切れ」と判定され、
-// 正規手順で奪われる = 二重実行 (issue 383)。引き継ぎの判定は `tryTakeover` が
+// 正規手順で奪われる = 二重実行。引き継ぎの判定は `tryTakeover` が
 // **`m == nil` を先に弾く** ことで、この経路へ到達させない。
 // ここに残る nil 分岐は、その先で nil 参照 panic を起こさないための最後の受けに過ぎない。
 //
@@ -315,16 +315,16 @@ func (l *Locker) Acquire(ttl time.Duration, label string) (*Meta, error) {
 }
 
 // acquire は Acquire の本体。`ab` は「呼び出し側はもう待っていない」を伝える経路
-// (issue 362)。`AcquireTimed` だけが非 nil を渡し、それ以外は nil = 見捨てられ得ない。
+// `AcquireTimed` だけが非 nil を渡し、それ以外は nil = 見捨てられ得ない。
 //
 // 🚨 **ensureDirs と serverNow には見捨ての検査を置かない**。前者は冪等 (mkdir は既存なら
 // 何もしない)、後者の probe は `sweepDir(probe, ...)` が回収する。
 //
-// 🚨 **訂正 (敵対レビュー 3 周目)**: ここには当初「probe は goroutine 内の defer が自分で消す」と
+// 🚨 **訂正**: ここには当初「probe は goroutine 内の defer が自分で消す」と
 // 書いていたが**誤り**。`os.Exit` は defer を走らせないので、見捨てられた goroutine の probe と
 // `tryPlace` の tmp は**実際に残る** (実測: 60 起動で 3 件ずつ)。検査を置かない理由は
 // 「消える」からではなく、**残っても掃除の担当が居て、ロック dir を塞がない**から
-// (issue 362 の ④ と同じ扱い)。この残骸はこの変更の前から在り、量も増えていない。
+// この残骸はこの変更の前から在り、量も増えていない。
 func (l *Locker) acquire(ttl time.Duration, label string, ab *abandon) (*Meta, error) {
 	if err := l.ensureDirs(); err != nil {
 		return nil, err
@@ -367,7 +367,7 @@ func (l *Locker) acquire(ttl time.Duration, label string, ab *abandon) (*Meta, e
 
 // tryPlace は lock を 1 回の原子操作で置き、置けたことを読み直して確認する。
 //
-// 🚨 見捨てられた goroutine の扱い (issue 362) は **2 段**で、順序に意味がある:
+// 🚨見捨てられた goroutine の扱いは **2 段**で、順序に意味がある:
 //  1. **作らない**: 不可逆な操作 (link / O_EXCL) の直前で降りる。いま漏れているケースは
 //     定義上その操作まで到達している (だから lock が置かれる) ので、同じ到達性で効く
 //  2. **取り消す**: それでも置けてしまった分だけ `Release` で戻す (best-effort)。
@@ -379,10 +379,10 @@ func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 	}
 	// 🚨 **この tmp は `link(2)` の材料にしか使わない。fallback (O_EXCL) 枝は 1 バイトも読まない。**
 	// `link` が使えない FS では fsync 付きの書き込みが丸ごと捨てられる。**実測で
-	// acquire の 3 割** (issue 392: 本物の ExFAT 上で 27.3ms → tmp を省いた計測版 18.7ms。
+	// acquire の 3 割** (本物の ExFAT 上で 27.3ms → tmp を省いた計測版 18.7ms。
 	// link が使える APFS では 8.97 vs 8.90ms = 差なし — そこでは tmp は使われている)。
 	//
-	// 🚨 **それでも直さないと決めた** (issue 392)。理由は 3 つで、**どれも実測か実験に基づく**:
+	// 🚨 **それでも直さないと決めた**。理由は 3 つで、**どれも実測か実験に基づく**:
 	//  1. 効果のある FS を使う運用が無い。現在の実運用 (`zshlib/_av1ify_lock.zsh`) は
 	//     ローカル HOME = link が使える側で、そこでは効果 0
 	//  2. **理想形は実験で否定済み**。`renameatx_np(tmp, lock, RENAME_EXCL)` で tmp を
@@ -392,20 +392,20 @@ func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 	//     **CLI の一発実行では効かない**かのどちらか
 	//
 	// 🚨 **fsync を `link` の後ろへ移す形は採らない**。crash が挟まると中身の無い lock が残り、
-	// issue 383 が閉じた「誰も引き継げない恒久 wedge」を再導入する。
+	// 「誰も引き継げない恒久 wedge」を再導入する。
 	// 🚨 **smbfs 自体の `link` は今も未測定** (091 の表の空欄。ExFAT/FAT で ENOTSUP だからと
 	// いって smbfs がそうだとは言えない)。再開の trigger は 392 に書いた。
 	// 🚨 この tmp の `defer` Remove も `os.Exit` に負けて残ることがある。放置の根拠は
-	// `serverNow` の注記と同じ (issue 391)。
+	// `serverNow` の注記と同じ。
 	tmp := filepath.Join(l.metaDir, tmpDirName, meta.Token+".json")
 	if err := writeFileSync(tmp, b); err != nil {
 		return err
 	}
 	defer func() { _ = os.Remove(tmp) }()
 
-	// 🚨 **1 段目: 不可逆な操作の直前で降りる** (issue 362)。ここまでに作ったのは tmp だけで、
+	// 🚨 **1 段目: 不可逆な操作の直前で降りる**。ここまでに作ったのは tmp だけで、
 	// それは上の defer が消す。🚨 ただし **`os.Exit` は defer を走らせない**ので、降りた後に
-	// プロセスが畳まれると tmp は残る (issue 391。放置してよいと判断済み)。
+	// プロセスが畳まれると tmp は残る (放置してよいと判断済み)。
 	// **ここで防いでいるのは lock 本体を置くこと**であって、tmp が残らないことではない。
 	abandonCheckBeforePlaceHook(ab)
 	if ab.abandoned() {
@@ -427,23 +427,23 @@ func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 		if err != nil {
 			return err
 		}
-		// 🚨 **失敗したら自分が作った lock を消す** (issue 383)。残すと「中身が無い lock」になり、
+		// 🚨 **失敗したら自分が作った lock を消す**。残すと「中身が無い lock」になり、
 		// fail-closed の下では**誰も引き継げず、保持者も居ない**恒久 wedge になる。
 		// この枝は link(2) が使えない FS (smbfs で ENOTSUP) でだけ通る = 本番の経路。
 		//
-		// 🚨 **「O_EXCL が通った = この lock は自分のもの」は偽** (敵対レビュー 2 周目 P1)。
+		// 🚨 **「O_EXCL が通った = この lock は自分のもの」は偽**。
 		// O_EXCL が保証するのは**その瞬間**にその名前を自分が作ったことだけで、Write / Sync /
 		// Close が失敗して戻るまでのあいだに `lock` という名前の指す先は入れ替わりうる
 		// (`Break` は期限も token も見ずに無条件で rename する)。名前で消すと、**別ホストの
 		// 生きた lock を無言で消す** = 二重実行。これは同じファイルの `tryTakeover` が
 		// 「rename が原子なのは操作であって、名前の指す先が入れ替わらないことは保証しない」と
-		// 明文で否定している前提そのもの (issue 366)。
+		// 明文で否定している前提そのもの。
 		// **消してよいのは、開いた実体と今の名前の指す先が同じときだけ**。
 		// 🚨 この commit が入れた stderr の案内 (「`lockman break` で剥がす」) は、まさに
 		// 0 バイト lock が在る状態で人に `break` を打たせるので、**窓の発火条件を自分で作る**。
 		// 🚨 **照合の「前」に割り込める seam**。これが無いと、`own` を fd (`f.Stat()`) で控えるか
-		// パス (`os.Lstat`) で控えるかを**テストから区別できない** (敵対レビュー 3 周目 P1-2 /
-		// 4 周目 P2-2)。同じ論点で `takeoverRefreshHook` は既に seam を持っている。
+		// パス (`os.Lstat`) で控えるかを**テストから区別できない**。
+		// 同じ論点で `takeoverRefreshHook` は既に seam を持っている。
 		tryPlaceBeforeIdentityHook()
 		own, ownErr := f.Stat() // 開いた実体を控える (Close より前でないと取れない)
 		tryPlaceAfterCreateHook(f)
@@ -484,7 +484,7 @@ func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 			return cleanupOwn(err)
 		}
 	}
-	// 🚨 **2 段目: 置いた直後に取り消す** (issue 362)。検証 (write-then-verify) より**前**に
+	// 🚨 **2 段目: 置いた直後に取り消す**。検証 (write-then-verify) より**前**に
 	// 置いたのは、lock が他者から見えているのはこの時点からで、取り消しは早いほど着地しやすい
 	// ため。負けていた場合は `Release` が token 照合で errNotOwner を返すので、
 	// **他者の lock を消す側には倒れない** (380 の identity 照合つき Release をそのまま使う)。
@@ -504,7 +504,7 @@ func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 }
 
 // abandonCheckBeforePlaceHook / abandonCheckAfterPlaceHook / abandonCheckAfterClaimHook /
-// abandonCheckBeforeMarkHook / abandonCheckBeforeEvictHook は「見捨てを見る直前」に呼ばれる seam (issue 362)。
+// abandonCheckBeforeMarkHook / abandonCheckBeforeEvictHook は「見捨てを見る直前」に呼ばれる seam。
 // production では何もしない。
 //
 // 🚨 これが無いと、見捨ての検査はテストから**決定論的に作れない**。`withTimeout` の期限を
@@ -520,13 +520,13 @@ var (
 	abandonCheckBeforeEvictHook = func(*abandon) {}
 )
 
-// undoAbandonedPlace は、見捨てられた goroutine が**自分が置いた** lock を取り消す (issue 362)。
+// undoAbandonedPlace は、見捨てられた goroutine が**自分が置いた** lock を取り消す。
 //
 // 🚨 取り消しは `Release` をそのまま使う (新しい判定を作らない。§0-B)。`Release` は
 // token 一致 + 期限内 + **読んだ実体との identity 照合**まで見るので、置けていない場合も
 // 引き継がれた後の場合も errNotOwner で止まり、他者の lock へは届かない。
 //
-// 🚨 **「黙らない」の実効性は限定的** (敵対レビュー 3 周目)。ここの警告は `ReleaseTimed` が
+// 🚨 **「黙らない」の実効性は限定的**。ここの警告は `ReleaseTimed` が
 // 返ってから出るので、最悪 `l.timeout` (本番の下限 100ms / 既定 10s) 遅れる。一方 `acquire` の
 // 一発実行では、期限切れの後プロセスが生きているのは**実測 1〜2ms** なので、
 // **警告はほぼ確実に出力前に os.Exit で消える**。`dispatch` の deferred cleanup も同じ
@@ -535,7 +535,7 @@ var (
 // それでも警告を出すのは、届く経路が 1 つ在ることと、テストで契約として固定できるため。
 // **「人に伝わる」を前提にした設計判断をここに積まないこと。**
 //
-// 🚨 **不変条件: この関数は `lockman break` を勧めない** (敵対レビュー 2 周目)。
+// 🚨 **不変条件: この関数は `lockman break` を勧めない**。
 // break は「期限検査も token 照合もしない無条件 rename」で、同ファイルが「この道具で最も現実的に
 // 二重取得を作る操作」と書いているもの。ここから勧めてよい枝は 1 つも無い —
 // 判定不能なら消えるかもしれず、lease 切れなら次の取得が引き継げ、確定した失敗でも
@@ -554,7 +554,7 @@ func (l *Locker) undoAbandonedPlace(token string) error {
 	case err == nil:
 		// 取り消せた
 	case errors.Is(err, errIOTimeout):
-		// 🚨 **「残る」と断定しない** (issue 362 の敵対レビュー P2)。`ReleaseTimed` の期限切れは
+		// 🚨 **「残る」と断定しない**。`ReleaseTimed` の期限切れは
 		// **判定不能**で、内側の goroutine は走り続けて `os.Remove` に到達しうる (実測: 到達する)。
 		// ここで `lockman break` を勧めると、**消えるかもしれない lock** に対して
 		// 「期限検査も token 照合もしない無条件 rename」(同ファイルが「この道具で最も現実的に
@@ -610,11 +610,11 @@ var takeoverRefreshHook = func() {}
 // 🚨 「rename は原子操作だから勝者は 1 人に絞られる」は**偽**。原子なのは操作であって、
 // 「自分が期限切れと判定したあの lock を動かす」ことは保証しない — rename は名前に対する
 // 操作で、名前の指す先は判定してから rename するまでに入れ替わる。実測 2026-09-15
-// (issue 366): 判定と rename のあいだを 60ms 広げると 10/10 で勝者が 2〜5 人になり、
+// : 判定と rename のあいだを 60ms 広げると 10/10 で勝者が 2〜5 人になり、
 // graveyard には「先に勝った者の新しい lock」が入っていた (2 人目が 1 人目の lock を
 // 退けてから自分の lock を置いていた)。
 //
-// 閉じ方は 2 段。段ごとに変異を当てて red を確認してある (issue 366):
+// 閉じ方は 2 段。段ごとに変異を当てて red を確認してある:
 //
 //  1. **調停**: 観測した世代 (lock の token) から決まる名前を tmp/ へ O_EXCL で取る。
 //     同じ世代を見た者は同じ名前を狙うので、退ける役が 1 人に絞られる。目印を取った者が
@@ -656,12 +656,12 @@ func (l *Locker) tryTakeover(ab *abandon) (bool, error) {
 	if err == nil && mtime.IsZero() {
 		return true, nil // 既に誰かが退けた後。作りにいってよい
 	}
-	// 🚨 **mtime が zero でも、err が busy 系なら「退けられた」ではない** (敵対レビュー 3 周目 P1-1)。
+	// 🚨 **mtime が zero でも、err が busy 系なら「退けられた」ではない**。
 	// `lock` がディレクトリのときが該当し、旧版は**エラーを根拠に `took=true`** を返していた。
 	// その先で `tryPlace` が EEXIST → **素の errBusy** になるので、分類から漏れて CLI が無音になる
 	// (人が `break` すれば解ける = 人が動くまで解けない busy なのに、正常な保持と区別できない)。
 	if m == nil {
-		// 🚨 **中身を読めない lock は「期限切れ」と判定しない** (issue 383。fail-closed)。
+		// 🚨 **中身を読めない lock は「期限切れ」と判定しない** (fail-closed)。
 		// TTL は lock の中身にしか無いので、読めない時点で生死は判定できない。既定 TTL へ
 		// 倒すと、それより長い TTL を宣言した保持者を生きたまま奪う。
 		// 詰まったら人が `lockman break` で剥がす (Break は**中身を読まない**ので、壊れた lock にも
@@ -702,11 +702,11 @@ func (l *Locker) tryTakeover(ab *abandon) (bool, error) {
 		}
 	}()
 
-	// 🚨 **見捨てられていたらここで降りる** (issue 362 の ②)。新しい後始末は要らない —
+	// 🚨 **見捨てられていたらここで降りる**。新しい後始末は要らない—
 	// `evicted` が false のままなので**上の defer がそのまま目印を回収する**。
 	// 🚨 検査は defer の**後**に置くこと。前に置くと、目印を置いた直後に降りたときに
 	// 回収する者が居なくなり、その世代の引き継ぎを猶予いっぱい塞ぐ (この issue の被害そのもの)。
-	// 🚨 **「測れた効果が無いから外す」はしない** (2026-09-21 の判断。issue 362)。A-B では
+	// 🚨 **「測れた効果が無いから外す」はしない** (2026-09-21 の判断)。A-B では
 	// ②単独の漏れは before/after とも 7/300 で差が出ないが、それは非引き継ぎ経路の claim を
 	// 上の defer が元から回収していたためで、この検査が単独で止めているのは
 	// **詰まったマウントへ 2 段目の `readLock` を撃つこと** — その regime は未実測のまま。
@@ -723,7 +723,7 @@ func (l *Locker) tryTakeover(ab *abandon) (bool, error) {
 	if err != nil && !errors.Is(err, errBusy) {
 		return false, err
 	}
-	// 🚨 **1 段目と同じ判別を使う** (敵対レビュー 4 周目 P1-1)。3 周目は 1 段目だけ直しており、
+	// 🚨 **1 段目と同じ判別を使う**。3 周目は 1 段目だけ直しており、
 	// ここは `mtime2.IsZero()` の素のままで、busy エラー + zero mtime を「別の誰かが先に退けた」と
 	// 読んで `took=true` を返していた (fail-open)。commit と issue に書いた「zero-mtime busy 全部に
 	// 効く」は**偽だった** (2 箇所中 1 箇所)。判定を 2 つ持たない。
@@ -739,7 +739,7 @@ func (l *Locker) tryTakeover(ab *abandon) (bool, error) {
 		return false, nil
 	}
 
-	// 🚨 **破壊的操作の直前にも見る** (issue 362 の敵対レビュー 3 周目)。claim の直後にも検査は
+	// 🚨 **破壊的操作の直前にも見る**。claim の直後にも検査は
 	// あるが、そこからここまでに 2 段目の `readLock` (詰まったマウントが止まる場所) が挟まる。
 	// 検査せずに来ると、**見捨てを宣言済みの goroutine が前世代の lock を退けて帰る**形になり、
 	// 「不可逆な操作の直前で降りる」という宣言と食い違う (実測で再現した。害は示せなかったが、
@@ -762,8 +762,7 @@ func (l *Locker) tryTakeover(ab *abandon) (bool, error) {
 	return true, nil
 }
 
-// stampGraveyard は graveyard へ退けた lock の mtime を **退避した時刻**へ打ち直す
-// (issue 364 の 2)。
+// stampGraveyard は graveyard へ退けた lock の mtime を **退避した時刻**へ打ち直す。
 //
 // 🚨 `os.Rename` は mtime を保つので、打ち直さないと `graveyardRetention` (7d) が
 // **lock が最後に打刻された時刻**から測られる。つまり「死んだマシンが何日も放置した lock」=
@@ -772,8 +771,8 @@ func (l *Locker) tryTakeover(ab *abandon) (bool, error) {
 // 人が `break` を打つのはまさに「誰が握っていたのか」を知りたい場面なので、
 // `Break` の doc が言う「誰が握っていたかの記録も残す」がそこでだけ成立しなくなる。
 //
-// 🚨 **この不変条件は「退避の瞬間」までしか保証しない** (敵対レビュー 380 の 2 周目 P3-3)。
-// 見捨てられた `Renew` (issue 381 以降は最大 `maxInFlightRenews` 本) が遅れて着地すると、
+// 🚨 **この不変条件は「退避の瞬間」までしか保証しない**。
+// 見捨てられた `Renew` (最大 `maxInFlightRenews` 本) が遅れて着地すると、
 // 開いたままの fd 越しに**graveyard へ退いた自分の inode**へ書くので、その entry の mtime は
 // 「いま」へ進む (`sweepDir` は `info.ModTime()` で retention を測る)。
 // 害は「記録が 7 日より長く残る」だけなので受容する (掃除の目的から見れば良性)。
@@ -781,7 +780,7 @@ func (l *Locker) tryTakeover(ab *abandon) (bool, error) {
 // **正しさには関与しない**ので best-effort。失敗しても呼び出し元は止めない
 // (打刻できなければ退避前の mtime が残る = 従来どおり早く消えるだけ)。
 // 鳴らさないのは、退避は正常系にも出る操作で、ここで warn を足すと
-// 「良性の状態で鳴る診断」になるため (issue 383 の 2 周目 P2)。
+// 「良性の状態で鳴る診断」になるため。
 //
 // 時刻は **サーバ側の打刻** (`serverNow`) を使う。掃除の側が `serverNow` と比べるので、
 // クライアント時計で打つと skew がそのまま retention のずれになる。
@@ -812,7 +811,7 @@ func (l *Locker) stampGraveyard(path string, now time.Time) {
 // 関数なので、1 段目の調停は **「同じ lock は誰が読んでも同じ parse 結果になる」という
 // 仮定**に乗っている。
 //
-// 🚨 **訂正 (issue 383)**: 旧版のコメントは「到達可能な非決定性は潰れている」と書いていたが、
+// 🚨 **訂正**: 旧版のコメントは「到達可能な非決定性は潰れている」と書いていたが、
 // **誤りだった**。根拠にしていたのは「O_TRUNC も mtime を現在へ動かすので、gen の計算に届く前に
 // expired で弾かれる」だが、**中身を読めない lock の TTL が既定 (30m) へ倒れていた**ため、
 // それより長い TTL を宣言した保持者では expired が成立してしまう。
@@ -847,7 +846,7 @@ func isHexToken(s string) bool {
 // 消すと他者の lock を消すことになる。呼び出し側には errNotOwner を返して
 // 「走行中に奪われていた」ことを知らせる。
 func (l *Locker) Release(token string) error {
-	// 🚨 identity は **読んだ実体そのもの**から取る (敵対レビュー 380 P1-1)。
+	// 🚨 identity は **読んだ実体そのもの**から取る。
 	// 別の `os.Lstat` で取り直すと、そのあいだに引き継がれたとき「照合した対象」と
 	// 「guard する対象」が食い違い、guard が**引き継いだ側の lock を消す許可**になる。
 	m, own, err := l.readLockInfo()
@@ -865,7 +864,7 @@ func (l *Locker) Release(token string) error {
 	if expired(now, mtime, holderTTL(m)) {
 		return fmt.Errorf("%w (走行中に引き継がれた可能性)", errLeaseExpired)
 	}
-	// 🚨 **消す直前に実体を照合する** (issue 380)。`os.Remove` は**名前**に対する操作なので、
+	// 🚨 **消す直前に実体を照合する**。`os.Remove` は**名前**に対する操作なので、
 	// 照合から消すまでのあいだに引き継がれると**別人の lock を消す** (実測済み。しかも戻り値は
 	// nil = 成功で、消えた直後に第三者が acquire できるので二重実行に直結する)。
 	// 🚨 `Renew` と違い、ここは**構造的には閉じられない**: unlink は名前でしか撃てず、
@@ -894,18 +893,15 @@ func (l *Locker) Release(token string) error {
 // 「引き継いだ側の lock を truncate して自分のメタで上書きする」形になるため。
 // 判定は Release と同じ expired / holderTTL を使う (2 つ目の判定を作らない)。
 //
-// 🚨 **旧版の注記 (「readLock と下の OpenFile のあいだの窓は 0 になっていない。直さないと
-// 決めた」「再開の trigger: 実 lock を使った並行実験で再現できたとき」) は issue 380 で解消した。**
-// trigger は発火し (issue 380 が実測)、下のとおり fd スコープ化 + 打刻後の照合で閉じてある。
 // 影響の範囲: av1ify は finalize の直前に renew の rc で保持を判定する
 // (__av1ify_lock_still_held)。rc=0 は「token 一致 かつ 期限内」までを意味する。
 func (l *Locker) Renew(token string) error {
-	// 🚨 **照合と書き込みを同じ fd に対して行う** (issue 380)。旧版は `readLock` で照合してから
+	// 🚨 **照合と書き込みを同じ fd に対して行う**。旧版は `readLock` で照合してから
 	// **名前で開き直して** `O_TRUNC` + write していたので、そのあいだに引き継がれると
 	// **別人の lock を自分のメタで上書き**した (実測済み。しかも戻り値は nil = 成功)。
 	// 同じ fd へ書けば、名前がすり替わっても当たるのは**自分が確かめた実体**だけなので、
 	// 窓が縮むのではなく**構造的に消える**。
-	// 🚨 **`O_TRUNC` を付けない** (issue 383)。付けると write までのあいだ 0 バイトの窓が開き、
+	// 🚨 **`O_TRUNC` を付けない**。付けると write までのあいだ 0 バイトの窓が開き、
 	// 読み手には「中身を読めない lock」として見える (fail-closed 側で引き継ぎが止まる)。
 	// 内容は読んだものと同じなので長さは変わらないが、変わったときだけ fd 越しに詰める。
 	f, err := os.OpenFile(l.lockPath(), os.O_RDWR, lockFileMode)
@@ -941,13 +937,13 @@ func (l *Locker) Renew(token string) error {
 	if expired(now, st.ModTime(), holderTTL(m)) {
 		return fmt.Errorf("%w (走行中に引き継がれた可能性)", errLeaseExpired)
 	}
-	// 🚨 **読んだバイト列をそのまま書き戻す** (再 marshal しない。敵対レビュー 380 P2-1 / P2-1b)。
+	// 🚨 **読んだバイト列をそのまま書き戻す** (再 marshal しない)。
 	// `Renew` の目的は「同じ内容を書き直してサーバに mtime を打刻させる」なので、意味論は変わらない。
 	// 再 marshal すると 2 つ壊れる:
 	//   ① **未知フィールドを黙って落とす** (旧バイナリが新バイナリの書いた lock を renew するたび
 	//      永久に消える。共有 SMB の lock dir を複数マシンが使う = 混在版が既定なので現実的)
 	//   ② 長さが変わると `Seek → Write → Truncate` の途中が**新旧の混ざった JSON** になり、
-	//      読み手には「中身を読めない lock」として見える (issue 383 の fail-closed = 人が break
+	//      読み手には「中身を読めない lock」として見える (fail-closed = 人が break
 	//      するまで永久 skip)。verbatim なら長さが必ず一致するので `Truncate` 枝ごと要らない
 	renewBeforeWriteHook()
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
@@ -957,7 +953,7 @@ func (l *Locker) Renew(token string) error {
 		return err
 	}
 	// 🚨 **この Sync が守っているのは SMB の write-behind で、手元のテストでは検出できない**
-	// (敵対レビュー 380 の 2 周目 P2-4。検出可能性は「確実な検出手段はない」)。
+	// (検出可能性は「確実な検出手段はない」)。
 	// 落とすと打刻がクライアント側に留まりうるが、`f.Stat()` はローカルのキャッシュ済み mtime を
 	// 返すので**下の検算は通ってしまう**。他マシンからは mtime が更新されて見えないまま
 	// 生きた lease を正当に引き継がれる = 二重実行。ローカル APFS では再現できないので、
@@ -979,28 +975,28 @@ func (l *Locker) Renew(token string) error {
 	if err != nil {
 		return err
 	}
-	// 🚨 **「他人を壊さない」だけでは足りない** (敵対レビュー 380 P1-2)。fd スコープにしたことで
+	// 🚨 **「他人を壊さない」だけでは足りない**。fd スコープにしたことで
 	// 引き継ぎ後の書き込みは orphan inode に当たる = 他人は壊さないが、そのまま nil を返すと
 	// **呼び出し側が「保持している」と誤認する**。`__av1ify_lock_still_held` は renew の rc だけを
-	// 見ており、rc=0 なら**出力を公開して元ファイルを削除する**ところまで進む (issue 380 の「影響」)。
+	// 見ており、rc=0 なら**出力を公開して元ファイルを削除する**ところまで進む。
 	// 名前が指す先が自分の実体でなくなっていたら、**保持していない**と伝える。
 	// 🚨 これは「役は 1 人」を保証しない。保証しているのは
 	// 「**`os.Lstat` を撃ったその瞬間に、名前が自分の実体を指していた**」までで、
 	// その Lstat の**後**に着地する置き換えは捕まえられない (飛行中の他者との調停ではない)。
 	// 🚨 ここに `refreshTakeoverClaim` の注記 (「置き換えが open の後だと `f.Stat()` は旧 inode を
-	// 返すので照合は通る」) を移植して書いていたが、**意味が反転していた** (2 周目 P2-2)。
+	// 返すので照合は通る」) を移植して書いていたが、**意味が反転していた**。
 	// あちらの guard は `f.Stat().ModTime()` の比較なので旧 inode の打刻で通るが、
 	// こちらは `os.SameFile(fd の inode, 名前を引き直した inode)` なので、旧 inode を掴むことは
 	// 照合が**落ちる**理由になる (実測: open 後に Break + 別ホストの Acquire を起こすと
 	// errNotOwner が返る)。誤った限界の記述は「この照合は実質 inert」と読ませ、
-	// 1 周目 P1-2 が名指しした被害 (保持の誤認 → 出力公開 + 元ファイル削除) を止めている
+	// 被害 (保持の誤認 → 出力公開 + 元ファイル削除) を止めている
 	// 唯一の機構を削る判断へ誘導する。
 	if cur, lerr := os.Lstat(l.lockPath()); lerr != nil {
 		if os.IsNotExist(lerr) {
 			return fmt.Errorf("%w: lock が消えている (走行中に引き継がれた可能性)", errNotOwner)
 		}
 		// 🚨 丸めないのは**終了コードと文言の意味を汚さないため**であって、子の生殺には影響しない
-		// (2 周目 P2-1 で訂正。旧コメントは「一過性の I/O で健全な子を殺さない」と書いていたが、
+		// (「一過性の I/O で健全な子を殺さない」ためではない。
 		// `with.go` の `reportRenewErr` は昇格を **`onLostKill` だけ**で gate しており、分類では
 		// gate していない。既定は `--on-lost=kill` なので、丸めても丸めなくても子は殺される。
 		// 実測 2026-09-19: 純粋な判定不能を起こすと kill=0.62s で子が死に、warn=5.22s で子を待つ。
@@ -1021,13 +1017,13 @@ func (l *Locker) Renew(token string) error {
 type State struct {
 	Held bool `json:"held"`
 	// Unreadable は「lock は在るが中身を読めない」。🚨 **`status` の案内先としてこれが要る**
-	// (敵対レビュー 4 周目 P1-2): `acquire` の案内が `lockman status` を名指ししているのに、
+	// : `acquire` の案内が `lockman status` を名指ししているのに、
 	// 旧版の status は rc=1 (道具の失敗) / stdout 空で、**人はそこで行き止まっていた**。
 	// 一過性 (Renew の O_TRUNC 窓) と恒久 (書きかけの残骸) は 1 回の観測では区別できないので、
 	// **人が判断するための材料** (サイズ・経過) を出すに留める。
 	Unreadable bool `json:"unreadable,omitempty"`
 	// 🚨 **SizeBytes / AgeSec は「取れなかった」と「本当に 0」を区別するためにポインタ**
-	// (敵対レビュー 5 周目 P2-1 / P2-2)。値型 + omitempty だと **canonical な unreadable lock
+	// 値型 + omitempty だと **canonical な unreadable lock
 	// (= 0 バイト) の size_bytes が丸ごと消え**、`serverNow` が失敗したときの age は
 	// **0 = 「いま書かれたばかり」という嘘**になって出る。どちらも「判断材料を出す」という
 	// この状態の存在理由そのものを壊す。nil = 未取得 (JSON からは欠落 / 人間向けは「不明」)。
@@ -1044,13 +1040,13 @@ func intPtr(v int) *int { return &v }
 
 // Inspect は現在の状態を返す。**排他の根拠には使えない** (読んだ次の瞬間に変わる)。
 func (l *Locker) Inspect() (*State, error) {
-	// 🚨 **判断材料は「読んだ実体」から取る** (敵対レビュー 380 の 2 周目 P1-1)。
+	// 🚨 **判断材料は「読んだ実体」から取る**。
 	// 旧版は `readLock` で読んでから **名前を `os.Lstat` し直して** unreadable 枝の size / age を
-	// 採っており (正常枝の mtime は当時から fd 由来。3 周目 P2-1 で訂正)、
+	// 採っており (正常枝の mtime は fd 由来)、
 	// そのあいだ (中に `io.ReadAll` = SMB 1 往復が入る) に引き継がれると
 	// **読んでいない別のファイルの数字**を「この lock の判断材料」として出した
 	// (実測: 0 バイト / 90 秒前の lock を読んだのに size=200B / age=0s)。
-	// これは `Release` で直したのと同じ形 (1 周目 P1-1) で、そのために `readLockInfo` を
+	// これは `Release` で直したのと同じ形で、そのために `readLockInfo` を
 	// 新設したのに、**その fi をいちばん必要としている呼び出し側が使っていなかった**。
 	// 数字が別ファイル由来だと `status` の案内 (「経過が伸び続けるなら残骸」) が壊れる:
 	// 置き換えが続くかぎり age は毎回 0 に戻り、人は「一過性だ、待とう」に倒れ続ける。
@@ -1098,7 +1094,7 @@ func (l *Locker) Break() error {
 		return err
 	}
 	grave := filepath.Join(l.metaDir, graveyardDirName, mustToken())
-	// 🚨 打刻に使う時刻は **rename の前**に取る (issue 364 の反証レビュー P1)。
+	// 🚨打刻に使う時刻は **rename の前**に取る。
 	// `stampGraveyard` の中で取り直すと、`serverNow` の I/O (probe の作成 + stat + 削除) が
 	// **不可逆な rename のあと**に乗る。応答の鈍いマウントではそこが `--io-timeout` を食い切り、
 	// 打刻が着地しないまま `BreakTimed` が「判定不能」で返る。`dispatch` は break のあとに
@@ -1258,7 +1254,6 @@ func readTakeoverClaimBody(claim string) *takeoverClaimBody {
 // この道具が想定する主要シナリオでは窓は stall の長さそのもの (--io-timeout が発火して
 // プロセスが終わる = 死ぬ側へ倒れる)。
 //
-// 366 以前はこの状態が無かった (目印も mark も無いので、死んだプロセスは誰も塞がなかった)。
 // **「退ける役が 2 人」を「退ける役が 0 人、最長 ~1h10m」と交換している**。排他の道具として
 // 正しさを優先した判断で、人の脱出口は `lockman break` (上の warnf が案内する)。
 // 根治は 362 / 363 の側 (見捨てられた goroutine / 遅い signal.Notify が副作用を残さなくなれば、
@@ -1279,7 +1274,7 @@ func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time, ab *abandon) 
 		return false, nil
 	}
 	takeoverReclaimHook()
-	// 🚨 **回収の目印 (mark) は「作らない」でしか防げない** (issue 362 の ③)。
+	// 🚨 **回収の目印 (mark) は「作らない」でしか防げない**。
 	// 作ってから降りる形は**害を増やす**: `refreshTakeoverClaim` を通らないので claim の打刻が
 	// 古いまま残り、以後の観測者は**同じ mark 名**を計算して EEXIST で弾かれ続ける。
 	// 消してから帰るつもりでも、その `os.Remove` 自体が詰まったマウントへの I/O なので着地しない
@@ -1346,19 +1341,18 @@ func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time, ab *abandon) 
 // 成功を返す — 置き直した側と 2 人が役を持つ。
 //
 // 🚨 **そうなった後は、2 段目の再照合も `tryPlace` の O_EXCL も一意性を担保しない**
-// (2026-09-16 の敵対レビュー 6 周目が反証。ここに「担保する」と書いていたのは誤り)。
 // 2 人とも同じ (token, mtime) を観測しているので 2 段目は両方通り、先に退けた側が lock を
 // 置いた後、もう一方の `os.Rename` が**その置いたばかりの lock** を退けて自分のを置ける —
-// issue 366 の元の signature (graveyard に「現に誰かが保持している token の lock」が入る)
+// 元の signature (graveyard に「現に誰かが保持している token の lock」が入る)
 // がそのまま出る。2 段目が守るのは**古い state で来た観測者**であって、正当に役を持つ
 // 2 人目ではない。役の一意性を作っているのは 1 段目だけ。
 // さらに 2 段目で落ちると `tryTakeover` の defer が `os.Remove(claim)` で**相手の生きた
 // 目印を消す**。
 //
-// 旧実装 (Stat → O_TRUNC) は同じ順序で相手のファイルを潰していたので改善ではあるが、
+// Stat → O_TRUNC の形は同じ順序で相手のファイルを潰す。それよりは改善ではあるが、
 // 閉じてはいない。役が 2 人になる生成器は 4 つに絞れており、どれも既知として記録済み:
 // 掃除が 1h 超の目印を open 後に浚う / 猶予超過 (設計上の trade-off) /
-// takeoverGeneration の parse 非決定性 (未確認リスク) / 見捨てられた goroutine (issue 362)。
+// takeoverGeneration の parse 非決定性 (未確認リスク) / 見捨てられた goroutine。
 // 検査可能な痕跡は「graveyard に、現に保持されている token の lock が入っている」。
 //
 // 🚨 **O_TRUNC を open に付けない**。付けると開いた時点で中身が消えるので、照合で弾く前に

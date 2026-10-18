@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// nastyDir は読み方で食い違いやすい項目を混ぜたフォルダ (issue 714 の受け入れ条件)。
+// nastyDir は読み方で食い違いやすい項目を混ぜたフォルダ。
 func nastyDir(t *testing.T) string {
 	t.Helper()
 	d := t.TempDir()
@@ -203,7 +203,7 @@ func TestParseBulkRecordFallsBackPerEntry(t *testing.T) {
 }
 
 // / はファームリンク (Users・Applications 等) とマウントポイントを持つ。bulk はそこで覆われた側の値を返すので、フォルダは lstat の値で揃える
-// (issue 714 の敵対レビュー。どの macOS の機械・CI の runner にも在る実物で確かめる)。
+// (どの macOS の機械・CI の runner にも在る実物で確かめる)。
 func TestBulkMatchesAtFirmlinksAndMountPoints(t *testing.T) {
 	for _, d := range []string{"/", "/System/Volumes", "/Volumes"} {
 		want, err := readEntriesSlow(d)

@@ -7,7 +7,7 @@ import (
 )
 
 // Place は、カーソルの経路の外で開いたフォルダも記録し、RestorePlace がそれを開く (カーソルの祖先は RestorePlace が
-// 開くので、祖先だけを見るテストでは Opened の欠落が見えない。issue 710 の敵対レビュー)。
+// 開くので、祖先だけを見るテストでは Opened の欠落が見えない)。
 func TestPlaceRoundTripsFoldersOffCursorPath(t *testing.T) {
 	m := newTest(t)
 	a := m.loadPath(filepath.Join(m.root.abs, "a"))

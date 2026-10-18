@@ -17,7 +17,7 @@ const launchctlTimeout = 10 * time.Second
 type jobStatus struct {
 	PID int // 0 = 動いていない ("-")
 	// Exit は Status 列。負値はシグナル停止、正値はプロセス自身の終了コード。
-	// 負値から異常かは判別できないので候補にしない (issue 148 の「最大の罠」)。
+	// 負値から異常かは判別できないので候補にしない。
 	Exit    int
 	HasExit bool // "-" なら false
 }
@@ -79,7 +79,7 @@ func parseLaunchctlPrint(out string) printInfo {
 // launchctlPrint は候補に絞ってから呼ぶ (全ラベルに対して呼ばない)。失敗は無視して続行する
 // (補助情報なので、無くても A / B の判定は成立する)。
 //
-// 🚨 **`sfltool dumpbtm` を独立した検出項目に昇格させない** (issue 218 で判断)。
+// 🚨 **`sfltool dumpbtm` を独立した検出項目に昇格させない**。
 // 取得そのものは可能で、実測 2026-09-03 は一般ユーザーで rc=0 / stdout 775 行 / stderr 0 行。
 // 昇格させない理由は 2 つ: ①出力形式が非公開で macOS 版間の安定性が不明 ②plist が消えていても
 // 残骸を検出できる強い判定だが、**`legacy agent` の消し方を提示できない**可能性がある。

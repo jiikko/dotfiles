@@ -13,7 +13,7 @@ import (
 	"treefiler/filer"
 )
 
-// q で終わるとき Close を呼ぶ (Remember place が保存される。issue 691)。
+// q で終わるとき Close を呼ぶ (Remember place が保存される)。
 func TestQuitSavesPlace(t *testing.T) {
 	cfg := t.TempDir()
 	t.Setenv("TREEFILER_CONFIG_DIR", cfg)
@@ -56,7 +56,7 @@ func TestExecStartFailureIsShown(t *testing.T) {
 	}
 }
 
-// 裏で終わった処理の知らせ (explode の完了) は、次のキーを待たずに tick で toast に出る (issue 731)。
+// 裏で終わった処理の知らせ (explode の完了) は、次のキーを待たずに tick で toast に出る。
 func TestBackgroundNoticeShowsOnTick(t *testing.T) {
 	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
 	root := t.TempDir()

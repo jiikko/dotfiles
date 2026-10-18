@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// 中身を読めない lock を「期限切れ」と判定しないこと (issue 383)。
+// 中身を読めない lock を「期限切れ」と判定しないこと。
 //
 // 🚨 これが壊れると、`--ttl 2h` を宣言した保持者が生きていても **30 分で正規手順で奪える** =
 // 二重実行。TTL は lock の中身にしか無いので、読めない時点で生死は判定できない。
@@ -47,7 +47,7 @@ func TestUnreadableLockIsNeverTakenOver(t *testing.T) {
 	if !errors.Is(err, errBusy) {
 		t.Fatalf("errBusy を期待したが %v", err)
 	}
-	// 🚨 **破壊的操作を促していないこと** (敵対レビュー 3 周目 P2-1)。同じ観測が
+	// 🚨 **破壊的操作を促していないこと**。同じ観測が
 	// 「健全な保持者の Renew が O_TRUNC している一瞬」からも出るので、`break` を促すと
 	// **生きた保持者を剥がして二重実行を作る**助言になる。誘導先は読み取り専用の `status`。
 	if strings.Contains(err.Error(), "break") {
@@ -100,7 +100,7 @@ func TestBreakRemovesUnreadableLock(t *testing.T) {
 	}
 }
 
-// readLock が返す mtime と中身は**同じ実体**のものであること (issue 383)。
+// readLock が返す mtime と中身は**同じ実体**のものであること。
 //
 // 🚨 2 syscall (`os.Stat` → `os.ReadFile`) 版は、あいだに lock が差し替えられると
 // 「古い mtime + 新しい中身」を返した。その組は `takeoverGeneration` の入力そのもので、
@@ -114,7 +114,7 @@ func TestReadLockReturnsMtimeAndBodyFromSameFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	// 読んでいる最中に、別の中身の lock へ差し替える (temp + rename。issue 380 が提案する形)
+	// 読んでいる最中に、別の中身の lock へ差し替える (temp + rename の形)
 	var once sync.Once
 	old := readLockAfterStatHook
 	readLockAfterStatHook = func() {
@@ -145,7 +145,7 @@ func TestReadLockReturnsMtimeAndBodyFromSameFile(t *testing.T) {
 	}
 }
 
-// 🚨 **案内が production の出口まで届くこと** (issue 383 の敵対レビュー P2-2)。
+// 🚨 **案内が production の出口まで届くこと**。
 //
 // fail-closed の代償は「人が `lockman break` を打つまで詰まる」ことなので、**その導線が
 // 出口に出ていないと恒久 wedge が『普通に他が走っている』と見分けられない**。
@@ -188,11 +188,11 @@ func TestUnreadableLockGuidanceReachesCLI(t *testing.T) {
 		t.Fatalf("with が破壊的操作を促している: %q", out2)
 	}
 
-	// 🚨 **案内されたコマンドを実際に走らせる** (敵対レビュー 4 周目 P1-2 = 10 個目の fixture の嘘)。
-	// 旧版は `strings.Contains(out, "status")` だけを見ており、**名指しされたコマンドがその状態で
-	// 何をするかは 1 行も検査していなかった**。実際には rc=1 (道具の失敗) / stdout 空で、
-	// 人はそこで行き止まっていた。1 周目 P2-2 (「文字列は production に出ていなかった」) の
-	// 一段外側の版 — 文字列は出ているが、指している先が空振り。
+	// 🚨 **案内されたコマンドを実際に走らせる**。
+	// `strings.Contains(out, "status")` だけを見る形では、**名指しされたコマンドがその状態で
+	// 何をするかは 1 行も検査されない**。実際には rc=1 (道具の失敗) / stdout 空で、
+	// 人はそこで行き止まる。
+	// 文字列は出ているが、指している先が空振りという形。
 	m := regexp.MustCompile("`lockman ([a-z]+)[^`]*`").FindStringSubmatch(out)
 	if m == nil {
 		t.Fatalf("案内にコマンドが含まれていない: %q", out)
@@ -210,7 +210,7 @@ func TestUnreadableLockGuidanceReachesCLI(t *testing.T) {
 			t.Fatalf("案内先が判断材料 (%s) を出していない: %q", want, guided)
 		}
 	}
-	// 🚨 **案内先も破壊的操作を促さない** (敵対レビュー 5 周目 P1)。
+	// 🚨 **案内先も破壊的操作を促さない**。
 	// `errUnreadableLock` のコメントは「break を促さない」を不変条件として宣言しているのに、
 	// 検査していたのは 3 hop 中 2 hop (err.Error() と acquire の stderr) だけで、
 	// **その 2 つが名指ししている status** は promote したまま緑だった。
@@ -221,7 +221,7 @@ func TestUnreadableLockGuidanceReachesCLI(t *testing.T) {
 	}
 }
 
-// 🚨 **正常な busy では静かなままであること** (敵対レビュー 2 周目 P2)。
+// 🚨 **正常な busy では静かなままであること**。
 //
 // 「人が動くまで解けない busy」と「正常に他者が保持中」を**機械で見分けられる差**にしてある
 // (`errUnreadableLock`)。正常系まで鳴らすと `lockman acquire || exit 0` の cron が skip の
@@ -249,7 +249,7 @@ func TestNormalBusyStaysQuiet(t *testing.T) {
 	}
 }
 
-// 🚨 **中身を書けなかった lock を残さない** (issue 383 の敵対レビュー P1)。
+// 🚨 **中身を書けなかった lock を残さない**。
 //
 // `tryPlace` の O_EXCL fallback (link(2) が使えない FS = smbfs の経路) は、Write / Sync / Close に
 // 失敗しても自分が作った 0 バイト lock を消さずに返していた。fail-closed の下では、それは
@@ -273,15 +273,15 @@ func TestTryPlaceRemovesOwnLockWhenBodyCannotBeWritten(t *testing.T) {
 	}
 }
 
-// 🚨 **後始末が消してよいのは「自分が開いた実体」だけ** (敵対レビュー 2 周目 P1 / P1-b)。
+// 🚨 **後始末が消してよいのは「自分が開いた実体」だけ**。
 //
-// 初版の後始末は `os.Remove(l.lockPath())` = **名前に対する破壊的操作**で、
-// 「O_EXCL が通った = 自分のもの」に乗っていた。O_EXCL が保証するのはその瞬間だけで、
+// 後始末を `os.Remove(l.lockPath())` = **名前に対する破壊的操作**にしない。それは
+// 「O_EXCL が通った = 自分のもの」に乗る形で、O_EXCL が保証するのはその瞬間だけで、
 // Write が失敗して戻るまでのあいだに `Break` (期限も token も見ない無条件 rename) が入れば、
 // 名前は**別ホストの生きた lock** を指している。そこを消すと二重実行になる。
 //
-// 🚨 初版のテストは「消えたこと」しか見ておらず、**消す範囲を 1 mm も固定していなかった**
-// (他人の lock を消しても緑だった)。これがその欠けていた否定ケース。
+// 🚨 「消えたこと」しか見ないテストは、**消す範囲を 1 mm も固定しない**
+// (他人の lock を消しても緑)。これがその否定ケース。
 func TestTryPlaceDoesNotRemoveSomeoneElsesLock(t *testing.T) {
 	l := newTestLocker(t)
 	other, err := NewLocker(l.dir, 5*time.Second)
@@ -340,7 +340,7 @@ func TestTryPlaceDoesNotRemoveSomeoneElsesLock(t *testing.T) {
 	}
 }
 
-// 🚨 **待ち直す枝では鳴らないこと** (敵対レビュー 2 周目 P3)。
+// 🚨 **待ち直す枝では鳴らないこと**。
 //
 // コメントには「待ち直す枝では出さない」と書いてあったが、**テストが 1 本も守っていなかった**
 // (再試行枝にも warnf を足す変異が全緑だった)。`--wait 3600` は backoff 1s→15s で数百回
@@ -360,7 +360,7 @@ func TestWaitLoopDoesNotWarnPerRetry(t *testing.T) {
 		t.Fatalf("Chtimes: %v", err)
 	}
 
-	// 再試行が何回か起きればよいので、間隔を縮めて実時間で 3 秒待たない (10・20・40・80ms と倍々で 4 周前後。issue 614)
+	// 再試行が何回か起きればよいので、間隔を縮めて実時間で 3 秒待たない (10・20・40・80ms と倍々で 4 周前後)
 	oldBackoff := acquireBackoff
 	acquireBackoff = 10 * time.Millisecond
 	t.Cleanup(func() { acquireBackoff = oldBackoff })
@@ -381,7 +381,7 @@ func TestWaitLoopDoesNotWarnPerRetry(t *testing.T) {
 	}
 }
 
-// 🚨 **「人が動くまで解けない busy」が分類から漏れて無音にならないこと** (3 周目 P1-1)。
+// 🚨 **「人が動くまで解けない busy」が分類から漏れて無音にならないこと**。
 //
 // `lock` がディレクトリのとき、旧版は `readLock` の busy エラーを握り潰したうえで
 // **エラーを根拠に `took=true`** を返し、その先の `tryPlace` が EEXIST で**素の errBusy** に
@@ -434,7 +434,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	return out
 }
 
-// 🚨 **`status` は「中身を読めない lock」に答えること** (敵対レビュー 4 周目 P1-2)。
+// 🚨 **`status` は「中身を読めない lock」に答えること**。
 //
 // 旧版は `Inspect` が readLock のエラーをそのまま返し、`status` が rc=1 (exitError) / stdout 空に
 // していた。`--json` でも stdout が空 + rc=1 なので、監視からは「lockman が壊れた / dir が無い」と
@@ -465,7 +465,7 @@ func TestStatusAnswersForUnreadableLock(t *testing.T) {
 		t.Fatalf("status --json が状態を出していない: rc=%d out=%q", rcj, outj)
 	}
 	// 🚨 **canonical な unreadable lock は 0 バイト**。値型 + omitempty だと、いちばん重要な
-	// 判断材料がちょうどそのときだけ JSON から消えていた (敵対レビュー 5 周目 P2-2)。
+	// 判断材料がちょうどそのときだけ JSON から消えていた。
 	if !strings.Contains(outj, `"size_bytes":0`) {
 		t.Fatalf("status --json が 0 バイトという判断材料を落としている: %q", outj)
 	}
@@ -479,7 +479,7 @@ func TestStatusAnswersForUnreadableLock(t *testing.T) {
 	}
 }
 
-// 🚨 **`with` 経路の分類も pin する** (敵対レビュー 3 周目 P2-2 / 4 周目 P2-1)。
+// 🚨 **`with` 経路の分類も pin する**。
 // `TestNormalBusyStaysQuiet` は `acquire` しか通しておらず、`with` 側は「常に理由を出す」に
 // 潰しても全緑だった。定期ジョブが使うのはこちらなので、静けさが壊れると 2 周目 P2 が復活する。
 func TestWithStaysQuietOnNormalBusy(t *testing.T) {
@@ -499,12 +499,12 @@ func TestWithStaysQuietOnNormalBusy(t *testing.T) {
 	}
 }
 
-// 🚨 **2 段目 (再照合) の zero-mtime も 1 段目と同じ判別であること** (敵対レビュー 4 周目 P1-1)。
+// 🚨 **2 段目 (再照合) の zero-mtime も 1 段目と同じ判別であること**。
 //
 // 3 周目は 1 段目だけを直し、commit と issue に「zero-mtime busy 全部に効く」と書いたが**偽**で、
 // 2 段目は素の `mtime2.IsZero()` のままだった。そこは busy エラー + zero mtime を
 // 「別の誰かが先に退けた」と読んで `took=true` を返す (fail-open) ので、その先の `tryPlace` が
-// EEXIST → **素の errBusy** になり、3 周目 P1-1 が P1 と判定した「CLI が無音」がそのまま生きていた。
+// EEXIST → **素の errBusy** になり、「CLI が無音」がそのまま生きる。
 func TestStage2ZeroMtimeBusyIsNotTreatedAsEvicted(t *testing.T) {
 	l := newTestLocker(t)
 	if _, err := l.Acquire(time.Minute, "holder"); err != nil {
@@ -545,7 +545,7 @@ func TestStage2ZeroMtimeBusyIsNotTreatedAsEvicted(t *testing.T) {
 	}
 }
 
-// 🚨 **`own` を「開いた実体」で控えていること自体を pin する** (3 周目 P1-2 / 4 周目 P2-2)。
+// 🚨 **`own` を「開いた実体」で控えていること自体を pin する**。
 //
 // `f.Stat()` を `os.Lstat(l.lockPath())` に変えても既存テストは全緑だった。照合を**する**ことは
 // 守られていたが、**何を**照合するかは無検査で、パス版に戻すと 2 周目 P1 (他ホストの生きた lock を
@@ -606,7 +606,7 @@ func TestTryPlaceCapturesIdentityFromFdNotPath(t *testing.T) {
 	}
 }
 
-// 🚨 **サーバ時刻を取れないとき、age を 0 に丸めない** (敵対レビュー 5 周目 P2-1)。
+// 🚨 **サーバ時刻を取れないとき、age を 0 に丸めない**。
 //
 // 旧版は `serverNow` のエラーを捨てて `AgeSec` を 0 のままにしていたので、**3 時間前の残骸が
 // `age=0s` = 「いま書かれたばかり」**として出た。この状態の存在理由は「人が一過性と恒久を
@@ -653,14 +653,13 @@ func TestStatusDoesNotFakeAgeWhenServerTimeIsUnavailable(t *testing.T) {
 	}
 }
 
-// `status` が出す判断材料 (size / age) は、**読んだ実体**から取ること
-// (敵対レビュー 380 の 2 周目 P1-1)。
+// `status` が出す判断材料 (size / age) は、**読んだ実体**から取ること。
 //
 // 🚨 `readLock` の後に名前を `os.Lstat` し直すと、そのあいだ (`io.ReadAll` = SMB 1 往復) に
 // 引き継がれたとき **読んでいない別のファイルの数字**を「この lock の判断材料」として出す。
 // 人間向けの案内は「経過が伸び続けるなら残骸」と**その数字を使う手順を名指ししている**ので、
 // 置き換えが続くかぎり age が 0 に戻り続け、人は「一過性だ、待とう」に倒れ続ける。
-// これは `Release` で直したのと同じ形 (1 周目 P1-1 = identity の土台を別 syscall から取り直す)。
+// これは `Release` で直したのと同じ形 (identity の土台を別 syscall から取り直さない)。
 func TestInspectReportsSizeAndAgeOfTheFileItRead(t *testing.T) {
 	l := newTestLocker(t)
 	if _, err := l.Acquire(time.Hour, "holder"); err != nil {
@@ -726,8 +725,7 @@ func TestInspectReportsSizeAndAgeOfTheFileItRead(t *testing.T) {
 	}
 }
 
-// `Inspect` の**正常枝**も、中身と打刻を同じ実体から取ること
-// (敵対レビュー 380 の 3 周目 P2-1)。
+// `Inspect` の**正常枝**も、中身と打刻を同じ実体から取ること。
 //
 // 🚨 2 周目は unreadable 枝にしか変異を当てておらず、正常枝は無検査だった。
 // こちらのほうが影響は大きい: `mtime` は `expired(now, mtime, holderTTL(m))` に入るので、

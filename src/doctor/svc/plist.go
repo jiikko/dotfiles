@@ -23,7 +23,7 @@ type job struct {
 }
 
 // restartKeyNames は「失敗しても launchd が再び起動する」条件。RunAtLoad は含めない:
-// RunAtLoad 単独はログイン時に一度起動して終わりで、失敗が繰り返されない (issue 148 codex 反証)。
+// RunAtLoad 単独はログイン時に一度起動して終わりで、失敗が繰り返されない。
 var restartKeyNames = []string{"KeepAlive", "StartInterval", "StartCalendarInterval", "WatchPaths", "QueueDirectories"}
 
 // parseJob は plist を読む。XML / binary の両形式を受ける。壊れていれば error (呼び出し側が
@@ -71,7 +71,7 @@ func parseJob(path string) (job, error) {
 //   - dict: SuccessfulExit=false (異常終了時に再起動) なら該当。SuccessfulExit=true は正常終了時のみ、
 //     Crashed=true はクラッシュ (シグナル) 時のみで、正の exit code では再起動しない → 該当しない。
 //     PathState / OtherJobEnabled 等の条件付きは判定できないので該当させない (偽陽性側に倒さない)。
-//     (敵対レビュー 2026-09-02: dict を一律「再起動条件あり」と読んで B の偽陽性を作っていた)
+//     (dict を一律「再起動条件あり」と読むと B の偽陽性になる)
 func keepAliveRestartsOnFailure(v any) bool {
 	switch kv := v.(type) {
 	case bool:
@@ -97,7 +97,7 @@ type execTarget struct {
 	Missing  bool   // 不在 = 壊れて確定 (ErrNotExist のときだけ)
 	Relative bool   // 相対名だった (解決を試みた)
 	// Unknown は stat が不在以外の理由で失敗した (EACCES 等)。「実行ファイルがありません」と断定できないので
-	// 診断できずにする (root 700 の dir 配下の Program を不在扱いして sudo rm を提示していた。敵対レビュー 2026-09-02)
+	// 診断できずにする (root 700 の dir 配下の Program を不在扱いすると sudo rm を提示してしまう)
 	Unknown error
 }
 

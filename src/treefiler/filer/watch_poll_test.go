@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// 1 周の記録 (metas) は今見ているフォルダのぶんだけ。見なくなったフォルダの記録は捨てる (issue 728 の 1)。
+// 1 周の記録 (metas) は今見ているフォルダのぶんだけ。見なくなったフォルダの記録は捨てる。
 func TestPollDropsMetasOfUnwatchedDirs(t *testing.T) {
 	root := t.TempDir()
 	a, b := filepath.Join(root, "a"), filepath.Join(root, "b")

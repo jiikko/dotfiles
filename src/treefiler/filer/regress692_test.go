@@ -12,7 +12,7 @@ import (
 	"subproc"
 )
 
-// 開いた repo の .git/config の fsmonitor・textconv を、git の印 (status) と d の diff で走らせない (issue 692)。
+// 開いた repo の .git/config の fsmonitor・textconv を、git の印 (status) と d の diff で走らせない。
 func TestGitDoesNotRunRepoConfigCommands(t *testing.T) {
 	needGit(t)
 	dir := t.TempDir()
@@ -41,7 +41,7 @@ func TestGitDoesNotRunRepoConfigCommands(t *testing.T) {
 	}
 }
 
-// 開いた repo の .git/config の filter (clean / process) を、git の印 (status) と d の diff (作業ツリーとの差分) で走らせない (issue 732)。
+// 開いた repo の .git/config の filter (clean / process) を、git の印 (status) と d の diff (作業ツリーとの差分) で走らせない。
 // attributes は `.git/info/attributes` に置く (作業ツリーの .gitattributes を読まない対策では止まらない形)。
 func TestGitDoesNotRunRepoFilters(t *testing.T) {
 	needGit(t)
@@ -90,7 +90,7 @@ func TestGitDoesNotRunRepoFilters(t *testing.T) {
 	}
 }
 
-// submodule の中の設定 (.git/modules/<名前>/config) の filter を、status と diff で走らせない (issue 732)。
+// submodule の中の設定 (.git/modules/<名前>/config) の filter を、status と diff で走らせない。
 // 子の git は submodule 自身の設定を読むので、親の設定の列挙と -c の上書きは届かない。--ignore-submodules=dirty で子を起こさない
 func TestGitDoesNotRunSubmoduleFilters(t *testing.T) {
 	needGit(t)

@@ -13,9 +13,9 @@ import (
 
 // 🚨 この file のテストは数秒ずつ実時間で走る (子の sleep 3/4 が lease の期限を跨ぎ、更新の ticker も本物)。時計を注入して
 // 短くする案は採っていない: lease が生きているかを**他のプロセスが**判定するのは lock の mtime と FS の今の時刻の差で、偽の時計では
-// FS の時刻が進まず、本番と違う時間の流れで判定することになる。再評価は lockman の時刻の取り方を変えるときに (issue 614 の 9)。
+// FS の時刻が進まず、本番と違う時間の流れで判定することになる。再評価は lockman の時刻の取り方を変えるときに。
 //
-// `--on-lost kill` (既定) の経路。着手時点でテストは **1 本も無かった** (issue 356)。
+// `--on-lost kill` (既定) の経路。着手時点でテストは **1 本も無かった**。
 // 091:282 は「子プロセスを**止められる**ようにする」と書いているが、実装は SIGTERM を
 // 1 回撃つだけで、trap / 無視する子には効かなかった。
 
@@ -59,8 +59,8 @@ func TestOnLostWarnDoesNotKillChild(t *testing.T) {
 		}
 	}()
 	// 🚨 **終了コードでは区別できない。** outcome が renewLost なら、子が殺されていても
-	// 122 が返る (childExitCode に到達しない)。敵対レビューが `if onLostKill` → `if true`
-	// の変異を当てて、このテストが**緑のまま通る**ことを実測した。
+	// 122 が返る (childExitCode に到達しない)。`if onLostKill` → `if true`
+	// の変異を当てると、このテストが**緑のまま通る**ことを実測した。
 	// 子が最後まで走ったことを**子自身に書かせて**観測する。
 	mark := filepath.Join(t.TempDir(), "done")
 	got := boundedInt(t, "runWith (--on-lost warn)", func() int {
@@ -96,13 +96,12 @@ func shortenOnLostGrace(t *testing.T, d time.Duration) func() {
 // 🚨 更新が詰まったとき、tick ごとに goroutine を積まないこと。
 //
 // `with` は lockman で唯一の長寿命モードなので、包んだ `Renew` が毎 tick ブロックすると
-// `withTimeout` が見捨てた goroutine が溜まり続ける (回収できない)。issue 359 の項目 4 が
-// 「357 を実装したら上限を置くか決めろ」と trigger を残していた箇所。
+// `withTimeout` が見捨てた goroutine が溜まり続ける (回収できない)。
 //
 // 判定は**時間ではなく本数**で行う。上限が無い版はこの条件で 10 本以上積む
 // (tick 200ms x 子の寿命 3s)。上限が在れば maxInFlightRenews 本で止まる。
 //
-// 🚨 **ここに「lease が生きているか」の assert は置けない** (issue 381 の残タスク ① は誤り)。
+// 🚨 **ここに「lease が生きているか」の assert は置けない**。
 // この手順は FIFO を最後まで退けないので、**どの実装でも Renew は 1 度も成功しえない** —
 // lease は修正版でも壊れた版でも死ぬ。恒久ラッチの検査は
 // `TestLeaseSurvivesPermanentRenewBlock` (パスだけ復旧させ、古い読み手は返らないまま残す形)
@@ -156,7 +155,7 @@ func shortenMaxInFlightRenews(t *testing.T, n int64) func() {
 //
 // 🚨 **`Acquire` が errBusy を返したことだけを「lease が生きている」と読まない。**
 // 中身を読めない lock も errBusy になる (`readLock` が fail-closed に倒す) ので、
-// 更新が止まっていても同じ緑になりうる (issue 383)。token と期限まで見て初めて
+// 更新が止まっていても同じ緑になりうる。token と期限まで見て初めて
 // 「保持者の lease が生きたまま」と言える。
 type leaseProbe struct {
 	setupErr   error // 手順そのものの失敗 (assert 以前の話)
@@ -238,8 +237,8 @@ func waitForLockToken(l *Locker) (string, []byte, error) {
 // になり、**健全なマウントで上限 tick 目に更新が永久に止まる**。既定値 (TTL 30m / tick 10m /
 // 上限 8) なら約 80 分走った `with` が lease を失う — 381 のバグより悪い。
 //
-// 詰まりを一切作らない列で固定する。敵対レビュー 2026-09-16 (観点② false green) の指摘で、
-// 「上限と**成功する**更新の相互作用」を見ているテストが 1 本も無かった。
+// 詰まりを一切作らない列で固定する。
+// 「上限と**成功する**更新の相互作用」を見るテストが他に無い。
 func TestLeaseSurvivesLongHealthyRun(t *testing.T) {
 	// 上限 tick 目を早く来させる。健全なら枠は毎 tick 戻るので、正しい実装は上限に触れない。
 	// 🚨 **2 まで縮めない**: 枠を埋めるのは「まだ返っていない更新」なので、負荷の高い CI で
@@ -269,7 +268,7 @@ func TestLeaseSurvivesLongHealthyRun(t *testing.T) {
 		// 上限 (3) の 9 倍の tick を通してから観測する。枠が戻らない実装は 3 tick 目
 		// (900ms) で更新をやめるので、lease は 1800ms には死んでいる (余裕 900ms)
 		// 更新の回数で待つ案は見送った: 周期は本番の ticker のままで短くならず、子の寿命 (sleep 4) が固定なので、負荷の日は数え終わる前に lock が外れて偽の赤になる
-		// sleep-ok: realtime: 本番の更新の ticker を実時間で 9 周回した後に lease を観測する (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない。issue 614 の 9)
+		// sleep-ok: realtime: 本番の更新の ticker を実時間で 9 周回した後に lease を観測する (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない)
 		time.Sleep(2700 * time.Millisecond)
 		ch <- probeLease(l, other, ttl, tok)
 	}()
@@ -281,13 +280,13 @@ func TestLeaseSurvivesLongHealthyRun(t *testing.T) {
 }
 
 // 🚨 判定不能 (125) を報告した後に確実な喪失 (errNotOwner) を知っても、終了コードは 125 の
-// まま。091:398-399 が 122 と 125 を分けているが、**判定不能だった窓があった事実は後から
-// 消えない**ので上書きしない (issue 381 で意図的に据え置いた決定)。
+// まま。仕様 091 が 122 と 125 を分けているが、**判定不能だった窓があった事実は後から
+// 消えない**ので上書きしない (意図的に据え置いた決定)。
 //
 // 更新を張り直すようになって、この順序 (判定不能 → 確実な喪失) は毎 tick 起こりうる常態に
-// なった。決めた以上は固定する。敵対レビュー 2026-09-16 (観点② false green) の指摘で、
-// 既存の TestWithSeparatesLostLeaseFromIndeterminate は 1 run に 1 種類の失敗しか起こさず、
-// この順序を誰も作っていなかった。
+// なった。決めた以上は固定する。
+// 既存の TestWithSeparatesLostLeaseFromIndeterminate は 1 run に 1 種類の失敗しか起こさないので、
+// この順序は作れない。
 func TestIndeterminateThenLostKeepsIndeterminateExit(t *testing.T) {
 	l, err := NewLocker(t.TempDir(), testIOTimeout) // io-timeout = 200ms
 	if err != nil {
@@ -332,7 +331,7 @@ func TestIndeterminateThenLostKeepsIndeterminateExit(t *testing.T) {
 // 最初の失敗で更新をやめる実装 (`ticker.Stop()`) は、これを**本物の lease 喪失**に変える:
 // 更新が二度と走らないので lease は実際に期限切れになり、他マシンが正当に引き継ぐ —
 // 子はまだ走っているので二重実行になる。091 が「最も現実的な事故経路」と呼ぶ形そのもの。
-// 敵対レビュー 2026-09-15 が A-B で実測したのを、そのままテストに落とす。
+// A-B で実測 (2026-09-15) したのを、そのままテストに落とす。
 func TestLeaseSurvivesTransientRenewBlock(t *testing.T) {
 	l, err := NewLocker(t.TempDir(), testIOTimeout) // io-timeout = 200ms
 	if err != nil {
@@ -390,7 +389,7 @@ func TestLeaseSurvivesTransientRenewBlock(t *testing.T) {
 		_ = os.Remove(fifo)
 		// ④ lease が切れているはずの時刻を十分に過ぎてから、別マシンが奪えるか試す
 		// 更新の回数で待つ案は見送った: 短くならず、子の寿命が固定なので、負荷の日に偽の赤へ変わるだけ
-		// sleep-ok: realtime: lease の期限を実時間で跨ぐ (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない。issue 614 の 9)
+		// sleep-ok: realtime: lease の期限を実時間で跨ぐ (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない)
 		time.Sleep(1500 * time.Millisecond)
 		stolen <- probeLease(l, other, ttl, tok)
 	}()
@@ -462,7 +461,7 @@ func TestLeaseSurvivesPermanentRenewBlock(t *testing.T) {
 		// ④ (b) の余裕: 復旧で打たれた mtime から ttl(1200ms) + 400ms 過ぎてから奪いに行く。
 		//    更新が再開していなければ、この時点で lease は死んでいる
 		// 更新の回数で待つ案は見送った: 短くならず、子の寿命が固定なので、負荷の日に偽の赤へ変わるだけ
-		// sleep-ok: realtime: lease の期限を実時間で跨ぐ (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない。issue 614 の 9)
+		// sleep-ok: realtime: lease の期限を実時間で跨ぐ (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない)
 		time.Sleep(1600 * time.Millisecond)
 		stolen <- probeLease(l, other, ttl, tok)
 	}()

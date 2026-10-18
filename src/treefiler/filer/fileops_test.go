@@ -304,7 +304,7 @@ func TestPasteGoesToNameInput(t *testing.T) {
 }
 
 // 木を読んだ後で途中のフォルダが外を指す symlink に差し替わっても、古い項目越しに root の外を触らない
-// (issue 722 の敵対レビューで再現: a を退けて外への symlink を置くと、a/one.txt の d / m / a が外のファイルに効いた)。
+// (再現: a を退けて外への symlink を置くと、a/one.txt の d / m / a が外のファイルに効いた)。
 func TestOpsDoNotFollowSwappedSymlinkFolder(t *testing.T) {
 	for _, k := range []string{"d", "m", "a"} {
 		m, trash := newOps(t)
@@ -348,7 +348,7 @@ func TestOpsDoNotFollowSwappedSymlinkFolder(t *testing.T) {
 }
 
 // ファイル操作の検査点は砂場に差し替わっていて、登録していない場所を実行前に拒否して記録する (main_test.go の配線。差し替え忘れ・
-// 「何でも許す」への書き換えでは他のテストが緑のままだった。issue 735)。
+// 「何でも許す」への書き換えでは他のテストが緑のままだった)。
 func TestFileOpGuardIsSandboxed(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "unregistered", "x") // 登録しない (一時ディレクトリの中なので、拒否されなくても本物は触らない)
 	if err := fsGuard("create", outside); err == nil {

@@ -10,7 +10,7 @@ import (
 
 // 検出条件そのものが未実測のエントリ (Entry.Unverified) は、候補 0 件でも行を畳まない。
 // 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と同じ見え方になり、
-// 探せていないことが画面から消える (issue 169 / 207)。
+// 探せていないことが画面から消える。
 func TestFormatKeepsUnverifiedEntryWithZeroItems(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
 	unver := Result{
@@ -50,7 +50,7 @@ func TestFormatKeepsUnverifiedEntryWithZeroItems(t *testing.T) {
 }
 
 // Mark が返す語彙を固定する。**この 6 語が CLI と TUI の唯一の出典**なので、
-// ここを変えると両方の画面の文言が同時に変わる (issue 222 で 2 実装を 1 つに寄せた)。
+// ここを変えると両方の画面の文言が同時に変わる。
 // 🚨 変異検証 2026-09-04: 寄せた直後は「注意 / 要確認 / 対象外」を pin するテストがどちらの
 // module にも無く、語を書き換えても両方緑のままだった (このテストはその穴を塞ぐ)。
 func TestMarkVocabulary(t *testing.T) {
@@ -74,7 +74,7 @@ func TestMarkVocabulary(t *testing.T) {
 }
 
 // Foldable は「候補 0 件で畳んでよい行か」の唯一の出典。畳む条件が緩むと候補のある行が消え、
-// 締まると未検証の行が「候補なし」と同じ見え方になる (false green。issue 169 / 207)。
+// 締まると未検証の行が「候補なし」と同じ見え方になる (false green)。
 func TestFoldable(t *testing.T) {
 	base := Result{Entry: Entry{ID: "e"}, Status: StatusOK}
 	if !Foldable(base) {
@@ -100,7 +100,7 @@ func TestFoldable(t *testing.T) {
 	}
 }
 
-// CLI (diskdoctor) は stdout へ**直接**書くので、ここが最後の関門 (issue 228)。
+// CLI (diskdoctor) は stdout へ**直接**書くので、ここが最後の関門。
 // TUI の描画層はセル単位に分解するため端末制御そのものは落ちるが、この経路にはその後段が無い:
 // OSC52 (クリップボード書き込み) やタイトル書き換えが「表示しただけ」で発火する。
 //
@@ -131,7 +131,7 @@ func TestFormatSanitizesUntrustedText(t *testing.T) {
 
 	out := Format(rep, Env{}, now)
 	for _, line := range strings.Split(out, "\n") {
-		// 判定の正本は github.com/jiikko/dotfiles/src/termsafe/ctlprobe (issue 285)。ここへ書き戻さないこと —
+		// 判定の正本は github.com/jiikko/dotfiles/src/termsafe/ctlprobe。ここへ書き戻さないこと—
 		// 同じオラクルが 5 箇所に複製されていて、無害化の定義を広げるときに
 		// 直し忘れた側だけが旧い狭い判定で守り続ける形になっていた。
 		if ctlprobe.HasControl(line) {
@@ -156,8 +156,8 @@ func TestFormatSanitizesUntrustedText(t *testing.T) {
 // WithItems は Items を絞ったら Size を引き直す。ただし **元の Items が空なら Size を保つ**
 // (Reused / FromSnapshot は Items を持たず Size だけを持つ。引き直すと行の合計が 0 になる)。
 //
-// この例外は 2026-09-04 の敵対レビューが SanitizeResultForDisplay で塞いだもので、以前は
-// 呼び出し側 3 箇所がそれぞれローカルに `if dropped > 0` で回避していた。契約として
+// この例外は SanitizeResultForDisplay が塞ぐもので、呼び出し側に回避させない。
+// 契約として
 // Result 側に移したので、ここが唯一の出典になる。
 func TestWithItemsRecomputesSizeExceptWhenItemsWereEmpty(t *testing.T) {
 	full := Result{Items: []Item{{Path: "/a", Size: 10}, {Path: "/b", Size: 5}}, Size: 15}

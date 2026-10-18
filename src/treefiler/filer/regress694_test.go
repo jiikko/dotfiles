@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// 隠した dotfile のフォルダの中にカーソルがあるとき、そのフォルダの変化も光る (見える判定は kids と同じ visible を通す。issue 694 の 3)。
+// 隠した dotfile のフォルダの中にカーソルがあるとき、そのフォルダの変化も光る (見える判定は kids と同じ visible を通す)。
 func TestChangeOnHiddenCursorPathLights(t *testing.T) {
 	isolateConfig(t)
 	dir := t.TempDir()
@@ -35,7 +35,7 @@ func TestChangeOnHiddenCursorPathLights(t *testing.T) {
 	}
 }
 
-// 選択肢つきの設定は、どの選択肢にも写しの表の行がある (speed を足して speedFactor を忘れると動きが止まる。issue 694 の 2)。
+// 選択肢つきの設定は、どの選択肢にも写しの表の行がある (speed を足して speedFactor を忘れると動きが止まる)。
 // 選択肢の設定を足したら、ここに表を足すか、写しの表を持たない理由を exempt に書く。
 func TestChoiceSettingsHaveTables(t *testing.T) {
 	in := func(m any) func(string) bool {
@@ -72,7 +72,7 @@ func TestChoiceSettingsHaveTables(t *testing.T) {
 			}
 			return false
 		},
-		// 並びは tree.go の sortOrder.less の switch で読む (知らない値は名前順) が、S の知らせの文言は sortByLabel の表 (issue 735)
+		// 並びは tree.go の sortOrder.less の switch で読む (知らない値は名前順) が、S の知らせの文言は sortByLabel の表
 		"sort_by": func(v string) bool { _, ok := sortByLabel[v]; return ok },
 	}
 	exempt := map[string]string{ // 表を持たず、描く所の switch / 比較で読む (知らない値は何も足さないだけで、動きは止まらない)
@@ -107,7 +107,7 @@ func TestChoiceSettingsHaveTables(t *testing.T) {
 	}
 }
 
-// 入力欄のキャレットは、描いた入力の末尾の直後にある (描画と CaretPos が別々に幅を計算するとずれる。issue 694 の 5)。
+// 入力欄のキャレットは、描いた入力の末尾の直後にある (描画と CaretPos が別々に幅を計算するとずれる)。
 // 窓より長い入力 (横に流れる) と短い入力、検索と `!` の両方で、画面の文字列から位置を測る。
 func TestCaretFollowsDrawnInput(t *testing.T) {
 	for _, open := range []string{"/", "!"} {
@@ -132,7 +132,7 @@ func TestCaretFollowsDrawnInput(t *testing.T) {
 }
 
 // Binds が false のキーは、木の画面で何もしない (表に無いキーが動作を持つと、glogx がそのキーを横断に取って filer の動作が消える)。
-// 逆に、キー一覧 (?) を開いている間は全部のキーを filer が持つ (閉じるだけのキーで glogx が横断しない。issue 694 の 6)。
+// 逆に、キー一覧 (?) を開いている間は全部のキーを filer が持つ (閉じるだけのキーで glogx が横断しない)。
 func TestBindsMatchesTreeKeys(t *testing.T) {
 	keys := []string{"up", "down", "left", "right", "enter", "esc", "tab", "space", "backspace", "home", "end", "pgup", "pgdown",
 		"shift+space", "ctrl+a", "ctrl+e", "ctrl+k", "ctrl+l", "ctrl+r", "ctrl+w", "delete", "insert", "f1"}
@@ -176,7 +176,7 @@ type exitCodeError struct{}
 func (exitCodeError) Error() string { return "exit status 1" }
 func (exitCodeError) ExitCode() int { return 1 }
 
-// ExecDone は読み直し (シェルで作ったファイルを出す) と、起動できなかったときだけの知らせを 1 か所で持つ (issue 694 の 7)。
+// ExecDone は読み直し (シェルで作ったファイルを出す) と、起動できなかったときだけの知らせを 1 か所で持つ。
 func TestExecDoneRefreshesAndWarnsOnlyOnStartFailure(t *testing.T) {
 	m := newTest(t)
 	dir := m.root.path()
@@ -195,7 +195,7 @@ func TestExecDoneRefreshesAndWarnsOnlyOnStartFailure(t *testing.T) {
 	}
 }
 
-// git の状態は gitKinds の 1 行に性質を持ち、色はどの地にもある (状態を足して色を忘れると芽が黒く描かれる。issue 694 の 9)。
+// git の状態は gitKinds の 1 行に性質を持ち、色はどの地にもある (状態を足して色を忘れると芽が黒く描かれる)。
 // classifyXY が返しうる状態は全部 gitKinds にある。
 func TestGitKindsComplete(t *testing.T) {
 	for _, xy := range []string{"??", "!!", "UU", "AA", "DD", "AU", " M", "M ", "MM", "A ", "D ", "R ", " D"} {
@@ -220,7 +220,7 @@ func TestGitKindsComplete(t *testing.T) {
 	}
 }
 
-// 設定の板の移動は listnav.MotionOf の語彙 (ctrl+d / end も効く。issue 700 の 3)。
+// 設定の板の移動は listnav.MotionOf の語彙 (ctrl+d / end も効く)。
 func TestPanelUsesMotionVocabulary(t *testing.T) {
 	m := newTest(t)
 	m.HandleKey(",")

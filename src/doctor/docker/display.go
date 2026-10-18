@@ -6,7 +6,7 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
-// 表示・コピーに出す前の関門 (disk / svc の display.go と対。issue 228 の規律)。
+// 表示・コピーに出す前の関門 (disk / svc の display.go と対)。
 //
 // 材料はすべて docker が持っている外部由来の文字列 — イメージ名は任意のレジストリから来るし、
 // コンテナ名・ボリューム名・ビルドキャッシュの Description は誰かが書いた文字列。
@@ -42,8 +42,7 @@ func SanitizeForDisplay(rep Report) Report {
 	}
 	if out.Dropped > 0 {
 		// 🚨 **Unavailable に足さない。** あちらは「診断できなかった」の一意な印で、消費側は
-		// 「非空ならエラーを出して return」と書く。1 件落としただけで全群が画面から消える
-		// (敵対レビュー 2026-09-04)
+		// 「非空ならエラーを出して return」と書く。1 件落としただけで全群が画面から消える。
 		out.Notes = append(out.Notes,
 			fmt.Sprintf("%d 件は名前が識別子として読めないため一覧から外しました (提示するコマンドが別の資源を指すため)", out.Dropped))
 	}

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// --io-timeout (091:418) のテスト。着手時点で **0 件**だった (issue 357)。
+// --io-timeout (091:418) のテスト。着手時点で **0 件**だった。
 //
 // 詰まりは FIFO で作る。open がブロックする位置を指定できるので、「応答しないマウント」の
 // 詰まる場所だけを本番と揃えられる。
@@ -85,7 +85,7 @@ func TestIOTimeoutWrapsLockerEntries(t *testing.T) {
 	}
 }
 
-// deferred Cleanup も包む (issue 357 の「未包み ②」)。
+// deferred Cleanup も包む。
 // 🚨 **タイムアウトは致命にしない** — 掃除は正しさに関与しない設計なので、
 // 件数と一緒に Errors へ入れて呼び出し側に見せるだけ。
 //
@@ -101,7 +101,7 @@ func TestIOTimeoutWrapsDeferredCleanup(t *testing.T) {
 		if len(o.res.Errors) != 1 || !strings.HasPrefix(o.res.Errors[0], errIOTimeout.Error()) {
 			t.Fatalf("掃除のタイムアウトが Errors に入っていない: %+v", o.res)
 		}
-		// 🚨 **「Removed は必ず 0」は消えた不変条件** (issue 393 / 敵対レビュー P3-1)。
+		// 🚨 **「Removed は必ず 0」は消えた不変条件**。
 		// 期限切れでも「どこまで進んだか」を報告する仕様になったので、この fixture で 0 なのは
 		// **残骸を 1 件も置いていないから**であって、「進捗を捨てているから」ではない。
 		// 旧 assert のまま fixture を現実的にすると、正しい挙動に**偽の赤**が出る。
@@ -121,7 +121,7 @@ func TestIOTimeoutWrapsDeferredCleanup(t *testing.T) {
 
 // 091:496 の受け入れ条件そのもの。**同じ --io-timeout で check も with も倒れること**、
 // かつ「空いている」に倒れないこと。
-// 着手前は check だけが 3.03s で倒れ、with は 10s 経っても戻らなかった (issue 357 の再現 A)。
+// 着手前は check だけが 3.03s で倒れ、with は 10s 経っても戻らなかった。
 func TestIOTimeoutFallsOverForCheckAndWith(t *testing.T) {
 	l := fifoLocker(t, lockFile)
 	dir := l.dir

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// 🚨 **照合してから書くまでのあいだに引き継がれても、別人の lock を上書きしないこと** (issue 380)。
+// 🚨 **照合してから書くまでのあいだに引き継がれても、別人の lock を上書きしないこと**。
 //
 // 旧版の `Renew` は `readLock` で照合してから **名前で開き直して** `O_TRUNC` + write していた。
 // そのあいだに引き継ぎが挟まると、**別人の lock を自分のメタで上書き**し、しかも **nil (成功) を
@@ -50,7 +50,7 @@ func TestRenewDoesNotOverwriteLockTakenOverMidway(t *testing.T) {
 	}
 	defer func() { renewBeforeWriteHook = old }()
 
-	// 🚨 **戻り値も assert する** (敵対レビュー P1-2)。旧版は「成功しても失敗してもよい」と
+	// 🚨 **戻り値も assert する**。旧版は「成功しても失敗してもよい」と
 	// 書いて**残存欠陥を仕様として固定していた**。保持していないのに nil を返すと、
 	// `__av1ify_lock_still_held` (renew の rc だけを見る) が「保持している」と答え、
 	// **出力を公開して元ファイルを削除する**ところまで行く。
@@ -76,7 +76,7 @@ func TestRenewDoesNotOverwriteLockTakenOverMidway(t *testing.T) {
 	}
 }
 
-// 🚨 **照合してから消すまでのあいだに引き継がれても、別人の lock を消さないこと** (issue 380)。
+// 🚨 **照合してから消すまでのあいだに引き継がれても、別人の lock を消さないこと**。
 //
 // 旧版の `Release` は `os.Remove(l.lockPath())` で、照合から消すまでのあいだに引き継がれると
 // **別人の lock を消し**、nil (成功) を返していた。消えた直後に第三者が acquire できるので
@@ -182,12 +182,12 @@ func TestRenewAndReleaseStillWorkWithoutInterference(t *testing.T) {
 	}
 }
 
-// 🚨 **Renew は 0 バイトの窓を開かないこと** (issue 383 の発生源を消す)。
+// 🚨 **Renew は 0 バイトの窓を開かないこと**。
 //
 // 旧版は `O_TRUNC` で開いてから write していたので、そのあいだ lock は 0 バイトで、
 // 読み手には「中身を読めない lock」として見えた (fail-closed 側で引き継ぎが止まる)。
 //
-// 🚨 **検出しない形** (敵対レビュー 380 P1-3。射程を先に書く): この検査の観測点は
+// 🚨 **検出しない形** (射程を先に書く): この検査の観測点は
 // `renewBeforeWriteHook` = **書き込みの前**なので、**`Seek`/`Write` より後ろに置かれた
 // truncate は原理的に見えない**。実測で、hook の直後に `f.Truncate(0)` を入れる変異は
 // 全テスト緑のまま通った。いま 0 バイト窓の発生源が構造的に無いのは、この検査ではなく
@@ -225,7 +225,7 @@ func TestRenewNeverLeavesLockEmpty(t *testing.T) {
 	}
 }
 
-// 🚨 **Renew は未知フィールドを落とさないこと** (敵対レビュー 380 P2-1b)。
+// 🚨 **Renew は未知フィールドを落とさないこと**。
 //
 // 旧版は読んだバイト列ではなく `json.Marshal(m)` を書き戻していたので、**旧バイナリが
 // 新バイナリの書いた lock を renew するたびに未知フィールドが永久に消えた**。
@@ -233,7 +233,7 @@ func TestRenewNeverLeavesLockEmpty(t *testing.T) {
 // `Version: "lockman/1"` を持つ設計とも矛盾する。
 //
 // 副次: verbatim なら書き戻す長さが必ず一致するので、`Seek → Write → Truncate` の途中が
-// **新旧の混ざった JSON** になる窓 (P2-1) も同時に消える。
+// **新旧の混ざった JSON** になる窓も同時に消える。
 func TestRenewPreservesUnknownFields(t *testing.T) {
 	l := newTestLocker(t)
 	mine, err := l.Acquire(time.Minute, "mine")
@@ -278,7 +278,7 @@ func TestRenewPreservesUnknownFields(t *testing.T) {
 	}
 }
 
-// 🚨 **identity の土台を「読んだ実体」から取ること** (敵対レビュー 380 P1-1)。
+// 🚨 **identity の土台を「読んだ実体」から取ること**。
 //
 // 初版は `readLock` の後に `os.Lstat` で取り直していた。そのあいだ (中に `io.ReadAll` =
 // SMB では 1 往復が入る) に引き継がれると、**照合した対象と guard する対象が別の実体**になり、

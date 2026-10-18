@@ -143,7 +143,7 @@ func TestBlankCommandDoesNotRun(t *testing.T) {
 }
 
 // searchFromRemoved は rel にカーソルを置いて検索を始め (before があれば打ってから)、rel を含む gone (dir からの相対) を
-// ディスクから消してライブ更新を当てる (検索中に origin が消える。issue 717)。
+// ディスクから消してライブ更新を当てる (検索中に origin が消える)。
 func searchFromRemoved(t *testing.T, rel, dir, gone string, before func(m *Model)) *Model {
 	t.Helper()
 	m := newTest(t)
@@ -168,7 +168,7 @@ func searchFromRemoved(t *testing.T, rel, dir, gone string, before func(m *Model
 }
 
 // 検索中に origin が消えたら、戻る経路 (一致なし・空欄の backspace・Esc) はどれも生きているいちばん近い祖先へ戻す
-// (消えた origin へ戻すと、カーソルが木の外を指し、カメラが原点へ寄る。issue 717)
+// (消えた origin へ戻すと、カーソルが木の外を指し、カメラが原点へ寄る)
 func TestSearchRestoresToLiveAncestorWhenOriginRemoved(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -197,7 +197,7 @@ func TestSearchRestoresToLiveAncestorWhenOriginRemoved(t *testing.T) {
 }
 
 // 一致へ移った後に origin が消えても、一致が無くなれば「始めた位置」の側 (生きている祖先) へ戻る。一致に留まらない
-// (「消えていれば今の位置に留まる」と書くと、この場面で一致していた項目に残る。issue 717 の反証レビュー)
+// (「消えていれば今の位置に留まる」と書くと、この場面で一致していた項目に残る)
 func TestSearchNoMatchAfterJumpGoesToOriginAncestor(t *testing.T) {
 	m := searchFromRemoved(t, "c.txt", ".", "c.txt", func(m *Model) {
 		typeText(m, "file")
@@ -214,7 +214,7 @@ func TestSearchNoMatchAfterJumpGoesToOriginAncestor(t *testing.T) {
 	}
 }
 
-// 打った字を消して空欄に戻したら、始めた位置へ戻る (検索は開いたまま)。空欄は列を作らずに返す (issue 723)。
+// 打った字を消して空欄に戻したら、始めた位置へ戻る (検索は開いたまま)。空欄は列を作らずに返す。
 func TestSearchBackToEmptyReturnsToOrigin(t *testing.T) {
 	m := newTest(t)
 	origin := m.cur

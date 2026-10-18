@@ -40,7 +40,7 @@ type Result struct {
 	// FromSnapshot は「今回走査しておらず、保存された結果をそのまま復元した」印。**Reused とは別物**:
 	// Reused は「重いエントリの計測値だけを前回から引き継いだ (行に『N 分前の計測を再利用』と出る)」で、
 	// こちらは「画面ごと snapshot から再現した」。前者を後者にも流用すると、普通の開き直しで
-	// 「-1113 分前の計測を再利用」のような嘘の注記が全行に出る (issue 178 の敵対レビューで実測)。
+	// 「-1113 分前の計測を再利用」のような嘘の注記が全行に出る。
 	// ④ (削除) は**どちらの印が立っていても再スキャンを通す** (issues/148 の不変条件)。
 	FromSnapshot bool `json:"from_snapshot,omitempty"`
 }
@@ -187,7 +187,7 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 	case GuardNone, GuardBoottime, GuardSimDevice, GuardOrphanApp, GuardBrewOrphan, GuardVMRoot,
 		GuardGoModcacheCurrent, GuardGoModcacheOld, GuardChromiumCache:
 	}
-	// $BREW_PREFIX を使うエントリは brew --prefix を実測してから展開する (直書きしない: issue 176)。
+	// $BREW_PREFIX を使うエントリは brew --prefix を実測してから展開する (直書きしない)。
 	// 取れなければ fail-closed (候補 0 件に畳まない)。
 	env := opt.Env
 	for _, tmpl := range e.Paths {
@@ -237,8 +237,7 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 		paths = filterPaths(paths, func(p string) bool {
 			id := filepath.Base(p)
 			// 名前から bundle id を決められないコンテナ (UUID 名) は判定できないので候補にしない。
-			// 突合は「ディレクトリ名 = bundle id」を前提にしており、UUID 名は構造的に素通りする
-			// (issue 167 (a))
+			// 突合は「ディレクトリ名 = bundle id」を前提にしており、UUID 名は構造的に素通りする。
 			if containerIsUndiagnosable(id) {
 				return false
 			}
@@ -330,7 +329,7 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 				kept = append(kept, p)
 			}
 		}
-		// 🚨 **全部が「起動中」で落ちたら blocked にする** (敵対レビュー 2026-09-04)。
+		// 🚨 **全部が「起動中」で落ちたら blocked にする**。
 		// 黙って候補 0 件にすると `Foldable` が行ごと畳み、2.7GB が「候補なし = きれい」と
 		// 同じ見え方になる (Slack と Dropbox を常駐させていれば普通に起きる)。
 		// 起動中で触らないことを見せる形は `chrome-tmp` (GuardProcessAbsent) と揃える。
@@ -376,8 +375,8 @@ func sizePaths(ctx context.Context, opt Options, e Entry, paths []string) Result
 			r.Failures = append(r.Failures, "対象パスを拒否: "+err.Error())
 			continue
 		}
-		// 🚨 **除外リストは実行時にも効かせる** (2026-09-04)。以前は `excludedRoots` を
-		// テストが**テンプレート文字列**に対してだけ照合していたので、glob を張った瞬間に
+		// 🚨 **除外リストは実行時にも効かせる**。`excludedRoots` を
+		// テストが**テンプレート文字列**に対してだけ照合すると、glob を張った瞬間に
 		// 素通りする: `~/Library/Application Support/*/Cache` は静的には
 		// `~/Library/Application Support/Google` で始まらないが、**展開すると中に入りうる**。
 		// 展開後のパスをここで落とす (エントリ全体を止めない: 他のアプリのぶんは正当な候補)。
@@ -444,7 +443,7 @@ func scanSimRuntimes(ctx context.Context, opt Options, e Entry) Result {
 }
 
 // SumDeletable は「今消せる量」。blocked (guard で対象外) と failed (走査できず) は行として出すが
-// 合計には足さない (トーストの発火判定も同じ合計を使う。issue 148)。UI の途中集計もこれを使う (計算を 2 つ持たない)。
+// 合計には足さない (トーストの発火判定も同じ合計を使う)。UI の途中集計もこれを使う (計算を 2 つ持たない)。
 func SumDeletable(results []Result) int64 {
 	var total int64
 	for _, r := range results {

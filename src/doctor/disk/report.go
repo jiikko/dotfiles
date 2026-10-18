@@ -37,7 +37,7 @@ func (rep Report) WithResults(rs []Result) Report {
 //
 // 🚨 引き直すのは**元の Items が非空だったときだけ**。Reused / FromSnapshot の Result は
 // Items を持たずに Size だけを持つことがあり、無条件に引き直すと行の合計が 0 になる
-// (SanitizeResultForDisplay が 2026-09-04 の敵対レビューで塞いだ穴)。この例外は Result の
+// (SanitizeResultForDisplay が塞ぐ穴)。この例外は Result の
 // 性質であって「Items を絞る側」の関心ではないので、呼び出し側に判断させずここへ閉じる。
 //
 // Size と Items が同時にしか増えないことは Scan が保証している (scanPaths /
@@ -58,7 +58,7 @@ func (r Result) WithItems(items []Item) Result {
 
 // Foldable は「候補 0 件なので一覧から畳んでよい行か」。CLI と TUI の唯一の出典。
 //
-// 🚨 **検出条件そのものが未実測のエントリ (Entry.Unverified) は畳まない** (issue 169 / 207)。
+// 🚨 **検出条件そのものが未実測のエントリ (Entry.Unverified) は畳まない**。
 // 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と同じ見え方になり、
 // 探せていないことが画面から永久に消える (false green)。
 func Foldable(r Result) bool {
@@ -68,8 +68,8 @@ func Foldable(r Result) bool {
 // MarkVocabulary は Mark が返しうる語をすべて返す (幅の見積もりに使う。glogx の
 // doctorMaxMarkWidth が唯一の利用者)。
 //
-// 🚨 **手で並べない**。以前は呼び出し側が 5 語をハードコードしていて「🔎 未検証」が抜けており、
-// 語が増えても幅の見積もりだけが古くなる形だった (issue 238)。ここは Mark を実際に通して作る。
+// 🚨 **手で並べない**。呼び出し側が 5 語をハードコードすると「🔎 未検証」が抜けたり、
+// 語が増えても幅の見積もりだけが古くなる。ここは Mark を実際に通して作る。
 // 🚨 それでも「**新しい Risk / Status が増えたとき**」は自動では入らないので、下の
 // markVocabularyGuard が exhaustive (default なし switch) で気づかせる。
 func MarkVocabulary() []string {
@@ -96,7 +96,7 @@ func MarkVocabulary() []string {
 
 // markVocabularyGuard は「MarkVocabulary の列挙が enum に追いついているか」の番人。
 // 🚨 **default を書かない**。Risk / Status に値を足すと exhaustive (.golangci.yml) がここで
-// 赤くなり、MarkVocabulary の列挙を直す必要に気づける (敵対レビュー 2026-09-04 の P2)。
+// 赤くなり、MarkVocabulary の列挙を直す必要に気づける。
 // 実行時の意味は無い (呼ばれない側の網羅性だけを固定する)。
 func markVocabularyGuard(r Risk, s Status) {
 	switch r {
@@ -115,13 +115,13 @@ func markVocabularyGuard(r Risk, s Status) {
 // 唯一の出典。**色は持たない**: この module は表示幅・色の依存を持たない方針なので、
 // 色付けは語を受け取った側 (glogx) の責務。
 //
-// 🚨 語を増やす / 変えるときはここだけを直す。以前は CLI と TUI に同じ写像が 2 つあり、
-// 「相手と同じ語彙を使うこと」というコメントだけが両者を結んでいた (issue 222)。
+// 🚨 語を増やす / 変えるときはここだけを直す。CLI と TUI に同じ写像を 2 つ持たせない。
+// 「相手と同じ語彙を使うこと」というコメントだけでは両者を結べない。
 func Mark(r Result) string {
 	switch r.Status {
 	case StatusBlocked:
 		// UI と同じく**固定語彙**。可変長の理由をここに置くと、幅の狭い端末で
-		// 切れて意味が失われる (issue 182)。理由は Format が下の行に出す。
+		// 切れて意味が失われる。理由は Format が下の行に出す。
 		// caution (🚨) と記号を分けるのは NO_COLOR で区別を残すため
 		return "🚫 対象外"
 	case StatusFailed:
@@ -149,7 +149,7 @@ func Mark(r Result) string {
 func Format(rep Report, env Env, now time.Time) string {
 	// 🚨 **stdout へ直接書く経路なので、ここが最後の関門**。走査した値 (パス / ReadDir の名前 /
 	// OS のエラー文) は自分以外が書いた文字列で、そのまま出すと OSC52 やタイトル書き換えが
-	// 「表示しただけ」で発火する。TUI (glogx) の受け口も同じ関数を通す (issue 228)。
+	// 「表示しただけ」で発火する。TUI (glogx) の受け口も同じ関数を通す。
 	rep = SanitizeForDisplay(rep)
 	var b strings.Builder
 	fmt.Fprintf(&b, "ディスク診断   合計 %s 解放可能 (blocked / 走査できず は含まない)\n", HumanSize(rep.Total))
@@ -158,7 +158,7 @@ func Format(rep Report, env Env, now time.Time) string {
 	}
 	shown := 0
 	for _, r := range rep.Results {
-		// 候補 0 件は畳む。🚨 **検出条件そのものが未実測のエントリは畳まない** (issue 169 / 207)。
+		// 候補 0 件は畳む。🚨 **検出条件そのものが未実測のエントリは畳まない**。
 		// 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と同じ見え方になる。
 		// UI 側 (src/glogx/doctor_view.go) と同じ規律。実測で Entry.Unverified が空になれば畳まれる側へ戻る
 		if Foldable(r) {
@@ -170,7 +170,7 @@ func Format(rep Report, env Env, now time.Time) string {
 			size = "---"
 		}
 		// 🚨 ラベルを `%-48s` で pad しない。Go の幅指定は**バイト数**なので、日本語ラベルでは
-		// 1 文字 3 バイトと数えられて列が行ごとにずれる (issue 182)。doctor module は幅計算の
+		// 1 文字 3 バイトと数えられて列が行ごとにずれる。doctor module は幅計算の
 		// 依存を持たないので、**揃えるのを諦めて**マークを先に出す (size は ASCII なので %9s が効く)。
 		// 揃えたくなったら表示幅を測る依存を足すこと。UI 側 (glogx) は termwidth を持つので揃えている
 		fmt.Fprintf(&b, "\n%9s  %s  %s\n", size, Mark(r), r.Entry.Label)
@@ -217,7 +217,7 @@ func Format(rep Report, env Env, now time.Time) string {
 			}
 		}
 	}
-	// 見出しだけで終わらせない (UI と svcdoctor は「見つかりませんでした」を出す。issue 177)
+	// 見出しだけで終わらせない (UI と svcdoctor は「見つかりませんでした」を出す)
 	if shown == 0 {
 		b.WriteString("\n掃除の候補はありませんでした\n")
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 )
 
-// linesRef / appendRGBRef は issue 724 の前の lines と appendRGB (セルを値で写す・色を毎回 strconv で組む)。今の lines の正解役。
+// linesRef / appendRGBRef は lines と appendRGB の素朴な版 (セルを値で写す・色を毎回 strconv で組む)。今の lines の正解役。
 func linesRef(c *canvas) []string {
 	out := make([]string, c.h)
 	var b []byte

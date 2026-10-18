@@ -107,7 +107,7 @@ func TestOpenKeyInTileOpensTileFile(t *testing.T) {
 	}
 }
 
-// O は Finder で選んだ状態で見せる (open -R)。フォルダでもファイルでも、その項目そのものを渡す (issue 719)。
+// O は Finder で選んだ状態で見せる (open -R)。フォルダでもファイルでも、その項目そのものを渡す。
 func TestRevealKeyRevealsCursorInFinder(t *testing.T) {
 	got := fakeOpen(t, nil)
 	m := newTest(t)

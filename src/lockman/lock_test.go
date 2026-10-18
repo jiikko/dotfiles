@@ -23,7 +23,7 @@ func newTestLocker(t *testing.T) *Locker {
 }
 
 // expireLease は lock の mtime を「3 × ttl 前」へ動かし、lease が切れた状態を待たずに作る (lease の期限は lock の mtime と
-// FS の時刻の差で決まる。issue 614)。🚨 遠い過去にしない: 同じ mtime を時計のずれの判定 (clockSkewTolerance) にも使う経路が
+// FS の時刻の差で決まる)。🚨 遠い過去にしない: 同じ mtime を時計のずれの判定 (clockSkewTolerance) にも使う経路が
 // あり、実時間で 3 × ttl 待った状態から外れる
 func expireLease(t *testing.T, l *Locker, ttl time.Duration) {
 	t.Helper()
@@ -173,7 +173,7 @@ func TestCorruptLockIsTreatedAsBusy(t *testing.T) {
 	if _, err := l.Acquire(time.Minute, ""); !errors.Is(err, errBusy) {
 		t.Fatalf("壊れた lock で busy にならない (err=%v)", err)
 	}
-	// 🚨 **手段ではなく意図を pin する** (issue 383 の敵対レビュー 4 周目 P1-2)。
+	// 🚨 **手段ではなく意図を pin する**。
 	// 旧版は `Inspect` が**エラーを返すこと**を assert していたが、それは当時の手段で、
 	// 意図は上のコメントどおり「空いていると解釈しない」。エラーに倒していたせいで
 	// `status` が rc=1 (道具の失敗) / stdout 空になり、**案内の行き先が空振り**していた
@@ -271,10 +271,10 @@ func TestRenewRefusesExpiredLease(t *testing.T) {
 // Renew は保持を延ばす (延びないと TTL 内に必ず奪われる)。
 // Renew が保持を延長すること。
 //
-// 🚨 **壁時計で測らない** (issue 364 の 4 / `avoid-wall-clock-assertions.md`)。
-// 旧版は ttl=200ms に対し `Sleep(ttl/2)` + `Renew` を 3 周しており、1 周に許された余裕は
-// 100ms しかなかった。`Renew` は FS 操作 6 回 (readLock + serverNow + write + fsync ×2 +
-// serverNow + stat) なので、**測っていたのは不変条件ではなく I/O レイテンシ**
+// 🚨 **壁時計で測らない** (`avoid-wall-clock-assertions.md`)。
+// ttl=200ms に対し `Sleep(ttl/2)` + `Renew` を 3 周する形だと、1 周に許された余裕は
+// 100ms しかない。`Renew` は FS 操作 6 回 (readLock + serverNow + write + fsync ×2 +
+// serverNow + stat) なので、**測るのは不変条件ではなく I/O レイテンシ**
 // (実測: `Renew` に 120ms = SMB では正常な範囲の遅延を足すと red)。
 //
 // 判定軸を「何が起きたか」へ移した: TTL を長く取り、mtime を**期限の手前**へ打ち直してから
@@ -450,7 +450,7 @@ func removeTakeoverClaims(t *testing.T, l *Locker) int {
 	return n
 }
 
-// ★ 回帰テスト (issue 366): 期限切れと判定した後に他者が引き継ぎを完走しても、
+// ★回帰テスト: 期限切れと判定した後に他者が引き継ぎを完走しても、
 // 遅れてきた観測者は「その後に置かれた新しい lock」を退けない。
 //
 // 症状 (勝者の数) だけでなく機構を固定する — graveyard に入ってよいのは死んだ lock だけ。
@@ -513,7 +513,7 @@ func TestStaleTakeoverDoesNotEvictFreshLock(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366 / 2 段目の単独検査): 調停の目印が掃除に浚われていても、
+// ★ 回帰テスト (2 段目の単独検査): 調停の目印が掃除に浚われていても、
 // 破壊的操作の直前の再照合が「世代が変わった」ことを見て退去を止める。
 //
 // 1 段目 (調停) と 2 段目 (再照合) はどちらか一方でも上のテストを緑にしてしまうので、
@@ -566,7 +566,7 @@ func TestStaleTakeoverRefusesWhenGenerationChangedAfterClaimSwept(t *testing.T) 
 	}
 }
 
-// ★ 回帰テスト (issue 366 / 1 段目の単独検査): 同じ世代を同時に見た者が何人いても、
+// ★ 回帰テスト (1 段目の単独検査): 同じ世代を同時に見た者が何人いても、
 // 実際に退けるのは 1 人だけ。
 //
 // 全員が「期限切れ」と判定し終えてから一斉に進む形にする (最悪の順序)。調停が無いと
@@ -632,7 +632,7 @@ func TestConcurrentTakeoverElectsExactlyOneEvictor(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366 / 2 段目の mtime 照合): 判定した後にその lock が延長されて
+// ★ 回帰テスト (2 段目の mtime 照合): 判定した後にその lock が延長されて
 // いたら、token が同じでも退けない。
 //
 // 期限の判定と保持者の Renew は別々の瞬間に serverNow を取るので、境界では
@@ -687,7 +687,7 @@ func TestStaleTakeoverRefusesRenewedLock(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): lock の中身は他ホストが書いた値なので、token をそのまま
+// ★回帰テスト: lock の中身は他ホストが書いた値なので、token をそのまま
 // パスの構成要素にしない。調停の目印が tmp/ の外に出ると、掃除の射程からも外れる。
 func TestTakeoverClaimStaysInsideTmpForHostileToken(t *testing.T) {
 	l := newTestLocker(t)
@@ -753,7 +753,7 @@ func staleLockWithClaim(t *testing.T, l *Locker) (*Meta, string) {
 	return dead, claim
 }
 
-// ★ 回帰テスト (issue 366): 飛行中の目印は踏まない。踏むと役が 2 人になる (= 二重取得)。
+// ★回帰テスト: 飛行中の目印は踏まない。踏むと役が 2 人になる (= 二重取得)。
 func TestTakeoverYieldsToLiveClaim(t *testing.T) {
 	l := newTestLocker(t)
 	dead, claim := staleLockWithClaim(t, l)
@@ -791,7 +791,7 @@ func TestTakeoverYieldsToLiveClaim(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 作成者が死んで残った目印は、猶予を過ぎたら回収する。
+// ★回帰テスト: 作成者が死んで残った目印は、猶予を過ぎたら回収する。
 //
 // 回収が無いと、目印を取った直後に死んだプロセス (Ctrl-C / --io-timeout の発火。どちらも
 // defer を飛ばす既定経路) がその世代の引き継ぎを掃除まで塞ぎ、**scratchRetention = 1h が
@@ -852,7 +852,7 @@ func TestTakeoverReclaimsAbandonedClaim(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 放棄された目印を同時に回収しても、役を持つのは 1 人だけ。
+// ★回帰テスト: 放棄された目印を同時に回収しても、役を持つのは 1 人だけ。
 //
 // 素朴な remove → create だと、先に回収した者が作り直した**新しい**目印を次の者が消して
 // しまい、役が 2 人になる。「存在しない名前へ rename できた 1 人だけが作り直す」形を固定する。
@@ -921,7 +921,7 @@ func TestConcurrentReclaimElectsExactlyOneEvictor(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 猶予は**目印の作成者が申告した --io-timeout** から決める。
+// ★回帰テスト: 猶予は**目印の作成者が申告した --io-timeout** から決める。
 //
 // 自分の値だけで決めると、長い --io-timeout で走っている作成者がまだ飛行しているうちに
 // その目印を回収してしまい、役が 2 人になる。
@@ -963,7 +963,7 @@ func TestTakeoverGraceHonorsClaimDeclaredTimeout(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 中身を読めない目印でも、猶予を待たずに回収しない。
+// ★回帰テスト: 中身を読めない目印でも、猶予を待たずに回収しない。
 //
 // `placeTakeoverClaim` は中身の書き込み失敗を握り潰す (目印としては成立するため)。
 // その受け皿が `takeoverClaimGrace` の fallback で、ここが 0 に倒れると**作られたばかりの
@@ -1001,7 +1001,7 @@ func TestTakeoverYieldsToClaimWithUnreadableBody(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 世代 id は mtime で変わらない / 危険な token は検疫する。
+// ★回帰テスト: 世代 id は mtime で変わらない / 危険な token は検疫する。
 //
 // 1 段目の調停は「同じ世代を見た者が必ず同じ id を得る」ことだけで成立している。
 // mtime を混ぜると、延長で mtime が動いたときに同じ世代が別の id になり調停をすり抜ける。
@@ -1032,7 +1032,7 @@ func TestTakeoverGenerationAndTokenQuarantine(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 猶予は既定 TTL を超えない / 申告値で溢れない。
+// ★回帰テスト: 猶予は既定 TTL を超えない / 申告値で溢れない。
 //
 // 猶予が既定 TTL を超えると「TTL を過ぎれば誰かが引き継げる」という道具の契約が割れる。
 // 申告値 (他ホストが書いた値) で int64 を溢れさせると猶予が負になり、生きた目印を
@@ -1095,7 +1095,7 @@ func TestTakeoverClaimGraceBounds(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 回収の途中で目印が置き直されていたら、上書きせずに譲る。
+// ★回帰テスト: 回収の途中で目印が置き直されていたら、上書きせずに譲る。
 //
 // 打刻を戻す O_TRUNC は「今そこにあるもの」への無条件操作なので、掃除が目印を浚った後に
 // 別の観測者が置き直していると、その人の目印を自分の中身で上書きして役が 2 人になる。
@@ -1134,7 +1134,7 @@ func TestRefreshTakeoverClaimYieldsWhenClaimWasReplaced(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 回収の mark が在るときは譲る。**理由を出すのは「止まっている」
+// ★回帰テスト: 回収の mark が在るときは譲る。**理由を出すのは「止まっている」
 // ときだけ**で、良性の競合では黙る。
 //
 // 回収を始めた者が途中で死ぬと目印の打刻が凍り、以後の観測者は全員この枝へ落ちて掃除まで
@@ -1194,7 +1194,7 @@ func TestTakeoverYieldsToReclaimMarkAndWarnsOnlyWhenStuck(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 掃除が目印を浚った後でも、回収した者は目印を置き直して役を保つ。
+// ★回帰テスト: 掃除が目印を浚った後でも、回収した者は目印を置き直して役を保つ。
 //
 // 🚨 これは**配線のテスト**。照合のために open の手前へ Stat を足すと、ENOENT の配線が
 // Stat 側にだけ残って open 側から抜け落ちる。そうなると「掃除が浚った」という正常系が
@@ -1216,7 +1216,7 @@ func TestRefreshTakeoverClaimRecreatesSweptClaim(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 回収の途中で失敗したら、回収の目印 (mark) を残さない。
+// ★回帰テスト: 回収の途中で失敗したら、回収の目印 (mark) を残さない。
 //
 // mark を残すと、目印の打刻は観測した値のままなので以後の観測者は同じ mark 名を計算して
 // EEXIST で弾かれ続け、**プロセスが落ちていなくても**その世代が掃除まで引き継げなくなる。
@@ -1263,7 +1263,7 @@ func takeoverMarks(t *testing.T, l *Locker) []string {
 	return out
 }
 
-// ★ 回帰テスト (issue 366): 照合を通った後に目印が置き直されても、**相手の目印を壊さない**。
+// ★回帰テスト: 照合を通った後に目印が置き直されても、**相手の目印を壊さない**。
 //
 // 🚨 これが「照合を fd に対して行っていること」の唯一の検査。パスに対する照合
 // (os.Stat で見てから O_TRUNC で開く) へ戻す変異は、seam が無いと全テスト緑で通る —
@@ -1316,7 +1316,7 @@ func TestRefreshTakeoverClaimDoesNotClobberReplacedClaim(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 回収で打刻を戻すとき、**自分より長い旧 body を切り詰める**。
+// ★回帰テスト: 回収で打刻を戻すとき、**自分より長い旧 body を切り詰める**。
 //
 // 回収の本命は「別ホストが置いた目印」なので、旧 body のほうが長い組み合わせ (長い hostname /
 // 長い username) は普通に起きる。切り詰めないと末尾に旧 body の破片が残って JSON が壊れ、
@@ -1358,7 +1358,7 @@ func TestReclaimTruncatesLongerPreviousBody(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 回収の途中で目印が置き直されたら、**busy として譲る** (hard error にしない)。
+// ★回帰テスト: 回収の途中で目印が置き直されたら、**busy として譲る** (hard error にしない)。
 //
 // hard error にすると `errBusy` に当たらないので `acquire --wait` のリトライループに入らず、
 // 良性のレース 1 回で待機が丸ごと諦める。
@@ -1398,7 +1398,7 @@ func TestReclaimYieldsAsBusyWhenClaimReplacedMidway(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 「回収が止まっている」の診断は **mark を置いた回収者**を名指しする。
+// ★回帰テスト: 「回収が止まっている」の診断は **mark を置いた回収者**を名指しする。
 //
 // 目印 (claim) の body は**とうに死んだ作成者**のものなので、それで閾値を作ると
 // 「回収者はまだ飛行中なのに止まっていると診断する」ことになり、しかも人へ無関係な pid を見せる。

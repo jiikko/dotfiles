@@ -155,7 +155,7 @@ func TestSortReverseResortsInPlace(t *testing.T) {
 	}
 }
 
-// root を 1 段上げた後も、旧 root の項目は今の mtime で並ぶ (新しい親は読み直した値で並べ、旧 root の node へ差し替える。issue 720 の敵対レビュー)。
+// root を 1 段上げた後も、旧 root の項目は今の mtime で並ぶ (新しい親は読み直した値で並べ、旧 root の node へ差し替える)。
 func TestSortAfterRerootUsesFreshMtime(t *testing.T) {
 	isolateConfig(t)
 	p := t.TempDir()

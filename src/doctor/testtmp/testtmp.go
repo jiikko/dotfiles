@@ -1,5 +1,5 @@
 // Package testtmp は「テストが起こした一時ディレクトリを、中断されても回収する」ための
-// 共通ヘルパー (issue 305)。
+// 共通ヘルパー。
 //
 // なぜ必要か: `TestMain` の `MkdirTemp` → `m.Run()` → `RemoveAll` という形は、
 // **`m.Run()` から戻らない終了 (SIGKILL / panic / -timeout の SIGQUIT) では末尾に到達しない**。

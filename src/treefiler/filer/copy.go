@@ -8,7 +8,7 @@ import (
 	"subproc/clipboard"
 )
 
-// copy.go は `y` / `Y` (カーソルの項目のパスをクリップボードへ。y = 絶対パス・Y = root からの相対パス。issue 718)。
+// copy.go は `y` / `Y` (カーソルの項目のパスをクリップボードへ。y = 絶対パス・Y = root からの相対パス)。
 
 // copyToClipboard はテストで実クリップボードを触らないための差し替え点 (本体と失敗モードは subproc/clipboard の doc)。
 var copyToClipboard = clipboard.Copy

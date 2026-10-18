@@ -9,11 +9,11 @@ import (
 	"time"
 )
 
-// 🚨 **既定 (`--on-lost=kill`) の経路を通る lease 生存テスト** (issue 385)。
+// 🚨 **既定 (`--on-lost=kill`) の経路を通る lease 生存テスト**。
 //
-// 385 以前は「最初の判定不能で即昇格」だったので、**一過性の詰まりで殺さなくてよい子を
-// 殺していた**。381 がループ側を「判定不能でも更新を続ける」へ変えたのに、昇格側が
-// 即殺すままだったため、既定では 381 の便益がほとんど回収されていなかった。
+// 「最初の判定不能で即昇格」にすると、**一過性の詰まりで殺さなくてよい子を
+// 殺す**。ループ側が「判定不能でも更新を続ける」のに、昇格側が
+// 即殺すままだと、既定ではその便益がほとんど回収されない。
 //
 // 実測 A-B (2026-09-20。ttl=900ms / tick=300ms / io-timeout=200ms、詰まりの長さを変えて):
 //
@@ -104,7 +104,7 @@ func TestDefaultKillWaitsForLeaseDeadline(t *testing.T) {
 			setupErr := blockRenews(l, []blockSpec{{duration: tc.block}})
 
 			// 子は 3 秒走ってからマーカーを書く。**完走したかはマーカーで見る**
-			// (`kill(pid, 0)` はゾンビにも成功するので生死の判定に使えない。issue 384)
+			// (`kill(pid, 0)` はゾンビにも成功するので生死の判定に使えない)
 			rc := boundedInt(t, "runWith (既定の kill)", func() int {
 				return runWith(l, ttl, "", true, // ← 既定 = --on-lost kill
 					[]string{"sh", "-c", fmt.Sprintf("sleep 3; : > %q", mark)})
@@ -123,7 +123,7 @@ func TestDefaultKillWaitsForLeaseDeadline(t *testing.T) {
 					"他者が正当に引き継げる時刻を過ぎており、二重実行になる", rc)
 			}
 			// 判定不能だった窓があった事実は消えないので、どちらの腕でも rc は 125
-			// (091:398-399 / issue 381 の sticky な outcome を据え置いている)
+			// (仕様 091 の終了コードの表どおり、sticky な outcome)
 			if rc != exitWithInvalid {
 				t.Errorf("rc=%d (期待 %d = 判定不能)", rc, exitWithInvalid)
 			}
@@ -131,7 +131,7 @@ func TestDefaultKillWaitsForLeaseDeadline(t *testing.T) {
 	}
 }
 
-// 🚨 **更新が成功したら lease の期限も進むこと** (issue 385)。
+// 🚨 **更新が成功したら lease の期限も進むこと**。
 //
 // 「判定不能では期限まで昇格を保留する」だけでは足りない: 期限を**進めない**と、
 // 2 回目の一過性の詰まりが来たとき「最初の期限はとうに過ぎている」ので即昇格してしまい、
@@ -176,7 +176,7 @@ func TestLeaseDeadlineAdvancesOnSuccessfulRenew(t *testing.T) {
 	}
 }
 
-// 🚨 **「失敗した更新では期限を進めない」を固定する** (敵対レビュー 385 の P1-2)。
+// 🚨 **「失敗した更新では期限を進めない」を固定する**。
 //
 // `case err := <-renewCh` の `break` を外すと、**失敗した更新でも期限が ttl ぶん前進し、
 // `pendingIndeterminate` も解ける**。更新が 1 回も成功していないのに昇格が来なくなるので、
@@ -184,8 +184,8 @@ func TestLeaseDeadlineAdvancesOnSuccessfulRenew(t *testing.T) {
 //
 // 既存のテストがこれを守れなかったのは、詰まりを FIFO で作ると `case <-renewExpired` へ
 // 落ちるので、**`renewCh` がエラーを返す列が 1 本も無かった**から。実在する速い失敗は
-// `errUnreadableLock` (lock の中身を読めない。issue 383 が「健全な保持者の Renew の一瞬でも
-// 出る」と記録している状態) なので、それで列を作る。
+// `errUnreadableLock` (lock の中身を読めない。健全な保持者の Renew の一瞬でも
+// 出る状態) なので、それで列を作る。
 //
 // 実測 A-B (2026-09-20 / ttl=900ms / io-timeout=200ms / 子は sleep 3):
 //
@@ -198,7 +198,7 @@ func TestFailedRenewDoesNotAdvanceLeaseDeadline(t *testing.T) {
 	}
 	const ttl = 900 * time.Millisecond
 	mark := filepath.Join(t.TempDir(), "child-finished")
-	// 🚨 **肯定側の観測を 1 つ持つ** (敵対レビュー 385 の 2 周目 P3-C)。合否が「marker が無い」+
+	// 🚨 **肯定側の観測を 1 つ持つ**。合否が「marker が無い」+
 	// 「rc == 125」だけだと**純粋な否定**になり、列が成立しなくても緑になる。実測: argv を
 	// 存在しないバイナリに替えると `cmd.Start()` が失敗して即 125 を返し、更新も昇格も期限も
 	// 一度も通らないのに PASS (0.02s。正常時は 0.91s)。子が走り始めたことを固定する。

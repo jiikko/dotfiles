@@ -121,7 +121,7 @@ func resolveLink(tok, root, base string, cache map[string]string) string {
 		return ""
 	}
 	// 🚨 鍵に root と base を含める: 同じ文字列 (util.go) でも、どのフォルダのファイルから読んだかで指す先が違う。
-	// 文字列だけを鍵にすると、b/note.txt のリンクが先に開いた a/note.txt の解決 (a/util.go) を使った (監査で再現 2026-10-09。issue 691)
+	// 文字列だけを鍵にすると、b/note.txt のリンクが先に開いた a/note.txt の解決 (a/util.go) を使った (再現 2026-10-09)
 	key := root + "\x00" + base + "\x00" + t
 	if p, ok := cache[key]; ok {
 		return p

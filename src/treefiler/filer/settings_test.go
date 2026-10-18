@@ -164,7 +164,7 @@ func TestPaperGroundsShareColors(t *testing.T) {
 	}
 }
 
-// palette の選択肢は ground で決まる。ファイルで palette が ground より前にあっても拒否しない (レビューの指摘 2026-10-09)。
+// palette の選択肢は ground で決まる。ファイルで palette が ground より前にあっても拒否しない。
 func TestLoadSettingsAppliesGroundBeforePalette(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "treefiler.toml")
 	mustWrite(t, p, "palette = \"growth\"\nground = \"parchment\"\n")
@@ -188,7 +188,7 @@ func TestGroundChangeSavesFittedPalette(t *testing.T) {
 }
 
 // Live を off で始めても Changed は待てるチャネルを返し、on に戻すと同じチャネルに合図が届く
-// (閉じたチャネルを返すと glogx の待ちが終わり、on に戻しても誰も待たない。レビューの指摘 2026-10-09)。
+// (閉じたチャネルを返すと glogx の待ちが終わり、on に戻しても誰も待たない)。
 func TestLiveToggleKeepsChannel(t *testing.T) {
 	m := newTest(t)
 	panelTo(t, m, "live")

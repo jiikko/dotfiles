@@ -23,7 +23,7 @@ const (
 // audioExt は開かずに断る音声 (spec §0.4。treebeard の対応形式)。
 var audioExt = map[string]bool{".mp3": true, ".flac": true, ".wav": true, ".ogg": true, ".m4a": true, ".aac": true}
 
-// imageExt は画像。プレビューは後回し (spec §0.1。2026-10-07 ユーザー回答。issue 688) なので、今は開かずに断る。
+// imageExt は画像。プレビューは後回し (spec §0.1。2026-10-07 ユーザー回答) なので、今は開かずに断る。
 var imageExt = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".bmp": true, ".tif": true, ".tiff": true,
 	".ico": true, ".svg": true, ".svgz": true, ".avif": true, ".heic": true, ".tga": true, ".psd": true,
@@ -115,7 +115,7 @@ func (s *textSource) feed(b []byte) {
 			cut := utf8Boundary(s.partial, maxLineBytes)
 			if cut == 0 {
 				// 🚨 文字の途中にならない切れ目が無い (続きのバイト 0x80〜0xBF だけが続く不正な UTF-8)。切らずに戻すと
-				// partial が減らず空の行を足し続け、タイルを開くと固まった (監査で再現 2026-10-09。issue 691)
+				// partial が減らず空の行を足し続け、タイルを開くと固まった (再現 2026-10-09)
 				cut = maxLineBytes
 			}
 			s.lines = append(s.lines, cleanLine(string(s.partial[:cut])))

@@ -214,7 +214,7 @@ func (m *Model) Resize(w, h int) {
 }
 
 // Busy は裏で走査・git の取得が走っているか (呼び出し側はこの間、遅い周期で Advance を呼んで結果を取り込む)。
-// 取り込んでいない結果がある間も true (最後の結果を取り込む前に呼び出し側が tick を止める窓を塞ぐ。レビューの指摘 2026-10-08)。
+// 取り込んでいない結果がある間も true (最後の結果を取り込む前に呼び出し側が tick を止める窓を塞ぐ)。
 func (m *Model) Busy() bool {
 	return m.walker.busy() || m.git.busy() || m.exploding != nil || m.opener.busy() || m.diffBusy()
 }
@@ -439,7 +439,7 @@ func (m *Model) applyChange(c dirChange) {
 	m.moving = true
 }
 
-// dropGoneRecs は dir の配下 (dir 自身を除く) で、読み直した木から消えたフォルダの走査の結果を捨てる (issue 727)。
+// dropGoneRecs は dir の配下 (dir 自身を除く) で、読み直した木から消えたフォルダの走査の結果を捨てる。
 func (m *Model) dropGoneRecs(dir string) {
 	var gone []string
 	idx := newTreeIndex(m)
@@ -454,8 +454,7 @@ func (m *Model) dropGoneRecs(dir string) {
 }
 
 // treeIndex は 1 回の判定の間だけ使う、フォルダごとの「名前 → 子」の表 (初めて要るときに作る)。
-// 🚨 キーごとに子を頭から舐めると、子の多いフォルダでキーの数 × 子の数になり、子 4 万件でライブ更新 1 回に約 3 秒 UI が固まった
-// (issue 691 / 693 と同じ形。issue 727 の敵対レビュー)。
+// 🚨 キーごとに子を頭から舐めると、子の多いフォルダでキーの数 × 子の数になり、子 4 万件でライブ更新 1 回に約 3 秒 UI が固まった。
 type treeIndex struct {
 	rootPrefix string // withSep(root) (キーごとに作り直さない)
 	byDir      map[*node]map[string]*node
@@ -467,7 +466,7 @@ func newTreeIndex(m *Model) *treeIndex {
 
 // gone は abs が消えたと木から分かるか: root から名前を辿り、読み込み済みのフォルダの子に次の名前が無ければ消えた。
 // 🚨 読み込んでいないフォルダに行き着いたら「分からない」(false)。走査の結果は配下の全部のフォルダ (node の無い未展開の子孫も) を持つので、
-// node が見つからないことを「消えた」とすると、その結果まで捨てて開くたびに数え直させる (issue 727 の反証レビュー)。
+// node が見つからないことを「消えた」とすると、その結果まで捨てて開くたびに数え直させる。
 func (ix *treeIndex) gone(m *Model, abs string) bool {
 	rel, ok := strings.CutPrefix(abs, ix.rootPrefix)
 	if !ok || rel == "" {
@@ -921,7 +920,7 @@ func init() {
 	}, "e")
 	bind(do(func(m *Model) { m.help = true }), "?")
 	bind(do((*Model).startPrompt), "!")
-	// a / m / d はファイルの操作 (fileops.go。issue 722)。a は glogx-ui-guide §2 の「all / 巡回」の例外 (ファイラーの慣習の add)
+	// a / m / d はファイルの操作 (fileops.go)。a は glogx-ui-guide §2 の「all / 巡回」の例外 (ファイラーの慣習の add)
 	bind(do((*Model).startCreate), "a")
 	bind(do((*Model).startRename), "m")
 	bind(do((*Model).startTrash), "d")
@@ -1024,7 +1023,7 @@ func (m *Model) rerootUp() {
 		m.fail("これ以上 上はありません (/ です)")
 		return
 	}
-	// 🚨 区切りの位置で切らない (`/Users` の区切りは 0 文字目で、> 0 の判定だと / へ上がれず黙った。監査で再現 2026-10-09。issue 691)
+	// 🚨 区切りの位置で切らない (`/Users` の区切りは 0 文字目で、> 0 の判定だと / へ上がれず黙った。再現 2026-10-09)
 	nr, err := newRoot(parentPath)
 	if err != nil {
 		m.fail("1 段上へ行けません: " + termsafeLine(err.Error())) // エラーに祖先のパスが入る

@@ -31,7 +31,7 @@ func upHistory(m *Model, n int) string {
 }
 
 // 新しい Model (別のプロセス・別の dir の F) を作り直しても ↑ で前のコマンドが出る。同じ Model を閉じて開くだけのテストは
-// 保存しなくても緑になるので、作り直す (issue 721)。
+// 保存しなくても緑になるので、作り直す。
 func TestBangHistorySurvivesNewModel(t *testing.T) {
 	m := newTest(t)
 	runBang(t, m, "echo one")
@@ -212,7 +212,7 @@ func TestBangHistoryDropsOverlongLastLine(t *testing.T) {
 	}
 }
 
-// 1 つの画面で打ち続けた `!` の履歴も、読み込みと同じ件数 (historyKeep) で頭から捨てる (issue 728 の 4)。
+// 1 つの画面で打ち続けた `!` の履歴も、読み込みと同じ件数 (historyKeep) で頭から捨てる。
 func TestPromptHistoryInMemoryIsCapped(t *testing.T) {
 	m := newTest(t)
 	for i := range historyKeep + 30 {
@@ -227,7 +227,7 @@ func TestPromptHistoryInMemoryIsCapped(t *testing.T) {
 	}
 }
 
-// 履歴の場所が symlink なら追記しない (先のファイルに書かず、mode も変えない。issue 731)。
+// 履歴の場所が symlink なら追記しない (先のファイルに書かず、mode も変えない)。
 func TestAppendHistoryDoesNotFollowSymlink(t *testing.T) {
 	d := t.TempDir()
 	target := filepath.Join(d, "other")

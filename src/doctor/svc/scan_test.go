@@ -467,9 +467,9 @@ func TestBrewOldnameIsNotOrphan(t *testing.T) {
 	}
 }
 
-// issue 178 の敵対レビュー (2026-09-03): 提示コマンドは人がそのまま貼る前提なので、
+// 提示コマンドは人がそのまま貼る前提なので、
 // plist のパスに「引用しないと別のコマンドになる」文字が入っていたら必ず引用する。
-// 旧実装は禁止文字を数える形で `;` `&` `|` `<` `>` を数え漏らしていた (実走査でも成立する)。
+// 禁止文字を数える形だと `;` `&` `|` `<` `>` を数え漏らす (実走査でも成立する)。
 func TestManualCommandsQuotesShellMetacharacters(t *testing.T) {
 	for _, p := range []string{
 		"/Library/LaunchDaemons/x;id>/tmp/pwned.plist",
@@ -506,7 +506,7 @@ func TestManualCommandsQuotesShellMetacharacters(t *testing.T) {
 	}
 }
 
-// CLI (svcdoctor) も stdout へ直接書く (issue 228)。材料は plist の中身 =
+// CLI (svcdoctor) も stdout へ直接書く。材料は plist の中身 =
 // `~/Library/LaunchAgents` に誰でも置ける。
 func TestFormatSanitizesUntrustedText(t *testing.T) {
 	const esc, bel = "\x1b", "\a"
@@ -521,7 +521,7 @@ func TestFormatSanitizesUntrustedText(t *testing.T) {
 		StatusErr:   "launchctl 失敗" + osc52,
 	})
 	for _, line := range strings.Split(out, "\n") {
-		// 判定の正本は github.com/jiikko/dotfiles/src/termsafe/ctlprobe (issue 285)。ここへ書き戻さないこと —
+		// 判定の正本は github.com/jiikko/dotfiles/src/termsafe/ctlprobe。ここへ書き戻さないこと—
 		// 同じオラクルが 5 箇所に複製されていて、無害化の定義を広げるときに
 		// 直し忘れた側だけが旧い狭い判定で守り続ける形になっていた。
 		if ctlprobe.HasControl(line) {

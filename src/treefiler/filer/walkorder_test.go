@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// 配下の走査は名前の順に数える (budget で打ち切る位置を os.ReadDir の頃と変えない。まとめて読む経路はフォルダの中の順で返す。issue 714)。
+// 配下の走査は名前の順に数える (budget で打ち切る位置を os.ReadDir の頃と変えない。まとめて読む経路はフォルダの中の順で返す)。
 func TestWalkDirCountsInNameOrderUnderBudget(t *testing.T) {
 	d := t.TempDir()
 	// 作る順と名前の順を逆にする (フォルダの中の順が名前の順と違うようにする)

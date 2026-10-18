@@ -11,8 +11,8 @@ import (
 	"doctor/svc"
 )
 
-// issue 177: 「診断できず」を exit code で落とさない。特に BrewErr は以前まったく見ていなかった
-// (画面に「🚨 診断できず (brew)」と「壊れた登録は見つかりませんでした」が同時に出て exit 0)。
+// 「診断できず」を exit code で落とさない。特に BrewErr を見ないと
+// (画面に「🚨 診断できず (brew)」と「壊れた登録は見つかりませんでした」が同時に出て exit 0 になる)。
 func TestSvcExitCode(t *testing.T) {
 	finding := svc.Finding{}
 	for _, tc := range []struct {
@@ -36,8 +36,8 @@ func TestSvcExitCode(t *testing.T) {
 	}
 }
 
-// issue 177 (b): text と -json の**どちらの経路でも**同じ終了コードを返す。
-// 以前は -json が return で判定を飛ばしていた。emit は出力の分岐の外で終了コードを決めるので、
+// text と -json の**どちらの経路でも**同じ終了コードを返す。
+// -json が return で判定を飛ばすと困る。emit は出力の分岐の外で終了コードを決めるので、
 // この性質は構造で守られている (この test はそれが崩れたら red になる)。
 func TestSvcEmitReturnsSameExitCodeForBothOutputs(t *testing.T) {
 	for _, rep := range []svc.Report{
@@ -69,7 +69,7 @@ type failWriter struct{}
 
 func (failWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
 
-// 無害化が Finding を落としたら「診断できず」へ倒す (diskdoctor と同じ規律。issue 228)。
+// 無害化が Finding を落としたら「診断できず」へ倒す (diskdoctor と同じ規律)。
 // 落とす理由は「提示するコマンドが別のファイルを指すのを避ける」ことなので、**落としたことが
 // 呼び出し側に見えなければ、候補が消えたのと区別できない**。
 func TestSvcEmitCountsSanitizerDropsAsUndiagnosed(t *testing.T) {

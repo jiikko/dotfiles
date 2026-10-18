@@ -41,7 +41,7 @@ func classifyRenewErr(err error) renewOutcome {
 // 終了コードは呼び出し側の API なので、子プロセスの終了コードをそのまま透過し、
 // ロック側の失敗は子と衝突しない上位番号 (121/122/125) へ逃がす。
 func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv []string) (rc int) {
-	// 🚨 **打刻より前**の時刻を控える (issue 385)。lease の期限はサーバが打刻した時刻 + TTL だが、
+	// 🚨 **打刻より前**の時刻を控える。lease の期限はサーバが打刻した時刻 + TTL だが、
 	// こちらから見えるのは「呼ぶ前」と「返った後」だけ。打刻は必ずその間にあるので、
 	// **呼ぶ前**を使えば「最も早い期限」= 保守側の見積もりになる (遅く見積もると、
 	// 他者が正当に引き継げる時刻を過ぎてから昇格することになる)。
@@ -49,9 +49,9 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	meta, err := l.AcquireTimed(ttl, label)
 	if err != nil {
 		if errors.Is(err, errBusy) {
-			// 🚨 **「人が動くまで解けない busy」のときだけ理由を足す** (issue 383)。
+			// 🚨 **「人が動くまで解けない busy」のときだけ理由を足す**。
 			// 定型文だけだと、中身を読めない lock による永久 skip が正常な保持中と区別できない。
-			// 逆に正常な busy まで理由を出すと、定期ジョブの stderr が毎回汚れる (敵対レビュー P2)。
+			// 逆に正常な busy まで理由を出すと、定期ジョブの stderr が毎回汚れる。
 			if errors.Is(err, errUnreadableLock) {
 				warnf("他が保持中のため実行しない (%v)", err)
 			} else {
@@ -63,15 +63,15 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		warnf("%v", err)
 		return exitWithInvalid
 	}
-	// 🚨 **`signal.Stop` の defer は、解放の defer より"先"に登録する** (敵対レビュー 363 の P2-1)。
+	// 🚨 **`signal.Stop` の defer は、解放の defer より"先"に登録する**。
 	// defer は LIFO なので、後から登録すると **Stop → 解放** の順に走る。Stop でハンドラが外れると
 	// 既定処理が戻るので、**解放中に届いた TERM / INT がプロセスを殺し、lock が残る** —
-	// issue 363 が漏れと定義した signature (`rc=143` + lock 残存) そのもの
+	// 漏れの signature (`rc=143` + lock 残存) そのもの
 	// (レビュー実測 3/3。窓の幅は `ReleaseTimed` の所要 = 詰まったマウントでは `--io-timeout` まで)。
 	// 🚨 **ここでは `Notify` しない**。取得中の即死は据え置く判断 (2026-09-21) なので、
 	// ハンドラを立てるのは子を起こす直前のまま。`Notify` していないチャネルへの `Stop` は no-op。
 	//
-	// 🚨 **受容: 解放中に届いたシグナルは acknowledge されない** (2 周目 P3-1)。この順序にすると
+	// 🚨 **受容: 解放中に届いたシグナルは acknowledge されない**。この順序にすると
 	// 解放が終わるまで既定処理が戻らないので、その間の INT / TERM は **rc にも stderr にも
 	// 現れない** (実測: 詰まった解放で 7.29s 無反応、rc は子のもの / 旧版は 1/1 で即死 + lock 残存)。
 	// 窓の上限は `--io-timeout` = 最大 `maxIOTimeout` (5 分)。
@@ -81,11 +81,11 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	sigCh := make(chan os.Signal, 4)
 	defer signalStop(sigCh)
 	defer func() {
-		// 🚨 解放に失敗したら、**子が成功していたときだけ** rc を 125 へ上げる (issue 364 の 1)。
+		// 🚨解放に失敗したら、**子が成功していたときだけ** rc を 125 へ上げる。
 		//
 		// `with` は 2 つの契約を持つ: ①子の終了コードを透過する ②確実に解放する。
-		// 解放に失敗した時点で②は破れているのに、以前は warn だけで rc は子のものを透過して
-		// いたので、**rc だけを見る呼び出し側からは成功に見えた** (実測: 解放直前に probe/ が
+		// 解放に失敗した時点で②は破れているのに、warn だけで rc は子のものを透過すると、
+		// **rc だけを見る呼び出し側からは成功に見える** (実測: 解放直前に probe/ が
 		// 消えると rc=0 のまま ttl_ms=1800000 の lock が 30 分残る)。
 		//
 		// 上書きを「子が rc=0 のときだけ」に絞るのは、非 0 の rc は既に「何かが失敗した」を
@@ -116,7 +116,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// 子を独立したプロセスグループに置き、**lease を失ったときに**まとめて止められるように
 	// する (この 1 点のためだけ。091:282 の `--on-lost=kill`)。
 	//
-	// 🚨 **「子が孫を作ったまま残るのを防ぐ」ではない** (issue 356 でコメントを訂正した)。
+	// 🚨 **「子が孫を作ったまま残るのを防ぐ」ではない**。
 	// グループへ撃つのは (a) シグナルを受けたとき (b) lease を失ったとき の 2 経路だけで、
 	// **子が正常終了した経路には無い**。`sh -c 'cmd & exit 0'` のように孫を置いて親だけ
 	// 終わる形では、孫が走ったままロックが解放される (実測: 解放後の孫と次の保持者が
@@ -129,7 +129,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// 移っており生存する)。プロセスグループで回収できる範囲が上限。
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	// 🚨 **ハンドラは子を起こす"前"に立てる** (issue 363)。旧版は `cmd.Start()` の**後**で
+	// 🚨 **ハンドラは子を起こす"前"に立てる**。旧版は `cmd.Start()` の**後**で
 	// `signal.Notify` していたので、その窓で届いた INT / TERM / HUP は**既定処理**で lockman を
 	// 即死させる。子は `Setpgid: true` で別のプロセスグループに居て端末のシグナルを受けないので、
 	// **孤児として走り続ける** — lease を更新する者が居ないまま TTL が切れ、他ホストが引き継ぐと
@@ -162,7 +162,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		err := cmd.Wait()
 		// 🚨 **close が先**。done を先に送ると、main が受け取って return した後も
 		// 昇格ゴルーチンが猶予待ちで残る窓ができる。その間に pgid が再利用されると
-		// **無関係なプロセスグループへ SIGKILL を撃つ** (issue 340 項目 2 と同クラス)。
+		// **無関係なプロセスグループへ SIGKILL を撃つ**。
 		close(exited)
 		done <- err
 	}()
@@ -175,18 +175,18 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 
 	outcome := renewOK
 	// 更新は **同時に 1 本まで**。詰まっている間は新しく起こさない (tick ごとに積むと
-	// 見捨てた goroutine が溜まる。issue 359 の項目 4)。
+	// 見捨てた goroutine が溜まる)。
 	//
-	// 🚨 **詰まっても更新をやめない。** 以前ここで `ticker.Stop()` していたが、それは
+	// 🚨 **詰まっても更新をやめない。** `ticker.Stop()` で止めない。止めると
 	// 一過性のヒカップを**本物の lease 喪失**に変える: 更新が二度と走らないので lease は
 	// 実際に期限切れになり、他マシンが正当に引き継ぐ — 子はまだ走っているので二重実行。
-	// 敵対レビュー 2026-09-15 が A-B で実測した (止めた版は他マシンの Acquire が成功、
+	// A-B で実測した 2026-09-15 (止めた版は他マシンの Acquire が成功、
 	// 止めない版は拒否)。しかも既定値 (ttl 30m / tick 10m) のほうが猶予が短い。
 	//
-	// 🚨 **「やめない」は「期限が来たら見捨てる」まで含む。** 以前は期限切れのあとも
-	// renewCh を握ったままにしていたので、`Renew` の syscall が返らないと以後の tick が
-	// すべて `continue` になり、`ticker.Stop()` で作ったのと**同じ穴**が残っていた
-	// (issue 381。恒久ラッチ = 掴んだ fd が死んだまま、新しい open なら通る stale handle 形)。
+	// 🚨 **「やめない」は「期限が来たら見捨てる」まで含む。** 期限切れのあとも
+	// renewCh を握ったままにすると、`Renew` の syscall が返らないと以後の tick が
+	// すべて `continue` になり、`ticker.Stop()` で作ったのと**同じ穴**が残る
+	// (恒久ラッチ = 掴んだ fd が死んだまま、新しい open なら通る stale handle 形)。
 	// 期限が来たら参照を捨て、次の tick で新しい更新を積む。
 	var renewCh <-chan error
 	var renewExpired <-chan time.Time // nil = 更新が走っていない
@@ -200,7 +200,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// すぐ下の onLostGracePeriod が「引数で渡して直読みを避けた」のと同じ理由。
 	maxInFlight := maxInFlightRenews
 	cappedReported := false
-	// lease は「自分の lease が生きていると言い切れる限界」を持つ (issue 385)。
+	// lease は「自分の lease が生きていると言い切れる限界」を持つ。
 	// 期限の計算・境界・保留の状態は `leaseTracker` が 1 箇所で持つ (`lease_tracker.go` の doc)。
 	lease := newLeaseTracker(acquireStartedAt, ttl)
 	escalateNow := func() {
@@ -217,7 +217,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		// あとに確実な喪失 (errNotOwner) を知る経路は、更新を張り直すようになって毎 tick
 		// 起こりうる。そこで「判定不能」と出すと、**他所で走っている**と運用者が知る唯一の
 		// 1 行が永久に出ない。終了コードだけは sticky にする — 判定不能だった窓があった事実は
-		// 後から消えないので 125 に留める (091:398-399。issue 381 で意図的に据え置いた)。
+		// 後から消えないので 125 に留める (仕様 091 の終了コードの表どおり。意図的に据え置く)。
 		if cur == renewLost {
 			warnf("lease を失った: %v", err)
 		} else {
@@ -226,7 +226,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		if !onLostKill {
 			return
 		}
-		// 🚨 **「確実な喪失」と「判定不能」で昇格の扱いを分ける** (issue 385)。
+		// 🚨 **「確実な喪失」と「判定不能」で昇格の扱いを分ける**。
 		//
 		// - `renewLost` (errNotOwner): **他者が既に引き継いでいる**ので、待つほど二重実行が
 		//   延びる。即座に昇格する (従来どおり)
@@ -235,7 +235,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		//   推測ではなく**計算できる** (最後に成功した更新の開始時刻 + TTL。同一レートで進む
 		//   時計を仮定している。サーバ時計が前方へステップすると保守側の保証は崩れる = 未確認)。
 		//
-		// 🚨 **例外は `lockman break`** (敵対レビュー 385 が実測)。`Break` は期限も token も見ない
+		// 🚨 **例外は `lockman break`** (実測)。`Break` は期限も token も見ない
 		// 無条件の rename なので、「期限までは誰も引き継げない」は break に対して**成立しない**。
 		// 実測 2026-09-20 (ttl=1800ms / 恒久的な詰まり / t=1000ms で break → 別ホストが acquire):
 		// 旧挙動は他者の取得より前に子が回収されていた (重なり −7〜−16ms) が、新挙動では
@@ -257,7 +257,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 			escalateNow()
 			return
 		}
-		// 🚨 **報告の時点でも期限を見る** (敵対レビュー 385 の P3-1)。期限は構造的に tick 境界と
+		// 🚨 **報告の時点でも期限を見る**。期限は構造的に tick 境界と
 		// 重なる (`renewStartedAt` が tick の瞬間で、周期は ttl/renewDivisor) ので、tick の枝でしか
 		// 見ないと配送ジッタで「今回の tick では未到達」に落ちて**次の tick まで = ttl/3 遅れる**
 		// (実測 92 回中 1 回。既定 ttl 30m ならその 1 回が 10 分の窓になる)。
@@ -276,9 +276,9 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 			// ときと同じ振る舞いにする。昇格するのは lease を失ったとき —
 			// **他者が既に引き継いでいて、止めないと二重実行になる**ときだけ。
 			//
-			// 🚨 **エラーを捨てているのは意図的** (issue 364 の 3)。`sigCh` と `done` が同時に
+			// 🚨 **エラーを捨てているのは意図的**。`sigCh` と `done` が同時に
 			// ready なとき Go の select は一様ランダムに選ぶので、**回収済みの pgid へ撃つ**窓がある。
-			// 実測 2026-09-20 (issue 384。darwin 24.6、3 回とも同じ) でその窓の失敗はすべて空振りだと
+			// 実測 2026-09-20 (darwin 24.6、3 回とも同じ) でその窓の失敗はすべて空振りだと
 			// 分かっている: 回収済み (グループが空) → **ESRCH** / 回収前 (ゾンビだけ) → **EPERM** /
 			// **生きたメンバーが 1 つでもあれば成功**。つまり実害には
 			// 「窓の中で pid が再利用され、**かつ再利用した側がそのグループのリーダー**」が要る
@@ -286,7 +286,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 			// 再評価の trigger: `with` に実利用者が現れ、シグナル転送の取りこぼしが報告されたとき。
 			_ = killGroup(pgid, sig.(syscall.Signal))
 		case <-ticker.C:
-			// 🚨 **保留した昇格は、lease の期限を過ぎたらここで必ず撃つ** (issue 385)。
+			// 🚨 **保留した昇格は、lease の期限を過ぎたらここで必ず撃つ**。
 			// tick は更新が詰まっていても鳴り続けるので、これが「判定不能のまま期限を
 			// 迎えた」を拾う唯一の経路になる (粒度は tick = ttl/renewDivisor)。
 			if lease.dueForEscalation(time.Now()) {
@@ -301,15 +301,15 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 				//
 				// 🚨 これは**新しい保証ではなく、診断と多重防御**。枠を埋めるには 1 本ごとに
 				// 期限切れ (下の renewExpired) を通る必要があるので、ここへ来た時点で
-				// outcome は既に判定不能。**ただし昇格は済んでいるとは限らない** — issue 385 以降、
-				// 判定不能の昇格は lease の期限まで保留される (敵対レビュー 385 の P2-2 で訂正)。
+				// outcome は既に判定不能。**ただし昇格は済んでいるとは限らない** —
+				// 判定不能の昇格は lease の期限まで保留される。
 				// それでも reportRenewErr に通すのは、「更新が止まった理由」を出す経路を 1 本に保つため。
 				//
 				// 🚨 「上限に達した = もう手遅れ」とは限らない。返らない更新と成功する更新が
 				// 交互に来る (半死のマウント) と、lease が生きているうちに枠だけが埋まり、
 				// **成功するはずの更新まで起こさなくなる**。`--on-lost=warn` ではこの形で
-				// 二重実行が残る (kill なら lease の期限で子を止めにいく。issue 385 以降は
-				// 「最初の期限切れで」ではない。敵対レビュー 385 の P2-2 で訂正)。
+				// 二重実行が残る (kill なら lease の期限で子を止めにいく。
+				// 「最初の期限切れで」ではない)。
 				//
 				// 🚨 報告は 1 回だけ (tick ごとに出すと warn が溢れる)。復旧して再び
 				// 上限に達しても出し直さない — 既に outcome は判定不能で確定している。
@@ -329,9 +329,9 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 				break
 			}
 			// 🚨 更新が成功した = サーバが打刻し直した。期限を進め、**保留していた昇格を解く**
-			// (issue 385。一過性の詰まりから復旧した形がここ)。
+			// (一過性の詰まりから復旧した形がここ)。
 			// `outcome` は sticky のままにする — 判定不能だった窓があった事実は消えないので
-			// 終了コードは 125 に留める (091:398-399 / issue 381 の判断を据え置く)。
+			// 終了コードは 125 に留める (仕様 091 の終了コードの表どおり)。
 			lease.renewed(renewStartedAt)
 		case <-renewExpired:
 			// 期限切れ = 判定不能。報告して**この 1 本は見捨てる** — 参照を捨てるだけで
@@ -354,7 +354,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 }
 
 // signalStop は `signal.Stop` の指標。**defer の登録順を in-process で pin する**ためだけに在る
-// (敵対レビュー 363 の 2 周目 P2-1)。1 周目は「死を再現できないので pin できない」と記録したが、
+// 1 周目は「死を再現できないので pin できない」と記録したが、
 // 守りたい不変条件は「Stop が解放より**後**に走ること」= **順序**であって死ではない。
 var signalStop = signal.Stop
 
@@ -363,7 +363,7 @@ var signalStop = signal.Stop
 // 🚨 **空リストで `signal.Notify` を呼んではいけない** — シグナルを 1 つも渡さない `Notify` は
 // **全シグナルを中継する**ので、「全部無視されている」環境で意味が反転する (SIGURG 等まで
 // 子へ転送しにいく)。そのガードをここに閉じ込めて、単体で固定できるようにした
-// (2 周目 P2-1。production に指標を増やさずに済む形を選んだ)。
+// (production に指標を増やさずに済む形を選んだ)。
 func installSignalHandler(ch chan<- os.Signal, ignored func(os.Signal) bool,
 	notify func(chan<- os.Signal, ...os.Signal)) {
 	sigs := notifiableSignals(ignored)
@@ -375,19 +375,19 @@ func installSignalHandler(ch chan<- os.Signal, ignored func(os.Signal) bool,
 
 // notifiableSignals は `signal.Notify` に渡すシグナルを選ぶ。
 //
-// 🚨 **既に無視されているシグナルは除く** (敵対レビュー 363 の P1-2)。Go の runtime は
+// 🚨 **既に無視されているシグナルは除く**。Go の runtime は
 // **SIGHUP と SIGINT に限り、継承された SIG_IGN を尊重して自前ハンドラを入れない**が、
 // `signal.Notify` はそれを上書きして入れてしまう。`exec` は「catch 中」を SIG_DFL へリセットする
 // ので、**Notify を `cmd.Start()` の前へ出した副作用として、子が継承する disposition が
 // SIG_IGN → SIG_DFL に変わる** (実測 darwin 24.6: `sh -c "trap ” HUP INT; exec lockman with …"`
 // の下で、素の実行と旧版では子が HUP/INT を生き延びたのに、新版では**死ぬ**)。
 // これは `with` の契約「子が無視するなら**素で実行したときと同じ振る舞いにする**」に反する
-// (`nohup lockman with … &` や cron で端末が切れたとき、以前は生き延びた長時間ジョブが死ぬ)。
+// (`nohup lockman with … &` や cron で端末が切れたとき、素で実行すれば生き延びる長時間ジョブが死ぬ)。
 //
 // 無視されているシグナルは **lockman 自身も無視する**ので、そもそも「即死して孤児を作る」害が
 // 無い = **fix を効かせる必要が無い**。効かせる必要があるのは「実際に殺すシグナル」だけ。
 //
-// 🚨 **回復するのは HUP / INT だけ。TERM は回復しない** (2 周目 P2-2 の実測)。Go の runtime が
+// 🚨 **回復するのは HUP / INT だけ。TERM は回復しない** (実測)。Go の runtime が
 // 継承 SIG_IGN を尊重するのは HUP / INT に限られ、`signal.Ignored(SIGTERM)` は `trap ” TERM` の
 // 下でも **false** を返す。そのため TERM では「素で実行したときと同じ」にならない
 // (実測: 素の exec では子が生き延びるが、lockman 経由では旧版・新版とも死ぬ)。
@@ -397,7 +397,7 @@ func installSignalHandler(ch chan<- os.Signal, ignored func(os.Signal) bool,
 //
 // 🚨 **空になったら `Notify` を呼ばないこと**。`signal.Notify(c)` は**シグナルを 1 つも
 // 渡さないと全シグナルを中継する**ので、「全部無視されている」環境で呼ぶと意味が反転する。
-// 🚨 **述語は引数で受け取る** (敵対レビュー 363 の変異 E)。`signal.Ignored` を直に呼ぶと、
+// 🚨 **述語は引数で受け取る** (変異検証で確認済み)。`signal.Ignored` を直に呼ぶと、
 // テストプロセスでは何も無視されていないため**選別の有無で結果が変わらず**、
 // 「無視されていても渡す」変異が緑で通る (実測)。注入できれば選別そのものを単体で固定できる。
 func notifiableSignals(ignored func(os.Signal) bool) []os.Signal {
@@ -435,9 +435,9 @@ func childExitCode(err error) int {
 // tick ごとに 1 スレッド積み、Go の既定のスレッド上限 (10000) に当てて落ちうる。
 //
 // 🚨 上限が抑えているのは goroutine の数だけではない。見捨てた Renew は**解放されたときに
-// `lockPath()` を名前で開き直して書く** (issue 380 の TOCTOU。**380 で解消**: いまは開いた
-// fd に対してしか書かないので、後から書きに来ても他人の lock には当たらない)。つまりこの値は「後から
-// lock へ書きに来るかもしれない本数」の上限でもある。上げるときは 380 を見ること。
+// 開いた fd に対してしか書かない** (名前で開き直さないので
+// 後から書きに来ても他人の lock には当たらない)。つまりこの値は「後から
+// lock へ書きに来るかもしれない本数」の上限でもある。上げるときは Renew の fd スコープ化の注記を見ること。
 //
 // 🚨 **全部が詰まる形では、この値は lease の生死の近因にならない**。上限に達するには
 // 8 サイクル ≈ 2.67 × TTL かかり、その時点で lease は 1.67 × TTL 前に死んでいる。
@@ -458,17 +458,16 @@ var onLostGracePeriod = 5 * time.Second
 //
 // 🚨 SIGTERM を 1 回撃つだけでは足りない。091:282 は「子プロセスを止められるようにする」と
 // 書いているが、TERM を trap / 無視するプログラム (ffmpeg を含め普通にある) だと子は生き続け、
-// `with` は子が終わるまで返らないので**他者が既に引き継いでいる状態が無期限に続く**
-// (issue 356 の経路 2)。
+// `with` は子が終わるまで返らないので**他者が既に引き継いでいる状態が無期限に続く**。
 //
 // 🚨 届く範囲はプロセスグループに残った子孫まで。**`setsid()` した子孫には届かない**
 // (runWith の Setpgid の注記を参照)。
 func escalateGroupKill(pgid int, exited <-chan struct{}, grace time.Duration) {
 	// 🚨 **撃つ前に「もう終わっている」かを見る。** `escalate.Do` から goroutine が実走する
 	// までの間に子が回収されていると、TERM は空いた pgid へ飛び、**再利用されていれば
-	// 無関係なプロセスグループに当たる** (issue 340 項目 2 と同クラス)。
-	// 🚨 同じ guard が **SIGKILL の直前にも要る**。以前のコメントは「close(exited) を先にしたので
-	// SIGKILL 側は塞がっている」と読める書き方だったが、塞がっていなかった (issue 384 項目 2)。
+	// 無関係なプロセスグループに当たる**。
+	// 🚨 同じ guard が **SIGKILL の直前にも要る**。「close(exited) を先にしたので
+	// SIGKILL 側は塞がっている」とは言えない。
 	select {
 	case <-exited:
 		return
@@ -478,7 +477,7 @@ func escalateGroupKill(pgid int, exited <-chan struct{}, grace time.Duration) {
 		// 🚨 **ここで返ると昇格は二度と走らない** (`escalate.Do` は sync.Once で、消費済み)。
 		// 再試行しても届かないので Once は消費したままでよい: `kill(2)` の失敗は
 		// EPERM / ESRCH / EINVAL しか無く、**一過性のものが無い** (EAGAIN も EINTR も返らない)。
-		// 効くのは「届かなかった」を人に伝えることだけなので、そこを厚くする (issue 384 項目 1)。
+		// 効くのは「届かなかった」を人に伝えることだけなので、そこを厚くする。
 		//
 		// 🚨 **実測 2026-09-19 (darwin 24.6 / go 1.26。3 回とも同じ)**。この pgid に対して
 		// `kill(-pgid, SIGTERM)` が失敗するのは、**グループに生きたメンバーが 1 つも無いとき**だけ:
@@ -507,14 +506,14 @@ func escalateGroupKill(pgid int, exited <-chan struct{}, grace time.Duration) {
 	// 子が終わっていても timer 枝を取ることがある (実測 50.1%)。その後 warnf の write が挟まる
 	// あいだも窓で、`<-done` の後も deferred な解放が最大 --io-timeout 走るため到達機会がある。
 	// 空いた pgid を撃つと、再利用した pid がその group leader だったときに無関係なグループへ
-	// 当たる (issue 384 項目 2。関数先頭の guard と同じ理由で、SIGKILL 側にも要る)。
+	// 当たる (関数先頭の guard と同じ理由で、SIGKILL 側にも要る)。
 	select {
 	case <-exited:
 		return
 	default:
 	}
 	warnf("子が %v 以内に終わらないので強制終了する (lease は既に他者が持っている)", grace)
-	// 🚨 ここもエラーを捨てる (上の転送と同じ理由。issue 364 の 3)。直前の guard を通っている =
+	// 🚨 ここもエラーを捨てる (上の転送と同じ理由)。直前の guard を通っている =
 	// まだ回収されていないと見えた時点なので、ここでの失敗は「guard の後に回収された」形に限られ、
 	// 実測ではその失敗はすべて空振り (ESRCH / EPERM)。
 	_ = killGroup(pgid, syscall.SIGKILL)
@@ -522,7 +521,7 @@ func escalateGroupKill(pgid int, exited <-chan struct{}, grace time.Duration) {
 
 // beforeChildStartHook は「子を起こす直前」に割り込む seam。既定は何もしない。
 //
-// 🚨 **契約は `cmd.Start()` 基準で書く** (敵対レビュー 363 の P1-1)。初版は
+// 🚨 **契約は `cmd.Start()` 基準で書く**。初版は
 // 「`signal.Notify` より後・select ループより前」と **Notify 基準**で書いており、
 // その契約どおりに seam を置くと **Start と Notify のあいだ**という窓が判別の外に落ちた —
 // そこへ `signal.Notify` を戻す変異 (363 そのものの退行。子は既に居るので孤児になる) が
@@ -542,7 +541,7 @@ var escalateBeforeKillHook = func() {}
 //
 // 🚨 **pgid が 0 や 1 なら撃たない。** `kill(0, sig)` は「呼び出し側のプロセスグループ」を
 // 撃つので、pgid の計算を誤ると本番では呼び出し元シェルを、テストでは `go test` 自身を
-// 殺す。撃つ前に弾く (issue 356 の実装時の注意)。
+// 殺す。撃つ前に弾く。
 func killGroup(pgid int, sig syscall.Signal) error {
 	if pgid <= 1 {
 		return fmt.Errorf("プロセスグループ %d には撃たない (自分のグループを撃つ危険)", pgid)

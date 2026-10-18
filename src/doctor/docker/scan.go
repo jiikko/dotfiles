@@ -79,7 +79,7 @@ type Report struct {
 	SystemPruneNote string `json:"system_prune_note,omitempty"`
 	// Notes は「診断はできたが、伝えておくこと」。🚨 Unavailable と混ぜない —
 	// あちらは「診断できなかった」の一意な印で、消費側が「非空ならエラー表示して return」と
-	// 書く前提の契約。一部を落としただけで全群が隠れる形にしない (敵対レビュー 2026-09-04)
+	// 書く前提の契約。一部を落としただけで全群が隠れる形にしない
 	Notes     []string      `json:"notes,omitempty"`
 	OldAfter  time.Duration `json:"old_after"`
 	ScannedAt time.Time     `json:"scanned_at"`
@@ -146,7 +146,7 @@ func (o Options) oldAfter() time.Duration {
 //
 // 🚨 **戻り値は必ず SanitizeForDisplay を通す** (disk/report.go / svc/report.go と同じく
 // プロデューサ側で関門を通す)。Unavailable には docker の stderr がそのまま入るので、
-// 早期 return の経路こそ関門が要る (敵対レビュー 2026-09-04)。
+// 早期 return の経路こそ関門が要る。
 func Scan(ctx context.Context, o Options) Report {
 	return SanitizeForDisplay(scan(ctx, o))
 }
@@ -205,7 +205,7 @@ func scan(ctx context.Context, o Options) Report {
 		volumeGroup(ctx, o, run, df.Volumes, now, old, &rep),
 	}
 	// 🚨 **件数を突合する**。`-v` の JSON は構文が正しければキー名が変わっても Unmarshal に
-	// 成功し、全部 nil = 「候補なし」で緑になる (敵対レビュー 2026-09-04 の P1)。
+	// 成功し、全部 nil = 「候補なし」で緑になる。
 	// docker 自身が同じ答え (TotalCount) を出しているので、近似の健全性検査を作らずそれと比べる。
 	// 2 コマンドは別スナップショットなので、食い違い = 走査中に増減した可能性もある。どちらでも
 	// 「今の数字は信用できない」ことに変わりはないので、診断できずへ倒す。
@@ -229,7 +229,7 @@ func scan(ctx context.Context, o Options) Report {
 	// 🚨 system prune はボリュームを消さない (--volumes が要る)。DockerReclaimable() には
 	// ボリュームぶんが入っているので、この 1 行が無いと「このコマンドで N GB」が過大になる
 	// 🚨 この 1 行が、いちばん広いコマンドに対する唯一の警告になる (確認画面にもコピーにも
-	// これが出る)。**群ごとの注記より薄くしない** (敵対レビュー 2 周目 P2-1)
+	// これが出る)。**群ごとの注記より薄くしない**
 	rep.SystemPruneNote = "この画面が数えた範囲より広く消します: 停止コンテナ全部 / 未使用ネットワーク / " +
 		"ビルドキャッシュ (until が効くか未確認)。-f 付きなので確認は出ません。ボリュームは含みません"
 	return rep
@@ -422,7 +422,7 @@ func imageGroup(is []dfImage, now time.Time, old time.Duration) Group {
 	//   `docker rmi <多タグの ID>`  → rc=1 "image is referenced in multiple repositories" (見える失敗)
 	//   `docker rmi <タグ>`         → rc=0 "Untagged:" だけ、**0 バイトしか減らない** (静かな成功)
 	// 画面は UniqueSize を「回収できる量」として出しているので、後者だと
-	// 「実行しました」と報告しながら 1 バイトも減らない (敵対レビュー 2 周目 P1-2)。
+	// 「実行しました」と報告しながら 1 バイトも減らない。
 	// ID を渡せば、消せないときは**理由つきで失敗する**。
 	for _, im := range is {
 		size := parseSize(im.UniqueSize)
@@ -470,7 +470,7 @@ func buildCacheGroup(bs []dfBuildCache, now time.Time, old time.Duration) Group 
 	unknownCache := 0
 	for _, b := range bs {
 		size := parseSize(b.Size)
-		// 🚨 **「true でなければ未使用」にしない** (敵対レビュー 2026-09-04 の P1)。
+		// 🚨 **「true でなければ未使用」にしない**。
 		// InUse が空 / 名前変更 / "1" 表記になった瞬間、使用中のキャッシュが全部候補になり、
 		// prune を提示することになる。読めない値は候補にせず件数を注記に出す
 		inUse, ok := parseBool(b.InUse)
@@ -527,8 +527,8 @@ func volumeGroup(ctx context.Context, o Options, run runner.Runner, vs []dfVolum
 			"最後にマウントされた日時は Docker が記録していないため、「今どのコンテナからも参照されていない」+ 作成日で判定しています",
 			"🚨 中身はデータです。docker volume prune -a は未使用ボリュームを全部消し、戻せません",
 		}}
-	// 🚨 名前の allowlist は**ここ 1 箇所**で掛ける (以前は inspect に渡す前と行を組むときの
-	// 2 箇所に分かれており、片方だけが Dropped を数えていた。敵対レビュー 2026-09-04)
+	// 🚨 名前の allowlist は**ここ 1 箇所**で掛ける (inspect に渡す前と行を組むときの
+	// 2 箇所に分けると、片方だけが Dropped を数える)
 	unused := make([]dfVolume, 0, len(vs))
 	for _, v := range vs {
 		if v.Links != "0" {
@@ -552,7 +552,7 @@ func volumeGroup(ctx context.Context, o Options, run runner.Runner, vs []dfVolum
 	for _, v := range unused {
 		c, ok := created[v.Name]
 		if !ok {
-			// 🚨 **作成日が取れなかったものは候補にしない** (敵対レビュー 2026-09-04 の P1)。
+			// 🚨 **作成日が取れなかったものは候補にしない**。
 			// ここは唯一の不可逆な群なので、診断の劣化 (inspect の失敗・書式変更) が
 			// 「5 分前に作ったボリュームを消せ」に化ける方へ倒してはいけない。
 			// 「無かったこと」にもしないよう、件数は注記に出す
@@ -591,7 +591,7 @@ func volumeCreatedAt(ctx context.Context, run runner.Runner, names []string, g *
 	}
 	// 🚨 **rc != 0 でも stdout を捨てない。** 名前をまとめて渡しているので、走査中に 1 個
 	// 消えただけで rc=1 になる。捨てると他の全ボリュームが「作成日不明」= 候補 0 件に落ち、
-	// ボリューム群が常時空になる (敵対レビュー 2 周目 P3-3)。読めた分は使い、rc は注記に残す
+	// ボリューム群が常時空になる。読めた分は使い、rc は注記に残す
 	if rc != 0 {
 		g.Notes = append(g.Notes, "🚨 一部のボリュームの作成日を取れませんでした (docker volume inspect: "+firstLine(stderr)+")")
 	}
@@ -750,7 +750,7 @@ func safeImageRef(s string) bool {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
 		// 🚨 先頭は英数に限る (safeDockerName と同じ規律)。先頭が `-` の語はフラグとして
-		// 読まれうるので、提示コマンドに載せない (敵対レビュー 2 周目 P3-1)
+		// 読まれうるので、提示コマンドに載せない
 		case i > 0 && (r == '_' || r == '.' || r == '-' || r == '/' || r == ':' || r == '@'):
 		default:
 			return false

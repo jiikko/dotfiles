@@ -45,7 +45,7 @@ func readDiskutil(ctx context.Context, run runner.Runner) diskutilInfo {
 		out.check.Value, out.check.Status = status, StatusFail
 	default:
 		// 🚨 知らない値 (Not Supported / 言い回しの変更) は判定不能。異常にすると、SMART を
-		// 返さないディスクを「壊れている」と言ってしまう (敵対レビュー 2026-09-29 の P2)
+		// 返さないディスクを「壊れている」と言ってしまう
 		out.check.Value, out.check.Status = status, StatusUnknown
 	}
 	return out

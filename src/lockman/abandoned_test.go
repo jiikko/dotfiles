@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// issue 362: `--io-timeout` で見捨てた goroutine が、失敗を報告した後に副作用を置いていく。
+// `--io-timeout` で見捨てた goroutine が、失敗を報告した後に副作用を置いていく。
 //
 // 🚨 **ここは in-process なので「窓が縮んだか」は測れない**。goroutine は待てば必ず完走するし、
 // プロセスは終了しない。ここが固定するのは「見捨てを見て降りる / 取り消す配線が在ること」まで。
@@ -139,7 +139,7 @@ func TestAbandonedAfterPlaceUndoesItsOwnLock(t *testing.T) {
 	}
 }
 
-// 🚨 再試行との干渉を固定する (issue 362 の「着手する人への注意」)。見捨てられた goroutine が
+// 🚨再試行との干渉を固定する。見捨てられた goroutine が
 // 取り消しに走るあいだに、同じプロセスが再取得して**別 token の lock** を持っていることがある。
 // 取り消しがそれを消したら、呼び出し側は「取れた」と思っているのに lock が無い = 二重実行。
 func TestAbandonedUndoDoesNotRemoveALaterLock(t *testing.T) {
@@ -288,7 +288,7 @@ func TestWithTimeoutMarksAbandonInProduction(t *testing.T) {
 	// `abandoned after I/O timeout` を表示する。**内部の事情**であって、人が次に何をすべきかを
 	// 何も言っていない文面になる。
 	//
-	// 🚨 **訂正 (敵対レビュー 2 周目)**: ここには当初「exit 3 が exit 1 に化ける」と書いていたが
+	// 🚨 **訂正**: ここには当初「exit 3 が exit 1 に化ける」と書いていたが
 	// **誤り**。`errIOTimeout` も `errBusy` ではないので元から `default:` に落ちており、
 	// この場面の終了コードは修正前から exit 1 (`with` なら 125)。終了コードの API は変わらない。
 	// 変わるのは文面だけ。
@@ -309,8 +309,8 @@ func TestWithTimeoutMarksAbandonInProduction(t *testing.T) {
 	}
 }
 
-// 敵対レビュー P2 (2026-09-18): 取り消しが**判定不能**で返ったときに「TTL が切れるまで残る」と
-// 断定し、`lockman break` を勧めていた。`ReleaseTimed` の期限切れは判定不能で、内側の goroutine は
+// 取り消しが**判定不能**で返ったときに「TTL が切れるまで残る」と
+// 断定して `lockman break` を勧めない。`ReleaseTimed` の期限切れは判定不能で、内側の goroutine は
 // 走り続けて Remove に到達しうる。**消えるかもしれない lock** に対して「期限検査も token 照合も
 // しない無条件 rename」へ人を誘導するのは、この道具で最も現実的に二重取得を作る操作。
 func TestUndoDoesNotClaimTheLockRemainsWhenIndeterminate(t *testing.T) {
@@ -351,8 +351,8 @@ func TestUndoDoesNotClaimTheLockRemainsWhenIndeterminate(t *testing.T) {
 	t.Fatal("期限切れで返った後も内側の goroutine が lock を消していない (このテストの前提が崩れている)")
 }
 
-// 敵対レビュー P3 (2026-09-18): lease 切れの errNotOwner を「消すものが無い」と同じ扱いで
-// 握り潰していたため、**自分が置いた lock が残っているのに stderr が完全に空**だった。
+// lease 切れの errNotOwner を「消すものが無い」と同じ扱いで
+// 握り潰すと、**自分が置いた lock が残っているのに stderr が完全に空**になる。
 // コメントは「取り消せなかったことは黙らない」と約束している。
 func TestUndoReportsWhenLeaseExpiredSoLockRemains(t *testing.T) {
 	l := newTestLocker(t)
@@ -409,7 +409,7 @@ func newWiringLocker(t *testing.T, timeout time.Duration) *Locker {
 	return l
 }
 
-// 🚨 **配線の pin (敵対レビュー 2 周目 P1)**。`acquire` から下流へ `ab` を渡す点は 3 つあるが、
+// 🚨 **配線の pin**。`acquire` から下流へ `ab` を渡す点は 3 つあるが、
 // 旧版は 1 つ (1 回目の tryPlace) しか pin しておらず、**残り 2 つを `nil` に落としても
 // スイート全緑**だった。検査の中身を seam で直接叩くテストは「配線済み」を 1 mm も守らない
 // (mutation-verify-new-tests.md の「計算ヘルパーの純関数テストだけで配線済みとしていないか」)。
@@ -469,7 +469,7 @@ func TestAbandonWiringReachesTakeoverPath(t *testing.T) {
 	})
 }
 
-// 🚨 **不変条件: `undoAbandonedPlace` は `lockman break` を勧めない** (敵対レビュー 2 周目)。
+// 🚨 **不変条件: `undoAbandonedPlace` は `lockman break` を勧めない**。
 // break は期限検査も token 照合もしない無条件 rename で、コード自身が「この道具で最も現実的に
 // 二重取得を作る操作」と書いている。旧版は errNotOwner 枝に break を足しても、default 枝の
 // 警告を消しても**全緑**だった (= 危険な向きが無検査だった)。全枝をテーブルで回す。
@@ -549,7 +549,7 @@ func TestUndoNeverSuggestsBreak(t *testing.T) {
 	}
 }
 
-// 🚨 **本番の枝 (O_EXCL fallback) でも同じか** (敵対レビュー 2 周目)。`tryPlace` の link(2) は
+// 🚨 **本番の枝 (O_EXCL fallback) でも同じか**。`tryPlace` の link(2) は
 // macOS の smbfs で ENOTSUP になり O_EXCL へ落ちる = **本番だけで走る経路**。ローカル APFS の
 // テストは link(2) の枝しか通らず、O_EXCL 枝は「1 段目の検査から lock が見えるまで」「置いてから
 // 2 段目まで」の syscall 数が違う。検査が両枝に効くことを固定する。
@@ -599,7 +599,7 @@ func TestAbandonChecksWorkOnExclFallbackBranch(t *testing.T) {
 }
 
 // 🚨 破壊的操作 (lock を graveyard へ退ける rename) の直前でも降りること
-// (敵対レビュー 3 周目)。claim の直後の検査からここまでに 2 段目の `readLock` が挟まるので、
+// claim の直後の検査からここまでに 2 段目の `readLock` が挟まるので、
 // そこで見捨てられると「見捨てを宣言済みの goroutine が前世代の lock を退けて帰る」形になる。
 func TestAbandonedTakeoverDoesNotEvict(t *testing.T) {
 	l := newTestLocker(t)

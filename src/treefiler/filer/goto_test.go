@@ -128,7 +128,7 @@ func TestGotoTildeIsHome(t *testing.T) {
 	}
 }
 
-// 在るが木に載らないパスでは、root を上げた後でも上げる前へ戻す (issue 746 の敵対レビュー: 戻さず / まで上がっていた)。
+// 在るが木に載らないパスでは、root を上げた後でも上げる前へ戻す (戻さないと / まで上がる)。
 func TestGotoExistingButNotInTreeKeepsRoot(t *testing.T) {
 	m := newTest(t)
 	root, cur := m.root, m.cur

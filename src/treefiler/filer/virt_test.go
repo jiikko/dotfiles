@@ -14,7 +14,7 @@ import (
 	"unicode/utf8"
 )
 
-// virt_test.go は巨大なフォルダの仮想化 (virt.go) が、全部を動かした場合と同じ画面を描くことを固定する (issue 712)。
+// virt_test.go は巨大なフォルダの仮想化 (virt.go) が、全部を動かした場合と同じ画面を描くことを固定する。
 // 正解役は同じ木・同じ時計で仮想化を切った Model (virtOverride < 0)。毎フレームの View を 1 文字残らず比べる。
 
 // virtPair は同じ木を開いた 2 つの Model (仮想化あり / なし)。画面は低く (仮想化の窓が木より小さくなるように)、
@@ -95,7 +95,7 @@ func virtHash(p string) uint32 {
 	return h.Sum32()
 }
 
-// virtStamp は項目の mtime。fNNNN の名前のファイルは名前から決まる分だけ 1 時間前より古くする (modified の並びを名前順と違えるため。issue 720)。
+// virtStamp は項目の mtime。fNNNN の名前のファイルは名前から決まる分だけ 1 時間前より古くする (modified の並びを名前順と違えるため)。
 // 🚨 フォルダと、操作で消えないファイルはちょうど 1 時間前にそろえる: フォルダの熱の色は裏の走査が数えた「配下でいちばん新しい時刻」で決まり、
 // 走査の結果が届く時刻は 2 つの Model で揃わない。いちばん新しい時刻を消えない項目に持たせると、どの時点の走査でも同じ値になる
 // (fNNNN を消す・足すライブ更新の操作でも変わらない。ずらしたファイルにいちばん新しい時刻を持たせると、300 本の種で 4 本が色の値の差で落ちた)
@@ -298,7 +298,7 @@ func TestVirtualizedCollapseAndReopenMatchFull(t *testing.T) {
 	vp.assertVirtualized()
 }
 
-// 敵対レビュー (issue 712) が再現した食い違いの回帰テスト。
+// 食い違いを再現した回帰テスト。
 
 // 行の間隔を変える: 兄弟のずれ方が順位に比例する (「近い兄弟の動きを写す」が成り立たない) ので、全部を動かす期間に入り、
 // 画面の外で捨てていた子は前の目標の位置から動く。
@@ -419,7 +419,7 @@ func TestVirtualizedResortManyFoldersMatchFull(t *testing.T) {
 	vp.assertVirtualized()
 }
 
-// 敵対レビュー 2 周目が再現した食い違いの回帰テスト。捨てていた子は、前の配置で近い兄弟から作り直す (reviveAnim)。
+// 食い違いを再現した回帰テスト。捨てていた子は、前の配置で近い兄弟から作り直す (reviveAnim)。
 
 // 端から端へ飛んでいる途中に、飛び飛びの挿入 (ばらばらの変化) がライブ更新で来る: 捨てていた子は止まっていたのではなく、
 // 兄弟と同じずれで飛んでいる途中。
@@ -501,8 +501,8 @@ func TestVirtualizedSpineKidRevivedInHoldMatchFull(t *testing.T) {
 	vp.frames("k と . の後", 45)
 }
 
-// カーソルが今の見せる子ではない項目 (読み直しで消えた) を指す: 仮想化した側は、古い順位でその項目を配置しない。issue 717 で検索が
-// 消えた項目へカーソルを戻していた (直った) ように、カーソルが木の外を指す経路は過去にあった。ここではその状態を直接作る。
+// カーソルが今の見せる子ではない項目 (読み直しで消えた) を指す: 仮想化した側は、古い順位でその項目を配置しない。検索が
+// 消えた項目へカーソルを戻す形のように、カーソルが木の外を指す経路はありうる。ここではその状態を直接作る。
 func TestVirtualizedCursorOutsideTreeMatchFull(t *testing.T) {
 	vp := newVirtPair(t)
 	vp.quiesce()
@@ -525,7 +525,7 @@ func TestVirtualizedCursorOutsideTreeMatchFull(t *testing.T) {
 	vp.frames("消えた項目を指す", 60) // 全部を動かす期間 (読み直し) が終わって仮想化に戻った後まで
 }
 
-// 敵対レビュー 3 周目の回帰テスト。
+// 食い違いを再現した回帰テスト。
 
 // 遅いフレーム (Advance の間隔が 50ms を超える) の間に行の間隔を変えると、動きは壁時計より遅れて進む: 全部を動かす期間は動きと
 // 同じ時計 (animClock) で測る。壁時計で測ると、動きが途中のまま仮想化に戻り、順位に比例してずれた遠い兄弟を写した。
@@ -628,7 +628,7 @@ func TestVirtualizedCollapseOthersFarFolderMatchFull(t *testing.T) {
 	vp.frames("C の後", 45)
 }
 
-// 敵対レビュー 4 周目の回帰テスト。
+// 食い違いを再現した回帰テスト。
 
 // 読み直しで遠くの子が消えた直後、Advance の前に画面を高くする: 全部を動かす側は、次の step まで消えた子を前の位置に描く。
 func TestVirtualizedRemovedDrawnUntilStepMatchFull(t *testing.T) {
@@ -667,7 +667,7 @@ func TestVirtualizedDoubleRebuildMatchFull(t *testing.T) {
 }
 
 // 全部を動かす期間のうちに 2 回読み直して遠くの子がたくさん外れても、仮想化に戻った後に外れた子の記録が残り続けない
-// (残ると描く直前に毎フレーム舐める。敵対レビュー 5 周目)。
+// (残ると描く直前に毎フレーム舐める)。
 func TestVirtualizedRemovedRecordIsDropped(t *testing.T) {
 	vp := newVirtPair(t)
 	big := filepath.Join(vp.dir, "big")
@@ -697,7 +697,7 @@ func TestVirtualizedRemovedRecordIsDropped(t *testing.T) {
 }
 
 // 操作を乱数で並べて、全部を動かす Model と毎フレーム突き合わせる (仮想化の近似が本物と食い違う入力を、思いつく形に頼らずに探す。
-// 敵対レビューが 2 周続けて同じ不変条件を別の入力で破ったので、本物を正解役にした網羅の検査を置く)。種は固定 (落ちたら同じ列を再現できる)。
+// 同じ不変条件を別の入力で破られうるので、本物を正解役にした網羅の検査を置く)。種は固定 (落ちたら同じ列を再現できる)。
 // 畳む動きの「消えかけの薄いセル」だけは違ってよい (sameButFaint)。
 func TestVirtualizedRandomOpsMatchFull(t *testing.T) {
 	if raceEnabled {

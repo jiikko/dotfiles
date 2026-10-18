@@ -331,7 +331,7 @@ func (m *Model) thinBranch(n *node) bool {
 
 // lines は「今描いている位置」(アニメ中の位置) から線を引く (spec §4.2: 線はアニメ中の位置から毎フレーム引く)。
 // ylo..yhi は画面に出る行 (木の座標)。その外の線は作らない: 5 万件のフォルダで 1 フレーム 25ms かかり、線の格子が半分を占めた
-// (監査で実測 2026-10-09。issue 693)。縦線は 1 行外まで残す (端のセルの継ぎ目の形は隣のセルのビットで決まる)。
+// (実測 2026-10-09)。縦線は 1 行外まで残す (端のセルの継ぎ目の形は隣のセルのビットで決まる)。
 func (m *Model) lines(now map[*node][2]int, ylo, yhi int) lineGrid {
 	sp := m.spine()
 	g := lineGrid{}
@@ -454,7 +454,7 @@ type reusedMap[K comparable, V any] struct {
 }
 
 // fit は入れ物に実際に入った数を覚える (take の見込みより多く入れると map は膨らむので、作り直しの判定をその数で行う。
-// 検索の layoutAll が 5 万件を入れた後、膨らんだ map を毎フレーム舐め続けた。敵対レビュー)。
+// 検索の layoutAll が 5 万件を入れた後、膨らんだ map を毎フレーム舐め続けた)。
 func (r *reusedMap[K, V]) fit(n int) { r.cap = max(r.cap, n) }
 
 func (r *reusedMap[K, V]) take(n int) map[K]V {

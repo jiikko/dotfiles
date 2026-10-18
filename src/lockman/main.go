@@ -1,5 +1,5 @@
 // lockman — ディレクトリ単位の排他を取る CLI (SMB 越しの複数マシン + 公開ホストの
-// ローカル経路が混在する前提)。仕様の正本は issue 091。
+// ローカル経路が混在する前提)。仕様の正本は仕様 091 (dotfiles の issues の done にある)。
 //
 // 設計の要点 (崩すと排他が消える):
 //   - 勝敗は「存在すれば失敗する 1 回の原子操作」だけで決める。事前に存在チェックをしない
@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-// 終了コードは呼び出し側の shell が分岐に使う API。issue 091 の表と一致させること。
+// 終了コードは呼び出し側の shell が分岐に使う API。仕様の表と一致させること。
 //
 // acquire / release / renew / check / status / break / cleanup:
 //
@@ -110,7 +110,7 @@ type opts struct {
 }
 
 // --on-lost が取る値。**ここが値集合の単一の出典**で、ヘルプ文・検証・エラー文はすべて
-// onLostModes から作る (意味論の出典は issue 385、CLI の契約は 091:282)。
+// onLostModes から作る (CLI の契約は仕様 091 の --on-lost の節)。
 // 🚨 値を足すときは with.go の runWith も一緒に見直すこと。あちらは bool 1 つで
 // 「殺すか殺さないか」しか受け取らないので、3 つ目の意味はそのままでは表現できない。
 const (
@@ -208,7 +208,6 @@ func run(args []string) int {
 	// 🚨 --io-timeout の値検証。0 や負値は**全操作を即「判定不能」**にする (0 を「無制限」と
 	// 読む CLI が多いので、黙って受けると意図と逆に倒れる)。上限も要る: 大きすぎると
 	// cleanup.go の minRetention が前提にしている「--io-timeout は十分小さい」が崩れる。
-	// (issue 359 の残タスク / cleanup.go の注記が「356 / 357 と一緒に直す」と予告していた分)
 	if o.ioTimeout < minIOTimeout || o.ioTimeout > maxIOTimeout {
 		warnf("--io-timeout が範囲外 (%v)。%v 〜 %v で指定すること", o.ioTimeout, minIOTimeout, maxIOTimeout)
 		return failCode(cmd, exitError)
@@ -216,7 +215,7 @@ func run(args []string) int {
 	// 🚨 --on-lost の値検証は **subcommand を問わず無条件**に行う。フラグ登録が subcommand 分岐の
 	// 外にあるので、`--on-lost` を読まない acquire 等でも黙って受理され、「効いたつもり」を作る。
 	// 🚨 外すと綴り間違いが黙って kill 側に倒れる — warn のつもりの人に SIGTERM が
-	// 撃たれる向きなので危険側 (issue 409)。
+	// 撃たれる向きなので危険側。
 	if !slices.Contains(onLostModes, o.onLost) {
 		warnf("--on-lost が不正 (%q)。%s のいずれかを指定すること", o.onLost, onLostUsage())
 		return failCode(cmd, exitError)
@@ -250,16 +249,16 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 			// 件数も一緒に出す: 部分的に進んでいるのか何も進んでいないのかは、
 			// 失敗している場面でこそ知りたい。
 			if len(res.Errors) > 0 || o.verbose {
-				// 🚨 **期限切れのときは件数の意味が違う** (issue 393)。見捨てた goroutine は
+				// 🚨 **期限切れのときは件数の意味が違う**。見捨てた goroutine は
 				// まだ消し続けているので、読んだ値は「少なくとも N 件」。`removed=N` と
 				// 出すと「これで打ち止め」と読めるので、`removed>=N` と書き分ける。
-				// 🚨 **0 件のときに「進んでいる」と言わない** (敵対レビュー 393 の P2-2)。
+				// 🚨 **0 件のときに「進んでいる」と言わない**。
 				// 「期限切れ + 0 件」は「排水中」でも「1 件も進んでいない」でもなく**判定不能**で、
 				// 旧文面 (「掃除は途中で、次回の続きから減る」) はそこに**偽の肯定**を足していた
 				// (実測: 残骸 0 件の fixture で `removed>=0 (…次回の続きから減る)` が出た)。
 				// 判定不能を allow / deny のどちらにも丸めない (`adversarial-review-own-safeguards.md` §2)。
 				// 🚨 「掃除は途中」とも断定しない。詰まった位置が sweep の後 (打刻) なら
-				// sweep は完走している (同 P2-1。同じ fixture で「途中」が偽になっていた)。
+				// sweep は完走している (同じ fixture で「途中」が偽になる)。
 				removed := fmt.Sprintf("removed=%d", res.Removed)
 				switch {
 				case res.Partial && res.Removed == 0:
@@ -302,7 +301,7 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 			printJSON(st)
 		} else if st.Unreadable {
 			// 🚨 **一過性か恒久かは言わない** (1 回の観測では区別できない)。人が判断する材料を出す。
-			// 🚨 **破壊的操作 (`lockman break`) を名指ししない** (敵対レビュー 5 周目 P1)。
+			// 🚨 **破壊的操作 (`lockman break`) を名指ししない**。
 			// `errUnreadableLock` のコメントが宣言している不変条件 ("break を促さない") は
 			// `acquire` / `with` では守られていたが、**その 2 つが名指ししているこの出口**だけが
 			// 破らせていた。しかも添えていた前提「保持者が居ないことを確かめてから」は、
@@ -339,7 +338,7 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 	return exitError
 }
 
-// acquireBackoff は --wait の再試行の最初の間隔 (以後倍々で 15 秒まで)。テストで短くする (issue 614)
+// acquireBackoff は --wait の再試行の最初の間隔 (以後倍々で 15 秒まで)。テストで短くする
 var acquireBackoff = time.Second
 
 func cmdAcquire(l *Locker, o *opts) int {
@@ -362,10 +361,10 @@ func cmdAcquire(l *Locker, o *opts) int {
 			return exitOK
 		case errors.Is(err, errBusy):
 			if o.wait <= 0 || time.Now().After(deadline) {
-				// 🚨 **「人が動くまで解けない busy」のときだけ理由を出す** (issue 383)。
+				// 🚨 **「人が動くまで解けない busy」のときだけ理由を出す**。
 				// 正常な busy まで鳴らすと、`lockman acquire || exit 0` のような cron が
 				// skip のたびにメールを飛ばすようになり、operator が `2>/dev/null` を足す →
-				// **本当に伝えたい wedge の案内まで黙る** (敵対レビュー P2)。
+				// **本当に伝えたい wedge の案内まで黙る**。
 				// 待ち直す枝でも出さない (毎周回 stderr を汚さないため)。
 				if errors.Is(err, errUnreadableLock) {
 					warnf("%v", err)
@@ -429,7 +428,7 @@ func main() {
 }
 
 // fmtSize / fmtAge は State の「取れなかった」(nil) を **0 に丸めずに**出す
-// (敵対レビュー 5 周目 P2-1)。0 に丸めると `serverNow` が失敗したときに
+// 0 に丸めると `serverNow` が失敗したときに
 // 「age=0s = いま書かれたばかり」という嘘を、判断材料の顔で出すことになる。
 func fmtSize(v *int64) string {
 	if v == nil {

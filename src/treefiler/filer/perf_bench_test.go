@@ -59,7 +59,7 @@ func hugeFolderModel(b *testing.B, n int) *Model {
 	return m
 }
 
-// hugeSizes は巨大なフォルダの件数。2 つ並べるのは、1 フレームの時間が件数に比例しないこと (issue 712) を同じ実行の中で比べるため。
+// hugeSizes は巨大なフォルダの件数。2 つ並べるのは、1 フレームの時間が件数に比例しないことを同じ実行の中で比べるため。
 var hugeSizes = []int{5000, 50000}
 
 // eachHugeSize は件数ごとの sub-benchmark を回す。
@@ -108,7 +108,7 @@ func BenchmarkMoveHugeFolder(b *testing.B) {
 }
 
 // BenchmarkSearchKeyHugeFolder は巨大なフォルダの中の検索の打鍵 (`99` から backspace + 1 文字 = 空でない検索語での一致の引き直し 2 回。
-// issue 723。空欄へ戻す打鍵は列を作らないので、比べる前後で同じ数の引き直しになるよう空欄を通らない)。
+// 空欄へ戻す打鍵は列を作らないので、比べる前後で同じ数の引き直しになるよう空欄を通らない)。
 func BenchmarkSearchKeyHugeFolder(b *testing.B) {
 	eachHugeSize(b, func(b *testing.B, m *Model) {
 		m.HandleKey("/")
@@ -132,7 +132,7 @@ func BenchmarkSearchStepHugeFolder(b *testing.B) {
 	})
 }
 
-// BenchmarkReadHugeFolder はフォルダを読む 1 回 (木の load とライブ更新の readSig)。ファイル 9 割・フォルダ 1 割 (issue 714 の測り方)。
+// BenchmarkReadHugeFolder はフォルダを読む 1 回 (木の load とライブ更新の readSig)。ファイル 9 割・フォルダ 1 割。
 func BenchmarkReadHugeFolder(b *testing.B) {
 	for _, n := range hugeSizes {
 		dir := b.TempDir()
@@ -169,7 +169,7 @@ func BenchmarkReadHugeFolder(b *testing.B) {
 	}
 }
 
-// BenchmarkViewScreenSizes は止まった画面 1 フレーム (View) を画面の大きさごとに測る (木は小さい。描画は画面のセル数に比例する。issue 724)。
+// BenchmarkViewScreenSizes は止まった画面 1 フレーム (View) を画面の大きさごとに測る (木は小さい。描画は画面のセル数に比例する)。
 func BenchmarkViewScreenSizes(b *testing.B) {
 	for _, sz := range [][2]int{{80, 24}, {200, 50}, {300, 80}} {
 		b.Run(fmt.Sprintf("%dx%d", sz[0], sz[1]), func(b *testing.B) {
@@ -188,7 +188,7 @@ func BenchmarkViewScreenSizes(b *testing.B) {
 	}
 }
 
-// BenchmarkLiveUpdateAllChangedHugeFolder は、開いた巨大なフォルダの全部の項目が 1 周で変わったライブ更新の取り込み 1 回 (issue 733)。
+// BenchmarkLiveUpdateAllChangedHugeFolder は、開いた巨大なフォルダの全部の項目が 1 周で変わったライブ更新の取り込み 1 回。
 func BenchmarkLiveUpdateAllChangedHugeFolder(b *testing.B) {
 	eachHugeSize(b, func(b *testing.B, m *Model) {
 		big := m.cur.parent

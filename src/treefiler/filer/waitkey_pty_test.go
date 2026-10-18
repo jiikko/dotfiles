@@ -12,7 +12,7 @@ import (
 	"github.com/creack/pty"
 )
 
-// `!` のキー待ちで矢印キー (ESC [ D) を押しても、残りのバイトが戻った先へ漏れない (issue 731)。
+// `!` のキー待ちで矢印キー (ESC [ D) を押しても、残りのバイトが戻った先へ漏れない。
 // 包みのシェルが waitIfQuick の後に端末の入力に残ったものを読んで出す。🚨 端末でしか成り立たない (パイプでは stty が効かない) ので pty で回す
 func TestKeyWaitSwallowsWholeEscapeSequence(t *testing.T) {
 	probe := `/bin/sh -c "$1" treefiler /bin/sh "/bin/echo ran"; stty -icanon -echo min 0 time 3 2>/dev/null; printf 'LEFT<'; dd bs=16 count=1 2>/dev/null | od -An -c | tr -d ' \n'; printf '>END'`

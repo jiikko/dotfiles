@@ -23,9 +23,9 @@ const (
 //
 // 🚨 縛るのは定数ではなく **sweep に渡る値**。定数に対する検査 (「scratchRetention が
 // 10 分以上」) は、別の定数を作って sweep へ渡す / 下限も一緒に下げる、の 2 形で静かに
-// 迂回される (issue 358 の敵対レビューが両方を実測。どちらもビルドもテストも緑だった)。
+// 迂回される (両方を実測した。どちらもビルドもテストも緑だった)。
 //
-// 🚨 `--io-timeout` の範囲検証は issue 357 で入った (100ms〜5m。`main.go` の
+// 🚨 `--io-timeout` の範囲検証は検証される (100ms〜5m。`main.go` の
 // minIOTimeout / maxIOTimeout)。上限が 5m なので、この余裕 (10 分) は既定の I/O の上限に
 // 対しては桁で長いが、**最大値に対しては 2 倍しかない**。`--io-timeout 5m` で走らせた
 // acquire の残骸を掃除が巻き込みうるかは未検証 (trigger: 5m を常用する運用が出たとき)。
@@ -37,7 +37,7 @@ const minRetention = 10 * time.Minute
 type CleanupResult struct {
 	Removed int  `json:"removed"`
 	Skipped bool `json:"skipped"`
-	// Partial は「期限切れで途中まで」(issue 393)。**`Removed` の意味が変わる**ので
+	// Partial は「期限切れで途中まで」。**`Removed` の意味が変わる**ので
 	// 一緒に運ぶ: false なら「これで全部」、true なら「**少なくとも** N 件は消した。
 	// 見捨てた goroutine はまだ消し続けている」。
 	// 🚨 これが無いと、期限切れの報告が `removed=0` = 「1 件も進んでいない」と読める値になり、
@@ -49,7 +49,7 @@ type CleanupResult struct {
 }
 
 // cleanupProgress は「いま何件消したか」を**掃除の外から読めるようにする**カウンタ
-// (issue 393)。期限切れで呼び出し側が諦めたとき、見捨てた goroutine はまだ
+// 期限切れで呼び出し側が諦めたとき、見捨てた goroutine はまだ
 // `CleanupResult` を書き続けているので、**その構造体を読むとデータ競合になる**。
 // atomic な件数だけを共有して、期限切れ時点のスナップショットを読む。
 //
@@ -69,9 +69,9 @@ func (p *cleanupProgress) add() {
 }
 
 // addErr は sweep 中に起きた失敗を積む。🚨 **件数だけでなくエラーも部分結果**
-// (敵対レビュー 393 の P2-3)。期限切れで捨てると、「排水中」と「権限ドリフトで
-// 恒久的に詰まっている」を分ける情報がちょうど失われる — issue 393 の動機 2 に対しては
-// 件数より効く。
+// 期限切れで捨てると、「排水中」と「権限ドリフトで
+// 恒久的に詰まっている」を分ける情報がちょうど失われる。
+// 件数より、こちらの方が診断に効く。
 func (p *cleanupProgress) addErr(msg string) {
 	if p == nil {
 		return
@@ -109,11 +109,11 @@ func (p *cleanupProgress) snapshot() (int, []string) {
 // 経路で、それを掃除という別経路から持ち込むと、rename 引き継ぎで勝者を 1 人に絞った
 // 意味が消える。期限切れの回収は Acquire の引き継ぎだけが行う。
 // .lockman/ 自体も消さない (再作成の churn と rmdir の競合を避ける)。
-// 🚨 **progress は可変長引数で受ける** (issue 393)。掃除の入口を 2 つに割ると
+// 🚨 **progress は可変長引数で受ける**。掃除の入口を 2 つに割ると
 // `timeout_wiring_test.go` の gate が見ている名前と実際の入口がずれる。
 // 実際に `cleanupWithProgress` へ切り出すと gate は落ちるが、**落ちるのは
 // 「件数の下限 canary」であって包み忘れの検出 (offenders) ではない**
-// (敵対レビュー 393 の P3-2 が実証: timeout.go に別の wrapped 名の呼び出しを 1 つ足すと
+// (実証済み: timeout.go に別の wrapped 名の呼び出しを 1 つ足すと
 // 切り出したままでも gate は通る)。つまり gate はこの形を構造的には止めないので、
 // **入口を 1 つに保つ規律はこのコメントが正本**。
 // 🚨 2 つ目以降の progress は黙って無視される (可変長引数に内在する footgun)。
@@ -123,7 +123,7 @@ func (l *Locker) Cleanup(force bool, progress ...*cleanupProgress) (res CleanupR
 	if len(progress) > 0 && progress[0] != nil {
 		p = progress[0]
 	}
-	// 🚨 **エラーの蓄積先を 1 つにする** (敵対レビュー 393 の 2 周目 P1-1)。
+	// 🚨 **エラーの蓄積先を 1 つにする**。
 	// 1 周目は `os.Remove` の失敗だけを progress へ積み、他 (ReadDir の EACCES /
 	// Info の失敗 / serverNow / 打刻) は `res.Errors` にしか入れていなかった。
 	// 期限切れ枝は `res` を読めない (データ競合) ので、**運んでいないエラーは構造的に消える** —
@@ -180,7 +180,7 @@ func (l *Locker) Cleanup(force bool, progress ...*cleanupProgress) (res CleanupR
 	// trigger は「SMB 共有で acquire が遅いという報告が出たとき同じ A-B を採る」)。
 	// 🚨 コストは readdir の時間だけではない。defer の Cleanup が長くなるほど、
 	// `timed()` が見捨てた goroutine が lock を置ききる窓も広がる
-	// (実測 2026-09-12: graveyard 200 件で漏れ 40/40。issue 362)。
+	// (実測 2026-09-12: graveyard 200 件で漏れ 40/40)。
 	// それでも打刻するより安い: 打刻すると壊れていること自体が 10 分ごとにしか見えない。
 	if p.errCount() == 0 {
 		// 🚨 打刻そのものの失敗も持ち帰る。握り潰すと、掃除は成功しているのに
@@ -199,7 +199,7 @@ func (l *Locker) Cleanup(force bool, progress ...*cleanupProgress) (res CleanupR
 // 🚨 下限が見ているのは retention だけで、now は検査していない。now を未来へ振ると
 // 下限を割らずに新しい残骸を消せるが、production では now も `info.ModTime()` も
 // 同じ `serverNow()` = サーバ側の打刻なので、その入力を作る経路が無い
-// (2 周目の敵対レビューが指摘。到達可能性は未確認のまま、防御は足さない)。
+// (到達可能性は未確認のまま、防御は足さない)。
 // `Renew` が `clockSkewTolerance` を持つのは打刻がクライアント側へ落ちる場合の検算で、
 // 掃除は正しさに関与しないため同じ検算は要らない。
 func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, p *cleanupProgress) {
@@ -260,9 +260,9 @@ func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, p 
 			}
 			continue
 		}
-		// 🚨 **1 件ずつ進めること** (issue 393)。sweep の後にまとめて足す形は「最適化」に
-		// 見えるが、**期限切れで途中まで進んだときに 0 を報告する** = issue 393 の症状そのものに
-		// 戻る (敵対レビューが実測: 一括版は 10 件消して `Removed=0`)。
+		// 🚨 **1 件ずつ進めること**。sweep の後にまとめて足す形は「最適化」に
+		// 見えるが、**期限切れで途中まで進んだときに 0 を報告する** = 消したのに 0 と報告する症状に
+		// 戻る (実測: 一括版は 10 件消して `Removed=0`)。
 		// 下の seam はその窓の**内側**にあり、`sweepPauseHook` を差し替えたテストが
 		// 「途中で止めて数える」ことでこの形を検出する (seam を窓の手前に置くと検出できない)。
 		p.add()
@@ -276,9 +276,9 @@ func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, p 
 // まだ sweep を続けている」状態を作るので、素の変数だと**テストの後始末 (差し戻し) と
 // 見捨てた goroutine の読み取りがデータ競合**になる (実測 2026-09-19: `-race` が検出)。
 // 他の seam が素の変数でよいのは、見捨てられた goroutine がそこを通らないから。
-// 🚨 **窓の内側に置くこと** (敵対レビュー 393 の P1-1)。詰まりを `.cleanup_at` (sweep の後) で
+// 🚨 **窓の内側に置くこと**。詰まりを `.cleanup_at` (sweep の後) で
 // 作る fixture では「sweep の途中で期限切れ」を構造的に再現できず、
-// **カウンタを一括で足す変異 (= issue 393 の症状そのもの) が全スイート緑で通った**。
+// **カウンタを一括で足す変異 (= 消したのに 0 件と報告する症状) が全スイート緑で通った**。
 var sweepPauseHook atomic.Pointer[func()]
 
 func sweepPause() {
@@ -311,7 +311,7 @@ func (l *Locker) stampCleanup() error {
 	// 🚨 umask に削られたモードを戻す (`ensureDirs` が dir にやっているのと同じ手当て)。
 	// `.cleanup_at` は **作成者以外が「書き込みで」開く唯一のファイル**なので
 	// (lock への書き込みは所有者だけ、tmp/probe/graveyard の削除は dir の権限で足りる。
-	// 🚨 `O_TRUNC` は issue 380 で無くなった — Renew は fd へ verbatim で書き戻す)、
+	// 🚨 Renew は `O_TRUNC` せず fd へ verbatim で書き戻す)、
 	// 0644 のまま残すと別ユーザーの打刻が**恒久的に** EACCES になる。
 	// lock.go が想定する 0777 no-sticky の共有 (SMB) 構成では実際に起きる。
 	// 6 周目の実測: この 1 行が無いと `with` の 3 回とも同じ警告が出て mtime も進まない

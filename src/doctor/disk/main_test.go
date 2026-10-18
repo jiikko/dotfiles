@@ -16,7 +16,7 @@ package disk
 //     文字列の prefix 比較だけだと sandbox 内から外を指す symlink で抜けられる
 //  3. XDG_CACHE_HOME を一時ディレクトリへ向ける。HistoryDir を渡し忘れたテストが
 //     実キャッシュ (~/.cache/glog) に書くのを防ぐ。
-//     🚨 issue 234 (c) で newHistory の先頭に history-create の検査点を置いたので、
+//     🚨 newHistory の先頭に history-create の検査点があるので、
 //     **Delete 経路ではこの段に到達する前に 1 段目が止める** (未登録の置き場は拒否)。
 //     この段が今も守っているのは「Delete を通らずに DefaultHistoryDir を読む経路」だけ
 //  4. 拒否した記録が 1 件でも残ったまま終わったら、**テストが全部緑でもスイートを落とす**
@@ -58,7 +58,7 @@ var (
 // sandboxT は sandboxAllow が使う *testing.T の面だけを切った seam。
 // 🚨 これが無いと**自己テストが本体を通れない**。判定を述語へ切り出すだけでは、
 // 「述語は正しいが sandboxAllow がそれを呼ばない」形 (= 登録の門番が丸ごと外れる) を
-// 検出できなかった (issue 234 (a) の敵対レビュー 2026-09-04 が実測: 判定の呼び出しを
+// 検出できなかった (実測 2026-09-04: 判定の呼び出しを
 // sandboxAllow から削る変異でスイート全体が緑のままだった)。
 type sandboxT interface {
 	Helper()
@@ -186,7 +186,7 @@ func checkViolations() error {
 
 func TestMain(m *testing.M) {
 	sandboxTmpRoot = resolveForSandbox(os.TempDir())
-	// 後始末を下の RemoveAll だけに預けない (issue 305)。`m.Run()` から戻らない終了では
+	// 後始末を下の RemoveAll だけに預けない。`m.Run()` から戻らない終了では
 	// 末尾に到達しないので、testtmp.Setup が起動時に前回の残骸を回収する。
 	cache, swept, cleanupCache, err := testtmp.Setup("disk-delete-cache")
 	if err != nil {
@@ -299,7 +299,7 @@ func TestSandboxAllowRejectsPathsOutsideTempDir(t *testing.T) {
 		t.Skip("HOME が取れない")
 	}
 	// 🚨 **sandboxAllow の本体を通す** (述語を直接叩くと「本体が判定を呼ばなくなった」を
-	// 検出できない。敵対レビュー 2026-09-04 の P1)
+	// 検出できない)
 	for _, p := range []string{home, "/", filepath.Join(home, "Documents")} {
 		rejected, reason := sandboxAllowRejects(p)
 		switch {
@@ -323,7 +323,7 @@ func TestSandboxAllowRejectsPathsOutsideTempDir(t *testing.T) {
 
 // errNotInSandbox は「登録先が os.TempDir() の外」を表す sentinel。
 // 🚨 自己テストは**この sentinel で拒否理由を区別する**。文言比較にしないのは、
-// 文言を変えるとテストが壊れ / 文言が同じなら別の理由でも通るため (issue 314)。
+// 文言を変えるとテストが壊れ / 文言が同じなら別の理由でも通るため。
 var errNotInSandbox = errors.New("サンドボックスの外")
 
 // sandboxAllowRejects は sandboxAllow **本体**へ root を渡し、結果を 3 値で返す。
@@ -333,7 +333,7 @@ var errNotInSandbox = errors.New("サンドボックスの外")
 //	(false, nil)        … 登録できた
 //	(false, reason!=nil)… **判定不能**。サンドボックス外とは別の理由で Fatal した
 //
-// 🚨 3 つ目を「拒否」に畳まないことが本体 (issue 314)。畳むと「引数が壊れていて落ちた」も
+// 🚨 3 つ目を「拒否」に畳まないことが本体。畳むと「引数が壊れていて落ちた」も
 // 合格になり、破壊的操作のガードが別の理由で壊れても緑になる。
 // 拒否されなかった場合は登録が残るので、その場で後始末する (スイートへ漏らさない)。
 // cleanup の defer は recover の defer より**先に**積む (LIFO なので後に走る) —
@@ -370,7 +370,7 @@ func runSandboxAllow(f func(*sandboxRecorder)) (rejected bool, reason error) {
 
 // 拒否 (panic) 経路でも cleanup が走り、拒否理由が sentinel で区別されること。
 // 🚨 「登録が残ったまま panic する」経路は今は本体に無いが、理由の区別で分岐が増えた以上、
-// 開いたときに黙って漏れる (issue 314 ②)。
+// 開いたときに黙って漏れる。
 func TestSandboxAllowRunnerClassifiesAndCleansUp(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
@@ -435,7 +435,7 @@ func (r *sandboxRecorder) Cleanup(f func())  { r.cleanups = append(r.cleanups, f
 //
 // 🚨 sandboxAllow から Fatal するときは **error を単独引数で**渡すこと。
 // `t.Fatal("登録できません:", err)` のように文脈を足すと wrap 鎖が畳まれて
-// errors.Is が外れ、正規の拒否が「判定不能」に落ちる (issue 314 が塞いだ穴の逆向き)。
+// errors.Is が外れ、正規の拒否が「判定不能」に落ちる。
 func fatalReason(args []any) error {
 	if len(args) == 1 {
 		if err, ok := args[0].(error); ok {
@@ -446,9 +446,9 @@ func fatalReason(args []any) error {
 }
 
 // sandboxAllowable は「この root を登録してよいか」の**唯一の判定**。
-// 🚨 sandboxAllow と自己テストが**同じ関数を通る**ことが要点。以前は自己テストが判定式を
-// 別に書き写しており、本走査 (sandboxAllow) の検査を外す変異を当てても緑のままだった
-// (issue 234 (a)。~/.claude/rules/verify-execution-not-just-exit-code.md の
+// 🚨 sandboxAllow と自己テストが**同じ関数を通る**ことが要点。自己テストが判定式を
+// 別に書き写すと、本走査 (sandboxAllow) の検査を外す変異を当てても緑のままになる
+// (~/.claude/rules/verify-execution-not-just-exit-code.md の
 // 「canary と本走査は同じ関数を通す」)。
 func sandboxAllowable(root string) error {
 	r := resolveForSandbox(root)
@@ -575,13 +575,13 @@ func TestDestructiveCallsGoThroughHook(t *testing.T) {
 	destructive := map[string]bool{
 		"RemoveAll": true, "Remove": true, "Rename": true,
 		"RenameatxNp": true, "Renameat": true, "Unlinkat": true,
-		// ゴミ箱への移動の本体は safefs.TrashMove (issue 722 で切り出した)。検査点は引数で渡すので、呼ぶ行に
+		// ゴミ箱への移動の本体は safefs.TrashMove。検査点は引数で渡すので、呼ぶ行に
 		// `destructive-op: allow` を書いて「allowDestructive を渡している」ことを残す
 		"TrashMove": true,
-		// 🚨 unix.Unlink / unix.Rmdir が抜けていた (issue 234 (c))。`unix.Unlink(p)` と
-		// 書くだけでゲートが無音で素通りする形だった。
+		// 🚨 unix.Unlink / unix.Rmdir を表に入れておく。`unix.Unlink(p)` と
+		// 書くだけでゲートが無音で素通りする。
 		// 🚨 **この 2 語は誰にも pin されていない**: package 内に呼び出しが 1 件も無いので、
-		// 表から消す変異を当てても全緑になる (敵対レビュー 2026-09-04 で実測)。
+		// 表から消す変異を当てても全緑になる (実測 2026-09-04)。
 		// ゲート自体が効くことは確認済み (呼び出しを足すと違反として報告される)。
 		// pin するには「合成ソースを走査する」形へゲートを分解する必要があり、そこまではしていない
 		"Unlink": true, "Rmdir": true,
@@ -644,7 +644,7 @@ func TestDestructiveCallsGoThroughHook(t *testing.T) {
 	}
 	// 0 件だけでなく、**要になる関数が走査に入っていること**を見る
 	// (表からキーが 1 つ落ちても他で checked > 0 になり、穴が緑に埋もれるため)
-	// 🚨 `TestMain` は 2026-09-09 (issue 305) にこの表から外した。一時 dir の後始末が
+	// 🚨 `TestMain` は 2026-09-09 にこの表から外した。一時 dir の後始末が
 	// `doctor/testtmp` の cleanup へ移り、**この file 内に破壊的呼び出しを持たなくなった**ため
 	// (走査自体は今も TestMain を通るので、破壊的呼び出しを足せばここで報告される。
 	// 外したのは「必ず見つかるはずの関数」の一覧からだけ)。

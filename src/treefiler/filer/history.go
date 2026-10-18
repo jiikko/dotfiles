@@ -15,7 +15,7 @@ import (
 	"atomicfile"
 )
 
-// history.go は `!` のコマンドの履歴をプロセスと dir をまたいで残す (issue 721)。保存先は設定と同じ置き場の treefiler-history (configDir)。
+// history.go は `!` のコマンドの履歴をプロセスと dir をまたいで残す。保存先は設定と同じ置き場の treefiler-history (configDir)。
 //
 // 形式は 1 行 1 コマンドで、コマンドを strconv.Quote した文字列 (改行・制御文字を含んでも 1 行に収まる)。
 // 🚨 打つたびに O_APPEND で 1 行足す。「閉じるときにまとめて書く」にしない: Close は F を閉じる・他の画面へ移るたびに呼ばれ、
@@ -110,7 +110,7 @@ func appendHistory(path, cmd string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return
 	}
-	// O_NOFOLLOW: 履歴の場所が symlink なら追記しない (先のファイルへ書き、chmod していた。読む側の loadHistory も symlink を辿らない。issue 731)
+	// O_NOFOLLOW: 履歴の場所が symlink なら追記しない (先のファイルへ書き、chmod してしまう。読む側の loadHistory も symlink を辿らない)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return
@@ -131,7 +131,7 @@ func loadHistory() []string {
 			b.WriteString(strconv.Quote(c) + "\n")
 		}
 		// 🚨 symlink を辿って link 先を書き直さない: link 先が設定の dir の外 (別の道具のファイル) だと、その中身を切り詰めて消す。
-		// rename は link を普通のファイルに置き換えるだけで、link 先は残る (敵対レビュー 2 周目)
+		// rename は link を普通のファイルに置き換えるだけで、link 先は残る
 		_ = atomicfile.Write(path, []byte(b.String()), 0o600)
 	}
 	return hist

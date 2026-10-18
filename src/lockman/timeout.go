@@ -18,7 +18,7 @@ var errIOTimeout = errors.New("I/O timeout")
 var errAbandoned = errors.New("abandoned after I/O timeout")
 
 // abandon は「呼び出し側はもう待っていない」を、見捨てられた goroutine 自身へ伝える
-// (issue 362)。`withTimeout` が期限切れで諦めた瞬間に立ち、`fn` の側は**不可逆な操作の
+// `withTimeout` が期限切れで諦めた瞬間に立ち、`fn` の側は**不可逆な操作の
 // 直前**と**置いた直後**でこれを見る。
 //
 // 🚨 **nil を受けてよい**。包みの外から本体を直接呼ぶ経路 (テスト / 包みが要らない場所) は
@@ -43,15 +43,15 @@ func (a *abandon) abandoned() bool { return a != nil && a.flag.Load() }
 
 // I/O の包み。**`l.timeout` を読んでよいのはこのファイルだけ**にする。
 //
-// 🚨 以前は包みが `main.go` の `timed()` だけにあり、呼び出し側が包むかどうかを
-// 選べる形だった。結果、`runWith` の Acquire / Renew / Release と `dispatch` の
-// deferred Cleanup の 4 経路が**素通り**していた (issue 357)。`--io-timeout` の目的は
+// 🚨 包みを `main.go` の `timed()` のように、呼び出し側が包むかどうかを
+// 選べる形にしない。選べると、`runWith` の Acquire / Renew / Release と `dispatch` の
+// deferred Cleanup の 4 経路が**素通り**する。`--io-timeout` の目的は
 // 「スクリプトが無言で固まらない」なので、包み忘れが 1 つでもあると機構ごと無意味になる。
 // 包みを Locker のメソッド側に寄せると、生の I/O を呼ぶ形がコード上に残らない。
 //
 // 🚨 **止まるのは「呼び出し側が待つ時間」までで、固まった goroutine は回収できない**
 // (ブロック中の syscall は中断できない)。見捨てた goroutine が後から lock を置く形は
-// 別問題として issue 362 が扱う。
+// 別問題で、lock.go の見捨て検査が扱う。
 
 // withTimeout は fn を別 goroutine で走らせ、期限を超えたら timeout エラーを返す。
 //
@@ -76,7 +76,7 @@ func withTimeout[T any](d time.Duration, fn func(*abandon) (T, error)) (T, error
 	case <-time.After(d):
 		// 🚨 **エラーを返す前に立てる**。返してから立てると、呼び出し側が失敗を報告して
 		// プロセスを畳み始めるまでのあいだ、見捨てられた goroutine は「まだ待たれている」と
-		// 思ったまま不可逆な操作へ進める (issue 362 の窓をそのぶん広げる)。
+		// 思ったまま不可逆な操作へ進める。
 		ab.mark()
 		var zero T
 		return zero, fmt.Errorf("%w: I/O が %v 以内に返らない (マウントが応答しない可能性): 判定不能", errIOTimeout, d)
@@ -109,7 +109,7 @@ func (l *Locker) ReleaseTimed(token string) error {
 //
 // 🚨 **期限が来ても更新をやめてはいけない。** やめるとマウントが復旧しても lease が
 // 期限切れになり、他者が正当に引き継ぐ = 子が走ったまま二重実行になる
-// (敵対レビュー 2026-09-15 が A-B で実測。`ticker.Stop()` で止めた版は他マシンの
+// (A-B で実測 2026-09-15。`ticker.Stop()` で止めた版は他マシンの
 // Acquire が成功し、止めない版は拒否された)。期限は**報告**のためだけに使う。
 // inFlight は「まだ返っていない Renew の本数」。**起こす側で増やし、返った goroutine 自身が
 // 減らす** — 呼び出し側は期限切れで chan を捨てるので、返り値からは終わりを観測できない。
@@ -143,7 +143,7 @@ func (l *Locker) BreakTimed() error {
 // CleanupTimed は掃除を包む。**タイムアウトは致命にしない** — 掃除は正しさに関与しない
 // 設計 (cleanup.go の 🚨) なので、失敗は件数と一緒に res.Errors へ入れて呼び出し側に見せる。
 func (l *Locker) CleanupTimed(force bool) CleanupResult {
-	// 🚨 **期限切れでも「どこまで進んだか」を返す** (issue 393)。旧版は `res` を丸ごと捨てて
+	// 🚨 **期限切れでも「どこまで進んだか」を返す**。旧版は `res` を丸ごと捨てて
 	// `CleanupResult{Errors: ...}` を返しており、**実際には数千件を消しているのに
 	// `removed=0`** と報告していた (実測 2026-09-18: 残骸 10,000 件で 3 回連続 `removed=0`、
 	// 実数は毎回 2,400〜2,500 件)。`dispatch` のコメントは「部分的に進んでいるのか
@@ -156,7 +156,7 @@ func (l *Locker) CleanupTimed(force bool) CleanupResult {
 		return l.Cleanup(force, p), nil
 	})
 	if err != nil {
-		// 🚨 **件数だけでなく sweep 中のエラーも持ち帰る** (敵対レビュー 393 の P2-3)。
+		// 🚨 **件数だけでなく sweep 中のエラーも持ち帰る**。
 		// 旧版はここで `CleanupResult` を組み立て直してタイムアウト 1 本だけを入れており、
 		// 「排水中」と「権限ドリフトで恒久的に詰まっている」を分ける情報を捨てていた。
 		removed, errs := p.snapshot() // 読んだ後も増え続ける = 「少なくとも」の値
@@ -171,7 +171,7 @@ func (l *Locker) CleanupTimed(force bool) CleanupResult {
 
 // statDirTimed は **Locker を作る前**の I/O を包む。対象ディレクトリは共有そのものなので、
 // ここが応答しないと `lockman check <share>` が無言で固まる (`--io-timeout` を渡していても)。
-// 🚨 敵対レビュー 2026-09-15 が実測: 3s ブロックするマウントで
+// 🚨 実測 2026-09-15: 3s ブロックするマウントで
 // `check --io-timeout 200ms` が exit=0 / 所要 3.001s だった。
 func statDirTimed(path string, d time.Duration) (os.FileInfo, error) {
 	return withTimeout(d, func(_ *abandon) (os.FileInfo, error) { return os.Stat(path) })

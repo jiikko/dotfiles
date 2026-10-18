@@ -1,4 +1,4 @@
-// Package disk は diskdoctor: 既知の掃除候補をリスク付きで一覧する (issue 148 の 1〜2 章)。
+// Package disk は diskdoctor: 既知の掃除候補をリスク付きで一覧する。
 //
 // allowlist 方式。「ここは消していい」を catalog.go に列挙し、未知のディレクトリは常に対象外。
 // カタログに載せる条件は「大きいこと」ではなく「消したまま戻らないこと」。

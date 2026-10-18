@@ -122,7 +122,7 @@ func isWordStart(name string, i int) bool {
 // column はカーソルの列 (同じ深さの見えている項目を上から)。画面の外の項目も検索の対象 (仮想化した配置は画面の近くしか持たない)。
 // 配置 (layout.go の layoutWith) は、列ごとに上の列の開いたフォルダの順に、その見せる子のブロックを重ねずに並べるので、
 // 列の上からの並びは「上の列の開いたフォルダの見せる子 (visKids の順) を順に繋いだもの」と同じ。配置を作って y で並べ直さない
-// (5 万件の列で 1 打鍵 24ms かかっていた。issue 723)。🚨 layoutWith の「次の列に置く親」の条件を変えたら、ここも合わせる
+// (5 万件の列で 1 打鍵 24ms かかる)。🚨 layoutWith の「次の列に置く親」の条件を変えたら、ここも合わせる
 // (search_test.go の TestColumnMatchesLayout が配置を正解役に突き合わせる)。
 func (m *Model) column(of *node) []*node {
 	col := []*node{m.root}
@@ -193,7 +193,7 @@ func (m *Model) searchKey(key, text string) {
 	m.refreshMatches()
 }
 
-// endSearch は検索を閉じる (restore なら始めた位置へ戻る)。一致と起点は手放す: 閉じた後は誰も読まず、残すと次の / まで消えた部分木を掴む (issue 726)。
+// endSearch は検索を閉じる (restore なら始めた位置へ戻る)。一致と起点は手放す: 閉じた後は誰も読まず、残すと次の / まで消えた部分木を掴む。
 func (m *Model) endSearch(restore bool) {
 	if restore {
 		m.restoreOrigin()
@@ -221,7 +221,7 @@ func (m *Model) refreshMatches() {
 
 // restoreOrigin は検索を始めた位置へ戻す。検索中のライブ更新で消えていたら、生きているいちばん近い祖先へ
 // (Refresh / applyChange がカーソルに使う規則と同じ)。「今の位置に留まる」にしない: 一致なしで一度戻った後は、
-// 今の位置そのものが消えた origin を指している (issue 717)。
+// 今の位置そのものが消えた origin を指している。
 func (m *Model) restoreOrigin() {
 	m.setCur(m.liveAncestor(m.search.origin))
 }

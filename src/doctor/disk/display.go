@@ -1,6 +1,6 @@
 package disk
 
-// 表示・コピーに出す前の関門 (issue 228)。
+// 表示・コピーに出す前の関門。
 //
 // 🚨 **走査した値は「自分以外が書いた文字列」**。パスはファイル名由来 (macOS のファイル名は
 // `/` と NUL 以外の任意バイトを取れる)、Contents は `os.ReadDir` の名前、Reason / Failures は
@@ -58,8 +58,8 @@ func SanitizeResultForDisplay(r Result) Result {
 		it.Ref = termsafe.PlainLine(it.Ref)
 		kept = append(kept, it)
 	}
-	// 🚨 落とした件数に関わらず kept を反映する。`if dropped > 0` の中だけで代入していたときは、
-	// **通常ケース (dropped == 0) で Ref の無害化が捨てられていた** (敵対レビュー 2026-09-04)。
+	// 🚨 落とした件数に関わらず kept を反映する。`if dropped > 0` の中だけで代入すると、
+	// **通常ケース (dropped == 0) で Ref の無害化が捨てられる**。
 	r = r.WithItems(kept)
 	if dropped > 0 {
 		r.Failures = append(r.Failures,
@@ -72,8 +72,8 @@ func SanitizeResultForDisplay(r Result) Result {
 //
 // 🚨 termsafe を通して**書き換える**のではなく、通らないものを落とすための述語。パスは表示
 // だけでなく削除の照合にも使う値で、書き換えたら別物になる (SanitizeResultForDisplay の doc)。
-// 判定そのものは termsafe.IsPlain に委ねる: 自前で `unicode.IsPrint` を回していたときは
-// **生の不正 UTF-8 バイト (8bit CSI = 0x9b 等) を通していた** (敵対レビュー 2026-09-04 が実測。
+// 判定そのものは termsafe.IsPlain に委ねる: 自前で `unicode.IsPrint` を回すと
+// **生の不正 UTF-8 バイト (8bit CSI = 0x9b 等) を通す** (実測 2026-09-04。
 // IsPrint は U+FFFD を印字可能と答えるため)。落とす側と書き換える側で判定が割れないよう、
 // 述語は 1 つにする。
 func DisplayablePath(p string) bool { return p != "" && termsafe.IsPlain(p) }
@@ -83,7 +83,7 @@ func DisplayablePath(p string) bool { return p != "" && termsafe.IsPlain(p) }
 // 走査した Result の Entry は**カタログ (自分のコード) の写し**なので本来は無害だが、glogx は
 // snapshot から Result ごと復元する経路を持ち、そこでは Entry も保存ファイルの中身になる。
 // 🚨 **意味のずれ (保存された Risk / DeleteVia が実物と違う) を直すのはここではない**。
-// それは issue 229 で入った glogx 側の `doctorSnapshotInCatalog` (doctor_cache.go) の担当で、
+// それは glogx 側の `doctorSnapshotInCatalog` (doctor_cache.go) の担当で、
 // 復元した Entry をコンパイル済みカタログへ束ね直している。ここが直すのは**制御文字だけ**。
 // 🚨 したがって Entry.ID / Result.Status を無害化していないのは「外部由来でないから」ではなく
 // **束ね直しに依存している**から (display_coverage_test.go の sanitizeExempt に同じ理由を書いた)。
@@ -107,7 +107,7 @@ func SanitizeDeleteReportForDisplay(rep DeleteReport) DeleteReport {
 	out := rep
 	out.HistoryPath = termsafe.PlainLine(rep.HistoryPath)
 	// 🚨 HistoryError は err.Error() = **ファイルシステムのエラー文字列**で、パスがそのまま入る。
-	// glogx の削除パネルが「記録を書けませんでした: 」に続けて生で出していた (issue 251 の検査が検出)
+	// glogx の削除パネルが「記録を書けませんでした: 」に続けて生で出していた
 	out.HistoryError = termsafe.PlainLine(rep.HistoryError)
 	out.Entries = make([]EntryOutcome, 0, len(rep.Entries))
 	for _, e := range rep.Entries {

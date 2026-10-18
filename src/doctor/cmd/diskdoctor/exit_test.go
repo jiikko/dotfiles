@@ -12,7 +12,7 @@ import (
 	"doctor/exitcode"
 )
 
-// issue 177: 候補ありを 1 で返す (svcdoctor と語彙を揃える)。走査できなかったものは 2。
+// 候補ありを 1 で返す (svcdoctor と語彙を揃える)。走査できなかったものは 2。
 func TestDiskExitCode(t *testing.T) {
 	item := disk.Item{Path: "/x", Size: 1}
 	ok := func(items ...disk.Item) disk.Result {
@@ -24,7 +24,7 @@ func TestDiskExitCode(t *testing.T) {
 		want int
 	}{
 		{"候補なし", disk.Report{Results: []disk.Result{ok()}}, exitcode.NoFindings},
-		// 🚨 検出条件そのものが未実測のエントリは、0 件でも「きれい」と言わない (issue 236 の P3-4)。
+		// 🚨検出条件そのものが未実測のエントリは、0 件でも「きれい」と言わない。
 		// 人間向け出力と UI は「0 件ですが候補なしではありません」と言うのに rc だけが丸めていた
 		{"未実測で 0 件は診断できず", disk.Report{Results: []disk.Result{
 			{Status: disk.StatusOK, Entry: disk.Entry{ID: "x", Unverified: "glob の実名が未実測"}}}}, exitcode.Undiagnosed},
@@ -45,9 +45,9 @@ func TestDiskExitCode(t *testing.T) {
 }
 
 // 語彙の数字そのものは exitcode package のテストが守る (定数を各 CLI にコピーすると、
-// 別 package なので片方だけ変えても機械的に検出できない: 敵対レビュー 2026-09-03)。
+// 別 package なので片方だけ変えても機械的に検出できない)。
 
-// issue 177 (b): text と -json のどちらの経路でも同じ終了コードを返す (svcdoctor と同じ規律)。
+// text と -json のどちらの経路でも同じ終了コードを返す (svcdoctor と同じ規律)。
 func TestDiskEmitReturnsSameExitCodeForBothOutputs(t *testing.T) {
 	now := time.Now()
 	for _, rep := range []disk.Report{
@@ -92,9 +92,9 @@ type failWriter struct{}
 
 func (failWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
 
-// 無害化が対象を一覧から落としたら、終了コードは「診断できず」へ倒す (issue 228)。
-// 🚨 emit が**無害化前**の Report で数えていたときは、隠したものがあるのに rc=1 (候補あり) を
-// 返していた (敵対レビュー 2026-09-04)。「検査できなかったを緑にしない」がこの CLI の設計。
+// 無害化が対象を一覧から落としたら、終了コードは「診断できず」へ倒す。
+// 🚨 emit が**無害化前**の Report で数えると、隠したものがあるのに rc=1 (候補あり) を
+// 返す。「検査できなかったを緑にしない」がこの CLI の設計。
 func TestEmitCountsSanitizerDropsAsUndiagnosed(t *testing.T) {
 	const esc, bel = "\x1b", "\a"
 	rep := disk.Report{Results: []disk.Result{{

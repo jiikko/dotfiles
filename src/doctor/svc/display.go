@@ -1,6 +1,6 @@
 package svc
 
-// 表示・コピーに出す前の関門 (issue 228)。disk 側の display.go と対になる。
+// 表示・コピーに出す前の関門。disk 側の display.go と対になる。
 //
 // 🚨 材料はすべて **plist ファイルの中身**と launchctl / brew の出力。plist は
 // `~/Library/LaunchAgents` に誰でも置けるので、Label に端末制御シーケンスを入れた plist を
@@ -10,8 +10,8 @@ package svc
 // 🚨 **同一性を持つ値は書き換えず落とす** (disk の Item.Path と同じ判断)。Label / PlistPath /
 // Domain は「手で叩いてください」と提示するコマンドが指す先そのもの。書き換えて表示すると、
 // 攻撃者が無害化後の名前のファイル (`a<ESC>[2Jb.plist` と `ab.plist` の両方) を置くだけで、
-// **doctor が「攻撃者が選んだファイルを rm しろ」と案内する**ことになる (敵対レビュー
-// 2026-09-04 が実測)。ShellQuote が守るのは注入であって同一性ではない。
+// **doctor が「攻撃者が選んだファイルを rm しろ」と案内する**ことになる (実測 2026-09-04)。
+// ShellQuote が守るのは注入であって同一性ではない。
 // 落としたことは DirErrs に件数で残す (svcExitCode が DirErrs を見て「診断できず」へ倒すので、
 // CLI の終了コードにも出る = 黙って減らない)。
 //

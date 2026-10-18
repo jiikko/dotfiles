@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-// layoutAll は仮想化せずに全ノードを配置する (issue 723 までは検索の列が使っていた。今は正解役だけ)。
+// layoutAll は仮想化せずに全ノードを配置する (正解役だけに使う)。
 func (m *Model) layoutAll() map[*node]place { return m.layoutWith(false) }
 
-// columnByLayout は issue 723 の前の column (木全体を配置して、同じ深さの項目を y で並べる)。新しい column の正解役。
+// columnByLayout は column の正解役 (木全体を配置して、同じ深さの項目を y で並べる)。
 func columnByLayout(m *Model, of *node) []*node {
 	pos := m.layoutAll()
 	d := of.depth()

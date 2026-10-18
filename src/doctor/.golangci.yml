@@ -5,7 +5,7 @@
 # 🚨 この設定が無かった間、CI (src_doctor.yml → _go-project.yml の `make -C src/doctor lint`) は
 # **既定の 5 個だけ**を回していた。glogx が `disk.Risk` / `Status` / `Outcome` / `Guard` を
 # そのまま分岐材料に使っているのに、網羅の強制 (exhaustive) は glogx 側だけに掛かっており、
-# gofmt されていないファイルが commit 済みでも誰も気づかなかった (issue 222)。
+# gofmt されていないファイルが commit 済みでも誰も気づかなかった。
 version: "2"
 
 # 🚨 golangci-lint は既定で os.TempDir()/golangci-lint.lock に flock を取り、別インスタンスが
@@ -15,7 +15,7 @@ version: "2"
 # 書く。書き込み自体は temp+rename ではなく最終名への直接 write で、安全性の根拠は原子性ではなく
 # 内容アドレス) ので、外しても結果の正しさには影響しない。root の Makefile (run_go_projects) が 7 プロジェクトを並列に
 # 回すため、全プロジェクトでこれを true にする (1 つでも false が残ると、その 1 つが他の
-# 6 つの起動タイミング次第で落ちる)。issue 258
+# 6 つの起動タイミング次第で落ちる)。
 run:
   allow-parallel-runners: true
 
@@ -70,7 +70,7 @@ linters:
     forbidigo:
       # 出力先は必ず引数で受ける。cmd/*/main.go の emit は (stdout, stderr) を引数に取り、
       # exit_test.go がそこへバッファを差して「終了コードと出力が両方の出力形式で揃う」ことを
-      # 検証している (issue 177)。裸の fmt.Print* はその設計を迂回する。
+      # 検証している。裸の fmt.Print* はその設計を迂回する。
       # 🚨 forbidigo のパターンは**呼び出し先の式**にしか当たらず引数では判別できないので、
       # `fmt.Fprintf(os.Stdout, ...)` は捕まえられない (判定ライブラリは fmt.Fprintf を
       # strings.Builder 向けに多用しているため、Fprint* 自体は禁止できない)。
@@ -96,12 +96,12 @@ linters:
 
 issues:
   # 同じ文面の指摘を 4 件目から落とす既定 (3) では、一括退行のときに直しては再実行を繰り返す
-  # ことになる (glogx の issue 118 と同じ理由)
+  # ことになる
   max-same-issues: 0
   max-issues-per-linter: 0
 
 # gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)。
-# 🚨 これが無かったため disk/report_test.go が改行なしで commit されていた (issue 222)
+# 🚨これが無かったため disk/report_test.go が改行なしで commit されていた
 formatters:
   enable:
     - gofmt

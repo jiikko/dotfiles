@@ -9,14 +9,14 @@ package gorules
 
 import "github.com/quasilyte/go-ruleguard/dsl"
 
-// padViaPadSpaces: 空白の連結は termwidth.PadSpaces を使う (無確保。glogx 側 issue 047 / 118)。
+// padViaPadSpaces: 空白の連結は termwidth.PadSpaces を使う (無確保)。
 func padViaPadSpaces(m dsl.Matcher) {
 	m.Match(`strings.Repeat(" ", $n)`).
 		Report(`空白の連結は termwidth.PadSpaces($n) を使う (無確保)`)
 }
 
 // pathPrefixViaWithSep: 「dir の中か」のための区切りの手組みは withSep (filer/git.go) を通す。root が / のとき
-// "/" + "/" = "//" になり、前方一致が全部外れる (issue 691 の 3。findNode・forget・nodeFor が別々に踏んだ)。
+// "/" + "/" = "//" になり、前方一致が全部外れる (findNode・forget・nodeFor が別々に踏む)。
 func pathPrefixViaWithSep(m dsl.Matcher) {
 	m.Match(`$x + string(filepath.Separator)`, `$x + string(os.PathSeparator)`).
 		Where(!m.File().Name.Matches(`^git\.go$`)).
@@ -28,11 +28,11 @@ func pathPrefixViaWithSep(m dsl.Matcher) {
 		Report(`前方一致の区切りは withSep($x) を通す (root が / のとき // にしない)`)
 }
 
-// execViaForeground: 端末を外のコマンドへ渡す実行は foreground.NewExec の値を tea.Exec に渡す (issue 707)。
+// execViaForeground: 端末を外のコマンドへ渡す実行は foreground.NewExec の値を tea.Exec に渡す。
 // tea.ExecProcess は戻った後に前面を確かめないので、子 (treefiler の `!` の `$SHELL -ic` 等) が前面を持ち去ったまま終わると、
 // 入れ直しで SIGTTOU に止まるか、EIO で何も読めず固まる。treefiler の pty テスト (filer/shell_pty_test.go) が見ているのは
 // foreground.Exec の振る舞いで、アプリがそれを通っていることはこの規則が止める。
-// 検出しない形: bubbletea を tea 以外の名前で import する・ExecProcess を関数値として変数へ入れてから呼ぶ (敵対レビューで実測。
+// 検出しない形: bubbletea を tea 以外の名前で import する・ExecProcess を関数値として変数へ入れてから呼ぶ (実測。
 // import は全部 tea なので、うっかりでは起きない)・tea.Exec に別の ExecCommand (自作の型) を渡す・bubbletea を経ずに
 // exec.Cmd.Run で端末を渡す (review で見る)
 func execViaForeground(m dsl.Matcher) {

@@ -9,7 +9,7 @@ import (
 // direntries.go はフォルダの中身を、名前と各項目の属性 (種類・mtime・大きさ) ごと読む (木の load・ライブ更新の readSig・配下の走査が使う)。
 // macOS では getattrlistbulk(2) で 1 回の syscall にまとめる (direntries_darwin.go)。使えないとき (未対応の FS 等) は
 // os.ReadDir + 項目ごとの lstat (DirEntry.Info) に戻る。どちらの経路でも属性は項目そのもの (symlink は辿らない = lstat) の値。
-// 5 万件のフォルダで 128ms → 43ms (issue 714 の実測)。
+// 5 万件のフォルダで 128ms → 43ms。
 
 // entryAttr は項目そのもの (lstat) の属性のうち、木が使うもの。
 type entryAttr struct {

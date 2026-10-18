@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// \r で終わるパスは前回の場所に書かない (bufio.Scanner が行末の \r を落とし、別のパスとして読み戻すため。issue 696 の 14)。
+// \r で終わるパスは前回の場所に書かない (bufio.Scanner が行末の \r を落とし、別のパスとして読み戻すため)。
 // カーソルの行と、開いたフォルダの行 (opened) を別々に見る (カーソルに \r があると場所ごと書かないので、opened の判定まで届かない)。
 func TestPlacesSkipCarriageReturn(t *testing.T) {
 	for _, tc := range []string{"cursor", "opened"} {

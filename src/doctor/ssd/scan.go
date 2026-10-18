@@ -1,4 +1,4 @@
-// Package ssd は内蔵 SSD の健康状態を読む (issue 578)。**読むだけ**で、修復・sudo・設定変更の経路は持たない。
+// Package ssd は内蔵 SSD の健康状態を読む。**読むだけ**で、修復・sudo・設定変更の経路は持たない。
 //
 // 見るのは 2 層で、混ぜない:
 //   - SMART (物理): `diskutil info disk0` の合否と、`smartctl -j -a disk0` の NVMe の健康情報
@@ -16,7 +16,7 @@ import (
 	"doctor/runner"
 )
 
-// Device は診断する内蔵の起動ディスク。外付けは初回の対象外 (issue 578 の非ゴール)。
+// Device は診断する内蔵の起動ディスク。外付けは初回の対象外。
 const Device = "disk0"
 
 // APFSCommand は APFS の整合性を手で確かめるコマンド。

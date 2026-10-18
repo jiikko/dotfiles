@@ -2,8 +2,7 @@
 // svc の C 判定 (homebrew.mxcl.<formula> が台帳に無い) が同じ集合を引く。
 //
 // `brew list --formula` ではなく `brew info --json=v2 --installed` を使う (実測 1.5 秒): rename 済み formula
-// (postgresql → postgresql@14 等) の状態 dir / plist は旧名で残るので、名前だけの台帳は現役を孤児にする
-// (敵対レビュー 2026-09-02)。
+// (postgresql → postgresql@14 等) の状態 dir / plist は旧名で残るので、名前だけの台帳は現役を孤児にする。
 package brewledger
 
 import (

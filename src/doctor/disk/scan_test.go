@@ -38,7 +38,7 @@ func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string
 	// 最長一致だけでは足りない ("pgrep -x Google Chrome" が "pgrep -x Google Chrome Canary" を
 	// 横取りしない、は最長一致で足りるが、それとは別の穴がある):
 	// **応答を登録していないコマンドが、別のキーの literal な prefix に吸われる**。
-	// 実測 2026-09-03 (issue 192): `--set /d/FooDevices` だけ登録した fake に
+	// 実測 2026-09-03: `--set /d/FooDevices` だけ登録した fake に
 	// `--set /d/FooDevicesExtra` を投げると、`unexpected` ではなく FooDevices の応答が返った。
 	// 壊れ方は「テストが別の応答を拾って green のまま意味を失う」なので気づけない。
 	// トークン境界を要求すれば、登録していない呼び出しは `unexpected` に落ちる
@@ -608,14 +608,14 @@ func TestReuseSkipsScan(t *testing.T) {
 	}
 }
 
-// issue 175: HOME に glob メタ文字が入っていても、実在するパスは候補として拾えること。
+// HOME に glob メタ文字が入っていても、実在するパスは候補として拾えること。
 // 素朴に filepath.Glob へ渡すと `[1]` が文字クラスとして解釈されて 0 件になり、実在するのに
 // 「候補なし」に化ける (false green)。
 func TestExpandLiteralizesGlobMetaInEnv(t *testing.T) {
 	base := t.TempDir()
 	// 各メタ文字名に「escape しなければ余分にマッチする」おとりの兄弟を必ず作る。
 	// おとりが無いと ? のように「escape しなくても同じ結果になる」ケースが混ざり、変異させても
-	// green のまま残る (敵対レビュー指摘)。
+	// green のまま残る。
 	decoys := map[string]string{"h[1]": "h1", "h*": "hZZ", "h?x": "hax", `h\z`: "hXz", "h 1": "hY1"}
 	for _, name := range []string{"h[1]", "h*", "h?x", `h\z`, "h 1"} {
 		home := filepath.Join(base, name)
@@ -645,9 +645,9 @@ func TestExpandLiteralizesGlobMetaInEnv(t *testing.T) {
 	}
 }
 
-// issue 175: 展開結果が相対パスなら「診断できず」にする (glob が 0 件になって無音で消えるのを防ぐ)。
+// 展開結果が相対パスなら「診断できず」にする (glob が 0 件になって無音で消えるのを防ぐ)。
 // 相対パスは cwd に偶然一致すると validateTarget が failed にし、一致しなければ無音の 0 件になる
-// 非対称があった。expand の時点で常に error に倒す。
+// 非対称がある。expand の時点で常に error に倒す。
 func TestExpandRelativeFailsClosed(t *testing.T) {
 	if _, err := expand(Env{Home: "/h", TmpDir: "tmp"}, "$TMPDIR/TemporaryItems/NSIRD_Finder_*"); err == nil {
 		t.Error("相対 TMPDIR が無音の 0 件になった (診断できずに倒れていない)")
@@ -661,7 +661,7 @@ func TestExpandRelativeFailsClosed(t *testing.T) {
 	}
 }
 
-// issue 176: brew prefix は `brew --prefix` から解決する (Apple Silicon /opt/homebrew と
+// brew prefix は `brew --prefix` から解決する (Apple Silicon /opt/homebrew と
 // Intel /usr/local で違うので直書きしない)。取れないときは fail-closed。
 func TestBrewPrefixIsResolvedNotHardcoded(t *testing.T) {
 	env := testEnv(t)
@@ -681,7 +681,7 @@ func TestBrewPrefixIsResolvedNotHardcoded(t *testing.T) {
 	// 取れない / 空 / 相対 / 実在しない → すべて failed (候補 0 件に畳まない)。
 	// 🚨 fixture は「その guard だけを踏む」形にする。どれも空文字や存在しないパスにすると、
 	// 実際には Stat の guard 1 つだけが全部を弾いていて、他の guard を消しても green のまま残る
-	// (敵対レビュー 2026-09-03 で実測)。各ケースは error 文言で「どの guard が弾いたか」まで固定する。
+	// (実測 2026-09-03)。各ケースは error 文言で「どの guard が弾いたか」まで固定する。
 	for _, tc := range []struct {
 		name, out, wantMsg string
 		rc                 int
@@ -706,7 +706,7 @@ func TestBrewPrefixIsResolvedNotHardcoded(t *testing.T) {
 		}
 		// 文言だけでなく「brewPrefix が弾いたこと」まで固定する。下流 (expand の絶対パス検査 /
 		// validateTarget) にも二重の防御があるので、prefix 側の guard を消しても別の層が弾いて
-		// green のまま残る (敵対レビュー 2026-09-03 で "." の相対ケースが実際にそうなっていた)。
+		// green のまま残る (実測 2026-09-03: "." の相対ケースが実際にそうなる)。
 		const by = "brew --prefix を取得できず"
 		if !strings.HasPrefix(r.Reason, by) || !strings.Contains(r.Reason, tc.wantMsg) {
 			t.Errorf("%s: brewPrefix 以外の層が弾いている (このケースは対象の guard を検査できていない): reason=%q want~=%q", tc.name, r.Reason, tc.wantMsg)
@@ -724,7 +724,7 @@ func TestBrewPrefixIsResolvedNotHardcoded(t *testing.T) {
 	}
 }
 
-// カタログが brew prefix を直書きしていないこと (issue 176 の再発防止)。
+// カタログが brew prefix を直書きしていないこと。
 func TestCatalogHasNoHardcodedBrewPrefix(t *testing.T) {
 	for _, e := range catalog {
 		for _, p := range e.Paths {
@@ -735,7 +735,7 @@ func TestCatalogHasNoHardcodedBrewPrefix(t *testing.T) {
 	}
 }
 
-// issue 176: brew cleanup の相対表記 (Would remove Library/Homebrew/vendor/...) は prefix 配下として
+// brew cleanup の相対表記 (Would remove Library/Homebrew/vendor/...) は prefix 配下として
 // 解決する。prefix が取れないときに**黙って捨てる**と「消す対象は無い」という false green になる。
 func TestBrewCleanupRelativeLineFailsClosed(t *testing.T) {
 	env := testEnv(t)
@@ -772,7 +772,7 @@ func TestBrewCleanupRelativeLineFailsClosed(t *testing.T) {
 	}
 }
 
-// issue 168: デバイスセットは既定 + Previews の 2 つではない。~/Library/Developer/*Devices に
+// デバイスセットは既定 + Previews の 2 つではない。~/Library/Developer/*Devices に
 // XCTestDevices (並列テストの clone) / XCPGDevices (Playground) が実在する (2026-09-03 実機で確認)。
 // 名前を直書きせず列挙するので、将来セットが増えても孤児判定に落ちない。
 func TestSimDeviceEnumeratesAllDeviceSets(t *testing.T) {
@@ -831,7 +831,7 @@ func TestSimDeviceEnumeratesAllDeviceSets(t *testing.T) {
 	// どのセットの取得失敗も fail-closed (孤児判定をしない)。
 	// 🚨 このループの手前で dev が読める状態であることを確かめる。読めないと全イテレーションが
 	// 「別の理由で fail-closed」になり、per-set の fail-closed を丸ごと消しても green のまま残る
-	// (敵対レビュー 2026-09-03 が、chmod の復元行を消すだけでそうなることを実測した)
+	// (chmod の復元行を消すだけでそうなることを実測した 2026-09-03)
 	if _, err := os.ReadDir(dev); err != nil {
 		t.Fatalf("この時点で %s は読める必要がある (以降の assert が空振りする): %v", dev, err)
 	}
@@ -849,7 +849,7 @@ func TestSimDeviceEnumeratesAllDeviceSets(t *testing.T) {
 	}
 }
 
-// issue 167: コンテナの孤児判定は「ディレクトリ名 = bundle id」を前提にしているので、
+// コンテナの孤児判定は「ディレクトリ名 = bundle id」を前提にしているので、
 // (a) UUID 名のコンテナは構造的に素通りする → 判定できないものとして候補から外す (fail-closed)
 // (b) Wrapper/ と Versions/*/Resources/ の Info.plist を読まないと bundle id が集まらない
 // (c) symlink の .app は DirEntry.IsDir が false を返すので走査から落ちる
@@ -889,7 +889,7 @@ func TestOrphanContainerCollectsAllBundleForms(t *testing.T) {
 	const uuidName = "0A7CEF49-521F-4A65-95E2-9B8495EA27BB"
 	// 小文字ケースは**別の UUID 値**にする。同じ値の大文字/小文字だと APFS (既定は大小無視) が
 	// 同じディレクトリに畳み込み、got に現れず assert が恒常的に空振りする
-	// (敵対レビュー 2026-09-03 で実測)
+	// (実測 2026-09-03)
 	const uuidLower = "1b8df05a-4c62-47e1-9d33-0af7be215cc9"
 	for _, name := range []string{"com.example.alive", "com.example.wrapped", "com.example.framework",
 		"com.example.linked", "com.example.bracket", "com.example.bracketfw", "com.example.bracketapp",
@@ -928,9 +928,9 @@ func TestOrphanContainerCollectsAllBundleForms(t *testing.T) {
 
 // ~/Library/Developer 自体が読めないときも fail-closed (孤児判定をしない)。無視して空を返すと
 // 「セットが無い」と同じ結果になり、生きたデバイスの作業領域を孤児にする — この関数が防いでいる
-// 失敗モードそのものを、診断の痕跡を出さずに再現する (敵対レビュー 2026-09-03)。
+// 失敗モードそのものを、診断の痕跡を出さずに再現する。
 // 独立したテストにする: 同じ関数の中で chmod すると、復元行を消しただけで後続の assert が
-// 「別の理由で fail-closed」になって恒常的に green になる (同レビューの 2 周目で実測)。
+// 「別の理由で fail-closed」になって恒常的に green になる (実測)。
 func TestSimDeviceSetDirUnreadableFailsClosed(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root は permission を無視するのでこの検査は成立しない")
@@ -984,7 +984,7 @@ func TestContainerIsUndiagnosable(t *testing.T) {
 	}
 }
 
-// 敵対レビュー 2026-09-03: symlink を辿るようにしたので巡回検出が要る。同じディレクトリを指す
+// symlink を辿るようにしたので巡回検出が要る。同じディレクトリを指す
 // symlink を n 個並べると、bundleMaxDepth (深さ) は縛っても**幅**が無制限なので n^8 に膨らむ
 // (実測: n=4 は 8 秒でも終わらなかった)。collectBundleIDs には ctx が無くキャンセルもできない。
 //
@@ -1011,9 +1011,9 @@ func TestCollectBundleIDsStopsOnSymlinkLoops(t *testing.T) {
 	// 1 回目で seen に入り、2 回目以降は降りない。降りる回数の上限を実体数 + symlink 数で押さえる。
 	const wantMax = 3 + 6
 
-	// 🚨 数え上げは**この呼び出しのぶんだけ**を受け取る (issue 217)。以前は package 変数を
-	// `Store(0)` してから絶対値を見ており、「同 package に並行して走る走査が無い」ことを
-	// 暗黙に前提にしていた (`t.Parallel()` を 1 つ足した瞬間に flaky。幅が 9 しかない)。
+	// 🚨数え上げは**この呼び出しのぶんだけ**を受け取る。package 変数を
+	// `Store(0)` してから絶対値を見ると、「同 package に並行して走る走査が無い」ことを
+	// 暗黙に前提にする (`t.Parallel()` を 1 つ足した瞬間に flaky。幅が 9 しかない)。
 	ids := map[string]bool{}
 	var visits int64
 	done := make(chan struct{})
@@ -1038,7 +1038,7 @@ func TestCollectBundleIDsStopsOnSymlinkLoops(t *testing.T) {
 	}
 }
 
-// fakeRunner の応答選択はトークン境界まで見る (issue 192)。
+// fakeRunner の応答選択はトークン境界まで見る。
 //
 // 最長一致だけだと「**応答を登録していない呼び出し**が、別のキーの literal な prefix に吸われる」。
 // テストは `unexpected` (rc=1) を期待しているのに別の応答が返り、**green のまま意味を失う**。
@@ -1163,15 +1163,15 @@ func TestCanonicalPathAndVMRootRejectBlankHome(t *testing.T) {
 	}
 }
 
-// 走査を 4 つ同時に回しても -race が落ちず、**各呼び出しが自分の結果を得る** (issue 214 / 217)。
+// 走査を 4 つ同時に回しても -race が落ちず、**各呼び出しが自分の結果を得る**。
 //
-// 元の形 (issue 214): 計測点が package 変数 (`atomic.Int64`) だったため、走査が 2 つ同時に走ると
-// そこだけが共有されて `-race` が落ちた (`guards.do` の sync.Once は**走査ごとの instance に
-// 属する**ので走査間では直列化しない)。glogx 側の TestUpdateKeysYieldToDoctorDelete が
-// 実際にこの形で赤くなっていた。
+// 計測点を package 変数 (`atomic.Int64`) にしない。走査が 2 つ同時に走ると
+// そこだけが共有されて `-race` が落ちる (`guards.do` の sync.Once は**走査ごとの instance に
+// 属する**ので走査間では直列化しない)。glogx 側の TestUpdateKeysYieldToDoctorDelete も
+// この形で赤くなりうる。
 //
-// 🚨 **その競合は issue 217 で構造的に消えた** (数え上げを呼び出しごとに持つようにしたので、
-// 共有される package 変数がもう無い)。このテストを消さずに主張を移したのは、元の防御が
+// 🚨 **その競合は構造的に消えている** (数え上げを呼び出しごとに持つので、
+// 共有される package 変数がもう無い)。このテストを残すのは、元の防御が
 // **副次的に守っていたもの**が残っているため
 // (規範: list-masked-failure-modes-before-removing-guard.md):
 //
@@ -1225,7 +1225,7 @@ func TestConcurrentScansDoNotShareState(t *testing.T) {
 	}
 }
 
-// go-modcache は世代を「現行 (go env GOMODCACHE)」と「それ以外」に分ける (issue 235)。
+// go-modcache は世代を「現行 (go env GOMODCACHE)」と「それ以外」に分ける。
 //
 // 🚨 分けていないと、`go clean -modcache` は 1 世代しか消さないのに走査は全世代を候補にするため、
 // 削除後の再走査に他の世代が残って **毎回必ず OutcomeIncomplete**「時間をおいて再スキャン」に

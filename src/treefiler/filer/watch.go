@@ -65,7 +65,7 @@ func (w *watcher) close() {
 	w.running = false
 	close(w.stop)
 	// 基準と溜まった変化を捨てる: 開き直すと木は読み直される (Refresh) ので、閉じる前の基準と比べると閉じていた間の変化が
-	// 偽の光で出た (監査で再現 2026-10-09。issue 691)。開き直した後の setDirs が木の中身から基準を取り直す
+	// 偽の光で出る (再現 2026-10-09)。開き直した後の setDirs が木の中身から基準を取り直す
 	w.seen = map[string]map[string]entrySig{}
 	w.pending = nil
 }
@@ -77,7 +77,7 @@ func (w *watcher) pause(p bool) {
 }
 
 // setDirs は見るフォルダを差し替える (開いているフォルダ)。base は初めて見るフォルダの基準 (木が読み込んだときの中身)。
-// 🚨 基準をポーリングの最初の観測にしない: 読み込んでから最初の観測 (最大 1 秒後) までの変化を取りこぼす (レビューの指摘 2026-10-08)
+// 🚨 基準をポーリングの最初の観測にしない: 読み込んでから最初の観測 (最大 1 秒後) までの変化を取りこぼす
 func (w *watcher) setDirs(dirs []string, base func(dir string) map[string]entrySig) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -146,7 +146,7 @@ func (w *watcher) loop(stop chan struct{}, ch chan struct{}) {
 }
 
 // poll は 1 周ぶん: dirs を読み (大きいフォルダは間引く)、基準と比べた変化を返す。metas は今の dirs のぶんだけを持つ新しい map で返す
-// (見なくなったフォルダの記録を捨てる。前の map を書き足していくと、開いて閉じたフォルダの数だけ伸び続けた。issue 728 の 1)。
+// (見なくなったフォルダの記録を捨てる。前の map を書き足していくと、開いて閉じたフォルダの数だけ伸び続ける)。
 func (w *watcher) poll(dirs []string, prev map[string]dirMeta) (map[string]dirMeta, map[string]map[string]entrySig, []dirChange) {
 	metas := make(map[string]dirMeta, len(dirs))
 	next := make(map[string]map[string]entrySig, len(dirs))
@@ -178,7 +178,7 @@ func (w *watcher) poll(dirs []string, prev map[string]dirMeta) (map[string]dirMe
 }
 
 // bigDirEntries を超えるフォルダは、フォルダ自身の mtime が変わらない限り bigDirEvery 周に 1 回だけ全部を読む。
-// 🚨 5 万件のフォルダは 1 回の readSig が 154ms で、毎秒読むと裏の CPU を 16% 前後使い続けた (監査で実測 2026-10-09。issue 693)。
+// 🚨 5 万件のフォルダは 1 回の readSig が 154ms で、毎秒読むと裏の CPU を 16% 前後使い続けた (実測 2026-10-09)。
 // 項目の追加・削除・名前の変更はフォルダの mtime に出るので次の周で読む。既存のファイルの書き換えは mtime に出ないので、最大 bigDirEvery 秒遅れて映る
 const (
 	bigDirEntries = 5000
@@ -250,7 +250,7 @@ func (w *watcher) commit(stop chan struct{}, next map[string]map[string]entrySig
 	}
 	for d := range w.seen {
 		// 閉じたフォルダは忘れる (開き直したら木の中身を基準にし直す)。🚨 今の want に在るものは消さない:
-		// この周の途中に setDirs が足した基準を、周の始めの一覧に無いからと消すと、開いた直後の変化を取りこぼした (issue 691)
+		// この周の途中に setDirs が足した基準を、周の始めの一覧に無いからと消すと、開いた直後の変化を取りこぼした
 		if _, ok := next[d]; !ok && !slices.Contains(w.want, d) {
 			delete(w.seen, d)
 		}

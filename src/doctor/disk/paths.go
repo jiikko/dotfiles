@@ -18,7 +18,7 @@ type Env struct {
 	AppDirs []string // orphan-container が .app を実走査するディレクトリ
 	// BrewPrefix は `brew --prefix` の実測値 ($BREW_PREFIX の展開に使う)。RealEnv では空で、
 	// scanEntry が brew を必要とするエントリの直前に解決して差す (Apple Silicon = /opt/homebrew,
-	// Intel = /usr/local。直書きすると Intel で候補 0 件に化ける: issue 176)。
+	// Intel = /usr/local。直書きすると Intel で候補 0 件に化ける)。
 	BrewPrefix string
 }
 
@@ -31,7 +31,7 @@ func RealEnv() Env {
 // escapeGlobMeta は環境変数由来の literal 部分を glob パターンとして解釈させないための escape。
 // filepath.Glob には Escape が無いので自前でやる (macOS なので `\` が escape 文字として効く)。
 // これをしないと HOME に `[` が入っているだけで Glob が 0 件を返し、実在するキャッシュが
-// 「候補なし」に化ける (issue 175 / false green)。
+// 「候補なし」に化ける (false green)。
 func escapeGlobMeta(s string) string {
 	// byte 単位で回す (rune で回すと不正 UTF-8 が U+FFFD に置換され、pattern が実バイト列と
 	// 食い違ってマッチしなくなる)。メタ文字はすべて ASCII なので継続バイトを誤爆しない。

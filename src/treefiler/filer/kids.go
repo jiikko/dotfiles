@@ -2,7 +2,7 @@ package filer
 
 // kids.go は「木に見せる子」(dotfile を隠す・カーソルへの経路は見せる。spec §5.5) と、その覚え。
 // 配置・描画・キーが毎フレーム・毎打鍵引くので、子の並びと見せ方が変わったときだけ作り直す (5 万件のフォルダで、絞り込みの
-// スライスを毎回作るのが残りの重さだった。issue 712)。
+// スライスを毎回作るのが残りの重さだった)。
 
 // hasKids は n に見える子がいるか (kids と同じ判定。描画で毎フレーム呼ぶので、スライスを作らずに数える)。
 func (m *Model) hasKids(n *node) bool {
@@ -67,7 +67,7 @@ func (m *Model) visOf(n *node) *visKids {
 	}
 	if v != nil && sameKids(m, n, v) {
 		// 並びも見せ方も変わらない作り直し (中身だけが変わったライブ更新の読み直し・labelMax): 世代を変えない。変えると全部を動かす
-		// 期間に入り、書き込みの続くファイルが 1 つある巨大なフォルダで毎秒 0.6 秒ずつ全件を動かした (敵対レビュー 3 周目)
+		// 期間に入り、書き込みの続くファイルが 1 つある巨大なフォルダで毎秒 0.6 秒ずつ全件を動かした
 		v.ver, v.first, v.n, v.all, v.pathKid, v.labMax = n.kidsVer, first, len(n.kids), m.set.ShowHidden, pk, labelMax
 		v.maxName = 0
 		for _, k := range v.kids {

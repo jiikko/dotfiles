@@ -233,7 +233,7 @@ func TestExcludedRootForResolvesTemplates(t *testing.T) {
 }
 
 // カタログ側の配線を pin する。guard を落とす / glob を広げる退行は、guard の中身を
-// 試すテストでは**原理的に検出できない** (敵対レビュー 2026-09-04)。
+// 試すテストでは**原理的に検出できない**。
 func TestCatalogChromiumEntryIsWired(t *testing.T) {
 	var found bool
 	for _, e := range catalog {

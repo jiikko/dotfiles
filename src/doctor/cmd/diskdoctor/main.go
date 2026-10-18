@@ -49,9 +49,9 @@ func run() int {
 }
 
 // emit は出力して終了コードを返す。**出力の分岐の外**で終了コードを決めるのが要点
-// (cmd/svcdoctor/main.go の同名関数と同じ理由: issue 177 (b))。
+// (cmd/svcdoctor/main.go の同名関数と同じ理由)。
 func emit(rep disk.Report, env disk.Env, jsonOut bool, now time.Time, stdout, stderr io.Writer) int {
-	// 🚨 終了コードは**人が見た内容**から決める (issue 228 の敵対レビュー 2026-09-04)。
+	// 🚨 終了コードは**人が見た内容**から決める。
 	// 無害化は「名前に制御文字を含む対象」を一覧から落とすので、無害化前の Report で数えると
 	// 隠したものがあるのに rc=1 (候補あり) になり、「検査できなかったを緑にしない」が崩れる
 	// (落としたことは Failures に残るので、その Failures を diskExitCode が見る形にする)。
