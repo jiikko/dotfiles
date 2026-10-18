@@ -13,6 +13,8 @@
 - **パイプの終端の status を見ない** (`cmd | tail` の `$?` は `tail` の status)。`set -o pipefail` を使うか、リダイレクトしてから rc を取る
   - 🚨 **成否で後段を走らせる `&&` のつなぎを書いた瞬間にも発動する**。`git push ... 2>&1 | tail -2 && <後段>` は push が落ちても後段が走る。
     前段は `> log 2>&1; rc=$?` で取り、`[ $rc -eq 0 ] || exit 1` で止めてから出力を読む
+    (検査 (make / go test / lint 等) の出力を tail / head / grep に通して `&&` で commit / push へ繋ぐ形は、PreToolUse の
+    `_claude/hooks/deny-piped-push-then-destroy.sh` が止める。字面で見る粗い判定で、検出しない形は hook の冒頭)
 - **検証コマンドの出力を `tail` / `head` / `grep` で削って読まない。ファイルへ落としてから読む** (削ると失敗の原因そのものが消え、再実行で緑なら追えない)
   - **stdout / stderr を分けたら両方読む**
 

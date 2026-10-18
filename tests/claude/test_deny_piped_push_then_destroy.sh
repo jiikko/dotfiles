@@ -57,6 +57,21 @@ expect() { # expect <deny|allow> <説明> <command>
   fi
 }
 
+# --- 2 の形: 検査の出力をパイプに通したまま && で commit / push --------------------------------------------
+expect deny "lint を tail に通して commit (retro 831 の形)" 'make -C src/mac-lan-manager lint 2>&1 | tail -1 && git status --short && git commit -q -F - -- a <<'"'"'M'"'"'
+msg
+M'
+expect deny "go test を tail に通して push" 'go test ./... | tail -3 && git push origin HEAD:master'
+expect deny "環境変数付きの go test を grep に通して git -C で commit" 'GOFLAGS=-mod=readonly go -C src/x test ./... 2>&1 | grep -E "^ok" && git -C /x commit -q -m y -- a' # pipefail-grep-q: allow 検査に渡すコマンドの文字列 (実行しない)
+expect deny "cd の後の検査を head に通して commit" 'cd src && make test | head -5 && echo ok && git commit -m z -- a'
+expect allow "pipefail を先に立てた形" 'set -o pipefail; make lint | tail -1 && git commit -m x -- a'
+expect allow "rc を直接取ってから繋ぐ形" 'make lint > log 2>&1; rc=$?; tail -2 log; [ $rc -eq 0 ] && git commit -m x -- a'
+expect allow "検査でない git log を head に通して commit" 'git log --oneline | head -3 && git commit -m x -- a'
+expect allow "; で繋いだ形 (成否で止める意図が無い)" 'make lint | tail -1; git commit -m x -- a'
+expect allow "commit message の heredoc の本文の中の並び" 'git commit -F - -- a <<'"'"'M'"'"'
+make lint | tail -1 && git commit
+M'
+
 # --- deny: push の rc がパイプに隠れたまま削除が走る ---------------------------------
 expect deny "実際に踏んだ形 (retro 450)" \
   'git fetch -q && git rebase -q origin/master && git push origin HEAD:master 2>&1 | tail -1 && git -C ~/dotfiles pull -q --rebase && git -C ~/dotfiles worktree remove --force ~/dotfiles-wt-x && echo removed'

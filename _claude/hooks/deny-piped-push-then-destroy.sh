@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 #
-# PreToolUse(Bash) フック: push の結果をパイプに通したまま、worktree / branch を消す Bash を deny する。
+# PreToolUse(Bash) フック: rc をパイプに隠したまま、その成否で後段を走らせる Bash を deny する。2 つの形を見る:
+#   1. push の結果をパイプに通したまま、worktree / branch を消す
+#   2. 検査 (make / go test / lint 等) の出力を tail / head / grep に通したまま、`&&` で git commit / push へ繋ぐ
+#      (`make lint 2>&1 | tail -1 && … && git commit` は lint が赤くても commit が走る)
+# (ファイル名は 1 の形だけだったころのまま。settings.json の command が実体パスを指すので、改名すると古い版で起動した session が
+#  消えたパスを指す)
 #
 # なぜ: `git push … | tail -1 && … && git worktree remove …` は、push の rc がパイプの終端 (tail) の rc にすり替わるので、
 # push が non-fast-forward で弾かれても後段が走り、**未 push の commit を持つ worktree を消す** (実際に 2 回踏んだ。
@@ -29,9 +34,11 @@
 #   - `set -o pipefail` / `PIPESTATUS[` があれば通す (push より後ろで set する・別の rc を見る、の誤用は見分けない)
 #   - `git` 以外の push (`hub push` 等)、引用符で書いた `"git"`、git のオプションの値に空白を含む形の一部
 #   - 算術の `<<n` の後ろに、区切り語と同じ語だけの行がある形 (heredoc と読んで、間の行を落とす)
+#   - 2 の形: 検査の語の一覧 (CHECK) に無いコマンド (自作のスクリプト・`bash tests/x.sh`・`bin/…`) / 検査と commit を `;` で繋いだ形
+#     (成否で止める意図が無い) / tail・head・grep 以外のパイプの終端 (`| cat` 等) / commit を変数・関数・別の呼び出しに分けた形
 #
 # ## 分かっていて受ける偽陽性 (字面で見る代わり)
-#   - 引用符の中・コメントの中に同じ並びを書いた形 (`echo "git push | tail && git worktree remove"`)。commit message は heredoc で渡せば当たらない
+#   - 引用符の中・コメントの中に同じ並びを書いた形 (`echo "git push | tail && git worktree remove"`)。2 の形も同じ (`-m "make x | tail && git commit"`)。commit message は heredoc で渡せば当たらない
 #     (heredoc の本文は、終わりの区切りが見つかるときだけ落とす。見つからない `<<` (算術の `$((1<<n))` 等) は heredoc とみなさない)
 #
 # ## 判定できないときは拒否に倒す (fail-closed)
@@ -50,10 +57,13 @@ hook_read_bash_command || exit 0
 cmd=$HOOK_CMD
 [ -n "$cmd" ] || exit 0
 
-# 速い経路: 止める形は必ず push とパイプと worktree / branch を含む。含まないものは解析に入れない (判定は変えない)
-case "$cmd" in *push*) ;; *) exit 0 ;; esac
+# 速い経路: 止める形は必ずパイプと、1 なら push と worktree / branch、2 なら && と commit / push を含む。含まないものは解析に入れない (判定は変えない)
 case "$cmd" in *'|'*) ;; *) exit 0 ;; esac
-case "$cmd" in *worktree* | *branch*) ;; *) exit 0 ;; esac
+case "$cmd" in
+  *push*worktree* | *push*branch* | *worktree*push* | *branch*push*) ;;
+  *'&&'*commit* | *'&&'*push*) ;;
+  *) exit 0 ;;
+esac
 
 REASON="git push の出力をパイプに通したまま、後ろで worktree / branch を消しています。パイプの rc は終端 (tail 等) のものなので、push が弾かれても削除が走り、未 push の commit を失います (retro 266 / 450 で 2 回実害)。push の rc を直接取ってから繋いでください: git push … > <log> 2>&1; rc=\$?; tail -2 <log>; [ \$rc -eq 0 ] && git worktree remove … (または set -o pipefail を先に)。引用符やコメントの中の文言で止まったなら、commit message 等は heredoc で渡してください。規範: _claude/rules/verify-execution-not-just-exit-code.md"
 
@@ -135,6 +145,15 @@ PUSH="${GIT}push([^[:alnum:]_.|;&${NL}-][^|;&${NL}]*)?\\|([^|]|\$)"
 DESTROY="${GIT}(worktree([[:blank:]]+-[^[:space:]]+)*[[:blank:]]+(remove|rm)([^[:alnum:]_-]|\$)|branch([[:blank:]]+[^[:space:]|;&]+)*[[:blank:]]+(-[acCfilmMqrtuv]*[dD][acCdDfilmMqrtuv]*|--d(e(l(e(te?)?)?)?)?)([^[:alnum:]_-]|\$))"
 if [[ "$text" =~ ${PUSH}.*${DESTROY} ]]; then
   hook_deny "$REASON"
+fi
+
+# 2. 検査の出力を tail / head / grep に通したまま && で commit / push。検査の語はパイプの左の単純コマンドの先頭の語で見る
+# (git log / git diff --stat を tail に通して commit するのは止めない)。検査の後ろに && を挟まず ; で繋いだ形は、成否で止める意図が無いので見ない
+CHECK='(make|go|golangci-lint|shellcheck|swift|xcodebuild|npm|pnpm|yarn|npx|pytest|cargo|bats|ruff|mypy|eslint|tsc)'
+PIPED_CHECK="(^|[;&|(\{${NL}])[[:blank:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:blank:]]+)*${CHECK}([[:blank:]][^|;&${NL}]*)?\|[[:blank:]]*(tail|head|grep)([[:blank:]][^;&|${NL}]*)?&&"
+COMMIT="${GIT}(commit|push)([^[:alnum:]_-]|\$)"
+if [[ "$text" =~ ${PIPED_CHECK}.*${COMMIT} ]]; then
+  hook_deny "検査の出力を tail / head / grep に通したまま、&& で git commit / push へ繋いでいます。パイプの rc は終端 (tail 等) のものなので、検査が赤くても commit / push が走ります (retro 831 で lint が赤いまま commit した)。検査の rc を直接取ってから繋いでください: make lint > <log> 2>&1; rc=\$?; tail -2 <log>; [ \$rc -eq 0 ] && git commit … (または set -o pipefail を先に)。規範: _claude/rules/verify-execution-not-just-exit-code.md"
 fi
 
 exit 0
