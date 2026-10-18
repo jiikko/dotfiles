@@ -2,6 +2,7 @@ package lanmgr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -33,16 +34,64 @@ type speedResult struct {
 	link netinfo.Link
 }
 
-// askSpeed は t (通信速度を測る) の確認の板を出す。帯域を使い切るので必ず板を通し、Enter では実行しない (行を選んで Enter を
-// 打ち続けても流れない)。測るのは管理対象の相手だけ (未管理は初期設定の前で鍵で入れないことが多い。ユーザー決定 2026-10-18)。
-func (m *Model) askSpeed(r row) {
+// SpeedTarget は通信速度を測る相手 1 台。画面の t と CLI の speedtest が同じ規則 (speedTarget) で決める。Refusal が空でなければ測らない。
+type SpeedTarget struct {
+	Host    string // 台帳の鍵
+	Name    string // 別名 (無ければ Host)
+	Dest    setup.Dest
+	Link    netinfo.Link
+	Refusal string
+}
+
+// speedTarget は r を測るときの宛先と経路 (測れなければ Refusal)。測るのは管理対象の相手だけ (未管理は初期設定の前で鍵で入れないことが
+// 多い。ユーザー決定 2026-10-18)。
+func (m *Model) speedTarget(r row) SpeedTarget {
+	t := SpeedTarget{Host: r.host, Name: or(r.alias, r.host)}
 	switch {
 	case r.self:
-		m.note("この Mac 自身は測らない", false)
-		return
+		t.Refusal = "この Mac 自身は測らない"
+		return t
 	case !r.managed:
-		m.note("通信速度は管理対象の Mac だけ測る (台帳に登録してから)", false)
-		return
+		t.Refusal = "通信速度は管理対象の Mac だけ測る (台帳に登録してから)"
+		return t
+	}
+	if why := m.sshRefusal(r); why != "" {
+		t.Refusal = why
+		return t
+	}
+	user, _ := m.userFor(r)
+	// 宛先は繋ぐ IP (内部 IP を優先 = 有線を測る)。有線の名前は引いた先が同じ内部 IP なので、IP で測る (setup.Dest は IPv4 だけを通す)
+	t.Dest = setup.Dest{User: user, IP: r.connectIP(), HostKeyAlias: r.host}
+	if err := t.Dest.Validate(); err != nil {
+		t.Refusal = "測れない: " + err.Error()
+		return t
+	}
+	t.Link = m.connectLink(r)
+	return t
+}
+
+// SpeedTargets は管理対象の相手を一覧の順に返す (CLI の speedtest)。この Mac のネットワークを読めていなければ nil と理由
+// (宛先の分類ができず、Wi-Fi の IP を有線として測りうる)。
+func (m *Model) SpeedTargets() ([]SpeedTarget, error) {
+	if !m.selfOK {
+		if m.selfErr != nil {
+			return nil, fmt.Errorf("この Mac のネットワークを読めない: %w", m.selfErr)
+		}
+		return nil, errors.New("この Mac のネットワークを読み終えていない")
+	}
+	var out []SpeedTarget
+	for _, r := range m.rows() {
+		if !r.self && r.managed {
+			out = append(out, m.speedTarget(r))
+		}
+	}
+	return out, nil
+}
+
+// askSpeed は t (通信速度を測る) の確認の板を出す。帯域を使い切るので必ず板を通し、Enter では実行しない (行を選んで Enter を
+// 打ち続けても流れない)。
+func (m *Model) askSpeed(r row) {
+	switch {
 	case m.o.SpeedTest == nil:
 		m.note("この画面では通信速度を測れない", false)
 		return
@@ -50,18 +99,12 @@ func (m *Model) askSpeed(r row) {
 		m.note("測定中 ("+m.speedRun.host+")。終わってから", false)
 		return
 	}
-	if why := m.sshRefusal(r); why != "" {
-		m.note(why, false)
+	t := m.speedTarget(r)
+	if t.Refusal != "" {
+		m.note(t.Refusal, false)
 		return
 	}
-	user, _ := m.userFor(r)
-	// 宛先は繋ぐ IP (内部 IP を優先 = 有線を測る)。有線の名前は引いた先が同じ内部 IP なので、IP で測る (setup.Dest は IPv4 だけを通す)
-	d := setup.Dest{User: user, IP: r.connectIP(), HostKeyAlias: r.host}
-	if err := d.Validate(); err != nil {
-		m.note("測れない: "+err.Error(), false)
-		return
-	}
-	link := m.connectLink(r)
+	d, link := t.Dest, t.Link
 	via := d.IP
 	if l := link.Label(); l != "" {
 		via += " (" + l + ")"

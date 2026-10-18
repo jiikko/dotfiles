@@ -190,3 +190,23 @@ func awaitSpeed(t *testing.T, m *Model) {
 		runtime.Gosched()
 	}
 }
+
+// 最下行の案内に t を出すのは、t が効く行 (管理対象で測れる相手) だけ。未管理の行と、測る口が無い画面 (SpeedTest が nil) には出さない。
+func TestSpeedFooterHint(t *testing.T) {
+	h, _ := speedHarness(t)
+	h.cursorTo(t, "m2macmini.local")
+	if foot := termwidth.StripSGR(h.m.footer()); !strings.Contains(foot, "t 速度") {
+		t.Errorf("測れる管理対象の行で t を案内しない: %q", foot)
+	}
+	h.keys("l")
+	h.cursorTo(t, "air.local")
+	if foot := termwidth.StripSGR(h.m.footer()); strings.Contains(foot, "t 速度") {
+		t.Errorf("未管理の行で t を案内した: %q", foot)
+	}
+	h.keys("h")
+	h.cursorTo(t, "m2macmini.local")
+	h.m.o.SpeedTest = nil
+	if foot := termwidth.StripSGR(h.m.footer()); strings.Contains(foot, "t 速度") {
+		t.Errorf("測る口が無いのに t を案内した: %q", foot)
+	}
+}

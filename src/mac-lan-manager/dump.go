@@ -48,15 +48,8 @@ func runDump(args []string, stdout, stderr io.Writer, now func() time.Time, stop
 	m.Resize(200, 50)
 	_ = m.View()
 	tm.FirstView = now().Sub(t)
-	deadline := start.Add(*wait)
-	for m.Advance(now()); m.Busy() && now().Before(deadline); m.Advance(now()) {
-		tm.observe(m.Report(), now().Sub(start))
-		select { // 走査の合図か、刻み (ネットワークの読み込みは合図を出さないので刻みで見る)
-		case <-m.Changed():
-		case <-time.After(20 * time.Millisecond):
-		case <-stop: // SIGINT / SIGTERM / SIGHUP: 待ちを打ち切り、defer の Close で dns-sd を止めてから戻る (監査の指摘)
-			return 130
-		}
+	if !settle(m, now, start.Add(*wait), stop, func() { tm.observe(m.Report(), now().Sub(start)) }) {
+		return 130
 	}
 	rep := m.Report()
 	tm.observe(rep, now().Sub(start))
@@ -248,6 +241,23 @@ func dumpPeer(d setup.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan s
 		}
 	}
 	return 0
+}
+
+// settle は裏の読み込み・走査が終わるか deadline まで Advance を回す (each は 1 周ごと。nil でよい)。stop が来たら false
+// (SIGINT / SIGTERM / SIGHUP: 待ちを打ち切る。呼び出し側の defer の Close で dns-sd を止めてから戻る)。
+func settle(m *lanmgr.Model, now func() time.Time, deadline time.Time, stop <-chan struct{}, each func()) bool {
+	for m.Advance(now()); m.Busy() && now().Before(deadline); m.Advance(now()) {
+		if each != nil {
+			each()
+		}
+		select { // 走査の合図か、刻み (ネットワークの読み込みは合図を出さないので刻みで見る)
+		case <-m.Changed():
+		case <-time.After(20 * time.Millisecond):
+		case <-stop:
+			return false
+		}
+	}
+	return true
 }
 
 func or(a, b string) string {

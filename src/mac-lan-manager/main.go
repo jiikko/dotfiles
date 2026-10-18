@@ -160,6 +160,7 @@ func (a *app) View() tea.View {
 const usage = `usage: mac-lan-manager
        mac-lan-manager dump [--json] [--wait 8s]
        mac-lan-manager dump --peer <IP> [--user <name>] [--host <Bonjour のホスト名>] [--json]
+       mac-lan-manager speedtest [--json] [--wait 8s] [<ホスト名か別名>...]
 
 手元の Mac 同士を、ネットに繋がっていない有線の LAN (内部の網) で繋いで管理する。
 Bonjour で見えている Mac と台帳 (~/.config/mac-lan-manager/hosts.toml) の Mac を一覧にする。
@@ -169,6 +170,10 @@ dump は画面を出さずに、この Mac の網・一覧 (画面と同じ判�
 読むだけ (台帳・設定・操作のログに書かない。初回だけ旧い置き場から移す。デバッグ用)。Bonjour の走査が終わるか --wait の上限まで待つ。
 dump --peer は相手を鍵だけの ssh で読み、鍵で入れるかと相手のルーターの無い有線のサービスを出す (読むだけ。上限 15 秒)。
 --user の既定は $USER、--host (known_hosts の鍵の名前) の既定は IP。
+
+speedtest は管理対象の相手 (引数を渡せばその相手だけ) との通信速度を ssh 越しに 1 台ずつ測る (画面の t と同じ宛先・同じ測り方。
+上り・下り各 5 秒、その間は回線をほぼ使い切る。確認は出さない)。有線で 100 Mbps 付近なら頭打ちの疑いを出す。
+終了コード: 0 = 全部測れた / 1 = 測れない相手がいた / 2 = 引数の誤り・管理対象に無い相手 / 130 = 止められた。
 `
 
 func main() {
@@ -187,6 +192,18 @@ func main() {
 				o.Log = nil // dump は読むだけ: 操作のログ (~/Library/Logs) に reload や知らせを書かない
 				return lanmgr.New(o), nil
 			}, live.Observe)
+			cancel()
+			os.Exit(rc)
+		case "speedtest":
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+			rc := runSpeed(os.Args[2:], os.Stdout, os.Stderr, time.Now, ctx.Done(), func() (*lanmgr.Model, error) {
+				o, err := live.Options()
+				if err != nil {
+					return nil, err
+				}
+				o.Log = nil // 結果は stdout に出す。操作のログ (~/Library/Logs) に reload や知らせを書かない
+				return lanmgr.New(o), nil
+			}, live.SpeedTest)
 			cancel()
 			os.Exit(rc)
 		}

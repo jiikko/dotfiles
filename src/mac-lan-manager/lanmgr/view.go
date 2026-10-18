@@ -116,6 +116,9 @@ func (m *Model) footer() string {
 			if r.smb {
 				hs = append(hs, keyHint{"y", "smb", 6}, keyHint{"O", "Finder で繋ぐ", 12})
 			}
+			if m.o.SpeedTest != nil && m.speedTarget(r).Refusal == "" { // 案内と効くキーを同じ述語にする (t は speedTarget で断る)
+				hs = append(hs, keyHint{"t", "速度", 9})
+			}
 		}
 		hs = append(hs, keyHint{"h/l", "タブ", 10}, keyHint{"space", "台帳", 8}, keyHint{"c", "この Mac の IP", 9},
 			keyHint{",", "設定", 11}, keyHint{"?", "全部のキー", 2}, keyHint{"q", "閉じる", 1})
