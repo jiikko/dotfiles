@@ -2,7 +2,7 @@
 #
 # PreToolUse(Bash) フック: rc をパイプに隠したまま、その成否で後段を走らせる Bash を deny する。2 つの形を見る:
 #   1. push の結果をパイプに通したまま、worktree / branch を消す
-#   2. 検査 (make / go test / lint 等) の出力を tail / head / grep に通したまま、`&&` で git commit / push へ繋ぐ
+#   2. 検査 (make / go test / lint 等) の出力をパイプに通したまま、`&&` で git commit / push へ繋ぐ
 #      (`make lint 2>&1 | tail -1 && … && git commit` は lint が赤くても commit が走る)
 # (ファイル名は 1 の形だけだったころのまま。settings.json の command が実体パスを指すので、改名すると古い版で起動した session が
 #  消えたパスを指す)
@@ -34,11 +34,14 @@
 #   - `set -o pipefail` / `PIPESTATUS[` があれば通す (push より後ろで set する・別の rc を見る、の誤用は見分けない)
 #   - `git` 以外の push (`hub push` 等)、引用符で書いた `"git"`、git のオプションの値に空白を含む形の一部
 #   - 算術の `<<n` の後ろに、区切り語と同じ語だけの行がある形 (heredoc と読んで、間の行を落とす)
-#   - 2 の形: 検査の語の一覧 (CHECK) に無いコマンド (自作のスクリプト・`bash tests/x.sh`・`bin/…`) / 検査と commit を `;` で繋いだ形
-#     (成否で止める意図が無い) / tail・head・grep 以外のパイプの終端 (`| cat` 等) / commit を変数・関数・別の呼び出しに分けた形
+#   - 2 の形: 検査の語の一覧 (CHECK) に無いコマンド (自作のスクリプト・`bash tests/x.sh`・`bin/` の検査) / 前置きの一覧 (runtimeout・env・
+#     time・nice) に無い前置き / 検査と commit を `;` で繋いだ形 (成否で止める意図が無い) / `if 検査 | tail; then git commit; fi` のように && を
+#     使わずに成否で分ける形 / commit を変数・関数・別の呼び出しに分けた形
 #
 # ## 分かっていて受ける偽陽性 (字面で見る代わり)
-#   - 引用符の中・コメントの中に同じ並びを書いた形 (`echo "git push | tail && git worktree remove"`)。2 の形も同じ (`-m "make x | tail && git commit"`)。commit message は heredoc で渡せば当たらない
+#   - 引用符の中・コメントの中に同じ並びを書いた形 (`echo "git push | tail && git worktree remove"`)。2 の形も同じ (`-m "make x | tail && git commit"`)。
+#   - 2 の形: 検査の語で始まるが検査でないコマンド (`go version | head -1 && git commit` / `make -n … | head` / `npm view … | head`)。rc を見ない
+#     パイプは正しい形でも止める (直し方は rc を取るか pipefail を先に立てる、で同じ)commit message は heredoc で渡せば当たらない
 #     (heredoc の本文は、終わりの区切りが見つかるときだけ落とす。見つからない `<<` (算術の `$((1<<n))` 等) は heredoc とみなさない)
 #
 # ## 判定できないときは拒否に倒す (fail-closed)
@@ -71,7 +74,7 @@ REASON="git push の出力をパイプに通したまま、後ろで worktree / 
 # ${#} はロケールによって文字数だが、ここは粗い上限なので文字数でよい
 MAX_RAW=1048576
 if [ "${#cmd}" -gt "$MAX_RAW" ]; then
-  hook_deny "入力が大きすぎて (${#cmd} > $MAX_RAW) 静的検査を上限の時間内に終えられる保証が無い。push とパイプと worktree / branch を含むため保守的に拒否した。push と削除を別の呼び出しに分けること"
+  hook_deny "入力が大きすぎて (${#cmd} > $MAX_RAW) 静的検査を上限の時間内に終えられる保証が無い。パイプと、その後ろで走る push / worktree・branch の削除 / commit を含むため保守的に拒否した。パイプを通す処理と後段を別の呼び出しに分けること"
 fi
 
 # 行継続 (`\` + 改行) を空白に畳む (sed を使わない: BSD sed の方言差でフックが静かに無力化する。deny-bare-tmux-kill.sh の注記)
@@ -116,7 +119,7 @@ fi
 MAX_SCAN_BYTES=131072
 body_bytes=$(LC_ALL=C; printf '%s' "${#body}") # 🚨 UTF-8 のロケールでは ${#} は文字数 (4 byte の文字で上限が 4 倍に膨らむ)。byte で数える
 if [ "$body_bytes" -gt "$MAX_SCAN_BYTES" ]; then
-  hook_deny "入力が大きすぎて (heredoc の本文を除いて ${body_bytes} byte > $MAX_SCAN_BYTES) 静的検査を上限の時間内に終えられる保証が無い。push とパイプと worktree / branch を含むため保守的に拒否した。push と削除を別の呼び出しに分けること"
+  hook_deny "入力が大きすぎて (heredoc の本文を除いて ${body_bytes} byte > $MAX_SCAN_BYTES) 静的検査を上限の時間内に終えられる保証が無い。パイプと、その後ろで走る push / worktree・branch の削除 / commit を含むため保守的に拒否した。パイプを通す処理と後段を別の呼び出しに分けること"
 fi
 
 # push の rc を見ている形は通す (「検出しない形」: 誤用は見分けない)。pipefail は set の引数として書いた形だけ (ブランチ名の中の pipefail で通さない)
@@ -147,13 +150,17 @@ if [[ "$text" =~ ${PUSH}.*${DESTROY} ]]; then
   hook_deny "$REASON"
 fi
 
-# 2. 検査の出力を tail / head / grep に通したまま && で commit / push。検査の語はパイプの左の単純コマンドの先頭の語で見る
-# (git log / git diff --stat を tail に通して commit するのは止めない)。検査の後ろに && を挟まず ; で繋いだ形は、成否で止める意図が無いので見ない
+# 2. 検査の出力をパイプに通したまま && で commit / push。検査の語はパイプの左の単純コマンドの先頭の語で見る (git log / git diff --stat を
+# パイプに通して commit するのは止めない)。終端の道具を tail / head / grep に限らない: 検査の後ろにパイプがあれば、終端が何でも rc は隠れる
+# (限ると `| tee log | tail` / `|&` / `grep -E "a|b"` の引用符の中の | で素通りした)。検査と && の間に ; / 改行 / & 1 つを挟んだ形は見ない
+# (成否で止める意図が無い・背景に回した)。前置き (runtimeout <秒> / env / time / nice) と絶対パス・相対パスの検査も見る
 CHECK='(make|go|golangci-lint|shellcheck|swift|xcodebuild|npm|pnpm|yarn|npx|pytest|cargo|bats|ruff|mypy|eslint|tsc)'
-PIPED_CHECK="(^|[;&|(\{${NL}])[[:blank:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:blank:]]+)*${CHECK}([[:blank:]][^|;&${NL}]*)?\|[[:blank:]]*(tail|head|grep)([[:blank:]][^;&|${NL}]*)?&&"
-COMMIT="${GIT}(commit|push)([^[:alnum:]_-]|\$)"
+PREFIX='(([^[:space:]|;&]*/)?runtimeout[[:blank:]]+[0-9.]+[[:blank:]]+|env([[:blank:]]+-[^[:space:]]+)*([[:blank:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*[[:blank:]]+|time[[:blank:]]+|nice([[:blank:]]+-n[[:blank:]]*[0-9]+)?[[:blank:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:blank:]]+)*'
+PIPED_CHECK="(^|[;&|(\\{${NL}])[[:blank:]]*${PREFIX}([^[:space:]|;&]*/)?${CHECK}([[:blank:]][^|;&${NL}]*)?\\|(&|[^;&${NL}])*&&"
+# commit / push は git の副コマンドの位置だけで見る (間に置けるのは - で始まるオプションと -C / -c の値。`git stash push` / `git log -- commit` を止めない)
+COMMIT="(^|[^[:alnum:]_.-])git([[:blank:]]+-[Cc][[:blank:]]+[^[:space:]]+|[[:blank:]]+-[^[:space:]]+)*[[:blank:]]+(commit|push)([^[:alnum:]_-]|\$)"
 if [[ "$text" =~ ${PIPED_CHECK}.*${COMMIT} ]]; then
-  hook_deny "検査の出力を tail / head / grep に通したまま、&& で git commit / push へ繋いでいます。パイプの rc は終端 (tail 等) のものなので、検査が赤くても commit / push が走ります (retro 831 で lint が赤いまま commit した)。検査の rc を直接取ってから繋いでください: make lint > <log> 2>&1; rc=\$?; tail -2 <log>; [ \$rc -eq 0 ] && git commit … (または set -o pipefail を先に)。規範: _claude/rules/verify-execution-not-just-exit-code.md"
+  hook_deny "検査の出力をパイプに通したまま、&& で git commit / push へ繋いでいます。パイプの rc は終端 (tail 等) のものなので、検査が赤くても commit / push が走ります (retro 831 で lint が赤いまま commit した)。検査の rc を直接取ってから繋いでください: make lint > <log> 2>&1; rc=\$?; tail -2 <log>; [ \$rc -eq 0 ] && git commit … (または set -o pipefail を先に)。規範: _claude/rules/verify-execution-not-just-exit-code.md"
 fi
 
 exit 0

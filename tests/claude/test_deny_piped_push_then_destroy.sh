@@ -64,6 +64,16 @@ M'
 expect deny "go test を tail に通して push" 'go test ./... | tail -3 && git push origin HEAD:master'
 expect deny "環境変数付きの go test を grep に通して git -C で commit" 'GOFLAGS=-mod=readonly go -C src/x test ./... 2>&1 | grep -E "^ok" && git -C /x commit -q -m y -- a' # pipefail-grep-q: allow 検査に渡すコマンドの文字列 (実行しない)
 expect deny "cd の後の検査を head に通して commit" 'cd src && make test | head -5 && echo ok && git commit -m z -- a'
+expect deny "|& で繋いだ形" 'go test ./... |& tail -5 && git commit -m x -- a'
+expect deny "grep の引用符の中に | がある形" 'make test 2>&1 | grep -E "FAIL|ok" && git commit -m x -- a' # pipefail-grep-q: allow 検査に渡すコマンドの文字列 (実行しない)
+expect deny "パイプが 2 段の形 (grep -v | head)" 'go test ./... 2>&1 | grep -v "^ok" | head -20 && git commit -m x -- a' # pipefail-grep-q: allow 検査に渡すコマンドの文字列 (実行しない)
+expect deny "tee を挟んだ形" 'make lint | tee log | tail -1 && git commit -m x -- a'
+expect deny "runtimeout の前置き" 'bin/runtimeout 600 make test | tail && git commit -m x -- a'
+expect deny "env の前置き" 'env GOFLAGS=-mod=readonly go test ./... | tail && git commit -m x -- a'
+expect deny "絶対パスの検査" '/opt/homebrew/bin/golangci-lint run | tail && git push origin HEAD:master'
+expect allow "検査と && の間に ; がある形" 'make lint | tail -1; echo done && git commit -m x -- a'
+expect allow "git stash push (commit / push の副コマンドでない)" 'make lint | tail && git stash push -m wip'
+expect allow "git log の引数の commit" 'make lint | tail && git log --oneline -- commit'
 expect allow "pipefail を先に立てた形" 'set -o pipefail; make lint | tail -1 && git commit -m x -- a'
 expect allow "rc を直接取ってから繋ぐ形" 'make lint > log 2>&1; rc=$?; tail -2 log; [ $rc -eq 0 ] && git commit -m x -- a'
 expect allow "検査でない git log を head に通して commit" 'git log --oneline | head -3 && git commit -m x -- a'
