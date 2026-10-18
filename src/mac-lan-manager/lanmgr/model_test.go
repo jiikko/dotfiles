@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"time"
 
@@ -964,6 +965,30 @@ func TestListTableFitsWidth(t *testing.T) {
 	for w := 30; w <= 140; w += 5 {
 		for i, l := range strings.Split(h.m.listTable(w, 10), "\n") {
 			if lw := termwidth.Of(l); lw > w {
+				t.Errorf("幅 %d: %d 行目が %d 桁 (%q)", w, i, lw, termwidth.StripSGR(l))
+			}
+		}
+	}
+}
+
+// 一覧が窓に収まらないときだけ右端にスクロールバーを置く。バーがあっても表のどの行も渡した幅を超えず、見出しと罫線も同じ幅に揃う。
+func TestListTableScrollbarOnlyWhenOverflow(t *testing.T) {
+	long := discover.Peer{Host: "studio.local", Instances: []string{"小嶋の Mac Studio (仕事用・2 階の奥の部屋)"}, SSH: true, VNC: true, SMB: true,
+		Addrs: map[int]string{14: "192.168.50.254", 27: "169.254.9.9"}}
+	h := newHarness(t, nil, []discover.Peer{mini, long})
+	h.m.pf.ShowOthers = true
+	h.keys("l")
+	hasBar := func(s string) bool { return strings.Contains(s, layout.ScrollbarThumb) }
+	if hasBar(h.m.listTable(80, 10)) {
+		t.Errorf("窓に収まるのにバーが出ている")
+	}
+	for w := minWidth; w <= 140; w += 5 { // minWidth: 画面を組む最小の幅 (これ未満は View が表を出さない)
+		out := h.m.listTable(w, 1) // 2 行以上を 1 行の窓に入れる = 収まらない
+		if !hasBar(out) {
+			t.Errorf("幅 %d: 収まらないのにバーが無い", w)
+		}
+		for i, l := range strings.Split(out, "\n") {
+			if lw := termwidth.Of(l); lw != w {
 				t.Errorf("幅 %d: %d 行目が %d 桁 (%q)", w, i, lw, termwidth.StripSGR(l))
 			}
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
@@ -430,6 +431,13 @@ func (m *Model) bodyHeight() int { return max(max(m.h, 10)-2*padY-2, 1) }
 func (m *Model) listTable(width, maxRows int) string {
 	vis := m.visible()
 	cur := min(m.cur[m.tab], len(vis)-1)
+	// 窓に収まらない (1 ページで出せない) ときだけ右端にスクロールバーを置く。バーの分 (layout.ScrollbarWidth) を先に引いて表を組む
+	// (幅ぴったりに組むと、全幅の行だけ末尾が … に化ける)。見出しと罫線はバー列を持たないので、outer の幅へ揃える
+	outer := width
+	scroll := len(vis) > maxRows && outer > layout.ScrollbarWidth
+	if scroll {
+		width -= layout.ScrollbarWidth
+	}
 	cols := m.columns()
 	used, fitAt := 0, -1
 	for i, c := range cols {
@@ -525,7 +533,7 @@ func (m *Model) listTable(width, maxRows int) string {
 		}
 		return lipgloss.JoinHorizontal(lipgloss.Top, out...)
 	}
-	lines := []string{render(-1, nil), sMuted.Render(strings.Repeat("─", width))}
+	lines := []string{render(-1, nil) + termwidth.PadSpaces(outer-width), sMuted.Render(strings.Repeat("─", outer))}
 	if len(vis) == 0 {
 		return strings.Join(append(lines, sDim.Render("  "+m.emptyTabNote())), "\n")
 	}
@@ -536,10 +544,14 @@ func (m *Model) listTable(width, maxRows int) string {
 		m.listOff[m.tab] = from
 		to = from + maxRows
 	}
+	body := make([]string, 0, to-from)
 	for i := from; i < to; i++ {
-		lines = append(lines, render(i, &vis[i]))
+		body = append(body, render(i, &vis[i]))
 	}
-	return strings.Join(lines, "\n")
+	if scroll {
+		body = layout.Scrollbar(body, outer, len(vis), from, true)
+	}
+	return strings.Join(append(lines, body...), "\n")
 }
 
 // emptyTabNote は相手のタブに行が無いときの 1 行。
