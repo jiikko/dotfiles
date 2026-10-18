@@ -217,3 +217,48 @@ func TestSpeedtestStopWhileSettling(t *testing.T) {
 		t.Errorf("rc=%d 測った %d 回 out=%q", rc, len(f.dests), out.String())
 	}
 }
+
+// 別名が別の Mac のホスト名そのものなら、ホスト名にちょうど一致する方を測る。大文字・末尾の . は台帳の鍵の形に揃えて比べる。
+func TestSpeedtestExactHostWinsAndKeyIsNormalized(t *testing.T) {
+	more := []ledger.Host{{Host: "air2.local", User: "koji", LAN: "192.168.100.15", Alias: "air.local"}} // 別名が air.local のホスト名と同じ
+	f := &fakeSpeed{res: map[string]speedtest.Result{"192.168.50.9": {UpBps: 1e8, DownBps: 1e8}, "192.168.100.12": {UpBps: 1e8, DownBps: 1e8}}}
+	var out, errb bytes.Buffer
+	if rc := runSpeed([]string{"air.local"}, &out, &errb, time.Now, nil, speedModelWith(nil, false, more), f.test); rc != 0 || len(f.dests) != 1 ||
+		f.dests[0].IP != "192.168.50.9" {
+		t.Errorf("ホスト名の完全一致を優先しない: rc=%d 宛先 %+v stderr=%q", rc, f.dests, errb.String())
+	}
+	f.dests = nil
+	if rc := runSpeed([]string{"M2MacMini.local."}, &out, &errb, time.Now, nil, speedModel(nil), f.test); rc != 0 || len(f.dests) != 1 {
+		t.Errorf("台帳の鍵の形に揃えない: rc=%d 測った %d 回 stderr=%q", rc, len(f.dests), errb.String())
+	}
+}
+
+// Bonjour の走査そのものが失敗したら (dns-sd を起こせない等)、scan_error と stderr で出し、rc=1 にする (走査は 3 秒で「終わった」扱いに
+// なるので scan_settled は true のまま。測れた相手の値は出す)。
+func TestSpeedtestReportsScanError(t *testing.T) {
+	f := &fakeSpeed{res: map[string]speedtest.Result{"192.168.100.12": {UpBps: 9e8, DownBps: 9e8}}}
+	failing := func() (*lanmgr.Model, error) {
+		return lanmgr.New(lanmgr.Options{
+			ReadNet: func(context.Context) (netinfo.Snapshot, error) {
+				return netinfo.Snapshot{Services: []netinfo.Service{{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Router: "192.168.50.1", Read: true}}}, nil
+			},
+			LocalHost: func() string { return "me.local" },
+			StartScan: func(time.Time) lanmgr.Scanner {
+				return &dumpScan{err: errors.New("dns-sd -B _ssh._tcp を起こせない")}
+			},
+			Ledger: &speedLedger{hosts: []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "192.168.100.12"}}},
+			User:   "koji",
+		}), nil
+	}
+	var out, errb bytes.Buffer
+	rc := runSpeed([]string{"--json"}, &out, &errb, time.Now, nil, failing, f.test)
+	var rs []speedReport
+	if err := json.Unmarshal(out.Bytes(), &rs); err != nil || rc != 1 || len(rs) != 1 || !strings.Contains(rs[0].ScanError, "起こせない") || rs[0].UpBps != 9e8 {
+		t.Errorf("走査の失敗を出さない: rc=%d %+v %v", rc, rs, err)
+	}
+	out.Reset()
+	errb.Reset()
+	if runSpeed(nil, &out, &errb, time.Now, nil, failing, f.test); !strings.Contains(errb.String(), "Bonjour で探せない") {
+		t.Errorf("文字の出力で走査の失敗を知らせない: %q", errb.String())
+	}
+}
