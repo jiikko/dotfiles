@@ -1218,7 +1218,9 @@ func TestSetupRefusesStaleSelfAfterFailedReread(t *testing.T) {
 	setObs(t, h, dests, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"})
 	h.keys("r")
 	awaitSetup(h.m)
-	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return netinfo.Snapshot{}, errors.New("networksetup が失敗した") }
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) {
+		return netinfo.Snapshot{}, errors.New("networksetup が失敗した")
+	}
 	if argv := runStep(t, h, nil); len(argv) == 0 || argv[0] != "sudo" { // この Mac の固定 (戻ると網を読み直し、失敗する)
 		t.Fatalf("この Mac の固定 = %q", argv)
 	}
