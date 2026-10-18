@@ -1262,7 +1262,7 @@ func TestSetupConfirmNotBlockedByFailedReread(t *testing.T) {
 	if h.m.selfErr == nil {
 		t.Fatal("前提: 読み直しが失敗していない")
 	}
-	if h.keys("x"); h.m.ov != ovConfirm {
-		t.Errorf("確認待ちの x を読み直しの失敗で断った: %+v", h.m.TakeNotices())
+	if h.keys("x"); h.m.ov != ovConfirm || h.m.ask == nil || h.m.ask.step != stepConfirm {
+		t.Errorf("確認待ちの x で確認の板を出さない (断った / 古い網で別の手順の板を出した): ov=%v ask=%+v %+v", h.m.ov, h.m.ask, h.m.TakeNotices())
 	}
 }

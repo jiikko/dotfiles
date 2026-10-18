@@ -53,6 +53,22 @@ knownHost の終了コードの読み分け / controlPath の長さ / dump の�
 
 ## 進捗
 
-- [ ] 1〜4 を直す (1 は 747 の「同時の 2 本で変更が 1 回だけ」のテストに、取ったばかりの lock の窓を作る形を足す)
+- [x] 1 取ったばかりの lock: 中身の欠けた lock (pid がまだ無い / pid は生きていて start がまだ無い) を生きている側に倒す (setup/staticip.go の prepare の alive)。
+  テストは 1 本目の最初の ps だけを 1 秒遅くして窓を広げる (TestStaticIPFreshLockIsNotTakenOver)。敵対的レビューで「片付けの rm -rf の途中で止まると pid の無い lock が
+  残り、以後ずっと断る」が出たので、lock は改名 (.gone.<pid>) してから消す形にした (drop)
+  - 受容: mkdir〜pid を書くまで (echo 1 回分) に kill -9 / 電源断が入った lock は自動で引き取らず、案内 (sudo rm -rf <lock> <lock>.takeover) で人が外す
+- [x] 2 止まった takeover: 断るときの案内に takeover のパスも入れる (refuse と takeover の mkdir の失敗の両方)
+- [x] 3 dump --peer の中断: 止められたら 130。observe の後に stop の合図そのものも見る
+  - 受容: 端末の Ctrl-C で ssh の子が先に死に、合図が届く前に observe が返ると 0 になりうる (ssh を別のプロセスグループに置けば消えるが、setup.ObservePeer の
+    起こし方を変えるので範囲外)。テストで固定していない
+- [x] 4 .pub の無い / 空の Mac: 秘密鍵から `ssh-keygen -y` で作り直してから ssh-copy-id へ渡す (一時ファイルから移し、失敗で空の .pub を残さない)。
+  ssh-copy-id が .pub を開けないときに失敗することは今も未実測
+- 変異で red を確かめたもの: commit message に列挙 (欠けた start / 案内の takeover 2 か所 / 中断 / .pub の作り直し・一時ファイル・空の .pub / 外すのを rm -rf に戻す)
+- 敵対的レビュー (opus): 1 周目 P1 無し・P2 1 件 (上の rm -rf の途中) を直し、P3 のテストの穴 3 件を塞いだ。2 周目 (drop と dump の先読み): P1・P2 無し。
+  P3 (受容): 同じ pid の `.gone.<pid>/staticip.lock` まで残っていると mv が黙って失敗し、その回の引き取りは「別の切り替えが先に始まった」で抜ける
+  (pid の再利用と 2 度の途中停止が重なったときだけ。次の回は $$ が変わるので詰まらない) / 引き取る側の確かめと drop の間に別の 1 本が lock を作ると
+  drop がそれを外す (改名の前から在る窓)
+- 未解明: 2026-10-18 に setup のテストを 1 回だけ赤で見た (出力を削って読んだのでどのテストかは残っていない)。その後 lock のテストだけ 8 回・setup 全体を 5 回
+  (`go test -count=5 ./setup`、160 秒) 回して全部緑。**trigger**: 次に setup のテストが赤くなったら、出力を全部ファイルに残して落ちたテスト名を記録する
 
 - 2026-10-18 反証レビュー (sonnet・読み取り専用): P1 なし・「既に直っている / 起きない」なし。記述の不正確さ (P3) を訂正した
