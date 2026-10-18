@@ -1208,3 +1208,36 @@ func TestNextStepSkipsBlockedSelfName(t *testing.T) {
 		t.Errorf("鍵が止まっているのに %s へ進んだ (指紋を確かめる前にこの Mac を変える)", st.ID)
 	}
 }
+
+// この Mac を固定した後の網の読み直しが失敗したら、残した古い網 (固定の前) で計画を組まない: 組むと「この Mac を固定する」の板 (sudo) が
+// もう一度出た。r でこの Mac の網も読み直し、読めたら次の手順へ進む。
+func TestSetupRefusesStaleSelfAfterFailedReread(t *testing.T) {
+	obs := &setup.PeerNet{}
+	h, dests := setupHarness(t, obs)
+	runStep(t, h, nil) // 鍵
+	setObs(t, h, dests, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"})
+	h.keys("r")
+	awaitSetup(h.m)
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return netinfo.Snapshot{}, errors.New("networksetup が失敗した") }
+	if argv := runStep(t, h, nil); len(argv) == 0 || argv[0] != "sudo" { // この Mac の固定 (戻ると網を読み直し、失敗する)
+		t.Fatalf("この Mac の固定 = %q", argv)
+	}
+	awaitNetLoad(h.m)
+	h.m.TakeNotices()
+	if h.keys("x"); h.m.ov == ovConfirm {
+		t.Fatalf("読み直せなかった古い網で次の板を出した: %q / %+v", h.m.ask.title, h.m.ask.body)
+	}
+	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "読み直せなかった") {
+		t.Errorf("読み直せなかったことで断らない: %+v", n)
+	}
+	setSelfStatic(h.m)
+	h.keys("r")
+	awaitNetLoad(h.m)
+	awaitSetup(h.m)
+	if h.m.selfErr != nil {
+		t.Fatalf("r でこの Mac の網を読み直さない: %v", h.m.selfErr)
+	}
+	if h.keys("x"); h.m.ov == ovConfirm && strings.Contains(h.m.ask.title, "この Mac") {
+		t.Errorf("読み直した後もこの Mac の固定の板が出た: %q", h.m.ask.title)
+	}
+}

@@ -512,6 +512,11 @@ func (m *Model) keySetup(key string) Action {
 	case "q", "esc", "h", "left":
 		m.closeSetup()
 	case "r":
+		if m.selfErr != nil && m.netCh == nil {
+			// 前の読み直しが失敗していたら、この Mac の網も読み直す (相手だけだと「r で読み直す」が効かなかった)。毎回は読まない:
+			// 読んでいる間の x は予約に回り、板がすぐ出なくなる
+			m.startNetLoad()
+		}
 		m.observe() // 読んでいる間は状態の行に出す (toast は出さない)
 	case "e":
 		m.openLog()
@@ -543,6 +548,12 @@ func (m *Model) setupX() {
 			// 始めない。鍵が無いだけの相手は KeyErr が nil なので止まらない。確認待ちの間は掛けない: 確認は新しい IP へ入るので観測とは
 			// 関係が無く、有線だけの相手は古い IP の観測が届かずに確認まで断られ、期限が切れた
 			m.note("相手に届かない (r でリロード): "+m.su.obs.KeyErr.Error(), false)
+			return
+		}
+		if m.selfErr != nil && !errors.Is(m.selfErr, netinfo.ErrIPsIncomplete) {
+			// 前に読んだ網は残しているが、それで計画を組まない: この Mac を固定した後の読み直しが失敗すると、固定の前の網で
+			// 「この Mac を固定する」の板 (sudo) がもう一度出た
+			m.note("この Mac のネットワークを読み直せなかった (r で読み直す)", false)
 			return
 		}
 		st, ok := nextStep(m.setupSteps())

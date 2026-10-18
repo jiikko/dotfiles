@@ -659,6 +659,9 @@ func (m *Model) lanFixed(r row) bool {
 }
 
 func (m *Model) selfLan() selfLanInfo {
+	if !m.selfOK { // 「無い」と「読めていない」を分ける
+		return selfLanInfo{Note: "この Mac のネットワークを読めていない"}
+	}
 	// 「固定」は初期設定 (setup.Plan の self) と同じ 1 つの規則: 初期設定が固定するのと同じサービス (selfWired) が、手動で帯の中。
 	// 画面と初期設定で別々に組むと、I/F で決める設定では方式だけで固定と出し、帯で決める設定ではサービスを持たない I/F (VM のブリッジ等) の
 	// 帯の番号を内部 IP と出して、どちらも初期設定は固定し直そうとした。固定かは setup.SelfFixed

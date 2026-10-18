@@ -2752,6 +2752,13 @@ func TestNetReadFailureFirstRefusesActions(t *testing.T) {
 	if r := m.current(); r.host != "vpn.local" || len(r.others) != 0 || r.mainIP != "" {
 		t.Fatalf("読めないのに相手の IP を分けた: %+v", r)
 	}
+	m.Resize(120, 40)
+	if v := termwidth.StripSGR(strings.Join(m.View(), "\n")); !strings.Contains(v, "ネットワークを読めない") {
+		t.Errorf("見出しに読めないことを出さない (「N 台見つかった」に戻った):\n%s", v)
+	}
+	if sl := m.selfLan(); !strings.Contains(sl.Note, "読めていない") {
+		t.Errorf("この Mac の内部 IP の説明が「無い」と「読めていない」を分けない: %q", sl.Note)
+	}
 	m.TakeNotices()
 	for _, k := range []string{"s", "enter"} {
 		if a := m.HandleKey(k); a != None || m.sc == scSetup {

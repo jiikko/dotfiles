@@ -154,6 +154,8 @@ func (m *Model) header(w int) string {
 			what = " 固定 IP の確認待ち"
 		}
 		left += "   " + lipgloss.NewStyle().Foreground(cPink).Render(spinner.At(m.now, spinStep)) + sDim.Render(what)
+	case !m.selfOK:
+		left += "   " + sWarn.Render("✗ この Mac のネットワークを読めない") + sDim.Render(" (r で読み直す)")
 	case m.scanErr != nil:
 		left += "   " + sWarn.Render("✗ Bonjour で探せない") + sDim.Render(fmt.Sprintf(" (%d 台。理由は ?)", len(m.peers)))
 	default:
