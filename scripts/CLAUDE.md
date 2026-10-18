@@ -77,6 +77,7 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 | `check_workflow_action_pins.sh` | 同じ Action が workflow 間で違う版 (issue 073 §1) | `action-pin: allow` |
 | `check_go_project_lanes.sh` | 新しい Go プロジェクトが CI レーン無しで入る (`src/*/go.mod` があるのに lint/test target・`src_<name>.yml`・paths filter (replace で取り込む共有 module の `src/<dir>/` も含めて)・`go.sum` (依存が無ければ空。無いと CI のキャッシュが毎回効かない) が欠ける / lint が `go_module_graph.sh` (replace の抜け。issue 787) を呼ばない / caller が `_go-project.yml` に渡す `dir` が `src/<name>` でない。issue 203 / 出典 080・087) | — |
 | `check_cd_rc_in_tests.sh` | `cd` の rc を見ていない行 (失敗すると別の場所で続行し、テストを 0 件発見したまま緑になる。tests/ だけでなく scripts/ と bin/ も見る) | `cd-rc: allow` |
+| `check_comment_provenance.sh` | コードコメントの変更の経緯・出所の語 (issue / retro の番号・以前は・旧実装・レビューの指摘) がファイルごとの一覧 (`comment_provenance_allowlist.txt`) より増える。規範は CLAUDE.md の「何をどこに書くか」。`--list <path>` で該当行、書き直したら `--update` | 印は無い (一覧の件数で受ける。増やすなら `--update --allow-increase` でレビューに見せる) |
 | `check_cdpath_before_cd_capture.sh` | `$(cd …)` でパスを取る前に CDPATH を外していない (`unset CDPATH` か lib なら `$(CDPATH='' cd …)`。export された CDPATH の下で相対パスの cd が解決先を stdout に出し、取ったパスが 2 行になる。zsh も対象) | `cdpath: allow` |
 | `check_var_before_multibyte.sh` | bash / sh で `$var` の直後に ASCII 以外の文字 (bash 3.2 が UTF-8 で全角の先頭バイトまで変数名に読む。`set -u` で死ぬか値が消える。zsh のファイルは除く。末尾で字句の状態が閉じないファイルも落とす。issue 633) | `var-multibyte: allow` |
 

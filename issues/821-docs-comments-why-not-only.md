@@ -16,6 +16,9 @@ CLAUDE.md の「何をどこに書くか」(2026-10-18 にユーザーが追記)
 
 ## 現状の数 (2026-10-18。`git grep` でコメント行を取って数えた概数)
 
+🚨 下の表は過少: `git grep -E` は `\s` を空白として扱わず、インデントしたコメント (Go の関数の中など) を数え落としていた。
+正しい母数は lint (`scripts/check_comment_provenance.sh`) が数えた **4,188 行 / 1,095 ファイル** (2026-10-18。下の「進捗」)
+
 コメント行 (`//` / `#` / `--` で始まる行。`issues/`・`*.md`・`*.json` を除く) は 40,342 行。そのうち:
 
 | 語 | 行数 | 注 |
@@ -40,7 +43,7 @@ YAML の `---` など Lua 以外の `--` 55 行・`vendor/` 513 行・`testdata/
 
 ## 対応方針
 
-### 1. lint `check-comment-provenance` を置く (CLAUDE.md が既に名指ししている)
+### 1. lint を置く (`make test-lint` の `test-comment-provenance` = `scripts/check_comment_provenance.sh`)
 
 - [ ] 語彙を決める: `issue NNN` / `retro NNN` / 「〜のレビュー」「指摘」「反証」/ 「以前は」「旧実装」/ 経緯の日付。
       残すもの (外部の制約・実測値・却下した指摘の再提起条件) と字面で区別できない語は、検出しない形として script 冒頭に書く
@@ -64,12 +67,12 @@ src/pro-con → src/glogx → tests → src/lockman → src/treefiler → src/do
 
 ### 先に決めること (ユーザーの判断)
 
-- **open な issue の再開条件を指すコメント** (「issue NNN で X が直るまでこの回避を残す」) の番号を残してよいか。
-  `~/.claude/rules/pending-issue-rationale-in-code.md` は「issue 番号だけ書いて中身を書かない」を ❌ とし、中身つきの番号は禁じていない。
-  CLAUDE.md の新しい表は「レビュー指摘の番号」をコミットログへ回す。既定案: 中身 (制約と再評価の条件) を書いたうえで、まだ open の issue の番号は残す。
-  done の issue・レビューの番号は消す
-- `_claude/` の rule / skill の本文 (Markdown) は対象外か。既定案: 対象外 (コードコメントではない)
-- テストのコメントも同じ基準か。既定案: 同じ (テストは What をテスト名と assert で言い、コメントは Why not だけ)
+- **open な issue の再開条件を指すコメントの番号**: 起票時の既定案は「中身を書いたうえで open の番号は残す」だったが、**lint では open の番号も数える**ことにした
+  (2026-10-18)。issue の状態で分けると、issue を done へ送っただけの commit で、その番号を書いたファイルの件数が一覧を超えて Lint と Tests が赤になり、
+  別の作業を止める (敵対的レビューの数え: 141 行 / 26 issue)。番号を残すこと自体は禁じていない: 書き直しでは open の issue の番号は中身を書いたうえで
+  残してよく、残した分は一覧の件数で受ける。新しく書くなら `--update --allow-increase` でレビューに見せる
+- `_claude/` の rule / skill の本文 (Markdown) は対象外 (lint も Markdown を見ない)
+- テストのコメントも同じ基準 (lint は tests/ も数える)
 
 ## 関連ファイル
 
@@ -81,3 +84,12 @@ src/pro-con → src/glogx → tests → src/lockman → src/treefiler → src/do
 - [x] 2026-10-18 起票 (骨組み → 本文)。反証レビュー (sonnet 1 体): 数・例のファイル・lint の不在・既存の同趣旨 issue の不在は反証できなかった
   (`issue NNN` は HEAD が進んで 2,117)。採用: 走査から vendor / testdata を外す・`--` を Lua に限る・shebang と指令を数えない・
   ラチェットの初期値は lint 自身の数で作る (P1 2 件・P2 3 件)。P3 2 件 (「前は」・`codex` の誤検出) は本文で断り済み
+- [x] 2026-10-18 1 (lint): `scripts/check_comment_provenance.sh` / `scripts/comment_provenance_allowlist.txt` / `tests/scripts/test_check_comment_provenance.sh`、
+  Makefile の `test-comment-provenance` (test-lint の並列)、`scripts/CLAUDE.md` の検査の一覧、ルートの CLAUDE.md の検査の名前 (`make lint` の `check-comment-provenance` と
+  書いてあったのを実際の入口に直した)。一覧はファイルごとの <件数><TAB><指紋><TAB><path> (4,188 件 / 1,095 ファイル)。
+  - 敵対的レビュー (opus) を 4 周: 1 周目 2 体 (素通り / 壊れ) で走査の漏れ (.awk .ci など)・表記ゆれ・一覧の重複・awk の失敗を緑に畳む・`--update` が
+    増加を吸収・done への移動で赤になる罠。2 周目で「敵対レビュー」(的なし) の漏れ・減少で余った枠・rename で赤。3 周目で 0 件の減少が gone 扱い・
+    件数の一致だけで rename を組む。それぞれ直して変異で red を確認 (1 周目の直しで 8 本、2 周目で 5 本、3 周目で 2 本)。
+    LC_ALL=C の awk で日本語に `?` を掛けると最後の 1 バイトにしか効かない罠を踏んだ (`敵対的?` が「敵対レビュー」に当たらなかった)
+  - 記録のみ (検出しない形として script の冒頭に書いた): 行末のコメント・1 桁の番号・複数形の issues・単独の (P2)・消して同じ名前で作り直す形 など
+
