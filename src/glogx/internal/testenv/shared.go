@@ -38,7 +38,7 @@ func CommitLines(t *testing.T, dir string, lines int, subject string) {
 // GitInRepo は dir を作業ディレクトリとして git を走らせる (author / committer を固定)。
 func GitInRepo(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := subproc.CommandContext(t.Context(), "git", args...)
+	cmd := subproc.CommandContext(t.Context(), "git", subproc.GitArgs(args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=tester", "GIT_AUTHOR_EMAIL=t@example.com",
@@ -51,7 +51,7 @@ func GitInRepo(t *testing.T, dir string, args ...string) {
 // HeadSHA は現在の HEAD の完全 SHA を返すテストヘルパー。
 func HeadSHA(t *testing.T) string {
 	t.Helper()
-	out, err := subproc.CommandContext(t.Context(), "git", "rev-parse", "HEAD").Output()
+	out, err := subproc.CommandContext(t.Context(), "git", subproc.GitArgs("rev-parse", "HEAD")...).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func MaxRowShift(window []string) int {
 // 移すため (ヘルパーの呼び出し順に依存させない)。
 func RepoTmpDir(t *testing.T) string {
 	t.Helper()
-	out, err := subproc.CommandContext(t.Context(), "git", "rev-parse", "--show-toplevel").Output()
+	out, err := subproc.CommandContext(t.Context(), "git", subproc.GitArgs("rev-parse", "--show-toplevel")...).Output()
 	if err != nil {
 		t.Fatalf("repo root を解決できない: %v", err)
 	}
