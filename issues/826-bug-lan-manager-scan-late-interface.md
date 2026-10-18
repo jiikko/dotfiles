@@ -59,7 +59,7 @@
   (「後から上がった I/F の IP を拾う…」の commit)。敵対的レビューの後に、片方の I/F だけの Rmv → 同じ I/F の Add でも引き直す・
   引き直しの -G も同時実行の上限 (sem) を通す・-G の途中に来た引き直しを終わった後にもう 1 度引く、を足した
 - [x] 2 -L / -G の無応答: 2 回まで打つ (lookupAttempts)。-L を諦めたら帳簿から外す (後の Add で引き直す)
-- [ ] 3 1 つの I/F に相手の IP が 2 つ: **未対応 (未実測)**。2026-10-18 に air5 で `dns-sd -G v4` を ms.local / m2macmini.local に打った結果は
+- [x] 3 1 つの I/F に相手の IP が 2 つ: **未対応 (未実測)。issue 830 (risk) に切り出した**。2026-10-18 に air5 で `dns-sd -G v4` を ms.local / m2macmini.local に打った結果は
   I/F ごとに 1 つずつ (en0 = 192.168.50.x / en5 = 192.168.100.x)。相手の Wi-Fi と有線が同じルーターの網に居る形がこの Mac の周りに無く、起こせない。
   **再開の trigger**: 相手の 2 本の I/F が同じ網に居る構成で `dns-sd -G v4 <host>` が同じ I/F の番号で 2 行返すのを見たとき (推測で Addrs の形を変えない)
 - [x] 4 方式: "Manually Using DHCP Router Configuration" / "BOOTP Configuration" を MethodManualDHCPRouter / MethodBOOTP と読み、固定の判定 (netinfo.FixedIP)・
