@@ -206,10 +206,16 @@ func (m *Model) viewList(w int) string {
 	if wide {
 		detailW = w - listW - 2
 	}
-	detail := m.detail(r, detailW)
-	if lipgloss.Width(detail) > detailW { // 詳細カードが幅に収まらない (狭い端末): 動作のキーだけの 1 行にする (広がると一覧の板の右辺まで切れた)
-		detail = m.detailCompact(r)
+	// 詳細カードが幅に収まらない (狭い端末) 行は、動作のキーだけの 1 行にする (広がると一覧の板の右辺まで切れた)
+	detailOf := func(r row, compact bool) string {
+		if !compact {
+			if d := m.detail(r, detailW); lipgloss.Width(d) <= detailW {
+				return d
+			}
+		}
+		return m.detailCompact(r)
 	}
+	detail := detailOf(r, false)
 	// 一覧に回せる行数: 画面の高さから、見出し・タブ・枠・表の見出しと (縦に積むときは) 詳細カードを先に引く。詳細カードに動作の
 	// キー (s 繋ぐ・Y コピー・o 開く) があるので、それを押し出さないよう先に取る。全部を描いて下で切っていたころは、狭い画面で
 	// 詳細カードもカーソル行も画面の外に出た
@@ -220,14 +226,26 @@ func (m *Model) viewList(w int) string {
 	m.tooShort = rows < -2
 	if !wide {
 		// 縦に積むときは、一覧に min(3, 行数) 行を残せなければ詳細カードを 1 行 (名前だけ) に畳み、それも入らなければ出さない。
-		// 動作のキーは最下行の案内にいつも載せている (footer) ので、ここで何を出しても消えない
-		if rows-lipgloss.Height(detail)-1 < min(3, len(m.visible())) {
-			detail = m.detailCompact(r)
+		// 動作のキーは最下行の案内にいつも載せている (footer) ので、ここで何を出しても消えない。
+		// 🚨 引く高さは選んだ行ではなく全行の最大で見積もる。選んだ行の分だけ引くと、詳細カードの高い行 (IP が多い相手) を選んだときだけ
+		// 一覧の窓が縮み、カーソルを動かすだけで窓とスクロールバーが伸び縮みした (畳むか出さないかも全行で揃える)
+		vis := m.visible()
+		reserve := func(compact bool) int {
+			h := lipgloss.Height(detailOf(r, compact))
+			for _, v := range vis {
+				h = max(h, lipgloss.Height(detailOf(v, compact)))
+			}
+			return h
 		}
-		if rows-lipgloss.Height(detail)-1 < 1 {
+		compact, h := false, reserve(false)
+		if rows-h-1 < min(3, len(vis)) {
+			compact, h = true, reserve(true)
+		}
+		if rows-h-1 < 1 {
 			detail = ""
 		} else {
-			rows -= lipgloss.Height(detail) + 1
+			detail = detailOf(r, compact)
+			rows -= h + 1
 		}
 	}
 	list := lipgloss.JoinVertical(lipgloss.Left, tabs, shadow(card(m.listTable(listW-7, max(rows, 1)), listW-1, surfList, tabColors[m.tab], cPurple)))

@@ -995,6 +995,40 @@ func TestListTableScrollbarOnlyWhenOverflow(t *testing.T) {
 	}
 }
 
+// 縦積みのとき、一覧の窓の行数 (とバーの有無) は選んだ行で変わらない。詳細カードの高さは行ごとに違う (IP が多い相手は行が増える) が、
+// それを選んだ行の分だけ引くと、カーソルを動かすだけで窓が伸び縮みし、4 件目を選んだときだけバーが出たり消えたりした。
+func TestListWindowDoesNotDependOnSelectedRow(t *testing.T) {
+	var ps []discover.Peer
+	for i := 0; i < 4; i++ {
+		p := discover.Peer{Host: fmt.Sprintf("mac%02d.local", i), SSH: true, Addrs: map[int]string{14: fmt.Sprintf("192.168.50.%d", i+2)}}
+		if i == 3 {
+			p.VNC, p.SMB = true, true
+			p.Addrs = map[int]string{14: "192.168.50.9", 27: "169.254.9.9", 5: "10.0.0.5"}
+		}
+		ps = append(ps, p)
+	}
+	for hh := 14; hh <= 40; hh++ {
+		h := newHarness(t, nil, ps)
+		h.m.Resize(80, hh)
+		h.m.pf.ShowOthers = true
+		h.keys("l")
+		var rows []int
+		var bars []bool
+		for c := 0; c < len(ps); c++ {
+			v := strings.Join(h.m.View(), "\n")
+			rows = append(rows, h.m.listRows)
+			bars = append(bars, strings.Contains(v, layout.ScrollbarThumb))
+			h.keys("j")
+		}
+		for c := range rows {
+			if rows[c] != rows[0] || bars[c] != bars[0] {
+				t.Errorf("高さ %d: 窓の行数 %v / バー %v (選ぶ行で変わった)", hh, rows, bars)
+				break
+			}
+		}
+	}
+}
+
 // 最下行の案内は幅で落とすが、q (抜け方) は必ず残し、? (全部のキー) は s より先に採る (80 桁で ? が真っ先に消えた)。
 // hintfit は入らない項目を飛ばして短い後続を入れるので、? が入らない狭い幅では、より短い s が入ることはある。
 func TestFooterKeepsHelpKey(t *testing.T) {
