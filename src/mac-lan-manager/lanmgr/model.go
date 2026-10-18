@@ -582,7 +582,10 @@ type row struct {
 	user      string // 台帳のユーザー名 (無ければ "")
 	mainIP    string
 	lanIP     string
-	lanNote   string // 内部 IP の出どころ (自分の行だけ)
+	mainDev   string       // メイン IP が見えたこの Mac の I/F (降ろして「その他」へ回すときに要る)
+	mainLink  netinfo.Link // メイン IP が見えたこの Mac の I/F の線 (有線 / 無線)
+	lanLink   netinfo.Link // 内部 IP が見えたこの Mac の I/F の線 (台帳の内部 IP は、今の走査で見えた I/F と照合できたときだけ)
+	lanNote   string       // 内部 IP の出どころ (自分の行だけ)
 	ssh       bool
 	vnc       bool
 	smb       bool
@@ -673,10 +676,10 @@ func (m *Model) selfLan() selfLanInfo {
 func (m *Model) rows() []row {
 	self := row{self: true, host: m.host, alias: "この Mac", user: m.o.User}
 	if s, ok := m.self.Main(); ok {
-		self.mainIP = s.IP
+		self.mainIP, self.mainLink = s.IP, m.self.Link(s.Device)
 	}
 	sl := m.selfLan()
-	self.lanIP, self.lanNote = sl.IP, sl.Note
+	self.lanIP, self.lanNote, self.lanLink = sl.IP, sl.Note, m.self.LinkOf(sl.IP)
 	for _, x := range m.self.IPs {
 		if x.Addr != self.mainIP && x.Addr != self.lanIP && slices.Contains(m.pf.Kinds, x.Kind.Key()) {
 			self.others = append(self.others, x)
@@ -734,17 +737,28 @@ func (m *Model) rows() []row {
 				break // この Mac のどの I/F が有線かを読み終えるまで分けない (分けると全部「その他」になり、s がその先頭へ繋いだ)
 			}
 			k := m.ifKind(dev, ip)
+			link := m.self.Link(dev)
 			// 内部 IP にするのは、この Mac のサービスとして登録された有線の I/F で見えたものだけ。Classify は登録の無い I/F の
 			// 169.254 も KindLinkLocal にするので、LinkLocal だけは登録を確かめる (KindWired は登録された I/F にしか付かない)
 			wiredService := k == netinfo.KindWired || (k == netinfo.KindLinkLocal && m.self.WiredIF(dev)) // 169.254 も、ルーターの無い有線の上なら内部の網
 			r.wired = r.wired || wiredService
 			switch {
-			case k == netinfo.KindInternet:
-				if r.mainIP == "" {
-					r.mainIP = clean(ip)
+			case wiredService && r.ledgerLAN != "" && clean(ip) == r.ledgerLAN:
+				r.lanLink = link // 台帳の内部 IP が今見えた I/F (見えていなければ線は分からないまま)。内部 IP と同じなので「その他」に重ねない
+			case k == netinfo.KindInternet && r.mainIP == "":
+				r.mainIP, r.mainDev, r.mainLink = clean(ip), dev, link
+			case k == netinfo.KindInternet && r.mainLink == netinfo.LinkWireless && link == netinfo.LinkWired:
+				// 有線と無線の両方で見えたら有線をメインにする (I/F 番号の順だと Wi-Fi の en0 が先に来て、有線で繋がっているのに
+				// メインが「無線」と出た)。降ろした方も、2 つ目のメインも捨てずに「その他」に残す
+				if clean(ip) != r.mainIP { // 同じ IP が 2 つの I/F で見えただけなら「その他」に重ねない
+					r.others = append(r.others, netinfo.IP{Device: r.mainDev, Addr: r.mainIP, Kind: netinfo.KindInternet})
 				}
+				r.mainIP, r.mainDev, r.mainLink = clean(ip), dev, link
+			case k == netinfo.KindInternet && clean(ip) == r.mainIP:
+				// 同じ IP が別の I/F でも見えた: 「その他」に重ねない (重ねると「その他」の線がメインの線と食い違って見えた)。
+				// 「Wi-Fi でも見えている」ことは画面から消えるが、出すのはメインの I/F の線 1 つと決めている
 			case wiredService && !lanPicked:
-				r.lanIP, lanPicked = clean(ip), true
+				r.lanIP, r.lanLink, lanPicked = clean(ip), link, true
 			default:
 				r.others = append(r.others, netinfo.IP{Device: dev, Addr: clean(ip), Kind: k})
 			}
@@ -862,6 +876,28 @@ func (r row) connectIP() string {
 		return ip
 	}
 	return r.others[0].Addr
+}
+
+// connectLink は繋ぐ先 (connectIP) の線。connectIP と同じ順 (内部 → メイン → その他の先頭) で、選んだ方の線を返す。
+// IP の値で引き直さない: 同じ IP が有線と無線の両方の I/F で見えると、どちらの線か値からは決まらない。
+//
+// 🚨 線は「この Mac のどの I/F で相手の IP が見えたか」で、実際に送る I/F ではない。この Mac が同じサブネットに Wi-Fi と有線の
+// 両方で居ると、macOS はサービスの並び順の上の I/F から送るので、(有線) と出ても Wi-Fi から出ていることがある。送る I/F を
+// 確かめるなら route get <IP> を引く (相手ごとに外部コマンドが要るので入れていない。同じサブネットに 2 本繋ぐ形が実際に出たら再評価)。
+func (m *Model) connectLink(r row) netinfo.Link {
+	switch ip := r.connectIP(); {
+	case ip == "":
+		return netinfo.LinkUnknown
+	case ip == r.lanIP && !r.lanAway && r.lanLink != netinfo.LinkUnknown:
+		return r.lanLink
+	case ip == r.mainIP: // 台帳の内部 IP が有線では見えず、同じ IP がメインとして見えたときもここ (メインの線は分かっている)
+		return r.mainLink
+	case ip == r.lanIP:
+		return netinfo.LinkUnknown
+	case len(r.others) > 0:
+		return m.self.Link(r.others[0].Device)
+	}
+	return netinfo.LinkUnknown
 }
 
 // lanReachable は、この Mac の内部 IP (self) から相手の内部 IP (peer) へ有線で届くか。両方が 169.254 (自動) か、両方が帯の中なら同じ網。

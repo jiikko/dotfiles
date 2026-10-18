@@ -92,11 +92,69 @@ type Service struct {
 // NotWiredLAN は Mac 同士の有線の網に使わない I/F のサービスか (無線・Bluetooth・iPhone のテザリング)。Hardware Port で決める
 // (サービス名は利用者が変えられる)。Thunderbolt Bridge は Mac 同士の有線なので含めない
 func (s Service) NotWiredLAN() bool {
-	switch s.Port {
-	case "Wi-Fi", "AirPort", "Bluetooth PAN", "iPhone USB":
+	return wirelessPort(s.Port) || s.Port == "iPhone USB"
+}
+
+// wirelessPort は電波で繋ぐ Hardware Port か。iPhone USB は Mac 同士の網には使わないが線は USB なので無線に入れない
+// (NotWiredLAN を無線の判定に流用すると iPhone USB が「無線」と出る)。
+func wirelessPort(port string) bool {
+	switch port {
+	case "Wi-Fi", "AirPort", "Bluetooth PAN":
 		return true
 	}
 	return false
+}
+
+// Link は I/F の線の種類 (有線 / 無線)。ルーターの有無で分ける Kind とは別の軸 (ルーターに有線で繋いだ I/F も KindInternet)。
+type Link int
+
+const (
+	LinkUnknown  Link = iota // サービスとして登録されていない I/F (VPN・VM のブリッジ・名前を引けなかった I/F)
+	LinkWired                // 登録された I/F で、Hardware Port が電波でない
+	LinkWireless             // Hardware Port が Wi-Fi など
+)
+
+// Label は画面に出す名前 (分からなければ "")。
+func (l Link) Label() string {
+	switch l {
+	case LinkWired:
+		return "有線"
+	case LinkWireless:
+		return "無線"
+	case LinkUnknown:
+	}
+	return ""
+}
+
+// Link は dev の線の種類を、その I/F に載るサービスの Hardware Port で決める (Port は I/F の物理的な種類なので、無効のサービスの
+// Port も同じ。サービス名は利用者が変えられるので見ない)。
+func (s Snapshot) Link(dev string) Link {
+	if dev == "" {
+		return LinkUnknown
+	}
+	link := LinkUnknown
+	for _, sv := range s.Services {
+		if sv.Device != dev {
+			continue
+		}
+		switch {
+		case wirelessPort(sv.Port):
+			return LinkWireless
+		case sv.Port != "": // Port が空 (読めなかった) なら有線と決めない
+			link = LinkWired
+		}
+	}
+	return link
+}
+
+// LinkOf は addr を持つこの Mac の I/F の線の種類 (この Mac の IP でなければ LinkUnknown)。
+func (s Snapshot) LinkOf(addr string) Link {
+	for _, x := range s.IPs {
+		if x.Addr == addr && addr != "" {
+			return s.Link(x.Device)
+		}
+	}
+	return LinkUnknown
 }
 
 // Internet はインターネット用のサービスか (ルーターがある)。

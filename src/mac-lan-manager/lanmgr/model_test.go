@@ -82,8 +82,8 @@ var t0 = time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 func selfNet() netinfo.Snapshot {
 	return netinfo.Snapshot{
 		Services: []netinfo.Service{
-			{Name: "Thunderbolt Ethernet", Device: "en13", Active: true, IP: "169.254.13.42", Method: "DHCP", Read: true},
-			{Name: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Method: "DHCP", Router: "192.168.50.1", Read: true},
+			{Name: "Thunderbolt Ethernet", Port: "Thunderbolt Ethernet", Device: "en13", Active: true, IP: "169.254.13.42", Method: "DHCP", Read: true},
+			{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Method: "DHCP", Router: "192.168.50.1", Read: true},
 		},
 		IPs: []netinfo.IP{
 			{Device: "en0", Addr: "192.168.50.250", Kind: netinfo.KindInternet},
@@ -2539,7 +2539,7 @@ func TestSetupPendingMark(t *testing.T) {
 		h.cursorTo(t, "zz.local")
 		var line string
 		for _, l := range h.m.View() {
-			if strings.Contains(termwidth.StripSGR(l), "m2macmini.local") {
+			if strings.Contains(termwidth.StripSGR(l), "m2macmini") { // 幅 120 ではホスト名の列が … で切れる
 				line = l
 				break
 			}
@@ -2554,5 +2554,155 @@ func TestSetupPendingMark(t *testing.T) {
 		if got := strings.Contains(line, "48;2;46;39;25"); got != c.want { // cPendBg (#2E2719)
 			t.Errorf("黄の地 = %v, want %v", got, c.want)
 		}
+	}
+}
+
+// IP が見えたこの Mac の I/F の線を行に持つ。Wi-Fi (en0) と、ルーターに有線で繋いだ Ethernet (en7) の両方で見えた相手は、I/F 番号の
+// 順 (en0 が先) ではなく有線をメインにし、無線の IP は捨てずに「その他」に残す。
+func TestRowsLinkPrefersWiredMain(t *testing.T) {
+	net := selfNet()
+	net.Services = append(net.Services, netinfo.Service{Name: "Ethernet", Port: "Ethernet", Device: "en7", Active: true, IP: "192.168.50.20", Method: "DHCP", Router: "192.168.50.1", Read: true})
+	both := discover.Peer{Host: "both.local", SSH: true, Addrs: map[int]string{14: "192.168.50.7", 20: "192.168.50.8", 27: "169.254.217.100"}}
+	m := New(Options{
+		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
+		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{both}} },
+		IfName:    func(i int) string { return map[int]string{14: "en0", 20: "en7", 27: "en13"}[i] },
+		Now:       func() time.Time { return t0 },
+	})
+	awaitNetLoad(m)
+	rs := m.rows()
+	r := rs[len(rs)-1]
+	if r.mainIP != "192.168.50.8" || r.mainLink != netinfo.LinkWired {
+		t.Errorf("メイン = %q (%v), want 192.168.50.8 (有線)", r.mainIP, r.mainLink)
+	}
+	if r.lanIP != "169.254.217.100" || r.lanLink != netinfo.LinkWired {
+		t.Errorf("内部 = %q (%v)", r.lanIP, r.lanLink)
+	}
+	if len(r.others) != 1 || r.others[0].Addr != "192.168.50.7" || r.others[0].Device != "en0" {
+		t.Errorf("その他 = %+v (無線の IP を残す)", r.others)
+	}
+	// 無線でしか見えない相手のメインは無線
+	wifiOnly := discover.Peer{Host: "air.local", SSH: true, Addrs: map[int]string{14: "192.168.50.44"}}
+	m2 := New(Options{
+		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
+		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{wifiOnly}} },
+		IfName:    func(i int) string { return map[int]string{14: "en0"}[i] },
+		Now:       func() time.Time { return t0 },
+	})
+	awaitNetLoad(m2)
+	rs = m2.rows()
+	if r := rs[len(rs)-1]; r.mainIP != "192.168.50.44" || r.mainLink != netinfo.LinkWireless || len(r.others) != 0 {
+		t.Errorf("無線だけの相手 = %+v", r)
+	}
+	if self := rs[0]; self.mainLink != netinfo.LinkWireless || self.lanLink != netinfo.LinkWired {
+		t.Errorf("この Mac の線: メイン %v / 内部 %v (Wi-Fi / Thunderbolt Ethernet)", self.mainLink, self.lanLink)
+	}
+}
+
+// 管理対象の内部 IP は台帳の値。今の走査で同じ IP が見えた I/F があるときだけ線が分かり、見えていなければ分からない (括弧を出さない)。
+func TestLedgerLanLinkOnlyWhenSeen(t *testing.T) {
+	seen := discover.Peer{Host: "studio.local", SSH: true, Addrs: map[int]string{27: "169.254.5.5"}}
+	h := newHarness(t, []ledger.Host{
+		{Host: "studio.local", User: "koji", LAN: "169.254.5.5"},
+		{Host: "mini.local", User: "koji", LAN: "169.254.6.6"},
+	}, []discover.Peer{seen, {Host: "mini.local", SSH: true, Addrs: map[int]string{27: "169.254.7.7"}}})
+	by := map[string]row{}
+	for _, r := range h.m.rows() {
+		by[r.host] = r
+	}
+	if r := by["studio.local"]; r.lanIP != "169.254.5.5" || r.lanLink != netinfo.LinkWired {
+		t.Errorf("台帳の IP が見えた相手 = %q (%v)", r.lanIP, r.lanLink)
+	}
+	if r := by["mini.local"]; r.lanIP != "169.254.6.6" || r.lanLink != netinfo.LinkUnknown {
+		t.Errorf("台帳の IP とは別の IP で見えた相手 = %q (%v), want 線は分からない", r.lanIP, r.lanLink)
+	}
+	if r := by["studio.local"]; len(r.others) != 0 {
+		t.Errorf("台帳の内部 IP と同じ IP を「その他」に重ねた: %+v", r.others)
+	}
+	if r := by["mini.local"]; len(r.others) != 1 || r.others[0].Addr != "169.254.7.7" {
+		t.Errorf("台帳と別の IP は「その他」に残す: %+v", r.others)
+	}
+}
+
+// 一覧と詳細カードで、IP の後ろに線の括弧が出る。線が分からない IP (登録の無い I/F) には括弧を出さない。
+func TestViewShowsLinkTags(t *testing.T) {
+	vm := discover.Peer{Host: "vm.local", SSH: true, Addrs: map[int]string{30: "192.168.64.3"}}
+	h := newHarness(t, nil, []discover.Peer{mini, vm})
+	h.m.o.IfName = func(i int) string { return map[int]string{14: "en0", 27: "en13", 30: "bridge100"}[i] }
+	h.m.Resize(160, 50)
+	h.keys("l") // 未管理のタブ
+	h.cursorTo(t, "m2macmini.local")
+	view := termwidth.StripSGR(strings.Join(h.m.View(), "\n"))
+	for _, want := range []string{"192.168.50.7    (無線)", "169.254.217.100 (有線)", "メイン      192.168.50.7 (無線)"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("画面に %q が無い:\n%s", want, view)
+		}
+	}
+	if !regexp.MustCompile(`ssh koji@169\.254\.217\.100 +\(有線\)`).MatchString(view) { // 宛先の行にも、繋ぐ IP の線
+		t.Errorf("ssh の宛先の行に (有線) が無い:\n%s", view)
+	}
+	h.cursorTo(t, "vm.local")
+	view = termwidth.StripSGR(strings.Join(h.m.View(), "\n"))
+	if !strings.Contains(view, "192.168.64.3") || strings.Contains(view, "192.168.64.3 (") || strings.Contains(view, "192.168.64.3    (") {
+		t.Errorf("線の分からない IP に括弧を出した / IP が無い:\n%s", view)
+	}
+}
+
+// 同じ IP が Wi-Fi と有線の 2 つの I/F で見えた相手は、メインを有線にし、同じ IP を「その他」に重ねない (重ねると「その他」の行に
+// 無線の I/F の名前と有線の線が並んだ)。有線の I/F の番号が先でも同じ。
+func TestSameIPOnTwoIFs(t *testing.T) {
+	net := selfNet()
+	net.Services = append(net.Services, netinfo.Service{Name: "Ethernet", Port: "Ethernet", Device: "en7", Active: true, IP: "192.168.50.20", Method: "DHCP", Router: "192.168.50.1", Read: true})
+	for _, names := range []map[int]string{{14: "en0", 20: "en7"}, {14: "en7", 20: "en0"}} {
+		p := discover.Peer{Host: "one.local", SSH: true, Addrs: map[int]string{14: "192.168.50.7", 20: "192.168.50.7"}}
+		m := New(Options{
+			ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
+			StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{p}} },
+			IfName:    func(i int) string { return names[i] },
+			Now:       func() time.Time { return t0 },
+		})
+		awaitNetLoad(m)
+		rs := m.rows()
+		r := rs[len(rs)-1]
+		if r.mainIP != "192.168.50.7" || r.mainLink != netinfo.LinkWired || len(r.others) != 0 || m.connectLink(r) != netinfo.LinkWired {
+			t.Errorf("%v: メイン %q (%v) / その他 %+v / 繋ぐ線 %v", names, r.mainIP, r.mainLink, r.others, m.connectLink(r))
+		}
+	}
+}
+
+// 選んだ行でも、IP と括弧は 1 つの文字列として描く (セルの中で色を分けると、選んだ行の地の色が IP と括弧の間で途切れた)。
+func TestSelectedRowKeepsIPAndTagTogether(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini})
+	h.m.Resize(160, 40)
+	h.keys("l")
+	h.cursorTo(t, "m2macmini.local")
+	for _, l := range h.m.View() {
+		if strings.Contains(termwidth.StripSGR(l), "m2macmini.local") && strings.Contains(termwidth.StripSGR(l), "(無線)") {
+			if !strings.Contains(l, "192.168.50.7    (無線)") {
+				t.Errorf("選んだ行の IP と括弧の間に SGR が入った: %q", l)
+			}
+			return
+		}
+	}
+	t.Fatal("一覧に m2macmini の行が無い")
+}
+
+// 台帳の内部 IP が有線の I/F では見えず、同じ IP が Wi-Fi でメインとして見えた相手は、繋ぐ先の線に無線を出す (内部 IP の線が
+// 分からないことを理由に括弧を落とさない)。
+func TestConnectLinkFallsBackToMainForLedgerIP(t *testing.T) {
+	// 169.254 同士なので有線の網は分かれていない (lanAway が偽) 扱いになり、繋ぐ先は内部 IP の分岐を通る
+	h := newHarness(t, []ledger.Host{{Host: "air.local", User: "koji", LAN: "169.254.9.9"}},
+		[]discover.Peer{{Host: "air.local", SSH: true, Addrs: map[int]string{14: "169.254.9.9"}}})
+	var r row
+	for _, x := range h.m.rows() {
+		if x.host == "air.local" {
+			r = x
+		}
+	}
+	if r.lanAway || r.mainIP != "169.254.9.9" {
+		t.Fatalf("前提: lanAway=%v メイン=%q (内部 IP の分岐を通らない)", r.lanAway, r.mainIP)
+	}
+	if r.connectIP() != "169.254.9.9" || r.lanLink != netinfo.LinkUnknown || h.m.connectLink(r) != netinfo.LinkWireless {
+		t.Errorf("繋ぐ先 %q / 内部の線 %v / 繋ぐ線 %v, want 無線", r.connectIP(), r.lanLink, h.m.connectLink(r))
 	}
 }

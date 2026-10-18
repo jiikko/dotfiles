@@ -333,14 +333,14 @@ func (m *Model) columns() []col {
 		}},
 	}
 	if m.pf.ShowMain {
-		cols = append(cols, col{"メイン IP", 17, func(r row) string { return or(r.mainIP, "-") }, nil})
+		cols = append(cols, col{"メイン IP", 24, func(r row) string { return ipCell(or(r.mainIP, "-"), r.mainLink) }, nil})
 	}
 	if m.pf.ShowLan {
-		cols = append(cols, col{"内部 IP", 18, func(r row) string {
+		cols = append(cols, col{"内部 IP", 25, func(r row) string {
 			if r.lanIP != "" && !m.lanFixed(r) {
-				return sWarn.Render(r.lanIP) // 自動割り当て (起動のたびに変わりうる。未固定)
+				return sWarn.Render(ipCell(r.lanIP, r.lanLink)) // 自動割り当て (起動のたびに変わりうる。未固定)
 			}
-			return or(r.lanIP, "-")
+			return ipCell(or(r.lanIP, "-"), r.lanLink)
 		}, nil})
 	}
 	if m.pf.ShowOthers {
@@ -380,9 +380,31 @@ func (m *Model) detailCompactLine(r row) string {
 	return sText.Render(name) + "   " + sMuted.Render("(動作のキーは最下行。端末を高くすると詳細)")
 }
 
+// ipCell は一覧の IP の列のセル。IPv4 の最長 (15 桁) まで埋めてから線の括弧を置く (括弧の位置を行の間で縦に揃える。IP の直後に
+// 付けると全角の「有線」の位置が行ごとにずれる)。線が分からなければ括弧を出さない。
+// 括弧に別の色を付けない: セルの中で色を分けると、選んだ行の地の色が IP と括弧の間で途切れた (描いた SGR で確かめた)。
+func ipCell(ip string, l netinfo.Link) string {
+	if l.Label() == "" {
+		return ip
+	}
+	return fmt.Sprintf("%-15s (%s)", ip, l.Label())
+}
+
+// linkTag は線の括弧 ("(有線)" / "(無線)")。分からなければ ""。
+func linkTag(l netinfo.Link) string {
+	if l.Label() == "" {
+		return ""
+	}
+	st := sDim
+	if l == netinfo.LinkWireless {
+		st = sWarn // 無線は遅くなりうる (有線で繋ぐつもりの相手が無線に居ることに気づかせる)
+	}
+	return st.Render("(" + l.Label() + ")")
+}
+
 // minWidth はこの画面を組む最小の幅。12 桁以下では枠を組む計算が負になって落ちた (strings.Repeat)。これより狭ければ
 // 抜け方だけの画面にする。
-const minWidth = 36 // 一覧の表の最小 (印 1 + 名前 4 + 内部 IP 18) + 板の枠と余白 7 + 外の余白 6 より狭いと、板の右辺が切れた
+const minWidth = 43 // 一覧の表の最小 (印 1 + 名前 4 + 内部 IP 25) + 板の枠と余白 7 + 外の余白 6 より狭いと、板の右辺が切れた
 
 // viewTooSmall は幅・高さが足りないときの画面 (抜け方だけは必ず見せる)。
 func (m *Model) viewTooSmall(why string) []string {
@@ -542,7 +564,8 @@ func (m *Model) detail(r row, width int) string {
 	link := func(url string) string {
 		return lipgloss.NewStyle().Foreground(cInfo).Underline(true).Hyperlink(url).Render(url)
 	}
-	ip := m.target(r) // 有線の名前が引ければ名前 (wiredname.go)
+	ip := m.target(r)                 // 有線の名前が引ければ名前 (wiredname.go)
+	via := tagAfter(m.connectLink(r)) // 宛先が有線の名前でも、繋ぐ IP の線を出す
 	lines := []string{title, gradRule(width-7, cTeal, cPurple, cPink, lipgloss.Color(surfDetail)), ""}
 	if !r.self {
 		if ip != "" && user != "" {
@@ -550,13 +573,13 @@ func (m *Model) detail(r row, width int) string {
 			if m.sshRefusal(r) == "" { // 最下行と s のキーと同じ述語 (ssh が閉じた相手に s を案内しない)
 				keys += "  " + keycap("s", "繋ぐ")
 			}
-			lines = append(lines, label("ssh")+sCode.Render(fmt.Sprintf("ssh %s@%s", user, ip))+"  "+keys)
+			lines = append(lines, label("ssh")+sCode.Render(fmt.Sprintf("ssh %s@%s", user, ip))+via+"  "+keys)
 		}
 		if r.smb && ip != "" {
-			lines = append(lines, label("smb")+link("smb://"+ip)+"   "+keycap("y", "コピー")+"  "+keycap("O", "open をコピー"))
+			lines = append(lines, label("smb")+link("smb://"+ip)+via+"   "+keycap("y", "コピー")+"  "+keycap("O", "open をコピー"))
 		}
 		if r.vnc && ip != "" {
-			lines = append(lines, label("画面共有")+link("vnc://"+ip)+"   "+keycap("o", "開く"))
+			lines = append(lines, label("画面共有")+link("vnc://"+ip)+via+"   "+keycap("o", "開く"))
 		}
 	}
 	lanState := pillOn.Render("有線・固定")
@@ -568,10 +591,10 @@ func (m *Model) detail(r row, width int) string {
 	}
 	lines = append(lines, "")
 	if m.pf.ShowMain {
-		lines = append(lines, label("メイン")+sText.Render(or(r.mainIP, "-")))
+		lines = append(lines, label("メイン")+sText.Render(or(r.mainIP, "-"))+tagAfter(r.mainLink))
 	}
 	if m.pf.ShowLan {
-		lines = append(lines, label("内部")+sText.Render(or(r.lanIP, "-"))+"  "+lanState)
+		lines = append(lines, label("内部")+sText.Render(or(r.lanIP, "-"))+tagAfter(r.lanLink)+"  "+lanState)
 		if name, ok, note := m.wiredState(r); name != "" {
 			state := sOK.Render("✓ 引ける")
 			if !ok {
@@ -583,7 +606,7 @@ func (m *Model) detail(r row, width int) string {
 	if m.pf.ShowOthers && len(r.others) > 0 {
 		lines = append(lines, "", sDim.Render("その他の IP"))
 		for _, x := range r.others {
-			lines = append(lines, "  "+lipgloss.NewStyle().Width(16).Render(kindPill(x.Kind))+sMuted.Width(11).Render(x.Device)+sText.Render(x.Addr))
+			lines = append(lines, "  "+lipgloss.NewStyle().Width(16).Render(kindPill(x.Kind))+sMuted.Width(11).Render(x.Device)+sText.Render(x.Addr)+tagAfter(m.self.Link(x.Device)))
 		}
 	}
 	lines = append(lines, "")
@@ -600,6 +623,14 @@ func (m *Model) detail(r row, width int) string {
 		lines = append(lines, keycap("m", "別名")+"   "+keycap("space", "台帳から外す")+"   "+keycap("enter", "初期設定"))
 	}
 	return shadow(card(strings.Join(lines, "\n"), width-1, surfDetail, cTeal, cPurple, cPink))
+}
+
+// tagAfter は詳細カードで IP の後ろに置く線の括弧 (分からなければ何も足さない)。
+func tagAfter(l netinfo.Link) string {
+	if t := linkTag(l); t != "" {
+		return " " + t
+	}
+	return ""
 }
 
 func kindPill(k netinfo.Kind) string {

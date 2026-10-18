@@ -36,7 +36,9 @@ type ReportRow struct {
 	VNC       bool       `json:"vnc"`
 	SMB       bool       `json:"smb"`
 	MainIP    string     `json:"main_ip,omitempty"`
+	MainLink  string     `json:"main_link,omitempty"` // メイン IP が見えたこの Mac の I/F の線 (有線 / 無線。分からなければ空)
 	LanIP     string     `json:"lan_ip,omitempty"`
+	LanLink   string     `json:"lan_link,omitempty"`
 	ConnectIP string     `json:"connect_ip,omitempty"`    // 繋ぐ IP (有線か Wi-Fi か)
 	Target    string     `json:"target,omitempty"`        // s / Y / y / o が実際に使う宛先 (有線の名前が引ければ名前。wiredname.go)
 	Listed    bool       `json:"listed"`                  // 一覧に出る (有線だけに絞る設定で隠れていない)
@@ -53,6 +55,7 @@ type ReportIP struct {
 	Device string `json:"device"`
 	Addr   string `json:"addr"`
 	Kind   string `json:"kind"`
+	Link   string `json:"link,omitempty"`
 }
 
 // Report は今の状態の写し。積んだ知らせは覗くだけで取り出さない (取り出すと、待ちのたびに Report を呼ぶ dump で、開いたときの
@@ -69,13 +72,14 @@ func (m *Model) Report() Report {
 	for _, x := range m.rows() {
 		row := ReportRow{Self: x.self, Host: x.host, Alias: x.alias, Instance: x.instance, User: x.user, Managed: x.managed, Seen: x.seen,
 			SSH: x.ssh, VNC: x.vnc, SMB: x.smb, MainIP: x.mainIP, LanIP: x.lanIP, ConnectIP: x.connectIP(), Target: m.target(x),
-			Listed: x.self || m.listed(x), LanFixed: m.lanFixed(x), Pending: m.setupPending(x)}
+			Listed: x.self || m.listed(x), LanFixed: m.lanFixed(x), Pending: m.setupPending(x),
+			MainLink: x.mainLink.Label(), LanLink: x.lanLink.Label()}
 		row.WiredName, row.WiredOK, row.WiredNote = m.wiredState(x)
 		if x.self {
 			row.Target = "" // この Mac の行では s / Y / y / o を断る (宛先は無い)
 		}
 		for _, o := range x.others {
-			row.Others = append(row.Others, ReportIP{Device: o.Device, Addr: o.Addr, Kind: o.Kind.String()})
+			row.Others = append(row.Others, ReportIP{Device: o.Device, Addr: o.Addr, Kind: o.Kind.String(), Link: m.self.Link(o.Device).Label()})
 		}
 		r.Rows = append(r.Rows, row)
 	}

@@ -443,3 +443,65 @@ func TestReadKeepsServicesWhenDeadlineHitsIFList(t *testing.T) {
 		t.Errorf("読めたサービスを捨てた: Offline = %+v", off)
 	}
 }
+
+// 線の種類は Hardware Port で決める。Kind (ルーターの有無) とは別の軸で、iPhone USB は Mac 同士の網に使わない (NotWiredLAN) が線は有線。
+// サービス名は利用者が変えられるので、名前を変えた Wi-Fi も無線 (serviceorder_renamed.txt は本物の出力)。
+func TestLinkByHardwarePort(t *testing.T) {
+	cases := []struct {
+		file string
+		dev  string
+		want Link
+	}{
+		{"serviceorder.txt", "bridge0", LinkWired},
+		{"serviceorder.txt", "en10", LinkWired},
+		{"serviceorder.txt", "en13", LinkWired},
+		{"serviceorder.txt", "en0", LinkWireless},
+		{"serviceorder.txt", "en11", LinkWired}, // iPhone USB
+		{"serviceorder.txt", "utun3", LinkUnknown},
+		{"serviceorder.txt", "", LinkUnknown},
+	}
+	for _, c := range cases {
+		s := Snapshot{Services: ParseServiceOrder(fixture(t, c.file))}
+		if got := s.Link(c.dev); got != c.want {
+			t.Errorf("%s: Link(%q) = %v, want %v", c.file, c.dev, got, c.want)
+		}
+	}
+	renamed := Snapshot{Services: ParseServiceOrder(fixture(t, "serviceorder_renamed.txt"))}
+	for _, sv := range renamed.Services {
+		want := LinkWired
+		if sv.Port == "Wi-Fi" {
+			want = LinkWireless
+		}
+		if got := renamed.Link(sv.Device); got != want {
+			t.Errorf("renamed %q (%s): Link = %v, want %v", sv.Name, sv.Device, got, want)
+		}
+	}
+}
+
+// ルーターに有線で繋いだ I/F は KindInternet でも LinkWired (Kind から線の種類を作らない)。
+func TestLinkIsIndependentOfRouter(t *testing.T) {
+	s := Snapshot{
+		Services: []Service{
+			{Name: "Ethernet", Port: "Ethernet", Device: "en7", IP: "192.168.1.30", Router: "192.168.1.1", Read: true},
+			{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", IP: "169.254.9.9", Read: true},
+		},
+		IPs: []IP{{Device: "en7", Addr: "192.168.1.30"}, {Device: "en0", Addr: "169.254.9.9"}},
+	}
+	if k, l := s.Kind("en7", "192.168.1.30"), s.LinkOf("192.168.1.30"); k != KindInternet || l != LinkWired {
+		t.Errorf("en7: Kind = %v, Link = %v (インターネット・有線)", k, l)
+	}
+	if k, l := s.Kind("en0", "169.254.9.9"), s.LinkOf("169.254.9.9"); k == KindInternet || l != LinkWireless {
+		t.Errorf("en0: Kind = %v, Link = %v (ルーターの無い Wi-Fi も無線)", k, l)
+	}
+	if l := s.LinkOf("10.0.0.1"); l != LinkUnknown {
+		t.Errorf("この Mac に無い IP: Link = %v", l)
+	}
+}
+
+// Port の無いサービス (読めなかった) の I/F は有線と決めない。
+func TestLinkUnknownWithoutPort(t *testing.T) {
+	s := Snapshot{Services: []Service{{Name: "x", Device: "en5"}}}
+	if l := s.Link("en5"); l != LinkUnknown {
+		t.Errorf("Link = %v, want LinkUnknown", l)
+	}
+}

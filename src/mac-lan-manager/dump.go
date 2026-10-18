@@ -121,6 +121,9 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 		fmt.Fprintf(w, "%s %-28s alias=%-14s main=%-16s lan=%-16s fixed=%v connect=%-16s target=%-24s ssh=%v vnc=%v smb=%v seen=%v user=%s\n",
 			mark, x.Host, or(or(x.Alias, x.Instance), "-"), or(x.MainIP, "-"), or(x.LanIP, "-"), x.LanFixed, or(x.ConnectIP, "-"), or(x.Target, "-"),
 			x.SSH, x.VNC, x.SMB, x.Seen, or(x.User, "?"))
+		if x.MainLink != "" || x.LanLink != "" {
+			fmt.Fprintf(w, "    線: main=%s lan=%s (IP が見えたこの Mac の I/F の Hardware Port)\n", or(x.MainLink, "-"), or(x.LanLink, "-"))
+		}
 		if !x.Listed {
 			fmt.Fprintln(w, "    hidden: 有線だけの表示で一覧に出ない")
 		}
@@ -131,7 +134,7 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 			fmt.Fprintf(w, "    有線の名前: %s %s\n", x.WiredName, map[bool]string{true: "✓ 引ける", false: or(x.WiredNote, "引けない")}[x.WiredOK])
 		}
 		for _, o := range x.Others {
-			fmt.Fprintf(w, "    その他: %s %s (%s)\n", o.Device, o.Addr, o.Kind)
+			fmt.Fprintf(w, "    その他: %s %s (%s%s)\n", o.Device, o.Addr, o.Kind, map[bool]string{true: ", " + o.Link}[o.Link != ""])
 		}
 	}
 	fmt.Fprintln(w, "\n# Bonjour の生の結果 (分類の前。addrs は I/F の番号 → IPv4)")
