@@ -42,7 +42,8 @@ LOG="$TMP/calls.log"
 : > "$LOG"
 # doctor・mac-lan-manager (L)・クリップボード / ブラウザの口が触りうる外部コマンド。**実体があるかに関わらず** shim を置く
 # (実体が無いマシンでも「呼ぼうとした」ことは検出したい)。L の本物のつなぎ (src/mac-lan-manager の live) が呼ぶものを足すときはここにも足す
-for cmd in brew xcrun pgrep launchctl du docker ssh dns-sd dscacheutil networksetup scutil sudo open pbcopy; do
+# 🚨 絶対パスで起動するもの (setup/wiredname.go の /usr/bin/dns-sd) は PATH の shim では捕まえられない
+for cmd in brew xcrun pgrep launchctl du docker ssh dns-sd dscacheutil networksetup scutil ifconfig sudo open pbcopy; do
   cat > "$SHIM/$cmd" <<SHIMEOF
 #!/bin/sh
 echo "\$(basename "\$0") \$*" >> "$LOG"

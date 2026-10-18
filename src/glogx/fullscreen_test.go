@@ -361,6 +361,7 @@ func visibleFullScreens(m *browseModel) int {
 
 // 横断キーは 2 か所に書く: キーの集合 (internal/crosskey。画面が判定に使う) と行き先 (CrossTarget。main だけが知る)。
 // 片方にだけ足すと、画面はキーを返すのに行き先が無い (押しても無言) か、行き先はあるのに画面がキーを飲む。
+// 見るのは 1 文字の ASCII のキーだけ (今の横断キーは全部 1 文字)。複数文字のキー (ctrl+x など) を横断キーにするなら、この走査も広げる。
 func TestCrossKeysMatchCrossTarget(t *testing.T) {
 	n := 0
 	for c := 0x20; c < 0x7f; c++ {

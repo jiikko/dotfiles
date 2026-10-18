@@ -106,6 +106,7 @@ func (v *FilerView) Hide() {
 
 // DrainNotices は見えている間に溜まった知らせを deliver へ渡す (閉じていれば何もしない)。押したキーが効かなかった理由は
 // NoticeRefused にする (lastWarning を汚さない)。
+// 🚨 呼ぶ側はキーの後だけでなく Advance の後にも呼ぶ: explode の完了や `o` の失敗は Advance の中で積まれるので、キーの後だけだと次のキーまで出ない。
 func (v *FilerView) DrainNotices(deliver func(text string, kind app.NoticeKind) bool) {
 	f := v.live()
 	if f == nil {

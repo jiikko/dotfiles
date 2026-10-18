@@ -26,6 +26,7 @@ var execCmdAllow = map[string]string{
 	"internal/extcmd/git.go":           "git 実行の共通入口 (WaitDelay は RunGitCmd が張る。issue 817 で gitlog.go から移した)",
 	"open_workspace.go":                "e / E の前景エディタ・ファイラー起動 (runEditorCmd = tea.Exec + foreground.Exec)",
 	"tui.go":                           "job ログを nvim の scratch で開く前景実行",
+	"internal/testenv/shared.go":       "テストの fixture の repo に打つ git (テスト専用のパッケージ。本番からの import は depguard が止める)",
 }
 
 // 下限は実件数のすぐ下に置く (0 や 1 だと「走査が壊れて対象を取りこぼした」が緑で通る)。
@@ -40,10 +41,8 @@ const (
 
 func TestEveryCommandContextSetsWaitDelay(t *testing.T) {
 	boundarycheck.Run(t, boundarycheck.Spec{
-		Root: ".",
-		// tools は本体から参照しない調査ツール。testenv はテスト専用のパッケージ (テストの fixture の repo に git を打つ。
-		// 本番のバイナリには入らない: .golangci.yml の depguard の test-support-only-in-tests が本番からの import を止める)
-		SkipDirs: []string{"tools", "testenv"},
+		Root:     ".",
+		SkipDirs: []string{"tools"}, // 本体から参照しない調査ツール
 		Allow:    execCmdAllow, SeenFloor: waitDelaySeenFloor, EnforcedFloor: waitDelayEnforcedFloor,
 	})
 }

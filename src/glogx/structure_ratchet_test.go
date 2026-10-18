@@ -373,9 +373,9 @@ func TestNoFixtureCallsInProduction(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
-			// テスト専用のパッケージ (testenv・doctortest・issuesviewtest・statusviewtest) は本番のバイナリに入らない
-			// (.golangci.yml の depguard の test-support-only-in-tests が本番からの import を止める) ので見ない
-			if n := d.Name(); n == "testdata" || n == "testenv" || (strings.HasSuffix(n, "test") && strings.HasPrefix(p, "internal"+string(filepath.Separator))) || (strings.HasPrefix(n, ".") && p != ".") {
+			// テスト専用のパッケージ (testSupportPkgs) は本番のバイナリに入らないので見ない。名前の形 (*test) で外すと、
+			// 同じ形の名前の本番のパッケージ (internal/latest 等) まで外れる
+			if n := d.Name(); n == "testdata" || testSupportPkgs[filepath.ToSlash(p)] || (strings.HasPrefix(n, ".") && p != ".") {
 				return filepath.SkipDir
 			}
 			return nil
@@ -509,6 +509,54 @@ func hasNofixtureConstraint(f *ast.File) bool {
 		}
 	}
 	return false
+}
+
+// testSupportPkgs はテスト専用のパッケージ (testing を import し、テストだけが使う部品)。本番のコードからの import は
+// .golangci.yml の depguard の test-support-only-in-tests が止める。その deny の一覧とこの一覧の一致は TestTestSupportPkgsMatchDepguard が見る
+// (片方にだけ足すと、本番から import できるのに検査からは外れるパッケージができる)。
+var testSupportPkgs = map[string]bool{
+	"internal/testenv":                   true,
+	"internal/doctorview/doctortest":     true,
+	"internal/issuesview/issuesviewtest": true,
+	"internal/statusview/statusviewtest": true,
+}
+
+// TestTestSupportPkgsMatchDepguard は testSupportPkgs と、.golangci.yml の depguard の test-support-only-in-tests の deny が
+// 同じパッケージの集合であることを確かめる。
+func TestTestSupportPkgsMatchDepguard(t *testing.T) {
+	b, err := os.ReadFile(".golangci.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	i := strings.Index(s, "test-support-only-in-tests:")
+	if i < 0 {
+		t.Fatal(".golangci.yml に test-support-only-in-tests の規則が無い")
+	}
+	rest := s[i:]
+	// 次の規則 (同じ深さのキー) の手前までを読む
+	if j := strings.Index(rest, "\n        render-pure:"); j > 0 {
+		rest = rest[:j]
+	}
+	got := map[string]bool{}
+	for _, line := range strings.Split(rest, "\n") {
+		if pkg, ok := strings.CutPrefix(strings.TrimSpace(line), "- pkg: glogx/"); ok {
+			got[pkg] = true
+		}
+	}
+	if len(got) == 0 {
+		t.Fatal("depguard の test-support-only-in-tests の deny を 1 つも読めなかった (読み方が壊れている)")
+	}
+	for p := range testSupportPkgs {
+		if !got[p] {
+			t.Errorf("%s: testSupportPkgs にあるのに depguard が本番からの import を止めていない", p)
+		}
+	}
+	for p := range got {
+		if !testSupportPkgs[p] {
+			t.Errorf("%s: depguard はテスト専用として止めているのに testSupportPkgs に無い (Fixture の検査が本番のコードとして読む)", p)
+		}
+	}
 }
 
 // TestNoViewImportsAnotherView は画面のパッケージ (internal/*view) の本番のコードが、別の画面のパッケージを import しないことを

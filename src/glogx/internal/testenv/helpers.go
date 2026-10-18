@@ -224,8 +224,13 @@ func HasControlExceptNewline(s string) bool { return ctlprobe.HasControlExceptNe
 // この値と実物の一致を固定する (frame の寸法や hint の余白を変えたら、そちらが落ちてここを直す)。
 const PopupHintBudget = 89
 
-// AssertSanitizedAndVisible は lines に端末の制御列と OSC の中身 (PWNED) が残っていないこと、wantVisible が全部描かれていることを見る。
-// wantVisible が描かれていないときは止める: 検査対象が空だと、制御列の assert は 1 つも sink を守っていない。
+// AssertSanitizedAndVisible は無害化テストの 2 つの主張を対で確かめる:
+//
+//  1. 制御シーケンス / OSC の中身 (PWNED) が残っていない (本来の主張)
+//  2. 🚨 **細工した値が実際に描かれている** (陽性対照。wantVisible)
+//
+// 2 が無いと、箱が空を返した瞬間に 1 の assert が 1 つも実行されず vacuous に緑を返す
+// (実測: markNextBox の先頭に `return nil` を入れても PASS した)。
 func AssertSanitizedAndVisible(t *testing.T, where string, lines []string, wantVisible ...string) {
 	t.Helper()
 	for _, line := range lines {

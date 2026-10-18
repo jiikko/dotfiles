@@ -78,6 +78,7 @@ func (v *LanView) Visible() bool { return v.shown }
 
 // DrainNotices は見えている間に溜まった知らせを deliver へ渡す (閉じていれば何もしない)。押したキーが効かなかった理由は
 // NoticeRefused にする (lastWarning を汚さない)。
+// 🚨 呼ぶ側はキーの後だけでなく Advance の後と開いたときにも呼ぶ: 走査の結果や読み込みの失敗 (台帳が読めない等) で積まれる知らせがある。
 func (v *LanView) DrainNotices(deliver func(text string, kind app.NoticeKind) bool) {
 	lm := v.live()
 	if lm == nil {
