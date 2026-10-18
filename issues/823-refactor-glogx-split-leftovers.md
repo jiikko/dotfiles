@@ -39,15 +39,25 @@
   (静的経路は全部 / TUI はチャンクの分) の違いは意図したもの (tui.go の ciResultMsg の注記)。取得の関数の中へ入れると返り値の契約 (Statuses に無い SHA は
   取れなかったもの) とそのテストを変える
 
-## 残タスク (未着手)
+## 残タスク (2026-10-18 に済ませた)
 
-- [ ] テストの helper の写し: `internal/*/shared_helpers_test.go` が 8 パッケージで約 680 行、中身が一致する写しを持つ (`assertSanitizedAndVisible` 4 か所、
-  `stubWorktreeStatus` / `newTestStatusView` / `applyStatusLoad` 3 か所)。写しどうしのずれを見る検査は無い。共有のテスト部品のパッケージへ寄せる
-- [ ] 全画面の enum とキーの対応 (`app.CrossTarget` / `app.FullScreen*`) が最下層の internal/app にあり、画面を 1 つ足すたびに app と、app に依存する全画面が作り直される
-  (上のキャッシュの「土台」の値)。trigger: 次に画面を足すとき
-- [ ] no-real-commands の shim (`tests/glogx/test_no_real_commands_in_tests.sh`) が見るのは brew xcrun pgrep launchctl du docker の 6 つだけで、
-  ssh・dscacheutil・dns-sd・networksetup・pbcopy を見ていない (issue 747 の進捗と retro 814 に「未対応」として記録されていたもの)
-- [ ] tui.go / browseModel そのものは分割で減っていない (上の測定)。filer と lan の振り分け (`routeKeyTo*` / `drain*Notices` / `restore*Screen`) はほぼ同じコードの 2 本
+- [x] テストの helper の写し: 中身が一致する写し 14 個を `testenv` (13 個) と `issuesviewtest` (StartPagerGlide。term と import が循環するため) へ寄せ、
+  main と commitview の status の helper 3 つを `statusviewtest` (新設。`//go:build !nofixture`) へ寄せた。`internal/*/shared_helpers_test.go` は 680 → 288 行
+  (残りは各パッケージの内部を触る別物と、テストの変数 lanScansMu を触る fakeLanOptions)。テストの差分は 549 行増・888 行減
+- [x] 全画面の enum とキーの対応: `FullScreenID` / `CrossTarget` を internal/app から main (`fullscreen_id.go`) へ移し、画面は `internal/crosskey.Is` で横断キーを判定して
+  押されたキーを返すだけにした (app の全画面の参照は 0)。2 か所の一致は `TestCrossKeysMatchCrossTarget`
+- [x] no-real-commands の shim を 6 → 15 本 (ssh・dns-sd・dscacheutil・networksetup・scutil・ifconfig・sudo・open・pbcopy)。L の偽物への差し替えを外す変異で、
+  本物のつなぎの scutil 14 回が shim に記録されることを確認した。絶対パスの /usr/bin/dns-sd は shim では捕まえられない (スクリプトに書いた)
+- [x] main が filer / lan の中身 (`Live()`) に触るのをやめ、`DrainNotices` / `RestorePlace` を画面の口にした。`routeKeyToFiler` / `routeKeyToLan` は合図の種類と
+  抜けたときの後処理が違うので寄せない (理由を tui.go に書いた)。tui.go は 4,227 → 4,196 行、browseModel のメソッドは 145 → 143
+- 敵対的レビュー (opus 2 体: 振る舞いの退行 / 検査の弱化): 退行は見つからなかった。採用: Fixture の検査と WaitDelay の検査がテスト部品を「名前」で外していて
+  同じ名前の本番のパッケージも外れた (正確なパスの一覧 `testSupportPkgs` + depguard との一致のテストに直した。再現の 2 形と、一覧を減らす変異で red)・
+  移設で落ちた「なぜ」のコメント 2 か所。記録のみ: 一致のテストは 1 文字のキーだけを見る (コメントに書いた)・テスト部品の公開の死んだ helper は到達不能の検査に出ない (golden で増減は見える)
+
+- 敵対的レビュー 2 周目 (opus 1 体。直した差分に): 1 周目の 2 形は塞がっていた。採用: WaitDelay の検査の SkipDirs が tools も名前で照合していた
+  (subproc/boundarycheck を Root からのパスでの照合に直した。glogx の tools と pro-con の samples はどちらも Root の直下で挙動は変わらない)・
+  testenv の git に付けた no-waitdelay の印が印の定義 (出力を取らない) と合っていない (subproc.CommandContext にして印と許可表から外した)・
+  WaitDelay の検査の下限が古い (8 に上げた)。記録のみ: depguard との一致のテストは .golangci.yml を字面で読むので、書き方によっては偽の赤になる (安全側)
 
 ## 進捗
 
