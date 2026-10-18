@@ -15,7 +15,7 @@
 # _tmux.conf の window-status-format / pane-border-format 側が解釈する。
 #
 # 競合対策: 「現在値を読む」→「seen を書く」を shell 側で 2 段に分けると、その隙間に
-# Claude hook が working/idle に更新したものを seen で上書きしうる (codex 指摘)。
+# Claude hook が working/idle に更新したものを seen で上書きしうる。
 # tmux if-shell -F に「@claude_state が厳密に '🔔 input' のときだけ set する」を
 # 閉じ込め、読み取りと条件付き書き込みを 1 コマンドにして隙間を無くす。
 set -uo pipefail
@@ -31,7 +31,7 @@ case "$win" in
 esac
 
 # pane ごとに tmux を起動しない: window 切替のたびに走る hook なので、pane 数に比例した
-# fork がそのまま切替の裏側のコストになる (issue 083)。if-shell は pane ごとに必要 (上の
+# fork がそのまま切替の裏側のコストになる。if-shell は pane ごとに必要 (上の
 # 競合対策) だが、`;` 区切りで 1 回のクライアント起動にまとめられる。
 cmds=()
 while IFS= read -r pid; do

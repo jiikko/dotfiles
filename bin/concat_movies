@@ -42,7 +42,7 @@ for cmd in ffmpeg ffprobe; do
 done
 
 # 秒の引き算 (a - b) を小数 3 桁で出す。🚨 bc に戻さない: bc は `1 - 0.3` を `.7` と出し (ffmpeg が fade の st を
-# 拒否する)、数値でない入力 (ffprobe の `N/A`) を黙って別の値にする (`N/A - 0.7` → 1.3)。issue 610。
+# 拒否する)、数値でない入力 (ffprobe の `N/A`) を黙って別の値にする (`N/A - 0.7` → 1.3)。
 sub_seconds() {  # $1=a $2=b $3=何の秒数か (エラー文用)
   local num='^[0-9]+([.][0-9]+)?$|^[.][0-9]+$'
   if ! [[ "$1" =~ $num && "$2" =~ $num ]]; then

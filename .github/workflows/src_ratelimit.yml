@@ -18,7 +18,7 @@ on:
       - 'src/safefs/**'      # doctor の依存 (replace は依存先から引き継がれないので ratelimit にも要る)
       # 🚨 statusline (shell) は usage と同じ pace ルールを二重実装しており、乖離を
       # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
-      # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いている。
+      # 検査が 1 度も走らない。tests.yml 側からも叩いている。
       - _claude/statusline-command.sh
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
       - scripts/go_module_graph.sh   # 全プロジェクトの make lint が先に回す module グラフの検査 (issue 787)
@@ -36,7 +36,7 @@ on:
       - 'src/safefs/**'      # doctor の依存 (replace は依存先から引き継がれないので ratelimit にも要る)
       # 🚨 statusline (shell) は usage と同じ pace ルールを二重実装しており、乖離を
       # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
-      # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いている。
+      # 検査が 1 度も走らない。tests.yml 側からも叩いている。
       - _claude/statusline-command.sh
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
       - scripts/go_module_graph.sh   # 全プロジェクトの make lint が先に回す module グラフの検査 (issue 787)

@@ -19,7 +19,7 @@
 # サブエージェントだけが触り、親の tool_use の入力に番号が出ていない issue (下の絞り込みで落ちる)。
 #
 # 🚨 commit の subject と next/ の claim は**他セッションのものも混ざる** (pull・`origin/master` から切った
-# worktree の commit・他人の claim。issue 353 / 808)。git の材料 (祖先関係・reflog) では自分と他人を区別できず、
+# worktree の commit・他人の claim)。git の材料 (祖先関係・reflog) では自分と他人を区別できず、
 # reflog は worktree を消すと記録ごと消えて標準手順で hook を恒久的に無音にする (353 の A-B)。
 # そこで「このセッションの transcript の tool_use の入力に、その番号が issue に触る形で出たか」で絞る (`touched_nums`)。
 # transcript は worktree を消しても残る。transcript を読めない・tool_use を 1 件も取れないときは「測れない」として
@@ -45,7 +45,7 @@ issue_hook_resolve_dir <<<"$input" || exit 0
 root="$ISSUE_HOOK_ROOT"
 
 session_id=$(issue_progress_json_field "$input" session_id)
-# 書き先 (`$state_dir/$session_id.reported`) に入るので、パス構成要素として検証する (issue 302 ②)
+# 書き先 (`$state_dir/$session_id.reported`) に入るので、パス構成要素として検証する
 issue_progress_valid_session_id "$session_id" || exit 0
 state_dir="${CLAUDE_ISSUE_PROGRESS_DIR:-$HOME/.cache/claude-issue-progress}"
 state="$state_dir/$session_id.head"
@@ -54,7 +54,7 @@ base_root=$(sed -n 1p "$state"); base=$(sed -n 2p "$state")
 [ "$base_root" = "$root" ] || exit 0
 git -C "$root" cat-file -e "$base^{commit}" 2>/dev/null || exit 0
 
-# 🚨 **worktree の commit も自分の作業として数える** (issue 339)。この repo は
+# 🚨 **worktree の commit も自分の作業として数える**。この repo は
 # `.claude/rules/worktree-per-session.md` が worktree を既定にしているので、本体へ push+pull
 # するまで `$root` からは「何も変わっていない」ように見え、**片付けた issue が毎ターン
 # 「1 度も変更されていない」と再掲される** (実測 2026-09-09 に 310/311/312/314 で 3 回)。
@@ -80,7 +80,7 @@ subjects=$( { while IFS= read -r w; do
 # path 由来 (issue ファイル自体を変更した番号) は「変更あり」が既に事実なので、関連 issue の列挙だけに使わない
 # (関連 issue に 1 行足しただけの番号を「作業対象」に格上げすると、その issue 自身に進捗を要求する誤報になる)。
 #
-# 🚨 **桁数を決め打たない** (issue 313 ②)。`[0-9]{3}` / `[0-9][0-9][0-9]` だと 1000 番以降を
+# 🚨 **桁数を決め打たない**。`[0-9]{3}` / `[0-9][0-9][0-9]` だと 1000 番以降を
 # **抽出集合から静かに落とす**。落ちても出力は「関わった issue なし」になるだけなので、
 # 到達した日に機構が無音で死ぬ。`issues/README.md` の採番規約は「3 桁ゼロ埋め」と書いているが、
 # それは**現在の桁数**であって上限の宣言ではない。
@@ -133,11 +133,11 @@ issue_file() {
 rel() { printf '%s' "${1#"$root"/}"; }
 count_done_boxes() { grep -cE '^\s*- \[x\]' 2>/dev/null || true; }
 count_headings() { grep -cE '^#+ .*(進捗|結果|残タスク|残課題|対応|todo|TODO)' 2>/dev/null || true; }
-# 🚨 **規約が要求する形も進捗として数える** (issue 339)。_claude/issue-rules.md「本文」は
+# 🚨 **規約が要求する形も進捗として数える**。_claude/issue-rules.md「本文」は
 # 「done へ移す commit では、その番号を参照している open issue にも『NNN で解消 / 継続』を
 # 1 行追記する」と要求しているのに、判定が見出しと [x] しか見ていなかったため、
 # **規約どおり書いても「進捗が増えていない」と言われる**。要求と判定が食い違っていた。
-# 🚨 **新しい側の内容も worktree を見る** (issue 339)。`$root` のファイルは worktree の commit を
+# 🚨 **新しい側の内容も worktree を見る**。`$root` のファイルは worktree の commit を
 # pull するまで古いままなので、本体だけを数えると「触ってはいるが進捗が増えていない」という
 # **別の誤検出**に化ける (「触っていない」を直しただけでは半分しか閉じない)。
 max_over_worktrees() { # max_over_worktrees <数える関数> <root 相対パス>
@@ -192,7 +192,7 @@ done
 
 # 同じ指摘は 1 セッション 1 回 (block で Claude が対応した後の Stop で再指摘しない。
 # 指摘の集合が変わったら (別の issue に関わった等) 改めて出す)
-# 🚨 **dedup は「指摘の集合」ではなく「1 行ごと」** (issue 339)。集合の cksum で見ると
+# 🚨 **dedup は「指摘の集合」ではなく「1 行ごと」**。集合の cksum で見ると
 # **commit を 1 つ積むたびに集合が変わる**ので、説明済みの N 件が丸ごと再掲される
 # (実測: obaket で 6 回、dotfiles で 3 回。実質的な新規は 1 回目の 2 件だけだった)。
 # 行ごとにすると「新しい 1 件が既知の 20 数件に埋もれる」も同時に消える。

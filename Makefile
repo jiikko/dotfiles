@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-# 🚨 継承した git の repo の場所を recipe から外す (issue 744)。hook から起動された make test は GIT_DIR などを
+# 🚨 継承した git の repo の場所を recipe から外す。hook から起動された make test は GIT_DIR などを
 # 持ったまま走り、テストの `git -C <一時 dir>` はそれに負けて継承した repo の config やブランチを書き換える。
 # 一覧は `git rev-parse --local-env-vars` と同じ集合 (src/subproc/gitenv.go の gitLocationEnv も同じ)。漏れは
 # tests/scripts/test_make_unexports_git_location_env.sh が本物の git と突き合わせて落とす。
@@ -57,7 +57,7 @@ ZSH_SYNTAX_FILES := \
 # zsh 例外を除いた補集合。手書き列挙しない (発見された script は登録なしで自動的に lint 対象)。
 SHELLCHECK_FILES := $(filter-out $(ZSH_SYNTAX_FILES),$(shell scripts/discover_shell_scripts.sh))
 
-# 手書き列挙しない (issue 313 ①: 実測で 25 本中 12 本が検査の外に出ていた)。
+# 手書き列挙しない (実測で 25 本中 12 本が検査の外に出ていた)。
 # 除外は scripts/discover_yaml_files.sh に理由つきで書く。対象 0 件は失敗する。
 YAML_FILES := $(shell scripts/discover_yaml_files.sh)
 JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
@@ -88,7 +88,7 @@ KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/ka
 #   make clean-tmp              # 30 日より古いものを消す
 #   make clean-tmp DRY_RUN=1    # 消さずに一覧と合計サイズだけ出す
 #   make clean-tmp DAYS=7       # 7 日より古いものを消す
-# 判定 (中に新しい更新があるフォルダ・登録済みの worktree・読めないものは残す) は scripts/clean_tmp.sh の冒頭 (issue 729)。
+# 判定 (中に新しい更新があるフォルダ・登録済みの worktree・読めないものは残す) は scripts/clean_tmp.sh の冒頭。
 clean-tmp: DAYS ?= 30
 clean-tmp:
 	@DAYS=$(DAYS) DRY_RUN=$(DRY_RUN) scripts/clean_tmp.sh
@@ -104,11 +104,11 @@ pull:
 	@_claude/hooks/normalize-settings.sh
 	@git pull --rebase
 
-# test-src (= go lint + test) を含める。かつては test-go (テストのみ) だったが、
+# test-src (= go lint + test) を含める。test-go (テストのみ) にすると、
 # CI (_go-project.yml) と test-changed の src 腕は lint + test を回すため、部分実行の
-# 方が全体実行より厳しいねじれがあった。golangci-lint は各 src Makefile が scripts/golangci_lint.sh 経由で
+# 方が全体実行より厳しいねじれになる。golangci-lint は各 src Makefile が scripts/golangci_lint.sh 経由で
 # 版を固定して呼ぶ (初回に版ごとの決まった場所へビルドする) ので、追加のツールインストールは不要
-# 🚨 **集約にする** (issue 130)。prerequisite に並べる形 (`test: a b c`) だと、lint が 1 つ
+# 🚨 **集約にする**。prerequisite に並べる形 (`test: a b c`) だと、lint が 1 つ
 #   落ちた日は **テストが 1 本も走らないまま赤を見る**。コミット前ゲートとして常用する入口なので、
 #   全部走らせてから失敗をまとめて返す (所要時間より「その日の全ての赤が 1 回で見える」を採る)。
 #   lint だけ先に見たいときは `make test-lint`。
@@ -133,7 +133,7 @@ test-dir:
 # run_all_targets は列挙したターゲットを**全部走らせてから**集約して失敗を返す。
 #
 # 🚨 prerequisite に並べる形 (`test-runtime: a b c`) だと、先に落ちた 1 本で make が中断し、
-#   後続が **1 度も実行されないまま CI ログから消える** (issue 109)。2026-08-25 に 2 回起き、
+#   後続が **1 度も実行されないまま CI ログから消える**。2026-08-25 に 2 回起き、
 #   push 済みの tests/codex_fanout.bats の修正が数時間 CI 未検証のまま放置された
 #   (赤の原因が別にある間、bats は永久に走らない)。
 #   「CI が緑になったら確認する」は、この形では成立しない。
@@ -186,17 +186,16 @@ test-runtime:
 # 発見 0 件は fail にする (テストを持つディレクトリしか対象にしないため、0 件 = ディレクトリの
 # 改名/不在や find の失敗がパイプに隠れて「未実行なのに成功」する状態。それを弾く)。
 # 🚨 **fail-fast しない** (並列版 run_tests_parallel と揃える)。1 本目で止めると、
-#   ソート順で後ろのテストが **1 度も走らないまま CI ログから消える** (issue 109)。
-#   壁をターゲット境界からファイル境界へ動かしただけになる — 実際 109 の 1 次修正は
-#   test-bats を救っただけで、`.sh` 側の隠れは残っていた (敵対的レビューが実証)。
+#   ソート順で後ろのテストが **1 度も走らないまま CI ログから消える**。
+#   壁をターゲット境界からファイル境界へ動かしただけになる — test-bats だけを救っても、`.sh` 側の隠れは残る。
 #   失敗は一時ファイルへ集め、最後にまとめて出す (`while` はパイプの subshell なので変数が返らない)。
 #
-# 🚨 **各テストは使い捨ての TMPDIR で走らせる** (issue 325 の層 1)。テストとその子プロセスが
+# 🚨 **各テストは使い捨ての TMPDIR で走らせる**。テストとその子プロセスが
 # **`${TMPDIR:-/tmp}` を組み立てて** `mktemp` する形 (例: `scripts/tmux_schedule_keys.sh` の
 # `SK_TMP_PREFIX="${TMPDIR:-/tmp}/schedkeys"`) は、隔離しないと実機の `/var/folders/.../T` へ
 # 撒き続ける。🚨 **素の `mktemp -d` / `mktemp -t pfx` は TMPDIR 環境変数を見ない** ので
 # ここでは隔離できない (macOS は `_CS_DARWIN_USER_TEMP_DIR` を使う。実測 2026-09-08)。
-# そちらの後始末は各テストの trap の責任で、issue 305 が担当する。macOS のそこは**起動時にしか
+# そちらの後始末は各テストの trap の責任。macOS のそこは**起動時にしか
 # 一掃されない** (`/etc/periodic/` が無い。実測 2026-09-06: uptime 64 日 / 7 日超のエントリ
 # 2,766 個 / `test_schedule_keys.sh` 由来だけで 14,147 個)。
 # **runner が作って runner が消す**形にしてあるので、テスト側の後始末漏れもここで回収される
@@ -234,7 +233,7 @@ endef
 # 🚨 **exit 77 = そのファイルは丸ごと skip した** (automake の慣例)。0 と区別しないと、依存が
 # 無くて何も検査しなかったテストが合格と同じ `[ok]` になる。実害: 2026-08-29 に
 # test_deny_bare_tmux_kill.sh が timeout(1) 不在で丸ごと skip し、**60 件の assert が消えたのに
-# `[ok]`** と集計されていた (issue 139)。skip 自体は失敗ではないので緑のままにするが、
+# `[ok]`** と集計されていた。skip 自体は失敗ではないので緑のままにするが、
 # **件数と一覧を出して「増えた」に気づける**ようにする (直列版と同じ形で最後に出す)。
 # テストごとにファイルへ隔離し、失敗時にまとめて吐く (並列で行が混ざるのを防ぐ)。
 # fail-fast はしない (xargs は失敗後も残りを流す)。失敗・skip・実行済みの一覧は追記専用の一時
@@ -275,7 +274,7 @@ rm -f "$$fails" "$$skips" "$$ran" "$$ran.s" "$$exp" "$$miss"; \
 [ "$$xrc" -eq 0 ] || { echo "✗ 並列 runner (xargs) が rc=$$xrc で終わったが、失敗したテストの記録が無い (runner 自体の故障)" >&2; exit 1; }
 endef
 
-# 新品チェックアウト (= 追跡されているものだけがある状態) で回す opt-in レーン (issue 132)。
+# 新品チェックアウト (= 追跡されているものだけがある状態) で回す opt-in レーン。
 # 「手元には在るが git に載っていないもの」への依存を push 前に出す。判定は「ignore か」では
 # なく「git に載っているか」: 空ディレクトリ (issues/next/) も untracked も同じ形で壊れる。
 # 🚨 test からは呼ばない (所要時間を倍にしない。push 前に自分で叩く)。HEAD で回るので
@@ -323,7 +322,7 @@ CI_HEAVY_PRUNE := \( $(foreach d,$(CI_HEAVY_TEST_DIRS),-path $(d) -o) -false \) 
 # 気づけない (どのディレクトリが heavy かの出典はここ、依存の出典は workflow、の二重管理)。
 # heavy は zsh テストのみなので tmux/bats を省いて ~60s 節約している。
 # ffmpeg (ffprobe も同じ formula) は av1ify の e2e (tests/zshrc/av1ify/test_av1ify_vfr_e2e.sh) 用。
-# 無いと e2e は exit 77 で skip し、CI では一度も走らない (issue 394)。
+# 無いと e2e は exit 77 で skip し、CI では一度も走らない。
 CI_COMMANDS_HEAVY := zsh make ffmpeg
 CI_COMMANDS_REST  := tmux zsh make bats rg
 # rest にはあるが heavy には無い = heavy で使うと CI が落ちるコマンド (乖離検査の対象)
@@ -346,17 +345,17 @@ test-ci-group-deps:
 		CI_COMMANDS_HEAVY='$(CI_COMMANDS_HEAVY)' CI_COMMANDS_REST='$(CI_COMMANDS_REST)' \
 		scripts/check_ci_group_deps.sh
 
-# `… | grep -q` が pipefail 下で判定を反転させる形を落とす (issue 096)。
+# `… | grep -q` が pipefail 下で判定を反転させる形を落とす。
 # 正本は scripts/check_pipefail_grep_q.sh (なぜ危険か・直し方・例外マーカーはそこに書いてある)。
 test-pipefail-grep-q:
 	@scripts/check_pipefail_grep_q.sh
 
-# 時間の上限付き実行を runtimeout (bin/runtimeout) 以外で書いた箇所を落とす (issue 643)。
+# 時間の上限付き実行を runtimeout (bin/runtimeout) 以外で書いた箇所を落とす。
 # 正本は scripts/check_handrolled_timeout.sh (なぜ危険か・検出しない形・例外マーカーはそこに書いてある)。
 test-handrolled-timeout:
 	@scripts/check_handrolled_timeout.sh
 
-# テストに理由の印の無い sleep を足させない (issue 615)。正本は scripts/check_test_sleeps.sh (規則・印の書き方・検出しない形)
+# テストに理由の印の無い sleep を足させない。正本は scripts/check_test_sleeps.sh (規則・印の書き方・検出しない形)
 test-test-sleeps:
 	@scripts/check_test_sleeps.sh
 
@@ -365,11 +364,11 @@ test-test-sleeps:
 test-comment-provenance:
 	@scripts/check_comment_provenance.sh
 
-# bash 3.2 で `$var` の直後に全角を置いて変数名を読み違える形を落とす (issue 633)。正本は scripts/check_var_before_multibyte.sh
+# bash 3.2 で `$var` の直後に全角を置いて変数名を読み違える形を落とす。正本は scripts/check_var_before_multibyte.sh
 test-var-multibyte:
 	@scripts/check_var_before_multibyte.sh
 
-# tests/ で `cd` の rc を見ていない行を落とす (issue 204)。cd が失敗しても CWD (= repo root)
+# tests/ で `cd` の rc を見ていない行を落とす。cd が失敗しても CWD (= repo root)
 # のまま先へ進み、fixture が repo に書かれる形を止める。意図的な例外は行内の `cd-rc: allow`。
 test-cd-rc:
 	@scripts/check_cd_rc_in_tests.sh
@@ -380,18 +379,18 @@ test-cdpath-capture:
 	@scripts/check_cdpath_before_cd_capture.sh
 
 # 共有観測ログ (tt-restore-trigger.log) の書き手が guards.sh の tt_trigger_log 以外に増えるのを落とす。
-# 同じ GitHub Action が workflow 間で違う版に固定されるのを落とす (issue 073 §1)。
+# 同じ GitHub Action が workflow 間で違う版に固定されるのを落とす。
 # 版が割れていても workflow は動くので actionlint は緑のまま = 気づけない。
 test-workflow-action-pins:
 	@scripts/check_workflow_action_pins.sh
 
 # 丸ごと skip なのに exit 0 で抜ける形を落とす (runner が [ok] と数え、assert が 1 本も
-# 走っていないことが緑に埋もれる。issue 139 / tests/CLAUDE.md)。
+# 走っていないことが緑に埋もれる。tests/CLAUDE.md)。
 # 正本は scripts/check_skip_exit_code.sh (なぜ危険か・例外マーカーはそこに書いてある)。
 test-skip-exit-code:
 	@scripts/check_skip_exit_code.sh
 
-# 「✗ を出しても exit code に出ない」テストの棚卸し (issue 327)。正本は
+# 「✗ を出しても exit code に出ない」テストの棚卸し。正本は
 # scripts/check_assert_reaches_exit.sh (脅威モデルと「検出しないと決めたもの」はそこ)。
 # 🚨 test からは呼ばない (各テストを 3 回走らせるので所要時間が数倍になる。test-fresh と同じ扱いで
 #    棚卸しのときに自分で叩く)。判定は 3 値で、判定不能を合格に丸めない。
@@ -404,7 +403,7 @@ test-assert-reaches-exit:
 test-trigger-log-writers:
 	@scripts/check_trigger_log_writers.sh
 
-# 新しい Go プロジェクトが「CI レーン無し」で入るのを落とす (issue 203 候補 B / 出典 080・087)。
+# 新しい Go プロジェクトが「CI レーン無し」で入るのを落とす。
 # Makefile 側は wildcard で発見するが、CI の paths filter とプロジェクトの lint/test target は
 # 手で用意するので、そこだけ穴が残っている。正本は scripts/check_go_project_lanes.sh。
 test-go-project-lanes:
@@ -546,7 +545,7 @@ test-ruby-syntax:
 test-lint-tests:
 	@./scripts/lint_test_scripts.sh
 
-# 🚨 prerequisite に並べない (issue 109 と同型)。12 本の直列だと 1 本目の失敗で残りが
+# 🚨 prerequisite に並べない。12 本の直列だと 1 本目の失敗で残りが
 #   1 度も走らず、lint.yml は `make test-lint` の 1 ステップなので CI ログにも出ない。
 #   **末尾の新設検査ほど隠れやすい** (実測: test-json を落とすと後続 7 本が未実行)。
 #
@@ -572,12 +571,12 @@ test-lint:
 #   lint / test から**無音で外れる** (make は緑のまま通り「lint も test も通っている」と読める)。
 #   この repo は他の全域で「登録なしで対象になる」を徹底しており (shellcheck は
 #   scripts/discover_shell_scripts.sh の発見、テストは test-dir の自動発見)、Go だけ手動なのは
-#   非対称だった (issue 080)。
+#   非対称だった。
 # 🚨 発見 0 件は**失敗させる** (下の recipe のガード)。発見式のゲートが 0 件で緑になるのは
 #   `_claude/rules/adversarial-review-own-safeguards.md` が禁じる false green そのもの。
 GO_PROJECT_DIRS := $(patsubst %/,%,$(dir $(wildcard src/*/go.mod)))
 
-# 一斉起動の前に std の -race 版を 1 プロセスで cache に入れる (issue 807)。go の build cache は
+# 一斉起動の前に std の -race 版を 1 プロセスで cache に入れる。go の build cache は
 # プロセス間で「ビルド中」を共有しないので、冷えた cache では 22 プロセスが std をそれぞれコンパイルしていた
 # (重複 942 回のうち 829 回が std)。std 以外の依存まで温めると温まった cache で毎回 20 秒かかるので std だけにする。
 # 🚨 module の中で走らせる。root には go.mod が無く、GOTOOLCHAIN=auto で手元の go が go.mod の go 行より古いと
@@ -597,13 +596,13 @@ else \
 fi;
 endef
 
-# 🚨 **最初のプロジェクトの失敗で残りを隠さない** (issue 130)。全プロジェクトを回してから
+# 🚨 **最初のプロジェクトの失敗で残りを隠さない**。全プロジェクトを回してから
 #   失敗したディレクトリをまとめて返す (run_all_targets と同じ規律。CI は src_*.yml で
 #   プロジェクト別に分かれているため無傷だったが、ローカルの方が弱い状態だった)。
 # 🚨 go 未導入は skip して緑にする。0 件は上のガードで失敗させるので、
 #   「発見が壊れた」と「go が無い」は別の結果として出る。
 # test も lint も並列に回す (go の build cache は並行アクセスに対して自前でロックする)。
-# 🚨 lint の並列は各 src/*/.golangci.yml の `run.allow-parallel-runners: true` が前提 (issue 258)。
+# 🚨 lint の並列は各 src/*/.golangci.yml の `run.allow-parallel-runners: true` が前提。
 #   golangci-lint は既定で os.TempDir() のグローバル file lock を取り、別インスタンスが走っていると
 #   "parallel golangci-lint is running" で落ちる。**1 プロジェクトでも設定が抜けると、そのプロジェクト
 #   だけが他の起動タイミング次第で落ちる** (flaky に見える)。新しい src/ を切ったら .golangci.yml に
@@ -639,7 +638,7 @@ fi
 endef
 
 # production から到達できないシンボル (テストだけが呼んでいる関数) を検出する。
-# golangci-lint の unused はテストも解析対象に含めるので、このクラスを構造的に見逃す (issue 315)。
+# golangci-lint の unused はテストも解析対象に含めるので、このクラスを構造的に見逃す。
 #
 # 🚨 **test-lint には入れない**。lint.yml は全 push で走るので、Go 解析を置くと非接触の push でも
 # 毎回 staticcheck が動く (2026-07-17 に Go を lint.yml から分離したのと同じ理由)。
@@ -656,8 +655,8 @@ test-go:
 
 # src/ 配下の全プロジェクトを lint + test 一括で回す集約ターゲット (人間の選択実行用)。
 # root の `make test` もこれを含む (test-lint + test-runtime + test-src)。src/ だけを触った後は、これ 1 発で
-# CI (src_*.yml の lint / test 両 job) と揃う。各 src の lint は scripts/go_module_graph.sh (go mod tidy -diff / go list -m all) も回す (issue 787)。
-# 🚨 ここも集約 (issue 130)。prerequisite に並べると lint の失敗で test が走らない
+# CI (src_*.yml の lint / test 両 job) と揃う。各 src の lint は scripts/go_module_graph.sh (go mod tidy -diff / go list -m all) も回す。
+# 🚨 ここも集約。prerequisite に並べると lint の失敗で test が走らない
 test-src:
 	@+$(call run_all_targets,test-go-lint test-unused-excluding-tests test-go)
 

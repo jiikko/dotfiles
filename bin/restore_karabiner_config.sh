@@ -14,7 +14,7 @@ fi
 # restore 済みの印として repo 側 karabiner.json の sha256 を記録する (setup.sh と同方式)。
 # _zshrc がこの記録と現在の repo ファイルを比較し、git pull 後の restore 忘れを警告する。
 # 🚨 記録は全段が成功した後だけ (下の 2 か所の出口) にする。レイアウトのパッチが失敗したのに記録すると、
-# キーボード種別が違うまま restore 忘れの警告も出なくなる (issue 610)。
+# キーボード種別が違うまま restore 忘れの警告も出なくなる。
 record_restored() {
     state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
     if ! { mkdir -p "$state_dir" &&

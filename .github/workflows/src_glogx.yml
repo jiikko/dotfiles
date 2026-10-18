@@ -21,7 +21,7 @@ on:
       - 'src/subproc/**'     # replace で取り込む共有 module (外部プロセス起動の安全弁)
       - 'src/atomicfile/**'  # replace で取り込む共有 module (temp + rename)
       - 'src/userdirs/**'  # treefiler / mac-lan-manager の依存 (replace は依存先から引き継がれないので glogx にも要る)
-      # issues/banner_test.go が module の外の CI 検査を実行して書式の一致を見る (issue 403 の続き)
+      # issues/banner_test.go が module の外の CI 検査を実行して書式の一致を見る
       - tests/issues/test_next_claims_have_banner.sh
       - scripts/lib/claim_banner.awk
       # 🚨 色の単一ソース。internal/term/box_test.go の TestFrameBorderMatchesThemeYML が
@@ -47,7 +47,7 @@ on:
       - 'src/subproc/**'     # replace で取り込む共有 module (外部プロセス起動の安全弁)
       - 'src/atomicfile/**'  # replace で取り込む共有 module (temp + rename)
       - 'src/userdirs/**'  # treefiler / mac-lan-manager の依存 (replace は依存先から引き継がれないので glogx にも要る)
-      # issues/banner_test.go が module の外の CI 検査を実行して書式の一致を見る (issue 403 の続き)
+      # issues/banner_test.go が module の外の CI 検査を実行して書式の一致を見る
       - tests/issues/test_next_claims_have_banner.sh
       - scripts/lib/claim_banner.awk
       # 🚨 色の単一ソース。internal/term/box_test.go の TestFrameBorderMatchesThemeYML が
@@ -77,7 +77,7 @@ jobs:
     with:
       dir: src/glogx
 
-  # 🚨 テストが**実マシンのコマンドを叩かない**ことの検査 (issue 216)。
+  # 🚨 テストが**実マシンのコマンドを叩かない**ことの検査。
   #
   # ここに置く理由: この検査は `go test` を PATH shim の下で回すので **Go が要る**。
   # Tests workflow の runner には Go が無く、tests/glogx/*.sh は exit 77 で skip される

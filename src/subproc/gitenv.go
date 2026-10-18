@@ -8,7 +8,7 @@ import (
 
 // gitLocationEnv は継承すると、`git -C <dir>` の先ではなく別の repo を読み・書きさせる環境変数 (`git rev-parse --local-env-vars` の全部と、
 // GIT_NAMESPACE。TestGitLocationEnvCoversLocalEnvVars が手元の git の出力と突き合わせる)。hook の中・`git rebase -x`・`git bisect run` から起動されると設定されている。
-// GIT_DIR を継承した `git -C <一時dir> init` は一時 dir ではなく継承した repo を再 init し、add / commit もそこへ入る (issue 740。2.55.0 で再現)。
+// GIT_DIR を継承した `git -C <一時dir> init` は一時 dir ではなく継承した repo を再 init し、add / commit もそこへ入る (2.55.0 で再現)。
 var gitLocationEnv = []string{
 	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",

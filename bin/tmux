@@ -1,6 +1,6 @@
 #!/bin/bash
 # 🚨 shebang は macOS 同梱の /bin/bash (3.2) に固定する。`env bash` は PATH 先頭の Homebrew bash 5 を起こし、
-# kill を含まない fast path でも 1 回 約 5〜7 ms 余計にかかる (起動が律速。issue 609 の実測)。
+# kill を含まない fast path でも 1 回 約 5〜7 ms 余計にかかる (起動が律速。実測)。
 # 3.2 に無い構文 (連想配列・mapfile・${x,,}・local -n) をこの shim に入れないこと。
 #
 # bin/tmux — tmux ラッパー shim。本番 tmux サーバ (default) を **非対話シェルから
@@ -76,7 +76,7 @@ uid=$(id -u)
 KILL_RE='^kill-s(er(v(er?)?)?|es(s(i(on?)?)?)?)$'
 # 🚨 tmux は `;` / `\;` で複数コマンドを 1 呼び出しに連ねて**順に実行**する。最初の subcommand
 # だけを見ると `list-sessions \; kill-server` のように**後続の kill を見落として本番へ通す**
-# (敵対レビューが実測。最初が非 kill なら TTY すら不要で、2026-09-11 と同じ script 内部クラス)。
+# (実測。最初が非 kill なら TTY すら不要で、script 内部から同じ事故になる)。
 # → 連鎖の**全 subcommand**を走査する。global socket option (-L/-S/-f/-c/-T) は最初の subcommand
 # より前にしか現れないので、そこだけで拾う。連鎖のどこかに kill があれば is_kill=1、
 # その中で最厳の kind (server > session) を採る。
@@ -181,8 +181,8 @@ fi
 target_canon=$(canon_socket "$target")
 # 🚨 macOS の FS は case-insensitive (default と DEFAULT は同一ファイル = 同一サーバ。実測)。
 # canon_socket は dir を pwd -P で畳むが basename の大小は畳まれないので、比較を小文字化して行う。
-# これを怠ると `-L DEFAULT` / `-S <...>/DEFAULT` が本番に届くのに素通す (P1: 敵対レビューが
-# end-to-end で実測。2026-09-11 に綴り 1 文字で 2 度事故を起こした的と同型)。
+# これを怠ると `-L DEFAULT` / `-S <...>/DEFAULT` が本番に届くのに素通す
+# (end-to-end で実測。綴り 1 文字で 2 度事故を起こした形)。
 lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 target_lc=$(lc "$target_canon")
 

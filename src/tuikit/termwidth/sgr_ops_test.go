@@ -39,9 +39,9 @@ func TestDropColumns(t *testing.T) {
 
 // Clip と Cut の**実際の差**を固定する。
 //
-// なぜ必要か (issue 107): 両者の doc は長らく「Clip は色を落とす / Cut は
+// なぜ必要か: 両者の doc は長らく「Clip は色を落とす / Cut は
 // 保持する」と対比していたが、Clip が ansi.Truncate へ移った時点で**どちらも色を保持
-// する**ようになり、記述だけが旧実装のまま残った。読んだ人が「色を残したいから」という理由で
+// する**ようになったので、記述を合わせてある。読んだ人が「色を残したいから」という理由で
 // 誤った方を選ぶ状態だったので、差 (= `…` の有無) を実行で pin する。
 func TestClipVsCutDifference(t *testing.T) {
 	const colored = "\x1b[31mABCDEF\x1b[0m"
@@ -80,7 +80,7 @@ func TestCutDoesNotCloseOpenStyle(t *testing.T) {
 	}
 }
 
-// DropColumns の列不変条件を、**ansi と uniseg で幅が食い違う文字**で pin する (issue 112)。
+// DropColumns の列不変条件を、**ansi と uniseg で幅が食い違う文字**で pin する。
 //
 // 合成側は「n 桁落とせば表示幅も n 減る」を当てにして浮動ボックスを背景行に重ねる。
 // clusterWidth が 2 本目の幅エンジン (uniseg) を使っていた頃、この不変条件はインド系文字と
@@ -94,12 +94,11 @@ func TestDropColumnsWidthInvariantWhereEnginesDisagree(t *testing.T) {
 		"ASCII only commit",  // 対照 (エンジンが一致する側)
 		// 🚨 全角を含む入力を必ず 1 本入れる: 全角境界で切ると DropColumns の straddle 分岐
 		//   (空白で埋め直す経路) を通る。ここが無いと、その分岐を丸ごと削っても本テストは
-		//   green のまま通る (敵対的レビューで実測)
+		//   green のまま通る
 		"日本語の コミット 12345",
 		// SGR を含む入力 (色を replay する経路を通す)
 		"\x1b[31mred\x1b[0m ಕಾ \x1b[32mgreen\x1b[0m",
-		// 🚨 **分割器**の食い違いで壊れていた rune (issue 124)。幅を 1 本にしても
-		//   (issue 112)、クラスタ境界が 2 本あると不変条件は閉じない。
+		// 🚨 **分割器**の食い違いで壊れていた rune。幅を 1 本にしても、クラスタ境界が 2 本あると不変条件は閉じない。
 		//   U+0897 / U+1ACF / U+113B8 / U+1E5EE は Unicode 16 で追加され、uniseg v0.4.7 (15.0)
 		//   は前の文字と結合せず別クラスタとして返す = 「クラスタ幅の総和 ≠ 全体の幅」。
 		//   これらを 1 つも含まないと、分割を uniseg へ戻す変更が green のまま通る。

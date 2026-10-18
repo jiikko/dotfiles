@@ -25,9 +25,9 @@ func parseInline(s string) []span {
 }
 
 // parse は sc.s[a:b] を読み、span を sc.out に足す。強調・リンクの中身は同じ表のまま区間を狭めて読み直す (中身は元の
-// 文字列の部分文字列なので、表を作り直すと入れ子の深さぶん段落の長さの 2 乗になる。issue 699 の反証レビュー)。
+// 文字列の部分文字列なので、表を作り直すと入れ子の深さぶん段落の長さの 2 乗になる)。
 // base は地の文字の style、ref は属するリンク (外側のリンクが中の全部を持つ)。どちらも外から渡して、読み終えた span を
-// 入れ子のたびに歩き直さない (歩き直すと深さ × span の数になる。2 周目の反証レビュー)。内側の強調の style は外側より勝つ。
+// 入れ子のたびに歩き直さない (歩き直すと深さ × span の数になる)。内側の強調の style は外側より勝つ。
 func (sc *inlineScan) parse(a, b int, base style, ref *linkRef) {
 	s := sc.s[:b] // 区間の外 (b 以降) を見ない。a より前は canOpenEm で区間の頭として扱う
 	var lit strings.Builder
@@ -169,7 +169,7 @@ func matchCode(s string, i int) (content string, next int, ok bool) {
 }
 
 // inlineScan は 1 段落の括弧の対応と強調の閉じの位置を前もって 1 回の走査で求めておく。開きのたびに段落の末尾まで探すと、
-// 閉じない `*` `~~` `[` が多い段落で長さの 2 乗になる (12 万字で 7〜9 秒。issue 699 の 2)。
+// 閉じない `*` `~~` `[` が多い段落で長さの 2 乗になる (12 万字で 7〜9 秒)。
 type inlineScan struct {
 	s      string
 	pair   []int                 // pair[i] = s[i] が '[' / '(' のとき対応する ']' / ')' の位置 (無ければ -1)

@@ -10,11 +10,11 @@
 # next-claim-push.sh (PostToolUse) が拾うが、**人が glogx の issues viewer で `n` を押した
 # 移動は Go 側の rename なので Bash を通らず、どの hook にも見えない**。その claim は
 # 誰も push しないまま寝てしまい、他マシンから見て「未着手の issue」に見え続ける。
-# issue 187 は viewer 側に push 導線を足す案だったが、push はブランチ単位で他の未 push
-# commit も飛ぶため、**押した瞬間に機械が push するのは危ない**。人に伺う形にした。
+# viewer 側に push 導線を足す案は採らない。push はブランチ単位で他の未 push
+# commit も飛ぶため、**押した瞬間に機械が push するのは危ない**ので、人に伺う形にした。
 #
-# 🚨 **commit 済みだが未 push の claim も拾う** (issue 249 の項目 4)。以前は未コミットだけを
-# 見ており、「claim を commit したが push を忘れた」窓が誰にも見えなかった。claim の意味は
+# 🚨 **commit 済みだが未 push の claim も拾う**。未コミットだけを
+# 見ると、「claim を commit したが push を忘れた」窓が誰にも見えなかった。claim の意味は
 # 「他マシンから見えること」なので、コミットしただけでは何も宣言していない。
 # git-state-verify.sh も未 push commit を出すが、あちらは **git commit/push を打った直後**
 # だけで、寝てしまった claim には届かない (こちらは毎プロンプト見る)。
@@ -37,11 +37,11 @@ command -v jq >/dev/null 2>&1 || exit 0
 # 適用範囲は「作業中の repo に global または group 内の next/ が 1 つでも実在するとき」だけ
 # (規範と同じ opt-in)
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
-# 🚨 入れ子の issue dir (`<root>/*/issues`) も見る (issue 276)。obaket は macOS/issues/ を
+# 🚨 入れ子の issue dir (`<root>/*/issues`) も見る。obaket は macOS/issues/ を
 # 正式に持っており、そこの next/ の claim がどの hook にも見えなかった。深さは 1 段に限る。
 #
-# 🚨 見つけた next/ の**相対パスを集めて、下の突き合わせにそのまま使う** (敵対的レビュー
-# 2026-09-06)。以前は「ゲートは深さ 1 段 / 突き合わせの grep は深さ無制限」という非対称で、
+# 🚨 見つけた next/ の**相対パスを集めて、下の突き合わせにそのまま使う**
+# 「ゲートは深さ 1 段 / 突き合わせの grep は深さ無制限」という非対称だと、
 # Next.js の `web/pages/issues/next/index.tsx` のような**claim と無関係なパス**を
 # 「未共有の claim」として毎プロンプト誤報していた (実測。親コミットでは無音だった)。
 # 実在する dir だけを見れば非対称は消える — claim があるならその dir は必ず実在する。
@@ -65,7 +65,7 @@ done
 #   claim を外した  → ` D issues/next/x.md` + `?? issues/x.md`
 # いずれも **global または group 内の next/ を含む行**が出るので、それを拾えば 3 形とも捕まる。
 #
-# 🚨 pathspec で絞らないこと (issue 276)。`*/issues/next` のような入れ子ぶんを pathspec へ
+# 🚨 pathspec で絞らないこと。`*/issues/next` のような入れ子ぶんを pathspec へ
 # 足すと、**そのパスが存在しない repo では git が pathspec エラーで空を返す**ので、
 # root 直下の claim まで丸ごと見えなくなる (実測: それで 4 ケースが無出力になった)。
 # 絞り込みは下の grep が担う。**アンカーを付けないこと** — porcelain は `?? issues/next/` の
@@ -79,12 +79,12 @@ claim_lines=$(
 
 # commit 済みだが未 push の claim。**リモートに無い commit のうち global または group 内の next/ を触ったもの**を見る
 # (`HEAD --branches --not --remotes` は未 push の commit 全部。そこから claim を触るものだけ絞る)
-# 🚨 **HEAD を明示すること** (issue 311)。`--branches` だけだと detached HEAD の commit を
+# 🚨 **HEAD を明示すること**。`--branches` だけだと detached HEAD の commit を
 # 1 件も返さず、worktree で claim した場合に無音になる。claim は通常ブランチでも worktree でも
 # 作るので両方を母集合にする (`--all` は stash と他 worktree まで拾うので採らない)
 unpushed_claims=$(
   cd "$repo_root" || exit 0
-  # 🚨 commit ヘッダの目印に SOH (%x01) を置くこと (敵対的レビュー 2026-09-06)。
+  # 🚨 commit ヘッダの目印に SOH (%x01) を置くこと。
   # `%h %s` だけだと awk の `/^[0-9a-f]+ /` が**ファイル名と区別できず**、
   # `face detection.py` のような 16 進文字だけの語で始まる名前がヘッダとして採用され、
   # 「どの commit を push すればいいか」が消えていた (実測。親コミットは正しく出していた)。

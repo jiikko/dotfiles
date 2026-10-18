@@ -58,7 +58,7 @@ func PlainLines(ss []string) []string {
 }
 
 // ClipRunes は s を n rune までにし、切ったときだけ末尾に … を足す (ログ・記録・案内に入れる文の長さの上限。表示幅で切るなら
-// tuikit の termwidth)。pro-con と ratelimit が同じ 4 行を 5 か所に持っていた (issue 777)。
+// tuikit の termwidth)。pro-con と ratelimit が同じ 4 行を 5 か所に持っていた。
 func ClipRunes(s string, n int) string {
 	if r := []rune(s); len(r) > n {
 		return string(r[:n]) + "…"
@@ -68,7 +68,7 @@ func ClipRunes(s string, n int) string {
 
 // CutBytes は s を maxBytes バイト以下に、rune の境界で切る (保存・復元する文字列の長さの上限。表示幅で切るなら tuikit の termwidth)。
 // バイト位置で切ると不正な UTF-8 の断片が残り、幅計算と端末で解釈が割れるので、上限を超える rune は丸ごと落とす。
-// 前は doctor と glogx が「i > 上限 になった最初の rune の先頭で切る」形を別々に持ち、上限を 1 rune 超えて返していた (issue 777)。
+// 前は doctor と glogx が「i > 上限 になった最初の rune の先頭で切る」形を別々に持ち、上限を 1 rune 超えて返していた。
 func CutBytes(s string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
@@ -234,7 +234,7 @@ func mustStrip(r rune) bool {
 // isBidiControl は表示順を書き換える双方向テキストの制御文字 (embedding / override / isolate:
 // U+202A-U+202E / U+2066-U+2069) か。BiDi 対応の端末では、これ 1 文字で後ろの文字列が逆順に
 // 描かれ、コミットの件名・ファイル名・issue のタイトルの並びを見た目の上で偽装できる
-// (Trojan Source, CVE-2021-42574 と同じ手口。issue 417)。制御シーケンスではないので ESC の
+// (Trojan Source, CVE-2021-42574 と同じ手口)。制御シーケンスではないので ESC の
 // 除去では落ちない。
 //
 // 残すもの: LRM / RLM (U+200E / U+200F) は並びを入れ替えない印で、ZWJ (U+200D) は絵文字の

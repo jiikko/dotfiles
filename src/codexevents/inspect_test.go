@@ -95,7 +95,7 @@ func TestIncompleteFailureEmptyAndMalformedAreNotSuccess(t *testing.T) {
 	}
 }
 
-// Python 版の str.splitlines / str.strip / str(Path) と同じ区切り方 (行番号とログの表記を Python 版とそろえる。issue 670)
+// Python 版の str.splitlines / str.strip / str(Path) と同じ区切り方 (行番号とログの表記を Python 版とそろえる)
 func TestPythonCompat(t *testing.T) {
 	if got := pySplitlines("a\vb\fc\x1cd\u0085e\u2028f\u2029g\nh\n"); !slices.Equal(got, []string{"a", "b", "c", "d", "e", "f", "g", "h"}) {
 		t.Errorf("pySplitlines = %q", got)

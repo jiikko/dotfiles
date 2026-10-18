@@ -1,9 +1,9 @@
 -- 参照検索 (<C-k>) の使用実績を記録する。
 --
--- なぜ: issue 332 で Ruby のメソッドの参照検索を LSP (11.2s) から ripgrep (0.17s) へ
+-- なぜ: Ruby のメソッドの参照検索を LSP (11.2s) から ripgrep (0.17s) へ
 -- 振り分けた。rg は AST を見ないのでコメント・文字列・シンボルを拾う。その false positive で
--- **実際に困るのか**が分からないまま、呼び出し側索引のような重い仕組みを作りたくない
--- (issue 334 の段階 1)。困った回数を数えて、段階 2 に進むかを数字で決める。
+-- **実際に困るのか**が分からないまま、呼び出し側索引のような重い仕組みを作りたくない。
+-- 困った回数を数えて、段階 2 に進むかを数字で決める。
 --
 -- 「困った」の観測点は **LSP 版へのフォールバック** (<leader>K)。rg で引いた直後に同じ語を
 -- LSP で引き直したなら、rg の結果では足りなかったということ。時間と語が一致したときだけ
@@ -60,10 +60,10 @@ local function append(entry)
 end
 
 -- kind: "ripgrep" (rg 経路) / "lsp" (LSP 経路) / "fallback" (rg の直後に LSP で引き直した)
--- 🚨 filetype を必ず一緒に残す。issue 334 は「LSP 経路の回数 = 定数を引いた回数」で sidecar 化を
+-- 🚨 filetype を必ず一緒に残す。「LSP 経路の回数 = 定数を引いた回数」で sidecar 化を
 --    判断すると決めているが、LSP 経路には **Ruby 以外の全 filetype の <C-k>** も入る
 --    (use_ripgrep_references が false を返すため)。ft を落とすと後から分離できず、判断が
---    「Ruby の定数で困っている」とは無関係な数字の上に乗る (敵対レビュー P1-1)。
+--    「Ruby の定数で困っている」とは無関係な数字の上に乗る。
 --: (string, string, string?) -> boolean
 function M.record(kind, word, filetype)
   local now = M.now()
@@ -125,7 +125,7 @@ end
 --: -> string
 function M.format_stats()
   local c = M.stats()
-  -- 判断に使うのは Ruby の行 (issue 334)。全体は参考値で、Ruby 以外の <C-k> も入っている
+  -- 判断に使うのは Ruby の行。全体は参考値で、Ruby 以外の <C-k> も入っている
   local ruby = c.by_ft.ruby or new_bucket()
   local eruby = c.by_ft.eruby
   if eruby then

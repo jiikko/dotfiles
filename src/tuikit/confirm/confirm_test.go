@@ -107,7 +107,7 @@ func TestWideDialogWidth(t *testing.T) {
 }
 
 // 狭い板でも案内の実行のキー (y/Enter) と取り消しのキーを両方残す (既定の案内は末尾から切れると実行のキーだけが残り、
-// 取り消しの仕方が読めない。短くしても Enter を落とすと、Enter で実行されることが読めない。issue 604)。
+// 取り消しの仕方が読めない。短くしても Enter を落とすと、Enter で実行されることが読めない)。
 // 行は元の案内か短い形のどれかそのものであること (部分一致にしない: "Enter" の n に当たる)。短い形も入らない幅 (26 桁未満) は切れる。
 func TestDialogHintKeepsCancelKeyWhenNarrow(t *testing.T) {
 	for _, c := range []struct{ hint, cancel string }{{HintYesNo, "n"}, {HintYesOther, "他"}} {
@@ -141,7 +141,7 @@ func TestDialogHintKeepsCancelKeyWhenNarrow(t *testing.T) {
 	}
 }
 
-// FitHint は Box の中で Dialog と同じ案内を出す (issue 761)。広ければそのまま、狭ければ短い形で、板の中身の幅に収まる。
+// FitHint は Box の中で Dialog と同じ案内を出す。広ければそのまま、狭ければ短い形で、板の中身の幅に収まる。
 func TestFitHintMatchesDialog(t *testing.T) {
 	if got := FitHint(HintYesNo, 80); got != HintYesNo {
 		t.Fatalf("広い板で案内を替えた: %q", got)

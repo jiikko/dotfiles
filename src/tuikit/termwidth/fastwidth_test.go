@@ -79,7 +79,7 @@ var fastWidthBenchCases = []struct {
 	{"status_row", "│ \x1b[32m✓\x1b[0m 2270ab5 \x1b[2m3 hours ago\x1b[0m  docs(rules): measure perf before fixing it  \x1b[31m✗\x1b[0m lint │"},
 	// 罫線だけ (記号が連続し ASCII の連なりが無い = NEON が効かない側)
 	{"box_120", "┌" + strings.Repeat("─", 118) + "┐"},
-	// 日本語の subject (acceptCJK で受理する。以前は途中で棄却されて ansi へ落ちていた)
+	// 日本語の subject (acceptCJK で受理する。途中で棄却すると ansi へ落ちる)
 	{"cjk_subject", "│ \x1b[32m✓\x1b[0m 2270ab5 fix(glogx): 請求計算の境界条件を是正し、回帰を実測で固定する"},
 }
 

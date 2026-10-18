@@ -127,7 +127,7 @@ func (t *toast) overlay(lines []string, width, height int) []string {
 		return []string{row}
 	}
 	// 🚨 中身の行を上書きしない: 画面が低くて空き行が無いときはトーストを諦める
-	//    (ヘルプ行や入力欄を食う。敵対的レビュー 2026-08-28 で h=8 と h=5 で再現)
+	//    (ヘルプ行や入力欄を食う。h=8 と h=5 で再現)
 	last := len(out) - 1
 	if strings.TrimSpace(stripSGR(out[last])) != "" {
 		return out

@@ -11,7 +11,7 @@ version: "2"
 # 書く。書き込み自体は temp+rename ではなく最終名への直接 write で、安全性の根拠は原子性ではなく
 # 内容アドレス) ので、外しても結果の正しさには影響しない。root の Makefile (run_go_projects) が 7 プロジェクトを並列に
 # 回すため、全プロジェクトでこれを true にする (1 つでも false が残ると、その 1 つが他の
-# 6 つの起動タイミング次第で落ちる)。issue 258
+# 6 つの起動タイミング次第で落ちる)。
 run:
   allow-parallel-runners: true
 
@@ -28,11 +28,11 @@ linters:
   settings:
     forbidigo:
       forbid:
-        # 端末の幅・切り詰め・切り出しは github.com/jiikko/dotfiles/src/tuikit/termwidth を通す (issue 524)。速い道 (と、入れるなら arm64 の実装) を
+        # 端末の幅・切り詰め・切り出しは github.com/jiikko/dotfiles/src/tuikit/termwidth を通す。速い道 (と、入れるなら arm64 の実装) を
         # 置く場所を termwidth の 1 か所にするため。字面で見るので、別名の import・変数経由の呼び出しは検出しない
         - pattern: ^ansi\.(StringWidth|Cut|Truncate|TruncateLeft)$
           msg: 幅は termwidth.Of、切り詰め・切り出しは termwidth.Truncate / Cut / Slice / SliceFrom / SplitAround を使う (issue 524)
-        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る (issue 590)
+        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る
         - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
           msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
     errcheck:

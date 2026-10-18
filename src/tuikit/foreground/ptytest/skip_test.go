@@ -16,7 +16,7 @@ func (f *fakeTB) Fatalf(string, ...any) { f.fatal = true }
 func (f *fakeTB) Skipf(string, ...any)  { f.skipped = !f.fatal }
 
 // CI (環境変数 CI) では pty の検査を Skip せず落とす。手元では Skip する (CI は -v を付けないので、Skip のまま緑だと
-// 検査が走っていないことがログから見えない。issue 758 の敵対レビュー: この分岐を通すテストが無かった)。
+// 検査が走っていないことがログから見えない)。
 func TestSkipFailsOnCI(t *testing.T) {
 	t.Setenv("CI", "true")
 	ci := &fakeTB{}

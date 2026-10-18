@@ -1,6 +1,6 @@
 // Package markdown は markdown の本文を width 桁の端末行へ整形する (見出し・箇条書き・表・
 // フェンスコードの chroma ハイライト)。glogx の issues viewer の本文と、pro-con の詳細の
-// 応答の文が同じ整形器を使う (glogx/issues から移した。dotfiles issue 486)。
+// 応答の文が同じ整形器を使う (glogx/issues から移した)。
 package markdown
 
 import (
@@ -44,7 +44,7 @@ func RenderLinks(src string, width int, colored bool, mark func(i int) LinkMark)
 	out = make([]string, 0, len(lines))
 	srcLines = make([]int, 0, len(lines))
 	for _, l := range lines {
-		// 「出力は width 桁を超えない」という Render の契約を、出口のここ 1 箇所で無条件に守る (issue 116)。
+		// 「出力は width 桁を超えない」という Render の契約を、出口のここ 1 箇所で無条件に守る。
 		// 整形は箇条書きの記号・番号・表の罫線・入れ子のインデントを先に置いてから残り幅へ本文を詰めるので、
 		// 幅がそれらの固定分より狭いと構造の側が溢れる (実測 2026-08-27: 幅 1 で 80 行・幅 3 で 42 行)。
 		// 「幅 N 未満は畳む」下限の案は、下限を跨ぐ入力ごとに畳み方を決めることになるので採らなかった。

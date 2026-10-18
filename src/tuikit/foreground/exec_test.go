@@ -13,7 +13,7 @@ import (
 
 // Exec の取り戻しの判断 (持っていた前面だけを取り戻し、結果を Was / Err に入れる) を、前面の確かめと取り戻しを
 // 差し替えて見る (pty は要らない)。pro-con の ui/terminal_test.go も同じことを termExec 越しに見ているが、
-// tuikit だけを変えたときにも tuikit のテストで止める (issue 758)。
+// tuikit だけを変えたときにも tuikit のテストで止める。
 func TestExecReclaimsOnlyWhatItHeld(t *testing.T) {
 	stolen := errors.New("stolen")
 	for _, held := range []bool{true, false} {
@@ -34,7 +34,7 @@ func TestExecReclaimsOnlyWhatItHeld(t *testing.T) {
 }
 
 // 前面を確かめるのは子を走らせる前 (子のシェルが前面を持ち去った後に確かめると、持っていたのに「持っていない」と
-// 読んで取り戻さない)。Owned は「子がまだ走っていない」間だけ真を返し、呼ぶ順番をテストから見えるようにする (敵対レビュー)。
+// 読んで取り戻さない)。Owned は「子がまだ走っていない」間だけ真を返し、呼ぶ順番をテストから見えるようにする。
 func TestExecChecksForegroundBeforeChildRuns(t *testing.T) {
 	ran := filepath.Join(t.TempDir(), "ran")
 	calls := 0

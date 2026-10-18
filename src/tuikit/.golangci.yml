@@ -4,7 +4,7 @@
 version: "2"
 
 # root の Makefile (run_go_projects) が全プロジェクトを並列に回すため、ロック待ちで落ちない
-# ようにする (理由の詳細は src/termsafe/.golangci.yml。issue 258)
+# ようにする (理由の詳細は src/termsafe/.golangci.yml)
 run:
   allow-parallel-runners: true
 
@@ -71,7 +71,7 @@ linters:
         # 部品は「状態 → 文字列」の純粋な層。I/O・プロセス起動・非同期を持ち込むと、毎フレーム呼ばれる
         # 合成の性能とテスト容易性が壊れる (glogx の render.go に掛けていた render-pure と同じ)。
         # widthenv は環境変数を読む・editor は外部のエディタを起こす・termcolor は端末 (tmux) に機能を聞く・foreground は端末を子へ渡すのが仕事なので対象外。
-        # 部品を足したら、ここと上のリストのどちらか (または両方) に足す (tests/scripts/test_tuikit_depguard_covers_parts.sh が漏れを落とす。issue 790)
+        # 部品を足したら、ここと上のリストのどちらか (または両方) に足す (tests/scripts/test_tuikit_depguard_covers_parts.sh が漏れを落とす)
         parts-pure:
           files:
             - "**/anim/**"
@@ -99,14 +99,14 @@ linters:
             - pkg: context
               desc: 部品は純粋な層 (非同期処理は使う側へ)
         # 幅計算の唯一の出典は termwidth.Of (= ansi.StringWidth)。runewidth は East Asian
-        # ambiguous を locale 依存で 2 桁と数え、枠の計算が実行環境でずれる (glogx issue 027)。
+        # ambiguous を locale 依存で 2 桁と数え、枠の計算が実行環境でずれる。
         width-single-source:
           files:
             - "**/*.go"
           deny:
             - pkg: github.com/mattn/go-runewidth
               desc: 幅は termwidth.Of で測る (locale 非依存)
-        # 分割も幅も x/ansi に一本化してある (termwidth.FirstCluster。glogx issue 124)。
+        # 分割も幅も x/ansi に一本化してある (termwidth.FirstCluster)。
         uniseg-test-only:
           files:
             - "**/*.go"
@@ -122,10 +122,10 @@ linters:
         # depguard はパッケージ単位でしか止められず、同じ x/ansi の 2 本目の幅モデルを止められない
         - pattern: ^ansi\.StringWidthWc$
           msg: 幅は termwidth.Of (GraphemeWidth) の 1 系統だけ (glogx issue 112 / 124)
-        # 幅・切り詰め・切り出しは termwidth を通す (速い道を置く場所を 1 か所にする。issue 524)。termwidth 自身は下で除外
+        # 幅・切り詰め・切り出しは termwidth を通す (速い道を置く場所を 1 か所にする)。termwidth 自身は下で除外
         - pattern: ^ansi\.(StringWidth|Cut|Truncate|TruncateLeft)$
           msg: 幅は termwidth.Of、切り詰め・切り出しは termwidth.Truncate / Cut / Slice / SliceFrom / SplitAround を使う (issue 524)
-        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る (issue 590)
+        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る
         - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
           msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
         # 部品は時刻を引数 (now) で受け取る。中で取ると、使う側のテストが時刻を固定できない
@@ -142,7 +142,7 @@ linters:
         text: issue 524
         linters:
           - forbidigo
-      # 折り返しも termwidth.Wrap が x/ansi の Wordwrap を包む層そのもの (issue 590)
+      # 折り返しも termwidth.Wrap が x/ansi の Wordwrap を包む層そのもの
       - path: (termwidth/|_test\.go)
         text: issue 590
         linters:

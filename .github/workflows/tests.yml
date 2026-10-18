@@ -35,8 +35,7 @@ jobs:
           # heavy (av1ify/concat) は nvim テストを含まない (setup-nvim 省略)。
           # 🚨 必要なコマンドをここに書かないこと: グループ定義 (CI_HEAVY_TEST_DIRS) の出典が
           # Makefile なのに依存だけ workflow にあると、heavy に bats/tmux 依存のテストを足した
-          # とき「Makefile だけ直して CI が command not found で落ちる」まで気づけない
-          # (issue 073)。依存も Makefile の CI_COMMANDS_* が出典で、下の step が読む。
+          # とき「Makefile だけ直して CI が command not found で落ちる」まで気づけない。依存も Makefile の CI_COMMANDS_* が出典で、下の step が読む。
           - group: heavy
             make-target: test-discovered-heavy
             needs-nvim: false
@@ -46,7 +45,7 @@ jobs:
             needs-nvim: true
             needs-go: true
     name: dotfiles-tests (${{ matrix.group }})
-    # 対象は macOS のみ (issue 133)。Linux はサポート対象外なので CI もそちらへ揃える。
+    # 対象は macOS のみ。Linux はサポート対象外なので CI もそちらへ揃える。
     # 🚨 `macos-latest` にしない。同じ commit の setup-nvim が「stable にせず明示 pin する
     #    (更新をファイルの変更として可視化する)」と書いているのと同じ理由で、ラベルの移動で
     #    誰の commit も無しに環境が変わるのを避ける。**開発機に合わせて 15 (darwin24) に置く**
@@ -74,7 +73,7 @@ jobs:
           echo "commands=$cmds" >> "$GITHUB_OUTPUT"
           echo "$var = $cmds"
 
-      # 導入と検証は共有 action に集約 (issue 141)。formula 名の写像もあちら側にある。
+      # 導入と検証は共有 action に集約。formula 名の写像もあちら側にある。
       - uses: ./.github/actions/ensure-toolchain
         with:
           commands: ${{ steps.deps.outputs.commands }}

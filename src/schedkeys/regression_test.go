@@ -388,8 +388,7 @@ func TestNoToastForCancel(t *testing.T) {
 }
 
 // 発火時刻は「Enter を押した瞬間」を基準にすること。popup を開いた時刻で固定すると、
-// 入力に迷った時間だけ予約が前倒しになり、放置すれば過去になって即送信される
-// (敵対的レビュー 2026-08-28)。
+// 入力に迷った時間だけ予約が前倒しになり、放置すれば過去になって即送信される。
 func TestReservationUsesClockAtSubmit(t *testing.T) {
 	m := newTestModel()
 	openForm(t, m)
@@ -662,8 +661,7 @@ func TestStartAtPick(t *testing.T) {
 	}
 }
 
-// メニューと「いつ」の候補は端で止まらず巡回する (listnav.Cycle に寄せた 3 か所。issue 757 の敵対レビュー: 端で止める
-// 変異が緑のままだった。メニューを MotionOf に寄せない理由も「巡回」なので、ここで固定する)。
+// メニューと「いつ」の候補は端で止まらず巡回する (listnav.Cycle に寄せた 3 か所。端で止める変異が緑のままにならないよう固定する。メニューを MotionOf に寄せない理由も「巡回」なので、ここで固定する)。
 func TestMenuAndWhenPresetsWrapAround(t *testing.T) {
 	m := newTestModel()
 	n := len(m.menuItems())

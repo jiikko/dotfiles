@@ -4,9 +4,9 @@
 # (値の正本はここ 1 箇所。他の状態と通知・ベル・bg の判定は tmux-pane-state.sh)。
 #
 # なぜ別の script か: tmux-pane-state.sh を PostToolUse から起こすと、homebrew の bash の起動込みで 1 回中央値 28.7ms が
-# ツール呼び出しごとにターンの待ち時間へ直列で乗っていた。/bin/sh で tmux を 1 回起こすだけなら中央値 15.7ms (issue 622 で実測)。
+# ツール呼び出しごとにターンの待ち時間へ直列で乗っていた。/bin/sh で tmux を 1 回起こすだけなら中央値 15.7ms。
 # mod (関数 hook) にすると 12ms だったが、tool.call は失敗・中断・拒否でも発火し、mod が読まれないセッションでは
-# @claude_bg が落ちずに承認待ちのベルが鳴らなくなるので採らなかった (issue 622)。
+# @claude_bg が落ちずに承認待ちのベルが鳴らなくなるので採らなかった。
 #
 # 書くもの: @claude_state "⚙ working" / @claude_state_since (epoch 秒) / @claude_bg を消す (Claude が動いている = bg 待機ではない)。
 # 表示側 (_tmux.conf / scripts/tmux_agent_panel.sh / tmux_agent_jump.sh / tmux-mark-seen.sh) が読む契約。

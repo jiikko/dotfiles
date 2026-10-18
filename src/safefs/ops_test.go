@@ -303,7 +303,7 @@ func TestTrashMoveChecksSourceToo(t *testing.T) {
 	}
 }
 
-// 同名がゴミ箱にあれば Finder と同じく拡張子の前に番号を足す (dotfile・拡張子の無い名前は末尾)。ゴミ箱の中の項目は断る (issue 731)。
+// 同名がゴミ箱にあれば Finder と同じく拡張子の前に番号を足す (dotfile・拡張子の無い名前は末尾)。ゴミ箱の中の項目は断る。
 func TestTrashMoveNamingAndInsideTrash(t *testing.T) {
 	d := tempDir(t)
 	trash := filepath.Join(d, "Trash")
@@ -342,7 +342,7 @@ func TestTrashMoveNameTooLongWithNumber(t *testing.T) {
 	}
 }
 
-// ResolveUnder は root だけ symlink を辿り、root の中の途中の symlink とフォルダでないものを断る (issue 734 で treefiler から移した)。
+// ResolveUnder は root だけ symlink を辿り、root の中の途中の symlink とフォルダでないものを断る。
 func TestResolveUnder(t *testing.T) {
 	d := tempDir(t)
 	real := filepath.Join(d, "real")

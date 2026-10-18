@@ -51,7 +51,7 @@ for dir in ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks ~/.
 done
 # per-file link の実体は scripts/claude_links.sh (期待するリンク集合の唯一の出典)。
 # SessionStart hook (_claude/hooks/claude-links-sync.sh) も同じスクリプトを呼ぶので、rule を
-# 足して setup.sh を忘れても次のセッション起動で補われる (issue 160)。ただし apply は張るだけで、
+# 足して setup.sh を忘れても次のセッション起動で補われる。ただし apply は張るだけで、
 # 掃除 (下の dangling 削除) と上の migrate はここ setup.sh だけが担う。
 # ~/.claude 自体はここで作る。apply は ~/.claude 不在を「検査できない」(exit 3) と扱って何も張らないので、
 # 新品マシンの初回 setup.sh ではこの mkdir が唯一の作成点 (消すと tests/setup/test_setup.sh が落ちる)
@@ -83,7 +83,7 @@ ln -sfn ~/dotfiles/_claude/_common ~/.claude/_common
 # anyenv: 必要な *env が入っていなければ警告、入っていれば global バージョンを設定
 # 🚨 DOTFILES_SKIP_ANYENV_GLOBAL=1 で skip できる: `*env global` は HOME ではなく GOENV_ROOT / NODENV_ROOT の下に書くので、
 #   tests/setup の HOME の差し替えでは隔離されず、実ユーザーの version ファイルを書き換える。2026-10-17 に test_setup.sh を
-#   2 本並列で回したら書き込みが競合し、goenv の version が「1.26.0」2 行になって go が起動しなくなった (issue 816)
+#   2 本並列で回したら書き込みが競合し、goenv の version が「1.26.0」2 行になって go が起動しなくなった
 if [ -n "${DOTFILES_SKIP_ANYENV_GLOBAL:-}" ]; then
   echo "skip: anyenv の global の設定 (DOTFILES_SKIP_ANYENV_GLOBAL)"
 elif command -v anyenv >/dev/null 2>&1; then
@@ -139,7 +139,7 @@ if [ "$(uname)" = "Darwin" ] && [ -z "${DOTFILES_SKIP_TERMINAL_PROFILE:-}" ]; th
     echo "WARN: Terminal プロファイルの適用に失敗。scripts/terminal_profile_restore.sh を単体で再実行して確認"
 fi
 
-# Go のビルドキャッシュを worktree をまたいで共有する (issue 816)。go env のファイルの GOFLAGS に -trimpath を足す
+# Go のビルドキャッシュを worktree をまたいで共有する。go env のファイルの GOFLAGS に -trimpath を足す
 # (この機械の全部の go コマンドが読む)。規則 (既に -trimpath=false などがあれば触らない・外し方) は scripts/go_env_trimpath.sh の冒頭
 if command -v go >/dev/null 2>&1; then
   ~/dotfiles/scripts/go_env_trimpath.sh || echo "warning: go env に -trimpath を足せなかった (scripts/go_env_trimpath.sh。issue 816)" >&2

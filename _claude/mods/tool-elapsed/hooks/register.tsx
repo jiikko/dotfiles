@@ -1,6 +1,6 @@
 // 長く走っている tool 呼び出しの経過時間を、プロンプトの上の帯に出す。
 // 走っている呼び出しの表は module の変数 (Map) に持つ: tool.call の前後と 1 秒の timer が同じ worker で同期に読み書きするので、
-// $.state の CAS (update) で競合させない (red team: 並列の終了で cleanup が失敗して記録が残る / 空の snapshot で timer を止める /
+// $.state の CAS (update) で競合させない (競合すると: 並列の終了で cleanup が失敗して記録が残る / 空の snapshot で timer を止める /
 // 重なった tick が同じ toast を 2 回出す、の 3 件が全部その競合から出た)。hot reload で module が作り直されると await 中の
 // 記録は消えるが、その呼び出しの finally も走らないので、残骸は出ない。$.state は帯を描き直す合図 (tick) だけ。
 // 5 分ごとに toast (「codex review: 10 分経過」) も出す。待ちの上限を人が判断する材料で、何かを止めはしない。

@@ -1,5 +1,5 @@
 // Package highlight は diff とコードの行へシンタックスハイライト (chroma) を付ける。glogx の diff の板と、
-// pro-con の詳細の差分の板 (dotfiles issue 508)、markdown のフェンスコード (github.com/jiikko/dotfiles/src/tuikit/markdown) が同じ色付けを使う
+// pro-con の詳細の差分の板、markdown のフェンスコード (github.com/jiikko/dotfiles/src/tuikit/markdown) が同じ色付けを使う
 // (glogx の highlight.go から移した)。
 //
 // 方式: git は --color=never で受け、diff の構造色 (メタ行/hunk/追加/削除の記号) は
@@ -141,7 +141,7 @@ func hlEscapeFor(t chroma.TokenType) string {
 // 入力は 1 行 (改行を含まない) なので、chroma が補う改行はトークン末尾にしか現れない。
 // Format は改行の手前でリセットするため、末尾で改行を落としてから閉じれば等価になる。
 // maxLineBytes を超える 1 行は色を付けずに素通しする。chroma の lexer は言語によって行の長さの 2 乗で伸びる
-// (TypeScript の日本語 16,000 字で 5〜9 秒・80,000 字で 2 分。issue 699 の 1)。呼び出し側 (treefiler のタイル) は UI の
+// (TypeScript の日本語 16,000 字で 5〜9 秒・80,000 字で 2 分)。呼び出し側 (treefiler のタイル) は UI の
 // goroutine で呼ぶので、上限が無いと画面が固まる。上限ちょうどの 1 行の所要の実測 (M 系 Mac): makefile 57 ms (2 KiB で 166 ms・
 // 4 KiB で 650 ms。いちばん遅い)・TypeScript / Python 10 ms 前後・ほかは数 ms。人が書く行は 1 KiB を超えないので、超える行
 // (生成物・minify) は色を諦める。

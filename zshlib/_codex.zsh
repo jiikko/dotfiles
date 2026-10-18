@@ -4,7 +4,7 @@
 #
 # 🚨 helper (_ensure_cli_with_brew) を無条件に呼ばない: Claude Code の shell snapshot は
 # `_` 始まりの関数を含めないため、この関数だけが snapshot に載り、実行時に
-# `command not found: _ensure_cli_with_brew` で壊れる (issue 149 実測 2026-09-01)。
+# `command not found: _ensure_cli_with_brew` で壊れる (実測 2026-09-01)。
 # 不在なら source で自己修復し、それも出来なければ ensure を諦めて素の実行に落とす
 # (ensure は対話シェルでの brew 自動 install の利便で、無くても codex の実行は成立する)
 codex() {

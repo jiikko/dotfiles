@@ -2,9 +2,9 @@ import { atom, read, update } from 'claude-code'
 import type { Register, EngineInterface } from 'claude-code'
 import { parseCounts, segments } from './band'
 
-// human / retro の催促を、モデル経由でなく人へ直接、プロンプトの上の帯に出す (issue 621)。
+// human / retro の催促を、モデル経由でなく人へ直接、プロンプトの上の帯に出す。
 // 数えるのは settings の SessionStart の hook と同じ script の --counts。帯が出なくても SessionStart の注入と規約の「冒頭で一言伝える」は
-// しばらく残す (mod は失敗すると黙ってスキップされるので、帯だけに頼らない。issue 618「mod が黙って止まったときの扱い」)。
+// しばらく残す (mod は失敗すると黙ってスキップされるので、帯だけに頼らない)。
 // 対話のセッションだけで数える: user の settings を読む裏の `claude -p` (ratelimit の `claude -p /usage` 等) でも mods は走る (docs/claude-mods.md)。
 
 const counts = atom({ plugin: 'issue-band', key: 'counts' } as const, null)

@@ -605,7 +605,7 @@ bdr() {
 # 動画系コマンドの lazy-reload ラッパー。実体は zshlib/_reload_then_call.zsh (save/restore の
 # 理由もそこに)。各ラッパー先頭の `${+functions[...]} || source` ガードは Claude Code の shell snapshot 対策: snapshot は
 # `_` 始まりの関数を含めないので、公開ラッパーだけが残った状態で呼ばれたら helper を source して
-# 自己修復する (issue 152。codex() と同じ形)。ガードを外すと snapshot 下で command not found になる。
+# 自己修復する (codex() と同じ形)。ガードを外すと snapshot 下で command not found になる。
 source "$HOME/dotfiles/zshlib/_reload_then_call.zsh"
 av1ify() {
   (( ${+functions[_reload_then_call]} )) || source "$HOME/dotfiles/zshlib/_reload_then_call.zsh"
@@ -699,7 +699,7 @@ fi
 
 if command -v brew > /dev/null 2>&1; then
   # 🚨 `brew --prefix` を毎回呼ばないこと。**1 回 9.6ms の fork** で、zsh の startup 実測 52.5ms の
-  #   約 19% をこれだけで使う (実測 2026-08-29 / issue 140)。シェル起動は 1 日に何十回も通る
+  #   約 19% をこれだけで使う (実測 2026-08-29)。シェル起動は 1 日に何十回も通る
   #   経路なので、`zsh-hook-return-via-reply.md` が hook について言っているのと同じ話。
   # 標準的な導入では prefix は brew 実体の 2 つ上 (`/opt/homebrew/bin/brew` → `/opt/homebrew`。
   # Intel Mac は `/usr/local`)。`$commands` は zsh のコマンドハッシュなので fork しない。
@@ -734,16 +734,16 @@ if command -v brew > /dev/null 2>&1; then
   # 🚨 **この repo では `menu-select` が該当しうる**: 上の `zstyle ':completion:*:default'
   # menu select=1` により `zsh/complist` が**最初のメニュー補完時**に autoload され、
   # そこで `menu-select` widget が生える (= 初回 precmd より後)。実害は未実証で、
-  # **issue 338 の人手確認に項目として入れてある**。
+  # **人手確認の項目に入れてある**。
   #
   # 🚨 **load 完了時点までに存在する widget は覆われる** (初回 bind は MANUAL_REBIND でも走る)。
   # zsh-syntax-highlighting は下で source されるが load 時 1 回しか bind せず、初回 precmd は
   # それより後なので順序は保たれる。実 rc で 417 widget が完全一致 (diff 0) を確認済み。
   # ただし**その比較は precmd 1 回ぶんの観測で、上の trade-off は構造的に見えない**
-  # (初回 bind は両条件で走るため、必ず一致する時点だけを見ていた。敵対レビューの指摘)。
+  # (初回 bind は両条件で走るため、必ず一致する時点だけを見ていた)。
   #
   # 🚨 この 6.3 ms は `tests/zshrc/bench_zsh.sh` の prompt_lag では見えない (run 間変動が
-  # 16〜22 ms あり分布に埋もれる。issue 323)。効果を語るときは上の直接計測を出すこと。
+  # 16〜22 ms あり分布に埋もれる)。効果を語るときは上の直接計測を出すこと。
   ZSH_AUTOSUGGEST_MANUAL_REBIND=1
   if [ -f "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
     source "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
@@ -780,7 +780,7 @@ fi
 if [[ -o interactive ]] && [[ -t 1 ]]; then
   # このシェルが登録し、まだ受け取っていない result のパス。
   # 🚨 件数カウンタにしない。カウンタは「数える対象 (ディレクトリの glob)」と別物なので、
-  # 他シェルの result を食った瞬間にずれる (issue 300 の実測: 1 件しか登録していないシェルが
+  # 他シェルの result を食った瞬間にずれる (実測: 1 件しか登録していないシェルが
   # 2 件消費して pending=-1 / 食われた側は pending=1 のまま precmd hook が残り続けた)。
   # 実体の配列なら「自分が登録したものだけ消費し、空になったら外す」が同義になる。
   typeset -ga _dotfiles_check_files=()
@@ -846,7 +846,7 @@ if [[ -o interactive ]] && [[ -t 1 ]]; then
       return
     fi
     [ "$watched" -nt "$state" ] || return   # 未変更ならここで終了 (stat 1回のみ)
-    # 🚨 pid を名前に入れるのは、シェルをまたいで共有しないため (issue 300)。固定名だと
+    # 🚨 pid を名前に入れるのは、シェルをまたいで共有しないため。固定名だと
     # ①後から起きたシェルの `rm -f` が先行シェルの未読を消し ②誰の result かを見ずに食い合う。
     local f="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/${name}-check.$$.result"
     command mkdir -p "${f:h}"; command rm -f -- "$f" "$f.partial"  # pid 再利用時の残骸
@@ -896,7 +896,7 @@ if [[ -o interactive ]] && [[ -t 1 ]]; then
   # 🚨 未設定は「既定にフォールバックする」のではなく **誤判定に落ちる**: tmux 内では
   # _tmux.conf が RGB を無条件広告し COLORTERM も TERM_PROGRAM も届かないので、自動判定は
   # 「不明 → 対応とみなす」になり、**256 色端末でも gruvbox + termguicolors=on** になる。
-  # エラーは出ず「なんか色が変」になるだけなので、気づく経路がここしか無い (issue 346)。
+  # エラーは出ず「なんか色が変」になるだけなので、気づく経路がここしか無い。
   # 値そのものはマシンの能力なので dotfiles では持てない (雛形は _zshenv.example)。
   # 🚨 受け付ける値は _nviminit.lua と揃っていること。ずれると「設定したのに効かない」が
   # 黙って起きる (tests/zshrc/test_truecolor_flag_check.sh が両者を突き合わせる)。
@@ -910,7 +910,7 @@ if [[ -o interactive ]] && [[ -t 1 ]]; then
         # vim.env = 子プロセスの環境なので、export の無いシェル変数は届かない。
         # 実測 2026-09-10 (env -u で隔離): `SUPPORT_TRUECOLOR=false` (export 無し) だと
         # nvim 側は vim.env.SUPPORT_TRUECOLOR == nil = 「不明 → 対応」の誤判定に落ちる。
-        # 値の検査だけだとこの形を「設定済み」として黙って通していた (敵対レビュー P2)。
+        # 値の検査だけだとこの形を「設定済み」として黙って通していた。
         [[ ${(t)SUPPORT_TRUECOLOR} == *export* ]] && return 0
         print -r -- "[dotfiles] SUPPORT_TRUECOLOR=${SUPPORT_TRUECOLOR} は設定されていますが **export されていない**ので nvim へ届きません (vim.env が nil になり誤判定します)。行頭に export を付けてね。"
         ;;

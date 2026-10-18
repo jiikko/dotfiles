@@ -2285,7 +2285,7 @@ func TestInteractiveChildCrashRestartsWithRKeyAndQuitsWithQ(t *testing.T) {
 	}
 }
 
-// rc 0 の終了は人の Cmd+Q 等なので、UI があっても待たずに runner を終える (issue 586 の R7)。
+// rc 0 の終了は人の Cmd+Q 等なので、UI があっても待たずに runner を終える。
 func TestInteractiveChildCleanExitStillEndsRunner(t *testing.T) {
 	r, _ := startInteractiveRunnerMode(t, map[string]string{"RESTARTABLE_TEST_RUN": "exit 0"}, false)
 	select {

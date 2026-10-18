@@ -150,7 +150,7 @@ func runCommand(args []string) int {
 }
 
 // withTerminals は stdin / stdout が端末かを cfg に写す。UI を出すのは両方が端末のときだけ (片方でも違えば headless)。
-// stdout が端末かは headless でも別に渡す: UI が無くても端末へ出す子の出力は無害化する (issue 601)
+// stdout が端末かは headless でも別に渡す: UI が無くても端末へ出す子の出力は無害化する
 func withTerminals(cfg runner.Config, stdinIsTerminal, stdoutIsTerminal bool) runner.Config {
 	cfg.Headless = !stdinIsTerminal || !stdoutIsTerminal
 	cfg.StdinIsTerminal, cfg.StdoutIsTerminal = stdinIsTerminal, stdoutIsTerminal
@@ -173,7 +173,7 @@ func validEnvName(name string) bool {
 }
 
 // callErrorCode は control.Call の失敗を終了コードに写す (2 = runner が動いていない / 124 = 時間切れ / 1 = それ以外)。
-// obaket の dev-restart が rc 2 を「ループが動いていない」と読むので、写しを変えると呼ぶ側の判断が黙って変わる (issue 598)。
+// obaket の dev-restart が rc 2 を「ループが動いていない」と読むので、写しを変えると呼ぶ側の判断が黙って変わる。
 func callErrorCode(err error) int {
 	if errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file or directory") || strings.Contains(err.Error(), "connection refused") {
 		return 2
@@ -196,8 +196,8 @@ func withPresenter(cfg runner.Config, warn io.Writer, newUI func() runner.Presen
 }
 
 // warnWidthEnv は曖昧幅を 2 桁と数える設定 (RUNEWIDTH_EASTASIAN) を起動時に知らせる。この設定では罫線と
-// → を含む進捗板や最下行が端末幅を超える (README「検出しない形 / 注意」・issue 588)。黙って崩れると原因が
-// 分からないので、TTY の UI を出すときだけ 1 行出す (issue 756)。UI はインライン画面なので、起動前の 1 行は
+// → を含む進捗板や最下行が端末幅を超える (README「検出しない形 / 注意」)。黙って崩れると原因が
+// 分からないので、TTY の UI を出すときだけ 1 行出す。UI はインライン画面なので、起動前の 1 行は
 // 画面の上に残る。headless では板を描かないので出さない。
 func warnWidthEnv(w io.Writer) {
 	if widthenv.EastAsianAmbiguous() {

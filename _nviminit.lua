@@ -139,7 +139,7 @@ require("lazy").setup({
       require("dotfiles.hl").set("LspReferenceText", lsp_ref)
       require("dotfiles.hl").set("LspReferenceTarget", lsp_ref)
 
-      -- 同じ Visual 漏れが SnippetTabstop と LspSignatureActiveParameter にもあった (issue 134)。
+      -- 同じ Visual 漏れが SnippetTabstop と LspSignatureActiveParameter にもあった。
       -- 実測 2026-09-03 (nvim 0.11.5): SnippetTabstop は**両 colorscheme 分岐**で `link=Visual`、
       -- LspSignatureActiveParameter は 256色 (retrobox) だけ `link=Visual` で truecolor (gruvbox) は
       -- `link=Search` (reverse)。前者は vim.snippet が**バッファ内**の tabstop に塗るので、
@@ -167,7 +167,7 @@ require("lazy").setup({
       require("dotfiles.hl").set("LspSignatureActiveParameter", { reverse = true })
 
       -- blink.cmp のドキュメント窓のカーソル行も `link = Visual` (blink/cmp/highlights.lua)。
-      -- 🚨 **敵対レビューが全 group 走査で見つけた** (issue 134)。名前を 2 つ足しただけの版では
+      -- 🚨 **全 group を走査して調べる**。名前を 2 つ足しただけでは
       -- 見えていなかった: blink は InsertEnter の lazy なので、headless 起動しただけでは
       -- その 53 group が存在せず、検査の外にいた。検査は blink の highlight を明示的に
       -- 読み込んでから走査する形に直してある (tests/nvim/lsp_reference_hl_check.lua)。
@@ -224,7 +224,7 @@ require("lazy").setup({
     -- 明言されており、Nvim 0.12 では 0.12 の treesitter API 変更 (iter_matches のキャプチャが
     -- ノード配列になる) と非互換 → injection の directive 評価が
     -- "attempt to call method 'range' (a nil value)" で死ぬ (render-markdown の md 描画で実発生)。
-    -- 0.12 へ上げた時点が移行トリガーだった (issue 010 の追記節に記録済み)。
+    -- 0.12 へ上げた時点が移行トリガー。
     -- main は完全な別プラグイン扱いで API 互換なし: configs.setup / ensure_installed /
     -- highlight モジュールは存在せず、install() と vim.treesitter.start() を自分で呼ぶ。
     -- branch を変えたら :Lazy update nvim-treesitter + :TSUpdate で parser を再同期すること
@@ -310,8 +310,8 @@ require("lazy").setup({
   { "nvim-lualine/lualine.nvim",
     dependencies = { "nvim-tree/nvim-web-devicons" },
     config = function()
-      -- git root 相対でファイルパスを表示する。旧実装は vim-fugitive 由来の vim.b.git_dir を
-      -- 参照していたが本構成に設定主体が無く、常に cwd 相対へフォールバックする dead branch
+      -- git root 相対でファイルパスを表示する。vim-fugitive 由来の vim.b.git_dir は使わない:
+      -- 本構成に設定主体が無く、常に cwd 相対へフォールバックする dead branch
       -- だった (cwd ≠ git root のとき意図と食い違う)。vim.fs.root で自前解決する。
       local function relative_path_from_git_root()
         local file = vim.api.nvim_buf_get_name(0)
@@ -380,7 +380,7 @@ require("lazy").setup({
       lsp.setup(ok and blink.get_lsp_capabilities() or nil)
       -- バイナリが実在するサーバだけ enable する (~4ms)。fresh install ではまだ mason が
       -- 入れていないサーバがあり、無条件 enable だと spawn 失敗の通知が出るうえ、導入完了後も
-      -- 再起動まで attach しない (codex 指摘 P2)。導入完了イベントで再 enable して同一
+      -- 再起動まで attach しない。導入完了イベントで再 enable して同一
       -- セッション内でも拾う。
       local function enable_available()
         local ready = {}
@@ -390,7 +390,7 @@ require("lazy").setup({
           -- 通知されず :LspLog にだけ残る (ruby_lsp は lsp.lua の root_dir が「git repo の root
           -- かつ ruby-lsp が起動できる」project にだけ on_dir を呼ぶので、gem 未導入の ruby
           -- version では attach 自体が起きない)。
-          -- 🚨 判定の実体は lsp.server_binary_available (issue 341)。lsp.lua の
+          -- 🚨 判定の実体は lsp.server_binary_available。lsp.lua の
           -- ruby_lsp_failed も同じ述語でフォールバック先を見るので、ここに式を書き直さない
           -- (2 実装になると片方だけ変わり、通知が黙って嘘になる)。
           -- gopls の config.cmd は Mason の絶対パスなので、PATH 先頭の bin/gopls shim では
@@ -980,7 +980,7 @@ require("lazy").setup({
     -- 🚨 ft = { "markdown" } にしないこと: lazy.nvim は ft ゲートのプラグインをロードした後
     -- FileType を再発火し、その再実行がレガシー Vimscript syntax 一式 (markdown.vim →
     -- html.vim → css.vim, ~16ms) を treesitter highlight と二重にロードする実バグがあった
-    -- (issue 013、A/B 実測で特定)。
+    -- (A/B 実測で特定)。
     -- BufReadPre (FileType より前) でロードすれば再発火が起きず legacy source はゼロになる。
     -- 拡張子ゲートの限界: 変わり種拡張子 (.mkd 等) や modeline で ft=markdown になるファイル
     -- では render-markdown がロードされない (実運用は .md/.markdown のみで許容)。

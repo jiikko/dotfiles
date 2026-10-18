@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// 敵対的レビュー (2026-08-28) で見つかった描画の壊れ方に対する回帰テスト。
+// 描画の壊れ方に対する回帰テスト。
 // 「幅・高さ・カーソル位置」は IME の未確定文字の位置を決めるので、崩れると入力そのものが壊れる。
 
 // 壊しにいく入力の見本。実際に打てるもの (貼り付け含む) だけを並べる。
@@ -270,10 +270,9 @@ func TestRenderCostStaysLinear(t *testing.T) {
 		}
 	}
 	small, big := frame(1000), frame(16000)
-	// 🚨 1 回の測定の比で判定しない: -race + 並列の make test では 1 回の割り込みで比が崩れ、単独では通るのに落ちた
-	//    (issue 421)。負荷は時間を足すだけで引かないので、交互に 7 回測った最小値どうしを比べる。
+	// 🚨 1 回の測定の比で判定しない: -race + 並列の make test では 1 回の割り込みで比が崩れ、単独では通るのに落ちた。負荷は時間を足すだけで引かないので、交互に 7 回測った最小値どうしを比べる。
 	//    16 倍の入力で、線形なら 16 倍以下 (固定費があるので実測は数倍)、二乗なら 256 倍。間の 64 倍で切る。
-	//    実測 (issue 421): 今の実装で 11 倍 (-race でも同じ)、旧 viewport (startRune で先頭から数え直す二乗) で 290 倍
+	//    実測: 今の実装で 11 倍 (-race でも同じ)、旧 viewport (startRune で先頭から数え直す二乗) で 290 倍
 	minSmall, minBig := time.Duration(1<<62), time.Duration(1<<62)
 	for range 7 {
 		minSmall = min(minSmall, small())
@@ -447,8 +446,8 @@ func TestFrameAddIsOneLine(t *testing.T) {
 }
 
 // メニューの「ラベル・遷移先・選べるか」が 1 箇所に揃っていること。
-// 以前は index 0/1 の意味が 3 箇所 (キー処理・ラベル・灰色表示) に散っており、
-// 項目を足すと直し漏れて「灰色なのに入れる」状態になりえた。
+// index 0/1 の意味が 3 箇所 (キー処理・ラベル・灰色表示) に散ると、
+// 項目を足すと直し漏れて「灰色なのに入れる」状態になりうる。
 func TestMenuItemsAreTheSingleSource(t *testing.T) {
 	// 予約 0 件: 一覧は選べない (灰色) し、Enter でも入れない
 	m := newTestModel()

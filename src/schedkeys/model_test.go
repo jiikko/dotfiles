@@ -12,9 +12,9 @@ var now = time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
 
 // press はキー入力を 1 つ流す。text は IME 確定文字列を含む「そのキーが生む文字」。
 // キー名は本番と同じ表記 ("ctrl+n" / "shift+tab" / "a") で書ける。
-// 🚨 修飾キー専用の別経路を作らないこと: 以前は ctrlKey() が press を迂回していたため、
+// 🚨 修飾キー専用の別経路を作らないこと: ctrlKey() のように press を迂回すると、
 //
-//	press(m, "ctrl+n", "") と書くと **c の打鍵**になり、名前と無関係な理由で通っていた。
+//	press(m, "ctrl+n", "") と書くと **c の打鍵**になり、名前と無関係な理由で通ってしまう。
 func press(m *model, key, text string) {
 	code, mod := parseKey(key)
 	m.Update(tea.KeyPressMsg{Code: code, Text: text, Mod: mod})

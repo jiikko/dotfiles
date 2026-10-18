@@ -29,7 +29,7 @@ func TestCommandPicksEditor(t *testing.T) {
 	}
 }
 
-// `-` / `+` で始まる相対パスはオプションと読まれないよう ./ を前置する (vim の +cmd。issue 701 の 11)。
+// `-` / `+` で始まる相対パスはオプションと読まれないよう ./ を前置する (vim の +cmd)。
 func TestCommandPrefixesOptionLikePath(t *testing.T) {
 	for path, want := range map[string]string{"+q": "./+q", "-c": "./-c", "a.md": "a.md", "/abs/+x": "/abs/+x"} {
 		cmd := Command(path, func(string) string { return "" })

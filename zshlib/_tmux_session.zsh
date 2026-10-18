@@ -95,7 +95,7 @@ _tt_wait_for_restore () {
 
   # resurrect 本体（helpers.sh の resurrect_dir）と同じ規則で保存先を解決し、last の
   # 有無を判定する。両候補を OR で見ると本体の選択とズレて「走らない復元」を待ち続けうる。
-  # 規則と展開 ($HOME / $HOSTNAME / ~) は guards.sh の tt_resurrect_dir が唯一の出典 (ここで書き直さない。issue 776)。
+  # 規則と展開 ($HOME / $HOSTNAME / ~) は guards.sh の tt_resurrect_dir が唯一の出典 (ここで書き直さない)。
   local rdir
   rdir="$(tt_resurrect_dir)"
   [ -f "$rdir/last" ] || return 3      # 保存が無い → 復元は走らない
@@ -148,7 +148,7 @@ _tt_wait_for_restore () {
 _tt_gc_stale_holds () {
   local sname wins attached spid panes
   # 🚨 prefix が空なら何もしない: 空の prefix は全セッションに一致し、"0" のような数字名のセッションを死んだ hold と読んで kill する
-  # (guards.sh の source に失敗したとき・誰かが空にしたとき。issue 776 の敵対的レビュー P2。前は既定値の写しがこれを防いでいた)
+  # (guards.sh の source に失敗したとき・誰かが空にしたとき)
   [ -n "${TT_HOLD_PREFIX:-}" ] || return 0
   tmux list-sessions -F '#{session_name} #{session_windows} #{session_attached}' 2>/dev/null \
   | while read -r sname wins attached; do
@@ -227,7 +227,7 @@ _tt_impl () {
     if [ -z "${TT_SKIP_REAP:-}" ] && [ -x "$_reap" ]; then "$_reap" 2>/dev/null || true; fi
 
     # tmux サーバはセッションが 1 つも無いと即終了する。復元完了までサーバを生かす hold を置く。
-    # 🚨 hold の目的は「サーバをセッション 0 個で落とさない」ことだけ。かつてここには
+    # 🚨 hold の目的は「サーバをセッション 0 個で落とさない」ことだけ。ここに
     #   「総ペイン数 = 1 で restore_from_scratch が有効化されスクロールバックごと復元される」と
     #   書いてあったが、これは誤り (2026-07-30 の A/B 実測で反証)。スクロールバック復元は
     #   from_scratch と無関係で、new_session/new_window/new_pane が pane_contents_file_exists で
@@ -316,6 +316,6 @@ _tt_impl () {
 # ガードし、失敗時は直近ロード済みの実体で続行する（実体呼び出しまで止めない）。
 # `:-` の既定パスは Claude Code の shell snapshot 対策: snapshot には t/tt は載るが
 # _TMUX_SESSION_LIB (非 export) と `_` 始まりの実体は載らない。変数が消えると -r ガードが黙って
-# 偽になり _t_impl not found で壊れるので、既定パスから lib を読み直して自己修復する (issue 152)。
+# 偽になり _t_impl not found で壊れるので、既定パスから lib を読み直して自己修復する。
 t ()  { local _l="${_TMUX_SESSION_LIB:-$HOME/dotfiles/zshlib/_tmux_session.zsh}"; [[ -r "$_l" ]] && source "$_l"; _t_impl "$@"; }
 tt () { local _l="${_TMUX_SESSION_LIB:-$HOME/dotfiles/zshlib/_tmux_session.zsh}"; [[ -r "$_l" ]] && source "$_l"; _tt_impl "$@"; }

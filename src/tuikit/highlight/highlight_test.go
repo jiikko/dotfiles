@@ -62,7 +62,7 @@ func TestDiffUnknownLanguagePassesThrough(t *testing.T) {
 }
 
 // BenchmarkDiff は maxDiffLines 相当 (diff popup の production 上限) の
-// ハイライト所要時間を測る。以前は固定 5s の wall-clock を assert する Test だったが、
+// ハイライト所要時間を測る。固定 5s の wall-clock を assert する Test にしない:
 // 共有 CI runner (ubuntu-slim) の速度ムラで chroma が 5s を超え頻繁に flake した
 // (2026-07-21: 実測 10.36s で fail)。固定 wall-clock は shared runner で構造的に flaky
 // なので Benchmark へ移し、CI の go test ./... では走らせない (perf を見たいときは

@@ -28,7 +28,7 @@ func TrashMove(src, trashDir string, id ID, guard Guard) (string, error) {
 	if trashDir == "" {
 		return "", errors.New("ゴミ箱の場所が分かりません")
 	}
-	// 🚨 **宛先も検査点を通す** (doctor の issue 234 (b))。src だけを見ていたので、登録済みの src から
+	// 🚨 **宛先も検査点を通す**。src だけを見ると、登録済みの src から
 	// 未登録のディレクトリへの移動が err == nil で成功し、違反記録も 0 件だった
 	// (trashDir はテストが自由に渡せるので、1 行間違えると実データの場所へファイルが移る)。
 	if err := check(guard, "trash-dest", trashDir); err != nil {
@@ -52,7 +52,7 @@ func TrashMove(src, trashDir string, id ID, guard Guard) (string, error) {
 	}
 	defer func() { _ = unix.Close(dstDir) }()
 
-	// 移動元がゴミ箱の直下なら断る (同じ場所への RENAME_EXCL は何もせずに成功し、「移した」と報告してしまう。issue 731)
+	// 移動元がゴミ箱の直下なら断る (同じ場所への RENAME_EXCL は何もせずに成功し、「移した」と報告してしまう)
 	var sd, dd unix.Stat_t
 	if unix.Fstat(srcDir, &sd) == nil && unix.Fstat(dstDir, &dd) == nil && sd.Dev == dd.Dev && sd.Ino == dd.Ino {
 		return "", errors.New("既にゴミ箱の中です")
@@ -63,7 +63,7 @@ func TrashMove(src, trashDir string, id ID, guard Guard) (string, error) {
 	if err := unix.Fstatat(srcDir, base, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return "", fmt.Errorf("移動元を確認できません: %w", err)
 	}
-	// 🚨 doctor の production からは到達しない (planItem が先に同じ検査をする) が、意図して残している (doctor の issue 236 の P3-5)。
+	// 🚨 doctor の production からは到達しない (planItem が先に同じ検査をする) が、意図して残している。
 	// この関数は**破壊的操作の直前の最後の照合**で、外すと下の比較が (0,0) と実体を比べ、「識別できないまま移動する」経路が
 	// 開く。呼び出し元が 1 つ増えた瞬間に穴になる形なので、冗長さと引き換えに残す (list-masked-failure-modes-before-removing-guard.md)
 	if id == (ID{}) {

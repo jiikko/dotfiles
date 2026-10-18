@@ -32,7 +32,7 @@ func setClock(t *testing.T, start time.Time) func(time.Duration) {
 // countingClaude は `-p` で起こされた回数を calls ファイルへ 1 行ずつ書く偽の claude を PATH に置く。
 // stdout は body (sh の printf 文) が書く。
 // 🚨 PATH をこの stub のディレクトリだけにするので、body の外部コマンドは絶対パスで書く (`sleep` は
-// `command not found` で素通りし、遅い claude を演じられないまま緑になっていた。issue 627 の進捗の末尾)。
+// `command not found` で素通りし、遅い claude を演じられないまま緑になる)。
 func countingClaude(t *testing.T, body string) (calls func() int) {
 	t.Helper()
 	dir := t.TempDir()

@@ -3,11 +3,11 @@
 # SessionStart フック: issue 運用の共通規約を、issues/ を持つ repo のセッションにだけ注入する。
 #
 #   issue-rules-inject.sh                       # _claude/issue-rules.md (規約の本体)
-#   issue-rules-inject.sh issue-rules.d/<x>.md  # issue 運用でしか発動しない rule (issue 414)
+#   issue-rules-inject.sh issue-rules.d/<x>.md  # issue 運用でしか発動しない rule
 #
 # なぜ: 規約を ~/.claude/CLAUDE.md や rules/ に置くと issues/ を持たない repo (仕事の repo) でも
 # 毎セッション全文読まれる。逆に各 repo の issues/README.md へコピーすると更新が伝播せず乖離する
-# (2026-09-19 に複数 repo のコピーが正本より古いまま放置されていた。issue 401)。
+# (2026-09-19 に複数 repo のコピーが正本より古いまま放置されていた)。
 # 「issues/ があるか」の判定は他の issue 系 hook と同じ issue_hook_resolve_dir に寄せる
 # (判定を別に書くと、どの repo で効くかが hook ごとにずれる)。
 #

@@ -29,7 +29,7 @@ describe('parseFile (statusline の claude-rate-limits.json)', () => {
 
 describe('fromLive ($.session.usage().rateLimits)', () => {
   test('five_hour を取り、resetsAt を ms にする', () => {
-    // 79.6 は切り捨てて 79 (statusline と同じ)。四捨五入すると 80 になり、旧経路では出なかった警告が出る (658 の red team P2)
+    // 79.6 は切り捨てて 79 (statusline と同じ)。四捨五入すると 80 になり、旧経路では出なかった警告が出る
     expect(fromLive([{ kind: 'seven_day', percentUsed: 97 }, { kind: 'five_hour', percentUsed: 79.6, resetsAt: new Date(RESET).toISOString() }], NOW))
       .toEqual({ percent: 79, resetsAtMs: RESET, observedAtMs: NOW, source: 'live' })
   })

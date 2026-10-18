@@ -43,7 +43,7 @@ env:
 jobs:
   # lint と test は独立 job: 並列実行 + 片方だけの再実行が可能
   lint:
-    # 対象は macOS のみ (issue 133)。Linux はサポート対象外なので CI もそちらへ揃える。
+    # 対象は macOS のみ。Linux はサポート対象外なので CI もそちらへ揃える。
     # 🚨 `macos-latest` にしない (ラベルの移動で環境が黙って変わる)。開発機が darwin24 = macOS 15。
     runs-on: macos-15
     # make lint は golangci-lint を scripts/golangci_lint.sh がソースからビルドする (runner では毎回初回)。build cache が warm
@@ -85,13 +85,13 @@ jobs:
           path: ~/Library/Caches/dotfiles-go-tools
           key: ${{ steps.gl.outputs.key }}
 
-      # Lint の make lint は先に scripts/go_module_graph.sh (go mod tidy -diff / go list -m all) を回す (issue 736 で足した step を
-      # issue 787 で make lint へ寄せた。手元の make test と同じ入口)。go build / go test / golangci-lint は replace の抜けで落ちない
+      # Lint の make lint は先に scripts/go_module_graph.sh (go mod tidy -diff / go list -m all) を回す (step を
+      # make lint へ寄せてある。手元の make test と同じ入口)。go build / go test / golangci-lint は replace の抜けで落ちない
       - name: Lint
         run: make -C ${{ inputs.dir }} lint
 
   test:
-    # 対象は macOS のみ (issue 133)。lint と同じ理由で pin する。
+    # 対象は macOS のみ。lint と同じ理由で pin する。
     runs-on: macos-15
     # macOS runner は VM 起動が遅い。ubuntu 時代の 10 分では足りない可能性があるので広げる
     timeout-minutes: 20

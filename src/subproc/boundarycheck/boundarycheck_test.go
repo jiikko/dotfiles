@@ -138,7 +138,7 @@ func TestScanLinesCanary(t *testing.T) {
 			wantOffender: false, wantSeen: 1, wantEnforced: 1,
 		},
 		{
-			// issue 303 の本体。語がコメントに出るだけでは通してはいけない
+			// 語がコメントに出るだけでは通してはいけない
 			name: "コメントで WaitDelay に言及しているだけ",
 			lines: []string{
 				`c := exec.CommandContext(ctx, "gh")`,

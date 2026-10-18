@@ -100,7 +100,7 @@ func runStatus(t *testing.T, repo string, guarded bool) string {
 	return string(out)
 }
 
-// repo のローカルの設定の filter (clean / process / include したファイル) が、表示のための status で走らない (issue 732)。
+// repo のローカルの設定の filter (clean / process / include したファイル) が、表示のための status で走らない。
 // 対照として、素の GitCommand では同じ罠が走ることも見る (罠が作動していない fixture を緑にしない)。
 func TestGitRepoArgsStopsLocalFilters(t *testing.T) {
 	for _, tc := range []struct {

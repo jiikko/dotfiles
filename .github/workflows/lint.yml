@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   dotfiles-lint:
-    # 対象は macOS のみ (issue 133)。Linux はサポート対象外なので CI もそちらへ揃える。
+    # 対象は macOS のみ。Linux はサポート対象外なので CI もそちらへ揃える。
     # 🚨 `macos-latest` にしない (ラベルの移動で誰の commit も無しに環境が変わる)。開発機が
     #    darwin24 = macOS 15 なので 15 に置く。tests.yml と同じ規律。
     runs-on: macos-15
@@ -39,13 +39,13 @@ jobs:
           cache: false
 
       # ruby は test-ruby-syntax (Brewfile/_pryrc の ruby -c と _gemrc の YAML パース) 用。
-      # 導入と検証は共有 action に集約 (issue 141)
+      # 導入と検証は共有 action に集約
       - uses: ./.github/actions/ensure-toolchain
         with:
           commands: zsh jq ruby yamllint
 
       # 静的解析の shellcheck はバージョンを固定してリリースバイナリで入れる。
-      # かつて apt (ubuntu 24.04) の 0.9 系を使っていた頃、開発機 (brew = 0.11) と指摘が食い違い
+      # apt (ubuntu 24.04) の 0.9 系だと、開発機 (brew = 0.11) と指摘が食い違い
       # 「手元 green なのに CI 赤」を生んだ (実例 2026-07-25: `[ -n "$x" ] && y || true` が
       # 0.9 では SC2015、0.11 では無指摘)。runner を macOS へ移した今も、brew 任せにすると
       # 版が黙って動くので pin は維持する。

@@ -102,7 +102,7 @@ func TestSlideIn(t *testing.T) {
 	}
 }
 
-// issue 416: ASCII + VS16 (キーキャップ) を含む行で、合成した行が 1 桁はみ出していた
+// ASCII + VS16 (キーキャップ) を含む行で、合成した行が 1 桁はみ出していた
 // (ansi.Truncate がこのクラスタを幅 1 と数えて切るため。termwidth.Truncate が測り直す)。
 func TestComposeKeepsWidthWithKeycaps(t *testing.T) {
 	const keycap = "1️⃣"

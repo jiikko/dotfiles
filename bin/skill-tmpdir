@@ -1,5 +1,5 @@
 #!/bin/bash
-# skill / agent が成果物を書く dir <本体 checkout>/tmp/<名前>/<session-id>/ を作り、絶対パスを 1 行で出す (issue 774)。
+# skill / agent が成果物を書く dir <本体 checkout>/tmp/<名前>/<session-id>/ を作り、絶対パスを 1 行で出す。
 #
 #   d=$(skill-tmpdir codex-drive)   # → /Users/me/repo/tmp/codex-drive/0b9a…/
 #

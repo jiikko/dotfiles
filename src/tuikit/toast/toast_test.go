@@ -319,7 +319,7 @@ func TestToastBoxLinesRespectsMaxLines(t *testing.T) {
 }
 
 // 溢れたときの追い出しは重要度を見る。🚨 年齢だけで捨てると、起動時の警告の後に成功通知が
-// 3 回来ただけで警告が消える (実測 2026-08-13。issue 028 P2 が要求していた
+// 3 回来ただけで警告が消える (実測 2026-08-13。
 // 「重要度 error > info の逆転を防ぐ」が、スタック化後は満たされていなかった)。
 func TestToastEvictionKeepsWarningOverSuccess(t *testing.T) {
 	var s Stack
@@ -395,8 +395,8 @@ func TestToastBoxLinesKeepsWarningWithinBudget(t *testing.T) {
 
 	// 1 枚ぶんの予算では最新 1 枚だけ (既存の不変条件: 見えない通知より覆う通知)。
 	// 🚨 行数だけの assert にしない: 最新が落ちて古い警告が残っても行数は同じ 4 行で通る。
-	// 実際この fixture は issue 057 のバグ (最新 ok2 が消え「未 push」だけが描かれる) を
-	// 再現していたのに、行数 assert だったため green を返し続けていた
+	// この fixture は「最新 ok2 が消え「未 push」だけが描かれる」退行を
+	// 再現するので、行数 assert だと green を返し続ける
 	one := strings.Join(s.BoxLines(false, BoxHeight, 0), "\n")
 	if got := len(s.BoxLines(false, BoxHeight, 0)); got != BoxHeight {
 		t.Errorf("予算 1 枚のとき %d 行 (want %d)", got, BoxHeight)
@@ -406,7 +406,7 @@ func TestToastBoxLinesKeepsWarningWithinBudget(t *testing.T) {
 	}
 }
 
-// 最新のトーストは重要度に関係なく必ず描かれる (issue 057 の回帰テスト)。
+// 最新のトーストは重要度に関係なく必ず描かれる。
 // 「最新が成功/進行中・残りが警告」の組み合わせで、狭い端末の予算 (fit=1 / fit=2) でも
 // 最新のテキストが出力に含まれることを**中身で** assert する (行数 assert はこの穴を通す)。
 func TestToastBoxLinesAlwaysDrawsNewest(t *testing.T) {
@@ -574,7 +574,7 @@ func TestToastHoldingFollowsWidthChange(t *testing.T) {
 }
 
 // 低い窓では最新の 1 枚の折り返しを予算の行数まで減らし、箱を下端で切らせない (最新は予算を超えても出すので、
-// 高い箱のままだと重ねる側が下辺と影を切る。敵対レビュー P2-2)。
+// 高い箱のままだと重ねる側が下辺と影を切る)。
 func TestToastTallBoxShrinksToBudget(t *testing.T) {
 	var s Stack
 	s.Show(strings.Repeat("長い警告 ", 30), false)
@@ -590,7 +590,7 @@ func TestToastTallBoxShrinksToBudget(t *testing.T) {
 	}
 }
 
-// 英文は語の途中で割らない (空白で割る。敵対レビュー P2-3: 文字の復元だけでは語を割っても緑だった)。
+// 英文は語の途中で割らない (空白で割る。文字の復元だけでは語を割っても緑になる)。
 func TestToastWrapBreaksAtSpaces(t *testing.T) {
 	text := "push failed: remote rejected the update because the branch is protected"
 	words := map[string]bool{}
@@ -606,7 +606,7 @@ func TestToastWrapBreaksAtSpaces(t *testing.T) {
 	}
 }
 
-// 先頭が空白の文を折り返しても、空白だけの行を作らない (敵対レビュー P3-1)。
+// 先頭が空白の文を折り返しても、空白だけの行を作らない。
 func TestToastWrapSkipsLeadingSpaces(t *testing.T) {
 	for _, line := range wrapText("  "+strings.Repeat("x", 40), 10, MaxTextLines) {
 		if strings.TrimSpace(line) == "" {
@@ -615,7 +615,7 @@ func TestToastWrapSkipsLeadingSpaces(t *testing.T) {
 	}
 }
 
-// 「空白 + 結合文字」の書記素が行の境に来ても、空白を剥がして結合文字だけを次の行へ残さない (敵対レビュー P3-2)。
+// 「空白 + 結合文字」の書記素が行の境に来ても、空白を剥がして結合文字だけを次の行へ残さない。
 func TestToastWrapKeepsSpaceWithCombiningMark(t *testing.T) {
 	text := "ab ́cd"
 	got := wrapText(text, 2, MaxTextLines)
@@ -624,7 +624,7 @@ func TestToastWrapKeepsSpaceWithCombiningMark(t *testing.T) {
 	}
 }
 
-// 最新と同じ通知は重ねずに出し直す。断り (赤) は追い出しで残るので、同じキーの連打で本物の警告を押し出さない (敵対レビュー P3-3)。
+// 最新と同じ通知は重ねずに出し直す。断り (赤) は追い出しで残るので、同じキーの連打で本物の警告を押し出さない。
 func TestToastSameNoticeDoesNotStack(t *testing.T) {
 	var s Stack
 	s.Show("push failed", false)
@@ -641,7 +641,7 @@ func TestToastSameNoticeDoesNotStack(t *testing.T) {
 	}
 }
 
-// 間に別の通知が挟まっても、同じ断りは重ならない (最新とだけ比べると 断り → 成功 → 断り で重なり、本物の警告を押し出す。敵対レビュー 2 周目)。
+// 間に別の通知が挟まっても、同じ断りは重ならない (最新とだけ比べると 断り → 成功 → 断り で重なり、本物の警告を押し出す)。
 func TestToastSameNoticeDoesNotStackAcrossOthers(t *testing.T) {
 	var s Stack
 	s.Show("push failed", false)
@@ -660,7 +660,7 @@ func TestToastSameNoticeDoesNotStackAcrossOthers(t *testing.T) {
 	}
 }
 
-// 空白だけの長い文でも、印の付いた 1 行の箱を出す (0 行の空箱にしない。敵対レビュー 2 周目)。
+// 空白だけの長い文でも、印の付いた 1 行の箱を出す (0 行の空箱にしない)。
 func TestToastWhitespaceOnlyTextKeepsMark(t *testing.T) {
 	var s Stack
 	s.Show(strings.Repeat(" ", 80), false)
@@ -671,7 +671,7 @@ func TestToastWhitespaceOnlyTextKeepsMark(t *testing.T) {
 	}
 }
 
-// ReservedHeight は最新の 1 枚 (重要でなくても) と、新しい重要な枚を最新を含めて n 枚まで数える (issue 484)。
+// ReservedHeight は最新の 1 枚 (重要でなくても) と、新しい重要な枚を最新を含めて n 枚まで数える。
 // BoxLines が描かない枚 (滑り込み前の frame 0) は数えない。
 func TestToastReservedHeight(t *testing.T) {
 	long := strings.Repeat("長い警告 ", 30) // 幅 40 で 3 行 → 箱 6 行
@@ -741,7 +741,7 @@ func TestInfoToastHasNoMark(t *testing.T) {
 
 // 窓幅 1〜40 のどれでも箱が出て、窓幅が PanelMinWidth 以上なら箱は窓に収まり、未満なら下限 (PanelMinWidth) で止まる。
 // 本文は欠けない (入り切らないときは MaxTextLines 行まで折り返した上で最終行の末尾が … で、その手前は元の文の先頭と一致する)。
-// 窓幅 30 以上しか見ていなかった頃は、狭い窓で通知を全部消す・本文の幅の下限を取り違える変更が緑のまま通った (issue 602)。
+// 窓幅 30 以上しか見ていなかった頃は、狭い窓で通知を全部消す・本文の幅の下限を取り違える変更が緑のまま通った。
 func TestToastBoxAtEveryNarrowWidth(t *testing.T) {
 	const text = "コピーした"
 	for width := 1; width <= 40; width++ {

@@ -21,7 +21,7 @@ runs:
     # 🚨 macOS runner の /bin/bash は 3.2、開発機は Homebrew の 5 系。揃えないと「手元だけ緑」が
     # 逆向きに起きる。実測 2026-08-28〜29 で 3.2 のまま踏んだもの:
     #   - tests/check_bench_budgets.sh の `declare -A` が invalid option になり、**予算を 1 件も
-    #     照合しないまま rc=0** を返して Bench が緑になった (issue 133)
+    #     照合しないまま rc=0** を返して Bench が緑になった
     #   - bats 1.13 が日本語のテスト名を解決できず 0 件実行して警告だけ出す
     #   - statusline の advisor 整形が 7 件不一致
     - name: Ensure modern bash (runner の /bin/bash は 3.2)

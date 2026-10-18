@@ -11,7 +11,7 @@ version: "2"
 # 書く。書き込み自体は temp+rename ではなく最終名への直接 write で、安全性の根拠は原子性ではなく
 # 内容アドレス) ので、外しても結果の正しさには影響しない。root の Makefile (run_go_projects) が 7 プロジェクトを並列に
 # 回すため、全プロジェクトでこれを true にする (1 つでも false が残ると、その 1 つが他の
-# 6 つの起動タイミング次第で落ちる)。issue 258
+# 6 つの起動タイミング次第で落ちる)。
 run:
   allow-parallel-runners: true
 

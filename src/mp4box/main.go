@@ -4,7 +4,7 @@
 //
 // どの box からも参照されない末尾のごみ (中断した書き込みの残り等) を数えないための値で、zshlib/_concat_helpers.zsh の
 // concat の出力サイズの診断 (__concat_mp4_effective_size) が使う。読めない・壊れているときは 0 を出す (診断を飛ばす合図)。
-// 常に rc=0 で数を 1 行出す (呼び出し側は数だけを読む)。Python 版 (python3 -c) を置き換えた (issue 670)。
+// 常に rc=0 で数を 1 行出す (呼び出し側は数だけを読む)。Python 版 (python3 -c) を置き換えた。
 package main
 
 import (

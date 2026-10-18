@@ -1,4 +1,4 @@
-// Package ptytest は、テストのバイナリを script(1) の擬似端末の上で helper として走らせる (検査のための部品。issue 518)。
+// Package ptytest は、テストのバイナリを script(1) の擬似端末の上で helper として走らせる (検査のための部品)。
 // helper は擬似端末を制御端末に持ち、前面のグループにいる (画面と同じ立場)。go test 自身は端末を持たないことが多いので、ここで作る。
 //
 // 使い方: TestMain の先頭で Helper を呼び、検査から Run で helper を起こす。
@@ -21,7 +21,7 @@ import (
 const env = "PTYTEST_HELPER"
 
 // pidEnv は helper が自分の pid を書くファイル。script を止めても、止まった (SIGTTOU・SIGSTOP) helper は script の
-// 子の session に残るので、上限を超えたら Run がこの pid を直接止める (敵対レビュー 2026-10-14)。
+// 子の session に残るので、上限を超えたら Run がこの pid を直接止める。
 const pidEnv = "PTYTEST_PIDFILE"
 
 // Helper は、helper として起こされていれば f(mode) の結果を書いて抜ける (そうでなければ何もしない)。TestMain の先頭で呼ぶ。
@@ -42,13 +42,13 @@ func Helper(f func(mode string) string) {
 }
 
 // timeout は helper の 1 回の上限。helper は前面を確かめて 1 行書くだけで、手元では 0.02 秒で終わる。子が止まる退行
-// (前面でないまま端末の設定を書いて SIGTTOU で止まる等) で suite ごと待ち続けないための安全網 (issue 758)。
+// (前面でないまま端末の設定を書いて SIGTTOU で止まる等) で suite ごと待ち続けないための安全網。
 const timeout = 60 * time.Second
 
 // Run は自分 (テストのバイナリ) を擬似端末の上で mode の helper として走らせ、f(mode) の結果を返す。
 // script・zsh が無い・擬似端末の前面に居られないときは Skip する。🚨 ただし CI (環境変数 CI) では落とす: CI は
-// `go test` に -v を付けないので、Skip のまま緑だと pty の検査が 1 本も走っていないことがログから見えない (issue 758。
-// treefiler の needGit と同じ扱い)。
+// `go test` に -v を付けないので、Skip のまま緑だと pty の検査が 1 本も走っていないことがログから見えない
+// (treefiler の needGit と同じ扱い)。
 func Run(t testing.TB, mode string) string {
 	t.Helper()
 	for _, bin := range []string{"script", "zsh"} {

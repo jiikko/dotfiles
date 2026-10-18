@@ -178,7 +178,7 @@ func TestFetchCodexNoResponse(t *testing.T) {
 
 func TestFetchCodexReturnsWhenDescendantHoldsStdout(t *testing.T) {
 	// 子孫が stdout の書き込み端を握ったまま応答しない server。ctx が終わったら、子孫の終了を
-	// 待たずに timeout として返ること (以前は子孫が終わるまで Scan が返らなかった)。
+	// 待たずに timeout として返ること (子孫が終わるまで Scan が返ると、ctx が効かない)。
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "descendant.pid")
 	writeStub(t, dir, "codex", "/bin/sleep 60 &\necho $! > "+pidFile+"\nexec /bin/sleep 60\n")

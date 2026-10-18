@@ -13,7 +13,7 @@
 # issues/epic/<name>/next/ = 未完了、issues/pending/ = 着手保留 (期限は追う)、
 # issues/done/ と issues/epic/<name>/done/ = 完了 (対象外)。group 内の pending/ は global の
 # pending/ と同じ扱い ([保留]・期限は追う) で走査する — 2026-09-06 に group 内の done/ pending/ が
-# 予約された状態になった (spec 3 節 / issue 291) が、走査すべき集合はそれ以前と変わらない。
+# 予約された状態になった (spec 3 節) が、走査すべき集合はそれ以前と変わらない。
 # issue-sync skill の `find … -name done -prune` も同じ集合を open と見るので、
 # hook だけ狭くすると skill と hook で報告が食い違う。本文の既読ヘッダーは見ない (書き換え忘れで嘘が残るため)。
 # 🚨 pending も走査する: 「保留」に置いた人間タスクの期限切れを黙らせると、期限を書いた本人
@@ -24,7 +24,7 @@
 #       未確認 0 件 + 期限問題なしのときは何も出さない (毎セッションのノイズにしない)。
 #       🚨 「期限が読めなかった」は黙って捨てない — 書式不正・期限なしとして必ず出す
 #       (取りこぼしを「期限なし」と区別できないと、検査が静かに空回りする)。
-# `--counts`: 帯の mod (_claude/mods/issue-band。issue 621) 向けの機械の出口。数え方は同じで、
+# `--counts`: 帯の mod (_claude/mods/issue-band) 向けの機械の出口。数え方は同じで、
 #       `overdue= soon= human= broken=` を 1 行ずつ、0 件でも必ず出す (issue dir の無い repo では何も出さない)。
 #       数えられないときは `error=<理由>` を出す (黙ると帯が「何も無い」と区別できない)
 
@@ -59,7 +59,7 @@ overdue="" ; upcoming="" ; broken="" ; later=0 ; unread=0
 # 予約された固定 2 段だけを明示する。glob が未展開でも [ -e ] で飛ばす (epic が無い
 # repo で zsh/bash の設定差や set -u に巻き込まれて落ちないようにする)。
 #
-# 🚨 issue dir は複数ありうる (issue 276)。root 直下だけでなく `<root>/*/issues` も回す
+# 🚨 issue dir は複数ありうる。root 直下だけでなく `<root>/*/issues` も回す
 # (obaket の macOS/issues/)。dir は改行区切りなので IFS を切り替えて読む。
 nl=$'\n' # 🚨 $'\n' は二重引用符の外でないと展開されない
 issue_files=""
@@ -84,7 +84,7 @@ while IFS= read -r f; do
   # 保留は未完了件数には数えない (着手条件待ちなので「今やる」対象ではない) が、
   # 期限は同じ基準で追う。ラベルで区別する
   held=""
-  # 🚨 `$dir` を patterns に埋めないこと (issue 276)。issue dir は複数ありうるので
+  # 🚨 `$dir` を patterns に埋めないこと。issue dir は複数ありうるので
   # 単一の `$dir` では他の dir の pending/ を取りこぼす。パス断片で判定する。
   case "$f" in
     */pending/*) held=" [保留]" ;;

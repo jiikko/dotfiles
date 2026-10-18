@@ -6,7 +6,7 @@
 # なぜ: per-file link 方式なので、rule を足した commit の後に ./setup.sh を忘れると、その rule は
 # Claude Code から一切読まれない。既存の防御は「CLAUDE.md の規律 (忘れると止まらない)」と
 # 「make test の test_claude_links_complete.sh (踏むのは次に test を回した無関係な人)」で、
-# どちらも当事者に届かない (issue 160)。セッション起動という必ず通る場所で自動修復する。
+# どちらも当事者に届かない。セッション起動という必ず通る場所で自動修復する。
 # pull で別 machine から入ってきた分にも同じ経路で効く (post-commit / post-merge の git hook より
 # 契機を選ばない)。
 #

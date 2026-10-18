@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// 上限を超える 1 行は色を付けずに素通しする (chroma の lexer が 2 乗で伸びる言語がある。issue 699 の 1)。上限ちょうどまでは色が付く。
+// 上限を超える 1 行は色を付けずに素通しする (chroma の lexer が 2 乗で伸びる言語がある)。上限ちょうどまでは色が付く。
 func TestLongLineIsPassedThrough(t *testing.T) {
 	short := "const a = 1;"
 	if got := Lang("typescript", short); !strings.Contains(got, "\x1b[") {

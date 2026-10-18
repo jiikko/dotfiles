@@ -26,7 +26,7 @@ input=""
 issue_hook_resolve_dir <<<"$input" || exit 0
 
 session_id=$(issue_progress_json_field "$input" session_id)
-# パス構成要素として安全な形だけを通す (issue 302 ②。`/` や `..` が来ると書き先が外れる)
+# パス構成要素として安全な形だけを通す (`/` や `..` が来ると書き先が外れる)
 issue_progress_valid_session_id "$session_id" || exit 0
 head=$(git -C "$ISSUE_HOOK_ROOT" rev-parse HEAD 2>/dev/null || true)
 [ -n "$head" ] || exit 0
@@ -34,7 +34,7 @@ head=$(git -C "$ISSUE_HOOK_ROOT" rev-parse HEAD 2>/dev/null || true)
 state_dir="${CLAUDE_ISSUE_PROGRESS_DIR:-$HOME/.cache/claude-issue-progress}"
 mkdir -p "$state_dir" 2>/dev/null || exit 0
 
-# --- 期限切れの状態ファイルを掃除する (issue 302 ①) -------------------------------------------
+# --- 期限切れの状態ファイルを掃除する -------------------------------------------
 #
 # 🚨 **消す対象を拡張子で必ず絞る**。`$state_dir` は env で上書きでき (テストが実際に
 # 差し替える)、`-type f -delete` のような広い形にすると**差し替え先の中身を巻き込む**。

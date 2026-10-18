@@ -10,7 +10,7 @@ import (
 )
 
 // Claude の利用枠の主な出所は、statusline (`_claude/statusline-command.sh` の write_rate_limits) が書き出す
-// `claude-rate-limits.json` (issue 627)。Claude Code は推論の応答ヘッダで利用枠を受け取り、statusline の
+// `claude-rate-limits.json`。Claude Code は推論の応答ヘッダで利用枠を受け取り、statusline の
 // 入力の rate_limits に載せる。これを読む限りサーバを余計に叩かない。
 // `claude -p /usage` (FetchShared の run) は、このファイルが無いか古いときだけの予備: あちらは 1 回ごとに
 // /api/oauth/usage を叩き、429 になると枠が取れない (対話の /usage は応答ヘッダの値で答えるので 429 でも見える)。

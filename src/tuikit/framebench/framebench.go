@@ -1,5 +1,5 @@
 // Package framebench は、描いた画面の文字列を bubbletea v2 のレンダラと同じ手順でセルへ書き直し、端末への差分まで通す
-// 計測の道具 (issue 607)。View の文字列を作るだけのベンチは、この分 (pro-con の 200 × 50 で View の約 2.3 倍) を測らない。
+// 計測の道具。View の文字列を作るだけのベンチは、この分 (pro-con の 200 × 50 で View の約 2.3 倍) を測らない。
 //
 // 再現しているのは bubbletea v2.0.8 の cursedRenderer.flush の alt screen の経路: 前のコマと同じなら何もしない (viewEquals) →
 // Clear → uv.NewStyledString(content).Draw → TerminalRenderer.Render → Flush。

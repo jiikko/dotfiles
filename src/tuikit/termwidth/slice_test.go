@@ -24,8 +24,7 @@ var sliceInputs = []string{
 	"\ta\ufe0fb",      // 同じく t = 0 でタブが残る形
 }
 
-// wantTruncate は ansi.Truncate を正本にした期待値。ansi の結果が Of で width をはみ出すとき (キーキャップ。
-// issue 416) は、ansi へ渡す幅を 1 ずつ下げて Of で収まる最初の結果にする (二分探索しない素朴な参照。
+// wantTruncate は ansi.Truncate を正本にした期待値。ansi の結果が Of で width をはみ出すとき (キーキャップ) は、ansi へ渡す幅を 1 ずつ下げて Of で収まる最初の結果にする (二分探索しない素朴な参照。
 // schedkeys が持っていた fitWidth と同じ形)。
 func wantTruncate(s string, width int, tail string) string {
 	r := ansi.Truncate(s, width, tail)

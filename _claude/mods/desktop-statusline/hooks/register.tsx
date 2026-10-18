@@ -3,7 +3,7 @@ import type { Register, EngineInterface } from 'claude-code'
 import { parseAnsi } from './ansi'
 import { statusInput } from './input'
 
-// Claude desktop の Code タブは settings の statusLine を実行しない (issue 625 で観測) ので、CLI と同じステータスバーを mod で描く。
+// Claude desktop の Code タブは settings の statusLine を実行しないので、CLI と同じステータスバーを mod で描く。
 // 中身は CLI と同じ _claude/statusline-command.sh の出力 (表示の正本は script 1 つ。色の閾値も script が決め、ここは ANSI を読むだけ)。
 // desktop の surface にだけ描き、terminal では描かない (CLI は statusLine が描くので二重に出さない)。
 // script は描画の中では呼ばない: セッションの開始・メインのターンの終わり・60 秒ごと (CLI の refreshInterval と同じ) に呼んで $.state に置く。
@@ -12,7 +12,7 @@ import { statusInput } from './input'
 // 「desktop のセッションか」は $.session.surfaces() でなく、起動時に決まる環境変数で聞く。desktop が起こすセッションは `-p` / SDK と同じ
 // 作りで、型定義 (SessionStartInput / session.attach) によると session.start の時点では surface が null・名簿が空で、desktop は
 // 最初の描画の要求で名簿に載る。名簿で聞くと、session.start の refresh も 60 秒ごとの timer も起動されず、帯は一度も作られない
-// (issue 625 / 628 で「desktop に何も出ない」が続いた原因の最有力。desktop 実機の session.start の surface は未観測)。
+// (「desktop に何も出ない」原因の最有力。desktop 実機の session.start の surface は未観測)。
 // 描くかどうかは描画のたびに e.surface で決める (名簿でなく、描く先そのもの)。
 
 const lines = atom({ plugin: 'desktop-statusline', key: 'lines' } as const, null)

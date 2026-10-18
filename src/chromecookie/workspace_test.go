@@ -522,7 +522,7 @@ func TestProcessAliveGuardsNonPositivePID(t *testing.T) {
 // 🚨 所有者が自分でない作業領域は使わないこと。
 //
 // 実環境では他ユーザー所有のディレクトリを作れないため、uid の取得を seam にして検査する。
-// seam が無いとこの検査は永久に無検査のまま残る（3 周の敵対的レビューで指摘され続けた）。
+// seam が無いとこの検査は永久に無検査のまま残る。
 func TestForeignOwnerIsRejected(t *testing.T) {
 	isolateTemp(t)
 	root, err := testWS.ensureTempRoot()

@@ -29,8 +29,8 @@
 #   mode: ro (codex exec -s read-only) | review (codex exec review)
 #   prompt_part: ファイルパス。複数はカンマ区切りで順に連結する (共通テンプレート + タスク固有 brief)。
 #                パスにカンマは使えない (区切りと衝突する)
-#   timeout_s: この行だけの秒数上限 (任意。省略時は CODEX_FANOUT_TIMEOUT)。敵対レビュー系
-#              (反証を構築する lens) は思考時間が長く既定値で時間切れ (rc=124) になりやすい (issue 150)
+#   timeout_s: この行だけの秒数上限 (任意。省略時は CODEX_FANOUT_TIMEOUT)。レビュー系
+#              (反証を構築する lens) は思考時間が長く既定値で時間切れ (rc=124) になりやすい
 #              ので、その行だけ 2400 程度に伸ばす。900 超は呼び出し側の detach が必要 (上記)
 #
 # 出力 (outdir):
@@ -48,7 +48,7 @@
 #                   上限で落ちた run も rc は変えない。stdout の要約・merger への注記では label:rc=N(利用上限) と出る
 #                   merger を回したときは末尾に label=merger の行を追記する (-o は digest.md)。
 #                   runs.tsv は merger まで終わってから公開する (在れば全 run と merger の rc は揃っている。driver の終了コードはその後に決まる。中断では作らない)。
-#                   「どの工程に壁時計が何分かかったか」を run 単位で残す (dotfiles issue 369 案 1)。
+#                   「どの工程に壁時計が何分かかったか」を run 単位で残す。
 #                   run 合計は通しの壁時計ではない (Claude の digest 読み・build・修正は外)
 #   <label>.stderr_bytes  -J のときの、codex-events が本文を追記する前の log の長さ (上限の判定がそこで切る)
 #   digest.md       merger の出力 (呼び出し側が読むのは原則これ 1 枚)
@@ -247,7 +247,7 @@ run_captured() { # timeout / label / last-message path / command...
     printf '%s\n' "$rc" >"$outdir/$label.cli.rc"
     # inspect は応答の本文を log の末尾へ追記する。codex が終わった時点の長さを控えておき、上限の判定 (usage_limit_line) はそこで切る
     # (本文は上限の行も区切り行も引用しうるので、字面では切る位置を決められない)。
-    # codex の子孫が codex の終了後にも stderr へ書くと、その行はこの長さの後ろに入って判定から落ちる (実際の codex で起きるかは未確認。issue 762)
+    # codex の子孫が codex の終了後にも stderr へ書くと、その行はこの長さの後ろに入って判定から落ちる (実際の codex で起きるかは未確認)
     wc -c <"$log" | tr -d ' ' >"$outdir/$label.stderr_bytes"
     "$CODEX_EVENTS" inspect "$outdir/$label.events.jsonl" "$out" "$outdir/$label.meta.json" "$log"
     inspect_rc=$?

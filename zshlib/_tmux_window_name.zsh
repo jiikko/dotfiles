@@ -178,8 +178,8 @@ _tmux_extract_subcommand() {
   REPLY=""
 }
 
-# OSC 2 で「このペインの」タイトルだけを書く。旧実装の \033k (ウィンドウ名直接
-# リネーム) は非アクティブペインの precmd がウィンドウ名を奪う事故があったため廃止
+# OSC 2 で「このペインの」タイトルだけを書く。\033k (ウィンドウ名直接
+# リネーム) は使わない: 非アクティブペインの precmd がウィンドウ名を奪うため
 # (allow-rename off で無視される。_tmux.conf 参照)
 _tmux_set_pane_title() {
   emulate -L zsh

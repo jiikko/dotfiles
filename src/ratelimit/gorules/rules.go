@@ -9,7 +9,7 @@ package gorules
 
 import "github.com/quasilyte/go-ruleguard/dsl"
 
-// padViaPadSpaces: 空白の連結は termwidth.PadSpaces を使う (無確保。glogx 側 issue 047 / 118)。
+// padViaPadSpaces: 空白の連結は termwidth.PadSpaces を使う (無確保)。
 func padViaPadSpaces(m dsl.Matcher) {
 	m.Match(`strings.Repeat(" ", $n)`).
 		Report(`空白の連結は termwidth.PadSpaces($n) を使う (無確保)`)

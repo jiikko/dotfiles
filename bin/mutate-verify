@@ -1,8 +1,8 @@
 #!/bin/bash
-# mutate-verify — 変異検証の「前提検査」を機械で強制する (issue 408)。
+# mutate-verify — 変異検証の「前提検査」を機械で強制する。
 #
 # `_claude/rules/mutation-verify-new-tests.md` が要求する手順 0〜3 のうち、**人が毎回手で書いて
-# 毎回書き忘れる部分**だけを引き受ける。変異の当て方 (sed / patch / 旧実装の貼り直し) は
+# 毎回書き忘れる部分**だけを引き受ける。変異の当て方 (sed / patch / 元の実装の貼り直し) は
 # タスクごとに違うので呼び出し側の責任で、この道具は guard に徹する。
 #
 # ## 何を止めるか (射程)
@@ -27,7 +27,7 @@
 #      🚨 確かめるのは「想定の検査が落ちた」までで、「**それだけが**落ちた」ではない (次節)
 #   (前提) baseline と変異の run は **同じ木の状態** で測る。道具の一時ファイルは worktree の gitdir に置き、
 #      intent-to-add も baseline より前に済ませる (検証コマンドから見える木が 2 回で違うと、挙動を変えない
-#      変異でも red になる。red team 4 周目 P1-2)
+#      変異でも red になる)
 #
 # ## 脅威モデル — 誰の、どの失敗を止めるか
 #
@@ -40,23 +40,22 @@
 #   - **行レベルの誤変異** — 当てた diff は必ず表示するが、内容の機械照合はしない
 #     (「意図した行か」は変異の設計そのものなので呼び出し側の責任)
 #   - **assert の誤り / 観測設計 / fixture・seam の問題** — 変異が red になっても、そのテストが
-#     正しいものを見ているかは別問題 (issue 408 が起票時に過大評価していた部分)
+#     正しいものを見ているかは別問題 (過大評価しやすい部分)
 #   - **repo の外に書かれた生成物・子プロセス** — worktree の中は消すが、検証コマンドが
 #     `$HOME` や `/tmp` へ書いたものは追えない
 #   - 🚨 **gitignore された対象と `.git/` 配下** — `git status` に出ないので改変を検出できない
 #     (`tmp/` / `node_modules` / `.envrc` / hook の植え込み)。**書き間違いで触る場所ではない**
-#     と判断して射程から外した (red team 2 周目 P1-1 / P1-3)
+#     と判断して射程から外した
 #   - 🚨 **`--expect` の具体性** — 「baseline に出る pattern」は rc=2 で拒否するが、
 #     `FAIL` のように**どのテストが落ちても出る** pattern は通る。狙ったテスト以外が落ちた red を
 #     「想定どおり」と読むので、**`--expect` にはテスト名まで含めること** (`FAIL` ではなく
-#     `FAIL: TestX/case`)。runner のサマリ表現は runner ごとに違うため機械では絞れない
-#     (red team 2 周目 P1-4)。一致した行は必ず表示するので、そこで人が確かめる
+#     `FAIL: TestX/case`)。runner のサマリ表現は runner ごとに違うため機械では絞れない。一致した行は必ず表示するので、そこで人が確かめる
 #   - 🚨 **巻き添えで落ちた検査** — 全部の検査を壊す変異 (スクリプトを丸ごと殺す等) でも、`--expect` の
 #     行が出れば rc=0 になる。何が「検査の失敗」かは runner ごとに違うので機械では判定せず、**baseline と
 #     変異の run の出力の差** (消えた行と増えた行) を必ず表示する。rc=0 のときはそこを見て、狙った検査だけが
-#     落ちたかを人が確かめる (red team 4 周目 P1-1 / 5 周目 P1-1)。差には無関係な行 (`ok pkg 0.2s` →
+#     落ちたかを人が確かめる。差には無関係な行 (`ok pkg 0.2s` →
 #     `(cached)` のような揺れ) も混ざり、先頭 40 行で切る。切ったら残りの行数を出し、全体は「全体のログ」の
-#     diff.txt に残す (issue 574。切れた先に見たい行があっても「無い」と区別できなかった)
+#     diff.txt に残す (切れた先に見たい行があっても「無い」と区別できなかった)
 #   - **検証コマンド自身が作る差** — 道具は 2 回の run の間に差を作らない (一時ファイルは gitdir、構文検査は
 #     baseline の前) が、`--verify` 自身が残す生成物 (coverage.out 等) で 2 回目の木が変わる形は止めない
 #   - **argv にパスを持たない子プロセス** — 掃除は「worktree のパスを argv に持つプロセス」を止めるだけ。
@@ -74,7 +73,7 @@
 #
 # ## 使い方
 #
-#   変異を何本も当てるなら bin/mutate-verify-list (一覧から 1 本ずつこの道具を起動し、結果を表にする。issue 580)
+#   変異を何本も当てるなら bin/mutate-verify-list (一覧から 1 本ずつこの道具を起動し、結果を表にする)
 #
 #   mutate-verify --file src/x/main.go \
 #     --apply 'perl -0pi -e "s/if guard/if false \&\& guard/" "$MUTATE_FILE"' \
@@ -86,18 +85,18 @@
 #   🚨 --expect / --baseline-expect は **拡張正規表現** (`grep -E`) で照合する。テスト名の `+` `.` `(` は
 #   メタ文字になるので `\` でエスケープする (`ctrl+h` → `ctrl\+h`)。`^ok ` のようにアンカーが要る場面が
 #   あるので固定文字列には倒していない。正規表現としては外れ、固定文字列としては一致する場合は、
-#   失敗のメッセージでその旨を知らせる (issue 423)
+#   失敗のメッセージでその旨を知らせる
 #   テスト名は **runner が出力する名前**で書く。swift-testing は表示名つきのテスト (`@Test("…")`) を表示名で
-#   出すので、メソッド名で書くと一致しない (obaket retro 1076)
+#   出すので、メソッド名で書くと一致しない
 #
 #   🚨 --syntax に `go build` を使わない: `_test.go` をコンパイルしないので、テストファイルへの構文
-#   エラーの変異を検出できない (red team 4 周目 P2-6)。`go vet` も使わない: `unreachable code` などの
-#   analyzer が構文と関係なく落ちるので、正当な変異が rc=5 になる (5 周目 P2-1)。
+#   エラーの変異を検出できない。`go vet` も使わない: `unreachable code` などの
+#   analyzer が構文と関係なく落ちるので、正当な変異が rc=5 になる。
 #   `go test -vet=off -count=1 -run '^$' ./...` はテストもコンパイルし、テストも analyzer も走らせない。
 #   --file は **repo root からの相対パス** (今いるディレクトリからではない。絶対パスは受けない)。
 #   --apply / --syntax / --verify は **worktree の中**で実行される。
 #   その worktree は新しい checkout なので、gitignore されたディレクトリ (`tmp/` 等) は無い。そこへ出力を書くなら
-#   コマンドに `mkdir -p tmp &&` を含める (無いと「No such file」で構文検査が落ち、全部が判定不能になる。obaket retro 1083)
+#   コマンドに `mkdir -p tmp &&` を含める (無いと「No such file」で構文検査が落ち、全部が判定不能になる)
 #   --syntax / --verify の出力先ディレクトリは素の worktree に無いことがある (ignore されたディレクトリは checkout されない)。
 #   各コマンドの中で `mkdir -p` してから書く (例: `cd macOS && mkdir -p tmp && … > tmp/build.log`。obaket 1083)
 #   $MUTATE_FILE に --file の絶対パス (worktree 側) が入る。
@@ -107,7 +106,7 @@
 #   --timeout <秒> は各 run (構文検査 / baseline / --apply / 変異後の検証) の上限。既定 1800 秒、
 #   環境変数 MUTATE_VERIFY_TIMEOUT でも渡せる (引数が優先)。0 で無制限。超えた run は子孫の木を凍らせてから
 #   SIGTERM → 5 秒後に SIGKILL で止め、rc=10 (時間切れ。第 3 の結果) を返す。変異が hang を起こしても、
-#   一覧 (mutate-verify-list) が 1 本で詰まらない (issue 610)。上限は壁時計 (Ctrl-Z で止めていた間も数える)。
+#   一覧 (mutate-verify-list) が 1 本で詰まらない。上限は壁時計 (Ctrl-Z で止めていた間も数える)。
 #   時間切れより前に親を離れて init の子になったもの (daemon 化) は止めない。検証コマンドは `bash -uo pipefail -c` で
 #   走り、mutate-verify の変数のうち渡るのは環境変数 (export 済みの MUTATE_FILE) だけ
 #   --syntax は shell / python / ruby なら拡張子から推定する。それ以外は明示必須
@@ -132,14 +131,13 @@ unset CDPATH  # export された CDPATH の下では、相対パスの cd が解
 prog="${0##*/}"
 die() { echo "$prog: $*" >&2; exit 2; }
 # 🚨 helper は $root (検査対象の repo) ではなく、この道具の実体の隣から読む。dotfiles 以外の repo の
-# $root にこの helper は無い (issue 585)。PATH / symlink 経由の起動でも実体まで辿る
+# $root にこの helper は無い。PATH / symlink 経由の起動でも実体まで辿る
 _self="$(readlink -f "${BASH_SOURCE[0]}")" || die "mutate-verify の実体を解決できない: ${BASH_SOURCE[0]}"
 # shellcheck source=bin/lib/uint.sh
 . "$(dirname "$_self")/lib/uint.sh" || die "$(dirname "$_self")/lib/uint.sh を読めない"
 # 起動時の stderr を fd 3 に控えて、報告はそこへ書く。bash は関数の実行中に届いたシグナルの trap を
 # その関数のリダイレクトがかかったまま走らせるので、`run_in_wt ... > "$mut_out" 2>&1` の最中に中断されると、
 # EXIT trap の報告 (rc=9 の警告・全体のログの置き場) が mv-mutant.log へ入り、worktree と一緒に消えていた
-# (issue 574 で実測)
 exec 3>&2
 note() { echo "[$prog] $*" >&3; }
 
@@ -164,7 +162,7 @@ done
 [ -n "$expect" ]          || die "--expect は必須 (red の帰属を確かめないと、既存の assert が先に落ちても気づけない)"
 [ -n "$baseline_expect" ] || die "--baseline-expect は必須 (rc=0 だけでは zero execution と全 pass を区別できない)"
 [ -n "$name" ] || name="$file"
-# 全角数字と桁あふれの罠は bin/lib/uint.sh (桁あふれは `[ -gt ]` が偽を返して黙って無制限になる。red team で実測)
+# 全角数字と桁あふれの罠は bin/lib/uint.sh (桁あふれは `[ -gt ]` が偽を返して黙って無制限になる。実測済み)
 t_rc=0
 uint_ok "$timeout" 7 || t_rc=$?
 case "$t_rc" in
@@ -176,7 +174,7 @@ root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "git repo の中で�
 [ -f "$root/$file" ] || die "--file が repo 内に無い: $file"
 # 🚨 `./guard.sh` / `a/../guard.sh` のような表記を git の正規形へ揃える。
 # snapshot は git が正規化したパスを出すので、揃えないと **--file 自身が「誤ファイル」として
-# rc=8 になる** (red team 2 周目 P2-1。見逃しでなく誤検出で、rc=8 の信頼を壊す)
+# rc=8 になる** (見逃しでなく誤検出で、rc=8 の信頼を壊す)
 _fdir="$(cd "$root/$(dirname "$file")" && pwd -P)" || die "--file のディレクトリを解決できない: $file"
 _rootp="$(cd "$root" && pwd -P)"
 case "$_fdir" in
@@ -186,13 +184,13 @@ case "$_fdir" in
 esac
 # 🚨 **表記は git に聞く**。macOS は既定で case-insensitive (`core.ignorecase=true`) なので
 # `--file GUARD.SH` でも `[ -f ]` は通るが、snapshot が出すのは `guard.sh`。文字列の完全一致で
-# 除外しているため、**--file 自身が「誤ファイル」として rc=8 になる** (red team 3 周目 P2-2)
+# 除外しているため、**--file 自身が「誤ファイル」として rc=8 になる**
 # 🚨 `--` の後ろの pathspec は **`core.ignorecase=true` でも case-sensitive** (実測 2026-09-22:
 # `ls-files -- GUARD.SH` は rc=0 だが出力が空)。magic pathspec `:(icase)` で引く
 # 🚨 `:(icase)` だけだと pathspec が **glob として効く** (`g[1].sh` で `g1.sh` を引いて別ファイルを
-# 変異させた。red team 4 周目 P2-4)。literal を併せ、表記が完全に一致するものがあればそれを優先する
+# 変異させる)。literal を併せ、表記が完全に一致するものがあればそれを優先する
 # 🚨 `-z` で読む。既定の `core.quotePath=true` では非 ASCII 名が `"\350…"` と引用されて返り、
-# それがそのまま --file になって壊れる (snapshot 側で塞いだ穴を正規化の側で作り直していた。5 周目 P2-2)
+# それがそのまま --file になって壊れる (snapshot 側で塞いだ穴を正規化の側で作り直すことになる)
 _canon="$( { git -C "$root" ls-files -z --full-name -- ":(literal)$file"
              git -C "$root" ls-files -z --others --full-name -- ":(literal)$file"
              git -C "$root" ls-files -z --full-name -- ":(icase,literal)$file"
@@ -232,23 +230,23 @@ fi
 # 「変更されうるファイル」を **パス|内容 hash** で撮る。
 # 🚨 `git status --porcelain` の**行**だけを比べてはいけない。すでに dirty なファイルの
 # **内容が変わっても行は同じ** (` M x` → ` M x`) なので差分が出ない。この道具は未コミット差分を
-# 持ち込むので、**その集合こそが死角**になる (red team P1-1: 「今書いている実装」が全部そこに入る)
+# 持ち込むので、**その集合こそが死角**になる (「今書いている実装」が全部そこに入る)
 # 🚨 **`-z` で読む**。`core.quotePath` が既定 (true) の環境では非 ASCII 名が `"\350\250\255…"` と
 # 引用されて `[ -f ]` が常に偽になり、ファイル名に改行があると行が割れる。どちらも
-# **恒久的に `<missing>` 固定 = 変更が不可視**になる (red team 2 周目 P1-5 / P3-1)。
+# **恒久的に `<missing>` 固定 = 変更が不可視**になる。
 # 🚨 **index の状態 (2 文字のステータス) も含める**。内容 hash だけだと `git add` / `git reset` で
-# **working tree を変えずに index だけ**動かされたのが見えない (同 P1-2。旧実装の行比較は見ていた)。
+# **working tree を変えずに index だけ**動かされたのが見えない (行の比較だけでは見えない)。
 # 🚨 **HEAD と index も撮る**。status のエントリだけだと、clean な木で HEAD を動かされた
-# (`git checkout HEAD~1`) のが見えない (status は 0 行のまま。red team 4 周目 P2-1 実測)。
+# (`git checkout HEAD~1`) のが見えない (status は 0 行のまま。実測済み)。
 # 区切りはタブ (パスにタブを含む repo は射程の外。冒頭の「何を止めないか」)。
 snapshot_tree() { # $1=repo dir
   local d="$1" f st
-  # 同じ commit の別ブランチへの切り替えも見る (symbolic-ref。5 周目 P3-3)
+  # 同じ commit の別ブランチへの切り替えも見る (symbolic-ref)
   printf 'HEAD\t%s\t%s\n' "$(git -C "$d" symbolic-ref -q HEAD 2>/dev/null)" "$(git -C "$d" rev-parse -q --verify HEAD 2>/dev/null)"
   printf 'INDEX\t-\t%s\n' "$(git -C "$d" ls-files -s 2>/dev/null | shasum -a 256 | awk '{print $1}')"
   # 🚨 **rename 検出を止める** (`--no-renames`)。検出は内容の類似度で決まるので、変異で中身が
   # 変わると `R new<-old` の 1 件が `D old` + `A new` の 2 件に割れ、触っていない old が
-  # 「変わったファイル」に見える (red team 4 周目 P2-3。`mv` で名前を変えた --file で rc=8)
+  # 「変わったファイル」に見える (`mv` で名前を変えた --file で rc=8)
   git -C "$d" status --porcelain -z --untracked-files=all --no-renames 2>/dev/null |
   while IFS= read -r -d '' entry; do
     [ -n "$entry" ] || continue
@@ -259,7 +257,7 @@ snapshot_tree() { # $1=repo dir
 }
 
 # hint_fixed_match は、pattern が正規表現としては外れたが固定文字列としては出力に在るときに、
-# メタ文字のエスケープ漏れを疑うよう知らせる (`ctrl+h` の `+` を踏んだ実例: issue 423)。
+# メタ文字のエスケープ漏れを疑うよう知らせる (`ctrl+h` の `+` を踏んだ実例がある)。
 hint_fixed_match() {  # $1=オプション名 $2=pattern $3=出力ファイル
   if grep -qF -- "$2" "$3"; then
     note "   ↳ ただし $1 は固定文字列としては出力に在る。正規表現 (grep -E) として照合しているので、"
@@ -268,7 +266,7 @@ hint_fixed_match() {  # $1=オプション名 $2=pattern $3=出力ファイル
 }
 
 # 元 repo の作業ツリーが変わっていないことを確かめる。**この道具が触らない**ことの確認だが、
-# `--apply` は eval なので元 repo の絶対パスを書けてしまう (red team P1-2)。
+# `--apply` は eval なので元 repo の絶対パスを書けてしまう。
 # 🚨 **警告で済ませず rc を変える** — 射程 1 が中心の主張なので、起きたのに緑を返してはいけない
 tree_before="$(snapshot_tree "$root")"
 worktree_touched=0
@@ -282,7 +280,7 @@ check_worktree_untouched() {
   diff <(printf '%s\n' "$tree_before") <(printf '%s\n' "$after") >&3 || true
 }
 
-# 全体のログを worktree の外へ写す (issue 574)。gitdir は worktree と一緒に消えるので、表示で切った先や
+# 全体のログを worktree の外へ写す。gitdir は worktree と一緒に消えるので、表示で切った先や
 # rc=6 / 7 の tail で見えなかった行を、終わった後に読めるようにする。写し先は消さない (読むのは終わった後)。
 # 写せなくても判定 (rc) は変えない: ログは判定の材料ではなく、人が後から読む控え
 # 置き場の親は起動時に絶対パスへ直す。EXIT trap の経路は先に repo root へ cd するので、相対のままだと
@@ -312,7 +310,7 @@ save_logs() {
   [ "$have" -eq 1 ] || return 1
   if [ -z "$logdir" ]; then
     parent="$log_root"
-    # 元 repo の中へは写さない: 写した物が untracked として見え、次の検査で rc=9 を作る (同 P2-1)
+    # 元 repo の中へは写さない: 写した物が untracked として見え、次の検査で rc=9 を作る
     if inside_root "$parent"; then
       note "🚨 MUTATE_VERIFY_LOG_ROOT が元 repo の中を指している ($parent)。\$TMPDIR へ写す"
       parent="$tmp_root"
@@ -339,8 +337,7 @@ report_logs() {
   save_logs && note "[$name] 全体のログ: $logdir"
 }
 
-# 中断 (SIGINT / SIGTERM・--verify の timeout) でも全体のログを写す。ログが一番要るのは hang のとき
-# (issue 574 の敵対的レビュー P2-2)。検査を先に、写すのは後 (写した物で rc=9 を作らない)
+# 中断 (SIGINT / SIGTERM・--verify の timeout) でも全体のログを写す。ログが一番要るのは hang のとき。検査を先に、写すのは後 (写した物で rc=9 を作らない)
 # shellcheck disable=SC2329  # WTS_ON_CLEANUP 経由で worktree_scratch.sh の EXIT trap から呼ばれる
 on_cleanup() {
   # trap は中断された関数のリダイレクト (`> "$mut_out" 2>&1`) の中で走るので、後片付けの出力
@@ -357,8 +354,8 @@ wts_init "$root" "dotfiles-mutant"
 wts_create HEAD || exit 3
 # 道具の一時ファイル (patch / 検証の出力) は **worktree の gitdir** に置く。作業ツリーに置くと
 # 検証コマンドから untracked として見え、しかも baseline と変異の run で見える数が違う
-# (`git ls-files` / `git status` を数えるテストで、挙動を変えない変異が rc=0 になった。
-# red team 4 周目 P1-2)。gitdir は worktree と一緒に消える
+# (`git ls-files` / `git status` を数えるテストで、挙動を変えない変異が rc=0 になった)。
+# gitdir は worktree と一緒に消える
 scratch="$(git -C "$WTS_PATH" rev-parse --absolute-git-dir)" || { note "worktree の gitdir を引けない"; exit 3; }
 
 
@@ -375,7 +372,7 @@ if [ -s "$scratch/mutate-verify.patch" ]; then
 fi
 rm -f "$scratch/mutate-verify.patch"
 # untracked も持ち込む (新規テストファイルを変異検証する形が普通にある)
-# 🚨 持ち込みの失敗は判定不能 (元と違う木の上で測ることになる。red team 4 周目 P3)
+# 🚨 持ち込みの失敗は判定不能 (元と違う木の上で測ることになる)
 if ! git -C "$root" ls-files --others --exclude-standard -z | while IFS= read -r -d '' u; do
   mkdir -p "$WTS_PATH/$(dirname "$u")" && cp -P "$root/$u" "$WTS_PATH/$u" || exit 1
 done; then
@@ -385,15 +382,15 @@ fi
 export MUTATE_FILE="$WTS_PATH/$file"
 [ -f "$MUTATE_FILE" ] || { note "--file が worktree に無い: $file"; exit 3; }
 # 🚨 untracked な --file (= 新規テストファイル。主要ユースケース) は `git diff` に出ないので、
-# 当てた変異の diff が**無音で空**になる。intent-to-add して diff が出る状態にする (red team P2-5)。
+# 当てた変異の diff が**無音で空**になる。intent-to-add して diff が出る状態にする。
 # **baseline より前に**やる: 変異の run の前だけで当てると、baseline と変異の run で index が違い、
-# `git ls-files` を数える検証では挙動を変えない変異が red になる (red team 4 周目 P1-2)
+# `git ls-files` を数える検証では挙動を変えない変異が red になる
 git -C "$WTS_PATH" add -N -- "$file" 2>/dev/null || true
 
-# --- 時間の上限 (issue 610 / 640) -----------------------------------------------------------------
+# --- 時間の上限 -----------------------------------------------------------------
 # 各 run は runtimeout -f で上限付きに起こす (時間切れは run の子孫の木を凍らせてから止めて rc=124。止め方は src/runtimeout)。
 # 🚨 -f (グループを分けない) にする: 分けると端末の job control から外れ、`stty tostop` の端末で --apply の出力が SIGTTOU で
-#    止まって上限まで待つ / Ctrl-Z で run が止まらない (red team で実測。旧実装は前景のまま走っていた)
+#    止まって上限まで待つ / Ctrl-Z で run が止まらない (実測済み)
 # 🚨 runtimeout は起動時に 1 回だけ解決する (bin/lib/runtimeout.sh)。run ごとにラッパーを通すと、再ビルドの失敗 rc=1 を
 #    検証の red と読みうる / ビルドの進捗が片方の出力にだけ混ざる
 # 🚨 上限は壁時計で数える (Ctrl-Z で止めていた間も数える。runtimeout のタイマーは単調時計)
@@ -412,8 +409,8 @@ stop_run_group() {  # 中断の trap から: 実行中の run を止める。run
 run_in_wt() {  # $1=段の名前 $2=コマンド。出力は呼び出し側のリダイレクトへ。時間切れは rc=124 + timed_out_phase
   local phase="$1" cmd="$2" start rc=0
   # 🚨 非対話の bash の `( … ) &` は INT / QUIT を**無視した状態**で子を起こし、それが検証コマンドへ引き継がれる
-  #    (Ctrl-C や trap … INT を扱うテストが baseline で落ちる。red team 2 周目)。/bin/bash 3.2 は `trap - INT` で戻せない
-  #    (実測) ので、perl で既定に戻してから同じ bash を exec する。オプションは旧実装の eval が引き継いでいた -u / pipefail に揃える。
+  #    (Ctrl-C や trap … INT を扱うテストが baseline で落ちる)。/bin/bash 3.2 は `trap - INT` で戻せない
+  #    (実測) ので、perl で既定に戻してから同じ bash を exec する。オプションは -u / pipefail に揃える。
   #    検証コマンドに渡るのは環境変数だけ (MUTATE_FILE は export 済み)。報告用の fd 3 は渡さない
   # 背景で起こして wait するのは、中断の trap が wait を抜けて stop_run_group を走らせられるようにするため
   # (前景で起こすと、trap は run が終わるまで走らない)
@@ -443,7 +440,7 @@ finish_if_timed_out() {  # $1=出力ファイル (末尾を見せる。無けれ
 
 # 🚨 **元 repo が壊れていたら、その run の結果は信用できない**ので rc=9 を優先する。
 # rc=0 の経路だけで見ていたときは、rc=4〜7 を受けた呼び出し側が「変異が弱い」と読んで
-# **同じ `--apply` で再実行し、元 repo をもう一度壊す**形が残っていた (red team 2 周目 P2-2)
+# **同じ `--apply` で再実行し、元 repo をもう一度壊す**形が残っていた
 finish() { # $1=rc
   local rc="$1"
   check_worktree_untouched
@@ -461,12 +458,10 @@ finish() { # $1=rc
 # baseline 系の失敗 (rc=3 / rc=2) でも**元 repo が壊れている可能性がある**。
 # rc=3「baseline が green でない」は呼び出し側に再実行を最も強く促す rc なので、
 # ここを素の exit にすると「同じコマンドで再実行して元 repo をもう一度壊す」が残る
-# (red team 3 周目 P1-1。2 周目 P2-2 と同じ被害ループの別経路)
 # 🚨 構文検査の推定・指定が**変異前の本物**で通ることを確かめる。拡張子は shebang より優先なので
-# zsh の `.sh` に `bash -n` が当たり、正当な変異が「構文エラー」(rc=5) になった (red team 4 周目
-# P2-5)。逆に、本物にも効かない検査ではエラーを見逃す。どちらも検査の選び方の誤りなので判定不能。
+# zsh の `.sh` に `bash -n` が当たり、正当な変異が「構文エラー」(rc=5) になる。逆に、本物にも効かない検査ではエラーを見逃す。どちらも検査の選び方の誤りなので判定不能。
 # 🚨 **baseline より前に**当てる。構文検査の副作用 (`py_compile` の `__pycache__` 等) が baseline と
-# 変異の run の間に入ると、2 回の run で木が違って挙動を変えない変異が red になる (5 周目 P2-3)
+# 変異の run の間に入ると、2 回の run で木が違って挙動を変えない変異が red になる
 note "[$name] 構文検査を変異前の本物に当てる"
 run_in_wt "構文検査 (変異前)" "$syntax" > "$scratch/mv-syntax.log" 2>&1; syntax0_rc=$?
 finish_if_timed_out "$scratch/mv-syntax.log"
@@ -491,8 +486,7 @@ if ! grep -qE -e "$baseline_expect" "$base_out"; then
 fi
 # 🚨 --expect が **baseline にも出る** pattern なら、red の帰属を判定できない。
 # verbose runner では常態 (`=== RUN TestX` / pytest の node id)。`FAIL: TestX` から
-# `TestX` へ 1 文字削った瞬間に入り、**別のテストが落ちた red を「想定どおり」と読む**
-# (red team P1-3)。使い方の誤りとして拒否する
+# `TestX` へ 1 文字削った瞬間に入り、**別のテストが落ちた red を「想定どおり」と読む**。使い方の誤りとして拒否する
 if grep -qE -e "$expect" "$base_out"; then
   note "🚨 --expect ($expect) が baseline の出力にも出ている"
   note "   これでは「狙ったテストが落ちた」を判定できない (pass のときも出る行に一致している)"
@@ -520,7 +514,7 @@ fi
 
 # 3. 誤ファイル: --file 以外が変わっていないか
 # 🚨 除外は **完全一致** (`grep -vxF`)。部分一致だと `sub/guard.sh` や `guard.sh.bak` を
-# 「--file 自身」と読んで見逃す (red team P2-4)
+# 「--file 自身」と読んで見逃す
 after_state="$(snapshot_tree "$WTS_PATH")"
 changed_others="$(diff <(printf '%s\n' "$before_state") <(printf '%s\n' "$after_state") |
   sed -n 's/^[<>] //p' | awk -F'\t' '{print $1}' | sort -u | grep -vxF "$file" || true)"
@@ -565,11 +559,9 @@ fi
 note "[$name] ✓ 変異は想定どおり red (一致: $expect)"
 grep -nE -e "$expect" "$mut_out" | head -5 >&2 || true
 # 🚨 rc=0 が言うのは「想定の検査が落ちた」までで、「**それだけが**落ちた」ではない。巻き添えで
-# 他の検査も落ちたか (全部を壊す変異か) は runner ごとに出力が違うので機械では判定しない
-# (red team 4 周目 P1-1)。材料として、変異の run で**新しく出た行**を必ず見せる
+# 他の検査も落ちたか (全部を壊す変異か) は runner ごとに出力が違うので機械では判定しない。材料として、変異の run で**新しく出た行**を必ず見せる
 # 🚨 **消えた行も出す** (`diff`)。増えた行だけだと、最初の失敗で止まる runner (`set -e` / panic /
-# `-failfast` / `pytest -x`) では後続の検査が走らずに**消える**だけなので、巻き添えが見えない
-# (5 周目 P1-1)。`grep -vxFf` は行数の 2 乗で遅く (4000 行で 2.6s)、NUL を含む出力で行を出さなかった
+# `-failfast` / `pytest -x`) では後続の検査が走らずに**消える**だけなので、巻き添えが見えない。`grep -vxFf` は行数の 2 乗で遅く (4000 行で 2.6s)、NUL を含む出力で行を出さなかった
 note "[$name] baseline と変異の run の出力の差 (< 消えた行 / > 増えた行。巻き添えで落ちた・走らなくなった検査が無いかをここで見る):"
 changed="$scratch/mv-changed.log"
 { diff -a "$base_out" "$mut_out" || true; } | grep -a '^[<>]' > "$changed"

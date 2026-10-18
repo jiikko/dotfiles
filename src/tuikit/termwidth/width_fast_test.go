@@ -79,8 +79,7 @@ func TestSymbolWidthRejectsOutsideTable(t *testing.T) {
 			t.Errorf("U+%04X を受理してしまった (w=%d)", r, w)
 		}
 	}
-	// 「受理 rune が表の範囲を超えない」は acceptedSymbols が表の範囲だけを走査するので常に真になり、何も検査しない
-	// (issue 758)。範囲の外を受理しないことは、上の symTableLo-1 / symTableHi+1 が見ている
+	// 「受理 rune が表の範囲を超えない」は acceptedSymbols が表の範囲だけを走査するので常に真になり、何も検査しない。範囲の外を受理しないことは、上の symTableLo-1 / symTableHi+1 が見ている
 }
 
 // 受理文字同士は決してクラスタを結合しないこと。
@@ -107,7 +106,7 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 	// 相手 (後ろに置く字) は、ASCII の代表 + 日本語以外の受理字すべて + 日本語の見本。🚨 日本語を全部相手にすると
 	// 約 3 万 × 3 万で 140 秒かかる (2026-09-27 に 1 度だけ全部を回して結合 0 を確かめた)。日本語の受理字はどれも
 	// Grapheme_Cluster_Break が Other で結合の規則上は区別が無いので、各範囲の端と一定間隔の見本で足りる。
-	// 前に置く字 (a) も同じ理由で、全相手と組むのは見本だけにする (全字 × 全相手は 3,300 万ペアで -race 85 秒。issue 593)。
+	// 前に置く字 (a) も同じ理由で、全相手と組むのは見本だけにする (全字 × 全相手は 3,300 万ペアで -race 85 秒)。
 	// 全字については次の 3 つを必ず確かめるので、結合を起こす字が範囲に紛れ込んでも見逃さない:
 	//   - "x" + a と a + a (下のループの先頭): a が Extend / ZWJ / SpacingMark なら前の字と結合して、地域指示子・ハングルの字母なら
 	//     同じ字どうしで結合して落ちる (幅もここで x/ansi と突き合わせる)
@@ -142,7 +141,7 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 			s := string(a) + string(b)
 			// クラスタは本番と同じ分割器 (x/ansi。FirstCluster) で数える。🚨 uniseg で数えていた頃は Unicode の版が本番と
 			// 違い (uniseg 15 / x/ansi 16)、判断が割れた (実測 2026-09-03: "a"+U+0897 は uniseg が 2 クラスタ / ansi.StringWidth が幅 1)。
-			// 依存を上げて Unicode の版が変わったときも、本番の規則で確かめ直せるようにする (2026-09-27 の敵対レビュー P3)
+			// 依存を上げて Unicode の版が変わったときも、本番の規則で確かめ直せるようにする
 			if n := clusterCount(s); n != 2 {
 				t.Fatalf("U+%04X + U+%04X が %d クラスタに結合した", a, b, n)
 			}
@@ -164,8 +163,7 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 // ⚠️ env は x/ansi の init が読むので、同一プロセス内で os.Setenv しても効かない。
 // 子プロセスを起こして確かめるしかない (この形でしか退行を捕まえられない)。
 //
-// ⚠️ これは「glogx がこの env を支持する」という主張ではない。支持しないと決めてあり
-// (issue 054)、TestMain は env が真なら止まる — この子プロセスだけが TUIKIT_EAW_CHILD=1 で
+// ⚠️ これは「glogx がこの env を支持する」という主張ではない。支持しないと決めてあり、TestMain は env が真なら止まる — この子プロセスだけが TUIKIT_EAW_CHILD=1 で
 // 除外される。ここが守るのは狭く「**幅計算の層**が env に追従してライブラリと一致し続ける」
 // ことだけ (fast-path が幅を決め打ちすると fillRight / truncateDispLeft の算術が破れる。
 // 046 の退行)。描画がこの env で正しいかは別問題で、実測では正しくない (widthenv 参照)。
@@ -201,8 +199,7 @@ func TestDispWidthAgreesUnderEastAsianEnv(t *testing.T) {
 			t.Fatalf("EASTASIAN=1: FillRight(s,30) の実幅が %d (要求 30)", got)
 		}
 		// TruncateLeft は env の幅モデルのまま要求幅を破らない。全角グリフが切り位置をまたぐと
-		// ansi.TruncateLeft 単体は要求 8 に対し 9 を返すが、TruncateLeft はもう 1 桁削って収める
-		// (issue 416)。ansi の結果が収まっているときは、それと同じ結果になる (変えるのははみ出す場合だけ)
+		// ansi.TruncateLeft 単体は要求 8 に対し 9 を返すが、TruncateLeft はもう 1 桁削って収める。ansi の結果が収まっているときは、それと同じ結果になる (変えるのははみ出す場合だけ)
 		for _, in := range []string{s + "abc", "─┌┐abc", strings.Repeat("→", 7) + "x"} {
 			for _, wd := range []int{4, 8, 15} {
 				got := TruncateLeft(in, wd, "…")
@@ -367,7 +364,7 @@ func FuzzDispWidthMatchesLibrary(f *testing.F) {
 	})
 }
 
-// TestMain は「glogx が支持しない幅 env」でテストを走らせない (issue 054。main / issues / usage の
+// TestMain は「glogx が支持しない幅 env」でテストを走らせない (main / issues / usage の
 // TestMain と同じ)。⚠️ TestDispWidthAgreesUnderEastAsianEnv が起こす子プロセスだけは除外する:
 // この env をわざと立てて「幅**計算**の層はライブラリと一致し続ける」ことを確かめるため。
 // env マーカー 1 個で判定すると、開発者が `export TUIKIT_EAW_CHILD=1` したまま suite を回したとき
@@ -393,7 +390,7 @@ func isEastAsianChild() bool {
 }
 
 // FirstCluster の分割と Of の幅が同じエンジンであること = 「クラスタ幅の総和 = 全体の幅」を
-// **2 rune クラスタの全域走査**で閉じる (issue 124)。
+// **2 rune クラスタの全域走査**で閉じる。
 //
 // これが根の不変条件で、これを当てにしている消費者が 2 つある:
 // main の dropToColumn (`Of(drop(s,n)) == Of(s)-n`) と issues の折り返し (セル幅の総和で行幅を決める)。

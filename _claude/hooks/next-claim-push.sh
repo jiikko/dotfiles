@@ -6,7 +6,7 @@
 #
 # なぜ: この repo は複数マシンのセッションが同じ issue 列を触る。claim がローカルに
 # 留まっている間、他マシンからは「誰も着手していない issue」に見えるため、同じ issue を
-# 2 人が同時に片付ける二重作業が起きる (実例 2026-09-02: retro 164 の切り出しを別マシンと
+# 2 人が同時に片付ける二重作業が起きる (実例 2026-09-02: 同じ切り出しを別マシンと
 # 同時にやり、ルール追記が衝突した)。claim は **push されて初めて claim になる**。
 # 規範: _claude/issue-rules.d/claim-issue-in-next-and-push.md
 #
@@ -36,7 +36,7 @@ hook_read_bash_command || exit 0
 # 運用を始めた回もこの時点では存在する = 正しく発火する。
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 next_dir_found=0
-# 🚨 入れ子の issue dir (`<root>/*/issues`) も見る (issue 276)。obaket は macOS/issues/ を
+# 🚨 入れ子の issue dir (`<root>/*/issues`) も見る。obaket は macOS/issues/ を
 # 正式に持っており、そこの next/ の claim がどの hook にも見えなかった。深さは 1 段に限る。
 for next_dir in "$repo_root/issues/next" "$repo_root/issues/epic"/*/next \
   "$repo_root"/*/issues/next "$repo_root"/*/issues/epic/*/next; do
@@ -50,10 +50,10 @@ done
 cmd=$HOOK_CMD
 
 # 判定: 「mv 系 / ln コマンドの**宛先**が issues/next または issues/epic/<name>/next か」を見る。
-# claim の正本は symlink の目印 (`ln -s ../NNN-x.md issues/next/NNN-x.md`。issue 263) で、
+# claim の正本は symlink の目印 (`ln -s ../NNN-x.md issues/next/NNN-x.md`) で、
 # 旧運用の `git mv` も移行期間は残るので両方を拾う。ln も mv も宛先が最後のトークンに来る。
 #
-# 🚨 素朴な行 grep では駄目だった (敵対的レビュー 2026-09-02 で P1 が 4 件)。実測した抜け:
+# 🚨 素朴な行 grep では駄目 (4 件の抜けがあった)。実測した抜け:
 #   - `grep` は行単位なので、行継続 (`\` 改行) や複数行スクリプトだと mv と宛先が別行になり外れる
 #   - `... issues/next/; git add ...` のように `;` が空白なしで隣接すると外れる
 #   - `git mv a issues/next/186-x.md` (宛先にファイル名まで書く形) が外れる
@@ -89,7 +89,7 @@ state=$(
     printf -- '--- git status -sb (自分の他の変更が混ざっていないか) ---\n'
     git status -sb 2>/dev/null | head -20 || true
     printf -- '--- 未 push の commit ---\n'
-    # 🚨 HEAD を明示する (issue 311)。`--branches` はローカルブランチの先端しか見ないので
+    # 🚨 HEAD を明示する。`--branches` はローカルブランチの先端しか見ないので
     # **detached HEAD の commit を 1 件も返さない**。この repo は worktree-per-session.md で
     # detached worktree を規範として要求しているため、規範どおりの運用で
     # 「未 push は無い」という**積極的な偽の全クリア**になっていた。

@@ -71,8 +71,7 @@ var shortHints = map[string][]string{
 }
 
 // FitHint は、Box に width を渡して組む板の中で hint を出すときの形 (入らなければ既定の案内の短い形。Dialog が案内に
-// 当てるのと同じ規則)。Box に案内の行を自分で並べる使う側が、Dialog と同じ文言を出すために使う (issue 761: restartable の
-// 遷移中の板は長い案内を切った形のままで、同じ確認が状態によって 2 通りの文言で出ていた)。
+// 当てるのと同じ規則)。Box に案内の行を自分で並べる使う側が、Dialog と同じ文言を出すために使う (同じ確認が状態によって 2 通りの文言で出ないように)。
 func FitHint(hint string, width int) string {
 	if width <= 0 {
 		width = 80

@@ -1,7 +1,7 @@
 import type { IssueBandCounts } from '../types'
 
 // script の --counts の出力 (`key=value` を 1 行ずつ) を読む。数えるのは script (_claude/hooks/human-tasks-due.sh /
-// retro-open.sh) で、ここは写さない (issue 621)。どちらも何も出さない = issue dir の無い repo なので null
+// retro-open.sh) で、ここは写さない。どちらも何も出さない = issue dir の無い repo なので null
 export const parseCounts = (human: string, retro: string): IssueBandCounts | null => {
   if (human.trim() === '' && retro.trim() === '') return null
   const kv = new Map<string, string>()

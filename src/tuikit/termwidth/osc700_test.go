@@ -7,7 +7,7 @@ import (
 )
 
 // ESC のシーケンスの読み方は Of と同じ x/ansi のパーサ (OSC 8 のリンクは英字で終わらないので、「英字まで」の自前の走査は
-// URL の途中で切って中身を文字として残した。issue 700 の 1)。
+// URL の途中で切って中身を文字として残した)。
 func TestEscapesReadLikeAnsi(t *testing.T) {
 	s := "\x1b]8;;https://example.com/a\x1b\\link\x1b]8;;\x1b\\ tail \x1b[31mred\x1b[0m"
 	if got, want := StripSGR(s), ansi.Strip(s); got != want {

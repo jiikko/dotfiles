@@ -16,7 +16,7 @@ import (
 // repo のローカルに `git lfs install --local` した repo では、clean を止めると pointer の代わりに本体を書き込む。
 //
 // filter の名前は .gitattributes に書かれた任意の文字列で、git の設定には「全部の filter を止める」鍵が無い。attributes の側も
-// `.git/info/attributes` は attr.tree / GIT_ATTR_SOURCE で差し替えられない (git 2.55.0 で実測。issue 732)。そこで git 自身に設定を
+// `.git/info/attributes` は attr.tree / GIT_ATTR_SOURCE で差し替えられない (git 2.55.0 で実測)。そこで git 自身に設定を
 // scope つきで列挙させ、ローカルで定義された鍵 (clean / smudge / process) ごとに上書きする。上書きの値は global / system / -c (command) に同じ鍵があればその値
 // (git-lfs は `git lfs install` で global に置くので、そのまま動く)、無ければ空。空にした名前は required=false も付ける
 // (required=true のまま clean を空にすると status が「clean filter failed」で落ちる)。

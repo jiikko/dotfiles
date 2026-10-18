@@ -74,7 +74,7 @@ type cacheEntry struct {
 	FetchedAt time.Time      `json:"fetchedAt"`
 }
 
-// fresh / usable は未来の時刻を真にしない (時計の巻き戻しで古い値を使い続けないため。issue 201)。
+// fresh / usable は未来の時刻を真にしない (時計の巻き戻しで古い値を使い続けないため)。
 func (e cacheEntry) fresh(now time.Time) bool { return e.ageWithin(now, cacheTTL) }
 
 // usable は取得せずに (-cached) / 取得に失敗して、手元の値で答えてよいか。

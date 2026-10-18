@@ -2,8 +2,7 @@
 //
 //	termwidth <文字列>
 //
-// シェルから幅を測るための入口で、bin/tmux-toast が通知の枠の大きさを決めるのに使う (issue 670 で python3 の
-// unicodedata.east_asian_width を置き換えた)。
+// シェルから幅を測るための入口で、bin/tmux-toast が通知の枠の大きさを決めるのに使う。
 package main
 
 import (

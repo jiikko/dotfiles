@@ -73,7 +73,7 @@ fi
 #   上へ go.mod を探す (src_dir 自身に go.mod があれば従来どおり mod_dir=src_dir, pkg=.)。
 # 🚨 上へ探すのは、外部から `go_autobuild_spawn_if_stale <cmd_dir> <name>` と呼ばれたとき (glogx が
 #   走行中に呼ぶ形) にも --pkg 相当を再現するため。module 変数は別プロセスに漏れないので、
-#   cmd/<name> を渡されたら自力で module root を見つける必要がある (敵対レビュー 2026-09-02)。
+#   cmd/<name> を渡されたら自力で module root を見つける必要がある。
 # 🚨 パスは :A (symlink も解決) で正規化する。指紋はパス文字列を含むので、/var/... と /private/var/...
 #   (macOS の /var は symlink) が呼び方で揺れると同じ入力が別の指紋になり、常に stale になる。
 _go_autobuild_resolve_mod() {  # $1=src_dir
@@ -94,7 +94,7 @@ _go_autobuild_resolve_mod() {  # $1=src_dir
 
 # go.mod の `replace X => <相対パス>` の先 (別 module を相対パスで取り込む形。glogx → ../doctor)。
 # reply=(絶対パス...)。🚨 取り込み先を編集しても src_dir の指紋は変わらないので、ここを入力に
-# 含めないと「replace 先だけ直した」変更で旧バイナリを黙って exec する (敵対レビュー 2026-09-02, P1)。
+# 含めないと「replace 先だけ直した」変更で旧バイナリを黙って exec する。
 # 1 行形式 (`replace a => ../b`) とブロック形式 (`replace (` ... `a => ../b` ... `)`) の両方を見る。
 # 相対パス (./ か ../ で始まる) だけが対象。バージョン指定 (`a => b v1.2.3`) は無視する。
 _go_autobuild_replace_dirs() {  # $1=mod_dir
@@ -216,8 +216,7 @@ _go_autobuild_fingerprint() {  # $1=src_dir (入力集合は _go_autobuild_input
 #
 # 🚨 指紋だけでなく開始時刻も持つ。install の可否は「順序」で決める必要があるため: 内容一致
 # だけで見ると「あとから完走した方が無条件で降りる」になり、最新の入力でビルドした方が捨て
-# られる (自己レビューで検出 2026-08-02)。旧実装は成果物の mtime を巻き戻すことで順序を
-# 表していたが、その仕掛けごと廃したのでここに持たせる。
+# られる。成果物の mtime を巻き戻して順序を表す仕掛けは使わないので、ここに持たせる。
 _go_autobuild_read_built() {  # $1=src_dir / reply=(開始時刻 指紋)
   local raw
   _go_autobuild_slurp "$1/.autobuild.built"; raw=$REPLY
@@ -358,7 +357,7 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # go 自体が無い環境 (新しい Mac / PATH が通っていない) を go build の "command not found"
   # (exit 127) に任せない。popup 起点だと 1 行の英語エラーが点滅して消えるだけで、
   # 「glogx がすぐ落ちる」に見える。何を入れれば動くかまで書いて止める。
-  # 🚨 **`command -v` では見ない** (issue 405 と同型)。goenv の shim は「どの版にも実体が無い」
+  # 🚨 **`command -v` では見ない**。goenv の shim は「どの版にも実体が無い」
   # ときでも PATH 上に在り rc=0 を返すので、この案内は素通りされて結局 exit 127 の英語エラーが
   # 点滅する — つまり案内を用意した意味が消える。実行できるかは**走らせて**確かめる。
   # 判定には**すぐ下で必要な `go env GOVERSION`** をそのまま使う (probe を別に足すと呼び出しが
@@ -585,7 +584,7 @@ go_autobuild_exec() {
       --async) async=1; shift ;;
       --pkg)
         # 🚨 値が無いと zsh の shift 2 は何も shift せず、この while が --pkg を永久に見る (無限ループ +
-        # stderr 洪水。敵対レビュー 2026-09-02)。ラッパーの書き間違いは loud に止める
+        # stderr 洪水)。ラッパーの書き間違いは loud に止める
         (( $# >= 2 )) || { print -u2 -- "go_autobuild_exec: --pkg には値が要る"; exit 2 }
         pkg="$2"; shift 2 ;;
       *) break ;;

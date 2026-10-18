@@ -14,7 +14,7 @@ import (
 //   - 1 つのクラスタが width より広い (幅 1 に全角) ときは、その行だけ width を超える (割る方が壊れる)
 //
 // x/ansi の Hardwrap / Wrap を使わない理由: キーキャップ (ASCII + VS16 + U+20E3) を含む行を、x/ansi 自身の幅でも
-// 指定幅を超える長さで返し、Wrap はクラスタも割る (issue 590 の実測: 幅 4〜12 で 7 種の入力を折り、キーキャップの 2 種だけが超えた)。
+// 指定幅を超える長さで返し、Wrap はクラスタも割る (実測: 幅 4〜12 で 7 種の入力を折り、キーキャップの 2 種だけが超えた)。
 func Wrap(s string, width int, trimSpace bool) []string {
 	var out []string
 	for _, para := range strings.Split(s, "\n") {
@@ -41,7 +41,7 @@ func WordWrap(s string, width int) []string {
 //
 //   - ESC 列と制御文字は幅 0 として今の行へそのまま入れる。長さは x/ansi のパーサ (DecodeSequence) に読ませる:
 //     Of (= ansi.StringWidth) と同じパーサなので、閉じていない OSC や中間バイト付きの ESC 列でも読み方が食い違わない
-//     (自前で読むと、Of と違う長さで切って行が幅を超えた・ESC 列が割れた。issue 590 の敵対的レビュー 2 周目)
+//     (自前で読むと、Of と違う長さで切って行が幅を超えた・ESC 列が割れた)
 //   - 見える字は FirstCluster で書記素ごとに切って測る (幅は Of と同じエンジン)
 //   - 色は次の行で張り直さない (x/ansi の Hardwrap と同じ)。張り直しは SGR の引数を解釈して状態を畳まないと、
 //     部分的な解除 (ESC[39m 等) で行ごとに積み上がり出力が 2 乗に膨らむ (同レビューの実測: 100 KB → 68 MB)
@@ -58,7 +58,7 @@ func wrapLine(out []string, s string, width int, trimSpace bool) []string {
 	for len(s) > 0 {
 		// 既知の食い違い (直していない): 閉じていない APC / SOS / PM (ESC _ / ESC ^ / ESC X) は、DecodeSequence が末尾まで
 		// 幅 0 の 1 列と読むのに、Of (ansi.StringWidth) は中身の非 ASCII の幅を数える。そういう行は折られず Of が width を超える
-		// (敵対的レビュー 3 周目: Wrap("a\x1b^xあb", 1, false) が 1 行で Of=4)。x/ansi の 2 つの関数の不整合で、届くのは
+		// (例: Wrap("a\x1b^xあb", 1, false) が 1 行で Of=4)。x/ansi の 2 つの関数の不整合で、届くのは
 		// 無害化していない壊れた端末出力だけ (消費者の入力は termsafe を通り ESC 列が残らない)。起きても 1 行が幅を超え、
 		// Panel の切り詰めが吸収する。無害化を通さない入力を折る消費者が出たら、行を出す前に Of で測り直す形を足す
 		if b := s[0]; b < 0x20 || b == 0x7f || (b >= 0x80 && b <= 0x9f) {

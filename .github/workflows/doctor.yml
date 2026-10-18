@@ -53,7 +53,7 @@ concurrency:
 jobs:
   doctor:
     # macOS runner: doctor は launchd / xcrun / brew / du の挙動を前提にした判定なので、
-    # Linux で回すと「動くが意味が無い」テストになる (repo 全体の方針も macOS のみ = issue 133)
+    # Linux で回すと「動くが意味が無い」テストになる (repo 全体の方針も macOS のみ)
     runs-on: macos-15
     timeout-minutes: 15
     steps:

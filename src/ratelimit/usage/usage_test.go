@@ -133,7 +133,7 @@ func TestRenderTable(t *testing.T) {
 	}
 	// 残り時間は 日/時間/分 の 3 列に右寄せ整列。時間・分は両行で常に出し (粒度を揃える)、
 	// 日は 1 日以上のときだけ。各列は取りうる最大の幅 ("6日" / "23時間" / "59分" / "12月" / "31日") から始める
-	// (値で列が広がって箱の幅が変わらないように。issue 626)。
+	// (値で列が広がって箱の幅が変わらないように)。
 	if want := "5h   [▱▱▱▱▱▱▱▱▱▱]   4%       4時間26分 /  7月21日16:26"; rows[0] != want {
 		t.Errorf("row0:\n got=%q\nwant=%q", rows[0], want)
 	}
@@ -235,7 +235,7 @@ func TestParseResetTimeOneHourBuffer(t *testing.T) {
 	}
 }
 
-// 取得中の場所取りの枠 (PendingWindows) は、届いた後と同じ幅の行で「取得中...」だけを出す (issue 626)。
+// 取得中の場所取りの枠 (PendingWindows) は、届いた後と同じ幅の行で「取得中...」だけを出す。
 func TestRenderTablePendingKeepsWidth(t *testing.T) {
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.Local)
 	got := (&Snapshot{}).With(Part{Windows: PendingWindows("", nil)})

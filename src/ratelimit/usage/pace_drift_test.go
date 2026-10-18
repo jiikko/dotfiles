@@ -15,8 +15,7 @@ package usage
 // 書き方が変わった日から乖離検出が黙って止まる (_claude/rules/adversarial-review-own-safeguards.md)。
 //
 // 🚨 **状態語の一致まで要求する**のは、同じ枠を 2 画面が違う語で呼ぶと読み替えが要るため
-// (issue 144 の目視確認に「statusline のペース行と同じ見え方になっているか」が入っていたのは
-// これを人の目で見ようとしていた)。🚨 意図的に片方だけ語を変えたくなったら、この検査を
+// 🚨 意図的に片方だけ語を変えたくなったら、この検査を
 // 「語の対応表」を持つ形へ変えること (両方書き換えて無理に揃えない。片方の表示都合で
 // もう片方の語を歪めるのが一番損)。
 //
@@ -40,7 +39,7 @@ import (
 func statuslinePath(t *testing.T) string {
 	t.Helper()
 	// 🚨 起点は runtime.Caller ではなく cwd (go test は package のディレクトリで走る)。-trimpath でビルドすると
-	// runtime.Caller のファイル名が module 相対になり、repo root まで辿れない (issue 816)
+	// runtime.Caller のファイル名が module 相対になり、repo root まで辿れない
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("cwd が取れない (乖離を検査できない): %v", err)
@@ -51,7 +50,7 @@ func statuslinePath(t *testing.T) string {
 		// 🚨 「見つかった」だけでは採らない。repo root であること (.git が隣にある) も確かめる。
 		// この repo の tmp/ 配下には過去の検証で作った古い複製が実在し (tmp/verify-tests/sbx/
 		// _claude/statusline-command.sh 等)、module を tmp へ丸ごとコピーして走らせると、
-		// 本物より先にそれが見つかって**古い shell と比較して緑になる** (red team 指摘 2026-09-01)。
+		// 本物より先にそれが見つかって**古い shell と比較して緑になる**。
 		if _, err := os.Stat(p); err == nil {
 			if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 				return p
@@ -180,8 +179,7 @@ func shellWord(t *testing.T, rungs []shellRung, elseWord, limitWord string, band
 // glogx (paceState) と statusline (pace_row) の状態判定が、整数 delta の全域で一致すること。
 //
 // 🚨 この 2 つは同じ数字を 2 言語に書いた**二重実装**で、片方だけ直すと黙って乖離する。
-// issue 144 の目視確認に「statusline のペース行と同じ見え方になっているか」が入っていたのは、
-// その乖離を人の目で確かめようとしていたということ。ここで機械に見せる。
+// その乖離を人の目で確かめずに済むよう、ここで機械に見せる。
 func TestPaceRulesMatchStatusline(t *testing.T) {
 	src, err := os.ReadFile(statuslinePath(t))
 	if err != nil {
@@ -202,8 +200,7 @@ func TestPaceRulesMatchStatusline(t *testing.T) {
 		}
 		// 🚨 経過率は**小数まで**回す。本番の cardPace は窓の残り時間から連続値を作るので、
 		// 整数だけで比べると「Go が小数で判定し shell が切り捨てで判定する」差を構造的に
-		// 見落とす (初版がその穴を持っていた: 経過 24.9% / 使用 49% で shell=先行・glogx=適正。
-		// red team 指摘 2026-09-01)。shell は $(( ... )) の整数除算しか持たないので、
+		// 見落とす (例: 経過 24.9% / 使用 49% で shell=先行・glogx=適正になる)。shell は $(( ... )) の整数除算しか持たないので、
 		// **切り捨てた整数**を渡した結果と一致しなければならない。
 		checked := 0
 		for used := range 101 {

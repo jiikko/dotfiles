@@ -48,7 +48,7 @@ gh_failed() {
   exit 1
 }
 
-# -i: commit と workflow を名指しして run の ID を返す (issue 634)
+# -i: commit と workflow を名指しして run の ID を返す
 if $id_mode; then
   [ "${#id_args[@]}" -ge 1 ] && [ "${#id_args[@]}" -le 2 ] && [ -n "${id_args[0]}" ] \
     || { echo "使い方: ci-log -i <workflow の名前> [<commit>]" >&2; exit 2; }
@@ -120,7 +120,7 @@ fi
 head_sha=$(git rev-parse HEAD 2>/dev/null || echo "")
 [ -n "$head_sha" ] || { echo "git リポジトリではありません" >&2; exit 1; }
 # 🚨 gh の出力は変数へ取って rc を見る。プロセス置換 (`< <(gh ...)`) は gh の失敗を見えなくし、認証切れ・
-# ネットワーク断で「失敗した run はありません」と rc=0 で答えていた (issue 610)。
+# ネットワーク断で「失敗した run はありません」と rc=0 で答えていた。
 failed_tsv=$(gh run list --commit "$head_sha" --limit 40 --json databaseId,headSha,conclusion,name \
   --jq ".[] | select(.headSha==\"$head_sha\" and .conclusion==\"failure\") | \"\(.databaseId)\t\(.name)\"") || gh_failed
 failed=()   # mapfile は bash 3.2 に無いので while read で積む

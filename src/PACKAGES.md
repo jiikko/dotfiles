@@ -85,12 +85,12 @@
 - `src/restartable/internal/runner` (`github.com/jiikko/dotfiles/src/restartable/internal/runner`) — Package runner は子プロセスの起動・停止・再起動と、その実行状態や入出力を管理する。 (internal)
 - `src/restartable/internal/ui` (`github.com/jiikko/dotfiles/src/restartable/internal/ui`) — Package ui は runner の状態とキー入力を Bubble Tea のインライン端末画面へ接続する。 (internal)
 - `src/runtimeout` (`runtimeout`) — runtimeout — コマンドを時間の上限付きで実行し、時間が来たら子孫ごと止める (coreutils の timeout 相当)。 (main)
-- `src/safefs` (`safefs`) — Package safefs はファイルを動かす・作る操作のうち、「上書きしない」「経路を差し替えられない」を守る部品を 1 か所に置く (doctor の削除エンジンと treefiler のファイル操作が共有する。
+- `src/safefs` (`safefs`) — Package safefs はファイルを動かす・作る操作のうち、「上書きしない」「経路を差し替えられない」を守る部品を 1 か所に置く (doctor の削除エンジンと treefiler のファイル操作が共有する)。
 - `src/safefs/sandbox` (`safefs/sandbox`) — Package sandbox はテストのための safefs.Guard: 明示的に登録した一時ディレクトリの外への操作を**実行前に**拒否する (`~/.claude/rules/sandbox-real-destructive-test-apis.md`)。
 - `src/schedkeys` (`schedkeys`) — 1 行のテキスト編集状態。 (main)
 - `src/subproc` (`subproc`) — Package subproc は外部プロセス実行の安全弁を 1 箇所に集める。
-- `src/subproc/boundarycheck` (`subproc/boundarycheck`) — Package boundarycheck は「外部コマンドの Cmd を作ったのに WaitDelay を張り忘れる」を止める検査の本体 (glogx issue 105 / 303)。
-- `src/subproc/clipboard` (`subproc/clipboard`) — Package clipboard は文字列を OS のクリップボードへ書く (glogx と treefiler の両方が使う。
+- `src/subproc/boundarycheck` (`subproc/boundarycheck`) — Package boundarycheck は「外部コマンドの Cmd を作ったのに WaitDelay を張り忘れる」を止める検査の本体。
+- `src/subproc/clipboard` (`subproc/clipboard`) — Package clipboard は文字列を OS のクリップボードへ書く (glogx と treefiler の両方が使う)。
 - `src/termsafe` (`github.com/jiikko/dotfiles/src/termsafe`) — Package termsafe は「外部由来の文字列を端末へ出す前に無害化する」単一の関門。
 - `src/termsafe/ctlprobe` (`github.com/jiikko/dotfiles/src/termsafe/ctlprobe`) — Package ctlprobe は「端末が制御として解釈しうる文字が残っているか」を判定する、 **テスト専用**のオラクル。
 - `src/treefiler` (`treefiler`) — treefiler は横に育つ木のファイラー (bin/treefiler)。 (main)
@@ -103,9 +103,9 @@
 - `src/tuikit/editor` (`github.com/jiikko/dotfiles/src/tuikit/editor`) — Package editor は実ファイルを 1 つエディタで開くコマンドを組む。
 - `src/tuikit/examples/listdetail` (`github.com/jiikko/dotfiles/src/tuikit/examples/listdetail`) — listdetail は tuikit の「一覧 → 詳細」の遷移パターンを 1 画面で見せるデモ。 (main)
 - `src/tuikit/examples/toast` (`github.com/jiikko/dotfiles/src/tuikit/examples/toast`) — toast は tuikit の toast (右下に数秒だけ出る通知のスタック) を 1 画面で見せるデモ。 (main)
-- `src/tuikit/foreground` (`github.com/jiikko/dotfiles/src/tuikit/foreground`) — Package foreground は、画面が端末の前面 (前面のプロセスグループ) を持っているかを確かめ、外れていたら取り戻す (pro-con の issue 518 で作り、issue 707 で treefiler・glogx と共有するため tuikit へ移した)。
-- `src/tuikit/foreground/ptytest` (`github.com/jiikko/dotfiles/src/tuikit/foreground/ptytest`) — Package ptytest は、テストのバイナリを script(1) の擬似端末の上で helper として走らせる (検査のための部品。
-- `src/tuikit/framebench` (`github.com/jiikko/dotfiles/src/tuikit/framebench`) — Package framebench は、描いた画面の文字列を bubbletea v2 のレンダラと同じ手順でセルへ書き直し、端末への差分まで通す 計測の道具 (issue 607)。
+- `src/tuikit/foreground` (`github.com/jiikko/dotfiles/src/tuikit/foreground`) — Package foreground は、画面が端末の前面 (前面のプロセスグループ) を持っているかを確かめ、外れていたら取り戻す
+- `src/tuikit/foreground/ptytest` (`github.com/jiikko/dotfiles/src/tuikit/foreground/ptytest`) — Package ptytest は、テストのバイナリを script(1) の擬似端末の上で helper として走らせる (検査のための部品)。
+- `src/tuikit/framebench` (`github.com/jiikko/dotfiles/src/tuikit/framebench`) — Package framebench は、描いた画面の文字列を bubbletea v2 のレンダラと同じ手順でセルへ書き直し、端末への差分まで通す 計測の道具。
 - `src/tuikit/gutter` (`github.com/jiikko/dotfiles/src/tuikit/gutter`) — Package gutter は本文の左に出す行番号の溝 (nvim の number)。
 - `src/tuikit/highlight` (`github.com/jiikko/dotfiles/src/tuikit/highlight`) — Package highlight は diff とコードの行へシンタックスハイライト (chroma) を付ける。
 - `src/tuikit/hintfit` (`github.com/jiikko/dotfiles/src/tuikit/hintfit`) — Package hintfit は最下行のキーの案内を幅に収める。
@@ -119,7 +119,7 @@
 - `src/tuikit/termwidth` (`github.com/jiikko/dotfiles/src/tuikit/termwidth`) — Package termwidth は端末表示幅の単一情報源。
 - `src/tuikit/toast` (`github.com/jiikko/dotfiles/src/tuikit/toast`) — Package toast は右下に数秒だけ出す通知 (トースト) のスタック。
 - `src/tuikit/widthenv` (`github.com/jiikko/dotfiles/src/tuikit/widthenv`) — Package widthenv は「tuikit の幅モデルが支持しない env」の検出とその文言を 1 箇所に集める。
-- `src/userdirs` (`userdirs`) — Package userdirs は道具ごとの設定の置き場を 1 か所で決める (issue 777)。
+- `src/userdirs` (`userdirs`) — Package userdirs は道具ごとの設定の置き場を 1 か所で決める。
 - `src/zundamon-kaisetsu` (`zundamon-kaisetsu`) — zundamon-kaisetsu は VOICEVOX で台本を合成し、四国めたんとずんだもんの掛け合い動画 (HTML プレイヤー / mp4) を作る。 (main)
 - `src/zundamon-kaisetsu/internal/app` (`zundamon-kaisetsu/internal/app`) — Package app は CLI の実行の文脈: 環境 (Env。 (internal)
 - `src/zundamon-kaisetsu/internal/build` (`zundamon-kaisetsu/internal/build`) — Package build は組み立て (Assemble: wav の連結・口の開き・まばたき・プレイヤーのデータ) と、HTML / mp4 への書き出し。 (internal)

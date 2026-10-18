@@ -196,7 +196,7 @@ func TestPlainBlockKeepsOnlyNewlines(t *testing.T) {
 	}
 }
 
-// 双方向テキストの制御文字は並びを見た目の上で入れ替えられるので落とす (issue 417)。
+// 双方向テキストの制御文字は並びを見た目の上で入れ替えられるので落とす。
 // LRM / RLM と ZWJ は並びを入れ替えない / 絵文字の合成に要るので残す。
 func TestDropsBidiControls(t *testing.T) {
 	for _, r := range []rune{0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069} {
@@ -235,7 +235,7 @@ func TestPlainLines(t *testing.T) {
 	}
 }
 
-// CutBytes は上限以下に、rune の境界で切る (前の実装は上限を 1 rune 超えて返した。issue 777)。
+// CutBytes は上限以下に、rune の境界で切る (前の実装は上限を 1 rune 超えて返した)。
 func TestCutBytes(t *testing.T) {
 	for _, tc := range []struct {
 		s    string

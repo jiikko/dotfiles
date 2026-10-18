@@ -263,8 +263,8 @@ func (s *Snapshot) HasCodex() bool {
 }
 
 // Part は 1 つの出所 (Claude Code / codex) の 1 回分の取得結果。Snapshot.With で表示中の Snapshot へ入れる。
-// 出所ごとに分けて返すのは、速い方を遅い方に待たせずに表示するため (glogx。issue 626。以前は両方を
-// 待ってから併合する FetchAll だった)。
+// 出所ごとに分けて返すのは、速い方を遅い方に待たせずに表示するため (glogx)。両方を
+// 待ってから併合する形にしない。
 type Part struct {
 	Source  string   // 空文字 = Claude Code / SourceCodex = codex (Window.Source と同じ語彙)
 	Windows []Window // Err が nil なら 1 枠以上 (Fetch / FetchCodex は 0 枠をエラーにする)

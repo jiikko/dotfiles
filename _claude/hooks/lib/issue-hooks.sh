@@ -33,12 +33,12 @@ issue_hook_resolve_dir() {
   [ -n "$root" ] || return 1
   # issues/ と issue/ (単数) の両方、および**入れ子の 1 段** (`<root>/*/issues`) を受ける。
   #
-  # 🚨 root 直下だけを見ないこと (issue 276)。obaket は `macOS/issues/` を正式に持っており
+  # 🚨 root 直下だけを見ないこと。obaket は `macOS/issues/` を正式に持っており
   # (apps/obaket/.claude/rules/issue-placement.md)、そこに置かれた human の期限切れ /
   # retro の未決着 / next/ の claim が **どの hook にも見えなかった**。
   # 深さは 1 段に限る: 全走査にすると .git / 深いビルド生成物まで舐める。
   #
-  # 🚨 深さ 1 段は依存ディレクトリを除けない (敵対的レビュー 2026-09-06)。
+  # 🚨 深さ 1 段は依存ディレクトリを除けない。
   # `node_modules` / `vendor` はそれ自体が深さ 1 なので `<root>/*/issues` がそのまま届き、
   # 実測で `node_modules/issues/900-human-*.md` が human タスクとして報告された
   # (npm に `issues` という名のパッケージが実在する)。名前で弾く。
@@ -66,7 +66,7 @@ issue_hook_resolve_dir() {
 
 # issue_hook_done_label: 「どこの done/ へ移すか」の案内語を stdout に出す。
 #
-# 🚨 単一 dir を名指ししないこと (敵対的レビュー 2026-09-06)。入れ子の issue dir を持つ repo
+# 🚨 単一 dir を名指ししないこと。入れ子の issue dir を持つ repo
 # (root に issues/ があり実体は macOS/issues/ の形) では、一覧は `macOS/issues/900-x.md` を
 # 出しながら案内だけ「issues/done/ へ移動」と言う嘘になっていた。移動先が違うと
 # 「既読はファイルの位置で表す」運用がそのまま壊れる。
@@ -114,7 +114,7 @@ issue_hook_emit() {
   fi
 }
 
-# issue_progress_valid_session_id は session_id が**パス構成要素として安全**かを見る (issue 302 ②)。
+# issue_progress_valid_session_id は session_id が**パス構成要素として安全**かを見る。
 #
 # 🚨 この値は `$state_dir/$session_id.head` の**パスに入る**。`issue_progress_json_field` の
 # jq 経路は任意の文字列を返し、jq が無い環境の sed 経路は `"` `,` `}` しか落とさないので

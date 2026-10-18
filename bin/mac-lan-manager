@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 # mac-lan-manager — 手元の Mac 同士を内部の網で繋いで管理する道具 (glogx の L と同じ画面を単体で開く)。
 # Go implementation at: ~/dotfiles/src/mac-lan-manager/ (main.go。画面の部品は同じ module の lanmgr/)
-# 使い方は main.go 冒頭と src/mac-lan-manager/README.md、要件と決定は issue 747。
+# 使い方は main.go 冒頭と src/mac-lan-manager/README.md。
 # 再ビルドは --async: 対話で使う画面なので、旧版で即起動し新版は次回から (bin/treefiler と同じ)。
 set -u
 source "${0:A:h}/lib/go_autobuild.zsh"

@@ -12,7 +12,7 @@
 # - 🚨 既知の穴: ビルド済みのバイナリが無い初回 (新しいマシン / git clean の後) は、bin/ratelimit が
 #   --async でも同期でビルドし、失敗しても backoff が無い (bin/lib/go_autobuild.zsh の初回分岐)。
 #   src/ratelimit (と replace 先) がビルドできない間は、毎プロンプト最大 timeout (15 秒) 待つ。直すなら初回分岐に失敗記録を持たせる
-# - mod `_claude/mods/ratelimit-warn` (issue 658) が同じ注入をする。mod はこのプロンプトを判定できたときだけ、
+# - mod `_claude/mods/ratelimit-warn` が同じ注入をする。mod はこのプロンプトを判定できたときだけ、
 #   env DOTFILES_MOD_RATELIMIT_WARN に `<session_id>:<epoch ms>` の印を打つ (settings の hook は mod の後に走る)。
 #   印が「この session で、10 秒以内」のときだけ黙る。永続の印にしないのは、mod が後で落ちた・classic.* が
 #   素通しになった・子の claude -p に継承された、のどれでもこの fallback まで黙らないため。

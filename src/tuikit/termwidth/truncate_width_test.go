@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// issue 416 の再現例。どれも「切った結果が要求幅を超える」形だった。
+// 再現例。どれも「切った結果が要求幅を超える」形だった。
 func TestTruncatesNeverExceedWidth(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -60,8 +60,8 @@ func TestTruncatePropertyWidth(t *testing.T) {
 }
 
 // 削りすぎていないこと (下限)。SGR を含まない入力で、クラスタの境界で切れる最良の幅と一致するかを見る。
-// 敵対的レビュー (issue 416): 最初の修正は切り直すたびに目標の幅まで詰めていて、`Cut("x1️⃣y", 3)` が
-// "x"、キーキャップだけの行が空になっていた (上限だけの検査では見えない)。
+// 切り直すたびに目標の幅まで詰める実装は、`Cut("x1️⃣y", 3)` が
+// "x"、キーキャップだけの行が空になる (上限だけの検査では見えない)。
 func TestTruncateDoesNotOverTruncate(t *testing.T) {
 	const kc = "1️⃣"
 	for _, c := range []struct {

@@ -30,7 +30,7 @@ func TestFitDropsWholeItemsInOrder(t *testing.T) {
 	}
 }
 
-// 優先度 1 は席を予約する (優先度は採る順序を決めるだけなので、以前は出口 (17 桁) が入らない幅で、より短い低優先 (9 桁) だけが残った)。
+// 優先度 1 は席を予約する (優先度は採る順序を決めるだけなので、予約しないと出口 (17 桁) が入らない幅で、より短い低優先 (9 桁) だけが残る)。
 func TestFitReservesExit(t *testing.T) {
 	items := []Item{
 		{"j/k: 移動", 2},      // 9 桁

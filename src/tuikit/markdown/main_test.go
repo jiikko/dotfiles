@@ -7,7 +7,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
 
-// TestMain は「支持しない幅 env」でテストを走らせない (glogx issue 054)。
+// TestMain は「支持しない幅 env」でテストを走らせない。
 //
 // RUNEWIDTH_EASTASIAN が真だと x/ansi は罫線 ─ や … を幅 2 として数えるため、罫線・表の桁揃えが
 // 要求幅を超え、幅の不変条件テストが「行 25 が幅を超えた (w=38)」の形で落ちる。期待値の焼き付けでは

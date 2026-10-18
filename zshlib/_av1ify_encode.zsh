@@ -55,8 +55,7 @@ __av1ify_format_size() {
 __av1ify_finalize() {
   # 🚨 排他の最終確認はここ。finalize は「出力を公開して元ファイルをゴミ箱へ移す」
   # 唯一の場所なので、成功経路が増えても (AAC 再エンコードの再試行など) 必ず通る。
-  # 呼び出し側に置いていた版は、再試行の成功経路が確認を迂回していた
-  # (2026-09-08 の codex 敵対レビュー P1)。
+  # 呼び出し側に置くと、再試行の成功経路が確認を迂回する。
   #
   # 🚨 lease を失っていても **共有名の一時出力を消さない**。<stem>-enc.mp4.in_progress は
   # 入力から決まる共有名なので、引き継いだ側が同じ名前で書いている最中かもしれない。
@@ -89,13 +88,13 @@ __av1ify_finalize() {
     REPLY="$final_out"; return 1
   fi
   # fps を変更したか (postcheck の fps_changed 引数)。明示 -fps 指定に加え、
-  # VFR 正規化 (issue 394) でもフレームの間引き/複製が正当に起こる。
-  # ただし**検査を捨てるのではなく**、適用した fps を渡して密度検査へ切り替える (issue 397)。
+  # VFR 正規化 でもフレームの間引き/複製が正当に起こる。
+  # ただし**検査を捨てるのではなく**、適用した fps を渡して密度検査へ切り替える。
   # 🚨 検査を止める入力は引数で受けること (グローバル直読みにしない)。関数のシグネチャに
-  # 現れない入力で安全機構を止めると、テストからその経路を制御できない (issue 397)。
+  # 現れない入力で安全機構を止めると、テストからその経路を制御できない。
   local _fps_changed=0
   [[ -n "$target_fps" || -n "$vfr_avg_fps" ]] && _fps_changed=1
-  # 密度検査に渡すのは **VFR 正規化で我々が選んだ fps** のときだけ (issue 397)。
+  # 密度検査に渡すのは **VFR 正規化で我々が選んだ fps** のときだけ。
   # 明示 --fps の経路は改修前と同じ「フレーム数チェックを行わない」に保つ: そちらは
   # ユーザーが尺や内容を変える操作 (trim 等) と併用されうるので、ソース尺から期待値を
   # 立てると誤検出になる。今回リスク (-r に誤った値が渡る) を持ち込んだのは VFR 経路だけ。
@@ -116,7 +115,7 @@ __av1ify_finalize() {
       _icon="📉"; (( _out_size > _src_size )) && _icon="📈"
       print -r -- "${_C_GREEN}   ${_icon} ${_src_h} → ${_out_h} (${_pct}%)${_C_OFF}"
     fi
-    # 仕上げの全フレームデコード検証 (issue 005 Phase B)。
+    # 仕上げの全フレームデコード検証。
     #
     # postcheck は ffprobe のメタデータ中心なので「出力が全フレーム本当に
     # 再生できるか」を見ていない。ここで __validate_mp4_check を in-process で
@@ -220,9 +219,9 @@ __av1ify_decide_resolution() {
 # 出力: REPLY (変換できなければ空)
 # 🚨 LC_ALL=C を外さないこと: awk の printf は小数点にロケールの記号を使うため、
 # de_DE 等では "29,970" を返す。この値は ffmpeg の -r 引数になるので
-# "Invalid framerate value" でエンコードごと失敗する (issue 397)。
+# "Invalid framerate value" でエンコードごと失敗する。
 # 🚨 分母が 0 以下 (ffprobe の "24/0" = 不明) は「変換不能 = 空」に倒すこと。
-# 分子をそのまま fps として返すと 24/0 が「24fps」に化け、誤った -r が渡る (issue 397)。
+# 分子をそのまま fps として返すと 24/0 が「24fps」に化け、誤った -r が渡る。
 __av1ify_frac_fps() {
   local raw="$1"
   REPLY=""
@@ -239,10 +238,10 @@ __av1ify_frac_fps() {
 # 相対差が閾値を超えるなら VFR とみなす。閾値は __av1ify_postcheck のフレーム数許容%
 # (AV1IFY_FRAME_TOLERANCE_PCT 既定 0.5%) と揃える。
 #
-# 検出したソース (かつ --fps 未指定) にだけ `-fps_mode cfr -r <avg fps>` を付ける (issue 394:
+# 検出したソース (かつ --fps 未指定) にだけ `-fps_mode cfr -r <avg fps>` を付ける。
 # VFR ソースを素通しすると出力も VFR のまま (r_frame_rate=29/1 / avg≈29.94) になり、その出力を
-# QuickTime で再生すると約5秒おきにブロックノイズが出た。CFR 化で直るかは人の目視確認待ち
-# = issue 396。出力パケットの DTS 自体は単調増加だった (原因を DTS と見たのは誤り。issue 394 訂正節))。
+# QuickTime で再生すると約5秒おきにブロックノイズが出た。CFR 化で直るかは人の目視確認待ち。
+# 出力パケットの DTS 自体は単調増加だった (原因を DTS と見たのは誤り)。
 # CFR retiming はフレームの複製/間引きを伴うので、検出結果は fps_changed 相当として
 # __av1ify_postcheck へ渡しフレーム数不一致チェックを抑制する。
 #
@@ -269,7 +268,7 @@ __av1ify_detect_vfr() {
 
   [[ -z "$nominal_val" || -z "$avg_val" ]] && return 0
 
-  # 🚨 postcheck のフレーム数許容% (AV1IFY_FRAME_TOLERANCE_PCT) を流用しないこと (issue 398)。
+  # 🚨 postcheck のフレーム数許容% (AV1IFY_FRAME_TOLERANCE_PCT) を流用しないこと。
   # 1 つのノブが 2 つの検査を逆向きに動かす: 緩めると VFR 検出が鈍って 394 のバグが復活し、
   # 0 にすると r=30/1 / avg=30000/1001 という普通の NTSC が VFR 判定へ落ちる。
   local tol_pct="${AV1IFY_VFR_DETECT_PCT:-0.5}"
@@ -289,7 +288,7 @@ __av1ify_detect_vfr() {
     __AV1IFY_R_VFR_DETECTED=1
     # 🚨 -r には ffprobe の生の有理数 (30000/1001) を渡すこと。10 進へ丸めると
     # (a) 低 fps 長尺で duration がズレて check_ng-duration に転ぶ
-    # (b) NTSC が 2997/100 という非標準レートになる (issue 397)。
+    # (b) NTSC が 2997/100 という非標準レートになる。
     # 表示用の 10 進は __AV1IFY_R_VFR_AVG_FPS_DISP に分けて持つ。
     __AV1IFY_R_VFR_AVG_FPS="$avg_raw"
     __AV1IFY_R_VFR_AVG_FPS_DISP="$avg_val"
@@ -306,7 +305,7 @@ __av1ify_decide_fps() {
   __AV1IFY_R_FPS_TAG=""
   [[ -z "$validated" ]] && return 0
 
-  # 🚨 キャップ判定は r_frame_rate と avg_frame_rate の**大きい方**で行う (issue 397)。
+  # 🚨 キャップ判定は r_frame_rate と avg_frame_rate の**大きい方**で行う。
   # VFR ソースでは nominal (r) が実勢 (avg) より低く出ることがあり、r だけで判定すると
   # r <= 指定fps < avg のときに「ソースの方が遅いので変更不要」と誤ってスキップし、
   # target_fps が空のまま VFR 正規化の枝へ落ちて**指定より高い avg fps** で出力される。
@@ -484,9 +483,8 @@ __av1ify_validate_reencode_margin() {
 #     超えない場合は再エンコードしても削減がほぼ無く、世代劣化と CPU を払うだけなので copy。
 #
 # 判定は compact / 通常モードで共通。compact は解像度と fps のプリセットであって、
-# 音声の扱いを変える理由が無いため (かつては compact だけが 130kbps 固定閾値を持ち、
-# 通常モードは copy 可能コーデックを無条件 copy していた。この非対称のせいで、
-# 圧縮したい高ビットレート AAC が通常モードでは素通りしていた)。
+# 音声の扱いを変える理由が無いため (compact だけが固定閾値を持つと、
+# 圧縮したい高ビットレート AAC が通常モードでは素通りする非対称になる)。
 #
 # 引数: $1=in, $2=use_copy (0/1: コーデックが MP4 へ copy 可能か), $3=desired (例 "96k")
 # 出力: __AV1IFY_R_AUDIO_REENCODE = 1 なら再エンコード / 0 なら copy
@@ -870,7 +868,7 @@ __av1ify_one() {
   target_fps="$__AV1IFY_R_FPS"
   local fps_tag="$__AV1IFY_R_FPS_TAG"
 
-  # VFR (可変フレームレート) 検出 (issue 394: QuickTime で再生破綻する DTS 不整合の対策)
+  # VFR (可変フレームレート) 検出 (QuickTime で再生破綻する DTS 不整合の対策)
   __av1ify_detect_vfr "$in"
   if (( __AV1IFY_R_VFR_DETECTED )); then
     print -r -- "${_C_CYAN}>> ソースは可変フレームレート (VFR) のため CFR へ正規化します (avg≈${__AV1IFY_R_VFR_AVG_FPS_DISP}fps)${_C_OFF}"
@@ -958,7 +956,7 @@ __av1ify_one() {
   if [[ -n "$target_fps" ]]; then
     args_common+=(-r "$target_fps")
   elif (( __AV1IFY_R_VFR_DETECTED )); then
-    # VFR ソースだけ CFR へ正規化する (issue 394。常時付与しない理由は __av1ify_detect_vfr)。
+    # VFR ソースだけ CFR へ正規化する (常時付与しない理由は __av1ify_detect_vfr)。
     # -r は実測平均fpsを明示する (ffmpeg が r_frame_rate と avg_frame_rate のどちらを
     # CFR の基準にするか曖昧なため)。
     args_common+=(-fps_mode cfr -r "$__AV1IFY_R_VFR_AVG_FPS")

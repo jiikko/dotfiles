@@ -2,7 +2,7 @@
 //
 // 🚨 IME は変換中の文字を**端末のカーソルの位置**に出す。カーソルを置かないと、描画の差分を書き終えた位置
 // (毎回変わる) に出て、日本語の変換中に入力欄から外れる。位置は「欄の左端 + キャレットの前の表示幅」
-// (幅は lineedit.Line.Window が termwidth で数える) で、それを画面の座標にする所をここ 1 つにする (issue 517)。
+// (幅は lineedit.Line.Window が termwidth で数える) で、それを画面の座標にする所をここ 1 つにする。
 //
 // tuikit の中でここだけが bubbletea を import する: 置く先が tea.Cursor そのもので、形 (棒) もここで揃えるため。
 package caret

@@ -17,7 +17,7 @@ import (
 )
 
 // Claude の利用枠の取得は、`claude -p /usage` を起こす全ての呼び出し元 (glogx の U / R・bin/ratelimit・
-// pro-con の dispatcher) で 1 つのゲートを通す (issue 627)。`claude -p /usage` は 1 回ごとにサーバの
+// pro-con の dispatcher) で 1 つのゲートを通す。`claude -p /usage` は 1 回ごとにサーバの
 // `/api/oauth/usage` を叩き、これは bearer ごとに強く rate limit される: glogx が表示中に 60 秒ごとに
 // 取ったところ 17 回目で 429 になり、以後 CLI は約 45 分 (Retry-After) 枠の行を黙って省いた
 // (実測 2026-10-02、2.1.287)。呼び出し元ごとに周期を下げても、呼び出し元が増えれば合計が増えるので、

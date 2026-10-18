@@ -91,7 +91,7 @@ type Result struct {
 type Spec struct {
 	// Command は起こすたびに新しい Cmd を作る (Cmd は 1 度しか Start できない)。Lifeline なら Stdin は上書きする。
 	// 🚨 Stdout / Stderr を *os.File 以外 (io.Writer。exec がパイプを作る) にするなら WaitDelay を張る (subproc.Command)。
-	// 子が孫に出力を握らせたまま抜けると、張らなければ Wait が戻らず、止めるときの Kill の後の待ちも戻らない (issue 782)
+	// 子が孫に出力を握らせたまま抜けると、張らなければ Wait が戻らず、止めるときの Kill の後の待ちも戻らない
 	Command func() (*exec.Cmd, error)
 	// Lifeline なら子の stdin を生命線のパイプにする (親が死ねば子の stdin が EOF になる)。
 	Lifeline bool

@@ -1,7 +1,6 @@
 // Package proctree はプロセスの子孫を集めて止める。プロセスグループの全員と、ppid でたどれる子孫
 // (setsid / setpgid でグループを抜けた子も、親が生きていれば木に居る) を凍らせてから集め、TERM → 猶予 → KILL。
 // 使う側: src/runtimeout (時間の上限付き実行) / src/zundamon-kaisetsu (mermaid の描画。puppeteer は Chrome を別のグループで起こす)。
-// 設計の経緯と敵対的レビューは issue 640 / 649。
 package proctree
 
 import (
@@ -110,7 +109,7 @@ func (t Target) send(set map[int]bool, sig syscall.Signal) {
 // bin/mutate-verify の stop_tree を移したもの: 凍らせてから集め直し、TERM → 猶予 → KILL。
 // 凍らせるのは、親が先に死んで子が init へ付け替わると木から外れて取りこぼすため。
 // 🚨 凍らせた pid は累積して持つ。集め直した一覧で置き換えると、凍らせた後に init へ付け替わった子が一覧から外れ、
-// TERM も CONT も受けずに T のまま残る (mutate-verify の red team 2 周目で実測)。
+// TERM も CONT も受けずに T のまま残る (mutate-verify で実測)。
 // 止められないもの: 時間切れより前に親を離れて init の子になり、グループも抜けたもの (daemon 化した子・tmux -L のサーバ等)。
 func (t Target) Stop(grace time.Duration) {
 	all := map[int]bool{} // pid → グループの外に居るか (集めた時点)
@@ -136,7 +135,7 @@ func (t Target) Stop(grace time.Duration) {
 	// root は ps が使えなくても必ず入れる (-f ではグループ宛てに撃てないので、入っていないと KILL まで進まずに返り、
 	// 呼び出し側が子の終了を無期限に待つ)。
 	// 🚨 集める前に入れない: 入れると root が「まだ集めていないもの」から外れて凍らず、集めている間も fork を続けられる
-	//    (setsid した子が逃げる。red team 2 周目で 6 回中 13〜20 個残った)
+	//    (setsid した子が逃げる。6 回中 13〜20 個残った)
 	if _, in := all[t.Root]; !in {
 		all[t.Root] = !t.Group
 	}

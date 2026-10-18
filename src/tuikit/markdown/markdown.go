@@ -300,7 +300,7 @@ func reflowSep(prev, next string) string {
 }
 
 // reflower は段落の行を reflowSep の規則でつなぐ。行ごとに prev + next を作り直すと段落の長さの 2 乗になる
-// (1 段落 20 万行で 4.2 秒。issue 699 の 2) ので、Builder に足していく。
+// (1 段落 20 万行で 4.2 秒) ので、Builder に足していく。
 type reflower struct{ b strings.Builder }
 
 func (r *reflower) add(next string) {

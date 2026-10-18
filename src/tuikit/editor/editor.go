@@ -30,7 +30,7 @@ func Argv(path string, env func(string) string) []string {
 		env = os.Getenv
 	}
 	// `-` / `+` で始まる相対パスはエディタがオプション (vim の +cmd) と読む。`--` は受けないエディタがあるので、./ を前置して
-	// ファイル名として渡す (issue 701 の 11)
+	// ファイル名として渡す
 	if strings.HasPrefix(path, "-") || strings.HasPrefix(path, "+") {
 		path = "./" + path
 	}

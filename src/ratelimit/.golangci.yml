@@ -11,7 +11,7 @@ version: "2"
 # 書く。書き込み自体は temp+rename ではなく最終名への直接 write で、安全性の根拠は原子性ではなく
 # 内容アドレス) ので、外しても結果の正しさには影響しない。root の Makefile (run_go_projects) が 7 プロジェクトを並列に
 # 回すため、全プロジェクトでこれを true にする (1 つでも false が残ると、その 1 つが他の
-# 6 つの起動タイミング次第で落ちる)。issue 258
+# 6 つの起動タイミング次第で落ちる)。
 run:
   allow-parallel-runners: true
 
@@ -59,7 +59,7 @@ linters:
       # usage は glogx の TUI 層からも呼ばれるので stdout へ直接書かない。stdout への出力は main.go に限定
       # (exclusions で許可)。
       forbid:
-        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る (issue 590)
+        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る
         - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
           msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
         - pattern: ^fmt\.Print(f|ln)?$
@@ -74,7 +74,7 @@ linters:
         width-single-source:
           # 幅計算の唯一の出典は termwidth.Of (= ansi.StringWidth。main では dispWidth の別名)。runewidth は
           # East Asian ambiguous (罫線・ブロック・…) を locale 依存で 2 桁と数えるため、
-          # 混在すると枠計算とテストのアサートが実行環境依存でずれる (issue 027: LANG=ja_JP で
+          # 混在すると枠計算とテストのアサートが実行環境依存でずれる (LANG=ja_JP で
           # テスト 12 件が落ちていた)。production/テストとも import を禁止して構造的に防ぐ。
           files:
             - "**/*.go"
@@ -82,8 +82,8 @@ linters:
             - pkg: github.com/mattn/go-runewidth
               desc: 幅は termwidth.Of (ansi.StringWidth) で測る (locale 非依存。main では dispWidth 別名)
         # uniseg は本体から一切使わない。**幅だけでなく分割も** x/ansi に一本化したため
-        # (termwidth.FirstCluster。issue 124)。以前は「分割にだけ使う」として render.go /
-        # issues/wrap.go を除外していたが、分割器が 2 本ある限り列不変条件は閉じなかった
+        # (termwidth.FirstCluster)。「分割にだけ使う」として render.go /
+        # issues/wrap.go を除外しない。分割器が 2 本ある限り列不変条件は閉じない
         # (uniseg=Unicode 15 / x/ansi=16 の版差で 2-rune クラスタの走査に違反 744 件)。
         # import 別名を使った持ち込みもここで止まる。シンボル名の走査は
         # width_test.go:TestNoSecondWidthEngine が担当 (tuikit も走査範囲。own_sources_test.go)。両輪。
@@ -95,7 +95,7 @@ linters:
             - "!**/width_test.go"
             # width-probe は「端末がどの幅モデルと一致するか」を測る道具で、3 モデル
             # (ansi.StringWidth / ansi.StringWidthWc / uniseg.StringWidth) を並べるのが仕事。
-            # 本体からは参照しない (README の tools/ の項)。issue 124
+            # 本体からは参照しない (README の tools/ の項)。
             - "!**/tools/width-probe/main.go"
           deny:
             - pkg: github.com/rivo/uniseg
@@ -167,7 +167,7 @@ issues:
   # 戻す) のとき 3 件しか出ず、直しては再実行を繰り返すことになる (実測: 20 箇所の退行で
   # 報告 3 件 → max-same-issues:0 で 20 件)。
   # 🚨 これは false green ではない (除外は上限の**前**に適用されるので make lint は赤のまま
-  # 落ちる。実験で確認済み)。直すのは報告の不完全さだけ。issue 118
+  # 落ちる。実験で確認済み)。直すのは報告の不完全さだけ。
   max-same-issues: 0
   max-issues-per-linter: 0
 

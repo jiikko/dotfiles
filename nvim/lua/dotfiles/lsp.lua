@@ -35,7 +35,6 @@ local ts_js_inlay_hints = {
 --    入る (_nviminit.lua) ので、mason 版が入った瞬間に下のプローブごと mason 版へ倒れる。
 --    導入は rbenv 側で人が行う: RBENV_VERSION=<v> gem install ruby-lsp
 --    (required_ruby_version >= 3.0 なので 2.x の project は solargraph のまま)。
--- 経緯と A-B は issue 332。
 
 -- 環境への問い合わせ。テストが差し替えられるよう M のフィールドに出す (root ごとに 1 回しか
 -- 呼ばれないので、production 側の複雑さはこの 2 関数に収まる)。
@@ -161,7 +160,7 @@ function M.ruby_lsp_failed(root, code, signal, deps, stopping)
   --    その窓で倒すと「切り替えます」と言いながら何も起動せず、**嘘の説明つきで
   --    Ruby の LSP が消える**。
   --
-  -- 🚨 **`is_enabled` だけに預けない** (issue 341)。`is_enabled` が「起動しうる」を意味するのは
+  -- 🚨 **`is_enabled` だけに預けない**。`is_enabled` が「起動しうる」を意味するのは
   --    `_nviminit.lua` の `enable_available` が **cmd が table のサーバをバイナリ実在で絞る**
   --    副作用があるからで、`cmd` が関数のサーバ (ruby_lsp / ts_ls 等) では常に true になる。
   --    フォールバック先を関数 cmd のサーバへ変えた日に**この通知が黙って嘘に戻る**ので、
@@ -795,10 +794,10 @@ M.server_packages = {
 
 -- server_binary_available は「そのサーバの実行ファイルが在るか」を返す。
 --
--- 🚨 **`enable_available` (_nviminit.lua) と同じ述語をここへ寄せた** (issue 341)。
--- 以前は判定が `_nviminit.lua` にだけ在り、`lsp.lua` は `vim.lsp.is_enabled` を
--- 「起動しうるか」の proxy として読んでいた。proxy が成り立つのは
--- **cmd が table のサーバに限る**ので、依存が 2 ファイルに跨ったまま暗黙になっていた。
+-- 🚨 **`enable_available` (_nviminit.lua) と同じ述語を使う**。
+-- 判定を `_nviminit.lua` にだけ置き、`lsp.lua` が `vim.lsp.is_enabled` を
+-- 「起動しうるか」の proxy として読むと、proxy が成り立つのは
+-- **cmd が table のサーバに限る**ので、依存が 2 ファイルに跨ったまま暗黙になる。
 --
 -- 🚨 **cmd が関数のサーバは判定できないので true を返す** (ruby_lsp / ts_ls / eslint /
 -- html / cssls / jsonls / yamlls / tailwindcss)。呼び出し側はこれを「起動する」ではなく
@@ -856,7 +855,7 @@ end
 -- 🚨 表示が変わったときだけ redrawstatus を呼ぶ。lualine の statusline は関数評価なので、
 --    再描画のたびに lualine_c の relative_path_from_git_root が走り、その中の vim.fs.root が
 --    上方向へ fs_stat を撃つ。索引中の $/progress は高頻度で飛ぶので、無条件に呼ぶと
---    「通知 1 本 = 全ウィンドウの statusline 再評価」になる (敵対レビュー P2-5)。
+--    「通知 1 本 = 全ウィンドウの statusline 再評価」になる。
 local function refresh()
   local text = compute()
   if text == shown then return end
@@ -927,7 +926,7 @@ end
 -- キーマップは LspAttach のたびに貼り直されるので、後から attach した client の root を
 -- 掴んでしまう。実例: lspconfig の solargraph の filetypes は { "ruby" } で eruby を含まず、
 -- tailwindcss は { ... "erb", "eruby" ... } を含むため、.erb では **tailwind の root**
--- (postcss.config.* / tailwind.config.* の場所) が入りうる (敵対レビュー P2-1)。
+-- (postcss.config.* / tailwind.config.* の場所) が入りうる。
 -- Ruby のサーバを名前で選び、無ければ repo 境界へ落とす。
 --: (integer) -> string
 function M.ruby_root_for(bufnr)
@@ -943,7 +942,7 @@ end
 -- <C-k> の行き先を **返り値で表明する**純関数。テストはこの返り値を見る。
 -- 🚨 分岐をマッピングの中に埋めない: 「文字列が在るか」の静的 pin では、rg と LSP を
 --    入れ替える / word_match を落とす / cwd を nvim の cwd に固定する、といった変異が
---    すべて緑で通ってしまう (敵対レビュー P1-2)。
+--    すべて緑で通ってしまう。
 --: (string, string, string) -> table
 function M.references_action(filetype, word, root)
   if not M.use_ripgrep_references(filetype, word) then
@@ -1019,7 +1018,7 @@ local function on_attach(client, bufnr)
   -- ジャンプ (coc: gd=定義 / gD=実装 / <C-k>=参照)
   map("n", "gd", function() tb().lsp_definitions() end, "定義へジャンプ (LSP definitions)")
   map("n", "gD", function() tb().lsp_implementations() end, "interface の実装一覧へ (LSP implementations)")
-  -- 参照検索は rg 経路と LSP 経路の両方を記録する (issue 334 段階 1)。
+  -- 参照検索は rg 経路と LSP 経路の両方を記録する。
   -- 記録の失敗は握り潰される (refs_usage.append の pcall)。ここで参照を握らず都度 require
   -- するのは、起動時に state ディレクトリへ触らないため。
   local function usage() return require("dotfiles.refs_usage") end
@@ -1216,7 +1215,7 @@ function M.setup(capabilities)
 
   -- 🚨 client が死ぬと in-flight の要求は **complete が飛ばないまま**消える (nvim は client 終了時に
   --    残った要求へ complete を投げない)。索引の $/progress も end が来ない。掃除しないと
-  --    「LSP: 参照を検索中…」や「indexing NN%」が永久に残る (敵対レビュー P2-2)。
+  --    「LSP: 参照を検索中…」や「indexing NN%」が永久に残る。
   --    progress_text も落とす: その進捗は今出ていった client のもので、別 client が索引中なら
   --    次の通知で戻る (kind == "end" のときと同じ扱い)。
   vim.api.nvim_create_autocmd("LspDetach", {

@@ -1,10 +1,9 @@
-// Package boundarycheck は「外部コマンドの Cmd を作ったのに WaitDelay を張り忘れる」を止める検査の本体
-// (glogx issue 105 / 303)。各 module のテストは Spec を渡して Run を呼ぶだけにする。
+// Package boundarycheck は「外部コマンドの Cmd を作ったのに WaitDelay を張り忘れる」を止める検査の本体。各 module のテストは Spec を渡して Run を呼ぶだけにする。
 //
-// なぜテストで縛るか (issue 105): WaitDelay の規律は glogx の 13 箇所中 12 箇所で守られ、1 箇所だけが静かに
+// なぜテストで縛るか: WaitDelay の規律は glogx の 13 箇所中 12 箇所で守られ、1 箇所だけが静かに
 // 抜けていた。抜けても手元でも CI でも何も起きず、孫プロセスがパイプを握って Wait が戻らなくなって初めて分かる
 // 種類の欠落なので、**書く人が覚えているか**に依存させない。検査が module ごとに写されて (glogx / ratelimit /
-// treefiler) 3 実装になり、pro-con と mac-lan-manager には写されもしなかったので、判定を 1 実装に寄せた (issue 777)。
+// treefiler) 3 実装になり、pro-con と mac-lan-manager には写されもしなかったので、判定を 1 実装に寄せた。
 //
 // ■ 誰の・どの失敗を止めるか
 //
@@ -16,7 +15,7 @@
 //	既定 (NoOsExec=false): 字句走査 + import 境界の 2 段構え。
 //	  段 A = Cmd を作る行 (`exec.Command(` / `exec.CommandContext(`) の直後 lookahead 行以内に WaitDelay の代入が要る。
 //	         例外は行内の注記 (MarkerNoWaitDelay / MarkerWaitDelayIn)。「既に os/exec を使っているファイルへの追記」
-//	         (最頻の退行) と「WaitDelay の代入を消す」退行 (issue 105 の形) を止める。
+//	         (最頻の退行) と「WaitDelay の代入を消す」退行 を止める。
 //	  段 B = os/exec の別名 import を禁じ (段 A の字句の前提)、Cmd を作るファイルを Allow に固定する。
 //	         「新しいファイルが Cmd を作り始める」を止める。段 B は WaitDelay を読まないので段 A の置き換えではない。
 //	厳しい設定 (NoOsExec=true): 非テストの .go が os/exec を import しない。外部プロセスを subproc.CommandContext
@@ -72,7 +71,7 @@ const lookahead = 12
 // cmdPatterns は「Cmd を作っている」とみなす字句。
 //
 // 🚨 2 本必要。`exec.Command(` は `exec.CommandContext(` を**含まない** (前者はここで `(` を要求し、後者はその位置が `C`)。
-// 片方だけにすると、もう片方の検査が丸ごと消える (issue 303 の A 案の本文がこの誤りを含んでいた)。
+// 片方だけにすると、もう片方の検査が丸ごと消える。
 // subproc.CommandContext / subproc.Command は含まない (そちらが張る側)。
 var cmdPatterns = []string{"exec.CommandContext(", "exec.Command("}
 
@@ -98,7 +97,7 @@ type Spec struct {
 	// **2 つを分けて数える**のは、注記を足すと enforced だけが減り、seen しか見ていない canary では
 	// 「守りが薄くなった」が観測できないため (脅威モデル (d) の一部はここで拾える)。
 	// 🚨 enforced に数えられている箇所に**注記を付けてはいけない**。ここを注記で逃がすと、
-	// 「WaitDelay の代入を消す」退行 (issue 105 の形) を検出する箇所が 0 になる。正当に減らすときは、この定数も同じ commit で意識的に下げる
+	// 「WaitDelay の代入を消す」退行 を検出する箇所が 0 になる。正当に減らすときは、この定数も同じ commit で意識的に下げる
 	SeenFloor, EnforcedFloor int
 }
 
@@ -113,7 +112,7 @@ type report struct {
 // Run は 1 つの module について検査する。呼び出し側 (module の root の _test.go) が自分の設定を渡す。
 //
 // 走査が壊れて 0 件 = 緑に化けないよう、見たファイルの数は go list (別の方法の列挙) と**ディレクトリごとに**
-// 突き合わせる (下限の定数は古くなる。treefiler issue 695 の 2)。go list が見ないディレクトリ (build tag で全部外れる
+// 突き合わせる (下限の定数は古くなる)。go list が見ないディレクトリ (build tag で全部外れる
 // gorules 等) を走査するのは構わない (走査が広い側は安全)。
 func Run(t *testing.T, s Spec) {
 	t.Helper()
@@ -291,7 +290,7 @@ func hasExemption(line string) bool {
 
 // hasWaitDelayAssign は「コードとして WaitDelay を代入しているか」を判定する。
 //
-// 🚨 語の出現 (`strings.Contains(line, "WaitDelay")`) では駄目。実測 2026-09-09 (issue 303): glogx の gitlog.go の
+// 🚨 語の出現 (`strings.Contains(line, "WaitDelay")`) では駄目。実測 2026-09-09: glogx の gitlog.go の
 // 唯一の強制対象は、+8 行目のコメント `(理由は subproc.WaitDelay の doc)` に引っかかって緑になっていた。
 // **実ガード `cmd.WaitDelay = subproc.WaitDelay` を削除しても緑、そのコメントから語を消すと赤**という反転状態で、
 // production の退行検出力は 0 だった。

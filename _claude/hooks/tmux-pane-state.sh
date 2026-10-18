@@ -3,7 +3,7 @@
 #
 # 使い方: tmux-pane-state.sh working|input|idle|start|clear
 #   working : "⚙ working" を表示 (UserPromptSubmit / PostToolUse=承認後の自動復帰)。書くのは tmux-pane-working.sh へ exec する
-#             (PostToolUse は bash を起こさないよう settings から直接そちらを呼ぶ。issue 622)
+#             (PostToolUse は bash を起こさないよう settings から直接そちらを呼ぶ)
 #             + @claude_bg を落とす (Claude が動いている = bg 待機ではない)
 #   input   : "🔔 input" を表示   (Notification — permission 承認待ち・質問への回答待ち)
 #             + ペインが画面に見えていなければ macOS 通知 (音あり)
@@ -47,7 +47,7 @@
 #
 # 通知条件 = 「画面で状態表示が見えていないとき」だけ:
 # - そのペインのウィンドウがどのクライアントでも前面でない (window_active_clients=0)
-# NOTE: かつては「ターミナル自体が非アクティブ (@term_unfocused)」も条件だったが、
+# NOTE: 「ターミナル自体が非アクティブ (@term_unfocused)」は条件にしない。
 # 供給元の client-focus-in/out フックを誤判定のため削除した (_tmux.conf 側の
 # NOTE 参照、2026-06-10) のに伴い本条件も撤去。ターミナルが背面でも claude
 # ウィンドウが tmux 内で前面なら通知は出ない (許容)
@@ -62,7 +62,7 @@ command -v tmux >/dev/null 2>&1 || exit 0
 # mark-seen の input→seen 降格では更新しない (「🔕 seen 12m = 12 分前に入力待ちに
 # なった (見たが未応答)」の方が放置時間として有用なため。意図的)
 #
-# 🚨 書き込みは 1 回の hook で **tmux の起動 1 回** (`\;` で繋ぐ) にまとめる (issue 501)。
+# 🚨 書き込みは 1 回の hook で **tmux の起動 1 回** (`\;` で繋ぐ) にまとめる。
 # tmux の set-option は 1 回ごとに attach 中の全クライアントを全面再描画させる
 # (options_push_changes → server_redraw_client。status の format 展開込み) ので、
 # 別プロセスで 3 回書くと、PostToolUse (ツール 1 回ごと) のたびに再描画も 3 回になっていた。
@@ -158,7 +158,7 @@ case "${1:-}" in
     # 6 値 = permission_prompt / idle_prompt / elicitation_dialog /
     # elicitation_url_dialog / agent_needs_input / worker_permission_prompt と、
     # 人の対処が要る quota_auto_resume_disabled。
-    # 🚨 かつて並んでいた elicitation_complete / elicitation_response は enum に無く、
+    # 🚨 elicitation_complete / elicitation_response は enum に無く、
     # 何も除外していなかった (実在するのは elicitation_dialog / elicitation_url_dialog で、
     # どちらも入力が要る = 鳴らす側)。新しい値を足すときは同じ enum を引き直すこと
     # (バイナリの strings に `notification_type` の配列がそのまま出る)。

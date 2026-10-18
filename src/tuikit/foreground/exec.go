@@ -14,14 +14,14 @@ import (
 //	x := foreground.NewExec(cmd)
 //	return tea.Exec(x, func(err error) tea.Msg { return doneMsg{err: err, reclaimErr: x.Err} })
 //
-// `tea.Exec(foreground.NewExec(cmd), fn)` と直に書くと、取り戻せなかった理由 (Err) を読めずに黙って捨てる (issue 757)。
+// `tea.Exec(foreground.NewExec(cmd), fn)` と直に書くと、取り戻せなかった理由 (Err) を読めずに黙って捨てる。
 //
 // 渡す前に前面を持っていたなら、子が終わった直後 (bubbletea が端末を入れ直す前) に前面を取り戻す。子 (の孫) の対話のシェルは
 // job control のために前面を自分のグループへ移し、戻さずに終わることがある (`$SHELL -ic` が最後のコマンドを exec した等)。
 // 前面でないまま入れ直すと、端末の設定を書くところで SIGTTOU で止まるか (前景ジョブの形)、EIO で何も読めない (session の先頭の形)。
 // 持っていなかった前面は奪わない (裏に回された画面が勝手に前へ出ない)。戻ったときに前面が session の先頭 (= 画面を起こした外の
 // シェル) にあるなら、それも奪わない: 子の実行中に Ctrl-Z → bg され、シェルが正当に取り戻した前面だから。奪うと、孤児になった
-// シェルのグループの読みが EIO になる (敵対レビューで実測)。画面自身が session の先頭 (tmux のペインで直に動く形) なら当たらない。
+// シェルのグループの読みが EIO になる。画面自身が session の先頭 (tmux のペインで直に動く形) なら当たらない。
 type Exec struct {
 	Cmd *exec.Cmd // nil = 何も走らせない (bubbletea の手放し → 入れ直しだけを通す)
 	// Owned・Reclaim は前面の確かめ方と取り戻し方 (テストが差し替える)。nil なら stdin の端末で確かめる (ゼロ値の Exec{Cmd: c} でも

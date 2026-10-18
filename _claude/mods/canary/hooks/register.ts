@@ -1,6 +1,6 @@
 import type { Register } from 'claude-code'
 
-// 何もしない mod。読み込まれたことを外から確かめるためだけにある (issue 619)。
+// 何もしない mod。読み込まれたことを外から確かめるためだけにある。
 // DOTFILES_MOD_CANARY_DIR が在るときだけ、そこへ印 `loaded` を書く。読まれる経路の実測
 // (対話 / claude -p / pro-con の PG) は、経路ごとに新しいディレクトリを渡してこの印の有無で読む。
 // 印の名前は固定 (経路ごとに新しいディレクトリを渡すので足りる)。session_id は中身に入れる。

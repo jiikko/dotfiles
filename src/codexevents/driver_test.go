@@ -67,7 +67,7 @@ func newDriver(t *testing.T) *driver {
 		must(t, err)
 		must(t, os.WriteFile(filepath.Join(root, "bin", name), b, 0o755))
 	}
-	// 引数の検査の helper は本物を写す (差し替えると検査の挙動が本物と離れる。issue 775)
+	// 引数の検査の helper は本物を写す (差し替えると検査の挙動が本物と離れる)
 	b, err := os.ReadFile(filepath.Join(repo, "bin", "lib", "uint.sh"))
 	must(t, err)
 	must(t, os.WriteFile(filepath.Join(root, "bin", "lib", "uint.sh"), b, 0o644))
@@ -234,7 +234,7 @@ func TestDriverPartialFanoutExcludesIncompleteRunFromMerger(t *testing.T) {
 	d.read("out/digest.md")
 }
 
-// -J の run は上限の行が events にだけ出ることがある。log に無くても台帳の cause で上限と分かる (issue 762)
+// -J の run は上限の行が events にだけ出ることがある。log に無くても台帳の cause で上限と分かる
 func TestDriverJSONUsageLimitOnlyInEventsIsReported(t *testing.T) {
 	d := newDriver(t)
 	rc, out := d.invoke("CASE_LIMIT", "ro", "-J")
@@ -249,7 +249,7 @@ func TestDriverJSONUsageLimitOnlyInEventsIsReported(t *testing.T) {
 	}
 }
 
-// events の中でも上限と見るのは error / turn.failed のイベントだけ。コマンドの出力に同じ文字列があるだけの失敗は上限にしない (issue 762)
+// events の中でも上限と見るのは error / turn.failed のイベントだけ。コマンドの出力に同じ文字列があるだけの失敗は上限にしない
 func TestDriverJSONUsageLimitTextInCommandOutputIsNotReported(t *testing.T) {
 	d := newDriver(t)
 	rc, out := d.invoke("CASE_QUOTED_FAIL", "ro", "-J")
@@ -264,7 +264,7 @@ func TestDriverJSONUsageLimitTextInCommandOutputIsNotReported(t *testing.T) {
 	}
 }
 
-// -J の log には応答の本文が追記される。本文が上限の行を引用しているだけの失敗は上限にせず、stderr にだけ出た本物の上限は拾う (issue 762)
+// -J の log には応答の本文が追記される。本文が上限の行を引用しているだけの失敗は上限にせず、stderr にだけ出た本物の上限は拾う
 func TestDriverJSONUsageLimitIgnoresQuotedBodyButReadsStderr(t *testing.T) {
 	d := newDriver(t)
 	rc, out := d.invoke("CASE_QUOTED_BODY", "ro", "-J")
@@ -283,7 +283,7 @@ func TestDriverJSONUsageLimitIgnoresQuotedBodyButReadsStderr(t *testing.T) {
 	}
 }
 
-// -J の log の本文が上限の行と区切り行まで引用していても、何も言わずに死んだ run でも、上限にしない (issue 762 の 4 周目)
+// -J の log の本文が上限の行と区切り行まで引用していても、何も言わずに死んだ run でも、上限にしない
 func TestDriverJSONUsageLimitIgnoresAppendedBodyAndSilentDeath(t *testing.T) {
 	for _, c := range []string{"CASE_QUOTED_MARK", "CASE_SILENT_DEATH"} {
 		d := newDriver(t)

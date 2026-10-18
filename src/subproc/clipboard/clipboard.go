@@ -1,11 +1,11 @@
-// Package clipboard は文字列を OS のクリップボードへ書く (glogx と treefiler の両方が使う。issue 718)。
+// Package clipboard は文字列を OS のクリップボードへ書く (glogx と treefiler の両方が使う)。
 //
 // OS のクリップボードコマンド (pbcopy / xclip) を真実とし、tmux 内では tmux バッファへも積む (tmux paste 用のおまけ・best effort)。
 // 本家 glog は load-buffer -w の成功 (exit 0) を「システム側にも届いた」とみなすが、-w の実体は OSC52 転送で、外側端末が OSC52 を
 // 解釈しなければ exit 0 のままクリップボードに入らない (glogx で実測 2026-07-19)。
 //
 // 呼び出し側は UI の Update から同期で呼ぶので Timeout で区切る: xclip は X サーバ無応答で戻らないことがある既知挙動で、上限が無いと
-// TUI ごと固まったうえ強制終了後に子プロセスが残る (glogx issue 029 P3 で xdg-open に入れたのと同じ手当て)。
+// TUI ごと固まったうえ強制終了後に子プロセスが残る (xdg-open に入れたのと同じ手当て)。
 package clipboard
 
 import (

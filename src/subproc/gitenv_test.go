@@ -9,7 +9,7 @@ import (
 )
 
 // UnsetGitLocationEnv は repo の場所・設定を変える環境変数を外し、関係の無い GIT_* は残す。外した後の `git -C <dir> init` は
-// 継承した GIT_DIR の repo ではなく dir に repo を作る (issue 740)。
+// 継承した GIT_DIR の repo ではなく dir に repo を作る。
 func TestUnsetGitLocationEnv(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git が無い")
@@ -43,7 +43,7 @@ func TestUnsetGitLocationEnv(t *testing.T) {
 }
 
 // 一覧が、手元の git が「repo に固有」と言う環境変数 (`git rev-parse --local-env-vars`) を全部覆う。git の版が上がって増えたら落ちる
-// (GIT_GRAFT_FILE・GIT_SHALLOW_FILE などが抜けていて、継承するとテストが別の repo の履歴を読んだ。issue 740 の敵対的レビュー)。
+// (GIT_GRAFT_FILE・GIT_SHALLOW_FILE などが抜けていて、継承するとテストが別の repo の履歴を読んだ)。
 func TestGitLocationEnvCoversLocalEnvVars(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git が無い")

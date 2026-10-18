@@ -1,7 +1,7 @@
 // Package chromecookie は macOS の Google Chrome のプロファイルから Cookie を復号して取り出す。
 //
-// slack-cli / esa-cli / newrelic-nrql-cli が共有する（以前は 3 repo にコピーがあり、
-// 修正が片方にしか当たらずに分岐していた）。どの Cookie を使うか・案内に出すフラグ名は
+// slack-cli / esa-cli / newrelic-nrql-cli が共有する（コピーを持つと
+// 修正が片方にしか当たらず分岐する）。どの Cookie を使うか・案内に出すフラグ名は
 // 呼び出し側が持つ。
 //
 // 🚨 ここで扱う値はいずれも「なりすましログインが可能な資格情報」。
@@ -36,7 +36,7 @@ import (
 
 // 🚨 Google Chrome 専用。
 //
-// 3 ツール共通の方針（esa-cli の issue 003）。対応表の値（Keychain のサービス名・Application
+// 3 ツール共通の方針。対応表の値（Keychain のサービス名・Application
 // Support 配下のディレクトリ名）は実機で確認しないと正しいか分からないため、
 // 手元で確認できる Chrome だけに絞る。未確認の値を並べると「動くように見えて
 // 別ブラウザの領域を読みに行く」形の事故になる。

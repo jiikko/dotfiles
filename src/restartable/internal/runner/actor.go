@@ -145,7 +145,7 @@ type actor struct {
 	readyResumePending   bool
 	timer                transitionTimer
 	// leftoverChild は終わった後に次のビルドへ進む子 (crashed からの再ビルド / stop-cmd の再起動)。ビルドの前に
-	// そのプロセスグループの残り (孫) を片付ける。Q で終えるときは片付けない (自然終了で孫を消さないのと同じ。issue 586)
+	// そのプロセスグループの残り (孫) を片付ける。Q で終えるときは片付けない (自然終了で孫を消さないのと同じ)
 	leftoverChild             *process
 	leftoverCleanupRunning    bool
 	buildAfterLeftoverCleanup bool

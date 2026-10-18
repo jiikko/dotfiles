@@ -238,7 +238,7 @@ func TestWithTerminals(t *testing.T) {
 	}
 }
 
-// 曖昧幅を 2 桁と数える設定では、TTY の UI を出す前に 1 行知らせる (issue 756)。設定が無ければ何も出さない。
+// 曖昧幅を 2 桁と数える設定では、TTY の UI を出す前に 1 行知らせる。設定が無ければ何も出さない。
 func TestWarnWidthEnv(t *testing.T) {
 	var b strings.Builder
 	t.Setenv("RUNEWIDTH_EASTASIAN", "")
@@ -253,7 +253,7 @@ func TestWarnWidthEnv(t *testing.T) {
 	}
 }
 
-// 警告は TTY の UI を出すときだけ (headless では板を描かないので出さない)。呼ぶ位置を見る (issue 756 の敵対レビュー)。
+// 警告は TTY の UI を出すときだけ (headless では板を描かないので出さない)。呼ぶ位置を見る。
 func TestWithPresenterWarnsOnlyForTTY(t *testing.T) {
 	t.Setenv("RUNEWIDTH_EASTASIAN", "1")
 	for _, headless := range []bool{true, false} {

@@ -30,7 +30,7 @@ func cat(parts ...[]byte) []byte {
 	return out
 }
 
-// 期待値は Python 版 (zshlib/_concat_helpers.zsh の python3 -c) と同じ規則で数えた値。旧版との突き合わせは issue 670 の進捗
+// 期待値は Python 版 (zshlib/_concat_helpers.zsh の python3 -c) と同じ規則で数えた値。
 func TestEffectiveSize(t *testing.T) {
 	ftyp := box("ftyp", 8) // 16
 	size0 := []byte{0, 0, 0, 0, 'm', 'd', 'a', 't'}

@@ -1,4 +1,4 @@
-// Package userdirs は道具ごとの設定の置き場を 1 か所で決める (issue 777)。
+// Package userdirs は道具ごとの設定の置き場を 1 か所で決める。
 //
 // 置き場は道具ごとに分ける ($XDG_CONFIG_HOME/<道具>、未設定なら ~/.config/<道具>)。前は treefiler と mac-lan-manager が
 // ~/.config/glogx の下に、pro-con だけが XDG に従って置いていた。道具は将来 glogx から分離するので glogx の下には置かない
@@ -14,7 +14,7 @@ import (
 
 // ConfigBase は設定の置き場の根 ($XDG_CONFIG_HOME、未設定なら <home>/.config)。home を外から渡す道具 (pro-con) のため。
 // 🚨 相対パスの XDG_CONFIG_HOME は無視する (XDG の仕様どおり)。受け付けると起動した cwd の下へ設定を移してしまい、cwd を変えて
-// 起動すると設定が消えたように見える (issue 777 の敵対的レビュー P2)。
+// 起動すると設定が消えたように見える。
 func ConfigBase(home string) string {
 	if base := os.Getenv("XDG_CONFIG_HOME"); base != "" && filepath.IsAbs(base) {
 		return base
@@ -32,7 +32,7 @@ func ConfigDir(app string) (string, error) {
 }
 
 // ConfigFile は app の設定ファイル name の置き場。legacy (前の置き場。~ からの相対) が在って新しい置き場に無ければ、1 回だけ移してから返す。
-// 移せなかったとき (権限・別の volume など) は前の置き場を返し、前の設定を読み続ける (黙って既定に戻ったように見せない。issue 777 の敵対的レビュー P3)。
+// 移せなかったとき (権限・別の volume など) は前の置き場を返し、前の設定を読み続ける (黙って既定に戻ったように見せない)。
 func ConfigFile(app, name, legacy string) (string, error) {
 	dir, err := ConfigDir(app)
 	if err != nil {

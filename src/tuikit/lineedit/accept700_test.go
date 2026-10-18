@@ -2,7 +2,7 @@ package lineedit
 
 import "testing"
 
-// 文字の向きを変える制御文字と行・段落の区切りは入れない (見えている文字列と中身の並びが食い違う。issue 700 の 2)。
+// 文字の向きを変える制御文字と行・段落の区切りは入れない (見えている文字列と中身の並びが食い違う)。
 // ZWJ と異体字セレクタは絵文字の一部として通す。
 func TestInsertDropsBidiAndLineSeparators(t *testing.T) {
 	for _, r := range []rune{0x202a, 0x202e, 0x2066, 0x2069} {

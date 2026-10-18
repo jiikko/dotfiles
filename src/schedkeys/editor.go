@@ -5,7 +5,7 @@
 // 🚨 幅の計算は必ず ansi (書記素クラスタ単位) で行う。rune ごとに足すと、結合文字や
 //
 //	VS16 (❤️) で実際の表示幅とずれ、行が画面幅を超える / スクロールが 1 文字も進まず
-//	無限ループになる (敵対的レビュー 2026-08-28 で UI のハングとして再現)。
+//	無限ループになる (UI のハングとして再現した)。
 package main
 
 import (
@@ -95,7 +95,7 @@ func truncate(s string, width int) string { return termwidth.Cut(s, width) }
 // 🚨 移動と削除は「見た目の 1 文字」= 書記素クラスタ単位で行う。rune 単位だと肌色や結合文字の
 //
 //	一部だけが消え、見た目はほぼ同じなのに**別の文字列が pane へ送られる**
-//	(敵対的レビュー 2026-08-28: 👍🏽 の backspace 1 回で 👍 になる)。
+//	(👍🏽 の backspace 1 回で 👍 になる)。
 func (e *editor) prevBoundary() int {
 	last := 0
 	e.eachBoundary(func(b int) bool {
@@ -194,7 +194,7 @@ func acceptable(text string) bool {
 	for _, r := range text {
 		// lineedit.Acceptable (制御文字・向きを変える制御文字・行と段落の区切り) に加えて、書式文字全般と異体字セレクタも弾く。
 		// 異体字セレクタは幅の数え方が描画側 (ultraviolet) と食い違い、本物のカーソルが絵文字 1 個につき 1 列ずつ右へずれる
-		// (敵対的レビュー 2026-08-28 に実測: ❤️ 5 個で 5 列ずれる)。1 字でも入っていれば打鍵ごと捨てる (一部だけ入れない)
+		// (実測: ❤️ 5 個で 5 列ずれる)。1 字でも入っていれば打鍵ごと捨てる (一部だけ入れない)
 		if !lineedit.Acceptable(r) || unicode.Is(unicode.Cf, r) || isVariationSelector(r) {
 			return false
 		}

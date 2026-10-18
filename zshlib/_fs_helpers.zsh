@@ -14,7 +14,7 @@
 # 🚨 macOS の mount 出力形式 "device on /mp (fstype, opts)" 前提。Linux の
 # "device on /mp type ext4 (opts)" 形式はパースできない (空文字列 fallback になり
 # 呼び出し側は trash 経路へ倒れる)。**Linux はサポート対象外なので対応しない**
-# (2026-08-28 決定 / issue 133)。対象が増えたら再評価する。
+# (2026-08-28 決定)。対象が増えたら再評価する。
 __fs_type_for() {
   # 注意: zsh では `path` (小文字) は `PATH` (大文字) の配列形 tied parameter なので
   # `local path=...` で書くと関数内 PATH を引数値で上書きしてしまい、
@@ -53,7 +53,7 @@ __fs_is_network_volume() {
   esac
 }
 
-# 内部補助: ファイルサイズ (バイト) を返す。取得できなければ空文字で rc≠0 (av1ify / concat が共有。issue 776)
+# 内部補助: ファイルサイズ (バイト) を返す。取得できなければ空文字で rc≠0 (av1ify / concat が共有)
 __fs_file_size() {
   stat -f%z -- "$1" 2>/dev/null
 }

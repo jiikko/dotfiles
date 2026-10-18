@@ -1,4 +1,4 @@
-// settings の hook _claude/hooks/ratelimit-warn.sh の mod 版 (issue 658)。
+// settings の hook _claude/hooks/ratelimit-warn.sh の mod 版。
 //
 // 枠は 2 つの出所から読み、使える観測の新しい方で判定する (hooks/limit.ts):
 //   live: session.measure が運ぶ rateLimits (直近の応答ヘッダの値) を発火時刻つきで $.state に控える

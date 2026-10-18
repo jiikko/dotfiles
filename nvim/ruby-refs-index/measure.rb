@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# 呼び出し側索引 (call-site index) が現実的かを実測するプロトタイプ。issue 334 の段階 2。
+# 呼び出し側索引 (call-site index) が現実的かを実測するプロトタイプ。
 #
 # なぜ: ruby-lsp の textDocument/references は索引を使わず、要求のたびにワークスペース全体を
 # Prism で再パースする (requests/references.rb:63)。索引が持っているのは宣言だけで、呼び出し側の

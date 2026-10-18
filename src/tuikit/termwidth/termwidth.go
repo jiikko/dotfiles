@@ -1,6 +1,6 @@
 // Package termwidth は端末表示幅の単一情報源。tuikit とそれを使う画面の表示幅は必ずこの
 // パッケージを通す (呼び出し側で ansi.StringWidth を直接呼ばない。glogx では素の
-// ansi.StringWidth を各パッケージへ写して食い違っていた。issue 106)。
+// ansi.StringWidth を各パッケージへ写して食い違っていた)。
 //
 // なぜ ansi (charmbracelet/x/ansi) に一本化するか: 描画エンジンの幅モデルと一致させるため。
 // 使う側が別ライブラリ (mattn/go-runewidth) で幅を測ると、両者が食い違う文字
@@ -39,7 +39,7 @@
 // ⚠️ ただし env `RUNEWIDTH_EASTASIAN` が真だと ansi は幅 2 に切り替わる。この層 (Of /
 // symWidthTable) は幅をライブラリから引くので追従するが、**tuikit の描画 (layout) はこの env を支持しない**
 // (枠・影・区切り線を strings.Repeat でグリフ数ぶん埋めている箇所があり、幅 2 になると要求の
-// 2 倍近くまで膨らむ。実測 issue 054)。検出と扱いは widthenv パッケージが一次情報。
+// 2 倍近くまで膨らむ)。検出と扱いは widthenv パッケージが一次情報。
 package termwidth
 
 import (
@@ -61,8 +61,7 @@ import (
 // だけ」で構成される行も 0.0〜0.7% しかない (glogx の行にはたいてい幅 1 の記号 —
 // CI 状態の ✓✗●⊘↑・枠線 ─│・切り詰めの …・スピナー ⠋ — が混ざる)。
 // そのため fast-path は下記 3 種を扱う: 印字可能 ASCII / SGR / 幅を表に持っている記号。
-// この形で slow-path の 97.6〜98.8% を拾い、ansi.StringWidth との幅の不一致は 0 件だった
-// (詳細は issue 046)。表の記号には日本語 (acceptCJK) も入っている: pro-con のカードのタイトルのような
+// この形で slow-path の 97.6〜98.8% を拾い、ansi.StringWidth との幅の不一致は 0 件だった。表の記号には日本語 (acceptCJK) も入っている: pro-con のカードのタイトルのような
 // 日本語の行が ansi へ落ちていた (epic 523。2026-09-27)。
 func Of(s string) int {
 	if w, ok := fastDispWidth(s); ok {
@@ -257,8 +256,8 @@ const symbolHi = 0x28FF
 
 // FirstCluster は s の先頭の grapheme クラスタ 1 個と、その表示幅を返す。s が空なら ("", 0)。
 //
-// ⚠️ **分割は必ずこれを通す。uniseg で切って Of で測らないこと** (issue 124)。
-// 幅を 1 本にしても (issue 112)、**分割器がもう 1 本ある**と列不変条件
+// ⚠️ **分割は必ずこれを通す。uniseg で切って Of で測らないこと**。
+// 幅を 1 本にしても、**分割器がもう 1 本ある**と列不変条件
 // `Of(dropToColumn(s,n)) == Of(s)-n` は成立しない: 境界が食い違えば「クラスタごとの幅の
 // 総和 = 全体の幅」が破れるので、クラスタの幅を何で測ろうが直らない。
 // 実測 2026-08-27 (2-rune クラスタの全域走査): uniseg で切ると違反 757 件。原因は Unicode の
@@ -283,7 +282,7 @@ func FirstCluster(s string) (cluster string, width int) {
 // Truncate は表示幅 width まで切り詰め末尾に tail を付す。SGR は保持する。
 //
 // 🚨 ansi.Truncate の結果が Of で width を超えることがある: ASCII + VS16 (キーキャップ `1️⃣` 等) を
-// 切り詰めの走査では幅 1、StringWidth では幅 2 と数える (x/ansi v0.11.7 の内部の食い違い。issue 416)。
+// 切り詰めの走査では幅 1、StringWidth では幅 2 と数える (x/ansi v0.11.7 の内部の食い違い)。
 // はみ出したときは、Of で width に収まる最も長い切り方を探し直す (この層の幅は Of が正本)。
 func Truncate(s string, width int, tail string) string {
 	r, _ := TruncateMeasure(s, width, tail)
@@ -312,7 +311,7 @@ func TruncateMeasure(s string, width int, tail string) (string, int) {
 // ほとんどの行は最初の 1 回で収まる。はみ出したときだけ、ansi へ渡す幅 t を二分探索して
 // 「Of(結果) <= width」を満たす最大の t を取る (結果の幅は t について単調)。🚨 比べる相手は常に
 // 要求された width で、t ではない: t と比べると、はみ出すたびに目標を詰めて削りすぎる
-// (`Cut("x1️⃣y", 3)` が "x" になった。敵対的レビューで実証)。1 字ずつ詰める形は、キーキャップの
+// (`Cut("x1️⃣y", 3)` が "x" になる)。1 字ずつ詰める形は、キーキャップの
 // 数だけ切り直すので長い行で遅い (O(はみ出し × 長さ))。二分探索なら O(長さ × log width)。
 func truncateOver(s string, width int, tail string) (string, int) {
 	r := ansiTruncate(s, width, tail)
@@ -414,7 +413,7 @@ func TruncateLeft(s string, width int, head string) string {
 	}
 	drop := sw - width + Of(head)
 	// 🚨 ansi.TruncateLeft の結果は Of で見ると width からずれる: 切れ目が全角の途中に落ちるとその字を
-	// 残して 1 桁はみ出し (issue 416: TruncateLeft("あ", 1) が幅 2)、キーキャップは幅 1 と数えて削りすぎる。
+	// 残して 1 桁はみ出し (TruncateLeft("あ", 1) が幅 2)、キーキャップは幅 1 と数えて削りすぎる。
 	// 見積もった drop で幅ちょうどになればそれで確定 (それより広くはできない。ほとんどの行はここで終わる)。
 	// 狭いときは 1 桁少なく削って収まらないことを確かめて確定する (全角の跨ぎ)。🚨 確かめる呼び出しを
 	// 常にすると、status viewer の 1 フレームの確保が 56 回増えた (glogx の TestFrameAllocBudget)。
@@ -522,8 +521,7 @@ func Cut(s string, width int) string {
 }
 
 // EscLen は s の先頭の ESC から始まるシーケンスのバイト長 (1 以上)。読み方は Of / Wrap / Slice と同じ x/ansi のパーサ
-// (OSC 8 のリンクのように英字で終わらないシーケンスを、自前の「英字まで」「次の m まで」の走査で読むと URL の途中で切れる。
-// issue 700 の 1)。使う側が ESC 列を読み飛ばすときもこれを使い、終わりの見方を自前で書かない (issue 757)。
+// (OSC 8 のリンクのように英字で終わらないシーケンスを、自前の「英字まで」「次の m まで」の走査で読むと URL の途中で切れる)。使う側が ESC 列を読み飛ばすときもこれを使い、終わりの見方を自前で書かない。
 func EscLen(s string) int {
 	_, _, n, _ := ansi.DecodeSequence(s, ansi.NormalState, nil)
 	return max(n, 1)

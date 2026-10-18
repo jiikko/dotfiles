@@ -24,7 +24,7 @@ local computed_tick = {}
 local timers = {}
 
 -- fold を計算する行数の上限。refresh_win は同期パース + 全行の foldexpr 評価で、コストは行数に比例する
--- (issue 612 の実測: 20,000 行で BufWinEnter 1 回 ~200ms、200,000 行で ~1.8s)。超えたバッファは fold なしで開く
+-- (実測: 20,000 行で BufWinEnter 1 回 ~200ms、200,000 行で ~1.8s)。超えたバッファは fold なしで開く
 -- (foldmethod は既定の manual のまま)。行数で見るのは foldexpr が行ごとに評価されるため。1 行が巨大な minified
 -- ファイルは行数では素通りするが、その形は測っていない
 local MAX_LINES = 20000

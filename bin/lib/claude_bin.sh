@@ -7,7 +7,7 @@
 #     rc:   0 = 選べた / 1 = PATH に claude が無い / 2 = 候補はあるがどれも動かない・応答しない (試した候補を stderr に出す)
 #     呼び出し側は 1 と 2 を区別できる (CI で「無いから skip」はよいが、「壊れた claude しか無い」は見えるようにする)
 #
-# なぜ `command -v claude` で済ませないか (issue 639):
+# なぜ `command -v claude` で済ませないか:
 #   版管理 (nodenv 等) の shim は、どれかの版に claude が入っているだけで PATH の先頭に現れる。
 #   今の版に無ければ shim は実行時に rc=127 で終わるが、`command -v` も `-x` もそれを「在る」と判定する。
 #   shim を `nodenv which claude` で辿る方法 (src/pro-con/dispatcher/claude.go) も、今の版に無ければ失敗して

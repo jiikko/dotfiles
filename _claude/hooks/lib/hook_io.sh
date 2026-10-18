@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# hook の入出力の定型 (issue 776)。PreToolUse / PostToolUse の Bash の hook が使う。
+# hook の入出力の定型。PreToolUse / PostToolUse の Bash の hook が使う。
 #
 # 🚨 どの関数も fail-open: jq が無い・入力の JSON が読めないときは rc≠0 を返すだけで、呼ぶ側が exit 0 で諦める
 # (誤って deny しない・何も注入しない)。lib 自体を読めないときも、呼ぶ側は `|| exit 0` で諦める。

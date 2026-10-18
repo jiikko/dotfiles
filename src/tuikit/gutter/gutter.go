@@ -30,7 +30,7 @@ func Format(src, width int) string {
 }
 
 // Number は溝のうち番号の部分 (width から区切りを引いた桁・右寄せ・色なし。src<=0 は空白)。番号だけを塗りたい
-// 使う側は、Format の出力を区切りの長さで切らずにこちらを使う (区切りの字を変えても壊れない。issue 757)。
+// 使う側は、Format の出力を区切りの長さで切らずにこちらを使う (区切りの字を変えても壊れない)。
 func Number(src, width int) string {
 	w := max(width-termwidth.Of(Separator), 0)
 	if src <= 0 {

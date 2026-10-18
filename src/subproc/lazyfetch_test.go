@@ -10,7 +10,7 @@ import (
 )
 
 // partial clone を名乗る repo で消えた blob を読ませても、遅延 fetch から repo の core.sshCommand / remote.<名前>.uploadpack を
-// 走らせない (issue 739)。対照として、素の git では同じ罠が走ることを見る (罠が作動しない fixture を緑にしない)。
+// 走らせない。対照として、素の git では同じ罠が走ることを見る (罠が作動しない fixture を緑にしない)。
 func TestGitDoesNotLazyFetchFromRepoConfig(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git が無い")

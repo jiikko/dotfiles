@@ -372,7 +372,7 @@ func TestBraillePutTextClipsAtEdges(t *testing.T) {
 
 // 段によって盤が出たり出なかったりしない。見出しの AA は CLI 名の桁数で可否が決まるので、
 // 「AA が 4 行食ったせいでその段だけ盤が消える」= 同じ画面で Claude 段は盤あり・codex 段は
-// 空行だけ、という非対称が起きていた (セルフレビュー指摘 2026-09-01)。
+// 空行だけ、という非対称が起きうる。
 func TestRenderDashboardGroupsStayConsistent(t *testing.T) {
 	for w := 26; w <= 200; w += 3 {
 		for h := 12; h <= 60; h += 2 {
@@ -683,8 +683,7 @@ func TestRenderDashboardUnusedWindow(t *testing.T) {
 	}
 }
 
-// 未消費の枠は、他のカードの数字と同じ字形の AA で「NO DATA」を出す
-// (ユーザー指示 2026-09-03 / issue 197)。散文だけだと隣のカードと視線の高さが揃わない。
+// 未消費の枠は、他のカードの数字と同じ字形の AA で「NO DATA」を出す。散文だけだと隣のカードと視線の高さが揃わない。
 func TestUnusedCardShowsNoDataArt(t *testing.T) {
 	joined := func(w, h int) string { return strings.Join(unusedArt(w, h, false), "\n") }
 

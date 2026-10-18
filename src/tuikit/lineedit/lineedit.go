@@ -27,7 +27,7 @@ import (
 // Line は 1 行の入力。カーソルは rune の位置 (0 = 先頭、len = 末尾) で、常に書記素クラスタの境界に置く。
 //
 // 🚨 移動と削除は「見た目の 1 文字」= 書記素クラスタ単位で行う。rune 単位だと肌色・ZWJ・国旗・結合文字の
-// 一部だけが消え、見た目はほぼ同じなのに別の文字列が送られる (👍🏽 の backspace 1 回で 👍 が残る。issue 589)。
+// 一部だけが消え、見た目はほぼ同じなのに別の文字列が送られる (👍🏽 の backspace 1 回で 👍 が残る)。
 // 境界は termwidth.FirstCluster (x/ansi) で求める。uniseg は Unicode の版が x/ansi と違い、判断が割れた実測がある
 // (termwidth/width_fast_test.go の TestAcceptedSymbolsNeverCombineWithEachOther のコメント)。
 type Line struct {
@@ -52,7 +52,7 @@ func (l *Line) View(mark string) string { return string(l.r[:l.cur]) + mark + st
 // 🚨 キャレットを欄の外に置くと、IME の変換中の文字も欄の外に出る。桁は caret.At に「欄の左端 + 桁」で渡す。
 //
 // 前を切る単位も書記素クラスタ (欄の左端に肌色修飾子や VS16 だけが残らない)。走査はクラスタを 1 回数えるだけで、
-// 入力の長さに対して線形 (前を 1 字削るたびに測り直すと O(n²) で、1 万字で 150 ms かかった。issue 589)。
+// 入力の長さに対して線形 (前を 1 字削るたびに測り直すと O(n²) で、1 万字で 150 ms かかった)。
 func (l *Line) Window(w int) (text string, col int) {
 	before := l.r[:l.cur]
 	cs := clusters(before)
@@ -115,7 +115,7 @@ func (l *Line) snap(i int) int {
 // Acceptable は入力欄に入れてよい文字か。弾くもの: 制御文字 (Cc)・文字の向きを変える制御文字 (U+202A-202E / U+2066-2069。
 // 見えている文字列と中身の並びが食い違う。`!` のコマンド行では見えているものと実行されるものが別になる)・行と段落の区切り
 // (U+2028 / 2029。行区切りとして解釈する端末がある。Insert は改行と同じく空白にする)。ZWJ と異体字セレクタは通す (絵文字の 1 文字として扱う。
-// TestEditKeysKeepGraphemeClusters)。schedkeys はこれに加えて書式文字全般と異体字セレクタも弾く (issue 700 の 2)。
+// TestEditKeysKeepGraphemeClusters)。schedkeys はこれに加えて書式文字全般と異体字セレクタも弾く。
 func Acceptable(r rune) bool {
 	return !unicode.IsControl(r) && (r < 0x202a || r > 0x202e) && (r < 0x2066 || r > 0x2069) && r != 0x2028 && r != 0x2029
 }

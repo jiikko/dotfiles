@@ -163,7 +163,7 @@ func TestExpandTabs(t *testing.T) {
 	}
 }
 
-// flattenSpans の分割は幅と同じエンジンを使う (issue 124)。
+// flattenSpans の分割は幅と同じエンジンを使う。
 //
 // 折り返しは「セル幅の総和」で行の幅を決めるので、分割器が幅の出典と別だと
 // 総和が行全体の幅と一致せず、**limit を超えた行**が出る (silent。ASCII / CJK / 絵文字では

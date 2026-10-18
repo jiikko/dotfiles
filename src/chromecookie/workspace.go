@@ -67,7 +67,7 @@ var errCleanupClosing = errors.New("終了処理中のため、一時コピー�
 //
 // 🚨 削除は③と同じく「検証済みの作業領域を開いた fd」経由で行う。パス文字列を
 // os.RemoveAll に渡すと、途中のディレクトリがシンボリックリンクに差し替えられていた場合に
-// **リンク先を再帰削除する**（③だけ塞いで①②に同じ穴を残していた。敵対的レビューが実証）。
+// **リンク先を再帰削除する**（③だけ塞いで①②に同じ穴を残すと破られる）。
 //
 // 🚨 検証（openVerifiedTempRoot）と fd 経由の削除は冗長な関係にある（変異検証で実測）:
 // 検証が先に弾くので、削除だけを os.RemoveAll に戻す変異は現行のテストでは素通りする。
@@ -294,7 +294,7 @@ func openVerifiedChild(parent *os.Root, name, display string, uid int, afterLsta
 	}
 	// 🚨 所有者が自分でも、group / other に権限があれば使わない。作成時の 0700 は既存の
 	// ディレクトリには効かない（MkdirAll は既存を直さない）。他人が書けると、作った <pid>-* を
-	// symlink に差し替えられ、コピーをリンク先へ書かせられる（敵対的レビューの指摘）。
+	// symlink に差し替えられ、コピーをリンク先へ書かせられる。
 	if got.Mode().Perm()&0o077 != 0 {
 		_ = child.Close()
 		return nil, fmt.Errorf("%s が自分以外にも開かれています（%v。chmod 700 するか削除してください）: %s", name, got.Mode().Perm(), display)

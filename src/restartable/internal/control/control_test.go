@@ -273,7 +273,7 @@ func TestCloseWhileRequestsArePendingDoesNotPanic(t *testing.T) {
 }
 
 // 子(build/run/stop-cmd 等)に lock の fd が渡ると、runner が死んでも子が flock を握り続け、
-// 新しい runner が二重起動として拒否される (issue 597)。exec 先で、その番号の fd が lock のファイルでないことを固定する
+// 新しい runner が二重起動として拒否される。exec 先で、その番号の fd が lock のファイルでないことを固定する
 // (番号が開いているだけでは継承とは言えない: 子の Go の実行時が同じ番号を別のファイルに使うことがある。inode で比べる)。
 func TestListenLockFDIsNotInheritedByChildren(t *testing.T) {
 	if fdStr := os.Getenv("RESTARTABLE_TEST_LOCK_FD"); fdStr != "" {

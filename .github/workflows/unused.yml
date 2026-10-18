@@ -1,5 +1,5 @@
 ---
-# production から到達できない Go シンボル (テストだけが呼んでいる関数) の検査 (issue 315)。
+# production から到達できない Go シンボル (テストだけが呼んでいる関数) の検査。
 #
 # なぜ独立した workflow か: 中身は Go の静的解析なので、全 push で走る lint.yml には置かない
 # (2026-07-17 に Go を lint.yml から分離したのと同じ理由)。かといって src_<project>.yml では
@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   unused:
-    # 対象は macOS のみ (issue 133)。ラベルの移動で環境が変わらないよう 15 に固定する。
+    # 対象は macOS のみ。ラベルの移動で環境が変わらないよう 15 に固定する。
     runs-on: macos-15
     timeout-minutes: 15
     steps:

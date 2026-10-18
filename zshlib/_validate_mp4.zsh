@@ -25,7 +25,7 @@ source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 # デコード破損を示す既知の文字列。良性警告で誤爆しないよう、具体的なものだけを列挙する。
 # (bare "error" 等は入れない — ffmpeg は良性警告にも error の語を含めるため)
 #
-# 🚨 "non monotonically increasing dts" は意図的に入れていない (issue 394 で一度足して取り下げた)。
+# 🚨 "non monotonically increasing dts" は意図的に入れていない。
 # この警告は **ファイルの欠陥ではない**: VFR の出力を `-f null` へ流すと、検証側の fps 変換が
 # 出力タイムスタンプを衝突させて出す (パケットの DTS を ffprobe で直接読むと単調増加だった。
 # 2026-09-18 実測)。ここへ足すと VFR というだけで正常なファイルが decode-error になり、

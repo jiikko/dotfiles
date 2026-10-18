@@ -1,5 +1,5 @@
 // Package safefs はファイルを動かす・作る操作のうち、「上書きしない」「経路を差し替えられない」を守る部品を 1 か所に置く
-// (doctor の削除エンジンと treefiler のファイル操作が共有する。issue 722)。macOS 専用 (renameatx_np)。
+// (doctor の削除エンジンと treefiler のファイル操作が共有する)。macOS 専用 (renameatx_np)。
 //
 // 🚨 どの操作も、syscall の直前に呼び出し側の Guard を通す。Guard が nil なら何もせずに失敗する (fail-closed)。
 // Guard は呼び出し側が持つ検査点で、production では素通りし、テストのハーネスがそこを差して一時ディレクトリの外を
@@ -100,14 +100,14 @@ func ValidName(name string) error {
 }
 
 // ID は項目そのもの (lstat) の実体 (dev, inode)。呼び出し側が「この実体を操作する」と決めた時点の値を Rename / TrashMove へ渡す
-// (2 つの uint64 で渡すと取り違えても型が通る。issue 734)。ゼロ値は「識別できない」で、操作は ErrUnidentified で断る。
+// (2 つの uint64 で渡すと取り違えても型が通る)。ゼロ値は「識別できない」で、操作は ErrUnidentified で断る。
 type ID struct{ Dev, Ino uint64 }
 
 func identity(st *unix.Stat_t) ID { return ID{Dev: uint64(st.Dev), Ino: st.Ino} }
 
 // ResolveUnder は root の中のフォルダ dir (root からの絶対パス) の実体のパス。root だけは symlink を辿り、root から dir までの途中は
 // 1 段ずつ Lstat して symlink とフォルダでないものを断る。🚨 dir を丸ごと EvalSymlinks しない: 呼び出し側が持っているパスを確かめた後で
-// 途中のフォルダが外を指す symlink に差し替わると、root の外を操作することになる (treefiler の issue 722 の敵対レビューで再現)。
+// 途中のフォルダが外を指す symlink に差し替わると、root の外を操作することになる。
 // 残る窓: ここで確かめてから Rename / Create / TrashMove が親を開くまでの間の差し替え (それらは最後の要素だけを O_NOFOLLOW で開く)。
 func ResolveUnder(root, dir string) (string, error) {
 	p, err := filepath.EvalSymlinks(root)

@@ -57,7 +57,7 @@ vim.keymap.set("n", "<leader>gd", function()
   require("telescope.builtin").lsp_document_symbols({ symbols = decl_kinds })
 end, { buffer = true, silent = true, desc = "このファイルの宣言一覧 (document symbols)" })
 -- GoDeclsDir 相当。ディレクトリ限定の厳密同等は telescope に無いため workspace 全体の
--- 動的シンボル検索で代替する (旧実装も非稼働だったため実挙動の後退はない)。
+-- 動的シンボル検索で代替する。
 vim.keymap.set("n", "<leader>gD", function()
   require("telescope.builtin").lsp_dynamic_workspace_symbols({ symbols = decl_kinds })
 end, { buffer = true, silent = true, desc = "ワークスペース全体の宣言検索 (workspace symbols)" })

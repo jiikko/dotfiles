@@ -77,7 +77,7 @@ const (
 //
 //	row  ="5h   [▰▱▱▱▱▱▱▱▱▱]   4%   4時間26分 / 7月22日03:09"
 //
-// 🚨 **production からの呼び出しは 0 件** (実測 2026-09-09 / issue 316)。`RenderTableGroups` の
+// 🚨 **production からの呼び出しは 0 件** (実測 2026-09-09)。`RenderTableGroups` の
 // 薄い包み (3 行)。平坦化の一致を固定しているのは `codex_test.go:TestRenderTableGroups` の **1 本だけ**で、
 // 他のテスト (`TestRenderTable` / `TestRenderTableAlignsColumns` / `TestRenderTableWithCodex`) は
 // 行文字列を直接 assert しているので `RenderTableGroups` + inline 平坦化へ寄せられる。
@@ -117,7 +117,7 @@ func RenderTableGroups(s *Snapshot, now time.Time, colored bool) (header string,
 	months := make([]string, len(ws))
 	dates := make([]string, len(ws))
 	clocks := make([]string, len(ws))
-	// 🚨 列の幅は、値が取りうる最大の幅から始める (issue 626)。値で幅を決めると、取得中の場所取りの行
+	// 🚨 列の幅は、値が取りうる最大の幅から始める。値で幅を決めると、取得中の場所取りの行
 	// (値が無い) から実際の値へ替わったとき・届いた出所の値で列が広がるたびに、箱の幅が変わる。
 	// 枠は最長 weekly なので日は 1 桁 ("6日")。それより長い窓が来たら、その値の幅まで広がる
 	wDay, wHour, wMin := termwidth.Of("6日"), termwidth.Of("23時間"), termwidth.Of("59分")

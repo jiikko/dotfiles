@@ -6,7 +6,7 @@ version: "2"
 # 🚨 golangci-lint は既定で os.TempDir()/golangci-lint.lock に flock を取り、別インスタンスが
 # 走っていると 5 秒待って "parallel golangci-lint is running" で落ちる。root の Makefile (run_go_projects) は
 # 全プロジェクトの lint を並列に回すので、全プロジェクトでこれを true にする
-# (lock がキャッシュ保護ではない理由と実測は src/subproc/.golangci.yml。issue 258)
+# (lock がキャッシュ保護ではない理由と実測は src/subproc/.golangci.yml)
 run:
   allow-parallel-runners: true
 
@@ -23,10 +23,10 @@ linters:
   settings:
     forbidigo:
       forbid:
-        # 端末の幅・切り詰め・切り出しは github.com/jiikko/dotfiles/src/tuikit/termwidth を通す (issue 524)
+        # 端末の幅・切り詰め・切り出しは github.com/jiikko/dotfiles/src/tuikit/termwidth を通す
         - pattern: ^ansi\.(StringWidth|Cut|Truncate|TruncateLeft)$
           msg: 幅は termwidth.Of、切り詰め・切り出しは termwidth.Truncate / Cut / Slice / SliceFrom / SplitAround を使う (issue 524)
-        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る (issue 590)
+        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る
         - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
           msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
 

@@ -128,7 +128,7 @@ func repeat(k string, n int) []string {
 }
 
 // 見た目の 1 文字が複数の rune でできているもの (肌色・ZWJ・国旗・結合文字・キーキャップ・NFD の濁点) を、
-// 移動と削除で割らない (issue 589: rune 単位だと 👍🏽 の backspace 1 回で 👍 が残り、別の文字列が送られる)。
+// 移動と削除で割らない (rune 単位だと 👍🏽 の backspace 1 回で 👍 が残り、別の文字列が送られる)。
 // 前後に ASCII を置き、カーソルをクラスタの前後に置いた状態で当てる (末尾だけだと delete と right が見えない)。
 func TestEditKeysKeepGraphemeClusters(t *testing.T) {
 	for _, c := range []string{"👍🏽", "👨\u200d👩\u200d👧", "🇯🇵", "e\u0301", "1\ufe0f\u20e3", "か\u3099"} {

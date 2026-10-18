@@ -315,7 +315,7 @@ EOF
   local first_video_info first_audio_info
   # ffprobe が失敗したら「判定不能」として拒否する。空を「情報なし」と読むと、先頭ファイルで
   # 失敗すれば音声チェックごと黙って skip され、2 本目以降で失敗すれば「再エンコードが必要」という
-  # 誤った案内で落ちる (issue 143)。
+  # 誤った案内で落ちる。
   first_video_info=$(__concat_get_video_info "${input_files[1]}") \
     || { print -r -- "エラー: 映像情報を取得できませんでした (ffprobe 失敗): ${input_files[1]:t}" >&2; return 1; }
   first_audio_info=$(__concat_get_audio_info "${input_files[1]}") \
@@ -382,8 +382,8 @@ EOF
     # time_base 不一致は max timescale (= 高分解能側) に揃える方向で repair する。
     # 低→高 (例: 1/30000 → 1/90000) は PTS を整数倍するだけなので常に無損失。
     # 逆方向は PTS が divisor の倍数である必要があり、満たさない場合は丸めが起きる。
-    # 旧実装は「先頭ファイル基準」で揃えていたため、順序によっては低分解能側に
-    # 寄せようとして A/V 同期破綻を招く可能性があった。
+    # 「先頭ファイル基準」で揃えない: 順序によっては低分解能側に
+    # 寄せようとして A/V 同期破綻を招く可能性がある。
     local -a tb_list=()
     local target_timescale=0
     local tb scale i
@@ -430,7 +430,7 @@ EOF
 
     # 音声 time_base 不一致もエラー。mp4 の音声トラックは timescale = sample_rate が通例なので
     # 1/<sample_rate> を基準にし、外れている側 (MPEG-TS の 1/90000 等) を remux で正規化する案内を出す。
-    # 再エンコードは不要 (`-c copy` の remux で 1/90000 → 1/44100 になることを実測。issue 143)。
+    # 再エンコードは不要 (`-c copy` の remux で 1/90000 → 1/44100 になることを実測)。
     # ffprobe が失敗したファイルがあれば「判定不能」として拒否する (空を一致と読んで素通りしない)。
     if (( has_input_audio )); then
       local -a atb_list=()
@@ -615,7 +615,7 @@ EOF
       (( verbose_mode )) && print -r -- ">> フレーム順序検証完了 (${$(( SECONDS - start_time ))}秒)"
 
       # 13. 境界デコード検証。属性が揃っていても extradata (SPS/PPS/hvcC) が違うと後半が
-      # デコードエラーになる (issue 143)。入力側の属性では判定できないので出力を読んで確かめる。
+      # デコードエラーになる。入力側の属性では判定できないので出力を読んで確かめる。
       (( verbose_mode )) && print -r -- ">> 境界デコード検証中..."
       start_time=$SECONDS
       if ! __concat_verify_decode "$output_path" "${sorted_files[@]}"; then

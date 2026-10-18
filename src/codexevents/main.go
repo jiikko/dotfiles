@@ -5,8 +5,7 @@
 //	codex-events help
 //
 // inspect は meta.json を書き、log に応答の本文 (と、終わっていないならその旨) を追記する。rc は完了なら 0、そうでなければ 1。
-// 呼び出し元は bin/codex-fanout (-J)。Python 版 (bin/lib/codex-events.py) を置き換えた (issue 670)。Python 版と意図的に変えた点は
-// issue 670 の「Python 版と変えたこと」。
+// 呼び出し元は bin/codex-fanout (-J)。Python 版 (bin/lib/codex-events.py) を置き換えた。Python 版と意図的に変えた点はテスト名に残してある。
 package main
 
 import (

@@ -11,7 +11,7 @@ import (
 )
 
 // wrapAtoms は幅の数え方が食い違いやすい部品 (キーキャップ・VS16・肌色・ZWJ・国旗・結合文字・全角・SGR・空白)。
-// キーキャップは x/ansi の Hardwrap / Wrap が幅を超える行を返した形 (issue 590)。
+// キーキャップは x/ansi の Hardwrap / Wrap が幅を超える行を返した形。
 var wrapAtoms = []string{"a", "Z", " ", "-", "あ", "漢", "1\ufe0f\u20e3", "#\ufe0f\u20e3", "a\ufe0f", "e\u0301",
 	"👍\U0001f3fd", "👨\u200d💻", "🇯🇵", "─", "\x1b[31m", "\x1b[0m", "\x1b[1;4m",
 	"\x1b[39m", "\x1b[0;31m", "\x1b]x", "\x1b]8;;http://u\x1b\\", "\x1bPq", "\x1b(B", "\x1b[>4;1m", "\x07", "\r", "\u200b"}
@@ -99,7 +99,7 @@ func TestWrapContract(t *testing.T) {
 }
 
 // 先頭が幅 0 の字 (制御文字・CR・ZWSP・素の ESC) でも止まる。Cut + DropColumns で組んでいた版は幅 0 の字の前で
-// 進まなくなった (敵対的レビュー P1)。🚨 時間は合否に使わない: 10 秒は止まらないときにスイートを止めないための安全網。
+// 進まなくなった。🚨 時間は合否に使わない: 10 秒は止まらないときにスイートを止めないための安全網。
 func TestWrapTerminatesOnZeroWidthHeads(t *testing.T) {
 	inputs := []string{"\x00あ", "\x01あ", "\rあ", "\r\rあ", "\u200bあ", "\x1bあ", "\x1b\u26a0\ufe0fあ  ", "\x7fあ", "\x1b[あ"}
 	done := make(chan struct{})
@@ -120,8 +120,8 @@ func TestWrapTerminatesOnZeroWidthHeads(t *testing.T) {
 	}
 }
 
-// 色の解除 (ESC[39m 等) を繰り返す入力でも出力は入力に比例する (行ごとに SGR を張り直していた版は、部分的な解除で
-// 張り直しが積み上がり 100 KB が 68 MB に膨らんだ。敵対的レビュー 2 周目)。幅 0 の字は 1 つの行にだけ入る。
+// 色の解除 (ESC[39m 等) を繰り返す入力でも出力は入力に比例する (行ごとに SGR を張り直す実装は、部分的な解除で
+// 張り直しが積み上がり 100 KB が 68 MB に膨らんだ)。幅 0 の字は 1 つの行にだけ入る。
 func TestWrapOutputStaysProportional(t *testing.T) {
 	in := strings.Repeat("\x1b[38;5;1mab\x1b[39m ", 2000)
 	if got := len(strings.Join(Wrap(in, 10, false), "")); got != len(in) {

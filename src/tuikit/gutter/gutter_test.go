@@ -30,7 +30,7 @@ func TestFormat(t *testing.T) {
 }
 
 // Number は番号の部分 (区切りを除いた桁・右寄せ。番号 0 は空白) を返す。Format は Number + Separator と定義しているので
-// 両者の一致を見ても何も検査しない (敵対レビュー) — 値はリテラルで固定する。
+// 両者の一致を見ても何も検査しない — 値はリテラルで固定する。
 func TestNumber(t *testing.T) {
 	for _, c := range []struct {
 		src, width int

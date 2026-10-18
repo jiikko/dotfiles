@@ -670,8 +670,8 @@ func TestPrintableLineKeepsBlankLinesVisible(t *testing.T) {
 	}
 }
 
-// 同じ確認は、遷移中の板でも通常時の Dialog でも同じ案内で出る (狭い幅では両方とも短い形。issue 761: 遷移中だけ
-// 長い案内を板の幅で切った形のままだった)。一番短い形も入らない幅では、どちらも同じ形を板が切る。
+// 同じ確認は、遷移中の板でも通常時の Dialog でも同じ案内で出る (狭い幅では両方とも短い形)。遷移中だけ
+// 長い案内を板の幅で切った形にしない。一番短い形も入らない幅では、どちらも同じ形を板が切る。
 func TestConfirmHintIsSameDuringTransition(t *testing.T) {
 	hintLine := func(lines []string) string {
 		for _, l := range lines {

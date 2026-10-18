@@ -109,7 +109,7 @@ __av1ify_on_interrupt() {
 source "${0:A:h}/_video_health.zsh"
 # validate-mp4 (全フレームデコード検証)。av1ify の postcheck は ffprobe の
 # メタデータ中心で「出力が全フレーム本当に再生できるか」を見ないため、
-# 仕上げに __validate_mp4_check を in-process で直呼びする (issue 005 Phase B)。
+# 仕上げに __validate_mp4_check を in-process で直呼びする。
 # 先例: _av1ify_encode.zsh の __video_health_check 直呼び。
 # shellcheck disable=SC1091
 source "${0:A:h}/_validate_mp4.zsh"
@@ -372,7 +372,7 @@ __av1ify_absolute_path_words() {
 # 🚨 (z) は zsh の字句解析だけを行い、コマンド置換・チルダ展開はしない
 #    (実測 2026-08-23: `$(touch x)` を含む行を通してもファイルは作られない)。
 #    クリップボードは貼り付けミス由来の信頼できない文字列なので、ここを eval や
-#    print -P に書き換えないこと (issue 089 と同じ穴になる)。
+#    print -P に書き換えないこと (同じ穴になる)。
 #
 # 直さないと決めた取りこぼし (「分割しない」側に倒れるだけで、誤って処理する方向には
 # 倒れないため許容する):
@@ -441,11 +441,11 @@ __av1ify_split_space_separated_paths() {
 #    複数取るには NSPasteboard の readObjectsForClasses が要るので JXA + ObjC bridge を使う。
 #    バイナリを持たずに済み、実測 0.1 秒 (osascript の起動込み)。
 # 🚨 スクリプトは固定文字列で、クリップボードの中身を一切渡さない。渡す形に書き換えると
-#    「貼り付け内容が実行される」穴になる (issue 089 と同根)。
+#    「貼り付け内容が実行される」穴になる (同根)。
 #
 # osascript は PATH 経由で呼ぶ (テストが実クリップボードを読まずに済むよう差し替えるため)。
 #
-# 直さないと決めたもの (2026-09-04 の敵対的レビュー。どちらも「取りこぼす」側に倒れる):
+# 直さないと決めたもの (どちらも「取りこぼす」側に倒れる):
 #   - 改行を含むファイル名は out.join("\n") と read の改行分割で割れ、存在しないパスとして
 #     ✗ に落ちる。NUL 区切りにすれば直るが zsh の変数は NUL を保持できない
 #   - ペーストボードの所有アプリがハングしていると osascript もハングし、テキスト経路への
@@ -543,7 +543,7 @@ __av1ify_targets_from_clipboard() {
   # 件数が合わないときに「コピー方法を変える」判断ができる形にする。
   print -ru2 -- "${_C_CYAN}>> 引数がないためクリップボードの${source_label}から読み取りました (${#lines[@]} ${source_unit})${_C_OFF}"
   # 🚨 パスの表示に print -P を使わないこと。prompt 展開はファイル名に含まれる $(...) を
-  # 実行する (issue 089)。クリップボードは貼り付けミス由来の信頼できない文字列なので、
+  # 実行する。クリップボードは貼り付けミス由来の信頼できない文字列なので、
   # ここは常に print -r -- で出す。
   local -i split_lines=0
   for line in "${lines[@]}"; do
@@ -555,7 +555,7 @@ __av1ify_targets_from_clipboard() {
       # そのまま対象にする。案内していた「位置引数で渡す形」には一覧も [y/N] も無いので
       # (av1ify() の `(( $# > 1 ))` 分岐)、ここで確認付きに受け止める方が安全。
       #
-      # 受容したリスク (2026-09-04 の敵対的レビュー P1): 実在しない 1 個のファイル名の中に、
+      # 受容したリスク: 実在しない 1 個のファイル名の中に、
       # 実在する別パスが 2 件以上「空白区切りで含まれている」と、その別ファイルが対象になる
       # (`/w/a.avi /w/b.avi memo.avi` で a/b が対象)。案内していた頃は同じ入力に対して
       # 確認なしの位置引数コマンドを勧めていたので、確認付きの現状の方が厳しい。
@@ -634,8 +634,8 @@ __av1ify_run_batch_impl() {
   local n=${#targets[@]} i next exit_status
   # 直前 av1ify 呼び出しから持ち越した stale PID をクリア (PID 再利用での誤 kill を避ける)。
   # 🚨 ここで kill しないのは意図的。下の always ブロックが**全出口で**看取るので、
-  #    正常な経路では持ち越しが構造的に発生しない (issue 306 以前は always が無く、
-  #    「クリアするが二度と殺せない」プロセスが正常終了のたびに生まれていた)。
+  #    正常な経路では持ち越しが構造的に発生しない (always が無いと、
+  #    「クリアするが二度と殺せない」プロセスが正常終了のたびに生まれる)。
   #    ここで kill する形にすると、__av1ify_kill_prefetches は生存確認を持たないため
   #    PID 再利用で無関係なプロセスを殺しうる。
   __AV1IFY_PREFETCH_PIDS=()
@@ -688,7 +688,7 @@ __av1ify_run_batch_impl() {
 }
 
 # __av1ify_run_batch は実体 (__av1ify_run_batch_impl) を呼び、**全出口で** prefetch を看取る
-# 薄いラッパー (issue 306)。実体は正常終了 / NG / 中断のどの return からも抜けるので、
+# 薄いラッパー。実体は正常終了 / NG / 中断のどの return からも抜けるので、
 # 看取りを実体の中に書くと必ずどれかを取りこぼす。
 #
 # 🚨 zsh の always ブロックは使えない。このファイルは「sh 互換なので shellcheck 側」に

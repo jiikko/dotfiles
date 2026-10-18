@@ -316,7 +316,7 @@ func kindTag(kind string, colored bool) string {
 // 🚨 v は `claude --version` / `codex --version` の出力から切り出した**外部由来の文字列**。
 // 空白は落ちているが空白を含まない CSI/OSC は残るので、載せる前に無害化する。同じ値を
 // 描く他の 2 箇所 (usage_overlay.go / ratelimit_dashboard.go) は無害化しており、ここだけが
-// 生だった (セルフレビュー指摘 2026-09-01)。termwidth.Of は ANSI を 0 幅で数えるため、
+// 生だと困る。termwidth.Of は ANSI を 0 幅で数えるため、
 // 幅の検査でも黙って通ってしまう。
 func versionTag(v string, colored bool) string {
 	v = termsafe.PlainLine(v)
@@ -431,7 +431,7 @@ func paceDeviation(c dialCard, elapsed float64, word, col string, tight, colored
 	}
 	// 🚨 乖離は**整数 pt** で出す。判定に使う経過率を切り捨てた整数にしたので、小数を出しても
 	// 常に .0 になるうえ、statusline は %+4dpt で出しており「同じ意味の数字が 2 か所で違う桁数」
-	// になる (issue 144 の「statusline と同じ見え方か」の確認項目がこれを見ていた)。
+	// になる。
 	expFmt, devFmt := "想定%3.0f%%", "%+4dpt %s"
 	if tight {
 		expFmt, devFmt = "想定%.0f%%", "%+dpt %s"
@@ -551,7 +551,7 @@ func renderCard(c dialCard, now time.Time, w, h int, headless, colored bool) []s
 }
 
 // cardFrame はカードの見出しと下の段を返す (本体はその残りの高さに描く。renderCard)。場所取りのカードと
-// 届いた後のカードで、この 2 つの行数が揃うことがレイアウトを動かさない条件 (issue 626)。
+// 届いた後のカードで、この 2 つの行数が揃うことがレイアウトを動かさない条件。
 func cardFrame(c dialCard, now time.Time, w, h int, headless, colored bool) (head, foot []string) {
 	remain, elapsed, col, word := cardPace(c, now)
 

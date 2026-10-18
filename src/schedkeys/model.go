@@ -40,8 +40,8 @@ type model struct {
 	res     result
 	quit    bool
 	// nowFn は「今」を返す。起動時に凍結した now で確定すると、popup に留まった時間だけ
-	// 予約が前倒しになる (60 秒迷えば 5 分後が 4 分後に、放置すれば過去になって即送信される。
-	// 敵対的レビュー 2026-08-28)。表示は起動時の now、確定は押した瞬間の now を使う
+	// 予約が前倒しになる (60 秒迷えば 5 分後が 4 分後に、放置すれば過去になって即送信される)。
+	// 表示は起動時の now、確定は押した瞬間の now を使う
 	nowFn func() time.Time
 	// togglePrefix は tmux の prefix キー (例 "ctrl+t")。popup が開いている間 prefix は tmux の
 	// キーテーブルへ届かず、そのままこの UI に入ってくる (隔離サーバで実測 2026-08-28)。
@@ -88,14 +88,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case tea.PasteMsg:
 		// 🚨 ペーストは KeyPressMsg では来ない (ブラケットペーストは既定で有効)。捨てると
-		//    「あとで送るコマンドを貼る」がまったく効かない (敵対的レビュー 2026-08-28)
+		//    「あとで送るコマンドを貼る」がまったく効かない
 		if m.screen == screenForm && !m.toast.shown {
 			m.form.paste(msg.Content)
 		}
 		return m, nil
 	case tickMsg:
 		// 表示用の時計。止めると「N 時に送る」が開いた時刻のままになり、時刻指定では画面と
-		// 実際の予約が丸 1 日ずれて見える (敵対的レビュー 2026-08-28)
+		// 実際の予約が丸 1 日ずれて見える
 		m.now = m.submitNow()
 		if m.quit {
 			return m, nil
@@ -128,7 +128,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 				return tea.Quit
 			}
 			// 🚨 prefix に続く別のキーは「prefix 自身」も含めて処理し直す。飲み込むと、prefix が
-			//    C-b の環境で入力欄の C-b (左移動) が効かなくなる (敵対的レビュー 2026-08-28)
+			//    C-b の環境で入力欄の C-b (左移動) が効かなくなる
 			m.dispatch(m.togglePrefix, "")
 		} else if key == m.togglePrefix {
 			m.prefixArmed = true
@@ -163,7 +163,7 @@ func (m *model) keyMenu(key string) tea.Cmd {
 		m.quit = true
 		return tea.Quit
 	// 移動キーは listnav.MotionOf に寄せない: メニューは tab / shift+tab でも動いて末尾で先頭へ巡回するが、MotionOf の
-	// 語彙は一覧の移動 (端で止まる・g/G/半ページ) で意味が違う。寄せるなら画面ごとの意味を揃える判断が先 (issue 757)
+	// 語彙は一覧の移動 (端で止まる・g/G/半ページ) で意味が違う。寄せるなら画面ごとの意味を揃える判断が先
 	case "j", "down", "tab", "ctrl+n":
 		m.menuIdx = listnav.Cycle(m.menuIdx, 1, len(items))
 	case "k", "up", "shift+tab", "ctrl+p":
@@ -177,9 +177,9 @@ func (m *model) keyMenu(key string) tea.Cmd {
 }
 
 // menuItem はメニューの 1 項目。ラベル・遷移先・選べるかを 1 箇所に持つ。
-// 🚨 以前はこの 3 つが keyMenu (index 0/1 の分岐) / menuItems (ラベル) / viewMenu (灰色表示) に
+// 🚨 この 3 つを keyMenu (index 0/1 の分岐) / menuItems (ラベル) / viewMenu (灰色表示) に
 //
-//	散っていて、項目を足すと 3 箇所を直す必要があった (直し漏れると「灰色なのに入れる」等になる)。
+//	散らさない。散らすと項目を足すときに 3 箇所を直す必要がある (直し漏れると「灰色なのに入れる」等になる)。
 type menuItem struct {
 	label   string
 	target  screen

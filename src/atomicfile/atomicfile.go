@@ -19,7 +19,7 @@ func IsTemp(name string) bool { return strings.Contains(filepath.Base(name), tmp
 // Write は temp + rename で path を置き換える (最終的な mode は perm)。write / Close / rename のどの分岐で失敗しても temp を掃除する。
 //
 // temp の名前は `<元のファイル名>.tmp.<乱数>` で、**この中で導出する**。
-// 🚨 **pattern を引数にしない** (issue 219 の敵対レビューで実測): 引数にすると
+// 🚨 **pattern を引数にしない**: 引数にすると
 // 「production が作る名前」と「テストが glob する名前」が別々のリテラルになり、
 // 呼び出し側の 1 行を書き換えるだけで残骸テストが無言で vacuous になる
 // (rename 失敗で temp が実際に残る変異を当てても、スイート全体が緑のまま通った)。
@@ -32,9 +32,9 @@ func IsTemp(name string) bool { return strings.Contains(filepath.Base(name), tmp
 // この repo から出た)。
 //
 // 🚨 **閉じるのは error-return 経路だけ**。CreateTemp と Remove の間で SIGKILL / panic した
-// 残骸はこの実装でも残る (issue 219)。
+// 残骸はこの実装でも残る。
 // ⚠️ **Close 分岐の掃除は変異検証の射程外**: RLIMIT_FSIZE では Close 失敗を作れないため、
-// この分岐の os.Remove を外してもどのテストも赤くならない (issue 219 で実測)。
+// この分岐の os.Remove を外してもどのテストも赤くならない。
 func Write(path string, data []byte, perm os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+tmpInfix+"*")
 	if err != nil {

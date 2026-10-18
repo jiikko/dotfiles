@@ -12,7 +12,7 @@ const (
 	Stopping    State = "stopping"
 	Exiting     State = "exiting"
 	// Crashed は子が rc≠0 (シグナルを含む) で自分から終わった後、R / restart か Q を待つ状態。
-	// rc 0 の終了は人の Cmd+Q 等なので待たずに runner も終える (issue 586 の R7)
+	// rc 0 の終了は人の Cmd+Q 等なので待たずに runner も終える
 	Crashed State = "crashed"
 )
 
@@ -208,7 +208,7 @@ func Update(m Model, e Event) (Model, []Effect) {
 		m.Transition.Busy = false
 		m.Transition.Result = TransitionBuildFailed
 		if e.NoUI {
-			// runner 自身の判断で終えるので、外から強制終了されたとき (以前は待っていたので CI の時間切れ等) と同じく、
+			// runner 自身の判断で終えるので、外から強制終了されたとき (CI の時間切れ等) と同じく、
 			// 失敗したビルドが残したプロセスも強制停止で片付ける
 			m.State = Exiting
 			m.Confirm = ConfirmNone

@@ -47,7 +47,7 @@ func TestAnsiTruncateMatchesAnsi(t *testing.T) {
 		}
 	}
 	// 深さ 4 は約 19 万列で -race だと 70 秒 (CI では 2 分強)。-race の run は深さ 3 (変異 6 本は深さ 2 でも全部 red)、深さ 4 は
-	// Makefile の test が -race なしで回す (issue 701 の 1)
+	// Makefile の test が -race なしで回す
 	depth := 4
 	if raceEnabled {
 		depth = 3

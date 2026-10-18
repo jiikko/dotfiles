@@ -13,14 +13,14 @@
 # issues/epic/<name>/next/ = 未決着、issues/done/ と issues/epic/<name>/done/ = 決着済み (対象外)。
 # group 内の pending/ は global の pending/ と同じ扱い ([保留]・件数に数えない) で走査する
 # (issue-sync の open 集合と揃える) — 2026-09-06 に group 内の done/ pending/ が予約された
-# 状態になった (spec 3 節 / issue 291) が、走査すべき集合はそれ以前と変わらない。
+# 状態になった (spec 3 節) が、走査すべき集合はそれ以前と変わらない。
 # 本文のチェックボックスは見ない (書き換え忘れで嘘が残るため)。
 # 🚨 経過日数はファイル名末尾の `-YYYY-MM-DD` か本文の `起票日:` から取る。どちらも読めない
 # ものは黙って捨てず「日付不明」として列挙する (取りこぼしを「新しい retro」と区別できないと
 # 検査が静かに空回りする)。
 #
 # 入力: SessionStart の hook JSON (stdin)。出力: 未決着が 1 件以上のときだけ emit。
-# `--counts`: 帯の mod (_claude/mods/issue-band。issue 621) 向けの機械の出口。数え方は同じで、`retro= held= odd=` を
+# `--counts`: 帯の mod (_claude/mods/issue-band) 向けの機械の出口。数え方は同じで、`retro= held= odd=` を
 #   1 行ずつ、0 件でも必ず出す (issue dir の無い repo では何も出さない)。数えられないときは `error=<理由>`
 
 set -u
@@ -71,7 +71,7 @@ dated="" ; odd="" ; count=0 ; held_count=0
 
 # 予約された固定 2 段だけを明示する。glob が未展開でも [ -e ] で飛ばす (epic が無い
 # repo で zsh/bash の設定差や set -u に巻き込まれて落ちないようにする)。
-# 🚨 issue dir は複数ありうる (issue 276)。root 直下だけでなく `<root>/*/issues` も回す。
+# 🚨 issue dir は複数ありうる。root 直下だけでなく `<root>/*/issues` も回す。
 nl=$'\n' # $'\n' は二重引用符の外でないと展開されない
 retro_files=""
 while IFS= read -r idir; do
@@ -99,7 +99,7 @@ while IFS= read -r f; do
   # 「保留は未完了件数に数えない」と同じ規律に揃える (同じ「N 件」が別の意味になるのを防ぐ)
   held=""
   case "$f" in
-    # 🚨 `$dir` を patterns に埋めない (issue 276。複数 dir では取りこぼす)
+    # 🚨 `$dir` を patterns に埋めない (複数 dir では取りこぼす)
     */pending/*) held=" [保留]" ; held_count=$((held_count + 1)) ;;
   esac
   [ -n "$held" ] || count=$((count + 1))
