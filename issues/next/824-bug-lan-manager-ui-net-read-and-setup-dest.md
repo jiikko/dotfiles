@@ -1,0 +1,1 @@
+../824-bug-lan-manager-ui-net-read-and-setup-dest.md
