@@ -37,7 +37,7 @@ make_fixture() {
   : > "$d/_claude/rules/x.md"
   : > "$d/docs/y.md"
   : > "$d/issues/done/311-b.md"
-  # 冒頭の担当者バナーは done へ送ると外れる (issue 763)。フェンスの中と `## ` より後のバナーの書式は残る
+  # 冒頭の担当者バナーは done へ送ると外れる。フェンスの中と `## ` より後のバナーの書式は残る
   cat > "$d/issues/347-refactor-a.md" <<'EOF'
 # a
 
@@ -63,13 +63,13 @@ EOF
   cat > "$d/issues/epic/900/901-feat-e.md" <<'EOF'
 - [rule](../../../_claude/rules/x.md)
 EOF
-  # issues/ の外からの参照 (P1-2: ここを走査しないと黙って切れる)
+  # issues/ の外からの参照 (ここを走査しないと黙って切れる)
   mkdir -p "$d/docs"
   cat > "$d/docs/g.md" <<'EOF'
 外から: [x](../issues/347-refactor-a.md)
 EOF
   # 🚨 repo root 直下からの参照。relbase が BASE_DIR 自身で絶対パスを返していたため、
-  # ここだけ張り直されないのに「stale 0 件」で緑になっていた (2 周目の敵対レビュー P1-1)
+  # ここだけ張り直されないのに「stale 0 件」で緑になっていた
   cat > "$d/README.md" <<'EOF'
 root から: [x](issues/347-refactor-a.md)
 EOF
@@ -81,7 +81,7 @@ EOF
 }
 
 # claim symlink を **追跡外**にした fixture (glogx の `n` が作る通常の状態)。
-# git rm を無条件に打つと rc=128 で落ち、set -e で移動済みのまま死ぬ (P1-1)
+# git rm を無条件に打つと rc=128 で落ち、set -e で移動済みのまま死ぬ
 make_fixture_untracked_claim() {
   local d="$1"
   make_fixture "$d"
@@ -128,7 +128,7 @@ grep -qF '](347-refactor-a.md)' "$d/issues/done/310-d.md" || fail "④ done/ か
 grep -qF '](../../../../_claude/rules/x.md)' "$d/issues/epic/900/done/901-feat-e.md" || fail "③ group の深さ (4 段) が違う"
 grep -qF '](../issues/done/347-refactor-a.md)' "$d/docs/g.md" || fail "④ issues/ の外 (docs/) からの参照が張り直されていない"
 grep -qF '](issues/done/347-refactor-a.md)' "$d/README.md" || fail "④ repo root 直下 (README.md) からの参照が張り直されていない"
-# 冒頭のバナーは外れ、直後の空行 1 つも消える。フェンスの中と `## ` より後は残る (issue 763)
+# 冒頭のバナーは外れ、直後の空行 1 つも消える。フェンスの中と `## ` より後は残る
 banner_check() { # $1=done へ送った 347 の本文
   ! grep -qF '**担当中: t**' "$1" || return 1
   [ "$(sed -n 1,3p "$1")" = "$(printf '# a\n\n- 上向き: [rule](../../_claude/rules/x.md)')" ] || return 1
@@ -148,14 +148,14 @@ d2="$work/missing"; mkdir -p "$d2"; make_fixture "$d2"
 if ISSUES_DIR="$d2/issues" "$SCRIPT" 999 >/dev/null 2>&1; then fail "実体の無い番号を受け付けた"; fi
 if ISSUES_DIR="$d2/issues" "$SCRIPT" 12 >/dev/null 2>&1; then fail "3 桁でない番号を受け付けた"; fi
 
-# 2.5 追跡外の claim symlink でも通る (glogx の `n` が作る通常の状態。P1-1)
+# 2.5 追跡外の claim symlink でも通る (glogx の `n` が作る通常の状態)
 d25="$work/untracked"; mkdir -p "$d25"; make_fixture_untracked_claim "$d25"
 ISSUES_DIR="$d25/issues" "$SCRIPT" 347 > "$work/untracked.log" 2>&1 ||
   { cat "$work/untracked.log" >&2; fail "追跡外の claim symlink で落ちた (git rm を無条件に打っている)"; }
 [ -f "$d25/issues/done/347-refactor-a.md" ] || fail "追跡外 claim: 移動できていない"
 [ ! -e "$d25/issues/next/347-refactor-a.md" ] || fail "追跡外 claim: symlink が残っている"
 
-# 2.6 epic は固定 2 段。予約外の深い置き場は着手しない (P2-3)
+# 2.6 epic は固定 2 段。予約外の深い置き場は着手しない
 d26="$work/deepepic"; mkdir -p "$d26/issues/epic/900/blocked"
 printf '# a\n' > "$d26/issues/epic/900/blocked/347-a.md"
 git -C "$d26" init -q; git -C "$d26" add -A
@@ -170,9 +170,9 @@ d27="$work/help"; mkdir -p "$d27"; make_fixture "$d27"
 ISSUES_DIR="$d27/issues" "$SCRIPT" 347 --help >/dev/null 2>&1 || fail "--help が rc≠0"
 [ -f "$d27/issues/347-refactor-a.md" ] || fail "--help なのに移動した"
 
-# 2.8 バナーを外すと本文のほかの部分も変わる (改行で終わらない最後の行に awk が改行を足す) なら、中止して元へ戻す (issue 763)
+# 2.8 バナーを外すと本文のほかの部分も変わる (改行で終わらない最後の行に awk が改行を足す) なら、中止して元へ戻す
 d28="$work/noeol"; mkdir -p "$d28"; make_fixture "$d28"
-# 本文にリンクを置かない: リンクを書き換える手順 3 の前段 (rebase_file) は、書き換えたときに改行を足す (変更前からの挙動。issue 763 に記録)
+# 本文にリンクを置かない: リンクを書き換える手順 3 の前段 (rebase_file) は、書き換えたときに改行を足す (変更前からの挙動)
 printf '# a\n\n> 🚨 **担当中: t**（2026-10-15〜）\n\n- 本文' > "$d28/issues/347-refactor-a.md"
 git -C "$d28" -c user.email=t@t -c user.name=t commit -qam noeol
 before28="$(shasum -a 256 < "$d28/issues/347-refactor-a.md")"
@@ -183,7 +183,7 @@ grep -q '本文のほかの部分も変わる' "$work/noeol.log" || { cat "$work
 [ "$before28" = "$(shasum -a 256 < "$d28/issues/347-refactor-a.md" 2>/dev/null)" ] || fail "改行で終わらない本文: 中止したのに元へ戻っていない"
 [ -L "$d28/issues/next/347-refactor-a.md" ] || fail "改行で終わらない本文: 中止したのに claim を消した"
 
-# 2.9 本文に不正なバイトがあっても、UTF-8 のロケールで送れる (awk が止まると張り直しが黙って抜け、別の理由で落ちる。issue 763)
+# 2.9 本文に不正なバイトがあっても、UTF-8 のロケールで送れる (awk が止まると張り直しが黙って抜け、別の理由で落ちる)
 d29="$work/badbytes"; mkdir -p "$d29"; make_fixture "$d29"
 printf 'latin1: caf\xe9\n' >> "$d29/issues/347-refactor-a.md"
 git -C "$d29" -c user.email=t@t -c user.name=t commit -qam badbytes
@@ -251,21 +251,21 @@ check_mutant no-rebase-self 's|^\( *\)rebase_file "$dest" .*|\1:|' \
 check_mutant no-rebase-inbound 's|if rebase_file "$other" .*; then|if false; then|' \
   'リンクが解決しない'
 # ④ の走査を issues/ に狭める → issues/ の外 (docs/) の参照が切れるが、2 本のリンク検査は
-#    そこを見ないので **事後条件だけが**これを捕まえる (P1-2 のオラクル)
+#    そこを見ないので **事後条件だけが**これを捕まえる
 check_mutant narrow-scan \
   "s|done < <(scan_candidates \"\$base\")|done < <(find \"\$ISSUES_DIR\" -type f -name '*.md' -print \| sort)|" \
   '移動前のパスを指したままの参照'
-# 判定より前で異常終了する → trap が rollback を回す (P1-1 / P1-3 の共通形)
+# 判定より前で異常終了する → trap が rollback を回す
 check_mutant abort-before-verdict 's|^  verdict=0$|  exit 3|' \
   '判定の前に中断された'
 # 母集合の走査を空にする → **触る前に** canary が落とす。
 # 🚨 これが無いと、手順 4 も事後条件も「何もせず 0 件 = 緑」になる。オラクル側の awk にだけ
-# canary があり、母集合の破損は誰も見ていなかった (2 周目の敵対レビュー P1-2)
+# canary があり、母集合の破損は誰も見ていなかった
 check_mutant empty-scan 's|^  grep -rlF --binary-files=without-match .*|  return 0|' \
   '母集合の走査が壊れている'
 
 # ③ のバナー除去を外す → done/ にバナーが残る。issue_done.sh 自身の判定 (リンク検査) は見ないので緑のまま終わり、
-#    捕まえるのは上の banner_check とバナー検査 (目印の無いバナー) の 2 つ (issue 763)
+#    捕まえるのは上の banner_check とバナー検査 (目印の無いバナー) の 2 つ
 db="$work/mut-banner"; mkdir -p "$db"; make_fixture "$db"
 fake_b="$(make_fake_root root-banner 's|^  awk -v mode=strip -f "$BANNER_AWK" "$dest" .*|  banner_rc=1|')"
 diff -q "$SCRIPT" "$fake_b/scripts/issue_done.sh" >/dev/null && fail "変異 [no-banner-strip] が当たっていない"

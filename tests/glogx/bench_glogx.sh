@@ -7,7 +7,7 @@
 # 行の項目名は常に ms= (tmux の server_rss_mb / nvim の startup_cpu_ms と同じ流儀。
 # checker と bench_stats を 1 書式のまま保つため)。_alloc_kb は B/op ÷ 1024。
 #
-# 確保も測る理由 (issue 051): フレームのコストの本体は確保で、時間だけ見ていると
+# 確保も測る理由: フレームのコストの本体は確保で、時間だけ見ていると
 # 「確保が 2 倍でも時間が予算内なら通る」。047/048 の実測では時間 −10〜34% に対し
 # 確保はバイトで −23〜53% 動いた (GC の回転数に直結する。047 で runtime.kevent の 42% が
 # gcStart 由来だった)。回数の退行は src/glogx/frame_alloc_test.go 側が -race 付きで見る。
@@ -22,7 +22,7 @@
 #   - issue_scan         : issue 一覧生成 (Scan + 全件 LoadMeta、合成 50 件。git fork は
 #                          含まない。ファイル I/O を含むため時間予算は他より粗め。2026-08-15)
 #   - issues_view_frame  : issues viewer の 1 フレーム (40 件)。status viewer と対になる
-#                          全画面ビューで、これまで唯一ゲート外だった (issue 062。2026-08-15)
+#                          全画面ビューで、これまで唯一ゲート外だった
 #   - issues_view_2000   : 同 2000 件 (「件数に比例して働いていないか」の status_view_2000 と
 #                          同型のゲート。導入時実測は 40 件比 +5% で比例していない)
 #   - glogx_calib        : runner 速度の較正器 (repo コード非依存の固定ワークロード。
@@ -60,7 +60,7 @@ cd "$GLOGX_DIR" || exit 1
 #   GLOGX_BENCH_INPUT : go test を走らせず、このファイルの内容を awk に流す (列ずれガードの検証用)
 #   GLOGX_BENCHTIME   : -benchtime の上書き (テストは 1x で配管だけ速く回す)。
 #                       🚨 -run '^$' を外して短い benchtime と併用すると、testing.Benchmark を
-#                       使う TestFrameAllocBudget が反復不足で Fatal する (issue 063 / 051 実測)
+#                       使う TestFrameAllocBudget が反復不足で Fatal する
 run_bench() {
   if [ -n "${GLOGX_BENCH_INPUT:-}" ]; then
     cat "$GLOGX_BENCH_INPUT"
@@ -112,9 +112,9 @@ run_bench |
     bench == "BenchmarkIssueScan"             { emit("issue_scan") }
     bench == "BenchmarkCalibrate"             { emit_time_only("glogx_calib") }
 
-    # 🚨 「件数を増やしたときの伸び率」を**同一 run 内の比**で出す (issue 269)。
+    # 🚨 「件数を増やしたときの伸び率」を**同一 run 内の比**で出す。
     # 絶対時間の予算は runner の速度差・混雑に晒されるので粗くせざるを得ず、実測の
-    # 16〜125 倍まで緩んでいて 2.7 倍の退行 (issue 268) を素通しした。比なら**同じ run の
+    # 16〜125 倍まで緩んでいて 2.7 倍の退行 を素通しした。比なら**同じ run の
     # 2 測定に同じ倍率が乗って打ち消える**ので、rel も較正も要らずに締められる。
     # tests/tmux/bench_tmux.sh の agent_panel_tick_scale_x100 が同じ形の前例。
     # 計測失敗 (どちらか欠測 / 0) は 99999 の番兵で loud に落とす (0 にすると予算内に見える)。

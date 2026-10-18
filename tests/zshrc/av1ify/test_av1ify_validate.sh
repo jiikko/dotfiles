@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 unset CDPATH
 # shellcheck shell=bash
-# av1ify ↔ validate-mp4 連携テスト (issue 005 Phase B/C)
+# av1ify ↔ validate-mp4 連携テスト
 #
 # 🚨 ここで守りたい不変条件は「**validate が NG を出したら元ファイルを消さない**」。
 # postcheck を通った出力に対する最後の砦なので、これが抜けると

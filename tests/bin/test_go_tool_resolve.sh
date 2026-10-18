@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bin/lib/go_tool.sh の go_tool_resolve (と、それを使う runtimeout_resolve / codex_events_resolve) が、bash と zsh の両方から
-# この checkout の Go の道具を解決できることを固定する (issue 670)。
+# この checkout の Go の道具を解決できることを固定する。
 #
 # なぜ zsh も見るか: zsh では path が PATH と結び付いた配列で、関数の中で local path と書くと PATH が空になる。
 # bash では同じコードが動くので、bash だけで確かめると見落とす (実際に 1 度書いて、zsh だけ「ビルドできない」で落ちた)。

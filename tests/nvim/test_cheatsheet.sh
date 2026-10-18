@@ -20,6 +20,6 @@ print "[test-cheatsheet] verifying desc mappings are shown and which-key trigger
 # headless nvim の実行と 3 つの検査 (異常終了 / FAIL・lua 例外 / 行頭の OK) は
 # tests/nvim/lib/check_log.sh に一元化してある。個別に grep を手書きしないこと —
 # 3 本へコピペしていた結果、うち 1 本が `grep -q "OK"` (アンカー無し) へ drift して
-# いた (issue 081)。
+# いた。
 source "$SCRIPT_DIR/lib/check_log.sh"
 tt_nvim_run_check "test-cheatsheet" "cheatsheet_check.lua"

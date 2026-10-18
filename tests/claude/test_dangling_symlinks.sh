@@ -3,16 +3,16 @@
 # $HOME 配下の「~/dotfiles を指す symlink」に dangling (リンク先消失) が無いことを検証する。
 #
 # なぜ: dotfiles 側でファイルを削除・rename すると、setup.sh を再実行するまで壊れたリンクが
-# 残り、Claude Code が skill/agent/hook を silent に見失う (issue 001 項目 11)。setup.sh には
+# 残り、Claude Code が skill/agent/hook を silent に見失う。setup.sh には
 # 掃除ロジックがあるが実行時のみ。このテストで「壊れたまま使い続けている」状態を make test が検出する。
 #
 # 対象は readlink が $HOME/dotfiles/ 配下を指すリンクだけ。ユーザーが手動で張った
 # 別由来のリンクは対象外 (setup.sh の掃除ロジックと同じ基準)。
 # dotfiles 未 symlink の環境 (CI 等) では対象リンクが 0 件になり素通しで pass する。
 #
-# 🚨 **深さを切らない**。以前は `~/.claude` を `-maxdepth 2` で掘っていたが、これは
+# 🚨 **深さを切らない**。`~/.claude` を `-maxdepth 2` で掘ると、これは
 # 「per-file リンクは agents/<f> や skills/<name> の深さ 2 まで」という**その時点の**
-# 置き場所を前提にしていた。setup.sh が `~/.config/nvim/init.lua` (深さ 3) にも張っている
+# 置き場所を前提にすることになる。setup.sh が `~/.config/nvim/init.lua` (深さ 3) にも張っている
 # ことは端から射程外で、実測 2026-09-05 に `~/.config/nvim/` へ dangling を置いても
 # **テストが pass した**。深さや置き場所の契約が変わったときに黙って対象外になる形なので、
 # 走査は深さを切らずに掘り、下の canary で射程そのものを固定する

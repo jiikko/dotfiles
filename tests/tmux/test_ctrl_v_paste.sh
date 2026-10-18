@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# _tmux.conf の C-v bind (issue 138) を隔離サーバで検証する。
+# _tmux.conf の C-v bind を隔離サーバで検証する。
 # 固定する不変条件:
 #   - root テーブルに C-v が 1 つだけ登録され、-N の説明が付いている (キーガイドに出る)
 #   - 判定式 #{==:#{pane_current_command},zsh} が zsh のペインでだけ真になる
 #     (= 実際の分岐先を決める値。nvim / less / cat が前面なら偽 = 既存の C-v が残る)
 #   - true 側のコマンド (scripts/tmux_paste_clipboard.sh) が実際にペインへ流し込み、
 #     貼ったバイト数を右下の toast (bin/tmux-toast) へ渡す
-#     (issue 248 の確認 1 を人が判定するための数字。宛先はそのペインのセッションへ固定する)
+#     (人が判定するための数字。宛先はそのペインのセッションへ固定する)
 #
 # 🚨 **キー押下そのものは自動テストで再現できない**。tmux send-keys は key table を通さず
 # ペインへ直接キーを送るので、root テーブルの bind は発火しない (2026-09-04 に実測: zsh には
@@ -34,13 +34,13 @@ TMP_DIR="$(mktemp -d)"
 BIN="$TMP_DIR/bin"
 mkdir -p "$BIN"
 
-# 🚨 socket ファイルも消す (issue 305 ①)。`kill-server` は socket を残すので、
+# 🚨 socket ファイルも消す。`kill-server` は socket を残すので、
 # このテストは走るたびに `/tmp/tmux-$uid/ctrlv-test-<pid>` を 1 個ずつ積んでいた
 # (実測 2026-09-10: 既定の socket dir に溜まった 535 個のうち最大勢力)。
 # shellcheck source=tests/tmux/lib/kill_socket.sh
 . "$ROOT_DIR/tests/tmux/lib/kill_socket.sh"
 cleanup() {
-  # 🚨 rc≠0 = **サーバが生き残った** (issue 377)。握り潰すと残骸が無言で積まれるので、
+  # 🚨 rc≠0 = **サーバが生き残った**。握り潰すと残骸が無言で積まれるので、
   # このテスト自身を失敗させる。🚨 **EXIT trap の中では `return` では終了コードが変わらない**
   # (実測: `cleanup(){ return 1; }` + `exit 0` は rc=0)。`exit` を呼ぶこと
   tt_tmux_kill_socket "$SOCK" || {
@@ -67,7 +67,7 @@ pane_cmd_is() {  # $1=対象 $2=期待するコマンド名
 file_nonempty() { [ -s "$1" ]; }
 pane_has() {  # $1=対象 $2=探す文字列
   # 🚨 `cmd | grep -q` にしないこと。pipefail 下では **一致していても非 0 になる**
-  # (grep -q が早期に閉じて cmd が SIGPIPE を受ける。issue 096。下の list-keys も同じ形)
+  # (grep -q が早期に閉じて cmd が SIGPIPE を受ける。下の list-keys も同じ形)
   grep -q "$2" <<< "$(tmux -L "$SOCK" capture-pane -p -t "$1" 2>/dev/null)"
 }
 
@@ -95,7 +95,7 @@ tmux -L "$SOCK" -f "$CONF" new-session -d -x 120 -y 30 "sh -c 'sleep 30'" 2>/dev
 keys="$(tmux -L "$SOCK" list-keys -T root 2>/dev/null | grep -c ' C-v ')"
 [ "$keys" = 1 ] && ok "root テーブルに C-v が 1 つ登録されている" || bad "C-v の登録数が 1 でない: $keys"
 # 🚨 `cmd | grep -q` は使わない。pipefail 下では **一致していても非 0 になる**
-# (grep -q が早期に閉じて cmd が SIGPIPE を受ける。issue 096)
+# (grep -q が早期に閉じて cmd が SIGPIPE を受ける)
 if grep -q 'C-v.*クリップボード' <<< "$(tmux -L "$SOCK" list-keys -N -T root 2>/dev/null)"; then
   ok "-N の説明が付いている (キーガイドに出る)"
 else

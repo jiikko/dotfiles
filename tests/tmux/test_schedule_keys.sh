@@ -40,12 +40,12 @@ export TMUX_SCHEDULE_KEYS_DIR="$TMP_DIR/state"
 export XDG_CACHE_HOME="$TMP_DIR/cache"
 # 🚨 TMPDIR を隔離する: スクリプトの mktemp は ${TMPDIR:-/tmp} 配下へ落ちるので、隔離しないと
 #    テストが実機の TMPDIR へ一時ファイルを撒く。実測 2026-09-06: 1 回の実行で 61 個、
-#    累計 14,147 個 (TMPDIR 全 18,297 エントリの 77%) が残っていた (issue 298)。
-#    残骸の掃除ではなく**発生源の遮断**が本筋 (issue 325)。
+#    累計 14,147 個 (TMPDIR 全 18,297 エントリの 77%) が残っていた。
+#    残骸の掃除ではなく**発生源の遮断**が本筋。
 export TMPDIR="$TMP_DIR/tmp"; mkdir -p "$TMPDIR"
 # 🚨 XDG_STATE_HOME を隔離する: 実行環境に設定があると STATE_ROOT がそちらへ向き、
 #    「socket ごとの dir」の検査が TMP_DIR の外を見て false red になる上、job を外へ書き残す
-#    (敵対的レビュー 2026-09-03 の P3-4 で実測)
+#    (実測)
 unset XDG_STATE_HOME
 
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/bin_nogum"
@@ -218,7 +218,7 @@ reset_state() {
 # shellcheck source=tests/lib/wait_until.sh
 . "$ROOT_DIR/tests/lib/wait_until.sh"
 # 🚨 何かが起きるのを秒数で待たない。条件を関数にして上限つきで待ち、時間切れは理由つきで落とす
-# (_claude/rules/avoid-wall-clock-assertions.md / issue 613)
+# (_claude/rules/avoid-wall-clock-assertions.md)
 wait_for() {  # $1=説明, 残りは条件コマンド
   local msg="$1"; shift
   TT_WAIT_TICKS=1200 TT_WAIT_TICK=0.05 tt_wait_until "$@" && return 0
@@ -364,7 +364,7 @@ printf '\n## fire: 予約したサーバでなければ送らない\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job j7 900 "make test"
 STUB_SRVPID=9999 run "$STUB_PATH" "$SCRIPT" fire j7   # 別サーバが立っている
-# 🚨 fire は冒頭で exec </dev/null >/dev/null 2>&1 する (issue 129) ので、stdout/stderr が空なのは
+# 🚨 fire は冒頭で exec </dev/null >/dev/null 2>&1 する ので、stdout/stderr が空なのは
 #    **構造的に真**であり、この行の主役は rc=0 の方 (view-mode を積む支配的な要因は rc≠0。111 の実測)。
 #    リダイレクトそのものは tests/tmux/test_runshell_silence.sh が「実処理より前にあるか」で守る
 [[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 無音 exit 0 でない (RC=%s)\n' "$RC"; exit 1; }
@@ -440,7 +440,7 @@ chmod +x "$TMP_DIR/bin_nodate_date"
 mkdir -p "$TMP_DIR/bin_nodate"; cp "$TMP_DIR/bin/tmux" "$TMP_DIR/bin/sleep" "$TMP_DIR/bin_nodate/" 2>/dev/null  # sleep-ok: stub: sleep の stub の配置
 cp "$TMP_DIR/bin_nodate_date" "$TMP_DIR/bin_nodate/date"
 run "$TMP_DIR/bin_nodate:/usr/bin:/bin" "$SCRIPT" fire nodate
-# 🚨 fire は冒頭で exec </dev/null >/dev/null 2>&1 する (issue 129) ので、stdout/stderr が空なのは
+# 🚨 fire は冒頭で exec </dev/null >/dev/null 2>&1 する ので、stdout/stderr が空なのは
 #    **構造的に真**であり、この行の主役は rc=0 の方 (view-mode を積む支配的な要因は rc≠0。111 の実測)。
 #    リダイレクトそのものは tests/tmux/test_runshell_silence.sh が「実処理より前にあるか」で守る
 [[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 時刻が取れないときに無音 exit 0 でない (RC=%s)\n' "$RC"; cat "$RUN_ERR"; exit 1; }
@@ -478,7 +478,7 @@ printf '\n## fire: 壊れた job (文字列行なし) は送らず掃く\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job j4 900 ""
 run "$STUB_PATH" "$SCRIPT" fire j4
-# 🚨 fire は冒頭で exec </dev/null >/dev/null 2>&1 する (issue 129) ので、stdout/stderr が空なのは
+# 🚨 fire は冒頭で exec </dev/null >/dev/null 2>&1 する ので、stdout/stderr が空なのは
 #    **構造的に真**であり、この行の主役は rc=0 の方 (view-mode を積む支配的な要因は rc≠0。111 の実測)。
 #    リダイレクトそのものは tests/tmux/test_runshell_silence.sh が「実処理より前にあるか」で守る
 [[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 壊れた job で無音 exit 0 でない (RC=%s)\n' "$RC"; exit 1; }
@@ -492,7 +492,7 @@ write_job j3 900 "make test"
 rm -f "$XDG_CACHE_HOME/tt-schedule-keys.log"   # 前ブロックの成功ログを持ち越さない
 STUB_PANE_GONE=1 run "$STUB_PATH" "$SCRIPT" fire j3
 [[ "$RC" -eq 0 ]] || { printf '✗ pane 消滅で exit %s (run-shell 経由なら view-mode が積まれる)\n' "$RC"; exit 1; }
-# 🚨 fire は冒頭で exec </dev/null >/dev/null 2>&1 する (issue 129) ので、stdout/stderr が空なのは
+# 🚨 fire は冒頭で exec </dev/null >/dev/null 2>&1 する ので、stdout/stderr が空なのは
 #    **構造的に真**であり、この行の主役は rc=0 の方 (view-mode を積む支配的な要因は rc≠0。111 の実測)。
 #    リダイレクトそのものは tests/tmux/test_runshell_silence.sh が「実処理より前にあるか」で守る
 [[ ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ pane 消滅で stdout/stderr に出力 (無音契約違反)\n'; cat "$RUN_OUT" "$RUN_ERR"; exit 1; }
@@ -729,7 +729,7 @@ write_job j-5 "$(( $(/bin/date +%s) + 3600 ))" "make test"
 printf '%s\n' "$long_pid" > "$TMUX_SCHEDULE_KEYS_DIR/j-5.pid"   # pid 再利用を模す
 ui_queue "cancel	j-5"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
 # 🚨 この待ちは消さない (起きないことの確認なので待つべき成立条件が無い)。シグナルの配送は非同期で、
-#    誤って j-55 を殺す実装でも直後の kill -0 は通る。0.3 秒は「誤った kill が届くだけの時間」(issue 613 の D)
+#    誤って j-55 を殺す実装でも直後の kill -0 は通る。0.3 秒は「誤った kill が届くだけの時間」
 /bin/sleep 0.3  # sleep-ok: negative: 起きないことの確認 (直前のコメント参照)
 kill -0 "$long_pid" 2>/dev/null || { printf '✗ j-5 の取消が別 id (j-55) の sleeper を殺した\n'; exit 1; }
 [[ -f "$TMUX_SCHEDULE_KEYS_DIR/j-55.job" ]] || { printf '✗ 別 id (j-55) の job まで消した\n'; exit 1; }
@@ -853,7 +853,6 @@ STUB_SRVPID=9999 run "$STUB_PATH" "$SCRIPT" fire dropped   # 予約時と別サ�
 assert_not_called "send-keys -t %5 -l" "別サーバなら送らない (前提の確認)"
 # 🚨 別サーバなら**表示にも触らない**。今この socket に居るのは別サーバで、そこの %5 は
 #    無関係な pane (pane id はサーバごとに振り直される)。unset すると他人の枠を消す
-#    (敵対的レビュー 2026-09-02 の P2)
 assert_not_called "set-option" "別サーバのときは表示を触らない (無関係な pane を消さない)"
 
 # 🚨 上のブロックは fire_drop の refresh を守っていない: 別サーバ判定は **claim の後**なので、
@@ -892,7 +891,7 @@ assert_called "tmux set-option -t main status 2" "予約があるセッション
 
 printf '\n## 2 行目: 予約が無くなったら 1 行へ戻す (自分が上げた分だけ)\n'
 # 🚨 戻すのは「自分が上げた印 (@schedkeys-rows) があるセッション」だけ。人が手で status 2 に
-#    しているセッションを勝手に 1 へ戻さない (セルフレビューの指摘)
+#    しているセッションを勝手に 1 へ戻さない
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper only2
 ui_queue "cancel	only2" "abort"; STUB_ROWS_OWNED=1 STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
@@ -960,8 +959,8 @@ assert_not_called "$(printf '@schedkeys-text a\tb')" "生のタブをオプシ�
 
 printf '\n## pane 表示: 別サーバの予約は同じ pane id でも数えない\n'
 # 🚨 $STATE_DIR は全サーバで共有 (-L の隔離サーバも同じディレクトリ)。pane id はサーバごとに
-#    振り直されるので、文字列一致だけで数えると別サーバの予約の時刻をこちらの枠に出す
-#    (敵対的レビュー 2026-09-02 の P1)。同一性は job の socket + サーバ pid で見る
+#    振り直されるので、文字列一致だけで数えると別サーバの予約の時刻をこちらの枠に出す。
+#    同一性は job の socket + サーバ pid で見る
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 sk_other=$(( $(/bin/date +%s) + 300 ))
 write_job other "$sk_other" "echo other" "/tmp/other-sock" "7777"   # 同じ %5 だが別サーバ
@@ -998,7 +997,7 @@ printf '✓ pane-border-format が @schedkeys-at を見る (fork なしの forma
 
 printf '\n## 置き場: 既定は tmux サーバ (socket) ごとに分かれる\n'
 # 🚨 全サーバで 1 つの dir を共有すると、pane id はサーバごとに振り直されるので一覧・取消・
-#    失効件数が別サーバの予約を混ぜる (issue 189。取消は別サーバの sleeper を実際に kill できた)。
+#    失効件数が別サーバの予約を混ぜる (取消は別サーバの sleeper を実際に kill できた)。
 #    以降のテストは TMUX_SCHEDULE_KEYS_DIR で dir を直接指定する形 (テスト用の上書き) なので、
 #    **既定の解決経路はここだけが見ている**
 sk_home="$TMP_DIR/home_sockdir"; mkdir -p "$sk_home"
@@ -1018,8 +1017,7 @@ assert_called "run-shell -b TMUX_SCHEDULE_KEYS_DIR='$sk_expect'" "fire には so
 
 printf '\n## 置き場: 別サーバの dir と旧共有 dir の予約は見えない\n'
 # 🚨 fixture は **退行したら見えるようになる場所**にも置く。別 socket の dir だけに置くと、
-#    共有 root を見る退行 (= 修正前の姿) では最初から不可視なので、このブロックは何も守らない
-#    (敵対的レビュー 2026-09-03 の P2-2 で、変異を当てても緑のまま通ることを実証された)。
+#    共有 root を見る退行 (= 修正前の姿) では最初から不可視なので、このブロックは何も守らない (変異を当てても緑のまま通ることを実証済み)。
 #    旧共有 dir (root 直下) は「移さない」と決めた置き場なので、そこに置くのが退行の観測点になる
 rm -f "$sk_expect"/*.job "$sk_expect"/*.pid
 other_dir="$sk_root/%tmp%tmux-501%othersock"; mkdir -p "$other_dir"
@@ -1049,8 +1047,8 @@ assert_called "display-message 予約入力を開けませんでした" "理由�
 
 printf '\n## 置き場: 同じ socket に立ち直ったサーバは前任の予約を失効させる\n'
 # 🚨 入れ物を分けても socket が同じなら dir は同じ。pane id は振り直されているので、前任の job は
-#    一覧に**今のサーバの pane 名で**並び、発火時に fire_claim が拒否するまで待たされる
-#    (敵対的レビュー 2026-09-03 の P2-3 で実験で再現)。kill はしない: job を消せば前任の
+#    一覧に**今のサーバの pane 名で**並び、発火時に fire_claim が拒否するまで待たされる (実験で再現済み)。
+#    kill はしない: job を消せば前任の
 #    sleeper は claim に失敗して静かに降りる
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper mine                                        # 今のサーバ (stub の pid=4242) の予約
@@ -1079,8 +1077,8 @@ STUB_SRVPID_FILE="$TMP_DIR/empty_srvpid" STUB_UI_RESULT="abort" run "$STUB_PATH"
 printf '✓ サーバ pid が取れなければ前任判定をしない\n'
 
 printf '\n## 置き場: 改行を含む置き場は扱わない (run-shell のコマンド文字列が割れる)\n'
-# 🚨 env 指定の経路は socket 由来の検査を通らないので、ここで同じ検査をかけている
-#    (敵対的レビュー 2026-09-03 の P3-2)。改行が入ると run-shell へ渡す 1 行が割れる
+# 🚨 env 指定の経路は socket 由来の検査を通らないので、ここで同じ検査をかけている。
+#    改行が入ると run-shell へ渡す 1 行が割れる
 reset_calls
 nl_dir="$TMP_DIR/nl
 dir"
@@ -1092,8 +1090,8 @@ assert_not_called "run-shell" "改行を含む置き場では sleeper を起こ�
 printf '✓ 改行を含む置き場は扱わない\n'
 
 printf '\n## 置き場: socket 名の潰し方で別 socket が衝突しない\n'
-# 🚨 `/` → `%` だけだと /tmp/a%b と /tmp/a/b が同じ dir 名になり、直したはずの混ざりが黙って戻る
-#    (敵対的レビュー 2026-09-03 の P3-1)。% を先に %25 へ逃がす
+# 🚨 `/` → `%` だけだと /tmp/a%b と /tmp/a/b が同じ dir 名になり、直したはずの混ざりが黙って戻る。
+#    % を先に %25 へ逃がす
 for pair in "/tmp/x/y:%tmp%x%y" "/tmp/x%y:%tmp%x%25y"; do
   sk_in="${pair%%:*}"; sk_want="${pair##*:}"
   reset_calls; rm -rf "$sk_home/.local/state/tmux-schedule-keys"
@@ -1105,7 +1103,7 @@ printf '✓ %% を先に逃がすので /tmp/x/y と /tmp/x%%y が同じ dir に
 
 printf '\n## 置き場: socket path の #{...} が展開されない (wizard と fire でズレない)\n'
 # 🚨 run-shell のコマンド文字列は **tmux がフォーマット展開してから** sh へ渡すので、socket path に
-#    #{pane_id} が入ると wizard の置き場と fire の置き場が食い違う (tmux 3.7b で実測。P2-1)
+#    #{pane_id} が入ると wizard の置き場と fire の置き場が食い違う (tmux 3.7b で実測)
 reset_calls; rm -rf "$sk_home/.local/state/tmux-schedule-keys"
 STUB_SOCK='/tmp/x#{pane_id}y' HOME="$sk_home" STUB_UI_RESULT="new	$(( $(/bin/date +%s) + 3600 ))	make test" \
   run "$STUB_PATH" env -u TMUX_SCHEDULE_KEYS_DIR "$SCRIPT" wizard
@@ -1145,7 +1143,7 @@ done
 ! grep -Eq "^bind(-key)?${BIND_FLAGS} +(-T prefix +)?Enter +display-menu" "$CONF" || { printf '✗ prefix+Enter に launcher (display-menu) が復活している\n'; exit 1; }
 printf '✓ prefix+Enter は launcher ではない\n'
 
-# 🚨 一時ファイルの残骸を検査する (issue 298 / 299)。
+# 🚨 一時ファイルの残骸を検査する。
 #    判定は rc ではなく **$TMPDIR に残った件数**。この検査が無い間、cmd_wizard は正常復帰の
 #    たびに 1 個ずつ残し続けており (実測 14,147 個)、テスト自身が 1 実行あたり 61 個の
 #    生産者だった。rc だけを見ていると何も気づけない
@@ -1163,14 +1161,14 @@ STUB_UI_EXIT=127 STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard
 [[ "$(tmp_leftovers)" == 0 ]] || { printf '✗ UI 起動失敗の復帰で %s 個残った (issue 299)\n' "$(tmp_leftovers)"; ls "$TMPDIR"/schedkeys*; exit 1; }
 printf '✓ 一時ファイル: 正常復帰 3 経路とも $TMPDIR に残骸ゼロ\n'
 
-# 中断経路 (popup を外から閉じる = UI 実行中の SIGTERM)。issue 299 の発火条件そのもの。
+# 中断経路 (popup を外から閉じる = UI 実行中の SIGTERM)。
 # 🚨 sleep で待たない: marker の出現と残骸ゼロを**上限つきポーリング**で見る
 #    (_claude/rules/avoid-wall-clock-assertions.md)。
 no_leftovers() { [ "$(tmp_leftovers)" = 0 ]; }
 rm -f "$TMPDIR"/schedkeys* 2>/dev/null || true
 BLOCK="$TMP_DIR/ui_block"; rm -f "$BLOCK"
 # 🚨 exec で起こす: `( ... ) &` だとサブシェルの pid が返り、kill -TERM がスクリプト本体へ
-#    届かない (issue 301 と同じ形。このテストを書くときに実際に踏んだ)
+#    届かない (このテストを書くときに実際に踏んだ)
 ( PATH="$STUB_PATH" STUB_UI_BLOCK="$BLOCK" STUB_UI_RESULT="abort" exec "$SCRIPT" wizard ) >/dev/null 2>&1 &
 wiz_pid=$!
 wait_for "UI stub が走り始めない" marker_exists "$BLOCK"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# src/ の Go が git を起動するときに、subproc.GitArgs (か GitCommand。遅延 fetch を許す GitArgsLazyFetch / GitCommandLazyFetch も可。issue 739) を通していることを pin する (issue 692)。
+# src/ の Go が git を起動するときに、subproc.GitArgs (か GitCommand。遅延 fetch を許す GitArgsLazyFetch / GitCommandLazyFetch も可) を通していることを pin する。
 #
 # なぜ: 開いた repo の `.git/config` の `core.fsmonitor=<cmd>` は status のたびにそのコマンドを走らせる。glogx・treefiler・pro-con が
 # tarball・zip で配られた「repo」を開くだけで、キー操作なしに走った (git 2.55.0 で実測)。GitArgs が `-c core.fsmonitor=false` を付ける。
@@ -33,13 +33,13 @@ while IFS= read -r f; do
     esac
   done < <(grep -nE "$call_re" "$f" || true)
   # GitArgs を内蔵した起動口 (subproc.GitCommand / GitCommandLazyFetch) も起動の数に入れる (通していることは形で決まるので判定は要らない。
-  # 数えないと、素の起動をこちらへ寄せるたびに下の「正規表現が壊れている」の下限に近づく。issue 777)
+  # 数えないと、素の起動をこちらへ寄せるたびに下の「正規表現が壊れている」の下限に近づく)
   n=$(grep -cE 'subproc\.GitCommand(LazyFetch)?\(' "$f") || true
   calls=$((calls + n))
 done < <(find src -name '*.go' ! -name '*_test.go' ! -path '*/vendor/*' ! -path 'src/subproc/*')
 
 # 遅延 fetch を許す口 (subproc.GitArgsLazyFetch / GitCommandLazyFetch・pro-con の gitx.RunLazyFetch) は、開いた repo の
-# core.sshCommand・remote.<名前>.uploadpack を走らせうる (issue 739)。使ってよいのはキーを押す操作か、自分の管理する repo に打つ操作だけなので、
+# core.sshCommand・remote.<名前>.uploadpack を走らせうる。使ってよいのはキーを押す操作か、自分の管理する repo に打つ操作だけなので、
 # 使う場所を下の一覧に固定する (表示の経路をこれに替える誤用は字面では他と区別できない。2 周目のレビュー)。足すときは理由を書いて一覧へ。
 # 照合はファイル単位 (: の後ろの関数名は人が読むための注記。一覧のファイルの中で別の関数が使い始めても検出しない)
 lazy_allowed='src/glogx/external_commands.go:noPromptGitCmd (push / pull のキー操作)

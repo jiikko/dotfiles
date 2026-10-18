@@ -5,12 +5,12 @@
 # 認める形は 2 つ:
 #   1. パッケージの _test.go が guard を直接呼ぶ
 #   2. パッケージの _test.go が `<module>/internal/testenv` を import して testenv.Main を呼び、その testenv の
-#      func Main が m.Run() より前に guard を呼ぶ (glogx は前処理を internal/testenv に寄せた。issue 817)
+#      func Main が m.Run() より前に guard を呼ぶ (glogx は前処理を internal/testenv に寄せた)
 # 検出しない形 (どちらの形も字面で見る): コメント・文字列・`if false` の中の呼び出し・TestMain 以外の関数の中の呼び出し・
 # `xtestenv.Main(` のような左に続く名前・2 の Main の中で guard が m.Run の後に走る形 (defer・使われない closure・条件分岐・
 # m.Run を別の関数の中で呼ぶ)。最後の形は、UnsetGitLocationEnv については src/glogx/internal/testenv/main_test.go が実行時に
 # 確かめる (widthenv.ExitIfUnsupported はプロセスを終えるので実行時に確かめられない)。脅威モデルはうっかりの漏れで、
-# testenv の Main を意図して作り替える形は止めない (敵対的レビュー 2 本の結果。issue 817 の「CI の赤の修正」)
+# testenv の Main を意図して作り替える形は止めない
 # 誤検出で赤になる形: testenv.Main を別名で import した呼び出し・Main が guard を別の関数経由で呼ぶ形 (Main の本文に guard の字面を要求する)
 
 # go_testmain_guard_present <パッケージの dir> <guard の ERE>

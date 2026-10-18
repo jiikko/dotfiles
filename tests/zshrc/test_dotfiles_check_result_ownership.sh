@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 # _zshrc の非同期 dotfiles check (_dotfiles_check_notify / _bg / _watch / _cleanup) が
-# **シェルをまたいで result を取り違えない**ことのテスト (issue 300)。
+# **シェルをまたいで result を取り違えない**ことのテスト。
 #
 # 検出したい失敗 (どれも 2026-09-09 に現行実装で実測した):
 #   ① 消費側が他シェルの result を食う  … 1 件しか登録していないシェルが 2 件消費し pending=-1
@@ -182,7 +182,7 @@ while [ ! -f "$gate" ]; do sleep 0.05; done
 echo "cafebabe  -"
 SHIM
 chmod +x "$TD/shim0/shasum"
-# rm を遅くして「bg が .partial を書いてから消すまで」の窓を広げる (issue 577)。固定の sleep で待つ実装なら
+# rm を遅くして「bg が .partial を書いてから消すまで」の窓を広げる。固定の sleep で待つ実装なら
 # この窓で必ず落ち、bg の終了を待つ実装なら通る (負荷任せの flaky を決定論にする)。
 # 🚨 本物は絶対パスで呼ぶ (PATH 先頭の shim から素の rm を呼ぶと自分に戻る)
 real_rm=$(command -v rm)
@@ -225,7 +225,7 @@ if ! bg_alive; then
   exit 1
 fi
 : > "$gate"   # shasum を解放 = bg がここから書き始める (親はもう居ない)
-# 🚨 待つのは「bg が終わった」そのもの (issue 577)。以前は「.partial が在る間は待つ」だったが、解放の直後は
+# 🚨 待つのは「bg が終わった」そのもの。「.partial が在る間は待つ」にしない。解放の直後は
 #    bg がまだ shim の中に居て .partial を書いていないので 1 回も回らず、実際には固定の sleep 0.3 で
 #    待っていた。並列の負荷で bg が 0.3 秒のうちに rm まで届かず、書きかけの .partial を「公開した」と読んだ
 bg_gone() { ! bg_alive }

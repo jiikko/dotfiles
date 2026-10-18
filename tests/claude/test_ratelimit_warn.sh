@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # _claude/hooks/ratelimit-warn.sh (UserPromptSubmit: 5h 枠が閾値を超えていたら 1 行注入する) の unit テスト。
 #
-# 見るのは mod `_claude/mods/ratelimit-warn` (issue 658) との分担: mod が判定できたプロンプトでは、env の印
+# 見るのは mod `_claude/mods/ratelimit-warn` との分担: mod が判定できたプロンプトでは、env の印
 # `DOTFILES_MOD_RATELIMIT_WARN=<session_id>:<epoch ms>` で hook が黙る。印の判定が壊れると、二重に注入する (緩い側) か、
 # mod が落ちた後も hook が黙り続ける (危険な側) のどちらかになる。両腕を固定する。
 # bin/ratelimit は HOME を偽の dir にして差し替える (hook は $HOME/dotfiles/bin/ratelimit を絶対パスで呼ぶ)。

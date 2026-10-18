@@ -2,13 +2,13 @@
 # next/ に claim の目印がある issue は、本文冒頭 (タイトル直下・最初の `## ` 見出しより前) に
 # 担当者バナー (`**担当中` か `**着手中` で始まる強調) を持つことを検査する。
 # 逆向きも見る: 目印の無い issue (done/ pending/ waiting/ と直下) の冒頭にバナーが残っていたら落とす。
-# バナーは next にいる間だけの表示で (glogx の viewer は next から出すときに外す)、残ると done/ の issue が「誰かが作業中」に読める。issue 763。
+# バナーは next にいる間だけの表示で (glogx の viewer は next から出すときに外す)、残ると done/ の issue が「誰かが作業中」に読める。
 #
 # なぜ: `next/` の目印は next/ を見る入口にしか届かない。issue ファイルを直接開く / 別経路から照会する
-# 相手には claim が存在しないのと同じで、2026-09-11 に照会の往復と推測による誤帰属を生んだ (retro 361)。
+# 相手には claim が存在しないのと同じで、2026-09-11 に照会の往復と推測による誤帰属を生んだ。
 # claim ルール (_claude/issue-rules.d/claim-issue-in-next-and-push.md) は本文にも書けと要求しているが、
 # next/ への push は hook が促す一方バナーには促す仕掛けが無く、push した時点で claim が閉じたように感じて落ちる。
-# glogx の `n` も symlink だけを作るので hook では捕まらない。ここ (CI) で止める。issue 403。
+# glogx の `n` も symlink だけを作るので hook では捕まらない。ここ (CI) で止める。
 #
 # 対象: issues/next/ と issues/epic/<name>/next/ の直下にある .md (symlink の目印と、旧運用の実ファイル)。
 # 目印そのものの形の正しさは test_next_links_valid.sh が見る (ここでは解決できたものだけを読む)。
@@ -51,7 +51,7 @@ fi
 
 # 🚨 ディレクトリ名 (next / epic) と拡張子は大文字小文字を無視して拾う。test_next_links_valid.sh と glogx は
 # `NEXT/` `Epic/` `.MD` も有効な目印と読むので、find -path の完全一致では有効な claim を黙って飛ばす
-# (敵対レビュー 2026-09-19 で実測)。名前に改行を含んでも割れないよう -print0 で読む。
+# 名前に改行を含んでも割れないよう -print0 で読む。
 # find の失敗は「claim 0 件 = 合格」と同じ空出力になるので rc を別に見る
 list=$(mktemp)
 # 起点の末尾に /: 起点が symlink のディレクトリでも辿る (BSD find は辿らず、0 件の緑になる)
@@ -107,7 +107,7 @@ claim_of() {
 }
 # rev_stale <issues_dir>: 目印が無いのにバナーがある issue を 1 行ずつ出す。awk が 1 本でも失敗したら rc=1
 # 🚨 awk は LC_ALL=C で読む。UTF-8 のロケールでは不正なバイトを含むファイルで awk が止まり、同じ xargs の束の残りを読まないまま
-# 「0 件」に見える (敵対レビュー 2026-10-15 で再現)。バナーの判定はバイト列の一致なので C ロケールで変わらない
+# 「0 件」に見える (2026-10-15 に再現)。バナーの判定はバイト列の一致なので C ロケールで変わらない
 rev_stale() {
   local dir="$1" f rel claim found
   found=$(mktemp)

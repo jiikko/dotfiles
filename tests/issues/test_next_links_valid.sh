@@ -2,7 +2,7 @@
 # issues/ 配下の symlink は「next/ の目印」だけで、しかも全部が有効であることを検査する。
 #
 # なぜ: 「次にやる」の claim は issue ファイルを next/ へ rename せず、`next/<base> -> ../<base>`
-# の symlink を目印として置く運用になった (issue 263。rename すると本文の相対リンクが切れる)。
+# の symlink を目印として置く運用になった (rename すると本文の相対リンクが切れる)。
 # 目印は glogx が読むとき採用条件で弾かれても警告が出るだけなので、壊れた目印 (issue を done/ へ
 # 動かして symlink を消し忘れた = dangling、別の物を指す、next/ 以外に置かれた symlink) は
 # 誰かが viewer を開くまで気づかれず、CI には見えなかった。ここで push 前後に止める。
@@ -11,7 +11,7 @@
 #   next/ 直下で、その next/ の親が issue ディレクトリ自身か epic/<name> /
 #   Readlink がちょうど ../<同名> / 指す先が通常ファイル /
 #   直下の実エントリ名と**大文字小文字まで一致** (APFS は case-insensitive なので readlink と -f だけでは
-#   通ってしまい、glogx の完全一致照合と割れる。敵対レビュー 2 周目で実測) /
+#   通ってしまい、glogx の完全一致照合と割れる) /
 #   README.md 等の meta ファイルは目印にしない
 # glogx 側の検査を緩めてもここが残るよう、判定はこのスクリプトが独立に持つ (値は転記だが、
 # 変えるなら両方を同じ commit で変える)。

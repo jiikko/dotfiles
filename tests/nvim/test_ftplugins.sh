@@ -171,7 +171,7 @@ EOF
 
   _run_headless_lua "$lua_file" "$log_file"
   # 🚨 走行の有無をテスト自身の出力に出す。nvim のログは失敗時しか表示されないので、
-  # 「skip したこと」がどこにも出ないと未検証を検証済みと読み違える (issue 082)。
+  # 「skip したこと」がどこにも出ないと未検証を検証済みと読み違える。
   # マーカーが無い = ハーネスが壊れた (判定不能) なので、pass にも skip にも丸めず落とす。
   if grep -q 'TS_BEHAVIOR_ASSERT=ran' "$log_file"; then
     print "[test-nvim:zsh]   ]] の実挙動 assert: 実行した (treesitter parser あり)"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# githooks/pre-push (issue 572) を、使い捨ての repo から bare の remote へ実際に push して検査する。
+# githooks/pre-push を、使い捨ての repo から bare の remote へ実際に push して検査する。
 # fixture は repo の HEAD のスナップショット (`git archive`) なので、本物の issues/ と
 # tests/issues/ がそのまま入る (件数の下限を持つ検査もそのまま通る)。
 set -euo pipefail

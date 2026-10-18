@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/tmux_log_restore_hook.sh (復元 hook の観測ログ書き込み) の unit テスト。
 #
-# なぜ必要か (issue 079): この 2 行 (restore-start / restore-end) は _tmux.conf のインラインに
+# なぜ必要か: この 2 行 (restore-start / restore-end) は _tmux.conf のインラインに
 # あり、**共有の観測ログに書く経路で唯一 default socket ゲートを通っていなかった**。-L の隔離
 # テストサーバも同じ conf を source して同じ hook を持つため、テストの復元が本番ログへ
 # restore-start / restore-end を注入し、watchdog の死因分類 (verdict) を汚す。

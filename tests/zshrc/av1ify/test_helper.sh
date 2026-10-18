@@ -15,7 +15,7 @@ TEST_TMP="$(mktemp -d)"
 # 本番の AV1IFY_LOCK_ROOT は変更せず、このテスト専用値だけを子プロセスへ渡す。
 export AV1IFY_LOCK_ROOT="$TEST_TMP/lockman"
 
-# 🚨 アサーションの失敗は exit code に出す (issue 327 / 329)。
+# 🚨 アサーションの失敗は exit code に出す。
 # ランナー (Makefile の run_tests) は **rc しか見ない**ので、`✗` を printf するだけの分岐は
 # **失敗しても [ok] に集計される**。失敗は bad() で報告してカウントし、下の cleanup が
 # 終了時に非 0 へ格上げする (落ちた assert を全部出すため、最初の 1 件で止めない)。
@@ -23,7 +23,7 @@ export AV1IFY_LOCK_ROOT="$TEST_TMP/lockman"
 typeset -gi FAIL_COUNT=0
 bad() { printf "$@"; FAIL_COUNT=$(( FAIL_COUNT + 1 )); }
 
-# 🚨 assert_* は失敗しても `return 1` しないこと (issue 399)。`setopt err_exit` の下では
+# 🚨 assert_* は失敗しても `return 1` しないこと。`setopt err_exit` の下では
 # 最初の失敗でファイルごと終了してしまい、**どの assert が検出力を持っているか**が
 # 観測できなくなる (変異検証がスイートの rc でしか判定できず、ケース単位で読めない)。
 # 失敗は bad() で数え、EXIT trap が rc を 1 へ格上げする。
@@ -122,7 +122,7 @@ elif echo "$*" | grep -q "stream=bit_rate"; then
   # MOCK_AUDIO_BITRATE を閾値超へ明示設定すること。
   echo "${MOCK_AUDIO_BITRATE-96000}"
 elif echo "$*" | grep -q "nb_read_packets"; then
-  # __av1ify_count_packets 用 (issue 412)。壊れたコンテナで宣言 nb_frames が
+  # __av1ify_count_packets 用。壊れたコンテナで宣言 nb_frames が
   # 実データより多い場合の「実パケット数」を模す。未設定なら nb_frames と同じ値
   # (= 既定は宣言値と実測値が一致し、frames チェックの挙動は従来どおり)。
   last_arg=""
@@ -162,7 +162,7 @@ elif echo "$*" | grep -q "select_streams a:0" && echo "$*" | grep -q "stream=dur
     *) echo "${MOCK_AUDIO_DURATION-10.0}" ;;
   esac
 elif echo "$*" | grep -q "stream=start_time"; then
-  # __av1ify_start_time 用 (issue 058)。時間シフト型の音ズレ (終端は揃うが先頭がずれる)
+  # __av1ify_start_time 用。時間シフト型の音ズレ (終端は揃うが先頭がずれる)
   # は start_time にしか出ないため、この口が無いとそのクラスの回帰テストが書けない。
   # 未設定は本物のコンテナの慣行どおり 0.0
   last_arg=""
@@ -191,7 +191,7 @@ elif echo "$*" | grep -q "packet=pts_time"; then
   # max(pts+duration) を取るので、単一行モックでも表示終端の意味は一致する。
   #
   # -read_intervals の有無で「区間 seek 版」と「全走査版 (force_full=1 または
-  # 区間 seek 失敗時のフォールバック)」を区別する (issue 412: 壊れたコンテナでは
+  # 区間 seek 失敗時のフォールバック)」を区別する (壊れたコンテナでは
   # 区間 seek が実データと違う値を返すことがあり、それを全走査が救う経路の
   # 回帰テストには両者を別の値で返せる必要がある)。MOCK_*_LAST_PTS_FULL を
   # 設定しなければ区間 seek 版と同じ値を返す (既定は従来どおり両者が一致)。
@@ -323,7 +323,7 @@ cat > "$MOCK_BIN_DIR/lockman" <<'EOF'
 #!/usr/bin/env sh
 # 取得は成功させるが、**呼び方が壊れていたら失敗する**。何でも 0 を返す mock だと、
 # サブコマンドの誤記やトークン引数の欠落が「成功」として通り、配線の退行を検出できない
-# (2026-09-08 の codex 敵対レビュー P2)。
+# (2026-09-08)。
 sub="$1"; shift
 if [ -n "${TEST_LOCKMAN_LOG-}" ]; then echo "$sub $*" >> "$TEST_LOCKMAN_LOG"; fi
 case "$sub" in
@@ -395,7 +395,7 @@ export PATH="$MOCK_BIN_DIR:$PATH"
 # av1ifyをロード
 source "$ROOT_DIR/zshlib/_av1ify.zsh"
 
-# validate-mp4 (issue 005 Phase B) の mock。
+# validate-mp4 の mock。
 #
 # 🚨 **source の後で上書きする**こと。__validate_mp4_check は外部バイナリでは
 # なく sourced な zsh 関数なので、MOCK_BIN_DIR の PATH mock では差し替わらない。

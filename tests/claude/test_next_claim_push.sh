@@ -15,7 +15,7 @@ HOOK_TIMEOUT=10
 
 # 本番と同じ上限を課せないなら「合格」ではなく「判定不能 = 失敗」にする
 # (tests/claude/test_deny_bare_tmux_kill.sh と同じ規律。CI で timeout(1) が消えて
-#  検査が丸ごと skip に化けた事故がある)。上限は runtimeout (issue 640) で課す。
+#  検査が丸ごと skip に化けた事故がある)。上限は runtimeout で課す。
 # shellcheck source=bin/lib/runtimeout.sh
 . "$ROOT_DIR/bin/lib/runtimeout.sh"
 runtimeout_resolve "$ROOT_DIR" || exit 1
@@ -49,10 +49,9 @@ trap cleanup EXIT
     git add -A && git -c user.email=t@t -c user.name=t commit -qm init
 ) >/dev/null 2>&1
 
-# 入れ子の issue dir (`<root>/*/issues/next/`) だけで opt-in されることを検査する (issue 276)。
-# 🚨 276 は「4 hook すべてに入れ子のケースを足した」と書いたが、**この hook だけテストが
-# 1 件も入っていなかった** (敵対的レビュー 2026-09-06 が変異で確認: 入れ子 glob 2 本を
-# 削っても 29/29 緑のままだった)。
+# 入れ子の issue dir (`<root>/*/issues/next/`) だけで opt-in されることを検査する。
+# 🚨 **この hook に入れ子のケースが 1 件も無い**と、入れ子 glob 2 本を
+# 削っても 29/29 緑のまま通る (変異で確認)。
 (
   cd "$NESTED_FIRE_REPO" && git init -q . && mkdir -p macOS/issues/next &&
     : > macOS/issues/186-x.md &&
@@ -127,7 +126,7 @@ expect_fire "末尾スラッシュ無し"           "git mv issues/186-x.md issu
 expect_fire "後続コマンドが続く形"         "git mv issues/186-x.md issues/next/ && echo done"
 expect_fire "空白入りのパス"               'git mv "issues/186 x.md" issues/next/'
 
-# --- 敵対的レビュー 2026-09-02 が P1 として見つけた抜け (当時は 4 件とも無検出だった)。
+# --- 抜けやすかった形 (4 件とも、検査が無ければ無検出になる)。
 #     判定を行 grep から「区切りで割って移動先を見る」形へ作り替えたので、ここで固定する。
 expect_fire "行継続で宛先が次の行"         "$(printf 'git mv issues/186-x.md \\\n  issues/next/')"
 expect_fire "; が空白なしで隣接"           "git mv issues/186-x.md issues/next/; git add issues/next/186-x.md"
@@ -189,7 +188,7 @@ else
   echo "✗ 非 JSON 入力で異常終了した"; fail=$((fail + 1))
 fi
 
-# --- 入れ子の issue dir (issue 276) ---
+# --- 入れ子の issue dir ---
 if [ -n "$(run_nested_hook 'ln -s ../186-x.md macOS/issues/next/186-x.md')" ]; then
   ok=$((ok + 1))
 else

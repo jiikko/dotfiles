@@ -81,8 +81,7 @@ assert_not_called "restore ran" "未解決時は何も実行しない"
 printf '✓ restore.sh 未解決: 記録のみで無害終了\n'
 
 # --- (4) 先任が実行中なら復元しない (tt_lock_acquire rc=1) -------------------------------
-# 🚨 この rc 分岐は issue 078 の統合で新設したもので、**どのテストからも踏まれていなかった**
-#   (敵対レビューの指摘)。`|| tt_lock_rc=$?` を `&& ...` に変える 1 文字のタイポで lock を
+# 🚨 この rc 分岐を踏むテストが無いと、`|| tt_lock_rc=$?` を `&& ...` に変える 1 文字のタイポで lock を
 #   取らないまま restore.sh を走らせる = 二重復元になるが、旧 3 ケースは全部 green のまま通る。
 reset_calls; : > "$LOG"
 STATE="$TMP_DIR/rstate"; rm -rf "$STATE"; mkdir -p "$STATE/lock"
@@ -118,7 +117,7 @@ fi
 # 🚨 production (`tmux_restore_runner.sh`) は「壊れていても復元は続行するが記録は残す」契約。
 # upstream は archive 展開の失敗を検証せず rc=0 で完走するので、この記録が無いと
 # 「window は全部戻ったのに全 pane の scrollback が空」が完全に silent になる (実証 2026-07-30)。
-# **それまでこの経路にテストが 1 本も無かった** (issue 316: 判定式を guards.sh へ寄せる前提として
+# **それまでこの経路にテストが 1 本も無かった** (判定式を guards.sh へ寄せる前提として
 # 「述語を false へ倒す変異で 2 スクリプトとも red」を確認しようとして発覚した)。
 RDIR="$TMP_DIR/resurrect"; mkdir -p "$RDIR"
 printf 'not a gzip' > "$RDIR/pane_contents.tar.gz"   # gzip -t が落ちる中身

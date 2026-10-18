@@ -1,14 +1,14 @@
 #!/usr/bin/env zsh
 unset CDPATH
 # shellcheck shell=bash
-# av1ify VFR 正規化の e2e テスト (issue 394)。mock を使わず本物の ffmpeg / ffprobe で走らせる。
+# av1ify VFR 正規化の e2e テスト。mock を使わず本物の ffmpeg / ffprobe で走らせる。
 #
 # 守る不変条件:
 #   1. VFR ソース (r_frame_rate と avg_frame_rate が乖離) の出力は CFR になる
 #      (r_frame_rate == avg_frame_rate、映像パケット長が 1 種類)
 #   2. VFR と判定されないソースは改修前と同じ引数 (フレーム数が変わらず、メッセージも出ない)
 # 🚨 「DTS 非単調増加」は判定に使わない。ffmpeg -f null の警告は検証側の fps 変換が出すもので、
-#    ファイルの欠陥ではなかった (issue 394 の訂正節)。ここではパケットを ffprobe で直接読む。
+#    ファイルの欠陥ではなかった。ここではパケットを ffprobe で直接読む。
 #
 # fixture は 6〜10 秒 / 160x120。音声を付けるのは、無いと av1ify の最終検証が no-audio で NG にするため。
 
@@ -81,7 +81,7 @@ else
   [[ "$out_log" == *"可変フレームレート (VFR)"* ]] && printf '✓ VFR 正規化のメッセージが出る\n' || bad '✗ VFR 正規化のメッセージが出ない\n'
   check_eq "$(v_field "$out" avg_frame_rate)" "$(v_field "$out" r_frame_rate)" "出力の avg_frame_rate == r_frame_rate (CFR)"
   check_eq "$(pkt_duration_kinds "$out")" "1" "出力の映像パケット長が 1 種類 (CFR)"
-  # 🚨 「CFR である」だけを見ないこと (issue 397)。どんな -r でも出力は CFR になるので、
+  # 🚨 「CFR である」だけを見ないこと。どんな -r でも出力は CFR になるので、
   # 上の 2 つは **何 fps の CFR か** に対して無感覚で、-r 10 のような誤りを緑のまま通す
   # (実測: ソース 154 フレーム中 92 フレームが drop されても 7/7 緑だった)。
   # ソースの avg_frame_rate と突き合わせて **値そのもの** を pin する。

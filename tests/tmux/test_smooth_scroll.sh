@@ -27,7 +27,7 @@ SOCKET_NAME="dss-$$"
 
 # resurrect / debounce 保存と smooth-scroll の状態ファイルを実データから隔離する。
 # scroll.sh の状態ファイルは ${TMPDIR:-/tmp}/tmux-smooth-scroll-<uid>/ に置かれるので TMPDIR ごと
-# 逃がす必要があるが、その隔離は lib 側 (HOME/XDG/TT_DEBOUNCE と一緒) へ集約した (issue 325)。
+# 逃がす必要があるが、その隔離は lib 側 (HOME/XDG/TT_DEBOUNCE と一緒) へ集約した。
 source "$ROOT_DIR/tests/tmux/lib/isolate_env.sh"
 source "$ROOT_DIR/tests/lib/wait_until.sh"
 
@@ -66,7 +66,7 @@ if ! env -u TMUX -u TMUX_PANE \
   if grep -qiE "operation not permitted|permission denied" "$start_log"; then
     print -u2 "[test-smooth-scroll-tmux] skipped: tmux cannot create sockets in this environment"
     # 🚨 丸ごと skip は **exit 77** (automake の慣例)。0 で抜けると runner が [ok] と数え、
-    # 以降の assert が 1 本も走っていないことが緑に埋もれる (tests/CLAUDE.md / issue 139)。
+    # 以降の assert が 1 本も走っていないことが緑に埋もれる (tests/CLAUDE.md)。
     exit 77
   fi
   cat "$start_log" >&2
@@ -109,7 +109,7 @@ read_gen() {
   awk 'NR==1 {print ($1 ~ /^[0-9]+$/) ? $1 : 0; exit} END {if (NR==0) print 0}' "$f"
 }
 
-# 🚨 押下の間に「リピート判定 (150ms) を跨ぐ」ための sleep は置かない (issue 613)。直前の wait_settled が
+# 🚨 押下の間に「リピート判定 (150ms) を跨ぐ」ための sleep は置かない。直前の wait_settled が
 #    3 回の同値 (0.1s 刻み) を見るので、前回押下から 150ms は必ず過ぎている。アニメ中の再押下 (anim_until_ms の内側)
 #    なら即時ジャンプになるが、下の assert はどちらの経路でも同じ移動量を要求するので結果に効かない
 #    (固定 sleep にも状態ファイルの書き換えにも、効果が無いことを変異で確かめた)。経路そのものは検査していない

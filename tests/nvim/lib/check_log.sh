@@ -5,8 +5,8 @@
 # なぜ必要か: nvim は startup/ftplugin/autocmd 内のエラーを stderr に出しても +qall で
 # exit 0 を返す。lib/guard.lua の cquit 経路は「check 本体の Lua エラー」しか捕まえられず、
 # check の外 (config ロード・ftplugin 評価) で出たエラーはこの grep だけが検知できる。
-# かつてこの grep が各テストへ手書きコピペされ、貼り忘れが実 false-pass を起こした
-# (54dbc81 が test_nvim.sh の lazy check への貼り忘れを閉鎖) ため一元化した。
+# この grep を各テストへ手書きコピペすると、貼り忘れが実 false-pass を起こすため
+# 一元化している。
 #
 #   tt_nvim_log_backstop <log_file> <label> [extra_alternation]
 #     extra_alternation: 呼び出し文脈固有の追加パターン (例: lazy.nvim の 'Failed to run')。
@@ -32,7 +32,7 @@ tt_nvim_log_backstop() {
 #     ③ **行頭の** OK マーカー (`^OK`)
 #
 #   🚨 ③ のアンカーを外さないこと。`grep -q "OK"` だと "not OK" のような出力でも通る。
-#     実際 test_image_hover.sh だけアンカー無しに drift していた (issue 081)。この関数は
+#     実際 test_image_hover.sh だけアンカー無しに drift していた。この関数は
 #     その drift を「1 か所しか無い」状態にするために作った。
 #   🚨 `qa!` は必須。check スクリプトが無名バッファへ書き込んで modified になると、未保存拒否で
 #     headless nvim が終了せず**永久にハングする** (2026-07-12 実測)。

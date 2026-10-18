@@ -70,8 +70,8 @@ assert_contains "$fzf_opts" "--reverse" "FZF_DEFAULT_OPTS preserves reverse sett
 # 4. rbenv lazy-loading wrapper is defined inside the sandbox
 # ホストの rbenv 有無で gate しない: 検証対象はサンドボックス側 (TMP_HOME に無条件で
 # 用意したダミー rbenv に対し _zshrc の _lazy_anyenv_manager が lazy wrapper 関数を
-# 定義するか) であり、旧実装のホスト gate だと rbenv の無い CI / 新規開発機で毎回
-# silent skip され、せっかくのダミーが一度も使われない false-pass になっていた。
+# 定義するか) であり、ホスト gate だと rbenv の無い CI / 新規開発機で毎回
+# silent skip され、せっかくのダミーが一度も使われない false-pass になる。
 # PATH 側 (shims が載るか) は Test 5 が無条件で検証している。
 rbenv_kind="$(run_zsh 'whence -w rbenv' | awk 'END{print}')"
 assert_contains "$rbenv_kind" "function" "rbenv lazy wrapper function is defined in interactive shells"

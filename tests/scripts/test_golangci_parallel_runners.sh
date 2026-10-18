@@ -5,7 +5,7 @@
 # 既定で os.TempDir() のグローバル file lock を取るので、**1 プロジェクトでも設定が抜けると、
 # そのプロジェクトだけが他の起動タイミング次第で "parallel golangci-lint is running" で落ちる**
 # (flaky に見え、抜けたプロジェクトが原因だと気づきにくい)。新しい src/ を切ったときの漏れを
-# ここで止める。issue 258
+# ここで止める。
 set -uo pipefail
 unset CDPATH
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

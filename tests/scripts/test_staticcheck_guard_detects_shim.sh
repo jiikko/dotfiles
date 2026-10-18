@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # `check_unused_excluding_tests.sh` の staticcheck ガードが、**shim を掴んで素通りしない**ことを
-# 実験で確かめる (issue 405)。
+# 実験で確かめる。
 #
 # なぜテストにするか: goenv / rbenv / nodenv の shim は「どの版にも実体が無い」ときでも PATH 上に
 # 在り、`command -v` は rc=0 を返す。旧版のガードは `command -v` だったので**原理的に発火せず**、

@@ -1,12 +1,12 @@
 #!/usr/bin/env zsh
 unset CDPATH
 # shellcheck shell=bash
-# issue 089 の実経路テスト: 名前に $(...) を含むファイルを av1ify に通しても実行されない。
+# 実経路テスト: 名前に $(...) を含むファイルを av1ify に通しても実行されない。
 #
 # なぜ実経路が必要か: 静的検査 (tests/zshrc/test_print_p_injection.sh) は「危険な形が
 # 残っていないこと」しか見ない。実際に処理の全ログ経路 (完了ログ / 元ファイル削除 /
 # 健全性チェック警告) を通したときに実行されないことは、通してみないと言えない。
-# 対象は主に zshlib/_av1ify_encode.zsh (issue 089 の 24 件がここにある)。
+# 対象は主に zshlib/_av1ify_encode.zsh (24 件がここにある)。
 
 source "${0:A:h}/test_helper.sh"
 setopt prompt_subst   # 対話シェルの既定。この下でないと $(...) は実行されない

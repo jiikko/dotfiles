@@ -219,7 +219,7 @@ ok "save-hide: epoch + 退避元記録 + kill (上の ✗ が無ければ)"
 
 : > "$CALLS"
 # 退避窓の間に toggle 連打等で panel が生えていても、save-show は掃討してから作る
-# (作る前に必ず kill_panel の規律。敵対レビュー指摘 2026-08-08)
+# (作る前に必ず kill_panel の規律)
 STUB_PANEL_ON=1 STUB_SAVED_WINDOW='@3' STUB_RENDER_PANES='%88' "$SCRIPT" save-show || ng "save-show が非 0"
 grep -q 'set-option -gu @agent_panel_saving' "$CALLS" || ng "save-show: saving を降ろさない"
 grep -q 'kill-pane -t %88' "$CALLS" || ng "save-show: 既存 panel を掃討しない (二重化)"
@@ -230,7 +230,7 @@ grep -E '^tmux new-pane .*-t @3( |$)' "$CALLS" >/dev/null \
   || ng "save-show: new-pane が退避元 window を target にしない"
 ok "save-show: saving 解除 + 掃討 + 退避元へ復帰 (上の ✗ が無ければ)"
 
-# --- toggle on (resurrect 保存中): 状態だけ立てて作らない (敵対レビュー指摘 2026-08-08) ---
+# --- toggle on (resurrect 保存中): 状態だけ立てて作らない ---
 # 保存中に作ると実行中の save.sh のダンプに写り込み、退避の意味が無くなる
 : > "$CALLS"
 STUB_PANEL_ON='' STUB_SAVING="$(date +%s)" "$SCRIPT" toggle '@1' || ng "toggle on (保存中) が非 0"

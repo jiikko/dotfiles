@@ -310,7 +310,7 @@ fi
 
 # --- 幅を測れない: 上界概算して表示は続行 (非 0 で hook を汚さない) ---------------
 # 幅は bin/termwidth (Go。zsh のラッパー) で測る。実ツール (grep/date) だけ symlink した PATH では zsh も go も無く、
-# termwidth を起動できない (issue 670 で python3 から置き換えた。縮退の形は同じ)
+# termwidth を起動できない (縮退の形は同じ)
 # (docs/feedback-nvim-tmux-2026-07-29.md パターン5: fallback は再現テストで固定する)
 reset_calls
 NOPY="$TMP_DIR/nopy"; mkdir -p "$NOPY"
@@ -324,7 +324,7 @@ else
   ng "幅を測れないとき rc=$rc 出力='$out' new-pane=$(grep '^tmux new-pane' "$CALLS" || true)"
 fi
 
-# --- 幅のバイナリがまだ無い: ビルドを待たずに上界で出す (issue 670) ---------------
+# --- 幅のバイナリがまだ無い: ビルドを待たずに上界で出す ---------------
 # 初回のビルドは同期なので、待つと前景で呼ぶペーストの通知が止まる。上界で即座に出し、ビルドは裏で起こす
 reset_calls
 rc=0

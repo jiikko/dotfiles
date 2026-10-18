@@ -7,11 +7,11 @@
 # tests/tmux/test_confirm_scripts.sh が緑のままだと実証された (隣の `&&` 短絡の規約は
 # 実装強制されていたので、同じ CLAUDE.md の 2 行が非対称だった)。
 #
-# 検出は「呼び出し単位」で行う。以下は red team が実際に素通りさせた形で、いずれも
-# 行単位の部分一致では防げない (issue 069 と同じ「窓の外から騙す」クラス):
+# 検出は「呼び出し単位」で行う。以下は実際に素通りした形で、いずれも
+# 行単位の部分一致では防げない (「窓の外から騙す」クラス):
 #   - 同じ行の行末コメントに --default=false という文字列だけ置く
 #   - 1 行に 2 つ目の confirm を足す (_tmux.conf の bind は 1 行に全部書く様式)
-#   - scripts/lib/ や bin/ や zshlib/ に置く (旧実装は scripts/*.sh と _tmux.conf だけ見ていた)
+#   - scripts/lib/ や bin/ や zshlib/ に置く (scripts/*.sh と _tmux.conf だけ見る実装は素通りする)
 #   - "$GUM" confirm と書く / gum と confirm を行継続で分割する
 #
 # 🚨 検査できなかったときに緑を返さないこと。発見 0 件・awk の失敗はいずれも失敗扱いにする。
@@ -23,8 +23,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # 検査対象は「実行されるコード」。登録不要の発見式にし、検査対象の外に confirm を置いて
 # 逃げられないようにする。除外するのは実行されない場所だけ (テスト・文書・生成物・vendor)。
 # 検査対象は「実行されるコード」。登録不要の発見式にし、検査対象の外に confirm を置いて
-# 逃げられないようにする (旧実装は scripts/*.sh と _tmux.conf だけ見ており、scripts/lib/ や
-# bin/ や zshlib/ に置くだけで素通りした)。除外するのは実行されない場所だけ
+# 逃げられないようにする (scripts/*.sh と _tmux.conf だけ見る実装は、scripts/lib/ や
+# bin/ や zshlib/ に置くだけで素通りする)。除外するのは実行されない場所だけ
 # (テスト自身・文書・生成物・vendor)。バイナリは awk が LANG 依存で落ちる (実測: .DS_Store と
 # ファームウェア .upd で rc=2) ため、confirm を含むテキストファイルだけに絞る。
 # 🚨 grep の rc は 3 分岐する: 0 = 一致、1 = 不一致、**2 以上 = 検査できなかった** (読めない
@@ -42,7 +42,7 @@ while IFS= read -r f; do
     *) unreadable+=("$f") ;;     # 検査できなかった = 緑にしない
   esac
 done < <(
-  # .claude/worktrees は pro-con の worktree (別の checkout の写し。issue 616)。-name .claude だと追跡している .claude/rules まで外れる
+  # .claude/worktrees は pro-con の worktree (別の checkout の写し)。-name .claude だと追跡している .claude/rules まで外れる
   find "$ROOT_DIR" \
     \( -name .git -o -name tmp -o -name tests -o -name docs -o -name issues \
        -o -name node_modules -o -name vendor -o -name src -o -name .venv \

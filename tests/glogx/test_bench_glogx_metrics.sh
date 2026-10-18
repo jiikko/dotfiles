@@ -1,10 +1,9 @@
 #!/bin/sh
-# test_bench_glogx_metrics.sh — glogx bench の配管 (bench_glogx.sh → bench_budgets.ci) の回帰テスト
-# (issue 063)。守る不変条件:
+# test_bench_glogx_metrics.sh — glogx bench の配管 (bench_glogx.sh → bench_budgets.ci) の回帰テスト。守る不変条件:
 #   1. bench_budgets.ci に載っている全 metric を bench_glogx.sh が emit し、値が数値である
 #      (予算と emit の食い違いを CI まで行かずローカルで検出する)
 #   2. 列ずれガード: go test の出力列が想定 ($4=ns/op, $6=B/op) と違う行は metric を出さない
-#      (issue 051 実測の false green: b.ReportMetric 持ちの benchmark が混ざると列がずれ、
+#      (実測の false green: b.ReportMetric 持ちの benchmark が混ざると列がずれ、
 #      ガード無しでは別の数値を予算照合して黙って pass する)
 # 実 bench は GLOGX_BENCHTIME=1x で配管だけ速く回す (値の大小は見ない。予算照合は CI の
 # check_bench_budgets.sh の責務)。
@@ -84,11 +83,11 @@ out=$(run_awk "BenchmarkCalibrate-8 100 3000000 ns/op 8 B/op 1 allocs/op")
 }
 ok "較正器 (glogx_calib) は時間のみ emit"
 
-# --- 3. 兄弟 benchmark の遮蔽 (issue 117) ---
+# --- 3. 兄弟 benchmark の遮蔽 ---
 # awk の振り分けは完全一致 (bench == "...") でなければならない。前方一致に戻すと、
 # JA 対照 (BenchmarkViewSteadyJA 等) や桁違いの版 (StatusViewFrame2000) が既存 metric を
 # 上書きし、**予算ゲートが別の benchmark の数字で判定する** (数値は出るので気づけない)。
-# issue 051 の敵対的レビュー R1-5 が直した形だが、それを守るテストが無かった。
+# この形を守るテストが無いと、退行しても気づけない。
 #
 # 🚨 benchmark 名はここに列挙せず grep で導出する。列挙すると、兄弟を足したときに
 #   追随を忘れる = まさにこの検査が守りたい事故を、検査自身が踏む。

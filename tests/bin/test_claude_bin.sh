@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bin/lib/claude_bin.sh の resolve_claude が、PATH の先頭にある「動かない claude」(版管理の shim) を飛ばして、
-# 実際に動く実体を選ぶことを固定する (issue 639)。
+# 実際に動く実体を選ぶことを固定する。
 #
 # なぜ: nodenv の shim は、どれかの版に claude が入っているだけで PATH の先頭に現れ、今の版に無ければ実行時に
 # rc=127 で終わる。`command -v claude` はそれを選び、tests/claude/test_claude_mods.sh が毎回落ちていた。
@@ -160,7 +160,7 @@ else
 fi
 unset CLAUDE_BIN_VERSION_TIMEOUT
 
-# 上限の値の検査 (bin/lib/uint.sh。issue 775): 数字でない・全角・8 桁以上・0 で始まるものは既定の 10 秒に寄せる。
+# 上限の値の検査 (bin/lib/uint.sh): 数字でない・全角・8 桁以上・0 で始まるものは既定の 10 秒に寄せる。
 # runtimeout に渡った上限を、引数を記録する偽物で読む (lib を読み込んだ後で RUNTIMEOUT を差し替える。_claude_bin_version_ok は呼ぶときに読む)
 cat > "$WORK/rt-rec" <<EOF
 #!/bin/sh

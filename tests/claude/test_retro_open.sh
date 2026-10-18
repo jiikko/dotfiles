@@ -109,7 +109,7 @@ fi
 
 # --- 8. hook 配線の契約 (event 名と suppressOutput) を pin する ---
 # ここが違うと Claude Code が注入を丸ごと無視する = 完全な沈黙になるが、additionalContext
-# だけを見るテストでは検出できない (実測 2026-08-21 の敵対的レビュー指摘)
+# だけを見るテストでは検出できない (実測 2026-08-21)
 meta="$(raw env | jq -r '[.hookSpecificOutput.hookEventName, (.suppressOutput|tostring)] | join(",")' 2>/dev/null)"
 check "SessionStart として emit する" "^SessionStart,true$" "$meta"
 
@@ -280,7 +280,7 @@ mkissue "019-retro-clockdrift.md" "起票日: ${yday}"
 check "壁時計が進んでも暦日で数える" "1 日前 +issues/019-retro-clockdrift" \
   "$(report env "PATH=$clock:$PATH")"
 
-# --- 入れ子の issue dir (`<root>/*/issues`) も走査する (issue 276) ---
+# --- 入れ子の issue dir (`<root>/*/issues`) も走査する ---
 # 🚨 走査を root 直下だけへ戻す変異で red になること。
 nested="$WORK/nested"
 mkdir -p "$nested/macOS/issues"
@@ -289,7 +289,7 @@ printf '# t\n\n起票日: 2026-08-01\n' >"$nested/macOS/issues/902-retro-nested.
 nested_ctx="$(printf '{"cwd":"%s"}' "$nested" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
 check "入れ子 dir の未決着 retro を拾う" 'macOS/issues/902-retro-nested' "$nested_ctx"
 
-# 案内の移動先を単一 dir で名指ししないこと (敵対的レビュー 2026-09-06)。
+# 案内の移動先を単一 dir で名指ししないこと。
 # 🚨 fixture は **root 直下と入れ子の両方**に issues/ が要る (1 つしか無い repo では
 # 名指しでも正しく、この主張を何も守らない)。
 both="$WORK/both"
@@ -301,7 +301,7 @@ check "入れ子がある repo は移動先を単一 dir で名指ししない" 
 check "入れ子がある repo で issues/done/ と断定しない" "" \
   "$(printf '%s' "$both_ctx" | grep -E 'と issues/done/ へ移動できる' || true)"
 
-# --- --counts: 帯の mod (issue 621) 向けの機械の出口。数え方は本体と同じで、0 件でも必ず出す ---
+# --- --counts: 帯の mod 向けの機械の出口。数え方は本体と同じで、0 件でも必ず出す ---
 cnt="$WORK/cnt"
 mkdir -p "$cnt/issues/pending"
 git -C "$cnt" init -q .

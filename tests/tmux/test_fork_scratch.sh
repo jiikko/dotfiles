@@ -30,7 +30,7 @@ set -euo pipefail
 unset CDPATH
 
 # 実 tmux サーバと同居する環境では走らせない設計 (bare `tmux` を叩く挙動テストを含むため)。
-# 🚨 判定を `uname` にしないこと。CI を macOS へ移した (issue 133) 途端に**このテストが CI から
+# 🚨 判定を `uname` にしないこと。CI を macOS へ移した 途端に**このテストが CI から
 #    消えた** — 2026-07-07 の「make test が本番サーバを kill した」再発防止テストなのに、
 #    ファイル単位では skip が緑に見えるので気づけない。避けたいのは「開発機の実サーバとの
 #    同居」であって macOS そのものではないので、CI かどうかで切る (runner に本番サーバは無い)。
@@ -115,8 +115,8 @@ keys=$("$TMUX_BIN_PATH" -L "$SOCKET_NAME" list-keys -T prefix)
 # ことが決まっている (正本: docs/claude-fork-popup.md の冒頭 + 復活手順)。したがってこの skip は
 # 期限つきの一時措置ではなく、**bind を復活させたときに自動で再検査が始まる**形の休眠。
 # scratch (bind t) は同日にユーザ判断で先行復活済みのため、B は fork の無効状態と独立して
-# 常時検査する（かつては A/B とも bind b の有効判定に相乗りしており、scratch 復活後も
-# その回帰ガードが一度も走らない false-skip になっていた）。C〜F はスクリプト/コマンド
+# 常時検査する（A/B を bind b の有効判定に相乗りさせると、scratch 復活後も
+# その回帰ガードが一度も走らない false-skip になる）。C〜F はスクリプト/コマンド
 # ファイル自体を直接検査するので有効/無効に関係なく走らせる。
 # NOTE: 「有効」の判定に bind の有無を使ってはいけない。tmux の既定で prefix+t は clock-mode に
 #   bind 済みのため、popup 無効でも bind t は list-keys に現れる（誤検知の元）。有効か否かは
@@ -162,9 +162,8 @@ grep -q 'has-session' "$POPUP_SCRIPT" || fail "tmux_fork_popup.sh に has-sessio
 ok "C: popup script は new-session 不使用 + has-session ガードあり"
 
 # D) popup 専用セッション (scratch / claude-fork) が fzf 候補から除外されること。
-# 除外パターンは lib/tmux_popup_sessions.sh に一本化された (2026-07-08。かつて本チェックは
-# jump スクリプト本文への直書き '(scratch|claude-fork):' を pin しており、一本化で恒久
-# false-fail になった)。よって (1) lib のパターンが両セッションを含む / (2) jump と
+# 除外パターンは lib/tmux_popup_sessions.sh に一本化された (2026-07-08)。jump スクリプト本文への直書き '(scratch|claude-fork):' を pin すると、
+# 一本化で恒久 false-fail になる。よって (1) lib のパターンが両セッションを含む / (2) jump と
 # pane_move の両方が lib を source しパターン変数でフィルタしている、の 2 段で検査する。
 POPUP_SESSIONS_LIB="$ROOT_DIR/scripts/lib/tmux_popup_sessions.sh"
 PANE_MOVE_SCRIPT="$ROOT_DIR/scripts/tmux_fzf_pane_move.sh"

@@ -261,7 +261,7 @@ proj 3 1"
   _tt_gc_stale_holds
   print "CASE:gc_stale kill=[$_LOG_KILL]"
 
-  # (保護) prefix が空 (guards.sh を読めなかった等) → 数字名のセッションを hold と読んで kill しない (issue 776)
+  # (保護) prefix が空 (guards.sh を読めなかった等) → 数字名のセッションを hold と読んで kill しない
   reset_log
   _T_GC_SESSIONS="0 1 0"
   ( TT_HOLD_PREFIX=""; _tt_gc_stale_holds; print "CASE:gc_noprefix kill=[$_LOG_KILL]" )

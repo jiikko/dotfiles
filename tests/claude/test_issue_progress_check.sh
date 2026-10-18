@@ -100,7 +100,7 @@ other="$WORK/plain"; mkdir -p "$other"; git -C "$other" init -q .
 check "issues 無し repo で黙る" "" "$(printf '{"cwd":"%s","session_id":"s9"}' "$other" | "$CHECK" 2>/dev/null || true)"
 
 
-# --- issue 339: 説明済みの指摘を再掲しない / 新規は単独で出る -----------------------------------
+# --- 説明済みの指摘を再掲しない / 新規は単独で出る -----------------------------------
 #
 # 🚨 dedup が「指摘の集合」の cksum だったため、**commit を 1 つ積むだけで集合が変わり**、
 # 説明済みの N 件が丸ごと再掲されていた (実測 2026-09-09: 同じリストが 3 回)。
@@ -113,7 +113,7 @@ echo x1 >"$repo/src/a.txt"; git -C "$repo" commit -qam "fix(101): 1 回目"
 first=$(reason s6)
 check "1 回目は 101 を指摘する" "101-feat-x.md: このセッションで 1 度も変更されていない" "$first"
 
-# commit を積んで集合を変える (旧実装はここで丸ごと再掲した)
+# commit を積んで集合を変える (ここで丸ごと再掲しないことを見る)
 echo x2 >"$repo/src/a.txt"; git -C "$repo" commit -qam "fix(101): 2 回目"
 check "同じ指摘は再掲しない" "" "$(reason s6)"
 
@@ -124,7 +124,7 @@ got=$(reason s6)
 check "新しい 108 の行が出る" "issues/108-feat-s.md: このセッションで 1 度も変更されていない" "$got"
 check "既知の 101 の行は混ざらない" "" "$(grep -E '101-feat-x' <<<"$got" || true)"
 
-# --- issue 339: 規約が要求する「NNN で解消」の 1 行を進捗として数える --------------------------
+# --- 規約が要求する「NNN で解消」の 1 行を進捗として数える --------------------------
 #
 # 🚨 _claude/issue-rules.md「本文」は done へ移す commit で参照元の open issue にこの 1 行を要求するのに、
 # 判定が見出しと [x] しか見ていなかったため、**規約どおり書いても未対応と判定**されていた。
@@ -139,7 +139,7 @@ printf '# 105 ref\n\n残課題: 106 待ち\n\n2026-09-09: **106 は ② Go の�
 git -C "$repo" commit -qam "docs(105): 106 の完了を書き戻す"
 check "「NNN … 解消」を進捗として数える" "" "$(grep -E '105-bug-v.md: 変更はあるが' <<<"$(reason s8)" || true)"
 
-# --- issue 339: worktree の commit を「触っていない」と誤検出しない ----------------------------
+# --- worktree の commit を「触っていない」と誤検出しない ----------------------------
 #
 # 🚨 この repo は worktree を既定にしているので、本体へ push+pull するまで root からは
 # 「何も変わっていない」ように見え、片付けた issue が毎ターン再掲されていた。
@@ -155,7 +155,7 @@ check "worktree の変更を「触っていない」と言わない" "" \
   "$(grep -E '107-feat-t.md' <<<"$(reason s9)" || true)"
 git -C "$repo" worktree remove --force "$wt"
 
-# 🚨 **肯定 assert (issue 353 で追加)**。上の否定 assert だけだと、「番号を 1 つも数えない」
+# 🚨 **肯定 assert**。上の否定 assert だけだと、「番号を 1 つも数えない」
 # 壊れ方 (primary が空 → hook が無音) でも緑になる。worktree の commit が**数えられている**
 # ことを、進捗を書かない issue が指摘されることで示す。
 printf '# 111 wt2\n\n- [ ] a\n' >"$repo/issues/111-feat-u.md"
@@ -169,7 +169,7 @@ check "worktree の commit を数えている (肯定)" \
   "issues/111-feat-u.md: このセッションで 1 度も変更されていない" "$(reason s9b)"
 git -C "$repo" worktree remove --force "$wt2"
 
-# --- issue 302 ①: 期限切れの状態ファイルを掃除する ---------------------------------------------
+# --- 期限切れの状態ファイルを掃除する ---------------------------------------------
 #
 # 🚨 判定は「**掃除が実際に消した件数**」で見る。0 件を成功にしない
 # (verify-execution-not-just-exit-code.md)。実測 2026-09-09: 導入 3 日で 174 ファイル溜まっていた。
@@ -194,7 +194,7 @@ check "掃除した件数を報告する" "状態ファイルを 2 件掃除し�
 # 掃除するものが無ければ黙る (毎回ノイズを出さない)
 check "掃除 0 件なら黙る" "" "$(CLAUDE_ISSUE_PROGRESS_DIR="$WORK/sweep2" hook_err "$START" s11)"
 
-# --- issue 302 ②: session_id をパス構成要素として検証する ---------------------------------------
+# --- session_id をパス構成要素として検証する ---------------------------------------
 #
 # 🚨 jq が無い環境の sed 経路は `"` `,` `}` しか落とさず **`/` と `..` を通す**。
 # 書き先が `$state_dir/$session_id.head` なので、通すと状態ディレクトリの外へ書ける。
@@ -213,7 +213,7 @@ CLAUDE_ISSUE_PROGRESS_DIR="$esc_dir" hook "$START" "7f7c4ee0-5da8-4891-b2fa-e4ec
 [ -f "$esc_dir/7f7c4ee0-5da8-4891-b2fa-e4ecbd1886fa.head" ] || {
   echo "NG: 正常な session_id (UUID) を弾いた"; fails=$((fails+1)); }
 
-# --- issue 808: このセッションの transcript の tool_use に出た番号だけを数える ------------------------
+# --- このセッションの transcript の tool_use に出た番号だけを数える ------------------------
 #
 # 🚨 commit の subject と next/ の claim には他セッションのものも混ざる。transcript の形は作った値で、
 # 本物の transcript (~/.claude/projects/<repo>/<session>.jsonl) で同じ jq が tool_use の入力を取れることを確かめてから写した。

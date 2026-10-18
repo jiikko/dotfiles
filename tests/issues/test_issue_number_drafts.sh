@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/issue_number_drafts.sh の検査 (issue 530)。
+# scripts/issue_number_drafts.sh の検査。
 #
 # 使い捨ての repo に origin/master 相当の ref を作り、
 #   ① 番号は working tree と ref の両方の最大 + 1 から振られる (ref にだけある番号を跨ぐ)

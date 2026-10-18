@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/clean_tmp.sh (make clean-tmp) の判定を固定する (issue 729)。
+# scripts/clean_tmp.sh (make clean-tmp) の判定を固定する。
 # 🚨 本物の rm -rf を呼ぶので、一時ディレクトリに作った git の repo の中でだけ走らせる。clean_tmp.sh は <repo の root>/tmp の外を
 # 実行前に拒否する (その拒否もここで確かめる)。
 set -uo pipefail
@@ -148,13 +148,13 @@ else
 	echo "skip 9: 大文字小文字を区別する FS"
 fi
 
-# 10. 書き込みが失敗する状況 (ディスクが一杯) でも find_git は印を見落とさない (bash 3.2 の here-string は一時ファイルに書く。issue 729 の 4 周目)
+# 10. 書き込みが失敗する状況 (ディスクが一杯) でも find_git は印を見落とさない (bash 3.2 の here-string は一時ファイルに書く)
 mkdir -p "$WORK/r10" && "$REAL_GIT" clone -q --bare "$WORK/r1" "$WORK/r10/b.git" 2>/dev/null
 sed -n '/^find_git() {/,/^}/p' "$SCRIPT" > "$WORK/find_git.sh"
 out=$(/bin/bash -c "source '$WORK/find_git.sh'; ( trap '' XFSZ; ulimit -f 0; find_git '$WORK/r10' 2>/dev/null )")
 if [ "${out##*/}" = b.git ]; then ok "10: 書き込みが失敗しても git の置き場を見つける"; else fail "10: ulimit -f 0 の下で find_git = [$out] (b.git を返すこと)"; fi
 
-# 11. skill の dir (印 .skill-tmpdir。bin/skill-tmpdir が置く) は丸ごと判定せず、中の session の dir を 1 件ずつ同じ規則で判定する (issue 774)
+# 11. skill の dir (印 .skill-tmpdir。bin/skill-tmpdir が置く) は丸ごと判定せず、中の session の dir を 1 件ずつ同じ規則で判定する
 newrepo r11
 sk="$REPO/tmp/sk"
 mkdir -p "$sk/oldsess/x" "$sk/newsess" "$sk/oldlive/x" "$sk/oldgit"
@@ -200,7 +200,7 @@ find "$sk/s1" -exec touch -h -t $OLD {} +
 run_dry; rc=$?
 if [ $rc -eq 0 ] && [ -e "$sk/s1/f" ] && grep -q "消す: tmp/sk/s1" "$WORK/out"; then ok "11d: DRY_RUN は session の dir も消さずに一覧に出す"; else fail "11d: rc=$rc ($(cat "$WORK/out"))"; fi
 
-# 11e. 印があっても直下に git がある dir (clone・worktree の中で skill-tmpdir を呼んだ) には降りない (issue 774 の敵対レビュー)
+# 11e. 印があっても直下に git がある dir (clone・worktree の中で skill-tmpdir を呼んだ) には降りない
 newrepo r11e
 "$REAL_GIT" init -q "$REPO/tmp/foo" 2>/dev/null && mkdir -p "$REPO/tmp/foo/src" && echo x > "$REPO/tmp/foo/src/f" && : > "$REPO/tmp/foo/.skill-tmpdir"
 "$REAL_GIT" -C "$REPO" worktree add -q --detach "$REPO/tmp/bar" >/dev/null 2>&1 && : > "$REPO/tmp/bar/.skill-tmpdir"
@@ -297,7 +297,7 @@ elif [ $left -eq 1 ] && grep -q "残す (一覧の後に更新された" "$WORK/
 else fail "11l: rc=$rc 残り $left 件 ($(cat "$WORK/out"))"; fi
 
 # 12. 実体の比較は getcwd を使う /bin/pwd -P で行う (builtin の pwd -P は $PWD の文字列を解決し直すだけで、cd の後に親を実体へ
-# 戻されると外の cwd を「一致」と答える。cd と比較の間は外部の呼び出しが挟まらず shim で窓を作れないので、形を固定する。issue 774 の 3 周目)
+# 戻されると外の cwd を「一致」と答える。cd と比較の間は外部の呼び出しが挟まらず shim で窓を作れないので、形を固定する)
 # 数えるのは行ではなく出現 (grep -o)。下限の件数ではなく、削除の直前の比較の形そのものを固定する
 code=$(grep -v '^[[:space:]]*#' "$SCRIPT")
 total=$(printf '%s\n' "$code" | grep -o 'pwd' | wc -l | tr -d ' ')

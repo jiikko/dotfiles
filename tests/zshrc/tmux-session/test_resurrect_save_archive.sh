@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/tmux_resurrect_save.sh の archive 完全性ガード (tt_archive_ok / tt_archive_finalize) の
-# unit テスト。issue 070 の 3 件を pin する:
+# unit テスト。次の 3 件を pin する:
 #
 #   1. tt_archive_ok が「entry >= 1」を実装していること。0 entry の tar.gz は非空で gzip -t も
 #      通るため、そこを健全と読むと下の掃除が唯一の良い退避コピーを消す (silent なデータ喪失)
@@ -120,7 +120,7 @@ prepare_save_fixture() {
 }
 
 # $2=seam (既定): TT_TRIGGER_LOG で seam へ書かせる / default: TT_TRIGGER_LOG を渡さず、guards.sh の既定 ($HOME/.cache/…) へ
-# 書くことを見る (issue 776: wrapper だけ既定を書き忘れ、本番では 2026-08-25 から 1 行も書かれていなかった。seam だけのテストでは見えない)
+# 書くことを見る (wrapper だけ既定を書き忘れ、本番では 2026-08-25 から 1 行も書かれていなかった。seam だけのテストでは見えない)
 run_save_writer_case() {
   local mode="$1" via="${2:-seam}"
   local case_home="$WORK/home-$mode-$via" state="$WORK/state-$mode-$via"

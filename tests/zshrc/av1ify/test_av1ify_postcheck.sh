@@ -150,8 +150,8 @@ else
   bad '✗ Should not check frame count when fps is changed\n'
 fi
 
-# Test 70b: VFR ソース検出時は「ソースとのフレーム数比較」をやめる (issue 394)。
-# ただし検査を捨てるのではなく密度検査へ切り替わる (issue 397) ので、
+# Test 70b: VFR ソース検出時は「ソースとのフレーム数比較」をやめる。
+# ただし検査を捨てるのではなく密度検査へ切り替わる ので、
 # 密度が期待どおりのケースでは何の警告も出ないことを確認する。
 # 🚨 期待値は **ソースの nb_frames** (適用fps を経由しない独立な量)。CFR 正規化は
 # avg_frame_rate = nb_frames / duration の定義どおり、フレーム数を丸め誤差の範囲で保つ。
@@ -175,7 +175,7 @@ else
   bad '✗ Density check must not fire when the density is correct\n%s\n' "$output"
 fi
 
-# Test 70d: VFR 検出時でも、密度が壊れていれば NG になる (issue 397 の中心)
+# Test 70d: VFR 検出時でも、密度が壊れていれば NG になる
 # 🚨 ここが無いと「-r に誤った値が渡ってフレームの大半が失われる」故障を誰も検出できない。
 # 実測 (実 ffmpeg): 30fps/10s/300 フレームを -r 1 で作り直すと 12 フレームになるが、
 # duration の差はちょうど 2.000s で閾値を超えず、元ファイルが削除されていた。
@@ -204,7 +204,7 @@ else
   bad '✗ The source file was deleted despite the broken density\n'
 fi
 
-# Test 70e: 音声が映像より長いソースで密度検査が誤爆しない (issue 397 の 2 周目 P1-2)
+# Test 70e: 音声が映像より長いソースで密度検査が誤爆しない
 # 🚨 期待値に format=duration (= 全ストリームの最大) を使うと、末尾に音声が残る素材で
 # 期待値が過大になり、**1 フレームも失っていない出力**が check_ng-density に転ぶ。
 # 実測 2026-09-19: 映像 60s / 音声 64s の VFR mp4 で、親 commit では ✅ 完了 だったものが
@@ -227,7 +227,7 @@ else
 fi
 
 # Test 70f: 密度検査のフロアは専用変数で、ユーザー向けの AV1IFY_FRAME_TOLERANCE では緩まない
-# (issue 398 と同型の相乗りを、398 の兄弟修正が再生産していた。2 周目 P2)
+# (別の許容変数への相乗りを避ける)
 printf '\n## Test 70f: AV1IFY_FRAME_TOLERANCE does not disable the density check (issue 397 r2)\n'
 TEST_DIR="$TEST_TMP/test70f"
 mkdir -p "$TEST_DIR"
@@ -244,8 +244,8 @@ else
 fi
 
 # Test 70g: nb_frames を出さないコンテナ (MKV / TS / FLV 等) のフォールバック経路
-# (3 周目の指摘 P1-2: この約 20 行をテストが 1 本も守っていなかった。mock は必ず
-#  nb_frames を正の整数で返すので primary 経路しか通らず、e2e の fixture も mp4 だった)
+# (この約 20 行は、mock が必ず nb_frames を正の整数で返すと primary 経路しか通らず、
+#  e2e の fixture も mp4 だと守られない)
 printf '\n## Test 70g: Fallback expectation for containers without nb_frames (issue 397 r3)\n'
 # 🚨 拡張子は .mkv にする: 実 AVI は nb_frames を出すので、.avi に MOCK_NB_FRAMES="N/A" を
 # 与えると実在しない組み合わせになり「nb_frames を出さないコンテナ」の代表として誤解を招く
@@ -309,7 +309,7 @@ fi
 #
 # 🚨 「却下メッセージが出ないこと」で採用を観測しないこと。それは else 枝の print を
 # 見ているだけで、採用枝を `want_frames="$want_by_duration"` に差し替える (= 常に尺ベースを
-# 使う。ただし黙って) 変異を**緑のまま通す** (実測 2026-09-19 の敵対レビュー 5 周目)。
+# 使う。ただし黙って) 変異を**緑のまま通す** (実測 2026-09-19)。
 # 採用/非採用で**密度の判定そのものが割れる**入力を使う:
 #   尺ベース=300 / nb=310 (差 10 ≤ trust 許容 12 なので採用される) / 出力=330
 #   採用時: 期待値 310、Δ=20 ≤ 許容 24 → 警告なし
@@ -669,8 +669,8 @@ setopt err_exit
 assert_not_contains "$output" "repetition-operator" "No regex error with '+0.5' threshold"
 
 # Test 85: 音声なしソース → 出力にも音声が無いのは正常 (noaudio NG にしない)
-# 回帰防止: 旧実装は出力の音声有無だけを見ていたため、-an で正常エンコードした
-# 音声なし素材が毎回 check_ng-noaudio にリネームされ、再実行のたび再エンコードされていた。
+# 回帰防止: 出力の音声有無だけを見ると、-an で正常エンコードした
+# 音声なし素材が毎回 check_ng-noaudio にリネームされ、再実行のたび再エンコードされる。
 # 注: 音声なしソースは __video_health_check (チェック2) が破損扱いするため、
 # このパスへは --force 経由でのみ到達する (health check の仕様は本テストのスコープ外)。
 printf '\n## Test 85: Silent source (--force) - no noaudio false positive\n'
@@ -794,7 +794,7 @@ assert_file_not_exists "$TEST_DIR/out.av1.mp4" "No bogus output left behind"
 (( rc == 1 )) || { bad '✗ finalize should return 1 (NG) on missing output\n'; exit 1; }
 
 # ----------------------------------------------------------------------
-# issue 412: 宣言メタデータ (nb_frames / format=duration) が実データを超えて
+# 宣言メタデータ (nb_frames / format=duration) が実データを超えて
 # 水増しされた壊れたコンテナ (idx1 が実データを超える AVI 等) を、実パケット数 /
 # 全走査での終端実測で救う再確認。Test 91-95 は各検査を単独で、Test 96 は
 # 実際に報告された事故 (frames/duration/vidloss が同時に NG) を再現する。
@@ -854,8 +854,8 @@ assert_not_contains "$output" "check_ng" "Output is not marked as check_ng"
 
 # Test 94: 映像は全走査で一致するが、音声だけ本当に短くなっている場合は降格しない
 # (duration チェックが音声を無視して映像だけで判定するようになっていないかの回帰防止。
-#  vidloss は映像しか見ないため、この欠落は duration だけが守る。codex 反証レビューの
-#  P1 指摘: 映像パケット数一致だけで duration を降格すると、この欠落を隠してしまう)
+#  vidloss は映像しか見ないため、この欠落は duration だけが守る。映像パケット数一致だけで
+#  duration を降格すると、この欠落を隠してしまう)
 printf '\n## Test 94: audio-only truncation is not masked by a matching video full-scan\n'
 TEST_DIR="$TEST_TMP/test94"
 mkdir -p "$TEST_DIR"
@@ -891,7 +891,7 @@ assert_not_contains "$output" "再生時間判定" "No downgrade message when re
 # Test 96: 実際の事故の再現 — 宣言メタデータ (nb_frames / format=duration /
 # stream=duration) が実データを超えて水増しされた壊れた AVI で、frames/duration/
 # vidloss が同時に NG になっていたが、実パケット数と全走査終端はすべて一致する
-# (issue 412 の実測値そのもの: 宣言 280,661 フレーム / 実測 278,888 フレーム)。
+# (実測値そのもの: 宣言 280,661 フレーム / 実測 278,888 フレーム)。
 # 🚨 MOCK_AUDIO_DURATION を MOCK_VIDEO_DURATION と揃えておくこと (揃えないと
 # avsync が横から NG を出し、frames/duration/vidloss の降格だけを検証できない)。
 printf '\n## Test 96: real-world repro - inflated container metadata downgrades all three checks\n'

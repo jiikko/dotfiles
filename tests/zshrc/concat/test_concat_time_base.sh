@@ -64,8 +64,8 @@ setopt err_exit
 assert_file_not_exists "$TEST_DIR/tbase.mp4" "No output file created on time_base mismatch"
 
 # Test 5: 修復は常に max timescale (高分解能側) を target にする
-# 旧実装は「先頭ファイル基準」だったため、低分解能ファイルが先頭にあると
-# 高分解能ファイルを低分解能側に丸めようとして PTS 誤差が発生する穴があった。
+# 「先頭ファイル基準」にすると、低分解能ファイルが先頭にあるとき
+# 高分解能ファイルを低分解能側に丸めようとして PTS 誤差が発生する。
 printf '\n## Test 5: Repair always targets max timescale (90000), regardless of file order\n'
 TEST_DIR="$TEST_TMP/tb5"
 mkdir -p "$TEST_DIR"

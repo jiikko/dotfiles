@@ -182,8 +182,8 @@ FIXB_OUT="$(
     bakcount() { ls "$RDIR"/.pane_contents.ttguard.* 2>/dev/null | wc -l | tr -d " "; }
 
     # 退行 (5→2): last も archive も退行前へ戻り、退避ファイルは残らない。
-    # rc は非 0 (= 保存していない)。旧実装は rc=0 を返しており、全呼び出し側が
-    # 「保存成功」を記録していた (periodic-save rc=0 / kill-cmd save=ok / 手動 C-s の
+    # rc は非 0 (= 保存していない)。rc=0 を返すと、全呼び出し側が
+    # 「保存成功」を記録してしまう (periodic-save rc=0 / kill-cmd save=ok / 手動 C-s の
     # 「Tmux environment saved!」)。rc=0 は「保存した」を意味しなければならない (2026-07-30)
     make_prev; printf 2 > "$RDIR/.fake_n"; ( tt_save_main quiet ); rrc=$?
     printf "CASE:fixb_regress last=%s archive=%s bak=%s rc=%s\n" "$(readlink "$RDIR/last")" "$(tar -tzf "$RDIR/pane_contents.tar.gz" 2>/dev/null | head -1 || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)" "$rrc"
@@ -219,8 +219,8 @@ FIXB_OUT="$(
     printf "CASE:fixb_zero_small last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(tar -tzf "$RDIR/pane_contents.tar.gz" 2>/dev/null | head -1 || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
 
     # save 失敗 (rc≠0): archive 生成中の死で truncate された共有 archive をバックアップから
-    # 書き戻す (旧実装は rc≠0 だと Fix B 復元ブロックを丸ごと skip して無傷の退避を捨てて
-    # いた)。rc は上流の失敗をそのまま呼び出し側へ返す。
+    # 書き戻す (rc≠0 で Fix B 復元ブロックを丸ごと skip すると、無傷の退避を捨てて
+    # しまう)。rc は上流の失敗をそのまま呼び出し側へ返す。
     make_prev; : > "$RDIR/.fake_fail"; ( tt_save_main quiet ); frc=$?
     rm -f "$RDIR/.fake_fail"
     printf "CASE:fixb_fail rc=%s archive=%s bak=%s\n" "$frc" "$(tar -tzf "$RDIR/pane_contents.tar.gz" 2>/dev/null | head -1 || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"

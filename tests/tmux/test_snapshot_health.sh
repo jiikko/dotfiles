@@ -95,7 +95,7 @@ tt_spawn_fake_proc; WATCH="$REPLY_PID";    mkdir -p "$TMP_DIR/wd/1.lock"; tt_loc
 
 # 書き手が「pid<TAB>lstart」形式で書いていること。pid のみの旧形式へ退行すると、読み手は
 # 旧形式フォールバック (pid 生存のみ) に落ちて pid 再利用の照合が黙って無効化される
-# (2026-08-20 の red team が、この検査が無いと退行が緑のまま通ることを実証)。
+# (この検査が無いと退行が緑のまま通ることを実証済み)。
 owner_line="$(cat "$TMP_DIR/ps/1.lock/pid")"
 case "$owner_line" in
   *"$(printf '\t')"*) printf '✓ 書き手は pid<TAB>lstart 形式で owner を記録する\n' ;;
@@ -137,8 +137,8 @@ grep -q 'last スナップショットが無い' "$RUN_OUT" || { printf '✗ las
 printf '✓ last が無いと NG\n'
 
 # --- (5a) archive が truncate されている → NG (mtime は新しいので中身で判定できるか) ----
-# レビューで実証された欠陥の回帰テスト: 旧実装は mtime 比較だったため、たった今 truncate された
-# 壊れた archive を「新しいから OK」と判定していた。復元すると全 pane の scrollback が空になる。
+# 回帰テスト: mtime 比較だと、たった今 truncate された
+# 壊れた archive を「新しいから OK」と判定してしまう。復元すると全 pane の scrollback が空になる。
 mk_snapshot snap_now.txt 3 0
 printf '\037\213broken' > "$RDIR/pane_contents.tar.gz"   # gzip magic だけの壊れたファイル (mtime は今)
 health
@@ -158,7 +158,7 @@ mk_snapshot snap_now.txt 3 0
 mk_archive 3
 
 # --- (8) 保存の間隔の読み方 → 鮮度の閾値 (= 間隔 × 2) ------------------------------------
-# 0 (continuum では「無効」) と数字でない値は既定の 15 分に寄せ、"08" は 8 進でなく 8 分と読む (issue 781)。
+# 0 (continuum では「無効」) と数字でない値は既定の 15 分に寄せ、"08" は 8 進でなく 8 分と読む。
 # 下限 (既定 30 分) に隠れないよう下限を 1 分に下げ、閾値そのものを見る
 for tc in '0:30' 'abc:30' '08:16' '20:40'; do
   iv="${tc%%:*}"; want="${tc##*:}"
@@ -171,8 +171,8 @@ printf '✓ 保存の間隔が 0 / 数字でないときは既定の 15 分か�
 # --- (4b) owner の起動時刻が記録と違う (pid 再利用) → NG --------------------------------
 # 🚨 ここが「pid<TAB>lstart 形式で書く唯一の理由」を守る検査。生きている pid を owner に
 # しつつ lstart だけ食い違わせると、pid 生存だけを見る実装 (旧 cat|kill -0 / start を捨てる
-# 実装) では「稼働中」に見えてしまう。2026-08-20 の red team が、この検査が無いと
-# 「書き手が pid だけ書く退行」も「読み手が start を捨てる退行」も緑のまま通ることを実証した。
+# 実装) では「稼働中」に見えてしまう。この検査が無いと
+# 「書き手が pid だけ書く退行」も「読み手が start を捨てる退行」も緑のまま通る (実証済み)。
 printf '%s\t%s\n' "$PERIODIC" "Thu Jan  1 00:00:00 1970" > "$TMP_DIR/ps/1.lock/pid"
 health
 [[ "$RC" -eq 1 ]] || { printf '✗ lstart 不一致 (pid 再利用) を稼働中と誤認した (RC=%s):\n' "$RC"; cat "$RUN_OUT"; exit 1; }

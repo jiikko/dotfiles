@@ -35,7 +35,7 @@ mk "$bad" 030-bug-c.md '# c\n\n## 概要\n'
 mk "$bad" epic/g/040-bug-e.md '# e\n\n本文\n'
 mk "$bad" 050-bug-f.md '# f\n\n## 概要\n\n> 🚨 **担当中: s3**\n'
 mkdir -p "$bad/next"; printf '# g\n\n本文\n' > "$bad/next/060-bug-g.md"
-# 🚨 バナーに見えるが冒頭の担当者表示ではない形 (敵対レビュー 2026-09-19 で実測した偽の緑)
+# 🚨 バナーに見えるが冒頭の担当者表示ではない形 (実測した偽の緑)
 # shellcheck disable=SC2016 # バッククォートは markdown のフェンス
 mk "$bad" 070-bug-h.md '# h\n\n```\n**担当中: x**\n```\n'
 mk "$bad" 080-bug-i.md '# i\n\n<!-- **担当中: x** -->\n'

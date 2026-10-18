@@ -4,7 +4,7 @@
 # 固定する不変条件:
 #   - 対象 window の input pane だけが seen になる (working / idle は触らない)
 #   - 別 window の input は触らない (window スコープ)
-#   - **tmux クライアントの起動回数が pane 数に比例しない** (issue 083: window 切替ごとに
+#   - **tmux クライアントの起動回数が pane 数に比例しない** (window 切替ごとに
 #     走る hook なので、pane 数ぶん fork していた。if-shell は競合対策で pane ごとに必要だが
 #     `;` 区切りで 1 回の起動にまとめられる)
 #
@@ -97,10 +97,10 @@ else
   ng "別 window の input を書き換えた ($got)"
 fi
 
-# 🚨 ここが issue 083 の本体。pane 数 (4) に比例して起動すると 1 + 4 = 5 回になる。
+# 🚨 ここが本体。pane 数 (4) に比例して起動すると 1 + 4 = 5 回になる。
 # 期待は「list-panes 1 回 + まとめた if-shell 1 回」= 2 回。
 # 🚨 上界 (-le 2) で見ないこと: hook が何もしない (0〜1 回) でもこの検査だけは緑になり、
-# 「まとめられている」と「壊れている」を区別できない (red team 実測 2026-08-21)。厳密一致で見る。
+# 「まとめられている」と「壊れている」を区別できない (実測 2026-08-21)。厳密一致で見る。
 calls="$(wc -l < "$CALLS" | tr -d ' ')"
 if [ "$calls" -eq 2 ]; then
   ok "tmux クライアントの起動は 2 回 (list-panes 1 + まとめた if-shell 1。pane 4 枚でも増えない)"

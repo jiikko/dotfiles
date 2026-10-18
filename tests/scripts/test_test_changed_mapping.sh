@@ -2,7 +2,7 @@
 # scripts/test_changed.sh の写像 (パス → テストターゲット) のゴールデンテスト。
 #
 # なぜ: 写像の腕は「実在するテストとの対応」を人手で維持しており、テスト側の移動や
-# 腕の編集で黙って腐る (issue 060: _claude/skills 等が「テスト対象なし」と誤断定され、
+# 腕の編集で黙って腐る (_claude/skills 等が「テスト対象なし」と誤断定され、
 # tests/claude が回らなかった)。ここで代表パスごとに期待ターゲットを固定し、
 # 写像が痩せたら red になるようにする。
 # 網羅ではなく「腐ると実害が大きい対応」だけを pin する (全列挙は写像と二重管理になる)。
@@ -28,13 +28,13 @@ expect() {
   printf '✓ %s\n' "$desc"
 }
 
-# issue 060 で実際に腐っていた対応 (回帰の本丸)
+# 実際に腐っていた対応 (回帰の本丸)
 expect "_claude/CLAUDE.md -> tests/claude" 'tests: .*tests/claude' _claude/CLAUDE.md
 expect "_claude/skills/*.md -> tests/claude" 'tests: .*tests/claude' _claude/skills/c/SKILL.md
 expect "_claude/rules/*.md -> tests/claude" 'tests: .*tests/claude' _claude/rules/commit-with-pathspec.md
 expect "_claude/hooks/*.sh -> shell lint + tests/claude" 'test-shellcheck.*tests: .*tests/claude' _claude/hooks/deny-bare-tmux-kill.sh
 expect "_claude/statusline-command.sh -> shell lint + tests/claude" 'test-shellcheck.*tests: .*tests/claude' _claude/statusline-command.sh
-# issue 619: mods の manifest / hooks.json が *.json (文法だけ) に落ちると、modules の指し先の誤りが test-changed を素通りする
+# mods の manifest / hooks.json が *.json (文法だけ) に落ちると、modules の指し先の誤りが test-changed を素通りする
 expect "_claude/mods/*/plugin.json -> tests/claude" 'tests: .*tests/claude' _claude/mods/canary/.claude-plugin/plugin.json
 expect "_claude/mods/*/register.ts -> tests/claude" 'tests: .*tests/claude' _claude/mods/canary/hooks/register.ts
 expect "_claude/settings.json -> test-json + tests/claude" 'test-json.*tests: .*tests/claude' _claude/settings.json
@@ -47,8 +47,8 @@ expect "src/subproc -> 取り込む ratelimit も" 'go: .*src/ratelimit' src/sub
 expect "src/subproc -> glogx 経由の pro-con も" 'go: .*src/pro-con' src/subproc/subproc.go
 
 # shell スクリプトは「名前で参照しているテストディレクトリ」まで届くこと (監査 071)。
-# 以前は lint 4 種 (test-syntax/shellcheck/zsh-syntax/zshrc) へ潰れ、tests/tmux などに
-# 一度も到達していなかった (issues/done/060 が「未網羅」と残していた穴)。
+# lint 4 種 (test-syntax/shellcheck/zsh-syntax/zshrc) へ潰れると、tests/tmux などに
+# 一度も到達しない。
 # 🚨 ここで「どのディレクトリを期待するか」を列挙し過ぎないこと。発見式なので、テスト側の
 # 参照が増減すれば期待も変わる。壊れたら「参照が消えたのか、発見が壊れたのか」を見る。
 expect "scripts/tmux_agent_panel.sh -> tests/tmux (参照からの発見)" 'tests: .*tests/tmux' scripts/tmux_agent_panel.sh
@@ -61,7 +61,7 @@ expect "zshlib -> shell 系" 'test-zshrc' zshlib/_concat.zsh
 expect "json -> test-json" 'test-json' _claude/keybindings.json
 
 # テストを持たない tests/lib を回す対象に入れない (make test-dir は 0 件を失敗にする)。
-# 以前は bin/mp・bin/tmux の逆引きが tests/lib に当たり、test-changed が「0 件」で赤くなっていた。
+# bin/mp・bin/tmux の逆引きが tests/lib に当たると、test-changed が「0 件」で赤くなる。
 # expect_no <説明> <出てはいけない語> <パス>...
 expect_no() {
   local desc="$1" word="$2"; shift 2
@@ -87,7 +87,7 @@ expect_no "tests/lib の helper の変更で tests/lib 自体は渡さない" 't
 # 逆引きで当たるディレクトリを先に全部渡しておく (「対象が増えたか」で当たりを判定する実装だと、ここで tests/lib を渡してしまう)
 expect_no "他のパスと一緒に渡しても tests/lib は渡さない" 'tests/lib' \
   tests/bin/x.sh tests/pro-con/x.sh tests/scripts/x.sh tests/tmux/x.sh tests/zshrc/x.sh tests/lib/wait_until.sh
-# 逆引きがどこにも当たらないテスト無しのディレクトリは従来どおり渡し、runner の「0 件」で気づかせる (issue 063)。
+# 逆引きがどこにも当たらないテスト無しのディレクトリは従来どおり渡し、runner の「0 件」で気づかせる。
 # 実在するディレクトリで試す (実在しないと find が失敗し「テスト有り」に倒れて、この分岐を通らない)。
 # 名前は実行時に組み立てる (このファイルに完全な名前を書くと、逆引きが tests/scripts に当たってしまう)
 unref_name="__synth""_unref_$$.sh"

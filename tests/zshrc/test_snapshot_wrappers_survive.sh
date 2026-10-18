@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Claude Code の shell snapshot 条件で公開ラッパーが壊れないことの回帰テスト (issue 152)。
+# Claude Code の shell snapshot 条件で公開ラッパーが壊れないことの回帰テスト。
 # snapshot は `_` 始まりの関数と非 export 変数を含めないため、「公開ラッパーの本体だけがあり、
 # _reload_then_call / _TMUX_SESSION_LIB / _t_impl が未定義」の zsh -f を作って呼ぶ。
 # 定義は本物を source した zsh から `functions[<name>]` で取り出す (コピーは本体に追従しない)。
-# 兄弟: tests/zshrc/codex-wrapper/test_codex_snapshot_survives.sh (codex() 版、issue 149)
+# 兄弟: tests/zshrc/codex-wrapper/test_codex_snapshot_survives.sh (codex() 版)
 set -euo pipefail
 unset CDPATH
 
@@ -72,28 +72,27 @@ out="$(HOME="$FAKE_HOME" zsh -f -c '
 [[ "$out" == $'LIVE_V1\nLIVE_V2' ]] || fail "_TMUX_SESSION_LIB の差し替えが既定パスに負けている (out: $out)"
 ok "_TMUX_SESSION_LIB が定義済みならそちらを優先して毎回再評価する"
 
-# --- 4. 静的検査: 新しい公開ラッパーが self-heal ガードなしで増えるのを止める (issue 203 候補 A) ---
+# --- 4. 静的検査: 新しい公開ラッパーが self-heal ガードなしで増えるのを止める ---
 # 上の実行時テストが固定しているのは concat と tt の 2 本だけで、**新しい公開ラッパーが
 # 増えたときは何も見ない**。snapshot は `_` 始まりの関数と非 export 変数を含めないので、公開関数が
 # `_` 始まりの helper (関数でも変数でも) を参照していてガードが無ければ、その関数は
-# Claude Code の Bash から `command not found` / 空変数で壊れる (issue 149 / 152 で実発生)。
+# Claude Code の Bash から `command not found` / 空変数で壊れる。
 #
 # 🚨 **関数の列挙は zsh 自身にさせる** (`${(k)functions}` + `${functions[name]}`)。正規表現で
-#    定義行を拾う形は、この repo に実在する書き方を取りこぼした (敵対的レビュー 2026-09-03 の
-#    P1-1: `function history-all { ... }` の括弧なし / `if` の中でインデントされた `anyenv() {`)。
+#    定義行を拾う形は、この repo に実在する書き方を取りこぼす (
+#    `function history-all { ... }` の括弧なし / `if` の中でインデントされた `anyenv() {`)。
 #    heredoc の中の偽定義を拾う・1 行 2 定義の 2 本目を落とす、も同時に消える
-# 🚨 参照の検出は `$_X` / `${_X}` の**変数**も含める。issue 152 で `tt` が壊れた原因は
-#    `_TMUX_SESSION_LIB` (非 export 変数) で、関数呼び出しだけを見ていると素通りする (同 P1-2)
+# 🚨 参照の検出は `$_X` / `${_X}` の**変数**も含める。`tt` が壊れた原因は
+#    `_TMUX_SESSION_LIB` (非 export 変数) で、関数呼び出しだけを見ていると素通りする
 # 🚨 コメントと `local` 宣言は除く。除かないと「コメントに helper 名を書いた」「`local _l=`」だけで
-#    落ちる (同 P2-6 / P2-7)
+#    落ちる
 # 🚨 ガードは **helper の source かどうか**を見る。body 全域の素の `source ` マッチだと、
-#    無関係な source・コメント・文字列で通ってしまう (同 P2-4)
+#    無関係な source・コメント・文字列で通ってしまう
 guard_probe="$TMP/guard_probe.zsh"
 cat > "$guard_probe" <<'PROBE'
 # 公開関数 (先頭が _ でない) を「名前 <TAB> 本体」で出す。本体の改行は \x01 に置き換える。
 # 🚨 **この repo が定義した関数だけ**に絞る (functions_source が定義元ファイルを返す)。
 #    絞らないと zsh 同梱の compdef 等が入り、`_comps` 参照で誤検出する
-#    (敵対的レビュー 2026-09-03 の指摘を受けた実測)
 zmodload zsh/parameter 2>/dev/null
 for k in ${(ko)functions}; do
   [[ "$k" == _* ]] && continue

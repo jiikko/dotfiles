@@ -86,7 +86,7 @@ expect_silent "issues/ の外の変更"
 new_repo; ( cd "$REPO" && git mv issues/186-x.md issues/next/ &&
   git -c user.email=t@t -c user.name=t commit -qm claim )
 # 🚨 **commit しただけでは claim になっていない** (他マシンからは「未着手の issue」に見える)。
-# issue 249 の項目 4 でここを拾うようにした。以前は「commit 済みなら黙る」が契約だった
+# 「commit 済みなら黙る」契約にしない: それだと他マシンから未着手に見える claim を拾えない
 expect_fire "claim が commit 済みだが未 push"
 
 echo "## 発火する形 (group 内 next/ の claim)"
@@ -100,7 +100,7 @@ new_epic_repo; ( cd "$REPO" && git mv issues/epic/foo/186-x.md issues/epic/foo/n
   git -c user.email=t@t -c user.name=t commit -qm claim )
 expect_fire "epic group の commit 済みだが未 push の claim"
 
-# 🚨 **detached worktree の claim** (issue 311)。この repo は `worktree-per-session.md` で
+# 🚨 **detached worktree の claim**。この repo は `worktree-per-session.md` で
 # **detached worktree を規範として要求している**のに、fixture は全ケース通常ブランチだった。
 # `git log --branches --not --remotes` は detached HEAD の commit を **1 件も返さない**ので、
 # 規範どおり worktree で claim すると **「未 push は無い」という積極的な偽の全クリア**になる。
@@ -151,13 +151,13 @@ out=$( cd "$scope" && printf '{"prompt":"x"}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$
 if [ -n "$out" ]; then echo "✗ issues/next/ を消した repo (opt-out) で発火した"; fail=$((fail+1));
 else echo "✓ issues/next/ が無い repo では発火しない (opt-out した repo を急かさない)"; ok=$((ok+1)); fi
 
-# 入れ子の issue dir (`<root>/*/issues/next/`) の claim も拾う (issue 276)。
+# 入れ子の issue dir (`<root>/*/issues/next/`) の claim も拾う。
 # 🚨 next_dir の探索を root 直下だけへ戻す変異で red になること。
 new_nested_repo
 ( cd "$REPO" && ln -s ../186-x.md macOS/issues/next/186-x.md ) >/dev/null 2>&1
 expect_fire "入れ子 dir (macOS/issues/next/) の未コミット claim"
 
-# 🚨 claim と無関係な深いパスを誤報しないこと (敵対的レビュー 2026-09-06)。
+# 🚨 claim と無関係な深いパスを誤報しないこと。
 # 276 で pathspec を外したとき、突き合わせの grep が**アンカー無し・深さ無制限**になり、
 # Next.js の `web/pages/issues/next/index.tsx` を「未共有の claim」として毎プロンプト
 # 誤報していた。ゲート (深さ 1 段) と突き合わせ (無制限) の非対称が原因。

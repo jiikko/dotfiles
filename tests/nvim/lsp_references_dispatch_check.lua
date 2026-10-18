@@ -11,9 +11,9 @@
 --      grep へ回すのは劣化にしかならない。
 --   4. **行き先は M.references_action の返り値で表明される**。分岐をマッピングの中に埋めると、
 --      「文字列が在るか」の静的 pin しか書けず、rg と LSP を入れ替える / word_match を落とす /
---      cwd を nvim の cwd に固定する、といった変異が全部緑で通る (敵対レビュー P1-2)。
+--      cwd を nvim の cwd に固定する、といった変異が全部緑で通る。
 --   5. 検索範囲は **Ruby のサーバの root**。on_attach が受け取った client をそのまま使うと、
---      後から attach した client (例: .erb の tailwindcss) の root を掴む (敵対レビュー P2-1)。
+--      後から attach した client (例: .erb の tailwindcss) の root を掴む。
 --   6. <C-k> のマッピングがこの判定を実際に通る。判定関数だけ正しくても、マッピングから
 --      呼ばれていなければ 1 mm も効かない。
 --   7. **rg の検索対象が Ruby 系のファイルに絞られている**。絞らないと README.md / *.yml /

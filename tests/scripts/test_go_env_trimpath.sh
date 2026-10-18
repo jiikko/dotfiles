@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_go_env_trimpath.sh — scripts/go_env_trimpath.sh が go env の GOFLAGS に -trimpath を足す規則の検査 (issue 816)。
+# test_go_env_trimpath.sh — scripts/go_env_trimpath.sh が go env の GOFLAGS に -trimpath を足す規則の検査。
 # GOENV を一時ファイルに向けて実ユーザーの go env を書かない。
 set -uo pipefail
 unset CDPATH

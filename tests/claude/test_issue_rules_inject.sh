@@ -5,7 +5,7 @@
 # なぜ: この hook の壊れ方は 2 つで、どちらも静かに起きる。
 #   ① issues/ がある repo で注入しない → 規約なしで issue が書かれる (各 README から規約を抜いたため)
 #   ② issues/ が無い repo (仕事の repo) で注入する → 無関係な規約が毎セッション読まれる
-#   ③ issue-rules.d/ の rule が届かない → hook 1 本の注入は約 10k 字で末尾が黙って落ちる (issue 414) ので、
+#   ③ issue-rules.d/ の rule が届かない → hook 1 本の注入は約 10k 字で末尾が黙って落ちる ので、
 #     1 ファイル 1 呼び出しで settings.json に並べる。並べ漏れ・上限超えを固定する
 # 同じ repo で issues/ の有無だけを変えた A-B で①②を固定する。
 set -euo pipefail

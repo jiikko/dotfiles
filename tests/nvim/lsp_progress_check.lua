@@ -13,10 +13,10 @@
 --      これが無いと「押したのに無反応」に見える。
 --   4. 索引 ($/progress) は実行中の要求より優先して出す。索引中はどのみち要求が返らないため。
 --   5. **client が死んでも表示が残らない**。nvim は client 終了時に in-flight の要求へ
---      complete を投げないので、掃除しないと「参照を検索中…」が永久に残る (敵対レビュー P2-2)。
+--      complete を投げないので、掃除しないと「参照を検索中…」が永久に残る。
 --   6. **表示が変わらないときは再描画しない**。lualine の statusline は関数評価で、再描画のたびに
 --      lualine_c の relative_path_from_git_root (中で vim.fs.root) が走る。索引中の $/progress は
---      高頻度なので、無条件に redrawstatus を呼ぶと再描画が跳ねる (敵対レビュー P2-5)。
+--      高頻度なので、無条件に redrawstatus を呼ぶと再描画が跳ねる。
 --   7. 🚨 statusline 側 (_nviminit.lua の lualine) が vim.lsp.status() を **直接呼ばない**。
 --      vim.lsp.status() は client.progress (vim.ringbuf) を pop しながら読むので、1 回の再描画で
 --      2 回評価されると 2 回目は必ず空になる。実行時には「たまに消える」形でしか出ず、

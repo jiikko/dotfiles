@@ -98,7 +98,7 @@ EOS
   [ -s "$WORK/out1/digest.md" ]
   grep -q "^a	0	" "$WORK/out1/runs.tsv"
   grep -q "^b	0	" "$WORK/out1/runs.tsv"
-  # 台帳の列 (issue 369 案 1 / 762): label / rc / started_at / elapsed_s / out / log / cause。ヘッダは完全一致で固定する
+  # 台帳の列: label / rc / started_at / elapsed_s / out / log / cause。ヘッダは完全一致で固定する
   [ "$(head -1 "$WORK/out1/runs.tsv")" = "$(printf 'label\trc\tstarted_at\telapsed_s\tout\tlog\tcause')" ]
   [ "$(awk -F'\t' '$1=="a"{print $7}' "$WORK/out1/runs.tsv")" = "-" ]
   # started_at は ISO 8601 (YYYY-MM-DDTHH:MM:SS+ZZZZ)、elapsed_s は整数。placeholder "-" ではない
@@ -270,8 +270,8 @@ EOS
 }
 
 # 🚨 status だけを見ないこと: die() はどの起動前検証でも 1 を返すので、「mode を見なくなった」
-# 「重複検出を消した」という退行でも別の理由で 1 になり、テストは緑のまま通る (2026-08-21 の
-# テスト監査 issue 072)。落ちた理由をメッセージで固定する。
+# 「重複検出を消した」という退行でも別の理由で 1 になり、テストは緑のまま通る。
+# 落ちた理由をメッセージで固定する。
 @test "mode 不正と label 重複は manifest エラー" {
   printf 'a\twrite\tm1\thigh\t%s\n' "$WORK/brief_ok.md" >"$WORK/m.tsv"
   run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out5"
@@ -312,7 +312,7 @@ EOS
   [ ! -e "$WORK/out_tv/a.rc" ]
 }
 
-# issue 150: 敵対レビュー lens だけ思考時間が長く既定 timeout で時間切れになるため、
+# 壊しにいく lens だけ思考時間が長く既定 timeout で時間切れになるため、
 # 行単位で timeout を上書きできる (省略行は CODEX_FANOUT_TIMEOUT のまま)
 @test "manifest の timeout_s 列: その行だけ上書きされ、省略行は env 既定のまま走る" {
   printf 'hang\tro\tm1\thigh\t%s\t2\nok\tro\tm1\thigh\t%s\n' \
@@ -332,7 +332,7 @@ EOS
   [ ! -e "$WORK/out_rowtv/a.rc" ]
 }
 
-# 敵対レビューの実測 (issue 150): どちらも通すと [ -ge ] が integer expected で常に偽になり、
+# 実測: どちらも通すと [ -ge ] が integer expected で常に偽になり、
 # watchdog が「無音で」無効化される (die もせず hang した codex を永久に待つ)
 @test "全角数字 (ロケール照合) と 19 桁 (桁あふれ) の timeout も起動前に弾く" {
   # 全角数字: ja_JP.UTF-8 の照合順では範囲式 [0-9] を素通りする → 明示列挙で弾く

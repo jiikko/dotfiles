@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 「手書き列挙」と「桁数の決め打ち」で射程が静かに縮む形を固定する (issue 313)。
+# 「手書き列挙」と「桁数の決め打ち」で射程が静かに縮む形を固定する。
 #
 # なぜ: どれも**壊れたときに黙る**。対象から漏れたファイルは検査されないだけで何も言わないし、
 # 1000 番の issue は「関わった issue なし」になるだけ。実測 2026-09-09 の起点:
@@ -36,7 +36,7 @@ else
     bad "導出結果に theme/colors.yml が無い (抽出が壊れている)"
   fi
   # 実在する yml/yaml が全部入っていること (= 手書き列挙へ戻すと落ちる)
-  # .claude/worktrees (pro-con の worktree。issue 616) は導出と同じく外す
+  # .claude/worktrees (pro-con の worktree) は導出と同じく外す
   actual=$(find . -path ./.claude/worktrees -prune -o \( -name '*.yml' -o -name '*.yaml' \) -type f \
     -not -path './.git/*' -not -path '*/vendor/*' -not -path '*/node_modules/*' -not -path './tmp/*' -print \
     | sed 's|^\./||' | sort)
@@ -100,7 +100,7 @@ fi
 # 🚨 ヘッダが「未登録は構造的に発生しない」と主張していたが偽だった。主張どおりに動く形へ寄せ、
 # 新しいディレクトリを足したときに黙って外へ出ないよう機械で見る。
 discovered=$(scripts/discover_shell_scripts.sh | sort)
-# .claude/worktrees は pro-con の worktree (別の checkout の写し。issue 616)。数えると手元だけ偽の赤になる
+# .claude/worktrees は pro-con の worktree (別の checkout の写し)。数えると手元だけ偽の赤になる
 allsh=$(find . -path ./.claude/worktrees -prune -o -type f \( -name '*.sh' -o -name '*.zsh' \) \
   -not -path './.git/*' -not -path '*/vendor/*' -not -path './tmp/*' -not -path './tests/*' -print \
   | sed 's|^\./||' | sort)

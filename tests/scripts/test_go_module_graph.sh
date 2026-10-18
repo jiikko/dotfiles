@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# scripts/go_module_graph.sh (go.mod が tidy の形で、module グラフ全体が解決できるか) のテスト (issue 787)。
+# scripts/go_module_graph.sh (go.mod が tidy の形で、module グラフ全体が解決できるか) のテスト。
 #
-# fixture は issue 736 / 787 で落ちた形を写す: a → b (replace あり) → c (b の go.mod だけが replace を持つ)。a が import するのは
+# fixture は実際に落ちた形を写す: a → b (replace あり) → c (b の go.mod だけが replace を持つ)。a が import するのは
 # c に届かない b の package だけなので、go mod tidy -diff と go build は通り、go list -m all だけが落ちる。
 set -euo pipefail
 unset CDPATH
@@ -68,7 +68,7 @@ mkdir -p "$TMP_DIR/nomod"
 run "$TMP_DIR/nomod"
 if [ "$rc" -eq 2 ]; then ok "go.mod の無い場所では rc=2"; else bad "go.mod の無い場所で rc=${rc}"; fi
 
-# 5. 上に go.work があっても素通りしない (workspace の module が replace の抜けを埋める。敵対的レビュー 2026-10-16 で再現)
+# 5. 上に go.work があっても素通りしない (workspace の module が replace の抜けを埋める。2026-10-16 に再現)
 dir="$(mk work '')"
 printf 'go 1.24\n\nuse (\n\t./a\n\t./b\n\t./c\n)\n' > "$(dirname "$dir")/go.work"
 if (cd "$dir" && GOWORK='' GOFLAGS='' go list -m all >/dev/null 2>&1); then ok "前提: go.work があると素の go list -m all は通る"; else bad "前提が崩れた: go.work があっても go list -m all が落ちる"; fi

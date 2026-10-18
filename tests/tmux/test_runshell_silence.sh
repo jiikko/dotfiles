@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # run-shell -b で detach 起動され、**長時間 tmux のパイプを掴む**スクリプトが
-# 無音契約 (`exec </dev/null >/dev/null 2>&1`) を実装しているかを固定する (issue 111)。
+# 無音契約 (`exec </dev/null >/dev/null 2>&1`) を実装しているかを固定する。
 #
 # なぜ必要か: この不変条件は一度ドリフトした。3 本のうち tmux_restore_runner.sh だけが
 # リダイレクトを持たず、呼び出しごとの `>/dev/null` で代用していた。それでは
@@ -42,7 +42,7 @@ for spec in "${targets[@]}"; do
   f="$ROOT_DIR/$rel"
   [ -f "$f" ] || { printf '✗ 対象が存在しない: %s\n' "$rel" >&2; fails=$((fails + 1)); continue; }
   # 🚨 字面の存在だけを見ると、末尾の死んだコードや heredoc 本文に同じ 32 バイトがあるだけで
-  #   緑になる (敵対的レビューが変異で実証)。**実処理より前にあること**まで見る。
+  #   緑になる (変異で実証済み)。**実処理より前にあること**まで見る。
   #   行頭の空白は許す (関数の中 / if の枝に置くスクリプトがある。冒頭の注記を参照)。
   exec_line="$(grep -n '^[[:space:]]*exec </dev/null >/dev/null 2>&1$' "$f" | head -1 | cut -d: -f1)"
   work_line="$(grep -n -- "$marker" "$f" | grep -v '^[0-9]*:[[:space:]]*#' | head -1 | cut -d: -f1)"

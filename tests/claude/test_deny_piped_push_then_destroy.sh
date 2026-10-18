@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016 # 検査に渡すコマンドの文字は展開させずにそのまま書く ($? / $(...) / ${PIPESTATUS[0]} を含む)
 # _claude/hooks/deny-piped-push-then-destroy.sh (PreToolUse(Bash): push の結果をパイプに通したまま worktree / branch を消す Bash を deny) の
-# unit テスト。合成した hook JSON を stdin で流し、deny / allow の判定を pin する (issue 454)。
+# unit テスト。合成した hook JSON を stdin で流し、deny / allow の判定を pin する。
 #
-# なぜ: `git push … | tail -1 && git worktree remove …` は push が弾かれても削除が走り、未 push の commit を失う (retro 266 / 450 で 2 回)。
+# なぜ: `git push … | tail -1 && git worktree remove …` は push が弾かれても削除が走り、未 push の commit を失う。
 # 判定式の退行 = 事故の再発経路が開く。脅威モデルと「検出しない形」はフック冒頭が正本。
 set -euo pipefail
 unset CDPATH

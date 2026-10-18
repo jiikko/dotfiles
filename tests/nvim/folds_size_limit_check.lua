@@ -1,4 +1,4 @@
--- dotfiles.folds が行数の上限 (max_lines) を超えたバッファで fold を計算しないことの headless 検証 (issue 612)。
+-- dotfiles.folds が行数の上限 (max_lines) を超えたバッファで fold を計算しないことの headless 検証。
 -- test_folds_size_limit.sh から dofile される。
 --
 -- 上限ちょうどのバッファでは今までどおり fold が作られ、上限 + 1 行では作られない (foldmethod は manual のまま)。

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/tmux_ignite_current.sh が popup の session (scratch / claude-fork) では点火しないことのテスト (issue 567)。
+# scripts/tmux_ignite_current.sh が popup の session (scratch / claude-fork) では点火しないことのテスト。
 #
 # 固定する不変条件:
 #   - 切替先が popup の session ならフレームを 1 つも出さない (popup は 1 フレームごとに全体を描き直すため)

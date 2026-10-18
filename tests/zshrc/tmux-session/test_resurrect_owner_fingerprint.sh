@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# scripts/lib/tmux_resurrect_guards.sh の owner 指紋 (起動時刻) の契約テスト (issue 078)
+# scripts/lib/tmux_resurrect_guards.sh の owner 指紋 (起動時刻) の契約テスト
 #
-# なぜ必要か: 指紋の実装は以前 guards.sh と tmux_resurrect_save.sh に**二重にあり、書式まで
-# 違っていた** (生の `ps -o lstart=` vs 空白を `_` に潰したトークン)。issue 068 の owner 書式
-# drift はこの二重化が直接原因で、078 で guards.sh 側へ一本化した。
+# なぜ必要か: 指紋の実装を guards.sh と tmux_resurrect_save.sh に**二重に持つと、書式まで
+# 違ってしまう** (生の `ps -o lstart=` vs 空白を `_` に潰したトークン)。owner 書式の
+# drift はこの二重化が直接原因になるので、guards.sh 側へ一本化している。
 #
 # 🚨 一本化しただけでは守られない。着手時の変異検証で、以下がすべて **green のまま通った**:
 #   - tt_same_proc の起動時刻比較を `return 0` に潰す (= PID 再利用を検出しなくなる)

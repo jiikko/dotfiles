@@ -91,7 +91,7 @@ printf '## inner __validate_mp4_check の契約\n'
 ( export MOCK_ACODEC_TYPE="";                                           assert_check "$F" 1 "no-audio"        "音声なし → no-audio" )
 ( export MOCK_DECODE_LOG="frame=10 time=00:00:01.00
 [h264 @ 0x0] corrupt decoded frame";                                    assert_check "$F" 1 "decode-error"    "corrupt検出 → decode-error" )
-# issue 394: DTS 非単調の警告だけでは NG にしない (従来 OK の出力を新たに NG にしないため。
+# DTS 非単調の警告だけでは NG にしない (従来 OK の出力を新たに NG にしないため。
 # 理由は __VALIDATE_MP4_DECODE_ERROR_RE の注記)。足すなら既存出力への影響を実測してから。
 ( export MOCK_DECODE_LOG="frame=10 time=00:00:10.00
 [null @ 0x0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 15 >= 15";

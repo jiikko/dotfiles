@@ -139,8 +139,8 @@ assert_file_exists "$TEST_DIR/videoC-enc.mp4" "File from list line 4 is processe
 assert_contains "$output" "サマリ" "Summary is displayed for file list"
 
 # Test 10b: -f が先頭以外の位置でも機能し、位置引数と併用できる
-# 回帰防止: 旧実装は positional 先頭の "-f" だけを処理していたため、
-# `av1ify a.mp4 -f list.txt` が「-f というファイルが無い」NG になっていた
+# 回帰防止: positional 先頭の "-f" だけを処理すると、
+# `av1ify a.mp4 -f list.txt` が「-f というファイルが無い」NG になる
 printf '\n## Test 10b: -f works in non-leading position combined with positional args\n'
 TEST_DIR="$TEST_TMP/test10b"
 mkdir -p "$TEST_DIR"

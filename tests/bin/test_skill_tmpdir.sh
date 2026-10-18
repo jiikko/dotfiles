@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bin/skill-tmpdir が <本体 checkout>/tmp/<名前>/<session-id>/ を返すことを固定する (issue 774)。
+# bin/skill-tmpdir が <本体 checkout>/tmp/<名前>/<session-id>/ を返すことを固定する。
 #
 # 守るもの: worktree の中から呼んでも本体 checkout の tmp/ を返す / session-id が無い・不正なら nosession- に倒す /
 # 名前に / や .. を通さない (tmp/ の外へ出さない) / repo の外では cwd を基準にする。

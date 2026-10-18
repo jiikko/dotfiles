@@ -12,7 +12,7 @@ ROOT_DIR="$(cd "$_HELPER_DIR/../../.." && pwd)"
 TEST_TMP="$(mktemp -d)"
 export TEST_TMP
 
-# 🚨 アサーションの失敗は exit code に出す (issue 327 / 329)。
+# 🚨 アサーションの失敗は exit code に出す。
 # ランナー (Makefile の run_tests) は **rc しか見ない**ので、`✗` を printf するだけの分岐は
 # **失敗しても [ok] に集計される**。失敗は bad() で報告してカウントし、下の cleanup が
 # 終了時に非 0 へ格上げする (落ちた assert を全部出すため、最初の 1 件で止めない)。
@@ -274,7 +274,7 @@ source "$ROOT_DIR/zshlib/_concat.zsh"
 
 # テストヘルパー関数
 #
-# 🚨 assert_* は失敗しても `return 1` しないこと (issue 388 / av1ify 側は issue 399)。
+# 🚨 assert_* は失敗しても `return 1` しないこと。
 # `setopt err_exit` の下では最初の失敗でファイルごと終了してしまい、**どの assert が
 # 検出力を持っているか**が観測できなくなる (変異検証がスイートの rc でしか判定できず、
 # ケース単位で読めない)。失敗は bad() で数え、EXIT trap が rc を 1 へ格上げする。

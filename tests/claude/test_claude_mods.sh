@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # _claude/mods/*/ (Claude Code の mods = 関数 hook の plugin) を自動で見つけ、各 mod に
-# `claude plugin validate` と `claude plugin test` を回す (issue 619)。あわせて settings の env が
+# `claude plugin validate` と `claude plugin test` を回す。あわせて settings の env が
 # この置き場所を読ませているかを見る (配線がずれると、検査は緑のまま本番は 1 本も読まない)。
 #
 # 🚨 CI では claude の要る検査を skip する (exit 77)。CI の runner に claude が無く、入れると毎回その時点の最新版になる。
@@ -39,7 +39,7 @@ echo "✓ settings の env.CLAUDE_CODE_PLUGIN_DIRS = $want_dirs"
 
 # shellcheck source=bin/lib/claude_bin.sh
 source "$repo/bin/lib/claude_bin.sh"
-# PATH の名前ではなく実際に動く実体で選ぶ (版管理の shim を掴んで rc=127 で落ちていた。issue 639)
+# PATH の名前ではなく実際に動く実体で選ぶ (版管理の shim を掴んで rc=127 で落ちていた)
 resolve_rc=0
 claude_bin="$(resolve_claude)" || resolve_rc=$?
 if [ "$resolve_rc" -eq 1 ] && [ -n "${CI:-}" ]; then

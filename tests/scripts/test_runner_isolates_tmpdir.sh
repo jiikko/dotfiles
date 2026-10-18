@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Makefile のテスト runner が、各テストを使い捨ての TMPDIR で走らせることを固定する (issue 325)。
+# Makefile のテスト runner が、各テストを使い捨ての TMPDIR で走らせることを固定する。
 #
 # なぜ: テストとその子プロセスが **`${TMPDIR:-/tmp}` を組み立てて** `mktemp` する形
 # (例: `scripts/tmux_schedule_keys.sh` の `SK_TMP_PREFIX="${TMPDIR:-/tmp}/schedkeys"`) は、
@@ -13,7 +13,7 @@
 #   - テスト側が自分で `mktemp -d` (引数なし) する形。**macOS の mktemp は TMPDIR 環境変数を
 #     見ない** (実測 2026-09-08: `-t prefix` でも見ず、`_CS_DARWIN_USER_TEMP_DIR` を使う。
 #     TMPDIR に従うのは `mktemp "$TMPDIR/x.XXXXXX"` のように**パスを自分で組む形だけ**)。
-#     この形の後始末はテスト自身の trap の責任で、issue 305 が担当する
+#     この形の後始末はテスト自身の trap の責任
 #   - runner が渡した TMPDIR を、テストが上書きする形 (二重に隔離されるだけで無害)
 #   - **Makefile 以外の経路**: `.github/workflows/src_glogx.yml` の no-real-commands job が
 #     `tests/glogx/test_no_real_commands_in_tests.sh` を直接叩く。runner は使い捨てなので

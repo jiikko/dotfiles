@@ -1,10 +1,10 @@
 # shellcheck shell=bash
 # tests/lib/utf8_locale.sh — テストが起こす tmux のロケールを UTF-8 に固定する。
 #
-# 🚨 各テストへコピペしないこと (tests/lib/wait_until.sh と同じ理由)。以前は
-#   tests/tmux/lib/isolate_env.sh の中だけに在ったため、**isolate_env を source しない
+# 🚨 各テストへコピペしないこと (tests/lib/wait_until.sh と同じ理由)。
+#   tests/tmux/lib/isolate_env.sh の中だけに置くと、**isolate_env を source しない
 #   tmux テスト** (tests/claude/test_tmux_pane_state_bell.sh / tests/tmux/test_ctrl_v_paste.sh) が
-#   非 UTF-8 環境で落ちていた (2026-09-05 実測: 前者は `✓ idle` が `_ idle` に、後者は
+#   非 UTF-8 環境で落ちる (2026-09-05 実測: 前者は `✓ idle` が `_ idle` に、後者は
 #   bind の -N 説明と `あいう` を含むペースト内容が潰れる)。
 #
 # 呼び出し側の要件なし (この file を source するだけ)。HOME / XDG の隔離は

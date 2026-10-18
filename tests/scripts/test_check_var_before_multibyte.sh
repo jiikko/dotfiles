@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/check_var_before_multibyte.sh (`$var` の直後の ASCII 以外の文字を落とす検査。issue 633) の契約を fixture で固定する。
+# scripts/check_var_before_multibyte.sh (`$var` の直後の ASCII 以外の文字を落とす検査) の契約を fixture で固定する。
 #
 # 守るもの: 引用の外・二重引用符の中・引用の無い heredoc の本文の `$var<全角>` を落とす / 単引用符・`$'…'`・コメント・
 # 引用付きの heredoc・`${var}`・`\$`・位置パラメータは通す / allow の印で通す / zsh のファイルを除く /

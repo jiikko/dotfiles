@@ -66,7 +66,7 @@ if ! grep -q 'return (font name of settings set profileName)' "$SCRIPT"; then
   ng "AppleScript がフォント名を読み戻していない"
 elif ! grep -q '\${applied% \*}" != "\$font_resolved' "$SCRIPT"; then
   # 🚨 `grep -q applied` では足りない。代入行 (`applied=$(osascript …)`) にも当たるので、
-  # **比較だけ落とす**退行 (ログ用に変数は残す形) を素通りする (敵対レビュー 2026-09-23 が実証)。
+  # **比較だけ落とす**退行 (ログ用に変数は残す形) を素通りする (実証済み)。
   ng "読み戻しの比較が無い / 比較先が解決後の名前でない"
   grep -n 'applied' "$SCRIPT" | head -3
 else
@@ -96,7 +96,7 @@ fi
 
 # --- 4. 挙動: fake osascript で「実際に何を組み立てたか」を見る -----------------------------
 # 🚨 ここまでは全部 grep の pin で、**シェル側の 2 段 (在庫ゲート / 読み戻し比較) はどちらを
-# 外しても緑のまま**だった (敵対レビュー 2026-09-23 が変異で実証)。段が実際に効いているかは
+# 外しても緑のまま**だった (変異で実証済み)。段が実際に効いているかは
 # 組み立て結果を見ないと分からないので、osascript と pgrep を PATH 先頭の stub に差し替える。
 # stub は実体を一切呼ばない (本物の Terminal 設定は 1 バイトも変えない)。
 if ! command -v swift >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
@@ -147,7 +147,7 @@ STUB
     src="$(arg_n 2)"
     colors="$(grep -c 'color of settings set profileName to {' <<< "$src" || true)"
     # 🚨 本数だけ見ると、**背景色と文字色を取り違える / RGB を入れ替える**退行が素通りする
-    # (敵対レビュー 2026-09-23 が変異で実証)。デコーダの出力とプロパティ名の対応を 1 行ずつ見る。
+    # (変異で実証済み)。デコーダの出力とプロパティ名の対応を 1 行ずつ見る。
     mapping_bad=''
     while read -r key r g b; do
       case "$key" in

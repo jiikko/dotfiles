@@ -12,7 +12,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SL="$ROOT_DIR/_claude/statusline-command.sh"
 
 TMP_DIR="$(mktemp -d)"
-# statusline は利用枠を $XDG_CACHE_HOME/glog/claude-rate-limits.json へ書き出す (issue 627)。
+# statusline は利用枠を $XDG_CACHE_HOME/glog/claude-rate-limits.json へ書き出す。
 # 本物のキャッシュを汚さないよう、全テストをこの一時ディレクトリへ向ける
 export XDG_CACHE_HOME="$TMP_DIR/cache"
 cleanup() { rm -rf "$TMP_DIR"; }
@@ -79,7 +79,7 @@ assert_lacks "$minimal" "ctx:"    "context 不在ならセグメントを出さ�
 assert_lacks "$minimal" "5h"      "rate limit 不在ならセグメントを出さない"
 
 # ctx の色は used_percentage から決める。🚨 使用率が取れない (欠けている / 整数化できない) ときに 0% と
-# みなして緑にしない: 「判定できない」が「余裕がある」に見える (issue 420)。区切りは残して色だけ灰にする
+# みなして緑にしない: 「判定できない」が「余裕がある」に見える。区切りは残して色だけ灰にする
 ctx_raw() { # ctx_raw <context_window に足す JSON 断片> → 色付きの生出力
   printf '%s' "{\"cwd\":\"/tmp\",\"context_window\":{\"total_input_tokens\":190000,\"context_window_size\":200000$1}}" \
     | "$SL" 2>"$TMP_DIR/ctx_stderr"
@@ -223,8 +223,8 @@ fi
 
 # --- 数値フィールドの正規化 -------------------------------------------------
 # bash の $(( )) は "08" (8 進数) / "5E+1" / 全角数字で **fatal** になり、囲みブロックの
-# 残りが丸ごとスキップされる。以前はこれで 3 行目が無言で消え、2 行目のバーも空になって
-# いた (stderr は statusline に出ないので気づけない)。整数化できない値は「その段を
+# 残りが丸ごとスキップされる。これで 3 行目が無言で消え、2 行目のバーも空になる
+# (stderr は statusline に出ないので気づけない)。整数化できない値は「その段を
 # 出さない」へ正規化する契約をここで固定する。**stderr が空であることも必ず見る**
 # (壊れ方が無言だったのが本質なので、出力だけ見ても退行を検出できない)。
 num_json() { # num_json <used_percentage の JSON 値>
@@ -269,7 +269,7 @@ done
 #   取る瞬間の 1 秒差でセル数が入れ替わり、連続実行で成功と失敗が両方出た。
 #   判定対象が境界そのものなら、余白をいくら積んでも境界は消えない。
 # 1 ウィンドウだけを与える stdin JSON。窓の種別・使用率・残り秒だけが違うので、
-# 組み立てはここ 1 か所に置く (以前は 7d/5h × 平文/ANSI の 4 か所に同型のコピーがあった)
+# 組み立てはここ 1 か所に置く (7d/5h × 平文/ANSI の 4 か所に同型のコピーを置かない)
 win_json() {  # win_json <five_hour|seven_day> <used%> <残り秒>
   local now; now="$(date +%s)"
   printf '%s' "{\"cwd\":\"/tmp\",\"rate_limits\":{\"$1\":{\"used_percentage\":$2,\"resets_at\":$(( now + $3 ))}}}"
@@ -332,8 +332,8 @@ assert_contains "$(pace_render 3 "$(day 10)")" "想定  0%" "残りが 7 日超�
 # 窓の中の「想定ペース」に意味が無くなる (想定 100% との比較は実績 62% を "-38pt
 # 余らせ過ぎ・もっと使える" という逆向きの助言にしてしまう) ので、想定・乖離・残り時間・
 # 予算・アドバイスを落として、点滅する (リセット!) だけを出す。
-# 🚨 ゲージ自体は出し続ける。以前は 2 行目の旧セグメント形式へフォールバックしていたが、
-#   同じウィンドウが 2 つの見た目を持つのをやめた (表示が突然「前の実装」に戻って見える)。
+# 🚨 ゲージ自体は出し続ける。2 行目の旧セグメント形式へフォールバックしない。
+#   同じウィンドウが 2 つの見た目を持つと、表示が突然「前の実装」に戻って見える。
 edge="$(pace_render 62 0)"
 assert_contains "$edge" "7d ["        "リセット済みでもゲージは出す (見た目を切り替えない)"
 assert_contains "$edge" "62%"         "リセット済みでも残量% は出す"
@@ -401,8 +401,8 @@ assert_contains "$(pace_render 0 87000)"       "99.3%/日"            "残り 1 
 #   だけになった (5 時間窓が 6 セル、7 日窓が 8 セル)。曜日・日付をバーに戻すときは
 #   カレンダー基準に戻す必要がある。
 # 🚨 この仕様のおかげで、塗り位置・想定線・下線の位置は **used% と残り秒だけで決まる**
-#   (実時刻・TZ に依存しない)。以前は格子のセル数が実時刻依存で、1 秒のズレで 7 と 8 が
-#   入れ替わって flaky になっていた (実測 2026-08-23)。
+#   (実時刻・TZ に依存しない)。格子のセル数が実時刻依存だと、1 秒のズレで 7 と 8 が
+#   入れ替わって flaky になる (実測 2026-08-23)。
 bar_of() { local l=${1#*[}; printf '%s' "${l%%]*}"; }
 
 grid_bar="$(bar_of "$(pace_render 62 178200 | tail -1)")"
@@ -645,7 +645,7 @@ assert_contains "$out" "[@dotfiles-zz]" "session_id が無ければ transcript �
 
 # 🚨 入れ子の JSON を文字列一致で拾わないこと。誤った名前は「存在しない宛先」になり、
 #    名前が出ないこと (空表示) より悪い。下の 2 つは、文字列一致だけで書いた第 1 版が
-#    実際に誤爆した入力 (2026-09-16 の敵対的レビューが再現させた)。
+#    実際に誤爆した入力 (再現済み)。
 printf '%s' "{\"pid\":$live_pid,\"sessionId\":\"SID-SELF\",\"resumedFrom\":{\"sessionId\":\"SID-A\"},\"name\":\"unrelated-session-name\"}" \
   > "$live_file"
 out="$(render_home "$sess_json")"

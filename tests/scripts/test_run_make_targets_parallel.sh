@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/run_make_targets_parallel.sh (test-lint の並列ランナー) の契約テスト。
 #
-# なぜ: 逐次版 run_all_targets が守っている契約 (issue 109 / 130) —「途中で失敗しても全部
+# なぜ: 逐次版 run_all_targets が守っている契約 —「途中で失敗しても全部
 # 走らせる」「失敗をまとめて返す」「対象 0 件は失敗」— は、並列化で最も壊れやすい。
 # 壊れても**緑になる**方向 (失敗を取りこぼす / 出力を落とす) なので、ここで固定する。
 set -uo pipefail
@@ -27,7 +27,7 @@ bad() { printf '  ✗ %s\n' "$1"; fail=1; }
 FIX=$(mktemp -d)
 trap 'rm -rf "$FIX"' EXIT
 # slow-ok は fast-fail が終わるまで終わらない (秒数ではなく順序で「失敗の後にまだ走っている」を作る)。
-# 🚨 この順序を外さない: 最初の失敗で残りを止める (fail-fast の) 退行は、失敗より後に終わる target でしか見えない (issue 613 の敵対レビュー)
+# 🚨 この順序を外さない: 最初の失敗で残りを止める (fail-fast の) 退行は、失敗より後に終わる target でしか見えない
 # sleep-ok: tick: Makefile の順序同期 (相手の完了ファイルを待つ刻み。上限つき)
 cat > "$FIX/Makefile" <<'MK'
 slow-ok:
@@ -36,7 +36,7 @@ fast-fail:
 	@echo "OUT fast-fail"; echo "ERR fast-fail" >&2; touch fast-fail.done; exit 3
 mid-ok:
 	@echo "OUT mid-ok"
-# 完了順が引数順と食い違うことを秒数ではなく順序で作る (出力順の検査を vacuous にしないため。issue 613):
+# 完了順が引数順と食い違うことを秒数ではなく順序で作る (出力順の検査を vacuous にしないため):
 # ord-late は ord-early が書き終えるまで終わらない。逐次に走ると ord-late が上限 (10 秒) まで待って落ちる
 ord-late:
 	@i=0; until [ -f ord-early.done ] || [ $$i -ge 200 ]; do sleep 0.05; i=$$((i+1)); done; [ -f ord-early.done ]; echo "OUT ord-late"
@@ -87,7 +87,7 @@ order=$(grep -o 'OUT [a-z-]*' "$FIX/out" | tr '\n' ' ')
 
 printf 'Test 4b: ターゲットは実際に並列に走る (逐次化の退行を検知)\n'
 # 🚨 ここが無いと「集約の契約」は守れていても、& / wait を外して逐次に戻す退行が緑で通る
-#    (敵対レビュー 2026-09-05 P3-1: 完全逐次化の変異で当時の 6 ケースが全部緑だった)
+#    (完全逐次化の変異で 6 ケースが全部緑だった)
 rm -f "$FIX/rv-a.started" "$FIX/rv-b.started"
 rc=$(run rv-a rv-b)
 [ "$rc" = 0 ] && ok '2 ターゲットが互いの開始を観測した (並列)' || bad "並列に走っていない (逐次化されている): rc=$rc"

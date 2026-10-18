@@ -251,8 +251,8 @@ assert_exit_code "0" "$exit_code" "Normal file passes all 3 checks"
 # 実ファイル由来の回帰: Web 配信動画 (time_base=1/90000) で
 #   r_frame_rate=120, avg_frame_rate=23.59
 # だが実体は PTS 連続差分が一定の CFR 24fps（破損ではない）。
-# 旧実装は r(120) vs avg(23.59) の乖離で「フレームレート異常」と誤判定していた。
-# 新実装は DTS 単調性のみで判定するため、duration 健全 + DTS 単調なら健全と判定する。
+# r(120) vs avg(23.59) の乖離で「フレームレート異常」と誤判定しない。
+# DTS 単調性のみで判定するため、duration 健全 + DTS 単調なら健全と判定する。
 printf '\n## Test 13: CFR with bogus r_frame_rate is NOT corruption (regression)\n'
 touch "$TEST_TMP/cfr_bogus_rfr.mp4"
 unsetopt err_exit

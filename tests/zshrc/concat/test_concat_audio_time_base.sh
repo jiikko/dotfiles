@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 unset CDPATH
 # shellcheck shell=bash
-# concat 音声 time_base 不一致検出テスト (issue 143 再現 1)
+# concat 音声 time_base 不一致検出テスト
 # codec / sample_rate / channels が同じでも音声 time_base が違えば拒否し、remux を案内する。
 
 source "${0:A:h}/test_helper.sh"

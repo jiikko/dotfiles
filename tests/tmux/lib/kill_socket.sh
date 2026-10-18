@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # tests/tmux/lib/kill_socket.sh — 隔離 tmux サーバを、**socket ファイルごと**片付ける。
 #
-# 🚨 なぜ必要か (issue 305 ①): **`tmux kill-server` は socket ファイルを消さない**。
+# 🚨 なぜ必要か: **`tmux kill-server` は socket ファイルを消さない**。
 # 実測 2026-09-10:
 #
 #   tmux -L probe -f /dev/null new-session -d 'sleep 30'
@@ -28,14 +28,14 @@
 # 🚨 **socket のパスは kill する前に取る**。サーバが死んでからでは `display -p` が失敗し、
 # 消すべきパスが分からなくなる (「判定不能だから消さない」に倒れて残骸が残る)。
 
-# 🚨 **停止要求は「届いた」ことも「死んだ」ことも保証しない** (issue 377)。
+# 🚨 **停止要求は「届いた」ことも「死んだ」ことも保証しない**。
 # ハングしたサーバ (floating pane が残った window を小さい client で attach / 縮小すると
 # CPU 100% の無応答になる。復旧は `kill -9` のみ) では **client 側も返らない**ので:
 #   ① 素の `$(tmux ...)` で聞くと後始末が一緒に固まる
 #   ② 停止要求は空振りし、それでも socket を消すと**唯一の handle を捨てる**
 #      = 誰も触れない CPU 100% のサーバが残る (実測 2026-09-15: 23 分間回り続けた)
 #
-# 🚨 **生死を client の応答から推論しない** (敵対レビュー 1 周目 P1-1 / 2 周目 P1-C)。
+# 🚨 **生死を client の応答から推論しない**。
 # 「返らない」も「黙って終わった」も**死んだ証拠にならない**:
 #   - 無応答 = ハング (消してはいけない)
 #   - 版ずれ (`protocol version mismatch`) / `tmux` が PATH に無い / fd 枯渇でも client は

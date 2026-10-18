@@ -90,14 +90,14 @@ reset_calls; : > "$LOG"
 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_INTERVAL=5 STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run_periodic "$FAKE"
 assert_called "sleep 300" "@continuum-save-interval=5 分 → sleep 300 秒"  # sleep-ok: other: 期待する呼び出し文字列の中の sleep
-# 0 (continuum では「無効」) と数字でない値は既定の 15 分へ寄せる (tt_save_interval_minutes。issue 776)
+# 0 (continuum では「無効」) と数字でない値は既定の 15 分へ寄せる (tt_save_interval_minutes)
 for v in 0 abc; do
   reset_calls; : > "$LOG"
   STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_INTERVAL="$v" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
     run_periodic "$FAKE"
   assert_called "sleep 900" "@continuum-save-interval=$v → 既定の 15 分 (sleep 900 秒)"  # sleep-ok: other: 期待する呼び出し文字列の中の sleep
 done
-# 0 で始まる値 ("08") を 8 進として読まない (前は算術が壊れて間隔が空になり、周期保存が待たずに回った。issue 776)
+# 0 で始まる値 ("08") を 8 進として読まない (前は算術が壊れて間隔が空になり、周期保存が待たずに回った)
 reset_calls; : > "$LOG"
 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_INTERVAL=08 STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run_periodic "$FAKE"
@@ -144,7 +144,7 @@ kill "$HOLDER" 2>/dev/null; rm -rf "$TMP_DIR/state/$FAKE.lock"
 
 # --- (6b) 死んだサーバの stale lock を掃除する ------------------------------------------
 # 🚨 この観点は refactor で guards.sh の tt_lock_sweep_stale へ寄せるまで **テストが 1 本も
-#   無かった** (変異検証で「掃除を no-op にしても全部 green」で発覚。issue 078)。
+#   無かった** (変異検証で「掃除を no-op にしても全部 green」で発覚)。
 #   掃除が止まると、死んだサーバの <pid>.lock が状態ディレクトリに溜まり続ける。
 reset_calls; : > "$LOG"
 # 🚨 「動いているサーバ」と「死んだサーバ」に**別々の pid** を割り当てること。tt_free_pid は
@@ -182,7 +182,7 @@ rm -rf "$TMP_DIR/state/$FAKE.lock" "$TMP_DIR/state/$DEADSRV_LIVEOWNER.lock"
 
 # --- (6c) lock を作れないときは無音で消えない ------------------------------------------
 # 🚨 rc=2 (取得不能) を rc=1 (先任生存) と畳んで `|| exit 0` にすると、**周期保存が二度と
-#   張られない**のに stdout も観測ログも 0 byte になる (敵対レビューが chmod 500 で実測)。
+#   張られない**のに stdout も観測ログも 0 byte になる (chmod 500 で実測)。
 #   「装置が不在になった」は必ず 1 行残す、を pin する。
 if [ "$(id -u)" = 0 ]; then
   printf '🚨 root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'

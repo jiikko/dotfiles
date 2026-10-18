@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# bin/mutate-verify-list (issue 580) の self-test。
+# bin/mutate-verify-list の self-test。
 #
 # 判定は全部 mutate-verify が持つので、ここで確かめるのは並べ役の仕事だけ:
 #   - LIST の引数が引用を崩さずに mutate-verify へ届く (defaults が前、mutant が後、--name)
@@ -15,7 +15,7 @@ MVL="$ROOT_DIR/bin/mutate-verify-list"
 [ -x "$MVL" ] || { echo "NG: bin/mutate-verify-list が無い"; exit 1; }
 
 # 🚨 道具を bash 3.2 (/bin/bash = shebang) と PATH の bash (開発機・CI は brew の 5 系) の両方で走らせる。
-#    set -e の効く文脈が版で違い、3.2 だけで測っていたときに 5 系の素通りを見落とした (2 周目の敵対レビュー)
+#    set -e の効く文脈が版で違い、3.2 だけで測っていたときに 5 系の素通りを見落とした
 if [ -z "${MVL_BASH:-}" ]; then
   seen="" rc_all=0
   for b in /bin/bash "$(command -v bash)"; do
@@ -177,14 +177,14 @@ printf 'ign/\n' > "$inrepo/.gitignore"
 rc=$?
 [ "$rc" = 0 ] || fail "ignore された置き場を拒否した (rc=$rc): $(cat "$work/out.log")"
 
-# 8. 別の dir へ symlink した mutate-verify-list も、兄弟の mutate-verify を実体の隣で見つける (issue 585)
+# 8. 別の dir へ symlink した mutate-verify-list も、兄弟の mutate-verify を実体の隣で見つける
 #    見つからなければ「実行できない」で止まり、見つかれば一覧の中身の検査 (mutant 0 本) まで進む
 mkdir -p "$work/linkbin"; ln -s "$MVL" "$work/linkbin/mutate-verify-list"; : > "$work/empty.list"
 ( cd "$work" && env -u MUTATE_VERIFY_BIN "$MVL_BASH" "$work/linkbin/mutate-verify-list" --log-dir "$work/link-logs" "$work/empty.list" ) > "$work/out.log" 2>&1
 grep -q 'mutant が 1 つも無い' "$work/out.log" || fail "symlink 経由で兄弟の mutate-verify を見失った: $(cat "$work/out.log")"
 
 # --- 本物の mutate-verify と繋ぐ: red と green が表に出る -----------------------------------
-# helper を repo へコピーしない (dotfiles の外の repo と同じ形で繋ぐ。issue 585)
+# helper を repo へコピーしない (dotfiles の外の repo と同じ形で繋ぐ)
 repo="$work/repo"
 mkdir -p "$repo"
 cat > "$repo/guard.sh" <<'G'

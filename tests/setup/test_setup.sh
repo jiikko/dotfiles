@@ -17,9 +17,9 @@ trap cleanup EXIT
 
 export HOME="$TEST_TMPDIR/home"
 # go env -w の書き先は GOENV (未設定なら $HOME/Library/Application Support/go/env)。親が GOENV を立てていると、
-# setup.sh が実ユーザーの go env を書き換えるので落とす (issue 816)
+# setup.sh が実ユーザーの go env を書き換えるので落とす
 unset GOENV
-# 同じく親から継承すると HOME の外 (実ユーザーの置き場所) を指す変数を落とす (codex の敵対的レビュー 2026-10-17。この機械では
+# 同じく親から継承すると HOME の外 (実ユーザーの置き場所) を指す変数を落とす (この機械では
 # どれも立っていないが、立っている環境では setup.sh の hash の記録・claude のリンク・go env の書き先が HOME の外へ出る)。
 # 🚨 落とせないもの: setup.sh は ~/dotfiles (= この repo へのリンク) の git config に core.hooksPath を書く。値は同じなので害は無いが、
 # 隔離はされていない
@@ -28,7 +28,7 @@ unset XDG_STATE_HOME XDG_CONFIG_HOME XDG_CACHE_HOME XDG_DATA_HOME CLAUDE_HOME CL
 # 効かない) ため必ず skip する
 export DOTFILES_SKIP_TERMINAL_PROFILE=1
 # anyenv の `*env global` も HOME の隔離が効かない (GOENV_ROOT などの下に書く)。実ユーザーの version ファイルを書き換え、
-# 並列に回すと書き込みが競合して壊す (issue 816 で goenv の version が 2 行になり go が起動しなくなった) ので skip する
+# 並列に回すと書き込みが競合して壊す (goenv の version が 2 行になり go が起動しなくなった実例がある) ので skip する
 export DOTFILES_SKIP_ANYENV_GLOBAL=1
 mkdir -p "$HOME"
 ln -s "$ROOT_DIR" "$HOME/dotfiles"
@@ -116,7 +116,7 @@ if [[ -e "$HOME/.bashrc" || -e "$HOME/.bash_profile" ]]; then
   exit 1
 fi
 
-# issue 816: go env に -trimpath が入り、setup.sh を 2 回回しても重複しない (上で 2 回回している)
+# go env に -trimpath が入り、setup.sh を 2 回回しても重複しない (上で 2 回回している)
 if command -v go >/dev/null 2>&1; then
   go_env_file="$HOME/Library/Application Support/go/env" # macOS の既定 (この repo は macOS のみ。境界の場合は tests/scripts/test_go_env_trimpath.sh)
   if [[ ! -f "$go_env_file" ]]; then

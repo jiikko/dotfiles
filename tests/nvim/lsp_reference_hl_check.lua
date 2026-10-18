@@ -29,8 +29,8 @@ local MIN_CONTRAST = 3.0
 -- 色を検査する group。Text/Read/Write は下の extmark 経路で名前を pin できるが、Target は
 -- hover (vim.lsp.buf.hover) 側で使われるため名前の pin は doc (hl-LspReferenceTarget) が根拠。
 --
--- 🚨 **「LspReference 一族」ではなく「Visual を link 経由で引きうる地塗り group」を検査する**
--- (issue 134)。ee5e2b7 は LspReference だけを直したが、同じ根 (nvim 既定の Visual への link +
+-- 🚨 **「LspReference 一族」ではなく「Visual を link 経由で引きうる地塗り group」を検査する**。
+-- ee5e2b7 は LspReference だけを直したが、同じ根 (nvim 既定の Visual への link +
 -- 本構成の Visual 上書き) を持つ group が他にもあり、名前で pin していたので検出できなかった。
 -- 実測 2026-09-03: SnippetTabstop は両分岐で、LspSignatureActiveParameter は 256色分岐で
 -- `link=Visual` のまま Kraft (180) を引いていた (最悪 1.10:1)。

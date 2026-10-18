@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bin/restore_karabiner_config.sh / bin/backup_karabiner_config.sh が失敗を成功に見せないことを固定する (issue 610)。
+# bin/restore_karabiner_config.sh / bin/backup_karabiner_config.sh が失敗を成功に見せないことを固定する。
 #
 # 守るもの: レイアウトのパッチ (jq) が失敗したら非 0 で止まり、.tmp と「restore 済み」の記録を残さない /
 # 成功したときだけ記録する / コピーが失敗したら止まる。

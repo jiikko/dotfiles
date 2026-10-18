@@ -2,9 +2,9 @@
 # issues/ 配下の md が本文から張る **repo 内の .md への相対リンク**が、全部解決することを検査する。
 #
 # なぜ: issue の本文リンクは `issues/` 直下を起点に書かれているので、`git mv issues/NNN-x.md
-# issues/done/` した瞬間に全部 1 段ずれる (issue 293。2026-09-06 の実測で 192 件 / 79 ファイル)。
+# issues/done/` した瞬間に全部 1 段ずれる (2026-09-06 の実測で 192 件 / 79 ファイル)。
 # done/ への移動は日常操作なので頻度が高く、しかも切れても誰も痛くないので放置される。
-# group issue の完了先が `issues/epic/<name>/done/` になった (issue 291) ぶん段数の種類も増えた。
+# group issue の完了先が `issues/epic/<name>/done/` になった ぶん段数の種類も増えた。
 #
 # ## 脅威モデル (何を止めるか)
 #
@@ -26,15 +26,14 @@
 #     本物のリンクまで無言で消える。落とさない側へ倒す (誤検出したら fence か inline code で囲む)
 #
 # 🚨 `.md` 以外への参照 (`../_nviminit.lua` 等) も**検査する**。当初「実測 0 件」と書いていたが
-# **誤り**で、同じ壊れ方が 20 件現存した (`issues/done/012` に 19 / `187` に 1。2026-09-06 の
-# 敵対的レビューが実測)。同一原因なので同じ検査で見る
+# **誤り**で、同じ壊れ方が 20 件現存した (`issues/done/012` に 19 / `187` に 1。2026-09-06 に実測)。同一原因なので同じ検査で見る
 #
 # ## 検出の作法
 #
 #   - **深さで絞らない** (`-maxdepth` を使わない)。`issues/epic/<name>/done/` は 4 段目で、
 #     深さ決め打ちの検査は新しい段を黙って対象外にする (claude-md-maintenance.md の実例)
 #   - **ディレクトリ名で絞らない** (`done` / `pending` 決め打ちにしない)。予約外の綴り
-#     (`closed/` 等) の配下にも md は在りうる (issue 291 でそれを迷子として一覧に出すようにした)
+#     (`closed/` 等) の配下にも md は在りうる (迷子として一覧に出す)
 #   - **canary を本走査と同じ関数に通す** (scan_files)。抽出が空を返すと
 #     「違反 0 件 = 緑」になるので、既知の入力で既知の答えが出ることを先に固定する
 #     (verify-execution-not-just-exit-code.md)。式をコピーして別に書かないこと — コピーすると
@@ -50,7 +49,7 @@ set -euo pipefail
 unset CDPATH
 
 # 実パスで持つ: 下の件数の下限は `pwd -P` と比べるので、論理パス (macOS の /var → /private/var、
-# symlink 越しの checkout) だと一致せず、下限が黙って外れる (issue 572 の敵対的レビュー)
+# symlink 越しの checkout) だと一致せず、下限が黙って外れる
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 cd "$ROOT_DIR" || exit 1
 
@@ -73,8 +72,8 @@ MIN_LINKS=100
 # scan_files は stdin に 1 行 1 本で渡した md の各リンクを "OK|file|link" / "BAD|file|link" で出す
 # (読めないファイルは "UNREADABLE|file|")。検査対象のリンクだけを抜く (コードフェンス / インラインコードを除く)。
 # 🚨 canary と本走査の**両方**がこの関数を通る。ここを直したら canary が落ちる
-# 全ファイルを 1 回の awk で読む。以前は 1 ファイルごとに dirname / awk / grep / sed を起こしていて、
-# issues/ の 622 本で約 4.4 秒かかっていた (pre-push の hook が issue を触る push のたびに回し、
+# 全ファイルを 1 回の awk で読む。1 ファイルごとに dirname / awk / grep / sed を起こすと、
+# issues/ の 622 本で約 4.4 秒かかる (pre-push の hook が issue を触る push のたびに回し、
 # tests/githooks/test_pre_push.sh はその hook を 11 回走らせる。2026-10-02 実測)。
 # 抽出の規則 (フェンス・インラインコード・リンクの形・アンカーの落とし方) は 1 ファイルずつの版と同じ。
 # 🚨 件数を変数で数えない: 呼び出し側は $(...) で受けるので**サブシェル**になり、中で増やした
@@ -104,7 +103,7 @@ scan_files() {
   #   リンクの形は ](<../ の繰り返し><パス>.<拡張子><#アンカー>) で、アンカーを落としてファイルの実在を見る
   # 🚨 awk は LC_ALL=C (バイト単位) で動かす。UTF-8 のロケールの macOS の awk は、中身に不正な UTF-8 があると
   # `towc: multibyte conversion failure` で止まり、全ファイルを 1 回の awk で読む形では**後ろの全ファイルが無検査の
-  # まま緑**になる (2026-10-02 の敵対的レビューで再現)。リンクの形もフェンスの判定も ASCII だけを見るので、C でも判定は
+  # まま緑**になる (2026-10-02 に再現)。リンクの形もフェンスの判定も ASCII だけを見るので、C でも判定は
   # ほぼ変わらない。変わるのは NBSP (U+00A0) で字下げしたフェンスの行だけで、UTF-8 では [[:space:]] に入り C では入らない。
   # CommonMark では NBSP の字下げはフェンスにならないので C の方が仕様に沿う (実 issues/ に該当 0 件。2026-10-02)
   # 🚨 それでも awk が途中で止まったら判定不能として赤にする (プロセス置換の中の失敗は rc にも set -e にも届かない)
@@ -165,7 +164,7 @@ cat > "$canary_dir/done/011-feat-canary.md" <<'CANARY'
 - 1 行に 2 つ: [ok2](../010-feat-target.md) と [bad2](nope-same-line.md)
 CANARY
 # 🚨 深さで絞らないことを canary で固定する (issues/epic/<name>/done/ は 4 段目。
-# -maxdepth を足す変異は、実データに epic が 1 件も無いと素通りする — 敵対レビュー 2026-09-06)
+# -maxdepth を足す変異は、実データに epic が 1 件も無いと素通りする)
 printf '[deep](../../../nonexistent-deep.md)\n' > "$canary_dir/epic/x/done/900-feat-deep.md"
 # 🚨 閉じていないフェンスで終わるファイルを、切れリンクを持つファイルの直前 (sort の順) に置く。
 # scan_files は全ファイルを 1 回の awk で読むので、ファイルの境目でフェンスの状態を戻し忘れると、
@@ -195,7 +194,7 @@ fi
 # --- 陽性 / 陰性対照: **報告経路 (BAD の分類 → 件数 → exit 1) まで**を自分で通す ------------
 # 🚨 canary が通すのは抽出と判定までで、その先 (case BAD|* / bad の加算 / 最後の exit 1) は
 # 何も検査していなかった。3 つの変異 (分類の綴りを変える / 加算を +0 にする / exit 0 にする) が
-# すべて素通りした (2026-09-06 の敵対的レビュー P1-1)。ここで自分自身を呼んで rc を見る
+# すべて素通りした。ここで自分自身を呼んで rc を見る
 if [ "${ISSUE_LINKS_SELFTEST:-}" != "1" ]; then
   if ISSUE_LINKS_SELFTEST=1 "$0" "$canary_dir" >/dev/null 2>&1; then
     printf '✗ 陽性対照が緑になった (切れリンクを持つ canary を通してしまう = 報告経路が壊れている)\n' >&2
@@ -247,7 +246,7 @@ if [ "${ISSUE_LINKS_SELFTEST:-}" != "1" ]; then
   # awk が途中で止まった対照: 陰性対照と同じ fixture の**本走査のときだけ**、正しく出力してから失敗で終わる awk に
   # 差し替える (canary は普通に通す)。緑なら awk の失敗を見ていない (全ファイルを 1 回の awk で読むので、止まると後ろの
   # ファイルが無検査になる)。🚨 canary でも失敗させると、子は canary の件数で落ち、守りの報告の経路 (UNREADABLE の分類 →
-  # 件数 → exit 1) を見ないまま赤になる (2026-10-02 の敵対的レビュー 2 周目: 印の綴りを変える変異が素通りした)
+  # 件数 → exit 1) を見ないまま赤になる (印の綴りを変える変異が素通りした)
   awkfail="$clean_dir/awk-then-fail"
   # shellcheck disable=SC2016 # 偽の awk の本文 ($@ / $? / $*) はその偽物が実行時に展開する。ここで展開させない
   printf '#!/bin/sh\nawk "$@"; rc=$?\ncase "$*" in *"%s/"*) exit 3 ;; esac\nexit $rc\n' "$clean_dir" > "$awkfail"
@@ -267,7 +266,7 @@ fi
 
 # --- 本走査 -------------------------------------------------------------------------------
 # 🚨 next/ を -not -path で外さない: symlink は -type f が落とすので、外すと**旧運用で next/ に
-# 実ファイルとして置かれた claim** だけが無検査になる (敵対レビュー 2026-09-06 P3-2)
+# 実ファイルとして置かれた claim** だけが無検査になる
 files=$(find "$issues_dir" -name '*.md' -type f -print | sort) ||
   { printf '✗ find が失敗した\n' >&2; exit 1; }
 file_count=$(printf '%s' "$files" | grep -c . || true)

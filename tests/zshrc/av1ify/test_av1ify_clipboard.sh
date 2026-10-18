@@ -16,7 +16,7 @@ source "${0:A:h}/test_helper.sh"
 # tests/lib/utf8_locale.sh のヘッダが言う「isolate_env を source しないテスト」の 3 例目。
 source "${0:A:h}/../../lib/utf8_locale.sh"
 
-# ファイル名の $(...) が実行される条件 (issue 089) を再現するため、対話シェルと同じく
+# ファイル名の $(...) が実行される条件 を再現するため、対話シェルと同じく
 # prompt 展開を有効にした状態で走らせる。
 setopt prompt_subst
 
@@ -145,8 +145,8 @@ assert_file_exists "$TEST_DIR/quoted-enc.mp4" "Resolves single-quoted path"
 
 # Test 7: 一覧表示ではファイル名の $(...) を実行しない
 # 🚨 主張はここまで。**承認 (y) した後**は処理本体 (_av1ify_encode.zsh の print -P 群) が
-#    実行してしまう = 未修正の issue 089 の管轄。この経路をこのテストは検証していない
-#    (red team が y 版で pwned 生成を実測済み。issue 089 に記録)。
+#    実行しうる。この経路はこのテストでは検証せず、
+#    tests/zshrc/av1ify/test_av1ify_injection.sh が実経路で見る。
 printf '\n## Test 7: Command substitution in filename is not executed while listing\n'
 TEST_DIR="$TEST_TMP/clip7"
 mkdir -p "$TEST_DIR"
@@ -156,7 +156,7 @@ cd "$TEST_DIR" || exit 1
 EVIL_NAME='evil$(touch pwned)file.avi'
 echo "dummy video" > "./$EVIL_NAME"
 export MOCK_CLIPBOARD="$TEST_DIR/$EVIL_NAME"
-# 一覧表示だけを検証対象にするため n で中止する (処理本体の print -P は issue 089 の管轄)
+# 一覧表示だけを検証対象にするため n で中止する (処理本体の print -P は test_av1ify_injection.sh の管轄)
 run_av1ify_clip n
 assert_file_not_exists "$TEST_DIR/pwned" "Listing does not execute \$(...) in pasted filename (approve path is issue 089)"
 assert_contains "$CLIP_OUTPUT" "$EVIL_NAME" "Shows the pasted filename verbatim"
@@ -193,7 +193,7 @@ unset MOCK_PBPASTE_FAIL
 
 # Test 10: 本番のゲートは「このテスト自身の文脈 (非対話)」で閉じている
 # 🚨 ここは seam を差し替えない。差し替えテストは「ゲート関数が偽ならヘルプ」しか pin できず、
-#    「スクリプトでは発火しない」という後方互換の主張を一切守らない (red team 指摘)。
+#    「スクリプトでは発火しない」という後方互換の主張を一切守らない。
 printf '\n## Test 10: Real gate is closed in this (non-interactive) context\n'
 unfunction __av1ify_clipboard_mode_available
 source "$ROOT_DIR/zshlib/_av1ify.zsh"   # 本番のゲートを復元する
@@ -218,7 +218,7 @@ setopt err_exit
 # 🚨 静的検査にしている理由: setopt interactive は実行時に変更できず、pty も必要なので
 #    「対話 + 端末」の真の組み合わせを自動テストから作れない。条件が消えると
 #    「端末から起動したスクリプトで発火する」= 削除つき経路が復活するため、
-#    文字列としてでも消えないように留める (挙動確認は pty 手動検証と issue 094)。
+#    文字列としてでも消えないように留める (挙動確認は pty 手動検証)。
 printf '\n## Test 12: Gate requires -o interactive (static pin)\n'
 gate_src=$(functions __av1ify_clipboard_mode_available)
 assert_contains "$gate_src" "-o interactive" "Gate checks -o interactive"
@@ -413,7 +413,7 @@ assert_contains "$av1c_src" "--delete-origin-if-success-and-no-ng" "av1c() holds
 
 # Test 26: 1 行に空白区切りで複数パスが並んでいたら、分割して対象にする
 # (シェルのコマンドラインや、パスを空白で連結するツールからそのままコピーすると起きる。
-#  以前は行全体が 1 個のパス名として ✗ になり、別コマンドを案内するだけだった)
+#  行全体を 1 個のパス名として ✗ にすると、別コマンドを案内するだけになる)
 printf '\n## Test 26: Space-separated paths on one line are split and accepted\n'
 TEST_DIR="$TEST_TMP/clip26"
 mkdir -p "$TEST_DIR"
@@ -475,7 +475,7 @@ assert_contains "$CLIP_OUTPUT" "対象 2件 / 除外 1件" "Counts the missing w
 
 # Test 30: 分割判定でファイル名の $(...) を実行しない
 # 判定は (z) の字句解析だけで行う (展開しない)。ここが eval / print -P に変わると
-# クリップボードの中身が実行される (issue 089 と同じ穴)
+# クリップボードの中身が実行される
 printf '\n## Test 30: Splitting does not execute $(...) in the pasted line\n'
 TEST_DIR="$TEST_TMP/clip30"
 mkdir -p "$TEST_DIR"
@@ -489,7 +489,7 @@ assert_file_not_exists "$TEST_DIR/pwned" "Splitting the line does not execute \$
 assert_contains "$CLIP_OUTPUT" "[分割]" "Still splits the line (both words exist)"
 
 # Test 31: cwd にたまたま同名のファイル/ディレクトリがあっても誤って割らない
-# (敵対的レビュー 2026-08-23 の指摘。判定が「分割した語が実在するか」だけだと、
+# (判定が「分割した語が実在するか」だけだと、
 #  `src` と `test` がある場所で「src test 用のメモ.avi」という 1 個のファイル名が
 #  「複数パス」に化ける。判定にはパス区切りを含む語だけを数える)
 printf '\n## Test 31: Bare words that exist in cwd do not cause a split\n'
@@ -513,8 +513,7 @@ assert_contains "$CLIP_OUTPUT" "見つかりません" "Still reports the missin
 assert_not_contains "$CLIP_OUTPUT" "[分割]" "No split when only one word resolves"
 
 # Test 33: 先頭 ~ の語も分割して受け取る (resolve が HOME を展開する)
-# 以前は「案内する ${(Q)${(z)...}} が ~ を展開しない」ために数えなかったが、
-# 案内をやめて自分で処理するようになったので、その制限は無くなった
+# 「案内する ${(Q)${(z)...}} が ~ を展開しない」制限は、案内せず自分で処理する今は無い
 printf '\n## Test 33: Tilde-prefixed words are split and expanded\n'
 TEST_DIR="$TEST_TMP/clip33"
 mkdir -p "$TEST_DIR"
@@ -630,7 +629,7 @@ assert_contains "$CLIP_OUTPUT" "対象 1件 / 除外 0件" "Still resolves the p
 assert_not_contains "$CLIP_OUTPUT" "partial.avi" "Output of the failed osascript run is discarded"
 
 # Test 40: KSH_ARRAYS が立っていても、分割行の一覧と処理対象がずれない
-# (敵対的レビュー 2026-09-04 の P1。0-based だと添字ループが先頭を飛ばして末尾で
+# (0-based だと添字ループが先頭を飛ばして末尾で
 #  範囲外になり、「1 行に 3 件」と出したのに 2 件 + 空文字を対象にする。
 #  旧 __av1ify_invocation_name でも同じ罠を踏んでいる)
 printf '\n## Test 40: Split listing survives KSH_ARRAYS\n'

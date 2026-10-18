@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 unset CDPATH
 # shellcheck shell=bash
-# concat 境界デコード検証テスト (issue 143 再現 2: extradata 不一致は入力属性では見えない)
+# concat 境界デコード検証テスト (extradata 不一致は入力属性では見えない)
 # 出力を境界でデコードしてエラーが出たら失敗にし、出力を残さないこと。
 
 source "${0:A:h}/test_helper.sh"

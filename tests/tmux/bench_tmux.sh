@@ -17,7 +17,7 @@
 #   - agent_panel_tick_forks / mark_seen_tmux_calls / agent_panel_tick_scale : プロセス数と、
 #                        形に依存しない裏付けとしての「行数 10 倍で時間が何倍になるか」の予算
 #                        (常駐 panel の 1 tick / window 切替 hook 1 回。表示行数・pane 数に
-#                         比例した fork の再発を捕まえる。issue 083。単位は metric 名が持つ)
+#                         比例した fork の再発を捕まえる。単位は metric 名が持つ)
 #
 # 出力: "metric=<name> ms=<value>" 行の列挙。CI では tests/check_bench_budgets.sh が
 # tests/tmux/bench_budgets.ci の予算と突き合わせ、超過で fail する (デグレ検出ゲート)。
@@ -163,7 +163,7 @@ done
 report mark_seen_direct_x20 $(( $(now_ms) - t0 ))
 
 # --- agent_panel_tick_forks: パネル描画 1 tick が作る子プロセス数 -------------------
-# 時間ではなく**プロセス数**を測る (issue 083)。この panel は 2 秒ごとに常駐で回るため、
+# 時間ではなく**プロセス数**を測る。この panel は 2 秒ごとに常駐で回るため、
 # 表示行数に比例した fork を持つと「tmux-continuum の status interpolation を 5〜10 fork/秒
 # だからと捨てた」この repo の基準に自分が抵触する。時間だけ見ていると気づけない
 # (1 tick 数十 ms は体感に出ない) ので、予算はプロセス数で持つ。
@@ -182,7 +182,7 @@ case "$*" in
     i=1
     while [ "$i" -le "${PANEL_STUB_ROWS:-10}" ]; do
       # 1 行目だけ cur=1 (今表示中の pane) にする: 強調行は別の printf 経路を通るので、
-      # 全行 cur=0 だとその分岐が fork 予算の被覆から外れる (red team 指摘 2026-08-21)
+      # 全行 cur=0 だとその分岐が fork 予算の被覆から外れる
       cur=0; [ "$i" -eq 1 ] && cur=1
       printf '🔔 input\tsess:%d.0\tagent-%d\t1787280000\t%s\n' "$i" "$i" "$cur"
       i=$((i + 1))
@@ -237,7 +237,7 @@ esac
 report agent_panel_tick_forks_rows10 "$panel_forks"
 
 # 🚨 fork 数だけでは足りない: SIGCHLD は**直接の子**しか数えないので、行ごとの fork を
-# パイプ (右辺がサブシェル) の中に置かれると数に出ない (red team 実測 2026-08-21: 行ループを
+# パイプ (右辺がサブシェル) の中に置かれると数に出ない (実測 2026-08-21: 行ループを
 # パイプへ移して行ごとに外部コマンドを呼ぶ変異で、fork 数は 4 のまま = 素通りした)。
 #
 # そこで**行数を 10 倍にしたときの時間の伸び率**も予算化する。tick のコストが行数に比例し
@@ -256,7 +256,7 @@ report agent_panel_tick_scale_x100 "$panel_scale"
 
 # --- mark_seen_tmux_calls: window 切替 hook が起動する tmux クライアント数 ------------
 # 同じ思想でプロセス数を予算化する。pane ごとに tmux を起動していた頃は pane 数 + 1 回で、
-# window 切替のたびに pane 数ぶんの fork が乗っていた (issue 083)。
+# window 切替のたびに pane 数ぶんの fork が乗っていた。
 # 期待は「list-panes 1 回 + まとめた if-shell 1 回」= 2 回 (pane 数に依存しない)。
 ms_stub_dir="$TMUX_TMPDIR/ms-stub"
 mkdir -p "$ms_stub_dir"

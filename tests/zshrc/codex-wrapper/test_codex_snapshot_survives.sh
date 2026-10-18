@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# codex() が Claude Code の shell snapshot 条件で壊れないことの回帰テスト (issue 149)。
+# codex() が Claude Code の shell snapshot 条件で壊れないことの回帰テスト。
 #
 # 🚨 argv は **完全一致 (grep -qx)** で固定する。`--approve-for-me` は commit 32d28ef0 が
 # 意図的に常時付与するようにしたフラグで、**渡らなくなったら気づきたい**もの。
@@ -52,7 +52,7 @@ out="$(HOME="$TMP_HOME" PATH="$STUB_BIN:/usr/bin:/bin" zsh -f -c '
   if (( ${+functions[_ensure_cli_with_brew]} )); then echo SELF_HEALED; fi
 ')" || fail "snapshot 条件で codex --version が非0 (out: $out)"
 grep -qx 'STUB_CODEX_INVOKED --approve-for-me --version' <<< "$out" || fail "snapshot 条件で codex 本体が期待どおりの argv で呼ばれていない (out: $out)"
-# 🚨 「codex が動いた」だけでは **issue 149 の修正 (自己修復) を何も守っていない**。
+# 🚨 「codex が動いた」だけでは **自己修復を何も守っていない**。
 # 自己修復を殺す変異 (`if false; then`) を当てても、helper が未定義のまま 2 つ目の if を
 # 素通りして codex は動くので緑になった (実測 2026-09-10 の変異検証)。
 # **helper が実際に定義されたか**まで見る。

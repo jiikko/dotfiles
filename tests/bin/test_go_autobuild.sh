@@ -343,7 +343,7 @@ printf '\n## 古い失敗記録は無視して再挑戦する (一時的な失�
 # 止まる。実証 (2026-07-31): pull 相当の状態で 1 回失敗させると、要因を解消した後の 3 回の起動で
 # go build が 0 回しか呼ばれず古いバイナリに固定された。TTL で救済する。
 # 「再挑戦しない」は shim が exec の前に同期で決める (_go_autobuild_should_retry)。起こさなければ
-# GO_AUTOBUILD_PENDING が立たないので、それをバイナリに読ませれば待たずに判定できる (issue 613)。
+# GO_AUTOBUILD_PENDING が立たないので、それをバイナリに読ませれば待たずに判定できる。
 # mark の最後の語を old に保つ (binary_mark は最後の語を読む)
 PROBE_OLD='pending=${GO_AUTOBUILD_PENDING-} old'
 ROOT="$(new_project failttl)"
@@ -357,7 +357,7 @@ before="$(calls "$ROOT")"
 out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK=fixed run_tool "$ROOT")"
 [[ "$out" == "pending= old" ]] || fail "TTL 内なのに再挑戦した (落ちるビルドを撒く。起動の出力: $out)"
 # 🚨 上の判定は「shim が起こすと決めたか」しか見ない。合図 (GO_AUTOBUILD_PENDING) なしに裏で起こす退行は、裏の go が
-#    呼ばれるまで見えないので、ここは否定の確認として待つ (成立条件が無い。issue 613 の敵対レビュー)
+#    呼ばれるまで見えないので、ここは否定の確認として待つ (成立条件が無い)
 sleep 0.5  # sleep-ok: negative: 起きないことの確認 (直前のコメント参照)
 [[ "$(calls "$ROOT")" == "$before" ]] || fail "TTL 内なのに go を呼んだ"
 ok "TTL 内はソース未変更で再挑戦しない"
@@ -489,7 +489,7 @@ before="$(calls "$ROOT")"
 AUTOBUILD_ARGS=--async run_tool "$ROOT" >/dev/null
 # 🚨 この待ちは消さない: lock を尊重するかは shim ではなく裏で起こした builder が決める (_go_autobuild_spawn の
 #    _go_autobuild_take_lock)。builder は lock を取れないと何も書かずに抜けるので、待つべき成立条件が無い
-#    (起きないことの確認。issue 613 の D)。0.5 秒は「二重ビルドが go を呼ぶだけの時間」
+#    (起きないことの確認)。0.5 秒は「二重ビルドが go を呼ぶだけの時間」
 sleep 0.5  # sleep-ok: negative: 起きないことの確認 (直前のコメント参照)
 [[ "$(calls "$ROOT")" == "$before" ]] || fail "生きている builder がいるのに二重ビルドした"
 ok "生存中の builder の lock を尊重する (多重ビルドしない)"
@@ -887,7 +887,7 @@ ok "--pkg: 別 main のビルドが他の main の記録を上書きしない"
 
 printf '\n## go.mod の replace 先 (相対パス) の変更で再ビルドする\n'
 # glogx → ../doctor の形。取り込み先だけを直しても src_dir の下は変わらないので、指紋に replace 先を
-# 含めないと旧バイナリを黙って exec する (敵対レビュー 2026-09-02 P1)。
+# 含めないと旧バイナリを黙って exec する。
 ROOT="$(new_project replace)"
 mkdir -p "$ROOT/src/shared/pkg"
 printf 'module shared\n\ngo 1.99\n' > "$ROOT/src/shared/go.mod"
@@ -982,8 +982,8 @@ ok "go 不在は brew / goenv の案内を出して exit 1 (stdin が端末で�
 
 printf '\n## 起動ごとに指紋を 2 回取らない (issue 319)\n'
 # ビルド入力の走査 (glob + zstat) は 1 回 3.83ms かかり、**起動のたびに**払う。
-# 以前は go_autobuild_exec が分岐の手前で無条件に指紋を取っており、--async (既定の経路) と
-# 初回ビルドではその結果が一度も読まれないまま捨てられていた (go_autobuild_spawn_if_stale と
+# go_autobuild_exec が分岐の手前で無条件に指紋を取ると、--async (既定の経路) と
+# 初回ビルドではその結果が一度も読まれないまま捨てられる (go_autobuild_spawn_if_stale と
 # _go_autobuild_build がどちらも自分で取り直すため)。
 #
 # 🚨 数えるのは F (_go_autobuild_fingerprint) だけでなく I (_go_autobuild_inputs) も。

@@ -115,8 +115,8 @@ setopt err_exit
 assert_contains "$output" "欠番があります" "Reports error for missing sequence numbers"
 
 # Test 8b: 連番が極端に離れていても即座に欠番を返す (範囲全走査ハングの回帰防止)
-# 旧実装は [min,max] の全整数を走査し欠番ごとに subshell を fork したため、
-# _000001 と _999999 のような疎な連番で事実上ハングした。隣接間隔走査 + 列挙上限に
+# [min,max] の全整数を走査して欠番ごとに subshell を fork すると、
+# _000001 と _999999 のような疎な連番で事実上ハングする。隣接間隔走査 + 列挙上限に
 # した後は、欠番メッセージが打ち切りマーカー "…" 付きで即座に返る。
 printf '\n## Test 8b: Far-apart sequence numbers report gap promptly (no full-range scan)\n'
 TEST_DIR="$TEST_TMP/test8b"

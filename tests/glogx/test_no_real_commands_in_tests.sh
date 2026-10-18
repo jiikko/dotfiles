@@ -1,12 +1,12 @@
 #!/bin/sh
 # test_no_real_commands_in_tests.sh — glogx の Go テストが**実マシンのコマンドを叩かない**ことの
-# 回帰テスト (issue 216)。
+# 回帰テスト。
 #
 # なぜ (実測 2026-09-03):
 #   glogx のテストは doctor の走査口に seam を差していない経路があり、キーを 1 つ押しただけで
 #   実 `xcrun simctl` / `brew doctor` / `pgrep` が走っていた (全体で 29 回)。しかも後始末が
 #   cancel だけで join しないため、走査 goroutine が次のテストへ跨いで package 変数を踏み、
-#   issue 214 のデータ競合として現れた。**「手元では緑」になる**のも同じ経路で、開発機に
+#   データ競合として現れた。**「手元では緑」になる**のも同じ経路で、開発機に
 #   snapshot があると走査が早期 return するため (CI の新品 cache では必ず漏れる)。
 #
 # 検出する形: PATH の先頭に記録つき shim を置いて go test を回し、**1 度も呼ばれない**ことを見る。
@@ -52,8 +52,8 @@ SHIMEOF
 done
 
 cd "$ROOT/src/glogx" || exit 1
-# 🚨 main (.) だけでなく internal/ の画面のパッケージも回す。doctor のテストは issue 742 で internal/doctorview へ移した
-# (. だけだと移したテストがこの監視から黙って外れる。codex の敵対的レビューの P2)
+# 🚨 main (.) だけでなく internal/ の画面のパッケージも回す。doctor のテストは internal/doctorview にある
+# (. だけだと internal/ のテストがこの監視から黙って外れる)
 scope="${GLOGX_SHIM_SCOPE:-subset}"
 if [ "$scope" = all ]; then
   min_pass=300

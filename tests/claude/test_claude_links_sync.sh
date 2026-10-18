@@ -7,7 +7,7 @@
 # 2 方向ある。(a) 素通り = 欠けているのに黙る (修復されないまま誰も気づかない) と、(b) 過剰 =
 # 揃っているのに毎回 apply する / 実ファイルや他ツールの link を上書きする / dir symlink 越しに
 # repo 側へ書き込む (setup.sh の migrate コメントが警告する自己参照 symlink 破壊)。両方を pin する。
-# 規範: issue 160 / ~/.claude/rules/adversarial-review-own-safeguards.md
+# 規範: ~/.claude/rules/adversarial-review-own-safeguards.md
 # ケース番号は 1〜16 + 6b + 17 (色)。
 set -euo pipefail
 unset CDPATH
@@ -214,7 +214,7 @@ set -e
 [ "$RC" -eq 0 ] || ng "HOME 未設定の hook が rc=$RC (常に 0 のはず)"$'\n'"$raw"
 grep -q '省略した' <<<"$raw" || ng "HOME 未設定の hook が配線の問題を報告していない:"$'\n'"$raw"
 
-# 並行 apply が落ちたときに、link が実際に何だったのかを出す (issue 260 の診断用)。
+# 並行 apply が落ちたときに、link が実際に何だったのかを出す。
 # `ls -l` は symlink / 実ファイル / 不在を 1 行で区別でき、`-e`/`-L` の判定と突き合わせられる。
 par_state() {
   echo "--- 実状態 ($CH):"
@@ -239,7 +239,7 @@ for i in 1 2 3 4 5; do
   wait $pids || true
   for j in 1 2 3; do
     # 🚨 失敗時は link の実状態も出す。2026-09-05 に `make test` の通しで 1 度だけ
-    # 「refused: .../hooks/h1.sh は symlink でない実ファイル」で落ちた (issue 260)。正体は
+    # 「refused: .../hooks/h1.sh は symlink でない実ファイル」で落ちた。正体は
     # apply 側の `[ -e ] && [ ! -L ]` の 2 回 stat で、相手の ln -sfn の unlink が間に挟まると
     # 不在が「実ファイル」に化ける (1 回 lstat へ直した。ケース 15b が形を pin する)。
     grep -q '^rc=0$' "$H/par.$i.$j" || ng "並行 apply #$i.$j が非 0:"$'\n'"$(cat "$H/par.$i.$j")"$'\n'"$(par_state)"
@@ -249,7 +249,7 @@ for i in 1 2 3 4 5; do
   [ "$RC" -eq 0 ] || ng "並行 apply #$i の後に check が rc=$RC:"$'\n'"$OUT"
 done
 
-# --- 15b. 実ファイル判定は 1 回の lstat (`stat -f %HT`) で行う (issue 260 の回帰ガード) ---
+# --- 15b. 実ファイル判定は 1 回の lstat (`stat -f %HT`) で行う ---
 # 挙動で pin できない: 窓はマイクロ秒で、テストから決定的に作れない (2 回 stat 版で 0.2% の発火率)。
 # 代わりに「2 回 stat の形 (`[ -e "$link" ] && [ ! -L "$link" ]`) が apply に戻っていない」ことを
 # 静的に pin する (pty が要る挙動を配線の静的 pin で守る verify-interactive-prompt-with-pty-driver.md の作法)。

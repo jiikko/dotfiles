@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bin/lib/uint.sh の uint_ok を、bin の道具が実際に動くシェル (/bin/bash = 3.2・bash 5・zsh・sh) で固定する (issue 775)。
+# bin/lib/uint.sh の uint_ok を、bin の道具が実際に動くシェル (/bin/bash = 3.2・bash 5・zsh・sh) で固定する。
 #
 # なぜ: [!0-9] は /bin/bash (3.2) の ja_JP.UTF-8 で全角数字に一致せず「１２」を整数として通した (mutate-verify の --timeout が
 # そうなっていた)。寄せた先の 1 か所が、どのシェルから source しても同じ答えを返すことを見る。

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# make の recipe が、継承した git の repo の場所 (GIT_DIR など) を持たないことを pin する (issue 744)。
+# make の recipe が、継承した git の repo の場所 (GIT_DIR など) を持たないことを pin する。
 #
 # なぜ: hook から起動された make test は GIT_DIR などを持ったまま走り、テストの `git -C <一時 dir>` がそれに負けて
 # 継承した repo の config とブランチを書き換えた (2026-10-12 に scratch の repo で再現)。Makefile の unexport で外している。

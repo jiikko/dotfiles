@@ -150,8 +150,8 @@ assert_contains "$output" "変換後チェック NG" "Reason starts with 'postch
 assert_contains "$output" "サイズ増加" "Reason contains specific issue tag"
 
 # Test 9: NG ありバッチは exit code 非0 / 全件 OK バッチは 0
-# 回帰防止: 旧実装は NG があっても 0 を返し、bin/av1ify・Finder action・
-# スクリプト連携 (&&) から失敗が見えなかった
+# 回帰防止: NG があっても 0 を返すと、bin/av1ify・Finder action・
+# スクリプト連携 (&&) から失敗が見えない
 printf '\n## Test 9: Batch exit code reflects NG\n'
 TEST_DIR="$TEST_TMP/ng_test9"
 mkdir -p "$TEST_DIR"
@@ -178,8 +178,8 @@ else
 fi
 
 # Test 10: バッチにディレクトリが混在し、その中に NG がある → 外側のサマリで NG 集計
-# 回帰防止: 旧実装はネストしたバッチが 0 を返すため、ディレクトリ内が全滅でも
-# 外側のサマリで OK にカウントされていた
+# 回帰防止: ネストしたバッチが 0 を返すと、ディレクトリ内が全滅でも
+# 外側のサマリで OK にカウントされる
 printf '\n## Test 10: Nested directory NG propagates to outer batch summary\n'
 TEST_DIR="$TEST_TMP/ng_test10"
 mkdir -p "$TEST_DIR/sub"

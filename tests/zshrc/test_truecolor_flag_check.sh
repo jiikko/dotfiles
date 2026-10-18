@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
-# _zshrc の _dotfiles_check_truecolor (SUPPORT_TRUECOLOR の設定漏れ検出) のテスト。issue 346。
+# _zshrc の _dotfiles_check_truecolor (SUPPORT_TRUECOLOR の設定漏れ検出) のテスト。
 #
 # 検出したい失敗: ~/.zshenv (dotfiles の管理外) にある `export SUPPORT_TRUECOLOR=false` の
 # 1 行が消えると、tmux 内の nvim が「不明 → truecolor 対応」に落ちて gruvbox +

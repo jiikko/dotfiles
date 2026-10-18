@@ -219,7 +219,7 @@ assert_contains "$output" "vidloss" "genuine 60s video loss still flagged after 
 
 # ----------------------------------------------------------------------
 # Test 11: 末尾区間の packet 実測 (seek 最適化) 自体が壊れた index に着地して
-# 宣言値に近い誤った値を再現するケース (issue 412)。全走査で再確認すると
+# 宣言値に近い誤った値を再現するケース。全走査で再確認すると
 # 一致することが分かり、正常と判定される。
 # 区別のしかた: MOCK_VIDEO_LAST_PTS (-read_intervals ありの seek 応答) は
 # 宣言値に近い壊れた値、MOCK_VIDEO_LAST_PTS_FULL (-read_intervals 無しの全走査
@@ -257,7 +257,7 @@ echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # MOCK_AUDIO_DURATION を映像側と揃え、avsync がこのテストの主張 (vidloss 単独) に
-# 横から割り込まないようにする (codex 敵対的レビュー P3)。
+# 横から割り込まないようにする。
 output=$(MOCK_VIDEO_DURATION=100.0 MOCK_VIDEO_LAST_PTS=100.0 MOCK_VIDEO_LAST_PTS_FULL=100.0 \
          MOCK_AUDIO_DURATION=100.0 \
          MOCK_OUTPUT_VIDEO_DURATION=40.0 MOCK_OUTPUT_AUDIO_DURATION=40.0 \

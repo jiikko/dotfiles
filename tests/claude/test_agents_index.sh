@@ -5,7 +5,7 @@
 # なぜ: 索引は手動メンテなので、agent の追加・削除と乖離する。**乖離した索引は無いより悪い**
 # (載っていない agent は「存在しない」と読まれ、消えた agent は探させる)。
 # 乖離を「読んだ人が気づく」から「テストが落ちる」へ格上げする
-# (tests/claude/test_skill_trigger_table.sh と同じ発想。issue 001 の項目 21)。
+# (tests/claude/test_skill_trigger_table.sh と同じ発想)。
 #
 # 検出する乖離 (両方向):
 #   1. 索引に在るのに実体が無い (削除残り)
@@ -44,7 +44,7 @@ fi
 
 for a in $actual; do
   # 🚨 `printf … | grep -qx` のパイプに戻さないこと。grep -q は一致した瞬間に exit するので
-  # 上流の printf が SIGPIPE で落ち、pipefail 下では**一致しているのに非 0** になる (issue 096)
+  # 上流の printf が SIGPIPE で落ち、pipefail 下では**一致しているのに非 0** になる
   grep -qx "$a" <<<"$listed" || { echo "✗ 索引に無い agent: $a (_claude/agents/README.md に足すこと)"; fail=1; }
 done
 

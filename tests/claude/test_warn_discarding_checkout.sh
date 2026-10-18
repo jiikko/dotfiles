@@ -83,7 +83,7 @@ expect_silent() { # $1=説明 $2=command  [$3=skip-control なら対の確認を
   echo "✓ $1"; ok=$((ok+1))
 }
 
-# 🚨 **生存確認を最初に置く** (敵対的レビュー P1-2)。expect_silent は「出力が空」しか見ておらず、
+# 🚨 **生存確認を最初に置く**。expect_silent は「出力が空」しか見ておらず、
 # **hook が壊れて死んでも空**なので、「正しく黙った」と「砦が消えた」が同じ観測になる。
 # 実測: hook の先頭に `exit 0` を差す変異 (= 何もしない hook) で、24 件中 **15 件が緑のまま**
 # 通った (緑で残ったのは expect_silent 系すべてと配線)。ここで先に「必ず出る形」を確かめ、
@@ -102,7 +102,7 @@ echo "## 捨てる形 (dirty)"
 # 🚨 `git checkout <何か>` は出す側へ倒す。`git checkout foo.go` (捨てる) と
 #    `git checkout foo` (ブランチ切替) は**静的に区別できない**ので、宣言したバイアス
 #    「取りこぼすより出す側へ倒す」に従って両方出す。初版はブランチ形を黙らせており、
-#    そのせいで `git checkout x.go` (`--` なし) が沈黙していた (敵対的レビュー P2-5)。
+#    そのせいで `git checkout x.go` (`--` なし) が沈黙していた。
 for c in "git checkout -- x.go" "git checkout ." "git checkout -f" "git checkout --force main" \
          "git restore x.go" "git restore --staged --worktree x.go" \
          "git checkout HEAD -- x.go" "git checkout -fq" "git checkout -qf main" \
@@ -122,7 +122,7 @@ git status"; do
   new_repo; dirty; expect_warn "複数の segment (注意だけ): ${c%%$'\n'*}" "$c"
 done
 # 🚨 ask は単純なコマンド (引用符・heredoc・コメント・コマンド置換・行継続が無い) だけ。それ以外は確実な形を含んでも注意だけ
-#    (ask にすると commit message や issue の本文で人とコマンドが止まり、`claude -p` では commit ごと拒否される。issue 623 の敵対的レビュー 2 周)
+#    (ask にすると commit message や issue の本文で人とコマンドが止まり、`claude -p` では commit ごと拒否される)
 for c in "echo 'note: git checkout -- x.go'" "gh issue comment 1 --body 'a; git restore x.go'" \
          "git commit -F - <<'M'
 fix: git checkout -- x.go を ask にする
@@ -169,13 +169,13 @@ echo "## 変更が無ければ黙る (毎回出すとノイズになり読まれ
 new_repo; expect_silent "clean な repo で checkout --" "git checkout -- x.go" skip-control
 
 echo "## untracked だけが dirty のときも出す (checkout では戻らない = 消えたら復元できない)"
-# untracked は checkout / restore で消えないので、untracked だけなら ask にはせず注意だけ (失いようが無い状態で人を止めない。4 周目 P3-4)
+# untracked は checkout / restore で消えないので、untracked だけなら ask にはせず注意だけ (失いようが無い状態で人を止めない)
 new_repo; : > "$REPO/new.go"; expect_warn "untracked だけ (注意だけ)" "git checkout -- x.go"
 
 echo "## cross-repo: 見るのは「捨てられる側」であって cwd ではない"
 # 🚨 この repo の規範 (commit-with-pathspec.md) は「本体への操作は `git -C <本体の絶対パス>` で
 # 対象を明示する」と推奨している。初版は cwd 側の dirty を見ていたので、**推奨形がそのまま盲点**
-# になっていた (敵対的レビュー P2-1)。両方向を固定する。
+# になっていた。両方向を固定する。
 new_repo; CLEAN="$REPO"          # clean な repo を cwd に
 new_repo; dirty; DIRTY="$REPO"   # dirty な repo を -C の対象に
 out=$(jq -n --arg c "git -C $DIRTY checkout -- x.go" --arg d "$CLEAN" '{cwd:$d,tool_input:{command:$c}}' |
@@ -187,7 +187,7 @@ out=$(jq -n --arg c "git -C $CLEAN checkout -- x.go" --arg d "$DIRTY" '{cwd:$d,t
   "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
 if [ -z "$out" ]; then echo "✓ dirty な cwd から clean な repo を触っても黙る (無関係な一覧を見せない)"; ok=$((ok+1))
 else echo "✗ 対象は clean なのに cwd 側の変更を「消えるもの」として見せた"; printf '%s\n' "$out" | head -2; fail=$((fail+1)); fi
-# 対象の repo の書き方 (issue 623 の敵対的レビュー P2-5 / P3-1): 引用符つきの -C / ~ / -c k=v の後の -C / cd <dir> && / サブシェル。
+# 対象の repo の書き方: 引用符つきの -C / ~ / -c k=v の後の -C / cd <dir> && / サブシェル。
 # どれも clean な cwd から dirty な repo を触る形で、対象 repo の一覧が出ること (= 黙らない) を見る
 for c in "git -C \"$DIRTY\" checkout -- x.go" "git -c a=b -C $DIRTY checkout -- x.go" \
          "git -C ~/${DIRTY##*/} checkout -- x.go" "git -C \$HOME/${DIRTY##*/} checkout -- x.go"; do
@@ -196,7 +196,7 @@ for c in "git -C \"$DIRTY\" checkout -- x.go" "git -c a=b -C $DIRTY checkout -- 
   if grep -qF "$DIRTY" <<< "$(body_of "$out")"; then echo "✓ 対象 repo を読む: $c"; ok=$((ok+1))
   else echo "✗ 対象 repo を読めずに黙った / 違う repo を見た: $c"; printf '%s\n' "$out" | head -2; fail=$((fail+1)); fi
 done
-# 🚨 後ろの segment に最初の破棄の対象を奪われて黙らない (対象は最初の「捨てる segment」で決める。敵対的レビュー 3 周目 P2-1)。
+# 🚨 後ろの segment に最初の破棄の対象を奪われて黙らない (対象は最初の「捨てる segment」で決める)。
 #    dirty な cwd での確実な破棄が、旧と同じく少なくとも注意を出すこと (cd があるので ask にはしない)
 for c in "git checkout -- x.go; cd $CLEAN; git checkout -- x.go" "git checkout -- x.go && cd $CLEAN && git checkout main" \
          "git commit -m 'x; cd /tmp'; git checkout -- x.go" "git checkout -- x.go; git -C $CLEAN checkout -b new"; do
@@ -204,7 +204,7 @@ for c in "git checkout -- x.go; cd $CLEAN; git checkout -- x.go" "git checkout -
   if grep -qF "$DIRTY" <<< "$(body_of "$out")"; then echo "✓ 後ろの segment に対象を奪われない: $c"; ok=$((ok+1))
   else echo "✗ 後ろの segment に対象を奪われて黙った / 違う repo を見た: $c"; printf '%s\n' "$out" | head -2; fail=$((fail+1)); fi
 done
-# 🚨 対象の repo は segment ごとに持つ (敵対的レビュー 4 周目 P2-1 / P2-2)。
+# 🚨 対象の repo は segment ごとに持つ。
 #    -C の無い破棄の後ろの `-C <dirty>` の破棄を見落とさない (clean な cwd でも dirty な対象の一覧を出す)
 for c in "git restore x.go && git -C $DIRTY restore x.go" "git checkout -- x.go; git -C $DIRTY checkout -- x.go" \
          "git checkout main && git -C $DIRTY checkout -- x.go"; do
@@ -219,7 +219,7 @@ for c in "git checkout main && git -C $CLEAN restore x.go" "echo git checkout fo
     echo "✗ clean な別の repo への破棄なのに cwd の一覧で ask にした: $c"; fail=$((fail+1))
   else echo "✓ 確実な破棄の対象が clean なら ask にしない: $c"; ok=$((ok+1)); fi
 done
-# 🚨 対象の repo に自信が無い形は ask にしない (cwd に倒した一覧で人を止めない。敵対的レビュー 3 周目 P2-2)
+# 🚨 対象の repo に自信が無い形は ask にしない (cwd に倒した一覧で人を止めない)
 for c in "(cd $CLEAN && git checkout -- x.go)" "pushd $CLEAN; git checkout -- x.go" "cd $CLEAN && git checkout -- x.go" \
          "GIT_DIR=$CLEAN/.git GIT_WORK_TREE=$CLEAN git checkout -- x.go" "git --git-dir=$CLEAN/.git --work-tree=$CLEAN checkout -- x.go" \
          "git -C $DIRTY -C $CLEAN checkout -- x.go" "git -C /nonexistent/xyz checkout -- x.go" \
@@ -253,7 +253,7 @@ for bad in "" "not json"; do
 done
 # 🚨 巨大な heredoc で timeout に殺されないこと (殺されると無出力 = 注意が消える)
 new_repo; dirty
-# 🚨 fixture に checkout を混ぜる (敵対的レビュー P3-1)。含まないと性能ガードの case で
+# 🚨 fixture に checkout を混ぜる。含まないと性能ガードの case で
 # 即 exit 0 し、**ループに 1 度も入らない** = 何も測っていない vacuous なテストになる。
 big=$(head -c 90000 /dev/zero | tr '\0' 'x')
 big="git checkout -- $big"
@@ -271,8 +271,8 @@ else echo "✗ 90KB の入力で注意が出なかった (timeout に殺され�
 echo "## 判定不能を緑に畳まない (adversarial-review-own-safeguards §2)"
 # 🚨 「検査できなかった」は「変更なし」ではない。rev-parse は通るが status だけ落ちる状態
 # (index の破損) を作って、黙らずに判定不能を出すことを固定する。
-# 実測 2026-09-06: 初版はここで exit 0 しており、**直上のコメントが約束したことを実装が
-# やっていなかった** (敵対的レビューが同じ手順で発見)。
+# 実測 2026-09-06: ここで exit 0 すると、**直上のコメントが約束したことを実装が
+# やっていない**ことになる。
 new_repo; dirty
 printf 'GARBAGE' > "$REPO/.git/index"
 if git -C "$REPO" rev-parse --show-toplevel >/dev/null 2>&1 &&
@@ -288,7 +288,7 @@ else
 fi
 
 echo "## 配線 (hook 本体が正しくても settings.json から消えれば防御はゼロ)"
-# 🚨 **これが緑でも「本番で armed」ではない** (敵対的レビュー P1-3)。ここが読むのは
+# 🚨 **これが緑でも「本番で armed」ではない**。ここが読むのは
 # **このツリーの** settings.json で、本番の hook は `~/dotfiles/_claude/hooks/...` という
 # 実体パスから起動する。worktree のコピーはどこからも読まれないので、統合は
 # `push` → `git -C ~/dotfiles pull --rebase` まで通して初めて効く

@@ -35,7 +35,7 @@ assert_not_contains "$output" "へ再エンコード" "Compact does not re-encod
 assert_file_exists "$TEST_DIR/input-720p-30fps-enc.mp4" "Compact output has no aac tag when copying"
 
 # Test 52: 通常モードでも閾値超の copy 可能コーデックは再エンコードする
-# (以前は「copy 可能なら無条件 copy」だったため、圧縮したい高ビットレート AAC が素通りしていた)
+# (「copy 可能なら無条件 copy」だと、圧縮したい高ビットレート AAC が素通りする)
 printf '\n## Test 52: Non-compact re-encodes allowed codec above threshold\n'
 TEST_DIR="$TEST_TMP/test52"
 mkdir -p "$TEST_DIR"

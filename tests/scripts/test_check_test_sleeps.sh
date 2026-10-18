@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/check_test_sleeps.sh (印の無い sleep を落とす検査。issue 615) の契約を fixture で固定する。
+# scripts/check_test_sleeps.sh (印の無い sleep を落とす検査) の契約を fixture で固定する。
 #
 # 守るもの: 印の無い sleep を落とす (sleep N / sleep "$x" / /bin/sleep / command sleep) / 同じ行・直前の行の印で通す /
 # heredoc の本文は開始行の前の印でまとめて通し、印が無ければ本文の sleep も落とす / 語彙に無い分類・理由の無い印は通さない /

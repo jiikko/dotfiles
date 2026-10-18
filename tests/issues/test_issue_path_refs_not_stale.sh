@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # issues/ の **外** (コード・docs・_claude/rules*) から issue を「裸のパス」で参照している箇所が、
-# issue の移動で腐っていないかを検査する (issue 350)。
+# issue の移動で腐っていないかを検査する。
 #
 # なぜ既存の検査で足りないか:
 #   - tests/issues/test_issue_links_valid.sh は **issues/ 配下しか歩かない**
@@ -17,7 +17,7 @@
 #   (obaket `issues/724-….md`) が実在の dotfiles issue と番号衝突して偽陽性になる。
 #   スラッグまで見ると除外リストが 1 件も要らない (2026-09-11 の全数照合で確認)。
 #
-# ## 検出しない形 (射程の外。issue 350 に記録)
+# ## 検出しない形 (射程の外)
 #
 #   - **glob / 省略を含む参照** (`issues/done/189-*.md` / `issues/done/010-...`)。
 #     リテラルとして解決せず、スラッグも `*` なので原理的に見えない
@@ -55,7 +55,7 @@ scan_tree() {
     printf 'VIOL\t%s\t%s\t%s\n' "$loc" "$written" "$actual"
   done < <(
     cd "$root" &&
-    # worktrees は .claude/worktrees (pro-con の worktree。別の checkout の写し。issue 616) を外すため。
+    # worktrees は .claude/worktrees (pro-con の worktree。別の checkout の写し) を外すため。
     # --exclude-dir は名前でしか外せない (追跡している worktrees という名前のディレクトリは無い)
     grep -rnI 'issues/' . \
       --exclude-dir=issues --exclude-dir=.git --exclude-dir=tmp --exclude-dir=node_modules --exclude-dir=worktrees \
@@ -121,7 +121,7 @@ fi
 # --- 本走査 -----------------------------------------------------------------------------------
 report "$ROOT_DIR" 'issues/ の外からの裸パス参照' "$work/m"
 read -r mcand mviol < "$work/m.sum"
-# 🚨 下限 50 は「母集合の縮小」を検出しきれないと分かったうえで選んでいる (issue 352 項目 4)。
+# 🚨 下限 50 は「母集合の縮小」を検出しきれないと分かったうえで選んでいる。
 # 候補の大半はテスト fixture で、tests/claude/test_next_claim_push.sh だけで 28 件を占める。
 # そのテストが整理されると**候補が半減しても下限は通る**。下限を上げない理由は、
 # fixture の正当な削除で赤くなり検査が邪魔になるから。

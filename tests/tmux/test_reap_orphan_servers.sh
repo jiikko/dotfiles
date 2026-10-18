@@ -5,7 +5,7 @@
 #   A) socket ファイルが消えた孤児 tmux サーバ（プロセスだけ生存）を reap が kill する
 #   B) 生存 socket を持つサーバ（実サーバ・接続中 client 相当）を reap が絶対に kill しない
 #   C) 空白入り TMUX_TMPDIR の生存サーバを誤殺しない
-#      (旧実装は lsof NAME 列を awk $NF で取りパスが truncate → [ -S ] 常に偽 → 誤殺)
+#      (lsof NAME 列を awk $NF で取るとパスが truncate → [ -S ] 常に偽 → 誤殺)
 #   D) socket ファイルが消えていても client が attach 中のサーバは kill しない
 #      (unix socket は unlink 後も接続維持。accept 済み fd の有無で使用中を判定する)
 #
@@ -25,15 +25,14 @@ REAP="$ROOT_DIR/scripts/tmux_reap_orphan_servers.sh"
 UID_NUM=$(id -u)
 
 # 一時 dir は必ず reap_mktemp_d で作る (作成と登録が 1 つ。書き忘れが構造的に起きない)。
-# 🚨 ヘルパーを lib へ出しているのは、検査側が「行範囲を切り出すアンカー」を持たずに済むため
-# (敵対レビュー 3 周目 P1-2)。理由は lib のヘッダに書いてある。
+# 🚨 ヘルパーを lib へ出しているのは、検査側が「行範囲を切り出すアンカー」を持たずに済むため。理由は lib のヘッダに書いてある。
 # shellcheck source=tests/tmux/lib/reap_mktemp.sh
 . "$ROOT_DIR/tests/tmux/lib/reap_mktemp.sh"
 . "$ROOT_DIR/tests/lib/wait_until.sh"
 
-# socket 名と pid の入れ物を先に置く。🚨 **cleanup と trap を「dir を作る前」に据える**ため
-# (敵対レビュー 3 周目 P3)。旧版は trap が dir 作成の 40 行あとに在り、3 本目の
-# reap_mktemp_d が失敗すると先の 2 つが回収されないまま死んでいた (実測: 2 dir 残存)。
+# socket 名と pid の入れ物を先に置く。🚨 **cleanup と trap を「dir を作る前」に据える**ため。
+# trap が dir 作成の 40 行あとにあると、3 本目の
+# reap_mktemp_d が失敗したとき先の 2 つが回収されないまま死ぬ (実測: 2 dir 残存)。
 ORPHAN_SOCK="ro$$"
 LIVE_SOCK="rl$$"
 SPACE_SOCK="rs$$"
@@ -232,8 +231,8 @@ kill -0 "$live_pid" 2>/dev/null || fail "B: 生存 socket のサーバ (pid=$liv
 ok "B: 生存 socket のサーバは保護された"
 
 # ---- C) 空白入り TMUX_TMPDIR の生存サーバを保護 ----
-# 旧実装は lsof の NAME 列を awk '{print $NF}' で取っており、パスに空白があると最終
-# フィールドだけに truncate → [ -S ] が常に偽 → 生存サーバを孤児と誤判定して kill した。
+# lsof の NAME 列を awk '{print $NF}' で取ると、パスに空白があると最終
+# フィールドだけに truncate → [ -S ] が常に偽 → 生存サーバを孤児と誤判定して kill する。
 mkdir -p "$SPACE_DIR"
 env TMUX_TMPDIR="$SPACE_DIR" "$TMUX_BIN_PATH" -L "$SPACE_SOCK" \
   new-session -d -s sp "tail -f /dev/null" >>"$start_log" 2>&1 || { cat "$start_log" >&2; fail "failed to start space server" }

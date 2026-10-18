@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# scripts/lib/tmux_resurrect_guards.sh の lock 取得・掃除の契約テスト (issue 078)
+# scripts/lib/tmux_resurrect_guards.sh の lock 取得・掃除の契約テスト
 #
 # なぜ必要か: `tt_lock_acquire` / `tt_lock_sweep_stale` は 3 本のスクリプトに逐語コピーされて
 # いた手順を集約したもので、**関数そのものを直接呼ぶテストが 1 本も無かった**。呼び出し元 3 本の
 # 統合テスト経由で偶発的に踏まれているだけで、特に **rc=2 (取得に失敗した) はどの経路からも
-# 到達しない** (敵対レビューの指摘、2026-08-25)。rc=2 を rc=0 に潰す変異が全 green で通る状態
-# だったので、ここで 3 つの戻り値と掃除の条件を直接固定する。
+# 到達しない**。rc=2 を rc=0 に潰す変異が全 green で通るので、ここで 3 つの戻り値と掃除の条件を直接固定する。
 #
 # 契約: 0 = 取得した / 1 = 先任が同一プロセスとして生きている / 2 = 取得に失敗した
 set -euo pipefail
@@ -68,7 +67,7 @@ rc="$(rc_of "$d")"
 
 # --- rc=1: 作りたての owner 不在 lock は奪わない (記録中かもしれない) --------------
 # 🚨 `mkdir` と owner 記録は原子的でないので、正当な取得者が記録中の一瞬は owner 不在に見える。
-#   ここを奪うと**両方が rc=0 になる** (issue 103 の原症状)。古さで区別する。
+#   ここを奪うと**両方が rc=0 になる**。古さで区別する。
 d="$BASE/c2.lock"; mkdir "$d"
 rc="$(rc_of "$d")"
 [ "$rc" = 1 ] && ok "作りたての owner 不在 lock は奪わない (rc=1)" || ng "owner 記録中の lock を rc=$rc で奪った"
@@ -138,7 +137,7 @@ race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げ
     . "$1" || exit 9
     # $4=1 のとき tt_proc_starttime (mkdir と owner 記録の間) で止めて窓を開けたままにする。
     # 窓は実測 4.6ms しかなく、素で回すとレースが「たまたま出ない」ので確率的にしか落とせない。
-    # 秒数で広げず、窓に入ったことを <解放マーカー>.in.<pid> で知らせて <解放マーカー>.go を待つ (issue 613)。上限 20 秒。
+    # 秒数で広げず、窓に入ったことを <解放マーカー>.in.<pid> で知らせて <解放マーカー>.go を待つ。上限 20 秒。
     # 🚨 関数の中の $5 は関数自身の引数なので、マーカーの置き場は変数で渡す
     gate_base=$5
     if [ "$4" = 1 ]; then tt_proc_starttime() {
@@ -153,7 +152,7 @@ race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げ
     #    後続は「記録済みで死んだ owner」を**正当に**奪える。その再取得を「二重取得」と数えると
     #    機械の速さ次第で落ちる (実測 2026-08-28: CI (macOS) で 形状=leftover delay=0.005s が
     #    2 winners)。固定 sleep で凌ぐと「どれだけ待てば十分か」が未実測のマジックナンバーに
-    #    なるので、マーカー待ちにして定数を消す (敵対的レビューの指摘 R1)。
+    #    なるので、マーカー待ちにして定数を消す。
     i=0
     while [ ! -e "$5" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$(( i + 1 )); done  # sleep-ok: tick: マーカー待ちの刻み (子の中。上限つき)
   ' _ "$1" "$2" "$3" "$4" "$5" &
@@ -164,8 +163,8 @@ race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げ
 # 🚨 $2 の「形状」を必ず両方掃くこと。`leftover` (取り残しを事前に作る) だけを試すと**両者が
 #   奪取経路に入る**ので、奪取権 lock で直列化されている経路しか検査しない。production の
 #   呼び出し元 3 本はどれも **lock dir が存在しない状態から始まる** (`fresh`) ため、片方が素の
-#   `mkdir` で入り、奪取権 lock を一切持たないまま owner を記録する — そこが issue 103 の
-#   原症状の窓だった。leftover だけ緑にして「閉じた」と誤判定した実例がある (2026-08-28)。
+#   `mkdir` で入り、奪取権 lock を一切持たないまま owner を記録する — そこが
+#   原症状の窓になる。leftover だけ緑にして「閉じた」と誤判定した実例がある (2026-08-28)。
 race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
   local dir="$BASE/race.lock" out="$BASE/race.out" rel="$BASE/race.release" g p1 p2
   g="$ROOT_DIR/scripts/lib/tmux_resurrect_guards.sh"
@@ -222,7 +221,7 @@ race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
   printf '%s\n' "${won:-0}"
 }
 
-# 敵対的レビューの実測では 1〜5ms がクリティカルウィンドウ (0s と 8ms 以上では出ない)。
+# 実測では 1〜5ms がクリティカルウィンドウ (0s と 8ms 以上では出ない)。
 # その帯を含めて掃く。
 race_bad=0
 race_trials=0
@@ -401,7 +400,7 @@ tt_lock_release_if_owner "$rel"
 [ -d "$rel" ] && ng "自分の lock を解放できない" || ok "自分が owner なら解放する"
 
 # 🚨 **他人の lock は消さない**。奪取のレース中は 2 プロセスが同じパスを保持しうるので、
-#   先に終わった側が、まだ走っている側の lock を消すと多重実行になる (issue 103)。
+#   先に終わった側が、まだ走っている側の lock を消すと多重実行になる。
 rm -rf "$rel"; mkdir "$rel"
 spawn_live; tt_lock_write_owner "$rel" "$REPLY_PID"
 tt_lock_release_if_owner "$rel"

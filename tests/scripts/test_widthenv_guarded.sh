@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tuikit を import するパッケージのテストが、幅の環境の検査 (widthenv.ExitIfUnsupported) を呼ぶことを pin する (issue 701 の 2)。
+# tuikit を import するパッケージのテストが、幅の環境の検査 (widthenv.ExitIfUnsupported) を呼ぶことを pin する。
 #
 # なぜ: RUNEWIDTH_EASTASIAN=1 では幅の数え方が変わり、幅を見るテストが大量に落ちる (pro-con/ui で「行の幅 131 が画面の幅 120 を
 # 超える」)。検査を呼ばないパッケージでは、落ちた理由が環境だと分からない。

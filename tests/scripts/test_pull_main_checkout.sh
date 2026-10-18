@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# `scripts/pull_main_checkout.sh` が、本体の checkout の pull を決まった lock で 1 つずつにすることを確かめる (issue 544)。
+# `scripts/pull_main_checkout.sh` が、本体の checkout の pull を決まった lock で 1 つずつにすることを確かめる。
 # 一時的な origin と clone の上だけで動かす (本物の ~/dotfiles は触らない)。lockman は repo の bin/lockman を使う。
 set -euo pipefail
 unset CDPATH

@@ -2,13 +2,13 @@
 # tuikit と、tuikit を go.mod に持つ src/* が、(1) 同じ版の x/ansi・bubbletea・ultraviolet で解決し、(2) 折り返しの x/ansi の直呼びを forbidigo で禁止していることを pin する。
 #
 # なぜ: tuikit は幅・切り詰め・折り返しの単一の出典 (termwidth) を、自分の go.mod の x/ansi の版でテストする。消費者が別の版で
-# tuikit をビルドすると、tuikit のテストが通ったまま消費者の表示だけがずれうる (issue 603: schedkeys だけ v0.11.8 だった)。
-# ansi の禁止は各 module の .golangci.yml にコピーされていて、新しい消費者・新しい禁止で漏れる (issue 590 の折り返しの禁止が 2 module だけだった)。
+# tuikit をビルドすると、tuikit のテストが通ったまま消費者の表示だけがずれうる (schedkeys だけ v0.11.8 だった)。
+# ansi の禁止は各 module の .golangci.yml にコピーされていて、新しい消費者・新しい禁止で漏れる (折り返しの禁止が 2 module だけだったことがある)。
 # 版は go.mod の行ではなく `go list -m` (MVS の解決結果) で見る: go.mod に x/ansi の行を持たない消費者もある。
 # 🚨 GOWORK=off で解決する: go.work があると全 module が workspace の版で解決され、ずれが見えなくなる。
 # bubbletea の版も見る (603 で schedkeys の v2.0.9 を v2.0.8 に揃えた)。ultraviolet も見る (tuikit/framebench が bubbletea のレンダラを再現するのに使う。
 # tuikit が f5a850f9、glogx・pro-con が 8b693049 でずれていた。2026-10-02)。tuikit 自身の版は見ない (restartable は go install のために疑似版で固定する)。
-# 禁止の検査の脅威モデル: うっかりの漏れ (行を足し忘れる・コメントにする・forbidigo を enable から外す・exclusions で issue 590 を広く外す) を止める。
+# 禁止の検査の脅威モデル: うっかりの漏れ (行を足し忘れる・コメントにする・forbidigo を enable から外す・exclusions で折り返しの禁止を広く外す) を止める。
 # 検出しない形: YAML の別の書き方 (flow style・アンカー)・forbid の節の外に同じ字面の行を置く・msg の書き換え。.golangci.yml を壊す変更は各 module の lint が止める
 set -uo pipefail
 unset CDPATH
@@ -18,7 +18,7 @@ cd "$ROOT_DIR" || exit 1
 ansi=github.com/charmbracelet/x/ansi
 tea=charm.land/bubbletea/v2
 uv=github.com/charmbracelet/ultraviolet
-# 色と幅の間接依存も揃える (lipgloss・ultraviolet が色の変換と幅に使う。treefiler・tuikit だけ古い版だった。issue 696 の 9)
+# 色と幅の間接依存も揃える (lipgloss・ultraviolet が色の変換と幅に使う。treefiler・tuikit だけ古い版だった)
 colorful=github.com/lucasb-eyer/go-colorful
 runewidth=github.com/mattn/go-runewidth
 wrap_forbid_re='^ +- pattern: \^ansi\\\.\(Hardwrap\|Wrap\|Wordwrap\)\$$'
@@ -50,7 +50,7 @@ for mod in src/*/go.mod; do
   if ! grep -qE '^    - forbidigo([[:space:]]|$)' "$yml"; then
     printf '  ✗ %s: linters.enable に forbidigo が無い (禁止の行があっても効かない)\n' "$dir"; fail=1
   fi
-  # issue 590 を外してよいのは tuikit の termwidth (x/ansi を包む層) とそのテストだけ
+  # 折り返しの禁止を外してよいのは tuikit の termwidth (x/ansi を包む層) とそのテストだけ
   while IFS= read -r prev; do
     if [ "$dir" != src/tuikit ] || [ "$prev" != '      - path: (termwidth/|_test\.go)' ]; then
       printf '  ✗ %s: exclusions が issue 590 (折り返しの禁止) を外している (直前の行: %s)\n' "$dir" "$prev"; fail=1

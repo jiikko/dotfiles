@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ローカルの入口 (make test / test-go* / test-discovered* / test_changed.sh) が「1 本目の失敗で残りを隠さない」
-# ことを実験で確かめる (issue 130)。
+# ことを実験で確かめる。
 #
 # なぜテストにするか: 集約かどうかは**失敗した日にしか観測されない**。緑の日は fail-fast でも
 # 集約でも同じ出力になるため、prerequisite 形へ戻す変更が無音で通る。
@@ -40,7 +40,7 @@ printf 'lint:\n\t@echo good-lint >> %s\ntest:\n\t@echo good-test >> %s\n' \
 #    入れていないので、置かないと **CI では何も検査していない**ことになる (実測: run
 #    33169546465 で 6 件が false green ではなく false red として露出した)。
 #    ここで見たいのは「集約して回すか」だけで go の挙動ではない。偽プロジェクトの Makefile は
-#    go を呼ばない。go を呼ぶのは test-go の一斉起動前の std の事前ビルド (issue 807) だけなので、
+#    go を呼ばない。go を呼ぶのは test-go の一斉起動前の std の事前ビルド だけなので、
 #    スタブは**呼ばれた引数を calls に書いて失敗する**形にする: 事前ビルドの失敗の経路を通しつつ、
 #    いつ・何で呼ばれたかを calls の順序で見る (黙って 0 を返すと、将来 recipe が本当に go を
 #    使い始めたときに嘘の緑になる)。
@@ -61,7 +61,7 @@ for goal in lint test; do
     || bad "$target: 1 つ目が落ちた後、2 つ目が走っていない ($(tr '\n' ' ' < "$TMP_DIR/calls"))"
   grep -q "失敗したプロジェクト.*bad" "$TMP_DIR/out" \
     || bad "$target: 失敗したプロジェクト名がまとめて出ない: $(cat "$TMP_DIR/out")"
-  # test-go は一斉起動の前に std の -race 版を go で温める (issue 807)。スタブの go が落ちるので
+  # test-go は一斉起動の前に std の -race 版を go で温める。スタブの go が落ちるので
   # その失敗の経路を通る: 失敗を出したうえで一斉起動へ進むこと (上の good-test が走ったかと合わせて見る)
   if [ "$goal" = test ]; then
     grep -q "std の -race 版の事前ビルドに失敗" "$TMP_DIR/out" \
@@ -143,7 +143,7 @@ note "make test-src は test-go-lint が落ちても test-go を回す"
 #    prerequisite 形へ戻す退行 (`test-discovered: 腕1 腕2`) では偽の腕1 が落ちた時点で make が
 #    止まり、腕2 の記録が無いので red になる。
 # 偽の並列腕: 失敗 1 本 + skip (exit 77) 1 本。偽の直列腕: 成功 1 本 (走った証拠を残す) + 失敗 1 本。
-# 最後に両腕の失敗 2 本と skip 1 本がテスト名で再掲されること (issue 261 P2-1 / P2-2) も見る。
+# 最後に両腕の失敗 2 本と skip 1 本がテスト名で再掲されること も見る。
 mkdir -p "$TMP_DIR/arm_p" "$TMP_DIR/arm_s"
 printf '#!/bin/sh\nexit 1\n' > "$TMP_DIR/arm_p/test_p_fail.sh"
 printf '#!/bin/sh\nexit 77\n' > "$TMP_DIR/arm_p/test_p_skip.sh"

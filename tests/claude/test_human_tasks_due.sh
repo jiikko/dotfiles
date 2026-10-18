@@ -169,7 +169,7 @@ noepic_out="$(printf '{"cwd":"%s"}' "$noepic" | "$HOOK" 2>/dev/null)"
 noepic_ctx="$(printf '%s' "$noepic_out" | jq -r '.hookSpecificOutput.additionalContext // ""')"
 check "epic 無しでも正常に走査する" '091-human-no-epic' "$noepic_ctx"
 
-# --- 入れ子の issue dir (`<root>/*/issues`) も走査する (issue 276) ---
+# --- 入れ子の issue dir (`<root>/*/issues`) も走査する ---
 # obaket は macOS/issues/ を正式に持っており、そこの human の期限切れがどの hook にも
 # 見えなかった。🚨 走査を root 直下だけへ戻す変異で red になること。
 mkdir -p "$repo/macOS/issues"
@@ -184,7 +184,7 @@ printf '# t\n\n起票日: 2026-08-01\n期限: 2026-08-02\n' >"$nested_only/sub/i
 nested_out="$(printf '{"cwd":"%s"}' "$nested_only" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
 check "root 直下に issues/ が無くても入れ子を拾う" "期限切れ 2026-08-02.*sub/issues/901-human-only" "$nested_out"
 
-# --- 案内文が単一 dir を名指ししないこと (敵対的レビュー 2026-09-06) ---
+# --- 案内文が単一 dir を名指ししないこと ---
 # 入れ子 dir を持つ repo で「issues/done/ へ移動する」と言うと、一覧は
 # macOS/issues/900-*.md を出しているのに移動先だけ嘘になる。
 # 変異: issue_hook_done_label を `${ISSUE_HOOK_DIR#...}/done/` の単一名指しへ戻すと red。
@@ -216,7 +216,7 @@ git -C "$none" init -q .
 none_out="$(printf '{"cwd":"%s"}' "$none" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
 check "issue dir が無ければ黙る" "" "$none_out"
 
-# --- --counts: 帯の mod (issue 621) 向けの機械の出口。数え方は本体と同じで、0 件でも必ず出す ---
+# --- --counts: 帯の mod 向けの機械の出口。数え方は本体と同じで、0 件でも必ず出す ---
 cnt="$WORK/cnt"
 mkdir -p "$cnt/issues/pending"
 git -C "$cnt" init -q .

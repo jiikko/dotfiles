@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# bin/ci-log の既定経路 (引数なし) が gh の失敗を「CI は緑」に化けさせないことを、偽の gh で固定する (issue 610)。
+# bin/ci-log の既定経路 (引数なし) が gh の失敗を「CI は緑」に化けさせないことを、偽の gh で固定する。
 #
 # 守るもの: `gh run list` が失敗したら非 0 で止まり「失敗した run はありません」と言わない (2 か所の gh のどちらでも) /
 # 失敗した run があればその失敗ログを取りに行く / bash 3.2 (/bin/bash) でも動く (mapfile を使わない) /
-# -i は commit を完全な SHA に展開して --commit に渡し、一覧の先頭ではなく headSha が一致する run の ID だけを返す (issue 634)。
+# -i は commit を完全な SHA に展開して --commit に渡し、一覧の先頭ではなく headSha が一致する run の ID だけを返す。
 # 偽の gh は --jq を解釈しないので、絞り込み後の行を環境変数でそのまま返す。
 set -euo pipefail
 unset CDPATH
@@ -104,7 +104,7 @@ for sh in bash /bin/bash; do
     fail "[$sh] 既定の経路が --commit で絞っていない: $(cat "$LOG")"
   fi
 
-  # -i (issue 634): 一覧の先頭が別の commit の古い run でも、headSha が一致する run の ID だけを返す
+  # -i: 一覧の先頭が別の commit の古い run でも、headSha が一致する run の ID だけを返す
   other_sha=0123456789abcdef0123456789abcdef01234567
   GH_ID_ROWS="999\t$other_sha\n555\t$head_sha" run_case id_stale_first -i Tests
   if [[ $RC -eq 0 && "$(cat "$OUT")" == 555 ]]; then

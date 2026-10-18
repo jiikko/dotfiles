@@ -18,7 +18,7 @@
 # 変えたらここも直す。🚨 このテストは意図的にあのスクリプトを呼ばない (実装が自分を検査する形にしない)。
 #
 # 🚨 hooks だけは「未リンク = 読まれない」が成り立たない。hook は _claude/settings.json の command
-# (dotfiles の実体パス) から起動されるので、link が無くても動く (issue 142 の実測)。ここで hooks を
+# (dotfiles の実体パス) から起動されるので、link が無くても動く。ここで hooks を
 # 検査しているのは link 集合を setup.sh と一致させるためで、hooks の FAIL は機能停止を意味しない。
 
 set -euo pipefail

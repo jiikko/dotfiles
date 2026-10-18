@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bin/concat_movies が ffmpeg へ渡す fade の開始位置を、偽の ffmpeg / ffprobe で固定する (本物の ffmpeg は呼ばない)。
 #
-# 守るもの (issue 610): 1 未満の開始位置を `0.700` の形で渡す (bc は `.7` を出し、ffmpeg が拒否する) /
+# 守るもの: 1 未満の開始位置を `0.700` の形で渡す (bc は `.7` を出し、ffmpeg が拒否する) /
 # stream の duration が N/A ならコンテナの長さへ落とす (bc は `N/A - 0.7` を黙って 1.3 にする) /
 # 長さが数値でない・フェードアウトより短いときは ffmpeg を呼ばずに非 0 で止まる。
 set -euo pipefail

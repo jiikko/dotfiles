@@ -42,7 +42,7 @@ else
   bad 'フックが settings.json に配線されていない (ベルが誰も鳴らさない)'
 fi
 # PostToolUse の working は bg フラグを落とす唯一の契機 (bg の後に再開した承認待ちのベル。Test 6c の前提)。
-# bash を起こさないよう tmux-pane-working.sh を直接呼ぶ (issue 622)。matcher の無い (全ツールの) 項目に在ること
+# bash を起こさないよう tmux-pane-working.sh を直接呼ぶ。matcher の無い (全ツールの) 項目に在ること
 if jq -e '[.hooks.PostToolUse[] | select(has("matcher") | not) | .hooks[].command] | index("~/dotfiles/_claude/hooks/tmux-pane-working.sh")' "$SETTINGS" >/dev/null 2>&1; then
   ok 'PostToolUse (全ツール) に tmux-pane-working.sh が配線されている'
 else
@@ -53,7 +53,7 @@ fi
 SOCKET="pane-state-bell-$$"
 TMUX_OUTER_SOCK=${TMUX:-}; TMUX_OUTER_SOCK=${TMUX_OUTER_SOCK%%,*}   # 本番ソケット (tmux 外 = CI では空。set -u なので :- が要る)
 unset TMUX TMUX_PANE
-# 🚨 socket ファイルも消す (issue 305 ①)。`kill-server` は socket を残すので、
+# 🚨 socket ファイルも消す。`kill-server` は socket を残すので、
 # このテストは走るたびに `pane-state-bell-<pid>` を 1 個ずつ積んでいた。
 # shellcheck source=tests/tmux/lib/kill_socket.sh
 . "$ROOT_DIR/tests/tmux/lib/kill_socket.sh"
@@ -147,8 +147,8 @@ done
 
 printf 'Test 6: Notification (入力不要な種別) → 鳴らない\n'
 # claude 2.1.263 のバイナリが持つ notification_type の enum (14 値) のうち、人が
-# 何もしなくてよい 7 値。🚨 かつて denylist にあった elicitation_complete /
-# elicitation_response は enum に無く何も除外していなかったので消した (実在するのは
+# 何もしなくてよい 7 値。🚨 elicitation_complete /
+# elicitation_response は enum に無く何も除外しないので denylist に置かない (実在するのは
 # Test 5 の elicitation_dialog / elicitation_url_dialog で、どちらも入力が要る)
 for nt in auth_success agent_completed push_notification computer_use_enter computer_use_exit quota_auto_resume_fired quota_auto_resume_stale; do
   expect_bell input "{\"hook_event_name\":\"Notification\",\"notification_type\":\"$nt\"}" 0 "$nt はベルなし"

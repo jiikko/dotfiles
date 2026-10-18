@@ -38,7 +38,7 @@ create_fake_env() {
   upper_tool="$(printf '%s' "$tool" | tr '[:lower:]' '[:upper:]')"
   # 🚨 内側の heredoc は quote する (<<'SCRIPT')。unquoted だと emit される関数本体の "$*" が
   # **ツール実行時 (init -)** に展開されて "init -" に固定され、遅延ロード後の再ディスパッチが
-  # 引数を渡せているかを観測できなくなる (issue 082: この歪みのせいで assert を足せなかった)。
+  # 引数を渡せているかを観測できなくなる (この歪みのせいで assert を足せなかった)。
   cat <<EOF_TOOL > "$tool_bin"
 #!/usr/bin/env bash
 if [[ "\$1" == "init" && "\$2" == "-" ]]; then
@@ -126,7 +126,7 @@ assert_path_priority() {
   fi
 }
 
-# 遅延ロード**本体**の検査 (issue 082)。
+# 遅延ロード**本体**の検査。
 #
 # 🚨 これまでの assert は「関数として定義されているか」「*_ROOT」「PATH 順」の 3 種だけで、
 # ラッパーの中身 (unfunction → eval "$(<tool> init -)" → 再ディスパッチ) が一度も実行されて

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/check_handrolled_timeout.sh (上限付き実行を runtimeout 以外で書いた箇所を落とす検査。issue 643) の契約を fixture で固定する。
+# scripts/check_handrolled_timeout.sh (上限付き実行を runtimeout 以外で書いた箇所を落とす検査) の契約を fixture で固定する。
 #
 # 守るもの: gtimeout / timeout を探す / timeout を呼ぶ (前に代入が付く形・$() の中・オプション付き・heredoc の開始行も) /
 # ( sleep; kill ) / ( sleep && kill ) / { sleep; kill; } の見張りを落とす / here-string・算術・終端の無い << の後ろも検査する /

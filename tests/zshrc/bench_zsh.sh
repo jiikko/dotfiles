@@ -65,8 +65,8 @@ typeset -a bench_env=(
 # --- startup: zsh -l -i -c exit の wall time (ms) ---
 # rc ロード自体のハングで CI job の timeout まで無言でぶら下がるのを防ぐため、runtimeout で 60s で切る。
 # -f (グループを分けない) にする: 分けると端末から実行したとき zsh -i が /dev/tty の tcsetpgrp で SIGTTOU に止まり、毎回 60s で落ちる
-# (issue 640。以前は timeout(1) があるときだけ切っており、素の macOS = CI では上限なしだった)。
-# runtimeout の起動の分 (手元で約 2.5ms。issue 640) は計測値から差し引く: 差し引かないと、道具を入れただけで
+# (timeout(1) があるときだけ切ると、素の macOS = CI では上限なしになる)。
+# runtimeout の起動の分 (手元で約 2.5ms) は計測値から差し引く: 差し引かないと、道具を入れただけで
 # 指標 (zsh の起動時間) が 1 割近く動き、予算 (bench_budgets.ci) との比較が別物になる。
 # 差し引く量は「runtimeout 経由の /usr/bin/true」と「素の /usr/bin/true」の min-of-5 の差 (計測と同じ min の取り方)
 source "$ROOT_DIR/bin/lib/runtimeout.sh"

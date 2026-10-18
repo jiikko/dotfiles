@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bin/kernel-alloc-watch のテスト (issue 500)。実 zprint は使わず、偽の zprint で在庫の値と書式を注入する。
+# bin/kernel-alloc-watch のテスト。実 zprint は使わず、偽の zprint で在庫の値と書式を注入する。
 # 現在時刻は KERNEL_ALLOC_WATCH_NOW で固定する (7 日の境界を壁時計に依存させない)。
 # pin したいもの:
 #   - record が zprint の inuse (7 列目) を記録する
@@ -348,7 +348,7 @@ printf '%s\trow\t1\n' "$NOW" > "$d/log.tsv"
 held=0
 # 判定も -k 付きにする。-k が無いと判定は終わるときに .lock を消し、その間に open して待っていた握る側が
 # 消されたファイルのロックを取る。以後の判定は新しい .lock を毎回取れてしまい、握る側が生きていても
-# 「握られていない」と見え続ける (issue 630。負荷の高いときにだけ判定が握る側より先に走って出る)。
+# 「握られていない」と見え続ける (負荷の高いときにだけ判定が握る側より先に走って出る)。
 # rc=75 (時間切れ) だけを「握られている」と読み、open や fork の失敗を握られていると取り違えない
 lock_is_held() { local r=0; /usr/bin/lockf -k -t 0 "$d/.lock" true 2>/dev/null || r=$?; [[ $r -eq 75 ]]; }
 TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until lock_is_held && held=1

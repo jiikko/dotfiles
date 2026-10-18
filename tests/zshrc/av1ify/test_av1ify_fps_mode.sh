@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 unset CDPATH
 # shellcheck shell=bash
-# av1ify VFR (可変フレームレート) 正規化テスト (issue 394)
+# av1ify VFR (可変フレームレート) 正規化テスト
 #
 # 目的: VFR ソース (r_frame_rate と avg_frame_rate が乖離するソース) を素通しすると
 #       出力も VFR のままになる (QuickTime でブロックノイズが出た出力はこれ)。av1ify は **検出した
@@ -46,7 +46,7 @@ assert_file_exists "$TEST_DIR/input-enc.mp4" "Encode succeeds for CFR source"
 printf '\n## Test 2: VFR source gets -fps_mode cfr + explicit -r <avg fps>\n'
 run_with_args fpsmode2 MOCK_FPS=29/1 MOCK_AVG_FPS=29970029/1000000 --
 assert_contains "$output" "可変フレームレート (VFR)" "VFR source logs the normalization message"
-# 🚨 -r は ffprobe の生の有理数がそのまま渡ること (10 進へ丸めない。issue 397)
+# 🚨 -r は ffprobe の生の有理数がそのまま渡ること (10 進へ丸めない)
 assert_contains "$ffargs" "-fps_mode cfr -r 29970029/1000000" "ffmpeg receives -fps_mode cfr -r <raw avg_frame_rate>"
 assert_not_contains "$ffargs" "-r 29.970" "The rounded decimal is NOT passed to ffmpeg"
 assert_file_exists "$TEST_DIR/input-enc.mp4" "Encode succeeds for VFR source"
@@ -76,15 +76,15 @@ assert_not_contains "$ffargs" "-fps_mode" "No -fps_mode for unknown avg_frame_ra
 assert_not_contains "$ffargs" " -r " "No -r (would be -r 0.000) for unknown avg_frame_rate"
 
 # Test 6: avg_frame_rate の分母が 0 (24/0 = 不明) のソースも VFR とみなさない
-# 🚨 fixture を 0/0 だけにしないこと (issue 399): ガードは `a <= 0 || b <= 0` なので
-# 0/0 は「分子が 0」で捕まり、分母だけ 0 の 24/0 は素通りしていた (issue 397 の b)。
+# 🚨 fixture を 0/0 だけにしないこと: ガードは `a <= 0 || b <= 0` なので
+# 0/0 は「分子が 0」で捕まり、分母だけ 0 の 24/0 は素通りしていた。
 printf '\n## Test 6: avg_frame_rate with zero denominator (24/0) keeps the old args\n'
 run_with_args fpsmode6 MOCK_FPS=30/1 MOCK_AVG_FPS=24/0 --
 assert_not_contains "$output" "可変フレームレート (VFR)" "avg_frame_rate=24/0 is not flagged as VFR"
 assert_not_contains "$ffargs" "-fps_mode" "No -fps_mode for zero-denominator avg_frame_rate"
 assert_not_contains "$ffargs" " -r 24" "The numerator is NOT fabricated into an fps (would be -r 24.000)"
 
-# Test 7: --fps のキャップ判定が VFR ソースで迂回されない (issue 397 の c)
+# Test 7: --fps のキャップ判定が VFR ソースで迂回されない
 # r=20 だけを見ると「20 <= 30 なので変更不要」と誤ってスキップし、target_fps が空のまま
 # VFR 分岐へ落ちて **指定より高い** avg=40 で出力されていた。
 printf '\n## Test 7: --fps cap is honoured for VFR sources whose avg exceeds it\n'
@@ -92,7 +92,7 @@ run_with_args fpsmode7 MOCK_FPS=20/1 MOCK_AVG_FPS=40/1 -- --fps 30
 assert_contains "$ffargs" "-r 30" "ffmpeg receives the explicit --fps value"
 assert_not_contains "$ffargs" "-r 40" "The higher avg fps is NOT used when --fps caps it"
 
-# Test 8: VFR 検出閾値は postcheck のフレーム数許容% に相乗りしない (issue 398)
+# Test 8: VFR 検出閾値は postcheck のフレーム数許容% に相乗りしない
 # AV1IFY_FRAME_TOLERANCE_PCT を両端へ振っても検出結果が変わらないこと。
 printf '\n## Test 8: VFR detection is independent of AV1IFY_FRAME_TOLERANCE_PCT\n'
 run_with_args fpsmode8a AV1IFY_FRAME_TOLERANCE_PCT=0 MOCK_FPS=30/1 MOCK_AVG_FPS=30000/1001 --
@@ -100,12 +100,12 @@ assert_not_contains "$output" "可変フレームレート (VFR)" "NTSC metadata
 run_with_args fpsmode8b AV1IFY_FRAME_TOLERANCE_PCT=5 MOCK_FPS=29/1 MOCK_AVG_FPS=29970029/1000000 --
 assert_contains "$output" "可変フレームレート (VFR)" "A real VFR source is still detected with PCT=5"
 
-# Test 9: 検出閾値そのもの (AV1IFY_VFR_DETECT_PCT) は効く (issue 398)
+# Test 9: 検出閾値そのもの (AV1IFY_VFR_DETECT_PCT) は効く
 printf '\n## Test 9: AV1IFY_VFR_DETECT_PCT controls the detection\n'
 run_with_args fpsmode9 AV1IFY_VFR_DETECT_PCT=10 MOCK_FPS=29/1 MOCK_AVG_FPS=29970029/1000000 --
 assert_not_contains "$output" "可変フレームレート (VFR)" "Raising AV1IFY_VFR_DETECT_PCT suppresses detection"
 
-# Test 10: 小数点がカンマのロケールでも検出と引数が壊れない (issue 397 の a)
+# Test 10: 小数点がカンマのロケールでも検出と引数が壊れない
 # 🚨 awk の printf はロケールの小数点を使うため、LC_ALL=C を外すと "29,970" が生まれる。
 # -r へは生の有理数を渡すので引数自体は無傷だが、**検出の比較**が壊れて VFR を取り逃す。
 printf '\n## Test 10: Detection and args survive a comma-decimal locale\n'

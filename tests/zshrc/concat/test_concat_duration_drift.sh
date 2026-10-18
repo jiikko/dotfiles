@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 unset CDPATH
 # shellcheck shell=bash
-# concat の duration 乖離検査の回帰テスト (issue 076)
+# concat の duration 乖離検査の回帰テスト
 #
 # なぜ必要か: production の乖離検査 (__concat_diagnose_output の「duration乖離チェック」) は
 # 生きているが、**その検査が壊れても concat テストは緑のまま通る**状態だった。原因は 2 つ:
@@ -12,8 +12,7 @@ unset CDPATH
 # 制御し、tolerance もこのファイル内でだけ production 既定 (5) に戻して 2 方向を pin する。
 #
 # 🚨 `CONCAT_DURATION_TOLERANCE=100` を 5 へ「直す」修正は誤り。モックが duration を 20.0 に
-#   固定している他の 14 ファイルで正常なテストが乖離扱いになり false failure を作る (issue 076 の
-#   「崩れた側」)。tolerance の上書きはこのテストの中だけに閉じること。
+#   固定している他の 14 ファイルで正常なテストが乖離扱いになり false failure を作る (「崩れた側」)。tolerance の上書きはこのテストの中だけに閉じること。
 
 source "${0:A:h}/test_helper.sh"
 

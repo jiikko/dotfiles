@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # tuikit の全 package が、depguard の 2 つの部品のリスト (no-framework-in-parts / parts-pure) のどちらかに入っているか、
-# 下の「外す理由つきの表」に載っていることを pin する (issue 790)。
+# 下の「外す理由つきの表」に載っていることを pin する。
 #
 # なぜ: リストは .golangci.yml に手で並べていて、package を足すと漏れる。漏れた package は bubbletea / os を import しても lint が
-# 通る (issue 785 で足した hintfit が漏れ、敵対レビューで見つかった。gutter・spinner・foreground も以前から漏れていた)。
+# 通る (hintfit・gutter・spinner・foreground が漏れていた)。
 # 脅威モデル: package を足してリストに足し忘れる・外す表に古い名前が残る・リストの行をコメントアウトして外す・知らない形の項目を足す。
 # リストの files の項目は、知っている 3 つの形 (`"**/<名前>/**"` / `"!**/tuikit/<名前>/**"` / `"!**/*_test.go"`) だけを読み、それ以外の項目が
-# 1 つでもあれば「判定できない」として落とす (黙って読み飛ばすと、別の形の否定で depguard が外れても緑になった。敵対レビュー)。
+# 1 つでもあれば「判定できない」として落とす (黙って読み飛ばすと、別の形の否定で depguard が外れても緑になった)。
 # 読み取りは字句 (字下げと行の形) で、YAML のパーサではない。files の中の行は「- <値>」の形だけを読み、それ以外 (「-」の後で改行した項目など)
 # と、2 つ目以降の YAML 文書 (golangci は最初の文書しか読まない) は「判定できない」として落とす。
 # 検出しない形 (どれも較正の termwidth か「知らない形」で赤に倒れる側。緑に倒れる形は残していない): YAML の flow style・アンカー・CRLF・
@@ -36,7 +36,7 @@ foreground/ptytest:foreground のテストが使う pty の道具 (context / os 
 
 # list_items <リスト名> — linters.settings.depguard.rules.<リスト名>.files の項目 (コメントの行は読まない)。
 # YAML の位置 (字下げ 0 / 2 / 4 / 6 / 8) で読む: 字下げを見ないと、rule が rules の外へ出て depguard から消えても、その行を読んで緑になった
-# (敵対レビュー。golangci は知らないキーを黙って無視する)
+# (golangci は知らないキーを黙って無視する)
 list_items() {
   awk -v L="$1:" '
     /^(---|\.\.\.)/ { if (seen) { print "?文書の区切り (golangci は最初の文書しか読まない): " $0 }; next }

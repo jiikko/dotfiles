@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本物の git を起こすテストのパッケージが、TestMain で subproc.UnsetGitLocationEnv を呼ぶことを pin する (issue 740)。
+# 本物の git を起こすテストのパッケージが、TestMain で subproc.UnsetGitLocationEnv を呼ぶことを pin する。
 #
 # なぜ: hook の中など GIT_DIR / GIT_WORK_TREE を継承した環境で go test を走らせると、`git -C <一時dir> init / add / commit` が
 # 一時 dir ではなく継承した repo を再 init し、そこへ commit する (git 2.55.0 で再現)。

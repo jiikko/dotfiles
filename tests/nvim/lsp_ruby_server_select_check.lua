@@ -647,10 +647,10 @@ if not vim.tbl_contains(mason, "solargraph") then
   fail("mason_packages() に solargraph が無い。フィルタが落としすぎている")
 end
 
--- --- issue 341: 「起動しうるか」の述語を 1 か所へ寄せた ------------------------------------
+-- --- 「起動しうるか」の述語を 1 か所へ寄せた ------------------------------------
 --
--- 🚨 以前は判定が _nviminit.lua にだけ在り、lsp.lua は vim.lsp.is_enabled を「起動しうるか」の
--- proxy として読んでいた。proxy が成り立つのは **cmd が table のサーバに限る**ので、
+-- 🚨 判定が _nviminit.lua にだけ在り、lsp.lua が vim.lsp.is_enabled を「起動しうるか」の
+-- proxy として読む形にしない。proxy が成り立つのは **cmd が table のサーバに限る**ので、
 -- フォールバック先を関数 cmd のサーバへ変えた日に通知が黙って嘘に戻る形だった。
 local binary_cases = {
   -- { 名前, cmd, executable の戻り, 期待 }
@@ -672,8 +672,7 @@ end
 
 -- 🚨 **_nviminit.lua が同じ述語を呼んでいること**を静的に固定する。
 -- seam が無い (enable_available は lazy.nvim の config 内のローカル関数で、外から呼べない) ので
--- ここだけはソースを読む。**行頭に固定**するのが要点 — 部分一致だとコメントアウトを素通しする
--- (issue 310 で実際に踏んだ形)。
+-- ここだけはソースを読む。**行頭に固定**するのが要点 — 部分一致だとコメントアウトを素通しする。
 local init_path = vim.env.DOTFILES_INIT or (vim.env.HOME .. "/dotfiles/_nviminit.lua")
 local init_src = table.concat(vim.fn.readfile(init_path), "\n")
 if not init_src:find("\n%s*if lsp%.server_binary_available%(name%) then") then

@@ -3,8 +3,8 @@
 -- nvim は +luafile/dofile 内の Lua エラー (assert/error/require 失敗) を終了コードに
 -- 伝えず、後続の +qall/+qall! が exit 0 にしてしまう。この guard は check 本体
 -- (require 含む全て) を pcall で捕捉し、失敗時に nvim_err_writeln + cquit 1 で確実に
--- 非0終了させる。かつてこの pcall+cquit 契約が各テストへ手書きコピペされ、適用漏れが
--- 実 false-pass を2回起こした (f51f0b0 で導入 / 54dbc81 で残存経路を閉鎖) ため一元化した。
+-- 非0終了させる。この pcall+cquit 契約を各テストへ手書きコピペすると、適用漏れが
+-- 実 false-pass を起こすため一元化している。
 --
 -- 使い方 (shell 側 heredoc の先頭で):
 --   local guard = dofile([[<このファイルの絶対パス>]])

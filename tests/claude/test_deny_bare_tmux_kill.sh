@@ -17,13 +17,13 @@ HOOK_TIMEOUT=10
 #    課す検査で、課せないなら合格でも不合格でもなく **判定不能 = 失敗**として扱う。
 #    実際に事故った: CI を macOS へ移した時点で timeout(1) が無くなり、このファイルの
 #    60 件が丸ごと skip に化けたのに `[ok]` として集計されていた (run 33174901609)。
-#    上限は runtimeout (bin/runtimeout。issue 640) で課す。用意できなければ exit 1。
+#    上限は runtimeout (bin/runtimeout) で課す。用意できなければ exit 1。
 # shellcheck source=bin/lib/runtimeout.sh
 . "$ROOT_DIR/bin/lib/runtimeout.sh"
 runtimeout_resolve "$ROOT_DIR" || exit 1
 
 # フック本体が正しくても settings.json からエントリが消えれば防御はゼロになるのに、それを
-# 見る検査が無かった (2026-08-20 の red team)。まず配線を検査する。
+# 見る検査が無かった。まず配線を検査する。
 SETTINGS="$ROOT_DIR/_claude/settings.json"
 [ -f "$HOOK" ] || { printf '✗ フック本体が無い: %s\n' "$HOOK"; exit 1; }
 [ -x "$HOOK" ] || { printf '✗ フックに実行権限が無い: %s\n' "$HOOK"; exit 1; }
@@ -36,7 +36,7 @@ grep -q 'deny-bare-tmux-kill.sh' "$SETTINGS" \
 
 if ! command -v jq >/dev/null 2>&1; then
   # 🚨 ここを exit 0 (成功) にしないこと。フック本体は jq 不在時 fail-open (= 防御ゼロ) なので、
-  # 「防御が完全に無効な環境で All tests passed」と報告する形になる (2026-08-20 の red team)。
+  # 「防御が完全に無効な環境で All tests passed」と報告する形になる。
   # 判定を検査できないことは失敗として扱い、意図的にスキップする環境では明示させる。
   if [ "${TT_ALLOW_SKIP_JQ:-}" = "1" ]; then
     echo "SKIP: jq が無い環境 (TT_ALLOW_SKIP_JQ=1 で明示スキップ。フックも fail-open で無効)"
@@ -54,10 +54,10 @@ jq -e '[.hooks.PreToolUse[]? | select((.matcher // "") | test("Bash")) | .hooks[
 printf '✓ settings.json の PreToolUse(Bash) に配線されている\n'
 
 decision() {  # $1=コマンド文字列 → "deny" / "allow" / "timeout" / "error" / "harness-error"
-  # 🚨 フックの異常終了・壊れた出力を allow に畳まないこと。旧実装は
+  # 🚨 フックの異常終了・壊れた出力を allow に畳まないこと。次の形だと
   #   ... | jq -r '...// empty' | grep . || echo allow
   # で、フックが落ちても jq が失敗しても "allow" になり、「素通り」と「検査できなかった」が
-  # 区別できなかった (検査できないときに緑を返す形)。
+  # 区別できない (検査できないときに緑を返す形)。
   # 🚨 本番と同じ timeout を課すこと (_claude/settings.json の PreToolUse は timeout: 10)。
   # 課さないと「入力長で hook が timeout に殺されて deny が消える」= 安全機構が無効化される
   # 退行を観測できない (時間内に終わるかどうかが判定に影響しないため、変異を当てても緑のまま
@@ -85,7 +85,7 @@ decision() {  # $1=コマンド文字列 → "deny" / "allow" / "timeout" / "err
   # 無出力の内訳を区別する: rc=0 は「何も deny しなかった」= 本番でも素通り。rc=124 は
   # timeout に殺された = 本番でも stdout 0 byte で素通り (これがゲート消失の観測点)。
   # 🚨 124 を allow に畳まない: 畳むと「判定ロジックが allow を返した」と「負荷で時間切れ」が同じ
-  #    `実際=allow` になり、1 度だけ落ちたときに原因を読めなかった (issue 422)。
+  #    `実際=allow` になり、1 度だけ落ちたときに原因を読めなかった。
   # それ以外の非 0 は hook 自身の異常終了なので error に倒す。
   case "$rc" in
     0) echo allow ;;
@@ -113,8 +113,8 @@ expect deny  "2026-07-30 の事故コマンドそのもの" \
   'export TMUX_TMPDIR=$(mktemp -d); tmux -f /dev/null new-session -d -s probe; tmux kill-server 2>/dev/null; rm -rf $TMUX_TMPDIR'
 expect deny  "TMUX_TMPDIR だけの隔離 (不十分)" 'env TMUX_TMPDIR=$d tmux kill-server'
 expect deny  "複合コマンドの後半だけ bare" 'tmux -L lab new-session -d && tmux kill-server'
-# --- 免除判定の回帰ガード (issue 069) ------------------------------------------------
-# 2026-08-20 の red team が「文字列の窓」方式を破った全形。トークン走査 (scan_segment /
+# --- 免除判定の回帰ガード ------------------------------------------------
+# 「文字列の窓」方式を破る形の全て。トークン走査 (scan_segment /
 # unquote) へ作り替えて閉じた。窓方式 (前方/後方の切り出し) へ戻すとここが red になる。
 expect deny  "kill より前に別の kill と -L がある \; 連結" \
   'tmux -L probe kill-server; tmux new-session -d \; kill-server'
@@ -183,7 +183,7 @@ expect deny  "pkill -f tmux (全サーバ無差別)" 'pkill -f tmux'
 expect deny  "pkill -x tmux" 'pkill -x tmux'
 expect deny  "killall tmux" 'killall tmux'
 
-# --- 2026-07-30 の敵対的レビューで実証されたバイパス (全て allow だった) --------------
+# --- 実証されたバイパス (全て allow だった) --------------
 expect deny  "フルパス起動" '/opt/homebrew/bin/tmux kill-server'
 expect deny  "フルパスの事故コマンド列" \
   'export TMUX_TMPDIR=$(mktemp -d); /opt/homebrew/bin/tmux -f /dev/null new-session -d -s probe; /opt/homebrew/bin/tmux kill-server'

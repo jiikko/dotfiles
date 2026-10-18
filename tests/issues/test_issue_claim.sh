@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/issue_claim.sh の検査 (issue 764)。
+# scripts/issue_claim.sh の検査。
 #
 # 一時ディレクトリに bare の origin と clone を作り、本物の git と bin/issue-claim を通す。確かめること:
 #   - claim が 1 コマンドで origin へ載り (目印の symlink + 本文冒頭のバナー)、手元の checkout は触らない
