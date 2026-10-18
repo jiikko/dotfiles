@@ -1,1 +1,0 @@
-../827-feat-lan-manager-speed-test-in-detail.md
