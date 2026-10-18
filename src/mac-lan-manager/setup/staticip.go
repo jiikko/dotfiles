@@ -193,6 +193,9 @@ func (s StaticIP) prepare(take bool) string {
 	fmt.Fprintf(&b, "alive() { p=$(cat %s/pid 2>/dev/null); st=$(cat %s/start 2>/dev/null); [ -n \"$p\" ] || return 0; kill -0 \"$p\" 2>/dev/null || return 1; [ -n \"$st\" ] || return 0; [ \"$(LC_ALL=C ps -o lstart= -p \"$p\" 2>/dev/null)\" = \"$st\" ]; }\n", lock, lock)
 	fmt.Fprintf(&b, "refuse() { echo \"mac-lan-manager: 固定 IP への切り替えが走っている (pid ${p:-不明})。止まっているなら sudo rm -rf %s %s で外す\" >&2; exit 1; }\n",
 		strings.Trim(lock, "'"), strings.Trim(takeover, "'"))
+	// drop は lock を外す。rm -rf で直に消さない: 途中 (pid を消した後) で kill -9・電源断が入ると、pid の無い lock が残り、alive が
+	// 「取ったばかり」と読んで以後ずっと断る。改名で一度に外してから消す (止まっても残るのは使われない .gone.<pid> だけ)
+	fmt.Fprintf(&b, "drop() { mv %s %s.gone.$$ 2>/dev/null && rm -rf %s.gone.$$; }\n", lock, lock, lock)
 	fmt.Fprintf(&b, "if [ -d %s ] && alive; then refuse; fi\n", lock)
 	if take {
 		// 死んだ lock の引き取りは 1 本ずつ (takeover を mkdir できた 1 本だけが、もう一度生死を見てから外す)。rm -rf と mkdir を
@@ -202,7 +205,7 @@ func (s StaticIP) prepare(take bool) string {
 		// takeover が残ったまま (mkdir と rmdir の間に止まった) だと以後の引き取りを全部断るので、外し方を出す
 		fmt.Fprintf(&b, "  mkdir %s 2>/dev/null || { echo \"mac-lan-manager: 別の切り替えが止まった lock を引き取っている。止まっているなら sudo rm -rf %s %s で外す\" >&2; exit 1; }\n  tk=1\n",
 			takeover, strings.Trim(lock, "'"), strings.Trim(takeover, "'"))
-		fmt.Fprintf(&b, "  if [ -d %s ] && alive; then rmdir %s; refuse; fi\n  rm -rf %s\nfi\n", lock, takeover, lock)
+		fmt.Fprintf(&b, "  if [ -d %s ] && alive; then rmdir %s; refuse; fi\n  drop\nfi\n", lock, takeover)
 		fmt.Fprintf(&b, "if ! mkdir %s 2>/dev/null; then [ \"$tk\" = 1 ] && rmdir %s; echo 'mac-lan-manager: 別の切り替えが先に始まった' >&2; exit 1; fi\n", lock, takeover)
 		fmt.Fprintf(&b, "echo $$ > %s/pid\nLC_ALL=C ps -o lstart= -p $$ > %s/start\n", lock, lock)
 		fmt.Fprintf(&b, "[ \"$tk\" = 1 ] && rmdir %s\n", takeover)
@@ -212,7 +215,7 @@ func (s StaticIP) prepare(take bool) string {
 
 // Script は root で背景に走らせる sh の本文 (Validate の後に呼ぶ)。
 func (s StaticIP) Script() string {
-	mark, lock := Quote(s.ConfirmPath()), Quote(s.lockPath())
+	mark := Quote(s.ConfirmPath())
 	svc := Quote(s.Service)
 	restore := s.Restore.Line(s.Service)
 	var b strings.Builder
@@ -220,7 +223,7 @@ func (s StaticIP) Script() string {
 	fmt.Fprintf(&b, "echo $$ > %s\n", Quote(s.startedPath()))
 	// 終わり方を問わず (確認・期限切れ・SIGTERM / SIGHUP)、変えたまま確認が無ければ戻してから lock を外す。shutdown は TERM を配るので、
 	// 待ちの途中で相手を再起動しても新しい IP のまま残らない
-	fmt.Fprintf(&b, "changed=0\nconfirmed=0\nfinish() { if [ \"$changed\" = 1 ] && [ \"$confirmed\" = 0 ]; then %s; fi; rm -rf %s; }\n", restore, lock)
+	b.WriteString("changed=0\nconfirmed=0\nfinish() { if [ \"$changed\" = 1 ] && [ \"$confirmed\" = 0 ]; then " + restore + "; fi; drop; }\n")
 	// INT / TERM / HUP の trap は EXIT の trap をシグナルでも走らせるため。macOS の /bin/sh (bash) はこれが無くても EXIT を走らせるので、
 	// この Mac の上のテストでは外しても緑のまま (変異で確かめた)。EXIT をシグナルで走らせない sh (dash など) のために残す
 	b.WriteString("trap 'finish' EXIT\ntrap 'exit 1' INT TERM HUP\n")

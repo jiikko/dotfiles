@@ -267,7 +267,8 @@ func TestObservePeerIgnoresIncompleteIPs(t *testing.T) {
 // 秘密鍵はあるが公開鍵 (.pub) が無い Mac では、秘密鍵から .pub を作り直してから ssh-copy-id へ渡す (秘密鍵だけを見ると毎回失敗した)。
 // .pub を作り直せなければ空の .pub を残さずに失敗する。
 func TestKeyArgvRebuildsMissingPub(t *testing.T) {
-	for _, keygenOK := range []bool{true, false} {
+	for _, c := range []struct{ keygenOK, emptyPub bool }{{true, false}, {false, false}, {true, true}} {
+		keygenOK := c.keygenOK
 		dir, err := filepath.EvalSymlinks(t.TempDir())
 		if err != nil {
 			t.Fatal(err)
@@ -281,6 +282,11 @@ func TestKeyArgvRebuildsMissingPub(t *testing.T) {
 		key := home + "/.ssh/id_ed25519"
 		if err := os.WriteFile(key, []byte("private\n"), 0o600); err != nil {
 			t.Fatal(err)
+		}
+		if c.emptyPub { // 前の回の失敗で空の .pub が残った Mac
+			if err := os.WriteFile(key+".pub", nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
 		}
 		keygen := "#!/bin/sh\n[ \"$1\" = -y ] && echo 'ssh-ed25519 AAAAfake' && exit 0\nexit 1\n"
 		if !keygenOK {

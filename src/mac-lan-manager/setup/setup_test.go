@@ -588,14 +588,35 @@ func TestStaticIPFreshLockIsNotTakenOver(t *testing.T) {
 		_, errOnce := os.Stat(filepath.Join(dir, "ps-once"))
 		return errLock == nil && errOnce == nil
 	})
-	if err := runSh(t, path, b.Script()).Wait(); err == nil {
-		t.Error("取ったばかりの lock を引き取って 2 本目が進んだ")
+	cb := exec.Command("/bin/sh", "-c", b.Script())
+	cb.Env = []string{"PATH=" + path}
+	if out, err := cb.CombinedOutput(); err == nil || !strings.Contains(string(out), "走っている") {
+		t.Errorf("取ったばかりの lock を「走っている」で断らない: err=%v out=%q", err, out)
 	}
 	if err := ca.Wait(); err != nil {
 		t.Fatal(err)
 	}
 	if n := strings.Count(readLog(dir), "-setmanual][Thunderbolt Ethernet][192.168.100.1"); n != 1 {
 		t.Errorf("取ったばかりの lock に 2 本目が来て変更が %d 回: %q", n, readLog(dir))
+	}
+}
+
+// lock を外す途中 (pid を消した後) で止まっても、pid の無い lock を残さない (残ると「取ったばかり」と読んで以後ずっと断る)。
+// 途中で止まる rm を偽物で作る: ディレクトリを渡されたら中の pid だけを消して失敗する。
+func TestStaticIPInterruptedUnlockDoesNotWedge(t *testing.T) {
+	dir, path := sandbox(t)
+	halfRm := "#!/bin/sh\nfor a in \"$@\"; do if [ -d \"$a\" ]; then /bin/rm -f \"$a/pid\"; exit 1; fi; done\nexec /bin/rm \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "rm"), []byte(halfRm), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	first := staticIP(t, dir)
+	_ = runSh(t, path, first.Script()).Wait() // 確認が来ずに戻して終わる (外す rm が途中で止まる)
+	second := staticIP(t, dir)
+	second.IP, second.Token = "192.168.100.12", "test-token-2"
+	cmd := exec.Command("/bin/sh", "-c", second.Script())
+	cmd.Env = []string{"PATH=" + path}
+	if out, err := cmd.CombinedOutput(); err != nil || !strings.Contains(readLog(dir), "192.168.100.12") {
+		t.Errorf("外す途中で止まった後の 2 本目が進まない: err=%v out=%q log=%q", err, out, readLog(dir))
 	}
 }
 
@@ -653,8 +674,8 @@ func TestStaticIPLockPidReuse(t *testing.T) {
 	cmd := exec.Command("/bin/sh", "-c", s.Script())
 	cmd.Env = []string{"PATH=" + path, "LC_ALL=C"}
 	out, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "rm -rf") {
-		t.Errorf("生きている持ち主の lock を断らない / 外し方を出さない: err=%v out=%q", err, out)
+	if err == nil || !strings.Contains(string(out), "rm -rf "+s.lockPath()+" "+s.lockPath()+".takeover") {
+		t.Errorf("生きている持ち主の lock を断らない / takeover も含めた外し方を出さない: err=%v out=%q", err, out)
 	}
 }
 

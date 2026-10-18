@@ -197,7 +197,13 @@ func dumpPeer(d setup.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan s
 		}
 	}()
 	p := observe(ctx, d)
-	if ctx.Err() != nil { // 止められた: 「判定できない」の結果として 0 で返さない (走査の dump と同じく 130。スクリプトから中断を区別する)
+	stopped := false
+	select { // 合図そのものも見る (ssh が SIGINT で先に死ぬと、取り消しが ctx へ届く前に observe が返る)
+	case <-stop:
+		stopped = true
+	default:
+	}
+	if stopped || ctx.Err() != nil { // 止められた: 「判定できない」の結果として 0 で返さない (走査の dump と同じく 130。スクリプトから中断を区別する)
 		return 130
 	}
 	r := peerReport{User: d.User, IP: d.IP, HostKeyAlias: d.HostKeyAlias, KeyOK: p.KeyOK, NetKnown: p.NetKnown,
