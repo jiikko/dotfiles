@@ -1,1 +1,0 @@
-../825-bug-lan-manager-setup-lock-fresh-window.md
