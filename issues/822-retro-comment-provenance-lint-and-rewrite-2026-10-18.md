@@ -19,7 +19,7 @@
 - 既存の規範に無いのは commit **前**の一覧の取り方: pathspec を組むときに `git diff --name-only` (未ステージだけ) を使うと、index に書く道具
   (`git apply --3way`・merge の衝突の解決) の後では一覧が欠ける。一般形: **pathspec の一覧は `git diff HEAD --name-only` (index と作業ツリーの両方) で取り、
   件数を期待値 (当てたパッチのファイル数) と突き合わせる**
-- 切り出し先: `_claude/rules/commit-with-pathspec.md` の「pathspec で生成物を漏らすと壊れたコミットになる」の節へ、上の一般形を 1 行追記 (新しい規範ではない。未実行。ユーザーの判断待ち)
+- 切り出し先: `_claude/rules/commit-with-pathspec.md` の「pathspec で生成物を漏らすと壊れたコミットになる」の節へ、上の一般形を 1 行追記 (新しい規範ではない。2026-10-18 に実行)
 
 ### 2. 「コメントだけの変更」で生成物が古くなり、master の Lint が赤になった
 
@@ -57,5 +57,5 @@
 
 ## 残課題
 
-- [ ] 1 を `_claude/rules/commit-with-pathspec.md` へ追記する (ユーザーの判断待ち)
+- [x] 1 を `_claude/rules/commit-with-pathspec.md` へ追記した (2026-10-18)
 - [x] 2〜5 は却下 (理由は各項)
