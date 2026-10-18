@@ -92,4 +92,17 @@ src/pro-con → src/glogx → tests → src/lockman → src/treefiler → src/do
     件数の一致だけで rename を組む。それぞれ直して変異で red を確認 (1 周目の直しで 8 本、2 周目で 5 本、3 周目で 2 本)。
     LC_ALL=C の awk で日本語に `?` を掛けると最後の 1 バイトにしか効かない罠を踏んだ (`敵対的?` が「敵対レビュー」に当たらなかった)
   - 記録のみ (検出しない形として script の冒頭に書いた): 行末のコメント・1 桁の番号・複数形の issues・単独の (P2)・消して同じ名前で作り直す形 など
+- [x] 2026-10-18 2 (書き直し): 領域ごとに sonnet に任せ (worktree を分けて 7 体)、差分がコメント行と空行だけであることを機械で確かめてから
+  取り込んだ。commit (一覧のファイルを除いた数): pro-con (269 ファイル) / tests (154) / glogx (203) / mac-lan-manager・scripts・zundamon-kaisetsu (127) /
+  tuikit・_claude・bin・zshlib・Makefile・.github ほか (210) / lockman・doctor・treefiler (132)。一覧は 4,188 → 24 件。
+  検閲で直したもの: 出所の語だけを消して宙に浮いた「(2026-09-10 の)」「(実測は)」の 5 か所・仕様を裸のパス (`issues/done/091-…md`) で
+  指した 1 行 (「仕様 091」に)。テスト: rest / heavy の 2 レーン・glogx / tuikit / lockman / doctor / treefiler の go test・make test-lint
+  - 踏んだ事故: `git apply --3way` が変更を index に置き、未ステージの差分の一覧で commit のファイルを拾ったため、pro-con の 1 回目の commit
+    (一覧を下げただけ) が 269 ファイルを漏らした。続けて直した (CI の Lint が赤だったのは 1 commit の間)。パッケージの説明から番号を消すと
+    生成物の src/PACKAGES.md が古くなる (test-go-packages-index が赤になった。作り直した)
+  - 残した 24 件 (一覧で受ける。経緯ではない): pro-con の設定 review の機能名「敵対的レビューの担い手」19 行・mac-lan-manager の open な issue 747
+    (見た目と要件の正本) 3 行・tests/claude/test_issue_progress_check.sh の fixture のデータの番号 1 行・glogx の issuesview の
+    貼り付ける参照文字列の例 (`issue 415`) 1 行
+  - 検査が数えない形で残っているもの (未対応): 語彙の外の経緯 (「2026-09-01 に指摘された」「前の版では」など)・行末のコメント・
+    裸の番号 (`438 の「記録からは消さない」` の形)。必要になったら語彙を広げる
 

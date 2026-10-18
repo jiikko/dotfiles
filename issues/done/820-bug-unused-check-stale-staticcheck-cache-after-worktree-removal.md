@@ -60,4 +60,4 @@
   (CI の checkout は git なので影響なし)・本体の `.git/staticcheck-cache` は消えないので増えうる (staticcheck が自分で刈り込むかは未確認)。
   壊せなかった: 同じ checkout の中の rename・同じパスへの作り直し・`.git` がファイルの形・書き込めない git dir (赤に倒れる)・CI (unused.yml は
   actions/cache を使わず毎回冷えた状態)
-
+- CI (2026-10-18): unused の workflow が done へ送る commit (dc47a24b) で緑。CI は毎回冷えたキャッシュで回るので、この変更で所要は変わらない

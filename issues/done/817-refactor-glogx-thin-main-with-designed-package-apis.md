@@ -267,4 +267,4 @@ done へ送った時点で、repo 全体の Tests は D (statusview の移設) �
 - 手元の検証 (最後の編集の後): `make test-lint` 緑・2 本の検査 緑・`src/glogx` の `make lint` と `go test ./...` 緑・`test_no_real_commands_in_tests.sh` 緑。
   `make test-runtime-rest` は helper の最終の修正の前に回し、上の 2 本は緑。落ちた 2 本はこの変更と無関係 (`test_dangling_symlinks.sh` は手元の
   `~/.config/nvim/coc-settings.json` の dangling で本体の checkout でも落ちる・`test_claude_bin.sh` は単独では本体でも worktree でも緑)。`make test-discovered-heavy` 緑
-
+- CI (2026-10-18): 修正を含む commit で Tests (c394f5d1) と Lint (f4184eb5) が緑。途中の run は他のセッションの push で 4 回取り消されたので、取り消されずに完了した run で判定した
