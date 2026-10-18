@@ -334,6 +334,19 @@ const (
 	MethodBOOTP            = "BOOTP"
 )
 
+// MethodLabel は方式を画面に出す名前。
+func MethodLabel(method string) string {
+	switch method {
+	case MethodManual:
+		return "手動"
+	case MethodManualDHCPRouter:
+		return "手動 (ルーターだけ DHCP)"
+	case "":
+		return "不明"
+	}
+	return method
+}
+
 // FixedIP は方式が IP を手で決めているか (ルーターだけ DHCP の形も含む。IP は動かない)。
 func FixedIP(method string) bool { return method == MethodManual || method == MethodManualDHCPRouter }
 

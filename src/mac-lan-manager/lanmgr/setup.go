@@ -416,7 +416,7 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		}
 		return &ask{title: "相手の有線を固定 IP にする", body: []string{
 			su.obs.Service + " を " + ip + " / " + s.Mask + " (ルーター無し) にする。相手の sudo のパスワードを聞く",
-			fmt.Sprintf("変えた後 %d 秒以内に新しい IP で入り直して確認しないと、相手の上で元の設定 (%s) に戻る", int(setup.PeerWindow.Seconds()), s.Restore.Method),
+			fmt.Sprintf("変えた後 %d 秒以内に新しい IP で入り直して確認しないと、相手の上で元の設定 (%s) に戻る", int(setup.PeerWindow.Seconds()), netinfo.MethodLabel(s.Restore.Method)),
 			// 実際の argv は戻しの仕掛け (数十行の sh) を 1 語に引用して持つので、全文を出すと板が画面を埋めた (ユーザー報告)。要約を出す
 			"$ ssh -t " + su.dest.User + "@" + su.dest.IP + " → sudo networksetup -setmanual " + setup.Quote(s.Service) + " " + ip + " " + s.Mask +
 				fmt.Sprintf(" (確認が無ければ %d 秒後に元へ戻す仕掛けを相手で走らせる)", int(setup.PeerWindow.Seconds())),

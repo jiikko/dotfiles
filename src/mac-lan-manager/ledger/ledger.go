@@ -250,6 +250,9 @@ func Parse(s string) (version int, hosts []Host, err error) { return parse(s, tr
 // 鍵が重複したら先の節を採る。後の版が足した項目を古い版でも表示できるように。形の壊れた行 (= が無い・値の引用が読めない) は err。
 func ParseLenient(s string) (version int, hosts []Host, err error) { return parse(s, false) }
 
+// ledgerKeys は [[host]] の節で読む鍵。
+var ledgerKeys = []string{"host", "user", "lan", "alias", "updated_at"}
+
 // quoted は値の先頭の引用された文字列を戻し、後ろに残った行末のコメント ("# …") を返す。コメント以外が残れば err。
 func quoted(v string) (val, comment string, err error) {
 	q, err := strconv.QuotedPrefix(v)
@@ -274,7 +277,12 @@ func parse(s string, strict bool) (version int, hosts []Host, err error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if line == "[[host]]" {
+		hdr := line
+		if !strict { // 緩い読みは見出しの後ろのコメントも読み飛ばす (書き戻しは消えるので断る)
+			hdr, _, _ = strings.Cut(line, "#")
+			hdr = strings.TrimSpace(hdr)
+		}
+		if hdr == "[[host]]" {
 			hosts = append(hosts, Host{})
 			cur = &hosts[len(hosts)-1]
 			seen = map[string]bool{}
@@ -303,6 +311,9 @@ func parse(s string, strict bool) (version int, hosts []Host, err error) {
 				return 0, nil, fmt.Errorf("台帳の %d 行目: [[host]] の外に知らない鍵 %q がある", n+1, k)
 			}
 			continue
+		}
+		if !strict && !slices.Contains(ledgerKeys, k) {
+			continue // 緩い読みは知らない鍵を値の形を問わず読み飛ばす (引用でない値の鍵 (port = 22) で一覧ごと止まった)
 		}
 		val, rest, err := quoted(v)
 		if err != nil {

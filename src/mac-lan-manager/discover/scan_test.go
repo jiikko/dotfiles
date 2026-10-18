@@ -138,7 +138,7 @@ func TestCloseClosesChanged(t *testing.T) {
 // 同じ I/F の重複の Add は引かず、全部の I/F で Rmv された後の Add は引き直す (相手の再起動で IP が変わる)。Rmv だけでは引かない。
 // 1 つの I/F だけの Rmv では外さない (もう 1 つの I/F ではまだ見えている)。
 func TestOnBrowseReresolvesAfterRemove(t *testing.T) {
-	s := &Scanner{seen: map[string]map[int]bool{}, readded: map[string]bool{}, hostOf: map[string]string{}, gathering: map[string]bool{}, regather: map[string]bool{}, peers: map[string]*Peer{}}
+	s := &Scanner{seen: map[string]map[int]bool{}, readded: map[string]bool{}, hostOf: map[string]string{}, gathering: map[string]bool{}, regather: map[string]bool{}, dropped: map[string]bool{}, peers: map[string]*Peer{}}
 	add := func(ifn int) Browse { return Browse{Add: true, If: ifn, Instance: "mini"} }
 	rmv := func(ifn int) Browse { return Browse{Add: false, If: ifn, Instance: "mini"} }
 	if act, _ := s.onBrowse("_ssh._tcp", add(14)); act != actResolve {
@@ -302,6 +302,44 @@ func TestResolveRetriesWhenLookupsTimeOut(t *testing.T) {
 	s.Close()
 	if len(peers) != 1 || peers[0].Addrs[14] != "192.168.50.7" {
 		t.Fatalf("1 度答えなかった -L / -G を引き直さない: %+v (calls %v)", peers, calls)
+	}
+}
+
+// 1 つの I/F だけで Rmv されて同じ I/F で Add し直されたら、Addrs に古い IP が残っていても -G を引き直す (片方の I/F の goodbye だけが
+// 届いた再起動・ケーブルの挿し直しで、169.254 の番号が変わる)。
+func TestOnBrowseRegathersAfterOneInterfaceRemoved(t *testing.T) {
+	s := &Scanner{seen: map[string]map[int]bool{}, readded: map[string]bool{}, hostOf: map[string]string{}, gathering: map[string]bool{},
+		regather: map[string]bool{}, dropped: map[string]bool{}, peers: map[string]*Peer{}}
+	key := "_ssh._tcp\x00mini"
+	s.seen[key] = map[int]bool{14: true, 27: true}
+	s.hostOf[key] = "m2macmini.local"
+	s.peers["m2macmini.local"] = &Peer{Host: "m2macmini.local", Addrs: map[int]string{14: "192.168.50.7", 27: "169.254.1.1"}}
+	if act, _ := s.onBrowse("_ssh._tcp", Browse{Add: false, If: 27, Instance: "mini"}); act != actNone {
+		t.Fatal("Rmv で引いた")
+	}
+	if act, host := s.onBrowse("_ssh._tcp", Browse{Add: true, If: 27, Instance: "mini"}); act != actAddrs || host != "m2macmini.local" {
+		t.Errorf("片方の I/F の Rmv の後の Add で -G を引き直さない: act=%v host=%q", act, host)
+	}
+}
+
+// 別のサービスで分かっているホストでも、この インスタンスが IP の無い I/F で見えていれば、-L の後に -G を引く
+// (-L の途中に来た有線の Add は onBrowse では引かず、resolve に任せる)。
+func TestResolveGathersForInterfaceWithoutIP(t *testing.T) {
+	f := &fakeStarter{out: map[string]string{
+		"dns-sd -L mini _ssh._tcp local": "21:28:48.953  mini._ssh._tcp.local. can be reached at m2macmini.local.:22 (interface 14)\n",
+		"dns-sd -G v4 m2macmini.local":   "21:27:58.076  Add  40000003      27  m2macmini.local.                       192.168.100.12                               4500\n",
+	}}
+	s := Start(f.start, time.Now()) // -B の偽物は無い (起こせずにすぐ終わる)
+	defer s.Close()
+	s.mu.Lock()
+	s.peers["m2macmini.local"] = &Peer{Host: "m2macmini.local", Addrs: map[int]string{14: "192.168.50.7"}, Instances: []string{"mini"}, SMB: true}
+	s.seen["_ssh._tcp\x00mini"] = map[int]bool{14: true, 27: true}
+	s.pending++
+	s.mu.Unlock()
+	s.wg.Add(1)
+	s.resolve("_ssh._tcp", "mini")
+	if got := s.Snapshot()[0].Addrs[27]; got != "192.168.100.12" {
+		t.Errorf("IP の無い I/F の IP を引かない: %q", got)
 	}
 }
 

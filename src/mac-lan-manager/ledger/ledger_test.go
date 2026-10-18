@@ -274,6 +274,12 @@ func TestParseLenientTrailingComment(t *testing.T) {
 	if err != nil || len(hs) != 1 || hs[0].Host != "a.local" || hs[0].Alias != "x # y" {
 		t.Fatalf("行末のコメントのある台帳 = %+v %v", hs, err)
 	}
+	if _, hs, err := ParseLenient("version = 1\n[[host]] # 書斎\nhost = \"a.local\"\nport = 22\n"); err != nil || len(hs) != 1 {
+		t.Errorf("見出しの後ろのコメント・引用でない値の知らない鍵で一覧が止まった: %+v %v", hs, err)
+	}
+	if _, _, err := Parse("version = 1\n[[host]] # 書斎\nhost = \"a.local\"\n"); err == nil {
+		t.Error("厳しい読みが見出しの後ろのコメントを通した (書き戻すと消える)")
+	}
 	if _, _, err := ParseLenient("version = 1\n[[host]]\nhost = \"a.local\" junk\n"); err == nil {
 		t.Error("値の後ろのコメントでないものを読み飛ばした")
 	}

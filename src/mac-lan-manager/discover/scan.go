@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +50,7 @@ type Scanner struct {
 	hostOf    map[string]string // サービス + インスタンス → -L で引いたホスト名
 	gathering map[string]bool   // -G を引いている途中のホスト (重ねて起こさない)
 	regather  map[string]bool   // -G の途中に IP の無い I/F で見えたホスト (終わったらもう 1 度引く)
+	dropped   map[string]bool   // サービス + インスタンス + I/F の番号: その I/F だけで Rmv された (次の Add で -G を引き直す)
 	sem       chan struct{}     // 同時に起こす引き当ての上限 (LAN 上の広告の数だけ dns-sd を起こさない)
 }
 
@@ -65,7 +67,7 @@ const settleWindow = 3 * time.Second
 func Start(start Starter, now time.Time) *Scanner {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Scanner{start: start, ctx: ctx, cancel: cancel, peers: map[string]*Peer{}, settle: now.Add(settleWindow), changed: make(chan struct{}, 1),
-		seen: map[string]map[int]bool{}, readded: map[string]bool{}, hostOf: map[string]string{}, gathering: map[string]bool{}, regather: map[string]bool{}, sem: make(chan struct{}, maxLookups)}
+		seen: map[string]map[int]bool{}, readded: map[string]bool{}, hostOf: map[string]string{}, gathering: map[string]bool{}, regather: map[string]bool{}, dropped: map[string]bool{}, sem: make(chan struct{}, maxLookups)}
 	for _, svc := range Services {
 		s.wg.Add(1)
 		go s.browse(svc)
@@ -176,6 +178,16 @@ func (s *Scanner) browse(svc string) {
 			go func() {
 				defer s.wg.Done()
 				defer s.done()
+				select { // 引き直しの -G も同時に起こす数の上限を通す (ケーブルを挿すと見えている全部の Mac が一斉に Add される)
+				case s.sem <- struct{}{}:
+					defer func() { <-s.sem }()
+				case <-s.ctx.Done():
+					s.mu.Lock()
+					delete(s.gathering, host)
+					delete(s.regather, host)
+					s.mu.Unlock()
+					return
+				}
 				s.addrs(host)
 			}()
 		case actNone:
@@ -204,6 +216,9 @@ func (s *Scanner) onBrowse(svc string, b Browse) (browseAct, string) {
 	if !b.Add {
 		if ifs[b.If] {
 			delete(ifs, b.If)
+			// その I/F の IP は変わりうる (片方の I/F の goodbye だけが届いた再起動・ケーブルの挿し直し)。Addrs に古い IP が残っていても、
+			// 次にその I/F で Add されたら -G を引き直す
+			s.dropped[key+"\x00"+strconv.Itoa(b.If)] = true
 			if len(ifs) == 0 {
 				delete(s.seen, key)
 				delete(s.hostOf, key)
@@ -221,9 +236,15 @@ func (s *Scanner) onBrowse(svc string, b Browse) (browseAct, string) {
 		return actResolve, ""
 	}
 	ifs[b.If] = true
+	dk := key + "\x00" + strconv.Itoa(b.If)
+	again := s.dropped[dk]
+	delete(s.dropped, dk)
 	// ホストがまだ分からない (-L の途中) なら、resolve が -L の後に I/F の帳簿を見て -G を引く
 	host := s.hostOf[key]
-	if p := s.peers[host]; host == "" || p == nil || p.Addrs[b.If] != "" {
+	if host == "" && again {
+		s.readded[key] = true
+	}
+	if p := s.peers[host]; host == "" || p == nil || (p.Addrs[b.If] != "" && !again) {
 		return actNone, ""
 	}
 	if s.gathering[host] {
@@ -297,10 +318,16 @@ func (s *Scanner) resolve(svc, inst string) {
 			missing = true
 		}
 	}
-	// 同じ I/F の IP は I/F の番号で上書きされる (Addrs は I/F の番号が鍵)
-	gather := (refresh || missing) && !s.gathering[host]
-	if gather {
-		s.gathering[host] = true
+	// 同じ I/F の IP は I/F の番号で上書きされる (Addrs は I/F の番号が鍵)。引き直し (再起動の後の Add) で -G の途中なら、終わったら
+	// もう 1 度引かせる (走っている -G は IP が変わる前に引き始めたかもしれない)。IP の無い I/F があるだけなら走っている -G に任せる:
+	// 印を残すと、起動の直後に 2 つの I/F で Add されるたびに -G が 1 本増える (終わる間際に答えが来る窓は残る)
+	gather := false
+	if refresh || missing {
+		if s.gathering[host] {
+			s.regather[host] = s.regather[host] || refresh
+		} else {
+			s.gathering[host], gather = true, true
+		}
 	}
 	s.mu.Unlock()
 	if gather {
