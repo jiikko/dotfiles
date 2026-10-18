@@ -1,0 +1,1 @@
+../814-retro-lan-manager-wired-name-ci-miss-2026-10-17.md
