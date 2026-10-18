@@ -166,6 +166,7 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | issue-writeback, issue更新漏れ, 書き戻し漏れ, issue更新した? | `~/.claude/skills/issue-writeback/SKILL.md` (本文の追記漏れ。done 移動は issue-sync) |
 | start-issues-ops, issue運用を始める, issuesディレクトリを作る | `~/.claude/skills/start-issues-ops/SKILL.md` (issues/ を作り dotfiles の README を持ち込む。commit するかはユーザーに聞く) |
 | claude-md-refresh, CLAUDE.md の refresh, README が古い, ディレクトリの文書の乖離 | `~/.claude/skills/claude-md-refresh/SKILL.md` (引数で対象ディレクトリを指定。issues/ は対象外) |
+| refresh-on-session, 差分全体の見直し, 用語の揺れ, コメントの更新漏れ, 呼び出し元の追従漏れ | `~/.claude/skills/refresh-on-session/SKILL.md` (ブランチ / セッションの差分だけを見る。差分から用語集を作って照合する。バグ探しは `/code-review`) |
 | events.yml, 審査が通った, バージョン公開を記録, product-analytics, my-products-update-apps-event | `~/.claude/skills/my-products-update-apps-event/SKILL.md` (my-products の product-analytics に App Store の最新版の公開を記録する) |
 | クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `~/.claude/skills/crash-log-analyzer/SKILL.md` |
 | codex-review, Codexレビュー, コードレビュー依頼 | `~/.claude/skills/codex-review/SKILL.md` |
