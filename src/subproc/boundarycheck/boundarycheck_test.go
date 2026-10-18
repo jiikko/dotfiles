@@ -42,19 +42,22 @@ func wantProblem(t *testing.T, problems []string, substr string) {
 
 func TestWaitDelayFixtureReportsExactlyTheViolations(t *testing.T) {
 	r, problems := problemsOf(t, waitDelaySpec())
-	if len(problems) != 3 {
-		t.Fatalf("指摘が 3 件でない: %v", problems)
+	if len(problems) != 5 {
+		t.Fatalf("指摘が 5 件でない: %v", problems)
 	}
 	wantProblem(t, problems, "missing.go:6: WaitDelay を張っていない")
 	wantProblem(t, problems, "alias.go: os/exec を別名 import している (xe)")
 	wantProblem(t, problems, "notallowed.go: *exec.Cmd を作っているが Allow に無い")
-	// 走査の射程: tools/ (SkipDirs)・_skipped/・sub/testdata/ は見ない。sub/ok.go は見る
-	if r.files != 7 || r.perDir["."] != 6 || r.perDir["sub"] != 1 {
+	// SkipDirs はパスで照合する: Root の直下の tools/ は外し、深い位置の同じ名前の sub/tools/ は見る
+	wantProblem(t, problems, "sub/tools/deep.go: *exec.Cmd を作っているが Allow に無い")
+	wantProblem(t, problems, "sub/tools/deep.go:7: WaitDelay を張っていない")
+	// 走査の射程: tools/ (SkipDirs)・_skipped/・sub/testdata/ は見ない。sub/ok.go と sub/tools/deep.go は見る
+	if r.files != 8 || r.perDir["."] != 6 || r.perDir["sub"] != 1 || r.perDir["sub/tools"] != 1 {
 		t.Fatalf("走査の数が違う: files=%d perDir=%v", r.files, r.perDir)
 	}
-	// seen = assign / marker / missing / notallowed (alias.go は xe. なので字句に出ない)、enforced = 注記の marker.go を除く 3
-	if r.seen != 4 || r.enforced != 3 {
-		t.Fatalf("seen=%d enforced=%d, want 4 / 3", r.seen, r.enforced)
+	// seen = assign / marker / missing / notallowed / sub/tools/deep (alias.go は xe. なので字句に出ない)、enforced = 注記の marker.go を除く 4
+	if r.seen != 5 || r.enforced != 4 {
+		t.Fatalf("seen=%d enforced=%d, want 5 / 4", r.seen, r.enforced)
 	}
 }
 

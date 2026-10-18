@@ -523,6 +523,8 @@ var testSupportPkgs = map[string]bool{
 
 // TestTestSupportPkgsMatchDepguard は testSupportPkgs と、.golangci.yml の depguard の test-support-only-in-tests の deny が
 // 同じパッケージの集合であることを確かめる。
+// .golangci.yml は字面で読む: `- pkg:` を引用符で書く・render-pure を改名して後ろに別の規則を足す、では偽の赤になる (安全側)。
+// depguard の規則の files: と、規則が有効かは見ない (golangci-lint の実行が見る)。
 func TestTestSupportPkgsMatchDepguard(t *testing.T) {
 	b, err := os.ReadFile(".golangci.yml")
 	if err != nil {

@@ -83,7 +83,8 @@ type Spec struct {
 	// Root は走査の根。module の root で呼ぶテストからは "."。非テストの .go を 1 つずつ見る
 	// (testdata / vendor / `.` `_` 始まりのディレクトリは Go のツールチェインと同じく常に飛ばす)
 	Root string
-	// SkipDirs は名前で飛ばすディレクトリ (本体から参照しない調査ツール。glogx の tools/)。
+	// SkipDirs は飛ばすディレクトリの Root からの相対パス (/ 区切り。本体から参照しない調査ツール。glogx の tools/)。
+	// 🚨 名前ではなくパスで照合する: 名前で照合すると、深い位置にある同じ名前の本番のディレクトリ (internal/x/tools/) まで外れる。
 	SkipDirs []string
 	// NoOsExec は厳しい設定: 非テストの .go が os/exec を import しない。true のとき Allow と Floor は使わない (0 のまま)
 	NoOsExec bool
@@ -204,16 +205,19 @@ func check(s Spec) (report, string) {
 
 // walk は Root の下の非テストの .go を 1 つずつ fn へ渡す (rel は Root からの / 区切りの相対パス)。
 func walk(s Spec, fn func(rel string, src []byte) error) error {
-	skip := map[string]bool{"testdata": true, "vendor": true}
-	for _, d := range s.SkipDirs {
-		skip[d] = true
-	}
 	return filepath.WalkDir(s.Root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if path != s.Root && (skip[d.Name()] || strings.HasPrefix(d.Name(), ".") || strings.HasPrefix(d.Name(), "_")) {
+			if path == s.Root {
+				return nil
+			}
+			rel, err := filepath.Rel(s.Root, path)
+			if err != nil {
+				return err
+			}
+			if underSkipped(filepath.ToSlash(rel), s.SkipDirs) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -343,10 +347,6 @@ func goListCounts(s Spec) (map[string]int, error) {
 	if err != nil {
 		return nil, fmt.Errorf("go list (in %s): %w", root, err)
 	}
-	skip := map[string]bool{}
-	for _, d := range s.SkipDirs {
-		skip[d] = true
-	}
 	counts := map[string]int{}
 	dec := json.NewDecoder(strings.NewReader(string(out)))
 	for dec.More() {
@@ -366,7 +366,7 @@ func goListCounts(s Spec) (map[string]int, error) {
 			return nil, err
 		}
 		rel = filepath.ToSlash(rel)
-		if underSkipped(rel, skip) {
+		if underSkipped(rel, s.SkipDirs) {
 			continue
 		}
 		n := 0
@@ -396,9 +396,19 @@ func mismatch(got, want map[string]int) string {
 	return ""
 }
 
-func underSkipped(rel string, skip map[string]bool) bool {
+// underSkipped は Root からの相対パス rel (/ 区切り) が走査の外か。Go のツールチェインと同じく testdata / vendor と `.` `_` で始まる
+// ディレクトリはどの深さでも外し、SkipDirs は Root からのパスで外す (その下も外す)。
+func underSkipped(rel string, skipDirs []string) bool {
+	if rel == "." { // Root そのもの (go list は Root のパッケージを "." で返す)
+		return false
+	}
 	for _, e := range strings.Split(rel, "/") {
-		if skip[e] {
+		if e == "testdata" || e == "vendor" || strings.HasPrefix(e, ".") || strings.HasPrefix(e, "_") {
+			return true
+		}
+	}
+	for _, d := range skipDirs {
+		if rel == d || strings.HasPrefix(rel, d+"/") {
 			return true
 		}
 	}

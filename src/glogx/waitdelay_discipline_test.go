@@ -26,16 +26,16 @@ var execCmdAllow = map[string]string{
 	"internal/extcmd/git.go":           "git 実行の共通入口 (WaitDelay は RunGitCmd が張る。issue 817 で gitlog.go から移した)",
 	"open_workspace.go":                "e / E の前景エディタ・ファイラー起動 (runEditorCmd = tea.Exec + foreground.Exec)",
 	"tui.go":                           "job ログを nvim の scratch で開く前景実行",
-	"internal/testenv/shared.go":       "テストの fixture の repo に打つ git (テスト専用のパッケージ。本番からの import は depguard が止める)",
 }
 
 // 下限は実件数のすぐ下に置く (0 や 1 だと「走査が壊れて対象を取りこぼした」が緑で通る)。
 // 実測 2026-09-09: seen=9、enforced=2 (tui.go の job ログ nvim / gitlog.go の runGitTimeout。後者は internal/extcmd/git.go に移った)。
 // 実測 2026-09-24: seen=7、enforced=2。extcmd.EditorCommand の exec.Command 2 か所を github.com/jiikko/dotfiles/src/tuikit/editor へ移した
 // (glogx と pro-con でエディタの解決を 1 実装にするため) ので seen だけが 2 減った。
+// 実測 2026-10-18: seen=9、enforced=2 (main と internal の画面への移設で数は変わらず)。下限を実件数のすぐ下へ上げた。
 // 🚨 enforced の 2 件は**注記を付けてはいけない** (理由は boundarycheck.Spec の EnforcedFloor の doc)。
 const (
-	waitDelaySeenFloor     = 6
+	waitDelaySeenFloor     = 8
 	waitDelayEnforcedFloor = 2
 )
 
