@@ -1,5 +1,7 @@
 # 818 (docs): Swift で、別の thread から呼ばれる callback を actor に属する型の中の closure で書かない — rule にするか
 
+> 🚨 **担当中: air5 (glogx)**（2026-10-18〜）
+
 起票日: 2026-10-17
 
 ## 概要
