@@ -125,6 +125,7 @@ const (
 	ovLog             // メッセージ一覧 (msglog.go)
 	ovAlias           // 台帳の欄 (別名 / ユーザー名) の入力欄
 	ovHelp            // 全部のキー
+	ovSpeed           // 通信速度を測る経路を選んで y (speed.go)
 )
 
 // Model は画面の状態。
@@ -175,9 +176,10 @@ type Model struct {
 	// selfAdvert はこの Mac の有線の名前の広告の状態 (selfAdvertKnown のときだけ有効。網と一緒に読む)
 	selfAdvert      setup.NameState
 	selfAdvertKnown bool
-	bg              []<-chan Notice        // 裏で走らせている後始末 (台帳から外した相手の名前の広告を止める) の結果
-	speedRun        *speedRun              // 測っている途中の通信速度 (speed.go。同時に 1 本)
-	speed           map[string]speedResult // 相手ごとの最後の通信速度 (台帳の鍵 → 結果)
+	bg              []<-chan Notice                   // 裏で走らせている後始末 (台帳から外した相手の名前の広告を止める) の結果
+	speedRun        *speedRun                         // 測っている途中の通信速度 (speed.go。同時に 1 本)
+	speed           map[string]map[string]speedResult // 相手・経路ごとの最後の通信速度 (台帳の鍵 → IP → 結果)
+	speedAsk        *speedAsk                         // 経路を選ぶ板 (ovSpeed の間だけ)
 	// wired は有線の名前を引いた結果 (台帳の鍵 → 結果。wiredname.go)。wiredCh / wiredWait は引いている途中の回
 	wired     map[string]wiredLookup
 	wiredCh   <-chan wiredResult
@@ -222,8 +224,6 @@ type ask struct {
 	// auto は読み込み中に押した x の予約で、読み終えたときに自動で出した板。Enter では実行しない (進捗のモーダルの間に押し続けた
 	// Enter が、裏で開いた板をそのまま実行した。この Mac の固定は自動では戻らない)
 	auto bool
-	// strict は帯域を使う操作の板 (通信速度)。auto と同じく Enter では実行しない
-	strict bool
 }
 
 // New は画面を作り、この Mac のネットワーク・台帳・設定を読み、Bonjour の走査を起こす。
@@ -588,7 +588,7 @@ func (m *Model) Paste(s string) {
 // 開いていた一時的な層 (確認・板・入力欄・設定) も畳む: glogx はこの Model を使い回すので、残すと L で開き直した直後に
 // 覚えの無い確認の板が y を待っていた (足りない画面の q で抜けたとき)。
 func (m *Model) Close() {
-	m.ov, m.ask = ovNone, nil
+	m.ov, m.ask, m.speedAsk = ovNone, nil, nil
 	if m.filtering {
 		m.filtering = false
 		m.filter.Reset()
@@ -1023,15 +1023,11 @@ func (m *Model) HandleInput(key, text string) Action {
 			m.copyAs(shellLine(a.exec.Argv), "実行するコマンド (全文)")
 			return None
 		}
-		if a != nil && (a.auto || a.strict) && key == "enter" {
-			return None // 自動で出した板・帯域を使う板は y でだけ実行する (板は閉じない)
+		if a != nil && a.auto && key == "enter" {
+			return None // 自動で出した板は y でだけ実行する (板は閉じない)
 		}
 		m.ov, m.ask = ovNone, nil
-		yes := confirm.IsYes(key)
-		if a != nil && a.strict {
-			yes = key == "y" // 帯域を使う板は y だけ (Y は一覧では ssh のコピーで指が慣れている)。他のキーは取り消し
-		}
-		if a != nil && yes {
+		if a != nil && confirm.IsYes(key) {
 			if a.exec != nil {
 				if m.su == nil { // 初期設定の画面の外で手順を起こさない (相手の名前の無い手順は、未確認の印も確認待ちも立たない。敵対レビュー)
 					m.note("初期設定の画面が閉じている (開き直して x)", false)
@@ -1062,6 +1058,8 @@ func (m *Model) HandleInput(key, text string) Action {
 		return m.keyLog(key)
 	case ovAlias:
 		return m.keyAlias(key, text)
+	case ovSpeed:
+		return m.keySpeed(key)
 	case ovHelp:
 		m.ov = ovNone // どのキーでも閉じる
 		return None

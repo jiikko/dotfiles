@@ -668,7 +668,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 				hint = "y: 実行   c: コマンドをコピー   n/Esc: キャンセル"
 			case m.ask.exec != nil:
 				hint = "y/Enter: 実行   c: コマンドをコピー   n/Esc: キャンセル"
-			case m.ask.auto || m.ask.strict: // 自動で出た板・帯域を使う板は Enter では実行しない (HandleInput)
+			case m.ask.auto: // 自動で出た板は Enter では実行しない (HandleInput)
 				hint = "y: 実行   n/Esc: キャンセル"
 			}
 			return modal(m.ask.title, m.ask.body, hint, m.w), -1, 0
@@ -716,6 +716,8 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 		field := lipgloss.NewStyle().Background(cCode).Render(termwidth.FillRight(txt, fw))
 		// 板の中の位置: 上の辺 1 + 余白 1 + 題 1 + 空行 1 = 4 行目、左の辺 1 + 余白 2 + 前置き
 		return modal(m.edit.title, []string{prefix + field}, "enter 決める   esc やめる", m.w), 4, 3 + lipgloss.Width(prefix) + col
+	case ovSpeed:
+		return m.speedBox(), -1, 0
 	case ovHelp:
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理 / この Mac のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"O", "Finder で smb に繋ぐコマンド (open smb://…) をコピー"}, {"o", "画面共有を開く"},

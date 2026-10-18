@@ -1,14 +1,16 @@
 package lanmgr
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"charm.land/lipgloss/v2"
 	"github.com/jiikko/dotfiles/src/termsafe"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
@@ -89,8 +91,77 @@ func (m *Model) SpeedTargets() ([]SpeedTarget, error) {
 	return out, nil
 }
 
-// askSpeed は t (通信速度を測る) の確認の板を出す。帯域を使い切るので必ず板を通し、Enter では実行しない (行を選んで Enter を
-// 打ち続けても流れない)。
+// speedPath は測る経路の候補 1 つ (相手の IP と、それが見えたこの Mac の I/F の線)。
+type speedPath struct {
+	ip   string
+	link netinfo.Link
+	what string // 画面の名前 ("内部" / "メイン" / I/F の名前)
+}
+
+func (p speedPath) label() string {
+	s := p.ip
+	if l := p.link.Label(); l != "" {
+		s += " (" + l + ")"
+	}
+	return s
+}
+
+// speedAsk は経路を選んで測る確認の板 (ovSpeed)。
+type speedAsk struct {
+	host, name string
+	user       string
+	paths      []speedPath
+	cur        int
+}
+
+// speedPaths は行の Mac を測れる経路 (内部 IP → メイン IP → その他の IP の順。同じ IP は 1 つ)。網が分かれていて届かない IP
+// (片方だけ固定して 169.254 と帯の番号に分かれた組) は外す: 内部 IP は rows が決めた lanAway、その他の IP はそれが見えた I/F に
+// この Mac が持つ IP と lanReachable で比べる (この Mac の内部 IP 1 つと比べると、別の有線の I/F で届く IP まで外れた)。
+// メイン IP とルーターのある I/F・VM・VPN の IP はルーター越しなので比べない (比べると、この Mac が 169.254 のときに Wi-Fi の IP まで外れた)。
+func (m *Model) speedPaths(r row) []speedPath {
+	var ps []speedPath
+	add := func(ip string, l netinfo.Link, what string) {
+		if ip == "" {
+			return
+		}
+		if i := slices.IndexFunc(ps, func(p speedPath) bool { return p.ip == ip }); i >= 0 {
+			if ps[i].link == netinfo.LinkUnknown { // 同じ IP の線が後の方で分かるなら、分かる方を採る (台帳の内部 IP がメインとして見えた)
+				ps[i].link = l
+			}
+			return
+		}
+		ps = append(ps, speedPath{ip: ip, link: l, what: what})
+	}
+	if !r.lanAway {
+		add(r.lanIP, r.lanLink, "内部")
+	}
+	add(r.mainIP, r.mainLink, "メイン")
+	for _, x := range r.others {
+		switch x.Kind {
+		case netinfo.KindWired, netinfo.KindLinkLocal, netinfo.KindUnknown: // 内部の網に居うる (Unknown は登録はあるが読めない有線の I/F を含む)
+			if !lanReachable(m.selfIPOn(x.Device), x.Addr, m.pf.Band) {
+				continue
+			}
+		case netinfo.KindInternet, netinfo.KindVirtual, netinfo.KindVPN:
+		}
+		add(x.Addr, m.self.Link(x.Device), x.Device)
+	}
+	return ps
+}
+
+// selfIPOn はこの Mac が dev に持つ IPv4 (無ければ "" = lanReachable は届くと見る)。
+func (m *Model) selfIPOn(dev string) string {
+	for _, x := range m.self.IPs {
+		if x.Device == dev {
+			return x.Addr
+		}
+	}
+	return ""
+}
+
+// askSpeed は t (通信速度を測る) の板を出す。帯域を使い切るので必ず板を通し、y だけで実行する (Enter を打ち続けても流れない。
+// Y は一覧では ssh のコピーで指が慣れている)。測れるかは CLI と同じ speedTarget で決め、経路は j/k で選ぶ。既定は最初の有線の経路
+// (ユーザー指示 2026-10-18: 既定は有線)。
 func (m *Model) askSpeed(r row) {
 	switch {
 	case m.o.SpeedTest == nil:
@@ -105,26 +176,82 @@ func (m *Model) askSpeed(r row) {
 		m.note(t.Refusal, false)
 		return
 	}
-	d, link := t.Dest, t.Link
-	via := d.IP
-	if l := link.Label(); l != "" {
-		via += " (" + l + ")"
+	paths := m.speedPaths(r)
+	if len(paths) == 0 {
+		m.note("測る IP が分からない", false)
+		return
+	}
+	cur := max(slices.IndexFunc(paths, func(p speedPath) bool { return p.link == netinfo.LinkWired }), 0)
+	m.ov, m.speedAsk = ovSpeed, &speedAsk{host: t.Host, name: t.Name, user: t.Dest.User, paths: paths, cur: cur}
+}
+
+// currentPaths は host の行の今の経路 (行が無ければ nil)。
+func (m *Model) currentPaths(host string) []speedPath {
+	for _, r := range m.rows() {
+		if r.host == host && !r.self {
+			return m.speedPaths(r)
+		}
+	}
+	return nil
+}
+
+// keySpeed は経路を選ぶ板のキー。j/k で選び、y で測る。Enter は何もしない (板は閉じない)。他のキーは取り消し (ガイド §4)。
+func (m *Model) keySpeed(key string) Action {
+	a := m.speedAsk
+	switch key {
+	case "j", "down":
+		a.cur = min(a.cur+1, len(a.paths)-1)
+		return None
+	case "k", "up":
+		a.cur = max(a.cur-1, 0)
+		return None
+	case "enter":
+		return None
+	}
+	m.ov, m.speedAsk = ovNone, nil
+	if key != "y" {
+		return None
+	}
+	if m.speedRun != nil { // 板を出している間に別の測定が始まることは無いが、y の時点で確かめる (同時に 2 本流さない)
+		m.note("測定中 ("+m.speedRun.host+")。終わってから", false)
+		return None
+	}
+	p := a.paths[a.cur]
+	// 板を出している間に一覧を読み直して経路が変わっていたら測らない (板の候補は開いたときの写し)
+	now := m.currentPaths(a.host)
+	i := slices.IndexFunc(now, func(q speedPath) bool { return q.ip == p.ip })
+	if i < 0 {
+		m.note(p.ip+" はもう見えていない (t で開き直す)", false)
+		return None
+	}
+	p = now[i] // 線は今の値を使う (板を出している間に分かった線の札を結果に付ける)
+	// 宛先は IP で測る (有線の名前は引いた先が同じ内部 IP。setup.Dest は IPv4 だけを通す)
+	d := setup.Dest{User: a.user, IP: p.ip, HostKeyAlias: a.host}
+	if err := d.Validate(); err != nil {
+		m.note("測れない: "+err.Error(), false)
+		return None
+	}
+	m.startSpeed(a.host, d, p.link)
+	m.note(fmt.Sprintf("%s を %s で測っています (約 %d 秒)", a.name, p.label(), 2*int(speedtest.Duration/time.Second)), true)
+	return None
+}
+
+// speedBox は経路を選ぶ板。
+func (m *Model) speedBox() string {
+	a := m.speedAsk
+	body := []string{a.name + " との通信速度を測ります。経路:"}
+	for i, p := range a.paths {
+		mark, st := "  ", sText
+		if i == a.cur {
+			mark, st = "▶ ", sAccent
+		}
+		body = append(body, mark+st.Render(p.label())+sDim.Render("  "+p.what))
 	}
 	secs := int(speedtest.Duration / time.Second)
-	m.ov, m.ask = ovConfirm, &ask{
-		title: "通信速度を測る",
-		body: []string{
-			or(r.alias, r.host) + " との通信速度を測ります",
-			"宛先: " + via,
-			fmt.Sprintf("上り・下りを %d 秒ずつ、ssh 越しで回線をほぼ使い切ります (その間、同じ回線の他の通信は遅くなります)", secs),
-			"値は ssh の暗号化を通した速さです (1 Gbps を超える回線は暗号化の速さで頭打ちになりえます)",
-		},
-		strict: true,
-		yes: func() Notice {
-			m.startSpeed(r.host, d, link)
-			return Notice{fmt.Sprintf("%s の通信速度を測っています (約 %d 秒)", or(r.alias, r.host), 2*secs), true}
-		},
-	}
+	body = append(body, "",
+		fmt.Sprintf("上り・下りを %d 秒ずつ、ssh 越しで回線をほぼ使い切ります (その間、同じ回線の他の通信は遅くなります)", secs),
+		"値は ssh の暗号化を通した速さです (1 Gbps を超える回線は暗号化の速さで頭打ちになりえます)")
+	return modal("通信速度を測る", body, "j/k: 経路   y: 実行   n/Esc: キャンセル", m.w)
 }
 
 func (m *Model) startSpeed(host string, d setup.Dest, link netinfo.Link) {
@@ -147,16 +274,20 @@ func (m *Model) takeSpeed() {
 		sr.cancel()
 		m.speedRun = nil
 		if m.speed == nil {
-			m.speed = map[string]speedResult{}
+			m.speed = map[string]map[string]speedResult{}
 		}
-		m.speed[sr.host] = speedResult{Result: res, at: m.now, ip: sr.ip, link: sr.link}
+		if m.speed[sr.host] == nil {
+			m.speed[sr.host] = map[string]speedResult{}
+		}
+		m.speed[sr.host][sr.ip] = speedResult{Result: res, at: m.now, ip: sr.ip, link: sr.link}
+		path := speedPath{ip: sr.ip, link: sr.link}.label()
 		if res.Err != nil {
-			m.logf("speed done %s err=%v", sr.host, res.Err)
-			m.note(sr.host+" の通信速度を測れなかった: "+res.Err.Error(), false)
+			m.logf("speed done %s ip=%s err=%v", sr.host, sr.ip, res.Err)
+			m.note(sr.host+" ("+path+") の通信速度を測れなかった: "+res.Err.Error(), false)
 			return
 		}
-		m.logf("speed done %s up=%.0f down=%.0f", sr.host, res.UpBps, res.DownBps)
-		m.note(fmt.Sprintf("%s: ↑ %s  ↓ %s", sr.host, speedtest.Format(res.UpBps), speedtest.Format(res.DownBps)), true)
+		m.logf("speed done %s ip=%s up=%.0f down=%.0f", sr.host, sr.ip, res.UpBps, res.DownBps)
+		m.note(fmt.Sprintf("%s (%s): ↑ %s  ↓ %s", sr.host, path, speedtest.Format(res.UpBps), speedtest.Format(res.DownBps)), true)
 	default:
 	}
 }
@@ -187,27 +318,70 @@ func errTail(err error, width int) string {
 	return s
 }
 
+func boolOrder(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// linkOrder は結果を並べる順 (有線 → 無線 → 分からない)。
+func linkOrder(l netinfo.Link) int {
+	switch l {
+	case netinfo.LinkWired:
+		return 0
+	case netinfo.LinkWireless:
+		return 1
+	case netinfo.LinkUnknown:
+	}
+	return 2
+}
+
 // speedLine は詳細カードの通信速度の行 (管理対象の相手だけ。測っていなければ t の案内)。
 func (m *Model) speedLine(r row, label func(string) string) []string {
 	if r.self || !r.managed {
 		return nil
 	}
+	lines := make([]string, 0, 2*len(m.speed[r.host])+1) // 経路ごとに結果と頭打ち (か時刻) の 2 行、測定中の 1 行
+	head := label("通信速度")
+	next := func() string { h := head; head = label(""); return h } // 項目名は最初の行だけ
 	if sr := m.speedRun; sr != nil && sr.host == r.host {
-		return []string{label("通信速度") + sDim.Render(fmt.Sprintf("測定中… (上り・下り 各 %d 秒)", int(speedtest.Duration/time.Second)))}
+		lines = append(lines, next()+sDim.Render(fmt.Sprintf("測定中… %s (上り・下り 各 %d 秒)", speedPath{ip: sr.ip, link: sr.link}.label(), int(speedtest.Duration/time.Second))))
 	}
-	res, ok := m.speed[r.host]
-	if !ok {
-		return []string{label("通信速度") + sDim.Render("未測定  ") + keycap("t", "測る")}
+	// 経路ごとの結果を有線から並べる (有線と無線の差を見比べる)。測っている IP の前の結果は重ねない。今の経路に無い IP
+	// (169.254 が付け直された・Bonjour が一時的に見失った) の結果は消さずに「今は見えていない」と付ける (隠すと「未測定」と出て、
+	// 走査のたびに出たり消えたりした。古い IP の行を今の速さと読ませない)
+	paths := m.speedPaths(r)
+	results := slices.DeleteFunc(slices.Collect(maps.Values(m.speed[r.host])), func(res speedResult) bool {
+		return m.speedRun != nil && m.speedRun.host == r.host && m.speedRun.ip == res.ip
+	})
+	seen := func(ip string) bool { return slices.ContainsFunc(paths, func(p speedPath) bool { return p.ip == ip }) }
+	slices.SortFunc(results, func(a, b speedResult) int {
+		if c := cmp.Compare(boolOrder(!seen(a.ip)), boolOrder(!seen(b.ip))); c != 0 { // 今見えている経路を上に
+			return c
+		}
+		if c := cmp.Compare(linkOrder(a.link), linkOrder(b.link)); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ip, b.ip)
+	})
+	for _, res := range results {
+		when := sDim.Render("  " + res.at.Format("15:04") + " に測定 (" + res.ip + ")")
+		if !seen(res.ip) {
+			when += sMuted.Render("  今は見えていない")
+		}
+		if res.Err != nil {
+			// 時刻と宛先は次の行に置く (同じ行だとカードの幅を超えて折り返した)
+			lines = append(lines, next()+sWarn.Render(errTail(res.Err, 60)), next()+when)
+			continue
+		}
+		lines = append(lines, next()+sText.Render(fmt.Sprintf("↑ %s  ↓ %s", speedtest.Format(res.UpBps), speedtest.Format(res.DownBps)))+tagAfter(res.link)+when)
+		if res.link == netinfo.LinkWired && seen(res.ip) && speedtest.Capped100M(res.Result) {
+			lines = append(lines, next()+sWarn.Render("🚨 100 Mbps 付近で頭打ち (途中に 100M の機器・ケーブル?)"))
+		}
 	}
-	when := sDim.Render("  " + res.at.Format("15:04") + " に測定 (" + res.ip + ")")
-	if res.Err != nil {
-		// 時刻と宛先は次の行に置く (同じ行だとカードの幅を超えて折り返した)
-		return []string{label("通信速度") + sWarn.Render(errTail(res.Err, 60)), label("") + when}
-	}
-	lines := []string{label("通信速度") + sText.Render(fmt.Sprintf("↑ %s  ↓ %s", speedtest.Format(res.UpBps), speedtest.Format(res.DownBps))) +
-		tagAfter(res.link) + when}
-	if res.link == netinfo.LinkWired && speedtest.Capped100M(res.Result) {
-		lines = append(lines, lipgloss.NewStyle().Width(12).Render("")+sWarn.Render("🚨 100 Mbps 付近で頭打ち (途中に 100M の機器・ケーブル?)"))
+	if len(lines) == 0 {
+		lines = append(lines, next()+sDim.Render("未測定  ")+keycap("t", "測る"))
 	}
 	return lines
 }
