@@ -51,13 +51,19 @@ if ! staticcheck --version >/dev/null 2>&1; then
 fi
 
 # 🚨 staticcheck の既定のキャッシュ (~/Library/Caches/staticcheck) を checkout の間で共有しない。共有すると、同じ中身の package の
-# 結果を別の checkout のものから使い回し、消した worktree の絶対パスで報告する (allowlist のキーと合わず、同じ 1 件が「到達できない」と
-# 「stale」の両方に出て赤になる。その checkout で回し直しても古い結果が当たり続ける)。置き場を checkout の git dir の下にするのは、
-# git worktree remove が worktree の git dir ごと消すから。既定のキャッシュとの差は、新しい checkout の最初の 1 回の約 4 秒
-# (22 モジュールで冷 12.3 秒 / 温 8.3 秒。2026-10-18 実測)。呼び出し側が STATICCHECK_CACHE を渡したらそれを使う
+# 結果を別の場所の checkout のものから使い回し、その場所の絶対パスで報告する (allowlist のキーと合わず、同じ 1 件が「到達できない」と
+# 「stale」の両方に出て赤になる。その checkout で回し直しても古い結果が当たり続ける)。置き場は checkout の git dir の下で、さらに
+# checkout の場所ごとに分ける: git dir は git worktree remove で一緒に消えるが、git worktree move や本体の mv では変わらないので、
+# git dir だけで分けると動かした後に前の場所のパスで返る。既定のキャッシュとの差は、新しい checkout の最初の 1 回の約 4 秒
+# (22 モジュールで冷 12.3 秒 / 温 8.3 秒。2026-10-18 実測)。呼び出し側が STATICCHECK_CACHE を渡したらそれを使う。
+# 継承した GIT_DIR / GIT_WORK_TREE は外して聞く (残っていると別の checkout の git dir が返る)
 if [ -z "${STATICCHECK_CACHE:-}" ]; then
-  gitdir=$(git rev-parse --absolute-git-dir) || { echo "✗ git dir を取れない (キャッシュの置き場を決められない)" >&2; exit 1; }
-  STATICCHECK_CACHE="$gitdir/staticcheck-cache"
+  gitdir=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$ROOT_DIR" rev-parse --absolute-git-dir) &&
+    top=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$ROOT_DIR" rev-parse --show-toplevel) &&
+    key=$(printf '%s' "$top" | shasum | cut -c1-12) &&
+    [ -n "$gitdir" ] && [ -n "$key" ] ||
+    { echo "✗ git dir を取れない (staticcheck のキャッシュの置き場を決められない)" >&2; exit 1; }
+  STATICCHECK_CACHE="$gitdir/staticcheck-cache/$key"
 fi
 export STATICCHECK_CACHE
 
