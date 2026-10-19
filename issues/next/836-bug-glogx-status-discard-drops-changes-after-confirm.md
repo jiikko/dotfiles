@@ -1,0 +1,1 @@
+../836-bug-glogx-status-discard-drops-changes-after-confirm.md
