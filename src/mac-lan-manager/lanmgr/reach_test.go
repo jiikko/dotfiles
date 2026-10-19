@@ -62,7 +62,7 @@ func awaitReach(t *testing.T, h *harness) {
 			t.Fatal("結果が取り込まれない")
 		}
 		h.m.Advance(t0)
-		time.Sleep(time.Millisecond) // sleep-ok: poll: 条件 (reachRun が空く) を待つ刻み
+		time.Sleep(time.Millisecond) // sleep-ok: tick: 条件 (reachRun が空く) を待つ刻み
 	}
 }
 
@@ -89,7 +89,7 @@ func TestReachOnlyManaged(t *testing.T) {
 }
 
 // p で Bonjour の名前と有線の名前を確かめ、確かめている間は Busy・2 本目は断る。名前が引けても届かなければ ✗ と知らせを出す
-// (起点: 有線の名前の広告だけが残り、誰も持っていない内部 IP に引けた。issue 847)。
+// (有線の名前の広告だけが残ると、誰も持っていない内部 IP に引ける)。
 func TestReachRunsAndShowsResult(t *testing.T) {
 	h, f := reachHarness(t)
 	h.cursorTo(t, "m2macmini.local")
