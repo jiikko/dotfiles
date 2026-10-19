@@ -4,7 +4,7 @@
 カテゴリ: human（人間しかできない判断。データが溜まるまで決められない）
 期限: 2026-11-09
 （**1 か月使ってから**見る。それより早く見ても行が溜まっていない）
-出典: [issue 334](done/334-ruby-references-call-site-index.md) の todolist 最後の 1 行
+出典: [issue 334](334-ruby-references-call-site-index.md) の todolist 最後の 1 行
 
 ## 何を決めてほしいか
 
@@ -69,7 +69,7 @@ issue 334 段階 1 の目的は「重い仕組みを作る前に数字で決め�
 （`<leader>K` も記録するので、Ruby 以外で押していれば `kind:"lsp"` の行が増える）。
 🚨 ただし `<C-k>` は buffer-local なので **LSP が attach していないバッファでは存在しない**。
 記録の生死を確かめるときは `get_clients` と `:map <C-k>` を先に見る。上の条項はこれを踏まえたもの。
-詳細は [issue 354](done/354-bug-refs-usage-log-not-growing.md)。
+詳細は [issue 354](354-bug-refs-usage-log-not-growing.md)。
 
 ## 2026-09-09 時点の状態（ここから増えた分が判断材料）
 
@@ -198,7 +198,7 @@ gemspec を caching しようとするが、rbenv shim が 0.56.2 を解決し�
 
 ## 関連
 
-- [issue 334](done/334-ruby-references-call-site-index.md) — 実測の記録（索引の構築時間 / メモリ / クエリ時間 / 精度差）
+- [issue 334](334-ruby-references-call-site-index.md) — 実測の記録（索引の構築時間 / メモリ / クエリ時間 / 精度差）
 - `nvim/lua/dotfiles/refs_usage.lua` — 記録の実体
 
 ## 2026-10-16 の実測 (期限 2026-10-09 を過ぎて、Claude が数えた)
