@@ -200,16 +200,21 @@ now=$(date +%s)
 #   このスクリプトを実際に走らせて検出する)。
 # 🚨 描画は送信が無くても refreshInterval (60 秒) ごとに起き、そのたびに最後に受け取った (古いかもしれない) 値が来る。
 #   放置したセッションが新しい値を上書きしないよう、既にあるファイルより新しい観測のときだけ書き換え、observedAt は
-#   「誰かが新しい値を受け取った時刻」にする。新しさは窓ごとに値で決める: リセット時刻が後の方、同じ窓なら使用率が
-#   高い方 (同じ窓の使用率は下がらない)。リセット時刻の差が rl_same_window 秒以内なら同じ窓とみなす (ヘッダの値が
-#   揺れても、使用率の低い古い観測が「後のリセット時刻」で勝たないように。揺れるかは未実測)。値の無い窓 (リセットを
-#   過ぎて落とされた窓) は新しい観測に数えない。
-#   値が変わらなくても (使用率は整数に切り捨てるので、軽い利用では 15 分動かないことがある)、このセッションの
-#   transcript がファイルより新しければ、ファイルを書いた後にやり取りがあった = 今も新しい値を受け取っているとみなし、
-#   observedAt だけ進める (放置したセッションの transcript は古いので進めない)。
+#   「誰かが新しい値を受け取った時刻」にする。このセッションの transcript がファイルより新しければ、ファイルを書いた後に
+#   やり取りがあった = 今の値を受け取っているとみなす (rl_fresh。放置したセッションの transcript は古い)。窓ごとに、
+#   リセット時刻が後の観測 (次の窓) は誰の描画でも採り、それ以外は rl_fresh のセッションのものだけを採る (上下どちらへも)。
+#   リセット時刻の差が rl_same_window 秒以内なら同じ窓とみなす (ヘッダの値が揺れても、放置したセッションの古い観測が
+#   「後のリセット時刻」で勝たないように。揺れるかは未実測)。値の無い窓 (リセットを過ぎて落とされた窓) は新しい観測に数えない。
+#   🚨 同じ窓を「使用率の高い方が新しい」で比べない。一度どこかから高すぎる値 (2026-10-19 に 7d=99%。サーバと
+#   Claude Code の今の値は 38%。出所は未特定) が入ると、リセットまで正しい値で上書きできなくなる。放置したセッションも
+#   同じ窓では書かせない (その値を 60 秒ごとに描き直すので、高い値を書き戻し続ける)。
+#   値が変わらなくても (使用率は整数に切り捨てるので、軽い利用では 15 分動かないことがある)、rl_fresh なら observedAt を進める。
+#   transcript の更新は応答を伴わないこと (ローカルのコマンド・送信した直後・中断やエラーで応答が来なかった送信) もあるので、
+#   rl_fresh でも前回の応答の古い値を書くことがある。次に応答を受け取ったセッションが書き直すまでの間 (最長は
+#   statuslineMaxAge で予備へ落ちるまで) だけずれる。張り付く旧規則より、ずれが自然に消える方を採る。
 # tmp + mv で読み手に書きかけを見せない。失敗しても描画は続ける。
 rl_same_window=600
-rl_newer() {  # rl_newer <新 %> <新リセット> <旧 %> <旧リセット> → 新しい観測なら 0
+rl_newer() {  # rl_newer <新 %> <新リセット> <旧 %> <旧リセット> → 採る観測なら 0 (次の窓以外は rl_fresh のときだけ)
   [ -n "$1" ] || return 1
   # 桁が多すぎる値 (ミリ秒・桁あふれ。[ が失敗する) は新しい観測に数えない。既にファイルに入っている壊れた値は
   # 「値が無い」とみなし、正しい観測で上書きできるようにする (比べる前に検査しないと、壊れた値が一度入ると窓が固まる)
@@ -218,14 +223,16 @@ rl_newer() {  # rl_newer <新 %> <新リセット> <旧 %> <旧リセット> →
   [ -n "$3" ] || return 0
   local nr=${2:-0} or=${4:-0}
   [ "$nr" -gt $(( or + rl_same_window )) ] && return 0
-  [ "$nr" -ge $(( or - rl_same_window )) ] && [ "$1" -gt "$3" ] && return 0
+  # rl_fresh のセッションは窓を問わず採る。ファイルのリセット時刻の方が後ろにずれて入っていても、それを直せるように
+  [ -n "$rl_fresh" ] && { [ "$1" != "$3" ] || [ "$nr" != "$or" ]; } && return 0
   return 1
 }
 write_rate_limits() {
   [ -n "$five_pct$seven_pct" ] || return 0
   local dir="${XDG_CACHE_HOME:-$HOME/.cache}/glog" fr sr ver
-  local f old="" o5p="" o5r="" o7p="" o7r="" changed=""
+  local f old="" o5p="" o5r="" o7p="" o7r="" changed="" rl_fresh=""
   f="$dir/claude-rate-limits.json"
+  if [ -n "$transcript" ] && [ "$transcript" -nt "$f" ]; then rl_fresh=1; fi
   to_int "$five_reset"; fr=$REPLY
   to_int "$seven_reset"; sr=$REPLY
   # JSON の文字列へそのまま入れるので、版の形 (数字・英字・. + -) 以外は捨てる
@@ -241,7 +248,7 @@ write_rate_limits() {
   if rl_newer "$five_pct" "$fr" "$o5p" "$o5r"; then o5p=$five_pct o5r=$fr changed=1; fi
   if rl_newer "$seven_pct" "$sr" "$o7p" "$o7r"; then o7p=$seven_pct o7r=$sr changed=1; fi
   # 値は同じでも、このセッションにファイルより後のやり取りがあれば observedAt だけ進める (上の注記)
-  if [ -z "$changed" ] && [ -n "$transcript" ] && [ "$transcript" -nt "$f" ]; then changed=1; fi
+  if [ -n "$rl_fresh" ]; then changed=1; fi
   [ -n "$changed" ] || return 0
   if [ -z "$ver" ] && [[ $old =~ \"version\":\"([0-9A-Za-z.+-]+)\" ]]; then ver=${BASH_REMATCH[1]}; fi
   local tmp="$f.tmp.$$"

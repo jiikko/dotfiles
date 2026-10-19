@@ -39,6 +39,21 @@ func runStatusline(t *testing.T, cache, input string) {
 	}
 }
 
+// freshTranscript はファイルより新しい transcript (= 書いた後にやり取りがあったセッション) を作る。
+// mtime を未来へずらす: bash 3.2 の -nt は秒単位なので、直前の run が書いたファイルと同じ秒だと新しいと数えない。
+func freshTranscript(t *testing.T) string {
+	t.Helper()
+	tr := filepath.Join(t.TempDir(), "s.jsonl")
+	if err := os.WriteFile(tr, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(5 * time.Second)
+	if err := os.Chtimes(tr, future, future); err != nil {
+		t.Fatal(err)
+	}
+	return tr
+}
+
 func readStatuslineRaw(t *testing.T, cache string) statuslineState {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(cache, "glog", statuslineFile))
@@ -88,8 +103,8 @@ func TestStatuslineWriterMatchesReader(t *testing.T) {
 	}
 }
 
-// 送信の無い描画 (refreshInterval) は、最後に受け取った古い値を毎回持ってくる。古い観測では書き換えず、observedAt も
-// 進めない (放置したセッションが新しい値を上書きしない / 新しい値が来ない間に observedAt が古くなる)。版は引き継ぐ。
+// 送信の無い描画 (refreshInterval) は、最後に受け取った古い値を毎回持ってくる。放置したセッションは同じ窓の値を書き換えず
+// (使用率が高くても)、observedAt も進めない (新しい値が来ない間に observedAt が古くなる)。版は引き継ぐ。
 func TestStatuslineWriterKeepsNewerObservation(t *testing.T) {
 	cache := t.TempDir()
 	now := time.Now()
@@ -105,6 +120,7 @@ func TestStatuslineWriterKeepsNewerObservation(t *testing.T) {
 	for _, stale := range []string{
 		fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":12,"resets_at":%d},"seven_day":{"used_percentage":30,"resets_at":%d}}}`, r5, r7), // 放置したセッション
 		fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":85,"resets_at":%d},"seven_day":{"used_percentage":60,"resets_at":%d}}}`, r5, r7), // 同じ値の描画し直し
+		fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":86,"resets_at":%d},"seven_day":{"used_percentage":99,"resets_at":%d}}}`, r5, r7), // 放置したセッションの高い値
 		fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":99,"resets_at":%d}}}`, r5-3600),                                                  // 前の窓の値
 	} {
 		runStatusline(t, cache, stale)
@@ -112,7 +128,7 @@ func TestStatuslineWriterKeepsNewerObservation(t *testing.T) {
 			t.Fatalf("古い観測で書き換えた (%s): %+v", stale, st)
 		}
 	}
-	runStatusline(t, cache, fmt.Sprintf(`{"rate_limits":{"seven_day":{"used_percentage":61,"resets_at":%d}}}`, r7))
+	runStatusline(t, cache, fmt.Sprintf(`{"transcript_path":%q,"rate_limits":{"seven_day":{"used_percentage":61,"resets_at":%d}}}`, freshTranscript(t), r7))
 	st := readStatuslineRaw(t, cache)
 	if st.ObservedAt == old || *st.FiveHour.UsedPercentage != 85 || *st.SevenDay.UsedPercentage != 61 || st.Version != "2.1.287" {
 		t.Fatalf("新しい観測で書き換えない / 他の窓・版を引き継がない: %+v", st)
@@ -254,7 +270,7 @@ func writeRaw(t *testing.T, cache string, observed time.Time, p5 int, r5 int64, 
 	return path
 }
 
-// リセット時刻が数秒ずれても同じ窓とみなし、使用率で比べる (使用率の低い古い観測が「後のリセット時刻」で勝たない)。
+// リセット時刻が数秒ずれても同じ窓とみなす (放置したセッションの古い観測が「後のリセット時刻」で勝たない)。
 func TestStatuslineWriterToleratesResetJitter(t *testing.T) {
 	cache := t.TempDir()
 	now := time.Now()
@@ -265,7 +281,7 @@ func TestStatuslineWriterToleratesResetJitter(t *testing.T) {
 	if st := readStatuslineRaw(t, cache); *st.FiveHour.UsedPercentage != 30 || st.ObservedAt != old.Unix() {
 		t.Fatalf("揺れたリセット時刻の古い観測で書き換えた: %+v", st.FiveHour)
 	}
-	runStatusline(t, cache, fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":31,"resets_at":%d}}}`, r5+1))
+	runStatusline(t, cache, fmt.Sprintf(`{"transcript_path":%q,"rate_limits":{"five_hour":{"used_percentage":31,"resets_at":%d}}}`, freshTranscript(t), r5+1))
 	if st := readStatuslineRaw(t, cache); *st.FiveHour.UsedPercentage != 31 {
 		t.Fatalf("同じ窓の新しい観測を採らない: %+v", st.FiveHour)
 	}
@@ -358,20 +374,30 @@ func TestStatuslineWriterRejectsOverlongReset(t *testing.T) {
 	}
 }
 
-// transcript が新しくても、ファイルより古い値 (使用率が低い) で上書きしない (observedAt だけ進める)。
-func TestStatuslineWriterBumpKeepsValues(t *testing.T) {
+// 同じ窓でも、やり取りのあったセッションの値はファイルの値より低くても採る。高い方を残すと、一度入った高すぎる値
+// (2026-10-19 に 7d=99%。今の値は 38%) がリセットまで下がらない。
+func TestStatuslineWriterFreshLowersValues(t *testing.T) {
 	now := time.Now()
 	r5, r7 := now.Add(time.Hour).Unix(), now.Add(48*time.Hour).Unix()
 	cache := t.TempDir()
 	old := now.Add(-10 * time.Minute)
-	writeRaw(t, cache, old, 30, r5, 60, r7)
-	tr := filepath.Join(t.TempDir(), "s.jsonl")
-	if err := os.WriteFile(tr, []byte("{}\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	runStatusline(t, cache, fmt.Sprintf(`{"transcript_path":%q,"rate_limits":{"five_hour":{"used_percentage":12,"resets_at":%d},"seven_day":{"used_percentage":40,"resets_at":%d}}}`, tr, r5, r7))
+	writeRaw(t, cache, old, 30, r5, 99, r7)
+	runStatusline(t, cache, fmt.Sprintf(`{"transcript_path":%q,"rate_limits":{"five_hour":{"used_percentage":12,"resets_at":%d},"seven_day":{"used_percentage":38,"resets_at":%d}}}`, freshTranscript(t), r5, r7))
 	st := readStatuslineRaw(t, cache)
-	if st.ObservedAt == old.Unix() || *st.FiveHour.UsedPercentage != 30 || *st.SevenDay.UsedPercentage != 60 {
-		t.Fatalf("observedAt だけ進めるはずが: %+v / 5h %d / 7d %d", st.ObservedAt, *st.FiveHour.UsedPercentage, *st.SevenDay.UsedPercentage)
+	if st.ObservedAt == old.Unix() || *st.FiveHour.UsedPercentage != 12 || *st.SevenDay.UsedPercentage != 38 {
+		t.Fatalf("やり取りのあったセッションの値で書き換えない: %+v / 5h %d / 7d %d", st.ObservedAt, *st.FiveHour.UsedPercentage, *st.SevenDay.UsedPercentage)
+	}
+}
+
+// ファイルのリセット時刻が後ろへずれて入っていても (前の窓に見える観測)、やり取りのあったセッションの値で直す。
+// 放置したセッションの前の窓の値は採らない (TestStatuslineWriterKeepsNewerObservation)。
+func TestStatuslineWriterFreshFixesShiftedReset(t *testing.T) {
+	now := time.Now()
+	r5, r7 := now.Add(time.Hour).Unix(), now.Add(48*time.Hour).Unix()
+	cache := t.TempDir()
+	writeRaw(t, cache, now.Add(-10*time.Minute), 30, r5, 99, r7+3*86400)
+	runStatusline(t, cache, fmt.Sprintf(`{"transcript_path":%q,"rate_limits":{"five_hour":{"used_percentage":30,"resets_at":%d},"seven_day":{"used_percentage":38,"resets_at":%d}}}`, freshTranscript(t), r5, r7))
+	if st := readStatuslineRaw(t, cache); *st.SevenDay.UsedPercentage != 38 || *st.SevenDay.ResetsAt != r7 {
+		t.Fatalf("ずれたリセット時刻の値を直さない: 7d %d / %d", *st.SevenDay.UsedPercentage, *st.SevenDay.ResetsAt)
 	}
 }
