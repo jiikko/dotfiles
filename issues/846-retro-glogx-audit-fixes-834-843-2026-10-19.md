@@ -17,6 +17,10 @@ glogx の全体監査 (844) で起票した 834〜843 を、1 つの worktree �
 3. **再開メモの「済」を確かめずに書いていた**。resume.md に「842 の A1〜A5 の一部は 840 で済」と書いたが、今の木で確かめると済んでいたのは A5 と B2 だけだった (A1〜A4 は未着手)
 4. **敵対的レビューの指摘を 1 つずつ直すと、直し方が次の周の指摘を生んだ** (status viewer の X の指紋)。「受け取った diff」→「描いた diff」→ キーに XY を含めた → 世代を持たない取得中の札、と 4 周続いた。
    基準 (最後に見せた diff の指紋) を読む経路 (描画・取得・閉じる・r・XY の変化・evict) と、書く側の状態 (取得中・世代) の表を先に作っていれば、3・4 周目の指摘は最初に潰せた
+6. **push の後、CI でだけ 5 本が赤くなった** (直して 2 回目の push で緑)。(a) テスト 2 本が push の見積もり (PlanPush) を差し替えず、テストの cwd の
+   repo を読んでいた。手元の worktree は detached で「数えていない」になり緑、CI の checkout は branch が origin と並んでいて「確かに 0 件」で赤。
+   (b) 新しい package の doc が無く、root の lint (`test-go-packages-index`) が落ちた。手元では glogx の module の test / lint しか回していなかった。
+   (c) glogx を取り込む pro-con の go.sum (`go mod tidy`) が古くなった。src/ratelimit の gofmt の赤は別のセッションの commit
 5. **変異の run で、テストが返した tea.Cmd を実行して止まった** (tick を含む Cmd を実行すると 1.5 秒ずつ待ち、600 秒の時間切れまで判定が出なかった)。testenv.TakeMsg の doc に「tick を含む Cmd を渡さない」と書いた (局所)
 
 ## 次に効きそうな改善 (提案)
@@ -31,8 +35,13 @@ glogx の全体監査 (844) で起票した 834〜843 を、1 つの worktree �
 - 却下 (3): 「記録した対策も前提に数えず、頼る場面で読む」は instrument-before-second-fix の前提の再検証の表に既にある (環境の対策の記録の話だが、再開メモの「済」も同じ扱いで読める)。新しい規範は要らない
 - 却下 (4): 「状態 × 読み手の表を先に作る」は survey-receiver-guards の「自分が宣言した不変条件」節に既にある。表を作らずに直し始めたのが原因で、規範の不足ではない
 - 局所 (5): testenv.TakeMsg の doc に書いた。ほかへ広げない
+- C (6a): **テストが cwd の repo の git の状態 (branch・upstream・@{push}・設定) を読む経路は、既定で差し替える**。worktree (detached)・CI の checkout
+  (branch)・開発機の本体 (並んでいる / 進んでいる) で同じテストの結果が変わり、どこか 1 か所でしか赤くならない。git を使う道具全般のテストで同じ形が起きる。
+  切り出し先: `_claude/rules/verify-execution-not-just-exit-code.md` の「隔離環境での成功は、本番での成功ではない」節へ 1 行追記 (worktree で緑でも、CI の checkout と git の状態が違う)
+- 却下 (6b・6c): package を新しく作る・module の依存を変えるときに root の lint と依存する module の tidy を回すのは、verify-execution の「最後の編集の後に、
+  変更したファイルを実際に検査する gate (CI と同じ lint・テスト) を回す」で足りる。module の中の test / lint だけで代えたのが原因
 
 ## 進捗
 
-- [ ] A・B の切り出し (rule への追記。実行はユーザーの判断を待つ)
+- [ ] A・B・C の切り出し (rule への追記。実行はユーザーの判断を待つ)
 - [x] 反証レビュー (sonnet のサブエージェント。codex の週の枠が切れていたため代えた): 事実の誤りなし。A が既存の規則とほぼ重なる・一般化の説明が無い、の指摘を反映した
