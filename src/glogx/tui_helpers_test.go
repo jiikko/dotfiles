@@ -94,6 +94,9 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]gitdata.CIState, toF
 	m := newBrowseModel(commits, statuses, toFetch, gitdata.Repo{Owner: "o", Name: "r"}, true,
 		&Options{NoFrame: true}, false, 80, 10)
 	installInertDoctor(t, &m.doctorOv)
+	// push の見積もりは既定で「数えていない」にする: 本物の PlanPush はテストの cwd の repo (CI の checkout は branch の上で
+	// origin と並んでいる = 確かに 0 件) を読み、環境で b の結果が変わる。件数が要るテストは stubPushPlan で上書きする
+	stubPushPlan(t, gitdata.PushPlan{})
 	t.Cleanup(func() {
 		// 🚨 `m.cancel` ではなく `m.cancelAll`。前者は browseModel 自身の fetch ctx だけで
 		// **doctorOv.stop() を呼ばない**ので、走っている走査は止まらない。上限なしの join と

@@ -1,3 +1,5 @@
+// Package fswatch は glogx の見張り (git log と issues viewer) が共有する「fsnotify のイベント待ち + 保険のポーリング」の札と世代、
+// watcher の seam。
 package fswatch
 
 import (

@@ -1,3 +1,5 @@
+// Package gitexec は glogx の git の実行の共通入口 (時間の上限・失敗の理由・status viewer の write 操作の差し替え点)。
+// bubbletea を持たない末端の package (データ層の gitdata が使う)。
 package gitexec
 
 import (
