@@ -36,6 +36,7 @@ func (m *Model) View() []string {
 	m.caretFY, m.caretMY = -1, -1
 	m.small = false
 	var body, tile string
+	tileX, tileY := -1, 0 // 重ねるタイルの位置 (-1 = 初期設定のタイル: 横は中央、縦は一覧のタブの下)
 	switch {
 	case m.sc == scSetup && m.su != nil:
 		// 初期設定は一覧を背景に残し、その上に画面の中央へ重ねる (全画面に切り替えると、どの相手を設定しているかが一覧から読めなかった。
@@ -76,6 +77,15 @@ func (m *Model) View() []string {
 		if m.tooShort { // カーソルの行まで入らない高さ: 切れた板を出さず、抜け方だけの画面にする (高さ 12 以下でカーソルの行ごと板が切れた)
 			return m.viewTooSmall("高さが足りない")
 		}
+		if m.detailOpen {
+			// 最下行 (抜け方の案内) とその上の空行は覆わない
+			tile, tileX, tileY = m.detailPanel(w, max(m.h, 10)-padY-2-m.panelTop), padX, m.panelTop
+			if tile == "" {
+				// 描けない (枠も入らない高さ・開いた Mac がカーソルの行に無い = 裏の読み直しで消えた): 開いたままにしない
+				// (見えないパネルの案内と enter が残った)
+				m.detailOpen = false
+			}
+		}
 	}
 	foot := m.footer()
 	h := max(m.h, 10)
@@ -89,7 +99,10 @@ func (m *Model) View() []string {
 	base := lipgloss.NewStyle().Width(m.w).Height(h).MaxHeight(h).Padding(padY, padX).Render(lipgloss.JoinVertical(lipgloss.Left, body, "", foot))
 	layers := []*lipgloss.Layer{lipgloss.NewLayer(base)}
 	if tile != "" {
-		layers = append(layers, lipgloss.NewLayer(tile).X(max((m.w-lipgloss.Width(tile))/2, 0)).Y(m.listTop).Z(1))
+		if tileX < 0 {
+			tileX, tileY = max((m.w-lipgloss.Width(tile))/2, 0), m.listTop
+		}
+		layers = append(layers, lipgloss.NewLayer(tile).X(tileX).Y(tileY).Z(1))
 	}
 	if box, fieldRow, fieldX := m.overlayBox(); box != "" {
 		box = lipgloss.NewStyle().MaxHeight(h).MaxWidth(m.w).Render(box) // 板が画面より高い・広いと View が画面からはみ出した (? の板は 22 行・66 桁)
@@ -110,6 +123,30 @@ const (
 	setupTileSideGap = 4
 )
 
+// rowHints は行の Mac への動作のキーの案内 (一覧と詳細のパネルが共有する。案内と効くキーを同じ述語にする)。
+func (m *Model) rowHints(r row) []keyHint {
+	if r.self || r.connectIP() == "" {
+		return nil
+	}
+	var hs []keyHint
+	if m.sshRefusal(r) == "" {
+		hs = append(hs, keyHint{"s", "繋ぐ", 3})
+	}
+	if user, _ := m.userFor(r); user != "" {
+		hs = append(hs, keyHint{"Y", "コピー", 4})
+	}
+	if r.vnc {
+		hs = append(hs, keyHint{"o", "画面共有", 5})
+	}
+	if r.smb {
+		hs = append(hs, keyHint{"y", "smb", 6}, keyHint{"O", "Finder で繋ぐ", 12})
+	}
+	if m.o.SpeedTest != nil && m.speedRun == nil && m.speedTarget(r).Refusal == "" { // askSpeed と同じ条件
+		hs = append(hs, keyHint{"t", "速度", 9})
+	}
+	return hs
+}
+
 // keyHint は最下行の案内の 1 つ。prio は小さいほど残す (1 = 抜ける手段。tuikit/hintfit の尺度)。
 type keyHint struct {
 	key, label string
@@ -127,30 +164,25 @@ func (m *Model) footer() string {
 		hs = []keyHint{{"j/k", "項目", 2}, {"space", "入/切", 3}, {"←/→", "選ぶ", 4}, {"enter", "編集", 5}, {"q/esc/,", "閉じる", 1}}
 	case m.filtering:
 		hs = []keyHint{{"enter", "確定", 2}, {"esc", "やめる", 1}}
-	default:
-		hs = []keyHint{{"j/k", "移動", 7}}
-		if r := m.current(); !r.self && r.connectIP() != "" {
-			if m.sshRefusal(r) == "" {
-				hs = append(hs, keyHint{"s", "繋ぐ", 3})
-			}
-			if user, _ := m.userFor(r); user != "" {
-				hs = append(hs, keyHint{"Y", "コピー", 4})
-			}
-			if r.vnc {
-				hs = append(hs, keyHint{"o", "画面共有", 5})
-			}
-			if r.smb {
-				hs = append(hs, keyHint{"y", "smb", 6}, keyHint{"O", "Finder で繋ぐ", 12})
-			}
-			if m.o.SpeedTest != nil && m.speedRun == nil && m.speedTarget(r).Refusal == "" { // 案内と効くキーを同じ述語にする (askSpeed と同じ条件)
-				hs = append(hs, keyHint{"t", "速度", 9})
-			}
+	case m.detailOpen:
+		hs = []keyHint{{"q/esc", "戻る", 1}}
+		if r := m.current(); !r.self {
+			hs = append(hs, keyHint{"enter", "初期設定", 2})
 		}
+		hs = append(hs, m.rowHints(m.current())...)
+		if m.detailMax > 0 {
+			hs = append(hs, keyHint{"j/k", "送る", 3})
+		}
+	default:
+		hs = []keyHint{{"j/k", "移動", 7}, {"enter", "詳細", 6}}
+		hs = append(hs, m.rowHints(m.current())...)
 		hs = append(hs, keyHint{"h/l", "タブ", 10}, keyHint{"space", "台帳", 8}, keyHint{"c", "この Mac の IP", 9},
 			keyHint{",", "設定", 11}, keyHint{"?", "全部のキー", 2}, keyHint{"q", "閉じる", 1})
 	}
 	if m.sc != scSettings && !m.filtering && !m.selfOK { // 読めるまで断るキーは案内にも出さない (出すと押しても断られた)
-		hs = slices.DeleteFunc(hs, func(h keyHint) bool { return slices.Contains(needsNet, h.key) })
+		hs = slices.DeleteFunc(hs, func(h keyHint) bool {
+			return slices.Contains(needsNet, h.key) || (m.detailOpen && h.key == "enter") // パネルの enter (初期設定) も netRefused が断る
+		})
 	}
 	items := make([]hintfit.Item, 0, len(hs))
 	for _, h := range hs {
@@ -275,6 +307,7 @@ func (m *Model) viewList(w int) string {
 	}
 	table := m.listTable(listW-7, max(rows, 1))
 	m.listTop = padY + lipgloss.Height(head) + lipgloss.Height(tabs)
+	m.panelTop = padY + lipgloss.Height(head) - 1 // 見出しの罫線の下の空行から (詳細のパネルはタブと一覧の上に重ねる)
 	list := lipgloss.JoinVertical(lipgloss.Left, tabs, shadow(card(table, listW-1, surfList, tabColors[m.tab], cPurple)))
 	var main string
 	switch {
@@ -418,6 +451,42 @@ func (m *Model) columns() []col {
 }
 
 // listTable は列ごとに幅を決め、セルを lipgloss のスタイルで描いて横に並べる (折り返さず … で切る)。
+// detailPanel は一覧で Enter を押したときに重ねる詳細のパネル (幅 width いっぱい・影なし・高さ height まで)。詳細カードと同じ中身から
+// 空行を詰め、入らなければ最後の行を送りの案内にして j/k で送る (m.detailOff)。描くたびに送りの上限 (m.detailMax) を決める。
+// 枠の分も入らない高さでは "" (パネルを出さない。最下行の案内で抜けられる)。
+func (m *Model) detailPanel(width, height int) string {
+	r := m.current()
+	const frame = 4 // card の上下の枠と余白
+	if height-frame < 2 || !m.detailShowsOpened() {
+		m.detailMax = 0
+		return ""
+	}
+	wrap := lipgloss.NewStyle().Width(max(width-1-6, 1)) // card(…, width-1) の内側 (左右の枠と余白 6 桁)
+	var lines []string
+	for i, l := range m.detailLines(r, width, "初期設定") {
+		if l == "" && i != 2 { // 題と罫線の後の空行だけ残す (区切りの空行は高さを食うので詰める)
+			continue
+		}
+		lines = append(lines, strings.Split(wrap.Render(l), "\n")...)
+	}
+	inner := height - frame
+	m.detailMax = 0
+	if len(lines) > inner {
+		shown := inner - 1 // 最後の行は送りの案内
+		m.detailMax = len(lines) - shown
+		m.detailOff = min(max(m.detailOff, 0), m.detailMax)
+		rest := len(lines) - shown - m.detailOff
+		hint := "↓ j/k で続き (" + strconv.Itoa(rest) + " 行)"
+		if rest == 0 {
+			hint = "↑ k で戻る"
+		}
+		lines = append(append([]string(nil), lines[m.detailOff:m.detailOff+shown]...), sMuted.Render(hint))
+	} else {
+		m.detailOff = 0
+	}
+	return card(strings.Join(lines, "\n"), width-1, surfDetail, cTeal, cPurple, cPink)
+}
+
 // detailCompact は高さ・幅が足りないときの詳細カードの代わり (動作のキーだけの 1 行。枠が無いので、幅で切っても壊れない)。
 func (m *Model) detailCompact(r row) string {
 	return termwidth.Truncate(m.detailCompactLine(r), max(m.w-2*padX, 1), "…")
@@ -428,7 +497,7 @@ func (m *Model) detailCompactLine(r row) string {
 	if r.self {
 		name = "この Mac"
 	}
-	return sText.Render(name) + "   " + sMuted.Render("(動作のキーは最下行。端末を高くすると詳細)")
+	return sText.Render(name) + "   " + sMuted.Render("(enter で詳細。動作のキーは最下行)")
 }
 
 // ipCell は一覧の IP の列のセル。IPv4 の最長 (15 桁) まで埋めてから線の括弧を置く (括弧の位置を行の間で縦に揃える。IP の直後に
@@ -616,6 +685,12 @@ func (m *Model) detail(r row, width int) string {
 	if !r.self && r.host == "" { // タブに行が無い
 		return sDim.Render(m.emptyTabNote())
 	}
+	return shadow(card(strings.Join(m.detailLines(r, width, "詳細・初期設定"), "\n"), width-1, surfDetail, cTeal, cPurple, cPink))
+}
+
+// detailLines は詳細の中身の行 (一覧の下のカードと、Enter で重ねるパネルが共有する)。enterLabel は enter の案内の語
+// (一覧では enter が詳細のパネルを開き、パネルの中では初期設定を開くので、置き場で語が変わる)。
+func (m *Model) detailLines(r row, width int, enterLabel string) []string {
 	user, _ := m.userFor(r)
 	name := or(r.alias, or(r.instance, r.host))
 	title := sAccent.Render(name)
@@ -679,13 +754,13 @@ func (m *Model) detail(r row, width int) string {
 	case r.self:
 		lines = append(lines, sOK.Render("✓ 台帳に登録済み"))
 	case !r.managed:
-		lines = append(lines, sDim.Render("未管理: ")+keycap("space", "台帳に登録")+"   "+keycap("enter", "初期設定"))
+		lines = append(lines, sDim.Render("未管理: ")+keycap("space", "台帳に登録")+"   "+keycap("enter", enterLabel))
 	case !r.seen:
 		lines = append(lines, sWarn.Render("今は Bonjour で見えていない")+"   "+keycap("m", "別名")+"   "+keycap("space", "台帳から外す"))
 	default:
-		lines = append(lines, keycap("m", "別名")+"   "+keycap("space", "台帳から外す")+"   "+keycap("enter", "初期設定"))
+		lines = append(lines, keycap("m", "別名")+"   "+keycap("space", "台帳から外す")+"   "+keycap("enter", enterLabel))
 	}
-	return shadow(card(strings.Join(lines, "\n"), width-1, surfDetail, cTeal, cPurple, cPink))
+	return lines
 }
 
 // tagAfter は詳細カードで IP の後ろに置く線の括弧 (分からなければ何も足さない)。
@@ -778,7 +853,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	case ovHelp:
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理 / この Mac のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"O", "Finder で smb に繋ぐコマンド (open smb://…) をコピー"}, {"o", "画面共有を開く"},
-			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "初期設定 (相手の行)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"t", "通信速度を測る (管理対象。確認してから帯域を使う)"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
+			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "詳細 (中でもう一度 enter で初期設定)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"t", "通信速度を測る (管理対象。確認してから帯域を使う)"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
 			{"r", "リロード"}, {"q / esc", "閉じる"}}
 		body := make([]string, 0, len(keys)+3)
 		if m.scanErr != nil { // 見出しの「✗ 探せない」の理由 (知らせは数秒で消え、glogx の中からは dump を起こせない。監査の指摘)

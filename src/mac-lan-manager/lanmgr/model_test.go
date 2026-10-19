@@ -738,13 +738,22 @@ func TestLoadingKeepsSelfSingleAndRefusesActions(t *testing.T) {
 		}
 	}
 	m.TakeNotices()
-	for _, k := range []string{"s", "Y", "y", "O", "o", "c", "space", "enter"} {
-		if a := m.HandleKey(k); a != None || m.ov != ovNone || m.sc == scSetup {
+	// 初期設定は詳細のパネルの enter (一覧の enter はパネルを開くだけで、読み込み中でも開ける)
+	for _, ks := range [][]string{{"s"}, {"Y"}, {"y"}, {"O"}, {"o"}, {"c"}, {"space"}, {"enter", "enter"}} {
+		k := strings.Join(ks, " ")
+		var a Action
+		for _, key := range ks {
+			a = m.HandleKey(key)
+		}
+		if a != None || m.ov != ovNone || m.sc == scSetup {
 			t.Errorf("読み込み中の %s を受けた (action=%v ov=%v)", k, a, m.ov)
 		}
 		// 断った理由は読み込み中だから (行の事情 = smb が無い等で断ったのでは、needsNet から漏れても緑になる)
 		if n := m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "確認中") {
 			t.Errorf("読み込み中の %s を、読み込み中だからと断っていない: %+v", k, n)
+		}
+		if m.detailOpen {
+			m.HandleKey("esc")
 		}
 	}
 	m.HandleKey("l")
@@ -1040,7 +1049,7 @@ func TestSetupOverlaysUnchangedList(t *testing.T) {
 		h.m.Resize(w, hh)
 		h.keys("l", "j")
 		if open {
-			h.keys("enter")
+			h.keys("enter", "enter")
 			if h.m.sc != scSetup {
 				t.Fatalf("初期設定が開かない: sc=%d", h.m.sc)
 			}
@@ -2551,7 +2560,7 @@ func TestGuidanceMatchesKeys(t *testing.T) {
 	if strings.Contains(v, "ssh @") || regexp.MustCompile(`(^|\s)s\s+繋ぐ`).MatchString(v) || regexp.MustCompile(`Y\s+コピー`).MatchString(v) {
 		t.Errorf("ユーザー名が分からないのに ssh を案内した:\n%s", v)
 	}
-	if !regexp.MustCompile(`enter\s+初期設定`).MatchString(v) {
+	if !regexp.MustCompile(`enter\s+詳細・初期設定`).MatchString(v) {
 		t.Errorf("詳細のカードに初期設定の入口が無い:\n%s", v)
 	}
 	h.keys("?")
@@ -2874,12 +2883,20 @@ func TestNetReadFailureFirstRefusesActions(t *testing.T) {
 		t.Errorf("この Mac の内部 IP の説明が「無い」と「読めていない」を分けない: %q", sl.Note)
 	}
 	m.TakeNotices()
-	for _, k := range []string{"s", "enter"} {
-		if a := m.HandleKey(k); a != None || m.sc == scSetup {
+	for _, ks := range [][]string{{"s"}, {"enter", "enter"}} { // 初期設定は詳細のパネルの enter
+		k := strings.Join(ks, " ")
+		var a Action
+		for _, key := range ks {
+			a = m.HandleKey(key)
+		}
+		if a != None || m.sc == scSetup {
 			t.Errorf("読めないのに %s を受けた", k)
 		}
 		if n := m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "読めなかった") {
 			t.Errorf("%s を「読めなかった」で断らない: %+v", k, n)
+		}
+		if m.detailOpen {
+			m.HandleKey("esc")
 		}
 	}
 }
@@ -3066,5 +3083,112 @@ func TestReloadLedgerFailureIsNoticed(t *testing.T) {
 	h.keys("y")
 	if n := h.m.TakeNotices(); !slices.ContainsFunc(n, func(x Notice) bool { return strings.Contains(x.Text, "読み直せない") }) {
 		t.Errorf("読み直しの失敗を知らせない: %+v", n)
+	}
+}
+
+// 一覧の enter は詳細のパネルを重ねる (低い端末では一覧の下の詳細カードが 1 行に畳まれるので、どの高さでも詳細を見られるように)。
+// パネルは最下行の案内 (抜け方) を覆わず、中の enter で初期設定を開き、q / esc は glogx を閉じずに一覧へ戻る。
+func TestDetailPanelOpensOverListAndLeadsToSetup(t *testing.T) {
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2", LAN: "192.168.100.13", Alias: "mini"}}, []discover.Peer{mini})
+	h.m.Resize(100, 22)
+	h.cursorTo(t, "m2macmini.local")
+	if v := stripView(strings.Join(h.m.View(), "\n")); !strings.Contains(v, "enter で詳細") {
+		t.Fatalf("低い端末で、畳んだ詳細に enter の案内が無い:\n%s", v)
+	}
+	if a := h.keys("enter"); a != None || !h.m.detailOpen || !h.m.OwnsKeys() {
+		t.Fatalf("enter で詳細のパネルが開かない (action=%v open=%v)", a, h.m.detailOpen)
+	}
+	lines := h.m.View()
+	v := stripView(strings.Join(lines, "\n"))
+	for _, want := range []string{"m2macmini.local", "ssh k2@", "有線・固定"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("パネルに %q が無い:\n%s", want, v)
+		}
+	}
+	last := ""
+	for i := len(lines) - 1; i >= 0 && last == ""; i-- {
+		last = strings.TrimSpace(stripView(lines[i]))
+	}
+	if !strings.Contains(last, "戻る") || !strings.Contains(last, "初期設定") {
+		t.Errorf("最下行がパネルの案内でない / パネルに覆われた: %q", last)
+	}
+	if a := h.keys("q"); a != None || h.m.detailOpen {
+		t.Fatalf("q でパネルが閉じない / glogx ごと閉じた (action=%v)", a)
+	}
+	h.keys("enter", "enter")
+	if h.m.sc != scSetup || h.m.detailOpen {
+		t.Errorf("パネルの enter で初期設定が開かない (sc=%d open=%v)", h.m.sc, h.m.detailOpen)
+	}
+}
+
+// 入らない高さでは、最後の行を送りの案内にして j/k で送る。パネルの間は一覧のカーソルを動かさない。動作のキーは一覧と同じに効く。
+func TestDetailPanelScrollsAndKeepsRowActions(t *testing.T) {
+	h := newHarness(t, []ledger.Host{
+		{Host: "studio.local", User: "koji", LAN: "192.168.100.12", Alias: "studio"},
+		{Host: "m2macmini.local", User: "k2", LAN: "192.168.100.13", Alias: "mini"},
+	}, []discover.Peer{mini})
+	h.m.Resize(72, 20)
+	h.cursorTo(t, "m2macmini.local")
+	cur := h.m.cur[h.m.tab]
+	h.keys("enter")
+	lines := h.m.View()
+	if v := stripView(strings.Join(lines, "\n")); !strings.Contains(v, "↓ j/k で続き") || h.m.detailMax == 0 {
+		t.Fatalf("入らない高さで送りの案内が無い (max=%d):\n%s", h.m.detailMax, v)
+	}
+	last := ""
+	for i := len(lines) - 1; i >= 0 && last == ""; i-- {
+		last = strings.TrimSpace(stripView(lines[i]))
+	}
+	if !strings.Contains(last, "戻る") { // 中身が入り切らない高さでも、最下行 (抜け方の案内) を覆わない
+		t.Errorf("最下行がパネルに覆われた: %q", last)
+	}
+	h.keys("j")
+	if h.m.detailOff != 1 || h.m.cur[h.m.tab] != cur {
+		t.Errorf("j でパネルを送らない / 一覧のカーソルが動いた (off=%d cur=%d→%d)", h.m.detailOff, cur, h.m.cur[h.m.tab])
+	}
+	h.keys("G")
+	if v := stripView(strings.Join(h.m.View(), "\n")); !strings.Contains(v, "↑ k で戻る") {
+		t.Errorf("送りきっても戻りの案内にならない:\n%s", v)
+	}
+	if a := h.keys("s"); a != Exec || !h.m.detailOpen {
+		t.Errorf("パネルの s が一覧と同じに効かない (action=%v open=%v)", a, h.m.detailOpen)
+	}
+}
+
+// パネルの中の space は台帳の登録 / 削除 (半ページの送りにしない。パネルの本文が「space 台帳から外す」を案内している)。
+func TestDetailPanelSpaceAsksLedger(t *testing.T) {
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2", LAN: "192.168.100.13", Alias: "mini"}}, []discover.Peer{mini})
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("enter", "space")
+	if h.m.ov != ovConfirm {
+		t.Errorf("パネルの space で台帳の確認が出ない (ov=%v off=%d)", h.m.ov, h.m.detailOff)
+	}
+}
+
+// 行の並びが変わっても (別名の付け替え)、パネルは開いた Mac を指し続ける。開いた Mac が消えたら閉じる。Close でも閉じる。
+func TestDetailPanelStaysOnOpenedMac(t *testing.T) {
+	h := newHarness(t, []ledger.Host{
+		{Host: "m2macmini.local", User: "k2", LAN: "192.168.100.13", Alias: "mini"},
+		{Host: "studio.local", User: "koji", LAN: "192.168.100.12", Alias: "studio"},
+	}, []discover.Peer{mini})
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("enter", "m")
+	for range "mini" {
+		h.keys("backspace")
+	}
+	h.keys("z", "e", "t", "a", "enter") // 並びが studio, zeta に変わる (添字はそのまま)
+	h.keys("j")                         // パネルのキー: カーソルを開いた Mac へ戻してから送る
+	if !h.m.detailOpen || h.m.current().host != "m2macmini.local" {
+		t.Fatalf("別名を変えた後、パネルが別の Mac を指した (open=%v host=%q)", h.m.detailOpen, h.m.current().host)
+	}
+	h.m.detailHost = "gone.local" // 開いた Mac が並びから消えた
+	h.m.View()
+	if h.m.detailOpen {
+		t.Error("開いた Mac が消えたのにパネルを開いたまま描いた")
+	}
+	h.keys("enter")
+	h.m.Close()
+	if h.m.detailOpen {
+		t.Error("Close でパネルが閉じない")
 	}
 }

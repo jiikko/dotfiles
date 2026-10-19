@@ -33,7 +33,7 @@ func setupHarness(t *testing.T, obs *setup.PeerNet) (*harness, *observed) {
 	}
 	h.keys("l")
 	h.cursorTo(t, "m2macmini.local")
-	h.keys("enter")
+	h.keys("enter", "enter")
 	if h.m.sc != scSetup || h.m.su == nil {
 		t.Fatalf("Enter で初期設定の画面にならない")
 	}
@@ -248,7 +248,7 @@ func TestSetupRefusals(t *testing.T) {
 	setSelfStatic(h3.m)
 	h3.keys("l")
 	h3.cursorTo(t, "vnc.local")
-	h3.keys("enter")
+	h3.keys("enter", "enter")
 	awaitSetup(h3.m)
 	if st, _ := nextStep(h3.m.setupSteps()); st.ID != setup.StepKey || st.Blocked == "" {
 		t.Fatalf("前提: 公開鍵の手順が止まっていない: %+v", st)
@@ -263,7 +263,7 @@ func TestSetupRefusals(t *testing.T) {
 		t.Fatal("この Mac を観測した")
 		return setup.PeerNet{}
 	}
-	h2.keys("h", "enter") // この Mac のタブ
+	h2.keys("h", "enter", "enter") // この Mac のタブ
 	if h2.m.sc == scSetup {
 		t.Error("この Mac の行で初期設定の画面を開いた")
 	}
@@ -301,7 +301,7 @@ func TestSetupRefusesWithoutObservation(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini})
 	h.keys("l")
 	h.cursorTo(t, "m2macmini.local")
-	h.keys("enter")
+	h.keys("enter", "enter")
 	if h.m.sc != scSetup {
 		t.Fatal("前提: 初期設定の画面が開かない")
 	}
@@ -323,7 +323,7 @@ func TestSetupConfirmSurvivesReopenAndExpires(t *testing.T) {
 		t.Fatal("前提: 確認待ちにならない")
 	}
 	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: c.static.IP}) // 窓の間は新しい IP に見える
-	h.keys("q", "enter")
+	h.keys("q", "enter", "enter")
 	awaitSetup(h.m)
 	if st, _ := nextStep(h.m.setupSteps()); st.ID != stepConfirm {
 		t.Fatalf("開き直したら確認を飛ばした: 次の手順 = %v", st.ID)
@@ -371,13 +371,13 @@ func TestSetupSecondPeerGetsDifferentIP(t *testing.T) {
 	setSelfStatic(h.m)
 	h.keys("l")
 	h.cursorTo(t, "m2macmini.local")
-	h.keys("enter")
+	h.keys("enter", "enter")
 	awaitSetup(h.m)
 	runStep(t, h, nil)
 	first := h.m.conf().static.IP
 	h.keys("q")
 	h.cursorTo(t, "air.local")
-	h.keys("enter")
+	h.keys("enter", "enter")
 	awaitSetup(h.m)
 	argv := runStep(t, h, nil)
 	second := h.m.conf().static.IP
@@ -394,7 +394,7 @@ func TestSetupGuards(t *testing.T) {
 	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet { return setup.PeerNet{} }
 	h.keys("l")
 	h.cursorTo(t, "wired.local")
-	h.keys("enter")
+	h.keys("enter", "enter")
 	awaitSetup(h.m)
 	steps := h.m.setupSteps()
 	if st, _ := nextStep(steps); st.ID != setup.StepKey || st.Blocked != "" {
@@ -531,12 +531,12 @@ func TestSetupWiredOnlyReopenUsesConfirmedIP(t *testing.T) {
 	setSelfStatic(h.m)
 	h.keys("l")
 	h.cursorTo(t, "wired.local")
-	h.keys("enter")
+	h.keys("enter", "enter")
 	awaitSetup(h.m)
 	runStep(t, h, nil) // 相手の固定 IP
 	ip := h.m.conf().static.IP
 	runStep(t, h, nil) // 確認
-	h.keys("q", "enter")
+	h.keys("q", "enter", "enter")
 	awaitSetup(h.m)
 	if got := dests[len(dests)-1].IP; got != ip {
 		t.Errorf("開き直した宛先 = %s (確認した %s)", got, ip)
@@ -986,7 +986,7 @@ func TestOperationLog(t *testing.T) {
 	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet { return *obs }
 	h.keys("l")
 	h.cursorTo(t, "m2macmini.local")
-	h.keys("enter")
+	h.keys("enter", "enter")
 	awaitSetup(h.m)
 	h.keys("x", "y")
 	h.m.TakeExec()
@@ -1078,7 +1078,7 @@ func TestSetupDoesNotOfferIPTriedOnOtherPeer(t *testing.T) {
 	setSelfStatic(h.m)
 	h.keys("l")
 	h.cursorTo(t, "m2macmini.local")
-	h.keys("enter")
+	h.keys("enter", "enter")
 	awaitSetup(h.m)
 	runStep(t, h, errors.New("exit status 1"))
 	var tried string
@@ -1090,7 +1090,7 @@ func TestSetupDoesNotOfferIPTriedOnOtherPeer(t *testing.T) {
 	}
 	h.keys("q")
 	h.cursorTo(t, "air.local")
-	h.keys("enter")
+	h.keys("enter", "enter")
 	awaitSetup(h.m)
 	h.keys("x")
 	if h.m.ask == nil {
@@ -1168,7 +1168,7 @@ func TestSetupLedgerUserHandling(t *testing.T) {
 			h.m.reloadLedger()
 			h.keys("esc", "h")
 			h.cursorTo(t, "m2macmini.local")
-			h.keys("enter")
+			h.keys("enter", "enter")
 			awaitSetup(h.m)
 			setSelfStatic(h.m)
 			runStep(t, h, nil)

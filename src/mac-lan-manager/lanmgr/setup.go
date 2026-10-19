@@ -130,7 +130,7 @@ const stepConfirm setup.StepID = "confirm"
 // openSetup は r の初期設定の画面を開く。
 func (m *Model) openSetup(r row) {
 	if r.self {
-		m.note("初期設定は相手の行で Enter (この Mac の固定 IP・有線の名前も、その手順の中にある)", false)
+		m.note("初期設定は相手の行の詳細 (Enter) でもう一度 Enter (この Mac の固定 IP・有線の名前も、その手順の中にある)", false)
 		return
 	}
 	d, err := m.destFor(r)

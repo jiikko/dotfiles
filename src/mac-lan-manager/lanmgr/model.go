@@ -142,7 +142,18 @@ type Model struct {
 	tooShort    bool         // 一覧の板に 1 行も入らない高さ (描いたとき)
 	prefsUnread bool         // 設定ファイルが読めなかった (既定で描き、保存しない)
 	small       bool         // 最後に描いた画面が幅・高さの足りない画面 (抜け方だけ)。HandleInput は q しか受けない
-	su          *setupState  // 初期設定の画面 (開いていなければ nil)
+	// detailOpen は一覧の上に重ねた詳細のパネル (一覧で Enter。中で Enter を押すと初期設定)。一覧の下の詳細カードは高さが足りないと
+	// 1 行に畳まれるので、どの高さでも詳細を見られるようにする。detailOff はパネルの中の送り、detailMax はその上限と、
+	// 最後に描いたパネルの位置と高さ (view.go の detailPanel が描くたびに決める。キーはそれで送りを止める)
+	detailOpen bool
+	// detailHost / detailSelf はパネルを開いた行の Mac。行の並びが変わっても (別名の付け替え・裏の読み直し)、パネルは同じ Mac を
+	// 指し続ける: キーのたびにカーソルをこの Mac へ戻し、見つからなければ閉じる (添字のままだと、黙って隣の Mac に入れ替わった)
+	detailHost string
+	detailSelf bool
+	detailOff  int
+	detailMax  int
+	panelTop   int
+	su         *setupState // 初期設定の画面 (開いていなければ nil)
 	// pending は相手ごとの確認待ち (固定 IP にした後、新しい IP で確認するまで)。claimed はこの起動で相手に割り当てた番号
 	// (台帳に載る前の新しい IP を、次の相手の番号の計算で避ける)。どちらも画面を閉じても残す
 	pending map[string]*pendingConfirm
@@ -489,7 +500,7 @@ func (m *Model) Busy() bool {
 
 // OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定) が開いているか (glogx は横断キーも渡す)。
 func (m *Model) OwnsKeys() bool {
-	return m.filtering || m.bandEdit || m.ov != ovNone || m.sc == scSettings || m.sc == scSetup
+	return m.filtering || m.bandEdit || m.ov != ovNone || m.sc == scSettings || m.sc == scSetup || m.detailOpen
 }
 
 // Binds はこの画面が使うキーか (glogx の横断キー・U より先にこの画面へ渡す。s は status の横断キーと同じ字だが、ここでは ssh)。
@@ -595,6 +606,7 @@ func (m *Model) Close() {
 		m.filter.Reset()
 	}
 	m.bandEdit = false
+	m.detailOpen = false
 	m.closeSetup()
 	// 渡したプロセスの印 (setupExec) も消す: 閉じた後の戻りは届かないことがあり (glogx は閉じた板に ExecDone を渡さない)、残すと後の
 	// 無関係な ssh の戻りが確認の成功として扱われた。未確認の印は起こした時点で立てているので、戻りに頼らない
@@ -1072,6 +1084,9 @@ func (m *Model) HandleInput(key, text string) Action {
 	if m.sc == scSettings {
 		return m.keySettings(key, text)
 	}
+	if m.detailOpen {
+		return m.keyDetail(key)
+	}
 	if m.filtering { // 入力中は入力欄が先にキーを取る (§7)
 		switch key {
 		case "esc":
@@ -1110,22 +1125,84 @@ func move(cur *int, n int, key string, rows int) bool {
 	return true
 }
 
-// needsNet は、この Mac のネットワークを読めるまで断るキー (最下行の案内もこの間は出さない)。enter (初期設定) も入れる: 読む前に開くと
-// 相手のメイン IP が分からず、宛先が台帳の有線の IP のまま閉じるまで固まった
-var needsNet = []string{"s", "Y", "y", "O", "o", "c", "t", "space", "enter"}
+// needsNet は、この Mac のネットワークを読めるまで断るキー (最下行の案内もこの間は出さない)。初期設定 (詳細のパネルの enter) も
+// keyDetail が同じ判定 (netRefused) で断る: 読む前に開くと相手のメイン IP が分からず、宛先が台帳の有線の IP のまま閉じるまで固まった。
+// 一覧の enter (詳細のパネルを開く) は読めていなくても開ける
+var needsNet = []string{"s", "Y", "y", "O", "o", "c", "t", "space"}
 
 // rowKeys はカーソルの行の Mac に効くキー (見ていた Mac が一覧から消えた・タブに行が無いときは断る)。c はこの Mac の IP のコピーで行に効かない
 var rowKeys = []string{"s", "Y", "y", "O", "o", "t", "space", "enter", "m", "u"}
 
+// netRefused は、この Mac のネットワークを読み終えていなければ理由を知らせて true (needsNet のキーと初期設定が断る)。
+func (m *Model) netRefused() bool {
+	if m.selfOK {
+		return false
+	}
+	if m.netReady && m.netCh == nil {
+		m.note("この Mac のネットワークを読めなかった (r で読み直す)", false)
+	} else {
+		m.note("この Mac のネットワーク設定を確認中 (少し待ってから)", false)
+	}
+	return true
+}
+
+// detailKeys は詳細のパネルの中で一覧と同じに効くキー (カーソルの行の Mac への動作。パネルは開いたまま)。
+var detailKeys = []string{"s", "Y", "y", "O", "o", "t", "m", "u", "space", "?", "e"}
+
+// detailFollow はカーソルをパネルを開いた Mac へ戻す (見つからなければ false)。
+func (m *Model) detailFollow() bool {
+	if m.cursorLost {
+		return false
+	}
+	if m.detailSelf {
+		return m.current().self
+	}
+	return m.followCursor(m.detailHost)
+}
+
+// detailShowsOpened はカーソルの行がパネルを開いた Mac か (描画はカーソルを動かさずに確かめる)。
+func (m *Model) detailShowsOpened() bool {
+	r := m.current()
+	if m.detailSelf {
+		return r.self
+	}
+	return !r.self && r.host != "" && r.host == m.detailHost
+}
+
+// keyDetail は詳細のパネルのキー: enter で初期設定、動作のキーは一覧と同じ、移動のキーでパネルの中を送り、q / esc で一覧へ戻る。
+// パネルが開いている間はカーソルを動かさない (見ている Mac と動作の相手を食い違わせない)。
+func (m *Model) keyDetail(key string) Action {
+	if !m.detailFollow() { // 見ていた Mac が一覧から消えた
+		m.detailOpen = false
+		m.note("一覧が変わった (カーソルの Mac を見直してから)", false)
+		return None
+	}
+	r := m.current()
+	switch {
+	case key == "q" || key == "esc":
+		m.detailOpen = false
+	case key == "enter":
+		if m.netRefused() {
+			return None
+		}
+		m.openSetup(r) // この Mac の行では断る (パネルは開いたまま)
+		if m.sc == scSetup {
+			m.detailOpen = false
+		}
+	case slices.Contains(detailKeys, key): // 移動の語彙より先に (space は半ページの送りでもある。一覧の keyList と同じ順)
+		return m.keyList(key)
+	case listnav.MotionOf(key) != listnav.None:
+		off := m.detailOff
+		_ = move(&off, m.detailMax+1, key, max(m.h-m.panelTop-4, 2))
+		m.detailOff = off
+	}
+	return None
+}
+
 func (m *Model) keyList(key string) Action {
 	// 繋ぐ・コピー・登録は、この Mac のネットワーク (どの I/F が有線か・この Mac の IP) を読み終えてから。読み込み中に受けると
 	// 繋ぐ先・登録する内部 IP を誤った分類で決める
-	if !m.selfOK && slices.Contains(needsNet, key) {
-		if m.netReady && m.netCh == nil {
-			m.note("この Mac のネットワークを読めなかった (r で読み直す)", false)
-		} else {
-			m.note("この Mac のネットワーク設定を確認中 (少し待ってから)", false)
-		}
+	if slices.Contains(needsNet, key) && m.netRefused() {
 		return None
 	}
 	if m.cursorLost && slices.Contains(rowKeys, key) {
@@ -1185,7 +1262,7 @@ func (m *Model) keyList(key string) Action {
 		m.Reload()
 		m.note("リロードした", true)
 	case "enter":
-		m.openSetup(r)
+		m.detailOpen, m.detailOff, m.detailHost, m.detailSelf = true, 0, r.host, r.self
 	case "s": // シェル (treefiler の s と同じ動詞)
 		if why := m.sshRefusal(r); why != "" {
 			m.note(why, false)
