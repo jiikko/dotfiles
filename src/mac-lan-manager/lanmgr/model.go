@@ -1185,10 +1185,7 @@ func (m *Model) keyDetail(key string) Action {
 		if m.netRefused() {
 			return None
 		}
-		m.openSetup(r) // この Mac の行では断る (パネルは開いたまま)
-		if m.sc == scSetup {
-			m.detailOpen = false
-		}
+		m.openSetup(r) // この Mac の行では断る。開いてもパネルは閉じない (初期設定はパネルの上に重ね、esc で 1 枚ずつ戻る)
 	case slices.Contains(detailKeys, key): // 移動の語彙より先に (space は半ページの送りでもある。一覧の keyList と同じ順)
 		return m.keyList(key)
 	case listnav.MotionOf(key) != listnav.None:

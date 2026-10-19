@@ -35,8 +35,8 @@ func (m *Model) View() []string {
 	w := m.w - 2*padX
 	m.caretFY, m.caretMY = -1, -1
 	m.small = false
-	var body, tile string
-	tileX, tileY := -1, 0 // 重ねるタイルの位置 (-1 = 初期設定のタイル: 横は中央、縦は一覧のタブの下)
+	var body, tile, under string // under = 初期設定の下に残す詳細のパネル (padX, m.panelTop)
+	tileX, tileY := -1, 0        // 重ねるタイルの位置 (-1 = 初期設定のタイル: 横は中央、縦は一覧のタブの下)
 	switch {
 	case m.sc == scSetup && m.su != nil:
 		// 初期設定は一覧を背景に残し、その上に画面の中央へ重ねる (全画面に切り替えると、どの相手を設定しているかが一覧から読めなかった。
@@ -46,9 +46,13 @@ func (m *Model) View() []string {
 		if m.tooShort {
 			return m.viewTooSmall("高さが足りない")
 		}
+		if m.detailOpen {
+			// 詳細のパネルから開いた: パネルを下に残し、その上へ少しずらして重ねる (選んだ順に積む。esc で 1 枚ずつ戻る)
+			under, tile, tileX, tileY = m.stackSetup(w)
+		}
 		// 見出しとタブは背景に見せ、その下から一覧の上に重ねる (中央に置くと、見出しもタブも一覧の行も全部隠れた)。左右にも一覧が覗く
-		if tw := min(m.w-2*(padX+setupTileSideGap), setupTileMaxW); tw >= setupTileMinW {
-			tile = m.viewSetup(tw, padY+m.bodyHeight()-m.listTop)
+		if tw := min(m.w-2*(padX+setupTileSideGap), setupTileMaxW); tile == "" && tw >= setupTileMinW {
+			tile, tileX = m.viewSetup(tw, padY+m.bodyHeight()-m.listTop), -1
 		}
 		if tile == "" || m.tooShort {
 			// 重ねて入らない (狭い・低い端末): 従来どおり全画面で出す
@@ -98,23 +102,44 @@ func (m *Model) View() []string {
 	body = lipgloss.NewStyle().Height(inner).MaxHeight(inner).Render(strings.Join(bl, "\n"))
 	base := lipgloss.NewStyle().Width(m.w).Height(h).MaxHeight(h).Padding(padY, padX).Render(lipgloss.JoinVertical(lipgloss.Left, body, "", foot))
 	layers := []*lipgloss.Layer{lipgloss.NewLayer(base)}
+	if under != "" && tile != "" {
+		layers = append(layers, lipgloss.NewLayer(under).X(padX).Y(m.panelTop).Z(1))
+	}
 	if tile != "" {
 		if tileX < 0 {
 			tileX, tileY = max((m.w-lipgloss.Width(tile))/2, 0), m.listTop
 		}
-		layers = append(layers, lipgloss.NewLayer(tile).X(tileX).Y(tileY).Z(1))
+		layers = append(layers, lipgloss.NewLayer(tile).X(tileX).Y(tileY).Z(2))
 	}
 	if box, fieldRow, fieldX := m.overlayBox(); box != "" {
 		box = lipgloss.NewStyle().MaxHeight(h).MaxWidth(m.w).Render(box) // 板が画面より高い・広いと View が画面からはみ出した (? の板は 22 行・66 桁)
 		bw, bh := lipgloss.Width(box), lipgloss.Height(box)
 		x, y := max((m.w-bw)/2, 0), max((h-bh)/2, 0)
-		layers = append(layers, lipgloss.NewLayer(box).X(x).Y(y).Z(2)) // 初期設定のタイル (Z 1) の上
+		layers = append(layers, lipgloss.NewLayer(box).X(x).Y(y).Z(3)) // 初期設定のタイル (Z 2) の上
 		if fieldRow >= 0 {
 			m.caretMX, m.caretMY = x+fieldX, y+fieldRow
 		}
 	}
 	return strings.Split(lipgloss.NewCompositor(layers...).Render(), "\n")
 }
+
+// stackSetup は詳細のパネルと、その上へ stackDX 桁・stackDY 行ずらして重ねる初期設定のタイル (と位置)。パネルが描けない・
+// 初期設定の手順のカードが入らないときは空 (呼び出し側が一覧の上に重ねる従来の形にする)。
+func (m *Model) stackSetup(w int) (under, tile string, x, y int) {
+	under = m.detailPanel(w, max(m.h, 10)-padY-2-m.panelTop)
+	x, y = padX+stackDX, m.panelTop+stackDY
+	tw := m.w - x - padX - 1 // 右端をパネルと揃える
+	if under == "" || tw < setupTileMinW {
+		return "", "", 0, 0
+	}
+	if tile = m.viewSetup(tw, max(m.h, 10)-padY-2-y); m.tooShort {
+		return "", "", 0, 0
+	}
+	return under, tile, x, y
+}
+
+// 初期設定を詳細のパネルに重ねるときのずらし (下の層の枠が覗いて、積んだことが見える。広げると狭い端末で手順の行が切れる)。
+const stackDX, stackDY = 2, 1
 
 // 初期設定のタイルを一覧に重ねる幅の下限 (手順の行が切れずに読める。足りない端末では全画面で出す)・上限と、左右に残して一覧を覗かせる桁数。
 const (
@@ -483,6 +508,8 @@ func (m *Model) detailPanel(width, height int) string {
 		lines = append(append([]string(nil), lines[m.detailOff:m.detailOff+shown]...), sMuted.Render(hint))
 	} else {
 		m.detailOff = 0
+		// 下まで伸ばす: 内容で高さを決めると、高い端末でパネルの下から一覧の中の詳細カードが覗き、同じ中身が 2 つ見えた
+		lines = append(lines, make([]string, inner-len(lines))...)
 	}
 	return card(strings.Join(lines, "\n"), width-1, surfDetail, cTeal, cPurple, cPink)
 }

@@ -323,7 +323,7 @@ func TestSetupConfirmSurvivesReopenAndExpires(t *testing.T) {
 		t.Fatal("前提: 確認待ちにならない")
 	}
 	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: c.static.IP}) // 窓の間は新しい IP に見える
-	h.keys("q", "enter", "enter")
+	h.keys("q", "enter")                                                                                                 // 初期設定 → 詳細のパネル → 初期設定を開き直す
 	awaitSetup(h.m)
 	if st, _ := nextStep(h.m.setupSteps()); st.ID != stepConfirm {
 		t.Fatalf("開き直したら確認を飛ばした: 次の手順 = %v", st.ID)
@@ -375,7 +375,7 @@ func TestSetupSecondPeerGetsDifferentIP(t *testing.T) {
 	awaitSetup(h.m)
 	runStep(t, h, nil)
 	first := h.m.conf().static.IP
-	h.keys("q")
+	h.keys("q", "q") // 初期設定 → 詳細のパネル → 一覧
 	h.cursorTo(t, "air.local")
 	h.keys("enter", "enter")
 	awaitSetup(h.m)
@@ -535,8 +535,8 @@ func TestSetupWiredOnlyReopenUsesConfirmedIP(t *testing.T) {
 	awaitSetup(h.m)
 	runStep(t, h, nil) // 相手の固定 IP
 	ip := h.m.conf().static.IP
-	runStep(t, h, nil) // 確認
-	h.keys("q", "enter", "enter")
+	runStep(t, h, nil)   // 確認
+	h.keys("q", "enter") // 初期設定 → 詳細のパネル → 初期設定を開き直す
 	awaitSetup(h.m)
 	if got := dests[len(dests)-1].IP; got != ip {
 		t.Errorf("開き直した宛先 = %s (確認した %s)", got, ip)
@@ -559,8 +559,7 @@ func TestSetupLedgerGuardsAllPaths(t *testing.T) {
 		t.Fatal("閉じた後に戻ったプロセスで未確認の印を立てない")
 	}
 	h.m.Reload()
-	h.keys("q") // 一覧へ
-	h.m.sc = scList
+	h.keys("q", "q") // 初期設定 → 詳細のパネル → 一覧
 	h.cursorTo(t, "m2macmini.local")
 	h.keys("space")
 	if h.m.ov == ovConfirm {
@@ -616,8 +615,7 @@ func TestSetupListSpaceSkipsTriedIP(t *testing.T) {
 	if _, ok := h.m.unconf["m2macmini.local"]; ok {
 		t.Fatal("前提: 戻しの後の観測で未確認の印が解けない")
 	}
-	h.keys("q")
-	h.m.sc = scList
+	h.keys("q", "q") // 初期設定 → 詳細のパネル → 一覧
 	h.m.Reload()
 	h.cursorTo(t, "m2macmini.local")
 	h.keys("space")
@@ -670,8 +668,7 @@ func triedIPsSurviveRetry(t *testing.T, confirm bool) {
 	if why := h.m.ledgerBlocked("m2macmini.local", second); why != "" {
 		t.Errorf("確定した 2 回目の番号 %s を台帳に書けない: %s", second, why)
 	}
-	h.keys("q")
-	h.m.sc = scList
+	h.keys("q", "q") // 初期設定 → 詳細のパネル → 一覧
 	h.m.Reload()
 	h.cursorTo(t, "m2macmini.local")
 	h.keys("space")
@@ -993,8 +990,8 @@ func TestOperationLog(t *testing.T) {
 	h.m.ExecDone(errors.New("exit status 1"))
 	awaitNetLoad(h.m)
 	awaitSetup(h.m)
-	h.m.Advance(t0)                                     // 読み終えて進捗を閉じる
-	h.keys("q", "/", "h", "i", "m", "i", "t", "s", "u") // 画面を閉じ、絞り込みに打つ
+	h.m.Advance(t0)                                          // 読み終えて進捗を閉じる
+	h.keys("q", "q", "/", "h", "i", "m", "i", "t", "s", "u") // 初期設定とパネルを閉じ、絞り込みに打つ
 	all := strings.Join(lines, "\n")
 	for _, want := range []string{"key enter  [一覧 行=m2macmini.local]", "observe start m2macmini.local (koji@192.168.50.7)", "observe done m2macmini.local key_ok=true",
 		"key y  [初期設定 m2macmini.local", "exec sudo networksetup -setmanual", "exec done err=exit status 1"} {
@@ -1088,7 +1085,7 @@ func TestSetupDoesNotOfferIPTriedOnOtherPeer(t *testing.T) {
 	if tried == "" {
 		t.Fatal("前提: 試した番号が無い")
 	}
-	h.keys("q")
+	h.keys("q", "q") // 初期設定 → 詳細のパネル → 一覧
 	h.cursorTo(t, "air.local")
 	h.keys("enter", "enter")
 	awaitSetup(h.m)
@@ -1166,7 +1163,7 @@ func TestSetupLedgerUserHandling(t *testing.T) {
 			h, ob := setupHarness(t, obs)
 			h.store.hosts = []ledger.Host{{Host: "m2macmini.local", User: c.stored}}
 			h.m.reloadLedger()
-			h.keys("esc", "h")
+			h.keys("esc", "esc", "h")
 			h.cursorTo(t, "m2macmini.local")
 			h.keys("enter", "enter")
 			awaitSetup(h.m)

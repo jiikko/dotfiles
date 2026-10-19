@@ -1038,35 +1038,25 @@ func TestListWindowDoesNotDependOnSelectedRow(t *testing.T) {
 	}
 }
 
-// 初期設定は全画面に切り替えず、通常の一覧を背景に残してその上に重なる (一覧のカードを広げて内側に入れる形ではない)。
-func TestSetupOverlaysUnchangedList(t *testing.T) {
+// 初期設定は全画面に切り替えず、開いた詳細のパネルを下に残して、その上へ右に stackDX 桁・下に stackDY 行ずらして重なる
+// (ドラクエの戦闘画面のように選んだ順に積む。esc で 1 枚ずつ戻る)。手順のカードが入らない狭い端末では全画面。
+func TestSetupStacksOnDetailPanel(t *testing.T) {
 	ps := make([]discover.Peer, 0, 4)
 	for i := range 4 {
 		ps = append(ps, discover.Peer{Host: fmt.Sprintf("mac%02d.local", i), SSH: true, Addrs: map[int]string{14: fmt.Sprintf("192.168.50.%d", i+2)}})
 	}
-	view := func(w, hh int, open bool) []string {
+	open := func(w, hh int) (*harness, []string) {
 		h := newHarness(t, nil, ps)
 		h.m.Resize(w, hh)
-		h.keys("l", "j")
-		if open {
-			h.keys("enter", "enter")
-			if h.m.sc != scSetup {
-				t.Fatalf("初期設定が開かない: sc=%d", h.m.sc)
-			}
+		h.keys("l", "j", "enter", "enter")
+		if h.m.sc != scSetup || !h.m.detailOpen {
+			t.Fatalf("%dx%d: 初期設定がパネルの上に開かない: sc=%d open=%v", w, hh, h.m.sc, h.m.detailOpen)
 		}
 		lines := h.m.View()
 		for i, l := range lines {
 			lines[i] = termwidth.StripSGR(l)
 		}
-		return lines
-	}
-	// 広くて高い端末: タブ・一覧の別の行が背景に見え、中央にタイルが重なる。一覧の高さは開く前と変わらない (広がらない)
-	before, after := view(100, 46, false), view(100, 46, true)
-	all := strings.Join(after, "\n")
-	for _, want := range []string{"未管理  4", "初期設定  mac01.local", "この手順で実行するもの"} {
-		if !strings.Contains(all, want) {
-			t.Errorf("100x46: %q が画面に無い", want)
-		}
+		return h, lines
 	}
 	rowOf := func(lines []string, sub string) int {
 		for i, l := range lines {
@@ -1076,20 +1066,62 @@ func TestSetupOverlaysUnchangedList(t *testing.T) {
 		}
 		return -1
 	}
-	if a, b := rowOf(after, "未管理  4"), rowOf(before, "未管理  4"); a != b || a < 0 {
-		t.Errorf("タブの位置が動いた: 開く前 %d, 開いた後 %d", b, a)
+	// 72x20 は手順のカード自体が入らない (重ねる前から「高さが足りない」)
+	for _, sz := range [][2]int{{100, 22}, {100, 46}, {72, 26}} {
+		h, lines := open(sz[0], sz[1])
+		r := rowOf(lines, "初期設定  mac01.local")
+		if r < 0 {
+			t.Fatalf("%v: 初期設定のタイルが無い:\n%s", sz, strings.Join(lines, "\n"))
+		}
+		// 題の行: パネルの左の枠 (padX 桁目) の stackDX 桁右にタイルの左の枠。パネルを描かないと前者が無く、ずらさないと 2 つが重なる
+		if want := strings.Repeat(" ", padX) + "▐" + strings.Repeat(" ", stackDX-1) + "▐"; !strings.HasPrefix(lines[r], want) {
+			t.Errorf("%v: タイルがパネルの上にずれて重なっていない: %q", sz, lines[r])
+		}
+		// パネルの上辺はタイルの上辺の stackDY 行上に覗く (card の上辺は左の枠の 1 桁右から始まる)。ずらさないと上辺どうしが同じ行に重なる
+		if top := lines[h.m.panelTop]; !strings.HasPrefix(top, strings.Repeat(" ", padX+1)+"▂▂") {
+			t.Errorf("%v: パネルの上辺が覗かない: %q", sz, top)
+		}
+		if tt := lines[h.m.panelTop+stackDY]; !strings.HasPrefix(tt, strings.Repeat(" ", padX)+"▐"+strings.Repeat(" ", stackDX)+"▂") {
+			t.Errorf("%v: タイルの上辺がパネルの上辺の %d 行下にない: %q", sz, stackDY, tt)
+		}
+		last := ""
+		for i := len(lines) - 1; i >= 0 && last == ""; i-- {
+			last = strings.TrimSpace(lines[i])
+		}
+		if !strings.Contains(last, "戻る") || !strings.Contains(last, "x 実行") {
+			t.Errorf("%v: 最下行が初期設定の案内でない (タイルに覆われた): %q", sz, last)
+		}
+		// esc で 1 枚ずつ戻る: 初期設定 → 詳細のパネル → 一覧
+		h.keys("esc")
+		if h.m.sc != scList || !h.m.detailOpen {
+			t.Errorf("%v: esc で詳細のパネルへ戻らない: sc=%d open=%v", sz, h.m.sc, h.m.detailOpen)
+		}
+		if v := termwidth.StripSGR(strings.Join(h.m.View(), "\n")); strings.Contains(v, "初期設定  mac01.local") || !strings.Contains(v, "mac01.local") {
+			t.Errorf("%v: 戻った後にパネルが見えない / 初期設定が残る:\n%s", sz, v)
+		}
+		h.keys("esc")
+		if h.m.detailOpen {
+			t.Errorf("%v: 2 回目の esc でパネルが閉じない", sz)
+		}
 	}
-	if rowOf(after, "初期設定  mac01.local") <= rowOf(after, "未管理  4") {
-		t.Errorf("タイルがタブの下に重なっていない")
+	// どの高さでも、タイルは最下行 (抜け方の案内) とその上の空行を覆わない (実行するもののカードを足すかを高さで決めるので、境の高さで覆いうる)
+	for hh := 22; hh <= 46; hh++ {
+		_, lines := open(100, hh)
+		f := len(lines) - 1
+		for f > 0 && strings.TrimSpace(lines[f]) == "" {
+			f--
+		}
+		if !strings.Contains(lines[f], "x 実行") || strings.TrimSpace(lines[f-1]) != "" {
+			t.Errorf("100x%d: タイルが最下行かその上の空行を覆った:\n%s\n%s", hh, lines[f-1], lines[f])
+		}
 	}
-	// 背景の一覧はタイルの左右に覗く (一覧の行の左の棒と別名の列の見出し)。重ねずに一覧を消すと出ない
-	if l := after[rowOf(after, "初期設定  mac01.local")]; !strings.Contains(l, "▐") || !strings.Contains(l, "別名") && !strings.Contains(l, "-") {
-		t.Errorf("タイルの行に背景の一覧が覗かない: %q", l)
+	if _, lines := open(100, 46); rowOf(lines, "この手順で実行するもの") < 0 {
+		t.Errorf("100x46: 高い端末で実行するもののカードが無い")
 	}
-	// 枠の内側に入らない狭い端末: 全画面 (一覧のタブは出ない)
-	all = strings.Join(view(70, 40, true), "\n")
-	if !strings.Contains(all, "初期設定  mac01.local") || strings.Contains(all, "未管理  4") {
-		t.Errorf("70x40: 全画面にならない:\n%s", all)
+	// タイルの幅 (stackDX と右の余白を引いた残り) が手順の行の最小に届かない狭い端末: 全画面 (一覧のタブは出ない)
+	_, lines := open(62, 40)
+	if all := strings.Join(lines, "\n"); !strings.Contains(all, "初期設定  mac01.local") || strings.Contains(all, "未管理  4") {
+		t.Errorf("62x40: 全画面にならない:\n%s", all)
 	}
 }
 
@@ -3116,8 +3148,22 @@ func TestDetailPanelOpensOverListAndLeadsToSetup(t *testing.T) {
 		t.Fatalf("q でパネルが閉じない / glogx ごと閉じた (action=%v)", a)
 	}
 	h.keys("enter", "enter")
-	if h.m.sc != scSetup || h.m.detailOpen {
-		t.Errorf("パネルの enter で初期設定が開かない (sc=%d open=%v)", h.m.sc, h.m.detailOpen)
+	if h.m.sc != scSetup || !h.m.detailOpen {
+		t.Errorf("パネルの enter で初期設定がパネルの上に開かない (sc=%d open=%v)", h.m.sc, h.m.detailOpen)
+	}
+}
+
+// 高い端末でもパネルは最下行の上まで伸びる: 内容の高さで止めると、パネルの下から一覧の中の詳細カードが覗き、同じ中身が 2 つ見えた。
+func TestDetailPanelFillsTallTerminal(t *testing.T) {
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2", LAN: "192.168.100.13", Alias: "mini"}}, []discover.Peer{mini})
+	h.m.Resize(100, 46)
+	h.cursorTo(t, "m2macmini.local")
+	if n := strings.Count(stripView(strings.Join(h.m.View(), "\n")), "ssh k2@"); n != 1 {
+		t.Fatalf("前提: 開く前の詳細カードの ssh の行が %d 個", n)
+	}
+	h.keys("enter")
+	if n := strings.Count(stripView(strings.Join(h.m.View(), "\n")), "ssh k2@"); n != 1 {
+		t.Errorf("パネルの下から一覧の詳細カードが覗く (ssh の行が %d 個)", n)
 	}
 }
 
