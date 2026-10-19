@@ -43,5 +43,6 @@ glogx の全体監査 (844) で起票した 834〜843 を、1 つの worktree �
 
 ## 進捗
 
-- [ ] A・B・C の切り出し (rule への追記。実行はユーザーの判断を待つ)
+- [x] A・B・C を rule へ追記した (2026-10-19。ユーザーの指示): A は parallel-write-agents-need-worktree-isolation の「read-only のレビュー」の項、
+  B は verify-execution-not-just-exit-code の「崩し・fixture・変異体」の項、C は同じ rule の「隔離環境での成功は、本番での成功ではない」節
 - [x] 反証レビュー (sonnet のサブエージェント。codex の週の枠が切れていたため代えた): 事実の誤りなし。A が既存の規則とほぼ重なる・一般化の説明が無い、の指摘を反映した
