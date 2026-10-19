@@ -173,13 +173,13 @@ func (v *IssuesView) openLink(l issues.FileLink, readonly bool) tea.Cmd {
 		return nil
 	}
 	if !readonly {
-		return extcmd.RunEditorCmd(extcmd.EditorCommand(l.Path))
+		return extcmd.RunEditorCmd(extcmd.OriginEditor, extcmd.EditorCommand(l.Path))
 	}
 	if !l.Dir && isMarkdownPath(l.Path) {
 		v.openDoc(l)
 		return nil
 	}
-	return extcmd.RunEditorCmd(extcmd.ReadonlyCommand(l.Path, l.Line))
+	return extcmd.RunEditorCmd(extcmd.OriginEditor, extcmd.ReadonlyCommand(l.Path, l.Line))
 }
 
 // maxDocDepth は docStack に積める段数 (相互リンクした doc を往復して積み続けないため)。

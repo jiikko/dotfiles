@@ -14,6 +14,8 @@
 - `internal/gitdata/` (`gitlog.go`, `github.go`, `cache.go`) — git log の取得 (制御文字レコードでコミット境界を識別)、CI 状態の GraphQL 取得とローカルキャッシュ。取得の条件は CLI の Options ではなく `LogQuery` で受け取る。一括取得は `PlanCIChunks` で丸めてから割る (issue 817 の G-1)
 - `external_commands.go` — git/tmux/claude を叩くラッパー群 (テストの差し替え点)
 - `internal/extcmd/` — 画面と main が共有する外部コマンドの口 (エディタ・ブラウザ・クリップボード) と結果の Msg (`extcmd.RunEditorCmd` などテストの差し替え点)
+- `internal/gitexec/` — git の実行の共通入口 (`gitexec.RunGitTimeout` / `RunGitReadTimeout` / `RunGitCmd`・失敗の型 `GitExitError`・status viewer の write 操作の差し替え点)。bubbletea を持たない末端の package (gitdata が使う)
+- `internal/fswatch/` — fsnotify のイベント待ち + 保険のポーリングの 2 本のチェーンの札と世代 (`fswatch.Chain`。git log と issues viewer の見張りが共有。札と世代はメソッドだけが書く) と watcher の seam (`fswatch.DirWatcher` / `fswatch.NewDirWatcher`)
 - `cli_health.go`, `claude_version.go`, `codex_version.go` — claude/codex CLI のログイン状態検査・新版検出
 - `action_modal.go` — push/pull/claude update の確認→実行→結果モーダル (それらを起こす配線そのものなので main に残す。issue 817 の G-2)
 - `internal/commitview/` (`diff_overlay.go`, `pr_status_overlay.go`, `job_detail_overlay.go`) — コミットに重ねるポップアップ群 (いずれも「対象 SHA/key を持つ pager」型。issue 817 の G-2)。main のテストの口は overlay ごとの `Fixture()` (`fixture.go`)
@@ -24,7 +26,7 @@
 - `internal/ratelimitview/` (`ratelimit_dashboard.go`, `ratelimit_resume.go`) — 全画面 ratelimit ダッシュボード (`R`)。取得・整形は `ratelimit/usage`
 - `internal/filerview/` (`filer_view.go`, `filer_resume.go`) — 全画面 treefiler (`F`)。main のテストの口は `fixture.go` (issue 817)。`filer_resume.go` は F を出したまま終えたときの場所の記憶 (C-g で開き直すと戻る)。画面の部品は `src/treefiler` の `filer` パッケージ (replace で取り込む)。仕様は `docs/treefiler-spec.md`
 - `internal/lanview/` (`lan_view.go`, `lan_resume.go`) — 全画面 mac-lan-manager (`L`)。main のテストの口は `fixture.go` (issue 817)。画面の部品は `src/mac-lan-manager` の `lanmgr` パッケージ、本物へのつなぎは `live` (replace で取り込む)。要件は issue 747
-- `internal/app/` — 画面のパッケージと main が共有する状態・道具。`clock.go` は時刻のシーム (`app.TimeNow`。テストが差し替える)、`screen_memory.go` は全画面 (issues / doctor / ratelimit / F / L) を閉じたときの記憶の保存・読み込み (30 分で失効。照合は各画面の `*_resume.go`)、`cleanup_latch.go` は終了前の完了待ち latch、`cache_io.go` はキャッシュの置き場 (`app.CacheBaseDir`) と atomic 書き込み (`app.WriteAtomic`)、`notice.go` は viewer の操作結果の種類 (`app.NoticeKind`) と小さな道具 (`app.FirstLine` / `app.ClampIdx` など)、`watch_chain.go` は fsnotify のイベント待ち + 保険のポーリングの 2 本のチェーンの札 (`app.WatchChain`。git log と issues viewer の見張りが共有) と watcher の seam (`app.DirWatcher` / `app.NewDirWatcher`)
+- `internal/app/` — 画面のパッケージと main が共有する状態・道具。`clock.go` は時刻のシーム (`app.TimeNow`。テストが差し替える)、`screen_memory.go` は全画面 (issues / doctor / ratelimit / F / L) を閉じたときの記憶の保存・読み込み (30 分で失効。照合は各画面の `*_resume.go`)、`cleanup_latch.go` は終了前の完了待ち latch、`cache_io.go` はキャッシュの置き場 (`app.CacheBaseDir`) と atomic 書き込み (`app.WriteAtomic`)、`notice.go` は viewer の操作結果の種類 (`app.NoticeKind`) と小さな道具 (`app.FirstLine` / `app.ClampIdx` など)。bubbletea・fsnotify を import しない (gitdata が依存するため。`.golangci.yml` の depguard `data-layer-no-ui`)
 - `cmd/issue-claim/` — `bin/issue-claim` の main (claim の目印とバナーを付ける。本体は `issues.MoveToSubdir` = viewer の `n` と同じ)
 - `ime.go`, `ime_tis_darwin.go`, `ime_tis_stub.go` — ブラウズ中の IME 英数切替 (macOS TIS 直接呼び出し)
 - `zoom.go`, `hint_surfaces.go` — 開閉演出・最下行ヒントの共有ロジック

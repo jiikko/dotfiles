@@ -646,11 +646,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 			scratch = (*cmds)[0].Args[i+1]
 		}
 	}
-	for _, want := range []string{"buftype=nofile", "noswapfile", "nomodifiable"} {
-		if !strings.Contains(scratch, want) {
-			t.Errorf("scratch 設定に %q が無い: -c %q", want, scratch)
-		}
-	}
+	testenv.ContainsAll(t, "scratch 設定", scratch, "buftype=nofile", "noswapfile", "nomodifiable")
 	// stdin に ANSI 除去済みログが載っている (ファイルは作らない)
 	buf, _ := io.ReadAll((*cmds)[0].Stdin)
 	if string(buf) != "boom\nat foo.go:10\n" {
@@ -1178,12 +1174,11 @@ func TestCIPollSkipsFetchWhileBusy(t *testing.T) {
 	sha := m.commits[0].SHA
 	m.statuses[sha] = gitdata.StatePending
 	calls := 0
-	orig := ciPollFetch
+	testenv.Restore(t, &ciPollFetch)
 	ciPollFetch = func(gitdata.Repo, []string, func(gitdata.CIBatch, *gitdata.GHError) tea.Msg) tea.Cmd {
 		calls++
 		return nil
 	}
-	t.Cleanup(func() { ciPollFetch = orig })
 
 	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil {
 		t.Fatal("周期発火で timer が繋がらない")
@@ -1215,9 +1210,8 @@ func TestCIPollAwaitCapGivesUp(t *testing.T) {
 	sha := m.commits[0].SHA
 	m.awaitCI = map[string]bool{sha: true}
 	none := gitdata.CIBatch{Statuses: map[string]gitdata.CIState{sha: gitdata.StateNone}}
-	orig := ciPollFetch
+	testenv.Restore(t, &ciPollFetch)
 	ciPollFetch = func(gitdata.Repo, []string, func(gitdata.CIBatch, *gitdata.GHError) tea.Msg) tea.Cmd { return nil }
-	t.Cleanup(func() { ciPollFetch = orig })
 
 	// 打ち切りは周期 (ciPollMsg) で数える = ciPollInterval × ciAwaitMaxAttempts の時間予算。
 	// 結果着弾では数えない (一括取得が複数チャンクに割れた回で余分に進まないこと)。

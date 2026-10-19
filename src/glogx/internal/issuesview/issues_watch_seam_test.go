@@ -113,7 +113,7 @@ func TestIssuesWatchEventPathWithoutFsnotify(t *testing.T) {
 // 回帰 (リーク監査 2026-08-01) を CI でも走らせる版: ポーリング由来の観測でイベント待ちの札まで
 // 降ろすと、観測 1 回につきイベント待ちの goroutine が 1 本積み上がる。
 //
-// 🚨 liveEventChains の 300ms 窓は、この検査が CI (ubuntu-slim) で初めて無条件に走る箇所になる。
+// 🚨 liveEventChains の 300ms 窓は、実 fsnotify を使わずに無条件に走る。
 // 極端な混雑下での flaky は理論上否定できないが、CPU 飽和 + GOMAXPROCS=1 + -race で 80 回
 // 回しても再現しなかった (実測 2026-08-21)。実際に intermittent な失敗が出たら、
 // 窓を広げる推測ベースの防御ではなく「チャネル close の完了を ack で同期する」形へ直すこと。

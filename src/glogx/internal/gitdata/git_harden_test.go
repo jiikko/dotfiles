@@ -1,7 +1,9 @@
-package gitdata
+package gitdata_test
 
 import (
+	"glogx/internal/gitdata"
 	"glogx/internal/statusview"
+	"glogx/internal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +15,7 @@ import (
 // 開いた repo の .git/config の fsmonitor・textconv を、glogx の git (一覧・d の diff・staged の diff) で走らせない。
 func TestGlogxGitDoesNotRunRepoConfigCommands(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い")
+		testenv.SkipEnv(t, "git が無い")
 	}
 	dir := t.TempDir()
 	marks := t.TempDir()
@@ -83,13 +85,13 @@ func TestGlogxGitDoesNotRunRepoConfigCommands(t *testing.T) {
 	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
 	t.Chdir(dir)
 
-	if _, err := LoadCommitDiff(sha, false); err != nil {
+	if _, err := gitdata.LoadCommitDiff(sha, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadStagedDiff(LogQuery{Patch: true}, false); err != nil {
+	if _, err := gitdata.LoadStagedDiff(gitdata.LogQuery{Patch: true}, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadLogDisplay(LogQuery{Patch: true, MaxCount: 5}, false); err != nil {
+	if _, err := gitdata.LoadLogDisplay(gitdata.LogQuery{Patch: true, MaxCount: 5}, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := statusview.FixtureLoadWorktree(); err != nil {

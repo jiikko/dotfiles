@@ -262,9 +262,15 @@ func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []s
 func FetchCIChunk(ctx context.Context, run CommandRunner, repo Repo, shas []string) (CIBatch, *GHError) {
 	query := buildStatusQuery(shas)
 	stdout, stderr, err := run(ctx, "gh", "api", "graphql",
-		"-F", "owner="+repo.Owner, "-F", "name="+repo.Name, "-f", "query="+query)
+		"-f", "owner="+repo.Owner, "-f", "name="+repo.Name, "-f", "query="+query)
 	if err != nil {
-		return EmptyBatch(), classifyGHError(err, string(stderr))
+		ghErr := classifyGHError(err, string(stderr))
+		// gh は GraphQL の errors があると、data を返していても rc≠0 で終わる (部分成功。gh 2.92.0 で実測)。取れた分は使う
+		// (捨てると 1 つの alias のエラーでチャンクの SHA が全部 ? になり、負のキャッシュにも載る)
+		if batch, _ := parseStatusResponse(stdout, shas); len(batch.Statuses) > 0 {
+			return batch, ghErr
+		}
+		return EmptyBatch(), ghErr
 	}
 	return parseStatusResponse(stdout, shas)
 }
@@ -385,10 +391,21 @@ func parseStatusResponse(stdout []byte, shas []string) (CIBatch, *GHError) {
 		} `json:"data"`
 		Errors []struct {
 			Message string `json:"message"`
+			Path    []any  `json:"path"`
 		} `json:"errors"`
 	}
 	if err := json.Unmarshal(stdout, &resp); err != nil {
 		return batch, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスを解析できません: " + err.Error()}
+	}
+	// failed はエラーが付いた alias (errors[].path に出る `c0` など)。その alias の null は「GitHub に無い」ではなく
+	// 「取れなかった」なので、Check なし (StateNone) にしない
+	failed := map[string]bool{}
+	for _, e := range resp.Errors {
+		for _, p := range e.Path {
+			if s, ok := p.(string); ok && strings.HasPrefix(s, "c") {
+				failed[s] = true
+			}
+		}
 	}
 	// GraphQL は data と errors を同時に返しうる (部分成功)。取れた分は表示に使いつつ、
 	// 失敗があった事実は警告として通知する (欠落 SHA が黙って ? になるのを防ぐ)。
@@ -403,8 +420,9 @@ func parseStatusResponse(stdout []byte, shas []string) (CIBatch, *GHError) {
 		return batch, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスに repository がありません"}
 	}
 	for i, sha := range shas {
-		raw, ok := resp.Data.Repository[fmt.Sprintf("c%d", i)]
-		if !ok {
+		alias := fmt.Sprintf("c%d", i)
+		raw, ok := resp.Data.Repository[alias]
+		if !ok || failed[alias] {
 			continue
 		}
 		var commit *commitPayload
@@ -818,7 +836,7 @@ func fetchAssociatedPRs[T any](ctx context.Context, run CommandRunner, repo Repo
   object(oid: %q) { ... on Commit { associatedPullRequests(first: %d) { nodes { %s } } } }
 } }`, sha, associatedPRLimit, fields)
 	stdout, stderr, err := run(ctx, "gh", "api", "graphql",
-		"-F", "owner="+repo.Owner, "-F", "name="+repo.Name, "-f", "query="+query)
+		"-f", "owner="+repo.Owner, "-f", "name="+repo.Name, "-f", "query="+query)
 	if err != nil {
 		return nil, classifyGHError(err, string(stderr))
 	}
@@ -882,13 +900,19 @@ var logTimestampRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\
 // 整形してから捨てるのは無駄。空行判定・整形はどちらも行単位で 1:1 なので「全行整形 →
 // 末尾 n」と「末尾 n の非空行を整形」は同じ結果になる。
 func logTail(out []byte, n int) []string {
-	raw := bytes.Split(bytes.TrimRight(out, "\n"), []byte{'\n'})
-	// 末尾から非空行を n 本拾う (逆順に集める)
+	// 末尾から非空行を n 本拾う (逆順に集める)。🚨 全体を bytes.Split しない: 全行ぶんの slice を作るので、
+	// 数十 MB のログでは末尾の数十行のために数 MB を確保する (BenchmarkLogTail: 20 万行で 4.8 MB/op)
 	kept := make([][]byte, 0, n)
-	for i := len(raw) - 1; i >= 0 && len(kept) < n; i-- {
-		if len(raw[i]) > 0 {
-			kept = append(kept, raw[i])
+	rest := bytes.TrimRight(out, "\n")
+	for len(rest) > 0 && len(kept) < n {
+		i := bytes.LastIndexByte(rest, '\n')
+		if line := rest[i+1:]; len(line) > 0 {
+			kept = append(kept, line)
 		}
+		if i < 0 {
+			break
+		}
+		rest = rest[:i]
 	}
 	// 表示順 (先頭→末尾) に戻しつつ、拾った ~n 行だけ整形する
 	lines := make([]string, 0, len(kept))

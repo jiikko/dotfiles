@@ -4,11 +4,9 @@ import (
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/testenv"
 	"glogx/issues"
-	"math"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
 // main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (両方のテストが使っていたもの。main の側は公開の口と Fixture へ書き換えて減らしていく)。
@@ -41,21 +39,7 @@ func newTestIssuesView() IssuesView {
 // drainScanMsg は tea.Cmd (Batch を含む) から issuesScanMsg を取り出す。
 func drainScanMsg(t *testing.T, cmd tea.Cmd) IssuesScanMsg {
 	t.Helper()
-	switch msg := cmd().(type) {
-	case IssuesScanMsg:
-		return msg
-	case tea.BatchMsg:
-		for _, c := range msg {
-			if c == nil {
-				continue
-			}
-			if scan, ok := c().(IssuesScanMsg); ok {
-				return scan
-			}
-		}
-	}
-	t.Fatal("Cmd から issuesScanMsg が取れない")
-	return IssuesScanMsg{}
+	return testenv.TakeMsg[IssuesScanMsg](t, cmd)
 }
 
 // landBody は一覧のカーソル行を Enter で開き、引き出しの着地まで済ませる。
@@ -69,9 +53,6 @@ func landBody(t *testing.T, v *IssuesView, page int) {
 	}
 	v.drawer.finish()
 }
-
-// pagerShown は p の今の表示位置 (glide 中は途中位置)。行数の上限で丸めない。
-func pagerShown(p *listnav.Pager) int { return p.DrawOffset(math.MaxInt32, 1) }
 
 // realIssuesView は実ファイルを持つ viewer を作る (openBody は ReadBody を通るので、
 // fake パスの loadedView では本文モードに入れない)。

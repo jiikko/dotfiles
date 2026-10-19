@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"glogx/internal/testenv"
 	"os"
 	"os/exec"
@@ -122,6 +123,14 @@ func TestPullRebaseAbortsItsOwnConflict(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "中断して元に戻しました") {
 		t.Fatalf("pull の conflict を abort しなかった: %v", err)
 	}
+	// 理由は git の出力の 1 行目 (From <remote>) ではなく CONFLICT の行。全文は w でコピーできるよう別に持つ
+	if !strings.Contains(err.Error(), "CONFLICT") || strings.Contains(err.Error(), "From ") {
+		t.Errorf("conflict の理由の行を選んでいない: %v", err)
+	}
+	var ge *gitOutputError
+	if !errors.As(err, &ge) || !strings.Contains(ge.Output, "From ") {
+		t.Errorf("git の出力の全文を持っていない: %#v", err)
+	}
 	if rebaseMergeExists(t, work) {
 		t.Fatal("pull が起こした rebase が残っている (abort されていない)")
 	}
@@ -211,5 +220,47 @@ func TestPullRebaseWorksInPartialClone(t *testing.T) {
 	}
 	if got := strings.TrimSpace(gitIn(t, part, "show", "HEAD~1:a")); got != "theirs" {
 		t.Fatalf("pull 後の HEAD~1:a = %q (相手の commit の上に載っていない)", got)
+	}
+}
+
+// push が remote に先を越されて拒否されたとき、理由の行 (! [rejected]) を選び、u で pull する次の手を添える。
+// git の出力の 1 行目 (To <remote>) は理由にならない。
+func TestPushRejectedNamesTheReasonAndTheNextStep(t *testing.T) {
+	work := pullSandbox(t)
+	other := filepath.Join(filepath.Dir(work), "other")
+	gitIn(t, filepath.Dir(work), "clone", "-q", filepath.Join(filepath.Dir(work), "origin.git"), other)
+	gitIn(t, other, "config", "user.email", "t@example.com")
+	gitIn(t, other, "config", "user.name", "t")
+	writeFileIn(t, other, "d", "theirs\n")
+	gitIn(t, other, "add", "d")
+	gitIn(t, other, "commit", "-q", "-m", "theirs")
+	gitIn(t, other, "push", "-q", "origin", "master")
+
+	writeFileIn(t, work, "e", "ours\n")
+	gitIn(t, work, "add", "e")
+	gitIn(t, work, "commit", "-q", "-m", "ours")
+	err := runGitPush(context.Background())
+	if err == nil {
+		t.Fatal("先を越された push が通った (前提が崩れている)")
+	}
+	if !strings.Contains(err.Error(), "[rejected]") || strings.HasPrefix(err.Error(), "To ") || !strings.Contains(err.Error(), "u で pull") {
+		t.Errorf("拒否の理由と次の手を出していない: %q", err.Error())
+	}
+	var ge *gitOutputError
+	if !errors.As(err, &ge) || !strings.Contains(ge.Output, "To ") {
+		t.Errorf("git の出力の全文を持っていない: %#v", err)
+	}
+}
+
+// rebase の abort が失敗したときは、その理由も理由の文と全文に入れる (無いと「手動で abort して」も同じ理由で失敗する)。
+func TestAbortRebaseFailureKeepsTheAbortReason(t *testing.T) {
+	_ = pullSandbox(t) // rebase の途中ではない使い捨ての clone (abort は失敗する)
+	err := abortRebase([]byte("CONFLICT (content): Merge conflict in a\n"))
+	if err == nil || !strings.Contains(err.Error(), "失敗しました (") || !strings.Contains(err.Error(), "CONFLICT") {
+		t.Fatalf("abort の失敗の理由が入っていない: %v", err)
+	}
+	var ge *gitOutputError
+	if !errors.As(err, &ge) || !strings.Contains(ge.Output, "--- git rebase --abort ---") {
+		t.Errorf("全文に abort の失敗が入っていない: %#v", err)
 	}
 }

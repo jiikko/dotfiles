@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"io/fs"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -49,10 +50,16 @@ func TestOwnStringLiteralsHaveNoVS16(t *testing.T) {
 		checked++
 		ast.Inspect(file, func(n ast.Node) bool {
 			lit, ok := n.(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
+			if !ok || (lit.Kind != token.STRING && lit.Kind != token.CHAR) {
 				return true
 			}
-			if strings.ContainsRune(lit.Value, vs16) {
+			// 字面ではなく値で見る: エスケープ表記 ("\uFE0F") と rune リテラルも画面には同じ文字として出る
+			val, uerr := strconv.Unquote(lit.Value)
+			if uerr != nil {
+				t.Errorf("%s: リテラル %s を読めない: %v", fset.Position(lit.Pos()), lit.Value, uerr)
+				return true
+			}
+			if strings.ContainsRune(val, vs16) {
 				found++
 				pos := fset.Position(lit.Pos())
 				t.Errorf("%s:%d 文字列リテラルに VS16 (U+FE0F) がある: %s\n"+

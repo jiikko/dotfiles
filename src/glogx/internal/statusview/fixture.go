@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 
+	"glogx/internal/app"
 	"glogx/internal/linecache"
 )
 
@@ -32,7 +33,7 @@ func FixtureStubWorktree(fn func() (string, error)) (restore func()) {
 		if err != nil {
 			return worktreeStatus{}, err
 		}
-		return parseWorktreeStatus(out), nil
+		return fixtureStatus(out), nil
 	}
 	return func() { loadWorktreeStatus = orig }
 }
@@ -46,8 +47,15 @@ func FixtureLoadWorktreeDiff(paths []string, staged bool) error {
 }
 
 // ReceivePorcelain は porcelain (`git status --porcelain --branch -z` の出力) を今の世代の結果として受け取らせる。
+// repo root は cwd (本番の loadWorktreeStatus は root を必ず埋めようとする。空だと X が断る)。
 func (f Fixture) ReceivePorcelain(porcelain string) tea.Cmd {
-	return f.v.Receive(StatusLoadMsg{st: parseWorktreeStatus(porcelain), gen: f.v.gen})
+	return f.v.Receive(StatusLoadMsg{st: fixtureStatus(porcelain), gen: f.v.gen})
+}
+
+func fixtureStatus(porcelain string) worktreeStatus {
+	st := parseWorktreeStatus(porcelain)
+	st.root = app.CurrentDir()
+	return st
 }
 
 // SetShown は開いているかを置く (取得や演出を起こさない)。SetCloseAnim は閉じる演出の有無。
@@ -63,7 +71,7 @@ func (f Fixture) Cursor() int               { return f.v.cursor }
 func (f Fixture) RowCount() int             { return len(f.v.rows) }
 func (f Fixture) Discarding() bool          { return f.v.discarding }
 func (f Fixture) SetDiscarding(on bool)     { f.v.discarding = on }
-func (f Fixture) AskDiscard()               { f.v.askDiscard() }
+func (f Fixture) AskDiscard()               { _ = f.v.askDiscard() }
 func (f Fixture) Pager() *listnav.Pager     { return &f.v.pager }
 func (f Fixture) Preview() *linecache.Cache { return &f.v.preview }
 

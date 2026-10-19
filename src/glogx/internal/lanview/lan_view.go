@@ -66,12 +66,11 @@ func waitLanChange(ch <-chan struct{}) tea.Cmd {
 }
 
 type LanView struct {
-	watching    <-chan struct{} // 今待っている走査の合図のチャネル (走査が替わったら待ち直す)
-	execPending bool
-	shown       bool
-	m           *lanmgr.Model
-	wantCross   string
-	openErr     string
+	watching  <-chan struct{} // 今待っている走査の合図のチャネル (走査が替わったら待ち直す)
+	shown     bool
+	m         *lanmgr.Model
+	wantCross string
+	openErr   string
 }
 
 func (v *LanView) Visible() bool { return v.shown }
@@ -80,6 +79,10 @@ func (v *LanView) Visible() bool { return v.shown }
 // NoticeRefused にする (lastWarning を汚さない)。
 // 🚨 呼ぶ側はキーの後だけでなく Advance の後と開いたときにも呼ぶ: 走査の結果や読み込みの失敗 (台帳が読めない等) で積まれる知らせがある。
 func (v *LanView) DrainNotices(deliver func(text string, kind app.NoticeKind) bool) {
+	if v.openErr != "" { // 開けなかった (見えていないので live は nil)
+		deliver(v.openErr, app.NoticeError)
+		v.openErr = ""
+	}
 	lm := v.live()
 	if lm == nil {
 		return
@@ -169,12 +172,6 @@ func (v *LanView) Rearm(msg LanChangedMsg) tea.Cmd {
 		return nil
 	}
 	return waitLanChange(msg.ch)
-}
-
-func (v *LanView) TakeOpenErr() string {
-	e := v.openErr
-	v.openErr = ""
-	return e
 }
 
 // ownsKeys は lanmgr が全部のキーを持つ層 (入力欄・確認・板・設定) を開いているか (overlayOwnershipTable)。
@@ -274,19 +271,14 @@ func (v *LanView) TakeExecCmd() tea.Cmd {
 	if !ok || len(r.Argv) == 0 {
 		return nil
 	}
-	v.execPending = true
-	return extcmd.RunEditorCmd(lanExecCommand(r)) // 戻ると extcmd.EditorClosedMsg で ExecDone を呼ぶ
+	return extcmd.RunEditorCmd(extcmd.OriginLan, lanExecCommand(r)) // 戻ると extcmd.EditorClosedMsg で ExecDone を呼ぶ
 }
 
-// ExecReturned は前景のプロセスから戻ったときに呼ぶ。この画面が起こしたものでなければ handled=false。
-// warning は起こせなかったときの知らせ (ssh の終了コードは相手のシェルのものなので知らせない)。
-func (v *LanView) ExecReturned(err error) (warning string, handled bool) {
-	if !v.execPending {
-		return "", false
-	}
-	v.execPending = false
+// ExecReturned はこの画面が起こした前景のプロセス (extcmd.OriginLan) から戻ったときに呼ぶ。返すのは起こせなかったときの
+// 知らせ (ssh の終了コードは相手のシェルのものなので知らせない)。
+func (v *LanView) ExecReturned(err error) string {
 	if lm := v.live(); lm != nil {
-		return lm.ExecDone(err), true
+		return lm.ExecDone(err)
 	}
-	return "", true
+	return ""
 }

@@ -114,9 +114,8 @@ func TestFilerBackgroundNoticeShowsOnTick(t *testing.T) {
 // (回らないと透明のまま次のキーまで何も見えない) も、ここで固定する。
 func TestFilerAnimationAdvancesOnTickAndStops(t *testing.T) {
 	clock := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
-	orig := app.TimeNow
+	testenv.Restore(t, &app.TimeNow)
 	app.TimeNow = func() time.Time { clock = clock.Add(20 * time.Millisecond); return clock }
-	t.Cleanup(func() { app.TimeNow = orig })
 	m := newFilerBrowse(t)
 	m.handleKey("F")
 	if !m.spinnerActive() {
@@ -278,6 +277,24 @@ func TestFilerSearchTakesFUAndRepeats(t *testing.T) {
 	}
 }
 
+// filer がキーを取っている間 (検索の入力中) は、F / q で抜けると案内しない (その打鍵は入力欄に入る)。
+// 抜ける手段は esc だけを出し、抜けたら元の案内に戻る。
+func TestFilerHintWhileTypingOffersOnlyEsc(t *testing.T) {
+	m := newFilerBrowse(t)
+	m.handleKey("F")
+	if h := m.hintLine(); !strings.Contains(h, "F: 閉じる") || !strings.Contains(h, "?: キーの一覧") {
+		t.Fatalf("ふだんの hint = %q", h)
+	}
+	m.handleKey("/")
+	if h := m.hintLine(); strings.Contains(h, "F: 閉じる") || strings.Contains(h, "q: glogx を終了") || !strings.Contains(h, "esc: 戻る") {
+		t.Fatalf("検索の入力中の hint = %q (F / q は入力欄に入るので案内しない)", h)
+	}
+	m.handleKey("esc")
+	if h := m.hintLine(); !strings.Contains(h, "F: 閉じる") {
+		t.Fatalf("esc で抜けた後の hint = %q", h)
+	}
+}
+
 // キー一覧 (?) を開いている間の F / i / U は一覧を閉じるだけ (glogx が閉じる・横断する・利用枠を開くと、一覧が開いたまま残る)。
 func TestFilerHelpSwallowsCrossKeys(t *testing.T) {
 	for _, k := range []string{"F", "i", "U"} { // C は一覧が閉じていても filer の木のキーなので、ここでは判別にならない
@@ -323,7 +340,7 @@ func TestFilerShellNonZeroExitIsQuiet(t *testing.T) {
 	testenv.StubEditorCapture(t)
 	m.handleKey("F")
 	m.handleKey("s")
-	m.Update(extcmd.EditorClosedMsg{Err: &exec.ExitError{}})
+	m.Update(extcmd.EditorClosedMsg{Origin: extcmd.OriginFiler, Err: &exec.ExitError{}})
 	if strings.Contains(m.toast.Text(), "エディタ") {
 		t.Fatalf("シェルから戻ったのにエディタの文言: %q", m.toast.Text())
 	}
@@ -341,5 +358,25 @@ func TestFilerPasteGoesToSearch(t *testing.T) {
 	m.Update(tea.PasteMsg{Content: "sub"})
 	if got := m.filerV.Fixture().Model().SearchQuery(); got != "sub" {
 		t.Fatalf("検索語 = %q", got)
+	}
+}
+
+// 開けなかったら (cwd が消えた等)、理由を w でコピーできるエラーとして出す (断りの色に落とさない)。
+func TestFilerOpenFailureIsReportedAsError(t *testing.T) {
+	m := newFilerBrowse(t)
+	gone := filepath.Join(t.TempDir(), "gone")
+	if err := os.MkdirAll(gone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(gone)
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+	m.handleKey("F")
+	if m.filerV.Visible() {
+		t.Skip("cwd が消えても filer が開けた (この環境では開けない状況を作れない)")
+	}
+	if !strings.Contains(m.lastWarning, "ファイラーを開けません") {
+		t.Errorf("開けなかった理由がエラーとして残っていない: lastWarning=%q toast=%q", m.lastWarning, m.toast.Text())
 	}
 }

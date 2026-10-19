@@ -1,0 +1,14 @@
+field GitExitError.Code
+field GitExitError.Err
+field GitExitError.Stderr
+field GitExitError.TimedOut
+func RunGitCmd
+func RunGitReadTimeout
+func RunGitTimeout
+method GitExitError.Error
+method GitExitError.Unwrap
+type GitExitError
+var RunGitAdd
+var RunGitCleanUntracked
+var RunGitRestoreStaged
+var RunGitRestoreWorktree

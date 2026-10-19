@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"glogx/issues"
 	"strings"
 	"testing"
@@ -61,7 +62,7 @@ func TestIssuesBodyPagerHalfPageGlides(t *testing.T) {
 	if !v.bodyPager.Animating() {
 		t.Error("本文の半ページが glide に載らない")
 	}
-	if got := pagerShown(&v.bodyPager); got != prev {
+	if got := testenv.PagerShown(&v.bodyPager); got != prev {
 		t.Errorf("glide 開始位置 = %d, want %d", got, prev)
 	}
 	// 本文を閉じたら glide を残さない (次に開いた瞬間に古い位置から滑らない)

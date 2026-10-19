@@ -22,8 +22,9 @@ package main
 import (
 	"fmt"
 	"glogx/internal/app"
-	"glogx/internal/extcmd"
+	"glogx/internal/fswatch"
 	"glogx/internal/gitdata"
+	"glogx/internal/gitexec"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -80,9 +81,9 @@ type gitLogReloadMsg struct {
 
 // gitLogWatch は見張りの状態。zero value は「まだ何も張っていない」。
 type gitLogWatch struct {
-	// app.WatchChain は watcher・世代・2 本のチェーンの札 (watch_chain.go)。世代は watcher を閉じるたびに
+	// fswatch.Chain は watcher・世代・2 本のチェーンの札 (internal/fswatch/chain.go)。世代は watcher を閉じるたびに
 	// 増え、古いチェーンの観測を弾く。
-	app.WatchChain
+	fswatch.Chain
 	dirs []string // 見張るディレクトリ (空 = 解決できなかった → ポーリングのみ)
 	seen string   // 反映済みの指紋
 	// hasSeen は seen が有効か。🚨 空文字列を「基準なし」のセンチネルにしないこと: コミット 0 件
@@ -112,19 +113,19 @@ func gitLogWatchDirsCmd() tea.Cmd {
 // 共有ディレクトリにあるので両方見る (実測 2026-09-01: --absolute-git-dir は
 // .git/worktrees/<name>、--git-common-dir は .git を返す)。
 func gitLogWatchDirs() []string {
-	out, err := extcmd.RunGitTimeout("rev-parse", "--absolute-git-dir")
+	out, err := gitexec.RunGitTimeout("rev-parse", "--absolute-git-dir")
 	if err != nil {
 		return nil // repo の外 / git が無い: 見張らない (ポーリングも指紋が取れないので空振りする)
 	}
-	gitDir := strings.TrimSpace(out)
+	gitDir := strings.TrimSuffix(out, "\n") // 改行だけを外す (末尾が空白のパスを削らない。issues.ResolveRepoRoot と同じ)
 	if gitDir == "" {
 		return nil
 	}
 	// --path-format は git 2.31+。失敗したら共有側を諦めて worktree 側だけ見る
 	// (HEAD の動きは拾えるので無音にはならず、refs の変化は 1 分ポーリングが拾う)。
 	common := gitDir
-	if cOut, cErr := extcmd.RunGitTimeout("rev-parse", "--path-format=absolute", "--git-common-dir"); cErr == nil {
-		if p := strings.TrimSpace(cOut); p != "" {
+	if cOut, cErr := gitexec.RunGitTimeout("rev-parse", "--path-format=absolute", "--git-common-dir"); cErr == nil {
+		if p := strings.TrimSuffix(cOut, "\n"); p != "" {
 			common = p
 		}
 	}
@@ -213,9 +214,8 @@ func (m *browseModel) startGitLogWatch() {
 // cancelAll の doc)。この見張りは起動から終了まで開き続けるので、閉じ忘れると r で再起動する
 // たびに kqueue fd が 1 本ずつ新プロセスへ継承される。
 func (m *browseModel) stopGitLogWatch() {
-	m.logWatch.Close()
 	// dirs は残す (解決し直す必要がない)。世代を進めて古いチェーンの観測を弾く。
-	m.logWatch = gitLogWatch{WatchChain: app.WatchChain{Gen: m.logWatch.Gen + 1}, dirs: m.logWatch.dirs}
+	m.logWatch = gitLogWatch{Chain: m.logWatch.Advance(), dirs: m.logWatch.dirs}
 }
 
 // gitLogWatchCmd は次の観測を予約する (イベント待ち + 保険のポーリング)。
@@ -244,7 +244,7 @@ func (m *browseModel) gitLogPollCmd() tea.Cmd {
 func (m *browseModel) gitLogMeasureCmd() tea.Cmd {
 	opts, gen := m.opts, m.logWatch.Gen
 	return func() tea.Msg {
-		out, err := extcmd.RunGitTimeout(gitdata.BuildFingerprintArgs(opts.LogQuery())...)
+		out, err := gitexec.RunGitTimeout(gitdata.BuildFingerprintArgs(opts.LogQuery())...)
 		if err != nil {
 			return gitLogFPMsg{gen: gen}
 		}
@@ -266,13 +266,11 @@ func (m *browseModel) handleGitLogProbe(msg gitLogProbeMsg) tea.Cmd {
 	}
 	if msg.closed {
 		// watcher が死んだ (fd 回収等)。閉じてポーリングだけで続ける (無音にはしない)
-		m.logWatch.DropDeadWatcher()
-		m.logWatch.Gen++
+		m.logWatch.DropDeadWatcher(true)
 		// 🚨 飛んでいる測定の札もここで降ろす: 世代を進めた後に届く結果は gen 違いで捨てられるので、
 		// 降ろさないと measuring が永久に true のまま = 以降ひとつも測らなくなる (静かに機能停止)。
 		m.logWatch.measuring = false
 		m.logWatch.reloading = false // 同じ理由 (gen 違いで捨てられる読み直しを待ち続けない)
-		m.logWatch.PollArmed = false // 旧世代の tick は捨てられるので張り直す
 		return m.gitLogWatchCmd()
 	}
 	m.logWatch.Release(msg.fromEvent)

@@ -38,15 +38,18 @@ type doctorDelete struct {
 	// preparing は d を押した直後の下見 (DryRun) 中。engine が削除の直前と同じ走査を通すので
 	// 重いエントリでは数秒かかる = 無言で固まらないよう進捗を出す
 	preparing bool
-	plan      *disk.DeleteReport // 下見の結果 (確認プロンプトの材料)
-	confirm   bool               // y/N の確認中
-	running   bool               // 削除の実行中 (キーを飲む)
-	result    *disk.DeleteReport
-	kind      doctorJob         // 何の仕事か (既定 = jobDisk)
-	cmdPlan   []doctorCmdAction // jobCmd: 実行するコマンド (確認画面の材料)
-	cmdRep    *cmdRunReport     // jobCmd: 実行の結果
-	err       string
-	progress  doctorProgress // 「2/3 Xcode DerivedData」+「走査中 12s」
+	plan      *disk.DeleteReport // 下見の結果 (確認プロンプトの材料。表示用に無害化した後)
+	// planRaw は無害化する前の下見の結果。y で本番へ渡す対象の絞り込み (disk.ConsentedTargets) はこちらで照合する
+	// (無害化はパスを書き換えるので、表示用の plan のパスは鍵にならない)
+	planRaw  *disk.DeleteReport
+	confirm  bool // y/N の確認中
+	running  bool // 削除の実行中 (キーを飲む)
+	result   *disk.DeleteReport
+	kind     doctorJob         // 何の仕事か (既定 = jobDisk)
+	cmdPlan  []doctorCmdAction // jobCmd: 実行するコマンド (確認画面の材料)
+	cmdRep   *cmdRunReport     // jobCmd: 実行の結果
+	err      string
+	progress doctorProgress // 「2/3 Xcode DerivedData」+「走査中 12s」
 
 	// log は実行したコマンドとその出力 (実行中は垂れ流し、終わった後も残す)。
 	// 失敗したときに LLM へ投げられるよう、y でまるごとコピーできる
@@ -299,7 +302,7 @@ func (v *DoctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 func (v *DoctorView) beginBrewRun() doctorAction {
 	acts := v.selectedBrewActions()
 	if len(acts) == 0 {
-		v.pendingToast = "Space で実行する手を選んでください"
+		v.refuse("Space で実行する手を選んでください")
 		return DoctorToast
 	}
 	v.del = doctorDelete{kind: jobCmd, confirm: true, cmdPlan: acts}
@@ -311,7 +314,7 @@ func (v *DoctorView) beginBrewRun() doctorAction {
 func (v *DoctorView) beginDockerRun() doctorAction {
 	acts := v.selectedDockerActions()
 	if len(acts) == 0 {
-		v.pendingToast = "Space で実行するコマンドを選んでください"
+		v.refuse("Space で実行するコマンドを選んでください")
 		return DoctorToast
 	}
 	v.del = doctorDelete{kind: jobCmd, confirm: true, cmdPlan: acts}
@@ -567,10 +570,9 @@ func (v *DoctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 	}
 	rep := disk.SanitizeDeleteReportForDisplay(*ev.rep)
 	if ev.dryRun {
-		// 🚨 plan は表示だけでなく**実行対象の絞り込み**にも使われる (plannedTargets → Entry.ID)。
-		// 無害化が触るのは表示に出る文字列 (Label / Reason / パス) だけで **ID は
-		// 触らない**ので、絞り込みも実際に消す対象 (selectedResults 側の実パス) も変わらない
-		v.del.plan, v.del.confirm = &rep, true
+		// 実行対象の絞り込みは無害化する前の plan で照合する (planRaw の doc)。表示と絞り込みで Entry と結末は同じ
+		raw := *ev.rep
+		v.del.plan, v.del.planRaw, v.del.confirm = &rep, &raw, true
 		return nil
 	}
 	v.del.result = &rep
@@ -646,17 +648,17 @@ func (v *DoctorView) handleDeleteKey(key string) (doctorAction, bool) {
 			// selectedResults は元の走査結果しか見ないので y で消えてしまう。
 			// 「見せた量より多く消える」= 破壊的操作の同意を実際より小さい数字で取る形。
 			// plan の Planned だけに絞れば、確認画面と実行が同じソースを見る。
-			targets := plannedTargets(d.plan, v.selectedResults())
+			targets := plannedTargets(d.planRaw, v.selectedResults())
 			if len(targets) == 0 {
 				d.reset()
-				v.pendingToast = "削除する対象がありません"
+				v.refuse("削除する対象がありません")
 				return DoctorToast, true
 			}
 			// 入口 (beginDelete) だけで検査すると非対称になる。押す瞬間にもう一度見る
 			for _, r := range targets {
 				if ok, why := v.deletable(r); !ok {
 					d.reset()
-					v.pendingToast = r.Entry.Label + ": " + why
+					v.refuse(r.Entry.Label + ": " + why)
 					return DoctorToast, true
 				}
 			}
@@ -969,7 +971,7 @@ func (v *DoctorView) snapshotRescan() (doctorAction, bool) {
 			return DoctorSwallow, false
 		}
 	}
-	v.pendingToast = "前回の結果を表示していたので、取り直します (終わったら選び直してください)"
+	v.refuse("前回の結果を表示していたので、取り直します (終わったら選び直してください)")
 	return DoctorRescan, true
 }
 
@@ -983,16 +985,16 @@ func (v *DoctorView) beginDelete() doctorAction {
 		// 🚨 v.scanning() ではない: あれは svc / brew も見るので、ディスクが完走していても
 		// brew doctor (最大 60 秒) の間ずっと d が通らなくなる。削除に要るのはディスクの結果だけ。
 		// 助言も「r で取り直す」と言わない (全部を最初からやり直すので待ち時間が増えるだけ)
-		v.pendingToast = "ディスクのスキャンが終わるまで待ってください"
+		v.refuse("ディスクのスキャンが終わるまで待ってください")
 		return DoctorToast
 	case len(v.selectedResults()) == 0:
-		v.pendingToast = "Space で削除するものを選んでください"
+		v.refuse("Space で削除するものを選んでください")
 		return DoctorToast
 	}
 	// 🚨 走査していない行は engine が拒否する。押す前にここで止める
 	for _, r := range v.selectedResults() {
 		if ok, why := v.deletable(r); !ok {
-			v.pendingToast = r.Entry.Label + ": " + why
+			v.refuse(r.Entry.Label + ": " + why)
 			return DoctorToast
 		}
 	}
@@ -1119,9 +1121,9 @@ func planHasWork(plan *disk.DeleteReport) bool {
 
 // plannedIDs は下見で「これから消す」と出たエントリの ID。
 //
-// 🚨 **確認画面と実行対象の唯一の出典**。「消せるものが在るか」の判定
-// (planHasWork) と「何を消すか」の判定 (case "y" の selectedResults) を別ソースにしない。
-// 別ソースだと**確認画面が何を約束しても実行が従わない**。述語をここに 1 つ置く。
+// 🚨 「消せるものが在るか」(planHasWork) と「何を消すか」(plannedTargets → disk.ConsentedTargets) は、同じ述語
+// (エントリの Outcome == Planned) で見る。別の述語だと**確認画面が何を約束しても実行が従わない**
+// (両者の一致は TestPlanHasWorkAgreesWithPlannedTargets が見る)。
 func plannedIDs(plan *disk.DeleteReport) map[entryID]bool {
 	if plan == nil {
 		return nil
@@ -1135,20 +1137,13 @@ func plannedIDs(plan *disk.DeleteReport) map[entryID]bool {
 	return ids
 }
 
-// plannedTargets は選択のうち、下見で Planned になったエントリだけを返す
-// (確認画面に出した対象と実行対象を一致させる)。
+// plannedTargets は選択を、下見で Planned になったエントリとその Planned の Item だけに絞る
+// (確認画面に出した対象と実行対象を一致させる。規則は disk.ConsentedTargets が持つ)。plan は無害化する前のもの。
 func plannedTargets(plan *disk.DeleteReport, sel []disk.Result) []disk.Result {
-	planned := plannedIDs(plan)
-	if len(planned) == 0 {
+	if plan == nil {
 		return nil
 	}
-	out := make([]disk.Result, 0, len(sel))
-	for _, r := range sel {
-		if planned[resultEntryID(r)] {
-			out = append(out, r)
-		}
-	}
-	return out
+	return disk.ConsentedTargets(*plan, sel)
 }
 
 // confirmLines は確認の本文。**下見 (DryRun) の結果をそのまま出す** (UI 側で組み直さない)。

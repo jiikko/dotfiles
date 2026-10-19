@@ -8,7 +8,6 @@ func FixtureChangedMsg
 func FixtureSaveScreen
 func FixtureSetOptions
 func LoadLanScreen
-method Fixture.ExecPending
 method Fixture.Model
 method Fixture.Watching
 method LanChangedMsg.Open
@@ -29,7 +28,6 @@ method LanView.RememberScreen
 method LanView.RestorePlace
 method LanView.Stop
 method LanView.TakeExecCmd
-method LanView.TakeOpenErr
 method LanView.TakeWantCross
 method LanView.Toggle
 method LanView.Visible

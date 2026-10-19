@@ -16,6 +16,7 @@ field IssuesScreen.Open
 field IssuesScreen.Root
 field IssuesScreen.SavedAt
 field IssuesScreen.Tab
+func FixtureSaveScreen
 func FixtureScanDir
 func FixtureScanDirs
 func FixtureScanMsg

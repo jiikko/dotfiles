@@ -216,10 +216,10 @@ func zzCanaryNew() { v := NewIssuesView(); v.FIELD = nil }
 
 	// 🚨 走査が壊れて何も見なくなっても緑にならないよう、下限を置く。
 	// 2026-09-06 実測: .go 167 件 (テスト込み。当時は main) を走査し、issuesView.rows への代入候補は setRows の 1 件。
-	// 2026-10-17: このパッケージの 27 件を走査する
+	// 2026-10-19: このパッケージの 29 件を走査する (下限は実件数のすぐ下)
 	// (rows を触れるのはこのパッケージの中だけ。main からは型の外の名前に見えない)
-	if scanned < 20 {
-		t.Fatalf("走査した .go が %d 件しかない (下限 20)。WalkDir の除外が壊れている", scanned)
+	if scanned < 25 {
+		t.Fatalf("走査した .go が %d 件しかない (下限 25)。WalkDir の除外が壊れている", scanned)
 	}
 	if candidates == 0 {
 		t.Fatal("issuesView.rows への代入を 1 件も見つけられなかった (setRows 自身が見えていない = 判定が壊れている)")

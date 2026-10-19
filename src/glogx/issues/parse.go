@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
 )
@@ -654,7 +655,7 @@ func (iss *Issue) LoadMeta() error {
 	if iss.loaded {
 		return nil
 	}
-	f, err := os.Open(iss.Path)
+	f, err := openIssueFile(iss.Path)
 	if err != nil {
 		return err
 	}
@@ -690,9 +691,37 @@ func (iss *Issue) LoadMeta() error {
 	return sc.Err()
 }
 
+// openIssueFile は issue のファイルを読むために開く。走査 (isIssueFile) は symlink と FIFO を弾くが、走査から開くまでの間に
+// 差し替わりうる (viewer を開いたまま git checkout し、見張りが反映する前に Enter)。開くときに見直す:
+// O_NOFOLLOW で symlink を辿らず、O_NONBLOCK で FIFO の open で止まらず、開いた fd が通常のファイルかを確かめる。
+// 見ないもの: 親のディレクトリの symlink への差し替え (O_NOFOLLOW は最後の要素だけ)。そうされると別の場所の通常のファイルを
+// 読んで表示する。issue のディレクトリを差し替えられる書き手は issue の本文もそのまま書けるので、読むものを守る意味が薄い
+// (書き換え側の rewriteIssue も同じ)。親を守る必要が出たら openat で 1 段ずつ O_NOFOLLOW で開く
+func openIssueFile(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, fmt.Errorf("%s は通常のファイルではないので開きません", filepath.Base(path))
+	}
+	return f, nil
+}
+
 // ReadBody は本文を読んで整形用の Body を作る (issue を開いたときだけ呼ぶ)。
 func (iss *Issue) ReadBody() (*Body, error) {
-	b, err := os.ReadFile(iss.Path)
+	f, err := openIssueFile(iss.Path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(f)
 	if err != nil {
 		return nil, err
 	}

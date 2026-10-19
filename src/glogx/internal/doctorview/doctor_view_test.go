@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
 	"slices"
@@ -186,11 +187,7 @@ func TestDoctorStartupToastThroughRealPath(t *testing.T) {
 		}
 	}
 	got := doctorStartupToast(c, true, now)
-	for _, want := range []string{"30.0GB 解放できます", "Xcode 20.0GB", "npm 10.0GB", "D で doctor を開く"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("トーストに %q が無い: %q", want, got)
-		}
-	}
+	testenv.ContainsAll(t, "トースト", got, "30.0GB 解放できます", "Xcode 20.0GB", "npm 10.0GB", "D で doctor を開く")
 	// failed のサイズはトーストに出さない (走査できていない数字を「解放できます」に混ぜない)
 	if strings.Contains(got, "壊れた") || strings.Contains(got, "99.0GB") {
 		t.Errorf("走査できなかったエントリがトーストに出た: %q", got)
@@ -706,11 +703,7 @@ func TestDoctorLinesFillsPage(t *testing.T) {
 	}
 	check("完了")
 	out := doctorTextAllTabs(v, 40)
-	for _, want := range []string{"▌ディスク占有", "Thing キャッシュ", "✅ 安全", "▌サービス", "壊れた登録は見つかりませんでした", "▌Homebrew", "非推奨 / 無効になった cask があります"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("完了後の表示に %q が無い:\n%s", want, out)
-		}
-	}
+	testenv.ContainsAll(t, "完了後の表示", out, "▌ディスク占有", "Thing キャッシュ", "✅ 安全", "▌サービス", "壊れた登録は見つかりませんでした", "▌Homebrew", "非推奨 / 無効になった cask があります")
 	if strings.Contains(out, "You should find replacements") {
 		t.Error("brew の本文が展開前から出ている (一覧は概要のみ)")
 	}
@@ -934,11 +927,7 @@ func TestDoctorCopyPathAndText(t *testing.T) {
 	if got := v.HandleKey("Y", 40); got != DoctorCopyText {
 		t.Fatal("ディスク行の Y が解説をコピーしない")
 	}
-	for _, want := range []string{"npm [npm-cache]", "✅ 安全", "2.0KB", "削除経路: rm", "復元方法: 再取得", "/h/.npm/_cacache"} {
-		if !strings.Contains(v.CopyPayload(), want) {
-			t.Errorf("解説に %q が無い:\n%s", want, v.CopyPayload())
-		}
-	}
+	testenv.ContainsAll(t, "解説", v.CopyPayload(), "npm [npm-cache]", "✅ 安全", "2.0KB", "削除経路: rm", "復元方法: 再取得", "/h/.npm/_cacache")
 	// svc はタブが違う (タブ分割後、j では届かない)
 	v.HandleKey("tab", 40)
 	_ = v.Lines(testOpts(40))
@@ -1263,8 +1252,8 @@ func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
 	// disk の「一部走査できず」: y は理由の文字列 (パスを含む)、Y は親エントリの解説
 	i := find("一部走査できず")
 	v.cur.index = i
-	if got := v.HandleKey("y", 40); got != DoctorCopyPath || !strings.Contains(v.CopyPayload(), "/h/.npm/_locks") {
-		t.Errorf("Failures 行の y: action=%v payload=%q", got, v.CopyPayload())
+	if got := v.HandleKey("y", 40); got != DoctorCopyPath || !strings.Contains(v.CopyPayload(), "/h/.npm/_locks") || v.CopyNoun() != "エラー" {
+		t.Errorf("Failures 行の y: action=%v payload=%q 語=%q (パスではなく走査できなかった理由)", got, v.CopyPayload(), v.CopyNoun())
 	}
 	v.cur.index = i
 	if got := v.HandleKey("Y", 40); got != DoctorCopyText || !strings.Contains(v.CopyPayload(), "_locks: permission denied") {
@@ -1283,11 +1272,7 @@ func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
 	if got := v.HandleKey("Y", 40); got != DoctorCopyText {
 		t.Fatalf("Undiagnosed 行の Y: action=%v", got)
 	}
-	for _, want := range []string{"/Library/LaunchDaemons/com.vendor.broken.plist", "permission denied", "plutil -p ", "ls -l "} {
-		if !strings.Contains(v.CopyPayload(), want) {
-			t.Errorf("Undiagnosed 行の Y に %q が無い:\n%s", want, v.CopyPayload())
-		}
-	}
+	testenv.ContainsAll(t, "Undiagnosed 行の Y", v.CopyPayload(), "/Library/LaunchDaemons/com.vendor.broken.plist", "permission denied", "plutil -p ", "ls -l ")
 
 	// Enter で理由が読める (一覧の行は幅で切れても、詳細には出る)
 	v.cur.index = j
@@ -2288,5 +2273,20 @@ func TestDoctorCollapsedRowsDoNotBuildDetail(t *testing.T) {
 	}
 	if len(target.detail) == 0 {
 		t.Error("展開しているのに detail が空 (遅延が効きすぎている)")
+	}
+}
+
+// 開いた詳細の子行 (対象パス) の上でも Enter は効く (親を畳む) ので、案内から Enter を消さない。
+func TestDoctorHintKeepsEnterOnChildRow(t *testing.T) {
+	v := testView(t)
+	runCmds(t, v, v.open())
+	_ = v.Lines(testOpts(30))
+	v.HandleKey("enter", 30) // 開くとカーソルが最初の対象パスへ移る
+	_ = v.Lines(testOpts(30))
+	if _, isChild := parentRowKey(v.rows[v.cur.index].key); !isChild {
+		t.Fatalf("前提が崩れている: Enter の後のカーソルが子行でない (%q)", v.rows[v.cur.index].key)
+	}
+	if h := v.Hint(200); !strings.Contains(h, "Enter: 開閉") {
+		t.Errorf("子行の hint から Enter が消えた: %q", h)
 	}
 }

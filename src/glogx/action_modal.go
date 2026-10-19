@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"glogx/internal/gitdata"
 	"sort"
 
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
@@ -19,12 +20,13 @@ import (
 // 残し、この型は「どのモーダルが出ているか」「キーをどう捌くか」「どう描くか」だけを持つ。
 // tmux prefix 誤爆のフィードバックは右下 toast で出す (browseModel が持つ)。ここには同居させない。
 type actionModal struct {
-	pushConfirm  bool   // b の push 確認中 (y/N)
-	pushing      bool   // git push 実行中 (終了以外のキーを無視)
-	pullConfirm  bool   // u の pull --rebase 確認中 (y/N)
-	pulling      bool   // git pull --rebase 実行中 (終了以外のキーを無視)
-	rerunConfirm bool   // r の CI job 再実行確認中 (y/N)
-	rerunJobName string // 再実行対象の job 名 (確認モーダルの文言用)
+	pushConfirm  bool             // b の push 確認中 (y/N)
+	pushPlan     gitdata.PushPlan // 確認に出す見積もり (confirmPush が git push の送るものを見積もった値)
+	pushing      bool             // git push 実行中 (終了以外のキーを無視)
+	pullConfirm  bool             // u の pull --rebase 確認中 (y/N)
+	pulling      bool             // git pull --rebase 実行中 (終了以外のキーを無視)
+	rerunConfirm bool             // r の CI job 再実行確認中 (y/N)
+	rerunJobName string           // 再実行対象の job 名 (確認モーダルの文言用)
 	// rerunAction は確認 y で実行する tea.Cmd。job id / repo / SHA は browseModel 側の関心事
 	// なので、askRerun 時に closure として注入する (この型は CI 状態を知らない)
 	rerunAction tea.Cmd
@@ -304,7 +306,7 @@ func (a *actionModal) runUpdate(target string) tea.Cmd {
 // boxLines は action モーダルの描画行 (中央寄せの影付き枠)。どれも非アクティブなら nil。
 // unpushedCount は push 確認の文言用に呼び出し側が渡す (この型はコミット状態を知らない)。
 // spinner / width / colored は browseModel の状態を受け取る (usageview.UsageOverlay / commitview.DiffOverlay と同様)。
-func (a *actionModal) boxLines(width int, colored bool, spinner string, unpushedCount int) []string {
+func (a *actionModal) boxLines(width int, colored bool, spinner string) []string {
 	if !a.active() {
 		return nil
 	}
@@ -340,7 +342,11 @@ func (a *actionModal) boxLines(width int, colored bool, spinner string, unpushed
 		title = " CI 再実行 "
 		return confirm.Dialog(title, []string{"失敗した job を再実行します:", a.rerunJobName}, confirm.HintYesNo, width, colored)
 	default: // pushConfirm
-		return confirm.Dialog(title, []string{fmt.Sprintf("未 push の %d コミットを push します", unpushedCount)},
+		body := "push します (件数は数えていません)" // 送るものは push の設定で決まる (gitdata.PushPlan の doc)
+		if a.pushPlan.Exact {
+			body = fmt.Sprintf("未 push の %d コミットを push します", a.pushPlan.N)
+		}
+		return confirm.Dialog(title, []string{body},
 			confirm.HintYesNo, width, colored)
 	}
 	return confirm.Box(title, rows, width, colored)

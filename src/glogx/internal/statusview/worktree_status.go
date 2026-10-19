@@ -1,14 +1,21 @@
 package statusview
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"glogx/internal/app"
-	"glogx/internal/extcmd"
+	"glogx/internal/gitdata"
+	"glogx/internal/gitexec"
 	"glogx/internal/term"
 	"glogx/issues"
-
-	"github.com/jiikko/dotfiles/src/tuikit/highlight"
 )
 
 // 作業ツリーの状態 (git status) の読み取りとセクション分類。status viewer (status_view.go) が
@@ -173,7 +180,7 @@ func rowsFor(x, y byte, path, orig string) []worktreeRow {
 var loadWorktreeStatus = func() (worktreeStatus, error) {
 	// TUI の tea.Cmd (goroutine) から呼ぶので timeout 付き (runGitTimeout の doc 参照)。
 	// --ignore-submodules=dirty: submodule の中の変更を見に子の git を起こさない (子は submodule 自身の設定の filter を読む)
-	out, err := extcmd.RunGitReadTimeout("status", "--porcelain", "--branch", "-z", "--ignore-submodules=dirty")
+	out, err := gitexec.RunGitReadTimeout("status", "--porcelain", "--branch", "-z", "--ignore-submodules=dirty")
 	if err != nil {
 		return worktreeStatus{}, err
 	}
@@ -202,32 +209,11 @@ var loadWorktreeDiff = func(paths []string, staged, colored bool) ([]string, err
 	}
 	args = append(args, "--color=never", "--")
 	args = append(args, paths...)
-	out, err := extcmd.RunGitReadTimeout(args...)
+	out, err := gitexec.RunGitReadTimeout(args...)
 	if err != nil {
 		return nil, err
 	}
-	return diffLines(out, colored), nil
-}
-
-// diffLines は git diff の生出力を表示行へ整える (行数上限・幅の正規化・色付け)。
-// LoadCommitDiff と同じ整形なので、揃えるためにここも term.SanitizeDetailLine + highlight.Diff を通す。
-func diffLines(out string, colored bool) []string {
-	trimmed := strings.TrimRight(out, "\n")
-	if trimmed == "" {
-		return nil
-	}
-	lines := make([]string, 0, min(strings.Count(trimmed, "\n")+1, extcmd.MaxDiffLines+1))
-	for line := range strings.SplitSeq(trimmed, "\n") {
-		if len(lines) >= extcmd.MaxDiffLines {
-			lines = append(lines, "... (これ以降は省略)")
-			break
-		}
-		lines = append(lines, term.SanitizeDetailLine(line))
-	}
-	if colored {
-		lines = highlight.Diff(lines)
-	}
-	return lines
+	return gitdata.DiffDisplayLines(out, colored, "... (これ以降は省略)"), nil
 }
 
 // counts はヘッダー/セクション見出し用の件数 (staged, unstaged, untracked, conflicted)。
@@ -333,5 +319,129 @@ func (r worktreeRow) pathspecs() []string {
 	return out
 }
 
+// worktreePathspecs は作業ツリーを書き戻すときに git へ渡すパス列。rename 元は作業ツリー側の rename (Y が R / C) のときだけ渡す:
+// staged の rename (RM) の元は index にもう無く、restore が pathspec の不一致で全体を止める (作業ツリーの変更は rename 先にしか無い)。
+func (r worktreeRow) worktreePathspecs() []string {
+	if r.orig != "" && (r.y == 'R' || r.y == 'C') {
+		return r.pathspecs()
+	}
+	return []string{worktreePathspec(r.path)}
+}
+
 // worktreePathspec は root 相対パスを cwd 非依存・glob 無効の pathspec にする (理由は pathspecs)。
 func worktreePathspec(path string) string { return ":(top,literal)" + path }
+
+// rowPrintMaxEntries は未追跡のディレクトリ行の指紋で見るファイルの上限。超えたら指紋を作らない (errPrintTooMany)。
+// 上限で打ち切って「先頭の N 件が同じなら同じ」と言うと、N 件より後ろの変化を見落としたまま捨てる。
+const rowPrintMaxEntries = 20000
+
+// rowPrintMaxDuration は未追跡のディレクトリ行の指紋の時間の上限 (キー処理の中で同期に採る。stat の遅いマウントで UI を止めない)。
+// var なのはテストが 0 にして上限を越えさせるため。
+var rowPrintMaxDuration = time.Second
+
+var (
+	errPrintTooMany    = fmt.Errorf("中のファイルが %d 件を超えるため、変化を確かめられません", rowPrintMaxEntries)
+	errPrintTooSlow    = errors.New("中のファイルを調べるのに時間がかかりすぎるため、変化を確かめられません")
+	errPrintTrackedDir = errors.New("作業ツリーではディレクトリになっていて、中ごと消すことになるため、変化を確かめられません")
+)
+
+// readIndexEntries / listUntrackedFiles は指紋が叩く git (テストの差し替え点)。--full-name: 出力を cwd ではなく repo root
+// 相対にする (glogx はサブディレクトリから起動されうる。pathspec の :(top) は入力の解釈しか変えない)。
+var (
+	readIndexEntries = func(pathspecs []string) (string, error) {
+		return gitexec.RunGitReadTimeout(append([]string{"ls-files", "-s", "-z", "--full-name", "--"}, pathspecs...)...)
+	}
+	listUntrackedFiles = func(pathspec string) (string, error) {
+		return gitexec.RunGitReadTimeout("ls-files", "-o", "--exclude-standard", "-z", "--full-name", "--", pathspec)
+	}
+)
+
+// rowPrint は行の中身の指紋 (同じなら、プレビュー・確認で見せたものから変わっていない、と言える値)。X の確認と y の実行の間・
+// プレビューと X の間で、XY は同じまま中身だけが変わったことを見つける (status_view.go の discardPrint / seenPrints)。
+//
+//   - index 側: `git ls-files -s` の行 (mode・blob・stage)。` M` の restore は index の中身を作業ツリーへ書くので、
+//     index だけが変わる (MM の行で別プロセスが stage し直す) と、作業ツリーの指紋が同じでも書き戻す中身が変わる
+//   - 作業ツリー側: statPrint。未追跡のディレクトリ行は git clean が消す集合 (ignore を除く未追跡のファイル) の各 statPrint
+//
+// 中身を読んで hash しない: X / y のキー処理の中で同期に採るので、大きなファイルで UI が止まる (4 GiB で 2 秒)。
+// 書き直せば stat は変わる (APFS で同じ 1 byte を書き直して 5000 回中 5000 回変わった。mtime の差は最小 21µs)。
+//
+// 見ないもの (どれも見落としではなく、安全側か被害が無い): 未追跡のディレクトリに増えた空のディレクトリ (clean が消すが
+// 中身が無い)・入れ子の repo の中の変化 (stat が変わって断るが、clean -fd は入れ子の repo を消さない = 断り過ぎ)。
+// 共有の mmap で書いて msync する前の変化は時刻が遅れて付きうる (POSIX が許す) が、macOS で反例は作れていない
+// (再提起するなら、その書き方で stat が変わらない実測を添える)
+func rowPrint(root string, row worktreeRow) (string, error) {
+	var b strings.Builder
+	if !row.isDir() {
+		if row.section != sectionUntracked {
+			// 🚨 tracked のパスが作業ツリーではディレクトリ (submodule・ファイルをディレクトリに置き換えた) なら採らない:
+			// restore は中を丸ごと消して書き戻す (submodule.recurse なら submodule の中の変更も) のに、指紋はディレクトリ自身の
+			// stat しか見ないので、中のファイルの変化を見落とす
+			if fi, err := os.Lstat(filepath.Join(root, row.path)); err == nil && fi.IsDir() {
+				return "", errPrintTrackedDir
+			}
+			idx, err := readIndexEntries(row.pathspecs())
+			if err != nil {
+				return "", err
+			}
+			b.WriteString("index:" + idx + "\n")
+		}
+		for _, p := range row.paths() {
+			b.WriteString(statPrint(filepath.Join(root, p)) + "\n")
+		}
+		return b.String(), nil
+	}
+	deadline := time.Now().Add(rowPrintMaxDuration) // 一覧を取る時間も含める
+	out, err := listUntrackedFiles(worktreePathspec(row.path))
+	if err != nil {
+		return "", err
+	}
+	var names []string // 空の出力を Split すると [""] になり、root そのものの stat (mtime は中の何が変わっても動く) を数える
+	if out != "" {
+		names = strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
+	}
+	if len(names) > rowPrintMaxEntries {
+		return "", errPrintTooMany
+	}
+	if time.Now().After(deadline) { // 一覧を取るだけで越えた (中が空でも)
+		return "", errPrintTooSlow
+	}
+	for _, name := range names {
+		// 名前は引用する: 改行を含む名前・リンク先で、別のファイルの集合と同じ文字列にならないように
+		b.WriteString(strconv.Quote(name) + " " + statOf(filepath.Join(root, name)) + "\n")
+		if time.Now().After(deadline) { // stat の後に見る (最後の 1 件の stat で越えた分も数える)
+			return "", errPrintTooSlow
+		}
+	}
+	return b.String(), nil
+}
+
+// statOf は未追跡のディレクトリ行の各ファイルの指紋 (テストが遅い stat を差し込む口)。
+var statOf = statPrint
+
+// statPrint は 1 つのパスの作業ツリー側の指紋。中身は読まない (rowPrint の doc)。
+//
+//   - mode・inode・大きさ・mtime・ctime (ctime は書いた側が戻せない)。symlink は加えてリンク先の文字列 (辿らない。引用する)
+//   - 無い: "absent"。読めない: "error:<理由>" (読めない状態が続けば一致する。読めるようになれば食い違って中止に倒れる)
+func statPrint(path string) string {
+	fi, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "absent"
+	}
+	if err != nil {
+		return "error:" + err.Error()
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return "error:stat を読めません"
+	}
+	fp := fmt.Sprintf("%v %d %d %d %d", fi.Mode(), st.Ino, fi.Size(), st.Mtimespec.Nano(), st.Ctimespec.Nano())
+	if fi.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(path)
+		if err != nil {
+			return "error:" + err.Error()
+		}
+		return fp + " link:" + strconv.Quote(target)
+	}
+	return fp
+}

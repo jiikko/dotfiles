@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"glogx/internal/testenv"
 	"testing"
 
 	"glogx/internal/gitdata"
@@ -11,11 +12,9 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// 🚨 このファイルの検査のうち `v.watch.w == nil` で skip するものは**実 fsnotify との結合**を
-// 見ている (CI = ubuntu-slim では NewWatcher が通らないので走らない)。不変条件そのものは
-// issues_watch_seam_test.go がフェイクを差して環境非依存に固定しているので、そちらを消さないこと。
-// CI でも走る組: 再 Add / イベント経路 / チェーンの積み上がり / cancelAll の Close。
-// CI では未カバーのまま (受け入れ済み): 閉じたときの closed 観測・死んだ後のポーリング縮退・世代の弾き。
+// 🚨 このファイルの検査のうち fsnotify を作れないときに飛ばすもの (testenv.SkipEnv。CI では落ちる) は**実 fsnotify との結合**を
+// 見ている。不変条件そのものは issues_watch_seam_test.go がフェイクを差して、イベントの届き方に依存しない形で固定している
+// ので、そちらを消さないこと。
 
 // observe は watchCmd と同じ指紋を同期で計算する (tea.Tick を待たずにテストで駆動するため)。
 // 対象集合は production と同じ watchTargets を通す (ここで再実装すると本番とずれる)。
@@ -45,7 +44,7 @@ func TestCancelAllClosesIssuesWatcher(t *testing.T) {
 	m.issuesOv.Receive(scanOf(t, root))
 	w := m.issuesOv.Fixture().Watcher()
 	if w == nil {
-		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
+		testenv.SkipEnv(t, "この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
 	}
 	m.cancelAll()
 	if m.issuesOv.Fixture().Watcher() != nil {

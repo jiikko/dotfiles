@@ -1951,7 +1951,7 @@ func TestIssuesViewBodyHalfPageGlidesViaKeyPath(t *testing.T) {
 	if !e.v.bodyPager.Animating() {
 		t.Fatal("Space の半ページ送りが glide に載っていない (キー経路)")
 	}
-	if got := pagerShown(&e.v.bodyPager); got != before {
+	if got := testenv.PagerShown(&e.v.bodyPager); got != before {
 		t.Errorf("glide 開始位置 = %d, want %d (移動前の offset)", got, before)
 	}
 	e.press("G")

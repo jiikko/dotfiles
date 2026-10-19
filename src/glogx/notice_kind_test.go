@@ -2,7 +2,6 @@ package main
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/printer"
 	"go/token"
 	"strings"
@@ -21,11 +20,9 @@ func TestSetNoticeKindsFollowWarningClassification(t *testing.T) {
 	noticeErrorWithoutDetail := []string{"開いていた issue が見つかりません", "見出しが変わりました"}
 	counts := map[string]int{}
 	fset := token.NewFileSet()
-	for _, file := range []string{"internal/issuesview/issues_view.go", "internal/issuesview/issues_linkjump.go", "internal/statusview/status_view.go"} {
-		f, err := parser.ParseFile(fset, file, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
+	// glogx の本番の .go を全部見る (手で並べたファイルだけだと、別のファイルに足した setNotice が検査の外になる)。2026-10-19 実測: 92 件
+	for _, mf := range parseModuleNonTestFiles(t, fset, 80) {
+		f := mf.file
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok || len(call.Args) != 2 {
@@ -62,7 +59,8 @@ func TestSetNoticeKindsFollowWarningClassification(t *testing.T) {
 					want = "NoticeError"
 				}
 			}
-			if kind.Name != "NoticeOK" && kind.Name != want {
+			// 成功 (NoticeOK) は断りの代わりにだけ置ける。エラーの詳細を含む知らせを成功の色で出すのも誤り (w でコピーできない)
+			if kind.Name != want && (kind.Name != "NoticeOK" || want == "NoticeError") {
 				t.Errorf("%s: %s の種類が %s (want %s)", fset.Position(call.Pos()), text, kind.Name, want)
 			}
 			return true

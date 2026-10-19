@@ -1,6 +1,7 @@
 package issues
 
 import (
+	"glogx/internal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -113,11 +114,11 @@ func TestRepoRootFallsBackToCwdOutsideGit(t *testing.T) {
 
 func TestRepoRootResolvesToplevelFromSubdir(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い")
+		testenv.SkipEnv(t, "git が無い")
 	}
 	root := t.TempDir()
 	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
-		t.Skipf("git init 失敗: %v %s", err, out)
+		testenv.SkipEnv(t, "git init 失敗: %v %s", err, out)
 	}
 	sub := filepath.Join(root, "src", "deep")
 	mkFiles(t, sub, "dummy.txt")
@@ -127,5 +128,23 @@ func TestRepoRootResolvesToplevelFromSubdir(t *testing.T) {
 	}
 	if got := RepoRoot(sub); got != root && got != real {
 		t.Fatalf("サブディレクトリから toplevel を解決できていない: want %q got %q", root, got)
+	}
+}
+
+// repo root の名前の末尾が空白でも、そのまま返す (空白を削ると在りもしないパスを root として返し、status viewer の指紋が
+// 別のパスを stat し続ける)。
+func TestResolveRepoRootKeepsTrailingSpace(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "repo ")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	testenv.GitInRepo(t, root, "init", "-q")
+	got, ok := ResolveRepoRoot(root)
+	want, err := filepath.EvalSymlinks(root) // macOS の TempDir は /var → /private/var の symlink 越し
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got != want {
+		t.Errorf("ResolveRepoRoot = %q (ok=%v), want %q", got, ok, want)
 	}
 }

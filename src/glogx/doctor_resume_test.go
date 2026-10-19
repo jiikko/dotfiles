@@ -5,6 +5,7 @@ import (
 	"glogx/internal/doctorview"
 	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/gitdata"
+	"glogx/internal/testenv"
 	"testing"
 	"time"
 )
@@ -13,9 +14,8 @@ import (
 func TestInitRestoresDoctorScreen(t *testing.T) {
 	doctortest.WithDoctorStateDir(t)
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
-	orig := app.TimeNow
+	testenv.Restore(t, &app.TimeNow)
 	app.TimeNow = func() time.Time { return now }
-	t.Cleanup(func() { app.TimeNow = orig })
 	rememberDoctorShown(now, doctorview.TabSvc)
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)

@@ -1858,7 +1858,7 @@ func (v *IssuesView) editCmd() tea.Cmd {
 		v.setNotice("実体が見つかりません (一覧を取り直します): "+iss.Rel, app.NoticeRefused)
 		return v.scanAfterChangeCmd()
 	}
-	return extcmd.RunEditorCmd(extcmd.EditorCommand(iss.Path))
+	return extcmd.RunEditorCmd(extcmd.OriginEditor, extcmd.EditorCommand(iss.Path))
 }
 
 // openURLPicker は本文中の URL のピッカーを開く (u キー)。URL が無ければ開かずに通知する。

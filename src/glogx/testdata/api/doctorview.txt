@@ -56,6 +56,7 @@ field doctorSnapshot.ScannedAt
 field doctorSnapshot.Svc
 func StartupToast
 func WaitDoctorCleanup
+method DoctorView.CopyNoun
 method DoctorView.CopyPayload
 method DoctorView.Deleting
 method DoctorView.Fixture
@@ -73,7 +74,7 @@ method DoctorView.SetDeps
 method DoctorView.Stop
 method DoctorView.TakeCursorFellBack
 method DoctorView.TakeDeleteCmd
-method DoctorView.TakeToast
+method DoctorView.TakeNotice
 method DoctorView.TakeWantCross
 method DoctorView.Toggle
 method DoctorView.Visible

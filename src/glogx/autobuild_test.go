@@ -1,8 +1,10 @@
 package main
 
 import (
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -404,9 +406,8 @@ func TestAutobuildMsgKeepsWatchingWhileNotifying(t *testing.T) {
 // だけを見るので、無関係な repo の pull では stale にならず何も起きない (判定を写経しない)。
 func TestPullStartsAutobuildAndOffersRestart(t *testing.T) {
 	var asked []string
-	orig := spawnAutobuild
+	testenv.Restore(t, &spawnAutobuild)
 	spawnAutobuild = func(exe string) bool { asked = append(asked, exe); return true }
-	t.Cleanup(func() { spawnAutobuild = orig })
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.toast.Clear()
@@ -444,9 +445,8 @@ func TestPullStartsAutobuildAndOffersRestart(t *testing.T) {
 // ビルドが不要 (最新) なら何も起きない。shim が「起動しなかった」と答えた場合、監視も
 // トーストも増やさない (無関係な repo を pull したときにここへ来る)。
 func TestPullWithoutSourceChangeIsQuiet(t *testing.T) {
-	orig := spawnAutobuild
+	testenv.Restore(t, &spawnAutobuild)
 	spawnAutobuild = func(string) bool { return false }
-	t.Cleanup(func() { spawnAutobuild = orig })
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.toast.Clear()
@@ -531,11 +531,7 @@ func TestAutobuildStaleWarnsAtStartup(t *testing.T) {
 	}
 	// 文面は原因 (失敗記録 / 誰もビルドしていない) ではなく次の行動を出す。どちらの根拠でも
 	// 復旧手順は同じで、理由はログにある。
-	for _, want := range []string{"古い版", "GO_AUTOBUILD_SYNC=1", ".autobuild.log"} {
-		if !strings.Contains(m.toast.Text(), want) {
-			t.Errorf("文面に %q が無い: %q", want, m.toast.Text())
-		}
-	}
+	testenv.ContainsAll(t, "文面", m.toast.Text(), "古い版", "GO_AUTOBUILD_SYNC=1", ".autobuild.log")
 	// w でコピーできるよう lastWarning にも残す (調べ方をユーザーが持ち出せる)
 	if !strings.Contains(m.lastWarning, ".autobuild.log") {
 		t.Errorf("lastWarning に残っていない: %q", m.lastWarning)
@@ -625,9 +621,8 @@ func writeStamp(t *testing.T, path string, mtime time.Time) {
 // stubSelfExe は selfExePath を差し替える (自バイナリの位置を偽装して失敗記録を読ませる)。
 func stubSelfExe(t *testing.T, exe string) {
 	t.Helper()
-	orig := selfExePath
+	testenv.Restore(t, &selfExePath)
 	selfExePath = func() string { return exe }
-	t.Cleanup(func() { selfExePath = orig })
 }
 
 // autobuildStaleBinary は失敗記録と自バイナリの前後関係だけで判定する (env に依存しない)。
@@ -791,5 +786,19 @@ func TestAutobuildSourcesNewerSeesReplaceTargets(t *testing.T) {
 	}
 	if got := autobuildReplaceDirs(dir); len(got) != 1 || got[0] != shared {
 		t.Fatalf("replace 先の解決: %v", got)
+	}
+}
+
+// go.mod の書きかけ (`=>` で終わる行) やコメントアウトした replace で、起動経路の走査が panic しない / 拾わない。
+func TestAutobuildReplaceDirsToleratesPartialAndCommentedLines(t *testing.T) {
+	dir := t.TempDir()
+	mod := "module x\n\n// replace c => ../commented\nreplace a => ../a // ローカルの a\nreplace b =>\nreplace (\n\td => ../d\n)\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := autobuildReplaceDirs(dir)
+	want := []string{filepath.Clean(filepath.Join(dir, "../a")), filepath.Clean(filepath.Join(dir, "../d"))}
+	if !slices.Equal(got, want) {
+		t.Errorf("autobuildReplaceDirs = %v, want %v", got, want)
 	}
 }

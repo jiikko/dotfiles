@@ -3,6 +3,7 @@ package main
 import (
 	"glogx/internal/app"
 	"glogx/internal/term"
+	"slices"
 	"strings"
 )
 
@@ -49,6 +50,9 @@ const (
 	hintSurfaceCount // 🚨 常に最後。面を足したらここより上へ
 )
 
+// githubOnlyBaseHints は一覧の案内のうち、GitHub の repo を解決できたときだけ効く手。
+var githubOnlyBaseHints = map[string]bool{"Enter: CI job": true, "o: ブラウザ": true, "p: PR": true, "P: PR 状態": true, "y: URL コピー": true}
+
 // hintBuilders は面 ID → その面の hint 項目。**唯一の出典**。
 //
 // 🚨 配列にしているのは、ID を足したときに要素が nil のまま残るのを検査で捕まえるため
@@ -57,8 +61,8 @@ var hintBuilders = [hintSurfaceCount]func(*browseModel) []term.HintItem{
 	// 🚨 固定文字列にしないこと。全部つなぐと 174 桁あり、端末 176 桁未満では
 	// 末尾の `q: 終了` が切られて**抜ける手段が案内から消える**。既定の画面・一般的な幅で
 	// 常時そうなっていた。優先度 1 = 出口、2 = 移動と主要操作、以降は幅が許せば出す。
-	hintSurfaceBase: func(*browseModel) []term.HintItem {
-		return []term.HintItem{
+	hintSurfaceBase: func(m *browseModel) []term.HintItem {
+		items := []term.HintItem{
 			{Text: "j/k: 移動", Prio: 2},
 			{Text: "Enter: CI job", Prio: 3},
 			{Text: "d: diff", Prio: 3},
@@ -76,6 +80,11 @@ var hintBuilders = [hintSurfaceCount]func(*browseModel) []term.HintItem{
 			{Text: "w: 警告コピー", Prio: 7},
 			{Text: "q: 終了", Prio: 1},
 		}
+		if m.hasRepo {
+			return items
+		}
+		// GitHub の repo を解決できない repo では CI と URL の手は効かない (押すと「GitHub の remote が無い」と断る) ので案内しない
+		return slices.DeleteFunc(items, func(it term.HintItem) bool { return githubOnlyBaseHints[it.Text] })
 	},
 	// 確認・進行中の面は 1 項目だけ。**優先度 1** にするのは、幅が足りないときに
 	// 「何を聞かれているか / 何を待っているか」が消えると操作不能になるため

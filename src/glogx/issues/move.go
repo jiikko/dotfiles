@@ -33,6 +33,9 @@ import (
 // rename すると本文の相対リンクが切れる)。目印の解除は symlink の削除。直下に無い issue
 // (pending/ done/ に居るもの) は ../<base> が成立しないので従来どおり rename で next/ へ運ぶ。
 // 旧運用でファイルそのものが next/ に居る issue の解除も従来どおり rename で直下へ戻す。
+// 🚨 2 つのプロセス (2 つの glogx・glogx と scripts/issue_claim.sh) が同じ issue の解除と claim を同時に行う形は排他していない:
+// 解除が本文を読んでから書くまでに相手が claim すると、「目印はあるがバナーは無い」が残りうる (再現はしていない)。
+// その形は CI のバナーの検査 (tests/issues/test_next_claims_have_banner.sh) が落とすので、黙っては残らない
 func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 	if iss == nil {
 		return "", errors.New("移動対象がない")
@@ -54,11 +57,22 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		return iss.Path, nil
 	}
 	if subdir == "" && iss.NextLink != "" {
-		if err := clearClaimBanner(iss.Path); err != nil {
-			return "", fmt.Errorf("担当者バナーを外せないため next の目印も外していません: %w", err)
+		// 順序は上の doc のとおり「目印を外す → バナーを外す (外せなければ目印を戻す)」。逆順だと、目印を外せない
+		// (next/<base> が実ファイルに差し替わった・権限) ときにバナーだけが消えた claim が残る (CI のバナー検査が落ちる)
+		removed, err := removeNextLink(iss)
+		if err != nil {
+			return "", fmt.Errorf("next の目印を外せないため担当者バナーも外していません: %w", err)
 		}
-		_, err := removeNextLink(iss)
-		return iss.Path, err
+		if err := clearClaimBanner(iss.Path); err != nil {
+			if !removed {
+				return "", fmt.Errorf("担当者バナーを外せません (next の目印は元から無かった): %w", err)
+			}
+			if rerr := placeNextLink(iss); rerr != nil {
+				return "", fmt.Errorf("担当者バナーを外せず、目印も戻せません: %w (戻し: %w)", err, rerr)
+			}
+			return "", fmt.Errorf("担当者バナーを外せないため next の目印を戻しました: %w", err)
+		}
+		return iss.Path, nil
 	}
 	base := filepath.Base(iss.Rel)
 	// group issue は epic の外へ出さない。subdir="" は group 直下へ戻すので、claim の解除
@@ -149,6 +163,9 @@ func placeNextLink(iss *Issue) error {
 // 無ければ唯一のコピーが消える)。既に無ければ成功 (解除の意図は満たされている)。
 // removed は実際に消したか: 既に無かったものを「消した」と数えると、失敗時の戻しが元から無かった目印を作る
 // (2026-10-14 に確認: 他のホストが外した claim を、失敗した移動の戻しが復活させた)。
+// 残る窓: 取り直しから os.Remove までの間に実ファイルへ差し替わると、それを消す (POSIX に「symlink のときだけ消す」口は無い)。
+// 一時の名前へ rename して確かめる形は、戻すときに同じ窓を作るので採っていない。取り直しは git pull の差し替え (秒の単位で
+// 前に起きる) を拾うためのもので、同じ瞬間に別のプロセスが書く形は再現していない。再提起するなら、その書き手と再現手順を添える
 func removeNextLink(iss *Issue) (removed bool, err error) {
 	link := iss.NextLink
 	fi, err := os.Lstat(link)

@@ -2,6 +2,7 @@ package term
 
 import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -182,7 +183,7 @@ func TestFrameBorderMatchesThemeYML(t *testing.T) {
 	const role = "blink_magenta"
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "theme", "colors.yml"))
 	if err != nil {
-		t.Skipf("theme/colors.yml を読めないのでスキップ (glogx 単体で切り出された場合): %v", err)
+		testenv.SkipEnv(t, "theme/colors.yml を読めないのでスキップ (glogx 単体で切り出された場合): %v", err)
 	}
 	// role の直後に続く最初の "cterm: <n>" を取る
 	lines := strings.Split(string(data), "\n")

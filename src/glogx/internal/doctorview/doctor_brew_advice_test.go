@@ -2,6 +2,7 @@ package doctorview
 
 import (
 	"context"
+	"glogx/internal/testenv"
 	"strings"
 	"testing"
 )
@@ -223,7 +224,7 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 	}
 	v.cur.jumpTo(v.rows, actKey)
 	if act := v.HandleKey(" ", 40); act != DoctorSwallow {
-		t.Fatalf("Space で選べない: %v (%s)", act, v.pendingToast)
+		t.Fatalf("Space で選べない: %v (%s)", act, v.notice)
 	}
 	if len(v.selectedActions) != 1 {
 		t.Fatalf("選択が入っていない: %v", v.selectedActions)
@@ -245,7 +246,7 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 
 	// x で確認画面へ。**実行するコマンドがそのまま出る**
 	if act := v.HandleKey("x", 40); act != DoctorSwallow {
-		t.Fatalf("x が効かない: %v (%s)", act, v.pendingToast)
+		t.Fatalf("x が効かない: %v (%s)", act, v.notice)
 	}
 	out := testText(v, 30)
 	if !strings.Contains(out, "これを実行しますか?") || !strings.Contains(out, "$ brew link node ruby") {
@@ -267,11 +268,7 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 		t.Fatalf("結果が出ていない: %+v", v.del)
 	}
 	out = testText(v, 30)
-	for _, want := range []string{"実行の結果", "1 件すべて成功しました", "$ brew link node ruby", "exit 0"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("結果に %q が無い:\n%s", want, out)
-		}
-	}
+	testenv.ContainsAll(t, "結果", out, "実行の結果", "1 件すべて成功しました", "$ brew link node ruby", "exit 0")
 }
 
 // x は何も選んでいないと実行しない (押し間違いで走らせない)。
@@ -282,8 +279,8 @@ func TestBrewRunNeedsSelection(t *testing.T) {
 	if act := v.HandleKey("x", 40); act != DoctorToast {
 		t.Fatalf("何も選んでいないのに実行へ入った: %v", act)
 	}
-	if !strings.Contains(v.pendingToast, "Space") {
-		t.Errorf("選び方を案内していない: %q", v.pendingToast)
+	if !strings.Contains(v.notice, "Space") {
+		t.Errorf("選び方を案内していない: %q", v.notice)
 	}
 	if v.del.active() {
 		t.Error("パネルが立ってしまった")
@@ -304,8 +301,8 @@ func TestExecuteKeysAreTabScoped(t *testing.T) {
 	_ = v.Lines(testOpts(40))
 
 	v.tab = TabDisk
-	if act := v.HandleKey("x", 40); act != DoctorToast || !strings.Contains(v.pendingToast, "タブ") {
-		t.Errorf("ディスクのタブで x が走った: %v (%q)", act, v.pendingToast)
+	if act := v.HandleKey("x", 40); act != DoctorToast || !strings.Contains(v.notice, "タブ") {
+		t.Errorf("ディスクのタブで x が走った: %v (%q)", act, v.notice)
 	}
 	if v.del.active() {
 		t.Fatal("ディスクのタブで brew の実行パネルが立った")
@@ -313,8 +310,8 @@ func TestExecuteKeysAreTabScoped(t *testing.T) {
 	v.tab = TabBrew
 	// 🚨 「ディスク」だけを見ない: ゲートを外しても beginDelete が
 	// 「ディスクのスキャンが終わるまで待ってください」を返すので素通りする (変異で実測)
-	if act := v.HandleKey("d", 40); act != DoctorToast || !strings.Contains(v.pendingToast, "タブ") {
-		t.Errorf("Homebrew のタブで d が削除へ入った: %v (%q)", act, v.pendingToast)
+	if act := v.HandleKey("d", 40); act != DoctorToast || !strings.Contains(v.notice, "タブ") {
+		t.Errorf("Homebrew のタブで d が削除へ入った: %v (%q)", act, v.notice)
 	}
 	// hint も押せないキーを案内しない
 	v.tab = TabBrew

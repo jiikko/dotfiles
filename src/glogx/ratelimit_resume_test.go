@@ -14,9 +14,8 @@ import (
 func TestRememberRatelimitScreen(t *testing.T) {
 	testenv.IsolateCache(t)
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
-	orig := app.TimeNow
+	testenv.Restore(t, &app.TimeNow)
 	app.TimeNow = func() time.Time { return now }
-	t.Cleanup(func() { app.TimeNow = orig })
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.rlDash.Fixture().SetShown(true)
@@ -36,9 +35,8 @@ func TestRememberRatelimitScreen(t *testing.T) {
 func TestInitRestoresRatelimitScreen(t *testing.T) {
 	testenv.IsolateCache(t)
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
-	orig := app.TimeNow
+	testenv.Restore(t, &app.TimeNow)
 	app.TimeNow = func() time.Time { return now }
-	t.Cleanup(func() { app.TimeNow = orig })
 	if err := ratelimitview.FixtureSaveScreen(now); err != nil {
 		t.Fatal(err)
 	}
@@ -70,9 +68,8 @@ func TestInitWithoutRatelimitMemoryStaysOnLog(t *testing.T) {
 func TestInitRestoresOnlyOneFullScreen(t *testing.T) {
 	testenv.IsolateCache(t)
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.Local)
-	orig := app.TimeNow
+	testenv.Restore(t, &app.TimeNow)
 	app.TimeNow = func() time.Time { return now }
-	t.Cleanup(func() { app.TimeNow = orig })
 	if err := ratelimitview.FixtureSaveScreen(now); err != nil {
 		t.Fatal(err)
 	}

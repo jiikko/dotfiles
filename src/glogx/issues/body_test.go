@@ -131,3 +131,26 @@ func TestBodyProgressCaches(t *testing.T) {
 		t.Errorf(`"" がキャッシュされていない: %q`, got)
 	}
 }
+
+// URL は文字の向きを変える制御文字・行の区切りで切る (混ざると一覧の見た目と開く先が食い違う)。
+func TestURLsStopAtBidiControls(t *testing.T) {
+	// urlRe が切る範囲の全文字 (U+202A-202E / U+2066-2069 / U+2028 / U+2029)。範囲の端を空振りしないよう
+	// 代表 4 文字ではなく全部回す (範囲を 2066-2066 に狭めても緑だった)
+	var all []rune
+	for _, r := range [][2]rune{{0x202a, 0x202e}, {0x2066, 0x2069}, {0x2028, 0x2029}} {
+		for c := r[0]; c <= r[1]; c++ {
+			all = append(all, c)
+		}
+	}
+	if len(all) != 11 {
+		t.Fatalf("前提が崩れた: 対象は 11 文字のはず (%d)", len(all))
+	}
+	for _, r := range all {
+		c := string(r)
+		b := &Body{src: "see https://example.com/a" + c + "b/c done"}
+		got := b.URLs()
+		if len(got) != 1 || got[0] != "https://example.com/a" {
+			t.Errorf("%U: URLs = %q (制御文字の手前で切るはず)", []rune(c)[0], got)
+		}
+	}
+}

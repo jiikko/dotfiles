@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"glogx/internal/app"
+	"glogx/internal/fswatch"
 	"glogx/issues"
 
 	tea "charm.land/bubbletea/v2"
@@ -61,7 +62,7 @@ type IssuesWatchMsg struct {
 
 // issuesWatch は見張りの状態。zero value は「見張っていない」。
 type issuesWatch struct {
-	// app.WatchChain は watcher・世代・2 本のチェーンの札 (watch_chain.go)。世代は閉じるたびに増え、
+	// fswatch.Chain は watcher・世代・2 本のチェーンの札 (internal/fswatch/chain.go)。世代は閉じるたびに増え、
 	// 古いチェーンの観測を弾く。
 	// 🚨 「Add 済み」を自前で覚えて skip しないこと。fsnotify の watch は**ディレクトリが
 	// 消えると黙って失われる**ので、印だけが残って二度と Add されない状態になる (実測
@@ -69,7 +70,7 @@ type issuesWatch struct {
 	// セッション中は done/ 内の変更が恒久的に無音。手動の取り直し 3 回でも復帰せず、
 	// 指紋ポーリング 30s も done/ の未知の新規ファイルは見ないので代替にならない)。
 	// Add は冪等 (同一パスの重複配送は起きないことを実測) なので、毎回無条件に Add する。
-	app.WatchChain
+	fswatch.Chain
 
 	seen    string // 反映済みの指紋 ("" = 次の観測を基準にする)
 	pending string // 変化を検出したが、書きかけを避けるため安定を待っている指紋
@@ -106,8 +107,7 @@ func (v *IssuesView) startWatch() {
 // stopWatch は watcher を閉じて状態を畳む (fd を残さない)。世代を 1 つ進めて、閉じる前に
 // 張ってあったチェーンの観測が開き直した後の状態へ効かないようにする。
 func (v *IssuesView) StopWatch() {
-	v.watch.Close()
-	v.watch = issuesWatch{WatchChain: app.WatchChain{Gen: v.watch.Gen + 1}}
+	v.watch = issuesWatch{Chain: v.watch.Advance()}
 }
 
 // watchDirs は fsnotify へ Add するディレクトリ (issue ディレクトリ + ファイルが居るサブ + epic/ と
@@ -271,11 +271,11 @@ func (v *IssuesView) HandleWatch(msg IssuesWatchMsg) tea.Cmd {
 		// watcher が死んだ (fd 回収・NFS 等)。閉じてポーリングだけで続ける (無音にはしない)。
 		// 世代は進めない: 指紋は goroutine の中で測り終えて届くので、捨てるべき飛行中の測定が無く、
 		// 旧世代のポーリングもそのまま有効 (git log の見張りは測定を後段に持つので進める。gitlog_watch.go)
-		v.watch.DropDeadWatcher()
+		v.watch.DropDeadWatcher(false)
 		return v.watchCmd()
 	}
 	// 指紋つきの観測はイベント経路とポーリング経路の両方から来る。降ろすのは届けたチェーンの札だけ
-	// (理由は app.WatchChain.release。平常時のポーリングは 30s 周期なので、両方降ろすと viewer を
+	// (理由は fswatch.Chain.release。平常時のポーリングは 30s 周期なので、両方降ろすと viewer を
 	// 開きっぱなしにするだけで goroutine が増え続ける)
 	v.watch.Release(msg.fromEvent)
 	if !v.shown {

@@ -125,6 +125,27 @@ linters:
               desc: issuesviewtest はテスト専用 (本番のコードから import しない)
             - pkg: glogx/internal/statusview/statusviewtest
               desc: statusviewtest はテスト専用 (本番のコードから import しない)
+        data-layer-no-ui:
+          # データ層 (gitdata) とその module 内の依存 (gitexec / app / term) は画面の道具を import しない。gitdata を UI 抜きで
+          # 使う呼び出し元が bubbletea・fsnotify を背負わず、画面の道具の 1 行の変更で gitdata から上が作り直されないため。
+          # 見るのは直接の import だけ: gitdata が module 内の別の package を新しく import したら、その package もここへ足す
+          files:
+            - "**/internal/gitdata/*.go"
+            - "**/internal/gitexec/*.go"
+            - "**/internal/app/*.go"
+            - "**/internal/term/*.go"
+            - "!**/*_test.go"
+          deny:
+            - pkg: charm.land/bubbletea/v2
+              desc: データ層は bubbletea に依存しない (tea.Cmd を組むのは画面と main)
+            - pkg: github.com/fsnotify/fsnotify
+              desc: データ層は fsnotify に依存しない (見張りは internal/fswatch)
+            - pkg: github.com/jiikko/dotfiles/src/tuikit/foreground
+              desc: データ層は前景のプロセス起動に依存しない (internal/extcmd)
+            - pkg: glogx/internal/extcmd
+              desc: git の実行は internal/gitexec (extcmd はエディタ・ブラウザ・前景の起動口で、bubbletea を持つ)
+            - pkg: glogx/internal/fswatch
+              desc: データ層は見張り (bubbletea と fsnotify を持つ) に依存しない
         render-pure:
           # render.go は「状態 → 文字列」の純粋な描画層。I/O・プロセス起動・非同期を
           # 持ち込むと TUI (毎フレーム呼ばれる) の性能とテスト容易性が壊れる

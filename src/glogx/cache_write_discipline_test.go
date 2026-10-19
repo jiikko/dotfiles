@@ -2,9 +2,7 @@ package main
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"io/fs"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -43,26 +41,9 @@ func TestCacheWritesGoThroughWriteAtomic(t *testing.T) {
 		write token.Pos       // os.WriteFile の位置 (NoPos = 無い)
 	}
 	var fns []fnInfo
-	scanned := 0
-
-	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if path == "tools" || d.Name() == "testdata" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		file, perr := parser.ParseFile(fset, path, nil, parser.ParseComments)
-		if perr != nil {
-			return perr
-		}
-		scanned++
+	// 下限は実件数のすぐ下に置く (遠いと、対象がかなり縮んでも緑のまま)。2026-10-19 実測: 本番の .go 92 件
+	for _, mf := range parseModuleNonTestFiles(t, fset, 85) {
+		file, path := mf.file, mf.path
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
@@ -89,10 +70,6 @@ func TestCacheWritesGoThroughWriteAtomic(t *testing.T) {
 			})
 			fns = append(fns, info)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("走査できない: %v", err)
 	}
 
 	// ① パス提供関数を集める (app.CacheBaseDir / cachedir.Base を直接呼ぶもの)
@@ -127,11 +104,6 @@ func TestCacheWritesGoThroughWriteAtomic(t *testing.T) {
 			filepath.ToSlash(f.path)+":"+strconv.Itoa(pos.Line)+" ("+f.decl.Name.Name+")")
 	}
 
-	// 🚨 抽出が空でも緑にならないよう下限を置く。
-	// 2026-09-06 実測: 非テストの .go 75 件を走査し、app.CacheBaseDir 系に届く関数は 14 件。
-	if scanned < 40 {
-		t.Fatalf("走査した .go が %d 件しかない (下限 40)。WalkDir の除外が壊れている", scanned)
-	}
 	if cacheFuncs < 8 {
 		t.Fatalf("app.CacheBaseDir 系に届く関数を %d 件しか見つけられなかった (下限 8)。判定が壊れている", cacheFuncs)
 	}
@@ -140,7 +112,7 @@ func TestCacheWritesGoThroughWriteAtomic(t *testing.T) {
 			"O_TRUNC なので途中書きの JSON が残る。issue 219 / 286):\n  %s\n"+
 			"意図的な例外は関数内に `%s` + 理由を書く", strings.Join(offenders, "\n  "), marker)
 	}
-	t.Logf("走査 .go=%d 件 / app.CacheBaseDir 系に届く関数 %d 件 / 違反 %d 件", scanned, cacheFuncs, len(offenders))
+	t.Logf("app.CacheBaseDir 系に届く関数 %d 件 / 違反 %d 件", cacheFuncs, len(offenders))
 }
 
 // funcHasComment は関数の範囲内にその語を含むコメントがあるか。

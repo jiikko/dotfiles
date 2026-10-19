@@ -82,17 +82,33 @@ func assertFits(t *testing.T, name, hint string, width int) {
 // commit diff の hint は term.FitHintItems で組み、狭い幅でも抜ける手段が残る。
 // 幅を掃くのは TestStatusHintUsesRenderBudget と同じ理由 (1 点では予算のずれが余白に吸われる)。
 func TestDiffHintUsesRenderBudget(t *testing.T) {
+	assertHintFitsAtEveryWidth(t, "q/h: 閉じる", func(m *browseModel) { m.diffOv.Open(m.commits[0].SHA) })
+}
+
+// assertHintFitsAtEveryWidth は frameMinWidth..140 の全部の幅で、setup で画面を出した後の hint 行が端末幅に収まり、切り詰めの …
+// が出ない (組む側の予算と描画側の clip 幅が一致している) ことを見る。keep が空でなければ、その項目 (抜ける手段など) が残ることも見る。
+// 🚨 幅を 1 点で見ない。項目単位で採るので、ある幅では予算のずれ 2 桁が余白に吸われて表に出ない。ずれが「切り詰めの …」として
+// 現れる幅は幅の刻みでしか見つからない (1 点だけの検査は、組む側だけ予算をずらす変異を素通りした)。
+func assertHintFitsAtEveryWidth(t *testing.T, keep string, setup func(m *browseModel)) {
+	t.Helper()
 	for w := frameMinWidth; w <= 140; w++ {
 		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+		// newTestBrowse は NoFrame なので、フレームぶん 2 桁引く経路を明示的に有効化する
 		m.showFrame, m.width, m.height = true, w, 40
-		m.diffOv.Open(m.commits[0].SHA)
+		if !m.frameActive() {
+			t.Fatalf("w=%d: 前提が崩れた (フレームが有効でない)", w)
+		}
+		setup(m)
 		line := m.hintLine()
 		got := term.StripANSI(line)
 		if term.DispWidth(got) > w {
 			t.Errorf("w=%d: hint 行が端末幅を超えた (%d 桁): %q", w, term.DispWidth(got), line)
 		}
-		if strings.Contains(got, "…") || !strings.Contains(got, "q/h: 閉じる") {
-			t.Errorf("w=%d: 切り詰め or 抜ける手段が消えた: %q", w, line)
+		if strings.Contains(got, "…") {
+			t.Errorf("w=%d: hint が切り詰められている (予算がずれている): %q", w, line)
+		}
+		if keep != "" && !strings.Contains(got, keep) {
+			t.Errorf("w=%d: %q が消えた: %q", w, keep, line)
 		}
 	}
 }

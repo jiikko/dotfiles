@@ -57,6 +57,19 @@ func readUsageCache(path string) (usageCacheEntry, bool) {
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return entry, false
 	}
+	// 🚨 **表示に載る文字列は入口で 1 回 termsafe を通す** (src/glogx/CLAUDE.md の規律)。
+	// このファイルは一般ユーザー権限で書き換えられる。live の取得経路は安全 (Claude は
+	// defaultOrder の完全一致でしか描かれず、codex の Label は分から組み立てる) だが、
+	// **codex 枠は Source で拾う**ので、キャッシュに書かれた Label がそのまま表示へ出る。
+	// 読み手 (loadUsageCache・取得中の場所取りの loadUsageShape) ごとに書き分けると漏れるので、読んだ直後のここで閉じる。
+	//
+	// 🚨 **出口の数を数え上げないこと**。守るべき規律は「**表示に載る文字列は入口で 1 回通す**」であって、出口の員数ではない
+	// (列挙は経路が増減するたびに嘘になる)。
+	if entry.Snapshot != nil {
+		for i := range entry.Snapshot.Windows {
+			entry.Snapshot.Windows[i].Label = termsafe.PlainLine(entry.Snapshot.Windows[i].Label)
+		}
+	}
 	return entry, true
 }
 
@@ -94,29 +107,14 @@ func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
 	// 消えて毎起動 claude subprocess ~2s を払うことになる)。codex が入っているのに常時失敗
 	// する環境 (未ログイン等) では同じ理由でキャッシュが効かなくなるが、取得は起動の
 	// クリティカルパス外の background なので、失敗の固定化より安い方を取る
-	if !entry.Snapshot.HasCodex() {
-		if _, err := extcmd.LookPath("codex"); err == nil {
-			return nil, false
-		}
+	if !entry.Snapshot.HasCodex() && codexInstalled() {
+		return nil, false
 	}
 	// age < 0 (未来) も取り直す
 	if age := now.Sub(entry.FetchedAt); age < 0 || age >= usageCacheTTL {
 		return nil, false
 	}
-	// 🚨 **表示に載る文字列は入口で 1 回 termsafe を通す** (src/glogx/CLAUDE.md の規律)。
-	// このファイルは一般ユーザー権限で書き換えられる。live の取得経路は安全 (Claude は
-	// defaultOrder の完全一致でしか描かれず、codex の Label は分から組み立てる) だが、
-	// **codex 枠は Source で拾う**ので、キャッシュに書かれた Label がそのまま表示へ出る。
-	// 出所ごとに書き分けると漏れるので、復元直後にここで閉じる。
-	//
-	// 🚨 **出口の数を数え上げないこと**。以前ここは
-	// 「RenderLine / RenderTableGroups / RenderDashboard の 3 経路」と列挙していたが、
-	// 列挙は経路が増減するたびに嘘になる (当時 `RenderLine` は呼び出し 0 件で、今は src/ratelimit の main が使う)。
-	// 守るべき規律は「**表示に載る文字列は入口で 1 回通す**」であって、出口の員数ではない。
-	for i := range entry.Snapshot.Windows {
-		entry.Snapshot.Windows[i].Label = termsafe.PlainLine(entry.Snapshot.Windows[i].Label)
-	}
-	return entry.Snapshot, true
+	return entry.Snapshot, true // Label の無害化は readUsageCache が済ませている
 }
 
 func saveUsageCache(path string, snap *usage.Snapshot, now time.Time) error {
@@ -128,4 +126,10 @@ func saveUsageCache(path string, snap *usage.Snapshot, now time.Time) error {
 		return err
 	}
 	return app.WriteAtomic(path, data)
+}
+
+// codexInstalled は codex が入っているか (キャッシュの採否と、取得中の場所取りが同じ判定を使う)。
+func codexInstalled() bool {
+	_, err := extcmd.LookPath("codex")
+	return err == nil
 }

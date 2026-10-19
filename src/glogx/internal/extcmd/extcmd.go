@@ -19,16 +19,37 @@ import (
 // OpenURLMsg は job 詳細ページをブラウザで開いた結果。
 type OpenURLMsg struct{ Err error }
 
-// EditorClosedMsg は job ログを開いた nvim を閉じた結果 (e キー)。reclaimErr は戻ったときに外れていた端末の前面を
+// ExecOrigin は前景で起こしたプロセスの起動元。戻ったときの後処理 (読み直す画面・知らせる文) は起動元で決める
+// (戻ってきた順や「待っている画面があるか」で推し量らない。前景を起こす画面が増えたときに、別の画面の読み直しへ流れる)。
+type ExecOrigin uint8
+
+const (
+	OriginEditor ExecOrigin = iota // エディタ (job ログ・repo root・issues viewer の e / v / リンク)。戻ったら issues を読み直す
+	OriginFiler                    // treefiler の ! / s / e
+	OriginLan                      // mac-lan-manager の s / o / 初期設定の手順
+)
+
+// EditorClosedMsg は前景で起こしたプロセスから戻った結果。ReclaimErr は戻ったときに外れていた端末の前面を
 // 取り戻せなかった理由。
-type EditorClosedMsg struct{ Err, ReclaimErr error }
+type EditorClosedMsg struct {
+	Origin          ExecOrigin
+	Err, ReclaimErr error
+}
 
 // RunEditorCmd はテストで実 nvim を起動しないための差し替え点。tea.Exec は bubbletea の描画を一旦止め、端末を nvim へ
 // 明け渡し、終了後に復帰する (エディタ起動用途の標準経路)。foreground.Exec は、戻った後に前面が外れていたら
 // 入れ直しの前に取り戻す (treefiler の ! の `$SHELL -ic` が前面を持ち去ったまま終わる形)。
-var RunEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
+var RunEditorCmd = func(origin ExecOrigin, cmd *exec.Cmd) tea.Cmd {
 	x := foreground.NewExec(cmd)
-	return tea.Exec(x, func(err error) tea.Msg { return EditorClosedMsg{Err: err, ReclaimErr: x.Err} })
+	return tea.Exec(x, closedMsg(origin, x))
+}
+
+// closedMsg は前景のプロセスから戻ったときの Msg を組む (起動元を載せる。テストの stub は RunEditorCmd ごと差し替えるので、
+// ここで Origin を落とす退行は stub の側から見えない。closed_msg_internal_test.go が直接見る)。
+// 見ないもの: RunEditorCmd が closedMsg に渡す origin の取り違え (tea.Exec の callback は非公開の field にしか無く、テストから
+// 呼べない)。RunEditorCmd の本文はこの 1 行なので、レビューで見る。
+func closedMsg(origin ExecOrigin, x *foreground.Exec) func(error) tea.Msg {
+	return func(err error) tea.Msg { return EditorClosedMsg{Origin: origin, Err: err, ReclaimErr: x.Err} }
 }
 
 // OpenInBrowser はテストで実ブラウザを開かないための差し替え点。

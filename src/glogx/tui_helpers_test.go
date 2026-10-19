@@ -177,12 +177,11 @@ func testHintBudget(t *testing.T) int {
 func stubDiff(t *testing.T, lines []string, err error) *[]string {
 	t.Helper()
 	var calls []string
-	orig := loadCommitDiff
+	testenv.Restore(t, &loadCommitDiff)
 	loadCommitDiff = func(sha string, colored bool) ([]string, error) {
 		calls = append(calls, sha)
 		return lines, err
 	}
-	t.Cleanup(func() { loadCommitDiff = orig })
 	return &calls
 }
 
@@ -234,4 +233,11 @@ func TestPopupHintBudgetMatchesBrowse(t *testing.T) {
 	if got := testHintBudget(t); got != testenv.PopupHintBudget {
 		t.Fatalf("popup 幅の hint の予算が %d (testenv.PopupHintBudget = %d)。testenv の定数を直す", got, testenv.PopupHintBudget)
 	}
+}
+
+// stubPushPlan は b の件数の出典 (pushPlan) を差し替える (テストで実 git を叩かない)。
+func stubPushPlan(t *testing.T, plan gitdata.PushPlan) {
+	t.Helper()
+	testenv.Restore(t, &pushPlan)
+	pushPlan = func() gitdata.PushPlan { return plan }
 }

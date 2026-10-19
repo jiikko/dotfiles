@@ -26,6 +26,7 @@ func SanitizeLineKeepTabs(s string) string  { return termsafe.LineKeepTabs(s) }
 func SanitizePlainLine(s string) string     { return termsafe.PlainLine(s) }
 func SanitizePlainKeepTabs(s string) string { return termsafe.PlainLineKeepTabs(s) }
 func DropEmojiVS16(s string) string         { return termsafe.DropEmojiVS16(s) }
+func SanitizePlainBlock(s string) string    { return termsafe.PlainBlock(s) }
 
 // IsCopySafe はクリップボードへ生のまま入れてよいか。タブだけは通す: group 名にタブを含む
 // 実例を生でコピーする決定があり (TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice)、

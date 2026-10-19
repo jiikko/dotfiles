@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -246,9 +247,8 @@ func TestUsageBoxShowsClaudeFetchError(t *testing.T) {
 func TestUsageLastGoodShowsStaleReason(t *testing.T) {
 	// 描画キャッシュの鍵には秒が入る。時刻を止めないと、失敗時と回復後の描画が秒をまたいだときに
 	// 鍵の秒の違いでキャッシュが外れ、鍵に理由を載せ忘れた退行を素通りする
-	orig := app.TimeNow
+	testenv.Restore(t, &app.TimeNow)
 	app.TimeNow = func() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC) }
-	t.Cleanup(func() { app.TimeNow = orig })
 	m := newTestBrowse(t, 5, nil, nil)
 	m.usageOv.Fixture().SetVisible(true)
 	good := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 4, ResetAt: time.Now().Add(time.Hour)}}}

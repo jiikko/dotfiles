@@ -177,11 +177,19 @@ func autobuildReplaceDirs(dir string) []string {
 	}
 	var dirs []string
 	for _, line := range strings.Split(string(data), "\n") {
+		// コメントは行末まで (go.mod の文法)。落とさないと `// replace x => ../y` を走査する木として拾う
+		if i := strings.Index(line, "//"); i >= 0 {
+			line = line[:i]
+		}
 		_, target, ok := strings.Cut(line, "=>")
 		if !ok {
 			continue
 		}
-		target = strings.Fields(target + " ")[0]
+		fields := strings.Fields(target)
+		if len(fields) == 0 {
+			continue // `=>` で終わる行 (書きかけの go.mod)。起動経路なので panic させない
+		}
+		target = fields[0]
 		if strings.HasPrefix(target, "./") || strings.HasPrefix(target, "../") {
 			dirs = append(dirs, filepath.Clean(filepath.Join(dir, target)))
 		}

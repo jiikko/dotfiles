@@ -2,12 +2,15 @@ package statusview
 
 import (
 	"errors"
+	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"glogx/internal/app"
-	"glogx/internal/extcmd"
+	"glogx/internal/gitexec"
 	"glogx/internal/linecache"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -38,19 +41,19 @@ type gitOpCalls struct {
 func stubGitOps(t *testing.T, err error) *gitOpCalls {
 	t.Helper()
 	calls := &gitOpCalls{}
-	origAdd, origStaged, origWork, origClean := extcmd.RunGitAdd, extcmd.RunGitRestoreStaged, extcmd.RunGitRestoreWorktree, extcmd.RunGitCleanUntracked
-	extcmd.RunGitAdd = func(paths []string) error { calls.add = append(calls.add, paths); return err }
-	extcmd.RunGitRestoreStaged = func(paths []string) error {
+	origAdd, origStaged, origWork, origClean := gitexec.RunGitAdd, gitexec.RunGitRestoreStaged, gitexec.RunGitRestoreWorktree, gitexec.RunGitCleanUntracked
+	gitexec.RunGitAdd = func(paths []string) error { calls.add = append(calls.add, paths); return err }
+	gitexec.RunGitRestoreStaged = func(paths []string) error {
 		calls.restoreStaged = append(calls.restoreStaged, paths)
 		return err
 	}
-	extcmd.RunGitRestoreWorktree = func(paths []string) error {
+	gitexec.RunGitRestoreWorktree = func(paths []string) error {
 		calls.restoreWork = append(calls.restoreWork, paths)
 		return err
 	}
-	extcmd.RunGitCleanUntracked = func(paths []string) error { calls.clean = append(calls.clean, paths); return err }
+	gitexec.RunGitCleanUntracked = func(paths []string) error { calls.clean = append(calls.clean, paths); return err }
 	t.Cleanup(func() {
-		extcmd.RunGitAdd, extcmd.RunGitRestoreStaged, extcmd.RunGitRestoreWorktree, extcmd.RunGitCleanUntracked = origAdd, origStaged, origWork, origClean
+		gitexec.RunGitAdd, gitexec.RunGitRestoreStaged, gitexec.RunGitRestoreWorktree, gitexec.RunGitCleanUntracked = origAdd, origStaged, origWork, origClean
 	})
 	return calls
 }
@@ -487,11 +490,7 @@ func TestStatusListWidthFallsBackToOneColumn(t *testing.T) {
 func TestStatusLinesShowsSectionsAndPartialBadge(t *testing.T) {
 	v := newTestStatusView(t, testenv.StatusRec("MM both.go", "?? new.txt"))
 	body := strings.Join(v.Lines(testStatusOpts(120, 20)), "\n")
-	for _, want := range []string{"Staged (1)", "Unstaged (1)", "Untracked (1)", "◐"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("画面に %q が無い:\n%s", want, body)
-		}
-	}
+	testenv.ContainsAll(t, "画面", body, "Staged (1)", "Unstaged (1)", "Untracked (1)", "◐")
 }
 
 func TestStatusLinesCleanTreeMessage(t *testing.T) {
@@ -505,11 +504,7 @@ func TestStatusLinesCleanTreeMessage(t *testing.T) {
 func TestStatusHeaderShowsBranchAndCounts(t *testing.T) {
 	v := newTestStatusView(t, testenv.StatusRec("## topic...origin/topic [ahead 2]", "M  a.go", " M b.go"))
 	head := term.StripANSI(v.Lines(testStatusOpts(120, 20))[0])
-	for _, want := range []string{"topic", "ahead 2", "staged 1", "unstaged 1"} {
-		if !strings.Contains(head, want) {
-			t.Errorf("ヘッダーに %q が無い: %q", want, head)
-		}
-	}
+	testenv.ContainsAll(t, "ヘッダー", head, "topic", "ahead 2", "staged 1", "unstaged 1")
 }
 
 // カーソル行の強調は一覧カラムの幅で完結する (プレビュー側まで背景が伸びない)。
@@ -810,7 +805,7 @@ func TestUntrackedPreviewDoesNotFollowSymlink(t *testing.T) {
 	}
 	link := dir + "/innocent.txt"
 	if err := os.Symlink(secret, link); err != nil {
-		t.Skipf("この環境では symlink を作れない: %v", err)
+		testenv.SkipEnv(t, "この環境では symlink を作れない: %v", err)
 	}
 	lines, err := untrackedPreview(link, false)
 	if err != nil {
@@ -1229,5 +1224,523 @@ func TestStatusHintWordsMatchBehavior(t *testing.T) {
 	pager := v.Hint(testenv.PopupHintBudget)
 	if !strings.Contains(pager, "d/q: 閉じる") {
 		t.Errorf("pager の hint が「閉じる」でない (そこでの q は pager を閉じる): %q", pager)
+	}
+}
+
+// ヘッダーの件数: unstaged は未追跡を含み、conflict は 1 件以上のときだけ先頭に出す。
+func TestStatusHeaderCountsAndConflict(t *testing.T) {
+	plainHeader := func(v *StatusView) string {
+		return term.StripANSI(v.headerLine(StatusRenderOpts{Width: 200}, 200))
+	}
+	v := newTestStatusView(t, testenv.StatusRec("M  s.go", " M a.go", "?? n.txt", "UU c.go"))
+	if got := plainHeader(v); !strings.Contains(got, "conflict 1 / unstaged 2 / staged 1") {
+		t.Errorf("header = %q, want conflict 1 / unstaged 2 / staged 1", got)
+	}
+	v = newTestStatusView(t, testenv.StatusRec("M  s.go", " M a.go"))
+	if got := plainHeader(v); strings.Contains(got, "conflict") || !strings.Contains(got, "unstaged 1 / staged 1") {
+		t.Errorf("header = %q (conflict が無いときは conflict を出さない)", got)
+	}
+}
+
+// まだ一度も読めていないうちに失敗したら、理由を一覧の列で切らずに全幅で出し、件数 (分からない数) は出さない。
+func TestStatusFirstLoadFailureShowsTheWholeReason(t *testing.T) {
+	v := NewStatusView()
+	v.closeAnimOff, v.shown = true, true
+	reason := "fatal: not a git repository (or any of the parent directories): .git — " + strings.Repeat("x", 40) + " end"
+	stubWorktreeStatus(t, "", errors.New(reason))
+	applyStatusLoad(t, &v)
+	out := term.StripANSI(strings.Join(v.Lines(StatusRenderOpts{Width: 200, Page: 10}), "\n"))
+	if !strings.Contains(out, " end") {
+		t.Errorf("理由が一覧の列で切れた:\n%s", out)
+	}
+	if strings.Contains(out, "unstaged 0") {
+		t.Errorf("読めていないのに件数を 0 と出した:\n%s", out)
+	}
+	if head := term.StripANSI(v.headerLine(StatusRenderOpts{Width: 200}, 200)); strings.HasSuffix(strings.TrimSpace(head), "/") {
+		t.Errorf("ヘッダーの末尾に区切りだけが残った: %q", head)
+	}
+}
+
+// 一度読めた後の読み直しが失敗したら、一覧は残したまま理由をヘッダーの下に出す。
+func TestStatusReloadFailureShowsTheReason(t *testing.T) {
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	stubWorktreeStatus(t, "", errors.New("fatal: index file corrupt"))
+	applyStatusLoad(t, v)
+	out := term.StripANSI(strings.Join(v.Lines(StatusRenderOpts{Width: 120, Page: 10}), "\n"))
+	if !strings.Contains(out, "🚨 status 取得失敗: fatal: index file corrupt") || !strings.Contains(out, "a.go") {
+		t.Errorf("読み直しの失敗の理由と last-good の一覧の両方が無い:\n%s", out)
+	}
+}
+
+// 読み直しの失敗の理由の行が出ている間は本文が 1 行減るので、半ページの移動量もその本文の高さで決める。
+func TestStatusHalfPageUsesTheBodyHeightWithReasonRow(t *testing.T) {
+	recs := make([]string, 0, 20)
+	for i := range 20 {
+		recs = append(recs, fmt.Sprintf(" M f%02d.go", i))
+	}
+	v := newTestStatusView(t, testenv.StatusRec(recs...))
+	stubWorktreeStatus(t, "", errors.New("fatal: index file corrupt"))
+	applyStatusLoad(t, v)
+	before := v.cursor
+	v.listKey("ctrl+d", StatusViewport{page: 9})
+	if got, want := v.cursor-before, listnav.Half(9-2); got != want {
+		t.Errorf("半ページの移動 = %d, want %d (本文は page - ヘッダー 2 行)", got, want)
+	}
+}
+
+// 確認の後に中身だけが変わった (XY は ` M` のまま。別プロセスが書き足した) ら捨てない。
+func TestStatusDiscardAbortsWhenContentChangedDuringConfirm(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("a.go", []byte("v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	calls := stubGitOps(t, nil)
+	v.HandleKey("X", testViewport())
+	if !v.discarding {
+		t.Fatal("X で確認モーダルが開いていない")
+	}
+	if err := os.WriteFile("a.go", []byte("v1\nB (確認の後に書き足した)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	applyCmd(t, v, v.HandleKey("y", testViewport()))
+	if len(calls.restoreWork) != 0 {
+		t.Fatalf("確認の後に中身が変わったのに捨てた: %v", calls.restoreWork)
+	}
+	if notice, ok := testenv.NoticeOKOf(v.TakeNotice()); ok || !strings.Contains(notice, "変わった") {
+		t.Errorf("notice = %q (ok=%v), want 中止したことを伝える", notice, ok)
+	}
+}
+
+// printOf はカーソル行の今の指紋 (テストが「プレビューを取ったときの指紋」を作るのに使う)。
+func printOf(t *testing.T, v *StatusView) string {
+	t.Helper()
+	row, ok := v.current()
+	if !ok {
+		t.Fatal("カーソル行がない")
+	}
+	p, err := rowPrint(v.st.root, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// receiveAndShow はカーソル行の diff を受け取り、2 カラムで描く (= ユーザーに見せる。seenPrints は描いたときに進む)。
+func receiveAndShow(t *testing.T, v *StatusView, lines []string, err error, print string) {
+	t.Helper()
+	row, _ := v.current()
+	v.ReceivePreview(StatusPreviewMsg{gen: v.gen, key: previewKey(row), lines: lines, err: err, print: print})
+	v.Lines(testStatusOpts(140, 20))
+}
+
+func writeA(t *testing.T, body string) {
+	t.Helper()
+	if err := os.WriteFile("a.go", []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// プレビュー (画面に出した diff) を取った後に中身が変わったら、X は確認に入らずプレビューを読み直す
+// (見せていない変更まで捨てない)。読み直した後なら確認に入れる。
+func TestStatusDiscardRefreshesPreviewWhenContentChangedAfterPreview(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeA(t, "v1\n")
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	receiveAndShow(t, v, []string{"+v1"}, nil, printOf(t, v))
+	writeA(t, "v1\nB (プレビューの後に書き足した)\n")
+	cmd := v.HandleKey("X", testViewport())
+	if v.discarding {
+		t.Fatal("画面に出していない変更を含むのに、捨てる確認に入った")
+	}
+	if cmd == nil {
+		t.Error("プレビューの読み直しを予約していない")
+	}
+	if notice, _ := testenv.NoticeOKOf(v.TakeNotice()); !strings.Contains(notice, "プレビューを出した後に") {
+		t.Errorf("notice = %q", notice)
+	}
+	receiveAndShow(t, v, []string{"+v1", "+B"}, nil, printOf(t, v))
+	v.HandleKey("X", testViewport())
+	if !v.discarding {
+		t.Error("プレビューを読み直した後でも確認に入らない")
+	}
+}
+
+// 別の行の変化でプレビューのキャッシュを捨てても、最後に見せた diff の指紋は残す。捨てると取り直しが着く前の X が
+// 比べるものを失い、見せていない中身で確認に入る。
+func TestStatusDiscardKeepsPrintOfShownDiffAcrossCacheDrop(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeA(t, "v1\n")
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	stub := stubWorktreeStatus(t, testenv.StatusRec(" M a.go"), nil)
+	row, _ := v.current()
+	receiveAndShow(t, v, []string{"+v1"}, nil, printOf(t, v))
+	stub.out = testenv.StatusRec(" M a.go", "?? new.txt") // 別の行が増えた = キャッシュを捨てる変化
+	applyStatusLoad(t, v)
+	if v.preview.Has(previewKey(row)) {
+		t.Fatal("前提: 一覧の変化でキャッシュが捨てられていない")
+	}
+	writeA(t, "v1\nB (取り直しが着く前に書き足した)\n")
+	v.HandleKey("X", testViewport())
+	if v.discarding {
+		t.Fatal("最後に見せた diff の後に変わったのに、キャッシュを捨てた後の X が確認に入った")
+	}
+}
+
+// 受け取っただけで描いていない diff (1 カラムで欄が無い) は「見せた」に数えない: 全画面 diff で A を見せた後に B へ変わり、
+// 裏の取り直しで B の diff が着いても、X は A と比べて断る。
+func TestStatusDiscardIgnoresReceivedButUnshownDiff(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeA(t, "v1\n")
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	row, _ := v.current()
+	v.pagerKey = previewKey(row)
+	v.ReceivePreview(StatusPreviewMsg{gen: v.gen, key: previewKey(row), lines: []string{"+v1"}, print: printOf(t, v)})
+	v.Lines(testStatusOpts(80, 20)) // 1 カラム。全画面 diff で A を見せた
+	v.pagerKey = ""
+	writeA(t, "v1\nB (全画面 diff を閉じた後に書き足した)\n")
+	v.dropPreviews()
+	v.ReceivePreview(StatusPreviewMsg{gen: v.gen, key: previewKey(row), lines: []string{"+v1", "+B"}, print: printOf(t, v)})
+	v.Lines(testStatusOpts(80, 20)) // 1 カラム: プレビュー欄が無いので B は描かれない
+	v.HandleKey("X", testViewport())
+	if v.discarding {
+		t.Fatal("描いていない diff を「見せた」と数えて確認に入った")
+	}
+}
+
+// diff を取れなかったときは指紋を進めない: A を見せた後に B へ変わり、取り直しが失敗して「取れなかった」が出ても、X は A と比べて断る。
+func TestStatusDiscardDoesNotAdvanceSeenPrintOnFailedPreview(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeA(t, "v1\n")
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	receiveAndShow(t, v, []string{"+v1"}, nil, printOf(t, v))
+	writeA(t, "v1\nB (取り直しが失敗する前に書き足した)\n")
+	v.dropPreviews()
+	receiveAndShow(t, v, nil, errors.New("git diff: timeout"), printOf(t, v))
+	v.HandleKey("X", testViewport())
+	if v.discarding {
+		t.Fatal("取り直しが失敗した (B を見せていない) のに確認に入った")
+	}
+}
+
+// tracked のパスが作業ツリーではディレクトリ (submodule・ファイルをディレクトリに置き換えた) なら X を断る: restore は中を
+// 丸ごと消すのに、指紋は中のファイルの変化を見ない。
+func TestStatusDiscardRefusesTrackedPathThatIsDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll(filepath.Join("a.go", "deep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	v := newTestStatusView(t, testenv.StatusRec(" D a.go"))
+	v.HandleKey("X", testViewport())
+	if v.discarding {
+		t.Fatal("作業ツリーでディレクトリになっている tracked の行で確認に入った")
+	}
+}
+
+// 未追跡のディレクトリの中を調べるのに時間の上限を越えたら、X を断る (stat の遅いマウントで UI を止めない)。
+func TestStatusDiscardRefusesUntrackedDirOverPrintTime(t *testing.T) {
+	t.Chdir(t.TempDir())
+	v := newTestStatusView(t, testenv.StatusRec("?? junk/"))
+	listUntrackedFiles = func(string) (string, error) { return "junk/f\x00", nil } // 1 件でも (256 件ごとの判定にしない)
+	testenv.Restore(t, &rowPrintMaxDuration)
+	rowPrintMaxDuration = 0
+	v.HandleKey("X", testViewport())
+	if v.discarding {
+		t.Fatal("時間の上限を越えたのに確認に入った")
+	}
+}
+
+// r は走行中の読み込みと自動更新の札も降ろして張り直す (gen を進めると、飛んでいる結果と旧い tick は着いても捨てられる)。
+func TestStatusReloadRearmsLoadAndPoll(t *testing.T) {
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	v.loading, v.pollArmed = true, true // 読み込み中・自動更新を張った状態で r
+	cmd := v.HandleKey("r", testViewport())
+	if cmd == nil {
+		t.Fatal("r が何も予約しない")
+	}
+	// 予約の中に読み込み (StatusLoadMsg を返す Cmd) があるか。tick の Cmd は待つので、各 Cmd を goroutine で走らせ、
+	// 読み込みの結果だけを待つ (札が立ったままだと LoadCmd が nil を返し、読み込みが来ない)
+	got := make(chan tea.Msg, 8)
+	run := func(c tea.Cmd) {
+		if c != nil {
+			go func() { got <- c() }()
+		}
+	}
+	if b, ok := cmd().(tea.BatchMsg); ok {
+		for _, c := range b {
+			run(c)
+		}
+	} else {
+		run(cmd)
+	}
+	// 自動更新の tick (statusPollInterval) も新しい世代で届くこと。旧い世代の tick は捨てられるので、張り直さないとチェーンが切れる
+	deadline := time.After(statusPollInterval + 5*time.Second) // hang guard
+	load, poll := false, false
+	for !load || !poll {
+		select {
+		case msg := <-got:
+			switch m := msg.(type) {
+			case StatusLoadMsg:
+				load = m.gen == v.gen
+			case StatusPollMsg:
+				poll = m.gen == v.gen
+			}
+		case <-deadline:
+			t.Fatalf("r の後の予約が足りない: 読み込み=%v 自動更新=%v (取得中・自動更新の札が立ったまま)", load, poll)
+		}
+	}
+}
+
+// 指紋: 作業ツリーは stat (書き直せば変わる)、symlink はリンク先、無いものは absent。
+func TestStatPrintTracksChanges(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "f")
+	if got := statPrint(f); got != "absent" {
+		t.Errorf("無いファイルの指紋 = %q", got)
+	}
+	if err := os.WriteFile(f, []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p1 := statPrint(f)
+	if err := os.WriteFile(f, []byte("b"), 0o644); err != nil { // 大きさは同じ
+		t.Fatal(err)
+	}
+	if statPrint(f) == p1 {
+		t.Error("同じ大きさで書き直しても指紋が同じ")
+	}
+	l := filepath.Join(dir, "l")
+	if err := os.Symlink("f", l); err != nil {
+		t.Fatal(err)
+	}
+	if got := statPrint(l); !strings.HasSuffix(got, ` link:"f"`) {
+		t.Errorf("symlink の指紋 = %q, want リンク先 f (辿らない)", got)
+	}
+}
+
+// 指紋は index 側の行も含む (MM の行で index だけが変わると、restore が書き戻す中身が変わる)。
+func TestRowPrintIncludesIndexEntry(t *testing.T) {
+	t.Chdir(t.TempDir())
+	v := newTestStatusView(t, testenv.StatusRec("MM a.go"))
+	index := "100644 aaaa 0\ta.go"
+	readIndexEntries = func([]string) (string, error) { return index, nil }
+	v.cursor = firstRowOfSection(v.rows, sectionUnstaged)
+	before := printOf(t, v)
+	index = "100644 bbbb 0\ta.go"
+	if printOf(t, v) == before {
+		t.Error("index の blob が変わっても指紋が同じ")
+	}
+}
+
+// 未追跡のディレクトリの中が上限を超えたら、先頭だけで「同じ」と言わずに X を断る。
+func TestStatusDiscardRefusesUntrackedDirOverPrintLimit(t *testing.T) {
+	t.Chdir(t.TempDir())
+	v := newTestStatusView(t, testenv.StatusRec("?? junk/"))
+	listUntrackedFiles = func(string) (string, error) {
+		return strings.Repeat("junk/f\x00", rowPrintMaxEntries+1), nil
+	}
+	v.HandleKey("X", testViewport())
+	if v.discarding {
+		t.Fatal("上限を超えたディレクトリで確認に入った")
+	}
+	if notice, _ := testenv.NoticeOKOf(v.TakeNotice()); !strings.Contains(notice, "確かめられない") {
+		t.Errorf("notice = %q", notice)
+	}
+}
+
+// repo root が分からないときは X を断る (rows は root 相対。cwd に落とすと指紋が別のファイルを見る)。
+func TestStatusDiscardRefusesWithoutRepoRoot(t *testing.T) {
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	v.st.root = ""
+	v.HandleKey("X", testViewport())
+	if v.discarding {
+		t.Fatal("root が分からないのに確認に入った")
+	}
+}
+
+// fetchDiff の指紋は repo root と結合したパスで採り (サブディレクトリから起動しても root のファイルを見る)、diff の取得の
+// 前後で食い違えば "" (確かめられなかった) にする (取得中に変わって戻る形で、画面の diff が指紋の状態のものでなくなる)。
+func TestStatusFetchDiffPrintIsRootJoinedAndEmptyWhenChangedDuringDiff(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "a.go")
+	if err := os.WriteFile(path, []byte("v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	v.st.root = root
+	t.Chdir(t.TempDir()) // cwd は root と別 (サブディレクトリから起動した形)
+	fetch := func(during func()) StatusPreviewMsg {
+		t.Helper()
+		testenv.Restore(t, &loadWorktreeDiff)
+		loadWorktreeDiff = func([]string, bool, bool) ([]string, error) { during(); return []string{"+v1"}, nil }
+		v.dropPreviews()
+		row, _ := v.current()
+		cmd := v.fetchDiff(row, false)
+		if cmd == nil {
+			t.Fatal("fetchDiff が取得を発行しない")
+		}
+		msg, ok := cmd().(StatusPreviewMsg)
+		if !ok {
+			t.Fatalf("msg = %T", msg)
+		}
+		v.ReceivePreview(msg) // 取得中の札を降ろす (次の fetch が発行されるように)
+		return msg
+	}
+	want := statPrint(path) // rowPrint を通さずに絶対パスで採る (結合を壊すと、期待値も一緒に absent になる形を避ける)
+	if want == "absent" || !strings.Contains(fetch(func() {}).print, want) {
+		t.Errorf("指紋に root のファイルの stat (%q) が入っていない", want)
+	}
+	msg := fetch(func() {
+		if err := os.WriteFile(path, []byte("v1\nB (diff の取得中に書き足した)\n"), 0o644); err != nil {
+			t.Error(err)
+		}
+	})
+	if msg.print != "" {
+		t.Errorf("diff の取得中に変わったのに指紋を付けた: %q", msg.print)
+	}
+}
+
+// 未追跡ファイルのプレビューは行数の上限ちょうどなら省略しない。1 行超えたら上限で切って案内を付ける。
+func TestUntrackedPreviewLineCapBoundary(t *testing.T) {
+	dir := t.TempDir()
+	write := func(n int) string {
+		p := filepath.Join(dir, fmt.Sprintf("f%d.txt", n))
+		if err := os.WriteFile(p, []byte(strings.Repeat("x\n", n)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	got, err := untrackedPreview(write(statusPreviewMaxLines), false)
+	if err != nil || len(got) != statusPreviewMaxLines || strings.Contains(got[len(got)-1], "省略") {
+		t.Errorf("ちょうど上限: %d 行 / 末尾 %q / err %v (省略しないはず)", len(got), got[len(got)-1], err)
+	}
+	got, err = untrackedPreview(write(statusPreviewMaxLines+1), false)
+	if err != nil || len(got) != statusPreviewMaxLines+1 || !strings.Contains(got[statusPreviewMaxLines], "省略") {
+		t.Errorf("上限 + 1: %d 行 / err %v (上限で切って案内を付けるはず)", len(got), err)
+	}
+}
+
+// 元のパスが続かないまま出力が終わった rename / copy のレコード (壊れた出力) は、元なしの行として読む (範囲の外を読まない)。
+func TestParseWorktreeStatusRenameAtEndWithoutOrigin(t *testing.T) {
+	st := parseWorktreeStatus("R  new.txt") // 末尾の NUL も無い (出力が途中で切れた)
+	if len(st.rows) != 1 || st.rows[0].path != "new.txt" || st.rows[0].orig != "" {
+		t.Fatalf("rows = %+v (元なしの rename 1 行のはず)", st.rows)
+	}
+}
+
+// 確認の前に別プロセスが stage して XY が変わっても (` M` → `MM`)、最後に見せた diff の指紋で比べる (キーに XY を含めると引けなくなる)。
+func TestStatusDiscardComparesShownPrintAcrossXYChange(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeA(t, "v1\n")
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	stub := stubWorktreeStatus(t, testenv.StatusRec(" M a.go"), nil)
+	receiveAndShow(t, v, []string{"+v1"}, nil, printOf(t, v))
+	stub.out = testenv.StatusRec("MM a.go") // 別プロセスが stage して、さらに書き足した
+	applyStatusLoad(t, v)
+	v.cursor = firstRowOfSection(v.rows, sectionUnstaged)
+	writeA(t, "v1\nB (stage の後に書き足した)\n")
+	v.HandleKey("X", testViewport())
+	if v.discarding {
+		t.Fatal("XY が変わった後に、最後に見せた diff と比べずに確認に入った")
+	}
+}
+
+// 本文が 1 行も入らない高さで描いても、見せたことにしない (見出しだけが描かれる)。
+func TestStatusPreviewTooShortIsNotSeen(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeA(t, "v1\n")
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	row, _ := v.current()
+	v.ReceivePreview(StatusPreviewMsg{gen: v.gen, key: previewKey(row), lines: []string{"+v1"}, print: printOf(t, v)})
+	v.Lines(testStatusOpts(140, 3)) // ヘッダー 1 行 + 本文 2 行 = プレビューの見出しと空行だけ
+	if _, ok := v.seenPrints[seenKey(previewKey(row))]; ok {
+		t.Error("diff の本文を 1 行も描いていないのに、見せたことにした")
+	}
+	v.Lines(testStatusOpts(140, 20))
+	if _, ok := v.seenPrints[seenKey(previewKey(row))]; !ok {
+		t.Error("前提: 本文が入る高さで描いても見せたことにならない")
+	}
+}
+
+// プレビューの取得中に r を押すと、旧い世代の結果は捨てるが、捨てたときに取り直しを予約する (r が張った取り直しは
+// 取得中の札で弾かれているので、予約しないとプレビューが空のまま残る)。
+func TestStatusReloadDuringPreviewFetchStillRefetches(t *testing.T) {
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	row, _ := v.current()
+	fetch := v.fetchDiff(row, false)
+	if fetch == nil {
+		t.Fatal("前提: 取得が発行されない")
+	}
+	v.HandleKey("r", testViewport())
+	msg, ok := fetch().(StatusPreviewMsg)
+	if !ok {
+		t.Fatalf("msg = %T", msg)
+	}
+	if cmd := v.ReceivePreview(msg); cmd == nil {
+		t.Fatal("旧い世代の結果を捨てたのに、取り直しを予約しない")
+	}
+	if cmd := v.fetchDiff(row, false); cmd == nil {
+		t.Error("札が降りていない (取り直しが弾かれる)")
+	}
+}
+
+// 全画面 diff は窓が低くても本文が残る (箱を中央に重ねる) ので、見せたことにする。
+func TestStatusPagerOnShortWindowIsSeen(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeA(t, "v1\n")
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	row, _ := v.current()
+	v.pagerKey = previewKey(row)
+	v.ReceivePreview(StatusPreviewMsg{gen: v.gen, key: previewKey(row), lines: []string{"+v1"}, print: printOf(t, v)})
+	v.Lines(testStatusOpts(80, 1))
+	if _, ok := v.seenPrints[seenKey(previewKey(row))]; ok {
+		t.Error("高さ 1 の全画面 diff (上辺の見出しだけ) で、見せたことにした")
+	}
+	v.Lines(testStatusOpts(80, 2)) // 上辺と本文の 1 行が見える境界
+	if _, ok := v.seenPrints[seenKey(previewKey(row))]; !ok {
+		t.Error("高さ 2 の全画面 diff で本文を見せたのに、見せたことにしていない")
+	}
+}
+
+// 閉じて開き直した後に旧い世代の結果が着いても、新しい世代の取得の札は降ろさず、取り直しも予約しない (同じキーを二重に取らない)。
+func TestStatusStalePreviewDoesNotReleaseNewGenerationMark(t *testing.T) {
+	v := newTestStatusView(t, testenv.StatusRec(" M a.go"))
+	row, _ := v.current()
+	old := v.fetchDiff(row, false)
+	if old == nil {
+		t.Fatal("前提: 取得が発行されない")
+	}
+	staleMsg, ok := old().(StatusPreviewMsg)
+	if !ok {
+		t.Fatalf("msg = %T", staleMsg)
+	}
+	v.close()
+	v.FinishClose()
+	v.shown = true
+	if v.fetchDiff(row, false) == nil {
+		t.Fatal("前提: 開き直した後の取得が発行されない")
+	}
+	if cmd := v.ReceivePreview(staleMsg); cmd != nil {
+		t.Error("旧い世代の結果で取り直しを予約した (新しい世代の取得と二重になる)")
+	}
+	if !v.preview.Loading(previewKey(row)) {
+		t.Error("旧い世代の結果が、新しい世代の取得の札を降ろした")
+	}
+}
+
+// 時間の上限は 1 件ごとの stat の後にも見る (一覧は速く、最後の stat で越えた分も数える)。
+func TestStatusDiscardRefusesWhenLastStatExceedsPrintTime(t *testing.T) {
+	t.Chdir(t.TempDir())
+	v := newTestStatusView(t, testenv.StatusRec("?? junk/"))
+	listUntrackedFiles = func(string) (string, error) { return "junk/f\x00", nil }
+	testenv.Restore(t, &statOf)
+	testenv.Restore(t, &rowPrintMaxDuration)
+	rowPrintMaxDuration = 10 * time.Millisecond
+	statOf = func(p string) string {
+		time.Sleep(50 * time.Millisecond) // sleep-ok: window: 遅い stat (マウントの遅さ) を演じる入力
+		return statPrint(p)
+	}
+	v.HandleKey("X", testViewport())
+	if v.discarding {
+		t.Fatal("最後の stat で時間の上限を越えたのに確認に入った")
 	}
 }

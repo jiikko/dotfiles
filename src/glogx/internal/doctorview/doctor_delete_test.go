@@ -8,9 +8,11 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -113,11 +115,7 @@ func TestDeleteResultCopiesCommandOutput(t *testing.T) {
 		t.Fatal("y で閉じてしまった (コピーは閉じない)")
 	}
 	got := v.CopyPayload()
-	for _, want := range []string{"$ xcrun simctl", "exit 24", "2| retry", "/L/a", "/tmp/h.json"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("コピー文に %q が無い:\n%s", want, got)
-		}
-	}
+	testenv.ContainsAll(t, "コピー文", got, "$ xcrun simctl", "exit 24", "2| retry", "/L/a", "/tmp/h.json")
 	// y 以外は閉じて再スキャン
 	if act, _ := v.handleDeleteKey("j"); act != DoctorRescan || v.del.active() {
 		t.Errorf("他のキーで閉じない: act=%v", act)
@@ -148,11 +146,12 @@ func TestReuseDoesNotCarryFromSnapshot(t *testing.T) {
 
 // トーストは一度出したら消える (残ると、次の再スキャンの理由として使い回される)。
 func TestDoctorToastIsConsumedOnce(t *testing.T) {
-	v := &DoctorView{pendingToast: "一度だけ"}
-	if got := v.TakeToast(); got != "一度だけ" {
+	v := &DoctorView{}
+	v.refuse("一度だけ")
+	if got := takeNoticeText(v); got != "一度だけ" {
 		t.Fatalf("takeToast = %q", got)
 	}
-	if got := v.TakeToast(); got != "" {
+	if got := takeNoticeText(v); got != "" {
 		t.Errorf("2 回目でも文言が残っている: %q", got)
 	}
 }
@@ -521,8 +520,8 @@ func TestDoctorSelectRefusesUnscannedRows(t *testing.T) {
 			if act := v.HandleKey(" ", 20); act != DoctorToast {
 				t.Fatalf("結果 = %v (理由を出すこと)", act)
 			}
-			if !strings.Contains(v.pendingToast, tc.want) {
-				t.Errorf("理由 = %q, want %q を含む", v.pendingToast, tc.want)
+			if !strings.Contains(v.notice, tc.want) {
+				t.Errorf("理由 = %q, want %q を含む", v.notice, tc.want)
 			}
 			if v.selected["thing"] {
 				t.Error("選べてしまった")
@@ -537,13 +536,13 @@ func TestDoctorSelectRequiresInspectForConfirmRisk(t *testing.T) {
 	v.diskRep.Results[0].Entry.Risk = disk.RiskConfirm
 	v.diskRep.Results[0].Entry.Inspect = true
 	_ = v.Lines(testOpts(30))
-	if act := v.HandleKey(" ", 20); act != DoctorToast || !strings.Contains(v.pendingToast, "中身を確認") {
-		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
+	if act := v.HandleKey(" ", 20); act != DoctorToast || !strings.Contains(v.notice, "中身を確認") {
+		t.Fatalf("act=%v toast=%q", act, v.notice)
 	}
 	v.HandleKey("enter", 20) // 中身を開く (カーソルは中の対象パスへ移る)
 	_ = v.Lines(testOpts(30))
 	if act := v.HandleKey(" ", 20); act != DoctorSwallow || len(v.selectedItems) == 0 {
-		t.Fatalf("中身を見た後も選べない: act=%v selectedItems=%v toast=%q", act, v.selectedItems, v.pendingToast)
+		t.Fatalf("中身を見た後も選べない: act=%v selectedItems=%v toast=%q", act, v.selectedItems, v.notice)
 	}
 	if got := v.selectedResults(); len(got) != 1 {
 		t.Fatalf("選んだ対象が削除に渡らない: %d 件", len(got))
@@ -554,8 +553,8 @@ func TestDoctorSelectRequiresInspectForConfirmRisk(t *testing.T) {
 func TestDoctorDeleteWithoutSelection(t *testing.T) {
 	f := &fakeDelete{}
 	v := deleteTestView(t, f)
-	if act := v.HandleKey("d", 20); act != DoctorToast || !strings.Contains(v.pendingToast, "Space") {
-		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
+	if act := v.HandleKey("d", 20); act != DoctorToast || !strings.Contains(v.notice, "Space") {
+		t.Fatalf("act=%v toast=%q", act, v.notice)
 	}
 	if len(f.calls) != 0 {
 		t.Error("engine を呼んだ")
@@ -588,11 +587,7 @@ func TestDoctorDeleteShowsDryRunInConfirm(t *testing.T) {
 		t.Fatalf("確認プロンプトが出ていない: %+v", v.del)
 	}
 	out := testText(v, 30)
-	for _, want := range []string{"本当に削除しますか?", "Thing キャッシュ", "4.0KB", "y: 削除する"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("確認に %q が無い:\n%s", want, out)
-		}
-	}
+	testenv.ContainsAll(t, "確認", out, "本当に削除しますか?", "Thing キャッシュ", "4.0KB", "y: 削除する")
 }
 
 // 確認で n / Esc は中止し、engine を 2 度と呼ばない。
@@ -626,15 +621,14 @@ func TestDoctorDeleteConfirmCancel(t *testing.T) {
 
 // 確認で y は本番の削除を走らせ、結果を出す。incomplete は成功にも失敗にも畳まない。
 func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
-	f := &fakeDelete{
-		phases: []disk.DeletePhase{disk.PhaseScanning, disk.PhaseDeleting, disk.PhaseVerifying},
-		rep: disk.DeleteReport{Entries: []disk.EntryOutcome{
-			// 🚨 ID を入れる: y の対象は plan の Planned な ID で絞る。
-			// planDelete は必ず ID を入れるので、省くと production に無い形になる
-			{ID: "thing", Label: "Thing キャッシュ", Outcome: disk.OutcomePlanned, BeforeSize: 4096, Items: plannedItemOutcomes(1)}}},
-	}
+	f := &fakeDelete{phases: []disk.DeletePhase{disk.PhaseScanning, disk.PhaseDeleting, disk.PhaseVerifying}}
 	v := deleteTestView(t, f)
 	v.HandleKey(" ", 20)
+	f.rep = disk.DeleteReport{Entries: []disk.EntryOutcome{
+		// 🚨 ID と Item を入れる: y の対象は plan の Planned なエントリと Item で絞る。
+		// planDelete は必ず ID を入れ、選んだ Item ごとに結末を書くので、省くと production に無い形になる
+		{ID: "thing", Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomePlanned, BeforeSize: 4096,
+			Items: plannedItemsOf(t, v, "thing")}}}
 	v.HandleKey("d", 20)
 	_ = runDeleteCmds(t, v, v.TakeDeleteCmd())
 
@@ -839,8 +833,8 @@ func TestDeleteRechecksAtPressTime(t *testing.T) {
 	v := deleteTestView(t, f)
 	v.HandleKey(" ", 20)
 	v.diskRep.Results[0].Reused = true // 選んだ後に印が立った
-	if act := v.HandleKey("d", 20); act != DoctorToast || !strings.Contains(v.pendingToast, "前回の計測") {
-		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
+	if act := v.HandleKey("d", 20); act != DoctorToast || !strings.Contains(v.notice, "前回の計測") {
+		t.Fatalf("act=%v toast=%q", act, v.notice)
 	}
 	if len(f.calls) != 0 {
 		t.Error("engine を呼んだ")
@@ -855,8 +849,8 @@ func TestDeleteRefusedWhileScanning(t *testing.T) {
 	doctorFirstDiskEvent(t, v) // 1 件だけ届いた = 走査中
 	_ = v.Lines(testOpts(30))
 	v.selected = map[entryID]bool{"thing": true}
-	if act := v.HandleKey("d", 20); act != DoctorToast || !strings.Contains(v.pendingToast, "スキャンが終わるまで") {
-		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
+	if act := v.HandleKey("d", 20); act != DoctorToast || !strings.Contains(v.notice, "スキャンが終わるまで") {
+		t.Fatalf("act=%v toast=%q", act, v.notice)
 	}
 	if len(f.calls) != 0 {
 		t.Error("走査中に engine を呼んだ")
@@ -870,11 +864,7 @@ func TestDeleteShowsProgressInPanel(t *testing.T) {
 	out := testText(v, 20)
 	// 🚨 エントリ名と「相 + 経過」は**別の行**に出す。1 行に詰めると狭い端末で
 	// term.TruncateDisp が末尾から削り、生存の手がかり (スピナー・経過) が最初に消える
-	for _, want := range []string{"削除しています", "2/3  Xcode DerivedData", "削除中", "Ctrl-C"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("実行中のパネルに %q が無い:\n%s", want, out)
-		}
-	}
+	testenv.ContainsAll(t, "実行中のパネル", out, "削除しています", "2/3  Xcode DerivedData", "削除中", "Ctrl-C")
 	// 🚨 「含む」ではなく**行の形**で検査する。連結された文字列を Contains で探す書き方だと、
 	// あいだに入る文字 (スピナー) を 1 つ書き落とすだけで一致しなくなり、1 行に詰める変異を
 	// 素通りさせる (実際に変異検証で素通りした)
@@ -909,11 +899,7 @@ func TestDeleteShowsEngineError(t *testing.T) {
 		t.Fatalf("エラーの相に落ちていない: %+v", v.del)
 	}
 	out := testText(v, 20)
-	for _, want := range []string{"削除できませんでした", "記録を残せない", "何も消えていません", "閉じてもう一度スキャン"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("エラーのパネルに %q が無い:\n%s", want, out)
-		}
-	}
+	testenv.ContainsAll(t, "エラーのパネル", out, "削除できませんでした", "記録を残せない", "何も消えていません", "閉じてもう一度スキャン")
 	// 🚨 パネルと hint が違うことを言わない。実挙動は DoctorRescan (閉じて再スキャン) で、
 	// 兄弟の結果パネルは正しく言っているのにエラー経路だけ「閉じる」だった
 	if h := v.Hint(120); !strings.Contains(h, "閉じてもう一度スキャン") {
@@ -973,11 +959,7 @@ func TestDeleteConfirmPerMethodLines(t *testing.T) {
 	v := &DoctorView{del: doctorDelete{confirm: true, plan: &plan}}
 	out := strings.Join(v.Lines(testOpts(30)), "\n")
 	// cli はコマンドの実体を 1 本ずつ出す (件数だけの注記と二重に出さない)
-	for _, want := range []string{"3 件をゴミ箱へ移動", "$ go clean -modcache", "1 件にコマンドを実行", "実行しません", "🚫 対象外", "いまは対象外です"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("確認に %q が無い:\n%s", want, out)
-		}
-	}
+	testenv.ContainsAll(t, "確認", out, "3 件をゴミ箱へ移動", "$ go clean -modcache", "1 件にコマンドを実行", "実行しません", "🚫 対象外", "いまは対象外です")
 	// ゴミ箱ぶんは「解放される見込み」に足さない (空にするまで容量は戻らない)
 	if strings.Contains(out, "解放される見込み: 3.0KB") {
 		t.Errorf("ゴミ箱の分を解放量に足している:\n%s", out)
@@ -993,11 +975,7 @@ func TestDeletePanelElisionNote(t *testing.T) {
 	}
 	v := &DoctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
 	out := strings.Join(v.Lines(testOpts(10)), "\n")
-	for _, want := range []string{"下に ", " 行", "j/k で送る"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("入り切らないぶんの案内に %q が無い:\n%s", want, out)
-		}
-	}
+	testenv.ContainsAll(t, "入り切らないぶんの案内", out, "下に ", " 行", "j/k で送る")
 }
 
 // 確認パネルは縦に送れる。**送るキーで確認が閉じない**のが要点:
@@ -1016,7 +994,7 @@ func TestDeleteConfirmScrollKeysDoNotCancel(t *testing.T) {
 	down := []string{"j", "down", "ctrl+d", "pgdown", "G", "end"}
 	up := []string{"k", "up", "ctrl+u", "pgup", "g", "home"}
 	for _, key := range append(append([]string{}, down...), up...) {
-		forward := slicesContains(down, key)
+		forward := slices.Contains(down, key)
 		v.del.confirmScroll.offset = 0
 		if !forward {
 			v.del.confirmScroll.offset = v.del.confirmScroll.total - v.del.confirmScroll.view // 末尾から戻す
@@ -1158,7 +1136,7 @@ func TestDoctorSnapshotScreenRescansInsteadOfRefusing(t *testing.T) {
 			if act := v.HandleKey(key, 20); act != DoctorRescan {
 				t.Fatalf("%q の結果 = %v (取り直すこと)", key, act)
 			}
-			if got := v.TakeToast(); !strings.Contains(got, "取り直します") {
+			if got := takeNoticeText(v); !strings.Contains(got, "取り直します") {
 				t.Errorf("理由を伝えていない: %q", got)
 			}
 		})
@@ -1180,7 +1158,7 @@ func TestDoctorSelectableAfterRescan(t *testing.T) {
 		t.Fatal("取り直した後も snapshot の印が残っている")
 	}
 	if act := v.HandleKey(" ", 20); act != DoctorSwallow || !v.selected["thing"] {
-		t.Fatalf("取り直した後も選べない: act=%v selected=%v toast=%q", act, v.selected, v.pendingToast)
+		t.Fatalf("取り直した後も選べない: act=%v selected=%v toast=%q", act, v.selected, v.notice)
 	}
 }
 
@@ -1262,7 +1240,7 @@ func TestDoctorSelectSingleDirectory(t *testing.T) {
 	_ = v.Lines(testOpts(40))
 	picked := v.rows[v.cur.index].key
 	if act := v.HandleKey(" ", 20); act != DoctorSwallow {
-		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
+		t.Fatalf("act=%v toast=%q", act, v.notice)
 	}
 	got := v.selectedResults()
 	if len(got) != 1 || len(got[0].Items) != 1 {
@@ -1318,11 +1296,7 @@ func TestDeleteConfirmListsFullPaths(t *testing.T) {
 		{Label: "たくさんある", Method: "rm", Outcome: disk.OutcomePlanned, BeforeSize: 13 << 20, Items: items}}}
 	v := &DoctorView{del: doctorDelete{confirm: true, plan: &plan}}
 	out := strings.Join(v.Lines(testOpts(40)), "\n")
-	for _, want := range []string{"/Users/koji/Library/Caches/thing/Entry-0", "/Users/koji/Library/Caches/thing/Entry-9"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("確認に %q が無い:\n%s", want, out)
-		}
-	}
+	testenv.ContainsAll(t, "確認", out, "/Users/koji/Library/Caches/thing/Entry-0", "/Users/koji/Library/Caches/thing/Entry-9")
 	// 1 エントリで画面を埋めない (他のエントリが丸ごと省略されるため)。打ち切りは件数で伝える
 	if strings.Contains(out, "Entry-10") {
 		t.Errorf("打ち切っていない (1 エントリで画面を埋める):\n%s", out)
@@ -1384,11 +1358,7 @@ func TestDeleteRunningPanelStreamsCommandOutput(t *testing.T) {
 		log: commandLogLines(disk.CommandRecord{Name: "faketool", Args: []string{"purge"},
 			RC: 24, Stdout: "done", Stderr: "retry later"})}}
 	out := strings.Join(v.Lines(testOpts(20)), "\n")
-	for _, want := range []string{"$ faketool purge", "exit 24", "1| done", "2| retry later"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("実行中の画面に %q が無い:\n%s", want, out)
-		}
-	}
+	testenv.ContainsAll(t, "実行中の画面", out, "$ faketool purge", "exit 24", "1| done", "2| retry later")
 }
 
 // blocked の行に削除の案内を出さない。出しておいて Space が断るのは案内が嘘になる。
@@ -1448,15 +1418,15 @@ func TestDoctorStartClearsCarryOverState(t *testing.T) {
 	v := testView(t)
 	runCmds(t, v, v.open())
 	_ = v.Lines(testOpts(30))
-	v.pendingToast, v.pendingCopy, v.enterDetail = "残り", "残り", "disk:thing"
+	v.notice, v.pendingCopy, v.enterDetail = "残り", "残り", "disk:thing"
 	v.cur.fellBack = true
 	v.pendingDeleteCmd = func() tea.Msg { return nil }
 	v.selected = map[entryID]bool{"thing": true}
 	runCmds(t, v, v.Rescan())
-	if v.pendingToast != "" || v.pendingCopy != "" || v.enterDetail != "" ||
+	if v.notice != "" || v.pendingCopy != "" || v.enterDetail != "" ||
 		v.cur.fellBack || v.pendingDeleteCmd != nil || len(v.selected) != 0 {
 		t.Errorf("前の世代の状態が残っている: toast=%q copy=%q enter=%q fellBack=%v cmd=%v selected=%v",
-			v.pendingToast, v.pendingCopy, v.enterDetail, v.cur.fellBack, v.pendingDeleteCmd != nil, v.selected)
+			v.notice, v.pendingCopy, v.enterDetail, v.cur.fellBack, v.pendingDeleteCmd != nil, v.selected)
 	}
 }
 
@@ -1555,20 +1525,7 @@ func TestDeleteResultPanelElisionNote(t *testing.T) {
 	rep := disk.DeleteReport{Entries: entries}
 	v := &DoctorView{del: doctorDelete{result: &rep}}
 	out := strings.Join(v.Lines(testOpts(10)), "\n")
-	for _, want := range []string{"他 ", "画面に入りません"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("落とした件数の注記に %q が無い:\n%s", want, out)
-		}
-	}
-}
-
-func slicesContains(xs []string, x string) bool {
-	for _, s := range xs {
-		if s == x {
-			return true
-		}
-	}
-	return false
+	testenv.ContainsAll(t, "落とした件数の注記", out, "他 ", "画面に入りません")
 }
 
 // 確認の結末語は結果画面と同じ出典 (doctorOutcomeWord) から取る。
@@ -1582,11 +1539,7 @@ func TestDeleteConfirmSeparatesSkippedFromFailed(t *testing.T) {
 	out := testText(v, 30)
 	// 🚨 下見の Skipped は「いまは対象外」なので**一覧と同じ語**であること。期待値は
 	// disk.Mark から取る (リテラルで書くと、一覧側だけ語が変わっても気づけない)
-	for _, want := range []string{disk.Mark(disk.Result{Status: disk.StatusBlocked}), "❌ できず"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("確認に %q が無い:\n%s", want, out)
-		}
-	}
+	testenv.ContainsAll(t, "確認", out, disk.Mark(disk.Result{Status: disk.StatusBlocked}), "❌ できず")
 	// 結果画面の語 (実行したが触らなかった) を下見で使わない。直下に出る理由は
 	// 「いまは対象外です: …」なので、「触れず」だと 1 行の中で語と理由が食い違う
 	if w := doctorOutcomeWord(disk.OutcomeSkipped); strings.Contains(out, w) {
@@ -1656,6 +1609,23 @@ func plannedItemOutcomes(n int) []disk.ItemOutcome {
 		})
 	}
 	return out
+}
+
+// plannedItemsOf は選択中の id のエントリの Item を全部 Planned にした下見の結果 (本物の planDelete が全部を通したときの形)。
+func plannedItemsOf(t *testing.T, v *DoctorView, id string) []disk.ItemOutcome {
+	t.Helper()
+	for _, r := range v.selectedResults() {
+		if r.Entry.ID != id {
+			continue
+		}
+		out := make([]disk.ItemOutcome, 0, len(r.Items))
+		for _, it := range r.Items {
+			out = append(out, disk.ItemOutcome{Path: it.Path, Size: it.Size, Ref: it.Ref, Outcome: disk.OutcomePlanned})
+		}
+		return out
+	}
+	t.Fatalf("前提が崩れている: %s が選ばれていない", id)
+	return nil
 }
 
 // 確認画面は**実際に触る Item だけ**を数え、並べる。
@@ -1751,10 +1721,9 @@ func TestDeleteProgressLines(t *testing.T) {
 // 同じ相が続くあいだ経過の基準を据え置く。毎イベントで打ち直すと経過が 0 に戻り続け、
 // 「どこまで進んだか」が読めなくなる (固まって見える元の症状に戻る)。
 func TestDeleteProgressElapsedSurvivesSameStep(t *testing.T) {
-	orig := app.TimeNow
+	testenv.Restore(t, &app.TimeNow)
 	now := time.Date(2026, 9, 4, 1, 0, 0, 0, time.Local)
 	app.TimeNow = func() time.Time { return now }
-	t.Cleanup(func() { app.TimeNow = orig })
 
 	v := deleteTestView(t, &fakeDelete{})
 	v.del = doctorDelete{running: true, ch: make(chan doctorDeleteEvent, 1), done: make(chan doctorDeleteEvent, 1)}
@@ -1796,4 +1765,13 @@ func TestDeletePanelKeepsAbortHintOnTinyPage(t *testing.T) {
 			}
 		})
 	}
+}
+
+// takeNoticeText は TakeNotice の文言だけを返す (doctor の知らせは今どれも断りなので、重さもそれを確かめる)。
+func takeNoticeText(v *DoctorView) string {
+	t, kind := v.TakeNotice()
+	if t != "" && kind != app.NoticeRefused {
+		panic("doctor の知らせの重さが断りでない: " + t)
+	}
+	return t
 }

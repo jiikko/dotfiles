@@ -137,7 +137,9 @@ func RenderLines(commits []gitdata.Commit, statuses map[string]gitdata.CIState, 
 // 全部未 push / push 状態不明 (HasRepo=false) のときは何も挿さない。push/pull で
 // statuses が変わると lines は再構築されるため、マークは常に現状を反映する。
 func insertPushBoundary(lines []Line, commits []gitdata.Commit, statuses map[string]gitdata.CIState, o RenderOpts) []Line {
-	if len(commits) == 0 {
+	// GitHub の repo を解決できない repo には境界を挿さない: 境界の名前 (origin) が実在する remote とは限らない
+	// (未 push の 🔼 は手元で判定して出すが、境界は remote の名前を言う)
+	if len(commits) == 0 || !o.HasRepo {
 		return lines
 	}
 	boundary := -1 // push 済み先頭のコミット index

@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -367,35 +368,16 @@ func lineDiff(want, got string) string {
 // 止めないもの: fixture.go の中に Fixture で始まらない名前の関数を足して、本番から包んで呼ぶ形 (レビューの責務)
 func TestNoFixtureCallsInProduction(t *testing.T) {
 	fset := token.NewFileSet()
-	scanned := 0
-	err := filepath.WalkDir(".", func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			// テスト専用のパッケージ (testSupportPkgs) は本番のバイナリに入らないので見ない。名前の形 (*test) で外すと、
-			// 同じ形の名前の本番のパッケージ (internal/latest 等) まで外れる
-			if n := d.Name(); n == "testdata" || testSupportPkgs[filepath.ToSlash(p)] || (strings.HasPrefix(n, ".") && p != ".") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
-			return nil
-		}
-		f, err := parser.ParseFile(fset, p, nil, parser.SkipObjectResolution|parser.ParseComments)
-		if err != nil {
-			return err
-		}
-		scanned++
-		isDef := filepath.Base(p) == "fixture.go" // Fixture を定義するファイル (`return Fixture{v}` は定義の一部)
-		if isDef {
+	// canary: main の直下と internal/ の本番の .go は 90 を超える (2026-10-19 実測 92)。走査が空振りしたら緑で通さない
+	for _, mf := range parseModuleNonTestFiles(t, fset, 80) {
+		p, f := mf.path, mf.file
+		if filepath.Base(p) == "fixture.go" { // Fixture を定義するファイル (`return Fixture{v}` は定義の一部)
 			// 外してよいのは nofixture のビルドから消えるものだけ。build tag の無い fixture.go は本番に残るので、
 			// そこから本番が Fixture を使っても字句の検査も nofixture のビルドも素通りする
 			if !hasNofixtureConstraint(f) {
 				t.Errorf("%s: fixture.go に //go:build !nofixture が無い (本番のビルドに残り、Fixture の検査を素通りする)", p)
 			}
-			return nil
+			continue
 		}
 		// 名前が Fixture で始まる識別子 (メソッドの `.Fixture()`・`Fixture{v}` の直接構築・パッケージの関数
 		// `issuesview.FixtureScanMsg`) を、Fixture を定義するファイルの外の本番のコードでは使わない
@@ -406,14 +388,6 @@ func TestNoFixtureCallsInProduction(t *testing.T) {
 			}
 			return true
 		})
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// canary: main の直下と internal/ の非テストの .go は 60 個を超える。走査が空振りしたら緑で通さない
-	if scanned < 50 {
-		t.Fatalf("非テストの .go を %d 個しか読んでいない (走査が壊れている)", scanned)
 	}
 }
 
@@ -525,6 +499,8 @@ var testSupportPkgs = map[string]bool{
 // 同じパッケージの集合であることを確かめる。
 // .golangci.yml は字面で読む: `- pkg:` を引用符で書く・render-pure を改名して後ろに別の規則を足す、では偽の赤になる (安全側)。
 // depguard の規則の files: と、規則が有効かは見ない (golangci-lint の実行が見る)。
+var nextDepguardRule = regexp.MustCompile(`\n {8}[a-z0-9-]+:\n`)
+
 func TestTestSupportPkgsMatchDepguard(t *testing.T) {
 	b, err := os.ReadFile(".golangci.yml")
 	if err != nil {
@@ -536,9 +512,9 @@ func TestTestSupportPkgsMatchDepguard(t *testing.T) {
 		t.Fatal(".golangci.yml に test-support-only-in-tests の規則が無い")
 	}
 	rest := s[i:]
-	// 次の規則 (同じ深さのキー) の手前までを読む
-	if j := strings.Index(rest, "\n        render-pure:"); j > 0 {
-		rest = rest[:j]
+	// 次の規則 (同じ深さ = 8 桁の字下げのキー) の手前までを読む (規則の名前で切ると、間に足した規則の deny まで読む)
+	if j := nextDepguardRule.FindStringIndex(rest[1:]); j != nil {
+		rest = rest[:j[0]+1]
 	}
 	got := map[string]bool{}
 	for _, line := range strings.Split(rest, "\n") {
@@ -608,4 +584,206 @@ func TestNoViewImportsAnotherView(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("画面のパッケージの本番のファイルを 1 つも読めなかった")
 	}
+}
+
+// TestWatchChainStateWrittenOnlyByItsMethods は fswatch.Chain の札と世代 (Gen / EvArmed / PollArmed) を、本番のコードが
+// internal/fswatch の外で書かない (代入・++/--・fswatch.Chain{...} の組み立て・Chain を埋め込む型を Chain なしで組み立てる)
+// ことを確かめる。世代を進めずに札を降ろす形
+// (旧い tick と新しい tick が同じ世代で届き、ポーリングが二重になる) を、各見張りの手組みで作らせないため。
+// 書き換えは internal/fswatch/chain.go の Advance / DropDeadWatcher / Release / EventCmd / PollCmd に寄せてある。
+// 止めないもの: 型情報を使わない字句の検査なので、同じ名前のフィールドを持つ別の型への代入も拾う (そのときは名前を変える)。
+// フィールドを別名の変数経由で書く形 (ポインタを取って書く) も拾わない
+func TestWatchChainStateWrittenOnlyByItsMethods(t *testing.T) {
+	guarded := map[string]bool{"Gen": true, "EvArmed": true, "PollArmed": true}
+	fset := token.NewFileSet()
+	report := func(pos token.Pos, what string) {
+		t.Errorf("%s: 本番のコードが %s を書いている (札と世代は fswatch.Chain のメソッドで変える)", fset.Position(pos), what)
+	}
+	isGuarded := func(e ast.Expr) (string, bool) {
+		sel, ok := e.(*ast.SelectorExpr)
+		if !ok || !guarded[sel.Sel.Name] {
+			return "", false
+		}
+		return sel.Sel.Name, true
+	}
+	isChain := func(e ast.Expr) bool {
+		sel, ok := e.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Chain" {
+			return false
+		}
+		x, ok := sel.X.(*ast.Ident)
+		return ok && x.Name == "fswatch"
+	}
+	files := parseModuleNonTestFiles(t, fset, 80) // 2026-10-19 実測: 92 件
+	// fswatch.Chain を埋め込む型 (issuesWatch・gitLogWatch)。その型を組み立てるのに Chain を指定しないと (`issuesWatch{}`)、
+	// 世代が 0 に戻り、閉じる前に張った tick を新しい世代として受け取る (Chain: x.Advance() で組む)
+	embedders := map[string]bool{}
+	for _, mf := range files {
+		ast.Inspect(mf.file, func(n ast.Node) bool {
+			ts, ok := n.(*ast.TypeSpec)
+			if !ok {
+				return true
+			}
+			if st, ok := ts.Type.(*ast.StructType); ok {
+				for _, fld := range st.Fields.List {
+					if len(fld.Names) == 0 && isChain(fld.Type) {
+						embedders[ts.Name.Name] = true
+					}
+				}
+			}
+			return true
+		})
+	}
+	if len(embedders) < 2 { // canary: issuesWatch と gitLogWatch
+		t.Fatalf("fswatch.Chain を埋め込む型を %d 個しか見つけない (%v)。抽出が壊れている", len(embedders), embedders)
+	}
+	for _, mf := range files {
+		p, f := mf.path, mf.file
+		if strings.HasPrefix(filepath.ToSlash(p), "internal/fswatch/") {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.AssignStmt:
+				for _, lhs := range n.Lhs {
+					if name, ok := isGuarded(lhs); ok {
+						report(lhs.Pos(), name)
+					}
+				}
+			case *ast.IncDecStmt:
+				if name, ok := isGuarded(n.X); ok {
+					report(n.Pos(), name)
+				}
+			case *ast.CompositeLit:
+				if isChain(n.Type) && len(n.Elts) > 0 {
+					report(n.Pos(), "fswatch.Chain{...}")
+				}
+				if id, ok := n.Type.(*ast.Ident); ok && embedders[id.Name] && !setsField(n, "Chain") {
+					report(n.Pos(), id.Name+"{...} (Chain を指定しない組み立て = 世代を 0 に戻す)")
+				}
+			}
+			return true
+		})
+	}
+}
+
+// skipAllowlist は t.Skip を直接呼んでよいテスト (ファイル:関数) と理由 (CI でも skip が正しい結果になりうるもの)。
+// 関数の単位で持つ: ファイルの単位だと、同じファイルに足した別のテストの skip まで許す。
+// それ以外の「この環境では前提を作れない」skip は testenv.SkipEnv を通す (CI では落ちる。-v の無い CI の出力では
+// skip に化けても見えない)。
+var skipAllowlist = map[string]string{
+	"filer_view_test.go:TestFilerOpenFailureIsReportedAsError":               "cwd を消しても開けるファイルシステムがある",
+	"issues/filelink_test.go:TestResolveLinkCaseInsensitivePathStillChecked": "大文字小文字を区別するファイルシステムでは迂回が起きない",
+	"issues/parse_test.go:TestScanWarnsUnreadableDir":                        "root は権限で読めなくならない",
+}
+
+// TestSkipsAreAllowlisted はテストの t.Skip / Skipf / SkipNow の直接の呼び出しが skipAllowlist の関数にだけあることを確かめる。
+// 止めないもの: 変数に入れた testing.TB 経由の呼び出しの名前が t / tb / b 以外のとき、testenv.SkipEnv 以外の helper に包んだ skip
+func TestSkipsAreAllowlisted(t *testing.T) {
+	fset := token.NewFileSet()
+	scanned := 0
+	used := map[string]bool{}
+	err := filepath.WalkDir(".", func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if n := d.Name(); n == "testdata" || (strings.HasPrefix(n, ".") && p != ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		f, err := parser.ParseFile(fset, p, nil, parser.SkipObjectResolution)
+		if err != nil {
+			return err
+		}
+		scanned++
+		// 名前ごとに見る (関数と、トップレベルの var / const に入れた値。var の塊の中も 1 つずつの名前で許可を引く)
+		for _, nd := range namedTopLevel(f) {
+			name := nd.name
+			key := filepath.ToSlash(p) + ":" + name
+			ast.Inspect(nd.node, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || (sel.Sel.Name != "Skip" && sel.Sel.Name != "Skipf" && sel.Sel.Name != "SkipNow") {
+					return true
+				}
+				if x, ok := sel.X.(*ast.Ident); !ok || (x.Name != "t" && x.Name != "tb" && x.Name != "b") {
+					return true
+				}
+				if _, ok := skipAllowlist[key]; !ok {
+					t.Errorf("%s (%s): t.%s を直接呼んでいる (環境の前提が無いなら testenv.SkipEnv を使う。CI でも skip が正しいなら skipAllowlist に理由を足す)", fset.Position(call.Pos()), name, sel.Sel.Name)
+				}
+				used[key] = true
+				return true
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scanned < 150 { // canary: 実測 166 (2026-10-19)
+		t.Fatalf("テストの .go を %d 個しか読んでいない (走査が壊れている)", scanned)
+	}
+	for k := range skipAllowlist {
+		if !used[k] {
+			t.Errorf("%s: skipAllowlist にあるのに t.Skip を呼んでいない (外し忘れ・改名)", k)
+		}
+	}
+}
+
+// setsField は composite literal が名前つきで field を指定しているか。
+func setsField(lit *ast.CompositeLit, field string) bool {
+	for _, e := range lit.Elts {
+		if kv, ok := e.(*ast.KeyValueExpr); ok {
+			if k, ok := kv.Key.(*ast.Ident); ok && k.Name == field {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// namedTopLevel はトップレベルの宣言を名前ごとに返す (関数・var / const の値 1 つずつ・型。名前の無いものは "(decl)")。
+func namedTopLevel(f *ast.File) []struct {
+	name string
+	node ast.Node
+} {
+	type named = struct {
+		name string
+		node ast.Node
+	}
+	var out []named
+	for _, d := range f.Decls {
+		switch d := d.(type) {
+		case *ast.FuncDecl:
+			out = append(out, named{d.Name.Name, d})
+		case *ast.GenDecl:
+			for _, sp := range d.Specs {
+				switch sp := sp.(type) {
+				case *ast.ValueSpec:
+					for i, n := range sp.Names {
+						if i < len(sp.Values) {
+							out = append(out, named{n.Name, sp.Values[i]})
+						}
+					}
+					if len(sp.Values) > len(sp.Names) || (len(sp.Names) > 0 && len(sp.Values) == 0) {
+						out = append(out, named{"(decl)", sp})
+					}
+				case *ast.TypeSpec:
+					out = append(out, named{sp.Name.Name, sp})
+				default:
+					out = append(out, named{"(decl)", sp})
+				}
+			}
+		}
+	}
+	return out
 }

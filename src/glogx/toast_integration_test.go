@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/testenv"
 	"testing"
 	"time"
 
@@ -24,9 +25,8 @@ import (
 //
 // どちらの経路でも退場が完走することを両方回して担保する (片方だけ通って油断しないため)。
 func TestToastLeavingReachesHiddenViaTick(t *testing.T) {
-	orig := toast.Hold
+	testenv.Restore(t, &toast.Hold)
 	toast.Hold = time.Millisecond // 退場タイマー Cmd を実行しても実時間 (3s) を待たない
-	t.Cleanup(func() { toast.Hold = orig })
 
 	cases := []struct {
 		name        string

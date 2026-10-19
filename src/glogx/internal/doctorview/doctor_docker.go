@@ -161,6 +161,7 @@ func (v *DoctorView) dockerSection(o DoctorRenderOpts) []doctorRow {
 				doctorColor(o.Colored, term.AnsiDim, "     Space で選んで x、または y でコピーして自分で叩いてください"),
 			}),
 			copyPath: d.SystemPrune,
+			copyKind: copyKindCommand,
 			copyText: d.SystemPrune + "\n# " + d.SystemPruneNote + "\n",
 		})
 	return rows
@@ -202,7 +203,7 @@ func (v *DoctorView) dockerGroupRow(o DoctorRenderOpts, g docker.Group) doctorRo
 			// ここが選べないと「1 件ずつ選んでください」と言うだけで手段が無い
 			row.selectable = true
 			row.key = dockerItemRowKey(string(g.Kind), it.Name)
-			row.copyPath = it.Command
+			row.copyPath, row.copyKind = it.Command, copyKindCommand
 			row.copyText = it.Name + " (" + it.SizeText + "):\n" + it.Command + "\n"
 		}
 		detail = append(detail, row)
@@ -224,6 +225,7 @@ func (v *DoctorView) dockerGroupRow(o DoctorRenderOpts, g docker.Group) doctorRo
 		// 🚨 群のコマンドが無い (ボリューム) 行でも y が無言にならないよう、
 		// 1 件ずつのコマンドを並べたものを渡す (hint は「y: コマンドをコピー」と言っている)
 		copyPath: dockerGroupCopyPath(g),
+		copyKind: copyKindCommand,
 		copyText: dockerGroupCopyText(g),
 	}
 }

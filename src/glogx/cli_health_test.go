@@ -90,8 +90,8 @@ func TestCommandExitCodeSignalIsUnknown(t *testing.T) {
 }
 
 func TestCheckClaudeHealthExitStatus(t *testing.T) {
-	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
-	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	testenv.Restore(t, &extcmd.LookPath)
+	testenv.Restore(t, &cliHealthRunner)
 	extcmd.LookPath = func(string) (string, error) { return "/fake/claude", nil }
 
 	tests := []struct {
@@ -120,8 +120,8 @@ func TestCheckClaudeHealthExitStatus(t *testing.T) {
 }
 
 func TestCheckCLIHealthExpiredContextDoesNotUseOutput(t *testing.T) {
-	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
-	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	testenv.Restore(t, &extcmd.LookPath)
+	testenv.Restore(t, &cliHealthRunner)
 	extcmd.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
 	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
@@ -141,11 +141,12 @@ func TestCheckCLIHealthExpiredContextDoesNotUseOutput(t *testing.T) {
 }
 
 func TestCheckCLIHealthSignalExitWithOutputIsUnknown(t *testing.T) {
-	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
-	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	testenv.Restore(t, &extcmd.LookPath)
+	testenv.Restore(t, &cliHealthRunner)
 	extcmd.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
-	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
-	defer cancel()
+	// 期限の切れていない ctx で呼ぶ: 期限切れの ctx だと時間切れの分岐が先に unknown を返し、signal 終了の扱い
+	// (commandExitCode の exitCode < 0) まで届かない
+	live := context.Background()
 	signalErr := signalExitError(t)
 	cliHealthRunner = func(_ context.Context, name string, _ ...string) ([]byte, []byte, error) {
 		if strings.HasSuffix(name, "claude") {
@@ -153,17 +154,17 @@ func TestCheckCLIHealthSignalExitWithOutputIsUnknown(t *testing.T) {
 		}
 		return nil, []byte("Not logged in\n"), signalErr
 	}
-	if got := checkClaudeHealth(expired); got != cliUnknown {
+	if got := checkClaudeHealth(live); got != cliUnknown {
 		t.Fatalf("claude state = %v, want unknown", got)
 	}
-	if got := checkCodexHealth(expired); got != cliUnknown {
+	if got := checkCodexHealth(live); got != cliUnknown {
 		t.Fatalf("codex state = %v, want unknown", got)
 	}
 }
 
 func TestCheckCodexHealthExitZeroLoggedIn(t *testing.T) {
-	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
-	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	testenv.Restore(t, &extcmd.LookPath)
+	testenv.Restore(t, &cliHealthRunner)
 	extcmd.LookPath = func(string) (string, error) { return "/fake/codex", nil }
 	cliHealthRunner = func(_ context.Context, _ string, _ ...string) ([]byte, []byte, error) {
 		return nil, []byte("Logged in using ChatGPT\n"), nil
@@ -174,8 +175,8 @@ func TestCheckCodexHealthExitZeroLoggedIn(t *testing.T) {
 }
 
 func TestCheckCLIHealthRunnerArguments(t *testing.T) {
-	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
-	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	testenv.Restore(t, &extcmd.LookPath)
+	testenv.Restore(t, &cliHealthRunner)
 	extcmd.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
 	var calls []string
 	cliHealthRunner = func(_ context.Context, name string, args ...string) ([]byte, []byte, error) {
@@ -198,8 +199,8 @@ func TestCheckCLIHealthRunnerArguments(t *testing.T) {
 }
 
 func TestCheckCLIHealthCmdIssues(t *testing.T) {
-	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
-	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	testenv.Restore(t, &extcmd.LookPath)
+	testenv.Restore(t, &cliHealthRunner)
 
 	tests := []struct {
 		name        string
@@ -245,8 +246,8 @@ func TestCheckCLIHealthCmdIssues(t *testing.T) {
 }
 
 func TestCheckCLIHealthCmdBothIssuesInSpecOrder(t *testing.T) {
-	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
-	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	testenv.Restore(t, &extcmd.LookPath)
+	testenv.Restore(t, &cliHealthRunner)
 	extcmd.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
 	claudeErr, codexErr := exitOneError(t), exitOneError(t)
 	cliHealthRunner = func(_ context.Context, name string, _ ...string) ([]byte, []byte, error) {
@@ -303,8 +304,8 @@ func TestCheckCLIHealthCmdKeepsCodexIssueWhenClaudeTimesOut(t *testing.T) {
 }
 
 func TestCheckCLIHealthCmdUnknownIsSilent(t *testing.T) {
-	origLookPath, origRunner := extcmd.LookPath, cliHealthRunner
-	t.Cleanup(func() { extcmd.LookPath, cliHealthRunner = origLookPath, origRunner })
+	testenv.Restore(t, &extcmd.LookPath)
+	testenv.Restore(t, &cliHealthRunner)
 	extcmd.LookPath = func(string) (string, error) { return "/fake/cli", nil }
 	cliHealthRunner = func(_ context.Context, name string, _ ...string) ([]byte, []byte, error) {
 		if strings.Contains(name, "claude") {

@@ -9,7 +9,6 @@ import (
 	"glogx/internal/gitdata"
 	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
-	"glogx/internal/term"
 	"glogx/internal/testenv"
 	"glogx/issues"
 )
@@ -32,22 +31,10 @@ func renderOpts(page int) issuesview.IssuesRenderOpts {
 // hint を組む予算と描画側が切る幅は同じ 1 か所 (browseModel.hintWidth) から取る。
 // TestStatusHintUsesRenderBudget の issues viewer 版。
 func TestIssuesHintUsesRenderBudget(t *testing.T) {
-	for w := frameMinWidth; w <= 140; w++ {
-		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
-		m.showFrame, m.width, m.height = true, w, 40
-		if !m.frameActive() {
-			t.Fatalf("w=%d: 前提が崩れた (フレームが有効でない)", w)
-		}
+	assertHintFitsAtEveryWidth(t, "", func(m *browseModel) {
 		m.issuesOv.Fixture().SetShown(true)
 		m.issuesOv.Receive(issuesview.FixtureScanMsg("", []string{"/repo/issues"}, issuesviewtest.SampleIssues()))
-		line := m.hintLine()
-		if got := term.DispWidth(term.StripANSI(line)); got > w {
-			t.Errorf("w=%d: hint 行が端末幅を超えた (%d 桁): %q", w, got, line)
-		}
-		if strings.Contains(line, "…") {
-			t.Errorf("w=%d: hint が切り詰められている (予算がずれている): %q", w, line)
-		}
-	}
+	})
 }
 
 // Msg 経路 (issuesScanMsg) からの notice 配達の回帰テスト。

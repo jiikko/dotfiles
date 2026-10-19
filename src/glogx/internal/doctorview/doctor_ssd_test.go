@@ -7,6 +7,7 @@ import (
 	"doctor/svc"
 	"glogx/internal/doctorview/doctortest"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"strings"
 	"testing"
 	"time"
@@ -59,11 +60,7 @@ func TestDoctorSSDCopyAPFSCommand(t *testing.T) {
 	}
 	v.HandleKey("Y", 30)
 	text := v.CopyPayload()
-	for _, want := range []string{"SMART: ok / APFS: 未検査", "予備領域: 100% (閾値 99%) [ok]", ssd.APFSCommand} {
-		if !strings.Contains(text, want) {
-			t.Errorf("解説に %q が無い:\n%s", want, text)
-		}
-	}
+	testenv.ContainsAll(t, "解説", text, "SMART: ok / APFS: 未検査", "予備領域: 100% (閾値 99%) [ok]", ssd.APFSCommand)
 	if strings.Contains(text, "FAKESERIAL") {
 		t.Errorf("シリアル番号が解説に入った:\n%s", text)
 	}
@@ -85,8 +82,11 @@ func TestDoctorSSDWithoutSmartctl(t *testing.T) {
 	_ = v.Lines(testOpts(30))
 	v.cur.key = ssdSmartctlRowKey
 	_ = v.Lines(testOpts(30))
-	if v.HandleKey("y", 30); v.CopyPayload() != ssd.InstallHint {
-		t.Fatalf("y = %q, want %q", v.CopyPayload(), ssd.InstallHint)
+	if h := v.Hint(200); !strings.Contains(h, "y: コマンドをコピー") {
+		t.Errorf("smartctl の入れ方の行の hint = %q (コマンドをコピーする行)", h)
+	}
+	if v.HandleKey("y", 30); v.CopyPayload() != ssd.InstallHint || v.CopyNoun() != "コマンド" {
+		t.Fatalf("y = %q (語 %q), want %q (コマンド)", v.CopyPayload(), v.CopyNoun(), ssd.InstallHint)
 	}
 }
 
@@ -148,9 +148,11 @@ func TestDoctorSSDHintHasNoEnter(t *testing.T) {
 	if h := v.Hint(200); strings.Contains(h, "Enter") || !strings.Contains(h, "y: コマンドをコピー") {
 		t.Fatalf("SSD タブの hint = %q", h)
 	}
+	// Enter と y の案内はカーソル行から決まるので、タブを替えたら描き直してディスクの行の上で見る
 	v.tab = TabDisk
-	if h := v.Hint(200); !strings.Contains(h, "Enter: 開閉") {
-		t.Fatalf("ディスクのタブから Enter が消えた: %q", h)
+	_ = v.Lines(testOpts(30))
+	if h := v.Hint(200); !strings.Contains(h, "Enter: 開閉") || !strings.Contains(h, "y: パスをコピー") {
+		t.Fatalf("ディスクのタブから Enter / y: パスをコピー が消えた: %q", h)
 	}
 }
 

@@ -76,7 +76,8 @@ func TestRebootNoteIsTruncatedOnNarrowWidth(t *testing.T) {
 	o.Env, o.Width = env, 40
 	out := strings.Join(v.Lines(o), "\n")
 	if strings.Contains(out, disk.RebootClearsNote) {
-		t.Skip("幅 40 でも切れなかった (この端末幅では検証できない)")
+		// 幅は 40 に固定しているので環境では変わらない: 切れないのは行の切り詰めを通らなくなった退行 (skip にしない)
+		t.Fatalf("幅 40 で注記が切り詰められていない (行の幅の切り詰めを通っていない):\n%s", out)
 	}
 	if !strings.Contains(out, "再起動すると消える") {
 		t.Errorf("幅 40 で注記の先頭が読めない (要点が末尾にある文言になっていないか):\n%s", out)

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"glogx/internal/extcmd"
 	"glogx/internal/gitdata"
+	"glogx/internal/gitexec"
 	"glogx/internal/testenv"
 	"os"
 	"os/exec"
@@ -55,11 +55,7 @@ func TestIntegrationPatchBodyIntact(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := commits[0].Body
-	for _, want := range []string{"diff --git", "+line"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("-p の patch 本文に %q がありません: %q", want, body)
-		}
-	}
+	testenv.ContainsAll(t, "-p の patch 本文", body, "diff --git", "+line")
 }
 
 func TestIntegrationUnpushedSHAs(t *testing.T) {
@@ -169,7 +165,7 @@ func TestLoadLogDisplayVerbatimRealRepo(t *testing.T) {
 	t.Chdir(dir)
 	run := func(args ...string) {
 		t.Helper()
-		if _, err := extcmd.RunGitTimeout(args...); err != nil {
+		if _, err := gitexec.RunGitTimeout(args...); err != nil {
 			t.Fatalf("git %v: %v", args, err)
 		}
 	}
@@ -205,5 +201,16 @@ func TestLoadLogDisplayVerbatimRealRepo(t *testing.T) {
 		if !l.Header && l.Text != raw[i] {
 			t.Errorf("行 %d が git log 出力と不一致: %q != %q", i, l.Text, raw[i])
 		}
+	}
+}
+
+// GitHub の repo を解決できない repo でも、未 push は手元で判定して 🔼 にする (⬜ = push 済みで Check が無い、と同じ絵にしない)。
+func TestMergePlanMarksUnpushedWithoutRepo(t *testing.T) {
+	statuses, toFetch, _, hasRepo, _ := mergePlan(repoPlan{hasRepo: false, unpushed: map[string]bool{"a": true}}, []string{"a", "b"})
+	if hasRepo || len(toFetch) != 0 {
+		t.Fatalf("hasRepo=%v toFetch=%v", hasRepo, toFetch)
+	}
+	if statuses["a"] != gitdata.StateUnpushed || statuses["b"] != gitdata.StateNone {
+		t.Errorf("statuses = %v (a は未 push、b は Check なし)", statuses)
 	}
 }

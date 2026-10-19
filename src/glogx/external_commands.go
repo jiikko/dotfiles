@@ -15,8 +15,8 @@ import (
 	"subproc"
 
 	"glogx/internal/app"
-	"glogx/internal/extcmd"
 	"glogx/internal/gitdata"
+	"glogx/internal/gitexec"
 )
 
 // 外部プロセス (git / tmux / claude / ブラウザ / クリップボード) を叩くラッパー群。
@@ -47,9 +47,116 @@ func noPromptGitCmd(ctx context.Context, args ...string) *exec.Cmd {
 var runGitPush = func(ctx context.Context) error {
 	out, err := noPromptGitCmd(ctx, "push").CombinedOutput()
 	if err != nil {
-		return errors.New(strings.TrimSpace(string(out)))
+		line := gitFailureLine(string(out))
+		return newGitOutputError(line+pushRetryHint(line), out, err)
 	}
 	return nil
+}
+
+// gitOutputError は git の失敗を、トーストに出す 1 行 (Error) と git の出力の全文 (Output。w でコピーする) に分けて持つ。
+// 🚨 git の出力の 1 行目をそのまま理由にしない: push の拒否は 1 行目が `To <remote>`、pull の衝突は `From <remote>` で、
+// 理由は 2 行目以降にある (gitFailureLine)。
+type gitOutputError struct {
+	line   string
+	Output string
+}
+
+func (e *gitOutputError) Error() string { return e.line }
+
+// newGitOutputError は理由の行 line と出力 out から作る。出力が空 (git が起動できない等) で line も空なら、
+// 起動の失敗 cause の文を理由にする (空のトーストにしない)。
+func newGitOutputError(line string, out []byte, cause error) error {
+	if strings.TrimSpace(line) == "" && cause != nil {
+		line = cause.Error()
+	}
+	return &gitOutputError{line: line, Output: strings.TrimSpace(string(out))}
+}
+
+// gitGenericLines は理由の行に選ばない決まり文句 (本当の理由は別の行にある: ssh の接続の失敗・remote の説明)。
+var gitGenericLines = []string{
+	"fatal: Could not read from remote repository.",
+	"error: failed to push some refs",
+	"Please make sure you have the correct access rights",
+	"and the repository exists.",
+}
+
+// isInformationalGitLine は失敗の理由ではないお知らせの行 (`notice:` / `warning:` / `info:`、remote の進み具合など)。
+func isInformationalGitLine(l string) bool {
+	for _, p := range []string{"notice:", "warning:", "info:", "remote: ", "Enumerating ", "Counting ", "Compressing ", "Writing ", "Total "} {
+		if strings.HasPrefix(l, p) {
+			return true
+		}
+	}
+	return isRefUpdateLine(l)
+}
+
+// isRefUpdateLine は通った ref の更新の行 (`abc..def  main -> main`・`* [new branch]`・`= [up to date]`)。送り先が複数の push では、
+// 先の送り先の成功の行が後の送り先の失敗の理由より前に出る。拒否 (`! [`) は理由なので数えない。
+func isRefUpdateLine(l string) bool {
+	return strings.Contains(l, " -> ") && !strings.HasPrefix(l, "!")
+}
+
+func isGenericGitLine(l string) bool {
+	if strings.HasPrefix(l, "hint:") || strings.HasPrefix(l, "To ") || strings.HasPrefix(l, "From ") {
+		return true
+	}
+	for _, g := range gitGenericLines {
+		if strings.HasPrefix(l, g) {
+			return true
+		}
+	}
+	return false
+}
+
+// gitFailureLine は git の出力から理由の 1 行を選ぶ。優先順: 衝突の行 (`CONFLICT`) → remote が書いた理由
+// (`remote: error:` / `remote: fatal:`) → ref の拒否 (`! [`) → 決まり文句でない `fatal:` / `error:` →
+// ssh の接続・認証の失敗 → 決まり文句の `fatal:` / `error:` → 決まり文句でない行 → 最初の空でない行。
+// 🚨 git の出力の 1 行目をそのまま使わない (push は `To <remote>`、pull は `From <remote>` で始まる)。決まり文句
+// (`fatal: Could not read from remote repository.` など) も選ばない: 本当の理由はその前の行にある
+func gitFailureLine(out string) string {
+	lines := strings.Split(out, "\n")
+	pick := func(match func(string) bool) string {
+		for _, l := range lines {
+			if t := strings.TrimSpace(l); t != "" && match(t) {
+				return t
+			}
+		}
+		return ""
+	}
+	for _, match := range []func(string) bool{
+		func(l string) bool { return strings.HasPrefix(l, "CONFLICT") },
+		func(l string) bool {
+			return strings.HasPrefix(l, "remote: error:") || strings.HasPrefix(l, "remote: fatal:")
+		},
+		func(l string) bool { return strings.HasPrefix(l, "! [") },
+		func(l string) bool {
+			return (strings.HasPrefix(l, "fatal:") || strings.HasPrefix(l, "error:")) && !isGenericGitLine(l)
+		},
+		func(l string) bool { return strings.HasPrefix(l, "ssh:") || strings.Contains(l, "Permission denied") },
+		// 決まり文句でもお知らせでもない行 (`ERROR: Repository not found.` / `Host key verification failed.` など、
+		// 接頭辞を持たない本当の理由) は決まり文句の fatal より前
+		func(l string) bool { return !isGenericGitLine(l) && !isInformationalGitLine(l) },
+		// 🚨 明確な理由が無いときは、お知らせの行 (ssh のラッパーの notice など) より決まり文句の fatal / error を選ぶ
+		func(l string) bool { return strings.HasPrefix(l, "fatal:") || strings.HasPrefix(l, "error:") },
+		func(l string) bool { return !isGenericGitLine(l) && !isRefUpdateLine(l) }, // 通った ref の更新は失敗の理由にしない
+		// 通った ref の更新の行しか無ければ "" (理由が無い。newGitOutputError は起動の失敗の文へ落とす)
+		func(l string) bool { return !isRefUpdateLine(l) },
+	} {
+		if l := pick(match); l != "" {
+			return l
+		}
+	}
+	return ""
+}
+
+// pushRetryHint は選んだ理由の行が「remote が先に進んでいて拒否された」ときだけ次の手を添える。
+// 🚨 出力全体からは判定しない: 別の ref の non-fast-forward や hook の説明文の語を拾って、保護ブランチ・hook・権限の拒否
+// (pull しても通らない) に pull を勧めてしまう
+func pushRetryHint(line string) string {
+	if strings.HasPrefix(line, "! [rejected]") && (strings.HasSuffix(line, "(fetch first)") || strings.HasSuffix(line, "(non-fast-forward)")) {
+		return " (u で pull してから b で push してください)"
+	}
+	return ""
 }
 
 // pullCleanup は走行中の pull (と conflict 時の rebase --abort 後始末) の完了 latch。
@@ -126,7 +233,7 @@ var runGitPullRebase = func(ctx context.Context) error {
 			return abortRebase(out)
 		}
 	}
-	return errors.New(strings.TrimSpace(string(out)))
+	return newGitOutputError(gitFailureLine(string(out)), out, err)
 }
 
 // rebaseInProgress は今の repo で rebase が途中で止まっているか (git dir の下に rebase-merge / rebase-apply があるか)。
@@ -149,11 +256,11 @@ func operationInProgress() (string, error) {
 
 // gitDirMarker は git dir の下にある最初の印 (ファイルかディレクトリ) の名前を返す (無ければ "")。
 func gitDirMarker(markers ...string) (string, error) {
-	gitDir, err := extcmd.RunGitTimeout("rev-parse", "--git-dir")
+	gitDir, err := gitexec.RunGitTimeout("rev-parse", "--git-dir")
 	if err != nil {
 		return "", err
 	}
-	dir := strings.TrimSpace(gitDir)
+	dir := strings.TrimSuffix(gitDir, "\n") // 改行だけを外す (末尾が空白のパスを削らない。issues.ResolveRepoRoot と同じ)
 	for _, name := range markers {
 		if _, statErr := os.Stat(dir + "/" + name); statErr == nil {
 			return name, nil
@@ -166,11 +273,14 @@ func gitDirMarker(markers ...string) (string, error) {
 // abort 自体が失敗したら「元に戻した」とは主張せず (壊れた状態が残っている可能性がある)、
 // 手動復旧を促す。out は pull --rebase の出力 (conflict 内容の提示用)。
 func abortRebase(out []byte) error {
-	conflict := app.FirstLine(strings.TrimSpace(string(out)))
-	if _, err := extcmd.RunGitTimeout("rebase", "--abort"); err != nil {
-		return fmt.Errorf("conflict のため rebase 中断を試みましたが失敗しました。手動で `git rebase --abort` してください: %s", conflict)
+	conflict := gitFailureLine(string(out))
+	if _, err := gitexec.RunGitTimeout("rebase", "--abort"); err != nil {
+		// abort が失敗した理由 (index.lock が残っている等) も出す。無いと「手動で abort して」も同じ理由で失敗する
+		why := strings.TrimSpace(app.FirstLine(err.Error()))
+		detail := append(append([]byte(nil), out...), []byte("\n\n--- git rebase --abort ---\n"+err.Error())...)
+		return newGitOutputError("conflict のため rebase 中断を試みましたが失敗しました ("+why+")。手動で `git rebase --abort` してください: "+conflict, detail, err)
 	}
-	return fmt.Errorf("conflict のため rebase を中断して元に戻しました: %s", conflict)
+	return newGitOutputError("conflict のため rebase を中断して元に戻しました: "+conflict, out, nil)
 }
 
 // pullBlockedByDirtyTree は git status --porcelain の出力に rebase を阻む tracked 変更

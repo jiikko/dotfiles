@@ -8,6 +8,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/filerview"
 	"glogx/internal/gitdata"
+	"glogx/internal/issuesview"
 	"glogx/internal/ratelimitview"
 	"glogx/internal/testenv"
 	"treefiler/filer"
@@ -84,5 +85,22 @@ func TestInitFilerRestoreYieldsToOtherScreens(t *testing.T) {
 	_ = m2.Init()
 	if m2.activeFullScreen() != FullScreenNone {
 		t.Errorf("記憶が無いのに全画面が開いた: %v", m2.activeFullScreen())
+	}
+}
+
+// issues の記憶は repo の照合 (非同期) の後でないと開くか決まらないので、記憶があるだけで F は譲らない
+// (照合が外れると何も復元されない)。issues の復元は、着いたときに F が出ていれば捨てられる。
+func TestInitFilerRestoreDoesNotYieldToUnverifiedIssuesMemory(t *testing.T) {
+	now := testenv.IsolateScreenMemory(t)
+	m := newFilerBrowse(t)
+	if err := filerview.FixtureSaveScreen(filer.Place{Start: app.CurrentDir()}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := issuesview.FixtureSaveScreen("/別の/repo", now); err != nil {
+		t.Fatal(err)
+	}
+	_ = m.Init()
+	if m.activeFullScreen() != FullScreenFiler {
+		t.Fatalf("issues の記憶があるだけで F を開かなかった: active=%v", m.activeFullScreen())
 	}
 }

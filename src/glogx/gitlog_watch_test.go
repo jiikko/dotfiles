@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"glogx/internal/app"
-	"glogx/internal/extcmd"
+	"glogx/internal/fswatch"
 	"glogx/internal/gitdata"
+	"glogx/internal/gitexec"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 
@@ -196,7 +196,7 @@ func TestGitLogFPUnmeasuredKeepsBaseline(t *testing.T) {
 func TestGitLogFingerprintBaselineCatchesStartupWindow(t *testing.T) {
 	m, dir, opts := realRepoBrowse(t, 10, "c1", "c2")
 
-	fp, err := extcmd.RunGitTimeout(gitdata.BuildFingerprintArgs(opts.LogQuery())...)
+	fp, err := gitexec.RunGitTimeout(gitdata.BuildFingerprintArgs(opts.LogQuery())...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestGitLogFingerprintBaselineCatchesStartupWindow(t *testing.T) {
 
 	// 「読み込みの後に commit された」= 基準がまだ無い状態で、手元と食い違う指紋が届く
 	testenv.CommitLines(t, dir, 3, "c3")
-	fp2, err := extcmd.RunGitTimeout(gitdata.BuildFingerprintArgs(opts.LogQuery())...)
+	fp2, err := gitexec.RunGitTimeout(gitdata.BuildFingerprintArgs(opts.LogQuery())...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,9 +303,9 @@ func TestGitLogReflectAtTopFallsToPullAnim(t *testing.T) {
 // 即時性を失うだけなので、gitLogWatchDirs の対象漏れは他のどの検査でも観測できない。
 // 🚨 fsnotify を作れない環境では skip する (その環境ではポーリングが唯一の経路)。
 func TestIntegrationGitLogWatchSeesCommitEvent(t *testing.T) {
-	w, err := app.NewDirWatcher()
+	w, err := fswatch.NewDirWatcher()
 	if err != nil {
-		t.Skipf("この環境では fsnotify を作れない (%v)。実 fsnotify との結合は未検証", err)
+		testenv.SkipEnv(t, "この環境では fsnotify を作れない (%v)。実 fsnotify との結合は未検証", err)
 	}
 	t.Cleanup(func() { _ = w.Close() })
 	dir := testenv.NewTempRepo(t, []string{"c1"})

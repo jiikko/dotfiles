@@ -177,3 +177,24 @@ func TestFetchCmdRefreshIgnoresCache(t *testing.T) {
 		t.Errorf("キャッシュを読んでしまった (リフレッシュは常に 2 本の取得へ進むべき): %T %v", msg, msg)
 	}
 }
+
+// キャッシュは一般ユーザー権限で書き換えられるので、取得中の場所取り (loadUsageShape) に使う Label も無害化する
+// (起動時の loadUsageCache だけを無害化すると、場所取りの行で codex の Label が端末へそのまま出る)。
+func TestLoadUsageShapeSanitizesCachedLabels(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	path, err := usageCachePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveUsageCache(path, &usage.Snapshot{Windows: []usage.Window{
+		{Label: "5h"},
+		{Label: "cx7d\x1b]52;c;bWFsaWNpb3Vz\x07", Source: usage.SourceCodex},
+	}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range loadUsageShape() {
+		if testenv.HasTerminalControl(w.Label) {
+			t.Errorf("場所取りの Label に制御文字が残った: %q", w.Label)
+		}
+	}
+}

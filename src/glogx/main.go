@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"strings"
@@ -21,8 +22,8 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/doctorview"
-	"glogx/internal/extcmd"
 	"glogx/internal/gitdata"
+	"glogx/internal/gitexec"
 
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
@@ -63,13 +64,23 @@ func run(argv []string) int {
 }
 
 // exitGitError は git 自体の失敗。stderr と終了コードをそのまま返す (issue のエラー方針)。
-func exitGitError(err error) int {
-	var gitErr *extcmd.GitExitError
+func exitGitError(err error) int { return writeGitError(os.Stderr, err) }
+
+// writeGitError は git の失敗を w へ書き、終了コードを返す (exitGitError の本体。テストが書き出し先を差し替える)。
+func writeGitError(w io.Writer, err error) int {
+	var gitErr *gitexec.GitExitError
 	if errors.As(err, &gitErr) {
-		fmt.Fprint(os.Stderr, gitErr.Stderr)
+		if strings.TrimSpace(gitErr.Stderr) == "" || gitErr.TimedOut {
+			fmt.Fprintln(w, "glogx:", gitErr) // 起動できない・時間切れ (stderr が空) でも理由を出す
+		} else {
+			fmt.Fprint(w, gitErr.Stderr)
+		}
+		if gitErr.Code <= 0 {
+			return 1 // signal で終わった (Code=-1) / 起動できなかった ときに 0 以下の終了コードを返さない
+		}
 		return gitErr.Code
 	}
-	fmt.Fprintln(os.Stderr, "glogx:", err)
+	fmt.Fprintln(w, "glogx:", err)
 	return 1
 }
 
@@ -314,9 +325,14 @@ func planStatuses(opts *Options, shas []string) (statuses map[string]gitdata.CIS
 func mergePlan(plan repoPlan, shas []string) (statuses map[string]gitdata.CIState, toFetch []string, repo gitdata.Repo, hasRepo bool, cachePath string) {
 	statuses = map[string]gitdata.CIState{}
 	if !plan.hasRepo {
-		// remote なし / GitHub 以外 → Check は存在しないので全件 `–` (issue のエラー方針)
+		// remote なし / GitHub 以外 → Check は存在しないので `–`。ただし未 push は手元で判定できるので 🔼 にする
+		// (⬜ は「push 済みだが Check が無い」で、未 push と同じ絵にしない)
 		for _, sha := range shas {
-			statuses[sha] = gitdata.StateNone
+			if plan.unpushed[sha] {
+				statuses[sha] = gitdata.StateUnpushed
+			} else {
+				statuses[sha] = gitdata.StateNone
+			}
 		}
 		return statuses, nil, plan.repo, false, ""
 	}

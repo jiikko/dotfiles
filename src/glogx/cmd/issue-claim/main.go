@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"glogx/internal/term"
 	"glogx/issues"
 )
 
@@ -32,7 +33,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	dir, num := args[0], args[1]
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-		fmt.Fprintf(stderr, "issue-claim: issues ディレクトリが無い: %s\n", dir)
+		fmt.Fprintf(stderr, "issue-claim: issues ディレクトリが無い: %s\n", term.SanitizePlainLine(dir))
 		return 2
 	}
 	list, warnings := issues.Scan([]string{dir})
@@ -45,7 +46,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	// 壊れた目印などの警告は、拒否や失敗の理由になりうるので出しておく
 	for _, w := range warnings {
-		fmt.Fprintf(stderr, "issue-claim: 警告: %s\n", w)
+		fmt.Fprintf(stderr, "issue-claim: 警告: %s\n", term.SanitizePlainLine(w))
 	}
 	switch len(hits) {
 	case 0:
@@ -55,23 +56,29 @@ func run(args []string, stdout, stderr io.Writer) int {
 	default:
 		fmt.Fprintf(stderr, "issue-claim: issue %s の実体が %d 件ある (番号の衝突)\n", num, len(hits))
 		for _, iss := range hits {
-			fmt.Fprintf(stderr, "  %s\n", iss.Rel)
+			fmt.Fprintf(stderr, "  %s\n", term.SanitizePlainLine(iss.Rel))
 		}
 		return 1
 	}
 	iss := hits[0]
+	// 🚨 制御文字を含むパスは claim しない。stdout は scripts/issue_claim.sh が実パスとして git add に渡すので、表示用に
+	// 書き換えられない (書き換えると実体と食い違う)。そのまま端末に出すと ESC が端末を操作する
+	if !term.IsCopySafe(iss.Rel) {
+		fmt.Fprintf(stderr, "issue-claim: issue %s のパスに制御文字が含まれるため claim しない: %s\n", num, term.SanitizePlainLine(iss.Rel))
+		return 1
+	}
 	// 🚨 MoveToSubdir は claim 済みの issue に対して何もせず成功を返し、直下に無い issue (pending/ waiting/) は
 	// ファイルを next/ へ動かす (旧運用)。どちらも claim の道具としては拒否する (目印は symlink、ファイルは動かさない)
 	if iss.Status == issues.StatusNext || iss.NextLink != "" {
-		fmt.Fprintf(stderr, "issue-claim: issue %s は既に claim されている: %s\n", num, iss.Rel)
+		fmt.Fprintf(stderr, "issue-claim: issue %s は既に claim されている: %s\n", num, term.SanitizePlainLine(iss.Rel))
 		return 1
 	}
 	if iss.Status != issues.StatusOpen {
-		fmt.Fprintf(stderr, "issue-claim: issue %s は直下 (open) に無い: %s。pending / waiting から出してから claim する\n", num, iss.Rel)
+		fmt.Fprintf(stderr, "issue-claim: issue %s は直下 (open) に無い: %s。pending / waiting から出してから claim する\n", num, term.SanitizePlainLine(iss.Rel))
 		return 1
 	}
 	if _, err := issues.MoveToSubdir(iss, issues.NextDirName); err != nil {
-		fmt.Fprintf(stderr, "issue-claim: issue %s を claim できない: %v\n", num, err)
+		fmt.Fprintf(stderr, "issue-claim: issue %s を claim できない: %s\n", num, term.SanitizePlainLine(err.Error()))
 		return 2
 	}
 	fmt.Fprintf(stdout, "%s\n%s\n", iss.Rel, filepath.ToSlash(mustRel(dir, issues.NextLinkPath(iss))))

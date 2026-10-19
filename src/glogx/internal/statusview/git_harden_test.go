@@ -1,7 +1,8 @@
 package statusview
 
 import (
-	"glogx/internal/extcmd"
+	"glogx/internal/gitexec"
+	"glogx/internal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +14,7 @@ import (
 // 対照として、filter を止めない runGitTimeout では同じ罠が走ることを見る (罠が作動しない fixture を緑にしない)。
 func TestGlogxGitDoesNotRunRepoFilters(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い")
+		testenv.SkipEnv(t, "git が無い")
 	}
 	for _, kind := range []string{"clean", "process"} {
 		t.Run(kind, func(t *testing.T) {
@@ -52,7 +53,7 @@ func TestGlogxGitDoesNotRunRepoFilters(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Chdir(dir)
-			if _, err := extcmd.RunGitTimeout("status", "--porcelain"); err != nil {
+			if _, err := gitexec.RunGitTimeout("status", "--porcelain"); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(marks); err != nil {
@@ -82,7 +83,7 @@ func TestGlogxGitDoesNotRunRepoFilters(t *testing.T) {
 // 子の git は submodule 自身の設定を読むので、親の設定の列挙と -c の上書きは届かない。--ignore-submodules=dirty で子を起こさない
 func TestGlogxGitDoesNotRunSubmoduleFilters(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い")
+		testenv.SkipEnv(t, "git が無い")
 	}
 	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
 	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
@@ -118,7 +119,7 @@ func TestGlogxGitDoesNotRunSubmoduleFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
-	if _, err := extcmd.RunGitTimeout("status", "--porcelain"); err != nil {
+	if _, err := gitexec.RunGitTimeout("status", "--porcelain"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(marks); err != nil {

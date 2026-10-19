@@ -33,6 +33,7 @@ func Paint
 func ReapplyAfterReset
 func SanitizeDetailLine
 func SanitizeLineKeepTabs
+func SanitizePlainBlock
 func SanitizePlainKeepTabs
 func SanitizePlainLine
 func StripANSI

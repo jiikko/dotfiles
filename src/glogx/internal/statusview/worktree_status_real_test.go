@@ -22,11 +22,7 @@ func realRepo(t *testing.T) string {
 		{"config", "user.name", "t"},
 		{"commit", "-q", "--allow-empty", "-m", "init"},
 	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
+		testenv.GitInRepo(t, dir, args...)
 	}
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -108,16 +104,8 @@ func TestRealDiscardDoesNotTakeGlobNeighbors(t *testing.T) {
 func TestRealOpsFromSubdirectory(t *testing.T) {
 	root := realRepo(t)
 	write(t, root, "src/deep/a.go", "package a\n")
-	cmd := exec.Command("git", "add", "-A")
-	cmd.Dir = root
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git add: %v\n%s", err, out)
-	}
-	cmd = exec.Command("git", "commit", "-q", "-m", "add a")
-	cmd.Dir = root
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %v\n%s", err, out)
-	}
+	testenv.GitInRepo(t, root, "add", "-A")
+	testenv.GitInRepo(t, root, "commit", "-q", "-m", "add a")
 	write(t, root, "src/deep/a.go", "package a\n\nvar X = 1\n")
 	chdirTo(t, filepath.Join(root, "src", "deep")) // repo root ではない場所から操作する
 
@@ -183,24 +171,15 @@ func TestRealDiscardUntrackedDirKeepsSiblings(t *testing.T) {
 func TestRealDiscardAbortsWhenFileChangedDuringConfirm(t *testing.T) {
 	root := realRepo(t)
 	write(t, root, "a.txt", "one\n")
-	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "a"}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = root
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	testenv.GitInRepo(t, root, "add", "-A")
+	testenv.GitInRepo(t, root, "commit", "-q", "-m", "a")
 	chdirTo(t, root)
 	write(t, root, "a.txt", "two\n")
 	v := realStatusView(t)
 	cursorTo(t, v, "a.txt")
 	v.HandleKey("X", StatusViewport{page: 20})
 	// 確認中に別プロセスが stage した (XY が " M" → "M " へ変わる)
-	cmd := exec.Command("git", "add", "a.txt")
-	cmd.Dir = root
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git add: %v\n%s", err, out)
-	}
+	testenv.GitInRepo(t, root, "add", "a.txt")
 	v.HandleKey("y", StatusViewport{page: 20})
 	body, err := os.ReadFile(filepath.Join(root, "a.txt"))
 	if err != nil {
@@ -252,5 +231,134 @@ func TestRealFailedOpIsReportedAsFailure(t *testing.T) {
 	}
 	if ok {
 		t.Fatalf("失敗を成功として報告した: %q", notice)
+	}
+}
+
+// gitIn は root で git を走らせて stdout を返す (失敗はテストを落とす)。
+func gitIn(t *testing.T, root, stdin string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	cmd.Stdin = strings.NewReader(stdin)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// MM の行の X は index の中身を作業ツリーへ書き戻す。確認中に別プロセスが index だけを差し替えたら (XY も作業ツリーも
+// 同じまま)、見せていない中身を書くことになるので捨てない。
+func TestRealDiscardAbortsWhenOnlyIndexChangedDuringConfirm(t *testing.T) {
+	root := realRepo(t)
+	write(t, root, "a.txt", "one\n")
+	gitIn(t, root, "", "add", "a.txt")
+	gitIn(t, root, "", "commit", "-q", "-m", "a")
+	write(t, root, "a.txt", "two\n")
+	gitIn(t, root, "", "add", "a.txt")
+	write(t, root, "a.txt", "three\n") // MM: index = two, 作業ツリー = three
+	chdirTo(t, root)
+	v := realStatusView(t)
+	v.cursor = -1
+	for i, r := range v.rows {
+		if r.section == sectionUnstaged && r.path == "a.txt" {
+			v.cursor = i
+		}
+	}
+	if v.cursor < 0 {
+		t.Fatalf("前提: a.txt の unstaged 行が無い: %+v", v.rows)
+	}
+	v.HandleKey("X", StatusViewport{page: 20})
+	if !v.discarding {
+		t.Fatal("前提: X で確認が開いていない")
+	}
+	blob := gitIn(t, root, "unseen\n", "hash-object", "-w", "--stdin")
+	gitIn(t, root, "", "update-index", "--cacheinfo", "100644,"+blob+",a.txt") // index だけを差し替える (XY は MM のまま)
+	v.HandleKey("y", StatusViewport{page: 20})
+	body, err := os.ReadFile(filepath.Join(root, "a.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "three\n" {
+		t.Fatalf("確認中に index が変わったのに書き戻した (中身 = %q)", body)
+	}
+}
+
+// 未追跡のディレクトリの指紋は git clean が消す集合で見る: 確認中に ignore されたファイルが増えても (ディレクトリの mtime は
+// 動く) 捨てる。消える集合にファイルが増えたら捨てない。
+func TestRealDiscardUntrackedDirPrintFollowsCleanSet(t *testing.T) {
+	root := realRepo(t)
+	write(t, root, ".gitignore", "*.log\n")
+	gitIn(t, root, "", "add", ".gitignore")
+	gitIn(t, root, "", "commit", "-q", "-m", "ignore")
+	chdirTo(t, root)
+
+	write(t, root, "junk/x.txt", "junk\n")
+	v := realStatusView(t)
+	cursorTo(t, v, "junk/")
+	v.HandleKey("X", StatusViewport{page: 20})
+	write(t, root, "junk/run.log", "ignored\n") // clean -fd は消さない
+	v.HandleKey("y", StatusViewport{page: 20})
+	if exists(root, "junk/x.txt") {
+		t.Fatalf("ignore されたファイルが増えただけで中止した: %v", v.notice)
+	}
+
+	write(t, root, "junk2/x.txt", "junk\n")
+	v = realStatusView(t)
+	cursorTo(t, v, "junk2/")
+	v.HandleKey("X", StatusViewport{page: 20})
+	write(t, root, "junk2/sub/y.txt", "見せていない\n") // clean -fd が消す集合に増えた
+	v.HandleKey("y", StatusViewport{page: 20})
+	if !exists(root, "junk2/sub/y.txt") {
+		t.Fatal("確認の後に増えたファイルまで捨てた")
+	}
+
+	// サブディレクトリから起動しても、一覧の各ファイルの中身の変化を見る (ls-files の出力は既定で cwd 相対)
+	if err := os.MkdirAll(filepath.Join(root, "work"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	chdirTo(t, filepath.Join(root, "work"))
+	write(t, root, "junk3/x.txt", "junk\n")
+	v = realStatusView(t)
+	cursorTo(t, v, "junk3/")
+	v.HandleKey("X", StatusViewport{page: 20})
+	write(t, root, "junk3/x.txt", "見せていない中身\n")
+	v.HandleKey("y", StatusViewport{page: 20})
+	if !exists(root, "junk3/x.txt") {
+		t.Fatal("サブディレクトリから起動したとき、確認の後に書き換わったファイルを捨てた")
+	}
+}
+
+// staged の rename の後に rename 先を編集した行 (RM) の X は、作業ツリーの編集だけを捨てる (rename 元は index に無いので
+// restore に渡すと pathspec の不一致で全体が止まる)。
+func TestRealDiscardRenamedThenEditedRow(t *testing.T) {
+	root := realRepo(t)
+	write(t, root, "old.txt", "one\n")
+	gitIn(t, root, "", "add", "old.txt")
+	gitIn(t, root, "", "commit", "-q", "-m", "old")
+	gitIn(t, root, "", "mv", "old.txt", "new.txt")
+	write(t, root, "new.txt", "one\nedited\n")
+	chdirTo(t, root)
+	v := realStatusView(t)
+	v.cursor = -1
+	for i, r := range v.rows {
+		if r.section == sectionUnstaged && r.path == "new.txt" {
+			v.cursor = i
+		}
+	}
+	if v.cursor < 0 {
+		t.Fatalf("前提: new.txt の unstaged 行が無い: %+v", v.rows)
+	}
+	v.HandleKey("X", StatusViewport{page: 20})
+	v.HandleKey("y", StatusViewport{page: 20})
+	body, err := os.ReadFile(filepath.Join(root, "new.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "one\n" {
+		t.Fatalf("作業ツリーの編集を捨てられていない (中身 = %q, notice = %q)", body, v.notice)
+	}
+	if got := gitIn(t, root, "", "status", "--porcelain"); got != "R  old.txt -> new.txt" {
+		t.Errorf("staged の rename まで変わった: %q", got)
 	}
 }

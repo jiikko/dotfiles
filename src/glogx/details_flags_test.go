@@ -6,7 +6,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -121,36 +120,12 @@ func clearDetailsFlags(m *browseModel, sha string) { delete(m.detailsLoading, sh
 	}
 
 	var offenders []string
-	seen, scanned := 0, 0
-	err = filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if path == "tools" || d.Name() == "testdata" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		f, perr := parser.ParseFile(fset, path, nil, 0)
-		if perr != nil {
-			return perr
-		}
-		scanned++
-		o, s := scanDetailsFlagDeletes(fset, path, f)
+	seen := 0
+	// 下限は実件数のすぐ下に置く (遠いと、対象がかなり縮んでも緑のまま)。2026-10-19 実測: 本番の .go 92 件
+	for _, mf := range parseModuleNonTestFiles(t, fset, 85) {
+		o, s := scanDetailsFlagDeletes(fset, mf.path, mf.file)
 		offenders = append(offenders, o...)
 		seen += s
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("走査できない: %v", err)
-	}
-	// 🚨 抽出が空でも緑にならないよう下限を置く (走査が壊れて 0 件 = 違反 0 件 = 緑 を塞ぐ)
-	if scanned < 40 {
-		t.Fatalf("走査した .go が %d 件しかない (下限 40)。WalkDir の除外が壊れている", scanned)
 	}
 	if seen == 0 {
 		t.Fatal("delete(detailsLoading/detailsWaiting) を 1 件も見つけられなかった (helper 自身が見えていない = 判定が壊れている)")
@@ -159,5 +134,5 @@ func clearDetailsFlags(m *browseModel, sha string) { delete(m.detailsLoading, sh
 		t.Errorf("札は clearDetailsFlags で対にして消すこと (片方だけ消すと孤児が残る。issue 272):\n  %s",
 			strings.Join(offenders, "\n  "))
 	}
-	t.Logf("走査 .go=%d 件 / 札の delete %d 件 / 違反 %d 件", scanned, seen, len(offenders))
+	t.Logf("札の delete %d 件 / 違反 %d 件", seen, len(offenders))
 }

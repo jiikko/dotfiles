@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"glogx/internal/testenv"
 	"reflect"
 	"strings"
 	"testing"
@@ -64,9 +65,8 @@ func TestActionModalActiveMatchesHandleKey(t *testing.T) {
 func TestWaitPullCleanupOutlivesQuit(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{})
-	orig := runGitPullRebase
+	testenv.Restore(t, &runGitPullRebase)
 	runGitPullRebase = func(context.Context) error { close(started); <-release; return nil }
-	t.Cleanup(func() { runGitPullRebase = orig })
 
 	var a actionModal
 	a.askPull()
@@ -113,6 +113,7 @@ func TestActionModalStateListCoversAllFlags(t *testing.T) {
 		"cancel":         true,  // 走行中の cancel を握るだけ (モーダルの状態ではない)
 		"rerunAction":    true,  // 確認 y で実行する Cmd の注入先
 		"rerunJobName":   true,  // 確認モーダルの文言用
+		"pushPlan":       true,  // push の確認の文言用 (見積もり。pushConfirm が状態)
 		"forceQuitArmed": false, // 一覧に入っている (active() が false のままであることの確認)
 	}
 	typ := reflect.TypeFor[actionModal]()
@@ -275,12 +276,8 @@ func TestActionModalUpdateBoxLines(t *testing.T) {
 	t.Run("単独走行", func(t *testing.T) {
 		var a actionModal
 		a.beginUpdate("codex")
-		out := strings.Join(a.boxLines(80, false, "⠋", 0), "\n")
-		for _, want := range []string{"codex update", "updating...", "完了まで終了できません"} {
-			if !strings.Contains(out, want) {
-				t.Errorf("単独走行の箱に %q が無い:\n%s", want, out)
-			}
-		}
+		out := strings.Join(a.boxLines(80, false, "⠋"), "\n")
+		testenv.ContainsAll(t, "単独走行の箱", out, "codex update", "updating...", "完了まで終了できません")
 		if strings.Contains(out, "claude") {
 			t.Errorf("走っていない claude が出ている:\n%s", out)
 		}
@@ -290,12 +287,8 @@ func TestActionModalUpdateBoxLines(t *testing.T) {
 		var a actionModal
 		a.beginUpdate("claude")
 		a.beginUpdate("codex")
-		out := strings.Join(a.boxLines(80, false, "⠋", 0), "\n")
-		for _, want := range []string{"CLI update", "claude updating...", "codex updating...", "完了まで終了できません"} {
-			if !strings.Contains(out, want) {
-				t.Errorf("並走の箱に %q が無い:\n%s", want, out)
-			}
-		}
+		out := strings.Join(a.boxLines(80, false, "⠋"), "\n")
+		testenv.ContainsAll(t, "並走の箱", out, "CLI update", "claude updating...", "codex updating...", "完了まで終了できません")
 	})
 }
 

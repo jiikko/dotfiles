@@ -30,8 +30,6 @@ const (
 	FilerExec                       // ! / s / e = プロセスを起こす (中身は f.TakeExec)
 )
 
-// execPending は ! / s / e で起こしたプロセスから戻るのを待っているか (戻ったときにエディタ向けの文言を出さないため)。
-
 // filerChangedMsg は treefiler のライブ更新の合図。ch はどのチャネルからか (ok=false はそのチャネルが閉じた)。
 type FilerChangedMsg struct {
 	ch <-chan struct{}
@@ -58,12 +56,11 @@ func (v *FilerView) Rearm(msg FilerChangedMsg) tea.Cmd {
 }
 
 type FilerView struct {
-	execPending bool
-	shown       bool
-	f           *filer.Model
-	dir         string
-	wantCross   string
-	openErr     string
+	shown     bool
+	f         *filer.Model
+	dir       string
+	wantCross string
+	openErr   string
 }
 
 func (v *FilerView) Visible() bool { return v.shown }
@@ -108,6 +105,10 @@ func (v *FilerView) Hide() {
 // NoticeRefused にする (lastWarning を汚さない)。
 // 🚨 呼ぶ側はキーの後だけでなく Advance の後にも呼ぶ: explode の完了や `o` の失敗は Advance の中で積まれるので、キーの後だけだと次のキーまで出ない。
 func (v *FilerView) DrainNotices(deliver func(text string, kind app.NoticeKind) bool) {
+	if v.openErr != "" { // 開けなかった (見えていないので live は nil)
+		deliver(v.openErr, app.NoticeError)
+		v.openErr = ""
+	}
 	f := v.live()
 	if f == nil {
 		return
@@ -142,12 +143,6 @@ func (v *FilerView) WatchCmd() tea.Cmd {
 		return waitFilerChange(f.Changed())
 	}
 	return nil
-}
-
-func (v *FilerView) TakeOpenErr() string {
-	e := v.openErr
-	v.openErr = ""
-	return e
 }
 
 // ownsKeys は filer が入力モード中か (overlayOwnershipTable)。
@@ -228,11 +223,16 @@ func (v *FilerView) Lines(width, page int) []string {
 }
 
 // hint は最下行の案内。抜ける手段 (F / q) を先に置き、幅で切る (glogx-ui-guide §5: 抜ける手段は必ず残す)。
+// 🚨 filer がキーを取っている間 (/ の検索・! と : の入力欄・パネル・? の一覧・確認) は F も q も filer に入るので、
+// 「F: 閉じる」を出すと嘘になる。そのときの抜ける手段は esc (1 段戻る) だけを出す (lan の Hint と同じ形)
 func (v *FilerView) Hint(width int) string {
+	if v.OwnsKeys() {
+		return term.FitHintItems(width, []term.HintItem{{Text: "esc: 戻る", Prio: 1}})
+	}
 	return term.FitHintItems(width, []term.HintItem{
 		{Text: "F: 閉じる", Prio: 1},
 		{Text: "q: glogx を終了", Prio: 2},
-		{Text: "キーは src/treefiler/README.md", Prio: 5},
+		{Text: "?: キーの一覧", Prio: 5},
 	})
 }
 
@@ -256,20 +256,15 @@ func (v *FilerView) TakeExecCmd() tea.Cmd {
 	if !ok || len(r.Argv) == 0 {
 		return nil
 	}
-	v.execPending = true
-	return extcmd.RunEditorCmd(filerExecCommand(r)) // 戻ると extcmd.EditorClosedMsg で読み直す
+	return extcmd.RunEditorCmd(extcmd.OriginFiler, filerExecCommand(r)) // 戻ると extcmd.EditorClosedMsg で読み直す
 }
 
-// ExecReturned は前景のプロセスから戻ったときに呼ぶ。この画面が起こしたものでなければ handled=false。
-// 戻ったら読み直す (シェルやエディタで作った・消したファイルを出す)。warning は知らせる文 (空なら無し)。
+// ExecReturned はこの画面が起こした前景のプロセス (extcmd.OriginFiler) から戻ったときに呼ぶ。
+// 戻ったら読み直す (シェルやエディタで作った・消したファイルを出す)。返すのは知らせる文 (空なら無し)。
 // 「エディタが異常終了しました」は出さない: シェルは最後のコマンドの終了コードで抜けるのが普通 (e のエディタも filer.ExecDone の判断に揃える)。
-func (v *FilerView) ExecReturned(err error) (warning string, handled bool) {
-	if !v.execPending {
-		return "", false
+func (v *FilerView) ExecReturned(err error) string {
+	if f := v.live(); f != nil { // 前景で起こしている間は閉じられないので、ここで見えていないことは無い
+		return f.ExecDone(err)
 	}
-	v.execPending = false
-	if f := v.live(); v.Visible() && f != nil { // 前景で起こしている間は閉じられないので、ここで見えていないことは無い
-		return f.ExecDone(err), true
-	}
-	return "", true
+	return ""
 }

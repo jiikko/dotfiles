@@ -1,9 +1,11 @@
 package issues
 
 import (
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -483,7 +485,7 @@ func TestScanRealRepoIssuesDirIfPresent(t *testing.T) {
 	// 実データでの smoke test (この repo の issues/)。内容に依存する断定はしない
 	dir := filepath.Join("..", "..", "..", "issues")
 	if _, err := os.Stat(dir); err != nil {
-		t.Skip("issues/ が無い")
+		testenv.SkipEnv(t, "issues/ が無い")
 	}
 	issues, warns := Scan([]string{dir})
 	if len(issues) < 10 {
@@ -981,5 +983,132 @@ func TestWaitingIsSeparateFromPending(t *testing.T) {
 func TestWaitingIsNotAcceptedInsideEpicGroup(t *testing.T) {
 	if _, ok := EpicChildStatus("waiting"); ok {
 		t.Fatal("group 内で waiting を受けている: 3 経路 (走査・発見・監視) を揃えたか確認すること")
+	}
+}
+
+// 走査の後に issue のファイルが symlink や FIFO に差し替わっても、開くときにリンク先を読まない / FIFO で止まらない。
+func TestOpenIssueRefusesSymlinkAndFIFOSwappedAfterScan(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "001-feat-a.md")
+	if err := os.WriteFile(path, []byte("# 001\n\n本文\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	found, _ := Scan([]string{dir})
+	if len(found) != 1 {
+		t.Fatalf("前提が崩れている: %d 件", len(found))
+	}
+	iss := found[0]
+	secret := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(secret, []byte("# 秘密\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := iss.ReadBody(); err == nil {
+		t.Error("差し替わった symlink の先を読んだ")
+	}
+	fresh := *iss
+	fresh.loaded = false
+	if err := fresh.LoadMeta(); err == nil {
+		t.Error("差し替わった symlink の先からメタ情報を読んだ")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := iss.ReadBody(); err == nil { // FIFO なら止まらずにエラーで返る
+		t.Error("FIFO を issue として読んだ")
+	}
+}
+
+// 数字だけのトークンの判定: 0 と 9 を含む端も数字。直前・直後の文字 ('/' と ':') は数字でない。
+func TestIsAllDigitsBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		s    string
+		want bool
+	}{{"0", true}, {"9", true}, {"1090", true}, {"/", false}, {":", false}, {"", false}} {
+		if got := isAllDigits(tc.s); got != tc.want {
+			t.Errorf("isAllDigits(%q) = %v, want %v", tc.s, got, tc.want)
+		}
+	}
+}
+
+// 同名の二重化 (内容の喪失) の警告は、壊れた目印の警告より前に来る (viewer のヘッダーは先頭の 1 本を出す)。
+func TestScanPutsConflictsFirst(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "issues")
+	mkFiles(t, dir, "001-a.md")
+	mkFiles(t, filepath.Join(dir, "done"), "001-a.md")
+	symlink(t, "../999-gone.md", filepath.Join(dir, "next", "999-gone.md")) // 指す先の無い目印 (警告になる)
+	_, warns := Scan([]string{dir})
+	if len(warns) < 2 {
+		t.Fatalf("前提: 警告が 2 本以上出る: %q", warns)
+	}
+	if !strings.Contains(warns[0], "同じファイル名") {
+		t.Fatalf("先頭の警告が二重化でない: %q", warns)
+	}
+}
+
+// 読めない状態のフォルダは警告に出す (黙って空にすると「全部消えた」と見分けられない)。
+func TestScanWarnsUnreadableDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root は権限で読めなくならない")
+	}
+	dir := filepath.Join(t.TempDir(), "issues")
+	mkFiles(t, dir, "001-a.md")
+	mkFiles(t, filepath.Join(dir, "done"), "002-b.md")
+	mkFiles(t, filepath.Join(dir, "epic", "g", "done"), "003-c.md")
+	for _, d := range []string{filepath.Join(dir, "done"), filepath.Join(dir, "epic", "g", "done")} {
+		if err := os.Chmod(d, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(d, 0o755) })
+	}
+	_, warns := Scan([]string{dir})
+	n := 0
+	for _, w := range warns {
+		if strings.Contains(w, "読めないフォルダ") {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("読めないフォルダの警告が %d 本 (done と epic の done の 2 本のはず): %q", n, warns)
+	}
+}
+
+// FIFO の NNN-x.md は issue として拾わない (読むと戻らない)。
+func TestScanSkipsFIFO(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "issues")
+	mkFiles(t, dir, "001-a.md")
+	if err := syscall.Mkfifo(filepath.Join(dir, "002-fifo.md"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := Scan([]string{dir})
+	if len(got) != 1 || filepath.Base(got[0].Rel) != "001-a.md" {
+		t.Fatalf("FIFO を拾った: %d 件", len(got))
+	}
+}
+
+// 日付の名前 (20260101-notes.md) や桁あふれする数字は採番の番号と見なさない。
+func TestNextNumberIgnoresDateLikeNames(t *testing.T) {
+	list := []*Issue{{Number: "041"}, {Number: "20260101"}, {Number: "9223372036854775807"}, {Number: "123456"}}
+	if got := NextNumber(list); got != "123457" {
+		t.Fatalf("次番号 = %q (6 桁までを番号と見て 123457 のはず)", got)
+	}
+	// 接頭辞付きの形式は別の列なので数えない
+	if got := NextNumber([]*Issue{{Number: "005"}, {Number: "120", Prefix: "UI"}}); got != "006" {
+		t.Fatalf("次番号 = %q (接頭辞付きの 120 に引きずられず 006 のはず)", got)
+	}
+	// 境界: 7 桁は番号と見なさない (上限の比較を 1 つずらしても緑だった)
+	if got := NextNumber([]*Issue{{Number: "041"}, {Number: "1234567"}}); got != "042" {
+		t.Fatalf("次番号 = %q (7 桁は番号と見なさず 042 のはず)", got)
+	}
+	if got := NextNumber([]*Issue{{Number: "041"}, {Number: "20260101"}}); got != "042" {
+		t.Fatalf("次番号 = %q (日付を番号と読んでいる)", got)
 	}
 }

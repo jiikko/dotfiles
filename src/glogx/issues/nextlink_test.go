@@ -1,6 +1,7 @@
 package issues
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -273,14 +274,21 @@ func TestUnclaimRefusesToRemoveRegularFileAtNextLink(t *testing.T) {
 	if claimed.NextLink == "" {
 		t.Fatal("前提: 目印が読めていない")
 	}
+	if err := writeClaimBanner(claimed.Path); err != nil {
+		t.Fatal(err)
+	}
 	// git pull 相当: symlink が実ファイルに差し替わる
 	if err := os.Remove(claimed.NextLink); err != nil {
 		t.Fatal(err)
 	}
 	writeIssue(t, claimed.NextLink)
 
-	if _, err := MoveToSubdir(claimed, ""); err == nil {
-		t.Fatal("実ファイルに差し替わった next/<base> を解除で消した")
+	if p, err := MoveToSubdir(claimed, ""); err == nil || p != "" {
+		t.Fatalf("実ファイルに差し替わった next/<base> を解除で消した / 失敗なのにパスを返した: %q %v", p, err)
+	}
+	// 目印を外せなかったので、バナーも外さない (バナーだけが消えた claim を残さない)
+	if body, err := os.ReadFile(claimed.Path); err != nil || !strings.Contains(string(body), "担当中") {
+		t.Errorf("目印を外せないのにバナーが消えた: %v\n%s", err, body)
 	}
 	if fi, err := os.Lstat(claimed.NextLink); err != nil || !fi.Mode().IsRegular() {
 		t.Fatalf("実ファイルが消えた / 壊れた: %v", err)
@@ -369,5 +377,77 @@ func TestMoveToDoneRemovesNextLinkFirst(t *testing.T) {
 	after, warns := scanOne(t, dir)
 	if len(after) != 1 || after[0].Status != StatusOpen || len(warns) != 0 {
 		t.Errorf("再 open で偽の claim が復活した: %+v warns=%v", after, warns)
+	}
+}
+
+// 目印を外せないとき (next/<base> が実ファイルに差し替わっていた) は、issue を動かす前に断る (目印を先に外す順序の意味)。
+// 動かしてから外そうとすると、issue は done/ に居るのに目印の場所に実ファイルが残り、どちらも戻せない。
+func TestMoveToDoneRefusesBeforeMovingWhenLinkCannotBeRemoved(t *testing.T) {
+	dir := t.TempDir()
+	writeIssue(t, filepath.Join(dir, "001-feat-a.md"))
+	link := filepath.Join(dir, NextDirName, "001-feat-a.md")
+	symlink(t, "../001-feat-a.md", link)
+	found, _ := scanOne(t, dir)
+	claimed := found[0]
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(link, []byte("実ファイル\n"), 0o644); err != nil { // scan の後に差し替わった
+		t.Fatal(err)
+	}
+	if _, err := MoveToSubdir(claimed, "done"); err == nil {
+		t.Fatal("目印を外せないのに done へ移した")
+	}
+	if _, err := os.Stat(claimed.Path); err != nil {
+		t.Errorf("断ったのに issue が元の場所に無い: %v", err)
+	}
+}
+
+// バナーを外せなければ、外した目印を戻す (目印だけが消えて claim が黙って外れた形にしない)。
+func TestUnclaimRestoresLinkWhenBannerCannotBeCleared(t *testing.T) {
+	dir := t.TempDir()
+	writeIssue(t, filepath.Join(dir, "001-feat-a.md"))
+	symlink(t, "../001-feat-a.md", filepath.Join(dir, NextDirName, "001-feat-a.md"))
+	found, _ := scanOne(t, dir)
+	claimed := found[0]
+	if err := writeClaimBanner(claimed.Path); err != nil {
+		t.Fatal(err)
+	}
+	// バナーの書き換えは issue のディレクトリに一時ファイルを作るので、そこを書けなくする (next/ は書ける)
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	if p, err := MoveToSubdir(claimed, ""); err == nil || p != "" {
+		t.Fatalf("バナーを外せないのに成功した: %q %v", p, err)
+	}
+	if target, err := os.Readlink(claimed.NextLink); err != nil || target != "../001-feat-a.md" {
+		t.Errorf("外した目印が戻っていない: %q %v", target, err)
+	}
+}
+
+// 目印が元から無い (他のセッションが先に外した) ときにバナーを外せなければ、「目印を戻した」とは言わず、目印も作らない。
+func TestUnclaimWithoutLinkDoesNotClaimToRestoreIt(t *testing.T) {
+	dir := t.TempDir()
+	writeIssue(t, filepath.Join(dir, "001-feat-a.md"))
+	symlink(t, "../001-feat-a.md", filepath.Join(dir, NextDirName, "001-feat-a.md"))
+	found, _ := scanOne(t, dir)
+	claimed := found[0]
+	if err := writeClaimBanner(claimed.Path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(claimed.NextLink); err != nil { // scan の後に目印が消えた
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	_, err := MoveToSubdir(claimed, "")
+	if err == nil || strings.Contains(err.Error(), "戻しました") {
+		t.Fatalf("err = %v, want 目印を戻したと言わない失敗", err)
+	}
+	if _, lerr := os.Lstat(claimed.NextLink); !errors.Is(lerr, os.ErrNotExist) {
+		t.Errorf("元から無かった目印を作った: %v", lerr)
 	}
 }

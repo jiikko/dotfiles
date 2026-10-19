@@ -6,11 +6,14 @@
 package issuesview
 
 import (
+	"time"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 
 	"glogx/internal/app"
+	"glogx/internal/fswatch"
 	"glogx/issues"
 )
 
@@ -103,8 +106,8 @@ func (f Fixture) MarkNextActive() bool { return f.v.markNext.active }
 func (f Fixture) SetMarkNextActive()   { f.v.markNext = issuesMarkConfirm{active: true} }
 
 // Watcher は見張りの watcher (nil = 張っていない)。PollArmed は保険のポーリングを張っているか。
-func (f Fixture) Watcher() app.DirWatcher { return f.v.watch.W }
-func (f Fixture) PollArmed() bool         { return f.v.watch.PollArmed }
+func (f Fixture) Watcher() fswatch.DirWatcher { return f.v.watch.W }
+func (f Fixture) PollArmed() bool             { return f.v.watch.PollArmed }
 
 // Observe は見張りと同じ指紋を同期で計算した Msg (tea.Tick を待たずに見張りの配線を駆動するテスト用)。
 func (f Fixture) Observe() IssuesWatchMsg {
@@ -125,3 +128,8 @@ func (f Fixture) Select(cursor, markAt int) bool {
 // EditNumberFilter / ConfirmNumberFilter は番号の入力欄へ s を打つ (受け付けたら true) / 確定する。
 func (f Fixture) EditNumberFilter(s string) bool { return f.v.numFilter.edit(s) }
 func (f Fixture) ConfirmNumberFilter()           { f.v.numFilter.confirm() }
+
+// FixtureSaveScreen は終了時の記憶を置く (起動時の復元を見るテスト用)。root は照合のキー (今の repo と違えば復元しない)。
+func FixtureSaveScreen(root string, now time.Time) error {
+	return saveIssuesScreen(IssuesScreen{Root: root, SavedAt: now})
+}

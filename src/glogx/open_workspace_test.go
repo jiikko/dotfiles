@@ -86,7 +86,7 @@ func TestOpenEditorAtRoot(t *testing.T) {
 // 書いていた対象が実在しなかったので足す)。
 func TestRepoRootReturnsGitToplevelAndFallsBack(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い環境")
+		testenv.SkipEnv(t, "git が無い環境")
 	}
 	// 1. repo の中 (サブディレクトリ) では toplevel を返す
 	root := t.TempDir()

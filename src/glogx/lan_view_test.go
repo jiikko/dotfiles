@@ -12,6 +12,7 @@ import (
 	"glogx/internal/gitdata"
 	"glogx/internal/lanview"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/live"
@@ -136,13 +137,14 @@ func TestLanQuitKeysGoBackToList(t *testing.T) {
 // 絞り込みの入力中は i も文字として入る (横断で閉じると打っている文字が消える)。
 func TestLanBindsBeatCrossKeys(t *testing.T) {
 	m := openLan(t)
+	execs := testenv.StubEditorCapture(t)
 	m.handleKey("l") // 未管理のタブ (相手の Mac だけ。この Mac は自分のタブ)
 	m.handleKey("s")
 	if m.activeFullScreen() != FullScreenLan {
 		t.Errorf("s で板を離れた (active=%v)。ssh のはず", m.activeFullScreen())
 	}
-	if !m.lanV.Fixture().ExecPending() {
-		t.Error("s で ssh を頼んでいない")
+	if len(*execs) != 1 {
+		t.Errorf("s で ssh を頼んでいない (前景の起動 %d 回)", len(*execs))
 	}
 
 	m = openLan(t)

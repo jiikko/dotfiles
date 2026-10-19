@@ -49,17 +49,12 @@ func (m *browseModel) openFullScreen(id FullScreenID) tea.Cmd {
 	case FullScreenFiler:
 		m.usageOv.Dismiss()
 		m.filerV.Toggle(app.CurrentDir())
-		if e := m.filerV.TakeOpenErr(); e != "" {
-			m.showWarning(e)
-		}
+		m.filerV.DrainNotices(m.deliverNotice) // 開けなかった理由 (エラー)
 		return tea.Batch(m.filerV.WatchCmd(), m.maybeTick())
 	case FullScreenLan:
 		m.usageOv.Dismiss()
 		m.lanV.Toggle()
-		if e := m.lanV.TakeOpenErr(); e != "" {
-			m.showWarning(e)
-		}
-		m.lanV.DrainNotices(m.deliverNotice) // 開いたときの読み込みの失敗 (台帳が読めない等)
+		m.lanV.DrainNotices(m.deliverNotice) // 開けなかった理由・開いたときの読み込みの失敗 (台帳が読めない等)
 		return tea.Batch(m.lanV.WatchCmd(), m.maybeTick())
 	case FullScreenNone, FullScreenCount:
 	}

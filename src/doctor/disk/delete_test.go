@@ -103,7 +103,15 @@ func (f *deleteFixture) scan(t *testing.T) Result {
 
 func (f *deleteFixture) delete(t *testing.T, r Result) DeleteReport {
 	t.Helper()
-	rep, err := Delete(context.Background(), []Result{r}, f.opt)
+	return f.deleteWith(t, r, f.opt.DryRun)
+}
+
+// deleteWith は dryRun を指定して Delete を呼ぶ (下見と本番の両方で同じ結末になることを見るテスト用)。
+func (f *deleteFixture) deleteWith(t *testing.T, r Result, dryRun bool) DeleteReport {
+	t.Helper()
+	opt := f.opt
+	opt.DryRun = dryRun
+	rep, err := Delete(context.Background(), []Result{r}, opt)
 	if err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -1565,5 +1573,88 @@ func TestTrashMoveKeepsDoctorWording(t *testing.T) {
 	}
 	if !exists(src) {
 		t.Fatal("移動元が動いた")
+	}
+}
+
+// cli の非 ref 版は、まだ在るのに候補から外れた Item が混ざると (候補の Item が残っていても) 実行しない。
+// コマンドの効果は Item ごとに絞れないので、実行すると確認画面で「省く」と出した Item まで消す。
+func TestDeleteCLISkipsCommandWhenSomeTargetsAreNoLongerCandidates(t *testing.T) {
+	f := newDeleteFixture(t, cliEntry, 64)
+	f.run.resp = map[string]cmdResp{"faketool purge": {rc: 0}}
+	scanned := f.scan(t)
+	child := filepath.Join(f.target, "blob")
+	if len(scanned.Items) == 0 || !exists(child) {
+		t.Fatalf("前提が崩れている: items=%v child の有無=%v", scanned.Items, exists(child))
+	}
+	scanned.Items = append(scanned.Items, Item{Path: child, Size: 1024})
+	for _, dry := range []bool{true, false} {
+		rep := f.deleteWith(t, scanned, dry)
+		if got := rep.Entries[0].Outcome; got != OutcomeFailed {
+			t.Errorf("dryRun=%v: outcome = %s (failed であるべき。一部の対象が候補から外れている)", dry, got)
+		}
+	}
+	for _, line := range f.run.callLines() {
+		if line == "faketool purge" {
+			t.Fatalf("候補から外れた対象が混ざっているのにコマンドを実行した: %v", f.run.callLines())
+		}
+	}
+}
+
+// ConsentedTargets は下見の Planned のエントリと Item だけを残す。plan のパスは validateTarget を通した形
+// (/var → /private/var) なので、選択の側の /var の形とも一致する。
+func TestConsentedTargets(t *testing.T) {
+	sel := []Result{
+		{Entry: Entry{ID: "rm"}, Items: []Item{
+			{Path: "/var/folders/x/keep", Size: 1}, {Path: "/var/folders/x/dropped", Size: 2}, {Path: "/var/folders/x/unplanned", Size: 4}}},
+		{Entry: Entry{ID: "sim"}, Items: []Item{{Path: "/Library/a", Ref: "R1", Size: 8}, {Path: "/Library/b", Ref: "R2", Size: 16}}},
+		{Entry: Entry{ID: "failed"}, Items: []Item{{Path: "/tmp/x/a", Size: 32}}},
+		{Entry: Entry{ID: "rm"}, Items: []Item{{Path: "/var/folders/x/keep", Size: 1}}}, // 重複
+	}
+	plan := DeleteReport{Entries: []EntryOutcome{
+		{ID: "rm", Method: methodRM, Outcome: OutcomePlanned, Items: []ItemOutcome{
+			{Path: "/private/var/folders/x/keep", Outcome: OutcomePlanned},
+			{Path: "/private/var/folders/x/dropped", Outcome: OutcomeFailed}}},
+		{ID: "sim", Method: methodCLI, Outcome: OutcomePlanned, Items: []ItemOutcome{
+			{Path: "/elsewhere", Ref: "R2", Outcome: OutcomePlanned}}},
+		{ID: "failed", Method: methodRM, Outcome: OutcomeFailed, Items: []ItemOutcome{{Path: "/tmp/x/a", Outcome: OutcomePlanned}}},
+	}}
+	got := ConsentedTargets(plan, sel)
+	if len(got) != 2 {
+		t.Fatalf("対象 = %+v (rm と sim の 2 件のはず)", got)
+	}
+	if r := got[0]; r.Entry.ID != "rm" || len(r.Items) != 1 || r.Items[0].Path != "/var/folders/x/keep" || r.Size != 1 {
+		t.Errorf("rm = %+v (keep だけが残り Size も 1 のはず)", r)
+	}
+	if r := got[1]; r.Entry.ID != "sim" || len(r.Items) != 1 || r.Items[0].Ref != "R2" {
+		t.Errorf("sim = %+v (cli は Ref で照合し R2 だけが残るはず)", r)
+	}
+}
+
+// cli の非 ref 版は、同意していない候補 (内訳から一部だけを選んだ / 確認の後に増えた) があれば実行しない。
+// コマンドは走査し直した候補の全部に効くので、実行すると選んでいない対象まで消える。全部を選べば実行する。
+func TestDeleteCLISkipsCommandWhenCandidatesOutsideConsent(t *testing.T) {
+	f := newDeleteFixture(t, cliEntry, 64)
+	mkfile(t, filepath.Join(f.target, "blob2"), 64)
+	f.entry.Paths = []string{"~/Library/Caches/testcache/*"}
+	f.opt.Catalog = []Entry{f.entry}
+	f.run.resp = map[string]cmdResp{"faketool purge": {rc: 0}}
+	scanned := f.scan(t)
+	if len(scanned.Items) != 2 {
+		t.Fatalf("前提が崩れている: 候補が %d 件 (2 件のはず): %+v", len(scanned.Items), scanned.Items)
+	}
+	one := scanned.WithItems(scanned.Items[:1])
+	for _, dry := range []bool{true, false} {
+		rep := f.deleteWith(t, one, dry)
+		if got := rep.Entries[0].Outcome; got != OutcomeFailed {
+			t.Errorf("dryRun=%v: outcome = %s (failed であるべき。選んでいない候補がある)", dry, got)
+		}
+	}
+	for _, line := range f.run.callLines() {
+		if line == "faketool purge" {
+			t.Fatalf("選んでいない候補があるのにコマンドを実行した: %v", f.run.callLines())
+		}
+	}
+	if rep := f.deleteWith(t, scanned, false); rep.Entries[0].Outcome == OutcomeFailed {
+		t.Errorf("全部を選んだのに実行しない: %+v", rep.Entries[0])
 	}
 }

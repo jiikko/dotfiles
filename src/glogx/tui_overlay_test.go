@@ -877,21 +877,7 @@ func TestIssuesViewerReloadsAfterEditorCloses(t *testing.T) {
 // drainScanMsg は tea.Cmd (Batch を含む) から issuesScanMsg を取り出す。
 func drainScanMsg(t *testing.T, cmd tea.Cmd) issuesview.IssuesScanMsg {
 	t.Helper()
-	switch msg := cmd().(type) {
-	case issuesview.IssuesScanMsg:
-		return msg
-	case tea.BatchMsg:
-		for _, c := range msg {
-			if c == nil {
-				continue
-			}
-			if scan, ok := c().(issuesview.IssuesScanMsg); ok {
-				return scan
-			}
-		}
-	}
-	t.Fatal("Cmd から issuesScanMsg が取れない")
-	return issuesview.FixtureScanMsg("", nil, nil)
+	return testenv.TakeMsg[issuesview.IssuesScanMsg](t, cmd)
 }
 
 func TestIssuesViewerNotOpenedWhilePanelOpen(t *testing.T) {
@@ -1320,5 +1306,19 @@ func TestBrowseCopyPRURLSanitizes(t *testing.T) {
 	m.handlePRStatusKey("y")
 	if *copied != "https://github.com/o/r/pull/1" {
 		t.Fatalf("コピー内容 = %q, want %q", *copied, "https://github.com/o/r/pull/1")
+	}
+}
+
+// 照合を待っている issues の復元は、着く前にユーザーがキーを押していたら捨てる (F を開いて閉じた後の一覧に、遅れて issues が
+// 割り込まない)。全画面が出ていなくても捨てる。
+func TestIssuesRestoreDroppedAfterUserKeyed(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	m.handleKey("j")
+	if m.activeFullScreen() != FullScreenNone {
+		t.Fatal("前提: 全画面が出ていない状態で試す")
+	}
+	m.Update(issuesRestoreMsg{})
+	if m.issuesOv.Visible() {
+		t.Error("キーを押した後に着いた復元で issues が開いた")
 	}
 }

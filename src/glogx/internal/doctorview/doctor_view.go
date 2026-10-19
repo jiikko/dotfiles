@@ -98,8 +98,10 @@ type DoctorView struct {
 	expanded map[rowKey]bool // 展開中の行 (key = 行の同一性)
 	rows     []doctorRow     // 直近の描画で組んだ行 (キー操作の対象。lines() が作り直す)
 
-	pendingCopy  string // 直近の y / Y の中身 (copyPayload)
-	pendingToast string // 直近の DoctorToast の文言
+	pendingCopy string         // 直近の y / Y の中身 (copyPayload)
+	copyNoun    string         // 直近の y でコピーした中身の語 (CopyNoun)
+	notice      string         // 直近の DoctorToast の文言 (TakeNotice)
+	noticeKind  app.NoticeKind // notice の重さ (成功 / 断り / エラー。main が deliverNotice で出し分ける)
 
 	// ④ 削除 (doctor_delete.go)。selected はエントリ ID、inspected は「Enter で中身を一度開いた」印
 	// (risk: confirm の行はこれが立つまで選べない)。
@@ -160,10 +162,52 @@ type doctorRow struct {
 	detail []doctorRow
 	// hasDetail は「Enter で展開できる行か」。detail が畳まれていて空でも真になる。
 	hasDetail bool
+	// copyKind は copyPath の中身の種類。y の案内とトーストの語はカーソル行のこの値から決める
+	// (タブから推測しない: Homebrew タブには警告の見出しの行とコマンドの行が混ざる)。
+	// hasDetail の直後に置くのは、bool の後の詰め物に収めて行を太らせないため (1 フレームの確保の予算)
+	copyKind copyKind
 	// copyPath は y でコピーするパス (複数なら改行区切り)。copyText は Y でコピーする解説文
 	// (ラベル・パス・復元方法・リスク・削除経路・提示コマンド。別セッションの LLM にそのまま投げられる形)。
 	copyPath string
 	copyText string
+}
+
+// copyKind は y でコピーする中身の種類 (zero value はパス)。
+type copyKind uint8
+
+const (
+	copyKindPath copyKind = iota
+	copyKindCommand
+	copyKindWarning
+	copyKindError
+)
+
+// hint は最下行の y の案内。毎フレーム描くので連結せず定数を返す (1 フレームの確保の予算)。
+func (k copyKind) hint() string {
+	switch k {
+	case copyKindCommand:
+		return "y: コマンドをコピー"
+	case copyKindWarning:
+		return "y: 警告をコピー"
+	case copyKindError:
+		return "y: エラーをコピー"
+	case copyKindPath:
+	}
+	return "y: パスをコピー"
+}
+
+// noun は案内とトーストに出す語。
+func (k copyKind) noun() string {
+	switch k {
+	case copyKindCommand:
+		return "コマンド"
+	case copyKindWarning:
+		return "警告"
+	case copyKindError:
+		return "エラー"
+	case copyKindPath:
+	}
+	return "パス"
 }
 
 // doctorDiskEvent は disk.Scan からの 1 イベント (r = 1 エントリ完了 / rep = 全完了)。
@@ -279,9 +323,9 @@ func (v *DoctorView) start(force bool) tea.Cmd {
 	// 共有 map に prune 系が載った時点で意味が変わった)
 	v.selectedActions, v.actionByCmd, v.dockerOrder = map[cmdKey]bool{}, map[cmdKey]doctorCmdAction{}, nil
 	// 🚨 世代をまたいで残る状態をここで**まとめて**捨てる。1 つでも残すと前の世代の行・文言・
-	// Cmd が次の画面に混ざる (pendingToast は実際に漏れて、次の再スキャンの理由として
+	// Cmd が次の画面に混ざる (notice は実際に漏れて、次の再スキャンの理由として
 	// 再表示されていた)
-	v.rows, v.enterDetail, v.pendingCopy, v.pendingToast, v.pendingDeleteCmd = nil, "", "", "", nil
+	v.rows, v.enterDetail, v.pendingCopy, v.notice, v.pendingDeleteCmd = nil, "", "", "", nil
 	v.del.reset()
 	v.diskResults, v.diskRep, v.svcRep, v.brew, v.docker, v.ssd = nil, nil, nil, nil, nil, nil
 	v.startedAt = app.TimeNow()
@@ -496,7 +540,7 @@ const (
 	DoctorCopyPath  // y: 選んだ行のパスをコピー (中身は copyPayload)
 	DoctorCopyText  // Y: 選んだ行の解説文をコピー (同上)
 	DoctorNothing   // y/Y を押したがコピーするものが無い (browseModel がその旨をトーストにする)
-	DoctorToast     // 削除の導線が理由を出したい (pendingToast)
+	DoctorToast     // 削除の導線が理由を出したい (TakeNotice)
 	DoctorCopyLog   // 削除の実行記録をコピー (y。トーストの文言が「解説」ではないので分ける)
 	DoctorRunDelete // 削除を開始する (pendingDeleteCmd を browseModel が実行する)
 	DoctorCross     // 別の全画面へ横断 (doctor は閉じ済み。行き先は takeWantCross)
@@ -594,7 +638,7 @@ func (v *DoctorView) jumpIntoDetail() {
 // 返さない。それだと**その打鍵が空振りする** (q / esc / d / r / Enter が等しく 1 回死ぬ)。
 // 呼ぶのは browseModel 側 (tui.go) で、handleKey を呼ぶ**前**にトーストを出す。
 //
-// 🚨 文言は**返り値で渡す**。pendingToast に書くと、それを消すのは takeToast() だけなので、
+// 🚨 文言は**返り値で渡す**。notice に書くと、それを消すのは TakeNotice() だけなので、
 // 次の再スキャンの理由として使い回される (実測 2026-09-03)。
 func (v *DoctorView) TakeCursorFellBack() string {
 	if !v.cur.takeFellBack() {
@@ -603,11 +647,18 @@ func (v *DoctorView) TakeCursorFellBack() string {
 	return "選んでいた行が無くなったので近くの行へ移りました"
 }
 
-// takeToast は溜めておいた文言を取り出して空にする (同じ文言が次の操作で再び出ないように)。
-func (v *DoctorView) TakeToast() string {
-	t := v.pendingToast
-	v.pendingToast = ""
-	return t
+// refuse は main へ渡す「押したキーが効かなかった理由」を置く。重さ (noticeKind) を知らせと一緒に持ち、TakeNotice で返す:
+// main が重さを決め打ちすると、成功やエラーを出すようになったときに、エラーが w でコピーできないか、成功が断りの色で出る
+// (issues / status / filer / lan と同じ口)。成功やエラーを出すときは、重さを変える置き口をここに足す。
+func (v *DoctorView) refuse(text string) {
+	v.notice, v.noticeKind = text, app.NoticeRefused
+}
+
+// TakeNotice は溜めておいた知らせを取り出して空にする (同じ文言が次の操作で再び出ないように)。
+func (v *DoctorView) TakeNotice() (string, app.NoticeKind) {
+	t := v.notice
+	v.notice = ""
+	return t, v.noticeKind
 }
 
 // takeWantCross は押された横断キー (無ければ "") を一度だけ取り出す (viewer と同じ語彙)。
@@ -619,6 +670,9 @@ func (v *DoctorView) TakeWantCross() string {
 
 // copyPayload は直近の y / Y でコピーする文字列 (handleKey がセットし、browseModel が取り出す)。
 func (v *DoctorView) CopyPayload() string { return v.pendingCopy }
+
+// CopyNoun は直近の y でコピーした中身の語 (パス / コマンド / 警告)。トーストの文言に使う。
+func (v *DoctorView) CopyNoun() string { return v.copyNoun }
 
 func (v *DoctorView) HandleKey(key string, page int) doctorAction {
 	// 削除の語彙が立っているあいだは、そちらが先にキーを取る
@@ -642,7 +696,7 @@ func (v *DoctorView) HandleKey(key string, page int) doctorAction {
 			if why == "" {
 				return DoctorSwallow
 			}
-			v.pendingToast = why
+			v.refuse(why)
 			return DoctorToast
 		}
 		return DoctorSwallow
@@ -657,7 +711,7 @@ func (v *DoctorView) HandleKey(key string, page int) doctorAction {
 		if v.tab != TabDisk {
 			// 🚨 タブごとに「印を付けた後にやること」を 1 つに保つ。ここで削除を許すと
 			// 一覧に 2 つの実行キーが同居していた頃の混乱がタブ越しに戻る
-			v.pendingToast = "削除はディスクのタブで (tab で移動)"
+			v.refuse("削除はディスクのタブで (tab で移動)")
 			return DoctorToast
 		}
 		return v.beginDelete()
@@ -670,7 +724,7 @@ func (v *DoctorView) HandleKey(key string, page int) doctorAction {
 		case TabDocker:
 			return v.beginDockerRun()
 		case TabDisk, TabSvc, TabSSD:
-			v.pendingToast = "コマンドの実行は Homebrew か Docker のタブで (tab で移動)"
+			v.refuse("コマンドの実行は Homebrew か Docker のタブで (tab で移動)")
 			return DoctorToast
 		}
 		return DoctorSwallow
@@ -706,6 +760,7 @@ func (v *DoctorView) HandleKey(key string, page int) doctorAction {
 		action := DoctorCopyText
 		if key == "y" {
 			v.pendingCopy, action = row.copyPath, DoctorCopyPath
+			v.copyNoun = row.copyKind.noun()
 		}
 		if v.pendingCopy == "" {
 			return DoctorNothing
@@ -786,11 +841,15 @@ func (v *DoctorView) Hint(width int) string {
 	case TabSvc, TabSSD:
 		// サービスと SSD は選択も実行も持たない (見て判断するだけ)
 	}
-	if v.tab != TabSSD { // SSD の行は開くものを持たない (押せないキーを案内しない)
+	// 🚨 押せないキーを案内しない: Enter と y はカーソル行の実際の判定 (expandableRow / copyableRow) から出す
+	// 子行の Enter は親を畳む (HandleKey が collapseAtCursor を先に見る) ので、畳めるときも案内する
+	if _, ok := v.expandableRow(); ok || v.collapsibleAtCursor() {
 		items = append(items, term.HintItem{Text: "Enter: 開閉", Prio: 4}) // 開くと対象パスへカーソルが移り、そこでも Space で選べる
 	}
+	if row, ok := v.copyableRow(); ok {
+		items = append(items, term.HintItem{Text: row.copyKind.hint(), Prio: 5})
+	}
 	items = append(items, []term.HintItem{
-		{Text: doctorCopyHintLabel(v.tab), Prio: 5},
 		{Text: "Y: 解説をコピー", Prio: 6},
 		{Text: "r: 再スキャン", Prio: 5},
 		{Text: doctorCloseHintLabel(v.collapsibleAtCursor()), Prio: 1}, // 抜ける手段は最優先で残す
@@ -822,13 +881,14 @@ func (v *DoctorView) selectedRunCount() int {
 	return 0
 }
 
-// doctorCopyHintLabel は y が何をコピーするか。タブで中身が違うので語も変える
-// (Docker タブにパスは無い。押せる手の説明が嘘になると、押さなくなる)。
-func doctorCopyHintLabel(t DoctorTab) string {
-	if t == TabDocker || t == TabSSD {
-		return "y: コマンドをコピー"
+// copyableRow はカーソル行が y でコピーできる行か (HandleKey の y と同じ条件)。
+// 案内の語はその行の copyKind から取る (押せる手の説明が嘘になると、押さなくなる)。
+func (v *DoctorView) copyableRow() (doctorRow, bool) {
+	if v.cur.index < 0 || v.cur.index >= len(v.rows) {
+		return doctorRow{}, false
 	}
-	return "y: パスをコピー"
+	row := v.rows[v.cur.index]
+	return row, row.selectable && row.copyPath != ""
 }
 
 // doctorCloseHintLabel は閉じるキーの案内。**畳めるものがある間は q を載せない**:
@@ -1196,7 +1256,8 @@ func (v *DoctorView) diskSection(o DoctorRenderOpts) []doctorRow {
 					doctorColor(o.Colored, term.AnsiDim, "        "+r.Entry.Label+" の一部を走査できませんでした (この分は合計に入っていません)"),
 					doctorColor(o.Colored, term.AnsiDim, "        "+f),
 				}),
-				copyPath: f,
+				copyPath: f, // パスではなく走査できなかった理由の文 (パスを含む)
+				copyKind: copyKindError,
 				copyText: diskCopyText(r, mark),
 			})
 		}
@@ -1495,6 +1556,7 @@ func (v *DoctorView) brewSection(o DoctorRenderOpts) []doctorRow {
 						selectable: true,
 						key:        brewActionRowKey(i, j),
 						copyPath:   act.cmd,
+						copyKind:   copyKindCommand,
 						copyText:   act.label + ":\n" + act.cmd + "\n",
 					},
 					doctorRow{text: doctorColor(o.Colored, term.AnsiDim, "       $ "+act.cmd)})
@@ -1529,7 +1591,7 @@ func (v *DoctorView) brewSection(o DoctorRenderOpts) []doctorRow {
 		rows = append(rows, doctorRow{text: text, selectable: true, key: brewRowKey(i, summary),
 			hasDetail: len(detailRows)+len(detail) > 0,
 			detail:    append(detailRows, textRows(detail)...),
-			copyPath:  summary, copyText: "brew doctor の警告 (macOS Homebrew):\n" + w + "\n"})
+			copyPath:  summary, copyKind: copyKindWarning, copyText: "brew doctor の警告 (macOS Homebrew):\n" + w + "\n"})
 	}
 	return rows
 }

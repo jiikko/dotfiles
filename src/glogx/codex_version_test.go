@@ -4,6 +4,7 @@ import (
 	"context"
 	"glogx/internal/gitdata"
 	"glogx/internal/term"
+	"glogx/internal/testenv"
 	"strings"
 	"testing"
 	"time"
@@ -27,9 +28,8 @@ func swapCodexVersionFetchers(t *testing.T, latest, installed string) {
 func TestBrowseCodexUpdateFlow(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	var calls int
-	orig := runCodexUpdate
+	testenv.Restore(t, &runCodexUpdate)
 	runCodexUpdate = func() (string, string, string, error) { calls++; return "0.144.6", "0.150.0", "", nil }
-	t.Cleanup(func() { runCodexUpdate = orig })
 
 	// X 直後は「既に latest か」の判定中でモーダルはまだ出ない (2 段構え。tui_actions_test.go
 	// の TestBrowseUpdateFlow と同じ)。updateBeginMsg を配送して実更新の開始を確認する
@@ -107,17 +107,15 @@ func TestCodexUpdateThatDidNotUpdateIsNotReportedAsLatest(t *testing.T) {
 	// 起動時チェックが「公開は 0.153.0」を保存済み。インストール済みは 0.152.0 なので
 	// installedIsLatest は早期リターンせず、実際に codex update が走る。
 	writeVersionCache(t, codexVersionCacheFile, "0.153.0", time.Now())
-	origFetch := fetchInstalledCodexVersion
+	testenv.Restore(t, &fetchInstalledCodexVersion)
 	fetchInstalledCodexVersion = func(context.Context) string { return "0.152.0" }
-	t.Cleanup(func() { fetchInstalledCodexVersion = origFetch })
 
-	origRun := runCodexUpdate
+	testenv.Restore(t, &runCodexUpdate)
 	var runCalls int
 	runCodexUpdate = func() (string, string, string, error) {
 		runCalls++
 		return "0.152.0", "0.152.0", "Codex is already up to date.", nil
 	}
-	t.Cleanup(func() { runCodexUpdate = origRun })
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd := m.handleKey("X")

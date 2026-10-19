@@ -10,6 +10,7 @@ const ST8
 func AssertNoTermControl
 func AssertSanitizedAndVisible
 func CommitLines
+func ContainsAll
 func FakeWatcherSeam
 func GitInRepo
 func HasControlExceptNewline
@@ -22,10 +23,13 @@ func MaxRowShift
 func NewFakeWatcher
 func NewTempRepo
 func NoticeOKOf
+func PagerShown
 func PinFallbackEditor
 func RatelimitTestSnap
 func RecvTypeName
 func RepoTmpDir
+func Restore
+func SkipEnv
 func StatusRec
 func StubBrowser
 func StubBrowserFunc
@@ -35,6 +39,7 @@ func StubClock
 func StubClockFrom
 func StubEditorCapture
 func StubLookPath
+func TakeMsg
 func UsageSnapFixture
 method FakeWatcher.Add
 method FakeWatcher.AddCount

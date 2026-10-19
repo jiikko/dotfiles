@@ -2,6 +2,7 @@ package issues
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -137,10 +138,20 @@ func rewriteIssue(path string, f func(string) (string, bool)) error {
 	if fi.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("%s は symlink なので本文を書き換えません", filepath.Base(path))
 	}
+	// 読むのは開いた fd から (openIssueFile): os.ReadFile は FIFO で書き手を待って止まり、Lstat の後に差し替わった
+	// symlink も辿る。mode・リンク数・時刻も同じ fd から採り直す (Lstat と開くまでの間に差し替わった物で判定しない)
+	file, err := openIssueFile(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if fi, err = file.Stat(); err != nil {
+		return err
+	}
 	if st, ok := fi.Sys().(*syscall.Stat_t); ok && st.Nlink > 1 {
 		return fmt.Errorf("%s はハードリンクなので本文を書き換えません", filepath.Base(path))
 	}
-	b, err := os.ReadFile(path)
+	b, err := io.ReadAll(file)
 	if err != nil {
 		return err
 	}

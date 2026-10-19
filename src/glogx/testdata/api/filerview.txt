@@ -30,7 +30,6 @@ method FilerView.RememberScreen
 method FilerView.Resize
 method FilerView.RestorePlace
 method FilerView.TakeExecCmd
-method FilerView.TakeOpenErr
 method FilerView.TakeWantCross
 method FilerView.Toggle
 method FilerView.Visible

@@ -1,6 +1,7 @@
 package issues
 
 import (
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -305,9 +306,8 @@ func TestMoveIntoNextByRenameRollsBackWhenBannerFails(t *testing.T) {
 	if err := os.WriteFile(p, []byte("# x\n\n## 概要\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	old := beforeRewrite
+	testenv.Restore(t, &beforeRewrite)
 	beforeRewrite = func(path string) { _ = os.WriteFile(path, []byte("# x\n\n## 概要\n追記\n"), 0o644) }
-	t.Cleanup(func() { beforeRewrite = old })
 	iss := &Issue{Path: p, Dir: dir, Rel: "done/001-feat-x.md", Status: StatusDone}
 	if _, err := MoveToSubdir(iss, NextDirName); err == nil {
 		t.Fatal("バナーを書けないのに成功した")

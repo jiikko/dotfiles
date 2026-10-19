@@ -14,9 +14,14 @@ import (
 // だけで下見の結末を見ないので、**確認画面に出した量より多く消える**。
 // 破壊的操作の同意を、実際より小さい数字を見せて取る形だった。
 func TestDeleteTargetsComeFromPlanNotSelection(t *testing.T) {
-	planned := disk.EntryOutcome{ID: "thing", Label: "消せる", Outcome: disk.OutcomePlanned}
+	planned := disk.EntryOutcome{ID: "thing", Label: "消せる", Method: "rm", Outcome: disk.OutcomePlanned,
+		Items: []disk.ItemOutcome{{Path: "/x/thing/a", Outcome: disk.OutcomePlanned}}}
 	aborted := disk.EntryOutcome{ID: "other", Label: "中断で落ちた", Outcome: disk.OutcomeFailed,
 		Reason: "中断されました"}
+	thing := disk.Result{Entry: disk.Entry{ID: "thing"}, Items: []disk.Item{{Path: "/x/thing/a"}}}
+	withItem := func(id string) disk.Result {
+		return disk.Result{Entry: disk.Entry{ID: id}, Items: []disk.Item{{Path: "/x/" + id + "/a"}}}
+	}
 
 	for _, tc := range []struct {
 		name    string
@@ -27,30 +32,26 @@ func TestDeleteTargetsComeFromPlanNotSelection(t *testing.T) {
 		{
 			name:    "中断で Failed になったエントリは y の対象から外れる",
 			entries: []disk.EntryOutcome{planned, aborted},
-			sel: []disk.Result{
-				{Entry: disk.Entry{ID: "thing"}}, {Entry: disk.Entry{ID: "other"}},
-			},
-			want: []string{"thing"},
+			sel:     []disk.Result{thing, withItem("other")},
+			want:    []string{"thing"},
 		},
 		{
 			name:    "Planned だけなら選択そのままが対象",
 			entries: []disk.EntryOutcome{planned},
-			sel:     []disk.Result{{Entry: disk.Entry{ID: "thing"}}},
+			sel:     []disk.Result{thing},
 			want:    []string{"thing"},
 		},
 		{
 			name:    "Skipped も対象にしない (消えないものを消しに行かない)",
 			entries: []disk.EntryOutcome{{ID: "gone", Outcome: disk.OutcomeSkipped}},
-			sel:     []disk.Result{{Entry: disk.Entry{ID: "gone"}}},
+			sel:     []disk.Result{withItem("gone")},
 			want:    nil,
 		},
 		{
 			name:    "plan に無い ID が選択に居ても対象にしない",
 			entries: []disk.EntryOutcome{planned},
-			sel: []disk.Result{
-				{Entry: disk.Entry{ID: "thing"}}, {Entry: disk.Entry{ID: "not-in-plan"}},
-			},
-			want: []string{"thing"},
+			sel:     []disk.Result{thing, withItem("not-in-plan")},
+			want:    []string{"thing"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -88,16 +89,19 @@ func TestPlannedTargetsIsEmptyWithoutPlan(t *testing.T) {
 // 実行が従わない構造になる。片方だけ直すとまた割れるので、両方を同じ入力で突き合わせる。
 func TestPlanHasWorkAgreesWithPlannedTargets(t *testing.T) {
 	sel := []disk.Result{
-		{Entry: disk.Entry{ID: "a"}}, {Entry: disk.Entry{ID: "b"}},
+		{Entry: disk.Entry{ID: "a"}, Items: []disk.Item{{Path: "/x/a"}}}, {Entry: disk.Entry{ID: "b"}, Items: []disk.Item{{Path: "/x/b"}}},
+	}
+	planned := func(id string) disk.EntryOutcome {
+		return disk.EntryOutcome{ID: id, Method: "rm", Outcome: disk.OutcomePlanned,
+			Items: []disk.ItemOutcome{{Path: "/x/" + id, Outcome: disk.OutcomePlanned}}}
 	}
 	for _, tc := range []struct {
 		name    string
 		entries []disk.EntryOutcome
 	}{
-		{"全部 Planned", []disk.EntryOutcome{
-			{ID: "a", Outcome: disk.OutcomePlanned}, {ID: "b", Outcome: disk.OutcomePlanned}}},
+		{"全部 Planned", []disk.EntryOutcome{planned("a"), planned("b")}},
 		{"片方が Failed", []disk.EntryOutcome{
-			{ID: "a", Outcome: disk.OutcomePlanned}, {ID: "b", Outcome: disk.OutcomeFailed}}},
+			planned("a"), {ID: "b", Outcome: disk.OutcomeFailed}}},
 		{"全部 Failed", []disk.EntryOutcome{
 			{ID: "a", Outcome: disk.OutcomeFailed}, {ID: "b", Outcome: disk.OutcomeFailed}}},
 		{"全部 Skipped", []disk.EntryOutcome{
@@ -137,17 +141,15 @@ func TestPlanEntriesAlwaysCarryID(t *testing.T) {
 // 変異を素通りさせる。同じ穴を踏みやすいので、
 // production の入口を通す形で固定する。
 func TestDeleteKeyYPassesOnlyPlannedTargetsToEngine(t *testing.T) {
-	f := &fakeDelete{
-		phases: []disk.DeletePhase{disk.PhaseScanning},
-		// 下見: thing は Planned、other は中断で Failed
-		rep: disk.DeleteReport{DryRun: true, Entries: []disk.EntryOutcome{
-			{ID: "thing", Label: "Thing キャッシュ", Outcome: disk.OutcomePlanned,
-				BeforeSize: 4096, Items: make([]disk.ItemOutcome, 1)},
-			{ID: "other", Label: "中断で落ちた", Outcome: disk.OutcomeFailed, Reason: "中断されました"},
-		}},
-	}
+	f := &fakeDelete{phases: []disk.DeletePhase{disk.PhaseScanning}}
 	v := deleteTestView(t, f)
 	v.HandleKey(" ", 20) // thing を選ぶ
+	// 下見: thing は Planned、other は中断で Failed
+	f.rep = disk.DeleteReport{DryRun: true, Entries: []disk.EntryOutcome{
+		{ID: "thing", Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomePlanned,
+			BeforeSize: 4096, Items: plannedItemsOf(t, v, "thing")},
+		{ID: "other", Label: "中断で落ちた", Outcome: disk.OutcomeFailed, Reason: "中断されました"},
+	}}
 	v.HandleKey("d", 20) // 下見
 	_ = runDeleteCmds(t, v, v.TakeDeleteCmd())
 
@@ -179,5 +181,49 @@ func TestDeleteKeyYPassesOnlyPlannedTargetsToEngine(t *testing.T) {
 	got := f.targetIDs(1)
 	if len(got) != 1 || got[0] != "thing" {
 		t.Errorf("engine が受け取った対象 = %v, want [thing] (確認画面に出していない対象まで消しに行っている)", got)
+	}
+}
+
+// 下見で外れた Item は、エントリが Planned でも y で本番へ渡さない。本番の Delete は渡された Items から計画を
+// 作り直すので、渡すと確認画面で「省く」と出した Item が、本番までに候補へ戻ったときに消える。
+func TestDeleteKeyYPassesOnlyItemsTheConfirmShowed(t *testing.T) {
+	f := &fakeDelete{phases: []disk.DeletePhase{disk.PhaseScanning}}
+	v := deleteTestView(t, f)
+	v.HandleKey(" ", 20) // thing を選ぶ
+	dropped := disk.Item{Path: filepath.Join(t.TempDir(), "dropped"), Size: 1 << 20}
+	if v.diskRep == nil {
+		t.Fatal("前提が崩れている: 走査の結果が無い")
+	}
+	results := append([]disk.Result(nil), v.diskRep.Results...)
+	for i, r := range results {
+		if r.Entry.ID == "thing" {
+			results[i] = r.WithItems(append(append([]disk.Item(nil), r.Items...), dropped))
+		}
+	}
+	*v.diskRep = v.diskRep.WithResults(results)
+	kept := plannedItemsOf(t, v, "thing")
+	if len(kept) < 2 {
+		t.Fatalf("前提が崩れている: thing の Item が %d 件 (2 件以上にならないと、この test は何も守らない)", len(kept))
+	}
+	kept[len(kept)-1].Outcome, kept[len(kept)-1].Reason = disk.OutcomeFailed, "いまは削除の候補ではありません"
+	f.rep = disk.DeleteReport{DryRun: true, Entries: []disk.EntryOutcome{
+		{ID: "thing", Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomePlanned, BeforeSize: 4096, Items: kept}}}
+	v.HandleKey("d", 20)
+	_ = runDeleteCmds(t, v, v.TakeDeleteCmd())
+
+	if act := v.HandleKey("y", 20); act != DoctorRunDelete {
+		t.Fatalf("y で本番が始まらない: act = %v", act)
+	}
+	_ = runDeleteCmds(t, v, v.TakeDeleteCmd())
+	if len(f.targets) < 2 || len(f.targets[1]) != 1 {
+		t.Fatalf("本番へ渡した対象 = %+v", f.targets)
+	}
+	for _, it := range f.targets[1][0].Items {
+		if it.Path == dropped.Path {
+			t.Errorf("確認画面で外れた Item %s を本番へ渡した (渡した Items: %+v)", dropped.Path, f.targets[1][0].Items)
+		}
+	}
+	if got := len(f.targets[1][0].Items); got != len(kept)-1 {
+		t.Errorf("本番へ渡した Item が %d 件 (確認画面に出した %d 件のはず)", got, len(kept)-1)
 	}
 }

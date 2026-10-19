@@ -4,6 +4,7 @@ const GHNotAuthenticated
 const GHNotInstalled
 const GHOther
 const GHRateLimited
+const MaxDiffLines
 const StateFailure
 const StateLoading
 const StateNeutral
@@ -52,6 +53,8 @@ field PRStatus.IsDraft
 field PRStatus.Mergeable
 field PRStatus.ReviewDecision
 field PRStatus.Title
+field PushPlan.Exact
+field PushPlan.N
 field Repo.Name
 field Repo.Owner
 field cacheEntry.FetchedAt
@@ -76,6 +79,7 @@ func BuildFingerprintArgs
 func CachePath
 func CapFetchSHAs
 func DefaultDecorColors
+func DiffDisplayLines
 func EmptyBatch
 func ExecRunner
 func FetchCIChunk
@@ -94,6 +98,7 @@ func LoadHeadCommit
 func LoadLogDisplay
 func LoadStagedDiff
 func PlanCIChunks
+func PlanPush
 func ResolveRepo
 func SaveCache
 func UnpushedSHAs
@@ -111,4 +116,5 @@ type GHErrorKind
 type LogQuery
 type PRRef
 type PRStatus
+type PushPlan
 type Repo

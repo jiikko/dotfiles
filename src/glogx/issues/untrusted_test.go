@@ -1,6 +1,7 @@
 package issues
 
 import (
+	"glogx/internal/testenv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,7 +136,7 @@ func TestIssueFilenameIsSanitizedForDisplayOnly(t *testing.T) {
 	name := "002-feat-" + esc + "]0;pwned" + bel + "x.md"
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte("no h1 here\n"), 0o644); err != nil {
-		t.Skipf("この環境では制御文字入りのファイル名を作れない: %v", err)
+		testenv.SkipEnv(t, "この環境では制御文字入りのファイル名を作れない: %v", err)
 	}
 	list, _ := Scan([]string{dir})
 	if len(list) != 1 {
@@ -167,7 +168,7 @@ func TestScanIgnoresSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(secret, filepath.Join(dir, "999-innocuous.md")); err != nil {
-		t.Skipf("この環境では symlink を作れない: %v", err)
+		testenv.SkipEnv(t, "この環境では symlink を作れない: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "001-real.md"), []byte("# 001 real\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -210,7 +211,7 @@ func TestScanWarningsAreSanitized(t *testing.T) {
 	name := "001-feat-" + esc + "]0;pwned" + bel + "x.md"
 	for _, p := range []string{filepath.Join(dir, name), filepath.Join(done, name)} {
 		if err := os.WriteFile(p, []byte("# 001 x\n"), 0o644); err != nil {
-			t.Skipf("この環境では制御文字入りのファイル名を作れない: %v", err)
+			testenv.SkipEnv(t, "この環境では制御文字入りのファイル名を作れない: %v", err)
 		}
 	}
 	_, warns := Scan([]string{dir})
@@ -246,7 +247,7 @@ func TestFindDirsIgnoresSymlinkedIssuesDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(outside, filepath.Join(repo, "issues")); err != nil {
-		t.Skipf("この環境では symlink を作れない: %v", err)
+		testenv.SkipEnv(t, "この環境では symlink を作れない: %v", err)
 	}
 	if dirs := FindDirs(repo); len(dirs) != 0 {
 		t.Fatalf("symlink の issues ディレクトリを拾った (repo 外が読める): %q", dirs)

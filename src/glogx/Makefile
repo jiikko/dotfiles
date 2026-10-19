@@ -27,5 +27,9 @@ ifneq ($(CI),)
 	$(MAKE) test-budget
 endif
 
+# 🚨 走ったことを出力で確かめる: テストを改名すると -run が何にも当たらず `ok ... [no tests to run]` rc=0 の緑になる
 test-budget:
-	go test -count=1 -run '^TestFrameAllocBudget$$' .
+	@out=$$(go test -count=1 -v -run '^TestFrameAllocBudget$$' . 2>&1); rc=$$?; printf '%s\n' "$$out"; \
+	[ $$rc -eq 0 ] || exit $$rc; \
+	case "$$out" in *'--- PASS: TestFrameAllocBudget '*) ;; \
+	*) echo "test-budget: TestFrameAllocBudget が走っていない (改名で -run が空振りした)" >&2; exit 1 ;; esac

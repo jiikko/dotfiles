@@ -1,6 +1,7 @@
 package gitdata
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -135,14 +136,18 @@ func TestFetchCIStatusesEmpty(t *testing.T) {
 }
 
 func TestFetchCIStatusesPartialErrors(t *testing.T) {
-	// GraphQL は data と errors を同時に返しうる。取れた分は使い、失敗は警告として返す
+	// GraphQL は data と errors を同時に返しうる。取れた分は使い、失敗は警告として返す。
+	// 🚨 fake は本物の gh と同じ形にする: errors があると data を返していても rc≠0 で終わり、stderr に `gh: <message>` を出す
+	// (gh 2.92.0 で実測)。エラーの alias は null で、errors[].path に名前が出る (null を「Check なし」と読まない)
 	sha1 := strings.Repeat("a", 40)
 	sha2 := strings.Repeat("b", 40)
 	fixture := `{"data":{"repository":{
 		"c0": {"statusCheckRollup": {"state":"SUCCESS","contexts":{"nodes":[
-			{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"}]}}}
-	}},"errors":[{"message":"Something went wrong while executing your query."}]}`
-	batch, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
+			{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"}]}}},
+		"c1": null
+	}},"errors":[{"path":["repository","c1"],"message":"Something went wrong while executing your query."}]}`
+	exitErr := exec.Command("false").Run() // subproc: no-waitdelay — rc=1 の ExitError を作るだけ (出力を取らない)
+	batch, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "gh: Something went wrong while executing your query.\n", exitErr),
 		Repo{Owner: "o", Name: "r"}, []string{sha1, sha2})
 	statuses := batch.Statuses
 	if statuses[sha1] != StateSuccess {
@@ -247,19 +252,7 @@ func TestFetchCIStatusesChunksInParallel(t *testing.T) {
 		mu.Lock()
 		inFlight--
 		mu.Unlock()
-		// このチャンクに含まれる alias の数だけ SUCCESS を返す
-		joined := strings.Join(args, " ")
-		var b strings.Builder
-		b.WriteString(`{"data":{"repository":{`)
-		for i := 0; strings.Contains(joined, fmt.Sprintf("c%d: object", i)); i++ {
-			if i > 0 {
-				b.WriteString(",")
-			}
-			fmt.Fprintf(&b, `"c%d": {"statusCheckRollup": {"state":"SUCCESS","contexts":{"nodes":[`+
-				`{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]}}}`, i)
-		}
-		b.WriteString(`}}}`)
-		return []byte(b.String()), nil, nil
+		return successResponse(strings.Join(args, " ")), nil, nil
 	}
 	batch, ghErr := FetchCIStatuses(context.Background(), run, Repo{Owner: "o", Name: "r"}, shas)
 	if ghErr != nil {
@@ -298,17 +291,7 @@ func TestFetchCIStatusesChunkPartialFailure(t *testing.T) {
 		if strings.Contains(joined, first) {
 			return nil, []byte("gh: api error"), errors.New("exit status 1")
 		}
-		var b strings.Builder
-		b.WriteString(`{"data":{"repository":{`)
-		for i := 0; strings.Contains(joined, fmt.Sprintf("c%d: object", i)); i++ {
-			if i > 0 {
-				b.WriteString(",")
-			}
-			fmt.Fprintf(&b, `"c%d": {"statusCheckRollup": {"state":"SUCCESS","contexts":{"nodes":[`+
-				`{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]}}}`, i)
-		}
-		b.WriteString(`}}}`)
-		return []byte(b.String()), nil, nil
+		return successResponse(joined), nil, nil
 	}
 	batch, ghErr := FetchCIStatuses(context.Background(), run, Repo{Owner: "o", Name: "r"}, shas)
 	if ghErr == nil {
@@ -698,6 +681,10 @@ func TestFormatDuration(t *testing.T) {
 		{42 * time.Second, "42s"},
 		{2*time.Minute + 39*time.Second, "2m39s"},
 		{time.Hour + 2*time.Minute, "1h2m"},
+		// 境界: 1 分ちょうど・1 時間ちょうどは上の単位で出す (`60s` / `60m00s` にしない)
+		{time.Minute, "1m00s"},
+		{time.Hour - time.Second, "59m59s"},
+		{time.Hour, "1h0m"},
 	}
 	for _, tt := range tests {
 		if got := FormatDuration(tt.d); got != tt.want {
@@ -864,4 +851,76 @@ func TestPickBestPRSanitizesURL(t *testing.T) {
 	if strings.ContainsAny(pr.URL, "\x1b\a") || pr.URL != "https://github.com/o/r/pull/1" {
 		t.Errorf("PR の url = %q, want %q", pr.URL, "https://github.com/o/r/pull/1")
 	}
+}
+
+// owner / name は文字列 (-f) で渡す。-F は数字・true / false / null を JSON の型に変えるので、repo 名が 2048 のような
+// 数字だと `$name: String!` に整数が渡り、型の誤りで CI が取れない (gh 2.92.0 で実測: Could not coerce value 2048 to String)。
+func TestGraphQLPassesOwnerAndNameAsStrings(t *testing.T) {
+	var calls [][]string
+	run := func(_ context.Context, _ string, args ...string) ([]byte, []byte, error) {
+		calls = append(calls, args)
+		return []byte(`{"data":{"repository":{}}}`), nil, nil
+	}
+	repo := Repo{Owner: "1234", Name: "2048"}
+	_, _ = FetchCIChunk(context.Background(), run, repo, []string{strings.Repeat("a", 40)})
+	_, _ = FetchCommitPR(context.Background(), run, repo, strings.Repeat("a", 40))
+	if len(calls) != 2 {
+		t.Fatalf("gh の呼び出しが %d 回 (2 回のはず)", len(calls))
+	}
+	for _, args := range calls {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "-F ") || !strings.Contains(joined, "-f owner=1234") || !strings.Contains(joined, "-f name=2048") {
+			t.Errorf("owner / name を文字列で渡していない: %v", args)
+		}
+	}
+}
+
+// BenchmarkLogTail は job のログ (約 20 万行・13 MB) から末尾 jobLogTailLines 行を取る所要と確保。
+func BenchmarkLogTail(b *testing.B) {
+	var buf bytes.Buffer
+	for i := range 200_000 {
+		fmt.Fprintf(&buf, "build\tstep\t2026-10-19T00:00:00.0000000Z line %06d of a long job log ................\n", i)
+	}
+	out := buf.Bytes()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = logTail(out, jobLogTailLines)
+	}
+}
+
+// logTail の境界: 改行で終わらない / 空行を挟む / 行数が n より少ない / 空。
+func TestLogTailBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		n    int
+		want []string
+	}{
+		{"a\nb\nc", 2, []string{"b", "c"}},
+		{"a\n\nb\n\n\nc\n\n", 2, []string{"b", "c"}},
+		{"only", 5, []string{"only"}},
+		{"a\nb\n", 5, []string{"a", "b"}},
+		{"", 3, []string{}},
+		{"\n\n", 3, []string{}},
+	} {
+		got := logTail([]byte(tc.in), tc.n)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("logTail(%q, %d) = %q, want %q", tc.in, tc.n, got, tc.want)
+		}
+	}
+}
+
+// successResponse は GraphQL の問い合わせ (gh に渡した引数を空白で繋いだもの) に含まれる alias (c0, c1, ...) の数だけ、
+// CI が SUCCESS の応答を組む。
+func successResponse(query string) []byte {
+	var b strings.Builder
+	b.WriteString(`{"data":{"repository":{`)
+	for i := 0; strings.Contains(query, fmt.Sprintf("c%d: object", i)); i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `"c%d": {"statusCheckRollup": {"state":"SUCCESS","contexts":{"nodes":[`+
+			`{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]}}}`, i)
+	}
+	b.WriteString(`}}}`)
+	return []byte(b.String())
 }

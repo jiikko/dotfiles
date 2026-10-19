@@ -1,20 +1,41 @@
-package extcmd
+package gitexec
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
+	"strings"
 	"subproc"
 )
 
 // GitExitError は git コマンド自体の失敗。stderr と終了コードをそのまま伝播する。
+// Err は起動の失敗・時間切れなど、git が理由を stderr に書けなかったときの原因 (無ければ nil)。
+// 🚨 Error() を stderr だけにしない: git が起動できない (PATH に無い) / 時間切れで殺された ときは stderr が空で、
+// 「git status に失敗しました: 」の後ろが空のトーストや、何も出さない rc=1 の終了になる。
+// TimedOut は上限の時間に達して殺された (Err がその説明)。stderr に警告が出ていても、時間切れを先に出す。
 type GitExitError struct {
-	Stderr string
-	Code   int
+	Stderr   string
+	Code     int
+	Err      error
+	TimedOut bool
 }
 
-func (e *GitExitError) Error() string { return e.Stderr }
+func (e *GitExitError) Error() string {
+	if e.TimedOut && e.Err != nil {
+		if s := strings.TrimSpace(e.Stderr); s != "" {
+			return e.Err.Error() + "\n" + s
+		}
+		return e.Err.Error()
+	}
+	if s := strings.TrimSpace(e.Stderr); s != "" || e.Err == nil {
+		return e.Stderr
+	}
+	return e.Err.Error()
+}
+
+func (e *GitExitError) Unwrap() error { return e.Err }
 
 // gitOpTimeout は subproc.GitOpTimeout の別名 (値と理由の正本はそちら)。issues パッケージも
 // 同じ上限で git を起動するため、値は共有の leaf パッケージに置いてある。
@@ -25,7 +46,8 @@ const gitOpTimeout = subproc.GitOpTimeout
 func RunGitTimeout(args ...string) (string, error) { //nolint:unparam // 出力は main (gitlog.go / gitlog_watch.go) が使う。unparam はパッケージの外の呼び出しを見ない
 	ctx, cancel := context.WithTimeout(context.Background(), gitOpTimeout)
 	defer cancel()
-	return RunGitCmd(exec.CommandContext(ctx, "git", subproc.GitArgs(args...)...))
+	out, err := RunGitCmd(exec.CommandContext(ctx, "git", subproc.GitArgs(args...)...))
+	return out, timeoutReason(ctx, err, args)
 }
 
 func RunGitCmd(cmd *exec.Cmd) (string, error) {
@@ -42,9 +64,25 @@ func RunGitCmd(cmd *exec.Cmd) (string, error) {
 		if errors.As(err, &exitErr) {
 			code = exitErr.ExitCode()
 		}
-		return "", &GitExitError{Stderr: stderr.String(), Code: code}
+		return "", &GitExitError{Stderr: stderr.String(), Code: code, Err: err}
 	}
 	return stdout.String(), nil
+}
+
+// timeoutReason は ctx の時間切れで殺された git の失敗に、時間切れだと分かる原因を付ける。
+// 🚨 exec.ExitError かどうかでは分けられない: 時間切れの SIGKILL も ExitError (Code=-1) になる。ctx.Err() で見る
+func timeoutReason(ctx context.Context, err error, args []string) error {
+	var ge *GitExitError
+	if err == nil || !errors.Is(ctx.Err(), context.DeadlineExceeded) || !errors.As(err, &ge) {
+		return err
+	}
+	name := "git"
+	if len(args) > 0 {
+		name += " " + args[0]
+	}
+	ge.Err = fmt.Errorf("%s が %s 以内に終わりませんでした: %w", name, gitOpTimeout, ctx.Err())
+	ge.TimedOut = true
+	return ge
 }
 
 // runGitReadTimeout は runGitTimeout と同じだが、表示のために作業ツリーを読む呼び出し (status・作業ツリーとの diff) 用。
@@ -54,18 +92,17 @@ func RunGitReadTimeout(args ...string) (string, error) {
 	defer cancel()
 	cmd, err := subproc.GitRepoCommand(ctx, "", args...)
 	if err != nil {
+		// 前処理 (filter を列挙する git config) の時間切れも、時間切れだと分かる形にする (下の timeoutReason は
+		// GitExitError にしか付けられない)
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "", &GitExitError{Code: -1, TimedOut: true,
+				Err: fmt.Errorf("git の設定を %s 以内に読めませんでした: %w", gitOpTimeout, errors.Join(ctx.Err(), err))}
+		}
 		return "", err
 	}
-	return RunGitCmd(cmd)
+	out, err := RunGitCmd(cmd)
+	return out, timeoutReason(ctx, err, args)
 }
-
-// maxDiffLines は diff ポップアップに保持する行数の上限。巨大コミット (自動生成物等) で
-// 描画・保持行数が際限なく増えないための安全弁で、超過時は末尾に省略注記を足す。
-// 🚨 これがバウンドするのは「保持する行数」だけで、ピークメモリは制限しない: runGit は
-// git show の全出力を bytes.Buffer + String() で一旦フルに展開する (diff 全長 × 約2) ため、
-// 数万行 diff の一時スパイクは起きる (popup クローズ後に GC 解放される一時的なもの)。
-// メモリも真にバウンドしたければ git 出力を行ストリームで読み上限で打ち切る必要がある。
-const MaxDiffLines = 5000
 
 // status viewer (s キー) の write 操作。いずれもローカルの index / 作業ツリーだけを触るので
 // noPromptGitCmd (remote 用) ではなく runGitTimeout を使う。テストで実 git を叩かないための

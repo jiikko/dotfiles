@@ -1,6 +1,7 @@
 package statusview
 
 import (
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -40,9 +41,18 @@ func stubWorktreeStatus(t *testing.T, porcelain string, err error) *struct {
 		if state.err != nil {
 			return worktreeStatus{}, state.err
 		}
-		return parseWorktreeStatus(state.out), nil
+		st := parseWorktreeStatus(state.out)
+		// root は読み込んだときの cwd (rows のパスはここからの相対として読む。ファイルを置くテストは cwd に置く)
+		if wd, err := os.Getwd(); err == nil {
+			st.root = wd
+		}
+		return st, nil
 	}
-	t.Cleanup(func() { loadWorktreeStatus = orig })
+	// 指紋 (rowPrint) が叩く git も差し替える: 実 repo を作らないテストで、cwd の repo (dotfiles) を読まない
+	origIndex, origUntracked := readIndexEntries, listUntrackedFiles
+	readIndexEntries = func([]string) (string, error) { return "", nil }
+	listUntrackedFiles = func(string) (string, error) { return "", nil }
+	t.Cleanup(func() { loadWorktreeStatus, readIndexEntries, listUntrackedFiles = orig, origIndex, origUntracked })
 	return state
 }
 

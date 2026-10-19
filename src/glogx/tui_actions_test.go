@@ -15,6 +15,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
 	"glogx/internal/gitdata"
+	"glogx/internal/gitexec"
 	"glogx/internal/statusview/statusviewtest"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
@@ -28,10 +29,10 @@ func TestBrowseConfirmEnterConfirms(t *testing.T) {
 	// push: Enter で実行
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
+	stubPushPlan(t, gitdata.PushPlan{N: 1, Exact: true})
 	var pushed int
-	origPush := runGitPush
+	testenv.Restore(t, &runGitPush)
 	runGitPush = func(context.Context) error { pushed++; return nil }
-	t.Cleanup(func() { runGitPush = origPush })
 	m.handleKey("b")
 	if !m.actModal.pushConfirm {
 		t.Fatal("b で push 確認に入らない")
@@ -41,9 +42,8 @@ func TestBrowseConfirmEnterConfirms(t *testing.T) {
 	}
 	// pull: Enter で実行
 	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
-	origPull := runGitPullRebase
+	testenv.Restore(t, &runGitPullRebase)
 	runGitPullRebase = func(context.Context) error { return nil }
-	t.Cleanup(func() { runGitPullRebase = origPull })
 	m2.handleKey("u")
 	if !m2.actModal.pullConfirm {
 		t.Fatal("u で pull 確認に入らない")
@@ -57,9 +57,8 @@ func TestBrowseConfirmEnterConfirms(t *testing.T) {
 func TestBrowseUpdateFlow(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	var calls int
-	orig := runClaudeUpdate
+	testenv.Restore(t, &runClaudeUpdate)
 	runClaudeUpdate = func() (string, string, string, error) { calls++; return "2.1.216", "2.2.0", "", nil }
-	t.Cleanup(func() { runClaudeUpdate = orig })
 
 	// C 直後は「既に latest か」の判定中で、モーダルはまだ出ない (早期リターン時に
 	// 一瞬モーダルが光るのを防ぐ 2 段構え。ユーザー指摘 2026-08-12)
@@ -157,11 +156,10 @@ func TestBrowseUpdateFlow(t *testing.T) {
 // 復帰 (updating 解除 → q/Ctrl-C が再び効く) を保証する回帰テスト。
 func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
-	orig := runClaudeUpdate
+	testenv.Restore(t, &runClaudeUpdate)
 	runClaudeUpdate = func() (string, string, string, error) {
 		return "2.1.216", "", "", errors.New("claude update がタイムアウトしました (5m0s)")
 	}
-	t.Cleanup(func() { runClaudeUpdate = orig })
 
 	_, cmd := m.handleKey("C")
 	deliverUpdateMsg(m, cmd)
@@ -187,12 +185,11 @@ func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
 // cancel する (leak 監査 2026-07-23: stall 中に Ctrl-C で抜けると git 子プロセスが孤児化する穴)。
 // stub を ctx.Done() で block させ、stop() で解除されることを確認する。
 func TestActionModalStopCancelsRunningPush(t *testing.T) {
-	orig := runGitPush
+	testenv.Restore(t, &runGitPush)
 	runGitPush = func(ctx context.Context) error {
 		<-ctx.Done() // cancel されるまでブロック (stall した git を模す)
 		return ctx.Err()
 	}
-	t.Cleanup(func() { runGitPush = orig })
 
 	a := &actionModal{pushConfirm: true}
 	consumed, action := a.handleKey("y")
@@ -252,9 +249,8 @@ func TestBrowsePushFlow(t *testing.T) {
 	m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
 	m.statuses[m.commits[1].SHA] = gitdata.StateUnpushed // 2 コミットまとめて push するケース
 	var pushed int
-	orig := runGitPush
+	testenv.Restore(t, &runGitPush)
 	runGitPush = func(context.Context) error { pushed++; return nil }
-	t.Cleanup(func() { runGitPush = orig })
 	// b で確認に入り、n でキャンセル (push されない)
 	m.handleKey("b")
 	if !m.actModal.pushConfirm {
@@ -373,9 +369,8 @@ func TestBrowsePullFlow(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.opts = &Options{MaxCount: 20}
 	var pulled int
-	orig := runGitPullRebase
+	testenv.Restore(t, &runGitPullRebase)
 	runGitPullRebase = func(context.Context) error { pulled++; return nil }
-	t.Cleanup(func() { runGitPullRebase = orig })
 	// u で確認に入り、n でキャンセル
 	m.handleKey("u")
 	if !m.actModal.pullConfirm {
@@ -526,6 +521,7 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = gitdata.StateSuccess
 	m.statuses[m.commits[1].SHA] = gitdata.StateSuccess
+	stubPushPlan(t, gitdata.PushPlan{N: 0, Exact: true})
 	m.handleKey("b")
 	if m.actModal.pushConfirm {
 		t.Fatal("未 push なしで push 確認に入った")
@@ -622,12 +618,11 @@ func TestBrowseRerunFlow(t *testing.T) {
 	withFailedJob(m, 0, 7, gitdata.StateFailure)
 	var gotJobID int64
 	var gotRepo gitdata.Repo
-	orig := runJobRerun
+	testenv.Restore(t, &runJobRerun)
 	runJobRerun = func(_ context.Context, repo gitdata.Repo, jobID int64) error {
 		gotRepo, gotJobID = repo, jobID
 		return nil
 	}
-	t.Cleanup(func() { runJobRerun = orig })
 	m.openPanel()
 	m.handleKey("j") // job へフォーカス
 	// r で確認に入り、n でキャンセル (実行されない)
@@ -664,10 +659,9 @@ func TestBrowseRerunFlow(t *testing.T) {
 }
 
 func TestBrowseRerunGuards(t *testing.T) {
-	orig := runJobRerun
+	testenv.Restore(t, &runJobRerun)
 	called := false
 	runJobRerun = func(context.Context, gitdata.Repo, int64) error { called = true; return nil }
-	t.Cleanup(func() { runJobRerun = orig })
 	// StatusContext (CheckID=0) は再実行不可
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.statuses = statusesFor(m, gitdata.StateFailure)
@@ -714,9 +708,8 @@ func TestBrowseRerunFailureShowsToast(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.statuses = statusesFor(m, gitdata.StateFailure)
 	withFailedJob(m, 0, 7, gitdata.StateFailure)
-	orig := runJobRerun
+	testenv.Restore(t, &runJobRerun)
 	runJobRerun = func(context.Context, gitdata.Repo, int64) error { return errors.New("run cannot be rerun") }
-	t.Cleanup(func() { runJobRerun = orig })
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("r")
@@ -1059,13 +1052,11 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 
 	// claude 側: installed == cached latest → runClaudeUpdate は呼ばれない
 	writeVersionCache(t, claudeVersionCacheFile, "2.2.0", time.Now())
-	origFetch := fetchInstalledClaudeVersion
+	testenv.Restore(t, &fetchInstalledClaudeVersion)
 	fetchInstalledClaudeVersion = func(context.Context) string { return "2.2.0" }
-	t.Cleanup(func() { fetchInstalledClaudeVersion = origFetch })
-	origRun := runClaudeUpdate
+	testenv.Restore(t, &runClaudeUpdate)
 	var runCalls int
 	runClaudeUpdate = func() (string, string, string, error) { runCalls++; return "2.2.0", "2.2.0", "", nil }
-	t.Cleanup(func() { runClaudeUpdate = origRun })
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd := m.handleKey("C")
@@ -1087,13 +1078,11 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 
 	// codex 側も同じ早期リターン (鏡像)
 	writeVersionCache(t, codexVersionCacheFile, "0.144.6", time.Now())
-	origCodexFetch := fetchInstalledCodexVersion
+	testenv.Restore(t, &fetchInstalledCodexVersion)
 	fetchInstalledCodexVersion = func(context.Context) string { return "0.144.6" }
-	t.Cleanup(func() { fetchInstalledCodexVersion = origCodexFetch })
-	origCodexRun := runCodexUpdate
+	testenv.Restore(t, &runCodexUpdate)
 	var codexCalls int
 	runCodexUpdate = func() (string, string, string, error) { codexCalls++; return "0.144.6", "0.144.6", "", nil }
-	t.Cleanup(func() { runCodexUpdate = origCodexRun })
 
 	m2 := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd2 := m2.handleKey("X")
@@ -1109,12 +1098,10 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 // 早期リターンしない側の保証: キャッシュが stale / installed が古い場合は従来どおり update を実行する。
 func TestBrowseUpdateRunsWhenNotConfirmedLatest(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	origFetch := fetchInstalledClaudeVersion
-	t.Cleanup(func() { fetchInstalledClaudeVersion = origFetch })
-	origRun := runClaudeUpdate
+	testenv.Restore(t, &fetchInstalledClaudeVersion)
+	testenv.Restore(t, &runClaudeUpdate)
 	var runCalls int
 	runClaudeUpdate = func() (string, string, string, error) { runCalls++; return "2.1.0", "2.2.0", "", nil }
-	t.Cleanup(func() { runClaudeUpdate = origRun })
 
 	// installed が cached latest より古い → 実行される
 	writeVersionCache(t, claudeVersionCacheFile, "2.2.0", time.Now())
@@ -1153,13 +1140,11 @@ func TestBrowseUpdateRunsWhenNotConfirmedLatest(t *testing.T) {
 func TestBrowseUpdateRunsWhenVersionsIncomparable(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	writeVersionCache(t, claudeVersionCacheFile, "2.2.0-beta.1", time.Now())
-	origFetch := fetchInstalledClaudeVersion
+	testenv.Restore(t, &fetchInstalledClaudeVersion)
 	fetchInstalledClaudeVersion = func(context.Context) string { return "2.1.0" }
-	t.Cleanup(func() { fetchInstalledClaudeVersion = origFetch })
-	origRun := runClaudeUpdate
+	testenv.Restore(t, &runClaudeUpdate)
 	var runCalls int
 	runClaudeUpdate = func() (string, string, string, error) { runCalls++; return "2.1.0", "2.2.0", "", nil }
-	t.Cleanup(func() { runClaudeUpdate = origRun })
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	_, cmd := m.handleKey("C")
@@ -1235,9 +1220,8 @@ func TestEditorCommand(t *testing.T) {
 // **実 git push が走る**。破棄確認中の `p` も同様に pull 確認を重ね、y → y で作業ツリー破棄へ到達する。
 func TestStatusViewerOwnsKeysBlocksRemoteHijack(t *testing.T) {
 	pushes := 0
-	origPush := runGitPush
+	testenv.Restore(t, &runGitPush)
 	runGitPush = func(context.Context) error { pushes++; return nil }
-	t.Cleanup(func() { runGitPush = origPush })
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.statusOv = *statusviewtest.NewView(t, testenv.StatusRec(" M a.go"))
@@ -1246,11 +1230,8 @@ func TestStatusViewerOwnsKeysBlocksRemoteHijack(t *testing.T) {
 	}
 
 	// --- 陽性対照: 通常状態 (ownsKeys=false) では b が push 確認を出す ---
-	// confirmPush は未 push が 0 件だとトーストで断るので、1 件だけ未 push を作る
-	m.statuses[m.commits[0].SHA] = gitdata.StateUnpushed
-	if m.unpushedCount() == 0 {
-		t.Fatal("前提: 未 push を作れていない (対照が無意味化する)")
-	}
+	// confirmPush は未 push が 0 件だとトーストで断るので、1 件だけ未 push にする (件数は pushPlan が見積もる)
+	stubPushPlan(t, gitdata.PushPlan{N: 1, Exact: true})
 	m.handleKey("b")
 	if !m.actModal.pushConfirm {
 		t.Fatal("通常状態で b が push 確認を出さない (ガードが広すぎる = viewer の外まで殺した)")
@@ -1304,9 +1285,8 @@ func TestUpdateDoesNotOverlapConfirmModal(t *testing.T) {
 		t.Run(st.name, func(t *testing.T) {
 			m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 			var pushed int
-			origPush := runGitPush
+			testenv.Restore(t, &runGitPush)
 			runGitPush = func(context.Context) error { pushed++; return nil }
-			t.Cleanup(func() { runGitPush = origPush })
 			st.apply(m)
 
 			// 判定を通過した update 開始要求が届く
@@ -1374,9 +1354,8 @@ func TestQuitBlockedWhileAnyUpdateRuns(t *testing.T) {
 // の鏡像 (方向が「外→viewer」ではなく「actModal→viewer」)。
 func TestUpdateKeysDoNotLeakIntoStatusViewer(t *testing.T) {
 	restores := 0
-	origRestore := extcmd.RunGitRestoreWorktree
-	extcmd.RunGitRestoreWorktree = func([]string) error { restores++; return nil }
-	t.Cleanup(func() { extcmd.RunGitRestoreWorktree = origRestore })
+	testenv.Restore(t, &gitexec.RunGitRestoreWorktree)
+	gitexec.RunGitRestoreWorktree = func([]string) error { restores++; return nil }
 
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.statusOv = *statusviewtest.NewView(t, testenv.StatusRec(" M a.go"))
@@ -1539,5 +1518,176 @@ func TestForceQuitSurvivesUpdateCoexistence(t *testing.T) {
 	}
 	if _, cmd := m.handleKey("ctrl+c"); cmd == nil && !m.done {
 		t.Error("2 回目の Ctrl-C で強制終了できない (stall した push から抜けられない)")
+	}
+}
+
+// git の失敗は、トーストに理由の 1 行だけを出し、w でコピーする警告に git の出力の全文 (改行を残して無害化) を付ける。
+func TestShowGitFailureCopiesTheWholeOutput(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	out := "To github.com:o/r.git\n ! [rejected]        main -> main (fetch first)\nerror: failed to push some refs\x1b]52;c;eA==\x07"
+	line := gitFailureLine(out)
+	m.showGitFailure("push に失敗", newGitOutputError(line+pushRetryHint(line), []byte(out), nil))
+	if got := m.toast.Text(); !strings.Contains(got, "[rejected]") || strings.Contains(got, "\n") || strings.Contains(got, "To github.com") {
+		t.Errorf("トースト = %q (理由の 1 行だけのはず)", got)
+	}
+	testenv.ContainsAll(t, "w でコピーする警告", m.lastWarning, "push に失敗: ! [rejected]", "To github.com:o/r.git", "error: failed to push some refs")
+	if testenv.HasControlExceptNewline(m.lastWarning) {
+		t.Errorf("w でコピーする警告に制御文字が残った: %q", m.lastWarning)
+	}
+}
+
+// 理由の行の選び方: 拒否・衝突の行 > fatal: / error: > 最初の空でない行。
+func TestGitFailureLinePicksTheReason(t *testing.T) {
+	for _, tc := range []struct{ out, want string }{
+		{"To r\n ! [rejected] main -> main (fetch first)\nerror: failed", "! [rejected] main -> main (fetch first)"},
+		{"From r\nAuto-merging a\nCONFLICT (content): Merge conflict in a\nerror: could not apply", "CONFLICT (content): Merge conflict in a"},
+		{"Enumerating\nfatal: unable to access", "fatal: unable to access"},
+		{"\n  boom  \n", "boom"},
+		// 送り先が複数の push: 先の送り先の成功の行 (ref の更新) を、後の送り先の失敗の理由として選ばない
+		{"To /repos/one.git\n   abc1234..def5678  main -> main\nERROR: Repository not found.\nfatal: Could not read from remote repository.", "ERROR: Repository not found."},
+		// 理由が何も出ていなくても、通った ref の更新の行を理由として選ばない (最初の行へ落ちる)
+		{"To /repos/one.git\n   abc1234..def5678  main -> main\n", "To /repos/one.git"},
+		{"   abc1234..def5678  main -> main\nTo /repos/one.git\n", "To /repos/one.git"},
+		{"   abc1234..def5678  main -> main\n", ""}, // 通った ref の更新しか無い
+	} {
+		if got := gitFailureLine(tc.out); got != tc.want {
+			t.Errorf("gitFailureLine(%q) = %q, want %q", tc.out, got, tc.want)
+		}
+	}
+	if pushRetryHint("! [remote rejected] main -> main (pre-receive hook declined)") != "" {
+		t.Error("hook の拒否に pull の案内を添えた (pull しても通らない)")
+	}
+}
+
+// git が stderr に何も書かずに失敗した (起動できない・時間切れ) ときも、終了時に理由を出し、0 以下の終了コードを返さない。
+func TestWriteGitErrorExplainsSilentFailures(t *testing.T) {
+	var buf strings.Builder
+	rc := writeGitError(&buf, &gitexec.GitExitError{Code: -1, Err: errors.New("git status が 10s 以内に終わりませんでした")})
+	if rc != 1 || !strings.Contains(buf.String(), "以内に終わりませんでした") {
+		t.Errorf("rc=%d 出力=%q (理由を出し rc=1 のはず)", rc, buf.String())
+	}
+	buf.Reset()
+	if rc := writeGitError(&buf, &gitexec.GitExitError{Stderr: "fatal: bad revision\n", Code: 128}); rc != 128 || buf.String() != "fatal: bad revision\n" {
+		t.Errorf("stderr のある失敗: rc=%d 出力=%q", rc, buf.String())
+	}
+}
+
+// b の件数は git push が送るものから数える。画面の statuses に未 push が無くても (path filter・-n・GitHub を解決できない
+// repo)、送るものがあれば確認を出し、その件数を出す。数えられなければ 0 件と読まずに理由を出す。
+func TestPushConfirmCountsWhatGitPushSends(t *testing.T) {
+	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = gitdata.StateNone
+	m.statuses[m.commits[1].SHA] = gitdata.StateNone
+	stubPushPlan(t, gitdata.PushPlan{N: 3, Exact: true})
+	m.handleKey("b")
+	if !m.actModal.pushConfirm {
+		t.Fatal("送るものがあるのに push の確認が出ない")
+	}
+	if box := strings.Join(m.centerModalLines(), "\n"); !strings.Contains(box, "未 push の 3 コミット") {
+		t.Errorf("確認の件数が git push の送る数でない:\n%s", box)
+	}
+	m.handleKey("n")
+
+	// 見積もりが確かでない (ref の作成だけ・push の refspec の設定) ときの 0 件は断らず、件数を出さずに確認する
+	stubPushPlan(t, gitdata.PushPlan{N: 0, Exact: false})
+	m.handleKey("b")
+	if !m.actModal.pushConfirm {
+		t.Fatal("見積もりが確かでない 0 件で push を断った (ref の作成だけの push を止める)")
+	}
+	if box := strings.Join(m.centerModalLines(), "\n"); strings.Contains(box, "0 コミット") || !strings.Contains(box, "件数は数えていません") {
+		t.Errorf("確かでない件数を出した:\n%s", box)
+	}
+}
+
+// GitHub の repo を解決できない repo では、CI と URL の手 (Enter / o / p / P / y) を案内しない (押しても断るだけ)。
+func TestBaseHintHidesGitHubOnlyKeysWithoutRepo(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.width = 300
+	m.hasRepo = true
+	if h := m.hintLine(); !strings.Contains(h, "o: ブラウザ") {
+		t.Fatalf("前提が崩れている: GitHub の repo のときの hint に o が無い: %q", h)
+	}
+	m.hasRepo = false
+	h := m.hintLine()
+	for _, k := range []string{"Enter: CI job", "o: ブラウザ", "p: PR", "P: PR 状態", "y: URL コピー"} {
+		if strings.Contains(h, k) {
+			t.Errorf("GitHub の repo が無いのに %q を案内した: %q", k, h)
+		}
+	}
+	if !strings.Contains(h, "b: push") {
+		t.Errorf("push の手まで消えた: %q", h)
+	}
+}
+
+// 理由の行は決まり文句ではなく本当の理由を選ぶ: ssh の接続の失敗 / remote が書いた理由 (hook・保護ブランチ)。
+// 次の手 (pull) は選んだ行が non-fast-forward のときだけ添え、別の ref の拒否や説明文の語を拾わない。
+func TestGitFailureLineSkipsBoilerplate(t *testing.T) {
+	ssh := "ssh: connect to host example.invalid port 22: Connection refused\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists."
+	if got := gitFailureLine(ssh); !strings.Contains(got, "Connection refused") {
+		t.Errorf("ssh の失敗の理由を選んでいない: %q", got)
+	}
+	remote := "remote: error: At least 1 approving review is required.\nTo example.invalid:r.git\n ! [remote rejected] main -> main (pre-receive hook declined)\nerror: failed to push some refs"
+	if got := gitFailureLine(remote); !strings.HasPrefix(got, "remote: error: At least 1 approving review") {
+		t.Errorf("remote が書いた理由を選んでいない: %q", got)
+	}
+	multi := "To r\n ! [remote rejected] main -> main (protected branch hook declined)\n ! [rejected] topic -> topic (non-fast-forward)\nerror: failed to push some refs"
+	line := gitFailureLine(multi)
+	if hint := pushRetryHint(line); hint != "" {
+		t.Errorf("保護ブランチの拒否 %q に pull を勧めた: %q", line, hint)
+	}
+	if pushRetryHint("! [rejected]        main -> main (fetch first)") == "" {
+		t.Error("remote に先を越された拒否に次の手を添えていない")
+	}
+}
+
+// git が起動できない (出力が空) ときも push の失敗の理由を空にしない。
+func TestPushFailureWithoutOutputKeepsTheReason(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	err := runGitPush(context.Background())
+	if err == nil || strings.TrimSpace(err.Error()) == "" {
+		t.Fatalf("起動できない push の理由が空: %v", err)
+	}
+}
+
+// 明確な理由が無いときは、ただの通知の行より決まり文句の fatal を選ぶ (ssh のラッパーの notice を理由にしない)。
+func TestGitFailureLinePrefersFatalOverNotice(t *testing.T) {
+	out := "notice: corporate SSH wrapper enabled\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists."
+	if got := gitFailureLine(out); got != "fatal: Could not read from remote repository." {
+		t.Errorf("gitFailureLine = %q (通知ではなく fatal のはず)", got)
+	}
+	// 接頭辞を持たない本当の理由は、決まり文句の fatal より前 (GitHub の SSH で多い 2 つ)
+	for _, tc := range []struct{ out, want string }{
+		{"ERROR: Repository not found.\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights", "ERROR: Repository not found."},
+		{"Host key verification failed.\nfatal: Could not read from remote repository.", "Host key verification failed."},
+	} {
+		if got := gitFailureLine(tc.out); got != tc.want {
+			t.Errorf("gitFailureLine(%q) = %q, want %q", tc.out, got, tc.want)
+		}
+	}
+}
+
+// GitHub の repo を解決できない repo でも、push の成功の後に git log を読み直す (🔼 を消す)。
+func TestPushWithoutRepoReloadsTheLog(t *testing.T) {
+	testenv.NewTempRepo(t, []string{"c1", "c2"}) // remote の無い実 repo (どのコミットも未 push)
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	m.hasRepo = false
+	m.opts.MaxCount = 10
+	_ = m.reloadLog(false, "") // 偽のコミットを実 repo のものに入れ替える (カーソルの錨が実在する SHA になる)
+	m.statuses = map[string]gitdata.CIState{}
+	m.cursor = 1 // 2 件目を見ていた
+	m.Update(pushMsg{})
+	if !strings.Contains(m.toast.Text(), "push しました") {
+		t.Errorf("トースト = %q", m.toast.Text())
+	}
+	if len(m.commits) != 2 {
+		t.Fatalf("push の成功の後に git log を読み直していない: コミット %d 件 (実 repo は 2 件)", len(m.commits))
+	}
+	if m.cursor != 1 {
+		t.Errorf("push の後にカーソルが動いた: %d (押す前の 1 のまま)", m.cursor)
+	}
+	for _, c := range m.commits {
+		if m.statuses[c.SHA] != gitdata.StateUnpushed {
+			t.Errorf("%s の状態 = %v (remote が無いので 🔼 のはず)", c.ShortSHA, m.statuses[c.SHA])
+		}
 	}
 }

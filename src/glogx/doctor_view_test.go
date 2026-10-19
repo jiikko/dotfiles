@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glogx/internal/testenv"
 	"strings"
 	"testing"
 
@@ -66,9 +67,8 @@ func TestDoctorCopyThroughBrowseModel(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 100, 30
 	var copied string
-	orig := extcmd.CopyToClipboard
+	testenv.Restore(t, &extcmd.CopyToClipboard)
 	extcmd.CopyToClipboard = func(s string) error { copied = s; return nil }
-	t.Cleanup(func() { extcmd.CopyToClipboard = orig })
 	m.doctorOv = doctorview.DoctorView{}
 	m.doctorOv.Fixture().Show()
 	m.doctorOv.Fixture().Reports(doctorview.TabDisk, &disk.Report{Results: []disk.Result{{Entry: disk.Entry{ID: "a", Label: "A", Risk: disk.RiskSafe, Recover: "r"},
@@ -78,11 +78,34 @@ func TestDoctorCopyThroughBrowseModel(t *testing.T) {
 	if copied != "/p/a" {
 		t.Fatalf("y でパスがクリップボードに届かない: %q", copied)
 	}
-	if !m.toast.Visible() || !strings.Contains(m.toast.Text(), "コピー") {
+	if !m.toast.Visible() || !strings.Contains(m.toast.Text(), "パスをコピーしました") {
 		t.Errorf("コピーのトーストが出ない: %q", m.toast.Text())
 	}
 	if !strings.Contains(m.hintLine(), "y: パスをコピー") {
 		t.Errorf("hint に y/Y が無い: %q", m.hintLine())
+	}
+}
+
+// y の案内とトーストの語は、タブではなくカーソル行のコピーの中身から決まる (Homebrew の警告の行はパスではない)。
+func TestDoctorCopyToastNamesWhatWasCopied(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	m.width, m.height = 100, 30
+	var copied string
+	testenv.Restore(t, &extcmd.CopyToClipboard)
+	extcmd.CopyToClipboard = func(s string) error { copied = s; return nil }
+	m.doctorOv = doctorview.DoctorView{}
+	m.doctorOv.Fixture().Show()
+	m.doctorOv.Fixture().Reports(doctorview.TabBrew, nil, nil, []string{"Warning: Some installed formulae are deprecated.\n  foo"}, nil, nil)
+	_ = m.View()
+	if h := m.hintLine(); !strings.Contains(h, "y: 警告をコピー") || strings.Contains(h, "y: パスをコピー") {
+		t.Fatalf("警告の行の hint = %q", h)
+	}
+	m.handleKey("y")
+	if copied == "" {
+		t.Fatal("y で何もコピーされない")
+	}
+	if got := m.toast.Text(); !strings.Contains(got, "警告をコピーしました") || strings.Contains(got, "パス") {
+		t.Errorf("トースト = %q (警告をコピーしたのにパスと言っている)", got)
 	}
 }
 

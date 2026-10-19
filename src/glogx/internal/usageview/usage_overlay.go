@@ -14,7 +14,6 @@ import (
 	"ratelimit/usage"
 
 	"glogx/internal/app"
-	"glogx/internal/extcmd"
 	"glogx/internal/term"
 
 	tea "charm.land/bubbletea/v2"
@@ -118,9 +117,11 @@ type UsageOverlay struct {
 // のは無意味 (TTL == 周期なので必ず miss する)。キャッシュの保存は周の終わりに handle が行う。
 func (o *UsageOverlay) FetchCmd(useCache bool) tea.Cmd { return o.fetchCmdWith(useCache, false) }
 
-// usageFooter は箱の末尾の文言。表示は app.UsageRefreshInterval ごとに読み直すが、Claude の枠そのものは
-// 全プロセス共有のゲートの間隔 (usage.SharedFresh) でしか新しくならないので、そちらを出す。
-var usageFooter = strconv.Itoa(int(usage.SharedFresh/time.Minute)) + "分ごとに更新"
+// usageFooter は箱の末尾の文言。言うのは「読み直す周期」(app.UsageRefreshInterval) で、値が新しくなる周期ではない
+// (値は statusline の観測か、観測が無いときの予備の取得 = usage.SharedFresh の 5 分のゲートで決まり、読み直しても
+// 同じ値が返ることがある)。「更新」と書くと値の鮮度を約束するので「読み直し」と書く (ratelimit ダッシュボードの案内・
+// README も同じ周期と語で言う)。
+var usageFooter = strconv.Itoa(int(app.UsageRefreshInterval/time.Minute)) + "分ごとに読み直し"
 
 // fetchNowCmd は人が「今すぐ取り直す」を押したときの取得。Claude 側は全プロセス共有のゲートの
 // 5 分の間引きを飛ばす (usage.FetchClaudePartNow。間引きのまま返すと、数分前の値が今取った値として入る)。
@@ -138,9 +139,8 @@ func (o *UsageOverlay) fetchCmdWith(useCache, force bool) tea.Cmd {
 	// last-good の出典は周の始まりの表示。束縛は UI スレッドのここで行う
 	o.round = usageRound{base: o.snap}
 	if o.fetchedAt.IsZero() && o.shape == nil {
-		o.shape = loadUsageShape()         // 場所取りを出すのは最初の取得だけ (waitingSources)。小さなファイルを 1 回読むだけ
-		_, err := extcmd.LookPath("codex") // 判定は loadUsageCache の「codex が入っているか」と同じ
-		o.noCodexPending = !(&usage.Snapshot{Windows: o.shape}).HasCodex() && err != nil
+		o.shape = loadUsageShape() // 場所取りを出すのは最初の取得だけ (waitingSources)。小さなファイルを 1 回読むだけ
+		o.noCodexPending = !(&usage.Snapshot{Windows: o.shape}).HasCodex() && !codexInstalled()
 	}
 	one := func(fetch func(context.Context) usage.Part) tea.Cmd {
 		return func() tea.Msg {
@@ -393,7 +393,7 @@ func (o *UsageOverlay) BoxLines(width int, colored bool, spinner string) []strin
 	snap := o.View(spinner)
 	switch {
 	case o.err != nil:
-		rows = []string{term.Paint("取得失敗", term.AnsiDim, colored)}
+		rows = []string{term.Paint("取得失敗 (理由は R)", term.AnsiDim, colored)} // 箱は狭いので理由は R のダッシュボードに出す
 	case snap == nil:
 		rows = []string{term.Paint(spinner+" 取得中...", term.AnsiDim, colored)}
 	default:

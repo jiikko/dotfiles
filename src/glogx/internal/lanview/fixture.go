@@ -21,9 +21,8 @@ func (v *LanView) Fixture() Fixture { return Fixture{v} }
 // Model は中の lanmgr (閉じた後も持ち続ける。nil = 一度も開いていない)。
 func (f Fixture) Model() *lanmgr.Model { return f.v.m }
 
-// Watching は今待っている走査の合図のチャネル。ExecPending は前景のプロセスから戻るのを待っているか。
+// Watching は今待っている走査の合図のチャネル。
 func (f Fixture) Watching() <-chan struct{} { return f.v.watching }
-func (f Fixture) ExecPending() bool         { return f.v.execPending }
 
 // FixtureChangedMsg は走査の合図の Msg を組む (Rearm の待ち直しの判断を見るテスト用)。
 func FixtureChangedMsg(ch <-chan struct{}, ok bool) LanChangedMsg {

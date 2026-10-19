@@ -142,7 +142,7 @@ func (v *DoctorView) ssdSection(o DoctorRenderOpts) []doctorRow {
 		if c.Label == "smartctl" && rep.SmartctlMissing {
 			// 入れ方をコピーできる行にする (doctor からは入れない)
 			row.selectable, row.key = true, ssdSmartctlRowKey
-			row.copyPath = ssd.InstallHint
+			row.copyPath, row.copyKind = ssd.InstallHint, copyKindCommand
 			row.copyText = "SSD の摩耗・整合性エラーを読む smartctl が入っていません。次で入れられます:\n" + ssd.InstallHint
 		}
 		rows = append(rows, row)
@@ -153,6 +153,7 @@ func (v *DoctorView) ssdSection(o DoctorRenderOpts) []doctorRow {
 		selectable: true,
 		key:        ssdAPFSRowKey,
 		copyPath:   ssd.APFSCommand,
+		copyKind:   copyKindCommand,
 		copyText:   ssdCopyText(rep),
 	})
 	for _, n := range rep.Notes {

@@ -1,6 +1,7 @@
 package testenv
 
 import (
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,9 +14,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/fsnotify/fsnotify"
 	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 
 	"glogx/internal/app"
 	"glogx/internal/extcmd"
+	"glogx/internal/fswatch"
 )
 
 // StubClock は app.TimeNow を固定時刻 Unix(1000, 0) に差し替え、テスト終了時に戻す。返す advance で
@@ -69,9 +72,9 @@ func StubEditorCapture(t *testing.T) *[]*exec.Cmd {
 	t.Helper()
 	var cmds []*exec.Cmd
 	orig := extcmd.RunEditorCmd
-	extcmd.RunEditorCmd = func(c *exec.Cmd) tea.Cmd {
+	extcmd.RunEditorCmd = func(origin extcmd.ExecOrigin, c *exec.Cmd) tea.Cmd {
 		cmds = append(cmds, c)
-		return func() tea.Msg { return extcmd.EditorClosedMsg{} }
+		return func() tea.Msg { return extcmd.EditorClosedMsg{Origin: origin} }
 	}
 	t.Cleanup(func() { extcmd.RunEditorCmd = orig })
 	return &cmds
@@ -95,7 +98,7 @@ const (
 	ST8  = "\u009c" // 8bit ST (C1)
 )
 
-// FakeWatcher は app.DirWatcher のフェイク。Add の履歴と watch 集合を観測できる。
+// FakeWatcher は fswatch.DirWatcher のフェイク。Add の履歴と watch 集合を観測できる。
 //
 // 実 fsnotify に合わせている点:
 //   - 存在しないパスの Add は失敗する (watch も張られない)
@@ -190,7 +193,7 @@ func (f *FakeWatcher) Emit(ev fsnotify.Event) {
 	f.events <- ev
 }
 
-// FakeWatcherSeam は app.NewDirWatcher をフェイクへ差し替え、そのフェイクを返す。
+// FakeWatcherSeam は fswatch.NewDirWatcher をフェイクへ差し替え、そのフェイクを返す。
 //
 // 🚨 seam は 2 つの見張り (issues / git log) の共用なので、1 つのテストで両方を起動すると
 // **同じフェイクを 2 つが掴んでイベントチャネルを取り合う**。両方を動かすテストを書くなら
@@ -198,10 +201,10 @@ func (f *FakeWatcher) Emit(ev fsnotify.Event) {
 func FakeWatcherSeam(t *testing.T) *FakeWatcher {
 	t.Helper()
 	fw := NewFakeWatcher()
-	prev := app.NewDirWatcher
-	app.NewDirWatcher = func() (app.DirWatcher, error) { return fw, nil }
+	prev := fswatch.NewDirWatcher
+	fswatch.NewDirWatcher = func() (fswatch.DirWatcher, error) { return fw, nil }
 	t.Cleanup(func() {
-		app.NewDirWatcher = prev
+		fswatch.NewDirWatcher = prev
 		_ = fw.Close()
 	})
 	return fw
@@ -264,4 +267,64 @@ func IsolateScreenMemory(t *testing.T) time.Time {
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.Local)
 	StubClockFrom(t, &now)
 	return now
+}
+
+// SkipEnv は「この環境ではテストの前提 (fsnotify・git・symlink など) を作れない」ときの skip。CI (環境変数 CI が立っている。
+// GitHub Actions の macOS) では skip にせず落とす: CI では前提が成り立つはずで、-v の無い CI の出力では skip に化けても
+// 見えず、検査が黙って外れる。端末の幅・ファイルシステムの性質 (大文字小文字)・root 権限のように、CI でも skip が
+// 正しい結果になりうるものはこれを使わない (structure_ratchet_test.go の TestSkipsAreAllowlisted)。
+func SkipEnv(t testing.TB, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("CI") != "" {
+		t.Fatalf("CI では成り立つはずの前提が崩れた (skip にしない): "+format, args...)
+		return
+	}
+	t.Skipf(format, args...)
+}
+
+// Restore は *p の今の値を控え、テストの終わりに戻す。差し替え (*p = fake) は呼び出し側がこの後に書く
+// (`orig := X; X = fake; t.Cleanup(func() { X = orig })` の手組みを 1 行にする)。
+func Restore[T any](t testing.TB, p *T) {
+	t.Helper()
+	orig := *p
+	t.Cleanup(func() { *p = orig })
+}
+
+// TakeMsg は tea.Cmd (Batch を含む) を実行し、型 T の Msg を取り出す (無ければテストを落とす)。
+// 🚨 tick (tea.Tick) を含む Cmd を渡さない: 実行すると本当に待つ。
+func TakeMsg[T any](t testing.TB, cmd tea.Cmd) T {
+	t.Helper()
+	var zero T
+	if cmd == nil {
+		t.Fatal("Cmd が nil")
+		return zero
+	}
+	switch msg := cmd().(type) {
+	case tea.BatchMsg:
+		for _, c := range msg {
+			if c == nil {
+				continue
+			}
+			if m, ok := c().(T); ok {
+				return m
+			}
+		}
+	case T:
+		return msg
+	}
+	t.Fatalf("Cmd から %T が取れない", zero)
+	return zero
+}
+
+// PagerShown は pager が今描いている先頭の行 (窓の高さを問わない見かけの位置)。
+func PagerShown(p *listnav.Pager) int { return p.DrawOffset(math.MaxInt32, 1) }
+
+// ContainsAll は got が wants を全部含むことを確かめる (無いものごとに Errorf)。what は got が何かの名前で、失敗の文に出る。
+func ContainsAll(t testing.TB, what, got string, wants ...string) {
+	t.Helper()
+	for _, w := range wants {
+		if !strings.Contains(got, w) {
+			t.Errorf("%s に %q が無い:\n%s", what, w, got)
+		}
+	}
 }

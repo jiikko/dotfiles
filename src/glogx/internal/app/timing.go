@@ -14,11 +14,12 @@ const FetchTimeout = 10 * time.Second
 // 🚨 実装で強制できない 2 つの制約 (変更時に再評価すること):
 //  1. FetchTimeout より必ず大きく保つ。小さくすると fetch が overlap し、fetchCmd の
 //     o.cancel 上書きで前回 fetch の cancel を取りこぼす (現状 10s < 60s で overlap しない)。
-//  2. usage_overlay.go のフッター (usageFooter) はこの値ではなく usage.SharedFresh から作る
-//     (値が新しくなる間隔はそちらで決まる)。この周期をそれより長くするならフッターも見直すこと。
+//  2. usage_overlay.go のフッター (usageFooter) と ratelimit ダッシュボードの案内と README は、この周期を
+//     「読み直す周期」として出す (値の鮮度は約束しない)。周期を変えたら 3 か所の文言も見直すこと。
 //
-// 🚨 この周期で claude を起こすわけではない: Claude 側の取得は usage.Fetch の全プロセス共有ゲート
+// 🚨 この周期で claude を起こすわけではない: Claude 側の取得は usage.FetchShared を通り、statusline が書いた新しい観測を
 //
-//	(src/ratelimit/usage/shared.go) を通り、5 分以内の結果があればそれを返す。毎回起こすと、
-//	表示を開いたまま 17 分で /api/oauth/usage が 429 になる。
+//	先に使う (この周期で新しくなる)。観測が無いときだけ予備の `claude -p /usage` を全プロセス共有のゲート
+//	(src/ratelimit/usage/shared.go の SharedFresh。5 分) 越しに起こす。毎回起こすと、表示を開いたまま 17 分で
+//	/api/oauth/usage が 429 になる。
 const UsageRefreshInterval = time.Minute

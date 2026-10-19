@@ -512,8 +512,84 @@ func planDelete(ctx context.Context, t Result, opt DeleteOptions) EntryOutcome {
 		out.Outcome, out.Reason = untouchedOutcome(failed)
 		return out
 	}
+	// 🚨 cli の非 ref 版のコマンドは Item ごとに絞れず、走査し直した候補 (cur.Items) の全部に効く。渡された Item
+	// (= 確認画面で同意した集合) と候補が一致しないなら実行しない。下見 (DryRun) と本番が同じ planDelete を通るので、
+	// 確認画面もこの結末を出す
+	if method == methodCLI && !cliNeedsRef(argv) {
+		if reason := cliScopeMismatch(method, t.Items, cur.Items, failed); reason != "" {
+			out.Outcome, out.Reason = OutcomeFailed, reason
+			return out
+		}
+	}
 	out.Outcome = OutcomePlanned
 	return out
+}
+
+// cliScopeMismatch は、対象ごとに絞れない cli のコマンドを実行すると、同意した集合 (want) の外まで消えるときの理由を返す
+// ("" なら一致)。外れるのは 2 通り: まだ在るのに候補から外れた Item がある (failed) / 同意していない候補がある
+// (確認の後に増えた・内訳から一部だけを選んだ)。既に無い Item (skipped) はコマンドの効果に含まれないので止めない。
+func cliScopeMismatch(method string, want, candidates []Item, failed int) string {
+	if failed > 0 {
+		return fmt.Sprintf("%d 件が候補から外れたため、コマンドを実行しません (対象ごとに絞れないコマンドです。再スキャンしてください)", failed)
+	}
+	consented := make(map[string]bool, len(want))
+	for _, it := range want {
+		consented[itemKey(method, it)] = true
+	}
+	extra := 0
+	for _, it := range candidates {
+		if !consented[itemKey(method, it)] {
+			extra++
+		}
+	}
+	if extra > 0 {
+		return fmt.Sprintf("選んでいない対象が %d 件あり、このコマンドは対象ごとに絞れないため実行しません (全部を選ぶか、再スキャンしてください)", extra)
+	}
+	return ""
+}
+
+// ConsentedTargets は sel を、下見 (DryRun) の plan で Planned になったエントリとその Planned の Item だけに絞る。
+// 確認画面が出すのは plan の Planned の Item なので、本番へ渡すのはその集合を上限にする。
+// 🚨 Delete は渡された Items から計画を作り直す (本番でも走査し直して照合する) ので、絞らずに渡すと、下見で外れた
+// Item が本番までに候補へ戻ったとき、確認画面に出していないものまで消す。
+// 🚨 plan は表示用に無害化する前のものを渡す。無害化はパスを書き換えるので、照合の鍵にならない。
+func ConsentedTargets(plan DeleteReport, sel []Result) []Result {
+	byID := make(map[string]EntryOutcome, len(plan.Entries))
+	for _, e := range plan.Entries {
+		if e.Outcome == OutcomePlanned {
+			byID[e.ID] = e
+		}
+	}
+	out := make([]Result, 0, len(sel))
+	for _, r := range dedupeTargets(sel) {
+		e, ok := byID[r.Entry.ID]
+		if !ok {
+			continue
+		}
+		consented := make(map[string]bool, len(e.Items))
+		for _, it := range e.Items {
+			if it.Outcome == OutcomePlanned {
+				consented[consentKey(e.Method, it.Path, it.Ref)] = true
+			}
+		}
+		items := make([]Item, 0, len(r.Items))
+		for _, it := range r.Items {
+			if consented[consentKey(e.Method, it.Path, it.Ref)] {
+				items = append(items, it)
+			}
+		}
+		if len(items) == 0 {
+			continue
+		}
+		out = append(out, r.WithItems(items))
+	}
+	return out
+}
+
+// consentKey は ConsentedTargets の照合の鍵 (itemKey と同じ規則)。plan の Item のパスは planItem が validateTarget を
+// 通した形 (/var → /private/var) なので、選択の側も同じ正規化に通してから比べる。
+func consentKey(method, path, ref string) string {
+	return itemKey(method, Item{Path: normalizeSystemLinks(filepath.Clean(path)), Ref: ref})
 }
 
 // untouchedOutcome は「触った Item が 1 件も無い」ときの結末語。plan の時点と

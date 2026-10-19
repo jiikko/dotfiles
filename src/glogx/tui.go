@@ -212,6 +212,9 @@ type prStatusMsg struct {
 	ghErr  *gitdata.GHError
 }
 
+// pushPlan は b の件数の出典 (gitdata.PlanPush)。テストで実 git を叩かないための差し替え点。
+var pushPlan = gitdata.PlanPush
+
 // loadCommitDiff はテストで実 git を叩かないための差し替え点。
 var loadCommitDiff = gitdata.LoadCommitDiff
 
@@ -366,6 +369,9 @@ type browseModel struct {
 	// どれも node の claude / codex を起こすので、CI 取得と開いた直後の描画から CPU を奪わないよう後ろへ回す。
 	// 放すのは Update の 1 か所だけ (releaseStartupChecks)
 	deferredStartup tea.Cmd
+	// keyed は起動の後にキーが押されたか。照合を待っている issues の復元 (issuesRestoreMsg) は、着いた時点で押されていたら捨てる:
+	// ユーザーが操作を始めた後に画面を割り込ませない (F を開いて閉じた後の一覧に、遅れて issues が開く形)
+	keyed bool
 
 	// lines() のメモ化。行リストの再構築は O(出力全行数) で、-p の巨大 patch では
 	// キー 1 打ごとに数万行を組み直すことになるためキャッシュする。行内容を変えうる
@@ -482,43 +488,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// 開く演出そのものの実装は zoom.go に残してある (戻すならこの行を復活させるだけ)。
 	// m.zoom.start(app.TimeNow()) // 画面を中央から開く (zoom.go)
 	ab := m.autobuild.tickCmd()
-	// issues viewer を出したまま終了していたら、その画面を復元する (issues_state.go)。
-	// ファイル読みだけ同期で済ませ、repo の照合 (git fork) は記憶があるときだけ非同期で行う
-	// = 記憶が無い通常の起動では fork が増えない。
-	var restore tea.Cmd
-	if s, ok := issuesview.LoadIssuesScreen(app.TimeNow()); ok {
-		restore = issuesRestoreCmd(s)
-	}
-	// doctor を出したまま終了していたら、その画面を復元する (doctor_resume.go)。
-	// 🚨 issues の復元とは**排他にしない**: 両方は同時に出ないので、後から開く doctor が
-	// 前面に来る。どちらを優先するかは「最後に見ていた方」で決めたいが、記憶は別ファイルで
-	// 順序を持たないため、ここでは doctor を後に開く (issues は下に残り、閉じれば出てくる)
-	// ratelimit ダッシュボードを出したまま終了していたら開き直す (ratelimit_resume.go)。
-	// 取得の起こし方 (キャッシュ優先 / stale 判定) は R と同じ経路に委ねる。
-	var rlRestore tea.Cmd
-	if ratelimitview.LoadRatelimitScreen(app.TimeNow()) {
-		rlRestore = m.toggleRatelimitDash()
-	}
-	var doctorRestore tea.Cmd
-	// 🚨 ratelimit を復元したなら doctor は開かない: 全画面ビューアは高々 1 枚 (fullscreen.go) で、
-	// 両方 shown にすると「見えている画面」と「キーを受ける画面」が食い違う。記憶は互いに
-	// 排他 (開いていない方は終了時に消える) なので通常は同時に残らないが、異常終了で片方が
-	// 残ったときにここで倒す。issues 側は issuesRestoreMsg のガードが同じ理由で弾く。
-	if rlRestore == nil {
-		doctorRestore, _ = m.doctorOv.RestoreScreen(app.TimeNow())
-	}
-	// F を出したまま終了していたら、同じ dir で開いたときに同じ場所の F を開き直す (filer_resume.go)。
-	// 優先は最下位: 他の全画面の記憶が当たったら開かない (全画面は同時に 1 枚。issues は repo の照合が非同期なので、
-	// 記憶が在るだけで譲る)
-	var filerRestore tea.Cmd
-	if restore == nil && rlRestore == nil && doctorRestore == nil {
-		filerRestore = m.restoreFilerScreen()
-	}
-	// L を出したまま終了していたら開き直す (lan_resume.go)。F より後 (異常終了で両方の記憶が残ったときは F を出す)
-	var lanRestore tea.Cmd
-	if restore == nil && rlRestore == nil && doctorRestore == nil && filerRestore == nil {
-		lanRestore = m.restoreLanScreen()
-	}
+	restore := m.restoreScreensCmd(app.TimeNow())
 	// 🚨 起動時にも追従チェーンを張る: ディスクキャッシュに pending が残っていると初回 fetch が
 	// 走らず (m.fetching() == false)、ciResultMsg 起点の開始点をどれも踏まないまま
 	// 「pending なのに追わない」状態になる (キャッシュの pending TTL 内に再起動した場合)。
@@ -528,9 +498,40 @@ func (m *browseModel) Init() tea.Cmd {
 	logWatch := tea.Batch(gitLogWatchDirsCmd(), m.gitLogPollCmd())
 	if m.fetching() {
 		m.deferredStartup = tea.Batch(u, ver, cliHealth)
-		return tea.Batch(m.fetch, prefix, ab, restore, rlRestore, doctorRestore, filerRestore, lanRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+		return tea.Batch(m.fetch, prefix, ab, restore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 	}
-	return tea.Batch(u, ver, cliHealth, prefix, ab, restore, rlRestore, doctorRestore, filerRestore, lanRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+	return tea.Batch(u, ver, cliHealth, prefix, ab, restore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+}
+
+// restoreScreensCmd は全画面を出したまま終了していたら、その画面を開き直す (各画面の *_resume.go)。
+// 全画面は同時に 1 枚 (fullscreen.go) なので、同期で開ける画面を優先順に試し、開いた (fullScreenActive) ところで止める。
+// 「Cmd が nil でない」を開いた印に使わない (開いても nil を返す画面があると、2 枚目を開く)。
+// issues は最後: repo の照合 (git fork) を非同期で行い、着いたときに別の全画面が出ていれば issuesRestoreMsg のガードが捨てる。
+// 照合の前に記憶があるだけで他の画面が譲ると、照合が外れたときに何も復元されない。
+// 記憶は閉じていた画面のぶんを終了時に消すので、2 つ以上残るのは異常終了のときだけ。
+func (m *browseModel) restoreScreensCmd(now time.Time) tea.Cmd {
+	cmds := make([]tea.Cmd, 0, 5)
+	for _, open := range []func() tea.Cmd{
+		func() tea.Cmd {
+			if ratelimitview.LoadRatelimitScreen(now) {
+				return m.toggleRatelimitDash() // 取得の起こし方 (キャッシュ優先 / stale 判定) は R と同じ経路に委ねる
+			}
+			return nil
+		},
+		func() tea.Cmd { cmd, _ := m.doctorOv.RestoreScreen(now); return cmd },
+		m.restoreFilerScreen, // 同じ dir で開いたときだけ (filer_resume.go)
+		m.restoreLanScreen,
+	} {
+		cmds = append(cmds, open())
+		if m.fullScreenActive() {
+			return tea.Batch(cmds...)
+		}
+	}
+	// ファイル読みだけ同期で済ませ、repo の照合は記憶があるときだけ非同期で行う (記憶が無い通常の起動では fork が増えない)
+	if s, ok := issuesview.LoadIssuesScreen(now); ok {
+		cmds = append(cmds, issuesRestoreCmd(s))
+	}
+	return tea.Batch(cmds...)
 }
 
 // releaseStartupChecks は、起動時の CI 取得が終わっていれば預けた検査を 1 回だけ放す。
@@ -732,6 +733,16 @@ func (m *browseModel) showWarning(text string) {
 	// 貼り付け先へ持ち出さない
 	m.lastWarning = term.SanitizePlainLine(text)
 	m.toast.Show(text, false)
+}
+
+// showGitFailure は git の操作の失敗を出す。トーストは理由の 1 行だけ、w でコピーする lastWarning には git の出力の
+// 全文を付ける (理由の行の前後 = どの ref が・どのファイルが、は全文にしか無い)。全文は行ごとに無害化して改行を残す。
+func (m *browseModel) showGitFailure(prefix string, err error) {
+	m.showWarning(prefix + ": " + app.FirstLine(err.Error()))
+	var ge *gitOutputError
+	if errors.As(err, &ge) && ge.Output != "" {
+		m.lastWarning += "\n\n" + term.SanitizePlainBlock(ge.Output)
+	}
 }
 
 // deliverNotice は viewer の操作結果 (takeNotice の戻り) をトーストへ流す。lastWarning に積むのは
@@ -1053,8 +1064,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusview.StatusPreviewTickMsg:
 		return m, tea.Batch(m.statusOv.ReceivePreviewTick(msg, m.colored), m.maybeTick())
 	case statusview.StatusPreviewMsg:
-		m.statusOv.ReceivePreview(msg)
-		return m, m.maybeTick()
+		return m, tea.Batch(m.statusOv.ReceivePreview(msg), m.maybeTick())
 	case issuesRestoreMsg:
 		// 🚨 復元の repo 照合 (git fork) が返る前に type-ahead の s で status viewer が開いて
 		// いたら復元を捨てる。restore は自分の shown しか見ないため、ここで弾かないと両 viewer
@@ -1065,7 +1075,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 「開く」ではなく「閉じる」に化ける。
 		// 🚨 判定は activeFullScreen から導出する: 全画面ビューアを 1 枚足した
 		// ときにここへ書き足すのを忘れると、復元で 2 枚同時 shown になる。
-		if id := m.activeFullScreen(); id != FullScreenNone && id != FullScreenIssues {
+		if id := m.activeFullScreen(); m.keyed || (id != FullScreenNone && id != FullScreenIssues) {
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.issuesOv.Restore(app.CurrentDir(), msg.screen), m.maybeTick())
@@ -1205,7 +1215,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pullMsg:
 		m.actModal.pulling = false
 		if msg.err != nil {
-			m.showWarning("pull に失敗: " + app.FirstLine(msg.err.Error()))
+			m.showGitFailure("pull に失敗", msg.err)
 			return m, m.maybeTick()
 		}
 		// 成功トーストを右下にせり上げつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
@@ -1298,12 +1308,20 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pushMsg:
 		m.actModal.pushing = false
 		if msg.err != nil {
-			m.showWarning("push に失敗: " + app.FirstLine(msg.err.Error()))
+			m.showGitFailure("push に失敗", msg.err)
 			return m, m.maybeTick()
 		}
 		m.toast.Show("push しました", true)
-		if !m.hasRepo || len(m.commits) == 0 {
+		if len(m.commits) == 0 {
 			return m, m.maybeTick() // 再取得先が無くてもトーストは出す (アニメ tick を回す)
+		}
+		if !m.hasRepo {
+			// CI の再取得は無いが、未 push (🔼) は手元で判定し直す (読み直さないと push 済みのコミットが 🔼 のまま残る)
+			cmds := []tea.Cmd{m.reloadLog(true, "push 後の再読込に失敗しました: "), m.maybeTick()}
+			if m.statusOv.Visible() {
+				cmds = append(cmds, m.statusOv.LoadCmd()) // GitHub の repo のときと同じく viewer の ahead を即消す
+			}
+			return m, tea.Batch(cmds...)
 		}
 		// status viewer 表示中は演出を出さない (対象のコミット一覧が画面に無く、演出分だけ
 		// 再取得が遅れるだけ)。代わりに viewer を読み直してヘッダーの ahead を即消す
@@ -1324,16 +1342,17 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.ReclaimErr != nil {
 			m.showWarning("端末の前面を取り戻せませんでした (" + app.FirstLine(msg.ReclaimErr.Error()) + ")。止まったら fg で戻してください")
 		}
-		// treefiler の ! / s / e から戻ったとき: 読み直す (シェルやエディタで作った・消したファイルを出す)。「エディタが異常終了しました」
-		// は出さない: シェルは最後のコマンドの終了コードで抜けるのが普通 (e のエディタも filer.ExecDone の判断に揃える)
-		// treefiler の ! / s / e、mac-lan-manager の s / o / 初期設定の手順から戻ったとき (知らせる文の判断は各画面の ExecReturned)
-		if w, ok := m.filerV.ExecReturned(msg.Err); ok {
-			if w != "" {
-				m.showWarning(app.FirstLine(w))
-			}
-			return m, m.maybeTick()
+		// 後処理は起動元で決める (extcmd.ExecOrigin)。treefiler の ! / s / e、mac-lan-manager の s / o / 初期設定の手順から
+		// 戻ったときの知らせる文は各画面の ExecReturned が決める (シェルの 0 以外の終了で「エディタが異常終了しました」を出さない)
+		var w string
+		switch msg.Origin {
+		case extcmd.OriginFiler:
+			w = m.filerV.ExecReturned(msg.Err)
+		case extcmd.OriginLan:
+			w = m.lanV.ExecReturned(msg.Err)
+		case extcmd.OriginEditor:
 		}
-		if w, ok := m.lanV.ExecReturned(msg.Err); ok {
+		if msg.Origin != extcmd.OriginEditor {
 			if w != "" {
 				m.showWarning(app.FirstLine(w))
 			}
@@ -1446,6 +1465,7 @@ func (m *browseModel) updateKeyReachable(key string) bool {
 }
 
 func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
+	m.keyed = true
 	if m.swallowKeyRepeat(key) {
 		return m, nil
 	}
@@ -1785,13 +1805,11 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 	case doctorview.DoctorRescan:
 		// 再スキャンの理由がある場合は伝える (「前回の結果だったので取り直します」等)。
 		// 🚨 黙って走らせない: ユーザーは Space / d を押したのであって r を押していない
-		if t := m.doctorOv.TakeToast(); t != "" {
-			m.toast.Show(t, false)
-		}
+		m.deliverNotice(m.doctorOv.TakeNotice())
 		// close() を経由しない: 数件だけの partial を書いて完全な結果を潰さない (doctorview.DoctorView.saveCache の注記)
 		return m, tea.Batch(m.doctorOv.Rescan(), m.maybeTick())
 	case doctorview.DoctorCopyPath:
-		m.copyWithToast(m.doctorOv.CopyPayload(), "パスをコピーしました")
+		m.copyWithToast(m.doctorOv.CopyPayload(), m.doctorOv.CopyNoun()+"をコピーしました")
 	case doctorview.DoctorCopyText:
 		m.copyWithToast(m.doctorOv.CopyPayload(), "解説をコピーしました (LLM にそのまま貼れます)")
 	case doctorview.DoctorCopyLog:
@@ -1799,7 +1817,7 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 	case doctorview.DoctorNothing:
 		m.toast.Show("この行にはコピーするものがありません", false)
 	case doctorview.DoctorToast:
-		m.toast.Show(m.doctorOv.TakeToast(), false)
+		m.deliverNotice(m.doctorOv.TakeNotice())
 	case doctorview.DoctorRunDelete:
 		// 削除 (と、その下見) は doctorview.DoctorView が組んだ Cmd をそのまま走らせる
 		return m, tea.Batch(m.doctorOv.TakeDeleteCmd(), m.maybeTick())
@@ -1929,20 +1947,23 @@ func (m *browseModel) routeKeyToStatus(key string) (tea.Model, tea.Cmd) {
 // confirmPush は push 確認 (y/N) に入る。未 push が 1 件も無ければ確認を出さない
 // (誤爆防止と「push 済みなのに聞かれる」違和感の回避)。
 func (m *browseModel) confirmPush() tea.Cmd {
-	if m.unpushedCount() == 0 {
+	// 🚨 件数は表示中の statuses から数えない: path filter (`glogx -- <path>`)・-n・GitHub を解決できない repo では、
+	// 画面に出ていない / CI の状態を持たない未 push があり、0 件と数えて push を断っていた。git push が送るものを見積もる。
+	// 断るのは見積もりが確かで 0 件のときだけ (gitdata.PushPlan の doc)
+	plan := pushPlan()
+	if plan.Exact && plan.N == 0 {
 		// 「押しても何も起きない理由」の通知はキー待ちのモーダルでなく右下トーストで出す
 		// (ユーザー要望 2026-07-25)。他の no-op 通知 (コピー対象なし・PR なし等) と同じ経路。
 		m.toast.Show("未 push のコミットはありません", false)
 		return m.maybeTick()
 	}
-	m.actModal.pushConfirm = true
+	m.actModal.pushConfirm, m.actModal.pushPlan = true, plan
 	return nil
 }
 
 // reloadAfterPull は pull --rebase 成功後の全面リロード (カーソルは新規コミットの先頭へ)。
 func (m *browseModel) reloadAfterPull() tea.Cmd {
-	_, cmd, _ := m.reloadLog(false, "pull 後の再読込に失敗しました: ")
-	return cmd
+	return m.reloadLog(false, "pull 後の再読込に失敗しました: ")
 }
 
 // logData は git log の読み直しで取り直すもの一式 (Update の外で集め、applyLogData でモデルへ入れる)。
@@ -1978,20 +1999,20 @@ func loadLogData(opts *Options, colored, oneline bool) (logData, error) {
 	return d, nil
 }
 
-// reloadLog は git log を読み直して派生キャッシュを畳む共通経路 (同期。pull 後の全面リロード用)。
+// reloadLog は git log を読み直して派生キャッシュを畳む共通経路 (同期。pull / push の後の全面リロード用)。
 // 読み込みと反映は loadLogData / applyLogData に分かれており、外部変更の追従 (gitlog_watch.go) は
 // 読み込みだけを Cmd へ出して同じ applyLogData で反映する。
-//
-// 返り値の added は先頭へ増えた新規コミット数、ok=false は読み直しに失敗した = モデルを
-// 一切触っていない (警告はここで出しているので、呼び出し側は追加の通知をしない)。
-func (m *browseModel) reloadLog(keepView bool, failPrefix string) (added int, cmd tea.Cmd, ok bool) {
+// 読み直しに失敗したらモデルを一切触らず、警告はここで出す (呼び出し側は追加の通知をしない)。
+// keepView は applyLogData の doc (pull は false = 先頭へ寄せて新しいコミットを見せる。push は true = 見ている画面を動かさない:
+// 送ったコミットは同じなので、押した人が見ていた位置から動かす理由が無い)。
+func (m *browseModel) reloadLog(keepView bool, failPrefix string) tea.Cmd {
 	d, err := loadLogData(m.opts, m.colored, m.oneline)
 	if err != nil {
 		m.showWarning(failPrefix + app.FirstLine(err.Error()))
-		return 0, nil, false
+		return nil
 	}
-	added, cmd = m.applyLogData(d, keepView)
-	return added, cmd, true
+	_, cmd := m.applyLogData(d, keepView)
+	return cmd
 }
 
 // applyLogData は読み直した logData をモデルへ入れ、派生キャッシュを畳む。rebase でローカル SHA が
@@ -2347,20 +2368,10 @@ func (m *browseModel) startScrollAnim(prev int) tea.Cmd {
 }
 
 // unpushedCount は未 push コミット数 (push 確認モーダルと confirmPush が共用)。
-func (m *browseModel) unpushedCount() int {
-	n := 0
-	for _, st := range m.statuses {
-		if st == gitdata.StateUnpushed {
-			n++
-		}
-	}
-	return n
-}
-
 // centerModalLines は中央モーダルの描画行 (action モーダル: push/pull/update)。非表示なら nil。
 // tmux prefix 誤爆のフィードバックは中央ダイアログをやめて右下 toast へ移した (2026-07-24)。
 func (m *browseModel) centerModalLines() []string {
-	return m.actModal.boxLines(m.contentWidth(), m.colored, m.spinner(), m.unpushedCount())
+	return m.actModal.boxLines(m.contentWidth(), m.colored, m.spinner())
 }
 
 // cancelAll は走行中の全非同期リソース (CI fetch の ctx / usage fetch / push・pull の git /
@@ -3184,7 +3195,7 @@ func (m *browseModel) openJobLogInEditor() tea.Cmd {
 	// 違い「パイプが無いから安全」が成り立たず、nvim の孫が読み口を握ったまま nvim だけ終わると
 	// Wait が戻らない。ctx が無く kill する主体もいないので、上限は WaitDelay しかない。
 	cmd.WaitDelay = subproc.WaitDelay
-	return extcmd.RunEditorCmd(cmd)
+	return extcmd.RunEditorCmd(extcmd.OriginEditor, cmd)
 }
 
 // openJob はパネルで選択中の job の詳細ページをブラウザで開く。

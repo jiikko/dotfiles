@@ -20,7 +20,7 @@ import (
 
 	"glogx/internal/app"
 	"glogx/internal/crosskey"
-	"glogx/internal/extcmd"
+	"glogx/internal/gitexec"
 	"glogx/internal/linecache"
 	"glogx/internal/term"
 
@@ -86,6 +86,21 @@ type StatusView struct {
 	// 実行時に git status を取り直して一致を検証するため (spec 4 節の不変条件 1)。
 	discard    worktreeRow
 	discarding bool
+	// discardPrint は X の確認に入ったときの行の指紋 (rowPrint)。y の直前に取り直して一致しなければ捨てない
+	// (確認中に別プロセスが中身だけを変えた = XY は同じ ` M` のまま、を捕まえる。spec 4 節の不変条件 1)
+	discardPrint string
+	// cachePrints はキャッシュ (preview) にある diff を取ったときの行の指紋 (キーは previewKey。"" = 確かめられなかった)。
+	// キャッシュと同じ寿命 (捨てるのは dropPreviews)。取得に失敗した diff の指紋は持たない (見せていないので、描いても
+	// seenPrints を進めない)
+	cachePrints map[string]string
+	// seenPrints はそのキーで最後に**描いた** diff の指紋 (プレビュー欄・全画面 diff。markSeen)。X で今の指紋と比べ、違えば
+	// 「最後に見せた diff と今の中身が違う」ので確認に入らずプレビューを読み直す。受け取っただけの diff (1 カラムで欄が
+	// 無い・カーソルが別の行) では進めない。🚨 キャッシュと一緒に捨てない: 別の行の変化・r・evict でキャッシュを捨てても、
+	// ユーザーが最後に見た diff は画面の記憶に残っている。捨てるのは閉じたときだけ
+	seenPrints map[string]string
+	// busyGen は取得中の札をどの世代の取得が立てたか (キーは previewKey)。札 (preview.Begin) は世代を持たないので、閉じて開き直した
+	// 後に旧い世代の結果が着くと、新しい世代の取得が立てた札まで降ろしてしまう。降ろすのは自分の世代の札だけにする
+	busyGen map[string]int
 
 	notice     string
 	noticeKind app.NoticeKind
@@ -155,6 +170,7 @@ type StatusPreviewMsg struct {
 	key   string
 	lines []string
 	err   error
+	print string // diff を取る直前に採った行の指紋 (rowPrint。"" = 確かめられなかった)
 }
 
 // statusPreviewTickMsg はカーソル移動のデバウンス満了。seq が現在の世代と一致するときだけ取得する。
@@ -281,10 +297,12 @@ func (v *StatusView) FinishClose() bool {
 	// diff 取得が返らない限り fetching() が true のままフレーム tick を回し続ける。
 	v.loading = false
 	v.preview.ClearBusy()
+	v.busyGen = nil
 	// 🚨 キャッシュ本体も捨てる。キー (section+XY+path) は内容を一意に決めないので、閉じている
 	// あいだに外部編集されても XY が動かなければキーが一致し、開き直しても**編集前の diff が
 	// 出続ける** (プロセスが生きている限り消えない)。
-	v.preview.ClearEntries()
+	v.dropPreviews()
+	v.seenPrints = nil // 閉じたら最後に見せた diff も画面から消える (seenPrints の doc)
 	v.gen++
 	return true
 }
@@ -391,7 +409,7 @@ func (v *StatusView) Receive(msg StatusLoadMsg) tea.Cmd {
 	// 同じ XY のまま中身だけ変わる編集 = 保存し直しでは当たってしまう)。
 	// 🚨 走行中の札は残す (clearEntries): 下で取り直しを予約するので、札まで降ろすと
 	// 走行中の取得と予約が同じキーを二重に取りに行く。
-	v.preview.ClearEntries()
+	v.dropPreviews()
 	// 🚨 捨てたら取り直しも予約する。捨てるだけだと、外部編集のたびにプレビュー欄が空になり
 	// 「カーソルを動かすまで戻らない」= 別プロセスに作業させながら眺める用途で画面が死ぬ。
 	return v.previewTickCmd()
@@ -511,23 +529,35 @@ func (v *StatusView) fetchDiff(row worktreeRow, colored bool) tea.Cmd {
 		return nil // キャッシュ済み / 取得中
 	}
 	gen := v.gen // 無効化を跨いだ結果を捨てるため (loadCmd と同じ形)
+	if v.busyGen == nil {
+		v.busyGen = map[string]int{}
+	}
+	v.busyGen[key] = gen
 	paths := row.pathspecs()
 	staged := row.section == sectionStaged
 	untracked := row.section == sectionUntracked
 	isDir := row.isDir()
 	// 🚨 ファイルを直接読む経路だけは repo root と結合する (rows のパスは root 相対で、
 	// glogx はサブディレクトリから起動されうる。git 側は pathspec の :(top) で解決している)
-	filePath := row.path
-	if v.st.root != "" {
-		filePath = filepath.Join(v.st.root, row.path)
-	}
+	filePath := v.rowFilePath(row)
+	root := v.st.root
 	return func() tea.Msg {
+		// 指紋は diff を取る**前**に採る。採った後・diff の前に中身が変わると、画面の diff は指紋より新しくなるが、
+		// X で今の指紋と食い違うので読み直しに倒れる (安全側)。逆順だと古い diff に新しい指紋が付く
+		before, _ := rowPrint(root, row)
+		var lines []string
+		var err error
 		if untracked {
-			lines, err := untrackedPreview(filePath, isDir)
-			return StatusPreviewMsg{gen: gen, key: key, lines: lines, err: err}
+			lines, err = untrackedPreview(filePath, isDir)
+		} else {
+			lines, err = loadWorktreeDiff(paths, staged, colored)
 		}
-		lines, err := loadWorktreeDiff(paths, staged, colored)
-		return StatusPreviewMsg{gen: gen, key: key, lines: lines, err: err}
+		// 後でも採って比べる: 前だけだと、取得の間に変わって元へ戻った (index を差し替えて戻した) 形で、画面の diff が
+		// 指紋の状態のものでなくなる。食い違ったら "" (確かめられなかった) にして、X は読み直しに倒れる
+		if after, _ := rowPrint(root, row); after != before {
+			before = ""
+		}
+		return StatusPreviewMsg{gen: gen, key: key, lines: lines, err: err, print: before}
 	}
 }
 
@@ -572,23 +602,73 @@ func untrackedPreview(path string, isDir bool) ([]string, error) {
 
 // receivePreview は diff 取得の結果を反映する。失敗は「取れなかった」ことをプレビュー欄に
 // 出すだけで、トーストにはしない (カーソルを動かすたびに出ると騒がしい)。
-func (v *StatusView) ReceivePreview(msg StatusPreviewMsg) {
+func (v *StatusView) ReceivePreview(msg StatusPreviewMsg) tea.Cmd {
 	if msg.gen != v.gen {
-		// 無効化 (閉じ / r) を跨いで着地した結果。捨てるが、**札は必ず降ろす** —
+		// 無効化 (閉じ / r) を跨いで着地した結果。捨てるが、**この取得が立てた札は必ず降ろす** —
 		// 降ろさないと begin() がこのキーを永久に弾き、取り直しが走らなくなる。
+		// 🚨 別の世代の札 (閉じて開き直した後の取得のもの) は降ろさない: 降ろすと同じキーを二重に取りに行く
+		if g, ok := v.busyGen[msg.key]; ok && g != msg.gen {
+			return nil
+		}
+		delete(v.busyGen, msg.key)
 		v.preview.Cancel(msg.key)
-		return
+		// 降ろしたら取り直しも予約する: r は世代を進めた後に取り直しを張るが、この札が残っている間はそれが Begin で弾かれる
+		// (札を r で降ろさないのは、走行中の取得と予約が同じキーを二重に取りに行かないため。TestStatusReloadKeepsInFlightMark)
+		return v.previewTickCmd()
 	}
+	delete(v.busyGen, msg.key)
 	if msg.err != nil {
-		// エラー文は git の stderr や os.Open の生のパスを含む
+		// エラー文は git の stderr や os.Open の生のパスを含む。指紋は持たない (diff を見せていない。cachePrints の doc)
+		delete(v.cachePrints, msg.key)
 		v.storePreview(msg.key, []string{"(diff を取得できませんでした: " + term.SanitizePlainLine(app.FirstLine(msg.err.Error())) + ")"})
-		return
+		return nil
 	}
+	if v.cachePrints == nil {
+		v.cachePrints = map[string]string{}
+	}
+	v.cachePrints[msg.key] = msg.print
 	if len(msg.lines) == 0 {
 		v.storePreview(msg.key, []string{"(差分はありません)"})
-		return
+		return nil
 	}
 	v.storePreview(msg.key, msg.lines)
+	return nil
+}
+
+// dropPreviews はプレビューのキャッシュと、その指紋を一緒に捨てる (走行中の取得の札は残す。clearEntries の doc)。
+// 最後に見せた diff の指紋 (seenPrints) は捨てない。
+func (v *StatusView) dropPreviews() {
+	v.preview.ClearEntries()
+	v.cachePrints = nil
+}
+
+// markSeen は key の diff を描いたことを控える (描く箇所が呼ぶ。seenPrints の doc)。取得に失敗した diff は指紋が無いので控えない。
+// 🚨 描画の中で状態を書くのはここだけ: 「見せた」は描いたときにしか決まらない (幅・全画面 diff・カーソルで変わる)。
+func (v *StatusView) markSeen(key string) {
+	p, ok := v.cachePrints[key]
+	if !ok {
+		return
+	}
+	if v.seenPrints == nil {
+		v.seenPrints = map[string]string{}
+	}
+	v.seenPrints[seenKey(key)] = p
+}
+
+// seenKey は seenPrints のキー: previewKey から XY を外した (セクション, パス)。XY を含めると、確認の前に別プロセスが stage して
+// XY が ` M` → `MM` に変わったとき、最後に見せた diff の指紋を引けなくなり、見せていない中身で確認に入る。
+func seenKey(previewKey string) string {
+	sec, rest, _ := strings.Cut(previewKey, "\x00")
+	_, path, _ := strings.Cut(rest, "\x00")
+	return sec + "\x00" + path
+}
+
+// rowFilePath は行のファイルを直接読むときのパス (rows のパスは root 相対。fetchDiff と同じ結合)。
+func (v *StatusView) rowFilePath(row worktreeRow) string {
+	if v.st.root != "" {
+		return filepath.Join(v.st.root, row.path)
+	}
+	return row.path
 }
 
 // storePreview はキャッシュへ入れて上限を超えたぶんを落とす (表示中のキーは残す)。
@@ -646,33 +726,36 @@ func (v *StatusView) HandleKey(key string, vp StatusViewport) tea.Cmd {
 //	シナリオにはならない**ため却下を維持した。
 //	→ 再評価するなら「`Y` を押して意図と違う結果になった」実例を先に作ること。
 func (v *StatusView) discardKey(key string) tea.Cmd {
-	row := v.discard
-	v.discarding, v.discard = false, worktreeRow{}
+	row, print := v.discard, v.discardPrint
+	v.discarding, v.discard, v.discardPrint = false, worktreeRow{}, ""
 	if !confirm.IsYes(key) {
 		return nil
 	}
-	return v.runDiscard(row)
+	return v.runDiscard(row, print)
 }
 
 // runDiscard は「確認に出した行」を捨てる。🚨 実行前に git status を取り直して
 // (パス, XY) の一致を検証する (spec 4 節の不変条件 1): 確認中に別プロセスがそのファイルを
 // 変えていたら、ユーザーが見て判断した対象はもう存在しないので捨てない。
-func (v *StatusView) runDiscard(row worktreeRow) tea.Cmd {
+func (v *StatusView) runDiscard(row worktreeRow, print string) tea.Cmd {
 	fresh, err := loadWorktreeStatus()
 	if err != nil {
 		v.setNotice("git status に失敗しました: "+app.FirstLine(err.Error()), app.NoticeError)
 		return v.LoadCmd()
 	}
 	now, ok := fresh.find(row.section, row.path)
-	if !ok || now.x != row.x || now.y != row.y {
+	// XY が同じでも中身だけが変わる (` M` のまま別プロセスが書き足す) ので、指紋も比べる (採れなければ中止に倒す)。
+	// 🚨 この照合から restore / clean までの間の書き込みは見えない (git に「指紋が一致するときだけ消す」口は無い。spec 4 節)
+	nowPrint, perr := rowPrint(v.st.root, row)
+	if !ok || now.x != row.x || now.y != row.y || perr != nil || nowPrint != print {
 		v.setNotice("確認中に "+row.path+" が変わったため中止しました", app.NoticeRefused)
 		v.applyFresh(fresh)
 		return nil
 	}
 	if row.section == sectionUntracked {
-		err = extcmd.RunGitCleanUntracked([]string{worktreePathspec(row.path)})
+		err = gitexec.RunGitCleanUntracked([]string{worktreePathspec(row.path)})
 	} else {
-		err = extcmd.RunGitRestoreWorktree(row.pathspecs())
+		err = gitexec.RunGitRestoreWorktree(row.worktreePathspecs())
 	}
 	if err != nil {
 		v.setNotice("捨てられませんでした: "+app.FirstLine(err.Error()), app.NoticeError)
@@ -688,7 +771,7 @@ func (v *StatusView) applyFresh(st worktreeStatus) {
 	sec, path, idx := v.anchor()
 	v.st, v.rows, v.loaded, v.err = st, st.ordered(), true, ""
 	v.restoreCursor(sec, path, idx)
-	v.preview.ClearEntries() // 走行中の取得は走行中のまま (clearEntries の doc)
+	v.dropPreviews() // 走行中の取得は走行中のまま (clearEntries の doc)
 }
 
 // pagerKeyPress は全画面 diff のキー (スクロールは共有ロジック、閉じるはここ)。
@@ -712,7 +795,7 @@ func (v *StatusView) pagerKeyPress(key string, vp StatusViewport) tea.Cmd {
 
 // listKey は一覧のキー。
 func (v *StatusView) listKey(key string, vp StatusViewport) tea.Cmd {
-	rows := max(vp.page-1, 1)
+	rows := max(vp.page-v.headerRows(), 1)
 	// 横断キー (i / R / D。判定は crosskey.Is、行き先は main の CrossTarget)。s は自分自身なので下の toggle (閉じる) に任せる。
 	// 確認中 (X) や pager 中はこの関数まで届かないので誤爆しない (handleKey の判定順)
 	if crosskey.Is(key) && key != "s" {
@@ -728,8 +811,7 @@ func (v *StatusView) listKey(key string, vp StatusViewport) tea.Cmd {
 	case "a":
 		return v.stageAll()
 	case "X":
-		v.askDiscard()
-		return nil
+		return v.askDiscard()
 	case "d", "enter", "l", "right":
 		return v.openPager(vp)
 	case "r":
@@ -740,9 +822,12 @@ func (v *StatusView) listKey(key string, vp StatusViewport) tea.Cmd {
 		// 🚨 gen を進めてから捨てる。進めないと、r を押した時点で飛んでいた取得が着地して
 		// 古い内容を復活させ、r が張った取り直しが begin() に弾かれる = 押しても何も変わらない。
 		// 閉じる側 (finishClose) は元から gen++ している。
+		// 🚨 走行中の読み込みと自動更新の札も降ろして張り直す。gen を進めると、飛んでいる結果と旧い tick は着いても
+		// 捨てられるので、札が立ったままだと LoadCmd は「取得中」で何もせず、自動更新のチェーンも二度と張られない
 		v.gen++
-		v.preview.ClearEntries()
-		return tea.Batch(v.LoadCmd(), v.previewTickCmd())
+		v.loading, v.pollArmed = false, false
+		v.dropPreviews()
+		return tea.Batch(v.LoadCmd(), v.pollCmd(), v.previewTickCmd())
 	case "q", "esc":
 		// viewer からの q/esc は glogx ごと終了する (ユーザー要望 2026-08-06: git log 一覧へは
 		// 戻らない)。実際の quit は browseModel が行う (takeWantQuit)。一覧へ戻りたいときは
@@ -838,9 +923,9 @@ func (v *StatusView) toggleStage() tea.Cmd {
 	}
 	var err error
 	if row.section == sectionStaged {
-		err = extcmd.RunGitRestoreStaged(row.pathspecs())
+		err = gitexec.RunGitRestoreStaged(row.pathspecs())
 	} else {
-		err = extcmd.RunGitAdd(row.pathspecs())
+		err = gitexec.RunGitAdd(row.pathspecs())
 	}
 	if err != nil {
 		v.setNotice("失敗しました: "+app.FirstLine(err.Error()), app.NoticeError)
@@ -866,7 +951,7 @@ func (v *StatusView) stageAll() tea.Cmd {
 		v.setNotice("stage するものがありません", app.NoticeOK)
 		return nil
 	}
-	if err := extcmd.RunGitAdd(paths); err != nil {
+	if err := gitexec.RunGitAdd(paths); err != nil {
 		v.setNotice("stage できませんでした: "+app.FirstLine(err.Error()), app.NoticeError)
 		return v.LoadCmd()
 	}
@@ -879,19 +964,35 @@ func (v *StatusView) stageAll() tea.Cmd {
 // 🚨 Staged 行では受けない: 「staged の変更を捨てる」は unstage + 作業ツリーの破棄という
 // 二段の破壊で、同じキー・同じ文言では意味が変わる。先に Space で降ろさせて、X の意味を
 // 「作業ツリーの変更を捨てる」1 つに保つ (spec 3/4 節)。
-func (v *StatusView) askDiscard() {
+func (v *StatusView) askDiscard() tea.Cmd {
 	row, ok := v.current()
 	if !ok {
-		return
+		return nil
 	}
 	switch {
 	case !row.section.mutable():
 		v.setNotice("conflict の解決はシェルで行ってください", app.NoticeRefused)
 	case row.section == sectionStaged:
 		v.setNotice("staged の変更は Space で unstage してから X してください", app.NoticeRefused)
+	case v.st.root == "":
+		// 指紋が見るファイルを決められない (rows は root 相対。cwd に落とすと別のファイルを見る)
+		v.setNotice("repo の場所を取得できなかったため、X は使えません", app.NoticeRefused)
 	default:
-		v.discarding, v.discard = true, row
+		print, err := rowPrint(v.st.root, row)
+		if err != nil {
+			v.setNotice(row.path+" の変化を確かめられないため、X は使えません: "+app.FirstLine(err.Error()), app.NoticeError)
+			return nil
+		}
+		// 最後に見せた diff (プレビュー) を取った後に中身が変わっていたら、確認に入らない: 見せていない変更まで捨てる
+		// ことになる。プレビューを読み直して、もう一度 X を押させる (一度も diff を受け取っていない行は比べるものが無い)
+		if seen, shown := v.seenPrints[seenKey(previewKey(row))]; shown && seen != print {
+			v.dropPreviews()
+			v.setNotice("プレビューを出した後に "+row.path+" が変わったか、確かめられませんでした。読み直したので、確かめてからもう一度 X してください", app.NoticeRefused)
+			return v.previewTickCmd()
+		}
+		v.discarding, v.discard, v.discardPrint = true, row, print
 	}
+	return nil
 }
 
 // openPager は全画面 diff を開く (未取得なら取得を発行してスピナーを出す)。
@@ -968,12 +1069,19 @@ func (v *StatusView) Lines(o StatusRenderOpts) []string {
 	// ヘッダー (ブランチ + 件数) は 2 カラムに割らず**全幅**で描く。一覧カラムの中に入れると
 	// 幅 48 桁ほどで件数が切り落とされる (実測 2026-08-03: "unstaged 15 / stage…")。
 	head := []string{v.headerLine(o, o.Width)}
+	if v.headerRows() == 2 {
+		// 一度読めた後の読み直しの失敗。一覧は last-good のまま出し続け (spec 5 節)、理由はここに出す
+		// (ヘッダーの「🚨 status 取得失敗」だけでは、何が起きているか・次に何をすればいいかが読めない)
+		head = append(head, term.Paint(term.ClipToWidth("🚨 status 取得失敗: "+v.err, o.Width), term.AnsiDim, o.Colored))
+	}
 	rows := max(o.Page-len(head), 1)
 	inner := o
 	inner.Page = rows
 	listW := statusListWidth(o.Width)
 	var body []string
-	if listW >= o.Width {
+	// 一覧に出すものが無い (失敗・読み込み中・クリーン) ときは、右のプレビューにも出すものが無いので 2 カラムに割らない。
+	// 割ると案内 (失敗の理由) が一覧の列の幅 (statusListMaxWidth) で切れ、右が空のまま残る
+	if listW >= o.Width || v.emptyMessage(o) != "" {
 		body = layout.PadTo(v.listLines(inner, o.Width), rows)
 	} else {
 		left := layout.PadTo(v.listLines(inner, listW), rows)
@@ -998,6 +1106,15 @@ func (v *StatusView) Lines(o StatusRenderOpts) []string {
 		body = slideLeftWindow(body, p, o.Width, v.closing, o.Colored)
 	}
 	return body
+}
+
+// headerRows は一覧の上に出すヘッダーの行数 (Lines の描画とキーの半ページの計算が共有する。別々に数えると、
+// 失敗の理由の行が出ている間だけ半ページの移動量が本文の高さとずれる)。
+func (v *StatusView) headerRows() int {
+	if v.err != "" && v.loaded {
+		return 2 // 一度読めた後の読み直しの失敗の理由の行
+	}
+	return 1
 }
 
 // statusListWidth は一覧カラムの幅 (>= o.width なら 1 カラム表示)。
@@ -1080,20 +1197,23 @@ func (v *StatusView) headerLine(o StatusRenderOpts, width int) string {
 	if v.st.track != "" {
 		left += " (" + v.st.track + ")"
 	}
-	staged, unstaged, untracked, conflicted := v.st.counts()
-	right := fmt.Sprintf("unstaged %d / staged %d", unstaged+untracked, staged)
-	if conflicted > 0 {
-		right = fmt.Sprintf("conflict %d / ", conflicted) + right
-	}
-	if v.err != "" {
-		// last-good の一覧を出しているあいだ、「今の表示は古いかもしれない」ことを示す
-		// (emptyMessage は loaded 後は失敗を出さないので、ここが唯一の手がかりになる)
-		right = "🚨 status 取得失敗 / " + right
-	}
+	var parts []string
 	if v.st.skipped > 0 {
 		// 一部だけ解釈できなかったケース (行はあるが取りこぼしている = 一覧が不完全)
-		right = fmt.Sprintf("🚨 %d 件解釈不能 / ", v.st.skipped) + right
+		parts = append(parts, fmt.Sprintf("🚨 %d 件解釈不能", v.st.skipped))
 	}
+	if v.err != "" {
+		// last-good の一覧を出しているあいだ、「今の表示は古いかもしれない」ことを示す (理由は Lines がヘッダーの下に出す)
+		parts = append(parts, "🚨 status 取得失敗")
+	}
+	if v.loaded { // まだ一度も読めていない間は件数を出さない (分からない数を 0 と見せない)
+		staged, unstaged, untracked, conflicted := v.st.counts()
+		if conflicted > 0 {
+			parts = append(parts, fmt.Sprintf("conflict %d", conflicted))
+		}
+		parts = append(parts, fmt.Sprintf("unstaged %d / staged %d", unstaged+untracked, staged))
+	}
+	right := strings.Join(parts, " / ")
 	pad := max(width-term.DispWidth(left)-term.DispWidth(right), 1)
 	return term.Paint(term.ClipToWidth(left+term.PadSpaces(pad)+right, width), term.AnsiBold, o.Colored)
 }
@@ -1279,6 +1399,9 @@ func (v *StatusView) previewPane(o StatusRenderOpts, width int) []string {
 	case !ok:
 		out = append(out, term.Paint("(d で全文)", term.AnsiDim, o.Colored))
 	default:
+		if o.Page > len(out) { // 本文が 1 行も入らない高さでは、見せたことにしない (見出しだけが描かれる)
+			v.markSeen(key)
+		}
 		rows := max(o.Page-len(out), 1)
 		body = body[previewSkipDiffHeader(body):]
 		for i, line := range body {
@@ -1332,6 +1455,10 @@ func (v *StatusView) pagerBox(o StatusRenderOpts) []string {
 	case !ok:
 		body = []string{term.Paint("(diff はありません)", term.AnsiDim, o.Colored)}
 	default:
+		// 箱は窓の中央に重ねるので、窓が低くても本文の行が残る (Page=5 でも本文が見える)。Page=1 だと上辺 (見出し) の 1 行だけ
+		if o.Page > 1 {
+			v.markSeen(v.pagerKey)
+		}
 		// 描画で確定した行数・窓で論理 offset を収束させる (理由は listnav.Pager.Clamp の doc)
 		v.pager.Clamp(len(lines), rows)
 		start := v.pager.DrawOffset(len(lines), rows)

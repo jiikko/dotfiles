@@ -18,6 +18,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 
+	"glogx/internal/app"
 	"glogx/internal/crosskey"
 	"glogx/internal/term"
 	"ratelimit/usage"
@@ -111,7 +112,13 @@ func (d *RatelimitDash) Lines(o RatelimitRenderOpts) []string {
 		d.cache, d.cacheKey, d.cacheOK = append([]string(nil), out...), key, true
 		return out
 	case o.Err != nil:
-		return layout.PadTo(append(head, centerLine("取得失敗", o.Width)), o.Page)
+		// 🚨 理由も出す。前回の値が無いまま全部の取得元が失敗したとき、理由はここ以外のどこにも出ない
+		// (U の箱は狭いので「理由は R」とだけ言う)。claude が PATH に無い・429 で止めている (再試行の時刻) などが読めないと次の手が無い
+		head = append(head, centerLine("取得失敗", o.Width))
+		if why := term.SanitizePlainLine(app.FirstLine(o.Err.Error())); why != "" {
+			head = append(head, centerLine(why, o.Width))
+		}
+		return layout.PadTo(head, o.Page)
 	default:
 		return layout.PadTo(append(head, centerLine(o.Spinner+" 取得中...", o.Width)), o.Page)
 	}
@@ -147,7 +154,7 @@ func (d *RatelimitDash) Hint(width int) string {
 		{Text: "i: issues", Prio: 4},
 		{Text: "s: status", Prio: 4},
 		{Text: "R/q/esc/h: 閉じる", Prio: 1},
-		{Text: "(毎分自動更新)", Prio: 5},
+		{Text: "(毎分読み直し)", Prio: 5},
 	})
 }
 

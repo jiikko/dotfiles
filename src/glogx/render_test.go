@@ -59,7 +59,7 @@ func TestRenderStaticOneline(t *testing.T) {
 func TestRenderLinesPushBoundary(t *testing.T) {
 	// 未 push と push 済みの間に ── origin ── の境界線が入る (どこまで push したかの視覚化)
 	statuses := map[string]gitdata.CIState{"a": gitdata.StateUnpushed, "b": gitdata.StateSuccess}
-	lines := RenderLines(testCommits(), statuses, RenderOpts{})
+	lines := RenderLines(testCommits(), statuses, RenderOpts{HasRepo: true})
 	ruleIdx, headerB := -1, -1
 	for i, l := range lines {
 		if strings.Contains(l.Text, " origin ") && strings.Contains(l.Text, "──") {
@@ -70,13 +70,13 @@ func TestRenderLinesPushBoundary(t *testing.T) {
 		}
 	}
 	if ruleIdx == -1 {
-		t.Fatalf("境界線が入っていない:\n%s", RenderStatic(testCommits(), statuses, RenderOpts{}))
+		t.Fatalf("境界線が入っていない:\n%s", RenderStatic(testCommits(), statuses, RenderOpts{HasRepo: true}))
 	}
 	if headerB == -1 || ruleIdx != headerB-1 {
 		t.Errorf("境界線の位置 = %d; want push 済み先頭ヘッダー (%d) の直前", ruleIdx, headerB)
 	}
 	// oneline でも入る
-	if out := RenderStatic(testCommits(), statuses, RenderOpts{Oneline: true}); !strings.Contains(out, " origin ") {
+	if out := RenderStatic(testCommits(), statuses, RenderOpts{Oneline: true, HasRepo: true}); !strings.Contains(out, " origin ") {
 		t.Errorf("oneline で境界線が入らない:\n%s", out)
 	}
 	// 全部未 push / repo 不明では入らない
@@ -636,5 +636,24 @@ func TestAnsiColorsAreDistinctPerMeaning(t *testing.T) {
 			t.Errorf("%s と %s が同じ値 %q (意味の違う色が区別できない)", prev, c.name, c.val)
 		}
 		seen[c.val] = c.name
+	}
+}
+
+// GitHub の repo を解決できない repo には push の境界 (origin) を挿さない (その名前の remote があるとは限らない)。
+func TestPushBoundaryNotInsertedWithoutRepo(t *testing.T) {
+	statuses := map[string]gitdata.CIState{"a": gitdata.StateUnpushed, "b": gitdata.StateNone}
+	hasRule := func(o RenderOpts) bool {
+		for _, l := range RenderLines(testCommits(), statuses, o) {
+			if strings.Contains(l.Text, " origin ") && strings.Contains(l.Text, "──") {
+				return true
+			}
+		}
+		return false
+	}
+	if hasRule(RenderOpts{HasRepo: false}) {
+		t.Error("GitHub の repo が無いのに境界 (origin) を挿した")
+	}
+	if !hasRule(RenderOpts{HasRepo: true}) {
+		t.Error("前提が崩れている: GitHub の repo のときに境界が挿されない")
 	}
 }

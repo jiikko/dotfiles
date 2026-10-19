@@ -1,7 +1,7 @@
 package main
 
 import (
-	"math"
+	"glogx/internal/testenv"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -10,8 +10,6 @@ import (
 	"glogx/internal/gitdata"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
-
-	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
 // 半ページ移動 (Space / ctrl+d) が 4 面すべてで glide に載る (ユーザー要望 2026-07-31)。
@@ -51,7 +49,7 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 		if !o.Fixture().Pager().Animating() {
 			t.Error("Space の半ページが glide に載っていない")
 		}
-		if got := pagerShown(o.Fixture().Pager()); got != 0 {
+		if got := testenv.PagerShown(o.Fixture().Pager()); got != 0 {
 			t.Errorf("glide 開始位置 = %d, want 0", got)
 		}
 		// 1 行移動は glide 対象外 (距離 1 で滑らせる意味がない)
@@ -172,6 +170,3 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 	})
 
 }
-
-// pagerShown は p の今の表示位置 (glide 中は途中位置)。行数の上限で丸めない。
-func pagerShown(p *listnav.Pager) int { return p.DrawOffset(math.MaxInt32, 1) }

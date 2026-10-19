@@ -2,10 +2,12 @@ package issues
 
 import (
 	"errors"
+	"glogx/internal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -59,9 +61,8 @@ func TestBannerDetectionMatchesCIRules(t *testing.T) {
 
 func fixedNow(t *testing.T) {
 	t.Helper()
-	old := bannerNow
+	testenv.Restore(t, &bannerNow)
 	bannerNow = func() time.Time { return time.Date(2026, 9, 19, 0, 0, 0, 0, time.Local) }
-	t.Cleanup(func() { bannerNow = old })
 }
 
 // n (claim) は目印とバナーを 1 組で作り、もう一度 n (解除) で両方を消す。mode は保つ。
@@ -189,13 +190,12 @@ func TestRewriteAbortsWhenFileChangedMeanwhile(t *testing.T) {
 		t.Fatal(err)
 	}
 	edited := "# x\n\n## 概要\n\nエディタで足した行\n"
-	old := beforeRewrite
+	testenv.Restore(t, &beforeRewrite)
 	beforeRewrite = func(path string) {
 		if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	t.Cleanup(func() { beforeRewrite = old })
 	if err := writeClaimBanner(p); err == nil {
 		t.Fatal("並行編集があったのに書き換えた")
 	}
@@ -230,6 +230,24 @@ func TestRewriteRefusesLinkedIssueFiles(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(real); string(b) != body {
 		t.Fatalf("リンク先が書き換わった: %q", b)
+	}
+}
+
+// 本文のパスが FIFO に差し替わっていたら、読んで書き手を待たずに断る (claim の解除は UI のキー処理の中で同期に走る)。
+func TestRewriteRefusesFIFOWithoutBlocking(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "001-feat-fifo.md")
+	if err := syscall.Mkfifo(p, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- clearClaimBanner(p) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("FIFO を書き換えた")
+		}
+	case <-time.After(10 * time.Second): // hang guard (書き手を待って止まる退行は、ここで赤になる)
+		t.Fatal("FIFO を読んで書き手を待ったまま戻らない")
 	}
 }
 
@@ -360,5 +378,31 @@ func TestRemoveBannerMatchesShellStrip(t *testing.T) {
 	}
 	if !removedAny {
 		t.Fatal("どのケースでもバナーを外していない (比較が何も見ていない)")
+	}
+}
+
+// front matter のある本文では、バナーを front matter と H1 の後ろに入れる (前に入れると front matter と見なくなり、
+// status の食い違いの 🚨 が消える)。外すと元に戻る。CRLF の本文には CRLF で足す。
+func TestAddBannerAfterFrontMatterAndKeepsCRLF(t *testing.T) {
+	const banner = "> 🚨 **担当中: h (glogx)**（2026-10-09〜）"
+	for _, eol := range []string{"\n", "\r\n"} {
+		src := strings.ReplaceAll("---\nstatus: pending\n---\n\n# T\n\nbody\n", "\n", eol)
+		got, changed := addBanner(src, banner)
+		if !changed {
+			t.Fatal("バナーが入らない")
+		}
+		want := strings.ReplaceAll("---\nstatus: pending\n---\n\n# T\n\n"+banner+"\n\nbody\n", "\n", eol)
+		if got != want {
+			t.Fatalf("eol %q: 入れた形\n%q\nwant\n%q", eol, got, want)
+		}
+		path := filepath.Join(t.TempDir(), "001-x.md")
+		writeFileContent(t, path, got)
+		iss := newIssue(filepath.Dir(path), filepath.Base(path))
+		if err := iss.LoadMeta(); err != nil || iss.Declared != "pending" {
+			t.Fatalf("eol %q: バナーを入れた後に front matter の status を読めない (%q, %v)", eol, iss.Declared, err)
+		}
+		if back, _ := removeBanner(got); back != src {
+			t.Fatalf("eol %q: 外しても元に戻らない\n%q", eol, back)
+		}
 	}
 }

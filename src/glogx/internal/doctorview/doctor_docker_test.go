@@ -178,6 +178,9 @@ func TestDoctorDockerItemRowCopiesItsCommand(t *testing.T) {
 	if found.copyPath != "docker volume rm -- old_data" {
 		t.Errorf("y でコピーされるのが %q", found.copyPath)
 	}
+	if found.copyKind != copyKindCommand {
+		t.Errorf("ボリュームの行の y の語 = %q (コマンドをコピーする行)", found.copyKind.noun())
+	}
 }
 
 func rowKeys(rows []doctorRow) []string {
@@ -252,8 +255,8 @@ func TestDoctorDockerVolumesCannotBeSelectedForRun(t *testing.T) {
 	if act := v.HandleKey(" ", 40); act != DoctorToast {
 		t.Fatalf("断っていない: %v", act)
 	}
-	if !strings.Contains(v.pendingToast, "y でコマンドをコピー") {
-		t.Errorf("案内が %q", v.pendingToast)
+	if !strings.Contains(v.notice, "y でコマンドをコピー") {
+		t.Errorf("案内が %q", v.notice)
 	}
 	if len(v.selectedActions) != 0 {
 		t.Errorf("選択されてしまった: %v", v.selectedActions)
@@ -307,8 +310,8 @@ func TestDoctorRunKeyOnWrongTabExplains(t *testing.T) {
 		if act := v.HandleKey("x", 40); act != DoctorToast {
 			t.Fatalf("tab=%v で x が無言: %v", tb, act)
 		}
-		if !strings.Contains(v.pendingToast, "Homebrew か Docker") {
-			t.Errorf("tab=%v の案内が %q", tb, v.pendingToast)
+		if !strings.Contains(v.notice, "Homebrew か Docker") {
+			t.Errorf("tab=%v の案内が %q", tb, v.notice)
 		}
 	}
 }

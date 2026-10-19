@@ -61,7 +61,8 @@ func ResolveRepoRoot(cwd string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	if root := strings.TrimSpace(string(out)); root != "" {
+	// 改行だけを外す (TrimSpace にしない: 末尾が空白のディレクトリ名を削って、在りもしない root を返す)
+	if root := strings.TrimSuffix(string(out), "\n"); root != "" {
 		return root, true
 	}
 	return "", false

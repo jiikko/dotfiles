@@ -39,5 +39,5 @@ func (m *browseModel) openEditorAtRoot() tea.Cmd {
 	// Wait が孫に握られる形が起きない。
 	cmd := exec.Command("nvim", ".") // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 	cmd.Dir = repoRoot()
-	return extcmd.RunEditorCmd(cmd)
+	return extcmd.RunEditorCmd(extcmd.OriginEditor, cmd)
 }

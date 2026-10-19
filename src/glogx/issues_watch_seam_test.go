@@ -2,13 +2,12 @@ package main
 
 // 実 fsnotify を要さない見張りの検査。
 //
-// なぜ別建てか: CI (ubuntu-slim) では fsnotify.NewWatcher が通らず、watcher を前提にした
-// 検査は全部 skip される。issues_watch_test.go 側の検査は「実 fsnotify との結合」を見る
-// 価値があるので残したまま、**不変条件そのもの**は app.NewDirWatcher seam へフェイクを差して
-// どの環境でも走る形で固定する (skip を消して「CI で走っている」ことにはしない)。
+// なぜ別建てか: 実 fsnotify のイベントは届く時刻と束ね方が OS とファイルシステムで変わる。issues_watch_test.go 側の検査は
+// 「実 fsnotify との結合」を見る価値があるので残したまま、**不変条件そのもの**は fswatch.NewDirWatcher seam へフェイクを
+// 差して、イベントの届き方に依存しない形で固定する (fsnotify を作れない環境でも走る。CI は macOS で実物も走る)。
 //
 // 🚨 各検査は v.watch.w がフェイクであることを最初に確かめる。将来 startWatch が seam を
-// 通らなくなったら、この検査は「実 fsnotify が要る = CI では skip」へ静かに戻ってしまうため。
+// 通らなくなったら、この検査は実 fsnotify のタイミングに依存する形へ静かに戻ってしまうため。
 
 import (
 	"errors"

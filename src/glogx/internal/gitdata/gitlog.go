@@ -3,38 +3,62 @@
 package gitdata
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os/exec"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
 	"subproc"
 
-	"glogx/internal/extcmd"
+	"glogx/internal/gitexec"
 	"glogx/internal/term"
 
 	"github.com/jiikko/dotfiles/src/tuikit/highlight"
 )
 
 // コミット境界の識別は人間向け出力の正規表現ではなく制御文字レコードで行う (issue の設計)。
-// %x1e = record separator (コミット先頭)、%x1f = field separator。
-// --stat / -p の本文は最後の %x1f 以降に続き、次の %x1e までがそのコミットのレコード。
-// %B (フルメッセージ) はセパレータを含みうる唯一のフィールドなので最後に置く。境界文字が
-// メッセージに入った病的ケースの扱いは非対称: \x1e (record sep) はレコードを割ってフィールド数
-// 不足になり解析エラーで落ちる。\x1f (field sep) は SplitN の上限が本文 (--stat/-p) の \x1f を
-// 1 フィールドへ吸収する idiom のため検出できず、当該メッセージが最初の \x1f で無言に切り詰め
-// られる (残りは本文側へ漏れる) — 単一デリミタ方式では「メッセージの \x1f」と「本文の \x1f」を
-// 区別できないための既知の制限。0x1F を含むコミットメッセージは実運用でほぼ発生しない。
+// 区切りは logFormat が 1 回の取得ごとに作る (下の doc)。--stat / -p の本文は最後のフィールド区切りの後に続き、
+// 次のレコード区切りまでがそのコミットのレコード。
 const (
-	recordSep    = "\x1e"
-	FieldSep     = "\x1f"
-	prettyFormat = "--pretty=format:%x1e%H%x1f%h%x1f%s%x1f%an%x1f%ae%x1f%ad%x1f%ar%x1f%D%x1f%B%x1f"
-	numFields    = 9
+	// FieldSep は指紋 (fingerprintFormat) の区切り。%H と %D は作者が書けない欄 (SHA と ref 名) なので、固定の制御文字でよい。
+	FieldSep  = "\x1f"
+	numFields = 9
 	// fingerprintFormat は「表示が変わったか」だけを測るための最小フォーマット (gitlog_watch.go)。
 	// SHA と decoration しか出さないので、-p の巨大 patch を持つ表示でも測る側は軽い。
 	fingerprintFormat = "--pretty=format:%H%x1f%D"
 )
+
+// logFormat は git log のレコードの区切りとフィールドの区切り。
+// 🚨 固定の制御文字だけで区切らない: %B と本文 (--stat / -p) はコミットの作者が書けるので、本文に区切りを書くと
+// 本物のレコードの途中から偽のコミット行を作れる (偽の SHA に `--output=<path>` を書くと、その行の d で git show が
+// ファイルを上書きした)。区切りに取得ごとの乱数 (64 bit) を混ぜ、作者が知りえない形にする。
+// 🚨 区切りを書けなくなるわけではない (作者が当てれば書ける。1 回の取得につき 2^-64)。偶然・推測の一致は受け入れる。
+type logFormat struct {
+	rec, field string // 出力の中の区切り
+	nonce      string
+}
+
+// newLogFormat は取得ごとに新しい区切りを作る。crypto/rand.Read は失敗しない (Go 1.24 以降は error を返さない)。
+func newLogFormat() logFormat {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return logFormatWith(hex.EncodeToString(b[:]))
+}
+
+func logFormatWith(nonce string) logFormat {
+	return logFormat{rec: "\x1e" + nonce + "\x1e", field: "\x1f" + nonce + "\x1f", nonce: nonce}
+}
+
+// pretty は git log に渡す --pretty。%B (フルメッセージ) は本文の直前に置く。
+func (f logFormat) pretty() string {
+	rec, field := "%x1e"+f.nonce+"%x1e", "%x1f"+f.nonce+"%x1f"
+	return "--pretty=format:" + rec + strings.Join([]string{"%H", "%h", "%s", "%an", "%ae", "%ad", "%ar", "%D", "%B"}, field) + field
+}
 
 // Commit は git log 1 レコード分。
 type Commit struct {
@@ -65,13 +89,13 @@ func colorArg(colored bool) string {
 func runGit(args ...string) (string, error) {
 	// waitdelay-in: WaitDelay は runGitCmd が張る (ctx 有無の両経路が通るので 1 箇所に寄せてある)。
 	// 🚨 no-waitdelay ではない。ここで「不要」と書くと嘘になる。
-	return extcmd.RunGitCmd(exec.Command("git", subproc.GitArgs(args...)...)) // subproc: waitdelay-in runGitCmd
+	return gitexec.RunGitCmd(exec.Command("git", subproc.GitArgs(args...)...)) // subproc: waitdelay-in runGitCmd
 }
 
 // buildLogArgs は allowlist 済みオプションから git log の引数列を組み立てる (データ解析用。
-// prettyFormat の制御文字レコードで機械 parse する)。colored は --stat / -p の本文にのみ効く。
-func buildLogArgs(q LogQuery, colored bool) []string {
-	return buildLogArgsWith(prettyFormat, q, colored, true)
+// f の区切りで機械 parse する)。colored は --stat / -p の本文にのみ効く。
+func buildLogArgs(f logFormat, q LogQuery, colored bool) []string {
+	return buildLogArgsWith(f.pretty(), q, colored, true)
 }
 
 // buildDisplayArgs は表示用 (verbatim) の git log 引数列。format を指定せず git の素の
@@ -131,19 +155,30 @@ func LoadLogDisplay(q LogQuery, colored bool) ([]string, error) {
 	return lines, nil
 }
 
-// parseLog は prettyFormat 付き git log の出力をコミット列へ解析する。
-func parseLog(out string) ([]Commit, error) {
+// parse は f.pretty() 付き git log の出力をコミット列へ解析する。
+func (f logFormat) parse(out string) ([]Commit, error) {
 	if out == "" {
 		return nil, nil
 	}
-	commits := make([]Commit, 0, strings.Count(out, recordSep))
-	for rec := range strings.SplitSeq(out, recordSep) {
+	commits := make([]Commit, 0, strings.Count(out, f.rec))
+	for rec := range strings.SplitSeq(out, f.rec) {
 		if rec == "" {
 			continue // 先頭レコード前の空文字列
 		}
-		parts := strings.SplitN(rec, FieldSep, numFields+1)
+		parts := strings.SplitN(rec, f.field, numFields+1)
 		if len(parts) != numFields+1 {
 			return nil, fmt.Errorf("glogx: git log の出力を解析できません (フィールド数 %d)", len(parts))
+		}
+		// 区切りは作者が知りえないので、ここに来るのは git の出力の形が想定と違うときだけ。SHA の欄は git の argv
+		// (LoadCommitDiff) に渡るので、形を確かめてから受け取る
+		if !isHexSHA(parts[0], fullSHALens...) || !isHexSHA(parts[1]) {
+			return nil, fmt.Errorf("glogx: git log の SHA の欄を解析できません (%q)", term.SanitizePlainLine(parts[1]))
+		}
+		// VS16 付き絵文字が残ると描画エンジンと端末で幅が食い違いガタつくため、欄ごとに正規化する (term.DropEmojiVS16)。
+		// 🚨 区切る前に出力全体へ掛けない: VS16 を落とすと前後の文字が連結され、元の出力に無かった区切りや
+		// SHA の形の値ができる (区切りと SHA の検査は git が出した生の値で行う)
+		for i := 2; i < len(parts); i++ {
+			parts[i] = term.DropEmojiVS16(parts[i])
 		}
 		body := strings.TrimPrefix(parts[9], "\n")
 		body = strings.TrimRight(body, "\n")
@@ -179,10 +214,10 @@ func parseLog(out string) ([]Commit, error) {
 // 無害化コストを払わない。
 func capGitBody(body, shortSHA string) string {
 	lines := strings.Split(body, "\n")
-	if len(lines) <= extcmd.MaxDiffLines {
+	if len(lines) <= MaxDiffLines {
 		return body
 	}
-	lines = append(lines[:extcmd.MaxDiffLines], truncatedNotice(shortSHA))
+	lines = append(lines[:MaxDiffLines], truncatedNotice(shortSHA))
 	return strings.Join(lines, "\n")
 }
 
@@ -190,7 +225,7 @@ func capGitBody(body, shortSHA string) string {
 // 同一だったのを一本化)。sha は呼び出し側の手元にある形 (short / full) をそのまま受ける
 // (git show はどちらでも解決できる)。
 func truncatedNotice(sha string) string {
-	return fmt.Sprintf("... (%d 行を超えるため省略。全文: git show %s)", extcmd.MaxDiffLines, sha)
+	return fmt.Sprintf("... (%d 行を超えるため省略。全文: git show %s)", MaxDiffLines, sha)
 }
 
 // sanitizeGitText は複数行の git 由来テキストを行ごとに term.SanitizeLineKeepTabs へ通す
@@ -220,22 +255,22 @@ func sanitizeGitText(s string) string {
 
 // LoadCommits は git log を実行して解析まで行う。
 func LoadCommits(q LogQuery, colored bool) ([]Commit, error) {
-	out, err := runGit(buildLogArgs(q, colored)...)
+	f := newLogFormat()
+	out, err := runGit(buildLogArgs(f, q, colored)...)
 	if err != nil {
 		return nil, err
 	}
-	// Subject/Message/Body に VS16 付き絵文字が残ると描画エンジンと端末で幅が食い違い
-	// ガタつくため、解析前に正規化する (term.DropEmojiVS16 参照)。
-	return parseLog(term.DropEmojiVS16(out))
+	return f.parse(out)
 }
 
 // LoadHeadCommit は --cached モード用に HEAD 1 件を取得する。
 func LoadHeadCommit() (*Commit, error) {
-	out, err := runGit("log", prettyFormat, "--max-count=1", "--color=never")
+	f := newLogFormat()
+	out, err := runGit("log", f.pretty(), "--max-count=1", "--color=never")
 	if err != nil {
 		return nil, err
 	}
-	commits, err := parseLog(out)
+	commits, err := f.parse(out)
 	if err != nil {
 		return nil, err
 	}
@@ -287,6 +322,78 @@ func UnpushedSHAs(revs []string, limit int, paths []string) map[string]bool {
 		}
 	}
 	return unpushed
+}
+
+// PushPlan は b の確認に出す「git push が送るもの」の見積もり。
+// Exact は N が確かなとき (今のブランチを 1 本だけ送る設定で、push 先 @{push} を解決できた) だけ真。
+// 🚨 Exact でないときの 0 件を「push 不要」と読まない: ref の作成だけの push (送るコミットは 0 件) や、今のブランチ以外・
+// 追跡 ref と別の送り先へ送る設定がある (コミットの数では push の要否を決められない。pushPlanUncertain)。
+// 🚨 Exact でも N は remote-tracking ref (最後に fetch した時点の @{push}) からの数: remote でブランチが消えた後に
+// prune していなければ 0 件と出るが、push はブランチを作り直す。remote に問い合わせない (b の確認を待たせない) ための限界。
+type PushPlan struct {
+	N     int
+	Exact bool
+}
+
+// PlanPush は b の確認と件数の出典 (表示中のコミット・path filter・-n・CI の状態に依存させない)。
+// ローカルの git だけを読む (remote には問い合わせない)。数えられないときは Exact=false で返す (err にしない:
+// push 自体は git が判断する)。
+func PlanPush() PushPlan {
+	if pushPlanUncertain() {
+		return PushPlan{}
+	}
+	out, err := gitexec.RunGitTimeout("rev-list", "--count", "@{push}..HEAD")
+	if err != nil {
+		return PushPlan{} // push 先を解決できない (upstream 未設定・triangular の未作成のブランチなど)
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return PushPlan{}
+	}
+	return PushPlan{N: n, Exact: true}
+}
+
+// pushPlanUncertain は「@{push} からのコミット数」が素の git push の送るもの・送れるかを表さない設定か:
+//   - 今のブランチ以外も送る: push の refspec・remote の mirror (全 ref)・push.followTags (届く annotated tag)・
+//     push.default=matching (同名のブランチ全部)
+//   - 送り先が @{push} の追跡 ref と別: pushurl・1 つの remote に url が複数 (全部へ送る)
+//   - git が設定の誤りで断る: push.default=upstream (push 先の remote が upstream と違うと断る)・branch.<名前>.merge が複数
+//     (0 件と出すと、断られる理由が「未 push のコミットはありません」に隠れる)
+//   - detached HEAD (@{push} も解決しない)
+func pushPlanUncertain() bool {
+	// 鍵の名前は git が小文字に正規化して照合・出力する (push.followTags も push.followtags で当たる)
+	if out, err := gitexec.RunGitTimeout("config", "--type=bool", "--get-regexp", `^(remote\..*\.mirror|push\.followtags)$`); err == nil {
+		for line := range strings.SplitSeq(out, "\n") {
+			if strings.HasSuffix(strings.TrimSpace(line), " true") {
+				return true
+			}
+		}
+	}
+	if out, err := gitexec.RunGitTimeout("config", "--get-regexp", `^(remote\..*\.(push|pushurl|url)|push\.default)$`); err == nil {
+		urls := map[string]int{}
+		for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
+			key, val, _ := strings.Cut(line, " ")
+			switch {
+			case strings.HasSuffix(key, ".push"), strings.HasSuffix(key, ".pushurl"):
+				return true
+			case strings.HasSuffix(key, ".url"):
+				if urls[key]++; urls[key] > 1 {
+					return true
+				}
+			case key == "push.default":
+				if val != "simple" && val != "current" {
+					return true
+				}
+			}
+		}
+	}
+	branch, err := gitexec.RunGitTimeout("symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil {
+		return true
+	}
+	merges, err := gitexec.RunGitTimeout("config", "--get-all", "branch."+strings.TrimSuffix(branch, "\n")+".merge")
+	// 行の数で数える (TrimSpace にしない: 空の値 `merge = ""` も 1 件で、git は複数の upstream として断る)
+	return err == nil && strings.Count(strings.TrimSuffix(merges, "\n"), "\n") > 0
 }
 
 // DecorColors は decoration (ブランチ名等) の色。git log の見た目を尊重するため、
@@ -359,15 +466,35 @@ func LoadDecorColors() DecorColors {
 // 色は git に任せず --color=never で受けて github.com/jiikko/dotfiles/src/tuikit/highlight.Diff が付ける (diff 構造色 +
 // chroma のシンタックスハイライト。方式は github.com/jiikko/dotfiles/src/tuikit/highlight の冒頭)。
 func LoadCommitDiff(sha string, colored bool) ([]string, error) {
-	// TUI 対話中の非同期経路 (d キー) なので timeout 付き (runGitTimeout の doc 参照)
-	out, err := extcmd.RunGitTimeout("show", "--stat", "--patch", "--no-textconv", "--no-ext-diff", "--color=never", sha)
+	if !isHexSHA(sha, fullSHALens...) {
+		return nil, fmt.Errorf("glogx: コミットの SHA ではありません (%q)", term.SanitizePlainLine(sha))
+	}
+	out, err := showCommit(sha)
 	if err != nil {
 		return nil, err
 	}
-	lines := make([]string, 0, min(strings.Count(out, "\n")+1, extcmd.MaxDiffLines+1))
-	for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
-		if len(lines) >= extcmd.MaxDiffLines {
-			lines = append(lines, truncatedNotice(sha))
+	return DiffDisplayLines(out, colored, truncatedNotice(sha)), nil
+}
+
+// MaxDiffLines は diff (コミットの diff・status viewer のプレビュー・-p の本文) に保持する行数の上限。巨大コミット (自動生成物等) で
+// 描画・保持行数が際限なく増えないための安全弁で、超過時は末尾に省略注記を足す。
+// 🚨 これがバウンドするのは「保持する行数」だけで、ピークメモリは制限しない: runGit は
+// git show の全出力を bytes.Buffer + String() で一旦フルに展開する (diff 全長 × 約2) ため、
+// 数万行 diff の一時スパイクは起きる (popup クローズ後に GC 解放される一時的なもの)。
+// メモリも真にバウンドしたければ git 出力を行ストリームで読み上限で打ち切る必要がある。
+const MaxDiffLines = 5000
+
+// DiffDisplayLines は git の diff / show の生出力を表示行へ整える: MaxDiffLines で打ち切って notice の行を足し、各行を
+// 無害化し、colored なら色を付ける (コミットの diff と status viewer のプレビューが同じ整形を通る)。空の出力は nil。
+func DiffDisplayLines(out string, colored bool, notice string) []string {
+	trimmed := strings.TrimRight(out, "\n")
+	if trimmed == "" {
+		return nil
+	}
+	lines := make([]string, 0, min(strings.Count(trimmed, "\n")+1, MaxDiffLines+1))
+	for line := range strings.SplitSeq(trimmed, "\n") {
+		if len(lines) >= MaxDiffLines {
+			lines = append(lines, notice)
 			break
 		}
 		lines = append(lines, term.SanitizeDetailLine(line))
@@ -375,7 +502,35 @@ func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 	if colored {
 		lines = highlight.Diff(lines)
 	}
-	return lines, nil
+	return lines
+}
+
+// showCommit は git show の本体。--end-of-options で sha をオプションとして読ませない (`--output=<path>` を渡されても
+// ファイルを書かない)。LoadCommitDiff の SHA の形の検査とは別の段: 片方が外れても、もう片方で止まる。
+func showCommit(sha string) (string, error) {
+	// TUI 対話中の非同期経路 (d キー) なので timeout 付き (runGitTimeout の doc 参照)
+	return gitexec.RunGitTimeout("show", "--stat", "--patch", "--no-textconv", "--no-ext-diff", "--color=never", "--end-of-options", sha)
+}
+
+// fullSHALens は %H の長さ (SHA-1 / SHA-256)。
+var fullSHALens = []int{40, 64}
+
+// isHexSHA は s が小文字の 16 進数だけで、長さが lens のどれかか (lens が空なら 4〜64 文字) を返す。
+// 短縮形 (%h) は core.abbrev と衝突の回避で長さが決まるので、長さを渡さずに見る。
+func isHexSHA(s string, lens ...int) bool {
+	if len(lens) == 0 {
+		if len(s) < 4 || len(s) > 64 {
+			return false
+		}
+	} else if !slices.Contains(lens, len(s)) {
+		return false
+	}
+	for i := range len(s) {
+		if c := s[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // LoadStagedDiff は --cached モードの本文 (git diff --cached) を取得する。

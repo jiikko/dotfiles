@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"ratelimit/usage"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -198,8 +199,15 @@ func TestUsageHandleRecoversFromInitialError(t *testing.T) {
 	}
 }
 
-// 成功時の usage box は自動更新を明示するフッター (usageFooter) を末尾に出す
-// (ユーザー要望 2026-07-22。間隔は全プロセス共有のゲートの間隔)。
+// 下端の周期は表示を読み直す周期 (app.UsageRefreshInterval) と同じ値を言う。ratelimit ダッシュボードの案内と README も
+// その周期を言っている。共有ゲートの 5 分 (usage.SharedFresh) は観測が無いときの予備の取得の間隔で、ふだんの周期ではない。
+func TestUsageFooterSaysTheRefreshInterval(t *testing.T) {
+	if want := strconv.Itoa(int(app.UsageRefreshInterval/time.Minute)) + "分ごとに読み直し"; usageFooter != want {
+		t.Errorf("usageFooter = %q, want %q", usageFooter, want)
+	}
+}
+
+// 成功時の usage box は自動更新を明示するフッター (usageFooter) を末尾に出す (ユーザー要望 2026-07-22)。
 func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
 	ov := UsageOverlay{
 		visible: true,

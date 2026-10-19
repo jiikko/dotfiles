@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -123,4 +126,47 @@ func localReplaces(t *testing.T) []localReplace {
 		rs = append(rs, localReplace{mod: r.Old.Path, path: filepath.ToSlash(filepath.Clean(p))})
 	}
 	return rs
+}
+
+// moduleFile は parseModuleNonTestFiles が返す 1 ファイル (repo 内の相対パスと構文木)。
+type moduleFile struct {
+	path string
+	file *ast.File
+}
+
+// parseModuleNonTestFiles は glogx の module の本番の .go (テスト・testdata・隠しディレクトリ・テスト専用の package を除く。tools/ は
+// 含める: 別の main だが、本体から import できる場所に置かれうる)
+// を全部 parse して返す。本番のコードの書き方を AST で検査するテストの足場 (1 つに寄せる: 検査ごとに除外がずれると、同じ
+// 「本番のコード」の集合が検査で食い違う)。min を下回ったら落とす (走査が壊れて「違反 0 件 = 緑」になるのを止める。
+// 下限は実件数のすぐ下に置く: 遠いと対象がかなり縮んでも緑のまま)。他の module も見る検査は walkOwnSources を使う。
+func parseModuleNonTestFiles(t *testing.T, fset *token.FileSet, minFiles int) []moduleFile {
+	t.Helper()
+	var out []moduleFile
+	err := filepath.WalkDir(".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if n := d.Name(); n == "testdata" || testSupportPkgs[filepath.ToSlash(p)] || (strings.HasPrefix(n, ".") && p != ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		f, err := parser.ParseFile(fset, p, nil, parser.ParseComments|parser.SkipObjectResolution)
+		if err != nil {
+			return err
+		}
+		out = append(out, moduleFile{path: p, file: f})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("走査できない: %v", err)
+	}
+	if len(out) < minFiles {
+		t.Fatalf("本番の .go を %d 件しか読んでいない (下限 %d)。走査の除外が壊れている", len(out), minFiles)
+	}
+	return out
 }

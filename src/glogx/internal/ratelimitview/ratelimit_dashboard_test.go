@@ -52,6 +52,11 @@ func TestRatelimitDashLoadingAndError(t *testing.T) {
 	if got := strings.Join(d.Lines(rlTestOpts(nil, nil)), "\n"); !strings.Contains(got, "取得中") {
 		t.Errorf("取得中の表示が無い:\n%s", got)
 	}
+	// 理由の 1 行目も出す (前回の値が無いまま全滅したとき、理由はここにしか出ない)。2 行目以降は出さず、制御文字は落とす
+	if got := strings.Join(d.Lines(rlTestOpts(nil, errors.New("claude が見つかりません\x1b[2J\n詳細"))), "\n"); !strings.Contains(got, "claude が見つかりません") ||
+		strings.Contains(got, "詳細") || strings.Contains(got, "\x1b[2J") {
+		t.Errorf("全滅したときに理由の 1 行目を出していない:\n%s", got)
+	}
 	if got := strings.Join(d.Lines(rlTestOpts(nil, errors.New("x"))), "\n"); !strings.Contains(got, "取得失敗") {
 		t.Errorf("失敗の表示が無い:\n%s", got)
 	}
@@ -81,11 +86,7 @@ func TestRatelimitDashHeaderShowsVersions(t *testing.T) {
 		ResetAt: time.Now().Add(time.Hour), WindowMins: 300,
 	})
 	head := d.Lines(rlTestOpts(snap, nil))[0]
-	for _, want := range []string{"v2.1.216", "codex v0.144.6", "ratelimit"} {
-		if !strings.Contains(head, want) {
-			t.Errorf("見出しに %q が無い: %q", want, head)
-		}
-	}
+	testenv.ContainsAll(t, "見出し", head, "v2.1.216", "codex v0.144.6", "ratelimit")
 }
 
 // Claude 側だけ取れなかったとき (codex だけ取れ、Claude 枠は前回値のまま) は、
@@ -102,11 +103,7 @@ func TestRatelimitDashShowsClaudeFetchError(t *testing.T) {
 	o.Note = usageview.FetchNote(snap, nil) // 注記は main が組んで渡す (ratelimitOpts)。ここは渡された注記の出し方を見る
 	lines := d.Lines(o)
 	note := term.StripANSI(lines[1])
-	for _, want := range []string{"Claude Code の取得に失敗", "前回の値を表示中", "exit status 127"} {
-		if !strings.Contains(note, want) {
-			t.Errorf("注記に %q が無い: %q", want, note)
-		}
-	}
+	testenv.ContainsAll(t, "注記", note, "Claude Code の取得に失敗", "前回の値を表示中", "exit status 127")
 	if strings.Contains(lines[1], "\x1b[31m") {
 		t.Errorf("理由の制御列が無害化されていない: %q", lines[1])
 	}

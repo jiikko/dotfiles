@@ -2,6 +2,7 @@ package issuesview
 
 import (
 	"glogx/internal/issuesview/issuesviewtest"
+	"glogx/internal/testenv"
 	"glogx/issues"
 	"os"
 	"path/filepath"
@@ -273,7 +274,7 @@ func TestIssuesWatchPollDoesNotStackEventChains(t *testing.T) {
 	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	if v.watch.W == nil {
-		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
+		testenv.SkipEnv(t, "この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
 	}
 	msgs := make(chan tea.Msg, 64)
 	v.watch.EvArmed = false // 既に張られている札をテストが引き取り、実体の goroutine を作る
@@ -359,7 +360,7 @@ func TestIssuesWatchReloadsFromRealEvent(t *testing.T) {
 	root, path := issuesviewtest.WatchTree(t, "# 001 feat: 編集前\n")
 	v := openedWatchView(t, root, path)
 	if v.watch.W == nil {
-		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
+		testenv.SkipEnv(t, "この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
 	}
 	v.watch.EvArmed = false // 既に張られているチェーンをテストが引き取る
 	cmd := v.eventCmd()
@@ -392,7 +393,7 @@ func TestIssuesWatchClosingReleasesWatcher(t *testing.T) {
 	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	if v.watch.W == nil {
-		t.Skip("この環境では fsnotify を作れない")
+		testenv.SkipEnv(t, "この環境では fsnotify を作れない")
 	}
 	v.watch.EvArmed = false // 既に張られているチェーンをテストが引き取る
 	cmd := v.eventCmd()
@@ -415,7 +416,7 @@ func TestIssuesWatchFallsBackToPollingWhenWatcherDies(t *testing.T) {
 	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	if v.watch.W == nil {
-		t.Skip("この環境では fsnotify を作れない")
+		testenv.SkipEnv(t, "この環境では fsnotify を作れない")
 	}
 	if got := v.pollInterval(); got != issuesWatchIdlePoll {
 		t.Fatalf("イベントがある間の保険は低頻度でよい: %v", got)
@@ -453,7 +454,7 @@ func TestIssuesWatchIgnoresStaleGeneration(t *testing.T) {
 	root, path := issuesviewtest.WatchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
 	if v.watch.W == nil {
-		t.Skip("この環境では fsnotify を作れない")
+		testenv.SkipEnv(t, "この環境では fsnotify を作れない")
 	}
 	stale := IssuesWatchMsg{closed: true, gen: v.watch.Gen} // 閉じる前のチェーンが持っている世代
 
@@ -504,15 +505,14 @@ func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
 	}
 	v.startWatch() // 戻った後の取り直し: ここで再び Add されなければならない
 
-	// 🚨 watcher が無い環境と、配線が壊れた場合を区別する。CI (ubuntu-slim) では
-	// fsnotify.NewWatcher が通らず watch.w が nil になり、既存の watch テストは指紋ポーリング
-	// 経路だけで通っていた (この検査を素で書くと nil 参照で panic する。2026-08-21 に CI で踏んだ)。
-	// 「環境が対応していない」は SKIP として**出力に見えるように**落とし、「作れるのに張って
-	// いない」は配線の退行なので FAIL にする (検査できなかったことを緑にしない)。
+	// 🚨 watcher が無い環境と、配線が壊れた場合を区別する。fsnotify.NewWatcher が通らない環境では watch.w が nil になり、
+	// 指紋ポーリングの経路だけで通ってしまう (この検査を素で書くと nil 参照で panic する)。
+	// 「環境が対応していない」は SkipEnv (CI では FAIL) にし、「作れるのに張っていない」は配線の退行なので FAIL にする
+	// (検査できなかったことを緑にしない)。
 	if v.watch.W == nil {
 		probe, err := fsnotify.NewWatcher()
 		if err != nil {
-			t.Skipf("この環境では fsnotify watcher を作れない (%v)。実 fsnotify との結合は未検証 (不変条件は issues_watch_seam_test.go が固定)", err)
+			testenv.SkipEnv(t, "この環境では fsnotify watcher を作れない (%v)。実 fsnotify との結合は未検証 (不変条件は issues_watch_seam_test.go が固定)", err)
 		}
 		_ = probe.Close()
 		t.Fatal("watcher は作れるのに startWatch が張っていない (配線の退行)")
