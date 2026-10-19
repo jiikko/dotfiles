@@ -89,9 +89,8 @@ func TestPingMarksWiredNameElsewhere(t *testing.T) {
 func TestPingStopWins(t *testing.T) {
 	stop := make(chan struct{})
 	check := func(ctx context.Context, names []string) []reach.Name {
-		close(stop)
-		<-ctx.Done()
-		return []reach.Name{{Name: names[0], Addrs: []reach.Addr{{IP: "192.168.100.12", Ping: reach.Ping{Sent: 1}, SSH: ctx.Err()}}}}
+		close(stop) // 合図を出してすぐ返す (ping が SIGINT で統計を出して終わった形。ctx が切れるのを待たない)
+		return []reach.Name{{Name: names[0], Addrs: []reach.Addr{{IP: "192.168.100.12", Ping: reach.Ping{Sent: 1}, SSH: errors.New("i/o timeout")}}}}
 	}
 	var out, errb bytes.Buffer
 	if rc := runPing(nil, &out, &errb, time.Now, stop, speedModel(nil), check); rc != 130 {

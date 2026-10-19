@@ -199,5 +199,6 @@ func (m *Model) reachLines(r row, label func(string) string) []string {
 		}
 		lines = append(lines, next()+line)
 	}
-	return append(lines, next()+sDim.Render(res.at.Format("15:04")+" に確認"))
+	// 日付も出す (glogx の板は日をまたいで開いたままになり、時刻だけだと前日の ✓ を今の値と読ませる)
+	return append(lines, next()+sDim.Render(res.at.Format("1/2 15:04")+" に確認"))
 }

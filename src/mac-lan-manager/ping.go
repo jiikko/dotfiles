@@ -39,7 +39,6 @@ type pingReport struct {
 	Name        string     `json:"name"`
 	LanIP       string     `json:"lan_ip,omitempty"`
 	Names       []pingName `json:"names"`
-	Skipped     string     `json:"skipped,omitempty"`
 	ScanSettled bool       `json:"scan_settled"` // speedReport と同じ
 	ScanError   string     `json:"scan_error,omitempty"`
 }
@@ -103,40 +102,34 @@ func runPing(args []string, stdout, stderr io.Writer, now func() time.Time, stop
 	reports := make([]pingReport, 0, len(targets))
 	for _, t := range targets {
 		r := pingReport{Host: t.Host, Name: t.Name, LanIP: t.LanIP, Names: []pingName{}, ScanSettled: settled, ScanError: scanErr}
-		if t.Refusal != "" {
-			r.Skipped, rc = t.Refusal, 1
-		} else {
-			ctx, cancel := context.WithCancel(context.Background())
-			done := make(chan struct{})
-			go func() {
-				select {
-				case <-stop:
-					cancel()
-				case <-done:
-				}
-			}()
-			names := check(ctx, t.Names)
-			close(done)
-			// 🚨 結果より先に止める合図を見る: 端末の Ctrl-C は子の ping にも届き、ping は統計 (0 received) を出して終わるので、
-			// 結果だけ見ると「届かない」になる
-			stopped := ctx.Err() != nil
-			cancel()
-			if stopped {
-				return 130
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			select {
+			case <-stop:
+				cancel()
+			case <-done:
 			}
-			for _, n := range names {
-				pn := toPingName(n, t.LanIP)
-				if !pn.Reachable {
-					rc = 1
-				}
-				r.Names = append(r.Names, pn)
-			}
-			if !*asJSON {
-				printPing(stdout, r, names)
-			}
+		}()
+		names := check(ctx, t.Names)
+		close(done)
+		cancel()
+		// 🚨 結果より先に止める合図を見る: 端末の Ctrl-C は子の ping にも届き、ping は統計 (0 received) を出してすぐ終わるので、
+		// 結果だけ見ると「届かない」になる。ctx.Err() では見ない (合図を受けた goroutine が cancel する前に check が戻りうる)
+		select {
+		case <-stop:
+			return 130
+		default:
 		}
-		if !*asJSON && r.Skipped != "" {
-			fmt.Fprintf(stdout, "%s  - 確かめない: %s\n", pingHead(r), r.Skipped)
+		for _, n := range names {
+			pn := toPingName(n, t.LanIP)
+			if !pn.Reachable {
+				rc = 1
+			}
+			r.Names = append(r.Names, pn)
+		}
+		if !*asJSON {
+			printPing(stdout, r, names)
 		}
 		reports = append(reports, r)
 	}

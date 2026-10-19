@@ -53,6 +53,7 @@
 - `src/mac-lan-manager/live` (`mac-lan-manager/live`) — Package live は lanmgr の画面を本物 (この Mac のネットワーク・Bonjour・台帳・設定・クリップボード) につなぐ。
 - `src/mac-lan-manager/netinfo` (`mac-lan-manager/netinfo`) — Package netinfo は、この Mac のネットワークのサービスと I/F の IP を、networksetup と ifconfig の出力から読む。
 - `src/mac-lan-manager/prefs` (`mac-lan-manager/prefs`) — Package prefs は mac-lan-manager の設定 (一覧に出す IP・内部 IP の決め方) を読み書きする。
+- `src/mac-lan-manager/reach` (`mac-lan-manager/reach`) — Package reach は相手の Mac に名前ごとに届くかを確かめる: 名前を引き、引けた IP ごとに ping と ssh の口 (22 番) を見る。
 - `src/mac-lan-manager/setup` (`mac-lan-manager/setup`) — Package setup は初期設定 (この Mac → 相手) の手順を組む。
 - `src/mac-lan-manager/speedtest` (`mac-lan-manager/speedtest`) — Package speedtest は相手の Mac との通信速度を ssh 越しに測る。
 - `src/mp4box` (`mp4box`) — Command mp4-effective-size は、MP4 のトップレベルの box を先頭から辿り、壊れていない box の大きさの合計 (実効サイズ) をバイト数で出す。 (main)
