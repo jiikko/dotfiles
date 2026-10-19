@@ -76,3 +76,4 @@ test-cleanup・test-helpers / ux・general / dependency・ci・lint-from-done)�
 
 - [x] 6 波の監査と照合
 - [x] 834〜840 の反証レビューと訂正
+- [x] 834〜843 を直した (2026-10-19。commit「glogx: 全体監査 (844) の issue 834〜843 を直す」。各 issue の進捗に詳細)

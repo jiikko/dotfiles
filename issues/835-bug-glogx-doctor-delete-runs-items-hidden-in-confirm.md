@@ -34,4 +34,9 @@
 
 ## 進捗
 
-- [ ] 対象を Item で絞る + 回帰テスト
+- [x] 対象を Item で絞る + 回帰テスト (2026-10-19。commit「glogx: 全体監査 (844) の issue 834〜843 を直す」)
+  - `src/doctor/disk/delete.go` に `ConsentedTargets` (確認画面に出した Item の集合。照合の鍵は `itemKey` と同じ) を置き、glogx の `plannedTargets` はそれを通す (`planRaw` = 無害化する前の下見を持つ)
+  - ref を取らない CLI のコマンドは、Item の一部が落ちた・同意の外の候補がある (`cliScopeMismatch`) ならエントリごと実行しない
+  - 回帰テスト: `TestDeleteCLISkipsCommandWhenSomeTargetsAreNoLongerCandidates` / `TestDeleteCLISkipsCommandWhenCandidatesOutsideConsent` / `TestConsentedTargets` / glogx の `TestDeleteKeyYPassesOnlyItemsTheConfirmShowed`
+- 変異: Item の絞り込み・ref なし CLI の照合などを外す変異がすべて red
+- レビュー: codex の実装レビュー (指摘は反映済み)

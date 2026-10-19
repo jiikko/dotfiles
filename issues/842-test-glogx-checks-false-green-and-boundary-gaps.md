@@ -51,6 +51,19 @@
 
 ## 進捗
 
-- [ ] A1 〜 A7
-- [ ] B1 〜 B6
-- [ ] C1 〜 C4
+- [x] A1 〜 A7 (2026-10-19。commit「glogx: 全体監査 (844) の issue 834〜843 を直す」)
+  - A1 VS16 の検査はリテラルの値 (`strconv.Unquote`) で見て、rune リテラルも対象 (変異: `"x\uFE0F"` を足すと red)
+  - A2 通知の種類の検査は glogx の本番の .go を全部走査する。成功 (NoticeOK) もエラーの詳細を含めば誤分類
+  - A3 `make test-budget` は `-v` の出力に `--- PASS: TestFrameAllocBudget ` が無ければ落ちる (改名で `[no tests to run]` の緑にならない。手で確かめた)
+  - A4 記録だけ (Stale は monotonic の時計で比べるので本番の害は無い。issue の判断のまま)
+  - A5 は 840 の 6 で済んでいた (fake は本物の gh と同じ rc≠0)
+  - A6 AST の走査の下限を実件数のすぐ下へ (cache_write 85 / 実測 92・details_flags 85 / 92・rows の setter 25 / 29)。走査の足場は 843 の 2 で 1 つにした
+  - A7 環境の前提が無いときの skip を `testenv.SkipEnv` に寄せ、CI (`CI` が立つ) では落とす。`t.Skip` を直接呼んでよいテストは `skipAllowlist` (ファイル:宣言の名前と理由。var の塊の中も 1 つずつの名前で引く) に固定 (`TestSkipsAreAllowlisted`)。幅を固定しているのに skip していた doctor のテストは Fatal にした。CI=1 で全体を回して落ちるものが無いことを確かめた
+- [x] B1 〜 B6: 上限ちょうど / + 1 のテスト (`DiffDisplayLines`・`capGitBody`・未追跡ファイルのプレビュー)・1 分 / 1 時間ちょうど・空の `ClampIdx` (internal/app に初めてのテスト)・末尾で切れた rename (NUL も無い入力)・数字の端。B2 は 838 で済んでいた
+- [x] C1 〜 C4
+  - C1 `ScreenMemory.Load` の規則のテストを internal/app に置いた (TTL の手前・ちょうど・超過・未来・時刻なし・壊れた JSON)。各画面のテストは SavedAt の配線を兼ねるので残した (消すと配線の誤りが見えなくなる)
+  - C2 signal 終了のテストは期限の切れていない ctx で呼ぶ (変異: `exitCode < 0` を外すと red)
+  - C3 「CI (ubuntu-slim) では fsnotify が skip される」の注記 5 か所を、今の前提 (CI は macOS・seam 版はイベントの届き方に依存しない) に直した
+  - C4 `issues/audit698_test.go` の 6 本を parse / body / banner のテストへ移した。実 repo の issues/ を読む smoke は残した (CI には issues/ が在る。切り出したときだけ skip)
+- 変異: 13 本 + 当て直し 2 本がすべて red
+- レビュー: codex の実装レビュー 3 周 + opus のサブエージェント 1 周 (codex の週の枠が切れた後)

@@ -22,4 +22,14 @@
 
 ## 進捗
 
-- [ ] 1 〜 8 (trigger: その helper を使うテストを次に足すとき。1 と 2 は単独で寄せてよい)
+- [x] 1 〜 8 (2026-10-19。commit「glogx: 全体監査 (844) の issue 834〜843 を直す」)
+  - 1 `testenv.Restore(t, &X)` を置き、`orig := X; ...; t.Cleanup(func() { X = orig })` の手組み 56 か所 (18 ファイル) を置き換えた。orig を別にも使う・形の違う 13 か所は残した
+  - 2 本番の .go を走査する AST 検査の足場を `parseModuleNonTestFiles` (own_sources_test.go) に寄せた (cache_write・details_flags・通知の種類・Fixture・WatchChain)。他の module も見る VS16・幅の検査は `walkOwnSources` のまま
+  - 3 hint の幅のループを `assertHintFitsAtEveryWidth` に
+  - 4 GraphQL の成功の応答を `successResponse` に
+  - 5 `testenv.ContainsAll` を置き、「〜に %q が無い」の 1 行の Errorf のループ 27 か所を置き換えた (Fatalf のもの・文言の違うものは残した)
+  - 6 実 git の手組みのうち形の単純なもの (statusview の実 git のテスト・gitdata・issues) を `testenv.GitInRepo` に。pull_rebase_real_test.go (対話の rebase など)・git_harden のテスト (素の起動を試す) は残した
+  - 7 逐語の複製の `pagerShown` → `testenv.PagerShown`、`drainScanMsg` → `testenv.TakeMsg[T]` への 1 行の委譲。同名で中身の違う他の helper は寄せていない
+  - 8 `slicesContains` → `slices.Contains`
+- 足した helper の直接のテスト (`TestRestoreRestoresValueAtCall` ほか) と変異 4 本がすべて red
+- レビュー: codex の実装レビュー 3 周 + opus のサブエージェント 1 周 (codex の週の枠が切れた後)

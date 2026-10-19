@@ -55,8 +55,10 @@ hint 行・トースト・README・UI ガイドが、実際の動きと違うこ
 
 ## 進捗
 
-- [ ] 1 doctor の y / Enter
-- [ ] 2 filer の入力中の hint
-- [ ] 3 周期の文言
-- [ ] 4 README の表
-- [ ] 5 UI ガイド
+- [x] 1〜5 (2026-10-19。commit「glogx: 全体監査 (844) の issue 834〜843 を直す」)
+  - 1 doctor の `y`: コピーする中身の種類 (`copyKind`: パス / コマンド / 警告 / エラー) を行が持ち、hint とトーストがその語を出す。Enter の hint は開ける・畳める行だけ
+  - 2 treefiler: 入力中は「esc: 戻る」だけを出す
+  - 3 周期の文言: usage は `app.UsageRefreshInterval` から「N 分ごとに読み直し」、ratelimit は「(毎分読み直し)」、README も同じ語
+  - 4 README のキー表の段落を移した・5 UI ガイドの `q` の例外に treefiler を足した
+- 変異: hint の固定・copyKind の外し方などがすべて red
+- レビュー: codex の実装レビュー (指摘は反映済み)

@@ -39,5 +39,12 @@
 
 ## 進捗
 
-- [ ] 1 push の判定を表示用の状態から切り離す
-- [ ] 2 件数を表示中のコミットに依存させない
+- [x] 1 push の判定を表示用の状態から切り離す (2026-10-19。commit「glogx: 全体監査 (844) の issue 834〜843 を直す」)
+  - `gitdata.PlanPush` (`@{push}..HEAD` の数) を件数の出典にした。GitHub の repo を解決できない repo でも `b` が断らない。repo が無いときは push 後に一覧と status を読み直し、未 push を `StateUnpushed` で出す・GitHub 専用のキーを hint から外す
+- [x] 2 件数を表示中のコミットに依存させない (同 commit)
+  - path filter・`-n` に依らない。件数が確かでない設定 (push の refspec・mirror・push.followTags・push.default が simple / current 以外・pushurl・1 つの remote に url が複数・branch.<名前>.merge が複数・detached・@{push} を解決できない) では `Exact=false` で「push します (件数は数えていません)」と出し、断らない
+  - 🚨 意図した挙動の変化: upstream が無いときは件数を出さない (前回のレビューで「コミット数では push の要否を決められない」と指摘されたため)
+  - 回帰テスト: `TestPushConfirmCountsWhatGitPushSends` / `TestPlanPushRealRepo` (設定ごと) / `TestPushWithoutRepoReloadsTheLog` / `TestPushBoundaryNotInsertedWithoutRepo` ほか
+- 変異: refspec・matching・mirror・followTags・pushurl・push.default・複数の url / merge (空の値を含む) のガードを外す変異がすべて red
+- レビュー: codex の実装レビュー 4 周・sonnet のレビュー・opus のサブエージェント (指摘は反映済み)
+- 残る限界 (doc に記録): Exact でも件数は remote-tracking ref からの数で、remote でブランチが消えた後に prune していなければ 0 件と出る (remote に問い合わせない)

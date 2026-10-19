@@ -38,4 +38,9 @@ git がこれをオプションとして読んで、show の出力を `<path>` �
 
 ## 進捗
 
-- [ ] 1〜4
+- [x] 1〜4 (2026-10-19。commit「glogx: 全体監査 (844) の issue 834〜843 を直す」)
+  - 1: `LoadCommitDiff` は SHA の形 (完全な 16 進) を先に見てから `git show ... --end-of-options <sha>` (`showCommit`)。2 段のどちらかが外れても止まる
+  - 2・3: レコードと欄の区切りを起動ごとの乱数の nonce 入り (`\x1e<nonce>\x1e` / `\x1f<nonce>\x1f`。`newLogFormat`) にし、作者が本文に書いた区切りでは切れない。SHA の欄は 16 進で検査する。VS16 の正規化は分割の後に欄ごと
+  - 4: 回帰テスト `TestIntegrationForgedRecordInMessage` (偽の SHA に `--output=` と実在の SHA の 2 通り) ほか `TestParseLogIgnoresSeparatorsWrittenByAuthor` / `TestParseLogRejectsNonHexSHA` / `TestParseLogNormalizesVS16AfterSplitting`
+- 変異: 6 本 (16 進の検査・`--end-of-options`・固定の区切り・分割前の VS16 の正規化など) がすべて red
+- レビュー: codex の実装レビュー 3 本 (指摘は反映済み)

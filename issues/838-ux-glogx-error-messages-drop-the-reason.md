@@ -58,7 +58,9 @@
 
 ## 進捗
 
-- [ ] 1 push / pull
-- [ ] 2 RunGitCmd
-- [ ] 3 usage
-- [ ] 4 status
+- [x] 1 push / pull (2026-10-19。commit「glogx: 全体監査 (844) の issue 834〜843 を直す」): 失敗の 1 行を `gitFailureLine` で選ぶ (CONFLICT > remote の error / fatal > ref の拒否 > 決まり文句でない fatal / error > ssh > ...)。通った ref の更新の行は理由に選ばない (それしか無ければ理由は空で、起動の失敗の文へ落ちる)。全文は lastWarning に残し `w` でコピーできる。fetch first / non-fast-forward のときだけ pull を勧める
+- [x] 2 RunGitCmd: `GitExitError` が起動の失敗・時間切れの理由を持つ (stderr が空でも理由が出る)。`glogx` の終了時も理由を出す
+- [x] 3 usage: 初回の取得が全滅したら「取得失敗 (理由は …)」を出す。ratelimit の盤にも理由の行
+- [x] 4 status: 失敗の理由をヘッダーの下に全幅で出す・空の表示を全幅に
+- 変異: 28 本 (理由の優先順位・ヘッダーの件数・理由の行など) がすべて red
+- レビュー: codex の実装レビュー 4 周・opus のサブエージェント (指摘は反映済み)

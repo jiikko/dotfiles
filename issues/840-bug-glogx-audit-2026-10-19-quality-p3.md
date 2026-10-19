@@ -54,5 +54,16 @@
 
 ## 進捗
 
-- [ ] 1 〜 6・8・10 (項目ごとに直したら commit の subject を書く)
+- [x] 1 〜 6・8・10 (2026-10-19。commit「glogx: 全体監査 (844) の issue 834〜843 を直す」)
+  - 1 GraphQL の owner / name を `-f` (文字列) で渡す
+  - 2 `autobuildReplaceDirs`: コメントを外し、空のフィールドで panic しない
+  - 3 claim の解除: 目印 → バナーの順で外し、バナーを外せなければ目印を戻す。目印が元から無かったときは「戻した」と言わない。done への移動は目印を外せなければ動かさない (`TestMoveToDoneRefusesBeforeMovingWhenLinkCannotBeRemoved`)。バナーの書き換えは `openIssueFile` で読む (FIFO に差し替わっていても止まらない)
+  - 4 `cmd/issue-claim`: 制御文字を含むパスは claim しない・stderr は無害化 (無いディレクトリの名前も)
+  - 5 `openIssueFile` (O_NOFOLLOW|O_NONBLOCK・開いた fd が通常のファイルか)
+  - 6 CI の部分成功: 失敗しても stdout を読み、`errors[].path` の alias だけを捨てる。fake は本物の gh と同じ rc≠0
+  - 8 usage のキャッシュの無害化を `readUsageCache` へ
+  - 10 `logTail` を後ろから走査 (実測: 2.06 ms / 4.8 MB → 約 22 µs / 16.9 KB)
+- 変異: 23 本 + 指摘対応の分がすべて red
+- レビュー: Claude の 2 体のレビュー・codex の実装レビュー 2 周
+- 記録だけ (再現していない・脅威として薄い。理由と再提起の条件はコードの直近): `removeNextLink` の取り直しから削除までの窓・`openIssueFile` は親のディレクトリの symlink を見ない・2 つのプロセスが同じ issue の解除と claim を同時に行う形 (CI のバナーの検査が落とす)
 - [x] 7・9 は反証レビューで却下 (理由と再提起の条件は各項目)

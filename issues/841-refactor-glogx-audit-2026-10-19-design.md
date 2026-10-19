@@ -50,4 +50,13 @@
 
 ## 進捗
 
-- [ ] 1 〜 7 (trigger: その箇所を次に触る変更。単独で直してもよい)
+- [x] 1 〜 7 (2026-10-19。commit「glogx: 全体監査 (844) の issue 834〜843 を直す」)
+  - 1 `fswatch.Chain` (旧 `app.WatchChain`。下の 3 で移した) に `Advance()` (閉じて世代を進めた空の札) と `DropDeadWatcher(advanceGen)` (世代を進めるときは札も降ろす) を置き、git log と issues の見張りの手組みを置き換えた。フィールドは別 package のテストが書くので公開のまま、本番のコードが札と世代を書く形 (代入・++・`fswatch.Chain{...}`・Chain を埋め込む型を Chain なしで組み立てる) を `TestWatchChainStateWrittenOnlyByItsMethods` が落とす
+  - 2 `MaxDiffLines` を gitdata へ移し、`gitdata.DiffDisplayLines` をコミットの diff と status viewer のプレビューが共有する
+  - 3 git の実行を末端の `internal/gitexec` へ、見張りを `internal/fswatch` へ出した。`go list -deps ./internal/gitdata` から bubbletea・fsnotify・foreground が消えた。depguard の `data-layer-no-ui` (gitdata・gitexec・app・term の直接の import に bubbletea・fsnotify・foreground・extcmd・fswatch を禁じる) で固定。直接の import しか見ないので、gitdata が module 内の別の package を新しく import したらそこも足す (規則の注記)
+  - 4 起動時の画面の復元 (`restoreScreensCmd`) は同期で開ける画面を優先順に試し、`fullScreenActive()` で開いたところで止める。issues は repo の照合が非同期なので最後に回し、記憶があるだけで F・L が譲らない。照合が着く前にキーが押されていたら復元を捨てる (`keyed`)。doctor の誤った注記は消した
+  - 5 `EditorClosedMsg` に起動元 (`extcmd.ExecOrigin`: エディタ / F / L) を載せ、main が起動元で振り分ける。filer と lan の `execPending` は消した
+  - 6 doctor の知らせに重さを持たせ (`refuse` / `TakeNotice`)、main は `deliverNotice` へ流す。filer・lan の開けなかった理由は `DrainNotices` がエラーとして出す (`TakeOpenErr` を消した)
+  - 7 usageview の `codexInstalled()` を 1 つにした
+- 変異: 札と世代の外し方・構造検査・depguard・復元の優先順位と割り込み・起動元の振り分け・知らせの重さなど 20 本超がすべて red
+- レビュー: codex の実装レビュー 3 周 + opus のサブエージェント 1 周 (codex の週の枠が切れた後)
