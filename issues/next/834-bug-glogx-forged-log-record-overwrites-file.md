@@ -1,1 +1,0 @@
-../834-bug-glogx-forged-log-record-overwrites-file.md
