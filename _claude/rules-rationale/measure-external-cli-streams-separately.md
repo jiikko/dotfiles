@@ -54,3 +54,14 @@ seam を全部差し替えたテストは「実測表どおりに書いたコー
 - 収束したのは、本文を追記する直前の log の長さを driver 自身が `<label>.stderr_bytes` に控え、そこで切ってから
   「最後の ERROR の塊が全部上限の行」を見る形 (bin/codex-fanout の usage_limit_line)。字面の区切りは引用されうるので、境界は書いた側が持つ
 
+
+## 使っていない同種の資源で隔離する (retro 845, 2026-10-19)
+
+- issue 826 の 4 (lan-manager が networksetup の「手動 (ルーターだけ DHCP)」と BOOTP を読む) は、「該当するサービスが無く、
+  `-setmanualwithdhcprouter` を打つと本物の設定を変える」として、作った値の fixture のまま未実測で done になっていた
+- 実際には、使っていない Thunderbolt Bridge (DHCP・IP 無し) を `-setmanualwithdhcprouter … 169.254.77.7` → `-setbootp` と切り替えて
+  `-getinfo` を読み、`-setdhcp` で戻して前後の `-getinfo` を diff し、一致を確かめられた。sudo は要らず、数十秒で済んだ
+- 実出力には、作った値にあった `Subnet mask:` / `Router:` の行が無かった。実装はその行に頼っていなかったので不具合にはならなかったが、
+  作った値が実出力と違う形で書かれていたことは測るまで分からなかった
+- 「ネットワーク設定は隔離できない」を CLI 単位で決めると、資源単位で隔離できる場合を落とす。条件 (今使っていない・1 コマンドで戻せて
+  前後を diff できる・他の資源に触れない) を満たすかで判断する
