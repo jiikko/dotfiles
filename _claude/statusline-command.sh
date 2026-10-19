@@ -212,6 +212,9 @@ now=$(date +%s)
 #   transcript の更新は応答を伴わないこと (ローカルのコマンド・送信した直後・中断やエラーで応答が来なかった送信) もあるので、
 #   rl_fresh でも前回の応答の古い値を書くことがある。次に応答を受け取ったセッションが書き直すまでの間 (最長は
 #   statuslineMaxAge で予備へ落ちるまで) だけずれる。張り付く旧規則より、ずれが自然に消える方を採る。
+# writers には窓ごとに、その値を書いたセッション (by: transcript のパス。設定ディレクトリとセッション ID が分かる)・
+#   その Claude Code の版・書いた時刻を残す。値の出所が疑わしいとき (サーバの値と食い違う) に、どのセッションが書いたかを
+#   後から辿るため (2026-10-19 の 7d=99% は出所を特定できなかった)。値を書き換えなかった窓は前の記録を引き継ぐ。
 # tmp + mv で読み手に書きかけを見せない。失敗しても描画は続ける。
 rl_same_window=600
 rl_newer() {  # rl_newer <新 %> <新リセット> <旧 %> <旧リセット> → 採る観測なら 0 (次の窓以外は rl_fresh のときだけ)
@@ -229,7 +232,7 @@ rl_newer() {  # rl_newer <新 %> <新リセット> <旧 %> <旧リセット> →
 }
 write_rate_limits() {
   [ -n "$five_pct$seven_pct" ] || return 0
-  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/glog" fr sr ver
+  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/glog" fr sr ver by me w5="null" w7="null"
   local f old="" o5p="" o5r="" o7p="" o7r="" changed="" rl_fresh=""
   f="$dir/claude-rate-limits.json"
   if [ -n "$transcript" ] && [ "$transcript" -nt "$f" ]; then rl_fresh=1; fi
@@ -237,6 +240,11 @@ write_rate_limits() {
   to_int "$seven_reset"; sr=$REPLY
   # JSON の文字列へそのまま入れるので、版の形 (数字・英字・. + -) 以外は捨てる
   case "$cc_version" in ''|*[!0-9A-Za-z.+-]*) ver="" ;; *) ver=$cc_version ;; esac
+  # by も JSON の文字列へそのまま入れるので、パスの形 (英数字・. _ / + -) でなければセッション ID、それも違えば空にする
+  by=$transcript
+  case "$by" in ''|*[!0-9A-Za-z._/+-]*) by=$session_id ;; esac
+  case "$by" in *[!0-9A-Za-z._/+-]*) by="" ;; esac
+  printf -v me '{"by":"%s","version":"%s","at":%s}' "$by" "$ver" "$now"
   [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 0
   [ -f "$f" ] && { IFS= read -r old < "$f"; } 2>/dev/null
   local re='^\{"observedAt":[0-9]+,"five_hour":\{"used_percentage":([0-9]+|null),"resets_at":([0-9]+|null)\},"seven_day":\{"used_percentage":([0-9]+|null),"resets_at":([0-9]+|null)\}'
@@ -245,16 +253,19 @@ write_rate_limits() {
     [ "$o5p" = null ] && o5p=""; [ "$o5r" = null ] && o5r=""
     [ "$o7p" = null ] && o7p=""; [ "$o7r" = null ] && o7r=""
   fi
-  if rl_newer "$five_pct" "$fr" "$o5p" "$o5r"; then o5p=$five_pct o5r=$fr changed=1; fi
-  if rl_newer "$seven_pct" "$sr" "$o7p" "$o7r"; then o7p=$seven_pct o7r=$sr changed=1; fi
+  # 前の記録は自分が書く形と完全に一致するときだけ引き継ぐ (形の違うものをそのまま書き戻すと JSON を壊しうる)
+  local wre='"writers":\{"five_hour":(null|\{"by":"[0-9A-Za-z._/+-]*","version":"[0-9A-Za-z.+-]*","at":[0-9]+\}),"seven_day":(null|\{"by":"[0-9A-Za-z._/+-]*","version":"[0-9A-Za-z.+-]*","at":[0-9]+\})\}'
+  if [[ $old =~ $wre ]]; then w5=${BASH_REMATCH[1]} w7=${BASH_REMATCH[2]}; fi
+  if rl_newer "$five_pct" "$fr" "$o5p" "$o5r"; then o5p=$five_pct o5r=$fr w5=$me changed=1; fi
+  if rl_newer "$seven_pct" "$sr" "$o7p" "$o7r"; then o7p=$seven_pct o7r=$sr w7=$me changed=1; fi
   # 値は同じでも、このセッションにファイルより後のやり取りがあれば observedAt だけ進める (上の注記)
   if [ -n "$rl_fresh" ]; then changed=1; fi
   [ -n "$changed" ] || return 0
   if [ -z "$ver" ] && [[ $old =~ \"version\":\"([0-9A-Za-z.+-]+)\" ]]; then ver=${BASH_REMATCH[1]}; fi
   local tmp="$f.tmp.$$"
   # { } 2>/dev/null で包む: `> "$tmp" 2>/dev/null` だとリダイレクトは左から処理され、tmp を開く失敗が stderr に出る
-  if ! { printf '{"observedAt":%s,"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s},"version":"%s"}\n' \
-    "$now" "${o5p:-null}" "${o5r:-null}" "${o7p:-null}" "${o7r:-null}" "$ver" > "$tmp"; } 2>/dev/null ||
+  if ! { printf '{"observedAt":%s,"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s},"version":"%s","writers":{"five_hour":%s,"seven_day":%s}}\n' \
+    "$now" "${o5p:-null}" "${o5r:-null}" "${o7p:-null}" "${o7r:-null}" "$ver" "$w5" "$w7" > "$tmp"; } 2>/dev/null ||
     ! mv -f "$tmp" "$f" 2>/dev/null; then
     rm -f "$tmp" 2>/dev/null
   fi

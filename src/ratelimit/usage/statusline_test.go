@@ -401,3 +401,101 @@ func TestStatuslineWriterFreshFixesShiftedReset(t *testing.T) {
 		t.Fatalf("ずれたリセット時刻の値を直さない: 7d %d / %d", *st.SevenDay.UsedPercentage, *st.SevenDay.ResetsAt)
 	}
 }
+
+// statuslineWriters は書き手が窓ごとに残す「値を書いたセッション」(読み手は使わない。出所を後から辿るための記録)。
+type statuslineWriters struct {
+	Writers struct {
+		FiveHour *struct {
+			By      string `json:"by"`
+			Version string `json:"version"`
+			At      int64  `json:"at"`
+		} `json:"five_hour"`
+		SevenDay *struct {
+			By      string `json:"by"`
+			Version string `json:"version"`
+			At      int64  `json:"at"`
+		} `json:"seven_day"`
+	} `json:"writers"`
+}
+
+func readWriters(t *testing.T, cache string) statuslineWriters {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(cache, "glog", statuslineFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var w statuslineWriters
+	if err := json.Unmarshal(b, &w); err != nil {
+		t.Fatalf("%v: %s", err, b)
+	}
+	return w
+}
+
+// 値を書き換えた窓には書いたセッション (transcript のパス)・版・時刻を残し、書き換えなかった窓は前の記録を引き継ぐ。
+// observedAt だけ進める書き込みでは記録を変えない。読み手は記録が付いたファイルも読める。
+func TestStatuslineWriterRecordsWriters(t *testing.T) {
+	now := time.Now()
+	r5, r7 := now.Add(time.Hour).Unix(), now.Add(48*time.Hour).Unix()
+	cache := t.TempDir()
+	a := freshTranscript(t)
+	runStatusline(t, cache, fmt.Sprintf(`{"transcript_path":%q,"version":"2.1.300","rate_limits":{"five_hour":{"used_percentage":10,"resets_at":%d},"seven_day":{"used_percentage":20,"resets_at":%d}}}`, a, r5, r7))
+	w := readWriters(t, cache)
+	if w.Writers.FiveHour == nil || w.Writers.FiveHour.By != a || w.Writers.FiveHour.Version != "2.1.300" || w.Writers.FiveHour.At == 0 ||
+		w.Writers.SevenDay == nil || w.Writers.SevenDay.By != a {
+		t.Fatalf("書いたセッションを残さない: %+v", w.Writers)
+	}
+	if readStatusline(filepath.Join(cache, "glog"), time.Now()) == nil {
+		t.Fatal("記録の付いたファイルを読み手が読めない")
+	}
+
+	// 別のセッションが 7d だけを書き換える: 5h の記録は a のまま
+	b := freshTranscript(t)
+	runStatusline(t, cache, fmt.Sprintf(`{"transcript_path":%q,"version":"2.1.303","rate_limits":{"five_hour":{"used_percentage":10,"resets_at":%d},"seven_day":{"used_percentage":21,"resets_at":%d}}}`, b, r5, r7))
+	w = readWriters(t, cache)
+	if w.Writers.FiveHour == nil || w.Writers.FiveHour.By != a || w.Writers.SevenDay == nil || w.Writers.SevenDay.By != b || w.Writers.SevenDay.Version != "2.1.303" {
+		t.Fatalf("書き換えた窓だけ記録を変える: 5h %+v / 7d %+v", w.Writers.FiveHour, w.Writers.SevenDay)
+	}
+
+	// 値が同じで observedAt だけ進める書き込み (別のセッション c) は記録を変えない
+	c := freshTranscript(t)
+	runStatusline(t, cache, fmt.Sprintf(`{"transcript_path":%q,"rate_limits":{"five_hour":{"used_percentage":10,"resets_at":%d},"seven_day":{"used_percentage":21,"resets_at":%d}}}`, c, r5, r7))
+	w = readWriters(t, cache)
+	if w.Writers.FiveHour.By != a || w.Writers.SevenDay.By != b {
+		t.Fatalf("値を書き換えていないのに記録を変えた: 5h %+v / 7d %+v", w.Writers.FiveHour, w.Writers.SevenDay)
+	}
+}
+
+// 形の違う記録 (壊れた・手で書いた) はそのまま書き戻さず null にする (JSON を壊さない)。
+func TestStatuslineWriterDropsMalformedWriters(t *testing.T) {
+	now := time.Now()
+	r5, r7 := now.Add(time.Hour).Unix(), now.Add(48*time.Hour).Unix()
+	cache := t.TempDir()
+	path := writeRaw(t, cache, now.Add(-10*time.Minute), 10, r5, 20, r7)
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = []byte(strings.TrimSuffix(strings.TrimSpace(string(body)), "}") + `,"writers":{"five_hour":{"by":"x\",\"evil\":\"1","version":"","at":1},"seven_day":null}}` + "\n")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, now.Add(-10*time.Minute), now.Add(-10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	runStatusline(t, cache, fmt.Sprintf(`{"transcript_path":%q,"rate_limits":{"seven_day":{"used_percentage":21,"resets_at":%d}}}`, freshTranscript(t), r7))
+	w := readWriters(t, cache)
+	if w.Writers.FiveHour != nil || w.Writers.SevenDay == nil {
+		t.Fatalf("形の違う記録を引き継いだ / 書いた窓を残さない: 5h %+v / 7d %+v", w.Writers.FiveHour, w.Writers.SevenDay)
+	}
+}
+
+// パスの形でない transcript (引用符・改行など) は記録に入れない (JSON を壊さない)。
+func TestStatuslineWriterSanitizesWriter(t *testing.T) {
+	now := time.Now()
+	cache := t.TempDir()
+	runStatusline(t, cache, fmt.Sprintf(`{"transcript_path":"/x/a\"b.jsonl","session_id":"SID-1","rate_limits":{"seven_day":{"used_percentage":21,"resets_at":%d}}}`, now.Add(48*time.Hour).Unix()))
+	if w := readWriters(t, cache); w.Writers.SevenDay == nil || w.Writers.SevenDay.By != "SID-1" {
+		t.Fatalf("パスの形でない transcript の代わりにセッション ID を残さない: %+v", w.Writers.SevenDay)
+	}
+}
+

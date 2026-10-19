@@ -20,12 +20,14 @@ Claude Code (`/usage`) と codex (app-server の rateLimits) の利用枠 (5h / 
 - 🚨 **Claude の枠の主な出所は statusline が書き出す `~/.cache/glog/claude-rate-limits.json`** (`usage/statusline.go`、issue 627)。
   Claude Code が推論の応答ヘッダで受け取り statusline の入力に載せる `rate_limits` を、`_claude/statusline-command.sh` の
   `write_rate_limits` が書く。サーバを余計に叩かない。7d(Fable) は来ないので出ない
-  - 🚨 statusline は送信が無くても `refreshInterval` (60 秒) ごとに描画し、そのたびに最後に受け取った古い値が来る。書き手は窓ごとに
+  - 🚨 statusline は送信が無くても `refreshInterval` (60 秒) ごとに描画し、そのたびに最後に受け取った古い値が来る。書き手は
     窓ごとに、リセット時刻が後の観測 (次の窓) は採り、同じ窓の値は transcript がファイルより新しいセッション (書いた後に
     やり取りがあった) のものだけを採る。同じ窓を「使用率の高い方」で比べると、一度入った高すぎる値がリセットまで下がらない
     (2026-10-19 に 7d が 99% のまま残った。今の値は 38%)。`observedAt` は
     「誰かが新しい値を受け取った時刻」で、15 分新しい値が来なければ下の予備へ落ちる (pro-con の PG は statusline を走らせないので、
     PG だけが動いている間は予備のサーバの値で見る)
+  - 値がサーバ (`claude -p /usage`) と食い違うときは、`jq .writers ~/.cache/glog/claude-rate-limits.json` で窓ごとに
+    その値を書いたセッション (`by`: transcript のパス。設定ディレクトリとセッション ID が分かる)・版・時刻を見る。読み手は使わない
 - `claude -p /usage` は上のファイルが無いか古いときだけの予備で、全プロセス共有のゲート (`usage.FetchShared`、`usage/shared.go`)
   越しにしか起こさない。1 回ごとにサーバの `/api/oauth/usage` を叩き、これは強く rate limit される (glogx が 60 秒ごとに取ったら
   17 回目で 429。CLI は 429 をプロセスをまたいで覚えないので、起こせば毎回叩く。対話の `/usage` が 429 でも見えるのは応答ヘッダの値で
