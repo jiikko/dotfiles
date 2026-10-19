@@ -6,4 +6,80 @@
 
 ## 概要
 
-管理対象の相手の Bonjour 名 (`<host>.local`) と有線の名前 (`<host>.wired.local`) ごとに、名前解決 → ping → ssh (22 番) の口を確かめ、画面 (詳細カードのキー) と CLI (`mac-lan-manager ping`) で出す。本文は反証レビューの後に入れる。
+管理対象の相手の Bonjour 名 (`<host>.local`) と有線の名前 (`<host>.wired.local`) ごとに、名前解決 → ping → ssh (22 番) の口を確かめ、
+画面 (詳細カード・一覧のキー `p`) と CLI (`mac-lan-manager ping`) で出す (ユーザー選定 2026-10-20: 対象は「管理対象の名前ごと」、入口は「画面と CLI の両方」)。
+
+## なぜ (起点の実例 2026-10-20)
+
+m2macmini の有線を備え付けの LAN から USB-C のアダプタへ替えたら、新しいサービス「USB 10/100/1000 LAN」は DHCP → 169.254.48.172 になった
+(固定 IP はサービスごとの設定で、前のサービスにしか付いていない。`dump --peer 192.168.50.7` で相手から読んだ)。ところが画面と dump は
+`wired_ok: true` (初期設定済み) のまま。有線の名前を広告する LaunchAgent が、その IP を持つ I/F が無くなった後も
+`m2macmini.wired.local → 192.168.100.12` を広告し続け、今の判定 (wiredname.go の名前解決だけ) は「引ける」で OK と読む。
+air5 から 192.168.100.12 / 169.254.48.172 のどちらにも ping は 3/3 損失。**名前が引けることと届くことは別**で、今は届くかを確かめる手段が無い。
+
+## 設計
+
+### 確かめる中身 (package `reach`。プロセスを起こす口は呼び出し側が渡す)
+
+- 名前ごとに: 解決 (Options.LookupHost と同じ `dscacheutil`。IPv4 だけ) → 解決した IP ごとに ping と ssh の口を並行に確かめる
+- ping: `/sbin/ping -n -q -c 3 -i 0.2 -t 3 <IP>` (絶対パス)。判定は stdout の統計行 (`N packets transmitted, M packets received`) で行い、rc では行わない
+  (実測 2026-10-20 macOS 26.7: 届く = rc 0、届かない = rc 2 で stdout に統計がある、名前を引けない = rc 68 で stdout 空・stderr に理由)。
+  統計行が読めない終わり方 (起こせない・統計が無い) は「測れない」で、「届かない」と分ける。往復は `round-trip min/avg/max/stddev` の avg
+- ssh の口: TCP で 22 番に繋がるか (Go の net.Dialer、上限 2 秒。プロセスは起こさない)。鍵で入れるかは見ない (`dump --peer` の担当)
+- 「届く」= ping が 1 つでも返る **か** ssh の口が開く (macOS のステルスモードは ping に応えない。ping だけで判定すると届く相手を届かないと言う)
+- 有線の名前には、一覧の内部 IP と違う IP に引けたら「内部 IP と違う」を付ける (wiredname.go の wiredMissing と同じ見方)
+- 確かめるのは管理対象の相手だけ (この Mac・未管理は断る)。有線の名前は内部 IP が固定の行だけ (wiredNames と同じ条件)
+
+### 画面
+
+- `p` (一覧の行・詳細のパネル): 裏で確かめ、詳細カードに「疎通」の行を出す (名前ごとに 1 行: 名前 → IP ごとに ping の往復 / 損失・ssh の口)。
+  帯域を使わず数秒で終わるので確認の板は通さない (t との違い)。同時に 1 本 (確認中に p を押したら断る)。結果は時刻つきで覚え、古い値を今の値と読ませない
+- Busy に含める (tick で取り込む)。glogx の板を閉じたら取り消す (stopSpeed と同じ所)
+
+### CLI
+
+- `mac-lan-manager ping [--json] [--wait 8s] [<ホスト名か別名>...]`。相手の選び方は speedtest と同じ (pickTarget を共通にする)。
+  終了コード 0 = 確かめた名前が全部届く / 1 = 届かない名前・測れない名前があった / 2 = 引数の誤り・管理対象に無い相手 / 130 = 止められた
+
+## 対応しないこと (この issue では)
+
+- `wired_ok` / 一覧の `!` の判定に疎通を混ぜない (判定の意味が変わり、名前を引くたびに ping を打つことになる)。上の実例の誤判定は別 issue に切り出す
+- 169.254 の相手に有線のどの I/F から届くか (送る I/F の選択) は見ない
+
+## 関連ファイル
+
+- `src/mac-lan-manager/lanmgr/wiredname.go` (wiredCheck / wiredNames)、`lanmgr/speed.go` (手本: 裏で走らせて取り込む・カードの行)、`speed.go` (CLI の手本・pickTarget)、`live/live.go` (lookupHost)
+
+## 進捗
+
+- [x] 設計の反証レビュー (sonnet の事実確認 1 本・opus の敵対的レビュー 1 本。codex は週の枠が 100% で使えなかった)
+- [x] package reach (解決・ping の統計の読み取り・ssh の口) とテスト (testdata は本物の ping の出力) — 「管理対象の名前ごとに疎通を確かめる」
+- [x] 画面の p と詳細カードの行 — 同上
+- [x] CLI の ping — 同上
+- [x] README / ? のキー一覧 / src/PACKAGES.md — 同上、「疎通の確認の敵対的レビューを直す」
+- [x] 実機 (2026-10-20、air5 から): `ping` は rc=1。m2macmini.local は 192.168.50.7 (Wi-Fi) に ✓・169.254.48.172 に届かない、
+  m2macmini.wired.local → 192.168.100.12 は ✗ (ping 0/3・22 番 i/o timeout)。ms.local / ms.wired.local は全部 ✓ (有線 0.5ms)。
+  Go からの 22 番への TCP はこの端末から起動して LAN 内に通った (ローカルネットワークの許可で落ちる形は出ていない)
+- [ ] 画面の p の目視 (詳細カードの「疎通」の行)。未確認
+
+### レビューの決着
+
+設計 (反映済み): CLI の相手は ssh の拒否を含む SpeedTargets を流用せず ReachTargets を別に作る / p を Binds・needsNet・rowKeys・
+detailKeys・案内・? に足す / Close で取り消す / dscacheutil は知らない名前でも rc 0・空を返すので空 = 引けない / Bonjour の走査の
+失敗は rc=1 / 引いた IP は netip で IPv4 に揃えて 127/8・0.0.0.0・マルチキャスト・255.255.255.255 を外す (揃えた後で重複も外す) /
+`+N duplicates` 付きの統計も読む (作った値でテスト) / 止める合図を結果より先に見る / 「本人かは見ない」と usage と README に書く。
+
+実装 (反映済み): src/PACKAGES.md の漏れ (P1) / Ctrl-C で goroutine の cancel より先に check が戻る競合 (P2。stop を直接見る) /
+CLI の通らない Refusal の分岐を消す / 詳細カードの時刻に日付。
+
+記録だけ (直していない。再提起には実測を添える):
+- この Mac 自身の IP を外していない: 古い有線の広告がこの Mac の今の IP を指すと「✓ 届く」になる (推測。起きた実例は無い)
+- サブネットのブロードキャスト (例 192.168.100.255) を通す: macOS の既定はブロードキャストの ping に応えないので実害は推測
+- 名前 1 つにつき IP は 4 つまで: dscacheutil が 5 つ以上返す実例は無い
+- 名前引きの dscacheutil は PATH 経由 (live/live.go の既存の lookupHost。ping だけ絶対パス)
+- `ping mini --json` は flag の仕様で "--json" を名前として読む (speedtest と同じ)
+
+### 切り出し候補 (未起票)
+
+- 「有線の名前 ✓ 引ける」/ `wired_ok` / 一覧の `!` が、名前を引けるだけで届かない状態を「済み」と読む (起点の実例)。
+  初期設定の観測 (相手の有線のサービスが manual か) と突き合わせるか、`!` の判定に疎通を足すかは判断が要る
