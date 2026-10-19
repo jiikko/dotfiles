@@ -326,7 +326,7 @@ func ParseServiceOrder(out string) []Service {
 }
 
 // 方式 (`networksetup -getinfo` の "… Configuration" の行。4 つの文字列は /usr/sbin/networksetup の本体に在ることを確かめた。
-// 手動 (ルーターだけ DHCP) と BOOTP の実出力はこの Mac では採れていない)。
+// 手動 (ルーターだけ DHCP) と BOOTP は未接続のサービスで採った実出力を testdata に置いた。接続したときの出力は未採取)。
 const (
 	MethodDHCP             = "DHCP"
 	MethodManual           = "manual"

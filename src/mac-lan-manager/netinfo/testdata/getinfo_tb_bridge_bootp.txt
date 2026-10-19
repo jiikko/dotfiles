@@ -1,0 +1,4 @@
+BOOTP Configuration
+IPv6: Automatic
+IPv6 IP address: none
+IPv6 Router: none

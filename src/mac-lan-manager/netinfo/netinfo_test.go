@@ -50,21 +50,15 @@ func TestParseGetInfo(t *testing.T) {
 		// 未接続のサービスは IPv4 の Router 行を出さない。"IPv6 Router: none" の行に当ててはいけない
 		{"getinfo_tb_bridge.txt", "DHCP", "", ""},
 		{"getinfo_wifi.txt", "DHCP", "192.168.50.250", "192.168.50.1"},
+		// 手動 (ルーターだけ DHCP) と BOOTP は、使っていない Thunderbolt Bridge を切り替えて採った実出力 (2026-10-19)。
+		// ルーターだけ DHCP の形は未接続だと Subnet mask / Router の行を出さない。"" に読むと、相手を固定 IP にする手順が「戻す方式が分からない」で止まる
+		{"getinfo_tb_bridge_manual_dhcp_router.txt", MethodManualDHCPRouter, "169.254.77.7", ""},
+		{"getinfo_tb_bridge_bootp.txt", MethodBOOTP, "", ""},
 	}
 	for _, c := range cases {
 		m, ip, r := ParseGetInfo(fixture(t, c.file))
 		if m != c.method || ip != c.ip || r != c.router {
 			t.Errorf("%s: got (%q, %q, %q), want (%q, %q, %q)", c.file, m, ip, r, c.method, c.ip, c.router)
-		}
-	}
-	// 手動 (ルーターだけ DHCP) と BOOTP は作った値 (1 行目の文字列は networksetup の本体に在る。この Mac には該当するサービスが無く実出力は採れていない)。
-	// "" に読むと、相手を固定 IP にする手順が「戻す方式が分からない」で止まる
-	for out, want := range map[string]string{
-		"Manually Using DHCP Router Configuration\nIP address: 192.168.100.12\nSubnet mask: 255.255.255.0\nRouter: (null)\n": MethodManualDHCPRouter,
-		"BOOTP Configuration\nIP address: 192.168.100.12\nSubnet mask: 255.255.255.0\nRouter: (null)\n":                      MethodBOOTP,
-	} {
-		if m, ip, _ := ParseGetInfo(out); m != want || ip != "192.168.100.12" {
-			t.Errorf("%q: got (%q, %q), want %q", strings.SplitN(out, "\n", 2)[0], m, ip, want)
 		}
 	}
 }

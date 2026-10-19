@@ -1,0 +1,5 @@
+Manually Using DHCP Router Configuration
+IP address: 169.254.77.7
+IPv6: Automatic
+IPv6 IP address: none
+IPv6 Router: none

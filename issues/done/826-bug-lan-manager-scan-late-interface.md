@@ -62,7 +62,7 @@
   **再開の trigger**: 相手の 2 本の I/F が同じ網に居る構成で `dns-sd -G v4 <host>` が同じ I/F の番号で 2 行返すのを見たとき (推測で Addrs の形を変えない)
 - [x] 4 方式: "Manually Using DHCP Router Configuration" / "BOOTP Configuration" を MethodManualDHCPRouter / MethodBOOTP と読み、固定の判定 (netinfo.FixedIP)・
   戻し方 (setup.Restore.Line / Validate)・確認の板の表示名 (netinfo.MethodLabel) に通した。2 つの文字列は `strings /usr/sbin/networksetup` で本体に在ることを確かめた。
-  **実出力は未採取** (該当するサービスが無く、`-setmanualwithdhcprouter` を打つと本物の設定を変えるので打っていない。テストの入力は作った値と書いてある)
+  2026-10-19 実出力を採った: 使っていない Thunderbolt Bridge (DHCP・IP 無し) を `-setmanualwithdhcprouter … 169.254.77.7` → `-setbootp` と切り替えて `-getinfo` を読み、`-setdhcp` で戻して前後の `-getinfo` が一致することを確かめた (sudo 無しで rc=0)。1 行目は想定どおり `Manually Using DHCP Router Configuration` / `BOOTP Configuration`。**作った値と違ったのは、未接続だと `Subnet mask:` と `Router:` の行が無い**こと。読み取り (方式・IP) と戻し方 (IP だけ / 値なし) はマスクに頼らないので不備は無かった。テストの入力を作った値から、この実出力 (testdata の getinfo_tb_bridge_manual_dhcp_router.txt / getinfo_tb_bridge_bootp.txt) に置き換え、2 つの方式の判定を外す変異で red を確かめた。接続したサービスでの出力は未採取
 - [x] 5 台帳の行末のコメント: 緩い読み (一覧) は値・版・見出しの後ろのコメントと、引用でない値の知らない鍵を読み飛ばす。厳しい読み (書き戻し) は消えるので断る
 - 変異で red を確かめたもの: commit message に列挙 (3 つの commit。後から上がった I/F の 2 形・打つ回数・帳簿から外す・片方の I/F の Rmv・resolve の IP の無い I/F・
   -L の途中の印・印の片付け・コメントの読み・ledgerKeys・方式の読み / FixedIP / 戻し方)
