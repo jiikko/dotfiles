@@ -1018,16 +1018,8 @@ local function on_attach(client, bufnr)
   -- ジャンプ (coc: gd=定義 / gD=実装 / <C-k>=参照)
   map("n", "gd", function() tb().lsp_definitions() end, "定義へジャンプ (LSP definitions)")
   map("n", "gD", function() tb().lsp_implementations() end, "interface の実装一覧へ (LSP implementations)")
-  -- 参照検索は rg 経路と LSP 経路の両方を記録する。
-  -- 記録の失敗は握り潰される (refs_usage.append の pcall)。ここで参照を握らず都度 require
-  -- するのは、起動時に state ディレクトリへ触らないため。
-  local function usage() return require("dotfiles.refs_usage") end
-
-  -- <leader>K: rg 経路を迂回して LSP の references を引く。
-  -- rg の結果で足りなかったときの逃げ道であり、同時に「困った回数」の観測点でもある
-  -- (rg の直後に同じ語をこれで引き直すと fallback として記録される)。
+  -- <leader>K: rg 経路を迂回して LSP の references を引く (rg の結果で足りなかったときの逃げ道)。
   map("n", "<leader>K", function()
-    usage().record("lsp", vim.fn.expand("<cword>"), vim.bo[bufnr].filetype)
     tb().lsp_references()
   end, "参照元一覧を LSP で引き直す (rg の結果で足りないとき)")
 
@@ -1035,7 +1027,6 @@ local function on_attach(client, bufnr)
     local ft = vim.bo[bufnr].filetype
     local word = vim.fn.expand("<cword>")
     local action = M.references_action(ft, word, M.ruby_root_for(bufnr))
-    usage().record(action.route == "ripgrep" and "ripgrep" or "lsp", word, ft)
     if action.route == "lsp" then return tb().lsp_references() end
     tb().grep_string({
       search = action.search,
@@ -1133,7 +1124,6 @@ end
 --   効かないため、共通 capabilities を先に確定させておく必要がある。
 function M.setup(capabilities)
   setup_diagnostics()
-  require("dotfiles.refs_usage").setup()
 
   -- lspconfig の root_dir を保存してから gopls の callback を上書きする。root_dir は dotfiles
   -- 外で lspconfig と同じ検出 (module cache / stdlib の共有 client を含む) へ戻す。

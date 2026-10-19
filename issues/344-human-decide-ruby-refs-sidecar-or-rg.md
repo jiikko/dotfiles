@@ -190,11 +190,11 @@ gemspec を caching しようとするが、rbenv shim が 0.56.2 を解決し�
 
 ### 残タスク
 
-- [ ] 「定義元クラス名を含むファイルに絞る」を `<C-k>` に入れるか、ノイズを受容するかの判断（ユーザー待ち）
-- [ ] 入れる場合、絞り込みが 0 件になったときのフォールバックをどうするか
-- [ ] solargraph の再測（gemspec cache が成功する条件で）。やるかどうかも含めて未定
-- [ ] `nvim/ruby-refs-index/README.md:49` の「production の `telescope.grep_string` はタイプを絞らない」が
-      e61fc71e（rg を Ruby 系に絞った変更）で古い。`measure.rb` の rg baseline も土俵がずれている（406 行 vs production 243 行）
+- [x] 「定義元クラス名を含むファイルに絞る」を `<C-k>` に入れるか → **入れない (ノイズを受容)**。ユーザー判断 2026-10-19
+- [x] 入れる場合のフォールバック → 入れないので不要
+- [x] solargraph の再測 → **やらない**。ripgrep のまま確定したので、solargraph 経路を検討する理由が無くなった
+- [x] `nvim/ruby-refs-index/README.md` の「production はタイプを絞らない」が古い → 「当時は」に直し、今の絞り込み
+      (`M.ripgrep_reference_args`) と measure.rb の基準線のずれ (406 行 vs 243 行) を書いた。measure.rb は直さない (sidecar を作らないため)
 
 ## 関連
 
@@ -218,3 +218,19 @@ ft 未記録 11 件 (層別に使えない古い行)
   Ruby の行は 09-14 (17)・09-28 (5)・10-13 (1)・09-08 (1)・09-15 (2)。9 月末から記録が 2 行しか増えておらず、
   Ruby 以外の `kind:"lsp"` も増えていない。**Ruby の参照検索だけでなく、`<C-k>` / `<leader>K` 全体があまり押されていない**
   (= 母数不足の理由が「nvim 自体をあまり使っていない」側かもしれない)。11-09 の判定の前にこの区別をもう一度見る
+
+## 決着 (2026-10-19、ユーザー判断)
+
+**ripgrep のまま確定。sidecar は作らない。** 期限 (2026-11-09) を待たずにユーザーが決めた。
+
+- 判断材料: 10-16 の集計 (Ruby の ripgrep 18 回・LSP への引き直し 0%) は**別のマシン**で取ったもの。
+  2026-10-19 にこの issue を扱ったマシン (air5) では、記録ファイルが一度も作られていなかった
+  (`~/.local/state/nvim/` の mtime が 8/7 のまま、`dotfiles/` が無い。`find ~` でも見つからない)
+- 母数は 20 回に届いていないが、「母数不足は確定側に倒す」と決めてあり、引き直しも 0% だった
+- 記録機構を外した: `nvim/lua/dotfiles/refs_usage.lua` と `tests/nvim/test_refs_usage.sh` / `refs_usage_check.lua` を削除し、
+  `lsp.lua` の記録の呼び出し (`<C-k>`・`<leader>K`・`setup`) を外した。`<leader>K` (LSP で引き直す) の機能は残した
+- 🚨 **記録のあったマシンにはログが残っている** (`~/.local/state/nvim/dotfiles/refs_usage.jsonl`、押した語を平文で持つ)。
+  `:DotfilesRefsReset` はもう無いので、そのマシンで `rm ~/.local/state/nvim/dotfiles/refs_usage.jsonl` を打つ
+  (消す仕組みはコードに置かない。どのマシンかは記録に無い)
+- `docs/nvim-ruby-lsp.md` の「8. 未解決 / 意図的にそうしていること」に、rg 確定と絞り込みをしない理由を書いた
+

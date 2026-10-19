@@ -1,6 +1,6 @@
 # nvim での Ruby: 定義ジャンプの仕組みと、2026-09-08 の高速化
 
-対象: `nvim/lua/dotfiles/lsp.lua` / `nvim/lua/dotfiles/refs_usage.lua` / `_nviminit.lua` の lualine。
+対象: `nvim/lua/dotfiles/lsp.lua` / `_nviminit.lua` の lualine。
 経緯と実測の全量は [`issues/332`](../issues/done/332-ruby-lsp-selection-by-probe.md) /
 [`issues/334`](../issues/done/334-ruby-references-call-site-index.md)。
 ここに置くのは**触る前に知らないと壊す前提**と、**なぜその設計にしたか**。
@@ -188,7 +188,6 @@ lualine に出す。🚨 `vim.lsp.status()` は `client.progress` (`vim.ringbuf`
 
 ```
 nvim/lua/dotfiles/lsp.lua        +245 行  (コメント 118 / 空行 14 → 実コード 113 行)
-nvim/lua/dotfiles/refs_usage.lua   93 行  (計測。速度には無関係)
 nvim/ruby-refs-index/measure.rb   148 行  (プロトタイプ。どこにも繋がっていない)
 tests/nvim/*                      674 行  ← 一番多い
 ```
@@ -198,7 +197,6 @@ tests/nvim/*                      674 行  ← 一番多い
 | `M.has_gemfile` / `M.ruby_lsp_runnable` / `M.ruby_server_for` / `ruby_root_dir` | サーバ選択 | ①の本体。速い探索を書いたのではなく「正しい ruby で動くサーバを選ぶ」だけ |
 | `M.use_ripgrep_references` + `<C-k>` | 参照の振り分け | ②の本体。検索は telescope + ripgrep がやる。行き先を決めているだけ |
 | `M.progress_status` + `LspProgress` / `LspRequest` の autocmd | 待ちの表示 | 体感のみ |
-| `refs_usage.lua` | 使用実績の記録 | 無関係 (判断材料を集める) |
 | `nvim/ruby-refs-index/measure.rb` | 呼び出し側索引のプロトタイプ | **0**。計測専用で production には繋がっていない |
 
 唯一アルゴリズムらしいのは `measure.rb` (Prism の visitor で呼び出し側の逆引きを作る) だが、
@@ -231,7 +229,12 @@ tests/nvim/*                      674 行  ← 一番多い
 ## 8. 未解決 / 意図的にそうしていること
 
 - **定数の `<C-k>` は 11.5 秒のまま**。`vendor/bundle` を repo 外へ出せば約 5 秒になる
-  (参照の再パース対象の 88% がそれ)。sidecar 化するかは `:DotfilesRefsStats` の数字で決める
+  (参照の再パース対象の 88% がそれ)
+- **Ruby のメソッドの `<C-k>` は ripgrep のまま確定し、呼び出し側索引 (sidecar) は作らない** (2026-10-19、issue 344)。
+  使用実績の記録 (`refs_usage.lua`、押した語を平文で残していた) で、LSP への引き直しは 0 / 18 回 (0%) だった。
+  記録は判断が出たので外した。sidecar を再検討するなら、rg の誤ヒットで困った回数を数え直すところから
+- **`<C-k>` を定義元クラス名を含むファイルに絞らない** (2026-10-19、issue 344)。`load` の実測でノイズは 91% → 0% になるが、
+  クラス名を書かない呼び出し元 (DI・factory・`const_get`) を取りこぼす。ノイズを受容した
 - **`.erb` は solargraph の filetypes に無い**ので、solargraph を選んだ project では `.erb` に
   どのサーバも attach しない。**受け入れている**: solargraph 0.60.2 に ERB のパーサは無く
   (`lib/` で ERB を使っているのは自分のドキュメント HTML 生成 `page.rb` だけ)、`.erb` を Ruby として

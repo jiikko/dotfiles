@@ -46,9 +46,14 @@ ruby nvim/ruby-refs-index/measure.rb <workspace> <method_name> [--all-files]
 （`wrap_error` で 59%）。ありふれた名前では 9 割を超える（`account`）。
 
 🚨 **この表は 1 度誤った数字を出している**。当初は計測側だけ `--type ruby` で絞っており、
-production の `telescope.grep_string` はタイプを絞らない（`.erb` / `.yml` / `.js` も舐める）ので
+当時の production の `telescope.grep_string` はタイプを絞らなかった（`.erb` / `.yml` / `.js` も舐めた）ので
 **土俵がずれて rg のゴミを過小評価していた**（`wrap_error` は「ゴミ 0」に見えていた）。
 比較する数字は、production と同じ条件で測ること。
+🚨 **production の `<C-k>` はその後 Ruby 系のファイル (ruby・rake・jbuilder・erb・haml・slim) に絞った**
+（`nvim/lua/dotfiles/lsp.lua` の `M.ripgrep_reference_args`）。`measure.rb` の rg の基準線はこれに合わせていないので、
+今の production とは件数が合わない（ubiregi-server の `load` で measure.rb 406 行 / production 243 行。issue 344）。
+sidecar は作らないと決めた（issue 344）ので、`measure.rb` は直さずに残している。測り直すなら基準線を
+`M.ripgrep_reference_args` と同じ引数にしてから。
 
 🚨 **宣言も索引に入れること**。最初は呼び出しだけを集めたため、`def wrap_error` の行が
 「rg だけに出る」に化けて rg の誤検出を過大に見積もった（実測で踏んだ）。`references` は
