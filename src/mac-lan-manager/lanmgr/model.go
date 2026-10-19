@@ -28,6 +28,7 @@ import (
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/prefs"
+	"mac-lan-manager/reach"
 	"mac-lan-manager/setup"
 	"mac-lan-manager/speedtest"
 )
@@ -106,6 +107,8 @@ type Options struct {
 	Observe func(ctx context.Context, d setup.Dest) setup.PeerNet
 	// SpeedTest は相手との通信速度を測る (帯域を使い切るので確認の板の y の後だけ。speed.go)。now は時計。nil なら測らない
 	SpeedTest func(ctx context.Context, d setup.Dest, now func() time.Time) speedtest.Result
+	// Reach は名前ごとに疎通を確かめる (p。reach.go)。nil なら確かめない
+	Reach func(ctx context.Context, names []string) []reach.Name
 }
 
 type screen int
@@ -192,6 +195,8 @@ type Model struct {
 	speedRun        *speedRun                         // 測っている途中の通信速度 (speed.go。同時に 1 本)
 	speed           map[string]map[string]speedResult // 相手・経路ごとの最後の通信速度 (台帳の鍵 → IP → 結果)
 	speedAsk        *speedAsk                         // 経路を選ぶ板 (ovSpeed の間だけ)
+	reachRun        *reachRun                         // 疎通を確かめている途中 (reach.go。同時に 1 本)
+	reach           map[string]reachResult            // 相手ごとの最後の疎通の結果 (台帳の鍵 → 結果)
 	// wired は有線の名前を引いた結果 (台帳の鍵 → 結果。wiredname.go)。wiredCh / wiredWait は引いている途中の回
 	wired     map[string]wiredLookup
 	wiredCh   <-chan wiredResult
@@ -465,6 +470,7 @@ func (m *Model) Advance(now time.Time) {
 	m.takeObserve()
 	m.takeBG()
 	m.takeSpeed()
+	m.takeReach()
 	m.takeWired()
 	m.refreshWired()
 	m.settleProgress(true)
@@ -495,7 +501,7 @@ func (m *Model) Changed() <-chan struct{} {
 // この Mac のネットワークを裏で読んでいる間も Busy (読み終わりを Advance で取り込むため)。
 func (m *Model) Busy() bool {
 	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && m.su.ch != nil) || len(m.pending) > 0 || m.awaitingUnconf() ||
-		len(m.bg) > 0 || m.wiredWait > 0 || m.speedRun != nil
+		len(m.bg) > 0 || m.wiredWait > 0 || m.speedRun != nil || m.reachRun != nil
 }
 
 // OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定) が開いているか (glogx は横断キーも渡す)。
@@ -519,7 +525,7 @@ func (m *Model) Binds(key string) bool {
 	if m.OwnsKeys() {
 		return true
 	}
-	return slices.Contains([]string{"s", "y", "Y", "o", "O", "m", "u", "e", "c", "t", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
+	return slices.Contains([]string{"s", "y", "Y", "o", "O", "m", "u", "e", "c", "t", "p", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
 		listnav.MotionOf(key) != listnav.None
 }
 
@@ -614,6 +620,7 @@ func (m *Model) Close() {
 	m.sc = scList
 	m.stopNetLoad()
 	m.stopSpeed() // 閉じた板の裏で帯域を使い続けない
+	m.stopReach()
 	if m.scan != nil {
 		m.scan.Close()
 		m.scan = nil
@@ -1128,10 +1135,10 @@ func move(cur *int, n int, key string, rows int) bool {
 // needsNet は、この Mac のネットワークを読めるまで断るキー (最下行の案内もこの間は出さない)。初期設定 (詳細のパネルの enter) も
 // keyDetail が同じ判定 (netRefused) で断る: 読む前に開くと相手のメイン IP が分からず、宛先が台帳の有線の IP のまま閉じるまで固まった。
 // 一覧の enter (詳細のパネルを開く) は読めていなくても開ける
-var needsNet = []string{"s", "Y", "y", "O", "o", "c", "t", "space"}
+var needsNet = []string{"s", "Y", "y", "O", "o", "c", "t", "p", "space"}
 
 // rowKeys はカーソルの行の Mac に効くキー (見ていた Mac が一覧から消えた・タブに行が無いときは断る)。c はこの Mac の IP のコピーで行に効かない
-var rowKeys = []string{"s", "Y", "y", "O", "o", "t", "space", "enter", "m", "u"}
+var rowKeys = []string{"s", "Y", "y", "O", "o", "t", "p", "space", "enter", "m", "u"}
 
 // netRefused は、この Mac のネットワークを読み終えていなければ理由を知らせて true (needsNet のキーと初期設定が断る)。
 func (m *Model) netRefused() bool {
@@ -1147,7 +1154,7 @@ func (m *Model) netRefused() bool {
 }
 
 // detailKeys は詳細のパネルの中で一覧と同じに効くキー (カーソルの行の Mac への動作。パネルは開いたまま)。
-var detailKeys = []string{"s", "Y", "y", "O", "o", "t", "m", "u", "space", "?", "e"}
+var detailKeys = []string{"s", "Y", "y", "O", "o", "t", "p", "m", "u", "space", "?", "e"}
 
 // detailFollow はカーソルをパネルを開いた Mac へ戻す (見つからなければ false)。
 func (m *Model) detailFollow() bool {
@@ -1297,6 +1304,8 @@ func (m *Model) keyList(key string) Action {
 		m.openEdit(r, aliasEdit, r.alias)
 	case "t": // 通信速度を測る (speed.go。確認の板を通す)
 		m.askSpeed(r)
+	case "p": // 疎通を確かめる (reach.go。板は通さない)
+		m.startReach(r)
 	case "e": // メッセージ一覧 (msglog.go)
 		m.openLog()
 	case "u": // ssh のユーザー名 (台帳の user)。欄は台帳の値で開く (推測の名前で開くと、そのまま enter で台帳に固定された。敵対レビュー)

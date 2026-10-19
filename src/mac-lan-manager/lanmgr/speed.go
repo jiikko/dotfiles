@@ -76,11 +76,8 @@ func (m *Model) speedTarget(r row) SpeedTarget {
 // SpeedTargets は管理対象の相手を一覧の順に返す (CLI の speedtest)。この Mac のネットワークを読めていなければ nil と理由
 // (宛先の分類ができず、Wi-Fi の IP を有線として測りうる)。
 func (m *Model) SpeedTargets() ([]SpeedTarget, error) {
-	if !m.selfOK {
-		if m.selfErr != nil {
-			return nil, fmt.Errorf("この Mac のネットワークを読めない: %w", m.selfErr)
-		}
-		return nil, errors.New("この Mac のネットワークを読み終えていない")
+	if err := m.selfNetErr(); err != nil {
+		return nil, err
 	}
 	var out []SpeedTarget
 	for _, r := range m.rows() {
@@ -89,6 +86,17 @@ func (m *Model) SpeedTargets() ([]SpeedTarget, error) {
 		}
 	}
 	return out, nil
+}
+
+// selfNetErr はこの Mac のネットワークを読めていなければその理由 (CLI の speedtest / ping が相手を決める前に断る)。
+func (m *Model) selfNetErr() error {
+	if m.selfOK {
+		return nil
+	}
+	if m.selfErr != nil {
+		return fmt.Errorf("この Mac のネットワークを読めない: %w", m.selfErr)
+	}
+	return errors.New("この Mac のネットワークを読み終えていない")
 }
 
 // speedPath は測る経路の候補 1 つ (相手の IP と、それが見えたこの Mac の I/F の線)。

@@ -76,7 +76,7 @@ func runSpeed(args []string, stdout, stderr io.Writer, now func() time.Time, sto
 	if want := fs.Args(); len(want) > 0 {
 		picked := make([]lanmgr.SpeedTarget, 0, len(want))
 		for _, w := range want {
-			t, why := pickTarget(targets, w)
+			t, why := pickTarget(targets, speedID, w)
 			if why != "" {
 				fmt.Fprintln(stderr, "mac-lan-manager speedtest:", why)
 				return 2
@@ -137,31 +137,31 @@ func runSpeed(args []string, stdout, stderr io.Writer, now func() time.Time, sto
 	return rc
 }
 
-// pickTarget は名前 w の相手を選ぶ。ホスト名にちょうど一致すればそれ。そうでなければ .local を落とした名前か別名で選び、2 台以上に
+func speedID(t lanmgr.SpeedTarget) (host, name string) { return t.Host, t.Name }
+
+// pickTarget は名前 w の相手を選ぶ (speedtest と ping が共有する。id は相手の台帳の鍵と別名)。ホスト名にちょうど一致すればそれ。そうでなければ .local を落とした名前か別名で選び、2 台以上に
 // 当たれば断る (先に当たった方を黙って測ると、別名と短いホスト名が別の Mac で重なったときに違う相手を測った)。
 // ホスト名は台帳の鍵の形 (ledger.Key: 小文字・末尾の . 無し) に揃えてから比べる。
-func pickTarget(targets []lanmgr.SpeedTarget, w string) (lanmgr.SpeedTarget, string) {
+func pickTarget[T any](targets []T, id func(T) (host, name string), w string) (T, string) {
+	var zero T
 	k := ledger.Key(w)
-	if i := slices.IndexFunc(targets, func(t lanmgr.SpeedTarget) bool { return t.Host == k }); i >= 0 {
+	if i := slices.IndexFunc(targets, func(t T) bool { h, _ := id(t); return h == k }); i >= 0 {
 		return targets[i], ""
 	}
-	var hit []lanmgr.SpeedTarget
+	var hit []T
+	var hosts []string
 	for _, t := range targets {
-		if t.Name == w || strings.TrimSuffix(t.Host, ".local") == k {
-			hit = append(hit, t)
+		if h, n := id(t); n == w || strings.TrimSuffix(h, ".local") == k {
+			hit, hosts = append(hit, t), append(hosts, h)
 		}
 	}
 	switch len(hit) {
 	case 0:
-		return lanmgr.SpeedTarget{}, fmt.Sprintf("管理対象に %q が無い (台帳のホスト名か別名で指定する)", w)
+		return zero, fmt.Sprintf("管理対象に %q が無い (台帳のホスト名か別名で指定する)", w)
 	case 1:
 		return hit[0], ""
 	}
-	hosts := make([]string, len(hit))
-	for i, t := range hit {
-		hosts[i] = t.Host
-	}
-	return lanmgr.SpeedTarget{}, fmt.Sprintf("%q は %s に当たる (ホスト名で指定する)", w, strings.Join(hosts, " / "))
+	return zero, fmt.Sprintf("%q は %s に当たる (ホスト名で指定する)", w, strings.Join(hosts, " / "))
 }
 
 func printSpeed(w io.Writer, r speedReport) {

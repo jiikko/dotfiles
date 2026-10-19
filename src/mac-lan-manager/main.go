@@ -157,10 +157,22 @@ func (a *app) View() tea.View {
 	return v
 }
 
+// quietModel は画面を出さないサブコマンド (dump / speedtest / ping) の Model。操作のログ (~/Library/Logs) に reload や知らせを書かない
+// (dump は読むだけ、speedtest / ping は結果を stdout に出す)。
+func quietModel() (*lanmgr.Model, error) {
+	o, err := live.Options()
+	if err != nil {
+		return nil, err
+	}
+	o.Log = nil
+	return lanmgr.New(o), nil
+}
+
 const usage = `usage: mac-lan-manager
        mac-lan-manager dump [--json] [--wait 8s]
        mac-lan-manager dump --peer <IP> [--user <name>] [--host <Bonjour のホスト名>] [--json]
        mac-lan-manager speedtest [--json] [--wait 8s] [<ホスト名か別名>...]
+       mac-lan-manager ping [--json] [--wait 8s] [<ホスト名か別名>...]
 
 手元の Mac 同士を、ネットに繋がっていない有線の LAN (内部の網) で繋いで管理する。
 Bonjour で見えている Mac と台帳 (~/.config/mac-lan-manager/hosts.toml) の Mac を一覧にする。
@@ -174,6 +186,11 @@ dump --peer は相手を鍵だけの ssh で読み、鍵で入れるかと相手
 speedtest は管理対象の相手 (引数を渡せばその相手だけ) との通信速度を ssh 越しに 1 台ずつ測る (画面の t と同じ宛先・同じ測り方。
 上り・下り各 5 秒、その間は回線をほぼ使い切る。確認は出さない)。有線で 100 Mbps 付近なら頭打ちの疑いを出す。
 終了コード: 0 = 全部測れた / 1 = 測れない相手がいた / 2 = 引数の誤り・管理対象に無い相手 / 130 = 止められた。
+
+ping は管理対象の相手 (引数を渡せばその相手だけ) の名前 (<host>.local と、内部 IP が固定なら <host>.wired.local) ごとに、
+名前を引いて、引けた IP へ ping (3 回) と ssh の口 (22 番に TCP で繋ぐ) を確かめる (画面の p と同じ)。届く = ping が返るか 22 番が開く。
+届いた相手が本人かは見ない (同じ IP の別の機器でも届くと出る)。有線の名前が内部 IP と違う IP に引けたら知らせる。
+終了コード: 0 = 確かめた名前が全部届く / 1 = 届かない・引けない名前があった / 2 = 引数の誤り・管理対象に無い相手 / 130 = 止められた。
 `
 
 func main() {
@@ -184,26 +201,17 @@ func main() {
 			return
 		case "dump":
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-			rc := runDump(os.Args[2:], os.Stdout, os.Stderr, time.Now, ctx.Done(), func() (*lanmgr.Model, error) {
-				o, err := live.Options()
-				if err != nil {
-					return nil, err
-				}
-				o.Log = nil // dump は読むだけ: 操作のログ (~/Library/Logs) に reload や知らせを書かない
-				return lanmgr.New(o), nil
-			}, live.Observe)
+			rc := runDump(os.Args[2:], os.Stdout, os.Stderr, time.Now, ctx.Done(), quietModel, live.Observe)
 			cancel()
 			os.Exit(rc)
 		case "speedtest":
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-			rc := runSpeed(os.Args[2:], os.Stdout, os.Stderr, time.Now, ctx.Done(), func() (*lanmgr.Model, error) {
-				o, err := live.Options()
-				if err != nil {
-					return nil, err
-				}
-				o.Log = nil // 結果は stdout に出す。操作のログ (~/Library/Logs) に reload や知らせを書かない
-				return lanmgr.New(o), nil
-			}, live.SpeedTest)
+			rc := runSpeed(os.Args[2:], os.Stdout, os.Stderr, time.Now, ctx.Done(), quietModel, live.SpeedTest)
+			cancel()
+			os.Exit(rc)
+		case "ping":
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+			rc := runPing(os.Args[2:], os.Stdout, os.Stderr, time.Now, ctx.Done(), quietModel, live.Reach)
 			cancel()
 			os.Exit(rc)
 		}

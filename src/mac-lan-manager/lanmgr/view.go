@@ -169,6 +169,9 @@ func (m *Model) rowHints(r row) []keyHint {
 	if m.o.SpeedTest != nil && m.speedRun == nil && m.speedTarget(r).Refusal == "" { // askSpeed と同じ条件
 		hs = append(hs, keyHint{"t", "速度", 9})
 	}
+	if m.o.Reach != nil && m.reachRun == nil && m.reachTarget(r).Refusal == "" { // startReach と同じ条件
+		hs = append(hs, keyHint{"p", "疎通", 10})
+	}
 	return hs
 }
 
@@ -768,6 +771,7 @@ func (m *Model) detailLines(r row, width int, enterLabel string) []string {
 		}
 	}
 	lines = append(lines, m.speedLine(r, label)...)
+	lines = append(lines, m.reachLines(r, label)...)
 	if others := m.shownOthers(r); m.pf.ShowOthers && len(others) > 0 {
 		lines = append(lines, "", sDim.Render("その他の IP"))
 		for _, x := range others {
@@ -880,7 +884,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	case ovHelp:
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理 / この Mac のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"O", "Finder で smb に繋ぐコマンド (open smb://…) をコピー"}, {"o", "画面共有を開く"},
-			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "詳細 (中でもう一度 enter で初期設定)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"t", "通信速度を測る (管理対象。確認してから帯域を使う)"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
+			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "詳細 (中でもう一度 enter で初期設定)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"t", "通信速度を測る (管理対象。確認してから帯域を使う)"}, {"p", "疎通を確かめる (管理対象の名前ごとに ping と ssh の口)"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
 			{"r", "リロード"}, {"q / esc", "閉じる"}}
 		body := make([]string, 0, len(keys)+3)
 		if m.scanErr != nil { // 見出しの「✗ 探せない」の理由 (知らせは数秒で消え、glogx の中からは dump を起こせない。監査の指摘)

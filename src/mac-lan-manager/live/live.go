@@ -53,6 +53,7 @@ func Options() (lanmgr.Options, error) {
 		User:       os.Getenv("USER"),
 		Observe:    Observe,
 		SpeedTest:  SpeedTest,
+		Reach:      Reach,
 		LookupHost: lookupHost,
 		RunQuiet: func(ctx context.Context, argv []string) error {
 			_, err := RunOut(ctx, argv[0], argv[1:]...)
