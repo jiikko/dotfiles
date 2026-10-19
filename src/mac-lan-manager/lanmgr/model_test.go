@@ -998,8 +998,8 @@ func TestListTableScrollbarOnlyWhenOverflow(t *testing.T) {
 // 縦積みのとき、一覧の窓の行数 (とバーの有無) は選んだ行で変わらない。詳細カードの高さは行ごとに違う (IP が多い相手は行が増える) が、
 // それを選んだ行の分だけ引くと、カーソルを動かすだけで窓が伸び縮みし、4 件目を選んだときだけバーが出たり消えたりした。
 func TestListWindowDoesNotDependOnSelectedRow(t *testing.T) {
-	var ps []discover.Peer
-	for i := 0; i < 4; i++ {
+	ps := make([]discover.Peer, 0, 4)
+	for i := range 4 {
 		p := discover.Peer{Host: fmt.Sprintf("mac%02d.local", i), SSH: true, Addrs: map[int]string{14: fmt.Sprintf("192.168.50.%d", i+2)}}
 		if i == 3 {
 			p.VNC, p.SMB = true, true
@@ -1014,7 +1014,7 @@ func TestListWindowDoesNotDependOnSelectedRow(t *testing.T) {
 		h.keys("l")
 		var rows []int
 		var bars []bool
-		for c := 0; c < len(ps); c++ {
+		for range ps {
 			v := strings.Join(h.m.View(), "\n")
 			rows = append(rows, h.m.listRows)
 			bars = append(bars, strings.Contains(v, layout.ScrollbarThumb))
@@ -1031,8 +1031,8 @@ func TestListWindowDoesNotDependOnSelectedRow(t *testing.T) {
 
 // 初期設定は全画面に切り替えず、通常の一覧を背景に残してその上に重なる (一覧のカードを広げて内側に入れる形ではない)。
 func TestSetupOverlaysUnchangedList(t *testing.T) {
-	var ps []discover.Peer
-	for i := 0; i < 4; i++ {
+	ps := make([]discover.Peer, 0, 4)
+	for i := range 4 {
 		ps = append(ps, discover.Peer{Host: fmt.Sprintf("mac%02d.local", i), SSH: true, Addrs: map[int]string{14: fmt.Sprintf("192.168.50.%d", i+2)}})
 	}
 	view := func(w, hh int, open bool) []string {
