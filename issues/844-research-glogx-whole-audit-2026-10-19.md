@@ -22,10 +22,10 @@ test-cleanup・test-helpers / ux・general / dependency・ci・lint-from-done)�
 | 834 (P1) | 1 | git log の区切りの偽装 → `git show --output=` で上書き。同じ根の起動不能を含む |
 | 835 (P2) | 1 | doctor の削除の Item 単位の不一致 |
 | 836 (P2) | 1 | status viewer の X が確認後の変更も捨てる |
-| 837 (P2) | 1 | 非 GitHub の remote で未 push が push 済みに見える |
+| 837 (P3) | 2 | 未 push の判定を表示用の CI 状態から取る (GitHub を解決できない repo・path filter で b が断る) |
 | 838 (P2) | 4 | 失敗の理由が落ちる (push / pull・RunGitCmd・usage・status) |
-| 839 (P2/P3) | 5 | 案内・文書と動作の食い違い (doctor の y・filer の入力中・周期・README・UI ガイド) |
-| 840 (P3) | 10 | 品質系の小物 |
+| 839 (P3) | 5 | 案内・文書と動作の食い違い (doctor の y・filer の入力中・周期・README・UI ガイド) |
+| 840 (P3) | 8 (+ 却下 2) | 品質系の小物。7 (画面の記憶) と 9 (Stale の巻き戻し) は却下 |
 | 841 | 7 | 設計系 (今は正しいが増えたら壊れる構造) |
 | 842 | 17 | 検査の素通り 7・境界の未検査 6・テストの重複と古い前提 4 |
 | 843 | 8 | テスト helper の重複 |
@@ -56,7 +56,23 @@ test-cleanup・test-helpers / ux・general / dependency・ci・lint-from-done)�
 - push の境界の `origin` の表示が固定 (別の remote 名の repo)
 - `UnpushedSHAs` が失敗すると nil を返し、一覧が緑の「すべて push 済み ✓」を出す。失敗させる経路が見つからず**未確認リスク**
 
+## 反証レビューの結果 (codex gpt-6.1-sol / high、834〜840 を 1 本で)
+
+7 本とも中核 (経路・発火そのもの) は反証されなかった。訂正したもの:
+
+| issue | 指摘 | 対応 |
+|---|---|---|
+| 834 | TUI が起動する条件が要る / hex の検査は実在 SHA の偽装を止められない | 発火条件に追加。対応方針をレコード境界の修正が本命の形に組み替えた |
+| 835 | 「Chrome を終了した」はエントリ全体が blocked になり例にならない / path だけで絞ると CLI の Item (`Ref`) を取りこぼす | 例を Item 単位の guard に替えた。同意した集合を `itemKey` で上限にする方針へ |
+| 836 | 確認に入るときの指紋では、確認の前に入った変更を守れない / 実装は spec の明文 (パス, XY) どおり | 守るもの (確認中 / 画面に出していない) を分けた。仕様違反ではなく保証の強化と書き直した |
+| 837 | `hasRepo=false` は「非 GitHub」と同義でない / 非 GitHub は README で未対応と明記 / `rev-list` は既に使っている | 題を「push の判定を表示用の状態から取る」に替え P3 へ。path filter の件を別項目に |
+| 838 | 時間切れの SIGKILL も `ExitError` / `showWarning` は改行を保てない / rejected の案内は non-fast-forward だけ / `FirstLine` は呼び出し 31 | 対応方針に反映 |
+| 839 | 「Claude の値は 5 分ごと」は誤り (statusline の観測が先) / doctor の y は P3 / 221 は保留中 | 周期の見立てを訂正 (疑わしいのは U の「5分ごと」の方)。P3 へ |
+| 840 | 7 は明記された設計 / 9 は monotonic clock で発火しない / 4 の stdout の無害化は `issue_claim.sh` の `git add` を壊す / 6 は null を Check なしに誤表示する / 10 はキャッシュに当たれば取り直さない | 7・9 を却下 (9 は `usage_overlay.go` の `Stale` に理由のコメントを置いた)。4・6・10 の方針と説明を直した |
+
+841〜844 は反証レビューに通していない (refactor / test / research で、issue 規約の「主要 issue だけ通す」の外。発見そのものは main が証拠で照合済み)。
+
 ## 進捗
 
 - [x] 6 波の監査と照合
-- [ ] 834〜843 の反証レビューと訂正
+- [x] 834〜840 の反証レビューと訂正

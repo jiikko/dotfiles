@@ -21,7 +21,7 @@
    - 実測: 一致しない名前で同じコマンドを打つと `ok glogx [no tests to run]` rc=0
    - 推奨: `-v` の出力から `--- PASS: TestFrameAllocBudget` を grep し、無ければ落とす
    - 同じ step は CI で約 10.6 秒かかる (テスト本体は 0.168 秒。直前の `-race` と別の build cache になり非 race のビルドをやり直す。run 39187832311 の 02:04:22 → 02:04:32)。直すかは任意
-4. **`clock_rollback_test.go` は名前が TTL / StaleAfter / Cooldown の定数と比べる関数しか見ない** (F5)。`usageview.UsageOverlay.Stale()` (`app.UsageRefreshInterval` と比較) は対象外のまま緑 (本番側の害は 840 の 9)
+4. **`clock_rollback_test.go` は名前が TTL / StaleAfter / Cooldown の定数と比べる関数しか見ない** (F5)。`usageview.UsageOverlay.Stale()` (`app.UsageRefreshInterval` と比較) は対象外のまま緑。ただし `Stale` は monotonic clock で比べるので本番の害は無い (840 の 9 で却下)。検査の範囲の狭さとしてだけ残す
 5. **CI の部分成功のテストの fake が本物の gh と違う** (F5)。`internal/gitdata/github_test.go` の `TestFetchCIStatusesPartialErrors` の fake は err=nil で `"errors"` 入りの JSON を返すが、gh は `data` と `errors` を同時に返すとき rc≠0 になる (本番側は 840 の 6)。fake にも本物と同じ rc を返させる
 6. **AST の走査の下限が実件数から遠い** (F5)。`cache_write_discipline_test.go` は下限 40 に実測 97、`details_flags_test.go` は 40 に 97、`internal/issuesview/issues_rows_setter_test.go` は 20 に 29。対象がかなり縮んでも緑。`clock_rollback_test.go` は 8 に 8 で、方針どおり (足場の共通化は 843 の 2)
 7. **環境 skip が CI の出力から見えない** (F4。予防)。`t.Skip` が 25 行 (fsnotify を作れない 7・git が無い 4・symlink など)。手元では skip 0 件だが、CI は `-v` 無しなので skip に化けても見えない (087 の再発の形)。`go test -json` の skip 件数を照合するか、`t.Skip*` を許可リストで固定する

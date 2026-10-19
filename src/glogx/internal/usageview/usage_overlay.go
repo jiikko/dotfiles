@@ -338,6 +338,8 @@ func (o *UsageOverlay) WaitingNote(spinner string) string {
 
 // stale は今の表示が許容陳腐度 (app.UsageRefreshInterval) を超えているか。未取得も stale 扱い。
 // 非表示中はリフレッシュを止めるため、再表示 (U) のときにこれで取り直しを判断する。
+// 時計の巻き戻しのガードは置かない: fetchedAt は本番では app.TimeNow (= time.Now) で取り、Sub は両方の
+// monotonic clock で比べるので壁時計が戻っても誤判定しない。fetchedAt を永続化した時刻から作るようになったら置き直す。
 func (o *UsageOverlay) Stale() bool {
 	return o.fetchedAt.IsZero() || app.TimeNow().Sub(o.fetchedAt) >= app.UsageRefreshInterval
 }
