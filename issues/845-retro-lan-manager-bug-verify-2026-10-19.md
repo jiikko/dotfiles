@@ -47,4 +47,6 @@ lan-manager のバグ探しで 824〜826 (17 件) を起票した。別のセッ
 
 ## 進捗
 
-- [ ] 提案 A: ユーザーの判断待ち
+- [x] 提案 A: ユーザーの承認 (2026-10-19) を受けて `_claude/rules/measure-external-cli-streams-separately.md` の「副作用を隔離できる場合に限る」の項に足した。経緯は同名の rules-rationale
+  (「rules: 「測ると本物の設定を変える」で未実測にする前に…」の commit)
+- 却下 2 件・局所 1 件は上のとおり。残課題なし
