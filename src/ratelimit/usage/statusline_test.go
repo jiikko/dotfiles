@@ -498,4 +498,3 @@ func TestStatuslineWriterSanitizesWriter(t *testing.T) {
 		t.Fatalf("パスの形でない transcript の代わりにセッション ID を残さない: %+v", w.Writers.SevenDay)
 	}
 }
-
