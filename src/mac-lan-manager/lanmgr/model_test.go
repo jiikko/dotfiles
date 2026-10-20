@@ -2249,7 +2249,7 @@ func TestWiredNameUsedAsTarget(t *testing.T) {
 	if r, _ := h.m.TakeExec(); !slices.Contains(r.Argv, "vnc://m2macmini.wired.local") {
 		t.Errorf("o = %q", r.Argv)
 	}
-	// a は同じ宛先とユーザー名を SyakeScreen の URL で渡す (issue 848)
+	// a は同じ宛先とユーザー名を SyakeScreen の URL で渡す
 	if a := h.keys("a"); a != Exec {
 		t.Fatalf("a = %v", a)
 	}
@@ -2267,10 +2267,22 @@ func TestSyakeScreenURLEscapesValues(t *testing.T) {
 
 // a はユーザー名が分からない相手を断る (SyakeScreen は user の無い URL を開かない)。案内にも出さない
 func TestSyakeScreenNeedsAUser(t *testing.T) {
+	// ユーザー名が分かる相手には、最下行の候補と詳細のカードに a を案内する (下の否定の確かめが、案内の形が変わって空振りしていないことの対照)。
+	// 最下行は幅で優先度の低い項目から落とすので、描いた行ではなく候補 (rowHints) で見る
+	hasA := func(h *harness) bool {
+		return slices.ContainsFunc(h.m.rowHints(h.m.current()), func(k keyHint) bool { return k.key == "a" })
+	}
+	card := regexp.MustCompile(`o\s+開く\s+a\s+SyakeScreen`)
 	h := newHarness(t, nil, []discover.Peer{mini})
+	h.keys("l")
+	if !hasA(h) || !card.MatchString(stripView(strings.Join(h.m.View(), "\n"))) {
+		t.Errorf("ユーザー名が分かるのに a を案内しない (候補=%v)", hasA(h))
+	}
+
+	h = newHarness(t, nil, []discover.Peer{mini})
 	h.m.o.User = ""
 	h.keys("l")
-	if v := stripView(strings.Join(h.m.View(), "\n")); regexp.MustCompile(`a\s+SyakeScreen`).MatchString(v) {
+	if v := stripView(strings.Join(h.m.View(), "\n")); hasA(h) || regexp.MustCompile(`a\s+SyakeScreen`).MatchString(v) {
 		t.Errorf("ユーザー名が分からないのに a を案内した:\n%s", v)
 	}
 	h.m.TakeNotices()
@@ -3175,7 +3187,7 @@ func TestDetailPanelOpensOverListAndLeadsToSetup(t *testing.T) {
 	if !strings.Contains(last, "戻る") || !strings.Contains(last, "初期設定") {
 		t.Errorf("最下行がパネルの案内でない / パネルに覆われた: %q", last)
 	}
-	// 詳細のパネルの中でも a で SyakeScreen を開き、パネルは開いたまま (issue 848)
+	// 詳細のパネルの中でも a で SyakeScreen を開き、パネルは開いたまま
 	if a := h.keys("a"); a != Exec || !h.m.detailOpen {
 		t.Fatalf("パネルの中で a が効かない (action=%v open=%v)", a, h.m.detailOpen)
 	}
