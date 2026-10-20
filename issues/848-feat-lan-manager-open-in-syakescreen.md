@@ -1,5 +1,7 @@
 # 848 (feat): lan-manager の o で、画面共有を SyakeScreen の URL で開く
 
+> 🚨 **担当中: MacBookPro (glogx)**（2026-10-20〜）
+
 起票日: 2026-10-20
 
 ## 概要
