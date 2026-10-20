@@ -401,7 +401,8 @@ func TestStaticIPValidate(t *testing.T) {
 	}
 }
 
-func TestSuggestIP(t *testing.T) {
+// 前の IP が無ければ、帯の中で使われていない最小の番号 (.1〜.9 を飛ばす)。
+func TestPickIPLowestFree(t *testing.T) {
 	for _, c := range []struct {
 		band string
 		used []string
@@ -411,15 +412,15 @@ func TestSuggestIP(t *testing.T) {
 		{"192.168.100.0/24", []string{"192.168.100.10", "192.168.100.11", "10.0.0.1"}, "192.168.100.12"},
 		{"192.168.100.77/24", nil, "192.168.100.10"}, // 帯は頭へ揃える
 	} {
-		if got, err := SuggestIP(c.band, c.used); err != nil || got != c.want {
-			t.Errorf("SuggestIP(%s, %v) = %q, %v; want %s", c.band, c.used, got, err, c.want)
+		if got, _, err := PickIP(c.band, c.used); err != nil || got != c.want {
+			t.Errorf("PickIP(%s, %v) = %q, %v; want %s", c.band, c.used, got, err, c.want)
 		}
 	}
-	if _, err := SuggestIP("192.168.100.0/28", []string{"192.168.100.10", "192.168.100.11", "192.168.100.12", "192.168.100.13", "192.168.100.14"}); err == nil {
+	if _, _, err := PickIP("192.168.100.0/28", []string{"192.168.100.10", "192.168.100.11", "192.168.100.12", "192.168.100.13", "192.168.100.14"}); err == nil {
 		t.Error("空きが無いのに番号を返した (.15 はブロードキャスト)")
 	}
 	for _, bad := range []string{"x", "fe80::/64", "10.0.0.0/8", "192.168.1.0/31"} {
-		if _, err := SuggestIP(bad, nil); err == nil {
+		if _, _, err := PickIP(bad, nil); err == nil {
 			t.Errorf("使えない帯 %q を通した", bad)
 		}
 	}
@@ -703,5 +704,43 @@ func TestPlanBlocksBandOverlappingMain(t *testing.T) {
 		if s.ID == StepSelfStatic && !strings.Contains(s.Blocked, "メインの網") {
 			t.Errorf("帯を含むメインの網でこの Mac の固定を止めない: %+v", s)
 		}
+	}
+}
+
+// 前に振った IP が帯の中で空いていればそれを返す (アダプタを差し替えて固定し直しても IP を変えない)。使われている・帯の外・網の番号・
+// ブロードキャスト・読めないなら使われていない最小の番号。
+func TestPickIP(t *testing.T) {
+	band := "192.168.100.0/24"
+	used := []string{"192.168.100.10", "192.168.100.11", "192.168.100.13"}
+	for _, c := range []struct {
+		name, prev, want string
+		reused           bool
+	}{
+		{"前の IP が読めない", "192.168.100.13x", "192.168.100.12", false},
+		{"前の IP をもう一度振る", "192.168.100.12", "192.168.100.12", true},
+		{"前の IP が若い番号でも使う", "192.168.100.5", "192.168.100.5", true},
+		{"前の IP が大きい番号でも使う", "192.168.100.200", "192.168.100.200", true},
+		{"前の IP を他の Mac が使っている", "192.168.100.13", "192.168.100.12", false},
+		{"前の IP が帯の外", "192.168.50.7", "192.168.100.12", false},
+		{"前の IP が網の番号", "192.168.100.0", "192.168.100.12", false},
+		{"前の IP がブロードキャスト", "192.168.100.255", "192.168.100.12", false},
+		{"前の IP が無い", "", "192.168.100.12", false},
+	} {
+		got, reused, err := PickIP(band, used, c.prev)
+		if err != nil || got != c.want || reused != c.reused {
+			t.Errorf("%s: PickIP(%q) = %q, %v, %v; want %s, %v", c.name, c.prev, got, reused, err, c.want, c.reused)
+		}
+	}
+}
+
+// 前の IP の候補は先に書いたものから試す (帯の外・使われているものは飛ばす)。使用中の判定は IPv4-mapped の形も同じ IP と読む。
+func TestPickIPCandidates(t *testing.T) {
+	band := "192.168.100.0/24"
+	used := []string{"192.168.100.10", "::ffff:192.168.100.20"}
+	if got, reused, _ := PickIP(band, used, "10.0.0.5", "192.168.100.20", "192.168.100.30"); got != "192.168.100.30" || !reused {
+		t.Errorf("候補の 3 つ目 = %q, %v (1 つ目は帯の外、2 つ目は使われている)", got, reused)
+	}
+	if got, reused, _ := PickIP(band, used, "192.168.100.40", "192.168.100.30"); got != "192.168.100.40" || !reused {
+		t.Errorf("先の候補を優先しない: %q, %v", got, reused)
 	}
 }

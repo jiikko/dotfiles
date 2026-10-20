@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"mac-lan-manager/netinfo"
 )
 
 type exitError struct {
@@ -63,6 +65,10 @@ func TestObservePeerReadsNetwork(t *testing.T) {
 	}
 	if p.Service != "Thunderbolt Ethernet" || p.Method != "DHCP" || p.IP != "169.254.13.42" || p.Mask != "255.255.0.0" {
 		t.Errorf("有線のサービス = %+v", p)
+	}
+	// 全部のサービスも残す (固定し直すときに、前の IP を同じ相手の別のサービスが持っていないかを見る)
+	if !slices.ContainsFunc(p.Services, func(sv netinfo.Service) bool { return sv.Name == "Thunderbolt Ethernet" }) || len(p.Services) < 2 {
+		t.Errorf("Services = %+v", p.Services)
 	}
 	for _, argv := range *calls {
 		i := slices.Index(argv, "--")

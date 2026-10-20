@@ -1263,3 +1263,158 @@ func TestSetupConfirmNotBlockedByFailedReread(t *testing.T) {
 		t.Errorf("確認待ちの x で確認の板を出さない (断った / 古い網で別の手順の板を出した): ov=%v ask=%+v %+v", h.m.ov, h.m.ask, h.m.TakeNotices())
 	}
 }
+
+// managedSetup は台帳に内部 IP (prevLAN) 付きで載った相手 (Bonjour の IP は addrs) の初期設定を開いた状態。相手の観測は obs。
+// LAN アダプタを差し替えて、相手の新しい I/F のサービスが DHCP (169.254) になった形を作る。
+func managedSetup(t *testing.T, prevLAN string, addrs map[int]string, obs setup.PeerNet) *harness {
+	t.Helper()
+	peer := discover.Peer{Host: "m2macmini.local", Instances: []string{"kojiのMac mini"}, SSH: true, Addrs: addrs}
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: prevLAN}}, []discover.Peer{peer})
+	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet { return obs }
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("enter", "enter")
+	if h.m.sc != scSetup || h.m.su == nil {
+		t.Fatalf("Enter で初期設定の画面にならない")
+	}
+	awaitSetup(h.m)
+	setSelfStatic(h.m)
+	return h
+}
+
+// アダプタを差し替えて固定が外れた相手を固定し直すと、台帳の内部 IP (前の IP) をもう一度振る (空いている最小の IP にしない)。
+func TestPeerRefixReusesLedgerIP(t *testing.T) {
+	obs := setup.PeerNet{KeyOK: true, NetKnown: true, Service: "USB 10/100/1000 LAN", Method: "DHCP", IP: "169.254.48.172"}
+	h := managedSetup(t, "192.168.100.12", map[int]string{14: "192.168.50.7", 27: "169.254.48.172"}, obs)
+	h.keys("x")
+	if h.m.ask == nil || h.m.ask.static == nil {
+		t.Fatalf("相手の固定 IP の板が出ない: %+v", h.m.ask)
+	}
+	if got := h.m.ask.static.IP; got != "192.168.100.12" {
+		t.Errorf("固定し直す IP = %s, want 前の 192.168.100.12", got)
+	}
+	if body := strings.Join(h.m.ask.body, "\n"); !strings.Contains(body, "(前と同じ IP)") {
+		t.Errorf("板に前と同じ IP だと出ない: %s", body)
+	}
+}
+
+// 前の IP を相手がまだ Bonjour で見せている (前のアダプタが繋がったまま) なら、もう一度振らない (1 台の中で重なる)。
+func TestPeerRefixAvoidsIPStillSeen(t *testing.T) {
+	obs := setup.PeerNet{KeyOK: true, NetKnown: true, Service: "USB 10/100/1000 LAN", Method: "DHCP", IP: "169.254.48.172"}
+	h := managedSetup(t, "192.168.100.12", map[int]string{14: "192.168.50.7", 27: "192.168.100.12"}, obs)
+	h.keys("x")
+	if h.m.ask == nil || h.m.ask.static == nil {
+		t.Fatalf("相手の固定 IP の板が出ない: %+v", h.m.ask)
+	}
+	if got := h.m.ask.static.IP; got == "192.168.100.12" || got == "192.168.100.10" {
+		t.Errorf("固定し直す IP = %s (前の IP はまだ見えている・.10 はこの Mac)", got)
+	}
+}
+
+// この Mac を固定し直すときは、この Mac の有線の名前の広告に載せていた IP (前の IP) をもう一度振る。
+func TestSelfRefixReusesAdvertIP(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	h.m.selfAdvert, h.m.selfAdvertKnown = setup.NameState{Running: true, Name: "kojim3macbook-pro.wired.local", IP: "192.168.100.31"}, true
+	h.keys("x")
+	if h.m.ask == nil || h.m.ask.title != "この Mac の有線を固定 IP にする" || h.m.ask.exec == nil {
+		t.Fatalf("この Mac の固定 IP の板が出ない: %+v", h.m.ask)
+	}
+	if argv := h.m.ask.exec.Argv; len(argv) < 5 || argv[4] != "192.168.100.31" {
+		t.Errorf("固定し直す IP = %q, want 前の 192.168.100.31", argv)
+	}
+}
+
+// usbObs は前のアダプタ (Ethernet) から USB のアダプタへ差し替えた相手の観測。前のサービスは手動の 192.168.100.12 を持ったまま残る。
+// oldActive は前のアダプタが繋がったままか。
+func usbObs(oldActive bool) setup.PeerNet {
+	return setup.PeerNet{KeyOK: true, NetKnown: true, Service: "USB 10/100/1000 LAN", Method: "DHCP", IP: "169.254.48.172",
+		Services: []netinfo.Service{
+			{Name: "Ethernet", Device: "en0", Active: oldActive, IfRead: true, IP: "192.168.100.12", Method: "manual", Read: true},
+			{Name: "USB 10/100/1000 LAN", Device: "en7", Active: true, IfRead: true, IP: "169.254.48.172", Method: "DHCP", Read: true},
+			{Name: "Wi-Fi", Device: "en1", Active: true, IfRead: true, IP: "192.168.50.7", Method: "DHCP", Router: "192.168.50.1", Read: true},
+		}}
+}
+
+// 前のアダプタが繋がったままなら、Bonjour に出ていなくても前の IP は振らない (1 台の中の 2 つの I/F に同じ IP が乗る)。
+// Bonjour はこの Mac の I/F ごとに相手の IP を 1 つしか持たないので、169.254 の方だけが見えている形。
+func TestPeerRefixAvoidsIPOnActiveOldAdapter(t *testing.T) {
+	h := managedSetup(t, "192.168.100.12", map[int]string{14: "192.168.50.7", 27: "169.254.48.172"}, usbObs(true))
+	h.keys("x")
+	if h.m.ask == nil || h.m.ask.static == nil {
+		t.Fatalf("相手の固定 IP の板が出ない: %+v", h.m.ask)
+	}
+	if got := h.m.ask.static.IP; got == "192.168.100.12" {
+		t.Errorf("前のアダプタが繋がったままなのに前の IP を振った")
+	}
+	if body := strings.Join(h.m.ask.body, "\n"); !strings.Contains(body, "前の IP (192.168.100.12) は Ethernet が繋がったまま") {
+		t.Errorf("前の IP を振らない理由が板に無い: %s", body)
+	}
+}
+
+// 前のアダプタのサービスが繋がっているかを読めなかった (ssh が途中で落ちた) ときは、繋がったままと同じに振らない側に倒す。
+// I/F が無い (抜いた USB のアダプタ) なら振る。
+func TestPeerRefixUnknownOrGoneOldAdapter(t *testing.T) {
+	for _, c := range []struct {
+		name         string
+		read, gone   bool
+		wantPrevious bool
+	}{
+		{"読めない", false, false, false},
+		{"I/F が無い", false, true, true},
+	} {
+		obs := usbObs(false)
+		obs.Services[0].IfRead, obs.Services[0].IfGone = c.read, c.gone
+		h := managedSetup(t, "192.168.100.12", map[int]string{14: "192.168.50.7", 27: "169.254.48.172"}, obs)
+		h.keys("x")
+		if h.m.ask == nil || h.m.ask.static == nil {
+			t.Fatalf("%s: 相手の固定 IP の板が出ない: %+v", c.name, h.m.ask)
+		}
+		if got := h.m.ask.static.IP == "192.168.100.12"; got != c.wantPrevious {
+			t.Errorf("%s: 前の IP を振った = %v, want %v", c.name, got, c.wantPrevious)
+		}
+	}
+}
+
+// 前のアダプタを抜いている (サービスは手動の設定を持ったまま) なら前の IP を振り、両方を同時に繋がないよう板で知らせる。
+func TestPeerRefixReusesIPOfUnpluggedAdapter(t *testing.T) {
+	h := managedSetup(t, "192.168.100.12", map[int]string{14: "192.168.50.7", 27: "169.254.48.172"}, usbObs(false))
+	h.keys("x")
+	if h.m.ask == nil || h.m.ask.static == nil || h.m.ask.static.IP != "192.168.100.12" {
+		t.Fatalf("前の IP を振らない: %+v", h.m.ask)
+	}
+	body := strings.Join(h.m.ask.body, "\n")
+	if !strings.Contains(body, "Ethernet も同じ IP の設定を持つ") || strings.Contains(body, "\n\n") {
+		t.Errorf("板の本文: %q", body)
+	}
+}
+
+// 台帳の内部 IP が帯の外 (帯を設定で変えた後) なら、相手が広告していた IP を前の IP として使う。
+func TestPeerRefixFallsBackToAdvertIP(t *testing.T) {
+	obs := usbObs(false)
+	obs.Services = nil
+	obs.AdvertKnown, obs.Advert = true, setup.NameState{Running: true, Name: "m2macmini.wired.local", IP: "192.168.100.44"}
+	h := managedSetup(t, "10.9.9.9", map[int]string{14: "192.168.50.7", 27: "169.254.48.172"}, obs)
+	h.keys("x")
+	if h.m.ask == nil || h.m.ask.static == nil || h.m.ask.static.IP != "192.168.100.44" {
+		t.Fatalf("広告の IP を振らない: %+v", h.m.ask)
+	}
+}
+
+// この Mac を固定し直すとき、台帳にこの Mac の行があっても自分の前の IP を塞がない。開いている相手が試した IP は避ける
+// (その相手が戻せずに持っている IP を、この Mac が取りうる)。
+func TestSelfRefixLedgerRowAndTried(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, _ := setupHarness(t, obs)
+	h.m.selfAdvert, h.m.selfAdvertKnown = setup.NameState{Running: true, Name: "kojim3macbook-pro.wired.local", IP: "192.168.100.31"}, true
+	h.m.hosts = append(h.m.hosts, ledger.Host{Host: h.m.host, LAN: "192.168.100.31"})
+	h.keys("x")
+	if h.m.ask == nil || h.m.ask.exec == nil || h.m.ask.exec.Argv[4] != "192.168.100.31" {
+		t.Fatalf("台帳のこの Mac の行で自分の前の IP を塞いだ: %+v", h.m.ask)
+	}
+	h.keys("n")
+	h.m.tried[h.m.su.host] = map[string]bool{"192.168.100.31": true}
+	h.keys("x")
+	if h.m.ask == nil || h.m.ask.exec == nil || h.m.ask.exec.Argv[4] == "192.168.100.31" {
+		t.Errorf("開いている相手が試した IP をこの Mac に振った: %+v", h.m.ask)
+	}
+}

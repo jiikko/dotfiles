@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"subproc"
 )
 
 // testdata は 2026-10-15 にこの Mac で本物のコマンドを起こして取った出力 (MAC アドレスと IPv6 のリンクローカルの値だけ伏せた)。
@@ -517,4 +520,61 @@ func TestMethodLabel(t *testing.T) {
 			t.Errorf("MethodLabel(%q) = %q, want %q", m, got, want)
 		}
 	}
+}
+
+// ifconfig を読めた / I/F が無い (抜いた USB のアダプタ) / 読めなかった、を分ける。読めなかったときは「繋がっていない」と読ませない。
+func TestReadIfconfigOutcome(t *testing.T) {
+	base := fakeRunner(t, map[string]string{
+		"networksetup -listnetworkserviceorder":      "serviceorder.txt",
+		"networksetup -getinfo Thunderbolt Ethernet": "getinfo_tb_ethernet.txt",
+		"networksetup -getinfo Thunderbolt Bridge":   "getinfo_tb_bridge.txt",
+		"networksetup -getinfo Wi-Fi":                "getinfo_wifi.txt",
+		"ifconfig en0":                               "ifconfig_en0.txt",
+		"ifconfig -l":                                "=lo0 en0",
+	})
+	run := func(ctx context.Context, name string, args ...string) (string, error) {
+		switch strings.TrimSpace(name + " " + strings.Join(args, " ")) {
+		case "ifconfig en13": // 相手の ssh の Run は stderr を err の文に含める
+			return "", codeError{1, "exit status 1: ifconfig: interface en13 does not exist"}
+		case "ifconfig bridge0": // この Mac の RunOut は stderr を *exec.ExitError に持つ (文には出ない)
+			return "", exitOne(t, "ifconfig: interface bridge0 does not exist\n")
+		case "ifconfig en10": // ssh が途中で落ちた (起動ファイルの行が同じ語を含んでも、rc=255 は抜いたと読まない)
+			return "", codeError{255, "exit status 255: .zshenv: foo does not exist / Connection closed"}
+		}
+		return base(ctx, name, args...)
+	}
+	snap, err := Read(context.Background(), run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]bool{"en0": {true, false}, "en13": {false, true}, "bridge0": {false, true}, "en10": {false, false}}
+	for _, s := range snap.Services {
+		w, ok := want[s.Device]
+		if !ok {
+			continue
+		}
+		if s.IfRead != w[0] || s.IfGone != w[1] {
+			t.Errorf("%s: IfRead=%v IfGone=%v, want %v %v", s.Device, s.IfRead, s.IfGone, w[0], w[1])
+		}
+	}
+}
+
+// codeError は終了コードを持つエラー (相手の ssh の Run の失敗の形)。
+type codeError struct {
+	code int
+	msg  string
+}
+
+func (e codeError) Error() string { return e.msg }
+func (e codeError) ExitCode() int { return e.code }
+
+// exitOne は終了コード 1 の本物の *exec.ExitError に stderr を載せたもの (RunOut の Output() が返す形。手で組むと終了コードが -1 になる)。
+func exitOne(t *testing.T, stderr string) error {
+	t.Helper()
+	var ee *exec.ExitError
+	if err := subproc.Command("/usr/bin/false").Run(); !errors.As(err, &ee) || ee.ExitCode() != 1 {
+		t.Fatalf("/usr/bin/false が終了コード 1 の ExitError にならない: %v", err)
+	}
+	ee.Stderr = []byte(stderr)
+	return ee
 }

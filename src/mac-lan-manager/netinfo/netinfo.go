@@ -9,13 +9,14 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"os/exec"
 	"regexp"
 	"slices"
 	"strings"
 )
 
 // ParseBand は内部の網の帯 ("192.168.100.0/24") を読む。IPv4 で /16〜/28 だけ (それより広い帯は番号の割り当てで回しきれず、
-// /29 より狭い帯は setup.SuggestIP が飛ばす .1〜.9 で埋まって Mac が入らない)。帯に入るかの判定はすべて InBand を通す (文字列の前方一致と netip の 2 系統があり、"abc.def.ghi.0/24" が
+// /29 より狭い帯は setup.PickIP が飛ばす .1〜.9 で埋まって Mac が入らない)。帯に入るかの判定はすべて InBand を通す (文字列の前方一致と netip の 2 系統があり、"abc.def.ghi.0/24" が
 // 前方一致の側だけを通った)。
 func ParseBand(s string) (netip.Prefix, error) {
 	p, err := netip.ParsePrefix(s)
@@ -80,11 +81,14 @@ type Service struct {
 	Port   string // Hardware Port (I/F の種類の名前。"Wi-Fi" / "Thunderbolt Ethernet")
 	Device string // I/F の名前 ("en13")
 	Active bool   // ifconfig の status が active
-	IP     string // IPv4 (無ければ空)
-	Method string // MethodDHCP / MethodManual / MethodManualDHCPRouter / MethodBOOTP / "" (読めなかった)
-	Router string // IPv4 のルーター (無ければ空)
-	Mask   string // サブネットマスク (読めなければ空。手動の設定へ戻すときに要る)
-	Read   bool   // -getinfo を読めた (読めなければルーターの有無は分からない)
+	// IfRead は ifconfig を読めた。IfGone は I/F が無い (抜いた USB のアダプタ。サービスは設定を持ったまま残る)。どちらでもなければ
+	// 繋がっているかは分からない (Active が偽でも「繋がっていない」と読まない。相手では ifconfig を 1 本ずつ ssh で打ち、途中で落ちうる)
+	IfRead, IfGone bool
+	IP             string // IPv4 (無ければ空)
+	Method         string // MethodDHCP / MethodManual / MethodManualDHCPRouter / MethodBOOTP / "" (読めなかった)
+	Router         string // IPv4 のルーター (無ければ空)
+	Mask           string // サブネットマスク (読めなければ空。手動の設定へ戻すときに要る)
+	Read           bool   // -getinfo を読めた (読めなければルーターの有無は分からない)
 	// Disabled は無効にしたサービス ("(*)")。I/F の分類に数えない (無効にした古い設定のルーターで、本物の有線の内部 IP が消えた)
 	Disabled bool
 }
@@ -410,6 +414,19 @@ func classifyByName(dev, addr string) Kind {
 // Runner はコマンドを起こして stdout を返す (テストで差し替える)。
 type Runner func(ctx context.Context, name string, args ...string) (string, error)
 
+// ifGone は ifconfig の失敗が「I/F が無い」か (rc=1・stderr に "interface en99 does not exist"。2026-10-20 macOS 26.7 で実測。
+// LANG=ja_JP でも英語)。stderr は err の文 (相手の ssh の Run) か *exec.ExitError の Stderr (この Mac の RunOut) にある。
+// 終了コードも 1 に限る (ssh の接続の失敗 255 の stderr に相手の起動ファイルの行が混ざっても、抜いたと読まない)。
+func ifGone(err error) bool {
+	const msg = "does not exist"
+	var ec interface{ ExitCode() int }
+	if !errors.As(err, &ec) || ec.ExitCode() != 1 {
+		return false
+	}
+	var ee *exec.ExitError
+	return strings.Contains(err.Error(), msg) || (errors.As(err, &ee) && strings.Contains(string(ee.Stderr), msg))
+}
+
 // Read はこの Mac のネットワークを読む。サービスごとに getinfo と ifconfig を起こし、I/F 全部 (ifconfig -l) の IPv4 も集める。
 // 1 つのサービスが読めなくても全体は止めない (読めた所だけ埋める)。サービスの一覧そのものが読めなければ err を返す。
 func Read(ctx context.Context, run Runner) (Snapshot, error) {
@@ -426,9 +443,12 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 		if out, err := run(ctx, "ifconfig", s.Device); err == nil {
 			var addrs []string
 			s.Active, addrs = ParseIfconfig(out)
+			s.IfRead = true
 			if len(addrs) > 0 {
 				s.IP = addrs[0]
 			}
+		} else {
+			s.IfGone = s.Device != "" && ifGone(err) // Device の無いサービス (VPN など) も "interface  does not exist" で落ちる (抜いたアダプタではない)
 		}
 		out, err := run(ctx, "networksetup", "-getinfo", s.Name)
 		if err != nil {

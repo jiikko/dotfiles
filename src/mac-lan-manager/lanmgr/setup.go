@@ -6,8 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/jiikko/dotfiles/src/termsafe"
 
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
@@ -321,21 +324,29 @@ func nextStep(steps []setup.Step) (setup.Step, bool) {
 	return setup.Step{}, false
 }
 
-// usedIPs は帯の番号を決めるときに避ける IP (台帳の内部 IP・この Mac・見えている相手)。電源の切れた Mac は見えないので台帳も入れる。
-func (m *Model) usedIPs() []string {
+// usedIPsExcept は host の Mac を固定するときに避ける IP (他の Mac が持つ・持ちうる IP)。host の Mac に前に振った IP (台帳の内部 IP・
+// この起動で振った IP・試した IP・台帳から写した行の内部 IP) は数えない (固定し直すときに前の IP をもう一度振るため。setup.PickIP)。
+// host が今 Bonjour で見せている IP は数える (前のアダプタが繋がったままなら、同じ IP を新しい I/F に付けると 1 台の中で重なる。
+// Bonjour はこの Mac の I/F ごとに 1 つしか持たないので、相手のサービスの観測 (pickRefixIP) でも見る)。
+func (m *Model) usedIPsExcept(host string) []string {
 	rows := m.rows()
 	used := make([]string, 0, len(m.hosts)+len(m.self.IPs)+2*len(rows)+len(m.claimed))
-	for _, ip := range m.claimed { // この起動で割り当てた番号 (台帳に載る前の相手の新しい IP は、台帳にも Bonjour の行にもまだ無い)
-		used = append(used, ip)
+	for h, ip := range m.claimed { // この起動で割り当てた番号 (台帳に載る前の相手の新しい IP は、台帳にも Bonjour の行にもまだ無い)
+		if h != host {
+			used = append(used, ip)
+		}
 	}
 	for _, h := range m.hosts {
-		used = append(used, h.LAN)
+		if h.Host != host {
+			used = append(used, h.LAN)
+		}
 	}
 	// 他の相手に試した番号も避ける: 失敗で戻った固定 (相手の上では変わっていることがある) や、期限が切れて戻している最中・戻せなかった
 	// (電源断) 相手は、claimed にも台帳にも行にも無いまま、その番号を持ちうる (別の相手に同じ番号を出した)。
-	// 今の相手の試した番号は避けない (同じ Mac に同じ番号を出し直すのは重ならない)
-	for host, ips := range m.tried {
-		if m.su != nil && host == m.su.host {
+	// host の Mac の試した番号は避けない (同じ Mac に同じ番号を出し直すのは重ならない)。この Mac を固定するときは、開いている相手の
+	// 試した番号も避ける (その相手が戻せずに持っている番号を、この Mac が前の IP として取りうる)
+	for h, ips := range m.tried {
+		if h == host {
 			continue
 		}
 		for ip := range ips {
@@ -346,12 +357,31 @@ func (m *Model) usedIPs() []string {
 		used = append(used, x.Addr)
 	}
 	for _, r := range rows {
+		if r.host == host {
+			// 行の内部 IP は台帳から写した値のことがある (今は誰も持っていない前の IP)。Bonjour で見えている IP だけを数える
+			used = append(used, m.bonjourIPs(host)...)
+			continue
+		}
 		used = append(used, r.lanIP, r.mainIP)
 		for _, x := range r.others { // 他の I/F に見えた番号も避ける (帯を 169.254 の中に置く設定では、自動で付いた番号と同じ網に居る)
 			used = append(used, x.Addr)
 		}
 	}
 	return used
+}
+
+// bonjourIPs は host の Mac が今 Bonjour で見せている IP。
+func (m *Model) bonjourIPs(host string) []string {
+	var out []string
+	for _, p := range m.peers {
+		if ledger.Key(p.Host) != host {
+			continue
+		}
+		for _, ip := range p.Addrs {
+			out = append(out, ip)
+		}
+	}
+	return out
 }
 
 // newToken は確認の印の名前 (実行ごとに変える)。
@@ -369,7 +399,12 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 	o, r := m.setupObserved()
 	switch st.ID {
 	case setup.StepSelfStatic:
-		ip, err := setup.SuggestIP(o.Band, m.usedIPs())
+		// 前の IP は、この Mac の有線の名前の広告に載せていた IP (この Mac は台帳に載らない)
+		var prevs []string
+		if o.SelfAdvertKnown {
+			prevs = append(prevs, o.SelfAdvert.IP)
+		}
+		ip, reused, why, err := pickRefixIP(o.Band, m.usedIPsExcept(m.host), m.self.Services, o.SelfService, prevs)
 		if err != nil {
 			return nil, err.Error()
 		}
@@ -378,11 +413,12 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		return &ask{title: "この Mac の有線を固定 IP にする", body: []string{
-			o.SelfService + " を " + ip + " / " + mask + " (ルーター無し) にする。sudo のパスワードを聞く",
-			"🚨 この Mac の変更は自動では戻らない。戻すなら " + selfRestoreLine(o),
-			"$ " + shellLine(argv),
-		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
+		return &ask{title: "この Mac の有線を固定 IP にする", body: dropEmpty(
+			o.SelfService+" を "+ip+" / "+mask+" (ルーター無し) にする"+reusedNote(reused)+"。sudo のパスワードを聞く",
+			sharedNote(m.self.Services, o.SelfService, ip), why,
+			"🚨 この Mac の変更は自動では戻らない。戻すなら "+selfRestoreLine(o),
+			"$ "+shellLine(argv),
+		), exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepKey:
 		argv, err := setup.KeyArgv(su.dest)
 		if err != nil {
@@ -397,8 +433,14 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		}
 		return &ask{title: "相手に公開鍵を置く", body: body, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepPeerStatic:
-		used := append(m.usedIPs(), o.SelfIP)
-		ip, err := setup.SuggestIP(o.Band, used)
+		used := append(m.usedIPsExcept(su.host), o.SelfIP)
+		// 前の IP の候補は台帳の内部 IP → 相手が有線の名前の広告に載せていた IP → この起動で振った IP (帯の外・使われているものは飛ばす)
+		prevs := []string{o.Peer.LedgerLAN}
+		if o.Peer.AdvertKnown {
+			prevs = append(prevs, o.Peer.Advert.IP)
+		}
+		prevs = append(prevs, m.claimed[su.host])
+		ip, reused, why, err := pickRefixIP(o.Band, used, su.obs.Services, su.obs.Service, prevs)
 		if err != nil {
 			return nil, err.Error()
 		}
@@ -414,13 +456,14 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		return &ask{title: "相手の有線を固定 IP にする", body: []string{
-			su.obs.Service + " を " + ip + " / " + s.Mask + " (ルーター無し) にする。相手の sudo のパスワードを聞く",
+		return &ask{title: "相手の有線を固定 IP にする", body: dropEmpty(
+			su.obs.Service+" を "+ip+" / "+s.Mask+" (ルーター無し) にする"+reusedNote(reused)+"。相手の sudo のパスワードを聞く",
+			sharedNote(su.obs.Services, su.obs.Service, ip), why,
 			fmt.Sprintf("変えた後 %d 秒以内に新しい IP で入り直して確認しないと、相手の上で元の設定 (%s) に戻る", int(setup.PeerWindow.Seconds()), netinfo.MethodLabel(s.Restore.Method)),
 			// 実際の argv は戻しの仕掛け (数十行の sh) を 1 語に引用して持つので、全文を出すと板が画面を埋めた (ユーザー報告)。要約を出す
-			"$ ssh -t " + su.dest.User + "@" + su.dest.IP + " → sudo networksetup -setmanual " + setup.Quote(s.Service) + " " + ip + " " + s.Mask +
+			"$ ssh -t "+su.dest.User+"@"+su.dest.IP+" → sudo networksetup -setmanual "+setup.Quote(s.Service)+" "+ip+" "+s.Mask+
 				fmt.Sprintf(" (確認が無ければ %d 秒後に元へ戻す仕掛けを相手で走らせる)", int(setup.PeerWindow.Seconds())),
-		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID, static: &s}, ""
+		), exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID, static: &s}, ""
 	case stepConfirm:
 		c := m.conf()
 		nd := su.dest
@@ -649,4 +692,56 @@ func shellLine(argv []string) string {
 		}
 	}
 	return strings.Join(words, " ")
+}
+
+// reusedNote は確認の板で、前と同じ IP をもう一度振るときの一言。
+func reusedNote(reused bool) string {
+	if reused {
+		return " (前と同じ IP)"
+	}
+	return ""
+}
+
+// pickRefixIP は固定する IP を決める (setup.PickIP)。services は固定する Mac の全部のサービス、target は固定するサービス。前の IP を
+// 同じ Mac の別のサービスが繋がったまま (Active) 持っていれば振らない (1 台の中の 2 つの I/F に同じ IP が乗る)。繋がっているかを
+// 読めなかったサービスも同じに扱う (振らない側に倒す)。I/F が無い・繋がっていないサービス (抜いたアダプタ) が持っているだけなら振る
+// (差し替えて使う形。両方を同時に繋ぐと重なるので sharedNote で知らせる)。note は前の IP を振らなかった理由 (無ければ "")。
+func pickRefixIP(band string, used []string, services []netinfo.Service, target string, prevs []string) (ip string, reused bool, note string, err error) {
+	busy := map[string]string{} // 使っている (かもしれない) IP → サービス名
+	for _, sv := range services {
+		if sv.Name != target && sv.IP != "" && (sv.Active || !sv.IfRead && !sv.IfGone) {
+			used = append(used, sv.IP)
+			busy[sv.IP] = sv.Name
+		}
+	}
+	ip, reused, err = setup.PickIP(band, used, prevs...)
+	if err == nil && !reused {
+		for _, prev := range prevs {
+			if name, ok := busy[prev]; ok {
+				note = "前の IP (" + prev + ") は " + termsafe.PlainLine(name) + " が繋がったまま使っている (か、繋がっているかを読めなかった) ので振らない。" +
+					"そのアダプタを使わないなら抜いてから r で読み直すと、前の IP に戻せる"
+				break
+			}
+		}
+	}
+	return ip, reused, note, err
+}
+
+// sharedNote は、固定する IP を同じ Mac の繋がっていない別のサービスも持っているときの一言 (無ければ "")。
+func sharedNote(services []netinfo.Service, target, ip string) string {
+	var names []string
+	for _, sv := range services {
+		if sv.Name != target && sv.IP == ip {
+			names = append(names, termsafe.PlainLine(sv.Name)) // サービス名は相手の networksetup の出力 (外から来た値)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return "🚨 " + strings.Join(names, " / ") + " も同じ IP の設定を持つ (前のアダプタ)。両方のアダプタを同時に繋ぐと 1 台の中で IP が重なる"
+}
+
+// dropEmpty は空の行を落とした板の本文 (出すときだけ足す一言を、空行にしない)。
+func dropEmpty(lines ...string) []string {
+	return slices.DeleteFunc(lines, func(l string) bool { return l == "" })
 }

@@ -104,6 +104,9 @@ type PeerNet struct {
 	Method      string
 	Mask        string
 	Router      string
+	// Services は相手の全部のサービス (NetKnown のときだけ)。固定し直すときに、前の IP を同じ相手の別のサービスが持っていないかを見る
+	// (前のアダプタのサービスは手動の設定を持ったまま残る。Bonjour は相手の I/F ごとの IP を全部は見せない)
+	Services []netinfo.Service
 }
 
 // exitCoder は終了コードを持つエラー (*exec.ExitError)。
@@ -156,6 +159,7 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 		return p
 	}
 	p.NetKnown = true
+	p.Services = snap.Services
 	if off := snap.Offline(); len(off) > 0 {
 		s := off[0]
 		p.Service, p.IP, p.Method, p.Mask, p.Router = s.Name, s.IP, s.Method, s.Mask, s.Router
