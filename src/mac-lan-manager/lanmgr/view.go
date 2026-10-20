@@ -407,8 +407,8 @@ type col struct {
 	style func(s lipgloss.Style, r row) lipgloss.Style
 }
 
-// dropOrder は幅が足りないときに列を落とす順 (大きいほど先: 他 → user → メイン IP → 名前 (疎通) → 接続できる。別名と内部 IP は落とさない)。
-var dropOrder = map[string]int{"他": 5, "user": 4, "メイン IP": 3, "名前": 2, "接続できる": 1}
+// dropOrder は幅が足りないときに列を落とす順 (大きいほど先: 他 → user → メイン IP → 疎通 → 接続できる。別名と内部 IP は落とさない)。
+var dropOrder = map[string]int{"他": 5, "user": 4, "メイン IP": 3, "疎通": 2, "接続できる": 1}
 
 // fitWidth は中身の最長に合わせる列の印 (別名の列)。上限は maxFitWidth、幅が足りなければホスト名の列に minFlexWidth を残すまで縮める。
 const (
@@ -456,7 +456,7 @@ func (m *Model) columns() []col {
 		}, nil})
 	}
 	if m.o.Reach != nil {
-		cols = append(cols, col{"名前", 7, m.reachCell, nil})
+		cols = append(cols, col{"疎通", 7, m.reachCell, nil})
 	}
 	if m.pf.ShowOthers {
 		cols = append(cols, col{"他", 6, func(r row) string {

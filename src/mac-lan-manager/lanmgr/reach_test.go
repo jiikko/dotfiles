@@ -83,8 +83,9 @@ func TestReachOnlyManaged(t *testing.T) {
 	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "管理対象") {
 		t.Errorf("知らせ = %+v", n)
 	}
-	if strings.Contains(h.screen(), "疎通") {
-		t.Error("未管理の相手の詳細カードに疎通の行を出した")
+	// 「疎通」の字は一覧の列の見出しにもあるので、カードの行の中身で見る
+	if sc := h.screen(); strings.Contains(sc, "未確認") || strings.Contains(sc, "確かめている") {
+		t.Errorf("未管理の相手の詳細カードに疎通の行を出した:\n%s", sc)
 	}
 }
 

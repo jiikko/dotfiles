@@ -16,7 +16,7 @@ import (
 // 疎通の確認 (p)。管理対象の相手の名前 (Bonjour の <host>.local と有線の名前) ごとに、引けた IP へ ping と ssh の口 (22 番) を
 // 確かめる。名前が引けることと届くことは別 (有線の名前の広告は、その IP を持つ I/F が無くなった後も残る。wiredCheck は引けるかだけを見る)。
 // 帯域を使わず数秒で終わるので確認の板は通さない (t との違い)。相手ごとに同時に 1 本 (同じ相手を重ねて確かめても結果は変わらない)。
-// 一覧を開いた (Reload) ときと、結果の無い・確かめた名前が今と違う管理対象の行には自分で確かめる (autoReach。一覧の「名前」の列。
+// 一覧を開いた (Reload) ときと、結果の無い・確かめた名前が今と違う管理対象の行には自分で確かめる (autoReach。一覧の「疎通」の列。
 // ユーザー指示 2026-10-20: 開いたときに確かめてアイコンで出す。名前を引くだけだと、広告だけが残った有線の名前を ✓ と出すので ping まで見る)。
 
 // reachRun は確かめている途中の 1 回。
@@ -114,7 +114,7 @@ func (m *Model) runReach(t ReachTarget, tell bool) {
 	go func() { ch <- run(ctx, names) }()
 }
 
-// autoReach は、結果が無いか、確かめた名前が今の名前と違う管理対象の行を裏で確かめる (一覧の「名前」の列。Advance から呼ぶ)。
+// autoReach は、結果が無いか、確かめた名前が今の名前と違う管理対象の行を裏で確かめる (一覧の「疎通」の列。Advance から呼ぶ)。
 // この Mac のネットワークを読むまでは待つ (内部 IP が固定かが決まらず、有線の名前を確かめる行を決められない)。
 // 失敗した結果も結果として残すので、届かない相手を確かめ続けることはない (確かめ直すのは r / 一覧を開き直したとき・p)。
 func (m *Model) autoReach() {
@@ -241,7 +241,7 @@ func (m *Model) reachLines(r row, label func(string) string) []string {
 	return append(lines, next()+sDim.Render(res.at.Format("1/2 15:04")+" に確認"))
 }
 
-// reachCell は一覧の「名前」の列 (L = <host>.local / W = <host>.wired.local)。✓ 届く / ✗ 届かない・引けない・有線の名前が内部 IP と違う /
+// reachCell は一覧の「疎通」の列 (L = <host>.local / W = <host>.wired.local)。✓ 届く / ✗ 届かない・引けない・有線の名前が内部 IP と違う /
 // - 有線の名前を持たない / … 確かめている途中・まだ確かめていない。管理対象の相手だけ (他の行は空)。
 func (m *Model) reachCell(r row) string {
 	if r.self || !r.managed {
