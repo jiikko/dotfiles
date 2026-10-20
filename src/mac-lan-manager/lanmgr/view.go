@@ -169,7 +169,7 @@ func (m *Model) rowHints(r row) []keyHint {
 	if m.o.SpeedTest != nil && m.speedRun == nil && m.speedTarget(r).Refusal == "" { // askSpeed と同じ条件
 		hs = append(hs, keyHint{"t", "速度", 9})
 	}
-	if m.o.Reach != nil && m.reachRun == nil && m.reachTarget(r).Refusal == "" { // startReach と同じ条件
+	if m.o.Reach != nil && m.reachTarget(r).Refusal == "" { // startReach が断らない条件 (確かめている途中なら終わったら知らせる)
 		hs = append(hs, keyHint{"p", "疎通", 10})
 	}
 	return hs
@@ -407,13 +407,13 @@ type col struct {
 	style func(s lipgloss.Style, r row) lipgloss.Style
 }
 
-// dropOrder は幅が足りないときに列を落とす順 (大きいほど先: 他 → user → メイン IP → 接続できる。名前と内部 IP は落とさない)。
-var dropOrder = map[string]int{"他": 4, "user": 3, "メイン IP": 2, "接続できる": 1}
+// dropOrder は幅が足りないときに列を落とす順 (大きいほど先: 他 → user → メイン IP → 名前 (疎通) → 接続できる。別名と内部 IP は落とさない)。
+var dropOrder = map[string]int{"他": 5, "user": 4, "メイン IP": 3, "名前": 2, "接続できる": 1}
 
-// fitWidth は中身の最長に合わせる列の印 (名前の列)。上限は maxFitWidth、幅が足りなければホスト名の列に minFlexWidth を残すまで縮める。
+// fitWidth は中身の最長に合わせる列の印 (別名の列)。上限は maxFitWidth、幅が足りなければホスト名の列に minFlexWidth を残すまで縮める。
 const (
 	fitWidth     = -1
-	maxFitWidth  = 34 // 中身 32 桁 + 左右の余白 (ユーザー要望 2026-10-15: 名前の列が短すぎる。固定の 12 では「kojiのMac mini」も切れた)
+	maxFitWidth  = 34 // 中身 32 桁 + 左右の余白 (ユーザー要望 2026-10-15: 別名の列が短すぎる。固定の 12 では「kojiのMac mini」も切れた)
 	minFitWidth  = 12
 	minFlexWidth = 12
 )
@@ -454,6 +454,9 @@ func (m *Model) columns() []col {
 			}
 			return ipCell(or(r.lanIP, "-"), r.lanLink)
 		}, nil})
+	}
+	if m.o.Reach != nil {
+		cols = append(cols, col{"名前", 7, m.reachCell, nil})
 	}
 	if m.pf.ShowOthers {
 		cols = append(cols, col{"他", 6, func(r row) string {
@@ -595,8 +598,8 @@ func (m *Model) listTable(width, maxRows int) string {
 		}
 		used += cols[i].width
 	}
-	// 足りなければ名前の列を縮めて、ホスト名の列に minFlexWidth を残す。縮めても残らなければホスト名の列を出さず (ホスト名は
-	// 詳細カードの見出しにある)、空いた幅を名前の列へ返す (縮めたまま返さないと、ホスト名も名前も両方切れる)
+	// 足りなければ別名の列を縮めて、ホスト名の列に minFlexWidth を残す。縮めても残らなければホスト名の列を出さず (ホスト名は
+	// 詳細カードの見出しにある)、空いた幅を別名の列へ返す (縮めたまま返さないと、ホスト名も名前も両方切れる)
 	desired := 0
 	if fitAt >= 0 {
 		desired = cols[fitAt].width
@@ -615,7 +618,7 @@ func (m *Model) listTable(width, maxRows int) string {
 		cols = cols[:len(cols)-1]
 	}
 	// それでも固定の列だけで幅を超えるなら、落とす順に列ごと落とす (落とさないと 1 行が枠の中で折り返し、Mac ごとに 2 行になった。
-	// 幅 75〜89 の既定の列で再現)。空いた幅は名前の列へ返す
+	// 幅 75〜89 の既定の列で再現)。空いた幅は別名の列へ返す
 	for used > width {
 		best := -1
 		for i, c := range cols {
@@ -632,13 +635,13 @@ func (m *Model) listTable(width, maxRows int) string {
 		}
 		cols = slices.Delete(cols, best, best+1)
 	}
-	// 落とせる列が無くても超えるなら、名前の列を 12 桁より細くする (最後の手段。最低 4 桁)
+	// 落とせる列が無くても超えるなら、別名の列を 12 桁より細くする (最後の手段。最低 4 桁)
 	if fitAt >= 0 && used > width {
 		shrink := min(cols[fitAt].width-4, used-width)
 		cols[fitAt].width -= shrink
 		used -= shrink
 	}
-	// 残りの幅を取る列 (ホスト名) が無いときだけ、空いた幅を名前の列へ返す (ある間はその列が残りを取る。両方に渡すと幅を超えた)
+	// 残りの幅を取る列 (ホスト名) が無いときだけ、空いた幅を別名の列へ返す (ある間はその列が残りを取る。両方に渡すと幅を超えた)
 	if fitAt >= 0 && used < width && cols[fitAt].width < desired && !slices.ContainsFunc(cols, func(c col) bool { return c.width == 0 }) {
 		grow := min(desired-cols[fitAt].width, width-used)
 		cols[fitAt].width += grow

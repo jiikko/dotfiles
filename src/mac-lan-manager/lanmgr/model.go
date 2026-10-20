@@ -195,7 +195,7 @@ type Model struct {
 	speedRun        *speedRun                         // 測っている途中の通信速度 (speed.go。同時に 1 本)
 	speed           map[string]map[string]speedResult // 相手・経路ごとの最後の通信速度 (台帳の鍵 → IP → 結果)
 	speedAsk        *speedAsk                         // 経路を選ぶ板 (ovSpeed の間だけ)
-	reachRun        *reachRun                         // 疎通を確かめている途中 (reach.go。同時に 1 本)
+	reachRuns       map[string]*reachRun              // 疎通を確かめている途中の回 (reach.go。台帳の鍵 → 回。相手ごとに 1 本)
 	reach           map[string]reachResult            // 相手ごとの最後の疎通の結果 (台帳の鍵 → 結果)
 	// wired は有線の名前を引いた結果 (台帳の鍵 → 結果。wiredname.go)。wiredCh / wiredWait は引いている途中の回
 	wired     map[string]wiredLookup
@@ -259,6 +259,7 @@ func New(o Options) *Model {
 // Reload はこの Mac のネットワーク・台帳・設定を読み直し、走査を起こし直す (r と、glogx の板を開き直したとき。Close の後でも使える)。
 func (m *Model) Reload() {
 	m.logf("reload")
+	m.forgetReach()
 	// 走査を起こし直すと行が空に近い所から増え直すので、カーソルの Mac を戻したい Mac として持つ (添字のままだと、増えた行の分だけ
 	// 別の Mac に移り、s / o がそのまま別の相手へ繋いだ)
 	if m.wantHost == "" {
@@ -482,6 +483,9 @@ func (m *Model) Advance(now time.Time) {
 			m.note("Bonjour で探せない: "+err.Error(), false) // 1 回だけ (毎 tick 出さない)
 		}
 	}
+	// 走査の結果を取り込んだ後で確かめる名前を決める (前に置くと 1 拍前の行で決め、走査が落ち着いた後の合図 1 回で名前が変わった
+	// 行は、次のキーまで「…」のまま何も走らなかった)
+	m.autoReach()
 	// 先に今の Mac へ合わせ直し、戻したい Mac が出ていればそちらが上書きする (逆順だと、見つけて合わせたカーソルを直前の Mac へ戻した。
 	// 戻したい Mac を待つ間も今の Mac には合わせる。待つ間だけ添字のままにすると、その間に増えた行の分だけ別の Mac に移った)
 	m.followCursor(held)
@@ -501,7 +505,7 @@ func (m *Model) Changed() <-chan struct{} {
 // この Mac のネットワークを裏で読んでいる間も Busy (読み終わりを Advance で取り込むため)。
 func (m *Model) Busy() bool {
 	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && m.su.ch != nil) || len(m.pending) > 0 || m.awaitingUnconf() ||
-		len(m.bg) > 0 || m.wiredWait > 0 || m.speedRun != nil || m.reachRun != nil
+		len(m.bg) > 0 || m.wiredWait > 0 || m.speedRun != nil || len(m.reachRuns) > 0
 }
 
 // OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定) が開いているか (glogx は横断キーも渡す)。
