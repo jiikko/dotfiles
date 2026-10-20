@@ -264,7 +264,19 @@ func (m *Model) selfObserved() setup.Observed {
 
 // selfStaticRefusal は、この Mac の有線を固定する板を出せない理由 ("" なら出せる。詳細の案内と askSelfStatic が同じ述語を見る)。
 func (m *Model) selfStaticRefusal() string {
+	// 読んでいる途中・読み損ねた後は、古い網 (固定の前の DHCP / 169.254) で板を組まない (相手の初期設定の x と同じ守り。固定した直後に
+	// もう一度 sudo の板が出る形を作らない)
+	if m.netCh != nil {
+		return "この Mac のネットワークを読んでいる途中 (少し待ってから)"
+	}
+	if m.selfErr != nil && !errors.Is(m.selfErr, netinfo.ErrIPsIncomplete) {
+		return "この Mac のネットワークを読み直せなかった (r で読み直す)"
+	}
 	s, ok := m.selfWired()
+	if !ok && !m.pf.LanByBand {
+		// I/F で決める設定が前のアダプタの I/F を指したまま (アダプタを替えた後)。r では直らない
+		return "設定の内部の I/F (" + termsafe.PlainLine(m.pf.LanIF) + ") が繋がっていない有線として見つからない (アダプタを替えたなら , の設定で新しい I/F を選ぶ)"
+	}
 	if !ok {
 		return "内部の網に使う有線が見つからない (アダプタを挿してから r で読み直す)"
 	}
@@ -289,6 +301,7 @@ func (m *Model) askSelfStatic() {
 		return
 	}
 	a.selfOnly = true
+	a.exec.Banner = m.execBanner(a) // 端末に題と「パスワードはこの下で聞かれる」を出し、失敗したら Enter で戻るまで止める (相手の初期設定の板と同じ)
 	m.ask, m.ov = a, ovConfirm
 }
 

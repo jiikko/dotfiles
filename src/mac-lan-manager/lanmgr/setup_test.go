@@ -1450,6 +1450,9 @@ func TestSelfRowFixesThisMacsWiredIP(t *testing.T) {
 	if !ok || len(r.Argv) != 6 || r.Argv[0] != "sudo" || r.Argv[2] != "-setmanual" || r.Argv[3] != "Thunderbolt Ethernet" {
 		t.Fatalf("この Mac の有線の固定のコマンドでない: %q", r.Argv)
 	}
+	if !strings.Contains(r.Banner, "パスワード") {
+		t.Errorf("端末に出す板が無い (sudo のパスワードの案内と、失敗したときに止める画面が出ない): %q", r.Banner)
+	}
 	ip := r.Argv[4]
 	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { // 固定 IP になった後のこの Mac
 		s := selfNet()
@@ -1468,5 +1471,24 @@ func TestSelfRowFixesThisMacsWiredIP(t *testing.T) {
 	}
 	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "固定 IP "+ip) {
 		t.Errorf("固定済みと知らせない: %+v", n)
+	}
+}
+
+// この Mac の網を読んでいる途中・読み損ねた後・I/F で決める設定が見つからない I/F を指しているときは、この Mac の固定の板を出さず、
+// 直し方 (待つ / r / , の設定) を知らせる
+func TestSelfStaticRefusesOnStaleOrMisconfiguredNetwork(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	awaitNetLoad(h.m)
+	if why := h.m.selfStaticRefusal(); why != "" {
+		t.Fatalf("前提: 固定できる状態で断った: %s", why)
+	}
+	h.m.selfErr = errors.New("networksetup failed")
+	if why := h.m.selfStaticRefusal(); !strings.Contains(why, "r で読み直す") {
+		t.Errorf("読み損ねた後に板を出せる / 直し方を言わない: %q", why)
+	}
+	h.m.selfErr = nil
+	h.m.pf.LanByBand, h.m.pf.LanIF = false, "en99"
+	if why := h.m.selfStaticRefusal(); !strings.Contains(why, "en99") || !strings.Contains(why, "設定") {
+		t.Errorf("I/F で決める設定が前のアダプタを指しているのに、設定で直すと言わない: %q", why)
 	}
 }
