@@ -739,7 +739,7 @@ func TestLoadingKeepsSelfSingleAndRefusesActions(t *testing.T) {
 	}
 	m.TakeNotices()
 	// 初期設定は詳細のパネルの enter (一覧の enter はパネルを開くだけで、読み込み中でも開ける)
-	for _, ks := range [][]string{{"s"}, {"Y"}, {"y"}, {"O"}, {"o"}, {"c"}, {"space"}, {"enter", "enter"}} {
+	for _, ks := range [][]string{{"s"}, {"Y"}, {"y"}, {"O"}, {"o"}, {"a"}, {"c"}, {"space"}, {"enter", "enter"}} {
 		k := strings.Join(ks, " ")
 		var a Action
 		for _, key := range ks {
@@ -2249,6 +2249,37 @@ func TestWiredNameUsedAsTarget(t *testing.T) {
 	if r, _ := h.m.TakeExec(); !slices.Contains(r.Argv, "vnc://m2macmini.wired.local") {
 		t.Errorf("o = %q", r.Argv)
 	}
+	// a は同じ宛先とユーザー名を SyakeScreen の URL で渡す (issue 848)
+	if a := h.keys("a"); a != Exec {
+		t.Fatalf("a = %v", a)
+	}
+	if r, _ := h.m.TakeExec(); !slices.Equal(r.Argv, []string{"open", "syakescreen://connect?host=m2macmini.wired.local&user=koji"}) || !r.ExitIsFailure {
+		t.Errorf("a = %q (入っていないとき open の失敗を知らせに出す: %v)", r.Argv, r.ExitIsFailure)
+	}
+}
+
+// SyakeScreen の URL は値を query の符号にして渡す (アプリは user の @ や空白を断る。こちらで崩した形を作らない)
+func TestSyakeScreenURLEscapesValues(t *testing.T) {
+	if got := syakeScreenURL("192.168.50.7", "ko ji&x=1"); got != "syakescreen://connect?host=192.168.50.7&user=ko+ji%26x%3D1" {
+		t.Errorf("syakeScreenURL = %q", got)
+	}
+}
+
+// a はユーザー名が分からない相手を断る (SyakeScreen は user の無い URL を開かない)。案内にも出さない
+func TestSyakeScreenNeedsAUser(t *testing.T) {
+	h := newHarness(t, nil, []discover.Peer{mini})
+	h.m.o.User = ""
+	h.keys("l")
+	if v := stripView(strings.Join(h.m.View(), "\n")); regexp.MustCompile(`a\s+SyakeScreen`).MatchString(v) {
+		t.Errorf("ユーザー名が分からないのに a を案内した:\n%s", v)
+	}
+	h.m.TakeNotices()
+	if a := h.keys("a"); a == Exec {
+		t.Fatalf("ユーザー名が分からないのに a で開いた")
+	}
+	if n := h.m.TakeNotices(); len(n) == 0 || n[len(n)-1].Text != noUserNote {
+		t.Errorf("断った理由が出ない: %+v", n)
+	}
 }
 
 // 名前が引けない・別の IP に向いているなら、宛先は IP のまま (渡しても繋がらない・別の Mac に繋がる名前を使わない) で、理由を詳細に出す。
@@ -2573,7 +2604,7 @@ func TestSelfFixedAgreesWithPlan(t *testing.T) {
 func TestGuidanceMatchesKeys(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini})
 	h.keys("h") // この Mac のタブ
-	for _, k := range []string{"Y", "y", "O", "o", "s"} {
+	for _, k := range []string{"Y", "y", "O", "o", "a", "s"} {
 		h.copied = nil
 		h.m.TakeNotices()
 		if a := h.keys(k); a == Exec || len(h.copied) != 0 {
@@ -3143,6 +3174,13 @@ func TestDetailPanelOpensOverListAndLeadsToSetup(t *testing.T) {
 	}
 	if !strings.Contains(last, "戻る") || !strings.Contains(last, "初期設定") {
 		t.Errorf("最下行がパネルの案内でない / パネルに覆われた: %q", last)
+	}
+	// 詳細のパネルの中でも a で SyakeScreen を開き、パネルは開いたまま (issue 848)
+	if a := h.keys("a"); a != Exec || !h.m.detailOpen {
+		t.Fatalf("パネルの中で a が効かない (action=%v open=%v)", a, h.m.detailOpen)
+	}
+	if r, _ := h.m.TakeExec(); len(r.Argv) != 2 || !strings.HasPrefix(r.Argv[1], "syakescreen://connect?") || !strings.Contains(r.Argv[1], "user=k2") {
+		t.Errorf("パネルの a = %q", r.Argv)
 	}
 	if a := h.keys("q"); a != None || h.m.detailOpen {
 		t.Fatalf("q でパネルが閉じない / glogx ごと閉じた (action=%v)", a)

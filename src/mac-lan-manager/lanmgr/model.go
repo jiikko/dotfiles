@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -529,7 +530,7 @@ func (m *Model) Binds(key string) bool {
 	if m.OwnsKeys() {
 		return true
 	}
-	return slices.Contains([]string{"s", "y", "Y", "o", "O", "m", "u", "e", "c", "t", "p", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
+	return slices.Contains([]string{"s", "y", "Y", "o", "O", "a", "m", "u", "e", "c", "t", "p", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
 		listnav.MotionOf(key) != listnav.None
 }
 
@@ -1139,10 +1140,10 @@ func move(cur *int, n int, key string, rows int) bool {
 // needsNet は、この Mac のネットワークを読めるまで断るキー (最下行の案内もこの間は出さない)。初期設定 (詳細のパネルの enter) も
 // keyDetail が同じ判定 (netRefused) で断る: 読む前に開くと相手のメイン IP が分からず、宛先が台帳の有線の IP のまま閉じるまで固まった。
 // 一覧の enter (詳細のパネルを開く) は読めていなくても開ける
-var needsNet = []string{"s", "Y", "y", "O", "o", "c", "t", "p", "space"}
+var needsNet = []string{"s", "Y", "y", "O", "o", "a", "c", "t", "p", "space"}
 
 // rowKeys はカーソルの行の Mac に効くキー (見ていた Mac が一覧から消えた・タブに行が無いときは断る)。c はこの Mac の IP のコピーで行に効かない
-var rowKeys = []string{"s", "Y", "y", "O", "o", "t", "p", "space", "enter", "m", "u"}
+var rowKeys = []string{"s", "Y", "y", "O", "o", "a", "t", "p", "space", "enter", "m", "u"}
 
 // netRefused は、この Mac のネットワークを読み終えていなければ理由を知らせて true (needsNet のキーと初期設定が断る)。
 func (m *Model) netRefused() bool {
@@ -1158,7 +1159,7 @@ func (m *Model) netRefused() bool {
 }
 
 // detailKeys は詳細のパネルの中で一覧と同じに効くキー (カーソルの行の Mac への動作。パネルは開いたまま)。
-var detailKeys = []string{"s", "Y", "y", "O", "o", "t", "p", "m", "u", "space", "?", "e"}
+var detailKeys = []string{"s", "Y", "y", "O", "o", "a", "t", "p", "m", "u", "space", "?", "e"}
 
 // detailFollow はカーソルをパネルを開いた Mac へ戻す (見つからなければ false)。
 func (m *Model) detailFollow() bool {
@@ -1227,7 +1228,7 @@ func (m *Model) keyList(key string) Action {
 	if guessed {
 		guessNote = "  (ユーザー名は推測)"
 	}
-	if r.self && (key == "Y" || key == "y" || key == "O" || key == "o") { // この Mac 自身には繋がない (s は shellRefusal が断る)。最下行・カードも出さない
+	if r.self && (key == "Y" || key == "y" || key == "O" || key == "o" || key == "a") { // この Mac 自身には繋がない (s は shellRefusal が断る)。最下行・カードも出さない
 		m.note("この Mac には繋がない (この Mac の IP・名前は c でコピー)", false)
 		return None
 	}
@@ -1303,6 +1304,24 @@ func (m *Model) keyList(key string) Action {
 			break
 		}
 		m.handOff(ExecRequest{Argv: []string{"open", "vnc://" + m.target(r)}, ExitIsFailure: true}, nil)
+		return Exec
+	case "a": // SyakeScreen (screen-share-app) で開く (issue 848)。宛先は o と同じ。入っていなければ open が失敗し、知らせに出る
+		if !r.vnc {
+			m.note("画面共有を広告していない", false)
+			break
+		}
+		if r.connectIP() == "" {
+			m.note(or(r.awayReason(), "繋ぐ IP が分からない"), false)
+			break
+		}
+		if user == "" { // SyakeScreen は user の無い URL を断る (一覧の鍵が user@host なので、省くと同じ Mac の 2 本目になる)
+			m.note(noUserNote, false)
+			break
+		}
+		if guessed {
+			m.note("SyakeScreen で開く"+guessNote, false)
+		}
+		m.handOff(ExecRequest{Argv: []string{"open", syakeScreenURL(m.target(r), user)}, ExitIsFailure: true}, nil)
 		return Exec
 	case "m": // 名前の変更 (treefiler と同じ動詞)
 		m.openEdit(r, aliasEdit, r.alias)
@@ -1617,4 +1636,11 @@ func (m *Model) CaretPos() (x, y int, ok bool) {
 		return m.caretMX, m.caretMY, m.caretMY >= 0
 	}
 	return 0, 0, false
+}
+
+// syakeScreenURL は SyakeScreen (my-products の screen-share-app) で相手を開く URL。パスワードは載せない (アプリは載っていても捨てる)。
+// 形の正本はアプリの ConnectURL.parse (`syakescreen://connect?host=<宛先>&user=<ユーザー名>`)
+func syakeScreenURL(host, user string) string {
+	u := url.URL{Scheme: "syakescreen", Host: "connect", RawQuery: url.Values{"host": {host}, "user": {user}}.Encode()}
+	return u.String()
 }

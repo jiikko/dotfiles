@@ -79,6 +79,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 |---|---|---|
 | `Enter` | **TUI 内の開閉 toggle** | job パネル / 本文の引き出し / doctor の内訳。開くのも閉じるのも Enter |
 | `o` | 外のアプリで開く (ブラウザ・Preview) | コミット / job / PR / pro-con のカードの添付 |
+| `a` | SyakeScreen (my-products の screen-share-app) で開く | mac-lan-manager だけ (`o` は Apple の画面共有のまま。issue 848) |
 | `O` | Finder で選んだ状態で見せる (`open -R`)。大文字が小文字の強い版ではない例外 (`o` の「開く」の代わりに「置き場所を見せる」) | treefiler (木・タイル) |
 | `e` (`v`) | エディタで開く | repo root / issue 本文 / job ログ |
 | `y` | コピー (素の値: URL / パス / group 名) | issues の**合成の** group 親行だけ group 名 (親 issue のある行はパス)。treefiler は項目の絶対パス (`Y` で root からの相対パス)。mac-lan-manager は `smb://<宛先>` (`Y` で `ssh <user>@<宛先>`、`O` で `open smb://<宛先>`。宛先は有線の名前 `<ホスト名>.wired.local` が引ければ名前、それ以外は IP) |
