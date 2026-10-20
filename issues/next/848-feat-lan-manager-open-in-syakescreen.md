@@ -1,1 +1,0 @@
-../848-feat-lan-manager-open-in-syakescreen.md
