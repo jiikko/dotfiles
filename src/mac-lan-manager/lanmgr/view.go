@@ -839,7 +839,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 		if m.ask != nil {
 			hint := confirm.HintYesNo
 			switch {
-			case m.ask.exec != nil && m.ask.auto:
+			case m.ask.exec != nil && (m.ask.auto || m.ask.selfOnly):
 				hint = "y: 実行   c: コマンドをコピー   n/Esc: キャンセル"
 			case m.ask.exec != nil:
 				hint = "y/Enter: 実行   c: コマンドをコピー   n/Esc: キャンセル"

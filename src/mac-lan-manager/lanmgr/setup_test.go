@@ -1439,6 +1439,10 @@ func TestSelfRowFixesThisMacsWiredIP(t *testing.T) {
 	if h.m.ov != ovConfirm || h.m.ask == nil || h.m.ask.title != "この Mac の有線を固定 IP にする" || !h.m.ask.selfOnly {
 		t.Fatalf("この Mac の有線を固定する板が出ない (ov=%v ask=%+v notices=%+v)", h.m.ov, h.m.ask, h.m.TakeNotices())
 	}
+	// enter を続けて押しても実行しない (パネル → 板 → 自動では戻らない変更まで進まない)。板は開いたまま
+	if a := h.keys("enter"); a == Exec || h.m.ov != ovConfirm {
+		t.Fatalf("板の enter で実行した / 板が閉じた (action=%v ov=%v)", a, h.m.ov)
+	}
 	if a := h.keys("y"); a != Exec {
 		t.Fatalf("y で起こさない (初期設定の画面の外だから断った?): %v %+v", a, h.m.TakeNotices())
 	}

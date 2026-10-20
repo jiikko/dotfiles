@@ -242,7 +242,7 @@ type ask struct {
 	// auto は読み込み中に押した x の予約で、読み終えたときに自動で出した板。Enter では実行しない (進捗のモーダルの間に押し続けた
 	// Enter が、裏で開いた板をそのまま実行した。この Mac の固定は自動では戻らない)
 	auto bool
-	// selfOnly は「この Mac」の詳細から出した、この Mac だけの手順 (askSelfStatic)。相手の初期設定の画面の外でも起こしてよい
+	// selfOnly は「この Mac」の詳細から出した、この Mac だけの手順 (askSelfStatic)。相手の初期設定の画面の外でも起こしてよい。enter では実行しない
 	selfOnly bool
 }
 
@@ -1050,8 +1050,10 @@ func (m *Model) HandleInput(key, text string) Action {
 			m.copyAs(shellLine(a.exec.Argv), "実行するコマンド (全文)")
 			return None
 		}
-		if a != nil && a.auto && key == "enter" {
-			return None // 自動で出した板は y でだけ実行する (板は閉じない)
+		if a != nil && (a.auto || a.selfOnly) && key == "enter" {
+			// 自動で出した板と、enter で開くこの Mac だけの板は y でだけ実行する (板は閉じない)。後者は enter を続けて押すと、
+			// パネル → 板 → 自動では戻らないこの Mac の変更まで進んだ
+			return None
 		}
 		m.ov, m.ask = ovNone, nil
 		if a != nil && confirm.IsYes(key) {
