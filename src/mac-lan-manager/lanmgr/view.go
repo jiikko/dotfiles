@@ -199,6 +199,8 @@ func (m *Model) footer() string {
 		hs = []keyHint{{"q/esc", "戻る", 1}}
 		if r := m.current(); !r.self {
 			hs = append(hs, keyHint{"enter", "初期設定", 2})
+		} else if m.selfStaticRefusal() == "" {
+			hs = append(hs, keyHint{"enter", "有線を固定", 2})
 		}
 		hs = append(hs, m.rowHints(m.current())...)
 		if m.detailMax > 0 {
@@ -791,9 +793,9 @@ func (m *Model) detailLines(r row, width int, enterLabel string) []string {
 	lines = append(lines, "")
 	switch {
 	case r.self && !r.managed:
-		lines = append(lines, sDim.Render("この Mac は台帳に無い  ")+keycap("space", "登録"))
+		lines = append(lines, sDim.Render("この Mac は台帳に無い  ")+keycap("space", "登録")+m.selfStaticKey(enterLabel))
 	case r.self:
-		lines = append(lines, sOK.Render("✓ 台帳に登録済み"))
+		lines = append(lines, sOK.Render("✓ 台帳に登録済み")+m.selfStaticKey(enterLabel))
 	case !r.managed:
 		lines = append(lines, sDim.Render("未管理: ")+keycap("space", "台帳に登録")+"   "+keycap("enter", enterLabel))
 	case !r.seen:
@@ -894,7 +896,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	case ovHelp:
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理 / この Mac のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"O", "Finder で smb に繋ぐコマンド (open smb://…) をコピー"}, {"o", "画面共有を開く"}, {"a", "SyakeScreen で開く (syakescreen://connect)"},
-			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "詳細 (中でもう一度 enter で初期設定)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"t", "通信速度を測る (管理対象。確認してから帯域を使う)"}, {"p", "疎通を確かめる (管理対象の名前ごとに ping と ssh の口)"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
+			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "詳細 (中でもう一度 enter で初期設定。この Mac の行では有線を固定 IP にする)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"t", "通信速度を測る (管理対象。確認してから帯域を使う)"}, {"p", "疎通を確かめる (管理対象の名前ごとに ping と ssh の口)"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
 			{"r", "リロード"}, {"q / esc", "閉じる"}}
 		body := make([]string, 0, len(keys)+3)
 		if m.scanErr != nil { // 見出しの「✗ 探せない」の理由 (知らせは数秒で消え、glogx の中からは dump を起こせない。監査の指摘)
@@ -909,4 +911,16 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	case ovNone:
 	}
 	return "", -1, 0
+}
+
+// selfStaticKey は「この Mac」のカードに添える enter の案内 (有線を固定できるときだけ)。詳細のパネル (enterLabel が初期設定) では固定を、
+// 一覧の下のカードでは一覧の enter (詳細を開く) を案内する
+func (m *Model) selfStaticKey(enterLabel string) string {
+	if m.selfStaticRefusal() != "" {
+		return ""
+	}
+	if enterLabel == "初期設定" {
+		return "   " + keycap("enter", "有線を固定")
+	}
+	return "   " + keycap("enter", enterLabel)
 }

@@ -133,7 +133,7 @@ const stepConfirm setup.StepID = "confirm"
 // openSetup は r の初期設定の画面を開く。
 func (m *Model) openSetup(r row) {
 	if r.self {
-		m.note("初期設定は相手の行の詳細 (Enter) でもう一度 Enter (この Mac の固定 IP・有線の名前も、その手順の中にある)", false)
+		m.askSelfStatic()
 		return
 	}
 	d, err := m.destFor(r)
@@ -240,6 +240,17 @@ func (m *Model) setupObserved() (setup.Observed, row) {
 			break
 		}
 	}
+	o := m.selfObserved()
+	o.Peer = setup.PeerObs{
+		Host: su.host, WifiIP: r.mainIP, LanIP: r.lanIP, SSHOpen: r.ssh || r.managed,
+		KeyOK: su.obs.KeyOK, NetKnown: su.obs.NetKnown, Service: su.obs.Service, IP: su.obs.IP, Method: su.obs.Method,
+		Managed: r.managed, LedgerLAN: r.ledgerLAN, AdvertKnown: su.obs.AdvertKnown, Advert: su.obs.Advert,
+	}
+	return o, r
+}
+
+// selfObserved は Plan に渡す観測のうち、この Mac の分 (相手の初期設定と、この Mac だけの固定 (askSelfStatic) が共有する)。
+func (m *Model) selfObserved() setup.Observed {
 	o := setup.Observed{Band: m.pf.Band}
 	if s, ok := m.selfWired(); ok {
 		o.SelfService, o.SelfIP, o.SelfMethod, o.SelfMask = s.Name, s.IP, s.Method, s.Mask
@@ -248,12 +259,62 @@ func (m *Model) setupObserved() (setup.Observed, row) {
 		o.SelfMainIP, o.SelfMainMask = s.IP, s.Mask
 	}
 	o.SelfHost, o.SelfAdvertKnown, o.SelfAdvert = m.host, m.selfAdvertKnown, m.selfAdvert
-	o.Peer = setup.PeerObs{
-		Host: su.host, WifiIP: r.mainIP, LanIP: r.lanIP, SSHOpen: r.ssh || r.managed,
-		KeyOK: su.obs.KeyOK, NetKnown: su.obs.NetKnown, Service: su.obs.Service, IP: su.obs.IP, Method: su.obs.Method,
-		Managed: r.managed, LedgerLAN: r.ledgerLAN, AdvertKnown: su.obs.AdvertKnown, Advert: su.obs.Advert,
+	return o
+}
+
+// selfStaticRefusal は、この Mac の有線を固定する板を出せない理由 ("" なら出せる。詳細の案内と askSelfStatic が同じ述語を見る)。
+func (m *Model) selfStaticRefusal() string {
+	s, ok := m.selfWired()
+	if !ok {
+		return "内部の網に使う有線が見つからない (アダプタを挿してから r で読み直す)"
 	}
-	return o, r
+	if setup.SelfFixed(m.pf.Band, s.Method, s.IP) {
+		return "この Mac の有線 (" + termsafe.PlainLine(s.Name) + ") は固定 IP " + s.IP + " になっている"
+	}
+	return ""
+}
+
+// askSelfStatic は「この Mac」の詳細の enter: この Mac の有線を固定 IP にする板を出す (相手の初期設定を通らずに)。
+// 手元の有線のアダプタを替えると macOS は別のネットワークのサービスとして扱い、前のサービスの固定 IP は付いてこない
+// (2026-10-20 に実際に起きた: 新しいアダプタが 169.254 のままで、相手の有線の IP へ届かなかった)。そのときに相手の初期設定を開かずに直せるように。
+// 中身 (サービスと IP の選び方・戻し方の案内・コマンド) は相手の初期設定の段と同じ selfStaticAsk
+func (m *Model) askSelfStatic() {
+	if why := m.selfStaticRefusal(); why != "" {
+		m.note(why, false)
+		return
+	}
+	a, why := m.selfStaticAsk(setup.StepSelfStatic)
+	if a == nil {
+		m.note(why, false)
+		return
+	}
+	a.selfOnly = true
+	m.ask, m.ov = a, ovConfirm
+}
+
+// selfStaticAsk はこの Mac の有線を固定 IP にする確認の板 (組めなければ理由)。
+func (m *Model) selfStaticAsk(step setup.StepID) (*ask, string) {
+	o := m.selfObserved()
+	// 前の IP は、この Mac の有線の名前の広告に載せていた IP (この Mac は台帳に載らない)
+	var prevs []string
+	if o.SelfAdvertKnown {
+		prevs = append(prevs, o.SelfAdvert.IP)
+	}
+	ip, reused, why, err := pickRefixIP(o.Band, m.usedIPsExcept(m.host), m.self.Services, o.SelfService, prevs)
+	if err != nil {
+		return nil, err.Error()
+	}
+	mask := netinfo.MaskFor(o.Band)
+	argv, err := setup.SelfStaticArgv(o.SelfService, ip, mask)
+	if err != nil {
+		return nil, err.Error()
+	}
+	return &ask{title: "この Mac の有線を固定 IP にする", body: dropEmpty(
+		o.SelfService+" を "+ip+" / "+mask+" (ルーター無し) にする"+reusedNote(reused)+"。sudo のパスワードを聞く",
+		sharedNote(m.self.Services, o.SelfService, ip), why,
+		"🚨 この Mac の変更は自動では戻らない。戻すなら "+selfRestoreLine(o),
+		"$ "+shellLine(argv),
+	), exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: step}, ""
 }
 
 // selfWired はこの Mac の内部の網のサービス (I/F で決める設定ならその I/F、帯で決めるならルーターの無い有線の先頭)。
@@ -399,26 +460,7 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 	o, r := m.setupObserved()
 	switch st.ID {
 	case setup.StepSelfStatic:
-		// 前の IP は、この Mac の有線の名前の広告に載せていた IP (この Mac は台帳に載らない)
-		var prevs []string
-		if o.SelfAdvertKnown {
-			prevs = append(prevs, o.SelfAdvert.IP)
-		}
-		ip, reused, why, err := pickRefixIP(o.Band, m.usedIPsExcept(m.host), m.self.Services, o.SelfService, prevs)
-		if err != nil {
-			return nil, err.Error()
-		}
-		mask := netinfo.MaskFor(o.Band)
-		argv, err := setup.SelfStaticArgv(o.SelfService, ip, mask)
-		if err != nil {
-			return nil, err.Error()
-		}
-		return &ask{title: "この Mac の有線を固定 IP にする", body: dropEmpty(
-			o.SelfService+" を "+ip+" / "+mask+" (ルーター無し) にする"+reusedNote(reused)+"。sudo のパスワードを聞く",
-			sharedNote(m.self.Services, o.SelfService, ip), why,
-			"🚨 この Mac の変更は自動では戻らない。戻すなら "+selfRestoreLine(o),
-			"$ "+shellLine(argv),
-		), exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
+		return m.selfStaticAsk(st.ID)
 	case setup.StepKey:
 		argv, err := setup.KeyArgv(su.dest)
 		if err != nil {

@@ -242,6 +242,8 @@ type ask struct {
 	// auto は読み込み中に押した x の予約で、読み終えたときに自動で出した板。Enter では実行しない (進捗のモーダルの間に押し続けた
 	// Enter が、裏で開いた板をそのまま実行した。この Mac の固定は自動では戻らない)
 	auto bool
+	// selfOnly は「この Mac」の詳細から出した、この Mac だけの手順 (askSelfStatic)。相手の初期設定の画面の外でも起こしてよい
+	selfOnly bool
 }
 
 // New は画面を作り、この Mac のネットワーク・台帳・設定を読み、Bonjour の走査を起こす。
@@ -1054,7 +1056,7 @@ func (m *Model) HandleInput(key, text string) Action {
 		m.ov, m.ask = ovNone, nil
 		if a != nil && confirm.IsYes(key) {
 			if a.exec != nil {
-				if m.su == nil { // 初期設定の画面の外で手順を起こさない (相手の名前の無い手順は、未確認の印も確認待ちも立たない。敵対レビュー)
+				if m.su == nil && !a.selfOnly { // 初期設定の画面の外で手順を起こさない (相手の名前の無い手順は、未確認の印も確認待ちも立たない。敵対レビュー)
 					m.note("初期設定の画面が閉じている (開き直して x)", false)
 					return None
 				}
@@ -1063,7 +1065,9 @@ func (m *Model) HandleInput(key, text string) Action {
 					return None
 				}
 				se := &setupExec{step: a.step, static: a.static}
-				if m.su != nil {
+				if a.selfOnly {
+					se.host = m.host // 戻ったときに setupExecDone がこの Mac の網を読み直す (相手の画面は無いので観測はしない)
+				} else if m.su != nil {
 					se.host = m.su.host
 					if a.step == setup.StepPeerStatic && a.static != nil {
 						// 起こす時点で未確認の印を立てる (戻ったときに立てると、戻りを受けない経路 (glogx で閉じた後) で立たなかった)

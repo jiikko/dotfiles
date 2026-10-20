@@ -1418,3 +1418,51 @@ func TestSelfRefixLedgerRowAndTried(t *testing.T) {
 		t.Errorf("開いている相手が試した IP をこの Mac に振った: %+v", h.m.ask)
 	}
 }
+
+// 「この Mac」の詳細の enter で、相手の初期設定を通らずにこの Mac の有線を固定 IP にする板を出し、y で起こす。戻ったらこの Mac の網を
+// 読み直し、固定になった後は板を出さずにそう知らせる (手元の有線のアダプタを替えると、前のサービスの固定 IP は付いてこない)。
+func TestSelfRowFixesThisMacsWiredIP(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	awaitNetLoad(h.m)
+	h.keys("h") // この Mac のタブ
+	if !h.m.current().self {
+		t.Fatalf("前提: カーソルがこの Mac の行に無い")
+	}
+	h.keys("enter")
+	if !h.m.detailOpen {
+		t.Fatalf("前提: 詳細のパネルが開かない")
+	}
+	if v := stripView(strings.Join(h.m.View(), "\n")); !strings.Contains(v, "有線を固定") {
+		t.Errorf("固定できるのに案内に enter 有線を固定 が無い:\n%s", v)
+	}
+	h.keys("enter")
+	if h.m.ov != ovConfirm || h.m.ask == nil || h.m.ask.title != "この Mac の有線を固定 IP にする" || !h.m.ask.selfOnly {
+		t.Fatalf("この Mac の有線を固定する板が出ない (ov=%v ask=%+v notices=%+v)", h.m.ov, h.m.ask, h.m.TakeNotices())
+	}
+	if a := h.keys("y"); a != Exec {
+		t.Fatalf("y で起こさない (初期設定の画面の外だから断った?): %v %+v", a, h.m.TakeNotices())
+	}
+	r, ok := h.m.TakeExec()
+	if !ok || len(r.Argv) != 6 || r.Argv[0] != "sudo" || r.Argv[2] != "-setmanual" || r.Argv[3] != "Thunderbolt Ethernet" {
+		t.Fatalf("この Mac の有線の固定のコマンドでない: %q", r.Argv)
+	}
+	ip := r.Argv[4]
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { // 固定 IP になった後のこの Mac
+		s := selfNet()
+		s.Services[0].Method, s.Services[0].IP = "manual", ip
+		return s, nil
+	}
+	h.m.ExecDone(nil)
+	awaitNetLoad(h.m)
+	h.m.TakeNotices()
+	if v := stripView(strings.Join(h.m.View(), "\n")); strings.Contains(v, "有線を固定") {
+		t.Errorf("固定した後も enter 有線を固定 を案内した:\n%s", v)
+	}
+	h.keys("enter")
+	if h.m.ov == ovConfirm {
+		t.Fatalf("固定した後も板を出した")
+	}
+	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "固定 IP "+ip) {
+		t.Errorf("固定済みと知らせない: %+v", n)
+	}
+}
