@@ -148,6 +148,8 @@ func candidates(w world, sel selection) ([]entry, []kept) {
 				keep(p, "読めない")
 			case strings.HasPrefix(name, "com.apple."):
 				keep(p, "システム")
+			case unmovable(fi):
+				keep(p, "移せない属性 (immutable / SIP)")
 			case w.procs[name]:
 				// 長く動く daemon の一時 dir (contentlinkingd など)。中が空で mtime は起動時刻のままなので、日数の閾値では守れない
 				keep(p, "動いているプロセスと同じ名前")

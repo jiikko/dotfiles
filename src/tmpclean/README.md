@@ -27,7 +27,7 @@ tmpclean apply -plan <dir>/plan-<ID>.json -approve <ID> [-json]
 | ID | 子孫のシェルの環境変数の `CLAUDE_CODE_SESSION_ID`・argv の `--resume` / `-r` / `--session-id`・自分の ID |
 | 判定不能で止める | cwd を読めない・ASCII 以外や `\` (lsof のエスケープ) を含む・導いた project が無い・起動時の `PWD` と違う・自分の claude の導出が自分の scratchpad と合わない → `session` を止める (2) |
 | 使用中 | lsof の全体の写し (100 件未満なら失敗とみなす) と、移す直前の 1 件の取り直し (stdout・stderr・rc の 3 つで判定。判定不能は残す) |
-| 古さ | 自身と中の全部 (ファイルも dir も) が N 日より前。走査に失敗したら残す。`$TMPDIR` では socket / FIFO を含むもの・`com.apple.*`・symlink も残す |
+| 古さ | 自身と中の全部 (ファイルも dir も) が N 日より前。走査に失敗したら残す。`$TMPDIR` では socket / FIFO を含むもの・`com.apple.*`・rename を拒む属性 (immutable・append・SIP の restricted / nounlink) が付いたもの・symlink も残す |
 | plan を信用しない | apply は候補を作り直して plan との交わりだけを移す。dev/ino が変わったものは残す |
 | 検査点 | `safefs.TrashMove` に渡す Guard が、根の配下の決まった深さ以外と今回の移し先の外を拒否する。ゴミ箱の経路の symlink は何も作る前に断る |
 

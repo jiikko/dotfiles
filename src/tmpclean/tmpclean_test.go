@@ -219,6 +219,24 @@ func TestTmpdirKeeps(t *testing.T) {
 	}
 }
 
+// rename を拒む属性 (SIP の SF_NOUNLINK など) が付いた $TMPDIR の dir は候補にしない (apply が毎回 operation not permitted で落ちる)。
+// SF_* は root でしか付けられないので、利用者が付けられる UF_IMMUTABLE で同じ判定を通す。
+func TestTmpdirKeepsUnmovable(t *testing.T) {
+	f := newFixture(t)
+	p := f.oldTmp("AudioConverterService", 30)
+	if err := syscall.Chflags(p, ufImmutable); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Chflags(p, 0) }) // 付けたままだと TempDir の後片付けが消せない
+	_, out := mustPlan(t, f, "tmpdir")
+	if !strings.Contains(out, "kept (移せない属性 (immutable / SIP)): 1") {
+		t.Errorf("移せない属性で残していない\n%s", out)
+	}
+	if countCandidates(out) != 0 {
+		t.Fatalf("候補が出た\n%s", out)
+	}
+}
+
 // plan を書き換えても、移すものは増やせない: 根そのもの・project dir・根の外・システムの置き場を足して ID を計算し直しても、
 // apply は今の候補との交わりしか移さない。
 func TestTamperedPlanCannotAddTargets(t *testing.T) {
