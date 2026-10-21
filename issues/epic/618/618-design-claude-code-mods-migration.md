@@ -54,7 +54,7 @@ settings に配線されている hook の script 16 本 (エントリは 25) (`
 | `warn-discarding-checkout.sh` | **移さない (settings の hook のまま ask を足した)**。確実に捨てる単純なコマンドだけ PreToolUse の `ask` で人に選ばせ、曖昧な形は注意のまま (ユーザーの判断)。理由に消える一覧を見せられるので mod は要らない | 623 (done) |
 | `ratelimit-warn.sh` | **移した (2026-10-07。hook は fallback として残す)**。`classic.*` が届くようになったので `classic.UserPromptSubmit` で同じ文を注入し、status line にも出す。子プロセス (zsh → Go → 裏の更新) を起こさない | 658 |
 | `next-claim-unshared.sh` | **今は移さない**。モデルに行動 (push の伺い) をさせるための注入で、帯に出すだけでは役目を果たさない。621 の帯にも足さないと決めた。`classic.*` が届く今なら移せるが、新しくできることが少ないので 658 の後に判断 | — |
-| `deny-bare-tmux-kill.sh` / `deny-piped-push-then-destroy.sh` | **移さない**。守りの hook。mod の hook は失敗すると黙ってスキップされ、chain が続く (reference.md「Developing one」)。settings の hook のままにする | — |
+| `deny-bare-tmux-kill.sh` / `deny-piped-push-then-destroy.sh` / `deny-tmp-area-rm.sh` | **移さない**。守りの hook。mod の hook は失敗すると黙ってスキップされ、chain が続く (reference.md「Developing one」)。settings の hook のままにする | — |
 | `issue-progress-check.sh` (Stop で差し戻す) | **今は移さない**。`classic.Stop` の `block` で移せるが、新しくできることが無い | — |
 | `gofmt-on-edit.sh` / `git-state-verify.sh` / `next-claim-push.sh` / `normalize-settings.sh` / `claude-links-sync.sh` / `issue-progress-start.sh` | **移さない**。移しても新しくできることが無い。`claude-links-sync` と `normalize-settings` はセッションの外の状態 (link・settings ファイル) を直す仕事 | — |
 
