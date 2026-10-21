@@ -79,7 +79,7 @@ type world struct {
 }
 
 func gatherWorld(ctx context.Context, d deps, sel selection) (world, error) {
-	r, err := resolveRoots(d, sel.has(kindTmpdir))
+	r, err := resolveRoots(d, sel.has(kindTmpdir), false)
 	if err != nil {
 		return world{}, err
 	}

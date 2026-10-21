@@ -95,18 +95,18 @@ func runCount(d deps, args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil || fs.NArg() > 0 {
 		return exitStopped
 	}
-	rep, err := count(d)
+	rep, err := count(context.Background(), d)
 	if err != nil {
 		return stopped(stderr, err, false)
 	}
 	if *asJSON {
 		return writeJSON(stdout, stderr, rep)
 	}
-	printArea := func(label string, c areaCount) {
+	printArea := func(label string, c AreaCount) {
 		fmt.Fprintf(stdout, "%s: %s\n  total: %d / top_level: %d / empty_dirs: %d / bytes: %d / unreadable: %d\n",
 			label, c.Root, c.Total, c.TopLevel, c.EmptyDirs, c.Bytes, c.Unreadable)
-		for _, p := range c.Prefixes {
-			fmt.Fprintf(stdout, "  %7d %s\n", p.Count, p.Prefix)
+		for _, p := range append(c.Projects, c.Prefixes...) {
+			fmt.Fprintf(stdout, "  %7d %s\n", p.Count, p.Name)
 		}
 	}
 	printArea("session", rep.Session)

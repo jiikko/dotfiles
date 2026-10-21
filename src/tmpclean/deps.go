@@ -1,5 +1,5 @@
 // Package tmpclean は一時領域 (Claude Code の scratchpad と $TMPDIR の直下) を数え、ユーザーが承認した古いものだけを
-// ゴミ箱へ移す CLI の本体。公開するのは Run だけで、cmd/tmpclean の main はそれを呼ぶだけ。
+// ゴミ箱へ移す CLI の本体。公開するのは Run (cmd/tmpclean の main はそれを呼ぶだけ) と、数えるだけの Count (glogx の doctor のタブ)。
 //
 // 判定 (生きている claude・使用中のパス・古さ) は外から推測するしかなく、完全には見分けられない
 // (README の「検出しないもの」)。守りは層を重ね、最後の層をゴミ箱 (戻せる) にしている。

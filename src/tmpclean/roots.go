@@ -3,6 +3,7 @@ package tmpclean
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -32,16 +33,19 @@ type roots struct {
 var tmpDirShape = regexp.MustCompile(`^/private/var/folders/[^/]+/[^/]+/T$`)
 
 // resolveRoots は根を決めて検査する。needTmpdir は tmpdir の種類を扱うか (扱うのに決められなければ止める。
-// 黙って飛ばすと、その種類の候補が全部「候補でない」で残り、成功に見える)。
-func resolveRoots(d deps, needTmpdir bool) (roots, error) {
+// 黙って飛ばすと、その種類の候補が全部「候補でない」で残り、成功に見える)。allowMissingSession は数えるだけのときに
+// scratchpad の根が無いのを「0 件」として通すか (無いと r.session は空。Claude Code を使っていない機械で $TMPDIR まで見えなくしない)。
+func resolveRoots(d deps, needTmpdir, allowMissingSession bool) (roots, error) {
 	var r roots
 	if d.strictRoots && d.sessionRoot != fmt.Sprintf("/private/tmp/claude-%d", os.Getuid()) {
 		return r, stopf("scratchpad の根が想定外: %s", d.sessionRoot)
 	}
-	if err := realDir(d.sessionRoot); err != nil {
-		return r, stopf("scratchpad の根を使えない: %v", err)
+	if _, err := os.Lstat(d.sessionRoot); !allowMissingSession || !errors.Is(err, fs.ErrNotExist) {
+		if err := realDir(d.sessionRoot); err != nil {
+			return r, stopf("scratchpad の根を使えない: %v", err)
+		}
+		r.session = d.sessionRoot
 	}
-	r.session = d.sessionRoot
 	if d.tmpDirEnv == "" {
 		if needTmpdir {
 			return r, stopf("TMPDIR が空なので tmpdir は扱えない")

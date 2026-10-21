@@ -42,7 +42,7 @@ tmpclean apply -plan <dir>/plan-<ID>.json -approve <ID> [-json]
 
 ## 構成
 
-公開は `Run` だけ (`cmd/tmpclean/main.go` はそれを呼ぶ 1 行)。外部コマンドは `internal/runner` だけが起こす (depguard)。
+公開は `Run` と、数えるだけの `Count` (glogx の doctor の「一時領域」タブが使う。消す部分は公開しない)。`cmd/tmpclean/main.go` は `Run` を呼ぶ 1 行。外部コマンドは `internal/runner` だけが起こす (depguard)。
 テストは `deps` に fake の ps / pgrep / lsof と使い捨ての根を入れ、`safefs/sandbox` で根の外への操作を実行前に拒否する (TestMain で違反を見る)。
 
 - `make -C src/tmpclean lint` / `test`

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -451,14 +452,14 @@ func TestCount(t *testing.T) {
 	if rc != exitOK {
 		t.Fatalf("rc=%d %s", rc, errOut)
 	}
-	var rep countReport
+	var rep Counts
 	if err := json.Unmarshal([]byte(out), &rep); err != nil {
 		t.Fatal(err)
 	}
 	if rep.Tmpdir == nil || rep.Tmpdir.TopLevel != 3 || rep.Tmpdir.EmptyDirs != 1 || rep.Tmpdir.Total != 5 {
 		t.Fatalf("tmpdir の集計が違う: %+v", rep.Tmpdir)
 	}
-	if len(rep.Tmpdir.Prefixes) == 0 || rep.Tmpdir.Prefixes[0] != (prefixCount{Prefix: "treefiler-config-", Count: 2}) {
+	if len(rep.Tmpdir.Prefixes) == 0 || rep.Tmpdir.Prefixes[0] != (Part{Name: "treefiler-config-", Count: 2}) {
 		t.Fatalf("接頭辞の集計が違う: %+v", rep.Tmpdir.Prefixes)
 	}
 }
@@ -604,5 +605,61 @@ func TestTrashBaseSymlinkStops(t *testing.T) {
 	}
 	if ents, _ := os.ReadDir(elsewhere); len(ents) != 0 {
 		t.Fatalf("symlink の先に作った: %v", ents)
+	}
+}
+
+// scratchpad はプロジェクトごとの配下の件数を多い順に出す (doctor のタブの「最多」)。
+func TestCountSessionProjects(t *testing.T) {
+	f := newFixture(t)
+	f.deadSession("-big-proj", deadSID, 30)
+	f.mkdir(filepath.Join(f.session, "-big-proj", deadSID2, "a", "b"))
+	rep, err := count(context.Background(), f.d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Session.Projects) < 2 || rep.Session.Projects[0].Name != "-big-proj" || rep.Session.Projects[0].Count != 8 { // project 自身・セッション 2・scratchpad・a・b・ファイル 2
+		t.Fatalf("内訳が違う: %+v", rep.Session.Projects)
+	}
+}
+
+// scratchpad の根が無いのは 0 件として数え、$TMPDIR は数える (Claude Code を使っていない機械で全体を判定不能にしない)。
+// plan / apply は根が無ければ止める (別の経路)。
+func TestCountWithoutSessionRoot(t *testing.T) {
+	f := newFixture(t)
+	f.oldTmp("go-build123456", 30)
+	f.d.sessionRoot = filepath.Join(filepath.Dir(f.session), "claude-missing")
+	rep, err := count(context.Background(), f.d)
+	if err != nil {
+		t.Fatalf("根が無いだけで止まった: %v", err)
+	}
+	if rep.Session.Total != 0 || rep.Tmpdir == nil || rep.Tmpdir.TopLevel != 1 {
+		t.Fatalf("集計が違う: session=%+v tmpdir=%+v", rep.Session, rep.Tmpdir)
+	}
+	if rc, _, _ := f.runCLI("plan", "-kinds", "session", "-out", f.out); rc != exitStopped {
+		t.Fatalf("plan は根が無ければ止めるはず: rc=%d", rc)
+	}
+}
+
+// ctx が終わったら走査を打ち切り、ctx の error を返す (glogx の doctor が閉じるときに数え終わるのを待たない)。
+func TestCountStopsOnCancel(t *testing.T) {
+	f := newFixture(t)
+	f.oldTmp("a123456", 30)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := count(ctx, f.d); !errors.Is(err, context.Canceled) {
+		t.Fatalf("打ち切られていない: %v", err)
+	}
+}
+
+func TestCountDir(t *testing.T) {
+	f := newFixture(t)
+	d := f.mkdir(filepath.Join(f.out, "x", "y"))
+	_ = d
+	c, err := CountDir(context.Background(), f.out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Total != 3 || c.TopLevel != 1 || c.EmptyDirs != 0 || len(c.Projects)+len(c.Prefixes) != 0 {
+		t.Fatalf("CountDir が違う: %+v", c)
 	}
 }
