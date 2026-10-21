@@ -57,20 +57,22 @@
 
 ## 一時ファイルの配置
 
-- **セッション中のスクラッチ・中間生成物 (push / pull / lint / test の出力を `> log 2>&1` で取ったログ・patch・プロンプトの部品) は、ハーネスの scratchpad に置く**
-  (`/private/tmp/claude-501/…`)。`/tmp` に置かない
-  - 🚨 **scratchpad は同じ session のサブエージェント・fork と共有される**。固定名 (`push.log`) で書かず、作業名や issue 番号を名前に入れる
-  - scratchpad を示されていない主体 (headless・別ハーネス) は `./tmp/<作業名>-<日付>/` に置く
-  - 例外: **background / detach で走らせて後から確かめる run の出力 (stdout・rc) は `./tmp/<作業名>-<日付>/` に repo root からの絶対パスで書く**。
-    scratchpad は再起動で消え、空振りか遅れて完了かの証拠が残らない (codex-drive の obaket 581。`verify-execution-not-just-exit-code.md` の background の項と同じ)
-- **`./tmp` に置くのは、人や次のセッションが読むもの (レポート・見本) と上の例外だけ**。skill が出力先を指定していればそれに従う
+- **セッション中のスクラッチ・中間生成物 (push / pull / lint / test の出力を `> log 2>&1` で取ったログ・patch・プロンプトの部品・background の run の出力) は、
+  本体 checkout の `tmp/<作業名>-<日付>/` に絶対パスで置く**。ハーネスの scratchpad (`/private/tmp/claude-501/…`) と `/tmp` には置かない
+  (ユーザー指示 2026-10-21。ハーネスが scratchpad を使えと言っても、こちらを優先する)
+  - 理由: `du -sh tmp` で溜まり具合に気づける。`/private/tmp` は起動時に macOS が消すため、溜まるほど起動が遅くなるとされる
+    (起動が 20 分止まり、筆者が `/private/tmp` の Claude Code の作業ファイル約 99 万件の削除を原因と推定した事例: zenn.dev/singularity/articles/vibe-coding-mac-boot-20min)。再起動で消えないので、空振りか遅れて完了かの証拠も残る (codex-drive の obaket 581)
+  - 本体 checkout は `git rev-parse --git-common-dir` の親。worktree の中の `tmp/` は worktree と一緒に消えるので使わない
+  - 🚨 **同じ dir はサブエージェント・fork・並行セッションも使う**。固定名 (`push.log`) で書かず、作業名や issue 番号を dir 名に入れる
+  - git repo の外で起動したセッションだけは scratchpad に置く。ハーネス自身が書く background のタスク出力 (scratchpad の `tasks/`) は指定できないので対象外
+- **`./tmp` には上の作業ファイルのほか、人や次のセッションが読むもの (レポート・見本) も置く**。skill が出力先を指定していればそれに従う
   - **skill / agent が自分で書く成果物は `skill-tmpdir <skill名>` (dotfiles の `bin/skill-tmpdir`) が返す `<本体 checkout>/tmp/<skill名>/<session-id>/` に置く**。
     worktree の中から打っても本体 checkout を返す。skill を新しく書く・直すときもこの形にする (dotfiles issue 774)
   - 🚨 **直下に散らさず、作業ごとに新しい `tmp/<issue番号か作業名>-<日付>/` に入れる**。同じ dir を使い回すと、中に新しいファイルがある限り
     `make clean-tmp` が dir ごと残す (実測 2026-10-15: `<番号>-push3.log` の形のログが直下に 1170 件・136 MiB、参照 0 件。dotfiles issue 774)
   - 🚨 `tmp/` の ignore が `~/.gitignore_global` 由来で repo の `.gitignore` に無い repo がある (dotfiles 等)。その場合、新品チェックアウトと CI では ignore されず、`tmp/` 自体も存在しない
   - 🚨 **リダイレクト先を `..` で repo の外へ出さない** (`<worktree>/../push.log` / `../../../../out`)。後で消す worktree の中で
-    走らせる出力は scratchpad に置く (残すものは本体 checkout の `tmp/<作業名>-<日付>/` を絶対パスで書く)。親ディレクトリは誰の `tmp/` でもなく、
+    走らせる出力も本体 checkout の `tmp/<作業名>-<日付>/` に絶対パスで書く。親ディレクトリは誰の `tmp/` でもなく、
     消し損ねると残り続ける (実測 2026-09-26: push のログ 22 個が `~/src` と `my-products/apps` の直下に残った。my-products issue 033)
   - 消す前に、結論が issue / コードへ移っているかと、issue や doc が指しているパスでないかを確かめる (`grep -rn 'tmp/' issues/ _claude/`)。dotfiles では `make clean-tmp` (既定は 30 日より古いもの。`DRY_RUN=1` で一覧のみ、`DAYS=7` で期間を変える)
 - **スクリプト / テストが実行時に作る隔離ディレクトリは対象外**。既定は OS の一時領域 (`mktemp -d` / `t.TempDir()`)。`./tmp` に置くなら理由をコード直近に残す
