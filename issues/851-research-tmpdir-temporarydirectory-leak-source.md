@@ -129,6 +129,6 @@ Claude Code の swift-lsp plugin (`_claude/settings.json` の `enabledPlugins` �
   - 変異 24 本すべて red、opus の敵対レビュー 2 体 + 直した差分に 1 周 (内訳は commit message)
   - 本物の環境で 1 回 (2026-10-21 23:09、hook の入口から): removed=62,599・failed=0・rc=0。`TemporaryDirectory.*` は 104,880 → 42,281。
     hook は 0 秒で返った
-- [ ] 残った 42,281 件: 全部「動いている Swift のツールの起動より後に作られた」で残った。範囲を決めたのは 10/10 から動き続けている
+- [x] 残った 42,281 件: 全部「動いている Swift のツールの起動より後に作られた」で残った。範囲を決めたのは 10/10 から動き続けている
   `/Applications/Xcode.app/Contents/Developer/usr/bin/make dev-fg-loop` (`swiftToolCommand` の `/Xcode[^/]*\.app/` が Xcode の中の make まで拾う。
-  敵対レビューが P3 で挙げた形)。make 自身は ArgsResolver を使わない。拾う範囲を絞るかはユーザーの判断待ち
+  敵対レビューが P3 で挙げた形)。拾う範囲を絞るかは 854 へ引き継いだ (ユーザーが make を一度止める予定。止めた後の sweep の確認も 854)
