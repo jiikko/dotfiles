@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -662,6 +663,89 @@ func appIsLive(ctx context.Context, run runner.Runner, app string) (bool, error)
 		return false, fmt.Errorf("lsof を実行できず: %w", err)
 	}
 	return strings.TrimSpace(stdout) != "", nil
+}
+
+// liveTextPaths は起動中のプロセスが実行ファイル・読み込み済みのライブラリとして掴んでいるパス
+// (lsof の txt) を返す。
+//
+// 🚨 プロセス名 (pgrep) では判定しない。DerivedData から起動するアプリの名前はプロジェクトごとに違い、
+// カタログに並べられない。実行ファイルのパス (ps の comm) だけでもなく txt を見るのは、本体が別の場所にあって
+// DerivedData の framework / dylib だけを読み込んでいるプロセス (テストのホスト等) も拾うため。
+// 実測 2026-10-22 (lsof 4.91): `lsof -nP -d txt -Fn` は 26,428 行 / 0.28 秒、stderr は空、rc=0。
+// 起動中の Obaket の Debug ビルドが、本体と Obaket.debug.dylib の 2 行で当たった。
+// 一般ユーザーの lsof が見えるのは自分のプロセスだけだが、DerivedData は本人のものなので足りる。
+// rc が 0 でない・パスが 1 件も無いときは error にする (fail-closed: 「掴んでいるかもしれない」)。
+func liveTextPaths(ctx context.Context, run runner.Runner) ([]string, error) {
+	stdout, stderr, rc, err := runner.WithTimeout(ctx, run, cmdTimeout, "lsof", "-nP", "-d", "txt", "-Fn")
+	if err != nil {
+		return nil, fmt.Errorf("lsof を実行できず: %w", err)
+	}
+	if rc != 0 {
+		return nil, fmt.Errorf("lsof: exit %d: %s", rc, strings.TrimSpace(stderr))
+	}
+	var out []string
+	for _, line := range strings.Split(stdout, "\n") {
+		if p, ok := strings.CutPrefix(line, "n"); ok && filepath.IsAbs(p) {
+			out = append(out, unescapeLsofName(p))
+		}
+	}
+	if len(out) == 0 {
+		// lsof 自身と呼び出し元の実行ファイルが必ず出るので、0 件は出力の形が想定と違う
+		return nil, errors.New("lsof の出力に txt のパスが 1 件も無い")
+	}
+	return out, nil
+}
+
+// unescapeLsofName は lsof が名前に施すエスケープを戻す。
+//
+// 🚨 戻さずに比べると guard が外れる (fail-open)。実測 2026-10-22 (lsof 4.91): locale (LANG / LC_*) の無い環境では
+// 非 ASCII を `\xNN` で出す (ja_JP.UTF-8 では原文のまま)。glogx は locale を持たない環境 (launchd・`env -i`) からも
+// 起動されうる。locale を渡して起動する形にしないのは、locale があっても印字不能と判定された文字は `\xNN` で出るため (man lsof の OUTPUT 節)。
+// `\` そのものは `\\`、タブは `\t` で出る (同日に実測)。
+// 戻さないもの: 他の制御文字の `^X` 形式。`^` そのものはエスケープされないので区別できない (その名前の
+// プロジェクトは照合が外れる)。
+func unescapeLsofName(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	simple := map[byte]byte{'\\': '\\', 'b': '\b', 'f': '\f', 'n': '\n', 'r': '\r', 't': '\t'}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i+1 >= len(s) {
+			b.WriteByte(s[i])
+			continue
+		}
+		if c, ok := simple[s[i+1]]; ok {
+			b.WriteByte(c)
+			i++
+			continue
+		}
+		if s[i+1] == 'x' && i+4 <= len(s) {
+			if v, err := strconv.ParseUint(s[i+2:i+4], 16, 8); err == nil {
+				b.WriteByte(byte(v))
+				i += 3
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+// pathHeldUnder は dir の配下を txt のどれかが指しているか。
+//
+// 🚨 dir は canonicalPath を通してから渡す。lsof は symlink を解決した実パスを出すので、
+// 片側だけ解決すると外れる (/var → /private/var のような system の symlink。DerivedData そのものを symlink にした
+// 構成は、親に symlink を挟む候補を validateTarget が拒否するので、もともと候補にならない)。
+// 大文字小文字は無視する (APFS の既定は case-insensitive。excludedRootFor と同じく、余分に守る側へ倒す)。
+func pathHeldUnder(dir string, txt []string) bool {
+	prefix := strings.ToLower(dir) + "/"
+	for _, p := range txt {
+		if strings.HasPrefix(strings.ToLower(p), prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // excludedRootFor は p が踏み込んでいる除外ルート (無ければ空文字)。

@@ -539,7 +539,7 @@ func TestOnlyReadOnlyCommands(t *testing.T) {
 		"brew --prefix":             {out: env.Home}, // 実機の /opt/homebrew に依存させない
 	}}
 	Scan(context.Background(), Options{Env: env, Run: f.run, BootTime: okBoot})
-	allowed := []string{"pgrep -x", "xcrun simctl list devices -j", "xcrun simctl --set", "xcrun simctl runtime list -j", "brew info --json=v2 --installed", "brew cleanup --dry-run", "brew --prefix", "go env GOMODCACHE"}
+	allowed := []string{"pgrep -x", "xcrun simctl list devices -j", "xcrun simctl --set", "xcrun simctl runtime list -j", "brew info --json=v2 --installed", "brew cleanup --dry-run", "brew --prefix", "go env GOMODCACHE", "lsof -nP -d txt -Fn"}
 	for _, c := range f.calls {
 		line := strings.Join(c, " ")
 		ok := false

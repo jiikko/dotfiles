@@ -91,6 +91,8 @@ const (
 	GuardGoModcacheOld     Guard = "go-modcache-old"
 	// Chromium 由来のキャッシュだけを残し、そのアプリが起動中のものを落とす (guard.go)
 	GuardChromiumCache Guard = "chromium-cache"
+	// 起動中のプロセスが実行ファイル・ライブラリとして掴んでいるものを落とす (lsof の txt。guard.go)
+	GuardDerivedDataLive Guard = "deriveddata-live"
 )
 
 // Entry はカタログの 1 行。UI に出す文言 (Recover / Detail) はここにデータとして持つ。
@@ -144,8 +146,14 @@ type Entry struct {
 var catalog = []Entry{
 	// --- Tier 1: 純粋なキャッシュ ---
 	{ID: "xcode-deriveddata", Label: "Xcode DerivedData", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
-		Recover: "次回ビルドで再生成されます", Detail: "初回ビルドが遅くなるだけ",
-		Paths: []string{"~/Library/Developer/Xcode/DerivedData/*"}},
+		Recover: "次回ビルドで再生成されます", Detail: "初回ビルドが遅くなるだけ。起動中のアプリのビルドは候補から外れる",
+		// 🚨 DerivedData から起動したアプリ (Debug ビルドの直接起動・テストのホスト) が動いている間に
+		// そのプロジェクトのディレクトリを消すと、遅延して読み込む framework・resource が無くなってアプリが落ちうる。
+		// プロジェクト単位 (DerivedData/<名前>-<hash>) で判定するので、他のプロジェクトは候補に残る。
+		// 守らないもの: ビルドの最中 (xcodebuild / SWBBuildService が書いている) のディレクトリ。消してもビルドが
+		// 失敗するだけで、やり直せば再生成される。ビルドサービスのプロセスの有無で止めないのは、Xcode を開いている
+		// あいだ常駐して毎回 blocked になると見込んだため (常駐するかは未実測。止める形を採るなら先に測ること)
+		Paths: []string{"~/Library/Developer/Xcode/DerivedData/*"}, Guard: GuardDerivedDataLive},
 	// iOS 限定にしていないのは watchOS / tvOS DeviceSupport も同型のため。他 OS 版は未実測 (未決)
 	{ID: "xcode-devicesupport", Label: "Xcode DeviceSupport", Tier: 1, Risk: RiskCaution, DeleteVia: "rm",
 		Recover: "実機を再接続すると自動で再取得されます (数分かかります)",

@@ -185,7 +185,7 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 	// exhaustive (.golangci.yml) がそれを強制する: 新しい Guard をどちらにも書き忘れると
 	// guard が 1 つも適用されないまま候補になる (fail-open)。
 	case GuardNone, GuardBoottime, GuardSimDevice, GuardOrphanApp, GuardBrewOrphan, GuardVMRoot,
-		GuardGoModcacheCurrent, GuardGoModcacheOld, GuardChromiumCache:
+		GuardGoModcacheCurrent, GuardGoModcacheOld, GuardChromiumCache, GuardDerivedDataLive:
 	}
 	// $BREW_PREFIX を使うエントリは brew --prefix を実測してから展開する (直書きしない)。
 	// 取れなければ fail-closed (候補 0 件に畳まない)。
@@ -300,6 +300,32 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 			if got != want { // 両側を同じ正規化で比べる
 				kept = append(kept, p)
 			}
+		}
+		paths = kept
+	case GuardDerivedDataLive:
+		// キャッシュしない: 削除の直前に planDelete が Scan を回し直すので、ここが破壊的操作の直前判定になる
+		txt, err := liveTextPaths(ctx, opt.Run)
+		if err != nil {
+			return failed(e, "起動中のプロセスが使うファイルを取れず (候補にしない): "+err.Error())
+		}
+		kept := paths[:0]
+		var held []string
+		for _, p := range paths {
+			dir, err := canonicalPath(opt.Env, p)
+			if err != nil {
+				return failed(e, "対象パスを正規化できず (候補にしない): "+err.Error())
+			}
+			if pathHeldUnder(dir, txt) {
+				held = append(held, filepath.Base(p))
+				continue
+			}
+			kept = append(kept, p)
+		}
+		// 全部が起動中で落ちたら blocked にする (chromium-cache と同じ。黙って 0 件にすると
+		// 行が畳まれて「候補なし」と同じ見え方になる)
+		if len(kept) == 0 && len(held) > 0 {
+			return Result{Entry: e, Status: StatusBlocked,
+				Reason: strings.Join(held, " / ") + " から起動中のプロセスがあるため対象外 (終了して r で再スキャン)"}
 		}
 		paths = kept
 	case GuardChromiumCache:
