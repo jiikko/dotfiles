@@ -74,7 +74,7 @@
   - 🚨 **リダイレクト先を `..` で repo の外へ出さない** (`<worktree>/../push.log` / `../../../../out`)。後で消す worktree の中で
     走らせる出力も本体 checkout の `tmp/<作業名>-<日付>/` に絶対パスで書く。親ディレクトリは誰の `tmp/` でもなく、
     消し損ねると残り続ける (実測 2026-09-26: push のログ 22 個が `~/src` と `my-products/apps` の直下に残った。my-products issue 033)
-  - 消す前に、結論が issue / コードへ移っているかと、issue や doc が指しているパスでないかを確かめる (`grep -rn 'tmp/' issues/ _claude/`)。dotfiles では `make clean-tmp` (既定は 30 日より古いもの。`DRY_RUN=1` で一覧のみ、`DAYS=7` で期間を変える)
+  - 消す前に、結論が issue / コードへ移っているかと、issue や doc が指しているパスでないかを確かめる (`grep -rn 'tmp/' issues/ _claude/`)。dotfiles では `make clean-tmp` (既定は 30 日より古いもの。`DRY_RUN=1` で一覧のみ、`DAYS=7` で期間を変える)。`/private/tmp`・`$TMPDIR` を片付けるなら `cleanup-tmp-dir` skill (`bin/tmpclean`。直接 rm しない)
 - **スクリプト / テストが実行時に作る隔離ディレクトリは対象外**。既定は OS の一時領域 (`mktemp -d` / `t.TempDir()`)。`./tmp` に置くなら理由をコード直近に残す
 - 線引きは置き場所ではなく **終了時に消す責任が実装されているか**
   - 🚨 パスで判断しない (`mktemp -d` は macOS では `/var/folders/…`、Linux では `/tmp` 配下になりうる)
@@ -167,6 +167,7 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | issue-sync, issue同期, 完了漏れ, done移動 | `~/.claude/skills/issue-sync/SKILL.md` |
 | issue-writeback, issue更新漏れ, 書き戻し漏れ, issue更新した? | `~/.claude/skills/issue-writeback/SKILL.md` (本文の追記漏れ。done 移動は issue-sync) |
 | start-issues-ops, issue運用を始める, issuesディレクトリを作る | `~/.claude/skills/start-issues-ops/SKILL.md` (issues/ を作り dotfiles の README を持ち込む。commit するかはユーザーに聞く) |
+| cleanup-tmp-dir, /tmp を掃除, 一時ファイルを片付け, TMPDIR が溜まっている | `~/.claude/skills/cleanup-tmp-dir/SKILL.md` (`bin/tmpclean` で /private/tmp の Claude Code の作業場所と $TMPDIR を数え、承認された plan の古いものだけをゴミ箱へ移す。dotfiles の tmp/ は `make clean-tmp`。浅い場所を直接 rm する形は hook `deny-tmp-area-rm.sh` が止める) |
 | claude-md-refresh, CLAUDE.md の refresh, README が古い, ディレクトリの文書の乖離 | `~/.claude/skills/claude-md-refresh/SKILL.md` (引数で対象ディレクトリを指定。issues/ は対象外) |
 | refresh-on-session, 差分全体の見直し, 用語の揺れ, コメントの更新漏れ, 呼び出し元の追従漏れ | `~/.claude/skills/refresh-on-session/SKILL.md` (ブランチ / セッションの差分だけを見る。差分から用語集を作って照合する。バグ探しは `/code-review`) |
 | events.yml, 審査が通った, バージョン公開を記録, product-analytics, my-products-update-apps-event | `~/.claude/skills/my-products-update-apps-event/SKILL.md` (my-products の product-analytics に App Store の最新版の公開を記録する) |
