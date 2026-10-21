@@ -88,6 +88,8 @@ issues viewer (`issuesView`) と周辺で、対で更新すべき状態の更新
 - `make -C src/glogx lint` 0 issues / `make -C src/glogx test` rc=0 (2026-10-08)
 - 観測: 1 回目の `make test` で doctor 系の 2 本 (`TestRescanCancelsPreviousGeneration` 10s / `TestCursorFallbackIsToldThroughBrowseModel` 30s) が時間切れで落ちた
   (全体 107s。マシンに負荷)。単独では 3/3 通り、同じ HEAD の 2 回目の `make test` も通った (48s) = 非決定性。この変更が触っていない走査の cancel 経路のテストで、未起票
+  - 2026-10-21: `TestRescanCancelsPreviousGeneration` の原因はテストの作り。fake が `select { case started <- …: default: }` で合図を送るのに `started` がバッファ無しで、
+    fake がテストより先に走ると合図が捨てられて 10 秒待つ (待ち始めを 200ms 遅らせると 3/3 で再現)。`started` をバッファ 1 にして直した。`TestCursorFallbackIsToldThroughBrowseModel` は未調査
 - [x] 敵対的レビュー (2026-10-08、663〜667 をまとめて 2 体を直列。①壊す・回帰 ②素通り)。①は P1/P2 の退行 0 件
   (横断キーの 3 打鍵 64 通りで全画面の 2 枚同時は 0 件 / setNotice 38 件で旧来 lastWarning に残ったエラー詳細の消失 0 件 /
   watchChain・groupExpansion・ContainerDir・OrderLess・IsStatusDir・URL ピッカーの窓はどれも旧実装と等価)。②は新しい検査を 3 つ壊した (下記)。

@@ -322,7 +322,10 @@ func TestDeleteIsTrackedAndCancelled(t *testing.T) {
 // この修正が無いと 211 が hang を新設する)。
 func TestRescanCancelsPreviousGeneration(t *testing.T) {
 	drainDoctorCleanup(t)
-	started := make(chan struct{})
+	// 🚨 started はバッファ 1: fake は select の default で送るので、バッファが無いと fake がテストより先に走ったとき
+	// (テストがまだ <-started で待っていない) 合図が捨てられ、10 秒待って「1 世代目の Run が呼ばれない」で落ちる。
+	// テストの待ち始めを 200ms 遅らせると毎回落ちた (2026-10-21)。2 世代目以降の送信は default で捨ててよい
+	started := make(chan struct{}, 1)
 	returned := make(chan struct{})
 	var once sync.Once
 	// 🚨 ctx を掴んで Err() を見る形は駄目だった: Run に渡るのは `runner.WithTimeout` の
