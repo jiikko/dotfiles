@@ -11,7 +11,15 @@
 - a17a0dbd: 04577f69 で入った 120 字超の 2 行を折る (master の Lint を赤にしていた)
 
 pre-push の 6 本は責務が別で、統合しても走査は減らない (表は下)。冗長だったのは CI の方で、
-2026-10-07〜21 の master の 1024 commit 中 497 件が issues/ だけの変更なのに、毎回 Tests (6〜10 分) と Lint (1.5〜3 分) が走っていた。
+master の commit のおよそ半分 (49%) が issues/ だけの変更なのに、毎回 Tests (6〜10 分) と Lint (1.5〜3 分) が走っていた。
+件数は 372715b1 (作業開始時の master) から数えて 1014 件中 492 件。作業中に数えた 1024 / 497 (workflow のコメントの値) とずれるのは、
+`--since` の起点が実行時刻で動くため。数え方:
+
+```sh
+for c in $(git log --since=2026-10-07 --format=%H --first-parent 372715b1); do
+  git diff-tree --no-commit-id --name-only -r "$c" | grep -qv '^issues/' || echo "$c"
+done | wc -l
+```
 
 | 検査 | 見るもの | 所要 (2026-10-21) |
 |---|---|---|
@@ -59,32 +67,37 @@ pre-push の 6 本は責務が別で、統合しても走査は減らない (表
 
 ## 次に効きそうな改善
 
-1. **検査が道具の不在で弱い経路に落ちた・skip したら、その検査が見る種類のファイルを変えた変更では、緑を証拠に数えない**
-   - 道具を入れて回すか、「その検査は未実施」と報告に書く
-   - 今回は workflow を変えたのに、yamllint と actionlint が無いまま `make test-lint` の緑で進めた
-   - 別の repo・別の言語の lint (formatter の fallback・optional な linter) でも同じ形で起きる
-   - 切り出し先: `_claude/rules/verify-execution-not-just-exit-code.md` の「確認の仕方」の表へ 1 行追記
-2. **シグナル・プロセスを観測するときは、結果を読む前に、観測が対象に当たったことを確かめる**
-   - 確かめること: 照合が対象を拾ったか、シグナルが無視されていない相手に届いたか、測る間に対象がまだ生きていたか
-   - 「残り 0」「止まった」は、観測が空振りしても同じ値になる
-   - 切り出し先: `_claude/rules/verify-execution-not-just-exit-code.md` の「有無で結果が変わらない観測を証拠に数えない」節へ追記
-     (例として、非対話シェルの `&` は SIGINT を無視した子を作る / macOS の `ps` は `-ww` が無いと切り詰める)
-3. **「X は Y を読まない / 含まない」を、検査や網を外す理由としてコメントに書く前に、Y の母集合を 2 通りの方法で数える**
-   - 外す網が見ていた集合を、方法を変えて列挙し (発見式の展開・git ls-files・grep)、一致を確かめてから書く
-   - 理由のコメントは、次に網を戻すかどうかの判断材料になる。誤りが残ると、戻す判断を逆に導く
-   - 切り出し先: `_claude/rules/list-masked-failure-modes-before-removing-guard.md` の手順 1 へ追記
-     (「呼ばれ方を grep」に「外す網の母集合を 2 通りで数え、理由のコメントはその結果だけで書く」を足す)
+1. **「lint 緑」を証拠に数える前に、ログに skip / fallback の行が出ていないかを読む**
+   - 出ていたら、その検査が見る種類のファイルを変えた変更では、道具を入れて回すか「その検査は未実施」と書く
+   - 既存の rule でほぼ足りている。`verify-execution-not-just-exit-code.md` の表の「新規テスト」の行は「skip を実行の証拠に数えない」と書き、
+     冒頭の「手元の検査が CI より狭い範囲しか回さないと知っている変更では、push の後に CI の結果を待つ」が直接の是正にあたる。
+     今回は手元の lint が狭いと「知っていた」状態に無かった。足りなかったのは、それに気づくための 1 点 (ログの skip / fallback の行を読む) だけ
+   - 切り出し先: `verify-execution-not-just-exit-code.md` の上の冒頭の項へ「skip / fallback の行が出ていたら、狭いと知っている状態に数える」を併合する (新しい項は立てない)
+2. **シグナル・プロセスを観測するときの空振りの例を足す**
+   - 主旨 (観測が空振りしても同じ値になる。必ず在るもので先に較正する) は、`verify-execution-not-just-exit-code.md` の
+     「抽出・判定を書いたら、同じ経路を通る canary を先に置く」節と「有無で結果が変わらない観測を証拠に数えない」節に既にある
+   - 新しいのは軸 1 つ (シグナルが届く相手か) と具体例だけ: 非対話シェルの `&` は SIGINT を無視した子を作る / macOS の `ps` は `-ww` が無いと
+     コマンド行を切り詰める / 子の mktemp が渡した TMPDIR を使わないことがある
+   - 切り出し先: 「有無で結果が変わらない観測を証拠に数えない」節に例として 1 行追記
+3. **網を外す理由のコメントに書く「X は Y を読まない」も、`mutation-verify-new-tests.md` の「検査の不在を主張するときの裏取り」の対象に数える**
+   - 方法を変えた列挙を最低 2 通り、という作法はその節に既にある。足りなかったのは発動点 (外す理由のコメントを書く瞬間) だけ
+   - 切り出し先: その節の冒頭の発動の文に「網を外す理由のコメントを書くとき」を 1 語足す (`list-masked-failure-modes-before-removing-guard.md` の手順 1 は
+     「呼ばれ方を grep」で母集合の数え方の置き場ではないので、そちらには足さない)
 
 局所的なもの (切り出し先を提案しない):
 
-- `make test-yaml` / `test-actionlint` が道具の不在で弱い経路に落ちても緑を返す。直していない。改善 1 を rule に入れれば足りるか、
-  Makefile 側で fallback を目立たせる (末尾に「未実施の検査」の一覧を出す) かは、ユーザーの判断を待つ
+- `make test-yaml` (Makefile の test-yaml。yamllint が無いと ruby の構文検査に落ちる) と `test-actionlint` (無いと skip を出して rc=0) は、
+  道具の不在でも緑を返す。直していない。`scripts/check_skip_exit_code.sh` (skip を告げて exit 0 を落とす) は tests 用で、Makefile の lint の
+  target には効かない。改善 1 を rule に入れれば足りるか、Makefile 側で fallback を目立たせる (`make test-lint` の末尾に「未実施の検査」の一覧を出す)
+  かは、ユーザーの判断を待つ
 - pre-push の並列化は、fork から `pids+=` までの数命令の間にシグナルが来ると検査が 1 本残る窓を受けた (c6ea7b2b の commit message)
 
 却下:
 
 - 却下: cancel された run を自分の commit の検証に数えかけた件。既存の rule (verify-execution-not-just-exit-code.md の「起動しなかった / 取り消された run」) で拾えたので、追記は要らない
-- 却下: 並列化の退行を敵対レビューが出した件。既存の rule (adversarial-review-own-safeguards.md / mutation-verify-new-tests.md の「変異は自分が想定した不変条件しか試さない」) どおりに動いた
+  (改善 1 とは別の失敗: こちらは取り消しに気づいて後ろの run で確かめられた。改善 1 は、後ろの run を待つ前に「手元で緑」を根拠にした方)
+- 却下: 並列化の退行を敵対レビューが出した件。既存の rule どおりに動いた (`mutation-verify-new-tests.md` の「関連」の「変異は自分が想定した
+  不変条件しか試さない」と、`adversarial-review-own-safeguards.md` の敵対的レビューを最終ゲートにする規律)
 
 ## 進捗
 
