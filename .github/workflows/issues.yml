@@ -41,7 +41,11 @@ jobs:
           stray=$(git ls-files issues | grep -vE '\.md$|(^|/)\.keep$|^issues/audit-log$' || true)
           n=$(git ls-files issues | grep -c . || true)
           [ "$n" -gt 0 ] || { echo "::error::git ls-files issues が 0 件 (checkout が壊れている)"; exit 1; }
-          [ -z "$stray" ] || { echo "::error::issues/ に .md / .keep / audit-log 以外のファイルがある (置き場所を issues/ の外へ):"; echo "$stray"; exit 1; }
+          if [ -n "$stray" ]; then
+            echo "::error::issues/ に .md / .keep / audit-log 以外のファイルがある (置き場所を issues/ の外へ):"
+            echo "$stray"
+            exit 1
+          fi
           echo "issues/ の追跡ファイル ${n} 件はすべて .md / .keep / audit-log"
       # 回す検査の一覧は githooks/pre-push の CHECKS が正本 (tests/issues/ の道具自身のテストは issues/ の中身で
       # 結果が変わらないので回さない。全部回すと 1 分近くかかる)。一覧をここに写さない: 写すと hook に足した検査が CI から漏れる
