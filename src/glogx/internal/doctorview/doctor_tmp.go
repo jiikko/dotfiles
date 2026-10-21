@@ -191,15 +191,14 @@ func (v *DoctorView) tmpSection(o DoctorRenderOpts) []doctorRow {
 	}
 
 	sess := c.Session
-	rows = append(rows, tmpAreaRow(tmpSessionRowKey, line("Claude Code の作業場所", sess, ""), sess.Root, sess.Projects, "",
-		tmpPrompt("Claude Code の作業場所 (/private/tmp の scratchpad)", sess.Total, sess.Projects, "", 0), o))
+	prompt := tmpPrompt(rep)
+	rows = append(rows, tmpAreaRow(tmpSessionRowKey, line("Claude Code の作業場所", sess, ""), sess.Root, sess.Projects, "", prompt, o))
 	if len(sess.Projects) > 0 {
 		rows = append(rows, most(tmpSessionRowKey, []string{tmpPartText(sess.Projects[0], "")})...)
 	}
 	if c.Tmpdir != nil {
 		t := *c.Tmpdir
-		rows = append(rows, tmpAreaRow(tmpTmpdirRowKey, line("$TMPDIR", t, ""), t.Root, t.Prefixes, "*",
-			tmpPrompt("$TMPDIR の直下", t.Total, t.Prefixes, "*", t.EmptyDirs), o))
+		rows = append(rows, tmpAreaRow(tmpTmpdirRowKey, line("$TMPDIR", t, ""), t.Root, t.Prefixes, "*", prompt, o))
 		var parts []string
 		if t.EmptyDirs > 0 {
 			parts = append(parts, "空の dir "+tmpCount(t.EmptyDirs))
@@ -215,7 +214,7 @@ func (v *DoctorView) tmpSection(o DoctorRenderOpts) []doctorRow {
 	if rep.repoTmp != "" {
 		r := rep.repo
 		rows = append(rows, tmpAreaRow(tmpRepoRowKey, line("この repo の tmp/", r, doctorColor(o.Colored, term.AnsiDim, " (参考)")),
-			rep.repoTmp, nil, "", tmpPrompt("この repo の tmp/ ("+termsafe.PlainLine(rep.repoTmp)+"。起動時の削除には関係しない)", r.Total, nil, "", 0), o))
+			rep.repoTmp, nil, "", prompt, o))
 	}
 	return rows
 }
@@ -253,23 +252,38 @@ func tmpPartText(p tmpclean.Part, suffix string) string {
 	return termsafe.PlainLine(p.Name) + suffix + " " + tmpCount(p.Count)
 }
 
-// tmpPrompt は Y でコピーする「片付けを頼むプロンプト」。承認を省く書き方はしない (skill が手順 4 で必ず承認を取る)。
-func tmpPrompt(target string, total int, parts []tmpclean.Part, suffix string, empty int) string {
+// tmpPrompt は Y でコピーする「片付けを頼むプロンプト」。**タブの全体で 1 つ** (どの行で Y を押しても同じ): 片付けは
+// skill が全領域を数えて種類ごとに承認を取るので、行ごとに対象を絞ったプロンプトは要らない (ユーザー指定 2026-10-21)。
+// 承認を省く書き方はしない (skill が手順 4 で必ず承認を取る)。
+func tmpPrompt(rep tmpReport) string {
+	c := rep.counts
 	var b strings.Builder
-	b.WriteString("/cleanup-tmp-dir で一時領域を片付けて。対象は " + target + "。glogx の doctor では " + tmpCount(total))
-	most := make([]string, 0, 4)
-	if empty > 0 {
-		most = append(most, "空の dir "+tmpCount(empty))
-	}
-	for i, p := range parts {
-		if i >= 3 {
-			break
+	b.WriteString("/cleanup-tmp-dir で一時領域を片付けて。glogx の doctor では、起動時に消える場所が合計 " + tmpCount(tmpBootTotal(c)) + ":\n")
+	area := func(label string, total int, parts []tmpclean.Part, suffix string, empty int) {
+		b.WriteString("- " + label + ": " + tmpCount(total))
+		most := make([]string, 0, 4)
+		if empty > 0 {
+			most = append(most, "空の dir "+tmpCount(empty))
 		}
-		most = append(most, tmpPartText(p, suffix))
+		for i, p := range parts {
+			if i >= 3 {
+				break
+			}
+			most = append(most, tmpPartText(p, suffix))
+		}
+		if len(most) > 0 {
+			b.WriteString("。多いのは " + strings.Join(most, " / "))
+		}
+		b.WriteString("\n")
 	}
-	if len(most) > 0 {
-		b.WriteString("で、多いのは " + strings.Join(most, " / "))
+	area("Claude Code の作業場所 (/private/tmp の scratchpad)", c.Session.Total, c.Session.Projects, "", 0)
+	if c.Tmpdir != nil {
+		area("$TMPDIR の直下", c.Tmpdir.Total, c.Tmpdir.Prefixes, "*", c.Tmpdir.EmptyDirs)
 	}
-	b.WriteString("。消す前に、種類ごとの件数と失うものを見せて確認して。")
+	b.WriteString("- /private/tmp のその他: " + tmpCount(c.OtherPrivate) + " (消さない)\n")
+	if rep.repoTmp != "" {
+		b.WriteString("- この repo の tmp/ (" + termsafe.PlainLine(rep.repoTmp) + "): " + tmpCount(rep.repo.Total) + " (起動時の削除には関係しない)\n")
+	}
+	b.WriteString("消す前に、種類ごとの件数と失うものを見せて確認して。")
 	return b.String()
 }

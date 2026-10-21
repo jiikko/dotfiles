@@ -107,18 +107,31 @@ func TestTmpSectionRowsAndExpand(t *testing.T) {
 	}
 }
 
-// Y は片付けを頼むプロンプト (skill を名指しし、件数と多いものを載せ、承認を求める)。案内の語も変える。
+// Y は片付けを頼むプロンプトを**タブの全体で 1 つ**コピーする: どの行で押しても同じで、全領域の件数と多いものが載る。
+// skill を名指しして承認を求める。案内の語も変える。
 func TestTmpYCopiesPrompt(t *testing.T) {
 	v, _ := openTmpTab(t, doctortest.FakeTmpCounts, nil)
 	_ = v.Lines(testOpts(30))
+	if v.rows[v.cur.index].key != tmpSessionRowKey {
+		t.Fatalf("前提: カーソルが作業場所の行に無い: %q", v.rows[v.cur.index].key)
+	}
 	if act := v.HandleKey("Y", 30); act != DoctorCopyText {
 		t.Fatalf("Y が解説のコピーにならない: %v", act)
 	}
-	p := v.CopyPayload()
-	for _, want := range []string{"/cleanup-tmp-dir", "1.6万件", "-Users-me-dotfiles 1.4万件", "確認して"} {
-		if !strings.Contains(p, want) {
-			t.Errorf("プロンプトに %q が無い: %q", want, p)
+	fromSession := v.CopyPayload()
+	for _, want := range []string{"/cleanup-tmp-dir", "合計 2.3万件", "Claude Code の作業場所", "-Users-me-dotfiles 1.4万件", "$TMPDIR の直下: 7,117件", "空の dir 1,182件", "tmp.* 489件", "/private/tmp のその他: 41件", "確認して"} {
+		if !strings.Contains(fromSession, want) {
+			t.Errorf("プロンプトに %q が無い:\n%s", want, fromSession)
 		}
+	}
+	v.HandleKey("j", 30) // → $TMPDIR の行
+	_ = v.Lines(testOpts(30))
+	if v.rows[v.cur.index].key != tmpTmpdirRowKey {
+		t.Fatalf("前提: カーソルが $TMPDIR の行に無い: %q", v.rows[v.cur.index].key)
+	}
+	v.HandleKey("Y", 30)
+	if got := v.CopyPayload(); got != fromSession {
+		t.Errorf("行によってプロンプトが違う:\n作業場所の行: %s\n$TMPDIR の行: %s", fromSession, got)
 	}
 	if !strings.Contains(v.Hint(200), "Y: 片付けを頼むプロンプトをコピー") {
 		t.Errorf("案内の語が変わっていない: %q", v.Hint(200))
