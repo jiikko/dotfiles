@@ -1,7 +1,5 @@
 # 852 (bug): treefiler と glogx の TestFrameAllocBudget が、テストの dir が git repo の中にあると確保の上限を超えて落ちる
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-21〜）
-
 起票日: 2026-10-21
 
 ## 概要
@@ -84,5 +82,18 @@ glogx の `TestFrameAllocBudget` の filer の行 (`src/glogx/frame_alloc_test.g
 - [x] 反証レビュー (サブエージェント 1 体、read-only): P1 = glogx の filer の行も同じ前提に依る (再現して本文へ反映) /
   P2 = 方針 1 の副作用 (反映) / P3 = repo の重さで揺れる推定 (未実測として反映)。反証できなかった主張: 256 / 312 の実測、
   `findRepoTop` が git を起こさず `GIT_CEILING_DIRECTORIES` が効かないこと、symlink 説の否定、CI の workflow が `TMPDIR` を設定していないこと
-- [ ] 直す
-- [ ] 他のテストに同じ前提が無いかを見る
+- [x] 直す (方針 1) — commit「treefiler・glogx: 確保の予算の検査を、全部を commit した repo の木で測る」
+  - treefiler: `cleanRepo` (`alloc_budget_test.go`) で木を `main` の repo にして全部を commit。`GIT_CONFIG_GLOBAL=/dev/null`・`GIT_CONFIG_NOSYSTEM=1` を `t.Setenv` し、
+    裏の `git status` にも利用者の設定ファイルを読ませない (既定の excludesfile `~/.config/git/ignore` は読まれる。コメントに明記)
+  - glogx: `budgetFilerModel` で同じことをする (`gitIn` の引数を `testing.TB` に広げて流用)
+  - 下界の検査に「`⎇ main` を描いたか」を足した (反証レビュー 2 回目の P2: git の取り込みが黙って失敗すると、印の無い軽い画面を測って緑になる)
+- 実測 (go1.26.0 darwin/arm64、`TMPDIR` = 既定 / repo の中の untracked / repo の中の ignore の 3 通り):
+  treefiler は 3 通りとも 258 回 (上限を 258 → 260 に上げた。増えた 2 回は木を repo にしてブランチ名を描く分。repo の外で測っていた修正前は 256)。
+  glogx の filer の行は 3 通りとも 211 回 / 50,214〜50,223 B (`-race`)。上限 222 / 51,500 B は据え置き
+- 変異 (mutate-verify、`TMPDIR` を repo の中の untracked に向けて): `cleanRepo(t, dir)` の呼び出しを消すと treefiler が 312 / 260 で red。
+  glogx の repo 化の 3 行を消すと 245 / 222 で red。`branchFor` が常に "" を返す形にすると、treefiler と glogx の両方が「ブランチを描いていない」で red
+- [x] 他のテストに同じ前提が無いかを見る: treefiler の `filer` 全体では `TestFrameAllocBudget` だけ (本文の「影響」)。glogx はこの 1 行を直した。
+  glogx の他のテストと他の module は見ていない (repo の中の `TMPDIR` で `make test` を回すのは、この issue の範囲外)
+- 反証レビュー 2 回目 (素通りの観点、read-only 1 体): P1 なし。P2 (ブランチの前提) は上で対応。P3 のうち「global の設定も切る」の言い過ぎはコメントを直した。
+  残した P3: `needGit` は CI の外では Skip するので、git の無い手元では treefiler の予算の検査が走らない (CI では Fatal なので CI 側は弱まっていない。glogx は git が無いと Fatal で、
+  2 つの module で扱いが違う)。glogx の case の注記「止まった画面で 220 / 50799 B」は今の実測 211 / 50,2xx B と合わないが、修正前からのずれで上限も据え置いたので触らない

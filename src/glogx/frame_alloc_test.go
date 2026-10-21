@@ -310,6 +310,15 @@ func budgetFilerModel(tb testing.TB) *browseModel {
 			}
 		}
 	}
+	// 全部を commit した印の無い repo にする。git の印を描くかで確保が変わり (repo の外 209 / 外側の repo の untracked 245)、
+	// 木を作る場所 (TMPDIR) がどこかの repo の中かをテストが決めていなかった。treefiler は .git を上へ辿って repo を探すので
+	// GIT_CEILING_DIRECTORIES では外側の repo を切れない。利用者の global / system の設定ファイルは、裏で起こす git status にも読ませない
+	// (既定の excludesfile ~/.config/git/ignore は読まれる)
+	tb.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	tb.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	gitIn(tb, dir, "init", "-q", "-b", "main")
+	gitIn(tb, dir, "add", ".")
+	gitIn(tb, dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x")
 	m.filerV.Toggle(dir)
 	m.filerV.HandleKey("l") // alpha を開いて中へ
 	// 止まった画面を測る: 固定の時計を 50ms ずつ進め、動きと裏の処理 (走査・git) が止まるまで回す。
@@ -323,6 +332,10 @@ func budgetFilerModel(tb testing.TB) *browseModel {
 		at = at.Add(50 * time.Millisecond)
 		m.filerV.Advance(at)
 		time.Sleep(time.Millisecond) // sleep-ok: tick: 裏の goroutine (走査・git) の完了を条件で待つループの刻み
+	}
+	// git の取り込みが失敗すると印の無い軽い画面を測って緑になる (assertFrameDrawn は描いたかしか見ない)
+	if v := term.StripANSI(m.View().Content); !strings.Contains(v, "⎇ main") {
+		tb.Fatalf("前提: treefiler が repo のブランチを描いていない:\n%s", v)
 	}
 	return m
 }

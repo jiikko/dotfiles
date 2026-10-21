@@ -57,7 +57,7 @@ func pullSandbox(t *testing.T) string {
 	return work
 }
 
-func gitIn(t *testing.T, dir string, args ...string) string {
+func gitIn(t testing.TB, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
