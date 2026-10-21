@@ -2,9 +2,17 @@
 name: Lint
 
 on:
+  # issues/ だけの push では走らせない (2026-10-07〜21 の master は 1024 commit 中 497 件がそれで、Lint は 1.5〜3 分かかっていた)。
+  # test-lint が issues/ から拾いうるのは .md 以外のファイルだけ (discover_yaml_files.sh の YAML、check_trigger_log_writers.sh は
+  # git ls-files の .md 以外)。issues.yml が「issues/ は .md・.keep・audit-log だけ」を確かめるので、issues/ だけの push で
+  # lint の対象が増えることは無い (audit-log と .keep は名前でしか見ないので、中身に trigger log への追記の形を書く push は素通りする。今の中身 = TSV のログと空ファイルには無い)。300 ファイルの制限は tests.yml の注記
   push:
     branches: [master]
+    paths-ignore:
+      - 'issues/**'
   pull_request:
+    paths-ignore:
+      - 'issues/**'
   workflow_dispatch:  # GitHub UI からの手動再実行 (flake 切り分け用)
 
 permissions:

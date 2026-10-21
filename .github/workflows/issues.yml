@@ -1,0 +1,61 @@
+---
+name: Issues
+
+# issues/ を触る push で、issue の整合 (番号の重複・相対リンク・next の目印・担当バナー・human の期限・
+# issues/ の外からの裸パス参照) を検査する。tests.yml / lint.yml は issues/ だけの push では走らないので、
+# その push の CI の網はここだけになる (手元の網は githooks/pre-push)。
+# issues/ の外も触る push では tests.yml も同じ検査を回す (重複は数秒なので受ける)。
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'issues/**'
+      - .github/workflows/issues.yml
+  pull_request:
+    paths:
+      - 'issues/**'
+      - .github/workflows/issues.yml
+  workflow_dispatch:  # GitHub UI からの手動再実行用
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  issue-state:
+    # 🚨 `macos-latest` にしない (tests.yml と同じ規律)
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/ensure-toolchain
+        with:
+          commands: ""
+      # tests.yml / lint.yml は issues/ だけの push で走らないが、repo 全体を走査する検査 (YAML の発見・shell script の発見・
+      # trigger log の書き手) は issues/ の .md 以外のファイルも拾う。issues/ にそれを置かせないことで、外した網を閉じる
+      - name: issues/ has only issue files
+        run: |
+          stray=$(git ls-files issues | grep -vE '\.md$|(^|/)\.keep$|^issues/audit-log$' || true)
+          n=$(git ls-files issues | grep -c . || true)
+          [ "$n" -gt 0 ] || { echo "::error::git ls-files issues が 0 件 (checkout が壊れている)"; exit 1; }
+          [ -z "$stray" ] || { echo "::error::issues/ に .md / .keep / audit-log 以外のファイルがある (置き場所を issues/ の外へ):"; echo "$stray"; exit 1; }
+          echo "issues/ の追跡ファイル ${n} 件はすべて .md / .keep / audit-log"
+      # 回す検査の一覧は githooks/pre-push の CHECKS が正本 (tests/issues/ の道具自身のテストは issues/ の中身で
+      # 結果が変わらないので回さない。全部回すと 1 分近くかかる)。一覧をここに写さない: 写すと hook に足した検査が CI から漏れる
+      - name: Run issue state checks
+        run: |
+          checks=$(bash githooks/pre-push --list-checks | sed -n 's/^check //p')
+          [ -n "$checks" ] || { echo "::error::githooks/pre-push --list-checks から検査の一覧を読めなかった"; exit 1; }
+          n=0
+          failed=""
+          for c in $checks; do
+            n=$((n + 1))
+            echo "::group::$c"
+            bash "tests/issues/$c.sh" || failed="$failed $c"
+            echo "::endgroup::"
+          done
+          echo "検査 ${n} 本を回した"
+          [ -z "$failed" ] || { echo "::error::落ちた検査:$failed"; exit 1; }

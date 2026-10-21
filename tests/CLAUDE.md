@@ -62,6 +62,10 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
 `test-runtime-rest` (heavy を除いた残り。並列腕 + 直列腕) の 2 job。`make test` は
 この 2 つを合わせた集合で、差分の正本は Makefile の `CI_HEAVY_TEST_DIRS` / `CI_HEAVY_PRUNE`。
 
+`tests.yml` と `lint.yml` は **issues/ だけの push では起動しない** (`paths-ignore`)。その push では
+`issues.yml` が `githooks/pre-push --list-checks` の検査 (tests/issues/ の repo の状態を見るもの) だけを回す。
+🚨 issues/ の中身を読む検査を tests/issues/ の外に足すなら、issues.yml にも載せる (載せないと issues/ だけの push で走らない)
+
 ## 何をいつ回すか
 
 - **既定は `make test`** (433 秒)。コミット前はこれを通す

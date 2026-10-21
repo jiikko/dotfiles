@@ -12,6 +12,7 @@
 #   (issue の本文は docs/ や _claude/ を相対で指しているので、リンク先を動かすとリンクが切れる)。
 #   全部を回すと、master が別の理由で赤い間は src/ の rename まで止めてしまう
 # - web・別の環境・`--no-verify` から入る push は止められない。そこは CI が最後の網
+#   (issues/ だけの push では tests.yml が走らず、.github/workflows/issues.yml が下の CHECKS を回す)
 #
 # 脅威モデル: 止めるのはうっかり壊した issue を push すること。意図的な迂回は相手にしない。
 # 検出しない形 (意図的):
@@ -22,7 +23,8 @@
 set -uo pipefail
 unset CDPATH
 
-# 回す検査。repo の状態を見る速いもの (合計 6 秒前後)
+# 回す検査。repo の状態を見る速いもの (hook 全体で 3 秒前後。2026-10-21 実測)。
+# .github/workflows/issues.yml も `--list-checks` でこの一覧を読む (ここが正本)
 CHECKS=(
   test_issue_numbers_unique
   test_issue_links_valid

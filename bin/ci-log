@@ -18,6 +18,7 @@
 #                     と引数の中で展開すると ci-log の rc が捨てられ、空の ID で 404 になる。「最新の run」で選ぶと別の commit の
 #                     run を拾う。--exit-status が無いと run が失敗しても watch は rc=0 で終わる。
 #                     rc=4: run がまだ無い (push 直後でまだ作られていない / paths filter で起動しない)。上限つきで再試行する
+#                           (issues/ だけの commit では Tests / Lint は起動しない。待つのは Issues)
 #                     rc=5: その commit が GitHub に無い (push していない。待っても run は来ない)
 #                     rc=1: gh の失敗 (認証・ネットワーク・workflow の名前の誤り) / rc=2: 引数の誤り
 
