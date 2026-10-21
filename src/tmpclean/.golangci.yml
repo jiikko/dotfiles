@@ -1,0 +1,50 @@
+# golangci-lint v2 config for tmpclean。既定の linter に、このモジュールの不変条件を機械で守るものを足す。
+# バージョンは Makefile の GOLANGCI_LINT_VERSION と整合させること。
+version: "2"
+
+# 🚨 root の Makefile (run_go_projects) が全プロジェクトを並列に回すので true にする
+# (false だと os.TempDir()/golangci-lint.lock の取り合いで、起動のタイミング次第で落ちる。理由の詳細は src/doctor/.golangci.yml)
+run:
+  allow-parallel-runners: true
+
+linters:
+  enable:
+    - copyloopvar
+    - depguard       # 外部コマンドは internal/runner 経由 (下の rules)
+    - errorlint
+    - forbidigo      # 出力先を引数で受けない裸の print を禁止
+    - intrange
+    - misspell
+    - perfsprint
+    - unconvert
+    - usestdlibvars
+    - wastedassign
+  settings:
+    depguard:
+      rules:
+        exec-via-runner:
+          # 外部コマンドは internal/runner に一本化する (stdout / stderr / rc を分けて返す・WaitDelay・プロセスグループ)。
+          # 判定 (生きている claude・使用中のパス) が os/exec を直に叩くと、その規律の外でプロセスが起きる
+          files:
+            - "**/*.go"
+            - "!**/internal/runner/*.go"
+          deny:
+            - pkg: os/exec
+              desc: 外部コマンドは internal/runner 経由で起こす
+    forbidigo:
+      forbid:
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: 出力先を引数で受けること (Run は stdout / stderr を引数に取る)
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0
+
+formatters:
+  enable:
+    - gofmt

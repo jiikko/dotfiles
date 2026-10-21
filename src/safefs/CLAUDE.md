@@ -6,7 +6,7 @@
 
 - 🚨 新しい操作を足すなら、syscall の直前に `check(guard, …)` を通す (nil の Guard は失敗にする)。テストは `sandbox.Sandbox` を Guard に渡し、
   TestMain の最後に `Violations` が空であることを見る (`ops_test.go` / `src/treefiler/filer/main_test.go`)
-- 🚨 振る舞いを変えると doctor の削除にも効く。`make -C src/doctor test` も回す (ゴミ箱の上書きしない・symlink の経路・砂場の検査は doctor 側のテストにもある)
+- 🚨 振る舞いを変えると doctor の削除と tmpclean の移動にも効く。`make -C src/doctor test` と `make -C src/tmpclean test` も回す (ゴミ箱の上書きしない・symlink の経路・砂場の検査は doctor 側のテストにもある)
 
 ## ビルド・テスト
 

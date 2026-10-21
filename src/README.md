@@ -15,6 +15,7 @@
 | [`doctor`](doctor/README.md) | 消してよさそうなもの・壊れて残っている常駐を見つけるライブラリと `diskdoctor` / `svcdoctor` |
 | [`lockman`](lockman/README.md) | ディレクトリ単位の排他を取る CLI (SMB 越しも) |
 | [`runtimeout`](runtimeout/README.md) | 時間の上限付きで実行し、子孫ごと止める CLI (`timeout` の代わり) |
+| [`tmpclean`](tmpclean/README.md) | 一時領域 (Claude Code の scratchpad・`$TMPDIR`) を数え、承認された古いものだけをゴミ箱へ移す CLI `bin/tmpclean` (skill `cleanup-tmp-dir` の本体) |
 | [`codexevents`](codexevents/README.md) | codex exec --json の run が最後まで終わったかを判定して記録する CLI (`bin/codex-fanout` の `-J` / `-S`) |
 | [`mp4box`](mp4box/README.md) | MP4 のトップレベルの box のうち壊れていないものの合計 (実効サイズ) を出す CLI (concat の出力サイズの診断) |
 | [`restartable`](restartable/README.md) | コマンドを前面で起動し、キーか socket から再起動できる runner |
@@ -27,7 +28,7 @@
 | [`termsafe`](termsafe/README.md) | 外から来た文字列を端末へ安全に出す無害化 |
 | [`subproc`](subproc/README.md) | 外部プロセス実行の安全弁 (WaitDelay と git の timeout) |
 | [`atomicfile`](atomicfile/README.md) | 途中の状態を残さないファイル書き込み (temp + rename) |
-| [`safefs`](safefs/README.md) | 上書きしない作成・名前の変更・ゴミ箱への移動 (doctor と treefiler が共有) |
+| [`safefs`](safefs/README.md) | 上書きしない作成・名前の変更・ゴミ箱への移動 (doctor と treefiler と tmpclean が共有) |
 | [`proctree`](proctree/README.md) | プロセスの子孫を集めて止める (runtimeout と zundamon-kaisetsu が使う) |
 | [`userdirs`](userdirs/README.md) | 道具ごとの設定の置き場 (`~/.config/<app>`) を 1 か所で決め、置き場を変えたときに 1 回だけ引っ越す (pro-con / treefiler / mac-lan-manager が使う) |
 

@@ -1,0 +1,4 @@
+# go_autobuild が cmd/<name>/ に置く成果物と作業ファイル (bin/tmpclean)
+/cmd/tmpclean/tmpclean
+/cmd/*/.autobuild.*
+/*.test

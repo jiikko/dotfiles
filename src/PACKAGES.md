@@ -99,6 +99,9 @@
 - `src/subproc/clipboard` (`subproc/clipboard`) — Package clipboard は文字列を OS のクリップボードへ書く (glogx と treefiler の両方が使う)。
 - `src/termsafe` (`github.com/jiikko/dotfiles/src/termsafe`) — Package termsafe は「外部由来の文字列を端末へ出す前に無害化する」単一の関門。
 - `src/termsafe/ctlprobe` (`github.com/jiikko/dotfiles/src/termsafe/ctlprobe`) — Package ctlprobe は「端末が制御として解釈しうる文字が残っているか」を判定する、 **テスト専用**のオラクル。
+- `src/tmpclean` (`tmpclean`) — Package tmpclean は一時領域 (Claude Code の scratchpad と $TMPDIR の直下) を数え、ユーザーが承認した古いものだけを ゴミ箱へ移す CLI の本体。
+- `src/tmpclean/cmd/tmpclean` (`tmpclean/cmd/tmpclean`) — Command tmpclean は一時領域 (Claude Code の scratchpad・$TMPDIR) を数え、承認された古いものだけをゴミ箱へ移す。 (main)
+- `src/tmpclean/internal/runner` (`tmpclean/internal/runner`) — Package runner は tmpclean の外部コマンドの実行口。 (internal)
 - `src/treefiler` (`treefiler`) — treefiler は横に育つ木のファイラー (bin/treefiler)。 (main)
 - `src/treefiler/filer` (`treefiler/filer`) — Package filer は treefiler の画面の部品 (木・タイル・キー・描画)。
 - `src/treefiler/gorules` (`treefiler/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml から参照)。 (build tags: ruleguard)

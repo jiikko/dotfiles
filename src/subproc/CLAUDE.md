@@ -20,5 +20,5 @@
 ## ビルド・テスト
 
 - `make -C src/subproc lint` / `test`
-- 張り忘れの検出は boundarycheck を呼ぶ各 module のテスト (glogx `waitdelay_discipline_test.go`、ratelimit / treefiler / pro-con / mac-lan-manager の `exec_boundary_test.go`)。
+- 張り忘れの検出は boundarycheck を呼ぶ各 module のテスト (glogx `waitdelay_discipline_test.go`、ratelimit / treefiler / pro-con / mac-lan-manager / tmpclean の `exec_boundary_test.go`)。
   検査を変えたら消費者の module でも `make test` を回す (CI の paths は `src/subproc/**` を持つ)

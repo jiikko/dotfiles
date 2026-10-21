@@ -35,6 +35,7 @@ ZSH_SYNTAX_FILES := \
   bin/runtimeout \
   bin/svcdoctor \
   bin/termwidth \
+  bin/tmpclean \
   bin/schedkeys \
   bin/treefiler \
   bin/validate-mp4 \
