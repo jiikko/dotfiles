@@ -1,5 +1,7 @@
 # 851 (research): $TMPDIR に TemporaryDirectory.* が 1 日数千件溜まる出どころを調べる
 
+> 🚨 **担当中: Mac (glogx)**（2026-10-21〜）
+
 起票日: 2026-10-21
 
 ## 概要
