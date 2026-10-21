@@ -4,8 +4,8 @@
 # 直接消す・移すコマンドを deny し、bin/tmpclean (skill cleanup-tmp-dir) を案内する。
 #
 # なぜ: 生きているセッションの scratchpad を消すとそのセッションが壊れる。見分けは bin/tmpclean が層を重ねて行う
-# (src/tmpclean/README.md)。Claude が rm を直接組むと、その守りを全部迂回する (2026-10-21、手順書に埋めた rm で
-# 敵対レビュー 3 周とも生きたセッションを消せる穴が出た)。
+# (src/tmpclean/README.md)。Claude が rm を直接組むと、その守りを全部迂回する (生きているかの判定を毎回その場で
+# 組み立てることになり、組み立てるたびに見落としが入る)。
 #
 # 判定 (字面で見る粗い判定):
 #   - 消す・移す語 (rm / rmdir / unlink / mv / trash / find -delete / xargs rm) がコマンドのどこかにあり、かつ
