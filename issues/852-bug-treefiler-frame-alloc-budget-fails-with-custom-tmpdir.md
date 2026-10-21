@@ -1,5 +1,7 @@
 # 852 (bug): treefiler と glogx の TestFrameAllocBudget が、テストの dir が git repo の中にあると確保の上限を超えて落ちる
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-21〜）
+
 起票日: 2026-10-21
 
 ## 概要
