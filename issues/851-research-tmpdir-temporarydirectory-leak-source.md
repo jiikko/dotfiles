@@ -122,8 +122,13 @@ Claude Code の swift-lsp plugin (`_claude/settings.json` の `enabledPlugins` �
   (xcodebuild と時間帯が重なる。候補の 1 つへ下げた) / 相関の手順に対照が無い (プロセスと増分を同じ行に記録する形へ) / 中身に `swift -e` の
   `main.swift` があった (作り手の候補に追加)
 - [x] 作り手の特定 (調べ方 1・2 は採らず、候補ごとに隔離した `TMPDIR` で動かす A/B に替えた。上の「結果」)。2026-10-21
-- [ ] 出どころで止める、または受け方を決める (案は下。どれにするかはユーザーの判断待ち)
-  - A. upstream (swiftlang/swift-driver・swift-package-manager) に報告する (外部への投稿)
-  - B. swift-lsp plugin の sourcekit-lsp だけ `TMPDIR` を専用の dir に向け、終わったら消す (PATH の shim。`path-shim-must-resolve-real-binary.md`)
-  - C. `.keep-directory` だけ (か空) の `TemporaryDirectory.*` で N 日より古いものを定期的に消す (消す側の安全機構になるので敵対レビューまで要る)
-  - D. swift-lsp plugin を切る (Claude Code の Swift の LSP 機能を失う)
+- [x] 受け方を決めた: 案 C (ユーザー決定 2026-10-21。消し方は rmdir・起動は SessionStart hook・同時起動は lockman で排他)。
+  A (upstream に報告)・B (sourcekit-lsp の TMPDIR を隔離)・D (swift-lsp plugin を切る) は採らなかった
+  - 実装: commit「feat(tmpclean): sweep で $TMPDIR の空の TemporaryDirectory.* を承認なしで消し、SessionStart hook で 1 日 1 回走らせる」
+    (`safefs.RemoveEmptyDir`・`tmpclean sweep`・`_claude/hooks/tmpdir-swift-sweep.sh`。守りと検出しないものは `src/tmpclean/README.md` の sweep の節)
+  - 変異 24 本すべて red、opus の敵対レビュー 2 体 + 直した差分に 1 周 (内訳は commit message)
+  - 本物の環境で 1 回 (2026-10-21 23:09、hook の入口から): removed=62,599・failed=0・rc=0。`TemporaryDirectory.*` は 104,880 → 42,281。
+    hook は 0 秒で返った
+- [ ] 残った 42,281 件: 全部「動いている Swift のツールの起動より後に作られた」で残った。範囲を決めたのは 10/10 から動き続けている
+  `/Applications/Xcode.app/Contents/Developer/usr/bin/make dev-fg-loop` (`swiftToolCommand` の `/Xcode[^/]*\.app/` が Xcode の中の make まで拾う。
+  敵対レビューが P3 で挙げた形)。make 自身は ArgsResolver を使わない。拾う範囲を絞るかはユーザーの判断待ち
