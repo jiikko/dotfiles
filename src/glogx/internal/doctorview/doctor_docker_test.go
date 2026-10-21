@@ -97,7 +97,7 @@ func TestDoctorDockerTabHiddenWhenNotInstalled(t *testing.T) {
 		t.Errorf("入っていないのにタブが出ている:\n%s", out)
 	}
 	v.tab = TabDisk
-	for _, want := range []DoctorTab{TabSvc, TabBrew, TabSSD, TabDisk} {
+	for _, want := range []DoctorTab{TabSvc, TabBrew, TabSSD, TabTmp, TabDisk} {
 		v.HandleKey("tab", 40)
 		if v.tab != want {
 			t.Fatalf("tab が Docker を飛ばさない: %v (期待 %v)", v.tab, want)

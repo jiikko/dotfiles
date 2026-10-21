@@ -23,6 +23,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"tmpclean"
 )
 
 // 記憶の置き場をテスト用に隔離する。
@@ -71,6 +72,8 @@ type Deps struct {
 	SSDOpts    func() ssd.Options
 	DeleteOpts func() disk.DeleteOptions
 	DeleteFn   func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
+	TmpCount   func(context.Context) (tmpclean.Counts, error)
+	RepoTmpDir func() string
 }
 
 // FakeDeps はテスト用の外への口: 一時 HOME に 1 エントリ (Thing キャッシュ) だけのカタログ・空の launchd・
@@ -113,7 +116,19 @@ func FakeDeps(t *testing.T) Deps {
 		BrewRun:    fake,
 		DockerOpts: func() docker.Options { return FakeDockerOptions(FakeDockerDF) },
 		SSDOpts:    FakeSSDOptions(true),
+		// 一時領域は本物の /private/tmp を数えない (機械ごとに違い、遅い)。固定の件数と「repo の外」を返す
+		TmpCount:   func(context.Context) (tmpclean.Counts, error) { return FakeTmpCounts, nil },
+		RepoTmpDir: func() string { return "" },
 	}
+}
+
+// FakeTmpCounts は一時領域の fixture (2026-10-21 のこのマシンの実測に近い形)。
+var FakeTmpCounts = tmpclean.Counts{
+	Session: tmpclean.AreaCount{Root: "/private/tmp/claude-501", Total: 16103, Bytes: 630 << 20,
+		Projects: []tmpclean.Part{{Name: "-Users-me-dotfiles", Count: 14481}, {Name: "-Users-me-src-app", Count: 1339}}},
+	Tmpdir: &tmpclean.AreaCount{Root: "/private/var/folders/xx/yy/T", Total: 7117, EmptyDirs: 1182, Bytes: 376 << 20,
+		Prefixes: []tmpclean.Part{{Name: "tmp.", Count: 489}, {Name: ".com.google.Chrome.", Count: 399}}},
+	OtherPrivate: 41,
 }
 
 // fakeDockerDF は `docker system df -v` の fixture (実物と同じ形。1 群 1 件ずつ)。

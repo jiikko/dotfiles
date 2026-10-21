@@ -20,13 +20,16 @@ const TabDisk
 const TabDocker
 const TabSSD
 const TabSvc
+const TabTmp
 field Deps.BrewRun
 field Deps.DeleteFn
 field Deps.DeleteOpts
 field Deps.DiskOpts
 field Deps.DockerOpts
+field Deps.RepoTmpDir
 field Deps.SSDOpts
 field Deps.SvcOpts
+field Deps.TmpCount
 field DoctorRenderOpts.Colored
 field DoctorRenderOpts.Env
 field DoctorRenderOpts.Now

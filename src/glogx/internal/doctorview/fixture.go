@@ -79,6 +79,7 @@ func (f Fixture) Reports(tab DoctorTab, d *disk.Report, s *svc.Report, brewWarni
 	f.v.expanded = map[rowKey]bool{}
 	f.v.diskRep, f.v.diskResults, f.v.svcRep, f.v.docker, f.v.ssd = d, d.Results, s, dk, sd
 	f.v.brew = &brewDoctorResult{Warnings: brewWarnings, Clean: len(brewWarnings) == 0}
+	f.v.tmp = &tmpReport{} // 一時領域も数え終わった (0 件) 状態にする。nil のままだと走査中に見える
 }
 
 // Rows は n 行の選べる行を置く (描画を経ずにキーの動きだけを見るテスト用)。

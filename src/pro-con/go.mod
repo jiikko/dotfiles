@@ -48,6 +48,7 @@ replace (
 	ratelimit => ../ratelimit
 	safefs => ../safefs
 	subproc => ../subproc
+	tmpclean => ../tmpclean
 	treefiler => ../treefiler
 )
 

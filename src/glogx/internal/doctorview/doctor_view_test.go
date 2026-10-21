@@ -1934,13 +1934,13 @@ func TestDoctorHLMovesTabs(t *testing.T) {
 	runCmds(t, v, v.open())
 	_ = v.Lines(testOpts(20))
 
-	for _, want := range []DoctorTab{TabSvc, TabBrew, TabDocker, TabSSD, TabDisk} {
+	for _, want := range []DoctorTab{TabSvc, TabBrew, TabDocker, TabSSD, TabTmp, TabDisk} {
 		v.HandleKey("l", 20)
 		if v.tab != want {
 			t.Fatalf("l で %v へ行かない: %v", want, v.tab)
 		}
 	}
-	for _, want := range []DoctorTab{TabSSD, TabDocker, TabBrew, TabSvc, TabDisk} {
+	for _, want := range []DoctorTab{TabTmp, TabSSD, TabDocker, TabBrew, TabSvc, TabDisk} {
 		v.HandleKey("h", 20)
 		if v.tab != want {
 			t.Fatalf("h で %v へ戻らない: %v", want, v.tab)
@@ -2087,13 +2087,13 @@ func TestDoctorTabs(t *testing.T) {
 
 	t.Run("tab で送り shift+tab で戻る (端で回る)", func(t *testing.T) {
 		v.tab = TabDisk
-		for _, want := range []DoctorTab{TabSvc, TabBrew, TabDocker, TabSSD, TabDisk} {
+		for _, want := range []DoctorTab{TabSvc, TabBrew, TabDocker, TabSSD, TabTmp, TabDisk} {
 			v.HandleKey("tab", 20)
 			if v.tab != want {
 				t.Fatalf("tab で %v へ行かない: %v", want, v.tab)
 			}
 		}
-		for _, want := range []DoctorTab{TabSSD, TabDocker, TabBrew, TabSvc, TabDisk} {
+		for _, want := range []DoctorTab{TabTmp, TabSSD, TabDocker, TabBrew, TabSvc, TabDisk} {
 			v.HandleKey("shift+tab", 20)
 			if v.tab != want {
 				t.Fatalf("shift+tab で %v へ戻らない: %v", want, v.tab)
@@ -2121,6 +2121,7 @@ func TestDoctorTabs(t *testing.T) {
 		v.HandleKey("tab", 20) // → Homebrew
 		v.HandleKey("tab", 20) // → Docker
 		v.HandleKey("tab", 20) // → SSD
+		v.HandleKey("tab", 20) // → 一時領域
 		_ = v.Lines(o)
 		if v.cur.key == diskKey {
 			t.Fatalf("前提が崩れている: SSD でディスクの行を指している: %q", diskKey)

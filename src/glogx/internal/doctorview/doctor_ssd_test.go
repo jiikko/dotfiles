@@ -118,6 +118,9 @@ func TestDoctorTabBarKeepsAllTabsAtNarrowWidth(t *testing.T) {
 	v.svcRep = &svc.Report{Findings: make([]svc.Finding, 99)}
 	v.brew = &brewDoctorResult{Warnings: make([]string, 99)}
 	v.docker = &docker.Report{Installed: true, Groups: []docker.Group{{Reclaimable: big}}}
+	tmpWorst := doctortest.FakeTmpCounts
+	tmpWorst.Session.Total = 999_999 // 一時領域の最も長い状態 (多い)
+	v.tmp = &tmpReport{counts: tmpWorst}
 	o := testOpts(20)
 	o.Width = 60
 	// 🚨 期待する印はリテラルで書く (ssdTabSummary から作ると、関数を壊しても期待値が一緒に変わる)。
@@ -136,6 +139,9 @@ func TestDoctorTabBarKeepsAllTabsAtNarrowWidth(t *testing.T) {
 			}
 			if want := "SSD " + wantMark[st]; !strings.Contains(line, want) {
 				t.Errorf("tab=%v SMART=%s: %q が見えない: %q", active, st, want, line)
+			}
+			if !strings.Contains(line, "Tmp ⛔") && !strings.Contains(line, "一時領域 ⛔") {
+				t.Errorf("tab=%v SMART=%s: 一時領域の印が見えない: %q", active, st, line)
 			}
 		}
 	}

@@ -25,6 +25,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/crosskey"
 	"glogx/internal/term"
+	"tmpclean"
 )
 
 // doctor (D キー) — 環境の健全性診断を並べる全画面ビュー。
@@ -59,11 +60,12 @@ const (
 	TabBrew
 	TabDocker
 	TabSSD
+	TabTmp
 )
 
 // numDoctorTabs はタブの数。**enum の番兵にしない** — DoctorTab の値として持つと
 // exhaustive の switch すべてに「タブでない値」の case を書かされる
-const numDoctorTabs = 5
+const numDoctorTabs = 6
 
 type DoctorView struct {
 	shown bool
@@ -85,7 +87,9 @@ type DoctorView struct {
 	// 開くたびに取り直す (doctor_docker.go の冒頭)
 	docker *docker.Report
 	// ssd は nil = 走査中。docker と同じくキャッシュに載せない (doctor_ssd.go の冒頭)
-	ssd        *ssd.Report
+	ssd *ssd.Report
+	// tmp は nil = 数えている途中。ssd と同じくキャッシュに載せない (doctor_tmp.go の冒頭)
+	tmp        *tmpReport
 	startedAt  time.Time
 	snapshotAt time.Time // 前回の結果をそのまま出しているときの走査時刻 (zero = 今回走査した)
 
@@ -137,6 +141,8 @@ type Deps struct {
 	SSDOpts    func() ssd.Options
 	DeleteOpts func() disk.DeleteOptions
 	DeleteFn   func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
+	TmpCount   func(context.Context) (tmpclean.Counts, error)
+	RepoTmpDir func() string
 }
 
 // SetDeps は外へ出る口を差し替える。
@@ -235,7 +241,7 @@ func (v *DoctorView) Visible() bool { return v.shown }
 
 // scanning はいずれかのセクションが走査中か (スピナーの根拠)。
 func (v *DoctorView) Scanning() bool {
-	return v.shown && (v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.docker == nil || v.ssd == nil)
+	return v.shown && (v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.docker == nil || v.ssd == nil || v.tmp == nil)
 }
 
 // deleting は削除の下見 / 実行中か (スピナーと再描画の根拠)。
@@ -263,6 +269,8 @@ func (v *DoctorView) Receive(msg tea.Msg) (cmd tea.Cmd, toast string, ok bool) {
 		return nil, "", true
 	case doctorSSDMsg:
 		return nil, v.receiveSSD(msg), true
+	case doctorTmpMsg:
+		return nil, v.receiveTmp(msg), true
 	case doctorBrewMsg:
 		v.receiveBrew(msg)
 		return nil, "", true
@@ -327,7 +335,7 @@ func (v *DoctorView) start(force bool) tea.Cmd {
 	// 再表示されていた)
 	v.rows, v.enterDetail, v.pendingCopy, v.notice, v.pendingDeleteCmd = nil, "", "", "", nil
 	v.del.reset()
-	v.diskResults, v.diskRep, v.svcRep, v.brew, v.docker, v.ssd = nil, nil, nil, nil, nil, nil
+	v.diskResults, v.diskRep, v.svcRep, v.brew, v.docker, v.ssd, v.tmp = nil, nil, nil, nil, nil, nil, nil
 	v.startedAt = app.TimeNow()
 	v.snapshotAt = time.Time{}
 	if !force {
@@ -412,7 +420,7 @@ func (v *DoctorView) start(force bool) tea.Cmd {
 // 🚨 tea.Batch で包まず列で返す: 包むと start の Batch が入れ子になり、1 段だけ開いて Cmd を
 // 走らせる検査 (TestEachDoctorScanIsTrackedUntilItReturns) から中の走査が見えなくなる
 func (v *DoctorView) uncachedCmds(ctx context.Context, gen int) []tea.Cmd {
-	return []tea.Cmd{v.dockerCmd(ctx, gen), v.ssdCmd(ctx, gen)}
+	return []tea.Cmd{v.dockerCmd(ctx, gen), v.ssdCmd(ctx, gen), v.tmpCmd(ctx, gen)}
 }
 
 // waitDiskCmd は channel から 1 イベント取り出して Msg にする (受け取り側が再アームする)。
@@ -723,7 +731,7 @@ func (v *DoctorView) HandleKey(key string, page int) doctorAction {
 			return v.beginBrewRun()
 		case TabDocker:
 			return v.beginDockerRun()
-		case TabDisk, TabSvc, TabSSD:
+		case TabDisk, TabSvc, TabSSD, TabTmp:
 			v.refuse("コマンドの実行は Homebrew か Docker のタブで (tab で移動)")
 			return DoctorToast
 		}
@@ -838,8 +846,8 @@ func (v *DoctorView) Hint(width int) string {
 			term.HintItem{Text: "d: 削除", Prio: 2})
 	case TabBrew, TabDocker:
 		items = append(items, term.HintItem{Text: "Space: 選択", Prio: 2})
-	case TabSvc, TabSSD:
-		// サービスと SSD は選択も実行も持たない (見て判断するだけ)
+	case TabSvc, TabSSD, TabTmp:
+		// サービス・SSD・一時領域は選択も実行も持たない (見て判断するだけ。一時領域の片付けは Y のプロンプトから Claude に頼む)
 	}
 	// 🚨 押せないキーを案内しない: Enter と y はカーソル行の実際の判定 (expandableRow / copyableRow) から出す
 	// 子行の Enter は親を畳む (HandleKey が collapseAtCursor を先に見る) ので、畳めるときも案内する
@@ -850,7 +858,7 @@ func (v *DoctorView) Hint(width int) string {
 		items = append(items, term.HintItem{Text: row.copyKind.hint(), Prio: 5})
 	}
 	items = append(items, []term.HintItem{
-		{Text: "Y: 解説をコピー", Prio: 6},
+		{Text: v.copyTextHint(), Prio: 6},
 		{Text: "r: 再スキャン", Prio: 5},
 		{Text: doctorCloseHintLabel(v.collapsibleAtCursor()), Prio: 1}, // 抜ける手段は最優先で残す
 	}...)
@@ -875,7 +883,7 @@ func (v *DoctorView) selectedRunCount() int {
 		return len(v.selectedDockerActions())
 	case TabBrew:
 		return len(v.selectedBrewActions())
-	case TabDisk, TabSvc, TabSSD:
+	case TabDisk, TabSvc, TabSSD, TabTmp:
 		return 0
 	}
 	return 0
@@ -996,8 +1004,8 @@ func (v *DoctorView) moveTab(d int) {
 // 🚨 **切り替えなくても「どこに何件あるか」が分かること**が、タブにしても一望性を失わない条件。
 // 件数を出さないタブ行にすると、異常の有無を知るために全タブを回ることになる。
 func (v *DoctorView) tabBarLine(o DoctorRenderOpts) string {
-	names := [numDoctorTabs]string{"ディスク", "サービス", "Homebrew", "Docker", "SSD"}
-	short := [numDoctorTabs]string{"Disk", "Svc", "Brew", "Docker", "SSD"}
+	names := [numDoctorTabs]string{"ディスク", "サービス", "Homebrew", "Docker", "SSD", "一時領域"}
+	short := [numDoctorTabs]string{"Disk", "Svc", "Brew", "Docker", "SSD", "Tmp"}
 	build := func(names [numDoctorTabs]string, pad string) string {
 		parts := make([]string, 0, numDoctorTabs)
 		for i := range numDoctorTabs {
@@ -1066,6 +1074,8 @@ func (v *DoctorView) tabSummary(o DoctorRenderOpts, t DoctorTab) string {
 			return o.Spinner
 		}
 		return ssdTabSummary(v.ssd.SMART)
+	case TabTmp:
+		return v.tmpTabSummary(o)
 	case TabDisk:
 		if v.diskRep == nil {
 			return o.Spinner
@@ -1115,6 +1125,8 @@ func (v *DoctorView) buildRows(o DoctorRenderOpts) []doctorRow {
 		add(v.dockerSection(o))
 	case TabSSD:
 		add(v.ssdSection(o))
+	case TabTmp:
+		add(v.tmpSection(o))
 	case TabDisk:
 		add(v.diskSection(o))
 	}

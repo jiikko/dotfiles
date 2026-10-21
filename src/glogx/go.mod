@@ -8,6 +8,7 @@ require (
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/term v0.45.0
+	tmpclean v0.0.0
 )
 
 require (
@@ -63,3 +64,5 @@ replace safefs => ../safefs
 replace mac-lan-manager => ../mac-lan-manager
 
 replace userdirs => ../userdirs
+
+replace tmpclean => ../tmpclean

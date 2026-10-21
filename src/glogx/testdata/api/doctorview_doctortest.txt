@@ -4,8 +4,10 @@ field Deps.DeleteFn
 field Deps.DeleteOpts
 field Deps.DiskOpts
 field Deps.DockerOpts
+field Deps.RepoTmpDir
 field Deps.SSDOpts
 field Deps.SvcOpts
+field Deps.TmpCount
 func FakeDeps
 func FakeDockerOptions
 func FakeSSDOptions
@@ -13,3 +15,4 @@ func NoDockerOptions
 func RunCmds
 func WithDoctorStateDir
 type Deps
+var FakeTmpCounts
