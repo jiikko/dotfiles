@@ -143,11 +143,12 @@ func runBangOnPTY(t *testing.T, c bangCase) {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=^TestBangHelperOnPTY$")
+	childTmp := t.TempDir() // helper の子の $TMPDIR。子の TestMain が置き場を作って残さないかを、終わった後に見る (issue 850)
+	cmd := exec.Command(os.Args[0], bangHelperRunArg)
 	// GORACE: -race のバイナリは終わる前に既定で 1 秒待ち、helper は 1 ケースで 1〜2 回終わる (42 秒 → 7 秒)。
 	// helper の終了コードは見ていないので、helper の中の race は待っても待たなくても出力にしか出ない
 	cmd.Env = append(os.Environ(), bangHelperEnv+"="+string(req), bangShapeEnv+"="+c.shape, bangRawEnv+"="+strconv.FormatBool(c.raw),
-		"GORACE=atexit_sleep_ms=0")
+		"GORACE=atexit_sleep_ms=0", "TMPDIR="+childTmp)
 	master, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 100})
 	if err != nil {
 		t.Fatal(err)
@@ -236,6 +237,9 @@ func runBangOnPTY(t *testing.T, c bangCase) {
 	if strings.Contains(got, keyWaitText) != c.wantKeyWait {
 		t.Fatalf("キー待ちの案内の有無 = %v、want %v:\n%s", !c.wantKeyWait, c.wantKeyWait, got)
 	}
+	if left, err := os.ReadDir(childTmp); err != nil || len(left) > 0 {
+		t.Fatalf("helper の子が $TMPDIR に残した (err=%v): %v", err, left)
+	}
 }
 
 func readyLine(s string) string {
@@ -247,6 +251,8 @@ const (
 	bangHelperEnv = "TREEFILER_BANG_PTY_HELPER"
 	bangShapeEnv  = "TREEFILER_BANG_PTY_SHAPE"
 	bangRawEnv    = "TREEFILER_BANG_PTY_RAW"
+	// bangHelperRunArg は helper を起こす引数。TestMain はこの引数と bangHelperEnv の両方が揃ったときだけ helper の子として扱う
+	bangHelperRunArg = "-test.run=^TestBangHelperOnPTY$"
 	// bangTakeBackEnv は子が作る印のファイル。session の先頭の helper はそれを見てから前面を自分へ戻す
 	bangTakeBackEnv = "TREEFILER_BANG_PTY_TAKEBACK"
 )

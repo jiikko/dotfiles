@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -23,6 +24,17 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	widthenv.ExitIfUnsupported() // 幅を数える env (RUNEWIDTH_EASTASIAN=1) では枠の検査が環境のせいで落ちる。理由を出して止める
+	if os.Getenv(bangHelperEnv) != "" && slices.Contains(os.Args[1:], bangHelperRunArg) {
+		// TestBangGivesTerminalBackOnPTY が起こした helper の子。helper は os.Exit で終わり m.Run から戻らないので、ここで置き場を作ると
+		// 消されずに $TMPDIR に残る。親が向けた置き場を env で継いでいるので、それを使う。
+		// 起動の引数も見る: env だけを外から設定して go test を打つと、ここに入って全部のテストが継いだ置き場 (本物でありうる) で走る
+		if os.Getenv("TREEFILER_CONFIG_DIR") == "" {
+			fmt.Fprintln(os.Stderr, "helper の子に TREEFILER_CONFIG_DIR が渡っていない")
+			os.Exit(1) // 隔離できないまま走らせると本物を触る
+		}
+		fsGuard = sb.Guard
+		os.Exit(m.Run())
+	}
 	dir, err := os.MkdirTemp("", "treefiler-config-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

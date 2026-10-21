@@ -1,7 +1,5 @@
 # 850 (bug): treefiler のテストが途中で死ぬと、$TMPDIR に空の treefiler-config-* が溜まる
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-21〜）
-
 起票日: 2026-10-21
 
 ## 概要
@@ -73,5 +71,16 @@
 ## 進捗
 
 - [x] 原因の特定と件数の実測 (2026-10-21)
-- [ ] 直す (方針 1、できれば 2)
-- [ ] 回帰テスト
+- [x] 直す (方針 1) — commit「treefiler: PTY テストの helper の子が $TMPDIR に設定の置き場を残さない」
+  - `TestMain` は `TREEFILER_BANG_PTY_HELPER` が非空で、かつ起動の引数に `-test.run=^TestBangHelperOnPTY$` (`bangHelperRunArg`) があるときだけ
+    helper の子として扱う。そのときは置き場を作らず、継いだ `TREEFILER_CONFIG_DIR` を使う (空なら exit 1)
+  - 引数も見るのは敵対レビューの P2 への対応: env だけを外から設定して `go test ./filer/` を打つと、親が helper の分岐に入り、全テストが継いだ置き場
+    (本物でありうる) で走った。今はその打ち方でも通常の経路 (一時 dir を作る) に入ることを実測した
+  - 置き場の名前 (`treefiler-config-*`) で判定する案は採らない: `newTest` が `t.Setenv` で置き場を `t.TempDir()` に差し替えるので、helper の子が継ぐ名前はその形にならない (試して 33 ケースが落ちた)
+- [x] 回帰テスト — `runBangOnPTY` は helper の子にだけ別の `TMPDIR` を渡し、終わった後にそこが空であることを assert する
+  - 変異: helper の分岐を `if false && …` にすると、33 ケースすべてがこの assert だけで red (leader の形は 1 個・job の形は 2 個残る。他の失敗は 0)
+- 実測 (使い捨ての `TMPDIR`、`go test -count=1 ./filer/`): 残った `treefiler-config-*` は 51 → 0
+- 方針 2 (中断でも残さない) は**採らない**: 修正後に残りうるのは中断 (SIGKILL・`-timeout`・panic) の run だけで、1 run に 1 個の空の dir。
+  `testtmp` を共有 module へ出すと doctor・glogx・treefiler (と replace を継ぐ module) の go.mod と workflow の paths に波及し、得るものに見合わない。
+  溜まったら `bin/tmpclean` (cleanup-tmp-dir skill) で片付く。**再評価の trigger**: `$TMPDIR` の `treefiler-config-*` が数十個を超えて見つかったとき
+- 未確認の観測 (`TestFrameAllocBudget` が使い捨ての `TMPDIR` で 262 回 / 上限 258) は修正後も同じく出た。既定の `TMPDIR` では通る。この issue とは別件として調べていない
