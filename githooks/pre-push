@@ -93,7 +93,13 @@ if [ "${#targets[@]}" -eq 0 ]; then
 fi
 
 tmp=$(mktemp -d) || { echo "pre-push: ✗ 一時ディレクトリを作れない" >&2; exit 1; }
-trap 'rm -rf "$tmp"' EXIT
+pids=()
+# 中断 (Ctrl-C / TERM) で hook が先に抜けても、起こした検査を残さない。各検査は自分のプロセスグループの頭なので
+# (下の set -m)、グループごと止めて孫 (find / awk / 再帰の自分自身) も止める。pid だけを kill すると、bash 3.2 は
+# subshell が exec を省かないので検査の本体が残る (2026-10-21 に TERM の直後で 3 本残るのを実測)。
+# 止めるのは自分が起こしたグループだけで、wait 済みのものは空にしてある。kill の失敗は捨てない: set -m が外れて
+# pgid が pid と一致しなくなると kill が全部失敗し、残る退行が黙って戻る (tests/githooks/test_pre_push.sh のケース 14)
+trap 'for p in ${pids[@]+"${pids[@]}"}; do [ -n "$p" ] && kill -TERM -- "-$p"; done; rm -rf "$tmp"' EXIT
 
 # 検査スクリプトは自分の置き場所を repo root にする。push 中の hook が継承する GIT_DIR 等が
 # 残っていると、検査の中の git が展開先ではなくこの repo を見るので落とす
@@ -123,21 +129,40 @@ for target in "${targets[@]}"; do
     continue
   fi
   echo "pre-push: $why なので issue の整合検査を ${#checks[@]} 本回す (${sha:0:12})" >&2
+  # 検査は互いに独立 (各自が mktemp で作業場所を作り、展開先は読むだけ) なので並列に起こし、結果は CHECKS の順に出す。
+  # 直列だと所要は検査の合計、並列だと最も遅い 1 本 (test_issue_links_valid) に寄る
+  pids=()
+  set -m # 起こす検査をそれぞれ別のプロセスグループに置く (trap がグループごと止めるため)。起こし終えたら戻す
   for c in "${checks[@]}"; do
     script="$snap/tests/issues/$c.sh"
     if [ ! -f "$script" ]; then
+      pids+=("")
+      continue
+    fi
+    # stdin を閉じる: 別のプロセスグループから端末を読むと SIGTTIN で止まり、下の wait が戻らない
+    (cd / && bash "$script") </dev/null >"$snap.$c.log" 2>&1 &
+    pids+=("$!")
+  done
+  set +m
+  for i in "${!checks[@]}"; do
+    c=${checks[$i]}
+    if [ -z "${pids[$i]}" ]; then
       echo "pre-push: ✗ $c が push する commit に無い (判定不能なので止める)" >&2
       failed=1
       continue
     fi
-    if (cd / && bash "$script") >"$tmp/$c.log" 2>&1; then
+    wait "${pids[$i]}"
+    rc=$?
+    pids[$i]=""
+    if [ "$rc" -eq 0 ]; then
       echo "pre-push:   ✓ $c" >&2
     else
       echo "pre-push:   ✗ $c" >&2
-      sed 's/^/    /' "$tmp/$c.log" >&2
+      sed 's/^/    /' "$snap.$c.log" >&2
       failed=1
     fi
   done
+  pids=()
 done
 
 if [ "$failed" -ne 0 ]; then

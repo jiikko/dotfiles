@@ -15,6 +15,9 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_C
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 
+# shellcheck source=../lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
+
 fails=0
 pass() { printf '✓ %s\n' "$1"; }
 fail() { printf '✗ %s\n' "$1" >&2; fails=$((fails + 1)); }
@@ -231,6 +234,70 @@ elif grep -q '走査件数が少なすぎる' "$T/mini.out"; then
   pass "展開先でもリンク検査の件数の下限が効く"
 else
   fail "展開先のリンク検査が別の理由で落ちた: $(cat "$T/mini.out")"
+fi
+
+# 12. push する commit から検査が 1 本欠けたら止め、欠けたものの名前と残りの結果を正しい名前で出す
+# 欠けさせるのは真ん中の検査 (並列に起こした検査と結果の対応がずれる退行は、末尾以外が欠けたときに出る)
+reset_case
+mid=$("$HOOK_DIR/pre-push" --list-checks | sed -n 's/^check //p' | sed -n 3p)
+[ -n "$mid" ] || { echo "✗ --list-checks から 3 本目の検査を取れない" >&2; exit 1; }
+git -C "$work" rm -q "tests/issues/$mid.sh"
+printf '\n- 追記 3\n' >>"$work/issues/$existing"
+git -C "$work" commit -q --no-verify -am rmcheck
+push rmcheck HEAD:refs/heads/master
+n_ok=$(grep -c '^pre-push:   ✓ ' "$T/rmcheck.err" || true)
+if [ "$(cat "$T/rmcheck.rc")" != 0 ] && [ "$(remote_head)" = "$base" ] \
+  && grep -q "✗ $mid が push する commit に無い" "$T/rmcheck.err" && [ "$n_ok" = $((n_checks - 1)) ] \
+  && ! grep -q "✓ $mid\$" "$T/rmcheck.err"; then
+  pass "欠けた検査があると止め、残り $n_ok 本の結果を正しい名前で出す"
+else
+  fail "欠けた検査の扱いが違う (rc=$(cat "$T/rmcheck.rc") / ✓ $n_ok 本): $(cat "$T/rmcheck.err")"
+fi
+
+# 13. 後ろの方の検査 1 本だけが落ちたとき、✗ はその検査の名前に付き、他は ✓ のまま
+# (並列に起こした検査と結果の名前の対応がずれる退行は、ケース 2 / 3 の先頭 2 本だけでは見えない)
+reset_case
+printf '# %s (human): x\n\n起票日: 2026-10-21\n' "$free_num" >"$work/issues/${free_num}-human-no-deadline.md"
+git -C "$work" add issues && git -C "$work" commit -q --no-verify -m nodeadline
+push nodeadline HEAD:refs/heads/master
+n_ng=$(grep -c '^pre-push:   ✗ ' "$T/nodeadline.err" || true)
+if [ "$(cat "$T/nodeadline.rc")" != 0 ] && [ "$(remote_head)" = "$base" ] \
+  && grep -q '^pre-push:   ✗ test_human_issues_have_deadline$' "$T/nodeadline.err" && [ "$n_ng" = 1 ]; then
+  pass "落ちた検査の名前に ✗ が付き、他は ✓ のまま"
+else
+  fail "落ちた検査と ✗ の名前が合わない (rc=$(cat "$T/nodeadline.rc") / ✗ $n_ng 本): $(cat "$T/nodeadline.err")"
+fi
+
+# 14. hook が中断されたら、起こした検査とその子を残さない (検査は別のプロセスグループで走るので、hook の trap が止める)
+# 検査の 1 本を「子を起こして待つだけ」の偽物に差し替え、子が走っている間に hook へ TERM を送る
+reset_case
+first=$("$HOOK_DIR/pre-push" --list-checks | sed -n 's/^check //p' | sed -n 1p)
+cat >"$work/tests/issues/$first.sh" <<FAKE
+#!/usr/bin/env bash
+sleep 60 & # sleep-ok: dummy: 中断で止まるかを見る子。止められなければ残る
+printf '%s %s\\n' "\$\$" "\$!" >"$T/fake.pids"
+wait
+FAKE
+printf '\n- 追記 4\n' >>"$work/issues/$existing"
+git -C "$work" commit -q --no-verify -am fakecheck
+printf 'refs/heads/master %s refs/heads/master %s\n' "$(git -C "$work" rev-parse HEAD)" "$base" >"$T/int.stdin"
+(cd "$work" && exec bash "$HOOK_DIR/pre-push" origin <"$T/int.stdin" >"$T/int.out" 2>"$T/int.err") &
+hook_pid=$!
+fake_ready() { [ -s "$T/fake.pids" ]; }
+if ! tt_wait_until fake_ready; then
+  fail "偽の検査が起動しない: $(cat "$T/int.err")"
+  kill -TERM "$hook_pid"; wait "$hook_pid" || true
+else
+  read -r fake_pid fake_child <"$T/fake.pids"
+  kill -TERM "$hook_pid"
+  wait "$hook_pid" || true
+  fake_gone() { ! kill -0 "$fake_pid" 2>/dev/null && ! kill -0 "$fake_child" 2>/dev/null; }
+  if tt_wait_until fake_gone; then
+    pass "中断された hook は起こした検査とその子を残さない"
+  else
+    fail "中断された hook の後に検査が残った (pid $fake_pid / 子 $fake_child): $(cat "$T/int.err")"
+    kill -TERM "$fake_child" "$fake_pid" 2>/dev/null || true # 後始末は自分が控えた pid だけ
+  fi
 fi
 
 if [ "$fails" -ne 0 ]; then
