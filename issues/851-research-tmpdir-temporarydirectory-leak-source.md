@@ -61,6 +61,47 @@
 3. 出どころが分かったら、設定で止められるか (sourcekit-lsp の background indexing を切る・置き場を変える)、upstream の既知の不具合かを調べる。
    dotfiles の中で止められないなら、定期的な片付け (`bin/tmpclean`) で受けるかを決める
 
+## 結果 (2026-10-21): 作り手は swift-driver の `ArgsResolver`。Swift のツールチェーン全体が残す
+
+調べ方 1・2 (相関・fs_usage) の代わりに、候補ごとに使い捨ての `TMPDIR` を渡して 1 回動かし、残った `TemporaryDirectory.*` を数えた
+(候補を 1 つずつ動かすので、他のプロセスの混入が無い)。Swift 6.4 (swift-driver 1.168.6) / Xcode 27.1 (27A9275)。
+
+| 動かしたもの | 残った数 (3 回) |
+|---|---|
+| `swiftc -c main.swift` (job 1 つ) | 1 / 1 / 1 |
+| `swiftc main.swift -o a.out` (コンパイル + リンク) | 0 / 0 / 0 |
+| `swift -e 'print(1)'` | 2 / 2 / 2 |
+| `swift-frontend -version` (ドライバを通らない) | 0 / 0 / 0 |
+| `swift package dump-package` (manifest を読むだけ) | 1 / 1 / 1 |
+| `swift build` (1 ファイルのパッケージ、変更なしの 2 回目) | 5 / 5 / 5 (初回は 6) |
+| `xcodebuild -scheme Tiny build` (同じパッケージ) | 2 (1 回) |
+| `sourcekit-lsp` (initialize → didOpen → 30 秒待つ → shutdown) | 18 (`.build` なし) / 10 (`.build` あり) |
+
+LSP の手順は Python で stdio の JSON-RPC を送るだけのもの (`Content-Length` 付きで `initialize`・`initialized`・`textDocument/didOpen`・
+`shutdown`・`exit` を順に送る)。実際に動いていた sourcekit-lsp (PID 40846) は `~/src/my-products/apps/obaket/macOS` を cwd にした、
+Claude Code の swift-lsp plugin (`_claude/settings.json` の `enabledPlugins` の `swift-lsp@claude-plugins-official`) が起動したもの。
+
+仕組み (upstream のソースを `gh api` で読んだ。main の版で、手元のバイナリの版と同じかは未確認):
+
+- swift-driver の `Sources/SwiftDriver/Execution/ArgsResolver.swift` の `init` は、一時 dir を渡されないと
+  `withTemporaryDirectory(removeTreeOnDeinit: false)` で `$TMPDIR/TemporaryDirectory.XXXXXX` を作り、`.keep-directory` を書く
+  (TSC が空の dir を消してしまうのを防ぐため、と FIXME にある)。消すのは `removeTemporaryDirectory()` を呼んだときだけ
+- `swiftc` のドライバ (`Driver.swift` の `run`) は、片付けを `defer` で登録するが、job が 1 つのとき (`swiftc -c` の 1 ファイル・`swift -e` 等)
+  はドライバ自身をその job に `exec` で置き換える (in-place 実行)。プロセスが置き換わるので `defer` が走らず、dir が残る。
+  `-###` などの表示だけのモードは `defer` の登録より前に return するので、これも残る
+- SwiftPM (`Sources/Build/BuildOperation.swift`・`BuildManifest/LLBuildManifestBuilder+Swift.swift`・`DriverSupport/DriverSupportUtils.swift`) は
+  ビルドの計画のたびに `ArgsResolver(fileSystem:)` を一時 dir なしで作り、`removeTemporaryDirectory()` を呼ばない (`gh search code` で 0 件)。
+  sourcekit-lsp はパッケージを開くと SwiftPM を内部で使って計画・準備ビルドをするので、編集や再インデックスのたびに増える
+- Xcode のビルドの本体 (swift-build の `SWBCore/LibSwiftDriver/LibSwiftDriver.swift`) は一時 dir をビルド dir の下に明示して渡すので残さない。
+  xcodebuild で残った 2 件はパッケージの manifest を読む段 (SwiftPM) のもの
+
+つまり、作り手は 1 つではなく「swift-driver の `ArgsResolver` を一時 dir なしで使い、`removeTemporaryDirectory()` まで届かない経路」全部。
+`.keep-directory` だけの dir はこれで説明できる。`inputs-1.LinkFileList` は、リンクの job が途中で死んだ (片付けの条件 `anyJobHadAbnormalExit`) か、
+同じ in-place の経路でリンクした回のもの (未確認)。
+
+どれが件数を占めるかは測っていないが、sourcekit-lsp は 1 ファイルのパッケージでも 30 秒で 10〜18 件で、Claude Code のセッションが開いている間ずっと
+動くので、直近 1 時間の 446 件 (xcodebuild が居ない時間帯) の主な出どころとして説明が付く (推定)。
+
 ## 影響
 
 - `bin/tmpclean apply` は 1 件ごとに `lsof` を取り直すので 1 件約 0.25 秒かかり、12 万件の片付けに約 8 時間かかる (2026-10-21 に実測し、途中で止めた)
@@ -80,6 +121,9 @@
   反証されなかった。採った指摘: itemReplacement 説の根拠が弱い (SwiftPM 系の接頭辞の可能性へ書き換え) / sourcekit-lsp を最有力とする根拠が足りない
   (xcodebuild と時間帯が重なる。候補の 1 つへ下げた) / 相関の手順に対照が無い (プロセスと増分を同じ行に記録する形へ) / 中身に `swift -e` の
   `main.swift` があった (作り手の候補に追加)
-- [ ] 調べ方 1 (相関)
-- [ ] 調べ方 2 (作った本人の特定)
-- [ ] 出どころで止める、または受け方を決める
+- [x] 作り手の特定 (調べ方 1・2 は採らず、候補ごとに隔離した `TMPDIR` で動かす A/B に替えた。上の「結果」)。2026-10-21
+- [ ] 出どころで止める、または受け方を決める (案は下。どれにするかはユーザーの判断待ち)
+  - A. upstream (swiftlang/swift-driver・swift-package-manager) に報告する (外部への投稿)
+  - B. swift-lsp plugin の sourcekit-lsp だけ `TMPDIR` を専用の dir に向け、終わったら消す (PATH の shim。`path-shim-must-resolve-real-binary.md`)
+  - C. `.keep-directory` だけ (か空) の `TemporaryDirectory.*` で N 日より古いものを定期的に消す (消す側の安全機構になるので敵対レビューまで要る)
+  - D. swift-lsp plugin を切る (Claude Code の Swift の LSP 機能を失う)
