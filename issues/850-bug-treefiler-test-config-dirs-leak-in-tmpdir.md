@@ -1,5 +1,7 @@
 # 850 (bug): treefiler のテストが途中で死ぬと、$TMPDIR に空の treefiler-config-* が溜まる
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-21〜）
+
 起票日: 2026-10-21
 
 ## 概要
