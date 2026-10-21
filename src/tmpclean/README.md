@@ -8,6 +8,7 @@
 tmpclean count [-json]
 tmpclean plan  -kinds session,tmpdir -out <dir> [-session-days 7] [-tmpdir-days 3] [-json]
 tmpclean apply -plan <dir>/plan-<ID>.json -approve <ID> [-json]
+tmpclean sweep [-days 3] [-json]
 ```
 
 - `plan` は何も動かさず、候補を `<dir>/plan-<ID>.json` に書く。ID は中身 (作成時刻・選ぶ条件・候補) の hash
@@ -15,6 +16,18 @@ tmpclean apply -plan <dir>/plan-<ID>.json -approve <ID> [-json]
   1 件ずつ判定し直してから `~/.Trash/tmpclean-<日時>-<ID>/<kind>/[<project>/]<名前>` へ移す。何をどこへ移したかは `<dir>/moved-<ID>.jsonl` (1 件ごとに fsync)
 - 終了コード (doctor の exitcode とは別の語彙): 0 = 走り切った / 1 = 移せなかったものがある / 2 = 前提の検査で止めた (1 件も移していない) /
   3 = 実行環境の失敗 / 4 = 途中で止めた (一部は移した)
+
+## sweep (承認なしで消す唯一の経路。issue 851)
+
+`$TMPDIR` の直下に Swift のツールチェーン (swift-driver の `ArgsResolver`。sourcekit-lsp・SwiftPM・`swiftc -c`・`swift -e`) が残す
+空の `TemporaryDirectory.XXXXXX` だけを、承認なし・ゴミ箱を経由せずに消す。SessionStart hook (`_claude/hooks/tmpdir-swift-sweep.sh`) が
+1 日 1 回、lockman で 1 本にして裏で走らせる。結果は `~/.cache/dotfiles-tmpdir-sweep/` の `sweep.log` / `last.json`。
+
+- 消すのは「空」か「空の `.keep-directory` だけ」のもので、`safefs.RemoveEmptyDir` が fd で実体を照合し、最後の rmdir は kernel が
+  空でなければ断る。失うのは空のフォルダと長さ 0 のファイルだけ
+- 残す: 名前が違う・フォルダでない (symlink を含む)・開かれている・自身か中が N 日 (既定 3) 以内・socket / FIFO を含む・
+  **動いている Swift のツールのうち一番古いものの起動より後に作られた** (そのツールが後で応答ファイルを書きうる。Xcode を開いたままだと消えない)
+- ps・lsof が読めなければ何も消さずに止める (2)
 
 ## 守り (層を重ねる。どれも回帰テストと変異で固定してある)
 
@@ -38,6 +51,12 @@ tmpclean apply -plan <dir>/plan-<ID>.json -approve <ID> [-json]
 - Desktop から起動し、起動後に cwd が移り、子のプロセスも走っていない生きたセッション (session の既定を 7 日にしてある。移されてもゴミ箱から戻せる)
 - 承認の結び付けは暗号的ではない (書き換えた plan の ID を計算し直せば通る。ただし今の候補との交わりしか移さないので、移すものは増やせない)
 - 見落とした生きたセッションは、移した後も開いた fd でゴミ箱の中へ書き続ける
+- sweep: 全体の lsof を取ってから消すまでに、そのフォルダを開いたプロセス (1 件ずつの lsof は取り直さない。開く理由があるのは作った
+  ツールだけで、それは起動時刻で守る)。Swift のツールの拾い方 (`swiftToolCommand`) に無い名前で同じ形のフォルダを作るプロセス
+  (swift-tools-support-core の `TemporaryDirectory` を使う tuist・xcodegen など。実在の確認はしていない。3 日と lsof だけが守る)。
+  `.keep-directory` を確かめてから消すまでに、その名前を中身のあるファイルへ差し替えられたとき (macOS は名前でしか unlink できない。
+  `.keep-directory` を書く書き手は ArgsResolver の作成時の 1 回だけ)。由来の印 (`com.apple.provenance`) は名前だけで許し、値は見ない
+  (利用者が任意の値を書ける。そこに中身を置く書き手はいない)
 - まだ知らない起動の形の claude (拾い方に足す)。本体の「200 字 + -hash」は実装を読んだだけで、実物の長い名前では未確認
 
 ## 構成

@@ -4,6 +4,7 @@
 doctor (削除エンジンのゴミ箱への移動) と treefiler (`a` 新規作成・`m` 名前の変更・`d` ゴミ箱へ移す) と tmpclean (一時領域の古いものをゴミ箱へ移す) が replace で取り込む。
 
 - `TrashMove` — ゴミ箱へ移す (renameatx_np の RENAME_EXCL・同名は Finder と同じく拡張子の前に番号を足す (`foo 2.txt`)・別ボリュームは断る・fd で掴んで (dev, ino) を照合)
+- `RemoveEmptyDir` — 空か、空のファイル 1 つ (`keep`) だけを含むフォルダを消す (fd で照合・最後の rmdir は空でなければ kernel が断る。戻せないが失うのは空のものだけ)。tmpclean の sweep が使う
 - `Rename` / `Create` — 同じフォルダの中での名前の変更と作成 (上書きしない)。`ValidName` が `/` `..` などを断る
 - どの操作も呼び出し側の `Guard` を syscall の直前に通す。テストは `safefs/sandbox` で一時ディレクトリの外を実行前に拒否する
   (doctor は自前の 4 段構え = `src/doctor/disk/main_test.go`)

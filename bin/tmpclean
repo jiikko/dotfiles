@@ -3,6 +3,7 @@
 # Go implementation at:
 #   ~/dotfiles/src/tmpclean/
 #     tmpclean count | plan -kinds session,tmpdir -out <dir> | apply -plan <file> -approve <ID>   (使い方は tmpclean -h)
+#     tmpclean sweep   ($TMPDIR の空の TemporaryDirectory.* を承認なしで消す。SessionStart hook tmpdir-swift-sweep.sh が 1 日 1 回)
 # 手順 (数える → 候補を見せる → 承認 → 移す) は skill cleanup-tmp-dir。
 # 再ビルドは同期 (--async にしない): 呼び出し側は出力と rc で判定するので、旧版の結果を新版のものと誤認させない。
 set -u

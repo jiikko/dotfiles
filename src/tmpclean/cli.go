@@ -28,6 +28,9 @@ const usage = `使い方:
   tmpclean apply -plan <dir>/plan-<ID>.json -approve <ID> [-json]
       plan に載っていて今も候補であるものだけを、1 件ずつ判定し直してからゴミ箱 (~/.Trash/tmpclean-…) へ移す。
       移した記録は plan と同じ dir の moved-<ID>.jsonl
+  tmpclean sweep [-days 3] [-json]
+      $TMPDIR の直下の空の TemporaryDirectory.* (Swift のツールチェーンが残す) を承認なしで消す (ゴミ箱を経由しない)。
+      消すのは空か空の .keep-directory だけのもので、N 日より古く、開かれておらず、動いている Swift のツールの起動より前に作られたもの
 
 終了コード: 0 = 走り切った / 1 = 移せなかったものがある / 2 = 前提の検査で止めた (1 件も移していない) /
             3 = 実行環境の失敗 / 4 = 途中で止めた (一部は移した)
@@ -50,6 +53,8 @@ func run(ctx context.Context, d deps, args []string, stdout, stderr io.Writer) i
 		return runPlan(ctx, d, args[1:], stdout, stderr)
 	case "apply":
 		return runApply(ctx, d, args[1:], stdout, stderr)
+	case "sweep":
+		return runSweep(ctx, d, args[1:], stdout, stderr)
 	case "-h", "-help", "--help", "help":
 		fmt.Fprint(stdout, usage)
 		return exitOK
@@ -278,4 +283,73 @@ func sortedCounts(m map[string]int) []keyCount {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
 	return out
+}
+
+type sweepOutput struct {
+	Removed []string       `json:"removed"`
+	Kept    map[string]int `json:"kept"`
+	Failed  []failure      `json:"failed"`
+	Limit   string         `json:"limit,omitempty"` // 消してよい範囲を決めた一番古い Swift のツール (pid と起動時刻と command)
+	Stopped string         `json:"stopped,omitempty"`
+	Exit    int            `json:"exit"`
+}
+
+func runSweep(ctx context.Context, d deps, args []string, stdout, stderr io.Writer) int {
+	fs := newFlags("sweep", stderr)
+	days := fs.Int("days", 3, "")
+	asJSON := fs.Bool("json", false, "")
+	if err := fs.Parse(args); err != nil || fs.NArg() > 0 {
+		return exitStopped
+	}
+	res, err := sweep(ctx, d, *days)
+	code := exitOK
+	switch {
+	case err != nil && len(res.removed) > 0:
+		code = exitStoppedMoved
+	case err != nil && isStop(err):
+		code = exitStopped
+	case err != nil:
+		code = exitEnv
+	case len(res.failed) > 0:
+		code = exitFailed
+	}
+	o := sweepOutput{Removed: res.removed, Kept: map[string]int{}, Failed: []failure{}, Exit: code}
+	if o.Removed == nil {
+		o.Removed = []string{}
+	}
+	for _, k := range res.kept {
+		o.Kept[k.reason]++
+	}
+	for _, f := range res.failed {
+		o.Failed = append(o.Failed, failure{Path: f.path, Reason: f.reason})
+	}
+	if res.limit != nil {
+		o.Limit = fmt.Sprintf("pid %d (%s から): %s", res.limit.pid, res.limit.started.Format("2006-01-02 15:04:05"), res.limit.command)
+	}
+	if err != nil {
+		o.Stopped = err.Error()
+	}
+	if *asJSON {
+		if rc := writeJSON(stdout, stderr, o); rc != exitOK {
+			return rc
+		}
+		return code
+	}
+	for _, p := range res.removed {
+		fmt.Fprintf(stdout, "removed: %s\n", p)
+	}
+	for _, f := range res.failed {
+		fmt.Fprintf(stdout, "failed (%s): %s\n", f.reason, f.path)
+	}
+	for _, line := range sortedCounts(o.Kept) {
+		fmt.Fprintf(stdout, "kept (%s): %d\n", line.key, line.n)
+	}
+	if o.Limit != "" {
+		fmt.Fprintf(stdout, "limit: %s\n", o.Limit)
+	}
+	fmt.Fprintf(stdout, "removed: %d / failed: %d\n", len(res.removed), len(res.failed))
+	if err != nil {
+		fmt.Fprintf(stderr, "止めた: %v\n", err)
+	}
+	return code
 }

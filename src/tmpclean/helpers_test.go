@@ -44,6 +44,7 @@ type fproc struct {
 	env       string // ps eww が command の後ろに出す環境変数
 	cwd       string // "" = lsof で cwd が取れない
 	pgrep     bool   // pgrep -a -x claude に当たる (argv[0] の名前が claude)
+	etime     string // ps -o etime ("" = 01:00)
 }
 
 // fakeSys は ps / pgrep / lsof の fake。テストは procs・open・openNow を書き換えて状況を作る。
@@ -52,6 +53,7 @@ type fakeSys struct {
 	open    []string             // 全体の lsof に出すパス (100 件に満たない分は無関係なパスで埋める)
 	openNow map[string][3]any    // 1 件の lsof の応答 {stdout, stderr, rc}。無ければ「該当なし」(rc=1・空)
 	lsofAll func() (string, int) // 全体の lsof を差し替える (失敗を作る)
+	psEtime func() (string, int) // ps -Ao pid=,etime=,command= を差し替える (失敗を作る)
 	onPS    func(n int)          // ps -Ao pid=,ppid=,command= が呼ばれた回数 (1 始まり) を受ける。途中で状況を変える
 	nPS     int
 	calls   []string
@@ -69,6 +71,19 @@ func (f *fakeSys) run(_ context.Context, name string, args ...string) (string, s
 		}
 		for _, p := range f.procs {
 			fmt.Fprintf(&b, "%5d %5d %s\n", p.pid, p.ppid, p.command)
+		}
+		return b.String(), "", 0, nil
+	case call == "ps -Ao pid=,etime=,command=":
+		if f.psEtime != nil {
+			out, rc := f.psEtime()
+			return out, "", rc, nil
+		}
+		for _, p := range f.procs {
+			et := p.etime
+			if et == "" {
+				et = "01:00"
+			}
+			fmt.Fprintf(&b, "%5d %11s %s\n", p.pid, et, p.command)
 		}
 		return b.String(), "", 0, nil
 	case call == "ps -Ao pid=,comm=":

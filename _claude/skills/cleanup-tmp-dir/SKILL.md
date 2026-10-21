@@ -18,6 +18,11 @@ description: 一時領域 (/private/tmp の Claude Code の作業場所・$TMPDI
 | `tmpdir` | `$TMPDIR` の直下 | tmpclean。既定は 3 日より古いもの |
 | `repo-tmp` | dotfiles の本体 checkout の `tmp/` | `make clean-tmp` (既定 30 日)。dotfiles 以外の repo の `tmp/` は容量を見せるだけ |
 
+`$TMPDIR` の直下の空の `TemporaryDirectory.*` (Swift のツールチェーンが残す。issue 851) は、この skill を通さずに SessionStart hook
+(`_claude/hooks/tmpdir-swift-sweep.sh`) が 1 日 1 回 `tmpclean sweep` で消す。手順 2 の数で `TemporaryDirectory.` が多いときは、
+先に `~/.cache/dotfiles-tmpdir-sweep/sweep.log` で sweep が走っているか (`rc=` と `removed=`) と、`last.json` に `limit` があれば
+それ (消すのを止めている一番古い Swift のツール) を見せる。
+
 ## 手順
 
 1. **置き場を決める**: `skill-tmpdir cleanup-tmp-dir` が返す絶対パスを `<D>` とし、以降はリテラルで書く
@@ -31,6 +36,8 @@ description: 一時領域 (/private/tmp の Claude Code の作業場所・$TMPDI
    「移す」の説明に **ID・種類ごとの件数・失うもの・移し先** を書く:
    - 失うもの: 終わったセッションの scratchpad (`--resume` で再開したときの作業ファイル)、`$TMPDIR` の古いテストの残骸とアプリの一時ファイル
    - 移し先: `~/.Trash/tmpclean-<日時>-<ID>/` (Finder から戻せる。容量はゴミ箱を空にするまで減らない)
+   - 所要: 件数 × 0.3 秒 (1 件ごとに `lsof` を取り直す)。🚨 数万件なら数時間かかる (12 万件で約 8 時間。2026-10-21 実測)。
+     `$TMPDIR` と scratchpad だけなら、再起動 (起動時に macOS が消す) の方が早いと添える
    - `repo-tmp` も扱うなら**別の質問**にする。🚨 こちらはゴミ箱を経由せず**消す** (戻せない) と説明に書く。`make clean-tmp DRY_RUN=1` の件数と、
      `grep -rn 'tmp/' <本体>/issues <本体>/_claude` で issue や doc が指しているパスを見せる。plan の ID に結び付かないので、承認の直後に打つ
 
