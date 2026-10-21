@@ -214,6 +214,26 @@ var catalog = []Entry{
 		Recover: "各ツール (rod / chrome-devtools-mcp) が再ダウンロードします", Paths: []string{"~/.cache/rod", "~/.cache/chrome-devtools-mcp"}},
 	{ID: "node-gyp-cache", Label: "node-gyp ヘッダキャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "次回ネイティブビルドで再取得されます", Paths: []string{"~/Library/Caches/node-gyp"}},
+	// Go の解析ツールのキャッシュ。実測 2026-10-22: golangci-lint 289MB / goimports 248MB /
+	// gopls 48MB / staticcheck 22MB。中身は go-build と同じく入力のハッシュを鍵にした結果で、
+	// golangci-lint には公式の `golangci-lint cache clean` がある。
+	// 🚨 ツールごとに分けてあるのは起動判定を独立させるため: エディタが開いている間 gopls は常駐するので、
+	// 1 エントリにまとめると golangci-lint / staticcheck の分まで毎回 blocked になる。
+	// 走行中に消すと書きかけのエントリを失うので、使う側が動いている間は候補にしない
+	{ID: "golangci-lint-cache", Label: "golangci-lint キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "次回の lint で再生成されます (初回が遅くなるだけ)", Paths: []string{"~/Library/Caches/golangci-lint"},
+		Guard: GuardProcessAbsent, Processes: []string{"golangci-lint"}},
+	// goimports の置き場は gopls も読む (同じ x/tools の module 索引)。だから起動判定に両方を見る
+	{ID: "gopls-cache", Label: "gopls / goimports キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "エディタが次に Go のファイルを開いたとき再生成されます", Detail: "gopls が常駐している間 (エディタで Go を開いている間) は候補から外れる",
+		Paths: []string{"~/Library/Caches/gopls", "~/Library/Caches/goimports"},
+		Guard: GuardProcessAbsent, Processes: []string{"gopls", "goimports"}},
+	{ID: "staticcheck-cache", Label: "staticcheck キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "次回の staticcheck で再生成されます", Paths: []string{"~/Library/Caches/staticcheck"},
+		Guard: GuardProcessAbsent, Processes: []string{"staticcheck"}},
+	// 実測 2026-10-22: 35MB。`pip cache purge` が消すのと同じ置き場 (wheel と HTTP のキャッシュ)
+	{ID: "pip-cache", Label: "pip キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "次回 pip install 時に再取得されます", Paths: []string{"~/Library/Caches/pip"}},
 	// Electron / Chromium アプリの HTTP・コード・GPU キャッシュ。**この機で最大の未カバー領域**
 	// (実測 2026-09-04: 合計 2.7GB。Slack 1.7GB / Multi-Video Player 系 509MB / Electron 495MB)。
 	//
