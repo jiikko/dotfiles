@@ -84,6 +84,13 @@ lan-manager の全体監査 (865) のうち、テスト (test-cleanup / test-hel
 
 項目ごとに上に書いた。
 
+### A9 (P3) flaky の疑い: `discover/scan_test.go:TestScannerFindsPeersAndClosesAll` (2026-10-22 に 1 回)
+
+- 861 の push 前の `make test` (load average 約 40 の混んだマシン) で `起こした数 = 9, want 8` で 1 回落ちた。同じ木で `-race -count=30` の単独実行は 0 件、
+  `make test` の 2 回目は通った。861 の差分は discover を含まない
+- 見立て (未確認): テストは条件が揃うまで最長 5 秒待つので、負荷で待ちが延びると、時間で起こす引き直し (regather) が 1 本余計に走る
+- 観測を仕込んだ: 失敗の文に起こした dns-sd の argv を順に出す (fakeStarter.argvs)。次に落ちたら、どの引き直しが余計かをその文で見る
+
 ## 進捗
 
 - [x] A1 flaky (dotfiles-0e。commit「test(mac-lan-manager): TestRemoteCommandRunsDetached が背景の lock の後始末を待つ」)
@@ -95,5 +102,6 @@ lan-manager の全体監査 (865) のうち、テスト (test-cleanup / test-hel
 - [x] A3 Update の鍵の固定のテスト (dotfiles-0e。862 の 6 と同じ commit)。edit の `hosts[i].Host = k` を消す変異 → TestUpdateOnlyExisting が red。memStore も鍵の固定と空のホスト名の拒否を本物に合わせた
 - [x] A4 (dotfiles-0e。commit「test(mac-lan-manager): setup のテストの準備の書き込みの失敗を t.Fatal で受ける」)。2 か所 (stale の 2 周目以降・生きている持ち主の lock) を t.Fatal で受ける
 - [ ] A5〜A6 (dotfiles-b9)
+- [ ] A9 flaky の疑い (観測待ち)
 - [x] A7 (dotfiles-0e。862 の 6 と同じ commit)。forbidigo ではなく、`Upsert` を `ledger.Store` から外して compiler が止める形にした (lanmgr は Store しか持たないので、丸ごと置き換える口を呼べない)
 - [x] A8 (dotfiles-0e。862 の 5 と同じ commit)。width_test.go・tools/width-probe の除外と、dispWidth・ruleguard を指すコメントを消した。`make lint` は 0 issues のまま

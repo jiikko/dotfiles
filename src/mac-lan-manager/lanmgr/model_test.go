@@ -2310,7 +2310,14 @@ func awaitWired(t *testing.T, m *Model) {
 func wiredHarness(t *testing.T, answers map[string][]string) *harness {
 	t.Helper()
 	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "169.254.217.100"}}, []discover.Peer{mini})
-	h.m.o.LookupHost = func(_ context.Context, name string) ([]string, error) { return answers[name], nil }
+	h.m.o.LookupHost = func(_ context.Context, name string) ([]string, error) {
+		if ips, ok := answers[name]; ok {
+			return ips, nil
+		}
+		// 広告されていない名前は、本物 (dscacheutil) では 0 件ではなく上限 (wiredLookupTimeout) の期限切れで返る
+		// (存在しない名前で real 10 秒・rc=0・出力 0 byte。上限は 3 秒)
+		return nil, context.DeadlineExceeded
+	}
 	h.m.startWiredLookups()
 	awaitWired(t, h.m)
 	return h

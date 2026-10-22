@@ -51,6 +51,8 @@ lan-manager の全体監査 (865) の設計系 7 タイプ (design / responsibil
 - 方向: `peer.Dest{User, Target, Alias}` と Validate / SSHArgv を独立した package に置く。ただし Y のコピーが HostKeyAlias を持たない形は
   テストで固定された意図的な形 (`model_test.go`) なので、変えるかはユーザーの判断
 
+- 2026-10-22: 症状の側 (s の HostKeyAlias が reAlias を通らない) は 860 で直した (`setup.ValidAlias` を sshRefusal で使う)。宛先と名前が生の string のまま越境する構造は残る
+
 ### P7 (encapsulation E1・P3) 有線の名前の判定を setup の外に写している
 
 - `lanmgr/reach.go:reachLines` と `ping.go:toPingName` の `strings.HasSuffix(n.Name, ".wired.local")`、`reachCell` の `t.Names[1]` (位置で判定)、

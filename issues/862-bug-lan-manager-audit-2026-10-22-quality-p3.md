@@ -86,7 +86,10 @@ lan-manager の全体監査 (865) の品質系のうち P3 の小物をまとめ
   - `netinfo.Snapshot.Unread` に数え、ObservePeer は 1 つでもあれば NetKnown=false。数えないのは I/F が無い (IfGone。macOS 27.0.1 で実測: ifconfig は rc=1 "does not exist"、-getinfo は rc=0) と Device が空のサービス (VPN。未実測)
   - 理由は `PeerNet.NetErr` に持ち、操作のログの observe done と dump --peer に出す
   - 未実測: Device のある VPN・PPPoE で -getinfo が落ちるか (落ちるなら毎回判定できないになる。observe done の net_err に名前が残り続けるのが目印)
-- [ ] 3 wiredCheck のテストの偽物を本物の形に揃える
+- [x] 3 wiredCheck のテストの偽物を本物の形に揃える (dotfiles-b9)。`wiredHarness` の LookupHost は、答えを持たない名前に `(nil, nil)` ではなく
+  `context.DeadlineExceeded` を返す (本物の dscacheutil は広告されていない名前で 0 件ではなく期限切れで返る)。
+  変異: wiredCheck を「err は分からない、0 件だけ missing」に直す誤った形にする → `TestWiredNameNotUsedUnlessItMatches` が red (それだけが落ちる)。
+  (a) 遅いだけの期限切れと区別できない点は、区別できる観測が見つかるまで受容 (方針どおり)
 - [x] 4 却下 (825 で見送り済み)
 - [x] 5 unescape (dotfiles-0e。commit「fix(mac-lan-manager): Bonjour の名前のエスケープを左から 1 回で読む / .golangci.yml の写し残りを消す」)
   - `\ddd`・`\.`・`\\` を 1 本の正規表現 (`reEsc`) で左から読む。戻す対象は今までと同じ 3 種類

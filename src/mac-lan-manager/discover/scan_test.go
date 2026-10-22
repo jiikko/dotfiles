@@ -17,6 +17,7 @@ type fakeStarter struct {
 	mu      sync.Mutex
 	out     map[string]string // コマンドの引数 → 出力
 	started int
+	argvs   []string // 起こした順 (数が合わないときに、どれが余計かを失敗の文に出す)
 	live    int
 }
 
@@ -25,6 +26,7 @@ func (f *fakeStarter) start(ctx context.Context, name string, args ...string) (i
 	f.mu.Lock()
 	out, ok := f.out[key]
 	f.started++
+	f.argvs = append(f.argvs, key)
 	f.mu.Unlock()
 	if !ok {
 		return nil, errors.New("no fake: " + key)
@@ -109,7 +111,7 @@ func TestScannerFindsPeersAndClosesAll(t *testing.T) {
 		t.Errorf("Close の後に止まっていない dns-sd が %d 本残っている", f.live)
 	}
 	if f.started != 3+4+1 { // -B ×3 / -L ×4 (smb の 2 つの I/F の Add は 1 回にまとめる) / -G は新しいホストで 1 回だけ
-		t.Errorf("起こした数 = %d, want 8", f.started)
+		t.Errorf("起こした数 = %d, want 8 (起こした順: %q)", f.started, f.argvs)
 	}
 }
 
