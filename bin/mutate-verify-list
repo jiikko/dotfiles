@@ -30,7 +30,8 @@
 #   - ログの置き場は repo の外か、repo の中なら ignore された場所 (ignore されていないと全部 rc=9 になる)
 #
 # 結果の表は 1 変異 1 行: 名前 / rc / rc の意味 (mutate-verify の終了コード)。各変異の出力は --log-dir の
-# <名前>.log に残す (既定は $MUTATE_VERIFY_LOG_ROOT か $TMPDIR の下に作る。この道具は消さない)。
+# <名前>.log に残し、各変異の全体のログ (mutate-verify.<名前>.*/) も同じ dir に置く (既定は $MUTATE_VERIFY_LOG_ROOT か、
+# 無ければ mutate-verify と同じ本体 checkout の tmp/mutate-verify/<session>/ の下に作る。この道具は消さない)。
 # 🚨 rc=0 は「--expect の検査が落ちた」までで、「それだけが落ちた」ではない (mutate-verify の doc)。巻き添えは各ログの
 #    baseline との差 (消えた行・増えた行) を見て確かめる
 #
@@ -127,11 +128,21 @@ done < "$__mvl_records"
 [ "${#names[@]}" -gt 0 ] || die "LIST に mutant が 1 つも無い: $list"
 
 if [ -z "$log_dir" ]; then
-  parent="${MUTATE_VERIFY_LOG_ROOT:-${TMPDIR:-/tmp}}"
+  # 既定の置き場の決め方は mutate-verify と同じ (本体 checkout の tmp/mutate-verify/<session>/。理由は mutate-verify の log_root)
+  if [ -n "${MUTATE_VERIFY_LOG_ROOT:-}" ]; then
+    parent="$MUTATE_VERIFY_LOG_ROOT"
+  elif parent="$("$(dirname "$_self")/skill-tmpdir" --if-ignored mutate-verify 2>/dev/null)"; then
+    :
+  else
+    parent="${TMPDIR:-/tmp}"
+  fi
   log_dir="$(mktemp -d "${parent%/}/mutate-verify-list.XXXXXX")" || die "ログの置き場を作れない: $parent"
 else
   mkdir -p "$log_dir" || die "ログの置き場を作れない: $log_dir"
 fi
+log_dir="$(cd "$log_dir" && pwd -P)" || die "ログの置き場を解決できない: $log_dir"
+# 各変異の mutate-verify が写す全体のログもこの下へ置く (変異の数だけ置き場の直下に dir が並ばないように)
+export MUTATE_VERIFY_LOG_ROOT="$log_dir"
 # 🚨 ログの置き場は repo の外 (か ignore された場所) に置く。repo の中で ignore されていないと、mutate-verify が走っている間に書かれ続けるログが untracked の差分に
 #    なり、全部の変異が rc=9 (元の作業ツリーが変わった) になる
 # 「repo の中か」は字面で比べず git に聞く (大文字小文字違いのパスで前方一致をすり抜けた。2 周目 P3)

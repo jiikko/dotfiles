@@ -102,7 +102,8 @@
 #   $MUTATE_FILE に --file の絶対パス (worktree 側) が入る。
 #   終了時に「全体のログ」の置き場を出す (baseline / 変異 / 構文検査の出力と、差の全体 diff.txt)。
 #   worktree と一緒に消えないよう外へ写したもので、**この道具は消さない**。置き場の親は
-#   MUTATE_VERIFY_LOG_ROOT で変えられる (既定は $TMPDIR)
+#   MUTATE_VERIFY_LOG_ROOT で変えられる (既定は本体 checkout の tmp/mutate-verify/<session>/ = `skill-tmpdir mutate-verify`。
+#   dotfiles では `make clean-tmp` が片付ける。tmp/ が ignore されていない repo では $TMPDIR)
 #   --timeout <秒> は各 run (構文検査 / baseline / --apply / 変異後の検証) の上限。既定 1800 秒、
 #   環境変数 MUTATE_VERIFY_TIMEOUT でも渡せる (引数が優先)。0 で無制限。超えた run は子孫の木を凍らせてから
 #   SIGTERM → 5 秒後に SIGKILL で止め、rc=10 (時間切れ。第 3 の結果) を返す。変異が hang を起こしても、
@@ -285,10 +286,20 @@ check_worktree_untouched() {
 # 写せなくても判定 (rc) は変えない: ログは判定の材料ではなく、人が後から読む控え
 # 置き場の親は起動時に絶対パスへ直す。EXIT trap の経路は先に repo root へ cd するので、相対のままだと
 # finish の経路と中断の経路で別の場所に解決される (2 周目 P3)
-log_root="${MUTATE_VERIFY_LOG_ROOT:-${TMPDIR:-/tmp}}"
-case "$log_root" in /*) ;; *) log_root="$PWD/$log_root" ;; esac
 tmp_root="${TMPDIR:-/tmp}"
 case "$tmp_root" in /*) ;; *) tmp_root="$PWD/$tmp_root" ;; esac
+# 既定は本体 checkout の tmp/mutate-verify/<session>/ (skill-tmpdir)。$TMPDIR を既定にしない: macOS の dirhelper が
+# 毎日 3:35 に 3 日より古いファイルだけを消し、中身の無い dir が $TMPDIR に溜まり続ける (ログも 3 日で読めなくなる)。
+# tmp/ が ignore されていない repo では写した物が rc=9 を作るので、$TMPDIR に倒す。ignore の確認は skill-tmpdir に任せる
+# (worktree から起動すると書き込む先は本体 checkout で、$root の ignore を見ても本体の ignore は分からない)
+if [ -n "${MUTATE_VERIFY_LOG_ROOT:-}" ]; then
+  log_root="$MUTATE_VERIFY_LOG_ROOT"
+elif log_root="$(cd "$root" && "$_tool_root/bin/skill-tmpdir" --if-ignored mutate-verify 2>/dev/null)"; then
+  :
+else
+  log_root="$tmp_root"
+fi
+case "$log_root" in /*) ;; *) log_root="$PWD/$log_root" ;; esac
 # $1 が元 repo の中 (か repo 自身) なら真。親をたどって `-ef` (同じ inode) で比べる。文字列の比較では
 # APFS の「大文字小文字・Unicode の正規化を区別しない」を再現できず、`É` / NFD / C locale で抜けた
 # (3 周目 P2)。答えはファイルシステムに出させる。存在しない dir は偽 (その後の mktemp が落ちる)
@@ -310,9 +321,9 @@ save_logs() {
   [ "$have" -eq 1 ] || return 1
   if [ -z "$logdir" ]; then
     parent="$log_root"
-    # 元 repo の中へは写さない: 写した物が untracked として見え、次の検査で rc=9 を作る
-    if inside_root "$parent"; then
-      note "🚨 MUTATE_VERIFY_LOG_ROOT が元 repo の中を指している ($parent)。\$TMPDIR へ写す"
+    # 元 repo の中の ignore されていない場所へは写さない: 写した物が untracked として見え、次の検査で rc=9 を作る
+    if inside_root "$parent" && ! git -C "$root" check-ignore -q -- "$(cd "$parent" && pwd -P)"; then
+      note "🚨 ログの置き場が元 repo の中で ignore されていない ($parent)。\$TMPDIR へ写す"
       parent="$tmp_root"
     fi
     # 名前は安全な文字だけにして短く切る (改行で表示が割れる・長すぎて mktemp が落ちる。同 P3)

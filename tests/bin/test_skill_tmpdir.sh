@@ -91,5 +91,27 @@ mkdir "$WORK/plain"
 got=$(cd "$WORK/plain" && CLAUDE_CODE_SESSION_ID=s1 GIT_CEILING_DIRECTORIES="$WORK" "$SUT" perf-analysis)
 expect "$got" "$WORK/plain/tmp/perf-analysis/s1" "repo の外では cwd の tmp/ を返す"
 
+# 6. --if-ignored: 本体 checkout で tmp/<名前>/ が ignore されているときだけ返す。されていなければ何も作らず rc=3
+IGN="$WORK/ign"
+git init -q "$IGN"
+git -C "$IGN" config core.excludesFile /dev/null # 手元の ~/.gitignore_global に頼らない (CI には無い)
+git -C "$IGN" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m init
+git -C "$IGN" worktree add -q --detach "$WORK/ignwt" HEAD
+rc=0; got=$(cd "$IGN" && CLAUDE_CODE_SESSION_ID=s6 "$SUT" --if-ignored mv 2>/dev/null) || rc=$?
+expect "$rc" 3 "--if-ignored: ignore されていなければ rc=3"
+if [ ! -e "$IGN/tmp" ]; then ok "--if-ignored: ignore されていなければ tmp/ を作らない"; else fail "ignore されていない repo に tmp/ を作った"; fi
+# worktree だけが ignore していても、書き込む先 (本体 checkout) の ignore で決める
+printf 'tmp/\n' > "$WORK/ignwt/.gitignore"
+rc=0; got=$(cd "$WORK/ignwt" && CLAUDE_CODE_SESSION_ID=s6 "$SUT" --if-ignored mv 2>/dev/null) || rc=$?
+expect "$rc" 3 "--if-ignored: worktree だけが ignore していても本体で ignore されていなければ rc=3"
+if [ ! -e "$IGN/tmp" ]; then ok "--if-ignored: worktree から呼んでも本体に tmp/ を作らない"; else fail "worktree から呼んで本体に tmp/ を作った"; fi
+printf 'tmp/\n' > "$IGN/.gitignore"
+got=$(cd "$WORK/ignwt" && CLAUDE_CODE_SESSION_ID=s6 "$SUT" --if-ignored mv)
+expect "$got" "$IGN/tmp/mv/s6" "--if-ignored: 本体で ignore されていれば本体の tmp/ を返す"
+printf '' > "$IGN/.gitignore"
+rc=0; (cd "$IGN" && CLAUDE_CODE_SESSION_ID=s6b "$SUT" mv2 --if-ignored) >/dev/null 2>&1 || rc=$?
+expect "$rc" 2 "--if-ignored を名前の後ろに置いたら usage で rc=2 (黙って無視しない)"
+if [ ! -e "$IGN/tmp/mv2" ]; then ok "引数の順を誤っても tmp/ を作らない"; else fail "引数の順を誤ったら tmp/ を作った"; fi
+
 printf '%d passed, %d failed\n' "$passes" "$fails"
 [ "$fails" -eq 0 ]

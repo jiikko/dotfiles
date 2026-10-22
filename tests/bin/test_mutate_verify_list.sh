@@ -44,6 +44,7 @@ cat > "$stub" <<'S'
 n=""; prev=""
 for a in "$@"; do [ "$prev" = "--name" ] && n="$a"; prev="$a"; done
 printf '%s\n' "$@" > "$STUB_DIR/args.$n"
+printf '%s\n' "${MUTATE_VERIFY_LOG_ROOT:-}" > "$STUB_DIR/logroot.$n"
 echo "$n" >> "$STUB_DIR/calls"
 case "$n" in green*) exit 6 ;; tree*) exit 9 ;; *) exit 0 ;; esac
 S
@@ -182,6 +183,38 @@ rc=$?
 mkdir -p "$work/linkbin"; ln -s "$MVL" "$work/linkbin/mutate-verify-list"; : > "$work/empty.list"
 ( cd "$work" && env -u MUTATE_VERIFY_BIN "$MVL_BASH" "$work/linkbin/mutate-verify-list" --log-dir "$work/link-logs" "$work/empty.list" ) > "$work/out.log" 2>&1
 grep -q 'mutant が 1 つも無い' "$work/out.log" || fail "symlink 経由で兄弟の mutate-verify を見失った: $(cat "$work/out.log")"
+
+# 9. 各変異の mutate-verify には、ログの置き場をそのまま置き場の親として渡す (全体のログが置き場の直下に散らない)。
+#    --log-dir も MUTATE_VERIFY_LOG_ROOT も無ければ、置き場は本体 checkout の tmp/mutate-verify/<session>/ の下
+#    ($TMPDIR を既定にすると dirhelper が中身だけ消し、空の dir が溜まる)
+run_stub 'mutant red-root'
+[ "$(cat "$STUB/logroot.red-root" 2>/dev/null)" = "$(cd "$STUB/logs" && pwd -P)" ] ||
+  fail "子へ渡した置き場の親が --log-dir でない: $(cat "$STUB/logroot.red-root" 2>/dev/null)"
+defrepo="$work/defrepo"; mkdir -p "$defrepo"; git -C "$defrepo" init -q .
+git -C "$defrepo" config core.excludesFile /dev/null   # 手元の ~/.gitignore_global に頼らない (CI には無い)
+printf 'tmp/\n' > "$defrepo/.gitignore"
+printf '%s\n' 'mutant red-def --file a' > "$work/def.list"
+( cd "$defrepo" && unset MUTATE_VERIFY_LOG_ROOT && CLAUDE_CODE_SESSION_ID=sess9 STUB_DIR="$work" MUTATE_VERIFY_BIN="$stub" \
+    "$MVL_BASH" "$MVL" "$work/def.list" ) > "$work/out.log" 2>&1
+rc=$?
+[ "$rc" = 0 ] || fail "既定の置き場で rc=$rc: $(cat "$work/out.log")"
+case "$(cat "$work/logroot.red-def" 2>/dev/null)" in
+  "$(cd "$defrepo" && pwd -P)/tmp/mutate-verify/sess9/mutate-verify-list."*) ;;
+  *) fail "既定の置き場が本体 checkout の tmp/mutate-verify/<session>/ の下でない: $(cat "$work/logroot.red-def" 2>/dev/null)" ;;
+esac
+# tmp/ が ignore されていない repo では $TMPDIR に倒し、repo に tmp/ を作らない (作ると置き場の検査で rc=2・各 run で rc=9)
+noign="$work/noign"; mkdir -p "$noign" "$work/tmp-noign"; git -C "$noign" init -q .
+git -C "$noign" config core.excludesFile /dev/null
+printf '%s\n' 'mutant red-noign --file a' > "$work/noign.list"
+( cd "$noign" && unset MUTATE_VERIFY_LOG_ROOT && CLAUDE_CODE_SESSION_ID=sess9 TMPDIR="$work/tmp-noign" STUB_DIR="$work" \
+    MUTATE_VERIFY_BIN="$stub" "$MVL_BASH" "$MVL" "$work/noign.list" ) > "$work/out.log" 2>&1
+rc=$?
+[ "$rc" = 0 ] || fail "tmp/ が ignore されていない repo で rc=$rc: $(cat "$work/out.log")"
+[ ! -e "$noign/tmp" ] || fail "tmp/ が ignore されていない repo に tmp/ を作った"
+case "$(cat "$work/logroot.red-noign" 2>/dev/null)" in
+  "$(cd "$work/tmp-noign" && pwd -P)/mutate-verify-list."*) ;;
+  *) fail "tmp/ が ignore されていない repo で \$TMPDIR に倒していない: $(cat "$work/logroot.red-noign" 2>/dev/null)" ;;
+esac
 
 # --- 本物の mutate-verify と繋ぐ: red と green が表に出る -----------------------------------
 # helper を repo へコピーしない (dotfiles の外の repo と同じ形で繋ぐ)

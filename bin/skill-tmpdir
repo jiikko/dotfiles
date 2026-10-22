@@ -8,11 +8,18 @@
 # - session-id: Claude Code が渡す CLAUDE_CODE_SESSION_ID。無い・パスに使えない文字を含むなら nosession-<日時>-<pid>
 #   (呼ぶたびに別の dir になるので、同じ run の中では最初に得たパスを使い回す)
 # - 掃除は `make clean-tmp` (dotfiles) / 各 repo の手順に任せる。この道具は消さない
+# - --if-ignored: tmp/<名前>/ が本体 checkout で git に ignore されていなければ、何も作らずに rc=3 で抜ける。
+#   書いた物が untracked に見えると困る呼び出し元 (mutate-verify の rc=9) 用。ignore を確かめる repo と書き込む repo を
+#   呼び出し元で別々に決めると、worktree から呼んだときに食い違う (worktree では ignore、本体では ignore されていない)
 set -eu
 unset CDPATH
+if_ignored=0
+if [ "${1:-}" = --if-ignored ]; then if_ignored=1; shift; fi
 name=${1:-}
+# 余った引数を黙って捨てない (`skill-tmpdir mutate-verify --if-ignored` の --if-ignored が無視され、ignore されていない tmp/ に作る)
+[ $# -le 1 ] || { echo "usage: skill-tmpdir [--if-ignored] <名前>  (引数が多い: $*)" >&2; exit 2; }
 case $name in
-'' | .* | *[!A-Za-z0-9._-]*) echo "usage: skill-tmpdir <名前>  (英数字と . _ - だけ。. で始めない): '$name'" >&2; exit 2 ;;
+'' | .* | *[!A-Za-z0-9._-]*) echo "usage: skill-tmpdir [--if-ignored] <名前>  (英数字と . _ - だけ。. で始めない): '$name'" >&2; exit 2 ;;
 esac
 sid=${CLAUDE_CODE_SESSION_ID:-}
 case $sid in
@@ -38,6 +45,14 @@ if [ -z "$root" ]; then
 	root=$(git rev-parse --show-toplevel 2>/dev/null) || root=$(pwd -P)
 fi
 dir="$root/tmp/$name/$sid"
+# repo の外・check-ignore の失敗 (tmp が symlink で rc=128 等) も「ignore されていない」に倒す。
+# dir だけを見て、中に作る印 (.skill-tmpdir) を個別に否定する .gitignore (`tmp/x/*` + `!tmp/x/.skill-tmpdir`) は見ない。
+# そう書く repo が実在すると示されたら印のパスも確かめる。dir を先に作るので、何も書かずに終わった呼び出し元の空の dir は
+# ignore された場所に残る (make clean-tmp が片付ける)
+if [ "$if_ignored" -eq 1 ] && ! git -C "$root" check-ignore -q -- "$root/tmp/$name/" 2>/dev/null; then
+	echo "skill-tmpdir: $root/tmp/$name/ は git に ignore されていない (--if-ignored)" >&2
+	exit 3
+fi
 mkdir -p "$dir"
 # 既にある dir (同じ session の再開) も今の mtime にする。古いままだと make clean-tmp が、パスを返した直後のこの dir を消しうる。
 # -c: mkdir の後に clean が消していたら作らない (素の touch は空のファイルを作り、以後の mkdir -p が File exists で失敗し続ける)。

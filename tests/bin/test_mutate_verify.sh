@@ -726,7 +726,7 @@ MUTATE_VERIFY_LOG_ROOT="$d/logs" TMPDIR="$work/tmp-inside" mv_run "$d" --file gu
 rc=$?
 [ "$rc" -eq 0 ] || { fail "🚨 置き場が元 repo の中だと rc=$rc (期待 0)"; grep -n '変わった\|全体のログ' "$work/out.log"; }
 [ ! -e "$d/logs" ] || [ -z "$(ls -A "$d/logs")" ] || fail "元 repo の中へ全体のログを写した"
-grep -q '元 repo の中を指している' "$work/out.log" || fail "元 repo の中を指したことを出していない"
+grep -q '元 repo の中で ignore されていない' "$work/out.log" || fail "元 repo の中の ignore されていない置き場を指したことを出していない"
 # 表記だけ違う書き方でもすり抜けない (APFS は大文字小文字も Unicode の正規化も区別しない。3 周目 P2)
 mkdir -p "$d/Élogs"   # NFC の É
 nfd_E="$(printf 'E\xcc\x81')"
@@ -882,6 +882,57 @@ mv_run "$d" --file guard.sh --timeout 99999999999999999999 --apply 'true' --expe
 mv_run "$d" --file guard.sh --timeout 0 \
   --apply 'perl -0pi -e "s/if \[ \"\\\$1\" = \"bad\" \]/if false/" "$MUTATE_FILE"' --expect 'FAIL: reject-bad'; rc=$?
 [ "$rc" -eq 0 ] || { fail "--timeout 0 (無制限) の正常系が rc=$rc (期待 0)"; tail -5 "$work/out.log"; }
+
+# ---------------------------------------------------------------------------
+# 50. MUTATE_VERIFY_LOG_ROOT が無ければ、全体のログは本体 checkout の tmp/mutate-verify/<session>/ へ写す
+#     ($TMPDIR を既定にすると dirhelper が中身だけ消し、空の dir が溜まる)。tmp/ が ignore されていない repo では
+#     $TMPDIR に倒し、元 repo に何も作らない (作ると untracked になり rc=9)
+# ---------------------------------------------------------------------------
+mv_default_root() { # $1=TMPDIR。MUTATE_VERIFY_LOG_ROOT を外して mv_run と同じ引数で呼ぶ
+  ( unset MUTATE_VERIFY_LOG_ROOT; export CLAUDE_CODE_SESSION_ID=sess50 TMPDIR="$1"
+    cd "$d" && exec "$MV" --verify 'bash verify.sh' --baseline-expect '^ran 2 checks' \
+      --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad' ) > "$work/out.log" 2>&1
+}
+d="$work/defroot"; make_repo "$d"
+printf 'tmp/\n' > "$d/.gitignore"; git -C "$d" add .gitignore; git -C "$d" commit -qm ignore
+git -C "$d" config core.excludesFile /dev/null   # 手元の ~/.gitignore_global に頼らない (CI には無い)
+mkdir -p "$work/tmp-def"
+mv_default_root "$work/tmp-def"
+rc=$?
+[ "$rc" -eq 0 ] || { fail "既定の置き場で rc=$rc (期待 0)"; cat "$work/out.log"; }
+dP="$(cd "$d" && pwd -P)"   # skill-tmpdir は実パスで返す ($TMPDIR の /var は /private/var への symlink)
+case "$(logdir_of)" in
+  "$dP/tmp/mutate-verify/sess50/mutate-verify."*) ;;
+  *) fail "🚨 既定の置き場が本体 checkout の tmp/mutate-verify/<session>/ でない: $(logdir_of)" ;;
+esac
+[ -f "$(logdir_of)/mv-mutant.log" ] || fail "既定の置き場に変異の全体のログが無い"
+[ -z "$(ls -A "$work/tmp-def")" ] || fail "ignore された tmp/ があるのに \$TMPDIR へ写した: $(ls -A "$work/tmp-def")"
+
+d="$work/defnoign"; make_repo "$d"
+git -C "$d" config core.excludesFile /dev/null
+mkdir -p "$work/tmp-noign"
+mv_default_root "$work/tmp-noign"
+rc=$?
+[ "$rc" -eq 0 ] || { fail "🚨 tmp/ が ignore されていない repo で rc=$rc (期待 0)"; cat "$work/out.log"; }
+case "$(logdir_of)" in
+  "$work/tmp-noign/mutate-verify."*) ;;
+  *) fail "tmp/ が ignore されていない repo で \$TMPDIR に倒していない: $(logdir_of)" ;;
+esac
+[ ! -e "$d/tmp" ] || fail "🚨 tmp/ が ignore されていない repo に tmp/ を作った"
+# worktree から起動したときは、書き込む先 (本体 checkout) の ignore で決める。worktree のブランチだけが tmp/ を
+# ignore していても本体へ書かない (本体に untracked を残し、本体で走る run に rc=9 を作る)
+git -C "$d" worktree add -q -b wt50 "$work/defnoign-wt" HEAD
+printf 'tmp/\n' > "$work/defnoign-wt/.gitignore"
+git -C "$work/defnoign-wt" add .gitignore; git -C "$work/defnoign-wt" commit -qm ignore
+mkdir -p "$work/tmp-noign-wt"
+d="$work/defnoign-wt" mv_default_root "$work/tmp-noign-wt"
+rc=$?
+[ "$rc" -eq 0 ] || { fail "worktree から起動して rc=$rc (期待 0)"; cat "$work/out.log"; }
+[ ! -e "$work/defnoign/tmp" ] || fail "🚨 worktree から起動して、tmp/ を ignore していない本体に tmp/ を作った"
+case "$(logdir_of)" in
+  "$work/tmp-noign-wt/mutate-verify."*) ;;
+  *) fail "worktree から起動して、本体が ignore していないのに \$TMPDIR に倒していない: $(logdir_of)" ;;
+esac
 
 # ---------------------------------------------------------------------------
 # 末尾. 🚨 全ケースを通した**後**の残骸ゼロ。
