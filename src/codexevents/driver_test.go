@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,7 +97,7 @@ func (d *driver) exec(name string, args ...string) (int, string) {
 	cmd := exec.Command(d.path("bin/"+name), args...)
 	cmd.Dir, cmd.Env = d.root, d.env
 	out, err := cmd.CombinedOutput()
-	if ee, ok := err.(*exec.ExitError); ok {
+	if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
 		return ee.ExitCode(), string(out)
 	} else if err != nil {
 		d.t.Fatal(err)

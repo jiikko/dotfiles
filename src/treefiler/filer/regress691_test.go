@@ -5,7 +5,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -361,7 +360,7 @@ func TestLinesClippedToViewport(t *testing.T) {
 		yhi := ylo + ch - 1
 		g := m.lines(now, ylo, yhi)
 		for k, c := range full {
-			if k[1] >= ylo && k[1] <= yhi && !reflect.DeepEqual(g[k], c) {
+			if k[1] >= ylo && k[1] <= yhi && (g[k] == nil || *g[k] != *c) {
 				t.Fatalf("窓 [%d, %d] のセル %v: 切り詰めると %+v、全体では %+v", ylo, yhi, k, g[k], c)
 			}
 		}

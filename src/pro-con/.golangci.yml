@@ -47,7 +47,24 @@ linters:
     - usestdlibvars  # stdlib にある定数の手書き
     - usetesting     # テストの os.Chdir / os.Setenv 等を t.Chdir / t.Setenv へ (後始末漏れの構造的防止。MkdirTemp は下の settings)
     - wastedassign   # 読まれない代入
+    # バグを見つける系 (全モジュール共通の塊。golangci-lint の推奨構成から、この repo で誤検出が出ないものを選んだ)
+    - asciicheck
+    - bodyclose
+    - canonicalheader
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - iotamixing
+    - nilerr
+    - nosprintfhostport
+    - reassign
+    - tparallel
   settings:
+    govet:
+      # 既定の analyzer に加えて全部を有効にする (nilness・unusedwrite・deepequalerrors などは既定では走らない)
+      enable-all: true
+      disable:
+        - fieldalignment # 構造体のフィールドをメモリの詰め方の順に並べ替えさせる。数バイトのために読む順を崩す
+        - shadow         # := での再宣言を全部拾う。意図した再宣言 (err の受け直し) が多く、ノイズに埋もれる
     dupl:
       threshold: 120 # glogx と同じ。導入時 0 件
     exhaustive:

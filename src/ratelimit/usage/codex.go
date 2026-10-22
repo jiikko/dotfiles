@@ -146,7 +146,7 @@ type codexRPCError struct {
 func parseCodexRPCLine(line []byte) (ws []Window, found bool, err error) {
 	var msg codexRPCLine
 	if json.Unmarshal(line, &msg) != nil {
-		return nil, false, nil // JSON でない行 (将来の診断出力等) は読み飛ばす
+		return nil, false, nil //nolint:nilerr // JSON でない行 (将来の診断出力等) は読み飛ばす
 	}
 	if msg.ID == nil || *msg.ID != codexRateLimitsID || msg.Method != "" {
 		return nil, false, nil

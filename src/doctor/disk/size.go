@@ -61,7 +61,7 @@ func duSize(ctx context.Context, root string, seen map[[2]uint64]struct{}) (Item
 		if !ok {
 			return fmt.Errorf("%s: 実体の stat 情報 (Stat_t) を取れない", p)
 		}
-		key := [2]uint64{uint64(s.Dev), uint64(s.Ino)} //nolint:unconvert
+		key := [2]uint64{uint64(s.Dev), uint64(s.Ino)} //nolint:unconvert // Stat_t の Dev / Ino の型は OS ごとに違う (変換が要る OS がある)
 		if _, dup := seen[key]; dup {
 			return nil
 		}

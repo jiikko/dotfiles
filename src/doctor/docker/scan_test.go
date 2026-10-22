@@ -463,8 +463,6 @@ func TestSystemPruneNoteMentionsVolumes(t *testing.T) {
 
 // 🚨 診断できなかった理由には docker の stderr が入る。早期 return の経路こそ関門が要る。
 func TestUnavailableFromStderrIsSanitized(t *testing.T) {
-	f := &fakeDocker{summaryRC: 1}
-	f.df, f.vol = dfJSON("", "", "", ""), "[]"
 	// summaryRC=1 の経路は stderr を読まないので、-v 側の rc!=0 で測る
 	f2 := &fakeDocker{df: "", dfRC: 1, dfStderr: "boom\x1b[2J\x1b]0;title\x07", summary: summaryFor(dfJSON("", "", "", ""))}
 	rep := Scan(context.Background(), opts(f2))
@@ -474,7 +472,6 @@ func TestUnavailableFromStderrIsSanitized(t *testing.T) {
 	if strings.ContainsRune(rep.Unavailable, 0x1b) {
 		t.Fatalf("stderr の制御文字が素通りした: %q", rep.Unavailable)
 	}
-	_ = f
 }
 
 // 🚨 提示コマンドを**完全一致**で固定する。部分一致 ("until=336h" を含むか) だと、

@@ -127,7 +127,7 @@ func parseBulkRecord(dir string, p []byte) (dirEntry, int, error) {
 		// この項目だけ今の形で読む (読めなければ、読む間に消えたとして落とす。readEntriesSlow と同じ)
 		info, err := os.Lstat(filepath.Join(dir, name))
 		if err != nil {
-			return dirEntry{}, l, nil
+			return dirEntry{}, l, nil //nolint:nilerr // 読む間に消えた項目は落とす (上のコメント)
 		}
 		return dirEntry{name: name, entryAttr: attrOf(info)}, l, nil
 	}

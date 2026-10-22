@@ -244,7 +244,7 @@ func Size(p string) (int64, int, error) {
 		}
 		info, err := d.Info()
 		if err != nil {
-			return nil // 歩いている間に消えた (git が書き換えた等)
+			return nil //nolint:nilerr // 歩いている間に消えた (git が書き換えた等)
 		}
 		total += blocks(info)
 		if !d.IsDir() {

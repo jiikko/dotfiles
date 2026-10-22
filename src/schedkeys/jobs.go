@@ -55,9 +55,6 @@ func readJobs(path string) ([]job, error) {
 			continue
 		}
 		out = append(out, job{id: fields[0], at: time.Unix(epoch, 0), label: fields[2], text: fields[3]})
-		if err != nil {
-			break
-		}
 	}
 	return out, nil
 }

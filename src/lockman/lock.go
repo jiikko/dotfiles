@@ -249,7 +249,7 @@ func (l *Locker) readLockInfo() (*Meta, os.FileInfo, error) {
 	var m Meta
 	if err := json.Unmarshal(b, &m); err != nil {
 		// 中身が壊れている / 書きかけ。**空いているとは解釈しない** (fail-closed)。
-		return nil, st, fmt.Errorf("%w: lock の中身を読めない (%v)", errBusy, err)
+		return nil, st, fmt.Errorf("%w: lock の中身を読めない (%w)", errBusy, err)
 	}
 	return &m, st, nil
 }
@@ -924,7 +924,7 @@ func (l *Locker) Renew(token string) error {
 	var parsed Meta
 	if jerr := json.Unmarshal(cur, &parsed); jerr != nil {
 		// 中身が壊れている / 書きかけ。**空いているとは解釈しない** (readLock と同じ fail-closed)
-		return fmt.Errorf("%w (Renew: %v)", errUnreadableLock, jerr)
+		return fmt.Errorf("%w (Renew: %w)", errUnreadableLock, jerr)
 	}
 	m = &parsed
 	if m.Token != token {

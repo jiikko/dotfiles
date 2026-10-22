@@ -20,7 +20,34 @@ linters:
     - unconvert      # redundant type conversions
     - usestdlibvars  # hand-written constants that exist in the stdlib
     - wastedassign   # assignments whose value is never read
+    # バグを見つける系 (全モジュール共通の塊。golangci-lint の推奨構成から、この repo で誤検出が出ないものを選んだ)
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - durationcheck
+    - errorlint
+    - exptostd
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - iotamixing
+    - nilerr
+    - nilnesserr
+    - nolintlint
+    - nosprintfhostport
+    - reassign
+    - tparallel
   settings:
+    govet:
+      # 既定の analyzer に加えて全部を有効にする (nilness・unusedwrite・deepequalerrors などは既定では走らない)
+      enable-all: true
+      disable:
+        - fieldalignment # 構造体のフィールドをメモリの詰め方の順に並べ替えさせる。数バイトのために読む順を崩す
+        - shadow         # := での再宣言を全部拾う。意図した再宣言 (err の受け直し) が多く、ノイズに埋もれる
+    nolintlint:
+      require-explanation: true # //nolint には理由を書く
+      require-specific: true    # 黙らせる linter を名指しする
     forbidigo:
       forbid:
         # 端末の幅・切り詰め・切り出しは github.com/jiikko/dotfiles/src/tuikit/termwidth を通す

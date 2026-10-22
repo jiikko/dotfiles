@@ -205,7 +205,7 @@ func autobuildTreeNewer(dir string, binAt time.Time) bool {
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		switch {
 		case err != nil:
-			return nil // 読めないものは無視する (判定は best-effort。止める理由にはしない)
+			return nil //nolint:nilerr // 読めないものは無視する (判定は best-effort。止める理由にはしない)
 		case d.IsDir():
 			if path != dir && strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir // zsh の ** も dot ディレクトリを辿らない

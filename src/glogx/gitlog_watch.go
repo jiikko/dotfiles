@@ -175,7 +175,7 @@ const gitLogWatchMaxDirs = 64
 func appendSubdirs(dirs []string, root string) []string {
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil // 読めない枝は飛ばす (権限・競合で消えた)
+			return nil //nolint:nilerr // 読めない枝は飛ばす (権限・競合で消えた)
 		}
 		if !d.IsDir() {
 			return nil

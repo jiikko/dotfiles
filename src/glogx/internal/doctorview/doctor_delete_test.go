@@ -396,7 +396,7 @@ func (f *fakeDelete) fn(ctx context.Context, targets []disk.Result, opt disk.Del
 	f.targets = append(f.targets, targets)
 	if err := ctx.Err(); err != nil {
 		f.ctxErr = err
-		return disk.DeleteReport{Entries: []disk.EntryOutcome{
+		return disk.DeleteReport{Entries: []disk.EntryOutcome{ //nolint:nilerr // 中断は本物の契約どおり「触っていない」報告で返す (error は返さない)
 			{Label: "中断", Outcome: disk.OutcomeSkipped, Reason: "中断されました"}}}, nil
 	}
 	for i, p := range f.phases {

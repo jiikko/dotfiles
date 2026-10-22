@@ -254,7 +254,7 @@ func parseArgs(args []string, specs []optSpec, stopAtPositional bool) (*parsed, 
 		}
 		if spec.check != nil {
 			if err := spec.check(val); err != nil {
-				return nil, nil, fmt.Errorf("argument %s: %v", strings.Join(spec.names, "/"), err)
+				return nil, nil, fmt.Errorf("argument %s: %w", strings.Join(spec.names, "/"), err)
 			}
 		}
 		p.opts[spec.dest] = val

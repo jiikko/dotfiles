@@ -275,6 +275,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		snaps = d.markRoles() // 取る前に控える (idle.go)
 		if ss, err = d.List(ctx); err != nil {
 			_ = store.SaveSeen(d.Dir, store.Seen{At: d.Now(), Err: err.Error()}) // 画面に前の一覧を使わせない (自分で読んで、取れなければ理由を出す)
+			//nolint:nilerr // 一覧の失敗は Tick を止めず、知らせて次の Tick へ回す
 			return append(notes, ev(eventlog.KindError, "", "", "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error())), nil
 		}
 		d.listedAt, d.listedQuiet = now, quiet
@@ -310,7 +311,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	}
 	d.refreshUsage(ctx, now)
 	if ctx.Err() != nil { // 枠を読んでいる間に止められた。取り消された ctx で起動して「失敗」を履歴に残さない
-		return notes, nil
+		return notes, nil //nolint:nilerr // 止められたのは失敗ではない
 	}
 	if list {
 		for _, r := range roles() {
