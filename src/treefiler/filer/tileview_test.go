@@ -77,11 +77,11 @@ func TestViewHighlightsCode(t *testing.T) {
 	m := newTest(t)
 	tl := openTileAt(t, m, "a/two.go")
 	vl := m.view(tl)
-	if len(vl) != 1 || vl[0].plain != "package two" || !strings.Contains(vl[0].styled, "\x1b[") {
+	if len(vl) != 1 || vl[0].plain != "package two" || !strings.Contains(tl.styledLine(0), "\x1b[") {
 		t.Fatalf("Go の行に色が付かない: %+v", vl)
 	}
-	if termwidth.StripSGR(vl[0].styled) != vl[0].plain {
-		t.Fatalf("色を外すと元の行に戻らない: %q", vl[0].styled)
+	if termwidth.StripSGR(tl.styledLine(0)) != vl[0].plain {
+		t.Fatalf("色を外すと元の行に戻らない: %q", tl.styledLine(0))
 	}
 }
 
@@ -600,5 +600,33 @@ func TestEnsureStopsAtLimitWithoutOpening(t *testing.T) {
 	src.ensure(1 << 30)
 	if src.readErr || src.eof {
 		t.Error("上限に達した後もファイルを開きに行った")
+	}
+}
+
+// コードの色付けは描いた行にだけ付く: 3000 行を読んで末尾まで飛んでも、色付けの回数は描いた画面の行の数で済む
+// (読み進めた行をまとめて色付けすると、読み足した 1 打が千行ぶんの chroma になる)。
+func TestCodeHighlightOnlyForDrawnLines(t *testing.T) {
+	m := newTest(t)
+	writeRel(t, m, "big.go", strings.Repeat("package big // x\n", 3000))
+	tl := openTileAt(t, m, "big.go")
+	calls := 0
+	hl := tl.hl
+	tl.hl = func(s string) string { calls++; return hl(s) }
+	m.HandleKey("G") // 末尾へ (読み切る)
+	settle(m)
+	m.View()
+	if len(m.view(tl)) < 3000 {
+		t.Fatalf("末尾まで読めていない: %d 行", len(m.view(tl)))
+	}
+	if rows := m.tileRows(tl); calls == 0 || calls > 2*rows {
+		t.Fatalf("色付けが %d 回 (描いた画面は %d 行。0 は描いていない・行数を大きく超えるのは描かない行まで色付けしている)", calls, rows)
+	}
+	if !strings.Contains(tl.styledLine(len(tl.vlines)-1), "\x1b[") {
+		t.Fatal("描いた行に色が付いていない")
+	}
+	before := calls
+	m.View() // 同じ画面をもう一度描く: 付けた色は覚えていて、付け直さない
+	if calls != before {
+		t.Fatalf("同じ画面を描き直すたびに色付けし直す: %d → %d 回", before, calls)
 	}
 }

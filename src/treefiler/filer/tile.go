@@ -438,7 +438,7 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 		if g > 0 {
 			c.put(r.x+2, r.y+1+i, gutter.Format(vl[ln].src, g), cMuted, false)
 		}
-		c.putSGR(tx, r.y+1+i, vl[ln].styled, lw, cText)
+		c.putSGR(tx, r.y+1+i, t.styledLine(ln), lw, cText)
 		for li, l := range links {
 			if l.line != ln {
 				continue

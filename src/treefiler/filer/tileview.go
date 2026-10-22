@@ -15,9 +15,22 @@ import (
 // 外部コマンド (glow / bat) は呼ばない (spec §0.1): Markdown は tuikit/markdown、コードは tuikit/highlight (chroma)。
 
 type viewLine struct {
-	styled string // SGR つき (canvas.putSGR で描く)
+	styled string // SGR つき (canvas.putSGR で描く)。lazy の間は空。読むのは tile.styledLine を通す
 	plain  string // 同じ文字列から SGR を外したもの (リンクを探す・幅を数える)
 	src    int    // 左の溝に出すファイルの行番号 (0 = 出さない: 折り返しの続き行・diff)
+	lazy   bool   // コードの色付けがまだ (描くときに styledLine が付ける)
+}
+
+// styledLine は表示の行 i の SGR つきの文字列。コードの色付けは描く行だけに、描くときに付けて覚える。
+// 読み進めた行を全部まとめて色付けしない: 64KiB の塊を読み足した 1 打で千行を超える chroma が走り、1 打が 40ms を超える
+// (tools/tfprobe の tile-code で 120 打目前後。1 行約 33µs)。遅らせても同じになるのは、コードの色付けが行ごと (折り返しなら
+// 1 片ごと) に独立しているから (tuikit/highlight の冒頭)。Markdown (整形で色が付く) と diff (行をまたぐ状態を持つ) は先に付ける。
+func (t *tile) styledLine(i int) string {
+	v := &t.vlines[i]
+	if v.lazy {
+		v.styled, v.lazy = t.hl(v.plain), false
+	}
+	return v.styled
 }
 
 type tileMode int
@@ -131,15 +144,15 @@ func (m *Model) view(t *tile) []viewLine {
 				pieces = wrapCells(l, w)
 			}
 			for j, p := range pieces {
-				st := p
-				if t.hl != nil {
-					st = t.hl(p)
-				}
 				src := 0
 				if j == 0 {
 					src = t.src.srcLine(t.vsrc + i)
 				}
-				t.vlines = append(t.vlines, viewLine{styled: st, plain: p, src: src})
+				if t.hl != nil {
+					t.vlines = append(t.vlines, viewLine{plain: p, src: src, lazy: true})
+				} else {
+					t.vlines = append(t.vlines, viewLine{styled: p, plain: p, src: src})
+				}
 			}
 		}
 		t.vsrc = len(t.src.lines)

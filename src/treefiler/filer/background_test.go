@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -472,6 +473,88 @@ func TestRippleElbowSkipsSiblingRows(t *testing.T) {
 				continue // 光らせた子の行・親 (root) の行
 			}
 			t.Fatalf("%d 行目の兄弟の枝まで光った: %q", y, after.plain()[y])
+		}
+	}
+}
+
+// 肘の光は画面に見えている行と桁だけを回す (巨大なフォルダの子が一斉に光ると、切らない回し方は 1 フレームが子の数の 2 乗)。
+// 切っても塗るセルと色は変わらない: 切らない回し方 (正解役) と同じ配置で比べる。光った兄弟が画面の上下の外まで続く形。
+func TestRippleElbowClipMatchesUnclipped(t *testing.T) {
+	m := newTest(t)
+	mkEmptyFiles(t, filepath.Join(m.root.abs, "big"), 300)
+	m.root.reload()
+	cdTo(t, m, "big/f150")
+	settle(m)
+	for _, k := range m.cur.parent.kids {
+		m.lightUp(k)
+	}
+	m.now = func() time.Time { return fixedNow.Add(100 * time.Millisecond) }
+	m.draw()
+	ch := m.canvasH()
+	ox, oy := int(math.Round(m.camX.v)), int(math.Round(m.camY.v))
+	now := map[*node][2]int{}
+	for _, n := range m.order {
+		if a := m.anims[n]; a != nil && !a.ghost && a.alpha.v > 0.05 {
+			now[n] = [2]int{int(math.Round(a.x.v)), int(math.Round(a.y.v))}
+		}
+	}
+	above, below := 0, 0 // 画面の外にいる光った子 (切らない回し方が空回りするのはこの子たちの縦の線)
+	for _, k := range m.cur.parent.kids {
+		if p, ok := now[k]; ok && p[1] < oy {
+			above++
+		} else if ok && p[1] >= oy+ch {
+			below++
+		}
+	}
+	if above == 0 || below == 0 {
+		t.Fatalf("光った子が画面の上下の外に無い: above=%d below=%d", above, below)
+	}
+	// カメラをずらした組でも比べる: 横 (肘の左端・右端が画面の外) と縦 (切る範囲の上端・下端) の切り詰めを当てる
+	for _, d := range [][2]int{{0, 0}, {6, 0}, {-6, 0}, {12, 3}, {0, -5}} {
+		dox, doy := ox+d[0], oy+d[1]
+		grid := m.lines(now, doy, doy+ch-1)
+		got, want := newCanvas(m.w, m.h), newCanvas(m.w, m.h)
+		m.drawRippleElbows(got, grid, now, dox, doy, ch)
+		unclippedRippleElbows(m, want, grid, now, dox, doy, ch)
+		lit := 0
+		for i := range want.cells {
+			if got.cells[i].fg != want.cells[i].fg {
+				t.Fatalf("ずらし %v: セル %d の色が違う: got %v want %v", d, i, got.cells[i].fg, want.cells[i].fg)
+			}
+			if want.cells[i].fg != want.blank[i].fg {
+				lit++
+			}
+		}
+		if lit == 0 {
+			t.Fatalf("ずらし %v: 肘が 1 セルも光っていない (比べる意味がない配置)", d)
+		}
+	}
+}
+
+// unclippedRippleElbows は画面に切らずに回す、切る前の drawRippleElbows (正解役)。
+func unclippedRippleElbows(m *Model, c *canvas, grid lineGrid, now map[*node][2]int, ox, oy, ch int) {
+	for n := range m.ripples {
+		g := m.glowAt(n, rippleStep/2)
+		np, ok := now[n]
+		if g <= 0.02 || !ok || n.parent == nil {
+			continue
+		}
+		pp, ok := now[n.parent]
+		if !ok {
+			continue
+		}
+		x0, x1 := pp[0]+m.labelWidth(n.parent), np[0]-1
+		y0, y1 := min(pp[1], np[1]), max(pp[1], np[1])
+		for y := y0; y <= y1; y++ {
+			for x := x0; x <= x1; x++ {
+				lc := grid[[2]int{x, y}]
+				if lc == nil || (y != pp[1] && y != np[1] && lc.mask&(dirUp|dirDown) == 0) {
+					continue
+				}
+				if p := c.at(x-ox, y-oy); p != nil && y-oy < ch {
+					p.fg = mix(p.fg, cRipple, 0.9*g)
+				}
+			}
 		}
 	}
 }

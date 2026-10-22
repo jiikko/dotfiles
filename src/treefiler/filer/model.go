@@ -1191,8 +1191,10 @@ func (m *Model) drawRippleElbows(c *canvas, grid lineGrid, now map[*node][2]int,
 		if !ok {
 			continue
 		}
-		x0, x1 := pp[0]+m.labelWidth(n.parent), np[0]-1
-		y0, y1 := min(pp[1], np[1]), max(pp[1], np[1])
+		// 画面に見えている行と桁に切ってから回す: 外のセルは c.at が捨てる。切らないと、巨大なフォルダの子が一斉に光ったとき
+		// (touch * / unzip) i 番目の子が i 行を回し、1 フレームが子の数の 2 乗の map 参照になる (3000 件で 1 フレーム 150ms)
+		x0, x1 := max(pp[0]+m.labelWidth(n.parent), ox), min(np[0]-1, ox+c.w-1)
+		y0, y1 := max(min(pp[1], np[1]), oy), min(max(pp[1], np[1]), oy+min(ch, c.h)-1)
 		for y := y0; y <= y1; y++ {
 			for x := x0; x <= x1; x++ {
 				lc := grid[[2]int{x, y}]
