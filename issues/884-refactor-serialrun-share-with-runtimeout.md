@@ -1,5 +1,7 @@
 # 884 (refactor): serialrun と runtimeout の写しを共有にする
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-23〜）
+
 起票日: 2026-10-23
 
 ## 概要
