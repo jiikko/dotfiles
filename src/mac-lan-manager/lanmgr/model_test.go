@@ -890,6 +890,7 @@ func TestReloadKeepsLedgerOnReadError(t *testing.T) {
 // 一覧は画面の高さに収める: 行が多くても、カーソルの行と詳細カード (動作のキーの案内) は画面の中に残る。全部を描いて下で切って
 // いたころは、狭い画面でカーソルの行も詳細カードも画面の外に出た。
 func TestListFitsHeightKeepingCursorAndDetail(t *testing.T) {
+	t.Parallel() // 描画の掃引で -race だと重い。harness は毎回作り、package の値は読むだけなので並べてよい
 	peers := make([]discover.Peer, 0, 40)
 	for i := range 40 {
 		peers = append(peers, discover.Peer{Host: fmt.Sprintf("mac%02d.local", i), Instances: []string{fmt.Sprintf("Mac %02d", i)}, SSH: true,
@@ -1009,6 +1010,7 @@ func TestListTableScrollbarOnlyWhenOverflow(t *testing.T) {
 // 縦積みのとき、一覧の窓の行数 (とバーの有無) は選んだ行で変わらない。詳細カードの高さは行ごとに違う (IP が多い相手は行が増える) が、
 // それを選んだ行の分だけ引くと、カーソルを動かすだけで窓が伸び縮みし、4 件目を選んだときだけバーが出たり消えたりした。
 func TestListWindowDoesNotDependOnSelectedRow(t *testing.T) {
+	t.Parallel() // 描画の掃引で -race だと重い。harness は毎回作り、package の値は読むだけなので並べてよい
 	ps := make([]discover.Peer, 0, 4)
 	for i := range 4 {
 		p := discover.Peer{Host: fmt.Sprintf("mac%02d.local", i), SSH: true, Addrs: map[int]string{14: fmt.Sprintf("192.168.50.%d", i+2)}}
@@ -1043,6 +1045,7 @@ func TestListWindowDoesNotDependOnSelectedRow(t *testing.T) {
 // 初期設定は全画面に切り替えず、開いた詳細のパネルを下に残して、その上へ右に stackDX 桁・下に stackDY 行ずらして重なる
 // (ドラクエの戦闘画面のように選んだ順に積む。esc で 1 枚ずつ戻る)。手順のカードが入らない狭い端末では全画面。
 func TestSetupStacksOnDetailPanel(t *testing.T) {
+	t.Parallel() // 描画の掃引で -race だと重い。harness は毎回作り、package の値は読むだけなので並べてよい
 	ps := make([]discover.Peer, 0, 4)
 	for i := range 4 {
 		ps = append(ps, discover.Peer{Host: fmt.Sprintf("mac%02d.local", i), SSH: true, Addrs: map[int]string{14: fmt.Sprintf("192.168.50.%d", i+2)}})
@@ -1238,6 +1241,7 @@ func TestUnfixedBadge(t *testing.T) {
 // 帯の入力欄のキャレットは、欄の文字の直後 (行も桁も) に出る。画面に入らない高さでは出さない (案内や空の行に出ない)。
 // 選んでいる行の左の棒の分 1 桁左に出ていた・低い画面で板の外に出ていた。
 func TestSettingsCaretExact(t *testing.T) {
+	t.Parallel() // 描画の掃引で -race だと重い。harness は毎回作り、package の値は読むだけなので並べてよい
 	for _, w := range []int{120, 80, 60, 48, 40} {
 		for hgt := 10; hgt <= 40; hgt++ {
 			h := newHarness(t, nil, nil)
@@ -1359,6 +1363,7 @@ func listHasRow(lines []string, want string) bool {
 // 絞り込みの入力中のキャレットは、入力した文字の直後に立つ (右寄せを仮定した式は、間の空白が 1 桁に詰まる幅 43〜44 で 2 桁左にずれた)。
 // 入力欄が入る幅 (43 以上) では必ず出る。全角の入力と広い配置も見る。
 func TestFilterCaretExact(t *testing.T) {
+	t.Parallel() // 描画の掃引で -race だと重い。harness は毎回作り、package の値は読むだけなので並べてよい
 	for _, in := range [][]string{{"m", "i", "n"}, {"み", "に", "ま", "っ", "く"}} {
 		for _, wired := range []bool{false, true} { // 有線だけに絞っているとタブの横に札が付く (札の分で入力欄が消えた。敵対レビュー)
 			typed := strings.Join(in, "")
@@ -1501,6 +1506,7 @@ func TestFooterShellHintFollowsKey(t *testing.T) {
 // どの画面でも View は高さちょうどの行を返す。設定の画面で項目の行が入らない高さは「高さが足りない」の画面になり、
 // 見えない項目に space が届いて設定を書き換えない (高さを 10 とみなして描き、端末より多い行を返していた)。
 func TestEveryScreenFitsHeight(t *testing.T) {
+	t.Parallel() // 描画の掃引で -race だと重い。harness は毎回作り、package の値は読むだけなので並べてよい
 	band := bandKeys()
 	for _, w := range []int{minWidth, 80, 120, 160, 200} {
 		for hgt := 1; hgt <= 30; hgt++ {

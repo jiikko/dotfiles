@@ -271,6 +271,7 @@ func TestSetupRefusals(t *testing.T) {
 
 // 初期設定の画面はどの幅・高さでも高さちょうどの行を返し、幅を超えない (足りなければ抜け方だけの画面)。
 func TestSetupViewFits(t *testing.T) {
+	t.Parallel() // 描画の掃引で -race だと重い。harness は毎回作り、package の値は読むだけなので並べてよい
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
 	for _, w := range []int{minWidth, 60, 100, 200} {
