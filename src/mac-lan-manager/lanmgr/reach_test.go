@@ -297,3 +297,35 @@ func TestReachKeyDuringAutoTellsResult(t *testing.T) {
 		t.Errorf("p を押した回の知らせ = %+v", n)
 	}
 }
+
+// Passive (画面を出さないサブコマンド) の Model は、一覧を開いても疎通を自分で確かめず、操作のログも書かない。
+// 対照として、同じつなぎで Passive でなければどちらも起きることを見る (起きない側だけでは、仕掛けが壊れていても緑になる)
+func TestPassiveStartsNoAutoWork(t *testing.T) {
+	for _, passive := range []bool{false, true} {
+		h, f := reachHarness(t)
+		var logs atomic.Int32
+		o := h.m.o
+		o.Passive, o.Log = passive, func(string) { logs.Add(1) }
+		m := New(o)
+		awaitNetLoad(m)
+		m.Resize(160, 50)
+		m.Advance(t0)
+		if passive {
+			// 確かめは goroutine で起こるので、Advance の直後に数えても 0 になりうる。起きないことには待つ条件が無いので、
+			// 起こされた合図を上限つきで待つ (Passive でないときは下の started がすぐ受ける)
+			select {
+			case n := <-f.names:
+				t.Errorf("Passive なのに疎通を確かめた: %q", n)
+			case <-time.After(300 * time.Millisecond):
+			}
+			if logs.Load() != 0 {
+				t.Errorf("Passive なのにログを %d 行書いた", logs.Load())
+			}
+			continue
+		}
+		f.started(t)
+		if logs.Load() == 0 {
+			t.Error("前提: Passive でないのにログを書かない (この検査では Passive の効き目を見分けられない)")
+		}
+	}
+}

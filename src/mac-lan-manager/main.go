@@ -167,8 +167,7 @@ func quietModel() (*lanmgr.Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	o.Log = nil
-	o.Reach = nil // 一覧を開いたときの疎通の確認をしない (dump は読むだけ・speedtest の帯域を食わない。ping は runPing が自分で確かめる)
+	o.Passive = true // 一覧を開いたときの疎通の確認をしない (dump は読むだけ・speedtest の帯域を食わない。ping は runPing が自分で確かめる)
 	return lanmgr.New(o), nil
 }
 

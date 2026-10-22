@@ -113,6 +113,10 @@ type Options struct {
 	// HostHints は最下行のキーの案内を呼び出し側が描く (glogx は枠の外の最下行に Hints を出す)。真なら View は案内の行と
 	// その上の空行を描かず、その分を本文に回す
 	HostHints bool
+	// Passive は画面を出さないサブコマンド (dump / speedtest / ping) の Model。Advance が自動で起こす仕事 (一覧を開いたときの
+	// 疎通の確認) と操作のログを止める。Advance に自動の仕事を足すときはこれを見る (呼び出し側に Options を 1 つずつ nil にさせると、
+	// 足した仕事が dump の中でも走る)
+	Passive bool
 }
 
 type screen int
@@ -251,6 +255,9 @@ type ask struct {
 
 // New は画面を作り、この Mac のネットワーク・台帳・設定を読み、Bonjour の走査を起こす。
 func New(o Options) *Model {
+	if o.Passive {
+		o.Log = nil
+	}
 	if !ledger.ValidUser(o.User) { // $USER は検査されていない値。空・使えない名前なら「分からない」にする (空のまま ssh すると宛先が "@<IP>" になった)
 		o.User = ""
 	}

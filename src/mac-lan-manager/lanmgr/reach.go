@@ -118,7 +118,7 @@ func (m *Model) runReach(t ReachTarget, tell bool) {
 // この Mac のネットワークを読むまでは待つ (内部 IP が固定かが決まらず、有線の名前を確かめる行を決められない)。
 // 失敗した結果も結果として残すので、届かない相手を確かめ続けることはない (確かめ直すのは r / 一覧を開き直したとき・p)。
 func (m *Model) autoReach() {
-	if m.o.Reach == nil || !m.selfOK {
+	if m.o.Passive || m.o.Reach == nil || !m.selfOK {
 		return
 	}
 	for _, r := range m.rows() {
