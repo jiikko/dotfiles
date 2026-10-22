@@ -47,3 +47,6 @@ issue 870 (treefiler のリークと重さを、実物の src で台本を回し
 ## 進捗
 
 - 2026-10-22: 起票
+- [x] 提案 2 の切り出し (2026-10-22。ユーザー依頼「これできる？」を受けて dotfiles-0e が実施。commit「rules: retro 875 の提案 2 を verify-execution の canary の節へ追記」)。
+  `verify-execution-not-just-exit-code.md` の「抽出・判定を書いたら、同じ経路を通る canary を先に置く」に、台本を流す道具の段ごとの確かめを 1 項足した
+- 提案 1・3・4 は本文どおり却下。提案 1 と同じ形 (共有の ref への soft reset) は同じ日に retro 876 でも踏んでいる (同じく既存のチェックリストの不履行)
