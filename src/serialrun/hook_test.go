@@ -37,9 +37,34 @@ func TestWrapCommandInsertsBeforeHeavyCommands(t *testing.T) {
 		{"make -j test", "serial-run -- make -j test"},
 		{"make -j 8 test", "serial-run -- make -j 8 test"},
 		{"make test &>/dev/null", "serial-run -- make test &>/dev/null"},
+		{"GOPATH=/x go test ./...", "GOPATH=/x serial-run -- go test ./..."},
+		{"PKG_CONFIG_PATH=/a make test", "PKG_CONFIG_PATH=/a serial-run -- make test"},
+		{`make test && git commit -m "serial-run を直す"`, `serial-run -- make test && git commit -m "serial-run を直す"`},
+		{"go -C src/x test ./...", "serial-run -- go -C src/x test ./..."},
+		{"make test | tee log", "serial-run -- make test | tee log"},
+		{"cat x | make test", "cat x | serial-run -- make test"},
+		{"make lint | make test", "serial-run -- make lint | make test"},
+		{"make lint || make test", "serial-run -- make lint || serial-run -- make test"},
+		{"make test 2>&1 | grep PATH=", "serial-run -- make test 2>&1 | grep PATH="},
+		{`git commit -m "PATH= の扱い"; make test`, `git commit -m "PATH= の扱い"; serial-run -- make test`},
+		{"make test PATH=/x", "serial-run -- make test PATH=/x"},
+		{"make test \\\n  -j4", "serial-run -- make test \\\n  -j4"},
+		{"(make lint) && make test", "(serial-run -- make lint) && serial-run -- make test"},
+		{"true && \\\n  make test", "true && \\\n  serial-run -- make test"},
+		{"for d in a b; do go test ./$d/... 2>&1 | tail -5; done", "for d in a b; do serial-run -- go test ./$d/... 2>&1 | tail -5; done"},
+		{"(cd src/x && go build) && make test 2>&1 | tail -20", "(cd src/x && go build) && serial-run -- make test 2>&1 | tail -20"},
+		{"make test 2>&1 | tail -20; for f in a; do echo $f; done", "serial-run -- make test 2>&1 | tail -20; for f in a; do echo $f; done"},
+		{"if ! make test 2>&1 | tail -20; then echo ng; fi", "if ! serial-run -- make test 2>&1 | tail -20; then echo ng; fi"},
+		{"make test |\\\n  tail", "serial-run -- make test |\\\n  tail"},
+		{"2>&1 make test | cat", "2>&1 serial-run -- make test | cat"},
+		{"make test > log 2>&1; make lint", "serial-run -- make test > log 2>&1; serial-run -- make lint"},
+		{"env PATH=/x make test", "serial-run -- env PATH=/x make test"},
+		{"make -Cscripts test", "serial-run -- make -Cscripts test"},
+		{"go test ./... -args -h", "serial-run -- go test ./... -args -h"},
+		{"go -C=src/x test ./...", "serial-run -- go -C=src/x test ./..."},
 	}
 	for _, c := range cases {
-		got, changed := wrapCommand(c.in)
+		got, changed, _ := wrapCommand(c.in)
 		if !changed || got != c.want {
 			t.Errorf("%q:\n got %q (changed=%v)\nwant %q", c.in, got, changed, c.want)
 		}
@@ -65,7 +90,6 @@ func TestWrapCommandLeavesOtherCommandsAlone(t *testing.T) {
 		"git commit -F - <<'M'\nmake test\nM",
 		"case $x in a) make test;; esac",
 		"for i in $(seq 3); do (( i++ )); make test; done",
-		"serial-run -- make test",
 		"echo 'unterminated",
 		"# make test",
 		"ls # make test",
@@ -79,9 +103,58 @@ func TestWrapCommandLeavesOtherCommandsAlone(t *testing.T) {
 		"arr=(go test ./...)",
 		"f() { make test; }",
 		"make -j 8 build",
+		"PATH+=:/x make test",
+		"serial-run -- make lint | make test",
+		"serial-run -- make test && make lint",
+		"make -kC test-fixtures build",
+		"make test | # c\nmake lint",
+		"make test |\n  make lint",
+		"exec serial-run -- make test | make lint",
+		"make test | xargs serial-run -- make lint",
+		"make test | sh -c 'serial-run -- make lint'",
+		"make test | tee \"$(serial-run -- make lint)\"",
+		"make test | while read l; do echo $l; done",
+		"(make test) 2>&1 | go test ./...",
+		"{ make test; } 2>&1 | go test ./...",
+		"(make test) |& go test ./...",
+		"( (make test) 2>&1 | go test ./... )",
+		"(go test ./...) 2>&1 | tee log | make lint",
+		"make test | time (go test ./...)",
+		"make lint | tail; make test | tail",
+		"make lint |& tee l; make test",
+		"(make test) | serial-run -- tee x",
+		"make test | (serial-run -- make lint)",
+		"{ make test; } | serial-run -- make lint",
+		"if make test; then :; fi | serial-run -- cat",
+		"for i in 1; do make test; done | serial-run -- cat",
+		"make test | while read l; do serial-run -- make lint; done",
+		"(cd x && make test) | serial-run -- tee log",
+		"make test |\nserial-run -- cat",
+		"make test |\\\n  serial-run -- cat",
+		"(make lint) | make test",
+		"builtin export PATH=/x; make test",
+		"command export PATH=/x; make test",
+		"unset PATH; make test",
+		"eval x; make test",
+		"path=/x; make test",
+		"make test 2>&1 | serial-run -- make lint",
+		"git commit -m $'fix\\'s ; make test ; done' \\'",
+		"noglob make test",
+		"make -t test",
+		"declare -x PATH=/x; go test ./...",
+		"make -n test",
+		"make --dry-run test",
+		"make -q test",
+		"make -p test-lint",
+		"make -nk test",
+		"make test --help",
+		"mutate-verify --help",
+		"go test -h",
+		"swift test --help",
+		"serial-run -- make test",
 	}
 	for _, in := range cases {
-		if got, changed := wrapCommand(in); changed {
+		if got, changed, _ := wrapCommand(in); changed {
 			t.Errorf("%q を書き換えた: %q", in, got)
 		}
 	}
@@ -173,5 +246,41 @@ func TestHookAddsQueueNoteOnlyWhenSomeoneIsAhead(t *testing.T) {
 		if !strings.Contains(c, want) {
 			t.Errorf("知らせに %q が無い: %s", want, c)
 		}
+	}
+}
+
+func TestWrapCommandSkipReasons(t *testing.T) {
+	for in, want := range map[string]string{
+		"git commit -F - <<'M'\nmake test\nM":       "heredoc",
+		"for i in 1; do (( i++ )); make test; done": "arith",
+		"echo 'x; make test":                        "parse",
+		"export PATH=/x:$PATH; make test":           "path",
+		"git status":                                "",
+	} {
+		if _, changed, skip := wrapCommand(in); changed || skip != want {
+			t.Errorf("%q: changed=%v skip=%q want %q", in, changed, skip, want)
+		}
+	}
+}
+
+// hook の判断は置き場の hook.log に残る (差し込んだとき・重いコマンドを含むのに見送ったときだけ)
+func TestHookLogsDecisions(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("SERIAL_RUN_STATE_DIR", state)
+	if _, err := openQueue(filepath.Join(state, "default")); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []string{"make test", "git status", "git commit -F - <<'M'\nmake test\nM", "ls"} {
+		b, _ := json.Marshal(map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": c}})
+		var out strings.Builder
+		_ = runHook(strings.NewReader(string(b)), &out)
+	}
+	log, err := os.ReadFile(filepath.Join(state, "default", "hook.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(log)), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], "\twrapped\tmake test") || !strings.Contains(lines[1], "\tskipped:heredoc\t") {
+		t.Fatalf("hook.log:\n%s", log)
 	}
 }

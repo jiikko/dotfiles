@@ -96,4 +96,37 @@ serialrun の監査で見つかった、グループ B の 11 項目。
 
 ## 進捗
 
-- [ ] 未着手 (項目ごとに、直した commit の subject・当てた変異・実測を書く)
+- 2026-10-23: B4・B7 以外の 9 項目に手を入れた (commit「fix(serialrun): hook の判定の誤りを直す (issue 879)」)
+  - [x] B1 部分文字列の拒否をやめ、字句の中で見る: 手で書いた `serial-run -- …` はコマンド語で重いと読まない / PATH の見送りは前置きの代入 (`PATH=` / `PATH+=`) と
+    `export` などの引数だけ (`GOPATH=`・`grep PATH=`・`make test PATH=/x`・`env PATH=` は包む)。`<<` と `((` は字句の前に打ち切る (heredoc の本文を単純コマンドと読むため。反証レビューの訂正どおり)
+  - [x] B2 make の dry-run 等 (`-n` `--dry-run` `--just-print` `--recon` `-q` `-p` `-h` `--help` `-v` `-t`。短いオプションの束は左から読み、値を取る文字で止める) と、
+    go / swift / mutate-verify の help (go は `-args` より前だけ) を待たせない
+  - [x] B3 `go -C dir test` / `go -C=dir test` と env の `-C` を読む。runtimeout の usage との照合は足していない
+  - [ ] B4 **見送り**: 語彙を足すのは観測の後 (869 の計測の日に、列の外で走る重い process を見る)
+  - [x] B5 hook の入口から jq を外し、入力の全文に手がかりの語を当てる。語彙のずれは tests/claude/test_serial_run_wrap.sh が「対象の例が入口を通り抜ける」で見る
+  - [x] B6 hook の判断 (差し込んだ / 重いのに見送った理由) を置き場の `hook.log` に残し、`serial-run status` が最後の 5 行を出す。入口のビルドの失敗は記録できていない (stderr は Claude Code に出ない)
+  - [ ] B7 **見送り**: hook の PATH と Bash のシェルの PATH の食い違いは未実測
+  - [x] B8 置き場を作れない・採番できない・run.lock を開けないときは、🚨 を出して順番を待たずに走らせる (status は 125)。`TestUnusableStateDirRunsUnqueued` /
+    `TestUnopenableRunLockRunsUnqueued` / `TestUnreadableQueueRunsUnqueued`
+  - [x] B9 1 つのパイプラインで包むのは最初の重い段 1 つだけ。手で書いた `serial-run --` の段があるパイプラインには差し込まない (位置はパイプラインの終わりで決める)
+  - [x] B10 `inCmdPos` を消した (`cmdAt < 0` と同じ)
+  - [x] B11 make の「数値を省略できるオプション」の枝を消した (等価だった)。`noglob` を包みのコマンドから外した (zsh の修飾子で exec できず rc=127。敵対的レビュー P2-4)。`$'…'` は見送る
+- 変異 (全部 red): PATH の見送りを外す / `serial-run` の部分文字列の拒否を戻す / PATH の正規表現の `^` を外す / make の dry-run を見ない / 束を見ない / help を見ない / go -C を読まない /
+  パイプの全段を包む / `||` をパイプと読む / hook.log を書かない / 待ち列を使えないと 125 / 入口に jq を要る / 入口の語から swift を落とす /
+  手で書いた serial-run の段を見ない / PATH を全部の引数で見る / `$'` を読む / noglob を戻す / `-args` の後ろも help と読む / 束の値を読み飛ばさない
+- 敵対的レビュー 1 周目 (Opus): P2 4 / P3 3 = 7 件。全部対応した (退行 3 件を含む):
+  P2 手で書いた `serial-run --` の段がある別の段に差し込み互いの札を待つ (退行・再現済み) / P2 B1 の例 (`grep PATH=` 等) が今も見送られる (再現済み) / P2 `$'…\'…'` で引用の中を書き換える (前から・再現済み) /
+  P2 `noglob make test` が rc=127 (前から・再現済み) / P3 重いコマンドの頭の deny / ask が効かなくなる (今の設定では 0 件) → README に書く / P3 `go test -args -h` を help と読む (退行) /
+  P3 `make -Cscripts test` を dry-run と読む (退行)。`make -t` も待たせない側へ。壊せなかった観点: 差し込む位置のずれ・意味の書き換え (`FOO=1` / `time` / `!` / `{ }` / `( )` / `&` / リダイレクト / `$( )` / `[[ ]]` / `#` / 継続行)・fast path の偽陰性
+- 敵対的レビュー 2 周目 (Opus): P1 1 / P3 2。P1 パイプの片側が `(…)` / `{…}` / 制御構文 / `|` の後の改行だと両方の段に付き、待ちの上限まで止まる (再現済み) →
+  手書きの serial-run があれば全体を見送る・パイプと複合コマンドを見送る (3 周目で絞った) / P3 `builtin export PATH=` 等・`unset PATH`・`eval`・`path=` → PATH の書き換えとして見送る /
+  P3 `make -kC dir build` → 束の最後の値を取る文字の次の語を値として飛ばす
+- 敵対的レビュー 3 周目 (Opus): P1 1 / P2 2 / P3 1。P1 `make test | # c⏎make lint` で両方に付く → | の後のコメントも読み飛ばして改行を見る / P2 `exec serial-run`・`xargs serial-run`・
+  置換の中の serial-run を手書きと読まない → パイプがあれば serial-run の文字列で見送る / P2 改行の分岐を守るテストが無い → 足した / P3 見送りが広く
+  `for … do go test … | tail; done` を取りこぼす → 複合コマンドは境目が | と隣り合うときだけ見送る
+- 敵対的レビュー 4 周目 (Opus): P1 1 / P2 1 / P3 1。P1 `(make test) 2>&1 | go test` で 2 本 (番号付きのリダイレクトの数字を語と読んで閉じた印を消す) → 数字の直後の < > をリダイレクトとして読む /
+  P2 zsh の `| time (…)` で 2 本 → time / ! の後も | の直後のまま / P3 `(cd x && make test) 2>&1 | tail` は見送りに回る (受け入れる。hook.log の skipped:parse の件数で見る)。
+  **周ごとに字句の別の隙間から同じ種類 (1 つのパイプラインに 2 本) が出たので、構造の歯止めを足した: パイプを含むコマンドでは差し込みを 1 か所まで**
+  (2 か所なら全体を見送る。取りこぼすのは重いパイプラインが 2 つ並ぶ形だけ)。変異: 歯止めを外す / 番号付きのリダイレクトを語と読む → red。
+  `time` / `!` の後の | の扱いを戻す変異は緑 (同じ形を歯止めが先に見送る。2 つの防御が重なる)
+- 敵対的レビューは 4 周で打ち切った。4 周目の修正 (歯止めを含む) には 5 周目を当てていない

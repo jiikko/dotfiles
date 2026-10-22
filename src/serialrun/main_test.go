@@ -945,6 +945,66 @@ func TestRelativeXDGStateHomeIsIgnored(t *testing.T) {
 	}
 }
 
+// 待ち列を使えない (置き場を作れない) ときは、警告して順番を待たずに走らせる (包んだコマンドを走らせないのは害が大きい)
+func TestUnusableStateDirRunsUnqueued(t *testing.T) {
+	f := newFixture(t)
+	errPath := filepath.Join(f.dir, "err")
+	ef, err := os.Create(errPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ef.Close()
+	cmd := exec.Command(bin, "--", "/bin/sh", "-c", "echo RAN >> "+f.log)
+	cmd.Env = append(f.env(), "SERIAL_RUN_STATE_DIR=/dev/null/serial-run")
+	cmd.Stderr = ef
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("待ち列を使えないときに子の rc で返らない: %v", err)
+	}
+	if !f.hasLog("RAN") || !strings.Contains(readFile(errPath), "順番を待たずに実行する") {
+		t.Fatalf("警告して走らせていない: log=%q err=%q", f.logText(), readFile(errPath))
+	}
+	if rc := exitCode(t, f.start([]string{"SERIAL_RUN_STATE_DIR=/dev/null/serial-run"}, false, "status")); rc != rcTool {
+		t.Fatalf("status は待ち列を使えないと 125: rc=%d", rc)
+	}
+}
+
+// run.lock を開けないときも、警告して順番を待たずに走らせる (札は残さない)
+func TestUnopenableRunLockRunsUnqueued(t *testing.T) {
+	f := newFixture(t)
+	if err := os.MkdirAll(f.qdir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	rl := filepath.Join(f.state, "default", "run.lock")
+	if err := os.WriteFile(rl, nil, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(rl, 0o600) })
+	if rc := exitCode(t, f.start(nil, false, "--", "/bin/sh", "-c", "echo RAN >> "+f.log)); rc != 0 || !f.hasLog("RAN") {
+		t.Fatalf("run.lock を開けないときに走らせていない: rc=%d", rc)
+	}
+	if n := f.ticketCount(); n != 0 {
+		t.Fatalf("待たずに走った後に札が残っている: %d 枚", n)
+	}
+}
+
+// 採番できない (seq も札の一覧も読めない) ときも、警告して順番を待たずに走らせる
+func TestUnreadableQueueRunsUnqueued(t *testing.T) {
+	f := newFixture(t)
+	if err := os.MkdirAll(f.qdir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.state, "default", "seq"), []byte("garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(f.qdir(), 0o300); err != nil { // 書けるが一覧を読めない
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(f.qdir(), 0o700) })
+	if rc := exitCode(t, f.start(nil, false, "--", "/bin/sh", "-c", "echo RAN >> "+f.log)); rc != 0 || !f.hasLog("RAN") {
+		t.Fatalf("採番できないときに走らせていない: rc=%d", rc)
+	}
+}
+
 func TestExitCodes(t *testing.T) {
 	f := newFixture(t)
 	cases := []struct {

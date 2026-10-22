@@ -97,15 +97,28 @@ func run(args []string, stderr io.Writer) int {
 		return rcTool
 	}
 	base, err := stateBase()
-	if err != nil {
-		fmt.Fprintf(stderr, "serial-run: 状態の置き場: %v\n", err)
+	if err == nil {
+		var q queue
+		if q, err = openQueue(filepath.Join(base, opt.lock)); err == nil {
+			return runWithQueue(q, opt, stderr)
+		}
+	}
+	if opt.status {
+		fmt.Fprintf(stderr, "serial-run: 状態の置き場を使えない: %v\n", err)
 		return rcTool
 	}
-	q, err := openQueue(filepath.Join(base, opt.lock))
-	if err != nil {
-		fmt.Fprintf(stderr, "serial-run: 状態の置き場を作れない: %v\n", err)
-		return rcTool
-	}
+	return runUnqueued(opt.argv, err, stderr)
+}
+
+// runUnqueued は待ち列を使えない (置き場を作れない・採番できない) ときに、順番を待たずに子を走らせる。
+// 直列化は重さを避けるための便宜で、使えないからといって包んだコマンド (hook が差し込んだ make test など) を走らせないのは
+// 害が大きい (利用者には「テストが 125 で落ちた」と見える)。排他を保証しないことは stderr に出す
+func runUnqueued(argv []string, why error, stderr io.Writer) int {
+	fmt.Fprintf(stderr, "serial-run: 🚨 待ち列を使えないので、順番を待たずに実行する (他の重いコマンドと重なりうる): %v\n", why)
+	return execDirect(argv, stderr)
+}
+
+func runWithQueue(q queue, opt options, stderr io.Writer) int {
 	if opt.status {
 		printStatus(q, os.Stdout)
 		return 0
@@ -257,8 +270,7 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "serial-run: 待ちの上限 (%s) を超えた。採番の lock が空かない。実行しない\n", opt.maxWait)
 		return rcTool
 	default:
-		fmt.Fprintf(stderr, "serial-run: 札を出せない: %v\n", err)
-		return rcTool
+		return runUnqueued(opt.argv, fmt.Errorf("札を出せない: %w", err), stderr)
 	}
 	info.Seq = seq
 	myPath := q.ticketPath(seq)
@@ -270,8 +282,7 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	rf, err := os.OpenFile(q.runPath(), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		leave()
-		fmt.Fprintf(stderr, "serial-run: run.lock を開けない: %v\n", err)
-		return rcTool
+		return runUnqueued(opt.argv, fmt.Errorf("run.lock を開けない: %w", err), stderr)
 	}
 
 	w := waiter{q: q, seq: seq, tn: tn, stderr: stderr, start: enq}
@@ -605,6 +616,17 @@ func printStatus(q queue, out io.Writer) {
 	}
 	if n == 0 {
 		fmt.Fprintln(out, "走っているものも待っているものも無い")
+	}
+	// hook の最近の判断 (差し込んだ / 読み切れず見送った)。効いているかを後から確かめる口
+	if b, err := os.ReadFile(filepath.Join(q.dir, "hook.log")); err == nil {
+		lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+		if len(lines) > 5 {
+			lines = lines[len(lines)-5:]
+		}
+		fmt.Fprintln(out, "hook の最近の判断:")
+		for _, l := range lines {
+			fmt.Fprintln(out, "  "+l)
+		}
 	}
 }
 
