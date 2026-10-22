@@ -1,7 +1,5 @@
 # 874 (chore): `.golangci.yml` の 23 個の写しのずれを止める (検査か生成)
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-22〜）
-
 起票日: 2026-10-22
 
 ## 概要
@@ -63,4 +61,5 @@
   - 変異で red を確認: 入口が -c を渡さない → `test_golangci_lint_pinned.sh` / 一覧を差分で置き換える・差分の鍵を先に並べる → `test_golangci_config.sh` /
     ベースから relative-path-mode を消す → `test_golangci_parallel_runners.sh`
   - `make test` rc=0 (24 プロジェクトの lint と test の 48 本が rc=0)・`make test-lint` rc=0
-  - 残り: CI の結果の確認
+  - CI: 48f6ec9d で Go プロジェクトの 20 本・doctor・unused・Issues ほか 25 本が success。取り消された 6 本 (Tests・Lint・Bench・src/glogx・src/pro-con・src/treefiler) は
+    後の bdca04fe (874 を含む) で success

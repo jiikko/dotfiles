@@ -1,1 +1,0 @@
-../874-chore-golangci-yml-23-copies-drift.md
