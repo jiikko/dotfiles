@@ -33,6 +33,7 @@ ZSH_SYNTAX_FILES := \
   bin/ratelimit \
   bin/repair-mp4-timebase \
   bin/runtimeout \
+  bin/serial-run \
   bin/svcdoctor \
   bin/termwidth \
   bin/tmpclean \

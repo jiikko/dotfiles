@@ -15,6 +15,7 @@
 | [`doctor`](doctor/README.md) | 消してよさそうなもの・壊れて残っている常駐を見つけるライブラリと `diskdoctor` / `svcdoctor` |
 | [`lockman`](lockman/README.md) | ディレクトリ単位の排他を取る CLI (SMB 越しも) |
 | [`runtimeout`](runtimeout/README.md) | 時間の上限付きで実行し、子孫ごと止める CLI (`timeout` の代わり) |
+| [`serialrun`](serialrun/README.md) | 重いコマンド (make test / xcodebuild 等) をマシン全体で順番待ちにする CLI `bin/serial-run` と、Claude Code の hook の本体 |
 | [`tmpclean`](tmpclean/README.md) | 一時領域 (Claude Code の scratchpad・`$TMPDIR`) を数え、承認された古いものだけをゴミ箱へ移す CLI `bin/tmpclean` (skill `cleanup-tmp-dir` の本体) |
 | [`codexevents`](codexevents/README.md) | codex exec --json の run が最後まで終わったかを判定して記録する CLI (`bin/codex-fanout` の `-J` / `-S`) |
 | [`mp4box`](mp4box/README.md) | MP4 のトップレベルの box のうち壊れていないものの合計 (実効サイズ) を出す CLI (concat の出力サイズの診断) |

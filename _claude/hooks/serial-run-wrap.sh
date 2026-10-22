@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#
+# PreToolUse(Bash) フック: 重いコマンド (make test / go test / xcodebuild 等) の直前に `serial-run -- ` を差し込み、
+# マシン全体で順番待ちにする。判定と書き換えの正本は src/serialrun/hook.go (`serial-run hook`)。
+#
+# 🚨 fail-open: どこで失敗しても何も出さずに exit 0 (元のコマンドのまま走る)。直列化は便宜で、tool を止める理由にならない。
+#    PATH 上の serial-run がこの checkout のものでなければ差し込まない (差し込んだ後に「見つからない」で make test を落とさない)。
+# 止め方: SERIAL_RUN_HOOK_DISABLE=1 を Claude Code の環境に置く。
+#
+# 入力: PreToolUse の hook JSON (stdin)。出力: 差し込むときだけ updatedInput の JSON。
+set -uo pipefail
+unset CDPATH
+
+# shellcheck source=_claude/hooks/lib/hook_io.sh
+. "$(dirname "$0")/lib/hook_io.sh" 2>/dev/null || exit 0
+hook_read_bash_command || exit 0
+[ "${SERIAL_RUN_HOOK_DISABLE:-}" = 1 ] && exit 0
+
+# 手がかりが無ければ即通す (fast path。判定は変えない。判定の正本は hook.go の isHeavy)
+case "$HOOK_CMD" in
+*make*|*go*test*|*xcodebuild*|*swift*|*mutate-verify*) ;;
+*) exit 0 ;;
+esac
+
+root="$(cd "$(dirname "$0")/../.." && pwd -P)" || exit 0
+bin="$root/bin/serial-run"
+found="$(command -v serial-run 2>/dev/null)" || exit 0
+[ "$(cd "$(dirname "$found")" && pwd -P)/serial-run" = "$bin" ] || exit 0
+
+printf '%s' "$HOOK_INPUT" | "$bin" hook
+exit 0

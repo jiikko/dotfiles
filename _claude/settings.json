@@ -91,6 +91,11 @@
             "command": "~/dotfiles/_claude/hooks/deny-tmp-area-rm.sh",
             "timeout": 10,
             "type": "command"
+          },
+          {
+            "command": "~/dotfiles/_claude/hooks/serial-run-wrap.sh",
+            "timeout": 20,
+            "type": "command"
           }
         ],
         "matcher": "Bash"

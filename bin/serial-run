@@ -1,0 +1,18 @@
+#!/usr/bin/env zsh
+# serial-run — 重いコマンド (make test / xcodebuild 等) をマシン全体で順番待ちにし、同時には 1 本だけ走らせる。
+# Go implementation at:
+#   ~/dotfiles/src/serialrun/
+#     serial-run [-l <lock名>] [--max-wait <秒>] -- <コマンド> [引数…]
+#     serial-run status
+# Claude Code の session が打つ重いコマンドは、PreToolUse hook (_claude/hooks/serial-run-wrap.sh) が自動でこれに包む。
+# 再ビルドは同期 (--async にしない): 排他の判定を出す道具なので、旧版が「取れた」を返して走り出すのを避ける。
+# 🚨 ビルドの段と実行の段を分ける。go_autobuild_exec はビルドに失敗すると rc=1 で抜けるので、そのまま通すと
+#    包んだ make test の失敗 (rc=1) と見分けられない。ビルドの失敗は 125 (道具の失敗) にする。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+src="${0:A:h}/../src/serialrun"
+( go_autobuild_exec "$src" serial-run -- __ready ) </dev/null >/dev/null || {
+  print -u2 -- "serial-run: ビルドできない (${src:A})"
+  exit 125
+}
+exec "${src:A}/serial-run" "$@"

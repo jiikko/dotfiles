@@ -1,0 +1,4 @@
+/serial-run
+
+# bin/lib/go_autobuild.zsh の作業ファイル (log / lock / 失敗記録 / rename 前の一時バイナリ)
+/.autobuild.*

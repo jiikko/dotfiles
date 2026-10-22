@@ -97,6 +97,7 @@
 - `src/safefs` (`safefs`) — Package safefs はファイルを動かす・作る操作のうち、「上書きしない」「経路を差し替えられない」を守る部品を 1 か所に置く (doctor の削除エンジンと treefiler のファイル操作が共有する)。
 - `src/safefs/sandbox` (`safefs/sandbox`) — Package sandbox はテストのための safefs.Guard: 明示的に登録した一時ディレクトリの外への操作を**実行前に**拒否する (`~/.claude/rules/sandbox-real-destructive-test-apis.md`)。
 - `src/schedkeys` (`schedkeys`) — 1 行のテキスト編集状態。 (main)
+- `src/serialrun` (`serialrun`) — serial-run — 重いコマンド (make test / xcodebuild 等) をマシン全体で順番待ちにし、同時には 1 本だけ走らせる。 (main)
 - `src/subproc` (`subproc`) — Package subproc は外部プロセス実行の安全弁を 1 箇所に集める。
 - `src/subproc/boundarycheck` (`subproc/boundarycheck`) — Package boundarycheck は「外部コマンドの Cmd を作ったのに WaitDelay を張り忘れる」を止める検査の本体。
 - `src/subproc/clipboard` (`subproc/clipboard`) — Package clipboard は文字列を OS のクリップボードへ書く (glogx と treefiler の両方が使う)。

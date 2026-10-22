@@ -48,7 +48,6 @@ Claude Code の session が打つ重いコマンドを自動でそれに包む h
 | `src/serialrun/` | 本体 (Go の独立 module。`go.mod` / `main.go` / `queue.go` / `Makefile` / `README.md` / テスト) |
 | `bin/serial-run` | 入口。`bin/runtimeout` と同じ数行の zsh で `go_autobuild_exec` を通す。**再ビルドは同期** (`--async` にしない。排他の判定を出す道具なので、旧版が「取れた」を返して走り出すのを避ける)。🚨 `go_autobuild_exec` はビルドに失敗すると rc=1 で抜ける (`bin/lib/go_autobuild.zsh`)。包んだ `make test` の失敗と見分けられないので、入口でビルドの失敗を 125 に写す |
 | `_claude/hooks/serial-run-wrap.sh` | PreToolUse(Bash) hook。対象のコマンドを `serial-run -- …` に包む |
-| `_claude/serial-run-targets` | 包む対象の一覧 (1 行 1 パターン) |
 | `src/README.md` / `src/PACKAGES.md` | 一覧へ 1 行ずつ (`new-tool-requires-entrypoint-docs.md`) |
 
 root の `make test` は `src/*/go.mod` を自動で見つけるので、本体のテストと lint は配線なしで乗る。
@@ -108,7 +107,10 @@ SIGKILL・クラッシュ・マシンの再起動でも残骸の lock が残ら�
    - blocking の flock は止められないので、専用の goroutine で待つ。本体は「flock が返った」「待ちの上限のタイマー」「30 秒の表示のタイマー」
      「シグナル」を `select` で待つ。上限・シグナルで抜けるときは自分の札を消してからプロセスごと終わる (眠っている goroutine の lock は、
      プロセスの終了でカーネルが外す)
-   - 待機中に定期的に起きるのは、30 秒ごとの表示だけ (CPU を使うのは表示の 1 行と、持ち主の経過を読むための札 1 枚の読み込み)
+   - 待機中に定期的に起きるのは、30 秒ごとの表示と、2 分ごとの保険の見直しだけ (保険はユーザー指示 2026-10-22: blocking の待ちが何かで
+     起こされなかったときに列挙し直す)
+   - 1 つ前の札が flock で待てないときは blocking で眠らず、5 秒ごとに見直す: ①持ち主は死んだが子が走っている (下の「子の起動」の孤児) ②札を開けない
+     (権限・fd の枯渇。生死を決められないので待ち続け、表示に出す)。🚨 開けない札で blocking の待ちを即座に起こし返すと空回り (CPU 100%) になる
 3. **実行権を取る**: `run.lock` に `LOCK_EX` (blocking)。札の順番は「公平さ」、run.lock は「排他」を持つ (札の列挙と判定の間に何かが
    割り込んでも、同時に 2 本走ることは run.lock が止める)
 4. **実行**: 下の「子の起動」
@@ -132,6 +134,8 @@ SIGKILL・クラッシュ・マシンの再起動でも残骸の lock が残ら�
   グループを分けたときに外れるものとして挙げている)
 - serial-run が SIGINT / SIGTERM / SIGHUP を受けたら子へ転送し、猶予の後に `src/proctree` で子孫ごと止める
 - **子が正常に終わった後は子孫を止めない**。残った孫は lock の外で走る (受け入れる。`status` には出ない)
+- 🚨 **serial-run だけが pid 宛ての SIGKILL で死ぬと、子は走り続ける** (札の flock は持ち主の死で外れる)。子の pid と開始時刻 (ps の lstart) を札に書き、
+  持ち主が死んでいても子が同じ開始時刻で生きていれば、その札を生きている扱い (孤児) にする。子が終わるまで後ろは入らない
 
 ### 入れ子
 
@@ -159,25 +163,30 @@ serial-run: 待ち 2 番目 (前: ~/src/obaket の make test 3 分 12 秒 / ~/do
 
 ## hook (入口)
 
-- `_claude/settings.json` の PreToolUse(Bash) に `_claude/hooks/serial-run-wrap.sh` を足す。全 session に効く (pro-con の PG は user の hook を持ち込まないので除かれる。431)
-- コマンド文字列が `_claude/serial-run-targets` のどれかに当たったら、コマンド全体を `serial-run -- zsh -c '<元のコマンド>'` に書き換えて通す
-  - 🚨 **hook がコマンドを書き換えられるか (`hookSpecificOutput.updatedInput`) は未確認**。今の Claude Code の版で実測してから決める。
-    書き換えられなければ deny で「`serial-run -- …` で包んで打ち直して」と返す形にする (打ち直しの往復が 1 回増える)
-  - 元のコマンドの引用は shell の quote 規則でエスケープする (単引用符を含むコマンドで壊れないことをテストで固定)
-  - 包むと、そのコマンドの中の `cd` / `export` は次の Bash 呼び出しへ持ち越されない。ツールのシェルの関数・alias・export していない変数も `zsh -c` の
-    中では見えない。重いコマンドとそれらを同じ行に書く形は多くないので受け入れる
-  - 既に `serial-run` を含むコマンドと、`SERIAL_RUN_HELD` が立っている環境では包まない
-- 対象の初期値 (`_claude/serial-run-targets`):
-  - `make test` / `make lint` / `make test-*` / `make -C <dir> test`
-  - `go test` (どの形も。軽い 1 パッケージの go test まで並ぶのが重すぎたら外す)
-  - `xcodebuild` / `swift build` / `swift test`
-  - `mutate-verify` / `mutate-verify-list` (変異ごとに go test を回す。471 で重なりの元だった)
-- 検出は字面で行う粗い判定。当てるのはコマンドの位置 (行頭・`&&` `||` `;` `|` の後) に来た語だけにし、引用符の中と `grep "make test"` のような
-  引数の中は外す。それでも heredoc の本文などで外しきれない偽陽性は残り、そのときは関係のない読み取りのコマンドが最大で待ちの上限まで待たされる
-  (偽陽性の数は `history.log` で後から数える)
-- **字面で見えない重い処理は包まれない**: スクリプトの中から呼ばれる `go test` (`bin/mutate-verify` の中身・codex の fanout 等)。トップレベルの
-  `mutate-verify` は上の一覧で包むが、それ以外は残る穴として受け入れ、効かない例が出たらその道具の側で serial-run を呼ぶ (入れ子は素通しになるので二重には取らない)
+実装した形 (設計の段階の「`zsh -c` で丸ごと包む」から変えた。理由は下の実測):
+
+- `_claude/settings.json` の PreToolUse(Bash) に `_claude/hooks/serial-run-wrap.sh` を足した。全 session に効く (pro-con の PG は user の hook を持ち込まないので除かれる。431)
+- 本体は `serial-run hook` (`src/serialrun/hook.go`)。**重い単純コマンドの直前にだけ `serial-run -- ` を差し込む** (`cd a && make test && git push` →
+  `cd a && serial-run -- make test && git push`)。`updatedInput` で返し、`permissionDecision` は出さない
+- 🚨 **実測 (Claude Code 2.1.308、2026-10-22、`claude -p --settings <使い捨ての設定>` の headless で)**:
+  - `updatedInput` の書き換えは効く (モデルが頼んだ `echo ORIGINAL` の代わりに書き換えた方が走った)。`permissionDecision: allow` を付けなくても効く
+  - **許可ルールは書き換えた後のコマンドで判定される** (元のコマンドへの deny は素通りし、書き換えた後への deny は効いた)。
+    丸ごと `zsh -c` で包むと `make test && git push --force` の `git push` への deny が効かなくなるので、差し込む形にした。差し込む形なら `cd` / `export` も次の呼び出しへ持ち越される
+- 差し込まない形 (読み切れない・壊しうるものは元のまま通す): 引用符・コマンド置換の中 / heredoc・`case`・`((` を含む / 閉じていない引用 / 語の直後の `(` (`arr=(…)`・関数定義) /
+  `PATH=` を含む (前置きの PATH や `export PATH` の後では `serial-run` が見つからず rc=127 になる) / 既に `serial-run` を含む
+- 重さの判定 (`isHeavy`): `make` の `test` / `lint` / `test-*` / `lint-*` の target (`-C` `-f` の値は飛ばす。`-j` は次が数値のときだけ値) / `go test` /
+  `swift build|test` / `xcodebuild` (`-version` `-list` `-showBuildSettings` などの情報表示は除く) / `mutate-verify(-list)`。
+  前に付いた `env` / `nice` / `nohup` / `command` / `noglob` / `runtimeout <秒>` は外して判定し、差し込むのはその前 (`serial-run -- runtimeout 600 make test`。
+  中に入れると待ちが runtimeout の上限を食う)
+- hook の入口 (`serial-run-wrap.sh`) は fail-open: どこで失敗しても元のコマンドのまま通す。PATH 上の `serial-run` がこの checkout のものに解決しなければ差し込まない。
+  止め方は Claude Code の環境に `SERIAL_RUN_HOOK_DISABLE=1`
+- **字面で見えない重い処理は包まれない**: スクリプトの中から呼ばれる `go test` (`bin/mutate-verify` の中身・codex の fanout 等)。効かない例が出たらその道具の側で serial-run を呼ぶ (入れ子は素通しになる)
 - 人が端末で直接打つコマンドは対象外。必要になったら alias / 関数を足す
+- **待つことを LLM に先に知らせる** (ユーザー要望 2026-10-22): Bash ツールはコマンドが終わるまで出力を返さないので、待っている間の LLM には
+  「長く走っている」としか見えない。差し込むときに既定の lock の待ち行列を読み、前に誰かいれば `additionalContext` に「順番待ちに入る・前に N 本・
+  先頭の持ち主・出力が返らないのは固まったのではない・run_in_background / `serial-run status`・上限 1 時間で rc=125」を添える
+  (前に誰もいなければ何も添えない)。🚨 実測 (2.1.308): PreToolUse の `additionalContext` は `updatedInput` と一緒に LLM へ届く
+- 待ちの最初の 1 行の末尾に `(状況は serial-run status)` を添える (背景に回った後の LLM が、別の呼び出しで様子を見られる)
 
 ## 失敗モード (設計で吸収するもの)
 
@@ -266,10 +275,61 @@ serial-run: 待ち 2 番目 (前: ~/src/obaket の make test 3 分 12 秒 / ~/do
 
 - 2026-10-22 (ユーザー): 待ちはポーリングにせず、イベント駆動にする (「待つ」の段)。この段は反証レビューの後に書き換えたので、まだ反証レビューに通していない (段階 2 の敵対的レビューで見る)
 
+## 実装 (2026-10-22)
+
+- `src/serialrun` (main.go / queue.go / hook.go とテスト)、`bin/serial-run`、`_claude/hooks/serial-run-wrap.sh`、`tests/claude/test_serial_run_wrap.sh`、
+  `.github/workflows/src_serialrun.yml`、`src/README.md` / `src/PACKAGES.md` / `Makefile` の zsh の構文検査の一覧
+- テスト: `go test -race` 22 本を 3 回連続で緑。hook の入口 7 件。`make lint` 0 件 (v2.15.0)
+- 変異 (`mutate-verify-list`。全部 red を確かめた): 採番と札の公開の間で seq の flock を離す / run.lock の fd を子へ渡す / 子を別のグループに置く /
+  待ちの上限を外す / blocking の待ちを 100ms の sleep に置き換える / 保険の見直しを外す / 入れ子で待つ / 死んだ札を回収しない / seq が札を見ない /
+  SIGTERM で子を止めない / 孤児の子を見ない / run.lock を取らない / QUIT で死に直す / hook: heredoc の打ち切りを外す / 代入を飛ばさない / make の値の
+  オプションを飛ばさない / 許可の判断 (allow) を出す / 包みのコマンドを外さない / PATH= の打ち切りを外す / `&>` を区切りと読む / 語の直後の `(` を許す。
+  空回りの防御 (blocking を即座に起こさない + 判定不能の札は短い見直し) は 2 ファイルにまたがるので、写しに両方を戻して red (1 秒に 9168 回起きた) を確かめた
+- 緑のまま通った変異 1 本: hook の、置換の結果の仮の値を変える形 (`no-subst-skip`)。仮の値が効くのはコマンド置換がコマンド語そのものになる形
+  (`$(echo make) test`) だけで、そこで差し込んでも害は無い。置換の中への差し込みは、`(` で字句を打ち切る作りが別に止めている。等価に近い変異として受け入れる
+
+### 敵対的レビュー (2026-10-22、Opus 1 体。実装の HEAD に対して)
+
+全数: P1 1 / P2 3 / P3 5 = 9 件。対応 7 / 記録 2。
+
+- 対応した (どれも上の変異で守った):
+  - P1 開けない札 (chmod 000・sudo で作られた札・EMFILE) で待ちが空回りし CPU 100% (レビュアーが再現: 3 秒で 23,922 回)
+  - P2 serial-run だけを pid 宛てに SIGKILL すると子が残り 2 本走る (再現) → 札に子の pid と開始時刻を書き、孤児の子を待つ
+  - P2 `PATH=… make test` を書き換えると rc=127 (再現) → `PATH=` を含むコマンドは書き換えない
+  - P3 run.lock を外しても全テストが緑 → 持ち主の札を外から消しても 2 本目が入らないテストを足した
+  - P3 `&>` を区切りと読む・`arr=(go test)` をサブシェルと読む → 直した
+  - P3 グループへの SIGQUIT で rc=2 と goroutine のダンプ → QUIT では死に直さず 128+n を返す
+  - P3 `xcodebuild -version` 等も待たされる・`env` / `nice` / `runtimeout` を前に付けた形と `make -j test` が包まれない → 直した
+- 記録だけ (決めるのはユーザー):
+  - P2 **既存の許可ルールが外れる**: 他の repo の settings に `Bash(make test:*)` 2 件・`Bash(go test:*)` 4 件・`Bash(make lint:*)` 2 件がある
+    (例: `~/src/pj_energy_matching/.claude/settings.local.json`)。書き換えた後のコマンドはこれらに当たらないので、auto でない許可の形では毎回確認が出る
+    (deny / ask なら素通りする)。必要なら各 repo に `Bash(serial-run -- make test:*)` の形を足す
+  - P3 **待ちの上限 1 時間は前に並ぶ全員の合計で尽きる**。20 分の make test が 3 本並ぶと 4 本目は rc=125 (stderr に `待ちの上限` と持ち主が出る)
+- 未確認のまま: Claude Code のツールの中断・TaskStop がどのシグナルをどこへ送るか (孤児の子の扱いで、pid 宛ての KILL でも順番は守られる形にした)
+
+## Makefile への組み込み (残り。2026-10-22 にユーザーと合意)
+
+hook は Claude Code の Bash ツールが打ったコマンドにしか効かず、字句で見えるものしか包めない。dotfiles の `make test` などの入口の target が
+自分で serial-run を取れば、人の端末・pre-push・スクリプト・サブエージェント・codex のどこから呼ばれても並び、字面は `make test` のままなので
+他の repo の許可ルール (`Bash(make test:*)`。敵対的レビューで記録だけにした P2) も当たる。
+
+- 形: 入口の target だけ、`SERIAL_RUN_HELD` が無ければ `exec serial-run -- $(MAKE) $(MAKECMDGOALS)` で自分を起こし直す。入れ子 (中の `make -C src/x test`・
+  hook で包まれた `make test`・テストの中の `make`) は `SERIAL_RUN_HELD` の素通しで二重に取らない
+- CI (`CI=true`) では包まない (runner は 1 台に 1 本)
+- 🚨 呼ぶのは worktree の版ではなく `~/dotfiles/bin/serial-run` (本体 checkout) に固定する。状態の置き場は 1 つなので、札・seq の形式が版で違うと食い違う。
+  worktree での初回のビルド待ちも避けられる
+- 粒度: 最初は `make test` 全体で 1 本 (go test のレーンごとに取る形は変更が大きい)
+- 所要を測る bench・テストは待ちも含めて測る。待ちは `history.log` に別に残るので、測る側で差し引ける
+- hook は、Makefile が包む入口 (dotfiles の `make test`) を見つけたら差し込まないようにする (二重の表示を避ける)
+- ほかの repo は共有の断片 (`include ~/dotfiles/make/serial-run.mk` のような 1 行) で同じことができる。Makefile の無い repo の xcodebuild・素の go test は hook が拾う
+
 ## 進捗
 
-- [ ] 1. 実測 (hook の書き換え・中断のシグナル)
-- [ ] 2. 本体とテスト・敵対的レビュー
-- [ ] 3. 入口と一覧
-- [ ] 4. hook
-- [ ] 5. 計測
+- [x] 1. 実測: hook の書き換えは効く・許可ルールは書き換えた後で判定される (上の「hook」)。中断のシグナルは未実測
+- [x] 2. 本体とテスト・敵対的レビュー (上の「実装」)
+- [x] 3. 入口と一覧
+- [x] 4. hook (push して `~/dotfiles` に pull した後の新しい session から効く。効いたかの観測は下の残り)
+- [ ] 5. 計測 (trigger: 2 session を並べた最初の日。`~/.local/state/serial-run/default/history.log` の待ち・所要を読む)
+- [x] 待つことを LLM に先に知らせる (`additionalContext`) / 待ちの行に `serial-run status` の案内。変異 2 本 (知らせを外す / 案内を毎行に出す) が red
+- [ ] **dotfiles の Makefile に組み込む** (ユーザーと合意 2026-10-22。下の「Makefile への組み込み」)
+- [ ] 新しい session で hook が効くことの観測 (headless の session で `make -n test` 相当を打たせ、書き換えを見る)
