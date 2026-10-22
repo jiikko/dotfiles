@@ -28,5 +28,5 @@ README (`src/treefiler/README.md`) は Wrap lines / Sort by / Reverse を設定�
 
 ## 進捗
 
-- [x] コメントを直す (commit「docs(treefiler): settings.go の冒頭の「写さない項目」「未対応」を今の設定の項目に合わせる」)。残りの写さない項目は spec §0.1 と項目一覧の両方で今も写していないことを確かめた
+- [x] コメントを直す (commit「docs(treefiler): settings.go の冒頭の「写さない項目」「未対応」を今の設定の項目に合わせる」)。残りの写さない項目は、どれも項目一覧に無いことを確かめた。Mouse・Wheel speed・Momentum・Image previews・外部コマンドのプレビュー・Step through (j k の歩き方の行) は spec §0.1 にもある。Pipes の別方式・River tracks・Block glyphs は §0.1 の表に無い (項目一覧に無いことだけを確かめた)
 - [x] spec §0.1 を確かめる (古い記述は無い。2026-10-22)

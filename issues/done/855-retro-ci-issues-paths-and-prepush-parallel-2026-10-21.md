@@ -89,7 +89,7 @@ done | wc -l
 - `make test-yaml` (Makefile の test-yaml。yamllint が無いと ruby の構文検査に落ちる) と `test-actionlint` (無いと skip を出して rc=0) は、
   道具の不在でも緑を返す。直していない。`scripts/check_skip_exit_code.sh` (skip を告げて exit 0 を落とす) は tests 用で、Makefile の lint の
   target には効かない。改善 1 を rule に入れれば足りるか、Makefile 側で fallback を目立たせる (`make test-lint` の末尾に「未実施の検査」の一覧を出す)
-  かは、ユーザーの判断を待つ
+  かは、ユーザーの判断を待つ (→ 2026-10-22 に却下と決着。下の「進捗」)
 - pre-push の並列化は、fork から `pids+=` までの数命令の間にシグナルが来ると検査が 1 本残る窓を受けた (c6ea7b2b の commit message)
 
 却下:
@@ -106,7 +106,7 @@ done | wc -l
   - 2: 同ファイルの「有無で結果が変わらない観測」節に、プロセス・シグナルの観測の 3 例
   - 3: `mutation-verify-new-tests.md` の「検査の不在を主張するときの裏取り」節の冒頭に、網を外す理由のコメントを発動点として
 - [x] 局所の `make test-yaml` / `test-actionlint` の扱い: 却下 (2026-10-22 ユーザー判断)。手元に入れる必要はなく、CI で回っていれば足りる。
-  Brewfile は使っていないので、そこに足す案も採らない。Makefile の fallback / skip も今のまま
+  Brewfile は使っていない (ユーザー) ので、そこに足す案も採らない (repo には `Brewfile` が残っていて、Lint は `ruby -c` だけを掛ける)。Makefile の fallback / skip も今のまま
   - CI で動いていることの実測 (2026-10-22): Lint run 39726522889 (d946bccb) のログに `[actionlint] .github/workflows OK` が出ていて、
     `yamllint not found` の行は出ていない。yamllint は lint.yml の `ensure-toolchain` (`commands: zsh jq ruby yamllint`) で入れて検証している
   - 手元で fallback に落ちたまま push しても、CI の Lint で赤になる。そのとき見るのは改善 1 (skip / fallback の行を読む)
