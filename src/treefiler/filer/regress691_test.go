@@ -347,18 +347,18 @@ func TestLinesClippedToViewport(t *testing.T) {
 		now[n] = [2]int{p.x, p.y}
 	}
 	oy, ch := int(math.Round(m.camY.v)), m.canvasH()
-	if g := m.lines(now, oy, oy+ch-1); len(g) > 4*ch {
+	if g := m.linesInto(lineGrid{}, now, oy, oy+ch-1); len(g) > 4*ch {
 		t.Fatalf("画面 %d 行に対して線のセルを %d 個作った (画面の外まで作っている)", ch, len(g))
 	}
 	// 切り詰めても画面の中のセルは切り詰めない格子と同じ (窓をずらして、端がブロックの途中・親の行・子の行に来る所を全部通す)
-	full := m.lines(now, -1<<30, 1<<30)
+	full := m.linesInto(lineGrid{}, now, -1<<30, 1<<30)
 	maxY := 0
 	for k := range full {
 		maxY = max(maxY, k[1])
 	}
 	for ylo := -3; ylo <= maxY; ylo += 3 {
 		yhi := ylo + ch - 1
-		g := m.lines(now, ylo, yhi)
+		g := m.linesInto(lineGrid{}, now, ylo, yhi)
 		for k, c := range full {
 			if gc, ok := g[k]; k[1] >= ylo && k[1] <= yhi && (!ok || gc != c) {
 				t.Fatalf("窓 [%d, %d] のセル %v: 切り詰めると %+v (在る=%v)、全体では %+v", ylo, yhi, k, gc, ok, c)

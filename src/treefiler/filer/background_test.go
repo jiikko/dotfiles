@@ -512,7 +512,7 @@ func TestRippleElbowClipMatchesUnclipped(t *testing.T) {
 	// カメラをずらした組でも比べる: 横 (肘の左端・右端が画面の外) と縦 (切る範囲の上端・下端) の切り詰めを当てる
 	for _, d := range [][2]int{{0, 0}, {6, 0}, {-6, 0}, {12, 3}, {0, -5}} {
 		dox, doy := ox+d[0], oy+d[1]
-		grid := m.lines(now, doy, doy+ch-1)
+		grid := m.linesInto(lineGrid{}, now, doy, doy+ch-1)
 		got, want := newCanvas(m.w, m.h), newCanvas(m.w, m.h)
 		m.drawRippleElbows(got, grid, now, dox, doy, ch)
 		unclippedRippleElbows(m, want, grid, now, dox, doy, ch)
@@ -580,7 +580,7 @@ func TestReusedLineGridMatchesFreshAfterCollapse(t *testing.T) {
 			now[n] = [2]int{int(math.Round(an.x.v)), int(math.Round(an.y.v))}
 		}
 	}
-	want, got := m.lines(now, oy, oy+ch-1), m.gridBuf.m
+	want, got := m.linesInto(lineGrid{}, now, oy, oy+ch-1), m.gridBuf.m
 	if len(want) >= before {
 		t.Fatalf("前提: 畳んでも線のセルが減っていない (%d → %d)", before, len(want))
 	}

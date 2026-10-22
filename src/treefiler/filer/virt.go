@@ -195,7 +195,7 @@ func (m *Model) placeVirtual(pos map[*node]place, p *node, v *visKids, y0, strid
 		}
 	}
 	if m.inHold(&v.built) {
-		// 新しく現れた子は遠くても湧かせる (湧いている間は親の右端に居て、ブロックの線の出方を決める: lines の「まだ展開の途中」)
+		// 新しく現れた子は遠くても湧かせる (湧いている間は親の右端に居て、ブロックの線の出方を決める: linesInto の「まだ展開の途中」)
 		for _, k := range v.fresh {
 			put(k)
 		}

@@ -66,7 +66,7 @@ type Model struct {
 	cv         *canvas                     // 使い回す格子 (大きさが変わったら作り直す)
 	posBuf     reusedMap[*node, place]     // layout の結果の入れ物 (毎 tick 作り直さない。layout の doc)
 	nowBuf     reusedMap[*node, [2]int]    // draw の「今の位置」の入れ物
-	kpBuf      [][2]int                    // lines の子の位置の入れ物
+	kpBuf      [][2]int                    // linesInto の子の位置の入れ物
 	gridBuf    reusedMap[[2]int, lineCell] // drawLines の線の格子の入れ物 (毎フレーム作り直さない)
 	gridLast   int                         // 前のフレームの格子のセルの数 (gridBuf の見込み)
 	// 巨大なフォルダの仮想化 (virt.go)

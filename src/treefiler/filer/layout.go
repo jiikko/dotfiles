@@ -328,14 +328,10 @@ func (m *Model) thinBranch(n *node) bool {
 	return m.set.DimIgnored && m.gitState(n) == gitIgn
 }
 
-// lines は「今描いている位置」(アニメ中の位置) から線を引く (spec §4.2: 線はアニメ中の位置から毎フレーム引く)。
+// linesInto は「今描いている位置」(アニメ中の位置) から線を引く (spec §4.2: 線はアニメ中の位置から毎フレーム引く)。
 // ylo..yhi は画面に出る行 (木の座標)。その外の線は作らない: 5 万件のフォルダで 1 フレーム 25ms かかり、線の格子が半分を占めた
 // (実測 2026-10-09)。縦線は 1 行外まで残す (端のセルの継ぎ目の形は隣のセルのビットで決まる)。
-func (m *Model) lines(now map[*node][2]int, ylo, yhi int) lineGrid {
-	return m.linesInto(lineGrid{}, now, ylo, yhi)
-}
-
-// linesInto は lines の格子を g (空) に作る。描画は Model の gridBuf (reusedMap) の map を毎フレーム使い回す。
+// 格子は g (空) に作る。描画は Model の gridBuf (reusedMap) の map を毎フレーム使い回す。
 func (m *Model) linesInto(g lineGrid, now map[*node][2]int, ylo, yhi int) lineGrid {
 	sp := m.spine()
 	for _, pn := range m.order {
