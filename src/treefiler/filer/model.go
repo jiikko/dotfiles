@@ -231,6 +231,30 @@ func (m *Model) OwnsKeys() bool {
 	return m.search.active || m.prompt.active || m.panel.open || m.help || m.ask != nil
 }
 
+// Hint は呼び出し側の最下行に出す案内の 1 つ (Prio は小さいほど残す。1 = 抜ける手段。tuikit/hintfit の尺度)。
+type Hint struct {
+	Key, Label string
+	Prio       int
+}
+
+// LayerHints は開いている層 (OwnsKeys の層) で効くキー。層が開いていなければ nil。glogx は層の間、自分の最下行をこれにする
+// (glogx-ui-guide §5: 板の間はその板のキーだけ)。並びは HandleInput がキーを渡す順と同じ (キー一覧 → 設定 → 確認 → 検索 → 入力欄)
+func (m *Model) LayerHints() []Hint {
+	switch {
+	case m.help:
+		return []Hint{{"どのキーでも", "閉じる", 1}}
+	case m.panel.open:
+		return []Hint{{"j/k", "項目", 2}, {"h/l", "選ぶ", 3}, {"r", "既定に戻す", 4}, {"esc/,/q", "閉じる", 1}}
+	case m.ask != nil:
+		return []Hint{{"y/enter", "ゴミ箱へ移す", 2}, {"その他", "キャンセル", 1}}
+	case m.search.active:
+		return []Hint{{"enter", "確定", 2}, {"tab/ctrl+n", "次", 3}, {"shift+tab/ctrl+p", "前", 4}, {"esc", "やめる", 1}}
+	case m.prompt.active:
+		return []Hint{{"enter", "実行", 2}, {"esc", "やめる", 1}}
+	}
+	return nil
+}
+
 // SearchQuery は検索欄の今の入力 (検索していなければ "")。
 func (m *Model) SearchQuery() string {
 	if !m.search.active {

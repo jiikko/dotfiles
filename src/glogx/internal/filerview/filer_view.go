@@ -224,10 +224,18 @@ func (v *FilerView) Lines(width, page int) []string {
 
 // hint は最下行の案内。抜ける手段 (F / q) を先に置き、幅で切る (glogx-ui-guide §5: 抜ける手段は必ず残す)。
 // 🚨 filer がキーを取っている間 (/ の検索・! と : の入力欄・パネル・? の一覧・確認) は F も q も filer に入るので、
-// 「F: 閉じる」を出すと嘘になる。そのときの抜ける手段は esc (1 段戻る) だけを出す (lan の Hint と同じ形)
+// 「F: 閉じる」を出すと嘘になる。そのときはその層で効くキー (filer.Model.LayerHints) を出す (lan の Hint と同じ形)
 func (v *FilerView) Hint(width int) string {
-	if v.OwnsKeys() {
-		return term.FitHintItems(width, []term.HintItem{{Text: "esc: 戻る", Prio: 1}})
+	if f := v.live(); f != nil && f.OwnsKeys() { // 層の間はその層で効くキーだけ (glogx-ui-guide §5)
+		hs := f.LayerHints()
+		items := make([]term.HintItem, 0, len(hs))
+		for _, h := range hs {
+			items = append(items, term.HintItem{Text: h.Key + ": " + h.Label, Prio: h.Prio})
+		}
+		if len(items) == 0 {
+			items = append(items, term.HintItem{Text: "esc: 戻る", Prio: 1})
+		}
+		return term.FitHintItems(width, items)
 	}
 	return term.FitHintItems(width, []term.HintItem{
 		{Text: "F: 閉じる", Prio: 1},

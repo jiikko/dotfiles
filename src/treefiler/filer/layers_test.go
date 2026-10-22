@@ -13,13 +13,14 @@ import (
 func TestEveryInputLayerOwnsKeys(t *testing.T) {
 	layers := map[string]struct {
 		open     func(m *Model)
-		quitOnCC bool // ctrl+c でアプリを終えるか (入力欄と確認の板は取り消し)
+		quitOnCC bool   // ctrl+c でアプリを終えるか (入力欄と確認の板は取り消し)
+		exit     string // LayerHints の抜ける手段 (優先度 1) のキー (glogx がその層の間の最下行に出す)
 	}{
-		"help":   {func(m *Model) { m.HandleKey("?") }, true},
-		"panel":  {func(m *Model) { m.HandleKey(",") }, true},
-		"search": {func(m *Model) { m.HandleKey("/") }, false},
-		"prompt": {func(m *Model) { m.HandleKey("!") }, false},
-		"ask":    {func(m *Model) { m.HandleKey("d") }, false},
+		"help":   {func(m *Model) { m.HandleKey("?") }, true, "どのキーでも"},
+		"panel":  {func(m *Model) { m.HandleKey(",") }, true, "esc/,/q"},
+		"search": {func(m *Model) { m.HandleKey("/") }, false, "esc"},
+		"prompt": {func(m *Model) { m.HandleKey("!") }, false, "esc"},
+		"ask":    {func(m *Model) { m.HandleKey("d") }, false, "その他"},
 	}
 	var tagged []string
 	rt := reflect.TypeFor[Model]()
@@ -40,12 +41,15 @@ func TestEveryInputLayerOwnsKeys(t *testing.T) {
 	for name, l := range layers {
 		m, _ := newOps(t)
 		cdTo(t, m, "c.txt")
-		if m.OwnsKeys() {
-			t.Fatalf("%s: 開く前から OwnsKeys", name)
+		if m.OwnsKeys() || m.LayerHints() != nil {
+			t.Fatalf("%s: 開く前から OwnsKeys / LayerHints がある", name)
 		}
 		l.open(m)
 		if !m.OwnsKeys() || !m.Binds("R") || !m.Binds("D") {
 			t.Errorf("%s: 開いているのに OwnsKeys / Binds が偽 (glogx が横断キーを先に取る)", name)
+		}
+		if i := slices.IndexFunc(m.LayerHints(), func(h Hint) bool { return h.Prio == 1 }); i < 0 || m.LayerHints()[i].Key != l.exit {
+			t.Errorf("%s: LayerHints の抜ける手段が %q でない: %+v", name, l.exit, m.LayerHints())
 		}
 		cur := m.cur
 		for _, k := range []string{"j", "J"} { // 小文字の移動と大文字の 10 件 (settings_test の TestPanelOwnsKeys をここへ畳んだ。issue 735)

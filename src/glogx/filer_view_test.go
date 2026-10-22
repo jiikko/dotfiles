@@ -277,8 +277,8 @@ func TestFilerSearchTakesFUAndRepeats(t *testing.T) {
 	}
 }
 
-// filer がキーを取っている間 (検索の入力中) は、F / q で抜けると案内しない (その打鍵は入力欄に入る)。
-// 抜ける手段は esc だけを出し、抜けたら元の案内に戻る。
+// filer がキーを取っている間 (検索の入力中・設定の板) は、F / q で抜けると案内しない (その打鍵は入力欄・板に入る)。
+// その層で効くキーだけを出し (glogx-ui-guide §5)、抜けたら元の案内に戻る。
 func TestFilerHintWhileTypingOffersOnlyEsc(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
@@ -286,8 +286,13 @@ func TestFilerHintWhileTypingOffersOnlyEsc(t *testing.T) {
 		t.Fatalf("ふだんの hint = %q", h)
 	}
 	m.handleKey("/")
-	if h := m.hintLine(); strings.Contains(h, "F: 閉じる") || strings.Contains(h, "q: glogx を終了") || !strings.Contains(h, "esc: 戻る") {
-		t.Fatalf("検索の入力中の hint = %q (F / q は入力欄に入るので案内しない)", h)
+	if h := m.hintLine(); strings.Contains(h, "F: 閉じる") || strings.Contains(h, "q: glogx を終了") || !strings.Contains(h, "esc: やめる") || !strings.Contains(h, "enter: 確定") {
+		t.Fatalf("検索の入力中の hint = %q (F / q は入力欄に入るので案内しない。検索のキーを出す)", h)
+	}
+	m.handleKey("esc")
+	m.handleKey(",")
+	if h := m.hintLine(); strings.Contains(h, "F: 閉じる") || !strings.Contains(h, "esc/,/q: 閉じる") || !strings.Contains(h, "h/l: 選ぶ") {
+		t.Fatalf("設定の板の hint = %q (板のキーを出す)", h)
 	}
 	m.handleKey("esc")
 	if h := m.hintLine(); !strings.Contains(h, "F: 閉じる") {
