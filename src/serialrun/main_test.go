@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -25,7 +26,7 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("SERIAL_RUN_STATE_DIR", filepath.Join(dir, "state")); err != nil {
 		panic(err)
 	}
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+	if out, err := exec.Command("go", "build", "-tags", "serialrun_testseam", "-o", bin, ".").CombinedOutput(); err != nil {
 		panic(string(out))
 	}
 	code := m.Run()
@@ -47,16 +48,19 @@ func newFixture(t *testing.T) *fixture {
 	return &fixture{t: t, state: filepath.Join(d, "state"), dir: d, log: filepath.Join(d, "log")}
 }
 
-// env はテストの子に渡す環境。外側の make test が serial-run に包まれていると SERIAL_RUN_HELD を継承しているので外す
+// env はテストの子に渡す環境。外側の make test が serial-run に包まれていると SERIAL_RUN_HELD を継承しているので外す。
+// 🚨 置き場は SERIAL_RUN_STATE_DIR だけでなく HOME と XDG_STATE_HOME も一時 dir に向ける。置き場の決め方を壊す変異 (変異検証) や
+// 退行で SERIAL_RUN_STATE_DIR が読まれなくなっても、本物の待ち列 (~/.local/state/serial-run) に入って他の session を止めないため
 func (f *fixture) env(extra ...string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, heldEnv+"=") || strings.HasPrefix(kv, "SERIAL_RUN_") {
+		if strings.HasPrefix(kv, "SERIAL_RUN_") || strings.HasPrefix(kv, "HOME=") || strings.HasPrefix(kv, "XDG_STATE_HOME=") {
 			continue
 		}
 		env = append(env, kv)
 	}
-	return append(append(env, "SERIAL_RUN_STATE_DIR="+f.state), extra...)
+	env = append(env, "SERIAL_RUN_STATE_DIR="+f.state, "HOME="+f.dir, "XDG_STATE_HOME="+filepath.Join(f.dir, "xdg"))
+	return append(env, extra...)
 }
 
 func (f *fixture) qdir() string { return filepath.Join(f.state, "default", "queue") }
@@ -68,6 +72,14 @@ func (f *fixture) gate(name string) string {
 	if err := syscall.Mkfifo(p, 0o600); err != nil {
 		f.t.Fatal(err)
 	}
+	// テストが途中で落ちても、gate を読んで止まっている子の sh を進めて終わらせる (残すと PPID=1 の孤児として残り続ける)。
+	// 読み手がいなければ O_NONBLOCK の open は ENXIO で失敗するだけ
+	f.t.Cleanup(func() {
+		if w, err := os.OpenFile(p, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+			_, _ = w.WriteString("\n")
+			_ = w.Close()
+		}
+	})
 	return p
 }
 
@@ -346,7 +358,7 @@ func TestStaleHeldEnvStillQueues(t *testing.T) {
 	ga := f.gate("a")
 	a := f.held("A", ga, nil, false)
 	waitFor(t, "A が始まる", func() bool { return f.hasLog("start A") })
-	stale := heldEnv + "=" + filepath.Join(f.state, "default") + ":999"
+	stale := heldEnv + "=" + heldToken(filepath.Join(f.state, "default"), 999, "x")
 	b := f.start([]string{stale}, false, "--", "/bin/sh", "-c", "echo B >> "+f.log)
 	waitFor(t, "B の札", func() bool { return f.ticketCount() == 2 })
 	if f.hasLog("B") {
@@ -504,6 +516,435 @@ func TestFirstWaitLineShowsStatusHint(t *testing.T) {
 	}
 }
 
+func firstTicket(f *fixture) string { return filepath.Join(f.qdir(), "000000000001"+ticketSuffix) }
+
+// waitChildRecorded は A の札に子の pid と開始時刻が載るまで待つ
+func waitChildRecorded(t *testing.T, f *fixture) {
+	t.Helper()
+	waitFor(t, "札に子の pid と開始時刻が載る", func() bool {
+		s := readFile(firstTicket(f))
+		return strings.Contains(s, "child_pid") && strings.Contains(s, "child_start")
+	})
+}
+
+// 札を書いた serial-run と読む serial-run のロケール・タイムゾーンが違っても、孤児の子を同じ子と読む (ps の lstart の書式が変わる)
+func TestOrphanSurvivesLocaleAndTimezoneDifference(t *testing.T) {
+	f := newFixture(t)
+	ga, gb := f.gate("a"), f.gate("b")
+	a := f.held("A", ga, []string{"LC_ALL=C", "TZ=UTC"}, false)
+	waitFor(t, "A が始まる", func() bool { return f.hasLog("start A") })
+	waitChildRecorded(t, f)
+	b := f.held("B", gb, []string{"LC_ALL=ja_JP.UTF-8", "TZ=Asia/Tokyo", "SERIAL_RUN_TEST_RECHECK=100ms"}, false)
+	waitFor(t, "B の札", func() bool { return f.ticketCount() == 2 })
+	if err := a.Process.Signal(syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	_ = exitCode(t, a)
+	// sleep-ok: negative: A の子が走っている間に B が入らないこと (見直しの刻み 100ms の 5 回分)
+	time.Sleep(500 * time.Millisecond)
+	if f.hasLog("start B") {
+		t.Fatal("ロケールとタイムゾーンが違うだけで、走っている孤児の子を死んだと読んだ")
+	}
+	f.release(ga)
+	waitFor(t, "A の子が終わってから B", func() bool { return f.hasLog("start B") })
+	f.release(gb)
+	_ = exitCode(t, b)
+}
+
+// ps が使えないときは、孤児の札を消さずに待つ (「子はもう居ない」と読まない)
+func TestPsFailureKeepsOrphanTicket(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	a := f.held("A", ga, nil, false)
+	waitFor(t, "A が始まる", func() bool { return f.hasLog("start A") })
+	waitChildRecorded(t, f)
+	if err := a.Process.Signal(syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	_ = exitCode(t, a)
+	b := f.start([]string{"SERIAL_RUN_TEST_PS=/nonexistent/ps", "SERIAL_RUN_TEST_RECHECK=100ms"}, false,
+		"--max-wait", "1", "--", "/bin/sh", "-c", "echo start B >> "+f.log)
+	if rc := exitCode(t, b); rc != rcTool {
+		t.Fatalf("ps が使えないのに待ちの上限まで待たなかった: rc=%d", rc)
+	}
+	if f.hasLog("start B") {
+		t.Fatal("ps が使えないのに、走っている孤児の子の後ろで B が走った")
+	}
+	if _, err := os.Stat(firstTicket(f)); err != nil {
+		t.Fatalf("孤児の札を消した: %v", err)
+	}
+	f.release(ga)
+}
+
+// 持ち主が死んで、子が停止 (SIGSTOP) のまま残った札は、後ろの待ち手が子孫ごと回収して進む
+func TestStoppedOrphanIsReclaimed(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	pidFile := filepath.Join(f.dir, "a.pid")
+	a := f.start(nil, false, "--", "/bin/sh", "-c", "echo $$ > "+pidFile+"; read _ < "+ga)
+	waitFor(t, "子の pid", func() bool { return strings.HasSuffix(readFile(pidFile), "\n") })
+	waitChildRecorded(t, f)
+	child, _ := strconv.Atoi(strings.TrimSpace(readFile(pidFile)))
+	if err := syscall.Kill(child, syscall.SIGSTOP); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(child, syscall.SIGKILL) })
+	if err := a.Process.Signal(syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	_ = exitCode(t, a)
+	b := f.start([]string{"SERIAL_RUN_TEST_RECHECK=100ms"}, false, "--max-wait", "5", "--", "/bin/sh", "-c", "echo B >> "+f.log)
+	if rc := exitCode(t, b); rc != 0 || !f.hasLog("B") {
+		t.Fatalf("停止したままの孤児の後ろで進めなかった: rc=%d", rc)
+	}
+	waitFor(t, "停止していた子が止められる", func() bool { return syscall.Kill(child, 0) != nil || zombie(child) })
+}
+
+// 子の開始時刻を記録できなかった札でも、子が停止したまま持ち主が死んだら、後ろが回収して進む (待ちの上限まで止まらない)
+func TestStoppedOrphanWithoutStartIsReclaimed(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	pidFile := filepath.Join(f.dir, "a.pid")
+	errPath := filepath.Join(f.dir, "a.err")
+	ef, err := os.Create(errPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ef.Close()
+	a := exec.Command(bin, "--", "/bin/sh", "-c", "echo $$ > "+pidFile+"; read _ < "+ga)
+	a.Env = f.env("SERIAL_RUN_TEST_PS=/nonexistent/ps")
+	a.Stderr = ef
+	if err := a.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "子の pid", func() bool { return strings.HasSuffix(readFile(pidFile), "\n") })
+	waitFor(t, "札に子の pid が載り、開始時刻を書けなかった警告が出る", func() bool {
+		return strings.Contains(readFile(firstTicket(f)), "child_pid") && strings.Contains(readFile(errPath), "子の情報を書けない")
+	})
+	if strings.Contains(readFile(firstTicket(f)), "child_start") {
+		t.Fatal("前提が崩れた: ps が使えないのに開始時刻が書かれた")
+	}
+	child, _ := strconv.Atoi(strings.TrimSpace(readFile(pidFile)))
+	if err := syscall.Kill(child, syscall.SIGSTOP); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(child, syscall.SIGKILL) })
+	if err := a.Process.Signal(syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	_ = exitCode(t, a)
+	b := f.start([]string{"SERIAL_RUN_TEST_RECHECK=100ms"}, false, "--max-wait", "5", "--", "/bin/sh", "-c", "echo B >> "+f.log)
+	if rc := exitCode(t, b); rc != 0 || !f.hasLog("B") {
+		t.Fatalf("開始時刻の無い停止した孤児の後ろで進めなかった: rc=%d", rc)
+	}
+	// 「別人」と読んで札だけ消したのではなく、子として回収した (停止したままの子を残さない)
+	waitFor(t, "停止していた子が止められる", func() bool { return syscall.Kill(child, 0) != nil || zombie(child) })
+}
+
+// 先頭が孤児 (持ち主の serial-run だけが死んだ) のとき、その子の子孫から SERIAL_RUN_HELD を落として呼んでも素通しする
+func TestNestedWithoutHeldUnderOrphanFindsAncestor(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	inner := "env -u SERIAL_RUN_HELD " + bin + " --max-wait 3 -- /bin/sh -c 'echo inner >> " + f.log + "'"
+	a := f.start(nil, false, "--", "/bin/sh", "-c", "echo start >> "+f.log+"; read _ < "+ga+"; "+inner)
+	waitFor(t, "外側が始まる", func() bool { return f.hasLog("start") })
+	waitChildRecorded(t, f)
+	if err := a.Process.Signal(syscall.SIGKILL); err != nil { // 外側の serial-run だけを止める (子は残る)
+		t.Fatal(err)
+	}
+	_ = exitCode(t, a)
+	f.release(ga)
+	waitFor(t, "孤児の下の入れ子が素通しで走る", func() bool { return f.hasLog("inner") })
+}
+
+// lstart (LC_ALL=C TZ=UTC) を読める。読み違えると、自分の子を「札より前から居た別人」と読んで回収する
+func TestStartedAfterReadsRealLstart(t *testing.T) {
+	before := time.Now().Add(-time.Hour)
+	s, known := procStart(os.Getpid())
+	if !known || s == "" {
+		t.Fatalf("自分の開始時刻を ps で取れない: %q", s)
+	}
+	if !startedAfter(s, before) {
+		t.Fatalf("1 時間前より後に起きた自分を、後と読めない: lstart=%q", s)
+	}
+	if startedAfter(s, time.Now().Add(time.Hour)) {
+		t.Fatalf("1 時間後より前に起きた自分を、後と読んだ: lstart=%q", s)
+	}
+}
+
+// writeDeadTicket は持ち主が死んだ札 (flock なし) を 1 番として置く。子は別に起こした child
+func writeDeadTicket(t *testing.T, f *fixture, info ticketInfo) {
+	t.Helper()
+	if err := os.MkdirAll(f.qdir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(firstTicket(f), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// startSleeper は停止していない長命の子を起こす (テストの終わりに止める)
+func startSleeper(t *testing.T) int {
+	t.Helper()
+	c := exec.Command("/bin/sleep", "30")
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Process.Kill(); _ = c.Wait() })
+	return c.Process.Pid
+}
+
+// ロケールを固定していなかった版が書いた札 (開始時刻が ja_JP の書式) でも、走っている子を別人と読まない (2 本走らない)
+func TestOldFormatChildStartIsStillTheSameChild(t *testing.T) {
+	f := newFixture(t)
+	start := time.Now().Add(-5 * time.Second)
+	child := startSleeper(t)
+	out, err := exec.Command("/usr/bin/env", "LC_ALL=ja_JP.UTF-8", "TZ=Asia/Tokyo", "/bin/ps", "-o", "lstart=", "-p", strconv.Itoa(child)).Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		t.Fatalf("古い書式の lstart を作れない: %v %q", err, out)
+	}
+	if _, ok := parseLstart(strings.TrimSpace(string(out))); ok {
+		t.Fatalf("前提が崩れた: 古い書式が新しい書式として読めてしまう: %q", out)
+	}
+	writeDeadTicket(t, f, ticketInfo{Seq: 1, Pid: 999999, Start: start, ChildPid: child, ChildStart: strings.TrimSpace(string(out))})
+	b := f.start(nil, false, "--max-wait", "1", "--", "/bin/sh", "-c", "echo B >> "+f.log)
+	if rc := exitCode(t, b); rc != rcTool || f.hasLog("B") {
+		t.Fatalf("古い書式の札の子が走っているのに B が走った: rc=%d", rc)
+	}
+	if _, err := os.Stat(firstTicket(f)); err != nil {
+		t.Fatalf("走っている子の札を消した: %v", err)
+	}
+}
+
+// 札の child_start は持ち主の環境のままの書式で書く (版が混ざる間、古い版はこれを自分の環境の ps と文字列で比べる)
+func TestTicketKeepsLegacyChildStartForOldVersions(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	pidFile := filepath.Join(f.dir, "a.pid")
+	a := f.start([]string{"LC_ALL=ja_JP.UTF-8", "TZ=Asia/Tokyo"}, false, "--", "/bin/sh", "-c", "echo $$ > "+pidFile+"; read _ < "+ga)
+	waitFor(t, "子の pid", func() bool { return strings.HasSuffix(readFile(pidFile), "\n") })
+	waitFor(t, "札に child_start_utc が載る", func() bool { return strings.Contains(readFile(firstTicket(f)), "child_start_utc") })
+	child, _ := strconv.Atoi(strings.TrimSpace(readFile(pidFile)))
+	out, err := exec.Command("/usr/bin/env", "LC_ALL=ja_JP.UTF-8", "TZ=Asia/Tokyo", "/bin/ps", "-o", "lstart=", "-p", strconv.Itoa(child)).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info ticketInfo
+	if err := json.Unmarshal([]byte(readFile(firstTicket(f))), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.ChildStart != strings.TrimSpace(string(out)) {
+		t.Fatalf("child_start が持ち主の環境の書式でない: %q want %q", info.ChildStart, strings.TrimSpace(string(out)))
+	}
+	f.release(ga)
+	_ = exitCode(t, a)
+}
+
+// 子の同一性を開始時刻で確かめられない孤児の札は、寿命を過ぎたら消す (使い回された pid の長命なプロセスを待ち続けない)
+func TestUnverifiedOrphanExpires(t *testing.T) {
+	f := newFixture(t)
+	other := startSleeper(t)
+	writeDeadTicket(t, f, ticketInfo{Seq: 1, Pid: 999999, Start: time.Now().Add(-unverifiedOrphanTTL - time.Minute), ChildPid: other})
+	b := f.start(nil, false, "--max-wait", "3", "--", "/bin/sh", "-c", "echo B >> "+f.log)
+	if rc := exitCode(t, b); rc != 0 || !f.hasLog("B") {
+		t.Fatalf("寿命を過ぎた確かめられない孤児の札の後ろで待った: rc=%d", rc)
+	}
+	if syscall.Kill(other, 0) != nil {
+		t.Fatal("寿命で札を消しただけのはずが、その pid のプロセスを止めた")
+	}
+}
+
+// LANG の無い環境で古い版が書いた札 (C の書式でローカル時刻) は、時刻として読めても UTC として比べない (9 時間ずれて別人と読む)
+func TestOldVersionCLocaleChildStartIsNotComparedAsUTC(t *testing.T) {
+	f := newFixture(t)
+	start := time.Now().Add(-5 * time.Second)
+	child := startSleeper(t)
+	out, err := exec.Command("/usr/bin/env", "-u", "LANG", "-u", "LC_ALL", "-u", "LC_TIME", "TZ=Asia/Tokyo", "/bin/ps", "-o", "lstart=", "-p", strconv.Itoa(child)).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := strings.TrimSpace(string(out))
+	if _, ok := parseLstart(old); !ok {
+		t.Fatalf("前提が崩れた: C の書式の lstart を読めない: %q", old)
+	}
+	writeDeadTicket(t, f, ticketInfo{Seq: 1, Pid: 999999, Start: start, ChildPid: child, ChildStart: old}) // V が無い = 古い版
+	b := f.start(nil, false, "--max-wait", "1", "--", "/bin/sh", "-c", "echo B >> "+f.log)
+	if rc := exitCode(t, b); rc != rcTool || f.hasLog("B") {
+		t.Fatalf("古い版の札の子が走っているのに B が走った: rc=%d", rc)
+	}
+}
+
+// 開始時刻の無い札の pid が、使い回された無関係の停止中のプロセスなら止めない (持ち主のプロセスグループと合わない)
+func TestUnrelatedStoppedProcessIsNotReclaimed(t *testing.T) {
+	f := newFixture(t)
+	start := time.Now().Add(-5 * time.Second)
+	other := startSleeper(t)
+	if err := syscall.Kill(other, syscall.SIGSTOP); err != nil {
+		t.Fatal(err)
+	}
+	writeDeadTicket(t, f, ticketInfo{Seq: 1, Pid: 999999, Start: start, ChildPid: other, Pgid: 1})
+	b := f.start(nil, false, "--max-wait", "1", "--", "/bin/sh", "-c", "echo B >> "+f.log)
+	_ = exitCode(t, b)
+	if syscall.Kill(other, 0) != nil || zombie(other) {
+		t.Fatal("持ち主のグループと合わない、使い回された pid の停止中のプロセスを止めた")
+	}
+}
+
+// 札の中身の seq は札の番号と一致する (子の情報を書き直したときに 0 へ戻さない)
+func TestTicketRecordsItsSeq(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	a := f.held("A", ga, nil, false)
+	waitChildRecorded(t, f)
+	if s := readFile(firstTicket(f)); !strings.Contains(s, `"seq":1,`) {
+		t.Fatalf("札の seq が番号と違う: %s", s)
+	}
+	f.release(ga)
+	_ = exitCode(t, a)
+}
+
+// 大文字・先頭の . を含む lock 名は通さない (同じ置き場を別名で指す / 親の置き場の seq を上書きする)
+func TestLockNameRejectsCaseAndDots(t *testing.T) {
+	f := newFixture(t)
+	for _, name := range []string{"Default", ".", "..", ".x"} {
+		if rc := exitCode(t, f.start(nil, false, "-l", name, "--", "/usr/bin/true")); rc != rcTool {
+			t.Errorf("-l %q: rc=%d want %d", name, rc, rcTool)
+		}
+	}
+}
+
+// 子が同じ置き場を symlink 越しに指しても、入れ子として素通しする
+func TestNestedThroughSymlinkedStateDirDoesNotWait(t *testing.T) {
+	f := newFixture(t)
+	if err := os.MkdirAll(f.state, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(f.dir, "state-link")
+	if err := os.Symlink(f.state, link); err != nil {
+		t.Fatal(err)
+	}
+	inner := "SERIAL_RUN_STATE_DIR=" + link + " " + bin + " --max-wait 3 -- /bin/sh -c 'echo inner >> " + f.log + "'"
+	if rc := exitCode(t, f.start(nil, false, "--", "/bin/sh", "-c", inner)); rc != 0 || !f.hasLog("inner") {
+		t.Fatalf("symlink 越しの入れ子が待った: rc=%d", rc)
+	}
+}
+
+// 同じ置き場を別の綴り (symlink 越し) で開いても、SERIAL_RUN_HELD の照合が一致する (祖先を辿る保険とは別の層)
+func TestHeldMatchesAcrossSymlinkSpellings(t *testing.T) {
+	d := t.TempDir()
+	real := filepath.Join(d, "real")
+	if err := os.MkdirAll(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(d, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	q1, err := openQueue(filepath.Join(real, "default"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// この test が札の flock を持つ (別の fd から見ると生きている札)
+	tf, seq, err := q1.enqueue(ticketInfo{Pid: os.Getpid(), Start: time.Now(), Nonce: "n1"}, func() error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tf.Close()
+	q2, err := openQueue(filepath.Join(link, "default"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !q2.heldByAncestor(heldToken(filepath.Join(real, "default"), seq, "n1")) {
+		t.Fatal("symlink 越しに開いた置き場で、実パスの SERIAL_RUN_HELD を持ち主と読めない")
+	}
+	if !q1.heldByAncestor(heldToken(filepath.Join(link, "default"), seq, "n1")) {
+		t.Fatal("実パスで開いた置き場で、symlink 越しの SERIAL_RUN_HELD を持ち主と読めない")
+	}
+}
+
+// 子が SERIAL_RUN_HELD を落としても、先頭の札の持ち主が祖先なら入れ子として素通しする (待つと自分の親を待って止まる)
+func TestNestedWithoutHeldEnvFindsAncestor(t *testing.T) {
+	f := newFixture(t)
+	inner := "env -u SERIAL_RUN_HELD " + bin + " --max-wait 3 -- /bin/sh -c 'echo inner >> " + f.log + "'"
+	if rc := exitCode(t, f.start(nil, false, "--", "/bin/sh", "-c", inner)); rc != 0 || !f.hasLog("inner") {
+		t.Fatalf("SERIAL_RUN_HELD を落とした入れ子が待った: rc=%d", rc)
+	}
+}
+
+// 番号が合っていても nonce が違う SERIAL_RUN_HELD (置き場が作り直されて番号が使い回された後の古い値) では並ぶ
+func TestHeldWithWrongNonceQueues(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	a := f.held("A", ga, nil, false)
+	waitFor(t, "A が始まる", func() bool { return f.hasLog("start A") })
+	stale := heldEnv + "=" + heldToken(filepath.Join(f.state, "default"), 1, "not-the-nonce")
+	b := f.start([]string{stale}, false, "--", "/bin/sh", "-c", "echo B >> "+f.log)
+	waitFor(t, "B の札", func() bool { return f.ticketCount() == 2 })
+	if f.hasLog("B") {
+		t.Fatal("nonce の違う SERIAL_RUN_HELD で並ばずに走った")
+	}
+	f.release(ga)
+	_ = exitCode(t, a)
+	if rc := exitCode(t, b); rc != 0 {
+		t.Fatalf("B rc=%d", rc)
+	}
+}
+
+// 採番の lock が空かない間も、シグナルで抜けられる (blocking の flock で止まらない)
+func TestSignalWhileWaitingForSeqLock(t *testing.T) {
+	f := newFixture(t)
+	pause := f.gate("pause")
+	x := f.start([]string{"SERIAL_RUN_TEST_PAUSE_BEFORE_RENAME=" + pause}, false, "--", "/usr/bin/true")
+	waitFor(t, "X が採番の lock を持ったまま止まる", func() bool {
+		ents, _ := os.ReadDir(f.qdir())
+		for _, e := range ents {
+			if strings.HasPrefix(e.Name(), tmpPrefix) {
+				return true
+			}
+		}
+		return false
+	})
+	retries := filepath.Join(f.dir, "seq-retries")
+	y := f.start([]string{"SERIAL_RUN_TEST_SEQ_RETRY_LOG=" + retries}, false, "--", "/usr/bin/true")
+	// 再試行の中に居ることを印で確かめてから撃つ (入る前に撃つと、Notify の前の既定の動作で死んでも同じ rc になり、何も確かめない)
+	waitFor(t, "Y が採番の lock の再試行に入る", func() bool { return countLines(retries) >= 1 })
+	if err := y.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	if rc := exitCode(t, y); rc != 128+int(syscall.SIGTERM) {
+		t.Fatalf("採番の lock を待つ間の TERM: rc=%d", rc)
+	}
+	f.release(pause)
+	_ = exitCode(t, x)
+}
+
+// 相対の XDG_STATE_HOME は使わない (cwd ごとに別の待ち行列ができる)。HOME の下の既定に落ちる
+func TestRelativeXDGStateHomeIsIgnored(t *testing.T) {
+	f := newFixture(t)
+	env := []string{}
+	for _, kv := range f.env() {
+		if !strings.HasPrefix(kv, "SERIAL_RUN_STATE_DIR=") && !strings.HasPrefix(kv, "XDG_STATE_HOME=") {
+			env = append(env, kv)
+		}
+	}
+	cmd := exec.Command(bin, "--", "/usr/bin/true")
+	cmd.Env = append(env, "XDG_STATE_HOME=rel")
+	cmd.Dir = f.dir
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(f.dir, ".local", "state", "serial-run", "default", "history.log")); err != nil {
+		t.Fatalf("既定の置き場に落ちていない: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.dir, "rel")); err == nil {
+		t.Fatal("相対の XDG_STATE_HOME を cwd の下に作った")
+	}
+}
+
 func TestExitCodes(t *testing.T) {
 	f := newFixture(t)
 	cases := []struct {
@@ -549,19 +990,21 @@ func TestSeqRecoversFromCorruptionAboveExistingTickets(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(f.state, "default", "seq"), []byte("garbage"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// 持ち主のいない札 (持ち主が死んだ残り)
-	if err := os.WriteFile(filepath.Join(f.qdir(), "000000000007"+ticketSuffix), []byte("{}"), 0o600); err != nil {
+	// 生きている札 7 番 (この test が flock を持つ)。seq が壊れていても、新しい番号はこれより大きくなる (生きている札と重ならない)。
+	// 持ち主のいない札は採番の前に回収されうるので、回収されない生きている札で確かめる
+	live, err := os.OpenFile(filepath.Join(f.qdir(), "000000000007"+ticketSuffix), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if rc := exitCode(t, f.start(nil, false, "--", "/usr/bin/true")); rc != 0 {
-		t.Fatalf("rc=%d", rc)
+	defer live.Close()
+	if err := syscall.Flock(int(live.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
 	}
-	hist := readFile(filepath.Join(f.state, "default", "history.log"))
-	if !strings.HasPrefix(hist, "8\t") {
-		t.Fatalf("番号が残っている札の後ろから続いていない: %q", hist)
+	if rc := exitCode(t, f.start(nil, false, "--max-wait", "0.3", "--", "/usr/bin/true")); rc != rcTool {
+		t.Fatalf("生きている札の後ろで待たなかった: rc=%d", rc)
 	}
-	if n := f.ticketCount(); n != 0 {
-		t.Fatalf("持ち主のいない札が回収されていない: %d 枚", n)
+	if got := strings.TrimSpace(readFile(filepath.Join(f.state, "default", "seq"))); got != "000000000008" {
+		t.Fatalf("番号が生きている札の後ろから続いていない: seq=%q", got)
 	}
 }
 

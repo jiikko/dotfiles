@@ -105,4 +105,47 @@ serialrun の監査で見つかった、グループ A の 11 項目。
 
 ## 進捗
 
-- [ ] 未着手 (項目ごとに、直した commit の subject・当てた変異・実測を書く)
+- 2026-10-23: 11 項目すべてに手を入れた (commit「fix(serialrun): 排他と順番の穴を塞ぐ (issue 878)」)
+  - [x] A1 `ps` を `proc.go` の `psField` に集め、`LC_ALL=C TZ=UTC` で呼ぶ。テスト `TestOrphanSurvivesLocaleAndTimezoneDifference` (A を LC_ALL=C TZ=UTC、B を ja_JP.UTF-8 Asia/Tokyo)
+  - [x] A2 `psField` が「居ない (rc=1 で空)」と「判定不能 (起動できない・時間切れ・その他)」を分け、判定不能の孤児の札は stateUnknown (消さない)。`TestPsFailureKeepsOrphanTicket`
+  - [x] A3 子の pid を先に書き、開始時刻は ps を 3 回まで試してから書く。書けなければ stderr に警告。`rewriteInfo` は誤りを返す。札の `seq` を 0 で書き戻していた不具合も直した
+    (`TestTicketRecordsItsSeq`)。開始時刻の無い札は「その pid が札を出した後に起きたか」で同一性を見る (`startedAfter`。`TestStartedAfterReadsRealLstart`)
+  - [x] A4 案 (b): 持ち主が死んで子が停止したままの札は、後ろの待ち手が `reclaimStopped` で子孫ごと止めて消す。自分の祖先は止めない。
+    `TestStoppedOrphanIsReclaimed` / `TestStoppedOrphanWithoutStartIsReclaimed`
+  - [x] A5 `openQueue` が置き場の symlink を解決する (`TestHeldMatchesAcrossSymlinkSpellings`・`TestNestedThroughSymlinkedStateDirDoesNotWait`)。lock 名は小文字だけ・先頭の `.` を拒否
+    (`TestLockNameRejectsCaseAndDots`。`.` `..` は D9 も兼ねる)。相対の `XDG_STATE_HOME` は無視 (`TestRelativeXDGStateHomeIsIgnored`)
+  - [x] A6 SERIAL_RUN_HELD を「置き場:番号:nonce」にした (`TestHeldWithWrongNonceQueues`)。環境変数が落ちても、先頭の札の持ち主 (または孤児の子) が祖先なら素通し
+    (`TestNestedWithoutHeldEnvFindsAncestor` / `TestNestedWithoutHeldUnderOrphanFindsAncestor`)
+  - [x] A7 README に「同じ環境の session どうしだけ」を書いた
+  - [x] A8 テストの差し込み口を build tag `serialrun_testseam` に移した (`seam_on.go` / `seam_off.go`)。採番の seq の flock を LOCK_NB の再試行にし、シグナルと待ちの上限で抜ける
+    (`TestSignalWhileWaitingForSeqLock`。再試行に入った印を待ってから撃つ)
+  - [x] A9 札の一覧を読めないときは「札が 0 枚」と読まず、短い見直しへ。seq も一覧も読めなければ採番しない
+  - [x] A10 `blockUntilReleased` は開けない・flock の失敗を `failed` で知らせ、待ち手は短い見直しへ (2 分の保険まで待たない)
+  - [x] A11 ps に 2 秒の上限 (超えたら判定不能)
+- 変異 (`mutate-verify-list`。全部 red を確かめた): ps のロケールを固定しない / ps の失敗を「居ない」と読む / 停止した孤児を回収しない / 札の seq を書かない / lock 名を元の正規表現に戻す /
+  置き場の symlink を解決しない (単体テストで) / 祖先を辿らない / nonce を見ない / 採番の flock を blocking に戻す / 相対の XDG を使う / 開始時刻を札より後かで見ない /
+  孤児の子を祖先として見ない / 開始時刻を書けない警告を出さない
+- テストで守れていないもの (失敗を作る手段が無い): A9 (札の一覧を読めない)・A10 の flock の失敗の経路・A11 (ps の時間切れ)・`reclaimStopped` の「自分の祖先は止めない」(発火条件が人工的。敵対的レビュー P3-3)
+- 敵対的レビュー (Opus、修正の後): P1 0 / P2 1 / P3 3 = 4 件、全部対応した。P2 開始時刻を書けなかった札が停止したまま残り後ろが上限まで止まる (再現済み) → 再試行・警告・`startedAfter` /
+  P3 孤児の下で HELD を落とした入れ子が祖先を待つ (再現済み) → 孤児の子も祖先として見る / P3 seq のテストが時間の窓に頼る → 再試行の印を待つ / P3 入れ子が祖先の木を止める (人工的) → 祖先は回収しない。
+  壊せなかった観点: 同時に 2 本走る (生きている持ち主の札を消す経路・祖先でないのに素通し・古い書式の HELD・rewriteInfo の途中読み)・Ctrl-Z で止めた正当な make test を回収する形
+- 敵対的レビュー 2 周目 (Opus、1 周目の修正の後): P2 1 / P3 2 = 3 件、全部対応した。
+  P2 版をまたぐと開始時刻の書式が合わず 2 本走る (ロケールを固定していなかった版が書いた札。再現済み) → 開始時刻を時刻として比べ、読めない書式は「札を出した後に起きたか」へ
+  (`TestOldFormatChildStartIsStillTheSameChild`) / P3 開始時刻の無い札で、使い回された pid の無関係な停止中のプロセスを止める (再現済み) → 札に持ち主のプロセスグループを書き、
+  開始時刻で確かめられないときはグループの一致を回収の条件にする (`TestUnrelatedStoppedProcessIsNotReclaimed`) / P3 ps の失敗で祖先を辿り損ね、入れ子が祖先を待つ (推測) →
+  1 段ごとに ps を 3 回まで試す (テストなし)。変異 2 本 (時刻でなく文字列で比べる / グループを見ない) が red。
+  壊せなかった観点: lstart の読み違い (1 桁の日・うるう日・末尾の空白)・孤児の子を祖先とみなす判定の pid の使い回し・2 本同時に走る (上の P2 以外)
+- 敵対的レビュー 3 周目 (Opus、2 周目の修正に絞って): P2 1 / P3 2 = 3 件。
+  P2 LANG の無い環境で古い版が書いた札 (C の書式でローカル時刻) は時刻として読めてしまい、UTC として比べて 9 時間ずれ、2 本走る (再現済み) → 札に書式の版 `V` を足し、
+  `V >= ticketVersion` の札でだけ時刻を比べる (`TestOldVersionCLocaleChildStartIsNotComparedAsUTC`。版を見ない変異で red) /
+  P3 札を出してから子が起きるまでに壁時計が戻ると本物の子を別人と読む (推測) → `startedAfter` に 1 分の余裕 (`startSlack`。テストなし) /
+  P3 移行のときの古い札 (Pgid が無い) では、停止した本物の子を回収しない (推測) → **受け入れる**: 安全側 (2 本は走らない) で、後ろは待ちの上限で抜ける。古い札は移行の間しか無い。
+  壊せなかった観点: 止めてはいけないものを止める (pgid の一致に入るのは開始時刻の無い新しい札だけ・serial-run がグループの先頭でなくても子と同じ値)・永久に待つ (上の受け入れたもの以外)
+- 敵対的レビュー 4 周目 (Opus、3 周目の修正に絞って。02:1x に週の枠が尽きて止まり、08:0x に再開して完了): P2 1 / P3 2 = 3 件、全部対応した。
+  P2 版が混ざる間に、古い版の待ち手が新しい札の child_start (C/UTC) を自分の環境の ps と文字列で比べて別人と読み、札を消す (推測) → child_start には持ち主の環境のままの値を書き続け、
+  C/UTC の値は `child_start_utc` に分けた (`TestTicketKeepsLegacyChildStartForOldVersions`。C/UTC を書く変異で red。今の版の比較は `child_start_utc` だけ: `utc-not-compared` の変異で red) /
+  P3 開始時刻で確かめられない札は pid の使い回しを見分けない (使い回したプロセスも札の後に起きる) ので、無関係な長命のプロセスを待ち続ける → 確かめられない孤児の札に寿命 6 時間
+  (`unverifiedOrphanTTL`・`TestUnverifiedOrphanExpires`。寿命を外す変異で red) とコメントの訂正 / P3 テストの doc コメントの付け違い → 直した。
+  壊せなかった観点: 新しい札を古い札と取り違える形・1 分の余裕から 2 本走る / 無関係なものを止める形・新しいテストの素通し (版を見ない変異で red を確かめた)
+- 敵対的レビューは 4 周で打ち切った (4 周目は 2 本走る形・止めてはいけないものを止める形を作れず、指摘が推測に縮んだ)。**4 周目の指摘を直した差分には 5 周目を当てていない**
+- テストの後始末: gate (fifo) をテストの終わりに必ず解放する (落ちたテストが子の sh を孤児として残していた。883 の F1 の一部)。テストの子の HOME / XDG_STATE_HOME も一時 dir へ (883 の F の一部)

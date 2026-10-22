@@ -14,6 +14,9 @@ serial-run hook                                                     # Claude Cod
 - 待ちの上限は既定 1 時間 (`--max-wait 0` で上限なし)。超えたら子を起こさずに 125
 - 待っている間は stderr に順番と先頭の持ち主を出す (順番が変わったときと 30 秒ごと)。先頭が 30 分を超えて持っていたら `🚨 長く持っている` と pid・状態を出す
 - 状態の置き場: `~/.local/state/serial-run/<lock名>/` (`XDG_STATE_HOME` / テストは `SERIAL_RUN_STATE_DIR`)。`history.log` に 1 本 1 行 (待ち・所要・rc)
+  - 🚨 「マシン全体」で 1 本になるのは、置き場の解決に使う環境 (`SERIAL_RUN_STATE_DIR` / 絶対パスの `XDG_STATE_HOME` / `HOME`) が同じ session どうしだけ。
+    HOME を差し替えたテスト環境などから呼ばれたものは別の待ち列に並ぶ。相対の `XDG_STATE_HOME` は使わない (cwd ごとに別の待ち列になる)
+- lock 名 (`-l`) は小文字・数字・`.` `_` `-` だけで、先頭の `.` は通さない (APFS は大小文字を区別しないので、`Default` と `default` が同じ置き場を別名で指す)
 
 ## Claude Code からの使われ方
 
@@ -36,6 +39,13 @@ serial-run hook                                                     # Claude Cod
 - 札は `.tmp-<id>` で作って flock してから rename する (src/pro-con/flockmark の Create と同じ理由)
 - 待ちはイベント駆動: 自分の 1 つ前の札に blocking の flock をかけて眠る。保険として 2 分ごとに列挙し直す (blocking の待ちが起こされなかったとき)
 - 実行権は `run.lock` の flock。札の順番は公平さ、run.lock は排他を受け持つ
+- `ps` (子の開始時刻・状態・親) は `LC_ALL=C TZ=UTC` と時間の上限 2 秒で呼ぶ (`proc.go`)。「その pid は居ない」と「ps が使えない (判定不能)」を分け、
+  判定不能の札は消さずに 5 秒ごとに見直す
+- 持ち主の serial-run だけが死んで子が残った札 (孤児) は、子が生きている間は生きている扱い。子の同一性は開始時刻で確かめる (開始時刻を書けなかった札は、
+  その pid が札を出した後に起きたかで見る)。子が停止 (stat T) したままなら、後ろの待ち手が子孫ごと止めて札を消す (持ち主が子孫を止める途中で殺された形)。
+  ただし自分の祖先は止めない
+- テストの差し込み口 (`SERIAL_RUN_TEST_*`) は `-tags serialrun_testseam` でビルドしたときだけ読む (`seam_on.go`)。本番のバイナリは読まない
 - 子は serial-run と同じプロセスグループに置く (別に置くと、グループごとの SIGKILL で serial-run だけが死に、子が lock の外で走り続ける)。
-  lock の fd は子へ渡さない (O_CLOEXEC)。子には `SERIAL_RUN_HELD=<置き場>:<番号>` を渡し、中からの同じ lock の呼び出しは待たずに通す
+  lock の fd は子へ渡さない (O_CLOEXEC)。子には `SERIAL_RUN_HELD=<置き場>:<番号>:<nonce>` を渡し、中からの同じ lock の呼び出しは待たずに通す (置き場は symlink を解決して比べる)。
+  環境変数が途中で落とされても、先頭の札の持ち主 (または孤児の子) が自分の祖先なら素通しする
 - 置き場は消さない・作り直さない (走っている持ち主は古い run.lock の inode を持っているので、作り直すと排他が破れる)

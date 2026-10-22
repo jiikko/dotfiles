@@ -160,7 +160,7 @@ func TestHookAddsQueueNoteOnlyWhenSomeoneIsAhead(t *testing.T) {
 		t.Fatalf("誰も並んでいないのに添えた: %q", c)
 	}
 	// この test の中で札の flock を持つ (別の fd から見ると生きている札に見える)
-	f, _, err := q.enqueue(ticketInfo{Pid: os.Getpid(), Start: time.Now(), Cwd: "/x/repo", Cmd: "make test"})
+	f, _, err := q.enqueue(ticketInfo{Pid: os.Getpid(), Start: time.Now(), Cwd: "/x/repo", Cmd: "make test"}, func() error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}

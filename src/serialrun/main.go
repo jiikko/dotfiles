@@ -9,6 +9,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -51,7 +53,9 @@ const usage = `usage: serial-run [-l <lock名>] [--max-wait <秒>] -- <コマン
 rc: 子の rc / 125 道具の失敗 / 126 起動できない / 127 見つからない
 `
 
-var lockNameRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+// lock 名は小文字だけを通す (APFS は大小文字を区別しないので、`Default` と `default` が同じ置き場を別の名前で指し、入れ子の照合が食い違う)。
+// 先頭の . も通さない (`.` / `..` は親の置き場の seq を上書きする)
+var lockNameRe = regexp.MustCompile(`^[a-z0-9_-][a-z0-9._-]*$`)
 
 type options struct {
 	lock    string
@@ -60,7 +64,7 @@ type options struct {
 	argv    []string
 }
 
-// tunables はテストの差し込み口 (環境変数で縮める)。本番では既定値
+// tunables は待ちの刻み。本番では既定値で、テストのビルドだけが縮める (seam_on.go)
 type tunables struct {
 	fallback time.Duration
 	report   time.Duration
@@ -71,17 +75,7 @@ type tunables struct {
 
 func loadTunables() tunables {
 	t := tunables{fallback: fallbackPoll, report: reportInterval, recheck: recheckInterval}
-	if d, err := time.ParseDuration(os.Getenv("SERIAL_RUN_TEST_RECHECK")); err == nil && d > 0 {
-		t.recheck = d
-	}
-	if d, err := time.ParseDuration(os.Getenv("SERIAL_RUN_TEST_FALLBACK")); err == nil && d > 0 {
-		t.fallback = d
-	}
-	if d, err := time.ParseDuration(os.Getenv("SERIAL_RUN_TEST_REPORT")); err == nil && d > 0 {
-		t.report = d
-	}
-	t.noBlock = os.Getenv("SERIAL_RUN_TEST_NO_BLOCK") == "1"
-	t.wakeLog = os.Getenv("SERIAL_RUN_TEST_WAKE_LOG")
+	applyTestSeams(&t)
 	return t
 }
 
@@ -116,17 +110,19 @@ func run(args []string, stderr io.Writer) int {
 		printStatus(q, os.Stdout)
 		return 0
 	}
-	if q.heldByAncestor(os.Getenv(heldEnv)) {
+	if q.heldByAncestor(os.Getenv(heldEnv)) || q.heldByAncestorProcess() {
 		return execDirect(opt.argv, stderr)
 	}
 	return runQueued(q, opt, loadTunables(), stderr)
 }
 
+// stateBase は状態の置き場の親を返す。どの枝も絶対パスにする (相対だと cwd ごとに別の待ち行列ができる)。
+// 相対の XDG_STATE_HOME は XDG の仕様どおり無視して既定に落とす
 func stateBase() (string, error) {
 	if d := os.Getenv("SERIAL_RUN_STATE_DIR"); d != "" {
 		return filepath.Abs(d)
 	}
-	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
+	if d := os.Getenv("XDG_STATE_HOME"); d != "" && filepath.IsAbs(d) {
 		return filepath.Join(d, "serial-run"), nil
 	}
 	home, err := os.UserHomeDir()
@@ -136,24 +132,68 @@ func stateBase() (string, error) {
 	return filepath.Join(home, ".local", "state", "serial-run"), nil
 }
 
-// heldByAncestor は、呼び出し元の serial-run がこの lock の実行権を今持っているかを返す (入れ子)。
-// 持っているのに並ぶと、親が子の終わりを待ち、子が親の終わりを待って止まる。
-// 値は「置き場:番号」。その番号の札が生きていて、前に生きている札が無いときだけ持ち主とみなす
-// (親が終わった後に生き残った孫が呼んだときは、札が消えているので普通に並ぶ)
-func (q queue) heldByAncestor(v string) bool {
-	i := strings.LastIndex(v, ":")
-	if i <= 0 || v[:i] != q.dir {
-		return false
+// heldToken は子へ渡す SERIAL_RUN_HELD の値 (置き場:番号:nonce)。書式の正本はこの関数と parseHeld の 2 つだけ
+func heldToken(dir string, seq int64, nonce string) string {
+	return fmt.Sprintf("%s:%d:%s", dir, seq, nonce)
+}
+
+func parseHeld(v string) (dir string, seq int64, nonce string, ok bool) {
+	j := strings.LastIndex(v, ":")
+	if j <= 0 {
+		return "", 0, "", false
 	}
-	seq, err := strconv.ParseInt(v[i+1:], 10, 64)
+	i := strings.LastIndex(v[:j], ":")
+	if i <= 0 {
+		return "", 0, "", false
+	}
+	n, err := strconv.ParseInt(v[i+1:j], 10, 64)
 	if err != nil {
+		return "", 0, "", false
+	}
+	return v[:i], n, v[j+1:], true
+}
+
+// heldByAncestor は、呼び出し元の serial-run がこの lock の実行権を今持っているかを SERIAL_RUN_HELD で判定する (入れ子)。
+// 持っているのに並ぶと、親が子の終わりを待ち、子が親の終わりを待って止まる。
+// その番号の札が生きていて (持ち主の serial-run だけが死んで子が残った孤児も含む)、nonce が一致し、前に札が無いときだけ持ち主とみなす
+// (親が終わった後に生き残った孫・置き場が作り直されて番号が使い回された後の古い値では、普通に並ぶ)
+func (q queue) heldByAncestor(v string) bool {
+	dir, seq, nonce, ok := parseHeld(v)
+	if !ok {
 		return false
 	}
-	// 持ち主の serial-run だけが死んで子 (自分の祖先) が残っている札 (stateOrphan) も、持ち主の系統として素通しする
+	if real, err := filepath.EvalSymlinks(dir); err != nil || real != q.dir {
+		return false
+	}
 	if st := stateOf(q.ticketPath(seq)); st != stateAlive && st != stateOrphan {
 		return false
 	}
-	return len(q.predecessors(seq)) == 0
+	if info, ok := q.readInfo(seq); !ok || info.Nonce != nonce {
+		return false
+	}
+	preds, err := q.predecessors(seq)
+	return err == nil && len(preds) == 0
+}
+
+// heldByAncestorProcess は、環境変数が途中で落とされても (`env -u SERIAL_RUN_HELD`・`env -i HOME=…`) 入れ子を見分ける保険。
+// 先頭の生きている札の持ち主 (serial-run) が自分の祖先なら、その serial-run の子孫として呼ばれている (待つと自分の親を待つ)
+// 先頭が孤児 (持ち主の serial-run だけが死んで子が走っている) なら、その子が祖先かで見る
+func (q queue) heldByAncestorProcess() bool {
+	preds, err := q.predecessors(math.MaxInt64)
+	if err != nil || len(preds) == 0 {
+		return false
+	}
+	info, ok := q.readInfo(preds[0].seq)
+	if !ok {
+		return false
+	}
+	switch preds[0].state {
+	case stateAlive:
+		return info.Pid > 1 && ancestors()[info.Pid]
+	case stateOrphan:
+		return info.ChildPid > 1 && ancestors()[info.ChildPid]
+	}
+	return false
 }
 
 func execDirect(argv []string, stderr io.Writer) int {
@@ -186,14 +226,41 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 		signal.Notify(sigs, syscall.SIGHUP)
 	}
 
+	var deadline <-chan time.Time
+	if opt.maxWait > 0 {
+		t := time.NewTimer(opt.maxWait)
+		defer t.Stop()
+		deadline = t.C
+	}
+
 	cwd, _ := os.Getwd()
 	enq := time.Now()
-	info := ticketInfo{Pid: os.Getpid(), Start: enq, Cwd: cwd, Cmd: displayCmd(opt.argv)}
-	tf, seq, err := q.enqueue(info)
-	if err != nil {
+	info := ticketInfo{Pid: os.Getpid(), Start: enq, Cwd: cwd, Cmd: displayCmd(opt.argv), Nonce: newNonce(), Pgid: syscall.Getpgrp(), V: ticketVersion}
+	var abortSig syscall.Signal
+	errMaxWait := errors.New("待ちの上限")
+	tf, seq, err := q.enqueue(info, func() error {
+		select {
+		case s := <-sigs:
+			abortSig, _ = s.(syscall.Signal)
+			return fmt.Errorf("シグナル %v", abortSig)
+		case <-deadline:
+			return errMaxWait
+		default:
+			return nil
+		}
+	})
+	switch {
+	case err == nil:
+	case abortSig != 0:
+		return exitAs(128+int(abortSig), abortSig)
+	case errors.Is(err, errMaxWait):
+		fmt.Fprintf(stderr, "serial-run: 待ちの上限 (%s) を超えた。採番の lock が空かない。実行しない\n", opt.maxWait)
+		return rcTool
+	default:
 		fmt.Fprintf(stderr, "serial-run: 札を出せない: %v\n", err)
 		return rcTool
 	}
+	info.Seq = seq
 	myPath := q.ticketPath(seq)
 	leave := func() {
 		_ = os.Remove(myPath)
@@ -207,12 +274,6 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 		return rcTool
 	}
 
-	var deadline <-chan time.Time
-	if opt.maxWait > 0 {
-		t := time.NewTimer(opt.maxWait)
-		defer t.Stop()
-		deadline = t.C
-	}
 	w := waiter{q: q, seq: seq, tn: tn, stderr: stderr, start: enq}
 	res, got := w.waitPredecessors(deadline, sigs)
 	if res == waitTurn {
@@ -239,9 +300,30 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	}
 
 	started := time.Now()
-	rc, got := runChild(opt.argv, q.dir, seq, sigs, stderr, func(pid int) {
-		info.ChildPid, info.ChildStart = pid, procStart(pid)
-		rewriteInfo(tf, info)
+	rc, got := runChild(opt.argv, heldToken(q.dir, seq, info.Nonce), sigs, stderr, func(pid int) {
+		// 🚨 pid を先に書く。ps (開始時刻) を待ってから書くと、その間に serial-run だけが SIGKILL されたとき、子の情報が無い札として消され、
+		// 走り続ける子の後ろで次の 1 本が走る
+		info.ChildPid = pid
+		err := rewriteInfo(tf, info)
+		if err == nil {
+			// ps は負荷で時間切れになりうるので数回試す。取れなくても子は走らせる (開始時刻の無い札は、札より後に起きた pid かで同一性を見る)
+			for i := range 3 {
+				if start, known := procStart(pid); known && start != "" {
+					info.ChildStartUTC = start
+					// 古い版との互換 (queue.go の ChildStartUTC の注記)。取れなくても今の版は困らない
+					info.ChildStart, _ = psFieldEnv(pid, "lstart", false)
+					err = rewriteInfo(tf, info)
+					break
+				}
+				if i == 2 {
+					err = errors.New("ps で子の開始時刻を取れない")
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "serial-run: 札に子の情報を書けない (この serial-run だけが殺されたとき、子の同一性を確かめにくくなる): %v\n", err)
+		}
 	})
 	q.appendHistory(seq, enq, waited, time.Since(started), rc, cwd, info.Cmd)
 	// 🚨 札を消してから run.lock を放す。後ろの待ち手は札の flock で起きて run.lock を取りに来るので、逆にすると
@@ -283,25 +365,32 @@ func (w *waiter) waitPredecessors(deadline <-chan time.Time, sigs <-chan os.Sign
 	defer report.Stop()
 
 	var watching int64 = -1
-	var woke chan struct{}
+	var woke, failed chan struct{}
 	for {
 		w.logWake()
 		w.q.sweepStaleTmp()
-		preds := w.q.predecessors(w.seq)
-		if len(preds) == 0 {
+		preds, err := w.q.predecessors(w.seq)
+		if err == nil && len(preds) == 0 {
 			return waitTurn, 0
 		}
-		w.reportPos(preds, false)
-		// 1 つ前の札が flock で待てない (孤児・判定不能) ときは blocking で眠らず、短い間隔で見直す
+		// 1 つ前の札が flock で待てない (孤児・判定不能・一覧を読めない) ときは blocking で眠らず、短い間隔で見直す
 		var recheck <-chan time.Time
-		if last := preds[len(preds)-1]; last.state != stateAlive {
+		switch {
+		case err != nil:
 			watching, woke = -1, nil
 			recheck = time.After(w.tn.recheck)
-		} else if last.seq != watching {
-			watching = last.seq
-			woke = make(chan struct{})
-			if !w.tn.noBlock {
-				go blockUntilReleased(w.q.ticketPath(last.seq), woke)
+		case preds[len(preds)-1].state != stateAlive:
+			w.reportPos(preds, false)
+			watching, woke = -1, nil
+			recheck = time.After(w.tn.recheck)
+		default:
+			w.reportPos(preds, false)
+			if last := preds[len(preds)-1]; last.seq != watching {
+				watching = last.seq
+				woke, failed = make(chan struct{}), make(chan struct{})
+				if !w.tn.noBlock {
+					go blockUntilReleased(w.q.ticketPath(last.seq), woke, failed)
+				}
 			}
 		}
 	inner:
@@ -310,12 +399,18 @@ func (w *waiter) waitPredecessors(deadline <-chan time.Time, sigs <-chan os.Sign
 			case <-woke:
 				watching = -1 // 起きたら同じ札でも眠り直す (起こした lock はもう放してある)
 				break inner
+			case <-failed:
+				// 1 つ前の札で眠れなかった (開けない・flock の失敗): 短い間隔の見直しに切り替える
+				failed, watching = nil, -1
+				recheck = time.After(w.tn.recheck)
 			case <-recheck:
 				break inner
 			case <-fallback.C:
 				break inner
 			case <-report.C:
-				w.reportPos(w.q.predecessors(w.seq), true)
+				if p, err := w.q.predecessors(w.seq); err == nil {
+					w.reportPos(p, true)
+				}
 			case <-deadline:
 				return waitTimeout, 0
 			case s := <-sigs:
@@ -371,8 +466,8 @@ func (w *waiter) reportPos(preds []pred, periodic bool) {
 }
 
 func (w *waiter) holderNote() string {
-	preds := w.q.predecessors(w.seq)
-	if len(preds) == 0 {
+	preds, err := w.q.predecessors(w.seq)
+	if err != nil || len(preds) == 0 {
 		return ""
 	}
 	return w.describe(preds[0])
@@ -394,30 +489,36 @@ func (w *waiter) describe(p pred) string {
 	held := time.Since(info.Start)
 	s := fmt.Sprintf(" 前: %s の %s (札を出してから %s)", info.Cwd, info.Cmd, fmtDur(held))
 	if held >= longHold {
-		s += fmt.Sprintf(" 🚨 長く持っている: pid %d %s", info.Pid, procStat(info.Pid))
+		s += fmt.Sprintf(" 🚨 長く持っている: pid %d %s", info.Pid, statNote(info.Pid))
 	}
 	return s
 }
 
-func procStat(pid int) string {
-	out, err := exec.Command("/bin/ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
-	if err != nil {
+func statNote(pid int) string {
+	st, known := procStat(pid)
+	if !known || st == "" {
 		return "(ps で見えない)"
 	}
-	return "stat=" + strings.TrimSpace(string(out))
+	return "stat=" + st
+}
+
+func newNonce() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // runChild は子を起こして待つ。
 // 🚨 子を別のプロセスグループに置かない。別に置くと、呼び出し元がグループへ SIGKILL を送ったとき serial-run だけが死んで
 // lock が外れ、子は lock の外で走り続けて次の待ち手と 2 本同時に走る。同じグループなら一緒に死ぬ (端末の job control も子に効く)。
 // 🚨 lock と札の fd は子へ渡さない (os.OpenFile は O_CLOEXEC で開く)。渡すと子が残した背景プロセスが lock を握ったまま残る
-func runChild(argv []string, dir string, seq int64, sigs <-chan os.Signal, stderr io.Writer, started func(pid int)) (int, syscall.Signal) {
+func runChild(argv []string, held string, sigs <-chan os.Signal, stderr io.Writer, started func(pid int)) (int, syscall.Signal) {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	if errors.Is(cmd.Err, exec.ErrDot) {
 		cmd.Err = nil
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%s:%d", heldEnv, dir, seq))
+	cmd.Env = append(os.Environ(), heldEnv+"="+held)
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(stderr, "serial-run: %v\n", err)
 		return startErrorRC(err), 0
@@ -498,7 +599,7 @@ func printStatus(q queue, out io.Writer) {
 		held := time.Since(info.Start)
 		line := fmt.Sprintf("%s\t#%d\t%s\tpid %d\t%s\t%s", state, s, fmtDur(held), info.Pid, info.Cwd, info.Cmd)
 		if !dead && held >= longHold {
-			line += "\t🚨 長く持っている " + procStat(info.Pid)
+			line += "\t🚨 長く持っている " + statNote(info.Pid)
 		}
 		fmt.Fprintln(out, line)
 	}

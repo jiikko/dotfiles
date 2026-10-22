@@ -68,8 +68,8 @@ func queueNote() string {
 	if _, err := os.Stat(q.qdir()); err != nil {
 		return ""
 	}
-	preds := q.predecessors(math.MaxInt64)
-	if len(preds) == 0 {
+	preds, err := q.predecessors(math.MaxInt64)
+	if err != nil || len(preds) == 0 {
 		return ""
 	}
 	head := ""
