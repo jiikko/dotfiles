@@ -81,7 +81,8 @@ lan-manager の全体監査 (865) の品質系のうち P3 の小物をまとめ
 
 ## 進捗
 
-- [ ] 1 ping の rc をテストで固定 (画面と揃えるかは 847 の判断)
+- [x] 1 ping の rc をテストで固定 (dotfiles-b9)。`TestPingMarksWiredNameElsewhere` は今の契約 (README・usage) どおり、lan_mismatch だけでは rc=0 を見る。
+  変異: lan_mismatch でも rc=1 にする → red。画面 (W✗) と揃えるかは 847 の判断のまま (揃えるなら、このテストの期待値を 1 に変える。テストのコメントに書いた)
 - [x] 2 部分失敗を判定不能に (dotfiles-0e。9 と同じ commit「fix(mac-lan-manager): 相手の観測でサービスだけを読み、読めなかったサービスがあれば判定できないにする」)
   - `netinfo.Snapshot.Unread` に数え、ObservePeer は 1 つでもあれば NetKnown=false。数えないのは I/F が無い (IfGone。macOS 27.0.1 で実測: ifconfig は rc=1 "does not exist"、-getinfo は rc=0) と Device が空のサービス (VPN。未実測)
   - 理由は `PeerNet.NetErr` に持ち、操作のログの observe done と dump --peer に出す

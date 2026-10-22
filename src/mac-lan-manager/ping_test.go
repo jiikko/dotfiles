@@ -75,7 +75,12 @@ func TestPingMarksWiredNameElsewhere(t *testing.T) {
 		return out
 	}
 	var out, errb bytes.Buffer
-	runPing([]string{"--json", "m2macmini.local"}, &out, &errb, time.Now, nil, speedModel(nil), check)
+	rc := runPing([]string{"--json", "m2macmini.local"}, &out, &errb, time.Now, nil, speedModel(nil), check)
+	// 今の契約 (README・usage): rc は「確かめた名前が全部届くか」だけで決め、lan_mismatch は知らせるだけ (rc=0)。
+	// 画面の疎通の列は同じ状態を W✗ にする。揃えるかは 847 の判断で、揃えるならこの期待値を 1 に変える
+	if rc != 0 {
+		t.Errorf("rc = %d, want 0 (届いているので lan_mismatch だけでは 1 にしない)", rc)
+	}
 	var reps []pingReport
 	if err := json.Unmarshal(out.Bytes(), &reps); err != nil || len(reps) != 1 || len(reps[0].Names) != 2 {
 		t.Fatalf("JSON = %s (%v)", out.String(), err)
