@@ -1,5 +1,7 @@
 # 881 (ux): serialrun の状態の置き場・status・history
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-23〜）
+
 起票日: 2026-10-23
 
 ## 概要
