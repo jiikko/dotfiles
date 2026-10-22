@@ -107,6 +107,7 @@
 - `src/treefiler` (`treefiler`) — treefiler は横に育つ木のファイラー (bin/treefiler)。 (main)
 - `src/treefiler/filer` (`treefiler/filer`) — Package filer は treefiler の画面の部品 (木・タイル・キー・描画)。
 - `src/treefiler/gorules` (`treefiler/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml から参照)。 (build tags: ruleguard)
+- `src/treefiler/tools/tfprobe` (`treefiler/tools/tfprobe`) — tfprobe は treefiler の画面 (filer.Model) を本物のディレクトリでヘッドレスに動かし、操作ごとの所要と、サイクルごとの 資源 (goroutine・fd・子プロセス・GC 後のヒープ) を測る。 (main)
 - `src/tuikit/anim` (`github.com/jiikko/dotfiles/src/tuikit/anim`) — Package anim は端末 UI の演出に使う状態機械と緩急カーブ。
 - `src/tuikit/caret` (`github.com/jiikko/dotfiles/src/tuikit/caret`) — Package caret は入力欄のキャレットを端末のカーソルにする (bubbletea v2 の View.Cursor)。
 - `src/tuikit/cmd/termwidth` (`github.com/jiikko/dotfiles/src/tuikit/cmd/termwidth`) — Command termwidth は、引数の文字列の端末での表示幅 (セル数) を出す。 (main)

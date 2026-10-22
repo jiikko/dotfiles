@@ -4,7 +4,7 @@
 # バージョンは .golangci.yml (version: "2") と整合させること。
 GOLANGCI_LINT_VERSION := v2.5.0
 
-.PHONY: lint test vet-gorules
+.PHONY: lint test vet-gorules probe
 
 lint: vet-gorules
 	../../scripts/go_module_graph.sh
@@ -19,3 +19,11 @@ test:
 	# 確保の回数の予算 (filer/alloc_budget_test.go) は -race の計装で揺れるので、-race なしでも回す。
 	# 仮想化の乱数の操作列のテスト (filer/virt_test.go) は -race で 7 倍遅く (4 秒 → 28 秒)、描画の計算を比べるだけなので -race なしで回す
 	go test -count=1 -run '^(TestFrameAllocBudget|TestVirtualizedRandomOpsMatchFull)$$' ./filer/
+
+# 実物のディレクトリでヘッドレスに台本を回し、操作ごとの所要と資源の推移を測る (tools/tfprobe。読み方は CLAUDE.md の「実物で測る」)。
+# 結果は本体の checkout の tmp/ へ (worktree の tmp は worktree と一緒に消える)。例: make probe ROOT=~/Downloads CYCLES=10 ARGS=-cpuprofile
+ROOT ?= $(abspath ..)
+CYCLES ?= 5
+OUT ?= $(abspath $(shell git rev-parse --git-common-dir)/..)/tmp/tfprobe-$(shell date +%Y%m%d-%H%M%S)
+probe:
+	go run ./tools/tfprobe -root $(ROOT) -out $(OUT) -cycles $(CYCLES) $(ARGS)

@@ -176,6 +176,11 @@ linters:
         text: (stdout への直接出力|「今」は)
         linters:
           - forbidigo
+      # tfprobe は計測の道具: 結果を stdout へ出し、所要を壁時計で測る (filer の「今」の注入とは別の用途)
+      - path: ^tools/tfprobe/main\.go$
+        text: (stdout への直接出力|「今」は)
+        linters:
+          - forbidigo
       # テストのテーブル/フローの相似は仕様 (dupl の対象にしない)
       - path: _test\.go
         linters:
