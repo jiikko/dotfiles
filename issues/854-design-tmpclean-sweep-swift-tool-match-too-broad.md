@@ -33,6 +33,12 @@ framework を読むもの) から集める。テスト (`TestSwiftToolCommand`) 
 ## 状態
 
 - 2026-10-21: ユーザーが make (dev-fg-loop) を一度止める予定。止めた後の sweep (次の日の SessionStart) で残りが消えるかを見る
+- 2026-10-22: 同じ形が再発した。09:30 の sweep は removed=6,426・kept 15,174 (「動いている Swift のツールの起動より後に作られた」14,853 /
+  「中身がある」321)・rc=0。範囲を決めたのは `pid 71058 (2026-10-15 22:34:50 から): /Applications/Xcode.app/Contents/Developer/usr/bin/make dev-fg-loop`
+  (10/10 の pid 78459 とは別。止めた後に再び起動されていた)。同じ日に cleanup-tmp-dir skill の `tmpclean apply` が、3 日より古い
+  `TemporaryDirectory.*` 8,225 件を含む 23,362 件をゴミ箱へ移した (plan eb4171aba07c4648)。11:40 ごろユーザーが obaket を止め、
+  pid 71058 が居ないことを `ps -p 71058` (rc=1) で確かめた。次の日の sweep で残りが消えるかを見る。dev ループは止めてもまた起動されるので、
+  案 A のままだと同じ形が繰り返す
 - 決めるのはユーザー (起票の時点では「よく分かっていない。とりあえず issue に」)
 
 ## 関連ファイル
