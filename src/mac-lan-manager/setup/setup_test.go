@@ -571,9 +571,13 @@ func TestStaticIPConcurrentRunsChangeOnce(t *testing.T) {
 			if n := strings.Count(readLog(dir), "-setmanual][Thunderbolt Ethernet][192.168.100.1"); n != 1 {
 				t.Fatalf("stale=%v: 同時の 2 本で変更が %d 回: %q", stale, n, readLog(dir))
 			}
-			if stale { // 次の回も「止まった lock」から始める
-				_ = os.MkdirAll(a.lockPath(), 0o700)
-				_ = os.WriteFile(a.lockPath()+"/pid", []byte("999999\n"), 0o600)
+			if stale { // 次の回も「止まった lock」から始める (作れないと新しい lock で走り、件数は 1 のまま引き取りの窓を見なくなる)
+				if err := os.MkdirAll(a.lockPath(), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(a.lockPath()+"/pid", []byte("999999\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
 	}
@@ -676,8 +680,13 @@ func TestStaticIPLockPidReuse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = os.WriteFile(s.lockPath()+"/pid", pid, 0o600)
-	_ = os.WriteFile(s.lockPath()+"/start", st, 0o600)
+	// 書けないと、空の pid を「生きている」と読んで断り、起動時刻の照合を通らないまま緑になる
+	if err := os.WriteFile(s.lockPath()+"/pid", pid, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.lockPath()+"/start", st, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command("/bin/sh", "-c", s.Script())
 	cmd.Env = []string{"PATH=" + path, "LC_ALL=C"}
 	out, err := cmd.CombinedOutput()
