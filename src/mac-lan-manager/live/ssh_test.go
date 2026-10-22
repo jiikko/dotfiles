@@ -90,3 +90,20 @@ func TestSSHRunWithObservePeer(t *testing.T) {
 		})
 	}
 }
+
+// RunQuiet (lanmgr の広告を止める ssh) の失敗は、理由の 1 行と終了コードを err に持つ。lanmgr の unadvertise は終了コード
+// (setup.ExitOtherName) で「相手は別の名前を広告している」を見分け、理由を画面に出す
+func TestRunQuietKeepsExitCodeAndReason(t *testing.T) {
+	ng := fakeSSH(t, `echo 'mac-lan-manager: 別の名前 (air6.wired.local) を広告している (止めない)' >&2; exit 4`)
+	err := runQuiet(context.Background(), []string{ng})
+	var ec interface{ ExitCode() int }
+	if !errors.As(err, &ec) || ec.ExitCode() != setup.ExitOtherName {
+		t.Fatalf("終了コードが err に無い: %v", err)
+	}
+	if !strings.Contains(err.Error(), "air6.wired.local") {
+		t.Errorf("理由の文が err に無い: %v", err)
+	}
+	if err := runQuiet(context.Background(), nil); err == nil {
+		t.Error("起こすコマンドが無いのに成功した")
+	}
+}

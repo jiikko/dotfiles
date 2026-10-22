@@ -4,11 +4,8 @@ package live
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -55,15 +52,15 @@ func Options() (lanmgr.Options, error) {
 		SpeedTest:  SpeedTest,
 		Reach:      Reach,
 		LookupHost: lookupHost,
-		RunQuiet: func(ctx context.Context, argv []string) error {
-			_, err := RunOut(ctx, argv[0], argv[1:]...)
-			var ee *exec.ExitError
-			if errors.As(err, &ee) && len(ee.Stderr) > 0 { // 理由 (相手の sh が stderr に出した 1 行) を画面に届ける。終了コードは %w で残る
-				return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
-			}
-			return err
-		},
+		RunQuiet:   runQuiet,
 	}, nil
+}
+
+// runQuiet は端末を渡さずに起こし、stdout を捨てる。失敗の err は SSHRun の *RunError で、理由 (相手の sh が stderr に出した 1 行) と
+// 終了コードを持つ (lanmgr の unadvertise は終了コードで「別の名前を広告している」を見分ける)
+func runQuiet(ctx context.Context, argv []string) error {
+	_, err := SSHRun(ctx, argv)
+	return err
 }
 
 // RunOut はコマンドを起こして標準出力を返す (subproc の WaitDelay 付き)。
