@@ -1,5 +1,7 @@
 # 854 (design): tmpclean sweep の「Swift のツール」の拾い方が広く、Xcode の中の make が動いている間は消えない
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-22〜）
+
 起票日: 2026-10-21
 
 ## 概要
