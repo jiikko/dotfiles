@@ -96,6 +96,9 @@ type PeerNet struct {
 	// 同じに扱い、鍵を置く手順 (端末を持つ ssh-copy-id) で人が指紋を確かめて受け入れる
 	HostKeyUnknown bool
 	NetKnown       bool
+	// NetErr は鍵で入れたのに NetKnown にしなかった理由 (読めなかったサービスの名前か、読み取りの失敗)。画面の板は「読めていない」とだけ
+	// 出すので、どのサービスがなぜかは操作のログと dump --peer にだけ出る
+	NetErr string
 	// AdvertKnown は有線の名前の広告の状態 (Advert) を読めた (wiredname.go)
 	AdvertKnown bool
 	Advert      NameState
@@ -154,8 +157,15 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 		}
 		return run(ctx, d.SSHArgv(false, true, strings.Join(words, " ")))
 	}
-	snap, err := netinfo.Read(ctx, remote)
-	if err != nil && !errors.Is(err, netinfo.ErrIPsIncomplete) { // IPs は使わない (Offline はサービスだけで決まる)
+	snap, err := netinfo.ReadServices(ctx, remote) // IPs は使わない (Offline はサービスだけで決まる)
+	// 1 つでも読めなかったサービスがあれば判定できないにする: そのサービスは Offline から黙って外れ、相手に有線が無い・(無し) と言い切る
+	// (ルーターの無い有線が 2 つある相手では、もう一方を固定の対象に選びうる)
+	switch {
+	case err != nil:
+		p.NetErr = err.Error()
+		return p
+	case len(snap.Unread) > 0:
+		p.NetErr = "読めないサービス: " + strings.Join(snap.Unread, ", ")
 		return p
 	}
 	p.NetKnown = true

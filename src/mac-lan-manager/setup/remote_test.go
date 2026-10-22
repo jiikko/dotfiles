@@ -39,8 +39,13 @@ func fakeRemote(t *testing.T, key error) (Run, *[][]string) {
 		"'networksetup' '-getinfo' 'Wi-Fi'":                fix("getinfo_wifi.txt"),
 		"'ifconfig' 'en13'":                                fix("ifconfig_en13.txt"),
 		"'ifconfig' 'en0'":                                 fix("ifconfig_en0.txt"),
-		"'ifconfig' '-l'":                                  "lo0 en0 en13",
+		// 残りのサービスも本物の返り方で答える (macOS 27.0.1 で実測: 抜いたアダプタは ifconfig が "does not exist" で rc=1、-getinfo は読める)
+		"'ifconfig' 'bridge0'":                               "bridge0: flags=8822<BROADCAST,SMART,SIMPLEX,MULTICAST> mtu 1500\n\tstatus: inactive\n",
+		"'networksetup' '-getinfo' 'Thunderbolt Bridge'":     "DHCP Configuration\nClient ID: \nIPv6: Automatic\n",
+		"'networksetup' '-getinfo' 'USB 10/100/1G/2.5G LAN'": "DHCP Configuration\nClient ID: \nIPv6: Automatic\nEthernet Address: (null)\n",
+		"'networksetup' '-getinfo' 'iPhone USB'":             "DHCP Configuration\nClient ID: \nIPv6: Automatic\nEthernet Address: (null)\n",
 	}
+	gone := map[string]bool{"'ifconfig' 'en10'": true, "'ifconfig' 'en11'": true}
 	var calls [][]string
 	return func(_ context.Context, argv []string) (string, error) {
 		calls = append(calls, argv)
@@ -50,6 +55,9 @@ func fakeRemote(t *testing.T, key error) (Run, *[][]string) {
 		}
 		if o, ok := out[remote]; ok {
 			return o, nil
+		}
+		if gone[remote] {
+			return "", exitError{1, "exit status 1: ifconfig: interface " + strings.Trim(remote[len("'ifconfig' "):], "'") + " does not exist"}
 		}
 		return "", exitError{1, "no fake: " + remote}
 	}, &calls
@@ -253,20 +261,37 @@ func TestObservePeerHostKey(t *testing.T) {
 }
 
 // サービスを読み終えた後、I/F の IP の途中で期限が来ても、相手の有線は読めたものとして返す (相手の判定はサービスだけで決まる)。
-func TestObservePeerIgnoresIncompleteIPs(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	base, _ := fakeRemote(t, nil)
-	run := func(c context.Context, argv []string) (string, error) {
-		if argv[len(argv)-1] == "'ifconfig' '-l'" {
-			cancel()
-			return "", context.Canceled
-		}
-		return base(c, argv)
-	}
-	p := ObservePeer(ctx, run, Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"})
+func TestObservePeerDoesNotReadIPs(t *testing.T) {
+	run, calls := fakeRemote(t, nil)
+	p := ObservePeer(context.Background(), run, dest)
 	if !p.NetKnown || p.Service != "Thunderbolt Ethernet" {
-		t.Errorf("IP の途中の期限で相手の有線を読めない扱いにした: %+v", p)
+		t.Fatalf("前提: 相手の有線を読めない: %+v", p)
+	}
+	for _, c := range *calls {
+		if c[len(c)-1] == "'ifconfig' '-l'" {
+			t.Errorf("使わない I/F 全部の IP を ssh で集めた: %q", c)
+		}
+	}
+}
+
+// 期限切れでもないのに読めなかったサービスがあれば、相手のネットワークは「判定できない」にする (そのサービスが Offline から黙って外れ、
+// 相手に有線が無いと言い切る)。抜いたアダプタ (ifconfig が "does not exist") は普段から読めないので数えない (TestObservePeerReadsNetwork)
+func TestObservePeerUnknownWhenServiceUnread(t *testing.T) {
+	for _, broken := range []string{"'ifconfig' 'en13'", "'networksetup' '-getinfo' 'Thunderbolt Ethernet'"} {
+		base, _ := fakeRemote(t, nil)
+		run := func(c context.Context, argv []string) (string, error) {
+			if argv[len(argv)-1] == broken {
+				return "", exitError{255, "exit status 255: mux_client_request_session: read from master failed"}
+			}
+			return base(c, argv)
+		}
+		p := ObservePeer(context.Background(), run, dest)
+		if p.NetKnown {
+			t.Errorf("%s を読めなかったのに相手のネットワークを読めたことにした: %+v", broken, p)
+		}
+		if p.NetErr != "読めないサービス: Thunderbolt Ethernet" { // 画面の板は「読めていない」とだけ出すので、どれがかはここにしか残らない
+			t.Errorf("%s: NetErr = %q", broken, p.NetErr)
+		}
 	}
 }
 

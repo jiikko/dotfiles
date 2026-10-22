@@ -557,6 +557,10 @@ func TestReadIfconfigOutcome(t *testing.T) {
 			t.Errorf("%s: IfRead=%v IfGone=%v, want %v %v", s.Device, s.IfRead, s.IfGone, w[0], w[1])
 		}
 	}
+	// 抜いたアダプタ (en13・bridge0。-getinfo は読める) は数えない。ssh が落ちた en10 と、偽物に答えの無い en11 (USB と iPhone USB の -getinfo も無い) は数える
+	if want := []string{"USB 10/100/1G/2.5G LAN", "iPhone USB"}; !slices.Equal(snap.Unread, want) {
+		t.Errorf("Unread = %q, want %q", snap.Unread, want)
+	}
 }
 
 // codeError は終了コードを持つエラー (相手の ssh の Run の失敗の形)。
@@ -594,5 +598,37 @@ func TestLanIF(t *testing.T) {
 		if got := s.LanIF(dev); got != want {
 			t.Errorf("LanIF(%q) = %v, want %v", dev, got, want)
 		}
+	}
+}
+
+// I/F の無いサービス (VPN。Device が空) は ifconfig も -getinfo も読めないのが普段の形なので Unread に数えない。期限切れでない
+// -getinfo の失敗は数える (ルーターの有無が分からないまま Offline から外れる)
+func TestReadServicesUnread(t *testing.T) {
+	order := "An asterisk (*) denotes that a network service is disabled.\n" +
+		"(1) Ethernet\n(Hardware Port: Ethernet, Device: en5)\n\n" +
+		"(2) My VPN\n(Hardware Port: com.wireguard.macos, Device: )\n\n"
+	run := func(_ context.Context, name string, args ...string) (string, error) {
+		switch strings.TrimSpace(name + " " + strings.Join(args, " ")) {
+		case "networksetup -listnetworkserviceorder":
+			return order, nil
+		case "ifconfig en5":
+			return "en5: flags=8863<UP> mtu 1500\n\tstatus: active\n", nil
+		case "networksetup -getinfo Ethernet":
+			return "", codeError{255, "exit status 255: Connection closed"}
+		}
+		return "", codeError{1, "exit status 1: interface  does not exist"}
+	}
+	snap, err := ReadServices(context.Background(), run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.Services) != 2 || snap.Services[1].Device != "" {
+		t.Fatalf("前提: VPN の行を読めていない: %+v", snap.Services)
+	}
+	if want := []string{"Ethernet"}; !slices.Equal(snap.Unread, want) {
+		t.Errorf("Unread = %q, want %q (VPN は数えず、-getinfo の失敗は数える)", snap.Unread, want)
+	}
+	if len(snap.IPs) != 0 {
+		t.Errorf("ReadServices が I/F 全部の IP を集めた: %+v", snap.IPs)
 	}
 }

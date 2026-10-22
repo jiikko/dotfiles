@@ -199,8 +199,8 @@ func (m *Model) takeObserve() {
 func (m *Model) applyObserve(p setup.PeerNet) {
 	su := m.su
 	su.obs, su.seen, su.ch, su.stop = p, true, nil, nil
-	m.logf("observe done %s key_ok=%v host_key_unknown=%v err=%v net=%v service=%q ip=%s method=%s (%.1f 秒)", su.host, p.KeyOK, p.HostKeyUnknown,
-		p.KeyErr, p.NetKnown, p.Service, p.IP, p.Method, m.o.Now().Sub(su.obsAt).Seconds())
+	m.logf("observe done %s key_ok=%v host_key_unknown=%v err=%v net=%v net_err=%q service=%q ip=%s method=%s (%.1f 秒)", su.host, p.KeyOK, p.HostKeyUnknown,
+		p.KeyErr, p.NetKnown, p.NetErr, p.Service, p.IP, p.Method, m.o.Now().Sub(su.obsAt).Seconds())
 	if p.KeyErr != nil { // 画面には状態の行で出す。理由の全文 (ssh の stderr) は一覧に残す (行は幅で切れる)
 		m.record("接続できない ("+su.host+"): "+p.KeyErr.Error(), false)
 	}

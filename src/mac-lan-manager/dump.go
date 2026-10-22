@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/termsafe"
+
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/setup"
 )
@@ -168,6 +170,7 @@ type peerReport struct {
 	KeyOK        bool   `json:"key_ok"`
 	KeyErr       string `json:"key_err,omitempty"`
 	NetKnown     bool   `json:"net_known"`
+	NetErr       string `json:"net_err,omitempty"`
 	Service      string `json:"service"`
 	PeerIP       string `json:"service_ip"`
 	Method       string `json:"method"`
@@ -199,7 +202,7 @@ func dumpPeer(d setup.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan s
 	if stopped || ctx.Err() != nil { // 止められた: 「判定できない」の結果として 0 で返さない (走査の dump と同じく 130。スクリプトから中断を区別する)
 		return 130
 	}
-	r := peerReport{User: d.User, IP: d.IP, HostKeyAlias: d.HostKeyAlias, KeyOK: p.KeyOK, NetKnown: p.NetKnown,
+	r := peerReport{User: d.User, IP: d.IP, HostKeyAlias: d.HostKeyAlias, KeyOK: p.KeyOK, NetKnown: p.NetKnown, NetErr: p.NetErr,
 		Service: p.Service, PeerIP: p.IP, Method: p.Method, Mask: p.Mask, Router: p.Router}
 	switch {
 	case p.KeyOK:
@@ -230,6 +233,9 @@ func dumpPeer(d setup.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan s
 	fmt.Fprintf(stdout, "\nnet_known: %v", r.NetKnown)
 	if r.KeyOK && !r.NetKnown {
 		fmt.Fprint(stdout, "  (入れたが相手のネットワークを読めなかった)")
+		if r.NetErr != "" {
+			fmt.Fprintf(stdout, "  %s", termsafe.PlainLine(r.NetErr))
+		}
 	}
 	fmt.Fprintln(stdout)
 	if r.NetKnown {

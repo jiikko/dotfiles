@@ -312,6 +312,10 @@ type IP struct {
 type Snapshot struct {
 	Services []Service
 	IPs      []IP // ifconfig の I/F 全部の IPv4 (lo0 を除く)
+	// Unread は、期限切れでもないのに ifconfig か -getinfo を読めなかったサービスの名前。そのサービスは Active / Read が偽のまま残り、
+	// Offline などの判定から黙って外れる (相手に有線が無いと言い切る)。普段から読めない形は数えない: I/F が無い (抜いたアダプタ。
+	// ifconfig は "does not exist" で落ち、-getinfo は読める。macOS 27.0.1 で実測) と、I/F の無いサービス (VPN。Device が空。未実測なので -getinfo の失敗も数えない)
+	Unread []string
 }
 
 var (
@@ -434,14 +438,15 @@ func ifGone(err error) bool {
 	return strings.Contains(err.Error(), msg) || (errors.As(err, &ee) && strings.Contains(string(ee.Stderr), msg))
 }
 
-// Read はこの Mac のネットワークを読む。サービスごとに getinfo と ifconfig を起こし、I/F 全部 (ifconfig -l) の IPv4 も集める。
-// 1 つのサービスが読めなくても全体は止めない (読めた所だけ埋める)。サービスの一覧そのものが読めなければ err を返す。
-func Read(ctx context.Context, run Runner) (Snapshot, error) {
+// ReadServices はサービスだけを読む (Read の I/F 全部の IP の段を打たない。相手を ssh 越しに読むときは I/F ごとに 1 本ずつ ssh になり、
+// IPs を使わない観測でその分の時間を食った)。
+func ReadServices(ctx context.Context, run Runner) (Snapshot, error) {
 	order, err := run(ctx, "networksetup", "-listnetworkserviceorder")
 	if err != nil {
 		return Snapshot{}, err
 	}
 	svcs := ParseServiceOrder(order)
+	var unread []string
 	for i := range svcs {
 		s := &svcs[i]
 		if s.Disabled {
@@ -456,9 +461,15 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 			}
 		} else {
 			s.IfGone = s.Device != "" && ifGone(err) // Device の無いサービス (VPN など) も "interface  does not exist" で落ちる (抜いたアダプタではない)
+			if s.Device != "" && !s.IfGone {
+				unread = append(unread, s.Name)
+			}
 		}
 		out, err := run(ctx, "networksetup", "-getinfo", s.Name)
 		if err != nil {
+			if s.Device != "" && !slices.Contains(unread, s.Name) {
+				unread = append(unread, s.Name)
+			}
 			continue // ルーターの有無が分からない: Read を立てない (有線とも インターネット側とも決めない)
 		}
 		var ip string
@@ -474,7 +485,16 @@ func Read(ctx context.Context, run Runner) (Snapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, err
 	}
-	snap := Snapshot{Services: svcs}
+	return Snapshot{Services: svcs, Unread: unread}, nil
+}
+
+// Read はこの Mac のネットワークを読む。サービスごとに getinfo と ifconfig を起こし、I/F 全部 (ifconfig -l) の IPv4 も集める。
+// 1 つのサービスが読めなくても全体は止めない (読めた所だけ埋める)。サービスの一覧そのものが読めなければ err を返す。
+func Read(ctx context.Context, run Runner) (Snapshot, error) {
+	snap, err := ReadServices(ctx, run)
+	if err != nil {
+		return Snapshot{}, err
+	}
 	list, err := run(ctx, "ifconfig", "-l")
 	if err != nil {
 		if ctx.Err() != nil {
