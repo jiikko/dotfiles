@@ -342,6 +342,12 @@ func TestRemoteCommandRunsDetached(t *testing.T) {
 		t.Errorf("前面が戻る前に変更が走った (印を変更の後に書いている): %q", readLog(dir))
 	}
 	waitFor(t, "背景で戻しまで走る", func() bool { return strings.Contains(readLog(dir), "-setdhcp") })
+	// 背景は戻しの後に lock を外す (finish の drop: 改名してから消す)。偽の sudo -b は背景を待たないので、ここで待たずに戻ると
+	// drop の改名が TempDir の後始末の途中に入り、「directory not empty」で落ちる
+	waitFor(t, "背景が lock を外し終える", func() bool {
+		m, _ := filepath.Glob(s.lockPath() + "*")
+		return len(m) == 0
+	})
 	// nohup は ssh が切れたときの SIGHUP で止まらないためのもの。SIGHUP は本物の端末が切れないと届かないので、ここでは
 	// 配線だけを固定する (挙動は段 4 の前の人手の確認: ssh が切れても変更が最後まで走るか)
 	if !strings.Contains(s.RemoteCommand(), "sudo -n -b nohup sh -c ") {
