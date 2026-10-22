@@ -1,8 +1,10 @@
 # 864 (test): lan-manager 監査 (2026-10-22) のテスト・CI
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-22〜）
-
 起票日: 2026-10-22
+
+> **waiting: A9 の flaky の再発を待つ。** A1〜A8 は全部済んだ。次に `discover/scan_test.go:TestScannerFindsPeersAndClosesAll` が
+> 「起こした数 = 9, want 8」で落ちたら、失敗の文の「起こした順」(dns-sd の argv) で余計な 1 本がどの引き直しかが分かる。
+> 時間で起こす引き直し (regather) なら、待ちの長さに頼る数の assert を直す。それ以外なら走査の重複起動の不具合として open に戻す
 
 ## 概要
 
@@ -112,7 +114,8 @@ lan-manager の全体監査 (865) のうち、テスト (test-cleanup / test-hel
   root の `speedLedger` は「書けば失敗する」台帳として残した (speedtest / ping が台帳を書かないことを見る。`Store` は書ける)。
   変異: `Scan.Close` が Changed を閉じない形にする → glogx の `TestLanChangedMsgRearms` が止まる (`go test -timeout 60s` で red。
   -timeout を付けない run は mutate-verify の 600 秒の上限で判定不能になった)
-- [ ] A9 flaky の疑い (観測待ち)
+- [ ] A9 flaky の疑い (観測待ち)。2026-10-22 21:05 に load average 18〜40 の中で `-race -count=200 -cpu 1,4` (計 400 回) を回して 0 件
+  (起票時と条件が違う試行なので、起票時の 1 回とは別に数える)。これ以上は回数を積まず、仕込んだ観測で次の再発を待つ
 - [x] A7 (dotfiles-0e。862 の 6 と同じ commit)。forbidigo ではなく、`Upsert` を `ledger.Store` から外して compiler が止める形にした (lanmgr は Store しか持たないので、丸ごと置き換える口を呼べない)
 - [x] A8 (dotfiles-0e。862 の 5 と同じ commit)。width_test.go・tools/width-probe の除外と、dispWidth・ruleguard を指すコメントを消した。`make lint` は 0 issues のまま
 - [x] 862 で解消 (2026-10-22。P3 の 9 件 (却下 1) を全部決着。done へ移した)
