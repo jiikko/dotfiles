@@ -35,5 +35,8 @@
 
 ## 進捗
 
-- [ ] 下限 (またはその代わりの突き合わせ) を直す
-- [ ] 変異で step が赤になることを確かめる
+- [x] 下限の代わりに、PASS の本数を glogx の中の `func TestDoctor*` の数と突き合わせ、1 本以上を求める形にした (commit「ci(doctor): doctor テストの本数を固定の下限でなく定義の数と突き合わせ、test の step に pipefail を付ける」)。`-run` は `^TestDoctor` に揃えた
+  - `go test -list` との突き合わせは採らない: 同じパターンで数えるので、名前を変えて全部外れると両方 0 で一致して通る
+  - 敵対的レビュー (opus) の P1 (前からの形): 既定の shell は pipefail を付けず `go test | tee` の rc が 0 になり、テスト関数の外の失敗を通す。test の step に `shell: bash` を付けた
+  - 記録だけ: 改行の無い stdout を出すテスト・build tag で外れるファイル・testdata の下の `_test.go` は数え方が合わず偽の赤になりうる (今の木には 0 件)
+- [x] gate の script を手元で 3 つの形で回した (CI の上で赤は見ていない): 今のまま 緑 (108/108) / package を 1 つ外す 赤 (4/108) / パターンの書き損じ 赤 (0/108)

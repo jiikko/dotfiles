@@ -1,7 +1,5 @@
 # 867 (cleanup): ruby-refs-index の measure.rb のコメントを今の production の rg の引数に合わせる
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-22〜）
-
 起票日: 2026-10-22
 
 ## 概要
@@ -32,4 +30,4 @@
 
 ## 進捗
 
-- [ ] コメントを直す
+- [x] コメントを直す (commit「docs(ruby-refs-index): measure.rb の rg の基準線のコメントを今の production に合わせる」。2 か所。引数は README の判断どおり変えない)

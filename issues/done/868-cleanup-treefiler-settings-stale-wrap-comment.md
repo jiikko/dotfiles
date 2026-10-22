@@ -1,7 +1,5 @@
 # 868 (cleanup): treefiler の settings.go 冒頭の「未対応: Wrap lines」が実装済みの今と合わない
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-22〜）
-
 起票日: 2026-10-22
 
 ## 概要
@@ -30,5 +28,5 @@ README (`src/treefiler/README.md`) は Wrap lines / Sort by / Reverse を設定�
 
 ## 進捗
 
-- [ ] コメントを直す
+- [x] コメントを直す (commit「docs(treefiler): settings.go の冒頭の「写さない項目」「未対応」を今の設定の項目に合わせる」)。残りの写さない項目は spec §0.1 と項目一覧の両方で今も写していないことを確かめた
 - [x] spec §0.1 を確かめる (古い記述は無い。2026-10-22)
