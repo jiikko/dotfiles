@@ -449,8 +449,8 @@ func TestFoldKeysAndReroot(t *testing.T) {
 	}
 }
 
-// root で ← (h / ctrl+b も) を押すと、1 段上げてから新しい root へカーソルが移る (- を押さずに ← だけで上へ辿れる)。
-// 元の root の開いた状態は保つ。
+// root で ← (h / ctrl+b も) を押すと root が 1 段上がり、カーソルは元の root に残る (- を押さずに ← だけで上へ辿れる)。
+// 元の root の開いた状態は保つ。もう一度押すと、カーソルは元の root から新しい root (親) へ移る。
 func TestLeftAtRootReroots(t *testing.T) {
 	for _, key := range []string{"left", "h", "ctrl+b"} {
 		t.Run(key, func(t *testing.T) {
@@ -463,11 +463,15 @@ func TestLeftAtRootReroots(t *testing.T) {
 				t.Fatalf("前提: カーソルが root にいない: %s", m.cur.path())
 			}
 			m.HandleKey(key)
-			if m.root == oldRoot || oldRoot.parent != m.root || m.cur != m.root {
-				t.Fatalf("root で %s を押しても 1 段上がって新しい root へ移らない: root=%s cur=%s", key, m.root.path(), m.cur.path())
+			if m.root == oldRoot || oldRoot.parent != m.root || m.cur != oldRoot {
+				t.Fatalf("root で %s: root が 1 段上がってカーソルが元の root に残らない: root=%s cur=%s", key, m.root.path(), m.cur.path())
 			}
 			if !oldRoot.expanded {
 				t.Error("元の root が畳まれた")
+			}
+			m.HandleKey(key)
+			if m.cur != m.root || m.root != oldRoot.parent {
+				t.Fatalf("もう一度 %s で親 (新しい root) へ移らない: root=%s cur=%s", key, m.root.path(), m.cur.path())
 			}
 		})
 	}
@@ -478,7 +482,8 @@ func TestLeftAtSlashStays(t *testing.T) {
 	isolateConfig(t)
 	m := newAt(t, "/usr")
 	m.HandleKey("h") // /usr (root) へ
-	m.HandleKey("h") // / へ上がる
+	m.HandleKey("h") // / へ上がる (カーソルは /usr のまま)
+	m.HandleKey("h") // / (root) へ
 	if m.root.path() != "/" || m.cur != m.root {
 		t.Fatalf("/usr の root から h で / へ上がらない: root=%s cur=%s", m.root.path(), m.cur.path())
 	}
