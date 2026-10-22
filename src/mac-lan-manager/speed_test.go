@@ -19,7 +19,7 @@ import (
 	"mac-lan-manager/speedtest"
 )
 
-// speedLedger は台帳の偽物 (読むだけ)。
+// speedLedger は書き込みを断る台帳の偽物 (lanmgrtest.Store は書けるので使わない。speedtest / ping が台帳を書かないことを、書けば失敗する形で見る)。
 type speedLedger struct{ hosts []ledger.Host }
 
 func (s *speedLedger) Load() ([]ledger.Host, error)                { return s.hosts, nil }
@@ -48,10 +48,10 @@ func speedModelWith(readErr error, busy bool, more []ledger.Host) func() (*lanmg
 			},
 			LocalHost: func() string { return "me.local" },
 			StartScan: func(time.Time) lanmgr.Scanner {
-				return &dumpScan{busy: busy, peers: []discover.Peer{
-					{Host: "m2macmini.local", Instances: []string{"mini"}, SSH: true, Addrs: map[int]string{14: "192.168.50.7", 27: "192.168.100.12"}},
-					{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}},
-				}}
+				return newScan(busy, nil,
+					discover.Peer{Host: "m2macmini.local", Instances: []string{"mini"}, SSH: true, Addrs: map[int]string{14: "192.168.50.7", 27: "192.168.100.12"}},
+					discover.Peer{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}},
+				)
 			},
 			IfName: func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
 			Ledger: &speedLedger{hosts: append([]ledger.Host{
@@ -261,7 +261,7 @@ func TestSpeedtestReportsScanError(t *testing.T) {
 			},
 			LocalHost: func() string { return "me.local" },
 			StartScan: func(time.Time) lanmgr.Scanner {
-				return &dumpScan{err: errors.New("dns-sd -B _ssh._tcp を起こせない")}
+				return newScan(false, errors.New("dns-sd -B _ssh._tcp を起こせない"))
 			},
 			Ledger: &speedLedger{hosts: []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "192.168.100.12"}}},
 			User:   "koji",

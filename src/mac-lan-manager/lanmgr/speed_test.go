@@ -423,7 +423,7 @@ func TestSpeedSkipsUnreachableOthers(t *testing.T) {
 		h.m.o.IfName = func(i int) string { return map[int]string{14: "en0", 27: "en13", 31: "en14"}[i] }
 		p := mini
 		p.Addrs = map[int]string{14: "192.168.50.7", 27: "169.254.217.100", 31: c.peerIP}
-		h.scan.peers = []discover.Peer{p}
+		h.scan.SetPeers([]discover.Peer{p}...)
 		h.m.Advance(t0)
 		h.cursorTo(t, "m2macmini.local")
 		h.keys("t")
@@ -466,7 +466,7 @@ func TestSpeedDropsStaleIPs(t *testing.T) {
 	moved := mini
 	moved.Addrs = map[int]string{14: "192.168.50.8", 27: "169.254.217.100"}
 	h.keys("t", "j") // 板で Wi-Fi の 192.168.50.7 を選んだ後に、相手のメイン IP が変わる
-	h.scan.peers = []discover.Peer{moved}
+	h.scan.SetPeers([]discover.Peer{moved}...)
 	h.m.Advance(t0)
 	h.keys("y")
 	if h.m.speedRun != nil || f.calls.Load() != 1 {
@@ -485,7 +485,7 @@ func TestSpeedDropsStaleIPs(t *testing.T) {
 		t.Errorf("今の経路 (.8) の結果が見えていない経路 (.7) より下に出た:\n%s", s)
 	}
 	// Bonjour が相手を一時的に見失っても、測った結果は「未測定」にならない
-	h.scan.peers = nil
+	h.scan.SetPeers(nil...)
 	h.m.Advance(t0)
 	if s := h.screen(); strings.Contains(s, "未測定") || !strings.Contains(s, "40 Mbps") {
 		t.Errorf("見失った間に結果が消えた:\n%s", s)
@@ -497,14 +497,14 @@ func TestSpeedUsesLinkAtRunTime(t *testing.T) {
 	h, f := speedHarness(t)
 	early := mini
 	early.Addrs = map[int]string{14: "192.168.50.7"} // 台帳の内部 IP はまだ有線で見えていない
-	h.scan.peers = []discover.Peer{early}
+	h.scan.SetPeers([]discover.Peer{early}...)
 	h.m.Advance(t0)
 	h.cursorTo(t, "m2macmini.local")
 	h.keys("t")
 	if a := h.m.speedAsk; a == nil || a.paths[a.cur].ip != "169.254.217.100" || a.paths[a.cur].link != netinfo.LinkUnknown {
 		t.Fatalf("前提: 内部 IP の線が分からない板にならない: %+v", h.m.speedAsk)
 	}
-	h.scan.peers = []discover.Peer{mini} // 有線で見えた
+	h.scan.SetPeers(mini) // 有線で見えた
 	h.m.Advance(t0)
 	h.keys("y")
 	f.started(t)

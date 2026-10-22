@@ -15,50 +15,19 @@ import (
 	"glogx/internal/testenv"
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
+	"mac-lan-manager/lanmgr/lanmgrtest"
 	"mac-lan-manager/live"
 	"mac-lan-manager/netinfo"
 )
 
-// fakeLanScan は Bonjour の走査の偽物 (dns-sd を起こさない)。closed で「止めたか」を見る。
-type fakeLanScan struct {
-	mu      sync.Mutex
-	peers   []discover.Peer
-	busy    bool
-	closed  bool
-	changed chan struct{}
-}
-
-func (f *fakeLanScan) Snapshot() []discover.Peer {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]discover.Peer(nil), f.peers...)
-}
-func (f *fakeLanScan) Busy(time.Time) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.busy && !f.closed
-}
-func (f *fakeLanScan) Changed() <-chan struct{} { return f.changed }
-func (f *fakeLanScan) Err() error               { return nil }
-
-// Close は本物 (discover.Scanner.Close) と同じく Changed を閉じる (待っている側は ok=false で抜ける)。
-func (f *fakeLanScan) Close() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if !f.closed {
-		f.closed = true
-		close(f.changed)
-	}
-}
-
 // lanScans はテストの中で起こした走査 (最後が今の走査)。
 var (
 	lanScansMu sync.Mutex
-	lanScans   []*fakeLanScan
+	lanScans   []*lanmgrtest.Scan
 	lanPeers   = []discover.Peer{{Host: "m2macmini.local", Instances: []string{"テストの Mac mini"}, SSH: true, SMB: true, Addrs: map[int]string{14: "192.168.1.20"}}}
 )
 
-func lastLanScan(t *testing.T) *fakeLanScan {
+func lastLanScan(t *testing.T) *lanmgrtest.Scan {
 	t.Helper()
 	lanScansMu.Lock()
 	defer lanScansMu.Unlock()
@@ -82,7 +51,8 @@ func fakeLanOptions() (lanmgr.Options, error) {
 	o.IfName = func(int) string { return "" }
 	o.User = "tester"
 	o.StartScan = func(time.Time) lanmgr.Scanner {
-		s := &fakeLanScan{peers: lanPeers, busy: true, changed: make(chan struct{}, 1)}
+		s := lanmgrtest.NewScan(lanPeers...)
+		s.SetWorking(true)
 		lanScansMu.Lock()
 		lanScans = append(lanScans, s)
 		lanScansMu.Unlock()
@@ -114,7 +84,7 @@ func TestLanOpensAndClosesWithL(t *testing.T) {
 	if m.activeFullScreen() != FullScreenNone {
 		t.Fatalf("L で閉じない (active=%v)", m.activeFullScreen())
 	}
-	if !scan.closed {
+	if scan.Closes() == 0 {
 		t.Error("閉じても走査 (dns-sd) を止めていない")
 	}
 }
@@ -170,13 +140,13 @@ func TestLanReopenRestartsScanAndRearmsOnlyCurrent(t *testing.T) {
 	m.handleKey("L")
 	m.handleKey("L")
 	second := lastLanScan(t)
-	if first == second || second.closed {
+	if first == second || second.Closes() > 0 {
 		t.Fatal("開き直しで走査を起こし直していない")
 	}
-	if m.lanV.Rearm(lanview.FixtureChangedMsg(first.changed, true)) != nil {
+	if m.lanV.Rearm(lanview.FixtureChangedMsg(first.Changed(), true)) != nil {
 		t.Error("古い走査の合図で待ち直した (待ちが 2 本になる)")
 	}
-	if m.lanV.Rearm(lanview.FixtureChangedMsg(second.changed, true)) == nil {
+	if m.lanV.Rearm(lanview.FixtureChangedMsg(second.Changed(), true)) == nil {
 		t.Error("今の走査の合図で待ち直さない (後から見つかった Mac が出ない)")
 	}
 }
@@ -188,7 +158,7 @@ func TestLanBusyTicksAndCancelAllStopsScan(t *testing.T) {
 		t.Error("走査中なのに tick が回らない (途中の結果が取り込まれない)")
 	}
 	m.cancelAll()
-	if !lastLanScan(t).closed {
+	if lastLanScan(t).Closes() == 0 {
 		t.Error("cancelAll で走査 (dns-sd) を止めていない")
 	}
 }
@@ -198,7 +168,7 @@ func TestLanBusyTicksAndCancelAllStopsScan(t *testing.T) {
 func TestLanChangedMsgRearms(t *testing.T) {
 	m := openLan(t)
 	scan := lastLanScan(t)
-	cur := (<-chan struct{})(scan.changed)
+	cur := scan.Changed()
 	if m.lanV.Fixture().Watching() != cur {
 		t.Fatal("開いたときに今の走査の合図を待っていない")
 	}
@@ -236,7 +206,7 @@ func TestLanReloadKeyRearmsWatch(t *testing.T) {
 	if first == second {
 		t.Fatal("r で走査を起こし直していない")
 	}
-	if m.lanV.Fixture().Watching() != (<-chan struct{})(second.changed) {
+	if m.lanV.Fixture().Watching() != second.Changed() {
 		t.Error("r の後も古い走査の合図を待っている")
 	}
 }

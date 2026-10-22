@@ -50,6 +50,7 @@
 - `src/mac-lan-manager/internal/testsandbox` (`mac-lan-manager/internal/testsandbox`) — Package testsandbox は、ledger と prefs のテストの書き込みを一時ディレクトリの配下に閉じ込める関門を持つ。 (internal)
 - `src/mac-lan-manager/internal/testwait` (`mac-lan-manager/internal/testwait`) — Package testwait はテストの「条件が成り立つまで刻みを回して待つ」を 1 つに持つ。 (internal)
 - `src/mac-lan-manager/lanmgr` (`mac-lan-manager/lanmgr`) — Package lanmgr は mac-lan-manager の画面を持つ。
+- `src/mac-lan-manager/lanmgr/lanmgrtest` (`mac-lan-manager/lanmgr/lanmgrtest`) — Package lanmgrtest は lanmgr の Scanner と ledger.Store の偽物を、本物の規約のまま 1 つずつ持つ (テスト専用。
 - `src/mac-lan-manager/ledger` (`mac-lan-manager/ledger`) — Package ledger は、管理対象の Mac の台帳を読み書きする (台帳は mac-lan-manager を実行している Mac の中だけに持つ)。
 - `src/mac-lan-manager/live` (`mac-lan-manager/live`) — Package live は lanmgr の画面を本物 (この Mac のネットワーク・Bonjour・台帳・設定・クリップボード) につなぐ。
 - `src/mac-lan-manager/netinfo` (`mac-lan-manager/netinfo`) — Package netinfo は、この Mac のネットワークのサービスと I/F の IP を、networksetup と ifconfig の出力から読む。

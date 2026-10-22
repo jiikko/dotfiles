@@ -105,7 +105,13 @@ lan-manager の全体監査 (865) のうち、テスト (test-cleanup / test-hel
   advanceUntil と無名の 3 か所、setup の waitFor)。名前の付いた 4 つは呼び出し元が多いので Until を呼ぶ 1 行の関数として残した。上限は元の値のまま。
   周の間は 1ms 眠る (Gosched で回す形は上限まで CPU を焼く)。`len(h.m.bg) > 0` の待ちは上限で Fatal するようになった (黙って先へ進まない)。
   変異: Until が上限で Fatal せず戻る旧の形にする → `TestUntilFailsAtLimit` が red。`-race` で lanmgr・setup は緑
-- [ ] A6 (dotfiles-b9)
+- [x] A6 (dotfiles-b9): 偽物を `lanmgr/lanmgrtest` (glogx からも使うので internal には置かない) の `Scan` と `Store` に寄せた。
+  lanmgr の `fakeScan` / `memStore`、root の `dumpScan` / `brokenStore` / `escStore`、glogx の `fakeLanScan` (2 か所) を消した。
+  `Scan` は本物の規約 (Close は何度呼んでもよく、閉じるときに Changed を閉じ、閉じている間は Busy が偽) を持つ。テストは同じ値を起こし直しに
+  使い回すので、harness の StartScan は `Reopen` してから返す (lanmgr の旧の偽物は閉じた後も busy を返していて、それに頼るテストが 1 本あった)。
+  root の `speedLedger` は「書けば失敗する」台帳として残した (speedtest / ping が台帳を書かないことを見る。`Store` は書ける)。
+  変異: `Scan.Close` が Changed を閉じない形にする → glogx の `TestLanChangedMsgRearms` が止まる (`go test -timeout 60s` で red。
+  -timeout を付けない run は mutate-verify の 600 秒の上限で判定不能になった)
 - [ ] A9 flaky の疑い (観測待ち)
 - [x] A7 (dotfiles-0e。862 の 6 と同じ commit)。forbidigo ではなく、`Upsert` を `ledger.Store` から外して compiler が止める形にした (lanmgr は Store しか持たないので、丸ごと置き換える口を呼べない)
 - [x] A8 (dotfiles-0e。862 の 5 と同じ commit)。width_test.go・tools/width-probe の除外と、dispWidth・ruleguard を指すコメントを消した。`make lint` は 0 issues のまま

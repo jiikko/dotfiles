@@ -267,7 +267,7 @@ func TestReachAutoUsesPeersOfSameAdvance(t *testing.T) {
 	}
 	awaitReach(t, h)
 	// 有線の I/F にも見えた (内部 IP が帯の番号で固定 = 有線の名前を持つ)。合図の 1 回の Advance だけで確かめ直す
-	h.scan.peers = []discover.Peer{{Host: "new.local", Instances: []string{"new"}, SSH: true, Addrs: map[int]string{14: "192.168.50.60", 27: "192.168.100.20"}}}
+	h.scan.SetPeers([]discover.Peer{{Host: "new.local", Instances: []string{"new"}, SSH: true, Addrs: map[int]string{14: "192.168.50.60", 27: "192.168.100.20"}}}...)
 	h.m.Advance(t0)
 	select {
 	case names := <-f.names:

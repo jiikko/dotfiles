@@ -15,25 +15,20 @@ import (
 
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
-	"mac-lan-manager/ledger"
+	"mac-lan-manager/lanmgr/lanmgrtest"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/setup"
 )
 
 func TestMain(m *testing.M) { widthenv.ExitIfUnsupported(); m.Run() }
 
-type dumpScan struct {
-	peers  []discover.Peer
-	busy   bool
-	closed bool
-	err    error
+// newScan は終わる / 終わらない (working) 走査の偽物 (lanmgrtest.Scan。Close で Changed を閉じる本物の規約)。
+func newScan(working bool, err error, peers ...discover.Peer) *lanmgrtest.Scan {
+	s := lanmgrtest.NewScan(peers...)
+	s.SetWorking(working)
+	s.SetErr(err)
+	return s
 }
-
-func (s *dumpScan) Snapshot() []discover.Peer { return s.peers }
-func (s *dumpScan) Busy(time.Time) bool       { return s.busy }
-func (s *dumpScan) Changed() <-chan struct{}  { return nil }
-func (s *dumpScan) Close()                    { s.closed = true }
-func (s *dumpScan) Err() error                { return s.err }
 
 func dumpModel(busy bool) func() (*lanmgr.Model, error) {
 	return func() (*lanmgr.Model, error) {
@@ -46,8 +41,8 @@ func dumpModel(busy bool) func() (*lanmgr.Model, error) {
 			},
 			LocalHost: func() string { return "me.local" },
 			StartScan: func(time.Time) lanmgr.Scanner {
-				return &dumpScan{busy: busy, peers: []discover.Peer{{Host: "m2macmini.local", Instances: []string{"kojiのMac mini"}, SSH: true,
-					Addrs: map[int]string{14: "192.168.50.7", 27: "169.254.217.100"}}}}
+				return newScan(busy, nil, discover.Peer{Host: "m2macmini.local", Instances: []string{"kojiのMac mini"}, SSH: true,
+					Addrs: map[int]string{14: "192.168.50.7", 27: "169.254.217.100"}})
 			},
 			IfName: func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
 			User:   "koji",
@@ -89,7 +84,7 @@ func TestDumpJSONAndWaitCap(t *testing.T) {
 
 // 待っている間にシグナル (stop) が来たら、待ちを打ち切って走査を止めてから戻る (止めないと dns-sd が親の外で残った)。
 func TestDumpStopsScanOnSignal(t *testing.T) {
-	scan := &dumpScan{busy: true} // 走査が終わらない
+	scan := newScan(true, nil) // 走査が終わらない
 	stop := make(chan struct{})
 	close(stop)
 	var out, errb bytes.Buffer
@@ -100,7 +95,7 @@ func TestDumpStopsScanOnSignal(t *testing.T) {
 	if rc != 130 || time.Since(start) > 5*time.Second {
 		t.Errorf("シグナルで打ち切らない: rc=%d (%v)", rc, time.Since(start))
 	}
-	if !scan.closed {
+	if scan.Closes() == 0 {
 		t.Error("シグナルで戻るときに走査を止めていない (dns-sd が残る)")
 	}
 }
@@ -110,7 +105,7 @@ func TestDumpKeepsEarlyNotices(t *testing.T) {
 	var out, errb bytes.Buffer
 	// 走査が終わらない (busy) ので、待ちの中で Report が何度も呼ばれる (知らせを取り出していたころは、ここで消えた)
 	rc := runDump([]string{"--wait", "200ms"}, &out, &errb, time.Now, nil, func() (*lanmgr.Model, error) {
-		return lanmgr.New(lanmgr.Options{Ledger: brokenStore{}, StartScan: func(time.Time) lanmgr.Scanner { return &dumpScan{busy: true} }}), nil
+		return lanmgr.New(lanmgr.Options{Ledger: &lanmgrtest.Store{LoadErr: errors.New("壊れた台帳")}, StartScan: func(time.Time) lanmgr.Scanner { return newScan(true, nil) }}), nil
 	}, nil)
 	if rc != 0 || !strings.Contains(out.String(), "台帳が読めない") {
 		t.Errorf("rc=%d 開いたときの知らせが出力に無い:\n%s", rc, out.String())
@@ -121,7 +116,7 @@ func TestDumpKeepsEarlyNotices(t *testing.T) {
 func TestDumpTextStripsEscapesInNotices(t *testing.T) {
 	var out, errb bytes.Buffer
 	rc := runDump([]string{"--wait", "200ms"}, &out, &errb, time.Now, nil, func() (*lanmgr.Model, error) {
-		return lanmgr.New(lanmgr.Options{Ledger: escStore{}, StartScan: func(time.Time) lanmgr.Scanner { return &dumpScan{} }}), nil
+		return lanmgr.New(lanmgr.Options{Ledger: &lanmgrtest.Store{LoadErr: errors.New("壊れた\x1b]52;c;aGk=\x07台帳\n  ok=true 偽の知らせ")}, StartScan: func(time.Time) lanmgr.Scanner { return newScan(false, nil) }}), nil
 	}, nil)
 	if rc != 0 || !strings.Contains(out.String(), "台帳が読めない") || strings.ContainsAny(out.String(), "\x1b\x07") {
 		t.Errorf("rc=%d 知らせが無い / 制御文字が残った: %q", rc, out.String())
@@ -130,20 +125,6 @@ func TestDumpTextStripsEscapesInNotices(t *testing.T) {
 		t.Errorf("知らせの中の改行で行を足させた: %q", out.String())
 	}
 }
-
-// escStore は読むと ESC / OSC を含む失敗を返す台帳。
-type escStore struct{ brokenStore }
-
-func (escStore) Load() ([]ledger.Host, error) {
-	return nil, errors.New("壊れた\x1b]52;c;aGk=\x07台帳\n  ok=true 偽の知らせ")
-}
-
-type brokenStore struct{}
-
-func (brokenStore) Load() ([]ledger.Host, error)                { return nil, errors.New("壊れた台帳") }
-func (brokenStore) Merge(ledger.Host, func(*ledger.Host)) error { return nil }
-func (brokenStore) Remove(string) error                         { return nil }
-func (brokenStore) Update(string, func(*ledger.Host)) error     { return nil }
 
 // noModel は --peer のときに呼ばれてはいけない newModel (相手を読むときは、この Mac の網も Bonjour も起こさない)。
 func noModel(t *testing.T) func() (*lanmgr.Model, error) {

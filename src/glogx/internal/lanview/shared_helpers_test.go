@@ -3,6 +3,7 @@ package lanview
 import (
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
+	"mac-lan-manager/lanmgr/lanmgrtest"
 	"mac-lan-manager/live"
 	"sync"
 	"time"
@@ -10,19 +11,10 @@ import (
 
 // main のテスト (browseModel と組み合わせるもの) と同じヘルパーの、中のテスト用の写し (両方のテストが使っていたもの)。
 
-// fakeLanScan は Bonjour の走査の偽物 (dns-sd を起こさない)。closed で「止めたか」を見る。
-type fakeLanScan struct {
-	mu      sync.Mutex
-	peers   []discover.Peer
-	busy    bool
-	closed  bool
-	changed chan struct{}
-}
-
 // lanScans はテストの中で起こした走査 (最後が今の走査)。
 var (
 	lanScansMu sync.Mutex
-	lanScans   []*fakeLanScan
+	lanScans   []*lanmgrtest.Scan
 	lanPeers   = []discover.Peer{{Host: "m2macmini.local", Instances: []string{"テストの Mac mini"}, SSH: true, SMB: true, Addrs: map[int]string{14: "192.168.1.20"}}}
 )
 
@@ -40,34 +32,12 @@ func fakeLanOptions() (lanmgr.Options, error) {
 	o.IfName = func(int) string { return "" }
 	o.User = "tester"
 	o.StartScan = func(time.Time) lanmgr.Scanner {
-		s := &fakeLanScan{peers: lanPeers, busy: true, changed: make(chan struct{}, 1)}
+		s := lanmgrtest.NewScan(lanPeers...)
+		s.SetWorking(true)
 		lanScansMu.Lock()
 		lanScans = append(lanScans, s)
 		lanScansMu.Unlock()
 		return s
 	}
 	return o, nil
-}
-
-func (f *fakeLanScan) Snapshot() []discover.Peer {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]discover.Peer(nil), f.peers...)
-}
-func (f *fakeLanScan) Busy(time.Time) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.busy && !f.closed
-}
-func (f *fakeLanScan) Changed() <-chan struct{} { return f.changed }
-func (f *fakeLanScan) Err() error               { return nil }
-
-// Close は本物 (discover.Scanner.Close) と同じく Changed を閉じる (待っている側は ok=false で抜ける)。
-func (f *fakeLanScan) Close() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if !f.closed {
-		f.closed = true
-		close(f.changed)
-	}
 }

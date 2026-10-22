@@ -23,6 +23,7 @@ import (
 
 	"mac-lan-manager/discover"
 	"mac-lan-manager/internal/testwait"
+	"mac-lan-manager/lanmgr/lanmgrtest"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/prefs"
@@ -30,55 +31,6 @@ import (
 )
 
 func TestMain(m *testing.M) { widthenv.ExitIfUnsupported(); m.Run() }
-
-// memStore は台帳の偽物 (メモリの中だけ。本物のファイルを書かない)。
-type memStore struct {
-	hosts   []ledger.Host
-	loadErr error
-}
-
-func (s *memStore) Load() ([]ledger.Host, error) {
-	if s.loadErr != nil {
-		return nil, s.loadErr
-	}
-	return slices.Clone(s.hosts), nil
-}
-func (s *memStore) Update(host string, f func(*ledger.Host)) error {
-	i := slices.IndexFunc(s.hosts, func(x ledger.Host) bool { return x.Host == ledger.Key(host) })
-	if i < 0 {
-		return ledger.ErrNotFound
-	}
-	f(&s.hosts[i])
-	s.hosts[i].Host = ledger.Key(host) // 本物 (FileStore.edit) と同じく鍵は変えさせない
-	return nil
-}
-func (s *memStore) Merge(h ledger.Host, f func(*ledger.Host)) error {
-	if err := s.Update(h.Host, f); !errors.Is(err, ledger.ErrNotFound) {
-		return err
-	}
-	if h.Host = ledger.Key(h.Host); h.Host == "" {
-		return errors.New("ホスト名が空") // 本物 (FileStore.Merge) と同じく足さない
-	}
-	s.hosts = append(s.hosts, h)
-	return nil
-}
-func (s *memStore) Remove(host string) error {
-	s.hosts = slices.DeleteFunc(s.hosts, func(x ledger.Host) bool { return x.Host == ledger.Key(host) })
-	return nil
-}
-
-type fakeScan struct {
-	err    error
-	peers  []discover.Peer
-	busy   bool
-	closed int
-}
-
-func (f *fakeScan) Snapshot() []discover.Peer { return f.peers }
-func (f *fakeScan) Busy(time.Time) bool       { return f.busy }
-func (f *fakeScan) Close()                    { f.closed++ }
-func (f *fakeScan) Changed() <-chan struct{}  { return nil }
-func (f *fakeScan) Err() error                { return f.err }
 
 var t0 = time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 
@@ -100,19 +52,19 @@ func selfNet() netinfo.Snapshot {
 
 type harness struct {
 	m      *Model
-	store  *memStore
-	scan   *fakeScan
+	store  *lanmgrtest.Store
+	scan   *lanmgrtest.Scan
 	copied []string
 	saved  []prefs.Prefs
 }
 
 func newHarness(t *testing.T, hosts []ledger.Host, peers []discover.Peer) *harness {
 	t.Helper()
-	h := &harness{store: &memStore{hosts: hosts}, scan: &fakeScan{peers: peers}}
+	h := &harness{store: &lanmgrtest.Store{Hosts: hosts}, scan: lanmgrtest.NewScan(peers...)}
 	h.m = New(Options{
 		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil },
 		LocalHost: func() string { return "kojiM3MacBook-Pro.local" },
-		StartScan: func(time.Time) Scanner { return h.scan },
+		StartScan: func(time.Time) Scanner { return h.scan.Reopen() },
 		IfName:    func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
 		Ledger:    h.store,
 		PrefsPath: "settings.toml (偽物)",
@@ -312,20 +264,20 @@ func TestSpaceRegistersWithConfirm(t *testing.T) {
 		t.Fatal("確認の板が開いていない")
 	}
 	h.keys("x") // 知らないキーは取り消し (§4)
-	if len(h.store.hosts) != 0 {
+	if len(h.store.Hosts) != 0 {
 		t.Fatal("取り消したのに登録した")
 	}
 	h.keys("space", "y")
-	if len(h.store.hosts) != 1 || h.store.hosts[0].Host != "m2macmini.local" || h.store.hosts[0].User != "koji" {
-		t.Fatalf("台帳 = %+v", h.store.hosts)
+	if len(h.store.Hosts) != 1 || h.store.Hosts[0].Host != "m2macmini.local" || h.store.Hosts[0].User != "koji" {
+		t.Fatalf("台帳 = %+v", h.store.Hosts)
 	}
 	if h.m.count(true) != 1 {
 		t.Error("登録した Mac が管理対象に移っていない")
 	}
 	h.keys("h") // 管理対象のタブ
 	h.keys("j", "space", "enter")
-	if len(h.store.hosts) != 0 {
-		t.Errorf("外していない: %+v", h.store.hosts)
+	if len(h.store.Hosts) != 0 {
+		t.Errorf("外していない: %+v", h.store.Hosts)
 	}
 }
 
@@ -336,8 +288,8 @@ func TestAliasOnlyForManaged(t *testing.T) {
 		h.m.HandleInput(string(r), string(r))
 	}
 	h.keys("enter")
-	if h.store.hosts[0].Alias != "mini" || h.store.hosts[0].User != "k2" {
-		t.Errorf("台帳 = %+v", h.store.hosts)
+	if h.store.Hosts[0].Alias != "mini" || h.store.Hosts[0].User != "k2" {
+		t.Errorf("台帳 = %+v", h.store.Hosts)
 	}
 	h.keys("l", "m") // 未管理のタブのこの Mac
 	if h.m.ov == ovAlias {
@@ -360,14 +312,14 @@ func TestAliasOnlyForManaged(t *testing.T) {
 func TestAliasDoesNotWriteBonjourIPOrResurrect(t *testing.T) {
 	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2"}}, []discover.Peer{mini})
 	h.keys("j", "m", "x", "enter")
-	if got := h.store.hosts[0]; got.LAN != "" || got.Alias != "x" {
+	if got := h.store.Hosts[0]; got.LAN != "" || got.Alias != "x" {
 		t.Errorf("台帳 = %+v (Bonjour の IP を固定 IP の欄に書いた)", got)
 	}
 	h.keys("m", "y")
-	h.store.hosts = nil // 別の画面 (glogx の板など) が外した
+	h.store.Hosts = nil // 別の画面 (glogx の板など) が外した
 	h.keys("enter")
-	if len(h.store.hosts) != 0 {
-		t.Errorf("外された Mac が台帳に戻った: %+v", h.store.hosts)
+	if len(h.store.Hosts) != 0 {
+		t.Errorf("外された Mac が台帳に戻った: %+v", h.store.Hosts)
 	}
 	if n := h.m.TakeNotices(); len(n) == 0 || n[len(n)-1].OK {
 		t.Errorf("外された Mac への別名は失敗で知らせる: %+v", n)
@@ -378,7 +330,7 @@ func TestAliasDoesNotWriteBonjourIPOrResurrect(t *testing.T) {
 func TestAliasRefusedOnSelf(t *testing.T) {
 	h := newHarness(t, []ledger.Host{{Host: "kojim3macbook-pro.local", User: "other", Alias: "mine"}}, nil)
 	h.keys("m", "enter")
-	if got := h.store.hosts[0]; got.User != "other" || got.Alias != "mine" {
+	if got := h.store.Hosts[0]; got.User != "other" || got.Alias != "mine" {
 		t.Errorf("この Mac の台帳の行が書き換わった: %+v", got)
 	}
 }
@@ -387,8 +339,8 @@ func TestAliasRefusedOnSelf(t *testing.T) {
 func TestRegisterSkipsLinkLocal(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini})
 	h.keys("l", "j", "space", "y")
-	if len(h.store.hosts) != 1 || h.store.hosts[0].LAN != "" {
-		t.Errorf("台帳 = %+v (169.254 を固定 IP の欄に書いた)", h.store.hosts)
+	if len(h.store.Hosts) != 1 || h.store.Hosts[0].LAN != "" {
+		t.Errorf("台帳 = %+v (169.254 を固定 IP の欄に書いた)", h.store.Hosts)
 	}
 }
 
@@ -500,16 +452,16 @@ func TestSanitizesExternalNames(t *testing.T) {
 func TestCloseStopsScanner(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	h.keys("r") // 読み直しで起こし直すときも前の走査を止める
-	if h.scan.closed != 1 {
-		t.Errorf("読み直しで前の走査を止めていない: closed = %d", h.scan.closed)
+	if h.scan.Closes() != 1 {
+		t.Errorf("読み直しで前の走査を止めていない: closed = %d", h.scan.Closes())
 	}
 	if a := h.keys("q"); a != Quit {
 		t.Fatalf("q = %v", a)
 	}
 	h.m.Close()
 	h.m.Close() // 2 回呼んでも 2 回は止めない
-	if h.scan.closed != 2 {
-		t.Errorf("closed = %d, want 2", h.scan.closed)
+	if h.scan.Closes() != 2 {
+		t.Errorf("closed = %d, want 2", h.scan.Closes())
 	}
 }
 
@@ -568,7 +520,7 @@ func TestReloadStartsScanAtNow(t *testing.T) {
 	now := t0
 	var started []time.Time
 	m := New(Options{
-		StartScan: func(at time.Time) Scanner { started = append(started, at); return &fakeScan{} },
+		StartScan: func(at time.Time) Scanner { started = append(started, at); return lanmgrtest.NewScan() },
 		Now:       func() time.Time { return now },
 	})
 	now = t0.Add(10 * time.Minute)
@@ -585,7 +537,7 @@ func TestLanIPIsDeterministicAcrossIFs(t *testing.T) {
 	two := discover.Peer{Host: "two.local", SSH: true, Addrs: map[int]string{168: "192.168.100.5", 32: "169.254.1.1"}}
 	m := New(Options{
 		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
-		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{two}} },
+		StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan([]discover.Peer{two}...) },
 		IfName:    func(i int) string { return map[int]string{32: "en13", 168: "en14"}[i] },
 		Now:       func() time.Time { return t0 },
 	})
@@ -604,10 +556,10 @@ func TestVirtualIFIsNotLan(t *testing.T) {
 	vm := discover.Peer{Host: "vm.local", SSH: true, Addrs: map[int]string{30: "192.168.64.3"}}
 	m := New(Options{
 		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil },
-		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{vm}} },
+		StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan([]discover.Peer{vm}...) },
 		IfName:    func(i int) string { return map[int]string{30: "bridge100"}[i] },
 		Now:       func() time.Time { return t0 },
-		Ledger:    &memStore{},
+		Ledger:    &lanmgrtest.Store{},
 		User:      "koji",
 	})
 	awaitNetLoad(m)
@@ -668,7 +620,7 @@ func TestAliasGoesToMacOpenedFor(t *testing.T) {
 		t.Fatal("前提が作れていない: カーソルの下が同じ Mac のまま")
 	}
 	h.keys("x", "enter")
-	for _, x := range h.store.hosts {
+	for _, x := range h.store.Hosts {
 		if want := map[bool]string{true: "x", false: ""}[x.Host == opened]; x.Alias != want {
 			t.Errorf("%s の別名 = %q, want %q", x.Host, x.Alias, want)
 		}
@@ -731,10 +683,10 @@ func TestLoadingKeepsSelfSingleAndRefusesActions(t *testing.T) {
 			return selfNet(), nil
 		},
 		LocalHost: func() string { return "me.local" },
-		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{me, mini}} },
+		StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan([]discover.Peer{me, mini}...) },
 		IfName:    func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
 		// x.local は台帳に内部 IP があるので、読み込み中でも行に IP が出る (ガードが無いと s がそこへ繋ぐ)
-		Ledger: &memStore{hosts: []ledger.Host{{Host: "me.local", User: "koji"}, {Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
+		Ledger: &lanmgrtest.Store{Hosts: []ledger.Host{{Host: "me.local", User: "koji"}, {Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
 		Now:    func() time.Time { return t0 },
 		User:   "koji",
 	})
@@ -803,22 +755,22 @@ func TestPlaceOnSelfHasNoHost(t *testing.T) {
 // その前に自分で動かしたら、後から見つかっても跳ばない。
 func TestRestorePlaceWaitsForLatePeer(t *testing.T) {
 	h := newHarness(t, nil, nil)
-	h.scan.busy = true
+	h.scan.SetWorking(true)
 	h.m.RestorePlace(Place{Tab: 1, Host: "m2macmini.local"})
 	if h.m.tab != 1 {
 		t.Fatalf("タブが戻らない: %d", h.m.tab)
 	}
-	h.scan.peers = []discover.Peer{{Host: "a.local", SSH: true}, mini}
+	h.scan.SetPeers([]discover.Peer{{Host: "a.local", SSH: true}, mini}...)
 	h.m.Advance(t0)
 	if got := h.m.current().host; got != "m2macmini.local" {
 		t.Errorf("後から見つかった Mac にカーソルが合わない: %q", got)
 	}
 
 	h = newHarness(t, nil, nil)
-	h.scan.busy = true
+	h.scan.SetWorking(true)
 	h.m.RestorePlace(Place{Tab: 1, Host: "m2macmini.local"})
 	h.keys("j") // 自分で動かした
-	h.scan.peers = []discover.Peer{{Host: "a.local", SSH: true}, mini}
+	h.scan.SetPeers([]discover.Peer{{Host: "a.local", SSH: true}, mini}...)
 	h.m.Advance(t0)
 	if got := h.m.current().host; got == "m2macmini.local" {
 		t.Error("自分で動かした後に、後から見つかった Mac へ跳んだ")
@@ -854,7 +806,7 @@ func TestKeyAppliesFinishedNetLoad(t *testing.T) {
 			return s, nil
 		},
 		LocalHost: func() string { return "me.local" },
-		Ledger:    &memStore{hosts: []ledger.Host{{Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
+		Ledger:    &lanmgrtest.Store{Hosts: []ledger.Host{{Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
 		Now:       func() time.Time { return t0 },
 	})
 	testwait.Until(t, "読み込みの結果が届く", 5*time.Second, nil, func() bool { return len(m.netCh) > 0 })
@@ -867,7 +819,7 @@ func TestKeyAppliesFinishedNetLoad(t *testing.T) {
 // 走査そのものが失敗したら (dns-sd を起こせない等)、0 台の「居ない」と分けて見せる: 知らせを 1 回・見出しに ✗・Report に理由。
 func TestScanErrorIsShownNotZero(t *testing.T) {
 	h := newHarness(t, nil, nil)
-	h.scan.err = errors.New("dns-sd -B _ssh._tcp を起こせない")
+	h.scan.SetErr(errors.New("dns-sd -B _ssh._tcp を起こせない"))
 	h.m.TakeNotices()
 	h.m.Advance(t0)
 	h.m.Advance(t0)
@@ -890,7 +842,7 @@ func TestScanErrorIsShownNotZero(t *testing.T) {
 // 読み直し (r) で台帳が読めなかったら、前に読んだ一覧を残す (管理対象を「未管理」に化けさせない)。読めないことは知らせる。
 func TestReloadKeepsLedgerOnReadError(t *testing.T) {
 	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "k2"}}, []discover.Peer{mini})
-	h.store.loadErr = errors.New("壊れた台帳")
+	h.store.LoadErr = errors.New("壊れた台帳")
 	h.m.TakeNotices()
 	h.keys("r")
 	awaitNetLoad(h.m)
@@ -1221,7 +1173,7 @@ func TestBindsCoversHandledKeys(t *testing.T) {
 	}
 	snap := func(h *harness) string {
 		m := h.m
-		return fmt.Sprint(m.tab, m.cur, m.ov, m.sc, m.filtering, m.exec != nil, len(m.notices), len(h.copied), len(h.store.hosts))
+		return fmt.Sprint(m.tab, m.cur, m.ov, m.sc, m.filtering, m.exec != nil, len(m.notices), len(h.copied), len(h.store.Hosts))
 	}
 	for _, k := range keys {
 		if k == "q" || k == "ctrl+c" { // 閉じる (glogx が自分で捌く)
@@ -1424,8 +1376,8 @@ func TestTooSmallAcceptsOnlyQuit(t *testing.T) {
 		if !strings.Contains(view, "が足りない") {
 			t.Fatalf("%v: 足りない画面にならない:\n%s", size, view)
 		}
-		if h.keys("y") != None || len(h.store.hosts) != 1 {
-			t.Errorf("%v: 見えない確認の板に y が届いた (台帳 %d 台)", size, len(h.store.hosts))
+		if h.keys("y") != None || len(h.store.Hosts) != 1 {
+			t.Errorf("%v: 見えない確認の板に y が届いた (台帳 %d 台)", size, len(h.store.Hosts))
 		}
 		if h.m.Binds("L") || !h.m.Binds("C") {
 			t.Errorf("%v: 確認の板を開いたまま足りない画面では、L (glogx の開閉) だけを渡して他は取る", size)
@@ -1496,8 +1448,8 @@ func TestCloseFoldsLayers(t *testing.T) {
 			t.Errorf("%s: 開き直したら層が残っていた", name)
 		}
 		h.keys("y")
-		if len(h.store.hosts) != 1 {
-			t.Errorf("%s: 開き直した直後の y で台帳が変わった (%d 台)", name, len(h.store.hosts))
+		if len(h.store.Hosts) != 1 {
+			t.Errorf("%s: 開き直した直後の y で台帳が変わった (%d 台)", name, len(h.store.Hosts))
 		}
 	}
 }
@@ -1623,8 +1575,8 @@ func TestUnreadablePrefsAreNotOverwritten(t *testing.T) {
 	m := New(Options{
 		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil },
 		LocalHost: func() string { return "kojiM3MacBook-Pro.local" },
-		StartScan: func(time.Time) Scanner { return &fakeScan{} },
-		Ledger:    &memStore{},
+		StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan() },
+		Ledger:    &lanmgrtest.Store{},
 		PrefsPath: t.TempDir(), // ディレクトリは読めない (ErrNotExist ではない読み取りの失敗)
 		SavePrefs: func(_ string, p prefs.Prefs) error { saved = append(saved, p); return nil },
 		Now:       func() time.Time { return t0 },
@@ -1762,13 +1714,13 @@ func TestUserEditChangesOnlyUser(t *testing.T) {
 	h.m.alias.Reset()
 	typ("-oProxyCommand=x")
 	h.keys("enter")
-	if h.store.hosts[0].User != "k2" || h.m.ov != ovAlias {
-		t.Fatalf("使えない名前を書いた・入力欄を閉じた: %+v ov=%v", h.store.hosts, h.m.ov)
+	if h.store.Hosts[0].User != "k2" || h.m.ov != ovAlias {
+		t.Fatalf("使えない名前を書いた・入力欄を閉じた: %+v ov=%v", h.store.Hosts, h.m.ov)
 	}
 	h.m.alias.Reset()
 	typ("koji")
 	h.keys("enter")
-	if got := h.store.hosts[0]; got != (ledger.Host{Host: "m2macmini.local", User: "koji", Alias: "mini", LAN: "192.168.100.13"}) {
+	if got := h.store.Hosts[0]; got != (ledger.Host{Host: "m2macmini.local", User: "koji", Alias: "mini", LAN: "192.168.100.13"}) {
 		t.Errorf("台帳 = %+v (ユーザー名だけを変える)", got)
 	}
 	setSelfStatic(h.m) // この Mac も帯の中 (同じ網でないと有線では繋がない)
@@ -1781,8 +1733,8 @@ func TestUserEditChangesOnlyUser(t *testing.T) {
 	h.keys("u") // 空にすると既定 (この Mac のユーザー名) に戻す
 	h.m.alias.Reset()
 	h.keys("enter")
-	if h.store.hosts[0].User != "" || h.m.ov == ovAlias {
-		t.Errorf("空にして既定へ戻せない: %+v", h.store.hosts)
+	if h.store.Hosts[0].User != "" || h.m.ov == ovAlias {
+		t.Errorf("空にして既定へ戻せない: %+v", h.store.Hosts)
 	}
 	h.keys("u") // 台帳が空なら欄も空で開く (推測の名前で開くと、そのまま enter で台帳に固定された)
 	if h.m.alias.String() != "" {
@@ -2021,7 +1973,7 @@ func TestCursorFollowsMacAcrossScanUpdate(t *testing.T) {
 	h.keys("l")
 	h.cursorTo(t, "zed.local")
 	abc := discover.Peer{Host: "abc.local", Instances: []string{"abc"}, SSH: true, Addrs: map[int]string{14: "192.168.50.21"}}
-	h.scan.peers = []discover.Peer{zed, abc}
+	h.scan.SetPeers([]discover.Peer{zed, abc}...)
 	h.m.Advance(t0.Add(time.Second))
 	if got := h.m.current().host; got != "zed.local" {
 		t.Errorf("走査で行が増えた後のカーソル = %s (zed.local のはず)", got)
@@ -2038,11 +1990,12 @@ func TestCursorReturnsToMacAfterReload(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{a, mm, z})
 	h.keys("l")
 	h.cursorTo(t, "zed.local")
-	h.scan.peers, h.scan.busy = []discover.Peer{a}, true // 走査を起こし直すと最初は一部だけ
+	h.scan.SetPeers(a) // 走査を起こし直すと最初は一部だけ
+	h.scan.SetWorking(true)
 	h.keys("r")
 	awaitNetLoad(h.m)
 	h.m.Advance(t0)
-	h.scan.peers = []discover.Peer{a, mm, z}
+	h.scan.SetPeers([]discover.Peer{a, mm, z}...)
 	h.m.Advance(t0.Add(time.Second))
 	if got := h.m.current().host; got != "zed.local" {
 		t.Errorf("r の後、zed が見つかったのにカーソル = %s", got)
@@ -2055,12 +2008,13 @@ func TestCursorHoldsWhileWaitingForMac(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{a, mm, z})
 	h.keys("l")
 	h.cursorTo(t, "zed.local")
-	h.scan.peers, h.scan.busy = []discover.Peer{mm}, true
+	h.scan.SetPeers(mm)
+	h.scan.SetWorking(true)
 	h.keys("r")
 	awaitNetLoad(h.m)
 	h.m.Advance(t0)
 	shown := h.m.current().host
-	h.scan.peers = []discover.Peer{a, mm}
+	h.scan.SetPeers([]discover.Peer{a, mm}...)
 	h.m.Advance(t0.Add(time.Second))
 	if got := h.m.current().host; got != shown {
 		t.Errorf("キーを押していないのにカーソルが %s → %s へ移った", shown, got)
@@ -2117,7 +2071,7 @@ func TestHeaderWhileOnlyNetReload(t *testing.T) {
 	block := make(chan struct{})
 	defer close(block)
 	h.m.o.ReadNet = func(ctx context.Context) (netinfo.Snapshot, error) { <-block; return selfNet(), nil }
-	h.scan.busy = false
+	h.scan.SetWorking(false)
 	h.keys("r")
 	h.m.Advance(t0)
 	if hd := h.m.header(200); !strings.Contains(hd, "この Mac のネットワーク設定を確認中") {
@@ -2136,7 +2090,7 @@ func TestHeaderNamesSpeedAndReach(t *testing.T) {
 		{"疎通の確認", func(m *Model) { m.reachRuns = map[string]*reachRun{"m2macmini.local": {}} }, "疎通を確かめている"},
 	} {
 		h := newHarness(t, nil, nil)
-		h.scan.busy = false
+		h.scan.SetWorking(false)
 		h.m.Advance(t0)
 		c.set(h.m)
 		if hd := h.m.header(200); !strings.Contains(hd, c.want) {
@@ -2221,8 +2175,8 @@ func TestLedgerRemoveStopsWiredName(t *testing.T) {
 		var notes []Notice
 		testwait.Until(t, "広告を止める ssh の結果の取り込み", 5*time.Second, func() { h.m.Advance(t0) }, func() bool { return len(h.m.bg) == 0 })
 		notes = h.m.TakeNotices()
-		if len(h.store.hosts) != 0 {
-			t.Fatalf("台帳から外していない: %+v", h.store.hosts)
+		if len(h.store.Hosts) != 0 {
+			t.Fatalf("台帳から外していない: %+v", h.store.Hosts)
 		}
 		if len(got) != 1 || !slices.Contains(got[0], "koji@192.168.50.7") || !strings.Contains(got[0][len(got[0])-1], "bootout") {
 			t.Fatalf("広告を止める ssh = %q", got)
@@ -2568,7 +2522,7 @@ func TestWiredEntryDroppedOnLedgerRemove(t *testing.T) {
 	gate := make(chan struct{})
 	defer close(gate)
 	h2.m.o.LookupHost = func(context.Context, string) ([]string, error) { <-gate; return nil, nil }
-	h2.scan.busy = false
+	h2.scan.SetWorking(false)
 	h2.m.startWiredLookups()
 	if h2.m.wiredWait == 0 {
 		t.Fatal("前提: 名前を引いていない")
@@ -2842,7 +2796,7 @@ func TestRowsLinkPrefersWiredMain(t *testing.T) {
 	both := discover.Peer{Host: "both.local", SSH: true, Addrs: map[int]string{14: "192.168.50.7", 20: "192.168.50.8", 27: "169.254.217.100"}}
 	m := New(Options{
 		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
-		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{both}} },
+		StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan([]discover.Peer{both}...) },
 		IfName:    func(i int) string { return map[int]string{14: "en0", 20: "en7", 27: "en13"}[i] },
 		Now:       func() time.Time { return t0 },
 	})
@@ -2862,7 +2816,7 @@ func TestRowsLinkPrefersWiredMain(t *testing.T) {
 	wifiOnly := discover.Peer{Host: "air.local", SSH: true, Addrs: map[int]string{14: "192.168.50.44"}}
 	m2 := New(Options{
 		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
-		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{wifiOnly}} },
+		StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan([]discover.Peer{wifiOnly}...) },
 		IfName:    func(i int) string { return map[int]string{14: "en0"}[i] },
 		Now:       func() time.Time { return t0 },
 	})
@@ -2934,7 +2888,7 @@ func TestSameIPOnTwoIFs(t *testing.T) {
 		p := discover.Peer{Host: "one.local", SSH: true, Addrs: map[int]string{14: "192.168.50.7", 20: "192.168.50.7"}}
 		m := New(Options{
 			ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
-			StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{p}} },
+			StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan([]discover.Peer{p}...) },
 			IfName:    func(i int) string { return names[i] },
 			Now:       func() time.Time { return t0 },
 		})
@@ -3019,7 +2973,7 @@ func TestNetReadFailureFirstRefusesActions(t *testing.T) {
 			return netinfo.Snapshot{}, errors.New("networksetup が失敗した")
 		},
 		LocalHost: func() string { return "me.local" },
-		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{vpnPeer}} },
+		StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan([]discover.Peer{vpnPeer}...) },
 		IfName:    vpnIfName,
 		Now:       func() time.Time { return t0 },
 		User:      "koji",
@@ -3089,7 +3043,7 @@ func TestKeyRefusedWhenRowsAppearUnderEmptyTab(t *testing.T) {
 			return selfNet(), nil
 		},
 		LocalHost: func() string { return "me.local" },
-		StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{mini}} },
+		StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan([]discover.Peer{mini}...) },
 		IfName:    func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
 		Now:       func() time.Time { return t0 },
 		User:      "koji",
@@ -3208,17 +3162,17 @@ func TestSpaceRegisterKeepsRowWrittenMeanwhile(t *testing.T) {
 	if h.m.ov != ovConfirm {
 		t.Fatal("前提: 確認の板が出ない")
 	}
-	h.store.hosts = append(h.store.hosts, ledger.Host{Host: "m2macmini.local", User: "k2", Alias: "mini", LAN: "192.168.100.12"})
+	h.store.Hosts = append(h.store.Hosts, ledger.Host{Host: "m2macmini.local", User: "k2", Alias: "mini", LAN: "192.168.100.12"})
 	h.keys("y")
-	if len(h.store.hosts) != 1 || h.store.hosts[0] != (ledger.Host{Host: "m2macmini.local", User: "k2", Alias: "mini", LAN: "192.168.100.12"}) {
-		t.Errorf("別のプロセスが載せた行を上書きした: %+v", h.store.hosts)
+	if len(h.store.Hosts) != 1 || h.store.Hosts[0] != (ledger.Host{Host: "m2macmini.local", User: "k2", Alias: "mini", LAN: "192.168.100.12"}) {
+		t.Errorf("別のプロセスが載せた行を上書きした: %+v", h.store.Hosts)
 	}
 	h = newHarness(t, nil, []discover.Peer{mini}) // 誰も載せていなければ今どおり足す
 	h.keys("l")
 	h.cursorTo(t, "m2macmini.local")
 	h.keys("space", "y")
-	if len(h.store.hosts) != 1 || h.store.hosts[0].Host != "m2macmini.local" || h.store.hosts[0].User != "koji" {
-		t.Errorf("登録しない: %+v", h.store.hosts)
+	if len(h.store.Hosts) != 1 || h.store.Hosts[0].Host != "m2macmini.local" || h.store.Hosts[0].User != "koji" {
+		t.Errorf("登録しない: %+v", h.store.Hosts)
 	}
 }
 
@@ -3228,7 +3182,7 @@ func TestReloadLedgerFailureIsNoticed(t *testing.T) {
 	h.keys("l")
 	h.cursorTo(t, "m2macmini.local")
 	h.keys("space")
-	h.store.loadErr = errors.New("permission denied")
+	h.store.LoadErr = errors.New("permission denied")
 	h.m.TakeNotices()
 	h.keys("y")
 	if n := h.m.TakeNotices(); !slices.ContainsFunc(n, func(x Notice) bool { return strings.Contains(x.Text, "読み直せない") }) {
@@ -3399,7 +3353,7 @@ func TestRowsWifiWithoutRouterIsNotWired(t *testing.T) {
 			net := netinfo.Snapshot{Services: c.services}
 			m := New(Options{
 				ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
-				StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{c.peer}} },
+				StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan([]discover.Peer{c.peer}...) },
 				IfName:    func(i int) string { return c.ifs[i] },
 				Now:       func() time.Time { return t0 },
 			})

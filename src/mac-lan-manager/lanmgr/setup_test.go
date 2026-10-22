@@ -171,8 +171,8 @@ func TestSetupWalksAllSteps(t *testing.T) {
 	if argv := runStep(t, h, nil); argv != nil {
 		t.Fatalf("台帳は手元の書き込み (プロセスを起こさない): %q", argv)
 	}
-	if len(h.store.hosts) != 1 || h.store.hosts[0] != (ledger.Host{Host: "m2macmini.local", User: "koji", LAN: c.static.IP}) {
-		t.Fatalf("台帳 = %+v", h.store.hosts)
+	if len(h.store.Hosts) != 1 || h.store.Hosts[0] != (ledger.Host{Host: "m2macmini.local", User: "koji", LAN: c.static.IP}) {
+		t.Fatalf("台帳 = %+v", h.store.Hosts)
 	}
 
 	// 有線の名前: この Mac → 相手。どちらも広告する Mac の launchd の状態で済みを決める (名前の解決では見ない)
@@ -501,8 +501,8 @@ func TestSetupLedgerNeedsConfirm(t *testing.T) {
 	if h.m.ov == ovConfirm && h.m.ask != nil && h.m.ask.yes != nil {
 		h.keys("y")
 	}
-	if len(h.store.hosts) != 0 {
-		t.Fatalf("確認していない固定 IP を台帳に書いた: %+v", h.store.hosts)
+	if len(h.store.Hosts) != 0 {
+		t.Fatalf("確認していない固定 IP を台帳に書いた: %+v", h.store.Hosts)
 	}
 
 	obs2 := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
@@ -608,7 +608,7 @@ func TestSetupListSpaceSkipsTriedIP(t *testing.T) {
 	}
 	p := mini
 	p.Addrs = map[int]string{14: "192.168.50.7", 27: c.static.IP} // 窓の間に走査が新しい番号を拾った
-	h.scan.peers = []discover.Peer{p}
+	h.scan.SetPeers([]discover.Peer{p}...)
 	after := t0.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second)
 	h.m.o.Now = func() time.Time { return after }
 	h.m.Advance(after) // 確認の期限が過ぎ、戻しの後に読み直す (相手は元の DHCP に見える)
@@ -646,7 +646,7 @@ func triedIPsSurviveRetry(t *testing.T, confirm bool) {
 	first := h.m.conf().static.IP
 	p := mini
 	p.Addrs = map[int]string{14: "192.168.50.7", 27: first} // 窓の間に走査が 1 回目の番号を拾い、そのまま残る
-	h.scan.peers = []discover.Peer{p}
+	h.scan.SetPeers([]discover.Peer{p}...)
 	t1 := t0.Add(setup.PeerDelay + setup.PeerWindow + unconfMargin + 10*time.Second)
 	expire(t1)
 	h.m.Reload()
@@ -935,7 +935,7 @@ func TestConnectIPSkipsLanOnOtherNetwork(t *testing.T) {
 	}
 	p := mini
 	p.Addrs = map[int]string{14: "192.168.50.7", 27: "192.168.100.12"}
-	h.scan.peers = []discover.Peer{p}
+	h.scan.SetPeers([]discover.Peer{p}...)
 	if got := ssh(); got != "koji@192.168.100.12" {
 		t.Errorf("両方帯の中なのに有線を使わない: %s", got)
 	}
@@ -1010,7 +1010,7 @@ func TestOperationLog(t *testing.T) {
 func TestSetupLedgerKeepsAliasChangedElsewhere(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, ob := setupHarness(t, obs)
-	h.store.hosts = []ledger.Host{{Host: "m2macmini.local", User: "koji", Alias: "旧い別名"}}
+	h.store.Hosts = []ledger.Host{{Host: "m2macmini.local", User: "koji", Alias: "旧い別名"}}
 	h.m.reloadLedger()
 	setSelfStatic(h.m)
 	runStep(t, h, nil) // 相手の固定 IP
@@ -1018,14 +1018,14 @@ func TestSetupLedgerKeepsAliasChangedElsewhere(t *testing.T) {
 	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"})
 	runStep(t, h, nil) // 確認
 	awaitSetup(h.m)
-	h.store.hosts[0].Alias, h.store.hosts[0].User = "新しい別名", "admin" // 別のプロセスが変えた (別名と u のユーザー名)
+	h.store.Hosts[0].Alias, h.store.Hosts[0].User = "新しい別名", "admin" // 別のプロセスが変えた (別名と u のユーザー名)
 	h.keys("x")
 	if h.m.ov != ovConfirm || h.m.ask == nil || h.m.ask.yes == nil {
 		t.Fatalf("前提: 台帳の手順の確認の板が出ない: %s", strings.Join(h.m.View(), "\n"))
 	}
 	h.keys("y")
-	if len(h.store.hosts) != 1 || h.store.hosts[0].LAN != ip || h.store.hosts[0].Alias != "新しい別名" || h.store.hosts[0].User != "admin" {
-		t.Errorf("台帳 = %+v (内部 IP %s と別のプロセスの別名を残すはず)", h.store.hosts, ip)
+	if len(h.store.Hosts) != 1 || h.store.Hosts[0].LAN != ip || h.store.Hosts[0].Alias != "新しい別名" || h.store.Hosts[0].User != "admin" {
+		t.Errorf("台帳 = %+v (内部 IP %s と別のプロセスの別名を残すはず)", h.store.Hosts, ip)
 	}
 }
 
@@ -1043,10 +1043,10 @@ func TestSetupLedgerKeepsRowAddedElsewhereWhileUnmanaged(t *testing.T) {
 	if h.m.ov != ovConfirm || h.m.ask == nil || h.m.ask.yes == nil {
 		t.Fatalf("前提: 台帳の手順の確認の板が出ない: %s", strings.Join(h.m.View(), "\n"))
 	}
-	h.store.hosts = []ledger.Host{{Host: "m2macmini.local", User: "admin", Alias: "別の画面の別名"}} // 板の間に別のプロセスが載せた
+	h.store.Hosts = []ledger.Host{{Host: "m2macmini.local", User: "admin", Alias: "別の画面の別名"}} // 板の間に別のプロセスが載せた
 	h.keys("y")
-	if len(h.store.hosts) != 1 || h.store.hosts[0].LAN != ip || h.store.hosts[0].Alias != "別の画面の別名" || h.store.hosts[0].User != "admin" {
-		t.Errorf("台帳 = %+v (内部 IP %s だけを書き、別のプロセスの別名と user を残すはず)", h.store.hosts, ip)
+	if len(h.store.Hosts) != 1 || h.store.Hosts[0].LAN != ip || h.store.Hosts[0].Alias != "別の画面の別名" || h.store.Hosts[0].User != "admin" {
+		t.Errorf("台帳 = %+v (内部 IP %s だけを書き、別のプロセスの別名と user を残すはず)", h.store.Hosts, ip)
 	}
 }
 
@@ -1140,7 +1140,7 @@ func TestSetupHeaderSaysWhatItWaitsFor(t *testing.T) {
 	setSelfStatic(h.m)
 	runStep(t, h, nil)
 	awaitNetLoad(h.m)
-	h.scan.busy = false
+	h.scan.SetWorking(false)
 	h.m.Advance(t0.Add(30 * time.Second))
 	if !h.m.Busy() {
 		t.Fatal("前提: 確認待ちで Busy でない")
@@ -1154,7 +1154,7 @@ func TestSetupHeaderSaysWhatItWaitsFor(t *testing.T) {
 func TestSetupLedgerDoesNotResurrectRemovedMac(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, ob := setupHarness(t, obs)
-	h.store.hosts = []ledger.Host{{Host: "m2macmini.local", User: "koji", Alias: "旧い別名"}}
+	h.store.Hosts = []ledger.Host{{Host: "m2macmini.local", User: "koji", Alias: "旧い別名"}}
 	h.m.reloadLedger()
 	setSelfStatic(h.m)
 	runStep(t, h, nil)
@@ -1162,14 +1162,14 @@ func TestSetupLedgerDoesNotResurrectRemovedMac(t *testing.T) {
 	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"})
 	runStep(t, h, nil)
 	awaitSetup(h.m)
-	h.store.hosts = nil // 別のプロセスが外した
+	h.store.Hosts = nil // 別のプロセスが外した
 	h.keys("x")
 	if h.m.ask == nil {
 		t.Fatalf("前提: 板が出ない %s", strings.Join(h.m.View(), "\n"))
 	}
 	h.keys("y")
-	if len(h.store.hosts) != 0 {
-		t.Errorf("外された Mac を作り直した: %+v", h.store.hosts)
+	if len(h.store.Hosts) != 0 {
+		t.Errorf("外された Mac を作り直した: %+v", h.store.Hosts)
 	}
 }
 
@@ -1183,7 +1183,7 @@ func TestSetupLedgerUserHandling(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 			h, ob := setupHarness(t, obs)
-			h.store.hosts = []ledger.Host{{Host: "m2macmini.local", User: c.stored}}
+			h.store.Hosts = []ledger.Host{{Host: "m2macmini.local", User: c.stored}}
 			h.m.reloadLedger()
 			h.keys("esc", "esc", "h")
 			h.cursorTo(t, "m2macmini.local")
@@ -1195,13 +1195,13 @@ func TestSetupLedgerUserHandling(t *testing.T) {
 			setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"})
 			runStep(t, h, nil)
 			awaitSetup(h.m)
-			h.store.hosts[0].User = c.changeTo // 別のプロセスが変えた
+			h.store.Hosts[0].User = c.changeTo // 別のプロセスが変えた
 			h.keys("x")
 			if h.m.ask == nil {
 				t.Fatalf("前提: 板が出ない %s", strings.Join(h.m.View(), "\n"))
 			}
 			h.keys("y")
-			if got := h.store.hosts[0]; got.User != c.want || got.LAN != ip {
+			if got := h.store.Hosts[0]; got.User != c.want || got.LAN != ip {
 				t.Errorf("台帳 = %+v (user %q / 内部 IP %s のはず)", got, c.want, ip)
 			}
 		})
