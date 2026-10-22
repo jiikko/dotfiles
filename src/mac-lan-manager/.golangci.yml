@@ -83,7 +83,7 @@ linters:
     depguard:
       rules:
         width-single-source:
-          # 幅計算の唯一の出典は termwidth.Of (= ansi.StringWidth。main では dispWidth の別名)。runewidth は
+          # 幅計算の唯一の出典は termwidth.Of (= ansi.StringWidth)。runewidth は
           # East Asian ambiguous (罫線・ブロック・…) を locale 依存で 2 桁と数えるため、
           # 混在すると枠計算とテストのアサートが実行環境依存でずれる (LANG=ja_JP で
           # テスト 12 件が落ちていた)。production/テストとも import を禁止して構造的に防ぐ。
@@ -91,26 +91,16 @@ linters:
             - "**/*.go"
           deny:
             - pkg: github.com/mattn/go-runewidth
-              desc: 幅は termwidth.Of (ansi.StringWidth) で測る (locale 非依存。main では dispWidth 別名)
-        # uniseg は本体から一切使わない。**幅だけでなく分割も** x/ansi に一本化したため
-        # (termwidth.FirstCluster)。「分割にだけ使う」として render.go /
-        # issues/wrap.go を除外する形にしない。分割器が 2 本ある限り列不変条件は閉じない
-        # (uniseg=Unicode 15 / x/ansi=16 の版差で 2-rune クラスタの走査に違反 744 件)。
-        # import 別名を使った持ち込みもここで止まる。シンボル名の走査は
-        # width_test.go:TestNoSecondWidthEngine が担当 (tuikit も走査範囲。own_sources_test.go)。両輪。
-        # termwidth は tuikit へ移ったので、fast-path の総当たり検証 (width_fast_test.go) の除外は
-        # tuikit/.golangci.yml が持つ。
+              desc: 幅は termwidth.Of (ansi.StringWidth) で測る (locale 非依存)
+        # uniseg は使わない。**幅だけでなく分割も** x/ansi (termwidth.FirstCluster) に一本化した。
+        # 「分割にだけ使う」として除外を足さない。分割器が 2 本ある限り列の不変条件は閉じない
+        # (uniseg=Unicode 15 / x/ansi=16 の版差で 2-rune クラスタの走査が食い違う)。import 別名を使った持ち込みもここで止まる
         uniseg-split-only:
           files:
             - "**/*.go"
-            - "!**/width_test.go"
-            # width-probe は「端末がどの幅モデルと一致するか」を測る道具で、3 モデル
-            # (ansi.StringWidth / ansi.StringWidthWc / uniseg.StringWidth) を並べるのが仕事。
-            # 本体からは参照しない (README の tools/ の項)。
-            - "!**/tools/width-probe/main.go"
           deny:
             - pkg: github.com/rivo/uniseg
-              desc: 分割も幅も termwidth に一本化した (termwidth.FirstCluster / dispWidth)。uniseg は使わない (issue 124)
+              desc: 分割も幅も termwidth に一本化した (termwidth.FirstCluster / termwidth.Of)。uniseg は使わない (issue 124)
     nolintlint:
       require-explanation: true
       require-specific: true
@@ -141,10 +131,8 @@ linters:
           - unparam
 
 issues:
-  # 既定 (true) は 1 行 1 issue に重複除去するため、同一行に別 linter の指摘があると
-  # ruleguard のカスタム不変条件 (padViaPadSpaces 等) が無言で隠れる (導入時の変異検証で
-  # 実際に踏んだ: unused と同居した行で ruleguard の指摘が消えた)。せっかくの強制が
-  # 別 linter の陰で false green になるのを防ぐため、行内の全指摘を出す。
+  # 既定 (true) は 1 行 1 issue に重複除去するため、同一行に別 linter の指摘があると片方が無言で隠れる
+  # (forbidigo / depguard の不変条件が unused などの陰に消える)。行内の全指摘を出す。
   uniq-by-line: false
 
   # 既定 (3) は同じ文面の指摘を 4 件目から落とす。一括退行 (例: timeNow シームを 20 箇所

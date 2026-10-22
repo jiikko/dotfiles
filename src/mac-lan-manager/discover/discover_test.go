@@ -97,7 +97,9 @@ func TestUnescape(t *testing.T) {
 		`a\.b`:             "a.b",
 		`a\\b`:             `a\b`,
 		`no escape`:        "no escape",
-		`\999`:             `\999`, // 255 を超える番号は戻さない
+		`\999`:             `\999`,   // 255 を超える番号は戻さない
+		`a\\032b`:          `a\032b`, // \\ の後ろの数字は番号ではない (左から 1 回で読む)
+		`a\\\032b`:         `a\ b`,
 	}
 	for in, want := range cases {
 		if got := unescape(in); got != want {

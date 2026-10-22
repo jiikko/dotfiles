@@ -50,7 +50,7 @@ var (
 	// 読むと 0.0.0.0 を相手の IP にして、s が自分へ ssh した)。0.0.0.0 は ParseAddr でも落とす (守りは 2 段で、
 	// テストは段ごとに 1 本ずつ持つ)
 	reAddr = regexp.MustCompile(stamp + `(Add|Rmv)\s+\S+\s+(\d+)\s+(\S+)\s+(\d+\.\d+\.\d+\.\d+)\s+\d+\s*$`)
-	reDec  = regexp.MustCompile(`\\(\d{3})`)
+	reEsc  = regexp.MustCompile(`\\(\d{3}|[.\\])`)
 )
 
 // ParseBrowse は dns-sd -B の 1 行を読む。見出しや STARTING などの行は ok=false。
@@ -88,14 +88,17 @@ func ParseAddr(line string) (Addr, bool) {
 	return Addr{Add: m[1] == "Add", If: ifn, Host: strings.TrimSuffix(m[3], "."), IP: m[4]}, true
 }
 
-// unescape は DNS の名前の 10 進の文字番号 (\032 = 空白) と \. などを文字に戻す。
+// unescape は DNS の名前の 10 進の文字番号 (\032 = 空白) と \. \\ を文字に戻す。
+// 左から 1 回で読む。番号を戻してから \\ を戻す 2 段にすると、`a\\032b` の \\ の後ろを番号と読んで `a\ b` にする
 func unescape(s string) string {
-	s = reDec.ReplaceAllStringFunc(s, func(e string) string {
+	return reEsc.ReplaceAllStringFunc(s, func(e string) string {
+		if len(e) == 2 {
+			return e[1:]
+		}
 		n, err := strconv.Atoi(e[1:])
 		if err != nil || n > 255 {
 			return e
 		}
 		return string(rune(n))
 	})
-	return strings.NewReplacer(`\.`, ".", `\\`, `\`).Replace(s)
 }
