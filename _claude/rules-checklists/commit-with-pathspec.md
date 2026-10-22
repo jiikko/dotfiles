@@ -23,6 +23,8 @@ pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は
   共有の ref は別の worktree の fetch で黙って進み、`reset --soft` した index が「他の session の変更を打ち消す差分」になる。
   起点を変えるなら、先に新しい起点の hash へ rebase を済ませてから、その hash へ soft reset する (rebase の後に古い起点の hash を使い続けない)。
   commit の前に `git diff --cached --stat <同じ hash>` と差分を読み、自分の作業と無関係な変更が無いことを確かめる
+  (HEAD の祖先でない行き先への `git reset --soft` は、PreToolUse の `_claude/hooks/deny-soft-reset-to-non-ancestor.sh` が止める。
+  hook が見るのは 1 本の Bash の字面と、その時点の ref だけ。検出しない形は hook の冒頭)
 - **zsh に渡す reflog の参照は `'HEAD@{1}'` のように引用符で包む** (`brace_ccl` 等の設定で波括弧が展開され、戻したつもりで戻らない)
 - **zsh で refspec (`sha:ref`) を変数から組むときは `${SHA}:refs/heads/master` と波括弧で囲む**。`$SHA:r...` の `:r` は
   履歴修飾子 (拡張子を落とす) に化け、`<sha>efs/heads/master` という refspec になる。

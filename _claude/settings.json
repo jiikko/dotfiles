@@ -88,6 +88,11 @@
             "type": "command"
           },
           {
+            "command": "~/dotfiles/_claude/hooks/deny-soft-reset-to-non-ancestor.sh",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
             "command": "~/dotfiles/_claude/hooks/deny-tmp-area-rm.sh",
             "timeout": 10,
             "type": "command"
