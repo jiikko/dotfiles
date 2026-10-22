@@ -1,1 +1,0 @@
-../861-bug-lan-manager-wifi-without-router-counted-as-wired.md
