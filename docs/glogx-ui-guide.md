@@ -94,7 +94,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 | `a` | all / 巡回 | status で全部 stage、issues で状態フィルタ巡回。**例外: treefiler では新規作成 (add)** (ファイラーの慣習。ユーザー確認 2026-10-12。issue 722) |
 | `n` | next (次にやる目印) | issues の claim |
 | `N` | 次の番号 | issues の採番コピー |
-| `i` `s` `R` `D` `F` `L` `U` | 板の toggle (横断キー) | どの画面からも同じ板へ飛べる (`F` = treefiler。treefiler の中では `s` がシェルなので status へは飛ばない。docs/treefiler-spec.md §0.1。`L` = mac-lan-manager。中では `s` が ssh なので同じく status へは飛ばない)。割当は行き先の表 `CrossTarget` (`src/glogx/fullscreen_id.go`) とキーの集合 `crosskey.Is` (`src/glogx/internal/crosskey`) の 2 か所 (一致はテストが見る) で、各画面はキーの集合を引く (`U` は重ねる箱なので別経路)。**画面が自分でキーを解釈し切るモード (確認の y/N・status の全画面 diff・URL ピッカー・番号入力・doctor の削除の確認と実行) では効かない** (issues の本文 pager では効く) (誤爆防止。issue 664) |
+| `i` `s` `R` `D` `F` `L` `U` | 板の toggle (横断キー) | どの画面からも同じ板へ飛べる (`F` = treefiler。treefiler の中では `s` がシェルなので status へは飛ばない。docs/treefiler-spec.md §0.1。`L` = mac-lan-manager。中では `s` が ssh なので同じく status へは飛ばない)。割当は行き先の表 `CrossTarget` (`src/glogx/fullscreen_id.go`) とキーの集合 `crosskey.Is` (`src/glogx/internal/crosskey`) の 2 か所 (一致はテストが見る) で、各画面はキーの集合を引く (`U` は重ねる箱なので別経路)。**画面が自分でキーを解釈し切るモード (確認の y/N・status の全画面 diff・URL ピッカー・番号入力・doctor の削除の確認と実行・mac-lan-manager の板と測定の進捗) では効かない** (issues の本文 pager では効く) (誤爆防止。issue 664) |
 | `C` `X` | update (claude / codex) | どの画面からも。**status では `X` = 変更を捨てる**なので例外 |
 | `Space` | 選択 / stage | 「対象に印を付ける」。一覧では半ページ (less)。mac-lan-manager は台帳への登録 / 削除 (管理対象の印。y/N 確認) |
 
@@ -138,7 +138,11 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 
 - **キーの案内は、glogx の全画面ではどれも枠の外の最下行に置く** (2026-10-22 にユーザーが統一を決めた)。単体でも動く部品を取り込んだ画面は、
   取り込まれたときだけ自分の最下行を描かず、案内の項目を glogx に渡す (mac-lan-manager の `Options.HostHints` / `Model.Hints`。
-  treefiler (`F`) はパンくず・件数・凡例とキーを 1 行にまとめた最下行のままで、まだ揃っていない)
+  treefiler (`F`) はパンくず・件数・凡例とキーを 1 行にまとめた最下行のままで、まだ揃っていない)。書き方は glogx の側が
+  決める (`j/k: 移動` の `キー: 説明` を空白 2 つで並べる)。部品が渡すのはキー・説明・優先度だけにする
+- **板・モーダル・層 (確認・ピッカー・入力欄・設定・進捗) が開いている間は、最下行をその板で効くキーだけに差し替える**。
+  一覧の案内を残すと、板では効かないキーを案内することになる (mac-lan-manager の `t` の板と確認の板で、一覧の `t 速度` などが
+  残っていた。2026-10-22)。板の中にも案内を書くなら、最下行と同じキーと語にする
 - 最下行の案内は端末幅で落とすが、**抜ける手段 (`q` / 閉じるキー) は必ず残す**。落とし方は `hintfit.Fit` (下の §9 の表) を通す
   (入らない項目は切らずに落とし、優先度 1 = 抜ける手段は席を予約する)。treefiler の最下行は凡例 → 右の欄 → 案内の段で落とす別の方式
 - 案内に載せたキーは**その画面のあらゆる状態で案内どおりに動く**こと。ピッカーや絞り込みの
@@ -270,6 +274,8 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 |---|---|---|
 | 一覧の上に右から重なる詳細 (引き出し。§1・§6) | `layout.ComposeDrawer` + `layout.DrawerGeometry` / 開閉は `anim.Transition` | glogx の issues の本文・pro-con のカードの詳細 |
 | 落ち影つきの板 (確認・ピッカーなど) | `layout.Panel` (中身の幅は `layout.PanelContentWidth`) / 重ねるのは `layout.OverlayCentered` / `OverlayRight` | glogx・pro-con・restartable |
+| 自前の枠で組んだ板に同じ落ち影を付ける | `layout.DropShadow` (影の形を画面ごとに作り直さない。glogx の中に取り込んだ画面の影が glogx の板と違う形で並ぶ) | mac-lan-manager のタイル |
+| 板の内側だけに地の色を敷く | `layout.PanelStyle.Fill` (行内のリセットの後は `sgr.ReapplyAfterReset` で張り直す)。🚨 **地を塗るのは枠の内側だけ**: 影は近黒なので、枠の外まで暗い地で塗ると影が溶けて見えない | glogx の全画面 ratelimit の黒地 |
 | y/N の確認 (§4) | `confirm.Dialog` (案内は定型の `HintYesNo` / `HintYesOther`) / 判定は `confirm.IsYes` / `IsYesStrict` | 板: glogx・restartable / 判定だけ: pro-con (§4 の下の項) |
 | 本文 (issue の md・PG の応答) | `markdown.Render` | glogx の issues・pro-con の詳細 |
 | 本文の左の行番号の溝 (nvim の number) | `gutter.Width` / `gutter.Format` (番号はソースの行番号。折り返しの続き行は空白) | glogx の issues の本文・treefiler のタイル |
@@ -293,6 +299,12 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
   通知は 3 種類 (`noticeKind`): 成功 (`noticeOK`) / 断り・クリップボード失敗 (`noticeRefused`、✗ のトーストだけ) /
   エラー詳細 (`noticeError`)。`w` でコピーできるよう控える (`lastWarning`) のは `noticeError` だけ — 断りの文まで控えると
   直前のエラーを上書きして `w` で辿れなくなる (issue 663。分類の正本は tui.go の `showWarning` の doc)
+- **数秒以上かかる操作 (通信速度の測定・相手の確認) は、始まりを toast だけで知らせない**。toast は数秒で消え、その後は何が
+  起きているか見えなくなる (mac-lan-manager の speedtest でユーザーの指摘。2026-10-22)。回る印・対象・経過秒の進捗のモーダルを出し、
+  終われば閉じて結果を toast に出す
+  - `esc` で閉じても処理は裏で続ける (止めない)。閉じたモーダルは、始めたキーをもう一度押せば開き直せる (2 本目は起こさない)
+  - モーダルの間は他のキーを裏の画面に届かせず、押したら ✗ で断る (黙って捨てると効いたように見える)
+  - 所要の見込み (「約 10 秒」) は、始める前に読めない時間 (接続・鍵の確認) が混ざるなら出さない。経過が見込みを超えて表示される
 - **時間で消えてはいけない知らせ** (起動時の警告・捨てた書きかけの文) は toast に載せず、消すまで残す行に置く
   (pro-con の `Notify` / `sticky`。ボードの `Esc` で消す)
 - schedkeys の予約成功の通知は tuikit/toast を使わない別実装 (理由は `src/schedkeys/toast.go` の冒頭)
@@ -309,5 +321,8 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 7. 入力欄を足すなら `tuikit/lineedit` を使い、§7 の編集キーが効くか (入力中は案内を入力欄のキーに差し替える)。
    端末のカーソルを `tuikit/caret` で置いたか (日本語の変換中の文字が欄に出るか)
 8. 板・確認・本文・通知を足すなら §9 の部品で組んだか (確認の板の案内は定型、操作の結果は toast、断りは ✗ 赤)
-9. **tuikit の部品を足した・語彙や見た目の決まりを変えたなら、本書 (§2 の表・§7 の表・§9 の地図) を同じ変更で直す**。
+9. 単体でも動く部品を glogx の全画面に取り込むなら、層・板・モーダルの間は部品が全部のキーを取るか (`OwnsKeys`)。
+   取らないと glogx の横断キーや `L` が裏へ抜けて板を閉じ、閉じた拍子に部品の処理 (測定など) が黙って止まる
+   (mac-lan-manager の測定の進捗で、敵対的レビューが見つけた。2026-10-22)。キーの案内は glogx の最下行に渡したか (§5)
+10. **tuikit の部品を足した・語彙や見た目の決まりを変えたなら、本書 (§2 の表・§7 の表・§9 の地図) を同じ変更で直す**。
    部品の README は API の正本、本書は「どの場面でどの部品をどう使うか」の正本で、片方だけ直すと次の画面が古い方に合わせる
