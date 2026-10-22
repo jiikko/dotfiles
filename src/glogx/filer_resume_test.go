@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -102,5 +103,31 @@ func TestInitFilerRestoreDoesNotYieldToUnverifiedIssuesMemory(t *testing.T) {
 	_ = m.Init()
 	if m.activeFullScreen() != FullScreenFiler {
 		t.Fatalf("issues の記憶があるだけで F を開かなかった: active=%v", m.activeFullScreen())
+	}
+}
+
+// プレビューのタイルを開いたまま C-g で終えたら、次の起動でタイルも開き直す (記憶の JSON を通る経路)。
+func TestFilerTilesSurviveQuitAndRestart(t *testing.T) {
+	testenv.IsolateScreenMemory(t)
+	m := newFilerBrowse(t)
+	dir := app.CurrentDir()
+	m.handleKey("F")
+	m.filerV.RestorePlace(filer.Place{Start: dir, Cursor: filepath.Join(dir, "a.txt")})
+	m.handleKey("enter") // カーソルのファイルをタイルで開く
+	want := []filer.TilePlace{{Path: filepath.Join(dir, "a.txt")}}
+	if got := m.filerV.Fixture().Model().Place().Tiles; !slices.Equal(got, want) {
+		t.Fatalf("enter でタイルが開いていない: %+v", got)
+	}
+	if _, cmd := m.handleKey("ctrl+g"); !isQuitCmd(cmd) {
+		t.Fatal("C-g で終わらない")
+	}
+
+	m2 := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
+	_ = m2.Init()
+	if m2.activeFullScreen() != FullScreenFiler {
+		t.Fatalf("F が開き直らない: active=%v", m2.activeFullScreen())
+	}
+	if got := m2.filerV.Fixture().Model().Place().Tiles; !slices.Equal(got, want) {
+		t.Errorf("タイルが戻らない: %+v", got)
 	}
 }

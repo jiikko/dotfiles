@@ -176,25 +176,56 @@ func (m *Model) cursorRect() rect {
 }
 
 func (m *Model) openTile(n *node, from rect) {
-	if msg := refuse(n); msg != "" {
+	t, msg := m.newTile(n, from)
+	if msg != "" {
 		m.fail(msg)
 		return
+	}
+	m.tiles = append(m.tiles, t)
+}
+
+// newTile は n を読むタイルを作る (まだ積まない)。開けなければ理由を返す。
+func (m *Model) newTile(n *node, from rect) (*tile, string) {
+	if msg := refuse(n); msg != "" {
+		return nil, msg
 	}
 	src, err := openText(n.path())
 	if err != nil {
 		switch {
 		case errors.Is(err, errBinary):
-			m.fail("バイナリは表示できません: " + n.name)
+			return nil, "バイナリは表示できません: " + n.name
 		case errors.Is(err, errNotRegular):
-			m.fail("通常のファイルではないので開けません: " + n.name)
+			return nil, "通常のファイルではないので開けません: " + n.name
 		default:
-			m.fail("開けません: " + n.name)
+			return nil, "開けません: " + n.name
 		}
-		return
 	}
 	t := &tile{slot: len(m.tiles) % 4, from: from}
 	t.setSource(n, src)
 	src.ensure(2 * m.tileRows(t))
+	return t, ""
+}
+
+// restoreTile は記憶のタイルを開き切った状態で積む (RestorePlace)。開けなくなったファイルは知らせずに飛ばす: 起動の直後に、
+// 打っていない操作の失敗を出さない。
+// diff は差分の有無 (diffable) を見ずに出す: git の状態は裏で取り終わる前なので、見ると変更のあるファイルでも本体に落ちる。
+// 変更が無くなっていれば「差分はありません」が出る (fetchDiff)。diff のスクロールは戻さない: 行は裏で取るので、着くまで上限が分からない。
+// 本体のスクロールは画面の大きさが決まる前に戻す (glogx は描くときに Resize する)。上限で切るのは Resize。
+func (m *Model) restoreTile(tp TilePlace) {
+	t, msg := m.newTile(m.nodeFor(tp.Path), m.cursorRect())
+	if msg != "" {
+		return
+	}
+	if tp.Diff {
+		t.setMode(modeDiff)
+	} else {
+		t.scroll = max(0, tp.Scroll)
+		t.src.ensure(t.scroll + 2*m.tileRows(t))
+	}
+	t.open.step(1, popupDur, 0)
+	t.open.snap()
+	t.sy.step(float64(t.scroll), scrollDur, 0)
+	t.sy.snap()
 	m.tiles = append(m.tiles, t)
 }
 
@@ -459,15 +490,23 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 
 // toggleDiff は d (git の diff と本体の切り替え。spec §8.3)。diff を出せないファイルでは理由を知らせる。
 func (m *Model) toggleDiff(t *tile) {
-	t.stopDiff()
 	if t.mode == modeDiff {
-		t.mode = modeFile
-	} else {
-		if !m.diffable(t.n) {
-			m.fail("diff はありません (git の変更が無いファイル)")
-			return
-		}
-		t.mode = modeDiff
+		t.setMode(modeFile)
+		return
+	}
+	if !m.diffable(t.n) {
+		t.stopDiff()
+		m.fail("diff はありません (git の変更が無いファイル)")
+		return
+	}
+	t.setMode(modeDiff)
+}
+
+// setMode は本体と diff を切り替え、先頭から出し直す。
+func (t *tile) setMode(mode tileMode) {
+	t.stopDiff()
+	t.mode = mode
+	if mode == modeDiff {
 		t.diff = startDiff(t.n.path()) // 切り替えるたびに取り直す (開いている間に書き換えた・git add した分を出す)
 	}
 	t.scroll, t.sy, t.jump, t.links = 0, tween{}, false, nil

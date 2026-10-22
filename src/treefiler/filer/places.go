@@ -24,12 +24,22 @@ func placesPath() string {
 	return filepath.Join(d, "treefiler-places")
 }
 
-// Place は開いている場所: 起動したフォルダ・開いていたフォルダ (root 以外の展開済み)・カーソル (どれも絶対パス)。
+// Place は開いている場所: 起動したフォルダ・開いていたフォルダ (root 以外の展開済み)・カーソル (どれも絶対パス)・プレビューのタイル。
 // Remember place の記録と、glogx が C-g で閉じて開き直したときの記憶 (glogx の filer_resume.go) が同じ形を使う。
+// Tiles は glogx の記憶 (JSON) だけが運ぶ。Remember place の行形式 (savePlace) には書かない: treebeard と同じ形式を保っており、
+// あちらにタイルを開き直す機能が無い。
 type Place struct {
-	Start  string   `json:"start"`
-	Opened []string `json:"opened,omitempty"`
-	Cursor string   `json:"cursor,omitempty"`
+	Start  string      `json:"start"`
+	Opened []string    `json:"opened,omitempty"`
+	Cursor string      `json:"cursor,omitempty"`
+	Tiles  []TilePlace `json:"tiles,omitempty"`
+}
+
+// TilePlace は開いていたプレビューのタイル 1 枚 (奥から手前の順に並べる)。
+type TilePlace struct {
+	Path   string `json:"path"`
+	Diff   bool   `json:"diff,omitempty"`
+	Scroll int    `json:"scroll,omitempty"`
 }
 
 // oneLine は 1 行に書いて同じ値で読み戻せるか。\r も外す: bufio.Scanner は行末の \r を落とすので、\r で終わるパスは
@@ -83,11 +93,16 @@ func (m *Model) Place() Place {
 		}
 	}
 	walk(m.root)
+	for _, t := range m.tiles {
+		if !t.closing {
+			p.Tiles = append(p.Tiles, TilePlace{Path: t.n.path(), Diff: t.mode == modeDiff, Scroll: t.scroll})
+		}
+	}
 	return p
 }
 
-// RestorePlace は p の開いていたフォルダとカーソルを戻す (無くなったパス・木の外のパスは飛ばす。カーソルが戻せなければ動かさない)。
-// 起動したフォルダの照合は呼び出し側が行う。
+// RestorePlace は p の開いていたフォルダとカーソルとタイルを戻す (無くなったパス・木の外のフォルダは飛ばす。カーソルが戻せなければ
+// 動かさない)。起動したフォルダの照合は呼び出し側が行う。
 func (m *Model) RestorePlace(p Place) {
 	for _, o := range p.Opened {
 		if n := m.loadPath(o); n != nil && n.dir {
@@ -95,6 +110,9 @@ func (m *Model) RestorePlace(p Place) {
 		}
 	}
 	m.reveal(p.Cursor)
+	for _, tp := range p.Tiles {
+		m.restoreTile(tp)
+	}
 }
 
 // savePlace は今の開いたフォルダとカーソルを、起動したフォルダの記録として先頭に書く (設定が on のときだけ)。

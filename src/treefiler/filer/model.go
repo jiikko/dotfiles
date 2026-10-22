@@ -209,6 +209,9 @@ func (m *Model) Resize(w, h int) {
 	}
 	m.w, m.h = w, h
 	for _, t := range m.tiles {
+		if t.mode == modeFile {
+			t.src.ensure(t.scroll + 2*m.tileRows(t)) // 読めている所だけで上限を決めると、大きさが決まる前に戻したスクロール (restoreTile) を縮める
+		}
 		t.scroll = min(t.scroll, m.maxScroll(t)) // 折り返しは幅で行の数が変わる (広げると末尾の先を指したまま空白になる)
 	}
 }
