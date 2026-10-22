@@ -360,12 +360,12 @@ func TestLinesClippedToViewport(t *testing.T) {
 		yhi := ylo + ch - 1
 		g := m.lines(now, ylo, yhi)
 		for k, c := range full {
-			if k[1] >= ylo && k[1] <= yhi && (g[k] == nil || *g[k] != *c) {
-				t.Fatalf("窓 [%d, %d] のセル %v: 切り詰めると %+v、全体では %+v", ylo, yhi, k, g[k], c)
+			if gc, ok := g[k]; k[1] >= ylo && k[1] <= yhi && (!ok || gc != c) {
+				t.Fatalf("窓 [%d, %d] のセル %v: 切り詰めると %+v (在る=%v)、全体では %+v", ylo, yhi, k, gc, ok, c)
 			}
 		}
 		for k := range g {
-			if k[1] >= ylo && k[1] <= yhi && full[k] == nil {
+			if _, ok := full[k]; k[1] >= ylo && k[1] <= yhi && !ok {
 				t.Fatalf("窓 [%d, %d] のセル %v: 全体の格子に無い線を作った", ylo, yhi, k)
 			}
 		}

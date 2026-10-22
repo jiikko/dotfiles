@@ -220,7 +220,7 @@ var mixedGlyph = map[string][2][]string{
 }
 
 // glyph は線の 1 セルの文字。
-func glyph(style string, lc *lineCell) string {
+func glyph(style string, lc lineCell) string {
 	m := lc.mask & 15
 	if mx, ok := mixedGlyph[style]; ok && m&^lc.thick != 0 {
 		// git が無視する枝だけが通る軸は細線に落とす (spec §2.1 の thin)
@@ -270,15 +270,13 @@ type lineCell struct {
 	owner *node // その枝が生える親 (線の色の元。spec §1.4 の sap)
 }
 
-type lineGrid map[[2]int]*lineCell
+// lineGrid はセルの位置から線の部品へ。セルは値で持つ: 毎フレーム作る格子でセルごとに確保しない (ポインタで持つと
+// 実物の src を上下に動かす 1 打で約 300KB、確保の過半がここだった。tools/tfprobe の move)。
+type lineGrid map[[2]int]lineCell
 
 func (g lineGrid) add(x, y, bits int, emph emphasis, owner *node, thick bool) {
 	k := [2]int{x, y}
 	c := g[k]
-	if c == nil {
-		c = &lineCell{}
-		g[k] = c
-	}
 	c.mask |= bits
 	if thick {
 		c.thick |= bits
@@ -286,6 +284,7 @@ func (g lineGrid) add(x, y, bits int, emph emphasis, owner *node, thick bool) {
 	if emph >= c.emph {
 		c.emph, c.owner = emph, owner
 	}
+	g[k] = c
 }
 
 func (g lineGrid) hseg(a, b, y int, emph emphasis, owner *node, thick bool) {
@@ -333,8 +332,12 @@ func (m *Model) thinBranch(n *node) bool {
 // ylo..yhi は画面に出る行 (木の座標)。その外の線は作らない: 5 万件のフォルダで 1 フレーム 25ms かかり、線の格子が半分を占めた
 // (実測 2026-10-09)。縦線は 1 行外まで残す (端のセルの継ぎ目の形は隣のセルのビットで決まる)。
 func (m *Model) lines(now map[*node][2]int, ylo, yhi int) lineGrid {
+	return m.linesInto(lineGrid{}, now, ylo, yhi)
+}
+
+// linesInto は lines の格子を g (空) に作る。描画は Model の gridBuf (reusedMap) の map を毎フレーム使い回す。
+func (m *Model) linesInto(g lineGrid, now map[*node][2]int, ylo, yhi int) lineGrid {
 	sp := m.spine()
-	g := lineGrid{}
 	for _, pn := range m.order {
 		pp, ok := now[pn]
 		if !ok || !pn.dir || !pn.expanded {

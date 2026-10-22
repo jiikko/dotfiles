@@ -13,8 +13,9 @@ import (
 // (56c93c8f: src/treefiler の CI が success、src/glogx が 164 / 158 で failure)。
 // 上限は実測 (-race なし。go1.26.0) に数回の余裕を足した値。描く文字列そのものを増やす変更 (案内・凡例) で上げるときは、
 // 増えた分が描く文字列の増加だと A/B で確かめてから上げる。
-// 実測 258 回 (上限 260)。木は全部を commit した repo (cleanRepo) なので、ブランチ名を描く分を含む。
-const frameAllocBudget = 260
+// 実測 108 回 (上限 112)。木は全部を commit した repo (cleanRepo) なので、ブランチ名を描く分を含む。
+// 線の格子 (lineGrid) をセルごとに確保する形・map を毎フレーム作り直す形に戻すと 301 回・119 回になり、この上限で止まる。
+const frameAllocBudget = 112
 
 func TestFrameAllocBudget(t *testing.T) {
 	isolateConfig(t)

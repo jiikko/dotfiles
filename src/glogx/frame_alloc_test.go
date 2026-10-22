@@ -210,8 +210,8 @@ func TestFrameAllocBudget(t *testing.T) {
 		// 最下行に検索とキー一覧の案内 (/ find  ? keys) を足して 156 / 45601 B。案内を戻すと 43556 B に下がるのを実測した
 		// (増えたのは描く文字列そのもので、確保の無駄ではない)。! cmd / s shell の案内を足して 45861 B
 		// 158 / 46200 は動きの途中の画面の値だった (fixture が実時計で進めていて止まりきらない。budgetFilerModel の注記)。
-		// 止まった画面で 220 / 50799 B (-race)
-		{"filer", budgetFilerModel, 222, 51500},
+		// 止まった画面で 220 / 50799 B (-race)。線の格子のセルを値で持ち map を使い回して 124 回 (-race なし) / 39790 B (-race)
+		{"filer", budgetFilerModel, 126, 40500},
 	}
 	for _, c := range cases {
 		m := c.build(t)

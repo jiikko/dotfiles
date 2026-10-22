@@ -547,14 +547,49 @@ func unclippedRippleElbows(m *Model, c *canvas, grid lineGrid, now map[*node][2]
 		y0, y1 := min(pp[1], np[1]), max(pp[1], np[1])
 		for y := y0; y <= y1; y++ {
 			for x := x0; x <= x1; x++ {
-				lc := grid[[2]int{x, y}]
-				if lc == nil || (y != pp[1] && y != np[1] && lc.mask&(dirUp|dirDown) == 0) {
+				lc, ok := grid[[2]int{x, y}]
+				if !ok || (y != pp[1] && y != np[1] && lc.mask&(dirUp|dirDown) == 0) {
 					continue
 				}
 				if p := c.at(x-ox, y-oy); p != nil && y-oy < ch {
 					p.fg = mix(p.fg, cRipple, 0.9*g)
 				}
 			}
+		}
+	}
+}
+
+// 描画の線の格子は Model の入れ物を使い回す。畳んで描き直したら、前のフレームの線 (畳んだフォルダの子への線) が残らず、
+// その時点の位置から作り直した格子 (lines) と同じになる。
+func TestReusedLineGridMatchesFreshAfterCollapse(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "a/one.txt")
+	settle(m)
+	m.draw()
+	before := len(m.gridBuf.m)
+	a := m.cur.parent
+	a.expanded = false
+	m.setCur(a)
+	settle(m)
+	m.draw()
+	ch := m.canvasH()
+	oy := int(math.Round(m.camY.v))
+	now := map[*node][2]int{}
+	for _, n := range m.order {
+		if an := m.anims[n]; an != nil && !an.ghost && an.alpha.v > 0.05 {
+			now[n] = [2]int{int(math.Round(an.x.v)), int(math.Round(an.y.v))}
+		}
+	}
+	want, got := m.lines(now, oy, oy+ch-1), m.gridBuf.m
+	if len(want) >= before {
+		t.Fatalf("前提: 畳んでも線のセルが減っていない (%d → %d)", before, len(want))
+	}
+	if len(got) != len(want) {
+		t.Fatalf("使い回した格子のセルが %d 個、作り直すと %d 個 (前のフレームの線が残っている)", len(got), len(want))
+	}
+	for k, c := range want {
+		if g, ok := got[k]; !ok || g != c {
+			t.Fatalf("セル %v: 使い回すと %+v (在る=%v)、作り直すと %+v", k, g, ok, c)
 		}
 	}
 }

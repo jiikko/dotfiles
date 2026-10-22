@@ -63,10 +63,12 @@ type Model struct {
 	nameW      []int  // 列ごとの最長の名前の幅 (layout が数える。詳細の右揃えに使う)
 	opener     opener // `o` の起動 (open.go)
 	linkCache  map[string]string
-	cv         *canvas                  // 使い回す格子 (大きさが変わったら作り直す)
-	posBuf     reusedMap[*node, place]  // layout の結果の入れ物 (毎 tick 作り直さない。layout の doc)
-	nowBuf     reusedMap[*node, [2]int] // draw の「今の位置」の入れ物
-	kpBuf      [][2]int                 // lines の子の位置の入れ物
+	cv         *canvas                     // 使い回す格子 (大きさが変わったら作り直す)
+	posBuf     reusedMap[*node, place]     // layout の結果の入れ物 (毎 tick 作り直さない。layout の doc)
+	nowBuf     reusedMap[*node, [2]int]    // draw の「今の位置」の入れ物
+	kpBuf      [][2]int                    // lines の子の位置の入れ物
+	gridBuf    reusedMap[[2]int, lineCell] // drawLines の線の格子の入れ物 (毎フレーム作り直さない)
+	gridLast   int                         // 前のフレームの格子のセルの数 (gridBuf の見込み)
 	// 巨大なフォルダの仮想化 (virt.go)
 	visGen       uint64
 	gitGen       uint64 // gitSnap を差し替えた回数 (縦棒の太さの覚えの鍵)
@@ -1177,7 +1179,10 @@ func (m *Model) drawBead(c *canvas, ox, oy, ch int) {
 }
 
 func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
-	grid := m.lines(now, oy, oy+ch-1)
+	// 前のフレームのセル (と線の持ち主の node) は take が手放す。見込みは前のフレームの数 (大きな画面から戻ると作り直す)
+	grid := m.linesInto(m.gridBuf.take(m.gridLast), now, oy, oy+ch-1)
+	m.gridBuf.fit(len(grid))
+	m.gridLast = len(grid)
 	for k, lc := range grid {
 		x, y := k[0]-ox, k[1]-oy
 		if y >= ch {
@@ -1221,8 +1226,8 @@ func (m *Model) drawRippleElbows(c *canvas, grid lineGrid, now map[*node][2]int,
 		y0, y1 := max(min(pp[1], np[1]), oy), min(max(pp[1], np[1]), oy+min(ch, c.h)-1)
 		for y := y0; y <= y1; y++ {
 			for x := x0; x <= x1; x++ {
-				lc := grid[[2]int{x, y}]
-				if lc == nil || (y != pp[1] && y != np[1] && lc.mask&(dirUp|dirDown) == 0) {
+				lc, ok := grid[[2]int{x, y}]
+				if !ok || (y != pp[1] && y != np[1] && lc.mask&(dirUp|dirDown) == 0) {
 					continue
 				}
 				if p := c.at(x-ox, y-oy); p != nil && y-oy < ch {
