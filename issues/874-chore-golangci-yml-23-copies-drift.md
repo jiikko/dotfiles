@@ -20,13 +20,27 @@
   (`test_golangci_lint_pinned.sh` は `scripts/golangci_lint.sh` のビルドと置き場所の検査で、設定の中身は見ない)
 - golangci-lint v2 の設定に別ファイルを読み込む仕組みがあるかは未確認 (着手の時に v2.15.0 の文書と実物で確かめる)
 
-## 対応方針 (案。決めるのは着手の時)
+## 対応方針 (2026-10-22 にユーザーと決めた)
 
-- A. 検査: 共通の塊を 1 つの正本に置き、各 `.golangci.yml` がそれを逐語で含むことを test で見る (ずれたら赤)。編集は 23 回のまま。
-  上の 3 本の検査との役割分担 (どれを残し、どれを正本の逐語検査に吸わせるか) も決める
-- B. 生成: 正本 + モジュールごとの差分から `.golangci.yml` を作るスクリプトを置き、生成物が最新かを test で見る。編集は 1 回になるが、
-  手で直したモジュールごとの事情 (除外のコメント) を差分の側へ移す手間がある
-- どちらにするかは、モジュールごとの差分の量を数えてから決める
+実行時に合成する (生成物は commit しない。commit すると同じ内容が 23 個のファイルとして残り、二重管理が変わらない。ユーザー判断 2026-10-22)。
+
+- 正本: `src/.golangci.yml` (共通の塊) と、各モジュールの `src/<module>/.golangci.local.yml` (そのモジュールの差分だけ。無いモジュールもある)
+- 入口: lint は全部 `scripts/golangci_lint.sh` を通る (各 Makefile の `make lint`・CI の `_go-project.yml`・`scripts/test_changed.sh`。2026-10-22 に grep で確認。
+  エディタからの起動は無い)。この script が `run` のときに合成した設定を一時ファイルへ書き、`-c` で渡す。CI も同じ入口なので、CI でも合成した設定で走る
+- 合成の規則は決定的にする (ユーザー指示 2026-10-22「順序が不定にならないように」): 読む順はベース → 差分の 2 つに固定 (glob で探さない)。
+  map は再帰的に合わせ、同じ鍵の値は差分が上書きする。一覧はベースの後に差分を足す。出力の鍵の並びは「ベースの順、その後に差分だけにある鍵を差分の順」。
+  同じ入力からは同じバイト列が出ることをテストで固定する
+- 合成は ruby (標準の YAML) で書く。python3 には YAML の標準 module が無い (手元で `import yaml` が失敗。2026-10-22)。macOS と CI の macOS runner には ruby がある
+- 🚨 ベースに `run.relative-path-mode: gomod` を書く。設定の相対パス (exclusions の path) は既定で設定ファイルの置き場所から解決されるので、
+  一時ファイルを `-c` で渡すと除外が効かなくなる (実測 2026-10-22・v2.15.0: treefiler の設定をモジュールの外へ写すと forbidigo が 18 件出た。
+  `relative-path-mode: gomod` を足すと 0 件)
+- golangci-lint 自体の `extends` / `include` は使えない (実測 2026-10-22・v2.15.0: 書いてもエラーも警告も出ずに無視され、既定の linter が有効になった)
+- 素の `golangci-lint run` (script を通さない) は親のディレクトリの `src/.golangci.yml` を見つけるので、少なくとも共通の塊が効く (既定に黙って倒れない)
+- CI の paths filter: 各 `src_<name>.yml` に `src/.golangci.yml` と合成の script を足し、`scripts/check_go_project_lanes.sh` で配線を固定する
+- 設定の中身を読む既存の検査 3 本 (`test_golangci_parallel_runners.sh`・`test_tuikit_consumers_aligned.sh`・`test_tuikit_depguard_covers_parts.sh`) は、
+  合成した結果を読む形に書き換える
+- 移行の確かめ: 各モジュールで、移行前の `.golangci.yml` と合成した設定で `golangci-lint run` の結果 (指摘の件数と中身) が同じであること。
+  加えて、合成した設定の意味 (YAML として読んだ値) が移行前と等しいことを機械で比べる
 
 ## 受け入れ条件
 
