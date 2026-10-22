@@ -68,6 +68,8 @@
 
 ## 関連
 
+- [869](../../869-feat-serial-run-machine-wide-heavy-command-queue.md) — pro-con を使わない間の、素の session どうしの直列化 (マシン全体で 1 本・flock)。pro-con を再開するときは、テストの係も 869 の lock を取る形に寄せるかをここで決める (2026-10-22)
+
 - 426 (決定 5: テストの係) / 455 (待ちの表示) / `bin/lockman` / 2026-09-25 の dogfooding (440)
 
 ## 実例 (2026-09-25)
