@@ -66,10 +66,12 @@ func (r ExecRequest) RunArgv() []string {
 	return append([]string{"/bin/sh", "-c", script, "mac-lan-manager", r.Banner}, r.Argv...)
 }
 
-// Notice は呼び出し側が右下の toast に出す知らせ。OK=false は「効かなかった」(✗ 赤。ガイド §9)。
+// Notice は呼び出し側が右下の toast に出す知らせ。OK=false は「効かなかった」(✗ 赤。ガイド §9)。Info は進行中の知らせ
+// (… シアン。OK より先に見る。始めたことを ✓ 緑で出すと、終わったように見える)。
 type Notice struct {
 	Text string
 	OK   bool
+	Info bool
 }
 
 // Scanner は Bonjour の走査の口 (discover.Scanner。テストで差し替える)。
@@ -388,8 +390,14 @@ func (m *Model) applyNetLoad(r netLoad) {
 }
 
 func (m *Model) note(text string, ok bool) {
-	m.notices = append(m.notices, Notice{text, ok})
+	m.notices = append(m.notices, Notice{Text: text, OK: ok})
 	m.record(text, ok)
+}
+
+// noteInfo は進行中の知らせ (始めた・待っている)。メッセージ一覧には成功の色で残す。
+func (m *Model) noteInfo(text string) {
+	m.notices = append(m.notices, Notice{Text: text, OK: true, Info: true})
+	m.record(text, true)
 }
 
 // Resize は画面の大きさを伝える。
@@ -1374,13 +1382,13 @@ func (m *Model) unadvertise(host, name string, argv []string) {
 		if err := run(ctx, argv); err != nil {
 			var ec interface{ ExitCode() int }
 			if errors.As(err, &ec) && ec.ExitCode() == setup.ExitOtherName {
-				ch <- Notice{name + " の広告は止めていない: 相手は別の名前を広告している (" + err.Error() + ")", false}
+				ch <- Notice{Text: name + " の広告は止めていない: 相手は別の名前を広告している (" + err.Error() + ")", OK: false}
 				return
 			}
-			ch <- Notice{name + " の広告を止められなかった (" + err.Error() + ")。相手で: " + setup.RemoveHint(), false}
+			ch <- Notice{Text: name + " の広告を止められなかった (" + err.Error() + ")。相手で: " + setup.RemoveHint(), OK: false}
 			return
 		}
-		ch <- Notice{name + " の広告を止めた", true}
+		ch <- Notice{Text: name + " の広告を止めた", OK: true}
 	}()
 }
 
@@ -1472,14 +1480,14 @@ func (m *Model) askLedger(r row) {
 		}
 		m.ask = &ask{title: "台帳から外す", body: body, yes: func() Notice {
 			if err := m.o.Ledger.Remove(r.host); err != nil {
-				return Notice{"外せない: " + err.Error(), false}
+				return Notice{Text: "外せない: " + err.Error(), OK: false}
 			}
 			delete(m.wired, r.host) // 外す前に引いた「引ける」を使い続けない (戻したときに引き直す)
 			m.reloadLedger()
 			if stop {
 				m.unadvertise(r.host, name, argv)
 			}
-			return Notice{"台帳から外した: " + r.host, true}
+			return Notice{Text: "台帳から外した: " + r.host, OK: true}
 		}}
 	} else {
 		if r.host == "" {
@@ -1510,10 +1518,10 @@ func (m *Model) askLedger(r row) {
 				x.User, x.LAN = or(x.User, h.User), or(x.LAN, h.LAN)
 			})
 			if err != nil {
-				return Notice{"登録できない: " + err.Error(), false}
+				return Notice{Text: "登録できない: " + err.Error(), OK: false}
 			}
 			m.reloadLedger()
-			return Notice{"台帳に登録した: " + r.host, true}
+			return Notice{Text: "台帳に登録した: " + r.host, OK: true}
 		}}
 	}
 	m.ov = ovConfirm

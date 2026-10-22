@@ -25,6 +25,7 @@ const (
 	NoticeOK      NoticeKind = iota // 成功 (トーストのみ)
 	NoticeRefused                   // 操作を拒否した理由の案内・クリップボード失敗 (失敗トーストのみ。lastWarning を汚さない)
 	NoticeError                     // エラー詳細を含み、後で w でコピーする価値があるもの (showWarning)
+	NoticeInfo                      // 進行中の知らせ (始めた・待っている。… シアンのトースト。ガイド §9)
 )
 
 // ClipboardFailText はクリップボードへのコピーが失敗したときの通知文 (copyWithToast と viewer で共有)。

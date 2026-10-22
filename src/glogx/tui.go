@@ -761,6 +761,8 @@ func (m *browseModel) deliverNotice(text string, kind app.NoticeKind) bool {
 		m.toast.Show(text, false)
 	case app.NoticeError:
 		m.showWarning(text)
+	case app.NoticeInfo:
+		m.toast.ShowInfo(text)
 	}
 	return true
 }
@@ -1256,7 +1258,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 本来の直し方は「描画とキー判定を同一の状態値から導出する」(未対応)。
 		if m.actModal.pushConfirm || m.actModal.pullConfirm || m.actModal.rerunConfirm ||
 			m.actModal.pushing || m.actModal.pulling || m.actModal.rerunning {
-			m.toast.Show(msg.target+" update は確認/実行が終わってから実行してください", true)
+			m.toast.Show(msg.target+" update は確認/実行が終わってから実行してください", false) // 断り (✗。ガイド §9)
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.actModal.runUpdate(msg.target), m.maybeTick())

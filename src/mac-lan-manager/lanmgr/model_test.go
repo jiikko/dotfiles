@@ -2103,7 +2103,7 @@ func TestHeaderNamesSpeedAndReach(t *testing.T) {
 func TestAutoBoardHintOmitsEnter(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	for _, a := range []*ask{
-		{title: "台帳に内部 IP 付きで載せる", body: []string{"x"}, yes: func() Notice { return Notice{"ok", true} }, auto: true},
+		{title: "台帳に内部 IP 付きで載せる", body: []string{"x"}, yes: func() Notice { return Notice{Text: "ok", OK: true} }, auto: true},
 		{title: "実行", body: []string{"x"}, exec: &ExecRequest{Argv: []string{"true"}}, auto: true},
 	} {
 		h.m.ask, h.m.ov = a, ovConfirm

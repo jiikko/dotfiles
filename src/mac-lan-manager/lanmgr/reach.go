@@ -89,7 +89,7 @@ func (m *Model) startReach(r row) {
 		return
 	case m.reachRuns[r.host] != nil: // 一覧を開いたときに自分で確かめている回なら、終わったら知らせる回にする (2 本目は起こさない)
 		m.reachRuns[r.host].tell = true
-		m.note("疎通を確かめている途中 ("+r.host+")。終わったら知らせる", true)
+		m.noteInfo("疎通を確かめている途中 (" + r.host + ")。終わったら知らせる")
 		return
 	}
 	t := m.reachTarget(r)
@@ -98,7 +98,7 @@ func (m *Model) startReach(r row) {
 		return
 	}
 	m.runReach(t, true)
-	m.note(t.Name+" の疎通を確かめています ("+strings.Join(t.Names, " / ")+")", true)
+	m.noteInfo(t.Name + " の疎通を確かめています (" + strings.Join(t.Names, " / ") + ")")
 }
 
 // runReach は t を裏で確かめる。tell は終わったときに知らせを出すか (p で頼んだ回だけ。開いたときに自分で確かめる回は列に出すだけ)。

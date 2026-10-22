@@ -138,6 +138,10 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	a.m.Advance(time.Now())
 	for _, n := range a.m.TakeNotices() {
+		if n.Info {
+			a.toast.ShowInfo(n.Text)
+			continue
+		}
 		a.toast.Show(n.Text, n.OK)
 	}
 	for _, t := range a.toast.Advance() {
@@ -266,7 +270,10 @@ func finishBG(w io.Writer, m bgWaiter, stop <-chan struct{}) {
 	got, left := m.WaitBG(stop)
 	for _, n := range got {
 		mark := "✓"
-		if !n.OK {
+		switch {
+		case n.Info:
+			mark = "…"
+		case !n.OK:
 			mark = "✗"
 		}
 		fmt.Fprintln(w, mark, n.Text)

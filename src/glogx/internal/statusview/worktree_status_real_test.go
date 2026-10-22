@@ -1,6 +1,7 @@
 package statusview
 
 import (
+	"glogx/internal/app"
 	"glogx/internal/testenv"
 	"os"
 	"os/exec"
@@ -202,8 +203,8 @@ func TestRealCleanRepoIsSafe(t *testing.T) {
 		t.Fatalf("新品の repo が clean でない: %+v", v.st.rows)
 	}
 	v.HandleKey("a", StatusViewport{page: 20})
-	if notice, ok := testenv.NoticeOKOf(v.TakeNotice()); !ok || !strings.Contains(notice, "ありません") {
-		t.Errorf("notice = %q (ok=%v), want 「stage するものがありません」", notice, ok)
+	if notice, kind := v.TakeNotice(); kind != app.NoticeRefused || !strings.Contains(notice, "ありません") {
+		t.Errorf("notice = %q (kind=%v), want 断りの「stage するものがありません」", notice, kind)
 	}
 	// 行が無い状態で各キーを叩いても panic しないこと
 	for _, key := range []string{" ", "X", "d", "j", "k", "tab", "g", "G", "r"} {

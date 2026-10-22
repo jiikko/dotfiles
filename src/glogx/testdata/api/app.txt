@@ -1,5 +1,6 @@
 const FetchTimeout
 const NoticeError
+const NoticeInfo
 const NoticeOK
 const NoticeRefused
 const ScreenMemoryTTL

@@ -144,8 +144,8 @@ func TestStatusStageAllOnCleanTreeDoesNothing(t *testing.T) {
 	if len(calls.add) != 0 {
 		t.Fatalf("stage 対象が無いのに git add が走った: %v", calls.add)
 	}
-	if notice, ok := testenv.NoticeOKOf(v.TakeNotice()); !ok || notice == "" {
-		t.Errorf("notice = %q (ok=%v), want 「stage するものがありません」", notice, ok)
+	if notice, kind := v.TakeNotice(); kind != app.NoticeRefused || notice == "" {
+		t.Errorf("notice = %q (kind=%v), want 断りの「stage するものがありません」", notice, kind)
 	}
 }
 

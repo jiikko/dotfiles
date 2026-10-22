@@ -581,16 +581,16 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 			var err error
 			if r.managed { // 開いた時は載っていたのに、別のプロセスが外した: 古い一覧の値で作り直さない
 				if err = m.o.Ledger.Update(h.Host, set); errors.Is(err, ledger.ErrNotFound) {
-					return Notice{"台帳から外されている (一覧を開き直して登録し直す)", false}
+					return Notice{Text: "台帳から外されている (一覧を開き直して登録し直す)", OK: false}
 				}
 			} else {
 				err = m.o.Ledger.Merge(h, set)
 			}
 			if err != nil {
-				return Notice{"登録できない: " + err.Error(), false}
+				return Notice{Text: "登録できない: " + err.Error(), OK: false}
 			}
 			m.reloadLedger()
-			return Notice{"台帳に載せた: " + su.host, true}
+			return Notice{Text: "台帳に載せた: " + su.host, OK: true}
 		}}, ""
 	}
 	return nil, "この手順は実行できない"
@@ -659,7 +659,7 @@ func (m *Model) setupX() {
 		}
 		st, ok := nextStep(m.setupSteps())
 		if !ok {
-			m.note("全部済んでいる", true)
+			m.note("全部済んでいる", false) // x が効かなかった (✗。ガイド §9)
 			return
 		}
 		if st.Blocked != "" {

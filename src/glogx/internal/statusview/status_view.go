@@ -948,7 +948,7 @@ func (v *StatusView) stageAll() tea.Cmd {
 		}
 	}
 	if len(paths) == 0 {
-		v.setNotice("stage するものがありません", app.NoticeOK)
+		v.setNotice("stage するものがありません", app.NoticeRefused) // 押したキーが効かなかった (✗。ガイド §9)
 		return nil
 	}
 	if err := gitexec.RunGitAdd(paths); err != nil {

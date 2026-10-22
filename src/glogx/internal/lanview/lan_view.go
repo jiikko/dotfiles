@@ -90,7 +90,10 @@ func (v *LanView) DrainNotices(deliver func(text string, kind app.NoticeKind) bo
 	}
 	for _, n := range lm.TakeNotices() {
 		kind := app.NoticeRefused
-		if n.OK {
+		switch {
+		case n.Info:
+			kind = app.NoticeInfo
+		case n.OK:
 			kind = app.NoticeOK
 		}
 		deliver(n.Text, kind)

@@ -100,11 +100,17 @@ func TestReachRunsAndShowsResult(t *testing.T) {
 	if !h.m.Busy() || !strings.Contains(h.screen(), "確かめている") {
 		t.Errorf("確かめている間: Busy=%v\n%s", h.m.Busy(), h.screen())
 	}
+	// 始めた・待っているの知らせは進行中 (… シアン。✓ 緑で出すと終わったように見える。ガイド §9)
+	if n := h.m.TakeNotices(); len(n) == 0 || !n[len(n)-1].Info || !strings.Contains(n[len(n)-1].Text, "確かめています") {
+		t.Errorf("始めた知らせが進行中でない: %+v", n)
+	}
 	h.keys("p")
 	if f.calls.Load() != 1 {
 		t.Errorf("確かめている途中に 2 本目を起こした: calls=%d", f.calls.Load())
 	}
-	h.m.TakeNotices()
+	if n := h.m.TakeNotices(); len(n) == 0 || !n[len(n)-1].Info {
+		t.Errorf("確かめている途中の p の知らせが進行中でない: %+v", n)
+	}
 	f.results <- []reach.Name{
 		{Name: "m2macmini.local", Addrs: []reach.Addr{reachOK}},
 		{Name: "m2macmini.wired.local", Addrs: []reach.Addr{reachDead}},

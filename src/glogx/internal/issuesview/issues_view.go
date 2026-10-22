@@ -2793,7 +2793,7 @@ func (v *IssuesView) markNextKey(key string) tea.Cmd {
 	}
 	v.clearMark()
 	if moved == 0 {
-		v.setNotice("対象がありません (すべて既にその状態)", app.NoticeOK)
+		v.setNotice("対象がありません (すべて既にその状態)", app.NoticeRefused) // 押したキーが効かなかった (✗。ガイド §9)
 		return nil
 	}
 	v.setPendingMoveAnchors(cursorBefore, markBefore, movedPaths)
