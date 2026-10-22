@@ -17,7 +17,7 @@ zundamon-kaisetsu check | up | down | speakers | kana … | lint script.json | s
 ## パッケージの地図
 
 `main.go` (引数の解析 = Python の argparse の再現・シグナル・コマンドの振り分け) のほかは `internal/` のパッケージに分けている
-(issue 741)。上の層は下の層だけを import する (循環はコンパイラが止める)。
+(issue 741)。上の層は下の層だけを import する (循環はコンパイラが止める)。層 0 の中にも向きがあり、`app` → `paths` → `pyjson`、`extcmd` / `wav` → `app` と import する。
 
 | 層 | パッケージ | 持つもの |
 |---|---|---|

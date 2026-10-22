@@ -36,7 +36,7 @@ bin/pro-con card list | show C-001 | wait C-001 --until review  # カードを�
 bin/pro-con card log C-001 [--follow] [--json]  # PG の活動 (応答の文と道具の呼び出し。例 `Bash: go test ./...` / `Edit: close.go`) を時刻の順に。再開で入れ替わった前の session から続けて出す。思考は Claude Code が中身を保存しないので出せず、道具の結果は長いので出さない。読むだけ (issue 467)
 bin/pro-con log [--card C-001] [--follow] [--since 10m] [--json]  # dispatcher の出来事 (適用・除けた・起動・再開・止めた・削除・枠・watchdog・画面の数・画面を開いた / quit で閉じた) を読む。画面の出来事は画面が受付の箱に置き dispatcher が書く (--view の画面は置かない。issue 445)。記録は状態の置き場の events.jsonl (1 MiB で events.1.jsonl へ回す)。読むだけ (issue 444)
 bin/pro-con stats [--since 30d] [--by points|repo|week|all] [--json]  # 閉じたカードの所要を束ねて比べる (件数・所要 / 作業中 / 人の番の中央値と最大・PG の枠の API 料金換算と 5 時間枠の %)。既定は見積もりのポイントごと。記録は状態の置き場の metrics.jsonl (閉じたカード 1 枚 = 1 行。90 日で消す)。読むだけ (issue 516)
-bin/pro-con screen [--screen <id>] [--all] [--ansi] [--json] [--follow]  # 人の画面に今出ているものを外から読む (画面が描いた最新の 1 枚を relay が中継する)。画面が 1 つならそれを、複数なら一覧を出す。--follow は描き直されるたびに出す (既定の上限 1m)。読むだけ (issue 443)
+bin/pro-con screen [--screen <id>] [--all] [--ansi] [--json] [--follow [--timeout <長さ>]] [--e2e <置き場>]  # 人の画面に今出ているものを外から読む (画面が描いた最新の 1 枚を relay が中継する)。画面が 1 つならそれを、複数なら一覧を出す。--follow は描き直されるたびに出す (上限は `--timeout`。既定 1m)。`--e2e` は e2e モードの画面を読む。読むだけ (issue 443)
 bin/pro-con monitor [--once] [--interval 1m]  # 見張り (issue 475)。dispatcher が子として起こし、落ちたら起こし直し (30 分に 3 回まで)、抜けるときに止める (手で起動しなくてよい。2 つ起動しない = monitor.lock)。
                          # PG の commit 済みの分を git merge-tree で origin/master と・PG どうしで突き合わせた衝突と、テストの順番の長さ (3 本以上か先頭が 30 分以上) を見る。
                          # 読むだけ (git fetch もしない) で、見つけた・消えたときだけ受付の箱に置き、dispatcher が出来事 (pro-con log の monitor) に書く。e2e モードと --once の dispatcher では起こさない

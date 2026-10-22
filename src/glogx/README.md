@@ -408,7 +408,8 @@ go test -run '^$' -bench BenchmarkView -benchmem .
 落ちた実例が `1b025b8`。CI が回すのは固定版なので、そちらが唯一の出典。
 
 - CI: `.github/workflows/src_glogx.yml` (paths filter 付きの薄い caller) が再利用 workflow
-  `_go-project.yml` を呼び、lint と test を回す (src/glogx を触った push/PR のときだけ起動)
+  `_go-project.yml` を呼び、lint と test を回す (src/glogx を触った push/PR のときだけ起動)。同じ workflow の
+  `no-real-commands` job が、テストが実マシンのコマンドを叩かないかを `tests/glogx/test_no_real_commands_in_tests.sh` (`GLOGX_SHIM_SCOPE=all`) で見る
 - Bubble Tea は v2 (`charm.land/bubbletea/v2`)。移行で変えた点・採らなかった v2 機能・上げるときに
   測り直すこと (幅モデルの一致) は [`docs/glogx-bubbletea-v2.md`](../../docs/glogx-bubbletea-v2.md)
 - 実装は `package main` (起動・配線・状態機械) と `internal/` の画面・データ取得のパッケージ (地図は [CLAUDE.md](CLAUDE.md))、`issues/` サブパッケージ。利用枠の取得・整形 (`usage`) と外部プロセス起動の
@@ -428,7 +429,7 @@ go test -run '^$' -bench BenchmarkView -benchmem .
 - 表示幅の単一情報源 (`termwidth`) と、演出・画面合成の部品 (drawer の開閉 / glide / slide-in /
   窓の計算) は [`../tuikit`](../tuikit/README.md) にある (replace で取り込む。別の TUI でも使えるように
   切り出した)。glogx は `internal/term/width.go` の別名経由、issues / usage は `github.com/jiikko/dotfiles/src/tuikit/termwidth` を直接呼ぶ。
-  glogx 側に残るのは寸法・所要時間・キーの語彙だけ (`issues_drawer.go` / `zoom.go` / `internal/term/scroll_glide.go`)
+  glogx 側に残るのは寸法・所要時間・キーの語彙だけ (`internal/issuesview/issues_drawer.go` / `zoom.go` / `internal/term/scroll_glide.go`)
 - `tools/width-probe/`: 端末が各文字に何セル割り当てるかを CPR (CSI 6n) で端末自身に
   問い合わせる調査ツール。幅ズレの原因層 (glogx / 描画エンジン / tmux / 端末) を推測でなく
   実測で切り分けるためのもので、本体からは参照しない。

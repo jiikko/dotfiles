@@ -123,7 +123,7 @@ CI は 3 レーンに分かれている。**doctor 機能を触ったら見る�
 
 - **テスト本数の下限**: `go test -run 'TestDoctor'` は**1 本も走らなくても rc=0** を返す。
   パターンとテスト名が食い違うと vacuous pass になるので、`--- PASS: TestDoctor` の本数を数えて
-  下限 (15 本。実測 19 本) を課している。テスト名の頭を変えるならこの gate も直す
+  下限 (15 本。テストは glogx 直下と `internal/doctorview` の両方を数え、2026-10-22 時点で 108 本) を課している。テスト名の頭を変えるならこの gate も直す
 - **fail-closed の smoke**: `xcrun` / `brew` を**必ず失敗する偽物**に差し替えて `diskdoctor -json` を回し、
   依存コマンドを使う 4 判定が `failed` (診断できず) になることを見る。
   🚨 PATH から外すだけでは足りない (`xcrun` は `/usr/bin` にあるので実在して成功する)

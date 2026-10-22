@@ -44,7 +44,7 @@ Claude Code で package を探すときは [PACKAGES.md](PACKAGES.md) を引く�
 
 ## 新規プロジェクトのガイドライン
 
-プロジェクトを追加するときは、以下の **3 点セット**を必ず揃える。どれか欠けると lint / test がローカルまたは CI から漏れる（これが無かったためテスト 6 ファイルが死蔵していた実例あり）。
+プロジェクトを追加するときは、以下の **3 点セット** (1〜3) と package の doc comment (4) を必ず揃える。どれか欠けると lint / test がローカルまたは CI から漏れる（これが無かったためテスト 6 ファイルが死蔵していた実例あり）。
 
 1. **プロジェクト直下に Makefile（`lint` / `test` ターゲット必須）**
    root の `make test-go-lint` / `make test-go` と CI が `make -C src/<name> lint|test` として呼ぶ契約。実装言語が Go 以外になっても、この 2 ターゲットの契約だけは維持する

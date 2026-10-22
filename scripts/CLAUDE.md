@@ -81,6 +81,10 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 | `check_cdpath_before_cd_capture.sh` | `$(cd …)` でパスを取る前に CDPATH を外していない (`unset CDPATH` か lib なら `$(CDPATH='' cd …)`。export された CDPATH の下で相対パスの cd が解決先を stdout に出し、取ったパスが 2 行になる。zsh も対象) | `cdpath: allow` |
 | `check_var_before_multibyte.sh` | bash / sh で `$var` の直後に ASCII 以外の文字 (bash 3.2 が UTF-8 で全角の先頭バイトまで変数名に読む。`set -u` で死ぬか値が消える。zsh のファイルは除く。末尾で字句の状態が閉じないファイルも落とす。issue 633) | `var-multibyte: allow` |
 
+`make test-lint` の外から回る check_*.sh が 2 本ある。`check_unused_excluding_tests.sh` は `make test-unused-excluding-tests`
+(`test-src` に含まれ、CI は `unused.yml`。全 push の lint.yml で Go 解析を回さないため test-lint に入れない)。
+`check_assert_reaches_exit.sh` は `make test-assert-reaches-exit` を棚卸しのときに手で叩く (所要が長く、当面は赤いのが正常。tests/CLAUDE.md)。
+
 ## テスト
 
 - このディレクトリのスクリプトの unit テストは tests/tmux/ に stub 方式 (PATH 先頭に偽

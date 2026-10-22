@@ -44,3 +44,8 @@ if err := res.Diagnose("esa 宛ての Cookie "); err != nil { /* *ReadError: 記
 `ListProfiles` は Local State からプロファイルを列挙する (直近に使ったものが先頭)。
 Cookie DB 以外のファイル (slack-cli の Local Storage など) を一時コピーするときも `ws.NewTempDir` を通す
 (通さないと②③の後始末の対象にならない)。どの Cookie を選ぶか・案内に出すフラグ名は使う側が持つ。
+
+## 開発
+
+`make lint` / `make test`。安全装置 (後始末・復号の検証・エラーの分類) かそのテストを触ったら、
+`python3 mutation_check.py` で各安全装置を壊す変異を当て、対象テストが red になることを確かめる (`--list` で変異の一覧)。

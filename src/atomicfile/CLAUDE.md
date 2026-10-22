@@ -10,4 +10,4 @@
 ## ビルド・テスト
 
 - `make -C src/atomicfile lint` / `test`
-- 振る舞いのテスト (temp の残骸・失敗経路) は消費者側 (glogx の `cache_test.go` 等) にある。このパッケージ自体に `*_test.go` は無い
+- 振る舞いのテスト (temp の残骸・失敗経路) は消費者側 (glogx の `internal/gitdata/cache_test.go` 等) にある。このパッケージ自体に `*_test.go` は無い

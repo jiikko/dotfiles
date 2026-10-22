@@ -51,7 +51,7 @@
 | --- | --- |
 | `doctor/internal/displaycheck` の `Run` | 表示用構造体に新しい文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる。**検査の本体はここ 1 つ**で、`doctor/disk` / `doctor/svc` / `doctor/docker` / `doctor/ssd` の各 `display_coverage_test.go` が「どの型をどの関門が担当するか」と「免除とその理由」だけを渡す (写経すると片方だけ直る形ができるため 1 実装に寄せた) |
 | `doctor/internal/displaycheck/displaycheck_test.go` | **検査器そのもの**の回帰 (testdata の fixture に既知の違反を置き、見逃さないことを固定する)。各 package の呼び出しは「今は違反が無い」しか示さず、検査器が見逃すようになったことは検出しない |
-| `src/glogx/untrusted_display_test.go` | sink ごとの回帰 (実際に素通しが見つかった経路を固定) |
+| `src/glogx/untrusted_display_test.go` と各画面の `src/glogx/internal/<view>/untrusted_display_test.go` | sink ごとの回帰 (実際に素通しが見つかった経路を固定) |
 | `scripts/check_go_project_lanes.sh` | `go.mod` の `replace` 先が dependent の workflow paths に入っているか (= 共有 module を変えた push で CI が走るか) |
 
 🚨 **新しい表示用の構造体を足したら、その package の `sanitizeGate` の表にも足すこと**。
@@ -64,7 +64,7 @@
 ### なぜ「読み手側の lint」ではないか
 
 無害化は**値の生成側 (この module と `doctor/disk`)** で済ませており、読み手 (`glogx` の
-`doctor_view.go`) には `termsafe` の呼び出しが 1 つも現れない。
+`internal/doctorview/doctor_view.go`) には `termsafe` の呼び出しが 1 つも現れない。
 実測 2026-09-04: `doctorRow.text` への代入 35 件のうち、右辺が `termsafe.` なのは **0 件**
 (無害化済みの `r.Reason` などをそのまま使う)。**読み手側で構文 lint を書くと 35 件全部が
 誤検出になる**ので、案として却下した (issue 251 の案 2 の当初案)。
@@ -75,7 +75,7 @@
 - **新しい構造体そのもの**を足したとき (`sanitizeGate` に載っている型しか見ない)
 - 無害化の**中身**が正しいか (右辺が `termsafe.*` / `sanitize*` を呼んでいるかまでしか見ない)
 - **関門がコピーを無害化して親へ書き戻さない形** (`r.Items = kept` の一文だけを消す等)。
-  この形は sink テスト (`glogx/untrusted_display_test.go`) が end-to-end で見る担当
+  この形は sink テスト (glogx の `untrusted_display_test.go` 群) が end-to-end で見る担当
 
 いずれも **review の責務**。字句・構文の検査は迂回が原理的に無限にあるので、
 「全部塞ぐ」を目標にしない (`_claude/rules/adversarial-review-own-safeguards.md` の §8)。
