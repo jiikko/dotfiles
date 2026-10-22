@@ -42,13 +42,36 @@
    プロファイルの 5 サイクルと 20 サイクルの差) は次のとおりで、filer の状態を掴み続けるものは無かった
    - Go ランタイムの goroutine の管理構造 (呼び出し元の無い `runtime.mallocgc`)。同時に動いた goroutine の最大数で頭打ちになる
    - 道具自身の記録 (初版はサイクルごとに約 80 個溜めていたので、行をその場で書く形に直した) と `time.After` のタイマー
-   - **未解明 (小さい)**: git を起こしたとき、`os/exec.(*Cmd).watchCtx` で作られる 112 バイトのオブジェクト (コンテキストの終了の
-     channel と見ている) が 1 サイクルあたり約 6 個 (約 0.7KB) 残る。git の repo でない木 (`/usr/share`) では出ない。filer のコンテキストは
-     どれも `context.Background()` から作って `defer cancel()` しており、掴んでいる経路は特定できていない。
-     実害は小さい: glogx は C-g で閉じるたびにプロセスが終わり、単体の treefiler は Model を 1 つしか作らない
-4. **記録 (直していない。測った値)**:
-   - `move` (root の直下の列の中を端から端まで往復して 829 打) の 1 打は p50 0.92ms・p95 1.50ms、確保は 1 打あたり約 300KB (段で 247MB)。
-     フレームの確保の予算は `filer/alloc_budget_test.go` が持つ。`search` (列の中の `/tr` → 確定 → `n` 30 回) の 1 打は p50 0.94ms
+   - git を起こしたとき、`os/exec.(*Cmd).watchCtx` で作られる 112 バイトのオブジェクトが 1 サイクルあたり約 6 個 (約 0.7KB) 残る。
+     git の repo でない木 (`/usr/share`) では出ない。**同じ形は filer を通さない最小のプログラム (下。filer と同じ WithTimeout +
+     `subproc.CommandContext` と同じ WaitDelay) で再現する**: 残る数は 100 回 +148・2000 回 +612・4000 回 +870・8000 回 +1038 で、
+     1 回あたりの増え方は 0.24 (100→2000 回)・0.13 (→4000 回)・0.04 (→8000 回) と鈍っているが、8000 回でも止まってはいない
+     (`watchCtx` の分を区間で数えたのは 4000→8000 回の +156 だけ)。WaitDelay 0 でも 2 秒でも同じ。filer の 1 サイクルが git を何回起こすかとの
+     数の突き合わせはしていない (定性の一致)。filer の書き方で避けられる形は見つからず、filer では直さない
+
+     ```go
+     // GOCACHE を分けて go build。引数: 回数 WaitDelay。前後に runtime.GC() を 2 回呼んで MemStats.HeapObjects を比べる
+     func run(waitDelay time.Duration) {
+     	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+     	defer cancel()
+     	cmd := exec.CommandContext(ctx, "git", "--version")
+     	cmd.WaitDelay = waitDelay
+     	_, _ = cmd.Output()
+     }
+     ```
+4. **フレームごとの線の格子の確保** (2026-10-22 の続きで直した): `move` (root の直下の列の中を端から端まで往復して 841 打) の確保が
+   1 打あたり約 300KB あり、`-memprofile` の alloc_space で過半 (1 サイクル 287MB / 520MB) が `lineGrid.add` だった。線の格子
+   (`filer/layout.go` の `lineGrid`) を毎フレーム新しい map で作り、セルごとに `&lineCell{}` を確保していた。セルを値で持ち、描画の格子は
+   Model の `gridBuf` (`reusedMap`。大きな画面から戻ると作り直す) を毎フレーム使い回す (`lines` は新しい map を返すまま。テストが格子を
+   持ち続けて比べるため)。回帰テスト `TestReusedLineGridMatchesFreshAfterCollapse` (畳んで描き直した格子が作り直した格子と同じ。前のフレームを
+   空けない変異で red。消したフォルダの node を掴み続けるので leak_test の 4 本も red)
+   - 実測 (同じ条件で前後のバイナリを続けて 5 サイクル): `move` の段の確保 255MB → 97MB・1 打の p95 1.27 → 1.13ms、`search` の段 18.8MB → 6.7MB、
+     `tile-code` 93MB → 45MB、`explode` 7.6MB → 6.0MB
+   - 1 フレームの確保の回数 (`filer/alloc_budget_test.go`): 255 → 108 回。上限を 260 → 112 に締めた。glogx の `frame_alloc_test.go` の
+     filer の行も 220 → 124 回 (-race なし)・50799 → 39790 B/frame (-race) で、上限を 222 / 51500 → 126 / 40500 に締めた。map を毎フレーム作り直す変異で
+     119 回、セルごとに確保する変異で 301 回 (glogx は 232 回) → どちらも red
+5. **記録 (直していない。測った値)**:
+   - `search` (列の中の `/tr` → 確定 → `n` 30 回) の 1 打は p50 0.84〜0.94ms
    - **初版の台本の move / search は空打ちだった**: どちらもカーソルの列 (兄弟) の中で動くが、台本は root (列は root だけ) にカーソルを
      置いたまま打っていた。その版の値 (move p50 0.6ms・1 打 155KB など) は何も測っていない。段の後の状態の列 (カーソル) と煙テストで
      見分けるようにした (反証レビューの指摘)
@@ -59,16 +82,20 @@
 
 ## 対応方針
 
-1・2 は直した。3 の未解明は追わない (再開の条件は下)。4 は今の値で重さの訴えが無いので直さない。
-同じ形の重さを探すときは、まず `make -C src/treefiler probe` の `worst_at` (最悪の 1 打の名前) と `-cpuprofile` を見る。
+1・2・4 は直した。3 はリークではない (git の分は filer の外でも同じ形で出て、増え方は鈍っていく)。5 は 1 フレーム 16ms の中に収まっていて重さの訴えも無いので
+直さない。同じ形の重さを探すときは、まず `make -C src/treefiler probe` の `worst_at` (最悪の 1 打の名前) と `-cpuprofile`、確保なら
+`-memprofile` の `-sample_index=alloc_space` を見る。
 
-再開の条件 (3 の未解明): glogx が 1 つのプロセスで F を何百回も開閉する使い方を始めたとき、または tfprobe の heap_objects の増え方が
-1 サイクルあたり 100 を超えたとき。そのときは `-memprofile` の 2 本の差 (`go tool pprof -sample_index=inuse_objects -base`) から始める。
+作業中に見つけた別の問題: 仮想化の等価性のテストが負荷の下で揺れる → issue 871。
+
+再開の条件 (3): tfprobe の heap_objects の増え方が 1 サイクルあたり 100 を超えたとき (git の分は 1 サイクル約 6 個なので、超えたら別のもの)。
+そのときは `-memprofile` の 2 本の差 (`go tool pprof -sample_index=inuse_objects -base`) から始める。
 
 ## 関連ファイル
 
 - `src/treefiler/tools/tfprobe/main.go` / `main_test.go` (台本が空振りしていないことの煙テスト)
-- `src/treefiler/filer/model.go` の `drawRippleElbows` / `src/treefiler/filer/tileview.go` の `view` と `styledLine`
+- `src/treefiler/filer/model.go` の `drawRippleElbows` と `drawLines` / `src/treefiler/filer/tileview.go` の `view` と `styledLine` /
+  `src/treefiler/filer/layout.go` の `lineGrid` と `linesInto`
 - `src/treefiler/CLAUDE.md` の「実物で測る」
 - 733 (前回の perf 監査)・728 (保持の監査)
 
@@ -90,3 +117,7 @@
   false なら空振り)・閉じた後の残りの処理が後の段の計測と資源の基準の行に混ざる (goroutine と子プロセスが戻るまで待ち、その時間を
   busy-close の行に書く。戻らなければリークの候補として止める)・ライブ更新を取り込むフレームが記録から外れていた・値の道具の版の明記。
   move の j / search の / を効かなくする変異で煙テストが red。煙テストは 3 回続けて緑
+- [x] 2026-10-22 (続き。ユーザー依頼「870 をやって」): 3 の未解明を最小のプログラムで切り分けた (Go の側・頭打ちに近い)。4 の線の格子の確保を
+  直し、filer と glogx の確保の予算を締めた。`TREEFILER_VIRT_SEEDS=300` で仮想化の等価性を 2 回回して緑 (1 回目の 1 本の赤は揺れ → 871)。
+  反証レビュー (opus): P1 なし。直したもの: 使い回しの経路を直接守るテストが無い (足した)・容量の残る map を素の clear で使い回していた
+  (既存の reusedMap に寄せた)・予算の注記の -race の書き方・3 の「頭打ち」の言い過ぎ・871 の対応方針 (下)
