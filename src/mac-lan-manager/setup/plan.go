@@ -55,7 +55,6 @@ type Step struct {
 	Title   string
 	Done    bool
 	Blocked string
-	Via     string // 相手に入る先の IP (StepKey / StepPeerStatic。Wi-Fi で入れるなら Wi-Fi)
 }
 
 // SelfFixed はこの Mac の有線 (method / ip) が帯の固定か。画面 (lanmgr の selfLan) と初期設定 (Plan の self) が同じ答えを出すための
@@ -72,10 +71,6 @@ func SelfFixed(band, method, ip string) bool {
 func Plan(o Observed) []Step {
 	_, bandErr := netinfo.ParseBand(o.Band)
 	inBand := func(ip string) bool { return netinfo.InBand(o.Band, ip) }
-	via := o.Peer.WifiIP
-	if via == "" {
-		via = o.Peer.LanIP
-	}
 	self := Step{ID: StepSelfStatic, Title: "この Mac の有線を固定 IP にする", Done: SelfFixed(o.Band, o.SelfMethod, o.SelfIP)}
 	switch {
 	case bandErr == nil && (inBand(o.SelfMainIP) || netinfo.Overlaps(o.Band, o.SelfMainIP, o.SelfMainMask)):
@@ -90,17 +85,17 @@ func Plan(o Observed) []Step {
 		// 相手に有線 (169.254) でしか入れないのに、この Mac を先に帯の固定 IP にすると、169.254 の相手に届かなくなる
 		self.Blocked = "相手に Wi-Fi (メイン) で入れない。この Mac を先に固定すると有線の 169.254 の相手に届かなくなる (相手を Wi-Fi に繋ぐ)"
 	}
-	key := Step{ID: StepKey, Title: "相手に公開鍵を置く", Done: o.Peer.KeyOK, Via: via}
+	key := Step{ID: StepKey, Title: "相手に公開鍵を置く", Done: o.Peer.KeyOK}
 	switch {
 	case key.Done:
 	case !o.Peer.SSHOpen:
 		key.Blocked = "相手のリモートログインがオフ (相手の前でシステム設定 → 共有 → リモートログインをオンに)"
-	case via == "":
+	case o.Peer.WifiIP == "" && o.Peer.LanIP == "": // Wi-Fi で入れなければ有線から入る
 		key.Blocked = "相手の IP が分からない"
 	}
 	// この Mac と同じ IP は済みにしない (衝突)
 	peerStatic := o.Peer.NetKnown && netinfo.FixedIP(o.Peer.Method) && inBand(o.Peer.IP) && o.Peer.IP != o.SelfIP
-	peer := Step{ID: StepPeerStatic, Title: "相手の有線を固定 IP にする", Done: peerStatic, Via: via}
+	peer := Step{ID: StepPeerStatic, Title: "相手の有線を固定 IP にする", Done: peerStatic}
 	switch {
 	case peer.Done:
 	case o.Peer.NetKnown && o.Peer.IP != "" && o.Peer.IP == o.SelfIP:

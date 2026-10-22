@@ -442,7 +442,7 @@ func TestPlan(t *testing.T) {
 		return m
 	}
 	s := byID(Plan(ready))
-	if !s[StepSelfStatic].Done || !s[StepKey].Done || s[StepPeerStatic].Done || s[StepPeerStatic].Blocked != "" || s[StepPeerStatic].Via != "192.168.50.7" {
+	if !s[StepSelfStatic].Done || !s[StepKey].Done || s[StepPeerStatic].Done || s[StepPeerStatic].Blocked != "" {
 		t.Errorf("相手を固定する手前: %+v", s)
 	}
 	mdr := ready
@@ -463,9 +463,13 @@ func TestPlan(t *testing.T) {
 		t.Errorf("ssh が閉じているのに鍵 / 固定へ進める: %+v", s)
 	}
 	o = ready
-	o.Peer.WifiIP = ""
-	if s := byID(Plan(o)); s[StepPeerStatic].Via != "169.254.1.1" {
-		t.Errorf("Wi-Fi で入れないときは有線から: %+v", s[StepPeerStatic])
+	o.Peer.WifiIP, o.Peer.KeyOK = "", false
+	if s := byID(Plan(o)); s[StepKey].Blocked != "" {
+		t.Errorf("Wi-Fi で入れなくても有線の IP があれば鍵の段へ進める: %+v", s[StepKey])
+	}
+	o.Peer.LanIP = ""
+	if s := byID(Plan(o)); s[StepKey].Blocked != "相手の IP が分からない" {
+		t.Errorf("相手の IP がどちらも無いのに鍵の段を止めない: %+v", s[StepKey])
 	}
 	o = ready
 	o.Peer.Method, o.Peer.IP, o.Peer.Managed, o.Peer.LedgerLAN = "manual", "192.168.100.11", true, "192.168.100.11"
