@@ -1,0 +1,9 @@
+# Apple container (https://github.com/apple/container) のユーザー設定。setup.sh が ~/.config/container/config.toml へ link する。
+# container のサービスは起動時に 1 回だけ読むので、変えたら `container system stop` → `container system start`
+# (動いているコンテナも全部止まる)。効いたかは `container system property list` で見る。
+
+[build]
+# rosetta を true (既定) にしない: Rosetta を入れていない Mac ではビルダーの VM が
+# "Rosetta is not installed" で起動せず、arm64 のイメージも作れない (2026-10-22 に実測)。
+# 代償として amd64 のイメージはビルドできない。Rosetta を入れたマシンで amd64 が要るなら true に戻す
+rosetta = false

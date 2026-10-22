@@ -31,6 +31,9 @@ ln -sf ~/dotfiles/_nviminit.lua ~/.config/nvim/init.lua
 ln -sf ~/dotfiles/_lazy-lock.json ~/.config/nvim/lazy-lock.json
 ln -sf ~/dotfiles/_tmux.conf ~/.tmux.conf
 
+mkdir -p ~/.config/container
+ln -sf ~/dotfiles/_container-config.toml ~/.config/container/config.toml
+
 # setup .claude directory
 # migrate: ディレクトリ丸ごとシンボリックリンクだった旧形式を個別リンク形式に変換。
 # per-file リンクを張る全ディレクトリを対象にする: 対象が dir symlink のまま残ると、後続の
