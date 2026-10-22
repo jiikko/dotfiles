@@ -1028,6 +1028,27 @@ func TestSetupLedgerKeepsAliasChangedElsewhere(t *testing.T) {
 	}
 }
 
+// 開いた時は台帳に無かった相手でも、板を出している間に別のプロセスが載せた行は残し、内部 IP だけを書き換える (足す側の経路)
+func TestSetupLedgerKeepsRowAddedElsewhereWhileUnmanaged(t *testing.T) {
+	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
+	h, ob := setupHarness(t, obs)
+	setSelfStatic(h.m)
+	runStep(t, h, nil) // 相手の固定 IP
+	ip := h.m.conf().static.IP
+	setObs(t, h, ob, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: ip, Mask: "255.255.255.0"})
+	runStep(t, h, nil) // 確認
+	awaitSetup(h.m)
+	h.keys("x")
+	if h.m.ov != ovConfirm || h.m.ask == nil || h.m.ask.yes == nil {
+		t.Fatalf("前提: 台帳の手順の確認の板が出ない: %s", strings.Join(h.m.View(), "\n"))
+	}
+	h.store.hosts = []ledger.Host{{Host: "m2macmini.local", User: "admin", Alias: "別の画面の別名"}} // 板の間に別のプロセスが載せた
+	h.keys("y")
+	if len(h.store.hosts) != 1 || h.store.hosts[0].LAN != ip || h.store.hosts[0].Alias != "別の画面の別名" || h.store.hosts[0].User != "admin" {
+		t.Errorf("台帳 = %+v (内部 IP %s だけを書き、別のプロセスの別名と user を残すはず)", h.store.hosts, ip)
+	}
+}
+
 // 読み込み中に押した x の予約で自動で出た板は、Enter では実行しない (進捗のモーダルの間に押し続けた Enter が、裏で開いた板を
 // そのまま実行した)。y では実行する。
 func TestSetupQueuedBoardIgnoresEnter(t *testing.T) {

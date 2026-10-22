@@ -572,17 +572,19 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 			// 既に載っている行は内部 IP だけを書き換え、無いときだけ足す (古い一覧の行で Upsert すると、別のプロセスが変えた別名を古い値に
 			// 戻した)。既にある行の user は触らない (この手順の役目は内部 IP。別のプロセスが u で変えた・空 (既定) にした値を、開いた時の値や推測の
 			// $USER で書き戻した)。使えない形の user だけは直す (一覧はそれを捨てて推測で入るので、板の user と台帳が食い違った)
-			err := m.o.Ledger.Update(h.Host, func(x *ledger.Host) {
+			set := func(x *ledger.Host) {
 				x.LAN = h.LAN
 				if x.User != "" && !ledger.ValidUser(x.User) {
 					x.User = h.User
 				}
-			})
-			if errors.Is(err, ledger.ErrNotFound) {
-				if r.managed { // 開いた時は載っていたのに、別のプロセスが外した: 古い一覧の値で作り直さない
+			}
+			var err error
+			if r.managed { // 開いた時は載っていたのに、別のプロセスが外した: 古い一覧の値で作り直さない
+				if err = m.o.Ledger.Update(h.Host, set); errors.Is(err, ledger.ErrNotFound) {
 					return Notice{"台帳から外されている (一覧を開き直して登録し直す)", false}
 				}
-				err = m.o.Ledger.Upsert(h)
+			} else {
+				err = m.o.Ledger.Merge(h, set)
 			}
 			if err != nil {
 				return Notice{"登録できない: " + err.Error(), false}

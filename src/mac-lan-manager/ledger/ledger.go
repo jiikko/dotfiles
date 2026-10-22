@@ -58,14 +58,16 @@ func (h Host) Unusable() []string {
 	return bad
 }
 
-// Store は台帳の口。
+// Store は台帳の口。行を丸ごと置き換える口 (FileStore.Upsert) は持たせない: 画面は開いた時の一覧の行しか持たず、
+// それで置き換えると、板を出している間に別のプロセス (glogx の L・単体のコマンド) が書いた別名・内部 IP を古い値で消す
 type Store interface {
 	Load() ([]Host, error)
-	Upsert(h Host) error // 同じ鍵があれば置き換える (UpdatedAt は Store が付ける)
 	Remove(host string) error
 	// Update は既にある 1 台を f で書き換える (書く直前に読み直す)。台帳に無ければ ErrNotFound (外された Mac を戻さない)。
-	// 一部の欄だけを変える (別名など) ときに使う。古い一覧の行で Upsert すると、他の欄を古い値で上書きする
 	Update(host string, f func(*Host)) error
+	// Merge は、在れば f で書き換え、無ければ h を足す。読み直し・書き換え・足すを 1 回のロックの中で行う
+	// (Update → ErrNotFound → 足す、とロックを 2 回に分けると、間に別のプロセスが載せた行を h で置き換える)
+	Merge(h Host, f func(*Host)) error
 }
 
 // ErrNotFound は台帳にその Mac が無い。
@@ -121,38 +123,39 @@ func (s FileStore) Load() ([]Host, error) {
 	return hosts, err
 }
 
-// Upsert は 1 台を足す / 置き換える。台帳のロックを取ってから読み直して書く (単体のコマンドと glogx の板が同時に書いても、片方の登録を消さない)。
-func (s FileStore) Upsert(h Host) error {
-	h.Host = Key(h.Host)
-	if h.Host == "" {
+// Update は既にある 1 台を f で書き換える。無ければ ErrNotFound (書かない)。
+func (s FileStore) Update(host string, f func(*Host)) error { return s.edit(host, f, nil) }
+
+// Merge は、在れば f で書き換え、無ければ h を足す (Store の注記)。
+func (s FileStore) Merge(h Host, f func(*Host)) error {
+	if Key(h.Host) == "" {
 		return errors.New("ホスト名が空")
 	}
-	return s.modify(func(hosts []Host) []Host {
-		h.UpdatedAt = s.now().UTC().Truncate(time.Second)
-		if i := slices.IndexFunc(hosts, func(x Host) bool { return x.Host == h.Host }); i >= 0 {
-			hosts[i] = h
-			return hosts
-		}
-		return append(hosts, h)
-	})
+	return s.edit(h.Host, f, &h)
 }
 
-// Update は既にある 1 台を f で書き換える。無ければ ErrNotFound (書かない)。
-func (s FileStore) Update(host string, f func(*Host)) error {
+// edit は host の行を f で書き換える。無ければ、insert があればそれを足し、無ければ ErrNotFound。
+func (s FileStore) edit(host string, f func(*Host), insert *Host) error {
 	k := Key(host)
 	var found bool
 	err := s.modify(func(hosts []Host) []Host {
+		at := s.now().UTC().Truncate(time.Second)
 		for i := range hosts {
 			if hosts[i].Host == k {
 				found = true
 				f(&hosts[i])
 				hosts[i].Host = k // 鍵は変えさせない
-				hosts[i].UpdatedAt = s.now().UTC().Truncate(time.Second)
+				hosts[i].UpdatedAt = at
 			}
+		}
+		if !found && insert != nil {
+			h := *insert
+			h.Host, h.UpdatedAt = k, at
+			hosts = append(hosts, h)
 		}
 		return hosts
 	})
-	if err == nil && !found {
+	if err == nil && !found && insert == nil {
 		return ErrNotFound
 	}
 	return err

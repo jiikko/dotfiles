@@ -21,10 +21,10 @@ import (
 // speedLedger は台帳の偽物 (読むだけ)。
 type speedLedger struct{ hosts []ledger.Host }
 
-func (s *speedLedger) Load() ([]ledger.Host, error)            { return s.hosts, nil }
-func (s *speedLedger) Upsert(ledger.Host) error                { return errors.New("書かない") }
-func (s *speedLedger) Remove(string) error                     { return errors.New("書かない") }
-func (s *speedLedger) Update(string, func(*ledger.Host)) error { return errors.New("書かない") }
+func (s *speedLedger) Load() ([]ledger.Host, error)                { return s.hosts, nil }
+func (s *speedLedger) Merge(ledger.Host, func(*ledger.Host)) error { return errors.New("書かない") }
+func (s *speedLedger) Remove(string) error                         { return errors.New("書かない") }
+func (s *speedLedger) Update(string, func(*ledger.Host)) error     { return errors.New("書かない") }
 
 // speedModel は管理対象 3 台の画面: mini (有線で見える。台帳の内部 IP は固定) / air (Wi-Fi だけで見える) / nouser (台帳の user が使えない
 // 形ではないが、$USER も空にして ssh のユーザー名が分からない)。

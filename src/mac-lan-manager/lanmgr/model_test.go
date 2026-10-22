@@ -42,21 +42,23 @@ func (s *memStore) Load() ([]ledger.Host, error) {
 	}
 	return slices.Clone(s.hosts), nil
 }
-func (s *memStore) Upsert(h ledger.Host) error {
-	h.Host = ledger.Key(h.Host)
-	if i := slices.IndexFunc(s.hosts, func(x ledger.Host) bool { return x.Host == h.Host }); i >= 0 {
-		s.hosts[i] = h
-		return nil
-	}
-	s.hosts = append(s.hosts, h)
-	return nil
-}
 func (s *memStore) Update(host string, f func(*ledger.Host)) error {
 	i := slices.IndexFunc(s.hosts, func(x ledger.Host) bool { return x.Host == ledger.Key(host) })
 	if i < 0 {
 		return ledger.ErrNotFound
 	}
 	f(&s.hosts[i])
+	s.hosts[i].Host = ledger.Key(host) // 本物 (FileStore.edit) と同じく鍵は変えさせない
+	return nil
+}
+func (s *memStore) Merge(h ledger.Host, f func(*ledger.Host)) error {
+	if err := s.Update(h.Host, f); !errors.Is(err, ledger.ErrNotFound) {
+		return err
+	}
+	if h.Host = ledger.Key(h.Host); h.Host == "" {
+		return errors.New("ホスト名が空") // 本物 (FileStore.Merge) と同じく足さない
+	}
+	s.hosts = append(s.hosts, h)
 	return nil
 }
 func (s *memStore) Remove(host string) error {

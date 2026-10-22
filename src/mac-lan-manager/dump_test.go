@@ -118,10 +118,10 @@ func TestDumpKeepsEarlyNotices(t *testing.T) {
 
 type brokenStore struct{}
 
-func (brokenStore) Load() ([]ledger.Host, error)            { return nil, errors.New("壊れた台帳") }
-func (brokenStore) Upsert(ledger.Host) error                { return nil }
-func (brokenStore) Remove(string) error                     { return nil }
-func (brokenStore) Update(string, func(*ledger.Host)) error { return nil }
+func (brokenStore) Load() ([]ledger.Host, error)                { return nil, errors.New("壊れた台帳") }
+func (brokenStore) Merge(ledger.Host, func(*ledger.Host)) error { return nil }
+func (brokenStore) Remove(string) error                         { return nil }
+func (brokenStore) Update(string, func(*ledger.Host)) error     { return nil }
 
 // noModel は --peer のときに呼ばれてはいけない newModel (相手を読むときは、この Mac の網も Bonjour も起こさない)。
 func noModel(t *testing.T) func() (*lanmgr.Model, error) {

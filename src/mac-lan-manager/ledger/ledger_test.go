@@ -313,6 +313,61 @@ func TestUpdateOnlyExisting(t *testing.T) {
 	if hs, _ := s.Load(); len(hs) != 1 {
 		t.Errorf("無い Mac を足した: %+v", hs)
 	}
+	// f が鍵を書き換えても鍵は戻す (戻さないと、同じ Mac が別の鍵の行になり、Upsert / Remove が元の行に届かない)
+	if err := s.Update("a.local", func(h *Host) { h.Host = "other.local" }); err != nil {
+		t.Fatal(err)
+	}
+	if hs, _ := s.Load(); len(hs) != 1 || hs[0].Host != "a.local" {
+		t.Errorf("f が鍵を書き換えた: %+v", hs)
+	}
+}
+
+// Merge は、在れば f だけを当て (渡した行で置き換えない)、無ければ渡した行を足す。
+// 置き換えると、板を出している間に別のプロセスが載せた別名・内部 IP を、開いた時の一覧の値で消す
+func TestMergeKeepsExistingRowAndInsertsMissing(t *testing.T) {
+	s := newStore(t)
+	if err := s.Upsert(Host{Host: "a.local", Alias: "mini", LAN: "192.168.100.5"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Merge(Host{Host: "A.local.", User: "stale"}, func(h *Host) { h.User = "koji" }); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Merge(Host{Host: "B.local", User: "u"}, func(h *Host) { h.Alias = "f は無い行に当てない" }); err != nil {
+		t.Fatal(err)
+	}
+	hs, _ := s.Load()
+	want := []Host{{Host: "a.local", User: "koji", Alias: "mini", LAN: "192.168.100.5"}, {Host: "b.local", User: "u"}}
+	if len(hs) != len(want) {
+		t.Fatalf("hosts = %+v", hs)
+	}
+	for i := range want {
+		if hs[i].Host != want[i].Host || hs[i].User != want[i].User || hs[i].Alias != want[i].Alias || hs[i].LAN != want[i].LAN {
+			t.Errorf("hosts[%d] = %+v, want %+v", i, hs[i], want[i])
+		}
+		if hs[i].UpdatedAt.IsZero() {
+			t.Errorf("hosts[%d] に UpdatedAt が付いていない", i)
+		}
+	}
+	if err := s.Merge(Host{Host: " . "}, func(*Host) {}); err == nil {
+		t.Error("空のホスト名を足した")
+	}
+}
+
+// Merge は無い Mac を足すときも台帳を 1 回だけ書き直す。見るのは「Update → ErrNotFound → 足す」と 2 回に分ける形 (間に別のプロセスが
+// 載せた行を、渡した行で置き換える) だけ。プロセスの間の競りは決定的に作れないので、書き直しの回数を edit が「今」を読む回数で数える。
+// ロックの外で読んでから 1 回で書く形は、この検査では見えない (読み直しは modify の中でしか起きない、を守っているのは edit の形そのもの)。
+// edit が 1 回の書き直しで「今」を 2 回読む形に変えたら、この数え方も直す
+func TestMergeTakesLockOnce(t *testing.T) {
+	s := newStore(t)
+	now := s.Now
+	n := 0
+	s.Now = func() time.Time { n++; return now() }
+	if err := s.Merge(Host{Host: "a.local"}, func(*Host) {}); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("無い Mac の Merge で台帳を %d 回書き直した (1 回のロックで足すはず)", n)
+	}
 }
 
 func TestValidUserAndLAN(t *testing.T) {

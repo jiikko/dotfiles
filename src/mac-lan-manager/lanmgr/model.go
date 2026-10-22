@@ -1460,13 +1460,10 @@ func (m *Model) askLedger(r row) {
 			"user " + or(h.User, "(無し。繋ぐときはこの Mac のユーザー名)") + " / 内部 IP " + or(h.LAN, "-"),
 		}, yes: func() Notice {
 			// 板を出している間に別のプロセス (glogx の L・単体のコマンド) が同じ Mac を載せていたら、その行を残す (古い一覧の値で
-			// Upsert すると別名・内部 IP を消した)。空の欄だけ埋める
-			err := m.o.Ledger.Update(h.Host, func(x *ledger.Host) {
+			// 置き換えると別名・内部 IP を消した)。空の欄だけ埋める
+			err := m.o.Ledger.Merge(h, func(x *ledger.Host) {
 				x.User, x.LAN = or(x.User, h.User), or(x.LAN, h.LAN)
 			})
-			if errors.Is(err, ledger.ErrNotFound) {
-				err = m.o.Ledger.Upsert(h)
-			}
 			if err != nil {
 				return Notice{"登録できない: " + err.Error(), false}
 			}
