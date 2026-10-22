@@ -72,3 +72,9 @@ hook で機械的に止める。retro 875 は「字面の判定で正当な使�
 - [x] 反証レビュー (この issue の本文、sonnet) — 件数・名前・retro の参照・「実装で決めたこと」と hook の一致は反証できず。指摘 7 件のうち
   6 件 (対応方針に残っていた起票時の記述 3 件、未確認節の古い書き方、チェックリストの行数、875 の保留を引き取った経緯) を直した。
   残る 1 件 (各周の指摘数の出典がログに無い) は未確認節に出典を書いた
+- [x] push と反映 — `feat(hooks): HEAD の祖先でない行き先への git reset --soft を PreToolUse で止める` を master へ push し、`pull_main_checkout.sh` で ~/dotfiles へ取り込んだ。
+  push の前の `make test` は `test-go-lint` の src/glogx だけが赤だった (go のビルドキャッシュに、消えた worktree `/Users/koji/wt-874` のパスが残っていて gofmt が開けない)。
+  GOCACHE と GOLANGCI_LINT_CACHE を新しい dir にした `make lint` は rc=0 で通った (この変更は Go を触っていない)。ほかは `[ok]` 140 本 (新しいテストを含む)
+- [x] headless の新規セッション (`claude -p --model haiku`、Bash を許可) での確認 (2026-10-23)。どちらも使い捨ての repo で `git reset --soft origin/master` を打たせた:
+  - origin/master が HEAD の祖先でない repo: hook が deny した (「行き先が HEAD の祖先ではありません (merge-base --is-ancestor rc=1 …」)。HEAD は動いていない
+  - 祖先の repo: reset が通り、HEAD が origin/master へ動いた
