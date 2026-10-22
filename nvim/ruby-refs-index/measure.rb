@@ -72,7 +72,8 @@ module RefsIndex
       # 🚨 パスを明示する。rg はパス引数が無く stdin が tty でないと **stdin を読む**ので、
       #    Open3 越しだと 0 バイト検索になって黙って 0 件を返す (実測 2026-09-08)。
       # ここは索引を作る対象なので --type ruby でよい (Prism で解析するのは .rb だけ)。
-      # 下の ripgrep_hits は production と土俵を合わせるため type を絞らない。
+      # 下の ripgrep_hits の基準線は type を絞らず、今の production (lsp.lua の M.ripgrep_reference_args) とは合わせていない
+      # (README の「production の <C-k>」の段落)。
       out, status = Open3.capture2("rg", "--files", "--type", "ruby", ".", chdir: workspace)
       raise "rg --files に失敗した (rc=#{status.exitstatus})" unless status.success?
 
@@ -99,8 +100,10 @@ module RefsIndex
 
   #: (String, String) -> Array[[String, Integer]]
   def ripgrep_hits(workspace, name)
-    # 🚨 production (telescope.grep_string) は **ファイルタイプを絞らない**。ここで --type ruby を
-    #    付けると .erb / .yml / .js を見ないぶん rg のヒットが減り、「rg のゴミ」を過小評価する。
+    # 🚨 ファイルタイプを絞らない基準線で、今の production とは合わない: production の <C-k> は lsp.lua の
+    #    M.ripgrep_reference_args で ruby (rake・jbuilder を含む)・erb・haml・slim に絞るので、ここは production より多く数える。
+    #    sidecar を作らないと決めたので直さずに残している (README の「production の <C-k>」の段落)。測り直すなら
+    #    引数を M.ripgrep_reference_args と同じにする。
     # -F: 語をリテラルとして扱う。付けないと `valid?` の `?` などが正規表現として解釈され、
     #    別の語に当たったり rc=2 で落ちたりする。production の <cword> は iskeyword の都合で
     #    `?` / `!` を含まないので、-w の語境界とも食い違わない。
