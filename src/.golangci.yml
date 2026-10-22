@@ -13,7 +13,7 @@ run:
   # 回すため、全プロジェクトでこれを true にする (1 つでも false が残ると、その 1 つが他の起動タイミング次第で落ちる)。
   allow-parallel-runners: true
   # 🚨 設定の相対パス (exclusions の path・depguard の files) をモジュールの根 (go.mod) から解決する。既定 (cfg) は設定ファイルの
-  # 置き場所から解決するので、合成した設定を一時ファイルで渡すと除外が黙って効かなくなる (v2.15.0 で実測: treefiler で forbidigo が 18 件出た)
+  # 置き場所から解決するので、合成した設定をモジュールの外のファイルで渡すと除外が黙って効かなくなる (v2.15.0 で実測: treefiler で forbidigo が 18 件出た)
   relative-path-mode: gomod
 
 linters:

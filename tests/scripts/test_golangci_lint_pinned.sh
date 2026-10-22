@@ -40,7 +40,7 @@ case "$1" in
     if [ -n "${FAKE_FAIL:-}" ]; then echo "fake go install: boom" >&2; exit 1; fi
     sleep "${FAKE_SLEEP:-0}"
     ver=${2##*@}
-    # -c の値 (毎回変わる一時ファイル) は <cfg> と出し、中身と場所を FAKE_CFG_SEEN / FAKE_CFG_PATH に控える
+    # -c の値 (合成した設定の置き場) は <cfg> と出し、中身と場所を FAKE_CFG_SEEN / FAKE_CFG_PATH に控える
     sed "s/@VER@/$ver/" "$FAKE_LINT_TEMPLATE" > "$GOBIN/golangci-lint"
     chmod +x "$GOBIN/golangci-lint"
     ;;
@@ -65,7 +65,10 @@ export FAKE_LINT_TEMPLATE="$TMP_DIR/fake-lint" FAKE_CFG_SEEN="$TMP_DIR/cfg_seen"
 export DOTFILES_GO_TOOLS_CACHE="$TMP_DIR/cache"
 : > "$FAKE_LOG"
 installs() { wc -l < "$FAKE_LOG" | tr -d ' '; }
-helper=scripts/golangci_lint.sh
+helper="$ROOT_DIR/scripts/golangci_lint.sh"
+# run はモジュールの根 (go.mod のあるディレクトリ) から起動する。偽のモジュールの中で回す
+mod="$TMP_DIR/mod"; mkdir -p "$mod"; printf 'module fake\n' > "$mod/go.mod"
+cd "$mod" || exit 1
 
 # 1. 初回は作ってから起動し、引数をそのまま渡す
 out=$("$helper" v2.5.0 run ./... 2>&1) || bad "初回が失敗した: $out"
@@ -135,20 +138,41 @@ d="$DOTFILES_GO_TOOLS_CACHE/golangci-lint@v2.5.0-go1.29.0-darwin-arm64-1"
 tmpleft=$(find "$d" -name '.install.*' 2>/dev/null | wc -l | tr -d ' ')
 if [ "$okn" = 6 ] && [ "$tmpleft" = 0 ]; then note "並列に 6 本起動しても全部成功し、一時ディレクトリを残さない"; else bad "並列: 成功 $okn/6 / 残った一時ディレクトリ $tmpleft"; fi
 
-# 7. run の設定は、共通の塊と呼んだディレクトリの差分を合成したもの。終わったら一時ファイルを消す。モジュールに .golangci.yml があれば起動しない
+# 7. run の設定は、共通の塊と呼んだディレクトリの差分を合成したもの。置き場は中身の sha256 で決まる (exec するので消さない)。
+#    差分を読まずに緑になる形 (根でない所からの起動・綴りの違う設定・-c の二重指定) と、モジュールの .golangci.yml は起動せず rc=2
 unset FAKE_SLEEP
-mod="$TMP_DIR/mod"; mkdir -p "$mod"
 printf 'linters:\n  enable:\n    - forbidigo\n' > "$mod/.golangci.local.yml"
 rm -f "$FAKE_CFG_SEEN" "$FAKE_CFG_PATH"
-out=$(cd "$mod" && "$ROOT_DIR/$helper" v2.5.0 run ./... 2>&1) || bad "差分つきの run が失敗した: $out"
-want=$(ruby scripts/golangci_config.rb src/.golangci.yml "$mod/.golangci.local.yml")
+out=$("$helper" v2.5.0 run ./... 2>&1) || bad "差分つきの run が失敗した: $out"
+want=$(ruby "$ROOT_DIR/scripts/golangci_config.rb" "$ROOT_DIR/src/.golangci.yml" "$mod/.golangci.local.yml")
 if [ -f "$FAKE_CFG_SEEN" ] && [ "$(cat "$FAKE_CFG_SEEN")" = "$want" ]; then note "run に、共通の塊とそのディレクトリの差分を合成した設定を渡す"; else bad "run に渡した設定が合成の結果と違う (出力: $out)"; fi
-if [ -f "$FAKE_CFG_PATH" ] && [ ! -e "$(cat "$FAKE_CFG_PATH")" ]; then note "合成した設定の一時ファイルは終わったら消す"; else bad "合成した設定の一時ファイルが残った: $(cat "$FAKE_CFG_PATH" 2>/dev/null)"; fi
-printf 'version: "2"\n' > "$mod/.golangci.yml"
-rm -f "$FAKE_CFG_SEEN"
-rc=0
-(cd "$mod" && "$ROOT_DIR/$helper" v2.5.0 run ./... >/dev/null 2>&1) || rc=$?
-if [ "$rc" = 2 ] && [ ! -e "$FAKE_CFG_SEEN" ]; then note "モジュールに .golangci.yml があれば golangci-lint を起動せず rc=2"; else bad ".golangci.yml があるときの rc=$rc / 起動した: $([ -e "$FAKE_CFG_SEEN" ] && echo yes || echo no)"; fi
+first=$(cat "$FAKE_CFG_PATH" 2>/dev/null)
+case "$first" in
+  "$DOTFILES_GO_TOOLS_CACHE"/golangci-config/*.json) note "合成した設定はツールの置き場の golangci-config/ に置く" ;;
+  *) bad "合成した設定の置き場が想定と違う: $first" ;;
+esac
+"$helper" v2.5.0 run ./... >/dev/null 2>&1 || bad "2 回目の run が失敗した"
+[ "$(cat "$FAKE_CFG_PATH")" = "$first" ] && note "同じ中身なら同じ置き場を使い回す" || bad "同じ中身で置き場が変わった: $(cat "$FAKE_CFG_PATH")"
+printf 'linters:\n  enable:\n    - depguard\n' > "$mod/.golangci.local.yml"
+"$helper" v2.5.0 run ./... >/dev/null 2>&1 || bad "差分を変えた run が失敗した"
+[ "$(cat "$FAKE_CFG_PATH")" != "$first" ] && note "差分を変えると別の置き場になる" || bad "差分を変えても同じ置き場のまま"
+left=$(find "$DOTFILES_GO_TOOLS_CACHE/golangci-config" -name '*.json.*' | wc -l | tr -d ' ')
+[ "$left" = 0 ] && note "書きかけの一時ファイルを残さない" || bad "書きかけが $left 個残った"
+refuse() { # $1=説明 $2=準備 (sh) $3...=引数
+  local what=$1 prep=$2; shift 2
+  rm -f "$FAKE_CFG_SEEN"
+  rc=0
+  (eval "$prep"; "$helper" v2.5.0 run "$@" >/dev/null 2>&1) || rc=$?
+  if [ "$rc" = 2 ] && [ ! -e "$FAKE_CFG_SEEN" ]; then note "$what は golangci-lint を起動せず rc=2"; else bad "$what の rc=$rc / 起動した: $([ -e "$FAKE_CFG_SEEN" ] && echo yes || echo no)"; fi
+}
+refuse 'モジュールの .golangci.yml' 'printf "version: \"2\"\n" > .golangci.yml' ./...
+rm -f "$mod/.golangci.yml"
+refuse '綴りの違う .golangci.local.yaml' 'printf "x: 1\n" > .golangci.local.yaml' ./...
+rm -f "$mod/.golangci.local.yaml"
+refuse '-c の二重指定' ':' -c x.yml ./...
+refuse '--config= の二重指定' ':' --config=x.yml ./...
+mkdir -p "$mod/sub"
+refuse 'モジュールの根でない所からの起動' 'cd sub' ./...
 out=$("$helper" v2.5.0 version 2>&1) || bad "run 以外が失敗した: $out"
 if [ "$out" = "ran:v2.5.0:version" ]; then note "run 以外の起動には設定を足さない"; else bad "run 以外の出力: $out"; fi
 

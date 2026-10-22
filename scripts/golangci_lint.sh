@@ -65,20 +65,42 @@ if [ "${1:-}" != run ]; then
 fi
 
 # run の設定は、共通の塊 (src/.golangci.yml) と、呼んだディレクトリ (モジュールの根) の差分 (.golangci.local.yml。無くてよい) から
-# 毎回合成して -c で渡す (scripts/golangci_config.rb。合成した設定は commit しない)。
-# モジュールに .golangci.yml を置かない: 置くと合成の外の写しが戻り、golangci-lint の素の起動がそちらを読む。
+# 毎回合成して -c で渡す (scripts/golangci_config.rb。合成した設定は commit しない)。次の形は rc=2 で止める (どれも黙って差分を読まずに緑になる):
+#   - モジュールの根 (go.mod のあるディレクトリ) 以外から起動する (下のディレクトリで打つと、その下の .golangci.local.yml を探して見つけない)
+#   - .golangci.local.yml 以外の .golangci.* を置く (.golangci.yml の写し・.golangci.local.yaml の綴りの違い)
+#   - -c / --config を渡す (後に書いた方が勝ち、合成した設定が捨てられる)
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-if [ -e .golangci.yml ]; then
-  echo "${0##*/}: $PWD/.golangci.yml がある。モジュールの設定は差分だけを .golangci.local.yml に書く (共通の塊は src/.golangci.yml)" >&2
+if [ ! -f go.mod ]; then
+  echo "${0##*/}: $PWD はモジュールの根でない (go.mod が無い)。make -C src/<module> lint から起動する" >&2
   exit 2
 fi
-cfgdir=$(mktemp -d "${TMPDIR:-/tmp}/golangci-config.XXXXXX")
-trap 'rm -rf "$cfgdir"' EXIT
-cfg="$cfgdir/golangci.json" # 拡張子で golangci-lint が書式を決める
+for f in .golangci.*; do
+  [ -e "$f" ] || continue
+  if [ "$f" != .golangci.local.yml ]; then
+    echo "${0##*/}: $PWD/$f がある。モジュールの設定は差分だけを .golangci.local.yml に書く (共通の塊は src/.golangci.yml)" >&2
+    exit 2
+  fi
+done
+shift
+for a in "$@"; do
+  case "$a" in
+    -c|--config|--config=*|-c?*)
+      echo "${0##*/}: run に $a を渡さない (設定は src/.golangci.yml と .golangci.local.yml から合成する)" >&2
+      exit 2 ;;
+  esac
+done
 locals=()
 [ -e .golangci.local.yml ] && locals=(.golangci.local.yml)
-ruby "$repo/scripts/golangci_config.rb" "$repo/src/.golangci.yml" ${locals[@]+"${locals[@]}"} >"$cfg"
-shift
-rc=0
-PATH="$goroot/bin:$PATH" "$bin" run -c "$cfg" "$@" || rc=$?
-exit "$rc"
+json=$(ruby "$repo/scripts/golangci_config.rb" "$repo/src/.golangci.yml" ${locals[@]+"${locals[@]}"})
+# 合成した設定は中身の sha256 で決まる置き場に書く (exec したいので後で消せない。同じ中身なら同じファイルを使い回す。
+# 1 つ数 KB で、共通の塊か差分を変えたときだけ増える。消す仕組みは作らない。要らなければディレクトリごと消してよい)。
+# 一時ファイルに書いてから rename で置く (並列の lint に書きかけを読ませない)。拡張子で golangci-lint が書式を決める
+sum=$(printf '%s\n' "$json" | shasum -a 256)
+cfg="$root/golangci-config/${sum%% *}.json"
+if [ ! -s "$cfg" ]; then
+  mkdir -p "${cfg%/*}"
+  part=$(mktemp "$cfg.XXXXXX")
+  printf '%s\n' "$json" >"$part"
+  mv -f "$part" "$cfg"
+fi
+PATH="$goroot/bin:$PATH" exec "$bin" run -c "$cfg" "$@"

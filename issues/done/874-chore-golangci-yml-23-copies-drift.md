@@ -63,3 +63,23 @@
   - `make test` rc=0 (24 プロジェクトの lint と test の 48 本が rc=0)・`make test-lint` rc=0
   - CI: 48f6ec9d で Go プロジェクトの 20 本・doctor・unused・Issues ほか 25 本が success。取り消された 6 本 (Tests・Lint・Bench・src/glogx・src/pro-con・src/treefiler) は
     後の bdca04fe (874 を含む) で success
+
+## 敵対的レビューの結果 (2026-10-23・opus・読み取りのみ。push の後に通した)
+
+普段の入口 (`make -C src/<m> lint`) では壊せなかった: 違反を入れた写しを移行前の設定と合成した設定で lint し、7 モジュールで結果が同じ。
+直したもの (commit「fix(go): golangci-lint の設定の合成で、差分が共通の塊を外す形・入口の使い方の誤りを rc=2 で止める」):
+
+- P1 差分の 1 行で共通の linter が黙って消える (`linters:` を空にする・enable を文字列にする・`linters.disable`)。合成で「差分は足すだけ」を強制した
+  (書き換え・型の違う上書き・`linters.default` / `linters.disable` / `formatters.disable` は rc=2)
+- P2 YAML の重複した鍵・2 つ目の文書を黙って読む → rc=2 / `.golangci.local.yaml` などの綴りの違い・モジュールの根以外からの起動で差分を読まない → rc=2 /
+  `make test-changed` が共通の塊と合成の変更で Go の lint を回さない → 写像を直した
+- P3 `-c` の二重指定 → rc=2。一時ファイルをやめて「中身の sha256」で決まる置き場に書き、exec に戻した (wrapper だけに TERM を送ると子が残った)。
+  素の `golangci-lint run` が共通の塊だけを読むことを src/README.md に書いた
+- 変異で red を確認: 書き換えを通す → test_golangci_config.sh / 重複した鍵の検査を外す → 同 / go.mod の確認を外す・綴りの確認を .golangci.yml だけにする・
+  -c の確認を外す → test_golangci_lint_pinned.sh
+
+記録だけ (直していない):
+- ruby の YAML (1.1) と golangci-lint の yaml.v3 で `on` / `yes` などの解釈が違いうる。今の差分には該当する値が無い (レビューが走査で確認)。未確認リスク
+- 移行で落ちたコメント: 共通の塊のバグ検出系の linter ごとの 1 行説明。doctor の「この設定が無かった間…」は経緯なので落としてよい
+- 手元の glogx の lint が、消した worktree の絶対パスを持つ Go のビルドキャッシュ (cgo の生成物) で落ちる。874 より前の commit でも同じく落ち、
+  空の GOCACHE では 0 件 (2026-10-23 に A/B で確認)。874 の変更とは無関係。CI は毎回キャッシュが空なので起きない

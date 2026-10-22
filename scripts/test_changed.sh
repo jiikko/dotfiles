@@ -160,6 +160,12 @@ notest=""
 for p in "$@"; do
   p="${p#./}"  # git status は ./ を付けないが、人が付けても同じ写像に落とす
   case "$p" in
+    # 全プロジェクトの make lint が通る共有の入口と、それが合成する設定の共通の塊。変えたら Go の lint を全部回す
+    # (shell の lint だけでは本物の経路を通らない)。src/*/* と *.yml より先に置く (src/.golangci.yml が *.yml に当たって YAML の検査だけになる)
+    scripts/golangci_lint.sh|scripts/golangci_config.rb|src/.golangci.yml)
+      add_shell_targets; add_target test-go-lint
+      [ "$p" = src/.golangci.yml ] && add_target test-yaml
+      add_test_dirs_referencing "$p" ;;
     src/*/*)
       # 2 番目のセグメントをプロジェクト名として取り出す。`src/../x` のような
       # トラバーサルは make -C src/.. (= repo root 全体) に化けるため弾く
@@ -234,10 +240,6 @@ for p in "$@"; do
     # shell/zsh ソース。ディレクトリ前方一致に加え、置き場所を問わない *.sh /
     # zsh dotfile (_z*) も拾う (shellcheck/zsh -n の対象は discover_shell_scripts が
     # repo 全体から発見するため、ここも場所で絞らない)
-    # 全プロジェクトの make lint が通る共有の入口。変えたら Go の lint を全部回す (shell の lint だけでは本物の経路を通らない)
-    scripts/golangci_lint.sh)
-      add_shell_targets; add_target test-go-lint
-      add_test_dirs_referencing "$p" ;;
     bin/*|scripts/*|zshlib/*|*.sh|_z*)
       add_shell_targets
       add_test_dirs_referencing "$p" ;;
