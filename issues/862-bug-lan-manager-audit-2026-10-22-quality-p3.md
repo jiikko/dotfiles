@@ -93,6 +93,10 @@ lan-manager の全体監査 (865) の品質系のうち P3 の小物をまとめ
   - `ledger.Store` に `Merge` (在れば f、無ければ足す。1 回のロック) を足し、space の登録と初期設定の台帳の手順を寄せた。初期設定の手順は r.managed なら今までどおり Update だけ
   - `Upsert` は Store から外し、`FileStore.Upsert` はテストのファイル (`ledger/upsert_test.go`) へ移した (864 の A7)
   - 変異 5 本で red を確認 (commit message に一覧)。敵対的レビュー 2 周 (opus)。`TestMergeTakesLockOnce` が見るのは「2 回の書き直しに戻す」形だけで、ロックの外で読んでから 1 回で書く形は見ない (テストのコメントに明記)
-- [ ] 7 unadvertise と Close
+- [x] 7 unadvertise と Close (dotfiles-0e。commit「fix(mac-lan-manager): 画面を閉じた後に、台帳から外した相手の広告を止める ssh の結果を待って出す」)
+  - 単体のバイナリは閉じた後に `finishBG` で結果を stderr に出す (`Model.WaitBG` / `PendingBG`)。Close は glogx と共有なので取り消さない
+  - 待つのをやめる合図は `sigWatch` (`sigwatch.go`。合図 × 時点の期待の表を注記に置いた)。変異 11 本で red を確認 (commit message に一覧)
+  - 敵対的レビュー 5 周 (opus)。残る窓: bubbletea の ignoreSignals と一致させられない ms の窓に外から kill が来ると、待たずに終える (「待たずに終えた」と出る)。Guard の注記に記録
+  - 記録だけ (直していない): 閉じる直前に takeBG が toast に移した結果は、閉じた後には出ない (toast には出ている)。Ctrl-C で待つのをやめると裏の ssh も止まる (同じプロセスグループ。案内の文言に書いた)。テストで見えないのは main() からの finishBG・Guard の配線
 - [ ] 8 header の待ちの文
 - [ ] 9 ObservePeer の IP の段
