@@ -117,6 +117,27 @@ func TestDumpKeepsEarlyNotices(t *testing.T) {
 	}
 }
 
+// 知らせ (# 知らせ) も文字の出力では無害化する (知らせの文には台帳・相手・ssh の stderr が入る)。
+func TestDumpTextStripsEscapesInNotices(t *testing.T) {
+	var out, errb bytes.Buffer
+	rc := runDump([]string{"--wait", "200ms"}, &out, &errb, time.Now, nil, func() (*lanmgr.Model, error) {
+		return lanmgr.New(lanmgr.Options{Ledger: escStore{}, StartScan: func(time.Time) lanmgr.Scanner { return &dumpScan{} }}), nil
+	}, nil)
+	if rc != 0 || !strings.Contains(out.String(), "台帳が読めない") || strings.ContainsAny(out.String(), "\x1b\x07") {
+		t.Errorf("rc=%d 知らせが無い / 制御文字が残った: %q", rc, out.String())
+	}
+	if strings.Contains(out.String(), "\n  ok=true 偽の知らせ") {
+		t.Errorf("知らせの中の改行で行を足させた: %q", out.String())
+	}
+}
+
+// escStore は読むと ESC / OSC を含む失敗を返す台帳。
+type escStore struct{ brokenStore }
+
+func (escStore) Load() ([]ledger.Host, error) {
+	return nil, errors.New("壊れた\x1b]52;c;aGk=\x07台帳\n  ok=true 偽の知らせ")
+}
+
 type brokenStore struct{}
 
 func (brokenStore) Load() ([]ledger.Host, error)                { return nil, errors.New("壊れた台帳") }
@@ -151,6 +172,41 @@ func TestDumpPeerText(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("出力に %q が無い:\n%s", want, out.String())
 		}
+	}
+}
+
+// 文字の出力では、相手が書ける値 (サービス名・ルーター・ssh の stderr) の ESC / OSC を端末へ出さない。JSON はそのまま (エスケープされる)。
+func TestDumpPeerTextStripsEscapes(t *testing.T) {
+	t.Setenv("USER", "alice")
+	osc := "\x1b]52;c;aGk=\x07"
+	observe := func(context.Context, setup.Dest) setup.PeerNet {
+		return setup.PeerNet{KeyErr: fmt.Errorf("%w: %s", setup.ErrUnknown, "ssh: "+osc+"bad\nkey: ok\n")}
+	}
+	var out, errb bytes.Buffer
+	if rc := runDump([]string{"--peer", "192.168.50.7"}, &out, &errb, time.Now, nil, noModel(t), observe); rc != 0 {
+		t.Fatalf("rc=%d stderr=%s", rc, errb.String())
+	}
+	if strings.ContainsAny(out.String(), "\x1b\x07") || !strings.Contains(out.String(), "key: unknown") {
+		t.Errorf("制御文字が残った / 出力が無い: %q", out.String())
+	}
+	// ssh の stderr の改行は " / " にして 1 行に畳む (末尾の改行は落とす)
+	if n := strings.Count("\n"+out.String(), "\nkey: "); n != 1 || !strings.Contains(out.String(), "bad / key: ok\nnet_known:") {
+		t.Errorf("key: の行が %d 本 / stderr を 1 行に畳んでいない: %q", n, out.String())
+	}
+	observe = func(context.Context, setup.Dest) setup.PeerNet {
+		return setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Thunder" + osc + "bolt\nkey: denied", IP: "169.254.13.42",
+			Method: "DHCP\nkey: denied", Mask: "255.255.0.0\nkey: denied", Router: "\x1b[2J\nkey: denied"}
+	}
+	out.Reset()
+	if rc := runDump([]string{"--peer", "192.168.50.7"}, &out, &errb, time.Now, nil, noModel(t), observe); rc != 0 {
+		t.Fatalf("rc=%d stderr=%s", rc, errb.String())
+	}
+	if strings.ContainsAny(out.String(), "\x1b\x07") || !strings.Contains(out.String(), "ip=169.254.13.42") {
+		t.Errorf("制御文字が残った / 出力が無い: %q", out.String())
+	}
+	// 値の中の改行で行を足させない (key: の行は自分が書いた 1 本だけ)。書式の改行は残る
+	if n := strings.Count("\n"+out.String(), "\nkey: "); n != 1 || !strings.Contains(out.String(), "\nnet_known: true") {
+		t.Errorf("key: の行が %d 本 / 書式の改行が消えた: %q", n, out.String())
 	}
 }
 

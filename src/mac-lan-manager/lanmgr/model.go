@@ -917,6 +917,11 @@ func (m *Model) sshRefusal(r row) string {
 	if user, _ := m.userFor(r); user == "" {
 		return noUserNote
 	}
+	// HostKeyAlias=<host> を組む (Bonjour の名前の , や * が known_hosts の照合を崩す)。Mac の LocalHostName は英数字と - だけなので
+	// 断られるのは Mac 以外の機器 (Avahi の UTF-8 のホスト名など) だけ。それらは IP で ssh する (受容)
+	if !setup.ValidAlias(r.host) {
+		return fmt.Sprintf("ホスト名 %q は ssh の鍵の名前に使えない (英数字と . _ - だけ)", r.host)
+	}
 	return ""
 }
 

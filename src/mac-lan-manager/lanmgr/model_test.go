@@ -251,6 +251,25 @@ func TestSSHUsesLanIPAndHostKeyAlias(t *testing.T) {
 	}
 }
 
+// Bonjour の名前に , や * が入った行では s を断る (HostKeyAlias=<名前> の , は known_hosts で名前を並べ、* はパターンになり、
+// 初めての鍵の確認に yes と答えると、その行の鍵が別の Mac (m2macmini.local・*.local) の照合を通る)。
+func TestSSHRefusesHostUnfitForHostKeyAlias(t *testing.T) {
+	for _, host := range []string{"x,m2macmini.local", "*.local"} {
+		t.Run(host, func(t *testing.T) {
+			t.Setenv("USER", "koji")
+			h := newHarness(t, nil, []discover.Peer{{Host: host, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}})
+			h.keys("l") // 未管理のタブ
+			if a := h.keys("s"); a == Exec {
+				r, _ := h.m.TakeExec()
+				t.Fatalf("s で ssh を起こした: %v", r.Argv)
+			}
+			if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "鍵の名前に使えない") {
+				t.Errorf("断った理由を出していない: %+v", n)
+			}
+		})
+	}
+}
+
 func TestCopyKeys(t *testing.T) {
 	h := newHarness(t, nil, []discover.Peer{mini, {Host: "nosmb.local", SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}})
 	h.keys("l") // 未管理のタブの 1 台目 (m2macmini)

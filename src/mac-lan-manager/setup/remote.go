@@ -30,7 +30,7 @@ func (d Dest) Validate() error {
 	}
 	// HostKeyAlias は known_hosts の行 (`,` で名前を並べる・`*` `?` `[` はパターン) と ssh の -o の値 (引用と \ を読む) に入る。
 	// ssh が照合する名前と ssh-keygen -F で引く名前が食い違わないよう、ホスト名に使う文字だけを通す
-	if !reAlias.MatchString(d.HostKeyAlias) {
+	if !ValidAlias(d.HostKeyAlias) {
 		return fmt.Errorf("ホスト名が使えない: %q", d.HostKeyAlias)
 	}
 	return nil
@@ -87,6 +87,10 @@ type Run func(ctx context.Context, argv []string) (stdout string, err error)
 var ErrUnknown = errors.New("判定できない")
 
 var reAlias = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// ValidAlias は HostKeyAlias に使える名前か (known_hosts の行では `,` で名前を並べ、`*` `?` `[` はパターンになる。Validate の注記)。
+// Dest を通さずに HostKeyAlias を組む経路 (lanmgr の s) もこれで断る。
+func ValidAlias(s string) bool { return reAlias.MatchString(s) }
 
 // PeerNet は ssh で読んだ相手の状態。KeyOK が偽で KeyErr が nil なら「鍵で入れない」と分かった。KeyErr が ErrUnknown なら判定できない。
 type PeerNet struct {

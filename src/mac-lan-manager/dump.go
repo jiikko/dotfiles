@@ -70,7 +70,7 @@ func runDump(args []string, stdout, stderr io.Writer, now func() time.Time, stop
 		}
 		return 0
 	}
-	writeDumpText(stdout, rep, tm)
+	writeDumpText(plainWriter{stdout}, rep, tm)
 	return 0
 }
 
@@ -155,7 +155,7 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 	if len(r.Notices) > 0 {
 		fmt.Fprintln(w, "\n# 知らせ")
 		for _, n := range r.Notices {
-			fmt.Fprintf(w, "  ok=%v %s\n", n.OK, n.Text)
+			fmt.Fprintf(w, "  ok=%v %s\n", n.OK, termsafe.PlainLine(n.Text)) // 知らせ 1 件を 1 行に (改行で偽の行を足させない)
 		}
 	}
 }
@@ -227,8 +227,11 @@ func dumpPeer(d setup.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan s
 		"host_key_unknown": "初めての相手 (ホスト鍵をまだ知らない。鍵を置く手順で指紋を確かめる)", "unknown": "判定できない (届かない・期限切れ)"}[r.Key]
 	fmt.Fprintf(stdout, "peer: %s@%s  host_key_alias=%s\n", r.User, r.IP, r.HostKeyAlias)
 	fmt.Fprintf(stdout, "key: %s (%s)", r.Key, key)
+	// 相手が書ける値 (ssh の stderr・サービス名・方式・ルーター) は値ごとに 1 行へ無害化する (改行を残すと key: ok のような偽の行を足せる)。
+	// User・IP・HostKeyAlias は Validate を通っている
+	line := termsafe.PlainLine
 	if r.KeyErr != "" {
-		fmt.Fprintf(stdout, "  %s", r.KeyErr)
+		fmt.Fprintf(stdout, "  %s", strings.ReplaceAll(strings.TrimRight(termsafe.PlainBlock(r.KeyErr), "\n"), "\n", " / "))
 	}
 	fmt.Fprintf(stdout, "\nnet_known: %v", r.NetKnown)
 	if r.KeyOK && !r.NetKnown {
@@ -243,7 +246,7 @@ func dumpPeer(d setup.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan s
 			fmt.Fprintln(stdout, "有線 (ルーターの無いサービス): (無し)")
 		} else {
 			fmt.Fprintf(stdout, "有線 (ルーターの無いサービス): service=%s ip=%s method=%s mask=%s router=%s\n",
-				r.Service, or(r.PeerIP, "-"), or(r.Method, "-"), or(r.Mask, "-"), or(r.Router, "-"))
+				line(r.Service), line(or(r.PeerIP, "-")), line(or(r.Method, "-")), line(or(r.Mask, "-")), line(or(r.Router, "-")))
 		}
 	}
 	return 0
@@ -296,4 +299,16 @@ func or(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// plainWriter は dump の文字の出力 (JSON でない方) を端末へ出す前に無害化する (知らせ・走査や網の失敗の文に ESC / OSC が入りうる。
+// 画面は rows の入口で termsafe を通すが、dump は Report をそのまま書く)。書式の改行を残すので、値の中の改行は落とせない:
+// 1 件を 1 行で読ませたい値は、書く側で PlainLine を当てる。1 回の Write を 1 つの塊として扱う (1 つの値を 2 回の Write に割って書かない)
+type plainWriter struct{ w io.Writer }
+
+func (p plainWriter) Write(b []byte) (int, error) {
+	if _, err := io.WriteString(p.w, termsafe.PlainBlock(string(b))); err != nil {
+		return 0, err
+	}
+	return len(b), nil
 }
