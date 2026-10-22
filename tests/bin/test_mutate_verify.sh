@@ -935,6 +935,41 @@ case "$(logdir_of)" in
 esac
 
 # ---------------------------------------------------------------------------
+# 51. 継承した GIT_DIR が別の repo (B) を指していても、cwd の repo (A) を検証する。外さないと B の HEAD から worktree を作り、
+#     A の中身を「未コミットの変更」として持ち込んだ混ざった木で判定する。B には何も残さない
+# ---------------------------------------------------------------------------
+d="$work/gitdir-a"; make_repo "$d"
+b="$work/gitdir-b"; make_repo "$b"
+printf '#!/bin/bash\necho B-version\n' > "$b/guard.sh"; git -C "$b" commit -qam "B differs"
+b_head="$(git -C "$b" rev-parse HEAD)"
+b_index="$(cksum < "$b/.git/index")"
+GIT_DIR="$b/.git" mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || { fail "GIT_DIR が別の repo を指すと rc=$rc (期待 0)"; cat "$work/out.log"; }
+grep -q '未コミットの変更を持ち込んだ' "$work/out.log" && fail "🚨 GIT_DIR の repo の HEAD に cwd の中身を未コミットの変更として持ち込んだ"
+grep -q 'B-version' "$work/out.log" && fail "🚨 GIT_DIR の repo (B) の中身で判定した"
+[ "$(git -C "$b" rev-parse HEAD)" = "$b_head" ] || fail "B の HEAD が動いた"
+[ -z "$(git -C "$b" status --porcelain)" ] || fail "B の作業ツリーを変えた: $(git -C "$b" status --porcelain)"
+[ "$(git -C "$b" worktree list | wc -l | tr -d ' ')" = 1 ] || fail "B に worktree を残した: $(git -C "$b" worktree list)"
+# 外さないと worktree の gitdir を B の .git と読み、B の index を上書きし、作業用のログ (mv-*.log) を B の .git に置き去る (2026-10-22 に実測)
+[ "$(cksum < "$b/.git/index")" = "$b_index" ] || fail "🚨 B の index を書き換えた"
+[ -z "$(find "$b/.git" -maxdepth 1 -name 'mv-*' -print)" ] || fail "🚨 B の .git に作業用のファイルを置き去った: $(find "$b/.git" -maxdepth 1 -name 'mv-*' -print)"
+# GIT_DIR 以外の場所の変数も外す (一覧を手で写して GIT_DIR だけにすると、B の木や B の index で判定する)。
+# GIT_INDEX_FILE=.git/index は pre-commit の hook が付ける形
+for spec in "GIT_WORK_TREE=$b" "GIT_INDEX_FILE=.git/index" "GIT_INDEX_FILE=$b/.git/index"; do
+  ( export "${spec?}"; mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad' )
+  rc=$?
+  [ "$rc" -eq 0 ] || { fail "🚨 $spec を継承すると rc=$rc (期待 0)"; cat "$work/out.log"; }
+done
+[ "$(cksum < "$b/.git/index")" = "$b_index" ] || fail "🚨 GIT_INDEX_FILE を継承して B の index を書き換えた"
+# cwd が A のサブディレクトリでも A の根を検証する (GIT_DIR だけがあると git は cwd を作業ツリーの根と見なす)
+mkdir -p "$d/sub"
+( cd "$d/sub" && GIT_DIR="$b/.git" "$MV" --verify 'bash verify.sh' --baseline-expect '^ran 2 checks' \
+    --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad' ) > "$work/out.log" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] || { fail "GIT_DIR が別の repo を指し、cwd がサブディレクトリだと rc=$rc (期待 0)"; cat "$work/out.log"; }
+
+# ---------------------------------------------------------------------------
 # 末尾. 🚨 全ケースを通した**後**の残骸ゼロ。
 #     この判定は必ずファイル末尾に置く — 2 周目に「末尾に置く」と書きながら、その後で
 #     新ケースを 3 つ判定より前に足して同じ穴を再生産した。

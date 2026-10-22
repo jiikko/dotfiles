@@ -78,7 +78,30 @@ cd A && GIT_DIR=<B>/.git mutate-verify --file g.sh --syntax 'bash -n g.sh' \
 
 ## 進捗
 
-- [ ] 継承した `GIT_DIR` などを mutate-verify / mutate-verify-list で外す
-- [ ] 再現手順をテストのケースにし、変異で red を確かめる
-- [ ] B の `.git` の中が書き換わるか (reflog・objects) を確かめる (未確認)
-- [ ] hook が `GIT_DIR` を付ける条件 (bare / linked worktree など) を確かめる。issue 744 と `src/subproc/gitenv.go` のコメントの記述の裏取りも兼ねる
+- [x] 継承した `GIT_DIR` などを mutate-verify / mutate-verify-list で外す — 「mutate-verify: 継承した GIT_DIR などを外し、cwd の repo を検証する」
+  - 外し方は `bin/lib/git_location_env.sh` の `git_location_env_unset` (`unset $(git rev-parse --local-env-vars) GIT_NAMESPACE`。外せなければ rc≠0)
+  - 同じ穴が `scripts/with_fresh_worktree.sh` (worktree_scratch.sh のもう 1 つの呼び出し元) にもあった (直接起動で B の HEAD から新品の
+    checkout を作った。`make test-fresh` は Makefile の unexport で守られていた)。同じ関数を呼ぶ
+- [x] 再現手順をテストのケースにし、変異で red を確かめる
+  - `tests/bin/test_mutate_verify.sh` ケース 51 (GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE の相対・絶対、cwd がサブディレクトリ、B の HEAD・
+    作業ツリー・worktree 一覧・index・`.git` 直下の置き去り)、`tests/bin/test_mutate_verify_list.sh` (GIT_DIR を継承した repo の中の置き場を拒否)、
+    `tests/bin/test_git_location_env.sh` (全部外れる・外せなければ rc≠0・/bin/sh)、`tests/scripts/test_with_fresh_worktree_git_location_env.sh`
+  - red を確かめた変異: 呼び出しを外す (mutate-verify / list / with_fresh_worktree)、関数の代わりに `unset GIT_DIR` だけを書く (mutate-verify)
+    / `unset GIT_DIR GIT_WORK_TREE` だけを書く (with_fresh_worktree)、関数の unset を消す、`GIT_NAMESPACE` を外す、失敗の rc を握り潰す (2 通り)
+  - 敵対的レビュー 2 周。1 周目の P2 (テストが GIT_DIR しか試さない・with_fresh_worktree の同じ穴) と P3 (unset の失敗で rc=0) を直し、
+    2 周目の P2 (with_fresh_worktree のテストが GIT_INDEX_FILE を試さない) と P3 2 件 (readonly の項・helper が無いときの終わり方) を直した
+- [x] B の `.git` の中が書き換わるか — **書き換わっていた** (2026-10-22、修正前の版で実測)。B の index を上書きし (137 → 118 バイト)、
+  作業用のログ `mv-*.log` 6 つを B の `.git` 直下に置き去り、object を 1 つ足した。worktree の gitdir を B の `.git` と読んだため。
+  修正後の版では、同じ手順で B の `.git` の全ファイルの大きさ・mtime が変わらない
+- [x] hook が `GIT_DIR` を付ける条件 (2026-10-22・git 2.55.0 で実測)
+  - 通常の checkout の pre-commit: 付かない (`GIT_INDEX_FILE=.git/index` だけ)
+  - **linked worktree の pre-commit: `GIT_DIR=<本体>/.git/worktrees/<名前>` が付く**。issue 744 と `src/subproc/gitenv.go` の「hook から設定される」は
+    この条件で成り立つ。dotfiles はセッションごとに worktree を切るので、日常的に起きる形
+  - bare repo の pre-receive: `GIT_DIR=.` が付く
+
+### 直さなかったもの
+
+- `scripts/` の他の手書きの unset (`bin/skill-tmpdir` / `scripts/clean_tmp.sh` / `scripts/issue_claim.sh` / `githooks/pre-push`) は一覧がそれぞれ違うが、
+  この issue の範囲外として触っていない。寄せるなら `bin/lib/git_location_env.sh` を使う
+- 外すのは場所を決める変数だけで、`GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS` も外れるため、親の `git -c` の値は --verify に届かない
+  (Makefile の unexport と同じ方針)

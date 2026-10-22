@@ -172,6 +172,13 @@ if [ -d "$up" ]; then
 else
   echo "[test-mutate-verify-list] SKIP: 大文字小文字を区別するファイルシステム (この迂回は起きない)"
 fi
+# 継承した GIT_DIR が別の repo を指していても、repo の中の判定は cwd の repo で行う (外さないと `git -C <置き場>` が GIT_DIR に負けて
+# 置き場を toplevel と答え、ignore されていない置き場を通す)
+other="$work/other"; mkdir -p "$other"; git -C "$other" init -q .
+( cd "$inrepo" && GIT_DIR="$other/.git" STUB_DIR="$work" MUTATE_VERIFY_BIN="$stub" "$MVL_BASH" "$MVL" --log-dir "$inrepo/logs3" "$work/in.list" ) > "$work/out.log" 2>&1
+rc=$?
+[ "$rc" = 2 ] || fail "GIT_DIR を継承した repo の中のログの置き場で rc=$rc (want 2): $(cat "$work/out.log")"
+[ ! -e "$work/args.red-1" ] || fail "GIT_DIR を継承した repo の中のログの置き場で mutate-verify を起動した"
 # ignore された置き場 (tmp/ 等) は git status に出ないので通す
 printf 'ign/\n' > "$inrepo/.gitignore"
 ( cd "$inrepo" && STUB_DIR="$work" MUTATE_VERIFY_BIN="$stub" "$MVL_BASH" "$MVL" --log-dir "$inrepo/ign/logs" "$work/in.list" ) > "$work/out.log" 2>&1

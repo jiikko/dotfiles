@@ -136,6 +136,11 @@ die() { echo "$prog: $*" >&2; exit 2; }
 _self="$(readlink -f "${BASH_SOURCE[0]}")" || die "mutate-verify の実体を解決できない: ${BASH_SOURCE[0]}"
 # shellcheck source=bin/lib/uint.sh
 . "$(dirname "$_self")/lib/uint.sh" || die "$(dirname "$_self")/lib/uint.sh を読めない"
+# shellcheck source=bin/lib/git_location_env.sh
+. "$(dirname "$_self")/lib/git_location_env.sh" || die "$(dirname "$_self")/lib/git_location_env.sh を読めない"
+# 検査対象は cwd の repo。継承した GIT_DIR などが別の repo を指すと、その repo の HEAD から worktree を作り、cwd の中身を
+# 「未コミットの変更」として持ち込んだ混ざった木で判定する。--verify / --syntax の実行環境からも外れる
+git_location_env_unset || die "継承した git の場所の環境変数 (GIT_DIR など) を外せない (git rev-parse --local-env-vars が失敗した)"
 # 起動時の stderr を fd 3 に控えて、報告はそこへ書く。bash は関数の実行中に届いたシグナルの trap を
 # その関数のリダイレクトがかかったまま走らせるので、`run_in_wt ... > "$mut_out" 2>&1` の最中に中断されると、
 # EXIT trap の報告 (rc=9 の警告・全体のログの置き場) が mv-mutant.log へ入り、worktree と一緒に消えていた

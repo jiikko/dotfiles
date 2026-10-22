@@ -13,6 +13,13 @@
 # scripts/lib/worktree_scratch.sh が持つ (bin/mutate-verify と共通)。
 set -euo pipefail
 
+# 新品にするのは cwd の repo。継承した GIT_DIR などが別の repo を指すと、その repo の HEAD から worktree を作る
+# (make test-fresh は Makefile の unexport で外れているが、直接起動したときは外れていない)
+# shellcheck source=bin/lib/git_location_env.sh
+. "$(dirname "$(readlink -f "$0")")/../bin/lib/git_location_env.sh" ||
+  { echo "with_fresh_worktree: bin/lib/git_location_env.sh を読めない" >&2; exit 2; }
+git_location_env_unset || { echo "with_fresh_worktree: 継承した git の場所の環境変数 (GIT_DIR など) を外せない" >&2; exit 2; }
+
 root="$(git rev-parse --show-toplevel)"
 # shellcheck source=scripts/lib/worktree_scratch.sh
 . "$root/scripts/lib/worktree_scratch.sh"

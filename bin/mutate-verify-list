@@ -63,6 +63,10 @@ done
 
 # 兄弟の mutate-verify は実体の隣を探す (symlink で別の dir から起動されても外れない)
 _self="$(readlink -f "$0")" || die "mutate-verify-list の実体を解決できない: $0"
+# shellcheck source=bin/lib/git_location_env.sh
+. "$(dirname "$_self")/lib/git_location_env.sh" || die "$(dirname "$_self")/lib/git_location_env.sh を読めない"
+# ログの置き場の判定 (repo の中か・ignore されているか) を cwd の repo で行う。各変異の mutate-verify も同じものを外す
+git_location_env_unset || die "継承した git の場所の環境変数 (GIT_DIR など) を外せない (git rev-parse --local-env-vars が失敗した)"
 mv_bin="${MUTATE_VERIFY_BIN:-$(dirname "$_self")/mutate-verify}"
 case "$mv_bin" in /*) ;; *) die "MUTATE_VERIFY_BIN は絶対パスで: $mv_bin" ;; esac
 [ -x "$mv_bin" ] || die "mutate-verify を実行できない: $mv_bin"
