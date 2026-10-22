@@ -102,7 +102,7 @@ func (m *Model) Place() Place {
 }
 
 // RestorePlace は p の開いていたフォルダとカーソルとタイルを戻す (無くなったパス・木の外のフォルダは飛ばす。カーソルが戻せなければ
-// 動かさない)。起動したフォルダの照合は呼び出し側が行う。
+// 動かさない)。タイルは木の外のファイルでも戻す (リンクから重ねて開いたもの)。起動したフォルダの照合は呼び出し側が行う。
 func (m *Model) RestorePlace(p Place) {
 	for _, o := range p.Opened {
 		if n := m.loadPath(o); n != nil && n.dir {

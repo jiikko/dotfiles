@@ -579,3 +579,26 @@ func TestJumpUnderlineShiftedByGutter(t *testing.T) {
 		t.Fatal("リンクの手前に下線が掛かっている (溝のぶんずれている)")
 	}
 }
+
+// 読む上限 (Markdown の markdownCap) に達した後の ensure は、ファイルを開かずに戻る (Resize が毎フレーム呼ぶ)。
+// 開きに行くと、消したファイルで読めない扱いになる。
+func TestEnsureStopsAtLimitWithoutOpening(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "x.md")
+	mustWrite(t, p, strings.Repeat("line\n", 3*chunkBytes/5)) // 1 回の読み (chunkBytes) で末尾に届かない大きさ
+	src, err := openText(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src.limit = chunkBytes
+	src.ensure(1 << 30)
+	if src.eof || src.off < src.limit {
+		t.Fatalf("上限まで読んでいない: off=%d eof=%v", src.off, src.eof)
+	}
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	src.ensure(1 << 30)
+	if src.readErr || src.eof {
+		t.Error("上限に達した後もファイルを開きに行った")
+	}
+}

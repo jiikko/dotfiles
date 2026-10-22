@@ -4,6 +4,7 @@ import (
 	"glogx/internal/app"
 	"glogx/internal/testenv"
 	"os"
+	"slices"
 	"testing"
 	"time"
 	"treefiler/filer"
@@ -40,5 +41,18 @@ func TestFilerScreenRejectsBadState(t *testing.T) {
 	}
 	if _, ok := LoadFilerScreen(now, "/a"); ok {
 		t.Error("壊れた JSON から復元しようとした")
+	}
+}
+
+// タイルの本体か diff か・スクロールは記憶の JSON を通って残る (glogx の起動をまたぐ経路はこのファイル 1 本)。
+func TestFilerScreenKeepsTiles(t *testing.T) {
+	now := testenv.IsolateScreenMemory(t)
+	p := filer.Place{Start: "/a", Cursor: "/a/x", Tiles: []filer.TilePlace{{Path: "/a/x", Scroll: 42}, {Path: "/a/y", Diff: true}}}
+	if err := saveFilerScreen(filerScreen{Place: p, SavedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := LoadFilerScreen(now, "/a")
+	if !ok || !slices.Equal(got.Tiles, p.Tiles) {
+		t.Fatalf("Tiles = %+v ok=%v, want %+v", got.Tiles, ok, p.Tiles)
 	}
 }

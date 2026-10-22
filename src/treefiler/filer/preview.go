@@ -174,7 +174,8 @@ func cleanLine(l string) string {
 
 // ensure は少なくとも want 行が読めるまで (または末尾まで) 読み進める。読めなくなったら末尾として扱う。
 func (s *textSource) ensure(want int) {
-	if s.eof || len(s.lines) >= want {
+	// 上限に達していたら開く前に戻る: Resize は毎フレーム呼ぶので、開いて何も読まずに閉じるのを繰り返す
+	if s.eof || len(s.lines) >= want || (s.limit > 0 && s.off >= s.limit) {
 		return
 	}
 	f, err := os.Open(s.path)

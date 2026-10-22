@@ -34,7 +34,7 @@ func removeFilerScreen() { filerMemory.Remove() }
 
 // loadFilerScreen は dir で開いた F の記憶を返す。読めない / 壊れている / 期限切れ / 未来の時刻 (app.ScreenMemory.load) と
 // 別の dir はすべて「復元しない」に倒す (勝手に全画面を出さない方が安全側)。
-func LoadFilerScreen(now time.Time, dir string) (filer.Place, bool) { //nolint:unparam // main の restoreFilerScreen が Place を使う (check-exported はパッケージの外の利用を数えない)
+func LoadFilerScreen(now time.Time, dir string) (filer.Place, bool) {
 	s, ok := filerMemory.Load(now)
 	if !ok || s.Place.Start == "" || s.Place.Start != dir {
 		return filer.Place{}, false
