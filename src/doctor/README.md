@@ -121,9 +121,10 @@ CI は 3 レーンに分かれている。**doctor 機能を触ったら見る�
 
 `doctor.yml` が持つ 2 つの gate は、どちらも「素通りする形」を止めるためにある。
 
-- **テスト本数の下限**: `go test -run 'TestDoctor'` は**1 本も走らなくても rc=0** を返す。
-  パターンとテスト名が食い違うと vacuous pass になるので、`--- PASS: TestDoctor` の本数を数えて
-  下限 (15 本。テストは glogx 直下と `internal/doctorview` の両方を数え、2026-10-22 時点で 108 本) を課している。テスト名の頭を変えるならこの gate も直す
+- **テスト本数の突き合わせ**: `go test -run '^TestDoctor'` は**1 本も走らなくても rc=0** を返す。
+  パターンや package の列挙とテストが食い違うと vacuous pass になるので、`--- PASS: TestDoctor` の本数を、glogx の中の
+  `func TestDoctor*` の数 (どの package かを問わない。2026-10-22 時点で直下 2 ファイル・`internal/doctorview` 8 ファイルの 108 本) と突き合わせ、
+  1 本以上を求める (`.github/workflows/doctor.yml`)。テスト名の頭を変えるならこの gate も直す
 - **fail-closed の smoke**: `xcrun` / `brew` を**必ず失敗する偽物**に差し替えて `diskdoctor -json` を回し、
   依存コマンドを使う 4 判定が `failed` (診断できず) になることを見る。
   🚨 PATH から外すだけでは足りない (`xcrun` は `/usr/bin` にあるので実在して成功する)

@@ -79,20 +79,27 @@ jobs:
       # glogx 側の doctor 配線。glogx 全体 (31 秒) からこの部分だけを切り出す (1 秒)
       # 🚨 -run のパターンは「テスト名が TestDoctor で始まる」ことに依存する。
       #   下の gate がその前提を検査するので、名前を変えたら gate が落ちて気づく
+      # shell: bash で pipefail を付ける (既定の bash -e は付けず、rc が tee の 0 になる)。テスト関数の外の失敗 (TestMain の
+      # 後片付け・テストの外の race) は PASS の本数を減らさないので、下の gate では止まらず、ここの rc でしか止まらない
       - name: glogx の doctor 配線テスト
-        run: go test -race -count=1 -run 'TestDoctor' -v . ./internal/doctorview | tee /tmp/doctor-tests.log
+        shell: bash
+        run: go test -race -count=1 -run '^TestDoctor' -v . ./internal/doctorview | tee /tmp/doctor-tests.log
         working-directory: src/glogx
 
-      # 「そもそも走ったか」を出力で確かめる (exit 0 は「1 本も走らなかった」を含む)。
-      # -run のパターンが名前と食い違うと vacuous pass になるので、本数を数えて下限を課す。
-      # 実測 2026-09-03 時点で 19 本。減る変更が入ったら気づけるよう 15 を下限にする
-      # (規範: _claude/rules/verify-execution-not-just-exit-code.md)
+      # 「そもそも走ったか」を出力で確かめる (exit 0 は「1 本も走らなかった」を含む。規範: _claude/rules/verify-execution-not-just-exit-code.md)。
+      # PASS の本数を、glogx の中の func TestDoctor* の数 (上で列挙した package の外も数える) と突き合わせる。止める形:
+      # - テストが上の package の列挙の外へ移った (doctorview へ移ったときの形) / skip で走らなかった → 本数が合わない
+      # - 名前を変えて -run のパターンから全部外れた → 0 本
+      # 名前を一部だけ変えた形は数え方も一緒に減るので止めない (glogx 全体の CI では走る)。
+      # 固定の下限にしない: 本数が増えるたびに下限が緩み (19 本の頃の 15 が、108 本の今は 9 割が抜けても通った)、手で直す必要があった
       - name: doctor テストが実際に走ったことを確認する
+        working-directory: src/glogx
         run: |
           n=$(grep -c '^--- PASS: TestDoctor' /tmp/doctor-tests.log || true)
-          echo "doctor テスト: ${n} 本が PASS"
-          if [ "${n:-0}" -lt 15 ]; then
-            echo "✗ doctor のテストが ${n} 本しか走っていない (-run のパターンとテスト名が食い違っている疑い)" >&2
+          want=$(grep -rhE '^func TestDoctor' --include='*_test.go' . | wc -l | tr -d ' ')
+          echo "doctor テスト: ${n} 本が PASS (定義は ${want} 本)"
+          if [ "${n:-0}" -lt 1 ] || [ "${n:-0}" -ne "${want:-0}" ]; then
+            echo "✗ doctor のテストの PASS ${n} 本が定義 ${want} 本と合わない (-run の package の列挙の外へ移った・skip・名前の食い違いの疑い)" >&2
             exit 1
           fi
 
