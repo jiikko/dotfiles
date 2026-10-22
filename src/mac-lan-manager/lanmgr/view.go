@@ -57,13 +57,13 @@ func (m *Model) View() []string {
 		if tile == "" || m.tooShort {
 			// 重ねて入らない (狭い・低い端末): 従来どおり全画面で出す
 			tile = ""
-			body = lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", m.viewSetup(w, m.bodyHeight()-4))
+			body = lipgloss.JoinVertical(lipgloss.Left, m.pageHead(w), m.viewSetup(w, m.bodyHeight()-4))
 			if m.tooShort {
 				return m.viewTooSmall("高さが足りない")
 			}
 		}
 	case m.sc == scSettings:
-		body = lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "", m.viewSettings(w))
+		body = lipgloss.JoinVertical(lipgloss.Left, m.pageHead(w), m.viewSettings(w))
 		if m.tooShort {
 			return m.viewTooSmall("高さが足りない")
 		}
@@ -207,6 +207,33 @@ func (m *Model) Hints() []Hint {
 	return out
 }
 
+// モーダルのキーは、最下行 (hints) とモーダルの中の案内 (hintLine) の両方がここから組む (別々に書くと片方だけ直して食い違う)。
+var (
+	progressHints      = []keyHint{{"esc", "閉じる (確認は裏で続く)", 1}}
+	speedProgressHints = []keyHint{{"esc", "閉じる (測定は裏で続く)", 1}}
+	speedBoxHints      = []keyHint{{"j/k", "経路", 3}, {"y", "実行", 2}, {"n/esc", "キャンセル", 1}}
+)
+
+// hintLine はモーダルの中に出すキーの案内の 1 行。
+func hintLine(hs []keyHint) string {
+	parts := make([]string, 0, len(hs))
+	for _, h := range hs {
+		parts = append(parts, h.key+" "+h.label)
+	}
+	return strings.Join(parts, "   ")
+}
+
+// firstLabel は詳細カードの項目の行頭を返す関数を作る。項目名は最初の行だけに出し、2 行目からは同じ幅の空白。
+func firstLabel(label func(string) string, name string) func() string {
+	head := label(name)
+	return func() string { h := head; head = label(""); return h }
+}
+
+// pageHead は全画面 (一覧・初期設定・設定) の見出しと罫線と空行。
+func (m *Model) pageHead(w int) string {
+	return lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "")
+}
+
 // hints は最下行に載せるキー。板・モーダルが開いている間はその板のキーだけにする (一覧のキーを残すと、板では効かないキーを案内する)。
 // 一覧では、選んでいる Mac の動作のキー (s 繋ぐ…) を名前の長さ・配置に依らず載せる (詳細カードが 1 行に畳まれると、そこから押し出された)。
 func (m *Model) hints() []keyHint {
@@ -215,11 +242,11 @@ func (m *Model) hints() []keyHint {
 	case m.small:
 		return []keyHint{{"q", "閉じる", 1}}
 	case m.progressShown():
-		hs = []keyHint{{"esc", "閉じる (確認は裏で続く)", 1}}
+		hs = progressHints
 	case m.speedShown():
-		hs = []keyHint{{"esc", "閉じる (測定は裏で続く)", 1}}
+		hs = speedProgressHints
 	case m.ov == ovSpeed:
-		hs = []keyHint{{"j/k", "経路", 3}, {"y", "実行", 2}, {"n/esc", "キャンセル", 1}}
+		hs = speedBoxHints
 	case m.ov == ovConfirm:
 		yes := "y/enter"
 		if m.ask != nil && (m.ask.auto || m.ask.selfOnly) { // HandleInput が enter で実行しない板
@@ -352,7 +379,7 @@ func (m *Model) viewList(w int) string {
 	if wide {
 		listW = w * 58 / 100
 	}
-	head := lipgloss.JoinVertical(lipgloss.Left, m.header(w), gradRule(w, cAccent, cPink, cPurple, cTeal, cBg), "")
+	head := m.pageHead(w)
 	tabs := m.tabs(listW - 1)
 	detailW := w
 	if wide {
@@ -561,7 +588,7 @@ func (m *Model) detailPanel(width, height int) string {
 	}
 	wrap := lipgloss.NewStyle().Width(max(width-1-6, 1)) // card(…, width-1) の内側 (左右の枠と余白 6 桁)
 	var lines []string
-	for i, l := range m.detailLines(r, width, "初期設定") {
+	for i, l := range m.detailLines(r, width, true) {
 		if l == "" && i != 2 { // 題と罫線の後の空行だけ残す (区切りの空行は高さを食うので詰める)
 			continue
 		}
@@ -794,12 +821,16 @@ func (m *Model) detail(r row, width int) string {
 	if !r.self && r.host == "" { // タブに行が無い
 		return sDim.Render(m.emptyTabNote())
 	}
-	return shadow(card(strings.Join(m.detailLines(r, width, "詳細・初期設定"), "\n"), width-1, surfDetail, cTeal, cPurple, cPink))
+	return shadow(card(strings.Join(m.detailLines(r, width, false), "\n"), width-1, surfDetail, cTeal, cPurple, cPink))
 }
 
-// detailLines は詳細の中身の行 (一覧の下のカードと、Enter で重ねるパネルが共有する)。enterLabel は enter の案内の語
-// (一覧では enter が詳細のパネルを開き、パネルの中では初期設定を開くので、置き場で語が変わる)。
-func (m *Model) detailLines(r row, width int, enterLabel string) []string {
+// detailLines は詳細の中身の行 (一覧の下のカードと、Enter で重ねるパネルが共有する)。inPanel は詳細のパネルの中か
+// (一覧では enter が詳細のパネルを開き、パネルの中では初期設定を開くので、置き場で enter の案内が変わる)。
+func (m *Model) detailLines(r row, width int, inPanel bool) []string {
+	enterLabel := "詳細・初期設定"
+	if inPanel {
+		enterLabel = "初期設定"
+	}
 	user, _ := m.userFor(r)
 	name := or(r.alias, or(r.instance, r.host))
 	title := sAccent.Render(name)
@@ -864,9 +895,9 @@ func (m *Model) detailLines(r row, width int, enterLabel string) []string {
 	lines = append(lines, "")
 	switch {
 	case r.self && !r.managed:
-		lines = append(lines, sDim.Render("この Mac は台帳に無い  ")+keycap("space", "登録")+m.selfStaticKey(enterLabel))
+		lines = append(lines, sDim.Render("この Mac は台帳に無い  ")+keycap("space", "登録")+m.selfStaticKey(inPanel, enterLabel))
 	case r.self:
-		lines = append(lines, sOK.Render("✓ 台帳に登録済み")+m.selfStaticKey(enterLabel))
+		lines = append(lines, sOK.Render("✓ 台帳に登録済み")+m.selfStaticKey(inPanel, enterLabel))
 	case !r.managed:
 		lines = append(lines, sDim.Render("未管理: ")+keycap("space", "台帳に登録")+"   "+keycap("enter", enterLabel))
 	case !r.seen:
@@ -987,13 +1018,13 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	return "", -1, 0
 }
 
-// selfStaticKey は「この Mac」のカードに添える enter の案内 (有線を固定できるときだけ)。詳細のパネル (enterLabel が初期設定) では固定を、
-// 一覧の下のカードでは一覧の enter (詳細を開く) を案内する
-func (m *Model) selfStaticKey(enterLabel string) string {
+// selfStaticKey は「この Mac」のカードに添える enter の案内 (有線を固定できるときだけ)。詳細のパネルの中では固定を、
+// 一覧の下のカードでは一覧の enter (詳細を開く) を案内する。案内の語で分けない (語を直すと案内がすり替わる)
+func (m *Model) selfStaticKey(inPanel bool, enterLabel string) string {
 	if m.selfStaticRefusal() != "" {
 		return ""
 	}
-	if enterLabel == "初期設定" {
+	if inPanel {
 		return "   " + keycap("enter", "有線を固定")
 	}
 	return "   " + keycap("enter", enterLabel)

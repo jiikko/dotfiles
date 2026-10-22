@@ -216,8 +216,7 @@ func (m *Model) reachLines(r row, label func(string) string) []string {
 	if r.self || !r.managed {
 		return nil
 	}
-	head := label("疎通")
-	next := func() string { h := head; head = label(""); return h } // 項目名は最初の行だけ
+	next := firstLabel(label, "疎通")
 	if m.reachRuns[r.host] != nil {
 		return []string{next() + sDim.Render("確かめている…")}
 	}

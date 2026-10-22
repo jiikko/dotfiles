@@ -80,7 +80,7 @@ func (m *Model) progressBox() string {
 	if su.queuedX {
 		body = append(body, sDim.Render("終わったら次の手順の確認を表示"))
 	}
-	return modal(title, body, "esc 閉じる (確認は裏で続く)", m.w)
+	return modal(title, body, hintLine(progressHints), m.w)
 }
 
 // execBanner は端末を渡す前に出す板 (確認の板と同じ枠。題・何を聞かれるか・戻り方)。

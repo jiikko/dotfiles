@@ -1450,12 +1450,26 @@ func TestSelfRowFixesThisMacsWiredIP(t *testing.T) {
 	if !h.m.current().self {
 		t.Fatalf("前提: カーソルがこの Mac の行に無い")
 	}
+	// カードの「台帳」の行の enter の案内だけを見る (最下行のキーの案内にも同じ語が出るので、画面全体では見分けられない)
+	ledgerLine := func() string {
+		for _, l := range strings.Split(stripView(strings.Join(h.m.View(), "\n")), "\n") {
+			if strings.Contains(l, "台帳に無い") || strings.Contains(l, "台帳に登録済み") {
+				return l
+			}
+		}
+		t.Fatalf("前提: カードに台帳の行が無い:\n%s", stripView(strings.Join(h.m.View(), "\n")))
+		return ""
+	}
+	// 一覧の下のカードの enter は詳細のパネルを開く (固定を案内するのはパネルの中だけ)
+	if l := ledgerLine(); strings.Contains(l, "有線を固定") || !strings.Contains(l, "詳細・初期設定") {
+		t.Errorf("一覧の下のカードの enter の案内が固定になっている / 詳細を開く案内が無い: %q", l)
+	}
 	h.keys("enter")
 	if !h.m.detailOpen {
 		t.Fatalf("前提: 詳細のパネルが開かない")
 	}
-	if v := stripView(strings.Join(h.m.View(), "\n")); !strings.Contains(v, "有線を固定") {
-		t.Errorf("固定できるのに案内に enter 有線を固定 が無い:\n%s", v)
+	if l := ledgerLine(); !strings.Contains(l, "有線を固定") {
+		t.Errorf("固定できるのにパネルの台帳の行に enter 有線を固定 が無い: %q", l)
 	}
 	h.keys("enter")
 	if h.m.ov != ovConfirm || h.m.ask == nil || h.m.ask.title != "この Mac の有線を固定 IP にする" || !h.m.ask.selfOnly {

@@ -261,7 +261,7 @@ func (m *Model) speedBox() string {
 	body = append(body, "",
 		fmt.Sprintf("上り・下りを %d 秒ずつ、ssh 越しで回線をほぼ使い切ります (その間、同じ回線の他の通信は遅くなります)", secs),
 		"値は ssh の暗号化を通した速さです (1 Gbps を超える回線は暗号化の速さで頭打ちになりえます)")
-	return modal("通信速度を測る", body, "j/k: 経路   y: 実行   n/Esc: キャンセル", m.w)
+	return modal("通信速度を測る", body, hintLine(speedBoxHints), m.w)
 }
 
 // speedShown は測定の進捗のモーダルを出すか (測っている途中で、esc で閉じておらず、他の板が開いていない)。
@@ -286,7 +286,7 @@ func (m *Model) speedProgressBox() string {
 		sAccent.Render(m.spin()) + " " + sText.Render(sr.name) + "  " + sDim.Render(speedPath{ip: sr.ip, link: sr.link}.label()),
 		sDim.Render(fmt.Sprintf("  経過 %d 秒  (ssh で繋いでから上り・下りを %d 秒ずつ)", el, int(speedtest.Duration/time.Second))),
 	}
-	return modal("通信速度を測っています", body, "esc 閉じる (測定は裏で続く)", m.w)
+	return modal("通信速度を測っています", body, hintLine(speedProgressHints), m.w)
 }
 
 func (m *Model) startSpeed(host, name string, d setup.Dest, link netinfo.Link) {
@@ -378,8 +378,7 @@ func (m *Model) speedLine(r row, label func(string) string) []string {
 		return nil
 	}
 	lines := make([]string, 0, 2*len(m.speed[r.host])+1) // 経路ごとに結果と頭打ち (か時刻) の 2 行、測定中の 1 行
-	head := label("通信速度")
-	next := func() string { h := head; head = label(""); return h } // 項目名は最初の行だけ
+	next := firstLabel(label, "通信速度")
 	if sr := m.speedRun; sr != nil && sr.host == r.host {
 		lines = append(lines, next()+sDim.Render(fmt.Sprintf("測定中… %s (上り・下り 各 %d 秒)", speedPath{ip: sr.ip, link: sr.link}.label(), int(speedtest.Duration/time.Second))))
 	}
