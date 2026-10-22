@@ -248,7 +248,70 @@ func TestSpeedFooterAndRefusalFollowState(t *testing.T) {
 	}
 }
 
-// 経路は板で選べる。既定は有線 (内部 IP)、j で Wi-Fi のメイン IP。トーストに経路を出し、結果は経路ごとに有線から並べる。
+// 測っている間は進捗のモーダル (回る印・相手・経路・経過秒) を出し、裏の一覧にキーを届かせない。esc で閉じても測定は続き、
+// 結果は toast で出る。終わればモーダルは消える。最下行の案内は板・モーダルのキーにする (一覧のキーを残さない)。
+func TestSpeedProgressModal(t *testing.T) {
+	h, f := speedHarness(t)
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("t")
+	if foot := termwidth.StripSGR(h.m.footer()); !strings.Contains(foot, "y 実行") || strings.Contains(foot, "t 速度") {
+		t.Errorf("経路を選ぶ板の案内が板のキーでない: %q", foot)
+	}
+	h.m.selfOK = false // 板を開いた後で網を読めなくなっても、板で効く y は案内から落とさない
+	if foot := termwidth.StripSGR(h.m.footer()); !strings.Contains(foot, "y 実行") {
+		t.Errorf("網を読めないときに板の y を案内から落とした: %q", foot)
+	}
+	h.m.selfOK = true
+	h.keys("y")
+	ctx := f.started(t)
+	s := h.screen()
+	if !h.m.speedShown() || !strings.Contains(s, "通信速度を測っています") || !strings.Contains(s, "mini  169.254.217.100 (有線)") ||
+		!strings.Contains(s, "経過 0 秒 / 約 10 秒") {
+		t.Fatalf("測っている間に進捗のモーダルが無い:\n%s", s)
+	}
+	if !regexp.MustCompile(`[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]`).MatchString(s) {
+		t.Errorf("進捗のモーダルに回る印が無い:\n%s", s)
+	}
+	if foot := termwidth.StripSGR(h.m.footer()); !strings.Contains(foot, "esc 閉じる") || strings.Contains(foot, "j/k") {
+		t.Errorf("測定中の案内がモーダルのキーでない: %q", foot)
+	}
+	for _, k := range []string{"L", "C", "i", "U"} { // glogx の開閉・横断キーもこの画面が取る (渡すと glogx が板を閉じ、Close が測定を取り消す)
+		if !h.m.OwnsKeys() || !h.m.Binds(k) {
+			t.Errorf("測定の進捗の間に %s を glogx へ渡す: OwnsKeys=%v Binds=%v", k, h.m.OwnsKeys(), h.m.Binds(k))
+		}
+	}
+	h.m.TakeNotices()
+	if a := h.keys("s"); a != None || h.m.ov != ovNone || !h.m.speedShown() { // 裏の一覧の s (ssh で繋ぐ)・space (台帳) を起こさない
+		t.Errorf("モーダルの裏の一覧にキーが届いた: action=%v ov=%v", a, h.m.ov)
+	}
+	if h.keys("space"); h.m.ov != ovNone {
+		t.Errorf("モーダルの裏で台帳の確認を出した: ov=%v", h.m.ov)
+	}
+	if n := h.m.TakeNotices(); len(n) == 0 || n[len(n)-1].OK || !strings.Contains(n[len(n)-1].Text, "esc で閉じる") {
+		t.Errorf("捨てたキーを断る知らせが無い: %+v", n)
+	}
+	h.keys("esc")
+	if h.m.speedShown() || h.m.speedRun == nil || ctx.Err() != nil || strings.Contains(h.screen(), "通信速度を測っています") {
+		t.Fatalf("esc でモーダルを閉じて測定を続けていない: shown=%v run=%v ctxErr=%v", h.m.speedShown(), h.m.speedRun != nil, ctx.Err())
+	}
+	if h.m.OwnsKeys() || h.m.Binds("L") { // 閉じた後は一覧と同じ (L で glogx の板を閉じられる)
+		t.Errorf("モーダルを閉じた後も全部のキーを取る: OwnsKeys=%v", h.m.OwnsKeys())
+	}
+	f.results <- speedtest.Result{UpBps: 94e6, DownBps: 93e6}
+	awaitSpeed(t, h.m)
+	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "↑ 94 Mbps  ↓ 93 Mbps") {
+		t.Errorf("閉じた後の結果を toast で出していない: %+v", n)
+	}
+	h.keys("t", "y") // 開いたまま終われば、モーダルは結果と一緒に消える
+	f.started(t)
+	f.results <- speedtest.Result{UpBps: 90e6, DownBps: 90e6}
+	awaitSpeed(t, h.m)
+	if h.m.speedShown() || strings.Contains(h.screen(), "通信速度を測っています") {
+		t.Errorf("測り終えた後もモーダルが残った:\n%s", h.screen())
+	}
+}
+
+// 経路は板で選べる。既定は有線 (内部 IP)、j で Wi-Fi のメイン IP。進捗のモーダルに経路を出し、結果は経路ごとに有線から並べる。
 func TestSpeedChoosesPath(t *testing.T) {
 	h, f := speedHarness(t)
 	h.cursorTo(t, "m2macmini.local")
@@ -267,8 +330,8 @@ func TestSpeedChoosesPath(t *testing.T) {
 	if f.dest.IP != "192.168.50.7" {
 		t.Errorf("j で選んだ経路で測っていない: %+v", f.dest)
 	}
-	if n := h.m.TakeNotices(); len(n) == 0 || !strings.Contains(n[len(n)-1].Text, "192.168.50.7 (無線) で測っています") {
-		t.Errorf("トーストに経路が無い: %+v", n)
+	if s := h.screen(); !strings.Contains(s, "通信速度を測っています") || !strings.Contains(s, "mini  192.168.50.7 (無線)") {
+		t.Errorf("進捗のモーダルに選んだ経路が無い:\n%s", s)
 	}
 	f.results <- speedtest.Result{UpBps: 40e6, DownBps: 35e6}
 	awaitSpeed(t, h.m)

@@ -511,9 +511,10 @@ func (m *Model) Busy() bool {
 		len(m.bg) > 0 || m.wiredWait > 0 || m.speedRun != nil || len(m.reachRuns) > 0
 }
 
-// OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定) が開いているか (glogx は横断キーも渡す)。
+// OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定・測定の進捗) が開いているか (glogx は横断キーも渡す)。
+// 測定の進捗を数えないと、glogx の L・横断キーがモーダルの裏で板を閉じ、Close が測定を黙って取り消した
 func (m *Model) OwnsKeys() bool {
-	return m.filtering || m.bandEdit || m.ov != ovNone || m.sc == scSettings || m.sc == scSetup || m.detailOpen
+	return m.filtering || m.bandEdit || m.ov != ovNone || m.sc == scSettings || m.sc == scSetup || m.detailOpen || m.speedShown()
 }
 
 // Binds はこの画面が使うキーか (glogx の横断キー・U より先にこの画面へ渡す。s は status の横断キーと同じ字だが、ここでは ssh)。
@@ -1043,6 +1044,9 @@ func (m *Model) HandleInput(key, text string) Action {
 		return None
 	}
 	m.wantHost = "" // 自分で動かしたら、後から見つかった Mac へカーソルを跳ばさない (効かないキーでは消さない)
+	if m.speedShown() {
+		return m.keySpeedProgress(key)
+	}
 	switch m.ov {
 	case ovConfirm:
 		a := m.ask

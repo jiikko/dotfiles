@@ -22,8 +22,11 @@ import (
 // speedRun は測っている途中の 1 回。同時に 1 本だけ (2 本流すと互いの帯域を食って値が意味を失う)。
 type speedRun struct {
 	host   string
+	name   string // 別名 (無ければ host。進捗のモーダルの見出し)
 	ip     string
 	link   netinfo.Link
+	since  time.Time
+	shown  bool // 進捗のモーダルを出している (esc で閉じても測定は続き、結果は toast で出す。ユーザー決定 2026-10-22)
 	ch     <-chan speedtest.Result
 	cancel context.CancelFunc
 }
@@ -239,8 +242,7 @@ func (m *Model) keySpeed(key string) Action {
 		m.note("測れない: "+err.Error(), false)
 		return None
 	}
-	m.startSpeed(a.host, d, p.link)
-	m.note(fmt.Sprintf("%s を %s で測っています (約 %d 秒)", a.name, p.label(), 2*int(speedtest.Duration/time.Second)), true)
+	m.startSpeed(a.host, a.name, d, p.link) // 測っている間は進捗のモーダルを出す (toast だけだと数秒で消え、測っているかが見えなかった。ユーザー報告)
 	return None
 }
 
@@ -262,10 +264,35 @@ func (m *Model) speedBox() string {
 	return modal("通信速度を測る", body, "j/k: 経路   y: 実行   n/Esc: キャンセル", m.w)
 }
 
-func (m *Model) startSpeed(host string, d setup.Dest, link netinfo.Link) {
+// speedShown は測定の進捗のモーダルを出すか (測っている途中で、esc で閉じておらず、他の板が開いていない)。
+func (m *Model) speedShown() bool { return m.speedRun != nil && m.speedRun.shown && m.ov == ovNone }
+
+// keySpeedProgress は進捗のモーダルのキー。esc / q で閉じる (測定は裏で続く)。他のキーは捨てる (裏の一覧に届かせない)。
+func (m *Model) keySpeedProgress(key string) Action {
+	if key == "esc" || key == "q" {
+		m.speedRun.shown = false
+		return None
+	}
+	m.note("測定中 (esc で閉じる。測定は裏で続く)", false)
+	return None
+}
+
+// speedProgressBox は測っている間のモーダル (回る印・相手と経路・経過秒)。
+func (m *Model) speedProgressBox() string {
+	sr := m.speedRun
+	secs := int(speedtest.Duration / time.Second)
+	el := max(int(m.now.Sub(sr.since)/time.Second), 0)
+	body := []string{
+		sAccent.Render(m.spin()) + " " + sText.Render(sr.name) + "  " + sDim.Render(speedPath{ip: sr.ip, link: sr.link}.label()),
+		sDim.Render(fmt.Sprintf("  上り・下り 各 %d 秒  (経過 %d 秒 / 約 %d 秒)", secs, el, 2*secs)),
+	}
+	return modal("通信速度を測っています", body, "esc 閉じる (測定は裏で続く)", m.w)
+}
+
+func (m *Model) startSpeed(host, name string, d setup.Dest, link netinfo.Link) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan speedtest.Result, 1) // 取り消した後に届いた結果は誰も読まない (送り手を止めない)
-	m.speedRun = &speedRun{host: host, ip: d.IP, link: link, ch: ch, cancel: cancel}
+	m.speedRun = &speedRun{host: host, name: name, ip: d.IP, link: link, since: m.o.Now(), shown: true, ch: ch, cancel: cancel}
 	m.logf("speed start %s ip=%s link=%s", host, d.IP, or(link.Label(), "?"))
 	run, now := m.o.SpeedTest, m.o.Now
 	go func() { ch <- run(ctx, d, now) }()

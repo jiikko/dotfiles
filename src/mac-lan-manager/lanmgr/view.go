@@ -189,6 +189,10 @@ type keyHint struct {
 func (m *Model) footer() string {
 	var hs []keyHint
 	switch {
+	case m.ov == ovSpeed: // 板のキー (一覧の案内を残すと、板で効かないキーを案内した)
+		hs = []keyHint{{"j/k", "経路", 3}, {"y", "実行", 2}, {"n/esc", "キャンセル", 1}}
+	case m.speedShown():
+		hs = []keyHint{{"esc", "閉じる (測定は裏で続く)", 1}}
 	case m.sc == scSetup:
 		hs = []keyHint{{"x", "実行", 2}, {"r", "リロード", 3}, {"e", "メッセージ", 4}, {"q/esc", "戻る", 1}} // e: 1 行に切った接続の失敗の全文
 	case m.sc == scSettings:
@@ -212,7 +216,7 @@ func (m *Model) footer() string {
 		hs = append(hs, keyHint{"h/l", "タブ", 10}, keyHint{"space", "台帳", 8}, keyHint{"c", "この Mac の IP", 9},
 			keyHint{",", "設定", 11}, keyHint{"?", "全部のキー", 2}, keyHint{"q", "閉じる", 1})
 	}
-	if m.sc != scSettings && !m.filtering && !m.selfOK { // 読めるまで断るキーは案内にも出さない (出すと押しても断られた)
+	if m.sc != scSettings && !m.filtering && m.ov != ovSpeed && !m.speedShown() && !m.selfOK { // 読めるまで断るキーは案内にも出さない (出すと押しても断られた。板とモーダルのキーは網を読まない)
 		hs = slices.DeleteFunc(hs, func(h keyHint) bool {
 			return slices.Contains(needsNet, h.key) || (m.detailOpen && h.key == "enter") // パネルの enter (初期設定) も netRefused が断る
 		})
@@ -833,6 +837,9 @@ func kindPill(k netinfo.Kind) string {
 func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	if m.progressShown() {
 		return m.progressBox(), -1, 0
+	}
+	if m.speedShown() {
+		return m.speedProgressBox(), -1, 0
 	}
 	switch m.ov {
 	case ovConfirm:
