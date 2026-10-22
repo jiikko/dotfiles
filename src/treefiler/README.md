@@ -9,6 +9,7 @@
 bin/treefiler [DIR]   # DIR (既定はカレントディレクトリ) を root にして開く
 ```
 
+tmux では `prefix + f` (`C-t f`) で、いま見ているペインの cwd を root にした popup が開く (`_tmux.conf`)。
 glogx からは `F` で同じ画面が開く。仕様とキーの一覧は [`docs/treefiler-spec.md`](../../docs/treefiler-spec.md)。
 
 ## キー (木)

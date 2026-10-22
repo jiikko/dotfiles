@@ -89,7 +89,7 @@ bind S command-prompt -p 'host:' "new-window -n %1 'ssh %1'"
 bind w choose-tree -Zw   # window をズーム表示の木から選ぶ
 ```
 
-【この repo の実例】標準の choose-tree を fzf popup（`/Users/koji/dotfiles/scripts/tmux_fzf_jump.sh`、`bind f`）に**置換している**。fzf 版は「全セッションの window をアクティビティ順 + 相対時刻 + capture-pane プレビュー付き」で出し、choose-tree より情報量が多い。choose-tree は「ゴチャついて見づらい」として不採用（`_tmux.conf` の `bind g/G` コメント参照）。外部 fuzzy finder に寄せた設計実例。
+【この repo の実例】標準の choose-tree を fzf popup（`/Users/koji/dotfiles/scripts/tmux_fzf_jump.sh`）に**置換していた**（`bind f`。2026-10-22 に `f` を treefiler の popup へ転用し、スクリプトは今はどのキーにも割り当てていない）。fzf 版は「全セッションの window をアクティビティ順 + 相対時刻 + capture-pane プレビュー付き」で出し、choose-tree より情報量が多い。choose-tree は「ゴチャついて見づらい」として不採用（`_tmux.conf` の `bind g/G` コメント参照）。外部 fuzzy finder に寄せた設計実例。
 
 【バージョン注意】`choose-tree` は 2.7+ で現形に。`-Z` は 2.7+、`-K` は 3.2+。3.5a で利用可。
 
@@ -389,7 +389,7 @@ set -g status-right "#{?client_prefix,#{p27:@keyguide},#{p27:@nothing}}"
 
 | ツール / 設定 | 起動・契機 | 使う tmux 機能 | 実装ファイル |
 | --- | --- | --- | --- |
-| 全 window fzf ジャンプ | `prefix + f` | display-popup -E / list-windows -a / capture-pane プレビュー / switch-client | `scripts/tmux_fzf_jump.sh` |
+| ファイラー (treefiler) | `prefix + f` | display-popup -E -d #{pane_current_path} -T | `bin/treefiler` (`src/treefiler`) |
 | window 跨ぎ pane 移動 (give) | `prefix + G` | display-popup -E / join-pane / display -p で自 pane 固定 | `scripts/tmux_fzf_pane_move.sh` |
 | scratch フローティング端末 | `prefix + t` / `C-t`（トグル） | display-popup -b heavy -S/-s/-T / has-session / detach-client / nested attach | `scripts/tmux_scratch_popup.sh` |
 | kill 確認 (pane / 他全 pane / window) | `prefix + x` / `q` / `&` | display-popup + gum confirm / display-message -p で対象固定 / 枠色で危険度を出す | `scripts/tmux_kill_confirm.sh` |
