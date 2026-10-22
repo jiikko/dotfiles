@@ -6,6 +6,7 @@ import (
 	"io"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1164,6 +1165,37 @@ func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	}
 	if !strings.Contains(m2.toast.Text(), "開けませんでした") {
 		t.Errorf("起動失敗の通知が出ない: %q", m2.toast.Text())
+	}
+}
+
+// エディタの <C-g> (extcmd.QuitExitCode で抜ける) は glogx ごと閉じる。「異常終了」とは知らせない。
+// 終了を飲む状態 (自己更新の実行中) では Ctrl-G と同じく閉じず、viewer に戻るので取り直す。
+func TestBrowseEditorQuitRequestQuits(t *testing.T) {
+	quitErr := exec.Command("sh", "-c", "exit "+strconv.Itoa(extcmd.QuitExitCode)).Run()
+	if !extcmd.IsQuitRequest(quitErr) {
+		t.Fatalf("前提が崩れた: exit %d が終了の依頼と判定されない: %v", extcmd.QuitExitCode, quitErr)
+	}
+
+	m := newTestBrowse(t, 1, nil, nil)
+	m.issuesOv = *loadedView(issuesviewtest.RealIssue(t))
+	m.Update(extcmd.EditorClosedMsg{Origin: extcmd.OriginEditor, Err: quitErr})
+	if !m.done {
+		t.Error("エディタの <C-g> で glogx が閉じない")
+	}
+	if strings.Contains(m.toast.Text(), "異常終了") {
+		t.Errorf("終了の依頼を異常終了として知らせた: %q", m.toast.Text())
+	}
+
+	// Ctrl-G を飲む状態では閉じない (迂回すると自己更新の途中でプロセスが落ちる)
+	m2 := newTestBrowse(t, 1, nil, nil)
+	m2.issuesOv = *loadedView(issuesviewtest.RealIssue(t))
+	m2.actModal.beginUpdate("claude")
+	m2.Update(extcmd.EditorClosedMsg{Origin: extcmd.OriginEditor, Err: quitErr})
+	if m2.done {
+		t.Error("自己更新の実行中にエディタの <C-g> で閉じた (Ctrl-G のガードを迂回している)")
+	}
+	if !m2.issuesOv.Fixture().Scanning() {
+		t.Error("閉じなかったときに取り直しが走らない (保存済みの編集が反映されない)")
 	}
 }
 

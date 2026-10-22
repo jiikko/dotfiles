@@ -1372,6 +1372,12 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 🚨 「起動できなかった」と「起動できたが 0 以外で終了した」を分ける。後者 (nvim の :cq 等)
 		// はエディタが実際に開いてファイルを保存できているので、reload を飛ばすと上の不変条件
 		// (復帰の境界で取り直す) が破れ、保存済みの編集が出ないまま古い内容を最新として表示する。
+		if extcmd.IsQuitRequest(msg.Err) {
+			// エディタの <C-g> (glogx ごと閉じて)。保存は nvim 側が済ませている (保存できなければ抜けずに止まる)。
+			// 終了が飲まれたとき (push 中など) は viewer に戻るので、取り直しも積む
+			_, quitCmd := m.handleQuitKey("ctrl+g")
+			return m, tea.Batch(m.issuesOv.ReloadAfterEdit(), quitCmd, m.maybeTick())
+		}
 		var exitErr *exec.ExitError
 		switch {
 		case msg.Err == nil:
@@ -1498,41 +1504,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.maybeTick()
 	}
 	if key == "ctrl+c" || key == "ctrl+g" {
-		switch {
-		// 🚨 push / pull と共存したときは下の 2 段ガードへ落とす。ここで常時ブロックすると
-		// stall した push の唯一の脱出口 (Ctrl-C 2 回) が消える (現状は updateBeginMsg の
-		// 譲りで共存しないが、if 1 つに依存させない)。
-		case m.actModal.anyUpdating() && !m.actModal.pushing && !m.actModal.pulling:
-			// 自己バイナリ更新の中断は CLI を壊しうるので常にブロック (ユーザー選定 2026-07-22)。
-			// 並走中はどちらか 1 つでも走っていればブロックする (片方だけ生き残った状態で
-			// 終了すると、残った自己更新が孤児のまま進む)。
-			// escape は updateTimeout のみ。モーダルに「完了まで終了できません」を出す。
-			return m, nil
-		case m.doctorOv.Deleting():
-			// doctor の削除も push / pull と同じ 2 段ガード。🚨 ここに case が無いと
-			// **1 回目の Ctrl-C でプロセスごと落ちる**。それは削除の中断を ctx で伝える経路を
-			// 使わないので、記録が executing のまま残り、cli: の子プロセスも孤児化する
-			// (doctor_delete.go 冒頭の不変条件を、UI の配線が破る形。2026-09-03 に実測)。
-			// 中断の意味づけ (1 回目は武装 / 2 回目で cancel) は doctorview.DoctorView が持つので、
-			// 判定を 2 箇所に書かず InterruptDelete へ渡す。**どちらの回でもここで飲む**
-			// (2 回目の cancel は相を落とさない = 相を落とすのは receiveDelete なので、
-			// 回数で戻り値を分けても同じ値になる)
-			m.doctorOv.InterruptDelete()
-			return m, m.maybeTick()
-		case m.actModal.pushing || m.actModal.pulling:
-			// 途中終了は不整合 (特に pull --rebase の mid-rebase 状態) を招くので 1 回目はブロック。
-			// ただし stall で永久に閉じられなくならないよう、2 回目の Ctrl-C で強制終了する
-			// (quit() の actModal.stop() が走行中 git を cancel。ユーザー選定 2026-07-23)。
-			if m.actModal.forceQuitArmed {
-				return m.quit()
-			}
-			m.actModal.forceQuitArmed = true
-			return m, nil
-		case key == "ctrl+c":
-			return m.quitNow() // 緊急脱出は演出なしで最短に抜ける
-		default:
-			return m.quit()
-		}
+		return m.handleQuitKey(key)
 	}
 	// git push/pull/update の確認と実行中ガードは action モーダルが捌く (通知はトースト)
 	// (警告/結果の dismiss・確認 y/N・実行中のキー無視。判定順は actionModal.handleKey 側)。
@@ -2393,6 +2365,47 @@ func (m *browseModel) cancelAll() {
 	m.stopGitLogWatch() // git log の見張りも同じ理由で閉じる (gitlog_watch.go)
 	m.doctorOv.Stop()   // doctor の走査 goroutine / 子プロセス (brew / simctl) を止める (popup の開閉で残さない)
 	m.lanV.Stop()       // mac-lan-manager の Bonjour の走査 (終わらない dns-sd) を止める
+}
+
+// handleQuitKey は Ctrl-C / Ctrl-G の終了要求を捌く (走っているものによっては飲む・2 回目まで待つ)。
+// エディタの <C-g> (extcmd.IsQuitRequest) も ctrl+g としてここを通す: 迂回すると push / pull / 自己更新 / doctor の削除の
+// 途中でもプロセスが落ちる。
+func (m *browseModel) handleQuitKey(key string) (tea.Model, tea.Cmd) {
+	switch {
+	// 🚨 push / pull と共存したときは下の 2 段ガードへ落とす。ここで常時ブロックすると
+	// stall した push の唯一の脱出口 (Ctrl-C 2 回) が消える (現状は updateBeginMsg の
+	// 譲りで共存しないが、if 1 つに依存させない)。
+	case m.actModal.anyUpdating() && !m.actModal.pushing && !m.actModal.pulling:
+		// 自己バイナリ更新の中断は CLI を壊しうるので常にブロック (ユーザー選定 2026-07-22)。
+		// 並走中はどちらか 1 つでも走っていればブロックする (片方だけ生き残った状態で
+		// 終了すると、残った自己更新が孤児のまま進む)。
+		// escape は updateTimeout のみ。モーダルに「完了まで終了できません」を出す。
+		return m, nil
+	case m.doctorOv.Deleting():
+		// doctor の削除も push / pull と同じ 2 段ガード。🚨 ここに case が無いと
+		// **1 回目の Ctrl-C でプロセスごと落ちる**。それは削除の中断を ctx で伝える経路を
+		// 使わないので、記録が executing のまま残り、cli: の子プロセスも孤児化する
+		// (doctor_delete.go 冒頭の不変条件を、UI の配線が破る形。2026-09-03 に実測)。
+		// 中断の意味づけ (1 回目は武装 / 2 回目で cancel) は doctorview.DoctorView が持つので、
+		// 判定を 2 箇所に書かず InterruptDelete へ渡す。**どちらの回でもここで飲む**
+		// (2 回目の cancel は相を落とさない = 相を落とすのは receiveDelete なので、
+		// 回数で戻り値を分けても同じ値になる)
+		m.doctorOv.InterruptDelete()
+		return m, m.maybeTick()
+	case m.actModal.pushing || m.actModal.pulling:
+		// 途中終了は不整合 (特に pull --rebase の mid-rebase 状態) を招くので 1 回目はブロック。
+		// ただし stall で永久に閉じられなくならないよう、2 回目の Ctrl-C で強制終了する
+		// (quit() の actModal.stop() が走行中 git を cancel。ユーザー選定 2026-07-23)。
+		if m.actModal.forceQuitArmed {
+			return m.quit()
+		}
+		m.actModal.forceQuitArmed = true
+		return m, nil
+	case key == "ctrl+c":
+		return m.quitNow() // 緊急脱出は演出なしで最短に抜ける
+	default:
+		return m.quit()
+	}
 }
 
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。

@@ -5,6 +5,7 @@ package extcmd
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -36,12 +37,37 @@ type EditorClosedMsg struct {
 	Err, ReclaimErr error
 }
 
+// QuitExitCode は、glogx が起こしたエディタが「glogx ごと閉じて」と頼むときの終了コード。nvim の設定
+// (nvim/lua/dotfiles/basic.lua の <C-g>) は値を写さず、quitCodeEnv で渡された値で `:cquit` する。
+// 🚨 nvim が自分から返しうる値 (0 / 1 = 起動失敗・`:cq` の既定 / 2) と重ねない: 重なると、ただの異常終了で glogx が閉じる。
+const QuitExitCode = 87
+
+// quitCodeEnv は QuitExitCode をエディタへ渡す環境変数。
+const quitCodeEnv = "GLOGX_QUIT_CODE"
+
+// IsQuitRequest は err がエディタからの「glogx ごと閉じて」か。
+func IsQuitRequest(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == QuitExitCode
+}
+
 // RunEditorCmd はテストで実 nvim を起動しないための差し替え点。tea.Exec は bubbletea の描画を一旦止め、端末を nvim へ
 // 明け渡し、終了後に復帰する (エディタ起動用途の標準経路)。foreground.Exec は、戻った後に前面が外れていたら
 // 入れ直しの前に取り戻す (treefiler の ! の `$SHELL -ic` が前面を持ち去ったまま終わる形)。
 var RunEditorCmd = func(origin ExecOrigin, cmd *exec.Cmd) tea.Cmd {
+	withQuitCode(origin, cmd)
 	x := foreground.NewExec(cmd)
 	return tea.Exec(x, closedMsg(origin, x))
+}
+
+// withQuitCode は quitCodeEnv をエディタ (OriginEditor) にだけ渡す。
+// 🚨 OriginFiler / OriginLan には渡さない: そちらは `!` のシェルや ssh を起こすので、その中で開いた nvim まで変数を継いで
+// <C-g> で抜けてしまう (glogx には nvim ではなくシェルの終了コードが届くので、glogx は閉じずに nvim だけが消える)。
+func withQuitCode(origin ExecOrigin, cmd *exec.Cmd) {
+	if origin != OriginEditor {
+		return
+	}
+	cmd.Env = append(cmd.Environ(), quitCodeEnv+"="+strconv.Itoa(QuitExitCode))
 }
 
 // closedMsg は前景のプロセスから戻ったときの Msg を組む (起動元を載せる。テストの stub は RunEditorCmd ごと差し替えるので、

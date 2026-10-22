@@ -209,7 +209,7 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 | `w` | **直近の警告/エラーをクリップボードへコピー** (トーストが消えた後も可。LLM に貼る用) |
 | `Ctrl-D` / `Ctrl-U` / `PgDn` / `PgUp` | ページスクロール |
 | `g` / `G` | 先頭 / 末尾のコミットへ |
-| `q` / `Esc` / `Ctrl-C` / `Ctrl-G` | 終了 (git log の pager と同じく表示は消える。`Ctrl-G` は tmux の popup を開いたキーと同じなので、もう一度押せば閉じる) |
+| `q` / `Esc` / `Ctrl-C` / `Ctrl-G` | 終了 (git log の pager と同じく表示は消える。`Ctrl-G` は tmux の popup を開いたキーと同じなので、もう一度押せば閉じる。**glogx が開いた nvim (`e` など) の中でも `Ctrl-G` で glogx ごと閉じる** — 全部保存してから抜け、保存できないバッファ (名前の無い変更・readonly) があれば閉じない。glogx が `GLOGX_QUIT_CODE` で渡した終了コードで nvim が抜け、glogx はそれを見て `Ctrl-G` と同じ扱いで終了する (push 中などは閉じずに viewer へ戻る)。割り当ては `nvim/lua/dotfiles/basic.lua`) |
 
 全画面 (`i` / `D` / `R` / `F` / `L`) を出したまま `C-g` で glogx ごと閉じると、次の起動はその画面を開き直す (30 分以内。issues は同じ repo、`F` は同じ dir のときだけ。`L` は場所を問わない)。
 

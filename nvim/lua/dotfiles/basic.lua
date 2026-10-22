@@ -111,6 +111,36 @@ local function set_keymaps()
   -- ハイライト検索時にカーソルを次の候補に移動しない
   map("n", "*", "*N", silent)
   map("n", "#", "#N", silent)
+
+  -- glogx が起こした nvim だけ: <C-g> で全部保存して、決めた終了コードで抜ける。glogx はそのコードを見て
+  -- 自分も閉じる (popup を閉じるキーと揃え、前面が nvim か glogx かを意識せずに閉じられるようにする)。
+  -- コードの値は glogx が GLOGX_QUIT_CODE で渡す (src/glogx/internal/extcmd の QuitExitCode。ここに値を写さない)。
+  -- 保存できないバッファ (名前の無い変更・readonly) があれば閉じずに止める: cquit は未保存の変更を捨てて抜ける
+  local glogx_quit_code = tonumber(vim.env.GLOGX_QUIT_CODE or "")
+  -- 子プロセスには継がない: :terminal の git が起こす editor の nvim が <C-g> で 87 を返して commit を中止する・
+  -- :terminal で起こした glogx が F の ! のシェルにまで渡す (glogx は extcmd の withQuitCode で渡す先を絞っている)
+  vim.env.GLOGX_QUIT_CODE = nil
+  if glogx_quit_code then
+    map("n", "<C-g>", function()
+      local ok, err = pcall(vim.cmd, "wall")
+      -- :wall は外から書き換えられたファイルの上書き確認を断られても例外を投げず、変更を残したまま戻る。
+      -- 成否は例外ではなく、書けるはずのバッファに変更が残っていないかで見る (nofile 等は :qa でも捨てるので数えない)
+      if ok then
+        for _, b in ipairs(vim.api.nvim_list_bufs()) do
+          local bt = vim.bo[b].buftype
+          if vim.bo[b].modified and (bt == "" or bt == "acwrite") then
+            ok, err = false, "未保存: " .. vim.api.nvim_buf_get_name(b)
+            break
+          end
+        end
+      end
+      if not ok then
+        vim.notify("保存できないバッファがあるので閉じません: " .. tostring(err), vim.log.levels.WARN)
+        return
+      end
+      vim.cmd("cquit " .. glogx_quit_code)
+    end, { desc = "glogx ごと閉じる (全部保存してから)" })
+  end
 end
 
 local function set_highlights()

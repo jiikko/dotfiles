@@ -1,11 +1,13 @@
 const OriginEditor
 const OriginFiler
 const OriginLan
+const QuitExitCode
 field EditorClosedMsg.Err
 field EditorClosedMsg.Origin
 field EditorClosedMsg.ReclaimErr
 field OpenURLMsg.Err
 func EditorCommand
+func IsQuitRequest
 func ReadonlyCommand
 type EditorClosedMsg
 type ExecOrigin
