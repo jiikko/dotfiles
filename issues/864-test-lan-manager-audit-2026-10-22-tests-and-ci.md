@@ -89,7 +89,9 @@ lan-manager の全体監査 (865) のうち、テスト (test-cleanup / test-hel
 - [x] A1 flaky (dotfiles-0e。commit「test(mac-lan-manager): TestRemoteCommandRunsDetached が背景の lock の後始末を待つ」)
   - `staticip.lock*` が消えるまで待ってから戻る。直した後 `-count=60` で 0 件 (直す前は `-count=20` で 1 件。直す前の割合でも 60 回で 0 件になる確率は 5% 弱。負荷下は未確認)
   - 偽の `sudo -b` で起こした背景を待たない形は、他のテストには無かった (敵対的レビューで確認。他は `cmd.Wait()` で背景の終わりまで待つ)
-- [ ] A2 テストの所要 (dotfiles-b9)
+- [x] A2 テストの所要 (dotfiles-0e。commit「test(mac-lan-manager): 描画を掃引する lanmgr のテスト 7 本を並列に回す」)
+  - プロファイルでは、TestListWindowDoesNotDependOnSelectedRow は -race 無しで 1.3 秒・-race で 48 秒で、時間の大半は View → card の lipgloss の描画に掛かる -race の掛け率だった (harness の作り直しは主因ではない)。網羅の範囲は変えずに t.Parallel() で並べた
+  - CI (src_mac-lan-manager の test): lanmgr 122.1 秒 (run 39759863496、1ff9c9cb) → 60.7 秒 (run 39763897294、ec8c4b24)。setup は 40.1 → 37.9 秒 (触っていない)
 - [x] A3 Update の鍵の固定のテスト (dotfiles-0e。862 の 6 と同じ commit)。edit の `hosts[i].Host = k` を消す変異 → TestUpdateOnlyExisting が red。memStore も鍵の固定と空のホスト名の拒否を本物に合わせた
 - [x] A4 (dotfiles-0e。commit「test(mac-lan-manager): setup のテストの準備の書き込みの失敗を t.Fatal で受ける」)。2 か所 (stale の 2 周目以降・生きている持ち主の lock) を t.Fatal で受ける
 - [ ] A5〜A6 (dotfiles-b9)

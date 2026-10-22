@@ -82,7 +82,10 @@ lan-manager の全体監査 (865) の品質系のうち P3 の小物をまとめ
 ## 進捗
 
 - [ ] 1 ping の rc をテストで固定 (画面と揃えるかは 847 の判断)
-- [ ] 2 部分失敗を判定不能に (VPN・IfGone を除く)
+- [x] 2 部分失敗を判定不能に (dotfiles-0e。9 と同じ commit「fix(mac-lan-manager): 相手の観測でサービスだけを読み、読めなかったサービスがあれば判定できないにする」)
+  - `netinfo.Snapshot.Unread` に数え、ObservePeer は 1 つでもあれば NetKnown=false。数えないのは I/F が無い (IfGone。macOS 27.0.1 で実測: ifconfig は rc=1 "does not exist"、-getinfo は rc=0) と Device が空のサービス (VPN。未実測)
+  - 理由は `PeerNet.NetErr` に持ち、操作のログの observe done と dump --peer に出す
+  - 未実測: Device のある VPN・PPPoE で -getinfo が落ちるか (落ちるなら毎回判定できないになる。observe done の net_err に名前が残り続けるのが目印)
 - [ ] 3 wiredCheck のテストの偽物を本物の形に揃える
 - [x] 4 却下 (825 で見送り済み)
 - [x] 5 unescape (dotfiles-0e。commit「fix(mac-lan-manager): Bonjour の名前のエスケープを左から 1 回で読む / .golangci.yml の写し残りを消す」)
@@ -98,5 +101,5 @@ lan-manager の全体監査 (865) の品質系のうち P3 の小物をまとめ
   - 待つのをやめる合図は `sigWatch` (`sigwatch.go`。合図 × 時点の期待の表を注記に置いた)。変異 11 本で red を確認 (commit message に一覧)
   - 敵対的レビュー 5 周 (opus)。残る窓: bubbletea の ignoreSignals と一致させられない ms の窓に外から kill が来ると、待たずに終える (「待たずに終えた」と出る)。Guard の注記に記録
   - 記録だけ (直していない): 閉じる直前に takeBG が toast に移した結果は、閉じた後には出ない (toast には出ている)。Ctrl-C で待つのをやめると裏の ssh も止まる (同じプロセスグループ。案内の文言に書いた)。テストで見えないのは main() からの finishBG・Guard の配線
-- [ ] 8 header の待ちの文
-- [ ] 9 ObservePeer の IP の段
+- [x] 8 header の待ちの文 (dotfiles-0e。commit「fix(mac-lan-manager): 速度測定と疎通の確認の間、見出しにその仕事の名前を出す」。2 つの case を消す変異で TestHeaderNamesSpeedAndReach が red)
+- [x] 9 ObservePeer の IP の段 (dotfiles-0e。`netinfo.ReadServices` を切り出し、ObservePeer は ifconfig -l を打たない。Read は変えない。変異 6 本・敵対的レビュー (opus) は commit message に)
