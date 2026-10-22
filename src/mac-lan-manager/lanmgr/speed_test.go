@@ -16,14 +16,14 @@ import (
 	"mac-lan-manager/internal/testwait"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
-	"mac-lan-manager/setup"
 	"mac-lan-manager/speedtest"
+	"mac-lan-manager/sshdest"
 )
 
 // fakeSpeed は SpeedTest の偽物。呼ばれた宛先と ctx を控え、results に送った結果を返す (送るまで測定中のまま)。
 type fakeSpeed struct {
 	calls   atomic.Int32
-	dest    setup.Dest
+	dest    sshdest.Dest
 	ctx     chan context.Context
 	results chan speedtest.Result
 }
@@ -32,7 +32,7 @@ func newFakeSpeed() *fakeSpeed {
 	return &fakeSpeed{ctx: make(chan context.Context, 4), results: make(chan speedtest.Result, 4)}
 }
 
-func (f *fakeSpeed) run(ctx context.Context, d setup.Dest, _ func() time.Time) speedtest.Result {
+func (f *fakeSpeed) run(ctx context.Context, d sshdest.Dest, _ func() time.Time) speedtest.Result {
 	f.dest = d
 	f.ctx <- ctx
 	select {
@@ -61,7 +61,7 @@ func speedHarness(t *testing.T) (*harness, *fakeSpeed) {
 	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: "169.254.217.100", Alias: "mini"}},
 		[]discover.Peer{mini, {Host: "air.local", SSH: true, Addrs: map[int]string{14: "192.168.50.44"}}})
 	f := newFakeSpeed()
-	h.m.o.SpeedTest = func(ctx context.Context, d setup.Dest, now func() time.Time) speedtest.Result {
+	h.m.o.SpeedTest = func(ctx context.Context, d sshdest.Dest, now func() time.Time) speedtest.Result {
 		f.calls.Add(1)
 		return f.run(ctx, d, now)
 	}

@@ -32,6 +32,7 @@ import (
 	"mac-lan-manager/reach"
 	"mac-lan-manager/setup"
 	"mac-lan-manager/speedtest"
+	"mac-lan-manager/sshdest"
 )
 
 // Action は HandleInput の結果 (呼び出し側がすること)。
@@ -107,9 +108,9 @@ type Options struct {
 	Now  func() time.Time
 	User string // 台帳にユーザー名が無い相手に使う推測の名前 (live は $USER を入れる。環境を読むのはつなぎの側)
 	// Observe は相手を ssh で読む (段 4 の初期設定。読むだけ)。live は setup.ObservePeer を本物の ssh で走らせる。nil なら観測しない
-	Observe func(ctx context.Context, d setup.Dest) setup.PeerNet
+	Observe func(ctx context.Context, d sshdest.Dest) setup.PeerNet
 	// SpeedTest は相手との通信速度を測る (帯域を使い切るので確認の板の y の後だけ。speed.go)。now は時計。nil なら測らない
-	SpeedTest func(ctx context.Context, d setup.Dest, now func() time.Time) speedtest.Result
+	SpeedTest func(ctx context.Context, d sshdest.Dest, now func() time.Time) speedtest.Result
 	// Reach は名前ごとに疎通を確かめる (p。reach.go)。nil なら確かめない
 	Reach func(ctx context.Context, names []string) []reach.Name
 	// HostHints は最下行のキーの案内を呼び出し側が描く (glogx は枠の外の最下行に Hints を出す)。真なら View は案内の行と
@@ -934,7 +935,7 @@ func (m *Model) sshRefusal(r row) string {
 	}
 	// HostKeyAlias=<host> を組む (Bonjour の名前の , や * が known_hosts の照合を崩す)。Mac の LocalHostName は英数字と - だけなので
 	// 断られるのは Mac 以外の機器 (Avahi の UTF-8 のホスト名など) だけ。それらは IP で ssh する (受容)
-	if !setup.ValidAlias(r.host) {
+	if !sshdest.ValidAlias(r.host) {
 		return fmt.Sprintf("ホスト名 %q は ssh の鍵の名前に使えない (英数字と . _ - だけ)", r.host)
 	}
 	return ""
@@ -1310,7 +1311,7 @@ func (m *Model) keyList(key string) Action {
 			m.note(why, false)
 		} else {
 			// known_hosts を IP でなく台帳の鍵に結び付ける (IP を付け替えても「鍵が変わった」にしない)
-			m.handOff(ExecRequest{Argv: []string{"ssh", "-o", "HostKeyAlias=" + r.host, "--", user + "@" + m.target(r)}}, nil)
+			m.handOff(ExecRequest{Argv: []string{"ssh", "-o", "HostKeyAlias=" + r.host, "--", m.login(r, m.target(r))}}, nil)
 			return Exec
 		}
 	case "Y": // コピー (整形した参照 = コマンド)
@@ -1318,7 +1319,7 @@ func (m *Model) keyList(key string) Action {
 			m.note("繋ぐ IP が分からない", false)
 			break
 		}
-		m.copy(fmt.Sprintf("ssh %s@%s", user, m.target(r)), guessNote)
+		m.copy("ssh "+m.login(r, m.target(r)), guessNote)
 	case "y": // コピー (素の値 = URL。Finder の「サーバへ接続」に貼る)
 		if url := m.smbURL(r); url != "" {
 			m.copy(url, "")

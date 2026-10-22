@@ -53,7 +53,7 @@ P2 の発見と「今すでに食い違っている」の主張は、main agent 
 
 - 847 (wired_ok が名前の解決だけで true / lanFixed が台帳の値だけで「固定」と言う)、830 (1 つの I/F に 2 つの IP)
 - `prefs.Save` の後勝ち: 747 の「直していないもの」で受容済み (人が 1 画面で変える)
-- ssh の ControlMaster が TUI の終了後 15 秒残る・IP が変わった直後に古い master に当たる: `setup/remote.go:controlPath` のコメントで受容済み
+- ssh の ControlMaster が TUI の終了後 15 秒残る・IP が変わった直後に古い master に当たる: `sshdest/sshdest.go:controlPath` のコメントで受容済み
 - trimLog と FileLog のプロセス間の行の消失: コメントで受容済み
 
 ## 低い確度で残すもの (issue にしていない)

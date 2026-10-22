@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"mac-lan-manager/netinfo"
+	"mac-lan-manager/sshdest"
 )
 
 type exitError struct {
@@ -21,7 +22,7 @@ type exitError struct {
 func (e exitError) Error() string { return e.msg }
 func (e exitError) ExitCode() int { return e.code }
 
-var dest = Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}
+var dest = sshdest.Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}
 
 // fakeRemote は相手の Mac の偽物。ssh の引数の最後 (相手で走る 1 行) で出力を引く。netinfo の fixture を返す。
 func fakeRemote(t *testing.T, key error) (Run, *[][]string) {
@@ -118,7 +119,7 @@ func TestObservePeerKeyOutcomes(t *testing.T) {
 
 // ssh の引数に入れる値を確かめる (台帳を手で書き換えて user が "-o…" になっていても、ssh の option にしない)。
 func TestDestValidate(t *testing.T) {
-	for _, d := range []Dest{
+	for _, d := range []sshdest.Dest{
 		{User: "-oProxyCommand=x", IP: "192.168.50.7", HostKeyAlias: "a.local"},
 		{User: "koji", IP: "192.168.50.7; id", HostKeyAlias: "a.local"},
 		{User: "koji", IP: "fe80::1", HostKeyAlias: "a.local"},

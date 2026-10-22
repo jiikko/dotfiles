@@ -13,8 +13,8 @@ import (
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
-	"mac-lan-manager/setup"
 	"mac-lan-manager/speedtest"
+	"mac-lan-manager/sshdest"
 )
 
 // speedReport は speedtest の 1 台分 (--json の要素)。
@@ -39,7 +39,7 @@ type speedReport struct {
 // 宛先・経路・測らない相手の規則は画面の t と同じ (lanmgr.SpeedTargets)。画面と違って確認の板を出さない (コマンドを打つことが確認)。
 // rc: 0 = 全部測れた / 1 = 測れない相手がいた (1 台でも) / 2 = 引数の誤り・知らない相手 / 130 = 止められた。
 func runSpeed(args []string, stdout, stderr io.Writer, now func() time.Time, stop <-chan struct{}, newModel func() (*lanmgr.Model, error),
-	test func(context.Context, setup.Dest, func() time.Time) speedtest.Result) int {
+	test func(context.Context, sshdest.Dest, func() time.Time) speedtest.Result) int {
 	fs := flag.NewFlagSet("speedtest", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	asJSON := fs.Bool("json", false, "JSON で出す")

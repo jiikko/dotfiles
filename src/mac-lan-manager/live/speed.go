@@ -8,16 +8,17 @@ import (
 	"strings"
 	"time"
 
-	"mac-lan-manager/setup"
-	"mac-lan-manager/speedtest"
 	"subproc"
+
+	"mac-lan-manager/speedtest"
+	"mac-lan-manager/sshdest"
 )
 
 // SpeedTimeout は測定 1 回の全体の上限 (上り・下りの流す時間 + 接続と後始末の余裕)。相手が黙ったときに書き込みで止まり続けない。
 const SpeedTimeout = 2*speedtest.Duration + 30*time.Second
 
 // SpeedTest は本物の ssh で相手との通信速度を測る (lanmgr.Options.SpeedTest)。now は時計 (lanmgr が注入された「今」を渡す)。
-func SpeedTest(ctx context.Context, d setup.Dest, now func() time.Time) speedtest.Result {
+func SpeedTest(ctx context.Context, d sshdest.Dest, now func() time.Time) speedtest.Result {
 	ctx, cancel := context.WithTimeout(ctx, SpeedTimeout)
 	defer cancel()
 	return speedtest.Measure(ctx, d, speedStart, speedtest.Clock{Now: now, After: time.After}, speedtest.Duration)

@@ -58,6 +58,7 @@
 - `src/mac-lan-manager/reach` (`mac-lan-manager/reach`) — Package reach は相手の Mac に名前ごとに届くかを確かめる: 名前を引き、引けた IP ごとに ping と ssh の口 (22 番) を見る。
 - `src/mac-lan-manager/setup` (`mac-lan-manager/setup`) — Package setup は初期設定 (この Mac → 相手) の手順を組む。
 - `src/mac-lan-manager/speedtest` (`mac-lan-manager/speedtest`) — Package speedtest は相手の Mac との通信速度を ssh 越しに測る。
+- `src/mac-lan-manager/sshdest` (`mac-lan-manager/sshdest`) — Package sshdest は相手の Mac へ ssh する宛先 (ユーザー・IPv4・known_hosts の鍵の名前) と、その ssh の引数を組む。
 - `src/mp4box` (`mp4box`) — Command mp4-effective-size は、MP4 のトップレベルの box を先頭から辿り、壊れていない box の大きさの合計 (実効サイズ) をバイト数で出す。 (main)
 - `src/pro-con` (`pro-con`) — pro-con — PM (producer) と PG (consumer) を分けて Claude Code を並列に回すための TUI。 (main)
 - `src/pro-con/agents` (`pro-con/agents`) — Package agents は `claude agents --json` で、今動いている Claude Code の session を一覧する。

@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"mac-lan-manager/setup"
+	"mac-lan-manager/sshdest"
 )
 
 // Duration は上り・下りそれぞれを流す時間。量ではなく時間で切る (Thunderbolt と Wi-Fi で同じ量だと所要が桁で違う)。
@@ -54,18 +54,18 @@ var ErrNoKey = errors.New("鍵で入れないので測れない (初期設定で
 
 // CheckArgv / UpArgv / DownArgv は測定で起こす ssh。BatchMode と接続の使い回し (SSHArgv の batch) で、最初の check が張った接続を
 // 上り・下りが使う (繋ぎ直しの時間を測定に入れない)。
-func CheckArgv(d setup.Dest) []string { return d.SSHArgv(false, true, "true") }
+func CheckArgv(d sshdest.Dest) []string { return d.SSHArgv(false, true, "true") }
 
 // UpArgv は相手が受け取った量を数えて返す (こちらが書けた量はパイプと ssh の窓に溜まった分だけ多い)。
-func UpArgv(d setup.Dest) []string { return d.SSHArgv(false, true, "exec wc -c") }
+func UpArgv(d sshdest.Dest) []string { return d.SSHArgv(false, true, "exec wc -c") }
 
 // DownArgv は相手に 0 を流させる。
-func DownArgv(d setup.Dest) []string {
+func DownArgv(d sshdest.Dest) []string {
 	return d.SSHArgv(false, true, fmt.Sprintf("exec head -c %d /dev/zero", downMax))
 }
 
 // Measure は鍵で入れるかを確かめてから、上り・下りを dur ずつ測る。
-func Measure(ctx context.Context, d setup.Dest, start Start, clk Clock, dur time.Duration) Result {
+func Measure(ctx context.Context, d sshdest.Dest, start Start, clk Clock, dur time.Duration) Result {
 	if err := d.Validate(); err != nil {
 		return Result{Err: err}
 	}
@@ -83,7 +83,7 @@ func Measure(ctx context.Context, d setup.Dest, start Start, clk Clock, dur time
 	return Result{UpBps: up, DownBps: down}
 }
 
-func check(ctx context.Context, d setup.Dest, start Start) error {
+func check(ctx context.Context, d sshdest.Dest, start Start) error {
 	p, err := start(ctx, CheckArgv(d), false)
 	if err != nil {
 		return err
@@ -98,7 +98,7 @@ func check(ctx context.Context, d setup.Dest, start Start) error {
 	return nil
 }
 
-func measureUp(ctx context.Context, d setup.Dest, start Start, clk Clock, dur time.Duration) (float64, error) {
+func measureUp(ctx context.Context, d sshdest.Dest, start Start, clk Clock, dur time.Duration) (float64, error) {
 	p, err := start(ctx, UpArgv(d), true)
 	if err != nil {
 		return 0, err
@@ -152,7 +152,7 @@ func measureUp(ctx context.Context, d setup.Dest, start Start, clk Clock, dur ti
 	return rate(n, t1.Sub(t0))
 }
 
-func measureDown(ctx context.Context, d setup.Dest, start Start, clk Clock, dur time.Duration) (float64, error) {
+func measureDown(ctx context.Context, d sshdest.Dest, start Start, clk Clock, dur time.Duration) (float64, error) {
 	pctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	p, err := start(pctx, DownArgv(d), false)

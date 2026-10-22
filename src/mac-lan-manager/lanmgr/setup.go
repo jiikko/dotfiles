@@ -15,6 +15,7 @@ import (
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/setup"
+	"mac-lan-manager/sshdest"
 )
 
 // 段 4 の初期設定。一覧の行で Enter を押すと、その相手の手順の画面になる。手順は観測した状態から毎回組み直す
@@ -24,8 +25,8 @@ import (
 
 // setupState は初期設定の画面の状態 (開いている相手 1 台分)。
 type setupState struct {
-	host  string     // 相手の台帳の鍵
-	dest  setup.Dest // 観測・鍵・固定 IP の ssh の宛先 (Wi-Fi で入れるなら Wi-Fi)
+	host  string       // 相手の台帳の鍵
+	dest  sshdest.Dest // 観測・鍵・固定 IP の ssh の宛先 (Wi-Fi で入れるなら Wi-Fi)
 	obs   setup.PeerNet
 	seen  bool // 一度は観測を読み終えた
 	ch    <-chan setup.PeerNet
@@ -217,7 +218,7 @@ func (m *Model) applyObserve(p setup.PeerNet) {
 }
 
 // destFor は行の Mac に ssh で入る宛先 (Wi-Fi で入れるなら Wi-Fi、有線だけなら有線)。
-func (m *Model) destFor(r row) (setup.Dest, error) {
+func (m *Model) destFor(r row) (sshdest.Dest, error) {
 	user, _ := m.userFor(r)
 	ip := r.mainIP
 	if ip == "" {
@@ -226,7 +227,7 @@ func (m *Model) destFor(r row) (setup.Dest, error) {
 			ip = c // 有線だけの相手は、期限内に確認した新しい IP で入る (行の 169.254 は古い。閉じて開き直すと古い宛先に戻った。敵対レビュー)
 		}
 	}
-	d := setup.Dest{User: user, IP: ip, HostKeyAlias: r.host}
+	d := sshdest.Dest{User: user, IP: ip, HostKeyAlias: r.host}
 	return d, d.Validate()
 }
 

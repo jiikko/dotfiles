@@ -15,8 +15,8 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"mac-lan-manager/netinfo"
-	"mac-lan-manager/setup"
 	"mac-lan-manager/speedtest"
+	"mac-lan-manager/sshdest"
 )
 
 // speedRun は測っている途中の 1 回。同時に 1 本だけ (2 本流すと互いの帯域を食って値が意味を失う)。
@@ -43,7 +43,7 @@ type speedResult struct {
 type SpeedTarget struct {
 	Host    string // 台帳の鍵
 	Name    string // 別名 (無ければ Host)
-	Dest    setup.Dest
+	Dest    sshdest.Dest
 	Link    netinfo.Link
 	Refusal string
 }
@@ -66,8 +66,8 @@ func (m *Model) speedTarget(r row) SpeedTarget {
 		return t
 	}
 	user, _ := m.userFor(r)
-	// 宛先は繋ぐ IP (内部 IP を優先 = 有線を測る)。有線の名前は引いた先が同じ内部 IP なので、IP で測る (setup.Dest は IPv4 だけを通す)
-	t.Dest = setup.Dest{User: user, IP: r.connectIP(), HostKeyAlias: r.host}
+	// 宛先は繋ぐ IP (内部 IP を優先 = 有線を測る)。有線の名前は引いた先が同じ内部 IP なので、IP で測る (sshdest.Dest は IPv4 だけを通す)
+	t.Dest = sshdest.Dest{User: user, IP: r.connectIP(), HostKeyAlias: r.host}
 	if err := t.Dest.Validate(); err != nil {
 		t.Refusal = "測れない: " + err.Error()
 		return t
@@ -237,8 +237,8 @@ func (m *Model) keySpeed(key string) Action {
 		return None
 	}
 	p = now[i] // 線は今の値を使う (板を出している間に分かった線の札を結果に付ける)
-	// 宛先は IP で測る (有線の名前は引いた先が同じ内部 IP。setup.Dest は IPv4 だけを通す)
-	d := setup.Dest{User: a.user, IP: p.ip, HostKeyAlias: a.host}
+	// 宛先は IP で測る (有線の名前は引いた先が同じ内部 IP。sshdest.Dest は IPv4 だけを通す)
+	d := sshdest.Dest{User: a.user, IP: p.ip, HostKeyAlias: a.host}
 	if err := d.Validate(); err != nil {
 		m.note("測れない: "+err.Error(), false)
 		return None
@@ -290,7 +290,7 @@ func (m *Model) speedProgressBox() string {
 	return modal("通信速度を測っています", body, hintLine(speedProgressHints), m.w)
 }
 
-func (m *Model) startSpeed(host, name string, d setup.Dest, link netinfo.Link) {
+func (m *Model) startSpeed(host, name string, d sshdest.Dest, link netinfo.Link) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan speedtest.Result, 1) // 取り消した後に届いた結果は誰も読まない (送り手を止めない)
 	m.speedRun = &speedRun{host: host, name: name, ip: d.IP, link: link, since: m.o.Now(), shown: true, ch: ch, cancel: cancel}

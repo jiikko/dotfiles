@@ -18,6 +18,7 @@ import (
 	"mac-lan-manager/lanmgr/lanmgrtest"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/setup"
+	"mac-lan-manager/sshdest"
 )
 
 func TestMain(m *testing.M) { widthenv.ExitIfUnsupported(); m.Run() }
@@ -137,8 +138,8 @@ func noModel(t *testing.T) func() (*lanmgr.Model, error) {
 // --peer はその相手を observe で読み、鍵の判定と有線のサービスを出す。--user の既定は $USER、--host の既定は IP。
 func TestDumpPeerText(t *testing.T) {
 	t.Setenv("USER", "alice")
-	var got setup.Dest
-	observe := func(_ context.Context, d setup.Dest) setup.PeerNet {
+	var got sshdest.Dest
+	observe := func(_ context.Context, d sshdest.Dest) setup.PeerNet {
 		got = d
 		return setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Thunderbolt Ethernet", IP: "169.254.13.42", Method: "DHCP", Mask: "255.255.0.0"}
 	}
@@ -146,7 +147,7 @@ func TestDumpPeerText(t *testing.T) {
 	if rc := runDump([]string{"--peer", "192.168.50.7"}, &out, &errb, time.Now, nil, noModel(t), observe); rc != 0 {
 		t.Fatalf("rc=%d stderr=%s", rc, errb.String())
 	}
-	if got != (setup.Dest{User: "alice", IP: "192.168.50.7", HostKeyAlias: "192.168.50.7"}) {
+	if got != (sshdest.Dest{User: "alice", IP: "192.168.50.7", HostKeyAlias: "192.168.50.7"}) {
 		t.Errorf("Dest = %+v", got)
 	}
 	for _, want := range []string{"peer: alice@192.168.50.7", "key: ok", "net_known: true", "service=Thunderbolt Ethernet", "ip=169.254.13.42", "method=DHCP", "mask=255.255.0.0", "router=-"} {
@@ -160,7 +161,7 @@ func TestDumpPeerText(t *testing.T) {
 func TestDumpPeerTextStripsEscapes(t *testing.T) {
 	t.Setenv("USER", "alice")
 	osc := "\x1b]52;c;aGk=\x07"
-	observe := func(context.Context, setup.Dest) setup.PeerNet {
+	observe := func(context.Context, sshdest.Dest) setup.PeerNet {
 		return setup.PeerNet{KeyErr: fmt.Errorf("%w: %s", setup.ErrUnknown, "ssh: "+osc+"bad\nkey: ok\n")}
 	}
 	var out, errb bytes.Buffer
@@ -174,7 +175,7 @@ func TestDumpPeerTextStripsEscapes(t *testing.T) {
 	if n := strings.Count("\n"+out.String(), "\nkey: "); n != 1 || !strings.Contains(out.String(), "bad / key: ok\nnet_known:") {
 		t.Errorf("key: の行が %d 本 / stderr を 1 行に畳んでいない: %q", n, out.String())
 	}
-	observe = func(context.Context, setup.Dest) setup.PeerNet {
+	observe = func(context.Context, sshdest.Dest) setup.PeerNet {
 		return setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Thunder" + osc + "bolt\nkey: denied", IP: "169.254.13.42",
 			Method: "DHCP\nkey: denied", Mask: "255.255.0.0\nkey: denied", Router: "\x1b[2J\nkey: denied"}
 	}
@@ -196,7 +197,7 @@ func TestDumpPeerTextStripsEscapes(t *testing.T) {
 func TestDumpPeerStoppedExits130(t *testing.T) {
 	stop := make(chan struct{})
 	close(stop)
-	observe := func(ctx context.Context, _ setup.Dest) setup.PeerNet {
+	observe := func(ctx context.Context, _ sshdest.Dest) setup.PeerNet {
 		<-ctx.Done() // 止められるまで ssh が返らない
 		return setup.PeerNet{KeyErr: fmt.Errorf("%w: %w", setup.ErrUnknown, ctx.Err())}
 	}
@@ -221,14 +222,14 @@ func TestDumpPeerJSONKeyOutcomes(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			var got setup.Dest
-			observe := func(_ context.Context, d setup.Dest) setup.PeerNet { got = d; return c.p }
+			var got sshdest.Dest
+			observe := func(_ context.Context, d sshdest.Dest) setup.PeerNet { got = d; return c.p }
 			var out, errb bytes.Buffer
 			args := []string{"--peer", "192.168.50.7", "--user", "koji", "--host", "m2macmini.local", "--json"}
 			if rc := runDump(args, &out, &errb, time.Now, nil, noModel(t), observe); rc != 0 {
 				t.Fatalf("rc=%d stderr=%s", rc, errb.String())
 			}
-			if got != (setup.Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}) {
+			if got != (sshdest.Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}) {
 				t.Errorf("Dest = %+v", got)
 			}
 			var r peerReport
@@ -244,7 +245,7 @@ func TestDumpPeerJSONKeyOutcomes(t *testing.T) {
 
 // 相手の IP・ユーザーが ssh に渡せない形なら、ssh を起こさずに使い方の誤り (rc=2) で返す。
 func TestDumpPeerRejectsBadDest(t *testing.T) {
-	observe := func(context.Context, setup.Dest) setup.PeerNet {
+	observe := func(context.Context, sshdest.Dest) setup.PeerNet {
 		t.Error("渡せない宛先で observe を呼んだ")
 		return setup.PeerNet{}
 	}

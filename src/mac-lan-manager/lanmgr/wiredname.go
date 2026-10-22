@@ -182,3 +182,12 @@ func (m *Model) target(r row) string {
 	}
 	return ip
 }
+
+// login は s・Y・詳細のカードの ssh の宛先 "<ユーザー名>@<target>"。target は呼び出し側が m.target(r) で 1 回だけ取って渡す
+// (target は有線の名前の鮮度を時計で見るので、同じカードの中で 2 回取ると ssh と smb の行で宛先が食い違いうる)。
+// sshdest.Dest を通さない: Dest は IPv4 だけを表し、target は有線の名前になりうる。断るかどうかは sshRefusal が決める
+// (Y とカードは HostKeyAlias を使わないので、鍵の名前に使えないホスト名の機器も IP で案内する)。
+func (m *Model) login(r row, target string) string {
+	user, _ := m.userFor(r)
+	return user + "@" + target
+}

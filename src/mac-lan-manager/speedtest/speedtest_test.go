@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"mac-lan-manager/setup"
+	"mac-lan-manager/sshdest"
 )
 
-var dest = setup.Dest{User: "koji", IP: "192.168.100.12", HostKeyAlias: "m2macmini.local"}
+var dest = sshdest.Dest{User: "koji", IP: "192.168.100.12", HostKeyAlias: "m2macmini.local"}
 
 // fakeClock は Now を呼ぶたびに進め方を選べる時計。After は手で閉じるチャネルを返す。
 type fakeClock struct {

@@ -15,8 +15,8 @@ import (
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
-	"mac-lan-manager/setup"
 	"mac-lan-manager/speedtest"
+	"mac-lan-manager/sshdest"
 )
 
 // speedLedger は書き込みを断る台帳の偽物 (lanmgrtest.Store は書けるので使わない。speedtest / ping が台帳を書かないことを、書けば失敗する形で見る)。
@@ -67,11 +67,11 @@ func speedModelWith(readErr error, busy bool, more []ledger.Host) func() (*lanmg
 // fakeSpeed は測定の偽物 (宛先を記録し、宛先ごとの値を返す)。
 type fakeSpeed struct {
 	mu    sync.Mutex
-	dests []setup.Dest
+	dests []sshdest.Dest
 	res   map[string]speedtest.Result
 }
 
-func (f *fakeSpeed) test(_ context.Context, d setup.Dest, _ func() time.Time) speedtest.Result {
+func (f *fakeSpeed) test(_ context.Context, d sshdest.Dest, _ func() time.Time) speedtest.Result {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.dests = append(f.dests, d)
@@ -158,7 +158,7 @@ func TestSpeedtestFailures(t *testing.T) {
 func TestSpeedtestStopCancelsMeasurement(t *testing.T) {
 	stop := make(chan struct{})
 	var calls int
-	test := func(ctx context.Context, _ setup.Dest, _ func() time.Time) speedtest.Result {
+	test := func(ctx context.Context, _ sshdest.Dest, _ func() time.Time) speedtest.Result {
 		calls++
 		close(stop)
 		<-ctx.Done() // 止められるまで流し続ける
@@ -174,7 +174,7 @@ func TestSpeedtestStopCancelsMeasurement(t *testing.T) {
 func TestSpeedtestStopWins(t *testing.T) {
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1)) // 合図を受ける側が走る前に test が戻る並びを毎回作る
 	stop := make(chan struct{})
-	test := func(context.Context, setup.Dest, func() time.Time) speedtest.Result {
+	test := func(context.Context, sshdest.Dest, func() time.Time) speedtest.Result {
 		close(stop) // 合図を出してすぐ返す (ssh が SIGINT で死んだ形。ctx が切れるのを待たない)
 		return speedtest.Result{Err: errors.New("上りを測れなかった: signal: interrupt")}
 	}

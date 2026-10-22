@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"mac-lan-manager/sshdest"
 )
 
 // 有線の名前 (`<ホスト名>.wired.local`): 各 Mac が自分の有線の固定 IP を Bonjour に広告する (2026-10-17 ユーザー決定)。
@@ -164,7 +166,7 @@ func ReadNameState(ctx context.Context, run Run) (NameState, error) {
 }
 
 // UnadvertiseArgv は相手の有線の名前の広告を止めて消す ssh (鍵で入る。端末は要らない)。
-func UnadvertiseArgv(d Dest, name string) ([]string, error) {
+func UnadvertiseArgv(d sshdest.Dest, name string) ([]string, error) {
 	if err := d.Validate(); err != nil {
 		return nil, err
 	}

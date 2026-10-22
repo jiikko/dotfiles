@@ -851,7 +851,7 @@ func (m *Model) detailLines(r row, width int, inPanel bool) []string {
 			if m.sshRefusal(r) == "" { // 最下行と s のキーと同じ述語 (ssh が閉じた相手に s を案内しない)
 				keys += "  " + keycap("s", "繋ぐ")
 			}
-			lines = append(lines, label("ssh")+sCode.Render(fmt.Sprintf("ssh %s@%s", user, ip))+via+"  "+keys)
+			lines = append(lines, label("ssh")+sCode.Render("ssh "+m.login(r, ip))+via+"  "+keys)
 		}
 		if r.smb && ip != "" {
 			lines = append(lines, label("smb")+link("smb://"+ip)+via+"   "+keycap("y", "コピー")+"  "+keycap("O", "open をコピー"))

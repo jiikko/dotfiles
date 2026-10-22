@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"mac-lan-manager/setup"
+	"mac-lan-manager/sshdest"
 )
 
 // fakeSSH は ssh の偽物を一時ディレクトリに置いて、その絶対パスを返す (本物の ssh は起こさない。PATH も引かない)。
@@ -66,7 +67,7 @@ func TestSSHRunNotStarted(t *testing.T) {
 
 // setup.ObservePeer と組んだとき、Permission denied の 255 だけが「鍵で入れない」、届かない 255 は判定できない。
 func TestSSHRunWithObservePeer(t *testing.T) {
-	d := setup.Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}
+	d := sshdest.Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}
 	cases := []struct {
 		name, body string
 		unknown    bool

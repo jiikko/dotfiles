@@ -15,6 +15,7 @@ import (
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/setup"
+	"mac-lan-manager/sshdest"
 
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
@@ -25,7 +26,7 @@ func setupHarness(t *testing.T, obs *setup.PeerNet) (*harness, *observed) {
 	t.Helper()
 	h := newHarness(t, nil, []discover.Peer{mini})
 	o := &observed{v: obs}
-	h.m.o.Observe = func(_ context.Context, d setup.Dest) setup.PeerNet {
+	h.m.o.Observe = func(_ context.Context, d sshdest.Dest) setup.PeerNet {
 		o.mu.Lock()
 		defer o.mu.Unlock()
 		o.dests = append(o.dests, d)
@@ -45,7 +46,7 @@ func setupHarness(t *testing.T, obs *setup.PeerNet) (*harness, *observed) {
 type observed struct {
 	mu    sync.Mutex
 	v     *setup.PeerNet
-	dests []setup.Dest
+	dests []sshdest.Dest
 }
 
 // setObs は次の観測が返す値を替える。観測が走っている間は替えない (どちらの値で読むかが決まらない)。
@@ -59,7 +60,7 @@ func setObs(t *testing.T, h *harness, o *observed, p setup.PeerNet) {
 	*o.v = p
 }
 
-func (o *observed) destsCopy() []setup.Dest {
+func (o *observed) destsCopy() []sshdest.Dest {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return slices.Clone(o.dests)
@@ -81,7 +82,7 @@ func holdObserve(t *testing.T, h *harness) (release func()) {
 	release = func() { once.Do(func() { close(gate) }) }
 	t.Cleanup(release)
 	prev := h.m.o.Observe
-	h.m.o.Observe = func(ctx context.Context, d setup.Dest) setup.PeerNet {
+	h.m.o.Observe = func(ctx context.Context, d sshdest.Dest) setup.PeerNet {
 		<-gate
 		return prev(ctx, d)
 	}
@@ -124,7 +125,7 @@ func runStep(t *testing.T, h *harness, err error) []string {
 func TestSetupWalksAllSteps(t *testing.T) {
 	obs := &setup.PeerNet{}
 	h, dests := setupHarness(t, obs)
-	if d := dests.destsCopy()[0]; d != (setup.Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}) {
+	if d := dests.destsCopy()[0]; d != (sshdest.Dest{User: "koji", IP: "192.168.50.7", HostKeyAlias: "m2macmini.local"}) {
 		t.Fatalf("観測の宛先 = %+v (Wi-Fi の IP・推測のユーザー・台帳の鍵)", d)
 	}
 
@@ -244,7 +245,7 @@ func TestSetupRefusals(t *testing.T) {
 	// 止まっている手順の理由だけで断る形 (コマンドは組める): ssh を広告していない相手では「公開鍵を置く」が止まる
 	vnc := discover.Peer{Host: "vnc.local", Instances: []string{"画面共有だけ"}, VNC: true, Addrs: map[int]string{14: "192.168.50.8"}}
 	h3 := newHarness(t, nil, []discover.Peer{vnc})
-	h3.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet { return setup.PeerNet{} }
+	h3.m.o.Observe = func(context.Context, sshdest.Dest) setup.PeerNet { return setup.PeerNet{} }
 	setSelfStatic(h3.m)
 	h3.keys("l")
 	h3.cursorTo(t, "vnc.local")
@@ -259,7 +260,7 @@ func TestSetupRefusals(t *testing.T) {
 	}
 
 	h2 := newHarness(t, nil, []discover.Peer{mini})
-	h2.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet {
+	h2.m.o.Observe = func(context.Context, sshdest.Dest) setup.PeerNet {
 		t.Fatal("この Mac を観測した")
 		return setup.PeerNet{}
 	}
@@ -366,7 +367,7 @@ func TestSetupConfirmSurvivesReopenAndExpires(t *testing.T) {
 func TestSetupSecondPeerGetsDifferentIP(t *testing.T) {
 	air := discover.Peer{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}
 	h := newHarness(t, nil, []discover.Peer{mini, air})
-	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet {
+	h.m.o.Observe = func(context.Context, sshdest.Dest) setup.PeerNet {
 		return setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.1.1"}
 	}
 	setSelfStatic(h.m)
@@ -392,7 +393,7 @@ func TestSetupSecondPeerGetsDifferentIP(t *testing.T) {
 func TestSetupGuards(t *testing.T) {
 	wired := discover.Peer{Host: "wired.local", Instances: []string{"wired"}, SSH: true, Addrs: map[int]string{27: "169.254.9.9"}}
 	h := newHarness(t, nil, []discover.Peer{wired})
-	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet { return setup.PeerNet{} }
+	h.m.o.Observe = func(context.Context, sshdest.Dest) setup.PeerNet { return setup.PeerNet{} }
 	h.keys("l")
 	h.cursorTo(t, "wired.local")
 	h.keys("enter", "enter")
@@ -524,8 +525,8 @@ func TestSetupLedgerNeedsConfirm(t *testing.T) {
 func TestSetupWiredOnlyReopenUsesConfirmedIP(t *testing.T) {
 	wired := discover.Peer{Host: "wired.local", Instances: []string{"wired"}, SSH: true, Addrs: map[int]string{27: "169.254.9.9"}}
 	h := newHarness(t, nil, []discover.Peer{wired})
-	var dests []setup.Dest
-	h.m.o.Observe = func(_ context.Context, d setup.Dest) setup.PeerNet {
+	var dests []sshdest.Dest
+	h.m.o.Observe = func(_ context.Context, d sshdest.Dest) setup.PeerNet {
 		dests = append(dests, d)
 		return setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.9.9"}
 	}
@@ -981,7 +982,7 @@ func TestOperationLog(t *testing.T) {
 	var lines []string
 	h := newHarness(t, nil, []discover.Peer{mini})
 	h.m.o.Log = func(l string) { lines = append(lines, l) }
-	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet { return *obs }
+	h.m.o.Observe = func(context.Context, sshdest.Dest) setup.PeerNet { return *obs }
 	h.keys("l")
 	h.cursorTo(t, "m2macmini.local")
 	h.keys("enter", "enter")
@@ -1091,7 +1092,7 @@ func TestSetupManualBoardClearsQueuedX(t *testing.T) {
 func TestSetupDoesNotOfferIPTriedOnOtherPeer(t *testing.T) {
 	air := discover.Peer{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}}
 	h := newHarness(t, nil, []discover.Peer{mini, air})
-	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet {
+	h.m.o.Observe = func(context.Context, sshdest.Dest) setup.PeerNet {
 		return setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.1.1"}
 	}
 	setSelfStatic(h.m)
@@ -1292,7 +1293,7 @@ func managedSetup(t *testing.T, prevLAN string, addrs map[int]string, obs setup.
 	t.Helper()
 	peer := discover.Peer{Host: "m2macmini.local", Instances: []string{"kojiのMac mini"}, SSH: true, Addrs: addrs}
 	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji", LAN: prevLAN}}, []discover.Peer{peer})
-	h.m.o.Observe = func(context.Context, setup.Dest) setup.PeerNet { return obs }
+	h.m.o.Observe = func(context.Context, sshdest.Dest) setup.PeerNet { return obs }
 	h.cursorTo(t, "m2macmini.local")
 	h.keys("enter", "enter")
 	if h.m.sc != scSetup || h.m.su == nil {

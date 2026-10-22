@@ -16,13 +16,14 @@ import (
 
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/setup"
+	"mac-lan-manager/sshdest"
 )
 
 // runDump は `mac-lan-manager dump`: TUI を起こさずに、この Mac の網・台帳・Bonjour の結果を画面と同じ判定で出す
 // (LLM・人のデバッグ用。読むだけ: 台帳・設定・操作のログに書かない。初回だけ旧い置き場から移す)。走査が終わるか --wait の上限まで待つ。
 // --peer を付けると、この Mac の代わりにその相手を ssh で読む (observe。段 4 の初期設定が見るのと同じ PeerNet)。
 func runDump(args []string, stdout, stderr io.Writer, now func() time.Time, stop <-chan struct{}, newModel func() (*lanmgr.Model, error),
-	observe func(context.Context, setup.Dest) setup.PeerNet) int {
+	observe func(context.Context, sshdest.Dest) setup.PeerNet) int {
 	fs := flag.NewFlagSet("dump", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	asJSON := fs.Bool("json", false, "JSON で出す")
@@ -34,7 +35,7 @@ func runDump(args []string, stdout, stderr io.Writer, now func() time.Time, stop
 		return 2
 	}
 	if *peer != "" {
-		return dumpPeer(setup.Dest{User: *user, IP: *peer, HostKeyAlias: or(*host, *peer)}, *asJSON, stdout, stderr, stop, observe)
+		return dumpPeer(sshdest.Dest{User: *user, IP: *peer, HostKeyAlias: or(*host, *peer)}, *asJSON, stdout, stderr, stop, observe)
 	}
 	start := now()
 	m, err := newModel()
@@ -178,7 +179,7 @@ type peerReport struct {
 	Router       string `json:"router"`
 }
 
-func dumpPeer(d setup.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan struct{}, observe func(context.Context, setup.Dest) setup.PeerNet) int {
+func dumpPeer(d sshdest.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan struct{}, observe func(context.Context, sshdest.Dest) setup.PeerNet) int {
 	if err := d.Validate(); err != nil {
 		fmt.Fprintln(stderr, "mac-lan-manager dump --peer:", err)
 		return 2

@@ -8,8 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"mac-lan-manager/setup"
 	"subproc"
+
+	"mac-lan-manager/setup"
+	"mac-lan-manager/sshdest"
 )
 
 // ObserveTimeout は相手を 1 台読む全体の上限 (鍵の確認と netinfo.Read の ssh を合わせて)。ssh は 1 本ごとに ConnectTimeout=5 を持つが、
@@ -17,7 +19,7 @@ import (
 const ObserveTimeout = 15 * time.Second
 
 // Observe は本物の ssh で相手を読む (lanmgr.Options.Observe と dump --peer の口)。読むだけで、設定を変えるコマンドは打たない。
-func Observe(ctx context.Context, d setup.Dest) setup.PeerNet {
+func Observe(ctx context.Context, d sshdest.Dest) setup.PeerNet {
 	ctx, cancel := context.WithTimeout(ctx, ObserveTimeout)
 	defer cancel()
 	return setup.ObservePeer(ctx, SSHRun, d)

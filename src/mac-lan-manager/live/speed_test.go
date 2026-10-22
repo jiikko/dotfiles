@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"mac-lan-manager/setup"
 	"mac-lan-manager/speedtest"
+	"mac-lan-manager/sshdest"
 )
 
 // stepClock は Now を呼ぶたびに 1 秒進む時計 (速さの値は見ず、本物のパイプで量が数えられることだけを見る)。
@@ -36,7 +36,7 @@ esac`)
 		argv = append([]string{ssh}, argv[1:]...) // PATH の ssh を引かない
 		return speedStart(ctx, argv, withStdin)
 	}
-	d := setup.Dest{User: "koji", IP: "192.168.100.12", HostKeyAlias: "m2macmini.local"}
+	d := sshdest.Dest{User: "koji", IP: "192.168.100.12", HostKeyAlias: "m2macmini.local"}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	r := speedtest.Measure(ctx, d, start, speedtest.Clock{Now: stepClock(), After: time.After}, 50*time.Millisecond)
@@ -54,7 +54,7 @@ func TestSpeedStartKeyDenied(t *testing.T) {
 	start := func(ctx context.Context, argv []string, withStdin bool) (speedtest.Proc, error) {
 		return speedStart(ctx, append([]string{ssh}, argv[1:]...), withStdin)
 	}
-	d := setup.Dest{User: "koji", IP: "192.168.100.12", HostKeyAlias: "m2macmini.local"}
+	d := sshdest.Dest{User: "koji", IP: "192.168.100.12", HostKeyAlias: "m2macmini.local"}
 	r := speedtest.Measure(context.Background(), d, start, speedtest.Clock{Now: stepClock(), After: time.After}, time.Second)
 	if !errors.Is(r.Err, speedtest.ErrNoKey) {
 		t.Errorf("Err = %v, want ErrNoKey", r.Err)

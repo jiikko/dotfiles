@@ -114,7 +114,14 @@ P1〜P4 は「層 / 動作 / 裏の仕事を 1 つ足すたびに N か所」の
 - [ ] P2 画面の層
 - [ ] P3 裏の仕事
 - [ ] P4 固定の試み
-- [ ] P6 ssh の宛先
+- [x] P6 ssh の宛先 (dotfiles-c3。commit「refactor(mac-lan-manager): ssh の宛先 Dest を sshdest へ移し、s / Y / 詳細のカードの宛先を login 1 つから組む」)
+  - `setup.Dest`・`Validate`・`SSHArgv`・`controlPath`・`ValidAlias` を中身を変えずに新 package `sshdest` へ移した。speedtest が import するのは ledger と sshdest だけになった
+  - s・Y・詳細のカードの `user@<target>` を `lanmgr` の `Model.login` から組む。target は呼び出し側が 1 回だけ取って渡す (カードの ssh と smb の行で宛先を揃える)
+  - 採らなかった案 (設計の反証レビュー、opus): Dest を `{User, Target, Alias}` に広げて有線の名前も通す案。同じ名前の `Validate` の意味が緩むと、IPv4 を前提にする
+    呼び出し元 (ConfirmArgv の IP の比較・ssh -G・controlPath の %C・速度の経路の突き合わせ) の置き換え漏れを compiler が拾わない。s に Target の検査を足す案も、
+    `shellRefusal` が IP の空を先に断るので届かない (足すと最下行・カードの案内と s の述語がまたずれる)。名前の述語 (`reLabel`) の一本化は P7 (847) に残した
+  - 変異 (`mutate-verify`): login が有線の名前を落とす → `TestWiredNameUsedAsTarget` / ユーザー名を落とす → `TestSSHUsesLanIPAndHostKeyAlias` ほか 6 本が red
+  - 実装の敵対的レビュー (opus、読み取りのみ): 挙動の変わる経路は作れなかった。P3 の 2 件 (カードで target を 2 回取る・865 の旧い置き場所の参照) を直した
 - [ ] P7 有線の名前の判定の写し (847 の範囲。847 の作業に任せる)
 - [x] P8 (dotfiles-0e。commit「refactor(mac-lan-manager): 詳細の enter の案内を文言で分けない / 見出し・項目名・モーダルのキーの重複をまとめる」)。detailLines / selfStaticKey は「パネルの中か」の真偽を受ける。既存のテストは最下行の案内にも同じ語が出るせいで、パネルの案内が消えても緑だった (変異で確認) ので、カードの台帳の行だけを見る形にした
 - [x] P9 (commit「refactor(mac-lan-manager): 本番で誰も読まない setup.Step.Via を消す」)。destFor の出典にする案は採らない (Plan は確認済みの IP を知らない)
@@ -122,6 +129,6 @@ P1〜P4 は「層 / 動作 / 裏の仕事を 1 つ足すたびに N か所」の
 - [x] P11 (commit「refactor(mac-lan-manager): RunQuiet を SSHRun に寄せ、失敗に stderr を付ける実装を 1 つにする」)
 - [x] P12 (commit「refactor(mac-lan-manager): 画面を出さないサブコマンドの自動の仕事を Options.Passive 1 つで止める」)
 - [x] U1〜U3 (P8 と同じ commit)。U3 で経路を選ぶ板の中の案内が最下行と同じ書式 (「j/k 経路   y 実行   n/esc キャンセル」) になった
-- 残り: P1〜P4 は trigger 待ち (次に動作・画面の層・裏の仕事・固定の遷移を足すとき)、P6 は 860 で HostKeyAlias の絞り込みは入ったが宛先の型の切り出しは未着手、P7 は 847。
+- 残り: P1〜P4 は trigger 待ち (次に動作・画面の層・裏の仕事・固定の遷移を足すとき)、P6 は済み (上)、P7 は 847。
   dotfiles-0e は 2026-10-22 に claim を外した (上の済んだ項目のほかに、今すぐ進めるものが無いため)
 - [x] 862 で解消 (2026-10-22。P3 の 9 件 (却下 1) を全部決着。done へ移した)
