@@ -105,4 +105,8 @@ done | wc -l
   - 1: `verify-execution-not-just-exit-code.md` の「手元の検査が CI より狭い」項の子項に、skip / fallback の行を「狭いと知っている」に数える旨
   - 2: 同ファイルの「有無で結果が変わらない観測」節に、プロセス・シグナルの観測の 3 例
   - 3: `mutation-verify-new-tests.md` の「検査の不在を主張するときの裏取り」節の冒頭に、網を外す理由のコメントを発動点として
-- [ ] 局所の `make test-yaml` / `test-actionlint` の扱い (ユーザーの判断待ち)
+- [x] 局所の `make test-yaml` / `test-actionlint` の扱い: 却下 (2026-10-22 ユーザー判断)。手元に入れる必要はなく、CI で回っていれば足りる。
+  Brewfile は使っていないので、そこに足す案も採らない。Makefile の fallback / skip も今のまま
+  - CI で動いていることの実測 (2026-10-22): Lint run 39726522889 (d946bccb) のログに `[actionlint] .github/workflows OK` が出ていて、
+    `yamllint not found` の行は出ていない。yamllint は lint.yml の `ensure-toolchain` (`commands: zsh jq ruby yamllint`) で入れて検証している
+  - 手元で fallback に落ちたまま push しても、CI の Lint で赤になる。そのとき見るのは改善 1 (skip / fallback の行を読む)
