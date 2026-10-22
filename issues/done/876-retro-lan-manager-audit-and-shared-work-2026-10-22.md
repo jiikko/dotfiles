@@ -81,4 +81,8 @@ dotfiles-0e のセッション。lan-manager の全観点の監査 (859〜865 �
 
 ## 進捗
 
-- [ ] 改善 1〜4 の切り出し (ユーザーの判断待ち)
+- [x] 改善 1〜4 の切り出し (2026-10-22 ユーザー指示「残っている issue も対応して」。commit「rules: retro 876 の改善 1〜4 を既存の rule へ追記」)
+  - 1: `survey-receiver-guards-before-passing-new-values.md` の「状態 × 読み手」の表の項に、プロセスの終了の扱いを足すときの子項
+  - 2: `rules-checklists/mutation-verify-new-tests.md` の「文字列を部分一致で pin していないか」を広げた (全体の Contains が別の出所で満たされる形)
+  - 3: `issue-rules.d/move-report-conclusions-to-issues.md` の done の節に、自分が書き足す決着節の項
+  - 4: `.claude/rules/worktree-per-session.md` に、待つ間も未コミットで置かない項
