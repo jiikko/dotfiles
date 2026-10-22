@@ -32,6 +32,33 @@ func TestEditorMultibyteEditing(t *testing.T) {
 	}
 }
 
+// 語の移動と削除 (glogx-ui-guide §7: Alt-B / Alt-F で 1 語、Ctrl-W / Alt-backspace で前の 1 語を消す。語は空白で区切る)。
+func TestEditorWordKeys(t *testing.T) {
+	var e editor
+	e.setValue("make  test now") // カーソルは末尾
+	e.handle("alt+b", "")
+	if got := string(e.runes[e.pos:]); got != "now" {
+		t.Errorf("alt+b の後ろ = %q; want now", got)
+	}
+	e.handle("alt+b", "")
+	if got := string(e.runes[e.pos:]); got != "test now" {
+		t.Errorf("alt+b ×2 の後ろ = %q; want test now", got)
+	}
+	e.handle("alt+f", "")
+	if got := string(e.runes[:e.pos]); got != "make  test" {
+		t.Errorf("alt+f の手前 = %q; want make  test", got)
+	}
+	e.handle("alt+backspace", "")
+	if e.value() != "make   now" {
+		t.Errorf("alt+backspace = %q; want make   now", e.value())
+	}
+	e.setValue("あい　うえ") // 全角の空白も語の区切り (lineedit と同じ unicode.IsSpace)
+	e.handle("alt+b", "")
+	if got := string(e.runes[e.pos:]); got != "うえ" {
+		t.Errorf("全角空白で alt+b の後ろ = %q; want うえ", got)
+	}
+}
+
 func TestEditorLineOps(t *testing.T) {
 	var e editor
 	e.setValue("make test now")

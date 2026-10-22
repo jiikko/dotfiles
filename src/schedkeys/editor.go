@@ -166,7 +166,11 @@ func (e *editor) handle(key string, text string) bool {
 		e.pos = 0
 	case "ctrl+k":
 		e.runes = append([]rune{}, e.runes[:e.pos]...)
-	case "ctrl+w":
+	case "alt+b":
+		e.pos = e.wordStart()
+	case "alt+f":
+		e.pos = e.wordEnd()
+	case "ctrl+w", "alt+backspace":
 		e.deleteWord()
 	default:
 		if !acceptable(text) {
@@ -203,13 +207,54 @@ func acceptable(text string) bool {
 }
 
 func (e *editor) deleteWord() {
-	i := e.pos
-	for i > 0 && e.runes[i-1] == ' ' {
-		i--
-	}
-	for i > 0 && e.runes[i-1] != ' ' {
-		i--
-	}
+	i := e.wordStart()
 	e.runes = append(e.runes[:i], e.runes[e.pos:]...)
 	e.pos = i
+}
+
+// wordStart はカーソルの前の語の先頭 (空白を飛ばしてから、空白でない並びの先頭)。語の決め方は tuikit lineedit と同じ
+// (glogx-ui-guide §7 の Alt-B / Ctrl-W)。lineedit.Line を使わないのは、受ける文字を lineedit より絞っているため (acceptable)。
+// 境界がクラスタの途中に落ちたら手前の境界へ寄せる
+func (e *editor) wordStart() int {
+	i := e.pos
+	for i > 0 && unicode.IsSpace(e.runes[i-1]) {
+		i--
+	}
+	for i > 0 && !unicode.IsSpace(e.runes[i-1]) {
+		i--
+	}
+	return e.snapBack(i)
+}
+
+// wordEnd はカーソルの後ろの語の末尾 (Alt-F)。クラスタの途中なら後ろの境界へ寄せる。
+func (e *editor) wordEnd() int {
+	i := e.pos
+	for i < len(e.runes) && unicode.IsSpace(e.runes[i]) {
+		i++
+	}
+	for i < len(e.runes) && !unicode.IsSpace(e.runes[i]) {
+		i++
+	}
+	next := len(e.runes)
+	e.eachBoundary(func(b int) bool {
+		if b >= i {
+			next = b
+			return false
+		}
+		return true
+	})
+	return next
+}
+
+// snapBack は i 以下で一番近いクラスタの境界。
+func (e *editor) snapBack(i int) int {
+	last := 0
+	e.eachBoundary(func(b int) bool {
+		if b > i {
+			return false
+		}
+		last = b
+		return true
+	})
+	return last
 }
