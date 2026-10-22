@@ -19,7 +19,7 @@ package main
 //
 // 新しい全画面ビューアは FullScreenCount の直前に ID を足す。足した瞬間に 2 段で捕まる:
 //
-//  1. **lint** — `exhaustive` (`.golangci.yml`) が「default なし switch は enum を全部書く」を
+//  1. **lint** — `exhaustive` (`.golangci.local.yml`) が「default なし switch は enum を全部書く」を
 //     強制するので、ID を足すと activeFullScreen を読む全 switch が `make lint` で赤くなる。
 //     🚨 **これらの switch に `default:` を書かないこと**。この repo は
 //     `default-signifies-exhaustive: true` なので、default を 1 つ書いた switch は

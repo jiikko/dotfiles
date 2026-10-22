@@ -166,7 +166,7 @@ func LabelProblems(d *PlayerData, ms []LabelMeasure) (layout, broken []string) {
 	}
 	for _, e := range ExpectedLabels(d) {
 		if !got[e.Key] {
-			broken = append(broken, fmt.Sprintf("%s: 測れなかった (player.html の計測モードが返さない)", labelWhere(d, e.Key)))
+			broken = append(broken, labelWhere(d, e.Key)+": 測れなかった (player.html の計測モードが返さない)")
 		}
 	}
 	return layout, broken
@@ -200,7 +200,7 @@ func labelWhere(d *PlayerData, key string) string {
 func firstLineOfShow(d *PlayerData, n int) string {
 	for i, l := range d.Lines {
 		if l.Show != nil && *l.Show == n {
-			return fmt.Sprint(i)
+			return strconv.Itoa(i)
 		}
 	}
 	return "?"

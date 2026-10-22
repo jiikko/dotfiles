@@ -1,0 +1,36 @@
+# zundamon-kaisetsu の golangci-lint の設定の差分。共通の塊は src/.golangci.yml で、scripts/golangci_lint.sh が run のたびに合成する。
+linters:
+  enable:
+    - forbidigo
+  settings:
+    forbidigo:
+      # 字面で見る (別名の import・変数経由の呼び出しは検出しない)
+      forbid:
+        # 子孫を止めるのは proctree に寄せる。グループ宛ての kill では、puppeteer が別のグループで起こした Chrome に届かない。
+        # main.go のシグナルでの死に直し (自分への kill) とテストは下の exclusions で許す
+        - pattern: ^syscall\.Kill$
+          msg: 子孫を止めるのは proctree.Target.Stop を使う (グループ宛ての kill では別のグループの子に届かない。issue 649)
+        # この package のテストはパッケージ変数 (mp4 のテストが縮める videoSize など) を書き換えるので、並列にしない
+        - pattern: \.Parallel$
+          msg: この package のテストは並列にしない (videoSize などのパッケージ変数を書き換えるテストがある。issue 651)
+    errcheck:
+      # 端末 (env.Stdout / env.Stderr) への進捗・結果の書き込み。失敗しても打つ手が無く、
+      # 失敗を返り値で扱うと全コマンドの経路が戻り値の確認で埋まる。ファイルへの書き込みは対象外 (os.WriteFile 等は確認している)
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+  exclusions:
+    rules:
+      # main.go はシグナルで自分が死に直す行 (自分への kill) だけを許す (ファイル全体を外すと、そこに足したグループ宛ての kill も通る)
+      - path: (^|/)main\.go$
+        source: syscall\.Kill\(os\.Getpid\(\)
+        text: proctree
+        linters:
+          - forbidigo
+      # テストは偽のプロセスの後始末に kill を使う
+      - path: _test\.go$
+        text: proctree
+        linters:
+          - forbidigo

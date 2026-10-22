@@ -1,6 +1,6 @@
 //go:build ruleguard
 
-// Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml の
+// Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.local.yml の
 // settings.gocritic.settings.ruleguard.rules から参照)。
 //
 // 🚨 **独立したディレクトリに置くこと**。glogx 直下に置くと `package gorules` が
@@ -8,7 +8,7 @@
 // (実測 2026-09-03: `go vet -tags ruleguard ./` が
 // `found packages main and gorules` で落ちた)。その状態では型エラーや API 誤用を書いても
 // Go のコンパイルに一度も載らず、気づけるのは gocritic が「ルールのロードに失敗した」と
-// 言うときだけだった (.golangci.yml のコメントによれば過去にルールが無言で消えた前科がある)。
+// 言うときだけだった (.golangci.local.yml のコメントによれば過去にルールが無言で消えた前科がある)。
 // ここに置いてあれば `go vet -tags ruleguard ./gorules` で型検査できる
 // (`make lint` から回している。Makefile の vet-gorules を参照)。
 //
@@ -28,7 +28,7 @@ import "github.com/quasilyte/go-ruleguard/dsl"
 // 🚨 このルールが安いのは PadSpaces が leaf パッケージ (termwidth) にあり、
 // **全パッケージから参照できるから**。参照できない別パッケージに置くと
 // 例外を 4 つ足す必要があり、費用対効果が合わない。
-// 現在の例外はテストだけ (.golangci.yml の exclusions)。実装本体は github.com/jiikko/dotfiles/src/tuikit/termwidth にあり、このルールの外。
+// 現在の例外はテストだけ (.golangci.local.yml の exclusions)。実装本体は github.com/jiikko/dotfiles/src/tuikit/termwidth にあり、このルールの外。
 // 🚨 Go 1.26 の strings.Repeat(" ", n) は n <= 128 なら確保しない (実測 2026-09-24)。差が出るのは埋め草が
 // 129〜256 桁のとき (広い端末の最外周の枠) で、このルールが守っているのはそこ。tuikit 側は同じ退行を
 // 確保回数のテスト (layout/alloc_test.go) で止めている。

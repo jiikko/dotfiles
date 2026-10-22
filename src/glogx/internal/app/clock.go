@@ -6,5 +6,5 @@ package app
 import "time"
 
 // TimeNow は経過時間・ETA 算出の現在時刻。テストで固定するため差し替え可能にしている。
-// main の tui.go では time.Now / time.Since の直呼びを forbidigo が禁じ、ここを通させる (.golangci.yml)。
+// main の tui.go では time.Now / time.Since の直呼びを forbidigo が禁じ、ここを通させる (.golangci.local.yml)。
 var TimeNow = time.Now

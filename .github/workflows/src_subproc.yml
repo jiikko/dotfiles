@@ -11,6 +11,8 @@ on:
     paths:
       - 'src/subproc/**'
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
+      - src/.golangci.yml          # lint の設定の共通の塊 (golangci_lint.sh が差分と合成する)
+      - scripts/golangci_config.rb # その合成
       - scripts/go_module_graph.sh   # 全プロジェクトの make lint が先に回す module グラフの検査 (issue 787)
       - .github/workflows/src_subproc.yml
       - .github/workflows/_go-project.yml
@@ -19,6 +21,8 @@ on:
     paths:
       - 'src/subproc/**'
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
+      - src/.golangci.yml          # lint の設定の共通の塊 (golangci_lint.sh が差分と合成する)
+      - scripts/golangci_config.rb # その合成
       - scripts/go_module_graph.sh   # 全プロジェクトの make lint が先に回す module グラフの検査 (issue 787)
       - .github/workflows/src_subproc.yml
       - .github/workflows/_go-project.yml

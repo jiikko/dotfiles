@@ -30,7 +30,7 @@
 
 - 🚨 **mermaid の描画を止めるときは子孫ごと止める** (`proctree`)。puppeteer は Chrome を別のプロセスグループ (detached) で起こすので、
   グループ宛ての kill では届かない (issue 649。実機で、グループ宛てだけでは Chrome が残った)。本体での `syscall.Kill` の直書きと、
-  テストの `t.Parallel` (パッケージ変数を書き換えるテストがある) は forbidigo が止める (`.golangci.yml`。issue 661)
+  テストの `t.Parallel` (パッケージ変数を書き換えるテストがある) は forbidigo が止める (`.golangci.local.yml`。issue 661)
 - 中断の判定: 全体の中断は `app.InterruptedErr()` (`app.Ctx`)。**見張りは `app.Ctx` と別の ctx で止めるので、ctx を受け取る処理は
   `app.CtxInterrupted(ctx)` で見る** (`app.Ctx` で見ると、見張りの成功や失敗まで「中断」になる。issue 652)
 - 自動で起動するエンジンは同時に 1 つだけ (印 `engine.auto` が URL を 1 つしか書けないため。コンテナの名前はポートごと)

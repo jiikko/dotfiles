@@ -2,7 +2,7 @@
 # tuikit の全 package が、depguard の 2 つの部品のリスト (no-framework-in-parts / parts-pure) のどちらかに入っているか、
 # 下の「外す理由つきの表」に載っていることを pin する。
 #
-# なぜ: リストは .golangci.yml に手で並べていて、package を足すと漏れる。漏れた package は bubbletea / os を import しても lint が
+# なぜ: リストは .golangci.local.yml に手で並べていて、package を足すと漏れる。漏れた package は bubbletea / os を import しても lint が
 # 通る (hintfit・gutter・spinner・foreground が漏れていた)。
 # 脅威モデル: package を足してリストに足し忘れる・外す表に古い名前が残る・リストの行をコメントアウトして外す・知らない形の項目を足す。
 # リストの files の項目は、知っている 3 つの形 (`"**/<名前>/**"` / `"!**/tuikit/<名前>/**"` / `"!**/*_test.go"`) だけを読み、それ以外の項目が
@@ -18,7 +18,7 @@ set -uo pipefail
 unset CDPATH
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR/src/tuikit" || exit 1
-yml=.golangci.yml
+yml=.golangci.local.yml # depguard のリストはモジュール固有の差分にある (共通の塊は src/.golangci.yml)
 
 # 外す理由つきの表。package のパス (tuikit からの相対) そのもので引く (先頭の名前で引くと、外した package の下に足した package も黙って外れた)。
 # 末尾の /* は直下の子を全部外す (examples のデモだけに使う)
@@ -102,7 +102,7 @@ for list in no-framework-in-parts parts-pure; do
     if [ "$listed" -eq 0 ] && [ "$isexcl" -eq 0 ] && [ "$rel" = . ]; then
       printf '  ✗ %s: tuikit 直下に package がある (files の形では表せない。部品はディレクトリに入れるか、この検査の外す表に理由つきで載せる)\n' "$list"; fail=1
     elif [ "$listed" -eq 0 ] && [ "$isexcl" -eq 0 ]; then
-      printf '  ✗ %s: %s がリストにも外す表にも無い (.golangci.yml の %s の files に足すか、この検査の外す表に理由つきで載せる)\n' "$list" "$rel" "$list"; fail=1
+      printf '  ✗ %s: %s がリストにも外す表にも無い (.golangci.local.yml の %s の files に足すか、この検査の外す表に理由つきで載せる)\n' "$list" "$rel" "$list"; fail=1
     elif [ "$listed" -eq 1 ] && [ "$isexcl" -eq 1 ]; then
       printf '  ✗ %s: %s はリストに入っているのに外す表にもある (どちらかにする)\n' "$list" "$rel"; fail=1
     fi

@@ -182,7 +182,7 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 		}
 	// 🚨 残りの Guard は**パス展開の後**の switch (下の「guard による Item の絞り込み」) が受ける。
 	// 全 Guard をどちらか一方で必ず受けるのが不変条件。default を書かず全 case を並べることで
-	// exhaustive (.golangci.yml) がそれを強制する: 新しい Guard をどちらにも書き忘れると
+	// exhaustive (.golangci.local.yml) がそれを強制する: 新しい Guard をどちらにも書き忘れると
 	// guard が 1 つも適用されないまま候補になる (fail-open)。
 	case GuardNone, GuardBoottime, GuardSimDevice, GuardOrphanApp, GuardBrewOrphan, GuardVMRoot,
 		GuardGoModcacheCurrent, GuardGoModcacheOld, GuardChromiumCache, GuardDerivedDataLive:

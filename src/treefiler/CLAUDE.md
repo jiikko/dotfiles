@@ -16,7 +16,7 @@
 - `filer/anim.go` — 時間で進む補間 (ease-out quint・キーで終点へ飛ばす)
 - `filer/tile.go` / `filer/preview.go` — プレビューのタイル (置き場所・リンク) とテキストの遅延読み込み
 - `filer/palette.go` — 配色と熱の色
-- `filer/render.go` — セルの格子 → 文字列 (I/O をしない純粋な描画層。`.golangci.yml` の render-pure)
+- `filer/render.go` — セルの格子 → 文字列 (I/O をしない純粋な描画層。`.golangci.local.yml` の render-pure)
 - `filer/theme.go` — 配色の表 (地・アクセント・熱の色。設定の板で選ぶ)
 - `filer/walk.go` — 配下でいちばん新しい更新と大きさを裏で数える (熱の色・Name details)
 - `filer/git.go` / `filer/diff.go` — git の状態 (印・芽・ブランチ) と、タイルの `d` の diff

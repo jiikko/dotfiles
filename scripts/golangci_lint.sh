@@ -24,6 +24,7 @@
 # go の版を上げると新しい鍵のディレクトリができ、古いものは残る (1 つ約 55MB。消す仕組みは作らない。要らなければ
 # ディレクトリごと消してよい。次の lint が作り直す)。
 set -euo pipefail
+unset CDPATH
 
 if [ $# -lt 1 ]; then
   echo "usage: ${0##*/} <golangci-lint の版> [引数…]" >&2
@@ -59,4 +60,25 @@ if [ ! -x "$bin" ] || [ ! -s "$bin" ]; then # 空のファイルは作り直す 
 fi
 # go run と同じく、起動するプログラムの PATH の先頭に $GOROOT/bin を足す (golangci-lint は中で go list 等を何度も呼ぶ。
 # 足さないと goenv の shim を毎回通り、lint 1 回で約 0.5 秒遅くなった。実測 2026-09-26)
-PATH="$goroot/bin:$PATH" exec "$bin" "$@"
+if [ "${1:-}" != run ]; then
+  PATH="$goroot/bin:$PATH" exec "$bin" "$@"
+fi
+
+# run の設定は、共通の塊 (src/.golangci.yml) と、呼んだディレクトリ (モジュールの根) の差分 (.golangci.local.yml。無くてよい) から
+# 毎回合成して -c で渡す (scripts/golangci_config.rb。合成した設定は commit しない)。
+# モジュールに .golangci.yml を置かない: 置くと合成の外の写しが戻り、golangci-lint の素の起動がそちらを読む。
+repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+if [ -e .golangci.yml ]; then
+  echo "${0##*/}: $PWD/.golangci.yml がある。モジュールの設定は差分だけを .golangci.local.yml に書く (共通の塊は src/.golangci.yml)" >&2
+  exit 2
+fi
+cfgdir=$(mktemp -d "${TMPDIR:-/tmp}/golangci-config.XXXXXX")
+trap 'rm -rf "$cfgdir"' EXIT
+cfg="$cfgdir/golangci.json" # 拡張子で golangci-lint が書式を決める
+locals=()
+[ -e .golangci.local.yml ] && locals=(.golangci.local.yml)
+ruby "$repo/scripts/golangci_config.rb" "$repo/src/.golangci.yml" ${locals[@]+"${locals[@]}"} >"$cfg"
+shift
+rc=0
+PATH="$goroot/bin:$PATH" "$bin" run -c "$cfg" "$@" || rc=$?
+exit "$rc"

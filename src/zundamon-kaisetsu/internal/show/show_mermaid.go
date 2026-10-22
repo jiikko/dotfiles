@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"proctree"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -125,7 +126,7 @@ func renderMermaid(scriptPath, name string, code []string, out string) error {
 			return app.Fail("%s: %v", p, err)
 		}
 	}
-	args := []string{"-y", mermaidCLI, "-p", pp, "-i", in, "-o", tmpOut, "-s", fmt.Sprint(mermaidScale), "-b", "white", "-q"}
+	args := []string{"-y", mermaidCLI, "-p", pp, "-i", in, "-o", tmpOut, "-s", strconv.Itoa(mermaidScale), "-b", "white", "-q"}
 	ctx, cancel := context.WithTimeout(app.Ctx, MermaidTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "npx", args...)

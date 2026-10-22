@@ -140,7 +140,7 @@ var stateNameRe = regexp.MustCompile(`state_(-?\d+)_(\d+)_(\d+)_(\d+)_(\d+)\.png
 // 結果を記録に書く (build の一時 dir は終わると消えるので、絵は mux の時点で見る)。concat の一覧で渡されたら失敗にする
 func checkFrames(args []string) {
 	var pattern string
-	for i := 0; i < len(args)-1; i++ {
+	for i := range len(args) - 1 {
 		if args[i] == "-i" {
 			pattern = args[i+1]
 			break
@@ -225,7 +225,7 @@ var cropRe = regexp.MustCompile(`\[s(\d+)\]crop=(\d+):(\d+):(\d+):(\d+)\[o(\d+)\
 func fakeCrop(args []string) int {
 	var in, fc string
 	maps := map[string]string{}
-	for i := 0; i < len(args)-1; i++ {
+	for i := range len(args) - 1 {
 		switch args[i] {
 		case "-i":
 			in = args[i+1]

@@ -10,6 +10,7 @@ package pyjson
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -250,7 +251,7 @@ func Float(v any) (float64, error) {
 		}
 		return f, nil
 	case nil:
-		return 0, fmt.Errorf("float() argument must be a string or a real number, not 'NoneType'")
+		return 0, errors.New("float() argument must be a string or a real number, not 'NoneType'")
 	default:
 		return 0, fmt.Errorf("float() argument must be a string or a real number, not %T", x)
 	}
@@ -284,7 +285,7 @@ func Int(v any) (int64, error) {
 		}
 		return n, nil
 	case nil:
-		return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not 'NoneType'")
+		return 0, errors.New("int() argument must be a string, a bytes-like object or a real number, not 'NoneType'")
 	default:
 		return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not %T", x)
 	}

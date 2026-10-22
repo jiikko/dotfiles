@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -214,10 +215,10 @@ func TestLintMoreRules(t *testing.T) {
 	// チャプターの数: 4〜6 は通す。長い台本 (87 行超) は 7 個以上でも通す
 	ch := func(n, total int) map[string]any {
 		var raw []any
-		for i := 0; i < total; i++ {
+		for i := range total {
 			x := l("zundamon", fmt.Sprintf("行%d？", i))
 			if i < n {
-				x["chapter"] = fmt.Sprint(i)
+				x["chapter"] = strconv.Itoa(i)
 			}
 			raw = append(raw, x)
 		}

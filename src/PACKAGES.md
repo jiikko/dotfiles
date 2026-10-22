@@ -20,7 +20,7 @@
 - `src/doctor/testtmp` (`doctor/testtmp`) — Package testtmp は「テストが起こした一時ディレクトリを、中断されても回収する」ための 共通ヘルパー。
 - `src/glogx` (`glogx`) — 対話ブラウズ中はキー操作 (j/k/q/b 等) が主なので、起動時に IME を英数 (ABC) へ 切り替え、終了時に元へ戻す。 (main)
 - `src/glogx/cmd/issue-claim` (`glogx/cmd/issue-claim`) — issue-claim は issue に着手の claim を付ける: next/ に目印 (symlink) を置き、本文冒頭に担当者バナーを書く。 (main)
-- `src/glogx/gorules` (`glogx/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml の settings.gocritic.settings.ruleguard.rules から参照)。 (build tags: ruleguard)
+- `src/glogx/gorules` (`glogx/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.local.yml の settings.gocritic.settings.ruleguard.rules から参照)。 (build tags: ruleguard)
 - `src/glogx/internal/app` (`glogx/internal/app`) — Package app は glogx の画面のパッケージと main が共有する状態・道具を持つ: 現在時刻のシーム (TimeNow)・ 全画面ビューアの ID と横断キーの表・全画面を閉じたときの記憶 (ScreenMemory)・終了前の完了待ち (CleanupLatch)・ キャッシュの置き場と atomic 書き込み。 (internal)
 - `src/glogx/internal/commitview` (`glogx/internal/commitview`) — Package commitview は glogx のコミットに重ねるポップアップ群: diff (d)・PR 状態 (P)・CI の job 詳細。 (internal)
 - `src/glogx/internal/crosskey` (`glogx/internal/crosskey`) — Package crosskey は横断キー (どの全画面からも同じ板へ飛ぶキー。 (internal)
@@ -87,7 +87,7 @@
 - `src/process_supervisor` (`process_supervisor`) — Package supervisor は子プロセスを 1 つ起こして見張る (foreman / supervisord の 1 本ぶん。
 - `src/proctree` (`proctree`) — Package proctree はプロセスの子孫を集めて止める。
 - `src/ratelimit` (`ratelimit`) — ratelimit — Claude Code / codex の利用枠 (5h / weekly) を表示・判定する単独コマンド。 (main)
-- `src/ratelimit/gorules` (`ratelimit/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml から参照)。 (build tags: ruleguard)
+- `src/ratelimit/gorules` (`ratelimit/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.local.yml から参照)。 (build tags: ruleguard)
 - `src/ratelimit/usage` (`ratelimit/usage`) — Package usage は Claude Code の `/usage` 出力と codex の rateLimits を取得・整形する。
 - `src/restartable` (`github.com/jiikko/dotfiles/src/restartable`) — Command restartable はコマンドを前面で実行し、キーまたは制御 socket から再起動できる CLI。 (main)
 - `src/restartable/internal/control` (`github.com/jiikko/dotfiles/src/restartable/internal/control`) — Package control implements the private Unix socket used to inspect and restart a runner. (internal)
@@ -108,7 +108,7 @@
 - `src/tmpclean/internal/runner` (`tmpclean/internal/runner`) — Package runner は tmpclean の外部コマンドの実行口。 (internal)
 - `src/treefiler` (`treefiler`) — treefiler は横に育つ木のファイラー (bin/treefiler)。 (main)
 - `src/treefiler/filer` (`treefiler/filer`) — Package filer は treefiler の画面の部品 (木・タイル・キー・描画)。
-- `src/treefiler/gorules` (`treefiler/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml から参照)。 (build tags: ruleguard)
+- `src/treefiler/gorules` (`treefiler/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.local.yml から参照)。 (build tags: ruleguard)
 - `src/treefiler/tools/tfprobe` (`treefiler/tools/tfprobe`) — tfprobe は treefiler の画面 (filer.Model) を本物のディレクトリでヘッドレスに動かし、操作ごとの所要と、サイクルごとの 資源 (goroutine・fd・子プロセス・GC 後のヒープ) を測る。 (main)
 - `src/tuikit/anim` (`github.com/jiikko/dotfiles/src/tuikit/anim`) — Package anim は端末 UI の演出に使う状態機械と緩急カーブ。
 - `src/tuikit/caret` (`github.com/jiikko/dotfiles/src/tuikit/caret`) — Package caret は入力欄のキャレットを端末のカーソルにする (bubbletea v2 の View.Cursor)。

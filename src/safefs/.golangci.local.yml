@@ -1,0 +1,7 @@
+# safefs の golangci-lint の設定の差分。共通の塊は src/.golangci.yml で、scripts/golangci_lint.sh が run のたびに合成する。
+linters:
+  settings:
+    errcheck:
+      # fd の後始末 (unix.Close) は best-effort (操作の成否はその前の syscall で決まっている)
+      exclude-functions:
+        - golang.org/x/sys/unix.Close

@@ -96,7 +96,7 @@ func MarkVocabulary() []string {
 }
 
 // markVocabularyGuard は「MarkVocabulary の列挙が enum に追いついているか」の番人。
-// 🚨 **default を書かない**。Risk / Status に値を足すと exhaustive (.golangci.yml) がここで
+// 🚨 **default を書かない**。Risk / Status に値を足すと exhaustive (.golangci.local.yml) がここで
 // 赤くなり、MarkVocabulary の列挙を直す必要に気づける。
 // 実行時の意味は無い (呼ばれない側の網羅性だけを固定する)。
 func markVocabularyGuard(r Risk, s Status) {

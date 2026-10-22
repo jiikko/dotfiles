@@ -1,71 +1,22 @@
-# golangci-lint v2 config for glog.
-# The standard linters (errcheck, govet, ineffassign, staticcheck, unused) are
-# on by default; the extras below are low-noise, mostly auto-fixable hygiene
-# linters. Run `golangci-lint run --fix ./...` to apply the auto-fixes.
-version: "2"
-
-# 🚨 golangci-lint は既定で os.TempDir()/golangci-lint.lock に flock を取り、別インスタンスが
-# 走っていると 5 秒待って "parallel golangci-lint is running" で落ちる (v2.15.0 の
-# pkg/commands/run.go acquireFileLock を実測)。この lock はキャッシュ保護ではない
-# (キャッシュは Go の build cache の fork。内容アドレスなので競合する 2 プロセスは同一バイト列を
-# 書く。書き込み自体は temp+rename ではなく最終名への直接 write で、安全性の根拠は原子性ではなく
-# 内容アドレス) ので、外しても結果の正しさには影響しない。root の Makefile (run_go_projects) が 7 プロジェクトを並列に
-# 回すため、全プロジェクトでこれを true にする (1 つでも false が残ると、その 1 つが他の
-# 6 つの起動タイミング次第で落ちる)。
-run:
-  allow-parallel-runners: true
-
+# glogx の golangci-lint の設定の差分。共通の塊は src/.golangci.yml で、scripts/golangci_lint.sh が run のたびに合成する。
 linters:
   enable:
-    - asasalint      # []any を ...any にそのまま渡す誤り
-    - bidichk        # 危険な Unicode 双方向制御文字 (コピペ由来の混入対策)
-    - bodyclose      # HTTP response body の close 漏れ (fd リーク。claude_version の registry 照会経路の退行防止)
     - containedctx   # struct フィールドへの ctx 格納の検出 (ctx は関数引数で渡し、struct には cancel を持つ規律。issue 029 と同族)
     - contextcheck   # ctx の非伝播・context.Background の握り込み検出 (issue 029 の cancel 系の再発防止)
-    - copyloopvar    # loop variables needlessly copied (Go 1.22+)
-    - durationcheck  # Duration 同士の乗算バグ (アニメ周期・タイムアウト計算が多い repo なので相性が良い)
     - depguard       # アーキテクチャ不変条件: render.go は純粋描画層 (下の rules)
     - dupl           # コピペ重複の検出 (runLog の 4 行 ×2 コピペを見逃した反省。閾値は下)
     - errname        # sentinel error は Err 接頭辞・error 型は Error 接尾辞
-    - errorlint      # errors.Is/As を使わない比較・%w 漏れの検出
     - exhaustive     # default なし switch の enum 網羅を強制 (settings 参照。網羅性の機械化)
-    - exptostd       # x/exp で書いたものの stdlib 昇格済み検出
     - fatcontext     # ループ内で context を積み重ねるパターンの検出
     - forbidigo      # stdout 直接出力の禁止 (下の forbid。main.go だけ除外)
     - gocritic       # unlambda / singleCaseSwitch 等の診断 (試走 2 件のみ = 低ノイズを確認済み)
-    - intrange       # for i := 0; i < n; i++  ->  for i := range n
     - makezero       # make([]T, n) への append で先頭にゼロ値が残るバグ
     - mirror         # bytes/strings の鏡写し API の取り違え (無駄な変換 alloc。perf 文化と一致)
-    - misspell       # common English misspellings in comments/strings
-    - nilnesserr     # err != nil を確認したのに別の nil error を返すバグ
-    - nolintlint     # 説明なし nolint コメントの禁止
-    - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
     - prealloc       # 事前確保できる append ループの検出 (View/整形ホットパスの alloc 削減文化と一致)
     - recvcheck      # value / pointer receiver の混在検出
-    - unconvert      # redundant type conversions
     - usetesting     # テストの os.Chdir/MkdirTemp 等を t.Chdir/t.TempDir へ (cleanup 漏れの構造的防止)
     - unparam        # 常に同値の引数・未使用戻り値 (テストは除外 = ヘルパーの汎用引数を許す)
-    - usestdlibvars  # hand-written constants that exist in the stdlib
-    - wastedassign   # assignments whose value is never read
-    # バグを見つける系 (全モジュール共通の塊。golangci-lint の推奨構成から、この repo で誤検出が出ないものを選んだ)
-    - asciicheck
-    - canonicalheader
-    - gocheckcompilerdirectives
-    - gochecksumtype
-    - iotamixing
-    - nilerr
-    - nosprintfhostport
-    - reassign
-    - tparallel
   settings:
-    perfsprint:
-      concat-loop: false # ループの中の文字列の連結を strings.Builder へ書き換えさせる。小さなループばかりで、読みやすさを崩すほど効かない
-    govet:
-      # 既定の analyzer に加えて全部を有効にする (nilness・unusedwrite・deepequalerrors などは既定では走らない)
-      enable-all: true
-      disable:
-        - fieldalignment # 構造体のフィールドをメモリの詰め方の順に並べ替えさせる。数バイトのために読む順を崩す
-        - shadow         # := での再宣言を全部拾う。意図した再宣言 (err の受け直し) が多く、ノイズに埋もれる
     dupl:
       threshold: 120
     unparam:
@@ -112,7 +63,7 @@ linters:
         # import 別名を使った持ち込みもここで止まる。シンボル名の走査は
         # width_test.go:TestNoSecondWidthEngine が担当 (tuikit も走査範囲。own_sources_test.go)。両輪。
         # termwidth は tuikit へ移ったので、fast-path の総当たり検証 (width_fast_test.go) の除外は
-        # tuikit/.golangci.yml が持つ。
+        # tuikit/.golangci.local.yml が持つ。
         uniseg-split-only:
           files:
             - "**/*.go"
@@ -184,9 +135,6 @@ linters:
       settings:
         ruleguard:
           rules: gorules/rules.go
-    nolintlint:
-      require-explanation: true
-      require-specific: true
     errcheck:
       # Best-effort operations whose error is conventionally ignored in a CLI:
       # writes to stderr/stdout, closing/removing temp files on error paths,
@@ -241,8 +189,3 @@ issues:
   # 落ちる。実験で確認済み)。直すのは報告の不完全さだけ。
   max-same-issues: 0
   max-issues-per-linter: 0
-
-# gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
-formatters:
-  enable:
-    - gofmt

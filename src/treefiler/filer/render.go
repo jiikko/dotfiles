@@ -8,7 +8,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
-// render.go は「セルの格子 → 文字列」の純粋な描画層 (I/O をしない。.golangci.yml の render-pure)。
+// render.go は「セルの格子 → 文字列」の純粋な描画層 (I/O をしない。.golangci.local.yml の render-pure)。
 
 type cell struct {
 	s             string // 書記素クラスタ 1 つ。全角の右半分は空で cont

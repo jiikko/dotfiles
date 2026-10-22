@@ -76,8 +76,14 @@ Claude Code で package を探すときは [PACKAGES.md](PACKAGES.md) を引く�
 - **`bin/` のラッパーを zsh で書いたら root [Makefile](../Makefile) の `ZSH_SYNTAX_FILES` に登録する**。
   `scripts/discover_shell_scripts.sh` が shebang で拾い、登録漏れは **shellcheck の SC1071 で
   `make test` 全体が落ちる** (bin/schedkeys 追加時に実際に落とした 2026-08-27)
-- `.golangci.yml` は必須。`run:` 節に `allow-parallel-runners: true` を入れる（root の `make test` が全プロジェクトの lint を並列に回すため。`tests/scripts/test_golangci_parallel_runners.sh` が無い・入っていないを落とす。issue 258）。カスタム lint は任意で、実例は glogx
-- **tuikit を使う module (go.mod に `src/tuikit` を持つもの) は、x/ansi と bubbletea を tuikit と同じ版にし、`.golangci.yml` の forbidigo に折り返しの禁止 `^ansi\.(Hardwrap|Wrap|Wordwrap)$` を入れる**（`tests/scripts/test_tuikit_consumers_aligned.sh` がずれを落とす。issue 603）。新しく tuikit を使う module を切るときも同じ
+- **golangci-lint の設定は、共通の塊 `src/.golangci.yml` と、モジュールごとの差分 `src/<module>/.golangci.local.yml` (無くてよい) の 2 つ**。
+  `scripts/golangci_lint.sh` が run のたびに `scripts/golangci_config.rb` で合成して `-c` で渡す (CI も同じ入口。合成した設定は commit しない)。
+  linter を足す・版を上げるときは `src/.golangci.yml` を 1 回直す。モジュールに `.golangci.yml` を置かない (置くと lint が rc=2 で止まる)。
+  合成の規則 (map は再帰的に合わせて差分が上書き・一覧はベースの後に差分の新しい要素・鍵の並びは固定) は script の冒頭、
+  規則のテストは `tests/scripts/test_golangci_config.sh`。`allow-parallel-runners: true` (root の `make test` が全プロジェクトの lint を並列に回すため) と
+  `relative-path-mode: gomod` (一時ファイルで渡すと除外のパスの基準がずれるため) は共通の塊が持ち、`tests/scripts/test_golangci_parallel_runners.sh` が
+  合成した結果で見る。カスタム lint は任意で、実例は glogx
+- **tuikit を使う module (go.mod に `src/tuikit` を持つもの) は、x/ansi と bubbletea を tuikit と同じ版にし、`.golangci.local.yml` の forbidigo に折り返しの禁止 `^ansi\.(Hardwrap|Wrap|Wordwrap)$` を入れる**（`tests/scripts/test_tuikit_consumers_aligned.sh` がずれを落とす。issue 603）。新しく tuikit を使う module を切るときも同じ
 - golangci-lint はインストール不要（Makefile が `scripts/golangci_lint.sh` 経由で版を固定して実行。初回に版ごとの決まった場所へビルドし、以後はそれを起動する）
 - テストが「重い / 環境依存」に思えても、CI から除外する前に**実測**すること（parallel-each は「TUI 依存で重い」とされていたが実測 8.7s で CI 投入できた。
   この repo からは 2026-09-08 に出たが、判断の作法として残す）
@@ -120,12 +126,18 @@ on:
       - .github/workflows/src_<name>.yml
       - .github/workflows/_go-project.yml
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
+      - src/.golangci.yml          # lint の設定の共通の塊 (golangci_lint.sh が差分と合成する)
+      - scripts/golangci_config.rb # その合成
+      - scripts/go_module_graph.sh # make lint が先に回す module グラフの検査
   pull_request:
     paths:
       - 'src/<name>/**'
       - .github/workflows/src_<name>.yml
       - .github/workflows/_go-project.yml
       - scripts/golangci_lint.sh
+      - src/.golangci.yml
+      - scripts/golangci_config.rb
+      - scripts/go_module_graph.sh
   workflow_dispatch:  # GitHub UI からの手動再実行用
 
 permissions:

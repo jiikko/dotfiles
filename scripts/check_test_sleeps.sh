@@ -27,7 +27,7 @@
 #   終端の行が来ないまま末尾に達したら落とす (開始の判定を誤ると本文がファイルの最後まで続き、印 1 つで後半が素通りするため)
 #   Go は `time.Sleep(` の行に、同じ行か直前の行の `// sleep-ok: <分類>: <理由>` を要求する (分類は同じ)。待つなら各 package の
 #   待ちの helper (pro-con の waitUntil / dispatcher の pollUntil / lockman の waitForCondition) で条件を待ち、helper の中の刻みに印を付ける。
-#   🚨 Go を forbidigo ではなくここで見るのは、規則と印を 1 つにするため。glogx / pro-con の .golangci.yml はテストで forbidigo を
+#   🚨 Go を forbidigo ではなくここで見るのは、規則と印を 1 つにするため。glogx / pro-con の .golangci.local.yml はテストで forbidigo を
 #   丸ごと外しており、各 module の lint 設定を崩さずに済む (lint.yml は paths の絞り込み無しで毎 push この検査を回す)
 #
 # 脅威モデル (adversarial-review-own-safeguards.md §8):

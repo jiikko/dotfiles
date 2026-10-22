@@ -203,7 +203,7 @@ func exifOrientation(t []byte) int {
 		return 1
 	}
 	count := int(bo.Uint16(t[off:]))
-	for k := 0; k < count; k++ {
+	for k := range count {
 		e := off + 2 + 12*k
 		if e+12 > len(t) {
 			return 1

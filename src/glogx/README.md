@@ -392,7 +392,7 @@ bare 記号なら全層で 1 に一致するため。割れる文字を出すと
 ```bash
 make test   # go test -race ./... (unit + 一時 git リポジトリでの integration。外部通信なし)。CI (環境変数 CI) では test-budget も回す
 make test-budget   # 確保回数の予算 (TestFrameAllocBudget) だけ -race なしで回す。手元の make test では回さないので、描画を触ったら回す
-make lint   # gorules の vet と module の依存グラフの検査 (scripts/go_module_graph.sh) の後に golangci-lint (scripts/golangci_lint.sh 経由・バージョン固定、設定は .golangci.yml)
+make lint   # gorules の vet と module の依存グラフの検査 (scripts/go_module_graph.sh) の後に golangci-lint (scripts/golangci_lint.sh 経由・バージョン固定、設定は src/.golangci.yml と .golangci.local.yml の合成)
 
 # 幅ズレ調査用 (要 TTY。tmux の内と外で走らせて比べる)
 go run ./tools/width-probe

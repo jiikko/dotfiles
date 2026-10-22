@@ -1,8 +1,8 @@
 # glog (Go) の静的解析とテスト。root Makefile の test-go-lint / test-go と CI
 # (.github/workflows/src_glog.yml) から `make -C src/glog lint|test` として呼ばれる
 # 自己完結ターゲット。golangci-lint はインストール不要で、scripts/golangci_lint.sh が版を固定して一度だけビルドし起動する。
-# 設定はこのディレクトリの .golangci.yml を自動で読む。
-# バージョンは .golangci.yml (version: "2") と整合させること。
+# 設定は scripts/golangci_lint.sh が src/.golangci.yml とこのディレクトリの .golangci.local.yml から合成して渡す。
+# バージョンは src/.golangci.yml (version: "2") と整合させること。
 GOLANGCI_LINT_VERSION := v2.15.0
 
 .PHONY: lint test test-budget

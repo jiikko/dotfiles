@@ -26,7 +26,7 @@
 - `internal/ratelimitview/` (`ratelimit_dashboard.go`, `ratelimit_resume.go`) — 全画面 ratelimit ダッシュボード (`R`)。取得・整形は `ratelimit/usage`
 - `internal/filerview/` (`filer_view.go`, `filer_resume.go`) — 全画面 treefiler (`F`)。main のテストの口は `fixture.go` (issue 817)。`filer_resume.go` は F を出したまま終えたときの場所の記憶 (C-g で開き直すと戻る)。画面の部品は `src/treefiler` の `filer` パッケージ (replace で取り込む)。仕様は `docs/treefiler-spec.md`
 - `internal/lanview/` (`lan_view.go`, `lan_resume.go`) — 全画面 mac-lan-manager (`L`)。main のテストの口は `fixture.go` (issue 817)。画面の部品は `src/mac-lan-manager` の `lanmgr` パッケージ、本物へのつなぎは `live` (replace で取り込む)。要件は issue 747
-- `internal/app/` — 画面のパッケージと main が共有する状態・道具。`clock.go` は時刻のシーム (`app.TimeNow`。テストが差し替える)、`screen_memory.go` は全画面 (issues / doctor / ratelimit / F / L) を閉じたときの記憶の保存・読み込み (30 分で失効。照合は各画面の `*_resume.go`)、`cleanup_latch.go` は終了前の完了待ち latch、`cache_io.go` はキャッシュの置き場 (`app.CacheBaseDir`) と atomic 書き込み (`app.WriteAtomic`)、`notice.go` は viewer の操作結果の種類 (`app.NoticeKind`) と小さな道具 (`app.FirstLine` / `app.ClampIdx` など)。bubbletea・fsnotify を import しない (gitdata が依存するため。`.golangci.yml` の depguard `data-layer-no-ui`)
+- `internal/app/` — 画面のパッケージと main が共有する状態・道具。`clock.go` は時刻のシーム (`app.TimeNow`。テストが差し替える)、`screen_memory.go` は全画面 (issues / doctor / ratelimit / F / L) を閉じたときの記憶の保存・読み込み (30 分で失効。照合は各画面の `*_resume.go`)、`cleanup_latch.go` は終了前の完了待ち latch、`cache_io.go` はキャッシュの置き場 (`app.CacheBaseDir`) と atomic 書き込み (`app.WriteAtomic`)、`notice.go` は viewer の操作結果の種類 (`app.NoticeKind`) と小さな道具 (`app.FirstLine` / `app.ClampIdx` など)。bubbletea・fsnotify を import しない (gitdata が依存するため。`.golangci.local.yml` の depguard `data-layer-no-ui`)
 - `cmd/issue-claim/` — `bin/issue-claim` の main (claim の目印とバナーを付ける。本体は `issues.MoveToSubdir` = viewer の `n` と同じ)
 - `ime.go`, `ime_tis_darwin.go`, `ime_tis_stub.go` — ブラウズ中の IME 英数切替 (macOS TIS 直接呼び出し)
 - `zoom.go`, `hint_surfaces.go` — 開閉演出・最下行ヒントの共有ロジック
@@ -46,7 +46,7 @@
 
 ## 不変条件は lint / test が正本 (ここにもコードにも再掲しない)
 
-render.go (main と `internal/term` の両方) の純粋描画層・幅計算の単一出典・stdout / 時刻のシーム・外部プロセスの WaitDelay・switch の網羅は `.golangci.yml` (depguard / forbidigo / exhaustive) / `gorules/rules.go` (gocritic の ruleguard。🚨 **glogx 直下に置くと package 名衝突で型検査されない**ので独立ディレクトリ。`make lint` が `go vet -tags ruleguard ./gorules` も回す。issue 202) / `waitdelay_discipline_test.go` / `clock_rollback_test.go` (永続キャッシュの鮮度判定に時計の巻き戻しガードを強制。issue 201) / `hint_width_test.go` (最下行の hint が幅に収まること。収まらないと**抜ける手段が案内から消える**) が強制し、理由もそこに書いてある。新しい規律を足すときも、まず lint / test で強制できないかを考える (`~/.claude/rules/comment-no-restate-enforced.md`)。
+render.go (main と `internal/term` の両方) の純粋描画層・幅計算の単一出典・stdout / 時刻のシーム・外部プロセスの WaitDelay・switch の網羅は `.golangci.local.yml` (depguard / forbidigo / exhaustive) / `gorules/rules.go` (gocritic の ruleguard。🚨 **glogx 直下に置くと package 名衝突で型検査されない**ので独立ディレクトリ。`make lint` が `go vet -tags ruleguard ./gorules` も回す。issue 202) / `waitdelay_discipline_test.go` / `clock_rollback_test.go` (永続キャッシュの鮮度判定に時計の巻き戻しガードを強制。issue 201) / `hint_width_test.go` (最下行の hint が幅に収まること。収まらないと**抜ける手段が案内から消える**) が強制し、理由もそこに書いてある。新しい規律を足すときも、まず lint / test で強制できないかを考える (`~/.claude/rules/comment-no-restate-enforced.md`)。
 
 ## 構造の判断 (lint では守れないもの)
 

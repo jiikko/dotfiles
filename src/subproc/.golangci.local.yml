@@ -1,0 +1,5 @@
+# subproc の golangci-lint の設定の差分。共通の塊は src/.golangci.yml で、scripts/golangci_lint.sh が run のたびに合成する。
+linters:
+  enable:
+    - containedctx   # struct フィールドへの ctx 格納の検出 (src/glogx/.golangci.local.yml から移した)
+    - contextcheck   # ctx の非伝播・context.Background の握り込み検出 (同上)

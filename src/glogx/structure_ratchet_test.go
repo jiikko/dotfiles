@@ -486,7 +486,7 @@ func hasNofixtureConstraint(f *ast.File) bool {
 }
 
 // testSupportPkgs はテスト専用のパッケージ (testing を import し、テストだけが使う部品)。本番のコードからの import は
-// .golangci.yml の depguard の test-support-only-in-tests が止める。その deny の一覧とこの一覧の一致は TestTestSupportPkgsMatchDepguard が見る
+// .golangci.local.yml の depguard の test-support-only-in-tests が止める。その deny の一覧とこの一覧の一致は TestTestSupportPkgsMatchDepguard が見る
 // (片方にだけ足すと、本番から import できるのに検査からは外れるパッケージができる)。
 var testSupportPkgs = map[string]bool{
 	"internal/testenv":                   true,
@@ -495,21 +495,21 @@ var testSupportPkgs = map[string]bool{
 	"internal/statusview/statusviewtest": true,
 }
 
-// TestTestSupportPkgsMatchDepguard は testSupportPkgs と、.golangci.yml の depguard の test-support-only-in-tests の deny が
+// TestTestSupportPkgsMatchDepguard は testSupportPkgs と、.golangci.local.yml の depguard の test-support-only-in-tests の deny が
 // 同じパッケージの集合であることを確かめる。
-// .golangci.yml は字面で読む: `- pkg:` を引用符で書く・render-pure を改名して後ろに別の規則を足す、では偽の赤になる (安全側)。
+// .golangci.local.yml は字面で読む: `- pkg:` を引用符で書く・render-pure を改名して後ろに別の規則を足す、では偽の赤になる (安全側)。
 // depguard の規則の files: と、規則が有効かは見ない (golangci-lint の実行が見る)。
 var nextDepguardRule = regexp.MustCompile(`\n {8}[a-z0-9-]+:\n`)
 
 func TestTestSupportPkgsMatchDepguard(t *testing.T) {
-	b, err := os.ReadFile(".golangci.yml")
+	b, err := os.ReadFile(".golangci.local.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(b)
 	i := strings.Index(s, "test-support-only-in-tests:")
 	if i < 0 {
-		t.Fatal(".golangci.yml に test-support-only-in-tests の規則が無い")
+		t.Fatal(".golangci.local.yml に test-support-only-in-tests の規則が無い")
 	}
 	rest := s[i:]
 	// 次の規則 (同じ深さ = 8 桁の字下げのキー) の手前までを読む (規則の名前で切ると、間に足した規則の deny まで読む)

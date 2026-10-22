@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -106,7 +107,7 @@ func letterNames(env *app.Env, styleID int64) (map[byte][]string, error) {
 // spelledPattern は語を 1 文字ずつ読んだときの読み (記号を除いた形) に当たる正規表現。
 func spelledPattern(word string, names map[byte][]string) *regexp.Regexp {
 	var b strings.Builder
-	for i := 0; i < len(word); i++ {
+	for i := range len(word) {
 		alts := names[strings.ToUpper(word[i : i+1])[0]]
 		quoted := make([]string, len(alts))
 		for j, a := range alts {
@@ -231,7 +232,7 @@ func checkReadings(env *app.Env, lines []lineKana, scriptAcronyms []string) erro
 		var differ []string
 		for _, i := range words[w].lines {
 			if !re.MatchString(StripKanaMarks(lines[i].Kana)) {
-				differ = append(differ, fmt.Sprint(i))
+				differ = append(differ, strconv.Itoa(i))
 			}
 		}
 		note := ""

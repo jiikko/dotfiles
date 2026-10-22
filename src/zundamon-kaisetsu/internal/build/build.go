@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -543,7 +544,7 @@ func Assemble(s *script.Script, env *app.Env) (*PlayerData, []byte, error) {
 func pyIntList(xs []int) string {
 	parts := make([]string, len(xs))
 	for i, x := range xs {
-		parts[i] = fmt.Sprint(x)
+		parts[i] = strconv.Itoa(x)
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }

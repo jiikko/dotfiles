@@ -1,7 +1,7 @@
 # atomicfile (Go) の静的解析とテスト。root Makefile の test-go-lint / test-go と CI
 # (.github/workflows/src_atomicfile.yml) から `make -C src/atomicfile lint|test` として呼ばれる
 # 自己完結ターゲット。golangci-lint はインストール不要で、scripts/golangci_lint.sh が版を固定して一度だけビルドし起動する。
-# バージョンは .golangci.yml (version: "2") と整合させること。
+# バージョンは src/.golangci.yml (version: "2") と整合させること。
 GOLANGCI_LINT_VERSION := v2.15.0
 
 .PHONY: lint test

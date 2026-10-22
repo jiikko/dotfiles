@@ -193,12 +193,12 @@ if confirm.IsYes(key) { run() }
 
 | 何を | どこで |
 |---|---|
-| 部品 (`anim` / `confirm` / `editor` / `foreground` / `gutter` / `highlight` / `hintfit` / `layout` / `lineedit` / `listnav` / `markdown` / `sgr` / `spinner` / `termcolor` / `termwidth` / `toast` / `widthenv`) は bubbletea を import しない (使ってよいのは `caret` と `examples/`。`framebench` は計測の道具で部品ではない) | `.golangci.yml` の depguard (`no-framework-in-parts`) |
-| 部品 (上から `editor`・`foreground`・`termcolor`・`widthenv` を除いたもの) は `os` / `os/exec` / `context` を import しない | `.golangci.yml` の depguard (`parts-pure`) |
+| 部品 (`anim` / `confirm` / `editor` / `foreground` / `gutter` / `highlight` / `hintfit` / `layout` / `lineedit` / `listnav` / `markdown` / `sgr` / `spinner` / `termcolor` / `termwidth` / `toast` / `widthenv`) は bubbletea を import しない (使ってよいのは `caret` と `examples/`。`framebench` は計測の道具で部品ではない) | `.golangci.local.yml` の depguard (`no-framework-in-parts`) |
+| 部品 (上から `editor`・`foreground`・`termcolor`・`widthenv` を除いたもの) は `os` / `os/exec` / `context` を import しない | `.golangci.local.yml` の depguard (`parts-pure`) |
 | 部品を足したら上の 2 つのリスト (または外す理由つきの表) に載せる | `tests/scripts/test_tuikit_depguard_covers_parts.sh` (issue 790) |
-| 部品の中で `time.Now` / `time.Since` を呼ばない | `.golangci.yml` の forbidigo |
-| 幅モデルは 1 系統 (runewidth・uniseg・`ansi.StringWidthWc` を使わない) | `.golangci.yml` の depguard / forbidigo |
-| 折り返しは `termwidth.Wrap` / `WordWrap` (`ansi.Hardwrap` / `Wrap` / `Wordwrap` を直に呼ばない。issue 590) | tuikit と全消費者の `.golangci.yml` の forbidigo |
+| 部品の中で `time.Now` / `time.Since` を呼ばない | `.golangci.local.yml` の forbidigo |
+| 幅モデルは 1 系統 (runewidth・uniseg・`ansi.StringWidthWc` を使わない) | `.golangci.local.yml` の depguard / forbidigo |
+| 折り返しは `termwidth.Wrap` / `WordWrap` (`ansi.Hardwrap` / `Wrap` / `Wordwrap` を直に呼ばない。issue 590) | tuikit と全消費者の `.golangci.local.yml` の forbidigo |
 | tuikit と消費者 (go.mod に tuikit を持つ module) の x/ansi・bubbletea の版が一致し、全部が折り返しの禁止を持つ | `tests/scripts/test_tuikit_consumers_aligned.sh` (`make test` が自動で拾う。issue 603) |
 | VS16 付きの文字列リテラルを書かない / 2 本目の幅エンジンを使わない | glogx の `own_sources_test.go` 経由の走査 (tuikit も対象。走査の根は glogx の go.mod の replace と突き合わせて固定) |
 | glogx の一覧 4 画面が移動の語彙を `listnav.MotionOf` から取り、半ページが `listnav.Half(各画面が基準に渡す行数)` | glogx の `motion_vocabulary_test.go` (入口 `browseModel.handleKey` から、別名と一次語彙の結果の一致と、半ページの移動量を見る) |

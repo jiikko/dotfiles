@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -160,7 +161,7 @@ func LoadScript(path string, env *app.Env) (*Script, error) {
 	}
 	s := &Script{Path: path, Raw: raw, Cast: map[string]map[string]any{}}
 	for _, def := range CastOrder {
-		m := map[string]any{"style_id": json.Number(fmt.Sprint(def.StyleID))}
+		m := map[string]any{"style_id": json.Number(strconv.FormatInt(def.StyleID, 10))}
 		if over, ok := cast[def.Key].(map[string]any); ok {
 			for k, v := range over {
 				m[k] = v

@@ -2,12 +2,12 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -140,7 +140,7 @@ func TestAcceptShowAtLimit(t *testing.T) {
 		)},
 		map[string]any{"who": "metan", "text": "c", "show": withKey(code(strings.Repeat("言", show.CodeLangMax/2),
 			append([]any{strings.Repeat("x", show.CodeColsMax), strings.Repeat("漢", show.CodeColsMax/2), ""}, fillCodeLines(3)...)),
-			"highlight", []any{json.Number("1"), json.Number(fmt.Sprint(show.CodeLinesMax))})},
+			"highlight", []any{json.Number("1"), json.Number(strconv.Itoa(show.CodeLinesMax))})},
 		// 言語名と強調は省略でき、先頭・末尾の空行も書ける (空行だけのコードは止まる)
 		map[string]any{"who": "metan", "text": "d", "show": map[string]any{"type": "code", "lines": []any{"", "x", ""}}},
 		map[string]any{"who": "metan", "text": "e", "show": withKey(code("go", []any{"x"}), "highlight", []any{})},

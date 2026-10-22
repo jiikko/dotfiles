@@ -161,7 +161,7 @@
 #### 0.8.1 置き場所と依存
 
 - `src/treefiler/` を独立 module にする。前例の `src/ratelimit` に倣って揃えるもの: `Makefile` (`lint` = `vet-gorules` + 版固定の golangci-lint、
-  `test` = `go test -race ./...`)・`.golangci.yml`・`gorules/` (規則の正本は `src/glogx/gorules/rules.go`)・`.gitignore` (autobuild の成果物)・
+  `test` = `go test -race ./...`)・`.golangci.local.yml`・`gorules/` (規則の正本は `src/glogx/gorules/rules.go`)・`.gitignore` (autobuild の成果物)・
   `CLAUDE.md` (ファイルの地図と入口)・`README.md`・`.github/workflows/src_treefiler.yml` (`_go-project.yml` を呼ぶ薄い caller。paths に
   replace で取り込む `src/termsafe/**` `src/tuikit/**` `src/subproc/**` などを並べる)・`bin/treefiler` (`go_autobuild_exec`)
 - 🚨 配線の漏れは `scripts/check_go_project_lanes.sh` が止める (Makefile の lint/test・workflow の存在・paths・replace 先の paths・go.sum・

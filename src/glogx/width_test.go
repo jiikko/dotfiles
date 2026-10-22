@@ -84,7 +84,7 @@ func TestOverlayCompositeWidthWithEmoji(t *testing.T) {
 //
 // なぜ depguard でなくテストか: depguard は**パッケージ単位**でしか禁止できず、
 // 「同じパッケージの中の 2 本目のモデル」(ansi.StringWidthWc) を止められない。
-// import そのものの禁止は .golangci.yml の depguard (`width-single-source` /
+// import そのものの禁止は .golangci.local.yml の depguard (`width-single-source` /
 // `uniseg-split-only`) が担当する。両輪。
 // ⚠️ uniseg は本体から消えた (分割も termwidth.FirstCluster へ寄せた) ので、
 // 下の importsUniseg 分岐が守るのは「uniseg を再び持ち込んだファイル」だけになった。

@@ -44,10 +44,23 @@
 
 ## 受け入れ条件
 
-- [ ] 共通の塊が 23 個でずれたら、`make test` が赤になる
-- [ ] 入口のドキュメント (`src/README.md` の `.golangci.yml` は必須、の項。今は `allow-parallel-runners` と tuikit の forbidigo だけを書いている) に、
+- [x] 共通の塊が 23 個でずれたら、`make test` が赤になる (写しそのものを無くした。モジュールに `.golangci.yml` を置くと lint が rc=2・`test_golangci_parallel_runners.sh` が赤)
+- [x] 入口のドキュメント (`src/README.md` の `.golangci.yml` は必須、の項。今は `allow-parallel-runners` と tuikit の forbidigo だけを書いている) に、
   共通の塊の正本と直し方を書く
 
 ## 関連
 
 - 872 (切り出し元)
+
+## 進捗
+
+- 2026-10-22 (dotfiles-c3): 実行時に合成する形で実装した (commit「chore(go): golangci-lint の設定を共通の塊と各モジュールの差分に分け、lint のたびに合成する」)
+  - 正本は `src/.golangci.yml` と 24 本の `src/<module>/.golangci.local.yml`。差分のファイルは元の行からベースの持つ部分を落として作り、理由のコメントを残した
+  - 移行の突き合わせ: 合成した設定を移行前の設定と意味 (一覧の順は無視) で比べ、23 本は同一。zundamon-kaisetsu だけ衛生系の 7 個と perfsprint の
+    concat-loop が増えた (写しのずれ。説明に外す理由が無かった)。新しく出た 11 件 (intrange 3・perfsprint 8) は `--fix` と goimports で直した
+  - 合成の出力は JSON (YAML の書き出しは ruby 2.6 と 3.2 でバイト列が違った)。同じ入力から同じバイト列になることを `test_golangci_config.sh` で固定
+  - CI: 24 本の `src_<name>.yml` の paths に `src/.golangci.yml` と `scripts/golangci_config.rb` を足し、`check_go_project_lanes.sh` の 8. で固定
+  - 変異で red を確認: 入口が -c を渡さない → `test_golangci_lint_pinned.sh` / 一覧を差分で置き換える・差分の鍵を先に並べる → `test_golangci_config.sh` /
+    ベースから relative-path-mode を消す → `test_golangci_parallel_runners.sh`
+  - `make test` rc=0 (24 プロジェクトの lint と test の 48 本が rc=0)・`make test-lint` rc=0
+  - 残り: CI の結果の確認

@@ -23,7 +23,7 @@
 #      引用符で囲んだ job id や with 以外のキーの下の dir: (後勝ちで上書きされる)・steps の中の uses。
 #      `dir: ./src/<name>` は動くが赤になる (安全側に倒す。今の書き方に揃える)
 #   7. src/<name>/Makefile の lint: の recipe が scripts/go_module_graph.sh を呼ぶ (go mod tidy -diff / go list -m all)
-#   8. その workflow の paths が make lint の呼ぶ共有の script (scripts/golangci_lint.sh・scripts/go_module_graph.sh) を含む
+#   8. その workflow の paths が make lint の呼ぶ共有の script と設定 (scripts/golangci_lint.sh・scripts/golangci_config.rb・src/.golangci.yml・scripts/go_module_graph.sh) を含む
 #
 # 🚨 検査できなかったときに緑を返さない。依存コマンド不在・発見 0 件はすべて失敗にする
 #   (`_claude/rules/adversarial-review-own-safeguards.md` の false green)。
@@ -290,7 +290,7 @@ while IFS= read -r name; do
         "$name" "$wf" "$trig" "$name"; bad=$((bad + 1))
     fi
     # 8. make lint が呼ぶ共有の script も paths に含む (含まないと、その script だけを変える push で実 module の lint が 1 本も走らない)
-    for shared in scripts/golangci_lint.sh scripts/go_module_graph.sh; do
+    for shared in scripts/golangci_lint.sh scripts/golangci_config.rb src/.golangci.yml scripts/go_module_graph.sh; do
       if ! paths_has "$wf" "$shared" "$trig" exact; then
         printf '✗ %s: %s の %s.paths が %s を含まない (make lint が呼ぶ共有の script。変えても CI の lint が走らない)\n' \
           "$name" "$wf" "$trig" "$shared"; bad=$((bad + 1))

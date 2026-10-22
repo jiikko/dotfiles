@@ -1,61 +1,16 @@
-# golangci-lint v2 config for tuikit.
-# 既定の linter (errcheck / govet / ineffassign / staticcheck / unused) に加えて、低ノイズの
-# 衛生系と、lib の不変条件を機械で止める depguard / forbidigo を足す。
-version: "2"
-
-# root の Makefile (run_go_projects) が全プロジェクトを並列に回すため、ロック待ちで落ちない
-# ようにする (理由の詳細は src/termsafe/.golangci.yml)
-run:
-  allow-parallel-runners: true
-
+# tuikit の golangci-lint の設定の差分。共通の塊は src/.golangci.yml で、scripts/golangci_lint.sh が run のたびに合成する。
 linters:
   enable:
-    - copyloopvar    # loop variables needlessly copied (Go 1.22+)
     - depguard       # lib の依存の不変条件 (下の rules)
     - dupl           # コピペ重複 (glogx から移した部品は glogx の lint が掛からなくなったので同じ網を張る)
-    - durationcheck  # Duration 同士の乗算バグ (所要時間を引数で受ける API が多い)
     - exhaustive     # default なし switch の enum 網羅を強制 (anim.Phase を足したら全 switch が止まる)
     - forbidigo      # 幅モデルの 2 本目と、部品の中での時刻取得を禁止 (下の forbid)
-    - intrange       # for i := 0; i < n; i++  ->  for i := range n
-    - misspell       # common English misspellings in comments/strings
-    - nolintlint     # 説明なし nolint コメントの禁止
-    - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
     - prealloc       # 事前確保できる append ループ (毎フレーム全行で走る合成の alloc 削減)
     - recvcheck      # value / pointer receiver の混在検出
-    - unconvert      # redundant type conversions
     - unparam        # 常に同値の引数・未使用戻り値
-    - usestdlibvars  # hand-written constants that exist in the stdlib
-    - wastedassign   # assignments whose value is never read
-    # バグを見つける系 (全モジュール共通の塊。golangci-lint の推奨構成から、この repo で誤検出が出ないものを選んだ)
-    - asasalint
-    - asciicheck
-    - bidichk
-    - bodyclose
-    - canonicalheader
-    - errorlint
-    - exptostd
-    - gocheckcompilerdirectives
-    - gochecksumtype
-    - iotamixing
-    - nilerr
-    - nilnesserr
-    - nosprintfhostport
-    - reassign
-    - tparallel
   settings:
-    perfsprint:
-      concat-loop: false # ループの中の文字列の連結を strings.Builder へ書き換えさせる。小さなループばかりで、読みやすさを崩すほど効かない
-    govet:
-      # 既定の analyzer に加えて全部を有効にする (nilness・unusedwrite・deepequalerrors などは既定では走らない)
-      enable-all: true
-      disable:
-        - fieldalignment # 構造体のフィールドをメモリの詰め方の順に並べ替えさせる。数バイトのために読む順を崩す
-        - shadow         # := での再宣言を全部拾う。意図した再宣言 (err の受け直し) が多く、ノイズに埋もれる
     dupl:
       threshold: 120
-    nolintlint:
-      require-explanation: true
-      require-specific: true
     exhaustive:
       default-signifies-exhaustive: true
     depguard:
@@ -180,8 +135,3 @@ linters:
         text: 部品は時刻を引数で受け取る
         linters:
           - forbidigo
-
-# gofmt を CI ゲートにする (v2 では formatter は linters と別枠)
-formatters:
-  enable:
-    - gofmt

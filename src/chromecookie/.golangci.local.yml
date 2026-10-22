@@ -1,0 +1,9 @@
+# chromecookie の golangci-lint の設定の差分。共通の塊は src/.golangci.yml で、scripts/golangci_lint.sh が run のたびに合成する。
+linters:
+  settings:
+    errcheck:
+      # 失敗経路での temp の後始末 (os.Remove / Close) は best-effort。src/glogx/.golangci.local.yml から
+      # 移したときの設定をそのまま持つ (ここで失敗を拾っても呼び出し側へ返す先が無い)
+      exclude-functions:
+        - os.Remove
+        - (*os.File).Close

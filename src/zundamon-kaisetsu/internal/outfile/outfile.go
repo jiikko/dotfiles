@@ -34,7 +34,7 @@ func CheckReplaceable(dst string) error {
 		return err // 自分を指す symlink (ELOOP)・途中が dir でない・読めない、を「まだ無い」と読まない
 	}
 	if st.IsDir() {
-		return fmt.Errorf("ディレクトリがある")
+		return errors.New("ディレクトリがある")
 	}
 	if err := syscall.Access(dst, 2 /* W_OK */); err != nil {
 		return fmt.Errorf("書き込めない既存のファイル: %w", err)

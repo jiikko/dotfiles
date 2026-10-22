@@ -40,15 +40,28 @@ case "$1" in
     if [ -n "${FAKE_FAIL:-}" ]; then echo "fake go install: boom" >&2; exit 1; fi
     sleep "${FAKE_SLEEP:-0}"
     ver=${2##*@}
-    printf '#!/bin/sh\necho "ran:%s:$*"\necho "$PATH" > "$FAKE_PATH_SEEN"\nexit "${FAKE_LINT_RC:-0}"\n' "$ver" > "$GOBIN/golangci-lint"
+    # -c の値 (毎回変わる一時ファイル) は <cfg> と出し、中身と場所を FAKE_CFG_SEEN / FAKE_CFG_PATH に控える
+    sed "s/@VER@/$ver/" "$FAKE_LINT_TEMPLATE" > "$GOBIN/golangci-lint"
     chmod +x "$GOBIN/golangci-lint"
     ;;
   *) echo "fake go: unexpected $*" >&2; exit 99 ;;
 esac
 GO
 chmod +x "$TMP_DIR/fakebin/go"
+cat > "$TMP_DIR/fake-lint" <<'LINT'
+#!/bin/sh
+out=""; prev=""
+for a in "$@"; do
+  if [ "$prev" = -c ]; then cp "$a" "$FAKE_CFG_SEEN"; echo "$a" > "$FAKE_CFG_PATH"; a="<cfg>"; fi
+  out="$out${out:+ }$a"; prev=$a
+done
+echo "ran:@VER@:$out"
+echo "$PATH" > "$FAKE_PATH_SEEN"
+exit "${FAKE_LINT_RC:-0}"
+LINT
 
 export PATH="$TMP_DIR/fakebin:$PATH" FAKE_LOG="$TMP_DIR/installs.log" FAKE_PATH_SEEN="$TMP_DIR/path_seen"
+export FAKE_LINT_TEMPLATE="$TMP_DIR/fake-lint" FAKE_CFG_SEEN="$TMP_DIR/cfg_seen" FAKE_CFG_PATH="$TMP_DIR/cfg_path"
 export DOTFILES_GO_TOOLS_CACHE="$TMP_DIR/cache"
 : > "$FAKE_LOG"
 installs() { wc -l < "$FAKE_LOG" | tr -d ' '; }
@@ -56,7 +69,7 @@ helper=scripts/golangci_lint.sh
 
 # 1. 初回は作ってから起動し、引数をそのまま渡す
 out=$("$helper" v2.5.0 run ./... 2>&1) || bad "初回が失敗した: $out"
-if [ "$out" = "ran:v2.5.0:run ./..." ]; then note "初回は作ってから起動し、引数をそのまま渡す"; else bad "初回の出力: $out"; fi
+if [ "$out" = "ran:v2.5.0:run -c <cfg> ./..." ]; then note "初回は作ってから起動し、合成した設定を -c で足して残りの引数をそのまま渡す"; else bad "初回の出力: $out"; fi
 [ "$(installs)" = 1 ] || bad "初回の install 回数 $(installs) (期待 1)"
 [ "$(sed -n 1p "$FAKE_LOG")" = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0" ] || bad "install した対象: $(sed -n 1p "$FAKE_LOG")"
 
@@ -70,7 +83,7 @@ if [ "$rc" = 3 ]; then note "lint の失敗の exit code をそのまま返す";
 
 # 2. 2 回目は作らない (決まった場所のものを起動する)
 out=$("$helper" v2.5.0 run ./x 2>&1) || bad "2 回目が失敗した: $out"
-if [ "$out" = "ran:v2.5.0:run ./x" ] && [ "$(installs)" = 1 ]; then note "2 回目は作らずに起動する"; else bad "2 回目: 出力 $out / install $(installs) 回"; fi
+if [ "$out" = "ran:v2.5.0:run -c <cfg> ./x" ] && [ "$(installs)" = 1 ]; then note "2 回目は作らずに起動する"; else bad "2 回目: 出力 $out / install $(installs) 回"; fi
 
 # 3. go の版が変わると作り直す (go run と同じく、今の toolchain でビルドしたものを使う)
 FAKE_GOVERSION=go1.27.0 "$helper" v2.5.0 run >/dev/null 2>&1 || bad "go の版を変えた回が失敗した"
@@ -90,7 +103,7 @@ d="$DOTFILES_GO_TOOLS_CACHE/golangci-lint@v2.5.0-go1.26.0-darwin-arm64-1"
 : > "$d/golangci-lint"
 before=$(installs)
 out=$("$helper" v2.5.0 run 2>&1) || true
-if [ "$(installs)" = $((before + 1)) ] && [ "$out" = "ran:v2.5.0:run" ]; then note "空のキャッシュのバイナリは作り直す"; else bad "空のバイナリ: install $before → $(installs) / 出力 $out"; fi
+if [ "$(installs)" = $((before + 1)) ] && [ "$out" = "ran:v2.5.0:run -c <cfg>" ]; then note "空のキャッシュのバイナリは作り直す"; else bad "空のバイナリ: install $before → $(installs) / 出力 $out"; fi
 
 # 4c. go env が失敗したら非 0 で止まる (空の鍵のまま進まない)
 rc=0
@@ -116,10 +129,27 @@ for i in 1 2 3 4 5 6; do
 done
 okn=0
 for i in "${!pids[@]}"; do
-  if wait "${pids[$i]}" && [ "$(cat "$TMP_DIR/par$((i + 1)).out")" = "ran:v2.5.0:run p$((i + 1))" ]; then okn=$((okn + 1)); fi
+  if wait "${pids[$i]}" && [ "$(cat "$TMP_DIR/par$((i + 1)).out")" = "ran:v2.5.0:run -c <cfg> p$((i + 1))" ]; then okn=$((okn + 1)); fi
 done
 d="$DOTFILES_GO_TOOLS_CACHE/golangci-lint@v2.5.0-go1.29.0-darwin-arm64-1"
 tmpleft=$(find "$d" -name '.install.*' 2>/dev/null | wc -l | tr -d ' ')
 if [ "$okn" = 6 ] && [ "$tmpleft" = 0 ]; then note "並列に 6 本起動しても全部成功し、一時ディレクトリを残さない"; else bad "並列: 成功 $okn/6 / 残った一時ディレクトリ $tmpleft"; fi
+
+# 7. run の設定は、共通の塊と呼んだディレクトリの差分を合成したもの。終わったら一時ファイルを消す。モジュールに .golangci.yml があれば起動しない
+unset FAKE_SLEEP
+mod="$TMP_DIR/mod"; mkdir -p "$mod"
+printf 'linters:\n  enable:\n    - forbidigo\n' > "$mod/.golangci.local.yml"
+rm -f "$FAKE_CFG_SEEN" "$FAKE_CFG_PATH"
+out=$(cd "$mod" && "$ROOT_DIR/$helper" v2.5.0 run ./... 2>&1) || bad "差分つきの run が失敗した: $out"
+want=$(ruby scripts/golangci_config.rb src/.golangci.yml "$mod/.golangci.local.yml")
+if [ -f "$FAKE_CFG_SEEN" ] && [ "$(cat "$FAKE_CFG_SEEN")" = "$want" ]; then note "run に、共通の塊とそのディレクトリの差分を合成した設定を渡す"; else bad "run に渡した設定が合成の結果と違う (出力: $out)"; fi
+if [ -f "$FAKE_CFG_PATH" ] && [ ! -e "$(cat "$FAKE_CFG_PATH")" ]; then note "合成した設定の一時ファイルは終わったら消す"; else bad "合成した設定の一時ファイルが残った: $(cat "$FAKE_CFG_PATH" 2>/dev/null)"; fi
+printf 'version: "2"\n' > "$mod/.golangci.yml"
+rm -f "$FAKE_CFG_SEEN"
+rc=0
+(cd "$mod" && "$ROOT_DIR/$helper" v2.5.0 run ./... >/dev/null 2>&1) || rc=$?
+if [ "$rc" = 2 ] && [ ! -e "$FAKE_CFG_SEEN" ]; then note "モジュールに .golangci.yml があれば golangci-lint を起動せず rc=2"; else bad ".golangci.yml があるときの rc=$rc / 起動した: $([ -e "$FAKE_CFG_SEEN" ] && echo yes || echo no)"; fi
+out=$("$helper" v2.5.0 version 2>&1) || bad "run 以外が失敗した: $out"
+if [ "$out" = "ran:v2.5.0:version" ]; then note "run 以外の起動には設定を足さない"; else bad "run 以外の出力: $out"; fi
 
 if [ "$fail" = 0 ]; then echo "PASS test_golangci_lint_pinned"; else echo "FAIL test_golangci_lint_pinned"; exit 1; fi

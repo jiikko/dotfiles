@@ -1,7 +1,7 @@
 // Package runner は tmpclean の外部コマンドの実行口。stdout / stderr / exit code を分けて返す
 // (lsof は「該当なし」も「失敗」も rc=1 を返すので、3 つを揃えて見ないと判定できない)。
 //
-// os/exec を import してよいのはこの package だけ (.golangci.yml の depguard)。src/doctor/runner と同じ形だが、
+// os/exec を import してよいのはこの package だけ (.golangci.local.yml の depguard)。src/doctor/runner と同じ形だが、
 // doctor を import すると plist などまで引き込むので写している。3 つ目の利用者が出たら共有 module への切り出しを検討する。
 package runner
 

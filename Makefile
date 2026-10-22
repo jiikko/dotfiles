@@ -604,11 +604,11 @@ endef
 # 🚨 go 未導入は skip して緑にする。0 件は上のガードで失敗させるので、
 #   「発見が壊れた」と「go が無い」は別の結果として出る。
 # test も lint も並列に回す (go の build cache は並行アクセスに対して自前でロックする)。
-# 🚨 lint の並列は各 src/*/.golangci.yml の `run.allow-parallel-runners: true` が前提。
+# 🚨 lint の並列は、合成した設定 (src/.golangci.yml + 各 .golangci.local.yml) の `run.allow-parallel-runners: true` が前提。
 #   golangci-lint は既定で os.TempDir() のグローバル file lock を取り、別インスタンスが走っていると
 #   "parallel golangci-lint is running" で落ちる。**1 プロジェクトでも設定が抜けると、そのプロジェクト
-#   だけが他の起動タイミング次第で落ちる** (flaky に見える)。新しい src/ を切ったら .golangci.yml に
-#   同じ run: 節を入れること (tests/scripts/test_golangci_parallel_runners.sh が漏れを検出する)。
+#   だけが他の起動タイミング次第で落ちる** (flaky に見える)。共通の塊 (src/.golangci.yml) が持ち、差分で上書きしない
+#   (tests/scripts/test_golangci_parallel_runners.sh が漏れを検出する)。
 # 出力はプロジェクトごとに一時ファイルへ隔離し、全部終わってから発見順に吐く (run_tests_parallel と
 # 同じ理由: 並列で行が混ざると、どの失敗がどのプロジェクトか読めない)。rc ファイルが無い =
 # サブシェルが結果を書く前に死んだ、なので失敗に数える (沈黙を緑にしない)。

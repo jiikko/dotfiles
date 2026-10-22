@@ -1,72 +1,20 @@
-# golangci-lint v2 config for pro-con.
-# 既定の linter (errcheck / govet / ineffassign / staticcheck / unused) に、状態の enum の網羅・ctx と error の扱い・
-# パッケージの依存の向き・衛生系を足す。src/glogx/.golangci.yml を下敷きに、pro-con の構成に意味のあるものだけを選んだ。
-#
-# 入れていないもの (glogx にはある):
-#   - prealloc: pro-con のスライスはカード・PG の本数 (数十) の大きさで、事前確保で測れる差が出ない。導入時に 21 件出たが、
-#     多くは条件つきの append (確保すると空振りが増える) で、alloc の実測の根拠が無いまま直すことになる。画面の描画で alloc が
-#     問題になったら (実測してから) 入れる
-#   - recvcheck: card.Card は値で持ち回る型 (store / ui がコピーを持つ) で、読むだけのメソッドは値、変える DropRun だけが pointer。
-#     混在は意図どおりで、揃えると値のまま呼んでいる箇所が壊れる
-#   - bodyclose: pro-con は HTTP を使わない
-#   - gocritic の ruleguard: 構文の不変条件の規則をまだ持たない (glogx の gorules/ に当たるものが無い)
-version: "2"
-
-# 🚨 root の Makefile (run_go_projects) が全プロジェクトを並列に回すので、全プロジェクトで true にする
-# (1 つでも false が残ると、その 1 つが他の起動タイミング次第で落ちる。理由の詳細は
-# src/doctor/.golangci.yml のコメント)。tests/scripts/test_golangci_parallel_runners.sh が検査する
-run:
-  allow-parallel-runners: true
-
+# pro-con の golangci-lint の設定の差分。共通の塊は src/.golangci.yml で、scripts/golangci_lint.sh が run のたびに合成する。
 linters:
   enable:
-    - asasalint      # []any を ...any にそのまま渡す誤り
-    - bidichk        # 危険な Unicode 双方向制御文字 (PM / PG の文を画面に出すので、コピペ由来の混入対策)
     - containedctx   # struct フィールドへの ctx 格納 (ctx は関数引数で渡す。dispatcher の Shutdown は呼び出しごとに上限を切る)
     - contextcheck   # ctx の非伝播・context.Background の握り込み (終了の保証は ctx の取り消しでも止めるのを続ける設計なので、切れ目を見える形にする)
-    - copyloopvar
     - depguard       # パッケージの依存の向き (下の rules)
     - dupl           # コピペ重複 (閾値は下)
-    - durationcheck  # Duration 同士の乗算 (待ち・上限・猶予の計算が多い)
     - errname        # sentinel error は Err 接頭辞・error 型は Error 接尾辞
-    - errorlint      # errors.Is / As を使わない比較・%w 漏れ (dispatcher は ErrRunning / ErrStopperDied を errors.Is で分岐する)
     - exhaustive     # card.State / WaitKind / Ending / OrderKind の switch に case を足し忘れない
-    - exptostd       # x/exp で書いたものの stdlib 昇格済み検出
     - fatcontext     # ループ内で context を積み重ねる形
     - forbidigo      # stdout への直接出力を root の package (CLI の口) に限る (下の forbid)
     - gocritic       # 既定の stable セット
-    - intrange
     - makezero       # make([]T, n) への append で先頭にゼロ値が残る
     - mirror         # bytes / strings の鏡写し API の取り違え
-    - misspell
-    - nilnesserr     # err != nil を確かめたのに別の nil error を返す
-    - nolintlint     # 説明なし nolint の禁止
-    - perfsprint     # fmt.Sprintf / Errorf を速い stdlib の呼び出しで置き換えられる箇所
-    - unconvert
     - unparam        # 常に同じ値の引数・使われない戻り値 (テストは除外 = ヘルパーの汎用引数を許す)
-    - usestdlibvars  # stdlib にある定数の手書き
     - usetesting     # テストの os.Chdir / os.Setenv 等を t.Chdir / t.Setenv へ (後始末漏れの構造的防止。MkdirTemp は下の settings)
-    - wastedassign   # 読まれない代入
-    # バグを見つける系 (全モジュール共通の塊。golangci-lint の推奨構成から、この repo で誤検出が出ないものを選んだ)
-    - asciicheck
-    - bodyclose
-    - canonicalheader
-    - gocheckcompilerdirectives
-    - gochecksumtype
-    - iotamixing
-    - nilerr
-    - nosprintfhostport
-    - reassign
-    - tparallel
   settings:
-    perfsprint:
-      concat-loop: false # ループの中の文字列の連結を strings.Builder へ書き換えさせる。小さなループばかりで、読みやすさを崩すほど効かない
-    govet:
-      # 既定の analyzer に加えて全部を有効にする (nilness・unusedwrite・deepequalerrors などは既定では走らない)
-      enable-all: true
-      disable:
-        - fieldalignment # 構造体のフィールドをメモリの詰め方の順に並べ替えさせる。数バイトのために読む順を崩す
-        - shadow         # := での再宣言を全部拾う。意図した再宣言 (err の受け直し) が多く、ノイズに埋もれる
     dupl:
       threshold: 120 # glogx と同じ。導入時 0 件
     exhaustive:
@@ -123,9 +71,6 @@ linters:
               desc: ui を組み立てるのは root の package だけ (下の層から画面へ依存しない)
             - pkg: pro-con/dispatcher
               desc: dispatcher を組み立てるのは root の package だけ (下の層から割り振り係へ依存しない)
-    nolintlint:
-      require-explanation: true
-      require-specific: true
   exclusions:
     rules:
       # テストのテーブル / フローの相似は仕様。テストのヘルパーの汎用引数・fixture の変数名も対象にしない
@@ -145,7 +90,3 @@ issues:
   uniq-by-line: false
   max-same-issues: 0
   max-issues-per-linter: 0
-
-formatters:
-  enable:
-    - gofmt
