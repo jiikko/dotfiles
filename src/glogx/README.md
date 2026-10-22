@@ -182,7 +182,7 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 
 ### 対話ブラウズのキー操作 (TTY のみ)
 
-`Ctrl-F` は全ビューで `→` の別名 (`C-n`/`C-p` = ↓/↑)。本家と異なり `Ctrl-B` の `←` 別名は無く、push は `b` (diff 表示中を除く)。
+`Ctrl-F` は全ビューで `→` の別名 (`C-n`/`C-p` = ↓/↑)。本家と異なり `Ctrl-B` は全ビューの `←` 別名ではなく (issues viewer のタブ移動だけ `←` として受ける)、push は `b` (diff 表示中を除く)。
 
 コミット一覧:
 
@@ -193,7 +193,7 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 | `d` | **コミットの diff をポップアップ表示** (`git show --stat --patch`。コード部分は chroma で拡張子ベースのシンタックスハイライト。ほぼ全画面のモーダルで less 流儀にスクロール: `j`/`k`/`Enter` 行送り・`Space`/`f`/`b`/`C-d`/`C-u` 半ページ・`g`/`G`。末尾では最終行を表示したまま止まる。**`J`/`K` (または `shift+↓`/`shift+↑`) で開いたまま次・前のコミットへ差し替える** (一覧のカーソルも追従。端では止まる)。閉じるのは `q`/`h`/`Esc`/`d`。SHA ごとにセッション内キャッシュ) |
 | `o` | **コミットの GitHub ページをブラウザで開く** |
 | `e` | **nvim を repo root で開く** (`nvim .` なので oil/netrw がそのまま入口になる。閉じると glogx へ復帰。C-g の tmux popup 内でもその popup の中で開く) |
-| `p` | **コミットに紐づく PR をブラウザで開く** (`associatedPullRequests` で解決。ブランチ指定は不要。複数あれば OPEN > MERGED 優先。無ければヒント行に通知) |
+| `p` | **コミットに紐づく PR をブラウザで開く** (`associatedPullRequests` で解決。ブランチ指定は不要。複数あれば OPEN > MERGED 優先。無ければトーストで知らせる) |
 | `P` | **PR の状態ポップアップ** (state / draft / レビュー承認 / conflict / CI をブラウザなしで確認。`o` でブラウザ・`y` で URL コピー・`P`/`q`/`h` で閉じる。mergeable は GitHub 側の遅延計算中は「計算中」表示) |
 | `b` | **git push** (y/N 確認。未 push が無ければ警告のみ。diff 表示中の `b` はスクロール) |
 | `u` | **git pull --rebase** (y/N 確認。conflict は自動 abort で元に戻す。未コミット変更があると案内して中止) |
@@ -267,7 +267,7 @@ OSC52 でシステム側にも届く)、tmux 外は `pbcopy` (macOS) / `xclip`�
 差し込まない。インライン展開だと開閉のたびに後続行がずれて高さがガタつくため)。
 画面下端で収まらない場合はビューポート内へ収まる位置まで引き上げる。
 job 詳細ページの URL は CheckRun の `detailsUrl` (Actions のジョブ画面) /
-StatusContext の `targetUrl`。URL が無い job では開かず、その旨をヒント行に出す。
+StatusContext の `targetUrl`。URL が無い job では開かず、その旨をトーストで知らせる。
 
 - less -F 相当のショートカット: 全件キャッシュ済みかつ 1 画面に収まる場合は
   ブラウズを開かずそのまま出力して終了する

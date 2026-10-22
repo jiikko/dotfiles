@@ -45,6 +45,8 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
   一覧では `l` = 開く / `h` = 閉じる、タブのある画面では `h`/`l` = タブ移動になる。
   「戻る = 左」「進む = 右」の向きは全画面で守る
 - `g`/`G` は端ジャンプ。`Ctrl-D`/`Ctrl-U` と `Space`/`f`/`b` は半ページ (less の語彙)
+  - 🚨 **例外: glogx のコミット一覧と status viewer では `b` が push、コミット一覧では `Space` が詳細パネルを開く** (glog から
+    引き継いだ割り当てで、README と `--help` に載っている押し慣れたキー。半ページは `Ctrl-D`/`Ctrl-U`)。新しい画面ではこの例外を真似ない
 - **移動の語彙 (どのキーがどの移動か) は tuikit の `listnav.MotionOf` が 1 箇所で持つ**。各画面は
   自分の動作キーを先に捌き、残りを `MotionOf` に渡して、得た移動を自分の意味で適用する
   (issues / status / doctor / コミット一覧 / job パネル / job 詳細 / pager)。画面ごとに移動の case を
@@ -65,7 +67,8 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
     受けていなかった)。削除確認パネルは上の例外のとおり受けない
 - 🚨 **`Ctrl-B` は ← の別名ではない**。本家 glog で push だった名残で未割当のまま。
   issues viewer がタブ移動の左として (ユーザー要望 2026-07-31)、pro-con のボードが左の列への移動として
-  (ユーザー要望 2026-09-25) 受けている。どちらも `left` が「左へ動く」だけの画面。全画面へは
+  (ユーザー要望 2026-09-25)、treefiler が木の左 (親へ) として、schedkeys が候補行の左として受けている。どれも `left` が
+  「左へ動く」だけの画面。全画面へは
   広げない (一覧・パネル側の `left` に別の意味を与えないため)
 - emacs 層のキーに**新しい意味を足さない**。これは「矢印の代わり」であって動作層ではない。
   `Ctrl-N` を「次の項目」のような別の意味にすると、pager で行送りのつもりが項目が飛ぶ
@@ -79,24 +82,24 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 |---|---|---|
 | `Enter` | **TUI 内の開閉 toggle** | job パネル / 本文の引き出し / doctor の内訳。開くのも閉じるのも Enter |
 | `o` | 外のアプリで開く (ブラウザ・Preview) | コミット / job / PR / pro-con のカードの添付 |
-| `a` | SyakeScreen (my-products の screen-share-app) で開く | mac-lan-manager だけ (`o` は Apple の画面共有のまま。issue 848) |
+| `a` | SyakeScreen (my-products の screen-share-app) で開く | mac-lan-manager だけ (`o` は Apple の画面共有のまま。issue 848)。mac-lan-manager の `u` は ssh のユーザー名を変える (pull ではない) |
 | `O` | Finder で選んだ状態で見せる (`open -R`)。大文字が小文字の強い版ではない例外 (`o` の「開く」の代わりに「置き場所を見せる」) | treefiler (木・タイル) |
-| `e` (`v`) | エディタで開く | repo root / issue 本文 / job ログ |
+| `e` (`v`) | エディタで開く | repo root / issue 本文 / job ログ。**例外: mac-lan-manager ではメッセージ一覧** (編集する対象が無い画面) |
 | `y` | コピー (素の値: URL / パス / group 名) | issues の**合成の** group 親行だけ group 名 (親 issue のある行はパス)。treefiler は項目の絶対パス (`Y` で root からの相対パス)。mac-lan-manager は `smb://<宛先>` (`Y` で `ssh <user>@<宛先>`、`O` で `open smb://<宛先>`。宛先は有線の名前 `<ホスト名>.wired.local` が引ければ名前、それ以外は IP) |
 | `Y` | コピー (整形した参照: Markdown / 番号+タイトル+パス) | |
 | `S` | 並び (sort) の巡回 | treefiler (名前順 → 更新の新しい順 → 大きい順)。小文字の `s` (シェル) の強い版ではない例外 |
-| `p` | PR または番号 | 一覧では PR を開く、issues では番号コピー (「PR / number」の頭文字) |
+| `p` | PR または番号 | 一覧では PR を開く、issues では番号コピー (「PR / number」の頭文字)。**例外: status viewer では pull** (status の中に PR が無いので `u` の代わりに置いた)、**mac-lan-manager では疎通の確かめ** (ping) |
 | `d` | diff | コミット / status のファイル / treefiler のタイル。**treefiler の木の上では「ゴミ箱へ移す」**(§4 の `d` 削除と同じ。y/N 確認) |
 | `m` | 名前の変更 (move / rename) | treefiler (同じフォルダの中だけ)。mac-lan-manager は台帳の別名 |
 | `c` | この Mac の IP をコピー | mac-lan-manager (選んでいる行に関係なく。板で内部 / メイン / 有線の名前を選ぶ)。**pro-con では「止めた dispatcher を起こす」** (画面ごとに意味が違う。glogx には無い) |
 | `,` | 設定 | treefiler・mac-lan-manager (macOS の ⌘, に合わせた字)。pro-con の設定は `s` |
 | `r` | 再読込 / 再実行 | issues の再読込、job の rerun |
 | `a` | all / 巡回 | status で全部 stage、issues で状態フィルタ巡回。**例外: treefiler では新規作成 (add)** (ファイラーの慣習。ユーザー確認 2026-10-12。issue 722) |
-| `n` | next (次にやる目印) | issues の claim |
+| `n` | next (次にやる目印) | issues の claim。**例外: treefiler では検索の次** (`N` が前。less / vim の検索の語彙) |
 | `N` | 次の番号 | issues の採番コピー |
 | `i` `s` `R` `D` `F` `L` `U` | 板の toggle (横断キー) | どの画面からも同じ板へ飛べる (`F` = treefiler。treefiler の中では `s` がシェルなので status へは飛ばない。docs/treefiler-spec.md §0.1。`L` = mac-lan-manager。中では `s` が ssh なので同じく status へは飛ばない)。割当は行き先の表 `CrossTarget` (`src/glogx/fullscreen_id.go`) とキーの集合 `crosskey.Is` (`src/glogx/internal/crosskey`) の 2 か所 (一致はテストが見る) で、各画面はキーの集合を引く (`U` は重ねる箱なので別経路)。**画面が自分でキーを解釈し切るモード (確認の y/N・status の全画面 diff・URL ピッカー・番号入力・doctor の削除の確認と実行・mac-lan-manager の板と測定の進捗) では効かない** (issues の本文 pager では効く) (誤爆防止。issue 664) |
-| `C` `X` | update (claude / codex) | どの画面からも。**status では `X` = 変更を捨てる**なので例外 |
-| `Space` | 選択 / stage | 「対象に印を付ける」。一覧では半ページ (less)。mac-lan-manager は台帳への登録 / 削除 (管理対象の印。y/N 確認) |
+| `C` `X` | update (claude / codex) | どの画面からも。**status では `X` = 変更を捨てる**なので例外。**treefiler の中の `C` は他の枝を畳む** (木の操作が優先。README に断りがある) |
+| `Space` | 選択 / stage | 「対象に印を付ける」。一覧では半ページ (less)。mac-lan-manager は台帳への登録 / 削除 (管理対象の印。y/N 確認)。**例外: glogx のコミット一覧では詳細パネルを開く** (`Enter` と同じ。job 詳細では閉じる)。押し慣れたキーなので移動の語彙に戻していない |
 
 例外: mac-lan-manager の一覧の `Enter` は詳細のパネルを開き、**パネルの中の `Enter` は閉じずに初期設定を開く** (閉じるのは `q` / `Esc`。ユーザー選定 2026-10-19)。初期設定はパネルを下に残してその上へ右に 2 桁・下に 1 行ずらして重ね、`q` / `Esc` で 1 枚ずつ戻る (ドラクエの戦闘画面のように選んだ順に積む。ユーザー選定 2026-10-19)。
 詳細から次の段 (初期設定) へ進む入口を、一覧で初期設定を開いていた同じキーに置いた。toggle にすると、初期設定へは別の字が要る。
@@ -109,6 +112,8 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 
 - **Enter は開閉 toggle**。行送りには使わない (ユーザー要望 2026-08-01。job パネルと issues
   本文で同じ)。pager の共有ロジックは `enter` を 1 行送りに写すので、**画面側で先に捌く**
+  - 例外: コミットの diff のポップアップ (`d`) は `Enter` を 1 行送りのまま残している (less の流儀。閉じるのは `d`/`q`/`Esc`/`h`。
+    README と `--help` に載っている)。`term.PagerScrollKey` をそのまま通しているため
 - **閉じるキーは `q` `Esc` `h` `←` + 開いたキー自身** (`d` で開いた diff は `d` でも閉じる。
   `i` で開いた viewer は `i` で閉じる)。開いたキーで閉じられると「押し直せば戻る」が成り立つ
   - 例外: 値を左右で選ぶ設定の画面では `h` `←` `l` `→` は値の切り替えに使い、閉じるのは `q` `Esc` と開いたキー
@@ -128,6 +133,10 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
   取り消しの側が先に切れて実行のキーだけが残る形にならない (手書きの案内は短い形を持たず、そのまま切られる)。y/N でない板 (glogx の新版の再起動 `r` など) は手書きでよい
   - pro-con の y/N は板を出さず、最下段の 1 行 (黄色の問い) と案内の行 (`y / enter 実行` `他のキー 取り消し`) で確かめる
     (`modeConfirm`。判定だけ `confirm.IsYesStrict`)。送る前の確認は中央の枠 (`sendconfirm.go`。§8)
+- 例外: restartable の y/N は、知らないキーでは閉じない (`n`/`Esc` だけが取り消し。誤打鍵で確認を閉じないため。理由は
+  `src/restartable/internal/runner/model.go` の注記)。案内は定型の `HintYesNo` のままで嘘にはならない
+- glogx の push / pull / rerun の確認は、板の中が定型の案内で、最下行は問いの 1 行 (`push しますか? [Y/n] (Enter=y)`) を出す
+  (`src/glogx/hint_surfaces.go`。幅が足りないときに「何を聞かれているか」が消えないよう、優先度 1 の 1 項目にしている)
 - 確認モーダルの `Enter` は「飲む」場合がある (doctor の削除確認は Enter で実行もキャンセルも
   しない。issue 243)。Enter が開閉 toggle として全画面に効くため、連打の勢いで削除が
   走らないようにしている
@@ -143,6 +152,9 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 - **板・モーダル・層 (確認・ピッカー・入力欄・設定・進捗) が開いている間は、最下行をその板で効くキーだけに差し替える**。
   一覧の案内を残すと、板では効かないキーを案内することになる (mac-lan-manager の `t` の板と確認の板で、一覧の `t 速度` などが
   残っていた。2026-10-22)。板の中にも案内を書くなら、最下行と同じキーと語にする
+  - 例外: 全画面 (issues / status / doctor / ratelimit / F / L) の上に glogx の push・pull・rerun の確認や update の進行・再起動の案内が
+    出たときは、最下行は全画面の案内のまま (中央の板が案内を持つので、狭い最下行を奪ってまで二重に出さない。`src/glogx/tui.go` の
+    `hintLine` の注記)。全画面の中の板 (各画面が自分で開く確認・ピッカー) は上のとおり差し替える
 - 最下行の案内は端末幅で落とすが、**抜ける手段 (`q` / 閉じるキー) は必ず残す**。落とし方は `hintfit.Fit` (下の §9 の表) を通す
   (入らない項目は切らずに落とし、優先度 1 = 抜ける手段は席を予約する)。treefiler の最下行は凡例 → 右の欄 → 案内の段で落とす別の方式
 - 案内に載せたキーは**その画面のあらゆる状態で案内どおりに動く**こと。ピッカーや絞り込みの
@@ -273,7 +285,7 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 | 見た目 | 部品 | 使っている所 |
 |---|---|---|
 | 一覧の上に右から重なる詳細 (引き出し。§1・§6) | `layout.ComposeDrawer` + `layout.DrawerGeometry` / 開閉は `anim.Transition` | glogx の issues の本文・pro-con のカードの詳細 |
-| 落ち影つきの板 (確認・ピッカーなど) | `layout.Panel` (中身の幅は `layout.PanelContentWidth`) / 重ねるのは `layout.OverlayCentered` / `OverlayRight` | glogx・pro-con・restartable |
+| 落ち影つきの板 (確認・ピッカーなど) | `layout.Panel` (中身の幅は `layout.PanelContentWidth`) / 重ねるのは `layout.OverlayCentered` / `OverlayRight` | glogx・pro-con・restartable。**treefiler は例外**: 文字の格子に直接描き、板もタイルも角の丸い影なしの枠 (treebeard の見た目。正本は `docs/treefiler-spec.md`) |
 | 自前の枠で組んだ板に同じ落ち影を付ける | `layout.DropShadow` (影の形を画面ごとに作り直さない。glogx の中に取り込んだ画面の影が glogx の板と違う形で並ぶ) | mac-lan-manager のタイル |
 | 板の内側だけに地の色を敷く | `layout.PanelStyle.Fill` (行内のリセットの後は `sgr.ReapplyAfterReset` で張り直す)。🚨 **地を塗るのは枠の内側だけ**: 影は近黒なので、枠の外まで暗い地で塗ると影が溶けて見えない | glogx の全画面 ratelimit の黒地 |
 | y/N の確認 (§4) | `confirm.Dialog` (案内は定型の `HintYesNo` / `HintYesOther`) / 判定は `confirm.IsYes` / `IsYesStrict` | 板: glogx・restartable / 判定だけ: pro-con (§4 の下の項) |
@@ -282,7 +294,7 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 | diff・コードの色付け | `highlight.Diff` (本文のフェンスコードは `markdown.Render` が中で `highlight.Lang` を通す) | glogx の diff の板・pro-con の差分の板 |
 | 一覧・本文の移動 (§2) | `listnav.MotionOf` / `List` / `Pager` | glogx の全画面・pro-con |
 | 最下行の案内を幅で落とす (§5) | `hintfit.Fit` (`Item{Text, Prio}`。Prio は小さいほど残す。1 = 抜ける手段) | glogx の全画面 (`term.FitHintItems`)・mac-lan-manager |
-| 入力欄 (§7) | `lineedit` + `caret` | pro-con・schedkeys・glogx (issues の番号の絞り込み・URL ピッカー) |
+| 入力欄 (§7) | `lineedit` + `caret` | pro-con・glogx (issues の番号の絞り込み・URL ピッカー)。schedkeys は受ける文字を絞るため自前の欄で、§7 の編集キーと語の決め方を揃えている (`src/schedkeys/editor.go`) |
 | 操作の結果の通知 (下) | `toast.Stack` | glogx・pro-con |
 | 処理中の回る印 (点字の spinner) | `spinner.Frame` (自前の整数で回す) / `spinner.At` (時刻から選ぶ)。いつ tick し・いつ止めるかは各画面 | glogx・pro-con・treefiler・restartable |
 | 行を幅で切る・揃える・折る | `termwidth` (x/ansi の `Hardwrap` / `Wrap` は使わない) | 全部 |
@@ -292,12 +304,16 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 - **操作の結果 (成功・失敗・断り・進行中) は `tuikit/toast` に出す**。右外から滑り込み、3 秒止まって、右へ抜ける。
   画面の他の行 (案内の行・ヘッダ) には出さない (§5)
 - 色は意味で選ぶ: 成功 = `Show(…, true)` (✓ 緑) / 失敗 = `Show(…, false)` (✗ 赤) / 進行中 = `ShowInfo` (… シアン)
-- 🚨 **押したキーが効かなかった理由 (できない・使えない・選ばれていない) は失敗 (✗ 赤) で出す**。進行中のシアンで出すと
-  「何かが始まった」に見える (2026-09-25 のユーザーの指摘。pro-con の `refuse` / glogx の `showWarning`)
+- 🚨 **押したキーが効かなかった理由 (できない・使えない・選ばれていない・対象が無い) は失敗 (✗ 赤) で出す**。成功の ✓ や進行中の
+  シアンで出すと「効いた」「何かが始まった」に見える (2026-09-25 のユーザーの指摘。pro-con の `refuse` / glogx の `showWarning`)
+  - 例外: pro-con は「レーンの端」「新版はまだ無い」「取り消した」をシアンの `info` で出す (`src/pro-con/ui/toast.go`)。glogx は同じ
+    場面 (一覧の端) を ✗ で出しているので、揃えるときはこちらに寄せる
+- 始めた・待っている知らせ (「確かめています」) は進行中 (… シアン) で出す。✓ 緑で出すと終わったように見える
+  (mac-lan-manager は `Notice.Info`、glogx の viewer は `app.NoticeInfo`)
 - glogx の viewer (issues / status) は自分で toast を持たず、`setNotice` で置いた結果を browseModel が `takeNotice` で
   取り出して toast に流す (`deliverNotice`)。Msg 経路で置いた notice も同じ口を通す (通さないと次の打鍵まで出ない。issue 059)。
-  通知は 3 種類 (`noticeKind`): 成功 (`noticeOK`) / 断り・クリップボード失敗 (`noticeRefused`、✗ のトーストだけ) /
-  エラー詳細 (`noticeError`)。`w` でコピーできるよう控える (`lastWarning`) のは `noticeError` だけ — 断りの文まで控えると
+  通知は 4 種類 (`app.NoticeKind`): 成功 (`NoticeOK`) / 断り・クリップボード失敗 (`NoticeRefused`、✗ のトーストだけ) /
+  エラー詳細 (`NoticeError`) / 進行中 (`NoticeInfo`、シアン)。`w` でコピーできるよう控える (`lastWarning`) のは `noticeError` だけ — 断りの文まで控えると
   直前のエラーを上書きして `w` で辿れなくなる (issue 663。分類の正本は tui.go の `showWarning` の doc)
 - **数秒以上かかる操作 (通信速度の測定・相手の確認) は、始まりを toast だけで知らせない**。toast は数秒で消え、その後は何が
   起きているか見えなくなる (mac-lan-manager の speedtest でユーザーの指摘。2026-10-22)。回る印・対象・経過秒の進捗のモーダルを出し、
