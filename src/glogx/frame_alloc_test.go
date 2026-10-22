@@ -419,7 +419,7 @@ func TestPanelBoxIndentIsPureLeftPad(t *testing.T) {
 func TestWrapWindowFrameGeometry(t *testing.T) {
 	content := []string{"aaa", "bbb", "ccc"}
 	for _, termW := range []int{20, 40, 80, 200} {
-		got := term.WrapWindowFrame(content, termW, false)
+		got := term.WrapWindowFrame(content, termW, false, "")
 		if len(got) != len(content)+4 {
 			t.Fatalf("termW=%d: 行数が %d (want %d = content+4)", termW, len(got), len(content)+4)
 		}

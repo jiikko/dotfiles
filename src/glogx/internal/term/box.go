@@ -41,11 +41,12 @@ func BuildShadowPanelBox(title string, rows []string, width int, colored bool) [
 // footprint は termW に収まる (呼び出し側の contentWidth()/frameVOverhead と一致)。
 // 罫線は AnsiFrameBorder (scratch と同じマゼンタ) で染める。落ち影は中立 dim のまま
 // (BuildShadowPanelBox の方針と同じ。トーストが枠だけ種別色にして影を据え置いたのと同型)。
-func WrapWindowFrame(content []string, termW int, colored bool) []string {
+// fill は枠の内側に敷く地の色 (bg の SGR。"" = 端末の地色のまま)。外 (余白・影) は塗らない。
+func WrapWindowFrame(content []string, termW int, colored bool, fill string) []string {
 	// -2 = 左右余白 1 桁ずつ。二重罫線 (ユーザー要望)。左余白 1 桁は indent で組み立てに
 	// 織り込む (全行を " "+l で作り直すと 8.3 KB/frame を捨てる。layout.PanelStyle.Indent の doc)
 	box := BuildPanelBoxImpl("", content, termW-2, colored,
-		layout.PanelStyle{Border: layout.BorderDouble, Color: AnsiFrameBorder, Indent: 1})
+		layout.PanelStyle{Border: layout.BorderDouble, Color: AnsiFrameBorder, Indent: 1, Fill: fill})
 	out := make([]string, 0, len(box)+1)
 	out = append(out, "") // 上余白 1 行 (端末地色)
 	return append(out, box...)

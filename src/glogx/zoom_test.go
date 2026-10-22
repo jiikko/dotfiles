@@ -290,7 +290,7 @@ func TestZoomWindowFramedInputNoNestedBorder(t *testing.T) {
 		content[i] = "line" + strings.Repeat("x", 20)
 	}
 	content[0] = "FIRSTCOMMIT" + strings.Repeat("x", 9)
-	all := append(term.WrapWindowFrame(content, termW, false), "hint: q quit")
+	all := append(term.WrapWindowFrame(content, termW, false, ""), "hint: q quit")
 
 	for _, scale := range []float64{0.2, 0.5, 0.8, 0.95} {
 		out := zoomWindow(all, scale, termW, false, true)

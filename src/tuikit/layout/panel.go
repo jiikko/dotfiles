@@ -25,6 +25,9 @@ type PanelStyle struct {
 	Border Border // 罫線の字形 (BorderLight / BorderDouble)
 	Color  string // 罫線の SGR (colored のときだけ使う。通常は sgr.Dim)
 	Shadow string // 落ち影の SGR (colored のときだけ使う。空なら ShadowNearBlack)
+	// Fill は枠の内側に敷く地の色 (bg の SGR。colored のときだけ使う。空なら端末の地色のまま)。
+	// 外 (影・余白) は塗らない: 影は近黒なので、地を暗い色で塗った上に落とすと見えなくなる
+	Fill string
 	// Indent は全行の頭に付ける空白の桁数 (0 = 付けない)。
 	//
 	// 🚨 見た目の都合ではなく確保を削るために持っている。呼び出し側で `" " + line` を全行に掛けると
@@ -85,6 +88,10 @@ func Panel(title string, rows []string, width int, colored bool, st PanelStyle) 
 	// 行ごとに変わらない断片はループの外で 1 度だけ組む (毎フレーム全可視行が通る)。
 	// 右影の上端 (最初の中身の行) だけ縁で柔らかく始め、以降は本体にする。
 	leftEdge, rightEdge := paint(b.V+" ", st.Color, colored), paint(" "+b.V, st.Color, colored)
+	fill := colored && st.Fill != ""
+	if fill {
+		leftEdge, rightEdge = paint(b.V, st.Color, colored), paint(b.V, st.Color, colored)
+	}
 	shadeFirst := shadowEdge(colored, shadowColor)
 	shadeRest := shadowRun(1, colored, shadowColor)
 	for i, row := range rows {
@@ -96,11 +103,19 @@ func Panel(title string, rows []string, width int, colored bool, st PanelStyle) 
 		if i == 0 {
 			shade = shadeFirst
 		}
-		lines = append(lines, pre+leftEdge+content+termwidth.PadSpaces(max(inner-cw, 0))+rightEdge+shade)
+		pad := termwidth.PadSpaces(max(inner-cw, 0))
+		if fill {
+			lines = append(lines, pre+leftEdge+st.Fill+" "+sgr.ReapplyAfterReset(content, st.Fill)+pad+" "+sgr.Reset+rightEdge+shade)
+			continue
+		}
+		lines = append(lines, pre+leftEdge+content+pad+rightEdge+shade)
 	}
 	// 下辺はセル最下段の低ブロック (▖ + ▁ + ▗) で、下の落ち影に隙間なく接地させる。─ だと
 	// 影との間に半セルの余白ができ、└┘ の角だけ中央高だと横線との間に段差が出る。
 	bottom := paint("▖"+strings.Repeat("▁", fw-2)+"▗", st.Color, colored)
+	if fill { // 低ブロックの上の空きは内側なので地を敷く (敷かないと中身と下辺の間に端末の地色の筋が出る)
+		bottom = st.Color + st.Fill + "▖" + strings.Repeat("▁", fw-2) + "▗" + sgr.Reset
+	}
 	lines = append(lines, pre+bottom+shadowRun(1, colored, shadowColor)) // 右下角の影は最も深い
 	// 下端の影: 左端を shadowBottomOffset 桁ずらして右下に落とす。左端は縁で溶かし、右端は右影の列と揃える
 	return append(lines, pre+termwidth.PadSpaces(shadowBottomOffset)+shadowEdge(colored, shadowColor)+

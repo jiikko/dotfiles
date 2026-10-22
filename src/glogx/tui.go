@@ -3847,11 +3847,15 @@ func (m *browseModel) finishWindow(window []string, page int) string {
 	// フレーム有効時は最外周を余白 + 枠 + 右下ドロップシャドウで包む。板の高さを
 	// 安定させるため、コンテンツが少なくても pageSize 行まで空行でパディングしてから包む
 	// (板が常にビューポート一杯 = リサイズや行数変動で枠が踊らない)。hint は板の外・最下行。
+	// 地色 (全画面 ratelimit ダッシュボードだけ) は枠の内側だけに敷く。枠の外 (余白・影・hint) まで塗ると、
+	// 近黒の影が黒地に溶けて見えない。枠を描かないときは窓の行だけを塗る
+	bg := m.screenBg()
 	if m.frameActive() {
 		for len(window) < page {
 			window = append(window, "")
 		}
-		window = term.WrapWindowFrame(window, m.width, m.colored)
+		window = term.WrapWindowFrame(window, m.width, m.colored, bg)
+		bg = ""
 	}
 	// 1 フレーム分の最終文字列は 10-30KB になる。pre-size しないと Builder の倍々成長で
 	// 出力サイズと同程度のバッファを毎フレーム捨てる (alloc プロファイルで View 全体の 57%)。
@@ -3874,11 +3878,8 @@ func (m *browseModel) finishWindow(window []string, page int) string {
 			size += len(w) + 1
 		}
 	}
-	// 画面全体の地色 (全画面 ratelimit ダッシュボードだけ)。枠・余白・影・hint まで含めて
-	// 塗るので、ここ (1 フレームの出口) で 1 回だけ掛ける。
-	bg := m.screenBg()
 	if bg != "" {
-		size += (len(window) + 1) * (len(bg) + len(term.AnsiReset) + m.width)
+		size += len(window) * (len(bg) + len(term.AnsiReset) + m.width)
 	}
 	var b strings.Builder
 	b.Grow(size)
@@ -3886,11 +3887,11 @@ func (m *browseModel) finishWindow(window []string, page int) string {
 		b.WriteString(paintScreenBg(w, bg, m.width))
 		b.WriteString("\n")
 	}
-	b.WriteString(paintScreenBg(hint, bg, m.width))
+	b.WriteString(hint)
 	return b.String()
 }
 
-// screenBg は画面全体に敷く地の色 ("" = 端末の地色のまま)。
+// screenBg は板の内側に敷く地の色 ("" = 端末の地色のまま)。
 //
 // 🚨 面塗りは既定では**しない**。bgLine の doc にあるとおり、push 済みエリアの面塗りは
 // 「環境の配色次第で視認性を落とす」としてユーザー判断で撤去した経緯があり、その判断は
@@ -3905,7 +3906,7 @@ func (m *browseModel) screenBg() string {
 
 // paintScreenBg は 1 行を bg で端末幅まで塗る。行内の SGR リセットで地色が切れるので、
 // リセット直後に張り直す (bgLine と同じ手口だが、あちらは板の内側 contentWidth 幅、
-// こちらは枠や hint も含む端末幅ぶん)。
+// こちらは枠を描かないときの窓の行の端末幅ぶん)。
 func paintScreenBg(line, bg string, width int) string {
 	if bg == "" || width <= 0 {
 		return line

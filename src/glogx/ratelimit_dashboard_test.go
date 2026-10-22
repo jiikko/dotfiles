@@ -211,34 +211,69 @@ func TestRatelimitDashDismissesUsageOverlay(t *testing.T) {
 	}
 }
 
-// 全画面ダッシュボードは画面全体 (枠・余白・影・hint 行まで) に地色を敷く。
+// 全画面ダッシュボードは枠の内側 (中身の行と下辺) にだけ地色を敷き、枠の外 (上の余白・影・hint 行) は塗らない
+// (影は近黒なので、黒地の上に落とすと見えない。ユーザー決定 2026-10-22)。
 //
 // 🚨 「端末の既定へ戻す」では足りない場面のための固定色。scratch popup は display-popup 自身が
 // 濃紺を敷いており、その popup では既定の背景が濃紺になる (ユーザー要望 2026-09-01)。
 func TestRatelimitDashPaintsScreenBackground(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.colored = true
-	m.width, m.height = 100, 30
+	m.showFrame, m.width, m.height = true, 100, 30
 	m.handleKey("R")
+	if !m.frameActive() {
+		t.Fatal("前提: 枠を描く大きさ")
+	}
 	lines := strings.Split(m.View().Content, "\n")
 	if len(lines) < 10 {
 		t.Fatalf("行が少なすぎる: %d", len(lines))
 	}
-	for i, ln := range lines {
-		if !strings.HasPrefix(ln, term.AnsiScreenBg) {
-			t.Errorf("%d 行目に地色が無い: %q", i, ln)
+	// 並び: 上の余白 / 上辺 / 中身 … / 下辺 / 影 / hint
+	n := len(lines)
+	for _, i := range []int{0, 1, n - 2, n - 1} {
+		if strings.Contains(lines[i], term.AnsiScreenBg) {
+			t.Errorf("%d 行目 (枠の外か上辺) に地色を敷いた: %q", i, lines[i])
+		}
+	}
+	if !strings.Contains(lines[n-3], term.AnsiScreenBg) {
+		t.Errorf("下辺に地色が無い (中身と下辺の間に端末の地色の筋が出る): %q", lines[n-3])
+	}
+	for i := 2; i < n-3; i++ {
+		ln := lines[i]
+		start, end := strings.Index(ln, term.AnsiScreenBg), strings.LastIndex(ln, "║")
+		if start < 0 || end < start {
+			t.Errorf("%d 行目の枠の内側に地色が無い: %q", i, ln)
 			continue
 		}
-		// 端末幅ぶん塗り切る (途中で切れると右側が端末の地色のまま残る)。
-		if w := term.DispWidth(ln); w != m.width {
-			t.Errorf("%d 行目の塗り幅 %d != %d: %q", i, w, m.width, ln)
+		// 枠の内側は板の幅ぶん塗り切る (途中で切れると右側が端末の地色のまま残る)
+		inner := ln[start:end]
+		if want := m.width - 2 - 1 - 2; term.DispWidth(inner) != want { // 左右の余白 2・右の影 1・罫線 2 本
+			t.Errorf("%d 行目の塗り幅 %d != %d: %q", i, term.DispWidth(inner), want, ln)
 		}
-		// 行内の SGR リセットの後は地色を張り直す (リセットで地が切れる)。
-		body := strings.TrimSuffix(ln, term.AnsiReset)
-		if idx := strings.LastIndex(body, term.AnsiReset); idx >= 0 &&
-			!strings.HasPrefix(body[idx+len(term.AnsiReset):], term.AnsiScreenBg) {
-			t.Errorf("%d 行目: リセット後に地色を張り直していない: %q", i, ln)
+		// 行内の SGR リセットの後は地色を張り直す (リセットで地が切れる)。最後のリセットは右の罫線の手前で地を閉じるもの
+		body := strings.TrimSuffix(strings.TrimSuffix(inner, term.AnsiFrameBorder), term.AnsiReset)
+		for rest := body; ; {
+			idx := strings.Index(rest, term.AnsiReset)
+			if idx < 0 {
+				break
+			}
+			rest = rest[idx+len(term.AnsiReset):]
+			if !strings.HasPrefix(rest, term.AnsiScreenBg) {
+				t.Errorf("%d 行目: リセット後に地色を張り直していない: %q", i, ln)
+				break
+			}
 		}
+	}
+	// 枠を描かないときは窓の行を端末幅まで塗り、hint 行は塗らない
+	m.showFrame = false
+	lines = strings.Split(m.View().Content, "\n")
+	for i, ln := range lines[:len(lines)-1] {
+		if !strings.HasPrefix(ln, term.AnsiScreenBg) || term.DispWidth(ln) != m.width {
+			t.Errorf("枠なしの %d 行目を端末幅まで塗っていない: %q", i, ln)
+		}
+	}
+	if hint := lines[len(lines)-1]; strings.Contains(hint, term.AnsiScreenBg) {
+		t.Errorf("枠なしの hint 行に地色を敷いた: %q", hint)
 	}
 }
 

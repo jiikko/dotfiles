@@ -83,7 +83,7 @@ func TestShadowForegroundBlocksAndFeather(t *testing.T) {
 func TestWrapWindowFrame(t *testing.T) {
 	content := []string{"line one", "line two"}
 	const termW = 40
-	out := WrapWindowFrame(content, termW, false)
+	out := WrapWindowFrame(content, termW, false, "")
 	// 行数 = content + 4 (上余白 + 上辺 + 下辺 + 下影)
 	if len(out) != len(content)+4 {
 		t.Fatalf("行数 = %d; want %d", len(out), len(content)+4)
@@ -106,7 +106,7 @@ func TestWrapWindowFrame(t *testing.T) {
 		t.Errorf("NO_COLOR の影グリフ (▒/░) が無い:\n%s", joined)
 	}
 	// colored は近黒 fg の █ (本体)
-	cj := strings.Join(WrapWindowFrame(content, termW, true), "\n")
+	cj := strings.Join(WrapWindowFrame(content, termW, true, ""), "\n")
 	if !strings.Contains(cj, AnsiShadowFg+"█") {
 		t.Errorf("colored で影本体 █ が無い")
 	}
@@ -118,7 +118,7 @@ func TestWrapWindowFrame(t *testing.T) {
 		t.Errorf("落ち影まで枠色で染まっている (影は中立のままにする):\n%s", cj)
 	}
 	// NO_COLOR では色を出さない (Paint が素通しする)
-	if nj := strings.Join(WrapWindowFrame(content, termW, false), "\n"); strings.Contains(nj, AnsiFrameBorder) {
+	if nj := strings.Join(WrapWindowFrame(content, termW, false, ""), "\n"); strings.Contains(nj, AnsiFrameBorder) {
 		t.Errorf("NO_COLOR で枠色の SGR が出ている:\n%s", nj)
 	}
 }

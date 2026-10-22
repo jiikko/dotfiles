@@ -74,6 +74,33 @@ func TestPanelShadow(t *testing.T) {
 	}
 }
 
+// Fill は枠の内側 (中身の行と下辺) にだけ地を敷き、行内のリセットの後に張り直す。上辺と影には敷かない
+// (近黒の影が暗い地に溶ける)。幅は Fill の無い板と同じ。色なしでは何もしない。
+func TestPanelFill(t *testing.T) {
+	const bg = "\x1b[48;5;16m"
+	st := PanelStyle{Border: BorderLight, Fill: bg}
+	out := Panel("", []string{"a" + sgr.Bold + "b" + sgr.Reset + "c"}, 20, true, st)
+	plain := Panel("", []string{"abc"}, 20, true, PanelStyle{Border: BorderLight})
+	for i := range out {
+		if termwidth.Of(out[i]) != termwidth.Of(plain[i]) {
+			t.Errorf("%d 行目の幅が Fill の無い板と違う: %d != %d", i, termwidth.Of(out[i]), termwidth.Of(plain[i]))
+		}
+	}
+	if strings.Contains(out[0], bg) || strings.Contains(out[len(out)-1], bg) {
+		t.Errorf("上辺か下端の影に地を敷いた: %q / %q", out[0], out[len(out)-1])
+	}
+	row, bottom := out[1], out[2]
+	if !strings.Contains(row, bg+" a") || !strings.Contains(row, sgr.Reset+bg+"c") {
+		t.Errorf("中身の行に地を敷いていない / リセットの後に張り直していない: %q", row)
+	}
+	if !strings.Contains(bottom, bg+"▖") {
+		t.Errorf("下辺に地を敷いていない (中身と下辺の間に端末の地色の筋が出る): %q", bottom)
+	}
+	if mono := Panel("", []string{"abc"}, 20, false, st); strings.Contains(strings.Join(mono, ""), bg) {
+		t.Errorf("色なしで地を敷いた: %q", mono)
+	}
+}
+
 // 中央に浮かせた板は、左右の背景を残し (色も持ち越し)、行の幅を変えない。
 func TestOverlayCenteredKeepsBackground(t *testing.T) {
 	bg := strings.Repeat("x", 30)
