@@ -449,6 +449,56 @@ func TestFoldKeysAndReroot(t *testing.T) {
 	}
 }
 
+// root で ← (h / ctrl+b も) を押すと、1 段上げてから新しい root へカーソルが移る (- を押さずに ← だけで上へ辿れる)。
+// 元の root の開いた状態は保つ。
+func TestLeftAtRootReroots(t *testing.T) {
+	for _, key := range []string{"left", "h", "ctrl+b"} {
+		t.Run(key, func(t *testing.T) {
+			m := newTest(t)
+			m.HandleKey("l") // a の中へ (a と root が開いている)
+			m.HandleKey(key) // a へ
+			m.HandleKey(key) // root へ
+			oldRoot := m.root
+			if m.cur != oldRoot {
+				t.Fatalf("前提: カーソルが root にいない: %s", m.cur.path())
+			}
+			m.HandleKey(key)
+			if m.root == oldRoot || oldRoot.parent != m.root || m.cur != m.root {
+				t.Fatalf("root で %s を押しても 1 段上がって新しい root へ移らない: root=%s cur=%s", key, m.root.path(), m.cur.path())
+			}
+			if !oldRoot.expanded {
+				t.Error("元の root が畳まれた")
+			}
+		})
+	}
+}
+
+// / ではそれ以上上がらず、知らせて root もカーソルも動かさない。
+func TestLeftAtSlashStays(t *testing.T) {
+	isolateConfig(t)
+	m := newAt(t, "/usr")
+	m.HandleKey("h") // /usr (root) へ
+	m.HandleKey("h") // / へ上がる
+	if m.root.path() != "/" || m.cur != m.root {
+		t.Fatalf("/usr の root から h で / へ上がらない: root=%s cur=%s", m.root.path(), m.cur.path())
+	}
+	m.TakeNotices()
+	m.HandleKey("h")
+	if ns := m.TakeNotices(); len(ns) != 1 || ns[0].OK || m.root.path() != "/" || m.cur != m.root {
+		t.Fatalf("/ で h: 知らせ=%+v root=%s cur=%s", ns, m.root.path(), m.cur.path())
+	}
+}
+
+// ctrl+h は Backspace (-) の別名: root だけを 1 段上げ、カーソルは動かさない。
+func TestCtrlHReroots(t *testing.T) {
+	m := newTest(t)
+	cur, oldRoot := m.cur, m.root
+	m.HandleKey("ctrl+h")
+	if m.root == oldRoot || oldRoot.parent != m.root || m.cur != cur {
+		t.Fatalf("ctrl+h で root だけが 1 段上がらない: root=%s cur=%s", m.root.path(), m.cur.path())
+	}
+}
+
 func TestJKOnTileOutsideTreeSaysSo(t *testing.T) {
 	m := newTest(t)
 	outside := filepath.Join(t.TempDir(), "out.txt")

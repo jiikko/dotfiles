@@ -915,10 +915,12 @@ func init() {
 	bind(func(*Model) Result { return Quit }, "q", "esc")
 	bind(do((*Model).descend), "l", "right", "ctrl+f", "enter")
 	// ctrl+b を ← の別名にするのは glogx-ui-guide §2 の例外 (pro-con のボードと同じ「← が左の列へ動くだけ」の画面)
+	// root では先に 1 段上げてから親 (新しい root) へ (spec §6.1 の treebeard と同じ。- を押さずに ← だけで上へ辿れる)
 	bind(do(func(m *Model) {
-		if m.cur.parent != nil {
-			m.setCur(m.cur.parent)
+		if m.cur.parent == nil && !m.rerootUp() {
+			return
 		}
+		m.setCur(m.cur.parent)
 	}), "h", "left", "ctrl+b")
 	bind(do(func(m *Model) {
 		if m.cur.dir {
@@ -934,7 +936,8 @@ func init() {
 	bind(do((*Model).collapseOthers), "C")
 	bind(do(func(m *Model) { m.moveSibling(10) }), "J")
 	bind(do(func(m *Model) { m.moveSibling(-10) }), "K")
-	bind(do((*Model).rerootUp), "-", "backspace")
+	// ctrl+h は Backspace の別名 (入力欄の tuikit/lineedit と同じ。Backspace を押さずに ctrl+h を使う人がいる)
+	bind(do(func(m *Model) { m.rerootUp() }), "-", "backspace", "ctrl+h")
 	bind(do((*Model).startSearch), "/")
 	bind(do(func(m *Model) { m.repeatSearch(1) }), "n")
 	bind(do(func(m *Model) { m.repeatSearch(-1) }), "N")
@@ -1044,19 +1047,19 @@ func (m *Model) collapseOthers() {
 	m.root.expanded = true
 }
 
-// rerootUp は root の親を新しい root にする (- / Backspace。spec §5.7)。
-func (m *Model) rerootUp() {
+// rerootUp は root の親を新しい root にする (- / Backspace / root での ←。spec §5.7)。上がれなかったら理由を知らせて false。
+func (m *Model) rerootUp() bool {
 	old := m.root
 	parentPath := filepath.Dir(old.path())
 	if parentPath == old.path() {
 		m.fail("これ以上 上はありません (/ です)")
-		return
+		return false
 	}
 	// 🚨 区切りの位置で切らない (`/Users` の区切りは 0 文字目で、> 0 の判定だと / へ上がれず黙った。再現 2026-10-09)
 	nr, err := newRoot(parentPath)
 	if err != nil {
 		m.fail("1 段上へ行けません: " + termsafeLine(err.Error())) // エラーに祖先のパスが入る
-		return
+		return false
 	}
 	// 新しい root の子のうち旧 root と同じ名前の項目を旧 root で置き換える (開いた状態とアニメを保つ)
 	found := false
@@ -1071,10 +1074,11 @@ func (m *Model) rerootUp() {
 	if !found {
 		// 親の中に見つからない (消えた / 読めない) なら付け替えない。付け替えると旧 root が孤児になり、カーソルが木の外へ出る
 		m.fail("1 段上へ行けません: " + old.name + " が親の中に見つかりません")
-		return
+		return false
 	}
 	nr.last = old
 	m.root = nr
+	return true
 }
 
 func baseName(p string) string {
@@ -1472,12 +1476,12 @@ var helpKeys = [][2]string{
 	{"J K / ^D ^U", "10 件 / 半ページ"},
 	{"g G", "兄弟の先頭 / 末尾"},
 	{"l → ^F enter", "フォルダへ潜る · ファイルを開く"},
-	{"h ← ^B", "親へ"},
+	{"h ← ^B", "親へ (root なら 1 段上へ)"},
 	{"space tab", "フォルダの開閉"},
 	{"c C", "このフォルダを畳む · 経路以外を畳む"},
 	{"e", "フォルダ: 配下を全部開く (esc で中断) · ファイル: エディタで開く"},
 	{"/ n N", "列の中を検索 · 次 · 前"},
-	{"- backspace", "root を 1 段上へ"},
+	{"- backspace ^H", "root を 1 段上へ"},
 	{".", "dotfile の表示を切り替え"},
 	{",", "設定"},
 	{"o O", "外のアプリで開く (open) · Finder で表示"},

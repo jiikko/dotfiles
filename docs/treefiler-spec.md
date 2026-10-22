@@ -15,7 +15,7 @@
 | 項目 | treebeard | glogx |
 |---|---|---|
 | 起動 | `tb [DIR]` | glogx の**どの画面からでも** `F` (§0.3) |
-| 起点 | 起動 dir の**親**を root、起動 dir にカーソル (§5.5) | **pwd を root** にして始める。`-` `Backspace` で 1 段上へ (§5.7 の reroot_up はそのまま) |
+| 起点 | 起動 dir の**親**を root、起動 dir にカーソル (§5.5) | **pwd を root** にして始める。`-` `Backspace` `Ctrl-H` と、root での `h` `←` `Ctrl-B` で 1 段上へ (§5.7 の reroot_up と §6.1 の「root なら先に reroot_up」はそのまま。`Ctrl-H` は入力欄と同じく Backspace の別名) |
 | プレビュー | 中央 90% のポップアップ 1 枚 (§4.6) | **ドラクエの対戦画面のように重なるタイル** (§0.2)。枠の中の飾り (§8.3) は写す |
 | `q` `Esc` | 終了 (`q` は cd 連携) | glogx 流・issues viewer に揃える: タイルの上は 1 枚閉じる / 木の上は **glogx ごと終了** / `F` で閉じて **git log 一覧へ戻る**。`Ctrl-C` は glogx の即終了。F を出したまま終えたら (`q` `Esc` `Ctrl-G` `Ctrl-C`)、30 分以内に同じ dir で開いた glogx は同じ場所の F から始まる (issue 710) |
 | `q` の cd 連携 (`--cwd-file`) | あり | **写さない** |
@@ -189,7 +189,7 @@
 - 配置: 決め打ちの木で `layout` の結果 (各ノードの x, y と線の格子) を固定する。spine の y=0、ブロック間の空白 1 行、肘の track、列の x の式 (§3.1〜3.3)
 - 線: mask から文字 (§2.1)、管の継ぎ目、強調の優先 (DIM < ACTIVE < ROUTE)
 - 熱: 停止点ちょうどの色と、区間の途中が smoothstep であること (§1.3)
-- キー: 兄弟の中だけを動く `j` `k` と別名 (`↓` `↑` `Ctrl-N` `Ctrl-P`)・`l` `→` `Ctrl-F` `Enter` で潜る / 開く・`h` `←` `Ctrl-B` で親・`Space` `Tab` の開閉・`c` `C`・`g` `G` (§0.1、§6.1)
+- キー: 兄弟の中だけを動く `j` `k` と別名 (`↓` `↑` `Ctrl-N` `Ctrl-P`)・`l` `→` `Ctrl-F` `Enter` で潜る / 開く・`h` `←` `Ctrl-B` で親 (root なら 1 段上げてから)・`Space` `Tab` の開閉・`c` `C`・`g` `G` (§0.1、§6.1)
 - タイル: 置き場所の巡回 (5 枚目が 0 番)・閉じると番号が戻る・`Enter` / `q` で 1 枚閉じる・`J` `K` の差し替えと端の toast・ジャンプモードの選択と抜け方
 - 読み込み: 先頭だけ読む・ページ送りで続きを読む境界・バイナリ (先頭 8192 バイトの NUL) と音声の拡張子で toast・タブの展開・termsafe を通すこと
 - git: `--porcelain=v1 -z --branch --ignored` の出力の fixture から印と branch 表記 (§5.3)
