@@ -26,7 +26,8 @@ tmpclean sweep [-days 3] [-json]
 - 消すのは「空」か「空の `.keep-directory` だけ」のもので、`safefs.RemoveEmptyDir` が fd で実体を照合し、最後の rmdir は kernel が
   空でなければ断る。失うのは空のフォルダと長さ 0 のファイルだけ
 - 残す: 名前が違う・フォルダでない (symlink を含む)・開かれている・自身か中が N 日 (既定 3) 以内・socket / FIFO を含む・
-  **動いている Swift のツールのうち一番古いものの起動より後に作られた** (そのツールが後で応答ファイルを書きうる。Xcode を開いたままだと消えない)
+  **動いている Swift のツールのうち一番古いものの起動より後に作られた** (そのツールが後で応答ファイルを書きうる。Xcode を開いたままだと消えない)。
+  Xcode.app・Toolchains・CommandLineTools の中にあっても、make・git は Swift のツールに数えない (dev ループの make が何日も範囲を止めていた。issue 854)
 - ps・lsof が読めなければ何も消さずに止める (2)
 
 ## 守り (層を重ねる。どれも回帰テストと変異で固定してある)

@@ -35,6 +35,11 @@ var (
 	// 拾いすぎは守りすぎ (消すのが遅れる) になるだけなので広めに取る。ArgsResolver を自分の中で使うのは
 	// swift-driver・SwiftPM・sourcekit-lsp・Xcode (IDE と swift-build のサービス)
 	swiftToolCommand = regexp.MustCompile(`/Xcode[^/]*\.app/|/Toolchains/|/CommandLineTools/|(^|/)(swift[A-Za-z0-9_-]*|sourcekit-lsp|xcodebuild|SourceKitService|SWBBuildService|XCBBuildService)( |$)`)
+	// 上の広い一致のうち、Swift のライブラリを持たない (otool -L で SwiftPM・swift-driver にリンクしていない) と分かっているものは外す。
+	// dev ループの make は何日も動き続け、その起動から後の作業場所を全部残させていた。make が起こす xcodebuild・swift と、
+	// git を起こす swift-package は自分の名前で拾われる。見るのは実行ファイル (先頭の語) だけにする
+	// (引数に /git を含む xcodebuild を外さない)。空白を含むパスでは当たらず、外さない側 (今までどおり守る側) に倒れる
+	notSwiftTool = regexp.MustCompile(`^([^ ]*/)?((gnu)?make|git(-[a-z-]+)?)( |$)`)
 )
 
 type swiftProc struct {
@@ -64,7 +69,7 @@ func collectSwiftProcs(ctx context.Context, d deps, now time.Time) ([]swiftProc,
 			return nil, stopf("ps の etime を読めない: %q", line)
 		}
 		cmd = strings.TrimLeft(cmd, " ")
-		if swiftToolCommand.MatchString(cmd) {
+		if isSwiftTool(cmd) {
 			ps = append(ps, swiftProc{pid: pid, started: now.Add(-el), command: cmd})
 		}
 	}
@@ -72,6 +77,10 @@ func collectSwiftProcs(ctx context.Context, d deps, now time.Time) ([]swiftProc,
 		return nil, stopf("ps からプロセスを 1 つも読めない")
 	}
 	return ps, nil
+}
+
+func isSwiftTool(cmd string) bool {
+	return swiftToolCommand.MatchString(cmd) && !notSwiftTool.MatchString(cmd)
 }
 
 // parseEtime は ps の etime ([[dd-]hh:]mm:ss) を時間にする。

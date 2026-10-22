@@ -142,6 +142,25 @@ func TestSweepKeepsDirsBornAfterOldestSwiftTool(t *testing.T) {
 	}
 }
 
+// 何日も動く dev ループの make は、Xcode.app の中にあっても範囲を決めない。範囲はその次に古い Swift のツールで決まる。
+func TestSweepIgnoresLongRunningMake(t *testing.T) {
+	f, now := sweepFixture(t)
+	p := tdir(t, f, now, "TemporaryDirectory.aaaaaa", strp(""), 30)
+	f.sys.procs = append(f.sys.procs,
+		fproc{pid: 600, ppid: 1, command: "/Applications/Xcode.app/Contents/Developer/usr/bin/make dev-fg-loop", etime: "40-00:00:00"},
+		fproc{pid: 601, ppid: 1, command: "/usr/bin/swift build", etime: "00:01"})
+	rc, out, errOut := f.runCLI("sweep")
+	if rc != exitOK {
+		t.Fatalf("rc=%d\n%s\n%s", rc, out, errOut)
+	}
+	if exists(p) {
+		t.Errorf("make の起動より後に作られたものが残った\n%s", out)
+	}
+	if !strings.Contains(out, "limit: pid 601") {
+		t.Errorf("範囲を決めたのが swift build でない\n%s", out)
+	}
+}
+
 // ps・lsof が読めないときは何も消さずに止める (読めないのを「居ない」「開かれていない」と読まない)。
 func TestSweepStopsWhenUndecidable(t *testing.T) {
 	for _, c := range []struct {
@@ -236,8 +255,15 @@ func TestSwiftToolCommand(t *testing.T) {
 		"/Users/me/.swiftly/toolchains/x/usr/bin/swiftc -c a.swift",
 		"/Library/Developer/Toolchains/swift-6.xctoolchain/usr/bin/sourcekit-lsp",
 		"sourcekit-lsp",
+		"/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project /src/git -scheme make",
+		"/Applications/Xcode 16.app/Contents/Developer/usr/bin/make dev-fg-loop",
 	}
 	no := []string{
+		"/Applications/Xcode.app/Contents/Developer/usr/bin/make dev-fg-loop",
+		"/Applications/Xcode-beta.app/Contents/Developer/usr/bin/gnumake -C x",
+		"/Library/Developer/CommandLineTools/usr/bin/git fetch",
+		"/Library/Developer/CommandLineTools/usr/bin/git-upload-pack /x",
+		"make -C /Library/Developer/Toolchains/x",
 		"/Users/me/.local/bin/claude",
 		"/bin/zsh -c tmpclean",
 		"/Applications/SwiftBar.app/Contents/MacOS/SwiftBar",
@@ -245,12 +271,12 @@ func TestSwiftToolCommand(t *testing.T) {
 		"/sbin/launchd",
 	}
 	for _, c := range yes {
-		if !swiftToolCommand.MatchString(c) {
+		if !isSwiftTool(c) {
 			t.Errorf("拾わない: %s", c)
 		}
 	}
 	for _, c := range no {
-		if swiftToolCommand.MatchString(c) {
+		if isSwiftTool(c) {
 			t.Errorf("拾った: %s", c)
 		}
 	}

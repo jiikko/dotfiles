@@ -28,6 +28,8 @@
 | A. 今のまま | make が止まるか再起動すれば残りも消える | なし。長く動く make / git がある間は、その起動から後の分が溜まり続ける |
 | B. ArgsResolver を使うものだけに絞る (Xcode 本体 `Contents/MacOS/Xcode`・xcodebuild・SWBBuildService・XCBBuildService・SourceKitService・sourcekit-lsp・`swift*`) | make や git が動いていても消える | Xcode.app / Toolchains / CommandLineTools の中にある、列挙していない名前で SwiftPM を使うプロセスの守り (例: Interface Builder の `Contents/Developer/usr/bin/ibtoold`。2026-10-21 に動いていた。ArgsResolver を使うかは未確認。3 日より古いことと lsof の守りは残る) |
 
+| C. 広い一致は残し、Swift のライブラリを持たないと分かっている実行ファイル (make・gnumake・git・git-*) だけを外す | make や git が動いていても消える。make が起こす xcodebuild・swift、git を起こす swift-package は自分の名前で拾われる | 外した名前のプロセスの守りだけ (CommandLineTools の make・git は `otool -L` で libSystem・CoreFoundation などにしかリンクしていない。2026-10-22 に確認)。別の長く動くツールが原因になったら、名前を足す必要がある |
+
 B にするなら、変える前に「`/Xcode[^/]*\.app/` 等の広い一致が副次的に守っていたもの」を列挙する (`list-masked-failure-modes-before-removing-guard.md`)。
 例えば Xcode.app の中で SwiftPM を自分の中に持つプロセスの名前を、`ps` の実物と Xcode.app の中のバイナリ (`otool -L` で SwiftPM / SwiftDriver の
 framework を読むもの) から集める。テスト (`TestSwiftToolCommand`) の拾う / 拾わないの表と、変異・敵対レビューまで要る (安全機構を緩める変更)。
@@ -42,6 +44,7 @@ framework を読むもの) から集める。テスト (`TestSwiftToolCommand`) 
   pid 71058 が居ないことを `ps -p 71058` (rc=1) で確かめた。次の日の sweep で残りが消えるかを見る。dev ループは止めてもまた起動されるので、
   案 A のままだと同じ形が繰り返す
 - 決めるのはユーザー (起票の時点では「よく分かっていない。とりあえず issue に」)
+- 2026-10-22: ユーザーが案 C に決めた (B より、失うものの列挙がほぼ自明なため)
 
 ## 関連ファイル
 
@@ -53,4 +56,15 @@ framework を読むもの) から集める。テスト (`TestSwiftToolCommand`) 
 
 - [x] 起票と実測 (2026-10-21)
 - [ ] make を止めた後の sweep で残りが消えたかを `sweep.log` / `last.json` で確かめる
-- [ ] A か B かを決める (ユーザー)
+- [x] 案を決める (ユーザー。2026-10-22 に案 C)
+- [x] 案 C の実装 (`src/tmpclean/sweep.go` の `notSwiftTool`・`isSwiftTool`)。判定は実行ファイル (コマンド行の先頭の語) だけを見る。
+  先頭の語に空白を含むパス (`/Applications/Xcode 16.app/...`) では当たらず、今までどおり守る側に倒れる
+- [x] テスト: `TestSwiftToolCommand` に拾う / 拾わない例を足した (引数に `/git` を含む xcodebuild は拾う)。
+  `TestSweepIgnoresLongRunningMake` で sweep の入口から通した (40 日動いている make は範囲を決めず、範囲を決めるのは次に古い `swift build`)
+- [x] 変異 (`mutate-verify`。3 本とも想定のテストが red): ①呼び出しを旧の `swiftToolCommand.MatchString` に戻す → `TestSweepIgnoresLongRunningMake`
+  ②除外の `^([^ ]*/)?` の固定を外す → `TestSwiftToolCommand` ③除外を外す → 両方
+- [x] 敵対的レビュー (opus、読み取りのみ): 守りの穴は作れなかった (P1・P2 なし)。CommandLineTools の git*・make・`libexec/git-core` の 181 本に
+  `otool -L` を当てて Swift へのリンクは 0 本 (同じ判定で `swift-build` は当たる)。子 (xcodebuild・swift・xcrun 経由) は自分の実行ファイルの名前で拾われる。
+  P3 (今回の変更が作った穴ではない): 別名の symlink (`sb -> swift-build`) や SwiftPM を組み込んだ自作の道具は前から拾えない。
+  これまでは長く動く make が偶然守っていた。README の「検出しないもの」の範囲 (3 日と lsof だけが守る) なので、対応しない。
+  Xcode.app の中の make・git は、この機械に Xcode.app が無いので `otool -L` が未確認
