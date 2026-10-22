@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,7 @@ import (
 // 結果のファイルが揃うことを確かめる。台本が filer のキーの変更で黙って何もしなくなったら、ここで落ちる。
 func TestProbeRunsEveryPhase(t *testing.T) {
 	root := t.TempDir()
-	for _, f := range []string{"treefiler/filer/model.go", "treefiler/README.md", "a/b/c.txt", "zz.txt"} {
+	for _, f := range []string{"treefiler/filer/model.go", "treefiler/README.md", "a/b/c.txt", "a/b/c/d/e.txt", "zz.txt"} {
 		p := filepath.Join(root, f)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
@@ -38,7 +39,7 @@ func TestProbeRunsEveryPhase(t *testing.T) {
 		state[f[1]] = f[14] + " | " + f[15]
 	}
 	for phase, want := range map[string]string{
-		"explode":        "opened=4 ",
+		"explode":        "opened=6 ",
 		"move":           "cursor=zz.txt ",    // 列 (a, treefiler, zz.txt) の最後。j / k が効かなければ l の先の a に残る
 		"search":         "cursor=treefiler ", // 列の最後から tr で treefiler へ。検索が効かなければ zz.txt に残る
 		"busy-close":     "閉じた時に裏の処理が走っていた",
@@ -52,6 +53,12 @@ func TestProbeRunsEveryPhase(t *testing.T) {
 		if !strings.Contains(state[phase], want) {
 			t.Errorf("%s の後の状態 = %q, want %q を含む", phase, state[phase], want)
 		}
+	}
+	// explore は閉じた木を渡り歩く: フォルダを 2 つ以上開き、root から 2 段以上深い所まで潜っている (l が効かないと root の直下に残る)
+	var opened int
+	var cursor string
+	if _, err := fmt.Sscanf(state["explore"], "opened=%d tiles=[] cursor=%s", &opened, &cursor); err != nil || opened < 2 || strings.Count(cursor, "/") < 1 {
+		t.Errorf("explore で潜っていない: %q (opened=%d cursor=%q err=%v)", state["explore"], opened, cursor, err)
 	}
 	for _, f := range []string{"cycles.tsv", "summary.txt"} {
 		if fi, err := os.Stat(filepath.Join(out, f)); err != nil || fi.Size() == 0 {

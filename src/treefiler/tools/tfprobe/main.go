@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -408,7 +409,12 @@ func (p *probe) cycle(c int) error {
 	if err != nil {
 		return err
 	}
-	s.phase("explode", func() { s.keys("h", "e") }) // カーソルを root へ上げて配下を全部開く
+	s.phase("explore", func() { s.explore(exploreKeys) })
+	s.phase("explode", func() { // root へ飛んで配下を全部開く (explore の後のカーソルは深い所にいる)
+		s.keys(":")
+		s.m.Paste(p.o.root)
+		s.keys("enter", "e")
+	})
 	// j / k と / はカーソルの列 (兄弟) の中で動く。root の列は root だけなので、l で root の直下の列へ入ってから動く
 	s.phase("move", func() { s.keys(moveKeys(columnSize(p.o.root))...) })
 	s.phase("search", func() {
@@ -629,6 +635,43 @@ func (p *probe) resources(w io.Writer) {
 }
 
 func repeat(k string, n int) []string { return slices.Repeat([]string{k}, n) }
+
+// exploreKeys / exploreDepth は explore の段の打鍵の数と、潜る深さの上限 (root の直下 = 1)。
+const (
+	exploreKeys  = 600
+	exploreDepth = 6
+)
+
+// explore は閉じた木を、キーを押しっぱなしにした間隔で渡り歩く: フォルダなら潜る (l)・同じ列で何個か動く (j / k)・親へ戻る (h) を
+// 種を固定した乱数で選ぶ (サイクルをまたいで同じ道を辿る)。潜るたびにフォルダを読み、木が右へ育ち、カメラが動く。
+// l はフォルダの上でだけ押す (ファイルの上ではタイルが開く)。h は root の直下より浅くは押さない (root では root を上げる)。
+func (s *session) explore(n int) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	for sent := 0; sent < n; {
+		cur := s.m.Place().Cursor
+		depth := 0
+		if rel, err := filepath.Rel(s.root, cur); err == nil && rel != "." {
+			depth = strings.Count(rel, string(filepath.Separator)) + 1
+		}
+		fi, err := os.Lstat(cur)
+		isDir := err == nil && fi.IsDir()
+		switch r := rng.IntN(10); {
+		case isDir && depth < exploreDepth && r < 5:
+			s.keys("l")
+			sent++
+		case r < 8 || depth <= 1: // 列の中を上下に何個か (下だけだと列の末尾に張り付く)
+			k, key := 1+rng.IntN(3), "j"
+			if rng.IntN(3) == 0 {
+				key = "k"
+			}
+			s.keys(repeat(key, k)...)
+			sent += k
+		default:
+			s.keys("h")
+			sent++
+		}
+	}
+}
 
 // columnSize は root の直下で木に見える項目の数 (既定の設定は . で始まる名前を隠す)。
 func columnSize(root string) int {
