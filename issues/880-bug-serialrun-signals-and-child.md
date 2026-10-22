@@ -14,7 +14,7 @@ serialrun の監査で見つかった、グループ C の 4 項目。
 ## 項目
 
 ### C1 起動時に SIGINT / SIGQUIT が無視されていると、serial-run が無視を解いて子を「INT で死ぬ」状態にする (HUP だけ配慮されている)
-- 重要度: P2 / 確認済み (`trap "" INT QUIT` の内側の `kill -INT $$` が、serial-run 越しだと survived が出ず rc=130。HUP は survived)
+- 重要度: P3 (反証レビューで「バグ」から「設計判断の見直し」へ下げた) / 確認済み (`trap "" INT QUIT` の内側の `kill -INT $$` が、serial-run 越しだと survived が出ず rc=130。HUP は survived)
 - 根拠: main.go `runQueued` (`signal.Notify(sigs, SIGINT, SIGQUIT, SIGTERM)` を無条件に張る。HUP だけ `signal.Ignored` を見る)。発火: 非対話 bash の `cmd &`・`trap '' INT` のスクリプト。hook は `make test &` も包む。同型が src/runtimeout/main.go:60・restartable/internal/runner/actor.go にある (lint-from-done の grep。restartable は未精査の推測)
 - 直し方の案: INT/QUIT も HUP と同じく `!signal.Ignored(sig)` のときだけ Notify する。テストは `trap '' INT` の親から起こして子の `kill -INT $$` が生き残ること。runtimeout も同じ commit で直す (G1 の共有化と同時なら 1 箇所)。検査は「語の有無」だけでは serialrun 自身を捕まえられない (HUP にだけ Ignored があるため) ので、script にするなら「INT/QUIT の Notify より前に Ignored(SIGINT)」まで詰める。本命は共有 helper (lockman の `notifiableSignals` / `installSignalHandler` を proctree へ出す) + forbidigo。script は helper 化までのつなぎ
 - 出典: broken-code P2-1 / lint-from-done P2-1
@@ -38,6 +38,16 @@ serialrun の監査で見つかった、グループ C の 4 項目。
 - 出典: error-handling P3-3 / ux P3-3
 
 ---
+
+## 反証レビュー (2026-10-23、Opus 1 体・読み取りのみ。実験はしていない)
+
+本文の重要度と案は下の訂正を反映済み。訂正の根拠を残す。
+
+- **C1 は設計判断の見直し** (P2 の指摘): `src/runtimeout/main.go` の Notify の注記は、INT / QUIT の無視を**意図して**外すと書いている (「非対話の bash の `&` は INT / QUIT を
+  無視して子を起こすので、戻さないと検証コマンドの Ctrl-C や trap … INT が効かない」。bin/mutate-verify の run_in_wt の注記)。HUP だけ `Ignored` を見るのは意図した非対称で、
+  serialrun はそれを写した。**runtimeout は対象から外す**。serialrun で変えるかは、mutate-verify の要件 (hook が mutate-verify を包む) との衝突を見て 869 で決める
+- **C2 の補強**: 869 の「子の起動」節は「SIGINT / SIGTERM / SIGHUP を受けたら子へ転送し」と書いているのに、`runChild` は INT / QUIT を転送しない (869 との乖離)。直すときは 869 か実装のどちらかに揃える
+- 反証できなかった: C3・C4
 
 ## 進捗
 
