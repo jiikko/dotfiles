@@ -1382,6 +1382,36 @@ func (m *Model) takeBG() {
 	})
 }
 
+// WaitBG は裏の後始末 (unadvertise) の結果を待って返す。単体のバイナリが終わる前に呼ぶ: Close は取り消さないので ssh は走りきるが、
+// 待たずに終わると結果 (止められなかったときの止め方) を知らせる先が無い。glogx は Model を使い回し、次に開いたときに takeBG が
+// 知らせるので呼ばない。stop が閉じたら待つのをやめ、まだ結果の来ない件数を left に返す (各 ssh は 20 秒で打ち切る)
+func (m *Model) WaitBG(stop <-chan struct{}) (got []Notice, left int) {
+	stopped := false
+	m.bg = slices.DeleteFunc(m.bg, func(ch <-chan Notice) bool {
+		select { // 届いている分は待たずに取る (stop と同時に来ていると select はどちらを取るか決まらず、届いた結果を落とした)
+		case n := <-ch:
+			got = append(got, n)
+			return true
+		default:
+		}
+		if stopped {
+			return false
+		}
+		select {
+		case n := <-ch:
+			got = append(got, n)
+			return true
+		case <-stop:
+			stopped = true
+			return false
+		}
+	})
+	return got, len(m.bg)
+}
+
+// PendingBG は結果の来ていない裏の後始末の件数。
+func (m *Model) PendingBG() int { return len(m.bg) }
+
 // smbURL は r のファイル共有の URL (smb://<宛先>)。繋げないなら理由を知らせて "" を返す (y と O が同じ断り方をする)。
 func (m *Model) smbURL(r row) string {
 	if !r.smb {

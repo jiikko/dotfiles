@@ -2198,6 +2198,50 @@ func TestLedgerRemoveStopsWiredName(t *testing.T) {
 	}
 }
 
+// WaitBG は裏で広告を止める ssh の結果を待って返す (単体のバイナリは閉じた後にこれで結果を出す)。stop が閉じたら待つのをやめ、
+// 残りの件数を返す。返した結果は takeBG がもう一度知らせない
+func TestWaitBGReturnsResultsOrLeftover(t *testing.T) {
+	h := newHarness(t, []ledger.Host{{Host: "m2macmini.local", User: "koji"}}, []discover.Peer{mini})
+	release := make(chan struct{})
+	h.m.o.RunQuiet = func(context.Context, []string) error { <-release; return nil }
+	h.keys("space", "y")
+	if h.m.PendingBG() != 1 {
+		t.Fatalf("前提: 広告を止める ssh が裏で走っていない (PendingBG=%d)", h.m.PendingBG())
+	}
+	stop := make(chan struct{})
+	close(stop)
+	if got, left := h.m.WaitBG(stop); len(got) != 0 || left != 1 || h.m.PendingBG() != 1 {
+		t.Fatalf("止めた待ち = %+v left=%d pending=%d (結果を待たずに 1 件残すはず)", got, left, h.m.PendingBG())
+	}
+	close(release)
+	got, left := h.m.WaitBG(nil)
+	if left != 0 || len(got) != 1 || !got[0].OK || !strings.Contains(got[0].Text, "の広告を止めた") || h.m.PendingBG() != 0 {
+		t.Fatalf("待った結果 = %+v left=%d pending=%d", got, left, h.m.PendingBG())
+	}
+	h.m.Advance(t0)
+	if n := h.m.TakeNotices(); slices.ContainsFunc(n, func(x Notice) bool { return strings.Contains(x.Text, "の広告を止めた") }) {
+		t.Errorf("WaitBG で返した結果を takeBG がもう一度知らせた: %+v", n)
+	}
+}
+
+// stop が閉じていても、届いている結果は取る (select がどちらを取るかに任せない)。届いていない分だけを残して数える
+func TestWaitBGTakesArrivedResultsAfterStop(t *testing.T) {
+	m := New(Options{})
+	waiting, arrived := make(chan Notice), make(chan Notice, 1)
+	arrived <- Notice{Text: "b.wired.local の広告を止めた", OK: true}
+	m.bg = []<-chan Notice{waiting, arrived}
+	stop := make(chan struct{})
+	close(stop)
+	for range 20 { // 同時に選べるときに取り落とす形は確率でしか出ないので、何度か回す
+		m.bg = []<-chan Notice{waiting, arrived}
+		got, left := m.WaitBG(stop)
+		if len(got) != 1 || left != 1 || m.PendingBG() != 1 {
+			t.Fatalf("got=%+v left=%d pending=%d (届いた 1 件を取り、届いていない 1 件を残すはず)", got, left, m.PendingBG())
+		}
+		arrived <- Notice{Text: "b.wired.local の広告を止めた", OK: true}
+	}
+}
+
 type otherNameError struct{}
 
 func (otherNameError) Error() string {

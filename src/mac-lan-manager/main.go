@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -25,6 +26,7 @@ import (
 
 	"mac-lan-manager/lanmgr"
 	"mac-lan-manager/live"
+	"mac-lan-manager/setup"
 	"subproc"
 )
 
@@ -65,6 +67,7 @@ type app struct {
 	toast    toast.Stack
 	w, h     int
 	ticking  bool
+	sig      *sigWatch
 }
 
 func (a *app) Init() tea.Cmd { return tea.Batch(a.tick(), a.watch()) }
@@ -113,7 +116,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				argv := r.RunArgv() // 初期設定の手順は、端末を渡す前に板を出す
 				cmd := subproc.CommandContext(context.Background(), argv[0], argv[1:]...)
 				x := foreground.NewExec(cmd)
-				cmds = append(cmds, tea.Exec(x, func(err error) tea.Msg { return execDoneMsg{err: err, reclaimErr: x.Err} }))
+				cmds = append(cmds, tea.Exec(a.sig.Guard(x), func(err error) tea.Msg { return execDoneMsg{err: err, reclaimErr: x.Err} }))
 			}
 		case lanmgr.None:
 		}
@@ -232,12 +235,44 @@ func main() {
 	if termcolor.TrueColorThroughTmux(os.Getenv("TMUX"), live.RunOut) {
 		opts = append(opts, tea.WithColorProfile(colorprofile.TrueColor))
 	}
-	_, err = tea.NewProgram(&app{m: m}, opts...).Run()
+	sigs := make(chan os.Signal, 4)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM) // 期待の表は sigWatch の注記
+	sig := newSigWatch(sigs)
+	_, err = tea.NewProgram(&app{m: m, sig: sig}, opts...).Run()
+	signal.Notify(sigs, syscall.SIGHUP) // m.Close の前に聞く (Close の最中に外から HUP が来ると、dns-sd を止める前に死ぬ)
 	// 🚨 err が無くても止める: bubbletea は SIGTERM を「終了」に変えて err=nil で戻すので、err のときだけ止めると
 	// dns-sd が 9 本残った (-B は終わらない)
 	m.Close()
+	finishBG(os.Stderr, m, sig.Done())
+	signal.Stop(sigs)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mac-lan-manager:", err)
 		os.Exit(1)
+	}
+}
+
+// bgWaiter は終わる前に待つ裏の後始末 (lanmgr.Model)。
+type bgWaiter interface {
+	PendingBG() int
+	WaitBG(stop <-chan struct{}) ([]lanmgr.Notice, int)
+}
+
+// finishBG は画面を閉じた後に、台帳から外した相手の広告を止める ssh の結果を待って出す (画面の知らせは閉じた後には出ない)。
+func finishBG(w io.Writer, m bgWaiter, stop <-chan struct{}) {
+	if m.PendingBG() == 0 {
+		return
+	}
+	// 裏の ssh は同じプロセスグループに居るので、端末の Ctrl-C は ssh も止める (待つのをやめるだけではない)
+	fmt.Fprintln(w, "台帳から外した相手の広告を止めている (Ctrl-C で取り消して終える。止める ssh も止まる)")
+	got, left := m.WaitBG(stop)
+	for _, n := range got {
+		mark := "✓"
+		if !n.OK {
+			mark = "✗"
+		}
+		fmt.Fprintln(w, mark, n.Text)
+	}
+	if left > 0 {
+		fmt.Fprintf(w, "✗ %d 台の結果を待たずに終えた (止まったかは分からない)。相手で: %s\n", left, setup.RemoveHint())
 	}
 }
