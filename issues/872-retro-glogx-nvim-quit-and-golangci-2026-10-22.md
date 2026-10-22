@@ -69,7 +69,9 @@ nvim の `<C-g>` を `pcall(vim.cmd, "wall")` が成功したら `:cquit` する
 
 ## 残課題
 
-- [ ] 1 の追記 (`verify-execution-not-just-exit-code.md`) — ユーザーの判断待ち
-- [ ] 2 の追記 (`verify-execution-not-just-exit-code.md`) — ユーザーの判断待ち
-- [ ] 4 の新規 issue — ユーザーの判断待ち
-- [ ] `.golangci.yml` が 23 個の写しで、共通の塊を 23 回書いた。ずれを検査で見張るか生成する形にするかを issue にするか — ユーザーの判断待ち (セッション中に「issue 化しますか？」と聞いて未回答)
+- [x] 1 の追記 (`verify-execution-not-just-exit-code.md`) — ユーザーの指示 (2026-10-22) で追記した。「最後の編集の後に gate を回す」の下に、
+  non-fast-forward の push の再試行の中に検査の段を置く項目を足した (同じ日に dotfiles-b9 も 861 の push で同じ形を踏んだ)
+- [x] 2 の追記 (`verify-execution-not-just-exit-code.md`) — 同じく追記した。「確認を求める外部コマンドは…rc=0 で返る」の節に、対話の中の
+  書き込み・保存を例外 / rc で判定するときの項目を足した
+- [x] 4 の新規 issue — 873 に起票した (反証レビュー済み。負荷でだけ落ちるテストの issue が 422・864 の A9・871 に散っていることも書いた)
+- [x] `.golangci.yml` の 23 個の写し — 874 に起票した (反証レビュー済み。既存の検査 3 本が共通の塊の一部だけを見ていることを書いた)
