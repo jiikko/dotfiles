@@ -119,19 +119,19 @@ func TestKindWithServicesSharingIF(t *testing.T) {
 		{Name: "Wi-Fi 2", Device: "en0", Active: true, IP: "192.168.50.250", Read: true},
 		{Name: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Router: "192.168.50.1", Read: true},
 	}}
-	if k := both.Kind("en0", "192.168.50.20"); k != KindInternet || both.WiredIF("en0") || len(both.Offline()) != 0 {
-		t.Errorf("ルーターのあるサービスが載る en0: Kind=%v WiredIF=%v Offline=%+v", k, both.WiredIF("en0"), both.Offline())
+	if k := both.Kind("en0", "192.168.50.20"); k != KindInternet || both.wiredIF("en0") || len(both.Offline()) != 0 {
+		t.Errorf("ルーターのあるサービスが載る en0: Kind=%v wiredIF=%v Offline=%+v", k, both.wiredIF("en0"), both.Offline())
 	}
 	unread := Snapshot{Services: []Service{
 		{Name: "Wi-Fi", Device: "en0", Active: true},
 		{Name: "Wi-Fi 2", Device: "en0", Active: true, Read: true},
 	}}
-	if k := unread.Kind("en0", "192.168.50.20"); k != KindUnknown || unread.WiredIF("en0") {
-		t.Errorf("読めないサービスが載る en0: Kind=%v WiredIF=%v", k, unread.WiredIF("en0"))
+	if k := unread.Kind("en0", "192.168.50.20"); k != KindUnknown || unread.wiredIF("en0") {
+		t.Errorf("読めないサービスが載る en0: Kind=%v wiredIF=%v", k, unread.wiredIF("en0"))
 	}
 	slices.Reverse(unread.Services) // 読めたサービスが先に並んでも同じ
-	if k := unread.Kind("en0", "192.168.50.20"); k != KindUnknown || unread.WiredIF("en0") {
-		t.Errorf("読めないサービスが後に載る en0: Kind=%v WiredIF=%v", k, unread.WiredIF("en0"))
+	if k := unread.Kind("en0", "192.168.50.20"); k != KindUnknown || unread.wiredIF("en0") {
+		t.Errorf("読めないサービスが後に載る en0: Kind=%v wiredIF=%v", k, unread.wiredIF("en0"))
 	}
 	// 読めないサービスが先でも、ルーターのあるサービスが載る I/F はインターネット側 (最優先)
 	unreadThenInternet := Snapshot{Services: []Service{
@@ -146,8 +146,8 @@ func TestKindWithServicesSharingIF(t *testing.T) {
 		{Name: "TB", Device: "en13", Active: true, IP: "192.168.100.5", Method: "manual", Read: true},
 		{Name: "古い設定", Device: "en13", Router: "192.168.100.1", Read: true, Disabled: true},
 	}}
-	if !disabled.WiredIF("en13") || disabled.Kind("en13", "192.168.100.5") != KindWired {
-		t.Errorf("無効のサービスのルーターで有線を外した: WiredIF=%v Kind=%v", disabled.WiredIF("en13"), disabled.Kind("en13", "192.168.100.5"))
+	if !disabled.wiredIF("en13") || disabled.Kind("en13", "192.168.100.5") != KindWired {
+		t.Errorf("無効のサービスのルーターで有線を外した: wiredIF=%v Kind=%v", disabled.wiredIF("en13"), disabled.Kind("en13", "192.168.100.5"))
 	}
 	twice := Snapshot{Services: []Service{
 		{Name: "A", Device: "en13", Active: true, Read: true}, {Name: "B", Device: "en13", Active: true, Read: true},
@@ -385,7 +385,7 @@ func TestReadFailsWhenContextEndsMidway(t *testing.T) {
 // I/F を持たないサービス (VPN など) は有線の I/F ではない ("" 同士の一致で有線と読み、I/F で決める設定が VPN を固定 IP にしかけた)。
 func TestWiredIFRejectsEmptyDevice(t *testing.T) {
 	snap := Snapshot{Services: []Service{{Name: "VPN (L2TP)", Port: "L2TP", Device: "", Read: true, Method: "DHCP"}}}
-	if snap.WiredIF("") {
+	if snap.wiredIF("") {
 		t.Error("I/F の無いサービスを有線と読んだ")
 	}
 }
@@ -451,7 +451,7 @@ func TestReadKeepsServicesWhenDeadlineHitsIFList(t *testing.T) {
 	}
 }
 
-// 線の種類は Hardware Port で決める。Kind (ルーターの有無) とは別の軸で、iPhone USB は Mac 同士の網に使わない (NotWiredLAN) が線は有線。
+// 線の種類は Hardware Port で決める。Kind (ルーターの有無) とは別の軸で、iPhone USB は Mac 同士の網に使わない (notWiredLAN) が線は有線。
 // サービス名は利用者が変えられるので、名前を変えた Wi-Fi も無線 (serviceorder_renamed.txt は本物の出力)。
 func TestLinkByHardwarePort(t *testing.T) {
 	cases := []struct {
@@ -577,4 +577,22 @@ func exitOne(t *testing.T, stderr string) error {
 	}
 	ee.Stderr = []byte(stderr)
 	return ee
+}
+
+// 内部の網の I/F はルーターの無い有線だけ。ルーターの無い Wi-Fi・iPhone USB・ルーターのある有線・登録の無い I/F は入れない。
+func TestLanIF(t *testing.T) {
+	s := Snapshot{Services: []Service{
+		{Name: "Thunderbolt Bridge", Port: "Thunderbolt Bridge", Device: "bridge0", IP: "169.254.1.1", Read: true},
+		{Name: "USB LAN", Port: "USB 10/100/1000 LAN", Device: "en13", IP: "192.168.100.2", Read: true},
+		{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", IP: "169.254.9.9", Read: true},
+		{Name: "iPhone", Port: "iPhone USB", Device: "en9", IP: "172.20.10.2", Read: true},
+		{Name: "Ethernet", Port: "Ethernet", Device: "en7", IP: "192.168.50.20", Router: "192.168.50.1", Read: true},
+	}}
+	// 無効のサービスの Port は数えない (抜いた iPhone の古い設定が同じ I/F の名前に残っても、今の USB LAN を外さない)
+	s.Services = append(s.Services, Service{Name: "old iPhone", Port: "iPhone USB", Device: "en13", Disabled: true})
+	for dev, want := range map[string]bool{"bridge0": true, "en13": true, "en0": false, "en9": false, "en7": false, "en5": false, "": false} {
+		if got := s.LanIF(dev); got != want {
+			t.Errorf("LanIF(%q) = %v, want %v", dev, got, want)
+		}
+	}
 }

@@ -35,7 +35,7 @@ func (m *Model) setCount() int { return setKind0 + len(otherKinds) }
 func (m *Model) lanIFs() []netinfo.Service {
 	var out []netinfo.Service
 	for _, s := range m.self.Enabled() {
-		if !s.NotWiredLAN() && m.self.WiredIF(s.Device) && !slices.ContainsFunc(out, func(o netinfo.Service) bool { return o.Device == s.Device }) {
+		if m.self.LanIF(s.Device) && !slices.ContainsFunc(out, func(o netinfo.Service) bool { return o.Device == s.Device }) {
 			out = append(out, s)
 		}
 	}

@@ -3354,3 +3354,55 @@ func TestDetailPanelStaysOnOpenedMac(t *testing.T) {
 		t.Error("Close でパネルが閉じない")
 	}
 }
+
+// ルーターの無い Wi-Fi (DHCP を取れず 169.254 になった・ルーターの無い網) の上で見えた相手を、内部 IP (有線) と数えない。
+// この Mac の内部の網 (Offline・selfWired) が Wi-Fi を除くのと同じ判定 (netinfo.LanIF) で決める。
+func TestRowsWifiWithoutRouterIsNotWired(t *testing.T) {
+	cases := []struct {
+		name     string
+		services []netinfo.Service
+		peer     discover.Peer
+		ifs      map[int]string
+		wantMain string
+	}{
+		{
+			name: "Wi-Fi が 169.254",
+			services: []netinfo.Service{
+				{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", Active: true, IP: "169.254.9.9", Method: "DHCP", Read: true},
+			},
+			peer: discover.Peer{Host: "air.local", SSH: true, Addrs: map[int]string{14: "169.254.50.7"}},
+			ifs:  map[int]string{14: "en0"},
+		},
+		{
+			// ルーターのある有線とルーターの無い Wi-Fi の両方に居る: 繋ぐ先は有線のメイン IP (Wi-Fi の IP を内部 IP と読んで先に選ばない)
+			name: "有線はルーターあり・Wi-Fi はルーターなし",
+			services: []netinfo.Service{
+				{Name: "Ethernet", Port: "Ethernet", Device: "en7", Active: true, IP: "192.168.50.20", Method: "DHCP", Router: "192.168.50.1", Read: true},
+				{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", Active: true, IP: "10.0.0.20", Method: "DHCP", Read: true},
+			},
+			peer:     discover.Peer{Host: "mini.local", SSH: true, Addrs: map[int]string{14: "10.0.0.8", 20: "192.168.50.8"}},
+			ifs:      map[int]string{14: "en0", 20: "en7"},
+			wantMain: "192.168.50.8",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			net := netinfo.Snapshot{Services: c.services}
+			m := New(Options{
+				ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return net, nil },
+				StartScan: func(time.Time) Scanner { return &fakeScan{peers: []discover.Peer{c.peer}} },
+				IfName:    func(i int) string { return c.ifs[i] },
+				Now:       func() time.Time { return t0 },
+			})
+			awaitNetLoad(m)
+			rs := m.rows()
+			r := rs[len(rs)-1]
+			if r.wired || r.lanIP != "" {
+				t.Errorf("wired = %v / 内部 IP = %q, want 有線と数えない", r.wired, r.lanIP)
+			}
+			if c.wantMain != "" && (r.mainIP != c.wantMain || r.connectIP() != c.wantMain) {
+				t.Errorf("メイン = %q / 繋ぐ先 = %q, want %s", r.mainIP, r.connectIP(), c.wantMain)
+			}
+		})
+	}
+}

@@ -336,7 +336,7 @@ func (m *Model) selfStaticAsk(step setup.StepID) (*ask, string) {
 func (m *Model) selfWired() (netinfo.Service, bool) {
 	if !m.pf.LanByBand {
 		for _, s := range m.self.Enabled() {
-			if s.Device == m.pf.LanIF && !s.NotWiredLAN() && m.self.WiredIF(s.Device) { // ネットに繋がっていない有線だけ (Offline と同じ)
+			if s.Device == m.pf.LanIF && m.self.LanIF(s.Device) { // ネットに繋がっていない有線だけ (Offline と同じ)
 				return s, true
 			}
 		}

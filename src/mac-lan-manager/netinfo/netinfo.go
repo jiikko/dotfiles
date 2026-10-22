@@ -93,14 +93,14 @@ type Service struct {
 	Disabled bool
 }
 
-// NotWiredLAN は Mac 同士の有線の網に使わない I/F のサービスか (無線・Bluetooth・iPhone のテザリング)。Hardware Port で決める
+// notWiredLAN は Mac 同士の有線の網に使わない I/F のサービスか (無線・Bluetooth・iPhone のテザリング)。Hardware Port で決める
 // (サービス名は利用者が変えられる)。Thunderbolt Bridge は Mac 同士の有線なので含めない
-func (s Service) NotWiredLAN() bool {
+func (s Service) notWiredLAN() bool {
 	return wirelessPort(s.Port) || s.Port == "iPhone USB"
 }
 
 // wirelessPort は電波で繋ぐ Hardware Port か。iPhone USB は Mac 同士の網には使わないが線は USB なので無線に入れない
-// (NotWiredLAN を無線の判定に流用すると iPhone USB が「無線」と出る)。
+// (notWiredLAN を無線の判定に流用すると iPhone USB が「無線」と出る)。
 func wirelessPort(port string) bool {
 	switch port {
 	case "Wi-Fi", "AirPort", "Bluetooth PAN":
@@ -212,8 +212,15 @@ func (s Snapshot) Enabled() []Service {
 	return slices.DeleteFunc(slices.Clone(s.Services), func(sv Service) bool { return sv.Disabled })
 }
 
-// WiredIF は dev がルーターの無い有線の I/F か。内部 IP の候補・「未固定」・I/F で決める設定は全部これで決める。
-func (s Snapshot) WiredIF(dev string) bool { return s.class(dev) == ifWired }
+// wiredIF は dev がルーターの無い I/F か (Hardware Port を見ないので、ルーターの無い Wi-Fi も入る)。外からは LanIF を使う。
+func (s Snapshot) wiredIF(dev string) bool { return s.class(dev) == ifWired }
+
+// LanIF は dev が Mac 同士の内部の網に使う I/F か (ルーターの無い I/F のうち、無線・iPhone USB を除く)。内部 IP の候補・「未固定」・
+// I/F で決める設定・相手の IP を内部 IP と読むかは全部これで決める (ルーターだけで決めると、DHCP を取れない Wi-Fi の上の相手を有線と数えた)。
+func (s Snapshot) LanIF(dev string) bool {
+	// 無効のサービスは数えない (class と同じ。抜いた機器の古い設定が同じ I/F の名前に残りうる)
+	return s.wiredIF(dev) && !slices.ContainsFunc(s.Enabled(), func(sv Service) bool { return sv.Device == dev && sv.notWiredLAN() })
+}
 
 // Kind は dev で見えた addr の種類。サービスとして登録されているのに読めない I/F は「分からない」にする
 // (名前で決めると、読めなかった Thunderbolt Bridge を「仮想」に、Wi-Fi の上の 169.254 を「自動割り当て」にした)。
@@ -516,7 +523,7 @@ func (s Snapshot) Offline() []Service {
 	for _, sv := range s.Enabled() {
 		// 無線は数えない: ルーターの無い Wi-Fi (どこにも繋がっていない・ルーターの無い網に繋いだ) を「ネットに繋がっていない有線」として
 		// 固定 IP にしかけた (ユーザーの指示 2026-10-16「ネットに繋がっていない有線ネットワークに限定」)
-		if sv.Active && !sv.NotWiredLAN() && s.WiredIF(sv.Device) && !slices.ContainsFunc(out, func(o Service) bool { return o.Device == sv.Device }) {
+		if sv.Active && s.LanIF(sv.Device) && !slices.ContainsFunc(out, func(o Service) bool { return o.Device == sv.Device }) {
 			out = append(out, sv)
 		}
 	}

@@ -41,4 +41,20 @@ lan-manager の全体監査 (865) の P2 (encapsulation E1)。「内部の網に
 
 ## 進捗
 
-- [ ] `LanIF` に寄せる修正とテスト
+- [x] `LanIF` に寄せる修正とテスト
+  - `netinfo.Snapshot.LanIF(dev)` = ルーターの無い I/F (`wiredIF`) で、その I/F のサービスに無線・iPhone USB (`notWiredLAN`) が無い
+  - 5 か所 (`Offline`・`lanIFs`・`selfWired`・`selfLan` の I/F で決める側・`rows` の wiredService) を `LanIF` に寄せた。`rows` は Kind を見ずに `LanIF(dev)` だけで決める
+  - 迂回を止める: `WiredIF` と `NotWiredLAN` を非公開 (`wiredIF` / `notWiredLAN`) にした。netinfo の外 (dotfiles の全 module) で使っていたのは寄せた 4 か所だけ
+  - テスト: `TestLanIF` (Thunderbolt Bridge・USB LAN は入る / ルーターの無い Wi-Fi・iPhone USB・ルーターのある有線・登録の無い I/F・"" は入らない)、
+    `TestRowsWifiWithoutRouterIsNotWired` (Wi-Fi が 169.254 の相手は有線と数えない / ルーターのある有線とルーターの無い Wi-Fi の両方で見えた相手は、繋ぐ先が有線のメイン IP)
+  - 変異 (`mutate-verify`。どちらも想定のテストが red): `rows` を Kind だけで決める旧の形に戻す → `TestRowsWifiWithoutRouterIsNotWired` /
+    `LanIF` から無線の除外を外す → `TestLanIF`
+  - 「何が壊れるか」の 3 (lanAway と mainIP == "" が重なる見当違いの理由) は、相手が内部 IP と数えられなくなるので起きない (専用のテストは足していない)
+- [x] 敵対的レビュー (opus、読み取りのみ): 本物の有線の相手が内部 IP から外れる形・無線の相手がまだ内部 IP になる形は作れなかった
+  (旧の rows の判定は `wiredIF(dev)` と同じで、新しい判定との差は Wi-Fi・AirPort・Bluetooth PAN・iPhone USB の I/F だけ)。指摘への対応:
+  - P3 `LanIF` が無効のサービスの Port も見ていた → `Enabled()` だけを見る (`class` と同じ)。`TestLanIF` に「無効の iPhone USB が同じ I/F に残る」を足し、
+    `Services` に戻す変異で red を確認
+  - P3 保存した I/F が Wi-Fi のときの文言が「読めない」だった → 「(Port) は内部の網に使えない (読めない・ルーターがある・無線か iPhone USB)」
+  - **残り (ユーザーの判断待ち)**: P2 内部 IP から外れたルーターの無い Wi-Fi の IP は「その他の IP」に入り、`Kind` (ルーターの有無の軸。Port を見ない) は
+    `KindWired` のままなので、詳細カードで `有線` の札と `(無線)` が並ぶ (report の Others も Kind="有線" / Link="無線")。この変更の前は同じ IP が
+    内部 IP として「有線」で出ていたので悪化ではない。直すなら、KindWired の語を「ルーターなし」に変えるか、ルーターの無い無線に別の種類を作るか (見た目の判断)
