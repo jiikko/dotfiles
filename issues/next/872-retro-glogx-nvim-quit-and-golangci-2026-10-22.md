@@ -1,0 +1,1 @@
+../872-retro-glogx-nvim-quit-and-golangci-2026-10-22.md

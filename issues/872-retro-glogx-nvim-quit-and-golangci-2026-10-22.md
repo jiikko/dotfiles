@@ -1,5 +1,7 @@
 # 872 (retro): glogx の nvim の Ctrl-G・golangci-lint の linter 追加と版上げの振り返り
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-22〜）
+
 起票日: 2026-10-22
 
 ## 概要
