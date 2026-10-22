@@ -101,5 +101,8 @@ done | wc -l
 
 ## 進捗
 
-- [ ] 改善 1〜3 の切り出し (ユーザーの判断待ち)
+- [x] 改善 1〜3 の切り出し (2026-10-22 ユーザー指示で実施。commit「rules: retro 855 の改善 1〜3 を既存の rule へ併合」)
+  - 1: `verify-execution-not-just-exit-code.md` の「手元の検査が CI より狭い」項の子項に、skip / fallback の行を「狭いと知っている」に数える旨
+  - 2: 同ファイルの「有無で結果が変わらない観測」節に、プロセス・シグナルの観測の 3 例
+  - 3: `mutation-verify-new-tests.md` の「検査の不在を主張するときの裏取り」節の冒頭に、網を外す理由のコメントを発動点として
 - [ ] 局所の `make test-yaml` / `test-actionlint` の扱い (ユーザーの判断待ち)
