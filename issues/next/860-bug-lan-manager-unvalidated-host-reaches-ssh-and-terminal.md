@@ -1,1 +1,0 @@
-../860-bug-lan-manager-unvalidated-host-reaches-ssh-and-terminal.md

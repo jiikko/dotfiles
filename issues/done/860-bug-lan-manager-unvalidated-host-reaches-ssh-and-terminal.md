@@ -1,7 +1,5 @@
 # 860 (bug): Bonjour の名前が未検査のまま ssh の HostKeyAlias と端末へ届く
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-22〜）
-
 起票日: 2026-10-22
 
 ## 概要
