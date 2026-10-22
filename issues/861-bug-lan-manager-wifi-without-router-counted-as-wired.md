@@ -55,6 +55,12 @@ lan-manager の全体監査 (865) の P2 (encapsulation E1)。「内部の網に
   - P3 `LanIF` が無効のサービスの Port も見ていた → `Enabled()` だけを見る (`class` と同じ)。`TestLanIF` に「無効の iPhone USB が同じ I/F に残る」を足し、
     `Services` に戻す変異で red を確認
   - P3 保存した I/F が Wi-Fi のときの文言が「読めない」だった → 「(Port) は内部の網に使えない (読めない・ルーターがある・無線か iPhone USB)」
-  - **残り (ユーザーの判断待ち)**: P2 内部 IP から外れたルーターの無い Wi-Fi の IP は「その他の IP」に入り、`Kind` (ルーターの有無の軸。Port を見ない) は
-    `KindWired` のままなので、詳細カードで `有線` の札と `(無線)` が並ぶ (report の Others も Kind="有線" / Link="無線")。この変更の前は同じ IP が
-    内部 IP として「有線」で出ていたので悪化ではない。直すなら、KindWired の語を「ルーターなし」に変えるか、ルーターの無い無線に別の種類を作るか (見た目の判断)
+  - P2 内部 IP から外れたルーターの無い Wi-Fi の IP が「その他の IP」で `有線` の札のままだった → ユーザーの決定 (2026-10-22) で別の種類にした:
+    `netinfo.KindWirelessNoRouter` (画面「無線 (ルーターなし)」・設定の Key `wireless-no-router`・黄の札)。Hardware Port が電波の I/F の
+    ルーターの無い IP は 169.254 も含めてこれになる。iPhone USB は線が USB なので `KindWired` のまま
+  - 設定: 既定の「その他の IP に含める種類」に入れた。版 1 の保存の `wired` はルーターの無い Wi-Fi も含んでいたので、`kinds_version` の無い
+    古い設定で `wired` が入っていれば新しい種類も入れて読む (今まで見えていた IP を黙って隠さない)。Save は `kinds_version = 2` を書き、
+    版 2 の設定は読み替えない (外した選択を戻さない)
+  - テスト: `TestKindWirelessNoRouter`・`TestLoadOldKindNames` (版 1 の読み替え)・`TestLoadKindsVersion2KeepsChoice`・
+    `TestRowsWifiWithoutRouterIsNotWired` (その他の IP の札)。変異: Kind の無線の判定を外す → `TestKindWirelessNoRouter` /
+    版 1 の読み替えを外す → `TestLoadOldKindNames` / Save が版を書かない → `TestLoadKindsVersion2KeepsChoice` (どれも red)

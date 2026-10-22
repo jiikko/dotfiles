@@ -31,7 +31,7 @@ type Prefs struct {
 
 // Default は最初の設定 (仮想と VPN は含めない)。
 func Default() Prefs {
-	return Prefs{ShowMain: true, ShowLan: true, LanByBand: true, Band: "192.168.100.0/24", Kinds: []string{netinfo.KindWired.Key(), netinfo.KindLinkLocal.Key(), netinfo.KindUnknown.Key()}}
+	return Prefs{ShowMain: true, ShowLan: true, LanByBand: true, Band: "192.168.100.0/24", Kinds: []string{netinfo.KindWired.Key(), netinfo.KindWirelessNoRouter.Key(), netinfo.KindLinkLocal.Key(), netinfo.KindUnknown.Key()}}
 }
 
 // EnvDir は置き場所を差し替える環境変数。台帳と同じ 1 つの名前を使う (別の定数に写していたので、片方の改名で黙ってずれた)。
@@ -58,6 +58,7 @@ func Load(path string) (Prefs, error) {
 	if err != nil {
 		return p, err
 	}
+	kindsVersion := 1
 	for _, line := range strings.Split(string(b), "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
 		if !ok || strings.HasPrefix(strings.TrimSpace(line), "#") {
@@ -84,6 +85,10 @@ func Load(path string) (Prefs, error) {
 			} else {
 				p.LanIF = s
 			}
+		case "kinds_version":
+			if n, err := strconv.Atoi(v); err == nil {
+				kindsVersion = n
+			}
 		case "kinds":
 			s, err := strconv.Unquote(v)
 			if err != nil {
@@ -97,8 +102,15 @@ func Load(path string) (Prefs, error) {
 			}
 		}
 	}
+	// 版 1 の "wired" は「ルーターの無い I/F」で、ルーターの無い Wi-Fi も含んでいた。分けた種類も入れて、今まで見えていた IP を黙って隠さない
+	if kindsVersion < kindsVersionNow && slices.Contains(p.Kinds, netinfo.KindWired.Key()) && !slices.Contains(p.Kinds, netinfo.KindWirelessNoRouter.Key()) {
+		p.Kinds = append(p.Kinds, netinfo.KindWirelessNoRouter.Key())
+	}
 	return p, nil
 }
+
+// kindsVersionNow は種類の意味の版 (2 = ルーターの無い Wi-Fi を wired から wireless-no-router に分けた)。Save が書く。
+const kindsVersionNow = 2
 
 // kindKey は保存された種類の名前を Key に揃える。前の版は画面の名前 (「有線」) を書いていたので、それも読む。
 // 知らない名前はそのまま残す (新しい版が足した種類を古い版が読んで Save すると、捨てた分が設定から消えた)。
@@ -123,7 +135,7 @@ func Save(path string, p Prefs) error {
 	}
 	kinds := slices.Clone(p.Kinds)
 	slices.Sort(kinds)
-	s := fmt.Sprintf("# mac-lan-manager の設定 (中の , で変える)\nshow_main = %t\nshow_lan = %t\nshow_others = %t\nlan_by_band = %t\nwired_only = %t\nband = %s\nlan_if = %s\nkinds = %s\n",
-		p.ShowMain, p.ShowLan, p.ShowOthers, p.LanByBand, p.WiredOnly, strconv.Quote(p.Band), strconv.Quote(p.LanIF), strconv.Quote(strings.Join(kinds, ",")))
+	s := fmt.Sprintf("# mac-lan-manager の設定 (中の , で変える)\nshow_main = %t\nshow_lan = %t\nshow_others = %t\nlan_by_band = %t\nwired_only = %t\nband = %s\nlan_if = %s\nkinds = %s\nkinds_version = %d\n",
+		p.ShowMain, p.ShowLan, p.ShowOthers, p.LanByBand, p.WiredOnly, strconv.Quote(p.Band), strconv.Quote(p.LanIF), strconv.Quote(strings.Join(kinds, ",")), kindsVersionNow)
 	return atomicfile.Write(path, []byte(s), 0o644)
 }

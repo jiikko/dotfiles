@@ -149,7 +149,8 @@ func (m *Model) speedPaths(r row) []speedPath {
 	add(r.mainIP, r.mainLink, "メイン")
 	for _, x := range r.others {
 		switch x.Kind {
-		case netinfo.KindWired, netinfo.KindLinkLocal, netinfo.KindUnknown: // 内部の網に居うる (Unknown は登録はあるが読めない有線の I/F を含む)
+		// 内部の網に居うる (Unknown は登録はあるが読めない有線の I/F を含む)。ルーターの無い Wi-Fi も、ルーターが無いので同じ網の相手にしか届かない
+		case netinfo.KindWired, netinfo.KindWirelessNoRouter, netinfo.KindLinkLocal, netinfo.KindUnknown:
 			if !lanReachable(m.selfIPOn(x.Device), x.Addr, m.pf.Band) {
 				continue
 			}

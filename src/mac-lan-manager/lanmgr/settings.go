@@ -14,7 +14,7 @@ import (
 )
 
 // otherKinds は「その他の IP」に含めるかを切り替える種類 (表示の順)。
-var otherKinds = []netinfo.Kind{netinfo.KindWired, netinfo.KindLinkLocal, netinfo.KindVirtual, netinfo.KindVPN, netinfo.KindUnknown}
+var otherKinds = []netinfo.Kind{netinfo.KindWired, netinfo.KindWirelessNoRouter, netinfo.KindLinkLocal, netinfo.KindVirtual, netinfo.KindVPN, netinfo.KindUnknown}
 
 const (
 	setMain = iota
@@ -171,7 +171,7 @@ func choice(opts []string, cur int) string {
 func (m *Model) viewSettings(w int) string {
 	labels := []string{"メイン IP (インターネット側)", "内部 IP (この Mac 同士の通信)", "その他の IP (+N の札・詳細カード)", "決め方", "帯", "I/F", "出す相手"}
 	sections := map[int]string{setMain: "一覧に出す IP", setMode: "内部 IP の決め方", setWired: "一覧に出す相手", setKind0: "その他の IP に含める種類"}
-	explain := map[netinfo.Kind]string{netinfo.KindWired: "ルーターの無い有線の I/F", netinfo.KindLinkLocal: "169.254 (リンクローカル。固定の帯を除く)",
+	explain := map[netinfo.Kind]string{netinfo.KindWired: "ルーターの無い有線の I/F", netinfo.KindWirelessNoRouter: "ルーターの無い Wi-Fi (DHCP を取れない・ルーターの無い網)", netinfo.KindLinkLocal: "169.254 (リンクローカル。固定の帯を除く)",
 		netinfo.KindVirtual: "bridge / vmnet (VM・Docker のブリッジ)", netinfo.KindVPN: "utun (VPN・Tailscale)", netinfo.KindUnknown: "設定に出てこない I/F"}
 	inner := max(w-7, 10) // 板の中身の幅 (card の Width(w-1-2) と左右の余白 2)
 	m.setLabelW = min(40, max(inner/2, 8))

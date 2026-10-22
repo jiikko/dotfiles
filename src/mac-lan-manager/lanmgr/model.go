@@ -815,7 +815,7 @@ func (m *Model) rows() []row {
 			k := m.ifKind(dev, ip)
 			link := m.self.Link(dev)
 			// 内部 IP にするのは、この Mac の内部の網の I/F (LanIF) で見えたものだけ。169.254 も、その I/F の上なら内部の網。
-			// Kind では決めない (登録の無い I/F の 169.254 も KindLinkLocal、ルーターの無い Wi-Fi も KindWired になる)
+			// Kind では決めない (登録の無い I/F の 169.254 も KindLinkLocal になる。iPhone USB は KindWired だが内部の網には使わない)
 			wiredService := m.self.LanIF(dev)
 			r.wired = r.wired || wiredService
 			switch {

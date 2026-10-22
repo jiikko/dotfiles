@@ -215,6 +215,11 @@ func (s Snapshot) Enabled() []Service {
 // wiredIF は dev がルーターの無い I/F か (Hardware Port を見ないので、ルーターの無い Wi-Fi も入る)。外からは LanIF を使う。
 func (s Snapshot) wiredIF(dev string) bool { return s.class(dev) == ifWired }
 
+// wirelessIF は dev の有効なサービスの Hardware Port が電波か (iPhone USB は線が USB なので入れない)。
+func (s Snapshot) wirelessIF(dev string) bool {
+	return slices.ContainsFunc(s.Enabled(), func(sv Service) bool { return sv.Device == dev && wirelessPort(sv.Port) })
+}
+
 // LanIF は dev が Mac 同士の内部の網に使う I/F か (ルーターの無い I/F のうち、無線・iPhone USB を除く)。内部 IP の候補・「未固定」・
 // I/F で決める設定・相手の IP を内部 IP と読むかは全部これで決める (ルーターだけで決めると、DHCP を取れない Wi-Fi の上の相手を有線と数えた)。
 func (s Snapshot) LanIF(dev string) bool {
@@ -231,6 +236,9 @@ func (s Snapshot) Kind(dev, addr string) Kind {
 	case ifUnread:
 		return KindUnknown
 	case ifWired:
+		if s.wirelessIF(dev) { // ルーターの無い Wi-Fi (DHCP を取れない・ルーターの無い網) は 169.254 も含めて有線と呼ばない
+			return KindWirelessNoRouter
+		}
 		if IsLinkLocal(addr) {
 			return KindLinkLocal
 		}
@@ -246,11 +254,14 @@ type Kind int
 // IP の種類。「その他の IP」に含めるかを設定で切り替える単位。
 const (
 	KindUnknown   Kind = iota // 設定 (networksetup) に出てこない I/F
-	KindWired                 // ルーターの無いサービス (有線)
+	KindWired                 // ルーターの無いサービス (有線。iPhone USB も含む)
 	KindInternet              // ルーターのあるサービス (Wi-Fi など)
 	KindLinkLocal             // 169.254 (固定していない)
 	KindVirtual               // VM・Docker のブリッジ (bridge / vmnet / vnic)
 	KindVPN                   // utun (VPN・Tailscale)
+	// KindWirelessNoRouter はルーターの無いサービスのうち Hardware Port が電波のもの。最後に足す (設定は Key で保存するので値の並びは効かないが、
+	// 既存の値を動かさない)
+	KindWirelessNoRouter
 )
 
 // String は画面に出す種類の名前。
@@ -266,6 +277,8 @@ func (k Kind) String() string {
 		return "仮想"
 	case KindVPN:
 		return "VPN"
+	case KindWirelessNoRouter:
+		return "無線 (ルーターなし)"
 	case KindUnknown:
 		return "不明"
 	}
@@ -285,6 +298,8 @@ func (k Kind) Key() string {
 		return "virtual"
 	case KindVPN:
 		return "vpn"
+	case KindWirelessNoRouter:
+		return "wireless-no-router"
 	case KindUnknown:
 		return "unknown"
 	}
@@ -292,7 +307,7 @@ func (k Kind) Key() string {
 }
 
 // Kinds は種類の全部 (設定の読み替えと検査に使う)。
-var Kinds = []Kind{KindUnknown, KindWired, KindInternet, KindLinkLocal, KindVirtual, KindVPN}
+var Kinds = []Kind{KindUnknown, KindWired, KindInternet, KindLinkLocal, KindVirtual, KindVPN, KindWirelessNoRouter}
 
 // IsLinkLocal は ip がリンクローカル (169.254.0.0/16) か。固定の帯は設定で 169.254 の中にも置ける (既定は 192.168.100.0/24) ので、これだけで「固定していない」とは
 // 決めない (固定かは方式か台帳で決める)。判定はここ 1 か所 (5 か所に写っていた)。

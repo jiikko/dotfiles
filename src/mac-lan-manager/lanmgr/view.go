@@ -921,7 +921,7 @@ func kindPill(k netinfo.Kind) string {
 	switch k {
 	case netinfo.KindWired:
 		return pillOn.Render(k.String())
-	case netinfo.KindLinkLocal:
+	case netinfo.KindLinkLocal, netinfo.KindWirelessNoRouter: // ルーターの無い Wi-Fi は「繋がっていない」に近い (黄)
 		return pillWrn.Render(k.String())
 	case netinfo.KindVirtual:
 		return pillVNC.Render(k.String())

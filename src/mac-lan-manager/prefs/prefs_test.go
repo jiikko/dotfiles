@@ -83,7 +83,8 @@ func TestLoadOldKindNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"wired", "link-local", "vpn", "なにか"}; !slices.Equal(got.Kinds, want) {
+	// 版 1 の wired はルーターの無い Wi-Fi も含んでいたので、分けた種類も入れて読む
+	if want := []string{"wired", "link-local", "vpn", "なにか", "wireless-no-router"}; !slices.Equal(got.Kinds, want) {
 		t.Errorf("Kinds = %v, want %v", got.Kinds, want)
 	}
 	if err := Save(path, got); err != nil {
@@ -95,6 +96,23 @@ func TestLoadOldKindNames(t *testing.T) {
 	}
 	if !slices.Contains(again.Kinds, "なにか") {
 		t.Errorf("Save と Load の後に知らない種類が消えた: %v", again.Kinds)
+	}
+}
+
+// 版 2 で保存した設定は読み替えない (利用者が「無線 (ルーターなし)」を外して保存したら、読み直しても戻さない)。
+func TestLoadKindsVersion2KeepsChoice(t *testing.T) {
+	path := filepath.Join(sandbox, "v2", "settings.toml")
+	p := Default()
+	p.Kinds = []string{"wired", "link-local"}
+	if err := Save(path, p); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"link-local", "wired"}; !slices.Equal(got.Kinds, want) {
+		t.Errorf("Kinds = %v, want %v (外した種類を戻した)", got.Kinds, want)
 	}
 }
 

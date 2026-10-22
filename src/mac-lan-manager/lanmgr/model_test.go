@@ -3366,6 +3366,10 @@ func TestRowsWifiWithoutRouterIsNotWired(t *testing.T) {
 			if c.wantMain != "" && (r.mainIP != c.wantMain || r.connectIP() != c.wantMain) {
 				t.Errorf("メイン = %q / 繋ぐ先 = %q, want %s", r.mainIP, r.connectIP(), c.wantMain)
 			}
+			// 「その他の IP」に残る Wi-Fi の IP は「有線」の札にしない
+			if i := slices.IndexFunc(r.others, func(x netinfo.IP) bool { return x.Device == "en0" }); i < 0 || r.others[i].Kind != netinfo.KindWirelessNoRouter {
+				t.Errorf("その他の IP = %+v, want en0 の IP が無線 (ルーターなし)", r.others)
+			}
 		})
 	}
 }

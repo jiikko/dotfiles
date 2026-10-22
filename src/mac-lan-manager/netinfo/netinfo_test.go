@@ -632,3 +632,29 @@ func TestReadServicesUnread(t *testing.T) {
 		t.Errorf("ReadServices が I/F 全部の IP を集めた: %+v", snap.IPs)
 	}
 }
+
+// ルーターの無い Wi-Fi の IP は有線と呼ばない (169.254 も)。iPhone USB は線が USB なので有線のまま。
+func TestKindWirelessNoRouter(t *testing.T) {
+	s := Snapshot{Services: []Service{
+		{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", IP: "10.0.0.20", Read: true},
+		{Name: "iPhone", Port: "iPhone USB", Device: "en9", IP: "172.20.10.2", Read: true},
+		{Name: "USB LAN", Port: "USB 10/100/1000 LAN", Device: "en13", IP: "192.168.100.2", Read: true},
+	}}
+	for _, c := range []struct {
+		dev, addr string
+		want      Kind
+	}{
+		{"en0", "10.0.0.8", KindWirelessNoRouter},
+		{"en0", "169.254.9.9", KindWirelessNoRouter},
+		{"en9", "172.20.10.3", KindWired},
+		{"en13", "192.168.100.9", KindWired},
+		{"en13", "169.254.1.1", KindLinkLocal},
+	} {
+		if got := s.Kind(c.dev, c.addr); got != c.want {
+			t.Errorf("Kind(%s, %s) = %v, want %v", c.dev, c.addr, got, c.want)
+		}
+	}
+	if k := KindWirelessNoRouter; k.Key() != "wireless-no-router" || k.String() != "無線 (ルーターなし)" || !slices.Contains(Kinds, k) {
+		t.Errorf("Key = %q / String = %q / Kinds に入っているか", k.Key(), k.String())
+	}
+}
