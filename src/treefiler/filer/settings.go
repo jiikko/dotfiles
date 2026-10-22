@@ -23,9 +23,8 @@ import (
 // 保存先は configDir の treefiler.toml (ユーザー回答 2026-10-07。置き場は道具ごとに持つ)。TREEFILER_CONFIG_DIR で差し替える (テストが本物を触らないため)。
 // 形式は treebeard と同じフラットな `key = value`。変えた 1 行だけ書き換え、他の行とコメントは保つ。
 //
-// 写さない項目 (spec §0.1): Pipes の別方式・River tracks・Sort by / Reverse (ソートは後回し)・Step through (j k は兄弟の中と決めた)・
-// Mouse・Wheel speed・Momentum・Image previews・Block glyphs (画像は後回し)・Text preview (glow / bat は呼ばない)。
-// 未対応: Wrap lines (タイルの長い行は今は切る)。
+// 写さない項目 (spec §0.1): Pipes の別方式・River tracks・Step through (j k は兄弟の中と決めた)・
+// Mouse・Wheel speed・Momentum・Image previews・Block glyphs (画像はまだ開かない)・Text preview (glow / bat は呼ばない)。
 
 // Settings は設定の値。
 type Settings struct {
