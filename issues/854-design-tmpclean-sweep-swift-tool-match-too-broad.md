@@ -54,6 +54,11 @@ framework を読むもの) から集める。テスト (`TestSwiftToolCommand`) 
 
 - [x] 起票と実測 (2026-10-21)
 - [ ] make を止めた後の sweep で残りが消えたかを `sweep.log` / `last.json` で確かめる
+  - 2026-10-22 19:50 の観測 (dotfiles-0e。読むだけ): 最後の sweep は 11:06 (`removed=0`、`kept: 新しい 1`) で、修正 (2ce152af、17:42) より前の版。
+    修正の後の sweep はまだ走っていない (hook は 1 日 1 回。`stamp` は 11:06)。$TMPDIR の `TemporaryDirectory.*` は 2 件:
+    `ib8TCh` (10-20 21:33) と `hYWpyC` (10-22 19:23)。どちらも `-days 3` に届かないので、今 sweep しても「新しい」で残り、確かめにならない
+  - 確かめ方: 10-23 21:33 より後に走った sweep の `last.json` で、`ib8TCh` が `removed` に入るか (入らなければ `kept` の理由と `limit` を見る)。
+    この時刻に CommandLineTools の make (他のセッションの make test) が動いていても範囲を決めていないことが、修正の効き目の観測になる
 - [x] 案を決める (ユーザー。2026-10-22 に案 C)
 - [x] 案 C の実装 (`src/tmpclean/sweep.go` の `notSwiftTool`・`isSwiftTool`)。判定は実行ファイル (コマンド行の先頭の語) だけを見る。
   先頭の語に空白を含むパス (`/Applications/Xcode 16.app/...`) では当たらず、今までどおり守る側に倒れる
