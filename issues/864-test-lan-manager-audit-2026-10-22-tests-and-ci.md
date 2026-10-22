@@ -86,6 +86,11 @@ lan-manager の全体監査 (865) のうち、テスト (test-cleanup / test-hel
 
 ## 進捗
 
-- [ ] A1 flaky
-- [ ] A2 テストの所要
-- [ ] A3〜A8
+- [x] A1 flaky (dotfiles-0e。commit「test(mac-lan-manager): TestRemoteCommandRunsDetached が背景の lock の後始末を待つ」)
+  - `staticip.lock*` が消えるまで待ってから戻る。直した後 `-count=60` で 0 件 (直す前は `-count=20` で 1 件。直す前の割合でも 60 回で 0 件になる確率は 5% 弱。負荷下は未確認)
+  - 偽の `sudo -b` で起こした背景を待たない形は、他のテストには無かった (敵対的レビューで確認。他は `cmd.Wait()` で背景の終わりまで待つ)
+- [ ] A2 テストの所要 (dotfiles-b9)
+- [x] A3 Update の鍵の固定のテスト (dotfiles-0e。862 の 6 と同じ commit)。edit の `hosts[i].Host = k` を消す変異 → TestUpdateOnlyExisting が red。memStore も鍵の固定と空のホスト名の拒否を本物に合わせた
+- [ ] A4〜A6 (dotfiles-b9)
+- [x] A7 (dotfiles-0e。862 の 6 と同じ commit)。forbidigo ではなく、`Upsert` を `ledger.Store` から外して compiler が止める形にした (lanmgr は Store しか持たないので、丸ごと置き換える口を呼べない)
+- [x] A8 (dotfiles-0e。862 の 5 と同じ commit)。width_test.go・tools/width-probe の除外と、dispWidth・ruleguard を指すコメントを消した。`make lint` は 0 issues のまま
