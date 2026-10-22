@@ -76,6 +76,9 @@ guard なし・`DeleteVia: "rm"` で候補にしていた。DerivedData から�
 
 ### 範囲外の観測 (別 issue の候補)
 
+> **訂正 (2026-10-22)**: 下の推定は誤り。削除済みのパスを掴んでいたのは Chromium ではなく NotificationCenter だった。
+> この掴みで DerivedData の判定が止まる問題とあわせて issue 858 で扱った。
+
 - lsof の txt に、起動中の Chromium Helper が `~/Library/Caches/.glogx-delete-<id>/chromium-1193/…`
   (削除のために改名された置き場) を掴んでいる行が出ていた。`playwright-cache` (`~/Library/Caches/ms-playwright`。
   起動中の判定の guard が無い) を、Playwright の Chromium が動いている間に消したと推定している (未確認)

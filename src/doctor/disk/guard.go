@@ -5,9 +5,11 @@ import (
 	"doctor/runner"
 
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -671,22 +673,33 @@ func appIsLive(ctx context.Context, run runner.Runner, app string) (bool, error)
 // 🚨 プロセス名 (pgrep) では判定しない。DerivedData から起動するアプリの名前はプロジェクトごとに違い、
 // カタログに並べられない。実行ファイルのパス (ps の comm) だけでもなく txt を見るのは、本体が別の場所にあって
 // DerivedData の framework / dylib だけを読み込んでいるプロセス (テストのホスト等) も拾うため。
-// 実測 2026-10-22 (lsof 4.91): `lsof -nP -d txt -Fn` は 26,428 行 / 0.28 秒、stderr は空、rc=0。
+// 実測 2026-10-22 (lsof 4.91): `lsof -nP -d txt -Fn` は 26,428 行 (`-Fni` は inode の行が足されて 39,477 行 / 0.19 秒) / 0.28 秒、stderr は空、rc=0。
 // 起動中の Obaket の Debug ビルドが、本体と Obaket.debug.dylib の 2 行で当たった。
 // 一般ユーザーの lsof が見えるのは自分のプロセスだけだが、DerivedData は本人のものなので足りる。
 // rc が 0 でない・パスが 1 件も無いときは error にする (fail-closed: 「掴んでいるかもしれない」)。
-func liveTextPaths(ctx context.Context, run runner.Runner) ([]string, error) {
-	stdout, stderr, rc, err := runner.WithTimeout(ctx, run, cmdTimeout, "lsof", "-nP", "-d", "txt", "-Fn")
+func liveTextPaths(ctx context.Context, run runner.Runner) ([]heldFile, error) {
+	stdout, stderr, rc, err := runner.WithTimeout(ctx, run, cmdTimeout, "lsof", "-nP", "-d", "txt", "-Fni")
 	if err != nil {
 		return nil, fmt.Errorf("lsof を実行できず: %w", err)
 	}
 	if rc != 0 {
 		return nil, fmt.Errorf("lsof: exit %d: %s", rc, strings.TrimSpace(stderr))
 	}
-	var out []string
+	// -F の出力はファイルごとに f → i → n の順 (実測 2026-10-22: txt の 12,946 件すべてに i があり、n より前)。
+	// f で区切り直すので、i の無いファイルの n が前のファイルの inode を引き継ぐことはない
+	var out []heldFile
+	var cur heldFile
 	for _, line := range strings.Split(stdout, "\n") {
-		if p, ok := strings.CutPrefix(line, "n"); ok && filepath.IsAbs(p) {
-			out = append(out, unescapeLsofName(p))
+		switch {
+		case strings.HasPrefix(line, "f"), strings.HasPrefix(line, "p"):
+			cur = heldFile{}
+		case strings.HasPrefix(line, "i"):
+			if v, err := strconv.ParseUint(line[1:], 10, 64); err == nil {
+				cur.ino, cur.hasIno = v, true
+			}
+		case strings.HasPrefix(line, "n") && filepath.IsAbs(line[1:]):
+			cur.path = unescapeLsofName(line[1:])
+			out = append(out, cur)
 		}
 	}
 	if len(out) == 0 {
@@ -694,6 +707,13 @@ func liveTextPaths(ctx context.Context, run runner.Runner) ([]string, error) {
 		return nil, errors.New("lsof の出力に txt のパスが 1 件も無い")
 	}
 	return out, nil
+}
+
+// heldFile は lsof の txt の 1 件 (名前と inode)。
+type heldFile struct {
+	path   string
+	ino    uint64
+	hasIno bool
 }
 
 // unescapeLsofName は lsof が名前に施すエスケープを戻す。
@@ -732,20 +752,73 @@ func unescapeLsofName(s string) string {
 	return b.String()
 }
 
-// pathHeldUnder は dir の配下を txt のどれかが指しているか。
+// pathHeldUnder は dir の配下にある Mach-O (実行ファイル・dylib・framework の本体) を、txt のどれかが指しているか。
+//
+// 🚨 txt に出たパスを全部数えない。txt には mmap したデータファイルも出るので、起動していないアプリの
+// リソースを他のプロセスが掴んでいるだけで止まる。実測 2026-10-22: NotificationCenter が、通知を出した
+// Chromium のバンドルの `InfoPlist.strings` を 9/17 の起動から掴み続けていた (Chromium は動いていない)。
+// 数えると、そのアプリのビルドは NotificationCenter が再起動するまで消せない。
+// DerivedData から起動したアプリは自分の実行ファイルを必ず txt に持つので、Mach-O だけに絞っても本体は取りこぼさない。
 //
 // 🚨 dir は canonicalPath を通してから渡す。lsof は symlink を解決した実パスを出すので、
 // 片側だけ解決すると外れる (/var → /private/var のような system の symlink。DerivedData そのものを symlink にした
 // 構成は、親に symlink を挟む候補を validateTarget が拒否するので、もともと候補にならない)。
 // 大文字小文字は無視する (APFS の既定は case-insensitive。excludedRootFor と同じく、余分に守る側へ倒す)。
-func pathHeldUnder(dir string, txt []string) bool {
+func pathHeldUnder(dir string, txt []heldFile) bool {
 	prefix := strings.ToLower(dir) + "/"
-	for _, p := range txt {
-		if strings.HasPrefix(strings.ToLower(p), prefix) {
+	for _, h := range txt {
+		if strings.HasPrefix(strings.ToLower(h.path), prefix) && machOOrUnknown(h) {
 			return true
 		}
 	}
 	return false
+}
+
+// machOMagics は Mach-O と universal binary の先頭 4 バイト (big endian で読んだ値)。実測 2026-10-22: DerivedData の
+// 実行ファイルと .debug.dylib は cffaedfe、/bin/ls と /usr/lib/dyld は cafebabe、Assets.car は 424f4d53 ("BOMS")。
+// cafebabe は Java の class ファイルとも同じ値だが、使用中と読む側 (守る側) に倒れるので区別しない。
+// fat64 (cafebabf) の実行ファイルはカーネルが exec を拒否する (実測 2026-10-22: rc=126) が、dylib として読み込まれるかは未確認なので含める。
+var machOMagics = map[uint32]bool{
+	0xfeedface: true, 0xcefaedfe: true, 0xfeedfacf: true, 0xcffaedfe: true,
+	0xcafebabe: true, 0xbebafeca: true, 0xcafebabf: true, 0xbfbafeca: true,
+}
+
+// machOOrUnknown は h が Mach-O か、掴まれているファイルの中身を読めず判定できないとき true
+// (fail-closed: 「使用中かもしれない」)。
+//
+// 🚨 名前だけで開いて読まない。lsof が出すのは vnode に最後に付いた名前で、そのファイルが消された後に同じ名前で
+// 別のファイルが作られると、名前で開いたものは掴まれているファイルではない。実測 2026-10-22: 起動中の実行ファイルを
+// `mv s s.old` → `rm s.old` → `printf hello > s.old` すると、lsof は消えた vnode を `s.old` (古い inode) で出し続けた。
+// 開いた後の inode が lsof の inode と違えば、掴まれているファイルは読めないので true にする。
+// 消されたファイル (開けない) も同じ。ビルドし直しで実行ファイルが消されても、起動中のアプリは配下を遅延して読み込む。
+func machOOrUnknown(h heldFile) bool {
+	if !h.hasIno {
+		return true
+	}
+	// 通常ファイルでないもの (FIFO 等) は開くと止まりうるので、開かずに判定できない側へ倒す
+	if fi, err := os.Stat(h.path); err != nil || !fi.Mode().IsRegular() {
+		return true
+	}
+	f, err := os.Open(h.path)
+	if err != nil {
+		return true
+	}
+	defer func() { _ = f.Close() }()
+	// 開いた後の fstat で比べる (Stat から Open までの間の差し替えも拾う)
+	fi, err := f.Stat()
+	if err != nil {
+		return true
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok || !fi.Mode().IsRegular() || st.Ino != h.ino {
+		return true
+	}
+	var b [4]byte
+	if _, err := io.ReadFull(f, b[:]); err != nil {
+		// 4 バイトに満たない (EOF) なら Mach-O ではない。それ以外の読み取りの失敗は判定できない
+		return !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF)
+	}
+	return machOMagics[binary.BigEndian.Uint32(b[:])]
 }
 
 // excludedRootFor は p が踏み込んでいる除外ルート (無ければ空文字)。
