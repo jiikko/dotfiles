@@ -1,0 +1,1 @@
+../863-refactor-lan-manager-audit-2026-10-22-design.md
