@@ -2104,6 +2104,26 @@ func TestHeaderWhileOnlyNetReload(t *testing.T) {
 	}
 }
 
+// Busy に入る裏の仕事ごとに、見出しはその仕事の名前を出す (case が無い仕事は、最後の「有線の名前を確かめている」に落ちる)。
+func TestHeaderNamesSpeedAndReach(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		set  func(m *Model)
+		want string
+	}{
+		{"速度測定", func(m *Model) { m.speedRun = &speedRun{} }, "通信速度を測っている"},
+		{"疎通の確認", func(m *Model) { m.reachRuns = map[string]*reachRun{"m2macmini.local": {}} }, "疎通を確かめている"},
+	} {
+		h := newHarness(t, nil, nil)
+		h.scan.busy = false
+		h.m.Advance(t0)
+		c.set(h.m)
+		if hd := h.m.header(200); !strings.Contains(hd, c.want) {
+			t.Errorf("%s の間の見出し = %q", c.name, hd)
+		}
+	}
+}
+
 // 自動で出た板は、実行の無い板 (台帳) でも案内に Enter を出さない (Enter では実行しない)。
 func TestAutoBoardHintOmitsEnter(t *testing.T) {
 	h := newHarness(t, nil, nil)

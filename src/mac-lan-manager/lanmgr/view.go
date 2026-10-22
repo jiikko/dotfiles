@@ -250,6 +250,10 @@ func (m *Model) header(w int) string {
 			what = " この Mac のネットワーク設定を確認中"
 		case len(m.pending) == 0 && !m.awaitingUnconf() && len(m.bg) > 0:
 			what = " 有線の名前の広告を止めている"
+		case len(m.pending) == 0 && !m.awaitingUnconf() && m.speedRun != nil:
+			what = " 通信速度を測っている"
+		case len(m.pending) == 0 && !m.awaitingUnconf() && len(m.reachRuns) > 0:
+			what = " 疎通を確かめている"
 		case len(m.pending) == 0 && !m.awaitingUnconf():
 			what = " 有線の名前を確かめている"
 		default: // 残る Busy は確認待ち (pending / awaitingUnconf)
