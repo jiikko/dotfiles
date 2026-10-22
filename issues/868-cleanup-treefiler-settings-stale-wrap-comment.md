@@ -1,5 +1,7 @@
 # 868 (cleanup): treefiler の settings.go 冒頭の「未対応: Wrap lines」が実装済みの今と合わない
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-22〜）
+
 起票日: 2026-10-22
 
 ## 概要
