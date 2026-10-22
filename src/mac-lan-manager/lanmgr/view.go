@@ -169,7 +169,11 @@ func (m *Model) rowHints(r row) []keyHint {
 	if r.smb {
 		hs = append(hs, keyHint{"y", "smb", 6}, keyHint{"O", "Finder で繋ぐ", 12})
 	}
-	if m.o.SpeedTest != nil && m.speedRun == nil && m.speedTarget(r).Refusal == "" { // askSpeed と同じ条件
+	switch { // askSpeed と同じ条件
+	case m.o.SpeedTest == nil:
+	case m.speedRun != nil:
+		hs = append(hs, keyHint{"t", "測定の進捗", 9})
+	case m.speedTarget(r).Refusal == "":
 		hs = append(hs, keyHint{"t", "速度", 9})
 	}
 	if m.o.Reach != nil && m.reachTarget(r).Refusal == "" { // startReach が断らない条件 (確かめている途中なら終わったら知らせる)
@@ -189,7 +193,7 @@ type keyHint struct {
 func (m *Model) footer() string {
 	var hs []keyHint
 	switch {
-	case m.ov == ovSpeed: // 板のキー (一覧の案内を残すと、板で効かないキーを案内した)
+	case m.ov == ovSpeed: // 一覧の案内を残さない (板では効かないキーを案内することになる)
 		hs = []keyHint{{"j/k", "経路", 3}, {"y", "実行", 2}, {"n/esc", "キャンセル", 1}}
 	case m.speedShown():
 		hs = []keyHint{{"esc", "閉じる (測定は裏で続く)", 1}}
@@ -903,7 +907,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 	case ovHelp:
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理 / この Mac のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"O", "Finder で smb に繋ぐコマンド (open smb://…) をコピー"}, {"o", "画面共有を開く"}, {"a", "SyakeScreen で開く (syakescreen://connect)"},
-			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "詳細 (中でもう一度 enter で初期設定。この Mac の行では有線を固定 IP にする)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"t", "通信速度を測る (管理対象。確認してから帯域を使う)"}, {"p", "疎通を確かめる (管理対象の名前ごとに ping と ssh の口)"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
+			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "詳細 (中でもう一度 enter で初期設定。この Mac の行では有線を固定 IP にする)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"t", "通信速度を測る (管理対象。確認してから帯域を使う。測定中は進捗を開く)"}, {"p", "疎通を確かめる (管理対象の名前ごとに ping と ssh の口)"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
 			{"r", "リロード"}, {"q / esc", "閉じる"}}
 		body := make([]string, 0, len(keys)+3)
 		if m.scanErr != nil { // 見出しの「✗ 探せない」の理由 (知らせは数秒で消え、glogx の中からは dump を起こせない。監査の指摘)

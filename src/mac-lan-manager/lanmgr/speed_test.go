@@ -134,9 +134,9 @@ func TestSpeedRunsAndShowsResult(t *testing.T) {
 	if !h.m.Busy() || !strings.Contains(h.screen(), "測定中") {
 		t.Errorf("測っている間: Busy=%v\n%s", h.m.Busy(), h.screen())
 	}
-	h.keys("t") // 測定中は 2 本目を流さない
-	if f.calls.Load() != 1 || h.m.ov == ovSpeed {
-		t.Errorf("測定中に 2 本目の板を出した / 測った: calls=%d ov=%v", f.calls.Load(), h.m.ov)
+	h.keys("esc", "t") // 測定中は 2 本目を流さず、閉じた進捗のモーダルを開き直す
+	if f.calls.Load() != 1 || h.m.ov == ovSpeed || !h.m.speedShown() {
+		t.Errorf("測定中の t で 2 本目の板を出した / 測った / モーダルを開き直さない: calls=%d ov=%v shown=%v", f.calls.Load(), h.m.ov, h.m.speedShown())
 	}
 	f.results <- speedtest.Result{UpBps: 94e6, DownBps: 93e6}
 	awaitSpeed(t, h.m)
@@ -227,7 +227,7 @@ func TestSpeedFooterHint(t *testing.T) {
 	}
 }
 
-// 測定中は最下行に t を出さない (押しても「測定中」で断るので、案内と効くキーを揃える)。この Mac のネットワークを読めていない画面では
+// 測定中は最下行の t を「測定の進捗」にする (2 本目は流さず、閉じたモーダルを開き直す。案内と効くキーを揃える)。この Mac のネットワークを読めていない画面では
 // t を断る (CLI と同じ規則。宛先と経路を決められない)。
 func TestSpeedFooterAndRefusalFollowState(t *testing.T) {
 	h, _ := speedHarness(t) // 偽の測定は結果を送るまで測定中のまま
@@ -236,8 +236,9 @@ func TestSpeedFooterAndRefusalFollowState(t *testing.T) {
 	if h.m.speedRun == nil {
 		t.Fatal("前提: 測定が始まらない")
 	}
-	if foot := termwidth.StripSGR(h.m.footer()); strings.Contains(foot, "t 速度") {
-		t.Errorf("測定中に t を案内した: %q", foot)
+	h.keys("esc")
+	if foot := termwidth.StripSGR(h.m.footer()); strings.Contains(foot, "t 速度") || !strings.Contains(foot, "t 測定の進捗") {
+		t.Errorf("測定中の t の案内が「測定の進捗」でない: %q", foot)
 	}
 	h.m.stopSpeed()
 	h.m.selfOK = false
@@ -266,7 +267,7 @@ func TestSpeedProgressModal(t *testing.T) {
 	ctx := f.started(t)
 	s := h.screen()
 	if !h.m.speedShown() || !strings.Contains(s, "通信速度を測っています") || !strings.Contains(s, "mini  169.254.217.100 (有線)") ||
-		!strings.Contains(s, "経過 0 秒 / 約 10 秒") {
+		!strings.Contains(s, "経過 0 秒  (ssh で繋いでから上り・下りを 5 秒ずつ)") {
 		t.Fatalf("測っている間に進捗のモーダルが無い:\n%s", s)
 	}
 	if !regexp.MustCompile(`[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]`).MatchString(s) {

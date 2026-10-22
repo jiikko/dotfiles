@@ -512,7 +512,7 @@ func (m *Model) Busy() bool {
 }
 
 // OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定・測定の進捗) が開いているか (glogx は横断キーも渡す)。
-// 測定の進捗を数えないと、glogx の L・横断キーがモーダルの裏で板を閉じ、Close が測定を黙って取り消した
+// 測定の進捗も数える: 数えないと glogx の L・横断キーがモーダルの裏で板を閉じ、Close が測定を黙って取り消す
 func (m *Model) OwnsKeys() bool {
 	return m.filtering || m.bandEdit || m.ov != ovNone || m.sc == scSettings || m.sc == scSetup || m.detailOpen || m.speedShown()
 }

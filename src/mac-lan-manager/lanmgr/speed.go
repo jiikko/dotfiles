@@ -26,7 +26,7 @@ type speedRun struct {
 	ip     string
 	link   netinfo.Link
 	since  time.Time
-	shown  bool // 進捗のモーダルを出している (esc で閉じても測定は続き、結果は toast で出す。ユーザー決定 2026-10-22)
+	shown  bool // 進捗のモーダルを出している。esc で閉じても測定は止めない (結果は toast で出す。閉じたら t で開き直せる)
 	ch     <-chan speedtest.Result
 	cancel context.CancelFunc
 }
@@ -178,8 +178,8 @@ func (m *Model) askSpeed(r row) {
 	case m.o.SpeedTest == nil:
 		m.note("この画面では通信速度を測れない", false)
 		return
-	case m.speedRun != nil:
-		m.note("測定中 ("+m.speedRun.host+")。終わってから", false)
+	case m.speedRun != nil: // 2 本目は流さず、閉じた進捗のモーダルを開き直す (どの行で押しても、今測っている相手のモーダル)
+		m.speedRun.shown = true
 		return
 	}
 	t := m.speedTarget(r)
@@ -242,7 +242,7 @@ func (m *Model) keySpeed(key string) Action {
 		m.note("測れない: "+err.Error(), false)
 		return None
 	}
-	m.startSpeed(a.host, a.name, d, p.link) // 測っている間は進捗のモーダルを出す (toast だけだと数秒で消え、測っているかが見えなかった。ユーザー報告)
+	m.startSpeed(a.host, a.name, d, p.link) // 始まりを toast だけで知らせない (数秒で消え、10 秒余りの測定の間に何も見えなくなる。進捗のモーダルを出す)
 	return None
 }
 
@@ -280,11 +280,11 @@ func (m *Model) keySpeedProgress(key string) Action {
 // speedProgressBox は測っている間のモーダル (回る印・相手と経路・経過秒)。
 func (m *Model) speedProgressBox() string {
 	sr := m.speedRun
-	secs := int(speedtest.Duration / time.Second)
 	el := max(int(m.now.Sub(sr.since)/time.Second), 0)
+	// 所要の見込みを「約 10 秒」と出さない: 流す前の ssh の接続と鍵の確認は相手次第で、出すと経過が見込みを超えて表示される
 	body := []string{
 		sAccent.Render(m.spin()) + " " + sText.Render(sr.name) + "  " + sDim.Render(speedPath{ip: sr.ip, link: sr.link}.label()),
-		sDim.Render(fmt.Sprintf("  上り・下り 各 %d 秒  (経過 %d 秒 / 約 %d 秒)", secs, el, 2*secs)),
+		sDim.Render(fmt.Sprintf("  経過 %d 秒  (ssh で繋いでから上り・下りを %d 秒ずつ)", el, int(speedtest.Duration/time.Second))),
 	}
 	return modal("通信速度を測っています", body, "esc 閉じる (測定は裏で続く)", m.w)
 }
