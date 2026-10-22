@@ -1,1 +1,0 @@
-../857-bug-mutate-verify-uses-inherited-git-dir.md

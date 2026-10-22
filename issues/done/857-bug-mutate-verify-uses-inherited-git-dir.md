@@ -1,7 +1,5 @@
 # 857 (bug): mutate-verify が継承した GIT_DIR の repo を検証する
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-22〜）
-
 起票日: 2026-10-22
 
 ## 概要
