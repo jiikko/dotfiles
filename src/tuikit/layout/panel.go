@@ -117,9 +117,41 @@ func Panel(title string, rows []string, width int, colored bool, st PanelStyle) 
 		bottom = st.Color + st.Fill + "▖" + strings.Repeat("▁", fw-2) + "▗" + sgr.Reset
 	}
 	lines = append(lines, pre+bottom+shadowRun(1, colored, shadowColor)) // 右下角の影は最も深い
-	// 下端の影: 左端を shadowBottomOffset 桁ずらして右下に落とす。左端は縁で溶かし、右端は右影の列と揃える
-	return append(lines, pre+termwidth.PadSpaces(shadowBottomOffset)+shadowEdge(colored, shadowColor)+
-		shadowRun(width-1-shadowBottomOffset, colored, shadowColor))
+	return append(lines, shadowBottom(pre, width, colored, shadowColor))
+}
+
+// shadowBottom は幅 width (右影 1 桁込み) の板の下端の影 (頭に pre を付ける)。左端を shadowBottomOffset 桁ずらして
+// 右下に落とし、左端は縁で溶かし、右端は右影の列と揃える。pre を同じ連結に入れるのは確保を 1 回に保つため (Panel は毎フレーム通る)
+func shadowBottom(pre string, width int, colored bool, color string) string {
+	return pre + termwidth.PadSpaces(shadowBottomOffset) + shadowEdge(colored, color) + shadowRun(width-1-shadowBottomOffset, colored, color)
+}
+
+// DropShadow は組み終わったブロック (罫線を自分で描いた板) に、Panel と同じ形の落ち影を付ける (幅と高さが 1 ずつ増える)。
+// 右は 1 桁 (最上段は空け、2 段目は縁、以降は本体)、下は右へ shadowBottomOffset 桁ずらした 1 行。行の幅が揃っていなければ
+// 一番広い行に合わせて空白で埋める。color は影の SGR (空なら ShadowNearBlack)。
+func DropShadow(block []string, colored bool, color string) []string {
+	if color == "" {
+		color = ShadowNearBlack
+	}
+	w := 0
+	for _, l := range block {
+		w = max(w, termwidth.Of(l))
+	}
+	out := make([]string, 0, len(block)+1)
+	edge, run := shadowEdge(colored, color), shadowRun(1, colored, color)
+	for i, l := range block {
+		l += termwidth.PadSpaces(max(w-termwidth.Of(l), 0))
+		switch i {
+		case 0:
+			l += " "
+		case 1:
+			l += edge
+		default:
+			l += run
+		}
+		out = append(out, l)
+	}
+	return append(out, shadowBottom("", w+1, colored, color))
 }
 
 func paint(s, color string, colored bool) string {

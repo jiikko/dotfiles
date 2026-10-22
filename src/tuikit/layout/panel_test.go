@@ -101,6 +101,28 @@ func TestPanelFill(t *testing.T) {
 	}
 }
 
+// DropShadow は自前の罫線の板に Panel と同じ形の影を付ける (右の列の並び・下端のずらし・幅と高さ +1)。
+func TestDropShadowMatchesPanel(t *testing.T) {
+	panel := Panel("", []string{"ab", "cd"}, 12, false, PanelStyle{Border: BorderLight})
+	block := make([]string, len(panel)-1)
+	for i, l := range panel[:len(panel)-1] {
+		block[i] = strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(l, " "), ShadowMonoEdge), ShadowMono) // Panel の右影を外す
+	}
+	got := DropShadow(block, false, "")
+	if strings.Join(got, "\n") != strings.Join(panel, "\n") {
+		t.Fatalf("Panel と同じ影にならない:\n%s\n---\n%s", strings.Join(got, "\n"), strings.Join(panel, "\n"))
+	}
+	ragged := DropShadow([]string{"abcd", "ab", "abc"}, false, "")
+	for i, l := range ragged {
+		if termwidth.Of(l) != 5 {
+			t.Errorf("%d 行目の幅 %d != 5 (短い行を埋めていない): %q", i, termwidth.Of(l), l)
+		}
+	}
+	if c := DropShadow([]string{"ab", "cd"}, true, ""); !strings.Contains(c[1], ShadowNearBlack+ShadowFeather) {
+		t.Errorf("影の色の既定が ShadowNearBlack でない: %q", c[1])
+	}
+}
+
 // 中央に浮かせた板は、左右の背景を残し (色も持ち越し)、行の幅を変えない。
 func TestOverlayCenteredKeepsBackground(t *testing.T) {
 	bg := strings.Repeat("x", 30)

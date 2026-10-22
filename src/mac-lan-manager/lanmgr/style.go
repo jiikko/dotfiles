@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 )
 
 var (
@@ -107,28 +109,16 @@ func card(content string, width int, surf string, edge ...color.Color) string {
 	return strings.Join(append(out, bot.String()), "\n")
 }
 
-// shadow はタイルに右と下の落ち影を付ける (幅と高さが 1 ずつ増える)。右は 1 桁の暗い面、下は上半分のブロック ▀
-// (セルの縦横比でも右と下の厚みが揃う)。右上の角は ▄、右下の角は ▘ で丸める。左上から光が当たる向き。
+// shadow はタイルに右と下の落ち影を付ける (幅と高さが 1 ずつ増える)。形は glogx・pro-con の板と同じ tuikit の影にそろえる
+// (glogx の L 画面で、glogx の外枠の影の中に別の形の影が並ばないように)。色は地 (cBg) に合わせた cShadow。
 func shadow(block string) string {
-	lines := strings.Split(block, "\n")
-	w := lipgloss.Width(block)
-	side := lipgloss.NewStyle().Background(cShadow).Render(" ")
-	sh := lipgloss.NewStyle().Foreground(cShadow)
-	for i, l := range lines {
-		l += strings.Repeat(" ", max(w-lipgloss.Width(l), 0))
-		switch i {
-		case 0:
-			l += " "
-		case 1:
-			l += sh.Render("▄")
-		default:
-			l += side
-		}
-		lines[i] = l
-	}
-	// 下の影: 左の 2 桁は空ける (タイルの左下の角が欠けているので)。全体で w+1 桁 (右の影の列の分)
-	bottom := "  " + sh.Render(strings.Repeat("▀", max(w-2, 0))+"▘")
-	return strings.Join(append(lines, bottom), "\n")
+	return strings.Join(layout.DropShadow(strings.Split(block, "\n"), true, fgSGR(cShadow)), "\n")
+}
+
+// fgSGR は c を前景に塗る truecolor の SGR (bubbletea が端末に合わせて 256 色へ落とす)。
+func fgSGR(c color.Color) string {
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", r>>8, g>>8, b>>8)
 }
 
 // gradRule は色が流れる太線。

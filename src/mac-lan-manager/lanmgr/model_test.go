@@ -1288,7 +1288,7 @@ func TestSettingsFrameFitsHeight(t *testing.T) {
 		h.m.Resize(100, hgt)
 		h.keys(",")
 		view := termwidth.StripSGR(strings.Join(h.m.View(), "\n"))
-		if !strings.Contains(view, "▀") || !strings.Contains(view, "▆") {
+		if !strings.Contains(view, layout.ShadowFeather+layout.ShadowFull) || !strings.Contains(view, "▆") {
 			t.Errorf("高さ %d: 設定の板の下の枠か影が切れた", hgt)
 		}
 	}
