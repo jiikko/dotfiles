@@ -1,7 +1,5 @@
 # 863 (refactor): lan-manager 監査 (2026-10-22) の設計系
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-22〜）
-
 起票日: 2026-10-22
 
 ## 概要
@@ -115,4 +113,12 @@ P1〜P4 は「層 / 動作 / 裏の仕事を 1 つ足すたびに N か所」の
 - [ ] P3 裏の仕事
 - [ ] P4 固定の試み
 - [ ] P6 ssh の宛先
-- [ ] P7〜P12、U1〜U3
+- [ ] P7 有線の名前の判定の写し (847 の範囲。847 の作業に任せる)
+- [x] P8 (dotfiles-0e。commit「refactor(mac-lan-manager): 詳細の enter の案内を文言で分けない / 見出し・項目名・モーダルのキーの重複をまとめる」)。detailLines / selfStaticKey は「パネルの中か」の真偽を受ける。既存のテストは最下行の案内にも同じ語が出るせいで、パネルの案内が消えても緑だった (変異で確認) ので、カードの台帳の行だけを見る形にした
+- [x] P9 (commit「refactor(mac-lan-manager): 本番で誰も読まない setup.Step.Via を消す」)。destFor の出典にする案は採らない (Plan は確認済みの IP を知らない)
+- [x] P10 は 859 (b9) で止める合図 (untilStop)・相手の選び方 (pickTarget)・待ち方 (settle) が共有になった。残りは出力 (行・JSON) の形が違う部分で、寄せても減る複雑性が小さいので今は寄せない
+- [x] P11 (commit「refactor(mac-lan-manager): RunQuiet を SSHRun に寄せ、失敗に stderr を付ける実装を 1 つにする」)
+- [x] P12 (commit「refactor(mac-lan-manager): 画面を出さないサブコマンドの自動の仕事を Options.Passive 1 つで止める」)
+- [x] U1〜U3 (P8 と同じ commit)。U3 で経路を選ぶ板の中の案内が最下行と同じ書式 (「j/k 経路   y 実行   n/esc キャンセル」) になった
+- 残り: P1〜P4 は trigger 待ち (次に動作・画面の層・裏の仕事・固定の遷移を足すとき)、P6 は 860 で HostKeyAlias の絞り込みは入ったが宛先の型の切り出しは未着手、P7 は 847。
+  dotfiles-0e は 2026-10-22 に claim を外した (上の済んだ項目のほかに、今すぐ進めるものが無いため)
