@@ -1,1 +1,0 @@
-../877-feat-hook-deny-soft-reset-to-moved-shared-ref.md
