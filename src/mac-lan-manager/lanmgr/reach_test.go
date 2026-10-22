@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"mac-lan-manager/discover"
+	"mac-lan-manager/internal/testwait"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/reach"
 )
@@ -57,13 +58,7 @@ func (f *fakeReach) started(t *testing.T) ([]string, context.Context) {
 // awaitReach は結果が取り込まれるまで Advance する (上限 10 秒)。
 func awaitReach(t *testing.T, h *harness) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); len(h.m.reachRuns) > 0; {
-		if time.Now().After(deadline) {
-			t.Fatal("結果が取り込まれない")
-		}
-		h.m.Advance(t0)
-		time.Sleep(time.Millisecond) // sleep-ok: tick: 条件 (reachRun が空く) を待つ刻み
-	}
+	testwait.Until(t, "疎通の結果の取り込み", 10*time.Second, func() { h.m.Advance(t0) }, func() bool { return len(h.m.reachRuns) == 0 })
 }
 
 var (

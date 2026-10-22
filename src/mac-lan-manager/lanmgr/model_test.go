@@ -22,6 +22,7 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 
 	"mac-lan-manager/discover"
+	"mac-lan-manager/internal/testwait"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/prefs"
@@ -856,12 +857,7 @@ func TestKeyAppliesFinishedNetLoad(t *testing.T) {
 		Ledger:    &memStore{hosts: []ledger.Host{{Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
 		Now:       func() time.Time { return t0 },
 	})
-	for deadline := time.Now().Add(5 * time.Second); len(m.netCh) == 0; {
-		if time.Now().After(deadline) {
-			t.Fatal("読み込みの結果が届かない")
-		}
-		time.Sleep(time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は上の条件)
-	}
+	testwait.Until(t, "読み込みの結果が届く", 5*time.Second, nil, func() bool { return len(m.netCh) > 0 })
 	m.HandleKey("j")
 	if a := m.HandleKey("s"); a != Exec {
 		t.Errorf("届いた結果を取り込まず「読んでいます」で断った: %v %+v", a, m.TakeNotices())
@@ -2223,10 +2219,7 @@ func TestLedgerRemoveStopsWiredName(t *testing.T) {
 		}
 		h.keys("y")
 		var notes []Notice
-		for deadline := time.Now().Add(5 * time.Second); len(h.m.bg) > 0 && time.Now().Before(deadline); {
-			h.m.Advance(t0)
-			runtime.Gosched()
-		}
+		testwait.Until(t, "広告を止める ssh の結果の取り込み", 5*time.Second, func() { h.m.Advance(t0) }, func() bool { return len(h.m.bg) == 0 })
 		notes = h.m.TakeNotices()
 		if len(h.store.hosts) != 0 {
 			t.Fatalf("台帳から外していない: %+v", h.store.hosts)
@@ -2297,13 +2290,7 @@ func (otherNameError) ExitCode() int { return setup.ExitOtherName }
 // awaitWired は裏で引いている有線の名前を全部取り込む。
 func awaitWired(t *testing.T, m *Model) {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); m.wiredWait > 0; {
-		if time.Now().After(deadline) {
-			t.Fatal("有線の名前を引き終えない")
-		}
-		m.takeWired()
-		runtime.Gosched()
-	}
+	testwait.Until(t, "有線の名前を引き終える", 5*time.Second, m.takeWired, func() bool { return m.wiredWait == 0 })
 }
 
 // wiredHarness は内部 IP を台帳で固定した mini (169.254.217.100) と、名前を引く偽物 (answers の名前 → IP)。
@@ -2488,13 +2475,7 @@ func TestWiredNameNotUsedOverWifi(t *testing.T) {
 // advanceUntil は cond が真になるまで tick を進める (本番と同じ Advance の経路で取り込ませる)。
 func advanceUntil(t *testing.T, m *Model, at time.Time, cond func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); !cond(); {
-		if time.Now().After(deadline) {
-			t.Fatal("tick を進めても成り立たない")
-		}
-		m.Advance(at)
-		runtime.Gosched()
-	}
+	testwait.Until(t, "tick を進めた後の条件", 5*time.Second, func() { m.Advance(at) }, cond)
 }
 
 // r → この Mac の網の読み込み → 名前を引く → tick で取り込む、の配線を通して、宛先が名前になる。引いている間は Busy (tick を回す)。
@@ -3119,12 +3100,8 @@ func TestKeyRefusedWhenRowsAppearUnderEmptyTab(t *testing.T) {
 		t.Fatalf("前提: 未管理のタブが空でない: %v", m.visibleHosts())
 	}
 	close(release)
-	for deadline := time.Now().Add(5 * time.Second); len(m.netCh) == 0; { // 結果が届くまで (取り込みはキーの入口で)
-		if time.Now().After(deadline) {
-			t.Fatal("読み込みの結果が届かない")
-		}
-		time.Sleep(time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は上の条件)
-	}
+	// 結果が届くまで (取り込みはキーの入口で)
+	testwait.Until(t, "読み込みの結果が届く", 5*time.Second, nil, func() bool { return len(m.netCh) > 0 })
 	m.TakeNotices()
 	if a := m.HandleKey("s"); a == Exec {
 		t.Fatal("一度も描かれていない Mac へ s が繋いだ")

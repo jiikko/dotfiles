@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -14,6 +13,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"mac-lan-manager/discover"
+	"mac-lan-manager/internal/testwait"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/setup"
@@ -198,13 +198,7 @@ func TestSpeedStopsOnClose(t *testing.T) {
 // awaitSpeed は裏の測定の結果が Advance で取り込まれるまで待つ (上限つき)。
 func awaitSpeed(t *testing.T, m *Model) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); m.speedRun != nil; { // awaitWired と同じ形
-		if time.Now().After(deadline) {
-			t.Fatal("測定の結果が 10 秒待っても取り込まれない")
-		}
-		m.Advance(t0)
-		runtime.Gosched()
-	}
+	testwait.Until(t, "測定の結果の取り込み", 10*time.Second, func() { m.Advance(t0) }, func() bool { return m.speedRun == nil })
 }
 
 // 最下行の案内に t を出すのは、t が効く行 (管理対象で測れる相手) だけ。未管理の行と、測る口が無い画面 (SpeedTest が nil) には出さない。

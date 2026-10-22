@@ -101,7 +101,11 @@ lan-manager の全体監査 (865) のうち、テスト (test-cleanup / test-hel
   - CI (src_mac-lan-manager の test): lanmgr 122.1 秒 (run 39759863496、1ff9c9cb) → 60.7 秒 (run 39763897294、ec8c4b24)。setup は 40.1 → 37.9 秒 (触っていない)
 - [x] A3 Update の鍵の固定のテスト (dotfiles-0e。862 の 6 と同じ commit)。edit の `hosts[i].Host = k` を消す変異 → TestUpdateOnlyExisting が red。memStore も鍵の固定と空のホスト名の拒否を本物に合わせた
 - [x] A4 (dotfiles-0e。commit「test(mac-lan-manager): setup のテストの準備の書き込みの失敗を t.Fatal で受ける」)。2 か所 (stale の 2 周目以降・生きている持ち主の lock) を t.Fatal で受ける
-- [ ] A5〜A6 (dotfiles-b9)
+- [x] A5 (dotfiles-b9): 待ちを `internal/testwait.Until(t, what, limit, step, cond)` 1 本に寄せた (lanmgr の awaitReach・awaitSpeed・awaitWired・
+  advanceUntil と無名の 3 か所、setup の waitFor)。名前の付いた 4 つは呼び出し元が多いので Until を呼ぶ 1 行の関数として残した。上限は元の値のまま。
+  周の間は 1ms 眠る (Gosched で回す形は上限まで CPU を焼く)。`len(h.m.bg) > 0` の待ちは上限で Fatal するようになった (黙って先へ進まない)。
+  変異: Until が上限で Fatal せず戻る旧の形にする → `TestUntilFailsAtLimit` が red。`-race` で lanmgr・setup は緑
+- [ ] A6 (dotfiles-b9)
 - [ ] A9 flaky の疑い (観測待ち)
 - [x] A7 (dotfiles-0e。862 の 6 と同じ commit)。forbidigo ではなく、`Upsert` を `ledger.Store` から外して compiler が止める形にした (lanmgr は Store しか持たないので、丸ごと置き換える口を呼べない)
 - [x] A8 (dotfiles-0e。862 の 5 と同じ commit)。width_test.go・tools/width-probe の除外と、dispWidth・ruleguard を指すコメントを消した。`make lint` は 0 issues のまま

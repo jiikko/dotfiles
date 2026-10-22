@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"mac-lan-manager/internal/testwait"
 	"mac-lan-manager/netinfo"
 )
 
@@ -68,12 +69,7 @@ func readLog(dir string) string { b, _ := os.ReadFile(filepath.Join(dir, "log"))
 
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); !cond(); {
-		if time.Now().After(deadline) {
-			t.Fatalf("%s が 10 秒で成り立たない", what)
-		}
-		time.Sleep(20 * time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は上の条件)
-	}
+	testwait.Until(t, what, 10*time.Second, nil, cond)
 }
 
 func me(t *testing.T) string {
