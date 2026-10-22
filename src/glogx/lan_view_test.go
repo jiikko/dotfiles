@@ -306,14 +306,20 @@ func TestLanOpensWithoutWaitingForNetwork(t *testing.T) {
 	}
 }
 
-// 層 (設定・初期設定・板) が開いている間の最下行は「esc: 戻る」(L も ? も lanmgr が取り、q / esc は 1 段戻るだけ。「L/q: 閉じる」は嘘になる)。
+// キーの案内は枠の外の最下行に出し (他の全画面と同じ場所)、板の内側には描かない。中身は lanmgr が今の画面で効くキー。
+// 一覧では lanmgr の q を「L/q: 閉じる」にし、層 (設定・初期設定・板) が開いている間は lanmgr の抜け方をそのまま出す
+// (L も ? も lanmgr が取り、q / esc は 1 段戻るだけ。「L/q: 閉じる」は嘘になる)。
 func TestLanHintFollowsLayers(t *testing.T) {
 	m := openLan(t)
-	if h := term.StripANSI(m.lanV.Hint(80)); !strings.Contains(h, "L/q: 閉じる") {
+	h := term.StripANSI(m.lanV.Hint(120))
+	if !strings.Contains(h, "L/q: 閉じる") || !strings.Contains(h, "j/k: 移動") || strings.Contains(h, " q: 閉じる") {
 		t.Fatalf("一覧の最下行 = %q", h)
 	}
+	if v := term.StripANSI(strings.Join(m.lanV.Lines(120, 30), "\n")); strings.Contains(v, "j/k 移動") {
+		t.Errorf("板の内側にも案内を描いた:\n%s", v)
+	}
 	m.handleKey(",") // 設定
-	if h := term.StripANSI(m.lanV.Hint(80)); strings.Contains(h, "L/q") || !strings.Contains(h, "esc: 戻る") {
+	if h := term.StripANSI(m.lanV.Hint(120)); strings.Contains(h, "L/q") || !strings.Contains(h, "q/esc/,: 閉じる") || !strings.Contains(h, "space: 入/切") {
 		t.Errorf("設定の画面の最下行 = %q", h)
 	}
 	// 足りない画面では q / esc が L ごと閉じ、L も glogx に渡る: 層が開いていても「L/q: 閉じる」

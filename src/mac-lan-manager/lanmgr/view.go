@@ -91,7 +91,6 @@ func (m *Model) View() []string {
 			}
 		}
 	}
-	foot := m.footer()
 	h := max(m.h, 10)
 	inner := m.bodyHeight()
 	// 安全網: どの行も幅で切ってから枠に入れる (lipgloss は幅を超えた行を折り返し、行が増えて下のキーの案内が押し出される)
@@ -100,7 +99,11 @@ func (m *Model) View() []string {
 		bl[i] = termwidth.Clip(l, w)
 	}
 	body = lipgloss.NewStyle().Height(inner).MaxHeight(inner).Render(strings.Join(bl, "\n"))
-	base := lipgloss.NewStyle().Width(m.w).Height(h).MaxHeight(h).Padding(padY, padX).Render(lipgloss.JoinVertical(lipgloss.Left, body, "", foot))
+	page := body
+	if !m.o.HostHints {
+		page = lipgloss.JoinVertical(lipgloss.Left, body, "", m.footer())
+	}
+	base := lipgloss.NewStyle().Width(m.w).Height(h).MaxHeight(h).Padding(padY, padX).Render(page)
 	layers := []*lipgloss.Layer{lipgloss.NewLayer(base)}
 	if under != "" && tile != "" {
 		layers = append(layers, lipgloss.NewLayer(under).X(padX).Y(m.panelTop).Z(1))
@@ -188,15 +191,56 @@ type keyHint struct {
 	prio       int
 }
 
-// footer は最下行の案内。幅が足りなければ hintfit が優先度の低いものから項目ごと落とし、q (抜け方) は最後まで残す。
+// Hint は最下行の案内の 1 つ (Prio は小さいほど残す。1 = 抜ける手段。tuikit/hintfit の尺度)。
+type Hint struct {
+	Key, Label string
+	Prio       int
+}
+
+// Hints は今の画面で効くキーの案内 (呼び出し側が自分の最下行に描くとき。Options.HostHints)。足りない画面では抜け方だけ。
+func (m *Model) Hints() []Hint {
+	hs := m.hints()
+	out := make([]Hint, 0, len(hs))
+	for _, h := range hs {
+		out = append(out, Hint{Key: h.key, Label: h.label, Prio: h.prio})
+	}
+	return out
+}
+
+// hints は最下行に載せるキー。板・モーダルが開いている間はその板のキーだけにする (一覧のキーを残すと、板では効かないキーを案内する)。
 // 一覧では、選んでいる Mac の動作のキー (s 繋ぐ…) を名前の長さ・配置に依らず載せる (詳細カードが 1 行に畳まれると、そこから押し出された)。
-func (m *Model) footer() string {
+func (m *Model) hints() []keyHint {
 	var hs []keyHint
 	switch {
-	case m.ov == ovSpeed: // 一覧の案内を残さない (板では効かないキーを案内することになる)
-		hs = []keyHint{{"j/k", "経路", 3}, {"y", "実行", 2}, {"n/esc", "キャンセル", 1}}
+	case m.small:
+		return []keyHint{{"q", "閉じる", 1}}
+	case m.progressShown():
+		hs = []keyHint{{"esc", "閉じる (確認は裏で続く)", 1}}
 	case m.speedShown():
 		hs = []keyHint{{"esc", "閉じる (測定は裏で続く)", 1}}
+	case m.ov == ovSpeed:
+		hs = []keyHint{{"j/k", "経路", 3}, {"y", "実行", 2}, {"n/esc", "キャンセル", 1}}
+	case m.ov == ovConfirm:
+		yes := "y/enter"
+		if m.ask != nil && (m.ask.auto || m.ask.selfOnly) { // HandleInput が enter で実行しない板
+			yes = "y"
+		}
+		hs = []keyHint{{yes, "実行", 2}, {"n/esc", "キャンセル", 1}}
+		if m.ask != nil && m.ask.exec != nil {
+			hs = append(hs, keyHint{"c", "コマンドをコピー", 3})
+		}
+	case m.ov == ovCopyIP:
+		keys := "1/2"
+		if len(m.selfCopyItems()) > 2 {
+			keys = "1/2/3"
+		}
+		hs = []keyHint{{keys, "すぐコピー", 2}, {"j/k+enter", "選んでコピー", 3}, {"esc", "やめる", 1}}
+	case m.ov == ovLog:
+		hs = []keyHint{{"j/k", "選ぶ", 3}, {"y", "1 件コピー", 2}, {"Y", "全部コピー", 4}, {"e/esc", "閉じる", 1}}
+	case m.ov == ovAlias:
+		hs = []keyHint{{"enter", "決める", 2}, {"esc", "やめる", 1}}
+	case m.ov == ovHelp:
+		hs = []keyHint{{"どのキーでも", "閉じる", 1}}
 	case m.sc == scSetup:
 		hs = []keyHint{{"x", "実行", 2}, {"r", "リロード", 3}, {"e", "メッセージ", 4}, {"q/esc", "戻る", 1}} // e: 1 行に切った接続の失敗の全文
 	case m.sc == scSettings:
@@ -220,11 +264,17 @@ func (m *Model) footer() string {
 		hs = append(hs, keyHint{"h/l", "タブ", 10}, keyHint{"space", "台帳", 8}, keyHint{"c", "この Mac の IP", 9},
 			keyHint{",", "設定", 11}, keyHint{"?", "全部のキー", 2}, keyHint{"q", "閉じる", 1})
 	}
-	if m.sc != scSettings && !m.filtering && m.ov != ovSpeed && !m.speedShown() && !m.selfOK { // 読めるまで断るキーは案内にも出さない (出すと押しても断られた。板とモーダルのキーは網を読まない)
+	if m.ov == ovNone && !m.speedShown() && !m.progressShown() && m.sc != scSettings && !m.filtering && !m.selfOK { // 読めるまで断るキーは案内にも出さない (出すと押しても断られた。板とモーダルのキーは網を読まない)
 		hs = slices.DeleteFunc(hs, func(h keyHint) bool {
 			return slices.Contains(needsNet, h.key) || (m.detailOpen && h.key == "enter") // パネルの enter (初期設定) も netRefused が断る
 		})
 	}
+	return hs
+}
+
+// footer は最下行の案内。幅が足りなければ hintfit が優先度の低いものから項目ごと落とし、抜け方 (優先度 1) は最後まで残す。
+func (m *Model) footer() string {
+	hs := m.hints()
 	items := make([]hintfit.Item, 0, len(hs))
 	for _, h := range hs {
 		items = append(items, hintfit.Item{Text: lipgloss.NewStyle().Foreground(cPink).Bold(true).Render(h.key) + " " + sDim.Render(h.label), Prio: h.prio})
@@ -581,6 +631,9 @@ func (m *Model) viewTooSmall(why string) []string {
 	m.small, m.caretFY, m.caretMY = true, -1, -1 // 何も無い画面に端末のカーソルを立てない
 	lines := make([]string, max(m.h, 1))
 	lines[0] = termwidth.Clip(why, max(m.w, 1))
+	if m.o.HostHints { // 抜け方は呼び出し側の最下行が出す (Hints)
+		return lines
+	}
 	lines[len(lines)-1] = "q"
 	if m.w >= termwidth.Of("q 閉じる") {
 		lines[len(lines)-1] = "q 閉じる"
@@ -588,8 +641,14 @@ func (m *Model) viewTooSmall(why string) []string {
 	return lines
 }
 
-// bodyHeight は枠の内側の行数 (View の inner と同じ式)。
-func (m *Model) bodyHeight() int { return max(max(m.h, 10)-2*padY-2, 1) }
+// bodyHeight は枠の内側の行数 (View の inner と同じ式)。最下行の案内とその上の空行の 2 行を引く (呼び出し側が案内を描くなら引かない)。
+func (m *Model) bodyHeight() int {
+	foot := 2
+	if m.o.HostHints {
+		foot = 0
+	}
+	return max(max(m.h, 10)-2*padY-foot, 1)
+}
 
 // listTable は一覧の表。maxRows 行より多ければ、カーソルを含む窓だけを描く (窓の位置はタブごとに覚える)。
 func (m *Model) listTable(width, maxRows int) string {

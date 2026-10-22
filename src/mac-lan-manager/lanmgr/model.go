@@ -110,6 +110,9 @@ type Options struct {
 	SpeedTest func(ctx context.Context, d setup.Dest, now func() time.Time) speedtest.Result
 	// Reach は名前ごとに疎通を確かめる (p。reach.go)。nil なら確かめない
 	Reach func(ctx context.Context, names []string) []reach.Name
+	// HostHints は最下行のキーの案内を呼び出し側が描く (glogx は枠の外の最下行に Hints を出す)。真なら View は案内の行と
+	// その上の空行を描かず、その分を本文に回す
+	HostHints bool
 }
 
 type screen int

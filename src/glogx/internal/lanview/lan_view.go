@@ -43,6 +43,7 @@ func newLanModel() (*lanmgr.Model, error) {
 	}
 	o.Copy = func(s string) error { return extcmd.CopyToClipboard(s) } // glogx のクリップボードの口 (テストは testenv.StubClipboard で差し替える)
 	o.Now = func() time.Time { return app.TimeNow() }                  // 呼ぶたびに読む (値をつかむとテストが差し替えた時計に追従しない)
+	o.HostHints = true                                                 // キーの案内は glogx の最下行 (枠の外) に出す。他の全画面と同じ場所
 	return lanmgr.New(o), nil
 }
 
@@ -239,18 +240,27 @@ func (v *LanView) Lines(width, page int) []string {
 	return v.m.View()
 }
 
-// hint は最下行の案内。抜ける手段 (L / q) を先に置き、幅で切る (glogx-ui-guide §5: 抜ける手段は必ず残す)。
+// Hint は最下行の案内 (枠の外。他の全画面と同じ場所)。lanmgr が今の画面で効くキー (Hints) を渡し、glogx の書き方で並べる
+// (glogx-ui-guide §5: 幅で項目を落とし、抜ける手段は必ず残す)。
+//
+// 一覧と足りない画面では lanmgr の q (閉じる) を「L/q: 閉じる」にする (L も q も glogx の板を閉じる)。層 (初期設定・設定・確認の板・
+// 入力欄・測定の進捗) が開いている間は L も lanmgr が取り、q / esc は 1 段戻るだけなので、lanmgr の抜け方をそのまま出す
 func (v *LanView) Hint(width int) string {
-	// 層 (初期設定・設定・確認の板・入力欄) が開いている間は L も ? も lanmgr が取り、q / esc は 1 段戻るだけ (Binds)。そのときに
-	// 「L/q: 閉じる」を出すと嘘になった (整合の監査)
-	// ただし足りない画面では q / esc が L ごと閉じ、L も glogx に渡る (Binds("L") が偽) ので「L/q: 閉じる」が正しい
-	if lm := v.live(); lm != nil && lm.OwnsKeys() && lm.Binds("L") {
-		return term.FitHintItems(width, []term.HintItem{{Text: "esc: 戻る", Prio: 1}})
+	lm := v.live()
+	if lm == nil {
+		return term.FitHintItems(width, []term.HintItem{{Text: "L/q: 閉じる", Prio: 1}})
 	}
-	return term.FitHintItems(width, []term.HintItem{
-		{Text: "L/q: 閉じる", Prio: 1},
-		{Text: "?: キーの一覧", Prio: 2},
-	})
+	layered := lm.OwnsKeys() && lm.Binds("L")
+	hs := lm.Hints()
+	items := make([]term.HintItem, 0, len(hs))
+	for _, h := range hs {
+		text := h.Key + ": " + h.Label
+		if !layered && h.Key == "q" {
+			text = "L/q: 閉じる"
+		}
+		items = append(items, term.HintItem{Text: text, Prio: h.Prio})
+	}
+	return term.FitHintItems(width, items)
 }
 
 // lanExecCommand は mac-lan-manager の s (ssh) / o (画面共有) が頼んだプロセス。返した Cmd は extcmd.RunEditorCmd (tea.Exec + foreground.Exec) が

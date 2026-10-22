@@ -312,6 +312,51 @@ func TestSpeedProgressModal(t *testing.T) {
 	}
 }
 
+// 呼び出し側が案内を描く (HostHints) と、View は最下行の案内とその上の空行を描かず、その 2 行を本文に回す。Hints は板・モーダルの
+// 間はその板のキーだけを返す (一覧のキーを残さない)。
+func TestHostHints(t *testing.T) {
+	h, f := speedHarness(t)
+	h.m.Resize(120, 40)
+	h.cursorTo(t, "m2macmini.local")
+	before := h.m.bodyHeight()
+	if !strings.Contains(h.screen(), "j/k 移動") {
+		t.Fatal("前提: 単体では最下行に案内を描く")
+	}
+	h.m.o.HostHints = true
+	if s := h.screen(); strings.Contains(s, "j/k 移動") || h.m.bodyHeight() != before+2 {
+		t.Errorf("HostHints で案内を描いた / 本文に 2 行回していない (%d → %d):\n%s", before, h.m.bodyHeight(), s)
+	}
+	keys := func() string {
+		var ks []string
+		for _, x := range h.m.Hints() {
+			ks = append(ks, x.Key+" "+x.Label)
+		}
+		return strings.Join(ks, " | ")
+	}
+	if k := keys(); !strings.Contains(k, "j/k 移動") || !strings.Contains(k, "q 閉じる") {
+		t.Errorf("一覧の Hints = %q", k)
+	}
+	h.keys("t")
+	if k := keys(); k != "j/k 経路 | y 実行 | n/esc キャンセル" {
+		t.Errorf("経路を選ぶ板の Hints = %q", k)
+	}
+	h.keys("y")
+	f.started(t)
+	if k := keys(); k != "esc 閉じる (測定は裏で続く)" {
+		t.Errorf("測定の進捗の Hints = %q", k)
+	}
+	h.keys("esc")
+	h.m.stopSpeed()
+	h.keys("?")
+	if k := keys(); k != "どのキーでも 閉じる" {
+		t.Errorf("キーの一覧の Hints = %q", k)
+	}
+	h.keys("x", "e")
+	if k := keys(); !strings.Contains(k, "e/esc 閉じる") || strings.Contains(k, "移動") {
+		t.Errorf("メッセージ一覧の Hints = %q", k)
+	}
+}
+
 // 経路は板で選べる。既定は有線 (内部 IP)、j で Wi-Fi のメイン IP。進捗のモーダルに経路を出し、結果は経路ごとに有線から並べる。
 func TestSpeedChoosesPath(t *testing.T) {
 	h, f := speedHarness(t)
