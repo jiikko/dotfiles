@@ -1351,7 +1351,7 @@ func (m *Model) statusBar(c *canvas) {
 		}
 	}
 	right = append(right, seg{meta + " · ", cMuted, false}, seg{"● ", heat(age), false}, seg{ago(age) + partial, cText, false}, seg{"   ", cMuted, false})
-	legend := []seg{{"now ", cMuted, false}}
+	legend := append(make([]seg, 0, 1+len(ember)+1), seg{"now ", cMuted, false})
 	for _, st := range ember {
 		legend = append(legend, seg{"▮", st.c, false})
 	}

@@ -249,7 +249,7 @@ func (m *Model) keySpeed(key string) Action {
 // speedBox は経路を選ぶ板。
 func (m *Model) speedBox() string {
 	a := m.speedAsk
-	body := []string{a.name + " との通信速度を測ります。経路:"}
+	body := append(make([]string, 0, 1+len(a.paths)+3), a.name+" との通信速度を測ります。経路:")
 	for i, p := range a.paths {
 		mark, st := "  ", sText
 		if i == a.cur {

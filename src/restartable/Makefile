@@ -1,5 +1,5 @@
 # restartable (Go) の静的解析とテスト。
-GOLANGCI_LINT_VERSION := v2.5.0
+GOLANGCI_LINT_VERSION := v2.15.0
 
 .PHONY: lint test
 

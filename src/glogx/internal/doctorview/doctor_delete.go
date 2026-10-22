@@ -1539,7 +1539,7 @@ func tailLines(lines []string, n int) []string {
 
 // doctorPanel は見出し + 本文を全画面に敷く (行数は呼び出し側の lines が padTo で揃える)。
 func doctorPanel(o DoctorRenderOpts, title string, body []string) []string {
-	out := []string{" " + doctorColor(o.Colored, term.AnsiBold, title), ""}
+	out := append(make([]string, 0, 2+len(body)), " "+doctorColor(o.Colored, term.AnsiBold, title), "")
 	for _, l := range body {
 		out = append(out, term.TruncateDisp(" "+l, o.Width, "…"))
 	}

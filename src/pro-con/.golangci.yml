@@ -59,6 +59,8 @@ linters:
     - reassign
     - tparallel
   settings:
+    perfsprint:
+      concat-loop: false # ループの中の文字列の連結を strings.Builder へ書き換えさせる。小さなループばかりで、読みやすさを崩すほど効かない
     govet:
       # 既定の analyzer に加えて全部を有効にする (nilness・unusedwrite・deepequalerrors などは既定では走らない)
       enable-all: true

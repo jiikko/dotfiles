@@ -131,7 +131,7 @@ func TestDispatcherUpgradesItselfE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	select {
-	case <-exited:
+	case <-exited: //nolint:errcheck // 抜けたかだけを見る (SIGTERM での終了の rc は問わない)
 	case <-time.After(30 * time.Second):
 		t.Fatalf("SIGTERM で抜けない:\n%s", logText())
 	}

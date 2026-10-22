@@ -58,7 +58,7 @@ func (m *Model) viewSetup(w, maxH int) string {
 		case hasNext && s.ID == next.ID:
 			mark, title = sAccent.Render("▶"), sText.Bold(true).Render(s.Title)
 		}
-		b.WriteString(fmt.Sprintf("%s %d  %s\n", mark, i+1, title))
+		fmt.Fprintf(&b, "%s %d  %s\n", mark, i+1, title)
 		if !first && hasNext && s.ID == next.ID && s.Blocked != "" {
 			b.WriteString(sWarn.Render("     止まっている: "+s.Blocked) + "\n")
 		}

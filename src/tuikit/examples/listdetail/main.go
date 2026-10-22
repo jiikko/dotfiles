@@ -237,10 +237,10 @@ func (m *model) View() tea.View {
 	if p := anim.Elapsed(m.listStart, now, m.dur(listOpenDuration)); p < 1 {
 		body = layout.SlideIn(body, p, m.width, false, listStagger)
 	}
-	head := []string{
-		sgr.Bold + " tuikit demo — list / detail" + sgr.Reset,
-		sgr.Dim + strings.Repeat("─", m.width) + sgr.Reset,
-	}
+	head := append(make([]string, 0, 2+len(body)),
+		sgr.Bold+" tuikit demo — list / detail"+sgr.Reset,
+		sgr.Dim+strings.Repeat("─", m.width)+sgr.Reset,
+	)
 	hint := " j/k 移動  Space/b 半ページ  g/G 端  Enter 開く  q 終了"
 	if m.drawer.Phase() != anim.Closed {
 		hint = " j/k・Space/b スクロール  J/K 隣へ  Esc 閉じる  q 終了"

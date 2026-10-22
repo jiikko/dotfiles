@@ -189,7 +189,7 @@ func drainWatchEvents(w DirWatcher, quiet time.Duration) {
 				<-timer.C
 			}
 			timer.Reset(quiet) // まだ書いている: 静まるまで待つ
-		case <-w.Errors():
+		case <-w.Errors(): //nolint:errcheck // watcher のエラーは読み捨てる (止めずに保険のポーリングに任せる)
 		case <-timer.C:
 			return
 		}

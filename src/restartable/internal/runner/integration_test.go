@@ -1474,7 +1474,7 @@ func TestForcedShutdownKillsStopCommandGroupAfterChildExits(t *testing.T) {
 		t.Fatalf("runner exit code = %d, want 143", code)
 	}
 	select {
-	case <-result:
+	case <-result: //nolint:errcheck // forced shutdown 中の呼び出しは終わればよい (失敗で返るのも正しい)
 	case <-time.After(time.Second):
 		t.Fatal("control call did not finish during forced shutdown")
 	}
@@ -1519,7 +1519,7 @@ func TestForcedShutdownIncludesGroupsWhoseLeadersWereReaped(t *testing.T) {
 		t.Fatalf("runner exit code = %d, want 143", code)
 	}
 	select {
-	case <-result:
+	case <-result: //nolint:errcheck // forced shutdown 中の呼び出しは終わればよい (失敗で返るのも正しい)
 	case <-time.After(time.Second):
 		t.Fatal("pending restart call did not finish during forced shutdown")
 	}

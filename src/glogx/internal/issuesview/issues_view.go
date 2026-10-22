@@ -2865,7 +2865,7 @@ func (v *IssuesView) markNextBox(width int, colored bool) []string {
 		// ここで sanitize する (制御文字入りのファイル名で確認モーダルを細工させない)
 		what = term.SanitizePlainLine(filepath.Base(v.markNext.targets[0].Rel))
 	}
-	title, lines := " next の目印 ", []string{what + " に next の目印を付けます"}
+	title, lines := " next の目印 ", []string{what + " に next の目印を付けます"} //nolint:prealloc // unmark では作り直すので、事前に確保しても捨てるだけ
 	if v.markNext.unmark {
 		// 🚨 宛先は独立した行にする。箱は 44 桁で頭打ち (confirm.MaxWidth) なので、1 行に繋ぐと
 		// 実在する長さのファイル名 (`292-feat-audit-forge-should-hand-each-agent-its-own-worktree.md`)

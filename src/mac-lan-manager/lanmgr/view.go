@@ -286,8 +286,9 @@ func (m *Model) hints() []keyHint {
 			hs = append(hs, keyHint{"j/k", "送る", 3})
 		}
 	default:
-		hs = []keyHint{{"j/k", "移動", 7}, {"enter", "詳細", 6}}
-		hs = append(hs, m.rowHints(m.current())...)
+		rows := m.rowHints(m.current())
+		hs = append(make([]keyHint, 0, 2+len(rows)+6), keyHint{"j/k", "移動", 7}, keyHint{"enter", "詳細", 6})
+		hs = append(hs, rows...)
 		hs = append(hs, keyHint{"h/l", "タブ", 10}, keyHint{"space", "台帳", 8}, keyHint{"c", "この Mac の IP", 9},
 			keyHint{",", "設定", 11}, keyHint{"?", "全部のキー", 2}, keyHint{"q", "閉じる", 1})
 	}

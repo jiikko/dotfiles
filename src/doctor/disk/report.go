@@ -74,12 +74,13 @@ func Foldable(r Result) bool {
 // markVocabularyGuard が exhaustive (default なし switch) で気づかせる。
 func MarkVocabulary() []string {
 	item := []Item{{Path: "/p"}}
-	rs := []Result{
-		{Entry: Entry{ID: "x"}, Status: StatusBlocked},
-		{Entry: Entry{ID: "x"}, Status: StatusFailed},
-		{Entry: Entry{ID: "x", Unverified: "未実測"}, Status: StatusOK},
-	}
-	for _, risk := range []Risk{RiskSafe, RiskCaution, RiskConfirm} {
+	risks := []Risk{RiskSafe, RiskCaution, RiskConfirm}
+	rs := append(make([]Result, 0, 3+len(risks)),
+		Result{Entry: Entry{ID: "x"}, Status: StatusBlocked},
+		Result{Entry: Entry{ID: "x"}, Status: StatusFailed},
+		Result{Entry: Entry{ID: "x", Unverified: "未実測"}, Status: StatusOK},
+	)
+	for _, risk := range risks {
 		rs = append(rs, Result{Entry: Entry{ID: "x", Risk: risk}, Status: StatusOK, Items: item})
 	}
 	markVocabularyGuard(RiskSafe, StatusOK) // 番人を配線に載せる (実行時の意味は無い)

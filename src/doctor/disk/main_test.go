@@ -588,7 +588,7 @@ func TestDestructiveCallsGoThroughHook(t *testing.T) {
 	}
 	hooks := map[string]bool{"allowDestructive": true, "sandboxCheck": true, "rmFixture": true}
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", nil, parser.ParseComments)
+	pkgs, err := parser.ParseDir(fset, ".", nil, parser.ParseComments) //nolint:staticcheck // ビルドタグに関係なく全ファイルを見る (それが ParseDir の非推奨の理由で、ここでは欲しい性質)
 	if err != nil {
 		t.Fatal(err)
 	}

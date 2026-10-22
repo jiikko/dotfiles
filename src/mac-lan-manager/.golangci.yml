@@ -5,7 +5,7 @@
 version: "2"
 
 # 🚨 golangci-lint は既定で os.TempDir()/golangci-lint.lock に flock を取り、別インスタンスが
-# 走っていると 5 秒待って "parallel golangci-lint is running" で落ちる (v2.5.0 の
+# 走っていると 5 秒待って "parallel golangci-lint is running" で落ちる (v2.15.0 の
 # pkg/commands/run.go acquireFileLock を実測)。この lock はキャッシュ保護ではない
 # (キャッシュは Go の build cache の fork。内容アドレスなので競合する 2 プロセスは同一バイト列を
 # 書く。書き込み自体は temp+rename ではなく最終名への直接 write で、安全性の根拠は原子性ではなく
@@ -58,6 +58,8 @@ linters:
     - reassign
     - tparallel
   settings:
+    perfsprint:
+      concat-loop: false # ループの中の文字列の連結を strings.Builder へ書き換えさせる。小さなループばかりで、読みやすさを崩すほど効かない
     govet:
       # 既定の analyzer に加えて全部を有効にする (nilness・unusedwrite・deepequalerrors などは既定では走らない)
       enable-all: true
@@ -133,6 +135,10 @@ linters:
         - (*os.File).Close
   exclusions:
     rules:
+      # テストの事前確保には性能上の意味が無い (小さな fixture を組むだけ)
+      - path: _test\.go$
+        linters:
+          - prealloc
       # main.go は静的出力の出口なので stdout 書き込みを許可。🚨 text で絞る: path だけで forbidigo ごと
       # 外すと、キャッシュを書く本人 (main.go) に os.WriteFile の禁止が効かない
       - path: ^main\.go$ # module の根の main.go だけ (main\.go だと domain.go なども外れる)

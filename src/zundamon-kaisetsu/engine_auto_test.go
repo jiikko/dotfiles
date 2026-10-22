@@ -694,7 +694,7 @@ func TestStartEngineSkipsPullWhenImageIsLocal(t *testing.T) {
 	go func() { done <- engine.StartEngine(env) }()
 	waitUntil(t, "run まで進む", func() bool { b, _ := os.ReadFile(log); return strings.Contains(string(b), "run ") })
 	cancel() // 応答待ち (最大 180 秒) を打ち切る
-	<-done
+	<-done   //nolint:errcheck // 打ち切ったので失敗で返る。終わるのを待つだけ
 	b, _ := os.ReadFile(log)
 	if strings.Contains(string(b), "image pull") {
 		t.Errorf("手元にイメージがあるのに取得した (オフラインで起動できなくなる):\n%s", b)

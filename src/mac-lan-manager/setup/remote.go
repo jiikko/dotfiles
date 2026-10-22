@@ -155,7 +155,7 @@ func ObservePeer(ctx context.Context, run Run, d Dest) PeerNet {
 	}
 	p.KeyOK = true
 	remote := func(ctx context.Context, name string, args ...string) (string, error) {
-		words := []string{Quote(name)}
+		words := append(make([]string, 0, 1+len(args)), Quote(name))
 		for _, a := range args {
 			words = append(words, Quote(a))
 		}

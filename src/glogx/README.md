@@ -402,7 +402,7 @@ go test -run '^$' -bench BenchmarkView -benchmem .
 ```
 
 🚨 **lint の確認は必ず `make lint` で行う。PATH の `golangci-lint` を直接叩かないこと。**
-`make lint` は `scripts/golangci_lint.sh` 経由で v2.5.0 に版を固定していて、PATH のバイナリとは指摘が食い違う
+`make lint` は `scripts/golangci_lint.sh` 経由で v2.15.0 に版を固定していて、PATH のバイナリとは指摘が食い違う
 (実測 2026-09-01: 同じツリーで `make lint` = 0 issues / PATH の v2.12.2 = 6 issues)。
 逆向きも起きる — PATH 版が 0 issues なのに固定版が prealloc を 1 件出し、master の lint が
 落ちた実例が `1b025b8`。CI が回すのは固定版なので、そちらが唯一の出典。

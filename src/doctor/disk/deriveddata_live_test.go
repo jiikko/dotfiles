@@ -200,7 +200,7 @@ func lsofEscape(p string) string {
 		case c == '\n':
 			b.WriteString(`\n`)
 		case c >= 0x7f:
-			b.WriteString(fmt.Sprintf(`\x%02x`, c))
+			fmt.Fprintf(&b, `\x%02x`, c)
 		default:
 			b.WriteByte(c)
 		}

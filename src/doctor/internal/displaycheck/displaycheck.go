@@ -91,7 +91,7 @@ func check(s Spec) (problems []string, fatal string) {
 	sanitizeGate, sanitizeExempt, wantChecked := s.Gates, s.Exempt, s.WantChecked
 	addf := func(format string, a ...any) { problems = append(problems, fmt.Sprintf(format, a...)) }
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, s.Dir, func(fi fs.FileInfo) bool {
+	pkgs, err := parser.ParseDir(fset, s.Dir, func(fi fs.FileInfo) bool { //nolint:staticcheck // ビルドタグに関係なく全ファイルを見る (OS ごとのファイルも検査から漏らさない)
 		return !strings.HasSuffix(fi.Name(), "_test.go")
 	}, 0)
 	if err != nil {

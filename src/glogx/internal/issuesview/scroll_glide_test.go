@@ -114,7 +114,7 @@ func TestIssuesBodyShiftSpaceScrollsUp(t *testing.T) {
 	// 長めの本文を与える。
 	var src strings.Builder
 	for i := range 200 {
-		src.WriteString(fmt.Sprintf("line %d\n", i))
+		fmt.Fprintf(&src, "line %d\n", i)
 	}
 	v.body = issues.NewBody(src.String())
 	v.body.Lines(80, false) // Len() を確定させる (幅ごとに整形するため)
