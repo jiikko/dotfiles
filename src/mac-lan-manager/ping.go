@@ -102,24 +102,9 @@ func runPing(args []string, stdout, stderr io.Writer, now func() time.Time, stop
 	reports := make([]pingReport, 0, len(targets))
 	for _, t := range targets {
 		r := pingReport{Host: t.Host, Name: t.Name, LanIP: t.LanIP, Names: []pingName{}, ScanSettled: settled, ScanError: scanErr}
-		ctx, cancel := context.WithCancel(context.Background())
-		done := make(chan struct{})
-		go func() {
-			select {
-			case <-stop:
-				cancel()
-			case <-done:
-			}
-		}()
-		names := check(ctx, t.Names)
-		close(done)
-		cancel()
-		// 🚨 結果より先に止める合図を見る: 端末の Ctrl-C は子の ping にも届き、ping は統計 (0 received) を出してすぐ終わるので、
-		// 結果だけ見ると「届かない」になる。ctx.Err() では見ない (合図を受けた goroutine が cancel する前に check が戻りうる)
-		select {
-		case <-stop:
+		var names []reach.Name
+		if untilStop(stop, func(ctx context.Context) { names = check(ctx, t.Names) }) {
 			return 130
-		default:
 		}
 		for _, n := range names {
 			pn := toPingName(n, t.LanIP)

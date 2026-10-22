@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -166,6 +167,20 @@ func TestSpeedtestStopCancelsMeasurement(t *testing.T) {
 	var out, errb bytes.Buffer
 	if rc := runSpeed(nil, &out, &errb, time.Now, stop, speedModel(nil), test); rc != 130 || calls != 1 {
 		t.Errorf("rc=%d 測った %d 回, want 130 / 1", rc, calls)
+	}
+}
+
+// 止める合図が来たら、測定の結果 (端末の Ctrl-C は子の ssh にも届き、ssh は失敗で終わる) より先に 130 を返す。
+func TestSpeedtestStopWins(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1)) // 合図を受ける側が走る前に test が戻る並びを毎回作る
+	stop := make(chan struct{})
+	test := func(context.Context, setup.Dest, func() time.Time) speedtest.Result {
+		close(stop) // 合図を出してすぐ返す (ssh が SIGINT で死んだ形。ctx が切れるのを待たない)
+		return speedtest.Result{Err: errors.New("上りを測れなかった: signal: interrupt")}
+	}
+	var out, errb bytes.Buffer
+	if rc := runSpeed(nil, &out, &errb, time.Now, stop, speedModel(nil), test); rc != 130 || out.Len() != 0 {
+		t.Fatalf("rc=%d stdout=%q, want 130 / 何も出さない", rc, out.String())
 	}
 }
 

@@ -212,8 +212,15 @@ loop:
 	switch {
 	case stop == nil:
 		return 0, fmt.Errorf("何も届かなかった: %w", errors.Join(rerr, waitErr))
-	case !stopped && !errors.Is(rerr, io.EOF):
-		return 0, fmt.Errorf("途中で切れた: %w", errors.Join(rerr, waitErr))
+	case !stopped:
+		// EOF も失敗に数える。相手の head は downMax を出し切るまで終わらないので、時間より前の EOF は ssh が切れたか相手が落ちた
+		if errors.Is(rerr, io.EOF) {
+			rerr = nil
+		}
+		if cause := errors.Join(rerr, waitErr); cause != nil {
+			return 0, fmt.Errorf("途中で切れた: %w", cause)
+		}
+		return 0, errors.New("途中で切れた: 相手が時間より前に出し終えた")
 	}
 	return rate(total, t1.Sub(t0))
 }

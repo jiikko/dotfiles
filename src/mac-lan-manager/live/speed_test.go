@@ -23,14 +23,14 @@ func stepClock() func() time.Time {
 	}
 }
 
-// 本物のパイプを通して測る: 偽物の ssh が相手の側を演じる (wc -c で数えて返す・head -c で流す)。上りは stdin を閉じて相手に
-// 終わりを知らせ、下りは相手が流し終えても値を出す。
+// 本物のパイプを通して測る: 偽物の ssh が相手の側を演じる (wc -c で数えて返す・止められるまで流す)。上りは stdin を閉じて相手に
+// 終わりを知らせ、下りは時間で止めてから値を出す (相手の head は時間の中では出し終えない。時間より前の EOF は失敗)。
 func TestSpeedStartMeasuresThroughPipes(t *testing.T) {
 	ssh := fakeSSH(t, `for a; do last=$a; done
 case "$last" in
 true) exit 0 ;;
 "exec wc -c") exec wc -c ;;
-*) exec head -c 3000000 /dev/zero ;;
+*) exec cat /dev/zero ;;
 esac`)
 	start := func(ctx context.Context, argv []string, withStdin bool) (speedtest.Proc, error) {
 		argv = append([]string{ssh}, argv[1:]...) // PATH の ssh を引かない

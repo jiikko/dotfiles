@@ -261,6 +261,30 @@ func settle(m *lanmgr.Model, now func() time.Time, deadline time.Time, stop <-ch
 	return true, !m.Busy()
 }
 
+// untilStop は run を、stop が来たら取り消す ctx で走らせ、止められたか (stopped) を返す。
+// 🚨 結果より先に止める合図を見る: 端末の Ctrl-C は子 (ping・ssh) にも届き、子はすぐ終わるので、結果だけ見ると「届かない」「測れない」になる。
+// ctx.Err() では見ない (合図を受けた goroutine が cancel する前に run が戻りうる)
+func untilStop(stop <-chan struct{}, run func(ctx context.Context)) (stopped bool) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { // 止める合図で取り消す (ssh を止めれば相手の wc / head も終わる)
+		select {
+		case <-stop:
+			cancel()
+		case <-done:
+		}
+	}()
+	run(ctx)
+	close(done)
+	select {
+	case <-stop:
+		return true
+	default:
+		return false
+	}
+}
+
 func or(a, b string) string {
 	if a != "" {
 		return a

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -215,5 +216,26 @@ func TestDumpPeerRejectsBadDest(t *testing.T) {
 		if rc := runDump(args, &out, &errb, time.Now, nil, noModel(t), observe); rc != 2 {
 			t.Errorf("%q: rc=%d", args, rc)
 		}
+	}
+}
+
+// 止める合図を受けた goroutine が cancel するより先に run が戻っても、止められたと答える (ping / speedtest の 130)。
+// GOMAXPROCS(1) で、合図を受ける側が走る前に run が戻る並びを毎回作る (ctx.Err() で見る形はここで必ず false になる)。
+func TestUntilStopSeesStopBeforeCancel(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	for i := range 100 {
+		stop := make(chan struct{})
+		if !untilStop(stop, func(context.Context) { close(stop) }) {
+			t.Fatalf("%d 回目: 合図の後に戻った run を止められていないと読んだ", i)
+		}
+	}
+	if untilStop(make(chan struct{}), func(context.Context) {}) {
+		t.Error("合図が無いのに止められたと読んだ")
+	}
+	var canceled bool
+	stop := make(chan struct{})
+	untilStop(stop, func(ctx context.Context) { close(stop); <-ctx.Done(); canceled = true })
+	if !canceled {
+		t.Error("合図で ctx を取り消していない")
 	}
 }

@@ -98,20 +98,8 @@ func runSpeed(args []string, stdout, stderr io.Writer, now func() time.Time, sto
 		case t.Refusal != "":
 			r.Skipped, rc = t.Refusal, 1
 		default:
-			ctx, cancel := context.WithCancel(context.Background())
-			done := make(chan struct{})
-			go func() { // 止める合図で測定を取り消す (ssh を止めれば相手の wc / head も終わる)
-				select {
-				case <-stop:
-					cancel()
-				case <-done:
-				}
-			}()
-			res := test(ctx, t.Dest, now)
-			close(done)
-			stopped := ctx.Err() != nil
-			cancel()
-			if stopped {
+			var res speedtest.Result
+			if untilStop(stop, func(ctx context.Context) { res = test(ctx, t.Dest, now) }) {
 				return 130
 			}
 			r.UpBps, r.DownBps = res.UpBps, res.DownBps

@@ -237,6 +237,36 @@ func TestMeasureUpStopsWhenWriteBlocks(t *testing.T) {
 	}
 }
 
+// 下りが時間より前に EOF で終わったら、そこまでの値を測れた値として出さない。ssh の失敗の文も残す。
+func TestMeasureDownCutBeforeTimeIsError(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		waitErr error
+		want    string
+	}{
+		{"ssh fails", errors.New("exit status 127"), "exit status 127"},
+		{"clean exit", nil, "時間より前"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			clk := &fakeClock{}
+			start := func(_ context.Context, argv []string, _ bool) (Proc, error) {
+				switch argv[len(argv)-1] {
+				case "true":
+					return &fakeProc{stdout: strings.NewReader(""), wait: func() error { return nil }}, nil
+				case "exec wc -c":
+					w := &countingWriter{onWrite: func(int64) { clk.advance(time.Second); clk.fire() }}
+					return &fakeProc{stdin: w, stdout: strings.NewReader("10\n"), wait: func() error { return nil }}, nil
+				}
+				return &fakeProc{stdout: bytes.NewReader(make([]byte, 2*chunk)), wait: func() error { return c.waitErr }}, nil
+			}
+			r := measureWithin(t, context.Background(), start, clk.clock())
+			if r.Err == nil || !strings.Contains(r.Err.Error(), "途中で切れた") || !strings.Contains(r.Err.Error(), c.want) {
+				t.Errorf("Result = %+v, want 途中で切れた (%s)", r, c.want)
+			}
+		})
+	}
+}
+
 // 下りの途中で取り消しても ssh を回収する (Wait を呼ぶ)。
 func TestMeasureDownCancelReapsProcess(t *testing.T) {
 	c := &fakeClock{}

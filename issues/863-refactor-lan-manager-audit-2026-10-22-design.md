@@ -73,6 +73,7 @@ lan-manager の全体監査 (865) の設計系 7 タイプ (design / responsibil
 - flag の読み取り → `newModel` → `settle` → scanErr → 相手を選ぶループ → stop を待つ goroutine → JSON がほぼ同じ (`pickTarget` と `settle` は共有済み)。
   止める合図の見方が既に分かれている (症状は 859 の 2)
 - 方向: 「相手を選ぶ」と「stop を受けて 1 台ずつ走らせる」を helper にする
+- 2026-10-22: 「stop を受けて走らせる」は 859 で `untilStop` (`dump.go`) に寄せた。「相手を選ぶ」ループと JSON の出力は残る
 
 ### P11 (duplication・P3) 外のコマンドの失敗に stderr を付ける実装が 2 つ
 
