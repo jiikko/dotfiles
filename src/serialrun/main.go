@@ -101,17 +101,34 @@ func run(args []string, stderr io.Writer) int {
 		return rcTool
 	}
 	base, err := stateBase()
+	if opt.status {
+		return runStatus(base, err, opt.lock, os.Stdout, stderr)
+	}
 	if err == nil {
 		var q queue
 		if q, err = openQueue(filepath.Join(base, opt.lock)); err == nil {
 			return runWithQueue(q, opt, stderr)
 		}
 	}
-	if opt.status {
+	return runUnqueued(opt.argv, err, stderr)
+}
+
+// runStatus は見るだけの入口。置き場を作らない (typo の lock 名で空の置き場を作り「無い」と答えない)
+func runStatus(base string, baseErr error, lock string, out, stderr io.Writer) int {
+	if baseErr != nil {
+		fmt.Fprintf(stderr, "serial-run: 状態の置き場を使えない: %v\n", baseErr)
+		return rcTool
+	}
+	q, err := openExistingQueue(filepath.Join(base, lock))
+	if errors.Is(err, errNoQueue) {
+		fmt.Fprintf(out, "lock %q は一度も使われていない (置き場 %s が無い)\n", lock, q.dir)
+		return 0
+	}
+	if err != nil {
 		fmt.Fprintf(stderr, "serial-run: 状態の置き場を使えない: %v\n", err)
 		return rcTool
 	}
-	return runUnqueued(opt.argv, err, stderr)
+	return printStatus(q, out, stderr)
 }
 
 // runUnqueued は待ち列を使えない (置き場を作れない・採番できない) ときに、順番を待たずに子を走らせる。
@@ -123,10 +140,6 @@ func runUnqueued(argv []string, why error, stderr io.Writer) int {
 }
 
 func runWithQueue(q queue, opt options, stderr io.Writer) int {
-	if opt.status {
-		printStatus(q, os.Stdout)
-		return 0
-	}
 	if q.heldByAncestor(os.Getenv(heldEnv)) || q.heldByAncestorProcess() {
 		return execDirect(opt.argv, stderr)
 	}
@@ -196,7 +209,7 @@ func (q queue) heldByAncestor(v string) bool {
 // 先頭の生きている札の持ち主 (serial-run) が自分の祖先なら、その serial-run の子孫として呼ばれている (待つと自分の親を待つ)
 // 先頭が孤児 (持ち主の serial-run だけが死んで子が走っている) なら、その子が祖先かで見る
 func (q queue) heldByAncestorProcess() bool {
-	preds, err := q.predecessors(math.MaxInt64)
+	preds, err := q.lineup()
 	if err != nil || len(preds) == 0 {
 		return false
 	}
@@ -268,7 +281,10 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	info := ticketInfo{Pid: os.Getpid(), Start: enq, Cwd: cwd, Cmd: displayCmd(opt.argv), Nonce: newNonce(), Pgid: syscall.Getpgrp(), V: ticketVersion}
 	var abortSig syscall.Signal
 	errMaxWait := errors.New("待ちの上限")
-	tf, seq, err := q.enqueue(info, func() error {
+	hist := func(seq int64, waited, ran time.Duration, rc int, outcome string) {
+		q.appendHistory(historyEntry{seq: seq, enq: enq, waited: waited, ran: ran, rc: rc, outcome: outcome, cwd: cwd, cmd: info.Cmd})
+	}
+	tk, err := q.enqueue(info, func() error {
 		select {
 		case s := <-sigs:
 			abortSig, _ = s.(syscall.Signal)
@@ -282,23 +298,22 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	switch {
 	case err == nil:
 	case abortSig != 0:
+		hist(0, time.Since(enq), -1, 128+int(abortSig), "signal")
 		return exitAs(128+int(abortSig), abortSig)
 	case errors.Is(err, errMaxWait):
 		fmt.Fprintf(stderr, "serial-run: 待ちの上限 (%s) を超えた。採番の lock が空かない。実行しない\n", opt.maxWait)
+		hist(0, time.Since(enq), -1, rcTool, "timeout")
 		return rcTool
 	default:
+		hist(0, time.Since(enq), -1, -1, "unqueued")
 		return runUnqueued(opt.argv, fmt.Errorf("札を出せない: %w", err), stderr)
 	}
-	info.Seq = seq
-	myPath := q.ticketPath(seq)
-	leave := func() {
-		_ = os.Remove(myPath)
-		_ = tf.Close()
-	}
+	seq := tk.seq
 
 	rf, err := os.OpenFile(q.runPath(), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
-		leave()
+		tk.release(nil)
+		hist(seq, time.Since(enq), -1, -1, "unqueued")
 		return runUnqueued(opt.argv, fmt.Errorf("run.lock を開けない: %w", err), stderr)
 	}
 
@@ -309,17 +324,18 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	}
 	switch res {
 	case waitTimeout:
-		leave()
-		_ = rf.Close()
-		fmt.Fprintf(stderr, "serial-run: 待ちの上限 (%s) を超えた。実行しない%s\n", opt.maxWait, w.holderNote())
+		note := w.holderNote()
+		tk.release(rf)
+		fmt.Fprintf(stderr, "serial-run: 待ちの上限 (%s) を超えた。実行しない%s\n", opt.maxWait, note)
+		hist(seq, time.Since(enq), -1, rcTool, "timeout")
 		return rcTool
 	case waitError:
-		leave()
-		_ = rf.Close()
+		tk.release(rf)
+		hist(seq, time.Since(enq), -1, rcTool, "error")
 		return rcTool
 	case waitSignal:
-		leave()
-		_ = rf.Close()
+		tk.release(rf)
+		hist(seq, time.Since(enq), -1, 128+int(got), "signal")
 		return exitAs(128+int(got), got)
 	}
 	waited := time.Since(enq)
@@ -329,35 +345,12 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 
 	started := time.Now()
 	rc, got := runChild(opt.argv, heldToken(q.dir, seq, info.Nonce), tn.intGrace, sigs, stderr, func(pid int) {
-		// 🚨 pid を先に書く。ps (開始時刻) を待ってから書くと、その間に serial-run だけが SIGKILL されたとき、子の情報が無い札として消され、
-		// 走り続ける子の後ろで次の 1 本が走る
-		info.ChildPid = pid
-		err := rewriteInfo(tf, info)
-		if err == nil {
-			// ps は負荷で時間切れになりうるので数回試す。取れなくても子は走らせる (開始時刻の無い札は、札より後に起きた pid かで同一性を見る)
-			for i := range 3 {
-				if start, known := procStart(pid); known && start != "" {
-					info.ChildStartUTC = start
-					// 古い版との互換 (queue.go の ChildStartUTC の注記)。取れなくても今の版は困らない
-					info.ChildStart, _ = psFieldEnv(pid, "lstart", false)
-					err = rewriteInfo(tf, info)
-					break
-				}
-				if i == 2 {
-					err = errors.New("ps で子の開始時刻を取れない")
-				}
-				time.Sleep(100 * time.Millisecond)
-			}
-		}
-		if err != nil {
+		if err := tk.setChild(pid, time.Now()); err != nil {
 			fmt.Fprintf(stderr, "serial-run: 札に子の情報を書けない (この serial-run だけが殺されたとき、子の同一性を確かめにくくなる): %v\n", err)
 		}
 	})
-	q.appendHistory(seq, enq, waited, time.Since(started), rc, cwd, info.Cmd)
-	// 🚨 札を消してから run.lock を放す。後ろの待ち手は札の flock で起きて run.lock を取りに来るので、逆にすると
-	// 札が残ったまま run.lock が空き、起きた待ち手がまだ前に札があると読んで眠り直す (遅れるだけで壊れはしない)
-	leave()
-	_ = rf.Close()
+	hist(seq, waited, time.Since(started), rc, "ran")
+	tk.release(rf)
 	return exitAs(rc, got)
 }
 
@@ -515,9 +508,9 @@ func (w *waiter) describe(p pred) string {
 	if !ok {
 		return ""
 	}
-	held := time.Since(info.Start)
-	s := fmt.Sprintf(" 前: %s の %s (札を出してから %s)", info.Cwd, info.Cmd, fmtDur(held))
-	if held >= longHold {
+	age, long := info.age(true) // describe は先頭の札にだけ使う
+	s := fmt.Sprintf(" 前: %s の %s (%s)", info.Cwd, info.Cmd, age)
+	if long {
 		s += fmt.Sprintf(" 🚨 長く持っている: pid %d %s", info.Pid, statNote(info.Pid))
 	}
 	return s
@@ -604,57 +597,54 @@ func exitAs(rc int, got syscall.Signal) int {
 	return rc
 }
 
-func (q queue) appendHistory(seq int64, enq time.Time, waited, ran time.Duration, rc int, cwd, cmd string) {
-	f, err := os.OpenFile(filepath.Join(q.dir, "history.log"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
-	if err != nil {
-		return
+// age は表示する時間と「長く持っている」かを返す。走り出していれば子を起こしてから数える (待って先頭に上がった札を、走り出した直後から 🚨 にしない)。
+// まだ走っていない札は札を出してから数え、🚨 は先頭のときだけ付ける。先頭は順番が来ればすぐ子を起こすので、走らないまま長いのは
+// 持ち主が止まった (Ctrl-Z・SIGSTOP) か、run_start を書かない古い版が走らせている。待っている後ろの札には付けない
+func (i ticketInfo) age(head bool) (label string, long bool) {
+	if !i.RunStart.IsZero() {
+		d := time.Since(i.RunStart)
+		return "走り出してから " + fmtDur(d), d >= longHold
 	}
-	defer f.Close()
-	// O_APPEND の 1 回の write で書く (並行する書き手と行が混ざらない)
-	_, _ = fmt.Fprintf(f, "%d\t%s\twait=%.1fs\tran=%.1fs\trc=%d\t%s\t%s\n",
-		seq, enq.Format(time.RFC3339), waited.Seconds(), ran.Seconds(), rc, cwd, oneLine(cmd))
+	d := time.Since(i.Start)
+	return "札を出してから " + fmtDur(d), head && d >= longHold
 }
 
-func printStatus(q queue, out io.Writer) {
-	seqs, err := q.tickets()
+// printStatus は列を表示する。数えるのは待ち手と同じ入口 (lineup) で、孤児の子・開けない札も 1 本に数える
+func printStatus(q queue, out, stderr io.Writer) int {
+	preds, err := q.lineup()
 	if err != nil {
-		fmt.Fprintf(out, "札を読めない: %v\n", err)
-		return
+		fmt.Fprintf(stderr, "serial-run: 札を読めない: %v\n", err)
+		return rcTool
 	}
-	n := 0
-	for _, s := range seqs {
-		info, ok := q.readInfo(s)
+	for i, p := range preds {
+		label := "待ち"
+		if i == 0 {
+			label = "先頭"
+		}
+		if p.state == stateUnknown {
+			fmt.Fprintf(out, "%s\t#%d\t(札を開けない。権限か fd の枯渇。生死を決められない)\n", label, p.seq)
+			continue
+		}
+		info, ok := q.readInfo(p.seq)
 		if !ok {
+			fmt.Fprintf(out, "%s\t#%d\t(札の情報を読めない)\n", label, p.seq)
 			continue
 		}
-		f, err := os.Open(q.ticketPath(s))
-		if err != nil {
-			continue
-		}
-		dead := flock(f, syscall.LOCK_EX|syscall.LOCK_NB) == nil
-		_ = f.Close()
-		state := "待ち"
+		age, long := info.age(i == 0)
+		line := fmt.Sprintf("%s\t#%d\t%s\tpid %d\t%s\t%s", label, p.seq, age, info.Pid, info.Cwd, info.Cmd)
 		switch {
-		case dead:
-			state = "(持ち主なし)"
-		case n == 0:
-			state = "先頭"
-		}
-		if !dead {
-			n++
-		}
-		held := time.Since(info.Start)
-		line := fmt.Sprintf("%s\t#%d\t%s\tpid %d\t%s\t%s", state, s, fmtDur(held), info.Pid, info.Cwd, info.Cmd)
-		if !dead && held >= longHold {
+		case p.state == stateOrphan:
+			line += fmt.Sprintf("\t(持ち主の serial-run は死んだ。子 pid %d がまだ走っている)", info.ChildPid)
+		case long:
 			line += "\t🚨 長く持っている " + statNote(info.Pid)
 		}
 		fmt.Fprintln(out, line)
 	}
-	if n == 0 {
+	if len(preds) == 0 {
 		fmt.Fprintln(out, "走っているものも待っているものも無い")
 	}
 	// hook の最近の判断 (差し込んだ / 読み切れず見送った)。効いているかを後から確かめる口
-	if b, err := os.ReadFile(filepath.Join(q.dir, "hook.log")); err == nil {
+	if b, err := os.ReadFile(q.hookLogPath()); err == nil {
 		lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 		if len(lines) > 5 {
 			lines = lines[len(lines)-5:]
@@ -664,6 +654,7 @@ func printStatus(q queue, out io.Writer) {
 			fmt.Fprintln(out, "  "+l)
 		}
 	}
+	return 0
 }
 
 // displayCmd は表示用のコマンド行。hook が包んだ `zsh -c '<元のコマンド>'` は元のコマンドを見せる

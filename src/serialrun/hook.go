@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -76,11 +75,11 @@ func logHookDecision(cmd string, changed bool, skip string) {
 	if err != nil {
 		return
 	}
-	dir := filepath.Join(base, "default")
-	if _, err := os.Stat(dir); err != nil {
+	q, err := openExistingQueue(filepath.Join(base, "default"))
+	if err != nil {
 		return
 	}
-	p := filepath.Join(dir, "hook.log")
+	p := q.hookLogPath()
 	if fi, err := os.Stat(p); err == nil && fi.Size() > hookLogMax {
 		_ = os.Rename(p, p+".1")
 	}
@@ -109,17 +108,18 @@ func queueNote() string {
 	if err != nil {
 		return ""
 	}
-	q := queue{dir: filepath.Join(base, "default")}
-	if _, err := os.Stat(q.qdir()); err != nil {
+	q, err := openExistingQueue(filepath.Join(base, "default"))
+	if err != nil {
 		return ""
 	}
-	preds, err := q.predecessors(math.MaxInt64)
+	preds, err := q.lineup()
 	if err != nil || len(preds) == 0 {
 		return ""
 	}
 	head := ""
 	if info, ok := q.readInfo(preds[0].seq); ok {
-		head = fmt.Sprintf("先頭は %s の %s (%s 前から)。", info.Cwd, info.Cmd, fmtDur(time.Since(info.Start)))
+		age, _ := info.age(true)
+		head = fmt.Sprintf("先頭は %s の %s (%s)。", info.Cwd, info.Cmd, age)
 	}
 	return fmt.Sprintf("serial-run: このコマンドの重い部分は serial-run の順番待ちに入る (マシン全体で 1 本ずつ流す仕組み)。"+
 		"前に %d 本ある。%s待っている間は Bash の出力が返らない (固まったのではない)。"+

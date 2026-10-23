@@ -716,7 +716,7 @@ func TestOldFormatChildStartIsStillTheSameChild(t *testing.T) {
 	if _, ok := parseLstart(strings.TrimSpace(string(out))); ok {
 		t.Fatalf("前提が崩れた: 古い書式が新しい書式として読めてしまう: %q", out)
 	}
-	writeDeadTicket(t, f, ticketInfo{Seq: 1, Pid: 999999, Start: start, ChildPid: child, ChildStart: strings.TrimSpace(string(out))})
+	writeDeadTicket(t, f, ticketInfo{Pid: 999999, Start: start, ChildPid: child, ChildStart: strings.TrimSpace(string(out))})
 	b := f.start(nil, false, "--max-wait", "1", "--", "/bin/sh", "-c", "echo B >> "+f.log)
 	if rc := exitCode(t, b); rc != rcTool || f.hasLog("B") {
 		t.Fatalf("古い書式の札の子が走っているのに B が走った: rc=%d", rc)
@@ -754,7 +754,7 @@ func TestTicketKeepsLegacyChildStartForOldVersions(t *testing.T) {
 func TestUnverifiedOrphanExpires(t *testing.T) {
 	f := newFixture(t)
 	other := startSleeper(t)
-	writeDeadTicket(t, f, ticketInfo{Seq: 1, Pid: 999999, Start: time.Now().Add(-unverifiedOrphanTTL - time.Minute), ChildPid: other})
+	writeDeadTicket(t, f, ticketInfo{Pid: 999999, Start: time.Now().Add(-unverifiedOrphanTTL - time.Minute), ChildPid: other})
 	b := f.start(nil, false, "--max-wait", "3", "--", "/bin/sh", "-c", "echo B >> "+f.log)
 	if rc := exitCode(t, b); rc != 0 || !f.hasLog("B") {
 		t.Fatalf("寿命を過ぎた確かめられない孤児の札の後ろで待った: rc=%d", rc)
@@ -777,7 +777,7 @@ func TestOldVersionCLocaleChildStartIsNotComparedAsUTC(t *testing.T) {
 	if _, ok := parseLstart(old); !ok {
 		t.Fatalf("前提が崩れた: C の書式の lstart を読めない: %q", old)
 	}
-	writeDeadTicket(t, f, ticketInfo{Seq: 1, Pid: 999999, Start: start, ChildPid: child, ChildStart: old}) // V が無い = 古い版
+	writeDeadTicket(t, f, ticketInfo{Pid: 999999, Start: start, ChildPid: child, ChildStart: old}) // V が無い = 古い版
 	b := f.start(nil, false, "--max-wait", "1", "--", "/bin/sh", "-c", "echo B >> "+f.log)
 	if rc := exitCode(t, b); rc != rcTool || f.hasLog("B") {
 		t.Fatalf("古い版の札の子が走っているのに B が走った: rc=%d", rc)
@@ -792,25 +792,12 @@ func TestUnrelatedStoppedProcessIsNotReclaimed(t *testing.T) {
 	if err := syscall.Kill(other, syscall.SIGSTOP); err != nil {
 		t.Fatal(err)
 	}
-	writeDeadTicket(t, f, ticketInfo{Seq: 1, Pid: 999999, Start: start, ChildPid: other, Pgid: 1})
+	writeDeadTicket(t, f, ticketInfo{Pid: 999999, Start: start, ChildPid: other, Pgid: 1})
 	b := f.start(nil, false, "--max-wait", "1", "--", "/bin/sh", "-c", "echo B >> "+f.log)
 	_ = exitCode(t, b)
 	if syscall.Kill(other, 0) != nil || zombie(other) {
 		t.Fatal("持ち主のグループと合わない、使い回された pid の停止中のプロセスを止めた")
 	}
-}
-
-// 札の中身の seq は札の番号と一致する (子の情報を書き直したときに 0 へ戻さない)
-func TestTicketRecordsItsSeq(t *testing.T) {
-	f := newFixture(t)
-	ga := f.gate("a")
-	a := f.held("A", ga, nil, false)
-	waitChildRecorded(t, f)
-	if s := readFile(firstTicket(f)); !strings.Contains(s, `"seq":1,`) {
-		t.Fatalf("札の seq が番号と違う: %s", s)
-	}
-	f.release(ga)
-	_ = exitCode(t, a)
 }
 
 // 大文字・先頭の . を含む lock 名は通さない (同じ置き場を別名で指す / 親の置き場の seq を上書きする)
@@ -855,11 +842,12 @@ func TestHeldMatchesAcrossSymlinkSpellings(t *testing.T) {
 		t.Fatal(err)
 	}
 	// この test が札の flock を持つ (別の fd から見ると生きている札)
-	tf, seq, err := q1.enqueue(ticketInfo{Pid: os.Getpid(), Start: time.Now(), Nonce: "n1"}, func() error { return nil })
+	tk, err := q1.enqueue(ticketInfo{Pid: os.Getpid(), Start: time.Now(), Nonce: "n1"}, func() error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tf.Close()
+	defer tk.release(nil)
+	seq := tk.seq
 	q2, err := openQueue(filepath.Join(link, "default"))
 	if err != nil {
 		t.Fatal(err)
@@ -943,7 +931,7 @@ func TestRelativeXDGStateHomeIsIgnored(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(f.dir, ".local", "state", "serial-run", "default", "history.log")); err != nil {
+	if _, err := os.Stat(queue{dir: filepath.Join(f.dir, ".local", "state", "serial-run", "default")}.historyPath()); err != nil {
 		t.Fatalf("既定の置き場に落ちていない: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(f.dir, "rel")); err == nil {
@@ -1311,4 +1299,164 @@ func zombie(pid int) bool {
 		return true // ps に出ない = もう居ない
 	}
 	return strings.HasPrefix(strings.TrimSpace(string(out)), "Z")
+}
+
+// status は f の置き場で `serial-run status` を打ち、rc・stdout・stderr を返す
+func (f *fixture) status(args ...string) (int, string, string) {
+	f.t.Helper()
+	cmd := exec.Command(bin, append([]string{"status"}, args...)...)
+	cmd.Env = f.env()
+	var out, errb strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	err := cmd.Run()
+	rc := 0
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		rc = ee.ExitCode()
+	} else if err != nil {
+		f.t.Fatal(err)
+	}
+	return rc, out.String(), errb.String()
+}
+
+// 見るだけの status は置き場を作らない (typo の lock 名で空の置き場を作り「無い」と答えない)
+func TestStatusDoesNotCreateQueue(t *testing.T) {
+	f := newFixture(t)
+	rc, out, _ := f.status("-l", "no-such-lock")
+	if rc != 0 || !strings.Contains(out, "一度も使われていない") {
+		t.Fatalf("使われていない lock の status: rc=%d out=%q", rc, out)
+	}
+	if _, err := os.Stat(filepath.Join(f.state, "no-such-lock")); !os.IsNotExist(err) {
+		t.Fatalf("status が置き場を作った: %v", err)
+	}
+}
+
+// 持ち主の serial-run だけが死んで子が走っている札は、status でも走っているものとして出す (待ち手が待っているのに「無い」と出さない)
+func TestStatusShowsOrphanChildAsRunning(t *testing.T) {
+	f := newFixture(t)
+	child := startSleeper(t)
+	start, known := procStart(child)
+	if !known || start == "" {
+		t.Fatal("子の開始時刻を取れない")
+	}
+	writeDeadTicket(t, f, ticketInfo{Pid: 999999, Start: time.Now().Add(-time.Minute), Cmd: "make test", ChildPid: child, ChildStartUTC: start, V: ticketVersion})
+	rc, out, _ := f.status()
+	if rc != 0 || !strings.Contains(out, "先頭") || !strings.Contains(out, "子 pid "+strconv.Itoa(child)+" がまだ走っている") || strings.Contains(out, "無い") {
+		t.Fatalf("孤児の子を走っているものとして出さない: rc=%d out=%q", rc, out)
+	}
+}
+
+// 札の一覧を読めないときは rc=125 と stderr で知らせる (rc=0 で「無い」と答えない)
+func TestStatusFailsLoudWhenQueueUnreadable(t *testing.T) {
+	f := newFixture(t)
+	c := exec.Command(bin, "--", "/usr/bin/true") // 置き場を作る
+	c.Env = f.env()
+	if err := c.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(f.qdir(), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(f.qdir(), 0o700) })
+	rc, out, errOut := f.status()
+	if rc != rcTool || !strings.Contains(errOut, "札を読めない") || strings.Contains(out, "無い") {
+		t.Fatalf("読めない置き場の status: rc=%d out=%q err=%q", rc, out, errOut)
+	}
+}
+
+// 待っただけで走らなかった run も history.log に 1 行残す (計測の母集合から抜けない)
+func TestHistoryRecordsRunsThatDidNotRun(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	a := f.held("A", ga, nil, false)
+	waitFor(t, "A が始まる", func() bool { return f.hasLog("start A") })
+	if rc := exitCode(t, f.start(nil, false, "--max-wait", "1", "--", "/bin/sh", "-c", "echo B >> "+f.log)); rc != rcTool {
+		t.Fatalf("待ちの上限で抜けない: rc=%d", rc)
+	}
+	f.release(ga)
+	_ = exitCode(t, a)
+	hist := readFile(queue{dir: filepath.Join(f.state, "default")}.historyPath())
+	lines := strings.Split(strings.TrimSpace(hist), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("history.log の行数が 2 でない:\n%s", hist)
+	}
+	if !strings.Contains(lines[0], "\tran=-\trc=125\t") || !strings.HasSuffix(lines[0], "\ttimeout") {
+		t.Fatalf("上限で抜けた B の行が無い:\n%s", hist)
+	}
+	if !strings.Contains(lines[1], "\trc=0\t") || !strings.HasSuffix(lines[1], "\tran") || strings.Contains(lines[1], "ran=-") {
+		t.Fatalf("走った A の行が無い:\n%s", hist)
+	}
+}
+
+// 「長く持っている」は走り出してから数える。待って先頭に上がった札を、走り出した直後から 🚨 にしない。
+// 走らないまま長い先頭 (持ち主が止まった・run_start を書かない古い版) には付け、待っている後ろの札には付けない
+func TestLongHoldCountsFromRunStart(t *testing.T) {
+	now := time.Now()
+	for _, c := range []struct {
+		name string
+		info ticketInfo
+		head bool
+		long bool
+	}{
+		{"長く待って走り出した直後", ticketInfo{Start: now.Add(-2 * longHold), RunStart: now.Add(-time.Minute)}, true, false},
+		{"走り出してから長い", ticketInfo{Start: now.Add(-2 * longHold), RunStart: now.Add(-longHold - time.Minute)}, true, true},
+		{"走らないまま長い先頭", ticketInfo{Start: now.Add(-2 * longHold)}, true, true},
+		{"長く待っている後ろの札", ticketInfo{Start: now.Add(-2 * longHold)}, false, false},
+		{"札を出したばかりの先頭", ticketInfo{Start: now.Add(-time.Minute)}, true, false},
+	} {
+		if _, long := c.info.age(c.head); long != c.long {
+			t.Errorf("%s: long=%v want %v", c.name, long, c.long)
+		}
+	}
+}
+
+// 子を起こしたら札に走り出した時刻を書く (「長く持っている」はこれで数える)
+func TestTicketRecordsRunStart(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	a := f.held("A", ga, nil, false)
+	waitChildRecorded(t, f)
+	info, ok := readInfoAt(firstTicket(f))
+	if !ok || info.RunStart.IsZero() || info.RunStart.Before(info.Start) {
+		t.Fatalf("札に走り出した時刻が無い: %+v", info)
+	}
+	f.release(ga)
+	_ = exitCode(t, a)
+}
+
+// status は見るだけ: 止まったままの孤児の子を止めず、札も消さない (回収は待ち手が行う)
+func TestStatusDoesNotReclaimStoppedOrphan(t *testing.T) {
+	f := newFixture(t)
+	child := startSleeper(t)
+	start, known := procStart(child)
+	if !known || start == "" {
+		t.Fatal("子の開始時刻を取れない")
+	}
+	if err := syscall.Kill(child, syscall.SIGSTOP); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(child, syscall.SIGCONT) })
+	writeDeadTicket(t, f, ticketInfo{Pid: 999999, Start: time.Now().Add(-time.Minute), Cmd: "make test", ChildPid: child, ChildStartUTC: start, Pgid: syscall.Getpgrp(), V: ticketVersion})
+	rc, out, _ := f.status()
+	if rc != 0 || !strings.Contains(out, "がまだ走っている") {
+		t.Fatalf("止まった孤児を出さない: rc=%d out=%q", rc, out)
+	}
+	if st, _ := procStat(child); !strings.HasPrefix(st, "T") {
+		t.Fatalf("status が孤児の子に手を出した: stat=%q", st)
+	}
+	if _, err := os.Stat(firstTicket(f)); err != nil {
+		t.Fatalf("status が札を消した: %v", err)
+	}
+}
+
+// status は死んだ札 (持ち主も子も居ない) を消さない (見るだけの入口。消すのは待ち手)
+func TestStatusDoesNotRemoveDeadTicket(t *testing.T) {
+	f := newFixture(t)
+	writeDeadTicket(t, f, ticketInfo{Pid: 999999, Start: time.Now().Add(-time.Minute), Cmd: "make test", V: ticketVersion})
+	if rc, out, _ := f.status(); rc != 0 || !strings.Contains(out, "無い") {
+		t.Fatalf("死んだ札だけの status: rc=%d out=%q", rc, out)
+	}
+	if _, err := os.Stat(firstTicket(f)); err != nil {
+		t.Fatalf("status が死んだ札を消した: %v", err)
+	}
 }

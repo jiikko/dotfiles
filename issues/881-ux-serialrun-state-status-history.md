@@ -73,4 +73,34 @@ serialrun の監査で見つかった、グループ D の 9 項目。
 
 ## 進捗
 
-- [ ] 未着手 (項目ごとに、直した commit の subject・当てた変異・実測を書く)
+- 2026-10-23 (commit「fix(serialrun): 状態の置き場・status・history を直す (issue 881)」):
+  - [x] D1 status と hook の案内 (`queueNote`) は待ち手と同じ入口 `lineup` (= `predecessors` を `stateOf` で) で数える。孤児の子は「持ち主の serial-run は死んだ。子 pid N がまだ走っている」、
+    開けない札・読めない札も 1 行に出して数える。札の一覧を読めなければ stderr + rc=125。`lineup` は見るだけで、死んだ札を消さず止まった孤児の子も回収しない (回収は待ち手の `predecessors`)。
+    `TestStatusShowsOrphanChildAsRunning` / `TestStatusFailsLoudWhenQueueUnreadable`。入れ子の保険 `heldByAncestorProcess` も同じ入口へ寄せた
+  - [x] D2 status は `openExistingQueue` (作らずに開く) を通す。無い lock なら「一度も使われていない」と rc=0。hook.log の書き手も同じ入口。`TestStatusDoesNotCreateQueue`
+  - [x] D3 待ちの上限・シグナル・待ちの失敗・待ち列を使えない経路 (札を出す前に抜けた分も番号 `-` で) も history.log に 1 行。結末の列 (ran / timeout / signal / error / unqueued) を末尾に足した (古い版の 7 列の行と混ざっても cwd・コマンドの位置が変わらない)。unqueued は exec した結果を見ないので rc=-。
+    `TestHistoryRecordsRunsThatDidNotRun`。**hook 由来かの列は足していない**: 差し込む前置きは許可ルール (`Bash(serial-run -- make test:*)`) のために固定の `serial-run -- ` で、
+    印を足すと前置きが変わる。hook.log が差し込んだ時刻とコマンドを残すので、計測ではそちらと時刻で突き合わせる
+  - [x] D4 `historyPath` / `hookLogPath` を queue に置き、`appendHistory` を queue.go へ移した (テストも同じ関数でパスを作る)
+  - [x] D5 自分の札を `ticket` 型にし、子の記録 (`setChild`: pid → 走り出した時刻 → 開始時刻の順で書く) と後始末 (`release`: 消す → 閉じる → run.lock を放す) をその上に置いた。
+    `runQueued` の出口 5 か所は `tk.release(rf)` (run.lock を開く前は `release(nil)`)
+  - [x] D6 `ticketInfo.Seq` を消した。878 で足した `TestTicketRecordsItsSeq` (子の情報を書き直したとき seq を 0 へ戻さない) も消した: 欄が無ければその退行は起こりえない。
+    読み手は 0 件 (番号は札のファイル名から取る)。古い版の札の `seq` は json.Unmarshal が無視する
+  - [x] D7 札を読む入口を `readInfoAt(path)` 1 つにした (`stateOf` と `readInfo` が通る)
+  - [x] D8 札に `run_start` (子を起こした時刻) を足し、「長く持っている」の 🚨 は走り出してから 30 分で付ける。表示も「走り出してから N」「札を出してから N」を分けた (describe・status・hook の案内が同じ `age`)。
+    まだ走っていない札は、先頭のときだけ札を出してから 30 分で 🚨 (持ち主が止まった・run_start を書かない古い版)。`TestLongHoldCountsFromRunStart` / `TestTicketRecordsRunStart`。札の版 (`ticketVersion`) は 3
+  - [x] D9 878 で済んでいた (`lockNameRe` が `.` / `..` / 先頭の `.` / 大文字を拒否する。`TestLockNameRejectsCaseAndDots`)
+- 変異 (全部 red): status が置き場を作る / 孤児を開けない札として出す / 読めない置き場で rc=0 / 上限で抜けた run を history に書かない / 長く持っているを札を出した時刻から数える /
+  走り出した時刻を札に書かない / lineup が生きている札だけを返す (孤児を数えない)
+- 敵対的レビュー 1 周目 (Opus): 2 本同時・順番抜け・永久待ちは壊せなかった。P2 1 / P3 5
+  - P2 走り出す前に止まった先頭に 🚨 が付かない (直す前は付いた。再現済み) → 先頭の未実行の札は札を出してから 30 分で 🚨
+  - P3 status と hook が止まった孤児の子を止め、札を消す (直す前の status は触らなかった。再現済み) → `lineup` を回収なしにした。`TestStatusDoesNotReclaimStoppedOrphan`
+  - P3 unqueued の行が rc=0 → rc=- / P3 history の列が版で混ざる → 結末を末尾に / P3 札の版を上げていない → 3
+  - P3 **記録**: status / hook が孤児の札を probe する間 flock を持つので、env を落とした入れ子の `heldByAncestorProcess` がその札を生きていると読み、死んだ持ち主の pid で祖先かを見て外す。
+    待ち手どうしでも前からある競合 (推論のみ。再現していない)
+- 変異 (レビュー対応、全部 red): lineup が回収する / 走らない先頭に 🚨 を付けない / 後ろの札にも付ける
+- 敵対的レビュー 2 周目 (Opus): P1 / P2 なし。入れ子の判定 (回収なしの lineup) も先頭の 🚨 も壊せなかった
+  - P3 status が死んだ札を消さないことに検査が無い → `TestStatusDoesNotRemoveDeadTicket` (変異: lineup が死んだ札を消す → red)
+  - P3 lineup の注記に入れ子の保険 (heldByAncestorProcess) が抜けていた → 足した
+  - P3 **受け入れ**: 止まった孤児の子を status は「がまだ走っている」と出し 🚨 を付けない (直す前は status が止めて消していた)。開始時刻で確かめられない札は待ち手も回収しないので、上限まで同じ表示
+  - P3 **受け入れ**: 版 2 の走っている札は run_start が無いので、待ちを含めて札を出してから 30 分で 🚨 (移行期だけ)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"proctree"
@@ -28,11 +29,12 @@ const (
 
 // ticketInfo は札の中身。待ちの表示と status が読む (順番と生死の判定には使わない)
 type ticketInfo struct {
-	Seq   int64     `json:"seq"`
 	Pid   int       `json:"pid"`
-	Start time.Time `json:"start"`
+	Start time.Time `json:"start"` // 札を出した時刻 (待ち始め)
 	Cwd   string    `json:"cwd"`
 	Cmd   string    `json:"cmd"`
+	// RunStart は子を起こした時刻 (未実行の札では零)。「長く持っている」の判定はこちらで見る (待って先頭に上がった札を、走り出した直後から 🚨 にしない)
+	RunStart time.Time `json:"run_start,omitzero"`
 	// 子の pid と開始時刻 (ps の lstart)。持ち主の serial-run だけが SIGKILL されて子が残ったとき、その子が走っている間は
 	// 札を生きている扱いにする (札の flock は持ち主の死で外れるので、flock だけでは子の生死が見えない)
 	ChildPid   int    `json:"child_pid,omitempty"`
@@ -51,8 +53,8 @@ type ticketInfo struct {
 	V int `json:"v,omitempty"`
 }
 
-// ticketVersion は今の札の書式の版 (ChildStartUTC と Pgid を持つ)
-const ticketVersion = 2
+// ticketVersion は今の札の書式の版 (3: seq を外し run_start を足した。2: ChildStartUTC と Pgid を持つ)
+const ticketVersion = 3
 
 // unverifiedOrphanTTL は、子の同一性を開始時刻で確かめられない孤児の札を生かしておく上限。確かめられない札の pid を、
 // 子が死んだ後に無関係な長命のプロセスが使い回すと、札は消えず、後ろは毎回待ちの上限まで待たされる
@@ -73,9 +75,11 @@ const (
 // 新しく来た人が新しい run.lock を取れて同時に 2 本走り、番号も 0 に戻って札の名前が使い回される。
 type queue struct{ dir string }
 
-func (q queue) qdir() string    { return filepath.Join(q.dir, "queue") }
-func (q queue) seqPath() string { return filepath.Join(q.dir, "seq") }
-func (q queue) runPath() string { return filepath.Join(q.dir, "run.lock") }
+func (q queue) qdir() string        { return filepath.Join(q.dir, "queue") }
+func (q queue) seqPath() string     { return filepath.Join(q.dir, "seq") }
+func (q queue) runPath() string     { return filepath.Join(q.dir, "run.lock") }
+func (q queue) historyPath() string { return filepath.Join(q.dir, "history.log") }
+func (q queue) hookLogPath() string { return filepath.Join(q.dir, "hook.log") }
 func (q queue) ticketPath(seq int64) string {
 	return filepath.Join(q.qdir(), fmt.Sprintf("%0*d%s", seqWidth, seq, ticketSuffix))
 }
@@ -87,6 +91,24 @@ func openQueue(dir string) (queue, error) {
 		return queue{dir: dir}, err
 	}
 	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return queue{dir: dir}, err
+	}
+	return queue{dir: real}, nil
+}
+
+// errNoQueue はその lock の置き場がまだ無い (一度も使われていない) こと
+var errNoQueue = errors.New("置き場が無い")
+
+// openExistingQueue は置き場を作らずに開く (status など見るだけの入口。typo の lock 名で空の置き場を作らない)。無ければ errNoQueue
+func openExistingQueue(dir string) (queue, error) {
+	real, err := filepath.EvalSymlinks(dir)
+	if err == nil {
+		_, err = os.Stat(filepath.Join(real, "queue"))
+	}
+	if os.IsNotExist(err) {
+		return queue{dir: dir}, errNoQueue
+	}
 	if err != nil {
 		return queue{dir: dir}, err
 	}
@@ -108,10 +130,10 @@ func flock(f *os.File, how int) error {
 // まだ無い間に、大きい番号の人が先に列挙して先頭だと読み、順番を抜かす。
 // seq の flock は LOCK_NB の再試行で取る。blocking で待つと、seq を持った側が止まった (SIGSTOP・ファイルシステムの停止) とき、
 // 全 session の serial-run がシグナルでも待ちの上限でも抜けられなくなる。abort が誤りを返したら諦める
-func (q queue) enqueue(info ticketInfo, abort func() error) (*os.File, int64, error) {
+func (q queue) enqueue(info ticketInfo, abort func() error) (*ticket, error) {
 	sf, err := os.OpenFile(q.seqPath(), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	defer sf.Close()
 	for {
@@ -120,30 +142,29 @@ func (q queue) enqueue(info ticketInfo, abort func() error) (*os.File, int64, er
 			break
 		}
 		if !errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, 0, fmt.Errorf("seq の flock: %w", err)
+			return nil, fmt.Errorf("seq の flock: %w", err)
 		}
 		if aerr := abort(); aerr != nil {
-			return nil, 0, aerr
+			return nil, aerr
 		}
 		noteSeqRetry()
 		time.Sleep(seqRetry)
 	}
 	last, err := q.lastSeq(sf)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	next := last + 1
 	// 🚨 固定長で同じ位置に上書きする。truncate すると途中で殺されたときに空になり、tmp に書いて rename すると
 	// flock が古い inode に残って、別のプロセスが新しい inode で同じ番号を取る
 	if _, err := sf.WriteAt([]byte(fmt.Sprintf("%0*d\n", seqWidth, next)), 0); err != nil {
-		return nil, 0, fmt.Errorf("seq の書き込み: %w", err)
+		return nil, fmt.Errorf("seq の書き込み: %w", err)
 	}
-	info.Seq = next
 	f, err := q.createTicket(next, info)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	return f, next, nil
+	return &ticket{f: f, seq: next, path: q.ticketPath(next), info: info}, nil
 }
 
 // lastSeq は最後に配った番号を返す。seq が読めない (壊れている・外から巻き戻された) ときも、
@@ -272,8 +293,11 @@ func probe(path string) (bool, *os.File) {
 }
 
 // stateOf は札の状態を返す。持ち主も子も死んでいれば札を消して stateGone を返す
-// (flock を持ったまま消すので、同時に見た他の待ち手と二重には消さない)
-func stateOf(path string) ticketState {
+// (flock を持ったまま消すので、同時に見た他の待ち手と二重には消さない)。止まったままの孤児の子は回収する (reclaimStopped)
+func stateOf(path string) ticketState { return stateOfMode(path, true) }
+
+// stateOfMode は reap=false なら札を消さず、孤児の子も止めずに状態だけを返す (lineup: status・hook の案内・入れ子の保険 heldByAncestorProcess。見るだけの入口が他人のプロセスに手を出さない)
+func stateOfMode(path string, reap bool) ticketState {
 	dead, f := probe(path)
 	if !dead {
 		// probe は開けない札も「死んでいない」と答えるので、開けるかで生きている・無い・判定不能を見分ける
@@ -289,20 +313,21 @@ func stateOf(path string) ticketState {
 		}
 	}
 	defer f.Close()
-	var info ticketInfo
-	if b, err := os.ReadFile(path); err == nil && json.Unmarshal(b, &info) == nil && info.ChildPid > 0 {
-		if st := orphanChild(info); st != stateGone {
+	if info, ok := readInfoAt(path); ok && info.ChildPid > 0 {
+		if st := orphanChild(info, reap); st != stateGone {
 			return st
 		}
 	}
-	_ = os.Remove(path)
+	if reap {
+		_ = os.Remove(path)
+	}
 	return stateGone
 }
 
 // orphanChild は持ち主が死んだ札の子の状態を返す (stateOrphan: 生きている / stateUnknown: 判定不能 / stateGone: もう居ない)。
 // 子の同一性は開始時刻で確かめる。開始時刻を書けなかった札 (pid を書いた直後に持ち主が死んだ・ps が失敗した) は、
 // その pid が札を出した後に起きたプロセスなら子とみなす。札より前から居たなら pid の使い回しで、別人を待ち続けない
-func orphanChild(info ticketInfo) ticketState {
+func orphanChild(info ticketInfo, reap bool) ticketState {
 	start, known := procStart(info.ChildPid)
 	if !known {
 		return stateUnknown // ps が使えない: 子の生死を決められない。消すと走っている子の後ろで 2 本目が走りうる
@@ -328,7 +353,7 @@ func orphanChild(info ticketInfo) ticketState {
 	if !verified && (info.Pgid <= 0 || !samePgid(info.ChildPid, info.Pgid)) {
 		return stateOrphan
 	}
-	if reclaimStopped(info.ChildPid) {
+	if reap && reclaimStopped(info.ChildPid) {
 		return stateGone
 	}
 	return stateOrphan
@@ -364,7 +389,9 @@ type pred struct {
 
 // predecessors は自分 (mine) より前の、消えていない札を小さい順に返す。死んだ札は消す。
 // 札の一覧を読めなければ誤りを返す (「札が 0 枚」と読むと、順番を飛ばして run.lock の奪い合いに入る)
-func (q queue) predecessors(mine int64) ([]pred, error) {
+func (q queue) predecessors(mine int64) ([]pred, error) { return q.scan(mine, true) }
+
+func (q queue) scan(mine int64, reap bool) ([]pred, error) {
 	seqs, err := q.tickets()
 	if err != nil {
 		return nil, err
@@ -374,7 +401,7 @@ func (q queue) predecessors(mine int64) ([]pred, error) {
 		if s >= mine {
 			break
 		}
-		if st := stateOf(q.ticketPath(s)); st != stateGone {
+		if st := stateOfMode(q.ticketPath(s), reap); st != stateGone {
 			out = append(out, pred{seq: s, state: st})
 		}
 	}
@@ -395,13 +422,100 @@ func rewriteInfo(f *os.File, info ticketInfo) error {
 	return f.Truncate(int64(len(body)))
 }
 
-func (q queue) readInfo(seq int64) (ticketInfo, bool) {
+func (q queue) readInfo(seq int64) (ticketInfo, bool) { return readInfoAt(q.ticketPath(seq)) }
+
+// readInfoAt は札の中身を読む。書き換えの途中 (rewriteInfo) を読むと JSON として読めず false になる
+func readInfoAt(path string) (ticketInfo, bool) {
 	var info ticketInfo
-	b, err := os.ReadFile(q.ticketPath(seq))
+	b, err := os.ReadFile(path)
 	if err != nil || json.Unmarshal(b, &info) != nil {
 		return info, false
 	}
 	return info, true
+}
+
+// lineup は列に並んでいる札 (走っているもの・待っているもの) を小さい順に返す。見るだけで、死んだ札を消さず、孤児の子も止めない
+// (回収は待ち手の predecessors が行う)。置き場が無ければ作らずに空を返す。
+// status・hook の案内・入れ子の保険 (heldByAncestorProcess) は同じこの入口で数える (孤児・開けない札を「無い」と出さない)
+func (q queue) lineup() ([]pred, error) {
+	if _, err := os.Stat(q.qdir()); os.IsNotExist(err) {
+		return nil, nil
+	}
+	return q.scan(math.MaxInt64, false)
+}
+
+// ticket は自分が出した札 1 枚 (flock を持った fd と中身)。札の寿命 (子の記録・後始末) はこの型の上で行う
+type ticket struct {
+	f    *os.File
+	seq  int64
+	path string
+	info ticketInfo
+}
+
+// setChild は子を起こした時刻と pid を札に書き、続けて子の開始時刻を書く。
+// 🚨 pid を先に書く。ps (開始時刻) を待ってから書くと、その間に serial-run だけが SIGKILL されたとき、子の情報が無い札として消され、
+// 走り続ける子の後ろで次の 1 本が走る
+func (t *ticket) setChild(pid int, runStart time.Time) error {
+	t.info.ChildPid, t.info.RunStart = pid, runStart
+	if err := rewriteInfo(t.f, t.info); err != nil {
+		return err
+	}
+	// ps は負荷で時間切れになりうるので数回試す。取れなくても子は走らせる (開始時刻の無い札は、札より後に起きた pid かで同一性を見る)
+	for range 3 {
+		if start, known := procStart(pid); known && start != "" {
+			t.info.ChildStartUTC = start
+			// 古い版との互換 (ChildStartUTC の注記)。取れなくても今の版は困らない
+			t.info.ChildStart, _ = psFieldEnv(pid, "lstart", false)
+			return rewriteInfo(t.f, t.info)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return errors.New("ps で子の開始時刻を取れない")
+}
+
+// release は札を消して閉じ、最後に run.lock (持っていれば) を放す。
+// 🚨 札を消してから run.lock を放す。後ろの待ち手は札の flock で起きて run.lock を取りに来るので、逆にすると
+// 札が残ったまま run.lock が空き、起きた待ち手がまだ前に札があると読んで眠り直す (遅れるだけで壊れはしない)
+func (t *ticket) release(runLock *os.File) {
+	_ = os.Remove(t.path)
+	_ = t.f.Close()
+	if runLock != nil {
+		_ = runLock.Close()
+	}
+}
+
+// historyEntry は history.log の 1 行。待っただけで走らなかった run (上限・シグナル・失敗) も 1 行残す (計測の母集合を偏らせない)
+type historyEntry struct {
+	seq     int64 // 札を出せなかったら 0
+	enq     time.Time
+	waited  time.Duration
+	ran     time.Duration // 走らなかったら負
+	rc      int           // 分からなければ負 (unqueued: 順番を待たずに exec したので結果を見ない)
+	outcome string        // ran / timeout / signal / error / unqueued
+	cwd     string
+	cmd     string
+}
+
+func (q queue) appendHistory(e historyEntry) {
+	f, err := os.OpenFile(q.historyPath(), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	seq, ran, rc := "-", "-", "-"
+	if e.seq > 0 {
+		seq = strconv.FormatInt(e.seq, 10)
+	}
+	if e.ran >= 0 {
+		ran = fmt.Sprintf("%.1fs", e.ran.Seconds())
+	}
+	if e.rc >= 0 {
+		rc = strconv.Itoa(e.rc)
+	}
+	// 結末は末尾に足す (古い版の 7 列の行と同じファイルに混ざっても、cwd・コマンドの列の位置が変わらない。コマンドは空白を 1 つに畳むのでタブを含まない)。
+	// O_APPEND の 1 回の write で書く (並行する書き手と行が混ざらない)
+	_, _ = fmt.Fprintf(f, "%s\t%s\twait=%.1fs\tran=%s\trc=%s\t%s\t%s\t%s\n",
+		seq, e.enq.Format(time.RFC3339), e.waited.Seconds(), ran, rc, e.cwd, oneLine(e.cmd), e.outcome)
 }
 
 // blockUntilReleased は path の札に blocking の flock をかけて眠り、持ち主が lock を外したら woke を閉じる
