@@ -300,6 +300,30 @@ else
   fi
 fi
 
+# 15. linked worktree からの push でも、検査には git の場所の環境変数を渡さない。git はこのとき hook に
+#     GIT_DIR=<本体>/.git/worktrees/<名前> を付けるので、外さないと検査の中の git が展開先ではなく push 中の repo を見る。
+#     今の検査はどれも git を呼ばず漏れが結果に出ないので、検査の 1 本を「漏れていたら落ちる」偽物に差し替えて確かめる
+reset_case
+git -C "$work" worktree add -q -b wt15 "$T/wt15" "$base"
+first=$("$HOOK_DIR/pre-push" --list-checks | sed -n 's/^check //p' | sed -n 1p)
+cat >"$T/wt15/tests/issues/$first.sh" <<'FAKE'
+#!/usr/bin/env bash
+leaked=$(env | grep -oE '^(GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|GIT_COMMON_DIR|GIT_PREFIX)=' || true)
+[ -z "$leaked" ] || { echo "git の場所の環境変数が検査に漏れた: $leaked"; exit 1; }
+FAKE
+printf '\n- 追記 15\n' >>"$T/wt15/issues/$existing"
+git -C "$T/wt15" commit -q --no-verify -am wt15
+set +e
+git -C "$T/wt15" push origin HEAD:refs/heads/wt15 >"$T/wt15.out" 2>"$T/wt15.err"
+wt15_rc=$?
+set -e
+if [ "$wt15_rc" = 0 ] && [ "$(git -C "$remote" rev-parse -q --verify refs/heads/wt15)" = "$(git -C "$T/wt15" rev-parse HEAD)" ]; then
+  pass "linked worktree からの push でも、検査に git の場所の環境変数を渡さない"
+else
+  fail "linked worktree からの push が rc=$wt15_rc: $(cat "$T/wt15.err")"
+fi
+grep -q "$first" "$T/wt15.err" || fail "linked worktree からの push で偽の検査 ($first) が走っていない: $(cat "$T/wt15.err")"
+
 if [ "$fails" -ne 0 ]; then
   printf '✗ pre-push: %s 件失敗\n' "$fails" >&2
   exit 1

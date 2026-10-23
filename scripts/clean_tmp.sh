@@ -31,7 +31,10 @@
 set -u
 unset CDPATH
 # 🚨 継承した GIT_DIR / GIT_WORK_TREE は cwd と別の repo を root にする (hook・rebase --exec から呼ばれた経路)。cwd だけで決める
-unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
+# shellcheck source=bin/lib/git_location_env.sh
+. "$(dirname "$(readlink -f "$0")")/../bin/lib/git_location_env.sh" ||
+  { echo "clean-tmp: bin/lib/git_location_env.sh を読めない" >&2; exit 2; }
+git_location_env_unset || { echo "clean-tmp: 継承した git の場所の環境変数 (GIT_DIR など) を外せない" >&2; exit 2; }
 days=${DAYS:-30}
 case $days in '' | *[!0-9]*) echo "clean-tmp: DAYS は 0 以上の整数 ($days)" >&2; exit 2 ;; esac
 # 🚨 DRY_RUN は 1 (一覧だけ) か 空・0 (消す) だけを受ける。知らない値 (true / yes) を「消す」に読むと、確かめるつもりの実行で消す

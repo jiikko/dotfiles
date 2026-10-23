@@ -103,7 +103,11 @@ trap 'for p in ${pids[@]+"${pids[@]}"}; do [ -n "$p" ] && kill -TERM -- "-$p"; d
 
 # 検査スクリプトは自分の置き場所を repo root にする。push 中の hook が継承する GIT_DIR 等が
 # 残っていると、検査の中の git が展開先ではなくこの repo を見るので落とす
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
+# ここより前の git は、hook が付けた GIT_DIR (push している repo。linked worktree では <本体>/.git/worktrees/<名前>) を使ってよい
+# shellcheck source=bin/lib/git_location_env.sh
+. "$(dirname "$(readlink -f "$0")")/../bin/lib/git_location_env.sh" ||
+  { echo "pre-push: bin/lib/git_location_env.sh を読めない" >&2; exit 1; }
+git_location_env_unset || { echo "pre-push: 継承した git の場所の環境変数 (GIT_DIR など) を外せない" >&2; exit 1; }
 
 failed=0
 seen=" "

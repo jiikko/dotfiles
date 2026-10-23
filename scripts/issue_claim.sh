@@ -30,7 +30,10 @@
 set -euo pipefail
 unset CDPATH
 # 🚨 hook などから継承した GIT_DIR / GIT_WORK_TREE は `git -C` より優先され、claim を別の repo に書く
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+# shellcheck source=bin/lib/git_location_env.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)/bin/lib/git_location_env.sh" ||
+  { echo "issue_claim: bin/lib/git_location_env.sh を読めない" >&2; exit 2; }
+git_location_env_unset || { echo "issue_claim: 継承した git の場所の環境変数 (GIT_DIR など) を外せない" >&2; exit 2; }
 
 # 中断の合図を受けた後の失敗は、表示の理由より中断を優先して中断の rc で終わる (子が合図で死んで別の理由に見えるため)
 die() {

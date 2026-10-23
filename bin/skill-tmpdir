@@ -26,7 +26,9 @@ case $sid in
 '' | .* | *[!A-Za-z0-9._-]*) sid="nosession-$(date +%Y%m%d-%H%M%S)-$$" ;;
 esac
 # 継承した GIT_DIR / GIT_WORK_TREE (hook から起動された経路) は cwd と別の repo を指しうるので、cwd だけで決める
-unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
+# shellcheck source=bin/lib/git_location_env.sh
+. "$(dirname "$(readlink -f "$0")")/lib/git_location_env.sh"
+git_location_env_unset || { echo "skill-tmpdir: 継承した git の場所の環境変数 (GIT_DIR など) を外せない" >&2; exit 2; }
 # 本体 checkout: common-dir の末尾が .git ならその親。submodule は common-dir の core.worktree が本体を指す。
 # bare repo と repo の外は cwd の toplevel / cwd (旧 ./tmp と同じ基準)。--separate-git-dir の worktree は本体の場所を git が
 # 持たないので、cwd の toplevel に倒して警告する (worktree を消すと中の出力も消える)
