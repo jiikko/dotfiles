@@ -1,4 +1,5 @@
 # serial-run の順番待ちに make の入口の target を包む共有の断片。
+# 他の repo へ組み込むガイドは docs/tools/serial-run.md。
 # 使い方: Makefile で include し、重い入口の recipe の先頭に $(serial_run) を置いて、本体を別の target に分ける:
 #
 #   include $(HOME)/dotfiles/make/serial-run.mk

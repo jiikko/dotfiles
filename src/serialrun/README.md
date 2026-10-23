@@ -49,7 +49,7 @@ serial-run -h                                                       # usage (rc=
 dotfiles の `make test` は自分で順番待ちに入る (`make/serial-run.mk` の `$(serial_run)` を recipe の先頭に置き、本体は `test-all`)。
 人の端末・スクリプト・サブエージェント・codex から打った `make test` も並ぶ。hook が包んだ `make test` の中では、serial-run が入れ子と判定して素通しにし、二重には並ばない。
 CI (`CI`)・`SERIAL_RUN_MAKE_DISABLE=1` (serial-run の入口のビルドが壊れて 125 で落ちる日の逃げ道)・`make -n` / `-q` / `-t`・本体 checkout に serial-run が無いときは包まない。
-ほかの repo も `include $(HOME)/dotfiles/make/serial-run.mk` と recipe の前置きで同じことができる (使い方は断片の冒頭)。
+ほかの repo も `include $(HOME)/dotfiles/make/serial-run.mk` と recipe の前置きで同じことができる (ガイドは [docs/tools/serial-run.md](../../docs/tools/serial-run.md))。
 
 
 - hook で包まれないもの: 人が端末で直接打つコマンド・git hook (pre-push 等)・スクリプトの中の重い処理・codex・pro-con の PG (user の hook を持ち込まない)。

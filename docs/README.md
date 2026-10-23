@@ -13,6 +13,7 @@ dotfiles が入れる道具の使い方。root の README からはここへ案�
 |---|---|
 | [`tools/tmux.md`](tools/tmux.md) | tmux のキー (prefix `C-t`)・ペインの見え方・ウィンドウ名の自動反映・Claude Code の作業状態表示。設定の正本は `_tmux.conf` |
 | [`tools/video-functions.md`](tools/video-functions.md) | 動画のシェル関数 `repair` / `av1ify` (`av1c`) / `concat` (`zshlib/`) |
+| [`tools/serial-run.md`](tools/serial-run.md) | serial-run を他のプロジェクトに組み込むガイド (hook で自動で並ぶもの・Makefile の入口を包む・Makefile の無い repo・確かめ方・注意) |
 | [`../src/serialrun/README.md`](../src/serialrun/README.md) | `serial-run`: 重いコマンド (make test / go test / xcodebuild / mutate-verify) をマシン全体で 1 本ずつ流す。Claude Code の hook が自動で差し込む。rc=125 は道具の失敗 (待ちの上限など。テストの失敗ではない)。止め方は Claude Code の環境に `SERIAL_RUN_HOOK_DISABLE=1` |
 | [`tools/macos.md`](tools/macos.md) | Karabiner-Elements の設定の扱い / `kernel-alloc-watch` / Finder Quick Actions |
 | [`../keyboards/kinesis-360/README.md`](../keyboards/kinesis-360/README.md) | Kinesis Advantage360 の設定ファイルの写しと、v-Drive (ドライブモード) の開き方・設定の入れ方 |
