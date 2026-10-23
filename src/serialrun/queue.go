@@ -493,7 +493,7 @@ type historyEntry struct {
 	rc      int           // 分からなければ負 (unqueued: 順番を待たずに exec したので結果を見ない)
 	outcome string        // ran / timeout / signal / error / unqueued
 	cwd     string
-	cmd     string
+	cmd     string // displayCmd を通したもの (改行・タブ・制御文字を含まない)
 }
 
 func (q queue) appendHistory(e historyEntry) {
@@ -515,7 +515,7 @@ func (q queue) appendHistory(e historyEntry) {
 	// 結末は末尾に足す (古い版の 7 列の行と同じファイルに混ざっても、cwd・コマンドの列の位置が変わらない。コマンドは空白を 1 つに畳むのでタブを含まない)。
 	// O_APPEND の 1 回の write で書く (並行する書き手と行が混ざらない)
 	_, _ = fmt.Fprintf(f, "%s\t%s\twait=%.1fs\tran=%s\trc=%s\t%s\t%s\t%s\n",
-		seq, e.enq.Format(time.RFC3339), e.waited.Seconds(), ran, rc, e.cwd, oneLine(e.cmd), e.outcome)
+		seq, e.enq.Format(time.RFC3339), e.waited.Seconds(), ran, rc, printable(e.cwd), e.cmd, e.outcome)
 }
 
 // blockUntilReleased は path の札に blocking の flock をかけて眠り、持ち主が lock を外したら woke を閉じる

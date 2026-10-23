@@ -35,6 +35,9 @@ const usage = `usage: runtimeout [-f] [-k <猶予秒>] <秒> <コマンド> [引
 rc: 子の rc / 124 時間切れ / 125 誤用 / 126 起動できない / 127 見つからない
 `
 
+// errHelp は -h / --help (usage を stdout に出して rc=0)
+var errHelp = errors.New("help")
+
 type options struct {
 	limit      time.Duration // 0 = 上限なし
 	grace      time.Duration
@@ -48,6 +51,10 @@ func main() {
 
 func run(args []string, stderr io.Writer) int {
 	opt, err := parseArgs(args)
+	if errors.Is(err, errHelp) {
+		fmt.Fprint(os.Stdout, usage)
+		return 0
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "runtimeout: %v\n%s", err, usage)
 		return rcUsage
@@ -157,6 +164,9 @@ func parseArgs(args []string) (options, error) {
 		if a == "--" {
 			args = args[1:]
 			break
+		}
+		if a == "-h" || a == "--help" {
+			return opt, errHelp
 		}
 		if a == "-f" {
 			opt.foreground = true

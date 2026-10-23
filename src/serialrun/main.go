@@ -48,13 +48,24 @@ const (
 	heldEnv = "SERIAL_RUN_HELD"
 )
 
-const usage = `usage: serial-run [-l <lock名>] [--max-wait <秒>] -- <コマンド> [引数…]
+// defaultLock は -l を省いたときの lock 名 (hook の案内と hook.log もこの置き場を見る)
+const defaultLock = "default"
+
+// usage の既定値は定数から作る (文面に複写すると定数を変えたときに食い違う)
+var usage = fmt.Sprintf(`usage: serial-run [-l <lock名>] [--max-wait <秒>] -- <コマンド> [引数…]
        serial-run status [-l <lock名>]
        serial-run hook   (Claude Code の PreToolUse(Bash) hook。重いコマンドの前に serial-run -- を差し込む)
-  -l          lock の名前 (既定 default)
-  --max-wait  待ちの上限 (秒。既定 3600。0 は上限なし)。超えたら実行せずに rc=125
-rc: 子の rc / 125 道具の失敗 / 126 起動できない / 127 見つからない
-`
+  -l          lock の名前 (既定 %s)
+  --max-wait  待ちの上限 (秒。既定 %d。0 は上限なし)。超えたら実行せずに rc=%d
+rc: 子の rc / %d 道具の失敗 / %d 起動できない / %d 見つからない
+hook を止める: Claude Code の環境に SERIAL_RUN_HOOK_DISABLE=1
+`, defaultLock, int(defaultMaxWait.Seconds()), rcTool, rcTool, rcCannotExec, rcNotFound)
+
+// notRunHint は待ちの上限で抜けたときの、次に取れる手
+const notRunHint = "コマンドは実行していない。もう一度打つと列の最後尾に並び直す。--max-wait 0 なら上限なしで待つ"
+
+// errHelp は -h / --help (usage を stdout に出して rc=0)
+var errHelp = errors.New("help")
 
 // lock 名は小文字だけを通す (APFS は大小文字を区別しないので、`Default` と `default` が同じ置き場を別の名前で指し、入れ子の照合が食い違う)。
 // 先頭の . も通さない (`.` / `..` は親の置き場の seq を上書きする)
@@ -96,6 +107,10 @@ func run(args []string, stderr io.Writer) int {
 		return runHook(os.Stdin, os.Stdout)
 	}
 	opt, err := parseArgs(args)
+	if errors.Is(err, errHelp) {
+		fmt.Fprint(os.Stdout, usage)
+		return 0
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "serial-run: %v\n%s", err, usage)
 		return rcTool
@@ -298,10 +313,11 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	switch {
 	case err == nil:
 	case abortSig != 0:
+		fmt.Fprintf(stderr, "serial-run: 待ちをやめた (シグナル %v を受けた。コマンドは実行していない)\n", abortSig)
 		hist(0, time.Since(enq), -1, 128+int(abortSig), "signal")
 		return exitAs(128+int(abortSig), abortSig)
 	case errors.Is(err, errMaxWait):
-		fmt.Fprintf(stderr, "serial-run: 待ちの上限 (%s) を超えた。採番の lock が空かない。実行しない\n", opt.maxWait)
+		fmt.Fprintf(stderr, "serial-run: 待ちの上限 (%s) を超えた。採番の lock が空かない。%s\n", fmtDur(opt.maxWait), notRunHint)
 		hist(0, time.Since(enq), -1, rcTool, "timeout")
 		return rcTool
 	default:
@@ -326,7 +342,7 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	case waitTimeout:
 		note := w.holderNote()
 		tk.release(rf)
-		fmt.Fprintf(stderr, "serial-run: 待ちの上限 (%s) を超えた。実行しない%s\n", opt.maxWait, note)
+		fmt.Fprintf(stderr, "serial-run: 待ちの上限 (%s) を超えた。%s%s\n", fmtDur(opt.maxWait), notRunHint, note)
 		hist(seq, time.Since(enq), -1, rcTool, "timeout")
 		return rcTool
 	case waitError:
@@ -335,6 +351,7 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 		return rcTool
 	case waitSignal:
 		tk.release(rf)
+		fmt.Fprintf(stderr, "serial-run: 待ちをやめた (シグナル %v を受けた。コマンドは実行していない)\n", got)
 		hist(seq, time.Since(enq), -1, 128+int(got), "signal")
 		return exitAs(128+int(got), got)
 	}
@@ -362,7 +379,8 @@ type waiter struct {
 	start  time.Time
 
 	lastPos int
-	told    bool // 最初の待ちの行を出したか
+	lastKey string // 先頭の説明つきの行を最後に出したときの順番・先頭の札・状態・長く持っているか
+	told    bool   // 最初の待ちの行を出したか
 
 }
 
@@ -481,10 +499,22 @@ func (w *waiter) reportPos(preds []pred, periodic bool) {
 	}
 	hint := ""
 	if !w.told {
-		// 最初の 1 行にだけ、外から様子を見る口を添える (背景に回った後の呼び出し側が、別の呼び出しで確かめられる)
-		hint, w.told = " (状況は serial-run status)", true
+		// 最初の 1 行にだけ、外から様子を見る口と止め方を添える (背景に回った後の呼び出し側が、別の呼び出しで確かめられる)
+		hint, w.told = " (状況は serial-run status。待ちをやめるなら Ctrl-C。コマンドは実行されない)", true
 	}
-	fmt.Fprintf(w.stderr, "serial-run: 待ち %d 番目 (%s)%s%s\n", pos, fmtDur(time.Since(w.start)), w.describe(preds[0]), hint)
+	// 周期の行は短くする: 先頭の説明を出すのは、順番・先頭の札・その状態 (走っている / 孤児 / 開けない)・長く持っているかのどれかが
+	// 変わったときだけ (1 時間待つと 120 行になり、毎回全文だと tool の結果が数十 KB になる)。経過の秒は毎回変わるので比べない
+	desc, long := w.describe(preds[0])
+	key := fmt.Sprintf("%d/%d/%d/%v", pos, preds[0].seq, preds[0].state, long)
+	switch {
+	case !periodic || key != w.lastKey:
+		w.lastKey = key
+	case long:
+		desc = " 🚨 先頭が長く持っている (詳しくは serial-run status)"
+	default:
+		desc = ""
+	}
+	fmt.Fprintf(w.stderr, "serial-run: 待ち %d 番目 (%s)%s%s\n", pos, fmtDur(time.Since(w.start)), desc, hint)
 }
 
 func (w *waiter) holderNote() string {
@@ -492,36 +522,31 @@ func (w *waiter) holderNote() string {
 	if err != nil || len(preds) == 0 {
 		return ""
 	}
-	return w.describe(preds[0])
+	desc, _ := w.describe(preds[0])
+	return desc
 }
 
-// describe は先頭 (走っているか、走る直前) の札の持ち主を 1 行で書く
-func (w *waiter) describe(p pred) string {
+// describe は先頭 (走っているか、走る直前) の札の持ち主を 1 行で書き、長く持っているかを返す
+// (長く持っているかを文面から読まない。cwd やコマンド行に 🚨 が入りうる)
+func (w *waiter) describe(p pred) (string, bool) {
 	switch p.state {
 	case stateUnknown:
-		return fmt.Sprintf(" 前: 札 #%d を開けない (権限か fd の枯渇。生死を決められないので待ち続ける)", p.seq)
+		return fmt.Sprintf(" 前: 札 #%d を開けない (権限か fd の枯渇。生死を決められないので待ち続ける)", p.seq), false
 	case stateOrphan:
 		info, _ := w.q.readInfo(p.seq)
-		return fmt.Sprintf(" 前: #%d の serial-run は死んだが、子 pid %d (%s) がまだ走っている", p.seq, info.ChildPid, info.Cmd)
+		return fmt.Sprintf(" 前: #%d の serial-run は死んだが、子 pid %d (%s) がまだ走っている", p.seq, info.ChildPid, printable(info.Cmd)), false
 	}
 	info, ok := w.q.readInfo(p.seq)
 	if !ok {
-		return ""
+		return "", false
 	}
-	age, long := info.age(true) // describe は先頭の札にだけ使う
-	s := fmt.Sprintf(" 前: %s の %s (%s)", info.Cwd, info.Cmd, age)
-	if long {
-		s += fmt.Sprintf(" 🚨 長く持っている: pid %d %s", info.Pid, statNote(info.Pid))
+	// describe は先頭の札にだけ使う
+	s := " 前: " + holderSummary(info, true)
+	n := longHoldNote(info, true)
+	if n != "" {
+		s += " " + n
 	}
-	return s
-}
-
-func statNote(pid int) string {
-	st, known := procStat(pid)
-	if !known || st == "" {
-		return "(ps で見えない)"
-	}
-	return "stat=" + st
+	return s, n != ""
 }
 
 func newNonce() string {
@@ -597,18 +622,6 @@ func exitAs(rc int, got syscall.Signal) int {
 	return rc
 }
 
-// age は表示する時間と「長く持っている」かを返す。走り出していれば子を起こしてから数える (待って先頭に上がった札を、走り出した直後から 🚨 にしない)。
-// まだ走っていない札は札を出してから数え、🚨 は先頭のときだけ付ける。先頭は順番が来ればすぐ子を起こすので、走らないまま長いのは
-// 持ち主が止まった (Ctrl-Z・SIGSTOP) か、run_start を書かない古い版が走らせている。待っている後ろの札には付けない
-func (i ticketInfo) age(head bool) (label string, long bool) {
-	if !i.RunStart.IsZero() {
-		d := time.Since(i.RunStart)
-		return "走り出してから " + fmtDur(d), d >= longHold
-	}
-	d := time.Since(i.Start)
-	return "札を出してから " + fmtDur(d), head && d >= longHold
-}
-
 // printStatus は列を表示する。数えるのは待ち手と同じ入口 (lineup) で、孤児の子・開けない札も 1 本に数える
 func printStatus(q queue, out, stderr io.Writer) int {
 	preds, err := q.lineup()
@@ -616,27 +629,31 @@ func printStatus(q queue, out, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "serial-run: 札を読めない: %v\n", err)
 		return rcTool
 	}
+	// 列は 状態 (全角 2 字)・番号・pid の固定の 3 つを先に置き、長さの揃わない説明は最後にまとめる
+	// (全角と半角を同じ列に混ぜない。経過・cwd・コマンドの長さはまちまちなので桁を揃える列にしない)
+	if len(preds) > 0 {
+		fmt.Fprintln(out, "状態\t番号\tpid\t持ち主")
+	}
 	for i, p := range preds {
+		head := i == 0
 		label := "待ち"
-		if i == 0 {
+		if head {
 			label = "先頭"
 		}
 		if p.state == stateUnknown {
-			fmt.Fprintf(out, "%s\t#%d\t(札を開けない。権限か fd の枯渇。生死を決められない)\n", label, p.seq)
+			fmt.Fprintf(out, "%s\t#%d\t-\t(札を開けない。権限か fd の枯渇。生死を決められない)\n", label, p.seq)
 			continue
 		}
 		info, ok := q.readInfo(p.seq)
 		if !ok {
-			fmt.Fprintf(out, "%s\t#%d\t(札の情報を読めない)\n", label, p.seq)
+			fmt.Fprintf(out, "%s\t#%d\t-\t(札の情報を読めない)\n", label, p.seq)
 			continue
 		}
-		age, long := info.age(i == 0)
-		line := fmt.Sprintf("%s\t#%d\t%s\tpid %d\t%s\t%s", label, p.seq, age, info.Pid, info.Cwd, info.Cmd)
-		switch {
-		case p.state == stateOrphan:
-			line += fmt.Sprintf("\t(持ち主の serial-run は死んだ。子 pid %d がまだ走っている)", info.ChildPid)
-		case long:
-			line += "\t🚨 長く持っている " + statNote(info.Pid)
+		line := fmt.Sprintf("%s\t#%d\t%d\t%s", label, p.seq, info.Pid, holderSummary(info, head))
+		if p.state == stateOrphan {
+			line += fmt.Sprintf(" (持ち主の serial-run は死んだ。子 pid %d がまだ走っている)", info.ChildPid)
+		} else if n := longHoldNote(info, head); n != "" {
+			line += " " + n
 		}
 		fmt.Fprintln(out, line)
 	}
@@ -651,39 +668,19 @@ func printStatus(q queue, out, stderr io.Writer) int {
 		}
 		fmt.Fprintln(out, "hook の最近の判断:")
 		for _, l := range lines {
-			fmt.Fprintln(out, "  "+l)
+			// 古い版や他の書き手が書いた行も、制御文字のまま端末へ出さない。区切りのタブは残す (欄ごとに落とす)
+			cols := strings.Split(l, "\t")
+			for i := range cols {
+				cols[i] = printable(cols[i])
+			}
+			fmt.Fprintln(out, "  "+strings.Join(cols, "\t"))
 		}
 	}
 	return 0
 }
 
-// displayCmd は表示用のコマンド行。hook が包んだ `zsh -c '<元のコマンド>'` は元のコマンドを見せる
-func displayCmd(argv []string) string {
-	s := strings.Join(argv, " ")
-	if len(argv) == 3 && argv[1] == "-c" && (filepath.Base(argv[0]) == "zsh" || filepath.Base(argv[0]) == "bash" || filepath.Base(argv[0]) == "sh") {
-		s = argv[2]
-	}
-	s = oneLine(s)
-	if r := []rune(s); len(r) > 120 {
-		s = string(r[:120]) + "…"
-	}
-	return s
-}
-
-func oneLine(s string) string {
-	return strings.Join(strings.Fields(s), " ")
-}
-
-func fmtDur(d time.Duration) string {
-	d = d.Round(time.Second)
-	if d < time.Minute {
-		return fmt.Sprintf("%d 秒", int(d.Seconds()))
-	}
-	return fmt.Sprintf("%d 分 %02d 秒", int(d.Minutes()), int(d.Seconds())%60)
-}
-
 func parseArgs(args []string) (options, error) {
-	opt := options{lock: "default", maxWait: defaultMaxWait}
+	opt := options{lock: defaultLock, maxWait: defaultMaxWait}
 	if len(args) > 0 && args[0] == "status" {
 		opt.status = true
 		args = args[1:]
@@ -694,6 +691,8 @@ func parseArgs(args []string) (options, error) {
 		case "--":
 			args = args[1:]
 			goto done
+		case "-h", "--help":
+			return opt, errHelp
 		case "-l", "--max-wait":
 			if len(args) < 2 {
 				return opt, fmt.Errorf("%s に値が無い", a)
@@ -713,7 +712,10 @@ func parseArgs(args []string) (options, error) {
 			args = args[2:]
 		default:
 			// 未知のフラグで即終了するのは go_autobuild の温め `--__autobuild_warmup__` の要件
-			return opt, fmt.Errorf("未知の引数: %s (コマンドの前に -- が要る)", a)
+			if strings.HasPrefix(a, "-") {
+				return opt, fmt.Errorf("未知のフラグ: %s (コマンドは -- の後に書く)", a)
+			}
+			return opt, fmt.Errorf("コマンドは -- の後に書く: %s", a)
 		}
 	}
 done:

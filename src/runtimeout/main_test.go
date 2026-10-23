@@ -378,3 +378,13 @@ func TestTimeoutStopsForkingChild(t *testing.T) {
 		}
 	}
 }
+
+// -h / --help は usage を stdout に出して rc=0 (help の要求を誤用の 125 にしない)
+func TestHelpPrintsUsage(t *testing.T) {
+	for _, a := range []string{"-h", "--help"} {
+		out, err := exec.Command(bin, a).Output()
+		if err != nil || !strings.HasPrefix(string(out), "usage: runtimeout") {
+			t.Fatalf("%s: err=%v out=%q", a, err, out)
+		}
+	}
+}

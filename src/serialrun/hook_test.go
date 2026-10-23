@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -242,7 +243,7 @@ func TestHookAddsQueueNoteOnlyWhenSomeoneIsAhead(t *testing.T) {
 	if !ok {
 		t.Fatal("前に 1 本あるのに順番待ちを知らせていない")
 	}
-	for _, want := range []string{"前に 1 本", "/x/repo の make test", "serial-run status", "rc=125"} {
+	for _, want := range []string{"前に 1 本", "/x/repo の make test", "serial-run status", "rc=" + strconv.Itoa(rcTool), "既定 " + fmtDur(defaultMaxWait), "run_in_background", "最後尾"} {
 		if !strings.Contains(c, want) {
 			t.Errorf("知らせに %q が無い: %s", want, c)
 		}

@@ -75,7 +75,7 @@ func logHookDecision(cmd string, changed bool, skip string) {
 	if err != nil {
 		return
 	}
-	q, err := openExistingQueue(filepath.Join(base, "default"))
+	q, err := openExistingQueue(filepath.Join(base, defaultLock))
 	if err != nil {
 		return
 	}
@@ -102,13 +102,13 @@ func mentionsHeavy(cmd string) bool {
 }
 
 // queueNote は既定の lock の待ち行列に誰かいれば、LLM 向けの 1 段落を返す。いなければ空 (普段は何も足さない)。
-// 置き場が無ければ作らずに空を返す (hook は待ち行列を書き換えない。死んだ札の回収だけは predecessors が行う)
+// 置き場が無ければ作らずに空を返す (hook は待ち行列を書き換えず、死んだ札の回収もしない)
 func queueNote() string {
 	base, err := stateBase()
 	if err != nil {
 		return ""
 	}
-	q, err := openExistingQueue(filepath.Join(base, "default"))
+	q, err := openExistingQueue(filepath.Join(base, defaultLock))
 	if err != nil {
 		return ""
 	}
@@ -118,13 +118,17 @@ func queueNote() string {
 	}
 	head := ""
 	if info, ok := q.readInfo(preds[0].seq); ok {
-		age, _ := info.age(true)
-		head = fmt.Sprintf("先頭は %s の %s (%s)。", info.Cwd, info.Cmd, age)
+		head = "先頭は " + holderSummary(info, true) + "。"
+		if n := longHoldNote(info, true); n != "" {
+			head += n + "。"
+		}
 	}
 	return fmt.Sprintf("serial-run: このコマンドの重い部分は serial-run の順番待ちに入る (マシン全体で 1 本ずつ流す仕組み)。"+
 		"前に %d 本ある。%s待っている間は Bash の出力が返らない (固まったのではない)。"+
-		"長く待ちそうなら run_in_background で起こすか timeout を延ばし、状況は別の呼び出しで `serial-run status` を打って見る。"+
-		"待ちの上限は既定 1 時間で、超えたら実行せずに rc=125 で抜ける (stderr に「待ちの上限」と出る)", len(preds), head)
+		"foreground の Bash の timeout は最大 10 分なので、前が長いなら run_in_background で起こす。同じコマンドを打ち直すと列の最後尾に並び直す。"+
+		"状況は別の呼び出しで `serial-run status` を打って見る。"+
+		"待ちの上限は既定 %s で、超えたら実行せずに rc=%d で抜ける (stderr に「待ちの上限」と出る。テストの失敗ではない)",
+		len(preds), head, fmtDur(defaultMaxWait), rcTool)
 }
 
 var (

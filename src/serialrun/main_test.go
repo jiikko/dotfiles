@@ -517,8 +517,13 @@ func TestFirstWaitLineShowsStatusHint(t *testing.T) {
 	if n := strings.Count(s, "serial-run status"); n != 1 {
 		t.Fatalf("案内が %d 回出た (最初の 1 行だけのはず):\n%s", n, s)
 	}
-	if !strings.Contains(strings.SplitN(s, "\n", 2)[0], "serial-run status") {
-		t.Fatalf("最初の行に案内が無い:\n%s", s)
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if !strings.Contains(lines[0], "serial-run status") || !strings.Contains(lines[0], " 前: ") {
+		t.Fatalf("最初の行に案内か先頭の説明が無い:\n%s", s)
+	}
+	// 順番が変わらない周期の行は、先頭の説明を繰り返さない (1 時間待つと tool の結果が数十 KB になる)
+	if strings.Contains(lines[1], " 前: ") {
+		t.Fatalf("周期の行が先頭の説明を繰り返した:\n%s", s)
 	}
 }
 
@@ -1275,9 +1280,16 @@ func TestTermStopsChildAndLeavesNoTicket(t *testing.T) {
 	}
 }
 
-func TestDisplayCmdShowsWrappedCommand(t *testing.T) {
-	if got := displayCmd([]string{"/bin/zsh", "-c", "make  test\n"}); got != "make test" {
+// 表示のコマンド行は空白を畳み、制御文字を落とす。人が打った sh -c は剥がさない (何を走らせたかが表示から消える)
+func TestDisplayCmdIsOneSafeLine(t *testing.T) {
+	if got := displayCmd([]string{"/bin/zsh", "-c", "make  test\n"}); got != "/bin/zsh -c make test" {
 		t.Fatalf("got %q", got)
+	}
+	if got := displayCmd([]string{"echo", "\x1b]0;PWNED\x07"}); got != "echo ?]0;PWNED?" {
+		t.Fatalf("制御文字が残った: %q", got)
+	}
+	if got := displayCmd([]string{"echo", "a\u202eb", "日本語"}); got != "echo a?b 日本語" {
+		t.Fatalf("双方向の上書きが残った / 日本語を壊した: %q", got)
 	}
 	if got := displayCmd([]string{"go", "test", "./..."}); got != "go test ./..." {
 		t.Fatalf("got %q", got)
@@ -1458,5 +1470,212 @@ func TestStatusDoesNotRemoveDeadTicket(t *testing.T) {
 	}
 	if _, err := os.Stat(firstTicket(f)); err != nil {
 		t.Fatalf("status が死んだ札を消した: %v", err)
+	}
+}
+
+// -h / --help は usage を stdout に出して rc=0 (help の要求を「道具の失敗」の 125 にしない)
+func TestHelpPrintsUsage(t *testing.T) {
+	for _, a := range []string{"-h", "--help"} {
+		out, err := exec.Command(bin, a).Output()
+		if err != nil || !strings.HasPrefix(string(out), "usage: serial-run") {
+			t.Fatalf("%s: err=%v out=%q", a, err, out)
+		}
+	}
+}
+
+// usage の既定値は定数と一致する (文面への複写が定数とずれない)
+func TestUsageMatchesConstants(t *testing.T) {
+	for _, want := range []string{"既定 " + defaultLock + ")", "既定 " + strconv.Itoa(int(defaultMaxWait.Seconds())) + "。", "rc=" + strconv.Itoa(rcTool)} {
+		if !strings.Contains(usage, want) {
+			t.Fatalf("usage に %q が無い:\n%s", want, usage)
+		}
+	}
+}
+
+// 待っている間のシグナルで抜けるときも、実行していないことを 1 行出す (rc だけだと子が失敗したのと見分けられない)
+func TestSignalWhileWaitingSaysNotRun(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	a := f.held("A", ga, nil, false)
+	waitFor(t, "A が始まる", func() bool { return f.hasLog("start A") })
+	errPath := filepath.Join(f.dir, "b.err")
+	ef, err := os.Create(errPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ef.Close()
+	b := exec.Command(bin, "--", "/bin/sh", "-c", "echo B >> "+f.log)
+	b.Env = f.env()
+	b.Stderr = ef
+	if err := b.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "B が待ちに入る", func() bool { return strings.Contains(readFile(errPath), "待ち 1 番目") })
+	if err := b.Process.Signal(syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	_ = exitCode(t, b)
+	if !strings.Contains(readFile(errPath), "待ちをやめた") || f.hasLog("B") {
+		t.Fatalf("シグナルで抜けたときの案内が無い:\n%s", readFile(errPath))
+	}
+	f.release(ga)
+	_ = exitCode(t, a)
+}
+
+// 待ちの上限で抜けたときは、上限を読める形で出し、次に取れる手を添える
+func TestMaxWaitMessageIsReadable(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	a := f.held("A", ga, nil, false)
+	waitFor(t, "A が始まる", func() bool { return f.hasLog("start A") })
+	errPath := filepath.Join(f.dir, "b.err")
+	ef, err := os.Create(errPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ef.Close()
+	b := exec.Command(bin, "--max-wait", "1", "--", "/usr/bin/true")
+	b.Env = f.env()
+	b.Stderr = ef
+	if err := b.Run(); err == nil {
+		t.Fatal("待ちの上限で rc=0 になった")
+	}
+	s := readFile(errPath)
+	if !strings.Contains(s, "待ちの上限 (1 秒)") || !strings.Contains(s, "コマンドは実行していない") {
+		t.Fatalf("上限切れの文言:\n%s", s)
+	}
+	f.release(ga)
+	_ = exitCode(t, a)
+}
+
+// 他の session の cwd とコマンド行の制御文字は、status にそのまま出さない (端末の ESC シーケンスになる)
+func TestStatusDropsControlCharacters(t *testing.T) {
+	f := newFixture(t)
+	child := startSleeper(t)
+	start, _ := procStart(child)
+	writeDeadTicket(t, f, ticketInfo{Pid: 999999, Start: time.Now(), Cwd: "/x/\x1b]0;PWNED\x07", Cmd: "make\x1btest", ChildPid: child, ChildStartUTC: start, V: ticketVersion})
+	_, out, _ := f.status()
+	if strings.ContainsAny(out, "\x1b\x07") || !strings.Contains(out, "/x/?]0;PWNED?") {
+		t.Fatalf("制御文字が status に出た: %q", out)
+	}
+}
+
+func TestFmtDurHours(t *testing.T) {
+	for d, want := range map[time.Duration]string{5 * time.Second: "5 秒", 90 * time.Second: "1 分 30 秒", time.Hour + 5*time.Minute: "1 時間 05 分"} {
+		if got := fmtDur(d); got != want {
+			t.Errorf("fmtDur(%v) = %q want %q", d, got, want)
+		}
+	}
+}
+
+// 先頭が孤児 (持ち主の serial-run だけが死んで子が走っている) になったら、順番が変わらなくても周期の行で知らせる
+func TestWaitLineReportsHeadBecomingOrphan(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	a := f.held("A", ga, nil, false)
+	waitChildRecorded(t, f)
+	errPath := filepath.Join(f.dir, "b.err")
+	ef, err := os.Create(errPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ef.Close()
+	b := exec.Command(bin, "--", "/bin/sh", "-c", "echo B >> "+f.log)
+	b.Env = f.env("SERIAL_RUN_TEST_REPORT=50ms", "SERIAL_RUN_TEST_RECHECK=50ms")
+	b.Stderr = ef
+	if err := b.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "B が待ちに入る", func() bool { return strings.Contains(readFile(errPath), "待ち 1 番目") })
+	// A の serial-run だけを殺す (子は同じグループに居るが、pid 宛てなので生き残る)
+	if err := a.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = a.Wait()
+	waitFor(t, "孤児になった先頭を待ちの行で知らせる", func() bool { return strings.Contains(readFile(errPath), "がまだ走っている") })
+	f.release(ga)
+	if rc := exitCode(t, b); rc != 0 {
+		t.Fatalf("B rc=%d", rc)
+	}
+}
+
+// 引数がフラグでないのに -- が無いときは「フラグ」と言わない
+func TestMissingDashDashMessage(t *testing.T) {
+	var errb strings.Builder
+	cmd := exec.Command(bin, "/bin/echo", "-h")
+	cmd.Stderr = &errb
+	_ = cmd.Run()
+	if !strings.Contains(errb.String(), "コマンドは -- の後に書く: /bin/echo") {
+		t.Fatalf("stderr: %q", errb.String())
+	}
+}
+
+// 先頭が長く持っているときは、最初に注意の全文を 1 回出し、その後の周期の行は短い 🚨 だけにする。
+// 長く持っているかは文面から読まない (先頭のコマンド行に 🚨 があっても、長く持っていると言わない)
+func TestWaitLineLongHoldAndEmojiInCommand(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		runStart time.Duration
+		cmd      string
+		long     bool
+	}{
+		{"長く持っている", longHold + time.Minute, "make test", true},
+		{"コマンド行に 🚨", time.Minute, "echo 🚨xx", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFixture(t)
+			q, err := openQueue(filepath.Join(f.state, defaultLock))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// この test が札の flock を持つ (別のプロセスから見ると生きている先頭)。pid は test の外のプロセスにする
+			// (test 自身の pid だと、B は持ち主を自分の祖先と読み、入れ子として待たずに走る)
+			now := time.Now()
+			tk, err := q.enqueue(ticketInfo{Pid: startSleeper(t), Start: now.Add(-c.runStart - time.Minute), RunStart: now.Add(-c.runStart), Cwd: "/x", Cmd: c.cmd}, func() error { return nil })
+			if err != nil {
+				t.Fatal(err)
+			}
+			errPath := filepath.Join(f.dir, "b.err")
+			ef, err := os.Create(errPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ef.Close()
+			b := exec.Command(bin, "--", "/usr/bin/true")
+			b.Env = f.env("SERIAL_RUN_TEST_REPORT=50ms")
+			b.Stderr = ef
+			if err := b.Start(); err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, "周期の行が 3 行以上出る", func() bool { return strings.Count(readFile(errPath), "待ち 1 番目") >= 3 })
+			tk.release(nil)
+			_ = exitCode(t, b)
+			lines := strings.Split(strings.TrimSpace(readFile(errPath)), "\n")
+			full, short := strings.Count(lines[0], "🚨 長く持っている (pid"), strings.Contains(lines[1], "🚨 先頭が長く持っている")
+			if c.long && (full != 1 || !short || strings.Contains(lines[1], "(pid")) {
+				t.Fatalf("長く持っている注意の出し方が違う:\n%s", readFile(errPath))
+			}
+			if !c.long && (strings.Contains(lines[0], "長く持っている") || strings.Contains(lines[1], "長く持っている")) {
+				t.Fatalf("コマンド行の 🚨 を長く持っていると読んだ:\n%s", readFile(errPath))
+			}
+		})
+	}
+}
+
+// status の hook.log の行は、欄の区切りのタブを残したまま制御文字だけを落とす
+func TestStatusHookLogKeepsTabs(t *testing.T) {
+	f := newFixture(t)
+	c := exec.Command(bin, "--", "/usr/bin/true") // 置き場を作る
+	c.Env = f.env()
+	if err := c.Run(); err != nil {
+		t.Fatal(err)
+	}
+	q := queue{dir: filepath.Join(f.state, defaultLock)}
+	if err := os.WriteFile(q.hookLogPath(), []byte("2026-10-23T10:00:00+09:00\twrapped\tmake\x1btest\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ := f.status()
+	if !strings.Contains(out, "  2026-10-23T10:00:00+09:00\twrapped\tmake?test") {
+		t.Fatalf("hook.log の行: %q", out)
 	}
 }

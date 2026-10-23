@@ -79,4 +79,36 @@ serialrun の監査で見つかった、グループ E の 10 項目。
 
 ## 進捗
 
-- [ ] 未着手 (項目ごとに、直した commit の subject・当てた変異・実測を書く)
+- 2026-10-23 (commit「fix(serialrun): 待ち・上限・status・hook の案内の文言と文書を直す (issue 882)」):
+  - [x] E1 待ちの間のシグナルで抜けるときも「待ちをやめた (シグナル … を受けた。コマンドは実行していない)」を 1 行 (採番の再試行の中も)。
+    hook の案内に「foreground の Bash の timeout は最大 10 分。前が長いなら run_in_background。打ち直すと最後尾に並び直す」を足した。`TestSignalWhileWaitingSaysNotRun`
+  - [x] E2 上限切れは「待ちの上限 (1 時間 00 分)」の形 (fmtDur。時間の表記を足した) で、「コマンドは実行していない。もう一度打つと最後尾。--max-wait 0 なら上限なし」を添える。
+    🚨 長く持っているには「持ち主の session が止まっているならユーザーに知らせる。待つ側は --max-wait で切り上げられる」を添える (待ちの行・status・hook の案内)。
+    最初の待ちの行に「待ちをやめるなら Ctrl-C」。hook の止め方は usage と README・docs/README.md の索引に。`TestMaxWaitMessageIsReadable` / `TestFmtDurHours`
+  - [x] E3 周期の待ちの行は、順番・先頭の札・その状態 (走っている / 孤児 / 開けない)・長く持っているかが前の説明つきの行と同じなら、先頭の説明を省く (`待ち N 番目 (経過)` だけ。長く持っているときは短い 🚨 を残す)。`TestFirstWaitLineShowsStatusHint` / `TestWaitLineReportsHeadBecomingOrphan`
+  - [x] E4 `-h` / `--help` は usage を stdout に出して rc=0 (serial-run と runtimeout の両方)。未知の引数の語は runtimeout に合わせて「未知のフラグ」。`TestHelpPrintsUsage` (2 module)
+  - [x] E5 status に見出し (`状態 番号 pid 持ち主`) を足し、全角 2 字の状態・番号・pid の固定の列を先に置いて、長さの揃わない説明を最後にまとめた。
+    2026-10-23 に一時の置き場で 2 本並べて端末へ出し、見出しと 2 行の桁が揃うのを目で見た。状態の語は全角のまま (同じ列に半角を混ぜない)
+  - [x] E6 `holderSummary` / `longHoldNote` (display.go) を待ちの行・status・hook の案内の 3 か所から呼ぶ
+  - [x] E7 `defaultLock` を const にし、usage と hook の案内の既定値・rc は定数から Sprintf で作る。`TestUsageMatchesConstants`・hook の案内のテストも定数で照合
+  - [x] E8 README に「効かない経路・前提」の節 (包まれない経路・孫・同じユーザーどうし・foreground の timeout・未実測)。docs/README.md の道具の表に 1 行 (rc=125 の意味と止め方)。
+    I1 (許可ルールは `serial-run -- …` の字面でも書く) は README に既にある。**_claude/CLAUDE.md (全 session が読む) には足していない**: 待ちに入ったときと上限で抜けたときの文言が
+    rc=125 の意味を言うので、常時読み込みを増やさない
+  - [x] E9 表示の入口 (`displayCmd` と `holderSummary`) で制御文字 (C0・DEL・C1) を ? に落とす。history.log の cwd も同じ。札の JSON は書き換えない。`TestStatusDropsControlCharacters` / `TestDisplayCmdIsOneSafeLine`
+  - [x] E10 整形を display.go に寄せた。`displayCmd` の `zsh -c` の剥がしは消した (hook はこの形を作らない。人が打った `sh -c` が表示から消えていた)。`appendHistory` は受け取ったコマンドをそのまま書く
+- 変異 (全部 red): help を受けない / usage の既定値を手で書く / 制御文字を落とさない / status の cwd を落とさない / 周期の行で全文を出す / シグナルで黙って抜ける /
+  上限を素の Duration で出す / runtimeout が help を受けない
+- 敵対的レビュー 1 周目 (Opus): P2 1 / P3 5。help の誤読・札の Cmd を判定に使う箇所・go_autobuild の温めは壊せなかった
+  - P2 先頭が孤児・開けない札になっても、順番が変わらないと待ちの行に出ない (直す前は出た。再現済み) → 省略を「順番・先頭の札・状態・🚨 が同じ」で判定する。変異 (順番と 🚨 だけで判定) → red
+  - P3 status の「hook の最近の判断」が hook.log を生のまま出す → printable を通す / P3 長く持っている間は毎周期全文 → 説明が変わらなければ短い 🚨 だけ
+  - P3 README の待ちの行の説明が実装と食い違う・使い方に -h が無い → 直した / P3 `serial-run /bin/echo -h` を「未知のフラグ」と言う → `-` で始まらない語は「コマンドは -- の後に書く」(変異 → red)
+  - P3 双方向の上書き (U+202A〜202E・U+2066〜2069) を通す → ? に落とす (変異 → red)。日本語・ZWJ の絵文字・C1 の CSI は壊さないことを確認済み (レビュー)
+- 敵対的レビュー 2 周目 (Opus): P1 1 / P2 1 / P3 2。2 本同時・順番・rc は壊せなかった
+  - P1 長く持っているかを待ちの行の文面の 🚨 で読んでいた。先頭のコマンド行に 🚨 があると、走り出して 1 秒で「長く持っている」と出て、本物の注意は一度も出ない (再現済み。直す前より悪い)
+    → describe が長く持っているかを返す (longHoldNote が空でないか)。`TestWaitLineLongHoldAndEmojiInCommand` (変異: 文面から読む → red)
+  - P2 status の hook.log の行で区切りのタブが ? になる (再現済み) → 欄ごとに落とす。`TestStatusHookLogKeepsTabs` (変異 → red)
+  - P3 短い 🚨 の行を検査するテストが無い → 上のテストで固定 (変異: 短い 🚨 を出さない → red)
+  - P3 **記録**: 説明つきの行を出す 1 回で札が書き換えの途中 (rewriteInfo) だと説明が空になり、その先頭の説明は以後出ない (推論のみ。直す前も同じ)
+- 敵対的レビュー 3 周目 (Opus): P1 / P2 なし (壊せなかった)。直す前より良くなったことを変異 4 本で確かめた (レビュー側のコピーで)
+  - P3 **記録**: 待っている途中で先頭が 30 分を越える形 (キーの「長く持っているか」が変わる) をテストが通らない。`long` をキーから外す変異が緑のまま通る (再現済み)。
+    longHold を縮める差し込み口が無いので、テストは最初から 30 分を越えた札で始めている。直す前からの穴。テストは周期の行の 2 行目だけを見ている
