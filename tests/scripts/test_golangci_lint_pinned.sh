@@ -32,6 +32,7 @@ case "$1" in
         GOOS) echo darwin ;;
         GOARCH) echo arm64 ;;
         CGO_ENABLED) echo 1 ;;
+        CGO_CPPFLAGS) echo "${FAKE_GO_ENV_CPP-}" ;; # go env -w で入れた値を演じる
       esac
     done
     ;;
@@ -57,12 +58,13 @@ for a in "$@"; do
 done
 echo "ran:@VER@:$out"
 echo "$PATH" > "$FAKE_PATH_SEEN"
+printf '%s' "${CGO_CPPFLAGS-<unset>}" > "$FAKE_CPP_SEEN"
 exit "${FAKE_LINT_RC:-0}"
 LINT
 
 export PATH="$TMP_DIR/fakebin:$PATH" FAKE_LOG="$TMP_DIR/installs.log" FAKE_PATH_SEEN="$TMP_DIR/path_seen"
 export FAKE_LINT_TEMPLATE="$TMP_DIR/fake-lint" FAKE_CFG_SEEN="$TMP_DIR/cfg_seen" FAKE_CFG_PATH="$TMP_DIR/cfg_path"
-export DOTFILES_GO_TOOLS_CACHE="$TMP_DIR/cache"
+export DOTFILES_GO_TOOLS_CACHE="$TMP_DIR/cache" FAKE_CPP_SEEN="$TMP_DIR/cpp_seen"
 : > "$FAKE_LOG"
 installs() { wc -l < "$FAKE_LOG" | tr -d ' '; }
 helper="$ROOT_DIR/scripts/golangci_lint.sh"
@@ -175,5 +177,27 @@ mkdir -p "$mod/sub"
 refuse 'モジュールの根でない所からの起動' 'cd sub' ./...
 out=$("$helper" v2.5.0 version 2>&1) || bad "run 以外が失敗した: $out"
 if [ "$out" = "ran:v2.5.0:version" ]; then note "run 以外の起動には設定を足さない"; else bad "run 以外の出力: $out"; fi
+
+# 8. run は cgo の鍵にだけ checkout を入れる (CGO_CPPFLAGS に checkout ごとの定義を足す)。cgo の生成物が持つ `//line <絶対パス>` を
+#    別の checkout に使い回させない (使い回すと、元の worktree を消した後の gofmt が開けずに落ちる)。同じ checkout なら同じ値、元の値は残す
+"$helper" v2.5.0 run ./... >/dev/null 2>&1 || bad "8: run が失敗した"
+cpp1=$(cat "$FAKE_CPP_SEEN")
+if [[ "$cpp1" =~ ^-DDOTFILES_LINT_CHECKOUT_[0123456789abcdef]{16}$ ]]; then note "run は CGO_CPPFLAGS に checkout ごとの定義を足す"; else bad "8: CGO_CPPFLAGS: $cpp1"; fi
+"$helper" v2.5.0 run ./... >/dev/null 2>&1 || bad "8: 2 回目の run が失敗した"
+[ "$(cat "$FAKE_CPP_SEEN")" = "$cpp1" ] && note "同じ checkout なら同じ定義 (キャッシュを使い回せる)" || bad "8: 同じ checkout で定義が変わった: $(cat "$FAKE_CPP_SEEN")"
+CGO_CPPFLAGS="-DKEEP=1" "$helper" v2.5.0 run ./... >/dev/null 2>&1 || bad "8: CGO_CPPFLAGS つきの run が失敗した"
+[ "$(cat "$FAKE_CPP_SEEN")" = "-DKEEP=1 $cpp1" ] && note "元の CGO_CPPFLAGS は残して後ろに足す" || bad "8: 元の値: $(cat "$FAKE_CPP_SEEN")"
+for env_cpp in unset empty; do # go env -w の値は、環境変数が無いときも空文字のときも使う (go と同じ)
+  if [ $env_cpp = unset ]; then FAKE_GO_ENV_CPP=-DFROMENVW=1 "$helper" v2.5.0 run ./... >/dev/null 2>&1 || bad "8: go env の値つきの run が失敗した"
+  else CGO_CPPFLAGS='' FAKE_GO_ENV_CPP=-DFROMENVW=1 "$helper" v2.5.0 run ./... >/dev/null 2>&1 || bad "8: 空の CGO_CPPFLAGS の run が失敗した"; fi
+  [ "$(cat "$FAKE_CPP_SEEN")" = "-DFROMENVW=1 $cpp1" ] && note "go env -w の CGO_CPPFLAGS を残す (環境変数: $env_cpp)" || bad "8: go env の値 (環境変数: $env_cpp): $(cat "$FAKE_CPP_SEEN")"
+done
+co2="$TMP_DIR/co2"; mkdir -p "$co2/scripts" "$co2/src"
+cp "$helper" "$ROOT_DIR/scripts/golangci_config.rb" "$co2/scripts/" && cp "$ROOT_DIR/src/.golangci.yml" "$co2/src/" || bad "8: 2 つ目の checkout を作れない"
+"$co2/scripts/golangci_lint.sh" v2.5.0 run ./... >/dev/null 2>&1 || bad "8: 2 つ目の checkout の run が失敗した"
+cpp2=$(cat "$FAKE_CPP_SEEN")
+if [ "$cpp2" != "$cpp1" ] && [[ "$cpp2" =~ ^-DDOTFILES_LINT_CHECKOUT_ ]]; then note "別の checkout なら別の定義"; else bad "8: 別の checkout でも同じ定義: $cpp2"; fi
+"$helper" v2.5.0 version >/dev/null 2>&1
+[ "$(cat "$FAKE_CPP_SEEN")" = "<unset>" ] && note "run 以外の起動には足さない" || bad "8: run 以外にも足した: $(cat "$FAKE_CPP_SEEN")"
 
 if [ "$fail" = 0 ]; then echo "PASS test_golangci_lint_pinned"; else echo "FAIL test_golangci_lint_pinned"; exit 1; fi

@@ -52,9 +52,30 @@ CI では落ちていない (2026-10-23 の 1310cbad の Lint・Tests の run �
 - issue 820 (done。worktree を消した後の古い staticcheck のキャッシュで unused の検査が落ちた。820 は「GOFLAGS を空にしても同じ。trimpath は原因ではない」と結論。
   こちらは cgo の生成物で、原因が同じかは未確認)
 
+## 実験 (2026-10-23。使い捨ての GOCACHE で「worktree A で `make lint` → A を消す → 別の worktree B で `make lint`」)
+
+| 条件 | A | B | 2 つ目の worktree の GOCACHE の増分 |
+|---|---|---|---|
+| `GOFLAGS=-trimpath` (今の設定) | rc=0 | **rc=2** (消した A のパスの `ime_tis_darwin.go` を開けない) | ≈0 (238 MB) |
+| `-trimpath` なし (`GOFLAGS=-buildvcs=false`) | rc=0 | rc=0 | +73 MB (311 MB) |
+| `-trimpath` + `CGO_CPPFLAGS=-D<checkout ごとの名前>` | rc=0 | rc=0 | +16 MB (243 → 259 MB) |
+| 修正後の `scripts/golangci_lint.sh` (-trimpath のまま) | rc=0 | rc=0 | +16 MB (243 → 259 MB) |
+
+仮説 (816 の -trimpath で鍵から checkout が外れ、cgo の生成物が `//line <絶対パス>` を持ったまま使い回される) は確かめられた。
+出典: `tmp/887-2026-10-23/exp*.sh` と `exp*.result`
+
 ## 進捗
 
 - [x] 反証レビュー (sonnet。2026-10-23) — 「`-trimpath` を付ける」を候補に挙げていたが既に適用済み (816) で、その下で再現している、を反映した。
   CI のキャッシュの記述、GOCACHE の 30 個の内訳、820 との関係も直した
-- [ ] 仮説の確認: 816 (-trimpath) を外した GOCACHE で起きないか、gofmt の失敗がこの cgo のエントリだけで説明できるか
-- [ ] 再発を止める形を決めて直す
+- [x] 仮説の確認 — 上の表
+- [x] 直す — `scripts/golangci_lint.sh` の `run` で、`CGO_CPPFLAGS` に checkout の root の sha256 から作った定義を足す
+  (cgo の package の鍵にだけ checkout を入れ、ほかの package は 816 のまま共有する)。`-trimpath` を lint で外す案は増分が 4.5 倍で採らなかった。
+  テスト `tests/scripts/test_golangci_lint_pinned.sh` の 8 節 (足す・同じ checkout で同じ値・元の値を残す・別の checkout で別の値・run 以外に足さない)。
+  変異 2 本 (export を消す / 鍵を checkout に依らない値にする) で red
+- [x] 敵対的レビュー (sonnet 1 本。5h 枠が 82% だったので 1 本に絞った) — P1・P2 は 0 件。golangci-lint の起動はすべてこのスクリプトを通ることを確かめた (CI も同じ)。
+  cgo の鍵に CGO_CPPFLAGS が効くこと、-D の値が cgo のフラグの許可リストで弾かれないことも、最小の cgo module で確かめた。P3 は 2 件:
+  - 空文字で set された CGO_CPPFLAGS が go env -w の値を捨てる (go は空文字を未設定として扱う) → `${CGO_CPPFLAGS:-…}` に直し、テストを 2 ケース足した。`-` に戻す変異で red。
+    1 行の修正なので、この差分にはレビューの 2 周目を回していない
+  - checkout を symlink 越しに呼ぶと、実パスで呼んだときと別の鍵になる (キャッシュが重複するだけで失敗はしない) → 直さない
+- [ ] 手元の共有 GOCACHE に残った `wt-874` のエントリの扱い (修正後は CGO_CPPFLAGS が違う鍵になるので、古いエントリは使われない。消さずに自動削除に任せる)

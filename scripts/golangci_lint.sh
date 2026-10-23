@@ -103,4 +103,12 @@ if [ ! -s "$cfg" ]; then
   printf '%s\n' "$json" >"$part"
   mv -f "$part" "$cfg"
 fi
+# cgo の生成物 (go/packages が go list -compiled で作る) は -trimpath の下でも `//line <checkout の絶対パス>` を持つ。
+# -trimpath (go env の GOFLAGS。setup.sh が入れる) は鍵から checkout の場所を外すので、その生成物が別の checkout にも使い回され、
+# 最初に作った checkout (worktree) を消すと gofmt が `//line` の先を開けずに lint が落ちる (2026-10-23 実測: -trimpath ありで落ち、なしで通る)。
+# -trimpath を外すと共有そのものを失う (2 つ目の worktree の増分が +73 MB) ので、cgo の鍵にだけ checkout を入れる (同じ実験で +16 MB)。
+# CGO_CPPFLAGS は cgo の package の鍵にしか入らない。定義の名前はどのソースも参照しない
+tag=$(printf '%s' "$repo" | shasum -a 256)
+cpp=${CGO_CPPFLAGS:-$(go env CGO_CPPFLAGS)} # 空文字は go と同じく未設定として扱い、go env -w の値へ落とす
+export CGO_CPPFLAGS="${cpp:+$cpp }-DDOTFILES_LINT_CHECKOUT_${tag:0:16}"
 PATH="$goroot/bin:$PATH" exec "$bin" run -c "$cfg" "$@"
