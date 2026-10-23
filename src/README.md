@@ -30,7 +30,7 @@
 | [`subproc`](subproc/README.md) | 外部プロセス実行の安全弁 (WaitDelay と git の timeout) |
 | [`atomicfile`](atomicfile/README.md) | 途中の状態を残さないファイル書き込み (temp + rename) |
 | [`safefs`](safefs/README.md) | 上書きしない作成・名前の変更・ゴミ箱への移動 (doctor と treefiler と tmpclean が共有) |
-| [`proctree`](proctree/README.md) | プロセスの子孫を集めて止める (runtimeout と zundamon-kaisetsu が使う) |
+| [`proctree`](proctree/README.md) | プロセスの子孫を集めて止める (runtimeout と zundamon-kaisetsu が使う)。`proctree/childrun` は子を 1 本起こして待つ道具 (runtimeout・serialrun) の共通部 (秒の引数・rc・死に直し) |
 | [`userdirs`](userdirs/README.md) | 道具ごとの設定の置き場 (`~/.config/<app>`) を 1 か所で決め、置き場を変えたときに 1 回だけ引っ越す (pro-con / treefiler / mac-lan-manager が使う) |
 
 package 単位の一覧は [PACKAGES.md](PACKAGES.md) (生成物)。道具を知らなくても grep で見つけられるよう commit しておき、`scripts/go_packages_index.sh --check` (`make test-lint`) が生成し直した結果との差分を検査する。

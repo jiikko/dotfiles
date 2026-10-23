@@ -14,12 +14,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"proctree"
+	"proctree/childrun"
 	"regexp"
 	"strconv"
 	"strings"
@@ -29,8 +29,8 @@ import (
 
 const (
 	rcTool       = 125
-	rcCannotExec = 126
-	rcNotFound   = 127
+	rcCannotExec = childrun.RCCannotExec
+	rcNotFound   = childrun.RCNotFound
 
 	defaultMaxWait = time.Hour
 	// fallbackPoll は blocking の flock が何かで起こされなかったときの保険の見直しの間隔 (ユーザー指示 2026-10-22)。
@@ -245,12 +245,12 @@ func execDirect(argv []string, stderr io.Writer) int {
 	path, err := exec.LookPath(argv[0])
 	if err != nil && !errors.Is(err, exec.ErrDot) {
 		fmt.Fprintf(stderr, "serial-run: %v\n", err)
-		return startErrorRC(err)
+		return childrun.StartErrorRC(err)
 	}
 	err = syscall.Exec(path, argv, os.Environ())
 	// 子を起こす経路 (runChild) と同じ rc にする (見つからない 127 / 実行できない 126)
 	fmt.Fprintf(stderr, "serial-run: %s: %v\n", path, err)
-	return startErrorRC(err)
+	return childrun.StartErrorRC(err)
 }
 
 type waitResult int
@@ -281,7 +281,7 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	// / を含む名前は見ない (前に並んでいる make build が作るもの `./bin/x` を指せるように。自分の番で確かめる)
 	if _, err := exec.LookPath(opt.argv[0]); !strings.Contains(opt.argv[0], "/") && err != nil && !errors.Is(err, exec.ErrDot) {
 		fmt.Fprintf(stderr, "serial-run: %v\n", err)
-		return startErrorRC(err)
+		return childrun.StartErrorRC(err)
 	}
 
 	var deadline <-chan time.Time
@@ -315,7 +315,7 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	case abortSig != 0:
 		fmt.Fprintf(stderr, "serial-run: 待ちをやめた (シグナル %v を受けた。コマンドは実行していない)\n", abortSig)
 		hist(0, time.Since(enq), -1, 128+int(abortSig), "signal")
-		return exitAs(128+int(abortSig), abortSig)
+		return childrun.ExitAs(128+int(abortSig), abortSig)
 	case errors.Is(err, errMaxWait):
 		fmt.Fprintf(stderr, "serial-run: 待ちの上限 (%s) を超えた。採番の lock が空かない。%s\n", fmtDur(opt.maxWait), notRunHint)
 		hist(0, time.Since(enq), -1, rcTool, "timeout")
@@ -356,7 +356,7 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 		tk.release(nil)
 		fmt.Fprintf(stderr, "serial-run: 待ちをやめた (シグナル %v を受けた。コマンドは実行していない)\n", got)
 		hist(seq, time.Since(enq), -1, 128+int(got), "signal")
-		return exitAs(128+int(got), got)
+		return childrun.ExitAs(128+int(got), got)
 	}
 	waited := time.Since(enq)
 	if waited >= time.Second {
@@ -371,7 +371,7 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	})
 	hist(seq, waited, time.Since(started), rc, "ran")
 	tk.release(rf)
-	return exitAs(rc, got)
+	return childrun.ExitAs(rc, got)
 }
 
 type waiter struct {
@@ -571,12 +571,12 @@ func runChild(argv []string, held string, grace time.Duration, sigs <-chan os.Si
 	cmd.Env = append(os.Environ(), heldEnv+"="+held)
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(stderr, "serial-run: %v\n", err)
-		return startErrorRC(err), 0
+		return childrun.StartErrorRC(err), 0
 	}
 	started(cmd.Process.Pid)
 	tgt := proctree.Target{Root: cmd.Process.Pid, Group: false}
 	done := make(chan int, 1)
-	go func() { done <- waitStatus(cmd.Wait()) }()
+	go func() { done <- childrun.WaitStatus(cmd.Wait()) }()
 	var got syscall.Signal
 	var graceUp <-chan time.Time
 	for {
@@ -610,19 +610,6 @@ func runChild(argv []string, held string, grace time.Duration, sigs <-chan os.Si
 			}
 		}
 	}
-}
-
-// exitAs は子の rc を返す。道具がシグナルを受けて子もシグナルで死んだなら、道具も同じシグナルで死に直す
-// (rc=128+n で返ると、呼び出し元の bash は「子がシグナルを処理した」と読んで次へ進む。runtimeout の exitAs と同じ)
-// 🚨 QUIT では死に直さない。Go は SIGQUIT を既定に戻しても自前の扱い (goroutine のダンプを出して exit 2) をするので、rc が 2 に化ける
-func exitAs(rc int, got syscall.Signal) int {
-	if got == 0 || rc <= 128 || got == syscall.SIGQUIT {
-		return rc
-	}
-	signal.Reset(got)
-	_ = syscall.Kill(os.Getpid(), got)
-	time.Sleep(100 * time.Millisecond) // 撃ったシグナルが届くまでの間 (届けばここへは戻らない)
-	return rc
 }
 
 // printStatus は列を表示する。数えるのは待ち手と同じ入口 (lineup) で、孤児の子・開けない札も 1 本に数える
@@ -706,7 +693,7 @@ func parseArgs(args []string) (options, error) {
 				}
 				opt.lock = args[1]
 			} else {
-				d, err := parseSeconds(args[1])
+				d, err := childrun.ParseSeconds(args[1])
 				if err != nil {
 					return opt, fmt.Errorf("--max-wait: %w", err)
 				}
@@ -733,34 +720,4 @@ done:
 	}
 	opt.argv = args
 	return opt, nil
-}
-
-func parseSeconds(s string) (time.Duration, error) {
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f < 0 || f > math.MaxInt64/float64(time.Second) {
-		return 0, fmt.Errorf("秒は 0 以上の数: %q", s)
-	}
-	return time.Duration(f * float64(time.Second)), nil
-}
-
-func startErrorRC(err error) int {
-	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
-		return rcNotFound
-	}
-	return rcCannotExec
-}
-
-// waitStatus は Wait の結果をシェルと同じ rc に直す (シグナルで死んだら 128+n)
-func waitStatus(err error) int {
-	if err == nil {
-		return 0
-	}
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-			return 128 + int(ws.Signal())
-		}
-		return ee.ExitCode()
-	}
-	return rcCannotExec
 }

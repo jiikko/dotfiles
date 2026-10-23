@@ -9,12 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"os/exec"
 	"os/signal"
 	"proctree"
-	"strconv"
+	"proctree/childrun"
 	"syscall"
 	"time"
 )
@@ -22,8 +21,8 @@ import (
 const (
 	rcTimeout    = 124
 	rcUsage      = 125
-	rcCannotExec = 126
-	rcNotFound   = 127
+	rcCannotExec = childrun.RCCannotExec
+	rcNotFound   = childrun.RCNotFound
 
 	defaultGrace = 5 * time.Second
 )
@@ -89,12 +88,12 @@ func run(args []string, stderr io.Writer) int {
 	}
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(stderr, "runtimeout: %v\n", err)
-		return startErrorRC(err)
+		return childrun.StartErrorRC(err)
 	}
 	tgt := proctree.Target{Root: cmd.Process.Pid, Group: !opt.foreground}
 
 	done := make(chan int, 1)
-	go func() { done <- waitStatus(cmd.Wait()) }()
+	go func() { done <- childrun.WaitStatus(cmd.Wait()) }()
 
 	var deadline <-chan time.Time
 	if opt.limit > 0 {
@@ -108,12 +107,12 @@ func run(args []string, stderr io.Writer) int {
 	for {
 		select {
 		case rc := <-done:
-			return exitAs(rc, got)
+			return childrun.ExitAs(rc, got)
 		case <-deadline:
 			// 子の終了と上限が同時に来たら終了を採る (select は準備できた case をランダムに選ぶ)
 			select {
 			case rc := <-done:
-				return exitAs(rc, got)
+				return childrun.ExitAs(rc, got)
 			default:
 			}
 			tgt.Stop(opt.grace)
@@ -127,7 +126,7 @@ func run(args []string, stderr io.Writer) int {
 				// setsid した孫が init へ付け替わり、木から外れる)。止め終わるまで返らない
 				// (この窓は数 ms で外から決定論的に作れないので、テストでは固定していない。mutate-verify の stop_tree と同じ)
 				tgt.Stop(opt.grace)
-				return exitAs(<-done, got)
+				return childrun.ExitAs(<-done, got)
 			case opt.foreground:
 				// -f の INT / QUIT は端末から子にも直接届いている。伝え直すと 2 回届くので伝えない
 			default:
@@ -139,22 +138,9 @@ func run(args []string, stderr io.Writer) int {
 		case <-graceUp:
 			// シグナルを伝えても猶予の間に終わらなかった: 時間切れと同じ止め方で止める
 			tgt.Stop(opt.grace)
-			return exitAs(<-done, got)
+			return childrun.ExitAs(<-done, got)
 		}
 	}
-}
-
-// exitAs は子の rc を返す。ただし道具がシグナルを受けて子もシグナルで死んだなら、道具も同じシグナルで死に直す。
-// rc=128+n で返ると、呼び出し元の bash は「子が INT を処理した」と読んで次へ進む (bash の wait-and-cooperative-exit)。
-// 呼び出し元が元々そのシグナルを無視していたなら Reset で無視に戻り、死なずに 128+n を返す
-func exitAs(rc int, got syscall.Signal) int {
-	if got == 0 || rc <= 128 {
-		return rc
-	}
-	signal.Reset(got)
-	_ = syscall.Kill(os.Getpid(), got)
-	time.Sleep(100 * time.Millisecond) // 撃ったシグナルが届くまでの間 (届けばここへは戻らない)
-	return rc
 }
 
 func parseArgs(args []string) (options, error) {
@@ -177,7 +163,7 @@ func parseArgs(args []string) (options, error) {
 			if len(args) < 2 {
 				return opt, errors.New("-k に値が無い")
 			}
-			d, err := parseSeconds(args[1])
+			d, err := childrun.ParseSeconds(args[1])
 			if err != nil {
 				return opt, fmt.Errorf("-k: %w", err)
 			}
@@ -195,41 +181,11 @@ func parseArgs(args []string) (options, error) {
 	if len(args) < 2 {
 		return opt, errors.New("<秒> と <コマンド> が要る")
 	}
-	d, err := parseSeconds(args[0])
+	d, err := childrun.ParseSeconds(args[0])
 	if err != nil {
 		return opt, err
 	}
 	opt.limit = d
 	opt.argv = args[1:]
 	return opt, nil
-}
-
-func parseSeconds(s string) (time.Duration, error) {
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f < 0 || f > math.MaxInt64/float64(time.Second) {
-		return 0, fmt.Errorf("秒は 0 以上の数: %q", s)
-	}
-	return time.Duration(f * float64(time.Second)), nil
-}
-
-func startErrorRC(err error) int {
-	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
-		return rcNotFound
-	}
-	return rcCannotExec
-}
-
-// waitStatus は Wait の結果をシェルと同じ rc に直す (シグナルで死んだら 128+n)
-func waitStatus(err error) int {
-	if err == nil {
-		return 0
-	}
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-			return 128 + int(ws.Signal())
-		}
-		return ee.ExitCode()
-	}
-	return rcCannotExec
 }

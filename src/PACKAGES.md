@@ -86,6 +86,7 @@
 - `src/pro-con/wtclean` (`pro-con/wtclean`) — Package wtclean は閉じたカードの PG の worktree を片付ける。
 - `src/process_supervisor` (`process_supervisor`) — Package supervisor は子プロセスを 1 つ起こして見張る (foreman / supervisord の 1 本ぶん。
 - `src/proctree` (`proctree`) — Package proctree はプロセスの子孫を集めて止める。
+- `src/proctree/childrun` (`proctree/childrun`) — Package childrun は、子を 1 本起こして待つ道具 (runtimeout・serialrun) の共通部: 秒の引数・起動の失敗の rc・子の終わり方の rc・道具の死に直し。
 - `src/ratelimit` (`ratelimit`) — ratelimit — Claude Code / codex の利用枠 (5h / weekly) を表示・判定する単独コマンド。 (main)
 - `src/ratelimit/gorules` (`ratelimit/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.local.yml から参照)。 (build tags: ruleguard)
 - `src/ratelimit/usage` (`ratelimit/usage`) — Package usage は Claude Code の `/usage` 出力と codex の rateLimits を取得・整形する。

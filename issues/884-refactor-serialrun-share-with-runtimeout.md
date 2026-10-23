@@ -31,4 +31,19 @@ serialrun の監査で見つかった、グループ G の 2 項目。
 
 ## 進捗
 
-- [ ] 未着手 (項目ごとに、直した commit の subject・当てた変異・実測を書く)
+- 2026-10-23 (commit「refactor: runtimeout と serialrun の子の rc・死に直し・秒の引数を proctree/childrun に寄せる (issue 884)」):
+  - [x] G1 `exitAs` / `waitStatus` / `startErrorRC` / `parseSeconds` と rc 126/127 を、新しい module ではなく proctree の package `childrun` に置いた
+    (runtimeout も serialrun も既に proctree を replace で持ち、CI の paths にも proctree が入っている。module を増やすと Makefile・CI・一覧の配線が増える)。
+    両方の写しは消し、呼び出しを `childrun.*` に。寄せる前に呼び出し元の前提を突き合わせた: runtimeout の「無視していた合図は Reset で無視に戻る」と
+    serialrun の「QUIT では死に直さない」はどちらも共通の版で表せる。
+    🚨 **runtimeout の QUIT の不具合はこれで直った** (QUIT で rc=2 とダンプ → 131)。`TestQuitToToolKeepsSignalRC` (runtimeout)。
+    runtimeout 側に揃える修正の残り: E4 (`--help`) は 882 で入れた / G2 はこの共有で入った / C1 (起動時に無視されていた INT・QUIT を保つ) は runtimeout が意図して外している
+    (`src/runtimeout/main.go` の注記。mutate-verify の Ctrl-C のため) ので揃えない / A4 は serialrun の待ち列の回収 (`reclaimStopped`) で、runtimeout には該当する仕組みが無い
+  - [x] G2 `ParseSeconds` は 0 より大きいのに 1ns 未満になる値を 1ns に切り上げる (`1e-10` → 1ns)。`TestParseSeconds` (childrun。runtimeout から移した)
+- 変異 (全部 red): QUIT でも死に直す / 1ns 未満を切り捨てる / 死に直さない
+- 敵対的レビュー 1 周 (Opus): P1 / P2 なし。挙動の変更は意図した 2 つだけ (QUIT・1ns) と突き合わせで確認。QUIT の経路は直す前より良いか同じ
+  (子が TERM で死んだ: 2 → 143 / 呼び出し元が QUIT を無視: 131 のまま / INT の後に QUIT: 2 → 130)
+  - P3 子が pid を書かないまま待ちが尽きてもテストが QUIT を撃ちに進む → 落とすように直した
+  - P3 **記録 (前からある形)**: ExitAs が覚えるのは最後のシグナルだけ (INT の後に QUIT を受けると INT で死に直さない) /
+    ParseSeconds の上限は float→int64 の変換を arm64 の挙動に頼る (amd64 では負になりうる。このリポジトリは macOS の arm64 だけ) /
+    runtimeout の `rcCannotExec` / `rcNotFound` の別名はテストだけが使う

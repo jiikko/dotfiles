@@ -274,20 +274,6 @@ func TestChildGetsDefaultINT(t *testing.T) {
 	}
 }
 
-func TestParseSeconds(t *testing.T) {
-	for in, want := range map[string]time.Duration{"0": 0, "1": time.Second, "0.5": 500 * time.Millisecond, "60": time.Minute} {
-		got, err := parseSeconds(in)
-		if err != nil || got != want {
-			t.Errorf("%q: got %v,%v want %v", in, got, err, want)
-		}
-	}
-	for _, in := range []string{"", "-1", "NaN", "Inf", "1e30", "x"} {
-		if _, err := parseSeconds(in); err == nil {
-			t.Errorf("%q を受け付けた", in)
-		}
-	}
-}
-
 // -f: 子は呼び出し元 (道具) と同じグループに居て、時間切れでは子と孫が止まる
 func TestForegroundKeepsGroupAndStopsTree(t *testing.T) {
 	dir := t.TempDir()
@@ -386,5 +372,36 @@ func TestHelpPrintsUsage(t *testing.T) {
 		if err != nil || !strings.HasPrefix(string(out), "usage: runtimeout") {
 			t.Fatalf("%s: err=%v out=%q", a, err, out)
 		}
+	}
+}
+
+// 道具の pid への QUIT で子が QUIT で死んだら、rc は 128+QUIT (Go の QUIT の扱いでダンプを出して rc=2 に化けない)
+func TestQuitToToolKeepsSignalRC(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	cmd := exec.Command(bin, "30", "/bin/sh", "-c", `echo $$ > "$1"; exec sleep 20`, "sh", pidFile) // sleep-ok: dummy: QUIT を受けるまで居座る子
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	started := false
+	for range 400 {
+		if b, _ := os.ReadFile(pidFile); strings.HasSuffix(string(b), "\n") {
+			started = true
+			break
+		}
+		time.Sleep(25 * time.Millisecond) // sleep-ok: tick: 子が pid を書くまでのポーリング
+	}
+	if !started {
+		t.Fatal("子が 10 秒で始まらない")
+	}
+	if err := cmd.Process.Signal(syscall.SIGQUIT); err != nil {
+		t.Fatal(err)
+	}
+	err := cmd.Wait()
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 128+int(syscall.SIGQUIT) || strings.Contains(stderr.String(), "goroutine") {
+		t.Fatalf("QUIT の rc: err=%v stderr=%q", err, stderr.String())
 	}
 }

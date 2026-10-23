@@ -15,3 +15,11 @@ proctree.Target{Root: cmd.Process.Pid, Group: true}.Stop(5 * time.Second)
 止められないもの: 止める前に親を離れて init の子になり、かつグループも抜けたもの (daemon 化した子・`tmux -L` のサーバ等)。
 
 使う側: `src/runtimeout` (時間の上限付き実行。issue 640) / `src/zundamon-kaisetsu` の mermaid の描画 (issue 649)。
+
+## `childrun` (同じ module の package)
+
+子を 1 本起こして待つ道具 (runtimeout・serialrun) の共通部。写しを 2 つの module に持つと片方だけ直る (QUIT の死に直しで実際に起きた) ので、ここに 1 つだけ置く。
+
+- `ParseSeconds`: 秒の引数 (小数可・0 以上)。0 より大きいのに 1ns 未満になる値は 1ns に切り上げる (0 は「上限なし」に使われるので)
+- `StartErrorRC` / `WaitStatus`: 起動の失敗と子の終わり方をシェルと同じ rc に (127 見つからない / 126 実行できない / シグナルなら 128+n)
+- `ExitAs`: 道具がシグナルを受けて子もシグナルで死んだら、道具も同じシグナルで死に直す (bash が「子が処理した」と読まないため)。QUIT では死に直さない
