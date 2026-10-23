@@ -2,6 +2,12 @@ module serialrun
 
 go 1.25.0
 
-require proctree v0.0.0
+require (
+	proctree v0.0.0
+	subproc v0.0.0
+)
 
-replace proctree => ../proctree
+replace (
+	proctree => ../proctree
+	subproc => ../subproc
+)

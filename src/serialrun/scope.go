@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"subproc"
 	"time"
 )
 
@@ -36,24 +37,16 @@ func lockFor(dir string) (string, error) {
 	return repoLockName(common), nil
 }
 
-// gitLocationEnv は git の repo の場所の環境変数 (`git rev-parse --local-env-vars` のうち、設定を渡す GIT_CONFIG・GIT_CONFIG_PARAMETERS・
-// GIT_CONFIG_COUNT を除いたもの。設定は残す)
-var gitLocationEnv = map[string]bool{
-	"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_INDEX_FILE": true, "GIT_COMMON_DIR": true, "GIT_OBJECT_DIRECTORY": true,
-	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true, "GIT_NAMESPACE": true, "GIT_PREFIX": true, "GIT_IMPLICIT_WORK_TREE": true,
-	"GIT_GRAFT_FILE": true, "GIT_NO_REPLACE_OBJECTS": true, "GIT_REPLACE_REF_BASE": true, "GIT_SHALLOW_FILE": true,
-}
-
 // gitCommonDir は dir の git の common dir (worktree でも本体の .git) の実パスを返す
 func gitCommonDir(dir string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	cmd := exec.CommandContext(ctx, "git", subproc.GitArgs("-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir")...)
 	// 継承した repo の場所 (GIT_DIR など) を外し、cwd だけで決める (相対の GIT_DIR はサブディレクトリで外れ、大文字小文字の違う GIT_DIR は
 	// 別の列になる。dotfiles の Makefile は recipe でこれらを外すので、外さないと外側と内側で列が割れる)。
 	// 外すのは場所の変数だけ (GIT_CONFIG_* などの設定は残す。safe.directory を渡す環境で rev-parse が通るように)
 	for _, kv := range os.Environ() {
-		if name, _, _ := strings.Cut(kv, "="); !gitLocationEnv[name] {
+		if name, _, _ := strings.Cut(kv, "="); !subproc.IsGitLocationEnv(name) {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}

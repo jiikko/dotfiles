@@ -12,6 +12,7 @@ on:
     paths:
       - 'src/serialrun/**'
       - 'src/proctree/**'     # replace で取り込む共有 module (子孫を集めて止める)
+      - 'src/subproc/**'      # replace で取り込む共有 module (git を起こす口・git の場所の環境変数)
       - .github/workflows/src_serialrun.yml
       - .github/workflows/_go-project.yml
       - .github/go-version
@@ -23,6 +24,7 @@ on:
     paths:
       - 'src/serialrun/**'
       - 'src/proctree/**'     # replace で取り込む共有 module (子孫を集めて止める)
+      - 'src/subproc/**'      # replace で取り込む共有 module (git を起こす口・git の場所の環境変数)
       - .github/workflows/src_serialrun.yml
       - .github/workflows/_go-project.yml
       - .github/go-version

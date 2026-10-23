@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"subproc"
 	"syscall"
 	"testing"
 	"time"
@@ -27,6 +28,10 @@ func TestMain(m *testing.M) {
 	// 🚨 本物の待ち行列 (~/.local/state/serial-run) を読ませない・消させない (死んだ札の回収は os.Remove する)。
 	// 個々のテストが置き場を渡し忘れても、既定がこの一時ディレクトリになる
 	if err := os.Setenv("SERIAL_RUN_STATE_DIR", filepath.Join(dir, "state")); err != nil {
+		panic(err)
+	}
+	// テストの git (gitRepo) が継承した repo の場所を見ないように外す
+	if err := subproc.UnsetGitLocationEnv(); err != nil {
 		panic(err)
 	}
 	// 既存のテストはマシン全体の列 (default) で見る。repo ごとの列は TestRepoScope* が git の repo を作って見る
@@ -2134,27 +2139,6 @@ func TestUnverifiedOrphanInOtherLockDoesNotBypass(t *testing.T) {
 	}
 	f.release(ga)
 	_ = exitCode(t, a)
-}
-
-// repo を調べる git から外す場所の変数は、git 自身の一覧 (--local-env-vars) から設定の 3 つを除いたもの全部を含む (git の版上げで増えた変数を落とす)
-func TestGitLocationEnvCoversLocalEnvVars(t *testing.T) {
-	out, err := exec.Command("git", "rev-parse", "--local-env-vars").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	n := 0
-	for _, v := range strings.Fields(string(out)) {
-		if strings.HasPrefix(v, "GIT_CONFIG") {
-			continue
-		}
-		n++
-		if !gitLocationEnv[v] {
-			t.Errorf("git の場所の変数 %s を外していない", v)
-		}
-	}
-	if n < 8 {
-		t.Fatalf("git が挙げた場所の変数が %d 個しかない (取り出しが壊れている)", n)
-	}
 }
 
 // 名指しの列 (-l) の中から範囲の列のコマンドを打つと、その範囲の列を他の人が持っていても待たずに素通しになる (列を持ったまま待たない)
