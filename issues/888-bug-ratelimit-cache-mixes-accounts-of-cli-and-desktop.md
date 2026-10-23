@@ -71,3 +71,6 @@ desktop の statusline の mod も、CLI と同じ `_claude/statusline-command.s
 - 2026-10-23 起票。反証レビュー (sonnet 1 体・読み取りのみ): P2 desktop は rl_fresh にならない (transcript_path が空) ので「最後にやり取りした方」ではなく「リセットが後ろの窓の方」が優勢 → 直した /
   P3 読み手の注記 (同じアカウントだけの前提) に触れていない → 足した。反証できなかった: desktop の mod が同じ script を rate_limits 付きで呼ぶ・desktop の分岐が無い・
   読み手がアカウントを区別しない・600 秒の判定・desktop の表示がファイルを読まない
+- 2026-10-23 本番で確かめた (push・~/dotfiles へ pull の後): 11:18:43 に `claude-rate-limits-desktop.json` が 82% / resets_at 13:40 (書き手は desktop のセッション
+  `833e594a-…`、02:16:42Z に書いた)、`claude-rate-limits.json` は 61% / 13:00 (書き手は CLI の session) のまま上書きされていない。
+  desktop の session を起動し直さずに分かれた (今の desktop の mod が surface を渡す版か、環境の印で分かれたかは見分けていない)
