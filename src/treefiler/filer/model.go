@@ -771,7 +771,9 @@ func (m *Model) stepBead(pos map[*node]place, dt float64) bool {
 			start = a.x.v - 2
 		}
 		m.beadFor, m.beadOn = m.cur, true
-		m.bead = tween{v: start}
+		// 速さも走り直す: dt が 0 のフレーム (同じ時刻の Advance・描くだけ) は下で速さを更新しないので、前の走りの速さが残り、
+		// 尾の長さ (drawBead) がそれまでの経緯で変わる (同じ画面へ同じ操作で来ても、前の走りによって尾が 1 セルずれる)
+		m.bead, m.beadVel = tween{v: start}, 0
 	}
 	if !m.beadOn {
 		return false

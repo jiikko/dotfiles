@@ -108,11 +108,36 @@ func virtStamp(p string, fi os.FileInfo) time.Time {
 }
 
 // frames は両方を n フレーム (60fps) 進め、毎フレームの画面を比べる。
+// quiet は両方の Model の裏の計算 (配下の走査・e の展開) が終わるまで待つ。結果は次の Advance で両方とも同じフレームに取り込まれる。
+// 待たないと、結果が届くフレームが 2 つの Model で実時間の速さ次第にずれ、仮想化と関係なく画面が食い違う (r の後のステータスバーの
+// 大きさが 1 フレームだけ違う。負荷の高いときや GOMAXPROCS=1 で出る)。
+func (vp *virtPair) quiet() {
+	vp.t.Helper()
+	waitFor(vp.t, "裏の計算", func() bool { return computed(vp.virt) && computed(vp.ref) })
+}
+
+// computed は m の裏の計算が終わっているか (結果は取り込んでいなくてよい)。
+func computed(m *Model) bool {
+	m.walker.mu.Lock()
+	running := m.walker.running
+	m.walker.mu.Unlock()
+	if running {
+		return false
+	}
+	if j := m.exploding; j != nil {
+		j.mu.Lock()
+		defer j.mu.Unlock()
+		return j.done
+	}
+	return true
+}
+
 func (vp *virtPair) frames(what string, n int) {
 	vp.t.Helper()
 	vp.same(what + " (キーの直後)")
 	for i := range n {
 		vp.at = vp.at.Add(16 * time.Millisecond)
+		vp.quiet()
 		vp.virt.Advance(vp.at)
 		vp.ref.Advance(vp.at)
 		vp.same(fmt.Sprintf("%s のフレーム %d", what, i+1))
@@ -125,6 +150,7 @@ func (vp *virtPair) gapFrames(what string, gap time.Duration, n int) {
 	vp.t.Helper()
 	for i := range n {
 		vp.at = vp.at.Add(gap)
+		vp.quiet()
 		vp.virt.Advance(vp.at)
 		vp.ref.Advance(vp.at)
 		vp.same(fmt.Sprintf("%s の遅いフレーム %d", what, i+1))

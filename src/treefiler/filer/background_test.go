@@ -270,6 +270,23 @@ func TestBeadRunsOnMoveAndSnapsOnKey(t *testing.T) {
 	}
 }
 
+// ビーズが走り直すときは速さも 0 から: 走り直した最初のフレームが経過時間 0 (同じ時刻の Advance) でも、前の走りの速さで
+// 尾の長さを決めない (経緯が違うと、同じ画面で尾が 1 セルずれる)。
+func TestBeadRestartResetsVelocity(t *testing.T) {
+	m := newTest(t)
+	m.HandleKey("j")
+	m.Advance(fixedNow.Add(16 * time.Millisecond))
+	m.Advance(fixedNow.Add(32 * time.Millisecond))
+	if m.beadVel == 0 {
+		t.Fatal("前提: 走っているビーズに速さが無い")
+	}
+	m.HandleKey("j")
+	m.Advance(fixedNow.Add(32 * time.Millisecond)) // 経過時間 0: 速さは更新されない
+	if m.beadFor != m.cur || m.beadVel != 0 {
+		t.Fatalf("走り直したのに前の速さが残る: vel=%v (走り直した=%v)", m.beadVel, m.beadFor == m.cur)
+	}
+}
+
 // 隠している dotfile の出入り・変化ではフォルダを光らせない (見えない変化で毎秒光るのを止める)。
 func TestHiddenDotfileChangeDoesNotLightUp(t *testing.T) {
 	m := newTest(t)
