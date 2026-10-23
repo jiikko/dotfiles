@@ -1,5 +1,7 @@
 SHELL := /bin/sh
 
+include $(dir $(lastword $(MAKEFILE_LIST)))make/serial-run.mk
+
 # 🚨 継承した git の repo の場所を recipe から外す。hook から起動された make test は GIT_DIR などを
 # 持ったまま走り、テストの `git -C <一時 dir>` はそれに負けて継承した repo の config やブランチを書き換える。
 # 一覧は `git rev-parse --local-env-vars` と同じ集合 (src/subproc/gitenv.go の gitLocationEnv も同じ)。漏れは
@@ -69,7 +71,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-comment-provenance test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-packages-index test-unused-excluding-tests test-go-lint test-go test-src test-fresh
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-all test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-comment-provenance test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-packages-index test-unused-excluding-tests test-go-lint test-go test-src test-fresh
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ。中に新しい更新があるフォルダは残す。
 # skill の dir (bin/skill-tmpdir の印 .skill-tmpdir がある tmp/<skill名>/) は中の session ごとの dir を単位にする)。
@@ -114,7 +116,11 @@ pull:
 #   落ちた日は **テストが 1 本も走らないまま赤を見る**。コミット前ゲートとして常用する入口なので、
 #   全部走らせてから失敗をまとめて返す (所要時間より「その日の全ての赤が 1 回で見える」を採る)。
 #   lint だけ先に見たいときは `make test-lint`。
+# 入口の test は serial-run の順番待ちに入る (make/serial-run.mk)。本体は test-all
 test:
+	@+$(serial_run) $(MAKE) --no-print-directory test-all
+
+test-all:
 	@+$(call run_all_targets,test-lint test-runtime test-src)
 
 # 変更したパスだけ検証する (CI の paths filter のローカル対応物)。写像とヘルプの

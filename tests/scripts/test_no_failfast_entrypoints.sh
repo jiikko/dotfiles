@@ -115,13 +115,14 @@ EOF
 chmod +x "$TMP_DIR/fakemake"
 
 : > "$TMP_DIR/calls"
-if make test MAKE="$TMP_DIR/fakemake" >"$TMP_DIR/out" 2>&1; then
-  bad "make test: 子ターゲットが落ちたのに成功した"
+# 集約の本体は test-all (入口の test は serial-run の順番待ちに入ってから test-all を呼ぶだけ。make/serial-run.mk)
+if make test-all MAKE="$TMP_DIR/fakemake" >"$TMP_DIR/out" 2>&1; then
+  bad "make test-all: 子ターゲットが落ちたのに成功した"
 fi
 for t in test-lint test-runtime test-src; do
-  grep -qx "$t" "$TMP_DIR/calls" || bad "make test: $t が呼ばれていない ($(tr '\n' ' ' < "$TMP_DIR/calls"))"
+  grep -qx "$t" "$TMP_DIR/calls" || bad "make test-all: $t が呼ばれていない ($(tr '\n' ' ' < "$TMP_DIR/calls"))"
 done
-note "make test は lint が落ちても test-runtime / test-src を回す"
+note "make test-all は lint が落ちても test-runtime / test-src を回す"
 
 : > "$TMP_DIR/calls"
 if make test-src MAKE="$TMP_DIR/fakemake" >"$TMP_DIR/out" 2>&1; then

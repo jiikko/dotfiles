@@ -44,9 +44,16 @@ serial-run -h                                                       # usage (rc=
   (待っている間は Bash の出力が返らないので、固まったと読ませない)。誰もいなければ何も添えない
 - 止め方: Claude Code の環境に `SERIAL_RUN_HOOK_DISABLE=1`
 
-## 効かない経路・前提
+## make の入口に組み込む
 
-- 包まれないもの: 人が端末で直接打つコマンド・git hook (pre-push 等)・スクリプトの中の重い処理・codex・pro-con の PG (user の hook を持ち込まない)。
+dotfiles の `make test` は自分で順番待ちに入る (`make/serial-run.mk` の `$(serial_run)` を recipe の先頭に置き、本体は `test-all`)。
+人の端末・スクリプト・サブエージェント・codex から打った `make test` も並ぶ。hook が包んだ `make test` の中では、serial-run が入れ子と判定して素通しにし、二重には並ばない。
+CI (`CI`)・`SERIAL_RUN_MAKE_DISABLE=1` (serial-run の入口のビルドが壊れて 125 で落ちる日の逃げ道)・`make -n` / `-q` / `-t`・本体 checkout に serial-run が無いときは包まない。
+ほかの repo も `include $(HOME)/dotfiles/make/serial-run.mk` と recipe の前置きで同じことができる (使い方は断片の冒頭)。
+
+
+- hook で包まれないもの: 人が端末で直接打つコマンド・git hook (pre-push 等)・スクリプトの中の重い処理・codex・pro-con の PG (user の hook を持ち込まない)。
+  dotfiles の `make test` は上の make の入口で並ぶ。
   これらは列の外で走るので、列の中の 1 本と重なりうる。必要ならその道具の側で `serial-run` を呼ぶ (入れ子は素通しになる)
 - 子が正常に終わった後に残った背景の孫は止めない (lock の外で走り、次の 1 本と同時に動く)。止めるときも、切り離された孫 (`( sleep & )`) は取りこぼす
 - 同じユーザーの session どうしのための道具。他のユーザーと置き場を共有する使い方は対象外 (置き場の権限は 0700 / 0600)

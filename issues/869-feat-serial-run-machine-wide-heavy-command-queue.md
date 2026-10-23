@@ -331,5 +331,17 @@ hook は Claude Code の Bash ツールが打ったコマンドにしか効か�
 - [x] 4. hook (push して `~/dotfiles` に pull した後の新しい session から効く。効いたかの観測は下の残り)
 - [ ] 5. 計測 (trigger: 2 session を並べた最初の日。`~/.local/state/serial-run/default/history.log` の待ち・所要を読む)
 - [x] 待つことを LLM に先に知らせる (`additionalContext`) / 待ちの行に `serial-run status` の案内。変異 2 本 (知らせを外す / 案内を毎行に出す) が red
-- [ ] **dotfiles の Makefile に組み込む** (ユーザーと合意 2026-10-22。下の「Makefile への組み込み」)
+- [x] **dotfiles の Makefile に組み込む** (ユーザーと合意 2026-10-22。2026-10-23 にユーザーが「今やる」を選んだ。commit「feat(make): make test を serial-run の順番待ちに入れる (issue 869)」)
+  - 共有の断片 `make/serial-run.mk` の `$(serial_run)` を、Makefile の `test` の recipe の先頭に置き、集約の本体は `test-all` に移した。
+    ほかの repo も `include $(HOME)/dotfiles/make/serial-run.mk` で同じことができる
+  - 包まない: CI・`SERIAL_RUN_MAKE_DISABLE=1`・`make -n` / `-q` / `-t` (`+` の行は dry-run でも走るので、包むと何もしない呼び出しが本物の列に並ぶ)・
+    本体 checkout (`$(HOME)/dotfiles/bin/serial-run`) に serial-run が無いとき。入れ子は make 側で判定せず、serial-run が札の番号・nonce・lock を照合して素通しにする
+  - 実測 2026-10-23: hook を通さない `bash -c 'make test'` が Makefile の前置きから並んだ (history.log の #103 `make --no-print-directory test-all`、走って 353.7 秒)
+  - テスト: `tests/scripts/test_make_serial_run.sh` (12 件)。集約の検査 (`test_no_failfast_entrypoints.sh`) は `test-all` に向けた。
+    変異 (全部 red): test が前置きを通らない / -n でも包む / 変数の代入の n を -n と読む
+  - 敵対的レビュー 1 周 (Opus): P1 新しいテストが `~/dotfiles` の実在に頼り CI で赤 → 一時の HOME に置く / P2 `make -n test` が本物の列に並ぶ → -n/-q/-t で包まない /
+    P3 SERIAL_RUN_HELD の有無だけで見ると別の lock の中・漏れた値で素通りする → 入れ子は serial-run に任せる / include を Makefile からの相対に。
+    **記録 (未確認)**: 本体 checkout の serial-run の入口のビルドが壊れると、全部の `make test` がテストを走らせずに 125 で落ちる (逃げ道は `SERIAL_RUN_MAKE_DISABLE=1`)。
+    自分の札を待って止まる形 (`env -u SERIAL_RUN_HELD` の入れ子) は祖先の照合で素通しになり、壊せなかった
+  - 入れなかった: hook が「Makefile が包む入口」を見つけたら差し込まない、は入れていない。hook が包んだ `make test` の中は入れ子の素通しになり二重には並ばない (害は無い)
 - [ ] 新しい session で hook が効くことの観測 (headless の session で `make -n test` 相当を打たせ、書き換えを見る)
