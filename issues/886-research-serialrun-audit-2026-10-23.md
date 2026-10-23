@@ -7,7 +7,7 @@
 serialrun に audit skill の全 22 観点 (design / responsibility / duplication / polymorphism / leaky-abstraction / encapsulation / ui-components / ux /
 security / resource-leaks / broken-code / dead-code / error-handling / false-green / performance / concurrency / test-cleanup / test-helpers /
 dependency / ci / lint-from-done / general) を 1 体ずつ直列で回した (2026-10-22 22:3x〜2026-10-23 01:xx。5h 枠のリセット待ちで 9 観点目の後に 1 回止めた)。
-報告 22 本を 1 体で突き合わせ、直す項目を [878](done/878-bug-serialrun-exclusion-and-order.md)〜[885](885-chore-serialrun-ci-deps-perf.md) に分けた。ここには全数勘定と、
+報告 22 本を 1 体で突き合わせ、直す項目を [878](done/878-bug-serialrun-exclusion-and-order.md)〜[885](done/885-chore-serialrun-ci-deps-perf.md) に分けた。ここには全数勘定と、
 直さない候補 (I) とその理由を残す (却下の理由が消えると、次の監査が同じ指摘を出す)。
 
 ## 監査の途中で起きたこと
