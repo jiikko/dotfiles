@@ -12,6 +12,9 @@
 desktop の statusline の mod も、CLI と同じ `_claude/statusline-command.sh` を `rate_limits` 付きで呼ぶ
 (`_claude/mods/desktop-statusline/hooks/register.tsx`・`tests/register.test.tsx` の「CLI と同じ形の JSON で呼ぶ」)。
 `write_rate_limits` はどちらから呼ばれても同じ `~/.cache/glog/claude-rate-limits.json` に書くので、2 つのアカウントの窓が 1 つのファイルで混ざる。
+読み手の `src/ratelimit/usage/statusline.go` は「別のアカウントのセッションも同じファイルに書く。今は同じアカウントだけを使う前提
+(pro-con の `dispatcher/usage.go` の注記と同じ)。別のアカウントを使うようになったら、ファイルを分ける」と前提を宣言している。
+**その前提が崩れている** (CLI と desktop で別アカウント)。
 
 ## 詳細
 
@@ -21,14 +24,20 @@ desktop の statusline の mod も、CLI と同じ `_claude/statusline-command.s
 - 10:36 `ratelimit -json`: 5h 53%・resetAt 13:00 (fetchedAt 10:32)。`claude-rate-limits.json` は 56%・resets_at 13:00
   (writers.five_hour.by はこの session の transcript)、glogx の `claude-usage.json` は 55%・13:00
 - 13:00 にリセットする窓と 13:40 にリセットする窓は、同じアカウントで同時に今の窓にはならない。82% / 13:40 は別の窓の値
-- 82% / 13:40 を書いたセッションは特定できていない (writers が今の値で上書きされた後に調べた)。desktop 側のアカウントの値だというのは**推測**
+- 10:42:44 にファイルが再び 82% / resets_at 13:40 になった。5h の書き手は `"by":"833e594a-f35f-4cef-8db5-8bbb74d76d76","version":""`。
+  by が transcript のパスでなくセッション ID で、版が空なのは、desktop の mod の呼び出しの形 (`_claude/mods/desktop-statusline/hooks/input.ts` は
+  `transcript_path: ''` を渡し、版を渡さない) と一致する。CLI の session の書き手は transcript のパスと `2.1.308` を残している。
+  desktop 側のアカウントの値だと読める (desktop のアカウントの実際の 5h を desktop の画面で突き合わせてはいない)
 
 ### 混ざる仕組み (`_claude/statusline-command.sh` の `rl_newer` / `write_rate_limits`)
 
 - 窓ごとに、リセット時刻が今のファイルより `rl_same_window` (600 秒) を超えて後ろの観測は「次の窓」として必ず採る。
   アカウント B の窓 (13:40) がアカウント A の窓 (13:00) より後ろにあると、B の値は A の値を無条件に置き換える
-- `rl_fresh` (transcript がファイルより新しい) のセッションは窓を問わず採るので、A の session が応答を受け取ると A の値に戻る。
-  どちらの値が載るかは、最後にどちらのアカウントでやり取りしたかで決まる
+- `rl_fresh` (transcript がファイルより新しい) のセッションは窓を問わず採るので、CLI (A) の session が応答を受け取ると A の値に戻る。
+  ただし desktop は transcript を渡さないので rl_fresh にならず、書けるのは「次の窓」(リセットが 600 秒を超えて後ろ) のときだけ。
+  B の窓が後ろにある間は、desktop の 60 秒ごとの描画のたびに B が A を上書きし直す。**リセットが後ろの窓を持つアカウントが優勢**になる
+  (10:36 には CLI の値 56% / 13:00 が載っていて、10:42 に desktop の値へ戻った)
+- desktop が書いた行の `by` はセッション ID だけで、どのアカウント・どの経路かを示さない
 - 読み手 (`src/ratelimit/usage/statusline.go`・`bin/ratelimit`・glogx・pro-con の dispatcher) はアカウントを区別しない
 
 ## 対応方針 (案。決めるのは設計の後)
@@ -36,7 +45,7 @@ desktop の statusline の mod も、CLI と同じ `_claude/statusline-command.s
 - 書くときに出所 (アカウント・設定ディレクトリ・CLI か desktop か) を区別できる値を持たせ、読み手は自分のアカウントの値だけを読む。
   statusline の入力にアカウントを示す欄があるかは**未確認** (無ければ、設定ディレクトリや desktop の mod からの呼び出しの印で分ける)
 - 最低限: desktop の mod から呼ばれたときは `write_rate_limits` を書かない (CLI のアカウントの判断に desktop の値を混ぜない)。
-  desktop の表示には今の入力の `rate_limits` をそのまま使えるので、ファイルを経由しなくても表示は変わらない (未確認)
+  desktop の表示は入力の `rate_limits` から描いていて (`statusline-command.sh` の `pace_row`)、このファイルを読まないので、表示は変わらない (反証レビューで確認)
 - 観測: 採った・捨てた・入れ替えた観測を、書き手 (by・アカウントの印) とリセット時刻つきで 1 行ずつ残す (今は最後の書き手しか残らないので、外れ値の出所を後から追えない)
 
 ## 関連ファイル
@@ -50,3 +59,6 @@ desktop の statusline の mod も、CLI と同じ `_claude/statusline-command.s
 ## 進捗
 
 - [ ] 未着手
+- 2026-10-23 起票。反証レビュー (sonnet 1 体・読み取りのみ): P2 desktop は rl_fresh にならない (transcript_path が空) ので「最後にやり取りした方」ではなく「リセットが後ろの窓の方」が優勢 → 直した /
+  P3 読み手の注記 (同じアカウントだけの前提) に触れていない → 足した。反証できなかった: desktop の mod が同じ script を rate_limits 付きで呼ぶ・desktop の分岐が無い・
+  読み手がアカウントを区別しない・600 秒の判定・desktop の表示がファイルを読まない
