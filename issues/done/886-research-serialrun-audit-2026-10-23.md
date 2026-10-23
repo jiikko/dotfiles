@@ -7,14 +7,14 @@
 serialrun に audit skill の全 22 観点 (design / responsibility / duplication / polymorphism / leaky-abstraction / encapsulation / ui-components / ux /
 security / resource-leaks / broken-code / dead-code / error-handling / false-green / performance / concurrency / test-cleanup / test-helpers /
 dependency / ci / lint-from-done / general) を 1 体ずつ直列で回した (2026-10-22 22:3x〜2026-10-23 01:xx。5h 枠のリセット待ちで 9 観点目の後に 1 回止めた)。
-報告 22 本を 1 体で突き合わせ、直す項目を [878](done/878-bug-serialrun-exclusion-and-order.md)〜[885](done/885-chore-serialrun-ci-deps-perf.md) に分けた。ここには全数勘定と、
+報告 22 本を 1 体で突き合わせ、直す項目を [878](878-bug-serialrun-exclusion-and-order.md)〜[885](885-chore-serialrun-ci-deps-perf.md) に分けた。ここには全数勘定と、
 直さない候補 (I) とその理由を残す (却下の理由が消えると、次の監査が同じ指摘を出す)。
 
 ## 監査の途中で起きたこと
 
 - 監査のサブエージェントがテストを回すたびに、失敗・時間切れのテストが子の `serial-run` と `sh` を残した (PPID=1)。test-cleanup の監査が当てた機械的な変異
   (main.go / queue.go に 215 本) のうち、`stateBase` の `SERIAL_RUN_STATE_DIR` の判定を壊すものでは、テストの `serial-run` が**本物の待ち列** (`~/.local/state/serial-run`) に入り、
-  他の session (dotfiles-0e の mutate-verify) を 11 分止めた (推測。原因の変異は特定していない)。孤児 34 本と子・`sh` 129 本を pid 指定で止めた。直すのは [883](done/883-test-serialrun-test-gaps-and-isolation.md) の F (テストの子の HOME / XDG_STATE_HOME も一時 dir へ・テストが本物の置き場を使おうとしたら拒否する)
+  他の session (dotfiles-0e の mutate-verify) を 11 分止めた (推測。原因の変異は特定していない)。孤児 34 本と子・`sh` 129 本を pid 指定で止めた。直すのは [883](883-test-serialrun-test-gaps-and-isolation.md) の F (テストの子の HOME / XDG_STATE_HOME も一時 dir へ・テストが本物の置き場を使おうとしたら拒否する)
 - 一時 dir を `$TMPDIR` の直下に作ったサブエージェントは、後片付けを hook (`deny-tmp-area-rm`) に止められて残した (4 個。ユーザーに `/cleanup-tmp-dir` を頼んだ)。後半は `tmp/serialrun-20261022/` の下に作らせた
 
 ## 0. 全数勘定
