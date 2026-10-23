@@ -31,4 +31,12 @@ serialrun の監査で見つかった、グループ H の 2 項目。
 
 ## 進捗
 
-- [ ] 未着手 (項目ごとに、直した commit の subject・当てた変異・実測を書く)
+- 2026-10-23: 2 項目とも測って、コードは変えないと決めた
+  - [x] H1 **直さない**: 手元 (go1.26.0 darwin/arm64) で serialrun の `go test -race -count=1 ./...` を、空の GOCACHE で 37.6 秒、温まった後で 32.4 秒
+    (差 5.2 秒。所要の大半はテスト自体の約 32 秒。空の GOCACHE は 129 MB)。issue の案の「差が数秒なら何もしない」に当たる。
+    CI の runner での差は未実測 (監査の見積もりは約 12 秒)。**再評価の trigger**: CI の 1 job の所要の大半がビルドになったとき (go test のログの ok 行の秒と job の所要の差で見る)
+  - [x] H2 **直さない**: 手元の go が go.mod の要求 (1.25.0) より古い機械はいまのところ無い (この機械は go1.26.0)。直す案はどれも今の害より重い:
+    hook の入口で手元の go の版を見る判定は `go env` が 1 回 0.2 秒 (3 回測って 0.20〜0.21 秒。goenv の shim 越し) で、重いコマンドの hook のたびに足すことになる /
+    入口で `GOTOOLCHAIN=local` にすると、go_autobuild がビルドの失敗を記録して TTL の間は手で打つ `serial-run` まで止める (`bin/lib/go_autobuild.zsh` の注記) /
+    hook だけ `--async` にする案は、旧版の判定を返す危険が `bin/serial-run` の注記で名指しされている。
+    **再評価の trigger**: go が 1.25 より古い機械でこの dotfiles を使うとき (そのときは hook の初回が toolchain の取得で 20 秒の timeout に掛かりうる。掛かっても hook は fail-open で、包まずに走る)
