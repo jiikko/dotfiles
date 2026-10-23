@@ -1,1 +1,0 @@
-../887-bug-gocache-cgo-path-of-removed-worktree-breaks-glogx-lint.md
