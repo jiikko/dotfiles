@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # PreToolUse(Bash) フック: 重いコマンド (make test / go test / xcodebuild 等) の直前に `serial-run -- ` を差し込み、
-# マシン全体で順番待ちにする。判定と書き換えの正本は src/serialrun/hook.go (`serial-run hook`)。
+# 順番待ちにする (既定は同じ repo ごと。SERIAL_RUN_SCOPE=machine ならマシン全体)。判定と書き換えの正本は src/serialrun/hook.go (`serial-run hook`)。
 #
 # 🚨 fail-open: どこで失敗しても何も出さずに exit 0 (元のコマンドのまま走る)。直列化は便宜で、tool を止める理由にならない。
 #    PATH 上の serial-run がこの checkout のものでなければ差し込まない (差し込んだ後に「見つからない」で make test を落とさない)。

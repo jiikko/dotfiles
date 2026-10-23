@@ -1,7 +1,12 @@
 # serial-run を他のプロジェクトに組み込む
 
-`serial-run` は重いコマンドをマシン全体で 1 本ずつ流す待ち列 (本体と設計は [src/serialrun/README.md](../../src/serialrun/README.md))。
-待ち列はユーザーごとに 1 つ (`~/.local/state/serial-run/default/`) なので、repo や worktree が違っても同じ列に並ぶ。
+`serial-run` は重いコマンドを 1 本ずつ流す待ち列 (本体と設計は [src/serialrun/README.md](../../src/serialrun/README.md))。
+
+- **既定は git の repo ごとの列**。同じ repo のコマンドは worktree が違っても 1 本ずつ、別の repo とは同時に走る
+  (置き場は `~/.local/state/serial-run/repo-<dir 名>-<hash>/`)
+- **マシン全体で 1 本にしたいとき**は `SERIAL_RUN_SCOPE=machine` (置き場は `~/.local/state/serial-run/default/`)。
+  Claude Code の hook も含めて全部をそうするなら、Claude Code の設定の env とシェルの環境の両方に置く
+- 1 回だけ別の列にするなら `serial-run -l <名前> --`
 このページは、dotfiles 以外の repo で「どこまで自動で並ぶか」と「足りない経路をどう並べるか」を書く。
 
 ## 1. 何もしなくても並ぶもの (Claude Code の hook)
@@ -64,11 +69,11 @@ serial-run -- xcodebuild -scheme App test
 ## 4. 動作の確かめ方
 
 ```sh
-serial-run status                                   # 先頭・待ち・hook の最近の判断 (置き場を作らない)
-tail ~/.local/state/serial-run/default/history.log  # 1 本 1 行: 番号・時刻・待ち・所要・rc・cwd・コマンド・結末
+serial-run status                                   # cwd の列 (lock:)・先頭・待ち・hook の最近の判断 (置き場を作らない)
+tail ~/.local/state/serial-run/repo-*/history.log   # 1 本 1 行: 番号・時刻・待ち・所要・rc・cwd・コマンド・結末 (列ごと)
 ```
 
-- 組み込んだ入口を 2 つの端末 (か 2 つの session) で同時に打ち、2 本目に `serial-run: 待ち 1 番目` が出て、
+- 組み込んだ入口を同じ repo の 2 つの端末 (か 2 つの session・worktree) で同時に打ち、2 本目に `serial-run: 待ち 1 番目` が出て、
   history.log の 2 本目の `wait=` が 1 本目の所要と同じくらいになれば並んでいる
 - Makefile に入れたなら、`make -n test` が待たずに返ることも見る
 
@@ -80,9 +85,9 @@ tail ~/.local/state/serial-run/default/history.log  # 1 本 1 行: 番号・時�
 - **Claude Code の Bash の timeout** (foreground は最大 10 分) は待ちも数える。長い入口は run_in_background で起こす
 - **許可ルール**: Claude Code は hook が書き換えた後のコマンドで許可を判定する。`Bash(make test:*)` のような deny / ask を書いている repo は、
   `Bash(serial-run -- make test:*)` の形も並べて書く
-- **lock を分ける**: 既定は全部 1 本の列 (`default`)。互いに重ならない資源 (たとえば GPU だけを使うもの) を別に流したいときだけ `serial-run -l <名前> --` で別の列にする。
-  分けると、その 2 つは同時に走る
+- **列の範囲**: 既定は repo ごと (別の repo とは同時に走る)。マシンが重くなるのを repo をまたいで避けたいなら `SERIAL_RUN_SCOPE=machine`。
+  同じ repo の中で別に流したいもの (たとえば GPU だけを使うもの) は `serial-run -l <名前> --` で別の列にする
 - **止める**: その repo の Makefile の包みだけ外すなら `SERIAL_RUN_MAKE_DISABLE=1`、hook を止めるなら Claude Code の環境に `SERIAL_RUN_HOOK_DISABLE=1`。
   `~/dotfiles` の serial-run がビルドできない状態のとき、Makefile の入口はテストを走らせずに 125 で落ちる。その日は `SERIAL_RUN_MAKE_DISABLE=1` で回す
-- **置き場を差し替えた環境** (`HOME` / `XDG_STATE_HOME` / `SERIAL_RUN_STATE_DIR` を変えたテストなど) は別の列に並ぶ。マシン全体では 1 本にならない
+- **置き場を差し替えた環境** (`HOME` / `XDG_STATE_HOME` / `SERIAL_RUN_STATE_DIR` を変えたテストなど) は別の置き場の列に並ぶ
 - 子が残した背景の孫は止めない (lock の外で走り続ける)。テストの後に常駐プロセスを残す入口は、その入口の側で後始末する

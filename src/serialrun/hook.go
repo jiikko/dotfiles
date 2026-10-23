@@ -25,6 +25,7 @@ func runHook(stdin io.Reader, stdout io.Writer) int {
 	var in struct {
 		ToolName  string         `json:"tool_name"`
 		ToolInput map[string]any `json:"tool_input"`
+		Cwd       string         `json:"cwd"`
 	}
 	if err := json.NewDecoder(stdin).Decode(&in); err != nil || in.ToolName != "Bash" || in.ToolInput == nil {
 		return 0
@@ -50,7 +51,7 @@ func runHook(stdin io.Reader, stdout io.Writer) int {
 	}
 	// 前に誰かいるときだけ、待つことを LLM に先に知らせる (待っている間は Bash の出力が返らないので、固まったと読ませない)。
 	// additionalContext は updatedInput と一緒に LLM へ届く (Claude Code 2.1.308 で実測)
-	if note := queueNote(); note != "" {
+	if note := queueNote(in.Cwd); note != "" {
 		hso["additionalContext"] = note
 	}
 	_ = json.NewEncoder(stdout).Encode(map[string]any{"hookSpecificOutput": hso})
@@ -75,11 +76,10 @@ func logHookDecision(cmd string, changed bool, skip string) {
 	if err != nil {
 		return
 	}
-	q, err := openExistingQueue(filepath.Join(base, defaultLock))
-	if err != nil {
+	if _, err := os.Stat(base); err != nil {
 		return
 	}
-	p := q.hookLogPath()
+	p := hookLogPath(base)
 	if fi, err := os.Stat(p); err == nil && fi.Size() > hookLogMax {
 		_ = os.Rename(p, p+".1")
 	}
@@ -103,12 +103,17 @@ func mentionsHeavy(cmd string) bool {
 
 // queueNote は既定の lock の待ち行列に誰かいれば、LLM 向けの 1 段落を返す。いなければ空 (普段は何も足さない)。
 // 置き場が無ければ作らずに空を返す (hook は待ち行列を書き換えず、死んだ札の回収もしない)
-func queueNote() string {
+// 見る列は hook の入力の cwd の列 (コマンドが先頭で cd する形では、実際に並ぶ列と違うことがある)
+func queueNote(cwd string) string {
 	base, err := stateBase()
 	if err != nil {
 		return ""
 	}
-	q, err := openExistingQueue(filepath.Join(base, defaultLock))
+	if cwd == "" {
+		cwd, _ = os.Getwd()
+	}
+	lock, _ := lockFor(cwd) // 範囲の値の誤りは本体が警告してマシン全体の列に並ぶので、同じ列を見る
+	q, err := openExistingQueue(filepath.Join(base, lock))
 	if err != nil {
 		return ""
 	}
@@ -123,7 +128,7 @@ func queueNote() string {
 			head += n + "。"
 		}
 	}
-	return fmt.Sprintf("serial-run: このコマンドの重い部分は serial-run の順番待ちに入る (マシン全体で 1 本ずつ流す仕組み)。"+
+	return fmt.Sprintf("serial-run: このコマンドの重い部分は serial-run の順番待ちに入る (同じ repo の重いコマンドを 1 本ずつ流す仕組み。SERIAL_RUN_SCOPE=machine ならマシン全体で 1 本)。"+
 		"前に %d 本ある。%s待っている間は Bash の出力が返らない (固まったのではない)。"+
 		"foreground の Bash の timeout は最大 10 分なので、前が長いなら run_in_background で起こす。同じコマンドを打ち直すと列の最後尾に並び直す。"+
 		"状況は別の呼び出しで `serial-run status` を打って見る。"+

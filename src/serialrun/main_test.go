@@ -29,6 +29,10 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("SERIAL_RUN_STATE_DIR", filepath.Join(dir, "state")); err != nil {
 		panic(err)
 	}
+	// 既存のテストはマシン全体の列 (default) で見る。repo ごとの列は TestRepoScope* が git の repo を作って見る
+	if err := os.Setenv(scopeEnv, "machine"); err != nil {
+		panic(err)
+	}
 	if out, err := exec.Command("go", "build", "-tags", "serialrun_testseam", "-o", bin, ".").CombinedOutput(); err != nil {
 		panic(string(out))
 	}
@@ -62,7 +66,7 @@ func (f *fixture) env(extra ...string) []string {
 		}
 		env = append(env, kv)
 	}
-	env = append(env, "SERIAL_RUN_STATE_DIR="+f.state, "HOME="+f.dir, "XDG_STATE_HOME="+filepath.Join(f.dir, "xdg"))
+	env = append(env, "SERIAL_RUN_STATE_DIR="+f.state, "HOME="+f.dir, "XDG_STATE_HOME="+filepath.Join(f.dir, "xdg"), scopeEnv+"=machine")
 	return append(env, extra...)
 }
 
@@ -1562,7 +1566,7 @@ func TestHelpPrintsUsage(t *testing.T) {
 
 // usage の既定値は定数と一致する (文面への複写が定数とずれない)
 func TestUsageMatchesConstants(t *testing.T) {
-	for _, want := range []string{"既定 " + defaultLock + ")", "既定 " + strconv.Itoa(int(defaultMaxWait.Seconds())) + "。", "rc=" + strconv.Itoa(rcTool)} {
+	for _, want := range []string{"マシン全体の " + defaultLock + ")", "既定 " + strconv.Itoa(int(defaultMaxWait.Seconds())) + "。", "rc=" + strconv.Itoa(rcTool)} {
 		if !strings.Contains(usage, want) {
 			t.Fatalf("usage に %q が無い:\n%s", want, usage)
 		}
@@ -1750,8 +1754,7 @@ func TestStatusHookLogKeepsTabs(t *testing.T) {
 	if err := c.Run(); err != nil {
 		t.Fatal(err)
 	}
-	q := queue{dir: filepath.Join(f.state, defaultLock)}
-	if err := os.WriteFile(q.hookLogPath(), []byte("2026-10-23T10:00:00+09:00\twrapped\tmake\x1btest\n"), 0o600); err != nil {
+	if err := os.WriteFile(hookLogPath(f.state), []byte("2026-10-23T10:00:00+09:00\twrapped\tmake\x1btest\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, out, _ := f.status()
@@ -1930,4 +1933,241 @@ func TestTermWhileWaitingForRunLock(t *testing.T) {
 	if rc := exitCode(t, b); rc != 128+int(syscall.SIGTERM) || f.hasLog("B") {
 		t.Fatalf("run.lock の待ちで TERM を受けた B: rc=%d", rc)
 	}
+}
+
+// gitRepo は t の一時 dir に git の repo を作り、そのパスを返す (repo ごとの列のテスト用)
+func gitRepo(t *testing.T, name string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), name)
+	for _, args := range [][]string{{"init", "-q", dir}, {"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Env = gitTestEnv()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	return dir
+}
+
+// gitTestEnv は継承した git の repo の場所 (GIT_DIR など) を外した環境 (テストの git が外側の repo を触らない)
+func gitTestEnv() []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			env = append(env, kv)
+		}
+	}
+	return env
+}
+
+// startIn は dir を cwd にして、既定の範囲 (repo ごと) の serial-run を起こす
+func (f *fixture) startIn(dir string, extraEnv []string, args ...string) *exec.Cmd {
+	f.t.Helper()
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = dir
+	// 元の環境の範囲の指定 (テストの既定の machine) と git の repo の場所だけを外し、渡された extraEnv はそのまま足す
+	var env []string
+	for _, kv := range f.env() {
+		if !strings.HasPrefix(kv, scopeEnv+"=") && !strings.HasPrefix(kv, "GIT_") {
+			env = append(env, kv)
+		}
+	}
+	cmd.Env = append(env, extraEnv...)
+	f.track(cmd)
+	if err := cmd.Start(); err != nil {
+		f.t.Fatal(err)
+	}
+	return cmd
+}
+
+// 既定では repo ごとの列: 別の repo のコマンドは同時に走り、同じ repo (別の worktree を含む) のコマンドは 1 本ずつ
+func TestRepoScopeSerializesPerRepo(t *testing.T) {
+	f := newFixture(t)
+	r1, r2 := gitRepo(t, "one"), gitRepo(t, "two")
+	wt := filepath.Join(t.TempDir(), "one-wt")
+	cmd := exec.Command("git", "-C", r1, "worktree", "add", "-q", "--detach", wt)
+	cmd.Env = gitTestEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("worktree: %v\n%s", err, out)
+	}
+	ga := f.gate("a")
+	a := f.startIn(r1, nil, "--", "/bin/sh", "-c", "echo start A >> "+f.log+"; read _ < "+ga)
+	f.waitStarted("A")
+	// 別の repo は待たずに走る
+	if rc := exitCode(t, f.startIn(r2, nil, "--max-wait", "5", "--", "/bin/sh", "-c", "echo B >> "+f.log)); rc != 0 || !f.hasLog("B") {
+		t.Fatalf("別の repo のコマンドが待たされた: rc=%d", rc)
+	}
+	// 同じ repo の別の worktree は待つ (上限で抜けて走らない)
+	if rc := exitCode(t, f.startIn(wt, nil, "--max-wait", "1", "--", "/bin/sh", "-c", "echo C >> "+f.log)); rc != rcTool || f.hasLog("C") {
+		t.Fatalf("同じ repo の worktree のコマンドが待たずに走った: rc=%d", rc)
+	}
+	f.release(ga)
+	_ = exitCode(t, a)
+	if _, err := os.Stat(filepath.Join(f.state, defaultLock)); !os.IsNotExist(err) {
+		t.Fatalf("repo ごとの範囲なのにマシン全体の列を使った: %v", err)
+	}
+}
+
+// SERIAL_RUN_SCOPE=machine なら別の repo でも 1 本ずつ (マシン全体の列)
+func TestMachineScopeSerializesAcrossRepos(t *testing.T) {
+	f := newFixture(t)
+	r1, r2 := gitRepo(t, "one"), gitRepo(t, "two")
+	ga := f.gate("a")
+	a := f.startIn(r1, []string{scopeEnv + "=machine"}, "--", "/bin/sh", "-c", "echo start A >> "+f.log+"; read _ < "+ga)
+	f.waitStarted("A")
+	if rc := exitCode(t, f.startIn(r2, []string{scopeEnv + "=machine"}, "--max-wait", "1", "--", "/bin/sh", "-c", "echo B >> "+f.log)); rc != rcTool || f.hasLog("B") {
+		t.Fatalf("マシン全体の範囲で別の repo のコマンドが待たずに走った: rc=%d", rc)
+	}
+	f.release(ga)
+	_ = exitCode(t, a)
+}
+
+// 範囲の値を間違えても、包んだコマンドは走らせる (警告してマシン全体の列に並ぶ。125 で落とすと包んだテストが落ちたと見える)
+func TestScopeUnknownValueWarnsAndUsesMachine(t *testing.T) {
+	f := newFixture(t)
+	errPath := filepath.Join(f.dir, "x.err")
+	ef, err := os.Create(errPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ef.Close()
+	x := exec.Command(bin, "--", "/bin/sh", "-c", "echo X >> "+f.log)
+	x.Dir = gitRepo(t, "one")
+	x.Env = append(f.env(), scopeEnv+"=Machine")
+	x.Stderr = ef
+	f.track(x)
+	if err := x.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if rc := exitCode(t, x); rc != 0 || !f.hasLog("X") || !strings.Contains(readFile(errPath), "マシン全体の列に並ぶ") {
+		t.Fatalf("範囲の誤りで走らなかった / 警告が無い: rc=%d err=%q", rc, readFile(errPath))
+	}
+	if _, err := os.Stat(filepath.Join(f.state, defaultLock)); err != nil {
+		t.Fatalf("マシン全体の列に並んでいない: %v", err)
+	}
+}
+
+// 別の repo へ cd して打った serial-run は、外側の列を持ったまま別の列を待たずに素通しにする
+// (待つと、逆向きの入れ子と組んで互いに待ち合い、両方が待ちの上限まで止まる)
+func TestNestedInOtherRepoPassesThrough(t *testing.T) {
+	f := newFixture(t)
+	r1, r2 := gitRepo(t, "one"), gitRepo(t, "two")
+	// r2 の列を誰かが持っている
+	gb := f.gate("b")
+	b := f.startIn(r2, nil, "--", "/bin/sh", "-c", "echo start B >> "+f.log+"; read _ < "+gb)
+	f.waitStarted("B")
+	// r1 の列を取った中から r2 へ cd して serial-run を打つ: 中は素通しで、r2 の持ち主を待たない
+	inner := bin + " --max-wait 1 -- /bin/sh -c 'echo inner >> " + f.log + "'"
+	if rc := exitCode(t, f.startIn(r1, nil, "--", "/bin/sh", "-c", "cd "+r2+" && "+inner)); rc != 0 || !f.hasLog("inner") {
+		t.Fatalf("別の repo への入れ子が素通しにならなかった: rc=%d", rc)
+	}
+	// 環境変数を落とした入れ子 (祖先のプロセスで見る) も同じ
+	inner2 := "env -u " + heldEnv + " " + bin + " --max-wait 1 -- /bin/sh -c 'echo inner2 >> " + f.log + "'"
+	if rc := exitCode(t, f.startIn(r1, nil, "--", "/bin/sh", "-c", "cd "+r2+" && "+inner2)); rc != 0 || !f.hasLog("inner2") {
+		t.Fatalf("環境変数を落とした別の repo への入れ子が素通しにならなかった: rc=%d", rc)
+	}
+	f.release(gb)
+	_ = exitCode(t, b)
+}
+
+// 継承した GIT_DIR (相対・別の綴り) で、同じ repo が別の列にならない (repo は cwd だけで決める)
+func TestRepoLockIgnoresInheritedGitDir(t *testing.T) {
+	r := gitRepo(t, "one")
+	sub := filepath.Join(r, "sub")
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(scopeEnv, "repo")
+	want, err := lockFor(r)
+	if err != nil || want == defaultLock {
+		t.Fatalf("repo の列にならない: %q %v", want, err)
+	}
+	t.Setenv("GIT_DIR", ".git")
+	if got, _ := lockFor(sub); got != want {
+		t.Fatalf("相対の GIT_DIR を継承したサブディレクトリで列が変わった: %q want %q", got, want)
+	}
+}
+
+// repo ごとの列の名前は dir 名を読める形にし、同じ dir 名の別の repo を hash で分ける
+func TestRepoLockName(t *testing.T) {
+	a, b := repoLockName("/x/My Repo/.git"), repoLockName("/y/My Repo/.git")
+	if !strings.HasPrefix(a, "repo-my-repo-") || a == b || !lockNameRe.MatchString(a) {
+		t.Fatalf("lock 名: %q %q", a, b)
+	}
+}
+
+// 列を持ったまま別の列を待たない: 名指しの列 (-l) と範囲の列 (repo ごと) を逆の順で入れ子にした 2 本が、互いに待ち合わずに両方走る
+func TestNestedNamedAndScopeLocksDoNotDeadlock(t *testing.T) {
+	f := newFixture(t)
+	r := gitRepo(t, "one")
+	gx, gy := f.gate("x"), f.gate("y")
+	// X: sim の列を持ち、gate の後で repo の列のコマンドを打つ / Y: repo の列を持ち、gate の後で sim の列のコマンドを打つ
+	x := f.startIn(r, nil, "-l", "sim", "--", "/bin/sh", "-c", "echo start X >> "+f.log+"; read _ < "+gx+"; "+bin+" --max-wait 3 -- /bin/sh -c 'echo inner-x >> "+f.log+"'")
+	f.waitStarted("X")
+	y := f.startIn(r, nil, "--", "/bin/sh", "-c", "echo start Y >> "+f.log+"; read _ < "+gy+"; "+bin+" -l sim --max-wait 3 -- /bin/sh -c 'echo inner-y >> "+f.log+"'")
+	f.waitStarted("Y")
+	f.release(gx)
+	f.release(gy)
+	if rx, ry := exitCode(t, x), exitCode(t, y); rx != 0 || ry != 0 || !f.hasLog("inner-x") || !f.hasLog("inner-y") {
+		t.Fatalf("名指しの列と範囲の列の入れ子が互いに待ち合った: X rc=%d Y rc=%d\n%s", rx, ry, f.logText())
+	}
+}
+
+// 列をまたぐ素通しは、持ち主が生きている先頭だけで見る。確かめられない孤児の札 (子の pid が自分の祖先と一致しうる) では素通しにしない
+func TestUnverifiedOrphanInOtherLockDoesNotBypass(t *testing.T) {
+	f := newFixture(t)
+	r := gitRepo(t, "one")
+	// 別の範囲の列に、子の pid がこの test のプロセス (serial-run の祖先) を指す、開始時刻の無い孤児の札を置く
+	other := queue{dir: filepath.Join(f.state, "repo-zzz-00000000")}
+	if err := os.MkdirAll(other.qdir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(ticketInfo{Pid: 999999, Start: time.Now().Add(-time.Hour), ChildPid: os.Getpid()})
+	if err := os.WriteFile(other.ticketPath(1), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ga := f.gate("a")
+	a := f.startIn(r, nil, "--", "/bin/sh", "-c", "echo start A >> "+f.log+"; read _ < "+ga)
+	f.waitStarted("A")
+	if rc := exitCode(t, f.startIn(r, nil, "--max-wait", "1", "--", "/bin/sh", "-c", "echo B >> "+f.log)); rc != rcTool || f.hasLog("B") {
+		t.Fatalf("別の列の確かめられない孤児の札で素通しになった: rc=%d", rc)
+	}
+	f.release(ga)
+	_ = exitCode(t, a)
+}
+
+// repo を調べる git から外す場所の変数は、git 自身の一覧 (--local-env-vars) から設定の 3 つを除いたもの全部を含む (git の版上げで増えた変数を落とす)
+func TestGitLocationEnvCoversLocalEnvVars(t *testing.T) {
+	out, err := exec.Command("git", "rev-parse", "--local-env-vars").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, v := range strings.Fields(string(out)) {
+		if strings.HasPrefix(v, "GIT_CONFIG") {
+			continue
+		}
+		n++
+		if !gitLocationEnv[v] {
+			t.Errorf("git の場所の変数 %s を外していない", v)
+		}
+	}
+	if n < 8 {
+		t.Fatalf("git が挙げた場所の変数が %d 個しかない (取り出しが壊れている)", n)
+	}
+}
+
+// 名指しの列 (-l) の中から範囲の列のコマンドを打つと、その範囲の列を他の人が持っていても待たずに素通しになる (列を持ったまま待たない)
+func TestNestedFromNamedLockPassesThrough(t *testing.T) {
+	f := newFixture(t)
+	r := gitRepo(t, "one")
+	gz := f.gate("z")
+	z := f.startIn(r, nil, "--", "/bin/sh", "-c", "echo start Z >> "+f.log+"; read _ < "+gz)
+	f.waitStarted("Z")
+	inner := bin + " --max-wait 1 -- /bin/sh -c 'echo inner >> " + f.log + "'"
+	if rc := exitCode(t, f.startIn(r, nil, "-l", "sim", "--", "/bin/sh", "-c", inner)); rc != 0 || !f.hasLog("inner") {
+		t.Fatalf("名指しの列の中からの範囲の列のコマンドが、列を持ったまま待った: rc=%d", rc)
+	}
+	f.release(gz)
+	_ = exitCode(t, z)
 }

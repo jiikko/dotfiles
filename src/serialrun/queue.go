@@ -79,7 +79,9 @@ func (q queue) qdir() string        { return filepath.Join(q.dir, "queue") }
 func (q queue) seqPath() string     { return filepath.Join(q.dir, "seq") }
 func (q queue) runPath() string     { return filepath.Join(q.dir, "run.lock") }
 func (q queue) historyPath() string { return filepath.Join(q.dir, "history.log") }
-func (q queue) hookLogPath() string { return filepath.Join(q.dir, "hook.log") }
+
+// hookLogPath は hook の判断の記録 (lock ごとではなく状態の置き場に 1 つ。hook はどの列に並ぶかを決めずに書く)
+func hookLogPath(base string) string { return filepath.Join(base, "hook.log") }
 func (q queue) ticketPath(seq int64) string {
 	return filepath.Join(q.qdir(), fmt.Sprintf("%0*d%s", seqWidth, seq, ticketSuffix))
 }

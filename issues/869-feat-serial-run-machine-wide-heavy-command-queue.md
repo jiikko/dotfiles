@@ -345,3 +345,13 @@ hook は Claude Code の Bash ツールが打ったコマンドにしか効か�
     自分の札を待って止まる形 (`env -u SERIAL_RUN_HELD` の入れ子) は祖先の照合で素通しになり、壊せなかった
   - 入れなかった: hook が「Makefile が包む入口」を見つけたら差し込まない、は入れていない。hook が包んだ `make test` の中は入れ子の素通しになり二重には並ばない (害は無い)
 - [ ] 新しい session で hook が効くことの観測 (headless の session で `make -n test` 相当を打たせ、書き換えを見る)
+- 2026-10-23: **列の既定を repo ごとにした** (ユーザー指示 2026-10-23「repo ごとに直列して。もしくはマシン全体で直列する選択肢も取れるようにして」。
+  commit「feat(serialrun): 待ち列の既定を git の repo ごとにし、SERIAL_RUN_SCOPE=machine でマシン全体に (issue 869)」)
+  - -l を省いたときの列は cwd の git の common dir から決める (`repo-<dir 名>-<hash 8 桁>`。同じ repo の worktree は同じ列)。`SERIAL_RUN_SCOPE=machine` と
+    git の repo の外はマシン全体の `default`。値の誤りは警告して machine。repo は cwd だけで決める (継承した GIT_DIR などの場所の変数は外す)
+  - 🚨 どれかの列の serial-run の中からは 2 本目の列を取らずに素通し (1 つのプロセスの木が持つ列は高々 1 本)。別の repo への入れ子・名指しの列 (-l) と範囲の列の
+    逆順の入れ子が、列を持ったまま別の列を待って互いに待ち合う形を、敵対的レビュー 3 周で順に再現した。名指しの列の直列は入れ子の外から打った分にだけ効く (受け入れ)。
+    列をまたぐ祖先の照合は持ち主が生きている先頭だけ (確かめられない孤児の札の子の pid が祖先と一致して全部の列を素通しにする形を再現・直した)
+  - hook の案内は hook の入力の cwd の列を見る。hook.log は置き場の直下に 1 つ。status は cwd の列を出す (先頭に `lock:`)
+  - 変異 (全部 red) 13 本。**記録**: 環境変数を落とし外側が SIGKILL された孤児の下の入れ子は、別の列で待ちうる (条件が狭い・未再現)。
+    status は他の列を出さない。hook は Claude Code の環境の SERIAL_RUN_SCOPE を読み、Bash のシェルの値とずれうる (両方に置く)

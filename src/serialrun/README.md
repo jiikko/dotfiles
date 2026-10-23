@@ -1,6 +1,7 @@
 # serialrun
 
-重いコマンド (`make test` / `go test` / `xcodebuild` / `mutate-verify` 等) を**マシン全体で順番待ち (FIFO)** にし、同時には 1 本だけ走らせる CLI。
+重いコマンド (`make test` / `go test` / `xcodebuild` / `mutate-verify` 等) を**順番待ち (FIFO)** にし、同時には 1 本だけ走らせる CLI。
+列の範囲は既定で **git の repo ごと** (同じ repo の worktree どうしは同じ列。別の repo とは同時に走る)。`SERIAL_RUN_SCOPE=machine` でマシン全体の 1 本の列にできる。
 並行して動く Claude Code の session がそれぞれの worktree で重いコマンドを打っても、マシンが重くならないようにする。入口は `bin/serial-run`。
 設計の正本は issue 869。
 
@@ -19,7 +20,14 @@ serial-run -h                                                       # usage (rc=
 - `serial-run status` は置き場を作らない (使われていない lock 名なら「一度も使われていない」)。走っている札・孤児の子 (持ち主の serial-run だけが死んだ)・開けない札も 1 本に数える。
   見るだけで、死んだ札を消さず孤児の子も止めない (回収は待ち手)。札の一覧を読めなければ rc=125。
   🚨「長く持っている」は走り出してから 30 分で付ける (待っていた時間は数えない)。走らないまま札を出してから 30 分の先頭 (持ち主が止まった) にも付ける
-  - 🚨 「マシン全体」で 1 本になるのは、置き場の解決に使う環境 (`SERIAL_RUN_STATE_DIR` / 絶対パスの `XDG_STATE_HOME` / `HOME`) が同じ session どうしだけ。
+- 列の決め方: `-l <lock名>` があればそれ。無ければ `SERIAL_RUN_SCOPE` (`repo` 既定 / `machine`) で決める。`repo` は cwd の git の common dir から
+  `repo-<dir 名>-<hash 8 桁>` の lock 名を作る (`scope.go`)。git の repo の外と `machine` はマシン全体の `default`。それ以外の値は警告してマシン全体に並ぶ (包んだコマンドは走らせる)。
+  repo は cwd だけで決める (継承した `GIT_DIR` などは使わない)。
+  🚨 どれかの列の serial-run の中から打った serial-run は、列が違っても (別の repo へ cd した make test・`-l` で名指しした列) 2 本目の列を取らずに
+  素通しになる (1 つのプロセスの木が持つ列は高々 1 本)。列を持ったまま別の列を待つと、逆向きの入れ子と組んで互いに待ち合うため。
+  中の処理は外側の列の 1 本として走る。そのため `-l` で名指しした列の直列は、入れ子の外から打った分にだけ効く
+  `serial-run status` は cwd で決まる列を出す (先頭の `lock:` の行)。hook の判断の記録 (`hook.log`) は置き場の直下に 1 つ
+  - 🚨 同じ列で 1 本になるのは、置き場の解決に使う環境 (`SERIAL_RUN_STATE_DIR` / 絶対パスの `XDG_STATE_HOME` / `HOME`) が同じ session どうしだけ。
     HOME を差し替えたテスト環境などから呼ばれたものは別の待ち列に並ぶ。相対の `XDG_STATE_HOME` は使わない (cwd ごとに別の待ち列になる)
 - lock 名 (`-l`) は小文字・数字・`.` `_` `-` だけで、先頭の `.` は通さない (APFS は大小文字を区別しないので、`Default` と `default` が同じ置き場を別名で指す)
 

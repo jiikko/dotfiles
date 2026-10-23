@@ -284,12 +284,47 @@ func TestHookLogsDecisions(t *testing.T) {
 		var out strings.Builder
 		_ = runHook(strings.NewReader(string(b)), &out)
 	}
-	log, err := os.ReadFile(filepath.Join(state, "default", "hook.log"))
+	log, err := os.ReadFile(hookLogPath(state))
 	if err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(log)), "\n")
 	if len(lines) != 2 || !strings.Contains(lines[0], "\twrapped\tmake test") || !strings.Contains(lines[1], "\tskipped:heredoc\t") {
 		t.Fatalf("hook.log:\n%s", log)
+	}
+}
+
+// repo ごとの範囲では、hook の案内は入力の cwd の repo の列を見る (別の repo の列に誰かいても知らせない)
+func TestHookQueueNoteFollowsCwdRepo(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("SERIAL_RUN_STATE_DIR", state)
+	t.Setenv(scopeEnv, "repo")
+	mine, other := gitRepo(t, "mine"), gitRepo(t, "other")
+	lock, err := lockFor(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := openQueue(filepath.Join(state, lock))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk, err := q.enqueue(ticketInfo{Pid: os.Getpid(), Start: time.Now(), Cwd: other, Cmd: "make test"}, func() error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tk.release(nil)
+	note := func(cwd string) string {
+		b, _ := json.Marshal(map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "make test"}, "cwd": cwd})
+		got, _ := runHookJSON(t, string(b))
+		if got.AdditionalContext == nil {
+			return ""
+		}
+		return *got.AdditionalContext
+	}
+	if c := note(mine); c != "" {
+		t.Fatalf("別の repo の列に誰かいるだけで知らせた: %q", c)
+	}
+	if c := note(other); !strings.Contains(c, "前に 1 本") {
+		t.Fatalf("同じ repo の列に誰かいるのに知らせない: %q", c)
 	}
 }

@@ -6,7 +6,7 @@
 #   test:
 #   	@+$(serial_run) $(MAKE) --no-print-directory test-all
 #
-# 包むと、人の端末・スクリプト・サブエージェント・codex のどこから呼ばれても、マシン全体で 1 本ずつ流れる
+# 包むと、人の端末・スクリプト・サブエージェント・codex のどこから呼ばれても、同じ repo のものは 1 本ずつ流れる (SERIAL_RUN_SCOPE=machine ならマシン全体で 1 本ずつ)
 # (Claude Code の hook は Bash ツールが打った字面しか包めない)。
 #
 # 包まない (空になる) とき:

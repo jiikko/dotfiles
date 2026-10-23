@@ -48,14 +48,14 @@ const (
 	heldEnv = "SERIAL_RUN_HELD"
 )
 
-// defaultLock は -l を省いたときの lock 名 (hook の案内と hook.log もこの置き場を見る)
+// defaultLock はマシン全体の列の lock 名 (SERIAL_RUN_SCOPE=machine・git の repo の外)。-l を省いたときの既定は repo ごとの列 (scope.go)
 const defaultLock = "default"
 
 // usage の既定値は定数から作る (文面に複写すると定数を変えたときに食い違う)
 var usage = fmt.Sprintf(`usage: serial-run [-l <lock名>] [--max-wait <秒>] -- <コマンド> [引数…]
        serial-run status [-l <lock名>]
        serial-run hook   (Claude Code の PreToolUse(Bash) hook。重いコマンドの前に serial-run -- を差し込む)
-  -l          lock の名前 (既定 %s)
+  -l          lock の名前 (既定は cwd の git の repo ごとの列。SERIAL_RUN_SCOPE=machine か repo の外ならマシン全体の %s)
   --max-wait  待ちの上限 (秒。既定 %d。0 は上限なし)。超えたら実行せずに rc=%d
 rc: 子の rc / %d 道具の失敗 / %d 起動できない / %d 見つからない
 hook を止める: Claude Code の環境に SERIAL_RUN_HOOK_DISABLE=1
@@ -115,6 +115,15 @@ func run(args []string, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "serial-run: %v\n%s", err, usage)
 		return rcTool
 	}
+	if opt.lock == "" {
+		cwd, _ := os.Getwd()
+		lock, lerr := lockFor(cwd)
+		if lerr != nil {
+			// 範囲の値の誤りで包んだコマンドを走らせないのは害が大きい (runUnqueued と同じ考え方)。マシン全体の列に並ぶ
+			fmt.Fprintf(stderr, "serial-run: 🚨 %v。マシン全体の列に並ぶ\n", lerr)
+		}
+		opt.lock = lock
+	}
 	base, err := stateBase()
 	if opt.status {
 		return runStatus(base, err, opt.lock, os.Stdout, stderr)
@@ -143,6 +152,7 @@ func runStatus(base string, baseErr error, lock string, out, stderr io.Writer) i
 		fmt.Fprintf(stderr, "serial-run: 状態の置き場を使えない: %v\n", err)
 		return rcTool
 	}
+	fmt.Fprintf(out, "lock: %s\n", lock)
 	return printStatus(q, out, stderr)
 }
 
@@ -155,10 +165,56 @@ func runUnqueued(argv []string, why error, stderr io.Writer) int {
 }
 
 func runWithQueue(q queue, opt options, stderr io.Writer) int {
-	if q.heldByAncestor(os.Getenv(heldEnv)) || q.heldByAncestorProcess() {
+	if q.heldByAncestor(os.Getenv(heldEnv)) || q.heldByAncestorProcess() || heldInOtherLock(filepath.Dir(q.dir)) {
 		return execDirect(opt.argv, stderr)
 	}
 	return runQueued(q, opt, loadTunables(), stderr)
+}
+
+// heldInOtherLock は、別の列 (別の repo の列・default・-l で名指しした列) の serial-run の中で走っているか。中なら 2 本目の列は取らずに素通しにする。
+// 🚨 列を持ったまま別の列を待たない (1 つのプロセスの木が持つ列は高々 1 本)。別の repo へ cd して打った make test が A の列を持ったまま
+// B の列を待つと、逆向き (B の中から A) と組んで互いに待ち合い、両方が待ちの上限まで止まる。中の処理は外側の列の 1 本として走る。
+// -l で名指しした列も同じ扱い: 名指しの列と範囲の列を逆の順で入れ子にした 2 本も互いに待ち合うので、入れ子の中では名指しの列にも並ばない
+// (その資源の直列は、入れ子の外から打った分にだけ効く)。
+// 祖先で見る枝は、持ち主が生きている (flock を持つ) 先頭だけを数える。開始時刻で確かめられない孤児の札は、子の pid の使い回しで
+// 関係の無い祖先 (シェル・Claude Code) と一致しうるので、全部の列の素通しの根拠にしない
+func heldInOtherLock(base string) bool {
+	if v := os.Getenv(heldEnv); v != "" {
+		if dir, _, _, ok := parseHeld(v); ok {
+			if q, err := openExistingQueue(dir); err == nil && q.heldByAncestor(v) {
+				return true
+			}
+		}
+	}
+	ents, err := os.ReadDir(base)
+	if err != nil {
+		return false
+	}
+	var anc map[int]bool // 祖先の一覧は ps を段の数だけ呼ぶので、要るときに 1 回だけ取る
+	for _, e := range ents {
+		if !e.IsDir() {
+			continue
+		}
+		q, err := openExistingQueue(filepath.Join(base, e.Name()))
+		if err != nil {
+			continue
+		}
+		preds, err := q.lineup()
+		if err != nil || len(preds) == 0 || preds[0].state != stateAlive {
+			continue
+		}
+		info, ok := q.readInfo(preds[0].seq)
+		if !ok || info.Pid <= 1 {
+			continue
+		}
+		if anc == nil {
+			anc = ancestors()
+		}
+		if anc[info.Pid] {
+			return true
+		}
+	}
+	return false
 }
 
 // stateBase は状態の置き場の親を返す。どの枝も絶対パスにする (相対だと cwd ごとに別の待ち行列ができる)。
@@ -651,7 +707,7 @@ func printStatus(q queue, out, stderr io.Writer) int {
 		fmt.Fprintln(out, "走っているものも待っているものも無い")
 	}
 	// hook の最近の判断 (差し込んだ / 読み切れず見送った)。効いているかを後から確かめる口
-	if b, err := os.ReadFile(q.hookLogPath()); err == nil {
+	if b, err := os.ReadFile(hookLogPath(filepath.Dir(q.dir))); err == nil {
 		lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 		if len(lines) > 5 {
 			lines = lines[len(lines)-5:]
@@ -670,7 +726,7 @@ func printStatus(q queue, out, stderr io.Writer) int {
 }
 
 func parseArgs(args []string) (options, error) {
-	opt := options{lock: defaultLock, maxWait: defaultMaxWait}
+	opt := options{maxWait: defaultMaxWait}
 	if len(args) > 0 && args[0] == "status" {
 		opt.status = true
 		args = args[1:]

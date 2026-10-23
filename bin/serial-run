@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
-# serial-run — 重いコマンド (make test / xcodebuild 等) をマシン全体で順番待ちにし、同時には 1 本だけ走らせる。
+# serial-run — 重いコマンド (make test / xcodebuild 等) を順番待ちにし、同時には 1 本だけ走らせる (既定は repo ごと。SERIAL_RUN_SCOPE=machine でマシン全体)。
 # Go implementation at:
 #   ~/dotfiles/src/serialrun/
 #     serial-run [-l <lock名>] [--max-wait <秒>] -- <コマンド> [引数…]
