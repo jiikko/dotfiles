@@ -78,4 +78,8 @@ CI では落ちていない (2026-10-23 の 1310cbad の Lint・Tests の run �
   - 空文字で set された CGO_CPPFLAGS が go env -w の値を捨てる (go は空文字を未設定として扱う) → `${CGO_CPPFLAGS:-…}` に直し、テストを 2 ケース足した。`-` に戻す変異で red。
     1 行の修正なので、この差分にはレビューの 2 周目を回していない
   - checkout を symlink 越しに呼ぶと、実パスで呼んだときと別の鍵になる (キャッシュが重複するだけで失敗はしない) → 直さない
-- [ ] 手元の共有 GOCACHE に残った `wt-874` のエントリの扱い (修正後は CGO_CPPFLAGS が違う鍵になるので、古いエントリは使われない。消さずに自動削除に任せる)
+- [x] 手元の共有 GOCACHE に残った `wt-874` のエントリ — 消さない。修正後は CGO_CPPFLAGS が違う鍵になるので使われず、go の自動削除 (5 日使われないもの) に任せる
+- [x] push と反映 (2026-10-23) — `fix(go): lint の cgo の生成物を checkout ごとの鍵にして…` を push し、`pull_main_checkout.sh` で ~/dotfiles へ取り込んだ。
+  修正前に rc=2 だった ~/dotfiles の `make -C src/glogx lint` が、共有の GOCACHE のまま rc=0 (`0 issues.`)。
+  push 前の `make test` は test-lint の shellcheck 1 件 (テストの `CGO_CPPFLAGS=` の書き方) だけが赤で、直した後の `make test-lint` は rc=0。
+  glogx の lint を含む test-src はその run で通った
