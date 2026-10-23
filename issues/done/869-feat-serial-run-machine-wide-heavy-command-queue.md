@@ -1,7 +1,5 @@
 # 869 (feat): serial-run — 重いコマンドをマシン全体で 1 本ずつ流す
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-22〜）
-
 起票日: 2026-10-22
 
 ## 概要
@@ -12,7 +10,7 @@ Claude Code の session が打つ重いコマンドを自動でそれに包む h
 
 ### 471 (pro-con 側の直列化) との関係
 
-[471](epic/415/471-feat-pro-con-serialize-heavy-commands-across-sessions.md) は同じ問題を pro-con の中から解いている (テストの係のコマンドを
+[471](../epic/415/471-feat-pro-con-serialize-heavy-commands-across-sessions.md) は同じ問題を pro-con の中から解いている (テストの係のコマンドを
 `lockman with <git-common-dir>/pro-con-locks/test` で包む。repo ごとの lock・待ちの上限 1 時間)。869 は別に作る:
 
 - pro-con は今使っていない (ユーザー 2026-10-22)。素の Claude Code session どうしの重なりは 471 の仕組みでは止まらない
@@ -238,7 +236,7 @@ serial-run: 待ち 2 番目 (前: ~/src/obaket の make test 3 分 12 秒 / ~/do
 - 未実測: 重なっている間の操作の重さ (load average と、エディタ・tmux の応答)。同じ 2 本の `make test` の組で比べる
 - 未実測: Claude Code のツールの中断・上限での背景への移行が、serial-run と子へどのシグナルをどこへ送るか (段階 1 で測る。子のグループの設計の前提)
 - 未実測: 待機中の負荷 (待ち手 1 本の CPU 時間と RSS。待っている 10 分の間に増えた CPU 時間を `ps -o time` で読む)
-- trigger: 実装の後、最初に 2 session を並べた日に測り、この節へ書く (`history.log` が待ちと所要を残すので、測り直しは要らない)
+- 889 に切り出した (測る・書くのは 889)
 
 ## 対応方針 (段階)
 
@@ -329,7 +327,7 @@ hook は Claude Code の Bash ツールが打ったコマンドにしか効か�
 - [x] 2. 本体とテスト・敵対的レビュー (上の「実装」)
 - [x] 3. 入口と一覧
 - [x] 4. hook (push して `~/dotfiles` に pull した後の新しい session から効く。効いたかの観測は下の残り)
-- [ ] 5. 計測 (trigger: 2 session を並べた最初の日。`~/.local/state/serial-run/default/history.log` の待ち・所要を読む)
+- [x] 5. 計測 → 889 に切り出した (2026-10-23 ユーザー判断。869 は実装の完了で閉じる)
 - [x] 待つことを LLM に先に知らせる (`additionalContext`) / 待ちの行に `serial-run status` の案内。変異 2 本 (知らせを外す / 案内を毎行に出す) が red
 - [x] **dotfiles の Makefile に組み込む** (ユーザーと合意 2026-10-22。2026-10-23 にユーザーが「今やる」を選んだ。commit「feat(make): make test を serial-run の順番待ちに入れる (issue 869)」)
   - 共有の断片 `make/serial-run.mk` の `$(serial_run)` を、Makefile の `test` の recipe の先頭に置き、集約の本体は `test-all` に移した。
@@ -344,7 +342,8 @@ hook は Claude Code の Bash ツールが打ったコマンドにしか効か�
     **記録 (未確認)**: 本体 checkout の serial-run の入口のビルドが壊れると、全部の `make test` がテストを走らせずに 125 で落ちる (逃げ道は `SERIAL_RUN_MAKE_DISABLE=1`)。
     自分の札を待って止まる形 (`env -u SERIAL_RUN_HELD` の入れ子) は祖先の照合で素通しになり、壊せなかった
   - 入れなかった: hook が「Makefile が包む入口」を見つけたら差し込まない、は入れていない。hook が包んだ `make test` の中は入れ子の素通しになり二重には並ばない (害は無い)
-- [ ] 新しい session で hook が効くことの観測 (headless の session で `make -n test` 相当を打たせ、書き換えを見る)
+- [x] 新しい session で hook が効くことの観測。2026-10-23 に本番の `~/.local/state/serial-run/hook.log` で、この作業と別の session (pj_energy_matching) の
+  `go test` が `wrapped` と記録された (16:34:52・17:40:27)。その repo の列 `repo-pj_energy_matching-50dd5e71` の history.log に 5 件の実行
 - 2026-10-23: **列の既定を repo ごとにした** (ユーザー指示 2026-10-23「repo ごとに直列して。もしくはマシン全体で直列する選択肢も取れるようにして」。
   commit「feat(serialrun): 待ち列の既定を git の repo ごとにし、SERIAL_RUN_SCOPE=machine でマシン全体に (issue 869)」)
   - -l を省いたときの列は cwd の git の common dir から決める (`repo-<dir 名>-<hash 8 桁>`。同じ repo の worktree は同じ列)。`SERIAL_RUN_SCOPE=machine` と
