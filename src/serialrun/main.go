@@ -338,19 +338,22 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	if res == waitTurn {
 		res, got = w.acquireRun(rf, deadline, sigs)
 	}
+	// 待ちで抜けるときは run.lock を閉じない (release(nil))。run.lock の待ち (acquireRun) で抜けると、別の goroutine が同じ fd で
+	// blocking の flock に入ったままで、os.File の Close はその呼び出しが返るまで待つので、serial-run が終わらなくなる。
+	// 札は消し、run.lock の fd はプロセスの終了でカーネルが閉じる (flock も取れていないので外すものは無い)
 	switch res {
 	case waitTimeout:
 		note := w.holderNote()
-		tk.release(rf)
+		tk.release(nil)
 		fmt.Fprintf(stderr, "serial-run: 待ちの上限 (%s) を超えた。%s%s\n", fmtDur(opt.maxWait), notRunHint, note)
 		hist(seq, time.Since(enq), -1, rcTool, "timeout")
 		return rcTool
 	case waitError:
-		tk.release(rf)
+		tk.release(nil)
 		hist(seq, time.Since(enq), -1, rcTool, "error")
 		return rcTool
 	case waitSignal:
-		tk.release(rf)
+		tk.release(nil)
 		fmt.Fprintf(stderr, "serial-run: 待ちをやめた (シグナル %v を受けた。コマンドは実行していない)\n", got)
 		hist(seq, time.Since(enq), -1, 128+int(got), "signal")
 		return exitAs(128+int(got), got)

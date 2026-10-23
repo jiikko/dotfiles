@@ -21,8 +21,12 @@ jq -e '[.hooks.PreToolUse[]? | select((.matcher // "") | test("Bash")) | .hooks[
 echo "✓ settings.json の PreToolUse(Bash) に配線されている"
 
 FAIL_COUNT=0
+PASS_COUNT=0
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+# 本物の待ち列 (~/.local/state/serial-run) を読み書きしない (hook は待ち列を見て案内を足し、hook.log に書く)。
+# HOME は差し替えない (serial-run の入口のビルドが Go のキャッシュを HOME の下に持つ)。置き場の決め方は SERIAL_RUN_STATE_DIR が先
+export SERIAL_RUN_STATE_DIR="$TMP_DIR/state" XDG_STATE_HOME="$TMP_DIR/xdg"
 
 # rewritten <コマンド> [env…]: hook が返した command (書き換えなしなら空) を出す。hook の rc≠0 は失敗にする
 rewritten() {
@@ -44,6 +48,7 @@ expect() {  # $1=期待 $2=説明 $3=コマンド [env…]
   got="$(rewritten "$cmd" "$@")"
   if [ "$got" = "$want" ]; then
     echo "✓ $desc"
+    PASS_COUNT=$((PASS_COUNT + 1))
   else
     echo "✗ $desc: got [$got] want [$want]"
     FAIL_COUNT=$((FAIL_COUNT + 1))
@@ -53,7 +58,8 @@ expect() {  # $1=期待 $2=説明 $3=コマンド [env…]
 P="PATH=$ROOT_DIR/bin:$PATH"
 expect "serial-run -- make test timeout=1234" "重いコマンドの前に差し込み、他の欄を残す" "make test" "$P"
 expect "cd a && serial-run -- go test ./... && git push timeout=1234" "重い部分だけに差し込む" "cd a && go test ./... && git push" "$P"
-expect "" "重くないコマンドは書き換えない" "git status" "$P"
+# 入口の手がかりの語 (make) を通り抜けて hook.go まで届き、そこで「重くない」と判定される形 (git status は入口で落ちて hook.go に届かない)
+expect "" "重くないコマンドは書き換えない" "make -n test" "$P"
 expect "" "引数の中の make test は書き換えない" 'grep -rn "make test" issues/' "$P"
 expect "" "SERIAL_RUN_HOOK_DISABLE=1 で止まる" "make test" "$P" SERIAL_RUN_HOOK_DISABLE=1
 
@@ -63,6 +69,8 @@ printf '#!/bin/sh\nexit 0\n' >"$TMP_DIR/other/serial-run"
 chmod +x "$TMP_DIR/other/serial-run"
 expect "" "PATH 上の serial-run が別物なら差し込まない" "make test" "PATH=$TMP_DIR/other:/usr/bin:/bin"
 expect "" "PATH に serial-run が無ければ差し込まない" "make test" "PATH=/usr/bin:/bin"
+# 上の 2 件の対照: 同じ狭い PATH でも、この checkout の serial-run を先頭に置けば差し込む (空が「別の理由で黙った」でないことを見る)
+expect "serial-run -- make test timeout=1234" "狭い PATH でもこの checkout の serial-run があれば差し込む" "make test" "PATH=$ROOT_DIR/bin:/usr/bin:/bin"
 
 # jq が使えなくても包む (jq に頼っていた頃は、jq が無いと直列化が黙って全部止まった)。
 # macOS には /usr/bin/jq があり PATH から外しにくいので、必ず失敗する jq を先頭に置く
@@ -77,7 +85,8 @@ for c in "make test" "gmake lint" "go test ./..." "go -C src/x test ./..." "swif
 done
 
 if [ "$FAIL_COUNT" -gt 0 ]; then
-  echo "✗ $FAIL_COUNT 件失敗"
+  echo "✗ $FAIL_COUNT 件失敗 ($PASS_COUNT 件通過)"
   exit 1
 fi
-echo "✓ serial-run-wrap: すべて通過"
+[ "$PASS_COUNT" -gt 0 ] || { echo "✗ 検査が 1 件も走っていない"; exit 1; }
+echo "✓ serial-run-wrap: すべて通過 ($PASS_COUNT 件)"

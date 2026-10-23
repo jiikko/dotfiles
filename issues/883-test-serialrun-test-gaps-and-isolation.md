@@ -121,4 +121,38 @@ serialrun の監査で見つかった、グループ F の 17 項目。
 
 ## 進捗
 
-- [ ] 未着手 (項目ごとに、直した commit の subject・当てた変異・実測を書く)
+- 2026-10-23 (commit「test(serialrun): テストの後始末・射程・helper を直し、run.lock の待ちで止まらなくする (issue 883)」):
+  - [x] F1 テストが起こす serial-run を全部専用のプロセスグループに置き (`fixture.track`)、後始末でそのグループの残りを止める。
+    🚨 pgid の使い回しで無関係なプロセスを撃たないよう、止めるのはグループに居てコマンド行に test の一時 dir か test 用のバイナリを含むものだけ。
+    `start` / `held` の `setpgid` の引数は消した (常に専用グループ)。テストを途中で落とす手で確かめた: 孫は残らなかった。
+    負の対照 (グループの残りを止めない版) では孫が PPID の付いたまま残った。**残る穴**: テストのプロセスが panic・SIGKILL で落ちると後始末が走らない
+    (2026-10-23 に gone の書き損じの無限再帰で 1 本残り、pid で止めた)
+  - [x] F2 `TestOrphanedChildKeepsTheTurn` に起きた回数の上限 (0.5 秒で 20 回)。正しい版は 0.5 秒で 4 回 (3 回測って 3 回とも)。変異 (孤児でも blocking で眠る) → red
+  - [x] F3 881 で済んだ (`TestStatus*`)
+  - [x] F4 `TestTermStopsDescendantsAndDiesBySignal` (TERM で子孫ごと止め、自分も TERM で死ぬ。exitAs の死に直しを外す変異 → red) /
+    `TestTermWhileWaitingRemovesTicket` / `TestMaxWaitAppliesWhileWaitingForRunLock` / `TestTermWhileWaitingForRunLock`。
+    🚨 **このテストで本物の不具合が見つかった**: run.lock の待ち (acquireRun) で待ちの上限・シグナルを受けると、後始末の `rf.Close()` が、
+    同じ fd で blocking の flock に入った goroutine を待って返らず、serial-run が終わらなかった (直す前からの形)。待ちで抜ける 3 つの出口は run.lock を閉じず、
+    プロセスの終了に任せる。変異 (上限 / シグナルの出口で閉じる・acquireRun が deadline を見ない) → red。同じ形 (goroutine の blocking flock の fd を閉じる) は src に他に無い (grep)
+  - [x] F5 `TestStaleTmpTicketIsSwept` / `TestHistoryRecordsChildRC` / `TestHeldTokenOfWaitingTicketDoesNotBypass`。変異 3 本 → red
+  - [x] F6 hook の表に `make lint-go`・引用の中の serial-run (正)、`ls # x; make test`・`(make test`・`echo a) (make test` (負) を足し、tool_name の検査を `command` を持つ入力で見る。
+    変異 (lint- の接頭辞を外す・tool_name を見ない) → red。`serial-run -- make test && make lint` は 879 で表に入っている
+  - [x] F7 シェルテストの「重くない」の例を、入口の手がかりの語を通る `make -n test` に替え、通った件数を数えて出す (0 件なら落とす)
+  - [x] F8 シェルテストは `SERIAL_RUN_STATE_DIR` / `XDG_STATE_HOME` を一時 dir に向ける (HOME は Go のキャッシュのため替えない)。テストの前後で本物の hook.log の大きさが変わらないのを見た
+  - [x] F9 狭い PATH の対照 (同じ PATH でこの checkout の serial-run を先頭に置けば差し込む) を足した
+  - [ ] F10 **消さない**: `TestMiddleWaiterDeathKeepsOrder` は唯一の検出者になる変異が無いが、テストを削るのは守るものを減らす変更で、残しても害は時間 (1 秒未満) だけ
+  - [x] F11 pid のファイルは `readPid` で読み、読めなければ落とす
+  - [x] F12 生存は `gone(pid)` 1 つに寄せた (serialrun の中だけ。module をまたぐ共通化は凍結のまま)
+  - [x] F13 `waitFor` の上限と刻みを定数にし、文言を上限から作る (serialrun の中だけ)
+  - [x] F14 `f.waitStarted(name)` (26 か所) / `f.waitTickets(n)` (16 か所) に寄せた。rc の検査は寄せていない (期待する rc がテストごとに違い、helper にすると読みにくくなる)
+  - [x] F15 札のパスは `f.ticketPath(seq)` (本体の `queue.ticketPath` を通す)
+  - [x] F16 刻みの定数 (`testTick` / `reportTick`) を env と否定の確認の窓 (`negWindow`) の両方に使う
+  - [x] F17 hook の出力は `runHookJSON` 1 つで読む
+- 変異 (全部 red): 孤児でも blocking で眠る / exitAs が死に直さない / acquireRun が deadline を見ない / 上限・シグナルの出口で run.lock を閉じる /
+  作りかけの札を掃除しない / history の rc を 0 にする / SERIAL_RUN_HELD の札の前の札を見ない / lint- を外す / tool_name を見ない
+- 敵対的レビュー 1 周目 (Opus): P1 なし。P2 1 / P3 2。テストと無関係なプロセスを撃つ経路は見つからなかった
+  - P2 後始末が、コマンド行に一時 dir を含まない子孫 (`sleep 41 &`) を撃たない (再現済み。直す前の setpgid=true の 7 本より後退) → 先頭が未回収の間 (pgid が使い回されない間) はグループごと止める
+  - P3 run.lock を閉じない修正は直す前より良い (直す前の版で 2 本のテストが「10 秒で終わらない」で赤を確認・レビュー)。残る窓: select が上限・シグナルを選んだ後に goroutine の flock が取れると、
+    札の無いまま終了まで run.lock を持つ (普通は数 ms〜100ms。推論のみ)
+  - P3 `gone` のコメントが用途と逆 → 直した
+  - ユーザーの指示 (2026-10-23「ペースを下げて」) で、この直しには 2 周目を当てていない

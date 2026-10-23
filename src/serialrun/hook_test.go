@@ -14,6 +14,8 @@ func TestWrapCommandInsertsBeforeHeavyCommands(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"make test", "serial-run -- make test"},
 		{"make lint", "serial-run -- make lint"},
+		{"make lint-go", "serial-run -- make lint-go"},
+		{`echo "serial-run"; make test`, `echo "serial-run"; serial-run -- make test`},
 		{"make test-go", "serial-run -- make test-go"},
 		{"make -C src/glogx test", "serial-run -- make -C src/glogx test"},
 		{"make -j4 test", "serial-run -- make -j4 test"},
@@ -94,6 +96,9 @@ func TestWrapCommandLeavesOtherCommandsAlone(t *testing.T) {
 		"echo 'unterminated",
 		"# make test",
 		"ls # make test",
+		"ls # x; make test",
+		"(make test",
+		"echo a) (make test",
 		"cat > f <<EOF\ngo test\nEOF",
 		"make test)",
 		"xcodebuild -version",
@@ -162,26 +167,13 @@ func TestWrapCommandLeavesOtherCommandsAlone(t *testing.T) {
 }
 
 func TestHookOutputsUpdatedInputKeepingOtherFields(t *testing.T) {
-	in := `{"tool_name":"Bash","tool_input":{"command":"make test","timeout":600000,"description":"テスト","run_in_background":true}}`
-	var out strings.Builder
-	if rc := runHook(strings.NewReader(in), &out); rc != 0 {
-		t.Fatalf("rc=%d", rc)
-	}
-	var got struct {
-		HookSpecificOutput struct {
-			HookEventName string         `json:"hookEventName"`
-			UpdatedInput  map[string]any `json:"updatedInput"`
-		} `json:"hookSpecificOutput"`
-	}
-	if err := json.Unmarshal([]byte(out.String()), &got); err != nil {
-		t.Fatalf("JSON でない: %q", out.String())
-	}
-	u := got.HookSpecificOutput.UpdatedInput
-	if got.HookSpecificOutput.HookEventName != "PreToolUse" || u["command"] != "serial-run -- make test" ||
+	got, raw := runHookJSON(t, `{"tool_name":"Bash","tool_input":{"command":"make test","timeout":600000,"description":"テスト","run_in_background":true}}`)
+	u := got.UpdatedInput
+	if got.HookEventName != "PreToolUse" || u["command"] != "serial-run -- make test" ||
 		u["timeout"] != float64(600000) || u["description"] != "テスト" || u["run_in_background"] != true {
 		t.Fatalf("updatedInput: %#v", got)
 	}
-	if strings.Contains(out.String(), "permissionDecision") {
+	if strings.Contains(raw, "permissionDecision") {
 		t.Fatal("許可の判断を出している (書き換えだけにする。許可は Claude Code が書き換え後のコマンドで判定する)")
 	}
 }
@@ -189,7 +181,7 @@ func TestHookOutputsUpdatedInputKeepingOtherFields(t *testing.T) {
 func TestHookIsSilentWhenNothingToWrap(t *testing.T) {
 	for _, in := range []string{
 		`{"tool_name":"Bash","tool_input":{"command":"git status"}}`,
-		`{"tool_name":"Read","tool_input":{"file_path":"make test"}}`,
+		`{"tool_name":"Read","tool_input":{"command":"make test"}}`,
 		`not json`,
 		`{"tool_name":"Bash","tool_input":{"command":42}}`,
 	} {
@@ -200,23 +192,39 @@ func TestHookIsSilentWhenNothingToWrap(t *testing.T) {
 	}
 }
 
-func hookContext(t *testing.T) (string, bool) {
+// hookOutput は hook が返す hookSpecificOutput
+type hookOutput struct {
+	HookEventName     string         `json:"hookEventName"`
+	UpdatedInput      map[string]any `json:"updatedInput"`
+	AdditionalContext *string        `json:"additionalContext"`
+}
+
+// runHookJSON は runHook に in を渡し、hookSpecificOutput と生の出力を返す (rc≠0・JSON でない出力は落とす)
+func runHookJSON(t *testing.T, in string) (hookOutput, string) {
 	t.Helper()
 	var out strings.Builder
-	if rc := runHook(strings.NewReader(`{"tool_name":"Bash","tool_input":{"command":"make test"}}`), &out); rc != 0 {
+	if rc := runHook(strings.NewReader(in), &out); rc != 0 {
 		t.Fatalf("rc=%d", rc)
 	}
 	var got struct {
-		HookSpecificOutput map[string]any `json:"hookSpecificOutput"`
+		HookSpecificOutput hookOutput `json:"hookSpecificOutput"`
 	}
 	if err := json.Unmarshal([]byte(out.String()), &got); err != nil {
 		t.Fatalf("JSON でない: %q", out.String())
 	}
-	if got.HookSpecificOutput["updatedInput"] == nil {
-		t.Fatalf("書き換えていない: %q", out.String())
+	return got.HookSpecificOutput, out.String()
+}
+
+func hookContext(t *testing.T) (string, bool) {
+	t.Helper()
+	got, raw := runHookJSON(t, `{"tool_name":"Bash","tool_input":{"command":"make test"}}`)
+	if got.UpdatedInput == nil {
+		t.Fatalf("書き換えていない: %q", raw)
 	}
-	c, ok := got.HookSpecificOutput["additionalContext"].(string)
-	return c, ok
+	if got.AdditionalContext == nil {
+		return "", false
+	}
+	return *got.AdditionalContext, true
 }
 
 // 前に誰かいるときだけ、順番待ちになることを LLM 向けに添える

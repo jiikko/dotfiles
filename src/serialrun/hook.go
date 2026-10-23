@@ -127,7 +127,7 @@ func queueNote() string {
 		"前に %d 本ある。%s待っている間は Bash の出力が返らない (固まったのではない)。"+
 		"foreground の Bash の timeout は最大 10 分なので、前が長いなら run_in_background で起こす。同じコマンドを打ち直すと列の最後尾に並び直す。"+
 		"状況は別の呼び出しで `serial-run status` を打って見る。"+
-		"待ちの上限は既定 %s で、超えたら実行せずに rc=%d で抜ける (stderr に「待ちの上限」と出る。テストの失敗ではない)",
+		"待ちの上限は既定 %sで、超えたら実行せずに rc=%d で抜ける (stderr に「待ちの上限」と出る。テストの失敗ではない)",
 		len(preds), head, fmtDur(defaultMaxWait), rcTool)
 }
 
