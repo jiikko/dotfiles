@@ -101,5 +101,7 @@ cd A && GIT_DIR=<B>/.git mutate-verify --file g.sh --syntax 'bash -n g.sh' \
 
 - `scripts/` の他の手書きの unset (`bin/skill-tmpdir` / `scripts/clean_tmp.sh` / `scripts/issue_claim.sh` / `githooks/pre-push`) は一覧がそれぞれ違うが、
   この issue の範囲外として触っていない。寄せるなら `bin/lib/git_location_env.sh` を使う
+  - 2026-10-23 に 4 か所とも `git_location_env_unset` に寄せた (「手書きの unset GIT_DIR ... を git_location_env_unset に寄せる」)。
+    `tests/bin/test_git_location_env.sh` が手書きの unset の再発を止める。`scripts/check_unused_excluding_tests.sh` の `env -u` (1 コマンドだけに効く) は対象外のまま
 - 外すのは場所を決める変数だけで、`GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS` も外れるため、親の `git -c` の値は --verify に届かない
   (Makefile の unexport と同じ方針)
