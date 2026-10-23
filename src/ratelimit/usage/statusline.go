@@ -19,8 +19,9 @@ import (
 // このマシンの対話セッションが送信しない間は新しい値が来ない (pro-con の PG は statusline を走らせない)。observedAt は
 // 「誰かが新しい値を受け取った時刻」(書き手が値で新旧を比べ、新しいときだけ書く) なので、statuslineMaxAge のあいだ
 // 新しい値が来なければ予備 (サーバの値。PG や他のデバイスの消費も見える) へ落ちる。
-// 🚨 別のアカウントのセッション (CLAUDE_CONFIG_DIR を変えた等) も同じファイルに書く。今は同じアカウントだけを使う前提
-// (pro-con の dispatcher/usage.go の 431 の注記と同じ)。別のアカウントを使うようになったら、ファイルを分ける。
+// 🚨 desktop (CLI と別のアカウントで動く) の statusline は claude-rate-limits-desktop.json へ書き、このファイルには書かない。
+// CLI どうしで別のアカウントのセッション (CLAUDE_CONFIG_DIR を変えた等) は同じファイルに書く。CLI は同じアカウントだけを使う前提
+// (pro-con の dispatcher/usage.go の 431 の注記と同じ)。CLI で別のアカウントを使うようになったら、ファイルを分ける。
 const (
 	statuslineFile = "claude-rate-limits.json"
 	// statuslineMaxAge: これより古い観測は使わず予備 (`claude -p /usage`) へ落ちる。予備は共有ゲートで 5 分に 1 回まで

@@ -44,5 +44,6 @@ test('CLI の statusLine と同じ形の JSON を組む (リセット時刻は�
     effort: { level: 'xhigh' },
     session_id: 's1',
     transcript_path: '',
+    surface: 'desktop',
   })
 })

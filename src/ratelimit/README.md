@@ -18,6 +18,8 @@ Claude Code (`/usage`) と codex (app-server の rateLimits) の利用枠 (5h / 
   (理由は main.go 冒頭)。書き込みは `atomicfile.Write` (lint が `os.WriteFile` を禁止)
 - 表示に載る文字列 (キャッシュ由来の Label) は入口で `termsafe` を通す
 - 🚨 **Claude の枠の主な出所は statusline が書き出す `~/.cache/glog/claude-rate-limits.json`** (`usage/statusline.go`、issue 627)。
+  desktop (CLI と別のアカウントで動く) の statusline の mod が呼んだときは `claude-rate-limits-desktop.json` へ書き、このファイルには書かない。
+  読み手は CLI のファイルだけを読む (issue 888。同じファイルだと、リセットが後ろの desktop のアカウントの窓が CLI の値を上書きし続けた)
   Claude Code が推論の応答ヘッダで受け取り statusline の入力に載せる `rate_limits` を、`_claude/statusline-command.sh` の
   `write_rate_limits` が書く。サーバを余計に叩かない。7d(Fable) は来ないので出ない
   - 🚨 statusline は送信が無くても `refreshInterval` (60 秒) ごとに描画し、そのたびに最後に受け取った古い値が来る。書き手は

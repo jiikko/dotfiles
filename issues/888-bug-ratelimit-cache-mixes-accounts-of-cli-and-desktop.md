@@ -58,7 +58,16 @@ desktop の statusline の mod も、CLI と同じ `_claude/statusline-command.s
 
 ## 進捗
 
-- [ ] 未着手
+- 2026-10-23 (commit「fix(ratelimit): desktop の利用枠を CLI と別のファイルへ書く (issue 888)」。ユーザー指示 2026-10-23「書き出し先は分離したい」):
+  - [x] desktop の mod は入力に `surface: "desktop"` を渡し、`write_rate_limits` は surface が desktop か `CLAUDE_CODE_ENTRYPOINT=claude-desktop` のとき
+    `claude-rate-limits-desktop.json` に書く。読み手 (ratelimit・hook・glogx・pro-con) は `claude-rate-limits.json` だけを読むまま (CLI のアカウントだけ)。
+    ratelimit の module は分けていない (混ざっていたのは書き手だけ)
+  - [x] テスト: `TestStatuslineDesktopWritesSeparateFile` (mod の印・desktop の環境の 2 経路。desktop の窓が後ろにある形で CLI の値が残ること)。mod の `pure.test.ts`。
+    テストの書き手の起動は `CLAUDE_CODE_ENTRYPOINT` を外す (desktop の中で go test を回しても CLI の検査が desktop のファイルへ書かない)
+  - 変異 (全部 red): script が印を見ない / 環境の印を見ない
+  - 検証: ratelimit の go test -race・make lint 0 件・tests/claude/test_statusline.sh・tests/claude/test_claude_mods.sh (6 件)・make test-lint が緑
+  - 敵対的レビュー 1 周 (sonnet): P1 / P2 なし。**記録 (P3)**: CLI が desktop の環境 (`CLAUDE_CODE_ENTRYPOINT=claude-desktop`) を継承したまま起動する形は未実測
+    (CLI は起動時に自分の値で上書きすると推定) / 逆向き (CLI なのに desktop の印) のテストは無い / desktop のファイルには読み手が無い (今は観測のためだけに書く)
 - 2026-10-23 起票。反証レビュー (sonnet 1 体・読み取りのみ): P2 desktop は rl_fresh にならない (transcript_path が空) ので「最後にやり取りした方」ではなく「リセットが後ろの窓の方」が優勢 → 直した /
   P3 読み手の注記 (同じアカウントだけの前提) に触れていない → 足した。反証できなかった: desktop の mod が同じ script を rate_limits 付きで呼ぶ・desktop の分岐が無い・
   読み手がアカウントを区別しない・600 秒の判定・desktop の表示がファイルを読まない

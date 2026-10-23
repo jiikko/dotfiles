@@ -26,16 +26,62 @@ func writeStatuslineFile(t *testing.T, dir, body string) {
 // runStatusline は書き手 (_claude/statusline-command.sh の write_rate_limits) を実際に走らせる。
 func runStatusline(t *testing.T, cache, input string) {
 	t.Helper()
+	runStatuslineEnv(t, cache, input)
+}
+
+// runStatuslineEnv は extra を足した環境で書き手を走らせる。テストを起こした環境の CLAUDE_CODE_ENTRYPOINT は外す
+// (desktop の中で go test を回すと、CLI の書き手を見るテストが desktop のファイルへ書く)
+func runStatuslineEnv(t *testing.T, cache, input string, extra ...string) {
+	t.Helper()
 	script, err := filepath.Abs("../../../_claude/statusline-command.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", script)
 	cmd.Stdin = strings.NewReader(input)
-	cmd.Env = append(os.Environ(), "XDG_CACHE_HOME="+cache)
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "CLAUDE_CODE_ENTRYPOINT=") {
+			env = append(env, kv)
+		}
+	}
+	cmd.Env = append(append(env, "XDG_CACHE_HOME="+cache), extra...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("statusline: %v\n%s", err, out)
+	}
+}
+
+// desktop (CLI と別のアカウントで動く) の利用枠は別のファイルへ書き、CLI の読み手のファイルには触れない。
+// 印は desktop の mod が渡す surface と、desktop が起こしたセッションの環境の 2 経路
+func TestStatuslineDesktopWritesSeparateFile(t *testing.T) {
+	now := time.Now()
+	cliInput := fmt.Sprintf(`{"cwd":"/tmp","transcript_path":%q,"rate_limits":{"five_hour":{"used_percentage":56,"resets_at":%d}}}`,
+		freshTranscript(t), now.Add(2*time.Hour).Unix())
+	// desktop のアカウントの窓は後ろにある (CLI の窓のリセットより後)。同じファイルなら「次の窓」として必ず採られていた形
+	desktopInput := fmt.Sprintf(`{"cwd":"/tmp","surface":"desktop","rate_limits":{"five_hour":{"used_percentage":82,"resets_at":%d}}}`,
+		now.Add(3*time.Hour).Unix())
+	for _, c := range []struct {
+		name  string
+		input string
+		env   []string
+	}{
+		{"mod の surface", desktopInput, nil},
+		{"desktop の環境", strings.Replace(desktopInput, `"surface":"desktop",`, "", 1), []string{"CLAUDE_CODE_ENTRYPOINT=claude-desktop"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cache := t.TempDir()
+			runStatusline(t, cache, cliInput)
+			runStatuslineEnv(t, cache, c.input, c.env...)
+			snap := readStatusline(filepath.Join(cache, "glog"), time.Now())
+			if w5, ok := snap.Find("5h"); !ok || w5.Percent != 56 {
+				t.Fatalf("CLI の読み手に desktop の値が入った: %+v (ok=%v)", w5, ok)
+			}
+			b, err := os.ReadFile(filepath.Join(cache, "glog", "claude-rate-limits-desktop.json"))
+			if err != nil || !strings.Contains(string(b), `"used_percentage":82`) {
+				t.Fatalf("desktop の値が desktop のファイルに無い: %v %s", err, b)
+			}
+		})
 	}
 }
 

@@ -1,6 +1,6 @@
 // CLI の statusLine が script に渡す JSON と同じ形を、mod から取れる値で組む。script が読むのは
 // workspace.current_dir / model.display_name / rate_limits.{five_hour,seven_day}.{used_percentage,resets_at (エポック秒)} /
-// context_window.{total_input_tokens,context_window_size,used_percentage} / effort.level / transcript_path / session_id (_claude/statusline-command.sh)
+// context_window.{total_input_tokens,context_window_size,used_percentage} / effort.level / transcript_path / session_id / surface (_claude/statusline-command.sh)
 export type UsageLike = {
   context: { tokens?: number; window: number; percent?: number }
   rateLimits: readonly { kind: string; percentUsed: number; resetsAt?: string }[]
@@ -34,4 +34,7 @@ export const statusInput = (a: { cwd: string; modelId: string; usage: UsageLike;
   ...(a.effort ? { effort: { level: a.effort } } : {}),
   session_id: a.sessionId,
   transcript_path: '',
+  // desktop は CLI と別のアカウントで動くことがある。script はこれを見て利用枠を CLI とは別のファイルへ書く
+  // (同じファイルに書くと、CLI の判断 (ratelimit・hook) に desktop のアカウントの値が混ざる)
+  surface: 'desktop',
 })

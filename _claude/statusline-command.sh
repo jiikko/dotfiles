@@ -31,6 +31,7 @@ input=$(cat)
   IFS= read -r transcript
   IFS= read -r session_id
   IFS= read -r cc_version
+  IFS= read -r surface
 } <<JSON_FIELDS
 $(printf '%s' "$input" | jq -r '
   (.workspace.current_dir // .cwd // ""),
@@ -45,7 +46,8 @@ $(printf '%s' "$input" | jq -r '
   (.effort.level // ""),
   (.transcript_path // ""),
   (.session_id // ""),
-  (.version // "")
+  (.version // ""),
+  (.surface // "")
 ' 2>/dev/null)
 JSON_FIELDS
 
@@ -234,7 +236,11 @@ write_rate_limits() {
   [ -n "$five_pct$seven_pct" ] || return 0
   local dir="${XDG_CACHE_HOME:-$HOME/.cache}/glog" fr sr ver by me w5="null" w7="null"
   local f old="" o5p="" o5r="" o7p="" o7r="" changed="" rl_fresh=""
+  # desktop (別のアカウントで動くことがある) の値は別のファイルへ書く。CLI の読み手 (src/ratelimit/usage/statusline.go・hook・pro-con) は
+  # claude-rate-limits.json だけを読むので、desktop のアカウントの値を CLI の枠と読まない。
+  # 印は desktop の mod が渡す surface と、desktop が起こしたセッションの環境の両方で見る (どちらの経路で呼ばれても分ける)
   f="$dir/claude-rate-limits.json"
+  if [ "$surface" = desktop ] || [ "${CLAUDE_CODE_ENTRYPOINT:-}" = claude-desktop ]; then f="$dir/claude-rate-limits-desktop.json"; fi
   if [ -n "$transcript" ] && [ "$transcript" -nt "$f" ]; then rl_fresh=1; fi
   to_int "$five_reset"; fr=$REPLY
   to_int "$seven_reset"; sr=$REPLY
