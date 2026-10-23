@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 var bin string // テスト用にビルドした serial-run の絶対パス
@@ -114,6 +116,10 @@ func (f *fixture) start(extraEnv []string, setpgid bool, args ...string) *exec.C
 	}
 	f.t.Cleanup(func() {
 		if cmd.ProcessState == nil {
+			if setpgid {
+				// 専用のグループで起こしたものは、子孫ごと止める (テストが途中で落ちると、ループで待つ子が孤児で残る)
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			}
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 		}
@@ -1002,6 +1008,199 @@ func TestUnreadableQueueRunsUnqueued(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(f.qdir(), 0o700) })
 	if rc := exitCode(t, f.start(nil, false, "--", "/bin/sh", "-c", "echo RAN >> "+f.log)); rc != 0 || !f.hasLog("RAN") {
 		t.Fatalf("採番できないときに走らせていない: rc=%d", rc)
+	}
+}
+
+// 起動時に無視されていた INT は、無視のまま子へ渡す (serial-run を挟んでも子の受け方を変えない)
+func TestIgnoredIntStaysIgnoredForChild(t *testing.T) {
+	f := newFixture(t)
+	// 外側は素の sh (serial-run 越しにすると、内側が入れ子の素通しになり runQueued の Notify を通らない)
+	script := "trap '' INT; " + bin + " -- /bin/sh -c 'kill -INT $$; echo survived >> " + f.log + "'"
+	sh := exec.Command("/bin/sh", "-c", script)
+	sh.Env = f.env()
+	if err := sh.Run(); err != nil {
+		t.Fatalf("rc: %v", err)
+	}
+	if !f.hasLog("survived") {
+		t.Fatal("無視されていた INT で子が死んだ")
+	}
+}
+
+// serial-run の pid だけに送った INT でも、猶予の後に子孫ごと止める (止められない serial-run にしない)
+func TestIntToSerialRunPidStopsChildAfterGrace(t *testing.T) {
+	f := newFixture(t)
+	g := f.gate("g")
+	pidFile := filepath.Join(f.dir, "child.pid")
+	cmd := f.start([]string{"SERIAL_RUN_TEST_INT_GRACE=1s"}, true, "--", "/bin/sh", "-c", "echo $$ > "+pidFile+"; read _ < "+g)
+	waitFor(t, "子の pid", func() bool { return strings.HasSuffix(readFile(pidFile), "\n") })
+	child, _ := strconv.Atoi(strings.TrimSpace(readFile(pidFile)))
+	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	if rc := exitCode(t, cmd); rc != 128+int(syscall.SIGINT) {
+		t.Fatalf("pid 宛ての INT で止まらない: rc=%d", rc)
+	}
+	if syscall.Kill(child, 0) == nil && !zombie(child) {
+		t.Fatal("猶予の後も子が残っている")
+	}
+}
+
+// グループ宛ての INT (runtimeout・CI) は子にも直接届く。serial-run は伝え直さない (2 回届けない)
+func TestGroupIntIsNotForwardedTwice(t *testing.T) {
+	f := newFixture(t)
+	g := f.gate("g")
+	counts := filepath.Join(f.dir, "ints")
+	// 子は INT を受けるたびに 1 行書き、待ち続ける (INT で抜けると、伝え直しの 2 回目を受ける相手がいなくなる)
+	script := "trap 'echo INT >> " + counts + "' INT; echo ready >> " + f.log + "; while :; do read _ < " + g + "; done"
+	cmd := f.start([]string{"SERIAL_RUN_TEST_INT_GRACE=3s"}, true, "--", "/bin/sh", "-c", script)
+	waitFor(t, "子が待ちに入る", func() bool { return f.hasLog("ready") })
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "子が INT を 1 回受ける", func() bool { return countLines(counts) >= 1 })
+	// sleep-ok: negative: 伝え直しの 2 回目が来ないこと (猶予 3 秒より短い間で見る)
+	time.Sleep(time.Second)
+	if n := countLines(counts); n != 1 {
+		t.Fatalf("グループ宛ての INT が子に %d 回届いた", n)
+	}
+	// 子は trap で INT をやり過ごすので、猶予の後に serial-run が子孫ごと止めて終わる (gate を解放しない: 読み手はもう居ないことがある)
+	_ = exitCode(t, cmd)
+	_ = g
+}
+
+// INT を受けて自分で後始末をする子は、猶予のうちなら最後まで走らせる (受けてすぐ止めると後始末が途中で切れる)
+func TestIntLetsChildFinishCleanupWithinGrace(t *testing.T) {
+	f := newFixture(t)
+	g := f.gate("g")
+	// sleep-ok: window: 後始末に 1 秒かかる子 (猶予 10 秒のうちに終わる)
+	script := "trap 'sleep 1; echo cleaned >> " + f.log + "; exit 0' INT; echo ready >> " + f.log + "; while :; do read _ < " + g + "; done"
+	cmd := f.start([]string{"SERIAL_RUN_TEST_INT_GRACE=10s"}, true, "--", "/bin/sh", "-c", script)
+	waitFor(t, "子が待ちに入る", func() bool { return f.hasLog("ready") })
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	if rc := exitCode(t, cmd); rc != 0 {
+		t.Fatalf("後始末を終えた子の rc が返らない: rc=%d", rc)
+	}
+	if !f.hasLog("cleaned") {
+		t.Fatal("子の後始末が途中で止められた")
+	}
+}
+
+// 猶予の後は子孫ごと止める (子だけ止めると、子が起こした背景のプロセスが lock の外で走り続ける)
+func TestIntGraceStopsGrandchildren(t *testing.T) {
+	f := newFixture(t)
+	g := f.gate("g")
+	gpidFile := filepath.Join(f.dir, "grandchild.pid")
+	script := "/bin/sh -c 'echo $$ > " + gpidFile + "; while :; do read _ < " + g + "; done' & wait"
+	cmd := f.start([]string{"SERIAL_RUN_TEST_INT_GRACE=1s"}, true, "--", "/bin/sh", "-c", script)
+	waitFor(t, "孫の pid", func() bool { return strings.HasSuffix(readFile(gpidFile), "\n") })
+	gpid, _ := strconv.Atoi(strings.TrimSpace(readFile(gpidFile)))
+	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	_ = exitCode(t, cmd)
+	waitFor(t, "孫が止まる", func() bool { return syscall.Kill(gpid, 0) != nil || zombie(gpid) })
+}
+
+// openPty は pty の master と slave を開く (darwin の posix_openpt の手順。依存を足さないため ioctl を直接打つ)
+func openPty(t *testing.T) (master, slave *os.File) {
+	t.Helper()
+	m, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	ioctl := func(req uintptr, arg unsafe.Pointer) {
+		if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, m.Fd(), req, uintptr(arg)); e != 0 {
+			t.Fatalf("ioctl %#x: %v", req, e)
+		}
+	}
+	ioctl(uintptr(syscall.TIOCPTYGRANT), nil)
+	ioctl(uintptr(syscall.TIOCPTYUNLK), nil)
+	name := make([]byte, 128)
+	ioctl(uintptr(syscall.TIOCPTYGNAME), unsafe.Pointer(&name[0]))
+	sl, err := os.OpenFile(string(name[:bytes.IndexByte(name, 0)]), os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sl.Close() })
+	return m, sl
+}
+
+// 制御端末の前景に居るときは、INT を受けても猶予で止めずに子の終わりを待つ (端末の Ctrl-C は子にも届いていて、それを扱って走り続ける子を殺さない)。
+// stdin は端末にしない (前景の判定を stdin で見る退行を落とすため。制御端末だけを pty にする)
+func TestIntInTerminalForegroundWaitsForChild(t *testing.T) {
+	f := newFixture(t)
+	_, slave := openPty(t)
+	cmd := exec.Command(bin, "--", "/bin/sh", "-c", "echo ready >> "+f.log+"; i=0; while [ $i -lt 15 ]; do sleep 0.1; i=$((i+1)); done; exit 7")
+	cmd.Env = f.env("SERIAL_RUN_TEST_INT_GRACE=200ms")
+	cmd.ExtraFiles = []*os.File{slave}
+	// 新しい session を作り、fd 3 (slave) を制御端末にする。session leader のグループが端末の前景になる
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 3}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = cmd.Wait()
+		}
+	})
+	waitFor(t, "子が始まる", func() bool { return f.hasLog("ready") })
+	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	if rc := exitCode(t, cmd); rc != 7 {
+		t.Fatalf("端末の前景なのに猶予で止めた: rc=%d", rc)
+	}
+}
+
+// 無いコマンドは、列を待ち切る前に 127 で抜ける。入れ子の直接実行でも同じ rc
+func TestMissingCommandFailsBeforeWaiting(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	a := f.held("A", ga, nil, false)
+	waitFor(t, "A が始まる", func() bool { return f.hasLog("start A") })
+	// 前確認は PATH から探す素の名前だけ (/ を含む名前は自分の番で確かめる)
+	if rc := exitCode(t, f.start(nil, false, "--", "serialrun-no-such-command")); rc != rcNotFound {
+		t.Fatalf("無いコマンドで待った / rc が違う: rc=%d", rc)
+	}
+	f.release(ga)
+	_ = exitCode(t, a)
+	nested := bin + " -- /nonexistent/cmd"
+	if rc := exitCode(t, f.start(nil, false, "--", "/bin/sh", "-c", nested)); rc != rcNotFound {
+		t.Fatalf("入れ子の無いコマンドの rc: %d want %d", rc, rcNotFound)
+	}
+}
+
+// 実行できない (shebang の interpreter が無い) スクリプトの rc は、入れ子の直接実行でも通常の経路と同じ
+func TestBadInterpreterRCMatchesNested(t *testing.T) {
+	f := newFixture(t)
+	bad := filepath.Join(f.dir, "bad.sh")
+	if err := os.WriteFile(bad, []byte("#!/nonexistent/interp\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	plain := exitCode(t, f.start(nil, false, "--", bad))
+	nested := exitCode(t, f.start(nil, false, "--", "/bin/sh", "-c", bin+" -- "+bad))
+	if plain != nested || plain == rcTool {
+		t.Fatalf("rc が経路で違う: 通常 %d / 入れ子 %d", plain, nested)
+	}
+}
+
+// / を含むコマンド名は前確認で落とさない (前に並んでいる make build が作るものを指せるように)
+func TestPathLikeCommandIsCheckedAtTurn(t *testing.T) {
+	f := newFixture(t)
+	ga := f.gate("a")
+	made := filepath.Join(f.dir, "made.sh")
+	a := f.start(nil, false, "--", "/bin/sh", "-c", "echo start A >> "+f.log+"; read _ < "+ga+"; printf '#!/bin/sh\\necho made >> "+f.log+"\\n' > "+made+"; chmod +x "+made)
+	waitFor(t, "A が始まる", func() bool { return f.hasLog("start A") })
+	b := f.start(nil, false, "--", made)
+	waitFor(t, "B の札", func() bool { return f.ticketCount() == 2 })
+	f.release(ga)
+	_ = exitCode(t, a)
+	if rc := exitCode(t, b); rc != 0 || !f.hasLog("made") {
+		t.Fatalf("前の人が作ったコマンドを走らせない: rc=%d", rc)
 	}
 }
 

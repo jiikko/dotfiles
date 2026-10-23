@@ -7,7 +7,9 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+	"unsafe"
 )
 
 // psTimeout は ps 1 回の上限。詰まった ps で待ちの select に戻れなくなるのを防ぐ (超えたら判定不能)
@@ -99,4 +101,20 @@ func ancestors() map[int]bool {
 		pid = n
 	}
 	return out
+}
+
+// inTerminalForeground は serial-run が制御端末の前景のグループに居るか (居れば端末の Ctrl-C は同じグループの子にも直接届いている)。
+// 🚨 stdin ではなく /dev/tty で見る。stdin をリダイレクトしていても制御端末は同じで、stdin で見ると前景を取り違える。
+// 制御端末が無い (Claude の Bash・CI・setsid) なら false
+func inTerminalForeground() bool {
+	f, err := os.Open("/dev/tty")
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var pg int32
+	if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), uintptr(syscall.TIOCGPGRP), uintptr(unsafe.Pointer(&pg))); e != 0 {
+		return false
+	}
+	return int(pg) == syscall.Getpgrp()
 }

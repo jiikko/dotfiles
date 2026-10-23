@@ -53,4 +53,38 @@ serialrun の監査で見つかった、グループ C の 4 項目。
 
 ## 進捗
 
-- [ ] 未着手 (項目ごとに、直した commit の subject・当てた変異・実測を書く)
+- 2026-10-23 (commit「fix(serialrun): シグナルと子の扱いを直す (issue 880)」):
+  - [x] C1 起動時に無視されていた INT / QUIT / HUP は Notify しない (無視のまま子へ渡す)。**決め**: serial-run は包むだけの道具なので、挟んでも挟まなくても子の受け方を変えない
+    (runtimeout は mutate-verify のために INT / QUIT の無視を意図して外すが、serial-run はその逆を選んだ。runtimeout は変えていない)。`TestIgnoredIntStaysIgnoredForChild`
+  - [x] C2 子が走っている間の INT / QUIT は子へ伝え直さない。端末の Ctrl-C・グループ宛ての INT (runtimeout・CI) は子にも直接届くので、伝え直すと 2 回届く。
+    **端末の前景に居るとき** (`/dev/tty` の TIOCGPGRP が自分のグループ) は猶予も張らない (Ctrl-C を自分で扱って走り続ける子を殺さない。直す前と同じ)。
+    **端末の外** (制御端末が無い・前景でない) では猶予 30 秒 (`intGrace`) のうちに子が終わらなければ子孫ごと止める (TERM → KILL)。猶予が切れるのと子の終了が同時なら終了を採る。
+    `TestIntToSerialRunPidStopsChildAfterGrace` / `TestGroupIntIsNotForwardedTwice` / `TestIntLetsChildFinishCleanupWithinGrace` / `TestIntGraceStopsGrandchildren`
+    - 合図 × 置かれ方の表 (期待値):
+
+      | 合図 | 端末の前景 | 端末の外 (Claude の Bash・CI・背景) |
+      |---|---|---|
+      | 端末の Ctrl-C | 子にも届く。serial-run は待つだけ (猶予なし) | — |
+      | グループ宛ての INT / QUIT | 子にも届く。待つだけ | 子にも届く。子が 30 秒で終わらなければ子孫ごと止める |
+      | pid 宛ての INT / QUIT | 子には届かない。**止まらない (受け入れ。前景で他の端末から pid 宛てに送る使い方は想定しない)** | 30 秒の後に子孫ごと止める |
+      | TERM / HUP | すぐ子孫ごと止める | すぐ子孫ごと止める |
+    - 端末の前景の経路は `TestIntInTerminalForegroundWaitsForChild` が pty (Setsid + Setctty で制御端末だけを pty にし、stdin は端末にしない) で固定する。
+      先に python の pty driver でも手で確かめた: 猶予 1 秒の seam 版で Ctrl-C を送り、INT を trap して 3 秒走る子が rc=7 で最後まで走った。前景の判定を外した版では 1.1 秒で止められた (負の対照)
+    - 猶予が切れるのと子の終了が同時の場合の覗き (`graceUp` の分岐の非 blocking の `done`) は競合の窓が狭く、テストで固定していない
+  - [ ] C3 **直さない (取り消した)**: 待っている間に親が消えたら抜ける形 (kqueue の NOTE_EXIT) を一度入れたが、敵対的レビューで nohup / `&` で正当に背景に回した待ち手を
+    黙って落とすと分かった (再現済み)。親の終了は「中断された」と「意図して切り離した」を見分けられない。待ち手が抜けるのは待ちの上限 (既定 1 時間) とシグナルだけ
+  - [x] C4 札を出す前に LookPath し、無ければ待たずに 127。`/` を含む名前は前確認しない (前に並んでいる make build が作るものを指せるように)。入れ子の直接実行の Exec の失敗も
+    通常の経路と同じ rc。`TestMissingCommandFailsBeforeWaiting` / `TestPathLikeCommandIsCheckedAtTurn` / `TestBadInterpreterRCMatchesNested`
+- 変異 (全部 red): 無視された INT を Notify する / pid 宛ての INT を猶予の後に止めない / 伝え直す (2 回届く) / 前確認をしない / `/` を含む名前も前確認する / 入れ子の Exec の失敗を 126 に戻す
+- 敵対的レビュー 1 周目 (Opus): P1 1 / P2 2 / P3 2。P1 親の見張りが nohup / `&` の待ち手を落とす (再現済み) → C3 を取り消した / P2 端末の前景で stdin をリダイレクトすると INT が 2 回 (再現済み) /
+  P2 グループ宛ての INT が 2 回 (再現済み) → 伝え直しをやめ、猶予の後に止める / P3 `./bin/x` を前確認で落とす → `/` を含む名前は見ない / P3 親の見張りの pid の使い回し → 取り消しで消えた
+- テストの後始末: 専用のグループで起こしたテストは、後始末でグループごと止める (ループで待つ子が孤児で残っていた)
+- 敵対的レビュー 2 周目 (Opus): P2 1 / P3 2。P2 端末の Ctrl-C を扱う子 (REPL・長い後始末) を 5 秒で殺す (直す前より悪い) → 前景では猶予を張らず、猶予を 30 秒へ /
+  P3 テストが猶予の存在と子孫の停止を守っていない → 2 本足した / P3 猶予と子の終了が同時のとき回収済みの pid を撃ちうる → 先に `done` を覗く
+- 変異 (2 周目、全部 red): 猶予 0 / 猶予を張らない / 猶予が seam を読まない / 猶予の後に子だけ止める
+- 敵対的レビュー 3 周目 (Opus): P1 0 / P3 2。直す前より悪くなる実用上のセルは見つからなかった
+  - P3 前景の経路に自動のテストが無い → pty のテストを足した。変異 (前景の判定が常に false / /dev/tty でなく stdin を見る) はどちらも red
+  - P3 **受け入れ**: 端末の master が閉じても、HUP を無視した session leader が slave を握って残ると、前景と判定され pid 宛ての INT で止まらない (再現済み)。
+    leader の shell が HUP で死ぬ普段の形では端末が revoke されて open が失敗し、猶予が効く。直す前 (47508a73^) は stdin が /dev/null なら INT を子へ伝えていたので、この形に限ってはそちらが止まった
+  - テストの穴 (記録): 「INT のたびに猶予を張り直す」に変えても赤にならない。30 秒という値そのものはテストが seam で上書きするので守っていない
+  - 壊せなかった: carrier が落ちた後の /dev/tty の open は詰まらない / TIOCEXCL の端末も影響なし / Claude の Bash では /dev/tty が ENXIO で猶予が効く (実測)

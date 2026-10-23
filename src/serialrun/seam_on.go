@@ -11,9 +11,10 @@ import (
 
 func applyTestSeams(t *tunables) {
 	for name, dst := range map[string]*time.Duration{
-		"SERIAL_RUN_TEST_RECHECK":  &t.recheck,
-		"SERIAL_RUN_TEST_FALLBACK": &t.fallback,
-		"SERIAL_RUN_TEST_REPORT":   &t.report,
+		"SERIAL_RUN_TEST_RECHECK":   &t.recheck,
+		"SERIAL_RUN_TEST_FALLBACK":  &t.fallback,
+		"SERIAL_RUN_TEST_REPORT":    &t.report,
+		"SERIAL_RUN_TEST_INT_GRACE": &t.intGrace,
 	} {
 		if d, err := time.ParseDuration(os.Getenv(name)); err == nil && d > 0 {
 			*dst = d

@@ -41,6 +41,9 @@ const (
 	recheckInterval = 5 * time.Second
 	longHold        = 30 * time.Minute
 	stopGrace       = 5 * time.Second
+	// intGrace は端末の外から INT / QUIT を受けてから、子が自分で終わるのを待つ間 (過ぎたら子孫ごと止める)。
+	// 後始末に数秒かける子 (テストの片付け・ビルドの中断) を途中で殺さない長さにする
+	intGrace = 30 * time.Second
 
 	heldEnv = "SERIAL_RUN_HELD"
 )
@@ -69,12 +72,13 @@ type tunables struct {
 	fallback time.Duration
 	report   time.Duration
 	recheck  time.Duration // 前の札が flock で待てない (孤児・判定不能) ときの見直しの間隔
+	intGrace time.Duration // 端末の外からの INT / QUIT の後、子孫ごと止めるまでの猶予
 	noBlock  bool          // blocking の待ちを外し、保険の見直しだけで進むか (保険が効くことを確かめるため)
 	wakeLog  string        // 待ちのループが回るたびに 1 行足すファイル (起きた回数を数えるため)
 }
 
 func loadTunables() tunables {
-	t := tunables{fallback: fallbackPoll, report: reportInterval, recheck: recheckInterval}
+	t := tunables{fallback: fallbackPoll, report: reportInterval, recheck: recheckInterval, intGrace: intGrace}
 	applyTestSeams(&t)
 	return t
 }
@@ -216,8 +220,9 @@ func execDirect(argv []string, stderr io.Writer) int {
 		return startErrorRC(err)
 	}
 	err = syscall.Exec(path, argv, os.Environ())
-	fmt.Fprintf(stderr, "serial-run: %v\n", err)
-	return rcCannotExec
+	// 子を起こす経路 (runChild) と同じ rc にする (見つからない 127 / 実行できない 126)
+	fmt.Fprintf(stderr, "serial-run: %s: %v\n", path, err)
+	return startErrorRC(err)
 }
 
 type waitResult int
@@ -233,10 +238,22 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	// 🚨 Notify は札を出す前に張る。張る前に届いたシグナルは、札を消さずに道具を殺す (札はカーネルが flock を外すので
 	// 次の待ち手が消すが、子を起こした後なら子が残る)
 	sigs := make(chan os.Signal, 4)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
-	// 起動時に無視されていた HUP は Notify しない (無視のまま子へ渡す。runtimeout の注記と同じ: nohup の run を HUP で止めない)
-	if !signal.Ignored(syscall.SIGHUP) {
-		signal.Notify(sigs, syscall.SIGHUP)
+	signal.Notify(sigs, syscall.SIGTERM)
+	// 起動時に無視されていた INT / QUIT / HUP は Notify しない (無視のまま子へ渡す)。serial-run を挟んでも挟まなくても子の受け方を
+	// 変えない: 非対話の bash の `make test &` は INT / QUIT を無視して起こされ、`nohup` は HUP を無視させる。
+	// 🚨 runtimeout は INT / QUIT の無視を意図して外す (src/runtimeout/main.go の注記。mutate-verify の Ctrl-C のため)。serial-run は
+	// 包むだけの道具なので、外さない方を選んだ
+	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP} {
+		if !signal.Ignored(sig) {
+			signal.Notify(sigs, sig)
+		}
+	}
+
+	// コマンドが無ければ、列を待ち切る前に 127 で抜ける (typo に気づくのが自分の番になってからでは遅い)。
+	// / を含む名前は見ない (前に並んでいる make build が作るもの `./bin/x` を指せるように。自分の番で確かめる)
+	if _, err := exec.LookPath(opt.argv[0]); !strings.Contains(opt.argv[0], "/") && err != nil && !errors.Is(err, exec.ErrDot) {
+		fmt.Fprintf(stderr, "serial-run: %v\n", err)
+		return startErrorRC(err)
 	}
 
 	var deadline <-chan time.Time
@@ -311,7 +328,7 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 	}
 
 	started := time.Now()
-	rc, got := runChild(opt.argv, heldToken(q.dir, seq, info.Nonce), sigs, stderr, func(pid int) {
+	rc, got := runChild(opt.argv, heldToken(q.dir, seq, info.Nonce), tn.intGrace, sigs, stderr, func(pid int) {
 		// 🚨 pid を先に書く。ps (開始時刻) を待ってから書くと、その間に serial-run だけが SIGKILL されたとき、子の情報が無い札として消され、
 		// 走り続ける子の後ろで次の 1 本が走る
 		info.ChildPid = pid
@@ -353,6 +370,7 @@ type waiter struct {
 
 	lastPos int
 	told    bool // 最初の待ちの行を出したか
+
 }
 
 func (w *waiter) logWake() {
@@ -523,7 +541,7 @@ func newNonce() string {
 // 🚨 子を別のプロセスグループに置かない。別に置くと、呼び出し元がグループへ SIGKILL を送ったとき serial-run だけが死んで
 // lock が外れ、子は lock の外で走り続けて次の待ち手と 2 本同時に走る。同じグループなら一緒に死ぬ (端末の job control も子に効く)。
 // 🚨 lock と札の fd は子へ渡さない (os.OpenFile は O_CLOEXEC で開く)。渡すと子が残した背景プロセスが lock を握ったまま残る
-func runChild(argv []string, held string, sigs <-chan os.Signal, stderr io.Writer, started func(pid int)) (int, syscall.Signal) {
+func runChild(argv []string, held string, grace time.Duration, sigs <-chan os.Signal, stderr io.Writer, started func(pid int)) (int, syscall.Signal) {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	if errors.Is(cmd.Err, exec.ErrDot) {
 		cmd.Err = nil
@@ -539,10 +557,21 @@ func runChild(argv []string, held string, sigs <-chan os.Signal, stderr io.Write
 	done := make(chan int, 1)
 	go func() { done <- waitStatus(cmd.Wait()) }()
 	var got syscall.Signal
+	var graceUp <-chan time.Time
 	for {
 		select {
 		case rc := <-done:
 			return rc, got
+		case <-graceUp:
+			// 猶予が切れるのと子が終わるのが同時なら、終わった方を採る (回収済みの pid を撃たない)
+			select {
+			case rc := <-done:
+				return rc, got
+			default:
+			}
+			// 端末の外からの INT / QUIT の後、猶予のうちに子が終わらなかった: 子孫ごと止める (pid 宛ての INT でも止められるように)
+			tgt.Stop(stopGrace)
+			return <-done, got
 		case s := <-sigs:
 			got, _ = s.(syscall.Signal)
 			if got == syscall.SIGTERM || got == syscall.SIGHUP {
@@ -550,7 +579,14 @@ func runChild(argv []string, held string, sigs <-chan os.Signal, stderr io.Write
 				tgt.Stop(stopGrace)
 				return <-done, got
 			}
-			// INT / QUIT は端末から同じグループの子にも届いている (伝え直すと 2 回届く)。子の終わりを待つ
+			// INT / QUIT は子へ伝え直さない。端末の Ctrl-C や、グループ宛ての INT (runtimeout・CI) は同じグループの子にも直接届いていて、
+			// 伝え直すと 2 回届く (2 回目を強制終了と読むプログラムがある)。
+			// 🚨 端末の前景に居るときは猶予で止めない。Ctrl-C は子にも届いていて、それを自分で扱って走り続ける子 (REPL・長い後始末) を
+			// 猶予で殺すことになる。端末の外 (pid 宛て・端末を持たない Claude の Bash) の INT だけ、猶予の後に子孫ごと止める
+			// (pid 宛てかグループ宛てかは Go からは見えないので、子が自分で終わるのを猶予の間は待つ。runtimeout と同じ考え方)
+			if graceUp == nil && !inTerminalForeground() {
+				graceUp = time.After(grace)
+			}
 		}
 	}
 }
