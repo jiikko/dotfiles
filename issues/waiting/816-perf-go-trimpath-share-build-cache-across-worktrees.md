@@ -62,6 +62,8 @@ module cache の中の依存は元から場所に依存しないので、worktre
 
 ## 関連
 
+- issue 887 (2026-10-23): -trimpath の下でも cgo の生成物は `//line` に絶対パスを残し、それが worktree の間で使い回されて、worktree を消した後の glogx の lint が落ちる (副作用の候補。未確認の部分は 887 に)
+
 - issue 742 — GOCACHE の増え方の実測 (54 GB・worktree のパスが埋まった 26 MB の項目・1 行の変更の増分)
 - issue 817 — glogx の main を薄くする (分割の動機はキャッシュではなく設計)。2026-10-18 に完了 (この issue の測り方には影響しない。継続)
 
