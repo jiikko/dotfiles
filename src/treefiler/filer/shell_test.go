@@ -83,3 +83,20 @@ func TestPasteGoesToInputOnly(t *testing.T) {
 		t.Fatalf("コマンドへの貼り付け = %q (改行は空白、制御文字は落とす)", got)
 	}
 }
+
+// ! と : の入力欄は、空欄の ctrl+h でも閉じる (backspace の別名。文字があるうちは 1 文字消す)。
+func TestPromptClosesOnEmptyCtrlH(t *testing.T) {
+	for _, open := range []string{"!", ":"} {
+		m := newTest(t)
+		m.HandleKey(open)
+		m.HandleInput("x", "x")
+		m.HandleInput("ctrl+h", "")
+		if !m.prompt.active || !m.prompt.line.Empty() {
+			t.Fatalf("%s: 文字があるうちの ctrl+h で閉じた / 消えない (active=%v line=%q)", open, m.prompt.active, m.prompt.line.String())
+		}
+		m.HandleInput("ctrl+h", "")
+		if m.prompt.active {
+			t.Fatalf("%s: 空欄の ctrl+h で閉じない", open)
+		}
+	}
+}

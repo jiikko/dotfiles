@@ -230,3 +230,18 @@ func TestSearchBackToEmptyReturnsToOrigin(t *testing.T) {
 		t.Fatalf("空欄に戻したのに 起点へ戻らない / 一致が残る (active=%v cur=%s)", m.search.active, m.cur.raw)
 	}
 }
+
+// 空欄の ctrl+h は backspace と同じく検索を閉じる (文字があるうちは 1 文字消す)。
+func TestSearchClosesOnEmptyCtrlH(t *testing.T) {
+	m := newTest(t)
+	m.HandleKey("/")
+	m.HandleInput("x", "x")
+	m.HandleInput("ctrl+h", "")
+	if !m.search.active || !m.search.line.Empty() {
+		t.Fatalf("文字があるうちの ctrl+h で閉じた / 消えない (active=%v)", m.search.active)
+	}
+	m.HandleInput("ctrl+h", "")
+	if m.search.active {
+		t.Fatal("空欄の ctrl+h で検索が閉じない")
+	}
+}

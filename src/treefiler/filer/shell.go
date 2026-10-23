@@ -160,7 +160,7 @@ func (m *Model) promptKey(key, text string) {
 				p.line.Insert(p.history[p.hist])
 			}
 		}
-	case "backspace":
+	case "backspace", "ctrl+h": // ctrl+h は lineedit と同じく backspace の別名
 		if p.line.Empty() {
 			p.active = false // 空欄の backspace で閉じる
 			return

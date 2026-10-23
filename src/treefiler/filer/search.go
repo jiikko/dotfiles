@@ -182,7 +182,7 @@ func (m *Model) searchKey(key, text string) {
 		return
 	case key == "up" && s.line.Empty():
 		s.line.Insert(m.lastSearch) // 空欄の ↑ は前回の検索を呼び戻す
-	case key == "backspace" && s.line.Empty(): // 空欄の backspace で閉じる
+	case (key == "backspace" || key == "ctrl+h") && s.line.Empty(): // 空欄の backspace で閉じる (ctrl+h は lineedit と同じく backspace の別名)
 		m.endSearch(true)
 		return
 	default:
