@@ -23,6 +23,8 @@ type Source interface {
 	Files() ([]string, error)
 	// ReadAll は files の中身を返す。commit の側は 1 回の git cat-file --batch でまとめて読む。
 	ReadAll(files []string) (map[string][]byte, error)
+	// ReadRoot は repo の root のファイル (設定ファイル) を読む。無ければ ok=false。
+	ReadRoot(name string) (b []byte, ok bool, err error)
 }
 
 // Worktree は今の作業ツリー (未コミットの変更と、ignore されていない untracked のファイルを含む) を読む。
@@ -48,6 +50,15 @@ func (w Worktree) ReadAll(files []string) (map[string][]byte, error) {
 		out[f] = b
 	}
 	return out, nil
+}
+
+// ReadRoot は repo の root のファイルを読む。
+func (w Worktree) ReadRoot(name string) ([]byte, bool, error) {
+	b, err := os.ReadFile(filepath.Join(w.Scope.Root, name))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	return b, err == nil, err
 }
 
 // Commit はある commit の木を、checkout せずに git のオブジェクトから読む (調べる repo に書かない)。
@@ -151,6 +162,24 @@ func (c *Commit) ReadAll(files []string) (map[string][]byte, error) {
 		return nil, fmt.Errorf("git cat-file: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return out, nil
+}
+
+// ReadRoot は commit の木の root のファイルを読む (checkout しない)。無ければ ok=false。
+func (c *Commit) ReadRoot(name string) ([]byte, bool, error) {
+	out, err := git(c.Scope.Root, "ls-tree", "-z", "--full-tree", c.Hash, "--", name)
+	if err != nil {
+		return nil, false, err
+	}
+	meta, _, found := strings.Cut(strings.TrimSuffix(out, "\x00"), "\t")
+	if !found {
+		return nil, false, nil
+	}
+	f := strings.Fields(meta)
+	if len(f) < 3 || f[1] != "blob" {
+		return nil, false, fmt.Errorf("%s:%s はファイルではない", c.Name(), name)
+	}
+	b, err := git(c.Scope.Root, "cat-file", "blob", f[2])
+	return []byte(b), err == nil, err
 }
 
 // ErrNoBase は base を決められないこと (判定不能)。

@@ -45,9 +45,33 @@ base で L3 だけ比べなかった相手 (L3Trivial) から来た別の単位�
 | `-min-nodes` | 10 | これより節の少ない関数・初期化子は比べない |
 | `-min-closure-nodes` | 20 | これより節の少ないクロージャは比べない |
 | `-limit` | 20 | text で出す組の上限 (0 は全部)。Claude が何度も回すので短くしている |
-| `-v` | false | 読めない構文の単位を 1 つずつ出す |
+| `-v` | false | 読めない構文の単位・除外の一覧・各組の「除外の 1 行」を出す |
+| `-no-exclude` | false | `.dupscan.json` の除外を外して回す (除外が正しいかを見直すため。形の誤りは rc=2 のまま) |
+| `-fail-new-exclusions` | false | gate だけ。base から新しく足された除外があれば rc=1 (CI で人の目に届けるため) |
 
 下限の既定値は仮 (issue 898 で obaket と DualNoteApp に当てて決める)。
+
+### 除外の設定 (`.dupscan.json`)
+
+誤検知・意図して分けている写しは、repo の root の `.dupscan.json` で外す (設計は issue 906)。report の json の各組と text の `-v`、
+gate の違反の json と `-v` に出る「除外の 1 行」に `kind` (`false-positive` / `intentional`) と `reason` を埋めて貼る。
+
+```json
+{"version": 1, "exclude": [
+  {"paths": ["Generated/**"], "kind": "false-positive", "reason": "生成コード"},
+  {"paths": ["**/*Tests.swift"], "levels": ["L3"], "kind": "false-positive", "reason": "テストの表の形が似ているだけ"},
+  {"group": ["<釘>", "<釘>"], "level": "L2", "kind": "intentional", "reason": "iOS と macOS で分けておく"},
+  {"unit": "<釘>", "kind": "intentional", "reason": "寄せない理由"}
+]}
+```
+
+- 釘は `<鍵 (クロージャの順番と多重定義の #n を除く)>@<本体の L1 のハッシュの先頭 12 文字>`。行がずれても効き、本体を直すと外れる。
+  1 つの釘が 2 つ以上の単位に当たる除外は効かせず「名指しできない除外」に出す
+- 組の除外は、組のメンバーが全部その釘に当たるときだけ組を消す (新しいメンバーが増えれば出る)。単位の除外 (許可) は寄せる側に出さないだけで、数には入れたまま
+- gate では、組・単位の除外は base に同じ釘の単位があったか、その釘が新しく足された要素のときだけ効く (消えた写しの場所に後から置いた写しを覆わない)。
+  新しく足された除外 (釘・glob の 1 つずつ) と、パスの除外で比べなかった変わった単位の数を 1 行目に出す。base の設定が読めなければ空とみなして注記する
+- 何も消していない除外は「効いていない除外」として出る (寄せ終わった・改名した・本体を直した)。起点を絞った走査では、起点の外を指す除外は数えない
+- 単位の直前のコメントでの許可 (`// dupscan:allow`) はまだ無い (issue 906 の 2 段目)
 
 ## 守っていること
 
@@ -62,7 +86,7 @@ base で L3 だけ比べなかった相手 (L3Trivial) から来た別の単位�
 
 - 局所の名前の有効範囲を見ない (宣言がどこかにあれば、単位の中の同じ名前を全部局所として扱う)。誤検知の向き
 - test のファイルの判定はパスの慣習 (`Tests` / `…Tests` / `…Tests.swift`) と `XCTestCase` の継承。`App/ABTests/` のような製品のディレクトリも test と読む (repo ごとの上書きは設定ファイル。issue 906)
-- クロージャの鍵は、囲む単位の中での出現の順番。前にクロージャを足すと後ろの鍵がずれる (除外の設定で指すときの注意。issue 906)
+- クロージャの鍵は、囲む単位の中での出現の順番。前にクロージャを足すと後ろの鍵がずれる (除外の設定は順番を入れない釘で指すので、ずれでは外れない)
 - 読めない構文があるファイルでは、読めない部分に飲み込まれた関数は単位として出てこない。件数は 1 行の出力にも出る
 - gate は組の数が増えたかしか見ないので、次の 2 つは正しい作業でも止まる (寄せる先・揃える先が前から組の外にいたため):
   既にある包み (wrapper) へ写しを寄せたら、包みと残った呼び出し側の形が一致した / 片方の写しにだけ入っていた修正を、もう片方にも入れて形を揃えた。
@@ -83,6 +107,7 @@ base で L3 だけ比べなかった相手 (L3Trivial) から来た別の単位�
 | `internal/swift` | Swift の adapter (tree-sitter の node の種類の分類表・単位の取り出し・test の判定) |
 | `internal/report` | text / JSON / Xcode の出力 (report と gate) |
 | `internal/gate` | gate の判定 (変わった単位・出どころ・違反になった最初の段) |
+| `internal/exclude` | `.dupscan.json` の読み込みと検査・釘・除外の効き方 (report と gate が同じ関数を呼ぶ)・効いていない除外 |
 
 - 文法は `github.com/alex-pinkus/tree-sitter-swift` の `with-generated-files` branch を pseudo-version で固定する。上げたら `TestEveryKindIsClassified` (文法の全部の名前つきの種類が分類表にあるか) を通す
 - `third_party/tree-sitter-swift-teststub` は、文法の module のテストが誤った import path で参照する package の空の代わり (go.mod の replace のコメント)

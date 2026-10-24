@@ -8,6 +8,7 @@ package norm
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -28,6 +29,16 @@ const (
 var Levels = []Level{L1, L2, L3}
 
 func (l Level) String() string { return "L" + strconv.Itoa(int(l)) }
+
+// ParseLevel は "L1" / "L2" / "L3" を段にする。
+func ParseLevel(s string) (Level, error) {
+	for _, l := range Levels {
+		if strings.TrimSpace(s) == l.String() {
+			return l, nil
+		}
+	}
+	return 0, fmt.Errorf("知らない段 %q (L1 / L2 / L3)", s)
+}
 
 // Result は 1 つの単位の正規化の結果。
 type Result struct {

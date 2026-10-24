@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"dupscan/internal/exclude"
 	"dupscan/internal/group"
 	"dupscan/internal/norm"
 	"dupscan/internal/repo"
@@ -40,7 +41,7 @@ type common struct {
 	format, levels       *string
 	minNodes, minClosure *int
 	limit                *int
-	verbose              *bool
+	verbose, noExclude   *bool
 }
 
 func newFlags(name string, stderr io.Writer) (*flag.FlagSet, common) {
@@ -53,6 +54,7 @@ func newFlags(name string, stderr io.Writer) (*flag.FlagSet, common) {
 		limit:      fs.Int("limit", 20, "text で出す組・違反の上限 (0 は全部)"),
 		verbose:    fs.Bool("v", false, "読めない構文の単位を 1 つずつ出す"),
 		levels:     fs.String("levels", "L1,L2,L3", "見る段 (カンマ区切り)"),
+		noExclude:  fs.Bool("no-exclude", false, "repo の root の "+exclude.FileName+" の除外を外して回す (除外が正しいかを見直すため)"),
 	}
 	fs.Usage = func() {
 		fmt.Fprint(stderr, usage)
@@ -102,12 +104,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan:", err)
 		return 2
 	}
-	got, err := scanSource(repo.Worktree{Scope: sc, Exts: swift.Extensions}, true)
+	src := repo.Worktree{Scope: sc, Exts: swift.Extensions}
+	cfg, err := loadConfig(src, *c.noExclude)
+	if err != nil {
+		fmt.Fprintln(stderr, "dupscan: 判定不能:", err)
+		return 2
+	}
+	got, err := scanSource(src, true)
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan:", err)
 		return 2
 	}
-	s := report.Build(sc.Root, got.files, got.units, got.errFiles, group.Build(got.entries, opt))
+	ex := exclude.New(cfg, got.entries, scopeFilter(sc))
+	kept, _ := ex.Filter(got.entries)
+	opt.Skip = ex.Skip
+	s := report.Build(sc.Root, got.files, got.units, got.errFiles, ex.ApplyGroups(group.Build(kept, opt)), ex)
 	switch *c.format {
 	case "json":
 		err = report.JSON(stdout, s)
@@ -126,19 +137,36 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// loadConfig は repo の root の除外の設定を読む。無ければ nil (除外無し)。読めない・形が違うときはエラー (黙って除外無しで回さない)。
+// noExclude でも形は確かめる (誤りを -no-exclude で隠さない)。
+func loadConfig(src repo.Source, noExclude bool) (*exclude.Config, error) {
+	b, ok, err := src.ReadRoot(exclude.FileName)
+	if err != nil || !ok {
+		return nil, err
+	}
+	cfg, err := exclude.Parse(b)
+	if err != nil || noExclude {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// scopeFilter は、起点が repo 全体でなければ起点の中かを返す関数 (起点の外を指す除外を効いていないに数えないため)。
+func scopeFilter(sc repo.Scope) func(string) bool {
+	if sc.Whole() {
+		return nil
+	}
+	return sc.Contains
+}
+
 func parseLevels(s string) ([]norm.Level, error) {
 	var out []norm.Level
 	for _, f := range strings.Split(s, ",") {
-		switch strings.TrimSpace(f) {
-		case "L1":
-			out = append(out, norm.L1)
-		case "L2":
-			out = append(out, norm.L2)
-		case "L3":
-			out = append(out, norm.L3)
-		default:
-			return nil, fmt.Errorf("知らない段 %q (L1 / L2 / L3)", f)
+		l, err := norm.ParseLevel(f)
+		if err != nil {
+			return nil, err
 		}
+		out = append(out, l)
 	}
 	return out, nil
 }

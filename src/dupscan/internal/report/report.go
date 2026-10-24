@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dupscan/internal/exclude"
 	"dupscan/internal/group"
 	"dupscan/internal/tree"
 )
@@ -20,6 +21,52 @@ type Summary struct {
 	FilesWithErrors []string    `json:"files_with_errors"`
 	Unreadable      []UnitRef   `json:"unreadable_units"`
 	Groups          []GroupJSON `json:"groups"`
+	Exclusions
+}
+
+// Exclusions は除外の設定の状態 (report と gate で共通)。
+type Exclusions struct {
+	// Stale は何も消していない除外 (寄せ終わった・改名した・本体を直した)。
+	Stale []exclude.Rule `json:"stale_exclusions"`
+	// Ambiguous は釘が 2 つ以上の単位に当たるので効かせなかった除外。
+	Ambiguous []exclude.Rule `json:"ambiguous_exclusions"`
+}
+
+func exclusions(ex *exclude.Set) Exclusions {
+	x := Exclusions{Stale: []exclude.Rule{}, Ambiguous: []exclude.Rule{}}
+	if ex != nil {
+		x.Stale = append(x.Stale, ex.Stale()...)
+		x.Ambiguous = append(x.Ambiguous, ex.Ambiguous()...)
+	}
+	return x
+}
+
+func (x Exclusions) note() string {
+	out := ""
+	if n := len(x.Stale); n > 0 {
+		out += fmt.Sprintf("・効いていない除外 %d", n)
+	}
+	if n := len(x.Ambiguous); n > 0 {
+		out += fmt.Sprintf("・名指しできない除外 %d (釘が 2 つ以上の単位に当たる)", n)
+	}
+	if out != "" {
+		out += " (-v で一覧)"
+	}
+	return out
+}
+
+func (x Exclusions) write(w io.Writer) {
+	for _, r := range x.Stale {
+		fmt.Fprintf(w, "効いていない除外: %s\n", ruleJSON(r))
+	}
+	for _, r := range x.Ambiguous {
+		fmt.Fprintf(w, "名指しできない除外: %s\n", ruleJSON(r))
+	}
+}
+
+func ruleJSON(r exclude.Rule) string {
+	b, _ := json.Marshal(r)
+	return string(b)
 }
 
 // UnitRef は単位 1 つの出力。
@@ -31,6 +78,7 @@ type UnitRef struct {
 	Kind       string `json:"kind"`
 	Name       string `json:"name"`
 	Signature  string `json:"signature,omitempty"`
+	Allowed    bool   `json:"allowed,omitempty"` // 単位の除外 (許可) が効いている
 	Enclosing  string `json:"enclosing,omitempty"`
 	Test       bool   `json:"test"`
 	Visibility string `json:"visibility"`
@@ -42,10 +90,12 @@ type GroupJSON struct {
 	Hash      string    `json:"hash"`
 	Partition string    `json:"partition"`
 	Members   []UnitRef `json:"members"`
+	// Exclude はこの組を指す組の除外の 1 行 (kind と reason を埋めて .dupscan.json に貼る)。
+	Exclude string `json:"exclude"`
 }
 
-// Build は出力の形を組み立てる。
-func Build(root string, files int, units []*tree.Unit, errFiles []string, groups []group.Group) Summary {
+// Build は出力の形を組み立てる。ex は除外 (nil なら無し)。単位の許可の印を付け、その後で効いていない除外を数える。
+func Build(root string, files int, units []*tree.Unit, errFiles []string, groups []group.Group, ex *exclude.Set) Summary {
 	s := Summary{Root: root, Files: files, Units: len(units), FilesWithErrors: errFiles}
 	if s.FilesWithErrors == nil {
 		s.FilesWithErrors = []string{}
@@ -58,12 +108,15 @@ func Build(root string, files int, units []*tree.Unit, errFiles []string, groups
 	}
 	s.Groups = []GroupJSON{}
 	for _, g := range groups {
-		gj := GroupJSON{Level: g.Level.String(), Hash: g.Hash, Partition: g.Partition}
+		gj := GroupJSON{Level: g.Level.String(), Hash: g.Hash, Partition: g.Partition, Exclude: exclude.GroupSnippet(g.Level, g.Members)}
 		for _, m := range g.Members {
-			gj.Members = append(gj.Members, ref(m.Unit))
+			r := ref(m.Unit)
+			r.Allowed = ex != nil && ex.Allowed(m)
+			gj.Members = append(gj.Members, r)
 		}
 		s.Groups = append(s.Groups, gj)
 	}
+	s.Exclusions = exclusions(ex)
 	return s
 }
 
@@ -90,13 +143,14 @@ type TextOptions struct {
 // Text は人が読む形で書く。重複が無いときは 1 行だけにする (何度も回す Claude の文脈を食わないように)。
 func Text(w io.Writer, s Summary, opt TextOptions) error {
 	if len(s.Groups) == 0 {
-		fmt.Fprintf(w, "dupscan: 重複なし (%d ファイル・%d 単位)%s\n", s.Files, s.Units, unreadableNote(s))
+		fmt.Fprintf(w, "dupscan: 重複なし (%d ファイル・%d 単位)%s%s\n", s.Files, s.Units, unreadableNote(s), s.note())
 		if opt.Verbose {
 			writeErrorFiles(w, s)
+			s.write(w)
 		}
 		return nil
 	}
-	fmt.Fprintf(w, "dupscan: 組 %d (%s)・%d ファイル・%d 単位%s\n", len(s.Groups), levelCounts(s), s.Files, s.Units, unreadableNote(s))
+	fmt.Fprintf(w, "dupscan: 組 %d (%s)・%d ファイル・%d 単位%s%s\n", len(s.Groups), levelCounts(s), s.Files, s.Units, unreadableNote(s), s.note())
 	shown := s.Groups
 	if opt.Limit > 0 && len(shown) > opt.Limit {
 		shown = shown[:opt.Limit]
@@ -104,7 +158,10 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 	for _, g := range shown {
 		fmt.Fprintf(w, "%s %s:\n", g.Level, g.Partition)
 		for _, m := range g.Members {
-			fmt.Fprintf(w, "  %s:%d %s\n", m.File, m.Line, label(m))
+			fmt.Fprintf(w, "  %s:%d %s%s\n", m.File, m.Line, label(m), allowedMark(m))
+		}
+		if opt.Verbose {
+			fmt.Fprintf(w, "  除外の 1 行: %s\n", g.Exclude)
 		}
 	}
 	if rest := len(s.Groups) - len(shown); rest > 0 {
@@ -112,6 +169,7 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 	}
 	if opt.Verbose {
 		writeErrorFiles(w, s)
+		s.write(w)
 		for _, u := range s.Unreadable {
 			fmt.Fprintf(w, "読めない: %s:%d %s\n", u.File, u.Line, label(u))
 		}
@@ -165,6 +223,13 @@ func Xcode(w io.Writer, s Summary) error {
 		fmt.Fprintf(w, "%s:1:1: note: 読めない構文があり、比べていない部分がある (dupscan)\n", filepath.Join(s.Root, f))
 	}
 	return nil
+}
+
+func allowedMark(u UnitRef) string {
+	if u.Allowed {
+		return " (許可)"
+	}
+	return ""
 }
 
 func label(u UnitRef) string {

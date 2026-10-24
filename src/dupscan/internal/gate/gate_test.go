@@ -3,6 +3,7 @@ package gate
 import (
 	"testing"
 
+	"dupscan/internal/exclude"
 	"dupscan/internal/group"
 	"dupscan/internal/norm"
 	"dupscan/internal/tree"
@@ -404,5 +405,31 @@ func TestMovedCopyNamingDoesNotDependOnOrder(t *testing.T) {
 		if len(r.Violations) != 1 || len(r.Violations[0].New) != 1 || r.Violations[0].New[0].Unit.Key != "A|n" {
 			t.Errorf("移した写しを新しいと名指しした (n が先=%v): %+v", nFirst, keys(r.Violations[0].New))
 		}
+	}
+}
+
+func TestAllowedUnitIsNotNamedButDoesNotHideNewCopy(t *testing.T) {
+	allow := func(es ...*group.Entry) *exclude.Set {
+		var rules []exclude.Rule
+		for _, x := range es {
+			rules = append(rules, exclude.Rule{Unit: exclude.Pin(x), Kind: "intentional", Reason: "r"})
+		}
+		s := exclude.New(&exclude.Config{Version: 1, Exclude: rules}, es, nil)
+		return s
+	}
+	// 許可した単位 n は寄せる側に出ず、寄せる側が空になった違反は出ない。
+	base := []*group.Entry{e("a", "x", "x2", "x3")}
+	n := e("n", "x", "x2", "x3")
+	o := opt
+	o.Exclude = allow(n)
+	if r := Judge(base, []*group.Entry{e("a", "x", "x2", "x3"), n}, o); len(r.Violations) != 0 {
+		t.Errorf("許可した単位が違反に出た: %+v", r)
+	}
+	// 古い単位 a に許可を付けても、新しい写し n の違反は消えない (数には入れたまま)。
+	a := e("a", "x", "x2", "x3")
+	o.Exclude = allow(a)
+	r := Judge(base, []*group.Entry{a, e("n", "x", "x2", "x3")}, o)
+	if len(r.Violations) != 1 || keys(r.Violations[0].New)[0] != "n" {
+		t.Errorf("古い単位の許可で新しい写しの違反が消えた: %+v", r)
 	}
 }

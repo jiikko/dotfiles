@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"dupscan/internal/exclude"
 	"dupscan/internal/group"
 	"dupscan/internal/norm"
 	"dupscan/internal/tree"
@@ -24,6 +25,8 @@ type Options struct {
 	group.Options
 	// Fail は止める段。粗い段を止めるなら、それより細かい段の一致も止める (L1 で一致すれば L2・L3 でも一致するため)。
 	Fail map[norm.Level]bool
+	// Exclude は除外の設定 (nil なら無し)。組の除外に当たる組は違反にせず、許可の単位は寄せる側に出さない。
+	Exclude *exclude.Set
 }
 
 // Violation は新しく増えた重複 1 つ (1 つの組)。
@@ -63,7 +66,7 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 	for _, lv := range levels {
 		groups[lv] = map[string][]*group.Entry{}
 		for _, e := range head {
-			if eligible(e, lv, opt.Options) {
+			if group.Eligible(e, lv, opt.Options) {
 				groups[lv][e.Result.Hash[lv]] = append(groups[lv][e.Result.Hash[lv]], e)
 			}
 		}
@@ -81,7 +84,7 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 			continue
 		}
 		for _, lv := range levels {
-			if !eligible(e, lv, opt.Options) {
+			if !group.Eligible(e, lv, opt.Options) {
 				continue
 			}
 			h := e.Result.Hash[lv]
@@ -90,6 +93,9 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 				continue // この段では他と一致しない。粗い段を見る
 			}
 			k := lv.String() + h
+			if _, done := judged[k]; !done && opt.Exclude != nil && opt.Exclude.GroupExcluded(lv, g) {
+				judged[k] = false // 除外した組。粗い段で新しいメンバーが増えていればそちらで出る
+			}
 			if _, done := judged[k]; !done {
 				v, ok := judgeGroup(lv, h, g, origin, opt)
 				if ok {
@@ -126,7 +132,7 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 			// (origins は種類をまたいで当てないので、ここに来るのは base で L3 だけ比べなかった L3Trivial の相手)。
 			// 同じに数えると、L3 で比べていなかった単位が組に入った分を見逃す。その場で育った単位 (鍵が同じ) は
 			// 同じに数える: 別に数えたり捨てたりすると、写しが同じ修正で一緒に下限を超えたときに止まる。
-			if !eligible(b, lv, opt.Options) && b.Unit.Key != m.Unit.Key {
+			if !group.Eligible(b, lv, opt.Options) && b.Unit.Key != m.Unit.Key {
 				key = "small:" + b.Result.Hash[lv]
 			}
 		}
@@ -172,6 +178,21 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 			} else {
 				v.New = append(v.New, m)
 			}
+		}
+	}
+	// 許可の単位は寄せる側から同じ形へ移す (付け替えの後で。先に外すと、触った単位が寄せる側に付け替えられる)。
+	if opt.Exclude != nil {
+		news := v.New[:0:0]
+		for _, m := range v.New {
+			if opt.Exclude.Allowed(m) {
+				v.Same = append(v.Same, m)
+			} else {
+				news = append(news, m)
+			}
+		}
+		v.New = news
+		if len(v.New) == 0 {
+			return Violation{}, false
 		}
 	}
 	return v, true
@@ -241,7 +262,7 @@ func origins(base, head []*group.Entry, opt group.Options) map[*group.Entry]*gro
 	match(func(e *group.Entry) string { return join(e.Unit.Key, l1(e)) })
 	split := func(es []*group.Entry) (big, small []*group.Entry) {
 		for _, e := range es {
-			if eligible(e, norm.L1, opt) {
+			if group.Eligible(e, norm.L1, opt) {
 				big = append(big, e)
 			} else {
 				small = append(small, e)
@@ -323,11 +344,4 @@ func failAt(lv norm.Level, fail map[norm.Level]bool) bool {
 		}
 	}
 	return false
-}
-
-func eligible(e *group.Entry, lv norm.Level, opt group.Options) bool {
-	if e.Unit.Unreadable || e.Result.Nodes < group.MinNodes(e, opt) {
-		return false
-	}
-	return lv != norm.L3 || !e.Result.L3Trivial
 }

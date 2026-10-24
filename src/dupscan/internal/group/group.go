@@ -28,6 +28,19 @@ type Options struct {
 	// MinClosureNodes はクロージャの下限。短いクロージャ (`{ Tag(name: $0) }`) はどこにでもあり、関数と同じ下限では組が雑音で埋まる。
 	MinClosureNodes int
 	Levels          []norm.Level
+	// Skip は、その単位をその段で比べないか (除外の設定の、段を指定したパスの除外)。nil なら外さない。
+	Skip func(*Entry, norm.Level) bool
+}
+
+// Eligible は、その単位をその段で比べるか (読めない・下限より小さい・L3 で自明・除外した段は比べない)。
+func Eligible(e *Entry, lv norm.Level, opt Options) bool {
+	if e.Unit.Unreadable || e.Result.Nodes < MinNodes(e, opt) {
+		return false
+	}
+	if lv == norm.L3 && e.Result.L3Trivial {
+		return false
+	}
+	return opt.Skip == nil || !opt.Skip(e, lv)
 }
 
 // Build は組を作る。細かい段の組とメンバーが同じ組は、粗い段では重ねて出さない
@@ -41,10 +54,7 @@ func Build(entries []*Entry, opt Options) []Group {
 	for _, lv := range levels {
 		byHash := map[string][]*Entry{}
 		for _, e := range entries {
-			if e.Unit.Unreadable || e.Result.Nodes < MinNodes(e, opt) {
-				continue
-			}
-			if lv == norm.L3 && e.Result.L3Trivial {
+			if !Eligible(e, lv, opt) {
 				continue
 			}
 			h := e.Result.Hash[lv]

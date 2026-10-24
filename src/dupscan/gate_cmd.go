@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 
+	"dupscan/internal/exclude"
 	"dupscan/internal/gate"
+	"dupscan/internal/group"
 	"dupscan/internal/norm"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
@@ -16,6 +18,7 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	baseRef := fs.String("base", "", "比べる base (その commit と head の merge-base を使う)。既定は upstream、無ければ origin/HEAD")
 	headRef := fs.String("head", "", "作業ツリーの代わりに比べる commit (過去の commit の流し直し用。checkout しない)")
 	failLevels := fs.String("fail-levels", "L1,L2", "違反を止める (rc=1) 段。それ以外の段は報告だけ")
+	failNewEx := fs.Bool("fail-new-exclusions", false, "base から新しく足された除外があれば rc=1 にする (CI で人の目に届けるため)")
 	dirs, rc, ok := parseFlags(fs, args)
 	if !ok {
 		return rc
@@ -55,7 +58,15 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2
 	}
-	b, err := scanSource(&repo.Commit{Scope: sc, Exts: swift.Extensions, Hash: baseHash}, false)
+	headCfg, err := loadConfig(head, *c.noExclude)
+	if err != nil {
+		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
+		return 2
+	}
+	baseSrc := &repo.Commit{Scope: sc, Exts: swift.Extensions, Hash: baseHash}
+	// base の設定は読めなければ空とみなす (壊れた設定を直す commit を通すため。空とみなすと除外は全部新しく見え、安全側)。
+	baseCfg, baseCfgErr := loadConfig(baseSrc, false)
+	b, err := scanSource(baseSrc, false)
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2
@@ -65,8 +76,24 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2
 	}
-	res := gate.Judge(b.entries, h.entries, gopt)
-	s := report.BuildGate(sc.Root, baseHash, head.Name(), res)
+	ex := exclude.New(headCfg, h.entries, scopeFilter(sc))
+	ex.LimitToBase(b.entries, baseCfg)
+	baseKept, _ := ex.Filter(b.entries)
+	headKept, headDropped := ex.Filter(h.entries)
+	gopt.Exclude, gopt.Skip = ex, ex.Skip
+	// 効いていない除外を数えるため、head 全体の組にも除外を掛ける (gate が見るのは変わった単位だけなので、それだけでは足りない)。
+	for _, g := range ex.ApplyGroups(group.Build(headKept, gopt.Options)) {
+		for _, m := range g.Members {
+			ex.Allowed(m)
+		}
+	}
+	res := gate.Judge(baseKept, headKept, gopt)
+	s := report.BuildGate(sc.Root, baseHash, head.Name(), res, ex)
+	s.NewExclusions = append(s.NewExclusions, exclude.NewElements(baseCfg, headCfg)...)
+	s.PathHiddenChanged = changedCount(b.entries, headDropped)
+	if baseCfgErr != nil {
+		s.BaseConfigError = baseCfgErr.Error()
+	}
 	// base が head の commit と同じなら、見たのは未コミットの変更だけ (CI で -base を付け忘れた疑い)。
 	if hc, err := repo.CommitHash(sc.Root, headCommit); err == nil && hc == baseHash {
 		s.BaseIsHead = true
@@ -86,10 +113,26 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan gate:", err)
 		return 2
 	}
-	if res.Failed() {
+	if res.Failed() || *failNewEx && len(s.NewExclusions) > 0 {
 		return 1
 	}
 	return 0
+}
+
+// changedCount は、パスの除外で比べなかった head の単位のうち、base に同じ鍵・同じ本体の単位が無いもの (この変更で触った単位) の数。
+// glob の下に新しいファイルを作って写しを置く形を、人が見られるように数える。
+func changedCount(base, dropped []*group.Entry) int {
+	have := map[string]bool{}
+	for _, e := range base {
+		have[e.Unit.Key+"\x00"+e.Result.Hash[norm.L1]] = true
+	}
+	n := 0
+	for _, e := range dropped {
+		if !have[e.Unit.Key+"\x00"+e.Result.Hash[norm.L1]] {
+			n++
+		}
+	}
+	return n
 }
 
 // resolveBase は base の commit を決める。渡された ref (CI の push の前の commit・PR の対象) でも既定 (upstream) でも、

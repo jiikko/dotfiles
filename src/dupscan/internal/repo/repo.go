@@ -43,6 +43,26 @@ func Resolve(dirs []string) (Scope, error) {
 	return s, nil
 }
 
+// Whole は起点に repo の root が入っているか。
+func (s Scope) Whole() bool {
+	for _, p := range s.Prefixes {
+		if p == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// Contains は root からの相対パスが起点の中か (起点は `git rev-parse --show-prefix` の形で、末尾が / のディレクトリ)。
+func (s Scope) Contains(file string) bool {
+	for _, p := range s.Prefixes {
+		if strings.HasPrefix(file, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // List は起点の中の、拡張子の合うファイルを root からの相対で返す。
 // 追跡しているファイルと、ignore されていない untracked のファイルを含む。symlink・消えたファイル・submodule は含めない。
 func List(s Scope, exts []string) ([]string, error) {

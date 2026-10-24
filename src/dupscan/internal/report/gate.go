@@ -6,6 +6,9 @@ import (
 	"io"
 	"path/filepath"
 
+	"dupscan/internal/group"
+
+	"dupscan/internal/exclude"
 	"dupscan/internal/gate"
 )
 
@@ -19,6 +22,13 @@ type GateSummary struct {
 	Failed     bool            `json:"failed"`
 	Violations []ViolationJSON `json:"violations"`
 	Unreadable []UnitRef       `json:"unreadable_changed_units"`
+	// NewExclusions は base の設定に無く head にある除外の要素 (glob と段・組の段と釘・単位の釘)。人が見る一覧。
+	NewExclusions []string `json:"new_exclusions"`
+	// PathHiddenChanged はパスの除外で比べなかった、この変更で触った単位の数。
+	PathHiddenChanged int `json:"path_excluded_changed_units"`
+	// BaseConfigError は base の設定を読めなかった理由 (空とみなした)。
+	BaseConfigError string `json:"base_config_error,omitempty"`
+	Exclusions
 }
 
 // ViolationJSON は違反 1 つの出力。
@@ -27,14 +37,17 @@ type ViolationJSON struct {
 	Fail  bool      `json:"fail"`
 	New   []UnitRef `json:"new"`  // 組に新しく入った単位 (寄せる側)
 	Same  []UnitRef `json:"same"` // 組に前からいた単位 (寄せる先の候補)
+	// Exclude はこの組を指す組の除外の 1 行 (誤検知なら kind と reason を埋めて .dupscan.json に貼る)。
+	Exclude string `json:"exclude"`
 }
 
 // BuildGate は gate の出力の形を組み立てる。
-func BuildGate(root, base, head string, r gate.Result) GateSummary {
+func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set) GateSummary {
 	s := GateSummary{Root: root, Base: base, Head: head, Changed: r.Changed, Failed: r.Failed(),
-		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}}
+		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewExclusions: []string{}, Exclusions: exclusions(ex)}
 	for _, v := range r.Violations {
-		vj := ViolationJSON{Level: v.Level.String(), Fail: v.Fail, New: []UnitRef{}, Same: []UnitRef{}}
+		vj := ViolationJSON{Level: v.Level.String(), Fail: v.Fail, New: []UnitRef{}, Same: []UnitRef{},
+			Exclude: exclude.GroupSnippet(v.Level, append(append([]*group.Entry(nil), v.New...), v.Same...))}
 		for _, m := range v.New {
 			vj.New = append(vj.New, ref(m.Unit))
 		}
@@ -65,6 +78,16 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	if n := len(s.Unreadable); n > 0 {
 		note += fmt.Sprintf("・読めない構文で確かめられなかった変わった単位 %d (-v で一覧)", n)
 	}
+	if n := len(s.NewExclusions); n > 0 {
+		note += fmt.Sprintf("・新しく足された除外 %d (-v で一覧)", n)
+	}
+	if s.PathHiddenChanged > 0 {
+		note += fmt.Sprintf("・パスの除外で比べなかった変わった単位 %d", s.PathHiddenChanged)
+	}
+	if s.BaseConfigError != "" {
+		note += "・base の除外の設定を読めないので空とみなした"
+	}
+	note += s.note()
 	if len(s.Violations) == 0 {
 		fmt.Fprintf(w, "dupscan gate: 新しい重複なし (base %s・変わった単位 %d)%s\n", short(s.Base), s.Changed, note)
 	} else {
@@ -90,7 +113,10 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 				fmt.Fprintf(w, "  新しい: %s:%d %s\n", m.File, m.Line, label(m))
 			}
 			for _, m := range v.Same {
-				fmt.Fprintf(w, "  同じ形: %s:%d %s\n", m.File, m.Line, label(m))
+				fmt.Fprintf(w, "  同じ形: %s:%d %s%s\n", m.File, m.Line, label(m), allowedMark(m))
+			}
+			if opt.Verbose {
+				fmt.Fprintf(w, "  除外の 1 行: %s\n", v.Exclude)
 			}
 		}
 		if rest := len(s.Violations) - len(shown); rest > 0 {
@@ -98,6 +124,13 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 		}
 	}
 	if opt.Verbose {
+		for _, el := range s.NewExclusions {
+			fmt.Fprintf(w, "新しく足された除外: %s\n", el)
+		}
+		if s.BaseConfigError != "" {
+			fmt.Fprintf(w, "base の除外の設定: %s\n", s.BaseConfigError)
+		}
+		s.write(w)
 		for _, u := range s.Unreadable {
 			fmt.Fprintf(w, "読めない: %s:%d %s\n", u.File, u.Line, label(u))
 		}
