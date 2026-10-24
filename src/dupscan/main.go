@@ -25,6 +25,7 @@ const usage = `usage: dupscan [report] [flags] [dir ...]
        dupscan near [flags] <file>:<関数名|行> [dir ...]
        dupscan explain [flags] <file>:<関数名|行>
        dupscan index [-name 語] [-returns 型] [-param-type 型] [-doc 語] [-file ファイル] [dir ...]
+       dupscan callers [flags] <名前|名前(ラベル:…)> [dir ...]
 
 report: dir (既定は .) を起点に、git が追跡しているファイルと ignore されていない untracked のファイルを読み、
 本体が同じ形の単位を段 (L1 / L2 / L3) ごとに組にして出す。
@@ -33,6 +34,7 @@ gate: base (既定は upstream との merge-base) から作業ツリー (か -he
 near: 指した単位と同じ形の単位を、一致した最も細かい段で並べる (起点を書かなければそのファイルの repo 全体と比べる)。
 explain: 指した単位を段ごとに潰した形・ハッシュと、比べない理由を出す (なぜ同じ / 違うと判定したか)。
 index: 名前の付いた単位を 1 行 1 件で出す。書く前に、名前・戻り値の型・引数の型・doc の語で同じものが既にないかを引く。-file でそのファイルの一覧。
+callers: 名前 (と引数ラベル) が当たる呼び出しの箇所と、それを囲む単位を出す (型を解決しない近似)。
 どちらも調べる repo には何も書かない。
 
 flags:
@@ -101,6 +103,9 @@ func (c common) options() (group.Options, error) {
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "gate" {
 		return runGate(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "callers" {
+		return runCallers(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "index" {
 		return runIndex(args[1:], stdout, stderr)
@@ -218,6 +223,7 @@ type scanned struct {
 	units    []*tree.Unit
 	errFiles []string
 	entries  []*group.Entry
+	calls    []tree.Call
 }
 
 // scanSource は src のファイルを読んで単位を正規化する。requireFiles なら 0 件を判定不能にする
@@ -234,7 +240,7 @@ func scanSource(src repo.Source, requireFiles bool) (scanned, error) {
 	if err != nil {
 		return scanned{}, err
 	}
-	units, errFiles, err := parseAll(files, contents)
+	units, calls, errFiles, err := parseAll(files, contents)
 	if err != nil {
 		return scanned{}, err
 	}
@@ -242,12 +248,13 @@ func scanSource(src repo.Source, requireFiles bool) (scanned, error) {
 	for i, u := range units {
 		entries[i] = &group.Entry{Unit: u, Result: norm.Normalize(u)}
 	}
-	return scanned{files: len(files), units: units, errFiles: errFiles, entries: entries}, nil
+	return scanned{files: len(files), units: units, errFiles: errFiles, entries: entries, calls: calls}, nil
 }
 
-func parseAll(files []string, contents map[string][]byte) ([]*tree.Unit, []string, error) {
+func parseAll(files []string, contents map[string][]byte) ([]*tree.Unit, []tree.Call, []string, error) {
 	type result struct {
 		units  []*tree.Unit
+		calls  []tree.Call
 		hasErr bool
 		err    error
 	}
@@ -268,7 +275,7 @@ func parseAll(files []string, contents map[string][]byte) ([]*tree.Unit, []strin
 			defer p.Close()
 			for i := range jobs {
 				r, err := p.Parse(files[i], contents[files[i]])
-				results[i] = result{units: r.Units, hasErr: r.HasError, err: err}
+				results[i] = result{units: r.Units, calls: r.Calls, hasErr: r.HasError, err: err}
 			}
 		}()
 	}
@@ -278,15 +285,17 @@ func parseAll(files []string, contents map[string][]byte) ([]*tree.Unit, []strin
 	close(jobs)
 	wg.Wait()
 	var units []*tree.Unit
+	var calls []tree.Call
 	var errFiles []string
 	for i, r := range results {
 		if r.err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", files[i], r.err)
+			return nil, nil, nil, fmt.Errorf("%s: %w", files[i], r.err)
 		}
 		units = append(units, r.units...)
+		calls = append(calls, r.calls...)
 		if r.hasErr {
 			errFiles = append(errFiles, files[i])
 		}
 	}
-	return units, errFiles, nil
+	return units, calls, errFiles, nil
 }

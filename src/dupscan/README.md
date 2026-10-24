@@ -27,7 +27,12 @@ bin/dupscan index -returns StorageLocation    # 書く前に引く: 戻り値の
 bin/dupscan index -name location -param-type String   # 名前の一部・引数の型の一部 (全部の条件に当たるものだけ)
 bin/dupscan index -doc bucket                 # doc comment (/// か /** */) の最初の行の語
 bin/dupscan index -file Sources/A.swift       # そのファイルの単位を行の順に (outline。件数で切らない)
+bin/dupscan callers 'make(x:_:)'              # 呼び出しの箇所と、それを囲む単位 (名前だけでも引ける)
 ```
+
+`callers` は呼び出しの箇所を `file:line 呼び出し元 [test] | その行` で出す (コメント・文字列の中は数えない。テスト関数の中も数え、呼び出し元は「(単位の外)」)。
+型を解決しないので、同名の別のメソッド・別の型の初期化子の呼び出しも当たる (近似)。ラベルを書けば数と順で絞る。
+後置クロージャのある呼び出しは括弧の中のラベルが先頭に一致すれば当てる。flag は名前の前に書く (`callers -format json make`)。
 
 `index` は名前の付いた単位 (関数・初期化子・computed property・subscript など。クロージャとテスト関数は除く) を
 `file:line 型.署名 [test,private] // doc の最初の行` の 1 行で出す。grep と違い呼び出し側の行・コメント・文字列は混ざらない。

@@ -39,6 +39,7 @@ func (p *Parser) Close() { p.p.Close() }
 // FileResult は 1 ファイルの結果。
 type FileResult struct {
 	Units []*tree.Unit
+	Calls []tree.Call
 	// HasError はファイルのどこかに読めない構文 (ERROR / MISSING) があること。読めない部分に飲み込まれた関数は単位として出てこないので、
 	// 呼び出し側は「比べていない部分がある」ことを出力に出す。
 	HasError bool
@@ -54,7 +55,63 @@ func (p *Parser) Parse(file string, src []byte) (FileResult, error) {
 	root := t.RootNode()
 	w := &walker{file: file, src: src, test: IsTestPath(file), closures: map[string]int{}, seen: map[string]int{}, isUnit: map[string]bool{}}
 	w.walk(root, ctx{})
-	return FileResult{Units: w.units, HasError: root.HasError()}, nil
+	return FileResult{Units: w.units, Calls: w.calls(root), HasError: root.HasError()}, nil
+}
+
+// calls はファイルの中の呼び出しを全部集める (テスト関数の中も。単位にしない関数の中も呼び出し元に数える)。
+func (w *walker) calls(root *sitter.Node) []tree.Call {
+	lines := strings.Split(string(w.src), "\n")
+	var out []tree.Call
+	var visit func(n *sitter.Node)
+	visit = func(n *sitter.Node) {
+		if n.Kind() == "call_expression" && n.NamedChildCount() > 0 {
+			if name := calleeName(n.NamedChild(0), w.src); name != "" {
+				pos := n.StartPosition()
+				c := tree.Call{File: w.file, Line: int(pos.Row) + 1, Col: int(pos.Column) + 1, Name: name, Labels: []string{}}
+				if suf := childOfKind(n, "call_suffix"); suf != nil {
+					c.Trailing = childOfKind(suf, "lambda_literal") != nil
+					if args := childOfKind(suf, "value_arguments"); args != nil {
+						for i := range args.NamedChildCount() {
+							label := "_"
+							if l := childOfKind(args.NamedChild(i), "value_argument_label"); l != nil {
+								label = l.Utf8Text(w.src)
+							}
+							c.Labels = append(c.Labels, label)
+						}
+					}
+				}
+				if int(pos.Row) < len(lines) {
+					c.Text = strings.TrimSpace(lines[pos.Row])
+				}
+				out = append(out, c)
+			}
+		}
+		for i := range n.NamedChildCount() {
+			visit(n.NamedChild(i))
+		}
+	}
+	visit(root)
+	return out
+}
+
+// calleeName は呼び出しの先頭の式から呼ばれる名前を取る (`f`・`a.b.f`・`a?.f`)。それ以外 (`(f)()`・`x[0]()`・`f()()`) は空。
+// 文法は `a + b.f(x)` を「`a + b.f` を呼ぶ」と読むので、二項式・前置の式は右端の式へ降りる。
+func calleeName(n *sitter.Node, src []byte) string {
+	switch k := n.Kind(); {
+	case k == "simple_identifier":
+		return n.Utf8Text(src)
+	case k == "navigation_expression":
+		for i := int(n.NamedChildCount()) - 1; i >= 0; i-- {
+			if c := n.NamedChild(uint(i)); c.Kind() == "navigation_suffix" {
+				if id := childOfKind(c, "simple_identifier"); id != nil {
+					return id.Utf8Text(src)
+				}
+			}
+		}
+	case strings.HasSuffix(k, "_expression") && k != "call_expression" && k != "tuple_expression" && n.NamedChildCount() > 0:
+		return calleeName(n.NamedChild(n.NamedChildCount()-1), src)
+	}
+	return ""
 }
 
 // IsTestPath は Swift の慣習で test のファイルかを決める (`Tests` / `…Tests` / `…UITests` のディレクトリの下、`…Tests.swift`)。

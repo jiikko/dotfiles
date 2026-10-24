@@ -60,6 +60,18 @@ const (
 	KindProperty UnitKind = "property"
 )
 
+// Call は呼び出しの箇所 1 つ (callers で引く)。型を解決しないので、名前と引数ラベルだけの近似。
+type Call struct {
+	File   string
+	Line   int
+	Col    int
+	Name   string   // 呼ばれる名前 (`a.b.make(…)` なら make。`Foo(…)` なら Foo)
+	Labels []string // 括弧の中の引数ラベル (ラベルの無い引数は `_`)
+	// Trailing は後置クロージャがあること (その分の引数ラベルは Labels に入らない)。
+	Trailing bool
+	Text     string // その行 (前後の空白を除く)
+}
+
 // Unit は比べる単位 (関数・初期化子・クロージャ) 1 つ。
 type Unit struct {
 	// Key は単位の同一性の鍵 (ファイル + 囲む型 + 名前・署名。クロージャは囲む単位の鍵 + 出現の順番)。
