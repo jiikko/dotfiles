@@ -385,3 +385,24 @@ func TestL3TrivialOriginCountsSeparately(t *testing.T) {
 		t.Errorf("L3 で比べていなかった単位が組に入ったのを報告しない: %+v", r)
 	}
 }
+
+func TestMovedCopyNamingDoesNotDependOnOrder(t *testing.T) {
+	// 写し b を別のファイル Z へ移し (名前はそのまま)、新しいファイル A に新しい写し n を足した: 並びに依らず新しいのは n。
+	at := func(key, file, name string) *group.Entry {
+		x := e(key, "x", "x2", "x3")
+		x.Unit.File, x.Unit.Name = file, name
+		return x
+	}
+	base := []*group.Entry{at("X|a", "X", "a"), at("B|b", "B", "b")}
+	for _, nFirst := range []bool{true, false} {
+		n, z := at("A|n", "A", "n"), at("Z|b", "Z", "b")
+		head := []*group.Entry{at("X|a", "X", "a"), n, z}
+		if !nFirst {
+			head = []*group.Entry{at("X|a", "X", "a"), z, n}
+		}
+		r := Judge(base, head, opt)
+		if len(r.Violations) != 1 || len(r.Violations[0].New) != 1 || r.Violations[0].New[0].Unit.Key != "A|n" {
+			t.Errorf("移した写しを新しいと名指しした (n が先=%v): %+v", nFirst, keys(r.Violations[0].New))
+		}
+	}
+}

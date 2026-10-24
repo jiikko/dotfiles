@@ -182,7 +182,8 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 //  1. 鍵も本体 (L1) も同じ単位 (変わっていない)
 //  2. 同じファイルで本体が同じ単位。同じ名前の相手を先に当てる (改名・クロージャの番号のずれ。名前をファイルで
 //     区切らないと、別のファイルに足した同じ名前の新しい写しが、改名した写しの相手を取る)
-//  3. 本体が同じ単位 (別のファイルへの移動)
+//  3. 本体が同じ単位 (別のファイルへの移動)。同じ名前の相手を先に当てる (名前を変えずに移した写しが、別のファイルに
+//     足した新しい写しと相手を取り合うと、head の並びで名指しが決まる)
 //  4. 鍵が同じ単位 (その場での編集)。クロージャを除く: クロージャの鍵は囲む単位の中の出現の順番で、前のクロージャを
 //     消すと後ろのクロージャが消えた鍵に入るため、鍵で当てると消えたクロージャを相手にしてしまう
 //  5. 同じ修正を入れた写し: 本体が同じ head の単位が既に相手を持っていれば、その相手の base での本体と同じ base の単位
@@ -190,6 +191,11 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 //  6. まだ相手の無い base の単位のうち、L2、次に L3 の形が同じもの (改名・移動しながらの小さな編集)
 //  7. クロージャの鍵
 //  8. 鍵が同じ単位 (下限をまたいで育った・縮んだ単位)
+//     鍵だけなので、小さいクロージャの鍵の位置に大きい新しい写しが入ると (前に足して後ろがずれ、元の小さいクロージャも
+//     書き換えた)、育った写しとして通る。逆に、下限より小さかった写しが一緒に育ちながら改名・番号のずれを伴うと、
+//     ここでは当たらず止まる。緩い段で種類をまたぐと、小さいクロージャを同じ本体の関数に置き換える新しい写しが通る
+//     (TestIneligibleBaseUnitIsNotOrigin) ので、両方は同時に直せない。実データ (DualNoteApp の first-parent 500 commit) では
+//     どちらも 1 件も出ていない。再び直すなら、その形が実データで出た commit を添える
 //
 // 2 から 7 は、比べる対象 (下限以上で読める) の単位どうし、そうでない単位どうしの中でだけ当てる。またいで当てると、
 // 足した短いクロージャが改名した写しの相手を取って写しを新しく見せ、新しい写しが触っていない小さいクロージャの相手を
@@ -270,6 +276,7 @@ func join(parts ...string) string {
 func matchLoose(match func(func(*group.Entry) string), head []*group.Entry, out map[*group.Entry]*group.Entry, isBase map[*group.Entry]bool) {
 	match(func(e *group.Entry) string { return join(l1(e), e.Unit.File, e.Unit.Name) })
 	match(func(e *group.Entry) string { return join(l1(e), e.Unit.File) })
+	match(func(e *group.Entry) string { return join(l1(e), e.Unit.Name) })
 	match(l1)
 	match(func(e *group.Entry) string {
 		if e.Unit.Kind == tree.KindClosure {
