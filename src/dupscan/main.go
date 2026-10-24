@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -21,9 +20,13 @@ import (
 )
 
 const usage = `usage: dupscan [report] [flags] [dir ...]
+       dupscan gate [flags] [dir ...]
 
-dir (既定は .) を起点に、git が追跡しているファイルと ignore されていない untracked のファイルを読み、
-本体が同じ形の単位を段 (L1 / L2 / L3) ごとに組にして出す。調べる repo には何も書かない。
+report: dir (既定は .) を起点に、git が追跡しているファイルと ignore されていない untracked のファイルを読み、
+本体が同じ形の単位を段 (L1 / L2 / L3) ごとに組にして出す。
+gate: base (既定は upstream との merge-base) から作業ツリー (か -head の commit) までに新しく増えた重複を出し、
+止める段の違反があれば rc=1。base を決められないときは rc=2。セルフレビューと make test・CI で回す。
+どちらも調べる repo には何も書かない。
 
 flags:
 `
@@ -32,51 +35,88 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) > 0 && args[0] == "report" {
-		args = args[1:]
-	}
-	fs := flag.NewFlagSet("dupscan", flag.ContinueOnError)
+// common は report と gate で共通の flag。
+type common struct {
+	format, levels       *string
+	minNodes, minClosure *int
+	limit                *int
+	verbose              *bool
+}
+
+func newFlags(name string, stderr io.Writer) (*flag.FlagSet, common) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	format := fs.String("format", "text", "出力の形式: text / json / xcode")
-	minNodes := fs.Int("min-nodes", 10, "これより節の少ない関数・初期化子は比べない")
-	minClosure := fs.Int("min-closure-nodes", 20, "これより節の少ないクロージャは比べない")
-	limit := fs.Int("limit", 20, "text で出す組の上限 (0 は全部)")
-	verbose := fs.Bool("v", false, "読めない構文の単位を 1 つずつ出す")
-	levels := fs.String("levels", "L1,L2,L3", "組を出す段 (カンマ区切り)")
+	c := common{
+		format:     fs.String("format", "text", "出力の形式: text / json / xcode"),
+		minNodes:   fs.Int("min-nodes", 10, "これより節の少ない関数・初期化子は比べない"),
+		minClosure: fs.Int("min-closure-nodes", 20, "これより節の少ないクロージャは比べない"),
+		limit:      fs.Int("limit", 20, "text で出す組・違反の上限 (0 は全部)"),
+		verbose:    fs.Bool("v", false, "読めない構文の単位を 1 つずつ出す"),
+		levels:     fs.String("levels", "L1,L2,L3", "見る段 (カンマ区切り)"),
+	}
 	fs.Usage = func() {
 		fmt.Fprint(stderr, usage)
 		fs.PrintDefaults()
 	}
+	return fs, c
+}
+
+func parseFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool) {
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return 0
+			return nil, 0, false
 		}
-		return 2
+		return nil, 2, false
 	}
-	lv, err := parseLevels(*levels)
-	if err != nil {
-		fmt.Fprintln(stderr, "dupscan:", err)
-		return 2
-	}
-	dirs := fs.Args()
+	dirs = fs.Args()
 	if len(dirs) == 0 {
 		dirs = []string{"."}
 	}
-	s, err := scan(dirs, group.Options{MinNodes: *minNodes, MinClosureNodes: *minClosure, Levels: lv})
+	return dirs, 0, true
+}
+
+func (c common) options() (group.Options, error) {
+	lv, err := parseLevels(*c.levels)
+	return group.Options{MinNodes: *c.minNodes, MinClosureNodes: *c.minClosure, Levels: lv}, err
+}
+
+func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "gate" {
+		return runGate(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "report" {
+		args = args[1:]
+	}
+	fs, c := newFlags("dupscan", stderr)
+	dirs, rc, ok := parseFlags(fs, args)
+	if !ok {
+		return rc
+	}
+	opt, err := c.options()
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan:", err)
 		return 2
 	}
-	switch *format {
+	sc, err := repo.Resolve(dirs)
+	if err != nil {
+		fmt.Fprintln(stderr, "dupscan:", err)
+		return 2
+	}
+	got, err := scanSource(repo.Worktree{Scope: sc, Exts: swift.Extensions}, true)
+	if err != nil {
+		fmt.Fprintln(stderr, "dupscan:", err)
+		return 2
+	}
+	s := report.Build(sc.Root, got.files, got.units, got.errFiles, group.Build(got.entries, opt))
+	switch *c.format {
 	case "json":
 		err = report.JSON(stdout, s)
 	case "xcode":
 		err = report.Xcode(stdout, s)
 	case "text":
-		err = report.Text(stdout, s, report.TextOptions{Limit: *limit, Verbose: *verbose})
+		err = report.Text(stdout, s, report.TextOptions{Limit: *c.limit, Verbose: *c.verbose})
 	default:
-		fmt.Fprintf(stderr, "dupscan: 知らない形式 %q\n", *format)
+		fmt.Fprintf(stderr, "dupscan: 知らない形式 %q\n", *c.format)
 		return 2
 	}
 	if err != nil {
@@ -103,31 +143,40 @@ func parseLevels(s string) ([]norm.Level, error) {
 	return out, nil
 }
 
-func scan(dirs []string, opt group.Options) (report.Summary, error) {
-	sc, err := repo.Resolve(dirs)
+// scanned は 1 つの読み方で読んだ結果。
+type scanned struct {
+	files    int
+	units    []*tree.Unit
+	errFiles []string
+	entries  []*group.Entry
+}
+
+// scanSource は src のファイルを読んで単位を正規化する。requireFiles なら 0 件を判定不能にする
+// (起点の取り違えで黙って「重複なし」にしない。base の側は 0 件でもよい: まだ Swift が無かった commit)。
+func scanSource(src repo.Source, requireFiles bool) (scanned, error) {
+	files, err := src.Files()
 	if err != nil {
-		return report.Summary{}, err
+		return scanned{}, err
 	}
-	files, err := repo.List(sc, swift.Extensions)
+	if requireFiles && len(files) == 0 {
+		return scanned{}, fmt.Errorf("%s に読むファイルが 1 つも無い (判定不能)", src.Name())
+	}
+	contents, err := src.ReadAll(files)
 	if err != nil {
-		return report.Summary{}, err
+		return scanned{}, err
 	}
-	// 0 件は「重複なし」ではなく判定不能 (起点の取り違えで黙って緑にしない)。
-	if len(files) == 0 {
-		return report.Summary{}, fmt.Errorf("起点 %v に読むファイルが 1 つも無い (判定不能)", dirs)
-	}
-	units, errFiles, err := parseAll(sc.Root, files)
+	units, errFiles, err := parseAll(files, contents)
 	if err != nil {
-		return report.Summary{}, err
+		return scanned{}, err
 	}
 	entries := make([]*group.Entry, len(units))
 	for i, u := range units {
 		entries[i] = &group.Entry{Unit: u, Result: norm.Normalize(u)}
 	}
-	return report.Build(sc.Root, len(files), units, errFiles, group.Build(entries, opt)), nil
+	return scanned{files: len(files), units: units, errFiles: errFiles, entries: entries}, nil
 }
 
-func parseAll(root string, files []string) ([]*tree.Unit, []string, error) {
+func parseAll(files []string, contents map[string][]byte) ([]*tree.Unit, []string, error) {
 	type result struct {
 		units  []*tree.Unit
 		hasErr bool
@@ -149,12 +198,7 @@ func parseAll(root string, files []string) ([]*tree.Unit, []string, error) {
 			}
 			defer p.Close()
 			for i := range jobs {
-				src, err := os.ReadFile(filepath.Join(root, files[i]))
-				if err != nil {
-					results[i].err = err
-					continue
-				}
-				r, err := p.Parse(files[i], src)
+				r, err := p.Parse(files[i], contents[files[i]])
 				results[i] = result{units: r.Units, hasErr: r.HasError, err: err}
 			}
 		}()

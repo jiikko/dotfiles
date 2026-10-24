@@ -14,7 +14,19 @@ bin/dupscan macOS Shared         # 起点を repo の中のディレクトリに
 bin/dupscan -format json .       # 全部の組を JSON で
 bin/dupscan -format xcode .      # Xcode / SwiftLint と同じ `ファイル:行:列: warning:` の形式
 bin/dupscan -limit 0 -v .        # text で全部の組と、読めない構文の単位の一覧
+
+bin/dupscan gate                 # upstream との merge-base から作業ツリーまでに新しく増えた重複。無ければ 1 行
+bin/dupscan gate -base origin/master .        # base を明示する (CI の push なら push の前の commit、PR なら対象のブランチ)
+bin/dupscan gate -base HEAD~1 -head HEAD .    # 2 つの commit を比べる (過去の commit の流し直し。checkout しない)
 ```
+
+`gate` の終了コード: 0 = 止める段の新しい重複なし / 1 = あり / 2 = 判定不能 (base が無い・読むファイルが 0 件など)。
+`-fail-levels` (既定 `L1,L2`) の段の違反だけで止め、ほかの段 (既定では L3) は報告だけ。セルフレビューと make test・CI で回す。
+
+`gate` の判定: 変わった単位 (鍵が base に無いか、本体のハッシュが base と違う) ごとに、細かい段から見て最初に他と一致した段で、
+その形の単位の数が base より増えていれば違反。移動・改名・整形・寄せる作業では数が増えないので落ちない。
+組の古い写しを消して新しい写しを足す入れ替えも、数が増えないので落ちない (検出しない形)。
+読めない構文がある変わった単位は確かめられないので一覧に出すが、rc は変えない。
 
 | flag | 既定 | 意味 |
 |---|---|---|
@@ -50,9 +62,10 @@ bin/dupscan -limit 0 -v .        # text で全部の組と、読めない構文�
 | `internal/tree` | 言語に依らない単位と本体の木 (役割: 名前の参照・局所の宣言・メンバー・ラベル・型・リテラル・トークン) |
 | `internal/norm` | 段 (L1 / L2 / L3) ごとの正規化とハッシュ |
 | `internal/group` | Type-2 の組分け (細かい段と同じメンバーの組は粗い段で重ねない・囲む単位が同じ組のクロージャは出さない) |
-| `internal/repo` | git でのファイルの列挙と起点の正規化 |
+| `internal/repo` | git でのファイルの列挙と起点の正規化。作業ツリーと commit (git のオブジェクトから読む) を同じ `Source` として読む |
 | `internal/swift` | Swift の adapter (tree-sitter の node の種類の分類表・単位の取り出し・test の判定) |
-| `internal/report` | text / JSON / Xcode の出力 |
+| `internal/report` | text / JSON / Xcode の出力 (report と gate) |
+| `internal/gate` | gate の判定 (変わった単位・最初に一致した段・数が増えたか) |
 
 - 文法は `github.com/alex-pinkus/tree-sitter-swift` の `with-generated-files` branch を pseudo-version で固定する。上げたら `TestEveryKindIsClassified` (文法の全部の名前つきの種類が分類表にあるか) を通す
 - `third_party/tree-sitter-swift-teststub` は、文法の module のテストが誤った import path で参照する package の空の代わり (go.mod の replace のコメント)

@@ -81,3 +81,8 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
   入れ替えを検出しない形として書いた / untracked は別の一覧に / 許可は機械で書き手を強制できない
 - 2026-10-24 反証レビュー (セルフレビュー・906 の改訂): 手元の base を merge-base(HEAD, @{u}) に、detached は設定の既定のブランチ / 鍵に囲む型とクロージャの順番 / キャッシュの鍵に版と設定 / 段の規則と回さない段・除外の順序 / 許可の意味を 906 と揃えた / 906 への依存
 - 2026-10-24 誤って止める割合を DualNoteApp でも数え、組み込みの手順を repo に依存しない形にした (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)
+- 2026-10-24 `dupscan gate` の中核を作った (commit「feat(dupscan): gate …」): base は -base か upstream / origin/HEAD との merge-base、head は作業ツリーか -head の commit (git cat-file で読み、checkout しない)。
+  判定は internal/gate (変わった単位・最初に一致した段・数が増えたか)。-fail-levels (既定 L1,L2) の違反で rc=1、判定不能は rc=2。text は新しい重複が無ければ 1 行
+  - テスト: 判定 (新しい写し・移動と改名・既にある組・寄せる作業・入れ替え・最初に一致した段・報告だけの段・下限と L3Trivial と読めない構文) と、CLI の通し
+    (untracked・未コミットの写しで rc=1、base が無ければ rc=2、-head の比較で .git/index を書き換えない)。変異: 「数が増えたか」を「一致があるか」にすると移動・改名と入れ替えのテストが赤
+  - **残り**: 意図した写しの許可 (`dupscan:allow`。906 と一緒に)・新しく足された許可と untracked の一覧・base のキャッシュ・`--record`・誤って止める割合の測定 (過去の commit の流し直し)・PR 24 の前の木での受け入れ (obaket が要る)・組み込みの例

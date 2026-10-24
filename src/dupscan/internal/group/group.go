@@ -41,7 +41,7 @@ func Build(entries []*Entry, opt Options) []Group {
 	for _, lv := range levels {
 		byHash := map[string][]*Entry{}
 		for _, e := range entries {
-			if e.Unit.Unreadable || e.Result.Nodes < minNodes(e, opt) {
+			if e.Unit.Unreadable || e.Result.Nodes < MinNodes(e, opt) {
 				continue
 			}
 			if lv == norm.L3 && e.Result.L3Trivial {
@@ -126,7 +126,8 @@ func sortEntries(ms []*Entry) {
 	})
 }
 
-func minNodes(e *Entry, opt Options) int {
+// MinNodes は単位の種類に応じた下限 (gate も同じ下限で数える)。
+func MinNodes(e *Entry, opt Options) int {
 	if e.Unit.Kind == tree.KindClosure && opt.MinClosureNodes > 0 {
 		return opt.MinClosureNodes
 	}

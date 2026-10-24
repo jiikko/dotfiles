@@ -19,6 +19,7 @@
 - `src/doctor/svc` (`doctor/svc`) — Package svc は svcdoctor: 壊れた launchd 登録の検出。
 - `src/doctor/testtmp` (`doctor/testtmp`) — Package testtmp は「テストが起こした一時ディレクトリを、中断されても回収する」ための 共通ヘルパー。
 - `src/dupscan` (`dupscan`) — Command dupscan は、repo の中で本体が同じ形のメソッド (関数・初期化子・クロージャ) を構文木で見つけて組にする。 (main)
+- `src/dupscan/internal/gate` (`dupscan/internal/gate`) — Package gate は、base から head までに新しく増えた重複を決める (make test・CI で回す dupscan gate の判定)。 (internal)
 - `src/dupscan/internal/group` (`dupscan/internal/group`) — Package group は、正規化したハッシュが同じ単位を段ごとに組 (Type-2) にまとめる。 (internal)
 - `src/dupscan/internal/norm` (`dupscan/internal/norm`) — Package norm は、単位の本体を段 (L1 / L2 / L3) ごとに正規化してハッシュを取る。 (internal)
 - `src/dupscan/internal/repo` (`dupscan/internal/repo`) — Package repo は、調べる repo のファイルを git で列挙する。 (internal)
