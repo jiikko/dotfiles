@@ -148,12 +148,11 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 // byPath は、パスの除外の下にあるので寄せる側から外した、変わった単位。
 func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Entry]*group.Entry, opt Options) (v Violation, ok bool, byPath []*group.Entry) {
 	// パスの除外の下の新しい単位 (出どころが無い) があれば、それを除いて判定する (除外の下の新しい写しの代わりに、
-	// 前から組にいた外の単位を止めない):
-	//  1. 除外が無くても違反でなければ違反にしない
-	//  2. 除いても違反なら、その違反 (除いた単位は同じ形の側)
-	//  3. 除くと違反でなくても、本体を変えたか新しい外の単位で、組の中に出どころの仲間がいないもの (除外の下の新しい単位と
-	//     だけ同じ形になった) は寄せる側にする。除いた後の組が 1 人だと 2 は成り立たないので、これが無いと外の写しが通る
-	//  4. どれでもなければ、除いた単位を除外で通した数に入れる
+	// 前から組にいた外の単位を止めない)。新しい単位はそれだけの出どころなので、除外が無ければこの組は必ず違反:
+	//  1. 除いても違反なら、その違反 (除いた単位は同じ形の側)
+	//  2. 除くと違反でなくても、本体を変えたか新しい外の単位で、組の中に出どころの仲間がいないもの (除外の下の新しい単位と
+	//     だけ同じ形になった) は寄せる側にする。除いた後の組が 1 人だと 1 は成り立たないので、これが無いと外の写しが通る
+	//  3. どちらでもなければ、除いた単位を除外で通した数に入れる
 	if opt.Exclude != nil {
 		var rest, fresh []*group.Entry
 		for _, m := range g {
@@ -164,11 +163,6 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 			}
 		}
 		if len(fresh) > 0 {
-			bare := opt
-			bare.Exclude = nil
-			if _, was, _ := judgeGroup(lv, h, g, origin, bare); !was {
-				return Violation{}, false, nil
-			}
 			if v, ok, byPath = judgeGroup(lv, h, rest, origin, opt); ok {
 				v.Same = append(v.Same, fresh...)
 				return v, ok, byPath
