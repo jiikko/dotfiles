@@ -9,6 +9,9 @@ LSP (sourcekit-lsp・gopls) か LSP ではない言語の解析の道具 (Swift 
 書く前に探す手順として、dupscan の索引 (本体の形で引く) と LSP の `workspaceSymbol` (名前で引く) を並べる形も決める。
 obaket で LSP を使う手順 (初回の待ち・worktree ごとの索引・結果の絞り方・マクロの重なり) は obaket issue 1299。
 
+2026-10-24 の調査 ([901](901-research-dupscan-existing-tools.md)) で、名前で引く手段は Claude Code の LSP ツール (組み込み) と Serena (MCP。Swift・Go・Bash を含む 40 以上の言語) にあると分かった。
+この issue は「dupscan の出力を補う値をどこから取るか」に絞り、名前で引く手段そのものは作らない。
+
 ## 受け入れ条件
 
 - [ ] 取る手段ごとに、取れるもの・所要・前提 (索引の有無・ビルドの要否) を表にして書く
@@ -17,3 +20,4 @@ obaket で LSP を使う手順 (初回の待ち・worktree ごとの索引・結
 ## 進捗
 
 - 2026-10-24 起票 (epic 890 の分解)
+- 2026-10-24 名前で引く手段は既にあることを書き、範囲を絞った (901)
