@@ -140,6 +140,9 @@ var ordinals = regexp.MustCompile(`#(closure)?[0-9]+`)
 
 // Pin は単位を指す釘: 名前の付いた単位の鍵 (クロージャの出現の順番と多重定義の #n を除く) と本体 (L1) のハッシュの先頭 12 文字。
 // 順番を入れないので、前にクロージャや多重定義を足しても外れない。本体を直すと外れる。
+// クロージャの釘は囲む関数の釘と鍵の部分が同じになる。重ならないのは、norm が根の node の種類 (lambda_literal / function_body) も
+// ハッシュに入れるので、クロージャと関数の本体が同じハッシュにならないから。根の種類をハッシュから外すなら、base で比べる対象で
+// なかった小さいクロージャの釘が、同じ本体の関数を覆う (gate の Set.known は base の単位が比べる対象だったかを見ない)。
 func Pin(e *group.Entry) string {
 	h := e.Result.Hash[norm.L1]
 	file, rest, _ := strings.Cut(e.Unit.Key, "|") // ファイル名の中の #数字 は削らない
