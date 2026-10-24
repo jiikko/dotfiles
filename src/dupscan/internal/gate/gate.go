@@ -180,16 +180,11 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 	isCand := func(m *group.Entry) bool {
 		return (from[m] != mostKey || strings.HasPrefix(mostKey, "new:")) && touched(m)
 	}
-	// 名指ししない単位 (許可・パスの除外の下) は、寄せる側を選ぶ前に外す。選んでから外すと、外の写しが名指しされずに違反ごと消える。
-	allowed := func(m *group.Entry) bool { return opt.Exclude != nil && opt.Exclude.Allowed(m) }
-	quiet := func(m *group.Entry) bool {
-		return allowed(m) || opt.Exclude != nil && opt.Exclude.PathExcluded(m, lv)
-	}
 	v = Violation{Level: lv, Fail: failAt(lv, opt.Fail)}
 	pick := func(ok func(*group.Entry) bool) {
 		v.New, v.Same = nil, nil
 		for _, m := range g {
-			if ok(m) && !quiet(m) {
+			if ok(m) {
 				v.New = append(v.New, m)
 			} else {
 				v.Same = append(v.Same, m)
@@ -197,35 +192,32 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 		}
 	}
 	pick(isCand)
-	// 寄せる側の候補が無い (触った単位が全部一番多い出どころの側) か、候補が全部パスの除外の下: 触った単位を寄せる側にする
-	// (除外の下の単位と組になった外の写しは、外の単位として止める)。候補に許可の単位がいれば付け替えない (意図した写しなので、
-	// 同じ修正を入れただけの写しを代わりに止めない)。
-	if len(v.New) == 0 && !hasAny(g, func(m *group.Entry) bool { return isCand(m) && allowed(m) }) {
-		fallback := touched
-		// 候補がパスの除外の下なら、鍵が変わっただけの外の単位 (移した・改名した) も寄せる側にする。出どころは名前・並びで
-		// 当てるので、除外の下の単位を移したのか外に写しを足したのかを取り違える。どちらの読みでも外の写しを通さないよう、
-		// 保守側に倒す (外の単位を移した・同じ修正を入れただけの commit も止まる。README の限界)。
-		// 除外の下の新しい単位を除いて判定する形は、除いた後の組が 1 人になる形・出どころの取り違えで外の写しが通り、
-		// 直すたびに別の見逃しが出たので採らない。採り直すなら、出どころの当て方に依らずに外の写しを通さないことを示す。
-		if hasAny(g, func(m *group.Entry) bool { return isCand(m) && opt.Exclude != nil && opt.Exclude.PathExcluded(m, lv) }) {
-			fallback = func(m *group.Entry) bool { return !unchanged(m, origin) }
-		}
-		pick(fallback)
+	if len(v.New) == 0 { // 触った単位が全部一番多い出どころの側にいる: 触った単位を寄せる側にする
+		pick(touched)
 	}
-	if len(v.New) == 0 {
-		// 名指しできる単位が無い。除外が無ければ寄せる側だったパスの除外の下の単位を、除外で通した数に入れる。
-		named := isCand
-		if !hasAny(g, isCand) {
-			named = touched
-		}
-		for _, m := range g {
-			if named(m) && opt.Exclude != nil && opt.Exclude.PathExcluded(m, lv) {
-				byPath = append(byPath, m)
-			}
-		}
-		return Violation{}, false, byPath
+	if opt.Exclude == nil {
+		return v, true, nil
 	}
-	return v, true, nil
+	// 除外があるときは、名指しで rc を決めない (名指しは出どころの読み方に左右され、名指ししない単位を選ぶ・外す規則を
+	// 足すたびに外の写しが通る形が出た。敵対的レビュー 906 の 3〜6 周目)。不変条件: 除外は、この変更で変わった単位
+	// (新しい・移した・改名した・本体を変えた) が全部名指ししない単位 (許可・パスの除外の下) のときだけ違反を消す。
+	// 外の新しい写しは必ず変わった単位なので、出どころの当て方に依らず止まる。代わりに、許可した写しやパスの除外の下の
+	// 新しい写しと同じ commit で同じ組の外の単位を変えると止まる (README の限界)。
+	quiet := func(m *group.Entry) bool { return opt.Exclude.Allowed(m) || opt.Exclude.PathExcluded(m, lv) }
+	if !hasAny(g, quiet) {
+		return v, true, nil
+	}
+	named := v.New
+	pick(func(m *group.Entry) bool { return !unchanged(m, origin) && !quiet(m) })
+	if len(v.New) > 0 {
+		return v, true, nil
+	}
+	for _, m := range named { // 除外が無ければ寄せる側だったパスの除外の下の単位を、除外で通した数に入れる
+		if opt.Exclude.PathExcluded(m, lv) {
+			byPath = append(byPath, m)
+		}
+	}
+	return Violation{}, false, byPath
 }
 
 // bucketOf はメンバーの出どころ (base の側の相手がその段で持っていた形)。

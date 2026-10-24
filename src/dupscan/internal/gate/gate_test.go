@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"math/rand/v2"
 	"strings"
 	"testing"
 
@@ -492,15 +493,21 @@ func TestPathPassedCountsOnlyRealCopies(t *testing.T) {
 	}
 }
 
-func TestAllowedNewCopyDoesNotBlameSameEditedCopies(t *testing.T) {
-	// 写しの組 a・b に同じ修正を入れ、意図した写し n (許可) を足した: 修正しただけの a・b を寄せる側にしない。
+func TestAllowedNewCopyBesideChangedCopiesIsStopped(t *testing.T) {
+	// 写しの組 a・b に同じ修正を入れ、意図した写し n (許可) を足した: 除外は変わった単位が全部名指ししない単位のときだけ
+	// 違反を消すので、修正した a・b を止める (保守側。README の限界)。a・b を触らなければ通す。
 	base := []*group.Entry{e("a", "x", "x2", "x3"), e("b", "x", "x2", "x3")}
 	n := e("n", "y", "y2", "y3")
 	head := []*group.Entry{e("a", "y", "y2", "y3"), e("b", "y", "y2", "y3"), n}
 	o := opt
 	o.Exclude = exclude.New(&exclude.Config{Version: 1, Exclude: []exclude.Rule{{Unit: exclude.Pin(n), Kind: "intentional", Reason: "r"}}}, head, nil)
-	if r := Judge(base, head, o); len(r.Violations) != 0 {
-		t.Errorf("許可した写しの代わりに修正しただけの写しを止めた: %+v", r)
+	if r := Judge(base, head, o); !r.Failed() || strings.Join(keys(r.Violations[0].New), ",") != "a,b" {
+		t.Errorf("許可した写しと同じ commit で変えた a・b を止めない: %+v", r)
+	}
+	head = []*group.Entry{e("a", "x", "x2", "x3"), e("b", "x", "x2", "x3"), e("n", "x", "x2", "x3")}
+	o.Exclude = exclude.New(&exclude.Config{Version: 1, Exclude: []exclude.Rule{{Unit: exclude.Pin(head[2]), Kind: "intentional", Reason: "r"}}}, head, nil)
+	if r := Judge(base, head, o); r.Failed() {
+		t.Errorf("許可した写しだけを足したのに止めた: %+v", r)
 	}
 }
 
@@ -603,6 +610,97 @@ func TestOriginMismatchDoesNotHideOutsideCopy(t *testing.T) {
 			opt2.Exclude = pathSet(t, "Gen/**", head...)
 			if r := Judge([]*group.Entry{a}, head, opt2); !r.Failed() || keys(r.Violations[0].New)[0] != c.out {
 				t.Errorf("%s (外が先=%v): 外の写しを止めない: %+v", name, outFirst, r)
+			}
+		}
+	}
+}
+
+func TestExclusionNeverPassesChangedOutsideUnit(t *testing.T) {
+	at := func(key, h string) *group.Entry {
+		x := inFile(e(key, h, h+"2", h+"3"), strings.Split(key, "|")[0]+".swift")
+		x.Unit.Name = strings.Split(key, "|")[1]
+		return x
+	}
+	// 生成の写しの組を、消した生成の単位の形に書き換え、外にその形の単位を足した。
+	base := []*group.Entry{at("Gen/a|foo", "x"), at("Gen/a|bar", "x"), at("Gen/b|del", "y")}
+	for _, name := range []string{"del", "qux"} {
+		for _, outFirst := range []bool{true, false} {
+			out := at("App/c|"+name, "y")
+			head := []*group.Entry{at("Gen/a|foo", "y"), at("Gen/a|bar", "y"), out}
+			if outFirst {
+				head = []*group.Entry{out, at("Gen/a|foo", "y"), at("Gen/a|bar", "y")}
+			}
+			o := opt
+			o.Exclude = pathSet(t, "Gen/**", head...)
+			if r := Judge(base, head, o); !r.Failed() || keys(r.Violations[0].New)[0] != "App/c|"+name {
+				t.Errorf("生成の組の形の外の写し (%s・外が先=%v) が通った: %+v", name, outFirst, r)
+			}
+		}
+	}
+	// 生成を改名して移し、外に写しを足し、別の外の写しに許可を付けた: 許可は外の写しを隠さない。
+	base = []*group.Entry{at("Gen/a|foo", "x")}
+	head := []*group.Entry{at("Gen/b|bar", "x"), at("App/c|foo", "x"), at("App/d|ok", "x")}
+	c, err := exclude.Parse([]byte(`{"version":1,"exclude":[{"paths":["Gen/**"],"kind":"false-positive","reason":"r"},{"unit":"` + exclude.Pin(head[2]) + `","kind":"intentional","reason":"r"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := opt
+	o.Exclude = exclude.New(c, head, nil)
+	if r := Judge(base, head, o); !r.Failed() || keys(r.Violations[0].New)[0] != "App/c|foo" {
+		t.Errorf("許可を足すと外の写しが通った: %+v", r)
+	}
+}
+
+func TestExclusionInvariantRandom(t *testing.T) {
+	// 不変条件: パスの除外と許可は、除外が無いときの違反の中に、この変更で変わった外の単位 (許可でもパスの除外の下でもない)
+	// がいれば違反を消さない。出どころの当て方・並びに依らない (名指しで rc を決めると、ここが崩れる)。
+	rng := rand.New(rand.NewPCG(906, 1))
+	files := []string{"Gen/a", "Gen/b", "App/c", "App/d"}
+	names := []string{"foo", "bar", "baz"}
+	bodies := []string{"x", "y", "z"}
+	mk := func(file, name, body string) *group.Entry {
+		x := inFile(e(file+"|"+name, body, body+"2", body+"3"), file+".swift")
+		x.Unit.Name = name
+		return x
+	}
+	for i := 0; i < 3000; i++ {
+		seen := map[string]bool{}
+		var base, head []*group.Entry
+		for j := 0; j < 4; j++ {
+			f, n, b := files[rng.IntN(len(files))], names[rng.IntN(len(names))], bodies[rng.IntN(len(bodies))]
+			if !seen["b"+f+n] {
+				seen["b"+f+n] = true
+				base = append(base, mk(f, n, b))
+			}
+			f, n, b = files[rng.IntN(len(files))], names[rng.IntN(len(names))], bodies[rng.IntN(len(bodies))]
+			if !seen["h"+f+n] {
+				seen["h"+f+n] = true
+				head = append(head, mk(f, n, b))
+			}
+		}
+		rules := `{"paths":["Gen/**"],"kind":"false-positive","reason":"r"}`
+		if len(head) > 0 && rng.IntN(2) == 0 {
+			rules += `,{"unit":"` + exclude.Pin(head[rng.IntN(len(head))]) + `","kind":"intentional","reason":"r"}`
+		}
+		cfg, err := exclude.Parse([]byte(`{"version":1,"exclude":[` + rules + `]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ex := exclude.New(cfg, head, nil)
+		bare := Judge(base, head, opt)
+		o := opt
+		o.Exclude = ex
+		got := Judge(base, head, o)
+		origin := origins(base, head, opt.Options)
+		for _, v := range bare.Violations {
+			if !v.Fail {
+				continue
+			}
+			for _, m := range append(append([]*group.Entry(nil), v.New...), v.Same...) {
+				outside := !ex.Allowed(m) && !ex.PathExcluded(m, v.Level)
+				if outside && !unchanged(m, origin) && !got.Failed() {
+					t.Fatalf("seed %d: 変わった外の単位 %s がいる違反を除外で消した\nbase=%v\nhead=%v", i, m.Unit.Key, keys(base), keys(head))
+				}
 			}
 		}
 	}
