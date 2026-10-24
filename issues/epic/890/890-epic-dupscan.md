@@ -20,7 +20,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 |---|---|---|
 | [891](891-design-dupscan-requirements.md) | 要件と構想の正本 (用途・コアと adapter の境界・正規化の段・出力・索引・実測・構想・決めること) | — |
 | [901](901-research-dupscan-existing-tools.md) | **既存の道具の調査** (CPD・jscpd とその MCP・DRYwall・dupl・similarity・ast-grep・意味検索の MCP。LSP・Serena は使わないと決めた)。PR 24 の 6 つに当てて、自分で作る範囲を決める | — |
-| [903](903-docs-dupscan-search-before-write-procedure.md) | **書く前に既存のメソッドを探す手順**を使う側の repo の入口に書く (dupscan の索引で名前・署名の型・doc 文を引く。索引ができるまでは grep の暫定の手順) | — |
+| [903](903-docs-dupscan-search-before-write-procedure.md) | **書く前に既存のメソッドを探す手順と、実装後のセルフレビューで `gate` を回す手順**を使う側の repo の入口に書く (索引ができるまでは grep の暫定の手順) | 暫定は無し (索引は 897・`gate` は 905) |
 | [892](892-chore-dupscan-project-scaffold.md) | `src/dupscan` の骨組み (module・Makefile・bin・CI・README・PACKAGES.md、cgo の所要の実測) | 901 |
 | [893](893-feat-dupscan-core-normalize-type2.md) | コア: 走査・test / prod の分類・単位・正規化 L1〜L3・ハッシュ・Type-2 の組 | 892 |
 | [894](894-feat-dupscan-swift-adapter.md) | Swift adapter (文法の pin・対応表と網羅テスト・ERROR の除外・PR 24 の固定の入力・canary) | 893 |
@@ -33,6 +33,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [902](pending/902-feat-dupscan-claude-code-hook.md) | **保留**: 編集のたびの hook。止める網は `make test` (905) にした。`make test` まで待つと手戻りが大きい実例が続いたら再開 | — |
 | [904](904-feat-dupscan-trial-subcommands.md) | 人が試す入口 (`near`・`explain`・`gate` を手で回す)。動作確認として何ができるか・なぜ同じと判定したかを手で確かめる | 893・894・896・897・898・905 |
 | [905](905-feat-dupscan-ci-check-gate.md) | **`make test` と CI で新しく入った重複を落とす** (`dupscan gate`)。作業ツリー (未コミット・untracked を含む) を merge-base と比べ、形のハッシュの数が増えた組を落とす。止めるかは所要と誤検知の割合を見て決める | 893・894・896・898 |
+| [906](906-feat-dupscan-exclusion-config.md) | **誤検知を除外する設定** (組・単位・パス・段・下限。理由が必須。効いていない除外と、新しく足された除外を出す) | 893・896 |
 
 ## 進捗
 
@@ -43,3 +44,4 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 - 2026-10-24 人が試す入口 (904) を足した (ユーザー指示: 動作確認としてどういう使い方ができるのかを知りたい)
 - 2026-10-24 検出できる種類の重複を hook (902) と CI (905) で止めることにした (ユーザー決定: 実行コスト次第)
 - 2026-10-24 止める網を `make test` の中の `dupscan gate` (905) にし、編集のたびの hook (902) は保留にした (ユーザー指示 2026-10-24: hook というより make test の中に dupscan を含める感じの実行頻度)
+- 2026-10-24 実装後のセルフレビューで `gate` を回すことを主な使い方に足し (903)、誤検知を除外する設定 (906) と検出の方法の文書 (`docs/dupscan-detection.md`) を足した (ユーザー指示)
