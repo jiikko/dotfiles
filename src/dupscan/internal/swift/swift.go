@@ -477,7 +477,9 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 				}
 			}
 		}
-		childBinds := patternBinds || (clause && (c.Kind() == "pattern" || f == "bound_identifier")) || (k == "for_statement" && f == "item")
+		// `for case .p(lo) in` の項目は値のパターン (束縛は中の let / var に任せる)。
+		forItem := k == "for_statement" && f == "item" && !hasToken(c, "case")
+		childBinds := patternBinds || (clause && (c.Kind() == "pattern" || f == "bound_identifier")) || forItem
 		cn := w.conv(c, n, f, childBinds, prevDot)
 		if casePattern && c.IsNamed() {
 			cn.Keep = true
@@ -501,6 +503,15 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 		out.Action = isActionCallee(n.NamedChild(0), w.src)
 	}
 	return out
+}
+
+func hasToken(n *sitter.Node, tok string) bool {
+	for i := range n.ChildCount() {
+		if c := n.Child(i); !c.IsNamed() && c.Kind() == tok {
+			return true
+		}
+	}
+	return false
 }
 
 func isBindingKeyword(c *sitter.Node, src []byte) bool {
@@ -540,7 +551,12 @@ func isActionCallee(c *sitter.Node, src []byte) bool {
 			if s := c.ChildByFieldName("suffix"); s != nil {
 				if id := s.ChildByFieldName("suffix"); id != nil {
 					name := id.Utf8Text(src)
-					return name != "init" && !startsUpper(name) // ConnectionID.init(rawValue:) も型の初期化
+					if name == "init" {
+						// ConnectionID.init(rawValue:) は型の初期化。self.init / super.init は委譲の処理
+						t := c.ChildByFieldName("target")
+						return t != nil && (t.Kind() == "self_expression" || t.Kind() == "super_expression")
+					}
+					return !startsUpper(name)
 				}
 			}
 		}
@@ -567,7 +583,14 @@ func (w *walker) nameRole(parent *sitter.Node, field string, binding, afterDot b
 		return tree.RoleLabel
 	case "navigation_suffix":
 		return tree.RoleMember
-	case "lambda_parameter", "parameter", "didset_clause", "willset_clause", "capture_list_item":
+	case "capture_list_item":
+		// `[k = store]` の k だけが新しい局所の名前。`[store]`・`[weak delegate]` と `=` の右辺は外側の名前の参照
+		// (局所にすると、別々の変数を捕まえるクロージャが L1 で同じになる)。
+		if field == "name" && hasToken(parent, "=") {
+			return tree.RoleDecl
+		}
+		return tree.RoleName
+	case "lambda_parameter", "parameter", "didset_clause", "willset_clause":
 		return tree.RoleDecl // didSet(old) の old も引数
 	case "pattern":
 		// `case .light:` の light・`case let .some(z)` の some は enum の case 名。`case minValue:` は値。

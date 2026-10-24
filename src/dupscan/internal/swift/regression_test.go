@@ -306,3 +306,28 @@ func repB(_ it: inout I) -> Int { var n = 0; repeat { n += 1 } while case .offli
 	}
 	differ(t, src, "repA", "repB", all3...)
 }
+
+func TestCaptureListsForCaseAndDelegatingInit(t *testing.T) {
+	src := `
+let lo = 0, hi = 9
+func capA(_ x: Int) -> () -> Int { { [store] in store.count + x } }
+func capB(_ x: Int) -> () -> Int { { [cache] in cache.count + x } }
+func valA(_ x: Int) -> () -> Int { { [k = store] in k.count + x } }
+func valB(_ x: Int) -> () -> Int { { [k = cache] in k.count + x } }
+func valC(_ x: Int) -> () -> Int { { [m = store] in m.count + x } }
+func weakA(_ x: Int) { run { [weak delegate] in delegate?.go(x) } }
+func weakB(_ x: Int) { run { [weak observer] in observer?.go(x) } }
+func h1(_ xs: [E]) -> Int { var n = 0; for case .p(lo) in xs { n += 1 }; return n }
+func h2(_ xs: [E]) -> Int { var n = 0; for case .p(hi) in xs { n += 1 }; return n }
+final class C {
+    var a = 0
+    convenience init(a: Int) throws { try self.init(name: "x", flag: true); self.a = a + 1 }
+    convenience init(b: Int) throws { try self.init(id: 0); self.a = b + 1 }
+}`
+	differ(t, src, "capA", "capB", norm.L1, norm.L2) // L3 では外側の値の読み (store.count) を畳むので同じでよい
+	differ(t, src, "valA", "valB", norm.L1, norm.L2)
+	same(t, src, "valA", "valC", norm.L1)
+	differ(t, src, "weakA", "weakB", norm.L1, norm.L2)
+	differ(t, src, "h1", "h2", norm.L1, norm.L2)
+	differ(t, src, "init(a: Int)", "init(b: Int)", all3...)
+}
