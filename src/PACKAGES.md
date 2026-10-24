@@ -18,6 +18,13 @@
 - `src/doctor/ssd` (`doctor/ssd`) — Package ssd は内蔵 SSD の健康状態を読む。
 - `src/doctor/svc` (`doctor/svc`) — Package svc は svcdoctor: 壊れた launchd 登録の検出。
 - `src/doctor/testtmp` (`doctor/testtmp`) — Package testtmp は「テストが起こした一時ディレクトリを、中断されても回収する」ための 共通ヘルパー。
+- `src/dupscan` (`dupscan`) — Command dupscan は、repo の中で本体が同じ形のメソッド (関数・初期化子・クロージャ) を構文木で見つけて組にする。 (main)
+- `src/dupscan/internal/group` (`dupscan/internal/group`) — Package group は、正規化したハッシュが同じ単位を段ごとに組 (Type-2) にまとめる。 (internal)
+- `src/dupscan/internal/norm` (`dupscan/internal/norm`) — Package norm は、単位の本体を段 (L1 / L2 / L3) ごとに正規化してハッシュを取る。 (internal)
+- `src/dupscan/internal/repo` (`dupscan/internal/repo`) — Package repo は、調べる repo のファイルを git で列挙する。 (internal)
+- `src/dupscan/internal/report` (`dupscan/internal/report`) — Package report は重複の報告を、人が読む形・JSON・Xcode / SwiftLint と同じ形式で書く。 (internal)
+- `src/dupscan/internal/swift` (`dupscan/internal/swift`) — Package swift は、Swift のソースを tree-sitter で読み、比べる単位 (関数・初期化子・クロージャ) を言語に依らない木に写す adapter。 (internal)
+- `src/dupscan/internal/tree` (`dupscan/internal/tree`) — Package tree は、言語に依らない「比べる単位」と、その本体の木を表す。 (internal)
 - `src/glogx` (`glogx`) — 対話ブラウズ中はキー操作 (j/k/q/b 等) が主なので、起動時に IME を英数 (ABC) へ 切り替え、終了時に元へ戻す。 (main)
 - `src/glogx/cmd/issue-claim` (`glogx/cmd/issue-claim`) — issue-claim は issue に着手の claim を付ける: next/ に目印 (symlink) を置き、本文冒頭に担当者バナーを書く。 (main)
 - `src/glogx/gorules` (`glogx/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.local.yml の settings.gocritic.settings.ruleguard.rules から参照)。 (build tags: ruleguard)

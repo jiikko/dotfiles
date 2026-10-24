@@ -50,7 +50,12 @@ for go_mod in "$SRC_DIR"/*/go.mod; do
 done
 [ -s "$module_list" ] || fail 'src/*/go.mod の module が 0 件です'
 
-nested_modules="$(find "$SRC_DIR" -mindepth 3 -name go.mod -print | sort)" || fail 'nested module の検査に失敗しました'
+# module の直下の third_party/ にある入れ子の module は、依存先の都合で置く小さな代わり (replace の先。実例: src/dupscan/third_party) で、
+# この module の package ではない。go の ./... も入れ子の module に入らないので、ここでも数えない。それ以外の入れ子は今までどおり落とす。
+# find の -path の * は / も含むので、「直下」は「深い方の形に当たらない」で書き分ける。src/*/go.mod (module 自身) は後で除く。
+all_go_mods="$(find "$SRC_DIR" \( -path "$SRC_DIR/*/third_party" ! -path "$SRC_DIR/*/*/third_party" \) -prune -o -name go.mod -print)" ||
+	fail 'nested module の検査に失敗しました'
+nested_modules="$(printf '%s\n' "$all_go_mods" | awk -v top="$SRC_DIR/" 'index($0, top) == 1 { rest = substr($0, length(top) + 1); if (rest ~ /\/.*\//) print }' | sort)"
 if [ -n "$nested_modules" ]; then
 	first_nested="$(printf '%s\n' "$nested_modules" | sed -n '1p')"
 	first_nested_rel="${first_nested#"$ROOT_DIR"/}"
@@ -64,7 +69,7 @@ while IFS= read -r module_rel; do
 	module_packages="$tmp_dir/module-$module_count-packages"
 	if ! (
 		cd "$module_dir" || exit 1
-		find . -mindepth 1 -type d \( -name vendor -o -name testdata -o -name '.*' -o -name '_*' \) -prune -o \
+		find . -mindepth 1 -type d \( -name vendor -o -name testdata -o -name '.*' -o -name '_*' -o -path ./third_party \) -prune -o \
 			\( -type f -o -type l \) -name '*.go' ! -name '*_test.go' -print |
 			awk '{ sub(/\/[^\/]*$/, ""); sub(/^\.\//, ""); if ($0 == "") $0 = "."; print }' |
 			sort -u |

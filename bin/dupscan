@@ -1,0 +1,9 @@
+#!/usr/bin/env zsh
+# dupscan — repo の中で本体が同じ形のメソッド (関数・初期化子・クロージャ) を構文木で見つけて組にする。
+# Go implementation at:
+#   ~/dotfiles/src/dupscan/
+#     dupscan [report] [-format text|json|xcode] [-limit N] [dir ...]
+# 調べる repo には何も書かない。初回は cgo で文法の C のソースをビルドするので時間がかかる。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec "${0:A:h}/../src/dupscan" dupscan -- "$@"

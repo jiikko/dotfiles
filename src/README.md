@@ -18,6 +18,7 @@
 | [`serialrun`](serialrun/README.md) | 重いコマンド (make test / xcodebuild 等) をマシン全体で順番待ちにする CLI `bin/serial-run` と、Claude Code の hook の本体 |
 | [`tmpclean`](tmpclean/README.md) | 一時領域 (Claude Code の scratchpad・`$TMPDIR`) を数え、承認された古いものだけをゴミ箱へ移す CLI `bin/tmpclean` (skill `cleanup-tmp-dir` の本体) |
 | [`codexevents`](codexevents/README.md) | codex exec --json の run が最後まで終わったかを判定して記録する CLI (`bin/codex-fanout` の `-J` / `-S`) |
+| [`dupscan`](dupscan/README.md) | repo の中で本体が同じ形のメソッドを構文木で見つけて組にする CLI `bin/dupscan` (Swift。epic 890) |
 | [`mp4box`](mp4box/README.md) | MP4 のトップレベルの box のうち壊れていないものの合計 (実効サイズ) を出す CLI (concat の出力サイズの診断) |
 | [`restartable`](restartable/README.md) | コマンドを前面で起動し、キーか socket から再起動できる runner |
 | [`process_supervisor`](process_supervisor/README.md) | 呼んだプロセスが生きている間だけ子を見張って起こし直す module |

@@ -1,0 +1,10 @@
+# dupscan の golangci-lint の設定の差分。共通の塊は src/.golangci.yml で、scripts/golangci_lint.sh が run のたびに合成する。
+linters:
+  settings:
+    errcheck:
+      # Best-effort writes to stderr/stdout and closing read handles.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*os.File).Close

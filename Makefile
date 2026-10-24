@@ -25,6 +25,7 @@ ZSH_SYNTAX_FILES := \
   bin/concat \
   bin/codex-events \
   bin/diskdoctor \
+  bin/dupscan \
   bin/glogx \
   bin/issue-claim \
   bin/lib/go_autobuild.zsh \

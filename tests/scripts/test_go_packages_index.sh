@@ -316,6 +316,28 @@ printf 'module fixture.test/demo/nested\n\ngo 1.25.0\n' > "$NESTED/src/demo/nest
 run_fixture "$NESTED" delegate
 expect_failure 'nested module' 'nested Go module は未対応です: src/demo/nested'
 
+# module の直下の third_party/ の入れ子の module (replace の先の代わり) は落とさず、package にも数えない。
+# third_party/ より深い入れ子でない場所 (src/demo/x/third_party) は今までどおり落とす。
+THIRD_PARTY="$WORK/third-party-module"
+mkdir -p "$THIRD_PARTY"
+cp -R "$BASE/." "$THIRD_PARTY/"
+mkdir -p "$THIRD_PARTY/src/demo/third_party/stub/bindings"
+printf 'module example.com/stub\n\ngo 1.25.0\n' > "$THIRD_PARTY/src/demo/third_party/stub/go.mod"
+printf 'package bindings\n' > "$THIRD_PARTY/src/demo/third_party/stub/bindings/b.go"
+run_fixture "$THIRD_PARTY" delegate
+if [ "$RC" -eq 0 ] && ! grep -Fq 'third_party' "$THIRD_PARTY/src/PACKAGES.md"; then
+	ok 'module の直下の third_party/ の入れ子の module を落とさず、一覧にも出さない'
+else
+	bad "third_party/ の入れ子の module の扱いが違う (rc=$RC): $OUT"
+fi
+DEEP_THIRD_PARTY="$WORK/deep-third-party-module"
+mkdir -p "$DEEP_THIRD_PARTY"
+cp -R "$BASE/." "$DEEP_THIRD_PARTY/"
+mkdir -p "$DEEP_THIRD_PARTY/src/demo/x/third_party/stub"
+printf 'module example.com/stub\n\ngo 1.25.0\n' > "$DEEP_THIRD_PARTY/src/demo/x/third_party/stub/go.mod"
+run_fixture "$DEEP_THIRD_PARTY" delegate
+expect_failure 'module の直下でない third_party の入れ子の module' 'nested Go module は未対応です: src/demo/x/third_party/stub'
+
 run_fixture "$BASE" rc
 expect_failure 'go list の非ゼロ rc' 'go list が失敗しました: src/demo (rc=23)'
 run_fixture "$BASE" tagged-rc
