@@ -44,6 +44,7 @@ sourcekit-lsp は `/usr/bin/sourcekit-lsp` にあるが、Swift の repo で Cla
       版・stdout / stderr / rc を分けて書き、obaket のあるマシンで行う
 - [ ] ast-grep の Swift のパターンで、PR 24 の 6 つを形で引けるかを試す (直書きの 4 つと、プロパティを読む 2 つ)
 - [ ] Claude Code の LSP ツールが obaket の Swift で `workspaceSymbol` を返すかと、初回の索引の待ちを測る (obaket issue 1299 と合わせる)
+- [ ] 名前・署名・doc の索引 (897) を既存の道具 (LSP の documentSymbol・ast-grep・ctags) で作れるかを比べる
 - [ ] 結果で、dupscan が自分で作る範囲を決めて [891](891-design-dupscan-requirements.md) の「決めること」に書き戻す。既存の道具で足りる部分は作らない
 
 ## 出典
