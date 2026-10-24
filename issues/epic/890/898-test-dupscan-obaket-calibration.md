@@ -4,8 +4,8 @@
 
 ## 概要
 
-[891 (要件の正本)](891-design-dupscan-requirements.md) の既定値 (下限・閾値) は実測で決める。**規模と作りの違う 2 つの repo** (obaket と DualNoteApp (`~/src/working/DualNoteApp` の `macOS/`。Swift 96 ファイル。XcodeGen の `project.yml` と SwiftPM の `Shared/Package.swift` を持ち、`project.pbxproj` は追跡していない)) に当てて決め、片方にだけ合わせない (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)。
-obaket はこのマシンに無いので、先に DualNoteApp で測り、obaket は手に入るマシンで測る。他人の repo に当てるときは `--cache-dir` で tmp に置き、その repo に書かない。
+[891 (要件の正本)](891-design-dupscan-requirements.md) の既定値 (下限・閾値) は実測で決める。**規模と作りの違う 2 つの repo** (obaket と DualNoteApp (`~/src/working/DualNoteApp`。`macOS/` に Swift 96 ファイル、兄弟の `Shared/` (SwiftPM の package) に 88 ファイル、`iOS/` に 15 ファイル。`macOS/project.yml` (XcodeGen) が `../Shared` を参照する。`project.pbxproj` は追跡していないが、ignore されたままディスク上にはある)) に当てて決め、片方にだけ合わせない (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)。
+obaket はこのマシンに無いので、先に DualNoteApp で測り、obaket は手に入るマシンで測る。DualNoteApp は `macOS/` と `Shared/` をまたぐ写しを見るため、repo の root を起点にする。dupscan は調べる repo に何も書かない (891 の不変条件)。
 obaket では、PR 24 の前の木で肯定と否定の期待値を置き、変異で効いていることを確かめる。
 
 Type-3 ([895](895-feat-dupscan-type3-candidates.md)) は後回しにしたので、下の Type-3 に触れる条件は 895 に着手したときに当てる。それまでは Type-2 と L1〜L3 の段だけで較正する。
@@ -17,7 +17,7 @@ Type-3 ([895](895-feat-dupscan-type3-candidates.md)) は後回しにしたので
 ## 受け入れ条件
 
 - [ ] obaket と DualNoteApp の全体に当てたときの組の数・誤検知の割合・ノード数の分布・所要を、repo ごとに実測して書く (下限と閾値の既定の根拠。2 つで食い違えば、どちらに合わせたかと理由を書く)
-- [ ] DualNoteApp に当てた後、DualNoteApp の作業ツリーと `.git` に何も書かれていないことを `git status` と `.git` の更新時刻で確かめる
+- [ ] DualNoteApp に当てた前後で、作業ツリーと `.git` の中身が変わっていないことを確かめる (`find <repo> -newer <印のファイル>` で、当てた後に更新されたファイルが 0 件。`git status` は `.git/index` を書き直しうるので確かめに使わない)
 - [ ] 全体の期待値: PR 24 の前の木の全体に **既定の設定 (既定の下限と閾値)** で当て、6 つが出ること、**同じ組に入ってよいもの / 入ってはいけないもの** を期待値にする。
       反証レビューが文法から推した候補: L2 で同じ形になるもの (`BrowserSelectionStateTests.makeLocation` の `"c"` / `.bucket("b")`、`S3StubTestSupport.leaf` の `"connection"`)、
       L3 で入りうるもの (`.container(Self.identifier)` / `.root` / `context.connection.id` を使う版・`StorageResumableMoveUseCaseTests.location(connectionID:path:)`)。どれを入れるかを決めて書く

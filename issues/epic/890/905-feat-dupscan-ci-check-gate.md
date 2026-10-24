@@ -44,7 +44,7 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
 
 - **所要**: `make test` に足される秒数。base と作業ツリーの 2 回の走査が要る (parse だけなら obaket の Swift 1626 ファイルで 5.0 秒。891 の実測。正規化と組分けを含む通しは未実測)。
   base の単位の一覧は base の commit ごとにキャッシュできる (鍵は commit・dupscan の版・文法の版・設定のハッシュ)
-- **誤って止める割合**: obaket と DualNoteApp の過去の commit を N 本 (例: 直近 100 本) 流し直し、1 本ずつ親を base にして `gate` を回し、落ちた本数と、そのうち誤検知の本数を段ごとに数える。
+- **誤って止める割合**: obaket と DualNoteApp の過去の commit を N 本 (例: 直近 100 本) 流し直し、1 本ずつ親を base・その commit を head にして `gate --head <commit>` を回し (作業ツリーを使わず、checkout も worktree も作らずに git のオブジェクトから読む)、落ちた本数と、そのうち誤検知の本数を段ごとに数える。
   repo 全体の組の誤検知 (898) とは別の量で、こちらが「make test が誤って赤になる頻度」に当たる
 - この 2 つを見て、ユーザーが段ごとに「止める / 報告だけ / 回さない」を決める
 

@@ -27,7 +27,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [895](895-feat-dupscan-type3-candidates.md) | Type-3 (少し違う写し) の類似度と候補の絞り込み (後回し。主な用途には Type-2 と L3 の一致で足りるかを先に見る) | 893 |
 | [896](896-feat-dupscan-report-output.md) | 出力 (人が読む形・JSON・リテラルの違いの表・プロパティの値・ターゲット・可視性・呼び出し元の数・既存のヘルパーとの一致) | 893・894 |
 | [897](897-feat-dupscan-index-subcommand.md) | 探索のための索引 (subcommand)。名前・署名の型・doc 文で引く (名前の検索も LSP でなくこれでまかなう) | 893・894 |
-| [898](898-test-dupscan-obaket-calibration.md) | obaket に当てた実測・既定の閾値・PR 24 の前の木での肯定と否定の期待値・変異 (Type-3 の条件は 895 の着手時) | 894・896 |
+| [898](898-test-dupscan-obaket-calibration.md) | obaket と DualNoteApp に当てた実測・既定の閾値・PR 24 の前の木での肯定と否定の期待値・変異 (Type-3 の条件は 895 の着手時) | 894・896 |
 | [899](pending/899-research-dupscan-lsp-integration.md) | **保留** (LSP は使わない)。構文木の近似で判断を誤る実例が出たら、LSP・言語の解析の道具で補う案を再開する | 896 |
 | [900](900-research-dupscan-next-languages.md) | 次の言語 (Go・zsh) の読み取りを測る | 893 |
 | [902](pending/902-feat-dupscan-claude-code-hook.md) | **保留**: 編集のたびの hook。止める網は `make test` (905) にした。`make test` まで待つと手戻りが大きい実例が続いたら再開 | — |

@@ -135,7 +135,7 @@ ERROR / MISSING ノードを含むファイルを数えた:
 
 ## 効果の測り方 (2026-10-24 に足した要件)
 
-- **効果**: obaket で、段ごとの組の数 (test / prod 別) を `dupscan <repo> --json` で定期的に数えて残し、導入の前と後で比べる。寄せた件数は、回と回の間で組から消えたメンバーの数で数える
+- **効果**: 使う repo (最初は obaket と DualNoteApp) で、段ごとの組の数 (test / prod 別) を `dupscan <repo> --json` で定期的に数えて残し、導入の前と後で比べる。寄せた件数は、回と回の間で組から消えたメンバーの数で数える
 - **記録**: `gate` は `--record <file>` で、1 回ごとの違反・除外・許可を 1 行の JSON で追記できるようにする (回をまたいで数えるため)
 - **誤検知**: 除外と許可に種別 (`false-positive` / `intentional`) を書かせ、`false-positive` で片付けた違反の割合を誤検知とする (意図した写しと混ぜない。高いなら下限・閾値か正規化を見直す)
 - どれも `dupscan` の出力 (`--json`) から数えられる形にする。測った値は epic 890 の issue に書く
@@ -144,7 +144,9 @@ ERROR / MISSING ノードを含むファイルを数えた:
 
 - **dupscan はソースを書き換えない** (読み取りだけ)。書くのはキャッシュと、`index` で求められたときの索引のファイルだけ
 - **キャッシュの鍵に、commit に加えて dupscan の版・文法の版・設定のハッシュを入れる** (版や設定が変わるとハッシュが変わり、古い base のキャッシュと比べると数の比較が全部ずれる)
-- **キャッシュは repo の作業ツリーの外に置く**: `git rev-parse --git-common-dir` の下 (worktree の間で共有し、`gate` が untracked として拾わず、repo を消せば一緒に消える)
+- **調べる repo に何も書かない**: キャッシュの既定の置き場所は、調べる repo の外のユーザーのキャッシュのディレクトリ (`${XDG_CACHE_HOME:-~/.cache}/dupscan/<repo の識別子>`。`--cache-dir` で変えられる)。
+  大きさの上限を持ち、古いものから消す。内部で打つ git は `GIT_OPTIONAL_LOCKS=0` で打ち、`.git/index` の書き直しも起こさない。
+  base や過去の commit は checkout せずに git のオブジェクトから読む (worktree も作らない)
 - **設定は作業ツリーの側を両方に当てる**: base の単位の一覧も作業ツリーの設定 (除外・下限・test / prod の規則) で読む (除外を足した変更で、base の側だけ数が変わらないように)
 - **所要の上限を超えたら**: `gate` は判定不能として非 0 で終わり、上限と経過を出す (黙って緑にも赤にもしない)
 - **キャッシュは並行して壊れない**: 複数のセッション・worktree の `make test` が同時に `gate` を回しても、キャッシュは原子的に置き換え、壊れたキャッシュは捨てて作り直す (読み違えた結果を出さない)
@@ -154,10 +156,13 @@ ERROR / MISSING ノードを含むファイルを数えた:
 - **repo ごとの事情は設定ファイルにだけ書く**。コードに特定の repo の既定を埋め込まない (共通のヘルパーの置き場所・既定のブランチ・test / prod の規則の上書き・除外・下限)。
   obaket の `SharedTestSupport` のような名前は、例として書くだけで既定にしない
 - **adapter の既定は言語の慣習だけ**にする (Swift の `Tests/` 配下・`*Tests.swift`・`@Test` など)。repo の慣習は設定で足す
-- **走査の起点をサブディレクトリにできる** (`dupscan <repo の中のディレクトリ>`)。repo の root は `git rev-parse --show-toplevel` で取り、パスは起点からではなく root からの相対で出す
+- **走査の起点をサブディレクトリにできる** (`dupscan <repo の中のディレクトリ>`。複数の起点も可)。起点は `git -C <起点> rev-parse --show-prefix` で正規化する
+  (大文字小文字の違う `macos` を渡されても `macOS/` に直す。字面のまま pathspec に渡すと 0 件になる)。列挙が 0 件なら判定不能にする。パスは repo の root からの相対で出す
+  - 比べる範囲は起点の中だけ。起点の外から移したコードは「新しく増えた」に数わるので、写しが起点をまたぐ repo (DualNoteApp の `macOS/` と `Shared/`) では、repo の root を起点にしてパスの除外で絞るのを勧める
+  - 設定ファイルは repo の root に 1 つ。起点やパスごとの違い (test / prod の規則・段の除外) はその中にパスの glob で書く
 - **プロジェクトの持ち方の違いを吸収する**: SwiftPM だけ・Xcode だけ・XcodeGen・混在。どれでも動き、所属ターゲットが分からないときは「不明」と出す
-- **調べる相手の repo に書かない**: 検証のために他人の repo に当てるときは `--cache-dir` で作業ツリーと `.git` の外にキャッシュを置ける (既定は git-common-dir の下)
-- **既定値は 2 つ以上の repo で決める**: 規模と作りの違う obaket (Swift 1626 ファイル) と DualNoteApp (`~/src/working/DualNoteApp` の `macOS/`。Swift 96 ファイル。XcodeGen の `project.yml` と SwiftPM の `Shared/Package.swift` を持ち、`project.pbxproj` は追跡していない) の両方で測り、片方にだけ合わせない (898)
+- **調べる相手の repo に書かない**: 上の不変条件のとおり。他人の repo に当てる検証でも、そのまま使える
+- **既定値は 2 つ以上の repo で決める**: 規模と作りの違う obaket (Swift 1626 ファイル) と DualNoteApp (`~/src/working/DualNoteApp`。`macOS/` に Swift 96 ファイル、兄弟の `Shared/` (SwiftPM の package) に 88 ファイル、`iOS/` に 15 ファイル。`macOS/project.yml` (XcodeGen) が `../Shared` を参照する。`project.pbxproj` は追跡していないが、ignore されたままディスク上にはある) の両方で測り、片方にだけ合わせない (898)
 - dupscan 自身のテストは、外の repo の checkout に依存しない。PR 24 などの実例は、出典の commit とパスを書いて testdata に切り出す
 
 ## SwiftLint のルールにしない (2026-10-24 の判断)
@@ -167,8 +172,10 @@ ERROR / MISSING ノードを含むファイルを数えた:
 - SwiftLint の `custom_rules` は、1 ファイルずつの正規表現。ファイルをまたいで本体の形を比べることも、名前やリテラルを潰すこともできない
 - Swift で書くネイティブのルール (SwiftSyntax) は、SwiftLint を Bazel で自前ビルドする必要がある。使う側の repo の swiftlint をその版に差し替えることになり、
   Swift 専用になる。上の「汎用性」と「依存と使い方を単純に」に反する
+- SwiftLint 本体には、ファイルをまたいで情報を集める仕組み (`CollectingRule`。unused_declaration などが使う) がある。ただし自前のルールから使えるかは未確認で、使えても上の Bazel の自前ビルドが要る
+- DualNoteApp は SwiftLint をビルド済みの plugin (SwiftLintBuildToolPlugin) で回しており、自前ビルドの swiftlint へ差し替えにくい
 - 代わりに、**出力を Xcode / SwiftLint と同じ `ファイル:行:列: warning: …` の形式でも出せる**ようにし (896)、使う側の repo の `make lint` / `make test` で swiftlint と並べて回す。
-  Xcode の Run Script に入れれば、swiftlint の警告と同じ場所に出る
+  Xcode の Run Script に入れる使い方は未確認 (User Script Sandboxing が有効だと repo 全体や `.git` を読めない可能性がある)
 - 再評価の条件: SwiftLint が Bazel なしで外部のネイティブのルールを読み込めるようになったとき
 
 ## 受け入れ条件
@@ -195,7 +202,7 @@ ERROR / MISSING ノードを含むファイルを数えた:
 - 索引の置き方: commit して `--check` で守る (897) か、worktree ごとのキャッシュか、両方か
 - 「どう共通化するか」の材料をどこまで出すか: 上の出力に加えて置き場所の候補まで出すか
 - 設定の置き場 (除外の設定と同じファイル。[906](906-feat-dupscan-exclusion-config.md)) (対象・除外・test / prod の規則・閾値・既にある共通のヘルパーの置き場所。repo の root の設定ファイルか CLI の引数か)。obaket issue 1298 の運用はこの決定を待つ
-- 他のマシン (CI を含む) への配り方: dotfiles の `bin/` が PATH にある前提でよいか、ビルド済みの実行ファイルを配るか
+- 他のマシン (CI を含む) への配り方 → **要件にした** (892): dotfiles を持たない repo の CI でも、版を固定して入れられること (`go install <module>@<版>` か、ビルド済みの実行ファイル)。cgo なので C のコンパイラが要る
 - Swift の次に足す言語の順 (下の「構想: 対応する言語」)
 
 ## 構想: 対応する言語 (候補。未確定)
@@ -262,3 +269,4 @@ dupscan は自前の構文木 (tree-sitter) だけで、書く前の検索・書
 - 2026-10-24 「効果の測り方」と「不変条件」(ソースを書き換えない・キャッシュの並行) を足した (ユーザー: 他に足りない要件ある?)
 - 2026-10-24 反証レビュー (セルフレビュー・906 の改訂) を取り込んだ: L1 は局所の名前だけを番号に / L3 は畳んだ後に振り直し、callee の名前は畳まない / キャッシュの鍵に版と設定 / キャッシュの置き場所 / 設定は作業ツリーの側を両方に / 所要の上限 / 効果の測り方を記録と種別で測れる形に
 - 2026-10-24 「汎用性」節 (repo に依存しない作り・サブディレクトリの起点・プロジェクトの持ち方・調べる相手に書かない・2 つ以上の repo で既定を決める) と、「SwiftLint のルールにしない」節を足した (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)
+- 2026-10-24 反証レビュー (汎用化の改訂) を取り込んだ: 調べる repo に何も書かない (キャッシュは repo の外・`GIT_OPTIONAL_LOCKS=0`・git のオブジェクトから読む) / 起点の正規化と比べる範囲 / DualNoteApp の事実 (`Shared/` は兄弟) / 配り方を要件に / SwiftLint の CollectingRule と Run Script の未確認

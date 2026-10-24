@@ -10,6 +10,8 @@ epic 890 の土台。`src/` の新しいプロジェクトの手順に沿って�
 
 ## 受け入れ条件
 
+- [ ] dotfiles を持たない repo の CI でも、版を固定して入れる手順がある (`go install <module>@<版>` か、ビルド済みの実行ファイル)。cgo なので C のコンパイラの要否も書く。DualNoteApp の CI (GitHub Actions) を例に手順を確かめる
+
 - [ ] `src/` の新しいプロジェクトの手順 (`src/README.md`「新規プロジェクトのガイドライン」) を満たす:
   - `src/dupscan/Makefile` の `lint:` (`../../scripts/go_module_graph.sh` を呼ぶ) / `test:`、`go.sum`、`src/dupscan/README.md`、`src/README.md` の一覧に 1 行
   - `.github/workflows/src_dupscan.yml` (`_go-project.yml` を呼ぶ。paths に `src/dupscan/**` と共有の script / 設定、replace で取り込む共有 module の dir)
@@ -22,3 +24,4 @@ epic 890 の土台。`src/` の新しいプロジェクトの手順に沿って�
 
 - 2026-10-24 起票 (epic 890 の分解)
 - 2026-10-24 901 の結論を待つことにした
+- 2026-10-24 他の repo の CI での入れ方 (版の固定) を受け入れ条件に足した (反証レビュー: 汎用化には入手の手段が要る)
