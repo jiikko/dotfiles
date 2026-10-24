@@ -127,9 +127,7 @@ func ref(u *tree.Unit) UnitRef {
 
 // JSON は JSON で書く。
 func JSON(w io.Writer, s Summary) error {
-	e := json.NewEncoder(w)
-	e.SetIndent("", "  ")
-	return e.Encode(s)
+	return WriteJSON(w, s)
 }
 
 // TextOptions は人が読む形の設定。

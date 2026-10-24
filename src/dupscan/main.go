@@ -22,11 +22,15 @@ import (
 
 const usage = `usage: dupscan [report] [flags] [dir ...]
        dupscan gate [flags] [dir ...]
+       dupscan near [flags] <file>:<関数名|行> [dir ...]
+       dupscan explain [flags] <file>:<関数名|行>
 
 report: dir (既定は .) を起点に、git が追跡しているファイルと ignore されていない untracked のファイルを読み、
 本体が同じ形の単位を段 (L1 / L2 / L3) ごとに組にして出す。
 gate: base (既定は upstream との merge-base) から作業ツリー (か -head の commit) までに新しく増えた重複を出し、
 止める段の違反があれば rc=1。base を決められないときは rc=2。セルフレビューと make test・CI で回す。
+near: 指した単位と同じ形の単位を、一致した最も細かい段で並べる (起点を書かなければそのファイルの repo 全体と比べる)。
+explain: 指した単位を段ごとに潰した形・ハッシュと、比べない理由を出す (なぜ同じ / 違うと判定したか)。
 どちらも調べる repo には何も書かない。
 
 flags:
@@ -95,6 +99,9 @@ func (c common) options() (group.Options, error) {
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "gate" {
 		return runGate(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && (args[0] == "near" || args[0] == "explain") {
+		return runPoint(args[0], args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "report" {
 		args = args[1:]

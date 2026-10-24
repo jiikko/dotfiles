@@ -66,6 +66,7 @@ type Unit struct {
 	Key       string
 	File      string // repo の root からの相対パス
 	Line      int
+	EndLine   int
 	Col       int
 	Name      string
 	Signature string

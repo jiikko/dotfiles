@@ -347,7 +347,7 @@ func (w *walker) newUnit(n *sitter.Node, kind tree.UnitKind, name, sig string, l
 		key = c.owner + "/" + label // 関数の中の関数は、囲む単位ごとに分ける
 	}
 	u := &tree.Unit{
-		Key: key, File: w.file, Line: int(pos.Row) + 1, Col: int(pos.Column) + 1,
+		Key: key, File: w.file, Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1, Col: int(pos.Column) + 1,
 		Name: name, Signature: sig, Kind: kind, Enclosing: encl, Test: w.test || c.testClass,
 		Params: locals, Unreadable: broken(n), Visibility: "internal",
 	}

@@ -18,7 +18,17 @@ bin/dupscan -limit 0 -v .        # text で全部の組と、読めない構文�
 bin/dupscan gate                 # upstream との merge-base から作業ツリーまでに新しく増えた重複。無ければ 1 行
 bin/dupscan gate -base origin/master .        # base を明示する (CI の push なら push の前の commit、PR なら対象のブランチ)
 bin/dupscan gate -base HEAD~1 -head HEAD .    # 2 つの commit を比べる (過去の commit の流し直し。checkout しない)
+
+bin/dupscan near Sources/A.swift:location     # この単位と同じ形の単位 (一致した最も細かい段で)。起点を書かなければ repo 全体と比べる
+bin/dupscan near Sources/A.swift:42 Sources   # 行で指す (その行を含む単位のうち最も後で始まるもの)。起点を絞る
+bin/dupscan explain Sources/A.swift:location  # 段ごとに潰した形・ハッシュと、比べない理由 (なぜ同じ / 違うと判定したか)
 ```
+
+`near` は report・gate と同じ比べ方 (`group.Eligible` と段のハッシュ) で、指した単位と同じハッシュの単位を出す。指した単位そのものは出さない。
+組の作り方 (被った組・入れ子のクロージャの組を外す) は通さないので、クロージャを指してもその一致が出る。
+本体が局所の名前を参照しない単位どうしの L3 の一致は、report・gate では組にしないので、中身を見た一致と分けて出す。
+組の除外とパスの除外は、指した単位と相手の 2 人の組に report と同じ関数で掛け、外した数を 1 行目に出す。名前で 2 つ以上に当たれば候補の行を並べて rc=2。
+`gate` を手で試すなら、既にある関数の写しをわざと足してから `bin/dupscan gate` を回すと、`make test` で落ちるときと同じ違反が出る。
 
 `gate` の終了コード: 0 = 止める段の新しい重複なし / 1 = あり / 2 = 判定不能 (base が無い・読むファイルが 0 件など)。
 `-fail-levels` (既定 `L1,L2`) の段の違反だけで止め、ほかの段 (既定では L3) は報告だけ。セルフレビューと make test・CI で回す。

@@ -1,7 +1,6 @@
 package report
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -69,9 +68,7 @@ func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set) GateSumm
 
 // GateJSON は JSON で書く。
 func GateJSON(w io.Writer, s GateSummary) error {
-	e := json.NewEncoder(w)
-	e.SetIndent("", "  ")
-	return e.Encode(s)
+	return WriteJSON(w, s)
 }
 
 // GateText は人が読む形で書く。新しい重複が無ければ 1 行だけにする (セルフレビューと make test で何度も回すため)。

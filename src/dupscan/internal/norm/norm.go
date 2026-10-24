@@ -45,8 +45,8 @@ type Result struct {
 	Hash map[Level]string
 	// Nodes は本体の名前つきの節の数 (下限の判定に使う)。
 	Nodes int
-	// L3Trivial は、本体が局所の名前を 1 つも参照しないので L3 で本体全体が 1 記号に畳まれたことを表す。
-	// 同じ型を返すだけでどれも一致するので、L3 の組には入れない。
+	// L3Trivial は、本体が局所の名前を 1 つも参照しないことを表す。L3 では値の位置がどれも同じ記号に畳まれ、
+	// 同じ型を返す同じ形の呼び出しならどれも一致するので、L3 の組には入れない。
 	L3Trivial bool
 	// Forms は段ごとに潰した形 (explain 用)。
 	Forms map[Level]string

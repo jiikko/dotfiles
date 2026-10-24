@@ -2,6 +2,8 @@
 package group
 
 import (
+	"fmt"
+	"slices"
 	"sort"
 
 	"dupscan/internal/norm"
@@ -31,11 +33,66 @@ type Options struct {
 }
 
 // Eligible は、その単位をその段で比べるか (読めない・下限より小さい・L3 で自明は比べない)。
-func Eligible(e *Entry, lv norm.Level, opt Options) bool {
-	if e.Unit.Unreadable || e.Result.Nodes < MinNodes(e, opt) {
-		return false
+func Eligible(e *Entry, lv norm.Level, opt Options) bool { return Skip(e, lv, opt) == "" }
+
+// Skip は、その単位をその段で比べない理由 (比べるなら空)。
+func Skip(e *Entry, lv norm.Level, opt Options) string {
+	switch {
+	case e.Unit.Unreadable:
+		return "読めない構文を含む"
+	case e.Result.Nodes < MinNodes(e, opt):
+		return fmt.Sprintf("節が %d で下限 %d より少ない", e.Result.Nodes, MinNodes(e, opt))
+	case lv == norm.L3 && e.Result.L3Trivial:
+		return "本体が局所の名前を参照しないので、L3 では値の位置がどれも同じ記号に畳まれる (同じ形の呼び出しならどれも一致する)"
 	}
-	return lv != norm.L3 || !e.Result.L3Trivial
+	return ""
+}
+
+// Match は、ある単位に近い単位 1 つと、一致した最も細かい段。
+type Match struct {
+	Entry *Entry
+	Level norm.Level
+	// Folded は、局所の名前を参照しない (L3Trivial の) 単位どうしの L3 の一致 (中身を見た一致ではない。Build はこれを組にしない)。
+	Folded bool
+}
+
+// Near は target と同じ段のハッシュを持つ他の単位を、一致した最も細かい段で返す。比べるかは Build と同じ Eligible で決める。
+// Build と違い、被った組・入れ子の組を外さない (指した単位がクロージャでも、その一致を出す)。
+func Near(target *Entry, entries []*Entry, opt Options) []Match {
+	levels := append([]norm.Level(nil), opt.Levels...)
+	sort.Slice(levels, func(i, j int) bool { return levels[i] < levels[j] })
+	var out []Match
+	for _, e := range entries {
+		if e == target {
+			continue
+		}
+		found := false
+		for _, lv := range levels {
+			if Eligible(target, lv, opt) && Eligible(e, lv, opt) && e.Result.Hash[lv] == target.Result.Hash[lv] {
+				out = append(out, Match{Entry: e, Level: lv})
+				found = true
+				break
+			}
+		}
+		if !found && slices.Contains(levels, norm.L3) && folded(target, opt) && folded(e, opt) && e.Result.Hash[norm.L3] == target.Result.Hash[norm.L3] {
+			out = append(out, Match{Entry: e, Level: norm.L3, Folded: true})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Folded != out[j].Folded {
+			return !out[i].Folded
+		}
+		if out[i].Level != out[j].Level {
+			return out[i].Level < out[j].Level
+		}
+		return key(out[i].Entry) < key(out[j].Entry)
+	})
+	return out
+}
+
+// folded は、L3 で畳まれたことだけが理由で比べない単位か。
+func folded(e *Entry, opt Options) bool {
+	return e.Result.L3Trivial && !e.Unit.Unreadable && e.Result.Nodes >= MinNodes(e, opt)
 }
 
 // Build は組を作る。細かい段の組とメンバーが同じ組は、粗い段では重ねて出さない
