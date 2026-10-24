@@ -504,9 +504,10 @@ func TestAllowedNewCopyDoesNotBlameSameEditedCopies(t *testing.T) {
 	}
 }
 
-func TestOutsideCopyIsNotBlamedForNewExcludedCopy(t *testing.T) {
-	// 生成コード g と手書きの h は前から写しの組。生成の新しい写し g2 が増え、h は移しただけ・同じ修正を入れただけ:
-	// h を寄せる側にせず、g2 を除外で通した数に入れる。
+func TestNewExcludedCopyBesideTouchedOutsideCopyIsStopped(t *testing.T) {
+	// 生成コード g と手書きの h は前から写しの組。生成の新しい写し g2 が増えた同じ commit で、h を移した・同じ修正を入れた:
+	// 保守側に倒して h を止める (除外の下の単位を移したのか外に写しを足したのかを出どころの当て方で取り違えるため。README の限界)。
+	// h を触らなければ通し、g2 を除外で通した数に入れる。
 	gen := func(key, h string) *group.Entry { return inFile(e(key, h, h+"2", h+"3"), "Gen/"+key+".swift") }
 	hb := e("h", "x", "x2", "x3")
 	hb.Unit.Name = "h"
@@ -515,13 +516,17 @@ func TestOutsideCopyIsNotBlamedForNewExcludedCopy(t *testing.T) {
 		"移した":  {gen("g", "x"), gen("g2", "x"), inFile(e("h2", "x", "x2", "x3"), "h2")},
 		"同じ修正": {gen("g", "y"), gen("g2", "y"), e("h", "y", "y2", "y3")},
 	} {
-		head[2].Unit.Name = "h"
 		o := opt
 		o.Exclude = pathSet(t, "Gen/**", head...)
-		r := Judge(base, head, o)
-		if r.Failed() || len(r.PathPassed) != 1 || keys(r.PathPassed)[0] != "g2" {
-			t.Errorf("%s: 外の h を止めた・g2 を数えない: passed=%v %+v", name, keys(r.PathPassed), r)
+		if r := Judge(base, head, o); !r.Failed() || strings.HasPrefix(r.Violations[0].New[0].Unit.File, "Gen/") {
+			t.Errorf("%s: 外の h を止めない: %+v", name, r)
 		}
+	}
+	head := []*group.Entry{gen("g", "x"), gen("g2", "x"), hb}
+	o := opt
+	o.Exclude = pathSet(t, "Gen/**", head...)
+	if r := Judge(base, head, o); r.Failed() || len(r.PathPassed) != 1 || keys(r.PathPassed)[0] != "g2" {
+		t.Errorf("h を触らないのに止めた・g2 を数えない: %+v", r)
 	}
 }
 
@@ -571,6 +576,34 @@ func TestMovedRenamedExcludedUnitDoesNotDependOnOrder(t *testing.T) {
 		o.Exclude = pathSet(t, "Gen/**", head...)
 		if r := Judge(base, head, o); !r.Failed() || keys(r.Violations[0].New)[0] != "App/c|baz" {
 			t.Errorf("生成が先=%v: 外の新しい写し c を止めない: %+v", gFirst, r)
+		}
+	}
+}
+
+func TestOriginMismatchDoesNotHideOutsideCopy(t *testing.T) {
+	// 生成の a を別のディレクトリへ改名して移し、外に写しを足した: 出どころの当て方 (名前・並び) がどちらを移動と読んでも、外の写しを止める。
+	for name, c := range map[string]struct {
+		gen, out string // 移した先の生成の単位・外の写しの鍵と名前
+	}{
+		"外が同じ名前":     {"Gen/b|bar", "App/c|foo"},
+		"ディレクトリをまたぐ": {"Gen/New/b|bar", "App/c|baz"},
+	} {
+		for _, outFirst := range []bool{true, false} {
+			a := inFile(e("Gen/Old/a|foo", "x", "x2", "x3"), "Gen/Old/a.swift")
+			a.Unit.Name = "foo"
+			g := inFile(e(c.gen, "x", "x2", "x3"), strings.Split(c.gen, "|")[0]+".swift")
+			g.Unit.Name = strings.Split(c.gen, "|")[1]
+			o := inFile(e(c.out, "x", "x2", "x3"), strings.Split(c.out, "|")[0]+".swift")
+			o.Unit.Name = strings.Split(c.out, "|")[1]
+			head := []*group.Entry{g, o}
+			if outFirst {
+				head = []*group.Entry{o, g}
+			}
+			opt2 := opt
+			opt2.Exclude = pathSet(t, "Gen/**", head...)
+			if r := Judge([]*group.Entry{a}, head, opt2); !r.Failed() || keys(r.Violations[0].New)[0] != c.out {
+				t.Errorf("%s (外が先=%v): 外の写しを止めない: %+v", name, outFirst, r)
+			}
 		}
 	}
 }
