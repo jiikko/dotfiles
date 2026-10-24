@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"unicode/utf8"
 
 	swiftgrammar "github.com/alex-pinkus/tree-sitter-swift/bindings/go"
 	sitter "github.com/tree-sitter/go-tree-sitter"
@@ -429,10 +430,12 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 		out.Keep = true
 	}
 	// let / var は pattern の中 (`case let .some(z)`) にも、その外の兄弟 (`let (a, b) = t` の property_declaration・
-	// `if case let .pair(x, y) = v` の if_statement に平らに置かれたトークン) にも現れる。どちらでも、その下の pattern の名前は束縛。
+	// `if case let .pair(x, y) = v` の if_statement に平らに置かれたトークン) にも現れる。どちらでも、その横の pattern の名前は束縛。
+	// 束縛は pattern の節とその下にだけ渡す (本体・初期化子の側へ渡すと、中の switch の `case minValue:` まで局所になる)。
+	binds := binding && k == "pattern"
 	for i := range n.ChildCount() {
 		if c := n.Child(i); c.Kind() == "value_binding_pattern" || (!c.IsNamed() && (w.text(c) == "let" || w.text(c) == "var")) {
-			binding = true
+			binds = true
 		}
 	}
 	firstNamed := true
@@ -443,7 +446,7 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 		if commentKinds[c.Kind()] {
 			continue
 		}
-		if (k == "if_statement" || k == "guard_statement") && !c.IsNamed() {
+		if (k == "if_statement" || k == "guard_statement" || k == "while_statement") && !c.IsNamed() {
 			switch w.text(c) {
 			case "case":
 				casePattern = true
@@ -451,7 +454,7 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 				casePattern = false
 			}
 		}
-		cn := w.conv(c, n, n.FieldNameForChild(uint32(i)), binding, prevDot)
+		cn := w.conv(c, n, n.FieldNameForChild(uint32(i)), binds && (k == "pattern" || c.Kind() == "pattern"), prevDot)
 		if casePattern && c.IsNamed() {
 			cn.Keep = true
 		}
@@ -476,26 +479,41 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 	return out
 }
 
-// isActionCallee は callee が処理の呼び出し (小文字で始まる関数名・メソッド名) か。型の初期化 (`ConnectionID(…)`) と
-// 暗黙のメンバー (`.bucket(…)`) は値を作るだけなので処理に数えない。
+// isActionCallee は callee が処理の呼び出しか。値を作るだけの呼び出し (大文字で始まる型の初期化 `ConnectionID(…)`・
+// 暗黙のメンバー `.bucket(…)`) 以外は全部処理に数える (`_save`・“ `delete` “・英字以外の名前も処理)。
+// 大文字で始まる処理 (`XCTUnwrap(…)`) は構文だけでは型の初期化と区別できず、値として畳まれる (docs/dupscan-detection.md の限界)。
 func isActionCallee(c *sitter.Node, src []byte) bool {
-	if c == nil {
-		return false
-	}
-	name := ""
-	switch c.Kind() {
-	case "simple_identifier":
-		name = c.Utf8Text(src)
-	case "navigation_expression":
-		if s := c.ChildByFieldName("suffix"); s != nil {
-			if id := s.ChildByFieldName("suffix"); id != nil {
-				name = id.Utf8Text(src)
+	for c != nil {
+		switch c.Kind() {
+		case "postfix_expression": // onDelete!() の !
+			c = c.NamedChild(0)
+			continue
+		case "tuple_expression": // (deleteAll)()
+			if c.NamedChildCount() == 1 {
+				c = c.NamedChild(0)
+				continue
+			}
+		case "prefix_expression": // 暗黙のメンバー
+			if op := c.ChildByFieldName("operation"); op != nil && op.Utf8Text(src) == "." {
+				return false
+			}
+		case "simple_identifier":
+			return !startsUpper(c.Utf8Text(src))
+		case "navigation_expression":
+			if s := c.ChildByFieldName("suffix"); s != nil {
+				if id := s.ChildByFieldName("suffix"); id != nil {
+					return !startsUpper(id.Utf8Text(src))
+				}
 			}
 		}
-	default:
-		return false // prefix_expression (`.bucket`)・呼び出しの連鎖の途中など
+		return true
 	}
-	return name != "" && name[0] >= 'a' && name[0] <= 'z'
+	return true
+}
+
+func startsUpper(s string) bool {
+	r, _ := utf8.DecodeRuneInString(s)
+	return r >= 'A' && r <= 'Z'
 }
 
 // nameRole は simple_identifier の役割を、親・field 名・束縛の文脈から決める。

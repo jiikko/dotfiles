@@ -243,3 +243,33 @@ final class W {
 }`
 	same(t, src, "a.didSet", "b.didSet", norm.L1)
 }
+
+func TestBindingDoesNotLeakIntoBodies(t *testing.T) {
+	src := `
+let minValue = 0, maxValue = 100
+func inIfA(_ o: Int?, _ e: Int) -> Int { if let x = o { switch e { case minValue: return x; default: return 0 } }; return 1 }
+func inIfB(_ o: Int?, _ e: Int) -> Int { if let x = o { switch e { case maxValue: return x; default: return 0 } }; return 1 }
+func swExA(_ e: Int) -> Int { let r = switch e { case minValue: 1 default: 2 }; return r + e }
+func swExB(_ e: Int) -> Int { let r = switch e { case maxValue: 1 default: 2 }; return r + e }`
+	differ(t, src, "inIfA", "inIfB", norm.L1, norm.L2)
+	differ(t, src, "swExA", "swExB", norm.L1, norm.L2)
+}
+
+func TestActionCalleeVariants(t *testing.T) {
+	src := `
+func uA(_ id: Int) throws { try _deleteAll(); print(id) }
+func uB(_ id: Int) throws { try _save(); print(id) }
+func bA(_ id: Int) throws { try ` + "`delete`" + `(); print(id) }
+func bB(_ id: Int) throws { try ` + "`import`" + `(); print(id) }
+func jA(_ id: Int) throws { try 削除(); print(id) }
+func jB(_ id: Int) throws { try 保存(); print(id) }
+func fA(_ id: Int) throws { try onDelete!(); print(id) }
+func fB(_ id: Int) throws { try onSave!(); print(id) }
+func pA(_ id: Int) throws { try (deleteAll)(); print(id) }
+func pB(_ id: Int) throws { try (save)(); print(id) }
+func wA(_ it: inout I) -> Int { var n = 0; while case .timeout = it.next() { n += 1 }; return n }
+func wB(_ it: inout I) -> Int { var n = 0; while case .offline = it.next() { n += 1 }; return n }`
+	for _, p := range [][2]string{{"uA", "uB"}, {"bA", "bB"}, {"jA", "jB"}, {"fA", "fB"}, {"pA", "pB"}, {"wA", "wB"}} {
+		differ(t, src, p[0], p[1], all3...)
+	}
+}

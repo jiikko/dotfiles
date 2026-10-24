@@ -32,3 +32,4 @@ epic 890 の土台。`src/` の新しいプロジェクトの手順に沿って�
   - 文法の module のテストが誤った import path を持ち `go mod tidy` が止まるので、`src/dupscan/third_party/tree-sitter-swift-teststub` に空の代わりを置いて replace した。
     `scripts/go_packages_index.sh` は入れ子の module を落とすので、module の直下の `third_party/` だけを外す例外を足した (テスト `tests/scripts/test_go_packages_index.sh` に、直下は通し深い場所は落とす 2 件を足し、変更前の版と最初の誤った版でそれぞれ赤を確認)
   - 手元の `make lint` (温まった状態) は 10 秒。**残り**: CI のコールドの所要 (cgo で parser.c 23 MB をコンパイル) の実測・他の repo の CI での入れ方
+- 2026-10-24 3 周目の敵対的レビュー: `scripts/go_packages_index.sh` の replace の先の判定で、CRLF の go.mod を読み、比べる値を環境変数で渡す (`-v` は `\` を解釈した)。テスト 2 件は直す前で赤

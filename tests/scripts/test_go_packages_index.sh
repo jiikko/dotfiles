@@ -360,6 +360,30 @@ printf '\nreplace example.com/ab => ./third_party/aXb\n' >> "$DOTTED_THIRD_PARTY
 rm -rf "$DOTTED_THIRD_PARTY/src/demo/vendor"
 run_fixture "$DOTTED_THIRD_PARTY" delegate
 expect_failure '名前の . を任意の 1 文字として当てた replace' 'nested Go module は未対応です: src/demo/third_party/a.b'
+# go は CRLF の go.mod を受け付けるので、CRLF の行の replace でも通す。
+CRLF_THIRD_PARTY="$WORK/crlf-third-party-module"
+mkdir -p "$CRLF_THIRD_PARTY"
+cp -R "$BASE/." "$CRLF_THIRD_PARTY/"
+mkdir -p "$CRLF_THIRD_PARTY/src/demo/third_party/stub"
+printf 'module example.com/stub\n\ngo 1.25.0\n' > "$CRLF_THIRD_PARTY/src/demo/third_party/stub/go.mod"
+printf '\r\nreplace example.com/stub => ./third_party/stub\r\n' >> "$CRLF_THIRD_PARTY/src/demo/go.mod"
+rm -rf "$CRLF_THIRD_PARTY/src/demo/vendor"
+run_fixture "$CRLF_THIRD_PARTY" delegate
+if [ "$RC" -eq 0 ]; then
+	ok 'CRLF の行の replace で指された third_party の module を通す'
+else
+	bad "CRLF の行の replace を読めない (rc=$RC): $OUT"
+fi
+# ディレクトリ名の \ を解釈して別の名前に当てない (awk の -v は \ を解釈する)。
+BACKSLASH_THIRD_PARTY="$WORK/backslash-third-party-module"
+mkdir -p "$BACKSLASH_THIRD_PARTY"
+cp -R "$BASE/." "$BACKSLASH_THIRD_PARTY/"
+mkdir -p "$BACKSLASH_THIRD_PARTY/src/demo/third_party/q\\.r"
+printf 'module example.com/qr\n\ngo 1.25.0\n' > "$BACKSLASH_THIRD_PARTY/src/demo/third_party/q\\.r/go.mod"
+printf '\nreplace example.com/qr => ./third_party/q.r\n' >> "$BACKSLASH_THIRD_PARTY/src/demo/go.mod"
+rm -rf "$BACKSLASH_THIRD_PARTY/src/demo/vendor"
+run_fixture "$BACKSLASH_THIRD_PARTY" delegate
+expect_failure 'ディレクトリ名のバックスラッシュを解釈して当てた replace' 'nested Go module は未対応です: src/demo/third_party/q'
 # module でない third_party の package は、この module の package なので doc を検査する (名前だけで外さない)。
 THIRD_PARTY_PACKAGE="$WORK/third-party-package"
 mkdir -p "$THIRD_PARTY_PACKAGE"
