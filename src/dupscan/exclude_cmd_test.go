@@ -122,11 +122,17 @@ func TestPathExclusionCountsHiddenChangedUnits(t *testing.T) {
 	gitRun(t, root, "commit", "-q", "-m", "base")
 	writeFile(t, root, "Generated/Deep/B.swift", helperB)
 	rc, out, errs := runGateCmd(t, "-base", "HEAD", root)
-	if rc != 0 || !strings.Contains(out, "パスの除外で比べなかった変わった単位 1") {
+	if rc != 0 || !strings.Contains(out, "パスの除外で通した変わった単位 1") {
 		t.Errorf("glob の下の新しい写しを数えない: rc=%d out=%q err=%q", rc, out, errs)
 	}
-	if _, out, _ := runReport(t, root); !strings.Contains(out, "重複なし") || strings.Contains(out, "効いていない除外") {
-		t.Errorf("パスの除外が効かない・効いているのに効いていないと出た: %q", out)
+	// report では、除外の下の単位と外の単位の組は出す (外の単位から見れば写しがある)。全員が除外の下の組だけを出さない。
+	if _, out, _ := runReport(t, root); !strings.Contains(out, "組 1") || strings.Contains(out, "効いていない除外") {
+		t.Errorf("除外の外の単位との組が出ない・効いているのに効いていないと出た: %q", out)
+	}
+	writeFile(t, root, "Generated/Deep/C.swift", helperC)
+	writeFile(t, root, "Sources/A.swift", "struct A {}\n")
+	if _, out, _ := runReport(t, root); !strings.Contains(out, "重複なし") {
+		t.Errorf("全員が除外の下の組が出た: %q", out)
 	}
 	writeConfig(t, root, map[string]any{"paths": []string{"Nowhere/**"}, "kind": "false-positive", "reason": "生成コード"})
 	if _, out, _ := runReport(t, root); !strings.Contains(out, "効いていない除外 1") {
@@ -162,5 +168,60 @@ func TestBrokenBaseConfigCountsAsEmpty(t *testing.T) {
 	rc, out, errs := runGateCmd(t, "-base", "HEAD", root)
 	if rc != 0 || !strings.Contains(out, "base の除外の設定を読めないので空とみなした") || !strings.Contains(out, "新しく足された除外 1") {
 		t.Errorf("壊れた base の設定を直す変更: rc=0 と注記を期待: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}
+
+func TestCopyOutOfExcludedPathIsViolation(t *testing.T) {
+	// パスの除外の下の単位を、除外の外へ写した: 外の新しい写しは除外の効果で止まらない。
+	for name, rule := range map[string]map[string]any{
+		"全部の段":  {"paths": []string{"Generated/**"}, "kind": "false-positive", "reason": "生成コード"},
+		"L2 から": {"paths": []string{"Generated/**"}, "levels": []string{"L2", "L3"}, "kind": "false-positive", "reason": "生成コード"},
+	} {
+		root := repoWith(t, map[string]string{"Generated/G.swift": helperA})
+		writeConfig(t, root, rule)
+		gitRun(t, root, "add", ".")
+		gitRun(t, root, "commit", "-q", "-m", "base")
+		writeFile(t, root, "Sources/B.swift", helperB)
+		if rc, out, errs := runGateCmd(t, "-base", "HEAD", root); rc != 1 || !strings.Contains(out, "新しい: Sources/B.swift") {
+			t.Errorf("%s: 除外の外への写しが通った: rc=%d out=%q err=%q", name, rc, out, errs)
+		}
+	}
+}
+
+func TestNewCopyUnderLevelsPathIsCounted(t *testing.T) {
+	// 段を指定したパスの除外の下に新しい写しを置いた: 通すが、通した数を 1 行目に出し、-fail-new-exclusions で止める。
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA})
+	writeConfig(t, root, map[string]any{"paths": []string{"Mirror/**"}, "levels": []string{"L1", "L2", "L3"}, "kind": "false-positive", "reason": "鏡"})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Mirror/B.swift", helperB)
+	rc, out, errs := runGateCmd(t, "-base", "HEAD", root)
+	if rc != 0 || !strings.Contains(out, "パスの除外で通した変わった単位 1") {
+		t.Errorf("通した数を期待: rc=%d out=%q err=%q", rc, out, errs)
+	}
+	if rc, _, _ := runGateCmd(t, "-fail-new-exclusions", "-base", "HEAD", root); rc != 1 {
+		t.Errorf("-fail-new-exclusions で rc=1 を期待: rc=%d", rc)
+	}
+}
+
+func TestBadGlobIsUndecidable(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA})
+	writeConfig(t, root, map[string]any{"paths": []string{"Generated/[a-"}, "kind": "false-positive", "reason": "r"})
+	if rc, _, errs := runReport(t, root); rc != 2 {
+		t.Errorf("壊れた glob で rc=2 を期待: rc=%d err=%q", rc, errs)
+	}
+}
+
+func TestNarrowedRunDoesNotCallExclusionStale(t *testing.T) {
+	// -levels を絞った走査では、効いている組の除外を「効いていない」と言わない。
+	l2copy := strings.Replace(helperB, `"conn"`, `"other"`, 1) // リテラルだけが違う L2 の写し
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": l2copy})
+	r := groupRule(t, root)
+	writeConfig(t, root, r)
+	if _, out, _ := runReport(t, root); strings.Contains(out, "効いていない") {
+		t.Fatalf("全部の段の走査で効いていないと出た: %q", out)
+	}
+	if _, out, _ := runReport(t, "-levels", "L1", root); strings.Contains(out, "効いていない") {
+		t.Errorf("絞った走査で効いていないと出た: %q", out)
 	}
 }

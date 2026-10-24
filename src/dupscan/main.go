@@ -77,6 +77,11 @@ func parseFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool
 	return dirs, 0, true
 }
 
+// narrowed は、段か下限を既定から変えた走査か (組が作られないだけの除外を「効いていない」と言えない)。
+func (c common) narrowed() bool {
+	return *c.levels != "L1,L2,L3" || *c.minNodes != 10 || *c.minClosure != 20
+}
+
 func (c common) options() (group.Options, error) {
 	lv, err := parseLevels(*c.levels)
 	return group.Options{MinNodes: *c.minNodes, MinClosureNodes: *c.minClosure, Levels: lv}, err
@@ -116,9 +121,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	ex := exclude.New(cfg, got.entries, scopeFilter(sc))
-	kept, _ := ex.Filter(got.entries)
-	opt.Skip = ex.Skip
-	s := report.Build(sc.Root, got.files, got.units, got.errFiles, ex.ApplyGroups(group.Build(kept, opt)), ex)
+	if c.narrowed() {
+		ex.Narrowed()
+	}
+	s := report.Build(sc.Root, got.files, got.units, got.errFiles, ex.ApplyGroups(group.Build(got.entries, opt)), ex)
 	switch *c.format {
 	case "json":
 		err = report.JSON(stdout, s)

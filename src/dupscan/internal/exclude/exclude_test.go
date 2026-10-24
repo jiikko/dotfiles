@@ -20,6 +20,9 @@ func TestPinDropsOrdinals(t *testing.T) {
 	if Pin(a) != Pin(b) || Pin(a) != "F.swift|V|var body@0123456789ab" {
 		t.Errorf("順番が釘に残った: %q / %q", Pin(a), Pin(b))
 	}
+	if Pin(ent("A#1.swift|T|foo()", "A#1.swift", "ff")) != "A#1.swift|T|foo()@ff" {
+		t.Errorf("ファイル名の #数字 を釘から削った")
+	}
 	if Pin(ent("F.swift|T|foo()#2", "F.swift", "ff")) != "F.swift|T|foo()@ff" {
 		t.Errorf("多重定義の #n が釘に残った")
 	}

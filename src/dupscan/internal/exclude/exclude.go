@@ -91,6 +91,11 @@ func (r *Rule) check() error {
 			if g == "" || strings.HasPrefix(g, "/") {
 				return fmt.Errorf("paths の %q は repo の root からの相対の glob で書く", g)
 			}
+			for _, part := range strings.Split(g, "/") {
+				if _, err := path.Match(part, ""); err != nil {
+					return fmt.Errorf("paths の %q は glob として読めない: %w", g, err)
+				}
+			}
 		}
 		if len(r.Levels) == 0 {
 			for _, lv := range norm.Levels {
@@ -137,7 +142,8 @@ var ordinals = regexp.MustCompile(`#(closure)?[0-9]+`)
 // 順番を入れないので、前にクロージャや多重定義を足しても外れない。本体を直すと外れる。
 func Pin(e *group.Entry) string {
 	h := e.Result.Hash[norm.L1]
-	return ordinals.ReplaceAllString(e.Unit.Key, "") + "@" + h[:min(len(h), 12)]
+	file, rest, _ := strings.Cut(e.Unit.Key, "|") // ファイル名の中の #数字 は削らない
+	return file + "|" + ordinals.ReplaceAllString(rest, "") + "@" + h[:min(len(h), 12)]
 }
 
 // Match は glob (`*` は 1 階層の中、`**` は 0 以上の階層) が repo の root からの相対パスに当たるか。

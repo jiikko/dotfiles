@@ -24,8 +24,8 @@ type GateSummary struct {
 	Unreadable []UnitRef       `json:"unreadable_changed_units"`
 	// NewExclusions は base の設定に無く head にある除外の要素 (glob と段・組の段と釘・単位の釘)。人が見る一覧。
 	NewExclusions []string `json:"new_exclusions"`
-	// PathHiddenChanged はパスの除外で比べなかった、この変更で触った単位の数。
-	PathHiddenChanged int `json:"path_excluded_changed_units"`
+	// PathPassed は、パスの除外の下にあるので寄せる側に名指ししなかった、この変更で触った単位の数 (除外で通した写し)。
+	PathPassed int `json:"path_excluded_passed_units"`
 	// BaseConfigError は base の設定を読めなかった理由 (空とみなした)。
 	BaseConfigError string `json:"base_config_error,omitempty"`
 	Exclusions
@@ -81,8 +81,8 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	if n := len(s.NewExclusions); n > 0 {
 		note += fmt.Sprintf("・新しく足された除外 %d (-v で一覧)", n)
 	}
-	if s.PathHiddenChanged > 0 {
-		note += fmt.Sprintf("・パスの除外で比べなかった変わった単位 %d", s.PathHiddenChanged)
+	if s.PathPassed > 0 {
+		note += fmt.Sprintf("・パスの除外で通した変わった単位 %d", s.PathPassed)
 	}
 	if s.BaseConfigError != "" {
 		note += "・base の除外の設定を読めないので空とみなした"

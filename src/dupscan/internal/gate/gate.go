@@ -44,6 +44,8 @@ type Result struct {
 	Changed    int // 変わった単位の数
 	Violations []Violation
 	Unreadable []*group.Entry // 変わった単位のうち読めない構文を含むもの (確かめられなかった)
+	// PathPassed は、パスの除外の下にあるので寄せる側に名指ししなかった、変わった単位 (除外で通した写し。人が見る数)。
+	PathPassed []*group.Entry
 }
 
 // Failed は止める段の違反があるか。
@@ -74,6 +76,7 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 
 	var r Result
 	judged := map[string]bool{} // 段 + ハッシュ → 違反か。組ごとに 1 回だけ判定する
+	passed := map[*group.Entry]bool{}
 	for _, e := range head {
 		if unchanged(e, origin) {
 			continue
@@ -93,13 +96,24 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 				continue // この段では他と一致しない。粗い段を見る
 			}
 			k := lv.String() + h
+			if _, done := judged[k]; !done && opt.Exclude != nil && opt.Exclude.PathCovers(lv, g) {
+				judged[k] = false // 全員がパスの除外の下にある組。触った単位は除外で通した数に入れる
+				for _, m := range g {
+					if !unchanged(m, origin) {
+						passed[m] = true
+					}
+				}
+			}
 			if _, done := judged[k]; !done && opt.Exclude != nil && opt.Exclude.GroupExcluded(lv, g) {
 				judged[k] = false // 除外した組。粗い段で新しいメンバーが増えていればそちらで出る
 			}
 			if _, done := judged[k]; !done {
-				v, ok := judgeGroup(lv, h, g, origin, opt)
+				v, ok, byPath := judgeGroup(lv, h, g, origin, opt)
 				if ok {
 					r.Violations = append(r.Violations, v)
+				}
+				for _, m := range byPath {
+					passed[m] = true
 				}
 				judged[k] = ok
 			}
@@ -108,6 +122,11 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 			if judged[k] {
 				break
 			}
+		}
+	}
+	for _, e := range head {
+		if passed[e] {
+			r.PathPassed = append(r.PathPassed, e)
 		}
 	}
 	sort.SliceStable(r.Violations, func(i, j int) bool {
@@ -121,7 +140,8 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 }
 
 // judgeGroup は組が base より増えたかを、メンバーの出どころで決める。
-func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Entry]*group.Entry, opt Options) (Violation, bool) {
+// byPath は、パスの除外の下にあるので寄せる側から外した、変わった単位。
+func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Entry]*group.Entry, opt Options) (v Violation, ok bool, byPath []*group.Entry) {
 	buckets := map[string]int{}
 	from := map[*group.Entry]string{}
 	for _, m := range g {
@@ -157,11 +177,11 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 		}
 	}
 	if len(g) <= most {
-		return Violation{}, false
+		return Violation{}, false, nil
 	}
 	// 寄せる側 (新しい) は、一番多い出どころ以外から来た、この変更で触った単位。触っていない単位は寄せる側に出さない
 	// (触っていない単位を出すと、その commit で触っていないファイルに warning が付く)。
-	v := Violation{Level: lv, Fail: failAt(lv, opt.Fail)}
+	v = Violation{Level: lv, Fail: failAt(lv, opt.Fail)}
 	for _, m := range g {
 		// 一番多い出どころも base に無い (新しい単位どうしの組) なら、全部が新しい。
 		if (from[m] != mostKey || strings.HasPrefix(mostKey, "new:")) && !unchanged(m, origin) {
@@ -180,22 +200,26 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 			}
 		}
 	}
-	// 許可の単位は寄せる側から同じ形へ移す (付け替えの後で。先に外すと、触った単位が寄せる側に付け替えられる)。
+	// 許可の単位とパスの除外の下の単位は寄せる側から同じ形へ移す (付け替えの後で。先に外すと、触った単位が寄せる側に付け替えられる)。
 	if opt.Exclude != nil {
 		news := v.New[:0:0]
 		for _, m := range v.New {
-			if opt.Exclude.Allowed(m) {
+			switch {
+			case opt.Exclude.Allowed(m):
 				v.Same = append(v.Same, m)
-			} else {
+			case opt.Exclude.PathExcluded(m, lv):
+				v.Same = append(v.Same, m)
+				byPath = append(byPath, m)
+			default:
 				news = append(news, m)
 			}
 		}
 		v.New = news
 		if len(v.New) == 0 {
-			return Violation{}, false
+			return Violation{}, false, byPath
 		}
 	}
-	return v, true
+	return v, true, byPath
 }
 
 // origins は head の単位ごとに base の側の相手 (出どころ) を 1 対 1 で当てる。ずれに強い順に当てる:

@@ -19,6 +19,8 @@ type Set struct {
 	basePins map[string]bool
 	newElems map[string]bool
 	inScope  func(file string) bool
+	// narrowed は既定より狭い走査 (段・下限を変えた) か。狭い走査では組が作られないだけの除外を「効いていない」と言えない。
+	narrowed bool
 }
 
 // New は head の単位 (path の除外で外す前の全部) に対する除外を作る。c が nil なら除外は無い。
@@ -39,9 +41,18 @@ func New(c *Config, entries []*group.Entry, inScope func(string) bool) *Set {
 				s.ambiguous[i] = true
 			}
 		}
+		for _, e := range entries {
+			if len(r.Paths) > 0 && r.matchesPath(e.Unit.File) {
+				s.used[i] = true // パスの除外は、単位に当たれば効いている
+				break
+			}
+		}
 	}
 	return s
 }
+
+// Narrowed は、既定より狭い走査 (段・下限を変えた) であることを伝える。効いていない除外を数えなくなる。
+func (s *Set) Narrowed() { s.narrowed = true }
 
 // LimitToBase は gate のために、組・単位の除外を base にあった釘か新しく足された要素だけに効かせる。
 func (s *Set) LimitToBase(base []*group.Entry, baseCfg *Config) {
@@ -62,27 +73,6 @@ func (r Rule) pins() []string {
 	return r.Group
 }
 
-// Filter は、全部の段で外すパスの除外に当たる単位を除く (base と head の両方に掛け、出どころにも使わない)。
-func (s *Set) Filter(entries []*group.Entry) (kept, dropped []*group.Entry) {
-	for _, e := range entries {
-		drop := false
-		for i, r := range s.rules {
-			if len(r.Paths) > 0 && r.matchesPath(e.Unit.File) {
-				s.used[i] = true
-				if len(r.levels) == len(norm.Levels) {
-					drop = true
-				}
-			}
-		}
-		if drop {
-			dropped = append(dropped, e)
-		} else {
-			kept = append(kept, e)
-		}
-	}
-	return kept, dropped
-}
-
 func (r Rule) matchesPath(file string) bool {
 	for _, g := range r.Paths {
 		if Match(g, file) {
@@ -92,14 +82,25 @@ func (r Rule) matchesPath(file string) bool {
 	return false
 }
 
-// Skip は、その単位をその段で比べないか (段を指定したパスの除外)。
-func (s *Set) Skip(e *group.Entry, lv norm.Level) bool {
+// PathExcluded は、その単位がその段でパスの除外の下にあるか。除外の下の単位は組の相手・出どころには残し、
+// 寄せる側に名指ししない (比べる相手から外すと、除外の下から外へ写した新しい写しが、相手がいないので通る)。
+func (s *Set) PathExcluded(e *group.Entry, lv norm.Level) bool {
 	for _, r := range s.rules {
 		if len(r.Paths) > 0 && r.levels[lv] && r.matchesPath(e.Unit.File) {
 			return true
 		}
 	}
 	return false
+}
+
+// PathCovers は、段 lv の組のメンバーが全部パスの除外の下にあるか (その組は出さない)。
+func (s *Set) PathCovers(lv norm.Level, members []*group.Entry) bool {
+	for _, m := range members {
+		if !s.PathExcluded(m, lv) {
+			return false
+		}
+	}
+	return len(members) > 0
 }
 
 // GroupExcluded は、段 lv の組のメンバーが全部 1 つの組の除外 (段が lv 以下) の釘に当たるか。1 つでも外れたメンバーがいれば出す。
@@ -148,7 +149,7 @@ func (s *Set) known(pin, elem string) bool {
 func (s *Set) ApplyGroups(groups []group.Group) []group.Group {
 	out := groups[:0:0]
 	for _, g := range groups {
-		if !s.GroupExcluded(g.Level, g.Members) {
+		if !s.PathCovers(g.Level, g.Members) && !s.GroupExcluded(g.Level, g.Members) {
 			out = append(out, g)
 		}
 	}
@@ -156,8 +157,12 @@ func (s *Set) ApplyGroups(groups []group.Group) []group.Group {
 }
 
 // Stale は、何も消していない除外 (起点の外を指すものを除く)。寄せ終わった・改名した・本体を直した除外がここに出る。
+// 単位の除外は、その単位がどれかの組にいれば効いている (report では印を付け、gate では寄せる側から外しうる)。
 func (s *Set) Stale() []Rule {
 	var out []Rule
+	if s.narrowed {
+		return out
+	}
 	for i, r := range s.rules {
 		if !s.used[i] && !s.ambiguous[i] && s.ruleInScope(r) {
 			out = append(out, r)
