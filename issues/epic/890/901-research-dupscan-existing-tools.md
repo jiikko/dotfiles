@@ -43,7 +43,7 @@ sourcekit-lsp は `/usr/bin/sourcekit-lsp` にあるが、Swift の repo で Cla
 - [ ] obaket の PR 24 の前の木 (commit 45cc3b208^) に CPD と jscpd を当て、6 つのうち何個が出るかを測る。既定の設定と、下限 (`--minimum-tokens` / `--min-tokens`) を下げた設定の両方。
       版・stdout / stderr / rc を分けて書き、obaket のあるマシンで行う
 - [ ] ast-grep の Swift のパターンで、PR 24 の 6 つを形で引けるかを試す (直書きの 4 つと、プロパティを読む 2 つ)
-- [ ] 結果で、dupscan が自分で作る範囲を決めて [891](891-design-dupscan-requirements.md) の「決めること」に書き戻す。既存の道具で足りる部分は作らない
+- [ ] 結果で、dupscan が自分で作る範囲を決めて [891](891-design-dupscan-requirements.md) の「決めること」に書き戻す。既存の道具で依存と使い方が単純なまま足りるなら作らない (足すと依存と使い方が増えるので、その分も比べる)
 
 ## 出典
 
@@ -62,3 +62,4 @@ sourcekit-lsp は `/usr/bin/sourcekit-lsp` にあるが、Swift の repo で Cla
 - 2026-10-24 起票 (ユーザー指示: 既存の道具の調査)。Web の一次情報と、手元の LSP ツールの実行で上の表を作った
 - 2026-10-24 反証レビュー (事実の観点。読み取りのみのサブエージェント) の指摘を取り込んだ: dupl は 3 ではなく 7 module (tuikit はテストを除外しない) / jscpd の MCP・Agent Skills と DRYwall を足した / semantic-code-mcp は Swift 非対応と書けた / jscpd の mode の定義 / similarity の「AI エージェント向けと明言」は言い過ぎだった
 - 2026-10-24 LSP を使わないことにしたので、LSP の実測と、索引を既存の道具で作る比較を受け入れ条件から外した
+- 2026-10-24 範囲の決め方に「依存と使い方が単純なままか」を入れた (LSP を使わない決定と基準を揃える)
