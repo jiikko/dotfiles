@@ -8,7 +8,7 @@ import (
 	"dupscan/internal/tree"
 )
 
-// 敵対的レビュー (2026-10-24) が再現した誤検知・見逃しの固定。入力はレビューの再現の入力を縮めたもの。
+// 誤検知 (違う処理を同じと判定する) と見逃しになりやすい形の固定。
 
 func unitBy(t *testing.T, r FileResult, sig string) *tree.Unit {
 	t.Helper()
@@ -193,4 +193,53 @@ func TestUnitsInsideErrorAreUnreadable(t *testing.T) {
 			t.Errorf("読めない構文の中の単位が比べる対象に残った: %s %s", u.Key, strings.TrimSpace(u.Signature))
 		}
 	}
+}
+
+func same(t *testing.T, src, a, b string, l norm.Level) {
+	t.Helper()
+	r := parse(t, "Sources/X.swift", src)
+	ra, rb := norm.Normalize(unitBy(t, r, a)), norm.Normalize(unitBy(t, r, b))
+	if ra.Hash[l] != rb.Hash[l] {
+		t.Errorf("%s と %s が %s で一致しない\n%s\n%s", a, b, l, ra.Forms[l], rb.Forms[l])
+	}
+}
+
+func TestBindingsOutsideThePatternNode(t *testing.T) {
+	src := `
+func tupA(_ t: (Int, Int)) -> Int { let (a, b) = t; return a - b }
+func tupB(_ t: (Int, Int)) -> Int { let (a, b) = t; return b - a }
+func tupC(_ t: (Int, Int)) -> Int { let (x, y) = t; return x - y }
+func icA(_ v: P) -> Int { if case let .pair(x, y) = v { return x - y }; return 0 }
+func icB(_ v: P) -> Int { if case let .pair(x, y) = v { return y - x }; return 0 }
+func icC(_ v: P) -> Int { if case let .pair(p, q) = v { return p - q }; return 0 }`
+	differ(t, src, "tupA", "tupB", all3...)
+	same(t, src, "tupA", "tupC", norm.L1)
+	differ(t, src, "icA", "icB", all3...)
+	same(t, src, "icA", "icC", norm.L1)
+}
+
+func TestActionCallsAreNotFoldedAtL3(t *testing.T) {
+	src := `
+func tryA(_ id: Int) throws { try deleteEverything(); print(id) }
+func tryB(_ id: Int) throws { try showWelcome(); print(id) }
+func awA(_ id: Int) async throws { try await store.deleteAll(); print(id) }
+func awB(_ id: Int) async throws { try await store.save(); print(id) }
+func retA(_ id: Int) -> Int { print(id); return fetchA() }
+func retB(_ id: Int) -> Int { print(id); return fetchB() }
+func stA(_ id: Int) { status = fetchA(); print(id) }
+func stB(_ id: Int) { status = fetchB(); print(id) }
+func isTimeout(_ e: Err) -> Bool { if case .timeout = e { return true }; return e == e }
+func isOffline(_ e: Err) -> Bool { if case .offline = e { return true }; return e == e }`
+	for _, p := range [][2]string{{"tryA", "tryB"}, {"awA", "awB"}, {"retA", "retB"}, {"stA", "stB"}, {"isTimeout", "isOffline"}} {
+		differ(t, src, p[0], p[1], all3...)
+	}
+}
+
+func TestDidSetParameterIsLocal(t *testing.T) {
+	src := `
+final class W {
+    var a: Int = 0 { didSet(old) { print(a - old, old) } }
+    var b: Int = 0 { didSet(prev) { print(a - prev, prev) } }
+}`
+	same(t, src, "a.didSet", "b.didSet", norm.L1)
 }

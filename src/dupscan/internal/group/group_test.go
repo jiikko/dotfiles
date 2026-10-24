@@ -123,3 +123,18 @@ func TestClosureGroupIsKeptWhenOwnersMatchOnlyAtCoarserLevel(t *testing.T) {
 		t.Fatalf("囲む関数が L3 でしか一致しないのに、L1 のクロージャの組が消えた: %+v", gs)
 	}
 }
+
+func TestDuplicateClosuresInsideOneUnitAreKept(t *testing.T) {
+	f1 := entry("f1", false, "f", "f", "f", 30, false)
+	f2 := entry("f2", false, "f", "f", "f", 30, false)
+	cs := []*Entry{}
+	for _, k := range []string{"c1a", "c1b", "c2a", "c2b"} {
+		c := entry(k, false, "c", "c", "c", 30, false)
+		c.Unit.Kind, c.Unit.Owner = tree.KindClosure, "f"+k[1:2]
+		cs = append(cs, c)
+	}
+	gs := Build(append([]*Entry{f1, f2}, cs...), all)
+	if len(gs) != 2 {
+		t.Fatalf("囲む関数の組と、1 つの関数の中で重なるクロージャの組の 2 つを期待: %+v", gs)
+	}
+}

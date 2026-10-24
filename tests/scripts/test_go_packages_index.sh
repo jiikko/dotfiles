@@ -347,6 +347,19 @@ mkdir -p "$UNREFERENCED_THIRD_PARTY/src/demo/third_party/other"
 printf 'module example.com/other\n\ngo 1.25.0\n' > "$UNREFERENCED_THIRD_PARTY/src/demo/third_party/other/go.mod"
 run_fixture "$UNREFERENCED_THIRD_PARTY" delegate
 expect_failure 'replace で指していない third_party の入れ子の module' 'nested Go module は未対応です: src/demo/third_party/other'
+# コメントの中の replace と、名前の . を任意の 1 文字として当てる形では通さない。
+printf '\n// replace example.com/other => ./third_party/other\n' >> "$UNREFERENCED_THIRD_PARTY/src/demo/go.mod"
+run_fixture "$UNREFERENCED_THIRD_PARTY" delegate
+expect_failure 'コメントの中の replace だけで指された third_party の module' 'nested Go module は未対応です: src/demo/third_party/other'
+DOTTED_THIRD_PARTY="$WORK/dotted-third-party-module"
+mkdir -p "$DOTTED_THIRD_PARTY"
+cp -R "$BASE/." "$DOTTED_THIRD_PARTY/"
+mkdir -p "$DOTTED_THIRD_PARTY/src/demo/third_party/a.b"
+printf 'module example.com/ab\n\ngo 1.25.0\n' > "$DOTTED_THIRD_PARTY/src/demo/third_party/a.b/go.mod"
+printf '\nreplace example.com/ab => ./third_party/aXb\n' >> "$DOTTED_THIRD_PARTY/src/demo/go.mod"
+rm -rf "$DOTTED_THIRD_PARTY/src/demo/vendor"
+run_fixture "$DOTTED_THIRD_PARTY" delegate
+expect_failure '名前の . を任意の 1 文字として当てた replace' 'nested Go module は未対応です: src/demo/third_party/a.b'
 # module でない third_party の package は、この module の package なので doc を検査する (名前だけで外さない)。
 THIRD_PARTY_PACKAGE="$WORK/third-party-package"
 mkdir -p "$THIRD_PARTY_PACKAGE"

@@ -428,21 +428,33 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 	if k == "directly_assignable_expression" {
 		out.Keep = true
 	}
-	if k == "pattern" {
-		for i := range n.ChildCount() {
-			if n.Child(i).Kind() == "value_binding_pattern" {
-				binding = true
-			}
+	// let / var は pattern の中 (`case let .some(z)`) にも、その外の兄弟 (`let (a, b) = t` の property_declaration・
+	// `if case let .pair(x, y) = v` の if_statement に平らに置かれたトークン) にも現れる。どちらでも、その下の pattern の名前は束縛。
+	for i := range n.ChildCount() {
+		if c := n.Child(i); c.Kind() == "value_binding_pattern" || (!c.IsNamed() && (w.text(c) == "let" || w.text(c) == "var")) {
+			binding = true
 		}
 	}
 	firstNamed := true
 	prevDot := false
+	casePattern := false // `if case .timeout = e` の case から = までは pattern (case 名を畳まない)
 	for i := range n.ChildCount() {
 		c := n.Child(i)
 		if commentKinds[c.Kind()] {
 			continue
 		}
+		if (k == "if_statement" || k == "guard_statement") && !c.IsNamed() {
+			switch w.text(c) {
+			case "case":
+				casePattern = true
+			case "=":
+				casePattern = false
+			}
+		}
 		cn := w.conv(c, n, n.FieldNameForChild(uint32(i)), binding, prevDot)
+		if casePattern && c.IsNamed() {
+			cn.Keep = true
+		}
 		prevDot = !c.IsNamed() && w.text(c) == "."
 		if c.IsNamed() && firstNamed {
 			firstNamed = false
@@ -458,7 +470,32 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 		}
 		out.Children = append(out.Children, cn)
 	}
+	if k == "call_expression" && len(out.Children) > 0 {
+		out.Action = isActionCallee(n.NamedChild(0), w.src)
+	}
 	return out
+}
+
+// isActionCallee は callee が処理の呼び出し (小文字で始まる関数名・メソッド名) か。型の初期化 (`ConnectionID(…)`) と
+// 暗黙のメンバー (`.bucket(…)`) は値を作るだけなので処理に数えない。
+func isActionCallee(c *sitter.Node, src []byte) bool {
+	if c == nil {
+		return false
+	}
+	name := ""
+	switch c.Kind() {
+	case "simple_identifier":
+		name = c.Utf8Text(src)
+	case "navigation_expression":
+		if s := c.ChildByFieldName("suffix"); s != nil {
+			if id := s.ChildByFieldName("suffix"); id != nil {
+				name = id.Utf8Text(src)
+			}
+		}
+	default:
+		return false // prefix_expression (`.bucket`)・呼び出しの連鎖の途中など
+	}
+	return name != "" && name[0] >= 'a' && name[0] <= 'z'
 }
 
 // nameRole は simple_identifier の役割を、親・field 名・束縛の文脈から決める。
@@ -474,8 +511,8 @@ func (w *walker) nameRole(parent *sitter.Node, field string, binding, afterDot b
 		return tree.RoleLabel
 	case "navigation_suffix":
 		return tree.RoleMember
-	case "lambda_parameter", "parameter":
-		return tree.RoleDecl
+	case "lambda_parameter", "parameter", "didset_clause", "willset_clause":
+		return tree.RoleDecl // didSet(old) の old も引数
 	case "pattern":
 		// `case .light:` の light・`case let .some(z)` の some は enum の case 名。`case minValue:` は値。
 		// 束縛 (let / var) の pattern の中の名前だけが局所の名前。

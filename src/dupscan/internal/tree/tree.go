@@ -37,7 +37,11 @@ type Node struct {
 	NoFold bool
 	// Keep はこの節の下を何も畳まない。呼び出しの callee (`JSONEncoder().encode` の受け手を畳むと呼ぶ相手が消える) と
 	// 代入の左辺 (`isLoading = …` と `isEditing = …` が同じになる) に付ける。
-	Keep     bool
+	Keep bool
+	// Action は処理の呼び出し (小文字で始まる関数・メソッドの呼び出し)。これを含む式は L3 でも畳まない
+	// (`try deleteEverything()` と `try showWelcome()`・`status = fetchA()` と `status = fetchB()` を同じにしない)。
+	// 大文字の型の初期化 (`ConnectionID(rawValue:)`) と暗黙のメンバー (`.bucket("b")`) は値を作るだけなので畳む。
+	Action   bool
 	Children []*Node
 }
 

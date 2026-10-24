@@ -158,10 +158,12 @@ func dropNested(groups []Group) []Group {
 
 func nested(g Group, in map[string]map[int]bool, finer func(int, norm.Level) bool) bool {
 	var common map[int]bool
+	seenOwner := map[string]bool{}
 	for _, m := range g.Members {
-		if m.Unit.Owner == "" {
-			return false
+		if m.Unit.Owner == "" || seenOwner[m.Unit.Owner] {
+			return false // 1 つの単位の中に同じクロージャが 2 つある: 外側を寄せても残るので外さない
 		}
+		seenOwner[m.Unit.Owner] = true
 		owners := in[m.Unit.Owner]
 		if common == nil {
 			common = map[int]bool{}

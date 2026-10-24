@@ -46,10 +46,12 @@ func Normalize(u *tree.Unit) Result {
 	locals := localNames(u)
 	refs := map[*tree.Node]bool{}
 	markRefs(u.Body, locals, refs)
+	acts := map[*tree.Node]bool{}
+	markActions(u.Body, acts)
 	r := Result{Hash: map[Level]string{}, Forms: map[Level]string{}, Nodes: countNodes(u.Body)}
 	r.L3Trivial = !refs[u.Body]
 	for _, l := range Levels {
-		w := &writer{level: l, locals: locals, refs: refs, nums: map[string]int{}}
+		w := &writer{level: l, locals: locals, refs: refs, acts: acts, nums: map[string]int{}}
 		// 引数は宣言の順に番号を先に振る (本体に出た順だけだと `a - b` と `b - a` が同じになる)。
 		for _, p := range u.Params {
 			if _, ok := w.nums[p]; !ok {
@@ -115,6 +117,17 @@ func markRefs(n *tree.Node, locals map[string]bool, refs map[*tree.Node]bool) bo
 	return r
 }
 
+func markActions(n *tree.Node, acts map[*tree.Node]bool) bool {
+	a := n.Action
+	for _, c := range n.Children {
+		if markActions(c, acts) {
+			a = true
+		}
+	}
+	acts[n] = a
+	return a
+}
+
 func countNodes(n *tree.Node) int {
 	c := 0
 	if n.Role != tree.RoleToken {
@@ -131,11 +144,12 @@ type writer struct {
 	level  Level
 	locals map[string]bool
 	refs   map[*tree.Node]bool
+	acts   map[*tree.Node]bool
 	nums   map[string]int
 }
 
 func (w *writer) write(n *tree.Node, keep bool) {
-	if w.level >= L3 && !keep && !n.Keep && n.Expr && !n.NoFold && !w.refs[n] {
+	if w.level >= L3 && !keep && !n.Keep && n.Expr && !n.NoFold && !w.refs[n] && !w.acts[n] {
 		w.b.WriteString("(#F)")
 		return
 	}
