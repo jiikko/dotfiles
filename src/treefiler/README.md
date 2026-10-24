@@ -10,7 +10,7 @@ bin/treefiler [DIR]   # DIR (既定はカレントディレクトリ) を root �
 tf [DIR]              # bin/tf は bin/treefiler の短い名前
 ```
 
-tmux では `prefix + f` (`C-t f`) で、いま見ているペインの cwd を root にした popup が開く (`_tmux.conf`)。
+tmux では `prefix + f` (`C-t f`) か `C-f` (prefix なし) で、いま見ているペインの cwd を root にした popup が開く (`_tmux.conf`)。
 glogx からは `F` で同じ画面が開く。仕様とキーの一覧は [`docs/treefiler-spec.md`](../../docs/treefiler-spec.md)。
 
 ## キー (木)

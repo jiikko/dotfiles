@@ -42,7 +42,7 @@ prefix は `C-t`。設定の正本は [_tmux.conf](../../_tmux.conf)（コメン
 | キー | 動作 |
 |---|---|
 | `C-t g` / `C-g` | **git log TUI (glogx) の popup**（`C-g` = Ctrl+g なら prefix 不要。popup 内でもう一度 `C-g` で閉じる）。いま見ているペインの cwd の repo を開く（nvim や Claude のペインからでも効く。repo の外ではトーストで知らせる）。status viewer (`s`) で stage / unstage、`b` で push。キー操作は [src/glogx/README.md](../../src/glogx/README.md) |
-| `C-t f` | **ファイラー (treefiler) の popup**。いま見ているペインの cwd を root に開く（git の repo の外でも開く。`q` / `esc` で閉じる）。キー操作は中で `?`、仕様は [docs/treefiler-spec.md](../treefiler-spec.md) |
+| `C-t f` / `C-f` | **ファイラー (treefiler) の popup**（`C-f` = Ctrl+f なら prefix 不要。tmux の中ではペインの `C-f` (zsh の 1 文字右・nvim のページ送り) が届かなくなる）。いま見ているペインの cwd を root に開く（git の repo の外でも開く。`q` / `esc` で閉じる）。キー操作は中で `?`、仕様は [docs/treefiler-spec.md](../treefiler-spec.md) |
 | `C-t m` / `C-t Enter` | **予約入力**: N 時間 M 分後にこのペインへ文字列を送る (一覧・取消も)。[src/schedkeys](../../src/schedkeys/README.md) の popup |
 | `C-t t` | **スクラッチターミナルのトグル**。専用セッション scratch をフローティング表示し、popup 内でもう一度押すと閉じる（セッションは生きるので作業状態は保持） |
 | `M-[` | prefix なしでコピーモードへ。vi キーバインド、`v`/`Space` で選択開始、`y`/`Enter` で pbcopy にコピーして抜ける |

@@ -38,6 +38,7 @@ ZSH_SYNTAX_FILES := \
   bin/serial-run \
   bin/svcdoctor \
   bin/termwidth \
+  bin/tf \
   bin/tmpclean \
   bin/schedkeys \
   bin/treefiler \

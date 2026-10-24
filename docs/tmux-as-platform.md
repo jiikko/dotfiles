@@ -389,7 +389,7 @@ set -g status-right "#{?client_prefix,#{p27:@keyguide},#{p27:@nothing}}"
 
 | ツール / 設定 | 起動・契機 | 使う tmux 機能 | 実装ファイル |
 | --- | --- | --- | --- |
-| ファイラー (treefiler) | `prefix + f` | display-popup -E -d #{pane_current_path} -T | `bin/treefiler` (`src/treefiler`) |
+| ファイラー (treefiler) | `prefix + f` / `C-f`（prefix なし） | display-popup -E -d #{pane_current_path} -T | `bin/treefiler` (`src/treefiler`) |
 | window 跨ぎ pane 移動 (give) | `prefix + G` | display-popup -E / join-pane / display -p で自 pane 固定 | `scripts/tmux_fzf_pane_move.sh` |
 | scratch フローティング端末 | `prefix + t` / `C-t`（トグル） | display-popup -b heavy -S/-s/-T / has-session / detach-client / nested attach | `scripts/tmux_scratch_popup.sh` |
 | kill 確認 (pane / 他全 pane / window) | `prefix + x` / `q` / `&` | display-popup + gum confirm / display-message -p で対象固定 / 枠色で危険度を出す | `scripts/tmux_kill_confirm.sh` |

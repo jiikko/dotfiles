@@ -307,6 +307,23 @@ assert_guard_branch "repo 外" "toast:$nogit_dir" "$REPLY"
 run_guard_branch glogx_guard_repo "$repo_dir"
 assert_guard_branch "repo 内" "popup:$repo_dir" "$REPLY"
 
+# treefiler の popup も prefix f と C-f の 2 本。片方だけ直したずれを、コマンドの一致で捕まえる。
+print "[test-tmux:zsh] checking the treefiler popup bindings (prefix f / C-f) run the same command"
+tf_bindings=$("${TMUX_CMD[@]}" list-keys | grep -F 'bin/treefiler' || true)
+tf_prefix=$(print -r -- "$tf_bindings" | grep -E -- '-T prefix +f ' | tail -1 || true)
+tf_root=$(print -r -- "$tf_bindings" | grep -E -- '-T root +C-f ' | tail -1 || true)
+for tf_line in "$tf_prefix" "$tf_root"; do
+  if [[ "$tf_line" != *"bin/treefiler"* ]]; then
+    print -u2 "[test-tmux:zsh] treefiler の popup の bind が見つかりません: $tf_line"
+    exit 1
+  fi
+done
+if [[ "${tf_prefix#*display-popup }" != "${tf_root#*display-popup }" ]]; then  # list-keys はキーの後ろを空白で揃えるので、コマンドから比べる
+  print -u2 "[test-tmux:zsh] prefix f と C-f の treefiler の bind が食い違います:\n  $tf_prefix\n  $tf_root"
+  exit 1
+fi
+print "[test-tmux:zsh] ok: prefix f と C-f は同じ treefiler の popup を開く"
+
 # terminal-features が conf の reload で膨張しないこと。
 # 🚨 `set -as` は追記なので、-u で既定へ戻さないと reload ごとに同じエントリが積まれる。
 # 実測 (2026-08-21): 稼働サーバが 38 エントリまで膨張していた (下の 2 行 × reload 17 回 +
