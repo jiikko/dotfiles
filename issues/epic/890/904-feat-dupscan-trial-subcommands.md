@@ -38,6 +38,7 @@ dupscan は、主に Claude が書く前に索引を引き (897)、セルフレ�
 - [897](897-feat-dupscan-index-subcommand.md) (単位の一覧のキャッシュ)
 - [898](898-test-dupscan-obaket-calibration.md) (下限と L3 の扱い。無いと引数なしの単位がどれも並ぶ)
 - [905](905-feat-dupscan-ci-check-gate.md) (照合の関数。`near` もこれを呼ぶので、905 と同時か後)
+- [906](906-feat-dupscan-exclusion-config.md) (除外は `near` にも効く)
 
 ## 進捗
 

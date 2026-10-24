@@ -31,8 +31,8 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [899](pending/899-research-dupscan-lsp-integration.md) | **保留** (LSP は使わない)。構文木の近似で判断を誤る実例が出たら、LSP・言語の解析の道具で補う案を再開する | 896 |
 | [900](900-research-dupscan-next-languages.md) | 次の言語 (Go・zsh) の読み取りを測る | 893 |
 | [902](pending/902-feat-dupscan-claude-code-hook.md) | **保留**: 編集のたびの hook。止める網は `make test` (905) にした。`make test` まで待つと手戻りが大きい実例が続いたら再開 | — |
-| [904](904-feat-dupscan-trial-subcommands.md) | 人が試す入口 (`near`・`explain`・`gate` を手で回す)。動作確認として何ができるか・なぜ同じと判定したかを手で確かめる | 893・894・896・897・898・905 |
-| [905](905-feat-dupscan-ci-check-gate.md) | **`make test` と CI で新しく入った重複を落とす** (`dupscan gate`)。作業ツリー (未コミット・untracked を含む) を merge-base と比べ、形のハッシュの数が増えた組を落とす。止めるかは所要と誤検知の割合を見て決める | 893・894・896・898 |
+| [904](904-feat-dupscan-trial-subcommands.md) | 人が試す入口 (`near`・`explain`・`gate` を手で回す)。動作確認として何ができるか・なぜ同じと判定したかを手で確かめる | 893・894・896・897・898・905・906 |
+| [905](905-feat-dupscan-ci-check-gate.md) | **セルフレビュー・`make test`・CI で新しく入った重複を落とす** (`dupscan gate`)。変わった単位を名指しし、その形の単位が base より増えたときだけ落とす。止めるかは所要と誤って止める割合を見て決める | 893・894・896・898・906 |
 | [906](906-feat-dupscan-exclusion-config.md) | **誤検知を除外する設定** (組・単位・パス・段・下限。理由が必須。効いていない除外と、新しく足された除外を出す) | 893・896 |
 
 ## 進捗
