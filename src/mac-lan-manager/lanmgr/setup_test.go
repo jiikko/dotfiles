@@ -1609,7 +1609,7 @@ func TestSetupWirelessOnlyMac(t *testing.T) {
 }
 
 // 「無線だけ」は、有線を 1 本も持たないと読み切れたときだけ (読めなかったサービスがある・設定の I/F のサービスがあってケーブルが
-// 抜けているだけ、では立てない。どちらもこの Mac の固定を飛ばしたまま相手を固定しかけた。敵対レビュー)。
+// 抜けているだけ、では立てない。どちらもこの Mac の固定を飛ばしたまま相手を固定しかける)。
 func TestSelfNoWireOnlyWhenReadInFull(t *testing.T) {
 	h := newHarness(t, nil, nil)
 	wifi := netinfo.Service{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Method: "DHCP", Router: "192.168.50.1", Read: true}
