@@ -107,7 +107,7 @@ obaket の週次の Claude audit (test-helpers) が出した PR 24 で、同じ 
   - trailing closure (`f(x) {}` と `f(x, {})`) は木が別になる。key path (key_path_expression) も別扱い
 - **網羅テスト**: node-types.json の named な種類が全部、対応表で分類されている (または明示して無視している) こと。文法の版を上げたときに対応の漏れを黙らせない
 - test / prod の既定の分類規則 (Swift なら `Tests/` 配下・`*Tests.swift`、Go なら `_test.go` など)
-- 所属ターゲットの解決 (Swift なら `Package.swift` と Xcode の `project.pbxproj`)
+- 所属ターゲットの解決 (Swift なら `Package.swift`・XcodeGen の `project.yml`・追跡されている `project.pbxproj` のどれでも読む。どれも無い・読めないときは「不明」と出し、推さない)
 - テスト関数の見分け方 (Swift の `@Test` / `func test…`、Go の `func TestXxx`)。テスト関数どうしは `let x = make(); #expect(x == y)` の形で
   大量に一致するので、ヘルパーとは閾値を分けるか既定で除く
 - adapter を足すときに、コアを変えずに済むこと (コアのテストは adapter に依存しない)
@@ -148,6 +148,28 @@ ERROR / MISSING ノードを含むファイルを数えた:
 - **設定は作業ツリーの側を両方に当てる**: base の単位の一覧も作業ツリーの設定 (除外・下限・test / prod の規則) で読む (除外を足した変更で、base の側だけ数が変わらないように)
 - **所要の上限を超えたら**: `gate` は判定不能として非 0 で終わり、上限と経過を出す (黙って緑にも赤にもしない)
 - **キャッシュは並行して壊れない**: 複数のセッション・worktree の `make test` が同時に `gate` を回しても、キャッシュは原子的に置き換え、壊れたキャッシュは捨てて作り直す (読み違えた結果を出さない)
+
+## 汎用性 (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)
+
+- **repo ごとの事情は設定ファイルにだけ書く**。コードに特定の repo の既定を埋め込まない (共通のヘルパーの置き場所・既定のブランチ・test / prod の規則の上書き・除外・下限)。
+  obaket の `SharedTestSupport` のような名前は、例として書くだけで既定にしない
+- **adapter の既定は言語の慣習だけ**にする (Swift の `Tests/` 配下・`*Tests.swift`・`@Test` など)。repo の慣習は設定で足す
+- **走査の起点をサブディレクトリにできる** (`dupscan <repo の中のディレクトリ>`)。repo の root は `git rev-parse --show-toplevel` で取り、パスは起点からではなく root からの相対で出す
+- **プロジェクトの持ち方の違いを吸収する**: SwiftPM だけ・Xcode だけ・XcodeGen・混在。どれでも動き、所属ターゲットが分からないときは「不明」と出す
+- **調べる相手の repo に書かない**: 検証のために他人の repo に当てるときは `--cache-dir` で作業ツリーと `.git` の外にキャッシュを置ける (既定は git-common-dir の下)
+- **既定値は 2 つ以上の repo で決める**: 規模と作りの違う obaket (Swift 1626 ファイル) と DualNoteApp (`~/src/working/DualNoteApp` の `macOS/`。Swift 96 ファイル。XcodeGen の `project.yml` と SwiftPM の `Shared/Package.swift` を持ち、`project.pbxproj` は追跡していない) の両方で測り、片方にだけ合わせない (898)
+- dupscan 自身のテストは、外の repo の checkout に依存しない。PR 24 などの実例は、出典の commit とパスを書いて testdata に切り出す
+
+## SwiftLint のルールにしない (2026-10-24 の判断)
+
+ユーザーの問い (2026-10-24): SwiftLint のルールとして組み込めないか。
+
+- SwiftLint の `custom_rules` は、1 ファイルずつの正規表現。ファイルをまたいで本体の形を比べることも、名前やリテラルを潰すこともできない
+- Swift で書くネイティブのルール (SwiftSyntax) は、SwiftLint を Bazel で自前ビルドする必要がある。使う側の repo の swiftlint をその版に差し替えることになり、
+  Swift 専用になる。上の「汎用性」と「依存と使い方を単純に」に反する
+- 代わりに、**出力を Xcode / SwiftLint と同じ `ファイル:行:列: warning: …` の形式でも出せる**ようにし (896)、使う側の repo の `make lint` / `make test` で swiftlint と並べて回す。
+  Xcode の Run Script に入れれば、swiftlint の警告と同じ場所に出る
+- 再評価の条件: SwiftLint が Bazel なしで外部のネイティブのルールを読み込めるようになったとき
 
 ## 受け入れ条件
 
@@ -239,3 +261,4 @@ dupscan は自前の構文木 (tree-sitter) だけで、書く前の検索・書
 - 2026-10-24 主な使い方に「実装後のセルフレビューで `gate` を回す」を足し (ユーザー 2026-10-24: 実装フェーズが終わってセルフレビューの時に dupscan をすればいいかな)、誤検知の除外の設定を 906 に起こした。反証レビュー (make test の改訂) の残り (hook の頃の語・Go の価値の食い違い) を直した
 - 2026-10-24 「効果の測り方」と「不変条件」(ソースを書き換えない・キャッシュの並行) を足した (ユーザー: 他に足りない要件ある?)
 - 2026-10-24 反証レビュー (セルフレビュー・906 の改訂) を取り込んだ: L1 は局所の名前だけを番号に / L3 は畳んだ後に振り直し、callee の名前は畳まない / キャッシュの鍵に版と設定 / キャッシュの置き場所 / 設定は作業ツリーの側を両方に / 所要の上限 / 効果の測り方を記録と種別で測れる形に
+- 2026-10-24 「汎用性」節 (repo に依存しない作り・サブディレクトリの起点・プロジェクトの持ち方・調べる相手に書かない・2 つ以上の repo で既定を決める) と、「SwiftLint のルールにしない」節を足した (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)

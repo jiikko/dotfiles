@@ -1,10 +1,12 @@
-# 898 (test): dupscan を obaket に当てて既定の閾値を決め、肯定と否定の期待値と変異で効いていることを確かめる
+# 898 (test): dupscan を obaket と DualNoteApp に当てて既定の閾値を決め、肯定と否定の期待値と変異で効いていることを確かめる
 
 起票日: 2026-10-24
 
 ## 概要
 
-[891 (要件の正本)](891-design-dupscan-requirements.md) の既定値 (下限・閾値) は実測で決める。obaket に当てて決め、PR 24 の前の木で肯定と否定の期待値を置き、変異で効いていることを確かめる。
+[891 (要件の正本)](891-design-dupscan-requirements.md) の既定値 (下限・閾値) は実測で決める。**規模と作りの違う 2 つの repo** (obaket と DualNoteApp (`~/src/working/DualNoteApp` の `macOS/`。Swift 96 ファイル。XcodeGen の `project.yml` と SwiftPM の `Shared/Package.swift` を持ち、`project.pbxproj` は追跡していない)) に当てて決め、片方にだけ合わせない (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)。
+obaket はこのマシンに無いので、先に DualNoteApp で測り、obaket は手に入るマシンで測る。他人の repo に当てるときは `--cache-dir` で tmp に置き、その repo に書かない。
+obaket では、PR 24 の前の木で肯定と否定の期待値を置き、変異で効いていることを確かめる。
 
 Type-3 ([895](895-feat-dupscan-type3-candidates.md)) は後回しにしたので、下の Type-3 に触れる条件は 895 に着手したときに当てる。それまでは Type-2 と L1〜L3 の段だけで較正する。
 
@@ -14,7 +16,8 @@ Type-3 ([895](895-feat-dupscan-type3-candidates.md)) は後回しにしたので
 
 ## 受け入れ条件
 
-- [ ] obaket の全体に当てたときの組の数・誤検知の割合・ノード数の分布・所要を実測して、この issue に書く (下限と閾値の既定の根拠)
+- [ ] obaket と DualNoteApp の全体に当てたときの組の数・誤検知の割合・ノード数の分布・所要を、repo ごとに実測して書く (下限と閾値の既定の根拠。2 つで食い違えば、どちらに合わせたかと理由を書く)
+- [ ] DualNoteApp に当てた後、DualNoteApp の作業ツリーと `.git` に何も書かれていないことを `git status` と `.git` の更新時刻で確かめる
 - [ ] 全体の期待値: PR 24 の前の木の全体に **既定の設定 (既定の下限と閾値)** で当て、6 つが出ること、**同じ組に入ってよいもの / 入ってはいけないもの** を期待値にする。
       反証レビューが文法から推した候補: L2 で同じ形になるもの (`BrowserSelectionStateTests.makeLocation` の `"c"` / `.bucket("b")`、`S3StubTestSupport.leaf` の `"connection"`)、
       L3 で入りうるもの (`.container(Self.identifier)` / `.root` / `context.connection.id` を使う版・`StorageResumableMoveUseCaseTests.location(connectionID:path:)`)。どれを入れるかを決めて書く
@@ -26,3 +29,4 @@ Type-3 ([895](895-feat-dupscan-type3-candidates.md)) は後回しにしたので
 - 2026-10-24 起票 (epic 890 の分解)
 - 2026-10-24 反証レビュー (設計) の指摘で、L3 の否定の期待値と、Claude に書かせた写しでの実測を足した
 - 2026-10-24 895 を後回しにしたので、依存から外し、Type-3 の条件を 895 の着手時に回した
+- 2026-10-24 較正の相手に DualNoteApp を足し、2 つの repo で既定を決めることにした (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)

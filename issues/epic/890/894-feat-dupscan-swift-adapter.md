@@ -9,6 +9,9 @@
 
 ## 受け入れ条件
 
+- [ ] 所属ターゲットを `Package.swift`・XcodeGen の `project.yml`・追跡されている `project.pbxproj` から解決する。どれも無ければ「不明」と出す。
+      obaket (Xcode と SwiftPM) と DualNoteApp (XcodeGen と SwiftPM。`project.pbxproj` は追跡していない) の両方で、代表のファイルの所属が正しいことを確かめる
+
 - [ ] 網羅テスト: node-types.json の named な種類が全部、対応表で分類されている (または明示して無視している)
 - [ ] 固定の入力: obaket の PR 24 の前の木 (commit 45cc3b208^) から 6 つの `location` の定義を含むファイルを切り出して Swift adapter のテストに置き
       (出典の commit とパスをテストに書く)、段ごとの期待値を書く (L1 / L2 で直書きの 4 つが 1 組、L3 で 6 つが 1 組)
@@ -17,3 +20,4 @@
 ## 進捗
 
 - 2026-10-24 起票 (epic 890 の分解)
+- 2026-10-24 所属ターゲットの解決に XcodeGen の `project.yml` を足し、DualNoteApp でも確かめる条件にした (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)

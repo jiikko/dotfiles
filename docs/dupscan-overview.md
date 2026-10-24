@@ -79,6 +79,14 @@ commit / push
 - 実装の最中 (Edit / Write のたび) には何も走らない。写しを前提に書き進めた後で (2) や (3) で見つかる手戻りが大きいと分かったら、hook (issue 902) を再開する
 - 所要の目安: (1) は 1 回の引きが短い (目安は実測で決める。issue 897)。(2)〜(4) は make test に足される秒数 (実測で決める。issue 905)
 
+## 1.7 repo に依存しない作り
+
+- repo ごとの事情 (共通のヘルパーの置き場所・既定のブランチ・test / prod の規則の上書き・除外・下限) は、その repo の設定ファイルにだけ書く。dupscan のコードに特定の repo の既定は入れない
+- 走査の起点は repo の中のサブディレクトリでもよい。所属ターゲットは `Package.swift`・XcodeGen の `project.yml`・追跡されている `project.pbxproj` のどれからでも読み、分からなければ「不明」と出す
+- 既定値は規模と作りの違う 2 つの repo (obaket と DualNoteApp) で測って決める (issue 898)
+- **SwiftLint のルールにはしない**: `custom_rules` は 1 ファイルずつの正規表現で、ファイルをまたいで本体の形を比べられない。Swift で書くネイティブのルールは SwiftLint を Bazel で自前ビルドする必要があり、Swift 専用にもなる。
+  代わりに、出力を Xcode / SwiftLint と同じ `ファイル:行:列: warning: …` の形式でも出し (`--format xcode`)、`make lint` / `make test` で swiftlint と並べて回す (issue 891・896)
+
 ## 2. プログラムの構成
 
 Go で書く。構文の解析は tree-sitter (cgo)。「言語に依らないコア」と「言語ごとの adapter」に分ける。
