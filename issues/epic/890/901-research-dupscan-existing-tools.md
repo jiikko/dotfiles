@@ -18,13 +18,14 @@
 | 道具 | 方式 | Swift / Go / zsh (bash) | 名前の違う写し | 値の書き方の違い (L3) | Claude との組み込み | 確かめ方 |
 |---|---|---|---|---|---|---|
 | PMD CPD | トークン列の一致 | ○ / ○ / × | `--ignore-identifiers` と `--ignore-literals` は公式文書上 Java・C++ だけ。Swift と Go は名前・リテラルを潰せない | × | なし (CLI。text・xml・csv・markdown を出す) | 公式文書 |
-| jscpd (v5 は Rust) | トークン列 + Rabin-Karp | ○ / ○ / ○ (bash) | `--mode` (mild / weak / strict) が何を潰すかは文書に無い | × | 出力の形式に `ai` がある。自動で知らせる組み込みは無い | README (v5.4.1) |
-| dupl (golangci-lint) | AST の型だけの列を比べる (値は無視) | × / ○ / × | ○ (名前と値を無視) | 一部 (値を無視するので直書きの違いは潰れる。プロパティとの違いは木の形が違う) | なし | 文書。**dotfiles では glogx・doctor・mac-lan-manager で有効** (`src/glogx/.golangci.local.yml` の `dupl.threshold: 120`、テストは除外) |
-| mizchi/similarity | 関数の AST の木の編集距離 (TSED) | × / 試験的 (similarity-generic) / × | ○ | 類似度として一部 | **AI エージェント向けと明言**。Claude に走らせて計画を立てさせるプロンプトを同梱。自動で知らせる組み込みは無い | README |
+| jscpd (v5 は Rust) | トークン列 + Rabin-Karp | ○ / ○ / ○ (bash) | `--mode` は strict (全トークン)・mild (改行と空白を除く。既定)・weak (さらにコメントも除く)。どの mode も識別子は潰さない (v4 の README) | × | 出力の形式に `ai` がある。組み込みの MCP サーバ (`jscpd --mcp <path>`) と Agent Skills もある | README (v5.4.1・v4.0.5) |
+| dupl (golangci-lint) | AST の型だけの列を比べる (値は無視) | × / ○ / × | ○ (名前と値を無視) | 一部 (値を無視するので直書きの違いは潰れる。プロパティとの違いは木の形が違う) | なし | 文書。**dotfiles の Go の 7 module (doctor・glogx・mac-lan-manager・pro-con・ratelimit・treefiler・tuikit) で有効。閾値はどれも 120 トークンで、tuikit 以外はテストを除外 (`src/*/.golangci.local.yml`)** |
+| DRYwall (Claude Code の plugin) | jscpd を呼ぶ | jscpd の対応に従う (例は JS / TS) | jscpd と同じ (潰さない) | × | skill `/drywall:scan`・重複を寄せる agent・MCP tool。**呼んだときに動く**。編集の直後に自動で走る仕組み (PostToolUse) は README に無い | README |
+| mizchi/similarity | 関数の AST の木の編集距離 (TSED) | × / 試験的 (similarity-generic) / × | ○ | 類似度として一部 | 出力を AI に渡しやすい形にしており (AI-friendly output)、AI にリファクタの計画を立てさせるプロンプトを同梱。自動で知らせる組み込みは無い | README |
 | ast-grep | tree-sitter の構造パターンで検索 | ○ / ○ / ○ (bash) | パターンの変数で吸収 | パターン次第 | MCP や skill で使える。類似度は出さない (「この形を探す」の問い合わせ) | crate の言語一覧 |
 | Claude Code の LSP ツール | 言語サーバの `workspaceSymbol` / `findReferences` / `incomingCalls` | sourcekit-lsp / gopls / (bash-language-server は未導入) | × (名前で引く) | × | **Claude Code に組み込み済み** | 手元で実行 (下) |
 | Serena (MCP) | LSP を MCP で出す | ○ / ○ / ○ (40 以上の言語) | × (名前で引く。ファイルの概要・参照元) | × | MCP で Claude Code に繋がる | README |
-| 埋め込みの意味検索の MCP (semantic-code-mcp など) | tree-sitter で切って埋め込み、意味で引く | 調べた範囲は Swift を明記していない | ○ (意味で引く) | ○ (意味で引く) | MCP。埋め込みのモデルと索引の置き場が要る | 検索結果の要約のみ (README は未読) |
+| 埋め込みの意味検索の MCP (semantic-code-mcp など) | tree-sitter で切って埋め込み、意味で引く | Python・Rust・Markdown だけ (Swift・Go・Bash は非対応) | ○ (意味で引く) | ○ (意味で引く) | MCP。埋め込みのモデルと索引の置き場が要る | glama の掲載ページ |
 
 手元での実行 (2026-10-24): Claude Code の LSP ツールで、dotfiles の `src/glogx/action_modal.go` から `workspaceSymbol` を `Modal` で引いた。
 gopls (`bin/gopls`) が **100 件で打ち切って**返し、あいまい一致なので `Modal` を含まない `advancePullAnim` なども混ざった。
@@ -34,8 +35,8 @@ sourcekit-lsp は `/usr/bin/sourcekit-lsp` にあるが、Swift の repo で Cla
 
 1. **名前で引く手段は既にある** (Claude Code の LSP ツール・Serena)。dupscan では作らない。先にやるのは、使う手順を使う側の repo の入口 (CLAUDE.md・skill) に書くこと
 2. **本体の形が同じものを後から見つける**部分は、CPD・jscpd で一部取れる可能性がある。ただし Swift で、名前・リテラルの違いと値の書き方の違い (L3) を潰すものは見つからなかった
-3. **編集の直後に、近い既存のメソッドを自動で知らせる**組み込みを持つ道具は見つからなかった。主な用途の中心はここ (902)。既存の道具を hook から呼ぶ形でも作れるので、dupscan のコアを自作するかは実測で決める
-4. Go の重複チェックは dupl が既に回っている。Go を dupscan に足す価値は、索引と hook (902) の側にある (900)
+3. **編集の直後に、近い既存のメソッドを自動で知らせる**組み込みを持つ道具は見つからなかった。jscpd の MCP と DRYwall は Claude から呼べるが、呼んだときにだけ動く。主な用途の中心はここ (902)。既存の道具を hook から呼ぶ形でも作れるので、dupscan のコアを自作するかは実測で決める
+4. Go の重複チェックは dupl が既に回っている (7 module)。Go を dupscan に足す価値は、索引と hook (902) の側にある (900)
 
 ## 受け入れ条件
 
@@ -53,8 +54,11 @@ sourcekit-lsp は `/usr/bin/sourcekit-lsp` にあるが、Swift の repo で Cla
 - mizchi/similarity: https://github.com/mizchi/similarity
 - ast-grep の言語: https://docs.rs/ast-grep-language
 - Serena: https://github.com/oraios/serena
+- DRYwall: https://github.com/nikhaldi/drywall
+- jscpd の mode の定義: https://unpkg.com/jscpd@4.0.5/README.md
 - semantic-code-mcp: https://glama.ai/mcp/servers/@vrppaul/semantic-code-mcp
 
 ## 進捗
 
 - 2026-10-24 起票 (ユーザー指示: 既存の道具の調査)。Web の一次情報と、手元の LSP ツールの実行で上の表を作った
+- 2026-10-24 反証レビュー (事実の観点。読み取りのみのサブエージェント) の指摘を取り込んだ: dupl は 3 ではなく 7 module (tuikit はテストを除外しない) / jscpd の MCP・Agent Skills と DRYwall を足した / semantic-code-mcp は Swift 非対応と書けた / jscpd の mode の定義 / similarity の「AI エージェント向けと明言」は言い過ぎだった

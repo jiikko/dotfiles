@@ -35,9 +35,9 @@ obaket の週次の Claude audit (test-helpers) が出した PR 24 で、同じ 
 
 この要件は当初、既存の道具を調べずに書いた。2026-10-24 の調査で分かったこと (PR 24 の 6 つに当てた実測はまだ無い):
 
-- **名前で引く**手段は既にある (Claude Code の LSP ツールの `workspaceSymbol`・Serena の MCP)。dupscan では作らず、使う手順を入口に書く
+- **名前で引く**手段は既にある (Claude Code の LSP ツールの `workspaceSymbol`・Serena の MCP)。jscpd も MCP サーバと、それを使う Claude Code の plugin (DRYwall) があるが、呼んだときにだけ動く。dupscan では作らず、使う手順を入口に書く
 - **本体が同じものを後から見つける**のは CPD・jscpd (トークン方式。Swift に対応) で一部取れる可能性がある。ただし Swift で名前・リテラルの違いを潰すオプションは文書に無く、
-  値の書き方の違い (L3) を潰すものは見つからなかった。Go は dupl (値を無視する AST 方式) が dotfiles の 3 module で既に回っている
+  値の書き方の違い (L3) を潰すものは見つからなかった。Go は dupl (値を無視する AST 方式) が dotfiles の 7 module で既に回っている
 - **編集の直後に自動で知らせる**組み込みを持つ道具は見つからなかった。主な使い方の中心はここ
 - → dupscan が自分で作るのは、Swift の L1〜L3 の正規化・索引・hook (902) を候補とし、901 の実測で範囲を決める。既存の道具で足りる部分は作らない
 
@@ -150,7 +150,7 @@ Swift の次は **Go と zsh** を候補にする (ユーザー 2026-10-24)。�
 
 | 言語 | 構文木の取り方の案 | 懸念 (未確認) |
 |---|---|---|
-| Go | tree-sitter-go (tree-sitter 公式の文法) で他の言語と同じ adapter にする | 標準の `go/ast` でも正確に取れるが、コアが tree-sitter の木を前提にするなら adapter の形が揃わない。どちらにするかは adapter の境界を決めてから。重複のチェックは dupl (golangci-lint) が dotfiles の glogx・doctor・mac-lan-manager で既に回っている (閾値 120 トークン、テストは除外) ので、Go を足す価値は索引と hook の側にある |
+| Go | tree-sitter-go (tree-sitter 公式の文法) で他の言語と同じ adapter にする | 標準の `go/ast` でも正確に取れるが、コアが tree-sitter の木を前提にするなら adapter の形が揃わない。どちらにするかは adapter の境界を決めてから。重複のチェックは dupl (golangci-lint) が dotfiles の Go の 7 module (doctor・glogx・mac-lan-manager・pro-con・ratelimit・treefiler・tuikit) で有効。閾値はどれも 120 トークンで、tuikit 以外はテストを除外 (`src/*/.golangci.local.yml`) ので、Go を足す価値は索引と hook の側にある |
 | zsh | tree-sitter-bash を使う案 (zsh 専用の成熟した文法は見つけていない) | zsh だけの構文 (パラメータ展開のフラグ `${(f)...}`・glob の修飾子 `*(N)`・`[[ ]]` の拡張など) を bash の文法は読めないはずで、ERROR が多いと使えない。比べる単位は関数 (`foo() { }` / `function foo { }`) |
 
 - 言語ごとに test / prod の分類の既定 (Go は `_test.go`、zsh は dotfiles の `tests/` 配下など) とテスト関数の見分け方 (Go の `func TestXxx`) を adapter に持たせる
@@ -193,3 +193,4 @@ Swift の次は **Go と zsh** を候補にする (ユーザー 2026-10-24)。�
 - 2026-10-24 epic 890 にし、この本文を 891 (要件の正本) へ移した。受け入れ条件はタスクの子 issue (892〜900) に振り分けた (ユーザー指示)
 - 2026-10-24 主な使い方 (Claude Code の編集の最中の重複の防止と発見性) を概要に書き、「既存の道具との関係」節と「決めること」の 2 項を足した。
   既存の道具の調査は 901、編集の最中に効かせる hook は 902 (ユーザー指示: 既存の道具の考慮不足の指摘と、用途の説明)
+- 2026-10-24 反証レビュー (事実の観点) で、dupl の module 数 (3 → 7) と、jscpd の MCP・DRYwall の記載漏れを直した (901)

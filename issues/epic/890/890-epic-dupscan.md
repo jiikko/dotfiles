@@ -19,14 +19,14 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | 番号 | 何をするか | 依存 |
 |---|---|---|
 | [891](891-design-dupscan-requirements.md) | 要件と構想の正本 (用途・コアと adapter の境界・正規化の段・出力・索引・実測・構想・決めること) | — |
-| [901](901-research-dupscan-existing-tools.md) | **既存の道具の調査** (CPD・jscpd・dupl・similarity・ast-grep・LSP・Serena・意味検索の MCP)。PR 24 の 6 つに当てて、自分で作る範囲を決める | — |
+| [901](901-research-dupscan-existing-tools.md) | **既存の道具の調査** (CPD・jscpd とその MCP・DRYwall・dupl・similarity・ast-grep・LSP・Serena・意味検索の MCP)。PR 24 の 6 つに当てて、自分で作る範囲を決める | — |
 | [892](892-chore-dupscan-project-scaffold.md) | `src/dupscan` の骨組み (module・Makefile・bin・CI・README・PACKAGES.md、cgo の所要の実測) | 901 |
 | [893](893-feat-dupscan-core-normalize-type2.md) | コア: 走査・test / prod の分類・単位・正規化 L1〜L3・ハッシュ・Type-2 の組 | 892 |
 | [894](894-feat-dupscan-swift-adapter.md) | Swift adapter (文法の pin・対応表と網羅テスト・ERROR の除外・PR 24 の固定の入力・canary) | 893 |
 | [895](895-feat-dupscan-type3-candidates.md) | Type-3 (少し違う写し) の類似度と候補の絞り込み (後回し。主な用途には Type-2 と L3 の一致で足りるかを先に見る) | 893 |
 | [896](896-feat-dupscan-report-output.md) | 出力 (人が読む形・JSON・リテラルの違いの表・プロパティの値・ターゲット・可視性・呼び出し元の数・既存のヘルパーとの一致) | 893・894 |
 | [897](897-feat-dupscan-index-subcommand.md) | 探索のための索引 (subcommand) | 893・894 |
-| [898](898-test-dupscan-obaket-calibration.md) | obaket に当てた実測・既定の閾値・PR 24 の前の木での肯定と否定の期待値・変異 | 894・895・896 |
+| [898](898-test-dupscan-obaket-calibration.md) | obaket に当てた実測・既定の閾値・PR 24 の前の木での肯定と否定の期待値・変異 (Type-3 の条件は 895 の着手時) | 894・896 |
 | [899](899-research-dupscan-lsp-integration.md) | LSP・言語の解析の道具と組み合わせる (呼び出し元・型・値の解決) | 896 |
 | [900](900-research-dupscan-next-languages.md) | 次の言語 (Go・zsh) の読み取りを測る | 893 |
 | [902](902-feat-dupscan-claude-code-hook.md) | **Claude Code の編集の最中に効かせる**: 書く前に探す入口と、Edit / Write の直後に近い既存のメソッドを知らせる hook | 893・894・897・901 |

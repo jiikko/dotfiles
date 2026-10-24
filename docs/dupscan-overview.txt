@@ -156,12 +156,15 @@ adapter が持つもの:
   Claude Code の LSP ツール 名前で引く・参照元・呼び出し元 (組み込み)       本体の形では引けない (名前の違う写しは出ない)
   Serena (MCP)             LSP を MCP で出す。Swift・Go・Bash を含む       同上
   PMD CPD / jscpd          トークン列の一致で後から重複を見つける。         Swift で名前・リテラルを潰す設定が文書に無い。
-                           Swift・Go に対応                                値の書き方の違い (L3) は見ない
-  dupl (golangci-lint)     Go で値を無視して比べる。dotfiles の 3 module   Go だけ。閾値 120 トークンより小さい写しは出ない
+                           Swift・Go に対応。jscpd は MCP サーバを持ち、   値の書き方の違い (L3) は見ない
+                           それを使う Claude Code の plugin (DRYwall)      呼んだときにだけ動く (編集の直後には走らない)
+                           もある
+  dupl (golangci-lint)     Go で値を無視して比べる。dotfiles の 7 module   Go だけ。閾値 120 トークンより小さい写しは出ない
                            で既に有効
-  mizchi/similarity        木の編集距離。AI エージェント向け               Swift と shell に対応していない
+  mizchi/similarity        木の編集距離。AI に渡しやすい出力               Swift と shell に対応していない
   ast-grep                 tree-sitter の構造パターンで検索                類似度は出さない (形を指定して探す道具)
-  意味検索の MCP           埋め込みで意味で引く                            モデルと索引が要る。Swift の対応は未確認
+  意味検索の MCP           埋め込みで意味で引く                            モデルと索引が要る。semantic-code-mcp は
+                                                                           Python・Rust・Markdown だけ (Swift 非対応)
 
   編集の直後に自動で知らせる組み込みを持つ道具は見つからなかった。dupscan が作るのは、Swift の L1〜L3 の正規化・
   索引・hook を候補とし、範囲は 901 の実測で決める (既存の道具を hook から呼ぶ形で足りるなら、そちらを使う)。
@@ -187,7 +190,7 @@ adapter が持つもの:
   895 Type-3 と候補の絞り込み (後回し)                   ← 893
   896 出力 (報告・JSON・リテラルの違いの表)               ← 893・894
   897 索引 (index subcommand)                             ← 893・894
-  898 obaket での実測と既定の閾値・変異                   ← 894・895・896
+  898 obaket での実測と既定の閾値・変異                   ← 894・896
   899 LSP との組み合わせ (調査)                           ← 896
   900 次の言語 (Go・zsh) の読み取りの実測                 ← 893
   902 Claude Code の hook と、書く前に探す入口            ← 893・894・897・901
