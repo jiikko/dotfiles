@@ -1,5 +1,7 @@
 # 894 (feat): dupscan の Swift adapter (tree-sitter-swift)
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-24〜）
+
 起票日: 2026-10-24
 
 ## 概要
