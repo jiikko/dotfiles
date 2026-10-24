@@ -275,3 +275,48 @@ func TestSmallCopiesGrowingTogetherAreNotViolation(t *testing.T) {
 		t.Errorf("小さかった写しが一緒に育って違反になった: %+v", r)
 	}
 }
+
+func TestIneligibleHeadUnitDoesNotTakeOrigin(t *testing.T) {
+	// 写し b を改名しながら小さく直し、別のファイルに下限より小さいクロージャ Y を足した: Y が b を相手に取って改名した写しを止めない。
+	o := opt
+	o.MinClosureNodes = 20
+	small := func(x *group.Entry) *group.Entry { x.Result.Nodes = 15; return x }
+	base := []*group.Entry{small(e("a", "x", "y", "z")), small(e("b", "x", "y", "z"))}
+	for _, yl1 := range []string{"x", "x3"} { // L1 で b と同じ / L2 でだけ同じ
+		for _, yFirst := range []bool{false, true} {
+			a, b2, y := small(e("a", "x", "y", "z")), small(e("b2", "x2", "y", "z")), small(cl("Y#closure1", yl1, "y", "z"))
+			head := []*group.Entry{a, b2, y}
+			if yFirst {
+				head = []*group.Entry{a, y, b2}
+			}
+			if r := Judge(base, head, o); r.Failed() {
+				t.Errorf("小さい単位 Y (L1=%s, 先=%v) が出どころを取って止めた: %+v", yl1, yFirst, r)
+			}
+		}
+	}
+}
+
+func TestSameEditJoiningAnotherGroupAtCoarserLevelIsViolation(t *testing.T) {
+	// 写し a・b に同じ修正を入れ、L1 では a・b の組のままだが、L2 で触っていない d と同じ形になった: d が新しく写しになる。
+	base := []*group.Entry{e("a", "x", "y", "z"), e("b", "x", "y", "z"), e("d", "p", "q", "r")}
+	head := []*group.Entry{e("a", "x2", "q", "r"), e("b", "x2", "q", "r"), e("d", "p", "q", "r")}
+	r := Judge(base, head, opt)
+	if !r.Failed() || len(r.Violations) != 1 || r.Violations[0].Level != norm.L2 {
+		t.Fatalf("L2 の違反 1 件を期待: %+v", r)
+	}
+	if v := r.Violations[0]; len(v.Same) != 1 || v.Same[0].Unit.Key != "d" {
+		t.Errorf("触っていない d を寄せる側にした: new=%v same=%v", keys(v.New), keys(v.Same))
+	}
+}
+
+func TestSmallUnitGrowingWithItsCopyIsNotViolation(t *testing.T) {
+	// 関数 a と、同じ本体で下限より小さかったクロージャが、同じ修正で一緒に育った: base で既に写しだった。
+	o := opt
+	o.MinClosureNodes = 20
+	a, f := e("a", "x", "x2", "x3"), cl("f#closure1", "x", "x2", "x3")
+	a.Result.Nodes, f.Result.Nodes = 15, 15
+	head := []*group.Entry{e("a", "y", "y2", "y3"), cl("f#closure1", "y", "y2", "y3")}
+	if r := Judge([]*group.Entry{a, f}, head, o); len(r.Violations) != 0 {
+		t.Errorf("一緒に育った写しが違反になった: %+v", r)
+	}
+}

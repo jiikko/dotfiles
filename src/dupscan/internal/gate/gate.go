@@ -1,6 +1,6 @@
 // Package gate は、base から head までに新しく増えた重複を決める (make test・CI で回す dupscan gate の判定)。
 //
-// 変わった単位 (鍵が base に無いか、L1 のハッシュが base と違う単位) ごとに、細かい段から見て最初に他の単位と一致した段の組を取る。
+// 変わった単位 (鍵が base に無いか、L1 のハッシュが base と違う単位) ごとに、細かい段から順に他の単位と一致した段の組を見る (違反になった最初の段だけを出す)。
 // 組のメンバーごとに「出どころ」(base の側の相手が、その段で持っていたハッシュ) を引き、組の大きさが同じ出どころから来た
 // メンバーの最大の数より大きいときだけ違反にする。
 //   - 移動・改名・整形・既存の写しを寄せる作業・入れ替え: 出どころが同じなので違反にしない
@@ -57,7 +57,7 @@ func (r Result) Failed() bool {
 func Judge(base, head []*group.Entry, opt Options) Result {
 	levels := append([]norm.Level(nil), opt.Levels...)
 	sort.Slice(levels, func(i, j int) bool { return levels[i] < levels[j] })
-	origin := origins(base, head)
+	origin := origins(base, head, opt.Options)
 
 	groups := map[norm.Level]map[string][]*group.Entry{}
 	for _, lv := range levels {
@@ -70,7 +70,7 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 	}
 
 	var r Result
-	seen := map[string]bool{} // 段 + ハッシュ。組ごとに 1 回だけ判定する
+	judged := map[string]bool{} // 段 + ハッシュ → 違反か。組ごとに 1 回だけ判定する
 	for _, e := range head {
 		if unchanged(e, origin) {
 			continue
@@ -89,13 +89,19 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 			if len(g) < 2 {
 				continue // この段では他と一致しない。粗い段を見る
 			}
-			if k := lv.String() + h; !seen[k] {
-				seen[k] = true
-				if v, ok := judgeGroup(lv, h, g, origin, opt); ok {
+			k := lv.String() + h
+			if _, done := judged[k]; !done {
+				v, ok := judgeGroup(lv, h, g, origin, opt)
+				if ok {
 					r.Violations = append(r.Violations, v)
 				}
+				judged[k] = ok
 			}
-			break // 最初に一致した段だけで判定する
+			// 違反になった最初の段だけを出す。違反でなければ粗い段も見る (細かい段では前からの写しの組のままでも、
+			// 粗い段で触っていない単位と新しく同じ形になることがある)。
+			if judged[k] {
+				break
+			}
 		}
 	}
 	sort.SliceStable(r.Violations, func(i, j int) bool {
@@ -116,10 +122,11 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 		key := "new:" + m.Unit.Key // 出どころの無い単位は、それぞれ別
 		if b := origin[m]; b != nil {
 			key = "base:" + b.Result.Hash[lv]
-			// base でこの段の比べる対象でなかった相手 (下限より小さい・読めない) は、比べる対象だった相手と別に数える。
-			// 同じに数えると、小さいクロージャを消して同じ本体の関数を足したときに新しい写しが通る。捨てると、
-			// 小さかった写し 2 つが同じ修正で下限を超えたときに止まる (どちらも base で既に写しだった)。
-			if !eligible(b, lv, opt.Options) {
+			// base でこの段の比べる対象でなかった相手 (下限より小さい・読めない) から来た別の単位 (鍵が違う) は、
+			// 比べる対象だった相手と別に数える。同じに数えると、小さいクロージャを消して同じ本体の関数を足したときに
+			// 新しい写しが通る。その場で育った単位 (鍵が同じ) は同じに数える: 別に数えたり捨てたりすると、写しが
+			// 同じ修正で一緒に下限を超えたときに止まる (どちらも base で既に写しだった)。
+			if !eligible(b, lv, opt.Options) && b.Unit.Key != m.Unit.Key {
 				key = "small:" + b.Result.Hash[lv]
 			}
 		}
@@ -182,10 +189,11 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 //  6. まだ相手の無い base の単位のうち、L2、次に L3 の形が同じもの (改名・移動しながらの小さな編集)
 //  7. クロージャの鍵
 //
-// 段の鍵が空の単位は、その段では当てない。
-func origins(base, head []*group.Entry) map[*group.Entry]*group.Entry {
+// 段の鍵が空の単位は、その段では当てない。1 から 7 は、比べる対象になる head の単位で全部回してから、残りの単位で回す。
+func origins(base, head []*group.Entry, opt group.Options) map[*group.Entry]*group.Entry {
 	out := map[*group.Entry]*group.Entry{}
 	used := map[*group.Entry]bool{}
+	cur := head
 	match := func(keyOf func(*group.Entry) string) {
 		pool := map[string][]*group.Entry{}
 		for _, b := range base {
@@ -193,7 +201,7 @@ func origins(base, head []*group.Entry) map[*group.Entry]*group.Entry {
 				pool[k] = append(pool[k], b)
 			}
 		}
-		for _, e := range head {
+		for _, e := range cur {
 			if out[e] != nil {
 				continue
 			}
@@ -220,6 +228,24 @@ func origins(base, head []*group.Entry) map[*group.Entry]*group.Entry {
 		}
 		return ""
 	})
+	// 比べる対象になる単位から当てる。下限より小さい単位を先に当てると、改名・移動した写しの相手を取って、
+	// 写しを新しいと見せる (段の中の並びを変えても、小さい単位の方が細かい段で一致すると防げない)。
+	var big, rest []*group.Entry
+	for _, e := range head {
+		if eligible(e, norm.L1, opt) {
+			big = append(big, e)
+		} else {
+			rest = append(rest, e)
+		}
+	}
+	for _, cur = range [][]*group.Entry{big, rest} {
+		matchAll(match, head, out, isBase)
+	}
+	return out
+}
+
+// matchAll は origins の 1 から 7 の段を順に当てる。
+func matchAll(match func(func(*group.Entry) string), head []*group.Entry, out map[*group.Entry]*group.Entry, isBase map[*group.Entry]bool) {
 	l1 := func(e *group.Entry) string { return e.Result.Hash[norm.L1] }
 	join := func(parts ...string) string {
 		for _, p := range parts {
@@ -258,7 +284,6 @@ func origins(base, head []*group.Entry) map[*group.Entry]*group.Entry {
 	match(func(e *group.Entry) string { return e.Result.Hash[norm.L2] })
 	match(func(e *group.Entry) string { return e.Result.Hash[norm.L3] })
 	match(func(e *group.Entry) string { return e.Unit.Key })
-	return out
 }
 
 // unchanged は、出どころが同じ鍵・同じ本体の単位 (この変更で触っていない単位) か。
