@@ -1,4 +1,4 @@
-# 890 (feat): 構文木で重複しているメソッドを repo からあぶり出す道具 dupscan (Go のコア + 言語ごとの差分)
+# 891 (design): dupscan の要件と構想 (epic 890 の正本。作業は同じディレクトリのタスクの子 issue)
 
 起票日: 2026-10-24
 
@@ -111,26 +111,8 @@ ERROR / MISSING ノードを含むファイルを数えた:
 
 ## 受け入れ条件
 
-- [ ] `bin/dupscan <repo>` で、test / prod を分けた組の一覧が出る (人が読む形と `--json`)
-- [ ] 索引: `bin/dupscan` の別の subcommand (例 `index`) で、上の「索引」の 1 行 1 件の一覧が出る。obaket の `SharedTestSupport` に当てて、
-      `bucketLocation(path:)` を含む全部の top-level の関数が載ることをテストで確かめる
-- [ ] 固定の入力: obaket の PR 24 の前の木 (commit 45cc3b208^) から 6 つの `location` の定義を含むファイルを切り出して Swift adapter のテストに置き
-      (出典の commit とパスをテストに書く)、段ごとの期待値を書く (L1 / L2 で直書きの 4 つが 1 組、L3 で 6 つが 1 組)
-- [ ] 全体の期待値: PR 24 の前の木の全体に **既定の設定 (既定の下限と閾値)** で当て、6 つが出ること、**同じ組に入ってよいもの / 入ってはいけないもの** を期待値にする。
-      反証レビューが文法から推した候補: L2 で同じ形になるもの (`BrowserSelectionStateTests.makeLocation` の `"c"` / `.bucket("b")`、`S3StubTestSupport.leaf` の `"connection"`)、
-      L3 で入りうるもの (`.container(Self.identifier)` / `.root` / `context.connection.id` を使う版・`StorageResumableMoveUseCaseTests.location(connectionID:path:)`)。どれを入れるかを決めて書く
-- [ ] canary: 本物の parser と adapter を通して必ず 1 組出る入力 (core だけの合成の木では adapter の退行を検出しない)。読めない構文を含む入力 (除外の件数が報告に出る)
-- [ ] 変異で効いていることを確かめる。肯定と否定を対で置く: 6 つのうち 1 つに文を 1 つ足すと Type-2 から外れて Type-3 に残る / 1 つ消すと組が 5 になる /
-      段を外すと期待どおりに組が割れる / 「入ってはいけないもの」が入るように閾値を緩める・畳みすぎる変異で否定の期待値が赤になる (`mutate-verify` で当てる)
-- [ ] コアのユニットテスト (正規化・ハッシュ・組分け・類似度・候補の絞り込み・出力) が adapter に依存せずに書けている。adapter の網羅テスト (上)
-- [ ] obaket の全体に当てたときの組の数・誤検知の割合・ノード数の分布・所要を実測して、この issue に書く (下限と閾値の既定の根拠)
-- [ ] `src/` の新しいプロジェクトの手順 (`src/README.md`「新規プロジェクトのガイドライン」) を満たす:
-  - `src/dupscan/Makefile` の `lint:` (`../../scripts/go_module_graph.sh` を呼ぶ) / `test:`、`go.sum`、`src/dupscan/README.md`、`src/README.md` の一覧に 1 行
-  - `.github/workflows/src_dupscan.yml` (`_go-project.yml` を呼ぶ。paths に `src/dupscan/**` と共有の script / 設定、replace で取り込む共有 module の dir)
-  - `PACKAGES.md` の再生成と全 package の doc comment (`scripts/go_packages_index.sh --check`)
-  - `bin/dupscan` を zsh で書くなら root の `Makefile` の `ZSH_SYNTAX_FILES` に登録。go_autobuild の成果物を `src/dupscan/.gitignore` に
-  - `make test-lint` (`test-go-project-lanes` ほか) が通る
-- [ ] cgo で巨大な `parser.c` をコンパイルするので、CI の lint (`_go-project.yml`。timeout 25 分) と test のコールドの所要を実測して書く
+この issue (要件の正本) の受け入れ条件は「タスクの子 issue が全部 done になり、決めることが全部決まっていること」。
+実装ごとの受け入れ条件はタスクの子 issue に置いた (epic 890 の親 issue の表)。
 
 ## やらないこと
 
@@ -182,7 +164,7 @@ Swift の次は **Go と zsh** を候補にする (ユーザー 2026-10-24)。�
 
 ## 進捗
 
-- 2026-10-24 起票。tree-sitter-swift の読み取りを obaket で実測した (上の表)
+- 2026-10-24 起票 (issue 890 として)。tree-sitter-swift の読み取りを obaket で実測した (上の表)
 - 2026-10-24 LSP と組み合わせる構想を書いた (ユーザー指示: dupscan と LSP を組み合わせてクリーンなコードを目指す)
 - 2026-10-24 Swift の次に対応する言語の候補 (Go・zsh) を構想として書いた (ユーザー指示)
 - 2026-10-24 用途を「重複のチェック」と「探索のための索引の作成 (似たメソッドが既にあるのに探さずに量産するのを、書く前に止める)」の 2 つと明記し、索引の要件と受け入れ条件を足した (ユーザー指示)
@@ -191,3 +173,4 @@ Swift の次は **Go と zsh** を候補にする (ユーザー 2026-10-24)。�
   - 設計: L3 は「引数を参照しない最大の部分式」だけを畳む (全部畳むと本体ごと 1 記号に潰れる) / L1 は位置で区別し出現順に番号 / 匿名トークンと引数ラベルをハッシュに入れる /
     Type-3 は多重集合・対で出す・祖先と子孫を除く / 候補の絞り込み (転置索引か LSH) / 既定の閾値で 6 つが出ること・全体に当てた肯定と否定の期待値・
     本物の parser を通す canary・否定の変異 / プロパティの初期値の解決・所属ターゲット・可視性・呼び出し元の数・既存のヘルパーとの一致 / Swift の対応表の落とし穴と網羅テスト
+- 2026-10-24 epic 890 にし、この本文を 891 (要件の正本) へ移した。受け入れ条件はタスクの子 issue (892〜900) に振り分けた (ユーザー指示)
