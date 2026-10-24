@@ -41,7 +41,10 @@ type Node struct {
 	// Action は処理の呼び出し (小文字で始まる関数・メソッドの呼び出し)。これを含む式は L3 でも畳まない
 	// (`try deleteEverything()` と `try showWelcome()`・`status = fetchA()` と `status = fetchB()` を同じにしない)。
 	// 大文字の型の初期化 (`ConnectionID(rawValue:)`) と暗黙のメンバー (`.bucket("b")`) は値を作るだけなので畳む。
-	Action   bool
+	Action bool
+	// Capture は `[store]` のように捕まえた外側の名前。番号にはせず字面を残すが、畳むかの判定では局所の参照として数える
+	// (数えないと、捕まえた名前だけを使うクロージャが L3 で本体ごと畳まれて比べられなくなる)。
+	Capture  bool
 	Children []*Node
 }
 

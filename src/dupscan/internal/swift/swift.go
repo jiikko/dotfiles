@@ -78,6 +78,7 @@ type walker struct {
 	units    []*tree.Unit
 	closures map[string]int
 	seen     map[string]int  // 鍵の重なりの数 (`#if` の両側の同じ関数など)
+	static   bool            // static / class のメソッドの本体を変換している間
 	isUnit   map[string]bool // 単位の鍵 (クロージャの Owner にしてよいか)
 }
 
@@ -263,6 +264,8 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 	}
 	if w.isStatic(n) {
 		signature = "static " + signature
+		w.static = true
+		defer func() { w.static = false }()
 	}
 	body := n.ChildByFieldName("body")
 	if body == nil {
@@ -408,6 +411,7 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 		out.Text = w.text(n)
 		out.Role = w.nameRole(parent, field, binding, afterDot)
 		out.Expr = out.Role == tree.RoleName
+		out.Capture = parent != nil && parent.Kind() == "capture_list_item" && out.Role == tree.RoleName && field == "name"
 		return out
 	case classify(k) == classType:
 		out.Role = tree.RoleType
@@ -500,7 +504,7 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 		out.Children = append(out.Children, cn)
 	}
 	if k == "call_expression" && len(out.Children) > 0 {
-		out.Action = isActionCallee(n.NamedChild(0), w.src)
+		out.Action = isActionCallee(n.NamedChild(0), w.src, w.static)
 	}
 	return out
 }
@@ -528,7 +532,7 @@ func isBindingKeyword(c *sitter.Node, src []byte) bool {
 // isActionCallee は callee が処理の呼び出しか。値を作るだけの呼び出し (大文字で始まる型の初期化 `ConnectionID(…)`・
 // 暗黙のメンバー `.bucket(…)`) 以外は全部処理に数える (`_save`・“ `delete` “・英字以外の名前も処理)。
 // 大文字で始まる処理 (`XCTUnwrap(…)`) は構文だけでは型の初期化と区別できず、値として畳まれる (docs/dupscan-detection.md の限界)。
-func isActionCallee(c *sitter.Node, src []byte) bool {
+func isActionCallee(c *sitter.Node, src []byte, static bool) bool {
 	for c != nil {
 		switch c.Kind() {
 		case "postfix_expression": // onDelete!() の !
@@ -552,9 +556,10 @@ func isActionCallee(c *sitter.Node, src []byte) bool {
 				if id := s.ChildByFieldName("suffix"); id != nil {
 					name := id.Utf8Text(src)
 					if name == "init" {
-						// ConnectionID.init(rawValue:) は型の初期化。self.init / super.init は委譲の処理
+						// ConnectionID.init(rawValue:) は型の初期化。self.init / super.init は委譲の処理。
+						// static のメソッドの中の self は型そのものなので、self.init も型の初期化
 						t := c.ChildByFieldName("target")
-						return t != nil && (t.Kind() == "self_expression" || t.Kind() == "super_expression")
+						return t != nil && ((t.Kind() == "self_expression" && !static) || t.Kind() == "super_expression")
 					}
 					return !startsUpper(name)
 				}

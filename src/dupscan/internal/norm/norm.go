@@ -70,6 +70,9 @@ func Normalize(u *tree.Unit) Result {
 	return r
 }
 
+// captureKey は捕まえた名前を局所の名前の表に入れるときの鍵 (番号にする局所の名前と混ぜないよう、別の鍵にする)。
+func captureKey(s string) string { return "\x00capture:" + s }
+
 func localNames(u *tree.Unit) map[string]bool {
 	m := map[string]bool{}
 	for _, p := range u.Params {
@@ -79,6 +82,9 @@ func localNames(u *tree.Unit) map[string]bool {
 	walk = func(n *tree.Node) {
 		if n.Role == tree.RoleDecl {
 			m[n.Text] = true
+		}
+		if n.Capture {
+			m[captureKey(n.Text)] = true
 		}
 		for _, c := range n.Children {
 			walk(c)
@@ -107,7 +113,7 @@ func isImplicitParam(n *tree.Node) bool {
 }
 
 func markRefs(n *tree.Node, locals map[string]bool, refs map[*tree.Node]bool) bool {
-	r := isLocal(n, locals) || isImplicitParam(n)
+	r := isLocal(n, locals) || isImplicitParam(n) || (n.Role == tree.RoleName && locals[captureKey(n.Text)])
 	for _, c := range n.Children {
 		if markRefs(c, locals, refs) {
 			r = true

@@ -331,3 +331,22 @@ final class C {
 	differ(t, src, "h1", "h2", norm.L1, norm.L2)
 	differ(t, src, "init(a: Int)", "init(b: Int)", all3...)
 }
+
+func TestCapturedNamesAndStaticSelfInit(t *testing.T) {
+	src := `
+func t1() { run { [weak store] in store?.save(Config.alpha); store?.flush(Limits.max) } }
+func t2() { run { [weak store] in store?.save(Config.beta); store?.flush(Limits.min) } }
+final class C {
+    var v = 0
+    static func a(_ x: Int) -> C { let c = self.init(id: Defaults.alpha); c.v = x; return c }
+    static func e(_ x: Int) -> C { let c = Self.init(id: Defaults.alpha); c.v = x; return c }
+}`
+	r := parse(t, "Sources/X.swift", src)
+	for _, n := range []string{"t1", "t2"} {
+		if norm.Normalize(unitBy(t, r, n)).L3Trivial {
+			t.Errorf("%s: 捕まえた名前を使う単位が L3Trivial になった", n)
+		}
+	}
+	same(t, src, "t1", "t2", norm.L3)
+	same(t, src, "static a(_ x: Int) -> C", "static e(_ x: Int) -> C", norm.L3)
+}
