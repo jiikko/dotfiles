@@ -541,3 +541,36 @@ func TestRenumberedClosureIsNotNamed(t *testing.T) {
 		}
 	}
 }
+
+func TestOutsideCopyOfNewExcludedUnitIsViolation(t *testing.T) {
+	// 生成の新しい単位 F と同じ commit で、F の写しの外の単位を足した・外の単位 s を F の形に書き換えた: 外の単位は止める。
+	f := func() *group.Entry { return inFile(e("F", "c", "c2", "c3"), "Gen/F.swift") }
+	for name, c := range map[string]struct{ base, head []*group.Entry }{
+		"新しい外の写し":    {[]*group.Entry{e("other", "o", "o2", "o3")}, []*group.Entry{e("other", "o", "o2", "o3"), f(), e("N", "c", "c2", "c3")}},
+		"外の単位を書き換えた": {[]*group.Entry{e("s", "k", "k2", "k3")}, []*group.Entry{f(), e("s", "c", "c2", "c3")}},
+	} {
+		o := opt
+		o.Exclude = pathSet(t, "Gen/**", c.head...)
+		r := Judge(c.base, c.head, o)
+		if !r.Failed() || len(r.Violations) != 1 || len(r.Violations[0].New) != 1 || strings.HasPrefix(r.Violations[0].New[0].Unit.File, "Gen/") {
+			t.Errorf("%s: 外の単位を止めない: %+v", name, r)
+		}
+	}
+}
+
+func TestMovedRenamedExcludedUnitDoesNotDependOnOrder(t *testing.T) {
+	// 生成の a を同じディレクトリの b へ改名して移し、外に新しい写し c を足した: 並びに依らず c を止める。
+	base := []*group.Entry{inFile(e("Gen/a|foo", "x", "x2", "x3"), "Gen/a.swift"), inFile(e("App/h|h", "x", "x2", "x3"), "App/h.swift")}
+	for _, gFirst := range []bool{true, false} {
+		h, g, c := inFile(e("App/h|h", "x", "x2", "x3"), "App/h.swift"), inFile(e("Gen/b|bar", "x", "x2", "x3"), "Gen/b.swift"), inFile(e("App/c|baz", "x", "x2", "x3"), "App/c.swift")
+		head := []*group.Entry{h, c, g}
+		if gFirst {
+			head = []*group.Entry{h, g, c}
+		}
+		o := opt
+		o.Exclude = pathSet(t, "Gen/**", head...)
+		if r := Judge(base, head, o); !r.Failed() || keys(r.Violations[0].New)[0] != "App/c|baz" {
+			t.Errorf("生成が先=%v: 外の新しい写し c を止めない: %+v", gFirst, r)
+		}
+	}
+}

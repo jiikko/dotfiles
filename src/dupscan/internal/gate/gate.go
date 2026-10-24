@@ -11,6 +11,7 @@
 package gate
 
 import (
+	"path"
 	"sort"
 	"strings"
 
@@ -146,8 +147,13 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 // judgeGroup は組が base より増えたかを、メンバーの出どころで決める。
 // byPath は、パスの除外の下にあるので寄せる側から外した、変わった単位。
 func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Entry]*group.Entry, opt Options) (v Violation, ok bool, byPath []*group.Entry) {
-	// パスの除外の下の新しい単位 (出どころが無い) を除いても組が増えていれば、その分で判定する。除いて増えていなければ、
-	// 除いた単位が増やした分なので、除外で通した数に入れる (除外の下の新しい写しの代わりに、前から組にいた外の単位を止めない)。
+	// パスの除外の下の新しい単位 (出どころが無い) があれば、それを除いて判定する (除外の下の新しい写しの代わりに、
+	// 前から組にいた外の単位を止めない):
+	//  1. 除外が無くても違反でなければ違反にしない
+	//  2. 除いても違反なら、その違反 (除いた単位は同じ形の側)
+	//  3. 除くと違反でなくても、本体を変えたか新しい外の単位で、組の中に出どころの仲間がいないもの (除外の下の新しい単位と
+	//     だけ同じ形になった) は寄せる側にする。除いた後の組が 1 人だと 2 は成り立たないので、これが無いと外の写しが通る
+	//  4. どれでもなければ、除いた単位を除外で通した数に入れる
 	if opt.Exclude != nil {
 		var rest, fresh []*group.Entry
 		for _, m := range g {
@@ -158,33 +164,39 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 			}
 		}
 		if len(fresh) > 0 {
-			v, ok, byPath = judgeGroup(lv, h, rest, origin, opt)
-			if ok {
+			bare := opt
+			bare.Exclude = nil
+			if _, was, _ := judgeGroup(lv, h, g, origin, bare); !was {
+				return Violation{}, false, nil
+			}
+			if v, ok, byPath = judgeGroup(lv, h, rest, origin, opt); ok {
 				v.Same = append(v.Same, fresh...)
 				return v, ok, byPath
 			}
-			bare := opt
-			bare.Exclude = nil
-			if _, was, _ := judgeGroup(lv, h, g, origin, bare); was {
-				byPath = append(byPath, fresh...)
+			count := map[string]int{}
+			for _, m := range rest {
+				count[bucketOf(m, lv, origin, opt)]++
 			}
-			return Violation{}, false, byPath
+			v = Violation{Level: lv, Fail: failAt(lv, opt.Fail)}
+			for _, m := range rest {
+				lone := count[bucketOf(m, lv, origin, opt)] == 1
+				if lone && bodyChanged(m, origin) && !opt.Exclude.Allowed(m) && !opt.Exclude.PathExcluded(m, lv) {
+					v.New = append(v.New, m)
+				} else {
+					v.Same = append(v.Same, m)
+				}
+			}
+			if len(v.New) > 0 {
+				v.Same = append(v.Same, fresh...)
+				return v, true, byPath
+			}
+			return Violation{}, false, append(byPath, fresh...)
 		}
 	}
 	buckets := map[string]int{}
 	from := map[*group.Entry]string{}
 	for _, m := range g {
-		key := "new:" + m.Unit.Key // 出どころの無い単位は、それぞれ別
-		if b := origin[m]; b != nil {
-			key = "base:" + b.Result.Hash[lv]
-			// base でこの段の比べる対象でなかった相手から来た別の単位 (鍵が違う) は、比べる対象だった相手と別に数える
-			// (origins は種類をまたいで当てないので、ここに来るのは base で L3 だけ比べなかった L3Trivial の相手)。
-			// 同じに数えると、L3 で比べていなかった単位が組に入った分を見逃す。その場で育った単位 (鍵が同じ) は
-			// 同じに数える: 別に数えたり捨てたりすると、写しが同じ修正で一緒に下限を超えたときに止まる。
-			if !group.Eligible(b, lv, opt.Options) && b.Unit.Key != m.Unit.Key {
-				key = "small:" + b.Result.Hash[lv]
-			}
-		}
+		key := bucketOf(m, lv, origin, opt)
 		from[m] = key
 		buckets[key]++
 	}
@@ -211,10 +223,7 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 	// 寄せる側 (新しい) は、一番多い出どころ以外から来た、この変更で本体を変えた (か新しい) 単位 (新しい単位どうしの組なら全部)。
 	// 本体を変えていない単位 (触っていない・移しただけ・クロージャの番号がずれただけ) は寄せる側に出さない
 	// (出すと、組を寄せた単位の代わりに、その commit で中身に触っていない単位に warning が付く)。
-	touched := func(m *group.Entry) bool {
-		b := origin[m]
-		return b == nil || b.Result.Hash[norm.L1] != m.Result.Hash[norm.L1]
-	}
+	touched := func(m *group.Entry) bool { return bodyChanged(m, origin) }
 	isCand := func(m *group.Entry) bool {
 		return (from[m] != mostKey || strings.HasPrefix(mostKey, "new:")) && touched(m)
 	}
@@ -257,6 +266,28 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 	return v, true, nil
 }
 
+// bucketOf はメンバーの出どころ (base の側の相手がその段で持っていた形)。
+func bucketOf(m *group.Entry, lv norm.Level, origin map[*group.Entry]*group.Entry, opt Options) string {
+	b := origin[m]
+	if b == nil {
+		return "new:" + m.Unit.Key // 出どころの無い単位は、それぞれ別
+	}
+	// base でこの段の比べる対象でなかった相手から来た別の単位 (鍵が違う) は、比べる対象だった相手と別に数える
+	// (origins は種類をまたいで当てないので、ここに来るのは base で L3 だけ比べなかった L3Trivial の相手)。
+	// 同じに数えると、L3 で比べていなかった単位が組に入った分を見逃す。その場で育った単位 (鍵が同じ) は
+	// 同じに数える: 別に数えたり捨てたりすると、写しが同じ修正で一緒に下限を超えたときに止まる。
+	if !group.Eligible(b, lv, opt.Options) && b.Unit.Key != m.Unit.Key {
+		return "small:" + b.Result.Hash[lv]
+	}
+	return "base:" + b.Result.Hash[lv]
+}
+
+// bodyChanged は、本体を変えたか新しい単位か (移しただけ・クロージャの番号がずれただけの単位は変えていない)。
+func bodyChanged(m *group.Entry, origin map[*group.Entry]*group.Entry) bool {
+	b := origin[m]
+	return b == nil || b.Result.Hash[norm.L1] != m.Result.Hash[norm.L1]
+}
+
 func hasAny(g []*group.Entry, ok func(*group.Entry) bool) bool {
 	for _, m := range g {
 		if ok(m) {
@@ -271,8 +302,8 @@ func hasAny(g []*group.Entry, ok func(*group.Entry) bool) bool {
 //  1. 鍵も本体 (L1) も同じ単位 (変わっていない)
 //  2. 同じファイルで本体が同じ単位。同じ名前の相手を先に当てる (改名・クロージャの番号のずれ。名前をファイルで
 //     区切らないと、別のファイルに足した同じ名前の新しい写しが、改名した写しの相手を取る)
-//  3. 本体が同じ単位 (別のファイルへの移動)。同じ名前の相手を先に当てる (名前を変えずに移した写しが、別のファイルに
-//     足した新しい写しと相手を取り合うと、head の並びで名指しが決まる)
+//  3. 本体が同じ単位 (別のファイルへの移動)。同じ名前の相手、次に同じディレクトリの相手を先に当てる (移した写しが、別の
+//     ファイルに足した新しい写しと相手を取り合うと、head の並びで名指しが決まる。除外の下の単位では rc も変わる)
 //  4. 鍵が同じ単位 (その場での編集)。クロージャを除く: クロージャの鍵は囲む単位の中の出現の順番で、前のクロージャを
 //     消すと後ろのクロージャが消えた鍵に入るため、鍵で当てると消えたクロージャを相手にしてしまう
 //  5. 同じ修正を入れた写し: 本体が同じ head の単位が既に相手を持っていれば、その相手の base での本体と同じ base の単位
@@ -366,6 +397,7 @@ func matchLoose(match func(func(*group.Entry) string), head []*group.Entry, out 
 	match(func(e *group.Entry) string { return join(l1(e), e.Unit.File, e.Unit.Name) })
 	match(func(e *group.Entry) string { return join(l1(e), e.Unit.File) })
 	match(func(e *group.Entry) string { return join(l1(e), e.Unit.Name) })
+	match(func(e *group.Entry) string { return join(l1(e), path.Dir(e.Unit.File)) })
 	match(l1)
 	match(func(e *group.Entry) string {
 		if e.Unit.Kind == tree.KindClosure {
