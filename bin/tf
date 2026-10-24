@@ -1,0 +1,3 @@
+#!/usr/bin/env zsh
+# tf — treefiler の短い名前。ビルドと起動は bin/treefiler に任せる (ここで go_autobuild_exec を呼ぶと実装が 2 つになる)。
+exec "${0:A:h}/treefiler" "$@"

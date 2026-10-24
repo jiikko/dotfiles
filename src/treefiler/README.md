@@ -7,6 +7,7 @@
 
 ```sh
 bin/treefiler [DIR]   # DIR (既定はカレントディレクトリ) を root にして開く
+tf [DIR]              # bin/tf は bin/treefiler の短い名前
 ```
 
 tmux では `prefix + f` (`C-t f`) で、いま見ているペインの cwd を root にした popup が開く (`_tmux.conf`)。
