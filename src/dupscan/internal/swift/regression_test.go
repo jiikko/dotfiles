@@ -273,3 +273,36 @@ func wB(_ it: inout I) -> Int { var n = 0; while case .offline = it.next() { n +
 		differ(t, src, p[0], p[1], all3...)
 	}
 }
+
+func TestBindingsPerClauseAndForItems(t *testing.T) {
+	src := `
+let minValue = 0, maxValue = 100
+func forA(_ xs: [(Int, Int)]) -> Int { var s = 0; for (a, b) in xs { s += a - b }; return s }
+func forB(_ xs: [(Int, Int)]) -> Int { var t = 0; for (x, y) in xs { t += x - y }; return t }
+func forC(_ xs: [(Int, Int)]) -> Int { var s = 0; for (a, b) in xs { s += a * b }; return s }
+func icA(_ z: Int) -> Int { if case minValue = z { return 1 }; return z }
+func icB(_ z: Int) -> Int { if case maxValue = z { return 1 }; return z }
+func clA(_ o: Int?, _ z: E) -> Int { if let a = o, case .y(minValue) = z { return a }; return 0 }
+func clB(_ o: Int?, _ z: E) -> Int { if let a = o, case .y(maxValue) = z { return a }; return 0 }
+func capA(_ xs: [Int]) -> [Int] { xs.map { [k = xs.count] a in a * k + 1 } }
+func capB(_ ys: [Int]) -> [Int] { ys.map { [m = ys.count] b in b * m + 1 } }`
+	same(t, src, "forA", "forB", norm.L1)
+	differ(t, src, "forA", "forC", all3...)
+	differ(t, src, "icA", "icB", norm.L1, norm.L2)
+	differ(t, src, "clA", "clB", norm.L1, norm.L2)
+	same(t, src, "capA", "capB", norm.L1)
+}
+
+func TestValueConstructionsFoldAtL3(t *testing.T) {
+	src := `
+func a1(_ p: String) -> L { L(c: ConnectionID.init(rawValue: "c"), path: P(rawValue: p)) }
+func a2(_ p: String) -> L { L(c: [Int](repeating: 0, count: 3), path: P(rawValue: p)) }
+func a3(_ p: String) -> L { L(c: Ärger(rawValue: "c"), path: P(rawValue: p)) }
+func b0(_ p: String) -> L { L(c: connectionID, path: P(rawValue: p)) }
+func repA(_ it: inout I) -> Int { var n = 0; repeat { n += 1 } while case .timeout = it.next(); return n }
+func repB(_ it: inout I) -> Int { var n = 0; repeat { n += 1 } while case .offline = it.next(); return n }`
+	for _, a := range []string{"a1", "a2", "a3"} {
+		same(t, src, a, "b0", norm.L3)
+	}
+	differ(t, src, "repA", "repB", all3...)
+}

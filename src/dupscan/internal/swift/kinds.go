@@ -63,6 +63,38 @@ var structKinds = set(
 	"willset_clause", "willset_didset_block",
 )
 
+// kindClass は種類の分類。
+type kindClass int
+
+const (
+	classStruct kindClass = iota
+	classExpr
+	classLiteral
+	className
+	classType
+	classComment
+	classUnknown // 表に無い種類 (文法を上げて増えたもの)。構造として扱い、網羅テストが落とす
+)
+
+// classify は種類を分類する。変換 (conv) も網羅テストもこれを通す (表と変換が別々に分類を持たないように)。
+func classify(k string) kindClass {
+	switch {
+	case nameKinds[k]:
+		return className
+	case typeKinds[k]:
+		return classType
+	case literalKinds[k] != "":
+		return classLiteral
+	case commentKinds[k]:
+		return classComment
+	case exprKinds[k]:
+		return classExpr
+	case structKinds[k]:
+		return classStruct
+	}
+	return classUnknown
+}
+
 func set(ks ...string) map[string]bool {
 	m := make(map[string]bool, len(ks))
 	for _, k := range ks {

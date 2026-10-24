@@ -70,7 +70,7 @@ while IFS= read -r go_mod; do
 		case "$name" in */*) ;; *)
 			# コメントを外し、=> の直後の語を字面の完全一致で比べる (正規表現に名前を埋めると . が任意の 1 文字に当たる)。
 			# 比べる値は環境変数で渡す (-v は \ を解釈する)。go は CRLF の go.mod も受け付けるので \r を落とす。
-			if REPLACE_TARGET="./third_party/$name" awk 'BEGIN { t = ENVIRON["REPLACE_TARGET"] } { sub(/\r$/, ""); sub(/\/\/.*/, ""); for (i = 1; i < NF; i++) if ($i == "=>" && ($(i + 1) == t || $(i + 1) == t "/")) found = 1 } END { exit !found }' "$SRC_DIR/$module/go.mod"; then
+			if REPLACE_TARGET="./third_party/$name" awk 'BEGIN { t = ENVIRON["REPLACE_TARGET"] } { sub(/\r$/, ""); sub(/\/\/.*/, ""); gsub(/"/, ""); for (i = 1; i < NF; i++) if ($i == "=>" && ($(i + 1) == t || $(i + 1) == t "/")) found = 1 } END { exit !found }' "$SRC_DIR/$module/go.mod"; then
 				continue
 			fi
 			;;

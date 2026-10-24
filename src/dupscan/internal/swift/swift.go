@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	swiftgrammar "github.com/alex-pinkus/tree-sitter-swift/bindings/go"
@@ -403,16 +404,16 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 		out.Role = tree.RoleToken
 		out.Text = w.text(n)
 		return out
-	case nameKinds[k]:
+	case classify(k) == className:
 		out.Text = w.text(n)
 		out.Role = w.nameRole(parent, field, binding, afterDot)
 		out.Expr = out.Role == tree.RoleName
 		return out
-	case typeKinds[k]:
+	case classify(k) == classType:
 		out.Role = tree.RoleType
 		out.Text = w.text(n)
 		return out
-	case literalKinds[k] != "":
+	case classify(k) == classLiteral:
 		out.Role = tree.RoleLiteral
 		out.LitKind = literalKinds[k]
 		out.Text = w.text(n)
@@ -422,39 +423,62 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 		// 子の無い名前つきの節 (custom_operator の `<+>`・statement_label の `outer:`) は字面をハッシュに入れる。
 		out.Role = tree.RoleToken
 		out.Text = w.text(n)
-		out.Expr = exprKinds[k]
+		out.Expr = classify(k) == classExpr
 		return out
 	}
-	out.Expr = exprKinds[k]
+	out.Expr = classify(k) == classExpr
 	if k == "directly_assignable_expression" {
 		out.Keep = true
 	}
-	// let / var は pattern の中 (`case let .some(z)`) にも、その外の兄弟 (`let (a, b) = t` の property_declaration・
-	// `if case let .pair(x, y) = v` の if_statement に平らに置かれたトークン) にも現れる。どちらでも、その横の pattern の名前は束縛。
-	// 束縛は pattern の節とその下にだけ渡す (本体・初期化子の側へ渡すと、中の switch の `case minValue:` まで局所になる)。
-	binds := binding && k == "pattern"
-	for i := range n.ChildCount() {
-		if c := n.Child(i); c.Kind() == "value_binding_pattern" || (!c.IsNamed() && (w.text(c) == "let" || w.text(c) == "var")) {
-			binds = true
+	// let / var は pattern の中 (`case let .some(z)`) にも、その外 (`let (a, b) = t` の property_declaration・
+	// `if case let .pair(x, y) = v` の if_statement に平らに置かれたトークン) にも現れる。
+	//   - pattern の中: 外から渡された束縛か、pattern 自身が let / var を持てば、その下全部に渡す
+	//   - それ以外: let / var から、条件の区切りの `,` までを 1 つの節とし、その中の pattern と bound_identifier にだけ渡す
+	//     (本体・初期化子の側へ渡すと中の switch の `case minValue:` まで局所になり、文の単位で渡すと
+	//     `if let a = o, case .y(minValue) = z` の minValue まで局所になる)
+	//   - for の項目 (`for (a, b) in`) は let が無くても束縛
+	inPattern := k == "pattern"
+	patternBinds := inPattern && binding
+	if inPattern {
+		for i := range n.ChildCount() {
+			if isBindingKeyword(n.Child(i), w.src) {
+				patternBinds = true
+			}
 		}
 	}
+	condList := k == "if_statement" || k == "guard_statement" || k == "while_statement" || k == "repeat_while_statement"
+	clause := false
+	depth := 0 // case パターンの `.pair(x, y)` の括弧と , も if 文の直下に平らに並ぶので、深さ 0 の , だけを条件の区切りにする
 	firstNamed := true
 	prevDot := false
 	casePattern := false // `if case .timeout = e` の case から = までは pattern (case 名を畳まない)
 	for i := range n.ChildCount() {
 		c := n.Child(i)
-		if commentKinds[c.Kind()] {
+		if classify(c.Kind()) == classComment {
 			continue
 		}
-		if (k == "if_statement" || k == "guard_statement" || k == "while_statement") && !c.IsNamed() {
+		f := n.FieldNameForChild(uint32(i))
+		if isBindingKeyword(c, w.src) {
+			clause = true
+		}
+		if condList && !c.IsNamed() {
 			switch w.text(c) {
 			case "case":
 				casePattern = true
 			case "=":
 				casePattern = false
+			case "(":
+				depth++
+			case ")":
+				depth--
+			case ",":
+				if depth == 0 {
+					clause = false
+				}
 			}
 		}
-		cn := w.conv(c, n, n.FieldNameForChild(uint32(i)), binds && (k == "pattern" || c.Kind() == "pattern"), prevDot)
+		childBinds := patternBinds || (clause && (c.Kind() == "pattern" || f == "bound_identifier")) || (k == "for_statement" && f == "item")
+		cn := w.conv(c, n, f, childBinds, prevDot)
 		if casePattern && c.IsNamed() {
 			cn.Keep = true
 		}
@@ -479,6 +503,17 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 	return out
 }
 
+func isBindingKeyword(c *sitter.Node, src []byte) bool {
+	if c.Kind() == "value_binding_pattern" {
+		return true
+	}
+	if c.IsNamed() {
+		return false
+	}
+	t := c.Utf8Text(src)
+	return t == "let" || t == "var"
+}
+
 // isActionCallee は callee が処理の呼び出しか。値を作るだけの呼び出し (大文字で始まる型の初期化 `ConnectionID(…)`・
 // 暗黙のメンバー `.bucket(…)`) 以外は全部処理に数える (`_save`・“ `delete` “・英字以外の名前も処理)。
 // 大文字で始まる処理 (`XCTUnwrap(…)`) は構文だけでは型の初期化と区別できず、値として畳まれる (docs/dupscan-detection.md の限界)。
@@ -497,12 +532,15 @@ func isActionCallee(c *sitter.Node, src []byte) bool {
 			if op := c.ChildByFieldName("operation"); op != nil && op.Utf8Text(src) == "." {
 				return false
 			}
+		case "array_literal", "dictionary_literal": // [Int](repeating:count:) などの型の初期化
+			return false
 		case "simple_identifier":
 			return !startsUpper(c.Utf8Text(src))
 		case "navigation_expression":
 			if s := c.ChildByFieldName("suffix"); s != nil {
 				if id := s.ChildByFieldName("suffix"); id != nil {
-					return !startsUpper(id.Utf8Text(src))
+					name := id.Utf8Text(src)
+					return name != "init" && !startsUpper(name) // ConnectionID.init(rawValue:) も型の初期化
 				}
 			}
 		}
@@ -513,7 +551,7 @@ func isActionCallee(c *sitter.Node, src []byte) bool {
 
 func startsUpper(s string) bool {
 	r, _ := utf8.DecodeRuneInString(s)
-	return r >= 'A' && r <= 'Z'
+	return unicode.IsUpper(r)
 }
 
 // nameRole は simple_identifier の役割を、親・field 名・束縛の文脈から決める。
@@ -521,15 +559,15 @@ func (w *walker) nameRole(parent *sitter.Node, field string, binding, afterDot b
 	if parent == nil {
 		return tree.RoleName
 	}
-	if field == "bound_identifier" {
-		return tree.RoleDecl
+	if field == "bound_identifier" && binding {
+		return tree.RoleDecl // `if case minValue = z` の minValue も bound_identifier だが、let / var が無ければ値
 	}
 	switch parent.Kind() {
 	case "value_argument_label":
 		return tree.RoleLabel
 	case "navigation_suffix":
 		return tree.RoleMember
-	case "lambda_parameter", "parameter", "didset_clause", "willset_clause":
+	case "lambda_parameter", "parameter", "didset_clause", "willset_clause", "capture_list_item":
 		return tree.RoleDecl // didSet(old) の old も引数
 	case "pattern":
 		// `case .light:` の light・`case let .some(z)` の some は enum の case 名。`case minValue:` は値。

@@ -384,6 +384,20 @@ printf '\nreplace example.com/qr => ./third_party/q.r\n' >> "$BACKSLASH_THIRD_PA
 rm -rf "$BACKSLASH_THIRD_PARTY/src/demo/vendor"
 run_fixture "$BACKSLASH_THIRD_PARTY" delegate
 expect_failure 'ディレクトリ名のバックスラッシュを解釈して当てた replace' 'nested Go module は未対応です: src/demo/third_party/q'
+# go は引用符付きの replace の先も受け付ける。
+QUOTED_THIRD_PARTY="$WORK/quoted-third-party-module"
+mkdir -p "$QUOTED_THIRD_PARTY"
+cp -R "$BASE/." "$QUOTED_THIRD_PARTY/"
+mkdir -p "$QUOTED_THIRD_PARTY/src/demo/third_party/stub"
+printf 'module example.com/stub\n\ngo 1.25.0\n' > "$QUOTED_THIRD_PARTY/src/demo/third_party/stub/go.mod"
+printf '\nreplace example.com/stub => "./third_party/stub"\n' >> "$QUOTED_THIRD_PARTY/src/demo/go.mod"
+rm -rf "$QUOTED_THIRD_PARTY/src/demo/vendor"
+run_fixture "$QUOTED_THIRD_PARTY" delegate
+if [ "$RC" -eq 0 ]; then
+	ok '引用符付きの replace で指された third_party の module を通す'
+else
+	bad "引用符付きの replace を読めない (rc=$RC): $OUT"
+fi
 # module でない third_party の package は、この module の package なので doc を検査する (名前だけで外さない)。
 THIRD_PARTY_PACKAGE="$WORK/third-party-package"
 mkdir -p "$THIRD_PARTY_PACKAGE"

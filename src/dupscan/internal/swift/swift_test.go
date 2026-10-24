@@ -25,6 +25,9 @@ func TestEveryKindIsClassified(t *testing.T) {
 		if literalKinds[k] != "" {
 			c++
 		}
+		if classify(k) == classUnknown {
+			t.Errorf("%s を classify が分類できない", k)
+		}
 		if c != 1 {
 			t.Errorf("%s が分類されていない、または 2 つ以上の分類にある (%d)", k, c)
 		}

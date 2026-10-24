@@ -33,3 +33,4 @@ epic 890 の土台。`src/` の新しいプロジェクトの手順に沿って�
     `scripts/go_packages_index.sh` は入れ子の module を落とすので、module の直下の `third_party/` だけを外す例外を足した (テスト `tests/scripts/test_go_packages_index.sh` に、直下は通し深い場所は落とす 2 件を足し、変更前の版と最初の誤った版でそれぞれ赤を確認)
   - 手元の `make lint` (温まった状態) は 10 秒。**残り**: CI のコールドの所要 (cgo で parser.c 23 MB をコンパイル) の実測・他の repo の CI での入れ方
 - 2026-10-24 3 周目の敵対的レビュー: `scripts/go_packages_index.sh` の replace の先の判定で、CRLF の go.mod を読み、比べる値を環境変数で渡す (`-v` は `\` を解釈した)。テスト 2 件は直す前で赤
+- 2026-10-24 CI: src/dupscan の lint 52 秒・test 35 秒 (cgo のコールドビルドを含む。run 40102531110)。別の workflow の unused (production から届かない symbol の検査) が、網羅テストだけが使う structKinds を赤にした。種類の分類を classify に寄せて変換も通すように直した。手元の make test-changed / test-lint はこの検査を含まないので、新しい Go の module では `make test-unused-excluding-tests` も回す / go_packages_index.sh は引用符付きの replace も読む
