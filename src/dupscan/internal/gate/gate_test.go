@@ -197,3 +197,81 @@ func keys(es []*group.Entry) []string {
 	}
 	return out
 }
+
+// cl は段ごとに別の値を持つクロージャ。
+func cl(key, h1, h2, h3 string) *group.Entry {
+	x := e(key, h1, h2, h3)
+	x.Unit.Kind = tree.KindClosure
+	return x
+}
+
+func TestClosureShiftWithEditIsNotViolation(t *testing.T) {
+	// 先頭のクロージャを消して後ろの番号がずれ、ずれた写しを小さく直した (鍵は消えたクロージャと衝突する)。
+	base := []*group.Entry{cl("f#closure1", "p", "p2", "p3"), cl("f#closure2", "q", "q2", "q3"), e("g", "q", "q2", "q3")}
+	head := []*group.Entry{cl("f#closure1", "q'", "q2", "q3"), e("g", "q", "q2", "q3")}
+	if r := Judge(base, head, opt); len(r.Violations) != 0 {
+		t.Errorf("番号のずれと小さな編集で違反になった: %+v", r)
+	}
+	// ずれたうえで、組の 2 つに同じ修正を入れた。
+	head = []*group.Entry{cl("f#closure1", "r", "r2", "r3"), e("g", "r", "r2", "r3")}
+	if r := Judge(base, head, opt); len(r.Violations) != 0 {
+		t.Errorf("番号のずれと同じ修正で違反になった: %+v", r)
+	}
+}
+
+func TestOriginOrderDoesNotDecide(t *testing.T) {
+	// 写しの組 (m, d) に同じ修正を入れて d を移し (n1)、L3 でだけ似ている新しい単位 n2 を足した: head の並びに依らず止めない。
+	base := []*group.Entry{e("m", "D", "Dy", "Z"), e("d", "D", "Dy", "Z")}
+	mk := func() (m, n1, n2 *group.Entry) {
+		m, n1, n2 = e("m", "P", "Py", "Z"), e("n1", "P", "Py", "Z"), e("n2", "Q", "Qy", "Z")
+		n1.Unit.Name = "d"
+		return
+	}
+	m, n1, n2 := mk()
+	a := Judge(base, []*group.Entry{m, n1, n2}, opt)
+	m, n1, n2 = mk()
+	b := Judge(base, []*group.Entry{m, n2, n1}, opt)
+	if a.Failed() || b.Failed() {
+		t.Errorf("同じ修正と移動で止まった (並び m,n1,n2: %v / m,n2,n1: %v)", a.Failed(), b.Failed())
+	}
+}
+
+func TestIneligibleBaseUnitIsNotOrigin(t *testing.T) {
+	// base でクロージャの下限より小さく組に入らなかった単位を消し、同じ本体の関数 n を足した: n は新しい写し。
+	o := opt
+	o.MinClosureNodes = 20
+	small := func(x *group.Entry) *group.Entry { x.Result.Nodes = 15; return x }
+	base := []*group.Entry{small(e("a", "x", "x2", "x3")), small(cl("h#closure1", "x", "x2", "x3"))}
+	head := []*group.Entry{small(e("a", "x", "x2", "x3")), small(e("n", "x", "x2", "x3"))}
+	r := Judge(base, head, o)
+	if !r.Failed() || len(r.Violations) != 1 || keys(r.Violations[0].New)[0] != "n" {
+		t.Errorf("比べる対象でなかった単位を出どころにして新しい写しを通した: %+v", r)
+	}
+}
+
+func TestRenameInFileIsNotNamedAsNew(t *testing.T) {
+	// B の fmt を render へ改名し、別のファイル C に同じ名前の写し fmt を足した: 新しいのは C の fmt。
+	at := func(key, file, name string) *group.Entry {
+		x := e(key, "x", "x2", "x3")
+		x.Unit.File, x.Unit.Name = file, name
+		return x
+	}
+	base := []*group.Entry{at("A|a", "A", "a"), at("B|fmt", "B", "fmt")}
+	head := []*group.Entry{at("A|a", "A", "a"), at("B|render", "B", "render"), at("C|fmt", "C", "fmt")}
+	r := Judge(base, head, opt)
+	if len(r.Violations) != 1 || len(r.Violations[0].New) != 1 || r.Violations[0].New[0].Unit.Key != "C|fmt" {
+		t.Errorf("改名した写しを新しいと名指しした: %+v", r)
+	}
+}
+
+func TestSmallCopiesGrowingTogetherAreNotViolation(t *testing.T) {
+	// base で下限より小さかったクロージャの写し 2 つが、同じ修正で下限を超えた: base で既に写しだったので止めない。
+	o := opt
+	o.MinClosureNodes = 20
+	small := func(x *group.Entry) *group.Entry { x.Result.Nodes = 15; return x }
+	base := []*group.Entry{small(cl("f#closure1", "x", "x2", "x3")), small(cl("g#closure1", "x", "x2", "x3"))}
+	head := []*group.Entry{cl("f#closure1", "y", "y2", "y3"), cl("g#closure1", "y", "y2", "y3")}
+	if r := Judge(base, head, o); len(r.Violations) != 0 {
+		t.Errorf("小さかった写しが一緒に育って違反になった: %+v", r)
+	}
+}

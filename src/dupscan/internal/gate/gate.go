@@ -12,9 +12,11 @@ package gate
 
 import (
 	"sort"
+	"strings"
 
 	"dupscan/internal/group"
 	"dupscan/internal/norm"
+	"dupscan/internal/tree"
 )
 
 // Options は判定の設定。
@@ -114,6 +116,12 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 		key := "new:" + m.Unit.Key // 出どころの無い単位は、それぞれ別
 		if b := origin[m]; b != nil {
 			key = "base:" + b.Result.Hash[lv]
+			// base でこの段の比べる対象でなかった相手 (下限より小さい・読めない) は、比べる対象だった相手と別に数える。
+			// 同じに数えると、小さいクロージャを消して同じ本体の関数を足したときに新しい写しが通る。捨てると、
+			// 小さかった写し 2 つが同じ修正で下限を超えたときに止まる (どちらも base で既に写しだった)。
+			if !eligible(b, lv, opt.Options) {
+				key = "small:" + b.Result.Hash[lv]
+			}
 		}
 		from[m] = key
 		buckets[key]++
@@ -164,18 +172,24 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 // origins は head の単位ごとに base の側の相手 (出どころ) を 1 対 1 で当てる。ずれに強い順に当てる:
 //  0. 読めない構文の単位は鍵で (本体で当てられない)
 //  1. 鍵も本体 (L1) も同じ単位 (変わっていない)
-//  2. 本体 (L1) が同じ単位。同じ名前の相手を先に当てる (移動・改名・クロージャの番号のずれ。クロージャの鍵は
-//     囲む単位の中の出現の順番なので、前に 1 つ足す・消すだけで後ろの鍵がずれる)
-//  3. 鍵が同じ単位 (その場での編集)
-//  4. まだ相手の無い base の単位のうち、L2、次に L3 の形が同じもの (改名・移動しながらの小さな編集)
+//  2. 同じファイルで本体が同じ単位。同じ名前の相手を先に当てる (改名・クロージャの番号のずれ。名前をファイルで
+//     区切らないと、別のファイルに足した同じ名前の新しい写しが、改名した写しの相手を取る)
+//  3. 本体が同じ単位 (別のファイルへの移動)
+//  4. 鍵が同じ単位 (その場での編集)。クロージャを除く: クロージャの鍵は囲む単位の中の出現の順番で、前のクロージャを
+//     消すと後ろのクロージャが消えた鍵に入るため、鍵で当てると消えたクロージャを相手にしてしまう
+//  5. 同じ修正を入れた写し: 本体が同じ head の単位が既に相手を持っていれば、その相手の base での本体と同じ base の単位
+//     (写しの組に同じ修正を入れて片方を移した・番号がずれた。緩い段より先に当てないと、先着で別の単位に相手を取られる)
+//  6. まだ相手の無い base の単位のうち、L2、次に L3 の形が同じもの (改名・移動しながらの小さな編集)
+//  7. クロージャの鍵
+//
+// 段の鍵が空の単位は、その段では当てない。
 func origins(base, head []*group.Entry) map[*group.Entry]*group.Entry {
 	out := map[*group.Entry]*group.Entry{}
 	used := map[*group.Entry]bool{}
 	match := func(keyOf func(*group.Entry) string) {
 		pool := map[string][]*group.Entry{}
 		for _, b := range base {
-			if !used[b] {
-				k := keyOf(b)
+			if k := keyOf(b); !used[b] && k != "" {
 				pool[k] = append(pool[k], b)
 			}
 		}
@@ -184,6 +198,9 @@ func origins(base, head []*group.Entry) map[*group.Entry]*group.Entry {
 				continue
 			}
 			k := keyOf(e)
+			if k == "" {
+				continue
+			}
 			for len(pool[k]) > 0 && used[pool[k][0]] {
 				pool[k] = pool[k][1:]
 			}
@@ -193,24 +210,54 @@ func origins(base, head []*group.Entry) map[*group.Entry]*group.Entry {
 			}
 		}
 	}
-	// 読めない構文の単位は本体で当てられないので、先に鍵で当てる (当てないと、その base の相手を新しい写しが
-	// 「移動元」として取り、読めなくした写しが新しい写しを隠す)。
-	byKey := map[string]*group.Entry{}
+	isBase := map[*group.Entry]bool{}
 	for _, b := range base {
-		byKey[b.Unit.Key] = b
+		isBase[b] = true
 	}
-	for _, e := range head {
-		if b := byKey[e.Unit.Key]; e.Unit.Unreadable && b != nil && !used[b] {
-			out[e], used[b] = b, true
+	match(func(e *group.Entry) string {
+		if isBase[e] || e.Unit.Unreadable {
+			return e.Unit.Key
 		}
-	}
+		return ""
+	})
 	l1 := func(e *group.Entry) string { return e.Result.Hash[norm.L1] }
-	match(func(e *group.Entry) string { return e.Unit.Key + "\x00" + l1(e) })
-	match(func(e *group.Entry) string { return l1(e) + "\x00" + e.Unit.Name })
+	join := func(parts ...string) string {
+		for _, p := range parts {
+			if p == "" {
+				return ""
+			}
+		}
+		return strings.Join(parts, "\x00")
+	}
+	match(func(e *group.Entry) string { return join(e.Unit.Key, l1(e)) })
+	match(func(e *group.Entry) string { return join(l1(e), e.Unit.File, e.Unit.Name) })
+	match(func(e *group.Entry) string { return join(l1(e), e.Unit.File) })
 	match(l1)
-	match(func(e *group.Entry) string { return e.Unit.Key })
+	match(func(e *group.Entry) string {
+		if e.Unit.Kind == tree.KindClosure {
+			return ""
+		}
+		return e.Unit.Key
+	})
+	byL1 := map[string][]*group.Entry{}
+	for _, e := range head {
+		byL1[l1(e)] = append(byL1[l1(e)], e)
+	}
+	match(func(e *group.Entry) string {
+		if isBase[e] {
+			return l1(e)
+		}
+		k := "" // 相手を持つ写しが複数あれば、相手の本体の小さい方 (並びで揺れないように)
+		for _, s := range byL1[l1(e)] {
+			if b := out[s]; b != nil && (k == "" || l1(b) < k) {
+				k = l1(b)
+			}
+		}
+		return k
+	})
 	match(func(e *group.Entry) string { return e.Result.Hash[norm.L2] })
 	match(func(e *group.Entry) string { return e.Result.Hash[norm.L3] })
+	match(func(e *group.Entry) string { return e.Unit.Key })
 	return out
 }
 
