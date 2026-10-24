@@ -11,7 +11,7 @@ repo で実行すると、テスト / 製品コードのそれぞれで重複し
 obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身のヘルパーが 6 つ見つかったことが起点 (経緯は obaket issue 1298)。
 
 **主な用途 (ユーザー 2026-10-24)**: Claude Code にコードを変更させている間に、重複したメソッドを作らせない・既存のメソッドを見つけやすくして実装を滑らかにする。
-後からまとめて重複を洗う使い方 (週次の audit) より、編集の最中に効く使い方 ([902](902-feat-dupscan-claude-code-hook.md)) を先にする。
+後からまとめて重複を洗う使い方 (週次の audit) より、実装の最中に効く使い方 (書く前に索引を引く [903](903-docs-dupscan-search-before-write-procedure.md) と、`make test` で落とす [905](905-feat-dupscan-ci-check-gate.md)) を先にする。
 **既存の道具の調査 ([901](901-research-dupscan-existing-tools.md)) を先に済ませ、足りない部分だけを作る** (当初は既存の道具を調べていなかった)。
 
 ## 子 issue
@@ -30,9 +30,9 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [898](898-test-dupscan-obaket-calibration.md) | obaket に当てた実測・既定の閾値・PR 24 の前の木での肯定と否定の期待値・変異 (Type-3 の条件は 895 の着手時) | 894・896 |
 | [899](pending/899-research-dupscan-lsp-integration.md) | **保留** (LSP は使わない)。構文木の近似で判断を誤る実例が出たら、LSP・言語の解析の道具で補う案を再開する | 896 |
 | [900](900-research-dupscan-next-languages.md) | 次の言語 (Go・zsh) の読み取りを測る | 893 |
-| [902](902-feat-dupscan-claude-code-hook.md) | **Claude Code の編集で効かせる**: 近い既存のメソッドを知らせる・止める hook (止めるかは所要と誤検知の割合を見て決める) | 893・894・897・898・901 |
-| [904](904-feat-dupscan-trial-subcommands.md) | 人が試す入口 (`near`・`explain`・`hook --dry-run`)。動作確認として何ができるか・なぜ同じと判定したかを手で確かめる | 893・894・896・897・898・902 |
-| [905](905-feat-dupscan-ci-check-gate.md) | **CI で新しく入った重複を落とす** (`dupscan check --base`)。hook の抜け道 (Bash での書き換え・人の変更) を止める。止めるかは所要と誤検知の割合を見て決める | 893・894・896・898 |
+| [902](pending/902-feat-dupscan-claude-code-hook.md) | **保留**: 編集のたびの hook。止める網は `make test` (905) にした。`make test` まで待つと手戻りが大きい実例が続いたら再開 | — |
+| [904](904-feat-dupscan-trial-subcommands.md) | 人が試す入口 (`near`・`explain`・`gate` を手で回す)。動作確認として何ができるか・なぜ同じと判定したかを手で確かめる | 893・894・896・897・898・905 |
+| [905](905-feat-dupscan-ci-check-gate.md) | **`make test` と CI で新しく入った重複を落とす** (`dupscan gate`)。作業ツリー (未コミット・untracked を含む) を merge-base と比べ、形のハッシュの数が増えた組を落とす。止めるかは所要と誤検知の割合を見て決める | 893・894・896・898 |
 
 ## 進捗
 
@@ -42,3 +42,4 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 - 2026-10-24 LSP は使わないことにした (ユーザー決定 2026-10-24: dupscan だけで依存も使い方もシンプルになるなら LSP は使わない)。名前の検索も索引 (897) でまかない、899 は pending へ
 - 2026-10-24 人が試す入口 (904) を足した (ユーザー指示: 動作確認としてどういう使い方ができるのかを知りたい)
 - 2026-10-24 検出できる種類の重複を hook (902) と CI (905) で止めることにした (ユーザー決定: 実行コスト次第)
+- 2026-10-24 止める網を `make test` の中の `dupscan gate` (905) にし、編集のたびの hook (902) は保留にした (ユーザー指示 2026-10-24: hook というより make test の中に dupscan を含める感じの実行頻度)
