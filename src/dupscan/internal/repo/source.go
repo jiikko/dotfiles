@@ -54,33 +54,41 @@ func (w Worktree) ReadAll(files []string) (map[string][]byte, error) {
 type Commit struct {
 	Scope Scope
 	Exts  []string
-	Hash  string // 完全な commit の hash
+	Hash  string            // 完全な commit の hash
+	blobs map[string]string // Files が控えるパス → blob の hash (ReadAll はパスでなく hash で読む。パスの改行で読み違えない)
 }
 
 // Name は読み方の名前。
-func (c Commit) Name() string { return c.Hash[:min(len(c.Hash), 12)] }
+func (c *Commit) Name() string { return c.Hash[:min(len(c.Hash), 12)] }
 
 // Files は commit の木のファイルの一覧。symlink (mode 120000) と submodule (160000) は読まない。
-func (c Commit) Files() ([]string, error) {
+func (c *Commit) Files() ([]string, error) {
 	args := []string{"ls-tree", "-r", "-z", "--full-tree", c.Hash, "--"}
+	whole := false
 	for _, p := range c.Scope.Prefixes {
-		if p != "" {
-			args = append(args, p)
+		if p == "" {
+			whole = true // 起点に repo の root があれば全体を読む (作業ツリーの側と範囲をそろえる)
 		}
+	}
+	if !whole {
+		args = append(args, c.Scope.Prefixes...)
 	}
 	out, err := git(c.Scope.Root, args...)
 	if err != nil {
 		return nil, err
 	}
 	var files []string
+	c.blobs = map[string]string{}
 	for _, rec := range strings.Split(out, "\x00") {
 		meta, path, ok := strings.Cut(rec, "\t")
 		if !ok || !hasExt(path, c.Exts) {
 			continue
 		}
-		if f := strings.Fields(meta); len(f) < 2 || f[0] != "100644" && f[0] != "100755" || f[1] != "blob" {
+		f := strings.Fields(meta)
+		if len(f) < 3 || f[0] != "100644" && f[0] != "100755" || f[1] != "blob" {
 			continue
 		}
+		c.blobs[path] = f[2]
 		files = append(files, path)
 	}
 	sort.Strings(files)
@@ -88,7 +96,7 @@ func (c Commit) Files() ([]string, error) {
 }
 
 // ReadAll は commit の中のファイルを git cat-file --batch でまとめて読む。
-func (c Commit) ReadAll(files []string) (map[string][]byte, error) {
+func (c *Commit) ReadAll(files []string) (map[string][]byte, error) {
 	if len(files) == 0 {
 		return map[string][]byte{}, nil
 	}
@@ -98,7 +106,11 @@ func (c Commit) ReadAll(files []string) (map[string][]byte, error) {
 	cmd.Env = cleanEnv(os.Environ())
 	var in bytes.Buffer
 	for _, f := range files {
-		fmt.Fprintf(&in, "%s:%s\n", c.Hash, f)
+		b, ok := c.blobs[f]
+		if !ok {
+			return nil, fmt.Errorf("%s は Files で列挙していない", f)
+		}
+		fmt.Fprintf(&in, "%s\n", b)
 	}
 	cmd.Stdin = &in
 	var stderr bytes.Buffer

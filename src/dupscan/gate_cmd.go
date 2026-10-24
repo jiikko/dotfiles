@@ -48,14 +48,14 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "dupscan gate:", err)
 			return 2
 		}
-		head, headCommit = repo.Commit{Scope: sc, Exts: swift.Extensions, Hash: h}, h
+		head, headCommit = &repo.Commit{Scope: sc, Exts: swift.Extensions, Hash: h}, h
 	}
 	baseHash, err := resolveBase(sc.Root, *baseRef, headCommit)
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2
 	}
-	b, err := scanSource(repo.Commit{Scope: sc, Exts: swift.Extensions, Hash: baseHash}, false)
+	b, err := scanSource(&repo.Commit{Scope: sc, Exts: swift.Extensions, Hash: baseHash}, false)
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2
@@ -67,6 +67,10 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	}
 	res := gate.Judge(b.entries, h.entries, gopt)
 	s := report.BuildGate(sc.Root, baseHash, head.Name(), res)
+	// base が head の commit と同じなら、見たのは未コミットの変更だけ (CI で -base を付け忘れた疑い)。
+	if hc, err := repo.CommitHash(sc.Root, headCommit); err == nil && hc == baseHash {
+		s.BaseIsHead = true
+	}
 	switch *c.format {
 	case "json":
 		err = report.GateJSON(stdout, s)

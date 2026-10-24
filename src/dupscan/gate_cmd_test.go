@@ -97,3 +97,43 @@ func TestGateHeadCommitDoesNotTouchRepo(t *testing.T) {
 		t.Error("gate が調べる repo の .git/index を書き換えた")
 	}
 }
+
+func TestGateRootAndSubdirReadSameScopeOnBothSides(t *testing.T) {
+	// other/ に既にある組があり、sub/ だけを編集した: 起点に root と sub を渡しても、既にある組で赤にしない。
+	root := repoWith(t, map[string]string{"other/X.swift": helperA, "other/Y.swift": strings.Replace(helperA, "struct A", "struct Y", 1), "sub/S.swift": "func s(_ x: Int) -> Int { x + 1 }\n"})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "sub/S.swift", "func s(_ x: Int) -> Int { x + 2 }\n")
+	if rc, out, errs := runGateCmd(t, "-base", "HEAD", root, filepath.Join(root, "sub")); rc != 0 {
+		t.Errorf("既にある組で赤になった: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}
+
+func TestGateReadsPathsWithNewline(t *testing.T) {
+	root := committedRepo(t)
+	writeFile(t, root, "Sources/odd\nname.swift", "func odd(_ x: Int) -> Int { x * 3 }\n")
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "odd")
+	if rc, out, errs := runGateCmd(t, "-base", "HEAD~1", "-head", "HEAD", root); rc != 0 {
+		t.Errorf("パスに改行を含むファイルで判定不能になった: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}
+
+func TestGateNotesBaseIsHead(t *testing.T) {
+	root := committedRepo(t)
+	if _, out, _ := runGateCmd(t, "-base", "HEAD", root); !strings.Contains(out, "base が HEAD と同じ") {
+		t.Errorf("base が HEAD と同じことを出さない: %q", out)
+	}
+}
+
+func TestGateSameEditToBothCopiesPasses(t *testing.T) {
+	// 既にある写し A・B に同じ修正を入れる (共通の写しを直す普通の場面) のは、重複の量が増えていないので緑。
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Sources/A.swift", strings.Replace(helperA, `"conn"`, `"conn2"`, 1))
+	writeFile(t, root, "Sources/B.swift", strings.Replace(helperB, `"conn"`, `"conn2"`, 1))
+	if rc, out, errs := runGateCmd(t, "-base", "HEAD", root); rc != 0 {
+		t.Errorf("既にある写しに同じ修正を入れて赤になった: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}

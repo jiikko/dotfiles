@@ -25,7 +25,7 @@ func TestNewCopyIsViolation(t *testing.T) {
 	base := []*group.Entry{e("a", "x", "x2", "x3")}
 	head := []*group.Entry{e("a", "x", "x2", "x3"), e("b", "x", "x2", "x3")}
 	r := Judge(base, head, opt)
-	if len(r.Violations) != 1 || r.Violations[0].Changed.Unit.Key != "b" || r.Violations[0].Level != norm.L1 || !r.Failed() {
+	if len(r.Violations) != 1 || len(r.Violations[0].New) != 1 || r.Violations[0].New[0].Unit.Key != "b" || r.Violations[0].Level != norm.L1 || !r.Failed() {
 		t.Fatalf("新しい写し b の L1 の違反を期待: %+v", r)
 	}
 	if len(r.Violations[0].Same) != 1 || r.Violations[0].Same[0].Unit.Key != "a" {
@@ -100,11 +100,59 @@ func TestSwapIsNotViolation(t *testing.T) {
 }
 
 func TestOneViolationPerGroup(t *testing.T) {
-	// 同じ形の新しい単位が 2 つ (b と c) 増えても、違反は 1 件で、残りは同じ形の一覧に入る。
+	// 同じ形の新しい単位が 2 つ (b と c) 増えても、違反は 1 件で、2 つとも新しい側に入る。
 	base := []*group.Entry{e("a", "x", "", "")}
 	head := []*group.Entry{e("a", "x", "", ""), e("b", "x", "", ""), e("c", "x", "", "")}
 	r := Judge(base, head, opt)
-	if len(r.Violations) != 1 || len(r.Violations[0].Same) != 2 {
-		t.Fatalf("違反 1 件・同じ形 2 つを期待: %+v", r)
+	if len(r.Violations) != 1 || len(r.Violations[0].New) != 2 || len(r.Violations[0].Same) != 1 {
+		t.Fatalf("違反 1 件・新しい 2 つ・前からいた 1 つを期待: %+v", r)
+	}
+}
+
+func TestSameEditToExistingCopiesIsNotViolation(t *testing.T) {
+	// 既にある写し a・b に同じ修正を入れた: head の形 (y) は base に無いが、2 つとも base で同じ組 (x) だったので違反にしない。
+	base := []*group.Entry{e("a", "x", "", ""), e("b", "x", "", "")}
+	head := []*group.Entry{e("a", "y", "", ""), e("b", "y", "", "")}
+	if r := Judge(base, head, opt); len(r.Violations) != 0 || r.Changed != 2 {
+		t.Errorf("同じ修正で違反になった: %+v", r)
+	}
+	// その上で新しい写し c を足せば違反。
+	head = append(head, e("c", "y", "", ""))
+	r := Judge(base, head, opt)
+	if len(r.Violations) != 1 || len(r.Violations[0].New) != 1 || r.Violations[0].New[0].Unit.Key != "c" {
+		t.Errorf("新しい写し c だけを寄せる側に期待: %+v", r)
+	}
+}
+
+func TestUnreadableCopyDoesNotHideNewCopy(t *testing.T) {
+	// 既にある写し b が読めない構文になり、新しい写し n を足した: b は数えられないが、n は新しい写しなので違反。
+	base := []*group.Entry{e("a", "x", "", ""), e("b", "x", "", "")}
+	b := e("b", "broken", "", "")
+	b.Unit.Unreadable = true
+	head := []*group.Entry{e("a", "x", "", ""), b, e("n", "x", "", "")}
+	r := Judge(base, head, opt)
+	if len(r.Violations) != 1 || r.Violations[0].New[0].Unit.Key != "n" {
+		t.Errorf("読めない写しが新しい写しを隠した: %+v", r)
+	}
+}
+
+func TestMovedCopyIsNotNamedAsNew(t *testing.T) {
+	// 古い写し b を b2 へ移し、新しい写し z を足した: 寄せる側は z で、移した b2 は前からいた側。
+	base := []*group.Entry{e("a", "x", "", ""), e("b", "x", "", "")}
+	head := []*group.Entry{e("a", "x", "", ""), e("b2", "x", "", ""), e("z", "x", "", "")}
+	r := Judge(base, head, opt)
+	if len(r.Violations) != 1 || len(r.Violations[0].New) != 1 || r.Violations[0].New[0].Unit.Key != "z" {
+		t.Errorf("移した写しを寄せる側にした: %+v", r)
+	}
+}
+
+func TestFailLevelsAreMonotonic(t *testing.T) {
+	// L1 で一致する写しは、L2 を止める設定でも止める (L1 の一致は L2 の一致を含む)。
+	base := []*group.Entry{e("a", "x", "y", "z")}
+	head := []*group.Entry{e("a", "x", "y", "z"), e("b", "x", "y", "z")}
+	o := opt
+	o.Fail = map[norm.Level]bool{norm.L2: true}
+	if r := Judge(base, head, o); !r.Failed() {
+		t.Errorf("L2 を止める設定で L1 の写しが止まらない: %+v", r)
 	}
 }
