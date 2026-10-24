@@ -43,3 +43,13 @@ dupscan は構文木で単位を取り出しているので、**定義だけを 
 - 2026-10-25 `outline` と `find` は 897 の `dupscan index` の引き方として作った (入口を 2 つにしない): `outline <file>` = `index -file <file>` (行の順・件数で切らない)、
   `find --name / --returns / --param-type` = `index -name / -returns / -param-type` (doc の語は `-doc`)。DualNoteApp で `-returns Tag` が 27 件を 1 行ずつ返し、`-file` が outline を返すことを確かめた (書き込み 0)。
   **残り**: `callers` (呼び出しの箇所の抜き出し)・効果の測定 (grep と dupscan で同じ問いを引き比べ、返る文字数と読んだファイルの数)・903 と使う側の入口への手順
+- 2026-10-25 効果の測定 (DualNoteApp・同じ問いを grep と `dupscan index` で引いた出力の文字数。grep は `--include='*.swift'`、index は `-limit 0`):
+
+  | 問い | grep | index |
+  |---|---|---|
+  | `[Tag]` を返すもの | `Tag\]` 4271 字 45 行 25 ファイル / 定義に絞った正規表現 `func .*-> \[Tag\]\|var .*: \[Tag\]` 2606 字 27 行 | `-returns '[Tag]'` 1386 字 13 行 |
+  | 名前に memo を含む関数 | `Memo` 214296 字 1949 行 92 ファイル / `func [a-z]*memo` (-i) 16615 字 146 行 | `-name memo` 9193 字 70 行 |
+  | このファイルに何があるか (TagPicker.swift) | `cat` 1978 字 65 行 | `-file` 232 字 3 行 |
+
+  grep の定義に絞った正規表現も、stored property・テスト関数・呼び出しの行が混ざる (`[Tag]` の 27 行のうち、戻り値が `[Tag]` の単位は 13)。index は既定で上位 20 件に切るので、実際に Claude に返るのはさらに短い。
+  「目的の定義に辿り着くまでに読んだファイルの数」は、Claude の実際の作業で測る必要があるので未測定 (trigger: 903 の手順を入れて、使う側の repo で調べものをしたとき)
