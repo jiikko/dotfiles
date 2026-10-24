@@ -69,6 +69,14 @@ func TestKidsAreNaturalSortedAndDotfilesHidden(t *testing.T) {
 	if !strings.Contains(names(m.kids(m.root)), ".hidden") {
 		t.Fatal(". で dotfile が見えない")
 	}
+	m.HandleKey("I") // . の別名
+	if strings.Contains(names(m.kids(m.root)), ".hidden") {
+		t.Fatal("I で dotfile が隠れない")
+	}
+	m.HandleKey("I")
+	if !strings.Contains(names(m.kids(m.root)), ".hidden") {
+		t.Fatal("I で dotfile が見えない")
+	}
 }
 
 func TestNameIsSanitized(t *testing.T) {

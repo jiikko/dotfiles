@@ -130,7 +130,7 @@ var items = []item{
 	boolItem("ORDER", "Natural sort", "natural_sort", "file2 を file10 より前に並べる", func(s *Settings) *bool { return &s.NaturalSort }),
 	choiceItem("ORDER", "Sort by", "sort_by", "name = 名前順 / modified = 更新の新しい順 / size = 大きい順 (フォルダは名前順)。S キーでも巡回", fixed(sortByChoices...), func(s *Settings) *string { return &s.SortBy }),
 	boolItem("ORDER", "Reverse", "reverse", "Sort by の向きを逆にする (Folders first はそのまま)", func(s *Settings) *bool { return &s.Reverse }),
-	boolItem("ORDER", "Dotfiles", "show_hidden", ". で始まる項目を見せる (. キーと同じ)", func(s *Settings) *bool { return &s.ShowHidden }),
+	boolItem("ORDER", "Dotfiles", "show_hidden", ". で始まる項目を見せる (. I キーと同じ)", func(s *Settings) *bool { return &s.ShowHidden }),
 	choiceItem("LOOK", "Ground", "ground", "地の色。dark か紙 (parchment / vellum)", fixed("dark", "parchment", "vellum"), func(s *Settings) *string { return &s.Ground }),
 	choiceItem("LOOK", "Accent", "accent", "線・選択・強調の色 (紙の地では固定)", fixed(accentOrder...), func(s *Settings) *string { return &s.Accent }),
 	choiceItem("LOOK", "Heat colors", "palette", "更新の新しさの色 (地ごとに選べる組が違う)", func(s *Settings) []string { return findGround(s.Ground).palettes }, func(s *Settings) *string { return &s.Palette }),

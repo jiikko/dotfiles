@@ -965,7 +965,7 @@ func init() {
 	bind(do(func(m *Model) {
 		m.set.ShowHidden = !m.set.ShowHidden // 設定の Dotfiles と同じ (保存もする)
 		m.applySettings("show_hidden")
-	}), ".")
+	}), ".", "I")
 	bind(do(func(m *Model) { m.panel.open, m.help = true, false }), ",")
 	bind(do(func(m *Model) { m.opener.open(m.cur.path(), m.cur.name) }), "o")
 	bind(do(func(m *Model) { m.opener.reveal(m.cur.path(), m.cur.name) }), "O")
@@ -1485,7 +1485,7 @@ var helpKeys = [][2]string{
 	{"e", "フォルダ: 配下を全部開く (esc で中断) · ファイル: エディタで開く"},
 	{"/ n N", "列の中を検索 · 次 · 前"},
 	{"- backspace ^H", "root を 1 段上へ"},
-	{".", "dotfile の表示を切り替え"},
+	{". I", "dotfile の表示を切り替え"},
 	{",", "設定"},
 	{"o O", "外のアプリで開く (open) · Finder で表示"},
 	{"y Y", "パスをコピー (絶対 · root からの相対)"},
