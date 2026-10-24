@@ -34,3 +34,4 @@
   - canary: `docs/dupscan-detection.md` の例を本物の parser に通し、L1 / L2 で違い L3 で同じ・呼ぶ型が違えば L3 でも違うことを固定
   - DualNoteApp (Swift 6.0) の 199 ファイルで読めない構文 0 件 (obaket は 3%)
   - **残り**: PR 24 の固定の入力 (obaket がこのマシンに無い)・所属ターゲットの解決 (`Package.swift`・`project.yml`)
+- 2026-10-24 敵対的レビューを受けて直した: 単位に computed property・subscript・deinit・`didSet` / `willSet` を足した・鍵に `static`・extension の `where`・入れ子の関数の親を入れ、重なれば番号を付ける・子の無い節 (`<+>`・`outer:`) の字面と `#if` をハッシュに入れる・`@Testing.Test` と `XCTestCase` を継承した型の中の `test…` を見分ける・読めない構文に接した単位 (入れ物に着くまでの祖先が ERROR を含む) を比べない

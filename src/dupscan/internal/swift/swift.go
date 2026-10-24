@@ -1,4 +1,4 @@
-// Package swift は、Swift のソースを tree-sitter で読み、比べる単位 (関数・初期化子・クロージャ) を言語に依らない木に写す adapter。
+// Package swift は、Swift のソースを tree-sitter で読み、比べる単位 (関数・初期化子・クロージャなど) を言語に依らない木に写す adapter。
 package swift
 
 import (
@@ -37,7 +37,8 @@ func (p *Parser) Close() { p.p.Close() }
 // FileResult は 1 ファイルの結果。
 type FileResult struct {
 	Units []*tree.Unit
-	// HasError はファイルのどこかに読めない構文 (ERROR / MISSING) があること。
+	// HasError はファイルのどこかに読めない構文 (ERROR / MISSING) があること。読めない部分に飲み込まれた関数は単位として出てこないので、
+	// 呼び出し側は「比べていない部分がある」ことを出力に出す。
 	HasError bool
 }
 
@@ -49,8 +50,8 @@ func (p *Parser) Parse(file string, src []byte) (FileResult, error) {
 	}
 	defer t.Close()
 	root := t.RootNode()
-	w := &walker{file: file, src: src, test: IsTestPath(file), closures: map[string]int{}, ownerIsUnit: map[string]bool{}}
-	w.walk(root, nil, "")
+	w := &walker{file: file, src: src, test: IsTestPath(file), closures: map[string]int{}, seen: map[string]int{}, isUnit: map[string]bool{}}
+	w.walk(root, ctx{})
 	return FileResult{Units: w.units, HasError: root.HasError()}, nil
 }
 
@@ -69,45 +70,107 @@ func IsTestPath(file string) bool {
 }
 
 type walker struct {
-	file        string
-	src         []byte
-	test        bool
-	units       []*tree.Unit
-	closures    map[string]int
-	ownerIsUnit map[string]bool
+	file     string
+	src      []byte
+	test     bool
+	units    []*tree.Unit
+	closures map[string]int
+	seen     map[string]int  // 鍵の重なりの数 (`#if` の両側の同じ関数など)
+	isUnit   map[string]bool // 単位の鍵 (クロージャの Owner にしてよいか)
+}
+
+// ctx は辿っている場所の文脈。
+type ctx struct {
+	enclosing []string // 囲む型の名前
+	owner     string   // 囲む単位の鍵
+	inError   bool     // 読めない構文 (ERROR) の中
+	testClass bool     // XCTestCase を継承した型の中
+	property  string   // 囲む property の名前 (didSet などの単位の名前に使う)
 }
 
 func (w *walker) text(n *sitter.Node) string { return n.Utf8Text(w.src) }
 
-// walk は enclosing (囲む型の名前の並び) と owner (囲む単位の鍵。クロージャの鍵に使う) を持って木を辿る。
-func (w *walker) walk(n *sitter.Node, enclosing []string, owner string) {
+func (w *walker) walk(n *sitter.Node, c ctx) {
+	if n.IsError() || n.IsMissing() {
+		c.inError = true
+	}
 	switch n.Kind() {
 	case "class_declaration", "protocol_declaration":
 		if name := w.typeName(n); name != "" {
-			enclosing = append(append([]string(nil), enclosing...), name)
+			c.enclosing = append(append([]string(nil), c.enclosing...), name)
 		}
-	case "function_declaration", "init_declaration":
-		if w.isTestFunc(n, enclosing) {
+		if w.inheritsTestCase(n) {
+			c.testClass = true
+		}
+	case "function_declaration", "init_declaration", "deinit_declaration", "subscript_declaration":
+		if w.isTestFunc(n, c) {
 			return
 		}
-		u := w.funcUnit(n, enclosing)
-		w.units = append(w.units, u)
-		owner = u.Key
-		w.ownerIsUnit[owner] = true
+		c.owner = w.add(w.declUnit(n, c), c)
+	case "property_declaration":
+		if name := w.boundName(n); name != "" {
+			c.property = name
+		}
+		if cp := n.ChildByFieldName("computed_value"); cp != nil {
+			c.owner = w.add(w.propertyUnit(n, cp, c.property, c), c)
+		}
+	case "didset_clause", "willset_clause":
+		name := "didSet"
+		if n.Kind() == "willset_clause" {
+			name = "willSet"
+		}
+		c.owner = w.add(w.newUnit(n, tree.KindProperty, c.property+"."+name, "", nil, n, c), c)
 	case "lambda_literal":
-		u := w.closureUnit(n, enclosing, owner)
-		w.units = append(w.units, u)
-		owner = u.Key
-		w.ownerIsUnit[owner] = true
+		c.owner = w.add(w.closureUnit(n, c), c)
 	}
 	for i := range n.ChildCount() {
-		w.walk(n.Child(i), enclosing, owner)
+		w.walk(n.Child(i), c)
 	}
 }
 
+// add は単位を足し、囲む単位として使う鍵を返す。鍵が重なったら (`#if` の両側の同じ関数・同じ署名の入れ子の関数) 番号を付けて分ける。
+func (w *walker) add(u *tree.Unit, c ctx) string {
+	w.seen[u.Key]++
+	if n := w.seen[u.Key]; n > 1 {
+		u.Key = fmt.Sprintf("%s#%d", u.Key, n)
+	}
+	u.Unreadable = u.Unreadable || c.inError
+	w.units = append(w.units, u)
+	w.isUnit[u.Key] = true
+	return u.Key
+}
+
 func (w *walker) typeName(n *sitter.Node) string {
-	if c := n.ChildByFieldName("name"); c != nil {
-		return w.text(c)
+	c := n.ChildByFieldName("name")
+	if c == nil {
+		return ""
+	}
+	name := w.text(c)
+	// 条件つきの extension (`extension Array where Element == Int`) どうしを分ける。
+	for i := range n.NamedChildCount() {
+		if ch := n.NamedChild(i); ch.Kind() == "where_clause" || ch.Kind() == "type_constraints" {
+			name += " " + collapse(w.text(ch))
+		}
+	}
+	return name
+}
+
+func (w *walker) inheritsTestCase(n *sitter.Node) bool {
+	for i := range n.NamedChildCount() {
+		if ch := n.NamedChild(i); ch.Kind() == "inheritance_specifier" && strings.HasSuffix(w.text(ch), "TestCase") {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *walker) boundName(n *sitter.Node) string {
+	p := n.ChildByFieldName("name")
+	if p == nil {
+		return ""
+	}
+	if b := p.ChildByFieldName("bound_identifier"); b != nil {
+		return w.text(b)
 	}
 	return ""
 }
@@ -121,8 +184,8 @@ func (w *walker) modifiers(n *sitter.Node) *sitter.Node {
 	return nil
 }
 
-// isTestFunc は Swift Testing の `@Test` か、XCTest の `func test…()` (引数なし・型の中) か。
-func (w *walker) isTestFunc(n *sitter.Node, enclosing []string) bool {
+// isTestFunc は Swift Testing の `@Test` (`@Testing.Test` も) か、XCTest の `func test…()` (引数なし。test のファイルか XCTestCase を継承した型の中) か。
+func (w *walker) isTestFunc(n *sitter.Node, c ctx) bool {
 	if n.Kind() != "function_declaration" {
 		return false
 	}
@@ -133,17 +196,19 @@ func (w *walker) isTestFunc(n *sitter.Node, enclosing []string) bool {
 				continue
 			}
 			for j := range a.NamedChildCount() {
-				if c := a.NamedChild(j); c.Kind() == "user_type" && w.text(c) == "Test" {
-					return true
+				if t := a.NamedChild(j); t.Kind() == "user_type" {
+					if s := w.text(t); s == "Test" || strings.HasSuffix(s, ".Test") {
+						return true
+					}
 				}
 			}
 		}
 	}
 	name := ""
-	if c := n.ChildByFieldName("name"); c != nil {
-		name = w.text(c)
+	if ch := n.ChildByFieldName("name"); ch != nil {
+		name = w.text(ch)
 	}
-	return w.test && len(enclosing) > 0 && strings.HasPrefix(name, "test") && len(params(n)) == 0
+	return (w.test || c.testClass) && len(c.enclosing) > 0 && strings.HasPrefix(name, "test") && len(params(n)) == 0
 }
 
 func params(n *sitter.Node) []*sitter.Node {
@@ -156,17 +221,33 @@ func params(n *sitter.Node) []*sitter.Node {
 	return ps
 }
 
-func (w *walker) funcUnit(n *sitter.Node, enclosing []string) *tree.Unit {
-	name := "init"
-	kind := tree.KindInit
-	if n.Kind() == "function_declaration" {
-		kind = tree.KindFunc
-		if c := n.ChildByFieldName("name"); c != nil {
-			name = w.text(c)
+func (w *walker) isStatic(n *sitter.Node) bool {
+	if m := w.modifiers(n); m != nil {
+		for i := range m.NamedChildCount() {
+			if s := w.text(m.NamedChild(i)); s == "static" || s == "class" {
+				return true
+			}
 		}
 	}
-	var sig []string
-	var locals []string
+	return false
+}
+
+func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
+	kind := tree.KindFunc
+	var name string
+	switch n.Kind() {
+	case "init_declaration":
+		kind, name = tree.KindInit, "init"
+	case "deinit_declaration":
+		kind, name = tree.KindProperty, "deinit"
+	case "subscript_declaration":
+		kind, name = tree.KindProperty, "subscript"
+	default:
+		if ch := n.ChildByFieldName("name"); ch != nil {
+			name = w.text(ch)
+		}
+	}
+	var sig, locals []string
 	for _, p := range params(n) {
 		sig = append(sig, collapse(w.text(p)))
 		if in := internalName(p, w.src); in != "" {
@@ -174,44 +255,76 @@ func (w *walker) funcUnit(n *sitter.Node, enclosing []string) *tree.Unit {
 		}
 	}
 	signature := name + "(" + strings.Join(sig, ", ") + ")"
-	if r := returnType(n, w.src); r != "" {
-		signature += " -> " + r
+	ret := returnType(n, w.src)
+	if ret != "" {
+		signature += " -> " + ret
 	}
-	encl := strings.Join(enclosing, ".")
-	u := w.newUnit(n, kind, name, signature, encl)
-	u.Key = w.file + "|" + encl + "|" + signature
-	u.Params = locals
+	if w.isStatic(n) {
+		signature = "static " + signature
+	}
+	body := n.ChildByFieldName("body")
+	if body == nil {
+		body = childOfKind(n, "computed_property") // subscript の本体 (引数の宣言を本体に入れない)
+	}
+	if body == nil && n.Kind() == "deinit_declaration" {
+		body = childOfKind(n, "function_body")
+	}
+	u := w.newUnit(n, kind, name, signature, locals, body, c)
+	u.ReturnType = ret
 	u.Visibility = w.visibility(n)
-	if b := n.ChildByFieldName("body"); b != nil {
-		u.Body = w.convert(b)
+	return u
+}
+
+func (w *walker) propertyUnit(decl, computed *sitter.Node, name string, c ctx) *tree.Unit {
+	u := w.newUnit(decl, tree.KindProperty, name, "var "+name, nil, computed, c)
+	for i := range decl.NamedChildCount() {
+		if ch := decl.NamedChild(i); ch.Kind() == "type_annotation" {
+			u.ReturnType = collapse(strings.TrimPrefix(w.text(ch), ":"))
+			u.Signature += ": " + u.ReturnType
+		}
+	}
+	u.Visibility = w.visibility(decl)
+	return u
+}
+
+func (w *walker) closureUnit(n *sitter.Node, c ctx) *tree.Unit {
+	owner := c.owner
+	if owner == "" {
+		owner = w.file + "|" + strings.Join(c.enclosing, ".")
+	}
+	w.closures[owner]++
+	u := w.newUnit(n, tree.KindClosure, "{closure}", "", nil, n, c)
+	u.Key = fmt.Sprintf("%s#closure%d", owner, w.closures[owner])
+	if w.isUnit[c.owner] {
+		u.Owner = c.owner
+	}
+	u.Visibility = "local"
+	return u
+}
+
+// newUnit は単位を作る。鍵はファイル + 囲む型 + (入れ子なら囲む単位) + 署名。
+func (w *walker) newUnit(n *sitter.Node, kind tree.UnitKind, name, sig string, locals []string, body *sitter.Node, c ctx) *tree.Unit {
+	pos := n.StartPosition()
+	encl := strings.Join(c.enclosing, ".")
+	label := sig
+	if label == "" {
+		label = name
+	}
+	key := w.file + "|" + encl + "|" + label
+	if c.owner != "" && kind != tree.KindClosure {
+		key = c.owner + "/" + label // 関数の中の関数は、囲む単位ごとに分ける
+	}
+	u := &tree.Unit{
+		Key: key, File: w.file, Line: int(pos.Row) + 1, Col: int(pos.Column) + 1,
+		Name: name, Signature: sig, Kind: kind, Enclosing: encl, Test: w.test || c.testClass,
+		Params: locals, Unreadable: broken(n), Visibility: "internal",
+	}
+	if body != nil {
+		u.Body = w.conv(body, nil, "", false, false)
 	} else {
 		u.Body = &tree.Node{Kind: "empty"}
 	}
 	return u
-}
-
-func (w *walker) closureUnit(n *sitter.Node, enclosing []string, owner string) *tree.Unit {
-	if owner == "" {
-		owner = w.file + "|" + strings.Join(enclosing, ".")
-	}
-	w.closures[owner]++
-	u := w.newUnit(n, tree.KindClosure, "{closure}", "", strings.Join(enclosing, "."))
-	u.Key = fmt.Sprintf("%s#closure%d", owner, w.closures[owner])
-	if w.ownerIsUnit[owner] {
-		u.Owner = owner
-	}
-	u.Visibility = "local"
-	u.Body = w.convert(n)
-	return u
-}
-
-func (w *walker) newUnit(n *sitter.Node, kind tree.UnitKind, name, sig, encl string) *tree.Unit {
-	pos := n.StartPosition()
-	return &tree.Unit{
-		File: w.file, Line: int(pos.Row) + 1, Col: int(pos.Column) + 1,
-		Name: name, Signature: sig, Kind: kind, Enclosing: encl, Test: w.test,
-		Unreadable: n.HasError(),
-	}
 }
 
 func (w *walker) visibility(n *sitter.Node) string {
@@ -257,12 +370,31 @@ func returnType(n *sitter.Node, src []byte) string {
 
 func collapse(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-// convert は tree-sitter の節を言語に依らない木に写す。
-func (w *walker) convert(n *sitter.Node) *tree.Node {
-	return w.conv(n, nil, "")
+func childOfKind(n *sitter.Node, kind string) *sitter.Node {
+	for i := range n.NamedChildCount() {
+		if c := n.NamedChild(i); c.Kind() == kind {
+			return c
+		}
+	}
+	return nil
 }
 
-func (w *walker) conv(n *sitter.Node, parent *sitter.Node, field string) *tree.Node {
+// containerKinds は単位の親として数えない入れ物 (ファイル・型の本体)。ここに読めない構文があっても、隣の単位は読めている。
+var containerKinds = map[string]bool{"source_file": true, "class_body": true, "enum_class_body": true, "protocol_body": true, "statements": true}
+
+// broken は単位の節か、入れ物 (型・ファイルの本体) に着くまでの祖先のどれかが読めない構文を含むか
+// (読めない部分に飲み込まれた関数の本体が、隣のクロージャとして読まれることがある)。
+func broken(n *sitter.Node) bool {
+	for c := n; c != nil && !containerKinds[c.Kind()]; c = c.Parent() {
+		if c.HasError() {
+			return true
+		}
+	}
+	return false
+}
+
+// conv は tree-sitter の節を言語に依らない木に写す。binding は let / var で束縛する pattern の中か、afterDot は直前のトークンが `.` か。
+func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bool) *tree.Node {
 	k := n.Kind()
 	out := &tree.Node{Kind: k}
 	switch {
@@ -272,7 +404,7 @@ func (w *walker) conv(n *sitter.Node, parent *sitter.Node, field string) *tree.N
 		return out
 	case nameKinds[k]:
 		out.Text = w.text(n)
-		out.Role = nameRole(parent, field)
+		out.Role = w.nameRole(parent, field, binding, afterDot)
 		out.Expr = out.Role == tree.RoleName
 		return out
 	case typeKinds[k]:
@@ -285,44 +417,79 @@ func (w *walker) conv(n *sitter.Node, parent *sitter.Node, field string) *tree.N
 		out.Text = w.text(n)
 		out.Expr = out.LitKind != "str" // 文字列の断片は、囲む文字列リテラルの節で畳む
 		return out
+	case n.ChildCount() == 0:
+		// 子の無い名前つきの節 (custom_operator の `<+>`・statement_label の `outer:`) は字面をハッシュに入れる。
+		out.Role = tree.RoleToken
+		out.Text = w.text(n)
+		out.Expr = exprKinds[k]
+		return out
 	}
 	out.Expr = exprKinds[k]
+	if k == "directly_assignable_expression" {
+		out.Keep = true
+	}
+	if k == "pattern" {
+		for i := range n.ChildCount() {
+			if n.Child(i).Kind() == "value_binding_pattern" {
+				binding = true
+			}
+		}
+	}
 	firstNamed := true
+	prevDot := false
 	for i := range n.ChildCount() {
 		c := n.Child(i)
 		if commentKinds[c.Kind()] {
 			continue
 		}
-		cn := w.conv(c, n, n.FieldNameForChild(uint32(i)))
+		cn := w.conv(c, n, n.FieldNameForChild(uint32(i)), binding, prevDot)
+		prevDot = !c.IsNamed() && w.text(c) == "."
 		if c.IsNamed() && firstNamed {
 			firstNamed = false
 			if k == "call_expression" || k == "constructor_expression" {
-				cn.Callee = true
+				cn.Keep = true
 			}
 		}
 		if k == "macro_invocation" && c.Kind() == "simple_identifier" {
-			cn.Callee = true
+			cn.Keep = true
+		}
+		if k == "statements" {
+			cn.NoFold = true
 		}
 		out.Children = append(out.Children, cn)
 	}
 	return out
 }
 
-// nameRole は simple_identifier の役割を親と field 名から決める。
-func nameRole(parent *sitter.Node, field string) tree.Role {
+// nameRole は simple_identifier の役割を、親・field 名・束縛の文脈から決める。
+func (w *walker) nameRole(parent *sitter.Node, field string, binding, afterDot bool) tree.Role {
 	if parent == nil {
 		return tree.RoleName
+	}
+	if field == "bound_identifier" {
+		return tree.RoleDecl
 	}
 	switch parent.Kind() {
 	case "value_argument_label":
 		return tree.RoleLabel
 	case "navigation_suffix":
 		return tree.RoleMember
-	case "pattern", "lambda_parameter", "parameter":
+	case "lambda_parameter", "parameter":
 		return tree.RoleDecl
-	}
-	if field == "bound_identifier" {
-		return tree.RoleDecl
+	case "pattern":
+		// `case .light:` の light・`case let .some(z)` の some は enum の case 名。`case minValue:` は値。
+		// 束縛 (let / var) の pattern の中の名前だけが局所の名前。
+		if afterDot {
+			return tree.RoleMember
+		}
+		if binding {
+			return tree.RoleDecl
+		}
+	case "control_transfer_statement":
+		// `break outer` / `continue outer` のラベル。
+		if first := parent.Child(0); first != nil && (first.Kind() == "break" || first.Kind() == "continue") {
+			return tree.RoleLabel
+		}
 	}
 	return tree.RoleName
 }

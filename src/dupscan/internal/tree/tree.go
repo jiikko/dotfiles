@@ -27,12 +27,17 @@ const (
 
 // Node は単位の本体の木の節。
 type Node struct {
-	Kind     string
-	Text     string
-	Role     Role
-	LitKind  string
-	Expr     bool // L3 で畳める式の境界
-	Callee   bool // 呼び出しの callee。単独では畳まない (畳むと呼ぶ相手の違う呼び出しが同じになる)
+	Kind    string
+	Text    string
+	Role    Role
+	LitKind string
+	Expr    bool // L3 で畳める式の境界
+	// NoFold はこの節そのものを畳まない (子は畳んでよい)。文として置かれた式に付ける
+	// (`deleteEverything()` と `showWelcome()` を 1 記号にすると、副作用の違う文が同じになる)。
+	NoFold bool
+	// Keep はこの節の下を何も畳まない。呼び出しの callee (`JSONEncoder().encode` の受け手を畳むと呼ぶ相手が消える) と
+	// 代入の左辺 (`isLoading = …` と `isEditing = …` が同じになる) に付ける。
+	Keep     bool
 	Children []*Node
 }
 
@@ -44,6 +49,8 @@ const (
 	KindFunc    UnitKind = "func"
 	KindInit    UnitKind = "init"
 	KindClosure UnitKind = "closure"
+	// KindProperty は computed property・subscript・accessor (didSet など)・deinit。
+	KindProperty UnitKind = "property"
 )
 
 // Unit は比べる単位 (関数・初期化子・クロージャ) 1 つ。
@@ -61,7 +68,8 @@ type Unit struct {
 	Enclosing  string
 	Test       bool // test のファイルにある
 	Visibility string
-	Params     []string // 局所の名前として扱う引数の名前
+	Params     []string // 局所の名前として扱う引数の名前 (宣言の順。番号はこの順に先に振る)
+	ReturnType string   // 戻り値の型 (ハッシュに入れる)
 	Body       *Node
 	Unreadable bool // 読めない構文 (ERROR / MISSING) を含む
 }

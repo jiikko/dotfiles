@@ -2,7 +2,7 @@
 //
 //   - L1: 局所の名前 (引数・ローカル変数・クロージャの引数) を、単位の中で初めて出た順の番号にする。それ以外の名前とリテラルは残す
 //   - L2: L1 に加えて、リテラルを種類ごとの記号にする
-//   - L3: L2 に加えて、局所の名前を参照しない最大の式を 1 つの記号に畳む (callee は単独では畳まない)
+//   - L3: L2 に加えて、局所の名前を参照しない最大の式を 1 つの記号に畳む (callee・代入の左辺の下と、文として置かれた式そのものは畳まない)
 package norm
 
 import (
@@ -50,7 +50,16 @@ func Normalize(u *tree.Unit) Result {
 	r.L3Trivial = !refs[u.Body]
 	for _, l := range Levels {
 		w := &writer{level: l, locals: locals, refs: refs, nums: map[string]int{}}
-		w.write(u.Body)
+		// 引数は宣言の順に番号を先に振る (本体に出た順だけだと `a - b` と `b - a` が同じになる)。
+		for _, p := range u.Params {
+			if _, ok := w.nums[p]; !ok {
+				w.nums[p] = len(w.nums) + 1
+			}
+		}
+		w.b.WriteString("(ret ")
+		w.b.WriteString(strconv.Quote(u.ReturnType))
+		w.b.WriteString(")")
+		w.write(u.Body, false)
 		form := w.b.String()
 		sum := sha256.Sum256([]byte(form))
 		r.Hash[l] = hex.EncodeToString(sum[:16])
@@ -78,15 +87,25 @@ func localNames(u *tree.Unit) map[string]bool {
 }
 
 func isLocal(n *tree.Node, locals map[string]bool) bool {
-	if n.Role != tree.RoleName && n.Role != tree.RoleDecl {
+	return (n.Role == tree.RoleName || n.Role == tree.RoleDecl) && locals[n.Text]
+}
+
+// isImplicitParam は `$0` などの暗黙のクロージャの引数。位置に意味があるので番号にせず字面を残すが、
+// 畳むかの判定では局所の名前として数える (`$isOn` のような projected value は含めない)。
+func isImplicitParam(n *tree.Node) bool {
+	if n.Role != tree.RoleName || len(n.Text) < 2 || n.Text[0] != '$' {
 		return false
 	}
-	// `$0` などの暗黙のクロージャの引数も局所の名前。
-	return locals[n.Text] || strings.HasPrefix(n.Text, "$")
+	for _, c := range n.Text[1:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func markRefs(n *tree.Node, locals map[string]bool, refs map[*tree.Node]bool) bool {
-	r := isLocal(n, locals)
+	r := isLocal(n, locals) || isImplicitParam(n)
 	for _, c := range n.Children {
 		if markRefs(c, locals, refs) {
 			r = true
@@ -115,8 +134,8 @@ type writer struct {
 	nums   map[string]int
 }
 
-func (w *writer) write(n *tree.Node) {
-	if w.level >= L3 && n.Expr && !n.Callee && !w.refs[n] {
+func (w *writer) write(n *tree.Node, keep bool) {
+	if w.level >= L3 && !keep && !n.Keep && n.Expr && !n.NoFold && !w.refs[n] {
 		w.b.WriteString("(#F)")
 		return
 	}
@@ -144,7 +163,7 @@ func (w *writer) write(n *tree.Node) {
 		w.b.WriteString(strconv.Quote(n.Text))
 	}
 	for _, c := range n.Children {
-		w.write(c)
+		w.write(c, keep || n.Keep)
 	}
 	w.b.WriteByte(')')
 }

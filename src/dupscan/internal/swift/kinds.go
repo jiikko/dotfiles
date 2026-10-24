@@ -31,7 +31,7 @@ var nameKinds = set("simple_identifier")
 var typeKinds = set("type_identifier")
 
 // commentKinds は捨てる種類。
-var commentKinds = set("comment", "multiline_comment", "shebang_line", "diagnostic", "directive")
+var commentKinds = set("comment", "multiline_comment", "shebang_line", "diagnostic")
 
 // structKinds は構造だけの種類 (種類だけをハッシュに入れる)。
 var structKinds = set(
@@ -39,7 +39,7 @@ var structKinds = set(
 	"bang", "bracket_qualified_type", "call_suffix", "capture_list", "capture_list_item", "catch_block", "catch_keyword", "class_body",
 	"class_declaration", "computed_getter", "computed_modify", "computed_property", "computed_setter",
 	"constructor_suffix", "control_transfer_statement", "custom_operator", "default_keyword", "deinit_declaration",
-	"deprecated_operator_declaration_body", "dictionary_type", "didset_clause", "discard_statement", "do_statement",
+	"deprecated_operator_declaration_body", "dictionary_type", "didset_clause", "directive", "discard_statement", "do_statement",
 	"else", "enum_class_body", "enum_entry", "enum_type_parameters", "equality_constraint", "existential_type",
 	"external_macro_definition", "for_statement", "function_body", "function_declaration", "function_modifier",
 	"function_type", "getter_specifier", "guard_statement", "identifier", "if_statement", "import_declaration",

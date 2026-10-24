@@ -102,3 +102,22 @@ func TestXcodeFormat(t *testing.T) {
 		t.Errorf("絶対パスの warning 1 行と note 1 行を期待: %q", out.String())
 	}
 }
+
+// 読めない構文に飲み込まれた関数は単位として出てこない。1 行の出力でも、比べていない部分があることを出す。
+func TestSyntaxErrorIsShownInOneLine(t *testing.T) {
+	root := repoWith(t, map[string]string{
+		"Sources/A.swift": "struct Z { func f(_ q: Int) -> Int { let a = q * 2 + 3; return a - q } }\n",
+		"Sources/B.swift": "struct Y {\n    let x = [1, 2,\n    func g(_ q: Int) -> Int { let a = q * 2 + 3; return a - q }\n}\n",
+	})
+	var out, errb bytes.Buffer
+	if rc := run([]string{"-min-nodes", "3", root}, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d: %s", rc, errb.String())
+	}
+	if !strings.Contains(out.String(), "読めない構文があるファイル 1") {
+		t.Errorf("読めない構文のファイルの件数が出ない: %q", out.String())
+	}
+	out.Reset()
+	if rc := run([]string{"-format", "xcode", "-min-nodes", "3", root}, &out, &errb); rc != 0 || !strings.Contains(out.String(), "B.swift:1:1: note:") {
+		t.Errorf("xcode の形式に読めない構文の note が出ない (rc=%d): %q", rc, out.String())
+	}
+}

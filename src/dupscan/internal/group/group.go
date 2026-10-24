@@ -35,7 +35,10 @@ type Options struct {
 func Build(entries []*Entry, opt Options) []Group {
 	var groups []Group
 	var seen []map[*Entry]bool
-	for _, lv := range opt.Levels {
+	// 細かい段から見る (渡された順のままだと、L3 を先に渡すと写しそのものが L3 の組として出る)。
+	levels := append([]norm.Level(nil), opt.Levels...)
+	sort.Slice(levels, func(i, j int) bool { return levels[i] < levels[j] })
+	for _, lv := range levels {
 		byHash := map[string][]*Entry{}
 		for _, e := range entries {
 			if e.Unit.Unreadable || e.Result.Nodes < minNodes(e, opt) {
@@ -130,8 +133,9 @@ func minNodes(e *Entry, opt Options) int {
 	return opt.MinNodes
 }
 
-// dropNested は、メンバー全部の囲む単位が既に同じ組に入っているクロージャの組を外す
+// dropNested は、メンバー全部の囲む単位が、同じかより細かい段で同じ組に入っているクロージャの組を外す
 // (写しの関数の中のクロージャは、外側の組を寄せれば一緒に片付くので、重ねて出すと組の数が膨らむだけ)。
+// 囲む単位が粗い段でしか一致しないなら外さない (外側は寄せられるとは限らず、細かい段の写しの方が強い証拠)。
 func dropNested(groups []Group) []Group {
 	in := map[string]map[int]bool{} // 単位の鍵 → 入っている組の番号
 	for i, g := range groups {
@@ -142,16 +146,17 @@ func dropNested(groups []Group) []Group {
 			in[m.Unit.Key][i] = true
 		}
 	}
+	finer := func(i int, lv norm.Level) bool { return groups[i].Level <= lv }
 	out := groups[:0:0]
 	for _, g := range groups {
-		if !nested(g, in) {
+		if !nested(g, in, finer) {
 			out = append(out, g)
 		}
 	}
 	return out
 }
 
-func nested(g Group, in map[string]map[int]bool) bool {
+func nested(g Group, in map[string]map[int]bool, finer func(int, norm.Level) bool) bool {
 	var common map[int]bool
 	for _, m := range g.Members {
 		if m.Unit.Owner == "" {
@@ -161,7 +166,9 @@ func nested(g Group, in map[string]map[int]bool) bool {
 		if common == nil {
 			common = map[int]bool{}
 			for k := range owners {
-				common[k] = true
+				if finer(k, g.Level) {
+					common[k] = true
+				}
 			}
 			continue
 		}

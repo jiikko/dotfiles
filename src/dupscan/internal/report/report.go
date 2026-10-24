@@ -91,6 +91,9 @@ type TextOptions struct {
 func Text(w io.Writer, s Summary, opt TextOptions) error {
 	if len(s.Groups) == 0 {
 		fmt.Fprintf(w, "dupscan: 重複なし (%d ファイル・%d 単位)%s\n", s.Files, s.Units, unreadableNote(s))
+		if opt.Verbose {
+			writeErrorFiles(w, s)
+		}
 		return nil
 	}
 	fmt.Fprintf(w, "dupscan: 組 %d (%s)・%d ファイル・%d 単位%s\n", len(s.Groups), levelCounts(s), s.Files, s.Units, unreadableNote(s))
@@ -108,11 +111,18 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 		fmt.Fprintf(w, "… 他 %d 組 (-limit 0 か -format json で全部)\n", rest)
 	}
 	if opt.Verbose {
+		writeErrorFiles(w, s)
 		for _, u := range s.Unreadable {
 			fmt.Fprintf(w, "読めない: %s:%d %s\n", u.File, u.Line, label(u))
 		}
 	}
 	return nil
+}
+
+func writeErrorFiles(w io.Writer, s Summary) {
+	for _, f := range s.FilesWithErrors {
+		fmt.Fprintf(w, "読めない構文があるファイル: %s\n", f)
+	}
 }
 
 func levelCounts(s Summary) string {
@@ -131,11 +141,13 @@ func levelCounts(s Summary) string {
 	return strings.Join(parts, "・")
 }
 
+// unreadableNote は読めない構文の件数。読めない部分に飲み込まれた関数は単位として出てこないので、単位の数だけでなく
+// ファイルの数も出す (「重複なし」と並べて、比べていない部分があることを黙らせない)。
 func unreadableNote(s Summary) string {
-	if len(s.Unreadable) == 0 {
+	if len(s.FilesWithErrors) == 0 && len(s.Unreadable) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("・読めない構文で比べなかった単位 %d (-v で一覧)", len(s.Unreadable))
+	return fmt.Sprintf("・読めない構文があるファイル %d・比べなかった単位 %d (-v で一覧)", len(s.FilesWithErrors), len(s.Unreadable))
 }
 
 // Xcode は `ファイル:行:列: warning: …` の形式で書く (swiftlint と並べて回し、Xcode の警告として出すため)。
@@ -149,8 +161,8 @@ func Xcode(w io.Writer, s Summary) error {
 			fmt.Fprintf(w, "%s:%d:%d: note: 同じ形: %s (dupscan.%s)\n", filepath.Join(s.Root, m.File), m.Line, m.Col, label(m), g.Level)
 		}
 	}
-	for _, u := range s.Unreadable {
-		fmt.Fprintf(w, "%s:%d:%d: note: 読めない構文があるので比べなかった: %s (dupscan)\n", filepath.Join(s.Root, u.File), u.Line, u.Col, label(u))
+	for _, f := range s.FilesWithErrors {
+		fmt.Fprintf(w, "%s:1:1: note: 読めない構文があり、比べていない部分がある (dupscan)\n", filepath.Join(s.Root, f))
 	}
 	return nil
 }

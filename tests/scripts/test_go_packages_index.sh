@@ -324,6 +324,8 @@ cp -R "$BASE/." "$THIRD_PARTY/"
 mkdir -p "$THIRD_PARTY/src/demo/third_party/stub/bindings"
 printf 'module example.com/stub\n\ngo 1.25.0\n' > "$THIRD_PARTY/src/demo/third_party/stub/go.mod"
 printf 'package bindings\n' > "$THIRD_PARTY/src/demo/third_party/stub/bindings/b.go"
+printf '\nreplace example.com/stub => ./third_party/stub\n' >> "$THIRD_PARTY/src/demo/go.mod"
+rm -rf "$THIRD_PARTY/src/demo/vendor" # vendor を持つと、go.mod に足した replace で go list が「vendor と食い違う」で止まる
 run_fixture "$THIRD_PARTY" delegate
 if [ "$RC" -eq 0 ] && ! grep -Fq 'third_party' "$THIRD_PARTY/src/PACKAGES.md"; then
 	ok 'module の直下の third_party/ の入れ子の module を落とさず、一覧にも出さない'
@@ -337,6 +339,22 @@ mkdir -p "$DEEP_THIRD_PARTY/src/demo/x/third_party/stub"
 printf 'module example.com/stub\n\ngo 1.25.0\n' > "$DEEP_THIRD_PARTY/src/demo/x/third_party/stub/go.mod"
 run_fixture "$DEEP_THIRD_PARTY" delegate
 expect_failure 'module の直下でない third_party の入れ子の module' 'nested Go module は未対応です: src/demo/x/third_party/stub'
+# replace で指していない third_party の module は、置き場所が同じでも落とす (例外を「replace の先」に限る)。
+UNREFERENCED_THIRD_PARTY="$WORK/unreferenced-third-party-module"
+mkdir -p "$UNREFERENCED_THIRD_PARTY"
+cp -R "$BASE/." "$UNREFERENCED_THIRD_PARTY/"
+mkdir -p "$UNREFERENCED_THIRD_PARTY/src/demo/third_party/other"
+printf 'module example.com/other\n\ngo 1.25.0\n' > "$UNREFERENCED_THIRD_PARTY/src/demo/third_party/other/go.mod"
+run_fixture "$UNREFERENCED_THIRD_PARTY" delegate
+expect_failure 'replace で指していない third_party の入れ子の module' 'nested Go module は未対応です: src/demo/third_party/other'
+# module でない third_party の package は、この module の package なので doc を検査する (名前だけで外さない)。
+THIRD_PARTY_PACKAGE="$WORK/third-party-package"
+mkdir -p "$THIRD_PARTY_PACKAGE"
+cp -R "$BASE/." "$THIRD_PARTY_PACKAGE/"
+mkdir -p "$THIRD_PARTY_PACKAGE/src/demo/third_party/bar"
+printf 'package bar\n' > "$THIRD_PARTY_PACKAGE/src/demo/third_party/bar/bar.go"
+run_fixture "$THIRD_PARTY_PACKAGE" delegate
+expect_failure 'third_party の下の module でない package の doc 不足' 'package doc comment が空です: src/demo/third_party/bar'
 
 run_fixture "$BASE" rc
 expect_failure 'go list の非ゼロ rc' 'go list が失敗しました: src/demo (rc=23)'

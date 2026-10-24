@@ -95,3 +95,31 @@ func TestClosureMinNodes(t *testing.T) {
 		t.Errorf("クロージャの下限より小さいクロージャが組になった: %+v", gs)
 	}
 }
+
+func TestLevelsAreOrderedFinestFirst(t *testing.T) {
+	a := entry("a", false, "x", "y", "z", 10, false)
+	b := entry("b", false, "x", "y", "z", 10, false)
+	gs := Build([]*Entry{a, b}, Options{MinNodes: 5, Levels: []norm.Level{norm.L3, norm.L1}})
+	if len(gs) != 1 || gs[0].Level != norm.L1 {
+		t.Fatalf("渡した順に関係なく L1 の組を期待: %+v", gs)
+	}
+}
+
+func TestClosureGroupIsKeptWhenOwnersMatchOnlyAtCoarserLevel(t *testing.T) {
+	f1 := entry("f1", false, "f1", "f1", "f", 30, false) // 囲む関数は L3 でだけ一致
+	f2 := entry("f2", false, "f2", "f2", "f", 30, false)
+	c1 := entry("c1", false, "c", "c", "c", 30, false) // クロージャは L1 で一致
+	c2 := entry("c2", false, "c", "c", "c", 30, false)
+	c1.Unit.Kind, c1.Unit.Owner = tree.KindClosure, "f1"
+	c2.Unit.Kind, c2.Unit.Owner = tree.KindClosure, "f2"
+	gs := Build([]*Entry{f1, f2, c1, c2}, all)
+	var closureGroup bool
+	for _, g := range gs {
+		if g.Level == norm.L1 && g.Members[0].Unit.Key == "c1" {
+			closureGroup = true
+		}
+	}
+	if !closureGroup {
+		t.Fatalf("囲む関数が L3 でしか一致しないのに、L1 のクロージャの組が消えた: %+v", gs)
+	}
+}

@@ -85,7 +85,7 @@ struct S {
 		t.Errorf("L3 で一致しない\n%s\n%s", a.Forms[norm.L3], b.Forms[norm.L3])
 	}
 	if b.Hash[norm.L3] == c.Hash[norm.L3] {
-		t.Errorf("呼ぶ型が違う (ObjectPath / BucketPath) のに L3 で一致する")
+		t.Errorf("呼ぶ型が違う (ObjectPath / BucketPath) のに L3 で一致する\n%s\n%s", b.Forms[norm.L3], c.Forms[norm.L3])
 	}
 	if a.L3Trivial || b.L3Trivial {
 		t.Error("引数を使う単位が L3Trivial になった")

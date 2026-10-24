@@ -33,7 +33,15 @@ bin/dupscan -limit 0 -v .        # text で全部の組と、読めない構文�
 - **0 件は判定不能**: 起点に読むファイルが 1 つも無ければ rc=2 で止まる (起点の取り違えで黙って「重複なし」にしない)
 - **読めない構文**: tree-sitter が ERROR / MISSING を出した単位は比べず、件数を出す
 - 列挙は `git ls-files --cached --others --exclude-standard`。symlink・消えたファイル・submodule の中は読まない
-- テスト関数そのもの (Swift Testing の `@Test`、XCTest の `func test…()`) とその中のクロージャは比べない
+- テスト関数そのもの (Swift Testing の `@Test` / `@Testing.Test`、XCTest の `func test…()`) とその中のクロージャは比べない
+- 単位: 関数・初期化子・クロージャ・computed property・subscript・deinit・`didSet` / `willSet`
+
+## 分かっている限界 (誤検知・見逃しの形)
+
+- 局所の名前の有効範囲を見ない (宣言がどこかにあれば、単位の中の同じ名前を全部局所として扱う)。誤検知の向き
+- test のファイルの判定はパスの慣習 (`Tests` / `…Tests` / `…Tests.swift`) と `XCTestCase` の継承。`App/ABTests/` のような製品のディレクトリも test と読む (repo ごとの上書きは設定ファイル。issue 906)
+- クロージャの鍵は、囲む単位の中での出現の順番。前にクロージャを足すと後ろの鍵がずれる (除外の設定で指すときの注意。issue 906)
+- 読めない構文があるファイルでは、読めない部分に飲み込まれた関数は単位として出てこない。件数は 1 行の出力にも出る
 
 ## 作り
 

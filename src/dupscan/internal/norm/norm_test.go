@@ -10,7 +10,7 @@ func name(s string) *tree.Node {
 	return &tree.Node{Kind: "id", Text: s, Role: tree.RoleName, Expr: true}
 }
 func callee(s string) *tree.Node {
-	return &tree.Node{Kind: "id", Text: s, Role: tree.RoleName, Expr: true, Callee: true}
+	return &tree.Node{Kind: "id", Text: s, Role: tree.RoleName, Expr: true, Keep: true}
 }
 func tok(s string) *tree.Node { return &tree.Node{Kind: s, Text: s, Role: tree.RoleToken} }
 func str(s string) *tree.Node {

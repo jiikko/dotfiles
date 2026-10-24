@@ -50,12 +50,37 @@ for go_mod in "$SRC_DIR"/*/go.mod; do
 done
 [ -s "$module_list" ] || fail 'src/*/go.mod の module が 0 件です'
 
-# module の直下の third_party/ にある入れ子の module は、依存先の都合で置く小さな代わり (replace の先。実例: src/dupscan/third_party) で、
-# この module の package ではない。go の ./... も入れ子の module に入らないので、ここでも数えない。それ以外の入れ子は今までどおり落とす。
-# find の -path の * は / も含むので、「直下」は「深い方の形に当たらない」で書き分ける。src/*/go.mod (module 自身) は後で除く。
-all_go_mods="$(find "$SRC_DIR" \( -path "$SRC_DIR/*/third_party" ! -path "$SRC_DIR/*/*/third_party" \) -prune -o -name go.mod -print)" ||
-	fail 'nested module の検査に失敗しました'
-nested_modules="$(printf '%s\n' "$all_go_mods" | awk -v top="$SRC_DIR/" 'index($0, top) == 1 { rest = substr($0, length(top) + 1); if (rest ~ /\/.*\//) print }' | sort)"
+# 入れ子の module は落とす。例外は、module の go.mod が `replace … => ./third_party/<名前>` で指している src/<module>/third_party/<名前>/go.mod だけ
+# (依存先の都合で置く小さな代わり。実例: src/dupscan/third_party)。go の ./... は入れ子の module に入らないので、package の一覧にも数えない (下の find)。
+all_go_mods="$(find "$SRC_DIR" -name go.mod -print)" || fail 'nested module の検査に失敗しました'
+nested_modules=""
+while IFS= read -r go_mod; do
+	[ -n "$go_mod" ] || continue
+	rel="${go_mod#"$SRC_DIR"/}"
+	case "$rel" in
+	*/*/*) ;;            # src/<module>/… の下 (入れ子)
+	*) continue ;;       # src/<module>/go.mod (module 自身)
+	esac
+	module="${rel%%/*}"
+	rest="${rel#*/}"
+	case "$rest" in
+	third_party/*/go.mod)
+		name="${rest#third_party/}"
+		name="${name%/go.mod}"
+		case "$name" in */*) ;; *)
+			if grep -Eq "=>[[:space:]]*\./third_party/${name}/?([[:space:]]|\$)" "$SRC_DIR/$module/go.mod"; then
+				continue
+			fi
+			;;
+		esac
+		;;
+	esac
+	nested_modules="${nested_modules}${go_mod}
+"
+done <<EOF_GO_MODS
+$all_go_mods
+EOF_GO_MODS
+nested_modules="$(printf '%s' "$nested_modules" | sort)"
 if [ -n "$nested_modules" ]; then
 	first_nested="$(printf '%s\n' "$nested_modules" | sed -n '1p')"
 	first_nested_rel="${first_nested#"$ROOT_DIR"/}"
@@ -69,7 +94,7 @@ while IFS= read -r module_rel; do
 	module_packages="$tmp_dir/module-$module_count-packages"
 	if ! (
 		cd "$module_dir" || exit 1
-		find . -mindepth 1 -type d \( -name vendor -o -name testdata -o -name '.*' -o -name '_*' -o -path ./third_party \) -prune -o \
+		find . -mindepth 1 -type d \( -name vendor -o -name testdata -o -name '.*' -o -name '_*' -o -exec test -e '{}/go.mod' \; \) -prune -o \
 			\( -type f -o -type l \) -name '*.go' ! -name '*_test.go' -print |
 			awk '{ sub(/\/[^\/]*$/, ""); sub(/^\.\//, ""); if ($0 == "") $0 = "."; print }' |
 			sort -u |
