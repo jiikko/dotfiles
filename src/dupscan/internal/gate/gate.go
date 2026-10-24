@@ -7,7 +7,7 @@
 //   - 既存の写し 2 つに同じ修正を入れる: 2 つとも base で同じ組だったので違反にしない
 //   - 新しい写し (出どころの無い単位・別の組から来た単位) が組に入る: 違反
 //
-// base の側の相手は、同じ鍵の単位か、鍵が消えた base の単位のうち L1 のハッシュが同じもの (移動・改名) を 1 対 1 で当てる。
+// base の側の相手の当て方は origins。
 package gate
 
 import (
@@ -70,8 +70,8 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 	var r Result
 	seen := map[string]bool{} // 段 + ハッシュ。組ごとに 1 回だけ判定する
 	for _, e := range head {
-		if b := origin[e]; b != nil && b.Unit.Key == e.Unit.Key && b.Result.Hash[norm.L1] == e.Result.Hash[norm.L1] {
-			continue // 変わっていない
+		if unchanged(e, origin) {
+			continue
 		}
 		r.Changed++
 		if e.Unit.Unreadable {
@@ -138,47 +138,86 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 	if len(g) <= most {
 		return Violation{}, false
 	}
+	// 寄せる側 (新しい) は、一番多い出どころ以外から来た、この変更で触った単位。触っていない単位は寄せる側に出さない
+	// (触っていない単位を出すと、その commit で触っていないファイルに warning が付く)。
 	v := Violation{Level: lv, Fail: failAt(lv, opt.Fail)}
 	for _, m := range g {
-		if from[m] == mostKey {
-			v.Same = append(v.Same, m)
-		} else {
+		if from[m] != mostKey && !unchanged(m, origin) {
 			v.New = append(v.New, m)
+		} else {
+			v.Same = append(v.Same, m)
+		}
+	}
+	if len(v.New) == 0 { // 触った単位が全部一番多い出どころの側にいる: 触った単位を寄せる側にする
+		v.Same = v.Same[:0]
+		for _, m := range g {
+			if unchanged(m, origin) {
+				v.Same = append(v.Same, m)
+			} else {
+				v.New = append(v.New, m)
+			}
 		}
 	}
 	return v, true
 }
 
-// origins は head の単位ごとに base の側の相手を当てる: 同じ鍵の単位、無ければ鍵が消えた base の単位のうち
-// L1 のハッシュが同じもの (移動・改名) を 1 対 1 で。
+// origins は head の単位ごとに base の側の相手 (出どころ) を 1 対 1 で当てる。ずれに強い順に当てる:
+//  0. 読めない構文の単位は鍵で (本体で当てられない)
+//  1. 鍵も本体 (L1) も同じ単位 (変わっていない)
+//  2. 本体 (L1) が同じ単位。同じ名前の相手を先に当てる (移動・改名・クロージャの番号のずれ。クロージャの鍵は
+//     囲む単位の中の出現の順番なので、前に 1 つ足す・消すだけで後ろの鍵がずれる)
+//  3. 鍵が同じ単位 (その場での編集)
+//  4. まだ相手の無い base の単位のうち、L2、次に L3 の形が同じもの (改名・移動しながらの小さな編集)
 func origins(base, head []*group.Entry) map[*group.Entry]*group.Entry {
+	out := map[*group.Entry]*group.Entry{}
+	used := map[*group.Entry]bool{}
+	match := func(keyOf func(*group.Entry) string) {
+		pool := map[string][]*group.Entry{}
+		for _, b := range base {
+			if !used[b] {
+				k := keyOf(b)
+				pool[k] = append(pool[k], b)
+			}
+		}
+		for _, e := range head {
+			if out[e] != nil {
+				continue
+			}
+			k := keyOf(e)
+			for len(pool[k]) > 0 && used[pool[k][0]] {
+				pool[k] = pool[k][1:]
+			}
+			if len(pool[k]) > 0 {
+				out[e], used[pool[k][0]] = pool[k][0], true
+				pool[k] = pool[k][1:]
+			}
+		}
+	}
+	// 読めない構文の単位は本体で当てられないので、先に鍵で当てる (当てないと、その base の相手を新しい写しが
+	// 「移動元」として取り、読めなくした写しが新しい写しを隠す)。
 	byKey := map[string]*group.Entry{}
 	for _, b := range base {
 		byKey[b.Unit.Key] = b
 	}
-	headKeys := map[string]bool{}
 	for _, e := range head {
-		headKeys[e.Unit.Key] = true
-	}
-	gone := map[string][]*group.Entry{} // L1 のハッシュ → 鍵が消えた base の単位
-	for _, b := range base {
-		if !headKeys[b.Unit.Key] {
-			gone[b.Result.Hash[norm.L1]] = append(gone[b.Result.Hash[norm.L1]], b)
+		if b := byKey[e.Unit.Key]; e.Unit.Unreadable && b != nil && !used[b] {
+			out[e], used[b] = b, true
 		}
 	}
-	out := map[*group.Entry]*group.Entry{}
-	for _, e := range head {
-		if b, ok := byKey[e.Unit.Key]; ok {
-			out[e] = b
-			continue
-		}
-		h := e.Result.Hash[norm.L1]
-		if bs := gone[h]; len(bs) > 0 {
-			out[e] = bs[0]
-			gone[h] = bs[1:]
-		}
-	}
+	l1 := func(e *group.Entry) string { return e.Result.Hash[norm.L1] }
+	match(func(e *group.Entry) string { return e.Unit.Key + "\x00" + l1(e) })
+	match(func(e *group.Entry) string { return l1(e) + "\x00" + e.Unit.Name })
+	match(l1)
+	match(func(e *group.Entry) string { return e.Unit.Key })
+	match(func(e *group.Entry) string { return e.Result.Hash[norm.L2] })
+	match(func(e *group.Entry) string { return e.Result.Hash[norm.L3] })
 	return out
+}
+
+// unchanged は、出どころが同じ鍵・同じ本体の単位 (この変更で触っていない単位) か。
+func unchanged(e *group.Entry, origin map[*group.Entry]*group.Entry) bool {
+	b := origin[e]
+	return b != nil && b.Unit.Key == e.Unit.Key && b.Result.Hash[norm.L1] == e.Result.Hash[norm.L1]
 }
 
 func failAt(lv norm.Level, fail map[norm.Level]bool) bool {

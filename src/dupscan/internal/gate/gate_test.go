@@ -156,3 +156,44 @@ func TestFailLevelsAreMonotonic(t *testing.T) {
 		t.Errorf("L2 を止める設定で L1 の写しが止まらない: %+v", r)
 	}
 }
+
+func TestClosureRenumberIsNotViolation(t *testing.T) {
+	// f の先頭にクロージャを 1 つ足すと、後ろのクロージャの鍵の番号がずれる。既にある組 (f#closure2, g) はずれても違反にしない。
+	c := func(key, h string) *group.Entry { return e(key, h, h+"2", h+"3") }
+	base := []*group.Entry{c("f#closure1", "p"), c("f#closure2", "q"), c("g", "q")}
+	head := []*group.Entry{c("f#closure1", "r"), c("f#closure2", "p"), c("f#closure3", "q"), c("g", "q")}
+	if r := Judge(base, head, opt); len(r.Violations) != 0 {
+		t.Errorf("クロージャの番号のずれで違反になった: %+v", r)
+	}
+}
+
+func TestRenameWithSmallEditIsNotViolation(t *testing.T) {
+	// 既にある写し b を改名しながら小さく直した (L1 は変わり L2 は同じ): 組 (L2) の数は増えていない。
+	base := []*group.Entry{e("a", "x", "y", ""), e("b", "x", "y", "")}
+	head := []*group.Entry{e("a", "x", "y", ""), e("b2", "x2", "y", "")}
+	if r := Judge(base, head, opt); len(r.Violations) != 0 {
+		t.Errorf("改名と小さな編集で違反になった: %+v", r)
+	}
+}
+
+func TestUntouchedUnitIsNotNamedAsNew(t *testing.T) {
+	// 別の組 (b, c) を a と同じ形に揃えた: 違反だが、寄せる側は触った b・c で、触っていない a は前からいた側。
+	base := []*group.Entry{e("a", "x", "", ""), e("b", "y", "", ""), e("c", "y", "", "")}
+	head := []*group.Entry{e("a", "x", "", ""), e("b", "x", "", ""), e("c", "x", "", "")}
+	r := Judge(base, head, opt)
+	if len(r.Violations) != 1 {
+		t.Fatalf("違反 1 件を期待: %+v", r)
+	}
+	v := r.Violations[0]
+	if len(v.Same) != 1 || v.Same[0].Unit.Key != "a" || len(v.New) != 2 {
+		t.Errorf("触っていない a を寄せる側にした: new=%v same=%v", keys(v.New), keys(v.Same))
+	}
+}
+
+func keys(es []*group.Entry) []string {
+	var out []string
+	for _, x := range es {
+		out = append(out, x.Unit.Key)
+	}
+	return out
+}
