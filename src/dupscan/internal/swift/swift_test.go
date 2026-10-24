@@ -190,3 +190,41 @@ func TestIsTestPath(t *testing.T) {
 		}
 	}
 }
+
+func TestAllowCommentIsReadOnlyDirectlyBeforeDeclaration(t *testing.T) {
+	src := `let a = 1 // dupscan:allow intentional 前の行の末尾
+func trailing() { g() }
+// dupscan:allow intentional 属性の前
+@MainActor
+func attributed() { g() }
+// dupscan:allow intentional 空行を挟む
+
+func separated() { g() }
+class C {
+    /// 説明
+    /**
+     * dupscan:allow false-positive 複数行の形
+     */
+    /// 説明の続き
+    var v: Int { 1 }
+    // dupscan:allow
+    init() {}
+    // TODO: dupscan:allow intentional は文の途中なので読まない
+    func plain() { g() }
+}
+`
+	want := map[string]string{"attributed": "intentional 属性の前", "v": "false-positive 複数行の形", "init": ""}
+	got := map[string]bool{}
+	for _, u := range parse(t, "A.swift", src).Units {
+		w, ok := want[u.Name]
+		if u.HasAllow != ok || u.Allow != w {
+			t.Errorf("%s: HasAllow=%v Allow=%q, 期待は %v %q", u.Name, u.HasAllow, u.Allow, ok, w)
+		}
+		got[u.Name] = true
+	}
+	for _, n := range []string{"trailing", "attributed", "separated", "v", "init", "plain"} {
+		if !got[n] {
+			t.Errorf("%s が単位として出ない", n)
+		}
+	}
+}

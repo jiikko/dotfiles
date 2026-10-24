@@ -30,6 +30,8 @@ type Rule struct {
 	Unit   string   `json:"unit,omitempty"`
 	Kind   string   `json:"kind"`
 	Reason string   `json:"reason"`
+	// Comment は単位の直前のコメントから作った許可の場所 (`file:line`)。設定ファイルには書けない。
+	Comment string `json:"comment,omitempty"`
 
 	levels map[norm.Level]bool // Paths の除外を効かせる段 (Levels が無ければ全部)
 	level  norm.Level          // Group の除外の段
@@ -56,6 +58,9 @@ func Parse(b []byte) (*Config, error) {
 		return nil, fmt.Errorf("%s: version は 1 (%d が書かれている)", FileName, c.Version)
 	}
 	for i := range c.Exclude {
+		if c.Exclude[i].Comment != "" {
+			return nil, fmt.Errorf("%s: exclude[%d]: comment は書けない (単位の直前のコメントから作る欄)", FileName, i)
+		}
 		if err := c.Exclude[i].check(); err != nil {
 			return nil, fmt.Errorf("%s: exclude[%d]: %w", FileName, i, err)
 		}
@@ -134,6 +139,39 @@ func (r *Rule) check() error {
 		}
 	}
 	return nil
+}
+
+// CommentRules は、単位の直前のコメント `// dupscan:allow <種別> <理由>` を単位の除外にする。
+// 設定ファイルの単位の除外と同じ釘で指すので、gate の「base に同じ釘があったときだけ効く」と「新しく足された除外」もそのまま効く
+// (新しい写しに許可のコメントを添えると、新しく足された除外に出る)。種別か理由の無いコメントは errs に入れる。
+func CommentRules(entries []*group.Entry) (rules []Rule, errs []error) {
+	for _, e := range entries {
+		u := e.Unit
+		if !u.HasAllow {
+			continue
+		}
+		kind, reason, _ := strings.Cut(u.Allow, " ")
+		r := Rule{Unit: Pin(e), Kind: kind, Reason: strings.TrimSpace(reason), Comment: fmt.Sprintf("%s:%d", u.File, u.AllowLine)}
+		if err := r.check(); err != nil {
+			errs = append(errs, fmt.Errorf("%s: dupscan:allow: %w (書き方は `// dupscan:allow <false-positive|intentional> <理由>`)", r.Comment, err))
+			continue
+		}
+		rules = append(rules, r)
+	}
+	return rules, errs
+}
+
+// WithComments は設定 c にコメントの許可 rules を足した設定を返す (c は書き換えない)。
+func WithComments(c *Config, rules []Rule) *Config {
+	if len(rules) == 0 {
+		return c
+	}
+	out := &Config{Version: 1}
+	if c != nil {
+		out.Exclude = append(out.Exclude, c.Exclude...)
+	}
+	out.Exclude = append(out.Exclude, rules...)
+	return out
 }
 
 var ordinals = regexp.MustCompile(`#(closure)?[0-9]+`)

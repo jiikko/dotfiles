@@ -247,3 +247,71 @@ func TestReorderedLevelsAreNotNarrowed(t *testing.T) {
 		t.Errorf("段の並びを変えただけで効いていない除外が消えた: %q", out)
 	}
 }
+
+func allowed(src, kindReason string) string {
+	return strings.Replace(src, "    func ", "    // dupscan:allow "+kindReason+"\n    func ", 1)
+}
+
+func TestAllowCommentOnNewCopyIsListedAsNewExclusion(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Sources/B.swift", allowed(helperB, "intentional 分けておく"))
+	rc, out, errs := runGateCmd(t, "-base", "HEAD", root)
+	if rc != 0 || !strings.Contains(out, "新しく足された除外 1") {
+		t.Errorf("許可のコメントを添えた新しい写し: rc=0 と新しく足された除外 1 を期待: rc=%d out=%q err=%q", rc, out, errs)
+	}
+	if rc, out, _ := runGateCmd(t, "-fail-new-exclusions", "-base", "HEAD", root); rc != 1 {
+		t.Errorf("-fail-new-exclusions で rc=1 を期待: rc=%d out=%q", rc, out)
+	}
+	if _, out, _ := runGateCmd(t, "-v", "-base", "HEAD", root); !strings.Contains(out, "(Sources/B.swift:2 のコメント)") {
+		t.Errorf("-v の新しく足された除外に許可したコメントの場所が出ない: %q", out)
+	}
+	if _, out, _ := runGateCmd(t, "-format", "xcode", "-base", "HEAD", root); !strings.Contains(out, "Sources/B.swift:2:1: warning: 新しく足された除外") || strings.Contains(out, ".dupscan.json") {
+		t.Errorf("xcode の新しく足された除外がコメントの場所を指さない: %q", out)
+	}
+	if rc, out, _ := runGateCmd(t, "-no-exclude", "-base", "HEAD", root); rc != 1 {
+		t.Errorf("-no-exclude ではコメントの許可も外れて rc=1 を期待: rc=%d out=%q", rc, out)
+	}
+}
+
+func TestAllowCommentInBaseIsNotNewAndDoesNotCoverNewCopy(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": allowed(helperB, "intentional 分けておく")})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Sources/B.swift", "// 行をずらす\n\n"+allowed(helperB, "intentional 分けておく"))
+	if rc, out, errs := runGateCmd(t, "-fail-new-exclusions", "-base", "HEAD", root); rc != 0 || strings.Contains(out, "新しく足された除外") {
+		t.Errorf("base からある許可のコメントは新しく足された除外に出ない: rc=%d out=%q err=%q", rc, out, errs)
+	}
+	writeFile(t, root, "Sources/C.swift", helperC)
+	if rc, out, _ := runGateCmd(t, "-base", "HEAD", root); rc != 1 || !strings.Contains(out, "新しい: Sources/C.swift") {
+		t.Errorf("古い写しの許可は新しい写し C を覆わない: rc=%d out=%q", rc, out)
+	}
+}
+
+func TestMalformedAllowCommentIsUndecidable(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": allowed(helperB, "intentional")})
+	if rc, _, errs := runReport(t, root); rc != 2 || !strings.Contains(errs, "Sources/B.swift:2") {
+		t.Errorf("理由の無い許可のコメントは rc=2 と場所を期待: rc=%d err=%q", rc, errs)
+	}
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	if rc, _, errs := runGateCmd(t, "-base", "HEAD", root); rc != 2 {
+		t.Errorf("gate でも rc=2 を期待: rc=%d err=%q", rc, errs)
+	}
+}
+
+func TestAllowCommentWithoutDuplicateIsStale(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": allowed(helperA, "false-positive 誤検知")})
+	if rc, out, _ := runReport(t, "-v", root); rc != 0 || !strings.Contains(out, `"comment":"Sources/A.swift:2"`) {
+		t.Errorf("組にいない単位の許可のコメントは、場所付きで効いていない除外に出る: rc=%d out=%q", rc, out)
+	}
+}
+
+func TestCommentFieldCannotBeWrittenInConfig(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA})
+	writeConfig(t, root, map[string]any{"unit": "Sources/A.swift|A|x@0", "kind": "intentional", "reason": "r", "comment": "Sources/A.swift:3"})
+	if rc, _, errs := runReport(t, root); rc != 2 || !strings.Contains(errs, "comment は書けない") {
+		t.Errorf("設定ファイルの comment 欄は rc=2 を期待: rc=%d err=%q", rc, errs)
+	}
+}

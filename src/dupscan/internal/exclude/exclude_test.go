@@ -71,7 +71,11 @@ func TestNewElementsAreItemized(t *testing.T) {
 	}
 	base := parse(`{"version":1,"exclude":[{"group":["a@1","b@2"],"level":"L1","kind":"intentional","reason":"r"}]}`)
 	head := parse(`{"version":1,"exclude":[{"group":["c@3","b@2","a@1"],"level":"L1","kind":"intentional","reason":"直した"}]}`)
-	if got := NewElements(base, head); strings.Join(got, ",") != "group:L1:c@3" {
+	var got []string
+	for _, el := range NewElements(base, head) {
+		got = append(got, el.Key)
+	}
+	if strings.Join(got, ",") != "group:L1:c@3" {
 		t.Errorf("新しい要素: %v", got)
 	}
 }

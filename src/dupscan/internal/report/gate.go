@@ -23,7 +23,7 @@ type GateSummary struct {
 	Violations []ViolationJSON `json:"violations"`
 	Unreadable []UnitRef       `json:"unreadable_changed_units"`
 	// NewExclusions は base の設定に無く head にある除外の要素 (glob と段・組の段と釘・単位の釘)。人が見る一覧。
-	NewExclusions []string `json:"new_exclusions"`
+	NewExclusions []exclude.Element `json:"new_exclusions"`
 	// PathPassed は、パスの除外の下にあるので寄せる側に名指ししなかった、この変更で触った単位の数 (除外で通した写し)。
 	PathPassed     int       `json:"path_excluded_passed_units"`
 	PathPassedList []UnitRef `json:"path_excluded_passed"`
@@ -45,7 +45,7 @@ type ViolationJSON struct {
 // BuildGate は gate の出力の形を組み立てる。
 func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set) GateSummary {
 	s := GateSummary{Root: root, Base: base, Head: head, Changed: r.Changed, Failed: r.Failed(),
-		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewExclusions: []string{}, Exclusions: exclusions(ex),
+		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewExclusions: []exclude.Element{}, Exclusions: exclusions(ex),
 		PathPassed: len(r.PathPassed), PathPassedList: []UnitRef{}}
 	for _, e := range r.PathPassed {
 		s.PathPassedList = append(s.PathPassedList, ref(e.Unit))
@@ -130,7 +130,7 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	}
 	if opt.Verbose {
 		for _, el := range s.NewExclusions {
-			fmt.Fprintf(w, "新しく足された除外: %s\n", el)
+			fmt.Fprintf(w, "新しく足された除外: %s%s\n", el.Key, commentAt(el))
 		}
 		for _, u := range s.PathPassedList {
 			fmt.Fprintf(w, "パスの除外で通した: %s:%d %s\n", u.File, u.Line, label(u))
@@ -168,9 +168,20 @@ func GateXcode(w io.Writer, s GateSummary) error {
 		fmt.Fprintf(w, "%s:%d:%d: warning: パスの除外の下なので名指ししなかった写し: %s (dupscan.gate.exclude)\n", filepath.Join(s.Root, u.File), u.Line, u.Col, label(u))
 	}
 	for _, el := range s.NewExclusions {
-		fmt.Fprintf(w, "%s:1:1: warning: 新しく足された除外: %s (dupscan.gate.exclude)\n", filepath.Join(s.Root, exclude.FileName), el)
+		at := exclude.FileName + ":1"
+		if el.Comment != "" {
+			at = el.Comment
+		}
+		fmt.Fprintf(w, "%s:1: warning: 新しく足された除外: %s (dupscan.gate.exclude)\n", filepath.Join(s.Root, at), el.Key)
 	}
 	return nil
+}
+
+func commentAt(el exclude.Element) string {
+	if el.Comment == "" {
+		return ""
+	}
+	return " (" + el.Comment + " のコメント)"
 }
 
 func short(h string) string { return h[:min(len(h), 12)] }

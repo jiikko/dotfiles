@@ -76,6 +76,14 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2
 	}
+	headCfg, err = withComments(headCfg, h.entries, *c.noExclude)
+	if err != nil {
+		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
+		return 2
+	}
+	// base のコメントの誤りは数えない (base の許可が欠けると head の許可は全部新しく見え、安全側)。
+	baseRules, _ := exclude.CommentRules(b.entries)
+	baseCfg = exclude.WithComments(baseCfg, baseRules)
 	ex := exclude.New(headCfg, h.entries, scopeFilter(sc))
 	ex.LimitToBase(b.entries, baseCfg)
 	if c.narrowed() {

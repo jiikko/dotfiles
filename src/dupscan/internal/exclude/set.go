@@ -62,7 +62,7 @@ func (s *Set) LimitToBase(base []*group.Entry, baseCfg *Config) {
 	}
 	s.newElems = map[string]bool{}
 	for _, el := range NewElements(baseCfg, &Config{Exclude: s.rules}) {
-		s.newElems[el] = true
+		s.newElems[el.Key] = true
 	}
 }
 
@@ -197,9 +197,16 @@ func (s *Set) ruleInScope(r Rule) bool {
 	return true
 }
 
+// Element は除外の要素 1 つ。Comment は、単位の直前のコメントから作った要素ならその場所 (`file:line`)。
+type Element struct {
+	Key     string `json:"element"`
+	Comment string `json:"comment,omitempty"`
+}
+
 // NewElements は head の設定にあって base の設定に無い要素 (glob と段・組の段と釘・単位の釘の 1 つずつ)。
 // 除外の単位でなく要素で比べるので、並べ替え・reason の直しは出ず、既存の除外に足した釘だけが出る。
-func NewElements(base, head *Config) []string {
+// コメントの許可は本体を直すと釘が変わって新しい要素になるので、どのコメントかを場所で添える (付いて回った許可と新しく付けた許可を読み分けるため)。
+func NewElements(base, head *Config) []Element {
 	have := map[string]bool{}
 	if base != nil {
 		for _, r := range base.Exclude {
@@ -208,19 +215,26 @@ func NewElements(base, head *Config) []string {
 			}
 		}
 	}
-	var out []string
-	seen := map[string]bool{}
+	var out []Element
+	seen := map[string]int{}
 	if head != nil {
 		for _, r := range head.Exclude {
 			for _, el := range r.elements() {
-				if !have[el] && !seen[el] {
-					seen[el] = true
-					out = append(out, el)
+				if have[el] {
+					continue
 				}
+				if i, ok := seen[el]; ok {
+					if out[i].Comment == "" {
+						out[i].Comment = r.Comment
+					}
+					continue
+				}
+				seen[el] = len(out)
+				out = append(out, Element{Key: el, Comment: r.Comment})
 			}
 		}
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
 }
 

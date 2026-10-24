@@ -79,4 +79,8 @@ type Unit struct {
 	ReturnType string   // 戻り値の型 (ハッシュに入れる)
 	Body       *Node
 	Unreadable bool // 読めない構文 (ERROR / MISSING) を含む
+	// Allow は単位の直前のコメントに書いた `dupscan:allow` の後ろ (種別と理由)。HasAllow はその印があること (後ろが空でも)。
+	Allow     string
+	HasAllow  bool
+	AllowLine int // 印を書いたコメントの行
 }

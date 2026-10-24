@@ -125,6 +125,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan:", err)
 		return 2
 	}
+	cfg, err = withComments(cfg, got.entries, *c.noExclude)
+	if err != nil {
+		fmt.Fprintln(stderr, "dupscan: 判定不能:", err)
+		return 2
+	}
 	ex := exclude.New(cfg, got.entries, scopeFilter(sc))
 	if c.narrowed() {
 		ex.Narrowed()
@@ -160,6 +165,19 @@ func loadConfig(src repo.Source, noExclude bool) (*exclude.Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// withComments は cfg に単位の直前のコメントの許可を足す。種別か理由の無いコメントはエラー (設定ファイルの誤りと同じく黙って外さない)。
+// noExclude ならコメントも効かせない (形は確かめる)。
+func withComments(cfg *exclude.Config, entries []*group.Entry, noExclude bool) (*exclude.Config, error) {
+	rules, errs := exclude.CommentRules(entries)
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	if noExclude {
+		return cfg, nil
+	}
+	return exclude.WithComments(cfg, rules), nil
 }
 
 // scopeFilter は、起点が repo 全体でなければ起点の中かを返す関数 (起点の外を指す除外を効いていないに数えないため)。
