@@ -433,3 +433,72 @@ func TestAllowedUnitIsNotNamedButDoesNotHideNewCopy(t *testing.T) {
 		t.Errorf("古い単位の許可で新しい写しの違反が消えた: %+v", r)
 	}
 }
+
+func pathSet(t *testing.T, glob string, es ...*group.Entry) *exclude.Set {
+	t.Helper()
+	c, err := exclude.Parse([]byte(`{"version":1,"exclude":[{"paths":["` + glob + `"],"kind":"false-positive","reason":"r"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return exclude.New(c, es, nil)
+}
+
+func inFile(x *group.Entry, file string) *group.Entry { x.Unit.File = file; return x }
+
+func TestExcludedUnitDoesNotShieldOutsideCopies(t *testing.T) {
+	// 生成コード G と手書きの写しの組 (b1, b2) を、3 つとも同じ形に書き換えた: 手書きの側が生成コードの写しになった。
+	// 除外の下の G を寄せる側に選んでから外すと、外の写しが名指しされずに違反ごと消える。
+	g := func() *group.Entry { return inFile(e("g", "A", "A2", "A3"), "Gen/G.swift") }
+	base := []*group.Entry{g(), e("b1", "B", "B2", "B3"), e("b2", "B", "B2", "B3")}
+	head := []*group.Entry{inFile(e("g", "C", "C2", "C3"), "Gen/G.swift"), e("b1", "C", "C2", "C3"), e("b2", "C", "C2", "C3")}
+	o := opt
+	o.Exclude = pathSet(t, "Gen/**", head...)
+	r := Judge(base, head, o)
+	if !r.Failed() || len(r.Violations) != 1 || len(r.Violations[0].New) != 2 {
+		t.Errorf("外の写し b1・b2 を寄せる側に期待: %+v", r)
+	}
+	// 同じ数の出どころでも、ハッシュの並びに依らず外の単位を名指しする。
+	for _, hs := range [][2]string{{"a", "b"}, {"b", "a"}} {
+		base := []*group.Entry{inFile(e("g", hs[0], hs[0]+"2", hs[0]+"3"), "Gen/G.swift"), e("s", hs[1], hs[1]+"2", hs[1]+"3")}
+		head := []*group.Entry{inFile(e("g", "c", "c2", "c3"), "Gen/G.swift"), e("s", "c", "c2", "c3")}
+		o.Exclude = pathSet(t, "Gen/**", head...)
+		if r := Judge(base, head, o); !r.Failed() || keys(r.Violations[0].New)[0] != "s" {
+			t.Errorf("ハッシュの並び %v で外の単位 s を名指ししない: %+v", hs, r)
+		}
+	}
+}
+
+func TestPathPassedCountsOnlyRealCopies(t *testing.T) {
+	// 除外の下の写しの組に同じ修正を入れた (作り直し)・片方を改名した: 除外が無くても違反ではないので、通した数に入れない。
+	gen := func(key, h string) *group.Entry { return inFile(e(key, h, h+"2", h+"3"), "Gen/"+key+".swift") }
+	base := []*group.Entry{gen("g1", "x"), gen("g2", "x")}
+	for name, head := range map[string][]*group.Entry{
+		"同じ修正": {gen("g1", "y"), gen("g2", "y")},
+		"改名":   {gen("g1", "x"), inFile(e("g3", "x", "x2", "x3"), "Gen/g2.swift")},
+	} {
+		o := opt
+		o.Exclude = pathSet(t, "Gen/**", head...)
+		if r := Judge(base, head, o); len(r.PathPassed) != 0 || len(r.Violations) != 0 {
+			t.Errorf("%s: 通した数に入った: passed=%d %+v", name, len(r.PathPassed), r)
+		}
+	}
+	// 除外の下に新しい写しを足したら数える。
+	head := []*group.Entry{gen("g1", "x"), gen("g2", "x"), gen("g9", "x")}
+	o := opt
+	o.Exclude = pathSet(t, "Gen/**", head...)
+	if r := Judge(base, head, o); len(r.PathPassed) != 1 || keys(r.PathPassed)[0] != "g9" {
+		t.Errorf("除外の下の新しい写しを数えない: %+v", r)
+	}
+}
+
+func TestAllowedNewCopyDoesNotBlameSameEditedCopies(t *testing.T) {
+	// 写しの組 a・b に同じ修正を入れ、意図した写し n (許可) を足した: 修正しただけの a・b を寄せる側にしない。
+	base := []*group.Entry{e("a", "x", "x2", "x3"), e("b", "x", "x2", "x3")}
+	n := e("n", "y", "y2", "y3")
+	head := []*group.Entry{e("a", "y", "y2", "y3"), e("b", "y", "y2", "y3"), n}
+	o := opt
+	o.Exclude = exclude.New(&exclude.Config{Version: 1, Exclude: []exclude.Rule{{Unit: exclude.Pin(n), Kind: "intentional", Reason: "r"}}}, head, nil)
+	if r := Judge(base, head, o); len(r.Violations) != 0 {
+		t.Errorf("許可した写しの代わりに修正しただけの写しを止めた: %+v", r)
+	}
+}

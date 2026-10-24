@@ -25,7 +25,8 @@ type GateSummary struct {
 	// NewExclusions は base の設定に無く head にある除外の要素 (glob と段・組の段と釘・単位の釘)。人が見る一覧。
 	NewExclusions []string `json:"new_exclusions"`
 	// PathPassed は、パスの除外の下にあるので寄せる側に名指ししなかった、この変更で触った単位の数 (除外で通した写し)。
-	PathPassed int `json:"path_excluded_passed_units"`
+	PathPassed     int       `json:"path_excluded_passed_units"`
+	PathPassedList []UnitRef `json:"path_excluded_passed"`
 	// BaseConfigError は base の設定を読めなかった理由 (空とみなした)。
 	BaseConfigError string `json:"base_config_error,omitempty"`
 	Exclusions
@@ -44,7 +45,11 @@ type ViolationJSON struct {
 // BuildGate は gate の出力の形を組み立てる。
 func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set) GateSummary {
 	s := GateSummary{Root: root, Base: base, Head: head, Changed: r.Changed, Failed: r.Failed(),
-		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewExclusions: []string{}, Exclusions: exclusions(ex)}
+		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewExclusions: []string{}, Exclusions: exclusions(ex),
+		PathPassed: len(r.PathPassed), PathPassedList: []UnitRef{}}
+	for _, e := range r.PathPassed {
+		s.PathPassedList = append(s.PathPassedList, ref(e.Unit))
+	}
 	for _, v := range r.Violations {
 		vj := ViolationJSON{Level: v.Level.String(), Fail: v.Fail, New: []UnitRef{}, Same: []UnitRef{},
 			Exclude: exclude.GroupSnippet(v.Level, append(append([]*group.Entry(nil), v.New...), v.Same...))}
@@ -127,6 +132,9 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 		for _, el := range s.NewExclusions {
 			fmt.Fprintf(w, "新しく足された除外: %s\n", el)
 		}
+		for _, u := range s.PathPassedList {
+			fmt.Fprintf(w, "パスの除外で通した: %s:%d %s\n", u.File, u.Line, label(u))
+		}
 		if s.BaseConfigError != "" {
 			fmt.Fprintf(w, "base の除外の設定: %s\n", s.BaseConfigError)
 		}
@@ -155,6 +163,12 @@ func GateXcode(w io.Writer, s GateSummary) error {
 	}
 	for _, u := range s.Unreadable {
 		fmt.Fprintf(w, "%s:%d:%d: note: 読めない構文があるので確かめられなかった: %s (dupscan.gate)\n", filepath.Join(s.Root, u.File), u.Line, u.Col, label(u))
+	}
+	for _, u := range s.PathPassedList {
+		fmt.Fprintf(w, "%s:%d:%d: warning: パスの除外の下なので名指ししなかった写し: %s (dupscan.gate.exclude)\n", filepath.Join(s.Root, u.File), u.Line, u.Col, label(u))
+	}
+	for _, el := range s.NewExclusions {
+		fmt.Fprintf(w, "%s:1:1: warning: 新しく足された除外: %s (dupscan.gate.exclude)\n", filepath.Join(s.Root, exclude.FileName), el)
 	}
 	return nil
 }

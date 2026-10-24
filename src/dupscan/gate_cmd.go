@@ -91,7 +91,6 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	res := gate.Judge(b.entries, h.entries, gopt)
 	s := report.BuildGate(sc.Root, baseHash, head.Name(), res, ex)
 	s.NewExclusions = append(s.NewExclusions, exclude.NewElements(baseCfg, headCfg)...)
-	s.PathPassed = len(res.PathPassed)
 	if baseCfgErr != nil {
 		s.BaseConfigError = baseCfgErr.Error()
 	}

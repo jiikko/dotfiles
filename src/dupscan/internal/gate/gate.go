@@ -97,9 +97,13 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 			}
 			k := lv.String() + h
 			if _, done := judged[k]; !done && opt.Exclude != nil && opt.Exclude.PathCovers(lv, g) {
-				judged[k] = false // 全員がパスの除外の下にある組。触った単位は除外で通した数に入れる
-				for _, m := range g {
-					if !unchanged(m, origin) {
+				// 全員がパスの除外の下にある組。除外が無ければ違反だったときだけ、寄せる側を除外で通した数に入れる
+				// (作り直しで写しの組に同じ修正が入る・改名するのは数えない)。
+				judged[k] = false
+				bare := opt
+				bare.Exclude = nil
+				if v, ok, _ := judgeGroup(lv, h, g, origin, bare); ok {
+					for _, m := range v.New {
 						passed[m] = true
 					}
 				}
@@ -179,47 +183,58 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 	if len(g) <= most {
 		return Violation{}, false, nil
 	}
-	// 寄せる側 (新しい) は、一番多い出どころ以外から来た、この変更で触った単位。触っていない単位は寄せる側に出さない
-	// (触っていない単位を出すと、その commit で触っていないファイルに warning が付く)。
+	// 寄せる側 (新しい) は、一番多い出どころ以外から来た、この変更で触った単位 (新しい単位どうしの組なら全部)。
+	// 触っていない単位は寄せる側に出さない (触っていないファイルに warning が付く)。
+	isCand := func(m *group.Entry) bool {
+		return (from[m] != mostKey || strings.HasPrefix(mostKey, "new:")) && !unchanged(m, origin)
+	}
+	touched := func(m *group.Entry) bool { return !unchanged(m, origin) }
+	// 名指ししない単位 (許可・パスの除外の下) は、寄せる側を選ぶ前に外す。選んでから外すと、外の写しが名指しされずに違反ごと消える。
+	allowed := func(m *group.Entry) bool { return opt.Exclude != nil && opt.Exclude.Allowed(m) }
+	quiet := func(m *group.Entry) bool {
+		return allowed(m) || opt.Exclude != nil && opt.Exclude.PathExcluded(m, lv)
+	}
 	v = Violation{Level: lv, Fail: failAt(lv, opt.Fail)}
-	for _, m := range g {
-		// 一番多い出どころも base に無い (新しい単位どうしの組) なら、全部が新しい。
-		if (from[m] != mostKey || strings.HasPrefix(mostKey, "new:")) && !unchanged(m, origin) {
-			v.New = append(v.New, m)
-		} else {
-			v.Same = append(v.Same, m)
-		}
-	}
-	if len(v.New) == 0 { // 触った単位が全部一番多い出どころの側にいる: 触った単位を寄せる側にする
-		v.Same = v.Same[:0]
+	pick := func(ok func(*group.Entry) bool) {
+		v.New, v.Same = nil, nil
 		for _, m := range g {
-			if unchanged(m, origin) {
-				v.Same = append(v.Same, m)
-			} else {
+			if ok(m) && !quiet(m) {
 				v.New = append(v.New, m)
+			} else {
+				v.Same = append(v.Same, m)
 			}
 		}
 	}
-	// 許可の単位とパスの除外の下の単位は寄せる側から同じ形へ移す (付け替えの後で。先に外すと、触った単位が寄せる側に付け替えられる)。
-	if opt.Exclude != nil {
-		news := v.New[:0:0]
-		for _, m := range v.New {
-			switch {
-			case opt.Exclude.Allowed(m):
-				v.Same = append(v.Same, m)
-			case opt.Exclude.PathExcluded(m, lv):
-				v.Same = append(v.Same, m)
+	pick(isCand)
+	// 寄せる側の候補が無い (触った単位が全部一番多い出どころの側) か、候補が全部パスの除外の下: 触った単位を寄せる側にする
+	// (除外の下の単位と組になった外の写しは、外の単位として止める)。候補に許可の単位がいれば付け替えない (意図した写しなので、
+	// 同じ修正を入れただけの写しを代わりに止めない)。
+	if len(v.New) == 0 && !hasAny(g, func(m *group.Entry) bool { return isCand(m) && allowed(m) }) {
+		pick(touched)
+	}
+	if len(v.New) == 0 {
+		// 名指しできる単位が無い。除外が無ければ寄せる側だったパスの除外の下の単位を、除外で通した数に入れる。
+		named := isCand
+		if !hasAny(g, isCand) {
+			named = touched
+		}
+		for _, m := range g {
+			if named(m) && opt.Exclude != nil && opt.Exclude.PathExcluded(m, lv) {
 				byPath = append(byPath, m)
-			default:
-				news = append(news, m)
 			}
 		}
-		v.New = news
-		if len(v.New) == 0 {
-			return Violation{}, false, byPath
+		return Violation{}, false, byPath
+	}
+	return v, true, nil
+}
+
+func hasAny(g []*group.Entry, ok func(*group.Entry) bool) bool {
+	for _, m := range g {
+		if ok(m) {
+			return true
 		}
 	}
-	return v, true, byPath
+	return false
 }
 
 // origins は head の単位ごとに base の側の相手 (出どころ) を 1 対 1 で当てる。ずれに強い順に当てる:

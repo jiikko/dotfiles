@@ -79,7 +79,12 @@ func parseFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool
 
 // narrowed は、段か下限を既定から変えた走査か (組が作られないだけの除外を「効いていない」と言えない)。
 func (c common) narrowed() bool {
-	return *c.levels != "L1,L2,L3" || *c.minNodes != 10 || *c.minClosure != 20
+	lv, err := parseLevels(*c.levels)
+	set := map[norm.Level]bool{}
+	for _, l := range lv {
+		set[l] = true
+	}
+	return err != nil || len(set) != len(norm.Levels) || *c.minNodes != 10 || *c.minClosure != 20
 }
 
 func (c common) options() (group.Options, error) {

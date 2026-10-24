@@ -225,3 +225,25 @@ func TestNarrowedRunDoesNotCallExclusionStale(t *testing.T) {
 		t.Errorf("絞った走査で効いていないと出た: %q", out)
 	}
 }
+
+func TestPassedCopiesAreListedInXcodeAndVerbose(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA})
+	writeConfig(t, root, map[string]any{"paths": []string{"Mirror/**"}, "kind": "false-positive", "reason": "鏡"})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Mirror/B.swift", helperB)
+	if _, out, _ := runGateCmd(t, "-v", "-base", "HEAD", root); !strings.Contains(out, "パスの除外で通した: Mirror/B.swift") {
+		t.Errorf("-v に通した単位が無い: %q", out)
+	}
+	if _, out, _ := runGateCmd(t, "-format", "xcode", "-base", "HEAD", root); !strings.Contains(out, "Mirror/B.swift:2:") || !strings.Contains(out, "名指ししなかった写し") {
+		t.Errorf("xcode に通した単位が無い: %q", out)
+	}
+}
+
+func TestReorderedLevelsAreNotNarrowed(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA})
+	writeConfig(t, root, map[string]any{"paths": []string{"Nowhere/**"}, "kind": "false-positive", "reason": "r"})
+	if _, out, _ := runReport(t, "-levels", "L3,L2,L1", root); !strings.Contains(out, "効いていない除外 1") {
+		t.Errorf("段の並びを変えただけで効いていない除外が消えた: %q", out)
+	}
+}
