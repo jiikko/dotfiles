@@ -122,10 +122,10 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 		key := "new:" + m.Unit.Key // 出どころの無い単位は、それぞれ別
 		if b := origin[m]; b != nil {
 			key = "base:" + b.Result.Hash[lv]
-			// base でこの段の比べる対象でなかった相手 (下限より小さい・読めない) から来た別の単位 (鍵が違う) は、
-			// 比べる対象だった相手と別に数える。同じに数えると、小さいクロージャを消して同じ本体の関数を足したときに
-			// 新しい写しが通る。その場で育った単位 (鍵が同じ) は同じに数える: 別に数えたり捨てたりすると、写しが
-			// 同じ修正で一緒に下限を超えたときに止まる (どちらも base で既に写しだった)。
+			// base でこの段の比べる対象でなかった相手から来た別の単位 (鍵が違う) は、比べる対象だった相手と別に数える
+			// (origins は種類をまたいで当てないので、ここに来るのは base で L3 だけ比べなかった L3Trivial の相手)。
+			// 同じに数えると、L3 で比べていなかった単位が組に入った分を見逃す。その場で育った単位 (鍵が同じ) は
+			// 同じに数える: 別に数えたり捨てたりすると、写しが同じ修正で一緒に下限を超えたときに止まる。
 			if !eligible(b, lv, opt.Options) && b.Unit.Key != m.Unit.Key {
 				key = "small:" + b.Result.Hash[lv]
 			}
@@ -157,7 +157,8 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 	// (触っていない単位を出すと、その commit で触っていないファイルに warning が付く)。
 	v := Violation{Level: lv, Fail: failAt(lv, opt.Fail)}
 	for _, m := range g {
-		if from[m] != mostKey && !unchanged(m, origin) {
+		// 一番多い出どころも base に無い (新しい単位どうしの組) なら、全部が新しい。
+		if (from[m] != mostKey || strings.HasPrefix(mostKey, "new:")) && !unchanged(m, origin) {
 			v.New = append(v.New, m)
 		} else {
 			v.Same = append(v.Same, m)
@@ -188,20 +189,23 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 //     (写しの組に同じ修正を入れて片方を移した・番号がずれた。緩い段より先に当てないと、先着で別の単位に相手を取られる)
 //  6. まだ相手の無い base の単位のうち、L2、次に L3 の形が同じもの (改名・移動しながらの小さな編集)
 //  7. クロージャの鍵
+//  8. 鍵が同じ単位 (下限をまたいで育った・縮んだ単位)
 //
-// 段の鍵が空の単位は、その段では当てない。1 から 7 は、比べる対象になる head の単位で全部回してから、残りの単位で回す。
+// 2 から 7 は、比べる対象 (下限以上で読める) の単位どうし、そうでない単位どうしの中でだけ当てる。またいで当てると、
+// 足した短いクロージャが改名した写しの相手を取って写しを新しく見せ、新しい写しが触っていない小さいクロージャの相手を
+// 取って通る (小さいクロージャどうしは本体が同じことが多い)。段の鍵が空の単位は、その段では当てない。
 func origins(base, head []*group.Entry, opt group.Options) map[*group.Entry]*group.Entry {
 	out := map[*group.Entry]*group.Entry{}
 	used := map[*group.Entry]bool{}
-	cur := head
+	curBase, curHead := base, head
 	match := func(keyOf func(*group.Entry) string) {
 		pool := map[string][]*group.Entry{}
-		for _, b := range base {
+		for _, b := range curBase {
 			if k := keyOf(b); !used[b] && k != "" {
 				pool[k] = append(pool[k], b)
 			}
 		}
-		for _, e := range cur {
+		for _, e := range curHead {
 			if out[e] != nil {
 				continue
 			}
@@ -228,34 +232,42 @@ func origins(base, head []*group.Entry, opt group.Options) map[*group.Entry]*gro
 		}
 		return ""
 	})
-	// 比べる対象になる単位から当てる。下限より小さい単位を先に当てると、改名・移動した写しの相手を取って、
-	// 写しを新しいと見せる (段の中の並びを変えても、小さい単位の方が細かい段で一致すると防げない)。
-	var big, rest []*group.Entry
-	for _, e := range head {
-		if eligible(e, norm.L1, opt) {
-			big = append(big, e)
-		} else {
-			rest = append(rest, e)
+	match(func(e *group.Entry) string { return join(e.Unit.Key, l1(e)) })
+	split := func(es []*group.Entry) (big, small []*group.Entry) {
+		for _, e := range es {
+			if eligible(e, norm.L1, opt) {
+				big = append(big, e)
+			} else {
+				small = append(small, e)
+			}
 		}
+		return big, small
 	}
-	for _, cur = range [][]*group.Entry{big, rest} {
-		matchAll(match, head, out, isBase)
+	hb, hs := split(head)
+	bb, bs := split(base)
+	for _, p := range [][2][]*group.Entry{{bb, hb}, {bs, hs}} {
+		curBase, curHead = p[0], p[1]
+		matchLoose(match, head, out, isBase)
 	}
+	curBase, curHead = base, head
+	match(func(e *group.Entry) string { return e.Unit.Key })
 	return out
 }
 
-// matchAll は origins の 1 から 7 の段を順に当てる。
-func matchAll(match func(func(*group.Entry) string), head []*group.Entry, out map[*group.Entry]*group.Entry, isBase map[*group.Entry]bool) {
-	l1 := func(e *group.Entry) string { return e.Result.Hash[norm.L1] }
-	join := func(parts ...string) string {
-		for _, p := range parts {
-			if p == "" {
-				return ""
-			}
+func l1(e *group.Entry) string { return e.Result.Hash[norm.L1] }
+
+// join は段の鍵を組み立てる。空の部分があれば空 (その段では当てない)。
+func join(parts ...string) string {
+	for _, p := range parts {
+		if p == "" {
+			return ""
 		}
-		return strings.Join(parts, "\x00")
 	}
-	match(func(e *group.Entry) string { return join(e.Unit.Key, l1(e)) })
+	return strings.Join(parts, "\x00")
+}
+
+// matchLoose は origins の 2 から 7 の段を順に当てる。
+func matchLoose(match func(func(*group.Entry) string), head []*group.Entry, out map[*group.Entry]*group.Entry, isBase map[*group.Entry]bool) {
 	match(func(e *group.Entry) string { return join(l1(e), e.Unit.File, e.Unit.Name) })
 	match(func(e *group.Entry) string { return join(l1(e), e.Unit.File) })
 	match(l1)
@@ -283,7 +295,12 @@ func matchAll(match func(func(*group.Entry) string), head []*group.Entry, out ma
 	})
 	match(func(e *group.Entry) string { return e.Result.Hash[norm.L2] })
 	match(func(e *group.Entry) string { return e.Result.Hash[norm.L3] })
-	match(func(e *group.Entry) string { return e.Unit.Key })
+	match(func(e *group.Entry) string {
+		if e.Unit.Kind != tree.KindClosure {
+			return ""
+		}
+		return e.Unit.Key
+	})
 }
 
 // unchanged は、出どころが同じ鍵・同じ本体の単位 (この変更で触っていない単位) か。

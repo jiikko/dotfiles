@@ -320,3 +320,68 @@ func TestSmallUnitGrowingWithItsCopyIsNotViolation(t *testing.T) {
 		t.Errorf("一緒に育った写しが違反になった: %+v", r)
 	}
 }
+
+// sized は節の数を変えた単位。
+func sized(x *group.Entry, n int) *group.Entry { x.Result.Nodes = n; return x }
+
+func TestNewCopiesDoNotTakeSmallUnitsAsOrigin(t *testing.T) {
+	o := opt
+	o.MinClosureNodes = 20
+	smalls := func() []*group.Entry {
+		return []*group.Entry{sized(cl("S|f#closure1", "s1", "SY", "Z"), 8), sized(cl("S|f#closure2", "s2", "SY", "Z"), 8)}
+	}
+	news := []*group.Entry{sized(cl("V|g#closure1", "N", "NY", "Z"), 28), sized(cl("W|h#closure1", "N", "NY", "Z"), 28)}
+	// 触っていない小さい写しの相手を、新しい写し 2 つが取って通っていた。
+	r := Judge(smalls(), append(smalls(), news...), o)
+	if !r.Failed() || r.Changed != 2 {
+		t.Errorf("新しい写しが小さい単位の相手を取って通った (changed は新しい 2 つだけのはず): %+v", r)
+	}
+	// 小さい写しを消して新しい写しを足しても、小さい単位は比べていなかったので新しい写し。
+	r = Judge(smalls(), news, o)
+	if !r.Failed() {
+		t.Errorf("消した小さい写しの代わりの新しい写しが通った: %+v", r)
+	}
+	// 新しい写しどうしの組では、どちらも新しい側に出す。
+	if v := r.Violations; len(v) != 1 || len(v[0].New) != 2 || len(v[0].Same) != 0 {
+		t.Errorf("新しい写しどうしの組の名指し: %+v", r)
+	}
+}
+
+func TestMoveWithSmallSameBodyClosureIsNotViolation(t *testing.T) {
+	// 写し b を別のファイルへ移しただけ。同じ本体の小さいクロージャ s が base で先に並んでいても、s が b の相手を取らない。
+	o := opt
+	o.MinClosureNodes = 20
+	at := func(key, file string, small bool) *group.Entry {
+		var x *group.Entry
+		if small {
+			x = cl(key, "X", "XY", "XZ")
+		} else {
+			x = e(key, "X", "XY", "XZ")
+		}
+		x.Unit.File = file
+		return sized(x, 15)
+	}
+	for _, sFirst := range []bool{true, false} {
+		a, s, b := at("A|a", "A", false), at("S|f#closure1", "S", true), at("B|b", "B", false)
+		base := []*group.Entry{a, s, b}
+		if !sFirst {
+			base = []*group.Entry{a, b, s}
+		}
+		head := []*group.Entry{at("A|a", "A", false), at("S|f#closure1", "S", true), at("C|b", "C", false)}
+		if r := Judge(base, head, o); len(r.Violations) != 0 {
+			t.Errorf("移しただけで違反になった (s が先=%v): %+v", sFirst, r)
+		}
+	}
+}
+
+func TestL3TrivialOriginCountsSeparately(t *testing.T) {
+	// base で L3 だけ比べなかった (L3Trivial) 単位 t を、移して直したら L3 で a と同じ形になった: L3 の新しい写し (報告だけ)。
+	tb := e("t", "q", "qy", "z")
+	tb.Result.L3Trivial = true
+	base := []*group.Entry{e("a", "x", "y", "z"), tb}
+	head := []*group.Entry{e("a", "x", "y", "z"), e("t2", "q2", "qy2", "z")}
+	r := Judge(base, head, opt)
+	if len(r.Violations) != 1 || r.Violations[0].Level != norm.L3 || r.Failed() {
+		t.Errorf("L3 で比べていなかった単位が組に入ったのを報告しない: %+v", r)
+	}
+}
