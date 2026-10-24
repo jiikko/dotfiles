@@ -83,7 +83,8 @@ commit / push
 
 - repo ごとの事情 (共通のヘルパーの置き場所・既定のブランチ・test / prod の規則の上書き・除外・下限) は、その repo の設定ファイルにだけ書く。dupscan のコードに特定の repo の既定は入れない
 - 走査の起点は repo の中のサブディレクトリでもよい (比べる範囲は起点の中だけ。写しが起点をまたぐなら repo の root を起点にしてパスの除外で絞る)。所属ターゲットは `Package.swift`・XcodeGen の `project.yml`・追跡されている `project.pbxproj` のどれからでも読み、分からなければ「不明」と出す
-- 既定値は規模と作りの違う 2 つの repo (obaket と DualNoteApp) で測って決める (issue 898)
+- 既定値は規模と作りの違う 2 つの repo (obaket と DualNoteApp) で測って決める (issue 898)。DualNoteApp は XCTest・XcodeGen・Swift 199 ファイル、obaket は Swift Testing・Swift 1626 ファイルで、テストの書き方と規模の両方が違う
+- submodule の中は既定で見ない
 - 調べる repo には何も書かない (キャッシュは repo の外、内部の git は `GIT_OPTIONAL_LOCKS=0`、base や過去の commit は checkout せずに git のオブジェクトから読む)
 - dotfiles を持たない repo の CI でも、版を固定して入れられる (issue 892)
 - **SwiftLint のルールにはしない**: `custom_rules` は 1 ファイルずつの正規表現で、ファイルをまたいで本体の形を比べられない。Swift で書くネイティブのルールは SwiftLint を Bazel で自前ビルドする必要があり、Swift 専用にもなる。

@@ -9,6 +9,9 @@
 
 ## 受け入れ条件
 
+- [ ] テスト関数を、XCTest (XCTestCase のサブクラスの `func test…`) と Swift Testing (`@Test`) の両方で見分ける。DualNoteApp は XCTest だけ (60 ファイル)、obaket は Swift Testing なので、両方の repo で確かめる
+- [ ] DualNoteApp (Swift 6.0) の全ファイルで、読めない構文があるファイルの数を測る (obaket の 3% と並べる)
+
 - [ ] 所属ターゲットを `Package.swift`・XcodeGen の `project.yml`・追跡されている `project.pbxproj` から解決する。どれも無ければ「不明」と出す。
       obaket と DualNoteApp (XcodeGen と SwiftPM。`project.pbxproj` は追跡していないがディスク上にはある) の両方で、代表のファイルの所属が正しいことを確かめる。
       追跡されていない `project.pbxproj` は読まない (手元と CI で結果が割れないように) ことをテストで固定する。`project.yml` は target の `sources` のパスだけを読み、
@@ -23,3 +26,4 @@
 
 - 2026-10-24 起票 (epic 890 の分解)
 - 2026-10-24 所属ターゲットの解決に XcodeGen の `project.yml` を足し、DualNoteApp でも確かめる条件にした (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)
+- 2026-10-24 XCTest と Swift Testing の両方のテスト関数の見分けと、DualNoteApp での読めない構文の実測を受け入れ条件に足した (ユーザーの問い 2026-10-24: DualNoteApp と obaket は使っている道具が同じか、検証環境にする障壁は)
