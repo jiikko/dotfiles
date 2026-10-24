@@ -22,7 +22,18 @@ bin/dupscan gate -base HEAD~1 -head HEAD .    # 2 つの commit を比べる (�
 bin/dupscan near Sources/A.swift:location     # この単位と同じ形の単位 (一致した最も細かい段で)。起点を書かなければ repo 全体と比べる
 bin/dupscan near Sources/A.swift:42 Sources   # 行で指す (その行を含む単位のうち最も後で始まるもの)。起点を絞る
 bin/dupscan explain Sources/A.swift:location  # 段ごとに潰した形・ハッシュと、比べない理由 (なぜ同じ / 違うと判定したか)
+
+bin/dupscan index -returns StorageLocation    # 書く前に引く: 戻り値の型の一部で既にある定義を (1 行 1 件・上位 20 件)
+bin/dupscan index -name location -param-type String   # 名前の一部・引数の型の一部 (全部の条件に当たるものだけ)
+bin/dupscan index -doc bucket                 # doc comment (/// か /** */) の最初の行の語
+bin/dupscan index -file Sources/A.swift       # そのファイルの単位を行の順に (outline。件数で切らない)
 ```
+
+`index` は名前の付いた単位 (関数・初期化子・computed property・subscript など。クロージャとテスト関数は除く) を
+`file:line 型.署名 [test,private] // doc の最初の行` の 1 行で出す。grep と違い呼び出し側の行・コメント・文字列は混ざらない。
+並べ方は名前の一致の強さ (同じ > 前方 > 一部) → prod を test より前 → private / fileprivate でないもの (そのまま使える) を前 → 場所。
+型は字面の一部で引く (`Tag` で `[Tag]` も当たる。型は解決しないので、typealias・同名の別の型は区別しない)。
+キャッシュは持たず、引くたびに読む (DualNoteApp の 1130 単位で 0.5 秒。issue 897)。呼び出し元の数・`--check` はまだ無い。
 
 `near` は report・gate と同じ比べ方 (`group.Eligible` と段のハッシュ) で、指した単位と同じハッシュの単位を出す。指した単位そのものは出さない。
 組の作り方 (被った組・入れ子のクロージャの組を外す) は通さないので、クロージャを指してもその一致が出る。

@@ -1,0 +1,149 @@
+package report
+
+import (
+	"fmt"
+	"io"
+	"sort"
+	"strings"
+
+	"dupscan/internal/tree"
+)
+
+// Query は索引の引き方。空の欄は絞らない。全部が当たる単位だけを返す。
+type Query struct {
+	Name      string // 名前の一部 (大文字小文字を区別しない)
+	Returns   string // 戻り値の型の一部
+	ParamType string // どれかの引数の型の一部
+	Doc       string // doc comment の最初の行の語 (大文字小文字を区別しない)
+	File      string // このファイル (repo の root からの相対) の単位だけ。行の順に並べる
+}
+
+// IndexEntry は索引の 1 行。
+type IndexEntry struct {
+	UnitRef
+	ReturnType string   `json:"return_type,omitempty"`
+	ParamTypes []string `json:"param_types,omitempty"`
+	Doc        string   `json:"doc,omitempty"`
+}
+
+// IndexSummary は索引の出力。
+type IndexSummary struct {
+	Units   int          `json:"units"`
+	Matches int          `json:"matches"`
+	Entries []IndexEntry `json:"entries"`
+}
+
+// BuildIndex は名前の付いた単位 (クロージャを除く) から q に当たるものを並べる。
+// 並べ方: 名前の一致の強さ (同じ > 前方 > 一部) → prod を test より前 → private でないもの (そのまま使える) を前 → 場所。
+// File を指したときはファイルの中の行の順 (outline)。
+func BuildIndex(units []*tree.Unit, q Query) IndexSummary {
+	type hit struct {
+		u     *tree.Unit
+		score int
+	}
+	var hits []hit
+	n := 0
+	for _, u := range units {
+		if u.Kind == tree.KindClosure {
+			continue
+		}
+		n++
+		score, ok := q.match(u)
+		if ok {
+			hits = append(hits, hit{u, score})
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		a, b := hits[i], hits[j]
+		if q.File == "" {
+			if a.score != b.score {
+				return a.score > b.score
+			}
+			if a.u.Test != b.u.Test {
+				return !a.u.Test
+			}
+			if pa, pb := hidden(a.u.Visibility), hidden(b.u.Visibility); pa != pb {
+				return !pa
+			}
+		}
+		if a.u.File != b.u.File {
+			return a.u.File < b.u.File
+		}
+		return a.u.Line < b.u.Line
+	})
+	s := IndexSummary{Units: n, Matches: len(hits), Entries: []IndexEntry{}}
+	for _, h := range hits {
+		s.Entries = append(s.Entries, IndexEntry{UnitRef: ref(h.u), ReturnType: h.u.ReturnType, ParamTypes: h.u.ParamTypes, Doc: h.u.Doc})
+	}
+	return s
+}
+
+func (q Query) match(u *tree.Unit) (int, bool) {
+	if q.File != "" && u.File != q.File {
+		return 0, false
+	}
+	if q.Returns != "" && !strings.Contains(u.ReturnType, q.Returns) {
+		return 0, false
+	}
+	if q.ParamType != "" && !containsAny(u.ParamTypes, q.ParamType) {
+		return 0, false
+	}
+	if q.Doc != "" && !strings.Contains(strings.ToLower(u.Doc), strings.ToLower(q.Doc)) {
+		return 0, false
+	}
+	if q.Name == "" {
+		return 0, true
+	}
+	name, want := strings.ToLower(u.Name), strings.ToLower(q.Name)
+	switch {
+	case name == want:
+		return 3, true
+	case strings.HasPrefix(name, want):
+		return 2, true
+	case strings.Contains(name, want):
+		return 1, true
+	}
+	return 0, false
+}
+
+// hidden は、その可視性では他のファイルからそのまま使えないか (寄せる候補として区別する)。
+func hidden(v string) bool { return v == "private" || v == "fileprivate" }
+
+func containsAny(xs []string, sub string) bool {
+	for _, x := range xs {
+		if strings.Contains(x, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// IndexText は索引を 1 行 1 件で出す (`file:line 型.署名 [印] // doc の 1 行目`)。limit を超えた分は件数だけ出す。
+func IndexText(w io.Writer, s IndexSummary, limit int) error {
+	if s.Matches == 0 {
+		fmt.Fprintf(w, "dupscan index: 当たる単位なし (単位 %d)\n", s.Units)
+		return nil
+	}
+	for i, e := range s.Entries {
+		if limit > 0 && i == limit {
+			fmt.Fprintf(w, "… 他 %d 件 (-limit 0 か -format json で全部。語を足して絞る)\n", s.Matches-limit)
+			break
+		}
+		line := fmt.Sprintf("%s:%d %s", e.File, e.Line, label(e.UnitRef))
+		var marks []string
+		if e.Test {
+			marks = append(marks, "test")
+		}
+		if hidden(e.Visibility) {
+			marks = append(marks, e.Visibility)
+		}
+		if len(marks) > 0 {
+			line += " [" + strings.Join(marks, ",") + "]"
+		}
+		if e.Doc != "" {
+			line += " // " + e.Doc
+		}
+		fmt.Fprintln(w, line)
+	}
+	return nil
+}

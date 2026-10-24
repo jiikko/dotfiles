@@ -1,6 +1,7 @@
 package swift
 
 import (
+	"strings"
 	"testing"
 
 	"dupscan/internal/norm"
@@ -226,5 +227,32 @@ class C {
 		if !got[n] {
 			t.Errorf("%s が単位として出ない", n)
 		}
+	}
+}
+
+func TestDocCommentAndParamTypes(t *testing.T) {
+	src := `struct D {
+    /**
+     * dupscan:allow intentional 理由
+     * Makes a thing.
+     * second line
+     */
+    func make(_ a: Int, label b: [String: Int], c: @escaping (Int) -> Void) {}
+    // ふつうのコメント
+    func plain() {}
+    /// Doc は空行を挟むと付かない
+
+    func separated() {}
+}
+`
+	got := map[string]*tree.Unit{}
+	for _, u := range parse(t, "D.swift", src).Units {
+		got[u.Name] = u
+	}
+	if u := got["make"]; u.Doc != "Makes a thing." || strings.Join(u.ParamTypes, "|") != "Int|[String: Int]|@escaping (Int) -> Void" {
+		t.Errorf("make: Doc=%q ParamTypes=%q", u.Doc, u.ParamTypes)
+	}
+	if got["plain"].Doc != "" || got["separated"].Doc != "" {
+		t.Errorf("doc comment でないコメント・空行を挟んだ doc は付かない: %q %q", got["plain"].Doc, got["separated"].Doc)
 	}
 }

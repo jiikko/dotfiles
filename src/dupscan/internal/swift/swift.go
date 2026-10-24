@@ -250,11 +250,14 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 			name = w.text(ch)
 		}
 	}
-	var sig, locals []string
+	var sig, locals, paramTypes []string
 	for _, p := range params(n) {
 		sig = append(sig, collapse(w.text(p)))
 		if in := internalName(p, w.src); in != "" {
 			locals = append(locals, in)
+		}
+		if _, typ, ok := strings.Cut(collapse(w.text(p)), ":"); ok {
+			paramTypes = append(paramTypes, strings.TrimSpace(typ))
 		}
 	}
 	signature := name + "(" + strings.Join(sig, ", ") + ")"
@@ -276,8 +279,10 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 	}
 	u := w.newUnit(n, kind, name, signature, locals, body, c)
 	u.ReturnType = ret
+	u.ParamTypes = paramTypes
 	u.Visibility = w.visibility(n)
 	u.Allow, u.AllowLine, u.HasAllow = w.allowComment(n)
+	u.Doc = w.docComment(n)
 	return u
 }
 
@@ -291,15 +296,17 @@ func (w *walker) propertyUnit(decl, computed *sitter.Node, name string, c ctx) *
 	}
 	u.Visibility = w.visibility(decl)
 	u.Allow, u.AllowLine, u.HasAllow = w.allowComment(decl)
+	u.Doc = w.docComment(decl)
 	return u
 }
 
 // allowMarker は単位の直前のコメントに書く許可の印。
 const allowMarker = "dupscan:allow"
 
-// allowComment は宣言 n の直前に続くコメント (空行を挟まない) の先頭から許可の印を探し、印の後ろを返す。
-// 前の行の末尾のコメント (`let a = 1 // …`) はその行のものなので数えない。クロージャ・didSet は名前で指せないので対象にしない。
-func (w *walker) allowComment(n *sitter.Node) (string, int, bool) {
+// leadingComments は宣言 n の直前に続くコメント (空行を挟まない) を近い順に返す。
+// 前の行の末尾のコメント (`let a = 1 // …`) はその行のものなので数えない。
+func leadingComments(n *sitter.Node) []*sitter.Node {
+	var out []*sitter.Node
 	next := n
 	for s := n.PrevSibling(); s != nil && (s.Kind() == "comment" || s.Kind() == "multiline_comment"); s = s.PrevSibling() {
 		if next.StartPosition().Row > s.EndPosition().Row+1 {
@@ -308,15 +315,44 @@ func (w *walker) allowComment(n *sitter.Node) (string, int, bool) {
 		if p := s.PrevSibling(); p != nil && p.EndPosition().Row == s.StartPosition().Row {
 			break
 		}
-		// 印はコメントの先頭だけで読む (`// TODO: dupscan:allow は使わない` のような文を許可にしない)。
-		// 改行も削る (`/**` の次の行の ` * dupscan:allow …` を読む)。
-		body := strings.TrimLeft(strings.TrimSpace(strings.TrimSuffix(w.text(s), "*/")), "/*! \t\r\n")
-		if after, ok := strings.CutPrefix(body, allowMarker); ok {
-			return strings.TrimSpace(after), int(s.StartPosition().Row) + 1, true
-		}
+		out = append(out, s)
 		next = s
 	}
+	return out
+}
+
+// commentBody はコメントの記号 (`//`・`///`・`/*`・`*/`・行頭の `*`) を除いた中身。改行も削る (`/**` の次の行の ` * …` を読む)。
+func (w *walker) commentBody(c *sitter.Node) string {
+	return strings.TrimLeft(strings.TrimSpace(strings.TrimSuffix(w.text(c), "*/")), "/*! \t\r\n")
+}
+
+// allowComment は宣言 n の直前のコメントの先頭から許可の印を探し、印の後ろを返す。クロージャ・didSet は名前で指せないので対象にしない。
+func (w *walker) allowComment(n *sitter.Node) (string, int, bool) {
+	for _, c := range leadingComments(n) {
+		// 印はコメントの先頭だけで読む (`// TODO: dupscan:allow は使わない` のような文を許可にしない)。
+		if after, ok := strings.CutPrefix(w.commentBody(c), allowMarker); ok {
+			return strings.TrimSpace(after), int(c.StartPosition().Row) + 1, true
+		}
+	}
 	return "", 0, false
+}
+
+// docComment は宣言 n の doc comment (`///` か `/** */`) の最初の行。許可の印の行は doc に数えない。
+func (w *walker) docComment(n *sitter.Node) string {
+	cs := leadingComments(n)
+	for i := len(cs) - 1; i >= 0; i-- {
+		t := w.text(cs[i])
+		if !strings.HasPrefix(t, "///") && !strings.HasPrefix(t, "/**") {
+			continue
+		}
+		for _, line := range strings.Split(w.commentBody(cs[i]), "\n") {
+			line = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "*"))
+			if line != "" && !strings.HasPrefix(line, allowMarker) {
+				return line
+			}
+		}
+	}
+	return ""
 }
 
 func (w *walker) closureUnit(n *sitter.Node, c ctx) *tree.Unit {

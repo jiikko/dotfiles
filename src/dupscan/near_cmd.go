@@ -38,12 +38,9 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return fail(fmt.Errorf("%q は <file>:<関数名> か <file>:<行> の形ではない", rest[0]))
 	}
-	abs, err := filepath.Abs(file)
+	abs, err := absPath(file)
 	if err != nil {
 		return fail(err)
-	}
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = real
 	}
 	sc, err := repo.Resolve(append([]string{filepath.Dir(abs)}, rest[1:]...))
 	if err != nil {
@@ -54,11 +51,10 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 	} else {
 		sc.Prefixes = sc.Prefixes[1:]
 	}
-	rel, err := filepath.Rel(sc.Root, abs)
+	rel, err := repoRel(sc.Root, abs)
 	if err != nil {
 		return fail(err)
 	}
-	rel = filepath.ToSlash(rel)
 	src := repo.Worktree{Scope: sc, Exts: swift.Extensions}
 	cfg, err := loadConfig(src, *c.noExclude)
 	if err != nil {
@@ -98,6 +94,27 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 		return fail(err)
 	}
 	return 0
+}
+
+// absPath は path の絶対パス (symlink を解いた実体。git の root と比べるため)。
+func absPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = real
+	}
+	return abs, nil
+}
+
+// repoRel は絶対パス abs の、repo の root からの相対パス (単位の File と同じ形)。
+func repoRel(root, abs string) (string, error) {
+	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 // cutSelector は `<file>:<関数名|行>` を分ける (最後の `:` で切る)。

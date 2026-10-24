@@ -40,3 +40,6 @@ dupscan は構文木で単位を取り出しているので、**定義だけを 
 
 - 2026-10-24 起票 (ユーザーの問い: 重複の検出ではなく、関連の実装の調査にも使えないか)
 - 2026-10-24 2 周目の敵対的レビューの反証を取り込んだ: doc の 1 行目は 897 を待つ・`find` は 897 の引き方の入口で別の実装を持たない・`outline` が出せるのは今の単位だけ
+- 2026-10-25 `outline` と `find` は 897 の `dupscan index` の引き方として作った (入口を 2 つにしない): `outline <file>` = `index -file <file>` (行の順・件数で切らない)、
+  `find --name / --returns / --param-type` = `index -name / -returns / -param-type` (doc の語は `-doc`)。DualNoteApp で `-returns Tag` が 27 件を 1 行ずつ返し、`-file` が outline を返すことを確かめた (書き込み 0)。
+  **残り**: `callers` (呼び出しの箇所の抜き出し)・効果の測定 (grep と dupscan で同じ問いを引き比べ、返る文字数と読んだファイルの数)・903 と使う側の入口への手順

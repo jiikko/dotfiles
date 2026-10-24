@@ -78,6 +78,8 @@ type Unit struct {
 	Visibility string
 	Params     []string // 局所の名前として扱う引数の名前 (宣言の順。番号はこの順に先に振る)
 	ReturnType string   // 戻り値の型 (ハッシュに入れる)
+	ParamTypes []string // 引数の型 (宣言の順。索引で引く)
+	Doc        string   // doc comment (`///` か `/** */`) の最初の行 (索引で引く)
 	Body       *Node
 	Unreadable bool // 読めない構文 (ERROR / MISSING) を含む
 	// Allow は単位の直前のコメントに書いた `dupscan:allow` の後ろ (種別と理由)。HasAllow はその印があること (後ろが空でも)。

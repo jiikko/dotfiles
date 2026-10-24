@@ -1,0 +1,76 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"io"
+
+	"dupscan/internal/repo"
+	"dupscan/internal/report"
+	"dupscan/internal/swift"
+)
+
+// runIndex は索引を引く。語を何も渡さなければ全部の単位を 1 行 1 件で出す。
+func runIndex(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("dupscan index", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	var q report.Query
+	fs.StringVar(&q.Name, "name", "", "名前の一部 (大文字小文字を区別しない)")
+	fs.StringVar(&q.Returns, "returns", "", "戻り値の型の一部")
+	fs.StringVar(&q.ParamType, "param-type", "", "どれかの引数の型の一部")
+	fs.StringVar(&q.Doc, "doc", "", "doc comment の最初の行の語")
+	file := fs.String("file", "", "このファイルの単位を行の順に (outline)")
+	format := fs.String("format", "text", "出力の形式: text / json")
+	limit := fs.Int("limit", 20, "text で出す件数の上限 (0 は全部。-file を指したときの既定は全部)")
+	fs.Usage = func() {
+		fmt.Fprint(stderr, usage)
+		fs.PrintDefaults()
+	}
+	dirs, rc, ok := parseFlags(fs, args)
+	if !ok {
+		return rc
+	}
+	fail := func(err error) int {
+		fmt.Fprintln(stderr, "dupscan index:", err)
+		return 2
+	}
+	sc, err := repo.Resolve(dirs)
+	if err != nil {
+		return fail(err)
+	}
+	if *file != "" {
+		abs, err := absPath(*file)
+		if err != nil {
+			return fail(err)
+		}
+		if q.File, err = repoRel(sc.Root, abs); err != nil {
+			return fail(err)
+		}
+	}
+	got, err := scanSource(repo.Worktree{Scope: sc, Exts: swift.Extensions}, true)
+	if err != nil {
+		return fail(err)
+	}
+	if q.File != "" && !flagSet(fs, "limit") {
+		*limit = 0 // ファイル 1 つの一覧は切らない
+	}
+	s := report.BuildIndex(got.units, q)
+	switch *format {
+	case "json":
+		err = report.WriteJSON(stdout, s)
+	case "text":
+		err = report.IndexText(stdout, s, *limit)
+	default:
+		return fail(fmt.Errorf("知らない形式 %q (text / json)", *format))
+	}
+	if err != nil {
+		return fail(err)
+	}
+	return 0
+}
+
+func flagSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	return set
+}
