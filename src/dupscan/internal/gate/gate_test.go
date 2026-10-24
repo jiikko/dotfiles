@@ -663,10 +663,10 @@ func TestExclusionInvariantRandom(t *testing.T) {
 		x.Unit.Name = name
 		return x
 	}
-	for i := 0; i < 3000; i++ {
+	for i := range 3000 {
 		seen := map[string]bool{}
 		var base, head []*group.Entry
-		for j := 0; j < 4; j++ {
+		for range 4 {
 			f, n, b := files[rng.IntN(len(files))], names[rng.IntN(len(names))], bodies[rng.IntN(len(bodies))]
 			if !seen["b"+f+n] {
 				seen["b"+f+n] = true
