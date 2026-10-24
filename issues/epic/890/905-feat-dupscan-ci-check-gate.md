@@ -1,5 +1,7 @@
 # 905 (feat): make test と CI で、新しく入った重複を落とす (dupscan gate)
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-25〜）
+
 起票日: 2026-10-24
 
 ## 概要
