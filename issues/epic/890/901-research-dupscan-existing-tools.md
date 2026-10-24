@@ -33,7 +33,7 @@ sourcekit-lsp は `/usr/bin/sourcekit-lsp` にあるが、Swift の repo で Cla
 
 ## 分かったこと (暫定。下の実測で確かめる)
 
-1. **名前で引く手段は既にある** (Claude Code の LSP ツール・Serena)。dupscan では作らない。先にやるのは、使う手順を使う側の repo の入口 (CLAUDE.md・skill) に書くこと
+1. **名前で引く手段は LSP にある** (Claude Code の LSP ツール・Serena) が、言語サーバと最初の索引の待ちが要る。**LSP は使わないと決めた** (ユーザー決定 2026-10-24: dupscan だけで依存も使い方もシンプルになるなら LSP は使わない)。名前の検索も dupscan の索引 (897) でまかなう
 2. **本体の形が同じものを後から見つける**部分は、CPD・jscpd で一部取れる可能性がある。ただし Swift で、名前・リテラルの違いと値の書き方の違い (L3) を潰すものは見つからなかった
 3. **編集の直後に、近い既存のメソッドを自動で知らせる**組み込みを持つ道具は見つからなかった。jscpd の MCP と DRYwall は Claude から呼べるが、呼んだときにだけ動く。主な用途の中心はここ (902)。既存の道具を hook から呼ぶ形でも作れるので、dupscan のコアを自作するかは実測で決める
 4. Go の重複チェックは dupl が既に回っている (7 module)。Go を dupscan に足す価値は、索引と hook (902) の側にある (900)
@@ -43,8 +43,6 @@ sourcekit-lsp は `/usr/bin/sourcekit-lsp` にあるが、Swift の repo で Cla
 - [ ] obaket の PR 24 の前の木 (commit 45cc3b208^) に CPD と jscpd を当て、6 つのうち何個が出るかを測る。既定の設定と、下限 (`--minimum-tokens` / `--min-tokens`) を下げた設定の両方。
       版・stdout / stderr / rc を分けて書き、obaket のあるマシンで行う
 - [ ] ast-grep の Swift のパターンで、PR 24 の 6 つを形で引けるかを試す (直書きの 4 つと、プロパティを読む 2 つ)
-- [ ] Claude Code の LSP ツールが obaket の Swift で `workspaceSymbol` を返すかと、初回の索引の待ちを測る (obaket issue 1299 と合わせる)
-- [ ] 名前・署名・doc の索引 (897) を既存の道具 (LSP の documentSymbol・ast-grep・ctags) で作れるかを比べる
 - [ ] 結果で、dupscan が自分で作る範囲を決めて [891](891-design-dupscan-requirements.md) の「決めること」に書き戻す。既存の道具で足りる部分は作らない
 
 ## 出典
@@ -63,3 +61,4 @@ sourcekit-lsp は `/usr/bin/sourcekit-lsp` にあるが、Swift の repo で Cla
 
 - 2026-10-24 起票 (ユーザー指示: 既存の道具の調査)。Web の一次情報と、手元の LSP ツールの実行で上の表を作った
 - 2026-10-24 反証レビュー (事実の観点。読み取りのみのサブエージェント) の指摘を取り込んだ: dupl は 3 ではなく 7 module (tuikit はテストを除外しない) / jscpd の MCP・Agent Skills と DRYwall を足した / semantic-code-mcp は Swift 非対応と書けた / jscpd の mode の定義 / similarity の「AI エージェント向けと明言」は言い過ぎだった
+- 2026-10-24 LSP を使わないことにしたので、LSP の実測と、索引を既存の道具で作る比較を受け入れ条件から外した

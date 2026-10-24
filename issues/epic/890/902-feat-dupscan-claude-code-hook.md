@@ -10,7 +10,7 @@ epic 890 の主な用途 (ユーザー 2026-10-24): **Claude Code にコード�
 
 効かせる時点は 2 つある。この issue は 2 つ目を担当する:
 
-1. **書く前**: 既存のメソッドを探す手順。名前で引く (LSP)・署名の型と doc 文で引く (dupscan の索引。[897](897-feat-dupscan-index-subcommand.md)) — 手順は [903](903-docs-dupscan-search-before-write-procedure.md) で先に書く。
+1. **書く前**: 既存のメソッドを探す手順。名前・署名の型・doc 文で引く (dupscan の索引。[897](897-feat-dupscan-index-subcommand.md)。LSP は使わない) — 手順は [903](903-docs-dupscan-search-before-write-procedure.md) で先に書く。
    書く前には本体がまだ無いので、本体の形 (L1〜L3) で引くことはできない
 2. **書いた直後 (この issue)**: PostToolUse の hook で、編集されたファイルの中の新しい・変わった単位を取り出し、repo の索引と本体の形 (Type-2・L1〜L3) で比べる。
    近いものがあれば、名前・file:line・一致した段を返す。既定は止めずに知らせるだけ
