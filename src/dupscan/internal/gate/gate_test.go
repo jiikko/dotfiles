@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"strings"
 	"testing"
 
 	"dupscan/internal/exclude"
@@ -500,5 +501,43 @@ func TestAllowedNewCopyDoesNotBlameSameEditedCopies(t *testing.T) {
 	o.Exclude = exclude.New(&exclude.Config{Version: 1, Exclude: []exclude.Rule{{Unit: exclude.Pin(n), Kind: "intentional", Reason: "r"}}}, head, nil)
 	if r := Judge(base, head, o); len(r.Violations) != 0 {
 		t.Errorf("許可した写しの代わりに修正しただけの写しを止めた: %+v", r)
+	}
+}
+
+func TestOutsideCopyIsNotBlamedForNewExcludedCopy(t *testing.T) {
+	// 生成コード g と手書きの h は前から写しの組。生成の新しい写し g2 が増え、h は移しただけ・同じ修正を入れただけ:
+	// h を寄せる側にせず、g2 を除外で通した数に入れる。
+	gen := func(key, h string) *group.Entry { return inFile(e(key, h, h+"2", h+"3"), "Gen/"+key+".swift") }
+	hb := e("h", "x", "x2", "x3")
+	hb.Unit.Name = "h"
+	base := []*group.Entry{gen("g", "x"), hb}
+	for name, head := range map[string][]*group.Entry{
+		"移した":  {gen("g", "x"), gen("g2", "x"), inFile(e("h2", "x", "x2", "x3"), "h2")},
+		"同じ修正": {gen("g", "y"), gen("g2", "y"), e("h", "y", "y2", "y3")},
+	} {
+		head[2].Unit.Name = "h"
+		o := opt
+		o.Exclude = pathSet(t, "Gen/**", head...)
+		r := Judge(base, head, o)
+		if r.Failed() || len(r.PathPassed) != 1 || keys(r.PathPassed)[0] != "g2" {
+			t.Errorf("%s: 外の h を止めた・g2 を数えない: passed=%v %+v", name, keys(r.PathPassed), r)
+		}
+	}
+}
+
+func TestRenumberedClosureIsNotNamed(t *testing.T) {
+	// 写しの組 b1・b2 をクロージャ K と同じ形に書き換え、同時に K の番号がずれた (本体は同じ): 寄せる側は b1・b2。
+	// K に許可が付いていても、違反は消えない。
+	base := []*group.Entry{cl("V|body#closure1", "k", "k2", "k3"), e("b1", "b", "b2", "b3"), e("b2", "b", "b2", "b3")}
+	head := []*group.Entry{cl("V|body#closure1", "z", "z2", "z3"), cl("V|body#closure2", "k", "k2", "k3"), e("b1", "k", "k2", "k3"), e("b2", "k", "k2", "k3")}
+	for _, allow := range []bool{false, true} {
+		o := opt
+		if allow {
+			o.Exclude = exclude.New(&exclude.Config{Version: 1, Exclude: []exclude.Rule{{Unit: exclude.Pin(head[1]), Kind: "intentional", Reason: "r"}}}, head, nil)
+		}
+		r := Judge(base, head, o)
+		if !r.Failed() || len(r.Violations) != 1 || strings.Join(keys(r.Violations[0].New), ",") != "b1,b2" {
+			t.Errorf("許可=%v: 番号がずれただけの K を名指しした・違反が消えた: %+v", allow, r)
+		}
 	}
 }

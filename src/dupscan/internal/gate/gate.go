@@ -146,6 +146,31 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 // judgeGroup は組が base より増えたかを、メンバーの出どころで決める。
 // byPath は、パスの除外の下にあるので寄せる側から外した、変わった単位。
 func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Entry]*group.Entry, opt Options) (v Violation, ok bool, byPath []*group.Entry) {
+	// パスの除外の下の新しい単位 (出どころが無い) を除いても組が増えていれば、その分で判定する。除いて増えていなければ、
+	// 除いた単位が増やした分なので、除外で通した数に入れる (除外の下の新しい写しの代わりに、前から組にいた外の単位を止めない)。
+	if opt.Exclude != nil {
+		var rest, fresh []*group.Entry
+		for _, m := range g {
+			if origin[m] == nil && opt.Exclude.PathExcluded(m, lv) {
+				fresh = append(fresh, m)
+			} else {
+				rest = append(rest, m)
+			}
+		}
+		if len(fresh) > 0 {
+			v, ok, byPath = judgeGroup(lv, h, rest, origin, opt)
+			if ok {
+				v.Same = append(v.Same, fresh...)
+				return v, ok, byPath
+			}
+			bare := opt
+			bare.Exclude = nil
+			if _, was, _ := judgeGroup(lv, h, g, origin, bare); was {
+				byPath = append(byPath, fresh...)
+			}
+			return Violation{}, false, byPath
+		}
+	}
 	buckets := map[string]int{}
 	from := map[*group.Entry]string{}
 	for _, m := range g {
@@ -183,12 +208,16 @@ func judgeGroup(lv norm.Level, h string, g []*group.Entry, origin map[*group.Ent
 	if len(g) <= most {
 		return Violation{}, false, nil
 	}
-	// 寄せる側 (新しい) は、一番多い出どころ以外から来た、この変更で触った単位 (新しい単位どうしの組なら全部)。
-	// 触っていない単位は寄せる側に出さない (触っていないファイルに warning が付く)。
-	isCand := func(m *group.Entry) bool {
-		return (from[m] != mostKey || strings.HasPrefix(mostKey, "new:")) && !unchanged(m, origin)
+	// 寄せる側 (新しい) は、一番多い出どころ以外から来た、この変更で本体を変えた (か新しい) 単位 (新しい単位どうしの組なら全部)。
+	// 本体を変えていない単位 (触っていない・移しただけ・クロージャの番号がずれただけ) は寄せる側に出さない
+	// (出すと、組を寄せた単位の代わりに、その commit で中身に触っていない単位に warning が付く)。
+	touched := func(m *group.Entry) bool {
+		b := origin[m]
+		return b == nil || b.Result.Hash[norm.L1] != m.Result.Hash[norm.L1]
 	}
-	touched := func(m *group.Entry) bool { return !unchanged(m, origin) }
+	isCand := func(m *group.Entry) bool {
+		return (from[m] != mostKey || strings.HasPrefix(mostKey, "new:")) && touched(m)
+	}
 	// 名指ししない単位 (許可・パスの除外の下) は、寄せる側を選ぶ前に外す。選んでから外すと、外の写しが名指しされずに違反ごと消える。
 	allowed := func(m *group.Entry) bool { return opt.Exclude != nil && opt.Exclude.Allowed(m) }
 	quiet := func(m *group.Entry) bool {
