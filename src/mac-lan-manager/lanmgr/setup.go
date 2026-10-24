@@ -253,13 +253,14 @@ func (m *Model) setupObserved() (setup.Observed, row) {
 // selfObserved は Plan に渡す観測のうち、この Mac の分 (相手の初期設定と、この Mac だけの固定 (askSelfStatic) が共有する)。
 func (m *Model) selfObserved() setup.Observed {
 	o := setup.Observed{Band: m.pf.Band}
-	if s, ok := m.selfWired(); ok {
+	if s, ok := m.selfWired(); ok && !s.IfGone { // 抜いたアダプタのサービスで固定を見ない (-getinfo は抜いた後も設定を返す。selfNoWire と同じ)
 		o.SelfService, o.SelfIP, o.SelfMethod, o.SelfMask = s.Name, s.IP, s.Method, s.Mask
 	}
 	if s, ok := m.self.Main(); ok {
 		o.SelfMainIP, o.SelfMainMask = s.IP, s.Mask
 	}
 	o.SelfHost, o.SelfAdvertKnown, o.SelfAdvert = m.host, m.selfAdvertKnown, m.selfAdvert
+	o.SelfNoWire = m.selfNoWire()
 	return o
 }
 
@@ -355,13 +356,27 @@ func (m *Model) selfWired() (netinfo.Service, bool) {
 	return netinfo.Service{}, false
 }
 
+// selfNoWire はこの Mac に内部の網に使える有線 (繋がっていてルーターの無い有線) が 1 本も無いと読めたか (無線だけで操作している)。
+// 初期設定はこの Mac の手順を飛ばし (setup.Observed.SelfNoWire)、一覧は相手の内部 IP へ繋がない (rows の lanAway)。
+// 読めなかったサービス (Unread。ifconfig / -getinfo の一時的な失敗) があれば「無い」と言い切らない (挿さっている有線を読み損ねて、
+// この Mac の固定を飛ばしたまま相手を固定しかけた。敵対レビュー)。設定の I/F のサービスが見つかる (ケーブルが抜けているだけ) ときも
+// 立てない (Plan はそのサービスで固定を見るので、一覧と確認だけが無線の扱いになって食い違った)。アダプタごと抜いた (IfGone) サービスは
+// 数えない (I/F で決める設定でアダプタを抜いた Mac が無線だけにならなかった。2 周目の敵対レビュー)
+func (m *Model) selfNoWire() bool {
+	if !m.selfOK || len(m.self.Unread) > 0 {
+		return false
+	}
+	s, wired := m.selfWired()
+	return (!wired || s.IfGone) && len(m.self.Offline()) == 0
+}
+
 // setupSteps は画面に並べる手順 (確認待ちなら、相手の固定 IP の後に確認を差し込む)。
 func (m *Model) setupSteps() []setup.Step {
 	o, _ := m.setupObserved()
 	steps := setup.Plan(o)
 	if c := m.conf(); c != nil {
 		left := int(c.deadline.Sub(m.now).Seconds())
-		st := setup.Step{ID: stepConfirm, Title: fmt.Sprintf("新しい IP (%s) で入り直して確認する (残り %d 秒)", c.static.IP, max(left, 0))}
+		st := setup.Step{ID: stepConfirm, Title: fmt.Sprintf("%s で入り直して確認する (残り %d 秒)", confirmVia(c.static), max(left, 0))}
 		out := make([]setup.Step, 0, len(steps)+1)
 		for _, s := range steps {
 			out = append(out, s)
@@ -382,7 +397,7 @@ func nextStep(steps []setup.Step) (setup.Step, bool) {
 		}
 	}
 	for i, s := range steps {
-		if !s.Done {
+		if !s.Settled() {
 			// この Mac の名前の手順が止まっていても (この Mac の広告を読めない等)、相手の名前の手順は進められる (どちらも仕上げで互いに
 			// 依らない)。止まっている手順を飛ばすのはここだけ: 鍵が止まっている間にこの Mac の固定へ進むと、人が相手の
 			// 指紋を確かめる前に戻らない変更が走る
@@ -459,6 +474,32 @@ func (m *Model) bonjourIPs(host string) []string {
 	return out
 }
 
+// allSettledNote は残りの手順が無いときの言い方。飛ばした手順があれば言い切らない (後で有線を挿した人に、この Mac が未固定だと伝える)。
+func allSettledNote(steps []setup.Step) string {
+	for _, s := range steps {
+		if s.Skipped != "" {
+			return "相手の手順は済んでいる (この Mac の有線の手順は飛ばした。有線を挿したら r で読み直す)"
+		}
+	}
+	return "全部済んでいる"
+}
+
+// confirmVia は確認で入り直す先の言い方 (ふつうは新しい IP。この Mac が無線だけなら今の宛先)。
+func confirmVia(s setup.StaticIP) string {
+	if s.ConfirmIP() != s.IP {
+		return "今の宛先 (" + s.ConfirmIP() + ") "
+	}
+	return "新しい IP (" + s.IP + ") "
+}
+
+// noWireConfirmNote は、新しい IP でなく今の宛先で確かめるときの断り (そうでなければ "")。
+func noWireConfirmNote(s setup.StaticIP) string {
+	if s.ConfirmIP() == s.IP {
+		return ""
+	}
+	return "この Mac に有線が無いので、相手に新しい IP が付いたかだけを見る (有線で届くかは見ない)"
+}
+
 // newToken は確認の印の名前 (実行ごとに変える)。
 func newToken() (string, error) {
 	b := make([]byte, 8)
@@ -508,6 +549,12 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
+		if o.SelfNoWire {
+			s.AcceptIP = su.dest.IP // 新しい IP へはこの Mac から届かない。今の宛先で入り直す (setup.StaticIP の AcceptIP)
+			if err := s.Validate(); err != nil {
+				return nil, err.Error()
+			}
+		}
 		argv, err := setup.PeerStaticArgv(su.dest, s)
 		if err != nil {
 			return nil, err.Error()
@@ -515,7 +562,8 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 		return &ask{title: "相手の有線を固定 IP にする", body: dropEmpty(
 			su.obs.Service+" を "+ip+" / "+s.Mask+" (ルーター無し) にする"+reusedNote(reused)+"。相手の sudo のパスワードを聞く",
 			sharedNote(su.obs.Services, su.obs.Service, ip), why,
-			fmt.Sprintf("変えた後 %d 秒以内に新しい IP で入り直して確認しないと、相手の上で元の設定 (%s) に戻る", int(setup.PeerWindow.Seconds()), netinfo.MethodLabel(s.Restore.Method)),
+			fmt.Sprintf("変えた後 %d 秒以内に%sで入り直して確認しないと、相手の上で元の設定 (%s) に戻る", int(setup.PeerWindow.Seconds()), confirmVia(s), netinfo.MethodLabel(s.Restore.Method)),
+			noWireConfirmNote(s),
 			// 実際の argv は戻しの仕掛け (数十行の sh) を 1 語に引用して持つので、全文を出すと板が画面を埋めた (ユーザー報告)。要約を出す
 			"$ ssh -t "+su.dest.User+"@"+su.dest.IP+" → sudo networksetup -setmanual "+setup.Quote(s.Service)+" "+ip+" "+s.Mask+
 				fmt.Sprintf(" (確認が無ければ %d 秒後に元へ戻す仕掛けを相手で走らせる)", int(setup.PeerWindow.Seconds())),
@@ -523,15 +571,16 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 	case stepConfirm:
 		c := m.conf()
 		nd := su.dest
-		nd.IP = c.static.IP
+		nd.IP = c.static.ConfirmIP()
 		argv, err := setup.ConfirmArgv(nd, c.static)
 		if err != nil {
 			return nil, err.Error()
 		}
-		return &ask{title: "新しい IP で入り直して確認する", body: []string{
-			nd.User + "@" + nd.IP + " に入り直して確認の印を置く (相手の sudo のパスワードを聞く)",
-			"$ " + shellLine(argv),
-		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
+		return &ask{title: confirmVia(c.static) + "で入り直して確認する", body: dropEmpty(
+			nd.User+"@"+nd.IP+" に入り直して確認の印を置く (相手の sudo のパスワードを聞く)",
+			noWireConfirmNote(c.static),
+			"$ "+shellLine(argv),
+		), exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepSelfName, setup.StepPeerName:
 		host, ip, who := m.host, o.SelfIP, "この Mac"
 		if st.ID == setup.StepPeerName {
@@ -660,7 +709,7 @@ func (m *Model) setupX() {
 		}
 		st, ok := nextStep(m.setupSteps())
 		if !ok {
-			m.note("全部済んでいる", false) // x が効かなかった (✗。ガイド §9)
+			m.note(allSettledNote(m.setupSteps()), false) // x が効かなかった (✗。ガイド §9)
 			return
 		}
 		if st.Blocked != "" {

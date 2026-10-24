@@ -8,6 +8,10 @@ type Observed struct {
 
 	// この Mac の有線 (内部の網に使う I/F のサービス)。空 = ルーターの無い有線のサービスが無い。SelfMask は戻し方の案内に使う
 	SelfService, SelfIP, SelfMethod, SelfMask string
+	// SelfNoWire はこの Mac に内部の網に使える有線が 1 本も無い (無線だけで操作している) と読めたこと。このときこの Mac の固定と
+	// 名前の広告は任意 (飛ばす) にし、相手の手順は Wi-Fi 越しに進める (ユーザー指示 2026-10-24)。有線が繋がっているのに設定の I/F と
+	// 違う・網を読めていないときは立てない (飛ばすと、アダプタを挿し替えた Mac が固定を忘れたまま相手を固定する)
+	SelfNoWire bool
 	// SelfMainIP / SelfMainMask はこの Mac のメイン (ルーターのある網。Wi-Fi) の IP とマスク。帯がこの網と重なると、その網の宛先が有線へ流れる
 	SelfMainIP, SelfMainMask string
 	// SelfHost はこの Mac の Bonjour のホスト名 (有線の名前の元)。SelfAdvert はこの Mac の有線の名前の広告の状態 (読めたときだけ SelfAdvertKnown)
@@ -49,13 +53,21 @@ const (
 	StepPeerName   StepID = "peer-name"   // 相手の有線の名前を広告する
 )
 
-// Step は手順の 1 つ。Done なら済んでいる。Blocked が空でなければ、その理由で今は進めない。
+// Step は手順の 1 つ。Done なら済んでいる。Blocked が空でなければ、その理由で今は進めない。Skipped が空でなければ、その理由で
+// 任意 (やらずに後ろへ進む)。
 type Step struct {
 	ID      StepID
 	Title   string
 	Done    bool
 	Blocked string
+	Skipped string
 }
+
+// Settled は済んだか飛ばす手順か (後ろの手順を止めない)。
+func (s Step) Settled() bool { return s.Done || s.Skipped != "" }
+
+// noWireSkip はこの Mac が無線だけのときに飛ばす手順の理由。
+const noWireSkip = "この Mac に内部の網の有線が無い (無線だけ)。相手の手順は Wi-Fi で進める"
 
 // SelfFixed はこの Mac の有線 (method / ip) が帯の固定か。画面 (lanmgr の selfLan) と初期設定 (Plan の self) が同じ答えを出すための
 // 1 つの述語 (別々に組むと、札は固定なのに初期設定は固定し直そうとした。整合の監査)。手動で帯の中なら固定。方式が読めない (空) ときは、
@@ -78,6 +90,8 @@ func Plan(o Observed) []Step {
 		self.Blocked = "帯 " + o.Band + " がこの Mac のメインの網 (" + o.SelfMainIP + ") と重なる (, の設定で別の帯にする)"
 	case bandErr != nil:
 		self.Blocked = "内部の網の帯が無いか使えない形 (, の設定で帯を決める。192.168.100.0/24 の形で /16〜/28)" // 帯が無いと「未固定」と誤った理由で止まった (fable の敵対レビュー)
+	case o.SelfService == "" && o.SelfNoWire:
+		self.Skipped = noWireSkip
 	case o.SelfService == "":
 		self.Blocked = "この Mac にルーターの無い有線のサービスが無い (ケーブル・アダプタを確かめる)"
 	case !self.Done && o.Peer.WifiIP == "" && !netinfo.LinkLocalBand(o.Band):
@@ -100,7 +114,7 @@ func Plan(o Observed) []Step {
 	case peer.Done:
 	case o.Peer.NetKnown && o.Peer.IP != "" && o.Peer.IP == o.SelfIP:
 		peer.Blocked = "相手の有線の IP がこの Mac と同じ (" + o.Peer.IP + ")。番号を振り直す"
-	case !self.Done:
+	case !self.Settled():
 		peer.Blocked = "先にこの Mac の有線を固定 IP にする (この Mac が 169.254 のままだと、変えた後の相手に有線で届かない)"
 	case !key.Done:
 		peer.Blocked = "先に公開鍵を置く"
@@ -117,6 +131,9 @@ func Plan(o Observed) []Step {
 		"先にこの Mac の有線を固定 IP にする", "この Mac の名前の広告の状態を読めていない (r でリロード)")
 	peerName := nameStep(StepPeerName, "相手の", o.Peer.Host, o.Peer.IP, ledger.Done, o.Peer.AdvertKnown, o.Peer.Advert,
 		"先に台帳に内部 IP 付きで載せる", "相手の名前の広告の状態を読めていない (r でリロード)")
+	if self.Skipped != "" {
+		selfName = Step{ID: StepSelfName, Title: selfName.Title, Skipped: self.Skipped} // 広告する有線の IP が無い
+	}
 	// 公開鍵を先に置く: 鍵の手順 (端末を持つ ssh-copy-id) で人が相手の指紋を確かめるまで、どちらの Mac の設定も変えない
 	// (この Mac の固定を先にしていたので、初めての相手ではホスト鍵を確かめる前に自動では戻らない変更が走った)。
 	// 鍵はこの Mac の固定に依らない (相手の Wi-Fi か 169.254 で入る)

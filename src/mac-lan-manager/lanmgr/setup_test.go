@@ -1529,3 +1529,106 @@ func TestSelfStaticRefusesOnStaleOrMisconfiguredNetwork(t *testing.T) {
 		t.Errorf("I/F で決める設定が前のアダプタを指しているのに、設定で直すと言わない: %q", why)
 	}
 }
+
+// この Mac が無線だけ (内部の網の有線が無い) でも初期設定を最後まで流せる (ユーザー指示 2026-10-24): この Mac の固定と名前は飛ばし、
+// 相手の固定の確認は今の宛先 (Wi-Fi) で入り直す (新しい IP へはこの Mac から届かない)。台帳に載せた後も、繋ぐ先は内部 IP でなく Wi-Fi。
+func TestSetupWirelessOnlyMac(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	h.m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) {
+		return netinfo.Snapshot{
+			Services: []netinfo.Service{{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Method: "DHCP", Router: "192.168.50.1", Read: true}},
+			IPs:      []netinfo.IP{{Device: "en0", Addr: "192.168.50.250", Kind: netinfo.KindInternet}},
+		}, nil
+	}
+	h.m.startNetLoad()
+	awaitNetLoad(h.m)
+	p := mini
+	p.Addrs = map[int]string{14: "192.168.50.7"} // この Mac に有線が無いので Wi-Fi でしか見えない
+	h.scan.SetPeers(p)
+	h.m.Advance(t0)
+	obs := &setup.PeerNet{}
+	o := &observed{v: obs}
+	h.m.o.Observe = func(_ context.Context, d sshdest.Dest) setup.PeerNet {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		o.dests = append(o.dests, d)
+		return *o.v
+	}
+	h.keys("l")
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("enter", "enter")
+	if h.m.sc != scSetup || h.m.su == nil {
+		t.Fatal("Enter で初期設定の画面にならない")
+	}
+	awaitSetup(h.m)
+
+	if argv := runStep(t, h, nil); argv[0] != "sh" || !strings.Contains(argv[2], "ssh-copy-id") {
+		t.Fatalf("最初は鍵: %q", argv)
+	}
+	setObs(t, h, o, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"})
+	h.keys("r")
+	awaitSetup(h.m)
+	if v := h.screen(); !strings.Contains(v, "(任意・飛ばす)") {
+		t.Errorf("この Mac の手順を飛ばすと描かない:\n%s", v)
+	}
+
+	argv := runStep(t, h, nil) // この Mac の固定を飛ばして相手の固定へ
+	if !slices.Contains(argv, "-t") || argv[slices.Index(argv, "--")+1] != "koji@192.168.50.7" {
+		t.Fatalf("相手の固定 IP = %q", argv)
+	}
+	c := h.m.conf()
+	if c == nil || c.static.AcceptIP != "192.168.50.7" || !strings.Contains(argv[len(argv)-1], "IP address: ") {
+		t.Fatalf("確認を今の宛先で受けない: %+v", c)
+	}
+	argv = runStep(t, h, nil)
+	if argv[slices.Index(argv, "--")+1] != "koji@192.168.50.7" {
+		t.Fatalf("確認は今の宛先 (Wi-Fi) で入る: %q", argv)
+	}
+	setObs(t, h, o, setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "manual", IP: c.static.IP, AdvertKnown: true})
+	h.keys("r")
+	awaitSetup(h.m)
+	if argv := runStep(t, h, nil); argv != nil {
+		t.Fatalf("台帳は手元の書き込み: %q", argv)
+	}
+	if len(h.store.Hosts) != 1 || h.store.Hosts[0].LAN != c.static.IP {
+		t.Fatalf("台帳 = %+v", h.store.Hosts)
+	}
+	if st, _ := nextStep(h.m.setupSteps()); st.ID != setup.StepPeerName {
+		t.Fatalf("台帳の次 = %v (この Mac の名前は飛ばして相手の名前)", st.ID)
+	}
+
+	h.keys("esc", "esc", "esc")
+	h.m.tab = 0 // 管理対象
+	h.cursorTo(t, "m2macmini.local")
+	if h.keys("s") != Exec {
+		t.Fatal("s で ssh を起こさない")
+	}
+	if r, _ := h.m.TakeExec(); r.Argv[len(r.Argv)-1] != "koji@192.168.50.7" {
+		t.Errorf("無線だけのこの Mac から台帳の内部 IP へ繋いだ: %q", r.Argv)
+	}
+}
+
+// 「無線だけ」は、有線を 1 本も持たないと読み切れたときだけ (読めなかったサービスがある・設定の I/F のサービスがあってケーブルが
+// 抜けているだけ、では立てない。どちらもこの Mac の固定を飛ばしたまま相手を固定しかけた。敵対レビュー)。
+func TestSelfNoWireOnlyWhenReadInFull(t *testing.T) {
+	h := newHarness(t, nil, nil)
+	wifi := netinfo.Service{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Method: "DHCP", Router: "192.168.50.1", Read: true}
+	usb := netinfo.Service{Name: "USB 10/100/1000 LAN", Port: "USB 10/100/1000 LAN", Device: "en6", Read: true, Method: "manual", IP: "192.168.100.10"}
+	for name, tc := range map[string]struct {
+		snap   netinfo.Snapshot
+		lanIF  string // "" なら帯で決める
+		noWire bool
+	}{
+		"Wi-Fi だけ":            {netinfo.Snapshot{Services: []netinfo.Service{wifi}}, "", true},
+		"有線を読めなかった":           {netinfo.Snapshot{Services: []netinfo.Service{wifi, {Name: usb.Name, Port: usb.Port, Device: "en6"}}, Unread: []string{usb.Name}}, "", false},
+		"設定の I/F のケーブルが抜けている": {netinfo.Snapshot{Services: []netinfo.Service{wifi, usb}}, "en6", false},
+		"I/F 指定でアダプタごと抜いた":    {netinfo.Snapshot{Services: []netinfo.Service{wifi, func() netinfo.Service { u := usb; u.IfGone = true; return u }()}}, "en6", true},
+		"有線が繋がっている":           {netinfo.Snapshot{Services: []netinfo.Service{wifi, func() netinfo.Service { u := usb; u.Active = true; return u }()}}, "", false},
+	} {
+		h.m.self, h.m.selfOK = tc.snap, true
+		h.m.pf.LanByBand, h.m.pf.LanIF = tc.lanIF == "", tc.lanIF
+		if got := h.m.selfNoWire(); got != tc.noWire {
+			t.Errorf("%s: selfNoWire = %v, want %v", name, got, tc.noWire)
+		}
+	}
+}

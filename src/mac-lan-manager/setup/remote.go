@@ -204,13 +204,13 @@ func PeerStaticArgv(d sshdest.Dest, s StaticIP) ([]string, error) {
 	return d.SSHArgv(true, false, s.RemoteCommand()), nil
 }
 
-// ConfirmArgv は新しい IP で入り直して確認の印を置く ssh。d.IP は新しい IP。
+// ConfirmArgv は新しい IP で入り直して確認の印を置く ssh。d.IP は s.ConfirmIP() (ふつうは新しい IP)。
 func ConfirmArgv(d sshdest.Dest, s StaticIP) ([]string, error) {
 	if err := d.Validate(); err != nil {
 		return nil, err
 	}
-	if d.IP != s.IP {
-		return nil, fmt.Errorf("確認は新しい IP (%s) で入る: %s", s.IP, d.IP)
+	if d.IP != s.ConfirmIP() {
+		return nil, fmt.Errorf("確認は %s で入る: %s", s.ConfirmIP(), d.IP)
 	}
 	return d.SSHArgv(true, false, s.ConfirmCommand()), nil
 }

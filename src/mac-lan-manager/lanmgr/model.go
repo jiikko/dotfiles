@@ -676,7 +676,8 @@ type row struct {
 	seen      bool   // Bonjour で見えている
 	wired     bool   // Bonjour でこの Mac の有線の I/F に見えた (台帳の内部 IP ではなく、今の走査で)
 	others    []netinfo.IP
-	lanAway   bool   // 内部 IP がこの Mac の有線と別の網 (片方だけ固定して 169.254 と帯の番号に分かれた): 有線では届かないので繋ぐ先にしない
+	lanAway   bool   // 内部 IP がこの Mac の有線と別の網 (片方だけ固定して 169.254 と帯の番号に分かれた・この Mac に有線が無い): 有線では届かないので繋ぐ先にしない
+	noWire    bool   // lanAway の理由が「この Mac に内部の網の有線が無い (無線だけ)」
 	instance  string // Bonjour のインスタンス名 (別名が無いときの表示)
 }
 
@@ -849,8 +850,11 @@ func (m *Model) rows() []row {
 			}
 		}
 	}
+	noWire := m.selfNoWire()
 	for i := range out {
-		out[i].lanAway = !lanReachable(self.lanIP, out[i].lanIP, m.pf.Band)
+		// この Mac に有線が無いと self.lanIP は空で、lanReachable は「分からない = 届く」と読む。台帳の内部 IP へ繋ぎにいかない
+		out[i].noWire = noWire && out[i].lanIP != ""
+		out[i].lanAway = out[i].noWire || !lanReachable(self.lanIP, out[i].lanIP, m.pf.Band)
 	}
 	slices.SortFunc(out, func(a, b row) int { return strings.Compare(or(a.alias, a.host), or(b.alias, b.host)) })
 	return append([]row{self}, out...)
@@ -946,6 +950,9 @@ const noUserNote = "ssh のユーザー名が分からない ($USER が使えな
 
 // awayReason は、有線で別の網に居て Wi-Fi も無いので繋げない理由 (そうでなければ "")。
 func (r row) awayReason() string {
+	if r.noWire && r.mainIP == "" {
+		return "この Mac に内部の網の有線が無く、相手も Wi-Fi に見えない。この Mac に有線を挿すか、相手を Wi-Fi に繋ぐ"
+	}
 	if r.lanAway && r.mainIP == "" {
 		return "有線で網が分かれている (この Mac か相手の片方だけが固定 IP)。相手も初期設定で固定するか、Wi-Fi に繋ぐ"
 	}

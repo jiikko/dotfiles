@@ -26,7 +26,9 @@ func sandbox(t *testing.T) (dir, path string) {
 		t.Fatal(err)
 	}
 	fakes := map[string]string{
-		"networksetup": `for a in "$@"; do printf '[%s]' "$a"; done >> "` + d + `/log"; echo >> "` + d + `/log"`,
+		// -getinfo は読むだけなので log に残さず、getinfo のファイルがあればそれを出す (AcceptIP の確認が読む)
+		"networksetup": `if [ "$1" = -getinfo ]; then cat "` + d + `/getinfo" 2>/dev/null; exit 0; fi
+for a in "$@"; do printf '[%s]' "$a"; done >> "` + d + `/log"; echo >> "` + d + `/log"`,
 		"sudo": `if [ "$1" = -v ]; then exit 0; fi
 if [ "$1" = -n ]; then shift; fi
 if [ "$1" = -b ]; then shift; "$@" & exit 0; fi
@@ -174,6 +176,53 @@ func TestStaticIPConfirmMustComeViaNewIP(t *testing.T) {
 			}
 			if !strings.Contains(readLog(dir), "-setdhcp") {
 				t.Errorf("新しい IP からの確認でないのに戻さなかった: %q", readLog(dir))
+			}
+		})
+	}
+}
+
+// この Mac が無線だけ (AcceptIP) なら、その IP に届いた確認を認める。ただし変えたサービスの -getinfo に新しい IP が出ていなければ
+// 認めない (出ていない = 変更が効いていない。有線で届くかはこの Mac からは確かめられないので、代わりに見る)。
+func TestStaticIPConfirmViaAcceptIP(t *testing.T) {
+	for name, tc := range map[string]struct {
+		getinfo string // 偽の networksetup -getinfo の出力 ("" なら何も出さない)
+		env     string
+		keep    bool
+	}{
+		"wifi-new-ip-set": { // Wi-Fi で確認し、変えたサービスに新しい IP が出ている (最後の行でも通る)
+			"Manual Configuration\nIP address: 192.168.100.11", viaWifi, true},
+		"new-ip-missing": { // 新しい IP が出ていない (前方一致の .111 だけ)
+			"Manual Configuration\nIP address: 192.168.100.111\nSubnet mask: 255.255.255.0\n", viaWifi, false},
+		"no-getinfo": {
+			"", viaWifi, false},
+		"via-new-ip": { // 受け口と違う IP (新しい IP) に届いた
+			"Manual Configuration\nIP address: 192.168.100.11\n", viaNewIP, false},
+	} { // 名前は ASCII にする (t.TempDir の名前に入り、状態ディレクトリの検査が空白・非 ASCII を断る)
+		t.Run(name, func(t *testing.T) {
+			dir, path := sandbox(t)
+			if tc.getinfo != "" {
+				if err := os.WriteFile(filepath.Join(dir, "getinfo"), []byte(tc.getinfo), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			s := staticIP(t, dir)
+			s.AcceptIP = "192.168.50.7"
+			s.Window = 2 * time.Second
+			if !tc.keep {
+				s.Window = 500 * time.Millisecond
+			}
+			if err := s.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			cmd := runSh(t, path, s.Script())
+			waitFor(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
+			cerr := runSh(t, path, s.ConfirmCommand(), tc.env).Wait()
+			if err := cmd.Wait(); err != nil {
+				t.Fatal(err)
+			}
+			kept := !strings.Contains(readLog(dir), "-setdhcp")
+			if kept != tc.keep || (cerr == nil) != tc.keep {
+				t.Errorf("固定のまま = %v (確認の rc の err = %v)、want %v: %q", kept, cerr, tc.keep, readLog(dir))
 			}
 		})
 	}
@@ -391,6 +440,7 @@ func TestStaticIPValidate(t *testing.T) {
 		"双方向の制御文字の名前":  func(s *StaticIP) { s.Service = "Ethernet\u202eNAL" },
 		"C1 の制御文字の名前":  func(s *StaticIP) { s.Service = "Ethernet\u009b2J" },
 		"sh が展開する置き場所": func(s *StaticIP) { s.StateDir = "/var/db/$(id)" },
+		"IPv4 でない受け口":  func(s *StaticIP) { s.AcceptIP = "192.168.50.7;id" },
 	} {
 		s := base
 		mut(&s)
@@ -429,18 +479,19 @@ func TestPickIPLowestFree(t *testing.T) {
 }
 
 // 手順は観測から組み直す: 済んだものは Done、前が済まない手順は理由つきで止める。
+func byID(ss []Step) map[StepID]Step {
+	m := map[StepID]Step{}
+	for _, s := range ss {
+		m[s.ID] = s
+	}
+	return m
+}
+
 func TestPlan(t *testing.T) {
 	band := "192.168.100.0/24"
 	ready := Observed{Band: band, SelfService: "Thunderbolt Ethernet", SelfIP: "192.168.100.2", SelfMethod: "manual",
 		Peer: PeerObs{Host: "mini.local", WifiIP: "192.168.50.7", LanIP: "169.254.1.1", SSHOpen: true, KeyOK: true, NetKnown: true,
 			Service: "Thunderbolt Ethernet", IP: "169.254.1.1", Method: "DHCP"}}
-	byID := func(ss []Step) map[StepID]Step {
-		m := map[StepID]Step{}
-		for _, s := range ss {
-			m[s.ID] = s
-		}
-		return m
-	}
 	s := byID(Plan(ready))
 	if !s[StepSelfStatic].Done || !s[StepKey].Done || s[StepPeerStatic].Done || s[StepPeerStatic].Blocked != "" {
 		t.Errorf("相手を固定する手前: %+v", s)
@@ -522,6 +573,48 @@ func TestPlan(t *testing.T) {
 	o.Peer.LedgerLAN = "192.168.100.99"
 	if s := byID(Plan(o)); s[StepLedger].Done {
 		t.Error("台帳の内部 IP が今の IP と違うのに済み扱い")
+	}
+}
+
+// この Mac に内部の網の有線が無い (無線だけ) なら、この Mac の固定と名前の広告は飛ばし、相手の固定・台帳・相手の名前は止めない
+// (ユーザー指示 2026-10-24)。有線が無いと読めていない (SelfNoWire が立たない) なら今までどおり止める。
+func TestPlanSkipsSelfWhenNoWire(t *testing.T) {
+	o := Observed{Band: "192.168.100.0/24", SelfMainIP: "192.168.50.14", SelfMainMask: "255.255.255.0", SelfHost: "self.local", SelfNoWire: true,
+		Peer: PeerObs{Host: "mini.local", WifiIP: "192.168.50.7", SSHOpen: true, KeyOK: true, NetKnown: true,
+			Service: "Thunderbolt Ethernet", IP: "169.254.1.1", Method: "DHCP"}}
+	s := byID(Plan(o))
+	for _, id := range []StepID{StepSelfStatic, StepSelfName} {
+		if st := s[id]; st.Skipped == "" || st.Done || st.Blocked != "" || !st.Settled() {
+			t.Errorf("%s を飛ばさない: %+v", id, st)
+		}
+	}
+	if st := s[StepPeerStatic]; st.Done || st.Blocked != "" {
+		t.Errorf("この Mac が無線だけなのに相手の固定を止めた: %+v", st)
+	}
+	for _, st := range Plan(o) {
+		if !st.Settled() {
+			if st.ID != StepPeerStatic {
+				t.Errorf("次の手順が相手の固定でない: %s", st.ID)
+			}
+			break
+		}
+	}
+	d := o
+	d.Peer.Method, d.Peer.IP, d.Peer.Managed, d.Peer.LedgerLAN = "manual", "192.168.100.11", true, "192.168.100.11"
+	d.Peer.AdvertKnown, d.Peer.Advert = true, NameState{Running: true, Name: "mini.wired.local", IP: "192.168.100.11"}
+	for _, st := range Plan(d) {
+		if !st.Settled() {
+			t.Errorf("相手の手順が全部済んでいるのに %s が残る: %+v", st.ID, st)
+		}
+	}
+	o.SelfNoWire = false
+	s = byID(Plan(o))
+	if st := s[StepSelfStatic]; st.Skipped != "" || !strings.Contains(st.Blocked, "有線のサービスが無い") || s[StepPeerStatic].Blocked == "" {
+		t.Errorf("有線が無いと読めていないのに飛ばした: %+v / %+v", st, s[StepPeerStatic])
+	}
+	o.SelfNoWire, o.Band = true, ""
+	if st := byID(Plan(o))[StepSelfStatic]; st.Skipped != "" || !strings.Contains(st.Blocked, "帯") {
+		t.Errorf("帯が無いのに飛ばした (相手に振る番号も決まらない): %+v", st)
 	}
 }
 

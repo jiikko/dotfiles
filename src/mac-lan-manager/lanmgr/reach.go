@@ -58,7 +58,9 @@ func (m *Model) reachTarget(r row) ReachTarget {
 		return t
 	}
 	t.Names = []string{r.host}
-	if m.lanFixed(r) { // 有線の名前を持つのは内部 IP が固定の行だけ (wiredNames と同じ条件)
+	// 有線の名前を持つのは内部 IP が固定の行だけ (wiredNames と同じ条件)。この Mac に有線が無ければ確かめない (必ず届かず、
+	// ping の CLI が毎回 rc=1 になる)
+	if m.lanFixed(r) && !r.noWire {
 		if name, err := setup.WiredName(r.host); err == nil {
 			t.Names = append(t.Names, name)
 		}
@@ -241,7 +243,7 @@ func (m *Model) reachLines(r row, label func(string) string) []string {
 }
 
 // reachCell は一覧の「疎通」の列 (L = <host>.local / W = <host>.wired.local)。✓ 届く / ✗ 届かない・引けない・有線の名前が内部 IP と違う /
-// - 有線の名前を持たない / … 確かめている途中・まだ確かめていない。管理対象の相手だけ (他の行は空)。
+// - 有線の名前を持たない・この Mac に有線が無い / … 確かめている途中・まだ確かめていない。管理対象の相手だけ (他の行は空)。
 func (m *Model) reachCell(r row) string {
 	if r.self || !r.managed {
 		return ""

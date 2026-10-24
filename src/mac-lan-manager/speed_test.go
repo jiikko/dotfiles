@@ -257,7 +257,11 @@ func TestSpeedtestReportsScanError(t *testing.T) {
 	failing := func() (*lanmgr.Model, error) {
 		return lanmgr.New(lanmgr.Options{
 			ReadNet: func(context.Context) (netinfo.Snapshot, error) {
-				return netinfo.Snapshot{Services: []netinfo.Service{{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Router: "192.168.50.1", Read: true}}}, nil
+				// 有線も持たせる: 無線だけのこの Mac は台帳の内部 IP へ繋がない (rows の noWire)
+				return netinfo.Snapshot{Services: []netinfo.Service{
+					{Name: "Wi-Fi", Port: "Wi-Fi", Device: "en0", Active: true, IP: "192.168.50.250", Router: "192.168.50.1", Read: true},
+					{Name: "USB 10/100/1000 LAN", Port: "USB 10/100/1000 LAN", Device: "en6", Active: true, IP: "192.168.100.10", Method: netinfo.MethodManual, Read: true},
+				}}, nil
 			},
 			LocalHost: func() string { return "me.local" },
 			StartScan: func(time.Time) lanmgr.Scanner {

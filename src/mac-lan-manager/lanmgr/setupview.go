@@ -19,7 +19,7 @@ func (m *Model) viewSetup(w, maxH int) string {
 	steps := m.setupSteps()
 	done := 0
 	for _, s := range steps {
-		if s.Done {
+		if s.Settled() {
 			done++
 		}
 	}
@@ -47,12 +47,15 @@ func (m *Model) viewSetup(w, maxH int) string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
+	lastSkip := ""                    // 飛ばす理由は前の行と同じなら繰り返さない (この Mac の固定と名前は同じ理由で並ぶ)
 	first := su.ch != nil && !su.seen // 相手をまだ一度も読み終えていない: 済んでいない手順は「確かめている」(「まだ」と描くと、鍵を置いた相手も毎回未実行に見えた)
 	for i, s := range steps {
 		mark, title := sMuted.Render("·"), sDim.Render(s.Title)
 		switch {
-		case first && !s.Done:
+		case first && !s.Settled():
 			mark, title = sAccent.Render(m.spin()), sDim.Render(s.Title+"  (確認中)")
+		case s.Skipped != "":
+			mark, title = sMuted.Render("–"), sDim.Render(s.Title+"  (任意・飛ばす)")
 		case s.Done && s.ID != stepConfirm:
 			mark, title = sOK.Render("✓"), sText.Render(s.Title)
 		case hasNext && s.ID == next.ID:
@@ -62,6 +65,10 @@ func (m *Model) viewSetup(w, maxH int) string {
 		if !first && hasNext && s.ID == next.ID && s.Blocked != "" {
 			b.WriteString(sWarn.Render("     止まっている: "+s.Blocked) + "\n")
 		}
+		if !first && s.Skipped != "" && s.Skipped != lastSkip {
+			b.WriteString(sDim.Render("     "+s.Skipped) + "\n")
+		}
+		lastSkip = s.Skipped
 	}
 	stepsCard := shadow(card(strings.TrimRight(b.String(), "\n"), w-1, surfPanel, cAccent, cYellow, cOK))
 
@@ -71,7 +78,7 @@ func (m *Model) viewSetup(w, maxH int) string {
 	case su.ch != nil && !su.seen:
 		c.WriteString(sDim.Render("確認が終わったら表示") + "\n")
 	case !hasNext:
-		c.WriteString(sOK.Render("全部済んでいる") + "\n")
+		c.WriteString(sOK.Render(allSettledNote(steps)) + "\n")
 	case next.Blocked != "":
 		c.WriteString(sDim.Render("先に上の理由を片付ける (r でリロード)") + "\n")
 	default:

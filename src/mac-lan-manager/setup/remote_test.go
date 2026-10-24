@@ -175,6 +175,14 @@ func TestStepArgv(t *testing.T) {
 	if argv, err := ConfirmArgv(nd, s); err != nil || argv[len(argv)-1] != s.ConfirmCommand() {
 		t.Errorf("ConfirmArgv = %q %v", argv, err)
 	}
+	w := s
+	w.AcceptIP = dest.IP // この Mac が無線だけ: 今の宛先で確かめる
+	if _, err := ConfirmArgv(nd, w); err == nil {
+		t.Error("AcceptIP があるのに新しい IP で確認しようとした")
+	}
+	if _, err := ConfirmArgv(dest, w); err != nil {
+		t.Errorf("AcceptIP の宛先で確認できない: %v", err)
+	}
 	manual := PeerNet{Service: "TB", Method: "manual", IP: "10.0.0.5", Mask: "255.255.255.0", Router: ""}
 	if s, err := PeerStatic(manual, "192.168.100.12", "255.255.255.0", "tok-12345678"); err != nil || s.Restore != (Restore{Method: "manual", IP: "10.0.0.5", Mask: "255.255.255.0"}) {
 		t.Errorf("手動の戻し先 = %+v %v", s.Restore, err)

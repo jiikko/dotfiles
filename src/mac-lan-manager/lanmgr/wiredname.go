@@ -138,6 +138,8 @@ func (m *Model) wiredCheck(r row) (name string, st wiredStatus, note string) {
 	}
 	w, found := m.wired[r.host]
 	switch {
+	case !r.self && r.noWire:
+		return name, wiredUnknown, "この Mac に内部の網の有線が無い (Wi-Fi で繋ぐ)"
 	case !r.self && r.connectIP() != r.lanIP:
 		// 宛先 (target) と同じ条件で見る: 網が分かれて Wi-Fi で繋ぐ相手に「引ける」と出すと、カードの ssh の行 (Wi-Fi の IP) と食い違った
 		return name, wiredUnknown, "有線で網が分かれている (Wi-Fi で繋ぐ)"

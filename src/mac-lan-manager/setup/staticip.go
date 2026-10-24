@@ -85,6 +85,10 @@ type StaticIP struct {
 	Mask    string // "255.255.255.0"
 	Restore Restore
 	Token   string // 確認の印の名前 (実行ごとに変える)
+	// AcceptIP は確認の ssh を受けてよい相手の IP (空なら新しい IP)。新しい IP 以外を渡すのは、この Mac に内部の網の有線が無いとき
+	// (無線だけ) だけ: 新しい IP へはこの Mac から届かないので、今の宛先 (Wi-Fi) で入り直し、相手の上で新しい IP が I/F に付いたことを
+	// 代わりに確かめる (有線で届くかは確かめない)
+	AcceptIP string
 	// StateDir は root だけが書ける状態ディレクトリ (空なら DefaultStateDir)。既定以外はテストの差し込み口: 誰でも書ける親の下を
 	// 渡すと、ls -ld で確かめた後にディレクトリごと差し替えられる (既定の /var/db は root の 0755 なので起きない)
 	StateDir string
@@ -132,8 +136,8 @@ func (s StaticIP) Validate() error {
 	if s.Service == "" || !termsafe.IsPlain(s.Service) { // IsPlain は C0・DEL (改行を含む) も弾く
 		return fmt.Errorf("サービス名が使えない: %q", s.Service)
 	}
-	if !ipv4(s.IP) || !ipv4(s.Mask) {
-		return fmt.Errorf("IPv4 でない: %q / %q", s.IP, s.Mask)
+	if !ipv4(s.IP) || !ipv4(s.Mask) || (s.AcceptIP != "" && !ipv4(s.AcceptIP)) {
+		return fmt.Errorf("IPv4 でない: %q / %q / %q", s.IP, s.Mask, s.AcceptIP)
 	}
 	if err := s.Restore.Validate(); err != nil {
 		return err
@@ -154,6 +158,14 @@ func (s StaticIP) Validate() error {
 		return errors.New("待ちの長さが使えない (周期の整数倍)") // 割り切れない待ちは sleep と周の数で丸まる (900ms が sleep 0 に化けた)
 	}
 	return nil
+}
+
+// ConfirmIP は確認の ssh で入る相手の IP (AcceptIP、空なら新しい IP)。
+func (s StaticIP) ConfirmIP() string {
+	if s.AcceptIP != "" {
+		return s.AcceptIP
+	}
+	return s.IP
 }
 
 func (s StaticIP) stateDir() string {
@@ -234,9 +246,19 @@ func (s StaticIP) Script() string {
 	fmt.Fprintf(&b, "i=0\nwhile [ \"$i\" -lt %d ]; do\n", int(s.Window/s.tick()))
 	// 印を認める条件: 通常のファイルで、中身の $SSH_CONNECTION の 3 語目 (ssh を受けた側の IP) が新しい IP。新しい IP に届いた ssh
 	// からしか確認が成り立たない (Wi-Fi 越しの既存の接続から打っても有線を確かめたことにならない)。
-	// 印は root の 0700 のディレクトリにしか無いので、差し替え・FIFO・symlink は起きない
+	// AcceptIP (この Mac が無線だけ) なら 3 語目はその IP で、変えたサービスの -getinfo に新しい IP が出ていることも見る (出ていなければ
+	// 認めない。有線で届くかはこの Mac からは確かめられない)。ifconfig 全体で探さない: 別の I/F (VM の bridge 等) が前から同じ IP を
+	// 持っていると、変更が効いていなくても通った (敵対レビュー)。受容: 手動の方式の -getinfo は設定した値を返すので、相手のケーブルが
+	// 抜けていても通る (見るのは「設定が効いたか」まで)。I/F に付いたかを見るなら Device を渡して ifconfig <dev> で照らす (今は StaticIP が
+	// Device を持たない。相手側の線の抜けで有線の相手を見失う報告が出たら再評価)。印は root の 0700 のディレクトリにしか無いので、差し替え・FIFO・symlink は起きない
+	accept := "[ \"$3\" = " + s.IP + " ]"
+	if s.AcceptIP != "" && s.AcceptIP != s.IP {
+		// 行末まで照らす (192.168.100.1 が 192.168.100.12 に当たらないように)。出力に改行を足して最後の行も同じ形にする。grep を使わず sh の case で照らす
+		accept = "[ \"$3\" = " + s.AcceptIP + " ] && case \"$(networksetup -getinfo " + svc + " 2>/dev/null)\n\" in *" +
+			Quote("IP address: "+s.IP+"\n") + "*) true ;; *) false ;; esac"
+	}
 	fmt.Fprintf(&b, "  if [ -f %s ] && [ ! -L %s ]; then\n    read -r c < %s\n    set -- $c\n", mark, mark, mark)
-	fmt.Fprintf(&b, "    if [ \"$3\" = %s ]; then confirmed=1; rm -f %s; exit 0; fi\n  fi\n", s.IP, mark)
+	fmt.Fprintf(&b, "    if %s; then confirmed=1; rm -f %s; exit 0; fi\n  fi\n", accept, mark)
 	fmt.Fprintf(&b, "  sleep %s\n  i=$((i+1))\ndone\n", secs(s.tick()))
 	return b.String()
 }
