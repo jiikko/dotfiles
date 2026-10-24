@@ -31,7 +31,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [899](pending/899-research-dupscan-lsp-integration.md) | **保留** (LSP は使わない)。構文木の近似で判断を誤る実例が出たら、LSP・言語の解析の道具で補う案を再開する | 896 |
 | [900](900-research-dupscan-next-languages.md) | 次の言語 (Go・zsh) の読み取りを測る | 893 |
 | [902](902-feat-dupscan-claude-code-hook.md) | **Claude Code の編集の直後に効かせる**: Edit / Write の直後に、近い既存のメソッドを知らせる hook | 893・894・897・898・901 |
-| [904](904-feat-dupscan-trial-subcommands.md) | 人が試す入口 (`near`・`explain`・`hook --dry-run`)。動作確認として何ができるか・なぜ同じと判定したかを手で確かめる | 893・894 (`hook --dry-run` は 902) |
+| [904](904-feat-dupscan-trial-subcommands.md) | 人が試す入口 (`near`・`explain`・`hook --dry-run`)。動作確認として何ができるか・なぜ同じと判定したかを手で確かめる | 893・894・896・897・898・902 |
 
 ## 進捗
 

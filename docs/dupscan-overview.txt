@@ -106,7 +106,7 @@ Go で書く。構文の解析は tree-sitter (cgo)。「言語に依らない�
   出力 4: 人が試す入口 (issue 904。動作確認用)
         dupscan near <file>:<関数名>      その関数に近い既存のメソッドを、一致した段ごとに出す
         dupscan explain <file>:<関数名>   段ごとに潰した形とハッシュを見せる (なぜ同じ / 違うと判定したか)
-        dupscan hook --dry-run <file>     Claude が編集したら hook が何を知らせるかを、編集せずに見せる
+        dupscan hook --dry-run            hook の入力の JSON を渡し、hook が何を知らせるかを見せる (キャッシュは書き換えない)
 
   索引・重複の報告・hook は同じ単位の一覧から作る (片方だけ別の抽出をして食い違わないように)。
 
@@ -208,4 +208,4 @@ dupscan だけで依存も使い方もシンプルになるなら、LSP は使�
   899 LSP との組み合わせ (保留。LSP は使わない)
   900 次の言語 (Go・zsh) の読み取りの実測                 ← 893
   902 編集の直後に知らせる Claude Code の hook            ← 893・894・897・898・901
-  904 人が試す入口 (near・explain・hook --dry-run)        ← 893・894 (hook --dry-run は 902)
+  904 人が試す入口 (near・explain・hook --dry-run)        ← 893・894・896・897・898・902
