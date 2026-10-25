@@ -36,9 +36,18 @@ func BuildNear(target *group.Entry, matches []group.Match, opt group.Options, ex
 			s.Skipped[lv.String()] = why
 		}
 	}
+	// プリセットは 2 人の組でなく、report・gate と同じ L2 の組 (指した単位と、L1・L2 で一致した全員) に掛ける。
+	// 2 人ずつ掛けると「L1 が同じメンバーを含む組には効かせない」が抜け、gate が止める相手まで隠す。
+	l2 := []*group.Entry{target}
+	for _, m := range matches {
+		if m.Level <= norm.L2 {
+			l2 = append(l2, m.Entry)
+		}
+	}
+	presetL2 := ex != nil && ex.PresetCovers(norm.L2, l2)
 	for _, m := range matches {
 		pair := []*group.Entry{target, m.Entry}
-		if ex != nil && (ex.PathCovers(m.Level, pair) || ex.PresetCovers(m.Level, pair) || ex.GroupExcluded(m.Level, pair)) {
+		if ex != nil && (ex.PathCovers(m.Level, pair) || (m.Level == norm.L2 && presetL2) || ex.GroupExcluded(m.Level, pair)) {
 			s.Excluded++
 			continue
 		}

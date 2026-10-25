@@ -120,6 +120,23 @@ func TestPresetDoesNotHideCopyFirstSeenAtL2(t *testing.T) {
 	}
 }
 
+// near もプリセットを 2 人ずつでなく L2 の組全体に掛ける: A と B が定数まで同じ写しなら、C から見た A・B は隠さない (gate も止める組)。
+func TestNearKeepsPresetGroupWithIdenticalMembers(t *testing.T) {
+	c := strings.Replace(strings.Replace(delegateA, "ATests", "CTests", 1), `"a-tests"`, `"c-tests"`, 1)
+	root := presetRepo(t, map[string]string{
+		"Tests/A.swift": delegateA,
+		"Tests/B.swift": strings.Replace(delegateA, "ATests", "BTests", 1),
+	})
+	writeFile(t, root, "Tests/C.swift", c)
+	if rc, out, _ := runGateCmd(t, "-base", "HEAD", root); rc != 1 {
+		t.Fatalf("前提: gate は C を止める: rc=%d out=%q", rc, out)
+	}
+	rc, out, _ := near(t, root, filepath.Join(root, "Tests/C.swift")+":makeTemporaryFile")
+	if rc != 0 || !strings.Contains(out, "Tests/A.swift") || !strings.Contains(out, "Tests/B.swift") {
+		t.Errorf("gate が止める組の相手を near が隠した: rc=%d %q", rc, out)
+	}
+}
+
 func TestPresetConfigErrorsAndStale(t *testing.T) {
 	root := repoWith(t, map[string]string{"Tests/A.swift": delegateA})
 	writeConfig(t, root, map[string]any{"preset": "no-such", "kind": "false-positive", "reason": "x"})

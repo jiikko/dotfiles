@@ -552,8 +552,8 @@ func (w *walker) atomCall(call *sitter.Node, withArgs bool) bool {
 		return false
 	}
 	args := childOfKind(suffix, "value_arguments")
-	if args == nil {
-		return false
+	if args == nil || !strings.HasPrefix(w.text(args), "(") {
+		return false // 添字 (`values["a"]`) も同じ value_arguments で表されるので、丸括弧の呼び出しに限る
 	}
 	n := 0
 	for i := range args.NamedChildCount() {
@@ -595,8 +595,18 @@ func (w *walker) atom(n *sitter.Node) bool {
 		t := n.ChildByFieldName("target")
 		return t != nil && w.atom(t)
 	case "prefix_expression":
+		// 暗黙のメンバー (`.root`) と数値のリテラルの負号 (`-1`) だけ。`-y`・`~x`・`!flag` は計算なので原子にしない。
 		t := n.ChildByFieldName("target")
-		return t != nil && n.NamedChildCount() == 1 && w.atom(t)
+		if t == nil || n.NamedChildCount() != 1 {
+			return false
+		}
+		switch op := strings.TrimSpace(strings.TrimSuffix(w.text(n), w.text(t))); op {
+		case ".":
+			return t.Kind() == "simple_identifier"
+		case "-":
+			return t.Kind() == "integer_literal" || t.Kind() == "real_literal"
+		}
+		return false
 	case "postfix_expression":
 		t := n.ChildByFieldName("target")
 		return t != nil && childOfKind(n, "bang") != nil && w.atom(t)
