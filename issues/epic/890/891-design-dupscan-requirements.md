@@ -199,7 +199,7 @@ ERROR / MISSING ノードを含むファイルを数えた:
 - ~~使う側の repo の `make test` への組み込み方~~ → **決めた** (2026-10-25。obaket の issue 1301): obaket は pre-push の lint-gates に `check-dupscan-gate` (起点は repo root・dupscan が無ければ rc 2・Xcode Cloud では飛ばす) と、GHA (`ubuntu-slim`) で回す。obaket の 100 commit の流し直しで 1 回 平均 3.0 秒・最大 4.2 秒
 - ~~Claude が `dupscan:allow` の許可を自分で書いてよいか~~ → skill `dupscan` で「書いてよいが、書いたらユーザーへの報告に書く」にした ([903](done/903-docs-dupscan-search-before-write-procedure.md))。CI は `-fail-new-exclusions` で新しく足された除外を止める
 - test と prod にまたがる組を `gate` の違反にするか
-- ~~意図した写しを許す書き方~~ → **決めた**: 単位の直前の `// dupscan:allow` と `.dupscan.json` の除外 ([906](done/906-feat-dupscan-exclusion-config.md))、形で外すプリセット ([919](919-feat-dupscan-exclusion-presets.md))
+- ~~意図した写しを許す書き方~~ → **決めた**: 単位の直前の `// dupscan:allow` と `.dupscan.json` の除外 ([906](done/906-feat-dupscan-exclusion-config.md))、形で外すプリセット ([919](done/919-feat-dupscan-exclusion-presets.md))
 - 止めるかの判定 (905。段ごとに止める / 報告だけ / 回さない): 所要と誤検知の割合の実測を見てユーザーが決める
 - ~~索引の置き方~~ → **決めた** ([897](done/897-feat-dupscan-index-subcommand.md)): 置かない。引くたびに作業ツリーを全部読む (obaket で 1.45 秒。ユーザー 2026-10-25: 1.5 秒を許し、目安を 2 秒にした)
 - ~~「どう共通化するか」の材料をどこまで出すか~~ → リテラルの違いの表・所属ターゲットは保留 ([918](pending/918-feat-dupscan-target-and-literal-table.md)。ユーザー 2026-10-25: obaket で使う中で欲しくなったら作る)
