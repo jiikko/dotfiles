@@ -8,7 +8,7 @@
 obaket はこのマシンに無いので、先に DualNoteApp で測り、obaket は手に入るマシンで測る。DualNoteApp は `macOS/` と `Shared/` をまたぐ写しを見るため、repo の root を起点にする。dupscan は調べる repo に何も書かない (891 の不変条件)。
 obaket では、PR 24 の前の木で肯定と否定の期待値を置き、変異で効いていることを確かめる。
 
-Type-3 ([895](895-feat-dupscan-type3-candidates.md)) は後回しにしたので、下の Type-3 に触れる条件は 895 に着手したときに当てる。それまでは Type-2 と L1〜L3 の段だけで較正する。
+Type-3 ([895](pending/895-feat-dupscan-type3-candidates.md)) は後回しにしたので、下の Type-3 に触れる条件は 895 に着手したときに当てる。それまでは Type-2 と L1〜L3 の段だけで較正する。
 
 追加の期待値 (反証レビュー (設計) 2026-10-24):
 - 否定: 引数を取らず同じ型を返す別々の関数が、L3 で 1 組にならないこと (L3 は本体全体を 1 記号に畳む)

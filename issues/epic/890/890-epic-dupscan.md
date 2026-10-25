@@ -24,7 +24,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [892](892-chore-dupscan-project-scaffold.md) | `src/dupscan` の骨組み (module・Makefile・bin・CI・README・PACKAGES.md、cgo の所要の実測) | 901 |
 | [893](done/893-feat-dupscan-core-normalize-type2.md) | コア: 走査・test / prod の分類・単位・正規化 L1〜L3・ハッシュ・Type-2 の組 | 892 |
 | [894](894-feat-dupscan-swift-adapter.md) | Swift adapter (文法の pin・対応表と網羅テスト・ERROR の除外・PR 24 の固定の入力・canary) | 893 |
-| [895](895-feat-dupscan-type3-candidates.md) | Type-3 (少し違う写し) の類似度と候補の絞り込み (後回し。主な用途には Type-2 と L3 の一致で足りるかを先に見る) | 893 |
+| [895](pending/895-feat-dupscan-type3-candidates.md) | **保留** (2026-10-25)。Type-3 (少し違う写し) の類似度と候補の絞り込み (後回し。主な用途には Type-2 と L3 の一致で足りるかを先に見る) | 893 |
 | [896](896-feat-dupscan-report-output.md) | 出力 (人が読む形・JSON・リテラルの違いの表・プロパティの値・ターゲット・可視性・呼び出し元の数・既存のヘルパーとの一致) | 893・894 |
 | [897](897-feat-dupscan-index-subcommand.md) | 探索のための索引 (subcommand)。名前・署名の型・doc 文で引く (名前の検索も LSP でなくこれでまかなう) | 893・894 |
 | [898](898-test-dupscan-obaket-calibration.md) | obaket と DualNoteApp に当てた実測・既定の閾値・PR 24 の前の木での肯定と否定の期待値・変異 (Type-3 の条件は 895 の着手時) | 894・896 |
@@ -37,6 +37,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [907](done/907-feat-dupscan-exploration-queries.md) | **探索の問い合わせ** (`outline`・`find`・`callers`)。grep の代わりに、定義だけを 1 件 1 行で返して文脈を食わずに関連の実装を探す | 893・894・897 |
 | [909](done/909-task-dupscan-integrate-into-obaket.md) | **obaket への組み込み**。2026-10-25 に obaket の issue 1301 へ移した (PR 24 の前の木での受け入れと obaket の規模の実測も 1301 で行い、結果を各 issue に書き戻す) | 903・905・906 |
 | [917](917-test-dupscan-usefulness-verification.md) | **有益さの検証**。書く前に引く効果を skill の有る無しの A/B で測る・起点の写しを拾えるか・組み込んだ後の効果 (この 2 つは obaket の issue 1301 へ移した) | 903・905・909 |
+| [918](pending/918-feat-dupscan-target-and-literal-table.md) | **保留**。所属ターゲットの解決とリテラルの違いの表 (894・896・897 から移した)。obaket で使う中で欲しくなったら作る | — |
 
 ## 進捗
 
@@ -54,3 +55,4 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 - 2026-10-25 有益さの検証 (917) を足した (ユーザー指示: 検証方法を sub issue に書いておく)
 - 2026-10-25 893・903・906・907 を done にした (受け入れ条件が済んだ。残った確かめは 898・909・917 へ)
 - 2026-10-25 obaket 側のタスク (909 と 917 の検証 2・3) を obaket の issue 1301 へ移した (ユーザー指示: ソースは dotfiles に残し、obaket 側のタスクは obaket の issue へ)。go・zsh (900) を除いて epic を done にするまで進める (ユーザー指示)
+- 2026-10-25 まだ作っていない機能 (Type-3 = 895・所属ターゲット・リテラルの違いの表) を保留にした (ユーザー 2026-10-25: 必要性を評価できないので、obaket の開発やコードスキャンを進める中で欲しい機能があったらその時に実装する)。所属ターゲットとリテラルの表は 918 にまとめた。obaket での受け入れ (obaket の issue 1301 の段階 1・2) の結果を 897・904・905 に書き戻した

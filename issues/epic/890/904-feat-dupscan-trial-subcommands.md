@@ -26,8 +26,8 @@ dupscan は、主に Claude が書く前に索引を引き (897)、セルフレ�
 
 ## 受け入れ条件
 
-- [ ] obaket の PR 24 の前の木 (commit 45cc3b208^) で、6 つのうち 1 つを `near` で指すと残りの 5 つが段つきで出る
-- [ ] `explain` で、直書きの版とプロパティを読む版の L3 のハッシュが一致し、L1 / L2 では違うことが見える。引数を使わない単位なら、L3 で本体全体が 1 記号に畳まれたことが見える
+- [x] obaket の PR 24 の前の木 (commit 45cc3b208^) で、6 つのうち 1 つを `near` で指すと残りの 5 つが段つきで出る
+- [x] `explain` で、直書きの版とプロパティを読む版の L3 のハッシュが一致し、L1 / L2 では違うことが見える。引数を使わない単位なら、L3 で本体全体が 1 記号に畳まれたことが見える
 - [x] `near` と `gate` が同じ照合の関数を通すことをテストで固定する (比べるかは gate・report と同じ `group.Eligible`。report の組のメンバーが互いに near に出ることを TestNearAgreesWithReportGroups で固定)
 - [x] `near` の結果に、指した単位そのものが出ない
 - [x] 無関係な関数を `near` で指すと「近いものはない」と出る (否定の期待値。898 で決めた L3 の扱いの上で)。読めない構文の単位を指すと、外した理由が出る
@@ -57,3 +57,9 @@ dupscan は、主に Claude が書く前に索引を引き (897)、セルフレ�
   DualNoteApp で `near` (MemoColumn の allKnownTags → iOS / macOS の TagPicker・MemoTabView の 3 つが L1、DiarySearchSheet が L3 の畳まれた一致) を確かめた (書き込み 0)。
   判定は既存の関数を読むだけの道具なので、敵対的レビューは回していない (gate の判定は `Eligible` を `Skip` 経由にしただけで、gate のテストは全部緑)。
   **残り**: obaket の PR 24 の前の木での受け入れ (obaket が要る)・リテラルの違いの表 (896)
+- 2026-10-25 obaket の PR 24 の前の木 (`4cb7cc740`) で受け入れた (M4Pro。obaket の issue 1301 の段階 2):
+  - `near shared/Tests/ObaketCoreTests/Move/MoveReconcileTests.swift:location`: dotfiles `4d80e474` の版で近いもの 43 (L1 6・L2 10・L3 27)。残りの 5 つが全部出た (直書きの 3 つは L1、プロパティを読む 2 つは L3)。
+    ただし既定の 20 件の表示では L3 の 2 つが「他 23 件」に入って見えなかった。`fce6622c` の版 (既定から L3 を外した。898) では既定で 16 (L1 6・L2 10) になり、プロパティを読む 2 つは出ない。
+    `-levels L1,L2,L3` を付けると 43 に戻り 5 つが出る (どちらも `-limit 0`)
+  - `explain`: 直書きの版 (`MoveReconcileTests`) とプロパティを読む版 (`BuildMoveManifestUseCaseTests`) は L3 のハッシュ `66d84b94d471` が一致し、L1・L2 は違った
+  - リテラルの違いの表 (896) は pending にした (ユーザー 2026-10-25: 必要性を評価できないので、obaket の開発で欲しくなったら作る)

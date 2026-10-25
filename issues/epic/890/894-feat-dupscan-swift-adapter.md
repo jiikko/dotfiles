@@ -14,10 +14,10 @@
 - [x] テスト関数を、XCTest (XCTestCase のサブクラスの `func test…`) と Swift Testing (`@Test`) の両方で見分ける。DualNoteApp は XCTest だけ (60 ファイル)、obaket は Swift Testing なので、両方の repo で確かめる
 - [x] DualNoteApp (Swift 6.0) の全ファイルで、読めない構文があるファイルの数を測る (obaket の 3% と並べる)
 
-- [ ] 所属ターゲットを `Package.swift`・XcodeGen の `project.yml`・追跡されている `project.pbxproj` から解決する。どれも無ければ「不明」と出す。
+- [x] ~~所属ターゲットを `Package.swift`・XcodeGen の `project.yml`・追跡されている `project.pbxproj` から解決する。どれも無ければ「不明」と出す。
       obaket と DualNoteApp (XcodeGen と SwiftPM。`project.pbxproj` は追跡していないがディスク上にはある) の両方で、代表のファイルの所属が正しいことを確かめる。
       追跡されていない `project.pbxproj` は読まない (手元と CI で結果が割れないように) ことをテストで固定する。`project.yml` は target の `sources` のパスだけを読み、
-      `include:`・templates など読めない書き方に当たったら、その target は「不明」にする
+      `include:`・templates など読めない書き方に当たったら、その target は「不明」にする~~ 保留にして [918](pending/918-feat-dupscan-target-and-literal-table.md) へ移した (ユーザー 2026-10-25)
 
 - [x] 網羅テスト: node-types.json の named な種類が全部、対応表で分類されている (または明示して無視している)
 - [ ] 固定の入力: obaket の PR 24 の前の木 (commit 45cc3b208^) から 6 つの `location` の定義を含むファイルを切り出して Swift adapter のテストに置き
@@ -36,3 +36,4 @@
   - **残り**: PR 24 の固定の入力 (obaket がこのマシンに無い)・所属ターゲットの解決 (`Package.swift`・`project.yml`)
 - 2026-10-24 敵対的レビューを受けて直した: 単位に computed property・subscript・deinit・`didSet` / `willSet` を足した・鍵に `static`・extension の `where`・入れ子の関数の親を入れ、重なれば番号を付ける・子の無い節 (`<+>`・`outer:`) の字面と `#if` をハッシュに入れる・`@Testing.Test` と `XCTestCase` を継承した型の中の `test…` を見分ける・読めない構文に接した単位 (入れ物に着くまでの祖先が ERROR を含む) を比べない
 - 2026-10-24 2 周目の敵対的レビュー: `didSet(old)` の old を局所の名前にした
+- 2026-10-25 所属ターゲットの解決を保留にして 918 へ移した (ユーザー 2026-10-25: 必要性を評価できないので、obaket の開発で欲しくなったら作る)
