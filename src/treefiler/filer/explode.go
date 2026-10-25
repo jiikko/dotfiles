@@ -6,18 +6,21 @@ import (
 	"sync"
 )
 
-// explode.go は `e` (配下のフォルダを全部開く。spec §5.4)。裏で幅優先に辿り、終わったら一斉に開く。
+// explode.go は `>` (配下のフォルダを全部開く。spec §5.4)。裏で幅優先に辿り、終わったら一斉に開く。
 // 隠したフォルダと git が無視するフォルダには降りない (対象のフォルダ自身は開く)。symlink は辿らない。
+// 開くと見える項目が explodeAskAt 以上なら、開く前に確認の板を出す (描画とアニメが重くなる)。
 
 const (
 	explodeMaxDirs    = 400
 	explodeMaxEntries = 6000
+	explodeAskAt      = 100
 )
 
 type explodeJob struct {
 	mu       sync.Mutex
 	target   string
 	dirs     []string // 開くフォルダ (幅優先の順)
+	shown    int      // 開いたフォルダの中の、木に見える項目の数 (隠す設定の dotfile を除く)
 	stopped  bool     // 上限で止めた
 	done     bool
 	canceled bool
@@ -41,14 +44,14 @@ func (j *explodeJob) count() int {
 	return len(j.dirs)
 }
 
-// startExplode は target の配下を辿り始める。skip は降りないフォルダの判定 (隠す・無視する)。
-func startExplode(target string, skip func(path, name string) bool) *explodeJob {
+// startExplode は target の配下を辿り始める。skip は降りないフォルダの判定 (隠す・無視する)。hidden は木に見せない名前 (数えない)。
+func startExplode(target string, skip func(path, name string) bool, hidden func(name string) bool) *explodeJob {
 	j := &explodeJob{target: target}
 	go func() {
 		queue := []string{target}
 		entries := 0
 		var out []string
-		stopped := false
+		stopped, shown := false, 0
 		for len(queue) > 0 {
 			j.mu.Lock()
 			canceled := j.canceled
@@ -69,6 +72,9 @@ func startExplode(target string, skip func(path, name string) bool) *explodeJob 
 			out = append(out, d)
 			entries += len(ents)
 			for _, e := range ents {
+				if !hidden(e.Name()) {
+					shown++
+				}
 				if e.IsDir() && !skip(filepath.Join(d, e.Name()), e.Name()) {
 					queue = append(queue, filepath.Join(d, e.Name()))
 				}
@@ -78,7 +84,7 @@ func startExplode(target string, skip func(path, name string) bool) *explodeJob 
 			j.mu.Unlock()
 		}
 		j.mu.Lock()
-		j.dirs, j.stopped, j.done = out, stopped, true
+		j.dirs, j.stopped, j.shown, j.done = out, stopped, shown, true
 		j.mu.Unlock()
 	}()
 	return j
@@ -88,27 +94,41 @@ func (m *Model) explode() {
 	if m.exploding != nil {
 		return
 	}
-	target := m.cur // フォルダの上でだけ呼ばれる (ファイルの e はエディタ。model.go の treeKeys)
+	target := m.cur
+	if !target.dir {
+		target = target.parent // ファイルの上では親のフォルダ (treebeard と同じ。spec §5.4)。root はフォルダなので親がいる
+	}
 	showHidden, intoIgnored := m.set.ShowHidden, m.set.ExplodeIgnore
 	snap := m.gitSnap
+	hidden := func(name string) bool { return !showHidden && hiddenName(name) }
 	m.exploding = startExplode(target.path(), func(path, name string) bool {
-		if !showHidden && hiddenName(name) {
-			return true
-		}
-		return !intoIgnored && snap.state(path, true) == gitIgn
-	})
+		return hidden(name) || !intoIgnored && snap.state(path, true) == gitIgn
+	}, hidden)
 }
 
-// takeExplode は辿り終えた explode を取り込み、見つけたフォルダを一斉に開く。
+// takeExplode は辿り終えた explode を取り込み、見つけたフォルダを一斉に開く。見える項目が多ければ先に確認の板を出す。
 func (m *Model) takeExplode() {
 	j := m.exploding
 	if j == nil || !j.finished() {
 		return
 	}
+	if !j.canceled && j.shown >= explodeAskAt && m.OwnsKeys() {
+		return // 他の層 (d の確認の板・入力欄など) を開いている間は板を重ねない (上書きすると d の確認が消える)。閉じてから聞く
+	}
 	m.exploding = nil
 	if j.canceled {
 		return
 	}
+	if j.shown < explodeAskAt {
+		m.openExploded(j)
+		return
+	}
+	m.ask = &askBoard{title: "配下を全部開く", lead: itoa(j.shown) + " 個の項目を開きます。表示に時間がかかります", verb: "開く",
+		yes: func(m *Model) { m.openExploded(j) }}
+}
+
+// openExploded は辿り終えたフォルダを一斉に開く (確認の板を待つ間に消えたフォルダは loadPath が見つけず飛ばす)。
+func (m *Model) openExploded(j *explodeJob) {
 	for _, d := range j.dirs {
 		n := m.loadPath(d)
 		if n != nil && n.dir {

@@ -145,7 +145,7 @@ var items = []item{
 	boolItem("BEHAVIOR", "Git status", "git", "git の印とブランチを出す", func(s *Settings) *bool { return &s.Git }),
 	boolItem("BEHAVIOR", "Dim ignored", "dim_ignored", "git が無視するものを灰色に沈める", func(s *Settings) *bool { return &s.DimIgnored }),
 	intItem("BEHAVIOR", "Dim floor", "dim_floor", "無視するものの見えやすさ (0 = ほぼ背景 / 10 = 灰色)", 0, 10, 1, func(s *Settings) *int { return &s.DimFloor }),
-	boolItem("BEHAVIOR", "Explode ignored", "explode_ignored", "e で git が無視するフォルダも開く", func(s *Settings) *bool { return &s.ExplodeIgnore }),
+	boolItem("BEHAVIOR", "Explode ignored", "explode_ignored", "> で git が無視するフォルダも開く", func(s *Settings) *bool { return &s.ExplodeIgnore }),
 	boolItem("BEHAVIOR", "Wrap lines", "wrap", "タイルの長い行を折り返す (off なら右端で切る)", func(s *Settings) *bool { return &s.Wrap }),
 	boolItem("BEHAVIOR", "Remember place", "remember", "閉じたときの開いたフォルダ・カーソル・プレビューを、次に同じ場所で開いたときに戻す", func(s *Settings) *bool { return &s.Remember }),
 }

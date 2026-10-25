@@ -99,7 +99,7 @@ func TestFilerBackgroundNoticeShowsOnTick(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
 	m.handleKey("G") // a.txt → b.mp3 → sub (末尾のフォルダ)
-	m.handleKey("e") // explode は裏で走り、完了の知らせは Advance の中で積まれる
+	m.handleKey(">") // explode は裏で走り、完了の知らせは Advance の中で積まれる
 	deadline := time.Now().Add(5 * time.Second)
 	for !strings.Contains(m.toast.Text(), "開いた") {
 		if time.Now().After(deadline) {

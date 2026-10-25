@@ -24,8 +24,8 @@ func clearEditorEnv(t *testing.T) {
 	t.Setenv("EDITOR", "")
 }
 
-// 木の e: ファイルならエディタ、フォルダなら今までどおり explode (spec §0.1)。
-func TestTreeEEditsFileAndExplodesFolder(t *testing.T) {
+// 木の e: ファイルでもフォルダでもエディタで開く (spec §0.1)。explode は > にあり、e では走らない。
+func TestTreeEEditsFileAndFolder(t *testing.T) {
 	clearEditorEnv(t)
 	m := newTest(t)
 	cdTo(t, m, "a/one.txt")
@@ -39,16 +39,14 @@ func TestTreeEEditsFileAndExplodesFolder(t *testing.T) {
 	}
 
 	cdTo(t, m, "b")
-	if got := m.HandleKey("e"); got != None {
-		t.Fatalf("フォルダの e = %v (explode は端末を明け渡さない)", got)
+	p = m.cur.path()
+	r = takeEdit(t, m, "e")
+	if !slices.Equal(r.Argv, []string{"nvim", p}) {
+		t.Fatalf("フォルダの e = %+v (nvim <フォルダ>)", r)
 	}
-	if _, ok := m.TakeExec(); ok {
-		t.Fatal("フォルダの e でプロセスを頼んだ")
+	if m.exploding != nil {
+		t.Fatal("フォルダの e で explode が走った")
 	}
-	if m.exploding == nil {
-		t.Fatal("フォルダの e で explode が始まらない")
-	}
-	m.exploding.cancel()
 }
 
 // タイルの e: 手前のタイルのファイルを開く。タイルは閉じない (戻ったら同じ所を読み続けられる)。

@@ -111,7 +111,7 @@ type Model struct {
 	exploding    *explodeJob
 	help         bool        `layer:"help"`
 	prompt       promptState `layer:"prompt"`
-	ask          *trashAsk   `layer:"ask"` // d の確認の板 (fileops.go)
+	ask          *askBoard   `layer:"ask"` // 確認の板 (ask.go。d のゴミ箱と、> で開く項目が多いとき)
 	exec         *ExecRequest
 }
 
@@ -249,7 +249,7 @@ func (m *Model) LayerHints() []Hint {
 	case m.panel.open:
 		return []Hint{{"j/k", "項目", 2}, {"h/l", "選ぶ", 3}, {"r", "既定に戻す", 4}, {"esc/,/q", "閉じる", 1}}
 	case m.ask != nil:
-		return []Hint{{"y/enter", "ゴミ箱へ移す", 2}, {"その他", "キャンセル", 1}}
+		return []Hint{{"y/enter", m.ask.verb, 2}, {"その他", "キャンセル", 1}}
 	case m.search.active:
 		return []Hint{{"enter", "確定", 2}, {"tab/ctrl+n", "次", 3}, {"shift+tab/ctrl+p", "前", 4}, {"esc", "やめる", 1}}
 	case m.prompt.active:
@@ -939,6 +939,8 @@ func init() {
 		}
 	}), "c")
 	bind(do((*Model).collapseOthers), "C")
+	bind(do((*Model).collapseBelow), "<")
+	bind(do((*Model).explode), ">")
 	bind(do(func(m *Model) { m.moveSibling(10) }), "J")
 	bind(do(func(m *Model) { m.moveSibling(-10) }), "K")
 	// ctrl+h は Backspace の別名 (入力欄の tuikit/lineedit と同じ。Backspace を押さずに ctrl+h を使う人がいる)
@@ -946,12 +948,8 @@ func init() {
 	bind(do((*Model).startSearch), "/")
 	bind(do(func(m *Model) { m.repeatSearch(1) }), "n")
 	bind(do(func(m *Model) { m.repeatSearch(-1) }), "N")
-	// e はフォルダなら explode (spec §5.4)、ファイルならエディタ (spec §0.1。treebeard ではファイルの親を explode する)
+	// e はフォルダでもエディタ (spec §0.1)。treebeard の e (explode) にしない: フォルダとファイルで e の意味が分かれる。explode は >
 	bind(func(m *Model) Result {
-		if m.cur.dir {
-			m.explode()
-			return None
-		}
 		m.requestEdit(m.cur.path())
 		return Exec
 	}, "e")
@@ -1035,6 +1033,29 @@ func (m *Model) descend() {
 		next = ks[0]
 	}
 	m.setCur(next)
+}
+
+// collapseBelow はカーソルのフォルダと配下を全部畳む (<。ファイルの上では親のフォルダが対象で、カーソルも親へ移す)。
+// c と違って配下の開閉を覚えない (次に開いたときは 1 段だけ開く)。対象に掛かる explode は止める (終わった後に開き直さない)。
+func (m *Model) collapseBelow() {
+	t := m.cur
+	if !t.dir {
+		t = t.parent // root はフォルダなので、ファイルには必ず親がいる
+		m.setCur(t)
+	}
+	if j := m.exploding; j != nil && (under(j.target, t.abs) || under(t.abs, j.target)) {
+		j.cancel()
+	}
+	var walk func(n *node)
+	walk = func(n *node) {
+		n.expanded = false
+		for _, k := range n.kids {
+			if k.dir {
+				walk(k)
+			}
+		}
+	}
+	walk(t)
 }
 
 // collapseOthers はカーソルの祖先以外を全部畳む (カーソル自身も畳む。treebeard の C。spec §6.1・§10)。
@@ -1483,7 +1504,8 @@ var helpKeys = [][2]string{
 	{"h ← ^B", "親へ (root なら 1 段上へ)"},
 	{"space tab", "フォルダの開閉"},
 	{"c C", "このフォルダを畳む · 経路以外を畳む"},
-	{"e", "フォルダ: 配下を全部開く (esc で中断) · ファイル: エディタで開く"},
+	{"> <", "配下を全部開く (esc で中断。100 件以上は確認) · 配下を全部畳む"},
+	{"e", "エディタで開く (フォルダも)"},
 	{"/ n N", "列の中を検索 · 次 · 前"},
 	{"- backspace ^H", "root を 1 段上へ"},
 	{". I", "dotfile の表示を切り替え"},

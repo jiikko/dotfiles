@@ -24,7 +24,8 @@
 | `y` `Y` | なし | **パスをコピー** (`y` = 絶対パス・`Y` = root からの相対パス。glogx の `y` と同じ「素の値をコピー」。クリップボードは `subproc/clipboard`。issue 718) |
 | ファイル操作 | 無い | **`a` 新規作成 (末尾 `/` でフォルダ)・`m` 名前の変更 (同じフォルダの中だけ)・`d` ゴミ箱へ移す (確認の板。`~/.Trash`)** (2026-10-12 ユーザー決定。issue 722)。上書きしない・別ボリュームは断る・root は対象外。本体は `src/safefs` (doctor の削除と共有)。名前の入力は `!` と同じ足元の欄、確認の板の中では `Ctrl-C` も取り消し。`d` はタイルの中では diff のまま。`R` `D` を避けたのは glogx の横断キー (ratelimit / doctor) を F の中で潰さないため |
 | パスへ移動 | 無い | **`:` で足元の欄にパスを入れるとカーソルをそこへ飛ばす** (2026-10-13 ユーザー依頼「ファイルパスを渡したらそこのパスに move」。issue 746)。絶対パス・`~`・root からの相対パス。root の外なら共通の祖先まで root を上げる (`-` の繰り返しと同じで開いた状態を保つ)。無いパスでは動かず toast。`p` でなく `:` はユーザー選定 |
-| `e` | explode (§5.4。ファイルの上では親のフォルダが対象) | **フォルダの上は explode、ファイルの上とタイルの中はエディタで開く** (2026-10-09 ユーザー依頼「ツリービューでファイルに e を押したら neovim を開いて欲しい」「プレビューを開いて e」)。エディタは `tuikit/editor` ($VISUAL → $EDITOR → nvim。glogx の issues viewer の `e` と同じ)。タイルのジャンプモードの `e` は選んだパスを開く (issues viewer と同じ)。戻ったら読み直す (`ExecDone`) |
+| `e` | explode (§5.4。ファイルの上では親のフォルダが対象) | **エディタで開く (ファイルもフォルダも。タイルの中も)** (2026-10-09 ユーザー依頼「ツリービューでファイルに e を押したら neovim を開いて欲しい」「プレビューを開いて e」。フォルダの上の e は 2026-10-25 に explode からエディタへ替えた: ユーザー「ディレクトリで e だと開くで、ファイルだと editor がひらくって、非対称」)。エディタは `tuikit/editor` ($VISUAL → $EDITOR → nvim。glogx の issues viewer の `e` と同じ)。タイルのジャンプモードの `e` は選んだパスを開く (issues viewer と同じ)。戻ったら読み直す (`ExecDone`) |
+| `>` `<` | 無い (`e` が explode) | **`>` = explode (§5.4)・`<` = カーソルのフォルダと配下を全部畳む (配下の開閉を覚えない。ファイルの上では親が対象でカーソルも親へ。対象に掛かる explode は止める)** (2026-10-25 ユーザー依頼「カーソルより下の node を全て open」「カーソル以下のツリーを全部閉じる」「100 ファイル以上開いてしまう場合は確認ダイアログ」)。`>` は辿り終えた時点で見える項目 (開くフォルダの中の、隠す設定の dotfile を除いた数) が 100 以上なら、開く前に確認の板 (`d` と同じ板。`y` `Enter` で開く・他のキーで取り消し) を出す。他の板・入力欄を開いている間に終わったら、閉じてから聞く |
 | 他の衝突するキー | `s` シェル / `C` 経路以外を畳む / `J` `K` / `Space` `Tab` / `n` `N` / `Enter` | **treebeard のまま** (`o` 以外は上書き)。ファイラーの中では glogx の `s` (status viewer)・`C` (claude update) は効かない |
 | `j` `k` の歩き方 | 既定 Step through = tree (開いたフォルダへ潜る) | **同じ階層 (兄弟) の中だけを動く** (2026-10-08 ユーザー回答。押しっぱなしで潜らない)。`J` `K` も兄弟を 10 |
 | `↓` `↑` | `j` `k` と別の意味 (列の中を移動) | **`j` `k` の別名** (`docs/glogx-ui-guide.md` §2: 矢印と emacs は新しい意味を持たない)。移動の語彙は `tuikit/listnav.MotionOf` を通す |
@@ -470,7 +471,7 @@ POPUP_T のばね `open` (0=カーソル行の 1 行 pill、1=全開)。矩形 =
   - `bytes` = 非ディレクトリ全部 (dotfile 含む) の `len` の合計。
 - 質: `rank = 2*complete + direct`。既存より rank が同等以上の結果だけ上書き (complete > 直接上限 > 通りがかり上限)。直接要求で上限に達した結果は最終。
 - **symlink は辿らない**: `lstat` (`DirEntry::metadata` / `symlink_metadata`)、`file_type().is_dir()` も symlink には false。`tree::make` も lstat なので、**ディレクトリへの symlink は「ファイル」扱い**。
-- **ignored の扱い**: 走査は git ignored を見ない (除外しない)。ignored が効くのは表示 (灰色・thin 線・芽の色)、`e` (explode) の降下除外のみ。
+- **ignored の扱い**: 走査は git ignored を見ない (除外しない)。ignored が効くのは表示 (灰色・thin 線・芽の色)、`>` (explode) の降下除外のみ。
 - `Tree::heat(id)`: `show_hidden` なら `max(全体 newest, 自身の mtime)`、そうでなければ `vis` (> UNIX_EPOCH のとき)、それも無ければ自身の mtime。ファイルは自身の mtime (lstat)。walk が無いフォルダは自身の mtime。
 - 完了結果は `Node.rec = (newest, complete, vis, bytes)` にコピー。`r` で再走査 (`invalidate`: 配下と祖先のキャッシュを消す)。
 

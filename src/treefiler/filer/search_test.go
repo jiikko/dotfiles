@@ -88,7 +88,7 @@ func TestExplodeOpensDescendantsButNotHidden(t *testing.T) {
 	m := newTest(t)
 	b := m.kids(m.root)[1]
 	m.setCur(b)
-	m.HandleKey("e")
+	m.HandleKey(">")
 	waitExplode(t, m)
 	deep := m.findNode(b.path() + "/deep")
 	if deep == nil || !deep.expanded || !b.expanded {

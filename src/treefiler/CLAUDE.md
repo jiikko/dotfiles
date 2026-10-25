@@ -22,12 +22,13 @@
 - `filer/git.go` / `filer/diff.go` — git の状態 (印・芽・ブランチ) と、タイルの `d` の diff
 - `filer/watch.go` — ライブ更新 (開いているフォルダを読み比べる)
 - `filer/search.go` / `filer/shell.go` — `/` の検索と、`!` / `s` (呼び出し側に起こしてほしいプロセスを渡す)
-- `filer/fileops.go` — `a` 新規作成・`m` 名前の変更・`d` ゴミ箱へ移す (issue 722)。本体は `src/safefs`。名前の入力は `!` と同じ欄 (`promptState.kind`)、確認の板は `Model.ask`
+- `filer/fileops.go` — `a` 新規作成・`m` 名前の変更・`d` ゴミ箱へ移す (issue 722)。本体は `src/safefs`。名前の入力は `!` と同じ欄 (`promptState.kind`)、確認の板は `Model.ask` (ask.go)
 - `filer/copy.go` — `y` / `Y` でカーソルの項目のパスをクリップボードへ (絶対 / root からの相対。issue 718)
 - `filer/history.go` — `!` のコマンドの履歴 (`treefiler-history` に 1 行ずつ追記。issue 721)
 - `filer/goto.go` — `:` 入力したパスへカーソルを飛ばす (root の外なら root を上げる。issue 746)。入力は `!` と同じ欄
 - `filer/settings.go` / `filer/places.go` — 設定の板と保存、前回の場所
-- `filer/open.go` / `filer/explode.go` — `o` (外のアプリで開く)・`e` (配下を全部開く)
+- `filer/open.go` / `filer/explode.go` — `o` (外のアプリで開く)・`>` (配下を全部開く。見える項目が 100 件以上なら確認の板)
+- `filer/ask.go` — 中央の確認の板 (`d` のゴミ箱と `>` が使う。開いている間は全部のキーを取る)
 - `filer/tileview.go` — タイルに出す表示の行 (本体 / diff・Markdown の整形)
 - `tools/tfprobe/` — 実物のディレクトリで台本を回して所要と資源を測る道具 (下の「実物で測る」)
 
@@ -49,7 +50,7 @@
 リソースリークと重さは、本物のディレクトリでヘッドレスに台本を回して数で見る。`make -C src/treefiler probe` (既定は `src/` を 5 サイクル。
 `ROOT=` `CYCLES=` `ARGS="-cpuprofile -memprofile -live 0"`)。結果は本体の checkout の `tmp/tfprobe-<日時>/` に出る。
 
-- 台本: 開く → 閉じた木を押しっぱなしの間隔で渡り歩く (`explore`: `l` `j` `k` `h` を種を固定した乱数で 600 打) → `e` (配下を全部) → root の直下の列で上下 約 800 打 → 列の中の検索 → コードと Markdown のタイル (スクロール・diff・閉じる)
+- 台本: 開く → 閉じた木を押しっぱなしの間隔で渡り歩く (`explore`: `l` `j` `k` `h` を種を固定した乱数で 600 打) → `>` (配下を全部。確認の板が出たら `y`) → root の直下の列で上下 約 800 打 → 列の中の検索 → コードと Markdown のタイル (スクロール・diff・閉じる)
   → `C` → `r` → 閉じる → 裏の処理の最中に閉じて、goroutine と子プロセスが戻るまでを測る (`busy-close`。戻らなければ止まる)。続けて一時フォルダ (git の repo) で diff のタイルとライブ更新
   (`-live` 件の mtime を一斉に進める。既定 3000。5000 を超えると見張りが間引く経路に入る)。root は書き換えない (読むキーだけ)。
   打鍵の間は 16ms とみなし、Model に見せる時計をその分進める (main.go では動きか裏の処理がある間、打鍵の間に 16ms / 80ms の

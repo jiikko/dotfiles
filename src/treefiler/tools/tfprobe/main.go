@@ -413,7 +413,10 @@ func (p *probe) cycle(c int) error {
 	s.phase("explode", func() { // root へ飛んで配下を全部開く (explore の後のカーソルは深い所にいる)
 		s.keys(":")
 		s.m.Paste(p.o.root)
-		s.keys("enter", "e")
+		s.keys("enter", ">")
+		if _, err := s.settle(); err == nil && s.m.OwnsKeys() {
+			s.keys("y") // 見える項目が 100 件以上なら確認の板が出る (filer/explode.go)。板が無いときの y はパスのコピーなので打たない
+		}
 	})
 	// j / k と / はカーソルの列 (兄弟) の中で動く。root の列は root だけなので、l で root の直下の列へ入ってから動く
 	s.phase("move", func() { s.keys(moveKeys(columnSize(p.o.root))...) })

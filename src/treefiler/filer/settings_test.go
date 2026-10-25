@@ -222,7 +222,7 @@ func TestExplodeIgnoredSetting(t *testing.T) {
 		setGit(m, "!! b/deep/\x00")
 		b := m.findNode(m.root.path() + "/b")
 		m.setCur(b)
-		m.HandleKey("e")
+		m.HandleKey(">")
 		waitExplode(t, m)
 		deep := m.findNode(b.path() + "/deep")
 		if deep == nil || deep.expanded != into {

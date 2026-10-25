@@ -69,7 +69,7 @@ func TestBackgroundNoticeShowsOnTick(t *testing.T) {
 	}
 	a := &app{f: f}
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	a.Update(tea.KeyPressMsg{Code: 'e', Text: "e"}) // カーソルは sub (フォルダ) → explode
+	a.Update(tea.KeyPressMsg{Code: '>', Text: ">"}) // カーソルは sub (フォルダ) → explode
 	deadline := time.Now().Add(5 * time.Second)
 	for !strings.Contains(a.toast.Text(), "開いた") {
 		if time.Now().After(deadline) {

@@ -6,9 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jiikko/dotfiles/src/tuikit/confirm"
-	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
-
 	"safefs"
 )
 
@@ -38,12 +35,6 @@ const (
 	promptRename                   // m: target の新しい名前
 	promptGoto                     // `:`: カーソルを飛ばす先のパス (goto.go)
 )
-
-// trashAsk は d の確認の板 (開いている間は全部のキーを取る)。id は板を開いたとき (= 人が対象を決めたとき) の実体。
-type trashAsk struct {
-	n  *node
-	id safefs.ID
-}
 
 // safeDir はフォルダ n の実体のパス (root だけ symlink を辿り、途中の symlink は断る。safefs.ResolveUnder の doc)。
 func (m *Model) safeDir(n *node) (string, error) { return safefs.ResolveUnder(m.root.abs, n.abs) }
@@ -175,21 +166,17 @@ func (m *Model) startTrash() {
 	if !ok {
 		return
 	}
-	m.ask = &trashAsk{n: n, id: id}
-}
-
-// askKey は確認の板のキー。y / Enter だけが実行で、それ以外 (ctrl+c も) は取り消し。
-func (m *Model) askKey(k string) {
-	a := m.ask
-	m.ask = nil
-	if confirm.IsYesStrict(k) {
-		m.trash(a)
+	what := "ファイル"
+	if n.dir {
+		what = "フォルダ (中身ごと)"
 	}
+	// id は板を開いたとき (= 人が対象を決めたとき) の実体。y を押すまでに差し替わった項目は動かさない
+	m.ask = &askBoard{title: "ゴミ箱へ移す", lead: what + "をゴミ箱へ移します:", name: n.name, verb: "ゴミ箱へ移す",
+		yes: func(m *Model) { m.trash(n, id) }}
 }
 
-// trash は a.n をゴミ箱へ移し、カーソルを隣の項目 (下 → 上 → 親) へ移す。
-func (m *Model) trash(a *trashAsk) {
-	n := a.n
+// trash は n をゴミ箱へ移し、カーソルを隣の項目 (下 → 上 → 親) へ移す。
+func (m *Model) trash(n *node, id safefs.ID) {
 	if !m.inTree(n) {
 		m.fail("ゴミ箱へ移せません: 項目が木から無くなりました")
 		return
@@ -208,7 +195,7 @@ func (m *Model) trash(a *trashAsk) {
 	nextAbs := next.abs
 	real, err := m.safeDir(parent)
 	if err == nil {
-		_, err = safefs.TrashMove(filepath.Join(real, n.raw), trashDir(), a.id, fsGuard)
+		_, err = safefs.TrashMove(filepath.Join(real, n.raw), trashDir(), id, fsGuard)
 	}
 	if err != nil {
 		m.fail("ゴミ箱へ移せません: " + opErr(err))
@@ -240,40 +227,4 @@ func (m *Model) reloadDir(n *node) {
 	m.dropGoneRecs(n.abs) // 消えた・名前の変わったフォルダの走査の結果を手放す (issue 727)
 	clear(m.linkCache)    // 増えた・消えたファイルでリンクの解決が変わる
 	m.moving = true
-}
-
-// drawAsk は d の確認の板 (中央)。名前は切らずに折り返す (切れた先が確認の対象そのものだと、実行前の唯一の確認に何も出ない)。
-func (m *Model) drawAsk(c *canvas) {
-	a := m.ask
-	w := min(confirm.MaxWidth+8, m.w-2)
-	if w < 20 || m.h < 7 {
-		return
-	}
-	inner := w - 4
-	what := "ファイル"
-	if a.n.dir {
-		what = "フォルダ (中身ごと)"
-	}
-	names := termwidth.Wrap(a.n.name, inner, false)
-	if room := m.h - 1 - 2 - 3; len(names) > room { // 枠 2 行と、題・空行・案内の 3 行を残す (案内が画面から落ちないように)
-		names = names[:max(room, 1)]
-		names[len(names)-1] = termwidth.Truncate(names[len(names)-1], inner-1, "") + "…"
-	}
-	body := append([]string{what + "をゴミ箱へ移します:"}, names...)
-	body = append(body, "", confirm.HintYesOther)
-	h := min(len(body)+2, m.h-1)
-	x0, y0 := (m.w-w)/2, max((m.h-1-h)/2, 0)
-	c.frame(rect{x0, y0, w, h}, cAccRoute)
-	c.put(x0+2, y0, " ゴミ箱へ移す ", cText, true)
-	for i, s := range body {
-		y := y0 + 1 + i
-		if y >= y0+h-1 {
-			break
-		}
-		col := cText
-		if i == len(body)-1 {
-			col = cMuted
-		}
-		c.put(x0+2, y, termwidth.Truncate(s, inner, "…"), col, false)
-	}
 }
