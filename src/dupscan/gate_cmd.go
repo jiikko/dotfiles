@@ -91,7 +91,7 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	if c.narrowed() {
 		ex.Narrowed()
 	}
-	ex.Scanned(gopt.Options.Levels)
+	ex.Scanned(gopt.Levels)
 	gopt.Exclude = ex
 	// 効いていない除外を数えるため、head 全体の組にも除外を掛ける (gate が見るのは変わった単位だけなので、それだけでは足りない)。
 	for _, g := range ex.ApplyGroups(group.Build(h.entries, gopt.Options)) {

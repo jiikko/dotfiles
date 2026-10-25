@@ -86,7 +86,7 @@ func parseFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool
 }
 
 // narrowed は、段か下限を既定から変えた走査か (組が作られないだけの除外を「効いていない」と言えない)。
-// 既定の下限と段。下限は DualNoteApp の実測で決めた (節 20 未満の関数・property の組はほぼ全部が 1 行の委譲などの雑音だった。issue 898)。
+// 既定の下限と段。下限を 20 節より下げると、1 行の委譲などの雑音の組が増える。L3 は値の位置まで畳むので偶然の一致が多い。
 const (
 	defaultMinNodes   = 20
 	defaultMinClosure = 20
