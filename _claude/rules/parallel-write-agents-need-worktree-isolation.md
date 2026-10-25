@@ -17,6 +17,8 @@
   気づいた修正はメモしておき、**レビュー結果が届いてからまとめて当てる**
   - **分ける側はレビューにする**: HEAD に detached の worktree を切ってレビューにはそちらを読ませ、本体では次の作業を続ける。「書き換えない」で待つと、
     待ちの間に手が動いて破る (retro 846: レビュー中に R1〜R4 の直しを入れた。後半は分けて、待ちが作業の止まりにならなかった)
+  - **レビューに差分の範囲 (`<下端>..HEAD`) を渡す前に、下端が HEAD の祖先かを確かめる** (`git merge-base --is-ancestor <下端> HEAD`)。worktree を切った後に origin が進むと、
+    `origin/master..HEAD` の diff に他人の commit の逆向きが混ざる。祖先でなければ rebase してから渡すか、自分の commit を `git show <sha>` で渡す (obaket retro 1302)
 - **書き始める前に、触る予定のファイルと関数を並行セッション全員へ申告する**
   (`ListAgents` で見えるセッションに `SendMessage`)。**worktree の持ち主は git state からは
   分からない**ので、持ち主を推測して個別に聞くのではなく全員へ送る (author は全セッション同じ /
