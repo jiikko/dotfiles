@@ -48,7 +48,8 @@ type anim struct {
 	x, y, alpha tween
 	ghost       bool
 	w           int
-	batch       int // 生まれた sync の回 (描く順 = order は「回 → 深さ → パス」の順。仮想化で作り直した子もこの順に戻す。virt.go)
+	fresh       bool // spawnAnim で湧いてまだ step を通っていない (寄せ切る回でも湧く動きは流す。step)
+	batch       int  // 生まれた sync の回 (描く順 = order は「回 → 深さ → パス」の順。仮想化で作り直した子もこの順に戻す。virt.go)
 }
 
 // Model は treefiler の画面 1 枚分の状態。
@@ -670,18 +671,22 @@ func (m *Model) sync(pos map[*node]place) {
 
 // spawnAnim は新しい項目のアニメ: いちばん近いアニメ中の祖先の右端から湧く (spec §4.2)。
 func (m *Model) spawnAnim(n *node, p place) *anim {
-	a := &anim{w: m.labelWidth(n)}
-	a.x.v, a.y.v = float64(p.x), float64(p.y)
-	for anc := n.parent; anc != nil; anc = anc.parent {
-		if pa, ok := m.anims[anc]; ok && !pa.ghost {
-			a.x.v, a.y.v = pa.x.v+float64(pa.w), pa.y.v
-			break
-		}
-	}
+	a := &anim{w: m.labelWidth(n), fresh: true}
+	a.x.v, a.y.v = m.spawnFrom(n, p)
 	if n.parent == nil {
 		a.alpha.v = 1
 	}
 	return a
+}
+
+// spawnFrom は n が湧き出す位置 (いちばん近いアニメ中の祖先の右端。祖先が居なければ自分の置き場)。
+func (m *Model) spawnFrom(n *node, p place) (x, y float64) {
+	for anc := n.parent; anc != nil; anc = anc.parent {
+		if pa, ok := m.anims[anc]; ok && !pa.ghost {
+			return pa.x.v + float64(pa.w), pa.y.v
+		}
+	}
+	return float64(p.x), float64(p.y)
 }
 
 // sortByDepth は浅い順、同じ深さはパス順 (map の反復順に依らず、描く順を毎回同じにする)。
@@ -713,8 +718,8 @@ func (m *Model) step(dt float64) bool {
 	m.inStep = false
 	moving := false
 	snapMove := m.bigShift(pos)
-	move := func(tw *tween, target float64) bool {
-		if snapMove {
+	move := func(tw *tween, target float64, snap bool) bool {
+		if snap {
 			tw.step(target, moveDur, 0)
 			tw.snap()
 			return false
@@ -734,17 +739,27 @@ func (m *Model) step(dt float64) bool {
 			}
 			tx, ty := m.ghostTarget(n)
 			moving = a.alpha.step(0, fadeOutDur, dt) || moving
-			moving = move(&a.x, tx) || moving
-			moving = move(&a.y, ty) || moving
+			moving = move(&a.x, tx, snapMove) || moving
+			moving = move(&a.y, ty, snapMove) || moving
 			if a.alpha.v <= 0.02 {
 				delete(m.anims, n)
 				continue
 			}
 		} else {
 			p := pos[n]
+			// 湧いたばかりの子は寄せ切る回でも流す: 開いたフォルダの子が親から広がる動きは書き直しが子の範囲で済み、開いた手応えになる
+			// (2026-10-26 ユーザー回答「子が湧く動きだけ流す」)。湧く元は sync のときの (寄せる前の) 祖先なので、寄せた後の祖先から湧かせ直す
+			// (祖先は order で先に寄せ終わっている)。湧く子が数百でも寄せ切りに戻さない: > で約 200 項目を開き下の兄弟が押し下がる回に
+			// 外側へ書いた量は、全部寄せる版 54〜63KB・この版 64KB (隔離した tmux と Terminal.app 相当のクライアント。2026-10-26)。
+			// 書き直しを生むのは既存の木の縦のずれで、それは寄せ切っている。戻すなら、湧く子の多い回で差が出る実測を添える
+			snap := snapMove && !a.fresh
+			if snapMove && a.fresh {
+				a.x.v, a.y.v = m.spawnFrom(n, p)
+			}
+			a.fresh = false
 			moving = a.alpha.step(1, fadeInDur, dt) || moving
-			moving = move(&a.x, float64(p.x)) || moving
-			moving = move(&a.y, float64(p.y)) || moving
+			moving = move(&a.x, float64(p.x), snap) || moving
+			moving = move(&a.y, float64(p.y), snap) || moving
 		}
 		kept = append(kept, n)
 	}
@@ -985,6 +1000,7 @@ func init() {
 	}), "c")
 	bind(do((*Model).collapseOthers), "C")
 	bind(do((*Model).collapseBelow), "<")
+	bind(do((*Model).collapseAll), "Z")
 	bind(do((*Model).explode), ">")
 	bind(do(func(m *Model) { m.moveSibling(10) }), "J")
 	bind(do(func(m *Model) { m.moveSibling(-10) }), "K")
@@ -1092,16 +1108,17 @@ func (m *Model) collapseBelow() {
 		j.cancel()
 		m.fail("explode を中断しました")
 	}
-	var walk func(n *node)
-	walk = func(n *node) {
-		n.expanded = false
-		for _, k := range n.kids {
-			if k.dir {
-				walk(k)
-			}
+	foldTree(t)
+}
+
+// foldTree は n と配下のフォルダを全部畳む (配下の開閉を覚えない)。
+func foldTree(n *node) {
+	n.expanded = false
+	for _, k := range n.kids {
+		if k.dir {
+			foldTree(k)
 		}
 	}
-	walk(t)
 }
 
 // collapseOthers はカーソルの祖先以外を全部畳む (カーソル自身も畳む。treebeard の C。spec §6.1・§10)。
@@ -1117,6 +1134,25 @@ func (m *Model) collapseOthers() {
 	}
 	walk(m.root)
 	m.root.expanded = true
+}
+
+// collapseAll は root 以外を全部畳み、カーソルを経路の root 直下の項目へ移す (Z。treebeard に無い。2026-10-26 ユーザー依頼
+// 「開いた node をリセット」)。C と違いカーソルまでの経路も畳む。走っている explode は木のどこかを開き直すので止める。
+func (m *Model) collapseAll() {
+	if j := m.exploding; j != nil { // < と違い対象で絞らない: root は上にしか付け替わらないので、走っている explode は必ず root の配下を開く
+		j.cancel()
+		m.fail("explode を中断しました")
+	}
+	top := m.cur
+	for top.parent != nil && top.parent != m.root {
+		top = top.parent
+	}
+	foldTree(m.root)
+	m.root.expanded = true
+	if ks := m.kids(m.root); top == m.root && len(ks) > 0 { // カーソルが root の上に居るなら先頭の子へ
+		top = ks[0]
+	}
+	m.setCur(top)
 }
 
 // rerootUp は root の親を新しい root にする (- / Backspace / root での ←。spec §5.7)。上がれなかったら理由を知らせる。
@@ -1551,6 +1587,7 @@ var helpKeys = [][2]string{
 	{"space tab", "フォルダの開閉"},
 	{"c C", "このフォルダを畳む · 経路以外を畳む"},
 	{"> <", "配下を全部開く (esc で中断。100 件以上は確認) · 配下を全部畳む"},
+	{"Z", "全部畳んで root 直下に戻る (カーソルは経路の root 直下へ)"},
 	{"e", "エディタで開く (フォルダも)"},
 	{"/ n N", "列の中を検索 · 次 · 前"},
 	{"- backspace ^H", "root を 1 段上へ"},

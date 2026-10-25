@@ -172,3 +172,57 @@ func TestExplodeDropsTargetGoneWhileWaiting(t *testing.T) {
 		}
 	}
 }
+
+// Z は root 以外を全部畳み (カーソルまでの経路も)、カーソルを経路の root 直下の項目へ移す。
+func TestCollapseAllResetsToRootLevel(t *testing.T) {
+	m := newTest(t)
+	a := m.findNode(m.root.abs + "/a")
+	m.setCur(a)
+	m.HandleKey("space")
+	b := m.findNode(m.root.abs + "/b")
+	m.setCur(b)
+	m.HandleKey(">")
+	waitExplode(t, m)
+	deep := m.findNode(b.abs + "/deep")
+	if !a.expanded || !b.expanded || deep == nil || !deep.expanded {
+		t.Fatal("前提: a と b と b/deep が開いていない")
+	}
+	m.setCur(deep)
+	m.HandleKey("Z")
+	if a.expanded || b.expanded || deep.expanded {
+		t.Fatalf("Z で畳まれない: a=%v b=%v deep=%v", a.expanded, b.expanded, deep.expanded)
+	}
+	if !m.root.expanded {
+		t.Fatal("Z で root まで畳んだ")
+	}
+	if m.cur != b {
+		t.Fatalf("Z の後のカーソル = %s, want b (経路の root 直下)", m.cur.raw)
+	}
+}
+
+// 走っている explode は Z で止まり、終わった後に開き直さない。
+func TestCollapseAllStopsExplode(t *testing.T) {
+	m := newTest(t)
+	b := m.findNode(m.root.abs + "/b")
+	m.setCur(b)
+	m.HandleKey(">")
+	m.TakeNotices()
+	m.HandleKey("Z")
+	if ns := m.TakeNotices(); len(ns) == 0 || !strings.Contains(ns[len(ns)-1].Text, "中断しました") {
+		t.Fatalf("Z で explode を止めたのに知らせない: %+v", ns)
+	}
+	waitExplode(t, m)
+	if b.expanded {
+		t.Fatal("Z の後に explode が b を開き直した")
+	}
+}
+
+// カーソルが root に居るとき (ライブ更新で経路が消えた) の Z は、root 直下の先頭へ移す (root に残すと選べる項目が無い)。
+func TestCollapseAllFromRootGoesToFirstKid(t *testing.T) {
+	m := newTest(t)
+	m.setCur(m.root)
+	m.HandleKey("Z")
+	if ks := m.kids(m.root); m.cur != ks[0] {
+		t.Fatalf("root の上の Z のカーソル = %s, want %s", m.cur.raw, ks[0].raw)
+	}
+}

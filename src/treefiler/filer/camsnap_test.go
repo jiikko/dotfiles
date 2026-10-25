@@ -193,3 +193,73 @@ func TestUnsyncedSnapsMultiStepShiftWithRowSpacing(t *testing.T) {
 		t.Errorf("行間 1 で 2 歩ずれるのに流している (f00.txt y=%.2f 目標 %.0f)", v, to)
 	}
 }
+
+func TestUnsyncedOpenSnapsTreeButKeepsSpawnAnimation(t *testing.T) {
+	// a を開いたまま b へ移って b を Enter で開くと、a の子が縦に数行寄る (寄せ切る回)。その回でも b の子が親から湧く動きは流す
+	isolateConfig(t)
+	root := t.TempDir()
+	for _, d := range []string{"a", "b"} {
+		for i := range 12 {
+			mkfile(t, filepath.Join(root, d, fmt.Sprintf("f%02d.txt", i)), "")
+		}
+	}
+	m, err := New(root, Options{Now: func() time.Time { return fixedNow }, Unsynced: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Resize(120, 40)
+	settle(m)
+	for _, k := range []string{"enter", "h", "j"} {
+		m.HandleKey(k)
+		settle(m)
+	}
+	var aKid *anim
+	for _, n := range m.order {
+		if n.raw == "f05.txt" && n.parent.raw == "a" {
+			aKid = m.anims[n]
+		}
+	}
+	yFrom := aKid.y.v
+	m.HandleKey("enter")
+	m.Advance(fixedNow.Add(16 * time.Millisecond))
+	if m.cur.parent.raw != "b" || math.Abs(aKid.y.to-yFrom) < 2 || aKid.y.v != aKid.y.to {
+		t.Fatalf("前提: b を開いた回に a の子が 2 行以上寄せ切られていない (cur=%s/%s、y %.1f → %.2f 目標 %.0f)", m.cur.parent.raw, m.cur.raw, yFrom, aKid.y.v, aKid.y.to)
+	}
+	b := m.anims[m.cur.parent]
+	var kid *anim // 同じ名前の a の子を引かないよう、b の子から探す
+	for _, n := range m.order {
+		if n.raw == "f05.txt" && n.parent == m.cur.parent {
+			kid = m.anims[n]
+		}
+	}
+	if kid == nil {
+		t.Fatal("前提: b の子 f05.txt が描かれていない")
+	}
+	if kid.y.v == kid.y.to || kid.x.v == kid.x.to || !m.Animating() {
+		t.Errorf("開いたフォルダの子が湧く動きまで寄せ切った (x %.2f 目標 %.0f、y %.2f 目標 %.0f)", kid.x.v, kid.x.to, kid.y.v, kid.y.to)
+	}
+	if kid.x.from != b.x.v+float64(b.w) || kid.y.from != b.y.v {
+		t.Errorf("b の子が b の右端から湧いていない (from %.1f,%.1f、b の右端 %.1f,%.1f)", kid.x.from, kid.y.from, b.x.v+float64(b.w), b.y.v)
+	}
+}
+
+func TestUnsyncedSpawnStartsFromSnappedAncestor(t *testing.T) {
+	// : で c/y.txt へ飛ぶと c は縦に寄せ切られ、c の子 y.txt は同じ回に湧く。湧く元は寄せる前の c ではなく、寄せた後の c の右端
+	// (寄せる前から湧くと、子だけが離れた所から飛んでくる)
+	m := camModel(t, true, 8)
+	cFrom := animOf(t, m, "c").y.v
+	m.HandleKey(":")
+	setLine(m, "c/y.txt")
+	m.HandleKey("enter")
+	m.Advance(fixedNow.Add(16 * time.Millisecond))
+	c, y := animOf(t, m, "c"), animOf(t, m, "y.txt")
+	if math.Abs(c.y.to-cFrom) < 2 || c.y.v != c.y.to {
+		t.Fatalf("前提: c が 2 行以上寄せ切られる形になっていない (y %.1f → %.2f 目標 %.0f)", cFrom, c.y.v, c.y.to)
+	}
+	if y.x.from != c.x.v+float64(c.w) || y.y.from != c.y.v {
+		t.Errorf("y.txt が寄せた後の c の右端から湧いていない (from %.1f,%.1f、c の右端 %.1f,%.1f)", y.x.from, y.y.from, c.x.v+float64(c.w), c.y.v)
+	}
+	if y.x.v == y.x.to {
+		t.Errorf("y.txt の湧く動きまで寄せ切った (x %.2f 目標 %.0f)", y.x.v, y.x.to)
+	}
+}
