@@ -11,13 +11,19 @@ import (
 func newOps(t *testing.T) (*Model, string) {
 	t.Helper()
 	m := newTest(t)
+	return m, allowOps(t, m)
+}
+
+// allowOps は m の root と使い捨てのゴミ箱へのファイル操作を sandbox に許し、ゴミ箱の場所を返す。
+func allowOps(t *testing.T, m *Model) string {
+	t.Helper()
 	sb.Allow(t, m.root.abs)
 	trash := filepath.Join(t.TempDir(), "Trash")
 	sb.Allow(t, filepath.Dir(trash))
 	old := trashDir
 	trashDir = func() string { return trash }
 	t.Cleanup(func() { trashDir = old })
-	return m, trash
+	return trash
 }
 
 func setLine(m *Model, s string) {

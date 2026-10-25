@@ -119,25 +119,32 @@ func (m *Model) takeExplode() {
 	if j.canceled {
 		return
 	}
+	target := m.findNode(j.target)
+	if target == nil {
+		return // 待つ間に木から無くなった (ゴミ箱へ移した・root を替えた)。spec §5.4 の「対象が接続されていなければ捨てる」
+	}
 	if j.shown < explodeAskAt {
 		m.openExploded(j)
 		return
 	}
-	m.ask = &askBoard{title: "配下を全部開く", lead: itoa(j.shown) + " 個の項目を開きます。表示に時間がかかります", verb: "開く",
-		yes: func(m *Model) { m.openExploded(j) }}
+	// 板は打鍵ではなく裏の走査の終わりで出るので、移動中のキーが答えになりうる。Enter (l の別名) では開かず、取り消しは知らせる
+	m.ask = &askBoard{title: "配下を全部開く", lead: itoa(j.shown) + " 個の項目を開きます。表示に時間がかかります:", name: target.name, verb: "開く",
+		yOnly: true, yes: func(m *Model) { m.openExploded(j) }, no: func(m *Model) { m.fail("配下を開くのを取り消しました (> でやり直せます)") }}
 }
 
 // openExploded は辿り終えたフォルダを一斉に開く (確認の板を待つ間に消えたフォルダは loadPath が見つけず飛ばす)。
 func (m *Model) openExploded(j *explodeJob) {
+	opened := 0
 	for _, d := range j.dirs {
 		n := m.loadPath(d)
 		if n != nil && n.dir {
 			n.expanded = true
+			opened++
 		}
 	}
-	msg := "開いた: " + itoa(len(j.dirs)) + " フォルダ"
+	msg := "開いた: " + itoa(opened) + " フォルダ"
 	if j.stopped {
-		msg = "最初の " + itoa(len(j.dirs)) + " フォルダを開いた (上限で止めた)"
+		msg = "最初の " + itoa(opened) + " フォルダを開いた (上限で止めた)"
 	}
 	m.notices = append(m.notices, Notice{Text: msg, OK: true})
 	m.moving = true

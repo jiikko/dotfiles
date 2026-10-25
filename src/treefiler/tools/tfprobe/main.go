@@ -414,7 +414,8 @@ func (p *probe) cycle(c int) error {
 		s.keys(":")
 		s.m.Paste(p.o.root)
 		s.keys("enter", ">")
-		if _, err := s.settle(); err == nil && s.m.OwnsKeys() {
+		_, _ = s.settle() // 時間切れは段の後の settle がもう一度出して記録する
+		if s.m.OwnsKeys() {
 			s.keys("y") // 見える項目が 100 件以上なら確認の板が出る (filer/explode.go)。板が無いときの y はパスのコピーなので打たない
 		}
 	})

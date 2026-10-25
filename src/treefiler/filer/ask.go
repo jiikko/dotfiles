@@ -11,16 +11,29 @@ type askBoard struct {
 	lead  string         // 1 行目 (何をするか)
 	name  string         // 対象の名前。切らずに折り返して出す (空なら出さない)
 	verb  string         // y / Enter の案内の語 (LayerHints)
-	yes   func(m *Model) // y / Enter で実行する
+	yOnly bool           // y だけを実行にする (Enter も取り消し)。打鍵と関係なく裏から出る板は、移動中の Enter が答えになりうる
+	yes   func(m *Model) // 実行する
+	no    func(m *Model) // 取り消したとき (nil なら何もしない)
 }
 
-// askKey は確認の板のキー。y / Enter だけが実行で、それ以外 (ctrl+c も) は取り消し。
+// askKey は確認の板のキー。y / Enter (yOnly なら y) だけが実行で、それ以外 (ctrl+c も) は取り消し。
 func (m *Model) askKey(k string) {
 	a := m.ask
 	m.ask = nil
-	if confirm.IsYesStrict(k) {
+	switch {
+	case a.yOnly && k == "y", !a.yOnly && confirm.IsYesStrict(k):
 		a.yes(m)
+	case a.no != nil:
+		a.no(m)
 	}
+}
+
+// yesKeys は実行になるキー (案内に出す)。
+func (a *askBoard) yesKeys() string {
+	if a.yOnly {
+		return "y"
+	}
+	return "y/enter"
 }
 
 // drawAsk は確認の板 (中央)。名前は切らずに折り返す (切れた先が確認の対象そのものだと、実行前の唯一の確認に何も出ない)。
@@ -40,7 +53,11 @@ func (m *Model) drawAsk(c *canvas) {
 		}
 		body = append(body, names...)
 	}
-	body = append(body, "", confirm.HintYesOther)
+	hint := confirm.HintYesOther
+	if a.yOnly {
+		hint = "y: 実行   その他: キャンセル"
+	}
+	body = append(body, "", hint)
 	h := min(len(body)+2, m.h-1)
 	x0, y0 := (m.w-w)/2, max((m.h-1-h)/2, 0)
 	c.frame(rect{x0, y0, w, h}, cAccRoute)

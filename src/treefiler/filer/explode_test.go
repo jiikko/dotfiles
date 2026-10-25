@@ -37,7 +37,7 @@ func waitExplodeDone(t *testing.T, m *Model) {
 	waitFor(t, "explode の走査", j.finished)
 }
 
-// 見える項目が 100 件以上なら、開く前に確認の板を出す。n で取り消すと何も開かず、y で開く。99 件までは聞かずに開く。
+// 見える項目が 100 件以上なら、開く前に確認の板 (件数と対象の名前) を出す。n と Enter は取り消して知らせ、y で開く。99 件までは聞かずに開く。
 func TestExplodeAsksBeforeOpeningHundredItems(t *testing.T) {
 	m, big := newBig(t, 98) // 99 件
 	m.HandleKey(">")
@@ -58,14 +58,24 @@ func TestExplodeAsksBeforeOpeningHundredItems(t *testing.T) {
 	if !strings.Contains(strings.Join(m.View(), "\n"), "100 個の項目") {
 		t.Error("確認の板に件数が描かれていない")
 	}
-	m.HandleKey("n")
-	settle(m)
-	if m.ask != nil || big.expanded {
-		t.Fatalf("n で取り消したのに開いた / 板が残る: ask=%v expanded=%v", m.ask != nil, big.expanded)
+	if m.ask.name != big.name { // 名前は木にも出ているので、画面の文字列では板に載ったかを見分けられない
+		t.Errorf("確認の板の対象の名前 = %q (want %q)", m.ask.name, big.name)
+	}
+	m.TakeNotices()
+	for _, k := range []string{"n", "enter"} { // Enter は l の別名。移動中に板が出ても開かない
+		m.HandleKey(k)
+		settle(m)
+		if m.ask != nil || big.expanded {
+			t.Fatalf("%s で取り消したのに開いた / 板が残る: ask=%v expanded=%v", k, m.ask != nil, big.expanded)
+		}
+		if ns := m.TakeNotices(); len(ns) == 0 || !strings.Contains(ns[len(ns)-1].Text, "取り消しました") {
+			t.Fatalf("%s の取り消しを知らせない: %+v", k, ns)
+		}
+		m.setCur(big)
+		m.HandleKey(">")
+		waitExplode(t, m)
 	}
 
-	m.HandleKey(">")
-	waitExplode(t, m)
 	m.HandleKey("y")
 	sub := m.findNode(filepath.Join(big.abs, "sub"))
 	if !big.expanded || sub == nil || !sub.expanded {
@@ -132,5 +142,29 @@ func TestCollapseBelowStopsExplode(t *testing.T) {
 	waitExplode(t, m)
 	if b.expanded {
 		t.Fatal("< の後に explode が b を開き直した")
+	}
+}
+
+// 板を待つ間に対象をゴミ箱へ移したら、板を出さずに捨てる (無いフォルダについて聞かない・「開いた」と知らせない)。
+func TestExplodeDropsTargetGoneWhileWaiting(t *testing.T) {
+	m, big := newBig(t, 120)
+	allowOps(t, m)
+
+	m.HandleKey(">")
+	m.HandleKey("d")
+	waitExplodeDone(t, m)
+	m.HandleKey("y") // big をゴミ箱へ
+	if m.findNode(big.abs) != nil {
+		t.Fatal("前提: big がゴミ箱へ移っていない")
+	}
+	m.TakeNotices()
+	m.Advance(fixedNow)
+	if m.ask != nil || m.exploding != nil {
+		t.Fatalf("木から無くなったフォルダの explode を捨てない: ask=%v exploding=%v", m.ask != nil, m.exploding != nil)
+	}
+	for _, n := range m.TakeNotices() {
+		if strings.Contains(n.Text, "開いた") {
+			t.Fatalf("無いフォルダについて開いたと知らせた: %q", n.Text)
+		}
 	}
 }

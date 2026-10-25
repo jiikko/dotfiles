@@ -103,8 +103,8 @@ func (m *Model) ExecDone(err error) (warning string) {
 	return "起動できませんでした: " + termsafeLine(err.Error())
 }
 
-// requestEdit は path をエディタで開く (木の `e` がファイルの上のとき・タイルの `e`)。エディタの選び方は tuikit/editor
-// ($VISUAL → $EDITOR → nvim)。起こすフォルダはファイルの親 (エディタの中の相対パスと :e がそこを起点にする)。
+// requestEdit は path をエディタで開く (木の `e`・タイルの `e`)。エディタの選び方は tuikit/editor
+// ($VISUAL → $EDITOR → nvim)。起こすフォルダは path の親 (エディタの中の相対パスと :e がそこを起点にする。フォルダでも同じ)。
 // $f は開くファイル (タイル・ジャンプの e ではカーソルと違う)。
 func (m *Model) requestEdit(path string) {
 	m.exec = &ExecRequest{Dir: filepath.Dir(path), Argv: editor.Argv(path, nil), Env: append(os.Environ(), "f="+path)}

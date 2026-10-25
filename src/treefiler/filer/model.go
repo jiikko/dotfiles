@@ -249,7 +249,7 @@ func (m *Model) LayerHints() []Hint {
 	case m.panel.open:
 		return []Hint{{"j/k", "項目", 2}, {"h/l", "選ぶ", 3}, {"r", "既定に戻す", 4}, {"esc/,/q", "閉じる", 1}}
 	case m.ask != nil:
-		return []Hint{{"y/enter", m.ask.verb, 2}, {"その他", "キャンセル", 1}}
+		return []Hint{{m.ask.yesKeys(), m.ask.verb, 2}, {"その他", "キャンセル", 1}}
 	case m.search.active:
 		return []Hint{{"enter", "確定", 2}, {"tab/ctrl+n", "次", 3}, {"shift+tab/ctrl+p", "前", 4}, {"esc", "やめる", 1}}
 	case m.prompt.active:
@@ -1045,6 +1045,7 @@ func (m *Model) collapseBelow() {
 	}
 	if j := m.exploding; j != nil && (under(j.target, t.abs) || under(t.abs, j.target)) {
 		j.cancel()
+		m.fail("explode を中断しました")
 	}
 	var walk func(n *node)
 	walk = func(n *node) {
