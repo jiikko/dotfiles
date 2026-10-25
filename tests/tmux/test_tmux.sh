@@ -320,6 +320,23 @@ if grep -qE -- '-T root +C-f ' <<< "$tf_bindings"; then
 fi
 print "[test-tmux:zsh] ok: treefiler の popup は prefix f だけ"
 
+# 新しいサーバを見るだけでは、以前の conf で bind -n C-f を読んだ稼働中のサーバ (他のマシン) に残る形を検出できない。
+# 残った状態を作ってから reload し、外れることを見る。
+print "[test-tmux:zsh] checking conf reload removes a stale root C-f bind"
+"${TMUX_CMD[@]}" bind -n C-f display-message stale-c-f
+root_keys=$("${TMUX_CMD[@]}" list-keys -T root)
+if ! grep -qE -- '-T root +C-f ' <<< "$root_keys"; then
+  print -u2 "[test-tmux:zsh] 前提: root の C-f に bind を置けていません"
+  exit 1
+fi
+"${TMUX_CMD[@]}" source-file "$CONF_FILE"
+root_keys=$("${TMUX_CMD[@]}" list-keys -T root)
+if stale=$(grep -E -- '-T root +C-f ' <<< "$root_keys"); then
+  print -u2 "[test-tmux:zsh] conf を reload しても root の C-f の bind が残っています:\n$stale"
+  exit 1
+fi
+print "[test-tmux:zsh] ok: reload で root の C-f が外れる"
+
 # terminal-features が conf の reload で膨張しないこと。
 # 🚨 `set -as` は追記なので、-u で既定へ戻さないと reload ごとに同じエントリが積まれる。
 # 実測 (2026-08-21): 稼働サーバが 38 エントリまで膨張していた (下の 2 行 × reload 17 回 +
