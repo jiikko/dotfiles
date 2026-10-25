@@ -8,7 +8,7 @@ epic [910](910-design-fold-subagents-into-main-loop.md)。前提: [911](911-test
 
 forge の実装モードは、Phase 1 で専門家を並行に調査させ (`forge.js` の `kind: investigate`)、Phase 1.1 で別の専門家にその findings をクロスレビューさせ、
 統合エージェントがまとめたものを main が Phase 1.5 の設計書の材料にする (`_claude/skills/forge/phases-0-1.md`)。
-ロスターは専門領域ごとで (`forge.js` の `resolveRoster`。Swift の Standard は必須 6 + 1、investigate では research-assistant も加わる)、
+ロスターは専門領域ごとで (`forge.js` の `resolveRoster` / `baseRoster`。Swift の Standard は必須 6 体で、investigate のときだけ research-assistant を足して 7 体)、
 Maximum は全員 (`_common/modes.md`)。
 
 記事に照らすと、この段は畳む候補の条件に重なる:
@@ -24,17 +24,18 @@ Maximum は全員 (`_common/modes.md`)。
 ## タスク
 
 - [ ] 911 の eval に forge 実装モードのケースを 1〜2 本足す (仕込んだ欠陥を直すタスク。正解表は「設計書が触るべきファイルと、避けるべき罠」)。
-      Phase 1.5 の設計書を grader で採点できる形にする
+      Phase 1.5 の設計書の「変更ファイル一覧」を正解表とスクリプトで照合できる形にする (911 の「照合はスクリプト」に合わせる)。
+      「避けるべき罠」に触れたかは LLM の採点になるので、911 の 2 回採点・一致率の手順を使う
 - [ ] 案 A (現状): investigate の fan-out + 1.1 クロスレビュー
 - [ ] 案 B (畳む): Phase 1 を main が自分で読む形にし、専門家の観点は `_claude/agents/<name>.md` の本文を reference として必要なときに Read する
-      (agent の本文を skill の参照ファイルとして読む形。914 の結論次第で置き場所が変わる)。類似コードの探索だけ Explore に委ねてよい
+      (比べるときは今の `_claude/agents/<name>.md` をそのまま Read する。skill へ移すかどうかの置き場所は、この issue の結論の後に 914 で決める)。類似コードの探索だけ Explore に委ねてよい
 - [ ] 案 C (中間): investigate を 1〜2 体に絞り、クロスレビューと統合をやめて main が raw を読む (Minimum の形を Standard にも使う)
 - [ ] **B / C には、設計段の別視点を残す段を必ず付ける**: `~/.claude/CLAUDE.md`「レビュー方針」は設計もレビューに通すことを求めていて、今の forge で main の外から
       設計の材料を見ているのは 1.1 だけ (1.5 は人の承認)。B / C では 1.5 の設計書を、観点を分けた read-only のサブエージェント (直列) に反証させる段を置き、その費用も比べる数字に入れる
 - [ ] A / B / C を runs 回ずつ回し (判定規則は 911 に先に書いたもの。判別できなければ A のまま)、設計書の採点・費用・所要を比べる。**最終スコアだけでなく、どのケースで結果が反転したか**を見る (記事の手順)
 - [ ] 結果に応じて `forge.js` / `phases-0-1.md` / `_common/modes.md` / `_common/cross-review.md` を同時に直す
       (forge SKILL.md の「仕様を変えたら forge.js も同期更新」)。Phase 4 / 4.3 は変えない
-- [ ] 変えたら skill の整合チェック 3 回 + `bin/skill-eval forge` を回す
+- [ ] 変えたら skill の整合チェック 3 回を回し、911 の driver で変更後の版を同じケースに回し直す (`bin/skill-eval forge` は forge のケースが無く「判定できない」で終わる。2026-10-25 に `--dry-run` で 0 件を確認)
 
 ## 受け入れ条件
 

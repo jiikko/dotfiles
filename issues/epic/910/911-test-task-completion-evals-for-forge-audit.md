@@ -26,7 +26,8 @@ fan-out を畳む・残すの判断には「仕込んだ欠陥を見つけられ
       読み込まないなら、913 で比べる「専門家の分割」は実在しないことになるので、913 を先に書き直す
 - [ ] forge が実際にどれだけ使われているかを確かめる: workflow の agent が transcript にどう残るかを 1 本で確かめ、直近 90 日の forge の起動回数を数える。
       ほとんど使われていないなら 912 / 913 に eval をかける価値が下がるので、着手するかをユーザーに諮る
-- [ ] forge Standard の 1 腕・1 run を回して、実費・所要・5h 枠を何 % 使うかを測る。この数字で全体の run 数と費用の上限を決める (5h 枠を跨ぐなら日を分ける)
+- [ ] forge Standard の 1 腕・1 run を手で回して、実費・所要・5h 枠を何 % 使うかを測る (fixture はまだ無いので、既存の小さなディレクトリをレビューモードで対象にする。
+      5h 枠は起動の前後に `ratelimit` で読む)。この数字で全体の run 数と費用の上限を決める (5h 枠を跨ぐなら日を分ける)
 
 ### 1. driver を作る
 
@@ -35,6 +36,11 @@ fan-out を畳む・残すの判断には「仕込んだ欠陥を見つけられ
 - [ ] 非対話で止まらないようにする: forge が明示で飛ばせるのは Phase -1 (モード選択) だけで、Phase 1.5 の設計承認や audit の Step 3 は AskUserQuestion を出す。
       各ケースは「1.5 の設計書を書いた時点」「issue を書いた時点」で打ち切る形にし、codex に届く Phase (forge の Phase 5.3 の codex-review) を回さないことを driver で保証する
       (codex は明示の指示があるときだけ使う、が記憶にあるユーザーの決定)
+- [ ] **audit の forge 腕の打ち切り点を別に決める**: audit から起動した forge は実装モードとして動き (912)、issue を書く前に Phase 1.5 の設計承認 (AskUserQuestion) に当たる。
+      driver が承認を前もって与えられるかを確かめ、与えられなければ forge 腕は Phase 1 の出力 (統合された findings) で採点する、と決めて 912 にも書く
+- [ ] **本物の HOME では hook も走ることを扱う**: SessionStart の注入 (issue 規約など)・UserPromptSubmit・Stop hook (`issue-progress-check.sh` が block して続きを処理させ、最終応答が差し替わる。
+      `.claude/rules/worktree-per-session.md` の headless の注記) が腕の挙動と採点を変える。audit は issues/ を書くので Stop hook に当たる。
+      どの hook が走ったかを run ごとに記録し、採点は最終応答ではなく run が書いたファイル・構造化した出力から読む
 - [ ] run は 1 本ずつ直列に回す (サブエージェントは直列、が記憶にあるユーザーの決定)。forge の腕は 1 run の中で並行の fan-out を起こすので、その腕を回すことはユーザーに了承を取る
 
 ### 2. fixture と正解表

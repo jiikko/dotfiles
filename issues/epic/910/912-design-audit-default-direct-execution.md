@@ -25,7 +25,7 @@ Explore は抜粋を返す道具で (agent の説明: "It reads excerpts rather 
 ## タスク
 
 - [ ] eval の前に、既にあるデータを数える: audit は `issues/audit-log` に `forge-<モード>` / `direct` の実施記録を残す (Step 5)。
-      各 repo の audit-log から、forge で回した回と直接実行の回について、書かれた issue の数とその後の扱い (done になった / 却下された) を数える
+      各 repo の audit-log (`find ~ -path '*/issues/audit-log' -not -path '*/node_modules/*' 2>/dev/null` などで探す) から、forge で回した回と直接実行の回について、書かれた issue の数とその後の扱い (done になった / 却下された) を数える
 - [ ] 911 の eval で、同じ監査タイプ (2〜3 本) を ①直接実行 (main が自分で読む) ②forge Minimum+ ③forge Standard で runs 回ずつ回し、検出数・偽陽性・費用・所要を表にする
 - [ ] 結果で決める (判定規則は 911 に先に書いたものを使う。**判別できなければ「未決」として今のまま残す**):
   - ①が②③に勝つ、または費用・所要で勝って検出数が判別できる差で劣らない → Step 3 の推奨を「直接実行」にし、forge は「単独で回して固有の発見が出たと eval で示したタイプ」だけに残す
