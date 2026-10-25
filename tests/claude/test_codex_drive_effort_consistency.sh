@@ -33,7 +33,7 @@
 #     SKILL.md の起動例は ```bash に書く (散文のモデル / effort は写し 3 が値だけ見る。組の取り違えは見ない)
 #   - `-c model="..."` のように config 経由でモデルを指定する形 (-m だけを数える)
 #   - 継続行の \ の付け忘れ・付け過ぎで、次のブロックの 1 行目を飲み込む形 (typo)
-#   - 集約役 (merger / 変更マップ) は read-only だが luna-max を使う。起動例を SKILL.md に足すなら、
+#   - 集約役 (merger / 変更マップ) は read-only だが書く run と同じ組 (astra-mid) を使う。起動例を SKILL.md に足すなら、
 #     この検査の分類に集約役を足すこと (今は散文にしか無い)
 
 set -euo pipefail

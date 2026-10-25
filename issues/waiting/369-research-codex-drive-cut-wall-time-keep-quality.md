@@ -275,6 +275,7 @@ issue の `[x]` は本文の主張であって証拠ではないので、成果�
   (effort は codex-drive が `max`・codex-lead が `low` のまま)。理由は単価 (入力 $0.10 / 出力 $0.50 per 1M。5.6-luna は $0.20 / $1.20)。
   上の節の「現行 skill は `gpt-5.6-luna`」は記録時点の記述。**案 0 以降の実測は 6-luna で取り直す**
   (5.6-luna の値と混ぜない)。質の比較は未実測
+- 2026-10-26: ユーザー指示で codex-drive の書く run と集約役 (`bin/codex-fanout` の merger の既定を含む) を `gpt-6-luna` + `max` → `gpt-6-astra` + `medium` へ変えた。読む run (`gpt-6.1-sol` + `high`) は据え置き。これ以降の書く run の実測は astra-mid の値として取り、luna-max の値と混ぜない
 
 ## 関連
 

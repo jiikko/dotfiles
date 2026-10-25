@@ -21,8 +21,8 @@
 #                                 manifest の timeout_s 列があればその行はそちらが優先
 #                                 900 を超える値で使うときは呼び出し側を detach する (Claude Code の Bash は 15 分で
 #                                 background ごと kill される。codex-drive skill「並列起動の作法」参照)
-#     CODEX_FANOUT_MERGER_MODEL   merger のモデル (既定 gpt-6-luna)
-#     CODEX_FANOUT_MERGER_EFFORT  merger の effort (既定 max。codex-drive の「書く run と集約は luna-max」に合わせる)
+#     CODEX_FANOUT_MERGER_MODEL   merger のモデル (既定 gpt-6-astra)
+#     CODEX_FANOUT_MERGER_EFFORT  merger の effort (既定 medium。codex-drive の「書く run と集約は astra-mid」に合わせる)
 #
 # manifest (TSV・1 行 1 本。空行と # 始まりは無視。CRLF は末尾 \r を剥がして受ける):
 #   label <TAB> mode <TAB> model <TAB> effort <TAB> prompt_part1[,part2,...] [<TAB> timeout_s]
@@ -403,8 +403,8 @@ if [ "$do_merge" -eq 1 ]; then
     fi
   } >"$merger_prompt"
   run_captured "$timeout_s" merger "$outdir/digest.md" \
-    codex exec -s read-only -m "${CODEX_FANOUT_MERGER_MODEL:-gpt-6-luna}" \
-    -c model_reasoning_effort="${CODEX_FANOUT_MERGER_EFFORT:-max}" \
+    codex exec -s read-only -m "${CODEX_FANOUT_MERGER_MODEL:-gpt-6-astra}" \
+    -c model_reasoning_effort="${CODEX_FANOUT_MERGER_EFFORT:-medium}" \
     --ephemeral -o "$outdir/digest.md" "$(cat "$merger_prompt")"
   merger_rc=$?
   # 成否に関係なく台帳へ (失敗した merger の所要時間も「どこで時間を食ったか」の材料)

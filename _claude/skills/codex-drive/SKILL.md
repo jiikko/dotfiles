@@ -46,8 +46,8 @@ codex トークンを積極消費したいタスク向け。
 検閲そのものではない。
 
 **既定は run の種類で 2 組** (下のモデル表が正本): **読む・判断する run (read-only / review。集約役を除く) は `gpt-6.1-sol` + effort `high`**
-(= sol-high)、**書く run (danger-full-access) と集約役は `gpt-6-luna` + effort `max`** (= luna-max)。
-フェーズ・難易度でこの 2 組から外さず、品質の上積みは本数と観点の数で作る (ユーザー決定 2026-10-02、読む run の effort は 2026-10-03 に medium から high へ。それまでは全フェーズ luna-max)。
+(= sol-high)、**書く run (danger-full-access) と集約役は `gpt-6-astra` + effort `medium`** (= astra-mid)。
+フェーズ・難易度でこの 2 組から外さず、品質の上積みは本数と観点の数で作る (ユーザー決定 2026-10-02、読む run の effort は 2026-10-03 に medium から high へ。書く run は 2026-10-26 に luna-max から astra-mid へ (ユーザー指示)。それまでは全フェーズ luna-max)。
 ユーザーが「品質全開で」と明示したときだけ v2 運用 (merger を挟まず Claude が生出力を全文精読) に切り替える。
 
 ## 役割分担（崩さない）
@@ -105,16 +105,17 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
   事実を取り、それを codex への次の指示に翻訳する。CI でしか出ない移植/プロトコルバグはこの往復で 1 段ずつ潰す。
 - **モデルはスキル側で明示する**: `-m <model> -c model_reasoning_effort=...`。省略すると
   `~/.codex/config.toml` の既定 (対話 TUI 側の都合で変わる) を拾い、実行ごとにモデルが変わってしまう。
-  effort も省かない (モデルだけ指定すると effort は config.toml の値になる。config.toml は対話用に sol + medium にしてあるので、書く run で effort を省くと luna が medium で走る)。
-- **モデルと effort は run の種類で 2 組に分ける** (ユーザー決定 2026-10-02):
+  effort も省かない (モデルだけ指定すると effort は config.toml の値になる。config.toml の値は対話用の都合で変わるので、書く run の effort も省かずに書く)。
+- **モデルと effort は run の種類で 2 組に分ける** (ユーザー決定 2026-10-02。書く run の組は 2026-10-26 に変更):
 
   | run | モデル + effort | フェーズ |
   |---|---|---|
   | 読む・判断する (`-s read-only` / `codex exec review`) | `gpt-6.1-sol` + `high` | `[S]` の 3 本・`[D1]`/`[D1.5]`/`[D2]`/`[D3]`・敗者剖検・`[3.5]`/`[3.55]`/`[3.6]`・`[7]` の敵対照合 |
-  | 書く (`-s danger-full-access`) と集約 | `gpt-6-luna` + `max` | `[2]`/`[2p]`・`[3.7]`・`[3.8]`・merger・変更マップ |
+  | 書く (`-s danger-full-access`) と集約 | `gpt-6-astra` + `medium` | `[2]`/`[2p]`・`[3.7]`・`[3.8]`・merger・変更マップ |
 
   - 読む側を sol にするのは、設計の反証と敵対レビューの見落としは後工程で拾えず、1 本あたりの質が効くため。
-    書く側は run が長く codex の 5h 枠を食うので luna に残す
+    書く側は astra-mid にする (ユーザー指示 2026-10-26。それまでは luna-max)。書く run は長く codex の 5h 枠を食うので、
+    長い run を起こす前に枠を見る (`[2]` の上振れの節の obaket 1003)
     ([`subagent-model-tiering.md`](../../rules/subagent-model-tiering.md) の「重いモデルは短い高価値な run へ」)。
     2026-08-26 に裁定役の 3 フェーズだけ sol-mid にして消費が重く同日中に廃止した経緯があるので、
     **sol の run を並べる前に codex の 5h 枠を見る** (`ratelimit -source codex -check`)。
@@ -123,8 +124,9 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
     この文書でたどれる出典・測定条件が無いので、effort の禁止や残量見積もりの根拠から外す。
     `xhigh` / `max` の優劣は対象タスクで比較して判断する。切り替えるならモデルが対応する値を確認し、
     同じ受け入れ条件で採用指摘・差し戻し・所要時間・usage を記録する。印象だけで上げない。
-  - **luna の effort は `max` だけ**。`low` / `medium` / `high` / `xhigh` は使わない (sol の組と混ぜない)
-    (難易度の自己判定がブレて難所を低い effort で踏む事故を、固定で構造的に潰す)。
+  - **astra の effort は `medium` に固定する** (ユーザー指示 2026-10-26)。マイルストーンごとに上げ下げしない
+    (難易度の自己判定がブレて難所を低い effort で踏む事故を、固定で構造的に潰す)。`low` は使わない (obaket 541 の実測: 実装とテスト強化を low にすると
+    「動くが筋が通っていない」ものを繰り返した)。medium で質が足りないマイルストーンは下の「上振れ」で sol-high へ切り替える
   - モデル別の所要時間と既定の timeout (1200 秒) の適否は、この運用では **未実測**。読む run が 時間切れ (rc=124) で落ちたら、その行に timeout 列を付ける (`[3.6]` の 2400 と同じ扱い)。
   - モデルの例外は書く run の上振れ (`[2]` の「モデルはマイルストーンの性質で振らない」)。
     effort の比較は上の手順で行う。同じ失敗を繰り返す場合は、設定変更だけで解こうとせず forge / cross-review へ escalate する
@@ -142,7 +144,7 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
     実機で踏んだ警告コメントの削除 / 落ちないテスト。
     その後 effort を上げた回は、計画レビューで「2 ラウンドの定義が緩い」等の**誤運用経路**を
     具体的に構築してきており、low の回では出ていなかった質の指摘だった
-    (= effort を落とすと実装系の質が落ちる。上限固定はこの実測の延長にある)。
+    (= effort を落とすと実装系の質が落ちる。書く run の effort を固定し `low` を禁じるのはこの実測の延長にある)。
   → **effort を上げても検閲は省略しない** (`[3]` の build/test/diff 精読、
     `[3.8]` のミューテーション検証は必須)。上げるのは codex 側の思考量だけで、
     Claude 側の検証は減らさない。
@@ -282,7 +284,7 @@ Claude がやるのは:
   **重要な反証を読み落としたまま「指摘なし」と誤判定する**。形は `... > "$log" 2>&1; tail -40 "$log"` にし、
   判断の入力は必ず保存したファイル (下記 merger 経由なら merger がその全文) にする。
 - **集約 (merger) 規約 — 並列 3 本以上のフェーズは digest 化してから Claude が読む**:
-  全本の完了後、merger codex (`codex exec -s read-only`・`gpt-6-luna`・max) に**保存ログのファイルパス群を
+  全本の完了後、merger codex (`codex exec -s read-only`・`gpt-6-astra`・medium) に**保存ログのファイルパス群を
   渡して読ませ**、1 枚の digest を作らせる — 指摘/案ごとに「出典ログパス・file:line・根本原因・発火条件・
   重複マージの結果・severity」を構造化し、**全数勘定を必須にする** (「run X: N 件中 M 件採用、落とした分は
   各 1 行の理由」+ 指摘ゼロの run の明記。merger の黙った取りこぼしを構造的に見えるようにする)。
@@ -643,12 +645,12 @@ EOF
 ```bash
 # 最終応答・stdout・rc は **run 固有のパス** (<D>/<タスク>/。「出力の置き場」) に保存する。
 # 後から「空振りだったのか遅れて完了したのか」を診断するため (2026-08-25 obaket 581 で証拠が残らなかった)。`</dev/null` 必須 (codex-review ルール)。
-# 実装は書く run なので luna + effort **max** (モデル表)。
+# 実装は書く run なので astra + effort **medium** (モデル表)。
 # ROOT は repo root の絶対パス。cwd はサブディレクトリに残っていることがあるので `-C "$ROOT"` を必ず付ける
 # (Storage/ を cwd に起動され macOS/bin を書けず「対応できませんでした」で 30 分ロス: obaket 696 項目 1)。
 ROOT="$(git rev-parse --show-toplevel)"
 last_message="<D>/<タスク>/impl.out.md"; log="<D>/<タスク>/impl.log"; mkdir -p "<D>/<タスク>"
-command codex exec -s danger-full-access -C "$ROOT" -m gpt-6-luna -c model_reasoning_effort="max" \
+command codex exec -s danger-full-access -C "$ROOT" -m gpt-6-astra -c model_reasoning_effort="medium" \
   --json -o "$last_message" </dev/null "$(cat <<'EOF'
 <タスク>。git 操作 (commit / pull / checkout / stash 等) はしない (人間が検証して commit する)。作業根 (この repo root) の外には書かない。
 ファイルを書き、プロジェクト標準の build/test が green になるまで自分で反復すること。Swift プロジェクトなら swift build / swift test を使う。
@@ -702,15 +704,15 @@ EOF
   完了イベント・応答があっても実装の正しさは [3] の build/test/diff で検証する。
 
 - **モデルはマイルストーンの性質で振らない** (大原則のモデル振り分け): 機械的移植・boilerplate でも、
-  判断を含む実装・非自明な wire/protocol でも、一律 `gpt-6-luna` + `max` (モデル表の書く run)。
-  - **唯一の例外は上振れ**: luna max の出力の質が低いと `[3]` の検閲で判定したマイルストーン
+  判断を含む実装・非自明な wire/protocol でも、一律 `gpt-6-astra` + `medium` (モデル表の書く run)。
+  - **唯一の例外は上振れ**: astra-mid の出力の質が低いと `[3]` の検閲で判定したマイルストーン
     (「動くが筋が通っていない」/ 捏造 API / 同じ型エラーを 2 往復しても直らない、等) は、
     **そのマイルストーンだけ `-m gpt-6.1-sol`** (effort は sol の `high`。モデル表) へ切り替えてよい
     (ユーザー指示 2026-09-13、dotfiles issue 369 1-3。2026-09-30 に上振れ先を astra から `gpt-6.1-sol` へ変更 (ユーザー指示: コストが安いため)。probe 実測: codex-cli 0.159.1 で rc 0、応答 "GPT-6")。
     切り替えは**マイルストーン単位**で、checkpoint に「M<n> は sol へ。理由: …」を 1 行残す (前後比較の材料)。
-    下げる方向 (541 の low) は依然禁止。capacity 死は luna と共通 (openai/codex #43398) なので回避策にはならない。
+    下げる方向 (541 の low) は依然禁止。capacity 死はモデルを変えても起きうる (openai/codex #43398) ので回避策にはならない。
     駄目だった質の判定材料は「`[3]` で差し戻した回数と種類」であって印象ではない
-  - 上振れ先は luna より 1 run の消費が重い。長い実装の run を上振れで起こす前に codex の 5h 枠の残量を見る
+  - 上振れ先は書く run の既定より 1 run の消費が重いことがある。長い実装の run を上振れで起こす前に codex の 5h 枠の残量を見る
     (`subagent-model-tiering.md` の「1 本の重さも見る」。obaket 1003 で astra の run が 2 回とも実装の途中で枠切れになった)
 - `command codex` プレフィックス / `</dev/null` / `-o` の作法は **codex-review が正本**。独立レビューの `--ephemeral` は [2] の継続実装には付けない。
   `-o` は実行ログ全体ではなく最終応答 (`--output-last-message`) の保存先。標準出力/標準エラーは必要に応じて呼び出し側で保存する。
@@ -784,8 +786,8 @@ echo "A=$root/../wt-$stamp-a"; echo "B=$root/../wt-$stamp-b"   # ← この 2 �
 ```bash
 # --- 案a (Bash 呼び出し 2・run_in_background)。案b も同形で別呼び出し・別 worktree ---
 wt="/<控えた A の絶対パス>"; out="<D>/<literal-stamp>.implA.md"; log="$out.log"
-command codex exec -s danger-full-access -C "$wt" -m gpt-6-luna \
-  -c model_reasoning_effort="max" --ephemeral -o "$out" </dev/null \
+command codex exec -s danger-full-access -C "$wt" -m gpt-6-astra \
+  -c model_reasoning_effort="medium" --ephemeral -o "$out" </dev/null \
   "<[2] と同じプロンプト>" > "$log" 2>&1; tail -40 "$log"
 ```
 
@@ -872,7 +874,7 @@ git worktree list   # 消えたことを確認する
   ついでにエラーの分類を変え、要約に書かない。テストがエラーの型しか見ていなければ素通りする (実測 obaket 1033: 再試行しない
   `capabilityLimit` を再試行する `transport` に変え、ファイル全体の取得を最大 5 回繰り返す退行。diff 精読でだけ見つかった。
   一般則は `survey-receiver-guards-before-passing-new-values.md` の「逆向きも同じ」)
-- **大きい diff (目安 200 行超) は「変更マップ」をナビに 1 回で精読する**: codex (read-only・luna・max) に
+- **大きい diff (目安 200 行超) は「変更マップ」をナビに 1 回で精読する**: codex (read-only・astra・medium) に
   「ファイル × 変更意図 × リスク順の hunk ランキング + 各 hunk の機械的/判断の分類 (根拠つき)」を
   作らせ、Claude はマップの順に diff を 1 回だけ読む (行き来と再読を消す — 精読を安くするのであって
   減らすのではない: **全 hunk に目は通す**)。斜め読みしてよいのは「機械的」と分類された hunk だけで、
@@ -1084,14 +1086,14 @@ diff -u "<...>.pre.status" "<...>.post.status"             # ← 新規ファイ
   (実測ではこれを書いた回だけ本数が揃った)。ただし**これは要求本数の取りこぼし検出であって、検知力の証明ではない**
   — parameterized test / 1 宣言に複数ケース / コメント内の文字列も数に入る。**実装を落とせるかは `[3.8]` の
   ミューテーションで別に確認する**。本数と検知力を同じ指標として扱わない。
-- effort は **`max`** (モデル表の書く run)。「実装を落とす入力」を組み立てるのは構築作業で、
+- effort は **`medium`** (モデル表の書く run)。「実装を落とす入力」を組み立てるのは構築作業で、
   effort を落とすと常に真になる assert や壊せないヘルパーが出やすい (実測)。
-  モデルは `gpt-6-luna`。テストを自分で回させるので実装と同じ `-s danger-full-access` (外せない環境は `workspace-write`)。
+  モデルは `gpt-6-astra`。テストを自分で回させるので実装と同じ `-s danger-full-access` (外せない環境は `workspace-write`)。
 
 ```bash
 # 起動前スナップショット (上の pre.patch / pre.status) をこの呼び出しの冒頭で採る
 out="<D>/<literal-stamp>.harden.md"; log="$out.log"
-command codex exec -s danger-full-access -m gpt-6-luna -c model_reasoning_effort="max" \
+command codex exec -s danger-full-access -m gpt-6-astra -c model_reasoning_effort="medium" \
   --ephemeral -o "$out" </dev/null "$(cat <<'EOF'
 このマイルストーンの実装を「落とす」テストを書く。git 操作 (commit / pull / checkout / stash 等) はしない。
 
@@ -1146,7 +1148,7 @@ EOF
   **worktree に patch を持ち込んだら baseline commit を作ってから注入させる**。持ち込んだ直後の worktree でも
   patch は未コミットなので、codex の `git checkout -- .` 復元が seam ごと消してテストがコンパイル不能になる
   (obaket 696 項目 4)。
-- **codex に注入から実行ループまで回させる** (`-s danger-full-access`・`-C <worktree>`・`gpt-6-luna`・max —
+- **codex に注入から実行ループまで回させる** (`-s danger-full-access`・`-C <worktree>`・`gpt-6-astra`・medium —
   機械作業。トークン経済 3)。🚨 **例外: sandbox を外せない環境で、その repo の `swift test` が sandbox で走らないと
   1 度分かったら、以降のマイルストーンでは実行ループを codex に回さない**。変異 patch の生成だけ codex read-only に
   作らせ、適用 → テスト実行 → 復元は最初から Claude のハーネスで当てる (obaket 650 M1: max effort で 15〜40 分の
