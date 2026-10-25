@@ -83,6 +83,11 @@
             "type": "command"
           },
           {
+            "command": "~/dotfiles/_claude/hooks/suggest-dupscan-for-symbol-grep.sh",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
             "command": "~/dotfiles/_claude/hooks/deny-piped-push-then-destroy.sh",
             "timeout": 10,
             "type": "command"
@@ -104,6 +109,16 @@
           }
         ],
         "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "~/dotfiles/_claude/hooks/suggest-dupscan-for-symbol-grep.sh",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "Grep"
       }
     ],
     "SessionEnd": [
