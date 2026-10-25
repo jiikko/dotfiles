@@ -486,7 +486,7 @@ func (w *walker) newUnit(n *sitter.Node, kind tree.UnitKind, name, sig string, l
 
 // delegation は、本体が「1 つの呼び出しに原子 (atom) だけを渡す」委譲か。本体の直下の文がちょうど 1 つ (コメントを除く) で、
 // その文が呼び出し (return・try・await・後置の ! で包んでよい) で、後置のクロージャが無く、引数が全部原子のとき。
-// 「1 文」だけで判定しない: 1 つの大きな式や guard 1 文の写しを、定数を変えるだけで除外に通せてしまう (issue 919 の反証レビュー)。
+// 「1 文」だけで判定しない: 1 つの大きな式や guard 1 文の写しを、定数を変えるだけで除外に通せてしまう。
 func (w *walker) delegation(body *sitter.Node) bool {
 	stmts := childOfKind(body, "statements")
 	if stmts == nil {

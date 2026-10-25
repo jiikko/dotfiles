@@ -2,7 +2,7 @@ package swift
 
 import "testing"
 
-// 「1 つの呼び出しに原子だけを渡す」委譲の判定 (除外のプリセット l2-single-call が読む。issue 919)。
+// 「1 つの呼び出しに原子だけを渡す」委譲の判定 (除外のプリセット l2-single-call が読む)。
 func TestDelegationIsOneCallWithAtomArguments(t *testing.T) {
 	src := `
 final class D: UserDefaults {

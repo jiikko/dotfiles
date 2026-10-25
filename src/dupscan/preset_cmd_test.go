@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// 除外のプリセット l2-single-call (issue 919)。定数だけが違う 1 行の委譲の L2 の組は外し、それ以外の写しは止める。
+// 除外のプリセット l2-single-call。定数だけが違う 1 行の委譲の L2 の組は外し、それ以外の写しは止める。
 
 const delegateA = `struct ATests {
     private func makeTemporaryFile(contents: Data) throws -> URL {
@@ -100,7 +100,7 @@ func TestPresetKeepsCopiesThatAreNotOneCallDelegations(t *testing.T) {
 
 // L1 では同じ出どころから来たので違反にならない組が、L2 で初めて違反になる写しは、プリセットが消さない (メンバーの L1 が同じなら効かせない)。
 // base: A と B は定数まで同じ写し (名前を渡す)・C は文字列を渡す (L2 でも A・B と違う)。変更: A と B に同じ修正を入れ、文字列を渡す形にする。
-// L1 の組 {A,B} は出どころが同じなので違反にならず、L2 の組 {A,B,C} で初めて違反になる (issue 919 の反証レビューの反例)。
+// L1 の組 {A,B} は出どころが同じなので違反にならず、L2 の組 {A,B,C} で初めて違反になる。
 func TestPresetDoesNotHideCopyFirstSeenAtL2(t *testing.T) {
 	body := func(typ, arg string) string {
 		return "struct " + typ + " {\n    private func makeTemporaryFile(contents: Data) throws -> URL {\n        try TestScratchDirectory.makeFile(prefix: " + arg + ", contents: contents)\n    }\n}\n"

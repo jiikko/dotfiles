@@ -25,7 +25,7 @@ func knownPreset(name string) bool {
 //
 // l2-single-call は L2 の組で、メンバー全員が 1 つの呼び出しの委譲 (adapter が決める tree.Unit.Delegation) で、L1 のハッシュが全員違うときだけ外す。
 // L1 のハッシュが同じメンバーを含む組には効かせない: gate は「違反になった最初の段」で打ち切るので、L1 では違反にならない写し
-// (同じ出どころから来た 2 つ) が L2 で初めて違反になることがあり、それを消さないため (issue 919 の反証レビュー)。
+// (同じ出どころから来た 2 つ) が L2 で初めて違反になることがあり、それを消さないため。
 func presetCovers(name string, lv norm.Level, members []*group.Entry) bool {
 	if name != PresetSingleCall || lv != norm.L2 || len(members) < 2 {
 		return false
