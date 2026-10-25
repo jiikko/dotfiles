@@ -21,6 +21,9 @@ import (
 type Options struct {
 	// Now は「今」。熱の色が今に依存するので、テストと撮影で固定するために注入する。nil なら time.Now
 	Now func() time.Time
+	// Unsynced は、外側の端末が同期出力を反映しない (書きかけのフレームを描く。tuikit/termcaps.SyncedOutput)。
+	// true なら、縦に 2 行以上動く配置の変わり目で、ノードを流さずに寄せ切る (bigShift)
+	Unsynced bool
 }
 
 // Result はキーを処理した結果、呼び出し側にしてほしいこと。
@@ -59,6 +62,7 @@ type Model struct {
 	tiles      []*tile
 	shut       shutTiles // q で閉じたばかりのタイル (Place が q q で抜けたときにも記憶へ載せる。places.go)
 	moving     bool
+	unsynced   bool // Options.Unsynced
 	lastAdv    time.Time
 	notices    []Notice
 	nameW      []int  // 列ごとの最長の名前の幅 (layout が数える。詳細の右揃えに使う)
@@ -135,7 +139,7 @@ func New(dir string, opts Options) (*Model, error) {
 	// moving は最初から true: 起動時のフェードインがある。false で始めると、呼び出し側が「動いていないので tick を回さない」と
 	// 判断し、透明のまま次のキーまで何も見えない (glogx の TestFilerAnimationAdvancesOnTickAndStops が捕まえた)
 	m := &Model{root: root, cur: root, startDir: root.abs, now: opts.Now, anims: map[*node]*anim{}, linkCache: map[string]string{}, moving: true,
-		walker: newWalker(), recs: map[string]walkResult{}, watch: newWatcher(), ripples: map[*node]ripple{}}
+		walker: newWalker(), recs: map[string]walkResult{}, watch: newWatcher(), ripples: map[*node]ripple{}, unsynced: opts.Unsynced}
 	if m.now == nil {
 		m.now = time.Now //nolint:forbidigo // 注入の既定値
 	}
@@ -708,6 +712,15 @@ func (m *Model) step(dt float64) bool {
 	m.noteStepVirt()
 	m.inStep = false
 	moving := false
+	snapMove := m.bigShift(pos)
+	move := func(tw *tween, target float64) bool {
+		if snapMove {
+			tw.step(target, moveDur, 0)
+			tw.snap()
+			return false
+		}
+		return tw.step(target, moveDur, dt)
+	}
 	kept := m.order[:0]
 	for _, n := range m.order {
 		a := m.anims[n]
@@ -715,10 +728,14 @@ func (m *Model) step(dt float64) bool {
 			continue
 		}
 		if a.ghost {
+			if snapMove { // 寄せ切ると消えかけが親の右端の 1 点に重なり、上がってきた行の上に 0.35 秒重ね書きされる。消えるのを待たない
+				delete(m.anims, n)
+				continue
+			}
 			tx, ty := m.ghostTarget(n)
 			moving = a.alpha.step(0, fadeOutDur, dt) || moving
-			moving = a.x.step(tx, moveDur, dt) || moving
-			moving = a.y.step(ty, moveDur, dt) || moving
+			moving = move(&a.x, tx) || moving
+			moving = move(&a.y, ty) || moving
 			if a.alpha.v <= 0.02 {
 				delete(m.anims, n)
 				continue
@@ -726,8 +743,8 @@ func (m *Model) step(dt float64) bool {
 		} else {
 			p := pos[n]
 			moving = a.alpha.step(1, fadeInDur, dt) || moving
-			moving = a.x.step(float64(p.x), moveDur, dt) || moving
-			moving = a.y.step(float64(p.y), moveDur, dt) || moving
+			moving = move(&a.x, float64(p.x)) || moving
+			moving = move(&a.y, float64(p.y)) || moving
 		}
 		kept = append(kept, n)
 	}
@@ -743,7 +760,12 @@ func (m *Model) step(dt float64) bool {
 	moving = m.stepBead(pos, dt) || moving
 	// カメラ: カーソルの名前の左端を画面の 38% に、選択線を画面の縦の中央に (spec §4.5)
 	cp := pos[m.cur]
-	moving = m.camX.step(float64(cp.x)-float64(m.w)*0.38, camDur, dt) || moving
+	if tx := float64(cp.x) - float64(m.w)*0.38; snapMove { // 縦だけ寄せて横を流すと、飛んでから滑る 2 段の動きになる
+		m.camX.step(tx, camDur, 0)
+		m.camX.snap()
+	} else {
+		moving = m.camX.step(tx, camDur, dt) || moving
+	}
 	moving = m.camY.step(float64(cp.y)-float64(m.canvasH()/2), camDur, dt) || moving
 	kt := m.tiles[:0]
 	for _, t := range m.tiles {
@@ -761,6 +783,29 @@ func (m *Model) step(dt float64) bool {
 	}
 	m.tiles = compactTail(m.tiles, kt)
 	return moving
+}
+
+// bigShift は、この回の配置で目標が変わったノードに、縦に 1 歩 (1 行と行間) より大きく動くものがあるか (同期出力の無い端末のときだけ見る)。
+// 選択線は y=0 に固定なので (spec §3.1)、子孫を開いた兄弟から隣へ移ると、木のほぼ全部が数行ずつ縦にずれる。流すと 1 行ずれるたびに
+// 全部の行が変わり、tmux はそれを外側へほぼ全画面ずつ書き直す (200×50 で 1 フレーム約 7KB、7 行のずれで約 80KB。隔離した tmux で測った)。
+// Terminal.app は書きかけのフレームを描くので、その全部が乱れとして見える。寄せ切れば書き直しは 1 回で済む。
+// 兄弟へ 1 歩のずれは流す (1 行なら流しても書き直しは 1 回。行間があっても j / k の動きは残す)。その回は全部のノードを寄せ切る (一部だけ寄せると、残りが遅れて滑り、線とずれて見える)。
+func (m *Model) bigShift(pos map[*node]place) bool {
+	if !m.unsynced {
+		return false
+	}
+	step := float64(1 + m.set.RowSpacing) // layout の stride
+	for n, p := range pos {
+		a := m.anims[n]
+		// 湧いたばかりのノード (目標をまだ持たない) は数えない: 開いたフォルダの子が親から湧く動きは、木が動かなければ流す
+		if a == nil || a.ghost || !a.y.init || float64(p.y) == a.y.to {
+			continue
+		}
+		if math.Abs(float64(p.y)-a.y.v) > step {
+			return true
+		}
+	}
+	return false
 }
 
 // stepBead はカーソルが変わったら、線に沿って光の粒 (ビーズ) を前のカーソルの位置から走らせる (spec §4.3)。

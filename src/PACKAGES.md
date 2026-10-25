@@ -119,6 +119,7 @@
 - `src/treefiler` (`treefiler`) — treefiler は横に育つ木のファイラー (bin/treefiler)。 (main)
 - `src/treefiler/filer` (`treefiler/filer`) — Package filer は treefiler の画面の部品 (木・タイル・キー・描画)。
 - `src/treefiler/gorules` (`treefiler/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.local.yml から参照)。 (build tags: ruleguard)
+- `src/treefiler/termsync` (`treefiler/termsync`) — Package termsync は、外側の端末が同期出力を持たないときに bubbletea へ渡す設定 (bin/treefiler と glogx が使う)。
 - `src/treefiler/tools/tfprobe` (`treefiler/tools/tfprobe`) — tfprobe は treefiler の画面 (filer.Model) を本物のディレクトリでヘッドレスに動かし、操作ごとの所要と、サイクルごとの 資源 (goroutine・fd・子プロセス・GC 後のヒープ) を測る。 (main)
 - `src/tuikit/anim` (`github.com/jiikko/dotfiles/src/tuikit/anim`) — Package anim は端末 UI の演出に使う状態機械と緩急カーブ。
 - `src/tuikit/caret` (`github.com/jiikko/dotfiles/src/tuikit/caret`) — Package caret は入力欄のキャレットを端末のカーソルにする (bubbletea v2 の View.Cursor)。
@@ -139,6 +140,7 @@
 - `src/tuikit/markdown` (`github.com/jiikko/dotfiles/src/tuikit/markdown`) — Package markdown は markdown の本文を width 桁の端末行へ整形する (見出し・箇条書き・表・ フェンスコードの chroma ハイライト)。
 - `src/tuikit/sgr` (`github.com/jiikko/dotfiles/src/tuikit/sgr`) — Package sgr は端末の基本 SGR (Select Graphic Rendition) シーケンスを 1 箇所に置く。
 - `src/tuikit/spinner` (`github.com/jiikko/dotfiles/src/tuikit/spinner`) — Package spinner は回る印 (点字の 10 コマ) の字形と、何番目のコマを出すかの選び方を持つ。
+- `src/tuikit/termcaps` (`github.com/jiikko/dotfiles/src/tuikit/termcaps`) — Package termcaps は、アプリの出力を最後に描く端末 (tmux の中なら外側のクライアント) が何に対応しているかを判定する。
 - `src/tuikit/termcolor` (`github.com/jiikko/dotfiles/src/tuikit/termcolor`) — Package termcolor は、24bit の色をそのまま書き出してよいかの判定 (bubbletea の色の判定を tmux の中で補う)。
 - `src/tuikit/termwidth` (`github.com/jiikko/dotfiles/src/tuikit/termwidth`) — Package termwidth は端末表示幅の単一情報源。
 - `src/tuikit/toast` (`github.com/jiikko/dotfiles/src/tuikit/toast`) — Package toast は右下に数秒だけ出す通知 (トースト) のスタック。

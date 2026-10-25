@@ -6,6 +6,7 @@
 ## ファイルの地図
 
 - `main.go` — `bin/treefiler` の入口。端末 (bubbletea) と toast の面倒だけを見る
+- `termsync/` — 外側の端末が同期出力を持たないときに bubbletea へ渡す設定 (bin/treefiler と glogx が使う。判定は `tuikit/termcaps`、filer へは `Options.Unsynced`)
 - `filer/model.go` — 状態・キー・時間 (`Advance`)・描画の組み立て。外へ出す面は `New` / `Resize` / `HandleKey` (`HandleInput`) / `Advance` / `View` /
   `Animating` / `Busy` / `OwnsKeys` / `Binds` / `CaretPos` / `Paste` / `TakeExec` / `ExecDone` / `TakeNotices` / `Refresh` / `Changed` / `WatchingChan` / `Close`
 - `filer/tree.go` — ディスクの木 (開いたときに 1 段ずつ読む・名前の自然順・symlink は辿らない)

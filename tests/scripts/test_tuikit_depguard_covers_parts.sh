@@ -30,6 +30,7 @@ excl_pure="$excl_framework
 cmd/termwidth:シェルから部品を呼ぶ入口のコマンド (引数と標準出力が仕事)
 editor:外部のエディタを起こすのが仕事
 widthenv:環境変数を読むのが仕事
+termcaps:端末 (tmux) に機能を聞くのが仕事
 termcolor:端末 (tmux) に機能を聞くのが仕事
 foreground:端末の前面を確かめ、子へ端末を渡すのが仕事 (os / os/exec / os/signal)
 foreground/ptytest:foreground のテストが使う pty の道具 (context / os / os/exec)"

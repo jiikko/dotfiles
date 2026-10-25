@@ -8,35 +8,29 @@
 package termcolor
 
 import (
-	"context"
 	"os"
 	"slices"
 	"strconv"
-	"strings"
-	"time"
+
+	"github.com/jiikko/dotfiles/src/tuikit/termcaps"
 )
 
-// Runner はコマンドを起こして標準出力を返す (使う側の外部プロセスの口。WaitDelay などの規律は使う側が持つ)。
-type Runner func(ctx context.Context, name string, args ...string) (string, error)
+// Runner はコマンドを起こして標準出力を返す (termcaps.Runner と同じ)。
+type Runner = termcaps.Runner
 
 // TrueColorThroughTmux は tmux の中で、外側の端末が 24bit の色に対応しているか。tmux の外 (tmuxEnv が空) は false
 // (colorprofile の判定 = COLORTERM に任せる)。聞けなければ false (今までどおり 256 色に落ちるだけで、壊れはしない)。
 // NO_COLOR が真なら false (24bit を強制する WithColorProfile は colorprofile の NO_COLOR の判定ごと上書きする)。
 // 真偽の読み方は colorprofile (env.go の envNoColor = strconv.ParseBool) に揃える: NO_COLOR=0 は色を出すので引き上げも外さない。
 func TrueColorThroughTmux(tmuxEnv string, run Runner) bool {
-	if noColor, _ := strconv.ParseBool(os.Getenv("NO_COLOR")); tmuxEnv == "" || noColor {
+	if noColor, _ := strconv.ParseBool(os.Getenv("NO_COLOR")); noColor {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	out, err := run(ctx, "tmux", "display", "-p", "#{client_termfeatures}")
-	if err != nil {
-		return false
-	}
-	return HasRGB(out)
+	f, ok := termcaps.TmuxClientFeatures(tmuxEnv, run)
+	return ok && slices.Contains(f, "RGB")
 }
 
 // HasRGB は `#{client_termfeatures}` の出力 (カンマ区切りの機能の名前) に RGB があるか。
 func HasRGB(features string) bool {
-	return slices.Contains(strings.Split(strings.TrimSpace(features), ","), "RGB")
+	return slices.Contains(termcaps.ParseFeatures(features), "RGB")
 }

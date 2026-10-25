@@ -3,6 +3,7 @@ const FilerCross
 const FilerExec
 const FilerQuit
 const FilerSwallow
+field FilerView.Unsynced
 field filerScreen.Place
 field filerScreen.SavedAt
 func FixtureChangedMsg

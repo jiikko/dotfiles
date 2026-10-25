@@ -56,6 +56,8 @@ func (v *FilerView) Rearm(msg FilerChangedMsg) tea.Cmd {
 }
 
 type FilerView struct {
+	// Unsynced は外側の端末が同期出力を反映しない (filer.Options.Unsynced。RunBrowse が起動時に 1 度だけ決める)
+	Unsynced  bool
 	shown     bool
 	f         *filer.Model
 	dir       string
@@ -81,7 +83,7 @@ func (v *FilerView) Toggle(dir string) {
 	}
 	if v.f == nil || v.dir != dir {
 		// app.TimeNow を呼ぶたびに読む (値をつかむと、テストが差し替えた時計に追従しない)
-		f, err := filer.New(dir, filer.Options{Now: func() time.Time { return app.TimeNow() }})
+		f, err := filer.New(dir, filer.Options{Now: func() time.Time { return app.TimeNow() }, Unsynced: v.Unsynced})
 		if err != nil {
 			v.openErr = "ファイラーを開けません: " + app.FirstLine(err.Error())
 			return

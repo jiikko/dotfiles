@@ -18,6 +18,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 |---|---|---|
 | `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …)。折り返しは `Wrap(s, 幅, 頭の空白を落とすか)` (書記素単位) / `WordWrap(s, 幅)` (単語の境目で折る)。`EscLen(s)` は先頭のエスケープ列のバイト長 (使う側が列を読み飛ばすときも終わりの見方を自前で書かない) | 行を幅で切る・揃える・折るときは**必ずここを通す** (x/ansi の `Hardwrap` / `Wrap` はキーキャップで幅を超える。tuikit と、tuikit を使う全 module が lint で禁止) |
 | `widthenv` | 幅モデルが支持しない環境変数 (`RUNEWIDTH_EASTASIAN`) の検出 | 起動時の警告・テストのガード |
+| `termcaps` | `SyncedOutput(環境変数を読む口, 起こす口)`: 同期出力 (DECSET 2026) が外側の端末まで効くか (tmux の中は `#{client_termfeatures}` に sync があるか、外は Terminal.app 以外か)。`TmuxClientFeatures` は機能の名前の列 (termcolor も使う) | false なら、画面全体が動くアニメを減らし、tmux の中では bubbletea に同期出力を使わせない (使うと tmux が外側へ書く量が増える)。treefiler (bin/treefiler と glogx の F) |
 | `termcolor` | `TrueColorThroughTmux(TMUX の値, 起こす口)`: tmux の中で外側の端末が 24bit の色に対応しているか (`#{client_termfeatures}` に RGB があるか。`HasRGB`)。bubbletea v2 の色の判定は tmux の中では tmux の端末の定義しか見ず、24bit の色を 256 色に落とすので、その補い | true なら `tea.WithColorProfile(colorprofile.TrueColor)` を渡す。24bit の色を描く glogx (treefiler・mac-lan-manager の板) と bin/mac-lan-manager |
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …)・256 色の番号の RGB (`XtermRGB`。色を混ぜる・暗くする計算用)・`ReapplyAfterReset` (行を地色で塗るとき、行内のリセットの後に地を張り直す) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
@@ -193,8 +194,8 @@ if confirm.IsYes(key) { run() }
 
 | 何を | どこで |
 |---|---|
-| 部品 (`anim` / `confirm` / `editor` / `foreground` / `gutter` / `highlight` / `hintfit` / `layout` / `lineedit` / `listnav` / `markdown` / `sgr` / `spinner` / `termcolor` / `termwidth` / `toast` / `widthenv`) は bubbletea を import しない (使ってよいのは `caret` と `examples/`。`framebench` は計測の道具で部品ではない) | `.golangci.local.yml` の depguard (`no-framework-in-parts`) |
-| 部品 (上から `editor`・`foreground`・`termcolor`・`widthenv` を除いたもの) は `os` / `os/exec` / `context` を import しない | `.golangci.local.yml` の depguard (`parts-pure`) |
+| 部品 (`anim` / `confirm` / `editor` / `foreground` / `gutter` / `highlight` / `hintfit` / `layout` / `lineedit` / `listnav` / `markdown` / `sgr` / `spinner` / `termcaps` / `termcolor` / `termwidth` / `toast` / `widthenv`) は bubbletea を import しない (使ってよいのは `caret` と `examples/`。`framebench` は計測の道具で部品ではない) | `.golangci.local.yml` の depguard (`no-framework-in-parts`) |
+| 部品 (上から `editor`・`foreground`・`termcaps`・`termcolor`・`widthenv` を除いたもの) は `os` / `os/exec` / `context` を import しない | `.golangci.local.yml` の depguard (`parts-pure`) |
 | 部品を足したら上の 2 つのリスト (または外す理由つきの表) に載せる | `tests/scripts/test_tuikit_depguard_covers_parts.sh` (issue 790) |
 | 部品の中で `time.Now` / `time.Since` を呼ばない | `.golangci.local.yml` の forbidigo |
 | 幅モデルは 1 系統 (runewidth・uniseg・`ansi.StringWidthWc` を使わない) | `.golangci.local.yml` の depguard / forbidigo |

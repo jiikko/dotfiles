@@ -19,12 +19,14 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/spinner"
+	"github.com/jiikko/dotfiles/src/tuikit/termcaps"
 	"github.com/jiikko/dotfiles/src/tuikit/termcolor"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
 	"doctor/disk"
 	"glogx/issues"
 	"subproc"
+	"treefiler/termsync"
 
 	"glogx/internal/commitview"
 	"glogx/internal/extcmd"
@@ -4136,12 +4138,29 @@ func RunBrowse(m *browseModel) (*browseModel, error) {
 	var opts []tea.ProgramOption
 	// tmux の中でも、外側の端末が対応していれば 24bit の色をそのまま書く (treefiler の F と mac-lan-manager の L の板が 24bit の色を描く。
 	// 判定しないと 256 色に落ちて面の色が紺になる。理由は tuikit/termcolor の doc)。glogx 自身の色は 256 色・基本色なので変わらない
-	if termcolor.TrueColorThroughTmux(os.Getenv("TMUX"), func(ctx context.Context, name string, args ...string) (string, error) {
+	// termcolor と termcaps が同じ問い合わせ (tmux の client_termfeatures) をするので、1 回の答えを使い回す
+	// (tmux が固まっていると 1 回ごとに上限の 1 秒を待つ)
+	type answer struct {
+		out string
+		err error
+	}
+	asked := map[string]answer{}
+	run := func(ctx context.Context, name string, args ...string) (string, error) {
+		key := strings.Join(append([]string{name}, args...), "\x00")
+		if a, ok := asked[key]; ok {
+			return a.out, a.err
+		}
 		out, err := subproc.CommandContext(ctx, name, args...).Output()
+		asked[key] = answer{string(out), err}
 		return string(out), err
-	}) {
+	}
+	if termcolor.TrueColorThroughTmux(os.Getenv("TMUX"), run) {
 		opts = append(opts, tea.WithColorProfile(colorprofile.TrueColor))
 	}
+	// 外側の端末が同期出力を反映しないなら、同期出力を使わず、F の木の縦の動きを流さずに寄せ切る (tuikit/termcaps の doc)。
+	// tmux の中で使うと tmux が外側へ書く量が約 5 倍になる (理由は treefiler/termsync)
+	m.filerV.Unsynced = !termcaps.SyncedOutput(os.Getenv, run)
+	opts = append(opts, termsync.ProgramOptions(m.filerV.Unsynced)...)
 	p := tea.NewProgram(m, opts...)
 	final, err := p.Run()
 	if err != nil {

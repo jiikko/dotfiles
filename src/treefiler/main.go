@@ -18,10 +18,12 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/caret"
 	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/termcaps"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
 	"subproc"
 	"treefiler/filer"
+	"treefiler/termsync"
 )
 
 // frameInterval は動いている間の描き直しの周期 (~60fps)。止まっている間は描かない。
@@ -151,7 +153,11 @@ func main() {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
 	}
-	f, err := filer.New(dir, filer.Options{})
+	unsynced := !termcaps.SyncedOutput(os.Getenv, func(ctx context.Context, name string, args ...string) (string, error) {
+		out, err := subproc.CommandContext(ctx, name, args...).Output()
+		return string(out), err
+	})
+	f, err := filer.New(dir, filer.Options{Unsynced: unsynced})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "treefiler:", err)
 		os.Exit(1)
@@ -159,7 +165,7 @@ func main() {
 	if widthenv.EastAsianAmbiguous() { // 支持しない幅の env は黙って枠を崩さず一度知らせる (glogx の main と同じ。alt screen の後に見える)
 		fmt.Fprintln(os.Stderr, "🚨 "+widthenv.Message)
 	}
-	if _, err := tea.NewProgram(&app{f: f}).Run(); err != nil {
+	if _, err := tea.NewProgram(&app{f: f}, termsync.ProgramOptions(unsynced)...).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "treefiler:", err)
 		os.Exit(1)
 	}

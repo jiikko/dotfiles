@@ -8,6 +8,7 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 
 - `termwidth` — 表示幅の単一情報源。行を幅で切る・揃えるときは必ずここを通す
 - `widthenv` — 幅モデルが支持しない環境変数の検出
+- `termcaps` — 外側の端末 (tmux の中ならクライアント) の機能の問い合わせと、同期出力が効くかの判定
 - `termcolor` — tmux の中で 24bit の色を書き出してよいかの判定 (bubbletea の色の判定の補い)
 - `sgr` — 基本の ANSI 色・装飾
 - `anim` — 開閉演出 (`Transition`)・進捗 (`Elapsed`)・数行スクロールの glide 演出
