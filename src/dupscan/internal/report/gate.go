@@ -1,9 +1,12 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
+	"time"
 
 	"dupscan/internal/group"
 
@@ -190,3 +193,24 @@ func commentAt(el exclude.Element) string {
 }
 
 func short(h string) string { return h[:min(len(h), 12)] }
+
+// AppendRecord は 1 回の gate の結果を、時刻を添えた 1 行の JSON として path に追記する (回をまたいで違反・除外・許可を数えるため)。
+// 1 行を 1 回の write で書く (同じファイルへ並行に追記しても行が混ざらない。O_APPEND の 1 回の write)。
+func AppendRecord(path string, s GateSummary, now time.Time) error {
+	b, err := json.Marshal(struct {
+		Time string `json:"time"`
+		GateSummary
+	}{now.Format(time.RFC3339), s})
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}

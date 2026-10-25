@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"dupscan/internal/exclude"
 	"dupscan/internal/gate"
@@ -18,6 +19,7 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	baseRef := fs.String("base", "", "比べる base (その commit と head の merge-base を使う)。既定は upstream、無ければ origin/HEAD")
 	headRef := fs.String("head", "", "作業ツリーの代わりに比べる commit (過去の commit の流し直し用。checkout しない)")
 	failLevels := fs.String("fail-levels", "L1,L2", "違反を止める (rc=1) 段。それ以外の段は報告だけ")
+	record := fs.String("record", "", "1 回ごとの結果 (違反・除外・許可) を、時刻を添えた 1 行の JSON でこのファイルに追記する")
 	failNewEx := fs.Bool("fail-new-exclusions", false, "base から新しく足された除外か、パスの除外で通した変わった単位があれば rc=1 にする (CI で人の目に届けるため)")
 	dirs, rc, ok := parseFlags(fs, args)
 	if !ok {
@@ -113,6 +115,12 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	// base が head の commit と同じなら、見たのは未コミットの変更だけ (CI で -base を付け忘れた疑い)。
 	if hc, err := repo.CommitHash(sc.Root, headCommit); err == nil && hc == baseHash {
 		s.BaseIsHead = true
+	}
+	if *record != "" {
+		if err := report.AppendRecord(*record, s, time.Now()); err != nil {
+			fmt.Fprintln(stderr, "dupscan gate: --record:", err)
+			return 2
+		}
 	}
 	switch *c.format {
 	case "json":

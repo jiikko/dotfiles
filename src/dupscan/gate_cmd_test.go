@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,5 +159,50 @@ func TestGateListsUntrackedFiles(t *testing.T) {
 	gitRun(t, root, "add", "Sources/B.swift")
 	if _, out, _ := runGateCmd(t, "-format", "json", "-base", "HEAD", root); !strings.Contains(out, `"untracked_files": []`) {
 		t.Errorf("追跡したら一覧から消える (空の配列): %q", out)
+	}
+}
+
+// --record は回ごとに 1 行の JSON を追記する (上書きしない)。渡さなければ何も書かない。
+func TestGateRecordAppendsOneJSONLinePerRun(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	rec := filepath.Join(t.TempDir(), "gate.jsonl")
+	if rc, _, errs := runGateCmd(t, "-record", rec, "-base", "HEAD", root); rc != 0 {
+		t.Fatalf("1 回目: rc=%d err=%q", rc, errs)
+	}
+	writeFile(t, root, "Sources/B.swift", helperB)
+	if rc, _, errs := runGateCmd(t, "-record", rec, "-base", "HEAD", root); rc != 1 {
+		t.Fatalf("2 回目は写しで rc=1: rc=%d err=%q", rc, errs)
+	}
+	b, err := os.ReadFile(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ls := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+	if len(ls) != 2 {
+		t.Fatalf("2 回で 2 行を期待: %q", b)
+	}
+	for i, l := range ls {
+		var r struct {
+			Time       string
+			Failed     bool
+			Violations []json.RawMessage
+		}
+		if err := json.Unmarshal([]byte(l), &r); err != nil || r.Time == "" || r.Failed != (i == 1) || len(r.Violations) != i {
+			t.Errorf("%d 行目: 時刻と、%d 回目の違反の数を期待: %v %q", i+1, i+1, err, l)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "gate.jsonl")); err == nil {
+		t.Errorf("調べる repo に書いた")
+	}
+}
+
+func TestGateRecordFailureIsUndecidable(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	if rc, _, errs := runGateCmd(t, "-record", filepath.Join(t.TempDir(), "no", "such", "dir.jsonl"), "-base", "HEAD", root); rc != 2 || !strings.Contains(errs, "--record") {
+		t.Errorf("記録に失敗したら黙らず rc=2: rc=%d err=%q", rc, errs)
 	}
 }

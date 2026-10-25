@@ -140,3 +140,6 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
 - 2026-10-25 untracked の一覧を足した (commit「feat(dupscan): gate が untracked から読んだファイルを出す」): 作業ツリーを head にしたとき、ignore されていない untracked から読んだファイルの数を 1 行目に、
   一覧を `-v` と json の `untracked_files` に出す (`-head <commit>` では空)。テスト 1 本、変異 4 本 (追跡しているファイルも数える・1 行目に出さない・-v に出さない・空を null にする) はビルドが通り全部赤。
   **残り**: `--record`・誤って止める割合の測定の続き (過去の commit の流し直し)・PR 24 の前の木での受け入れ (obaket が要る)・組み込みの例を実際の repo の CI で 1 回走らせる
+- 2026-10-25 `--record <file>` を足した (commit「feat(dupscan): gate の結果を 1 行の JSON で追記する --record」。891 の「記録」): gate の json の出力に `time` を添えた 1 行を O_APPEND の 1 回の write で追記する。
+  書けなければ黙らず rc=2。テスト 2 本、変異 3 本 (上書きする・書けなくても続ける・時刻を入れない) はビルドが通り全部赤。
+  **残り**: 誤って止める割合の測定の続き (過去の commit の流し直し)・PR 24 の前の木での受け入れ (obaket が要る)・組み込みの例を実際の repo の CI で 1 回走らせる
