@@ -53,14 +53,14 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
 ## 受け入れ条件
 
 - [ ] obaket の PR 24 の前の木を base にし、6 つのうち 1 つを新しく足した作業ツリーで `gate` が非 0 になり、足した単位を寄せる側として名指しする。未コミットのまま・untracked の新しいファイルに足した場合も
-- [ ] 否定: 既存の写しのファイルの移動・関数の改名・整形の変更では落ちない。既存の写しを 1 つ共通の置き場所へ寄せた変更で落ちない。base の時点で在った組だけでは落ちない
-- [ ] 理由つきの許可を付けた単位では落ちず、理由の無い許可では落ちる。古い単位に許可を付けても、新しい写しの違反は消えない。新しく足された許可が別の一覧に出る
-- [ ] base の commit が無いとき・手元で upstream が無く `--base` も無いとき、判定不能として非 0 で終わる
-- [ ] detached HEAD の worktree で、設定ファイルの既定のブランチとの merge-base を base にして回る。upstream が先に進んでいても、他人の変更を数えない
-- [ ] 同じファイルの別の型に同名・同署名の関数がある場合と、クロージャを、別の単位として名指しできる
+- [x] 否定: 既存の写しのファイルの移動・関数の改名・整形の変更では落ちない。既存の写しを 1 つ共通の置き場所へ寄せた変更で落ちない。base の時点で在った組だけでは落ちない
+- [x] 理由つきの許可を付けた単位では落ちず、理由の無い許可では落ちる。古い単位に許可を付けても、新しい写しの違反は消えない。新しく足された許可が別の一覧に出る
+- [x] base の commit が無いとき・手元で upstream が無く `--base` も無いとき、判定不能として非 0 で終わる
+- [x] detached HEAD の worktree で、~~設定ファイルの~~既定のブランチ (origin/HEAD) との merge-base を base にして回る。upstream が先に進んでいても、他人の変更を数えない
+- [x] 同じファイルの別の型に同名・同署名の関数がある場合と、クロージャを、別の単位として名指しできる
 - [ ] 直接 push の運用: push の前の commit を base にした CI で、push した写しが落ちる
-- [ ] 写し 1 つの違反が、段を重ねずに 1 つの段で出る
-- [ ] 読めない構文の単位を、件数と場所つきで報告する
+- [x] 写し 1 つの違反が、段を重ねずに 1 つの段で出る
+- [x] 読めない構文の単位を、件数と場所つきで報告する
 - [ ] 所要と、過去の commit の流し直しで数えた誤って止める割合を段ごとに書き、ユーザーの決定 (段ごとに止める / 報告だけ / 回さない) を書く
 
 ## 依存
@@ -151,3 +151,17 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
   **意図して並べている写しが多い repo では、組み込むと当面 gate がよく赤になる**: 寄せるか、`intentional` の除外を書くかの方針を組み込む前に決める (909 の手順 3)。
   merge commit (0696a919) は base が first parent なので、取り込んだ側の写しが新しく見える (CI では push の前の commit を base にするので同じ形になる。受け入れている)。
   出典: `tmp/dupscan-replay-2026-10-25/` (replay.tsv・reds.txt。30 日で消える。結論はここに移した)
+- 2026-10-25 受け入れ条件の照合と残りの実装 (commit「test(dupscan): gate の受け入れ条件の残りを固める」):
+  - チェックを付けた 7 項目と根拠のテスト: 否定 = `TestMoveRenameAndExistingCopiesAreNotViolations`・`TestSwapIsNotViolation`・新しく足した `TestGateFormattingOnlyChangeIsNotChange` (整形・コメントだけの変更は変わった単位 0) /
+    許可 = `TestAllowedUnitIsNotNamedButDoesNotHideNewCopy`・`TestMalformedAllowCommentIsUndecidable`・`TestNewExclusionsAreListedAndCanFail` /
+    判定不能 = `TestGateWithoutBaseIsUndecidable`・新しく足した `TestGateShallowCloneWithoutBaseIsUndecidable` (浅い clone で base が無ければ rc=2) /
+    detached HEAD = 新しく足した `TestGateUsesOriginHeadOnDetachedHead` (origin/HEAD が先に進んでいても、merge-base より後の他人の写しを数えない) /
+    別の単位 = `TestKeysDistinguishEnclosingTypesAndClosures` / 1 つの段 = `TestFirstMatchingLevelDecides`・`TestOneViolationPerGroup` / 読めない構文 = `TestUnreadableCopyDoesNotHideNewCopy` と gate の 1 行目・`-v` の一覧
+  - gate の `-no-exclude` が設定ファイルの除外を外すことを確かめるテストが無かったので足した (変異で見つけた)
+  - **設定ファイルで既定の base を選ぶのは作らない** (59 の「設定ファイルの」を外した): `.dupscan.json` の `"base"` を実装して opus の敵対的レビューに 2 周かけ、
+    1 周目は `"base": "HEAD"` を写しと一緒に commit、2 周目は値を remote のブランチの名前に限った後で、写しと一緒に push した remote のブランチ (`origin/feat`) を指す値で、
+    upstream の無い手元の gate を既定でも `-fail-new-exclusions` でも素通りした。設定は調べる変更の中にあるので、変更が自分の比べる相手を選べるという同じ不変条件が 2 周続けて破れたため、
+    規則を足さずに取り下げた (retro 908 の教訓)。detached HEAD の worktree は既にある origin/HEAD の fallback で回る。理由と再提起の条件は `repo.DefaultBase` の直近に書いた
+  - 変異 (どれもビルドが通り赤): origin/HEAD の fallback を外す / 手元に無い base を空の木とみなす / コメントを本体の木に残す / gate の -no-exclude で除外を外さない
+  - **残り**: 55 (PR 24 の前の木。909)・61 (直接 push の運用を実際の CI で。909)・64 (止める段の決定。下)
+  - 64 の判断材料: 所要は DualNoteApp で 1 回 0.4 秒。誤って止めた割合は直近 100 commit で 1/100 (L1・L2 を止める今の既定で)。L3 は報告だけ。**ユーザーの決定待ち** (段ごとに止める今の既定のままか、報告だけにするか)

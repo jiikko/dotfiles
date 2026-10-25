@@ -20,7 +20,7 @@ epic 890 の土台。`src/` の新しいプロジェクトの手順に沿って�
   - `PACKAGES.md` の再生成と全 package の doc comment (`scripts/go_packages_index.sh --check`)
   - `bin/dupscan` を zsh で書くなら root の `Makefile` の `ZSH_SYNTAX_FILES` に登録。go_autobuild の成果物を `src/dupscan/.gitignore` に
   - `make test-lint` (`test-go-project-lanes` ほか) が通る
-- [ ] cgo で巨大な `parser.c` をコンパイルするので、CI の lint (`_go-project.yml`。timeout 25 分) と test のコールドの所要を実測して書く
+- [x] cgo で巨大な `parser.c` をコンパイルするので、CI の lint (`_go-project.yml`。timeout 25 分) と test のコールドの所要を実測して書く
 
 ## 進捗
 
@@ -34,3 +34,8 @@ epic 890 の土台。`src/` の新しいプロジェクトの手順に沿って�
   - 手元の `make lint` (温まった状態) は 10 秒。**残り**: CI のコールドの所要 (cgo で parser.c 23 MB をコンパイル) の実測・他の repo の CI での入れ方
 - 2026-10-24 3 周目の敵対的レビュー: `scripts/go_packages_index.sh` の replace の先の判定で、CRLF の go.mod を読み、比べる値を環境変数で渡す (`-v` は `\` を解釈した)。テスト 2 件は直す前で赤
 - 2026-10-24 CI: src/dupscan の lint 52 秒・test 35 秒 (cgo のコールドビルドを含む。run 40102531110)。別の workflow の unused (production から届かない symbol の検査) が、網羅テストだけが使う structKinds を赤にした。種類の分類を classify に寄せて変換も通すように直した。手元の make test-changed / test-lint はこの検査を含まないので、新しい Go の module では `make test-unused-excluding-tests` も回す / go_packages_index.sh は引用符付きの replace も読む
+- 2026-10-25 CI の所要を実測した (`gh run list --workflow src_dupscan.yml` の 27 回): 最初の run (dupscan の go.sum に対する build cache が無いコールド) は lint の step 30 秒・test の step 22 秒。
+  それ以降は lint 3〜6 秒・test 20〜51 秒 (macOS の runner)。`_go-project.yml` の timeout 25 分に対して十分短い。手元で空の GOCACHE から `go build` するのは 8 秒 (go1.26.0・darwin/arm64)。
+  dotfiles を持たない repo の CI で入れる手順は `src/dupscan/README.md` の組み込みの例 (固定した commit の dotfiles から `src/dupscan`・`src/subproc` を取り出して build。
+  module の path が `dupscan` なので `go install <module>@<版>` の形は取れない)。C のコンパイラは要る (GitHub の macOS / Ubuntu の runner には入っている)。
+  **残り**: その手順を実際の repo の CI で 1 回走らせて確かめる (DualNoteApp は読み取りのみなので使えない。obaket で行う = 909)

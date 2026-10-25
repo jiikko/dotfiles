@@ -205,6 +205,9 @@ func MergeBase(root, a, b string) (string, error) {
 
 // DefaultBase は base の既定: 今のブランチの upstream、無ければ origin/HEAD。どちらも無ければ ErrNoBase
 // (detached HEAD の worktree では upstream が無い)。
+// 既定の base を repo の設定ファイル (.dupscan.json) で選べるようにはしない: 設定は調べる変更の中にあるので、変更が自分の比べる相手を選べる。
+// `"base": "HEAD"` や、写しと一緒に push した remote のブランチを指す値を写しと同じ commit に書くと、base がその commit 自身になり、写しが gate を素通りする。
+// 再提起するなら、設定の値を調べる変更の外 (origin/HEAD の commit の設定など) から読み、上の 2 つの形で止まることを実測で示す。
 func DefaultBase(root string) (string, error) {
 	for _, ref := range []string{"@{upstream}", "refs/remotes/origin/HEAD"} {
 		if h, err := CommitHash(root, ref); err == nil {

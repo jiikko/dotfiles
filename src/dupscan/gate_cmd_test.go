@@ -206,3 +206,59 @@ func TestGateRecordFailureIsUndecidable(t *testing.T) {
 		t.Errorf("記録に失敗したら黙らず rc=2: rc=%d err=%q", rc, errs)
 	}
 }
+
+// upstream の無い detached HEAD の worktree では、origin/HEAD との merge-base を base にする。
+// origin/HEAD が先に進んでいても (他人の写し B)、merge-base より後の他人の変更は数えず、自分の写し C だけを名指しする。
+func TestGateUsesOriginHeadOnDetachedHead(t *testing.T) {
+	root := committedRepo(t)
+	gitRun(t, root, "checkout", "-q", "-b", "trunk")
+	writeFile(t, root, "Sources/B.swift", helperB)
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "someone else's copy")
+	gitRun(t, root, "update-ref", "refs/remotes/origin/trunk", "trunk")
+	gitRun(t, root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+	gitRun(t, root, "checkout", "-q", "--detach", "trunk~1")
+	writeFile(t, root, "Sources/C.swift", helperC)
+	rc, out, errs := runGateCmd(t, root)
+	if rc != 1 || !strings.Contains(out, "新しい: Sources/C.swift") || strings.Contains(out, "Sources/B.swift") {
+		t.Errorf("origin/HEAD との merge-base で、自分の写し C だけを名指しする: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}
+
+// base の commit が手元に無い (浅い clone) ときは、全部を新しいと数えずに判定不能 (rc=2) で終わる。
+func TestGateShallowCloneWithoutBaseIsUndecidable(t *testing.T) {
+	src := committedRepo(t)
+	writeFile(t, src, "Sources/B.swift", helperB)
+	gitRun(t, src, "add", ".")
+	gitRun(t, src, "commit", "-q", "-m", "copy")
+	clone := filepath.Join(t.TempDir(), "clone")
+	if out, err := subproc.GitCommand(context.Background(), "clone", "-q", "--depth", "1", "file://"+src, clone).CombinedOutput(); err != nil {
+		t.Fatalf("git clone: %v: %s", err, out)
+	}
+	rc, out, errs := runGateCmd(t, "-base", "HEAD~1", clone)
+	if rc != 2 || !strings.Contains(errs, "手元に無い") || strings.Contains(out, "新しい") {
+		t.Errorf("浅い clone で base が無ければ rc=2: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}
+
+// 整形 (改行・字下げ・空白・コメント) だけの変更は、本体の木が同じなので変わった単位にならず、写しの組があっても落ちない。
+func TestGateFormattingOnlyChangeIsNotChange(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Sources/B.swift", `struct B {
+    // 整形し直した
+    func makeLocation(_ p: String) -> StorageLocation {
+
+        StorageLocation(
+            connectionID: ConnectionID(rawValue: "conn"),   /* 同じ値 */
+            path: ObjectPath(rawValue: p)
+        )
+    }
+}
+`)
+	rc, out, errs := runGateCmd(t, "-base", "HEAD", root)
+	if rc != 0 || !strings.Contains(out, "変わった単位 0") {
+		t.Errorf("整形だけの変更は変わった単位 0 で rc=0: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}

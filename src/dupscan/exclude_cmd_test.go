@@ -113,6 +113,9 @@ func TestNewExclusionsAreListedAndCanFail(t *testing.T) {
 	if rc, out, _ := runGateCmd(t, "-fail-new-exclusions", "-base", "HEAD", root); rc != 1 {
 		t.Errorf("-fail-new-exclusions で rc=1 を期待: rc=%d out=%q", rc, out)
 	}
+	if rc, out, _ := runGateCmd(t, "-no-exclude", "-base", "HEAD", root); rc != 1 || !strings.Contains(out, "新しい: Sources/B.swift") {
+		t.Errorf("gate の -no-exclude は設定ファイルの除外も外し、写しで rc=1: rc=%d out=%q", rc, out)
+	}
 }
 
 func TestPathExclusionCountsHiddenChangedUnits(t *testing.T) {
