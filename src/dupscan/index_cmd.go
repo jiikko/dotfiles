@@ -47,7 +47,13 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 			return fail(err)
 		}
 	}
-	got, err := scanSource(repo.Worktree{Scope: sc, Exts: swift.Extensions}, true)
+	src := repo.Worktree{Scope: sc, Exts: swift.Extensions}
+	cfg, err := loadConfig(src, false)
+	if err != nil {
+		return fail(fmt.Errorf("判定不能: %w", err))
+	}
+	q.Shared = cfg.InShared
+	got, err := scanSource(src, true)
 	if err != nil {
 		return fail(err)
 	}

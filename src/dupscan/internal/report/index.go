@@ -16,6 +16,8 @@ type Query struct {
 	ParamType string // どれかの引数の型の一部
 	Doc       string // doc comment の最初の行の語 (大文字小文字を区別しない)
 	File      string // このファイル (repo の root からの相対) の単位だけ。行の順に並べる
+	// Shared は共通の置き場所か (nil なら無し)。名前の一致の強さの次に、ここの定義を先に並べる。
+	Shared func(file string) bool
 }
 
 // IndexEntry は索引の 1 行。
@@ -26,6 +28,8 @@ type IndexEntry struct {
 	Doc        string   `json:"doc,omitempty"`
 	// Calls は呼び出しの数 (名前と引数ラベルで当てる近似。callers と同じ当て方)。関数と初期化子だけ数え、それ以外は nil。
 	Calls *int `json:"calls,omitempty"`
+	// Shared は共通の置き場所 (設定の shared) にある定義。
+	Shared bool `json:"shared,omitempty"`
 }
 
 // IndexSummary は索引の出力。
@@ -36,7 +40,7 @@ type IndexSummary struct {
 }
 
 // BuildIndex は名前の付いた単位 (クロージャを除く) から q に当たるものを並べる。
-// 並べ方: 名前の一致の強さ (同じ > 前方 > 一部) → prod を test より前 → private でないもの (そのまま使える) を前 → 呼び出しの多いもの → 場所。
+// 並べ方: 名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所を前 → prod を test より前 → private でないもの (そのまま使える) を前 → 呼び出しの多いもの → 場所。
 // File を指したときはファイルの中の行の順 (outline)。
 func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
 	counts := callCounts(units, calls)
@@ -62,6 +66,9 @@ func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
 			if a.score != b.score {
 				return a.score > b.score
 			}
+			if sa, sb := q.shared(a.u.File), q.shared(b.u.File); sa != sb {
+				return sa
+			}
 			if a.u.Test != b.u.Test {
 				return !a.u.Test
 			}
@@ -79,7 +86,7 @@ func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
 	})
 	s := IndexSummary{Units: n, Matches: len(hits), Entries: []IndexEntry{}}
 	for _, h := range hits {
-		e := IndexEntry{UnitRef: ref(h.u), ReturnType: h.u.ReturnType, ParamTypes: h.u.ParamTypes, Doc: h.u.Doc}
+		e := IndexEntry{UnitRef: ref(h.u), ReturnType: h.u.ReturnType, ParamTypes: h.u.ParamTypes, Doc: h.u.Doc, Shared: q.shared(h.u.File)}
 		if n, ok := counts[h.u]; ok {
 			e.Calls = &n
 		}
@@ -87,6 +94,8 @@ func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
 	}
 	return s
 }
+
+func (q Query) shared(file string) bool { return q.Shared != nil && q.Shared(file) }
 
 func (q Query) match(u *tree.Unit) (int, bool) {
 	if q.File != "" && u.File != q.File {
@@ -179,6 +188,9 @@ func IndexText(w io.Writer, s IndexSummary, limit int) error {
 		}
 		line := fmt.Sprintf("%s:%d %s", e.File, e.Line, label(e.UnitRef))
 		var marks []string
+		if e.Shared {
+			marks = append(marks, "shared")
+		}
 		if e.Test {
 			marks = append(marks, "test")
 		}

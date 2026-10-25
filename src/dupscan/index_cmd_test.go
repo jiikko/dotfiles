@@ -130,3 +130,22 @@ func use() {
 		t.Errorf("property は数えない: %q", out)
 	}
 }
+
+// 設定の shared (共通の置き場所) の定義は、名前の一致の強さの次に先に並べ、[shared] と印を付ける (prod / test より強い)。
+func TestIndexRanksSharedPlaceFirst(t *testing.T) {
+	support := "func bucketLocation(path: String) -> StorageLocation { make(path) }\n"
+	root := repoWith(t, map[string]string{
+		"Sources/Helpers.swift":          indexed,
+		"ZTests/SharedSupport/Loc.swift": support,
+	})
+	writeFile(t, root, ".dupscan.json", `{"version": 1, "exclude": [], "shared": ["ZTests/SharedSupport/**"]}`)
+	_, out, errs := index(t, "-name", "bucketLocation", root)
+	got := lines(out)
+	if len(got) != 2 || !strings.HasPrefix(got[0], "ZTests/SharedSupport/Loc.swift:1 ") || !strings.Contains(got[0], "[shared,test]") {
+		t.Errorf("共通の置き場所の定義を先に [shared] で: %q err=%q", out, errs)
+	}
+	writeFile(t, root, ".dupscan.json", `{"version": 1, "exclude": [], "shared": ["["]}`)
+	if rc, _, errs := index(t, "-name", "bucketLocation", root); rc != 2 || !strings.Contains(errs, "shared") {
+		t.Errorf("読めない glob は rc=2: rc=%d err=%q", rc, errs)
+	}
+}

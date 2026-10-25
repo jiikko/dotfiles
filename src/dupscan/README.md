@@ -35,8 +35,8 @@ bin/dupscan callers 'make(x:_:)'              # 呼び出しの箇所と、そ�
 後置クロージャのある呼び出しは括弧の中のラベルが先頭に一致すれば当てる。flag は名前の前に書く (`callers -format json make`)。
 
 `index` は名前の付いた単位 (関数・初期化子・computed property・subscript など。クロージャとテスト関数は除く) を
-`file:line 型.署名 [test,private] (呼び出し ~N) // doc の最初の行` の 1 行で出す。grep と違い呼び出し側の行・コメント・文字列は混ざらない。
-並べ方は名前の一致の強さ (同じ > 前方 > 一部) → prod を test より前 → private / fileprivate でないもの (そのまま使える) を前 → 呼び出しの多いもの → 場所。
+`file:line 型.署名 [shared,test,private] (呼び出し ~N) // doc の最初の行` の 1 行で出す。grep と違い呼び出し側の行・コメント・文字列は混ざらない。
+並べ方は名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所 (`.dupscan.json` の `"shared": ["Tests/SharedTestSupport/**"]` のような glob。`[shared]` と出る) を前 → prod を test より前 → private / fileprivate でないもの (そのまま使える) を前 → 呼び出しの多いもの → 場所。
 呼び出しの数 (`~` は近似の印) は `callers` と同じ当て方 (名前と引数ラベル。初期化子は型の名前) で関数と初期化子だけ数える。既定値のある引数を省いた呼び出しは数えない。
 型は字面の一部で引く (`Tag` で `[Tag]` も当たる。型は解決しないので、typealias・同名の別の型は区別しない)。
 キャッシュは持たず、引くたびに読む (DualNoteApp の 1130 単位で 0.5 秒。issue 897)。`--check` はまだ無い。

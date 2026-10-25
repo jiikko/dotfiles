@@ -21,7 +21,8 @@ dupscan index -param-type ConnectionID        # 受け取る型
 dupscan index -doc bucket                     # doc comment の語
 ```
 
-使えるものがあれば使う (他のファイルから使えないものは `[private]` か `[fileprivate]` と出る。使うなら共通の置き場所へ寄せる)。無ければ書く。
+使えるものがあれば使う (repo が `.dupscan.json` の `shared` に書いた共通の置き場所の定義は `[shared]` と出て先に並ぶ。
+他のファイルから使えないものは `[private]` か `[fileprivate]` と出る。使うなら共通の置き場所へ寄せる)。無ければ書く。
 
 ## 2. 調べもの (grep の前に)
 

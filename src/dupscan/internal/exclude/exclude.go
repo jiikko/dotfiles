@@ -41,6 +41,22 @@ type Rule struct {
 type Config struct {
 	Version int    `json:"version"`
 	Exclude []Rule `json:"exclude"`
+	// Shared は共通の置き場所 (使い回すヘルパーを置くファイル) の glob。index がそこの定義を先に並べるだけで、report と gate の判定には効かない
+	// (gate を緩めないので、exclude と違い base から増えた分を gate の注記に出さない)。
+	Shared []string `json:"shared,omitempty"`
+}
+
+// InShared は file が共通の置き場所の glob のどれかに当たるか。
+func (c *Config) InShared(file string) bool {
+	if c == nil {
+		return false
+	}
+	for _, g := range c.Shared {
+		if Match(g, file) {
+			return true
+		}
+	}
+	return false
 }
 
 // Parse は設定ファイルを読む。形の誤り・知らない欄・種別か理由の無い除外はエラー (黙って除外無しで回さない)。
@@ -56,6 +72,11 @@ func Parse(b []byte) (*Config, error) {
 	}
 	if c.Version != 1 {
 		return nil, fmt.Errorf("%s: version は 1 (%d が書かれている)", FileName, c.Version)
+	}
+	for _, g := range c.Shared {
+		if err := checkGlob(g); err != nil {
+			return nil, fmt.Errorf("%s: shared: %w", FileName, err)
+		}
 	}
 	for i := range c.Exclude {
 		if c.Exclude[i].Comment != "" {
@@ -93,13 +114,8 @@ func (r *Rule) check() error {
 	r.levels = map[norm.Level]bool{}
 	if len(r.Paths) > 0 {
 		for _, g := range r.Paths {
-			if g == "" || strings.HasPrefix(g, "/") {
-				return fmt.Errorf("paths の %q は repo の root からの相対の glob で書く", g)
-			}
-			for _, part := range strings.Split(g, "/") {
-				if _, err := path.Match(part, ""); err != nil {
-					return fmt.Errorf("paths の %q は glob として読めない: %w", g, err)
-				}
+			if err := checkGlob(g); err != nil {
+				return fmt.Errorf("paths: %w", err)
 			}
 		}
 		if len(r.Levels) == 0 {
@@ -172,6 +188,19 @@ func WithComments(c *Config, rules []Rule) *Config {
 	}
 	out.Exclude = append(out.Exclude, rules...)
 	return out
+}
+
+// checkGlob は repo の root からの相対の glob として読めるか。
+func checkGlob(g string) error {
+	if g == "" || strings.HasPrefix(g, "/") {
+		return fmt.Errorf("%q は repo の root からの相対の glob で書く", g)
+	}
+	for _, part := range strings.Split(g, "/") {
+		if _, err := path.Match(part, ""); err != nil {
+			return fmt.Errorf("%q は glob として読めない: %w", g, err)
+		}
+	}
+	return nil
 }
 
 var ordinals = regexp.MustCompile(`#(closure)?[0-9]+`)
