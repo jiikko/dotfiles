@@ -55,8 +55,8 @@ skill の有る無しを変えて、headless の Claude Code (`claude -p`。`bin
 
 ## 受け入れ条件
 
-- [ ] 検証 1 を回し、腕ごとの「写しを書いた割合」・index を引いた割合・費用を表にして、効果の有無を書いた
-- [ ] 検証 2 の結果を obaket の issue 1301 から書き戻した
+- [x] 検証 1 を回し、腕ごとの「写しを書いた割合」・index を引いた割合・費用を表にして、効果の有無を書いた (**試走で基準率が 0 だったので本番は回さなかった**。下の進捗)
+- [x] 検証 2 の結果を obaket の issue 1301 から書き戻した
 - [ ] 検証 3 の 1 か月分の記録を obaket の issue 1301 から書き戻した
 - [ ] 結果から、dupscan を使い続けるか・skill と gate のどちらに寄せるかをユーザーに諮った
 
@@ -67,3 +67,19 @@ skill の有る無しを変えて、headless の Claude Code (`claude -p`。`bin
   依頼文に型の名前を出すと grep で見つかる → 名前を出さない依頼文に / `bin/skill-eval` は Bash を許さないので使えない → `claude -p` を直接 / 腕 B の作り方 → 全腕を同じ隔離した HOME に /
   判定を dupscan だけにすると循環する → diff を読む判定を併用 / 仕込むヘルパーを gate の下限より大きく / description の語で発火を誘導しない / 基準率を見る試走 / 費用の計算の誤り / 表の比の範囲と、誤って止めた数を数えた版
 - 2026-10-25 検証 1 も含めて、obaket の入っている別のマシンで行うことにした (ユーザー指示: 917 は obaket の入っている別マシンで検証やります)
+- 2026-10-25 検証 1 の試走 (ユーザー 2026-10-25: 縮小して回す = 3 腕 × 3 種類 × 3 回)。本番の前に腕 B (skill なし) で基準率を見た。M4Pro・`claude -p --model sonnet --setting-sources project,local`。
+  腕の違いは「使い捨ての repo の `.claude/skills/dupscan/` に skill を置くか」だけにした (`--setting-sources project,local` で起動するとユーザーの skill が init の一覧から消えることを確かめた)。
+  | 試走 | repo | 回 | 既存のヘルパーを使った | 新しく書いた写し | 費用 |
+  |---|---|---|---|---|---|
+  | 1 | 7 ファイル (ヘルパーは `Support/Fixtures.swift`、既存のテストが使っている) | B×3 | 3 | 0 | 各 $0.29 |
+  | 2 | 158 ファイル (ヘルパーを `Support/Builders/` の 52 ファイルの中に埋めた) | B×2 | 2 | 0 | 各 $0.30 |
+  | 3 | 同上 + `StorageKey` と認証のヘッダの辞書を 100 ファイルで使い、ヘルパーを誰も呼ばない形 | B×2 | 2 | 0 | 各 $0.34 |
+  - **基準率が 0** (7 回とも、skill が無くても `Grep` と `Glob` で既存のヘルパーを見つけて使った)。917 の手順どおり 2 回作り直したが、sonnet は使い捨ての規模の repo では grep で十分に見つける
+  - **腕の分け方が漏れた**: 試走 3 の腕 B の 1 回が `~/.claude/skills/dupscan/SKILL.md` を Read し、`dupscan index` を引いた。`--setting-sources project,local` でもユーザーの `~/.claude/CLAUDE.md` (skill の表に dupscan がある) は読み込まれるとみられる (未確認。init の skill の一覧には出ていなかった)。
+    `CLAUDE_CONFIG_DIR` を使い捨ての dir にすると「Not logged in」で起動できず、ユーザーの設定を読ませずに認証だけ通す手段が無かった
+  - **判断**: 基準率が 0 で、腕も漏れるので、本番 (27 回・約 $15) を回しても書く前に引く効果は測れない。試走で止めた (費用は計 約 $2.2)。
+    効果は obaket に組み込んだ後の実測 (obaket の issue 1301 の検証 3) で見る。使い捨ての repo で測り直すなら、**再開の条件**: ユーザーの CLAUDE.md を読ませずに headless を起動できる手段 (認証だけ引き継ぐ設定) が分かり、
+    かつ grep で見つけにくい規模 (obaket 程度、1000 ファイル以上) の repo を用意できるとき。
+    道具とスクリプトは obaket の `tmp/dupscan-917-2026-10-25/` (git の管理外): `run1.sh` (1 回)・`summarize.py` (表)・`gen.py` (repo の生成)
+- 2026-10-25 検証 2 の結果 (obaket の issue 1301 の段階 2): PR 24 の前の木で、gate は 7 つ目の写しを止め、near は残りの 5 つを出した (プロパティを読む 2 つは L3 = 今の既定では `-levels L1,L2,L3` が要る)。
+  dupscan は PR 24 が見落とした macOS のテストの写し 3 つも同じ組に出し、obaket で寄せた
