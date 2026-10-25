@@ -48,7 +48,7 @@ type Parser struct {
 	CollectCalls bool
 	// CollectDefs は定義と型宣言を別に集める (重複の比較単位にはしない)。
 	CollectDefs bool
-	// CollectRefs は型・値の参照を集める。
+	// CollectRefs は型・式の位置にある識別子の出現を集める。
 	CollectRefs bool
 }
 
@@ -79,38 +79,48 @@ type FileResult struct {
 
 // Definition は def 用の定義情報。重複を比べる Unit ではない。
 type Definition struct {
-	Name      string
-	Kind      string
-	File      string
-	Line      int
-	EndLine   int
-	Enclosing string
-	Signature string
-	Labels    []string
-	Test      bool
+	Name       string
+	Kind       string
+	File       string
+	Line       int
+	EndLine    int
+	Col        int
+	Enclosing  string
+	Signature  string
+	Labels     []string
+	Test       bool
+	Nested     bool
+	Visibility string
+	Doc        string
 }
 
 // TypeDeclaration は型本体の宣言情報。Unit には含めない。
 type TypeDeclaration struct {
+	Name       string
+	Kind       string
+	File       string
+	Line       int
+	EndLine    int
+	Col        int
+	Enclosing  string
+	Scope      string
+	Signature  string
+	Test       bool
+	Nested     bool
+	Visibility string
+	Doc        string
+}
+
+// Reference は refs 用の識別子の出現。Kind は type_position または expression_position。
+type Reference struct {
 	Name      string
 	Kind      string
 	File      string
 	Line      int
-	EndLine   int
-	Enclosing string
-	Signature string
+	Col       int
+	Text      string
 	Test      bool
-}
-
-// Reference は refs 用の識別子の出現。Kind は type または value。
-type Reference struct {
-	Name string
-	Kind string
-	File string
-	Line int
-	Col  int
-	Text string
-	Test bool
+	TestOwner string
 }
 
 // Parse は file (repo の root からの相対) の src から単位を取り出す。テスト関数そのものとその中のクロージャは単位にしない。
@@ -182,6 +192,18 @@ func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration
 		testClass      bool
 		insideCallable bool
 	}
+	addDefinition := func(n *sitter.Node, c context, name, kind, signature string, labels []string) {
+		pos := n.StartPosition()
+		test := w.test || c.testClass
+		if kind == string(tree.KindFunc) && w.isTestFunc(n, ctx{enclosing: c.enclosing, testClass: c.testClass}) {
+			test = true
+		}
+		defs = append(defs, Definition{
+			Name: name, Kind: kind, File: w.file, Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1,
+			Col: int(pos.Column) + 1, Enclosing: strings.Join(c.enclosing, "."), Signature: signature,
+			Labels: labels, Test: test, Nested: c.insideCallable, Visibility: w.visibility(n), Doc: w.docComment(n),
+		})
+	}
 	var visit func(*sitter.Node, context)
 	visit = func(n *sitter.Node, c context) {
 		k := kindOf(n)
@@ -192,11 +214,17 @@ func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration
 			name := typeIdentity(rawName)
 			if name != "" {
 				pos := n.StartPosition()
+				kind := w.typeDeclarationKind(n)
+				scope := rawName
+				if kind != "extension" && len(c.enclosing) > 0 {
+					scope = strings.Join(append(append([]string(nil), c.enclosing...), rawName), ".")
+				}
 				types = append(types, TypeDeclaration{
-					Name: name, Kind: w.typeDeclarationKind(n), File: w.file,
-					Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1,
-					Enclosing: strings.Join(c.enclosing, "."), Signature: rawName,
-					Test: w.test || c.testClass,
+					Name: name, Kind: kind, File: w.file,
+					Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1, Col: int(pos.Column) + 1,
+					Enclosing: strings.Join(c.enclosing, "."), Scope: scope, Signature: rawName,
+					Test: w.test || c.testClass, Nested: c.insideCallable,
+					Visibility: w.visibility(n), Doc: w.docComment(n),
 				})
 				childContext.enclosing = append(append([]string(nil), c.enclosing...), rawName)
 			}
@@ -204,23 +232,22 @@ func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration
 		}
 
 		switch k {
-		case "function_declaration", "init_declaration", "deinit_declaration", "subscript_declaration":
+		case "function_declaration", "protocol_function_declaration", "init_declaration", "deinit_declaration", "subscript_declaration":
 			u := w.declUnit(n, ctx{enclosing: c.enclosing, testClass: c.testClass})
-			defs = append(defs, definitionFromUnit(u))
+			d := definitionFromUnit(u, c.insideCallable)
+			if w.isTestFunc(n, ctx{enclosing: c.enclosing, testClass: c.testClass}) {
+				d.Test = true
+			}
+			defs = append(defs, d)
 			childContext.insideCallable = true
 		case "property_declaration":
 			if !c.insideCallable {
 				if name := w.boundName(n); name != "" {
 					if computed := n.ChildByFieldName("computed_value"); computed != nil {
-						defs = append(defs, definitionFromUnit(w.propertyUnit(n, computed, name, ctx{enclosing: c.enclosing, testClass: c.testClass})))
+						u := w.propertyUnit(n, computed, name, ctx{enclosing: c.enclosing, testClass: c.testClass})
+						defs = append(defs, definitionFromUnit(u, c.insideCallable))
 					} else {
-						pos := n.StartPosition()
-						defs = append(defs, Definition{
-							Name: name, Kind: string(tree.KindProperty), File: w.file,
-							Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1,
-							Enclosing: strings.Join(c.enclosing, "."), Signature: w.storedPropertySignature(n, name),
-							Test: w.test || c.testClass,
-						})
+						addDefinition(n, c, name, string(tree.KindProperty), w.storedPropertySignature(n, name), nil)
 					}
 				}
 			}
@@ -232,23 +259,41 @@ func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration
 			if k == "willset_clause" {
 				name = "willSet"
 			}
-			pos := n.StartPosition()
-			defs = append(defs, Definition{
-				Name: name, Kind: string(tree.KindProperty), File: w.file,
-				Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1,
-				Enclosing: strings.Join(c.enclosing, "."), Signature: name,
-				Test: w.test || c.testClass,
-			})
+			addDefinition(n, c, name, string(tree.KindProperty), name, nil)
 			childContext.insideCallable = true
 		case "protocol_property_declaration":
 			if name := w.boundName(n); name != "" {
-				pos := n.StartPosition()
+				addDefinition(n, c, name, string(tree.KindProperty), w.storedPropertySignature(n, name), nil)
+			}
+		case "enum_entry":
+			for i := range n.ChildCount() {
+				name := n.Child(i)
+				if n.FieldNameForChild(uint32(i)) != "name" {
+					continue
+				}
+				end := n.EndByte()
+				for j := i + 1; j < n.ChildCount(); j++ {
+					child := n.Child(j)
+					if !child.IsNamed() && w.text(child) == "," {
+						end = child.StartByte()
+						break
+					}
+				}
+				pos := name.StartPosition()
+				signature := collapse(strings.TrimSpace(string(w.src[name.StartByte():end])))
 				defs = append(defs, Definition{
-					Name: name, Kind: string(tree.KindProperty), File: w.file,
-					Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1,
-					Enclosing: strings.Join(c.enclosing, "."), Signature: w.storedPropertySignature(n, name),
-					Test: w.test || c.testClass,
+					Name: w.text(name), Kind: "case", File: w.file, Line: int(pos.Row) + 1, EndLine: int(pos.Row) + 1,
+					Col: int(pos.Column) + 1, Enclosing: strings.Join(c.enclosing, "."), Signature: signature,
+					Test: w.test || c.testClass, Nested: c.insideCallable, Visibility: w.visibility(n), Doc: w.docComment(n),
 				})
+			}
+		case "typealias_declaration", "associatedtype_declaration":
+			if name := w.declaredName(n); name != "" {
+				kind := "typealias"
+				if k == "associatedtype_declaration" {
+					kind = "associatedtype"
+				}
+				addDefinition(n, c, name, kind, collapse(w.text(n)), nil)
 			}
 		case "lambda_literal":
 			childContext.insideCallable = true
@@ -261,11 +306,25 @@ func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration
 	return defs, types
 }
 
-func definitionFromUnit(u *tree.Unit) Definition {
+func definitionFromUnit(u *tree.Unit, nested bool) Definition {
 	return Definition{
-		Name: u.Name, Kind: string(u.Kind), File: u.File, Line: u.Line, EndLine: u.EndLine,
+		Name: u.Name, Kind: string(u.Kind), File: u.File, Line: u.Line, EndLine: u.EndLine, Col: u.Col,
 		Enclosing: u.Enclosing, Signature: u.Signature, Labels: append([]string(nil), u.Labels...), Test: u.Test,
+		Nested: nested, Visibility: u.Visibility, Doc: u.Doc,
 	}
+}
+
+func (w *walker) declaredName(n *sitter.Node) string {
+	if name := n.ChildByFieldName("name"); name != nil {
+		return w.text(name)
+	}
+	for i := range n.NamedChildCount() {
+		child := n.NamedChild(i)
+		if kindOf(child) == "simple_identifier" || kindOf(child) == "type_identifier" {
+			return w.text(child)
+		}
+	}
+	return ""
 }
 
 func (w *walker) storedPropertySignature(n *sitter.Node, name string) string {
@@ -319,6 +378,23 @@ func typeIdentity(name string) string {
 	if before, _, ok := strings.Cut(name, " where "); ok {
 		name = before
 	}
+	var identity strings.Builder
+	depth := 0
+	for _, r := range name {
+		switch r {
+		case '<':
+			depth++
+		case '>':
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth == 0 {
+				identity.WriteRune(r)
+			}
+		}
+	}
+	name = strings.TrimSpace(identity.String())
 	if i := strings.LastIndex(name, "."); i >= 0 {
 		name = name[i+1:]
 	}
@@ -346,41 +422,63 @@ func (w *walker) typeDeclarationKind(n *sitter.Node) string {
 func (w *walker) references(root *sitter.Node) []Reference {
 	lines := strings.Split(string(w.src), "\n")
 	var out []Reference
-	var visit func(n, parent *sitter.Node, field string, binding, afterDot, declarationName, inTest bool)
-	visit = func(n, parent *sitter.Node, field string, binding, afterDot, declarationName, inTest bool) {
+	type context struct {
+		binding, afterDot, declarationName bool
+		inTest, testClass                  bool
+		enclosing                          []string
+		testOwner                          string
+	}
+	var visit func(n, parent *sitter.Node, field string, c context)
+	visit = func(n, parent *sitter.Node, field string, c context) {
 		k := kindOf(n)
-		declarationName = declarationName || (parent != nil && field == "name" && declarationNameKind(kindOf(parent)))
+		c.declarationName = c.declarationName || (parent != nil && field == "name" && declarationNameKind(kindOf(parent)))
 		pos := n.StartPosition()
-		if k == "simple_identifier" && !declarationName {
-			role := w.nameRole(parent, field, binding, afterDot)
+		if k == "simple_identifier" && !c.declarationName && !isGenericParameterName(parent, n, field) {
+			role := w.nameRole(parent, field, c.binding, c.afterDot)
 			if role != tree.RoleDecl && role != tree.RoleLabel {
 				row := int(pos.Row)
 				text := ""
 				if row >= 0 && row < len(lines) {
 					text = strings.TrimSpace(lines[row])
 				}
-				out = append(out, Reference{Name: w.text(n), Kind: "value", File: w.file, Line: row + 1, Col: int(pos.Column) + 1, Text: text, Test: inTest})
+				out = append(out, Reference{
+					Name: w.text(n), Kind: "expression_position", File: w.file, Line: row + 1, Col: int(pos.Column) + 1,
+					Text: text, Test: c.inTest, TestOwner: c.testOwner,
+				})
 			}
-		} else if k == "type_identifier" && !declarationName && !isTypeParameterName(parent, field) {
+		} else if k == "type_identifier" && !c.declarationName && !isGenericParameterName(parent, n, field) {
 			row := int(pos.Row)
 			text := ""
 			if row >= 0 && row < len(lines) {
 				text = strings.TrimSpace(lines[row])
 			}
-			out = append(out, Reference{Name: w.text(n), Kind: "type", File: w.file, Line: row + 1, Col: int(pos.Column) + 1, Text: text, Test: inTest})
+			out = append(out, Reference{
+				Name: w.text(n), Kind: "type_position", File: w.file, Line: row + 1, Col: int(pos.Column) + 1,
+				Text: text, Test: c.inTest, TestOwner: c.testOwner,
+			})
 		}
 
-		childTest := inTest
-		childDeclName := declarationName
-		if isTypeDeclarationKind(k) && w.inheritsTestCase(n) {
-			childTest = true
+		childContext := c
+		if isTypeDeclarationKind(k) {
+			if rawName := w.typeName(n); rawName != "" {
+				childContext.enclosing = append(append([]string(nil), c.enclosing...), rawName)
+			}
+			if w.inheritsTestCase(n) {
+				childContext.testClass = true
+				childContext.inTest = true
+			}
 		}
-		if k == "function_declaration" && w.isTestFunc(n, ctx{enclosing: []string{"_"}, testClass: inTest}) {
-			childTest = true
+		if k == "function_declaration" && w.isTestFunc(n, ctx{enclosing: c.enclosing, testClass: c.testClass}) {
+			childContext.inTest = true
+			unit := w.declUnit(n, ctx{enclosing: c.enclosing, testClass: c.testClass})
+			childContext.testOwner = unit.Signature
+			if enclosing := strings.Join(c.enclosing, "."); enclosing != "" {
+				childContext.testOwner = enclosing + "." + unit.Signature
+			}
 		}
 
 		inPattern := k == "pattern"
-		patternBinds := inPattern && binding
+		patternBinds := inPattern && c.binding
 		if inPattern {
 			for i := range n.ChildCount() {
 				if isBindingKeyword(n.Child(i), w.src) {
@@ -411,18 +509,22 @@ func (w *walker) references(root *sitter.Node) []Reference {
 			childField := n.FieldNameForChild(uint32(i))
 			forItem := k == "for_statement" && childField == "item" && !hasToken(child, "case")
 			childBinding := patternBinds || (clause && (kindOf(child) == "pattern" || childField == "bound_identifier")) || forItem
-			visit(child, n, childField, childBinding, prevDot, childDeclName, childTest)
+			nextContext := childContext
+			nextContext.binding = childBinding
+			nextContext.afterDot = prevDot
+			nextContext.declarationName = c.declarationName
+			visit(child, n, childField, nextContext)
 			prevDot = !child.IsNamed() && w.text(child) == "."
 		}
 	}
-	visit(root, nil, "", false, false, false, w.test)
+	visit(root, nil, "", context{inTest: w.test})
 	return out
 }
 
 func declarationNameKind(kind string) bool {
 	switch kind {
 	case "class_declaration", "protocol_declaration",
-		"function_declaration", "init_declaration", "deinit_declaration", "subscript_declaration", "property_declaration",
+		"function_declaration", "protocol_function_declaration", "init_declaration", "deinit_declaration", "subscript_declaration", "property_declaration",
 		"protocol_property_declaration", "typealias_declaration", "associatedtype_declaration", "type_parameter", "enum_entry", "macro_declaration":
 		return true
 	default:
@@ -432,6 +534,17 @@ func declarationNameKind(kind string) bool {
 
 func isTypeParameterName(parent *sitter.Node, field string) bool {
 	return parent != nil && kindOf(parent) == "type_parameter" && field == "name"
+}
+
+func isGenericParameterName(parent, n *sitter.Node, field string) bool {
+	if parent == nil || n == nil || (kindOf(parent) != "type_parameter" && kindOf(parent) != "type_parameter_pack") {
+		return false
+	}
+	if field == "name" || isTypeParameterName(parent, field) {
+		return true
+	}
+	first := parent.NamedChild(0)
+	return first != nil && first.StartByte() == n.StartByte() && first.EndByte() == n.EndByte()
 }
 
 // calleeName は呼び出しの先頭の式から呼ばれる名前を取る (`f`・`a.b.f`・`a?.f`)。それ以外 (`(f)()`・`x[0]()`・`f()()`) は空。

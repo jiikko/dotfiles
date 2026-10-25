@@ -106,17 +106,72 @@ let interpolated = "\(box.value)"
 	for _, r := range got.References {
 		refs[r.Name] = append(refs[r.Name], r)
 	}
-	if got := refs["Box"]; len(got) != 1 || got[0].Kind != "type" {
+	if got := refs["Box"]; len(got) != 1 || got[0].Kind != "type_position" {
 		t.Errorf("Box の宣言・extension は外し、型注釈だけを数える: %#v", got)
 	}
-	if got := refs["helper"]; len(got) != 1 || got[0].Kind != "value" {
+	if got := refs["helper"]; len(got) != 1 || got[0].Kind != "expression_position" {
 		t.Errorf("関数の宣言・コメント・文字列は外し、呼び出しだけを数える: %#v", got)
 	}
-	if got := refs["stored"]; len(got) != 1 || got[0].Kind != "value" {
+	if got := refs["stored"]; len(got) != 1 || got[0].Kind != "expression_position" {
 		t.Errorf("property の宣言・コメント・文字列は外し、computed body の参照だけを数える: %#v", got)
 	}
 	if got := refs["box"]; len(got) != 2 {
 		t.Errorf("通常の値と文字列補間の値を数える: %#v", got)
+	}
+}
+
+func TestReferencesSkipDeclarationNamesButKeepUses(t *testing.T) {
+	src := `typealias AliasOnly = Int
+protocol Contract {
+    associatedtype AssociatedOnly
+    func protocolMethod(_ value: AssociatedOnly)
+}
+enum State { case failed }
+struct Box<TOnly> {
+    var propertyOnly: Int = 0
+    func method(externalOnly externalParameter: Int, internalOnly: Int) {
+        let localOnly = 1
+        var mutableOnly = localOnly
+        let optionalOnly: Int? = nil
+        if let conditionalOnly = optionalOnly { _ = conditionalOnly }
+        guard let guardedOnly = optionalOnly else { return }; _ = guardedOnly
+        for loopOnly in [mutableOnly] { _ = loopOnly }
+        let closure = [1].map { closureOnly in closureOnly }
+        receive(labelOnly: externalParameter)
+        self.propertyOnly
+        self.memberOnly
+        let state = State.failed
+        let alias: AliasOnly = 1
+        let generic: TOnly? = nil
+    }
+}
+`
+	p, err := NewParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	p.CollectRefs = true
+	got, err := p.Parse("Sources/Names.swift", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, r := range got.References {
+		counts[r.Name]++
+	}
+	wants := map[string]int{
+		"AliasOnly": 1, "AssociatedOnly": 1, "TOnly": 1,
+		"method": 0, "protocolMethod": 0,
+		"externalOnly": 0, "externalParameter": 1, "internalOnly": 0, "labelOnly": 0,
+		"propertyOnly": 1, "memberOnly": 1, "failed": 1,
+		"localOnly": 1, "mutableOnly": 1, "optionalOnly": 2,
+		"conditionalOnly": 1, "guardedOnly": 1, "loopOnly": 1, "closureOnly": 1,
+	}
+	for name, want := range wants {
+		if counts[name] != want {
+			t.Errorf("%s の参照数: got %d want %d (all=%v)", name, counts[name], want, counts)
+		}
 	}
 }
 

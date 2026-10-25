@@ -49,27 +49,36 @@ func ParseDefQuery(value string) (DefQuery, error) {
 
 // DefinitionRecord is a def result assembled from adapter metadata and source lines.
 type DefinitionRecord struct {
-	Name      string
-	Kind      string
-	File      string
-	Line      int
-	EndLine   int
-	Enclosing string
-	Signature string
-	Labels    []string
-	Test      bool
+	Name       string
+	Kind       string
+	File       string
+	Line       int
+	EndLine    int
+	Col        int
+	Enclosing  string
+	Signature  string
+	Labels     []string
+	Test       bool
+	Nested     bool
+	Visibility string
+	Doc        string
 }
 
 // TypeRecord is a declaration of a type body, kept separate from comparison units.
 type TypeRecord struct {
-	Name      string
-	Kind      string
-	File      string
-	Line      int
-	EndLine   int
-	Enclosing string
-	Signature string
-	Test      bool
+	Name       string
+	Kind       string
+	File       string
+	Line       int
+	EndLine    int
+	Col        int
+	Enclosing  string
+	Scope      string
+	Signature  string
+	Test       bool
+	Nested     bool
+	Visibility string
+	Doc        string
 }
 
 // DefinitionEntry is one def result. Source is omitted for type declarations, which use Members.
@@ -99,7 +108,7 @@ type DefinitionsSummary struct {
 func BuildDefinitions(query string, q DefQuery, defs []DefinitionRecord, types []TypeRecord, units []*tree.Unit, calls []tree.Call, sources map[string][]byte, maxLines int, shared func(string) bool) DefinitionsSummary {
 	s := DefinitionsSummary{Query: query, Entries: []DefinitionEntry{}}
 	for _, d := range defs {
-		if d.Name != q.Name || (q.Type != "" && !sameTypeScope(d.Enclosing, q.Type)) || !labelsMatch(q.Labels, d.Labels) {
+		if d.Name != q.Name || (q.Type != "" && (d.Nested || !sameTypeScope(d.Enclosing, q.Type))) || !labelsMatch(q.Labels, d.Labels) {
 			continue
 		}
 		e := DefinitionEntry{
@@ -111,14 +120,13 @@ func BuildDefinitions(query string, q DefQuery, defs []DefinitionRecord, types [
 	}
 	if q.Type == "" && q.Labels == nil {
 		for _, d := range types {
-			if d.Name != q.Name {
+			if !sameTypeScope(d.Scope, q.Name) {
 				continue
 			}
-			members := typeMembers(d, units)
-			index := BuildIndex(members, calls, Query{File: d.File, Shared: shared})
+			members := typeMembers(d, defs, types, units, calls, shared)
 			e := DefinitionEntry{
 				Name: d.Name, Kind: d.Kind, File: d.File, Line: d.Line, EndLine: d.EndLine,
-				Enclosing: d.Enclosing, Signature: d.Signature, Test: d.Test, Members: index.Entries,
+				Enclosing: d.Enclosing, Signature: d.Signature, Test: d.Test, Members: members,
 			}
 			s.Entries = append(s.Entries, e)
 		}
@@ -153,35 +161,88 @@ func labelsMatch(query, got []string) bool {
 }
 
 func sameTypeScope(got, want string) bool {
-	got, want = cleanTypeScope(got), cleanTypeScope(want)
+	got, want = normalizeTypeScope(got), normalizeTypeScope(want)
 	return got == want || strings.HasSuffix(got, "."+want)
 }
 
-func cleanTypeScope(value string) string {
+func normalizeTypeScope(value string) string {
+	value = strings.TrimSpace(value)
 	value, _, _ = strings.Cut(value, " where ")
-	return strings.TrimSpace(value)
+	var out strings.Builder
+	depth := 0
+	for _, r := range value {
+		switch r {
+		case '<':
+			depth++
+		case '>':
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth == 0 {
+				out.WriteRune(r)
+			}
+		}
+	}
+	return strings.Join(strings.Fields(out.String()), " ")
 }
 
-func typeMembers(d TypeRecord, units []*tree.Unit) []*tree.Unit {
-	want := cleanTypeScope(strings.Trim(strings.Join(nonEmpty(d.Enclosing, d.Name), "."), "."))
+func typeMembers(d TypeRecord, defs []DefinitionRecord, types []TypeRecord, units []*tree.Unit, calls []tree.Call, shared func(string) bool) []IndexEntry {
 	var members []*tree.Unit
 	for _, u := range units {
-		if u.Kind == tree.KindClosure || u.Line < d.Line || u.EndLine > d.EndLine || !sameTypeScope(u.Enclosing, want) {
+		if u.Kind == tree.KindClosure || u.Line < d.Line || u.EndLine > d.EndLine || !sameTypeScope(u.Enclosing, d.Scope) {
 			continue
 		}
 		members = append(members, u)
 	}
-	return members
+	entries := BuildIndex(members, calls, Query{File: d.File, Shared: shared}).Entries
+	for _, member := range defs {
+		if member.Nested || member.File != d.File || member.Line < d.Line || member.EndLine > d.EndLine || !sameTypeScope(member.Enclosing, d.Scope) {
+			continue
+		}
+		if hasIndexUnit(members, member) {
+			continue
+		}
+		entries = append(entries, syntheticMember(member, shared))
+	}
+	for _, nested := range types {
+		if nested.Nested || nested.File != d.File || nested.Line < d.Line || nested.EndLine > d.EndLine || !sameTypeScope(nested.Enclosing, d.Scope) {
+			continue
+		}
+		entries = append(entries, IndexEntry{
+			UnitRef: UnitRef{File: nested.File, Line: nested.Line, Col: nested.Col, Kind: nested.Kind,
+				Name: nested.Name, Signature: nested.Kind + " " + nested.Signature, Enclosing: d.Scope,
+				Test: nested.Test, Visibility: nested.Visibility},
+			Doc: nested.Doc, Shared: shared != nil && shared(nested.File),
+		})
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].File != entries[j].File {
+			return entries[i].File < entries[j].File
+		}
+		if entries[i].Line != entries[j].Line {
+			return entries[i].Line < entries[j].Line
+		}
+		return entries[i].Col < entries[j].Col
+	})
+	return entries
 }
 
-func nonEmpty(parts ...string) []string {
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part != "" {
-			out = append(out, part)
+func hasIndexUnit(units []*tree.Unit, definition DefinitionRecord) bool {
+	for _, unit := range units {
+		if unit.File == definition.File && unit.Line == definition.Line && unit.Name == definition.Name {
+			return true
 		}
 	}
-	return out
+	return false
+}
+
+func syntheticMember(d DefinitionRecord, shared func(string) bool) IndexEntry {
+	return IndexEntry{
+		UnitRef: UnitRef{File: d.File, Line: d.Line, Col: d.Col, Kind: d.Kind, Name: d.Name,
+			Signature: d.Signature, Enclosing: d.Enclosing, Test: d.Test, Visibility: d.Visibility},
+		Doc: d.Doc, Shared: shared != nil && shared(d.File),
+	}
 }
 
 func sourceRange(source []byte, first, last, maxLines int) ([]string, bool, int) {
@@ -233,13 +294,14 @@ func DefinitionsText(w io.Writer, s DefinitionsSummary, limit int) error {
 
 // ReferenceRecord is one syntax-tree identifier occurrence collected by an adapter.
 type ReferenceRecord struct {
-	Name string
-	Kind string
-	File string
-	Line int
-	Col  int
-	Text string
-	Test bool
+	Name      string
+	Kind      string
+	File      string
+	Line      int
+	Col       int
+	Text      string
+	Test      bool
+	TestOwner string
 }
 
 // ReferenceEntry is one refs result.
@@ -275,6 +337,8 @@ func BuildReferences(query string, references []ReferenceRecord, units []*tree.U
 		if u := enclosing(byFile[r.File], r.Line); u != nil {
 			e.Enclosing = label(ref(u))
 			e.Test = e.Test || u.Test
+		} else {
+			e.Enclosing = r.TestOwner
 		}
 		s.Entries = append(s.Entries, e)
 	}
@@ -314,9 +378,9 @@ func ReferencesText(w io.Writer, s ReferencesSummary, limit int) error {
 		if e.Test {
 			test = " [test]"
 		}
-		kind := "値"
-		if e.Kind == "type" {
-			kind = "型"
+		kind := "式の位置"
+		if e.Kind == "type_position" {
+			kind = "型の位置"
 		}
 		fmt.Fprintf(w, "%s:%d %s%s [%s] | %s\n", e.File, e.Line, caller, test, kind, e.Text)
 	}

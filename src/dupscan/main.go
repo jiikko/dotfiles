@@ -38,7 +38,7 @@ explain: 指した単位を段ごとに潰した形・ハッシュと、比べ�
 index: 名前の付いた単位を 1 行 1 件で出す。書く前に、名前・戻り値の型・引数の型・doc の語で同じものが既にないかを引く。-file でそのファイルの一覧。
 callers: 名前 (と引数ラベル) が当たる呼び出しの箇所と、それを囲む単位を出す (型を解決しない近似)。
 def: 完全一致する定義を本体つきで出す。型は宣言とメンバー一覧、Type.member と引数ラベルで絞れる。
-refs: 型・値としての識別子の参照を、それを囲む単位つきで出す (コメント・文字列は除く)。
+refs: 型・式の位置にある識別子の参照を、それを囲む単位つきで出す (コメント・文字列は除く)。
 どちらも調べる repo には何も書かない。
 
 flags:
@@ -87,6 +87,37 @@ func parseFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool
 		dirs = []string{"."}
 	}
 	return dirs, 0, true
+}
+
+func parseInterspersedFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool) {
+	flags := make([]string, 0, len(args))
+	positionals := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			positionals = append(positionals, args[i:]...)
+			break
+		}
+		if len(arg) > 1 && arg[0] == '-' {
+			flags = append(flags, arg)
+			name, _, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+			if hasValue {
+				continue
+			}
+			if f := fs.Lookup(name); f != nil {
+				boolFlag, isBool := f.Value.(interface{ IsBoolFlag() bool })
+				if !isBool || !boolFlag.IsBoolFlag() {
+					if i+1 < len(args) {
+						i++
+						flags = append(flags, args[i])
+					}
+				}
+			}
+			continue
+		}
+		positionals = append(positionals, arg)
+	}
+	return parseFlags(fs, append(flags, positionals...))
 }
 
 // narrowed は、段か下限を既定から変えた走査か (組が作られないだけの除外を「効いていない」と言えない)。

@@ -52,6 +52,10 @@ func TestDefMatchesExactNamesTypesAndLabels(t *testing.T) {
 	if rc != 0 || !strings.Contains(out, "… 他 1 件") {
 		t.Errorf("-limit は出力する定義を切る: rc=%d out=%q stderr=%q", rc, out, errs)
 	}
+	rc, out, errs = def(t, "combine", "-limit", "1", root)
+	if rc != 0 || !strings.Contains(out, "… 他 1 件") {
+		t.Errorf("定義名の後の -limit も受け付ける: rc=%d out=%q stderr=%q", rc, out, errs)
+	}
 	rc, out, errs = def(t, "missing", root)
 	if rc != 1 || out != "dupscan def: missing の定義なし\n" || errs != "" {
 		t.Errorf("定義なしは 1 行と rc=1: rc=%d out=%q stderr=%q", rc, out, errs)
@@ -97,6 +101,88 @@ func TestDefFindsInitializersAndSubscriptsByLabels(t *testing.T) {
 	}
 }
 
+func TestDefListsProtocolRequirementsCasesAliasesAndNestedTypes(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/Outline.swift": `protocol StorageContract {
+    associatedtype Payload
+    var transferWireCapabilities: String { get }
+    init(configuration: Int)
+    subscript(index: Int) -> Payload { get }
+    func send(payload: Payload)
+}
+enum TransferStatus {
+    case failed, ready
+}
+struct Container {
+    let stored: Int = 1
+    typealias Alias = String
+    struct Inner {}
+}
+`})
+	rc, out, errs := def(t, "StorageContract", root)
+	for _, want := range []string{
+		"StorageContract.associatedtype Payload", "StorageContract.var transferWireCapabilities: String",
+		"StorageContract.init(configuration: Int)", "StorageContract.subscript(index: Int) -> Payload", "StorageContract.send(payload: Payload)",
+	} {
+		if rc != 0 || !strings.Contains(out, want) {
+			t.Errorf("protocol 要件を outline に含める %q: rc=%d out=%q stderr=%q", want, rc, out, errs)
+		}
+	}
+	rc, out, errs = def(t, "TransferStatus", root)
+	if rc != 0 || !strings.Contains(out, "TransferStatus.failed") || !strings.Contains(out, "TransferStatus.ready") {
+		t.Errorf("enum case を outline に含める: rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+	for _, tc := range []struct{ query, want string }{
+		{"TransferStatus.failed", "TransferStatus.failed"},
+		{"failed", "TransferStatus.failed"},
+		{"ready", "TransferStatus.ready"},
+		{"Alias", "typealias Alias = String"},
+		{"Payload", "associatedtype Payload"},
+	} {
+		rc, out, errs = def(t, tc.query, root)
+		if rc != 0 || !strings.Contains(out, tc.want) {
+			t.Errorf("case / typealias / associatedtype を def で引く %q: rc=%d out=%q stderr=%q", tc.query, rc, out, errs)
+		}
+	}
+	rc, out, errs = def(t, "Container", root)
+	if rc != 0 || !strings.Contains(out, "Container.let stored: Int") || !strings.Contains(out, "Container.typealias Alias = String") || !strings.Contains(out, "Container.struct Inner") {
+		t.Errorf("保存 property・typealias・入れ子の型を outline に含める: rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+}
+
+func TestDefTypeMemberMatchesGenericAndConditionalScopes(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/Generic.swift": `protocol Marker {}
+struct Box<T> where T: Marker {
+    func member() {}
+    func outer() {
+        func nested() {}
+    }
+}
+extension Box where T: Marker {
+    func constrained() {}
+}
+struct Outer {
+    struct Bar { func inside() {} }
+}
+extension Outer.Bar {
+    func extensionMember() {}
+}
+`})
+	for _, query := range []string{"Box.member", "Box.constrained", "Outer.Bar.inside", "Outer.Bar.extensionMember"} {
+		rc, out, errs := def(t, query, root)
+		if rc != 0 || !strings.Contains(out, query[strings.LastIndex(query, ".")+1:]) {
+			t.Errorf("generic / where / qualified extension scope %q: rc=%d out=%q stderr=%q", query, rc, out, errs)
+		}
+	}
+	rc, out, errs := def(t, "Box.nested", root)
+	if rc != 1 || !strings.Contains(out, "定義なし") {
+		t.Errorf("Type.member はメソッド内の nested func を除く: rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+	rc, out, errs = def(t, "nested", root)
+	if rc != 0 || !strings.Contains(out, "nested()") {
+		t.Errorf("nested func は名前だけなら引ける: rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+}
+
 func TestDefTruncatesSourceAndEmitsJSON(t *testing.T) {
 	root := repoWith(t, map[string]string{"Sources/Box.swift": definitionsSource})
 	rc, out, errs := def(t, "-max-lines", "2", "longBody", root)
@@ -123,6 +209,7 @@ func TestRefsIgnoreDeclarationsCommentsAndStringsAndCountInterpolation(t *testin
 		"Sources/Refs.swift": `struct Box {
     func read() { target() }
 }
+
 func use(_ value: Box) { let result = value.read() }
 let interpolated = "\(target)"
 // target and Box are only words here.
@@ -134,18 +221,22 @@ let literal = "target Box"
 `,
 	})
 	rc, out, errs := refs(t, "Box", root)
-	want := "Sources/Refs.swift:4 use(_ value: Box) [型] | func use(_ value: Box) { let result = value.read() }\n" +
-		"Tests/BoxTests.swift:2 BoxChecks.check(_ item: Box) [test] [型] | func check(_ item: Box) { print(item) }\n"
+	want := "Sources/Refs.swift:5 use(_ value: Box) [型の位置] | func use(_ value: Box) { let result = value.read() }\n" +
+		"Tests/BoxTests.swift:2 BoxChecks.check(_ item: Box) [test] [型の位置] | func check(_ item: Box) { print(item) }\n"
 	if rc != 0 || out != want {
 		t.Errorf("型参照は宣言・コメント・文字列を除き prod を先に出す: rc=%d out=%q want=%q stderr=%q", rc, out, want, errs)
 	}
 	rc, out, errs = refs(t, "target", root)
-	if rc != 0 || strings.Count(out, "[値]") != 2 || !strings.Contains(out, "Sources/Refs.swift:5") || strings.Contains(out, ":1 ") {
-		t.Errorf("値参照は呼び出しと文字列補間を数え、宣言・コメント・通常文字列を除く: rc=%d out=%q stderr=%q", rc, out, errs)
+	if rc != 0 || strings.Count(out, "[式の位置]") != 2 || !strings.Contains(out, "Sources/Refs.swift:6") || strings.Contains(out, ":1 ") {
+		t.Errorf("呼び出しと文字列補間を数え、宣言・コメント・通常文字列を除く: rc=%d out=%q stderr=%q", rc, out, errs)
 	}
 	rc, out, errs = refs(t, "-limit", "1", "target", root)
 	if rc != 0 || !strings.Contains(out, "… 他 1 件") {
 		t.Errorf("refs の -limit は出力する参照を切る: rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+	rc, out, errs = refs(t, "target", "-limit", "1", root)
+	if rc != 0 || !strings.Contains(out, "… 他 1 件") {
+		t.Errorf("名前の後の -limit も受け付ける: rc=%d out=%q stderr=%q", rc, out, errs)
 	}
 	rc, out, errs = refs(t, "-format", "json", "target", root)
 	var refJSON struct {
@@ -154,11 +245,41 @@ let literal = "target Box"
 			Kind string `json:"kind"`
 		} `json:"entries"`
 	}
-	if err := json.Unmarshal([]byte(out), &refJSON); rc != 0 || err != nil || refJSON.Matches != 2 || len(refJSON.Entries) != 2 || refJSON.Entries[0].Kind != "value" {
-		t.Errorf("refs JSON は型・値の別と件数を出す: rc=%d err=%v json=%+v stderr=%q", rc, err, refJSON, errs)
+	if err := json.Unmarshal([]byte(out), &refJSON); rc != 0 || err != nil || refJSON.Matches != 2 || len(refJSON.Entries) != 2 || refJSON.Entries[0].Kind != "expression_position" {
+		t.Errorf("refs JSON は構文上の位置と件数を出す: rc=%d err=%v json=%+v stderr=%q", rc, err, refJSON, errs)
 	}
 	rc, out, errs = refs(t, "absent", root)
 	if rc != 1 || out != "dupscan refs: absent の参照なし\n" || errs != "" {
 		t.Errorf("参照なしは 1 行と rc=1: rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+}
+
+func TestRefsUseSyntacticPositionLabelsAndTestFunctionNames(t *testing.T) {
+	root := repoWith(t, map[string]string{
+		"Sources/Positions.swift": `struct Foo { static let shared = 1 }
+func makeFoo() {
+    _ = Foo()
+    _ = Foo.shared
+}
+`,
+		"Tests/RefsTests.swift": `import Testing
+@Test func swiftTest() { target }
+final class XCTestFixture: XCTestCase {
+    func testValue() { target }
+}
+`,
+	})
+	rc, out, errs := refs(t, "Foo", root)
+	if rc != 0 || strings.Count(out, "[式の位置]") != 2 || strings.Contains(out, "[型の位置]") {
+		t.Errorf("型名でも式中の出現は式の位置と表示する: rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+	rc, out, errs = refs(t, "shared", root)
+	if rc != 0 || !strings.Contains(out, "[式の位置]") {
+		t.Errorf("メンバー参照は式の位置として数える: rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+	rc, out, errs = refs(t, "target", root)
+	if rc != 0 || !strings.Contains(out, "swiftTest() [test] [式の位置]") ||
+		!strings.Contains(out, "XCTestFixture.testValue() [test] [式の位置]") || strings.Contains(out, "(単位の外)") {
+		t.Errorf("@Test / XCTest の参照はテスト関数名を囲む単位として出す: rc=%d out=%q stderr=%q", rc, out, errs)
 	}
 }

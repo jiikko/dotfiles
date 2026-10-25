@@ -33,7 +33,9 @@ bin/dupscan callers 'make(x:_:)'              # 呼び出しの箇所と、そ�
 bin/dupscan def StorageOperationLockRegistry  # 定義の本体。型なら宣言とメンバー一覧
 bin/dupscan def -max-lines 120 DropboxClient.upload
 bin/dupscan def 'make(x:_:)'                  # 引数ラベルで完全一致
-bin/dupscan refs StorageOperationLockRegistry # 型・値としての参照
+bin/dupscan def ObjectStorageProtocol -limit 10
+bin/dupscan refs StorageOperationLockRegistry # 識別子の出現
+bin/dupscan refs StorageStatsEvent -limit 10
 ```
 
 `callers` は呼び出しの箇所を `file:line 呼び出し元 [test] | その行` で出す (コメント・文字列の中は数えない。テスト関数の中も数え、呼び出し元は「(単位の外)」)。
@@ -42,11 +44,14 @@ bin/dupscan refs StorageOperationLockRegistry # 型・値としての参照
 
 `def` は名前の完全一致で定義を探す。`Type.member` で型を絞り、`make(x:_:)` のように引数ラベルも指定できる。
 関数・初期化子・property・subscript は `file:line-endLine 型.署名` の見出しとソースを出し、既定 80 行を超えると残りの行数を示す。
-struct / class / enum / protocol / actor / extension は宣言とメンバーの一覧を出す。型の extension は宣言ごとに表示する。
+struct / class / enum / protocol / actor / extension は宣言とメンバーの一覧を出す。protocol 要件・保存 property・enum case・typealias・associatedtype・入れ子の型も一覧に含める。
+型の extension は宣言ごとに表示する。`Type.member` は generic 引数と `where` 句を除いた型名で照合するので、`Box<T> where T: P` は `Box.member`、条件付き extension は `Box.member`、`extension Foo.Bar` は `Foo.Bar.member` で引ける。
+`Type.member` はその型の直接メンバーを探す。メソッド内の入れ子の `func` は対象外で、名前だけの `def` なら引ける。
 同名の定義は全件を候補にし、text は `-limit` の既定 20 件まで出す (`0` は全部)。`-format json` は全件を返す。
 
-`refs` は型の位置と値の位置にある識別子の出現を `file:line 囲む単位 [test] [型|値] | その行` で出す。
-宣言名・コメント・文字列本文は含めず、文字列補間の中の識別子は値の参照として数える。prod を test より先に並べる。
+`refs` は識別子の構文上の位置を `file:line 囲む単位 [test] [型の位置|式の位置] | その行` で出す。これは意味上の型/値判定ではない。`Foo(...)` や `Foo.shared` の `Foo` も、構文上は式の位置として出る。
+宣言名・呼び出しの引数ラベル・コメント・文字列本文は含めず、文字列補間の中の識別子は式の位置として数える。prod を test より先に並べる。
+`@Test` / XCTest 関数の中の参照はその関数名を囲む単位として出す。メソッド内の入れ子の `func` は `Type.member` 照合の対象外。
 text は `-limit` の既定 20 件まで (`0` は全部)、JSON は全件を返す。
 
 report の text は、組を大きい順 (メンバーのうち最大の単位の節の数) に並べ、先頭に「ファイルの組」(同じファイルの組み合わせに組が 2 つ以上あるもの) を件数と節の合計の大きい順に 5 行出す。

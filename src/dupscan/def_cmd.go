@@ -21,7 +21,7 @@ func runDef(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, usage)
 		fs.PrintDefaults()
 	}
-	_, rc, ok := parseFlags(fs, args)
+	_, rc, ok := parseInterspersedFlags(fs, args)
 	if !ok {
 		return rc
 	}
@@ -60,15 +60,17 @@ func runDef(args []string, stdout, stderr io.Writer) int {
 	defs := make([]report.DefinitionRecord, 0, len(got.definitions))
 	for _, d := range got.definitions {
 		defs = append(defs, report.DefinitionRecord{
-			Name: d.Name, Kind: d.Kind, File: d.File, Line: d.Line, EndLine: d.EndLine,
+			Name: d.Name, Kind: d.Kind, File: d.File, Line: d.Line, EndLine: d.EndLine, Col: d.Col,
 			Enclosing: d.Enclosing, Signature: d.Signature, Labels: d.Labels, Test: d.Test,
+			Nested: d.Nested, Visibility: d.Visibility, Doc: d.Doc,
 		})
 	}
 	types := make([]report.TypeRecord, 0, len(got.types))
 	for _, d := range got.types {
 		types = append(types, report.TypeRecord{
-			Name: d.Name, Kind: d.Kind, File: d.File, Line: d.Line, EndLine: d.EndLine,
-			Enclosing: d.Enclosing, Signature: d.Signature, Test: d.Test,
+			Name: d.Name, Kind: d.Kind, File: d.File, Line: d.Line, EndLine: d.EndLine, Col: d.Col,
+			Enclosing: d.Enclosing, Scope: d.Scope, Signature: d.Signature, Test: d.Test,
+			Nested: d.Nested, Visibility: d.Visibility, Doc: d.Doc,
 		})
 	}
 	summary := report.BuildDefinitions(pos[0], q, defs, types, got.units, got.calls, got.contents, *maxLines, cfg.InShared)
