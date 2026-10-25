@@ -36,3 +36,12 @@ Type-3 ([895](895-feat-dupscan-type3-candidates.md)) は後回しにしたので
 - 2026-10-24 895 を後回しにしたので、依存から外し、Type-3 の条件を 895 の着手時に回した
 - 2026-10-24 較正の相手に DualNoteApp を足し、2 つの repo で既定を決めることにした (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)
 - 2026-10-24 DualNoteApp での較正の進め方 (正解の一覧の作り方・規模の限界・決めた commit で測る) を書いた (ユーザーの問い 2026-10-24: DualNoteApp と obaket は使っている道具が同じか、検証環境にする障壁は)
+- 2026-10-25 DualNoteApp の重複の一覧 (report) の実用性を確かめた (ユーザーの問い: 重複一覧は使い物になるか。DualNoteApp 26860a4・cdd68f08 以降の版。書き込み 0):
+  - 既定 (関数の下限 10 節・クロージャ 20 節・L1〜L3) で組 133 (L1 115・L2 10・L3 8)・199 ファイル・2225 単位、1.8 秒。組の 83 が iOS と macOS にまたがり、31 が Shared の中、17 が 1 つの app の中。
+  - 関数と property の組 72 を本体まで読んで分けた (見積もり): **寄せる価値があるもの約 40** と **雑音約 32**。
+    - 価値がある側の大半は iOS と macOS の画面の処理の写し: `pastYearSection` (節 608)・App の `init` (364)・`editRow` (205)・`newTagForm` (169)・`applySearchQuery` (149)・`selectedSearchTags` (98)・`toggleTagInSearch` (82)・カレンダーの `cellBackground` (65) など。Shared へ寄せる候補として使える。Diary と Memo の ViewModel の補助 (`withEditingState` など 24 節) もここに数えた
+    - 雑音: 1 行の委譲 (`DiaryTagStore.save` と `TagStore.save`)・名前で意味を分けている同じ本体 (`createPermission` / `deletePermission`、`reset` / `applyLoadSuccess`)・テストの setUp / tearDown の定型・L3 の偶然の一致 (`shiftMonth` / `shiftYear`・`resolvedEditorTextColor` / `resolvedEditorBackgroundColor`)。節 20 未満の関数・property の組 23 は、見た限りほぼ全部この側
+  - クロージャの組 61 の多くは、同じ画面の写し (`MemoTabView.swift` ↔ `MemoColumn.swift` が 27 組・`MemoColumnDialogsModifier.swift` ↔ `MemoTabView.swift` が 7 組) の部品で、組ごとに並ぶと同じ事実が細切れに 30 行近く出る
+  - 下限を上げたときの組の数: 関数の下限 20 で 110・30 で 89。L3 を外すと (下限 20 で) 104
+  - **結論**: 一覧は使い物になる (寄せる価値のある写しを、特に iOS と macOS の画面の間で拾えている)。ただし既定のままでは約 4 分の 1 が雑音で、同じ画面の写しが細切れに並ぶ。
+    改善の候補 (未実装・ユーザーの判断待ち): ①関数・property の下限を 20 節に上げる (雑音の大半が消える。gate の誤って止める割合も同時に見直す) ②既定の段から L3 を外す ③組の一覧の前に「ファイルの組ごとの件数と節の合計」を出し、大きい写しから並べる (画面ごとの写しが 1 行で分かる)
