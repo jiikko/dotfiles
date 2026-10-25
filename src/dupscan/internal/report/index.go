@@ -27,7 +27,8 @@ type IndexEntry struct {
 	ParamTypes []string `json:"param_types,omitempty"`
 	Doc        string   `json:"doc,omitempty"`
 	// Calls は呼び出しの数 (名前と引数ラベルで当てる近似。callers と同じ当て方)。関数と初期化子だけ数え、それ以外は nil。
-	Calls *int `json:"calls,omitempty"`
+	// 欄の名前に approx を入れる: 型を解決しないので同名の別のメソッドも数えうる。text の "~" と同じく、読む側が正確な数と取り違えないため。
+	Calls *int `json:"calls_approx,omitempty"`
 	// Shared は共通の置き場所 (設定の shared) にある定義。
 	Shared bool `json:"shared,omitempty"`
 }

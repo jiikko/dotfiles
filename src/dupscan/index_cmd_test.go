@@ -129,6 +129,10 @@ func use() {
 	if _, out, _ := index(t, "-name", "label", root); strings.Contains(out, "呼び出し") {
 		t.Errorf("property は数えない: %q", out)
 	}
+	// JSON でも近似と分かる欄の名前で出す (text の "~" と同じ印)。
+	if _, out, _ := index(t, "-format", "json", "-name", "fill", root); !strings.Contains(out, `"calls_approx": 3`) || strings.Contains(out, `"calls"`) {
+		t.Errorf("JSON の呼び出しの数は calls_approx の欄で出す: %q", out)
+	}
 }
 
 // 設定の shared (共通の置き場所) の定義は、名前の一致の強さの次に先に並べ、[shared] と印を付ける (prod / test より強い)。
