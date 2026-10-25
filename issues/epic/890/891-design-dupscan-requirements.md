@@ -196,13 +196,13 @@ ERROR / MISSING ノードを含むファイルを数えた:
 
 - 道具の名前 (`dupscan` は仮)。重複の検出だけでなく探索 (907) にも使う道具なので、実態に合う名前に**実装が落ち着いてから rename する** (ユーザー 2026-10-24)
 - ~~自分で作る範囲~~ → **決めた** (2026-10-25。[901](done/901-research-dupscan-existing-tools.md) の実測): 正規化と組分けは自作のまま続ける。jscpd は直書きとプロパティを読む版を結ばず、既定の上限で大きいテストファイルを黙って落とす。ast-grep は形を知っている問い合わせで組にしない
-- 使う側の repo の `make test` への組み込み方 (Makefile の target・CI の fetch の深さ) と、`make test` に足してよい秒数
-- Claude が `dupscan:allow` の許可を自分で書いてよいか (書けると、寄せるより安い抜け道になる)
+- ~~使う側の repo の `make test` への組み込み方~~ → **決めた** (2026-10-25。obaket の issue 1301): obaket は pre-push の lint-gates に `check-dupscan-gate` (起点は repo root・dupscan が無ければ rc 2・Xcode Cloud では飛ばす) と、GHA (`ubuntu-slim`) で回す。obaket の 100 commit の流し直しで 1 回 平均 3.0 秒・最大 4.2 秒
+- ~~Claude が `dupscan:allow` の許可を自分で書いてよいか~~ → skill `dupscan` で「書いてよいが、書いたらユーザーへの報告に書く」にした ([903](done/903-docs-dupscan-search-before-write-procedure.md))。CI は `-fail-new-exclusions` で新しく足された除外を止める
 - test と prod にまたがる組を `gate` の違反にするか
-- 意図した写しを許す書き方 (例: 単位の直前の `dupscan:allow <理由>` か設定ファイル)。`gate` (905) が持つ
+- ~~意図した写しを許す書き方~~ → **決めた**: 単位の直前の `// dupscan:allow` と `.dupscan.json` の除外 ([906](done/906-feat-dupscan-exclusion-config.md))、形で外すプリセット ([919](919-feat-dupscan-exclusion-presets.md))
 - 止めるかの判定 (905。段ごとに止める / 報告だけ / 回さない): 所要と誤検知の割合の実測を見てユーザーが決める
-- 索引の置き方: commit して `--check` で守る (897) か、worktree ごとのキャッシュか、両方か
-- 「どう共通化するか」の材料をどこまで出すか: 上の出力に加えて置き場所の候補まで出すか
+- ~~索引の置き方~~ → **決めた** ([897](done/897-feat-dupscan-index-subcommand.md)): 置かない。引くたびに作業ツリーを全部読む (obaket で 1.45 秒。ユーザー 2026-10-25: 1.5 秒を許し、目安を 2 秒にした)
+- ~~「どう共通化するか」の材料をどこまで出すか~~ → リテラルの違いの表・所属ターゲットは保留 ([918](pending/918-feat-dupscan-target-and-literal-table.md)。ユーザー 2026-10-25: obaket で使う中で欲しくなったら作る)
 - 設定の置き場 (除外の設定と同じファイル。[906](done/906-feat-dupscan-exclusion-config.md)) (対象・除外・test / prod の規則・閾値・既にある共通のヘルパーの置き場所。repo の root の設定ファイルか CLI の引数か)。obaket issue 1298 の運用はこの決定を待つ
 - 他のマシン (CI を含む) への配り方 → **要件にした** (892): dotfiles を持たない repo の CI でも、版を固定して入れられること (`go install <module>@<版>` か、ビルド済みの実行ファイル)。cgo なので C のコンパイラが要る
 - Swift の次に足す言語の順 (下の「構想: 対応する言語」)
