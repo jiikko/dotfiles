@@ -64,7 +64,7 @@ epic 890 の主な用途 (ユーザー 2026-10-24): **Claude Code にコード�
 
 ## 依存
 
-- [893](../done/893-feat-dupscan-core-normalize-type2.md)・[894](../894-feat-dupscan-swift-adapter.md)・[897](../done/897-feat-dupscan-index-subcommand.md) (同じ単位の一覧を使う)
+- [893](../done/893-feat-dupscan-core-normalize-type2.md)・[894](../done/894-feat-dupscan-swift-adapter.md)・[897](../done/897-feat-dupscan-index-subcommand.md) (同じ単位の一覧を使う)
 - [898](../898-test-dupscan-obaket-calibration.md) (知らせる段と下限)
 - [901](../done/901-research-dupscan-existing-tools.md) の結論 (既存の道具を hook から呼ぶ形で依存と使い方が単純なまま足りるなら、そちらを使う)
 

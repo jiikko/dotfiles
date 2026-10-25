@@ -33,7 +33,7 @@ dupscan は、主に Claude が書く前に索引を引き (897)、セルフレ�
 
 ## 依存
 
-- [893](893-feat-dupscan-core-normalize-type2.md)・[894](../894-feat-dupscan-swift-adapter.md) (単位の一覧と正規化)
+- [893](893-feat-dupscan-core-normalize-type2.md)・[894](894-feat-dupscan-swift-adapter.md) (単位の一覧と正規化)
 - [896](../896-feat-dupscan-report-output.md) (リテラルの違いの表・プロパティの初期値の解決・JSON の形)
 - [897](897-feat-dupscan-index-subcommand.md) (単位の一覧のキャッシュ)
 - [898](../898-test-dupscan-obaket-calibration.md) (下限と L3 の扱い。無いと引数なしの単位がどれも並ぶ)

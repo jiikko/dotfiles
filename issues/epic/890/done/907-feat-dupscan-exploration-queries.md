@@ -32,7 +32,7 @@ dupscan は構文木で単位を取り出しているので、**定義だけを 
 
 ## 依存
 
-- [893](893-feat-dupscan-core-normalize-type2.md)・[894](../894-feat-dupscan-swift-adapter.md) (単位の一覧・呼び出しの箇所)・[897](897-feat-dupscan-index-subcommand.md) (索引と同じ一覧)
+- [893](893-feat-dupscan-core-normalize-type2.md)・[894](894-feat-dupscan-swift-adapter.md) (単位の一覧・呼び出しの箇所)・[897](897-feat-dupscan-index-subcommand.md) (索引と同じ一覧)
 
 ## 進捗
 

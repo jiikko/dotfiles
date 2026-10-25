@@ -65,7 +65,7 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
 
 ## 依存
 
-- [893](done/893-feat-dupscan-core-normalize-type2.md)・[894](894-feat-dupscan-swift-adapter.md) (単位の一覧と正規化)
+- [893](done/893-feat-dupscan-core-normalize-type2.md)・[894](done/894-feat-dupscan-swift-adapter.md) (単位の一覧と正規化)
 - [896](896-feat-dupscan-report-output.md) (組の出力の形)
 - [898](898-test-dupscan-obaket-calibration.md) (下限・閾値。L3 の引数なしの単位の扱い)
 - [906](done/906-feat-dupscan-exclusion-config.md) (除外の判定。許可と実装を共有する)

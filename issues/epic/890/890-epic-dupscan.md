@@ -23,7 +23,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [903](done/903-docs-dupscan-search-before-write-procedure.md) | **書く前に既存のメソッドを探す手順と、実装後のセルフレビューで `gate` を回す手順**を使う側の repo の入口に書く (索引ができるまでは grep の暫定の手順) | 暫定は無し (索引は 897・`gate` は 905) |
 | [892](892-chore-dupscan-project-scaffold.md) | `src/dupscan` の骨組み (module・Makefile・bin・CI・README・PACKAGES.md、cgo の所要の実測) | 901 |
 | [893](done/893-feat-dupscan-core-normalize-type2.md) | コア: 走査・test / prod の分類・単位・正規化 L1〜L3・ハッシュ・Type-2 の組 | 892 |
-| [894](894-feat-dupscan-swift-adapter.md) | Swift adapter (文法の pin・対応表と網羅テスト・ERROR の除外・PR 24 の固定の入力・canary) | 893 |
+| [894](done/894-feat-dupscan-swift-adapter.md) | Swift adapter (文法の pin・対応表と網羅テスト・ERROR の除外・PR 24 の固定の入力・canary) | 893 |
 | [895](pending/895-feat-dupscan-type3-candidates.md) | **保留** (2026-10-25)。Type-3 (少し違う写し) の類似度と候補の絞り込み (後回し。主な用途には Type-2 と L3 の一致で足りるかを先に見る) | 893 |
 | [896](896-feat-dupscan-report-output.md) | 出力 (人が読む形・JSON・リテラルの違いの表・プロパティの値・ターゲット・可視性・呼び出し元の数・既存のヘルパーとの一致) | 893・894 |
 | [897](done/897-feat-dupscan-index-subcommand.md) | 探索のための索引 (subcommand)。名前・署名の型・doc 文で引く (名前の検索も LSP でなくこれでまかなう) | 893・894 |

@@ -230,7 +230,7 @@ dupscan は自前の構文木 (tree-sitter) だけで、書く前の検索・書
 - **構文木だけでは正確に決まらない値**は、近似と分かる形で出す:
   - 呼び出し元の数: 名前と引数ラベルが一致する呼び出しの数 (別の型の同名のメソッドも数えうる)
   - プロパティの初期値: 同じ型の stored property の初期値を構文木で 1 段だけ解決する ([896](896-feat-dupscan-report-output.md))
-  - 所属ターゲット: adapter が `Package.swift` と `project.pbxproj` を読む ([894](894-feat-dupscan-swift-adapter.md))
+  - 所属ターゲット: adapter が `Package.swift` と `project.pbxproj` を読む ([894](done/894-feat-dupscan-swift-adapter.md))
 - **LSP を使わない理由**: 言語サーバの起動と、最初の索引の待ち (obaket の SwiftPM の package で数分・1.6 GB。0 件を返す間を「無い」と読む罠もある) が、
   worktree ごと・言語ごとに要る。gopls の名前検索はあいまい一致で 100 件で打ち切る ([901](done/901-research-dupscan-existing-tools.md) の実行)。
   dupscan の索引だけで済めば、依存は dupscan の実行ファイル 1 つ、使い方は 1 つになる
