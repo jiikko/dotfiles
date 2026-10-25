@@ -1,7 +1,5 @@
 # 907 (feat): 探索の問い合わせ (outline・find・callers) で、grep より文脈を食わずに関連の実装を探す
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-25〜）
-
 起票日: 2026-10-24
 
 ## 概要
@@ -11,7 +9,7 @@
 
 grep で定義を探すと、呼び出し側の行・コメント・文字列の一致が混ざり、1 行では署名が分からずファイルを開いて読むことになる。
 dupscan は構文木で単位を取り出しているので、**定義だけを 1 件 1 行** (名前・署名・file:line) で返せる。doc の 1 行目は今の adapter がコメントを捨てているので、
-索引 ([897](897-feat-dupscan-index-subcommand.md)) で doc を取り出してから足す。`find` は 897 の引き方 (名前・署名の型・doc 文) の入口で、別の実装を持たない (入口を 2 つにしない)。
+索引 ([897](../897-feat-dupscan-index-subcommand.md)) で doc を取り出してから足す。`find` は 897 の引き方 (名前・署名の型・doc 文) の入口で、別の実装を持たない (入口を 2 つにしない)。
 
 | subcommand (名前は仮) | 問い | 返すもの |
 |---|---|---|
@@ -34,7 +32,7 @@ dupscan は構文木で単位を取り出しているので、**定義だけを 
 
 ## 依存
 
-- [893](893-feat-dupscan-core-normalize-type2.md)・[894](894-feat-dupscan-swift-adapter.md) (単位の一覧・呼び出しの箇所)・[897](897-feat-dupscan-index-subcommand.md) (索引と同じ一覧)
+- [893](893-feat-dupscan-core-normalize-type2.md)・[894](../894-feat-dupscan-swift-adapter.md) (単位の一覧・呼び出しの箇所)・[897](../897-feat-dupscan-index-subcommand.md) (索引と同じ一覧)
 
 ## 進捗
 

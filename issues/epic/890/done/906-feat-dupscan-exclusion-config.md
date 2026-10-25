@@ -1,14 +1,12 @@
 # 906 (feat): 誤検知を除外する設定 (dupscan の除外の設定ファイル)
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-25〜）
-
 起票日: 2026-10-24
 
 ## 概要
 
 類似メソッドの検出には誤検知 (false positive) が出る (ユーザー 2026-10-24)。典型は、L3 で本体全体が 1 記号に畳まれた自明な一致・
 テストの表の形が似ているだけの関数・生成コード・意図して分けている写し。これを除外できる設定を持つ。
-除外は、重複の報告 ([896](896-feat-dupscan-report-output.md))・`gate` ([905](905-feat-dupscan-ci-check-gate.md))・`near` ([904](904-feat-dupscan-trial-subcommands.md)) の全部に同じ規則で効かせ、判定の実装は 1 つにする。
+除外は、重複の報告 ([896](../896-feat-dupscan-report-output.md))・`gate` ([905](../905-feat-dupscan-ci-check-gate.md))・`near` ([904](../904-feat-dupscan-trial-subcommands.md)) の全部に同じ規則で効かせ、判定の実装は 1 つにする。
 
 ## 除外の種類
 
@@ -18,7 +16,7 @@
 | 単位の除外 | 特定の単位を、寄せる側の違反として出さない。**数には入れたまま** (905 の許可と同じ意味。古い単位に付けても、新しい写しの違反は消えない) | 単位の直前のコメント `dupscan:allow <種別> <理由>` (905 と同じ) か、設定ファイル |
 | パスの除外 | 生成コード・vendor・fixture などのファイルを丸ごと | 設定ファイルの glob |
 | 段の除外 | 特定のパスで、特定の段 (例: L3) を使わない | 設定ファイル (パスの glob + 段) |
-| 下限・閾値 | 小さすぎる単位・自明な一致 | 設定ファイル。既定値は [898](898-test-dupscan-obaket-calibration.md) の実測で決める |
+| 下限・閾値 | 小さすぎる単位・自明な一致 | 設定ファイル。既定値は [898](../898-test-dupscan-obaket-calibration.md) の実測で決める |
 
 ## 要件
 
@@ -92,8 +90,8 @@
 
 ## 依存
 
-- [893](893-feat-dupscan-core-normalize-type2.md) (単位の鍵と段)・[896](896-feat-dupscan-report-output.md) (報告に貼れる 1 行を付ける)
-- [905](905-feat-dupscan-ci-check-gate.md) の許可 (`dupscan:allow`) と判定の実装を共有する (同じ意味: 寄せる側の違反から外し、数には入れたまま)
+- [893](893-feat-dupscan-core-normalize-type2.md) (単位の鍵と段)・[896](../896-feat-dupscan-report-output.md) (報告に貼れる 1 行を付ける)
+- [905](../905-feat-dupscan-ci-check-gate.md) の許可 (`dupscan:allow`) と判定の実装を共有する (同じ意味: 寄せる側の違反から外し、数には入れたまま)
 
 ## 進捗
 

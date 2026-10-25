@@ -39,7 +39,7 @@ obaket の規約 (obaket の CLAUDE.md・`.claude/rules/`・issues/README.md) �
    - CI は `-fail-new-exclusions` を付ける (除外を足した PR を人の目に届ける)
    - YAML の `DOTFILES_SHA` は、公開の `jiikko/dotfiles` に push 済みの commit にする。build は `src/dupscan` と `src/subproc` (go.mod の replace) を取り、cgo で文法の C のソースを build できる runner が要る
 4. **CI で 1 回確かめる**: 写しを 1 つ足した PR (か branch の push) で CI の gate が落ち、消すと通ることを見る。README の YAML はまだどの repo の Actions でも走っていない (905 の「未検証」)
-5. obaket の CLAUDE.md の入口から skill `dupscan` (dotfiles の `_claude/skills/dupscan/`) にたどり着けるかを見る (Swift の repo で発火する前提。[903](903-docs-dupscan-search-before-write-procedure.md))
+5. obaket の CLAUDE.md の入口から skill `dupscan` (dotfiles の `_claude/skills/dupscan/`) にたどり着けるかを見る (Swift の repo で発火する前提。[903](done/903-docs-dupscan-search-before-write-procedure.md))
 
 ## 受け入れ条件
 
@@ -50,7 +50,7 @@ obaket の規約 (obaket の CLAUDE.md・`.claude/rules/`・issues/README.md) �
 
 ## 依存
 
-- [905](905-feat-dupscan-ci-check-gate.md) (gate と組み込みの例)・[906](906-feat-dupscan-exclusion-config.md) (除外)・[903](903-docs-dupscan-search-before-write-procedure.md) (skill)
+- [905](905-feat-dupscan-ci-check-gate.md) (gate と組み込みの例)・[906](done/906-feat-dupscan-exclusion-config.md) (除外)・[903](done/903-docs-dupscan-search-before-write-procedure.md) (skill)
 - 手順 2 で受け入れる側: [894](894-feat-dupscan-swift-adapter.md)・[897](897-feat-dupscan-index-subcommand.md)・[898](898-test-dupscan-obaket-calibration.md)・[904](904-feat-dupscan-trial-subcommands.md)
 - 道具の名前を変える (rename) なら、obaket に書く前に変える (後で変えると obaket の Makefile・CI・除外のコメントも直すことになる)
 
