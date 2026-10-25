@@ -40,11 +40,42 @@ sourcekit-lsp は `/usr/bin/sourcekit-lsp` にあるが、Swift の repo で Cla
 
 ## 受け入れ条件
 
-- [ ] obaket の PR 24 の前の木 (commit 45cc3b208^) に CPD と jscpd を当て、6 つのうち何個が出るかを測る。既定の設定と、下限 (`--minimum-tokens` / `--min-tokens`) を下げた設定の両方。
+- [x] obaket の PR 24 の前の木 (commit 45cc3b208^) に CPD と jscpd を当て、6 つのうち何個が出るかを測る。既定の設定と、下限 (`--minimum-tokens` / `--min-tokens`) を下げた設定の両方。
+      (jscpd は実測。CPD は Java が無く未実測: 下の「実測」)
       版・stdout / stderr / rc を分けて書き、obaket のあるマシンで行う
-- [ ] DualNoteApp の `macOS/` にも CPD と jscpd を当て、何が出るかと所要を書く (このマシンで今できる。調べる相手の repo に書き込まない置き場所で動かす)
-- [ ] ast-grep の Swift のパターンで、PR 24 の 6 つを形で引けるかを試す (直書きの 4 つと、プロパティを読む 2 つ)
-- [ ] 結果で、dupscan が自分で作る範囲を決めて [891](891-design-dupscan-requirements.md) の「決めること」に書き戻す。既存の道具で依存と使い方が単純なまま足りるなら作らない (足すと依存と使い方が増えるので、その分も比べる)
+- [x] DualNoteApp の `macOS/` にも CPD と jscpd を当て、何が出るかと所要を書く (jscpd だけ。CPD は同上) (このマシンで今できる。調べる相手の repo に書き込まない置き場所で動かす)
+- [x] ast-grep の Swift のパターンで、PR 24 の 6 つを形で引けるかを試す (直書きの 4 つと、プロパティを読む 2 つ)
+- [x] 結果で、dupscan が自分で作る範囲を決めて [891](891-design-dupscan-requirements.md) の「決めること」に書き戻す。既存の道具で依存と使い方が単純なまま足りるなら作らない (足すと依存と使い方が増えるので、その分も比べる)
+
+## 実測 (2026-10-25。M4Pro・obaket の PR 24 の前の木 `4cb7cc740` の `shared/Tests` + `macOS/ObaketTests` 801 ファイル)
+
+道具は作業用の置き場所の npm にだけ入れた (グローバルには入れていない): jscpd 4.3.0 (`jscpd@4`)・ast-grep 0.51.0。node v24.12.0。対象の repo には何も書いていない (終わった後の `git status --short` が空)。
+「9 つ」は PR 24 の 6 つ (直書き 4・プロパティを読む 2) と、dupscan が同じ L1 の組に出した macOS のテストの写し 3 つ (obaket の issue 1301)。
+
+**jscpd** (`--format swift`。「対」は clone の両側が 9 つのどれかに重なった数):
+
+| 設定 | 既定のファイルの上限 | clone 数 | 9 つのうち対に入った数 | wall |
+|---|---|---|---|---|
+| 既定 (50 トークン / 5 行) | 既定 | 1009 | — (下の理由で 2360 行と 1425 行のファイルを読まない) | 21.2 秒 |
+| 既定 | 上げた (`--max-lines 100000 --max-size 10mb`) | 2213 | 7 / 9 (4 組: Build–PathMapping・Reconcile–Resumable・Executor–Resumable・StorageBrowser–UploadDestination) | 17.0 秒 |
+| `--min-tokens 20` | 上げた | 6745 | 6 / 9 | 15.7 秒 |
+| `--min-tokens 10` | 上げた | 8663 | 3 / 9 (macOS の 2 組だけ。最長一致の clone に吸収される) | 13.7 秒 |
+| `--min-tokens 10 --min-lines 3` | 上げた | 21389 | 3 / 9 | 18.0 秒 (既定の heap では OOM・rc=134) |
+
+- **既定の `--max-lines 1000` / `--max-size 100kb` で、大きいテストファイル (`MoveReconcileExecutorTests.swift` 2360 行・`TransferRetryCoordinatorTests.swift` 1425 行) を黙って読み飛ばす** (stdout に出ない。報告の JSON にこの 2 ファイルが 1 件も出ないことで確かめた)
+- 6 つを 1 つの組にした設定は無い。直書きとプロパティを読む版を結んだ clone は 0 (識別子・リテラルを潰さない。strict でも同じ)。1 行で書いた `MutationFinishing…` の版はどの設定でも対にならない
+- DualNoteApp の `macOS/` (210 ファイル。上限を上げた設定): 既定で 93 clone (重複行 3.1%)・1.1 秒、`--min-tokens 10` で 682 clone。真偽は精査していない
+
+**ast-grep** (`-l swift`): `StorageLocation(connectionID: $A, namespace: $B, path: ObjectPath(rawValue: $C))` の呼び出しを含み `-> StorageLocation` を返す関数の rule で **9 / 9** を引けた (98 件。関数の中でその呼び出しを使うだけのテスト関数が約 16 件混ざる)。0.25 秒。
+形を先に知っている問い合わせで、似たものを組にする処理・類似度は無い (未知の重複は探せない)。
+
+**PMD CPD**: 未実測 (このマシンに Java が無く、JDK を入れるのは環境を変えるので見送った)。公式文書 (pmd_userdocs_cpd) では `--ignore-literals` / `--ignore-identifiers` の対応言語に Swift が無く、名前・リテラルの違いは潰せない見込み (実測ではない)。
+**再開の条件**: Java のある環境で、CPD が Swift で名前・リテラルを潰せるという情報が出たとき
+
+## 決着 (2026-10-25)
+
+既存の道具だけでは、dupscan の段ごとの組 (名前の違う写しを L1 で、直書きとプロパティを読む版を L3 で結ぶ) を置き換えられない。jscpd は同じ書き方の写しは出すが、上限で大きいファイルを黙って落とし、直書きとプロパティの版を結ばず、clone の数が多い。
+ast-grep は形を知っている問い合わせには強いが、組にしない。**dupscan の正規化と組分けは自作のまま続ける** (891 の「決めること」に書き戻した)。依存も増やさない (jscpd は node、CPD は Java が要る)。
 
 ## 出典
 
@@ -65,3 +96,4 @@ sourcekit-lsp は `/usr/bin/sourcekit-lsp` にあるが、Swift の repo で Cla
 - 2026-10-24 LSP を使わないことにしたので、LSP の実測と、索引を既存の道具で作る比較を受け入れ条件から外した
 - 2026-10-24 範囲の決め方に「依存と使い方が単純なままか」を入れた (LSP を使わない決定と基準を揃える)
 - 2026-10-24 DualNoteApp でも既存の道具を測る条件を足した (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)
+- 2026-10-25 obaket の PR 24 の前の木と DualNoteApp で jscpd・ast-grep を実測し (sonnet のサブエージェント。主張は報告の JSON で裏を取った)、決着を書いた。CPD は Java が無く未実測
