@@ -57,7 +57,8 @@ type Result struct {
 type Resolved struct {
 	Level   norm.Level
 	Members []*group.Entry // base の側のメンバー
-	// Remain は、メンバーの head の側の相手のうち、head の同じ組に揃っている最大の数。2 未満は 0 (消えた)。
+	// Remain は、head の側の相手が他のメンバーの相手のどれかとまだ同じ形のメンバーの数 (0 は消えた)。
+	// 組が 2 つに割れただけ (4 → 2 + 2) は 4 のままで、縮んだと数えない (寄せていない)。
 	Remain int
 }
 
@@ -186,7 +187,7 @@ func resolved(base, head []*group.Entry, origin map[*group.Entry]*group.Entry, o
 	var out []Resolved
 	for _, g := range group.Build(base, opt) {
 		count := map[string]int{}
-		remain := 0
+		var forms [][]string // メンバーごとの head の側の形
 		unreadable := false
 		for _, m := range g.Members {
 			h := inHead[m]
@@ -197,19 +198,27 @@ func resolved(base, head []*group.Entry, origin map[*group.Entry]*group.Entry, o
 				unreadable = true
 				break
 			}
+			var ks []string
 			for _, lv := range opt.Levels {
 				if group.Eligible(h, lv, opt) {
 					k := lv.String() + "\x00" + h.Result.Hash[lv]
 					count[k]++
-					remain = max(remain, count[k])
+					ks = append(ks, k)
 				}
 			}
+			forms = append(forms, ks)
 		}
 		if unreadable {
 			continue
 		}
-		if remain < 2 {
-			remain = 0
+		remain := 0
+		for _, ks := range forms {
+			for _, k := range ks {
+				if count[k] >= 2 {
+					remain++
+					break
+				}
+			}
 		}
 		if remain < len(g.Members) {
 			out = append(out, Resolved{Level: g.Level, Members: g.Members, Remain: remain})

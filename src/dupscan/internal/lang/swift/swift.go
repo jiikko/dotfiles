@@ -192,6 +192,8 @@ func (w *walker) walk(n *sitter.Node, c ctx) {
 		if w.inheritsTestCase(n) {
 			c.testClass = true
 		}
+		// 関数の中の型の中は、関数の中として表示しない。鍵に入る owner と property は今の形のまま残す (変えると除外の釘が外れる)。
+		c.ownerName = ""
 	case "function_declaration", "init_declaration", "deinit_declaration", "subscript_declaration":
 		if w.isTestFunc(n, c) {
 			return
@@ -465,7 +467,7 @@ func (w *walker) closureUnit(n *sitter.Node, c ctx) *tree.Unit {
 		u.Owner = c.owner
 	}
 	u.OwnerName = c.ownerName
-	if c.owner == "" {
+	if u.OwnerName == "" {
 		u.OwnerName = c.property // 格納 property の初期値のクロージャ (`let x = { … }()`)
 	}
 	u.Visibility = "local"

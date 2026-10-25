@@ -777,3 +777,17 @@ func TestResolvedSkipsUnreadableAndIgnoresNestedDrop(t *testing.T) {
 		t.Errorf("外側を同じ形にしただけでクロージャの組を消えたと数えた: %v", got)
 	}
 }
+
+func TestResolvedDoesNotCountSplitAsShrunk(t *testing.T) {
+	// 4 つの写しが 2 つずつ別の形に割れただけ: どれも寄せていないので縮んだと数えない。
+	base := []*group.Entry{e("a", "x", "x2", "x3"), e("b", "x", "x2", "x3"), e("c", "x", "x2", "x3"), e("d", "x", "x2", "x3")}
+	head := []*group.Entry{e("a", "y", "y2", "y3"), e("b", "y", "y2", "y3"), e("c", "z", "z2", "z3"), e("d", "z", "z2", "z3")}
+	if got := resolvedKeys(Judge(base, head, opt)); len(got) != 0 {
+		t.Errorf("割れただけの組を縮んだと数えた: %v", got)
+	}
+	// 1 つを寄せて 3 つが残るなら 4 → 3。
+	head = []*group.Entry{e("a", "x", "x2", "x3"), e("b", "x", "x2", "x3"), e("c", "x", "x2", "x3"), e("d", "q", "q2", "q3")}
+	if got := strings.Join(resolvedKeys(Judge(base, head, opt)), " "); got != "a,b,c,d:3" {
+		t.Errorf("縮んだ組 = %q、期待 a,b,c,d:3", got)
+	}
+}

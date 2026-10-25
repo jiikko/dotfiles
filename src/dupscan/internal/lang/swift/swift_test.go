@@ -427,3 +427,17 @@ struct A {
 		}
 	}
 }
+
+func TestClosureInTypeInsideFunctionIsNotShownUnderFunction(t *testing.T) {
+	r := parse(t, "Sources/A.swift", `
+struct A { func outer() { struct S { let v = { [1, 2].map { $0 + 1 } }() } } }`)
+	var got []string
+	for _, u := range r.Units {
+		if u.Kind == tree.KindClosure {
+			got = append(got, u.OwnerName)
+		}
+	}
+	if strings.Join(got, " ") != "v v.{closure}" {
+		t.Errorf("関数の中の型のクロージャの表示名 = %v、期待 [v v.{closure}] (外の関数の名前を付けない)", got)
+	}
+}
