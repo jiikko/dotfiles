@@ -20,10 +20,10 @@ ok=0; fail=0
 TMP_ROOT=$(mktemp -d); trap 'rm -rf "$TMP_ROOT"' EXIT
 export TMPDIR="$TMP_ROOT"   # 出しすぎ防止の状態ファイルをテストの中に閉じる
 
-new_repo() { # $1=1 なら .dupscan.json を置く → $REPO
+new_repo() { # $1=1 なら .swift を 1 つ追跡する → $REPO
   REPO=$(mktemp -d "$TMP_ROOT/repo.XXXXXX")
-  ( cd "$REPO" && git init -q . ) >/dev/null 2>&1
-  [ "$1" = 1 ] && printf '{"version":1}\n' > "$REPO/.dupscan.json"
+  ( cd "$REPO" && git init -q . && printf 'x\n' > README.md &&
+    if [ "$1" = 1 ]; then printf 'struct A {}\n' > A.swift; fi && git add -A ) >/dev/null 2>&1
   return 0
 }
 session=0
@@ -59,7 +59,7 @@ next_session; expect_nudge "PascalCase の rg" "$(run_bash "rg -n 'StorageOperat
 next_session; expect_nudge "呼び出しの形 (末尾の括弧) で Swift を対象" "$(run_bash 'grep -rn "retrying(" --include=*.swift .')" retrying
 next_session; expect_nudge "\\b つきの camelCase" "$(run_bash 'grep -rnw "\bdiagnosticCode\b" .')" diagnosticCode
 next_session; expect_nudge "git grep の Type.member" "$(run_bash 'git grep -n "DropboxClient.upload"')" DropboxClient.upload
-next_session; expect_nudge "パイプの後ろの segment" "$(run_bash 'cd shared && grep -rn "struct HTTPRequestHead" Sources | head -5')" HTTPRequestHead
+next_session; expect_nudge "cd の後ろの segment (後ろにパイプが続く)" "$(run_bash 'cd shared && grep -rn "struct HTTPRequestHead" Sources | head -5')" HTTPRequestHead
 next_session; expect_nudge "-e で渡したパターン" "$(run_bash 'grep -rn -e "makeUploadSessionBodyRequest" Sources')" makeUploadSessionBodyRequest
 next_session; expect_nudge "Grep ツールの camelCase" "$(run_grep 'func statsEvent' '')" statsEvent
 next_session; expect_nudge "Grep ツールの小文字の語でも glob が swift" "$(run_grep 'retrying' '*.swift')" retrying
@@ -71,6 +71,8 @@ next_session; expect_silent "grep を含まないコマンド" "$(run_bash 'swif
 next_session; expect_silent "grep が語の一部 (grepper)" "$(run_bash 'grepper StorageOperationLockRegistry')"
 next_session; expect_silent "heredoc の本文の中の grep" "$(run_bash "$(printf 'git commit -F - <<%sM%s\nfix: grep -rn StorageOperationLockRegistry を直す\nM\n' "'" "'")")"
 next_session; expect_silent "Grep ツールの記号だけのパターン" "$(run_grep 'error:' '')"
+next_session; expect_silent "パイプの後ろで stdin を絞る grep" "$(run_bash 'make test 2>&1 | grep FooBarFailure')"
+next_session; expect_silent "alternation のパターン" "$(run_bash 'grep -rn "FooBar|BazQux" Sources')"
 
 # 出しすぎない: 同じ session の 2 回目は出さず、別の session なら出す
 next_session
@@ -83,9 +85,9 @@ expect_nudge "状態ファイルが数字でない" "$(run_bash 'grep -rn "func 
 next_session; printf '12345678901234567890\n' > "$TMP_ROOT/claude-dupscan-nudge-s$session"
 expect_nudge "状態ファイルの桁が多すぎる" "$(run_bash 'grep -rn "func fooBarBaz" .')" fooBarBaz
 
-# .dupscan.json の無い repo・git の外では出さない
+# .swift を追跡していない repo・git の外では出さない
 new_repo 0
-next_session; expect_silent ".dupscan.json の無い repo" "$(run_bash 'grep -rn "func executeMutation" Sources')"
+next_session; expect_silent ".swift を追跡していない repo" "$(run_bash 'grep -rn "func executeMutation" Sources')"
 REPO="$TMP_ROOT"
 next_session; expect_silent "git の外" "$(run_bash 'grep -rn "func executeMutation" Sources')"
 

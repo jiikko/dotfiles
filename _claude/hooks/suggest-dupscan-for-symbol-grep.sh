@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# PreToolUse(Bash / Grep) フック: dupscan を組み込んだ repo (root に .dupscan.json がある) で、Swift の定義・呼び出し元を探す形の
+# PreToolUse(Bash / Grep) フック: Swift の repo (git が .swift を追跡している) で、Swift の定義・呼び出し元を探す形の
 # grep / rg / git grep を打とうとしたら、dupscan の def / refs / callers を 1 行案内する (issue 921)。
 #
 # なぜ: Swift の 4 repo の直近 7 日の 27 セッションで、Swift のパスを対象にした grep は 2,882 回、dupscan は 13 回だった (921 の実測)。
@@ -16,11 +16,13 @@
 #   - パターンがシンボルらしい: 先頭の宣言の語 (func / struct / class / enum / protocol / extension / actor / init / var / let / case / typealias)・
 #     `\b` `\<` `\>`・末尾の `(` を外した残りが識別子 (`A.b` も可) で、次のどれか:
 #       宣言の語が付いている / PascalCase か camelCase (大文字を含み、全部が大文字ではない) / 検索の対象が Swift (`.swift`・`-t swift`・glob・type)
-#   - repo: cwd (Bash の `-C` は見ない) の git root に .dupscan.json がある
+#   - repo: cwd (Bash の `-C` は見ない) の git が .swift を 1 つ以上追跡している (dupscan は .dupscan.json が無くても動く)
+#   - パイプの後ろの grep (`make test | grep FooBar`) は出力を絞っているだけなので案内しない
 #
 # 検出しない形 (silent):
 #   - 全部が小文字の語で Swift を対象にしていない grep (`grep -n refresh config.yml`)・全部が大文字の語 (`TODO`)・正規表現 (`foo.*bar`)
-#   - grep の語が変数・エイリアス・`sh -c "..."` の中にあるもの / `-C` や cd で別の repo を指したもの (cwd の repo で判定する)
+#   - grep の語が変数・エイリアス・`sh -c "..."` の中にあるもの / `-C` や cd・`$W/…` で別の repo を指したもの (cwd の repo で判定する)
+#   - パイプの後ろの grep (stdin を絞る形)・`A|B` の alternation のパターン
 #   - python3 / jq / git が無い環境 (fail-open)
 #   - 1 つ目のパターンだけを見る (`-e a -e b` の b は見ない)
 
@@ -52,7 +54,7 @@ esac
 
 [ -n "$cwd" ] && [ -d "$cwd" ] || exit 0
 root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
-[ -f "$root/.dupscan.json" ] || exit 0
+git -C "$root" ls-files -- '*.swift' 2>/dev/null | head -n 1 | grep -q . || exit 0
 
 # 名前を 1 つ返す (案内しないなら空)。Bash は cmd、Grep は tool_input を読む
 name=$(HOOK_TOOL="$tool" HOOK_CMD="$cmd" HOOK_INPUT="$input" python3 -I - <<'PY' 2>/dev/null
@@ -121,7 +123,17 @@ if tool == 'Grep':
     print(symbol(str(ti.get('pattern') or ''), 'swift' in target))
 else:
     cmd = os.environ['HOOK_CMD']
-    for seg in re.split(r'\|\|?|&&|;|\n', cmd):
+    # 区切りを残して分け、パイプ (`|`) の直後の segment は stdin を絞る grep なので見ない
+    parts = re.split(r'(\|\||&&|;|\n|\|)', cmd)
+    prev = None
+    for seg in parts:
+        if seg in ('||', '&&', ';', '\n', '|'):
+            prev = seg
+            continue
+        after_pipe = prev == '|'
+        prev = None
+        if after_pipe:
+            continue
         try:
             words = shlex.split(seg, comments=True)
         except ValueError:
@@ -145,5 +157,5 @@ fi
 printf '%s\n' "$now" > "$stamp" 2>/dev/null || true
 
 short=${name##*.}
-msg="dupscan (この repo は .dupscan.json を持つ) で Swift の定義・参照を引ける: \`dupscan def $name\` (定義を本体つき・型はメンバーの一覧) / \`dupscan refs $short\` (型・値としての参照、コメントと文字列を除く) / \`dupscan callers '$short'\` (呼び出し元)。grep は文字列・コメント・設定ファイルを探すときに使う (skill dupscan の 2 節)"
+msg="dupscan で Swift の定義・参照を引ける: \`dupscan def $name\` (定義を本体つき・型はメンバーの一覧) / \`dupscan refs $short\` (型・値としての参照、コメントと文字列を除く) / \`dupscan callers '$short'\` (呼び出し元)。grep は文字列・コメント・設定ファイルを探すときに使う (skill dupscan の 2 節)"
 jq -n --arg c "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $c}}'
