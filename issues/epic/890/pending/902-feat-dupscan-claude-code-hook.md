@@ -41,7 +41,7 @@ epic 890 の主な用途 (ユーザー 2026-10-24): **Claude Code にコード�
 - **見る道具**: Edit / Write / MultiEdit を matcher にする。**Bash (sed・python など) で書かれた変更と NotebookEdit は見ない**。これは「検出しない形」として README に書く
 - **索引の鮮度と置き場所**: 索引は worktree ごとに置き、hook は編集したファイルの分だけ差し替える。誰がいつ作り直すか、複数のセッション・hook が同時に書いたときの扱い
   (原子的な置き換え・lock) を決める。commit して置く索引 (897 の `--check`) と、hook が使うキャッシュの関係もここで決める
-- **所要**: 編集のたびに走るので、1 回の上限を決めて測る (未実測)。`bin/dupscan` の初回ビルド (cgo。[892](../892-chore-dupscan-project-scaffold.md)) を hook の中で走らせない。
+- **所要**: 編集のたびに走るので、1 回の上限を決めて測る (未実測)。`bin/dupscan` の初回ビルド (cgo。[892](../done/892-chore-dupscan-project-scaffold.md)) を hook の中で走らせない。
   実行ファイルが無ければビルドを促す 1 行だけを返す
 - **知らせる量**: 既存の単位の名前と署名・file:line・可視性・doc comment の 1 行目・一致した段。呼び出し元の数など近似の値には、近似の印を付ける ([896](../done/896-feat-dupscan-report-output.md) と同じ表し方)。共通の置き場所にあるものは「これを使う」、
   ファイルの中の private なものは「寄せる候補」と区別する。件数に上限を置く

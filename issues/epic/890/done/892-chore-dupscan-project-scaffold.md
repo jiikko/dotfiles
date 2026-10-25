@@ -1,18 +1,16 @@
 # 892 (chore): dupscan のプロジェクトの骨組み (src/dupscan・bin・CI・README・PACKAGES.md)
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-24〜）
-
 起票日: 2026-10-24
 
 ## 概要
 
-epic 890 の土台。`src/` の新しいプロジェクトの手順に沿って、中身が空でも lint とテストが CI で回る状態を作る。要件は [891 (要件の正本)](891-design-dupscan-requirements.md)。
+epic 890 の土台。`src/` の新しいプロジェクトの手順に沿って、中身が空でも lint とテストが CI で回る状態を作る。要件は [891 (要件の正本)](../891-design-dupscan-requirements.md)。
 
-着手は [901 (既存の道具の調査)](done/901-research-dupscan-existing-tools.md) の結論を待つ (既存の道具で足りる部分が大きければ、骨組みの形が変わる)。
+着手は [901 (既存の道具の調査)](901-research-dupscan-existing-tools.md) の結論を待つ (既存の道具で足りる部分が大きければ、骨組みの形が変わる)。
 
 ## 受け入れ条件
 
-- [ ] dotfiles を持たない repo の CI でも、版を固定して入れる手順がある (`go install <module>@<版>` か、ビルド済みの実行ファイル)。cgo なので C のコンパイラの要否も書く。DualNoteApp の CI (GitHub Actions) を例に手順を確かめる
+- [x] dotfiles を持たない repo の CI でも、版を固定して入れる手順がある (`go install <module>@<版>` か、ビルド済みの実行ファイル)。cgo なので C のコンパイラの要否も書く。DualNoteApp の CI (GitHub Actions) を例に手順を確かめる
 
 - [x] `src/` の新しいプロジェクトの手順 (`src/README.md`「新規プロジェクトのガイドライン」) を満たす:
   - `src/dupscan/Makefile` の `lint:` (`../../scripts/go_module_graph.sh` を呼ぶ) / `test:`、`go.sum`、`src/dupscan/README.md`、`src/README.md` の一覧に 1 行
@@ -39,3 +37,8 @@ epic 890 の土台。`src/` の新しいプロジェクトの手順に沿って�
   dotfiles を持たない repo の CI で入れる手順は `src/dupscan/README.md` の組み込みの例 (固定した commit の dotfiles から `src/dupscan`・`src/subproc` を取り出して build。
   module の path が `dupscan` なので `go install <module>@<版>` の形は取れない)。C のコンパイラは要る (GitHub の macOS / Ubuntu の runner には入っている)。
   **残り**: その手順を実際の repo の CI で 1 回走らせて確かめる (DualNoteApp は読み取りのみなので使えない。obaket で行う = 909)
+- 2026-10-25 dotfiles を持たない repo の CI で確かめた (obaket の `.github/workflows/dupscan.yml`。issue 1301 の段階 6。ユーザー決定: GHA の `ubuntu-slim`):
+  固定した dotfiles の commit から `src/dupscan` と `src/subproc` を取り出して `go build` する (README の例のとおり)。ubuntu-slim には C のコンパイラ (gcc) があり、cgo の build は 46 秒、job 全体で 1 分 41 秒 (run 40172240531)。
+  ubuntu-slim の git は 2.43 で、dupscan が git に付ける `--no-lazy-fetch` (2.44 から) を知らず rc=2 になった (run 40171336706)。
+  dotfiles の subproc に版の分岐は足さず (dotfiles は macOS のみ・Apple git も 2.54)、CI の中だけでこの引数を外す shim を置いた (通常の clone では効く場面が無い)。README の CI の例にもこの注意を書いた
+- 2026-10-25 done
