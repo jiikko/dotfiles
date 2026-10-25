@@ -53,3 +53,8 @@ Type-3 ([895](895-feat-dupscan-type3-candidates.md)) は後回しにしたので
     1 行の委譲・setUp の定型・版の文字列の getter が 3、Diary と Memo の並べた小さな写しが 1 (`replaceRefreshTaskAndWait`)、本物の写しが 1 (54e9bb65: リファクタの途中で `reconcileDisplayModeWithTagState` を新しい controller に写し、元が残っていた。小さい)。
     下限を上げた代わりに、この大きさの写しは止めなくなる (受け入れた。止めたいなら `-min-nodes` で下げる)
   - **残り**: 言語ごとのおすすめセット (Swift の定型 = テストの setUp / tearDown・`==`・`hash(into:)`・Codable の `init(from:)` / `encode(to:)`・SwiftUI の modifier のクロージャ) を実測で決めて Swift の adapter に入れる (ユーザー了承の手順の 2・3)
+- 2026-10-25 言語ごとのおすすめセット (Swift の定型を外す既定) は **今は作らない**。新しい既定 (下限 20 節・L1/L2) で DualNoteApp (origin/master 8060665) に残った 95 組を種類で数えた:
+  テストの setUp / tearDown 3・`==` / `hash(into:)` 0・Codable の `init(from:)` / `encode(to:)` 0・クロージャ 51・それ以外の関数と property 41。
+  クロージャの組を 10 組抜き出して読むと、6 組は振る舞いの写し (pull-to-refresh の iCloud の読み直し 節 60・読み込みの失敗の一覧の文 65・削除の確認 43 と 21・新しいメモのボタン 28・タグ管理のシート 30)、
+  4 組は見た目だけの写し (アイコンのラベルなど)。SwiftUI のクロージャを型で一律に外すと振る舞いの写しも隠すので、セットにできない。外せる定型は setUp / tearDown の 3 組だけで、セットを作る手間と、名前で先回りして外す危うさに見合わない。
+  **再開の条件**: obaket (909 → obaket の issue 1301) か別の Swift の repo で、新しい既定のまま定型 (テストの lifecycle・`==`・Codable など) の組が 1 割を超えたとき。作るなら名前で外さず、その種類の単位の下限を上げる形にする (名前で外すと、後から足された本物の写しも覆う)
