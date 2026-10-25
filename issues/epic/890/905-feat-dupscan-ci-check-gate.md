@@ -134,3 +134,6 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
   手元で、使い捨ての Swift の repo に Makefile を入れ、dotfiles を clone して build した dupscan で `make test` が写しを足すと落ち (L1 の組を表示)・無ければ通り・dupscan が無ければ rc=2 で止まることを確かめた。
   **YAML は使う側の repo の Actions で走らせていない (未検証)**。DualNoteApp は読み取りのみなので入れていない (obaket への組み込みは obaket issue 1298)
   **残り**: untracked の一覧・base のキャッシュ・`--record`・誤って止める割合の測定 (過去の commit の流し直し)・PR 24 の前の木での受け入れ (obaket が要る)・組み込みの例を実際の repo の CI で 1 回走らせる
+- 2026-10-25 所要の実測 (base のキャッシュが要るかの判断): DualNoteApp (Swift 199 ファイル・1130 単位) で `gate -base HEAD~1 -head HEAD` が 0.37〜0.38 秒 (wall。1 回目だけ 1.87 秒)、
+  `-base HEAD~50` (変わった単位 214) も 0.38 秒、作業ツリーとの比較も 0.37 秒。`make test` に足される秒数としては十分小さいので、base のキャッシュは今は足さない。
+  obaket (Swift 1626 ファイル。parse だけで 5.0 秒 = 891) はこのマシンに checkout が無く未実測。**trigger**: obaket に組み込むとき (obaket issue 1298) に通しの所要を測り、`make test` の増分が数秒を超えるならキャッシュ (base の commit の単位の一覧) を足す
