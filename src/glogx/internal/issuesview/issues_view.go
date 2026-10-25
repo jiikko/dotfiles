@@ -2699,7 +2699,7 @@ func (v *IssuesView) Hint(width int) string {
 	// (ユーザー要望 2026-08-06)。一覧へ戻るのは i (toggle)。README も 2 語を使い分けており、
 	// git log 一覧の hint も同じ動作を "q: 終了" と書いている。
 	// "i: 一覧へ" は出さない (戻り方は --help と README が正本。足すなら優先度を付けて並べる)。
-	return term.FitHintItems(width, []term.HintItem{
+	items := []term.HintItem{
 		{Text: "j/k: 移動", Prio: 2},
 		// 🚨 上方向を `b` で案内するのは、shift+space が端末を選ぶから (spec の
 		// 「半ページ移動はカーソルが滑る」末尾)。Apple Terminal では shift が落ちて Space と
@@ -2707,14 +2707,33 @@ func (v *IssuesView) Hint(width int) string {
 		// 🚨 語が「半ページ」でなく「送り」なのは幅のため: 予算幅 89 に対し現行の hint が 71 桁で、
 		// "Space/b: 半ページ" は区切り込み 19 桁と 1 桁だけ入らず、a の案内 (状態フィルタ) を
 		// 押しのける (TestIssuesViewHintFitsPopupWidth が予算幅で a が残ることを要求している)。
-		{Text: "Space/b: 送り", Prio: 5},
+		// 優先度を最下位 (6) にしているのは、親行で Enter の案内が「Enter: 開閉  o: 本文」の 2 項目に増え、予算幅に
+		// 入り切らないとき a や o より先に落とすため (送りは j/k で代わりが効く。o は親 issue の本文を開く唯一の手段)。
+		{Text: "Space/b: 送り", Prio: 6},
 		{Text: "Tab: カテゴリ", Prio: 3},
 		{Text: "/: 検索", Prio: 4},
-		{Text: "Enter: 本文", Prio: 2},
-		{Text: "n: next", Prio: 4},
-		{Text: next, Prio: 5},
-		{Text: "q: 終了", Prio: 1},
-	})
+	}
+	items = append(items, v.openHintItems()...)
+	return term.FitHintItems(width, append(items,
+		term.HintItem{Text: "n: next", Prio: 4},
+		term.HintItem{Text: next, Prio: 5},
+		term.HintItem{Text: "q: 終了", Prio: 1},
+	))
+}
+
+// openHintItems は一覧で本文を開くキーの案内。親行の Enter は子の開閉なので、そこで「Enter: 本文」と
+// 案内すると親 issue の本文を読む手段 (o) が画面から消える (ユーザー要望 2026-10-26)。合成の親行には
+// 本文が無い (o は断る) ので o を案内しない。
+func (v *IssuesView) openHintItems() []term.HintItem {
+	row, ok := v.currentDisplayRow()
+	switch {
+	case ok && row.groupHead:
+		return []term.HintItem{{Text: "Enter: 開閉", Prio: 2}, {Text: "o: 本文", Prio: 2}}
+	case ok && row.kind == displayRowGroup:
+		return []term.HintItem{{Text: "Enter: 開閉", Prio: 2}}
+	default:
+		return []term.HintItem{{Text: "Enter: 本文", Prio: 2}}
+	}
 }
 
 // 「次にやる」の目印 (n)。選択中の issue を <issue ディレクトリ>/next/ へ移す。

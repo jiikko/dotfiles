@@ -378,3 +378,51 @@ func (e *bodyKeyEnv) assertClosesBody(t *testing.T, key string) {
 		t.Errorf("%q の後に本文が捨てられない", key)
 	}
 }
+
+// 親行の Enter は子の開閉なので、一覧の案内は行に合わせて変える (ユーザー要望 2026-10-26)。親 issue を統合した親行では
+// 本文を開く o を案内する (案内が「Enter: 本文」のままだと、親 issue の本文を読む手段が画面から消える)。合成の親行には
+// 本文が無いので o を案内しない。子の行は従来どおり「Enter: 本文」。
+func TestIssuesViewHintFollowsGroupRow(t *testing.T) {
+	parent := fakeEpicIssue("/repo/issues", "001", "001", "blog", issues.StatusOpen)
+	child := fakeEpicIssue("/repo/issues", "001", "002", "post", issues.StatusOpen)
+	named := fakeEpicIssue("/repo/issues", "google-drive", "710", "drive", issues.StatusOpen)
+	v := loadedView(parent, child, named)
+	v.ensureDisplayRows()
+	find := func(pred func(displayRow) bool) int {
+		for i, r := range v.displayRows {
+			if pred(r) {
+				return i
+			}
+		}
+		t.Fatalf("前提: 行が無い: %+v", v.displayRows)
+		return -1
+	}
+	v.cursor = find(func(r displayRow) bool { return r.groupHead })
+	if !v.toggleGroupAtCursor() {
+		t.Fatal("前提: 統合した親行を開けない")
+	}
+	v.ensureDisplayRows()
+	budget := testenv.PopupHintBudget
+	for _, tc := range []struct {
+		name      string
+		row       int
+		want, not []string
+	}{
+		{"統合した親行", find(func(r displayRow) bool { return r.groupHead }), []string{"Enter: 開閉", "o: 本文", "a: "}, []string{"Enter: 本文"}},
+		{"合成の親行", find(func(r displayRow) bool { return r.kind == displayRowGroup }), []string{"Enter: 開閉"}, []string{"o: 本文", "Enter: 本文"}},
+		{"子の行", find(func(r displayRow) bool { return r.inGroup }), []string{"Enter: 本文"}, []string{"Enter: 開閉", "o: 本文"}},
+	} {
+		v.cursor = tc.row
+		h := v.Hint(budget)
+		for _, w := range tc.want {
+			if !strings.Contains(h, w) {
+				t.Errorf("%s: %q が無い: %q", tc.name, w, h)
+			}
+		}
+		for _, n := range tc.not {
+			if strings.Contains(h, n) {
+				t.Errorf("%s: %q を案内した: %q", tc.name, n, h)
+			}
+		}
+	}
+}
