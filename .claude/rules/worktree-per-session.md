@@ -28,6 +28,11 @@
   - 🚨 本体の pull は **このスクリプトを通す** (lock を取ってから `git -C ~/dotfiles pull --rebase` する)。素の `git -C ~/dotfiles pull` を並行して打つと、
     片方がファイルを書き出している途中を見てもう片方が「untracked working tree files would be overwritten」で止まる (issue 544。2026-09-26 に 2 つの session が 1.2 秒差で pull した)。
     止まっても `git reset --hard` はしない (git がそう案内しても、他の session の作業を消しうる)
+- 🚨 **設定を「消す」変更は、pull して reload しても稼働中のプロセスから消えない**。reload は書かれた行を足し直すだけで、
+  conf から消えた bind・hook・追記 (`set -a`) は残る (tmux の `source-file`。zsh の `source ~/.zshrc` も消えた bindkey・alias・関数を残す)。
+  撤去するときは**行を消すだけにせず、打ち消す行 (`unbind` / `set -u` / `set-hook -u` / `bindkey -r` / `unalias`) を conf に残す**。
+  テストは新しく起動したサーバを見るだけでは足りない。消した設定が残った状態を作ってから reload し、外れることを見る
+  (2026-10-25: root の `C-f` の bind の行を消しただけで push し、以前の conf を読んだ他のマシンのサーバに残った。`_tmux.conf` の予約入力の節に同じ注意が既に書かれていた)
 - 🚨 **「動作確認した」と書く前に、確認した対象が本番の実体かを見る**。隔離サーバ (`-L`) や
   worktree 内で動かした結果は、`~/dotfiles` が古いままなら**本番の証拠にならない**。
   `git -C ~/dotfiles status -sb` の `behind N` が出ていないかを、報告の前に確認する
