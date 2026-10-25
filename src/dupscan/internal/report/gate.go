@@ -23,6 +23,8 @@ type GateSummary struct {
 	Unreadable []UnitRef       `json:"unreadable_changed_units"`
 	// NewExclusions は base の設定に無く head にある除外の要素 (glob と段・組の段と釘・単位の釘)。人が見る一覧。
 	NewExclusions []exclude.Element `json:"new_exclusions"`
+	// Untracked は head の作業ツリーで、ignore されていない untracked から読んだファイル (commit を head にしたときは空)。
+	Untracked []string `json:"untracked_files"`
 	// PathPassed は、パスの除外の下にあるので寄せる側に名指ししなかった、この変更で触った単位の数 (除外で通した写し)。
 	PathPassed     int       `json:"path_excluded_passed_units"`
 	PathPassedList []UnitRef `json:"path_excluded_passed"`
@@ -44,7 +46,7 @@ type ViolationJSON struct {
 // BuildGate は gate の出力の形を組み立てる。
 func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set) GateSummary {
 	s := GateSummary{Root: root, Base: base, Head: head, Changed: r.Changed, Failed: r.Failed(),
-		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewExclusions: []exclude.Element{}, Exclusions: exclusions(ex),
+		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewExclusions: []exclude.Element{}, Untracked: []string{}, Exclusions: exclusions(ex),
 		PathPassed: len(r.PathPassed), PathPassedList: []UnitRef{}}
 	for _, e := range r.PathPassed {
 		s.PathPassedList = append(s.PathPassedList, ref(e.Unit))
@@ -89,6 +91,9 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	if s.BaseConfigError != "" {
 		note += "・base の除外の設定を読めないので空とみなした"
 	}
+	if n := len(s.Untracked); n > 0 {
+		note += fmt.Sprintf("・untracked から読んだファイル %d (CI には無い。-v で一覧)", n)
+	}
 	note += s.note()
 	if len(s.Violations) == 0 {
 		fmt.Fprintf(w, "dupscan gate: 新しい重複なし (base %s・変わった単位 %d)%s\n", short(s.Base), s.Changed, note)
@@ -128,6 +133,9 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	if opt.Verbose {
 		for _, el := range s.NewExclusions {
 			fmt.Fprintf(w, "新しく足された除外: %s%s\n", el.Key, commentAt(el))
+		}
+		for _, f := range s.Untracked {
+			fmt.Fprintf(w, "untracked: %s\n", f)
 		}
 		for _, u := range s.PathPassedList {
 			fmt.Fprintf(w, "パスの除外で通した: %s:%d %s\n", u.File, u.Line, label(u))

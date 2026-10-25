@@ -137,3 +137,26 @@ func TestGateSameEditToBothCopiesPasses(t *testing.T) {
 		t.Errorf("既にある写しに同じ修正を入れて赤になった: rc=%d out=%q err=%q", rc, out, errs)
 	}
 }
+
+// untracked から読んだファイルは CI の checkout に無いので、手元と CI の結果の差として別に出す。追跡している変更・commit を head にした比較では出さない。
+func TestGateListsUntrackedFiles(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/U.swift": unrelated})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Sources/U.swift", unrelated+"\n")
+	writeFile(t, root, "Sources/B.swift", helperB)
+	rc, out, errs := runGateCmd(t, "-v", "-base", "HEAD", root)
+	if rc != 1 || !strings.Contains(out, "・untracked から読んだファイル 1 (CI には無い。-v で一覧)") || !strings.Contains(out, "untracked: Sources/B.swift\n") || strings.Contains(out, "untracked: Sources/U.swift") {
+		t.Errorf("untracked の B だけを一覧に: rc=%d out=%q err=%q", rc, out, errs)
+	}
+	_, out, _ = runGateCmd(t, "-format", "json", "-base", "HEAD", root)
+	if !strings.Contains(out, `"untracked_files": [
+    "Sources/B.swift"
+  ]`) {
+		t.Errorf("json の untracked_files: %q", out)
+	}
+	gitRun(t, root, "add", "Sources/B.swift")
+	if _, out, _ := runGateCmd(t, "-format", "json", "-base", "HEAD", root); !strings.Contains(out, `"untracked_files": []`) {
+		t.Errorf("追跡したら一覧から消える (空の配列): %q", out)
+	}
+}

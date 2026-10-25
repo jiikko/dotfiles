@@ -102,6 +102,14 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	if baseCfgErr != nil {
 		s.BaseConfigError = baseCfgErr.Error()
 	}
+	if *headRef == "" {
+		u, err := repo.Untracked(sc, swift.Extensions)
+		if err != nil {
+			fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
+			return 2
+		}
+		s.Untracked = append(s.Untracked, u...)
+	}
 	// base が head の commit と同じなら、見たのは未コミットの変更だけ (CI で -base を付け忘れた疑い)。
 	if hc, err := repo.CommitHash(sc.Root, headCommit); err == nil && hc == baseHash {
 		s.BaseIsHead = true

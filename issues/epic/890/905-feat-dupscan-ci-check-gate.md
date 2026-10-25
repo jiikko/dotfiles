@@ -137,3 +137,6 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
 - 2026-10-25 所要の実測 (base のキャッシュが要るかの判断): DualNoteApp (Swift 199 ファイル・1130 単位) で `gate -base HEAD~1 -head HEAD` が 0.37〜0.38 秒 (wall。1 回目だけ 1.87 秒)、
   `-base HEAD~50` (変わった単位 214) も 0.38 秒、作業ツリーとの比較も 0.37 秒。`make test` に足される秒数としては十分小さいので、base のキャッシュは今は足さない。
   obaket (Swift 1626 ファイル。parse だけで 5.0 秒 = 891) はこのマシンに checkout が無く未実測。**trigger**: obaket に組み込むとき (obaket issue 1298) に通しの所要を測り、`make test` の増分が数秒を超えるならキャッシュ (base の commit の単位の一覧) を足す
+- 2026-10-25 untracked の一覧を足した (commit「feat(dupscan): gate が untracked から読んだファイルを出す」): 作業ツリーを head にしたとき、ignore されていない untracked から読んだファイルの数を 1 行目に、
+  一覧を `-v` と json の `untracked_files` に出す (`-head <commit>` では空)。テスト 1 本、変異 4 本 (追跡しているファイルも数える・1 行目に出さない・-v に出さない・空を null にする) はビルドが通り全部赤。
+  **残り**: `--record`・誤って止める割合の測定の続き (過去の commit の流し直し)・PR 24 の前の木での受け入れ (obaket が要る)・組み込みの例を実際の repo の CI で 1 回走らせる

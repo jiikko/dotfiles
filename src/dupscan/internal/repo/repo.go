@@ -65,8 +65,13 @@ func (s Scope) Contains(file string) bool {
 
 // List は起点の中の、拡張子の合うファイルを root からの相対で返す。
 // 追跡しているファイルと、ignore されていない untracked のファイルを含む。symlink・消えたファイル・submodule は含めない。
-func List(s Scope, exts []string) ([]string, error) {
-	args := []string{"ls-files", "-z", "--cached", "--others", "--exclude-standard", "--"}
+func List(s Scope, exts []string) ([]string, error) { return list(s, exts, "--cached", "--others") }
+
+// Untracked は List のうち、ignore されていない untracked のファイルだけ (CI の checkout には無いので、手元と CI の結果の差になる)。
+func Untracked(s Scope, exts []string) ([]string, error) { return list(s, exts, "--others") }
+
+func list(s Scope, exts []string, which ...string) ([]string, error) {
+	args := append(append([]string{"ls-files", "-z"}, which...), "--exclude-standard", "--")
 	for _, p := range s.Prefixes {
 		// repo の root は `:(top)` だけにする (`:(top).` は何にも一致しない)。
 		args = append(args, ":(top)"+p)
