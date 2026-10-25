@@ -9,10 +9,10 @@ import (
 
 	"dupscan/internal/exclude"
 	"dupscan/internal/group"
+	"dupscan/internal/lang/swift"
 	"dupscan/internal/norm"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
-	"dupscan/internal/swift"
 )
 
 // runPoint は 1 つの単位を指す subcommand (near / explain)。最初の引数が `<file>:<関数名>` か `<file>:<行>`、残りが起点 (既定はそのファイルの repo 全体)。

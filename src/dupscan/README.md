@@ -202,7 +202,7 @@ gate の違反の json と `-v` に出る「除外の 1 行」に `kind` (`false
 | `internal/norm` | 段 (L1 / L2 / L3) ごとの正規化とハッシュ |
 | `internal/group` | Type-2 の組分け (細かい段と同じメンバーの組は粗い段で重ねない・囲む単位が同じ組のクロージャは出さない) |
 | `internal/repo` | git でのファイルの列挙と起点の正規化。作業ツリーと commit (git のオブジェクトから読む) を同じ `Source` として読む |
-| `internal/swift` | Swift の adapter (tree-sitter の node の種類の分類表・単位の取り出し・test の判定) |
+| `internal/lang/swift` | Swift の adapter (tree-sitter の node の種類の分類表・単位の取り出し・test の判定) |
 | `internal/report` | text / JSON / Xcode の出力 (report と gate) |
 | `internal/gate` | gate の判定 (変わった単位・出どころ・違反になった最初の段) |
 | `internal/exclude` | `.dupscan.json` の読み込みと検査・釘・除外の効き方 (report と gate が同じ関数を呼ぶ)・効いていない除外 |

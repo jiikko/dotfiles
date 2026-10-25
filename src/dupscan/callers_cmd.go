@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 
+	"dupscan/internal/lang/swift"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
-	"dupscan/internal/swift"
 )
 
 // runCallers は名前 (と引数ラベル) で呼び出しの箇所を引く。型を解決しないので、同名の別のメソッドの呼び出しも当たる (近似)。

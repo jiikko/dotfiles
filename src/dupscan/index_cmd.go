@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 
+	"dupscan/internal/lang/swift"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
-	"dupscan/internal/swift"
 )
 
 // runIndex は索引を引く。語を何も渡さなければ全部の単位を 1 行 1 件で出す。

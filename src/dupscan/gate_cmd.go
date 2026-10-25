@@ -8,10 +8,10 @@ import (
 	"dupscan/internal/exclude"
 	"dupscan/internal/gate"
 	"dupscan/internal/group"
+	"dupscan/internal/lang/swift"
 	"dupscan/internal/norm"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
-	"dupscan/internal/swift"
 )
 
 func runGate(args []string, stdout, stderr io.Writer) int {
