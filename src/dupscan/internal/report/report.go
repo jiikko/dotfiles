@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"dupscan/internal/exclude"
@@ -21,7 +22,16 @@ type Summary struct {
 	FilesWithErrors []string    `json:"files_with_errors"`
 	Unreadable      []UnitRef   `json:"unreadable_units"`
 	Groups          []GroupJSON `json:"groups"`
+	// FilePairs は組をメンバーのファイルの組み合わせでまとめた件数 (節の合計の大きい順)。同じ画面・同じ型の写しが細切れの組で並ぶのを、1 行で見せる。
+	FilePairs []FilePair `json:"file_pairs"`
 	Exclusions
+}
+
+// FilePair は、同じファイルの組み合わせに属する組の数と、各組の最大の単位の節の合計。
+type FilePair struct {
+	Files  []string `json:"files"`
+	Groups int      `json:"groups"`
+	Nodes  int      `json:"nodes"`
 }
 
 // Exclusions は除外の設定の状態 (report と gate で共通)。
@@ -92,6 +102,8 @@ type GroupJSON struct {
 	Members   []UnitRef `json:"members"`
 	// Exclude はこの組を指す組の除外の 1 行 (kind と reason を埋めて .dupscan.json に貼る)。
 	Exclude string `json:"exclude"`
+	// Nodes はメンバーのうち最も大きい単位の節の数 (寄せる価値の目安。組はこの大きい順に並べる)。
+	Nodes int `json:"nodes"`
 }
 
 // Build は出力の形を組み立てる。ex は除外 (nil なら無し)。単位の許可の印を付け、その後で効いていない除外を数える。
@@ -113,11 +125,42 @@ func Build(root string, files int, units []*tree.Unit, errFiles []string, groups
 			r := ref(m.Unit)
 			r.Allowed = ex != nil && ex.Allowed(m)
 			gj.Members = append(gj.Members, r)
+			gj.Nodes = max(gj.Nodes, m.Result.Nodes)
 		}
 		s.Groups = append(s.Groups, gj)
 	}
+	// 大きい写しから並べる (寄せる価値が大きく、小さい組ほど雑音が多い)。同じ大きさなら細かい段・元の順。
+	sort.SliceStable(s.Groups, func(i, j int) bool { return s.Groups[i].Nodes > s.Groups[j].Nodes })
+	s.FilePairs = filePairs(s.Groups)
 	s.Exclusions = exclusions(ex)
 	return s
+}
+
+func filePairs(groups []GroupJSON) []FilePair {
+	idx := map[string]int{}
+	out := []FilePair{}
+	for _, g := range groups {
+		seen := map[string]bool{}
+		var files []string
+		for _, m := range g.Members {
+			if !seen[m.File] {
+				seen[m.File] = true
+				files = append(files, m.File)
+			}
+		}
+		sort.Strings(files)
+		k := strings.Join(files, "\x00")
+		i, ok := idx[k]
+		if !ok {
+			i = len(out)
+			idx[k] = i
+			out = append(out, FilePair{Files: files})
+		}
+		out[i].Groups++
+		out[i].Nodes += g.Nodes
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Nodes > out[j].Nodes })
+	return out
 }
 
 func ref(u *tree.Unit) UnitRef {
@@ -149,12 +192,13 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 		return nil
 	}
 	fmt.Fprintf(w, "dupscan: 組 %d (%s)・%d ファイル・%d 単位%s%s\n", len(s.Groups), levelCounts(s), s.Files, s.Units, unreadableNote(s), s.note())
+	writeFilePairs(w, s.FilePairs)
 	shown := s.Groups
 	if opt.Limit > 0 && len(shown) > opt.Limit {
 		shown = shown[:opt.Limit]
 	}
 	for _, g := range shown {
-		fmt.Fprintf(w, "%s %s:\n", g.Level, g.Partition)
+		fmt.Fprintf(w, "%s %s (節 %d):\n", g.Level, g.Partition, g.Nodes)
 		for _, m := range g.Members {
 			fmt.Fprintf(w, "  %s:%d %s%s\n", m.File, m.Line, label(m), allowedMark(m))
 		}
@@ -173,6 +217,28 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 		}
 	}
 	return nil
+}
+
+// filePairsShown は text で出すファイルの組の数。
+const filePairsShown = 5
+
+// writeFilePairs は、組が 2 つ以上あるファイルの組み合わせを、節の合計の大きい順に上位だけ出す (1 組だけのものは組の一覧と同じなので出さない)。
+func writeFilePairs(w io.Writer, pairs []FilePair) {
+	n := 0
+	for _, p := range pairs {
+		if p.Groups < 2 {
+			continue
+		}
+		if n == 0 {
+			fmt.Fprintln(w, "ファイルの組 (組が 2 つ以上・節の合計の大きい順):")
+		}
+		if n == filePairsShown {
+			fmt.Fprintln(w, "  … (-format json の file_pairs で全部)")
+			break
+		}
+		fmt.Fprintf(w, "  %d 組・節 %d: %s\n", p.Groups, p.Nodes, strings.Join(p.Files, " ↔ "))
+		n++
+	}
 }
 
 func writeErrorFiles(w io.Writer, s Summary) {

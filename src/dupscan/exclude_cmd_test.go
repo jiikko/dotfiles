@@ -227,6 +227,10 @@ func TestNarrowedRunDoesNotCallExclusionStale(t *testing.T) {
 	if _, out, _ := runReport(t, "-levels", "L1", root); strings.Contains(out, "効いていない") {
 		t.Errorf("絞った走査で効いていないと出た: %q", out)
 	}
+	// 下限を既定より上げた走査も狭い (組が作られないだけ)。
+	if _, out, _ := runReport(t, "-min-nodes", "500", root); strings.Contains(out, "効いていない") {
+		t.Errorf("下限を上げた走査で効いていないと出た: %q", out)
+	}
 }
 
 func TestPassedCopiesAreListedInXcodeAndVerbose(t *testing.T) {

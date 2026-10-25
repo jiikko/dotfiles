@@ -57,11 +57,11 @@ func newFlags(name string, stderr io.Writer) (*flag.FlagSet, common) {
 	fs.SetOutput(stderr)
 	c := common{
 		format:     fs.String("format", "text", "出力の形式: text / json / xcode"),
-		minNodes:   fs.Int("min-nodes", 10, "これより節の少ない関数・初期化子は比べない"),
-		minClosure: fs.Int("min-closure-nodes", 20, "これより節の少ないクロージャは比べない"),
+		minNodes:   fs.Int("min-nodes", defaultMinNodes, "これより節の少ない関数・初期化子・property は比べない"),
+		minClosure: fs.Int("min-closure-nodes", defaultMinClosure, "これより節の少ないクロージャは比べない"),
 		limit:      fs.Int("limit", 20, "text で出す組・違反の上限 (0 は全部)"),
 		verbose:    fs.Bool("v", false, "読めない構文の単位を 1 つずつ出す"),
-		levels:     fs.String("levels", "L1,L2,L3", "見る段 (カンマ区切り)"),
+		levels:     fs.String("levels", defaultLevels, "見る段 (カンマ区切り。L3 は値の位置まで畳む一致で、偶然の一致が多いので既定では見ない)"),
 		noExclude:  fs.Bool("no-exclude", false, "repo の root の "+exclude.FileName+" の除外を外して回す (除外が正しいかを見直すため)"),
 	}
 	fs.Usage = func() {
@@ -86,13 +86,31 @@ func parseFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool
 }
 
 // narrowed は、段か下限を既定から変えた走査か (組が作られないだけの除外を「効いていない」と言えない)。
+// 既定の下限と段。下限は DualNoteApp の実測で決めた (節 20 未満の関数・property の組はほぼ全部が 1 行の委譲などの雑音だった。issue 898)。
+const (
+	defaultMinNodes   = 20
+	defaultMinClosure = 20
+	defaultLevels     = "L1,L2"
+)
+
+// narrowed は、既定より狭い走査 (既定の段を見ない・下限を既定より上げた) か (組が作られないだけの除外を「効いていない」と言えない)。
+// 既定より広い走査 (L3 も見る・下限を下げる) は狭くない。
 func (c common) narrowed() bool {
 	lv, err := parseLevels(*c.levels)
+	if err != nil {
+		return true
+	}
 	set := map[norm.Level]bool{}
 	for _, l := range lv {
 		set[l] = true
 	}
-	return err != nil || len(set) != len(norm.Levels) || *c.minNodes != 10 || *c.minClosure != 20
+	def, _ := parseLevels(defaultLevels)
+	for _, l := range def {
+		if !set[l] {
+			return true
+		}
+	}
+	return *c.minNodes > defaultMinNodes || *c.minClosure > defaultMinClosure
 }
 
 func (c common) options() (group.Options, error) {
@@ -151,6 +169,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if c.narrowed() {
 		ex.Narrowed()
 	}
+	ex.Scanned(opt.Levels)
 	s := report.Build(sc.Root, got.files, got.units, got.errFiles, ex.ApplyGroups(group.Build(got.entries, opt)), ex)
 	switch *c.format {
 	case "json":

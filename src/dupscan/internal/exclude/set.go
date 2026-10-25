@@ -21,6 +21,9 @@ type Set struct {
 	inScope  func(file string) bool
 	// narrowed は既定より狭い走査 (段・下限を変えた) か。狭い走査では組が作られないだけの除外を「効いていない」と言えない。
 	narrowed bool
+	// maxLevel は走査で組を作った段のうち最も粗い段。それより粗い段の組の除外は、組が作られないだけなので「効いていない」に数えない
+	// (L3 の組の除外は、L3 を見ない既定の走査では何も消さない)。0 なら制限しない。
+	maxLevel norm.Level
 }
 
 // New は head の単位 (path の除外で外す前の全部) に対する除外を作る。c が nil なら除外は無い。
@@ -53,6 +56,13 @@ func New(c *Config, entries []*group.Entry, inScope func(string) bool) *Set {
 
 // Narrowed は、既定より狭い走査 (段・下限を変えた) であることを伝える。効いていない除外を数えなくなる。
 func (s *Set) Narrowed() { s.narrowed = true }
+
+// Scanned は、組を作った段を伝える。それより粗い段の組の除外を「効いていない」に数えなくなる。
+func (s *Set) Scanned(levels []norm.Level) {
+	for _, lv := range levels {
+		s.maxLevel = max(s.maxLevel, lv)
+	}
+}
 
 // LimitToBase は gate のために、組・単位の除外を base にあった釘か新しく足された要素だけに効かせる。
 func (s *Set) LimitToBase(base []*group.Entry, baseCfg *Config) {
@@ -164,6 +174,9 @@ func (s *Set) Stale() []Rule {
 		return out
 	}
 	for i, r := range s.rules {
+		if len(r.Group) > 0 && s.maxLevel != 0 && r.level > s.maxLevel {
+			continue
+		}
 		if !s.used[i] && !s.ambiguous[i] && s.ruleInScope(r) {
 			out = append(out, r)
 		}

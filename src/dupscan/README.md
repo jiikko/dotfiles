@@ -14,6 +14,7 @@ bin/dupscan macOS Shared         # 起点を repo の中のディレクトリに
 bin/dupscan -format json .       # 全部の組を JSON で
 bin/dupscan -format xcode .      # Xcode / SwiftLint と同じ `ファイル:行:列: warning:` の形式
 bin/dupscan -limit 0 -v .        # text で全部の組と、読めない構文の単位の一覧
+bin/dupscan -levels L1,L2,L3 .   # 値の位置まで畳んだ一致 (L3) も見る (偶然の一致が多いので既定では見ない)
 
 bin/dupscan gate                 # upstream との merge-base から作業ツリーまでに新しく増えた重複。無ければ 1 行
 bin/dupscan gate -base origin/master .        # base を明示する (CI の push なら push の前の commit、PR なら対象のブランチ)
@@ -34,6 +35,9 @@ bin/dupscan callers 'make(x:_:)'              # 呼び出しの箇所と、そ�
 型を解決しないので、同名の別のメソッド・別の型の初期化子の呼び出しも当たる (近似)。ラベルを書けば数と順で絞る。
 後置クロージャのある呼び出しは括弧の中のラベルが先頭に一致すれば当てる。flag は名前の前に書く (`callers -format json make`)。
 
+report の text は、組を大きい順 (メンバーのうち最大の単位の節の数) に並べ、先頭に「ファイルの組」(同じファイルの組み合わせに組が 2 つ以上あるもの) を件数と節の合計の大きい順に 5 行出す。
+同じ画面・同じ型の写しが細切れの組で並ぶのを 1 行で見せ、寄せる作業の単位を決めやすくする (json は `file_pairs` に全部・各組の `nodes`)。
+
 `index` は名前の付いた単位 (関数・初期化子・computed property・subscript など。クロージャとテスト関数は除く) を
 `file:line 型.署名 [shared,test,private] (呼び出し ~N) // doc の最初の行` の 1 行で出す。grep と違い呼び出し側の行・コメント・文字列は混ざらない。
 並べ方は名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所 (`.dupscan.json` の `"shared": ["Tests/SharedTestSupport/**"]` のような glob。`[shared]` と出る) を前 → prod を test より前 → private / fileprivate でないもの (そのまま使える) を前 → 呼び出しの多いもの → 場所。
@@ -48,7 +52,7 @@ bin/dupscan callers 'make(x:_:)'              # 呼び出しの箇所と、そ�
 `gate` を手で試すなら、既にある関数の写しをわざと足してから `bin/dupscan gate` を回すと、`make test` で落ちるときと同じ違反が出る。
 
 `gate` の終了コード: 0 = 止める段の新しい重複なし / 1 = あり / 2 = 判定不能 (base が無い・読むファイルが 0 件など)。
-`-fail-levels` (既定 `L1,L2`) の段の違反だけで止め、ほかの段 (既定では L3) は報告だけ。セルフレビューと make test・CI で回す。
+`-fail-levels` (既定 `L1,L2`) の段の違反だけで止め、ほかの段は報告だけ (`-levels` に L3 を足したとき、L3 は報告だけ)。セルフレビューと make test・CI で回す。
 
 `gate` の判定: 変わった単位 (鍵が base に無いか、本体のハッシュが base と違う) ごとに、細かい段から順に、他と一致した段の組を見る。
 組のメンバーごとに出どころ (base の側の相手) がその段で持っていた形を引き、組の大きさが同じ出どころから来たメンバーの最大の数より大きいときだけ違反。
@@ -70,8 +74,8 @@ base で L3 だけ比べなかった相手 (L3Trivial) から来た別の単位�
 | flag | 既定 | 意味 |
 |---|---|---|
 | `-format` | `text` | `text` / `json` / `xcode` |
-| `-levels` | `L1,L2,L3` | 組を出す段 |
-| `-min-nodes` | 10 | これより節の少ない関数・初期化子は比べない |
+| `-levels` | `L1,L2` | 組を出す段。L3 (値の位置まで畳む) は偶然の一致が多いので既定では見ない |
+| `-min-nodes` | 20 | これより節の少ない関数・初期化子・property は比べない (節 20 未満の組は 1 行の委譲などの雑音がほとんどだった。DualNoteApp の実測、issue 898) |
 | `-min-closure-nodes` | 20 | これより節の少ないクロージャは比べない |
 | `-limit` | 20 | text で出す組の上限 (0 は全部)。Claude が何度も回すので短くしている |
 | `-v` | false | 読めない構文の単位・除外の一覧・各組の「除外の 1 行」を出す |

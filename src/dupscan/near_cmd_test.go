@@ -101,11 +101,11 @@ func TestNearAgreesWithReportGroups(t *testing.T) {
 
 func TestNearSeparatesFoldedMatches(t *testing.T) {
 	root := repoWith(t, map[string]string{"Sources/FA.swift": foldedA, "Sources/FB.swift": foldedB})
-	rc, out, errs := near(t, root, filepath.Join(root, "Sources/FA.swift")+":make")
+	rc, out, errs := near(t, root, "-levels", "L1,L2,L3", filepath.Join(root, "Sources/FA.swift")+":make")
 	if rc != 0 || !strings.Contains(out, "L3 (局所の名前を参照しない単位どうしの一致) Sources/FB.swift") || !strings.Contains(out, "L3 は比べていない") {
 		t.Errorf("畳まれた一致を中身を見た一致と分けて出すことを期待: rc=%d out=%q err=%q", rc, out, errs)
 	}
-	if _, out, _ := runReport(t, root); !strings.Contains(out, "重複なし") {
+	if _, out, _ := runReport(t, "-levels", "L1,L2,L3", root); !strings.Contains(out, "重複なし") {
 		t.Errorf("畳まれた一致は report の組にはしない: %q", out)
 	}
 }
@@ -167,11 +167,11 @@ func TestNearOnSmallUnitComparesNothing(t *testing.T) {
 		"Sources/A.swift": "struct A {\n    func a(_ x: Int) -> Int { x + 1 }\n}\n",
 		"Sources/B.swift": "struct B {\n    func b(_ y: Int) -> Int { y + Limits.config.maximum.value }\n}\n",
 	})
-	rc, out, errs := near(t, root, filepath.Join(root, "Sources/A.swift")+":a")
+	rc, out, errs := near(t, root, "-levels", "L1,L2,L3", "-min-nodes", "10", filepath.Join(root, "Sources/A.swift")+":a")
 	if rc != 0 || !strings.Contains(out, "近いものはない") || !strings.Contains(out, "L3 は比べていない: 節が 5 で下限 10 より少ない") {
 		t.Errorf("下限より小さい単位を指すと比べず、理由を出す: rc=%d out=%q err=%q", rc, out, errs)
 	}
-	if _, out, _ := near(t, root, "-min-nodes", "5", filepath.Join(root, "Sources/A.swift")+":a"); !strings.Contains(out, "L3 Sources/B.swift:2") {
+	if _, out, _ := near(t, root, "-levels", "L1,L2,L3", "-min-nodes", "5", filepath.Join(root, "Sources/A.swift")+":a"); !strings.Contains(out, "L3 Sources/B.swift:2") {
 		t.Errorf("下限を下げると L3 で一致する (入力の前提): %q", out)
 	}
 }
