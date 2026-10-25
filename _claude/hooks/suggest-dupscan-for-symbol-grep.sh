@@ -23,6 +23,9 @@
 #   - 全部が小文字の語で Swift を対象にしていない grep (`grep -n refresh config.yml`)・全部が大文字の語 (`TODO`)・正規表現 (`foo.*bar`)
 #   - grep の語が変数・エイリアス・`sh -c "..."` の中にあるもの / `-C` や cd・`$W/…` で別の repo を指したもの (cwd の repo で判定する)
 #   - パイプの後ろの grep (stdin を絞る形)・`A|B` の alternation のパターン
+#   - `-i` (大文字小文字を無視する) の grep (def / refs は完全一致なので、案内しても引けない名前になりうる)
+#   - 対象が Swift 以外のファイルだけの grep (`grep -c Error build.log`・`grep -n Foo .gitignore`)
+#   - grep / rg がコマンドの先頭の語でないもの (`xargs grep …`・`find … -exec grep …`・`time grep …`)
 #   - python3 / jq / git が無い環境 (fail-open)
 #   - 1 つ目のパターンだけを見る (`-e a -e b` の b は見ない)
 
@@ -54,7 +57,9 @@ esac
 
 [ -n "$cwd" ] && [ -d "$cwd" ] || exit 0
 root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
-git -C "$root" ls-files -- '*.swift' 2>/dev/null | head -n 1 | grep -q . || exit 0
+# 🚨 パイプの終わりの rc で判定しない: .swift が多い repo (obaket は 100KB 超) では head の後に git が SIGPIPE で落ち、pipefail で
+# 失敗扱いになって黙る。コマンド置換の出力の有無で見る (置換の rc は使わない)
+[ -n "$(git -C "$root" ls-files -- '*.swift' 2>/dev/null | head -n 1)" ] || exit 0
 
 # 名前を 1 つ返す (案内しないなら空)。Bash は cmd、Grep は tool_input を読む
 name=$(HOOK_TOOL="$tool" HOOK_CMD="$cmd" HOOK_INPUT="$input" python3 -I - <<'PY' 2>/dev/null
@@ -78,6 +83,14 @@ def symbol(pattern, swift_target):
         return name
     return ''
 
+# 値を取るオプション (次の語をパターンやパスと読まない)。grep と rg で意味が違う短いオプション (-r: grep は再帰 / rg は置換、-E・-T など)
+# は、grep で値を取らないので入れない (入れると `grep -r Foo .` の Foo を読み飛ばす)。rg のそれらは長い形だけ数える
+VALUE_OPTIONS = {
+    '-t', '--type', '--type-not', '-g', '--glob', '--iglob', '--include', '--exclude', '--exclude-dir',
+    '-A', '-B', '-C', '-m', '--max-count', '-f', '--file', '--sort', '--sortr', '-M', '--max-columns',
+    '-j', '--threads', '--encoding', '--replace', '--context-separator', '--path-separator', '--colors',
+}
+
 def from_segment(words):
     # grep / rg / git grep の後ろから、パターンと Swift を対象にしているかを取る
     i = 0
@@ -94,8 +107,10 @@ def from_segment(words):
     if i >= len(words) or os.path.basename(words[i]) not in ('grep', 'rg', 'egrep'):
         return None
     rest = words[i + 1:]
-    swift = any('swift' in w for w in rest)
+    # Swift を対象にしているか: `.swift` の拡張子 (glob を含む) か `-t swift` (`.swiftlint.yml` には当てない)
+    swift = any(re.search(r'\.swift($|[^A-Za-z0-9_])', w) or w == 'swift' for w in rest)
     pattern = None
+    paths = []
     k = 0
     while k < len(rest):
         w = rest[k]
@@ -106,13 +121,22 @@ def from_segment(words):
             continue
         if w.startswith('--regexp='):
             pattern = pattern or w.split('=', 1)[1]
-        elif w in ('-t', '--type', '-g', '--glob', '--include', '-A', '-B', '-C', '-m', '--max-count', '-f'):
+        elif w in VALUE_OPTIONS:
             k += 2
             continue
-        elif not w.startswith('-') and pattern is None:
-            pattern = w
+        elif w in ('-i', '--ignore-case') or re.fullmatch(r'-[A-Za-z]*i[A-Za-z]*', w):
+            return None  # 大文字小文字を無視する検索
+        elif not w.startswith('-'):
+            if pattern is None:
+                pattern = w
+            else:
+                paths.append(w)
         k += 1
     if pattern is None:
+        return None
+    # 対象のファイルを名指ししていて、どれも Swift でない (拡張子つき・dot file) なら、設定やログを探している
+    named = [p for p in paths if re.search(r'(^|/)\.[^/]+$|\.[A-Za-z0-9]+$', p)]
+    if named and len(named) == len(paths) and not any(p.endswith('.swift') for p in named):
         return None
     return symbol(pattern, swift)
 
@@ -154,8 +178,9 @@ if [ -f "$stamp" ]; then
   [ "${#last}" -le 12 ] || last=0
   [ $((now - last)) -ge "$NUDGE_INTERVAL" ] || exit 0
 fi
-printf '%s\n' "$now" > "$stamp" 2>/dev/null || true
+# 書けない TMPDIR でも stderr に漏らさない (`> f 2>/dev/null` の順だと、リダイレクトの失敗は stderr に出る)
+{ printf '%s\n' "$now" > "$stamp"; } 2>/dev/null || true
 
 short=${name##*.}
-msg="dupscan で Swift の定義・参照を引ける: \`dupscan def $name\` (定義を本体つき・型はメンバーの一覧) / \`dupscan refs $short\` (型・値としての参照、コメントと文字列を除く) / \`dupscan callers '$short'\` (呼び出し元)。grep は文字列・コメント・設定ファイルを探すときに使う (skill dupscan の 2 節)"
+msg="dupscan で Swift の定義・参照を引ける: \`dupscan def $name\` (定義を本体つき・型はメンバーの一覧) / \`dupscan refs $short\` (参照の一覧。[型の位置] / [式の位置] と囲む関数、宣言名・コメント・文字列を除く) / \`dupscan callers '$short'\` (呼び出し元)。grep は文字列・コメント・設定ファイルを探すときに使う (skill dupscan の 2 節)"
 jq -n --arg c "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $c}}'

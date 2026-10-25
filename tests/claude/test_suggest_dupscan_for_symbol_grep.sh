@@ -73,6 +73,14 @@ next_session; expect_silent "heredoc の本文の中の grep" "$(run_bash "$(pri
 next_session; expect_silent "Grep ツールの記号だけのパターン" "$(run_grep 'error:' '')"
 next_session; expect_silent "パイプの後ろで stdin を絞る grep" "$(run_bash 'make test 2>&1 | grep FooBarFailure')"
 next_session; expect_silent "alternation のパターン" "$(run_bash 'grep -rn "FooBar|BazQux" Sources')"
+next_session; expect_nudge "値を取るオプションの値をパターンと読まない (--exclude-dir)" "$(run_bash 'grep -rn --exclude-dir build StorageFoo --include=*.swift .')" StorageFoo
+next_session; expect_nudge "値を取るオプションの値をパターンと読まない (rg --sort)" "$(run_bash "rg -n --sort path fooBarQux -g '*.swift'")" fooBarQux
+next_session; expect_nudge "grep の -r は値を取らない" "$(run_bash 'grep -r StorageOperationLockRegistry .')" StorageOperationLockRegistry
+next_session; expect_silent ".swiftlint.yml は Swift の対象ではない" "$(run_bash 'grep -n disabled_rules .swiftlint.yml')"
+next_session; expect_silent "対象が Swift 以外のファイルだけ (ログ)" "$(run_bash 'grep -c Error build.log')"
+next_session; expect_silent "対象が Swift 以外のファイルだけ (dot file)" "$(run_bash 'grep -n "Package.resolved" .gitignore')"
+next_session; expect_nudge "Swift のファイルを名指し" "$(run_bash 'grep -n "fooBarQux" Sources/A.swift')" fooBarQux
+next_session; expect_silent "大文字小文字を無視する検索 (-rni)" "$(run_bash 'grep -rni "StorageLock" --include=*.swift .')"
 
 # 出しすぎない: 同じ session の 2 回目は出さず、別の session なら出す
 next_session
@@ -84,6 +92,18 @@ next_session; printf 'abc\n' > "$TMP_ROOT/claude-dupscan-nudge-s$session"
 expect_nudge "状態ファイルが数字でない" "$(run_bash 'grep -rn "func fooBarBaz" .')" fooBarBaz
 next_session; printf '12345678901234567890\n' > "$TMP_ROOT/claude-dupscan-nudge-s$session"
 expect_nudge "状態ファイルの桁が多すぎる" "$(run_bash 'grep -rn "func fooBarBaz" .')" fooBarBaz
+
+# 書けない TMPDIR: 状態を残せなくても案内は出し、stderr に漏らさない
+next_session
+err=$(jq -n --arg d "$REPO" --arg s "s$session" '{tool_name: "Bash", session_id: $s, cwd: $d, tool_input: {command: "grep -rn \"func fooBarBaz\" ."}}' |
+  TMPDIR=/nonexistent/dir "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>&1 >/dev/null || true)
+if [ -z "$err" ]; then echo "✓ 書けない TMPDIR でも stderr に出さない"; ok=$((ok+1)); else echo "✗ 書けない TMPDIR で stderr に出た: $err"; fail=$((fail+1)); fi
+
+# .swift が多い repo (ls-files の出力がパイプの buffer を超える) でも出す。head の後に git が SIGPIPE で落ちても黙らない
+REPO=$(mktemp -d "$TMP_ROOT/big.XXXXXX")
+( cd "$REPO" && git init -q . && mkdir -p Sources/VeryLongDirectoryNameToGrowTheListing &&
+  for n in $(seq 1 2500); do : > "Sources/VeryLongDirectoryNameToGrowTheListing/GeneratedSourceFile$n.swift"; done && git add -A ) >/dev/null 2>&1
+next_session; expect_nudge ".swift が多い repo" "$(run_bash 'grep -rn "func executeMutation" Sources')" executeMutation
 
 # .swift を追跡していない repo・git の外では出さない
 new_repo 0
