@@ -13,7 +13,7 @@
 
 | 主張 | 根拠 | 強さ |
 |---|---|---|
-| gate は新しい写しを見つける | DualNoteApp の first-parent 500 commit の流し直しで赤 59。見た範囲は全部、同じ本体の単位が残ったままの本物の写し ([905](../905-feat-dupscan-ci-check-gate.md)) | 実測 |
+| gate は新しい写しを見つける | DualNoteApp の first-parent 500 commit の流し直しで赤 59。見た範囲は全部、同じ本体の単位が残ったままの本物の写し ([905](../done/905-feat-dupscan-ci-check-gate.md)) | 実測 |
 | gate は誤って止めにくい | 直近 100 commit で誤って止めたのは 1 (905。9b10af80 の版で数えた。500 commit の流し直しでは赤の一覧を見た限りで、件数を 1 つずつ数えてはいない) | 実測。DualNoteApp 1 つだけ |
 | 引く所要は小さい | DualNoteApp で index 0.5 秒・callers 0.6 秒・gate 0.4 秒 ([897](../done/897-feat-dupscan-index-subcommand.md)・905) | 実測。obaket の規模: report 1.6 秒・未コミットだけを見る gate 3.0 秒 (obaket の issue 1301。2026-10-25) |
 | index は grep より返る量が少ない | 同じ問いで grep の約 1/2〜1/23 の文字数 (定義に絞った正規表現との比では約 1/1.8〜1/1.9。ファイルの中身は cat の約 1/8.5) ([907](../done/907-feat-dupscan-exploration-queries.md)) | 実測。作業が速くなるかは未測定 |

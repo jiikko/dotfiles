@@ -6,12 +6,12 @@
 
 ## 概要
 
-[891 (要件の正本)](../891-design-dupscan-requirements.md) の「構想: 対応する言語」節。Swift の次は Go と zsh が候補 (ユーザー 2026-10-24)。足す前に、Swift と同じく
+[891 (要件の正本)](../done/891-design-dupscan-requirements.md) の「構想: 対応する言語」節。Swift の次は Go と zsh が候補 (ユーザー 2026-10-24)。足す前に、Swift と同じく
 「対象の repo の全ファイルを読ませて、読めない構文 (ERROR / MISSING) が出るファイルを数える」を測ってから決める。
 zsh は tree-sitter-bash を使う案で、zsh だけの構文 (`${(f)...}`・glob の修飾子など) を読めるかが分かれ目。Go は tree-sitter-go か標準の `go/ast`。
 
 Go の重複のチェックは dupl (golangci-lint) が dotfiles の Go の 7 module (doctor・glogx・mac-lan-manager・pro-con・ratelimit・treefiler・tuikit) で有効。閾値はどれも 120 トークンで、tuikit 以外はテストを除外 (`src/*/.golangci.local.yml`)。
-Go を足す価値は、索引と `gate` ([905](../905-feat-dupscan-ci-check-gate.md)) の側と、dupl の閾値より小さいヘルパーの写しにある。
+Go を足す価値は、索引と `gate` ([905](../done/905-feat-dupscan-ci-check-gate.md)) の側と、dupl の閾値より小さいヘルパーの写しにある。
 
 ## 受け入れ条件
 

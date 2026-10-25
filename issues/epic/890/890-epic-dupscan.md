@@ -2,7 +2,7 @@
 
 起票日: 2026-10-24
 
-> epic 890 の親 issue。要件と構想の正本は [891](891-design-dupscan-requirements.md)。作業は同じディレクトリのタスクの子 issue で進める。
+> epic 890 の親 issue。要件と構想の正本は [891](done/891-design-dupscan-requirements.md)。作業は同じディレクトリのタスクの子 issue で進める。
 
 ## 概要
 
@@ -11,14 +11,14 @@ repo で実行すると、テスト / 製品コードのそれぞれで重複し
 obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身のヘルパーが 6 つ見つかったことが起点 (経緯は obaket issue 1298)。
 
 **主な用途 (ユーザー 2026-10-24)**: Claude Code にコードを変更させている間に、重複したメソッドを作らせない・既存のメソッドを見つけやすくして実装を滑らかにする。
-後からまとめて重複を洗う使い方 (週次の audit) より、実装の最中に効く使い方 (書く前に索引を引く [903](done/903-docs-dupscan-search-before-write-procedure.md) と、`make test` で落とす [905](905-feat-dupscan-ci-check-gate.md)) を先にする。
+後からまとめて重複を洗う使い方 (週次の audit) より、実装の最中に効く使い方 (書く前に索引を引く [903](done/903-docs-dupscan-search-before-write-procedure.md) と、`make test` で落とす [905](done/905-feat-dupscan-ci-check-gate.md)) を先にする。
 **既存の道具の調査 ([901](done/901-research-dupscan-existing-tools.md)) を先に済ませ、足りない部分だけを作る** (当初は既存の道具を調べていなかった)。
 
 ## 子 issue
 
 | 番号 | 何をするか | 依存 |
 |---|---|---|
-| [891](891-design-dupscan-requirements.md) | 要件と構想の正本 (用途・コアと adapter の境界・正規化の段・出力・索引・実測・構想・決めること) | — |
+| [891](done/891-design-dupscan-requirements.md) | 要件と構想の正本 (用途・コアと adapter の境界・正規化の段・出力・索引・実測・構想・決めること) | — |
 | [901](done/901-research-dupscan-existing-tools.md) | **既存の道具の調査** (CPD・jscpd とその MCP・DRYwall・dupl・similarity・ast-grep・意味検索の MCP。LSP・Serena は使わないと決めた)。PR 24 の 6 つに当てて、自分で作る範囲を決める | — |
 | [903](done/903-docs-dupscan-search-before-write-procedure.md) | **書く前に既存のメソッドを探す手順と、実装後のセルフレビューで `gate` を回す手順**を使う側の repo の入口に書く (索引ができるまでは grep の暫定の手順) | 暫定は無し (索引は 897・`gate` は 905) |
 | [892](done/892-chore-dupscan-project-scaffold.md) | `src/dupscan` の骨組み (module・Makefile・bin・CI・README・PACKAGES.md、cgo の所要の実測) | 901 |
@@ -32,7 +32,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [900](pending/900-research-dupscan-next-languages.md) | 次の言語 (Go・zsh) の読み取りを測る | 893 |
 | [902](pending/902-feat-dupscan-claude-code-hook.md) | **保留**: 編集のたびの hook。止める網は `make test` (905) にした。`make test` まで待つと手戻りが大きい実例が続いたら再開 | — |
 | [904](done/904-feat-dupscan-trial-subcommands.md) | 人が試す入口 (`near`・`explain`・`gate` を手で回す)。動作確認として何ができるか・なぜ同じと判定したかを手で確かめる | 893・894・896・897・898・905・906 |
-| [905](905-feat-dupscan-ci-check-gate.md) | **セルフレビュー・`make test`・CI で新しく入った重複を落とす** (`dupscan gate`)。変わった単位を名指しし、その形の単位が base より増えたときだけ落とす。止めるかは所要と誤って止める割合を見て決める | 893・894・896・898・906 |
+| [905](done/905-feat-dupscan-ci-check-gate.md) | **セルフレビュー・`make test`・CI で新しく入った重複を落とす** (`dupscan gate`)。変わった単位を名指しし、その形の単位が base より増えたときだけ落とす。止めるかは所要と誤って止める割合を見て決める | 893・894・896・898・906 |
 | [906](done/906-feat-dupscan-exclusion-config.md) | **誤検知を除外する設定** (組・単位・パス・段・下限。理由が必須。効いていない除外と、新しく足された除外を出す) | 893・896 |
 | [907](done/907-feat-dupscan-exploration-queries.md) | **探索の問い合わせ** (`outline`・`find`・`callers`)。grep の代わりに、定義だけを 1 件 1 行で返して文脈を食わずに関連の実装を探す | 893・894・897 |
 | [909](done/909-task-dupscan-integrate-into-obaket.md) | **obaket への組み込み**。2026-10-25 に obaket の issue 1301 へ移した (PR 24 の前の木での受け入れと obaket の規模の実測も 1301 で行い、結果を各 issue に書き戻す) | 903・905・906 |

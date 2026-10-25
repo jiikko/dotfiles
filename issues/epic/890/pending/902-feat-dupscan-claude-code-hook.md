@@ -3,7 +3,7 @@
 起票日: 2026-10-24
 
 > **保留 (ユーザー指示 2026-10-24: hook というより `make test` の中に dupscan を含める感じの実行頻度にしたい)**。止める網は `make test` と CI の
-> `dupscan gate` ([905](../905-feat-dupscan-ci-check-gate.md)) にした。再開の条件: `make test` まで待つと手戻りが大きい (写しを前提に書き進めた後で落ちる) 実例が続いたとき。
+> `dupscan gate` ([905](../done/905-feat-dupscan-ci-check-gate.md)) にした。再開の条件: `make test` まで待つと手戻りが大きい (写しを前提に書き進めた後で落ちる) 実例が続いたとき。
 > 再開するときの注意 (反証レビュー 2026-10-24): PostToolUse の block は編集を取り消せないので「止める」ではなく「強く知らせる」になる。
 > PreToolUse で拒否するなら、編集後の内容の組み立て (`replace_all`・`old_string` が一意でない / 見つからない・新規ファイル) と、拒否されて Bash で書き直す誘因を先に設計する。
 > MultiEdit が今の Claude Code にあるかは未確認。照合と許可は 905 と同じ実装を使う
@@ -22,7 +22,7 @@ epic 890 の主な用途 (ユーザー 2026-10-24): **Claude Code にコード�
    近いものがあれば、名前・file:line・一致した段を返す
 
 **止める (ユーザー決定 2026-10-24: 実行コスト次第で、hook と CI で止めたい)**。知らせるだけでは Claude が読み流せば写しが残るので、
-検出できる種類 (Type-2 と L3 の一致) は止める。抜け道 (Bash での書き換えなど) は CI ([905](../905-feat-dupscan-ci-check-gate.md)) で止める。
+検出できる種類 (Type-2 と L3 の一致) は止める。抜け道 (Bash での書き換えなど) は CI ([905](../done/905-feat-dupscan-ci-check-gate.md)) で止める。
 
 - **止め方は 2 案。実装の前に、Claude Code での実際の振る舞いを測って選ぶ**:
   - PreToolUse: 編集の前に、Edit の `old_string` / `new_string` (Write は全文) から編集後の内容を組み立てて照合し、一致があれば編集を拒否して理由を返す。写しは書かれない
@@ -45,11 +45,11 @@ epic 890 の主な用途 (ユーザー 2026-10-24): **Claude Code にコード�
   実行ファイルが無ければビルドを促す 1 行だけを返す
 - **知らせる量**: 既存の単位の名前と署名・file:line・可視性・doc comment の 1 行目・一致した段。呼び出し元の数など近似の値には、近似の印を付ける ([896](../done/896-feat-dupscan-report-output.md) と同じ表し方)。共通の置き場所にあるものは「これを使う」、
   ファイルの中の private なものは「寄せる候補」と区別する。件数に上限を置く
-- **誤検知**: 引数を取らない単位は L3 で本体全体が 1 記号に畳まれ、同じ型を返す関数がどれも一致しうる ([891](../891-design-dupscan-requirements.md) の L3)。
+- **誤検知**: 引数を取らない単位は L3 で本体全体が 1 記号に畳まれ、同じ型を返す関数がどれも一致しうる ([891](../done/891-design-dupscan-requirements.md) の L3)。
   hook で知らせる段と下限は、[898](../done/898-test-dupscan-obaket-calibration.md) の否定の期待値を通ったものだけにする
 - **黙らない・うるさくしない**: 対応する言語の拡張子 (最初は `.swift`) のファイルの編集にだけ反応する。索引が無い・読めない構文で確かめられなかったときは
   「確認できなかった」と返すが、同じ理由ならセッションで 1 回にする。沈黙を「重複なし」に読ませない
-- **opt-in**: 使う側の repo が settings の hook で有効にする。置き場所 (dotfiles の `_claude/hooks/` か、使う側の repo か) は [891](../891-design-dupscan-requirements.md) の「決めること」
+- **opt-in**: 使う側の repo が settings の hook で有効にする。置き場所 (dotfiles の `_claude/hooks/` か、使う側の repo か) は [891](../done/891-design-dupscan-requirements.md) の「決めること」
 
 ## 受け入れ条件
 

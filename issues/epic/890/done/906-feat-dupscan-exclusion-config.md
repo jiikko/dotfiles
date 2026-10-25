@@ -6,7 +6,7 @@
 
 類似メソッドの検出には誤検知 (false positive) が出る (ユーザー 2026-10-24)。典型は、L3 で本体全体が 1 記号に畳まれた自明な一致・
 テストの表の形が似ているだけの関数・生成コード・意図して分けている写し。これを除外できる設定を持つ。
-除外は、重複の報告 ([896](896-feat-dupscan-report-output.md))・`gate` ([905](../905-feat-dupscan-ci-check-gate.md))・`near` ([904](904-feat-dupscan-trial-subcommands.md)) の全部に同じ規則で効かせ、判定の実装は 1 つにする。
+除外は、重複の報告 ([896](896-feat-dupscan-report-output.md))・`gate` ([905](905-feat-dupscan-ci-check-gate.md))・`near` ([904](904-feat-dupscan-trial-subcommands.md)) の全部に同じ規則で効かせ、判定の実装は 1 つにする。
 
 ## 除外の種類
 
@@ -91,7 +91,7 @@
 ## 依存
 
 - [893](893-feat-dupscan-core-normalize-type2.md) (単位の鍵と段)・[896](896-feat-dupscan-report-output.md) (報告に貼れる 1 行を付ける)
-- [905](../905-feat-dupscan-ci-check-gate.md) の許可 (`dupscan:allow`) と判定の実装を共有する (同じ意味: 寄せる側の違反から外し、数には入れたまま)
+- [905](905-feat-dupscan-ci-check-gate.md) の許可 (`dupscan:allow`) と判定の実装を共有する (同じ意味: 寄せる側の違反から外し、数には入れたまま)
 
 ## 進捗
 

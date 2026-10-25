@@ -4,7 +4,7 @@
 
 ## 概要
 
-[891 (要件の正本)](../891-design-dupscan-requirements.md) は、既存の道具を調べずに書かれていた (ユーザー 2026-10-24「既存ツールに関しては考慮不足」)。
+[891 (要件の正本)](891-design-dupscan-requirements.md) は、既存の道具を調べずに書かれていた (ユーザー 2026-10-24「既存ツールに関しては考慮不足」)。
 ここで既存の道具を調べ、使えるものは使い、dupscan が自分で作るのは足りない部分だけにする。
 
 比べる軸は、主な用途 (ユーザー 2026-10-24) に合わせる: **Claude Code にコードを変更させている間に、重複したメソッドを作らせない・
@@ -45,7 +45,7 @@ sourcekit-lsp は `/usr/bin/sourcekit-lsp` にあるが、Swift の repo で Cla
       版・stdout / stderr / rc を分けて書き、obaket のあるマシンで行う
 - [x] DualNoteApp の `macOS/` にも CPD と jscpd を当て、何が出るかと所要を書く (jscpd だけ。CPD は同上) (このマシンで今できる。調べる相手の repo に書き込まない置き場所で動かす)
 - [x] ast-grep の Swift のパターンで、PR 24 の 6 つを形で引けるかを試す (直書きの 4 つと、プロパティを読む 2 つ)
-- [x] 結果で、dupscan が自分で作る範囲を決めて [891](../891-design-dupscan-requirements.md) の「決めること」に書き戻す。既存の道具で依存と使い方が単純なまま足りるなら作らない (足すと依存と使い方が増えるので、その分も比べる)
+- [x] 結果で、dupscan が自分で作る範囲を決めて [891](891-design-dupscan-requirements.md) の「決めること」に書き戻す。既存の道具で依存と使い方が単純なまま足りるなら作らない (足すと依存と使い方が増えるので、その分も比べる)
 
 ## 実測 (2026-10-25。M4Pro・obaket の PR 24 の前の木 `4cb7cc740` の `shared/Tests` + `macOS/ObaketTests` 801 ファイル)
 

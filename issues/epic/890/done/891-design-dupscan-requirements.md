@@ -8,7 +8,7 @@ repo で実行すると、**テストコード / 製品コードのそれぞれ�
 どう共通化するかを決める材料 (組のメンバーの場所・どこまで同じか・どこが違うか・既にある共通のヘルパーとの一致) を出す道具。
 目的は **あぶり出しと、新しい写しを止めること**で、共通化の修正そのものは人 (か Claude) が出力を見て行う。
 **検出できる種類の重複 (Type-2 と L3 の一致) は、使う側の repo の `make test` (CI も同じ) の中の `dupscan gate` ([905](905-feat-dupscan-ci-check-gate.md)) で止める。ただし実行コスト次第** (ユーザー決定 2026-10-24)。
-編集のたびの hook ([902](pending/902-feat-dupscan-claude-code-hook.md)) は保留 (ユーザー指示 2026-10-24: hook というより make test の中に dupscan を含める感じの実行頻度)。
+編集のたびの hook ([902](../pending/902-feat-dupscan-claude-code-hook.md)) は保留 (ユーザー指示 2026-10-24: hook というより make test の中に dupscan を含める感じの実行頻度)。
 所要と誤検知の割合を測ってユーザーに見せ、見合わなければ報告だけに落とす。CI の workflow を置くのは使う側の repo (obaket は obaket issue 1298)。
 「確実に止める」が及ぶのは検出できる種類までで、書き方が違って振る舞いが同じもの (Type-4) は構文木では取れない
 
@@ -20,11 +20,11 @@ repo で実行すると、**テストコード / 製品コードのそれぞれ�
    写しは書く前に探さなかったことで生まれるので、1 (できた写しを後から見つける) と 2 (写しを作る前に止める) は対になる
 
 **主な使い方 (ユーザー 2026-10-24)**: Claude Code にコードを変更させている間に、重複したメソッドを作らせない・既存のメソッドを見つけやすくして実装を滑らかにする。
-書く前に探す手順 ([903](done/903-docs-dupscan-search-before-write-procedure.md)。dupscan の索引で名前・署名の型・doc 文を引く) と、実装が終わったセルフレビューで `dupscan gate` ([905](905-feat-dupscan-ci-check-gate.md)) を回して増えた写しを寄せる、の 2 つで効かせる (ユーザー 2026-10-24: 実装フェーズが終わってセルフレビューの時に dupscan をすればいいかな)。
-`make test` と CI の `gate` は網として残す。誤検知は除外の設定 ([906](done/906-feat-dupscan-exclusion-config.md)) で外す。検出の方法の説明は `docs/dupscan-detection.md`。書く前の索引は、メソッドを定義するときに適宜引くくらい気軽に使えることを要件にする (903・897)。週次の audit のような後からの洗い出しはその次。
+書く前に探す手順 ([903](903-docs-dupscan-search-before-write-procedure.md)。dupscan の索引で名前・署名の型・doc 文を引く) と、実装が終わったセルフレビューで `dupscan gate` ([905](905-feat-dupscan-ci-check-gate.md)) を回して増えた写しを寄せる、の 2 つで効かせる (ユーザー 2026-10-24: 実装フェーズが終わってセルフレビューの時に dupscan をすればいいかな)。
+`make test` と CI の `gate` は網として残す。誤検知は除外の設定 ([906](906-feat-dupscan-exclusion-config.md)) で外す。検出の方法の説明は `docs/dupscan-detection.md`。書く前の索引は、メソッドを定義するときに適宜引くくらい気軽に使えることを要件にする (903・897)。週次の audit のような後からの洗い出しはその次。
 
 - 名前は仮に `dupscan` (`src/dupscan/` と `bin/dupscan`)
-- 人が動作確認として試す入口 (`near`・`explain`・`gate` を手で回す) は [904](done/904-feat-dupscan-trial-subcommands.md)。照合は `gate` (905) と同じ関数を通し、判定の実装を別に持たない
+- 人が動作確認として試す入口 (`near`・`explain`・`gate` を手で回す) は [904](904-feat-dupscan-trial-subcommands.md)。照合は `gate` (905) と同じ関数を通し、判定の実装を別に持たない
 - **Go のコア + 言語ごとの差分 (adapter)** の構成にする。最初の言語は Swift。Go・TypeScript などは adapter を足して広げる
 - 名前の違う写し・同じ値を別の書き方で作る写し (下の PR 24 の例) を拾うため、文字列ではなく構文木を正規化して比べる
 
@@ -36,7 +36,7 @@ obaket の週次の Claude audit (test-helpers) が出した PR 24 で、同じ 
 既存の字句の検査 (obaket の `macOS/bin/check-test-helper-copies`) も 6 つのうち 4 つを見ず、2 つは登録簿の事実と違う理由で通していた。
 経緯と検査の穴の詳細は obaket issue 1298。
 
-## 既存の道具との関係 (詳細と実測は [901](done/901-research-dupscan-existing-tools.md))
+## 既存の道具との関係 (詳細と実測は [901](901-research-dupscan-existing-tools.md))
 
 この要件は当初、既存の道具を調べずに書いた。2026-10-24 の調査で分かったこと (PR 24 の 6 つに当てた実測はまだ無い):
 
@@ -195,15 +195,15 @@ ERROR / MISSING ノードを含むファイルを数えた:
 ## 決めること
 
 - 道具の名前 (`dupscan` は仮)。重複の検出だけでなく探索 (907) にも使う道具なので、実態に合う名前に**実装が落ち着いてから rename する** (ユーザー 2026-10-24)
-- ~~自分で作る範囲~~ → **決めた** (2026-10-25。[901](done/901-research-dupscan-existing-tools.md) の実測): 正規化と組分けは自作のまま続ける。jscpd は直書きとプロパティを読む版を結ばず、既定の上限で大きいテストファイルを黙って落とす。ast-grep は形を知っている問い合わせで組にしない
+- ~~自分で作る範囲~~ → **決めた** (2026-10-25。[901](901-research-dupscan-existing-tools.md) の実測): 正規化と組分けは自作のまま続ける。jscpd は直書きとプロパティを読む版を結ばず、既定の上限で大きいテストファイルを黙って落とす。ast-grep は形を知っている問い合わせで組にしない
 - ~~使う側の repo の `make test` への組み込み方~~ → **決めた** (2026-10-25。obaket の issue 1301): obaket は pre-push の lint-gates に `check-dupscan-gate` (起点は repo root・dupscan が無ければ rc 2・Xcode Cloud では飛ばす) と、GHA (`ubuntu-slim`) で回す。obaket の 100 commit の流し直しで 1 回 平均 3.0 秒・最大 4.2 秒
-- ~~Claude が `dupscan:allow` の許可を自分で書いてよいか~~ → skill `dupscan` で「書いてよいが、書いたらユーザーへの報告に書く」にした ([903](done/903-docs-dupscan-search-before-write-procedure.md))。CI は `-fail-new-exclusions` で新しく足された除外を止める
+- ~~Claude が `dupscan:allow` の許可を自分で書いてよいか~~ → skill `dupscan` で「書いてよいが、書いたらユーザーへの報告に書く」にした ([903](903-docs-dupscan-search-before-write-procedure.md))。CI は `-fail-new-exclusions` で新しく足された除外を止める
 - test と prod にまたがる組を `gate` の違反にするか
-- ~~意図した写しを許す書き方~~ → **決めた**: 単位の直前の `// dupscan:allow` と `.dupscan.json` の除外 ([906](done/906-feat-dupscan-exclusion-config.md))、形で外すプリセット ([919](done/919-feat-dupscan-exclusion-presets.md))
+- ~~意図した写しを許す書き方~~ → **決めた**: 単位の直前の `// dupscan:allow` と `.dupscan.json` の除外 ([906](906-feat-dupscan-exclusion-config.md))、形で外すプリセット ([919](919-feat-dupscan-exclusion-presets.md))
 - 止めるかの判定 (905。段ごとに止める / 報告だけ / 回さない): 所要と誤検知の割合の実測を見てユーザーが決める
-- ~~索引の置き方~~ → **決めた** ([897](done/897-feat-dupscan-index-subcommand.md)): 置かない。引くたびに作業ツリーを全部読む (obaket で 1.45 秒。ユーザー 2026-10-25: 1.5 秒を許し、目安を 2 秒にした)
-- ~~「どう共通化するか」の材料をどこまで出すか~~ → リテラルの違いの表・所属ターゲットは保留 ([918](pending/918-feat-dupscan-target-and-literal-table.md)。ユーザー 2026-10-25: obaket で使う中で欲しくなったら作る)
-- 設定の置き場 (除外の設定と同じファイル。[906](done/906-feat-dupscan-exclusion-config.md)) (対象・除外・test / prod の規則・閾値・既にある共通のヘルパーの置き場所。repo の root の設定ファイルか CLI の引数か)。obaket issue 1298 の運用はこの決定を待つ
+- ~~索引の置き方~~ → **決めた** ([897](897-feat-dupscan-index-subcommand.md)): 置かない。引くたびに作業ツリーを全部読む (obaket で 1.45 秒。ユーザー 2026-10-25: 1.5 秒を許し、目安を 2 秒にした)
+- ~~「どう共通化するか」の材料をどこまで出すか~~ → リテラルの違いの表・所属ターゲットは保留 ([918](../pending/918-feat-dupscan-target-and-literal-table.md)。ユーザー 2026-10-25: obaket で使う中で欲しくなったら作る)
+- 設定の置き場 (除外の設定と同じファイル。[906](906-feat-dupscan-exclusion-config.md)) (対象・除外・test / prod の規則・閾値・既にある共通のヘルパーの置き場所。repo の root の設定ファイルか CLI の引数か)。obaket issue 1298 の運用はこの決定を待つ
 - 他のマシン (CI を含む) への配り方 → **要件にした** (892): dotfiles を持たない repo の CI でも、版を固定して入れられること (`go install <module>@<版>` か、ビルド済みの実行ファイル)。cgo なので C のコンパイラが要る
 - Swift の次に足す言語の順 (下の「構想: 対応する言語」)
 
@@ -225,21 +225,21 @@ Swift の次は **Go と zsh** を候補にする (ユーザー 2026-10-24)。�
 dupscan だけで依存も使い方もシンプルになるなら、LSP は使わない (ユーザー 2026-10-24。先に書いた「dupscan と LSP を組み合わせる」構想をこの決定で置き換えた)。
 dupscan は自前の構文木 (tree-sitter) だけで、書く前の検索・書いた後の照合・重複の報告をまかなう。
 
-- **書く前の検索**: dupscan の索引 ([897](done/897-feat-dupscan-index-subcommand.md)) で、名前・署名の型 (戻り値・引数の型)・doc 文を引く。名前の検索も索引でまかなう
+- **書く前の検索**: dupscan の索引 ([897](897-feat-dupscan-index-subcommand.md)) で、名前・署名の型 (戻り値・引数の型)・doc 文を引く。名前の検索も索引でまかなう
   (索引は 1 行 1 件のテキストなので、grep でも引ける)。書く前には本体が無いので、本体の形で比べるのは書いた後 (`make test` の `gate`。[905](905-feat-dupscan-ci-check-gate.md))
 - **構文木だけでは正確に決まらない値**は、近似と分かる形で出す:
   - 呼び出し元の数: 名前と引数ラベルが一致する呼び出しの数 (別の型の同名のメソッドも数えうる)
-  - プロパティの初期値: 同じ型の stored property の初期値を構文木で 1 段だけ解決する ([896](done/896-feat-dupscan-report-output.md))
-  - 所属ターゲット: adapter が `Package.swift` と `project.pbxproj` を読む ([894](done/894-feat-dupscan-swift-adapter.md))
+  - プロパティの初期値: 同じ型の stored property の初期値を構文木で 1 段だけ解決する ([896](896-feat-dupscan-report-output.md))
+  - 所属ターゲット: adapter が `Package.swift` と `project.pbxproj` を読む ([894](894-feat-dupscan-swift-adapter.md))
 - **LSP を使わない理由**: 言語サーバの起動と、最初の索引の待ち (obaket の SwiftPM の package で数分・1.6 GB。0 件を返す間を「無い」と読む罠もある) が、
-  worktree ごと・言語ごとに要る。gopls の名前検索はあいまい一致で 100 件で打ち切る ([901](done/901-research-dupscan-existing-tools.md) の実行)。
+  worktree ごと・言語ごとに要る。gopls の名前検索はあいまい一致で 100 件で打ち切る ([901](901-research-dupscan-existing-tools.md) の実行)。
   dupscan の索引だけで済めば、依存は dupscan の実行ファイル 1 つ、使い方は 1 つになる
 - **失うもの**: 索引は `git ls-files` の範囲だけを読むので、依存の package・SDK・`.build` の API は引けない (LSP なら引けた)。
   重複の防止の対象は repo の中のメソッドなので、まずはこれで足りる前提に置く
 - **「単純になるか」の判定**: 次のどれかが起きたら、索引だけでは単純にならなかったと読み、LSP を使う案を見直す:
   索引で引いても見つからず、あとで repo の中に同じものが見つかった実例が出た / 索引の作り直しや鮮度の管理の手間が、LSP の待ちより重いと分かった
 - **再開の条件**: 上の判定で単純にならなかったと読んだとき、または構文木の近似 (呼び出し元の数など) が誤りで判断を誤る実例が出たら、LSP か言語の解析の道具 (Swift の index store・Go の `go/packages`) を
-  使う案を [899](pending/899-research-dupscan-lsp-integration.md) で再開する
+  使う案を [899](../pending/899-research-dupscan-lsp-integration.md) で再開する
 
 ## 関連
 

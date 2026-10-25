@@ -4,7 +4,7 @@
 
 ## 概要
 
-[891 (要件の正本)](../891-design-dupscan-requirements.md) の「adapter」節と「実測」節に沿って、Swift の adapter を作る: 文法の pin (`with-generated-files` branch)・node の種類から役割への対応表
+[891 (要件の正本)](891-design-dupscan-requirements.md) の「adapter」節と「実測」節に沿って、Swift の adapter を作る: 文法の pin (`with-generated-files` branch)・node の種類から役割への対応表
 (暗黙のメンバー・constructor_expression・macro_invocation・文字列の埋め込み・trailing closure などの落とし穴)・test / prod の既定の規則・テスト関数の見分け方・所属ターゲットの解決。
 
 ## 受け入れ条件

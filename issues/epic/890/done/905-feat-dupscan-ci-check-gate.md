@@ -1,7 +1,5 @@
 # 905 (feat): make test と CI で、新しく入った重複を落とす (dupscan gate)
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-25〜）
-
 起票日: 2026-10-24
 
 ## 概要
@@ -11,7 +9,7 @@
 - **止める頻度は、編集のたびの hook ではなく、`make test` の中に dupscan を含める程度にする**
 
 そこで、使う側の repo の `make test` に `dupscan gate` を組み込む。CI も `make test` を回すので、同じ検査が CI でも走る。
-Claude は `make test` の失敗として受け取り、既存のメソッドへ寄せる。編集のたびの hook ([902](pending/902-feat-dupscan-claude-code-hook.md)) は保留にした。
+Claude は `make test` の失敗として受け取り、既存のメソッドへ寄せる。編集のたびの hook ([902](../pending/902-feat-dupscan-claude-code-hook.md)) は保留にした。
 
 ## `dupscan gate` (名前は仮。897 の索引の `--check` と紛らわしくしないため `check` にしない)
 
@@ -25,7 +23,7 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
   3. その形のハッシュを持つ単位の**数が base より増えている**ときだけ違反にする。移動・改名・署名の変更・整形では数が増えないので落ちない。既存の写しを寄せる作業では数が減るので落ちない
   4. 違反の出力は、変わった単位 (寄せる側) と、同じ形の既存の単位 (寄せる先の候補) を分けて名指しする
   - **検出しない形** (README に書く): 同じ組の古い写しを 1 つ消して新しい写しを 1 つ足す入れ替え (数が増えないので、重複の量は増えていないと読む)
-  - L3 で本体全体が 1 記号に畳まれる単位 (本体で引数を使わない単位) は、無関係な単位とも一致して数が揺れる。この単位の L3 の扱い (除くか別の桶にするか) は [898](done/898-test-dupscan-obaket-calibration.md) で決め、決まるまで L3 は報告だけにする
+  - L3 で本体全体が 1 記号に畳まれる単位 (本体で引数を使わない単位) は、無関係な単位とも一致して数が揺れる。この単位の L3 の扱い (除くか別の桶にするか) は [898](898-test-dupscan-obaket-calibration.md) で決め、決まるまで L3 は報告だけにする
 - **base** (直接 push する運用でも何かを確かめるように):
   - 手元の `make test`・セルフレビュー: `git merge-base HEAD @{u}` (upstream が fetch 済みで先に進んでいても、他人の変更を逆向きに数えない)。
     upstream が無い (detached HEAD の worktree など) ときは、設定ファイルに書いた既定のブランチとの merge-base。どちらも無ければ `--base` を求めて判定不能で終わる
@@ -65,10 +63,10 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
 
 ## 依存
 
-- [893](done/893-feat-dupscan-core-normalize-type2.md)・[894](done/894-feat-dupscan-swift-adapter.md) (単位の一覧と正規化)
-- [896](done/896-feat-dupscan-report-output.md) (組の出力の形)
-- [898](done/898-test-dupscan-obaket-calibration.md) (下限・閾値。L3 の引数なしの単位の扱い)
-- [906](done/906-feat-dupscan-exclusion-config.md) (除外の判定。許可と実装を共有する)
+- [893](893-feat-dupscan-core-normalize-type2.md)・[894](894-feat-dupscan-swift-adapter.md) (単位の一覧と正規化)
+- [896](896-feat-dupscan-report-output.md) (組の出力の形)
+- [898](898-test-dupscan-obaket-calibration.md) (下限・閾値。L3 の引数なしの単位の扱い)
+- [906](906-feat-dupscan-exclusion-config.md) (除外の判定。許可と実装を共有する)
 
 ## 進捗
 

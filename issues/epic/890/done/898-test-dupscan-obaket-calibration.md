@@ -4,7 +4,7 @@
 
 ## 概要
 
-[891 (要件の正本)](../891-design-dupscan-requirements.md) の既定値 (下限・閾値) は実測で決める。**規模と作りの違う 2 つの repo** (obaket と DualNoteApp (`~/src/working/DualNoteApp`。`macOS/` に Swift 96 ファイル、兄弟の `Shared/` (SwiftPM の package) に 88 ファイル、`iOS/` に 15 ファイル。`macOS/project.yml` (XcodeGen) が `../Shared` を参照する。`project.pbxproj` は追跡していないが、ignore されたままディスク上にはある)) に当てて決め、片方にだけ合わせない (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)。
+[891 (要件の正本)](891-design-dupscan-requirements.md) の既定値 (下限・閾値) は実測で決める。**規模と作りの違う 2 つの repo** (obaket と DualNoteApp (`~/src/working/DualNoteApp`。`macOS/` に Swift 96 ファイル、兄弟の `Shared/` (SwiftPM の package) に 88 ファイル、`iOS/` に 15 ファイル。`macOS/project.yml` (XcodeGen) が `../Shared` を参照する。`project.pbxproj` は追跡していないが、ignore されたままディスク上にはある)) に当てて決め、片方にだけ合わせない (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)。
 obaket はこのマシンに無いので、先に DualNoteApp で測り、obaket は手に入るマシンで測る。DualNoteApp は `macOS/` と `Shared/` をまたぐ写しを見るため、repo の root を起点にする。dupscan は調べる repo に何も書かない (891 の不変条件)。
 obaket では、PR 24 の前の木で肯定と否定の期待値を置き、変異で効いていることを確かめる。
 
