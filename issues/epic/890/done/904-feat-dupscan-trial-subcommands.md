@@ -18,7 +18,7 @@ dupscan は、主に Claude が書く前に索引を引き (897)、セルフレ�
 - 出力は人が読む形を既定にし、`--json` も出す (テストと、Claude が読むとき用)。JSON の形は 896 の組の JSON とそろえ、別のスキーマを作らない
 - `near` は、`gate` (905) と同じ「ある単位と同じ段のハッシュを持つ他の単位を探す」関数を呼ぶ (人が試した結果と、`make test` の結果が食い違わないように)
 - **指した単位そのものは結果から外す**。鍵はファイル + 名前・署名。`<file>:<行>` で指したときは、その行を含む単位を探してから同じ鍵で外す
-- 🚨 PR 24 の 6 つのように本体で引数を使わない単位は、L3 で本体全体が 1 記号に畳まれ、同じ型を返す引数なしの単位がどれも一致しうる ([891](../891-design-dupscan-requirements.md) の L3、[898](../898-test-dupscan-obaket-calibration.md) の否定の期待値)。
+- 🚨 PR 24 の 6 つのように本体で引数を使わない単位は、L3 で本体全体が 1 記号に畳まれ、同じ型を返す引数なしの単位がどれも一致しうる ([891](../891-design-dupscan-requirements.md) の L3、[898](898-test-dupscan-obaket-calibration.md) の否定の期待値)。
   `near` はこの一致を、中身を見た一致と区別して出す (`explain` でも畳まれたことが見える)
 - 単位を名前で指したとき、同じファイルに同名の単位が複数あれば (overload など) 候補を列挙して止める (黙って片方を選ばない)
 
@@ -36,7 +36,7 @@ dupscan は、主に Claude が書く前に索引を引き (897)、セルフレ�
 - [893](893-feat-dupscan-core-normalize-type2.md)・[894](894-feat-dupscan-swift-adapter.md) (単位の一覧と正規化)
 - [896](896-feat-dupscan-report-output.md) (リテラルの違いの表・プロパティの初期値の解決・JSON の形)
 - [897](897-feat-dupscan-index-subcommand.md) (単位の一覧のキャッシュ)
-- [898](../898-test-dupscan-obaket-calibration.md) (下限と L3 の扱い。無いと引数なしの単位がどれも並ぶ)
+- [898](898-test-dupscan-obaket-calibration.md) (下限と L3 の扱い。無いと引数なしの単位がどれも並ぶ)
 - [905](../905-feat-dupscan-ci-check-gate.md) (照合の関数。`near` もこれを呼ぶので、905 と同時か後)
 - [906](906-feat-dupscan-exclusion-config.md) (除外は `near` にも効く)
 

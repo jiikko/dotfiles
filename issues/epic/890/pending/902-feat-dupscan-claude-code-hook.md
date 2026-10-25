@@ -28,7 +28,7 @@ epic 890 の主な用途 (ユーザー 2026-10-24): **Claude Code にコード�
   - PreToolUse: 編集の前に、Edit の `old_string` / `new_string` (Write は全文) から編集後の内容を組み立てて照合し、一致があれば編集を拒否して理由を返す。写しは書かれない
   - PostToolUse: 編集の後に照合し、一致があれば止める判定 (decision の block など) で理由を返す。編集は取り消せないので、Claude に寄せるか許可を書くかを求める形になる
 - 理由には、寄せる先の既存のメソッド (名前・file:line・一致した段) と、意図した写しなら許可を書く方法 (905 と共通の `dupscan:allow <理由>` など) を入れる
-- **コストの判定**: 1 回の所要と、obaket での誤検知の割合 ([898](../898-test-dupscan-obaket-calibration.md)) を測ってユーザーに見せ、止めるか、知らせるだけ (additionalContext) に落とすかを決める。
+- **コストの判定**: 1 回の所要と、obaket での誤検知の割合 ([898](../done/898-test-dupscan-obaket-calibration.md)) を測ってユーザーに見せ、止めるか、知らせるだけ (additionalContext) に落とすかを決める。
   誤検知のたびに Claude の作業が止まるので、割合がそのまま手間になる
 
 ## 要件
@@ -46,7 +46,7 @@ epic 890 の主な用途 (ユーザー 2026-10-24): **Claude Code にコード�
 - **知らせる量**: 既存の単位の名前と署名・file:line・可視性・doc comment の 1 行目・一致した段。呼び出し元の数など近似の値には、近似の印を付ける ([896](../done/896-feat-dupscan-report-output.md) と同じ表し方)。共通の置き場所にあるものは「これを使う」、
   ファイルの中の private なものは「寄せる候補」と区別する。件数に上限を置く
 - **誤検知**: 引数を取らない単位は L3 で本体全体が 1 記号に畳まれ、同じ型を返す関数がどれも一致しうる ([891](../891-design-dupscan-requirements.md) の L3)。
-  hook で知らせる段と下限は、[898](../898-test-dupscan-obaket-calibration.md) の否定の期待値を通ったものだけにする
+  hook で知らせる段と下限は、[898](../done/898-test-dupscan-obaket-calibration.md) の否定の期待値を通ったものだけにする
 - **黙らない・うるさくしない**: 対応する言語の拡張子 (最初は `.swift`) のファイルの編集にだけ反応する。索引が無い・読めない構文で確かめられなかったときは
   「確認できなかった」と返すが、同じ理由ならセッションで 1 回にする。沈黙を「重複なし」に読ませない
 - **opt-in**: 使う側の repo が settings の hook で有効にする。置き場所 (dotfiles の `_claude/hooks/` か、使う側の repo か) は [891](../891-design-dupscan-requirements.md) の「決めること」
@@ -65,7 +65,7 @@ epic 890 の主な用途 (ユーザー 2026-10-24): **Claude Code にコード�
 ## 依存
 
 - [893](../done/893-feat-dupscan-core-normalize-type2.md)・[894](../done/894-feat-dupscan-swift-adapter.md)・[897](../done/897-feat-dupscan-index-subcommand.md) (同じ単位の一覧を使う)
-- [898](../898-test-dupscan-obaket-calibration.md) (知らせる段と下限)
+- [898](../done/898-test-dupscan-obaket-calibration.md) (知らせる段と下限)
 - [901](../done/901-research-dupscan-existing-tools.md) の結論 (既存の道具を hook から呼ぶ形で依存と使い方が単純なまま足りるなら、そちらを使う)
 
 ## 進捗
