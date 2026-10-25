@@ -75,3 +75,17 @@ obaket の 1306 (dupscan が出した類似メソッド 8 組を寄せる作業�
     見る段を先頭の 1 つに絞る → `TestResolvedGroups` / `TestResolvedSkipsUnreadableAndIgnoresNestedDrop`。
     OwnerName を入れない → `TestClosureOwnerNameIsForDisplayOnly`。label が OwnerName を使わない → `TestClosureLabelShowsOwner`。
     要約の行の数を出さない → `TestGateListsResolvedGroupAfterRemovingCopy`
+- 2026-10-25 敵対的レビュー (opus、2 周)。1 周目の指摘のうち採ったもの (commit「fix(dupscan): 割れただけの組を縮んだと数えず、関数の中の型のクロージャに
+  外の関数の名前を付けない (issue 920)」):
+  - 揃った数を「同じ形の最大の数」で数えていたので、4 つの写しが 2 つずつ別の形に割れただけで「縮んだ 4 → 2」と出た。
+    他のメンバーとまだ同じ形のメンバーの数に変えた (`TestResolvedDoesNotCountSplitAsShrunk`。旧式に戻す変異で赤)
+  - 型の宣言で表示名を戻していなかったので、`func outer() { struct S { let v = { … }() } }` のクロージャが `outer` を名乗った。
+    表示名だけを戻した。鍵に入る owner と property は戻さない (`TestClosureInTypeInsideFunctionIsNotShownUnderFunction`。戻す行を消す変異で赤)
+  - README の限界に書いたもの: プリセットを掛けない (写しを下限以上の 1 行の委譲に置き換えると消えない)・出どころの取り違え (写しを改名して空いた名前に
+    無関係な単位を足すと消えたと数える。改名した写しは違反で止まる)・L1 の組とそれを含む L2 の組をそれぞれ数える (report と同じ単位)・
+    callers の呼び出し元の表示も変わる
+  - 採らなかったもの: 多重定義の関数のクロージャが同じ表示になる (行番号で区別できる。Signature を挟むと init の引数全部で長くなる)・
+    読めない写しを同時に改名すると消えたと数えうる (推測で、再現する入力が無い)
+  - 性能: obaket (26,083 単位) で `gate -base 3b19561e5 -head HEAD` を 3 回ずつ。変更前 1.75 / 1.68 / 1.69 秒、変更後 1.99 / 1.65 / 1.67 秒。差は回ごとの揺れの内
+  - 2 周目は実害のある壊し方なし。受け入れた P3: 型の宣言で property は戻さないので、クロージャの中の型でタプルの束縛
+    (`let (p, q) = ({ 1 }(), 2)`、名前を取れない) の初期値のクロージャが外の property の名前を名乗る。普通には書かない形なので直さない
