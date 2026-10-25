@@ -83,6 +83,43 @@ func TestSiblingClosureExtraPinIsNewExclusion(t *testing.T) {
 	}
 }
 
+// 人数の足りない (効いていない) 除外を 1 行に合流すると、釘ごとの要素は同じでも、新しく足された除外に出る。
+func TestMergedSiblingClosureExclusionIsNewExclusion(t *testing.T) {
+	body := func(label string) string {
+		return "    r.add { value in\n        let normalized = value.trimmingCharacters(in: .whitespaces)\n        audit(\"" + label + "\", value: normalized, attempts: 3)\n    }\n"
+	}
+	src := "func register(_ r: Registry) {\n" + body("x") + body("x") + body("y") + body("y") + "}\n"
+	root := repoWith(t, map[string]string{"Sources/R.swift": src})
+	_, out, _ := runReport(t, "-format", "json", root)
+	var s struct {
+		Groups []struct{ Level, Exclude string }
+	}
+	if err := json.Unmarshal([]byte(out), &s); err != nil {
+		t.Fatal(err)
+	}
+	var l1 []string // L1 の組 (x 同士・y 同士) の釘
+	for _, g := range s.Groups {
+		var r struct{ Group []string }
+		if g.Level == "L1" && json.Unmarshal([]byte(g.Exclude), &r) == nil {
+			l1 = append(l1, r.Group[0])
+		}
+	}
+	if len(l1) != 2 {
+		t.Fatalf("前提: L1 の組 2 つ: %s", out)
+	}
+	p, q := l1[0], l1[1]
+	rule := func(pins ...string) map[string]any {
+		return map[string]any{"group": pins, "level": "L1", "kind": "intentional", "reason": "r"}
+	}
+	writeConfig(t, root, rule(p, p, q), rule(p, q, q))
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeConfig(t, root, rule(p, p, q, q))
+	if rc, out, errs := runGateCmd(t, "-base", "HEAD", "-fail-new-exclusions", root); rc != 1 || !strings.Contains(out, "新しく足された除外") {
+		t.Errorf("合流した除外が新しく足された除外に出ない: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}
+
 // 1 つ消した後に同じ写しを足し直すと、除外を変えなくても新しい写しとして止まる (base の釘の個数を超えた分は覆わない)。
 func TestSiblingClosureReaddedAfterRemovalIsViolation(t *testing.T) {
 	root := repoWith(t, map[string]string{"Sources/R.swift": siblingBody(2)})

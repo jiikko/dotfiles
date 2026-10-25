@@ -296,6 +296,16 @@ func (r Rule) elements() []string {
 			n[p]++
 			out = append(out, groupElement(r.level, p, n[p]))
 		}
+		// 同じ釘を 2 回以上書いた除外は、釘と回数の組み合わせそのものも要素にする。効いていなかった (人数の足りない) 除外を 1 行に合流すると
+		// 釘ごとの要素の集合は変わらないまま組を消せるので、組み合わせが新しければ「新しく足された除外」に出す。
+		if len(n) < len(r.Group) {
+			var parts []string
+			for p, c := range n {
+				parts = append(parts, fmt.Sprintf("%s×%d", p, c))
+			}
+			sort.Strings(parts)
+			out = append(out, "group:"+r.level.String()+":["+strings.Join(parts, ", ")+"]")
+		}
 	case r.Unit != "":
 		out = append(out, "unit:"+r.Unit)
 	case r.Preset != "":
