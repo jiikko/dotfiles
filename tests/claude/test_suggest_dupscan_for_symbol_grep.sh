@@ -54,6 +54,8 @@ expect_silent() { # $1=説明 $2=stdout
 }
 
 new_repo 1
+# 名指しで探す対象のファイルと dir (Swift 以外のファイルか、拡張子つきの dir かは在るもので判定する)
+printf 'x\n' > "$REPO/build.log"; printf 'x\n' > "$REPO/.gitignore"; mkdir -p "$REPO/MyPkg.swiftpm" "$REPO/Sources"; printf 'x\n' > "$REPO/Sources/A.swift"
 next_session; expect_nudge "宣言の語つきの grep" "$(run_bash 'grep -rn "func executeMutation" shared/Sources')" executeMutation
 next_session; expect_nudge "PascalCase の rg" "$(run_bash "rg -n 'StorageOperationLockRegistry' shared")" StorageOperationLockRegistry
 next_session; expect_nudge "呼び出しの形 (末尾の括弧) で Swift を対象" "$(run_bash 'grep -rn "retrying(" --include=*.swift .')" retrying
@@ -81,6 +83,14 @@ next_session; expect_silent "対象が Swift 以外のファイルだけ (ログ
 next_session; expect_silent "対象が Swift 以外のファイルだけ (dot file)" "$(run_bash 'grep -n "Package.resolved" .gitignore')"
 next_session; expect_nudge "Swift のファイルを名指し" "$(run_bash 'grep -n "fooBarQux" Sources/A.swift')" fooBarQux
 next_session; expect_silent "大文字小文字を無視する検索 (-rni)" "$(run_bash 'grep -rni "StorageLock" --include=*.swift .')"
+next_session; expect_nudge "値をくっつけた -tswift を -i と読まない" "$(run_bash 'rg -n FooBar -tswift')" FooBar
+next_session; expect_nudge "--type=swift を Swift の対象と読む" "$(run_bash 'rg -n refresh --type=swift')" refresh
+next_session; expect_nudge "親の dir (..) をファイルと読まない" "$(run_bash 'grep -rn FooBar ..')" FooBar
+next_session; expect_nudge "拡張子つきの dir をファイルと読まない" "$(run_bash 'grep -rn FooBar MyPkg.swiftpm')" FooBar
+next_session; expect_nudge "束ねた -nA の値をパターンと読まない" "$(run_bash 'grep -rnA 3 FooBar Sources')" FooBar
+next_session; expect_silent "Grep ツールの -i" "$(jq -n --arg d "$REPO" --arg s "s$session" '{tool_name: "Grep", session_id: $s, cwd: $d, tool_input: {pattern: "StorageLocation", "-i": true}}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)"
+next_session; expect_silent "Grep ツールの Swift でない glob" "$(run_grep 'StorageLocation' '*.md')"
+next_session; expect_silent "Grep ツールの Swift でないファイルの path" "$(jq -n --arg d "$REPO" --arg s "s$session" '{tool_name: "Grep", session_id: $s, cwd: $d, tool_input: {pattern: "StorageLocation", path: "build.log"}}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)"
 
 # 出しすぎない: 同じ session の 2 回目は出さず、別の session なら出す
 next_session

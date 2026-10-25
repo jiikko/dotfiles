@@ -62,7 +62,7 @@ root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
 [ -n "$(git -C "$root" ls-files -- '*.swift' 2>/dev/null | head -n 1)" ] || exit 0
 
 # 名前を 1 つ返す (案内しないなら空)。Bash は cmd、Grep は tool_input を読む
-name=$(HOOK_TOOL="$tool" HOOK_CMD="$cmd" HOOK_INPUT="$input" python3 -I - <<'PY' 2>/dev/null
+name=$(HOOK_TOOL="$tool" HOOK_CMD="$cmd" HOOK_INPUT="$input" HOOK_CWD="$cwd" python3 -I - <<'PY' 2>/dev/null
 import json, os, re, shlex
 
 DECL = r'(?:func|struct|class|enum|protocol|extension|actor|init|var|let|case|typealias)'
@@ -107,8 +107,8 @@ def from_segment(words):
     if i >= len(words) or os.path.basename(words[i]) not in ('grep', 'rg', 'egrep'):
         return None
     rest = words[i + 1:]
-    # Swift を対象にしているか: `.swift` の拡張子 (glob を含む) か `-t swift` (`.swiftlint.yml` には当てない)
-    swift = any(re.search(r'\.swift($|[^A-Za-z0-9_])', w) or w == 'swift' for w in rest)
+    # Swift を対象にしているか: `.swift` の拡張子 (glob を含む) か `-t swift` / `-tswift` / `--type=swift` (`.swiftlint.yml` には当てない)
+    swift = any(re.search(r'\.swift($|[^A-Za-z0-9_])', w) or w == 'swift' or re.fullmatch(r'(-t|--type=)swift', w) for w in rest)
     pattern = None
     paths = []
     k = 0
@@ -124,8 +124,11 @@ def from_segment(words):
         elif w in VALUE_OPTIONS:
             k += 2
             continue
-        elif w in ('-i', '--ignore-case') or re.fullmatch(r'-[A-Za-z]*i[A-Za-z]*', w):
-            return None  # 大文字小文字を無視する検索
+        elif w in ('-i', '--ignore-case') or (re.fullmatch(r'-[A-Za-z]*i[A-Za-z]*', w) and not re.search(r'[tgefmABCMj]', w)):
+            return None  # 大文字小文字を無視する検索 (値をくっつけた -tswift・-gFoo は -i と読まない)
+        elif re.fullmatch(r'-[A-Za-z]*[ABCmMjtgf]', w):
+            k += 2  # 束ねた短いオプションの最後が値を取る (`-nA 3`)
+            continue
         elif not w.startswith('-'):
             if pattern is None:
                 pattern = w
@@ -134,17 +137,29 @@ def from_segment(words):
         k += 1
     if pattern is None:
         return None
-    # 対象のファイルを名指ししていて、どれも Swift でない (拡張子つき・dot file) なら、設定やログを探している
-    named = [p for p in paths if re.search(r'(^|/)\.[^/]+$|\.[A-Za-z0-9]+$', p)]
-    if named and len(named) == len(paths) and not any(p.endswith('.swift') for p in named):
+    if not_swift_files(paths):
         return None
     return symbol(pattern, swift)
+
+def not_swift_files(paths):
+    # 対象を全部ファイルとして名指ししていて、どれも .swift でないなら、設定やログを探している。ファイルかは cwd で確かめる
+    # (`..`・`MyPkg.swiftpm` のような dir をファイルと読まない)。在ることを確かめられない対象が 1 つでもあれば判定しない
+    cwd = os.environ.get('HOOK_CWD', '')
+    if not paths or not cwd:
+        return False
+    for p in paths:
+        full = p if os.path.isabs(p) else os.path.join(cwd, p)
+        if not os.path.isfile(full) or p.endswith('.swift'):
+            return False
+    return True
 
 tool = os.environ['HOOK_TOOL']
 if tool == 'Grep':
     ti = json.loads(os.environ['HOOK_INPUT']).get('tool_input') or {}
-    target = ' '.join(str(ti.get(k) or '') for k in ('glob', 'type', 'path'))
-    print(symbol(str(ti.get('pattern') or ''), 'swift' in target))
+    glob, typ, path = (str(ti.get(k) or '') for k in ('glob', 'type', 'path'))
+    # Bash の経路と同じ除外: 大文字小文字を無視する検索・Swift でない glob / type・Swift でないファイルを名指し
+    ignored = ti.get('-i') is True or (glob and 'swift' not in glob) or (typ and typ != 'swift') or (path and not_swift_files([path]))
+    print('' if ignored else symbol(str(ti.get('pattern') or ''), 'swift' in glob or typ == 'swift' or path.endswith('.swift')))
 else:
     cmd = os.environ['HOOK_CMD']
     # 区切りを残して分け、パイプ (`|`) の直後の segment は stdin を絞る grep なので見ない
