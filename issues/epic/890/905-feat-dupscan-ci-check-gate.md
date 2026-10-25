@@ -58,10 +58,10 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
 - [x] base の commit が無いとき・手元で upstream が無く `--base` も無いとき、判定不能として非 0 で終わる
 - [x] detached HEAD の worktree で、~~設定ファイルの~~既定のブランチ (origin/HEAD) との merge-base を base にして回る。upstream が先に進んでいても、他人の変更を数えない
 - [x] 同じファイルの別の型に同名・同署名の関数がある場合と、クロージャを、別の単位として名指しできる
-- [ ] 直接 push の運用: push の前の commit を base にした CI で、push した写しが落ちる
+- [x] 直接 push の運用: push の前の commit を base にした CI で、push した写しが落ちる
 - [x] 写し 1 つの違反が、段を重ねずに 1 つの段で出る
 - [x] 読めない構文の単位を、件数と場所つきで報告する
-- [ ] 所要と、過去の commit の流し直しで数えた誤って止める割合を段ごとに書き、ユーザーの決定 (段ごとに止める / 報告だけ / 回さない) を書く
+- [x] 所要と、過去の commit の流し直しで数えた誤って止める割合を段ごとに書き、ユーザーの決定 (段ごとに止める / 報告だけ / 回さない) を書く
 
 ## 依存
 
@@ -171,3 +171,9 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
     (`events() -> AsyncStream<Void>`・`save`・`delete(id:)`・`connection(id:)`・記録係の `append`) の写し。寄せるべき写しは `location(connectionID:path:)` と `makeTemporaryFile(contents:)`。
     止める段の決定は、別のマシンで作っているノイズの除外の後に、新しい既定で流し直して諮る (ユーザー 2026-10-25)
   - 61 (直接 push の運用を実際の CI で) は obaket の GHA (`ubuntu-slim`) で行う (1301 の段階 6。CI に入れるのは最後というユーザーの決定)
+- 2026-10-25 obaket の CI (GHA の `ubuntu-slim`。obaket の issue 1301 の段階 6) で確かめた: master への直接 push の run (40172240531。base は push の前の commit = `github.event.before`) は「新しい重複なし」で通り、
+  写しを 1 つ足した一時的な PR の run (40172625372。base は PR の対象) は rc=1 で、足した `probeLocation` を「新しい」、`SharedTestSupport` の `bucketLocation` を「同じ形」に名指しした
+  (PR と branch は消した)。写しを含む commit を master に直接 push して赤を見ることはしていない (master の履歴を汚すため)。base の取り方だけが違い、判定は同じ gate を通る
+- 2026-10-25 **止める段のユーザー決定 (2026-10-25)**: L1・L2 で止める (今の既定のまま)。材料: obaket の 100 commit の流し直しで、既定 (下限 20 節・L1/L2) とプリセット `l2-single-call` (919) 込みで赤 4
+  (fake の写し 3・並べたクロージャ 1)。所要は 1 回 平均 3.0 秒・最大 4.2 秒。obaket では pre-push の lint-gates (`check-dupscan-gate`) と CI の両方で止める
+- 2026-10-25 done
