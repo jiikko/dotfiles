@@ -12,7 +12,7 @@ epic [910](910-design-fold-subagents-into-main-loop.md)。他の子と独立。
 
 dotfiles の常時読み込みは、retro のたびに 1 項目ずつ足される形で育っている。2026-10-25 の量:
 `_claude/rules/*.md` が 35 ファイルで合計 239,035 byte (`wc -c`。`paths:` で条件ロードされるものを含む。日本語なので文字数はこれより少ない)、
-`_claude/CLAUDE.md` が 29,157 byte。既にやっている対策: なぜ・起源を `rules-rationale/` へ、長い手順を `rules-checklists/` へ切り出す /
+`_claude/CLAUDE.md` が 29,423 byte。既にやっている対策: なぜ・起源を `rules-rationale/` へ、長い手順を `rules-checklists/` へ切り出す /
 `paths:` の条件ロード / 強制できるものを hook・スクリプトへ移す (tmux の shim と hook、`scripts/issue_claim.sh` / `issue_done.sh`) /
 retro からの新規ルールを入口で絞る (issue-rules の retro 節)。
 

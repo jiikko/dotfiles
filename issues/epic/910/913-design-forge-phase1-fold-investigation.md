@@ -41,8 +41,10 @@ Maximum は全員 (`_common/modes.md`)。
 
 ## 未確認
 
-- `forge.js` の `agentType: item.name` で起動した専門家が、`_claude/agents/<name>.md` の本文をシステムプロンプトとして読み込むのか、名前だけが渡るのかは未確認。
+- `forge.js` は、`agentType: item.name` で起動した専門家が `_claude/agents/<name>.md` の本文をシステムプロンプトとして読み込む**前提**で書かれている
+  (`_common/agents.md` 冒頭の注記: プロンプトのテンプレートは agentType のシステムプロンプトに委ね、forge.js は簡潔版だけを持つ)。実際にそう動くかは**未実測**。
   読み込まないなら、今の fan-out は「専門家」ではなく、観点の 1 行 (lens) が違うだけの同じモデルを並べていることになる。最初に 1 本で確かめる
+  (ロスターに入る `Explore` は組み込みの agent で `_claude/agents/` に本文が無いので、確かめる対象から外す)
 
 ## 関連ファイル
 

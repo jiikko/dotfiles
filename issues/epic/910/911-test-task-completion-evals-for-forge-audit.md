@@ -6,7 +6,7 @@ epic [910](910-design-fold-subagents-into-main-loop.md) の前提。912 / 913 / 
 
 ## 概要
 
-`_claude/skill-evals/` にあるケースは 11 skill 分で、どれも「skill が発火するか / 選択肢を出すか」しか見ていない
+`_claude/skill-evals/` にあるケースは 12 skill・13 本で、zundamon-kaisetsu の `no-pointing-at-show` の 1 本を除き「skill が発火するか / 選択肢を出すか」しか見ていない
 (2026-10-25 時点: `audit/invoked` は `offers-ci` / `offers-concurrency` の grader、`codex-drive/fires` は `fires` の grader。forge はケースが無い)。
 fan-out を畳む・残すの判断には「仕込んだ欠陥を見つけられたか」のような**タスク完了**の eval が要る。
 記事の実例では、統合で壊れた挙動が **2 回に 1 回しか出なかった**ので、各ケースを複数回回す。
@@ -16,6 +16,9 @@ fan-out を畳む・残すの判断には「仕込んだ欠陥を見つけられ
 - [ ] **fixture の repo を作る**: 小さな Go か shell の repo に、既知の欠陥を 5〜10 件仕込む。監査タイプ (concurrency の K1 check-then-act・false-green の F2 対象 0 件が合格・
       encapsulation の E2 など) と forge のレビューで見つかるべきものに対応させ、仕込んだ欠陥の一覧 (正解表) をケースの外に置く。
       fixture は `_claude/skill-evals/<skill>/<case>/` の下で、skill の link に入らない場所に置く (`bin/skill-eval` の冒頭の注記)
+- [ ] **fixture の言語とロスターの対応を決める**: forge のロスターは言語で変わる (`forge.js` の `baseRoster`。Standard は swift が必須 6 (+investigate で research-assistant)、
+      go は Explore を含めて 5 体)。`language: 'generic'` には専用の分岐が無く swift の既定に落ちるので、shell の fixture を generic で回すと Swift の専門家が shell を読む。
+      Go の fixture にするか、generic の扱いを先に決める
 - [ ] **audit のケース**: 監査タイプ 2〜3 本 (concurrency / false-green / encapsulation) を、「直接実行」と「forge Minimum+ / Standard」で回せる形にする。
       grader は「正解表の欠陥を何件見つけたか」「正解表に無い指摘のうち発火条件の無いものの件数」を数える
 - [ ] **forge のケース**: レビューモード (`/forge <path>`) で、仕込んだ欠陥の検出数を数えるケース。実装モードは対話 (AskUserQuestion) を挟むので、

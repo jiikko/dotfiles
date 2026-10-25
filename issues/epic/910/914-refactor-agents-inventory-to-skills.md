@@ -37,6 +37,9 @@ appstore-monetization-expert / smoke-test-runner / swift-test-runner / tt-api-ex
   - **skill へ移す**: 本文が手順・領域知識で、main が読めば足りるもの (reference skill にする。例: Swift の言語・UI の知識)
   - **消す / 寄せる**: 実行だけの runner、参照も利用も無いもの、他と重複するもの
   - **その repo へ移す**: 特定のプロジェクト専用 (smoke-test-runner / tt-api-expert)
+- [ ] 参照が 1 か所だけの agent は、その参照元も同じ変更で直す: test-runner (`_claude/skills/forge/phases-5-completion.md` の「test-runner 連携」) /
+      image-editing-expert・macos-system-integration-expert (`forge/_common/agents.md` の検出表) / code-reviewer (`cross-review/SKILL.md` の選定表) /
+      appstore-submission-expert (`_claude/CLAUDE.md` の表) / crash-analyzer (`crash-log-analyzer` skill が名指しで呼ぶ。skill 経由の起動が transcript の集計に出るかを先に確かめる)
 - [ ] forge のロスター (`forge.js` の `resolveRoster` / `_common/agents.md`) と cross-review の選定表 (`_claude/skills/cross-review/SKILL.md` の手順 3) が参照している agent は、
       913 の結論が出るまで消さない
 - [ ] 消す・移すときは入口も同じ変更で直す: `_claude/agents/README.md` (索引。`tests/claude/test_agents_index.sh` が乖離を検出)、

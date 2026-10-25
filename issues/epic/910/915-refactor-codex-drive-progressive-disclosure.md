@@ -20,10 +20,15 @@ fan-out の構成 (D1 の 4 案・3.5 / 3.6 の lens) は記事に照らして�
 
 - [ ] 分け方を決める: 本体に残すのは「役割分担・大原則・工程の厚さ・出力の置き場・ワークフローの一覧・使い分け」と、各フェーズのファイルへの入口だけ。
       候補: `phase-0-fit.md` / `phases-R-S-D.md` (要件・spec・設計) / `phases-1-2-2p.md` (スコープ・実装・競作) / `phases-3-review.md` (3〜3.8) / `parallel-launch.md` (並列起動の作法)
-- [ ] 分ける前に、外から節番号で参照している箇所を全部挙げ、移動後も辿れる形にする。2026-10-25 に `codex-drive` を名前で参照しているファイル:
-      `_claude/rules/parallel-write-agents-need-worktree-isolation.md` (`[2p]`) / `_claude/rules/mutation-verify-new-tests.md` (`[3.8]`) /
-      `_claude/rules/claude-md-maintenance.md` / `_claude/CLAUDE.md` / `_claude/skills/codex-review/SKILL.md` / `tests/bin/test_skill_tmpdir.sh` /
-      `tests/claude/test_codex_drive_effort_consistency.sh`。**節番号 (`[3.8]` など) は振り直さない**
+- [ ] 分ける前に、外から節名・節番号で参照している箇所を全部挙げ、移動後も辿れる形にする。一覧は着手時に
+      `grep -rln 'codex-drive' bin src _claude tests | grep -v '^_claude/skills/codex-drive/'` で取り直す。2026-10-25 の結果 (14 本):
+      - 節名・節番号を引くもの: `bin/codex-fanout` (「並列起動の作法」・`[2p]`・`templates/merger.md` のパス) / `bin/codex-run` (`[2]`・「モデル表」) /
+        `_claude/rules/parallel-write-agents-need-worktree-isolation.md` (`[2p]`) / `_claude/rules/mutation-verify-new-tests.md` (`[3.8]`)
+      - 名前・skill の存在だけを引くもの (中身を着手時に確かめる): `_claude/rules/claude-md-maintenance.md` / `_claude/CLAUDE.md` / `_claude/skills/codex-review/SKILL.md` /
+        `_claude/rules-rationale/verify-execution-not-just-exit-code.md` / `_claude/skill-evals/codex-drive/fires/graders/fires.md` / `src/runtimeout/main.go` (コメント) /
+        `src/ratelimit/README.md` / `bin/skill-tmpdir` / `tests/bin/test_skill_tmpdir.sh`
+      - 本文を読む検査: `tests/claude/test_codex_drive_effort_consistency.sh` (下の項)
+      **節番号 (`[3.8]` など) は振り直さない**
 - [ ] `tests/claude/test_codex_drive_effort_consistency.sh` が読むファイルを、分けた後の全ファイルに広げる (本体だけを読む形のままだと、移した節の effort の食い違いが検査から外れる)。
       広げた後に、移した先のファイルで effort を食い違わせる変異を 1 本当てて red を確かめる
 - [ ] `templates/` (merger.md / review-lens-header.md) との関係は変えない
