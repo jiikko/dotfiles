@@ -182,6 +182,7 @@ func (m *Model) openTile(n *node, from rect) {
 		return
 	}
 	m.tiles = append(m.tiles, t)
+	m.shut = shutTiles{}
 }
 
 // newTile は n を読むタイルを作る (まだ積まない)。開けなければ理由を返す。
@@ -265,6 +266,7 @@ func (m *Model) tileKey(k string) {
 	switch k {
 	// 閉じるキーは glogx-ui-guide §3 (q Esc h ← と、開閉 toggle の Enter)
 	case "q", "esc", "h", "left", "enter":
+		m.noteShut()
 		t.closing = true
 		return
 	case "tab":

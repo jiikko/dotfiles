@@ -57,6 +57,7 @@ type Model struct {
 	order      []*node // 描画順 (生まれた順)
 	camX, camY tween
 	tiles      []*tile
+	shut       shutTiles // q で閉じたばかりのタイル (Place が q q で抜けたときにも記憶へ載せる。places.go)
 	moving     bool
 	lastAdv    time.Time
 	notices    []Notice

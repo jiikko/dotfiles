@@ -103,11 +103,8 @@ func TestPanelIntClampsAndBoolToggles(t *testing.T) {
 
 func TestRememberPlace(t *testing.T) {
 	m := newTest(t)
-	panelTo(t, m, "remember")
-	m.HandleKey("l")
-	m.HandleKey("esc")
 	if !m.set.Remember {
-		t.Fatal("remember が on にならない")
+		t.Fatal("remember が既定で on でない")
 	}
 	b := m.loadPath(filepath.Join(m.root.abs, "b"))
 	x := m.loadPath(filepath.Join(m.root.abs, "b", "deep", "x.txt"))
@@ -150,6 +147,12 @@ func TestRememberPlace(t *testing.T) {
 
 func TestRememberOffDoesNotWrite(t *testing.T) {
 	m := newTest(t)
+	panelTo(t, m, "remember")
+	m.HandleKey("l")
+	m.HandleKey("esc")
+	if m.set.Remember {
+		t.Fatal("remember が off にならない")
+	}
 	m.Close()
 	if _, err := os.Stat(placesPath()); !os.IsNotExist(err) {
 		t.Fatalf("remember が off なのに書いた: %v", err)

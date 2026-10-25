@@ -80,6 +80,9 @@ func TestMain(m *testing.M) {
 
 func newTestBrowse(t *testing.T, n int, statuses map[string]gitdata.CIState, toFetch []string) *browseModel {
 	t.Helper()
+	// treefiler の設定と前回の場所 (Remember place は既定で on) をテストごとに分ける: TestMain の置き場はバイナリで 1 つで、
+	// 場所の鍵は起動したフォルダ (F はテストの cwd = このパッケージで開くことが多い) なので、前のテストが閉じた F の場所を次のテストの F が戻す
+	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
 	commits := make([]gitdata.Commit, n)
 	for i := range commits {
 		sha := strings.Repeat(string(rune('a'+i)), 40)

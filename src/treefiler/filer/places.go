@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"atomicfile"
@@ -12,7 +13,8 @@ import (
 
 // places.go は前回の場所を覚える (設定の Remember place。spec §7 の places)。
 // 保存先は設定と同じ置き場の treefiler-places (configDir。treebeard は ~/.local/state/tb/places)。
-// 形式は treebeard と同じ: `= <起動したフォルダ>` に続けて `+ <開いていたフォルダ>` と `@ <カーソル>`。新しいものが先頭、最大 placesKeep 件。
+// 形式は treebeard の `= <起動したフォルダ>` に続けて `+ <開いていたフォルダ>` と `@ <カーソル>` に、treefiler だけの `> <d か スクロール> <タイル>`
+// (奥から手前の順) を足したもの。新しいものが先頭、最大 placesKeep 件。
 
 const placesKeep = 50
 
@@ -26,8 +28,6 @@ func placesPath() string {
 
 // Place は開いている場所: 起動したフォルダ・開いていたフォルダ (root 以外の展開済み)・カーソル (どれも絶対パス)・プレビューのタイル。
 // Remember place の記録と、glogx が C-g で閉じて開き直したときの記憶 (glogx の filer_resume.go) が同じ形を使う。
-// Tiles は glogx の記憶 (JSON) だけが運ぶ。Remember place の行形式 (savePlace) には書かない: treebeard と同じ形式を保っており、
-// あちらにタイルを開き直す機能が無い。
 type Place struct {
 	Start  string      `json:"start"`
 	Opened []string    `json:"opened,omitempty"`
@@ -75,12 +75,66 @@ func readPlaces(path string) ([]Place, bool) {
 			if len(ps) > 0 {
 				ps[len(ps)-1].Cursor = v
 			}
+		case '>':
+			if tp, ok := parseTileLine(v); ok && len(ps) > 0 {
+				ps[len(ps)-1].Tiles = append(ps[len(ps)-1].Tiles, tp)
+			}
 		}
 	}
 	return ps, sc.Err() == nil
 }
 
-// Place は今の開いている場所を返す。
+// tileLine / parseTileLine は `>` の行の値 (`d <パス>` = diff、`<スクロール> <パス>` = 本体)。
+func tileLine(tp TilePlace) string {
+	if tp.Diff {
+		return "d " + tp.Path
+	}
+	return strconv.Itoa(max(0, tp.Scroll)) + " " + tp.Path
+}
+
+func parseTileLine(v string) (TilePlace, bool) {
+	head, path, ok := strings.Cut(v, " ")
+	if !ok || path == "" {
+		return TilePlace{}, false
+	}
+	if head == "d" {
+		return TilePlace{Path: path, Diff: true}, true
+	}
+	n, err := strconv.Atoi(head)
+	if err != nil {
+		return TilePlace{}, false
+	}
+	return TilePlace{Path: path, Scroll: n}, true
+}
+
+// shutTiles は q (Esc・h・←・Enter) で最後の 1 枚を閉じたときのタイルと、そのときのカーソル。
+// タイルを開いている間の q は閉じるだけなので、q q で抜けると終了の時点ではタイルが無い。それでも次に開いたときにプレビューへ戻す
+// (2026-10-25 ユーザー回答「最後に見たプレビューを開き直す」)。抜けたときのカーソルが閉じたときと別の項目なら使わない: 戻した画面で
+// タイルとカーソルが別のものを指す (照合はパスで、離れて戻ってきた場合は使う)。新しくタイルを開いたら捨てる (openTile)。
+type shutTiles struct {
+	cur   string
+	tiles []TilePlace
+}
+
+// openTiles は閉じかけでないタイル (奥から手前の順)。
+func (m *Model) openTiles() []TilePlace {
+	var ts []TilePlace
+	for _, t := range m.tiles {
+		if !t.closing {
+			ts = append(ts, TilePlace{Path: t.n.path(), Diff: t.mode == modeDiff, Scroll: t.scroll})
+		}
+	}
+	return ts
+}
+
+// noteShut は手前のタイルを閉じる直前に呼ぶ。それが最後の 1 枚なら、閉じる前の姿を覚える。
+func (m *Model) noteShut() {
+	if ts := m.openTiles(); len(ts) == 1 {
+		m.shut = shutTiles{cur: m.cur.path(), tiles: ts}
+	}
+}
+
+// Place は今の開いている場所を返す。タイルが無く、閉じたばかりのタイルがあってカーソルが動いていなければ、それを載せる (shutTiles)。
 func (m *Model) Place() Place {
 	p := Place{Start: m.startDir, Cursor: m.cur.path()}
 	var walk func(n *node)
@@ -93,17 +147,21 @@ func (m *Model) Place() Place {
 		}
 	}
 	walk(m.root)
-	for _, t := range m.tiles {
-		if !t.closing {
-			p.Tiles = append(p.Tiles, TilePlace{Path: t.n.path(), Diff: t.mode == modeDiff, Scroll: t.scroll})
-		}
+	p.Tiles = m.openTiles()
+	if len(p.Tiles) == 0 && m.shut.cur == p.Cursor {
+		p.Tiles = m.shut.tiles
 	}
 	return p
 }
 
 // RestorePlace は p の開いていたフォルダとカーソルとタイルを戻す (無くなったパス・木の外のフォルダは飛ばす。カーソルが戻せなければ
 // 動かさない)。タイルは木の外のファイルでも戻す (リンクから重ねて開いたもの)。起動したフォルダの照合は呼び出し側が行う。
+// 今のタイルは p のタイルに置き換える (積み増さない): glogx は New が Remember place で戻した後に、自分の記憶でもう一度戻す。
 func (m *Model) RestorePlace(p Place) {
+	for _, t := range m.tiles {
+		t.stopDiff()
+	}
+	m.tiles, m.shut = nil, shutTiles{}
 	for _, o := range p.Opened {
 		if n := m.loadPath(o); n != nil && n.dir {
 			n.expanded = true
@@ -115,7 +173,7 @@ func (m *Model) RestorePlace(p Place) {
 	}
 }
 
-// savePlace は今の開いたフォルダとカーソルを、起動したフォルダの記録として先頭に書く (設定が on のときだけ)。
+// savePlace は今の開いたフォルダとカーソルとタイルを、起動したフォルダの記録として先頭に書く (設定が on のときだけ)。
 func (m *Model) savePlace() {
 	if !m.set.Remember {
 		return
@@ -148,6 +206,11 @@ func (m *Model) savePlace() {
 		}
 		if p.Cursor != "" {
 			b.WriteString("@ " + p.Cursor + "\n")
+		}
+		for _, tp := range p.Tiles {
+			if oneLine(tp.Path) {
+				b.WriteString("> " + tileLine(tp) + "\n")
+			}
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

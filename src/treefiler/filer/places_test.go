@@ -102,3 +102,86 @@ func TestRestorePlaceReopensTiles(t *testing.T) {
 		t.Errorf("diff の表示: %+v", vl)
 	}
 }
+
+// `>` の行はスクロールか diff とパスを運び、空白を含むパスも同じ値で読み戻す。壊れた行は捨てる。
+func TestTileLineRoundTrip(t *testing.T) {
+	for _, tp := range []TilePlace{{Path: "/a b/c.txt", Scroll: 7}, {Path: "/x/d", Diff: true}, {Path: "/x/0"}} {
+		got, ok := parseTileLine(tileLine(tp))
+		if !ok || got != tp {
+			t.Errorf("%+v → %q → %+v (%v)", tp, tileLine(tp), got, ok)
+		}
+	}
+	for _, v := range []string{"", "12", "x /p", "3 "} {
+		if tp, ok := parseTileLine(v); ok {
+			t.Errorf("%q を読んだ: %+v", v, tp)
+		}
+	}
+}
+
+// reopen は m を閉じて (終了と同じく Close で記録を書き)、同じフォルダから開き直す。
+func reopen(t *testing.T, m *Model) *Model {
+	t.Helper()
+	m.Close()
+	m2, err := New(m.root.abs, Options{Now: m.now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m2
+}
+
+// Ctrl-C (タイルを開いたまま終了) の後に同じフォルダから開くと、Remember place (既定で on) がタイルとスクロールまで戻す。
+func TestRememberPlaceReopensOpenTile(t *testing.T) {
+	m := newTest(t)
+	writeRel(t, m, "long.txt", strings.Repeat("line\n", 300))
+	long := openTileAt(t, m, "long.txt")
+	long.scroll = 40
+	if m.HandleKey("ctrl+c") != Quit {
+		t.Fatal("ctrl+c で終わらない")
+	}
+	m2 := reopen(t, m)
+	if len(m2.tiles) != 1 || m2.tiles[0].n.path() != long.n.path() || m2.tiles[0].scroll != 40 {
+		t.Fatalf("タイル = %+v, want long.txt の 40 行目", m2.Place().Tiles)
+	}
+	if m2.cur.path() != long.n.path() {
+		t.Errorf("カーソル = %s", m2.cur.path())
+	}
+}
+
+// q でタイルを閉じてから q で終わっても (q q)、閉じたタイルを戻す。閉じた後にカーソルを動かしたら戻さない。
+func TestRememberPlaceReopensTileClosedByQuit(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		keys []string
+		tile bool
+	}{
+		{"q q", nil, true},
+		{"閉じてから動く", []string{"j"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTest(t)
+			tl := openTileAt(t, m, "c.txt")
+			m.HandleKey("q") // タイルを閉じる
+			for _, k := range tc.keys {
+				m.HandleKey(k)
+			}
+			if m.HandleKey("q") != Quit {
+				t.Fatal("2 度目の q で終わらない")
+			}
+			m2 := reopen(t, m)
+			if got := len(m2.tiles) == 1 && m2.tiles[0].n.path() == tl.n.path(); got != tc.tile {
+				t.Fatalf("タイルを戻した = %v, want %v (%+v)", got, tc.tile, m2.Place().Tiles)
+			}
+		})
+	}
+}
+
+// RestorePlace はタイルを積み増さずに置き換える (glogx は New の Remember place の後に、自分の記憶でもう一度戻す)。
+func TestRestorePlaceReplacesTiles(t *testing.T) {
+	m := newTest(t)
+	p := Place{Start: m.startDir, Tiles: []TilePlace{{Path: filepath.Join(m.root.abs, "c.txt")}}}
+	m.RestorePlace(p)
+	m.RestorePlace(p)
+	if len(m.tiles) != 1 {
+		t.Fatalf("タイル %d 枚, want 1", len(m.tiles))
+	}
+}
