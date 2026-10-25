@@ -138,7 +138,11 @@ func TestCollapseBelowStopsExplode(t *testing.T) {
 	b := m.findNode(m.root.abs + "/b")
 	m.setCur(b)
 	m.HandleKey(">")
+	m.TakeNotices()
 	m.HandleKey("<")
+	if ns := m.TakeNotices(); len(ns) == 0 || !strings.Contains(ns[len(ns)-1].Text, "中断しました") {
+		t.Fatalf("< で explode を止めたのに知らせない: %+v", ns)
+	}
 	waitExplode(t, m)
 	if b.expanded {
 		t.Fatal("< の後に explode が b を開き直した")
