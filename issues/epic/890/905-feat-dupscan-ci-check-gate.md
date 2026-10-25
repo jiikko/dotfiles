@@ -143,3 +143,11 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
 - 2026-10-25 `--record <file>` を足した (commit「feat(dupscan): gate の結果を 1 行の JSON で追記する --record」。891 の「記録」): gate の json の出力に `time` を添えた 1 行を O_APPEND の 1 回の write で追記する。
   書けなければ黙らず rc=2。テスト 2 本、変異 3 本 (上書きする・書けなくても続ける・時刻を入れない) はビルドが通り全部赤。
   **残り**: 誤って止める割合の測定の続き (過去の commit の流し直し)・PR 24 の前の木での受け入れ (obaket が要る)・組み込みの例を実際の repo の CI で 1 回走らせる
+- 2026-10-25 流し直しを 500 commit に広げた (DualNoteApp の first-parent 500 commit・`-base <親> -head <commit>`・cdd68f08 の版。DualNoteApp への書き込み 0):
+  直近 200 は 906 を閉じた版の流し直しと rc・組・名指しとも全部同じ (この間の変更 = コメントの許可・near・index・callers・untracked・--record は gate の判定を変えていない)。
+  500 commit で赤 59 (直近 200 で 13、それより古い 300 で 46)。古い 300 の赤 46 は、違反の一覧 (足した単位と同じ形の単位) を全部並べて見た限り、どれも「足した単位と同じ本体の単位が残っている」形で、
+  移動・改名を名指ししたものは見当たらなかった。小さな commit 4 つ (acd1b44e・45ccab31・0341e259・db943c8e) は差分まで見て、どれも本物の写し (例: acd1b44e の `MemoStorage.parseVersion` は `DiaryFileLoader.version` と同じ本体)。
+  古い赤の多くは Diary と Memo の並行の実装 (`applyLoadFailure`・`feedbackState`・`replaceRefreshTask` など) と、テストの fake のファイルをまたぐ写し (`read`・`write`・`list` など)。
+  **意図して並べている写しが多い repo では、組み込むと当面 gate がよく赤になる**: 寄せるか、`intentional` の除外を書くかの方針を組み込む前に決める (909 の手順 3)。
+  merge commit (0696a919) は base が first parent なので、取り込んだ側の写しが新しく見える (CI では push の前の commit を base にするので同じ形になる。受け入れている)。
+  出典: `tmp/dupscan-replay-2026-10-25/` (replay.tsv・reds.txt。30 日で消える。結論はここに移した)
