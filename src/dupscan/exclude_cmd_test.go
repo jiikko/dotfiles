@@ -46,6 +46,57 @@ func writeConfig(t *testing.T, root string, rules ...any) {
 	writeFile(t, root, ".dupscan.json", string(b))
 }
 
+// 同じ関数に並んだ同じ本体のクロージャの組も、報告の除外の 1 行 (釘を人数分書く) を貼れば外れる。3 つ目が増えれば再び出る。
+func TestSiblingClosureGroupExclusion(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/R.swift": siblingBody(2)})
+	writeConfig(t, root, groupRule(t, root))
+	if _, out, _ := runReport(t, root); !strings.Contains(out, "重複なし") || strings.Contains(out, "名指しできない") {
+		t.Errorf("並んだクロージャの組の除外が効かない: %q", out)
+	}
+	writeFile(t, root, "Sources/R.swift", siblingBody(3))
+	if _, out, _ := runReport(t, root); !strings.Contains(out, "組 1") || !strings.Contains(out, "名指しできない除外 1") {
+		t.Errorf("3 つ目のクロージャが増えても組が出ない: %q", out)
+	}
+}
+
+func siblingBody(n int) string {
+	s := "func register(_ r: Registry) {\n"
+	for range n {
+		s += "    r.add { value in\n        let normalized = value.trimmingCharacters(in: .whitespaces)\n        audit(\"x\", value: normalized, attempts: 3)\n    }\n"
+	}
+	return s + "}\n"
+}
+
+// 除外に同じ釘を書き足して許可の人数を増やすと、新しく足された除外に出る (書き足すだけで写しを通せない)。
+func TestSiblingClosureExtraPinIsNewExclusion(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/R.swift": siblingBody(2)})
+	rule := groupRule(t, root)
+	writeConfig(t, root, rule)
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Sources/R.swift", siblingBody(3))
+	pins := rule["group"].([]any)
+	rule["group"] = append(pins, pins[0])
+	writeConfig(t, root, rule)
+	if rc, out, errs := runGateCmd(t, "-base", "HEAD", "-fail-new-exclusions", "-v", root); rc != 1 || !strings.Contains(out, "(3 つ目)") {
+		t.Errorf("釘を書き足して増やした許可が新しく足された除外に出ない: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}
+
+// 1 つ消した後に同じ写しを足し直すと、除外を変えなくても新しい写しとして止まる (base の釘の個数を超えた分は覆わない)。
+func TestSiblingClosureReaddedAfterRemovalIsViolation(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/R.swift": siblingBody(2)})
+	writeConfig(t, root, groupRule(t, root))
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "a")
+	writeFile(t, root, "Sources/R.swift", siblingBody(1))
+	gitRun(t, root, "commit", "-q", "-am", "b")
+	writeFile(t, root, "Sources/R.swift", siblingBody(2))
+	if rc, out, errs := runGateCmd(t, "-base", "HEAD", root); rc != 1 {
+		t.Errorf("消した後に足し直した写しを除外が覆った: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}
+
 func TestGroupExclusionHidesGroupAndSurvivesLineShift(t *testing.T) {
 	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
 	writeConfig(t, root, groupRule(t, root))

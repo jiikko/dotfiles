@@ -42,6 +42,25 @@ func TestAmbiguousPinIsNotApplied(t *testing.T) {
 	}
 }
 
+func TestSiblingClosurePinCountedInGroupRule(t *testing.T) {
+	// 同じ囲む単位に並んだ同じ本体のクロージャは、釘を人数分書いた組の除外で外せる (報告の除外の 1 行がその形)。
+	x, y := ent("F|V|body#closure1", "F", "h"), ent("F|V|body#closure2", "F", "h")
+	c := &Config{Version: 1, Exclude: []Rule{{Group: []string{Pin(x), Pin(y)}, Level: "L1", Kind: "intentional", Reason: "r"}}}
+	if err := c.Exclude[0].check(); err != nil {
+		t.Fatal(err)
+	}
+	s := New(c, []*group.Entry{x, y}, nil)
+	if !s.GroupExcluded(norm.L1, []*group.Entry{x, y}) || len(s.Ambiguous()) != 0 || len(s.Stale()) != 0 {
+		t.Errorf("人数分の釘を書いた除外が効かない: ambiguous=%d stale=%d", len(s.Ambiguous()), len(s.Stale()))
+	}
+	// 同じ本体のクロージャが 3 つ目に増えたら、書いた回数を超えるので効かせない (組が再び出る)。
+	z := ent("F|V|body#closure3", "F", "h")
+	s = New(c, []*group.Entry{x, y, z}, nil)
+	if s.GroupExcluded(norm.L1, []*group.Entry{x, y, z}) || len(s.Ambiguous()) != 1 {
+		t.Errorf("書いた回数を超えて当たる釘の除外が効いた: ambiguous=%d", len(s.Ambiguous()))
+	}
+}
+
 func TestMatchGlob(t *testing.T) {
 	for _, c := range []struct {
 		glob, file string

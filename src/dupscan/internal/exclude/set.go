@@ -1,6 +1,7 @@
 package exclude
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -16,7 +17,7 @@ type Set struct {
 	pinCount  map[string]int
 	// basePins は gate のときの base の単位の釘。組・単位の除外は、base に同じ釘の単位があったときか、
 	// その釘が新しく足された要素のときだけ効く (消えた写しの釘の場所に後から同じ写しを置いても覆わない)。nil なら制限しない (report)。
-	basePins map[string]bool
+	basePins map[string]int // 釘ごとの base の単位の数 (同じ関数に並んだ同じ本体のクロージャは同じ釘で数が 2 以上になる)
 	newElems map[string]bool
 	inScope  func(file string) bool
 	// narrowed は既定より狭い走査 (段・下限を変えた) か。狭い走査では組が作られないだけの除外を「効いていない」と言えない。
@@ -39,8 +40,15 @@ func New(c *Config, entries []*group.Entry, inScope func(string) bool) *Set {
 		s.pinCount[Pin(e)]++
 	}
 	for i, r := range s.rules {
+		// 釘は除外に書いた回数まで当たってよい。同じ単位の中で同じ本体のクロージャが並ぶと、順番を入れない釘はどれも同じになるので、
+		// 組の除外にはその釘が人数分書かれる (報告の除外の 1 行のとおり)。当たる単位が書いた回数より多いときだけ名指しできない
+		// (後から同じ本体のクロージャが増えた・別の単位が同じ釘になった) として効かせない。
+		want := map[string]int{}
 		for _, p := range r.pins() {
-			if s.pinCount[p] > 1 {
+			want[p]++
+		}
+		for p, n := range want {
+			if s.pinCount[p] > n {
 				s.ambiguous[i] = true
 			}
 		}
@@ -66,9 +74,9 @@ func (s *Set) Scanned(levels []norm.Level) {
 
 // LimitToBase は gate のために、組・単位の除外を base にあった釘か新しく足された要素だけに効かせる。
 func (s *Set) LimitToBase(base []*group.Entry, baseCfg *Config) {
-	s.basePins = map[string]bool{}
+	s.basePins = map[string]int{}
 	for _, e := range base {
-		s.basePins[Pin(e)] = true
+		s.basePins[Pin(e)]++
 	}
 	s.newElems = map[string]bool{}
 	for _, el := range NewElements(baseCfg, &Config{Exclude: s.rules}) {
@@ -134,10 +142,14 @@ func (s *Set) GroupExcluded(lv norm.Level, members []*group.Entry) bool {
 		for _, p := range r.Group {
 			pins[p] = true
 		}
+		// 同じ釘のメンバーの k 人目は、base にその釘が k 個以上あったか、k 人目の要素が新しく足されたときだけ覆う
+		// (1 つ消した後に同じ写しを足し直すと、base の個数を超えた分が新しい写しとして出る)。
 		all := true
+		seen := map[string]int{}
 		for _, m := range members {
 			p := Pin(m)
-			if !pins[p] || !s.known(p, "group:"+r.level.String()+":"+p) {
+			seen[p]++
+			if !pins[p] || !s.known(p, groupElement(r.level, p, seen[p]), seen[p]) {
 				all = false
 				break
 			}
@@ -154,7 +166,7 @@ func (s *Set) GroupExcluded(lv norm.Level, members []*group.Entry) bool {
 func (s *Set) Allowed(e *group.Entry) bool {
 	p := Pin(e)
 	for i, r := range s.rules {
-		if r.Unit == p && !s.ambiguous[i] && s.known(p, "unit:"+p) {
+		if r.Unit == p && !s.ambiguous[i] && s.known(p, "unit:"+p, 1) {
 			s.used[i] = true
 			return true
 		}
@@ -162,8 +174,8 @@ func (s *Set) Allowed(e *group.Entry) bool {
 	return false
 }
 
-func (s *Set) known(pin, elem string) bool {
-	return s.basePins == nil || s.basePins[pin] || s.newElems[elem]
+func (s *Set) known(pin, elem string, k int) bool {
+	return s.basePins == nil || s.basePins[pin] >= k || s.newElems[elem]
 }
 
 // ApplyGroups は組から、組の除外に当たる組を除く (dropNested の後で呼ぶ。先に除くと、除いた関数の中のクロージャの組が出てくる)。
@@ -279,8 +291,10 @@ func (r Rule) elements() []string {
 			out = append(out, "paths:"+g+" ("+strings.Join(lvs, ",")+")")
 		}
 	case len(r.Group) > 0:
+		n := map[string]int{}
 		for _, p := range r.Group {
-			out = append(out, "group:"+r.level.String()+":"+p)
+			n[p]++
+			out = append(out, groupElement(r.level, p, n[p]))
 		}
 	case r.Unit != "":
 		out = append(out, "unit:"+r.Unit)
@@ -288,4 +302,14 @@ func (r Rule) elements() []string {
 		out = append(out, "preset:"+r.Preset)
 	}
 	return out
+}
+
+// groupElement は組の除外の要素。同じ釘を 2 回以上書いた (同じ関数に並んだ同じ本体のクロージャ) ときは、何人目かを要素に入れる。
+// 入れないと、釘を書き足して許可の人数を増やしても「新しく足された除外」に出ない。
+func groupElement(lv norm.Level, pin string, k int) string {
+	e := "group:" + lv.String() + ":" + pin
+	if k > 1 {
+		e += fmt.Sprintf(" (%d つ目)", k)
+	}
+	return e
 }
