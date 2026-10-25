@@ -133,28 +133,31 @@ func (c *Commit) ReadAll(files []string) (map[string][]byte, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	// fail は読みかけで止めるときの後始末。先に git を止めてから待つ (読み残したまま待つと、出力が pipe を埋めた git が書けずに止まり、
+	// 時間切れまで戻らない)。
+	fail := func(err error) (map[string][]byte, error) {
+		cancel()
+		_ = cmd.Wait()
+		return nil, err
+	}
 	out := make(map[string][]byte, len(files))
 	r := bufio.NewReader(stdout)
 	for _, f := range files {
 		header, err := r.ReadString('\n')
 		if err != nil {
-			_ = cmd.Wait()
-			return nil, fmt.Errorf("git cat-file の出力を読めない (%s): %w: %s", f, err, strings.TrimSpace(stderr.String()))
+			return fail(fmt.Errorf("git cat-file の出力を読めない (%s): %w: %s", f, err, strings.TrimSpace(stderr.String())))
 		}
 		fields := strings.Fields(header)
 		if len(fields) != 3 || fields[1] != "blob" {
-			_ = cmd.Wait()
-			return nil, fmt.Errorf("git cat-file が %s:%s を blob として返さない: %q", c.Name(), f, strings.TrimSpace(header))
+			return fail(fmt.Errorf("git cat-file が %s:%s を blob として返さない: %q", c.Name(), f, strings.TrimSpace(header)))
 		}
 		size, err := strconv.Atoi(fields[2])
 		if err != nil {
-			_ = cmd.Wait()
-			return nil, err
+			return fail(err)
 		}
 		body := make([]byte, size+1) // 末尾の改行まで
 		if _, err := io.ReadFull(r, body); err != nil {
-			_ = cmd.Wait()
-			return nil, err
+			return fail(err)
 		}
 		out[f] = body[:size]
 	}

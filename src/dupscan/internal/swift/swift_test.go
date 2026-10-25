@@ -1,6 +1,10 @@
 package swift
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -79,9 +83,9 @@ struct S {
         StorageLocation(connectionID: connectionID, path: BucketPath(rawValue: p))
     }
 }`)
-	a := norm.Normalize(find(t, r, "location"))
-	b := norm.Normalize(find(t, r, "bucketLocation"))
-	c := norm.Normalize(find(t, r, "other"))
+	a := normBoth(t, find(t, r, "location"))
+	b := normBoth(t, find(t, r, "bucketLocation"))
+	c := normBoth(t, find(t, r, "other"))
 	for _, l := range []norm.Level{norm.L1, norm.L2} {
 		if a.Hash[l] == b.Hash[l] {
 			t.Errorf("%s で一致してしまう\n%s\n%s", l, a.Forms[l], b.Forms[l])
@@ -103,7 +107,7 @@ func TestRenamedLocalsMatchAtL1(t *testing.T) {
 func f(x: Int) -> Int { let y = x + 1; return y * 2 }
 func g(a: Int) -> Int { let b = a + 1; return b * 2 }
 func h(a: Int) -> Int { let b = a + 1; return b * 3 }`)
-	f, g, h := norm.Normalize(find(t, r, "f")), norm.Normalize(find(t, r, "g")), norm.Normalize(find(t, r, "h"))
+	f, g, h := normBoth(t, find(t, r, "f")), normBoth(t, find(t, r, "g")), normBoth(t, find(t, r, "h"))
 	if f.Hash[norm.L1] != g.Hash[norm.L1] {
 		t.Errorf("局所の名前だけが違うのに L1 で一致しない\n%s\n%s", f.Forms[norm.L1], g.Forms[norm.L1])
 	}
@@ -259,11 +263,33 @@ func TestDocCommentAndParamTypes(t *testing.T) {
 	}
 }
 
-// kindOf は表から引くので、Node.Kind() と全部の節で同じ名前を返すことを、読めない構文も含む入力で確かめる。
+// kindOf は表から引くので、Node.Kind() と同じ名前を返すことを、本番が名前で比べる種類 (属性・where・didSet・subscript・
+// テスト関数・可視性・capture・読めない構文など) を含む入力の全部の節で確かめる。
 func TestKindOfMatchesKind(t *testing.T) {
-	src := []byte(`struct A { func f(_ x: Int) -> Int { let y = x + 1 /* c */; return y } }
-class B: XCTestCase { func testX() { XCTAssertEqual(1, 1) } }
-func broken( { let = = }
+	src := []byte(`import XCTest
+@MainActor
+public struct A<T>: Equatable where T: Hashable {
+    private var v: Int { didSet { print(oldValue) } willSet { print(newValue) } }
+    subscript(i: Int) -> Int { get { i } }
+    init(x: Int) { self.v = x }
+    deinit { }
+    func f(_ x: Int, label y: Int) -> Int {
+        let g = { [weak self] (z: Int) -> Int in z + 1 }
+        if case .some(let w) = Optional(x) { return w }
+        guard let q = Optional(y) else { return 0 }
+        for i in 0..<q where i > 0 { _ = g(i) }
+        switch x { case 1: break; default: break }
+        return a.b?.c(x: 1, 2) { $0 } ?? 0
+    }
+}
+protocol P { func p() }
+enum E { case a, b(Int) }
+final class B: XCTestCase { func testX() { XCTAssertEqual(1, 1) } }
+@Test func t() {}
+struct Broken {
+    @@
+    func broken() {}
+}
 `)
 	p := sitter.NewParser()
 	defer p.Close()
@@ -272,10 +298,10 @@ func broken( { let = = }
 	}
 	tr := p.Parse(src, nil)
 	defer tr.Close()
-	n := 0
+	seen := map[string]bool{}
 	var walk func(*sitter.Node)
 	walk = func(x *sitter.Node) {
-		n++
+		seen[x.Kind()] = true
 		if got, want := kindOf(x), x.Kind(); got != want {
 			t.Errorf("kindOf = %q, Kind() = %q", got, want)
 		}
@@ -284,7 +310,93 @@ func broken( { let = = }
 		}
 	}
 	walk(tr.RootNode())
-	if n < 50 {
-		t.Fatalf("節が %d しかない (入力の前提)", n)
+	for _, k := range []string{"attribute", "where_clause", "didset_clause", "willset_clause", "subscript_declaration", "visibility_modifier",
+		"capture_list_item", "lambda_literal", "call_suffix", "value_argument_label", "navigation_suffix", "ERROR"} {
+		if !seen[k] {
+			t.Errorf("入力に %s の節が無い (入力の前提)", k)
+		}
 	}
+}
+
+// 本番のコードが種類の名前と比べる文字列 (kindOf(x) == "…"・switch kindOf(x) の case・childOfKind の引数・入れ物の表) は、
+// どれも文法に在る名前でなければならない。綴りを誤った比較は黙って偽になり、テストの入力にその形が無ければ誰も気づかない。
+func TestComparedKindNamesExistInGrammar(t *testing.T) {
+	known := map[string]bool{}
+	for _, k := range kindNames() {
+		known[k] = true
+	}
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "swift.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	isKindOf := func(e ast.Expr) bool {
+		c, ok := e.(*ast.CallExpr)
+		if !ok {
+			return false
+		}
+		id, ok := c.Fun.(*ast.Ident)
+		return ok && id.Name == "kindOf"
+	}
+	lit := func(e ast.Expr) (string, bool) {
+		b, ok := e.(*ast.BasicLit)
+		if !ok || b.Kind != token.STRING {
+			return "", false
+		}
+		s, err := strconv.Unquote(b.Value)
+		return s, err == nil
+	}
+	var names []string
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.BinaryExpr:
+			if x.Op == token.EQL || x.Op == token.NEQ {
+				if s, ok := lit(x.Y); ok && isKindOf(x.X) {
+					names = append(names, s)
+				}
+			}
+		case *ast.SwitchStmt:
+			if x.Tag != nil && isKindOf(x.Tag) {
+				for _, c := range x.Body.List {
+					for _, e := range c.(*ast.CaseClause).List {
+						if s, ok := lit(e); ok {
+							names = append(names, s)
+						}
+					}
+				}
+			}
+		case *ast.CallExpr:
+			if id, ok := x.Fun.(*ast.Ident); ok && id.Name == "childOfKind" && len(x.Args) == 2 {
+				if s, ok := lit(x.Args[1]); ok {
+					names = append(names, s)
+				}
+			}
+		case *ast.KeyValueExpr:
+			if s, ok := lit(x.Key); ok && strings.Contains(s, "_") {
+				names = append(names, s)
+			}
+		}
+		return true
+	})
+	if len(names) < 30 {
+		t.Fatalf("比べる名前を %d しか集められない (集め方が空振りしていないか)", len(names))
+	}
+	for _, s := range names {
+		if !known[s] {
+			t.Errorf("本番のコードが比べる %q は文法に無い種類の名前", s)
+		}
+	}
+}
+
+// normBoth は本番の経路 (Normalize。形を作らない) と形を作る経路の両方で正規化し、ハッシュが段ごとに一致することを確かめてから、
+// 形つきの結果を返す (失敗の表示に形を出すため)。テストが形つきの経路だけを通ると、本番の経路の退行が見えなくなる。
+func normBoth(t *testing.T, u *tree.Unit) norm.Result {
+	t.Helper()
+	with, plain := norm.NormalizeWithForms(u), norm.Normalize(u)
+	for _, l := range norm.Levels {
+		if with.Hash[l] != plain.Hash[l] || with.L3Trivial != plain.L3Trivial || with.Nodes != plain.Nodes {
+			t.Errorf("%s: 本番の経路と形を作る経路で結果が違う: %s / %s", l, plain.Hash[l], with.Hash[l])
+		}
+	}
+	return with
 }

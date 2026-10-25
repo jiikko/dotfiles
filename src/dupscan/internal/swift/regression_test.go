@@ -29,7 +29,7 @@ func unitBy(t *testing.T, r FileResult, sig string) *tree.Unit {
 func differ(t *testing.T, src, a, b string, levels ...norm.Level) {
 	t.Helper()
 	r := parse(t, "Sources/X.swift", src)
-	ra, rb := norm.NormalizeWithForms(unitBy(t, r, a)), norm.NormalizeWithForms(unitBy(t, r, b))
+	ra, rb := normBoth(t, unitBy(t, r, a)), normBoth(t, unitBy(t, r, b))
 	for _, l := range levels {
 		if ra.Hash[l] == rb.Hash[l] {
 			t.Errorf("%s と %s が %s で一致してしまう\n%s\n%s", a, b, l, ra.Forms[l], rb.Forms[l])
@@ -57,7 +57,7 @@ func codeB(_ r: Result<Int, Error>) -> Int { switch r { case .success(let w): re
 	differ(t, src, "onTimeout", "onOffline", norm.L1, norm.L2)
 	// `case .success(let v)` の v は束縛 (局所の名前) なので、名前だけが違えば L1 で同じ。
 	r := parse(t, "Sources/X.swift", src)
-	if a, b := norm.NormalizeWithForms(unitBy(t, r, "codeA")), norm.NormalizeWithForms(unitBy(t, r, "codeB")); a.Hash[norm.L1] != b.Hash[norm.L1] {
+	if a, b := normBoth(t, unitBy(t, r, "codeA")), normBoth(t, unitBy(t, r, "codeB")); a.Hash[norm.L1] != b.Hash[norm.L1] {
 		t.Errorf("束縛の名前だけが違うのに L1 で一致しない\n%s\n%s", a.Forms[norm.L1], b.Forms[norm.L1])
 	}
 }
@@ -127,11 +127,11 @@ final class M {
     deinit { items.removeAll() }
     var watched: Int = 0 { didSet { print(watched) } }
 }`)
-	a, b := norm.NormalizeWithForms(unitBy(t, r, "var fullName: String")), norm.NormalizeWithForms(unitBy(t, r, "var displayName: String"))
+	a, b := normBoth(t, unitBy(t, r, "var fullName: String")), normBoth(t, unitBy(t, r, "var displayName: String"))
 	if a.Hash[norm.L1] != b.Hash[norm.L1] {
 		t.Errorf("同じ本体の computed property が L1 で一致しない\n%s\n%s", a.Forms[norm.L1], b.Forms[norm.L1])
 	}
-	s1, s2 := norm.NormalizeWithForms(unitBy(t, r, "subscript(i: Int) -> Int")), norm.NormalizeWithForms(unitBy(t, r, "subscript(j j: Int) -> Int"))
+	s1, s2 := normBoth(t, unitBy(t, r, "subscript(i: Int) -> Int")), normBoth(t, unitBy(t, r, "subscript(j j: Int) -> Int"))
 	if s1.Hash[norm.L1] != s2.Hash[norm.L1] {
 		t.Errorf("同じ本体の subscript が L1 で一致しない\n%s\n%s", s1.Forms[norm.L1], s2.Forms[norm.L1])
 	}
@@ -198,7 +198,7 @@ func TestUnitsInsideErrorAreUnreadable(t *testing.T) {
 func same(t *testing.T, src, a, b string, l norm.Level) {
 	t.Helper()
 	r := parse(t, "Sources/X.swift", src)
-	ra, rb := norm.NormalizeWithForms(unitBy(t, r, a)), norm.NormalizeWithForms(unitBy(t, r, b))
+	ra, rb := normBoth(t, unitBy(t, r, a)), normBoth(t, unitBy(t, r, b))
 	if ra.Hash[l] != rb.Hash[l] {
 		t.Errorf("%s と %s が %s で一致しない\n%s\n%s", a, b, l, ra.Forms[l], rb.Forms[l])
 	}
@@ -343,7 +343,7 @@ final class C {
 }`
 	r := parse(t, "Sources/X.swift", src)
 	for _, n := range []string{"t1", "t2"} {
-		if norm.NormalizeWithForms(unitBy(t, r, n)).L3Trivial {
+		if normBoth(t, unitBy(t, r, n)).L3Trivial {
 			t.Errorf("%s: 捕まえた名前を使う単位が L3Trivial になった", n)
 		}
 	}

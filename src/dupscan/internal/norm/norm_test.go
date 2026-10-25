@@ -38,6 +38,11 @@ func unit(params []string, body *tree.Node) *tree.Unit {
 func same(t *testing.T, a, b *tree.Unit, want map[Level]bool) {
 	t.Helper()
 	ra, rb := NormalizeWithForms(a), NormalizeWithForms(b)
+	for _, u := range []*tree.Unit{a, b} {
+		if p, w := Normalize(u), NormalizeWithForms(u); p.Hash[L1] != w.Hash[L1] || p.Hash[L2] != w.Hash[L2] || p.Hash[L3] != w.Hash[L3] {
+			t.Errorf("本番の経路と形を作る経路でハッシュが違う: %v / %v", p.Hash, w.Hash)
+		}
+	}
 	for _, l := range Levels {
 		if got := ra.Hash[l] == rb.Hash[l]; got != want[l] {
 			t.Errorf("%s: 一致=%v, 期待=%v\n a=%s\n b=%s", l, got, want[l], ra.Forms[l], rb.Forms[l])
@@ -115,24 +120,30 @@ func TestLocalDeclarationsInBodyAreLocal(t *testing.T) {
 }
 
 // ハッシュは形を sha256 へ直接流して取る。形を作るかどうかで値が変わらず、形の sha256 の先頭 16 byte と一致する。
+// 長い名前の長さを変えて、bufio の 4096 byte の境界をいろいろな位置で跨がせる。L3 で畳む (#F) と局所の名前の番号 ($1) も通す。
 func TestStreamedHashMatchesForm(t *testing.T) {
-	u := &tree.Unit{
-		Params:     []string{"x"},
-		ReturnType: "Int",
-		Body: &tree.Node{Kind: "statements", Children: []*tree.Node{
-			{Kind: "simple_identifier", Text: "x", Role: tree.RoleName, Expr: true},
-			{Kind: "integer_literal", Text: "1", Role: tree.RoleLiteral, LitKind: "num", Expr: true},
-			{Kind: "simple_identifier", Text: strings.Repeat("y", 10000), Role: tree.RoleName, Expr: true},
-		}},
-	}
-	plain, with := Normalize(u), NormalizeWithForms(u)
-	if plain.Forms != nil {
-		t.Error("Normalize が形を持った")
-	}
-	for _, l := range Levels {
-		sum := sha256.Sum256([]byte(with.Forms[l]))
-		if want := hex.EncodeToString(sum[:16]); plain.Hash[l] != want || with.Hash[l] != want {
-			t.Errorf("%s: Normalize=%s WithForms=%s 形の sha256=%s", l, plain.Hash[l], with.Hash[l], want)
+	for n := 4000; n <= 4200; n += 7 {
+		u := &tree.Unit{
+			Params:     []string{"x"},
+			ReturnType: "Int",
+			Body: &tree.Node{Kind: "statements", Children: []*tree.Node{
+				{Kind: "simple_identifier", Text: "x", Role: tree.RoleName, Expr: true},
+				{Kind: "integer_literal", Text: "1", Role: tree.RoleLiteral, LitKind: "num", Expr: true},
+				{Kind: "simple_identifier", Text: strings.Repeat("y", n), Role: tree.RoleName, Expr: true},
+			}},
+		}
+		plain, with := Normalize(u), NormalizeWithForms(u)
+		if plain.Forms != nil {
+			t.Fatal("Normalize が形を持った")
+		}
+		if !strings.Contains(with.Forms[L1], "$1") || !strings.Contains(with.Forms[L3], "(#F)") {
+			t.Fatalf("入力の前提: L1 に $1、L3 に (#F) が要る: %.80q / %.80q", with.Forms[L1], with.Forms[L3])
+		}
+		for _, l := range Levels {
+			sum := sha256.Sum256([]byte(with.Forms[l]))
+			if want := hex.EncodeToString(sum[:16]); plain.Hash[l] != want || with.Hash[l] != want {
+				t.Errorf("名前 %d 字・%s: Normalize=%s WithForms=%s 形の sha256=%s", n, l, plain.Hash[l], with.Hash[l], want)
+			}
 		}
 	}
 }

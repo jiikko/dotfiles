@@ -260,23 +260,25 @@ func scanSource(src repo.Source, requireFiles, withCalls bool) (scanned, error) 
 	if err != nil {
 		return scanned{}, err
 	}
-	units, calls, errFiles, err := parseAll(files, contents, withCalls)
+	entries, calls, errFiles, err := parseAll(files, contents, withCalls)
 	if err != nil {
 		return scanned{}, err
 	}
-	entries := make([]*group.Entry, len(units))
-	for i, u := range units {
-		entries[i] = &group.Entry{Unit: u, Result: norm.Normalize(u)}
+	units := make([]*tree.Unit, len(entries))
+	for i, e := range entries {
+		units[i] = e.Unit
 	}
 	return scanned{files: len(files), units: units, errFiles: errFiles, entries: entries, calls: calls}, nil
 }
 
-func parseAll(files []string, contents map[string][]byte, withCalls bool) ([]*tree.Unit, []tree.Call, []string, error) {
+// parseAll はファイルを並列に読んで単位を取り出し、同じ worker の中で正規化まで済ませる (正規化を後で 1 本で回すと、そこが走査の直列の部分になる)。
+// 結果はファイルの順 (files の順) に並べる。
+func parseAll(files []string, contents map[string][]byte, withCalls bool) ([]*group.Entry, []tree.Call, []string, error) {
 	type result struct {
-		units  []*tree.Unit
-		calls  []tree.Call
-		hasErr bool
-		err    error
+		entries []*group.Entry
+		calls   []tree.Call
+		hasErr  bool
+		err     error
 	}
 	results := make([]result, len(files))
 	jobs := make(chan int)
@@ -296,7 +298,11 @@ func parseAll(files []string, contents map[string][]byte, withCalls bool) ([]*tr
 			p.CollectCalls = withCalls
 			for i := range jobs {
 				r, err := p.Parse(files[i], contents[files[i]])
-				results[i] = result{units: r.Units, calls: r.Calls, hasErr: r.HasError, err: err}
+				entries := make([]*group.Entry, len(r.Units))
+				for j, u := range r.Units {
+					entries[j] = &group.Entry{Unit: u, Result: norm.Normalize(u)}
+				}
+				results[i] = result{entries: entries, calls: r.Calls, hasErr: r.HasError, err: err}
 			}
 		}()
 	}
@@ -305,18 +311,18 @@ func parseAll(files []string, contents map[string][]byte, withCalls bool) ([]*tr
 	}
 	close(jobs)
 	wg.Wait()
-	var units []*tree.Unit
+	var entries []*group.Entry
 	var calls []tree.Call
 	var errFiles []string
 	for i, r := range results {
 		if r.err != nil {
 			return nil, nil, nil, fmt.Errorf("%s: %w", files[i], r.err)
 		}
-		units = append(units, r.units...)
+		entries = append(entries, r.entries...)
 		calls = append(calls, r.calls...)
 		if r.hasErr {
 			errFiles = append(errFiles, files[i])
 		}
 	}
-	return units, calls, errFiles, nil
+	return entries, calls, errFiles, nil
 }
