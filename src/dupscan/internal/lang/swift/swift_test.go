@@ -107,7 +107,7 @@ let interpolated = "\(box.value)"
 	for _, r := range got.References {
 		refs[r.Name] = append(refs[r.Name], r)
 	}
-	// struct Box の Box (宣言) は数えず、extension Box の Box (既にある型への参照) と型注釈を数える (issue 921 の対応方針 2)
+	// struct Box の Box (宣言) は数えず、extension Box の Box (既にある型への参照) と型注釈を数える
 	if got := refs["Box"]; len(got) != 2 || got[0].Line != 6 || got[1].Line != 9 {
 		t.Errorf("Box の宣言は外し、extension と型注釈を数える: %#v", got)
 	}

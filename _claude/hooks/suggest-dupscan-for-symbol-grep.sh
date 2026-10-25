@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # PreToolUse(Bash / Grep) フック: Swift の repo (git が .swift を追跡している) で、Swift の定義・呼び出し元を探す形の
-# grep / rg / git grep を打とうとしたら、dupscan の def / refs / callers を 1 行案内する (issue 921)。
+# grep / rg / git grep を打とうとしたら、dupscan の def / refs / callers を 1 行案内する。
 #
 # なぜ: Swift の 4 repo の直近 7 日の 27 セッションで、Swift のパスを対象にした grep は 2,882 回、dupscan は 13 回だった (921 の実測)。
 # skill dupscan の 2 節に「grep の前に」と書いてあっても使われない。grep はコメント・文字列・呼び出し側の行が混ざって返る量が多い。
