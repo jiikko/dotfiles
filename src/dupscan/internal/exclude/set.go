@@ -113,6 +113,17 @@ func (s *Set) PathCovers(lv norm.Level, members []*group.Entry) bool {
 	return len(members) > 0
 }
 
+// PresetCovers は、段 lv の組をどれかのプリセットが外すか。パスの除外と同じく、書いた後にできた単位にも効く (gate の base の釘の制限を受けない)。
+func (s *Set) PresetCovers(lv norm.Level, members []*group.Entry) bool {
+	for i, r := range s.rules {
+		if r.Preset != "" && presetCovers(r.Preset, lv, members) {
+			s.used[i] = true
+			return true
+		}
+	}
+	return false
+}
+
 // GroupExcluded は、段 lv の組のメンバーが全部 1 つの組の除外 (段が lv 以下) の釘に当たるか。1 つでも外れたメンバーがいれば出す。
 func (s *Set) GroupExcluded(lv norm.Level, members []*group.Entry) bool {
 	for i, r := range s.rules {
@@ -159,7 +170,7 @@ func (s *Set) known(pin, elem string) bool {
 func (s *Set) ApplyGroups(groups []group.Group) []group.Group {
 	out := groups[:0:0]
 	for _, g := range groups {
-		if !s.PathCovers(g.Level, g.Members) && !s.GroupExcluded(g.Level, g.Members) {
+		if !s.PathCovers(g.Level, g.Members) && !s.PresetCovers(g.Level, g.Members) && !s.GroupExcluded(g.Level, g.Members) {
 			out = append(out, g)
 		}
 	}
@@ -176,6 +187,9 @@ func (s *Set) Stale() []Rule {
 	for i, r := range s.rules {
 		if len(r.Group) > 0 && s.maxLevel != 0 && r.level > s.maxLevel {
 			continue
+		}
+		if r.Preset != "" && s.maxLevel != 0 && s.maxLevel < norm.L2 {
+			continue // L2 の組を作らない走査では、プリセットは何も消せない
 		}
 		if !s.used[i] && !s.ambiguous[i] && s.ruleInScope(r) {
 			out = append(out, r)
@@ -199,8 +213,8 @@ func (s *Set) ruleInScope(r Rule) bool {
 	if s.inScope == nil {
 		return true
 	}
-	if len(r.Paths) > 0 {
-		return false // glob が起点のどこに当たるかは決められないので、起点を絞った走査では数えない
+	if len(r.Paths) > 0 || r.Preset != "" {
+		return false // glob・形が起点のどこに当たるかは決められないので、起点を絞った走査では数えない
 	}
 	for _, p := range r.pins() {
 		if file, _, ok := strings.Cut(p, "|"); !ok || !s.inScope(file) {
@@ -270,6 +284,8 @@ func (r Rule) elements() []string {
 		}
 	case r.Unit != "":
 		out = append(out, "unit:"+r.Unit)
+	case r.Preset != "":
+		out = append(out, "preset:"+r.Preset)
 	}
 	return out
 }

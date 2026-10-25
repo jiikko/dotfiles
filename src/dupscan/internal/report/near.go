@@ -38,7 +38,7 @@ func BuildNear(target *group.Entry, matches []group.Match, opt group.Options, ex
 	}
 	for _, m := range matches {
 		pair := []*group.Entry{target, m.Entry}
-		if ex != nil && (ex.PathCovers(m.Level, pair) || ex.GroupExcluded(m.Level, pair)) {
+		if ex != nil && (ex.PathCovers(m.Level, pair) || ex.PresetCovers(m.Level, pair) || ex.GroupExcluded(m.Level, pair)) {
 			s.Excluded++
 			continue
 		}

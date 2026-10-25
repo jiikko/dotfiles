@@ -31,6 +31,8 @@ type GateSummary struct {
 	// PathPassed は、パスの除外の下にあるので寄せる側に名指ししなかった、この変更で触った単位の数 (除外で通した写し)。
 	PathPassed     int       `json:"path_excluded_passed_units"`
 	PathPassedList []UnitRef `json:"path_excluded_passed"`
+	// PresetPassedList は、プリセットが組を外したので違反にしなかった、この変更で触った単位 (止めないが人が見る一覧)。
+	PresetPassedList []UnitRef `json:"preset_passed"`
 	// BaseConfigError は base の設定を読めなかった理由 (空とみなした)。
 	BaseConfigError string `json:"base_config_error,omitempty"`
 	Exclusions
@@ -50,9 +52,12 @@ type ViolationJSON struct {
 func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set) GateSummary {
 	s := GateSummary{Root: root, Base: base, Head: head, Changed: r.Changed, Failed: r.Failed(),
 		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewExclusions: []exclude.Element{}, Untracked: []string{}, Exclusions: exclusions(ex),
-		PathPassed: len(r.PathPassed), PathPassedList: []UnitRef{}}
+		PathPassed: len(r.PathPassed), PathPassedList: []UnitRef{}, PresetPassedList: []UnitRef{}}
 	for _, e := range r.PathPassed {
 		s.PathPassedList = append(s.PathPassedList, ref(e.Unit))
+	}
+	for _, e := range r.PresetPassed {
+		s.PresetPassedList = append(s.PresetPassedList, ref(e.Unit))
 	}
 	for _, v := range r.Violations {
 		vj := ViolationJSON{Level: v.Level.String(), Fail: v.Fail, New: []UnitRef{}, Same: []UnitRef{},
@@ -90,6 +95,9 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	}
 	if s.PathPassed > 0 {
 		note += fmt.Sprintf("・パスの除外で通した変わった単位 %d", s.PathPassed)
+	}
+	if n := len(s.PresetPassedList); n > 0 {
+		note += fmt.Sprintf("・プリセットで通した変わった単位 %d (-v で一覧)", n)
 	}
 	if s.BaseConfigError != "" {
 		note += "・base の除外の設定を読めないので空とみなした"
@@ -143,6 +151,9 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 		for _, u := range s.PathPassedList {
 			fmt.Fprintf(w, "パスの除外で通した: %s:%d %s\n", u.File, u.Line, label(u))
 		}
+		for _, u := range s.PresetPassedList {
+			fmt.Fprintf(w, "プリセットで通した: %s:%d %s\n", u.File, u.Line, label(u))
+		}
 		if s.BaseConfigError != "" {
 			fmt.Fprintf(w, "base の除外の設定: %s\n", s.BaseConfigError)
 		}
@@ -174,6 +185,9 @@ func GateXcode(w io.Writer, s GateSummary) error {
 	}
 	for _, u := range s.PathPassedList {
 		fmt.Fprintf(w, "%s:%d:%d: warning: パスの除外の下なので名指ししなかった写し: %s (dupscan.gate.exclude)\n", filepath.Join(s.Root, u.File), u.Line, u.Col, label(u))
+	}
+	for _, u := range s.PresetPassedList {
+		fmt.Fprintf(w, "%s:%d:%d: note: プリセットで通した写し (定数だけが違う 1 行の委譲): %s (dupscan.gate.preset)\n", filepath.Join(s.Root, u.File), u.Line, u.Col, label(u))
 	}
 	for _, el := range s.NewExclusions {
 		at := exclude.FileName + ":1"

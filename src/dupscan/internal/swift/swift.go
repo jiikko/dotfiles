@@ -477,10 +477,136 @@ func (w *walker) newUnit(n *sitter.Node, kind tree.UnitKind, name, sig string, l
 	}
 	if body != nil {
 		u.Body = w.conv(body, nil, "", false, false)
+		u.Delegation = w.delegation(body)
 	} else {
 		u.Body = &tree.Node{Kind: "empty"}
 	}
 	return u
+}
+
+// delegation は、本体が「1 つの呼び出しに原子 (atom) だけを渡す」委譲か。本体の直下の文がちょうど 1 つ (コメントを除く) で、
+// その文が呼び出し (return・try・await・後置の ! で包んでよい) で、後置のクロージャが無く、引数が全部原子のとき。
+// 「1 文」だけで判定しない: 1 つの大きな式や guard 1 文の写しを、定数を変えるだけで除外に通せてしまう (issue 919 の反証レビュー)。
+func (w *walker) delegation(body *sitter.Node) bool {
+	stmts := childOfKind(body, "statements")
+	if stmts == nil {
+		if fb := childOfKind(body, "function_body"); fb != nil {
+			stmts = childOfKind(fb, "statements")
+		}
+	}
+	if stmts == nil {
+		return false
+	}
+	var only *sitter.Node
+	for i := range stmts.NamedChildCount() {
+		c := stmts.NamedChild(i)
+		switch c.Kind() {
+		case "comment", "multiline_comment":
+			continue
+		}
+		if only != nil {
+			return false
+		}
+		only = c
+	}
+	if only == nil {
+		return false
+	}
+	call := w.unwrapStatement(only)
+	if call == nil || call.Kind() != "call_expression" {
+		return false
+	}
+	return w.atomCall(call, true)
+}
+
+// unwrapStatement は return・try・await・後置の ! を外す。
+func (w *walker) unwrapStatement(n *sitter.Node) *sitter.Node {
+	for n != nil {
+		switch n.Kind() {
+		case "control_transfer_statement":
+			if !strings.HasPrefix(w.text(n), "return") {
+				return nil
+			}
+			n = n.ChildByFieldName("result")
+		case "try_expression", "await_expression":
+			n = n.ChildByFieldName("expr")
+		case "postfix_expression":
+			if childOfKind(n, "bang") == nil {
+				return nil
+			}
+			n = n.ChildByFieldName("target")
+		default:
+			return n
+		}
+	}
+	return nil
+}
+
+// atomCall は呼び出しの callee が原子で、後置のクロージャが無く、引数が全部原子か。withArgs が false なら引数を許さない (原子の中の呼び出し `UUID()`)。
+func (w *walker) atomCall(call *sitter.Node, withArgs bool) bool {
+	if call.NamedChildCount() != 2 || !w.atom(call.NamedChild(0)) {
+		return false
+	}
+	suffix := call.NamedChild(1)
+	if suffix.Kind() != "call_suffix" || childOfKind(suffix, "lambda_literal") != nil {
+		return false
+	}
+	args := childOfKind(suffix, "value_arguments")
+	if args == nil {
+		return false
+	}
+	n := 0
+	for i := range args.NamedChildCount() {
+		a := args.NamedChild(i)
+		if a.Kind() != "value_argument" {
+			return false
+		}
+		n++
+		v := a.ChildByFieldName("value")
+		if v == nil || !w.atom(v) {
+			return false
+		}
+	}
+	return withArgs || n == 0
+}
+
+// atom は計算をしない値か: リテラル・名前・self / super・メンバーの参照・暗黙のメンバー・原子だけを埋め込んだ文字列・引数の無い呼び出し、とそれらの ! / try / await。
+func (w *walker) atom(n *sitter.Node) bool {
+	switch n.Kind() {
+	case "simple_identifier", "self_expression", "super_expression",
+		"integer_literal", "real_literal", "boolean_literal", "hex_literal", "oct_literal", "bin_literal", "nil_literal":
+		return true
+	case "line_string_literal", "multi_line_string_literal":
+		for i := range n.NamedChildCount() {
+			c := n.NamedChild(i)
+			switch c.Kind() {
+			case "line_str_text", "multi_line_str_text", "str_escaped_char":
+			case "interpolated_expression":
+				v := c.ChildByFieldName("value")
+				if v == nil || !w.atom(v) {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+		return true
+	case "navigation_expression":
+		t := n.ChildByFieldName("target")
+		return t != nil && w.atom(t)
+	case "prefix_expression":
+		t := n.ChildByFieldName("target")
+		return t != nil && n.NamedChildCount() == 1 && w.atom(t)
+	case "postfix_expression":
+		t := n.ChildByFieldName("target")
+		return t != nil && childOfKind(n, "bang") != nil && w.atom(t)
+	case "try_expression", "await_expression":
+		e := n.ChildByFieldName("expr")
+		return e != nil && w.atom(e)
+	case "call_expression":
+		return w.atomCall(n, false)
+	}
+	return false
 }
 
 func (w *walker) visibility(n *sitter.Node) string {

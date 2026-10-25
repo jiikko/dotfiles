@@ -46,6 +46,9 @@ type Result struct {
 	Unreadable []*group.Entry // 変わった単位のうち読めない構文を含むもの (確かめられなかった)
 	// PathPassed は、パスの除外の下にあるので寄せる側に名指ししなかった、変わった単位 (除外で通した写し。人が見る数)。
 	PathPassed []*group.Entry
+	// PresetPassed は、プリセットが組を外したので違反にしなかった、変わった単位 (除外が無ければ違反だった組の新しいメンバー)。
+	// プリセットは書いた後にできた単位にも効くので、通した数を毎回出す (止めはしない)。
+	PresetPassed []*group.Entry
 }
 
 // Failed は止める段の違反があるか。
@@ -77,6 +80,7 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 	var r Result
 	judged := map[string]bool{} // 段 + ハッシュ → 違反か。組ごとに 1 回だけ判定する
 	passed := map[*group.Entry]bool{}
+	presetPassed := map[*group.Entry]bool{}
 	for _, e := range head {
 		if unchanged(e, origin) {
 			continue
@@ -108,6 +112,16 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 					}
 				}
 			}
+			if _, done := judged[k]; !done && opt.Exclude != nil && opt.Exclude.PresetCovers(lv, g) {
+				judged[k] = false
+				bare := opt
+				bare.Exclude = nil
+				if v, ok, _ := judgeGroup(lv, h, g, origin, bare); ok {
+					for _, m := range v.New {
+						presetPassed[m] = true
+					}
+				}
+			}
 			if _, done := judged[k]; !done && opt.Exclude != nil && opt.Exclude.GroupExcluded(lv, g) {
 				judged[k] = false // 除外した組。粗い段で新しいメンバーが増えていればそちらで出る
 			}
@@ -131,6 +145,9 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 	for _, e := range head {
 		if passed[e] {
 			r.PathPassed = append(r.PathPassed, e)
+		}
+		if presetPassed[e] {
+			r.PresetPassed = append(r.PresetPassed, e)
 		}
 	}
 	sort.SliceStable(r.Violations, func(i, j int) bool {

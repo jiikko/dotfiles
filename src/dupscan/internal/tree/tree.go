@@ -94,6 +94,9 @@ type Unit struct {
 	Labels     []string // 呼び出しで書く引数ラベル (宣言の順。ラベルの無い引数は `_`)
 	Doc        string   // doc comment (`///` か `/** */`) の最初の行 (索引で引く)
 	Body       *Node
+	// Delegation は本体が「1 つの呼び出しに定数や名前を渡すだけ」の委譲か (本体が 1 文の呼び出しで、引数が全部リテラル・名前・メンバーの参照など)。
+	// 除外のプリセット l2-single-call が読む。コアは言語の節の種類を知らないので adapter が決める。
+	Delegation bool
 	Unreadable bool // 読めない構文 (ERROR / MISSING) を含む
 	// Allow は単位の直前のコメントに書いた `dupscan:allow` の後ろ (種別と理由)。HasAllow はその印があること (後ろが空でも)。
 	Allow     string

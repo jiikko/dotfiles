@@ -142,9 +142,15 @@ gate の違反の json と `-v` に出る「除外の 1 行」に `kind` (`false
   {"paths": ["Generated/**"], "kind": "false-positive", "reason": "生成コード"},
   {"paths": ["**/*Tests.swift"], "levels": ["L3"], "kind": "false-positive", "reason": "テストの表の形が似ているだけ"},
   {"group": ["<釘>", "<釘>"], "level": "L2", "kind": "intentional", "reason": "iOS と macOS で分けておく"},
-  {"unit": "<釘>", "kind": "intentional", "reason": "寄せない理由"}
+  {"unit": "<釘>", "kind": "intentional", "reason": "寄せない理由"},
+  {"preset": "l2-single-call", "kind": "false-positive", "reason": "定数だけが違う 1 行の委譲"}
 ]}
 ```
+
+- プリセット (`preset`) は形で組を外す既定の規則 (issue 919)。今あるのは `l2-single-call` だけ: L2 の組で、メンバー全員の本体が「1 つの呼び出しに原子 (リテラル・名前・メンバーの参照・
+  原子だけを埋め込んだ文字列・引数の無い呼び出し) だけを渡す」1 文 (`return`・`try`・`await`・後置の `!` は可) で、L1 のハッシュが全員違う組。
+  例: `try TestScratchDirectory.makeFile(prefix: "a", contents: contents)` と `prefix: "b"` の版。寄せるには定数を引数にするしかなく、それは呼んでいる関数そのもの。
+  パスの除外と同じく書いた後にできた単位にも効くので、gate はプリセットで通した変わった単位を 1 行目と json (`preset_passed`)・xcode の形式 (note) に毎回出す (止めはしない)
 
 - 釘は `<鍵 (クロージャの順番と多重定義の #n を除く)>@<本体の L1 のハッシュの先頭 12 文字>`。行がずれても効き、本体を直すと外れる。
   1 つの釘が 2 つ以上の単位に当たる除外は効かせず「名指しできない除外」に出す

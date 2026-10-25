@@ -21,9 +21,11 @@ import (
 // FileName は設定ファイルの名前 (repo の root に置く)。
 const FileName = ".dupscan.json"
 
-// Rule は除外 1 つ。Paths / Group / Unit のどれか 1 つを持つ。
+// Rule は除外 1 つ。Paths / Group / Unit / Preset のどれか 1 つを持つ。
 type Rule struct {
-	Paths  []string `json:"paths,omitempty"`
+	Paths []string `json:"paths,omitempty"`
+	// Preset は形で組を外す既定の規則の名前 (Presets のどれか)。パスの除外と同じく、書いた後にできた単位にも効く。
+	Preset string   `json:"preset,omitempty"`
 	Levels []string `json:"levels,omitempty"`
 	Group  []string `json:"group,omitempty"`
 	Level  string   `json:"level,omitempty"`
@@ -91,13 +93,16 @@ func Parse(b []byte) (*Config, error) {
 
 func (r *Rule) check() error {
 	n := 0
-	for _, has := range []bool{len(r.Paths) > 0, len(r.Group) > 0, r.Unit != ""} {
+	for _, has := range []bool{len(r.Paths) > 0, len(r.Group) > 0, r.Unit != "", r.Preset != ""} {
 		if has {
 			n++
 		}
 	}
 	if n != 1 {
-		return errors.New("paths / group / unit のどれか 1 つだけを書く")
+		return errors.New("paths / group / unit / preset のどれか 1 つだけを書く")
+	}
+	if r.Preset != "" && !knownPreset(r.Preset) {
+		return fmt.Errorf("知らない preset %q (使えるのは %s)", r.Preset, strings.Join(Presets, " / "))
 	}
 	if r.Kind != "false-positive" && r.Kind != "intentional" {
 		return fmt.Errorf("kind は false-positive か intentional (%q)", r.Kind)
