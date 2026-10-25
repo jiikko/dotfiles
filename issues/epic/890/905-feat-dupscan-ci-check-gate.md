@@ -128,3 +128,9 @@ Claude は `make test` の失敗として受け取り、既存のメソッドへ
   下限より小さかった写しが改名・番号のずれを伴って一緒に育つと止まる (P2)。前者を止めるには鍵の段を外し、後者を通すには緩い段で種類をまたぐ必要があり、
   緩い段で種類をまたぐと 3 周目に直した「小さいクロージャを同じ本体の関数に置き換える新しい写し」の見逃しが戻る。再び直すなら実データで出た commit を添える。
   敵対的レビューはここで止める: 4〜6 周目の指摘は下限まわりの組み合わせに寄り、実データでの差は 5 周目の 42f29f74 の 1 件だけだった
+
+- 2026-10-25 組み込みの例を README に書いた (commit「docs(dupscan): 使う側の repo の make test と CI に gate を組み込む例」): Makefile の `dupscan-gate` (dupscan が無ければ rc=2 で止める) と、
+  GitHub Actions で固定した commit の dotfiles から `src/dupscan`・`src/subproc` だけを取り出して build し、push の前の commit / PR の対象を `-base` に渡す例 (取り出し先は workspace の外。gate が untracked も読むため)。
+  手元で、使い捨ての Swift の repo に Makefile を入れ、dotfiles を clone して build した dupscan で `make test` が写しを足すと落ち (L1 の組を表示)・無ければ通り・dupscan が無ければ rc=2 で止まることを確かめた。
+  **YAML は使う側の repo の Actions で走らせていない (未検証)**。DualNoteApp は読み取りのみなので入れていない (obaket への組み込みは obaket issue 1298)
+  **残り**: untracked の一覧・base のキャッシュ・`--record`・誤って止める割合の測定 (過去の commit の流し直し)・PR 24 の前の木での受け入れ (obaket が要る)・組み込みの例を実際の repo の CI で 1 回走らせる

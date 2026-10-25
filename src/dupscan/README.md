@@ -77,6 +77,53 @@ base で L3 だけ比べなかった相手 (L3Trivial) から来た別の単位�
 
 下限の既定値は仮 (issue 898 で obaket と DualNoteApp に当てて決める)。
 
+### 使う側の repo の `make test` と CI に組み込む
+
+手元 (Makefile)。`dupscan` が無ければ黙って飛ばさず止める (飛ばすと「通った」と区別が付かない):
+
+```make
+DUPSCAN ?= dupscan
+
+test: dupscan-gate
+
+dupscan-gate:
+	@command -v $(DUPSCAN) >/dev/null || { echo "dupscan が無い (dotfiles の bin/dupscan を PATH に置くか DUPSCAN= で渡す)" >&2; exit 2; }
+	$(DUPSCAN) gate $(DUPSCAN_GATE_FLAGS) .
+.PHONY: test dupscan-gate
+```
+
+CI (GitHub Actions)。runner には dotfiles が無いので、固定した commit の `src/dupscan` を取って build する。
+**取り出し先は workspace の外にする** (gate は ignore されていない untracked のファイルも読むので、workspace に置くと取ってきた中身まで走査する)。
+base は push の前の commit か PR の対象。CI の checkout は浅いので、base まで履歴を取る (無いと rc=2 で止まる):
+
+```yaml
+- uses: actions/checkout@<固定した版>
+  with:
+    fetch-depth: 0            # base の commit まで要る
+- uses: actions/setup-go@<固定した版>
+  with:
+    go-version: "1.25"
+- name: build dupscan
+  env:
+    DOTFILES_SHA: <固定した dotfiles の commit>
+  run: |
+    git clone -q --no-checkout https://github.com/jiikko/dotfiles "$RUNNER_TEMP/dotfiles"
+    git -C "$RUNNER_TEMP/dotfiles" checkout -q "$DOTFILES_SHA" -- src/dupscan src/subproc
+    (cd "$RUNNER_TEMP/dotfiles/src/dupscan" && go build -o "$RUNNER_TEMP/dupscan" .)
+- name: dupscan gate
+  env:
+    BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+    DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+  run: |
+    case "$BASE" in ""|0000000000000000000000000000000000000000) BASE="origin/$DEFAULT_BRANCH" ;; esac  # 新しいブランチの push
+    make test DUPSCAN="$RUNNER_TEMP/dupscan" DUPSCAN_GATE_FLAGS="-base $BASE -fail-new-exclusions"
+```
+
+- 手元で確かめたのは Makefile と build の手順 (dotfiles を clone して `src/dupscan` と `src/subproc` だけを取り出し、build して `make test` が写しで落ち・無ければ通り・
+  `dupscan` が無ければ rc=2 で止まる)。**YAML は使う側の repo の Actions で走らせていない (未検証)**。最初に入れる repo で 1 回、写しを足した PR で落ちることを見る
+- `-fail-new-exclusions` は CI でだけ付ける (除外を足した PR を人の目に届ける。手元のセルフレビューでは一覧を見て報告に書く)
+- cgo で文法の C のソースを build するので、runner に C compiler が要る (GitHub の macOS / Ubuntu の runner には入っている)
+
 ### 除外の設定 (`.dupscan.json`)
 
 誤検知・意図して分けている写しは、repo の root の `.dupscan.json` で外す (設計は issue 906)。report の json の各組と text の `-v`、
