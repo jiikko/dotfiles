@@ -23,7 +23,7 @@ obaket の規約 (obaket の CLAUDE.md・`.claude/rules/`・issues/README.md) �
    - 905: 誤って止める割合を obaket の過去の commit の流し直し (`-base <親> -head <commit>`。DualNoteApp では 905 の進捗にある流し直しで測った) で測り、止める段の既定 (`-fail-levels`) を obaket でも保てるか決める
    - [904](904-feat-dupscan-trial-subcommands.md): 6 つのうち 1 つを `near` で指すと、残りの 5 つが段つきで出る
    - [897](897-feat-dupscan-index-subcommand.md): `SharedTestSupport` に `bucketLocation(path:)` を含む top-level の関数が載り、名前の一部・戻り値の型 (`StorageLocation`)・doc の語のそれぞれで PR 24 の共通のヘルパーが引ける。1 回の引きの所要。
-     897 の受け入れは `SharedTestSupport` を「共通の置き場所」として設定で指す形だが、その設定はまだ無い (897 の残り)。設定を作るか、置き場所を指さずに引ける範囲で受け入れるかを先に決める
+     `SharedTestSupport` は obaket の `.dupscan.json` の `"shared"` に glob で指す (設定は 2026-10-25 に足した。897)
    - [894](894-feat-dupscan-swift-adapter.md): 6 つの `location` の定義を含むファイルを切り出して adapter のテストの固定の入力にする (dotfiles に置く。obaket のコードの一部を写すので、置いてよいかをユーザーに確かめる)。
      所属ターゲットの解決 (`Package.swift`・`project.yml`) を obaket の構成で確かめる
    - [898](898-test-dupscan-obaket-calibration.md): 全体の期待値 (PR 24 の前の木の全体に既定の設定で当て、6 つが出る・同じ組に入ってよいもの / 入ってはいけないもの) と、
@@ -51,7 +51,7 @@ obaket の規約 (obaket の CLAUDE.md・`.claude/rules/`・issues/README.md) �
 ## 依存
 
 - [905](905-feat-dupscan-ci-check-gate.md) (gate と組み込みの例)・[906](906-feat-dupscan-exclusion-config.md) (除外)・[903](903-docs-dupscan-search-before-write-procedure.md) (skill)
-- 手順 2 で受け入れる側: [894](894-feat-dupscan-swift-adapter.md)・[897](897-feat-dupscan-index-subcommand.md) (共通の置き場所の設定が未実装)・[898](898-test-dupscan-obaket-calibration.md)・[904](904-feat-dupscan-trial-subcommands.md)
+- 手順 2 で受け入れる側: [894](894-feat-dupscan-swift-adapter.md)・[897](897-feat-dupscan-index-subcommand.md)・[898](898-test-dupscan-obaket-calibration.md)・[904](904-feat-dupscan-trial-subcommands.md)
 - 道具の名前を変える (rename) なら、obaket に書く前に変える (後で変えると obaket の Makefile・CI・除外のコメントも直すことになる)
 
 ## 進捗
@@ -61,3 +61,4 @@ obaket の規約 (obaket の CLAUDE.md・`.claude/rules/`・issues/README.md) �
   拾い漏れ 5 つ (obaket の流し直し・898 の全体の期待値と対の変異・894 の所属ターゲット・901 の ast-grep・891 の効果の記録) を手順 2 に足した /
   897 の受け入れは共通の置き場所の設定が未実装 / 依存に受け入れる側の issue / 書き戻す前の着手の印の確認 / YAML の DOTFILES_SHA と build の前提。
   却下: 「`next/` に 909 の目印が無い」(next/ は着手の印で、open な issue を並べる場所ではない。着手する session が claim で置く)
+- 2026-10-25 897 の共通の置き場所の設定 (`shared`) ができたので、手順 2 の前提を直した
