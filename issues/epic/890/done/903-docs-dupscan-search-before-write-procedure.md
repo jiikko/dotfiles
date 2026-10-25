@@ -5,7 +5,7 @@
 ## 概要
 
 epic 890 の主な用途 (Claude Code にコードを変更させている間の重複の防止と発見性) の、書く前の側。
-新しいメソッドを書く前に、dupscan の索引 ([897](../897-feat-dupscan-index-subcommand.md)) で名前・署名の型 (戻り値・引数の型)・doc 文を引く手順を、
+新しいメソッドを書く前に、dupscan の索引 ([897](897-feat-dupscan-index-subcommand.md)) で名前・署名の型 (戻り値・引数の型)・doc 文を引く手順を、
 使う側の repo の入口 (CLAUDE.md か skill) に書く。LSP は使わない (ユーザー決定 2026-10-24: dupscan だけで依存も使い方もシンプルになるなら LSP は使わなくてよい。
 [891](../891-design-dupscan-requirements.md) の「LSP は使わない」節)。
 
@@ -28,7 +28,7 @@ epic 890 の主な用途 (Claude Code にコードを変更させている間の
 
 ## 依存
 
-- 暫定の手順 (`git grep`) は依存なし。索引で引く手順は [897](../897-feat-dupscan-index-subcommand.md)、`gate` の手順は 905 の後
+- 暫定の手順 (`git grep`) は依存なし。索引で引く手順は [897](897-feat-dupscan-index-subcommand.md)、`gate` の手順は 905 の後
 
 ## 進捗
 

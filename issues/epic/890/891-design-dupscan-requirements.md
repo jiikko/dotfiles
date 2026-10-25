@@ -24,7 +24,7 @@ repo で実行すると、**テストコード / 製品コードのそれぞれ�
 `make test` と CI の `gate` は網として残す。誤検知は除外の設定 ([906](done/906-feat-dupscan-exclusion-config.md)) で外す。検出の方法の説明は `docs/dupscan-detection.md`。書く前の索引は、メソッドを定義するときに適宜引くくらい気軽に使えることを要件にする (903・897)。週次の audit のような後からの洗い出しはその次。
 
 - 名前は仮に `dupscan` (`src/dupscan/` と `bin/dupscan`)
-- 人が動作確認として試す入口 (`near`・`explain`・`gate` を手で回す) は [904](904-feat-dupscan-trial-subcommands.md)。照合は `gate` (905) と同じ関数を通し、判定の実装を別に持たない
+- 人が動作確認として試す入口 (`near`・`explain`・`gate` を手で回す) は [904](done/904-feat-dupscan-trial-subcommands.md)。照合は `gate` (905) と同じ関数を通し、判定の実装を別に持たない
 - **Go のコア + 言語ごとの差分 (adapter)** の構成にする。最初の言語は Swift。Go・TypeScript などは adapter を足して広げる
 - 名前の違う写し・同じ値を別の書き方で作る写し (下の PR 24 の例) を拾うため、文字列ではなく構文木を正規化して比べる
 
@@ -225,7 +225,7 @@ Swift の次は **Go と zsh** を候補にする (ユーザー 2026-10-24)。�
 dupscan だけで依存も使い方もシンプルになるなら、LSP は使わない (ユーザー 2026-10-24。先に書いた「dupscan と LSP を組み合わせる」構想をこの決定で置き換えた)。
 dupscan は自前の構文木 (tree-sitter) だけで、書く前の検索・書いた後の照合・重複の報告をまかなう。
 
-- **書く前の検索**: dupscan の索引 ([897](897-feat-dupscan-index-subcommand.md)) で、名前・署名の型 (戻り値・引数の型)・doc 文を引く。名前の検索も索引でまかなう
+- **書く前の検索**: dupscan の索引 ([897](done/897-feat-dupscan-index-subcommand.md)) で、名前・署名の型 (戻り値・引数の型)・doc 文を引く。名前の検索も索引でまかなう
   (索引は 1 行 1 件のテキストなので、grep でも引ける)。書く前には本体が無いので、本体の形で比べるのは書いた後 (`make test` の `gate`。[905](905-feat-dupscan-ci-check-gate.md))
 - **構文木だけでは正確に決まらない値**は、近似と分かる形で出す:
   - 呼び出し元の数: 名前と引数ラベルが一致する呼び出しの数 (別の型の同名のメソッドも数えうる)
