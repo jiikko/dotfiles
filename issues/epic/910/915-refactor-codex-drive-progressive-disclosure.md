@@ -31,6 +31,8 @@ fan-out の構成 (D1 の 4 案・3.5 / 3.6 の lens) は記事に照らして�
       **節番号 (`[3.8]` など) は振り直さない**
 - [ ] `tests/claude/test_codex_drive_effort_consistency.sh` が読むファイルを、分けた後の全ファイルに広げる (本体だけを読む形のままだと、移した節の effort の食い違いが検査から外れる)。
       広げた後に、移した先のファイルで effort を食い違わせる変異を 1 本当てて red を確かめる
+- [ ] 読み忘れを防ぐ: 本体が入口だけになると、compaction の後に本体の要約しか残らず、次の Phase のファイルを読まずに進む失敗が起きうる (fires の eval では検出できない)。
+      各 Phase のファイルの末尾に「次の Phase に入る前に <ファイル> を Read」を置く。rules の参照 (`mutation-verify-new-tests.md` の「SKILL.md の `[3.8]`」など) はファイル名まで直す
 - [ ] `templates/` (merger.md / review-lens-header.md) との関係は変えない
 - [ ] 挙動を変えない分割なので、文言は移すだけにする (要約・言い換えをしない)。移す前後で、本文の行の集合が一致すること (見出しの入口の行を除く) を機械で確かめる
 - [ ] skill の整合チェック 3 回 + `bin/skill-eval codex-drive` を回す

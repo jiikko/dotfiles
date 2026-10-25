@@ -32,6 +32,8 @@ appstore-monetization-expert / smoke-test-runner / swift-test-runner / tt-api-ex
 
 - [ ] 31 本それぞれについて、利用回数・参照元 (skill / workflow / CLAUDE.md の表 / forge ロスター)・本文の中身 (手順か / 知識か / 観点か) を表にする。
       forge 経由の利用を数える方法を先に確かめる (913 の「未確認」と同じ論点)
+- [ ] 表に「description が起動を強制する文言を持つか」の列を足す (go-architecture-designer / rails-domain-designer / refactoring-patterns などの description は
+      「MUST be used」と書いている。`subagent-model-tiering.md` の「数回のツール呼び出しで終わる作業は委譲しない」と衝突し、利用回数そのものがこの文言に引っ張られている可能性がある)
 - [ ] 各 agent を次のどれかに仕分ける:
   - **残す**: 独立した調査・ブラックボックスの検証として起動される実績があるもの (security-auditor / code-reviewer など)
   - **skill へ移す**: 本文が手順・領域知識で、main が読めば足りるもの (reference skill にする。例: Swift の言語・UI の知識)
@@ -40,8 +42,10 @@ appstore-monetization-expert / smoke-test-runner / swift-test-runner / tt-api-ex
 - [ ] 参照が 1 か所だけの agent は、その参照元も同じ変更で直す: test-runner (`_claude/skills/forge/phases-5-completion.md` の「test-runner 連携」) /
       image-editing-expert・macos-system-integration-expert (`forge/_common/agents.md` の検出表) / code-reviewer (`cross-review/SKILL.md` の選定表) /
       appstore-submission-expert (`_claude/CLAUDE.md` の表) / crash-analyzer (`crash-log-analyzer` skill が名指しで呼ぶ。skill 経由の起動が transcript の集計に出るかを先に確かめる)
-- [ ] forge のロスター (`forge.js` の `resolveRoster` / `_common/agents.md`) と cross-review の選定表 (`_claude/skills/cross-review/SKILL.md` の手順 3) が参照している agent は、
-      913 の結論が出るまで消さない
+- [ ] forge のロスター (`forge.js` の `resolveRoster` / `_common/agents.md`) が参照している agent は、913 の結論が出るまで消さない。
+      cross-review の選定表 (`_claude/skills/cross-review/SKILL.md` の手順 3) の agent は 913 とは独立で、cross-review 自身の利用実績で判断する
+- [ ] **消す・移す前にユーザーに確かめる**: 利用回数はこのマシンの transcript だけの値で、他の repo (obaket など) の CLAUDE.md・skill や他のマシンが agent を名指ししている可能性がある (未確認)。
+      `~/.claude/CLAUDE.md` の表も css-expert / nodejs-expert / electron-expert を名指ししている (いずれも 0 回)。あわせて、消した agent の名前を forge.js に渡したときの挙動を 1 本で確かめる
 - [ ] 消す・移すときは入口も同じ変更で直す: `_claude/agents/README.md` (索引。`tests/claude/test_agents_index.sh` が乖離を検出)、
       `~/.claude/CLAUDE.md` のスキルファイル参照の表 (agent の行)、`setup.sh` / `scripts/claude_links.sh` の link (消した agent の古い link は `./setup.sh` が掃除する)
 - [ ] 仕分けの表と理由をこの issue に残す (消したものの再提起を止めるため)
