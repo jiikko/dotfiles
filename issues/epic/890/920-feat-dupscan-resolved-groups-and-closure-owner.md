@@ -22,8 +22,11 @@ obaket の 1306 (dupscan が出した類似メソッド 8 組を寄せる作業�
 
 - gate は base と head の単位を既に両方読み、head の単位ごとに base の側の相手 (出どころ) を当てている (`internal/gate/gate.go` の `origins`)。
   消えた組は、この対応と、base・head それぞれの組 (`group.Build`) から出せる。新しく読むものは無い
-- 定義: base の組 (除外を掛けない素の組) のメンバーについて、head の側の相手を引く。相手のうち 2 つ以上が head の同じ組 (段は問わない) に
-  入っていれば「残っている」。どの head の組にも 2 つ以上揃わなければ「消えた」。揃った最大の数がメンバーの数より少なければ「縮んだ」
+- 定義: base の組 (report と同じ `group.Build` の組。除外は掛けない) のメンバーについて、head の側の相手を引く。相手のうち 2 つ以上が、
+  見ている段のどれかで同じ形なら「残っている」。どこにも 2 つ以上揃わなければ「消えた」。揃った最大の数がメンバーの数より少なければ「縮んだ」
+  - head の側は段ごとの生のハッシュで見る (`group.Build` を通さない)。通すと、外側の関数を同じ組にした (悪化させた) とき、
+    中のクロージャの組が入れ子 (dropNested) として外れ、消えたと数える (反証レビューの指摘)
+  - 相手が読めない構文になった組は数えない (比べられなくなっただけ。gate は同じ単位を `unreadable_changed_units` に分けている)
   - 除外を掛けない: 除外は組を消さず、出さないだけ。除外を掛けた組で比べると「除外を足した」が「寄せた」に数えられる。
     また `exclude.Set` の判定 (`GroupExcluded` 等) は使われた除外を数える副作用を持つので、base の組に掛けると効いていない除外の数が狂う
   - 段を問わない: L1 の組の 1 つが定数だけ変わって L2 の組で残るのは、寄せていない
@@ -40,11 +43,11 @@ obaket の 1306 (dupscan が出した類似メソッド 8 組を寄せる作業�
 
 ## 受け入れ条件
 
-- [ ] gate が消えた組・縮んだ組を数え、`-v` で一覧を出す。JSON に `resolved` が載る
-- [ ] 消えた組を数えるテスト: 寄せた (メンバーを消した・本体を変えた)・除外を足しただけ (消えない)・定数だけ変えた (消えない)・3 → 2 (縮んだ)
-- [ ] クロージャの表示に囲む関数の名前が出る。鍵と `Name` が変わらないことをテストで固定する
-- [ ] 足したテストに変異を当てて赤を見る
-- [ ] README の gate と出力の節を直す
+- [x] gate が消えた組・縮んだ組を数え、`-v` で一覧を出す。JSON に `resolved` が載る
+- [x] 消えた組を数えるテスト: 寄せた (メンバーを消した・本体を変えた)・除外を足しただけ (消えない)・定数だけ変えた (消えない)・3 → 2 (縮んだ)
+- [x] クロージャの表示に囲む関数の名前が出る。鍵と `Name` が変わらないことをテストで固定する
+- [x] 足したテストに変異を当てて赤を見る
+- [x] README の gate と出力の節を直す
 
 ## 関連ファイル
 
@@ -57,3 +60,18 @@ obaket の 1306 (dupscan が出した類似メソッド 8 組を寄せる作業�
 ## 進捗
 
 - 2026-10-25 起票
+- 2026-10-25 反証レビュー (sonnet。codex の 5h 枠が超過していたため代替) の結果を本文へ反映: 読めない構文の相手を数えない・head の側を
+  段ごとの生のハッシュで見る (dropNested の非対称) を採った。採らずに仕様として README に書いたもの: 相手が下限より小さくなった組は消えたと数える
+  (1 行の委譲に縮めるのは寄せる作業の普通の形。obaket 1306 の debug の pacer 3 組がこの形)・写しを同じ形の薄い委譲に置き換えて下限以上に残ると
+  消えない (report にも組として残るので一致している)・起点を絞った実行で起点の外へ移した単位は消えたと数える。
+  クロージャの表示は、同じ関数の中の 2 つのクロージャ (1306 の `advanceToNextDeadline` の `min(by:)` と `sorted`) は同じ表示のまま
+  (番号は鍵の出現順で前に足すとずれるので出さない。行番号で区別する)
+- 2026-10-25 実装 (commit「feat(dupscan): gate で寄せて消えた組を出し、クロージャに囲む単位の名前を出す (issue 920)」)
+  - obaket の 1306 (base `3b19561e5` → head `b25079dd1`) で `gate -v`: 消えた組 8・縮んだ組 0。手で突き合わせた 8 組と一致。
+    クロージャは `ManualTransferPacingClock.advanceToNextDeadline.{closure}`・`FiniteTransferLedger.validateDisjoint.{closure}` /
+    `coversExactly.{closure}`・`StorageByteStream.init.{closure}` のように出た
+  - `make -C src/dupscan lint` (0 issues)・`make -C src/dupscan test` rc=0
+  - 変異 (mutate-verify、7 本とも想定のテストが赤): 読めない相手の除外を外す・head を group.Build で数える・揃った数 1 を 0 に丸めない・
+    見る段を先頭の 1 つに絞る → `TestResolvedGroups` / `TestResolvedSkipsUnreadableAndIgnoresNestedDrop`。
+    OwnerName を入れない → `TestClosureOwnerNameIsForDisplayOnly`。label が OwnerName を使わない → `TestClosureLabelShowsOwner`。
+    要約の行の数を出さない → `TestGateListsResolvedGroupAfterRemovingCopy`
