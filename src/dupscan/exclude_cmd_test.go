@@ -111,10 +111,16 @@ func TestMergedSiblingClosureExclusionIsNewExclusion(t *testing.T) {
 	rule := func(pins ...string) map[string]any {
 		return map[string]any{"group": pins, "level": "L1", "kind": "intentional", "reason": "r"}
 	}
-	writeConfig(t, root, rule(p, p, q), rule(p, q, q))
+	// 組み合わせの要素と同じ文字列の偽の釘を先に書いておいても、合流は新しく足された除外に出る (要素の名前空間が別)。
+	lo, hi := p, q
+	if hi < lo {
+		lo, hi = hi, lo
+	}
+	fake := "[" + lo + "×2, " + hi + "×2]" // 実装と同じ並べ方 (並べ替えて ", " でつなぐ)
+	writeConfig(t, root, rule(p, p, q), rule(p, q, q), rule(fake, "unused@000000000000"))
 	gitRun(t, root, "add", ".")
 	gitRun(t, root, "commit", "-q", "-m", "base")
-	writeConfig(t, root, rule(p, p, q, q))
+	writeConfig(t, root, rule(p, p, q, q), rule(fake, "unused@000000000000"))
 	if rc, out, errs := runGateCmd(t, "-base", "HEAD", "-fail-new-exclusions", root); rc != 1 || !strings.Contains(out, "新しく足された除外") {
 		t.Errorf("合流した除外が新しく足された除外に出ない: rc=%d out=%q err=%q", rc, out, errs)
 	}

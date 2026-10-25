@@ -304,7 +304,9 @@ func (r Rule) elements() []string {
 				parts = append(parts, fmt.Sprintf("%s×%d", p, c))
 			}
 			sort.Strings(parts)
-			out = append(out, "group:"+r.level.String()+":["+strings.Join(parts, ", ")+"]")
+			// 釘の要素 (group:…) と別の名前空間にする: 同じ名前空間だと、組み合わせの文字列を釘として先に除外へ書いておけば合流を隠せる。
+			// 釘を削って除外を狭めても組み合わせが変わるので新しい要素に出る (広げたか狭めたかは要素の集合では区別しない。止める側に倒す)。
+			out = append(out, "group-pins:"+r.level.String()+":["+strings.Join(parts, ", ")+"]")
 		}
 	case r.Unit != "":
 		out = append(out, "unit:"+r.Unit)
