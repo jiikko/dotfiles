@@ -100,7 +100,7 @@ func TestPR24CopiesMatchByLevel(t *testing.T) {
 	}
 }
 
-// PR 24 の前の木で、直書きの版の周りにあった別の写し (issue 898 の「同じ組に入ってよいもの / 入ってはいけないもの」)。既定の段 (L1・L2) での期待値を固める。
+// PR 24 の前の木で、直書きの版の周りにあった別の写し (同じ組に入ってよいもの / 入ってはいけないもの)。既定の段 (L1・L2) での期待値を固める。
 var pr24Neighbours = map[string]string{
 	// 定数だけが違う: L2 で直書きの版と同じ組に入ってよい (L1 では違う)。
 	"BrowserSelectionStateTests.swift": `
