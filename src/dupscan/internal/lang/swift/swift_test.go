@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -56,6 +57,67 @@ func parse(t *testing.T, file, src string) FileResult {
 		t.Fatal(err)
 	}
 	return r
+}
+
+func TestDefinitionAndReferenceMetadataAreSeparateFromUnits(t *testing.T) {
+	src := `struct Box {
+    let stored: Int = 1
+    var value: Int { stored }
+    func get(_ x: Int) -> Int { helper(x) + x }
+}
+extension Box {
+    func helper(_ x: Int) -> Int { x }
+}
+func use(_ box: Box) { let v = box.value; print(v) }
+// Box helper stored are comments, not references.
+let text = "Box helper stored"
+let interpolated = "\(box.value)"
+`
+	p, err := NewParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	p.CollectDefs = true
+	p.CollectRefs = true
+	got, err := p.Parse("Sources/Box.swift", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline := parse(t, "Sources/Box.swift", src)
+	if !reflect.DeepEqual(got.Units, baseline.Units) {
+		t.Fatal("def / refs の追加収集で比較単位の Key・Name・本体が変わった")
+	}
+	if len(got.Types) != 2 || got.Types[0].Kind != "struct" || got.Types[1].Kind != "extension" {
+		t.Fatalf("struct と同じ型の extension を別に集める: %#v", got.Types)
+	}
+	defs := map[string]int{}
+	for _, d := range got.Definitions {
+		defs[d.Name]++
+	}
+	if defs["stored"] != 1 || defs["value"] != 1 || defs["get"] != 1 || defs["helper"] != 1 {
+		t.Errorf("保存 property・computed property・関数を定義として集める: %v", defs)
+	}
+	unitCount := len(got.Units)
+	if unitCount != 4 {
+		t.Fatalf("型や保存 property を比較単位に加えない: units=%d (%#v)", unitCount, got.Units)
+	}
+	refs := map[string][]Reference{}
+	for _, r := range got.References {
+		refs[r.Name] = append(refs[r.Name], r)
+	}
+	if got := refs["Box"]; len(got) != 1 || got[0].Kind != "type" {
+		t.Errorf("Box の宣言・extension は外し、型注釈だけを数える: %#v", got)
+	}
+	if got := refs["helper"]; len(got) != 1 || got[0].Kind != "value" {
+		t.Errorf("関数の宣言・コメント・文字列は外し、呼び出しだけを数える: %#v", got)
+	}
+	if got := refs["stored"]; len(got) != 1 || got[0].Kind != "value" {
+		t.Errorf("property の宣言・コメント・文字列は外し、computed body の参照だけを数える: %#v", got)
+	}
+	if got := refs["box"]; len(got) != 2 {
+		t.Errorf("通常の値と文字列補間の値を数える: %#v", got)
+	}
 }
 
 func find(t *testing.T, r FileResult, name string) *tree.Unit {

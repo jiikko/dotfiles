@@ -26,6 +26,8 @@ const usage = `usage: dupscan [report] [flags] [dir ...]
        dupscan explain [flags] <file>:<関数名|行>
        dupscan index [-name 語] [-returns 型] [-param-type 型] [-doc 語] [-file ファイル] [dir ...]
        dupscan callers [flags] <名前|名前(ラベル:…)> [dir ...]
+       dupscan def [flags] <名前|Type.member|名前(ラベル:…)> [dir ...]
+       dupscan refs [flags] <名前> [dir ...]
 
 report: dir (既定は .) を起点に、git が追跡しているファイルと ignore されていない untracked のファイルを読み、
 本体が同じ形の単位を段 (L1 / L2 / L3) ごとに組にして出す。
@@ -35,6 +37,8 @@ near: 指した単位と同じ形の単位を、一致した最も細かい段�
 explain: 指した単位を段ごとに潰した形・ハッシュと、比べない理由を出す (なぜ同じ / 違うと判定したか)。
 index: 名前の付いた単位を 1 行 1 件で出す。書く前に、名前・戻り値の型・引数の型・doc の語で同じものが既にないかを引く。-file でそのファイルの一覧。
 callers: 名前 (と引数ラベル) が当たる呼び出しの箇所と、それを囲む単位を出す (型を解決しない近似)。
+def: 完全一致する定義を本体つきで出す。型は宣言とメンバー一覧、Type.member と引数ラベルで絞れる。
+refs: 型・値としての識別子の参照を、それを囲む単位つきで出す (コメント・文字列は除く)。
 どちらも調べる repo には何も書かない。
 
 flags:
@@ -127,6 +131,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && args[0] == "index" {
 		return runIndex(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "def" {
+		return runDef(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "refs" {
+		return runRefs(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && (args[0] == "near" || args[0] == "explain") {
 		return runPoint(args[0], args[1:], stdout, stderr)
@@ -238,17 +248,25 @@ func parseLevels(s string) ([]norm.Level, error) {
 
 // scanned は 1 つの読み方で読んだ結果。
 type scanned struct {
-	files    int
-	units    []*tree.Unit
-	errFiles []string
-	entries  []*group.Entry
-	calls    []tree.Call
+	files       int
+	units       []*tree.Unit
+	errFiles    []string
+	entries     []*group.Entry
+	calls       []tree.Call
+	definitions []swift.Definition
+	types       []swift.TypeDeclaration
+	references  []swift.Reference
+	contents    map[string][]byte
 }
 
 // scanSource は src のファイルを読んで単位を正規化する。requireFiles なら 0 件を判定不能にする
 // (起点の取り違えで黙って「重複なし」にしない。base の側は 0 件でもよい: まだ Swift が無かった commit)。
 // withCalls なら呼び出しの箇所も集める (index と callers だけ)。
 func scanSource(src repo.Source, requireFiles, withCalls bool) (scanned, error) {
+	return scanSourceOptions(src, requireFiles, withCalls, false, false)
+}
+
+func scanSourceOptions(src repo.Source, requireFiles, withCalls, withDefs, withRefs bool) (scanned, error) {
 	files, err := src.Files()
 	if err != nil {
 		return scanned{}, err
@@ -260,25 +278,40 @@ func scanSource(src repo.Source, requireFiles, withCalls bool) (scanned, error) 
 	if err != nil {
 		return scanned{}, err
 	}
-	entries, calls, errFiles, err := parseAll(files, contents, withCalls)
+	parsed, err := parseAll(files, contents, withCalls, withDefs, withRefs)
 	if err != nil {
 		return scanned{}, err
 	}
-	units := make([]*tree.Unit, len(entries))
-	for i, e := range entries {
+	units := make([]*tree.Unit, len(parsed.entries))
+	for i, e := range parsed.entries {
 		units[i] = e.Unit
 	}
-	return scanned{files: len(files), units: units, errFiles: errFiles, entries: entries, calls: calls}, nil
+	return scanned{
+		files: len(files), units: units, errFiles: parsed.errFiles, entries: parsed.entries, calls: parsed.calls,
+		definitions: parsed.definitions, types: parsed.types, references: parsed.references, contents: contents,
+	}, nil
 }
 
 // parseAll はファイルを並列に読んで単位を取り出し、同じ worker の中で正規化まで済ませる (正規化を後で 1 本で回すと、そこが走査の直列の部分になる)。
 // 結果はファイルの順 (files の順) に並べる。
-func parseAll(files []string, contents map[string][]byte, withCalls bool) ([]*group.Entry, []tree.Call, []string, error) {
+type parsedFiles struct {
+	entries     []*group.Entry
+	calls       []tree.Call
+	definitions []swift.Definition
+	types       []swift.TypeDeclaration
+	references  []swift.Reference
+	errFiles    []string
+}
+
+func parseAll(files []string, contents map[string][]byte, withCalls, withDefs, withRefs bool) (parsedFiles, error) {
 	type result struct {
-		entries []*group.Entry
-		calls   []tree.Call
-		hasErr  bool
-		err     error
+		entries     []*group.Entry
+		calls       []tree.Call
+		definitions []swift.Definition
+		types       []swift.TypeDeclaration
+		references  []swift.Reference
+		hasErr      bool
+		err         error
 	}
 	results := make([]result, len(files))
 	jobs := make(chan int)
@@ -296,13 +329,15 @@ func parseAll(files []string, contents map[string][]byte, withCalls bool) ([]*gr
 			}
 			defer p.Close()
 			p.CollectCalls = withCalls
+			p.CollectDefs = withDefs
+			p.CollectRefs = withRefs
 			for i := range jobs {
 				r, err := p.Parse(files[i], contents[files[i]])
 				entries := make([]*group.Entry, len(r.Units))
 				for j, u := range r.Units {
 					entries[j] = &group.Entry{Unit: u, Result: norm.Normalize(u)}
 				}
-				results[i] = result{entries: entries, calls: r.Calls, hasErr: r.HasError, err: err}
+				results[i] = result{entries: entries, calls: r.Calls, definitions: r.Definitions, types: r.Types, references: r.References, hasErr: r.HasError, err: err}
 			}
 		}()
 	}
@@ -311,18 +346,19 @@ func parseAll(files []string, contents map[string][]byte, withCalls bool) ([]*gr
 	}
 	close(jobs)
 	wg.Wait()
-	var entries []*group.Entry
-	var calls []tree.Call
-	var errFiles []string
+	var parsed parsedFiles
 	for i, r := range results {
 		if r.err != nil {
-			return nil, nil, nil, fmt.Errorf("%s: %w", files[i], r.err)
+			return parsedFiles{}, fmt.Errorf("%s: %w", files[i], r.err)
 		}
-		entries = append(entries, r.entries...)
-		calls = append(calls, r.calls...)
+		parsed.entries = append(parsed.entries, r.entries...)
+		parsed.calls = append(parsed.calls, r.calls...)
+		parsed.definitions = append(parsed.definitions, r.definitions...)
+		parsed.types = append(parsed.types, r.types...)
+		parsed.references = append(parsed.references, r.references...)
 		if r.hasErr {
-			errFiles = append(errFiles, files[i])
+			parsed.errFiles = append(parsed.errFiles, files[i])
 		}
 	}
-	return entries, calls, errFiles, nil
+	return parsed, nil
 }

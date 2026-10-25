@@ -30,11 +30,24 @@ bin/dupscan index -name location -param-type String   # 名前の一部・引数
 bin/dupscan index -doc bucket                 # doc comment (/// か /** */) の最初の行の語
 bin/dupscan index -file Sources/A.swift       # そのファイルの単位を行の順に (outline。件数で切らない)
 bin/dupscan callers 'make(x:_:)'              # 呼び出しの箇所と、それを囲む単位 (名前だけでも引ける)
+bin/dupscan def StorageOperationLockRegistry  # 定義の本体。型なら宣言とメンバー一覧
+bin/dupscan def -max-lines 120 DropboxClient.upload
+bin/dupscan def 'make(x:_:)'                  # 引数ラベルで完全一致
+bin/dupscan refs StorageOperationLockRegistry # 型・値としての参照
 ```
 
 `callers` は呼び出しの箇所を `file:line 呼び出し元 [test] | その行` で出す (コメント・文字列の中は数えない。テスト関数の中も数え、呼び出し元は「(単位の外)」)。
 型を解決しないので、同名の別のメソッド・別の型の初期化子の呼び出しも当たる (近似)。ラベルを書けば数と順で絞る。
 後置クロージャのある呼び出しは括弧の中のラベルが先頭に一致すれば当てる。flag は名前の前に書く (`callers -format json make`)。
+
+`def` は名前の完全一致で定義を探す。`Type.member` で型を絞り、`make(x:_:)` のように引数ラベルも指定できる。
+関数・初期化子・property・subscript は `file:line-endLine 型.署名` の見出しとソースを出し、既定 80 行を超えると残りの行数を示す。
+struct / class / enum / protocol / actor / extension は宣言とメンバーの一覧を出す。型の extension は宣言ごとに表示する。
+同名の定義は全件を候補にし、text は `-limit` の既定 20 件まで出す (`0` は全部)。`-format json` は全件を返す。
+
+`refs` は型の位置と値の位置にある識別子の出現を `file:line 囲む単位 [test] [型|値] | その行` で出す。
+宣言名・コメント・文字列本文は含めず、文字列補間の中の識別子は値の参照として数える。prod を test より先に並べる。
+text は `-limit` の既定 20 件まで (`0` は全部)、JSON は全件を返す。
 
 report の text は、組を大きい順 (メンバーのうち最大の単位の節の数) に並べ、先頭に「ファイルの組」(同じファイルの組み合わせに組が 2 つ以上あるもの) を件数と節の合計の大きい順に 5 行出す。
 同じ画面・同じ型の写しが細切れの組で並ぶのを 1 行で見せ、寄せる作業の単位を決めやすくする (json は `file_pairs` に全部・各組の `nodes`)。

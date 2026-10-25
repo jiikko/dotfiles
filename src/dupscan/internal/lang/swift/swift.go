@@ -46,6 +46,10 @@ type Parser struct {
 	p *sitter.Parser
 	// CollectCalls は呼び出しの箇所も集める (index と callers だけが使う。全部の節をもう 1 度歩くので、要らないときは集めない)。
 	CollectCalls bool
+	// CollectDefs は定義と型宣言を別に集める (重複の比較単位にはしない)。
+	CollectDefs bool
+	// CollectRefs は型・値の参照を集める。
+	CollectRefs bool
 }
 
 // NewParser は Parser を作る。
@@ -63,11 +67,50 @@ func (p *Parser) Close() { p.p.Close() }
 
 // FileResult は 1 ファイルの結果。
 type FileResult struct {
-	Units []*tree.Unit
-	Calls []tree.Call
+	Units       []*tree.Unit
+	Calls       []tree.Call
+	Definitions []Definition
+	Types       []TypeDeclaration
+	References  []Reference
 	// HasError はファイルのどこかに読めない構文 (ERROR / MISSING) があること。読めない部分に飲み込まれた関数は単位として出てこないので、
 	// 呼び出し側は「比べていない部分がある」ことを出力に出す。
 	HasError bool
+}
+
+// Definition は def 用の定義情報。重複を比べる Unit ではない。
+type Definition struct {
+	Name      string
+	Kind      string
+	File      string
+	Line      int
+	EndLine   int
+	Enclosing string
+	Signature string
+	Labels    []string
+	Test      bool
+}
+
+// TypeDeclaration は型本体の宣言情報。Unit には含めない。
+type TypeDeclaration struct {
+	Name      string
+	Kind      string
+	File      string
+	Line      int
+	EndLine   int
+	Enclosing string
+	Signature string
+	Test      bool
+}
+
+// Reference は refs 用の識別子の出現。Kind は type または value。
+type Reference struct {
+	Name string
+	Kind string
+	File string
+	Line int
+	Col  int
+	Text string
+	Test bool
 }
 
 // Parse は file (repo の root からの相対) の src から単位を取り出す。テスト関数そのものとその中のクロージャは単位にしない。
@@ -83,6 +126,12 @@ func (p *Parser) Parse(file string, src []byte) (FileResult, error) {
 	r := FileResult{Units: w.units, HasError: root.HasError()}
 	if p.CollectCalls {
 		r.Calls = w.calls(root)
+	}
+	if p.CollectDefs {
+		r.Definitions, r.Types = w.definitions(root)
+	}
+	if p.CollectRefs {
+		r.References = w.references(root)
 	}
 	return r, nil
 }
@@ -121,6 +170,268 @@ func (w *walker) calls(root *sitter.Node) []tree.Call {
 	}
 	visit(root)
 	return out
+}
+
+// definitions walks declaration metadata only when def was requested. These records never enter Unit,
+// so adding types and stored properties cannot affect duplicate grouping.
+func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration) {
+	var defs []Definition
+	var types []TypeDeclaration
+	type context struct {
+		enclosing      []string
+		testClass      bool
+		insideCallable bool
+	}
+	var visit func(*sitter.Node, context)
+	visit = func(n *sitter.Node, c context) {
+		k := kindOf(n)
+		childContext := c
+		if isTypeDeclarationKind(k) {
+			childContext.insideCallable = false
+			rawName := w.typeName(n)
+			name := typeIdentity(rawName)
+			if name != "" {
+				pos := n.StartPosition()
+				types = append(types, TypeDeclaration{
+					Name: name, Kind: w.typeDeclarationKind(n), File: w.file,
+					Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1,
+					Enclosing: strings.Join(c.enclosing, "."), Signature: rawName,
+					Test: w.test || c.testClass,
+				})
+				childContext.enclosing = append(append([]string(nil), c.enclosing...), rawName)
+			}
+			childContext.testClass = c.testClass || w.inheritsTestCase(n)
+		}
+
+		switch k {
+		case "function_declaration", "init_declaration", "deinit_declaration", "subscript_declaration":
+			u := w.declUnit(n, ctx{enclosing: c.enclosing, testClass: c.testClass})
+			defs = append(defs, definitionFromUnit(u))
+			childContext.insideCallable = true
+		case "property_declaration":
+			if !c.insideCallable {
+				if name := w.boundName(n); name != "" {
+					if computed := n.ChildByFieldName("computed_value"); computed != nil {
+						defs = append(defs, definitionFromUnit(w.propertyUnit(n, computed, name, ctx{enclosing: c.enclosing, testClass: c.testClass})))
+					} else {
+						pos := n.StartPosition()
+						defs = append(defs, Definition{
+							Name: name, Kind: string(tree.KindProperty), File: w.file,
+							Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1,
+							Enclosing: strings.Join(c.enclosing, "."), Signature: w.storedPropertySignature(n, name),
+							Test: w.test || c.testClass,
+						})
+					}
+				}
+			}
+			if n.ChildByFieldName("computed_value") != nil {
+				childContext.insideCallable = true
+			}
+		case "didset_clause", "willset_clause":
+			name := "didSet"
+			if k == "willset_clause" {
+				name = "willSet"
+			}
+			pos := n.StartPosition()
+			defs = append(defs, Definition{
+				Name: name, Kind: string(tree.KindProperty), File: w.file,
+				Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1,
+				Enclosing: strings.Join(c.enclosing, "."), Signature: name,
+				Test: w.test || c.testClass,
+			})
+			childContext.insideCallable = true
+		case "protocol_property_declaration":
+			if name := w.boundName(n); name != "" {
+				pos := n.StartPosition()
+				defs = append(defs, Definition{
+					Name: name, Kind: string(tree.KindProperty), File: w.file,
+					Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1,
+					Enclosing: strings.Join(c.enclosing, "."), Signature: w.storedPropertySignature(n, name),
+					Test: w.test || c.testClass,
+				})
+			}
+		case "lambda_literal":
+			childContext.insideCallable = true
+		}
+		for i := range n.ChildCount() {
+			visit(n.Child(i), childContext)
+		}
+	}
+	visit(root, context{})
+	return defs, types
+}
+
+func definitionFromUnit(u *tree.Unit) Definition {
+	return Definition{
+		Name: u.Name, Kind: string(u.Kind), File: u.File, Line: u.Line, EndLine: u.EndLine,
+		Enclosing: u.Enclosing, Signature: u.Signature, Labels: append([]string(nil), u.Labels...), Test: u.Test,
+	}
+}
+
+func (w *walker) storedPropertySignature(n *sitter.Node, name string) string {
+	keyword := "var"
+	var findKeyword func(*sitter.Node) bool
+	findKeyword = func(node *sitter.Node) bool {
+		if !node.IsNamed() {
+			if text := w.text(node); text == "let" || text == "var" {
+				keyword = text
+				return true
+			}
+		}
+		for i := range node.ChildCount() {
+			if findKeyword(node.Child(i)) {
+				return true
+			}
+		}
+		return false
+	}
+	findKeyword(n)
+	signature := keyword + " " + name
+	var findType func(*sitter.Node) string
+	findType = func(node *sitter.Node) string {
+		if kindOf(node) == "type_annotation" {
+			return collapse(strings.TrimPrefix(w.text(node), ":"))
+		}
+		for i := range node.NamedChildCount() {
+			if value := findType(node.NamedChild(i)); value != "" {
+				return value
+			}
+		}
+		return ""
+	}
+	if typ := findType(n); typ != "" {
+		signature += ": " + typ
+	}
+	return signature
+}
+
+func isTypeDeclarationKind(kind string) bool {
+	switch kind {
+	case "class_declaration", "protocol_declaration":
+		return true
+	default:
+		return false
+	}
+}
+
+func typeIdentity(name string) string {
+	name = collapse(name)
+	if before, _, ok := strings.Cut(name, " where "); ok {
+		name = before
+	}
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		name = name[i+1:]
+	}
+	return name
+}
+
+func (w *walker) typeDeclarationKind(n *sitter.Node) string {
+	switch kindOf(n) {
+	case "protocol_declaration":
+		return "protocol"
+	}
+	for i := range n.ChildCount() {
+		child := n.Child(i)
+		if child.IsNamed() {
+			continue
+		}
+		switch text := w.text(child); text {
+		case "class", "struct", "enum", "actor", "protocol", "extension":
+			return text
+		}
+	}
+	return "type"
+}
+
+func (w *walker) references(root *sitter.Node) []Reference {
+	lines := strings.Split(string(w.src), "\n")
+	var out []Reference
+	var visit func(n, parent *sitter.Node, field string, binding, afterDot, declarationName, inTest bool)
+	visit = func(n, parent *sitter.Node, field string, binding, afterDot, declarationName, inTest bool) {
+		k := kindOf(n)
+		declarationName = declarationName || (parent != nil && field == "name" && declarationNameKind(kindOf(parent)))
+		pos := n.StartPosition()
+		if k == "simple_identifier" && !declarationName {
+			role := w.nameRole(parent, field, binding, afterDot)
+			if role != tree.RoleDecl && role != tree.RoleLabel {
+				row := int(pos.Row)
+				text := ""
+				if row >= 0 && row < len(lines) {
+					text = strings.TrimSpace(lines[row])
+				}
+				out = append(out, Reference{Name: w.text(n), Kind: "value", File: w.file, Line: row + 1, Col: int(pos.Column) + 1, Text: text, Test: inTest})
+			}
+		} else if k == "type_identifier" && !declarationName && !isTypeParameterName(parent, field) {
+			row := int(pos.Row)
+			text := ""
+			if row >= 0 && row < len(lines) {
+				text = strings.TrimSpace(lines[row])
+			}
+			out = append(out, Reference{Name: w.text(n), Kind: "type", File: w.file, Line: row + 1, Col: int(pos.Column) + 1, Text: text, Test: inTest})
+		}
+
+		childTest := inTest
+		childDeclName := declarationName
+		if isTypeDeclarationKind(k) && w.inheritsTestCase(n) {
+			childTest = true
+		}
+		if k == "function_declaration" && w.isTestFunc(n, ctx{enclosing: []string{"_"}, testClass: inTest}) {
+			childTest = true
+		}
+
+		inPattern := k == "pattern"
+		patternBinds := inPattern && binding
+		if inPattern {
+			for i := range n.ChildCount() {
+				if isBindingKeyword(n.Child(i), w.src) {
+					patternBinds = true
+				}
+			}
+		}
+		condList := k == "if_statement" || k == "guard_statement" || k == "while_statement" || k == "repeat_while_statement"
+		clause := false
+		depth, prevDot := 0, false
+		for i := range n.ChildCount() {
+			child := n.Child(i)
+			if isBindingKeyword(child, w.src) {
+				clause = true
+			}
+			if condList && !child.IsNamed() {
+				switch w.text(child) {
+				case "(":
+					depth++
+				case ")":
+					depth--
+				case ",":
+					if depth == 0 {
+						clause = false
+					}
+				}
+			}
+			childField := n.FieldNameForChild(uint32(i))
+			forItem := k == "for_statement" && childField == "item" && !hasToken(child, "case")
+			childBinding := patternBinds || (clause && (kindOf(child) == "pattern" || childField == "bound_identifier")) || forItem
+			visit(child, n, childField, childBinding, prevDot, childDeclName, childTest)
+			prevDot = !child.IsNamed() && w.text(child) == "."
+		}
+	}
+	visit(root, nil, "", false, false, false, w.test)
+	return out
+}
+
+func declarationNameKind(kind string) bool {
+	switch kind {
+	case "class_declaration", "protocol_declaration",
+		"function_declaration", "init_declaration", "deinit_declaration", "subscript_declaration", "property_declaration",
+		"protocol_property_declaration", "typealias_declaration", "associatedtype_declaration", "type_parameter", "enum_entry", "macro_declaration":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTypeParameterName(parent *sitter.Node, field string) bool {
+	return parent != nil && kindOf(parent) == "type_parameter" && field == "name"
 }
 
 // calleeName は呼び出しの先頭の式から呼ばれる名前を取る (`f`・`a.b.f`・`a?.f`)。それ以外 (`(f)()`・`x[0]()`・`f()()`) は空。
@@ -243,6 +554,18 @@ func (w *walker) addOwner(u *tree.Unit, c ctx) (string, string) {
 
 func (w *walker) typeName(n *sitter.Node) string {
 	c := n.ChildByFieldName("name")
+	if c == nil {
+		for i := range n.NamedChildCount() {
+			child := n.NamedChild(i)
+			switch kindOf(child) {
+			case "type_identifier", "user_type", "navigation_expression":
+				c = child
+			}
+			if c != nil {
+				break
+			}
+		}
+	}
 	if c == nil {
 		return ""
 	}

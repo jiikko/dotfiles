@@ -187,27 +187,32 @@ func IndexText(w io.Writer, s IndexSummary, limit int) error {
 			fmt.Fprintf(w, "… 他 %d 件 (-limit 0 か -format json で全部。語を足して絞る)\n", s.Matches-limit)
 			break
 		}
-		line := fmt.Sprintf("%s:%d %s", e.File, e.Line, label(e.UnitRef))
-		var marks []string
-		if e.Shared {
-			marks = append(marks, "shared")
-		}
-		if e.Test {
-			marks = append(marks, "test")
-		}
-		if hidden(e.Visibility) {
-			marks = append(marks, e.Visibility)
-		}
-		if len(marks) > 0 {
-			line += " [" + strings.Join(marks, ",") + "]"
-		}
-		if e.Calls != nil {
-			line += fmt.Sprintf(" (呼び出し ~%d)", *e.Calls)
-		}
-		if e.Doc != "" {
-			line += " // " + e.Doc
-		}
-		fmt.Fprintln(w, line)
+		fmt.Fprintln(w, IndexEntryText(e))
 	}
 	return nil
+}
+
+// IndexEntryText formats one outline entry. def uses the same row shape for type members.
+func IndexEntryText(e IndexEntry) string {
+	line := fmt.Sprintf("%s:%d %s", e.File, e.Line, label(e.UnitRef))
+	var marks []string
+	if e.Shared {
+		marks = append(marks, "shared")
+	}
+	if e.Test {
+		marks = append(marks, "test")
+	}
+	if hidden(e.Visibility) {
+		marks = append(marks, e.Visibility)
+	}
+	if len(marks) > 0 {
+		line += " [" + strings.Join(marks, ",") + "]"
+	}
+	if e.Calls != nil {
+		line += fmt.Sprintf(" (呼び出し ~%d)", *e.Calls)
+	}
+	if e.Doc != "" {
+		line += " // " + e.Doc
+	}
+	return line
 }
