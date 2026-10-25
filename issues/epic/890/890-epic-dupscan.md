@@ -25,7 +25,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [893](done/893-feat-dupscan-core-normalize-type2.md) | コア: 走査・test / prod の分類・単位・正規化 L1〜L3・ハッシュ・Type-2 の組 | 892 |
 | [894](done/894-feat-dupscan-swift-adapter.md) | Swift adapter (文法の pin・対応表と網羅テスト・ERROR の除外・PR 24 の固定の入力・canary) | 893 |
 | [895](pending/895-feat-dupscan-type3-candidates.md) | **保留** (2026-10-25)。Type-3 (少し違う写し) の類似度と候補の絞り込み (後回し。主な用途には Type-2 と L3 の一致で足りるかを先に見る) | 893 |
-| [896](896-feat-dupscan-report-output.md) | 出力 (人が読む形・JSON・リテラルの違いの表・プロパティの値・ターゲット・可視性・呼び出し元の数・既存のヘルパーとの一致) | 893・894 |
+| [896](done/896-feat-dupscan-report-output.md) | 出力 (人が読む形・JSON・リテラルの違いの表・プロパティの値・ターゲット・可視性・呼び出し元の数・既存のヘルパーとの一致) | 893・894 |
 | [897](done/897-feat-dupscan-index-subcommand.md) | 探索のための索引 (subcommand)。名前・署名の型・doc 文で引く (名前の検索も LSP でなくこれでまかなう) | 893・894 |
 | [898](898-test-dupscan-obaket-calibration.md) | obaket と DualNoteApp に当てた実測・既定の閾値・PR 24 の前の木での肯定と否定の期待値・変異 (Type-3 の条件は 895 の着手時) | 894・896 |
 | [899](pending/899-research-dupscan-lsp-integration.md) | **保留** (LSP は使わない)。構文木の近似で判断を誤る実例が出たら、LSP・言語の解析の道具で補う案を再開する | 896 |

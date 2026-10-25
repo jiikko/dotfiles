@@ -6,7 +6,7 @@
 
 dupscan は、主に Claude が書く前に索引を引き (897)、セルフレビューと `make test` で `dupscan gate` を回す ([905](../905-feat-dupscan-ci-check-gate.md))。人が日常的に使う道具ではないが、
 **動作確認として「何ができるか・なぜ同じと判定したか」を人が手で試せる入口**が要る (ユーザー 2026-10-24)。
-重複の報告 ([896](../896-feat-dupscan-report-output.md)) と索引 ([897](897-feat-dupscan-index-subcommand.md)) は repo 全体を相手にするので、
+重複の報告 ([896](896-feat-dupscan-report-output.md)) と索引 ([897](897-feat-dupscan-index-subcommand.md)) は repo 全体を相手にするので、
 1 つの関数を指して試す入口を 2 つ足し、`gate` を手で試す方法を書く。どれもコア (893・894) と同じ単位の一覧の上に載せ、判定の実装を別に持たない。
 
 | subcommand (名前は仮) | 入力 | 出力 | 何を確かめるか |
@@ -34,7 +34,7 @@ dupscan は、主に Claude が書く前に索引を引き (897)、セルフレ�
 ## 依存
 
 - [893](893-feat-dupscan-core-normalize-type2.md)・[894](894-feat-dupscan-swift-adapter.md) (単位の一覧と正規化)
-- [896](../896-feat-dupscan-report-output.md) (リテラルの違いの表・プロパティの初期値の解決・JSON の形)
+- [896](896-feat-dupscan-report-output.md) (リテラルの違いの表・プロパティの初期値の解決・JSON の形)
 - [897](897-feat-dupscan-index-subcommand.md) (単位の一覧のキャッシュ)
 - [898](../898-test-dupscan-obaket-calibration.md) (下限と L3 の扱い。無いと引数なしの単位がどれも並ぶ)
 - [905](../905-feat-dupscan-ci-check-gate.md) (照合の関数。`near` もこれを呼ぶので、905 と同時か後)
