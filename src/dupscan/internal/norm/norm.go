@@ -6,9 +6,11 @@
 package norm
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -48,35 +50,57 @@ type Result struct {
 	// L3Trivial は、本体が局所の名前を 1 つも参照しないことを表す。L3 では値の位置がどれも同じ記号に畳まれ、
 	// 同じ型を返す同じ形の呼び出しならどれも一致するので、L3 の組には入れない。
 	L3Trivial bool
-	// Forms は段ごとに潰した形 (explain 用)。
+	// Forms は段ごとに潰した形 (explain 用。NormalizeWithForms のときだけ入る)。
 	Forms map[Level]string
 }
 
 // Normalize は単位を正規化する。
-func Normalize(u *tree.Unit) Result {
+func Normalize(u *tree.Unit) Result { return normalize(u, false) }
+
+// NormalizeWithForms は Normalize に加えて、段ごとに潰した形の文字列を Forms に入れる (explain とテストの失敗の表示用)。
+func NormalizeWithForms(u *tree.Unit) Result { return normalize(u, true) }
+
+// normalize は段ごとの形を sha256 へ直接流してハッシュを取る。形の文字列は withForms のときだけ作る
+// (全部の単位で形を持つと、repo 全体の走査で一時的な確保が数百 MB になる)。
+func normalize(u *tree.Unit, withForms bool) Result {
 	locals := localNames(u)
 	refs := map[*tree.Node]bool{}
 	markRefs(u.Body, locals, refs)
 	acts := map[*tree.Node]bool{}
 	markActions(u.Body, acts)
-	r := Result{Hash: map[Level]string{}, Forms: map[Level]string{}, Nodes: countNodes(u.Body)}
+	r := Result{Hash: map[Level]string{}, Nodes: countNodes(u.Body)}
+	if withForms {
+		r.Forms = map[Level]string{}
+	}
 	r.L3Trivial = !refs[u.Body]
+	h := sha256.New()
+	out := bufio.NewWriterSize(h, 4096)
 	for _, l := range Levels {
-		w := &writer{level: l, locals: locals, refs: refs, acts: acts, nums: map[string]int{}}
+		h.Reset()
+		var form strings.Builder
+		if withForms {
+			out.Reset(io.MultiWriter(h, &form))
+		} else {
+			out.Reset(h)
+		}
+		w := &writer{out: out, level: l, locals: locals, refs: refs, acts: acts, nums: map[string]int{}}
 		// 引数は宣言の順に番号を先に振る (本体に出た順だけだと `a - b` と `b - a` が同じになる)。
 		for _, p := range u.Params {
 			if _, ok := w.nums[p]; !ok {
 				w.nums[p] = len(w.nums) + 1
 			}
 		}
-		w.b.WriteString("(ret ")
-		w.b.WriteString(strconv.Quote(u.ReturnType))
-		w.b.WriteString(")")
+		w.str("(ret ")
+		w.str(strconv.Quote(u.ReturnType))
+		w.str(")")
 		w.write(u.Body, false)
-		form := w.b.String()
-		sum := sha256.Sum256([]byte(form))
-		r.Hash[l] = hex.EncodeToString(sum[:16])
-		r.Forms[l] = form
+		if err := out.Flush(); err != nil {
+			panic(err) // sha256 と strings.Builder への書き込みは失敗しない
+		}
+		r.Hash[l] = hex.EncodeToString(h.Sum(nil)[:16])
+		if withForms {
+			r.Forms[l] = form.String()
+		}
 	}
 	return r
 }
@@ -157,7 +181,7 @@ func countNodes(n *tree.Node) int {
 }
 
 type writer struct {
-	b      strings.Builder
+	out    *bufio.Writer
 	level  Level
 	locals map[string]bool
 	refs   map[*tree.Node]bool
@@ -165,13 +189,17 @@ type writer struct {
 	nums   map[string]int
 }
 
+// str と byte は形を書き出す。bufio の書き込みの失敗は Flush が返すので、ここでは見ない (先は sha256 と strings.Builder で失敗しない)。
+func (w *writer) str(s string) { _, _ = w.out.WriteString(s) }
+func (w *writer) byte(c byte)  { _ = w.out.WriteByte(c) }
+
 func (w *writer) write(n *tree.Node, keep bool) {
 	if w.level >= L3 && !keep && !n.Keep && n.Expr && !n.NoFold && !w.refs[n] && !w.acts[n] {
-		w.b.WriteString("(#F)")
+		w.str("(#F)")
 		return
 	}
-	w.b.WriteByte('(')
-	w.b.WriteString(n.Kind)
+	w.byte('(')
+	w.str(n.Kind)
 	switch {
 	case isLocal(n, w.locals):
 		num, ok := w.nums[n.Text]
@@ -179,22 +207,22 @@ func (w *writer) write(n *tree.Node, keep bool) {
 			num = len(w.nums) + 1
 			w.nums[n.Text] = num
 		}
-		w.b.WriteString(" $")
-		w.b.WriteString(strconv.Itoa(num))
+		w.str(" $")
+		w.str(strconv.Itoa(num))
 	case n.Role == tree.RoleLiteral:
 		if w.level >= L2 {
-			w.b.WriteString(" #lit:")
-			w.b.WriteString(n.LitKind)
+			w.str(" #lit:")
+			w.str(n.LitKind)
 		} else {
-			w.b.WriteString(" ")
-			w.b.WriteString(strconv.Quote(n.Text))
+			w.str(" ")
+			w.str(strconv.Quote(n.Text))
 		}
 	case n.Role != tree.RoleStruct:
-		w.b.WriteString(" ")
-		w.b.WriteString(strconv.Quote(n.Text))
+		w.str(" ")
+		w.str(strconv.Quote(n.Text))
 	}
 	for _, c := range n.Children {
 		w.write(c, keep || n.Keep)
 	}
-	w.b.WriteByte(')')
+	w.byte(')')
 }

@@ -53,7 +53,7 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 		return fail(fmt.Errorf("判定不能: %w", err))
 	}
 	q.Shared = cfg.InShared
-	got, err := scanSource(src, true)
+	got, err := scanSource(src, true, true)
 	if err != nil {
 		return fail(err)
 	}

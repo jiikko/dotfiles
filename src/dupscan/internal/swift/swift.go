@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -20,8 +21,32 @@ var Extensions = []string{".swift"}
 // Language は文法を返す。
 func Language() *sitter.Language { return sitter.NewLanguage(swiftgrammar.Language()) }
 
+// kindNames は文法の節の種類の名前を番号で引く表。`Node.Kind()` は呼ぶたびに C の文字列を Go の文字列へ写して確保するので、
+// 全部の節を何度も見る walker では番号 (KindId) から引く。
+var kindNames = sync.OnceValue(func() []string {
+	l := Language()
+	names := make([]string, l.NodeKindCount())
+	for id := range names {
+		names[id] = l.NodeKindForId(uint16(id))
+	}
+	return names
+})
+
+// kindOf は n の種類の名前 (`n.Kind()` と同じ値)。
+func kindOf(n *sitter.Node) string {
+	names := kindNames()
+	if id := int(n.KindId()); id < len(names) {
+		return names[id]
+	}
+	return n.Kind()
+}
+
 // Parser はファイルを読んで単位を取り出す。goroutine ごとに 1 つ作る (tree-sitter の parser は共有できない)。
-type Parser struct{ p *sitter.Parser }
+type Parser struct {
+	p *sitter.Parser
+	// CollectCalls は呼び出しの箇所も集める (index と callers だけが使う。全部の節をもう 1 度歩くので、要らないときは集めない)。
+	CollectCalls bool
+}
 
 // NewParser は Parser を作る。
 func NewParser() (*Parser, error) {
@@ -55,7 +80,11 @@ func (p *Parser) Parse(file string, src []byte) (FileResult, error) {
 	root := t.RootNode()
 	w := &walker{file: file, src: src, test: IsTestPath(file), closures: map[string]int{}, seen: map[string]int{}, isUnit: map[string]bool{}}
 	w.walk(root, ctx{})
-	return FileResult{Units: w.units, Calls: w.calls(root), HasError: root.HasError()}, nil
+	r := FileResult{Units: w.units, HasError: root.HasError()}
+	if p.CollectCalls {
+		r.Calls = w.calls(root)
+	}
+	return r, nil
 }
 
 // calls はファイルの中の呼び出しを全部集める (テスト関数の中も。単位にしない関数の中も呼び出し元に数える)。
@@ -64,7 +93,7 @@ func (w *walker) calls(root *sitter.Node) []tree.Call {
 	var out []tree.Call
 	var visit func(n *sitter.Node)
 	visit = func(n *sitter.Node) {
-		if n.Kind() == "call_expression" && n.NamedChildCount() > 0 {
+		if kindOf(n) == "call_expression" && n.NamedChildCount() > 0 {
 			if name := calleeName(n.NamedChild(0), w.src); name != "" {
 				pos := n.StartPosition()
 				c := tree.Call{File: w.file, Line: int(pos.Row) + 1, Col: int(pos.Column) + 1, Name: name, Labels: []string{}}
@@ -97,12 +126,12 @@ func (w *walker) calls(root *sitter.Node) []tree.Call {
 // calleeName は呼び出しの先頭の式から呼ばれる名前を取る (`f`・`a.b.f`・`a?.f`)。それ以外 (`(f)()`・`x[0]()`・`f()()`) は空。
 // 文法は `a + b.f(x)` を「`a + b.f` を呼ぶ」と読むので、二項式・前置の式は右端の式へ降りる。
 func calleeName(n *sitter.Node, src []byte) string {
-	switch k := n.Kind(); {
+	switch k := kindOf(n); {
 	case k == "simple_identifier":
 		return n.Utf8Text(src)
 	case k == "navigation_expression":
 		for i := int(n.NamedChildCount()) - 1; i >= 0; i-- {
-			if c := n.NamedChild(uint(i)); c.Kind() == "navigation_suffix" {
+			if c := n.NamedChild(uint(i)); kindOf(c) == "navigation_suffix" {
 				if id := childOfKind(c, "simple_identifier"); id != nil {
 					return id.Utf8Text(src)
 				}
@@ -154,7 +183,7 @@ func (w *walker) walk(n *sitter.Node, c ctx) {
 	if n.IsError() || n.IsMissing() {
 		c.inError = true
 	}
-	switch n.Kind() {
+	switch kindOf(n) {
 	case "class_declaration", "protocol_declaration":
 		if name := w.typeName(n); name != "" {
 			c.enclosing = append(append([]string(nil), c.enclosing...), name)
@@ -176,7 +205,7 @@ func (w *walker) walk(n *sitter.Node, c ctx) {
 		}
 	case "didset_clause", "willset_clause":
 		name := "didSet"
-		if n.Kind() == "willset_clause" {
+		if kindOf(n) == "willset_clause" {
 			name = "willSet"
 		}
 		c.owner = w.add(w.newUnit(n, tree.KindProperty, c.property+"."+name, "", nil, n, c), c)
@@ -208,7 +237,7 @@ func (w *walker) typeName(n *sitter.Node) string {
 	name := w.text(c)
 	// 条件つきの extension (`extension Array where Element == Int`) どうしを分ける。
 	for i := range n.NamedChildCount() {
-		if ch := n.NamedChild(i); ch.Kind() == "where_clause" || ch.Kind() == "type_constraints" {
+		if ch := n.NamedChild(i); kindOf(ch) == "where_clause" || kindOf(ch) == "type_constraints" {
 			name += " " + collapse(w.text(ch))
 		}
 	}
@@ -217,7 +246,7 @@ func (w *walker) typeName(n *sitter.Node) string {
 
 func (w *walker) inheritsTestCase(n *sitter.Node) bool {
 	for i := range n.NamedChildCount() {
-		if ch := n.NamedChild(i); ch.Kind() == "inheritance_specifier" && strings.HasSuffix(w.text(ch), "TestCase") {
+		if ch := n.NamedChild(i); kindOf(ch) == "inheritance_specifier" && strings.HasSuffix(w.text(ch), "TestCase") {
 			return true
 		}
 	}
@@ -237,7 +266,7 @@ func (w *walker) boundName(n *sitter.Node) string {
 
 func (w *walker) modifiers(n *sitter.Node) *sitter.Node {
 	for i := range n.NamedChildCount() {
-		if c := n.NamedChild(i); c.Kind() == "modifiers" {
+		if c := n.NamedChild(i); kindOf(c) == "modifiers" {
 			return c
 		}
 	}
@@ -246,17 +275,17 @@ func (w *walker) modifiers(n *sitter.Node) *sitter.Node {
 
 // isTestFunc は Swift Testing の `@Test` (`@Testing.Test` も) か、XCTest の `func test…()` (引数なし。test のファイルか XCTestCase を継承した型の中) か。
 func (w *walker) isTestFunc(n *sitter.Node, c ctx) bool {
-	if n.Kind() != "function_declaration" {
+	if kindOf(n) != "function_declaration" {
 		return false
 	}
 	if m := w.modifiers(n); m != nil {
 		for i := range m.NamedChildCount() {
 			a := m.NamedChild(i)
-			if a.Kind() != "attribute" {
+			if kindOf(a) != "attribute" {
 				continue
 			}
 			for j := range a.NamedChildCount() {
-				if t := a.NamedChild(j); t.Kind() == "user_type" {
+				if t := a.NamedChild(j); kindOf(t) == "user_type" {
 					if s := w.text(t); s == "Test" || strings.HasSuffix(s, ".Test") {
 						return true
 					}
@@ -274,7 +303,7 @@ func (w *walker) isTestFunc(n *sitter.Node, c ctx) bool {
 func params(n *sitter.Node) []*sitter.Node {
 	var ps []*sitter.Node
 	for i := range n.NamedChildCount() {
-		if c := n.NamedChild(i); c.Kind() == "parameter" {
+		if c := n.NamedChild(i); kindOf(c) == "parameter" {
 			ps = append(ps, c)
 		}
 	}
@@ -295,7 +324,7 @@ func (w *walker) isStatic(n *sitter.Node) bool {
 func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 	kind := tree.KindFunc
 	var name string
-	switch n.Kind() {
+	switch kindOf(n) {
 	case "init_declaration":
 		kind, name = tree.KindInit, "init"
 	case "deinit_declaration":
@@ -332,7 +361,7 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 	if body == nil {
 		body = childOfKind(n, "computed_property") // subscript の本体 (引数の宣言を本体に入れない)
 	}
-	if body == nil && n.Kind() == "deinit_declaration" {
+	if body == nil && kindOf(n) == "deinit_declaration" {
 		body = childOfKind(n, "function_body")
 	}
 	u := w.newUnit(n, kind, name, signature, locals, body, c)
@@ -348,7 +377,7 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 func (w *walker) propertyUnit(decl, computed *sitter.Node, name string, c ctx) *tree.Unit {
 	u := w.newUnit(decl, tree.KindProperty, name, "var "+name, nil, computed, c)
 	for i := range decl.NamedChildCount() {
-		if ch := decl.NamedChild(i); ch.Kind() == "type_annotation" {
+		if ch := decl.NamedChild(i); kindOf(ch) == "type_annotation" {
 			u.ReturnType = collapse(strings.TrimPrefix(w.text(ch), ":"))
 			u.Signature += ": " + u.ReturnType
 		}
@@ -367,7 +396,7 @@ const allowMarker = "dupscan:allow"
 func leadingComments(n *sitter.Node) []*sitter.Node {
 	var out []*sitter.Node
 	next := n
-	for s := n.PrevSibling(); s != nil && (s.Kind() == "comment" || s.Kind() == "multiline_comment"); s = s.PrevSibling() {
+	for s := n.PrevSibling(); s != nil && (kindOf(s) == "comment" || kindOf(s) == "multiline_comment"); s = s.PrevSibling() {
 		if next.StartPosition().Row > s.EndPosition().Row+1 {
 			break
 		}
@@ -457,7 +486,7 @@ func (w *walker) newUnit(n *sitter.Node, kind tree.UnitKind, name, sig string, l
 func (w *walker) visibility(n *sitter.Node) string {
 	if m := w.modifiers(n); m != nil {
 		for i := range m.NamedChildCount() {
-			if c := m.NamedChild(i); c.Kind() == "visibility_modifier" {
+			if c := m.NamedChild(i); kindOf(c) == "visibility_modifier" {
 				return w.text(c)
 			}
 		}
@@ -469,10 +498,10 @@ func (w *walker) visibility(n *sitter.Node) string {
 func externalLabel(p *sitter.Node, src []byte) string {
 	for i := range p.ChildCount() {
 		c := p.Child(i)
-		if c.Kind() == ":" {
+		if kindOf(c) == ":" {
 			break
 		}
-		if c.Kind() == "simple_identifier" { // `_` もこの種類で読まれる
+		if kindOf(c) == "simple_identifier" { // `_` もこの種類で読まれる
 			return c.Utf8Text(src)
 		}
 	}
@@ -484,10 +513,10 @@ func internalName(p *sitter.Node, src []byte) string {
 	last := ""
 	for i := range p.ChildCount() {
 		c := p.Child(i)
-		if c.Kind() == ":" {
+		if kindOf(c) == ":" {
 			break
 		}
-		if c.Kind() == "simple_identifier" {
+		if kindOf(c) == "simple_identifier" {
 			last = c.Utf8Text(src)
 		}
 	}
@@ -498,7 +527,7 @@ func returnType(n *sitter.Node, src []byte) string {
 	after := false
 	for i := range n.ChildCount() {
 		c := n.Child(i)
-		if c.Kind() == "->" {
+		if kindOf(c) == "->" {
 			after = true
 			continue
 		}
@@ -513,7 +542,7 @@ func collapse(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 func childOfKind(n *sitter.Node, kind string) *sitter.Node {
 	for i := range n.NamedChildCount() {
-		if c := n.NamedChild(i); c.Kind() == kind {
+		if c := n.NamedChild(i); kindOf(c) == kind {
 			return c
 		}
 	}
@@ -526,7 +555,7 @@ var containerKinds = map[string]bool{"source_file": true, "class_body": true, "e
 // broken は単位の節か、入れ物 (型・ファイルの本体) に着くまでの祖先のどれかが読めない構文を含むか
 // (読めない部分に飲み込まれた関数の本体が、隣のクロージャとして読まれることがある)。
 func broken(n *sitter.Node) bool {
-	for c := n; c != nil && !containerKinds[c.Kind()]; c = c.Parent() {
+	for c := n; c != nil && !containerKinds[kindOf(c)]; c = c.Parent() {
 		if c.HasError() {
 			return true
 		}
@@ -536,7 +565,7 @@ func broken(n *sitter.Node) bool {
 
 // conv は tree-sitter の節を言語に依らない木に写す。binding は let / var で束縛する pattern の中か、afterDot は直前のトークンが `.` か。
 func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bool) *tree.Node {
-	k := n.Kind()
+	k := kindOf(n)
 	out := &tree.Node{Kind: k}
 	switch {
 	case !n.IsNamed():
@@ -547,7 +576,7 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 		out.Text = w.text(n)
 		out.Role = w.nameRole(parent, field, binding, afterDot)
 		out.Expr = out.Role == tree.RoleName
-		out.Capture = parent != nil && parent.Kind() == "capture_list_item" && out.Role == tree.RoleName && field == "name"
+		out.Capture = parent != nil && kindOf(parent) == "capture_list_item" && out.Role == tree.RoleName && field == "name"
 		return out
 	case classify(k) == classType:
 		out.Role = tree.RoleType
@@ -594,7 +623,7 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 	casePattern := false // `if case .timeout = e` の case から = までは pattern (case 名を畳まない)
 	for i := range n.ChildCount() {
 		c := n.Child(i)
-		if classify(c.Kind()) == classComment {
+		if classify(kindOf(c)) == classComment {
 			continue
 		}
 		f := n.FieldNameForChild(uint32(i))
@@ -619,7 +648,7 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 		}
 		// `for case .p(lo) in` の項目は値のパターン (束縛は中の let / var に任せる)。
 		forItem := k == "for_statement" && f == "item" && !hasToken(c, "case")
-		childBinds := patternBinds || (clause && (c.Kind() == "pattern" || f == "bound_identifier")) || forItem
+		childBinds := patternBinds || (clause && (kindOf(c) == "pattern" || f == "bound_identifier")) || forItem
 		cn := w.conv(c, n, f, childBinds, prevDot)
 		if casePattern && c.IsNamed() {
 			cn.Keep = true
@@ -631,7 +660,7 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 				cn.Keep = true
 			}
 		}
-		if k == "macro_invocation" && c.Kind() == "simple_identifier" {
+		if k == "macro_invocation" && kindOf(c) == "simple_identifier" {
 			cn.Keep = true
 		}
 		if k == "statements" {
@@ -647,7 +676,7 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 
 func hasToken(n *sitter.Node, tok string) bool {
 	for i := range n.ChildCount() {
-		if c := n.Child(i); !c.IsNamed() && c.Kind() == tok {
+		if c := n.Child(i); !c.IsNamed() && kindOf(c) == tok {
 			return true
 		}
 	}
@@ -655,7 +684,7 @@ func hasToken(n *sitter.Node, tok string) bool {
 }
 
 func isBindingKeyword(c *sitter.Node, src []byte) bool {
-	if c.Kind() == "value_binding_pattern" {
+	if kindOf(c) == "value_binding_pattern" {
 		return true
 	}
 	if c.IsNamed() {
@@ -670,7 +699,7 @@ func isBindingKeyword(c *sitter.Node, src []byte) bool {
 // 大文字で始まる処理 (`XCTUnwrap(…)`) は構文だけでは型の初期化と区別できず、値として畳まれる (docs/dupscan-detection.md の限界)。
 func isActionCallee(c *sitter.Node, src []byte, static bool) bool {
 	for c != nil {
-		switch c.Kind() {
+		switch kindOf(c) {
 		case "postfix_expression": // onDelete!() の !
 			c = c.NamedChild(0)
 			continue
@@ -695,7 +724,7 @@ func isActionCallee(c *sitter.Node, src []byte, static bool) bool {
 						// ConnectionID.init(rawValue:) は型の初期化。self.init / super.init は委譲の処理。
 						// static のメソッドの中の self は型そのものなので、self.init も型の初期化
 						t := c.ChildByFieldName("target")
-						return t != nil && ((t.Kind() == "self_expression" && !static) || t.Kind() == "super_expression")
+						return t != nil && ((kindOf(t) == "self_expression" && !static) || kindOf(t) == "super_expression")
 					}
 					return !startsUpper(name)
 				}
@@ -719,7 +748,7 @@ func (w *walker) nameRole(parent *sitter.Node, field string, binding, afterDot b
 	if field == "bound_identifier" && binding {
 		return tree.RoleDecl // `if case minValue = z` の minValue も bound_identifier だが、let / var が無ければ値
 	}
-	switch parent.Kind() {
+	switch kindOf(parent) {
 	case "value_argument_label":
 		return tree.RoleLabel
 	case "navigation_suffix":
@@ -744,7 +773,7 @@ func (w *walker) nameRole(parent *sitter.Node, field string, binding, afterDot b
 		}
 	case "control_transfer_statement":
 		// `break outer` / `continue outer` のラベル。
-		if first := parent.Child(0); first != nil && (first.Kind() == "break" || first.Kind() == "continue") {
+		if first := parent.Child(0); first != nil && (kindOf(first) == "break" || kindOf(first) == "continue") {
 			return tree.RoleLabel
 		}
 	}

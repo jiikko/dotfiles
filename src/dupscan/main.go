@@ -155,7 +155,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan: 判定不能:", err)
 		return 2
 	}
-	got, err := scanSource(src, true)
+	got, err := scanSource(src, true, false)
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan:", err)
 		return 2
@@ -247,7 +247,8 @@ type scanned struct {
 
 // scanSource は src のファイルを読んで単位を正規化する。requireFiles なら 0 件を判定不能にする
 // (起点の取り違えで黙って「重複なし」にしない。base の側は 0 件でもよい: まだ Swift が無かった commit)。
-func scanSource(src repo.Source, requireFiles bool) (scanned, error) {
+// withCalls なら呼び出しの箇所も集める (index と callers だけ)。
+func scanSource(src repo.Source, requireFiles, withCalls bool) (scanned, error) {
 	files, err := src.Files()
 	if err != nil {
 		return scanned{}, err
@@ -259,7 +260,7 @@ func scanSource(src repo.Source, requireFiles bool) (scanned, error) {
 	if err != nil {
 		return scanned{}, err
 	}
-	units, calls, errFiles, err := parseAll(files, contents)
+	units, calls, errFiles, err := parseAll(files, contents, withCalls)
 	if err != nil {
 		return scanned{}, err
 	}
@@ -270,7 +271,7 @@ func scanSource(src repo.Source, requireFiles bool) (scanned, error) {
 	return scanned{files: len(files), units: units, errFiles: errFiles, entries: entries, calls: calls}, nil
 }
 
-func parseAll(files []string, contents map[string][]byte) ([]*tree.Unit, []tree.Call, []string, error) {
+func parseAll(files []string, contents map[string][]byte, withCalls bool) ([]*tree.Unit, []tree.Call, []string, error) {
 	type result struct {
 		units  []*tree.Unit
 		calls  []tree.Call
@@ -292,6 +293,7 @@ func parseAll(files []string, contents map[string][]byte) ([]*tree.Unit, []tree.
 				return
 			}
 			defer p.Close()
+			p.CollectCalls = withCalls
 			for i := range jobs {
 				r, err := p.Parse(files[i], contents[files[i]])
 				results[i] = result{units: r.Units, calls: r.Calls, hasErr: r.HasError, err: err}

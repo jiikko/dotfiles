@@ -44,7 +44,7 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	got, err := scanSource(repo.Worktree{Scope: sc, Exts: swift.Extensions}, true)
+	got, err := scanSource(repo.Worktree{Scope: sc, Exts: swift.Extensions}, true, true)
 	if err != nil {
 		return fail(err)
 	}

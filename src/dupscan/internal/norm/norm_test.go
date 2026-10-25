@@ -1,6 +1,9 @@
 package norm
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
 	"testing"
 
 	"dupscan/internal/tree"
@@ -34,7 +37,7 @@ func unit(params []string, body *tree.Node) *tree.Unit {
 
 func same(t *testing.T, a, b *tree.Unit, want map[Level]bool) {
 	t.Helper()
-	ra, rb := Normalize(a), Normalize(b)
+	ra, rb := NormalizeWithForms(a), NormalizeWithForms(b)
 	for _, l := range Levels {
 		if got := ra.Hash[l] == rb.Hash[l]; got != want[l] {
 			t.Errorf("%s: 一致=%v, 期待=%v\n a=%s\n b=%s", l, got, want[l], ra.Forms[l], rb.Forms[l])
@@ -109,4 +112,27 @@ func TestLocalDeclarationsInBodyAreLocal(t *testing.T) {
 			call("f", arg("a", name(v)))))
 	}
 	same(t, mk("x"), mk("y"), map[Level]bool{L1: true, L2: true, L3: true})
+}
+
+// ハッシュは形を sha256 へ直接流して取る。形を作るかどうかで値が変わらず、形の sha256 の先頭 16 byte と一致する。
+func TestStreamedHashMatchesForm(t *testing.T) {
+	u := &tree.Unit{
+		Params:     []string{"x"},
+		ReturnType: "Int",
+		Body: &tree.Node{Kind: "statements", Children: []*tree.Node{
+			{Kind: "simple_identifier", Text: "x", Role: tree.RoleName, Expr: true},
+			{Kind: "integer_literal", Text: "1", Role: tree.RoleLiteral, LitKind: "num", Expr: true},
+			{Kind: "simple_identifier", Text: strings.Repeat("y", 10000), Role: tree.RoleName, Expr: true},
+		}},
+	}
+	plain, with := Normalize(u), NormalizeWithForms(u)
+	if plain.Forms != nil {
+		t.Error("Normalize が形を持った")
+	}
+	for _, l := range Levels {
+		sum := sha256.Sum256([]byte(with.Forms[l]))
+		if want := hex.EncodeToString(sum[:16]); plain.Hash[l] != want || with.Hash[l] != want {
+			t.Errorf("%s: Normalize=%s WithForms=%s 形の sha256=%s", l, plain.Hash[l], with.Hash[l], want)
+		}
+	}
 }

@@ -77,7 +77,7 @@ func TestPR24CopiesMatchByLevel(t *testing.T) {
 	hash := map[string]norm.Result{}
 	for name, src := range pr24Files {
 		r := parse(t, "Tests/"+name, src)
-		hash[name] = norm.Normalize(unitBy(t, r, "location"))
+		hash[name] = norm.NormalizeWithForms(unitBy(t, r, "location"))
 	}
 	same := func(lv norm.Level, a, b string) bool { return hash[a].Hash[lv] == hash[b].Hash[lv] }
 	for _, lv := range all3 {

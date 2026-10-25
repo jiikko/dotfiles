@@ -68,12 +68,12 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	baseSrc := &repo.Commit{Scope: sc, Exts: swift.Extensions, Hash: baseHash}
 	// base の設定は読めなければ空とみなす (壊れた設定を直す commit を通すため。空とみなすと除外は全部新しく見え、安全側)。
 	baseCfg, baseCfgErr := loadConfig(baseSrc, false)
-	b, err := scanSource(baseSrc, false)
+	b, err := scanSource(baseSrc, false, false)
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2
 	}
-	h, err := scanSource(head, true)
+	h, err := scanSource(head, true, false)
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2

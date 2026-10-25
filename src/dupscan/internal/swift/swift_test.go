@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	sitter "github.com/tree-sitter/go-tree-sitter"
+
 	"dupscan/internal/norm"
 	"dupscan/internal/tree"
 )
@@ -254,5 +256,35 @@ func TestDocCommentAndParamTypes(t *testing.T) {
 	}
 	if got["plain"].Doc != "" || got["separated"].Doc != "" {
 		t.Errorf("doc comment でないコメント・空行を挟んだ doc は付かない: %q %q", got["plain"].Doc, got["separated"].Doc)
+	}
+}
+
+// kindOf は表から引くので、Node.Kind() と全部の節で同じ名前を返すことを、読めない構文も含む入力で確かめる。
+func TestKindOfMatchesKind(t *testing.T) {
+	src := []byte(`struct A { func f(_ x: Int) -> Int { let y = x + 1 /* c */; return y } }
+class B: XCTestCase { func testX() { XCTAssertEqual(1, 1) } }
+func broken( { let = = }
+`)
+	p := sitter.NewParser()
+	defer p.Close()
+	if err := p.SetLanguage(Language()); err != nil {
+		t.Fatal(err)
+	}
+	tr := p.Parse(src, nil)
+	defer tr.Close()
+	n := 0
+	var walk func(*sitter.Node)
+	walk = func(x *sitter.Node) {
+		n++
+		if got, want := kindOf(x), x.Kind(); got != want {
+			t.Errorf("kindOf = %q, Kind() = %q", got, want)
+		}
+		for i := range x.ChildCount() {
+			walk(x.Child(i))
+		}
+	}
+	walk(tr.RootNode())
+	if n < 50 {
+		t.Fatalf("節が %d しかない (入力の前提)", n)
 	}
 }

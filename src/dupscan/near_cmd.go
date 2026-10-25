@@ -9,6 +9,7 @@ import (
 
 	"dupscan/internal/exclude"
 	"dupscan/internal/group"
+	"dupscan/internal/norm"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
 	"dupscan/internal/swift"
@@ -60,7 +61,7 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(fmt.Errorf("判定不能: %w", err))
 	}
-	got, err := scanSource(src, true)
+	got, err := scanSource(src, true, false)
 	if err != nil {
 		return fail(err)
 	}
@@ -79,6 +80,7 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 		s := report.BuildNear(target, group.Near(target, got.entries, opt), opt, exclude.New(cfg, got.entries, nil))
 		out, text = s, func(w io.Writer) error { return report.NearText(w, s, *c.limit) }
 	default:
+		target.Result = norm.NormalizeWithForms(target.Unit) // 形の文字列は走査では作らないので、指した単位だけ作り直す
 		s := report.BuildExplain(target, opt)
 		out, text = s, func(w io.Writer) error { return report.ExplainText(w, s) }
 	}
