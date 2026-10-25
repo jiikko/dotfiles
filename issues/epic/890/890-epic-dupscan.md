@@ -36,6 +36,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [906](906-feat-dupscan-exclusion-config.md) | **誤検知を除外する設定** (組・単位・パス・段・下限。理由が必須。効いていない除外と、新しく足された除外を出す) | 893・896 |
 | [907](907-feat-dupscan-exploration-queries.md) | **探索の問い合わせ** (`outline`・`find`・`callers`)。grep の代わりに、定義だけを 1 件 1 行で返して文脈を食わずに関連の実装を探す | 893・894・897 |
 | [909](909-task-dupscan-integrate-into-obaket.md) | **obaket への組み込み** (`make test` と CI に `gate`)。PR 24 の前の木での受け入れと、obaket の規模の実測もここで行う (obaket の checkout が要る) | 903・905・906 |
+| [917](917-test-dupscan-usefulness-verification.md) | **有益さの検証**。書く前に引く効果を skill の有る無しの A/B で測る・起点の写しを拾えるか (909)・組み込んだ後の効果 | 903・905・909 |
 
 ## 進捗
 
@@ -50,3 +51,4 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 - 2026-10-24 repo に依存しない作りを要件にし (891 の「汎用性」)、検証に DualNoteApp を使うことにした。SwiftLint のルールにしない理由を 891 に書いた (ユーザー 2026-10-24: repo に依存しない汎用的な作りにしたい。途中の検証には DualNoteApp の macOS を使ってよい)
 - 2026-10-24 探索の問い合わせ (907) を足した。道具の名前は、重複の検出と探索の両方に使う道具として、実装が落ち着いてから決め直す (ユーザー指示)
 - 2026-10-25 obaket への組み込み (909) を足した (ユーザー指示: obaket に組み込みたいが clone していないので sub issue として書いておく)
+- 2026-10-25 有益さの検証 (917) を足した (ユーザー指示: 検証方法を sub issue に書いておく)
