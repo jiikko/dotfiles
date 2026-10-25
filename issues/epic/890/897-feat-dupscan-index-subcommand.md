@@ -51,3 +51,7 @@
   index は名前の一致の強さの次にここの定義を先に並べ、`[shared]` と印を付ける。report と gate の判定には効かないので、exclude と違い base から増えた分を gate の注記に出さない (理由は `exclude.Config` の直近)。
   読めない glob は rc=2。テスト 1 本、変異 4 本 (並べ方に使わない・印を付けない・glob を検査しない・設定を読まない) はビルドが通り全部赤。skill `dupscan` にも 1 行足した。
   **残り**: 所属ターゲット・obaket の `SharedTestSupport` を shared に指しての受け入れ (909)
+- 2026-10-25 所属ターゲットは作らない (保留): ターゲットを解くには `Package.swift` (Swift なので adapter で読める) と XcodeGen の `project.yml` (YAML) の両方を読む必要があり、
+  後者は YAML の parser の依存を足すことになる (dupscan は Go の標準だけで作る方針。906 の設定ファイルを JSON にしたのと同じ理由)。
+  DualNoteApp は `iOS/`・`macOS/`・`Shared/` (Swift package) とディレクトリがターゲットに対応しており、索引の 1 行のパスで所属が読める。
+  **再開の条件**: ディレクトリとターゲットが対応しない repo (1 つのディレクトリを複数のターゲットが共有する・ファイル単位でターゲットを分ける) で、別ターゲットのヘルパーを使えると誤って引く事例が出たとき
