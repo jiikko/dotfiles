@@ -36,7 +36,7 @@ obaket の週次の Claude audit (test-helpers) が出した PR 24 で、同じ 
 既存の字句の検査 (obaket の `macOS/bin/check-test-helper-copies`) も 6 つのうち 4 つを見ず、2 つは登録簿の事実と違う理由で通していた。
 経緯と検査の穴の詳細は obaket issue 1298。
 
-## 既存の道具との関係 (詳細と実測は [901](901-research-dupscan-existing-tools.md))
+## 既存の道具との関係 (詳細と実測は [901](done/901-research-dupscan-existing-tools.md))
 
 この要件は当初、既存の道具を調べずに書いた。2026-10-24 の調査で分かったこと (PR 24 の 6 つに当てた実測はまだ無い):
 
@@ -195,7 +195,7 @@ ERROR / MISSING ノードを含むファイルを数えた:
 ## 決めること
 
 - 道具の名前 (`dupscan` は仮)。重複の検出だけでなく探索 (907) にも使う道具なので、実態に合う名前に**実装が落ち着いてから rename する** (ユーザー 2026-10-24)
-- ~~自分で作る範囲~~ → **決めた** (2026-10-25。[901](901-research-dupscan-existing-tools.md) の実測): 正規化と組分けは自作のまま続ける。jscpd は直書きとプロパティを読む版を結ばず、既定の上限で大きいテストファイルを黙って落とす。ast-grep は形を知っている問い合わせで組にしない
+- ~~自分で作る範囲~~ → **決めた** (2026-10-25。[901](done/901-research-dupscan-existing-tools.md) の実測): 正規化と組分けは自作のまま続ける。jscpd は直書きとプロパティを読む版を結ばず、既定の上限で大きいテストファイルを黙って落とす。ast-grep は形を知っている問い合わせで組にしない
 - 使う側の repo の `make test` への組み込み方 (Makefile の target・CI の fetch の深さ) と、`make test` に足してよい秒数
 - Claude が `dupscan:allow` の許可を自分で書いてよいか (書けると、寄せるより安い抜け道になる)
 - test と prod にまたがる組を `gate` の違反にするか
@@ -232,7 +232,7 @@ dupscan は自前の構文木 (tree-sitter) だけで、書く前の検索・書
   - プロパティの初期値: 同じ型の stored property の初期値を構文木で 1 段だけ解決する ([896](896-feat-dupscan-report-output.md))
   - 所属ターゲット: adapter が `Package.swift` と `project.pbxproj` を読む ([894](894-feat-dupscan-swift-adapter.md))
 - **LSP を使わない理由**: 言語サーバの起動と、最初の索引の待ち (obaket の SwiftPM の package で数分・1.6 GB。0 件を返す間を「無い」と読む罠もある) が、
-  worktree ごと・言語ごとに要る。gopls の名前検索はあいまい一致で 100 件で打ち切る ([901](901-research-dupscan-existing-tools.md) の実行)。
+  worktree ごと・言語ごとに要る。gopls の名前検索はあいまい一致で 100 件で打ち切る ([901](done/901-research-dupscan-existing-tools.md) の実行)。
   dupscan の索引だけで済めば、依存は dupscan の実行ファイル 1 つ、使い方は 1 つになる
 - **失うもの**: 索引は `git ls-files` の範囲だけを読むので、依存の package・SDK・`.build` の API は引けない (LSP なら引けた)。
   重複の防止の対象は repo の中のメソッドなので、まずはこれで足りる前提に置く

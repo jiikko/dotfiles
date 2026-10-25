@@ -8,7 +8,7 @@
 
 epic 890 の土台。`src/` の新しいプロジェクトの手順に沿って、中身が空でも lint とテストが CI で回る状態を作る。要件は [891 (要件の正本)](891-design-dupscan-requirements.md)。
 
-着手は [901 (既存の道具の調査)](901-research-dupscan-existing-tools.md) の結論を待つ (既存の道具で足りる部分が大きければ、骨組みの形が変わる)。
+着手は [901 (既存の道具の調査)](done/901-research-dupscan-existing-tools.md) の結論を待つ (既存の道具で足りる部分が大きければ、骨組みの形が変わる)。
 
 ## 受け入れ条件
 
