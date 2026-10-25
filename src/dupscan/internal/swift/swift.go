@@ -307,12 +307,13 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 			name = w.text(ch)
 		}
 	}
-	var sig, locals, paramTypes []string
+	var sig, locals, paramTypes, labels []string
 	for _, p := range params(n) {
 		sig = append(sig, collapse(w.text(p)))
 		if in := internalName(p, w.src); in != "" {
 			locals = append(locals, in)
 		}
+		labels = append(labels, externalLabel(p, w.src))
 		if _, typ, ok := strings.Cut(collapse(w.text(p)), ":"); ok {
 			paramTypes = append(paramTypes, strings.TrimSpace(typ))
 		}
@@ -337,6 +338,7 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 	u := w.newUnit(n, kind, name, signature, locals, body, c)
 	u.ReturnType = ret
 	u.ParamTypes = paramTypes
+	u.Labels = labels
 	u.Visibility = w.visibility(n)
 	u.Allow, u.AllowLine, u.HasAllow = w.allowComment(n)
 	u.Doc = w.docComment(n)
@@ -461,6 +463,20 @@ func (w *walker) visibility(n *sitter.Node) string {
 		}
 	}
 	return "internal"
+}
+
+// externalLabel は呼び出しで書く引数ラベル (`_ p: String` なら _、`to url: URL` なら to、`path: String` なら path)。
+func externalLabel(p *sitter.Node, src []byte) string {
+	for i := range p.ChildCount() {
+		c := p.Child(i)
+		if c.Kind() == ":" {
+			break
+		}
+		if c.Kind() == "simple_identifier" { // `_` もこの種類で読まれる
+			return c.Utf8Text(src)
+		}
+	}
+	return "_"
 }
 
 // internalName は引数の本体の中で使う名前 (`_ p: String` なら p、`path: String` なら path)。

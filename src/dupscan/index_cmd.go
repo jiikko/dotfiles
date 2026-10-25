@@ -54,7 +54,7 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	if q.File != "" && !flagSet(fs, "limit") {
 		*limit = 0 // ファイル 1 つの一覧は切らない
 	}
-	s := report.BuildIndex(got.units, q)
+	s := report.BuildIndex(got.units, got.calls, q)
 	switch *format {
 	case "json":
 		err = report.WriteJSON(stdout, s)

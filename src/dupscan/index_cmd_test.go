@@ -67,11 +67,11 @@ func TestIndexLineShowsDocAndMarks(t *testing.T) {
 	// test のファイルを場所の順で前に置き、並べ方が場所でなく prod / test で決まることを見る。
 	root := repoWith(t, map[string]string{"Sources/Helpers.swift": indexed, "AppTests/TestSupport.swift": indexedTest})
 	_, out, _ := index(t, "-name", "listLocation", root)
-	if strings.TrimSpace(out) != "Sources/Helpers.swift:8 Helpers.listLocation(_ p: String, depth: Int) -> StorageLocation [private] // Location for listing." {
+	if strings.TrimSpace(out) != "Sources/Helpers.swift:8 Helpers.listLocation(_ p: String, depth: Int) -> StorageLocation [private] (呼び出し ~0) // Location for listing." {
 		t.Errorf("1 行の形 (許可の印の行は doc にしない): %q", out)
 	}
 	got := lines(func() string { _, o, _ := index(t, "-name", "bucketLocation", root); return o }())
-	if len(got) != 2 || !strings.HasPrefix(got[0], "Sources/Helpers.swift") || !strings.HasSuffix(got[1], "[test]") {
+	if len(got) != 2 || !strings.HasPrefix(got[0], "Sources/Helpers.swift") || !strings.Contains(got[1], "[test]") {
 		t.Errorf("prod を test より前に並べる: %q", got)
 	}
 }
@@ -95,5 +95,38 @@ func TestIndexFileIsOutlineInLineOrder(t *testing.T) {
 	writeFile(t, root, "Sources/Many.swift", many.String())
 	if _, out, _ := index(t, "-file", filepath.Join(root, "Sources/Many.swift"), root); len(lines(out)) != 25 {
 		t.Errorf("-file の既定は件数で切らない: %q", out)
+	}
+}
+
+// 呼び出しの数は callers と同じ当て方 (名前と引数ラベル) で数え、多いものを前に並べる。初期化子は型の名前で当てる。
+func TestIndexCountsCallsAndRanksByThem(t *testing.T) {
+	src := `struct Box {
+    init(size: Int) {}
+    func fill(with x: Int) {}
+    func fill(_ x: String) {}
+    var label: String { "" }
+}
+func use() {
+    let b = Box(size: 1)
+    b.fill(with: 2)
+    b.fill(with: 3)
+    b.fill("s")
+    b.fill("t")
+    b.fill("u")
+    _ = Box(size: 2)
+    _ = Box(other: 1)
+}
+`
+	root := repoWith(t, map[string]string{"Sources/Box.swift": src})
+	_, out, errs := index(t, "-name", "fill", root)
+	want := "Sources/Box.swift:4 Box.fill(_ x: String) (呼び出し ~3)\nSources/Box.swift:3 Box.fill(with x: Int) (呼び出し ~2)\n"
+	if out != want {
+		t.Errorf("ラベルで当てて数え、多い方を前に:\n got: %q\nwant: %q err=%q", out, want, errs)
+	}
+	if _, out, _ := index(t, "-name", "init", root); !strings.Contains(out, "Box.init(size: Int) (呼び出し ~2)") {
+		t.Errorf("初期化子は型の名前とラベルで数える (Box(other:) は外す): %q", out)
+	}
+	if _, out, _ := index(t, "-name", "label", root); strings.Contains(out, "呼び出し") {
+		t.Errorf("property は数えない: %q", out)
 	}
 }

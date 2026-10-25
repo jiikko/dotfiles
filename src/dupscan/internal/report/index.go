@@ -24,6 +24,8 @@ type IndexEntry struct {
 	ReturnType string   `json:"return_type,omitempty"`
 	ParamTypes []string `json:"param_types,omitempty"`
 	Doc        string   `json:"doc,omitempty"`
+	// Calls は呼び出しの数 (名前と引数ラベルで当てる近似。callers と同じ当て方)。関数と初期化子だけ数え、それ以外は nil。
+	Calls *int `json:"calls,omitempty"`
 }
 
 // IndexSummary は索引の出力。
@@ -34,9 +36,10 @@ type IndexSummary struct {
 }
 
 // BuildIndex は名前の付いた単位 (クロージャを除く) から q に当たるものを並べる。
-// 並べ方: 名前の一致の強さ (同じ > 前方 > 一部) → prod を test より前 → private でないもの (そのまま使える) を前 → 場所。
+// 並べ方: 名前の一致の強さ (同じ > 前方 > 一部) → prod を test より前 → private でないもの (そのまま使える) を前 → 呼び出しの多いもの → 場所。
 // File を指したときはファイルの中の行の順 (outline)。
-func BuildIndex(units []*tree.Unit, q Query) IndexSummary {
+func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
+	counts := callCounts(units, calls)
 	type hit struct {
 		u     *tree.Unit
 		score int
@@ -65,6 +68,9 @@ func BuildIndex(units []*tree.Unit, q Query) IndexSummary {
 			if pa, pb := hidden(a.u.Visibility), hidden(b.u.Visibility); pa != pb {
 				return !pa
 			}
+			if ca, cb := counts[a.u], counts[b.u]; ca != cb {
+				return ca > cb
+			}
 		}
 		if a.u.File != b.u.File {
 			return a.u.File < b.u.File
@@ -73,7 +79,11 @@ func BuildIndex(units []*tree.Unit, q Query) IndexSummary {
 	})
 	s := IndexSummary{Units: n, Matches: len(hits), Entries: []IndexEntry{}}
 	for _, h := range hits {
-		s.Entries = append(s.Entries, IndexEntry{UnitRef: ref(h.u), ReturnType: h.u.ReturnType, ParamTypes: h.u.ParamTypes, Doc: h.u.Doc})
+		e := IndexEntry{UnitRef: ref(h.u), ReturnType: h.u.ReturnType, ParamTypes: h.u.ParamTypes, Doc: h.u.Doc}
+		if n, ok := counts[h.u]; ok {
+			e.Calls = &n
+		}
+		s.Entries = append(s.Entries, e)
 	}
 	return s
 }
@@ -104,6 +114,44 @@ func (q Query) match(u *tree.Unit) (int, bool) {
 		return 1, true
 	}
 	return 0, false
+}
+
+// callCounts は関数と初期化子ごとの呼び出しの数。初期化子は型の名前 (`Foo(…)`) で当てる。
+// 型を解決しないので同名の別のメソッドの呼び出しも数え、既定値のある引数を省いた呼び出しは数えない (近似)。
+func callCounts(units []*tree.Unit, calls []tree.Call) map[*tree.Unit]int {
+	byName := map[string][]tree.Call{}
+	for _, c := range calls {
+		byName[c.Name] = append(byName[c.Name], c)
+	}
+	out := map[*tree.Unit]int{}
+	for _, u := range units {
+		name := u.Name
+		switch u.Kind {
+		case tree.KindFunc:
+		case tree.KindInit:
+			name = typeName(u.Enclosing)
+		default:
+			continue
+		}
+		q := CallQuery{Name: name, Labels: append([]string{}, u.Labels...)}
+		n := 0
+		for _, c := range byName[name] {
+			if q.matches(c) {
+				n++
+			}
+		}
+		out[u] = n
+	}
+	return out
+}
+
+// typeName は囲む型の表し (`Outer.Inner`・`Foo where T == Int`) から、初期化の呼び出しに書く型の名前を取る。
+func typeName(enclosing string) string {
+	head, _, _ := strings.Cut(enclosing, " ")
+	if i := strings.LastIndex(head, "."); i >= 0 {
+		head = head[i+1:]
+	}
+	return head
 }
 
 // hidden は、その可視性では他のファイルからそのまま使えないか (寄せる候補として区別する)。
@@ -139,6 +187,9 @@ func IndexText(w io.Writer, s IndexSummary, limit int) error {
 		}
 		if len(marks) > 0 {
 			line += " [" + strings.Join(marks, ",") + "]"
+		}
+		if e.Calls != nil {
+			line += fmt.Sprintf(" (呼び出し ~%d)", *e.Calls)
 		}
 		if e.Doc != "" {
 			line += " // " + e.Doc
