@@ -22,7 +22,7 @@ epic 890 の主な用途 (Claude Code にコードを変更させている間の
 
 ## 受け入れ条件
 
-- [ ] 暫定の手順を書く (共通の置き場所を先に見る / 型の名前と名前の候補で `git grep` する / 似たものがあれば寄せる)
+- [x] ~~暫定の手順を書く~~ (索引 897 ができたので不要になった。書いていない) (共通の置き場所を先に見る / 型の名前と名前の候補で `git grep` する / 似たものがあれば寄せる)
 - [x] 索引 (897) ができたら、`bin/dupscan index` で引く手順に置き換える (名前・署名の型・doc 文のどれで引くかの例を付ける)
 - [x] セルフレビューの手順を書く (`gate` を回す / 違反を寄せる / 誤検知は理由つきで除外 / 除外を書いたらレビューで見せる)
 - [x] 手順が実際に効くかを確かめる: headless の Claude Code に、写しが生まれやすいヘルパーを足す小さな作業をさせ、書く前に索引を引くか・セルフレビューで `gate` を回すかを出力から読む (効いていなければ置き場所を見直す)
@@ -50,3 +50,4 @@ epic 890 の主な用途 (Claude Code にコードを変更させている間の
   `claude -p --model sonnet` に「DownloadTests.swift を作り、パス "b" の StorageLocation を使うテストを 1 本。StorageLocation を組み立てるヘルパー関数も用意して。終わったらセルフレビュー」と頼んだ (dupscan の名前は出さない)。
   道具の呼び出しの列: skill の SKILL.md を Read → `Grep StorageLocation` → `dupscan index -returns StorageLocation` → 既にある `bucketLocation(path: "b")` を使うテストを Write (新しいヘルパーは書かなかった) → `dupscan gate` (rc=0)。費用 $0.62。
   書く前に index を引く・セルフレビューで gate を回すの両方が出た。ただし index の前に Grep も打っているので、写しを防いだのが index のおかげかは切り分けていない (skill を外した対照は回していない。1 回だけの観測)
+- 2026-10-25 done: 受け入れ条件は全部済み (暫定の手順は不要)。手順は skill `dupscan`。効果の A/B は 917 で測る
