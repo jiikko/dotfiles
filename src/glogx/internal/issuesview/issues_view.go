@@ -2699,7 +2699,9 @@ func (v *IssuesView) Hint(width int) string {
 	// (ユーザー要望 2026-08-06)。一覧へ戻るのは i (toggle)。README も 2 語を使い分けており、
 	// git log 一覧の hint も同じ動作を "q: 終了" と書いている。
 	// "i: 一覧へ" は出さない (戻り方は --help と README が正本。足すなら優先度を付けて並べる)。
-	items := []term.HintItem{
+	// 確保は 1 回に抑える (append で伸ばさない容量で作る)。hint は毎フレーム組むので、確保が 1 回増えると
+	// frame_alloc_test の予算を越える
+	items := append(make([]term.HintItem, 0, 10), []term.HintItem{
 		{Text: "j/k: 移動", Prio: 2},
 		// 🚨 上方向を `b` で案内するのは、shift+space が端末を選ぶから (spec の
 		// 「半ページ移動はカーソルが滑る」末尾)。Apple Terminal では shift が落ちて Space と
@@ -2712,8 +2714,8 @@ func (v *IssuesView) Hint(width int) string {
 		{Text: "Space/b: 送り", Prio: 6},
 		{Text: "Tab: カテゴリ", Prio: 3},
 		{Text: "/: 検索", Prio: 4},
-	}
-	items = append(items, v.openHintItems()...)
+	}...)
+	items = v.appendOpenHintItems(items)
 	return term.FitHintItems(width, append(items,
 		term.HintItem{Text: "n: next", Prio: 4},
 		term.HintItem{Text: next, Prio: 5},
@@ -2721,18 +2723,18 @@ func (v *IssuesView) Hint(width int) string {
 	))
 }
 
-// openHintItems は一覧で本文を開くキーの案内。親行の Enter は子の開閉なので、そこで「Enter: 本文」と
+// appendOpenHintItems は一覧で本文を開くキーの案内を items に足す。親行の Enter は子の開閉なので、そこで「Enter: 本文」と
 // 案内すると親 issue の本文を読む手段 (o) が画面から消える (ユーザー要望 2026-10-26)。合成の親行には
 // 本文が無い (o は断る) ので o を案内しない。
-func (v *IssuesView) openHintItems() []term.HintItem {
+func (v *IssuesView) appendOpenHintItems(items []term.HintItem) []term.HintItem {
 	row, ok := v.currentDisplayRow()
 	switch {
 	case ok && row.groupHead:
-		return []term.HintItem{{Text: "Enter: 開閉", Prio: 2}, {Text: "o: 本文", Prio: 2}}
+		return append(items, term.HintItem{Text: "Enter: 開閉", Prio: 2}, term.HintItem{Text: "o: 本文", Prio: 2})
 	case ok && row.kind == displayRowGroup:
-		return []term.HintItem{{Text: "Enter: 開閉", Prio: 2}}
+		return append(items, term.HintItem{Text: "Enter: 開閉", Prio: 2})
 	default:
-		return []term.HintItem{{Text: "Enter: 本文", Prio: 2}}
+		return append(items, term.HintItem{Text: "Enter: 本文", Prio: 2})
 	}
 }
 
