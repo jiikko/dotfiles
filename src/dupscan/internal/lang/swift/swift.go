@@ -526,7 +526,8 @@ func (w *walker) references(root *sitter.Node) []Reference {
 func declarationNameKind(kind string) bool {
 	switch kind {
 	case "class_declaration", "protocol_declaration",
-		"function_declaration", "protocol_function_declaration", "init_declaration", "deinit_declaration", "subscript_declaration", "property_declaration",
+		// subscript_declaration は入れない: 自分の名前を持たず、最初の name の子が戻り値の型になる
+		"function_declaration", "protocol_function_declaration", "init_declaration", "deinit_declaration", "property_declaration",
 		"protocol_property_declaration", "typealias_declaration", "associatedtype_declaration", "enum_entry", "macro_declaration":
 		// type_parameter は入れない: 引数の名前 (`<S: P>` の S) にはフィールドが無く、制約の P の側に name が付くので、name で読むと
 		// 制約の型を宣言名として落とす。引数の名前は isGenericParameterName (最初の名前つきの子と位置で比べる) が除く
@@ -539,7 +540,18 @@ func declarationNameKind(kind string) bool {
 // isNameField は n が parent の最初の name フィールドの子か。位置 (byte の範囲) で比べる。
 // この文法は戻り値の型 (`-> Box`) や typealias の右辺 (`= Box`) にも name のフィールドを付けるので、宣言の名前は最初の 1 つだけ
 // (2 つ目以降を宣言名と読むと、型の参照を部分木ごと落とす)。
+// enum の case (`case a, b`) だけは name の子が全部宣言の名前 (関連値の型には name が付かない)。
 func isNameField(parent, n *sitter.Node) bool {
+	if kindOf(parent) == "enum_entry" {
+		cursor := parent.Walk()
+		defer cursor.Close()
+		for _, c := range parent.ChildrenByFieldName("name", cursor) {
+			if c.StartByte() == n.StartByte() && c.EndByte() == n.EndByte() {
+				return true
+			}
+		}
+		return false
+	}
 	c := parent.ChildByFieldName("name")
 	return c != nil && c.StartByte() == n.StartByte() && c.EndByte() == n.EndByte()
 }

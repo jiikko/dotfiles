@@ -592,3 +592,34 @@ extension Outer.Inner {}
 		t.Errorf("extension Outer.Inner の Outer を参照として数える: %v", lines["Outer"])
 	}
 }
+
+func TestReferencesSkipAllEnumCaseNamesAndKeepSubscriptReturnType(t *testing.T) {
+	src := `struct Box3 {}
+enum E { case ea, eb; case ec(Box3), ed(Box3) }
+struct S { subscript(i: Int) -> Box3 { Box3() } }
+protocol P { subscript(i: Int) -> Box3 { get } }
+`
+	p, err := NewParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	p.CollectRefs = true
+	got, err := p.Parse("Sources/A.swift", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols := map[string][]string{}
+	for _, r := range got.References {
+		cols[r.Name] = append(cols[r.Name], fmt.Sprintf("%d:%d", r.Line, r.Col))
+	}
+	for _, name := range []string{"ea", "eb", "ec", "ed"} {
+		if len(cols[name]) != 0 {
+			t.Errorf("enum の case の名前 %s を参照に数えた: %v", name, cols[name])
+		}
+	}
+	// 関連値の型 2 つ・subscript の戻り値の型 2 つ・式の Box3() 1 つ
+	if want := "[2:31 2:41 3:33 3:40 4:35]"; fmt.Sprint(cols["Box3"]) != want {
+		t.Errorf("Box3 の参照 = %v、期待 %s", cols["Box3"], want)
+	}
+}
