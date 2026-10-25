@@ -1,5 +1,7 @@
 # 922 (bug): dupscan の def / refs の分かっている限界を直す
 
+> 🚨 **担当中: M4Pro-MacBook-Pro (glogx)**（2026-10-26〜）
+
 起票日: 2026-10-26
 
 ## 概要
