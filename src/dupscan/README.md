@@ -101,6 +101,7 @@ dupscan-gate:
 ```
 
 CI (GitHub Actions)。runner には dotfiles が無いので、固定した commit の `src/dupscan` を取って build する。
+runner の git が 2.44 より古いと、dupscan が git に付ける `--no-lazy-fetch` を知らずに rc=2 になる (ubuntu-slim は 2.43)。その runner では、CI の中だけでこの引数を外す shim を PATH の先頭に置く (通常の clone では効く場面が無い。実例は obaket の `.github/workflows/dupscan.yml`)。
 **取り出し先は workspace の外にする** (gate は ignore されていない untracked のファイルも読むので、workspace に置くと取ってきた中身まで走査する)。
 base は push の前の commit か PR の対象。CI の checkout は浅いので、base まで履歴を取る (無いと rc=2 で止まる):
 
