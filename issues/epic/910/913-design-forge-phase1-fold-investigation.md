@@ -1,7 +1,54 @@
-# 913 (design): forge Phase 1 の専門家 fan-out を main の単一ループへ畳む
+# 913 (design): forge Phase 1 (事前調査) の専門家 fan-out を main の単一ループへ畳む
 
 起票日: 2026-10-25
 
+epic [910](910-design-fold-subagents-into-main-loop.md)。前提: [911](911-test-task-completion-evals-for-forge-audit.md) の eval。
+
 ## 概要
 
-本文はレビュー後に入れる。
+forge の実装モードは、Phase 1 で専門家を並行に調査させ (`forge.js` の `kind: investigate`)、Phase 1.1 で別の専門家にその findings をクロスレビューさせ、
+統合エージェントがまとめたものを main が Phase 1.5 の設計書の材料にする (`_claude/skills/forge/phases-0-1.md`)。
+ロスターは専門領域ごとで (`forge.js` の `resolveRoster`。Swift の Standard は必須 6 + 1、investigate では research-assistant も加わる)、
+Maximum は全員 (`_common/modes.md`)。
+
+記事に照らすと、この段は畳む候補の条件に重なる:
+
+- 分割の軸が問題の種類 (専門領域) で、全員が同じ対象コードを読む
+- 出力が次の段の入力になる連鎖 (専門家 → クロスレビュー → 統合 → main の設計) で、受け渡しのたびに要約される
+- 設計を書く main 自身は対象コードを読まないまま設計する形になりうる
+
+一方、Phase 4 (レビュー) と Phase 4.3 (Ultra) は「書いたものを外から確かめる」検証で、記事も残す側に置いている。**この issue は Phase 1 / 1.1 だけを対象にする**。
+
+ロスターの体数 (6+1 / 全員) を決めた根拠は `_common/modes.md` に見当たらない (2026-10-25 に読んだ範囲)。
+
+## タスク
+
+- [ ] 911 の eval に forge 実装モードのケースを 1〜2 本足す (仕込んだ欠陥を直すタスク。正解表は「設計書が触るべきファイルと、避けるべき罠」)。
+      Phase 1.5 の設計書を grader で採点できる形にする
+- [ ] 案 A (現状): investigate の fan-out + 1.1 クロスレビュー
+- [ ] 案 B (畳む): Phase 1 を main が自分で読む形にし、専門家の観点は `_claude/agents/<name>.md` の本文を reference として必要なときに Read する
+      (agent の本文を skill の参照ファイルとして読む形。914 の結論次第で置き場所が変わる)。類似コードの探索だけ Explore に委ねてよい
+- [ ] 案 C (中間): investigate を 1〜2 体に絞り、クロスレビューと統合をやめて main が raw を読む (Minimum の形を Standard にも使う)
+- [ ] A / B / C を runs 回ずつ回し、設計書の採点・費用・所要を比べる。**最終スコアだけでなく、どのケースで結果が反転したか**を見る (記事の手順)
+- [ ] 結果に応じて `forge.js` / `phases-0-1.md` / `_common/modes.md` / `_common/cross-review.md` を同時に直す
+      (forge SKILL.md の「仕様を変えたら forge.js も同期更新」)。Phase 4 / 4.3 は変えない
+- [ ] 変えたら skill の整合チェック 3 回 + `bin/skill-eval forge` を回す
+
+## 受け入れ条件
+
+- Phase 1 の形 (A / B / C) が eval の数字で選ばれ、選んだ理由が `phases-0-1.md` に書かれている
+- 案 A を残すなら、残す理由 (どのケースで B / C が劣ったか) が書かれている
+
+## 未確認
+
+- `forge.js` の `agentType: item.name` で起動した専門家が、`_claude/agents/<name>.md` の本文をシステムプロンプトとして読み込むのか、名前だけが渡るのかは未確認。
+  読み込まないなら、今の fan-out は「専門家」ではなく、観点の 1 行 (lens) が違うだけの同じモデルを並べていることになる。最初に 1 本で確かめる
+
+## 関連ファイル
+
+- `_claude/workflows/forge.js` (`resolveRoster` / `investigatePrompt` / cross-review の pipeline)
+- `_claude/skills/forge/phases-0-1.md` / `_common/modes.md` / `_common/agents.md` / `_common/cross-review.md`
+
+## 進捗
+
+起票のみ。
