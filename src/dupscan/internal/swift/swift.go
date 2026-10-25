@@ -604,7 +604,11 @@ func (w *walker) atom(n *sitter.Node) bool {
 		case ".":
 			return t.Kind() == "simple_identifier"
 		case "-":
-			return t.Kind() == "integer_literal" || t.Kind() == "real_literal"
+			switch t.Kind() {
+			case "integer_literal", "real_literal", "hex_literal", "oct_literal", "bin_literal":
+				return true
+			}
+			return false
 		}
 		return false
 	case "postfix_expression":

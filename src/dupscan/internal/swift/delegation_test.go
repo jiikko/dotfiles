@@ -40,6 +40,7 @@ func negVariable(_ y: Int) { print("a", -y, separator: ":") }
 func bitNot(_ x: Int) { print("a", ~x, separator: ":") }
 func notFlag(_ z: Bool) { print("a", !z, separator: ":") }
 func negLiteral() { print("a", -1, separator: ":") }
+func negHex() { print("a", -0x1, -0o7, -0b1, separator: ":") }
 func subscripted(_ s: Store, _ fallback: Int) -> Int { return s.cache.values["a", default: fallback] }
 `
 	r := parse(t, "Sources/X.swift", src)
@@ -47,7 +48,7 @@ func subscripted(_ s: Store, _ fallback: Int) -> Int { return s.cache.values["a"
 		"init": true, "tryCall": true, "returned": true, "awaited": true, "commented": true,
 		"arithmetic": false, "computedArg": false, "nestedCallWithArgs": false, "trailing": false, "twoStatements": false,
 		"guarded": false, "thrown": false, "conditional": false, "empty": false, "interpolatedCall": false,
-		"negVariable": false, "bitNot": false, "notFlag": false, "negLiteral": true, "subscripted": false,
+		"negVariable": false, "bitNot": false, "notFlag": false, "negLiteral": true, "negHex": true, "subscripted": false,
 	}
 	for name, w := range want {
 		if got := unitBy(t, r, name).Delegation; got != w {
