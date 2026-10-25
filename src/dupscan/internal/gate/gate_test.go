@@ -2,6 +2,7 @@ package gate
 
 import (
 	"math/rand/v2"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -703,5 +704,76 @@ func TestExclusionInvariantRandom(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// resolvedKeys は消えた・縮んだ組を「base の鍵:残った数」で並べる。
+func resolvedKeys(r Result) []string {
+	var out []string
+	for _, g := range r.Resolved {
+		out = append(out, strings.Join(keys(g.Members), ",")+":"+strconv.Itoa(g.Remain))
+	}
+	return out
+}
+
+func TestResolvedGroups(t *testing.T) {
+	pair := func() []*group.Entry { return []*group.Entry{e("a", "x", "x2", "x3"), e("b", "x", "x2", "x3")} }
+	cases := []struct {
+		name string
+		base []*group.Entry
+		head []*group.Entry
+		want string
+	}{
+		{"触っていない組は出ない", pair(), pair(), ""},
+		{"写しを消して寄せた組は消えた", pair(), []*group.Entry{e("a", "x", "x2", "x3")}, "a,b:0"},
+		{"本体を変えて寄せた組は消えた", pair(), []*group.Entry{e("a", "x", "x2", "x3"), e("b", "q", "q2", "q3")}, "a,b:0"},
+		{"定数だけ変えて粗い段で残る組は出ない", pair(), []*group.Entry{e("a", "x", "x2", "x3"), e("b", "q", "x2", "x3")}, ""},
+		{"移動・改名しただけの組は出ない", pair(), []*group.Entry{e("a", "x", "x2", "x3"), e("b2", "x", "x2", "x3")}, ""},
+		{"3 つのうち 1 つを寄せた組は縮んだ",
+			[]*group.Entry{e("a", "x", "", ""), e("b", "x", "", ""), e("c", "x", "", "")},
+			[]*group.Entry{e("a", "x", "", ""), e("b", "x", "", "")}, "a,b,c:2"},
+	}
+	for _, c := range cases {
+		got := strings.Join(resolvedKeys(Judge(c.base, c.head, opt)), " ")
+		if got != c.want {
+			t.Errorf("%s: 消えた・縮んだ組 = %q、期待 %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestExclusionDoesNotCountAsResolved(t *testing.T) {
+	base := []*group.Entry{e("a", "x", "x2", "x3"), e("b", "x", "x2", "x3")}
+	head := []*group.Entry{e("a", "x", "x2", "x3"), e("b", "x", "x2", "x3")}
+	o := opt
+	o.Exclude = exclude.New(&exclude.Config{Version: 1, Exclude: []exclude.Rule{
+		{Group: []string{exclude.Pin(head[0]), exclude.Pin(head[1])}, Level: "L1", Kind: "intentional", Reason: "r"},
+	}}, head, nil)
+	if !o.Exclude.GroupExcluded(norm.L1, head) {
+		t.Fatal("前提: 組の除外が head の組に効いていない")
+	}
+	if got := resolvedKeys(Judge(base, head, o)); len(got) != 0 {
+		t.Errorf("除外を足しただけの組を消えたと数えた: %v", got)
+	}
+}
+
+func TestResolvedSkipsUnreadableAndIgnoresNestedDrop(t *testing.T) {
+	// head の相手が読めない構文になった組は、比べられないので消えたと数えない。
+	base := []*group.Entry{e("a", "x", "x2", "x3"), e("b", "x", "x2", "x3")}
+	broken := e("b", "x", "x2", "x3")
+	broken.Unit.Unreadable = true
+	if got := resolvedKeys(Judge(base, []*group.Entry{e("a", "x", "x2", "x3"), broken}, opt)); len(got) != 0 {
+		t.Errorf("読めなくなった組を消えたと数えた: %v", got)
+	}
+	// 外側の関数 f・g を同じ形にすると、head の group.Build では中のクロージャの組が入れ子として外れる。
+	// クロージャどうしは同じ形のままなので、消えたと数えない。
+	closure := func(key, owner string) *group.Entry {
+		c := e(key, "c", "c2", "c3")
+		c.Unit.Kind, c.Unit.Owner = tree.KindClosure, owner
+		return c
+	}
+	base = []*group.Entry{e("f", "f1", "f2", "f3"), e("g", "g1", "g2", "g3"), closure("f#closure1", "f"), closure("g#closure1", "g")}
+	head := []*group.Entry{e("f", "s", "s2", "s3"), e("g", "s", "s2", "s3"), closure("f#closure1", "f"), closure("g#closure1", "g")}
+	if got := resolvedKeys(Judge(base, head, opt)); len(got) != 0 {
+		t.Errorf("外側を同じ形にしただけでクロージャの組を消えたと数えた: %v", got)
 	}
 }

@@ -400,3 +400,30 @@ func normBoth(t *testing.T, u *tree.Unit) norm.Result {
 	}
 	return with
 }
+
+func TestClosureOwnerNameIsForDisplayOnly(t *testing.T) {
+	r := parse(t, "Sources/A.swift", `
+struct A {
+    let table = { [1, 2].map { $0 + 1 } }()
+    init(x: Int = [3].reduce(0) { $0 + $1 }) {}
+    func run(xs: [Int]) { xs.forEach { y in [y].forEach { print($0) } } }
+}`)
+	got := map[string]bool{}
+	for _, u := range r.Units {
+		if u.Kind != tree.KindClosure {
+			continue
+		}
+		if u.Name != "{closure}" {
+			t.Errorf("クロージャの Name が変わった (出どころの当て方と index が読む): %q", u.Name)
+		}
+		if !strings.Contains(u.Key, "#closure") {
+			t.Errorf("クロージャの鍵の形が変わった (除外の釘が読む): %q", u.Key)
+		}
+		got[u.OwnerName] = true
+	}
+	for _, want := range []string{"table", "table.{closure}", "init", "run", "run.{closure}"} {
+		if !got[want] {
+			t.Errorf("囲む単位の表示名 %q が無い: %v", want, got)
+		}
+	}
+}

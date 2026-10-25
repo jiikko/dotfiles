@@ -172,6 +172,7 @@ type walker struct {
 type ctx struct {
 	enclosing []string // 囲む型の名前
 	owner     string   // 囲む単位の鍵
+	ownerName string   // 囲む単位の表示名 (クロージャの表示に使う)
 	inError   bool     // 読めない構文 (ERROR) の中
 	testClass bool     // XCTestCase を継承した型の中
 	property  string   // 囲む property の名前 (didSet などの単位の名前に使う)
@@ -195,22 +196,22 @@ func (w *walker) walk(n *sitter.Node, c ctx) {
 		if w.isTestFunc(n, c) {
 			return
 		}
-		c.owner = w.add(w.declUnit(n, c), c)
+		c.owner, c.ownerName = w.addOwner(w.declUnit(n, c), c)
 	case "property_declaration":
 		if name := w.boundName(n); name != "" {
 			c.property = name
 		}
 		if cp := n.ChildByFieldName("computed_value"); cp != nil {
-			c.owner = w.add(w.propertyUnit(n, cp, c.property, c), c)
+			c.owner, c.ownerName = w.addOwner(w.propertyUnit(n, cp, c.property, c), c)
 		}
 	case "didset_clause", "willset_clause":
 		name := "didSet"
 		if kindOf(n) == "willset_clause" {
 			name = "willSet"
 		}
-		c.owner = w.add(w.newUnit(n, tree.KindProperty, c.property+"."+name, "", nil, n, c), c)
+		c.owner, c.ownerName = w.addOwner(w.newUnit(n, tree.KindProperty, c.property+"."+name, "", nil, n, c), c)
 	case "lambda_literal":
-		c.owner = w.add(w.closureUnit(n, c), c)
+		c.owner, c.ownerName = w.addOwner(w.closureUnit(n, c), c)
 	}
 	for i := range n.ChildCount() {
 		w.walk(n.Child(i), c)
@@ -227,6 +228,15 @@ func (w *walker) add(u *tree.Unit, c ctx) string {
 	w.units = append(w.units, u)
 	w.isUnit[u.Key] = true
 	return u.Key
+}
+
+// addOwner は単位を足し、中の単位から見た囲む単位の鍵と表示名を返す。
+func (w *walker) addOwner(u *tree.Unit, c ctx) (string, string) {
+	name := u.Name
+	if u.OwnerName != "" {
+		name = u.OwnerName + "." + name
+	}
+	return w.add(u, c), name
 }
 
 func (w *walker) typeName(n *sitter.Node) string {
@@ -453,6 +463,10 @@ func (w *walker) closureUnit(n *sitter.Node, c ctx) *tree.Unit {
 	u.Key = fmt.Sprintf("%s#closure%d", owner, w.closures[owner])
 	if w.isUnit[c.owner] {
 		u.Owner = c.owner
+	}
+	u.OwnerName = c.ownerName
+	if c.owner == "" {
+		u.OwnerName = c.property // 格納 property の初期値のクロージャ (`let x = { … }()`)
 	}
 	u.Visibility = "local"
 	return u

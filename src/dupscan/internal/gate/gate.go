@@ -49,6 +49,16 @@ type Result struct {
 	// PresetPassed は、プリセットが組を外したので違反にしなかった、変わった単位 (除外が無ければ違反だった組の新しいメンバー)。
 	// プリセットは書いた後にできた単位にも効くので、通した数を毎回出す (止めはしない)。
 	PresetPassed []*group.Entry
+	// Resolved は base の組のうち、head で消えた・縮んだもの (寄せた結果を確かめる。止めはしない)。
+	Resolved []Resolved
+}
+
+// Resolved は base の組 1 つが head でどうなったか。
+type Resolved struct {
+	Level   norm.Level
+	Members []*group.Entry // base の側のメンバー
+	// Remain は、メンバーの head の側の相手のうち、head の同じ組に揃っている最大の数。2 未満は 0 (消えた)。
+	Remain int
 }
 
 // Failed は止める段の違反があるか。
@@ -150,6 +160,7 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 			r.PresetPassed = append(r.PresetPassed, e)
 		}
 	}
+	r.Resolved = resolved(base, head, origin, opt.Options)
 	sort.SliceStable(r.Violations, func(i, j int) bool {
 		a, b := r.Violations[i].New[0].Unit, r.Violations[j].New[0].Unit
 		if a.File != b.File {
@@ -158,6 +169,53 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 		return a.Line < b.Line
 	})
 	return r
+}
+
+// resolved は、base の組のうち head でメンバーが揃わなくなったものを返す。組は除外を掛けない素の組で比べる: 除外は組を消さず
+// 出さないだけなので、掛けると「除外を足した」が「寄せた」に数えられる (除外の判定は使われた除外を数えるので、base に掛けると
+// 効いていない除外の数も狂う)。段は問わない: L1 の組が定数だけ変わって L2 の組で残るのは寄せていない。
+// base の側は report と同じ組 (group.Build)、head の側は段ごとの生のハッシュで見る。head も group.Build で取ると、外側の関数を
+// 同じ組にした (悪化させた) ときに中のクロージャの組が入れ子として外れ、消えたと数える。
+// head の側の相手が読めない構文を含む組は数えない (比べられなくなっただけで、寄せたとは言えない)。下限より小さくなった相手は
+// 揃わないと数える (写しを 1 行の委譲に縮めるのは寄せる作業の普通の形)。
+func resolved(base, head []*group.Entry, origin map[*group.Entry]*group.Entry, opt group.Options) []Resolved {
+	inHead := map[*group.Entry]*group.Entry{} // base の単位 → head の側の相手
+	for h, b := range origin {
+		inHead[b] = h
+	}
+	var out []Resolved
+	for _, g := range group.Build(base, opt) {
+		count := map[string]int{}
+		remain := 0
+		unreadable := false
+		for _, m := range g.Members {
+			h := inHead[m]
+			if h == nil {
+				continue
+			}
+			if h.Unit.Unreadable {
+				unreadable = true
+				break
+			}
+			for _, lv := range opt.Levels {
+				if group.Eligible(h, lv, opt) {
+					k := lv.String() + "\x00" + h.Result.Hash[lv]
+					count[k]++
+					remain = max(remain, count[k])
+				}
+			}
+		}
+		if unreadable {
+			continue
+		}
+		if remain < 2 {
+			remain = 0
+		}
+		if remain < len(g.Members) {
+			out = append(out, Resolved{Level: g.Level, Members: g.Members, Remain: remain})
+		}
+	}
+	return out
 }
 
 // judgeGroup は組が base より増えたかを、メンバーの出どころで決める。

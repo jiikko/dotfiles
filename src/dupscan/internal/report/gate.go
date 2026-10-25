@@ -33,6 +33,8 @@ type GateSummary struct {
 	PathPassedList []UnitRef `json:"path_excluded_passed"`
 	// PresetPassedList は、プリセットが組を外したので違反にしなかった、この変更で触った単位 (止めないが人が見る一覧)。
 	PresetPassedList []UnitRef `json:"preset_passed"`
+	// Resolved は base の組のうち head で消えた・縮んだもの (寄せた結果。除外を掛けない素の組で比べる)。
+	Resolved []ResolvedJSON `json:"resolved"`
 	// BaseConfigError は base の設定を読めなかった理由 (空とみなした)。
 	BaseConfigError string `json:"base_config_error,omitempty"`
 	Exclusions
@@ -48,11 +50,25 @@ type ViolationJSON struct {
 	Exclude string `json:"exclude"`
 }
 
+// ResolvedJSON は消えた・縮んだ組 1 つの出力。Members は base の側の位置。
+type ResolvedJSON struct {
+	Level   string    `json:"level"`
+	Members []UnitRef `json:"members"`
+	Remain  int       `json:"remain"` // head で同じ組に揃っている数 (0 は消えた)
+}
+
 // BuildGate は gate の出力の形を組み立てる。
 func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set) GateSummary {
 	s := GateSummary{Root: root, Base: base, Head: head, Changed: r.Changed, Failed: r.Failed(),
 		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewExclusions: []exclude.Element{}, Untracked: []string{}, Exclusions: exclusions(ex),
-		PathPassed: len(r.PathPassed), PathPassedList: []UnitRef{}, PresetPassedList: []UnitRef{}}
+		PathPassed: len(r.PathPassed), PathPassedList: []UnitRef{}, PresetPassedList: []UnitRef{}, Resolved: []ResolvedJSON{}}
+	for _, g := range r.Resolved {
+		rj := ResolvedJSON{Level: g.Level.String(), Remain: g.Remain}
+		for _, m := range g.Members {
+			rj.Members = append(rj.Members, ref(m.Unit))
+		}
+		s.Resolved = append(s.Resolved, rj)
+	}
 	for _, e := range r.PathPassed {
 		s.PathPassedList = append(s.PathPassedList, ref(e.Unit))
 	}
@@ -101,6 +117,9 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	}
 	if s.BaseConfigError != "" {
 		note += "・base の除外の設定を読めないので空とみなした"
+	}
+	if gone, shrunk := s.resolvedCounts(); gone+shrunk > 0 {
+		note += fmt.Sprintf("・消えた組 %d・縮んだ組 %d (-v で一覧)", gone, shrunk)
 	}
 	if n := len(s.Untracked); n > 0 {
 		note += fmt.Sprintf("・untracked から読んだファイル %d (CI には無い。-v で一覧)", n)
@@ -157,6 +176,16 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 		if s.BaseConfigError != "" {
 			fmt.Fprintf(w, "base の除外の設定: %s\n", s.BaseConfigError)
 		}
+		for _, g := range s.Resolved {
+			kind := "消えた"
+			if g.Remain > 0 {
+				kind = "縮んだ"
+			}
+			fmt.Fprintf(w, "%s組: %s (%d → %d)\n", kind, g.Level, len(g.Members), g.Remain)
+			for _, m := range g.Members {
+				fmt.Fprintf(w, "  base: %s:%d %s\n", m.File, m.Line, label(m))
+			}
+		}
 		s.write(w)
 		for _, u := range s.Unreadable {
 			fmt.Fprintf(w, "読めない: %s:%d %s\n", u.File, u.Line, label(u))
@@ -197,6 +226,18 @@ func GateXcode(w io.Writer, s GateSummary) error {
 		fmt.Fprintf(w, "%s:1: warning: 新しく足された除外: %s (dupscan.gate.exclude)\n", filepath.Join(s.Root, at), el.Key)
 	}
 	return nil
+}
+
+// resolvedCounts は消えた組と縮んだ組の数。
+func (s GateSummary) resolvedCounts() (gone, shrunk int) {
+	for _, g := range s.Resolved {
+		if g.Remain == 0 {
+			gone++
+		} else {
+			shrunk++
+		}
+	}
+	return gone, shrunk
 }
 
 func commentAt(el exclude.Element) string {

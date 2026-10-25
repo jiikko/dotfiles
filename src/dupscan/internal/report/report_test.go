@@ -100,3 +100,14 @@ func TestJSONUsesEmptyArraysAndMarksAllowedUnits(t *testing.T) {
 		t.Errorf("許可の付いた単位に印が無い:\n%s\n%s", t2.String(), b.String())
 	}
 }
+
+func TestClosureLabelShowsOwner(t *testing.T) {
+	c := UnitRef{File: "A.swift", Line: 3, Kind: "closure", Name: "{closure}", Enclosing: "Clock", OwnerName: "advance"}
+	if got := label(c); got != "Clock.advance.{closure}" {
+		t.Errorf("label = %q, 期待 Clock.advance.{closure}", got)
+	}
+	c.OwnerName = "" // 囲む単位が無い (型の直下) クロージャは今の形のまま
+	if got := label(c); got != "Clock.{closure}" {
+		t.Errorf("label = %q, 期待 Clock.{closure}", got)
+	}
+}

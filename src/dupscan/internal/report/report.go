@@ -90,6 +90,7 @@ type UnitRef struct {
 	Signature  string `json:"signature,omitempty"`
 	Allowed    bool   `json:"allowed,omitempty"` // 単位の除外 (許可) が効いている
 	Enclosing  string `json:"enclosing,omitempty"`
+	OwnerName  string `json:"owner_name,omitempty"` // クロージャを囲む単位の表示名
 	Test       bool   `json:"test"`
 	Visibility string `json:"visibility"`
 }
@@ -165,7 +166,7 @@ func filePairs(groups []GroupJSON) []FilePair {
 
 func ref(u *tree.Unit) UnitRef {
 	return UnitRef{Key: u.Key, File: u.File, Line: u.Line, Col: u.Col, Kind: string(u.Kind), Name: u.Name,
-		Signature: u.Signature, Enclosing: u.Enclosing, Test: u.Test, Visibility: u.Visibility}
+		Signature: u.Signature, Enclosing: u.Enclosing, OwnerName: u.OwnerName, Test: u.Test, Visibility: u.Visibility}
 }
 
 // JSON は JSON で書く。
@@ -300,6 +301,9 @@ func label(u UnitRef) string {
 	name := u.Signature
 	if name == "" {
 		name = u.Name
+	}
+	if u.OwnerName != "" {
+		name = u.OwnerName + "." + name
 	}
 	if u.Enclosing != "" {
 		return u.Enclosing + "." + name

@@ -84,7 +84,10 @@ type Unit struct {
 	Signature string
 	Kind      UnitKind
 	// Owner は囲む単位の鍵 (クロージャのとき)。囲む単位が無ければ空。
-	Owner      string
+	Owner string
+	// OwnerName は囲む単位 (無ければ囲む property) の表示名 (クロージャのとき。入れ子なら `f.{closure}`)。表示だけに使う:
+	// 鍵と Name に入れると、既にある除外の釘 (key@hash) が外れ、gate の出どころの当て方 (同じ名前を先に当てる) も変わる。
+	OwnerName  string
 	Enclosing  string
 	Test       bool // test のファイルにある
 	Visibility string

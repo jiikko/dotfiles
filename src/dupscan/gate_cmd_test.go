@@ -262,3 +262,39 @@ func TestGateFormattingOnlyChangeIsNotChange(t *testing.T) {
 		t.Errorf("整形だけの変更は変わった単位 0 で rc=0: rc=%d out=%q err=%q", rc, out, errs)
 	}
 }
+
+func TestGateListsResolvedGroupAfterRemovingCopy(t *testing.T) {
+	// 写し B を消して寄せた: 違反は無く、要約に消えた組が数えられ、-v と JSON で base の側の位置が出る。
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	if err := os.Remove(filepath.Join(root, "Sources/B.swift")); err != nil {
+		t.Fatal(err)
+	}
+	rc, out, errs := runGateCmd(t, "-v", "-base", "HEAD", root)
+	if rc != 0 || !strings.Contains(out, "消えた組 1・縮んだ組 0") || !strings.Contains(out, "消えた組: L1 (2 → 0)") ||
+		!strings.Contains(out, "  base: Sources/B.swift:") {
+		t.Errorf("消えた組の数と一覧を期待: rc=%d out=%q err=%q", rc, out, errs)
+	}
+	rc, out, errs = runGateCmd(t, "-format", "json", "-base", "HEAD", root)
+	var s struct {
+		Resolved []struct {
+			Level   string `json:"level"`
+			Remain  int    `json:"remain"`
+			Members []struct {
+				File string `json:"file"`
+			} `json:"members"`
+		} `json:"resolved"`
+	}
+	if err := json.Unmarshal([]byte(out), &s); err != nil || rc != 0 {
+		t.Fatalf("rc=%d err=%v stderr=%q", rc, err, errs)
+	}
+	if len(s.Resolved) != 1 || s.Resolved[0].Remain != 0 || len(s.Resolved[0].Members) != 2 {
+		t.Errorf("JSON の resolved に消えた組 1 つを期待: %+v", s.Resolved)
+	}
+	// 触っていないなら要約に出さない (1 行のまま)。
+	gitRun(t, root, "checkout", "-q", "--", "Sources/B.swift")
+	if _, out, _ := runGateCmd(t, "-base", "HEAD", root); strings.Contains(out, "消えた組") {
+		t.Errorf("変わっていないのに消えた組を出した: %q", out)
+	}
+}
