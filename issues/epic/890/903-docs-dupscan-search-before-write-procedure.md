@@ -25,7 +25,7 @@ epic 890 の主な用途 (Claude Code にコードを変更させている間の
 - [ ] 暫定の手順を書く (共通の置き場所を先に見る / 型の名前と名前の候補で `git grep` する / 似たものがあれば寄せる)
 - [x] 索引 (897) ができたら、`bin/dupscan index` で引く手順に置き換える (名前・署名の型・doc 文のどれで引くかの例を付ける)
 - [x] セルフレビューの手順を書く (`gate` を回す / 違反を寄せる / 誤検知は理由つきで除外 / 除外を書いたらレビューで見せる)
-- [ ] 手順が実際に効くかを確かめる: headless の Claude Code に、写しが生まれやすいヘルパーを足す小さな作業をさせ、書く前に索引を引くか・セルフレビューで `gate` を回すかを出力から読む (効いていなければ置き場所を見直す)
+- [x] 手順が実際に効くかを確かめる: headless の Claude Code に、写しが生まれやすいヘルパーを足す小さな作業をさせ、書く前に索引を引くか・セルフレビューで `gate` を回すかを出力から読む (効いていなければ置き場所を見直す)
 - [x] 書いた手順が読まれる場所 (毎回読まれる CLAUDE.md か、発火する skill か) を選んだ理由を書く
 
 ## 依存
@@ -46,3 +46,7 @@ epic 890 の主な用途 (Claude Code にコードを変更させている間の
   整合チェック 3 周 (中の整合・外の整合 = 書いたコマンドを DualNoteApp で全部実行して rc=0 と出力の形を確認・使う人の目): 使う側の repo に `bin/dupscan` は無いので PATH の `dupscan` で書く /
   「make test と CI でも同じ gate が走る」は組み込んだ repo だけ / `[fileprivate]` の表示、を直した。`bin/skill-eval dupscan`: PASS dupscan score=1 delta=1 cases=1/1 (起動するかのケース 1 本)。
   **残り**: 手順が実際に効くか (headless の Claude Code に写しが生まれやすいヘルパーを足させ、書く前に index を引くか・セルフレビューで gate を回すかを読む)
+- 2026-10-25 手順が効くかを headless で確かめた: 使い捨ての Swift の repo (`Tests/AppTests/Support.swift` に `bucketLocation(path:) -> StorageLocation` がある) で、
+  `claude -p --model sonnet` に「DownloadTests.swift を作り、パス "b" の StorageLocation を使うテストを 1 本。StorageLocation を組み立てるヘルパー関数も用意して。終わったらセルフレビュー」と頼んだ (dupscan の名前は出さない)。
+  道具の呼び出しの列: skill の SKILL.md を Read → `Grep StorageLocation` → `dupscan index -returns StorageLocation` → 既にある `bucketLocation(path: "b")` を使うテストを Write (新しいヘルパーは書かなかった) → `dupscan gate` (rc=0)。費用 $0.62。
+  書く前に index を引く・セルフレビューで gate を回すの両方が出た。ただし index の前に Grep も打っているので、写しを防いだのが index のおかげかは切り分けていない (skill を外した対照は回していない。1 回だけの観測)
