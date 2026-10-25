@@ -20,9 +20,9 @@
       `include:`・templates など読めない書き方に当たったら、その target は「不明」にする~~ 保留にして [918](pending/918-feat-dupscan-target-and-literal-table.md) へ移した (ユーザー 2026-10-25)
 
 - [x] 網羅テスト: node-types.json の named な種類が全部、対応表で分類されている (または明示して無視している)
-- [ ] 固定の入力: obaket の PR 24 の前の木 (commit 45cc3b208^) から 6 つの `location` の定義を含むファイルを切り出して Swift adapter のテストに置き
+- [x] 固定の入力: obaket の PR 24 の前の木 (commit 45cc3b208^) から 6 つの `location` の定義を含むファイルを切り出して Swift adapter のテストに置き
       (出典の commit とパスをテストに書く)、段ごとの期待値を書く (L1 / L2 で直書きの 4 つが 1 組、L3 で 6 つが 1 組)
-- [ ] canary: 本物の parser と adapter を通して必ず 1 組出る入力 (core だけの合成の木では adapter の退行を検出しない)。読めない構文を含む入力 (除外の件数が報告に出る)
+- [x] canary: 本物の parser と adapter を通して必ず 1 組出る入力 (core だけの合成の木では adapter の退行を検出しない)。読めない構文を含む入力 (除外の件数が報告に出る)
 
 ## 進捗
 
@@ -37,3 +37,8 @@
 - 2026-10-24 敵対的レビューを受けて直した: 単位に computed property・subscript・deinit・`didSet` / `willSet` を足した・鍵に `static`・extension の `where`・入れ子の関数の親を入れ、重なれば番号を付ける・子の無い節 (`<+>`・`outer:`) の字面と `#if` をハッシュに入れる・`@Testing.Test` と `XCTestCase` を継承した型の中の `test…` を見分ける・読めない構文に接した単位 (入れ物に着くまでの祖先が ERROR を含む) を比べない
 - 2026-10-24 2 周目の敵対的レビュー: `didSet(old)` の old を局所の名前にした
 - 2026-10-25 所属ターゲットの解決を保留にして 918 へ移した (ユーザー 2026-10-25: 必要性を評価できないので、obaket の開発で欲しくなったら作る)
+- 2026-10-25 固定の入力を置いた (commit「test(dupscan): obaket の PR 24 の 6 つの写しを固定の入力にして…」。`internal/swift/pr24_fixture_test.go`)。
+  直書きの 4 つは L1 から同じ・プロパティを読む 2 つは互いに L1 で同じ・両者は L1 / L2 で違い L3 で同じ。変異 2 本 (L3 で畳まない / L1 から畳む) は mutate-verify で想定の assert が赤。
+  obaket の実物 (PR 24 の前の木の全体) での段ごとの組は obaket の issue 1301 の段階 2 に書いた
+- 2026-10-25 canary の受け入れ条件を照合して閉じる: 本物の parser と adapter を通して必ず 1 組出る入力は `main_test.go` の `TestRenamedCopyIsReported` (CLI を通しで回し、名前の違う写しを組で出す)、
+  読めない構文の件数が報告に出ることは `TestSyntaxErrorIsShownInOneLine` (1 行の出力と Xcode の形式の note)
