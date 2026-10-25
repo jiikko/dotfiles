@@ -283,3 +283,18 @@ final class XCTestFixture: XCTestCase {
 		t.Errorf("@Test / XCTest の参照はテスト関数名を囲む単位として出す: rc=%d out=%q stderr=%q", rc, out, errs)
 	}
 }
+
+func TestDefFindsNestedTypeByQualifiedName(t *testing.T) {
+	// extension Outer.Inner と同じ書き方で、入れ子の型を引ける
+	root := repoWith(t, map[string]string{"Sources/Nested.swift": `struct Outer {
+    struct Inner {
+        let value: Int = 1
+    }
+}
+struct Inner {}
+`})
+	rc, out, errs := def(t, "Outer.Inner", root)
+	if rc != 0 || !strings.Contains(out, "Sources/Nested.swift:2-4 struct Inner") || strings.Contains(out, "Sources/Nested.swift:6") {
+		t.Errorf("Outer.Inner は入れ子の型だけを引く: rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+}

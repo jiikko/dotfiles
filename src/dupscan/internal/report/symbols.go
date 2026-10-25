@@ -118,9 +118,14 @@ func BuildDefinitions(query string, q DefQuery, defs []DefinitionRecord, types [
 		e.Source, e.Truncated, e.RemainingLines = sourceRange(sources[d.File], d.Line, d.EndLine, maxLines)
 		s.Entries = append(s.Entries, e)
 	}
-	if q.Type == "" && q.Labels == nil {
+	if q.Labels == nil {
+		// 型は Outer.Inner の形でも引ける (extension Outer.Inner と同じ書き方)
+		qualified := q.Name
+		if q.Type != "" {
+			qualified = q.Type + "." + q.Name
+		}
 		for _, d := range types {
-			if !sameTypeScope(d.Scope, q.Name) {
+			if !sameTypeScope(d.Scope, qualified) {
 				continue
 			}
 			members := typeMembers(d, defs, types, units, calls, shared)

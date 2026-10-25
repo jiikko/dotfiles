@@ -1,6 +1,7 @@
 package swift
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -106,8 +107,9 @@ let interpolated = "\(box.value)"
 	for _, r := range got.References {
 		refs[r.Name] = append(refs[r.Name], r)
 	}
-	if got := refs["Box"]; len(got) != 1 || got[0].Kind != "type_position" {
-		t.Errorf("Box の宣言・extension は外し、型注釈だけを数える: %#v", got)
+	// struct Box の Box (宣言) は数えず、extension Box の Box (既にある型への参照) と型注釈を数える (issue 921 の対応方針 2)
+	if got := refs["Box"]; len(got) != 2 || got[0].Line != 6 || got[1].Line != 9 {
+		t.Errorf("Box の宣言は外し、extension と型注釈を数える: %#v", got)
 	}
 	if got := refs["helper"]; len(got) != 1 || got[0].Kind != "expression_position" {
 		t.Errorf("関数の宣言・コメント・文字列は外し、呼び出しだけを数える: %#v", got)
@@ -556,5 +558,37 @@ struct A { func outer() { struct S { let v = { [1, 2].map { $0 + 1 } }() } } }`)
 	}
 	if strings.Join(got, " ") != "v v.{closure}" {
 		t.Errorf("関数の中の型のクロージャの表示名 = %v、期待 [v v.{closure}] (外の関数の名前を付けない)", got)
+	}
+}
+
+func TestReferencesKeepTypesRightOfTheName(t *testing.T) {
+	// この文法は戻り値の型・typealias の右辺・generic の制約にも name のフィールドを付ける。宣言名は最初の 1 つだけで、残りは型の参照として数える
+	src := `struct Box2 {}
+struct Outer { struct Inner {} }
+func make() -> Box2 { fatalError() }
+typealias A2 = Box2
+func g<T: Box2, U>(_ t: T, _ u: U) where U: Box2 {}
+struct W<C: Box2> {}
+extension Outer.Inner {}
+`
+	p, err := NewParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	p.CollectRefs = true
+	got, err := p.Parse("Sources/A.swift", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := map[string][]int{}
+	for _, r := range got.References {
+		lines[r.Name] = append(lines[r.Name], r.Line)
+	}
+	if want := []int{3, 4, 5, 5, 6}; fmt.Sprint(lines["Box2"]) != fmt.Sprint(want) {
+		t.Errorf("Box2 の参照の行 = %v、期待 %v (戻り値の型・typealias の右辺・関数と where の制約・型の generic の制約。1 行目の宣言は数えない)", lines["Box2"], want)
+	}
+	if fmt.Sprint(lines["Outer"]) != "[7]" {
+		t.Errorf("extension Outer.Inner の Outer を参照として数える: %v", lines["Outer"])
 	}
 }
