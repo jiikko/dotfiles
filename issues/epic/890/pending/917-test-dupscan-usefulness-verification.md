@@ -2,6 +2,8 @@
 
 起票日: 2026-10-25
 
+> **保留** (2026-10-25)。残りは検証 3 (obaket に gate を組み込んだ後の 1 か月分の記録) と、その結果をユーザーに諮ることだけ。**再開の条件**: obaket の issue 1301 の段階 6 (GHA) が入ってから 1 か月たったとき。
+
 ## 概要
 
 ユーザーの問い (2026-10-25: このツールは有益の可能性が高いか) への答えは「gate で新しい写しを見つける側は根拠がある。書く前に引いて写しを作らせない側 (本来の狙い) は未証明」だった。
@@ -11,11 +13,11 @@
 
 | 主張 | 根拠 | 強さ |
 |---|---|---|
-| gate は新しい写しを見つける | DualNoteApp の first-parent 500 commit の流し直しで赤 59。見た範囲は全部、同じ本体の単位が残ったままの本物の写し ([905](905-feat-dupscan-ci-check-gate.md)) | 実測 |
+| gate は新しい写しを見つける | DualNoteApp の first-parent 500 commit の流し直しで赤 59。見た範囲は全部、同じ本体の単位が残ったままの本物の写し ([905](../905-feat-dupscan-ci-check-gate.md)) | 実測 |
 | gate は誤って止めにくい | 直近 100 commit で誤って止めたのは 1 (905。9b10af80 の版で数えた。500 commit の流し直しでは赤の一覧を見た限りで、件数を 1 つずつ数えてはいない) | 実測。DualNoteApp 1 つだけ |
-| 引く所要は小さい | DualNoteApp で index 0.5 秒・callers 0.6 秒・gate 0.4 秒 ([897](done/897-feat-dupscan-index-subcommand.md)・905) | 実測。obaket の規模: report 1.6 秒・未コミットだけを見る gate 3.0 秒 (obaket の issue 1301。2026-10-25) |
-| index は grep より返る量が少ない | 同じ問いで grep の約 1/2〜1/23 の文字数 (定義に絞った正規表現との比では約 1/1.8〜1/1.9。ファイルの中身は cat の約 1/8.5) ([907](done/907-feat-dupscan-exploration-queries.md)) | 実測。作業が速くなるかは未測定 |
-| 書く前に引くと写しを書かない | headless の 1 回で、skill を読み index を引き既存のヘルパーを使った ([903](done/903-docs-dupscan-search-before-write-procedure.md))。ただし grep も打っており、skill を外した対照が無い | **未証明** |
+| 引く所要は小さい | DualNoteApp で index 0.5 秒・callers 0.6 秒・gate 0.4 秒 ([897](../done/897-feat-dupscan-index-subcommand.md)・905) | 実測。obaket の規模: report 1.6 秒・未コミットだけを見る gate 3.0 秒 (obaket の issue 1301。2026-10-25) |
+| index は grep より返る量が少ない | 同じ問いで grep の約 1/2〜1/23 の文字数 (定義に絞った正規表現との比では約 1/1.8〜1/1.9。ファイルの中身は cat の約 1/8.5) ([907](../done/907-feat-dupscan-exploration-queries.md)) | 実測。作業が速くなるかは未測定 |
+| 書く前に引くと写しを書かない | headless の 1 回で、skill を読み index を引き既存のヘルパーを使った ([903](../done/903-docs-dupscan-search-before-write-procedure.md))。ただし grep も打っており、skill を外した対照が無い | **未証明** |
 | 起点の PR 24 の 6 つを拾う | obaket が要る | **未検証** (obaket の issue 1301 の段階 2) |
 
 ## 検証 1: 書く前に引く効果の A/B
@@ -83,3 +85,4 @@ skill の有る無しを変えて、headless の Claude Code (`claude -p`。`bin
     道具とスクリプトは obaket の `tmp/dupscan-917-2026-10-25/` (git の管理外): `run1.sh` (1 回)・`summarize.py` (表)・`gen.py` (repo の生成)
 - 2026-10-25 検証 2 の結果 (obaket の issue 1301 の段階 2): PR 24 の前の木で、gate は 7 つ目の写しを止め、near は残りの 5 つを出した (プロパティを読む 2 つは L3 = 今の既定では `-levels L1,L2,L3` が要る)。
   dupscan は PR 24 が見落とした macOS のテストの写し 3 つも同じ組に出し、obaket で寄せた
+- 2026-10-25 保留にした (残りは obaket の 1 か月分の記録を待つだけ。上の注記)

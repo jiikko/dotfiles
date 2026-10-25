@@ -36,7 +36,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [906](done/906-feat-dupscan-exclusion-config.md) | **誤検知を除外する設定** (組・単位・パス・段・下限。理由が必須。効いていない除外と、新しく足された除外を出す) | 893・896 |
 | [907](done/907-feat-dupscan-exploration-queries.md) | **探索の問い合わせ** (`outline`・`find`・`callers`)。grep の代わりに、定義だけを 1 件 1 行で返して文脈を食わずに関連の実装を探す | 893・894・897 |
 | [909](done/909-task-dupscan-integrate-into-obaket.md) | **obaket への組み込み**。2026-10-25 に obaket の issue 1301 へ移した (PR 24 の前の木での受け入れと obaket の規模の実測も 1301 で行い、結果を各 issue に書き戻す) | 903・905・906 |
-| [917](917-test-dupscan-usefulness-verification.md) | **有益さの検証**。書く前に引く効果を skill の有る無しの A/B で測る・起点の写しを拾えるか・組み込んだ後の効果 (この 2 つは obaket の issue 1301 へ移した) | 903・905・909 |
+| [917](pending/917-test-dupscan-usefulness-verification.md) | **保留** (obaket の 1 か月分の記録を待つ)。**有益さの検証**。書く前に引く効果を skill の有る無しの A/B で測る・起点の写しを拾えるか・組み込んだ後の効果 (この 2 つは obaket の issue 1301 へ移した) | 903・905・909 |
 | [918](pending/918-feat-dupscan-target-and-literal-table.md) | **保留**。所属ターゲットの解決とリテラルの違いの表 (894・896・897 から移した)。obaket で使う中で欲しくなったら作る | — |
 
 ## 進捗
