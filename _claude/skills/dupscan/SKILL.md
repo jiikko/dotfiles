@@ -1,7 +1,7 @@
 ---
 name: dupscan
-version: 1.1.0
-description: Swift の repo で、新しいメソッド (ヘルパー・初期化・値を組み立てる関数) を書く前に同じものが既にないかを dupscan index で引き、実装が終わったセルフレビューで dupscan gate を回して増えた写しを寄せる。関連の実装 (定義・ファイルの中身・呼び出し元) を grep より短く探すときにも使う。「dupscan」「重複したメソッド」「類似メソッドの統合」「既にあるヘルパーを探して」「セルフレビュー」「呼び出し元」「似た関数」で発火。寄せるときはドメインの境界を確かめる (4 節)。Swift 以外の repo では使わない (対応する言語は Swift だけ)。
+version: 1.2.0
+description: Swift の repo で、新しいメソッド (ヘルパー・初期化・値を組み立てる関数) を書く前に同じものが既にないかを dupscan index で引き、実装が終わったセルフレビューで dupscan gate を回して増えた写しを寄せる。関連の実装 (定義・参照・ファイルの中身・呼び出し元) を grep より先に探すときにも使う (def / refs / callers)。「dupscan」「重複したメソッド」「類似メソッドの統合」「既にあるヘルパーを探して」「セルフレビュー」「定義元」「参照」「呼び出し元」「似た関数」で発火。寄せるときはドメインの境界を確かめる (4 節)。Swift 以外の repo では使わない (対応する言語は Swift だけ)。
 ---
 
 # dupscan (書く前に引く・セルフレビューで写しを寄せる)
@@ -26,15 +26,19 @@ dupscan index -doc bucket                     # doc comment の語
 
 ## 2. 調べもの (grep の前に)
 
-定義だけを 1 件 1 行で返すので、grep より返る量が少ない (呼び出し側の行・コメント・文字列が混ざらない)。
-文字列・コメント・設定ファイルを探すなら grep のほうが向く。
+Swift の定義・参照を探すときは grep より先にこちらを使う。構文木から引くので、コメント・文字列・呼び出し側の行が混ざらず、返る量が少ない
+(LSP の「定義へ移動」「参照を検索」の代わり。Swift の 4 repo の 7 日で grep 2,882 回に対し dupscan 13 回だった。issue 921)。
+文字列・コメント・設定ファイルを探すなら grep のほうが向く。Swift の repo でシンボルを grep すると、hook がこの節のコマンドを 1 行案内する。
 
 ```sh
-dupscan index -file Sources/Foo.swift         # このファイルに何があるか (outline)
+dupscan def StorageClient                     # 定義を本体つきで (型は宣言とメンバーの一覧: protocol の要件・格納 property・enum の case を含む)
+dupscan def StorageClient.upload              # 型を絞る (generic の引数と where 句は外して照合する)。make(x:_:) で引数ラベルも絞れる
+dupscan refs StorageClient                    # 参照の一覧 ([型の位置] / [式の位置] と、それを囲む関数)。宣言名・引数名・局所の束縛・ラベルは数えない
 dupscan callers 'make(x:_:)'                  # 呼び出しの箇所と、それを囲む関数 (名前だけでも引ける)
+dupscan index -file Sources/Foo.swift         # このファイルに何があるか (outline)
 ```
 
-型を解決しないので、同名の別のメソッドの呼び出しも当たる (近似)。flag は名前・パスの前に書く。
+型を解決しないので、同名の別の定義・参照も当たる (近似)。flag は名前・パスの前に書く。
 
 ## 3. セルフレビューで gate を回す
 
