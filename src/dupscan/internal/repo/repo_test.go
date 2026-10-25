@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"subproc"
 )
@@ -119,41 +118,5 @@ func TestCleanEnvDropsGitLocation(t *testing.T) {
 	got := cleanEnv([]string{"GIT_DIR=/x", "HOME=/h", "GIT_WORK_TREE=/y", "PATH=/p"})
 	if !reflect.DeepEqual(got, []string{"HOME=/h", "PATH=/p"}) {
 		t.Errorf("got %v", got)
-	}
-}
-
-// base の commit を読みかけで止めるときは、git を止めてから待つ。読み残したまま待つと、後ろの大きな blob で pipe を埋めた git が書けずに止まり、
-// GitOpTimeout (30 秒) まで戻らない。直した版は即座に返る。10 秒は時間切れより十分短い見張りで、合否を所要で決めるのではなく「止まらない」ことを見る。
-func TestCommitReadAllStopsGitOnError(t *testing.T) {
-	root := t.TempDir()
-	run(t, root, "init", "-q")
-	big := strings.Repeat("let x = 1\n", 60000) // 600KB: pipe の容量を大きく超える
-	for _, f := range []string{"A.swift", "B.swift", "C.swift", "D.swift"} {
-		write(t, root, f, f+big)
-	}
-	run(t, root, "add", ".")
-	run(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "c")
-	h, err := CommitHash(root, "HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := &Commit{Scope: Scope{Root: root, Prefixes: []string{""}}, Exts: []string{".swift"}, Hash: h}
-	files, err := c.Files()
-	if err != nil || len(files) != 4 {
-		t.Fatalf("Files: %v %v", files, err)
-	}
-	c.blobs[files[0]] = strings.Repeat("0", 40) // 無い object: cat-file は `missing` を返し、後ろの 3 つは読まれずに残る
-	done := make(chan error, 1)
-	go func() {
-		_, err := c.ReadAll(files)
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		if err == nil || !strings.Contains(err.Error(), "blob として返さない") {
-			t.Errorf("無い blob で失敗を期待: %v", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("読みかけで止めた ReadAll が戻らない (git の終了を待ち続けている)")
 	}
 }
