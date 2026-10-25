@@ -40,3 +40,9 @@ obaket に gate を組み込む前の流し直し (obaket の issue 1301 の段�
 
 - 2026-10-25 起票 (骨組み → 本文)。設計の反証レビューの前
 - 2026-10-25 設計の反証レビュー (codex・読み取りのみ): P1 3 件・P2 1 件。どれも反例が gate.go の判定の順と合っていた。設計を絞った (上の「落とした案」)
+- 2026-10-25 実装した (commit「feat(dupscan): 除外のプリセット l2-single-call …」)。adapter が `tree.Unit.Delegation` (1 つの呼び出しに原子だけを渡す 1 文) を入れ、`exclude` の `PresetCovers` が L2 の組に効かせる。
+  report・gate・near に同じ判定が効き、gate はプリセットで通した変わった単位を 1 行目・json (`preset_passed`)・xcode (note) に出す。変異 7 本は全部想定のテストで赤
+- 2026-10-25 実装の敵対的レビュー (codex 6.1・medium) の P2 3 件を直した (commit「fix(dupscan): l2-single-call の委譲の判定から単項の計算と添字を外し…」):
+  `-y`・`~x` (変数の計算) を原子として通していた / 添字 `values["a", default: x]` を呼び出しと誤認した (文法が同じ value_arguments で表す) /
+  near がプリセットを 2 人の組に掛け、L1 が同じメンバーを含む組でも隠していた。変異 3 本が赤
+- 2026-10-25 obaket の赤の 6 commit を、親 + その差分 + プリセットの設定で流し直すと、2 (`9b46e3989`・`f55e7ccfe`) が通り、4 が残った (fake の写し 3・並べたクロージャ 1)
