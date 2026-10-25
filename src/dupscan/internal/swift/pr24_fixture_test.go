@@ -99,3 +99,62 @@ func TestPR24CopiesMatchByLevel(t *testing.T) {
 		t.Errorf("L3: 直書きとプロパティを読む版が違う\n%s\n%s", hash[literal[0]].Forms[norm.L3], hash[property[0]].Forms[norm.L3])
 	}
 }
+
+// PR 24 の前の木で、直書きの版の周りにあった別の写し (issue 898 の「同じ組に入ってよいもの / 入ってはいけないもの」)。既定の段 (L1・L2) での期待値を固める。
+var pr24Neighbours = map[string]string{
+	// 定数だけが違う: L2 で直書きの版と同じ組に入ってよい (L1 では違う)。
+	"BrowserSelectionStateTests.swift": `
+struct BrowserSelectionStateTests {
+    private static func makeLocation(_ name: String) -> StorageLocation {
+        StorageLocation(
+            connectionID: ConnectionID(rawValue: "c"),
+            namespace: .bucket("b"),
+            path: ObjectPath(rawValue: name)
+        )
+    }
+}`,
+	"S3StubTestSupport.swift": `
+enum S3StubTestSupport {
+    static func leaf(_ key: String) -> StorageLocation {
+        StorageLocation(
+            connectionID: ConnectionID(rawValue: "connection"),
+            namespace: .bucket("bucket"),
+            path: ObjectPath(rawValue: key)
+        )
+    }
+}`,
+	// 形が違う (namespace が .root・接続を引数で受ける): 既定の段では入ってはいけない (L3 は既定で見ない)。
+	"DropboxAdapterTests.swift": `
+struct DropboxAdapterTests {
+    private func rootLocation(path: String = "") -> StorageLocation {
+        StorageLocation(connectionID: Self.connectionID, namespace: .root, path: ObjectPath(rawValue: path))
+    }
+}`,
+	"StorageResumableMoveUseCaseTests.swift": `
+private func location(connectionID: ConnectionID, path: String) -> StorageLocation {
+    StorageLocation(
+        connectionID: connectionID,
+        namespace: .bucket("bucket"),
+        path: ObjectPath(rawValue: path)
+    )
+}`,
+}
+
+func TestPR24NeighboursAtDefaultLevels(t *testing.T) {
+	hashOf := func(name, src, fn string) norm.Result {
+		return norm.Normalize(unitBy(t, parse(t, "Tests/"+name, src), fn))
+	}
+	literal := hashOf("MoveReconcileTests.swift", pr24Files["MoveReconcileTests.swift"], "location")
+	for _, c := range []struct{ file, fn string }{{"BrowserSelectionStateTests.swift", "makeLocation"}, {"S3StubTestSupport.swift", "leaf"}} {
+		h := hashOf(c.file, pr24Neighbours[c.file], c.fn)
+		if h.Hash[norm.L1] == literal.Hash[norm.L1] || h.Hash[norm.L2] != literal.Hash[norm.L2] {
+			t.Errorf("%s は定数だけが違うので L1 で違い L2 で同じになるはず", c.fn)
+		}
+	}
+	for _, c := range []struct{ file, fn string }{{"DropboxAdapterTests.swift", "rootLocation"}, {"StorageResumableMoveUseCaseTests.swift", "location"}} {
+		h := hashOf(c.file, pr24Neighbours[c.file], c.fn)
+		if h.Hash[norm.L1] == literal.Hash[norm.L1] || h.Hash[norm.L2] == literal.Hash[norm.L2] {
+			t.Errorf("%s は形が違うので既定の段 (L1・L2) では同じ組に入ってはいけない", c.fn)
+		}
+	}
+}
