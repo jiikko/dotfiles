@@ -167,6 +167,7 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | App Store, TestFlight, 審査, リジェクト, App Store Connect | agent: `appstore-submission-expert` |
 | issue-sync, issue同期, 完了漏れ, done移動 | `~/.claude/skills/issue-sync/SKILL.md` |
 | issue-writeback, issue更新漏れ, 書き戻し漏れ, issue更新した? | `~/.claude/skills/issue-writeback/SKILL.md` (本文の追記漏れ。done 移動は issue-sync) |
+| dupscan, 重複したメソッド, 既にあるヘルパー, 書く前に探す, セルフレビューで写し, 呼び出し元 (Swift) | `~/.claude/skills/dupscan/SKILL.md` (書く前に index で引く・セルフレビューで gate。Swift の repo だけ) |
 | start-issues-ops, issue運用を始める, issuesディレクトリを作る | `~/.claude/skills/start-issues-ops/SKILL.md` (issues/ を作り dotfiles の README を持ち込む。commit するかはユーザーに聞く) |
 | cleanup-tmp-dir, /tmp を掃除, 一時ファイルを片付け, TMPDIR が溜まっている | `~/.claude/skills/cleanup-tmp-dir/SKILL.md` (`bin/tmpclean` で /private/tmp の Claude Code の作業場所と $TMPDIR を数え、承認された plan の古いものだけをゴミ箱へ移す。dotfiles の tmp/ は `make clean-tmp`。浅い場所を直接 rm する形は hook `deny-tmp-area-rm.sh` が止める) |
 | claude-md-refresh, CLAUDE.md の refresh, README が古い, ディレクトリの文書の乖離 | `~/.claude/skills/claude-md-refresh/SKILL.md` (引数で対象ディレクトリを指定。issues/ は対象外) |

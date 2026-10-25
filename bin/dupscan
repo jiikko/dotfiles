@@ -3,6 +3,7 @@
 # Go implementation at:
 #   ~/dotfiles/src/dupscan/
 #     dupscan [report] [-format text|json|xcode] [-limit N] [dir ...]
+#     dupscan gate | near | explain | index | callers  (使い方は src/dupscan/README.md・Claude の手順は skill dupscan)
 # 調べる repo には何も書かない。初回は cgo で文法の C のソースをビルドするので時間がかかる。
 set -u
 source "${0:A:h}/lib/go_autobuild.zsh"
