@@ -108,7 +108,8 @@ type DefinitionsSummary struct {
 func BuildDefinitions(query string, q DefQuery, defs []DefinitionRecord, types []TypeRecord, units []*tree.Unit, calls []tree.Call, sources map[string][]byte, maxLines int, shared func(string) bool) DefinitionsSummary {
 	s := DefinitionsSummary{Query: query, Entries: []DefinitionEntry{}}
 	for _, d := range defs {
-		if d.Name != q.Name || (q.Type != "" && (d.Nested || !sameTypeScope(d.Enclosing, q.Type))) || !labelsMatch(q.Labels, d.Labels) {
+		if d.Name != q.Name || (q.Type != "" && (d.Nested || !sameTypeScope(d.Enclosing, q.Type))) ||
+			(q.Labels != nil && !supportsArgumentLabels(d)) || !labelsMatch(q.Labels, d.Labels) {
 			continue
 		}
 		e := DefinitionEntry{
@@ -148,6 +149,18 @@ func BuildDefinitions(query string, q DefQuery, defs []DefinitionRecord, types [
 	})
 	s.Matches = len(s.Entries)
 	return s
+}
+
+// supportsArgumentLabels は括弧つきの問い合わせ (`count()`) を当ててよい定義か。subscript と deinit は property の種類で記録しているので名前で見る。
+func supportsArgumentLabels(d DefinitionRecord) bool {
+	switch d.Kind {
+	case string(tree.KindFunc), string(tree.KindInit):
+		return true
+	case string(tree.KindProperty):
+		return d.Name == "subscript" || d.Name == "deinit"
+	default:
+		return false
+	}
 }
 
 func labelsMatch(query, got []string) bool {
@@ -306,6 +319,7 @@ type ReferenceRecord struct {
 	Col       int
 	Text      string
 	Test      bool
+	Enclosing string
 	TestOwner string
 }
 
@@ -344,6 +358,9 @@ func BuildReferences(query string, references []ReferenceRecord, units []*tree.U
 			e.Test = e.Test || u.Test
 		} else {
 			e.Enclosing = r.TestOwner
+			if e.Enclosing == "" {
+				e.Enclosing = r.Enclosing
+			}
 		}
 		s.Entries = append(s.Entries, e)
 	}

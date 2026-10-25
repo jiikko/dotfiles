@@ -49,7 +49,7 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 	references := make([]report.ReferenceRecord, 0, len(got.references))
 	for _, r := range got.references {
 		references = append(references, report.ReferenceRecord{
-			Name: r.Name, Kind: r.Kind, File: r.File, Line: r.Line, Col: r.Col, Text: r.Text, Test: r.Test, TestOwner: r.TestOwner,
+			Name: r.Name, Kind: r.Kind, File: r.File, Line: r.Line, Col: r.Col, Text: r.Text, Test: r.Test, Enclosing: r.Enclosing, TestOwner: r.TestOwner,
 		})
 	}
 	summary := report.BuildReferences(query, references, got.units, swift.IsTestPath)

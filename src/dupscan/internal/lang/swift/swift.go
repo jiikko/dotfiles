@@ -120,6 +120,7 @@ type Reference struct {
 	Col       int
 	Text      string
 	Test      bool
+	Enclosing string
 	TestOwner string
 }
 
@@ -242,7 +243,7 @@ func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration
 			childContext.insideCallable = true
 		case "property_declaration":
 			if !c.insideCallable {
-				if name := w.boundName(n); name != "" {
+				for _, name := range w.boundNames(n) {
 					if computed := n.ChildByFieldName("computed_value"); computed != nil {
 						u := w.propertyUnit(n, computed, name, ctx{enclosing: c.enclosing, testClass: c.testClass})
 						defs = append(defs, definitionFromUnit(u, c.insideCallable))
@@ -271,18 +272,22 @@ func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration
 				if n.FieldNameForChild(uint32(i)) != "name" {
 					continue
 				}
-				end := n.EndByte()
+				// 終わりは次の `,` の手前の子の終わり。`,` の開始で切ると、`,` を次の行の頭に書いた形で次の case の行まで含む
+				last := name
 				for j := i + 1; j < n.ChildCount(); j++ {
 					child := n.Child(j)
 					if !child.IsNamed() && w.text(child) == "," {
-						end = child.StartByte()
 						break
+					}
+					if !isComment(child) {
+						last = child
 					}
 				}
 				pos := name.StartPosition()
-				signature := collapse(strings.TrimSpace(string(w.src[name.StartByte():end])))
+				signature := collapse(strings.TrimSpace(string(w.src[name.StartByte():last.EndByte()])))
+				endLine := int(last.EndPosition().Row) + 1
 				defs = append(defs, Definition{
-					Name: w.text(name), Kind: "case", File: w.file, Line: int(pos.Row) + 1, EndLine: int(pos.Row) + 1,
+					Name: w.text(name), Kind: "case", File: w.file, Line: int(pos.Row) + 1, EndLine: endLine,
 					Col: int(pos.Column) + 1, Enclosing: strings.Join(c.enclosing, "."), Signature: signature,
 					Test: w.test || c.testClass, Nested: c.insideCallable, Visibility: w.visibility(n), Doc: w.docComment(n),
 				})
@@ -358,8 +363,34 @@ func (w *walker) storedPropertySignature(n *sitter.Node, name string) string {
 		}
 		return ""
 	}
-	if typ := findType(n); typ != "" {
-		signature += ": " + typ
+	typeNode := n
+	if kindOf(n) == "property_declaration" {
+		typeNode = nil
+		for i := range n.ChildCount() {
+			if n.FieldNameForChild(uint32(i)) != "name" {
+				continue
+			}
+			pattern := n.Child(i)
+			if w.text(pattern) != name {
+				continue
+			}
+			// `let a, b: String` の a は後ろの束縛の型注釈を共有する。初期化式 (`= 値`) が先に来たら型は推論なので付けない
+			for j := i + 1; j < n.ChildCount(); j++ {
+				child := n.Child(j)
+				if kindOf(child) == "type_annotation" {
+					typeNode = child
+				}
+				if typeNode != nil || kindOf(child) == "=" || n.FieldNameForChild(uint32(j)) == "computed_value" {
+					break
+				}
+			}
+			break
+		}
+	}
+	if typeNode != nil {
+		if typ := findType(typeNode); typ != "" {
+			signature += ": " + typ
+		}
 	}
 	return signature
 }
@@ -426,6 +457,7 @@ func (w *walker) references(root *sitter.Node) []Reference {
 		binding, afterDot, declarationName bool
 		inTest, testClass                  bool
 		enclosing                          []string
+		typeEnclosing                      string
 		testOwner                          string
 	}
 	var visit func(n, parent *sitter.Node, field string, c context)
@@ -437,7 +469,7 @@ func (w *walker) references(root *sitter.Node) []Reference {
 		pos := n.StartPosition()
 		if k == "simple_identifier" && !c.declarationName && !isGenericParameterName(parent, n, field) {
 			role := w.nameRole(parent, field, c.binding, c.afterDot)
-			if role != tree.RoleDecl && role != tree.RoleLabel {
+			if (role != tree.RoleDecl || isOptionalBindingShorthand(parent, n, field)) && role != tree.RoleLabel {
 				row := int(pos.Row)
 				text := ""
 				if row >= 0 && row < len(lines) {
@@ -445,7 +477,7 @@ func (w *walker) references(root *sitter.Node) []Reference {
 				}
 				out = append(out, Reference{
 					Name: w.text(n), Kind: "expression_position", File: w.file, Line: row + 1, Col: int(pos.Column) + 1,
-					Text: text, Test: c.inTest, TestOwner: c.testOwner,
+					Text: text, Test: c.inTest, Enclosing: c.typeEnclosing, TestOwner: c.testOwner,
 				})
 			}
 		} else if k == "type_identifier" && !c.declarationName && !isGenericParameterName(parent, n, field) {
@@ -456,7 +488,7 @@ func (w *walker) references(root *sitter.Node) []Reference {
 			}
 			out = append(out, Reference{
 				Name: w.text(n), Kind: "type_position", File: w.file, Line: row + 1, Col: int(pos.Column) + 1,
-				Text: text, Test: c.inTest, TestOwner: c.testOwner,
+				Text: text, Test: c.inTest, Enclosing: c.typeEnclosing, TestOwner: c.testOwner,
 			})
 		}
 
@@ -464,6 +496,7 @@ func (w *walker) references(root *sitter.Node) []Reference {
 		if isTypeDeclarationKind(k) {
 			if rawName := w.typeName(n); rawName != "" {
 				childContext.enclosing = append(append([]string(nil), c.enclosing...), rawName)
+				childContext.typeEnclosing = strings.Join(childContext.enclosing, ".")
 			}
 			if w.inheritsTestCase(n) {
 				childContext.testClass = true
@@ -515,6 +548,10 @@ func (w *walker) references(root *sitter.Node) []Reference {
 			nextContext.binding = childBinding
 			nextContext.afterDot = prevDot
 			nextContext.declarationName = c.declarationName
+			// 型の名前・継承節・generic の制約はその型の外の参照として読む (`extension Foo` の Foo を Foo の中と出さない)
+			if isTypeDeclarationKind(k) && childField != "body" {
+				nextContext.typeEnclosing = c.typeEnclosing
+			}
 			visit(child, n, childField, nextContext)
 			prevDot = !child.IsNamed() && w.text(child) == "."
 		}
@@ -561,14 +598,63 @@ func isTypeParameterName(parent *sitter.Node, field string) bool {
 }
 
 func isGenericParameterName(parent, n *sitter.Node, field string) bool {
-	if parent == nil || n == nil || (kindOf(parent) != "type_parameter" && kindOf(parent) != "type_parameter_pack") {
+	if parent == nil || n == nil {
 		return false
 	}
-	if field == "name" || isTypeParameterName(parent, field) {
-		return true
+	if kindOf(parent) == "type_parameter" || kindOf(parent) == "type_parameter_pack" {
+		if field == "name" || isTypeParameterName(parent, field) {
+			return true
+		}
+		first := parent.NamedChild(0)
+		if first != nil && first.StartByte() == n.StartByte() && first.EndByte() == n.EndByte() {
+			return true
+		}
 	}
-	first := parent.NamedChild(0)
-	return first != nil && first.StartByte() == n.StartByte() && first.EndByte() == n.EndByte()
+	// pack の宣言は type_parameter → type_parameter_pack → user_type → T の形。`repeat each T` の使用にも同じ user_type が出るが、
+	// そちらの pack の親は type_pack_expansion なので、親まで見ないと使用の側まで落とす
+	if kindOf(parent) == "user_type" && kindOf(n) == "type_identifier" {
+		pack := parent.Parent()
+		if pack != nil && kindOf(pack) == "type_parameter_pack" {
+			parameter := pack.Parent()
+			if parameter != nil && kindOf(parameter) == "type_parameter" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isOptionalBindingShorthand は `if let foo` (guard / while も) の省略形の名前か。束縛であると同時に、外側の foo への参照でもある。
+func isOptionalBindingShorthand(parent, n *sitter.Node, field string) bool {
+	if parent == nil || n == nil || kindOf(n) != "simple_identifier" || field != "bound_identifier" {
+		return false
+	}
+	switch kindOf(parent) {
+	case "if_statement", "guard_statement", "while_statement":
+	default:
+		return false
+	}
+	for i := range parent.ChildCount() {
+		child := parent.Child(i)
+		if child.StartByte() != n.StartByte() || child.EndByte() != n.EndByte() {
+			continue
+		}
+		// 省略形は名前の直後で条件が終わる (`,` / `{` / guard の else)。`= 値`・型注釈 (`: Int = x`)・`case let foo? = x` は新しい束縛
+		prev := prevNonComment(parent, i)
+		if prev == nil || kindOf(prev) != "value_binding_pattern" {
+			return false
+		}
+		next := nextNonComment(parent, i)
+		if next == nil {
+			return false
+		}
+		switch kindOf(next) {
+		case ",", "{", "else":
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 // calleeName は呼び出しの先頭の式から呼ばれる名前を取る (`f`・`a.b.f`・`a?.f`)。それ以外 (`(f)()`・`x[0]()`・`f()()`) は空。
@@ -736,6 +822,39 @@ func (w *walker) boundName(n *sitter.Node) string {
 	return ""
 }
 
+// boundNames は property の宣言の束縛の名前を全部返す。`var x = 0, y = 0` は name の子を複数持つ 1 つの property_declaration になる。
+func (w *walker) boundNames(n *sitter.Node) []string {
+	var names []string
+	seen := map[string]bool{}
+	var visit func(*sitter.Node)
+	visit = func(pattern *sitter.Node) {
+		for i := range pattern.ChildCount() {
+			child := pattern.Child(i)
+			// tuple の pattern のラベル (`let (label: a) = …` の label) は束縛ではない。束縛は後ろの子の pattern の中にある
+			if next := nextNonComment(pattern, i); kindOf(child) == "simple_identifier" && next != nil && kindOf(next) == ":" {
+				continue
+			}
+			if kindOf(child) == "simple_identifier" {
+				name := w.text(child)
+				if !seen[name] {
+					seen[name] = true
+					names = append(names, name)
+				}
+				continue
+			}
+			if child.IsNamed() {
+				visit(child)
+			}
+		}
+	}
+	for i := range n.ChildCount() {
+		if n.FieldNameForChild(uint32(i)) == "name" {
+			visit(n.Child(i))
+		}
+	}
+	return names
+}
+
 func (w *walker) modifiers(n *sitter.Node) *sitter.Node {
 	for i := range n.NamedChildCount() {
 		if c := n.NamedChild(i); kindOf(c) == "modifiers" {
@@ -863,12 +982,37 @@ func (w *walker) propertyUnit(decl, computed *sitter.Node, name string, c ctx) *
 // allowMarker は単位の直前のコメントに書く許可の印。
 const allowMarker = "dupscan:allow"
 
+func isComment(n *sitter.Node) bool {
+	return kindOf(n) == "comment" || kindOf(n) == "multiline_comment"
+}
+
+// prevNonComment は parent の i 番目の子の前で、最初のコメントでない子を返す (無ければ nil)。
+func prevNonComment(parent *sitter.Node, i uint) *sitter.Node {
+	for j := int(i) - 1; j >= 0; j-- {
+		if c := parent.Child(uint(j)); !isComment(c) {
+			return c
+		}
+	}
+	return nil
+}
+
+// nextNonComment は parent の i 番目の子の後ろで、最初のコメントでない子を返す (無ければ nil)。
+// この文法はコメントを名前つきの子として木に入れるので、隣の子を見る判定はコメントを飛ばさないと `foo /* x */ {` で外れる
+func nextNonComment(parent *sitter.Node, i uint) *sitter.Node {
+	for j := i + 1; j < parent.ChildCount(); j++ {
+		if c := parent.Child(j); !isComment(c) {
+			return c
+		}
+	}
+	return nil
+}
+
 // leadingComments は宣言 n の直前に続くコメント (空行を挟まない) を近い順に返す。
 // 前の行の末尾のコメント (`let a = 1 // …`) はその行のものなので数えない。
 func leadingComments(n *sitter.Node) []*sitter.Node {
 	var out []*sitter.Node
 	next := n
-	for s := n.PrevSibling(); s != nil && (kindOf(s) == "comment" || kindOf(s) == "multiline_comment"); s = s.PrevSibling() {
+	for s := n.PrevSibling(); s != nil && isComment(s); s = s.PrevSibling() {
 		if next.StartPosition().Row > s.EndPosition().Row+1 {
 			break
 		}

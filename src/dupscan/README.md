@@ -43,6 +43,7 @@ bin/dupscan refs StorageStatsEvent -limit 10
 後置クロージャのある呼び出しは括弧の中のラベルが先頭に一致すれば当てる。flag は名前の前に書く (`callers -format json make`)。
 
 `def` は名前の完全一致で定義を探す。`Type.member` で型を絞り、`make(x:_:)` のように引数ラベルも指定できる。
+`count()` のように括弧を書いた場合は関数・初期化子・subscript・deinit・protocol の関数要件だけに当てる。
 関数・初期化子・property・subscript は `file:line-endLine 型.署名` の見出しとソースを出し、既定 80 行を超えると残りの行数を示す。
 struct / class / enum / protocol / actor / extension は宣言とメンバーの一覧を出す。protocol 要件・保存 property・enum case・typealias・associatedtype・入れ子の型も一覧に含める。
 型の extension は宣言ごとに表示する。`Type.member` は generic 引数と `where` 句を除いた型名で照合するので、`Box<T> where T: P` は `Box.member`、条件付き extension は `Box.member`、`extension Foo.Bar` は `Foo.Bar.member` で引ける。
@@ -52,6 +53,7 @@ struct / class / enum / protocol / actor / extension は宣言とメンバーの
 `refs` は識別子の構文上の位置を `file:line 囲む単位 [test] [型の位置|式の位置] | その行` で出す。これは意味上の型/値判定ではない。`Foo(...)` や `Foo.shared` の `Foo` も、構文上は式の位置として出る。
 宣言名・呼び出しの引数ラベル・コメント・文字列本文は含めず、文字列補間の中の識別子は式の位置として数える。prod を test より先に並べる。
 `@Test` / XCTest 関数の中の参照はその関数名を囲む単位として出す。メソッド内の入れ子の `func` は `Type.member` 照合の対象外。
+単位の外でも型の中なら囲む型名を出す。`if let foo` などの省略束縛は外側の値への参照として数え、parameter pack の宣言名は除く。
 text は `-limit` の既定 20 件まで (`0` は全部)、JSON は全件を返す。
 
 report の text は、組を大きい順 (メンバーのうち最大の単位の節の数) に並べ、先頭に「ファイルの組」(同じファイルの組み合わせに組が 2 つ以上あるもの) を件数と節の合計の大きい順に 5 行出す。
@@ -210,10 +212,12 @@ gate の違反の json と `-v` に出る「除外の 1 行」に `kind` (`false
 
 ## 分かっている限界 (誤検知・見逃しの形)
 
-- def / refs は構文木の近似で、型を解決しない (同名の別の定義・参照も当たる)。ほかに分かっている形 (issue 921 の敵対的レビュー):
-  `def count()` (空のラベル) は同じ名前の property・case にも当たる / `var x = 0, y = 0` の 2 つ目以降の名前は def で引けない /
-  複数行にわたる enum の case は 1 行目だけを出す / `if let foo {` (Swift 5.7 の省略形) は束縛として読むので、外側の `foo` への参照を数えない /
-  parameter pack の宣言 (`<each T>` の T) を refs で参照に数える
+- def / refs は構文木の近似で、型を解決しない (同名の別の定義・参照も当たる)
+- tuple の pattern の束縛 (`let (a, b): (Int, String) = …`) は def の見出しに型注釈を付けない (要素の位置で型を割り当てない)
+- 1 つの宣言の 2 つ目以降の束縛 (`var p = 0,\n q = ""` の q) の def は、宣言の先頭の行を指す
+- refs の囲む単位は行の範囲でも引く。型の宣言と同じ行に関数があると (`struct S: P { func g() {`)、継承節・where 句の参照もその関数の中と出る
+- 束縛の列の `,` の直前にコメントがあると (`let a /* c */, b: String`)、2 つ目以降の束縛を def で引けない
+- 関連値にラベルのある case (`case foo(x: Int)`) は `def foo(x:)` で引けない (`def foo` で引く)。macro の宣言は def で引けない
 - 局所の名前の有効範囲を見ない (宣言がどこかにあれば、単位の中の同じ名前を全部局所として扱う)。誤検知の向き
 - test のファイルの判定はパスの慣習 (`Tests` / `…Tests` / `…Tests.swift`) と `XCTestCase` の継承。`App/ABTests/` のような製品のディレクトリも test と読む (repo ごとの上書きは設定ファイル。issue 906)
 - クロージャの鍵は、囲む単位の中での出現の順番。前にクロージャを足すと後ろの鍵がずれる (除外の設定は順番を入れない釘で指すので、ずれでは外れない)
