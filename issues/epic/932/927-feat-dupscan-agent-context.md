@@ -34,7 +34,7 @@ dupscan context -symbol StorageClient.upload -definition-file Sources/StorageCli
 - [ ] Claude/Codexで同じ変更課題を既存コマンド列と比較し、必要な情報への到達、往復数、返したbytes、elapsed time、見落としを測る。少ない出力だけを成功指標にしない。
 - [ ] [924](924-perf-dupscan-exploration-latency.md) の1走査/batch案と処理を共有できるか確認し、別の解析cacheや常駐プロセスを重複して作らない。
 
-関連: [926](926-feat-dupscan-query-diagnostics.md) の曖昧さ・解析不完全の契約を使う。[918](epic/890/pending/918-feat-dupscan-target-and-literal-table.md) の所属情報が無い段階では、利用可能なモジュールを推測で断定しない。literal差分表やType-3は既存issueの範囲を維持する。
+関連: [926](926-feat-dupscan-query-diagnostics.md) の曖昧さ・解析不完全の契約を使う。[918](../890/pending/918-feat-dupscan-target-and-literal-table.md) の所属情報が無い段階では、利用可能なモジュールを推測で断定しない。literal差分表やType-3は既存issueの範囲を維持する。
 
 ## 詳細設計案（2026-10-26、未実装）
 

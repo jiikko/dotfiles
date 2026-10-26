@@ -106,4 +106,4 @@ skill dupscan の 2 節・README・obaket の AGENTS.md / CLAUDE.md の dupscan 
 
 ## 追加提案との境界（2026-10-26）
 
-[928](../../../928-feat-dupscan-agent-onboarding.md) にClaude/Codex共通のCLI能力診断・導入案内を提案した。本issueのClaude用grep案内は実装済みの入口として利用し、重複して新設しない。既存の1か月後の測定・保留条件は維持する。Codex側の固有hook対応は別途検証する事項で、ここで利用可能と断定しない。CLIの問い合わせ診断は [926](../../../926-feat-dupscan-query-diagnostics.md)、情報をまとめる新commandは [927](../../../927-feat-dupscan-agent-context.md) の範囲とする。
+[928](../../932/928-feat-dupscan-agent-onboarding.md) にClaude/Codex共通のCLI能力診断・導入案内を提案した。本issueのClaude用grep案内は実装済みの入口として利用し、重複して新設しない。既存の1か月後の測定・保留条件は維持する。Codex側の固有hook対応は別途検証する事項で、ここで利用可能と断定しない。CLIの問い合わせ診断は [926](../../932/926-feat-dupscan-query-diagnostics.md)、情報をまとめる新commandは [927](../../932/927-feat-dupscan-agent-context.md) の範囲とする。

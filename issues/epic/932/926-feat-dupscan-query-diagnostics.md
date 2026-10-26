@@ -30,7 +30,7 @@ Claude/Codexがコマンドの書き方の違いで失敗したり、非対応�
 - [ ] 次の問い合わせ案は安全にquote可能なargvとして返し、表示内容を自動実行しない。候補数と出力量に上限を設ける。
 - [ ] Claude/Codexで、誤った問い合わせから目的の結果までの再試行回数と、誤った不存在判断が減るかを比較する。改善量は実測する。
 
-関連: [900](epic/890/900-research-dupscan-next-languages.md) の言語ごとの対応範囲を反映する。[928](928-feat-dupscan-agent-onboarding.md) の能力情報と整合させる。gateのbase/違反/除外の判定を変更する作業は、この探索診断と切り分ける。
+関連: [900](../890/900-research-dupscan-next-languages.md) の言語ごとの対応範囲を反映する。[928](928-feat-dupscan-agent-onboarding.md) の能力情報と整合させる。gateのbase/違反/除外の判定を変更する作業は、この探索診断と切り分ける。
 
 ## 詳細設計案（2026-10-26、未実装）
 

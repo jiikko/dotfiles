@@ -32,7 +32,7 @@ dupscan callers -format json 'run(_:)'
 3. v2に現行shape一致と追加のpossible candidateを分けて出す案を比較する。候補にはfile/line/colと `default_argument_omission` 等の理由を付ける。同じ出現が複数候補に当たった場合も曖昧さを保持する。possibleを単純加算した値を「正しい呼び出し数」と呼ばない。大きな一覧の予算は926へ従う。
 4. Goのvariadic/spread・Swiftのtrailing closure等は対応済みと推測しない。能力/limitationsへ明記し、各言語のfixtureで対応を確認してから範囲を広げる。LSP/型解決の追加は範囲外。
 
-[925](925-feat-dupscan-helper-search.md) の初期search順位は近似呼び出し数を使わない方針を維持する。本issueでindexの既存順位を黙って変えない。候補の実際の再利用可否・module/targetの所属は[918](epic/890/pending/918-feat-dupscan-target-and-literal-table.md)とコード確認の課題であり、数値で代用しない。
+[925](925-feat-dupscan-helper-search.md) の初期search順位は近似呼び出し数を使わない方針を維持する。本issueでindexの既存順位を黙って変えない。候補の実際の再利用可否・module/targetの所属は[918](../890/pending/918-feat-dupscan-target-and-literal-table.md)とコード確認の課題であり、数値で代用しない。
 
 ## 検証・受け入れ条件
 

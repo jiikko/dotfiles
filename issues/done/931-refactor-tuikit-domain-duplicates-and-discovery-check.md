@@ -80,9 +80,9 @@ dupscan near -format json -min-nodes 1 -min-closure-nodes 1 -levels L1,L2,L3 src
 
 ## 次の改善案へ戻す知見
 
-[925](../925-feat-dupscan-helper-search.md): 名前が不明な状態の型/用途検索と、入力がslice直渡し/struct.field経由で違う実例を評価課題に入れる。今回のnode閾値/構文差を新しいlexical searchが必ず解消するとは言わない。Type-3等は既存の保留範囲。
+[925](../epic/932/925-feat-dupscan-helper-search.md): 名前が不明な状態の型/用途検索と、入力がslice直渡し/struct.field経由で違う実例を評価課題に入れる。今回のnode閾値/構文差を新しいlexical searchが必ず解消するとは言わない。Type-3等は既存の保留範囲。
 
-[928](../928-feat-dupscan-agent-onboarding.md): default reportだけで探索を終えず、候補が無い場合に型/用途/outlineへ移る導線を検証する。同じstdout予算でも広いcatで読取を使い切れるため、検証harnessではbudgetを機械的に制御する。未実装featureの効果と現行ツールの結果を分ける。
+[928](../epic/932/928-feat-dupscan-agent-onboarding.md): default reportだけで探索を終えず、候補が無い場合に型/用途/outlineへ移る導線を検証する。同じstdout予算でも広いcatで読取を使い切れるため、検証harnessではbudgetを機械的に制御する。未実装featureの効果と現行ツールの結果を分ける。
 
 ## 検証と受け入れ条件
 

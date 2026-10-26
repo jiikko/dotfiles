@@ -3,6 +3,7 @@
 起票日: 2026-10-24
 
 > epic 890 の親 issue。要件と構想の正本は [891](891-design-dupscan-requirements.md)。作業は同じディレクトリのタスクの子 issue で進める。
+> **この epic のゴールは動くものを作ること**。精度を上げる改善は epic [932](../../932/932-epic-dupscan-accuracy.md) で扱う (ユーザー指示 2026-10-26)。
 
 ## 概要
 

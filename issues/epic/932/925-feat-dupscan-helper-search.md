@@ -37,7 +37,7 @@ dupscan search -query 'connection bucket fixture' -returns StorageLocation -limi
 - [ ] 既存がない課題では正しく新規実装できることを対照に入れる。小さなrepoで対照群も常に既存を見つけるなら、効果を測れない条件として扱う。
 - [ ] 924の代表的規模でlatencyと出力量を測り、検索の便利さと追加コストを評価する。
 
-関連: [924](924-perf-dupscan-exploration-latency.md) は処理速度、[918](epic/890/pending/918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](epic/890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。本提案でこれらの保留作業を自動的に再開しない。
+関連: [924](924-perf-dupscan-exploration-latency.md) は処理速度、[918](../890/pending/918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](../890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。本提案でこれらの保留作業を自動的に再開しない。
 
 ## 詳細設計案（2026-10-26、未実装）
 
@@ -106,4 +106,4 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 
 - 2026-10-26: 既存実装発見・比較評価について読み取り専用Codex subagentで反証レビュー。925の「候補の適切性をCLIが判断するように読める」P3を訂正し、候補抽出とagentによる採用判断を分けた。 issue内の相対リンク・JSON/Python構文・diffとBash 5のissue関連テストが成功。929の本文内手順と930の3問い合わせをCLIで再現した。文書の改善は、出力誤認の再現・責務と、既存実装発見/不要な重複追加を測る条件を具体化したこと。機能改善の効果は未検証。
 
-- 2026-10-26: [931](done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931のtuikit実例では、同じ表示幅ループがslice直渡し/struct.field経由の構文差と19-nodeの閾値で現行near/reportに一致しなかった。未知名からの型/用途検索の評価へ追加する。新searchの効果は未検証。
+- 2026-10-26: [931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931のtuikit実例では、同じ表示幅ループがslice直渡し/struct.field経由の構文差と19-nodeの閾値で現行near/reportに一致しなかった。未知名からの型/用途検索の評価へ追加する。新searchの効果は未検証。
