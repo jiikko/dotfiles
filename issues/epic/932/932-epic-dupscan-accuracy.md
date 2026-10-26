@@ -31,6 +31,7 @@
 | [934](934-feat-dupscan-source-evidence-search.md) | doc全文・テスト使用例・元ソースを補助証拠として探す |
 | [935](done/935-test-doctor-duplicate-discovery-effect.md) | doctorの重複検出・探索出力量をgrep/併用で比較する |
 | [937](937-feat-dupscan-go-test-call-owner.md) | 比較から除くGoテストにも呼び出し元名を保持する |
+| [938](938-ux-dupscan-agent-friendly.md) | agent のコンテキスト消費と発見性を良くするアイデア (既存 issue との関係つき) |
 
 ## 指摘の対応範囲
 
