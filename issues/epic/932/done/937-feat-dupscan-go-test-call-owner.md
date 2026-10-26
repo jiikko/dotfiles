@@ -88,3 +88,5 @@ bin/dupscan index -file src/doctor/internal/displaycheck/displaycheck_test.go sr
 - 2026-10-27: 実装と回帰は `feat(dupscan): name Go test callers without comparing test bodies`、README/検証・完了記録は `docs(dupscan): document test caller ownership and complete 937`へ分けた。最終文書も読み取り専用Codex subagentで反証レビューし、数値・契約・限定評価に修正必須の指摘なし。
 
 - 2026-10-27: Markdownに適用されるissue整合検査、dupscanの適用lint/race、移動後の相対リンク検査、diff検査が成功。937の受け入れ条件を満たし完了へ移動した。
+
+- 2026-10-27: `docs(dupscan): record verification after context and evidence integration`で最新origin/masterのcontext/evidence最小版との統合を記録。親issueの937/938行を両方保持して競合を解消した。統合後にlint/race全テスト、origin 4709b3bb基準のstrict gate（変わった7単位、新規違反なし）、doctor互換性5条件と6出現/4テスト名を再検証して成功。
