@@ -43,19 +43,7 @@ func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string
 	// 壊れ方は「テストが別の応答を拾って green のまま意味を失う」なので気づけない。
 	// トークン境界を要求すれば、登録していない呼び出しは `unexpected` に落ちる
 	line := strings.Join(append([]string{name}, args...), " ")
-	best := ""
-	for k := range f.resp {
-		if !strings.HasPrefix(line, k) {
-			continue
-		}
-		// キーの直後は「行末」か「空白」でなければならない (パスの途中で切れた一致を弾く)
-		if len(line) > len(k) && line[len(k)] != ' ' {
-			continue
-		}
-		if len(k) > len(best) {
-			best = k
-		}
-	}
+	best := longestCommandPrefix(line, f.resp)
 	if best != "" {
 		r := f.resp[best]
 		return r.out, "stderr", r.rc, r.err

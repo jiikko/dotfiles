@@ -37,18 +37,7 @@ func (f *deleteRunner) run(_ context.Context, name string, args ...string) (stri
 	if f.onCall != nil {
 		f.onCall(append([]string{name}, args...))
 	}
-	best := ""
-	for k := range f.resp {
-		if !strings.HasPrefix(line, k) {
-			continue
-		}
-		if len(line) > len(k) && line[len(k)] != ' ' {
-			continue
-		}
-		if len(k) > len(best) {
-			best = k
-		}
-	}
+	best := longestCommandPrefix(line, f.resp)
 	if best == "" {
 		return "", "unexpected: " + line, 1, nil
 	}

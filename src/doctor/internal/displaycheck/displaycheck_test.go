@@ -1,6 +1,7 @@
 package displaycheck
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -111,5 +112,21 @@ func TestExtractionCanaryIsFatal(t *testing.T) {
 	s2.Package = "nosuchpackage"
 	if _, fatal := check(s2); fatal == "" {
 		t.Fatal("package が見つからなくても fatal にならない")
+	}
+}
+
+func TestSortedKeysPreservesDisplayCheckOrder(t *testing.T) {
+	for _, keys := range [][]string{
+		sortedKeys(map[string]Gate{"z": {Func: "first"}, "a": {Func: "last"}}),
+		sortedKeys(map[string]string{"z": "first", "a": "last"}),
+	} {
+		if !reflect.DeepEqual(keys, []string{"a", "z"}) {
+			t.Errorf("keys must be ordered independently of values: %v", keys)
+		}
+	}
+	for _, keys := range [][]string{sortedKeys(map[string]Gate(nil)), sortedKeys(map[string]string{})} {
+		if keys == nil || len(keys) != 0 {
+			t.Errorf("empty input must return a nonnil empty slice: %#v", keys)
+		}
 	}
 }

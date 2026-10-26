@@ -220,7 +220,7 @@ func check(s Spec) (problems []string, fatal string) {
 
 	checked := 0
 	usedExempt := map[string]bool{}
-	for _, typ := range sortedGateKeys(sanitizeGate) {
+	for _, typ := range sortedKeys(sanitizeGate) {
 		gate, recv := sanitizeGate[typ].Func, sanitizeGate[typ].Recv
 		if !structs[typ] {
 			addf("%s: 構造体が見つからない (rename したら sanitizeGate も直すこと)", typ)
@@ -314,16 +314,7 @@ func stringish(e ast.Expr, strNamed map[string]bool) (yes, unknown bool) {
 	return false, false // func / chan / … は文字列を含まない
 }
 
-func sortedGateKeys(m map[string]Gate) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func sortedKeys(m map[string]string) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
