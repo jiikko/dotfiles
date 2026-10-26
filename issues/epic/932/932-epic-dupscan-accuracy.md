@@ -30,7 +30,7 @@
 | [933](933-feat-dupscan-behavior-hint-search.md) | 呼出先・処理構造から名前不明の既存helperを探す |
 | [934](934-feat-dupscan-source-evidence-search.md) | doc全文・テスト使用例・元ソースを補助証拠として探す |
 | [935](done/935-test-doctor-duplicate-discovery-effect.md) | doctorの重複検出・探索出力量をgrep/併用で比較する |
-| [937](937-feat-dupscan-go-test-call-owner.md) | 比較から除くGoテストにも呼び出し元名を保持する |
+| [937](done/937-feat-dupscan-go-test-call-owner.md) | 比較から除くGoテストにも呼び出し元名を保持する |
 | [938](938-ux-dupscan-agent-friendly.md) | agent のコンテキスト消費と発見性を良くするアイデア (既存 issue との関係つき) |
 
 ## 指摘の対応範囲
@@ -39,7 +39,7 @@
 
 ## 状態
 
-929のgate解析漏れ通知/strict判定と935のdoctor限定測定を完了（2026-10-26）。残る機能課題は未着手。
+929のgate解析漏れ通知/strict判定、935のdoctor限定測定、937のGo test呼び出し元表示を完了。927のcontextと934のevidenceは最小版を実装済みで、詳細設計の残りをopenで継続する。ほかの課題は各子issueで追跡する。
 
 - 2026-10-26: 指摘の未カバー分を933/934へ切り出し、895/899/918を未着手のopen課題へ戻した。context消費と重複追加の削減は928で評価する。実装・効果は未検証。
 
@@ -50,3 +50,5 @@
 - 2026-10-26: [935](done/935-test-doctor-duplicate-discovery-effect.md)でdoctorの検出・探索出力量を比較。併用で完全重複を検出し、探索転送量は平均48.7%少なかったが、grepは別の部分重複を発見。実context/新規重複追加率と機能改善は895/928ほかで継続。
 
 - 2026-10-26: 936の共通化作業で確認したGo testのcall owner欠落を937へ切り出した。現行の比較除外仕様を維持する設計で、機能実装は未着手。
+
+- 2026-10-27: 937でGoのtest ownerを比較単位から分離した。doctorの6出現を保ち、欠けていた4件のテスト名を表示。互換性5条件・4変異検出・lint/raceを確認。固定例ではソース補完読取が1→0回だが、一般的なcontext効率は未検証。

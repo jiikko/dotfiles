@@ -37,6 +37,6 @@
 
 - 2026-10-26: `refactor(doctor): share display keys and test command matching`で両処理を共通化。doctorのreportは1組から0組、strict gateは解析エラー/新規違反なし、消えた組1。callersでsortedKeysの本体利用2箇所、longestCommandPrefixの両runner利用2箇所を照合した。部分loopはソース差分でも2→1を確認した。
 - 2026-10-26: make -C src/doctor lint testが成功（race・derived-fieldsのキャッシュ無効実行を確認）。読み取り専用Codex subagentがソース/テスト/issueを反証レビューし、不具合の指摘なし。src全体の通常gateは新規違反なしだが、既知の意図的な壊れたfixture src/subproc/boundarycheck/testdata/broken/broken.goにより解析不完全。doctorに絞ったstrict gateは成功しており、src全体の完全解析成功とは扱わない。
-- 2026-10-26: 実作業で得たtest owner表示の課題を[937](../epic/932/937-feat-dupscan-go-test-call-owner.md)へ切り出した。部分重複の検出自体は895で継続。規則の実装箇所は各2→1となり修正漏れの可能性を減らした。追加コストはprivate generic helper2個と回帰テスト。性能/context効果は未測定。
+- 2026-10-26: 実作業で得たtest owner表示の課題を[937](../epic/932/done/937-feat-dupscan-go-test-call-owner.md)へ切り出した。部分重複の検出自体は895で継続。規則の実装箇所は各2→1となり修正漏れの可能性を減らした。追加コストはprivate generic helper2個と回帰テスト。性能/context効果は未測定。
 
 - 2026-10-26: `docs(doctor): complete consolidation and specify dupscan test owners`で完了記録と改善課題への参照を保存。gateの除外は追加していない。
