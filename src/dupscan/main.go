@@ -13,7 +13,8 @@ import (
 
 	"dupscan/internal/exclude"
 	"dupscan/internal/group"
-	"dupscan/internal/lang/swift"
+	"dupscan/internal/lang"
+	"dupscan/internal/langs"
 	"dupscan/internal/norm"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
@@ -190,7 +191,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan:", err)
 		return 2
 	}
-	src := repo.Worktree{Scope: sc, Exts: swift.Extensions}
+	src := repo.Worktree{Scope: sc, Exts: langs.Extensions()}
 	cfg, err := loadConfig(src, *c.noExclude)
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan: 判定不能:", err)
@@ -284,9 +285,9 @@ type scanned struct {
 	errFiles    []string
 	entries     []*group.Entry
 	calls       []tree.Call
-	definitions []swift.Definition
-	types       []swift.TypeDeclaration
-	references  []swift.Reference
+	definitions []lang.Definition
+	types       []lang.TypeDeclaration
+	references  []lang.Reference
 	contents    map[string][]byte
 }
 
@@ -328,9 +329,9 @@ func scanSourceOptions(src repo.Source, requireFiles, withCalls, withDefs, withR
 type parsedFiles struct {
 	entries     []*group.Entry
 	calls       []tree.Call
-	definitions []swift.Definition
-	types       []swift.TypeDeclaration
-	references  []swift.Reference
+	definitions []lang.Definition
+	types       []lang.TypeDeclaration
+	references  []lang.Reference
 	errFiles    []string
 }
 
@@ -338,9 +339,9 @@ func parseAll(files []string, contents map[string][]byte, withCalls, withDefs, w
 	type result struct {
 		entries     []*group.Entry
 		calls       []tree.Call
-		definitions []swift.Definition
-		types       []swift.TypeDeclaration
-		references  []swift.Reference
+		definitions []lang.Definition
+		types       []lang.TypeDeclaration
+		references  []lang.Reference
 		hasErr      bool
 		err         error
 	}
@@ -351,17 +352,8 @@ func parseAll(files []string, contents map[string][]byte, withCalls, withDefs, w
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			p, err := swift.NewParser()
-			if err != nil {
-				for i := range jobs {
-					results[i].err = err
-				}
-				return
-			}
+			p := langs.NewParsers(lang.Options{Calls: withCalls, Defs: withDefs, Refs: withRefs})
 			defer p.Close()
-			p.CollectCalls = withCalls
-			p.CollectDefs = withDefs
-			p.CollectRefs = withRefs
 			for i := range jobs {
 				r, err := p.Parse(files[i], contents[files[i]])
 				entries := make([]*group.Entry, len(r.Units))

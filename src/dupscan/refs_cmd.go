@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"dupscan/internal/lang/swift"
+	"dupscan/internal/langs"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
 )
@@ -42,7 +42,7 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	got, err := scanSourceOptions(repo.Worktree{Scope: sc, Exts: swift.Extensions}, true, false, false, true)
+	got, err := scanSourceOptions(repo.Worktree{Scope: sc, Exts: langs.Extensions()}, true, false, false, true)
 	if err != nil {
 		return fail(err)
 	}
@@ -52,7 +52,7 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 			Name: r.Name, Kind: r.Kind, File: r.File, Line: r.Line, Col: r.Col, Text: r.Text, Test: r.Test, Enclosing: r.Enclosing, TestOwner: r.TestOwner,
 		})
 	}
-	summary := report.BuildReferences(query, references, got.units, swift.IsTestPath)
+	summary := report.BuildReferences(query, references, got.units, langs.IsTestPath)
 	switch *format {
 	case "text":
 		err = report.ReferencesText(stdout, summary, *limit)

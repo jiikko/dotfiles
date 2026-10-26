@@ -8,7 +8,7 @@ import (
 	"dupscan/internal/exclude"
 	"dupscan/internal/gate"
 	"dupscan/internal/group"
-	"dupscan/internal/lang/swift"
+	"dupscan/internal/langs"
 	"dupscan/internal/norm"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
@@ -45,7 +45,7 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	var head repo.Source = repo.Worktree{Scope: sc, Exts: swift.Extensions}
+	var head repo.Source = repo.Worktree{Scope: sc, Exts: langs.Extensions()}
 	headCommit := "HEAD"
 	if *headRef != "" {
 		h, err := repo.CommitHash(sc.Root, *headRef)
@@ -53,7 +53,7 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "dupscan gate:", err)
 			return 2
 		}
-		head, headCommit = &repo.Commit{Scope: sc, Exts: swift.Extensions, Hash: h}, h
+		head, headCommit = &repo.Commit{Scope: sc, Exts: langs.Extensions(), Hash: h}, h
 	}
 	baseHash, err := resolveBase(sc.Root, *baseRef, headCommit)
 	if err != nil {
@@ -65,7 +65,7 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2
 	}
-	baseSrc := &repo.Commit{Scope: sc, Exts: swift.Extensions, Hash: baseHash}
+	baseSrc := &repo.Commit{Scope: sc, Exts: langs.Extensions(), Hash: baseHash}
 	// base の設定は読めなければ空とみなす (壊れた設定を直す commit を通すため。空とみなすと除外は全部新しく見え、安全側)。
 	baseCfg, baseCfgErr := loadConfig(baseSrc, false)
 	b, err := scanSource(baseSrc, false, false)
@@ -106,7 +106,7 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		s.BaseConfigError = baseCfgErr.Error()
 	}
 	if *headRef == "" {
-		u, err := repo.Untracked(sc, swift.Extensions)
+		u, err := repo.Untracked(sc, langs.Extensions())
 		if err != nil {
 			fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 			return 2

@@ -4,13 +4,14 @@ import (
 	"strings"
 	"testing"
 
+	"dupscan/internal/lang"
 	"dupscan/internal/norm"
 	"dupscan/internal/tree"
 )
 
 // 誤検知 (違う処理を同じと判定する) と見逃しになりやすい形の固定。
 
-func unitBy(t *testing.T, r FileResult, sig string) *tree.Unit {
+func unitBy(t *testing.T, r lang.FileResult, sig string) *tree.Unit {
 	t.Helper()
 	for _, u := range r.Units {
 		if u.Signature == sig || u.Name == sig {

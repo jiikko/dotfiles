@@ -12,6 +12,7 @@ import (
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
 
+	"dupscan/internal/lang"
 	"dupscan/internal/norm"
 	"dupscan/internal/tree"
 )
@@ -46,7 +47,7 @@ func TestEveryKindIsClassified(t *testing.T) {
 	}
 }
 
-func parse(t *testing.T, file, src string) FileResult {
+func parse(t *testing.T, file, src string) lang.FileResult {
 	t.Helper()
 	p, err := NewParser()
 	if err != nil {
@@ -103,7 +104,7 @@ let interpolated = "\(box.value)"
 	if unitCount != 4 {
 		t.Fatalf("型や保存 property を比較単位に加えない: units=%d (%#v)", unitCount, got.Units)
 	}
-	refs := map[string][]Reference{}
+	refs := map[string][]lang.Reference{}
 	for _, r := range got.References {
 		refs[r.Name] = append(refs[r.Name], r)
 	}
@@ -177,7 +178,7 @@ struct Box<TOnly> {
 	}
 }
 
-func find(t *testing.T, r FileResult, name string) *tree.Unit {
+func find(t *testing.T, r lang.FileResult, name string) *tree.Unit {
 	t.Helper()
 	for _, u := range r.Units {
 		if u.Name == name {

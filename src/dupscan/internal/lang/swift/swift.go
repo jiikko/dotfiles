@@ -12,11 +12,24 @@ import (
 	swiftgrammar "github.com/alex-pinkus/tree-sitter-swift/bindings/go"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 
+	"dupscan/internal/lang"
 	"dupscan/internal/tree"
 )
 
 // Extensions は adapter が読むファイルの拡張子。
 var Extensions = []string{".swift"}
+
+// Adapter は Swift の読み方。
+var Adapter = lang.Adapter{Name: "swift", Extensions: Extensions, IsTestPath: IsTestPath, NewParser: newLangParser}
+
+func newLangParser(o lang.Options) (lang.Parser, error) {
+	p, err := NewParser()
+	if err != nil {
+		return nil, err
+	}
+	p.CollectCalls, p.CollectDefs, p.CollectRefs = o.Calls, o.Defs, o.Refs
+	return p, nil
+}
 
 // Language は文法を返す。
 func Language() *sitter.Language { return sitter.NewLanguage(swiftgrammar.Language()) }
@@ -65,76 +78,17 @@ func NewParser() (*Parser, error) {
 // Close は parser を閉じる。
 func (p *Parser) Close() { p.p.Close() }
 
-// FileResult は 1 ファイルの結果。
-type FileResult struct {
-	Units       []*tree.Unit
-	Calls       []tree.Call
-	Definitions []Definition
-	Types       []TypeDeclaration
-	References  []Reference
-	// HasError はファイルのどこかに読めない構文 (ERROR / MISSING) があること。読めない部分に飲み込まれた関数は単位として出てこないので、
-	// 呼び出し側は「比べていない部分がある」ことを出力に出す。
-	HasError bool
-}
-
-// Definition は def 用の定義情報。重複を比べる Unit ではない。
-type Definition struct {
-	Name       string
-	Kind       string
-	File       string
-	Line       int
-	EndLine    int
-	Col        int
-	Enclosing  string
-	Signature  string
-	Labels     []string
-	Test       bool
-	Nested     bool
-	Visibility string
-	Doc        string
-}
-
-// TypeDeclaration は型本体の宣言情報。Unit には含めない。
-type TypeDeclaration struct {
-	Name       string
-	Kind       string
-	File       string
-	Line       int
-	EndLine    int
-	Col        int
-	Enclosing  string
-	Scope      string
-	Signature  string
-	Test       bool
-	Nested     bool
-	Visibility string
-	Doc        string
-}
-
-// Reference は refs 用の識別子の出現。Kind は type_position または expression_position。
-type Reference struct {
-	Name      string
-	Kind      string
-	File      string
-	Line      int
-	Col       int
-	Text      string
-	Test      bool
-	Enclosing string
-	TestOwner string
-}
-
 // Parse は file (repo の root からの相対) の src から単位を取り出す。テスト関数そのものとその中のクロージャは単位にしない。
-func (p *Parser) Parse(file string, src []byte) (FileResult, error) {
+func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 	t := p.p.Parse(src, nil)
 	if t == nil {
-		return FileResult{}, fmt.Errorf("%s を parse できない", file)
+		return lang.FileResult{}, fmt.Errorf("%s を parse できない", file)
 	}
 	defer t.Close()
 	root := t.RootNode()
 	w := &walker{file: file, src: src, test: IsTestPath(file), closures: map[string]int{}, seen: map[string]int{}, isUnit: map[string]bool{}}
 	w.walk(root, ctx{})
-	r := FileResult{Units: w.units, HasError: root.HasError()}
+	r := lang.FileResult{Units: w.units, HasError: root.HasError()}
 	if p.CollectCalls {
 		r.Calls = w.calls(root)
 	}
@@ -185,9 +139,9 @@ func (w *walker) calls(root *sitter.Node) []tree.Call {
 
 // definitions walks declaration metadata only when def was requested. These records never enter Unit,
 // so adding types and stored properties cannot affect duplicate grouping.
-func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration) {
-	var defs []Definition
-	var types []TypeDeclaration
+func (w *walker) definitions(root *sitter.Node) ([]lang.Definition, []lang.TypeDeclaration) {
+	var defs []lang.Definition
+	var types []lang.TypeDeclaration
 	type context struct {
 		enclosing      []string
 		testClass      bool
@@ -199,7 +153,7 @@ func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration
 		if kind == string(tree.KindFunc) && w.isTestFunc(n, ctx{enclosing: c.enclosing, testClass: c.testClass}) {
 			test = true
 		}
-		defs = append(defs, Definition{
+		defs = append(defs, lang.Definition{
 			Name: name, Kind: kind, File: w.file, Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1,
 			Col: int(pos.Column) + 1, Enclosing: strings.Join(c.enclosing, "."), Signature: signature,
 			Labels: labels, Test: test, Nested: c.insideCallable, Visibility: w.visibility(n), Doc: w.docComment(n),
@@ -220,7 +174,7 @@ func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration
 				if kind != "extension" && len(c.enclosing) > 0 {
 					scope = strings.Join(append(append([]string(nil), c.enclosing...), rawName), ".")
 				}
-				types = append(types, TypeDeclaration{
+				types = append(types, lang.TypeDeclaration{
 					Name: name, Kind: kind, File: w.file,
 					Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1, Col: int(pos.Column) + 1,
 					Enclosing: strings.Join(c.enclosing, "."), Scope: scope, Signature: rawName,
@@ -286,7 +240,7 @@ func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration
 				pos := name.StartPosition()
 				signature := collapse(strings.TrimSpace(string(w.src[name.StartByte():last.EndByte()])))
 				endLine := int(last.EndPosition().Row) + 1
-				defs = append(defs, Definition{
+				defs = append(defs, lang.Definition{
 					Name: w.text(name), Kind: "case", File: w.file, Line: int(pos.Row) + 1, EndLine: endLine,
 					Col: int(pos.Column) + 1, Enclosing: strings.Join(c.enclosing, "."), Signature: signature,
 					Test: w.test || c.testClass, Nested: c.insideCallable, Visibility: w.visibility(n), Doc: w.docComment(n),
@@ -311,8 +265,8 @@ func (w *walker) definitions(root *sitter.Node) ([]Definition, []TypeDeclaration
 	return defs, types
 }
 
-func definitionFromUnit(u *tree.Unit, nested bool) Definition {
-	return Definition{
+func definitionFromUnit(u *tree.Unit, nested bool) lang.Definition {
+	return lang.Definition{
 		Name: u.Name, Kind: string(u.Kind), File: u.File, Line: u.Line, EndLine: u.EndLine, Col: u.Col,
 		Enclosing: u.Enclosing, Signature: u.Signature, Labels: append([]string(nil), u.Labels...), Test: u.Test,
 		Nested: nested, Visibility: u.Visibility, Doc: u.Doc,
@@ -450,9 +404,9 @@ func (w *walker) typeDeclarationKind(n *sitter.Node) string {
 	return "type"
 }
 
-func (w *walker) references(root *sitter.Node) []Reference {
+func (w *walker) references(root *sitter.Node) []lang.Reference {
 	lines := strings.Split(string(w.src), "\n")
-	var out []Reference
+	var out []lang.Reference
 	type context struct {
 		binding, afterDot, declarationName bool
 		inTest, testClass                  bool
@@ -475,7 +429,7 @@ func (w *walker) references(root *sitter.Node) []Reference {
 				if row >= 0 && row < len(lines) {
 					text = strings.TrimSpace(lines[row])
 				}
-				out = append(out, Reference{
+				out = append(out, lang.Reference{
 					Name: w.text(n), Kind: "expression_position", File: w.file, Line: row + 1, Col: int(pos.Column) + 1,
 					Text: text, Test: c.inTest, Enclosing: c.typeEnclosing, TestOwner: c.testOwner,
 				})
@@ -486,7 +440,7 @@ func (w *walker) references(root *sitter.Node) []Reference {
 			if row >= 0 && row < len(lines) {
 				text = strings.TrimSpace(lines[row])
 			}
-			out = append(out, Reference{
+			out = append(out, lang.Reference{
 				Name: w.text(n), Kind: "type_position", File: w.file, Line: row + 1, Col: int(pos.Column) + 1,
 				Text: text, Test: c.inTest, Enclosing: c.typeEnclosing, TestOwner: c.testOwner,
 			})

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"dupscan/internal/lang/swift"
+	"dupscan/internal/langs"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
 )
@@ -44,11 +44,11 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	got, err := scanSource(repo.Worktree{Scope: sc, Exts: swift.Extensions}, true, true)
+	got, err := scanSource(repo.Worktree{Scope: sc, Exts: langs.Extensions()}, true, true)
 	if err != nil {
 		return fail(err)
 	}
-	s := report.BuildCallers(rest[0], q, got.calls, got.units, swift.IsTestPath)
+	s := report.BuildCallers(rest[0], q, got.calls, got.units, langs.IsTestPath)
 	switch *format {
 	case "json":
 		err = report.WriteJSON(stdout, s)

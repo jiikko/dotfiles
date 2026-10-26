@@ -9,7 +9,7 @@ import (
 
 	"dupscan/internal/exclude"
 	"dupscan/internal/group"
-	"dupscan/internal/lang/swift"
+	"dupscan/internal/langs"
 	"dupscan/internal/norm"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
@@ -56,7 +56,7 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	src := repo.Worktree{Scope: sc, Exts: swift.Extensions}
+	src := repo.Worktree{Scope: sc, Exts: langs.Extensions()}
 	cfg, err := loadConfig(src, *c.noExclude)
 	if err != nil {
 		return fail(fmt.Errorf("判定不能: %w", err))

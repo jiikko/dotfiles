@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"dupscan/internal/lang/swift"
+	"dupscan/internal/langs"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
 )
@@ -47,7 +47,7 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 			return fail(err)
 		}
 	}
-	src := repo.Worktree{Scope: sc, Exts: swift.Extensions}
+	src := repo.Worktree{Scope: sc, Exts: langs.Extensions()}
 	cfg, err := loadConfig(src, false)
 	if err != nil {
 		return fail(fmt.Errorf("判定不能: %w", err))
