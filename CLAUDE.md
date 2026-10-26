@@ -19,6 +19,11 @@
   (glogx の bubbletea v2 / テーマ色の定数 / tmux のセッション永続化) と、glogx の画面の契約がここにある。
   **新しく足したら索引に 1 行足す**（載っていない文書は存在を知っている人にしか届かない）
 
+## `src/` の Go を書くとき
+
+- **新しい関数 (helper・値を組み立てる関数・テストの helper) を書く前に `dupscan index` で既にあるものを引き、commit の前に `dupscan gate` を回す** (skill dupscan の 1・3 節)。
+  dotfiles の `src` には module をまたいだ写しが多い (issue 900 の較正)。`src/` の `.go` を Write / Edit すると hook (`_claude/hooks/suggest-dupscan-for-go-edit.sh`) が session に 1 回案内する
+
 ## 何をどこに書くか
 
 | 置き場所 | 書くもの | 書かないもの |

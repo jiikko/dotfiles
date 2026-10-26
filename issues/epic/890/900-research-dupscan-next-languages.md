@@ -44,6 +44,10 @@ Go を足す価値は、索引と `gate` ([905](done/905-feat-dupscan-ci-check-g
     直さず README に記録: map のキーの局所の変数・型引数の制約・余分な `}` で手前の関数も読めない扱い・生の tag と解釈済みの tag
   - 変異: 新しいテストに 40 本余り当て、全部が狙ったテストで red (緑だった変異はテストを直すか捨てた)
 
+- 2026-10-26 dotfiles の `src/` の `.go` を Write / Edit すると、session に 1 回「書く前に dupscan index・commit の前に dupscan gate」を案内する hook と、
+  CLAUDE.md の節を足した (ユーザー決定: CLAUDE.md の 1 行 + 書く瞬間の hook。commit: feat(claude): src の Go を書くときに dupscan を案内する)。
+  敵対的レビュー 1 周 (P1 なし。テストが rc・stderr を捨てていた偽の緑を直した)・変異 10 本が全部 red
+
 ## 較正 (2026-10-26。master f4f463b41)
 
 - dotfiles の `src`: 1211 ファイル・8547 単位・組 70 (L1 45・L2 25)。所要 1 秒未満。読めない構文のファイルは 1 (testdata のわざと壊したファイル)
