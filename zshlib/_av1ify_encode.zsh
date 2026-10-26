@@ -678,6 +678,13 @@ __av1ify_match_existing_variant() {
         seg="$t"
         t=""
       fi
+      # 検証 NG の出力は __av1ify_mark_issue が <variant...>-check_ng[N][-<理由>...]-enc.mp4
+      # に改名する。理由はハイフンを含む (trim-drops-audio) のでタグ単位では検証できない。
+      # 理由は postcheck / validate-mp4 側の語彙で、ここに写すと追加のたびに再エンコードが
+      # 走り出すため、check_ng 以降は検証せず「変換済み」とみなす。
+      if [[ "$seg" =~ ^check_ng[0-9]*$ ]]; then
+        break
+      fi
       if ! __av1ify_is_valid_variant_tag "$seg"; then
         valid=0
         break

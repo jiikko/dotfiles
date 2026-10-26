@@ -582,6 +582,75 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# Test 17d: 検証 NG で check_ng 注記が付いた出力も「変換済み」として SKIP する
+# 入力名は __av1ify_mark_issue が実際に作る名前を使う (注記の語彙を手で写さない)。
+# 注記は理由をハイフンで連ねる (trim-drops-audio) ので、バリアントタグ単位の
+# 検証では通らない。再実行のたびに再エンコードが走り、衝突回避で
+# check_ng-...-audio2-enc.mp4 のような出力が増えていた。
+# ----------------------------------------------------------------------
+printf '\n## Test 17d: check_ng annotated output counts as existing output\n'
+TEST_DIR="$TEST_TMP/skip_check_ng"
+mkdir -p "$TEST_DIR"
+
+echo "in" > "$TEST_DIR/d.avi"
+echo "out" > "$TEST_DIR/d-enc.mp4"
+__av1ify_mark_issue "$TEST_DIR/d-enc.mp4" "check_ng-trim-drops-audio"
+ng_first="$REPLY"
+echo "out" > "$TEST_DIR/d-enc.mp4"
+__av1ify_mark_issue "$TEST_DIR/d-enc.mp4" "check_ng-trim-drops-audio"
+ng_second="$REPLY"
+rm -f "$ng_second"   # 2 世代目の衝突名 (…audio2) を消し、1 世代目だけ残した状態も見る
+for state in first-only both; do
+  if [[ "$state" == both ]]; then echo "out" > "$ng_second"; fi
+  if __av1ify_match_existing_variant "$TEST_DIR/d.avi" && [[ "$REPLY" == "$ng_first" || "$REPLY" == "$ng_second" ]]; then
+    printf '✓ [%s] match_existing_variant finds check_ng output: %s\n' "$state" "${REPLY:t}"
+  else
+    bad '✗ [%s] check_ng output not recognized as existing (ng_first=%s)\n' "$state" "${ng_first:t}"
+  fi
+  if __av1ify_skip_by_name "$TEST_DIR/d.avi"; then
+    printf '✓ [%s] skip_by_name skips input with check_ng output\n' "$state"
+  else
+    bad '✗ [%s] skip_by_name did not skip (prefetch/再エンコードが走る)\n' "$state"
+  fi
+done
+
+# 番号付き注記 (check_ng2) 単独と、バリアントタグ併用 (720p の後ろに注記)
+echo "in" > "$TEST_DIR/e.avi"
+echo "out" > "$TEST_DIR/e-720p-check_ng-duration-enc.mp4"
+if __av1ify_match_existing_variant "$TEST_DIR/e.avi"; then
+  printf '✓ variant tag + check_ng note recognized\n'
+else
+  bad '✗ 720p + check_ng note not recognized\n'
+fi
+echo "in" > "$TEST_DIR/f.avi"
+echo "out" > "$TEST_DIR/f-check_ng2-enc.mp4"
+if __av1ify_match_existing_variant "$TEST_DIR/f.avi"; then
+  printf '✓ bare check_ng2 note recognized\n'
+else
+  bad '✗ bare check_ng2 note not recognized\n'
+fi
+
+# 偽陽性: check_ng より前に未知のタグがあるものは従来どおり別物 (無関係な派生ファイル)
+echo "in" > "$TEST_DIR/g.avi"
+echo "out" > "$TEST_DIR/g-unknown-check_ng-enc.mp4"
+if __av1ify_match_existing_variant "$TEST_DIR/g.avi"; then
+  bad '✗ unknown tag before check_ng must stay unrecognized\n'
+else
+  printf '✓ unknown tag before check_ng stays unrecognized\n'
+fi
+
+# 17e: __av1ify_one 経由で SKIP メッセージが出る (再エンコードに入らない)
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+out_ng=$(__AV1IFY_INTERNAL_CALL=1 av1ify "$TEST_DIR/d.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$out_ng" == *"別バリアント"* && "$out_ng" != *"ファイル取得中"* ]]; then
+  printf '✓ av1ify skips input whose earlier output was marked check_ng\n'
+else
+  bad '✗ expected SKIP for check_ng output, got: %s\n' "$out_ng"
+fi
+
+# ----------------------------------------------------------------------
 # Test 18: 正常終了 (全件 OK / NG あり) でも prefetch を看取る
 # 🚨 これが無いと「中断パスでだけ kill する」実装が緑のまま通り、正常終了のたびに
 #    追跡不能なプロセスが残る。判定は壁時計でなく kill -0 の成否を上限つきポーリング。
