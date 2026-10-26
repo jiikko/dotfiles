@@ -99,3 +99,5 @@ dupscan near -format json -min-nodes 1 -min-closure-nodes 1 -levels L1,L2,L3 src
 - 2026-10-26: markdownの幅計算だけを既存実装へ寄せ、既存テスト・lint・gateが成功。改善は同じ幅規則の変更箇所を2実装から1実装へ減らしたこと。新規抽象化を増やさず、将来の幅規則変更の不整合を避ける。性能・一般的な開発効率・提案featureの効果は未検証で、別責務の類似実装と未評価候補は残る。
 
 - 2026-10-26: `refactor(tuikit): share markdown span width calculation` に実装を分離。実装/domainの反証レビューは追加指摘なし。測定レビューのP3（修正前入力の固定、recorder bytesとモデル可視bytesの境界）を訂正した。Bash 5でissue関連テストとrepo標準make test-dupscan-gateも成功。931は今回の限定比較と1組の共通化として完了し、一般的な優位性と未実装featureの検証は925/928へ残す。
+
+- 2026-10-26: この実例を拾うための部分木類似検索・短い関数の別条件・差分付き候補出力の設計を[895](../epic/890/pending/895-feat-dupscan-type3-candidates.md)へ追記。931の実装済み範囲は幅計算の共通化までで、Type-3は未実装。
