@@ -24,6 +24,11 @@ type GateSummary struct {
 	Failed     bool            `json:"failed"`
 	Violations []ViolationJSON `json:"violations"`
 	Unreadable []UnitRef       `json:"unreadable_changed_units"`
+	// 単位を抽出できない解析失敗も、base/headのどちらを比べられなかったかを残す。
+	AnalysisIncomplete  bool     `json:"analysis_incomplete,omitempty"`
+	StrictAnalysis      bool     `json:"strict_analysis,omitempty"`
+	BaseFilesWithErrors []string `json:"base_files_with_errors,omitempty"`
+	HeadFilesWithErrors []string `json:"head_files_with_errors,omitempty"`
 	// NewExclusions は base の設定に無く head にある除外の要素 (glob と段・組の段と釘・単位の釘)。人が見る一覧。
 	NewExclusions []exclude.Element `json:"new_exclusions"`
 	// Untracked は head の作業ツリーで、ignore されていない untracked から読んだファイル (commit を head にしたときは空)。
@@ -103,6 +108,9 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	if s.BaseIsHead {
 		note += "・base が HEAD と同じ (見たのは未コミットの変更だけ。CI なら -base を渡す)"
 	}
+	if s.AnalysisIncomplete {
+		note += fmt.Sprintf("・読めない構文のファイル base %d / head %d", len(s.BaseFilesWithErrors), len(s.HeadFilesWithErrors))
+	}
 	if n := len(s.Unreadable); n > 0 {
 		note += fmt.Sprintf("・読めない構文で確かめられなかった変わった単位 %d (-v で一覧)", n)
 	}
@@ -126,7 +134,11 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	}
 	note += s.note()
 	if len(s.Violations) == 0 {
-		fmt.Fprintf(w, "dupscan gate: 新しい重複なし (base %s・変わった単位 %d)%s\n", short(s.Base), s.Changed, note)
+		status := "新しい重複なし"
+		if s.AnalysisIncomplete {
+			status = "解析が不完全"
+		}
+		fmt.Fprintf(w, "dupscan gate: %s (base %s・変わった単位 %d)%s\n", status, short(s.Base), s.Changed, note)
 	} else {
 		fails := 0
 		for _, v := range s.Violations {
@@ -158,6 +170,21 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 		}
 		if rest := len(s.Violations) - len(shown); rest > 0 {
 			fmt.Fprintf(w, "… 他 %d 件 (-limit 0 か -format json で全部)\n", rest)
+		}
+	}
+	for _, source := range []struct {
+		name  string
+		files []string
+	}{{"base", s.BaseFilesWithErrors}, {"head", s.HeadFilesWithErrors}} {
+		files := source.files
+		if opt.Limit > 0 && len(files) > opt.Limit {
+			files = files[:opt.Limit]
+		}
+		for _, file := range files {
+			fmt.Fprintf(w, "読めないファイル (%s): %s\n", source.name, file)
+		}
+		if rest := len(source.files) - len(files); rest > 0 {
+			fmt.Fprintf(w, "… %sの読めないファイルは他%d件 (-limit 0か-format jsonで全部)\n", source.name, rest)
 		}
 	}
 	if opt.Verbose {
@@ -196,6 +223,14 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 
 // GateXcode は Xcode / SwiftLint と同じ形式で書く。止める段は warning、報告だけの段と同じ形の単位は note。
 func GateXcode(w io.Writer, s GateSummary) error {
+	for _, source := range []struct {
+		name  string
+		files []string
+	}{{"base", s.BaseFilesWithErrors}, {"head", s.HeadFilesWithErrors}} {
+		for _, file := range source.files {
+			fmt.Fprintf(w, "%s: warning: %sの読めない構文で解析が不完全 (dupscan.gate.parse)\n", filepath.Join(s.Root, file), source.name)
+		}
+	}
 	for _, v := range s.Violations {
 		sev := "warning"
 		if !v.Fail {

@@ -20,6 +20,7 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	headRef := fs.String("head", "", "作業ツリーの代わりに比べる commit (過去の commit の流し直し用。checkout しない)")
 	failLevels := fs.String("fail-levels", "L1,L2", "違反を止める (rc=1) 段。それ以外の段は報告だけ")
 	record := fs.String("record", "", "1 回ごとの結果 (違反・除外・許可) を、時刻を添えた 1 行の JSON でこのファイルに追記する")
+	strictAnalysis := fs.Bool("strict-analysis", false, "base/headのどちらかに読めない構文があれば判定不能 (rc=2) にする")
 	failNewEx := fs.Bool("fail-new-exclusions", false, "base から新しく足された除外か、パスの除外で通した変わった単位があれば rc=1 にする (CI で人の目に届けるため)")
 	dirs, rc, ok := parseFlags(fs, args)
 	if !ok {
@@ -101,6 +102,10 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	}
 	res := gate.Judge(b.entries, h.entries, gopt)
 	s := report.BuildGate(sc.Root, baseHash, head.Name(), res, ex)
+	s.BaseFilesWithErrors = b.errFiles
+	s.HeadFilesWithErrors = h.errFiles
+	s.AnalysisIncomplete = len(b.errFiles) > 0 || len(h.errFiles) > 0
+	s.StrictAnalysis = *strictAnalysis
 	s.NewExclusions = append(s.NewExclusions, exclude.NewElements(baseCfg, headCfg)...)
 	if baseCfgErr != nil {
 		s.BaseConfigError = baseCfgErr.Error()
@@ -136,6 +141,9 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan gate:", err)
+		return 2
+	}
+	if s.StrictAnalysis && s.AnalysisIncomplete {
 		return 2
 	}
 	if res.Failed() || *failNewEx && (len(s.NewExclusions) > 0 || s.PathPassed > 0) {
