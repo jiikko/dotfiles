@@ -30,6 +30,7 @@
 | [933](933-feat-dupscan-behavior-hint-search.md) | 呼出先・処理構造から名前不明の既存helperを探す |
 | [934](934-feat-dupscan-source-evidence-search.md) | doc全文・テスト使用例・元ソースを補助証拠として探す |
 | [935](done/935-test-doctor-duplicate-discovery-effect.md) | doctorの重複検出・探索出力量をgrep/併用で比較する |
+| [937](937-feat-dupscan-go-test-call-owner.md) | 比較から除くGoテストにも呼び出し元名を保持する |
 
 ## 指摘の対応範囲
 
@@ -46,3 +47,5 @@
 - 2026-10-26: 929で解析不能を重複なしと誤認させない土台を実装した。正常入力の互換性、両言語の回帰、変異5本を確認。探索の発見率/context効率の改善は他の子issueで継続。
 
 - 2026-10-26: [935](done/935-test-doctor-duplicate-discovery-effect.md)でdoctorの検出・探索出力量を比較。併用で完全重複を検出し、探索転送量は平均48.7%少なかったが、grepは別の部分重複を発見。実context/新規重複追加率と機能改善は895/928ほかで継続。
+
+- 2026-10-26: 936の共通化作業で確認したGo testのcall owner欠落を937へ切り出した。現行の比較除外仕様を維持する設計で、機能実装は未着手。

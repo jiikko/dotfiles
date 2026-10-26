@@ -185,3 +185,5 @@ macOS/arm64、build済みbinary、warm-up1回を除いた5回。4queryをround�
 - 2026-10-26: `issues: reserve doctor duplicate discovery comparison`で番号予約。grep/併用を各2回実施し、Dをそれぞれ別の1組として発見した。改善は検出の実例、転送量の観測、取りこぼし/意図的な一致を切り分けて残したこと。ソースの重複削減やmodel context削減を実装したものではない。
 
 - 2026-10-26: `test(dupscan): record doctor discovery output comparison`で検出・限定測定を完了。935の調査範囲は完了、895/928の機能実装と実token・新規重複追加率の評価は継続。
+
+- 2026-10-26: 検出した2組の共通化は専用[936](../../../done/936-refactor-doctor-domain-duplicate-methods.md)で実装した。上記の検出実験は固定sourceの履歴として維持し、共通化後の結果とは区別する。

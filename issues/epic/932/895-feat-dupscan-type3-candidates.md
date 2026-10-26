@@ -94,3 +94,5 @@ spansWidthの例では、rangeの入力式が異なってもループ内部の�
 - 2026-10-26: pendingから同番号のopen課題へ移し、見逃しの実例と検証条件を継続管理。 読み取り専用Codex subagentで指摘の網羅性とcontext計測を反証レビューし、P3（現行/設計、着手条件、計測範囲）の3点を訂正した。文書の改善は、不足した指摘の担当と検証条件を明確にしたこと。実装・両効果の実証は未着手。
 
 - 2026-10-26: [935](done/935-test-doctor-duplicate-discovery-effect.md)のdoctor探索で、disk/scan_test.goとdisk/delete_test.goのfake runnerが同じ最長prefix/トークン境界選択loopを持つと確認した。grep側は2/2回発見したが、現行reportは既定・事前指定の追加条件のどちらでも検出しなかった。完全なメソッドの同一性ではなく部分重複の既知例として、Type-3の回帰入力候補に加える。未実装の895で拾えると実証したものではない。
+
+- 2026-10-26: doctorの最長prefix部分重複は[936](../../done/936-refactor-doctor-domain-duplicate-methods.md)で共通化済み。895の検出改善は未着手で継続し、既知例の回帰fixtureを作る際は共通化前の4a79e2dcの両runnerを入力にする。現在のdoctorに未解消のloop重複があるとは扱わない。
