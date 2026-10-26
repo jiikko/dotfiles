@@ -299,3 +299,5 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 - 文法は `github.com/alex-pinkus/tree-sitter-swift` の `with-generated-files` branch を pseudo-version で固定する。上げたら `TestEveryKindIsClassified` (文法の全部の名前つきの種類が分類表にあるか) を通す
 - `third_party/tree-sitter-swift-teststub` は、文法の module のテストが誤った import path で参照する package の空の代わり (go.mod の replace のコメント)
 - cgo で文法の C のソース (`parser.c`) をコンパイルする。`TOKEN_COUNT` の再定義の警告が 1 つ出るが動作には影響しない
+
+探索用の `index` / `def` / `refs` / `callers` / `context` / `evidence` は、scope全体の構文解析とmetadataを保ちながら、重複比較用の本体変換・L1〜L3正規化を省く。`index -file` の呼び出し数もscope全体で数える。解析cacheは持たず、編集・追加・削除を毎回読み直す。`report` / `gate` / `near` / `explain` は従来どおり完全な本体で全段を比較する（issue 924）。

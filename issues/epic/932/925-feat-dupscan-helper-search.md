@@ -37,7 +37,7 @@ dupscan search -query 'connection bucket fixture' -returns StorageLocation -limi
 - [ ] 既存がない課題では正しく新規実装できることを対照に入れる。小さなrepoで対照群も常に既存を見つけるなら、効果を測れない条件として扱う。
 - [ ] 924の代表的規模でlatencyと出力量を測り、検索の便利さと追加コストを評価する。
 
-関連: [924](924-perf-dupscan-exploration-latency.md) は処理速度、[918](918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](../890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。917の保留条件は維持する。895/918の実装はepic 932の別担当であり、本issueに混ぜない。
+関連: [924](done/924-perf-dupscan-exploration-latency.md) は処理速度、[918](918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](../890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。917の保留条件は維持する。895/918の実装はepic 932の別担当であり、本issueに混ぜない。
 
 ## 詳細設計案（2026-10-26、未実装）
 
@@ -109,3 +109,5 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 - 2026-10-26: [931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931のtuikit実例では、同じ表示幅ループがslice直渡し/struct.field経由の構文差と19-nodeの閾値で現行near/reportに一致しなかった。未知名からの型/用途検索の評価へ追加する。新searchの効果は未検証。
 
 - 2026-10-26: 初期のname/signature/doc先頭行に加える呼出先/本体hintは[933](933-feat-dupscan-behavior-hint-search.md)、doc全文・テスト等の補助証拠は[934](934-feat-dupscan-source-evidence-search.md)へ起票した。段階ごとの仕様変更を分け、未実装の能力を初期searchに混ぜない。
+
+- 2026-10-27: 924で探索共通経路の比較用本体変換/正規化を省く処理を実装した。925の用途語/署名検索・順位設計は未着手で継続する。

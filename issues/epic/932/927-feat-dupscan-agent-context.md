@@ -32,7 +32,7 @@ dupscan context -symbol StorageClient.upload -definition-file Sources/StorageCli
 - [ ] 大きい型、多重定義、同名の別モジュール、1行に複数の呼び出し、source変更、読めない構文、0件を検査する。
 - [ ] 小さいbudgetでもJSON/UTF-8が有効で、省略と継続取得が検証できる。継続時の入力変更は検知/明示し、以前の結果と混ぜない。
 - [ ] Claude/Codexで同じ変更課題を既存コマンド列と比較し、必要な情報への到達、往復数、返したbytes、elapsed time、見落としを測る。少ない出力だけを成功指標にしない。
-- [ ] [924](924-perf-dupscan-exploration-latency.md) の1走査/batch案と処理を共有できるか確認し、別の解析cacheや常駐プロセスを重複して作らない。
+- [ ] [924](done/924-perf-dupscan-exploration-latency.md) の1走査/batch案と処理を共有できるか確認し、別の解析cacheや常駐プロセスを重複して作らない。
 
 関連: [926](926-feat-dupscan-query-diagnostics.md) の曖昧さ・解析不完全の契約を使う。[918](918-feat-dupscan-target-and-literal-table.md) の所属情報が無い段階では、利用可能なモジュールを推測で断定しない。literal差分表やType-3は既存issueの範囲を維持する。
 
@@ -129,3 +129,5 @@ cursorのquery hashは定義IDと探索条件を束縛する。表示上のsecti
   - 記録だけのもの (直していない): `dupscan context` は `context` という名前の dir の report ではなくサブコマンドになる (def / refs / callers と同じ扱い。`dupscan report context` で引ける)。定義のソースに列 0 の `## ` で始まる行があると節の見出しと紛れる (swift-smbee・screen-share-app には無かった。再提起には実例が要る)
   - 実測 (swift-smbee、`POSIXSocketTransport.connect`、既定の `-limit 20`、3 回): def・refs・callers を別々に 3 回で 2.34〜2.56 秒・9,731 bytes、context 1 回で 1.10〜1.12 秒・10,316 bytes。**時間は半分以下になるが、出力は見出しと要約の分だけ 6% 増える**。agent の往復・見落とし・総 context 量への効果は未測定 (928 の評価で測る)
 
+
+- 2026-10-27: 924でcontextを含む探索共通経路をmetadata-onlyへ変更し、既存の出力一致を確認した。927の最小版は維持し、予算/継続取得など詳細設計の残りは継続する。
