@@ -2,4 +2,97 @@
 
 起票日: 2026-10-26
 
-obaket規模での探索待ち時間を測り、不要な正規化・ファイル指定時の全体走査を減らせるか検討する。実測・対応候補・検証条件を追記するための採番。
+## 概要
+
+Swiftの実装中に繰り返し使う `index` / `def` / `refs` の待ち時間を減らす。obaketでの反復計測では、1問い合わせの中央値は1.56〜2.48秒だった。現行は探索でも全ファイルの解析・全単位の正規化を通るため、処理を省ける余地がある。
+
+**改善量は未測定**。以下は現状の実測と候補であり、正規化が最大の律速だとは断定しない。実装は未着手。
+
+## 現状の裏取り
+
+dotfiles `e4489100` 時点のSwift実装を確認した。
+
+- `src/dupscan/main.go` の `scanSourceOptions` はファイル一覧・全内容を読み、`parseAll` を呼ぶ。`parseAll` は各単位に `norm.Normalize` を行い、L1〜L3の正規化結果を作る。
+- `index_cmd.go` は `-file` をqueryに設定した後も、元のscope全体を `scanSource` へ渡す。ファイルでの絞り込みは `report.BuildIndex` で行う。
+- `def_cmd.go` / `refs_cmd.go` も `scanSourceOptions` を経由する。探索結果は主に単位のmetadataを使い、重複用のハッシュを出力しない。
+- 解析結果のキャッシュは持たず、問い合わせのたびに読み直す。
+- `index -file` にもrepo内の呼び出しを数えた `calls_approx` がある。対象ファイルだけを読む変更ではこの値が変わるため、単純に走査範囲を狭めればよいとは言えない。
+
+関連: [900](epic/890/900-research-dupscan-next-languages.md) ではGo追加に向けてadapter選択・コマンド層を変更中。着手時に取り込み、共通の走査経路を確認し直す。900の言語追加・Go較正と、本issueのSwift探索latencyを混同しない。
+
+## 現状の計測（2026-10-26）
+
+- macOS / arm64、ビルド済みCLIを固定して使用。コンパイル時間は含めない。
+- CLIのSHA-256: `b106423de3aa7dc9713195050b5f0628abc4596e0dbbbf055daeca6eb67f5c20`。
+- 入力repo: obaket `7e140e9abf261b7c6c89b0f25388b0f1073e9b92`。計測前後とも `git status --porcelain` は空。
+- 各queryで最初の1回をウォームアップとして除き、続く5回のwall timeを測った。query間の順序は表の順に固定。CPU負荷・OSのファイルキャッシュは制御していないため、この数字だけで他の版との性能差は判断しない。
+
+| query（共通して `-format json`） | 5回の秒数 | 中央値 | min〜max | matches（全回同じ） |
+|---|---|---|---|---|
+| `def awaitTaskValue` | 2.2389 / 2.2457 / 2.2293 / 2.2629 / 2.2203 | 2.2389 | 2.2203〜2.2629 | 2 |
+| `index -file shared/Sources/ObaketPresentation/Transfer/TransferRetryCoordinator.swift` | 1.4576 / 1.5578 / 1.5878 / 1.4837 / 1.5779 | 1.5578 | 1.4576〜1.5878 | 40 |
+| `refs TransferRetryCoordinator` | 2.2804 / 2.3381 / 2.2940 / 2.3846 / 2.4985 | 2.3381 | 2.2804〜2.4985 | 28 |
+| `def TransferRetryCoordinator.canRetry` | 2.4709 / 2.4831 / 2.9536 / 2.5221 / 2.3918 | 2.4831 | 2.3918〜2.9536 | 1 |
+
+前回の各1回の観測（1.4〜2.2秒）とは条件を揃えたA/Bではなく、退行を示す比較には使わない。
+
+## 改善候補と進める順
+
+1. **内訳を測る**。列挙・読取・parse・正規化・呼び出し集計・整形について、wall timeとCPU profile等で時間を使う箇所を特定する。並列workerのCPU時間や段階の合計を、コマンド全体のwall timeと混同しない。
+2. **探索で不要な重複用正規化を省く**。metadataの抽出と重複比較用ハッシュ生成を分ける案を、現在の結果と同じ出力で比較する。型のoutlineや呼び出しの集計に必要な単位・metadataは残す。
+3. **既知ファイルのoutlineを軽くする**。まず既存の呼び出し数を保てる範囲で処理を省く。全repoの呼び出し数を省略する高速モードを作るなら明示的な選択にし、既定の `calls_approx` の意味を変えない。追加モードの必要性は測定後に判断する。
+4. **同一repoの連続問い合わせをまとめる案**。上の単純化だけでは待ちが残る場合、1走査で複数queryを処理するbatchや、内容hashに基づく解析結果の再利用を比較する。永続cacheや常駐プロセスを最初から前提にしない。
+
+cacheを採る場合は、未コミット編集・untracked追加・削除・改名・worktree分離・解析器の版・設定変更で古い結果を返さない条件と検査を設ける。キャッシュしない版の出力との一致、保持上限、並列実行、破損時の再解析、調査対象repoへ書き込まない契約も確認する。
+
+## 再計測の入口
+
+dotfilesの比較したい版でCLIを別々にbuildし、同じobaketの固定worktreeを入力にする。下の例では固定済みの入力repoと実行ファイルを引数で渡す。既存の一時スクリプトには依存しない。
+
+```sh
+go -C src/dupscan build -o /private/tmp/dupscan-perf-before .
+python3 - /path/to/fixed-obaket /private/tmp/dupscan-perf-before <<'PY'
+import json, statistics, subprocess, sys, time
+repo, exe = sys.argv[1:]
+queries = [
+    ['def', '-format', 'json', 'awaitTaskValue'],
+    ['index', '-format', 'json', '-file',
+     'shared/Sources/ObaketPresentation/Transfer/TransferRetryCoordinator.swift'],
+    ['refs', '-format', 'json', 'TransferRetryCoordinator'],
+    ['def', '-format', 'json', 'TransferRetryCoordinator.canRetry'],
+]
+for query in queries:
+    times, expected = [], None
+    for run in range(6):
+        start = time.perf_counter()
+        result = subprocess.run([exe, *query], cwd=repo, capture_output=True,
+                                text=True, check=True)
+        elapsed = time.perf_counter() - start
+        value = json.loads(result.stdout)
+        if expected is None:
+            expected = value
+        assert value == expected, query
+        if run:
+            times.append(elapsed)
+    print(json.dumps({'query': query, 'seconds': times,
+                      'median': statistics.median(times),
+                      'matches': expected['matches']}, ensure_ascii=False))
+PY
+```
+
+before / afterの採否を決める際は、入力・設定・ビルド条件を固定し、複数roundで実行順を交互にして同じqueryごとの中央値・ばらつきを比較する。stdoutのJSON全体・text・終了コードも比較する。batch / cache案なら、同じ連続問い合わせを両方式で通して全体のwall timeも別に測る。
+
+## 受け入れ条件
+
+- [ ] 900取り込み後の現状を再確認し、代表queryと小規模repoでもbaselineを取る。
+- [ ] プロファイルを根拠に候補を選び、同じworkloadのbefore / afterを記録する。
+- [ ] 観測したばらつきを超える待ち時間の短縮を確認する。差が判定できなければ回数・roundを増やし、改善済みとは扱わない。他の代表queryの退行も評価する。
+- [ ] 既存モードの結果順・metadata・近似呼び出し数・終了コード・探索範囲を維持する。変更・追加・削除・改名・別worktree・読めない構文の扱いを回帰で確認する。
+- [ ] cache等を採る場合は保持・無効化・破損・並列実行を検査し、単純化だけの案より採る利益を示す。
+- [ ] `make -C src/dupscan lint test` が成功し、追加した複雑さと実測した改善を最終diffで再評価する。
+
+## 進捗
+
+- 2026-10-26: 起票。実装は未着手。5回ずつのbaselineと、ソース上の候補を記録した。現状の改善は「次の実装時に再現・比較できる条件を残したこと」であり、高速化の効果は未実測。
+- 2026-10-26: Codexの読み取り専用subagentで反証レビューを実施。探索の正規化経路、`calls_approx`、計測と仮説の区別、900との境界、再計測スクリプトについて静的な指摘なし。レビュアーによるbuild・benchmark再実行は行っていない。
+- 2026-10-26: 本文内Pythonの構文・相対リンク・diffを検査。Bash 5環境の `make test-changed PATHS="issues/924-perf-dupscan-exploration-latency.md"` でissue関連テストが成功（標準Bash 3.2では既存issue_doneスクリプトの構文で停止するため、repo方針のBash 5で再実行）。
