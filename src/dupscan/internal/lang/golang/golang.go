@@ -84,7 +84,7 @@ func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 		}
 		return true
 	})
-	w := &walker{fset: fset, file: file, src: src, test: IsTestPath(file), errs: errs,
+	w := &walker{metadataOnly: p.opt.MetadataOnly, fset: fset, file: file, src: src, test: IsTestPath(file), errs: errs,
 		closures: map[string]int{}, seen: map[string]int{}}
 	for i, d := range f.Decls {
 		// 宣言の誤りは次の宣言の手前までで数える。閉じないまま EOF で終わる関数は、誤りの位置が宣言の End より後ろに出る
@@ -121,16 +121,17 @@ func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 }
 
 type walker struct {
-	fset       *token.FileSet
-	file       string
-	src        []byte
-	test       bool
-	errs       scanner.ErrorList
-	callOwners []*tree.CallOwner
-	units      []*tree.Unit
-	closures   map[string]int
-	seen       map[string]int // 鍵の重なりの数 (1 つのファイルに複数書ける `func init()`)
-	lines      []string
+	metadataOnly bool
+	fset         *token.FileSet
+	file         string
+	src          []byte
+	test         bool
+	errs         scanner.ErrorList
+	callOwners   []*tree.CallOwner
+	units        []*tree.Unit
+	closures     map[string]int
+	seen         map[string]int // 鍵の重なりの数 (1 つのファイルに複数書ける `func init()`)
+	lines        []string
 }
 
 // ctx は辿っている場所の文脈。
@@ -184,8 +185,10 @@ func (w *walker) funcDecl(d *ast.FuncDecl, limit int) {
 	locals = append(locals, fieldNames(d.Type.Results)...)
 	broken := w.errorIn(d.Pos(), limit)
 	u := w.newUnit(d, tree.KindFunc, name, sig, encl, locals, ctx{broken: broken})
-	u.Body = w.conv(d.Body)
-	u.Delegation = delegation(d.Body)
+	if !w.metadataOnly {
+		u.Body = w.conv(d.Body)
+		u.Delegation = delegation(d.Body)
+	}
 	// 戻り値は型だけをハッシュに入れる。名前は Params に入れて本体の中で番号にするので、字面で入れると名前を変えた写しを見逃す
 	u.ReturnType = resultTypes(d.Type.Results)
 	u.ParamTypes = paramTypes
@@ -247,7 +250,9 @@ func (w *walker) closuresIn(n ast.Node, c ctx) {
 		}
 		u.Visibility = "local"
 		// 引数は本体の木の中で宣言として数える (Swift のクロージャと同じ。Params には入れない)。
-		u.Body = w.conv(fl)
+		if !w.metadataOnly {
+			u.Body = w.conv(fl)
+		}
 		key := w.add(u)
 		w.closuresIn(fl.Body, ctx{owner: key, ownerName: u.OwnerName + ".{closure}", broken: u.Unreadable})
 		return false

@@ -28,6 +28,7 @@ func newLangParser(o lang.Options) (lang.Parser, error) {
 		return nil, err
 	}
 	p.CollectCalls, p.CollectDefs, p.CollectRefs = o.Calls, o.Defs, o.Refs
+	p.MetadataOnly = o.MetadataOnly
 	return p, nil
 }
 
@@ -56,7 +57,8 @@ func kindOf(n *sitter.Node) string {
 
 // Parser はファイルを読んで単位を取り出す。goroutine ごとに 1 つ作る (tree-sitter の parser は共有できない)。
 type Parser struct {
-	p *sitter.Parser
+	MetadataOnly bool
+	p            *sitter.Parser
 	// CollectCalls は呼び出しの箇所も集める (index と callers だけが使う。全部の節をもう 1 度歩くので、要らないときは集めない)。
 	CollectCalls bool
 	// CollectDefs は定義と型宣言を別に集める (重複の比較単位にはしない)。
@@ -86,7 +88,7 @@ func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 	}
 	defer t.Close()
 	root := t.RootNode()
-	w := &walker{file: file, src: src, test: IsTestPath(file), closures: map[string]int{}, seen: map[string]int{}, isUnit: map[string]bool{}}
+	w := &walker{metadataOnly: p.MetadataOnly, file: file, src: src, test: IsTestPath(file), closures: map[string]int{}, seen: map[string]int{}, isUnit: map[string]bool{}}
 	w.walk(root, ctx{})
 	r := lang.FileResult{Units: w.units, HasError: root.HasError()}
 	if p.CollectCalls {
@@ -649,14 +651,15 @@ func IsTestPath(file string) bool {
 }
 
 type walker struct {
-	file     string
-	src      []byte
-	test     bool
-	units    []*tree.Unit
-	closures map[string]int
-	seen     map[string]int  // 鍵の重なりの数 (`#if` の両側の同じ関数など)
-	static   bool            // static / class のメソッドの本体を変換している間
-	isUnit   map[string]bool // 単位の鍵 (クロージャの Owner にしてよいか)
+	metadataOnly bool
+	file         string
+	src          []byte
+	test         bool
+	units        []*tree.Unit
+	closures     map[string]int
+	seen         map[string]int  // 鍵の重なりの数 (`#if` の両側の同じ関数など)
+	static       bool            // static / class のメソッドの本体を変換している間
+	isUnit       map[string]bool // 単位の鍵 (クロージャの Owner にしてよいか)
 }
 
 // ctx は辿っている場所の文脈。
@@ -1074,6 +1077,9 @@ func (w *walker) newUnit(n *sitter.Node, kind tree.UnitKind, name, sig string, l
 		Key: key, File: w.file, Line: int(pos.Row) + 1, EndLine: int(n.EndPosition().Row) + 1, Col: int(pos.Column) + 1,
 		Name: name, Signature: sig, Kind: kind, Enclosing: encl, Test: w.test || c.testClass,
 		Params: locals, Unreadable: broken(n), Visibility: "internal",
+	}
+	if w.metadataOnly {
+		return u
 	}
 	if body != nil {
 		u.Body = w.conv(body, nil, "", false, false)

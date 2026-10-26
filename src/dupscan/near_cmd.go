@@ -61,11 +61,15 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(fmt.Errorf("判定不能: %w", err))
 	}
-	got, err := scanSource(src, true, false)
+	got, err := scanSource(src, true, analysisPlan{Normalize: true})
 	if err != nil {
 		return fail(err)
 	}
-	target, err := pick(got.entries, rel, sel)
+	entries, err := got.cloneEntries()
+	if err != nil {
+		return fail(err)
+	}
+	target, err := pick(entries, rel, sel)
 	if err != nil {
 		return fail(err)
 	}
@@ -73,11 +77,11 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 	var text func(io.Writer) error
 	switch name {
 	case "near":
-		cfg, err = withComments(cfg, got.entries, *c.noExclude)
+		cfg, err = withComments(cfg, entries, *c.noExclude)
 		if err != nil {
 			return fail(fmt.Errorf("判定不能: %w", err))
 		}
-		s := report.BuildNear(target, group.Near(target, got.entries, opt), opt, exclude.New(cfg, got.entries, nil))
+		s := report.BuildNear(target, group.Near(target, entries, opt), opt, exclude.New(cfg, entries, nil))
 		out, text = s, func(w io.Writer) error { return report.NearText(w, s, *c.limit) }
 	default:
 		target.Result = norm.NormalizeWithForms(target.Unit) // 形の文字列は走査では作らないので、指した単位だけ作り直す

@@ -207,22 +207,27 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan: 判定不能:", err)
 		return 2
 	}
-	got, err := scanSource(src, true, false)
+	got, err := scanSource(src, true, analysisPlan{Normalize: true})
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan:", err)
 		return 2
 	}
-	cfg, err = withComments(cfg, got.entries, *c.noExclude)
+	entries, err := got.cloneEntries()
+	if err != nil {
+		fmt.Fprintln(stderr, "dupscan:", err)
+		return 2
+	}
+	cfg, err = withComments(cfg, entries, *c.noExclude)
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan: 判定不能:", err)
 		return 2
 	}
-	ex := exclude.New(cfg, got.entries, scopeFilter(sc))
+	ex := exclude.New(cfg, entries, scopeFilter(sc))
 	if c.narrowed() {
 		ex.Narrowed()
 	}
 	ex.Scanned(opt.Levels)
-	s := report.Build(sc.Root, got.files, got.units, got.errFiles, ex.ApplyGroups(group.Build(got.entries, opt)), ex)
+	s := report.Build(sc.Root, got.files, got.units, got.errFiles, ex.ApplyGroups(group.Build(entries, opt)), ex)
 	switch *c.format {
 	case "json":
 		err = report.JSON(stdout, s)
@@ -294,6 +299,7 @@ type scanned struct {
 	units       []*tree.Unit
 	errFiles    []string
 	entries     []*group.Entry
+	normalized  bool
 	calls       []tree.Call
 	definitions []lang.Definition
 	types       []lang.TypeDeclaration
@@ -301,14 +307,22 @@ type scanned struct {
 	contents    map[string][]byte
 }
 
-// scanSource は src のファイルを読んで単位を正規化する。requireFiles なら 0 件を判定不能にする
-// (起点の取り違えで黙って「重複なし」にしない。base の側は 0 件でもよい: まだ Swift が無かった commit)。
-// withCalls なら呼び出しの箇所も集める (index と callers だけ)。
-func scanSource(src repo.Source, requireFiles, withCalls bool) (scanned, error) {
-	return scanSourceOptions(src, requireFiles, withCalls, false, false)
+// analysisPlan keeps metadata collection independent of clone normalization.
+type analysisPlan struct {
+	lang.Options
+	Normalize bool
 }
 
-func scanSourceOptions(src repo.Source, requireFiles, withCalls, withDefs, withRefs bool) (scanned, error) {
+// cloneEntries rejects metadata-only scans rather than reporting false clone absence.
+func (s scanned) cloneEntries() ([]*group.Entry, error) {
+	if !s.normalized {
+		return nil, errors.New("clone consumer requires normalization")
+	}
+	return s.entries, nil
+}
+
+// scanSource reads the complete scope; metadata queries retain cross-file call counts.
+func scanSource(src repo.Source, requireFiles bool, plan analysisPlan) (scanned, error) {
 	files, err := src.Files()
 	if err != nil {
 		return scanned{}, err
@@ -320,23 +334,21 @@ func scanSourceOptions(src repo.Source, requireFiles, withCalls, withDefs, withR
 	if err != nil {
 		return scanned{}, err
 	}
-	parsed, err := parseAll(files, contents, withCalls, withDefs, withRefs)
+	parsed, err := parseAll(files, contents, plan)
 	if err != nil {
 		return scanned{}, err
 	}
-	units := make([]*tree.Unit, len(parsed.entries))
-	for i, e := range parsed.entries {
-		units[i] = e.Unit
-	}
+
 	return scanned{
-		files: len(files), units: units, errFiles: parsed.errFiles, entries: parsed.entries, calls: parsed.calls,
+		files: len(files), units: parsed.units, errFiles: parsed.errFiles, entries: parsed.entries, normalized: plan.Normalize, calls: parsed.calls,
 		definitions: parsed.definitions, types: parsed.types, references: parsed.references, contents: contents,
 	}, nil
 }
 
-// parseAll はファイルを並列に読んで単位を取り出し、同じ worker の中で正規化まで済ませる (正規化を後で 1 本で回すと、そこが走査の直列の部分になる)。
+// parseAll keeps parsing and optional clone normalization in the same worker.
 // 結果はファイルの順 (files の順) に並べる。
 type parsedFiles struct {
+	units       []*tree.Unit
 	entries     []*group.Entry
 	calls       []tree.Call
 	definitions []lang.Definition
@@ -345,8 +357,9 @@ type parsedFiles struct {
 	errFiles    []string
 }
 
-func parseAll(files []string, contents map[string][]byte, withCalls, withDefs, withRefs bool) (parsedFiles, error) {
+func parseAll(files []string, contents map[string][]byte, plan analysisPlan) (parsedFiles, error) {
 	type result struct {
+		units       []*tree.Unit
 		entries     []*group.Entry
 		calls       []tree.Call
 		definitions []lang.Definition
@@ -362,15 +375,20 @@ func parseAll(files []string, contents map[string][]byte, withCalls, withDefs, w
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			p := langs.NewParsers(lang.Options{Calls: withCalls, Defs: withDefs, Refs: withRefs})
+			options := plan.Options
+			options.MetadataOnly = !plan.Normalize
+			p := langs.NewParsers(options)
 			defer p.Close()
 			for i := range jobs {
 				r, err := p.Parse(files[i], contents[files[i]])
-				entries := make([]*group.Entry, len(r.Units))
-				for j, u := range r.Units {
-					entries[j] = &group.Entry{Unit: u, Result: norm.Normalize(u)}
+				var entries []*group.Entry
+				if plan.Normalize {
+					entries = make([]*group.Entry, len(r.Units))
+					for j, u := range r.Units {
+						entries[j] = &group.Entry{Unit: u, Result: norm.Normalize(u)}
+					}
 				}
-				results[i] = result{entries: entries, calls: r.Calls, definitions: r.Definitions, types: r.Types, references: r.References, hasErr: r.HasError, err: err}
+				results[i] = result{units: r.Units, entries: entries, calls: r.Calls, definitions: r.Definitions, types: r.Types, references: r.References, hasErr: r.HasError, err: err}
 			}
 		}()
 	}
@@ -384,6 +402,7 @@ func parseAll(files []string, contents map[string][]byte, withCalls, withDefs, w
 		if r.err != nil {
 			return parsedFiles{}, fmt.Errorf("%s: %w", files[i], r.err)
 		}
+		parsed.units = append(parsed.units, r.units...)
 		parsed.entries = append(parsed.entries, r.entries...)
 		parsed.calls = append(parsed.calls, r.calls...)
 		parsed.definitions = append(parsed.definitions, r.definitions...)

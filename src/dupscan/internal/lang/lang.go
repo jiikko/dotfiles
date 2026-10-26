@@ -8,9 +8,11 @@ import "dupscan/internal/tree"
 
 // Options は単位のほかに何を集めるか。集めない材料は読むたびの確保と時間を食うので、使うコマンドだけが頼む。
 type Options struct {
-	Calls bool // 呼び出しの箇所 (index・callers)
-	Defs  bool // 定義と型の宣言 (def)
-	Refs  bool // 識別子の出現 (refs)
+	// MetadataOnly omits clone bodies and delegation analysis while retaining unit metadata.
+	MetadataOnly bool
+	Calls        bool // 呼び出しの箇所 (index・callers)
+	Defs         bool // 定義と型の宣言 (def)
+	Refs         bool // 識別子の出現 (refs)
 }
 
 // Parser は 1 つの goroutine の中で使う読み手 (並行に使わない。worker ごとに作る)。

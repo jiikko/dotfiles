@@ -1,6 +1,7 @@
 package main
 
 import (
+	"dupscan/internal/lang"
 	"flag"
 	"fmt"
 	"io"
@@ -53,7 +54,7 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 		return fail(fmt.Errorf("判定不能: %w", err))
 	}
 	q.Shared = cfg.InShared
-	got, err := scanSource(src, true, true)
+	got, err := scanSource(src, true, analysisPlan{Options: lang.Options{Calls: true}})
 	if err != nil {
 		return fail(err)
 	}

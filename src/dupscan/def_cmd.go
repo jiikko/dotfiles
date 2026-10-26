@@ -1,6 +1,7 @@
 package main
 
 import (
+	"dupscan/internal/lang"
 	"errors"
 	"flag"
 	"fmt"
@@ -55,7 +56,7 @@ func runDef(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(fmt.Errorf("判定不能: %w", err))
 	}
-	got, err := scanSourceOptions(src, true, true, true, false)
+	got, err := scanSource(src, true, analysisPlan{Options: lang.Options{Calls: true, Defs: true}})
 	if err != nil {
 		return fail(withNote(err, note))
 	}

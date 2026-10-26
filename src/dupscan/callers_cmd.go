@@ -1,6 +1,7 @@
 package main
 
 import (
+	"dupscan/internal/lang"
 	"errors"
 	"flag"
 	"fmt"
@@ -44,7 +45,7 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	got, err := scanSource(repo.Worktree{Scope: sc, Exts: langs.Extensions()}, true, true)
+	got, err := scanSource(repo.Worktree{Scope: sc, Exts: langs.Extensions()}, true, analysisPlan{Options: lang.Options{Calls: true}})
 	if err != nil {
 		return fail(err)
 	}

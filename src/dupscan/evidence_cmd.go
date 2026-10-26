@@ -1,6 +1,7 @@
 package main
 
 import (
+	"dupscan/internal/lang"
 	"errors"
 	"flag"
 	"fmt"
@@ -53,7 +54,7 @@ func runEvidence(args []string, stdout, stderr io.Writer) int {
 		return fail(err)
 	}
 	// defs は Swift の型の名前を取るため (初期化子の呼び出しは型の名前で書く)。Go の型は取らないので、Go の型の生成は集計に出ない
-	got, err := scanSourceOptions(repo.Worktree{Scope: sc, Exts: langs.Extensions()}, true, true, true, false)
+	got, err := scanSource(repo.Worktree{Scope: sc, Exts: langs.Extensions()}, true, analysisPlan{Options: lang.Options{Calls: true, Defs: true}})
 	if err != nil {
 		return fail(err)
 	}

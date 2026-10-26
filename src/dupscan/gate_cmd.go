@@ -69,38 +69,48 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	baseSrc := &repo.Commit{Scope: sc, Exts: langs.Extensions(), Hash: baseHash}
 	// base の設定は読めなければ空とみなす (壊れた設定を直す commit を通すため。空とみなすと除外は全部新しく見え、安全側)。
 	baseCfg, baseCfgErr := loadConfig(baseSrc, false)
-	b, err := scanSource(baseSrc, false, false)
+	b, err := scanSource(baseSrc, false, analysisPlan{Normalize: true})
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2
 	}
-	h, err := scanSource(head, true, false)
+	h, err := scanSource(head, true, analysisPlan{Normalize: true})
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2
 	}
-	headCfg, err = withComments(headCfg, h.entries, *c.noExclude)
+	baseEntries, err := b.cloneEntries()
+	if err != nil {
+		fmt.Fprintln(stderr, "dupscan gate:", err)
+		return 2
+	}
+	headEntries, err := h.cloneEntries()
+	if err != nil {
+		fmt.Fprintln(stderr, "dupscan gate:", err)
+		return 2
+	}
+	headCfg, err = withComments(headCfg, headEntries, *c.noExclude)
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan gate: 判定不能:", err)
 		return 2
 	}
 	// base のコメントの誤りは数えない (base の許可が欠けると head の許可は全部新しく見え、安全側)。
-	baseRules, _ := exclude.CommentRules(b.entries)
+	baseRules, _ := exclude.CommentRules(baseEntries)
 	baseCfg = exclude.WithComments(baseCfg, baseRules)
-	ex := exclude.New(headCfg, h.entries, scopeFilter(sc))
-	ex.LimitToBase(b.entries, baseCfg)
+	ex := exclude.New(headCfg, headEntries, scopeFilter(sc))
+	ex.LimitToBase(baseEntries, baseCfg)
 	if c.narrowed() {
 		ex.Narrowed()
 	}
 	ex.Scanned(gopt.Levels)
 	gopt.Exclude = ex
 	// 効いていない除外を数えるため、head 全体の組にも除外を掛ける (gate が見るのは変わった単位だけなので、それだけでは足りない)。
-	for _, g := range ex.ApplyGroups(group.Build(h.entries, gopt.Options)) {
+	for _, g := range ex.ApplyGroups(group.Build(headEntries, gopt.Options)) {
 		for _, m := range g.Members {
 			ex.Allowed(m)
 		}
 	}
-	res := gate.Judge(b.entries, h.entries, gopt)
+	res := gate.Judge(baseEntries, headEntries, gopt)
 	s := report.BuildGate(sc.Root, baseHash, head.Name(), res, ex)
 	s.BaseFilesWithErrors = b.errFiles
 	s.HeadFilesWithErrors = h.errFiles

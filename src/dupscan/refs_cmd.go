@@ -1,6 +1,7 @@
 package main
 
 import (
+	"dupscan/internal/lang"
 	"errors"
 	"flag"
 	"fmt"
@@ -46,7 +47,7 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	got, err := scanSourceOptions(src, true, false, false, true)
+	got, err := scanSource(src, true, analysisPlan{Options: lang.Options{Refs: true}})
 	if err != nil {
 		return fail(withNote(err, note))
 	}
