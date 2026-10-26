@@ -32,6 +32,78 @@ Claude/Codexがコマンドの書き方の違いで失敗したり、非対応�
 
 関連: [900](epic/890/900-research-dupscan-next-languages.md) の言語ごとの対応範囲を反映する。[928](928-feat-dupscan-agent-onboarding.md) の能力情報と整合させる。gateのbase/違反/除外の判定を変更する作業は、この探索診断と切り分ける。
 
+## 詳細設計案（2026-10-26、未実装）
+
+### 互換性と導入順
+
+既存 `-format text|json|xcode` の正常な出力・終了コードは維持する。machine向けの共通契約は **明示的な `-format json-v2`** に追加し、既存JSONへ共通envelopeを黙って被せない。新しいsearch/context/doctor/capabilitiesもjson-v2を受け付ける。旧モードは現行goldenを固定し、正常ケースのbyte比較で退行を検査する。
+
+CLI定義は928の `internal/commandmeta` を共通の情報源にする。実装順は「command/adapter registry→924の解析Plan/View→本v2診断→search/context→doctor/guideの詳細診断」。循環依存は作らず、共通packageは各commandのRun実装をimportしない。
+
+### 引数の共通規則
+
+- flagは位置引数の前後で受け付ける。既存flagの型・既定値は維持し、単値flagの繰り返しは現行Go flagと同じく最後を採る。複数値の-pathは例外として全指定を保持する。`--` 以降はflagとして解釈しない。
+- `-repo DIR` は探索repoを指定。未指定はcwdからgit rootを解決する。`-path DIR` はrepo内の相対directory prefixで、複数指定は和集合。実在directoryを正規化し、repo外へ出る指定・symlink経由の指定はrc=2。directory境界で一致させ、重複prefixを除く。Gitにもliteral pathspecとして渡し、[]*?等をglobとして解釈させない。shell quotingだけで済ませない。legacyの位置引数directoryと新しいrepo/path指定の併用は、曖昧なためrc=2にして直し方を示す。
+- v2の `-file` はrepo相対の結果selector。scopeのscan範囲を勝手に狭めない。legacy -fileのcwd相対解決は旧モードに残す。contextの `-definition-file` は定義選択だけに使う。
+- `-scope all|prod|test` は返す宣言/出現の分類を絞り、既定all。呼び出し数が別scopeで集計される場合は `calls_scope` を明記する。
+- `-lang auto|swift|go` はregistryから解決。明示swiftならGoは意図的な対象外、autoで既知のGoファイルをdef/refsが読めなければskipとしてcoverageに載せる。domainは列挙したrepo sourcesであり、scope内のtracked/未ignoreのvendor sourceも含む。外部SDK・repo外の依存取得・未知の拡張子は対象外で、module/targetの所属解決をしたとは表示しない。
+- v2のrefs/callersは単独名（callersはlabel指定可）。`Worker.run` を型解決済みの絞り込みとして受理せず `unsupported_query` とし、defと、絞り込みなしのrefs/callersのargv案をreason付きで出す。この拒否はv2だけに追加し、旧モードの扱いは維持する。
+
+### v2 envelopeと状態の直交化
+
+```json
+{
+  "schema_version": 2,
+  "command": "refs",
+  "query": {"validity": "valid", "effective_name": "run"},
+  "result": {"state": "found", "total": 8, "returned": 3},
+  "analysis": {
+    "state": "partial", "domain": "repo_sources",
+    "searched_languages": ["swift"],
+    "skipped_languages": [{"language": "go", "reason": "definitions_references_unsupported"}],
+    "parse_error_files": ["Sources/B.swift"], "count_scope": "parsed_supported_files",
+    "resolution": "syntactic"
+  },
+  "output": {"truncated": true, "byte_budget": 12000},
+  "data": {}, "next_actions": []
+}
+```
+
+- query.validity: valid / invalid / unsupported。result.state: found / no_match / ambiguous / not_evaluated。analysis.state: complete / partial / not_run / failed。matchとcoverageを1つの状態に潰さない。
+- totalは解析できた対象内の正確な件数で、プログラム全体での件数ではない。未評価ならnull。意図したscope除外と、非対応言語/parse errorによるskipを分ける。
+- file単位のHasErrorは、Unitsが0件でもcoverageへ伝える。parse errorの位置情報が無いadapterはfile名だけを返し、位置を捏造しない。I/O失敗はanalysis.failed、dataを確定結果として返さない。
+- formatが確定した後の入力/実行エラーはv2で返す。format指定自体が不正・確定不能の場合はstdoutを空にしてstderrとrc=2を返す。生成argvはformatを先頭に置く。
+- next_actionsは最大3個、各要素はkind/reason/argvのデータ。shell文字列のevalは使わない。提案のquery変更・絞り込みの有無を明示する。
+
+| v2条件 | 通常rc | 明示mode |
+|---|---|---|
+| valid / found / complete | 0 | 同じ |
+| valid / no_match / complete | 0 | -require-matchなら1 |
+| valid / ambiguous / complete | 0（候補を返す） | -require-uniqueなら1 |
+| valid / found・no_match・ambiguous / partial | 対応するcomplete行と同じ | -strict-analysisなら2（他のrequire条件より優先） |
+| invalid / unsupported、対象言語を全く評価できない | 2 | 同じ |
+| I/O失敗、stale selector/cursor、内部処理失敗 | 2 | 同じ |
+
+終了コードは「入力不正・実行不能・analysis.failed→2、strictかつpartial→2、require-matchかつtotal=0→1、require-uniqueかつtotal≠1→1、その他→0」の順で決める。require-uniqueは定義を1つ選ぶdef/contextだけに提供し、0件も失敗とする。require条件はpartialでも有効だが、0件は解析できた範囲内での結果に限る。complete/partial×0/1/複数×require/strictの全組合せを検査する。
+
+autoの混在repoでは「Swiftのhit＋Go skip」「Swift 0件＋Go skip」「いずれか＋parse error」を全て検査する。明示swiftでの正常な対象外はpartialにしない。Goだけのdef/refsはunsupportedでありno_matchにしない。Go callersは対応済みとして登録する。
+
+### 出力の上限と回帰検査
+
+新commandのjson-v2とtextはmax-bytesを持つ。serializerは総件数を別に数え、mandatory metadataと継続案の領域を確保してから、制限済みsnippet/itemを予算内のprefixだけencodeする。全件JSONを作って1件ずつ削除・全体再encodeする方式は採らない。診断配列にもtotal/returned/truncatedを持たせ、予算を無制限に消費させない。最終UTF-8文書のbytesを検証し、byte列の途中では切らない。legacy serializerは変更しない。mandatory metadataさえ収まらなければ短い `output_budget_too_small` エラー（rc=2）を返す。許されるbudget最小値は1,024 bytesとし、このエラー自体はその内側に収める。
+
+legacy mode、v2通常/require/strict、flag前後、--、quotes、空白・Unicode・[]*?を含むパス、..・symlink・repo外・重複prefix、vendor/外部依存、混在言語、I/O、完全に抽出できない構文、同名別型、0件、予算不足をmatrixで固定する。共通状態型は `internal/report` か専用protocol packageに置き、検索・context・capabilitiesが別定義を持たないようにする。
+
+## 今回の3回のセルフレビュー（2026-10-26）
+
+各回で読み取り専用Codex subagentの反証レビューと本体の自己点検を行い、指摘を次の回の前に反映した。
+
+1. **CLI仕様・互換性**: matchとcoverageを分離し、混在言語/parse errorの組合せとGo callers対応を修正した。
+2. **agentの使いやすさ・効果測定**: partialでもrequire条件が有効になる終了コード優先順位、require-uniqueの0件判定を追加した。
+3. **実装構造・運用コスト**: vendorも含む探索domain、literal pathspec、予算内のprefixだけencodeする方式へ修正した。
+
+改善の評価: 起票時の機能案から、引数・状態・依存関係・異常系・検査手順を実装/レビュー可能な契約へ具体化した。共通仕様の正本は926、registry/評価手順は928、解析経路は924とし、重複した実装を避ける。これは設計文書の改善であり、実装・性能・開発効率の向上は未検証。受け入れ条件は未完了のままopenに残す。
+
 ## 進捗
 
 - 2026-10-26: 起票。CLIの不一致・0件と解析不完全の区別を裏取り。非対応形式の拒否は挙動変更なので、既存契約への影響を明示してから実装する。

@@ -91,6 +91,54 @@ before / afterの採否を決める際は、入力・設定・ビルド条件を
 - [ ] cache等を採る場合は保持・無効化・破損・並列実行を検査し、単純化だけの案より採る利益を示す。
 - [ ] `make -C src/dupscan lint test` が成功し、追加した複雑さと実測した改善を最終diffで再評価する。
 
+## 詳細設計案（2026-10-26、未実装）
+
+### 共通の解析経路
+
+9369b0beでGo adapterと `internal/lang` / `internal/langs` が追加された。以下はその構造を前提にし、先のSwift計測値は旧版baselineとして保持する。Go版や最新版が同じ秒数だとは扱わない。
+
+`repo.Source → ReadSet → AnalysisPlan → AnalysisView → 各report builder` と分ける。最初はprocess内の1回の実行で共有し、永続cache・常駐化は入れない。
+
+- `ReadSet`: canonical repo root、scope、列挙したファイル、読み込んだbytes、設定bytes、内容hash。読取失敗は結果を黙って欠落させずエラーとして返す。
+- `AnalysisPlan`: `Calls / Defs / Refs / Normalize` を指定。`Units` は現行の囲む単位・outlineのため常に抽出する。言語ごとの対応判定は928のregistryを使う。
+- `AnalysisView`: Unitsと任意のCalls/Definitions/Types/References、file単位のparse error/skip理由を持つ。正規化結果は別のoptionalなfieldに持つ。
+- gate/report/near/explainは `Normalize=true`。index/def/refs/callersと新しいsearch/contextはfalse。正規化を要求するconsumerが結果なしで呼ばれたら内部エラーにし、ゼロhashで比較しない。
+- gateの出どころ推定はL3も使うため、既定の表示段がL1/L2でもL3計算を削らない。本変更は探索の不要な正規化の分離に限定する。
+- adapterのparserはworkerごとに作り、言語ごとに再利用して終了時にCloseする現行の所有関係を維持する。ReadSetとViewはコマンド終了で解放する。
+
+| consumer | Calls | Defs | Refs | Normalize |
+|---|---|---|---|---|
+| index | yes | no | no | no |
+| def / 型outline | yes | yes | no | no |
+| refs | no | no | yes | no |
+| callers | yes | no | no | no |
+| report / gate / near / explain | no | no | no | yes |
+| search初期版 | no | no | no | no |
+| context初期版 | yes | yes | yes | no |
+
+### ファイル指定と互換性
+
+indexの `-file` は結果の絞り込みであり、既存 `calls_approx` は走査scope内の呼び出しを数える。この意味を保つ間は、他ファイルのCallsも収集する。まず正規化の分離を測り、単一ファイルだけのscanに置き換えない。呼び出し数を省くoutline modeは、必要性を測ってから別の明示modeとして設計する。
+
+### 計測・採用手順
+
+1. 最新Go対応版を基点に、Swift/Go/混在、小規模/obaket規模の固定入力を用意する。CLI buildと入力commit/dirty状態、設定、OS/CPU、実行環境を記録する。
+2. 現行と候補を同じbuild条件で別binaryにし、queryごとにwarm-up後の反復を交互の順序で測る。中央値・min/max・全生データを残し、CPU profileとpeak RSSも別に測る。
+3. legacy text/JSON、終了コード、件数、順序、近似数を同一入力で比較する。parse error、untracked、削除、改名、symlink、別worktreeも含める。
+4. 正規化の分離だけで差が出るかを先に判断する。差が測定のばらつき内なら高速化済みとしない。次のcache/batchはその結果を見て提案を更新する。
+
+927のcontextはこのReadSet/Viewを1回構築して利用する。cacheを追加する場合も独立の二重cacheを作らず、本issueで無効化条件・上限・回復を評価する。
+
+## 今回の3回のセルフレビュー（2026-10-26）
+
+各回で読み取り専用Codex subagentの反証レビューと本体の自己点検を行い、指摘を次の回の前に反映した。
+
+1. **CLI仕様・互換性**: 共通契約との整合を確認し、Go追加後のbaseline取り直し・L3維持・calls_approx維持を詳細化した。
+2. **agentの使いやすさ・効果測定**: contextとの共有ReadSetを確認し、出力上限と入力/ASTメモリ量を分けて評価する方針を保持した。
+3. **実装構造・運用コスト**: parserの所有関係・正規化の任意化・永続cacheを先送りする境界を静的に確認した。
+
+改善の評価: 起票時の機能案から、引数・状態・依存関係・異常系・検査手順を実装/レビュー可能な契約へ具体化した。共通仕様の正本は926、registry/評価手順は928、解析経路は924とし、重複した実装を避ける。これは設計文書の改善であり、実装・性能・開発効率の向上は未検証。受け入れ条件は未完了のままopenに残す。
+
 ## 進捗
 
 - 2026-10-26: 起票。実装は未着手。5回ずつのbaselineと、ソース上の候補を記録した。現状の改善は「次の実装時に再現・比較できる条件を残したこと」であり、高速化の効果は未実測。

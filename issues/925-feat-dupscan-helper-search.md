@@ -20,7 +20,7 @@ Claude/Codexが新しいfixtureや値の組み立て関数を書く前に、名�
 dupscan search -query 'connection bucket fixture' -returns StorageLocation -limit 5
 ```
 
-名前・署名・docの語を横断するlexicalな候補検索を追加する。新しいsubcommandかindexへの追加flagかは、既存indexの意味を保てる方を実装時に選ぶ。
+名前・署名・docの語を横断するlexicalな候補検索を追加する。詳細設計では新しいsearch subcommandに分離し、既存indexの意味を維持する。
 
 - 識別子のcamelCase / snake_case分割、大文字小文字、複数の語の一致を扱う。単なる語の部分一致として仕様を明示し、意味理解を保証しない。
 - `-returns` 等の明示した型フィルターは制約として扱い、用途語の部分一致とは分ける。どのフィールドに何語が一致したかを表示する。
@@ -38,6 +38,51 @@ dupscan search -query 'connection bucket fixture' -returns StorageLocation -limi
 - [ ] 924の代表的規模でlatencyと出力量を測り、検索の便利さと追加コストを評価する。
 
 関連: [924](924-perf-dupscan-exploration-latency.md) は処理速度、[918](epic/890/pending/918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](epic/890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。本提案でこれらの保留作業を自動的に再開しない。
+
+## 詳細設計案（2026-10-26、未実装）
+
+### 初期版のCLI
+
+新規 `search` subcommandにする。既存indexの挙動を変えず、署名・docを横断する順位付けを分離する。
+
+```sh
+dupscan search -format json-v2 -query 'connection bucket fixture' -returns StorageLocation -lang swift -limit 5
+```
+
+`-query` 必須、1〜8語、全体512 UTF-8 bytes以内・各語64 rune以内。`-lang auto|swift|go`、`-scope all|prod|test`、`-repo` / `-path`、`-file`、`-returns`、`-param-type`、`-limit`、`-max-bytes` は926の契約に従う。limitは既定5、1〜50。出力予算は既定8,192 bytes、指定範囲は1,024〜1,048,576 bytes。無制限出力は初期版に設けない。
+
+### 検索の規則
+
+1. 924のmetadata用AnalysisViewを取得し、現在のindexと同じく名前付きUnitsを候補にする。Swift/Goのindexに出る単位が対象で、各言語の除外条件を引き継ぐ。
+2. 明示filterはAND。`-returns` / `-param-type` は現行indexの字面の部分一致（大文字小文字を区別）を保つ。型別名の解決や型推論はしない。型metadata不明の候補は、指定された型filterを満たしたとはみなさない。
+3. queryは空白で分け、Unicode小文字化後に重複語を除く。この空白区切りの語を加点単位とする。対象はname / signature / 現行doc先頭行。各fieldの小文字化した原文に語が部分一致するか、語をcamelCase/acronym/snake_caseの境界で分けた全成分が同じfieldの分割tokenへそれぞれ部分一致すれば、そのfieldの一致とする（境界分割は小文字化前に行う）。例: HTTPClientはhttp/client、http_clientもhttp/client。日本語は原文の部分一致を用い、形態素解析・同義語展開・Unicode正規化は行わない。根拠には元の語と一致field/成分を残す。
+4. 初期版はOR候補検索で、少なくとも1語が一致した候補を返す。`-min-matched-terms N` を指定したらN語以上を要求する。範囲は1〜queryの語数。自動で条件を緩めない。
+5. 各語について最も強い一致fieldだけを加点（name=3、signature=2、doc=1）。順位は「一致語数→加点合計→query全体との名前完全一致→shared→非hidden→prod→file/line/col/署名」の順。前の比較項目が同じときだけ次を見る。近似呼び出し数は順位に使わない。
+
+scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`missing_terms`、可視性、shared、型metadataを返す。snippetはdocの短い抜粋とし、長さ制限・省略を示す。利用可能性は `not_proven` と、既知の可視性を分ける。sharedをpublic/他moduleから利用可能という意味にしない。
+
+### 出力と0件
+
+926のv2 envelopeに `data.candidates` を持たせる。候補IDは同じReadSet内のfile/位置/署名から作る参照であり、型解決済みのsymbol IDではない。件数はfilterと検索規則を満たした全候補、returnedは予算内の件数。budget不足は `output.truncated` で示し、hitがあるのに返却0件でもno_matchにしない。
+
+0件なら現在のfilterを保持したまま、1語への再検索・既存indexでの型検索等を最大3個のargvで提案する。提案を自動実行しない。語・filterを変える案は、何が変わるかをreasonへ明記する。
+
+### 実装の分割と検査
+
+- `internal/report` の既存index queryからhard filter判定を共通化し、旧indexのgolden出力を保持する。新しいtokenize/rankは独立したpure functionとして検査する。
+- camel/acronym、日本語、重複語、同点の順序、AND filter、OR/min-matched、alias不一致、doc欠落、scope、private/unexported、同名別file、partial解析をtable testにする。
+- 精度のgolden queryは925の受け入れ条件にある正解/不正解対照で作る。ranking規則を変えた際はtop-kの変化を評価し、都合のよいqueryだけで採用しない。
+- 初期版は永続検索indexを作らず、924の実測を用いて必要性を判断する。詳細設計の数値は初期仕様案で、効果確認後の変更は本文とテストで追跡する。
+
+## 今回の3回のセルフレビュー（2026-10-26）
+
+各回で読み取り専用Codex subagentの反証レビューと本体の自己点検を行い、指摘を次の回の前に反映した。
+
+1. **CLI仕様・互換性**: 既存indexから独立したsearchを選び、型filterの現行部分一致を維持する仕様を明文化した。
+2. **agentの使いやすさ・効果測定**: 順位評価とagent作業評価を分離し、正解あり/なし・別targetの対照を928の評価手順へ接続した。
+3. **実装構造・運用コスト**: 語の分割/部分一致/加点単位の曖昧さを自己点検で修正し、sourceにあるmetadataだけを利用する境界を維持した。
+
+改善の評価: 起票時の機能案から、引数・状態・依存関係・異常系・検査手順を実装/レビュー可能な契約へ具体化した。共通仕様の正本は926、registry/評価手順は928、解析経路は924とし、重複した実装を避ける。これは設計文書の改善であり、実装・性能・開発効率の向上は未検証。受け入れ条件は未完了のままopenに残す。
 
 ## 進捗
 
