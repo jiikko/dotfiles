@@ -36,6 +36,7 @@ bin/dupscan def 'make(x:_:)'                  # 引数ラベルで完全一致
 bin/dupscan def ObjectStorageProtocol -limit 10
 bin/dupscan refs StorageOperationLockRegistry # 識別子の出現
 bin/dupscan refs StorageStatsEvent -limit 10
+bin/dupscan context DropboxClient.upload      # def・refs・callers を 1 回の走査でまとめて (変更の前に定義と使われ方を見る)
 ```
 
 `callers` は呼び出しの箇所を `file:line 呼び出し元 [test] | その行` で出す (コメント・文字列の中は数えない。テスト関数の中も数え、呼び出し元は「(単位の外)」)。
@@ -56,6 +57,14 @@ struct / class / enum / protocol / actor / extension は宣言とメンバーの
 `@Test` / XCTest 関数の中の参照はその関数名を囲む単位として出す。メソッド内の入れ子の `func` は `Type.member` 照合の対象外。
 単位の外でも型の中なら囲む型名を出す。`if let foo` などの省略束縛は外側の値への参照として数え、parameter pack の宣言名は除く。
 text は `-limit` の既定 20 件まで (`0` は全部)、JSON は全件を返す。
+
+`context` は `def` と同じ問い合わせ (`名前` / `Type.member` / `名前(ラベル:…)`) を受け、1 回の走査から `def`・`refs`・`callers` の節を並べて出す。
+各節の中身は `def <問い合わせ>`・`refs <名前>`・`callers <名前(ラベル:…)>` の text と同じ (省略の案内の文言と、下の 2 つを除く)。
+参照・呼び出しは `Type` では絞らない。`Type.init` は型の名前で引く (`Foo(…)` の形の呼び出し。参照は型の名前の全部の出現になる)。
+呼び出しの数え方は `callers` の限界をそのまま引き継ぐ: `.init(`・`Self(…)`・`Foo<T>(…)` と書いた呼び出しは数えず、ラベルで引くと既定値のある引数を省いた呼び出しも数えない (要約の行にも出す)。
+1 行目に 3 つの件数、続けて近似の範囲・定義が 0 件か 1 つに決まっていないこと・読めない構文のファイル・読まなかった言語を書く。
+Swift だけを読む (`def` / `refs` と同じ)。呼び出しの節も Swift の分だけで、Go の呼び出しも数える単独の `callers` とはここが違う。出力は text だけで、0 件でも rc=0 (入力の誤り・判定不能は rc=2)。`-limit` は節ごとの件数、`-max-lines` は定義のソース行。
+json を出さないのは、既存コマンドの json の形を固定して変えない決まりのため (ここで出すと、状態・省略・継続取得を持つ共通の形より前に、固定する形が 1 つ増える。issue 926・927)。
 
 report の text は、組を大きい順 (メンバーのうち最大の単位の節の数) に並べ、先頭に「ファイルの組」(同じファイルの組み合わせに組が 2 つ以上あるもの) を件数と節の合計の大きい順に 5 行出す。
 同じ画面・同じ型の写しが細切れの組で並ぶのを 1 行で見せ、寄せる作業の単位を決めやすくする (json は `file_pairs` に全部・各組の `nodes`)。

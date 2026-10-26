@@ -35,11 +35,12 @@ dupscan def StorageClient                     # 定義を本体つきで (型は
 dupscan def StorageClient.upload              # 型を絞る (generic の引数と where 句は外して照合する)。make(x:_:) で引数ラベルも絞れる
 dupscan refs StorageClient                    # 参照の一覧 ([型の位置] / [式の位置] と、それを囲む関数)。宣言名・引数名・局所の束縛・ラベルは数えない
 dupscan callers 'make(x:_:)'                  # 呼び出しの箇所と、それを囲む関数 (名前だけでも引ける)
+dupscan context StorageClient.upload          # 変更の前に: 上の def・refs・callers を 1 回の走査でまとめて (text だけ。参照・呼び出しは名前だけで当てる)
 dupscan index -file Sources/Foo.swift         # このファイルに何があるか (outline)
 ```
 
 型を解決しないので、同名の別の定義・参照も当たる (近似)。flag は名前・パスの前に書く。
-`def` / `refs` は Swift だけを読む (Go のファイルを読まなかったことは stderr に出る)。Go の定義・参照は LSP (gopls) で引く。
+`def` / `refs` / `context` は Swift だけを読む (Go のファイルを読まなかったことは stderr に出る)。Go の定義・参照は LSP (gopls) で引く。
 `callers` と `index -file` は Go のファイルにも使える (Go に引数ラベルは無いので、`callers` は名前と引数の数で当てる)。
 
 ## 3. セルフレビューで gate を回す

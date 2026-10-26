@@ -50,13 +50,7 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(withNote(err, note))
 	}
-	references := make([]report.ReferenceRecord, 0, len(got.references))
-	for _, r := range got.references {
-		references = append(references, report.ReferenceRecord{
-			Name: r.Name, Kind: r.Kind, File: r.File, Line: r.Line, Col: r.Col, Text: r.Text, Test: r.Test, Enclosing: r.Enclosing, TestOwner: r.TestOwner,
-		})
-	}
-	summary := report.BuildReferences(query, references, got.units, langs.IsTestPath)
+	summary := buildReferences(query, got)
 	switch *format {
 	case "text":
 		err = report.ReferencesText(stdout, summary, *limit)
@@ -75,4 +69,15 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// buildReferences は走査の結果から name の参照を組み立てる (refs と context が同じ当て方を使う)。
+func buildReferences(name string, got scanned) report.ReferencesSummary {
+	references := make([]report.ReferenceRecord, 0, len(got.references))
+	for _, r := range got.references {
+		references = append(references, report.ReferenceRecord{
+			Name: r.Name, Kind: r.Kind, File: r.File, Line: r.Line, Col: r.Col, Text: r.Text, Test: r.Test, Enclosing: r.Enclosing, TestOwner: r.TestOwner,
+		})
+	}
+	return report.BuildReferences(name, references, got.units, langs.IsTestPath)
 }

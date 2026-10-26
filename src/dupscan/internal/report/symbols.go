@@ -281,13 +281,18 @@ func sourceRange(source []byte, first, last, maxLines int) ([]string, bool, int)
 
 // DefinitionsText writes source declarations and type outlines.
 func DefinitionsText(w io.Writer, s DefinitionsSummary, limit int) error {
+	return DefinitionsTextMore(w, s, limit, "-limit 0 か -format json で全部")
+}
+
+// DefinitionsTextMore は DefinitionsText の、省略したときの案内 (more) を呼び出し側が決める版 (-format を持たないコマンド用)。
+func DefinitionsTextMore(w io.Writer, s DefinitionsSummary, limit int, more string) error {
 	if s.Matches == 0 {
 		fmt.Fprintf(w, "dupscan def: %s の定義なし\n", s.Query)
 		return nil
 	}
 	for i, e := range s.Entries {
 		if limit > 0 && i == limit {
-			fmt.Fprintf(w, "… 他 %d 件 (-limit 0 か -format json で全部)\n", s.Matches-limit)
+			fmt.Fprintf(w, "… 他 %d 件 (%s)\n", s.Matches-limit, more)
 			break
 		}
 		name := e.Signature
@@ -383,13 +388,18 @@ func BuildReferences(query string, references []ReferenceRecord, units []*tree.U
 
 // ReferencesText writes one occurrence per line in callers-style form.
 func ReferencesText(w io.Writer, s ReferencesSummary, limit int) error {
+	return ReferencesTextMore(w, s, limit, "-limit 0 か -format json で全部")
+}
+
+// ReferencesTextMore は ReferencesText の、省略したときの案内 (more) を呼び出し側が決める版。
+func ReferencesTextMore(w io.Writer, s ReferencesSummary, limit int, more string) error {
 	if s.Matches == 0 {
 		fmt.Fprintf(w, "dupscan refs: %s の参照なし\n", s.Query)
 		return nil
 	}
 	for i, e := range s.Entries {
 		if limit > 0 && i == limit {
-			fmt.Fprintf(w, "… 他 %d 件 (-limit 0 か -format json で全部)\n", s.Matches-limit)
+			fmt.Fprintf(w, "… 他 %d 件 (%s)\n", s.Matches-limit, more)
 			break
 		}
 		caller := e.Enclosing

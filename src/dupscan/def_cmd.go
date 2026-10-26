@@ -59,23 +59,7 @@ func runDef(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(withNote(err, note))
 	}
-	defs := make([]report.DefinitionRecord, 0, len(got.definitions))
-	for _, d := range got.definitions {
-		defs = append(defs, report.DefinitionRecord{
-			Name: d.Name, Kind: d.Kind, File: d.File, Line: d.Line, EndLine: d.EndLine, Col: d.Col,
-			Enclosing: d.Enclosing, Signature: d.Signature, Labels: d.Labels, Test: d.Test,
-			Nested: d.Nested, Visibility: d.Visibility, Doc: d.Doc,
-		})
-	}
-	types := make([]report.TypeRecord, 0, len(got.types))
-	for _, d := range got.types {
-		types = append(types, report.TypeRecord{
-			Name: d.Name, Kind: d.Kind, File: d.File, Line: d.Line, EndLine: d.EndLine, Col: d.Col,
-			Enclosing: d.Enclosing, Scope: d.Scope, Signature: d.Signature, Test: d.Test,
-			Nested: d.Nested, Visibility: d.Visibility, Doc: d.Doc,
-		})
-	}
-	summary := report.BuildDefinitions(pos[0], q, defs, types, got.units, got.calls, got.contents, *maxLines, cfg.InShared)
+	summary := buildDefinitions(pos[0], q, got, *maxLines, cfg.InShared)
 	switch *format {
 	case "text":
 		err = report.DefinitionsText(stdout, summary, *limit)
@@ -94,4 +78,25 @@ func runDef(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// buildDefinitions は走査の結果から q に当たる定義を組み立てる (def と context が同じ当て方を使う)。
+func buildDefinitions(query string, q report.DefQuery, got scanned, maxLines int, shared func(string) bool) report.DefinitionsSummary {
+	defs := make([]report.DefinitionRecord, 0, len(got.definitions))
+	for _, d := range got.definitions {
+		defs = append(defs, report.DefinitionRecord{
+			Name: d.Name, Kind: d.Kind, File: d.File, Line: d.Line, EndLine: d.EndLine, Col: d.Col,
+			Enclosing: d.Enclosing, Signature: d.Signature, Labels: d.Labels, Test: d.Test,
+			Nested: d.Nested, Visibility: d.Visibility, Doc: d.Doc,
+		})
+	}
+	types := make([]report.TypeRecord, 0, len(got.types))
+	for _, d := range got.types {
+		types = append(types, report.TypeRecord{
+			Name: d.Name, Kind: d.Kind, File: d.File, Line: d.Line, EndLine: d.EndLine, Col: d.Col,
+			Enclosing: d.Enclosing, Scope: d.Scope, Signature: d.Signature, Test: d.Test,
+			Nested: d.Nested, Visibility: d.Visibility, Doc: d.Doc,
+		})
+	}
+	return report.BuildDefinitions(query, q, defs, types, got.units, got.calls, got.contents, maxLines, shared)
 }

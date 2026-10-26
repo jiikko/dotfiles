@@ -29,6 +29,7 @@ const usage = `usage: dupscan [report] [flags] [dir ...]
        dupscan callers [flags] <名前|名前(ラベル:…)> [dir ...]
        dupscan def [flags] <名前|Type.member|名前(ラベル:…)> [dir ...]
        dupscan refs [flags] <名前> [dir ...]
+       dupscan context [flags] <名前|Type.member|名前(ラベル:…)> [dir ...]
 
 report: dir (既定は .) を起点に、git が追跡しているファイルと ignore されていない untracked のファイルを読み、
 本体が同じ形の単位を段 (L1 / L2 / L3) ごとに組にして出す。
@@ -40,6 +41,7 @@ index: 名前の付いた単位を 1 行 1 件で出す。書く前に、名前�
 callers: 名前 (と引数ラベル) が当たる呼び出しの箇所と、それを囲む単位を出す (型を解決しない近似)。
 def: 完全一致する定義を本体つきで出す。型は宣言とメンバー一覧、Type.member と引数ラベルで絞れる。
 refs: 型・式の位置にある識別子の参照を、それを囲む単位つきで出す (コメント・文字列は除く)。
+context: def・refs・callers を 1 回の走査でまとめて出す (変更の前に定義と使われ方を見る。参照・呼び出しは名前だけで当てた近似。text だけ)。
 どちらも調べる repo には何も書かない。
 
 flags:
@@ -169,6 +171,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && args[0] == "refs" {
 		return runRefs(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "context" {
+		return runContext(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && (args[0] == "near" || args[0] == "explain") {
 		return runPoint(args[0], args[1:], stdout, stderr)

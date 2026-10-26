@@ -119,13 +119,18 @@ func enclosing(units []*tree.Unit, line int) *tree.Unit {
 
 // CallersText は callers を 1 行 1 件で出す (`file:line 呼び出し元 [test] | その行`)。
 func CallersText(w io.Writer, s CallersSummary, limit int) error {
+	return CallersTextMore(w, s, limit, "-limit 0 か -format json で全部。ラベルを書いて絞る")
+}
+
+// CallersTextMore は CallersText の、省略したときの案内 (more) を呼び出し側が決める版。
+func CallersTextMore(w io.Writer, s CallersSummary, limit int, more string) error {
 	if s.Matches == 0 {
 		fmt.Fprintf(w, "dupscan callers: %s の呼び出しなし\n", s.Query)
 		return nil
 	}
 	for i, e := range s.Entries {
 		if limit > 0 && i == limit {
-			fmt.Fprintf(w, "… 他 %d 件 (-limit 0 か -format json で全部。ラベルを書いて絞る)\n", s.Matches-limit)
+			fmt.Fprintf(w, "… 他 %d 件 (%s)\n", s.Matches-limit, more)
 			break
 		}
 		caller := e.Caller

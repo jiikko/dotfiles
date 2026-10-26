@@ -30,7 +30,7 @@ dupscan context -symbol StorageClient.upload -definition-file Sources/StorageCli
 ## 検証・受け入れ条件
 
 - [ ] 選択の曖昧さと、定義選択/参照検索scopeの違いをtext/JSONに表す。
-- [ ] 同じ入力で、既存def/refs/callersとの対応と、省略していない結果の一致を確認する。結果の網羅性は既存コマンドの限界も引き継ぐと明示する。
+- [x] 同じ入力で、既存def/refs/callersとの対応と、省略していない結果の一致を確認する。結果の網羅性は既存コマンドの限界も引き継ぐと明示する。（最小版で達成。下の進捗）
 - [ ] 大きい型、多重定義、同名の別モジュール、1行に複数の呼び出し、source変更、読めない構文、0件を検査する。
 - [ ] 小さいbudgetでもJSON/UTF-8が有効で、省略と継続取得が検証できる。継続時の入力変更は検知/明示し、以前の結果と混ぜない。
 - [ ] Claude/Codexで同じ変更課題を既存コマンド列と比較し、必要な情報への到達、往復数、返したbytes、elapsed time、見落としを測る。少ない出力だけを成功指標にしない。
@@ -120,3 +120,14 @@ cursorのquery hashは定義IDと探索条件を束縛する。表示上のsecti
 - 2026-10-26: 既存実装発見・比較評価について読み取り専用Codex subagentで反証レビュー。925の「候補の適切性をCLIが判断するように読める」P3を訂正し、候補抽出とagentによる採用判断を分けた。 issue内の相対リンク・JSON/Python構文・diffとBash 5のissue関連テストが成功。929の本文内手順と930の3問い合わせをCLIで再現した。文書の改善は、出力誤認の再現・責務と、既存実装発見/不要な重複追加を測る条件を具体化したこと。機能改善の効果は未検証。
 
 - 2026-10-26: 段階取得と総context量の評価を928へ接続。 読み取り専用Codex subagentで指摘の網羅性とcontext計測を反証レビューし、P3（現行/設計、着手条件、計測範囲）の3点を訂正した。文書の改善は、不足した指摘の担当と検証条件を明確にしたこと。実装・両効果の実証は未着手。
+
+- 2026-10-26: **最小版を実装** (`dupscan context`。ユーザー指示「最小版で進めて」)。上の詳細設計のうち、924 (ReadSet)・926 (json-v2・予算付き serializer・状態)・928 (registry) に依存しない部分だけを作った。
+  - 作ったもの: def と同じ問い合わせを受け、1 回の走査 (`scanSourceOptions` の calls / defs / refs を全部オン) から定義・参照・呼び出しの節を text で並べる。1 行目に 3 つの件数、続けて近似の範囲・定義が 0 件か 1 つに決まっていないこと・読めない構文のファイル (先頭 3 個 + 件数)・読まなかった言語を書く。`Type.init` は型の名前で refs / callers を引く。0 件でも rc=0 (926 の v2 の方針に合わせた)
+  - 作らなかったもの: JSON (926 が既存の JSON の形を固定するので、v2 より前に固定すべき形を増やさない)・`definition_id` / snapshot / cursor・byte 予算・`-sections`。理由は 926 / 924 / 928 が未実装で、先取りすると二重に作るため
+  - def / refs / callers の text 出力は関数を分けただけで、既存の出力は変えていない (省略の案内の文言だけを context 用に差し替える `*TextMore` を足した)。def と refs の走査結果からの組み立ては helper (`buildDefinitions` / `buildReferences`) に寄せて context と共用した
+  - 検査: `src/dupscan/context_cmd_test.go` の 7 本。節ごとに単独コマンドの `-limit 0` の text と一致すること・`Type.member` で参照を絞らないこと・省略の案内に `-format` を出さないこと (def の案内は不変)・0 件・`Type.init`・読めないファイルと Go の注記・引数の誤り。変異 10 本 (参照を問い合わせ全体で引く・ラベルを落とす・曖昧の行を消す・読めないファイルの行を消す・既存の案内を使う・注記を消す・init を名前で引く・0 件の行を消す・要約の注記を消す・節の見出しを問い合わせの名前にする) がすべて想定の検査で red
+  - opus の敵対的レビュー 1 周目: 既存コマンドの退行は壊せなかった。P1 1 件 (`SMB2Header.init` が callers を名前 init で引き、self.init など無関係の 10 件を出して `SMB2Header(…)` の 188 件を落としていた) と P2 3 件 (定義 0 件の注記なし・Swift と Go の混在で呼び出しの節が Go を落とすのを書いていない・README との食い違い)・P3 (ラベルで絞るのに「名前だけ」と書いていた) を再現して直した
+  - opus の敵対的レビュー 2 周目 (直した差分): P1 なし。P2 2 件 (ラベルで引くと既定値のある引数を省いた呼び出しを落とす・`Foo<T>()` の呼び出しを数えない。どちらも callers の限界で、要約・README に書いていなかった) と P3 (`Type..init` が空の名前で通る・`Box<T>.init` が `Box<T>` のまま引く・`Self(…)` を数えないのを書いていない・`Type.init` の参照は型の名前の全部の出現になる) を、再現して直すか要約・README に書いた。変異 3 本 (空の名前を通す・generic の引数を残す・既定値の注記を消す) も想定の検査で red
+  - 記録だけのもの (直していない): `dupscan context` は `context` という名前の dir の report ではなくサブコマンドになる (def / refs / callers と同じ扱い。`dupscan report context` で引ける)。定義のソースに列 0 の `## ` で始まる行があると節の見出しと紛れる (swift-smbee・screen-share-app には無かった。再提起には実例が要る)
+  - 実測 (swift-smbee、`POSIXSocketTransport.connect`、既定の `-limit 20`、3 回): def・refs・callers を別々に 3 回で 2.34〜2.56 秒・9,731 bytes、context 1 回で 1.10〜1.12 秒・10,316 bytes。**時間は半分以下になるが、出力は見出しと要約の分だけ 6% 増える**。agent の往復・見落とし・総 context 量への効果は未測定 (928 の評価で測る)
+
