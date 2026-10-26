@@ -63,7 +63,7 @@ skill dupscan の 2 節・README・obaket の AGENTS.md / CLAUDE.md の dupscan 
 
 ## 関連
 
-- [899](../../932/899-research-dupscan-lsp-integration.md): LSP は使わない (ユーザー決定 2026-10-24)。本 issue は構文木の近似のまま引く手段を足す。
+- [899](../../932/done/899-research-dupscan-lsp-integration.md): LSP は使わない (ユーザー決定 2026-10-24)。本 issue は構文木の近似のまま引く手段を足す。
   同名の取り違えで判断を誤る実例が出たら 899 を再開する
 - 2026-10-25 実装して push した (dotfiles `d8199d5b` まで def / refs、`afce63e5` まで hook)。~/dotfiles に取り込み、obaket で hook の案内と `dupscan def` が動くことを確かめた
   - commit: 「feat(dupscan): def (定義を本体つき・型はメンバーの一覧) と refs (識別子の参照) を足す」「fix(dupscan): def の型のメンバーに protocol の要件・格納 property・enum の case を含め、refs の宣言名の除外を広げる」
@@ -107,3 +107,5 @@ skill dupscan の 2 節・README・obaket の AGENTS.md / CLAUDE.md の dupscan 
 ## 追加提案との境界（2026-10-26）
 
 [928](../../932/928-feat-dupscan-agent-onboarding.md) にClaude/Codex共通のCLI能力診断・導入案内を提案した。本issueのClaude用grep案内は実装済みの入口として利用し、重複して新設しない。既存の1か月後の測定・保留条件は維持する。Codex側の固有hook対応は別途検証する事項で、ここで利用可能と断定しない。CLIの問い合わせ診断は [926](../../932/926-feat-dupscan-query-diagnostics.md)、情報をまとめる新commandは [927](../../932/927-feat-dupscan-agent-context.md) の範囲とする。
+
+- 2026-10-27: 899の補完方式調査が完了。通常の構文探索とLSP不採用は維持し、921のgrep案内の効果測定は既定の条件で継続する。typed/indexed補完を導入済みとは扱わない。

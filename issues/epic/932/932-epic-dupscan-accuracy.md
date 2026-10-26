@@ -18,7 +18,7 @@
 | 番号 | 何をするか |
 |---|---|
 | [895](895-feat-dupscan-type3-candidates.md) | 小さい関数を含む構文の少し違う重複候補を出す |
-| [899](899-research-dupscan-lsp-integration.md) | 型/シンボル解決の範囲と負担を非LSPの解析から調査する |
+| [899](done/899-research-dupscan-lsp-integration.md) | 型/シンボル解決の範囲と負担を非LSPの解析から調査する |
 | [918](918-feat-dupscan-target-and-literal-table.md) | 所属/利用可否とリテラル差分の根拠を扱う |
 | [924](done/924-perf-dupscan-exploration-latency.md) | 探索コマンド (`index` / `def` / `refs`) の待ち時間を減らす |
 | [925](925-feat-dupscan-helper-search.md) | 用途語・署名から、名前の分からない既存ヘルパーの候補を探す |
@@ -39,7 +39,7 @@
 
 ## 状態
 
-924の探索latency改善、929のgate解析漏れ通知/strict判定、935のdoctor限定測定、937のGo test呼び出し元表示を完了。927のcontextと934のevidenceは最小版を実装済みで、詳細設計の残りをopenで継続する。ほかの課題は各子issueで追跡する。
+899の非LSP補完調査、924の探索latency改善、929のgate解析漏れ通知/strict判定、935のdoctor限定測定、937のGo test呼び出し元表示を完了。927のcontextと934のevidenceは最小版を実装済みで、詳細設計の残りをopenで継続する。ほかの課題は各子issueで追跡する。
 
 - 2026-10-26: 指摘の未カバー分を933/934へ切り出し、895/899/918を未着手のopen課題へ戻した。context消費と重複追加の削減は928で評価する。実装・効果は未検証。
 
@@ -54,3 +54,5 @@
 - 2026-10-27: 937でGoのtest ownerを比較単位から分離した。doctorの6出現を保ち、欠けていた4件のテスト名を表示。互換性5条件・4変異検出・lint/raceを確認。固定例ではソース補完読取が1→0回だが、一般的なcontext効率は未検証。
 
 - 2026-10-27: 924で探索の比較用本体変換/正規化を省いた。固定大規模Swiftの中央値27〜46%短縮、outline追加測定でも約31%短縮。小規模の改善は未確定。rc/出力200条件、lint/race、5変異検出を確認し、cacheや意味解決は追加していない。
+
+- 2026-10-27: 899でGo/Swiftの補完範囲・所要・前提を実験と一次資料で比較した。通常構文経路とLSP不採用を維持し、typed/indexedの将来候補とunknown契約を決定。899は調査完了で、本体統合や918/926/930の機能実装は継続する。
