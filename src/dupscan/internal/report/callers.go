@@ -62,7 +62,7 @@ type CallerEntry struct {
 	File   string `json:"file"`
 	Line   int    `json:"line"`
 	Col    int    `json:"col"`
-	Caller string `json:"caller,omitempty"` // 呼び出しを囲む単位 (型.署名)。単位の外 (テスト関数・top-level) なら空
+	Caller string `json:"caller,omitempty"` // 呼び出しを囲む単位 (型.署名)。単位の外 (top-level 等) なら空
 	Test   bool   `json:"test"`
 	Text   string `json:"text"`
 }
@@ -86,7 +86,12 @@ func BuildCallers(query string, q CallQuery, calls []tree.Call, units []*tree.Un
 			continue
 		}
 		e := CallerEntry{File: c.File, Line: c.Line, Col: c.Col, Test: isTest(c.File), Text: c.Text}
-		if u := enclosing(byFile[c.File], c.Line); u != nil {
+		if c.Owner != nil {
+			if !c.Owner.Unreadable {
+				e.Caller = label(UnitRef{Signature: c.Owner.Signature, Enclosing: c.Owner.Enclosing})
+			}
+			e.Test = e.Test || c.Owner.Test
+		} else if u := enclosing(byFile[c.File], c.Line); u != nil {
 			e.Caller = label(ref(u))
 			e.Test = e.Test || u.Test
 		}

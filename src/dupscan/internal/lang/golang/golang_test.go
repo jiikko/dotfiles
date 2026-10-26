@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -451,6 +452,33 @@ func TestUnclosedFunctionAtEOFIsUnreadable(t *testing.T) {
 	for _, u := range r.Units {
 		if !u.Unreadable {
 			t.Errorf("%s が読める単位になった", u.Key)
+		}
+	}
+}
+
+func TestCallOwnersLeaveCloneUnitsUnchanged(t *testing.T) {
+	src := []byte(`package fixture
+func helper() { target() }
+func TestA(t *testing.T) { target(); use(func() { target() }) }
+func BenchmarkB(b *testing.B) { target() }
+func FuzzC(f *testing.F) { target() }
+func ExampleD() { target() }
+func (s *suite) TestMethod() { target() }
+`)
+	with, err := (&Parser{opt: lang.Options{Calls: true}}).Parse("owner_test.go", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	without, err := (&Parser{}).Parse("owner_test.go", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(with.Units) != 1 || with.Units[0].Name != "helper" || !reflect.DeepEqual(with.Units, without.Units) || len(without.Calls) != 0 {
+		t.Fatalf("call metadata must not admit tests/closures into clone units: with=%+v without=%+v", with, without)
+	}
+	for _, c := range with.Calls {
+		if c.Owner == nil || c.Owner.Signature == "" || !c.Owner.Test || c.Owner.Unreadable || c.Owner.Line > c.Line || c.Owner.EndLine < c.Line {
+			t.Errorf("call must retain a readable named owner and range: %+v owner=%+v", c, c.Owner)
 		}
 	}
 }

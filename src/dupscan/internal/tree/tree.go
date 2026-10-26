@@ -69,7 +69,21 @@ type Call struct {
 	Labels []string // 括弧の中の引数ラベル (ラベルの無い引数は `_`)
 	// Trailing は後置クロージャがあること (その分の引数ラベルは Labels に入らない)。
 	Trailing bool
-	Text     string // その行 (前後の空白を除く)
+	// Owner is nil when the adapter uses Unit-based ownership. A nonnil empty
+	// owner explicitly means top-level or unknown, so callers must not fall back.
+	Owner *CallOwner
+	Text  string // その行 (前後の空白を除く)
+}
+
+// CallOwner describes a named call container independently of clone eligibility.
+// File comes from Call; positions refer to the physical source, with an exclusive end.
+type CallOwner struct {
+	Signature       string
+	Enclosing       string
+	Line, Col       int
+	EndLine, EndCol int
+	Test            bool
+	Unreadable      bool
 }
 
 // Unit は比べる単位 (関数・初期化子・クロージャ) 1 つ。

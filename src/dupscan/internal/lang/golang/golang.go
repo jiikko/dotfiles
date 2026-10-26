@@ -94,6 +94,9 @@ func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 		}
 		switch d := d.(type) {
 		case *ast.FuncDecl:
+			if p.opt.Calls && d.Body != nil {
+				w.callOwners = append(w.callOwners, w.callOwner(d, limit))
+			}
 			w.funcDecl(d, limit)
 		case *ast.GenDecl:
 			// パッケージの変数の初期値の関数リテラル (`var handler = func(…) {…}`)
@@ -118,15 +121,16 @@ func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 }
 
 type walker struct {
-	fset     *token.FileSet
-	file     string
-	src      []byte
-	test     bool
-	errs     scanner.ErrorList
-	units    []*tree.Unit
-	closures map[string]int
-	seen     map[string]int // 鍵の重なりの数 (1 つのファイルに複数書ける `func init()`)
-	lines    []string
+	fset       *token.FileSet
+	file       string
+	src        []byte
+	test       bool
+	errs       scanner.ErrorList
+	callOwners []*tree.CallOwner
+	units      []*tree.Unit
+	closures   map[string]int
+	seen       map[string]int // 鍵の重なりの数 (1 つのファイルに複数書ける `func init()`)
+	lines      []string
 }
 
 // ctx は辿っている場所の文脈。
@@ -175,13 +179,9 @@ func (w *walker) funcDecl(d *ast.FuncDecl, limit int) {
 		locals = append(locals, fieldNames(d.Recv)...)
 	}
 	name := d.Name.Name
-	params, paramTypes, labels := paramList(d.Type.Params)
+	sig, paramTypes, labels := functionSignature(d)
 	locals = append(locals, fieldNames(d.Type.Params)...)
 	locals = append(locals, fieldNames(d.Type.Results)...)
-	sig := name + "(" + params + ")"
-	if r := results(d.Type.Results); r != "" {
-		sig += " " + r
-	}
 	broken := w.errorIn(d.Pos(), limit)
 	u := w.newUnit(d, tree.KindFunc, name, sig, encl, locals, ctx{broken: broken})
 	u.Body = w.conv(d.Body)
@@ -201,6 +201,29 @@ func (w *walker) funcDecl(d *ast.FuncDecl, limit int) {
 	}
 	key := w.add(u)
 	w.closuresIn(d.Body, ctx{owner: key, ownerName: name, broken: broken})
+}
+
+func functionSignature(d *ast.FuncDecl) (string, []string, []string) {
+	params, paramTypes, labels := paramList(d.Type.Params)
+	sig := d.Name.Name + "(" + params + ")"
+	if r := results(d.Type.Results); r != "" {
+		sig += " " + r
+	}
+	return sig, paramTypes, labels
+}
+
+func (w *walker) callOwner(d *ast.FuncDecl, limit int) *tree.CallOwner {
+	start, end := w.position(d.Pos()), w.position(d.End())
+	sig, _, _ := functionSignature(d)
+	owner := &tree.CallOwner{
+		Signature: sig, Line: start.Line, Col: start.Column,
+		EndLine: end.Line, EndCol: end.Column, Test: w.test,
+		Unreadable: w.errorIn(d.Pos(), limit),
+	}
+	if d.Recv != nil && len(d.Recv.List) > 0 {
+		owner.Enclosing = receiverType(d.Recv.List[0].Type)
+	}
+	return owner
 }
 
 // closuresIn は n の中の関数リテラルを単位にする。入れ子のリテラルは、それを囲むリテラルを囲む単位にする。
@@ -401,6 +424,7 @@ func (w *walker) calls(f *ast.File) []tree.Call {
 		w.lines = strings.Split(string(w.src), "\n")
 	}
 	var out []tree.Call
+	unknownOwner := &tree.CallOwner{}
 	ast.Inspect(f, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -411,7 +435,15 @@ func (w *walker) calls(f *ast.File) []tree.Call {
 			return true
 		}
 		pos := w.position(call.Pos())
-		c := tree.Call{File: w.file, Line: pos.Line, Col: pos.Column, Name: name, Labels: []string{}}
+		c := tree.Call{File: w.file, Line: pos.Line, Col: pos.Column, Name: name, Labels: []string{}, Owner: unknownOwner}
+		for _, owner := range w.callOwners {
+			afterStart := pos.Line > owner.Line || pos.Line == owner.Line && pos.Column >= owner.Col
+			beforeEnd := pos.Line < owner.EndLine || pos.Line == owner.EndLine && pos.Column < owner.EndCol
+			if afterStart && beforeEnd {
+				c.Owner = owner
+				break
+			}
+		}
 		for range call.Args {
 			c.Labels = append(c.Labels, "_")
 		}
