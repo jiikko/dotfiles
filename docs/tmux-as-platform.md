@@ -376,9 +376,9 @@ tmux send-keys -t :.+ 'watch -n2 docker ps' Enter
 set -g status on
 set -g status-interval 1   # この repo は prefix 点滅・放置フェードの駆動で 1 秒
 # status-right は prefix 押下中だけキーガイドを出す島に使う（非押下時は同幅の空白）
-set -g @keyguide ' m:予約 g:glogx ?:キー一覧 '
-set -g status-right-length 27
-set -g status-right "#{?client_prefix,#{p27:@keyguide},#{p27:@nothing}}"
+set -g @keyguide ' m:予約 g:glogx f:treefiler ?:キー一覧 '
+set -g status-right-length 39
+set -g status-right "#{?client_prefix,#{p39:@keyguide},#{p39:@nothing}}"
 ```
 
 【この repo の実例】`/Users/koji/dotfiles/_tmux.conf` の status 設定。🚨 両分岐を `#{pN:}` で同じ幅に固定するのが要点で、片方だけ可変にすると prefix を押すたび window list の描画幅が変わる（status-left の島を 20 セル固定にしているのと同じ理由）。N を変えるときは `status-right-length` も同じ値へ。`status-interval` の値 0 や `status off` 自体は、上流構成なら continuum 由来 autosave を止める。
