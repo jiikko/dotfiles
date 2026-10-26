@@ -651,6 +651,26 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# Test 17f: validate-mp4 --mark が付けた .broken(...) / .correct 注記の出力も SKIP する
+# 名前は __validate_mp4_mark_path が実際に作るものを使う。ドット区切りなので
+# <stem>-*-enc.mp4 の glob には当たらない (再実行で再エンコードが走っていた)。
+# ----------------------------------------------------------------------
+printf '\n## Test 17f: validate-mp4 --mark annotated output counts as existing output\n'
+TEST_DIR="$TEST_TMP/skip_marked"
+mkdir -p "$TEST_DIR"
+for pair in "h:h-enc.mp4:broken(trim-drops-audio)" "i:i-720p-enc.mp4:broken(decode-error)" "j:j-check_ng-duration-enc.mp4:broken(truncated)" "k:k-enc.mp4:correct"; do
+  stem_name="${pair%%:*}"; rest="${pair#*:}"; src_out="${rest%%:*}"; label="${rest#*:}"
+  echo "in" > "$TEST_DIR/$stem_name.avi"
+  marked=$(__validate_mp4_mark_path "$TEST_DIR/$src_out" "$label")
+  echo "out" > "$marked"
+  if __av1ify_match_existing_variant "$TEST_DIR/$stem_name.avi" && [[ "$REPLY" == "$marked" ]]; then
+    printf '✓ marked output recognized: %s\n' "${marked:t}"
+  else
+    bad '✗ marked output not recognized as existing: %s\n' "${marked:t}"
+  fi
+done
+
+# ----------------------------------------------------------------------
 # Test 18: 正常終了 (全件 OK / NG あり) でも prefetch を看取る
 # 🚨 これが無いと「中断パスでだけ kill する」実装が緑のまま通り、正常終了のたびに
 #    追跡不能なプロセスが残る。判定は壁時計でなく kill -0 の成否を上限つきポーリング。

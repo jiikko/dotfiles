@@ -660,16 +660,28 @@ __av1ify_match_existing_variant() {
   [[ -z "$in" ]] && return 1
   local stem="${in%.*}"
   setopt LOCAL_OPTIONS extended_glob null_glob
+  # 2 つ目以降の glob は validate-mp4 --mark の改名 (__validate_mp4_mark_path) が作る
+  # <stem>[-<tag>...].broken(<理由>)-enc.mp4 / .correct-enc.mp4 用。ドット区切りで
+  # 1 つ目の glob に当たらない形 (タグ無しの <stem>.broken(...)-enc.mp4) を拾う。
+  # (a|b) の交代形にしない: shellcheck が bash として解析できず test-shellcheck が落ちる。
   # shellcheck disable=SC1036,SC2206
-  local -a variants=( "${stem}"-*-enc.mp4(N) )
+  local -a variants=( "${stem}"-*-enc.mp4(N) "${stem}".broken*-enc.mp4(N) "${stem}".correct*-enc.mp4(N) )
   (( ${#variants[@]} == 0 )) && return 1
-  local v t seg valid
+  local v t seg valid marked
   for v in "${variants[@]}"; do
     # shellcheck disable=SC2295
-    t="${v#${stem}-}"
+    t="${v#${stem}}"
     t="${t%-enc.mp4}"
+    # validate-mp4 の注記は理由に括弧・ハイフンを含むので、タグ検証の前に丸ごと落とす
+    marked=0
+    if [[ "$t" == *.broken* || "$t" == *.correct* ]]; then
+      marked=1
+      t="${t%%.broken*}"
+      t="${t%%.correct*}"
+    fi
+    t="${t#-}"
     valid=1
-    [[ -z "$t" ]] && valid=0
+    [[ -z "$t" ]] && valid=$marked
     while [[ -n "$t" ]]; do
       if [[ "$t" == *-* ]]; then
         seg="${t%%-*}"
