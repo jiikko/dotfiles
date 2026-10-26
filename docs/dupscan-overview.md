@@ -115,7 +115,7 @@ bin/dupscan (入口。初回に src/dupscan をビルドする)
     ^
     | 役割の対応表・単位の抽出・既定の規則
 +--------------------- adapter (言語ごと) ---------------------+
-|  Swift (最初)   |   Go (候補)   |   ...                      |
+|  Swift (最初)   |   Go          |   ...                      |
 +--------------------------------------------------------------+
 ```
 
@@ -144,7 +144,7 @@ bin/dupscan (入口。初回に src/dupscan をビルドする)
 | 入口 | 出力 |
 |---|---|
 | `dupscan <repo>` (重複の報告。issue 896) | 人が読む形と `-format json`。test / prod / 両方にまたがる組を分けて出す。組ごとにメンバー (ファイル:行・署名・test / prod・可視性) と一致した段を出す。所属ターゲット・リテラル差分表は未実装（918）。共通の置き場所の優先表示と呼び出し数は index の機能 |
-| `dupscan index [-name 語] [-returns 型] [-param-type 型] [-doc 語] [-file ファイル]` (索引。issue 897・907) | 1 行 1 件の text と JSON (名前と署名・ファイル:行・test・可視性・doc comment の 1 行目)。private / fileprivate を後に並べる。呼び出し元の近似数・共通の置き場所の優先表示も実装済み。所属ターゲット・`--check` は未実装 |
+| `dupscan index [-name 語] [-returns 型] [-param-type 型] [-doc 語] [-file ファイル]` (索引。issue 897・907) | 1 行 1 件の text と JSON (名前と署名・ファイル:行・test・可視性・doc comment の 1 行目)。private / fileprivate / unexported (Go) を後に並べる。呼び出し元の近似数・共通の置き場所の優先表示も実装済み。所属ターゲット・`--check` は未実装 |
 | `dupscan callers <名前|名前(ラベル:…)>` (呼び出しの箇所。issue 907) | `file:line 呼び出し元 [test] \| その行` の 1 行 1 件と JSON。型を解決しない近似 (同名の別のメソッドも当たる) |
 | `dupscan gate` (issue 905) | セルフレビューと `make test`・CI の中で、変わった単位のうち同じ形の単位の数が base より増えたものを、寄せる先の候補と一緒に出し、あれば非 0 で終わる。段ごとに止める / 報告だけ / 回さないを選べ、既定では L1・L2 を検出・停止し、L3 は明示した場合だけ報告する。意図した写しは理由つきの `dupscan:allow` で通し、新しく足された許可は別の一覧に出す。base が無い場合は rc=2。読めない変更単位は通知するが rc は変えず、単位を抽出できない解析失敗は通知できない場合がある。誤検知は除外の設定 (issue 906) で外す |
 | `dupscan near` / `explain` (人が試す入口。issue 904) | `near <file>:<関数名>` はその関数に近い既存のメソッドを段ごとに出す。`explain <file>:<関数名>` は段ごとに潰した形とハッシュを見せる (なぜ同じ / 違うと判定したか)。`gate` もわざと写しを書いてから手で回すと、`make test` でどう落ちるかが見える |
@@ -154,7 +154,7 @@ bin/dupscan (入口。初回に src/dupscan をビルドする)
 
 ## 4. 異なる言語への対応
 
-正規化・組分けのコアは言語を知らない。現行のCLIはSwift adapterを直接呼ぶため、他言語を足す際はadapterとCLIの選択経路が必要。Goは標準のgo/astで追加する方針で着手中（900）、zsh / shell scriptは対応対象外。
+正規化・組分けのコアは言語を知らない。CLI は `internal/langs` が拡張子で adapter を選ぶ (Swift と Go。Go は標準の go/ast で読む。900)。zsh / shell script は対応対象外。
 
 tree-sitter の木は言語ごとに node の種類 (`call_expression` など) の名前が違う。adapter はそれを、コアが使う共通の「役割」に写す対応表を持つ。
 コアは役割だけを見て正規化・ハッシュする。
@@ -181,7 +181,7 @@ Swift adapter が持つもの（他言語ではparser・規則をその言語に
 | 言語 | 状況 |
 |---|---|
 | Swift | 実装済み。alex-pinkus/tree-sitter-swift の `with-generated-files` branch を使う。obaket の 1626 ファイルで、読めない構文があるのは 50 ファイル (3%)、全体の parse と走査は 5.0 秒 (2026-10-24 実測)。読めないのは `switch await` / `for … where await` / `nonisolated(unsafe)` など。残りを読める場合もあるが、関数ごと抽出できない場合もある |
-| Go | 標準の `go/ast` を中立の `internal/tree.Unit` / `Node` に写す方針で着手中（900、2026-10-26）。現時点では未実装。まずadapter選択・Go adapter・較正・gate導入判断を進め、Goのdef / refs / callersは後回し。duplは既存lintとして併用する |
+| Go | 標準の `go/ast` で読む (issue 900)。コアが見るのは tree-sitter の木ではなく `internal/tree` の中立の木なので、adapter が go/ast をそこへ写せば形が揃う。文法の pin が要らず、正しい Go で読めない構文が出ない。網羅テストは node-types.json の代わりに、標準ライブラリの実物を conv に通して知らない節が無いかを見る (`TestConvKnowsEveryNode`)。def / refs は作らない (gopls が型を解決して答える)。dupl (閾値 120 トークン) は既に回っているので、足した価値は索引・`gate` と、dupl の閾値より小さい写しにある (dotfiles の src で 70 組・8547 単位を 1 秒未満。過去の 150 commit に gate を流すと 7 commit で止まり、多くは module をまたいだ本物の写し。2026-10-26。issue 900) |
 | zsh / shell script | **対応しない** (ユーザー決定 2026-10-26)。見送った時点の懸念は 2 つで、どちらも未実測: zsh 専用の成熟した tree-sitter の文法が無く、tree-sitter-bash では `${(f)...}`・`*(N)` などの zsh だけの構文が ERROR になりうる / shell の写しは関数の外 (トップレベルの数行・テストの準備) に多いと見ており、関数を単位に比べる dupscan では拾えない形が残りうる。対応するなら adapter のほか、コマンド層が `lang/swift` を直接参照している所 (`main.go` などの `swift.Extensions`・`swift.IsTestPath`) を言語で選ぶ口にし、`norm.go` の `isImplicitParam` (`$` で始まる名前を Swift の `$0` とみなす) を言語ごとに分ける必要がある。再評価するのは、shell の写しを機械で止めたい具体的な場面が出たとき (issue 900) |
 
 言語を足す前に、Swift と同じく「対象の repo の全ファイルを parse して ERROR / MISSING が出るファイルを数える」を測ってから決める。
@@ -231,6 +231,6 @@ dupscan だけで依存も使い方もシンプルになるなら、LSP は使�
 | 905 | セルフレビュー・`make test`・CI で新しく入った重複を落とす (`gate`) | 893・894・896・898・906 |
 | 906 | 誤検知を除外する設定 (組・単位・パス・段・下限。理由が必須、効いていない除外と新しい除外を出す) | 893・896 |
 | 904 | 人が試す入口 (`near`・`explain`・`gate` を手で回す) | 893・894・896・897・898・905・906 |
-| 900 | 次の言語 (Go) の読み取りの実測。zsh / shell は対応しない | 893 |
+| 900 | 次の言語 Go を go/ast の adapter で足す。zsh / shell は対応しない | 893 |
 | 899 | LSP との組み合わせ (保留。LSP は使わない) | — |
 | 902 | 編集のたびの Claude Code の hook (保留) | — |

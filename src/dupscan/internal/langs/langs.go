@@ -8,11 +8,12 @@ import (
 	"path"
 
 	"dupscan/internal/lang"
+	"dupscan/internal/lang/golang"
 	"dupscan/internal/lang/swift"
 )
 
 // All は adapter の一覧。1 つの拡張子は 1 つの adapter だけが持つ (TestExtensionsAreUnique)。
-var All = []lang.Adapter{swift.Adapter}
+var All = []lang.Adapter{swift.Adapter, golang.Adapter}
 
 // Extensions は全部の adapter が読む拡張子 (走査でこれ以外のファイルは読まない)。
 func Extensions() []string {
@@ -21,6 +22,18 @@ func Extensions() []string {
 		out = append(out, a.Extensions...)
 	}
 	return out
+}
+
+// Symbols は def / refs が読む拡張子 (定義と参照を集める adapter のもの) と、集めない adapter。
+func Symbols() (exts []string, skipped []lang.Adapter) {
+	for _, a := range All {
+		if a.Symbols {
+			exts = append(exts, a.Extensions...)
+		} else {
+			skipped = append(skipped, a)
+		}
+	}
+	return exts, skipped
 }
 
 // For は file を読む adapter。

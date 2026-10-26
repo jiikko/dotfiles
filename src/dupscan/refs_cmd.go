@@ -42,9 +42,13 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	got, err := scanSourceOptions(repo.Worktree{Scope: sc, Exts: langs.Extensions()}, true, false, false, true)
+	src, note, err := symbolSource(sc)
 	if err != nil {
 		return fail(err)
+	}
+	got, err := scanSourceOptions(src, true, false, false, true)
+	if err != nil {
+		return fail(withNote(err, note))
 	}
 	references := make([]report.ReferenceRecord, 0, len(got.references))
 	for _, r := range got.references {
@@ -63,6 +67,9 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 	}
 	if err != nil {
 		return fail(err)
+	}
+	if note != "" {
+		fmt.Fprintln(stderr, "dupscan refs:", note) // 見つかっても出す (同じ名前の Go の定義が「無い」と読めないように)
 	}
 	if summary.Matches == 0 {
 		return 1

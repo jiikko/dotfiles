@@ -13,6 +13,7 @@ import (
 	sitter "github.com/tree-sitter/go-tree-sitter"
 
 	"dupscan/internal/lang"
+	"dupscan/internal/lang/langtest"
 	"dupscan/internal/norm"
 	"dupscan/internal/tree"
 )
@@ -178,17 +179,6 @@ struct Box<TOnly> {
 	}
 }
 
-func find(t *testing.T, r lang.FileResult, name string) *tree.Unit {
-	t.Helper()
-	for _, u := range r.Units {
-		if u.Name == name {
-			return u
-		}
-	}
-	t.Fatalf("単位 %s が無い (%d 個)", name, len(r.Units))
-	return nil
-}
-
 // docs/dupscan-detection.md の例を本物の parser に通す (合成の木だけのテストでは adapter の退行を検出しない)。
 func TestDetectionDocExample(t *testing.T) {
 	r := parse(t, "Sources/A.swift", `
@@ -203,9 +193,9 @@ struct S {
         StorageLocation(connectionID: connectionID, path: BucketPath(rawValue: p))
     }
 }`)
-	a := normBoth(t, find(t, r, "location"))
-	b := normBoth(t, find(t, r, "bucketLocation"))
-	c := normBoth(t, find(t, r, "other"))
+	a := langtest.NormBoth(t, langtest.Find(t, r, "location"))
+	b := langtest.NormBoth(t, langtest.Find(t, r, "bucketLocation"))
+	c := langtest.NormBoth(t, langtest.Find(t, r, "other"))
 	for _, l := range []norm.Level{norm.L1, norm.L2} {
 		if a.Hash[l] == b.Hash[l] {
 			t.Errorf("%s で一致してしまう\n%s\n%s", l, a.Forms[l], b.Forms[l])
@@ -227,7 +217,7 @@ func TestRenamedLocalsMatchAtL1(t *testing.T) {
 func f(x: Int) -> Int { let y = x + 1; return y * 2 }
 func g(a: Int) -> Int { let b = a + 1; return b * 2 }
 func h(a: Int) -> Int { let b = a + 1; return b * 3 }`)
-	f, g, h := normBoth(t, find(t, r, "f")), normBoth(t, find(t, r, "g")), normBoth(t, find(t, r, "h"))
+	f, g, h := langtest.NormBoth(t, langtest.Find(t, r, "f")), langtest.NormBoth(t, langtest.Find(t, r, "g")), langtest.NormBoth(t, langtest.Find(t, r, "h"))
 	if f.Hash[norm.L1] != g.Hash[norm.L1] {
 		t.Errorf("局所の名前だけが違うのに L1 で一致しない\n%s\n%s", f.Forms[norm.L1], g.Forms[norm.L1])
 	}
@@ -282,7 +272,7 @@ func TestUnreadableUnitIsMarked(t *testing.T) {
 	r := parse(t, "Sources/A.swift", `
 func ok(x: Int) -> Int { x + 1 }
 func broken(x: Int) -> Int { let = = x }`)
-	if find(t, r, "ok").Unreadable {
+	if langtest.Find(t, r, "ok").Unreadable {
 		t.Error("読める単位が Unreadable になった")
 	}
 	if !r.HasError {
@@ -510,16 +500,6 @@ func TestComparedKindNamesExistInGrammar(t *testing.T) {
 
 // normBoth は本番の経路 (Normalize。形を作らない) と形を作る経路の両方で正規化し、ハッシュが段ごとに一致することを確かめてから、
 // 形つきの結果を返す (失敗の表示に形を出すため)。テストが形つきの経路だけを通ると、本番の経路の退行が見えなくなる。
-func normBoth(t *testing.T, u *tree.Unit) norm.Result {
-	t.Helper()
-	with, plain := norm.NormalizeWithForms(u), norm.Normalize(u)
-	for _, l := range norm.Levels {
-		if with.Hash[l] != plain.Hash[l] || with.L3Trivial != plain.L3Trivial || with.Nodes != plain.Nodes {
-			t.Errorf("%s: 本番の経路と形を作る経路で結果が違う: %s / %s", l, plain.Hash[l], with.Hash[l])
-		}
-	}
-	return with
-}
 
 func TestClosureOwnerNameIsForDisplayOnly(t *testing.T) {
 	r := parse(t, "Sources/A.swift", `

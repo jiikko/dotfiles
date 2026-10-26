@@ -385,3 +385,32 @@ func parseAll(files []string, contents map[string][]byte, withCalls, withDefs, w
 	}
 	return parsed, nil
 }
+
+// symbolSource は def / refs が読む走査 (定義と参照を集める言語のファイルだけ) と、読まなかった言語のファイルの説明 (無ければ空)。
+// 集めない言語のファイルを黙って読み飛ばすと、そこにある定義が「無い」と読める。
+func symbolSource(sc repo.Scope) (repo.Worktree, string, error) {
+	exts, skipped := langs.Symbols()
+	var notes []string
+	for _, a := range skipped {
+		files, err := repo.List(sc, a.Extensions)
+		if err != nil {
+			return repo.Worktree{}, "", err
+		}
+		if len(files) > 0 {
+			notes = append(notes, fmt.Sprintf("%s のファイル %d 個", a.Name, len(files)))
+		}
+	}
+	note := ""
+	if len(notes) > 0 {
+		note = strings.Join(notes, "・") + "は def / refs の対象外 (その言語の定義・参照は LSP で引く)"
+	}
+	return repo.Worktree{Scope: sc, Exts: exts}, note, nil
+}
+
+// withNote は err に読まなかった言語の説明を足す (Go だけの repo で def を打つと「読むファイルが無い」になる理由を添える)。
+func withNote(err error, note string) error {
+	if note == "" {
+		return err
+	}
+	return fmt.Errorf("%w。%s", err, note)
+}

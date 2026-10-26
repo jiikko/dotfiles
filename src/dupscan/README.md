@@ -1,7 +1,7 @@
 # dupscan
 
 repo の中で、本体が同じ形のメソッド (関数・初期化子・クロージャ) を構文木で見つけて組にする CLI (`bin/dupscan`)。
-Claude Code にコードを書かせている間に、似たメソッドが量産されるのを見つける。最初の言語は Swift。
+Claude Code にコードを書かせている間に、似たメソッドが量産されるのを見つける。読む言語は Swift と Go (拡張子で adapter を選ぶ。`def` / `refs` は Swift だけ)。
 
 設計と狙いは [`docs/dupscan-overview.md`](../../docs/dupscan-overview.md)、同じと判定する方法と誤検知は
 [`docs/dupscan-detection.md`](../../docs/dupscan-detection.md)、要件の正本は epic 890 (issue 891)。
@@ -62,7 +62,7 @@ report の text は、組を大きい順 (メンバーのうち最大の単位�
 
 `index` は名前の付いた単位 (関数・初期化子・computed property・subscript など。クロージャとテスト関数は除く) を
 `file:line 型.署名 [shared,test,private] (呼び出し ~N) // doc の最初の行` の 1 行で出す。grep と違い呼び出し側の行・コメント・文字列は混ざらない。
-並べ方は名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所 (`.dupscan.json` の `"shared": ["Tests/SharedTestSupport/**"]` のような glob。`[shared]` と出る) を前 → prod を test より前 → private / fileprivate でないもの (そのまま使える) を前 → 呼び出しの多いもの → 場所。
+並べ方は名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所 (`.dupscan.json` の `"shared": ["Tests/SharedTestSupport/**"]` のような glob。`[shared]` と出る) を前 → prod を test より前 → private / fileprivate / unexported (Go の小文字で始まる関数) でないもの (そのまま使える) を前 → 呼び出しの多いもの → 場所。
 呼び出しの数 (`~` は近似の印) は `callers` と同じ当て方 (名前と引数ラベル。初期化子は型の名前) で関数と初期化子だけ数える。既定値のある引数を省いた呼び出しは数えない。
 型は字面の一部で引く (`Tag` で `[Tag]` も当たる。型は解決しないので、typealias・同名の別の型は区別しない)。
 キャッシュは持たず、引くたびに読む (DualNoteApp の 1130 単位で 0.5 秒。issue 897)。`--check` はまだ無い。
@@ -209,8 +209,10 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 - **0 件は判定不能**: 起点に読むファイルが 1 つも無ければ rc=2 で止まる (起点の取り違えで黙って「重複なし」にしない)
 - **読めない構文**: 抽出できた単位が ERROR / MISSING を含む場合は比較から外し、件数を出す。単位を抽出できない場合など、通知の限界は下記
 - 列挙は `git ls-files --cached --others --exclude-standard`。symlink・消えたファイル・submodule の中は読まない
-- テスト関数そのもの (Swift Testing の `@Test` / `@Testing.Test`、XCTest の `func test…()`) とその中のクロージャは比べない
-- 単位: 関数・初期化子・クロージャ・computed property・subscript・deinit・`didSet` / `willSet`
+- テスト関数そのもの (Swift Testing の `@Test` / `@Testing.Test`、XCTest の `func test…()`、Go の `_test.go` の go test が呼ぶ関数 (receiver の無い `Test…` / `Benchmark…` / `Fuzz…` で引数 1 つ・`Example…` で引数なし。頭の後ろが小文字なら除かない) と、testify の suite が呼ぶ引数の無い `Test…` メソッド) とその中のクロージャは比べない
+- 単位: Swift は関数・初期化子・クロージャ・computed property・subscript・deinit・`didSet` / `willSet`。Go は関数・メソッド・関数リテラル (本体の無い宣言は除く)
+- Go の生成されたファイル (`// Code generated … DO NOT EDIT.`) は単位も呼び出しも出さない (寄せる対象ではない)
+- `def` / `refs` は Go のファイルを読まない。読まなかった数を stderr に出す (黙って「定義なし」にしない。Go の定義・参照は gopls で引く)
 
 ## 分かっている限界 (誤検知・見逃しの形)
 
@@ -227,6 +229,19 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
   同じ関数の中の 2 つのクロージャ・多重定義の関数のクロージャは同じ表示になるので、行番号で区別する。関数の中の型の中のクロージャには外の関数の名前を付けない。
   表示だけの名前で、鍵・`name` (json) は `{closure}` のまま (json の `owner_name` に囲む単位の名前)。`callers` の呼び出し元 (`caller`) も同じ表示になる
 - 読めない構文があるファイルでは、関数が単位ごと取り出せない場合がある。report は `files_with_errors` を出すが、gate は抽出できた変更単位だけを `unreadable_changed_units` に出す。例えば追跡済みの関数を `func broken(` に書き換えると、report は解析失敗を出す一方、gate が `changed_units=0`・通知なし・rc=0になる（2026-10-26再現）。探索コマンドにも解析失敗件数は出ないので、検索0件を不存在の証明に使わない
+- Go: 型を解決しないので、呼び出しが処理か値の変換かを構文で決める。組み込みの変換・`len` などと型リテラルへの変換 (`[]byte(s)`) だけを値とし、
+  ほかの呼び出しは全部処理として L3 でも畳まない。Go は公開の関数も大文字で始まるので、Swift のように大文字を型の初期化とみなさない
+  (`UserID(s)` のような型への変換も処理に数える。見逃しの向き)
+- Go: 複合リテラルの `Key: v` の Key が識別子なら field 名として字面で残す。map のリテラルのキーに局所の変数を書いても番号にならない (見逃しの向き)。
+  逆に、局所の変数 `k` をキーにした `map[string]int{k: 1}` と、パッケージの定数 `k` をキーにした同じ形は L1 で一致する (誤検知の向き。型を解決しないと分けられない)
+- Go: 型引数の制約 (`[T int]` / `[T string]`) と引数の型は、Swift と同じく本体のハッシュに入れない
+- Go: 型の位置は go/printer で書き出した字面で比べる (改行の位置・field のコメントは字面に入らず、tag は field の位置に残る)。
+  意味が同じでも書き方が違う型 (生の tag `` `json:"x"` `` と解釈済みの `"json:\"x\""`・余分な括弧 `[(N)]int`) は別の字面になる (見逃しの向き)
+- Go: 構文の誤りは、トップレベルの宣言の始まりから次の宣言の手前までで数える (閉じないまま EOF で終わる関数を拾うため)。
+  関数の後ろに余分な `}` があると、その関数も読めない単位になる (gate では止めずに「確かめられなかった」に数える)
+- Go: testify の suite が呼ぶ `Test…` メソッドは、test のファイルにある receiver つきの引数の無い `Test…` で判定する。
+  suite でない型のそういうメソッドも除き、`Testable()` のような後ろが小文字のメソッドは (testify は呼ぶが) 単位に残す
+- Go: `testdata` の下は test のファイルとして読む。呼び出しの照合 (`callers`・index の呼び出しの数) は名前と引数の数だけで、可変長の引数の呼び出しは数が合わず数えない
 - gate は組の数が増えたかしか見ないので、次の 2 つは正しい作業でも止まる (寄せる先・揃える先が前から組の外にいたため):
   既にある包み (wrapper) へ写しを寄せたら、包みと残った呼び出し側の形が一致した / 片方の写しにだけ入っていた修正を、もう片方にも入れて形を揃えた。
   どちらも出力の「同じ形」を見て意図した重複なら、除外の設定 (issue 906) で外す
@@ -246,7 +261,10 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 | `internal/norm` | 段 (L1 / L2 / L3) ごとの正規化とハッシュ |
 | `internal/group` | Type-2 の組分け (細かい段と同じメンバーの組は粗い段で重ねない・囲む単位が同じ組のクロージャは出さない) |
 | `internal/repo` | git でのファイルの列挙と起点の正規化。作業ツリーと commit (git のオブジェクトから読む) を同じ `Source` として読む |
+| `internal/lang` | adapter が満たす形 (`Adapter` / `Parser`) と、adapter がコマンドへ返す結果の型 |
+| `internal/langs` | adapter の一覧と、拡張子でどの adapter が読むかの選び方 (コマンドはここだけを見る) |
 | `internal/lang/swift` | Swift の adapter (tree-sitter の node の種類の分類表・単位の取り出し・test の判定) |
+| `internal/lang/golang` | Go の adapter (標準の go/ast で読む。`TestConvKnowsEveryNode` が標準ライブラリの実物で、知らない節が無いかを見る) |
 | `internal/report` | text / JSON / Xcode の出力 (report と gate) |
 | `internal/gate` | gate の判定 (変わった単位・出どころ・違反になった最初の段) |
 | `internal/exclude` | `.dupscan.json` の読み込みと検査・釘・除外の効き方 (report と gate が同じ関数を呼ぶ)・効いていない除外 |

@@ -20,7 +20,7 @@ import (
 var Extensions = []string{".swift"}
 
 // Adapter は Swift の読み方。
-var Adapter = lang.Adapter{Name: "swift", Extensions: Extensions, IsTestPath: IsTestPath, NewParser: newLangParser}
+var Adapter = lang.Adapter{Name: "swift", Extensions: Extensions, IsTestPath: IsTestPath, NewParser: newLangParser, Symbols: true}
 
 func newLangParser(o lang.Options) (lang.Parser, error) {
 	p, err := NewParser()

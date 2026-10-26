@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	"dupscan/internal/langs"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
 )
@@ -48,14 +47,17 @@ func runDef(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	src := repo.Worktree{Scope: sc, Exts: langs.Extensions()}
+	src, note, err := symbolSource(sc)
+	if err != nil {
+		return fail(err)
+	}
 	cfg, err := loadConfig(src, false)
 	if err != nil {
 		return fail(fmt.Errorf("判定不能: %w", err))
 	}
 	got, err := scanSourceOptions(src, true, true, true, false)
 	if err != nil {
-		return fail(err)
+		return fail(withNote(err, note))
 	}
 	defs := make([]report.DefinitionRecord, 0, len(got.definitions))
 	for _, d := range got.definitions {
@@ -84,6 +86,9 @@ func runDef(args []string, stdout, stderr io.Writer) int {
 	}
 	if err != nil {
 		return fail(err)
+	}
+	if note != "" {
+		fmt.Fprintln(stderr, "dupscan def:", note) // 見つかっても出す (同じ名前の Go の定義が「無い」と読めないように)
 	}
 	if summary.Matches == 0 {
 		return 1

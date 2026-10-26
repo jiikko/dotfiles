@@ -26,11 +26,34 @@ Go を足す価値は、索引と `gate` ([905](done/905-feat-dupscan-ci-check-g
 
 ## 受け入れ条件
 
-- [ ] dotfiles の Go のファイルで、読めない構文があるファイルの数と所要を測って書く
-- [ ] 足すかと、足すならどの文法・道具かを決める (足すときは、言語ごとに adapter と網羅テストの子 issue を起こす)
+- [x] dotfiles の Go のファイルで、読めない構文があるファイルの数と所要を測って書く (下の「較正」)
+- [x] 足すかと、足すならどの文法・道具かを決める → go/ast の adapter で足した (`src/dupscan/internal/lang/golang`)
+- [ ] Go の module の make test・CI に gate を入れるか (ユーザーの判断待ち。下の「gate を make test に入れるか」)
 
 ## 進捗
 
 - 2026-10-24 起票 (epic 890 の分解)
 - 2026-10-24 Go は dupl が既に回っていることを書いた (901。反証レビューで 3 → 7 module に直した)
 - 2026-10-26 zsh / shell script は対応しないと決めた (ユーザー決定)。overview §4 の表に理由・要る改修・再評価の条件を書いた。受け入れ条件を Go だけに絞った
+- 2026-10-26 実装した (commit: refactor(dupscan): コマンドが言語を拡張子で選ぶ口 (internal/langs) を通るようにする / feat(dupscan): Go のファイルを読む)
+  - 手順 ①: コマンド層の lang/swift の直参照を internal/langs に寄せた。挙動が変わらないことは、変更前後のバイナリを flickorder-client・DualNoteApp に当て、
+    report・gate・index・callers・def・refs・near・explain の stdout / stderr / rc が全部一致したことで確かめた
+  - 手順 ②: go/ast の adapter。def / refs は Go のファイルを読まず、読まなかった数を stderr に出す。index は Go の小文字の関数に `[unexported]`
+  - 敵対的レビュー (opus) を 5 周。直した指摘: 戻り値の名前がハッシュに入る・struct の tag が落ちる / tag が field から外れる・型の字面が改行で変わる・
+    field と宣言のコメントが型の字面に入る・テスト関数の判定・`//line` の行・EOF で閉じない関数・チャネルの送受信の L3・型の別名・言語の分離 (種類名に `go.`)。
+    直さず README に記録: map のキーの局所の変数・型引数の制約・余分な `}` で手前の関数も読めない扱い・生の tag と解釈済みの tag
+  - 変異: 新しいテストに 40 本余り当て、全部が狙ったテストで red (緑だった変異はテストを直すか捨てた)
+
+## 較正 (2026-10-26。master f4f463b41)
+
+- dotfiles の `src`: 1211 ファイル・8547 単位・組 70 (L1 45・L2 25)。所要 1 秒未満。読めない構文のファイルは 1 (testdata のわざと壊したファイル)
+- dupl (閾値 120 トークン) が出さない小さい写しが出る。例: zundamon-kaisetsu の `InUse` / `ReaperAlive` (ファイル名と失敗時の戻り値だけが違う)
+- 過去の first-parent の 150 commit (Go を触ったもの) に `gate -base <親> -head <commit>` を repo 全体で流すと、止まったのは 7 commit (4.7%)。1 本 1 秒以下
+  - serialrun が runtimeout の parseSeconds / startErrorRC / waitStatus を写した・JSON の書き出しの写し・tmpclean と doctor の同じクロージャ・test helper の写し
+  - 多くは module をまたいだ本物の写し。Go は module をまたいで非公開の helper を共有できないので、寄せるには共有の module が要る。`main` の定型のような意図した形もある
+
+## gate を make test に入れるか (未決。ユーザーの判断)
+
+- repo 全体で回すと上の 4.7% で止まり、多くは module をまたぐ。module ごとの make test で `gate .` を回すと、module の外の写しは数えない (serialrun と runtimeout のような写しは止めない)
+- 入れない間も、セルフレビューで `dupscan gate` を回す (skill dupscan の 3 節) ことで同じ判定は得られる
+

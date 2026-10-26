@@ -26,6 +26,8 @@ type Adapter struct {
 	// IsTestPath はその言語の慣習で test のファイルかを決める。
 	IsTestPath func(file string) bool
 	NewParser  func(Options) (Parser, error)
+	// Symbols は def と refs の材料 (Options.Defs / Refs) を集めるか。集めない言語のファイルを def / refs は読まない。
+	Symbols bool
 }
 
 // FileResult は 1 ファイルの結果。

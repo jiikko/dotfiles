@@ -164,8 +164,9 @@ func typeName(enclosing string) string {
 	return head
 }
 
-// hidden は、その可視性では他のファイルからそのまま使えないか (寄せる候補として区別する)。
-func hidden(v string) bool { return v == "private" || v == "fileprivate" }
+// hidden は、その可視性では他のファイル (Go は他の package) からそのまま使えないか (寄せる候補として区別する)。
+// unexported は Go の adapter が小文字で始まる名前に付ける (Swift の `package` 修飾子と混ざらない名前にしている)。
+func hidden(v string) bool { return v == "private" || v == "fileprivate" || v == "unexported" }
 
 func containsAny(xs []string, sub string) bool {
 	for _, x := range xs {

@@ -1,12 +1,12 @@
 ---
 name: dupscan
-version: 1.2.0
-description: Swift の repo で、新しいメソッド (ヘルパー・初期化・値を組み立てる関数) を書く前に同じものが既にないかを dupscan index で引き、実装が終わったセルフレビューで dupscan gate を回して増えた写しを寄せる。関連の実装 (定義・参照・ファイルの中身・呼び出し元) を grep より先に探すときにも使う (def / refs / callers)。「dupscan」「重複したメソッド」「類似メソッドの統合」「既にあるヘルパーを探して」「セルフレビュー」「定義元」「参照」「呼び出し元」「似た関数」で発火。寄せるときはドメインの境界を確かめる (4 節)。Swift 以外の repo では使わない (対応する言語は Swift だけ)。
+version: 1.3.0
+description: Swift か Go の repo で、新しいメソッド (ヘルパー・初期化・値を組み立てる関数) を書く前に同じものが既にないかを dupscan index で引き、実装が終わったセルフレビューで dupscan gate を回して増えた写しを寄せる。関連の実装 (定義・参照・ファイルの中身・呼び出し元) を grep より先に探すときにも使う (def / refs は Swift だけ。callers と index -file は Go も)。「dupscan」「重複したメソッド」「類似メソッドの統合」「既にあるヘルパーを探して」「セルフレビュー」「定義元」「参照」「呼び出し元」「似た関数」で発火。寄せるときはドメインの境界を確かめる (4 節)。Swift と Go 以外の repo では使わない (対応する言語は Swift と Go)。
 ---
 
 # dupscan (書く前に引く・セルフレビューで写しを寄せる)
 
-`dupscan` (実体は dotfiles の `bin/dupscan`。PATH 上にあるので、どの repo でもそのまま呼べる) は Swift のメソッドを構文木で読む。調べる repo には何も書かない。
+`dupscan` (実体は dotfiles の `bin/dupscan`。PATH 上にあるので、どの repo でもそのまま呼べる) は Swift と Go のメソッド (関数・メソッド・クロージャ) を構文木で読む。調べる repo には何も書かない。
 詳しい使い方と限界は `~/dotfiles/src/dupscan/README.md`、検出の方法は `~/dotfiles/docs/dupscan-detection.md`。
 
 ## 1. 書く前に引く (気軽に)
@@ -22,7 +22,7 @@ dupscan index -doc bucket                     # doc comment の語
 ```
 
 使えるものがあれば使う (repo が `.dupscan.json` の `shared` に書いた共通の置き場所の定義は `[shared]` と出て先に並ぶ。
-他のファイルから使えないものは `[private]` か `[fileprivate]` と出る。使うなら共通の置き場所へ寄せる)。無ければ書く。
+他のファイルから使えないものは `[private]` か `[fileprivate]`、Go の別の package から使えない小文字の関数は `[unexported]` と出る。使うなら共通の置き場所へ寄せる)。無ければ書く。
 
 ## 2. 調べもの (grep の前に)
 
@@ -39,6 +39,8 @@ dupscan index -file Sources/Foo.swift         # このファイルに何があ�
 ```
 
 型を解決しないので、同名の別の定義・参照も当たる (近似)。flag は名前・パスの前に書く。
+`def` / `refs` は Swift だけを読む (Go のファイルを読まなかったことは stderr に出る)。Go の定義・参照は LSP (gopls) で引く。
+`callers` と `index -file` は Go のファイルにも使える (Go に引数ラベルは無いので、`callers` は名前と引数の数で当てる)。
 
 ## 3. セルフレビューで gate を回す
 
