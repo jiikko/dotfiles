@@ -1,5 +1,7 @@
 # 900 (research): dupscan の次の言語 (Go・zsh) の読み取りを測る
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-26〜）
+
 起票日: 2026-10-24
 
 > **zsh / shell script は対応しない** (ユーザー決定 2026-10-26。理由と、対応するなら要る改修は `docs/dupscan-overview.md` §4 の言語の表)。この issue に残るのは Go だけ。
