@@ -160,3 +160,5 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 - 2026-10-26: [931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931で現行dupscan併用とgrep中心を同一入力/固定出力予算で各1 agent比較したが、共通化候補を確定する効率の向上は確認できなかった。予備runの予算超過も記録し、hard capで再確認した。提案feature実装後の再利用/重複追加率の検証は引き続き未着手。
 
 - 2026-10-26: context消費と重複追加の同時評価を追加し、最大入力contextとwindow全体の占有を区別。 読み取り専用Codex subagentで指摘の網羅性とcontext計測を反証レビューし、P3（現行/設計、着手条件、計測範囲）の3点を訂正した。文書の改善は、不足した指摘の担当と検証条件を明確にしたこと。実装・両効果の実証は未着手。
+
+- 2026-10-26: [935](done/935-test-doctor-duplicate-discovery-effect.md)でdoctor探索を各方式2回比較した。Dは各run1組、探索recorder転送bytesは平均54,783対28,116で併用が48.7%少なかった。ただし候補は異なり、品質非劣性・model context token/window占有・新規重複追加率は未実証。本issueの実装課題A/Bを置き換えない。
