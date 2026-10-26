@@ -29,6 +29,7 @@ bin/dupscan index -returns StorageLocation    # 書く前に引く: 戻り値の
 bin/dupscan index -name location -param-type String   # 名前の一部・引数の型の一部 (全部の条件に当たるものだけ)
 bin/dupscan index -doc bucket                 # doc comment (/// か /** */) の最初の行の語
 bin/dupscan index -file Sources/A.swift       # そのファイルの単位を行の順に (outline。件数で切らない)
+bin/dupscan evidence bucket                   # index で見つからないとき: doc の全文・テスト・ソースの行にある語から候補を探す
 bin/dupscan callers 'make(x:_:)'              # 呼び出しの箇所と、それを囲む単位 (名前だけでも引ける)
 bin/dupscan def StorageOperationLockRegistry  # 定義の本体。型なら宣言とメンバー一覧
 bin/dupscan def -max-lines 120 DropboxClient.upload
@@ -65,6 +66,18 @@ text は `-limit` の既定 20 件まで (`0` は全部)、JSON は全件を返�
 1 行目に 3 つの件数、続けて近似の範囲・定義が 0 件か 1 つに決まっていないこと・読めない構文のファイル・読まなかった言語を書く。
 Swift だけを読む (`def` / `refs` と同じ)。呼び出しの節も Swift の分だけで、Go の呼び出しも数える単独の `callers` とはここが違う。出力は text だけで、0 件でも rc=0 (入力の誤り・判定不能は rc=2)。`-limit` は節ごとの件数、`-max-lines` は定義のソース行。
 json を出さないのは、既存コマンドの json の形を固定して変えない決まりのため (ここで出すと、状態・省略・継続取得を持つ共通の形より前に、固定する形が 1 つ増える。issue 926・927)。
+
+`evidence` は語 (大文字小文字を区別しない) を含むソースの行を探し、3 つに分ける。同じ行を 2 つに数えない。語の一致であって、定義・呼び出しの照合ではない。
+- doc: doc comment の全文のどこかにある行。その doc が付いた宣言を 1 件にまとめて出す (`index -doc` は最初の行しか見ない)。
+  Swift は宣言 (関数・初期化子・property (保存も)・protocol の要件・enum の case・typealias・型など) の `///` / `/** */`、Go は関数の doc だけ。
+  宣言に近い側から続く doc comment の塊だけを数える (doc と宣言の間の非 doc コメントは飛ばす。塊の上に `// MARK:` などを挟んだ別の doc は入れない。
+  `index -doc` の「最初の行」は挟んだ doc も含めて探すので、この形では 2 つの範囲が食い違う)
+- テスト: test のファイルかテスト関数の中の行。囲む関数 (関数の外なら型) と、その行で呼んでいる名前を添える (Go のテスト関数は「(単位の外)」と出る。`callers` と同じ限界)
+- その他のソース: 残りの行 (コメント・文字列を含む)。囲む単位と、その行で呼んでいる名前を添える
+
+先頭に、テストとその他のソースの行で呼ばれている名前のうち、repo の定義と同じ名前 (関数・初期化子・property の名前と Swift の型の名前) を行の数の多い順に出す (使われ方から候補へ辿る入口)。
+型を解決しないので、同名の外の関数 (`t.Fatalf`・`strings.Join`・`append(contentsOf:)` など) の呼び出しも数える。
+Swift と Go の両方を読む。出力は text だけで、0 件でも rc=0。`-limit` は節ごとの件数。行は 160 文字、囲む単位の署名は 80 文字で切り、壊れた UTF-8 は置き換える。
 
 report の text は、組を大きい順 (メンバーのうち最大の単位の節の数) に並べ、先頭に「ファイルの組」(同じファイルの組み合わせに組が 2 つ以上あるもの) を件数と節の合計の大きい順に 5 行出す。
 同じ画面・同じ型の写しが細切れの組で並ぶのを 1 行で見せ、寄せる作業の単位を決めやすくする (json は `file_pairs` に全部・各組の `nodes`)。

@@ -158,6 +158,7 @@ func (w *walker) definitions(root *sitter.Node) ([]lang.Definition, []lang.TypeD
 			Col: int(pos.Column) + 1, Enclosing: strings.Join(c.enclosing, "."), Signature: signature,
 			Labels: labels, Test: test, Nested: c.insideCallable, Visibility: w.visibility(n), Doc: w.docComment(n),
 		})
+		defs[len(defs)-1].DocStart, defs[len(defs)-1].DocEnd = w.docRange(n)
 	}
 	var visit func(*sitter.Node, context)
 	visit = func(n *sitter.Node, c context) {
@@ -181,6 +182,7 @@ func (w *walker) definitions(root *sitter.Node) ([]lang.Definition, []lang.TypeD
 					Test: w.test || c.testClass, Nested: c.insideCallable,
 					Visibility: w.visibility(n), Doc: w.docComment(n),
 				})
+				types[len(types)-1].DocStart, types[len(types)-1].DocEnd = w.docRange(n)
 				childContext.enclosing = append(append([]string(nil), c.enclosing...), rawName)
 			}
 			childContext.testClass = c.testClass || w.inheritsTestCase(n)
@@ -245,6 +247,7 @@ func (w *walker) definitions(root *sitter.Node) ([]lang.Definition, []lang.TypeD
 					Col: int(pos.Column) + 1, Enclosing: strings.Join(c.enclosing, "."), Signature: signature,
 					Test: w.test || c.testClass, Nested: c.insideCallable, Visibility: w.visibility(n), Doc: w.docComment(n),
 				})
+				defs[len(defs)-1].DocStart, defs[len(defs)-1].DocEnd = w.docRange(n)
 			}
 		case "typealias_declaration", "associatedtype_declaration":
 			if name := w.declaredName(n); name != "" {
@@ -269,7 +272,7 @@ func definitionFromUnit(u *tree.Unit, nested bool) lang.Definition {
 	return lang.Definition{
 		Name: u.Name, Kind: string(u.Kind), File: u.File, Line: u.Line, EndLine: u.EndLine, Col: u.Col,
 		Enclosing: u.Enclosing, Signature: u.Signature, Labels: append([]string(nil), u.Labels...), Test: u.Test,
-		Nested: nested, Visibility: u.Visibility, Doc: u.Doc,
+		Nested: nested, Visibility: u.Visibility, Doc: u.Doc, DocStart: u.DocStart, DocEnd: u.DocEnd,
 	}
 }
 
@@ -916,6 +919,7 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 	u.Visibility = w.visibility(n)
 	u.Allow, u.AllowLine, u.HasAllow = w.allowComment(n)
 	u.Doc = w.docComment(n)
+	u.DocStart, u.DocEnd = w.docRange(n)
 	return u
 }
 
@@ -930,6 +934,7 @@ func (w *walker) propertyUnit(decl, computed *sitter.Node, name string, c ctx) *
 	u.Visibility = w.visibility(decl)
 	u.Allow, u.AllowLine, u.HasAllow = w.allowComment(decl)
 	u.Doc = w.docComment(decl)
+	u.DocStart, u.DocEnd = w.docRange(decl)
 	return u
 }
 
@@ -995,12 +1000,33 @@ func (w *walker) allowComment(n *sitter.Node) (string, int, bool) {
 	return "", 0, false
 }
 
+// docRange は宣言 n の直前の doc comment (`///` か `/**`) の行の範囲 (1 始まり。無ければ 0, 0)。宣言に近い側から続く doc comment だけを数える
+// (doc と宣言の間の `// dupscan:allow` などは飛ばし、doc の上に離れた `// MARK:` と別の doc があっても、そこで止める)。
+func (w *walker) docRange(n *sitter.Node) (start, end int) {
+	for _, c := range leadingComments(n) {
+		if !isDocComment(w.text(c)) {
+			if start > 0 {
+				break
+			}
+			continue
+		}
+		start = int(c.StartPosition().Row) + 1
+		if end == 0 {
+			end = int(c.EndPosition().Row) + 1
+		}
+	}
+	return start, end
+}
+
+func isDocComment(text string) bool {
+	return strings.HasPrefix(text, "///") || strings.HasPrefix(text, "/**")
+}
+
 // docComment は宣言 n の doc comment (`///` か `/** */`) の最初の行。許可の印の行は doc に数えない。
 func (w *walker) docComment(n *sitter.Node) string {
 	cs := leadingComments(n)
 	for i := len(cs) - 1; i >= 0; i-- {
-		t := w.text(cs[i])
-		if !strings.HasPrefix(t, "///") && !strings.HasPrefix(t, "/**") {
+		if !isDocComment(w.text(cs[i])) {
 			continue
 		}
 		for _, line := range strings.Split(w.commentBody(cs[i]), "\n") {

@@ -196,6 +196,9 @@ func (w *walker) funcDecl(d *ast.FuncDecl, limit int) {
 	}
 	u.Allow, u.AllowLine, u.HasAllow = w.allowComment(d.Doc)
 	u.Doc = docLine(d.Doc)
+	if d.Doc != nil {
+		u.DocStart, u.DocEnd = w.position(d.Doc.Pos()).Line, w.position(d.Doc.End()).Line
+	}
 	key := w.add(u)
 	w.closuresIn(d.Body, ctx{owner: key, ownerName: name, broken: broken})
 }

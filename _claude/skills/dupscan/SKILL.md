@@ -18,7 +18,8 @@ description: Swift か Go の repo で、新しいメソッド (ヘルパー・�
 dupscan index -returns StorageLocation        # 作ろうとしている値の型 (戻り値の型の一部)
 dupscan index -name location                  # 名前の候補の一部
 dupscan index -param-type ConnectionID        # 受け取る型
-dupscan index -doc bucket                     # doc comment の語
+dupscan index -doc bucket                     # doc comment の語 (最初の行だけ)
+dupscan evidence bucket                       # 上で見つからないとき: doc の全文・テスト・ソースの行にある語から、doc の付いた宣言と、その語の行で呼ばれている名前を出す
 ```
 
 使えるものがあれば使う (repo が `.dupscan.json` の `shared` に書いた共通の置き場所の定義は `[shared]` と出て先に並ぶ。

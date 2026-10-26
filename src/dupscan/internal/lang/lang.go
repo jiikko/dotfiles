@@ -57,6 +57,8 @@ type Definition struct {
 	Nested     bool
 	Visibility string
 	Doc        string
+	// DocStart / DocEnd は doc comment の行の範囲 (無ければ 0)。evidence が doc の後半の語から定義へ辿る
+	DocStart, DocEnd int
 }
 
 // TypeDeclaration は型本体の宣言情報。Unit には含めない。
@@ -74,6 +76,8 @@ type TypeDeclaration struct {
 	Nested     bool
 	Visibility string
 	Doc        string
+	DocStart   int // Definition と同じ
+	DocEnd     int
 }
 
 // Reference は refs 用の識別子の出現。Kind は type_position または expression_position。
