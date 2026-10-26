@@ -34,7 +34,7 @@ dupscan context -symbol StorageClient.upload -definition-file Sources/StorageCli
 - [ ] Claude/Codexで同じ変更課題を既存コマンド列と比較し、必要な情報への到達、往復数、返したbytes、elapsed time、見落としを測る。少ない出力だけを成功指標にしない。
 - [ ] [924](924-perf-dupscan-exploration-latency.md) の1走査/batch案と処理を共有できるか確認し、別の解析cacheや常駐プロセスを重複して作らない。
 
-関連: [926](926-feat-dupscan-query-diagnostics.md) の曖昧さ・解析不完全の契約を使う。[918](../890/pending/918-feat-dupscan-target-and-literal-table.md) の所属情報が無い段階では、利用可能なモジュールを推測で断定しない。literal差分表やType-3は既存issueの範囲を維持する。
+関連: [926](926-feat-dupscan-query-diagnostics.md) の曖昧さ・解析不完全の契約を使う。[918](918-feat-dupscan-target-and-literal-table.md) の所属情報が無い段階では、利用可能なモジュールを推測で断定しない。literal差分表やType-3は既存issueの範囲を維持する。
 
 ## 詳細設計案（2026-10-26、未実装）
 
@@ -103,6 +103,10 @@ cursorのquery hashは定義IDと探索条件を束縛する。表示上のsecti
 
 初期版はSwiftのみ。contextの近似refs/callersを選択定義に型解決した使用例と表示しない。出力上限による省略や[929](929-bug-dupscan-gate-lost-file-parse-errors.md)と共通する解析不完全を、再利用先/影響箇所が存在しない根拠にしない。JSONのmetadataが単純なrgより大きい場合もあるため、候補の確認に必要なsectionとsnippetを予算へ収め、実際の総tool出力量で評価する。
 
+## コンテキスト節約の確認条件
+
+初期表示は少数候補と一致根拠に絞り、選択した定義の本体/使用例を必要なsectionだけ追加取得する導線を[925](925-feat-dupscan-helper-search.md)/928と揃える。JSON metadataや同じsnippetの再送が増えた分も計上する。1ページの上限を守ったことと、実装完了までにagentが読む総量やwindow占有が減ったことを区別する。品質を保った総context量と不要な重複追加の同時評価は928が担当する。
+
 ## 進捗
 
 - 2026-10-26: 起票。既存コマンドの組み合わせで手動では可能な探索を、上限付きの1問い合わせへまとめる提案。効果は未測定。
@@ -112,3 +116,5 @@ cursorのquery hashは定義IDと探索条件を束縛する。表示上のsecti
 - 2026-10-26: grepによる既存実装の見落とし・類似メソッドの追加を減らす目的に照らし、出力の誤解と探索成功の評価条件を追記。実装・効果測定は未着手。
 
 - 2026-10-26: 既存実装発見・比較評価について読み取り専用Codex subagentで反証レビュー。925の「候補の適切性をCLIが判断するように読める」P3を訂正し、候補抽出とagentによる採用判断を分けた。 issue内の相対リンク・JSON/Python構文・diffとBash 5のissue関連テストが成功。929の本文内手順と930の3問い合わせをCLIで再現した。文書の改善は、出力誤認の再現・責務と、既存実装発見/不要な重複追加を測る条件を具体化したこと。機能改善の効果は未検証。
+
+- 2026-10-26: 段階取得と総context量の評価を928へ接続。 読み取り専用Codex subagentで指摘の網羅性とcontext計測を反証レビューし、P3（現行/設計、着手条件、計測範囲）の3点を訂正した。文書の改善は、不足した指摘の担当と検証条件を明確にしたこと。実装・両効果の実証は未着手。

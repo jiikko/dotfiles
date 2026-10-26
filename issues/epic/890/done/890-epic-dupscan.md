@@ -25,11 +25,11 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [892](892-chore-dupscan-project-scaffold.md) | `src/dupscan` の骨組み (module・Makefile・bin・CI・README・PACKAGES.md、cgo の所要の実測) | 901 |
 | [893](893-feat-dupscan-core-normalize-type2.md) | コア: 走査・test / prod の分類・単位・正規化 L1〜L3・ハッシュ・Type-2 の組 | 892 |
 | [894](894-feat-dupscan-swift-adapter.md) | Swift adapter (文法の pin・対応表と網羅テスト・ERROR の除外・PR 24 の固定の入力・canary) | 893 |
-| [895](../pending/895-feat-dupscan-type3-candidates.md) | **保留** (2026-10-25)。Type-3 (少し違う写し) の類似度と候補の絞り込み (後回し。主な用途には Type-2 と L3 の一致で足りるかを先に見る) | 893 |
+| [895](../../932/895-feat-dupscan-type3-candidates.md) | Type-3の類似候補。2026-10-26からepic 932の未着手課題として継続 | 893 |
 | [896](896-feat-dupscan-report-output.md) | 出力 (人が読む形・JSON・リテラルの違いの表・プロパティの値・ターゲット・可視性・呼び出し元の数・既存のヘルパーとの一致) | 893・894 |
 | [897](897-feat-dupscan-index-subcommand.md) | 探索のための索引 (subcommand)。名前・署名の型・doc 文で引く (名前の検索も LSP でなくこれでまかなう) | 893・894 |
 | [898](898-test-dupscan-obaket-calibration.md) | obaket と DualNoteApp に当てた実測・既定の閾値・PR 24 の前の木での肯定と否定の期待値・変異 (Type-3 の条件は 895 の着手時) | 894・896 |
-| [899](../pending/899-research-dupscan-lsp-integration.md) | **保留** (LSP は使わない)。構文木の近似で判断を誤る実例が出たら、LSP・言語の解析の道具で補う案を再開する | 896 |
+| [899](../../932/899-research-dupscan-lsp-integration.md) | 型/シンボル解決を非LSPから調査。epic 932で継続し、LSP不採用の方針は維持 | 896 |
 | [900](../900-research-dupscan-next-languages.md) | 次の言語 (Go) を足す (go/ast の adapter。zsh は対応しない) | 893 |
 | [902](../pending/902-feat-dupscan-claude-code-hook.md) | **保留**: 編集のたびの hook。止める網は `make test` (905) にした。`make test` まで待つと手戻りが大きい実例が続いたら再開 | — |
 | [904](904-feat-dupscan-trial-subcommands.md) | 人が試す入口 (`near`・`explain`・`gate` を手で回す)。動作確認として何ができるか・なぜ同じと判定したかを手で確かめる | 893・894・896・897・898・905・906 |
@@ -38,7 +38,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [907](907-feat-dupscan-exploration-queries.md) | **探索の問い合わせ** (`outline`・`find`・`callers`)。grep の代わりに、定義だけを 1 件 1 行で返して文脈を食わずに関連の実装を探す | 893・894・897 |
 | [909](909-task-dupscan-integrate-into-obaket.md) | **obaket への組み込み**。2026-10-25 に obaket の issue 1301 へ移した (PR 24 の前の木での受け入れと obaket の規模の実測も 1301 で行い、結果を各 issue に書き戻す) | 903・905・906 |
 | [917](../pending/917-test-dupscan-usefulness-verification.md) | **保留** (obaket の 1 か月分の記録を待つ)。**有益さの検証**。書く前に引く効果を skill の有る無しの A/B で測る・起点の写しを拾えるか・組み込んだ後の効果 (この 2 つは obaket の issue 1301 へ移した) | 903・905・909 |
-| [918](../pending/918-feat-dupscan-target-and-literal-table.md) | **保留**。所属ターゲットの解決とリテラルの違いの表 (894・896・897 から移した)。obaket で使う中で欲しくなったら作る | — |
+| [918](../../932/918-feat-dupscan-target-and-literal-table.md) | 所属ターゲットとリテラル差分。epic 932の未着手課題として継続 | — |
 
 ## 進捗
 
@@ -62,3 +62,5 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
   保留 = 895 (Type-3)・899 (LSP)・900 (Go・zsh)・902 (編集のたびの hook)・917 (有益さの検証。obaket の 1 か月分の記録を待つ)・918 (所属ターゲット・リテラルの違いの表)。
   保留のうち 895・918 は「obaket の開発やコードの走査で欲しくなったら作る」(ユーザー 2026-10-25)。
   obaket への組み込み: 書く前の索引と skill への入口・`.dupscan.json` (共通の置き場所・プリセット)・pre-push の lint-gates の `check-dupscan-gate`・GHA (`ubuntu-slim`) の gate。続きは obaket の issue 1301 (検証 3) と 1298 (写しの共通化)
+
+- 2026-10-26: 895/899/918の未実装課題はepic 932で継続する。890の実装済み範囲と完了時の履歴は維持。

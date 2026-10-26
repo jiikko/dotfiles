@@ -37,7 +37,7 @@ dupscan search -query 'connection bucket fixture' -returns StorageLocation -limi
 - [ ] 既存がない課題では正しく新規実装できることを対照に入れる。小さなrepoで対照群も常に既存を見つけるなら、効果を測れない条件として扱う。
 - [ ] 924の代表的規模でlatencyと出力量を測り、検索の便利さと追加コストを評価する。
 
-関連: [924](924-perf-dupscan-exploration-latency.md) は処理速度、[918](../890/pending/918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](../890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。本提案でこれらの保留作業を自動的に再開しない。
+関連: [924](924-perf-dupscan-exploration-latency.md) は処理速度、[918](918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](../890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。917の保留条件は維持する。895/918の実装はepic 932の別担当であり、本issueに混ぜない。
 
 ## 詳細設計案（2026-10-26、未実装）
 
@@ -94,7 +94,7 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 - 候補カードには署名・可視性・一致根拠・file位置と確認用argvを返す。可視性は実際の利用可否の証明ではなく、module/target確認は未解決と表示する。candidateの数や[930](930-feat-dupscan-candidate-call-evidence.md)の近似呼び出し数で正しさを代用しない。
 - 正解集合から、top-5に適切な既存候補が入る率・既存ありなのに候補0となる割合を測る。agent評価では、最終diffの不要な重複追加率、正しい再利用率、誤った統合率を928で計測する。候補の網羅性と最終再利用を別に採点する。
 
-受け入れ条件への追加: grepを適切に使っても見落としが起こる代表課題で、dupscanが適切な候補への到達と重複追加の削減に寄与するか比較する。結果が改善しなければ、語の規則・順位・案内のどこで失敗したかを残す。Type-3や所属target解析の保留を本issueで自動解除しない。
+受け入れ条件への追加: grepを適切に使っても見落としが起こる代表課題で、dupscanが適切な候補への到達と重複追加の削減に寄与するか比較する。結果が改善しなければ、語の規則・順位・案内のどこで失敗したかを残す。Type-3と所属target解析の実装は895/918の担当であり、本issueの範囲外。
 
 ## 進捗
 
@@ -107,3 +107,5 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 - 2026-10-26: 既存実装発見・比較評価について読み取り専用Codex subagentで反証レビュー。925の「候補の適切性をCLIが判断するように読める」P3を訂正し、候補抽出とagentによる採用判断を分けた。 issue内の相対リンク・JSON/Python構文・diffとBash 5のissue関連テストが成功。929の本文内手順と930の3問い合わせをCLIで再現した。文書の改善は、出力誤認の再現・責務と、既存実装発見/不要な重複追加を測る条件を具体化したこと。機能改善の効果は未検証。
 
 - 2026-10-26: [931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931のtuikit実例では、同じ表示幅ループがslice直渡し/struct.field経由の構文差と19-nodeの閾値で現行near/reportに一致しなかった。未知名からの型/用途検索の評価へ追加する。新searchの効果は未検証。
+
+- 2026-10-26: 初期のname/signature/doc先頭行に加える呼出先/本体hintは[933](933-feat-dupscan-behavior-hint-search.md)、doc全文・テスト等の補助証拠は[934](934-feat-dupscan-source-evidence-search.md)へ起票した。段階ごとの仕様変更を分け、未実装の能力を初期searchに混ぜない。

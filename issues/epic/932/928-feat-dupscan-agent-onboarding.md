@@ -134,6 +134,19 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 
 全grepを禁止せず、文字列・設定・未対応言語では継続利用する。grepで0件だった時やhelperを書き始める時にdupscanの型/用途検索が役立つことを説明する。軽量hookの契約を保ち、通知だけで全repo解析やbuildを始めない。[929](929-bug-dupscan-gate-lost-file-parse-errors.md)の未修正中はgate成功を解析完了の証明と案内しない。
 
+## コンテキスト消費と重複追加を同時に減らす評価
+
+2026-10-26のユーザー確認: 狙う効果は「agentのコンテキストウィンドウ消費を減らす」と「不要な重複メソッド定義を減らす」の両方。候補を絞って必要な定義/使用例だけ確認できれば達成の可能性はあるが、現状は未実証。少ない出力で見落としを増やす方式は成功としない。
+
+- 同じ固定課題で、通常のrg/grep/Glob/Readに対してdupscanを追加する比較を維持する。課題終了までの全tool検索・Read・再問い合わせを数え、dupscan単体の短い出力だけで評価しない。
+- 構文解析の除外・候補省略で読まなかった正解がないか確認し、正しい候補の到達/課題成功を維持した上で、正しい再利用率と不要な重複追加率、別責務の誤統合率を同時に採点する。
+- 計測層を区別する: (a)toolのraw stdout/stderr bytes、(b)recorder/tool転送後のbytes、(c)観測できる場合のmodel入力側のtool/source text token数、(d)各turnの入力context token数とその最大値。bytesや費用をcontext token数へ固定倍率で換算しない。取得できない層は欠測とする。
+- 各turnの入力context長の最大値と、全turnを通した入力tokenの累積を別に示す。入力側だけ観測できる場合は「最大入力context」と表記し、生成中・出力を含むwindow全体の最大占有は、その範囲を実測できた場合だけ報告する。会話の再送・共通instructions・compaction/要約・出力制限・cacheの扱いを環境ごとに記録し、累積量の減少だけでwindow最大占有が減ったとは言わない。provider固有usageの定義は実装時の一次仕様と実動作で確認する。
+- 初期instructions/agent/model/版/権限/予算/compaction方針を同一agent内で揃え、対照群への設定漏れをpilotで検査する。[931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)のrecorder転送量は、モデルが実際に見た全bytesの証明ではなかった点を踏まえる。
+- 比較表には課題成功・正しい再利用・不要な重複追加・誤統合・context量・総時間/費用を併記する。一方だけ改善した場合はtrade-offを残す。両効果を観測できた課題/agent/条件の範囲だけを報告し、未実装featureや他repoに一般化しない。
+
+追加受け入れ条件: 上記の計測層と欠測を区別した報告形式を用意し、同じ品質を維持しながらコンテキスト消費と不要な重複追加を減らせたか判定する。12課題の既存案だけで一般的な非劣性や有効性が証明できるとは扱わない。
+
 ## 進捗
 
 - 2026-10-26: 起票。既存Claude hookと新たな共通入口を分けた。CLI・設定・agent連携の実装は未着手。
@@ -145,3 +158,5 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 - 2026-10-26: 既存実装発見・比較評価について読み取り専用Codex subagentで反証レビュー。925の「候補の適切性をCLIが判断するように読める」P3を訂正し、候補抽出とagentによる採用判断を分けた。 issue内の相対リンク・JSON/Python構文・diffとBash 5のissue関連テストが成功。929の本文内手順と930の3問い合わせをCLIで再現した。文書の改善は、出力誤認の再現・責務と、既存実装発見/不要な重複追加を測る条件を具体化したこと。機能改善の効果は未検証。
 
 - 2026-10-26: [931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931で現行dupscan併用とgrep中心を同一入力/固定出力予算で各1 agent比較したが、共通化候補を確定する効率の向上は確認できなかった。予備runの予算超過も記録し、hard capで再確認した。提案feature実装後の再利用/重複追加率の検証は引き続き未着手。
+
+- 2026-10-26: context消費と重複追加の同時評価を追加し、最大入力contextとwindow全体の占有を区別。 読み取り専用Codex subagentで指摘の網羅性とcontext計測を反証レビューし、P3（現行/設計、着手条件、計測範囲）の3点を訂正した。文書の改善は、不足した指摘の担当と検証条件を明確にしたこと。実装・両効果の実証は未着手。
