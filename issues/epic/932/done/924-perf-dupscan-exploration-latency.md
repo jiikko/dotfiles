@@ -253,3 +253,5 @@ queryは順に、`def -format json awaitTaskValue`、`index -format json -file s
 - 2026-10-27: 最終反証レビューのP3で、別git rootの確認をlinked worktreeの確認と混同しないよう指摘を受けた。実際に `git worktree add --detach` したfixtureで初期/未追跡追加後の22条件を追加比較し、rc/stdout/stderrの一致を確認した（原本 `/private/tmp/924-linked-worktree-check.py` / `924-linked-worktree-results.json`）。通常fixture178条件と合わせ200条件。src全体の通常gateは既知の意図的なbroken.go fixtureにより解析不完全で、新規違反なし。dupscan scopeのstrict gate成功と区別する。
 
 - 2026-10-27: `docs(dupscan): record discovery performance results and complete 924`で測定と完了を記録。Markdownの適用issue整合検査、dupscanの適用lint/race、移動後の相対リンク検査、diff検査が成功した。
+
+- 2026-10-27: `docs(dupscan): record additional self-review of discovery optimization`で追加セルフレビューを記録。全consumerのNormalize選択、Body/Delegation参照、parserのClose・例外経路を再読し、修正必須の不具合なし。空scope/完全な構文エラー/生成Goコード/line directive・generic呼出しとSwift accessorを含む28条件でbefore/afterのrc/stdout/stderrが一致した（`/private/tmp/review924-edge-results.json`）。コード追加なし。小規模latencyの未確定性とmetadata-only分岐の保守コストは引き続き残る。
