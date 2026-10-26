@@ -13,7 +13,7 @@ agent が dupscan に気づき、少ない出力で正しい次の一手へ進�
 - [926](926-feat-dupscan-query-diagnostics.md): 既存コマンドの `-format text|json|xcode` の正常な出力と終了コードを維持する (golden での固定は 926 の未完了の受け入れ条件で、
   `src/dupscan` にはまだ golden のテストが無い)。machine 向けの新しい契約は明示した `-format json-v2` と新しいコマンドにだけ足す。
   0 件の rc・unsupported の区別・`next_actions` (最大 3 個)・予算付きの serializer もここが正本
-  - 例外の前例: [937](done/937-feat-dupscan-go-test-call-owner.md) は既存の callers の text と JSON の `caller` を変える設計で、変更を README / fixture に明記する形を採る。
+  - 例外の前例: [937](done/937-feat-dupscan-go-test-call-owner.md) は既存の callers の text と JSON の `caller` を変更し、README / 回帰テストに明記して実装した。
     既存の出力を変える案は、この形 (明記して変える) か v2 のどちらかに載せる
 - [927](927-feat-dupscan-agent-context.md): context での予算の配分・省略・継続取得 (cursor)
 - [928](928-feat-dupscan-agent-onboarding.md): 導入案内・能力診断・commandmeta の registry。hook から全 repo の解析や build を起こさない
@@ -29,7 +29,7 @@ agent が dupscan に気づき、少ない出力で正しい次の一手へ進�
   (`.swift` / `-t swift` の指定は Swift と読む。名指しした対象が全部 .swift 以外の実在ファイルなら黙る。Grep ツールの glob / type が Swift 以外なら黙る)。
   見ていないのは、dir の指定や Go の指定 (`--include=*.go`・`-t go`) を Go と判定すること
 - 案: Go の指定が明示されている grep では、Go で使えるコマンドだけを案内する (Go は index (`-name` / `-returns` / `-file`)・callers・report・gate・near・explain が使える。
-  ただし 937 のとおり、Go の callers はテストの中の呼び出しを「(単位の外)」と出し、`index -file` はテスト関数を載せない。案内にこの限界も添える)
+  Go の callers は937でテスト名も表示するようになった。`index -file` は引き続きテスト関数を載せないため、案内ではこの違いを区別する)
 - 一覧を hook に写すと、928 の registry と食い違う。ただし bash の hook が registry を引くには `dupscan capabilities` を起動するしかなく、
   今の wrapper は build を起こしうる (928 の「hook から build を起こさない」に反する)。**928 の capabilities と `-no-build` が実装されるまでは、registry から引く形にはできない**。
   それまでは、hook の中の短い対応表を 928 の実装時に置き換える前提で持つ
@@ -70,3 +70,5 @@ agent が dupscan に気づき、少ない出力で正しい次の一手へ進�
 - 2026-10-26: 起票。926 / 927 / 928 / 921 / 937 と照合し、競合 (1 は 928 の未実装に依存・Swift のパスに効く案は 921 の測り直しの後・5 は 927 の既定値と食い違う) と制約を本文に書いた。実装・効果測定は未着手
 - 2026-10-26: opus の読み取り専用の反証レビュー。P2 4 件 (hook の判定の説明が言い過ぎ・registry を hook から引くには 928 の未実装の `-no-build` が要る・legacy の rc=1 は 926 が残す・937 が既存の出力を変える前例と golden の不在) と
   P3 4 件 (予算の serializer の正本は 926・Go で使えるコマンドの列挙が狭い・921 の数え方は Swift のパスだけ・json-v2 に「1 行目」は無い) を、実物で確かめてすべて直した
+
+- 2026-10-27: `docs(dupscan): refresh agent UX assumptions after test owner support`で937への参照を完了位置へ合わせ、Go callersはテスト名を表示できるという実装済みの前提へ更新した。938のhook/UX機能自体は未着手のまま。
