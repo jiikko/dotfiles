@@ -25,7 +25,7 @@
 | [926](926-feat-dupscan-query-diagnostics.md) | 問い合わせの形式と、検索 0 件のときの診断を揃える |
 | [927](927-feat-dupscan-agent-context.md) | agent 向けに、定義・参照・呼び出しをまとめて返す |
 | [928](928-feat-dupscan-agent-onboarding.md) | Claude / Codex 共通の導入案内と能力診断 |
-| [929](929-bug-dupscan-gate-lost-file-parse-errors.md) | gate が、単位を抽出できない解析失敗を通知せずに成功する |
+| [929](done/929-bug-dupscan-gate-lost-file-parse-errors.md) | gate が、単位を抽出できない解析失敗を通知せずに成功する |
 | [930](930-feat-dupscan-candidate-call-evidence.md) | 候補の呼び出し数に、省略引数・曖昧さの根拠を付ける |
 | [933](933-feat-dupscan-behavior-hint-search.md) | 呼出先・処理構造から名前不明の既存helperを探す |
 | [934](934-feat-dupscan-source-evidence-search.md) | doc全文・テスト使用例・元ソースを補助証拠として探す |
@@ -36,8 +36,10 @@
 
 ## 状態
 
-group にまとめただけ (2026-10-26)。どれも未着手。
+929のgate解析漏れ通知とstrict判定を完了（2026-10-26）。残る子issueは未着手。
 
 - 2026-10-26: 指摘の未カバー分を933/934へ切り出し、895/899/918を未着手のopen課題へ戻した。context消費と重複追加の削減は928で評価する。実装・効果は未検証。
 
 - 2026-10-26: 子issue 12件のopen位置と担当範囲を照合し、相対リンク・diff・Bash 5の適用テストが成功。反証レビューの3件の表現を修正済み。今回の改善は、未カバーの検索材料と二つの目的の計測条件を追跡可能にしたこと。機能/効果の実証は未着手。
+
+- 2026-10-26: 929で解析不能を重複なしと誤認させない土台を実装した。正常入力の互換性、両言語の回帰、変異5本を確認。探索の発見率/context効率の改善は他の子issueで継続。

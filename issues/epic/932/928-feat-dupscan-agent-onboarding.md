@@ -132,7 +132,7 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 
 「用途/入出力は分かるが名前は不明→indexの型検索/925のsearch→候補の定義と利用例を確認→同じ責務なら再利用、違えば分ける→実装後にgate/nearで名前を変えた写しを検査」をguideの主導線とする。新機能未実装時は現行で実行可能な入口だけを案内する。
 
-全grepを禁止せず、文字列・設定・未対応言語では継続利用する。grepで0件だった時やhelperを書き始める時にdupscanの型/用途検索が役立つことを説明する。軽量hookの契約を保ち、通知だけで全repo解析やbuildを始めない。[929](929-bug-dupscan-gate-lost-file-parse-errors.md)の未修正中はgate成功を解析完了の証明と案内しない。
+全grepを禁止せず、文字列・設定・未対応言語では継続利用する。grepで0件だった時やhelperを書き始める時にdupscanの型/用途検索が役立つことを説明する。軽量hookの契約を保ち、通知だけで全repo解析やbuildを始めない。[929](done/929-bug-dupscan-gate-lost-file-parse-errors.md)の未修正中はgate成功を解析完了の証明と案内しない。
 
 ## コンテキスト消費と重複追加を同時に減らす評価
 

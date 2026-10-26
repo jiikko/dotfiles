@@ -110,7 +110,7 @@ legacy mode、v2通常/require/strict、flag前後、--、quotes、空白・Unic
 
 また、0件と解析不完全、省略された候補と本当の0件、同名候補と選択済み定義を分ける。parse errorを含むfixtureでは、結果がある場合もcoverageの不完全さが見えることを検査する。未知の入力形式を無条件に正常な検索として受理しない。
 
-- [929](929-bug-dupscan-gate-lost-file-parse-errors.md) はgate側のfile parse error通知とstrict判定の担当。本issueだけを完了してgateの解析漏れまで直ったとは扱わない。
+- [929](done/929-bug-dupscan-gate-lost-file-parse-errors.md) はgate側のfile parse error通知とstrict判定の担当。本issueだけを完了してgateの解析漏れまで直ったとは扱わない。
 - [930](930-feat-dupscan-candidate-call-evidence.md) は呼び出し数の照合条件・省略引数・曖昧さの担当。approx=0を未使用と表示しない。
 - このscopeで保証するのは、構文検索の結果と限界を正しく伝えること。型/target解決を実装せず「別moduleから使える」「影響は他に無い」を出力しない。
 
@@ -123,3 +123,5 @@ legacy mode、v2通常/require/strict、flag前後、--、quotes、空白・Unic
 - 2026-10-26: grepによる既存実装の見落とし・類似メソッドの追加を減らす目的に照らし、出力の誤解と探索成功の評価条件を追記。実装・効果測定は未着手。
 
 - 2026-10-26: 出力の正確性について読み取り専用Codex subagentで反証レビューし、P1/P2/P3の追加指摘なし。 issue内の相対リンク・JSON/Python構文・diffとBash 5のissue関連テストが成功。929の本文内手順と930の3問い合わせをCLIで再現した。文書の改善は、出力誤認の再現・責務と、既存実装発見/不要な重複追加を測る条件を具体化したこと。機能改善の効果は未検証。
+
+- 2026-10-26: 929でgateのbase/head file parse error通知とstrict-analysisを実装した。本issueの探索コマンド側のcoverage/共通v2は継続して未実装。

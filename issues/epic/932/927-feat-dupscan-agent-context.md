@@ -101,7 +101,7 @@ cursorのquery hashは定義IDと探索条件を束縛する。表示上のsecti
 
 [925](925-feat-dupscan-helper-search.md)で得た候補の定義・本体・利用例を、再利用を判断する根拠としてまとめる。候補の名前だけ分かっても、別々のRead/refs/callersで取りこぼして新設へ戻る往復を減らす。CLIの速度・bytesだけで効果を決めず、最終的な不要な重複追加を928で採点する。
 
-初期版はSwiftのみ。contextの近似refs/callersを選択定義に型解決した使用例と表示しない。出力上限による省略や[929](929-bug-dupscan-gate-lost-file-parse-errors.md)と共通する解析不完全を、再利用先/影響箇所が存在しない根拠にしない。JSONのmetadataが単純なrgより大きい場合もあるため、候補の確認に必要なsectionとsnippetを予算へ収め、実際の総tool出力量で評価する。
+初期版はSwiftのみ。contextの近似refs/callersを選択定義に型解決した使用例と表示しない。出力上限による省略や[929](done/929-bug-dupscan-gate-lost-file-parse-errors.md)と共通する解析不完全を、再利用先/影響箇所が存在しない根拠にしない。JSONのmetadataが単純なrgより大きい場合もあるため、候補の確認に必要なsectionとsnippetを予算へ収め、実際の総tool出力量で評価する。
 
 ## コンテキスト節約の確認条件
 
