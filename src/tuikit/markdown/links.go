@@ -51,7 +51,7 @@ func collectLinks(lines []line, width int) (links []Link, index map[*linkRef]int
 	index = map[*linkRef]int{}
 	for li, l := range lines {
 		limit := width
-		if lineWidth(l) > width {
+		if spansWidth(l.spans) > width {
 			limit = width - 1
 		}
 		col := 0
@@ -87,13 +87,4 @@ func collectLinks(lines []line, width int) (links []Link, index map[*linkRef]int
 		}
 	}
 	return links, index
-}
-
-// lineWidth は 1 行の表示幅 (塗る前)。
-func lineWidth(l line) int {
-	w := 0
-	for _, sp := range l.spans {
-		w += termwidth.Of(sp.Text)
-	}
-	return w
 }

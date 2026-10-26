@@ -153,7 +153,7 @@ func TestRenderLinksWideCharAtClipEdge(t *testing.T) {
 			src := "| a" + strings.Repeat("a", pad) + " | b | c | d | e |\n|---|---|---|---|---|\n| x | y | z | v | `全`xx |\n"
 			ls := renderMarkdown(src, w)
 			l := ls[len(ls)-1]
-			if lineWidth(l) <= w {
+			if spansWidth(l.spans) <= w {
 				continue
 			}
 			col := 0
