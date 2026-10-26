@@ -22,7 +22,9 @@
 ## `src/` の Go を書くとき
 
 - **新しい関数 (helper・値を組み立てる関数・テストの helper) を書く前に `dupscan index` で既にあるものを引き、commit の前に `dupscan gate` を回す** (skill dupscan の 1・3 節)。
-  dotfiles の `src` には module をまたいだ写しが多い (issue 900 の較正)。`src/` の `.go` を Write / Edit すると hook (`_claude/hooks/suggest-dupscan-for-go-edit.sh`) が session に 1 回案内する
+  dotfiles の `src` には module をまたいだ写しが多い (issue 900 の較正)。同じ gate は `make test` (`test-src` の `test-dupscan-gate`。base は upstream との merge-base、detached の worktree では origin/HEAD) と
+  CI (`.github/workflows/dupscan-gate.yml`。base は master で最後に成功した run の commit なので、赤の後に push を重ねても、その間に入った写しを数え続ける) でも走り、module をまたいだ写しも落とす。
+  `src/` の `.go` を Write / Edit すると hook (`_claude/hooks/suggest-dupscan-for-go-edit.sh`) が session に 1 回案内する
 
 ## 何をどこに書くか
 

@@ -1,0 +1,101 @@
+---
+# src/ の Go に新しく入った写しの検査 (dupscan gate。make test-dupscan-gate)。
+#
+# なぜ独立した workflow か: base の commit まで履歴が要る (fetch-depth: 0) ので、浅い checkout の lint.yml / src_<project>.yml には
+# 置かない。module をまたいだ写しを数えるので、module ごとの src_<project>.yml でも持てない (unused.yml と同じ形)。
+# 🚨 paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
+name: dupscan gate
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - .dupscan.json
+      - .github/workflows/dupscan-gate.yml
+      - .github/go-version
+      - Makefile
+  pull_request:
+    paths:
+      - 'src/**'
+      - .dupscan.json
+      - .github/workflows/dupscan-gate.yml
+      - .github/go-version
+      - Makefile
+  workflow_dispatch:
+    inputs:
+      base:
+        description: >-
+          base にする commit の sha (最後に成功した run の commit が取れず止まったときに渡す)。
+          この run が成功すると次の run の base になるので、渡した commit より前の赤い run で入った写しは以後数えない
+        required: false
+
+permissions:
+  contents: read
+  actions: read # 最後に成功した run の commit を gh run list で引く
+
+# 取り消してよい: master の base は「最後に成功した run の commit」なので、取り消された run の push で入った写しも次の run が数える
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    # 対象は macOS のみ。ラベルの移動で環境が変わらないよう 15 に固定する。
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # base の commit が無いと gate は rc=2 で止まる
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: .github/go-version # CI の Go の版の正本 (go.mod の go 行は最小の版で、別に持つ)
+          cache: false
+
+      # base: PR は対象のブランチ。master は、この workflow が master で最後に成功した run の commit (push の前の commit にしない。
+      # それだと前の push の run が赤や取り消しで終わったとき、その push で入った写しを次の run が数えず、master に残ったまま緑になる)。
+      # 祖先でない成功 (force push の後) もそのまま渡す (gate が HEAD との merge-base を取る)。手元に無ければ取りに行き、取れなければ止める
+      # (push の前の commit へ逃がさない。force push の後はそれも消えていて、次の run がその先端を base にし、間の写しを数えなくなる)。
+      # push の前の commit を使うのは、成功した run がまだ 1 本も無いときだけ。base が空のまま既定のブランチへ逃がすこともしない
+      # (比べる範囲が空のまま緑になり、その run が「最後の成功」になる)。止まったら手動起動の base に確かめた commit を渡す。
+      # PR の run は外す (fork の master からの PR も headBranch が master になる)。
+      # -fail-new-exclusions は付けない: base が最後の成功なので、許可を足した commit から先の run が全部赤になる。
+      # 許可・除外を足したことは skill dupscan の 3 節どおりユーザーへの報告に書く
+      - name: 新しく入った写しの検査
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          INPUT_BASE: ${{ github.event.inputs.base }}
+          BEFORE: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          zero=0000000000000000000000000000000000000000
+          if [ "$EVENT" = pull_request ]; then
+            BASE="$PR_BASE"
+          elif [ -n "$INPUT_BASE" ]; then
+            BASE="$INPUT_BASE"
+          else
+            BASE=$(gh run list --workflow dupscan-gate.yml --branch "$DEFAULT_BRANCH" --status success --limit 20 \
+              --json headSha,event --jq '[.[] | select(.event != "pull_request")][0].headSha // ""') || exit 1
+            if [ -z "$BASE" ]; then
+              echo "::notice::成功した run がまだ無い。push の前の commit を base にする"
+              BASE="$BEFORE"
+            fi
+          fi
+          case "$BASE" in
+            ""|"$zero")
+              echo "::error::base を決められない。手動起動の base に確かめた commit を渡して回す"
+              exit 1 ;;
+            *[!0-9a-f]*) # 手動起動の入力は make と git fetch の引数になるので、sha の形だけを通す
+              echo "::error::base は commit の sha (16 進) で渡す: $BASE"
+              exit 1 ;;
+          esac
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null && ! git fetch -q origin "$BASE"; then
+            echo "::error::base の commit ($BASE) を取れない (force push で消えた?)。手動起動の base に確かめた commit を渡して回す"
+            exit 1
+          fi
+          echo "base: $BASE"
+          make test-dupscan-gate DUPSCAN_GATE_FLAGS="-base $BASE"

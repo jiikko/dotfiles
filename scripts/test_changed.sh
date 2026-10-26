@@ -175,6 +175,7 @@ for p in "$@"; do
           echo "✗ 不正な src プロジェクト名: $p" >&2; fail=1 ;;
         *)
           add_go_dir "src/$proj"
+          add_target test-dupscan-gate  # module をまたいだ写しも数えるので、module の make ではなく root で回す
           # 共有 module (subproc / termsafe 等) を変えたら、replace で取り込む module も回す。
           # Go は replace を取り込む側の go.mod にも要求するので、推移的な利用者もここで拾える
           for _mod in src/*/go.mod; do

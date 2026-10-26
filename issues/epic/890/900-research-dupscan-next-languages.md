@@ -28,7 +28,7 @@ Go を足す価値は、索引と `gate` ([905](done/905-feat-dupscan-ci-check-g
 
 - [x] dotfiles の Go のファイルで、読めない構文があるファイルの数と所要を測って書く (下の「較正」)
 - [x] 足すかと、足すならどの文法・道具かを決める → go/ast の adapter で足した (`src/dupscan/internal/lang/golang`)
-- [ ] Go の module の make test・CI に gate を入れるか (ユーザーの判断待ち。下の「gate を make test に入れるか」)
+- [x] Go の module の make test・CI に gate を入れるか → 入れた (ユーザー指示 2026-10-26「gateを入れてみて」。下の「gate を make test に入れるか」)
 
 ## 進捗
 
@@ -44,6 +44,7 @@ Go を足す価値は、索引と `gate` ([905](done/905-feat-dupscan-ci-check-g
     直さず README に記録: map のキーの局所の変数・型引数の制約・余分な `}` で手前の関数も読めない扱い・生の tag と解釈済みの tag
   - 変異: 新しいテストに 40 本余り当て、全部が狙ったテストで red (緑だった変異はテストを直すか捨てた)
 
+- 2026-10-26 gate を make test と CI に入れた (commit「feat(dupscan): dotfiles の src の Go の make test と CI に gate を入れる」)。上の「gate を make test に入れるか」
 - 2026-10-26 dotfiles の `src/` の `.go` を Write / Edit すると、session に 1 回「書く前に dupscan index・commit の前に dupscan gate」を案内する hook と、
   CLAUDE.md の節を足した (ユーザー決定: CLAUDE.md の 1 行 + 書く瞬間の hook。commit: feat(claude): src の Go を書くときに dupscan を案内する)。
   敵対的レビュー 1 周 (P1 なし。テストが rc・stderr を捨てていた偽の緑を直した)・変異 10 本が全部 red
@@ -56,7 +57,18 @@ Go を足す価値は、索引と `gate` ([905](done/905-feat-dupscan-ci-check-g
   - serialrun が runtimeout の parseSeconds / startErrorRC / waitStatus を写した・JSON の書き出しの写し・tmpclean と doctor の同じクロージャ・test helper の写し
   - 多くは module をまたいだ本物の写し。Go は module をまたいで非公開の helper を共有できないので、寄せるには共有の module が要る。`main` の定型のような意図した形もある
 
-## gate を make test に入れるか (未決。ユーザーの判断)
+## gate を make test に入れるか (2026-10-26 に入れた)
+
+- 形: root の `make test-src` → `test-dupscan-gate` (`bin/dupscan gate src`。module をまたいだ写しも数える)、`make test-changed` の src 腕、
+  GHA `.github/workflows/dupscan-gate.yml` (paths filter つき。base は master で最後に成功した run の commit。PR は対象のブランチ)
+- 入れた時点の木は緑 (2.8 秒、初回 build 込み)。`-base HEAD~40` では dupscan の `jsonout` の `Write` / `Line` が codexevents・zundamon の写しとして止まる (入れる前の commit なので数えない)
+- 敵対的レビュー (opus) 4 周で決めたこと:
+  - base を push の前の commit にしない: concurrency で pending の run が押し出される・赤の run の次の push が緑になる、の 2 つで写しが master に残る
+  - 最後の成功が手元に無ければ取りに行き、取れなければ止める (force push の後に前の commit へ逃がすと、2 本目の run で写しが素通る)。逃げ道は手動起動の `base` (sha だけを通す)
+  - `-fail-new-exclusions` は付けない: base が最後の成功なので、許可を足した後の run が全部赤のままになる。許可・除外は skill dupscan の 3 節どおり報告に書く
+  - 受けた形: 成功した run が 0 本の間は push の前の commit を使う (導入直後だけ) / 手動起動に先端を渡すと、それより前の赤い run の写しを以後数えない /
+    base から HEAD の間に別の正当な寄せがあると、新しい写しが相殺されて緑になる (正味の写しの数は増えていない) / 共有 working tree の他人の untracked な .go で手元が赤になる (dotfiles は worktree が既定)
+- 以下は入れる前に書いた判断材料:
 
 - repo 全体で回すと上の 4.7% で止まり、多くは module をまたぐ。module ごとの make test で `gate .` を回すと、module の外の写しは数えない (serialrun と runtimeout のような写しは止めない)
 - 入れない間も、セルフレビューで `dupscan gate` を回す (skill dupscan の 3 節) ことで同じ判定は得られる

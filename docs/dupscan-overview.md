@@ -44,7 +44,7 @@ repo の中で、局所名やリテラルの違いを正規化すると本体が
 
 dupscan は Claude Code が**自動で呼ぶ道具ではない**。編集のたびに走る hook は保留にした (issue 902)。
 Claude が使う側の repo の入口 (CLAUDE.md か skill。issue 903) に書かれた手順に従って自分で呼ぶか、導入先の検査から走る。
-以下は `make test` に組み込んだ場合の例。obaket は lint-gates / pre-push / GHA に組み込んでいる。Swift のシンボル探索には `def` / `refs` / `callers` も使える。
+以下は `make test` に組み込んだ場合の例。obaket は lint-gates / pre-push / GHA に組み込んでいる。dotfiles の `src` (Go) は `make test-dupscan-gate` (`make test` の `test-src` から) と GHA の `dupscan-gate.yml` に組み込んでいる (issue 900)。Swift のシンボル探索には `def` / `refs` / `callers` も使える。
 
 ```
 タスクを受ける

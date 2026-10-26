@@ -73,7 +73,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-all test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-comment-provenance test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-packages-index test-unused-excluding-tests test-go-lint test-go test-src test-fresh
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-all test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-comment-provenance test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-packages-index test-unused-excluding-tests test-dupscan-gate test-go-lint test-go test-src test-fresh
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ。中に新しい更新があるフォルダは残す。
 # skill の dir (bin/skill-tmpdir の印 .skill-tmpdir がある tmp/<skill名>/) は中の session ごとの dir を単位にする)。
@@ -668,5 +668,11 @@ test-go:
 # CI (src_*.yml の lint / test 両 job) と揃う。各 src の lint は scripts/go_module_graph.sh (go mod tidy -diff / go list -m all) も回す。
 # 🚨 ここも集約。prerequisite に並べると lint の失敗で test が走らない
 test-src:
-	@+$(call run_all_targets,test-go-lint test-unused-excluding-tests test-go)
+	@+$(call run_all_targets,test-go-lint test-unused-excluding-tests test-dupscan-gate test-go)
+
+# src/ の Go に新しく入った写し (既にある関数と本体が同じ形の関数) を落とす。module ごとの make に置かない:
+# module をまたいだ写し (非公開の helper を別 module へ写したもの) が数えられなくなる。寄せ方・意図した写しの許可は skill dupscan の 3・4 節。
+# base は手元なら upstream との merge-base (detached の worktree は origin/HEAD)。CI は dupscan-gate.yml が -base を渡す
+test-dupscan-gate:
+	@bin/dupscan gate $(DUPSCAN_GATE_FLAGS) src
 
