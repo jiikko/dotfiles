@@ -50,6 +50,7 @@ struct / class / enum / protocol / actor / extension は宣言とメンバーの
 `Type.member` はその型の直接メンバーを探す。メソッド内の入れ子の `func` は対象外で、名前だけの `def` なら引ける。
 同名の定義は全件を候補にし、text は `-limit` の既定 20 件まで出す (`0` は全部)。`-format json` は全件を返す。
 
+`refs` の問い合わせは単独の識別子（`run` など）。`def` と異なり `Type.member` の絞り込みはなく、`refs Worker.run` は `run` の呼び出しがあっても0件になる。
 `refs` は識別子の構文上の位置を `file:line 囲む単位 [test] [型の位置|式の位置] | その行` で出す。これは意味上の型/値判定ではない。`Foo(...)` や `Foo.shared` の `Foo` も、構文上は式の位置として出る。
 宣言名・呼び出しの引数ラベル・コメント・文字列本文は含めず、文字列補間の中の識別子は式の位置として数える。prod を test より先に並べる。
 `@Test` / XCTest 関数の中の参照はその関数名を囲む単位として出す。メソッド内の入れ子の `func` は `Type.member` 照合の対象外。
@@ -114,7 +115,7 @@ base で L3 だけ比べなかった相手 (L3Trivial) から来た別の単位�
 | `-record` | (なし) | gate だけ。1 回ごとの結果 (違反・除外・許可) を、時刻を添えた 1 行の JSON でこのファイルに追記する (回をまたいで数えるため)。書けなければ rc=2 |
 | `-fail-new-exclusions` | false | gate だけ。base から新しく足された除外か、パスの除外で通した変わった単位があれば rc=1 (CI で人の目に届けるため) |
 
-下限の既定値は仮 (issue 898 で obaket と DualNoteApp に当てて決める)。
+下限の既定20節とL1・L2の選択は、issue 898のDualNoteAppでの較正とobaketでの受け入れを反映したもの。調整は上のflagで明示する。
 
 ### 使う側の repo の `make test` と CI に組み込む
 
@@ -160,7 +161,7 @@ base は push の前の commit か PR の対象。CI の checkout は浅いの�
 ```
 
 - 手元で確かめたのは Makefile と build の手順 (dotfiles を clone して `src/dupscan` と `src/subproc` だけを取り出し、build して `make test` が写しで落ち・無ければ通り・
-  `dupscan` が無ければ rc=2 で止まる)。**YAML は使う側の repo の Actions で走らせていない (未検証)**。最初に入れる repo で 1 回、写しを足した PR で落ちることを見る
+  `dupscan` が無ければ rc=2 で止まる)。obaket の1301には、2026-10-25にGHAの通常runの成功と、写しを足した一時PRのrunがrc=1になった記録がある。上の汎用スニペットが全repoでそのまま動く保証ではないので、新しい導入先でも両方を確かめる
 - `-fail-new-exclusions` は CI でだけ付ける (除外を足した PR を人の目に届ける。手元のセルフレビューでは一覧を見て報告に書く)
 - cgo で文法の C のソースを build するので、runner に C compiler が要る (GitHub の macOS / Ubuntu の runner には入っている)
 
@@ -206,7 +207,7 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 
 - **調べる repo に何も書かない**: git は `subproc.GitCommand` (`--no-optional-locks`) で打ち、`.git/index` も書き直さない。継承した `GIT_DIR` などは外す
 - **0 件は判定不能**: 起点に読むファイルが 1 つも無ければ rc=2 で止まる (起点の取り違えで黙って「重複なし」にしない)
-- **読めない構文**: tree-sitter が ERROR / MISSING を出した単位は比べず、件数を出す
+- **読めない構文**: 抽出できた単位が ERROR / MISSING を含む場合は比較から外し、件数を出す。単位を抽出できない場合など、通知の限界は下記
 - 列挙は `git ls-files --cached --others --exclude-standard`。symlink・消えたファイル・submodule の中は読まない
 - テスト関数そのもの (Swift Testing の `@Test` / `@Testing.Test`、XCTest の `func test…()`) とその中のクロージャは比べない
 - 単位: 関数・初期化子・クロージャ・computed property・subscript・deinit・`didSet` / `willSet`
@@ -220,12 +221,12 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 - 束縛の列の `,` の直前にコメントがあると (`let a /* c */, b: String`)、2 つ目以降の束縛を def で引けない
 - 関連値にラベルのある case (`case foo(x: Int)`) は `def foo(x:)` で引けない (`def foo` で引く)。macro の宣言は def で引けない
 - 局所の名前の有効範囲を見ない (宣言がどこかにあれば、単位の中の同じ名前を全部局所として扱う)。誤検知の向き
-- test のファイルの判定はパスの慣習 (`Tests` / `…Tests` / `…Tests.swift`) と `XCTestCase` の継承。`App/ABTests/` のような製品のディレクトリも test と読む (repo ごとの上書きは設定ファイル。issue 906)
+- test のファイルの判定はパスの慣習 (`Tests` / `…Tests` / `…Tests.swift`) と `XCTestCase` の継承。`App/ABTests/` のような製品のディレクトリも test と読む。設定にtest/prod判定の上書きはなく、パス除外は誤分類自体を直すものではない
 - クロージャの鍵は、囲む単位の中での出現の順番。前にクロージャを足すと後ろの鍵がずれる (除外の設定は順番を入れない釘で指すので、ずれでは外れない)
 - クロージャの表示は囲む単位の名前を挟んだ `型.関数.{closure}` (入れ子は `型.関数.{closure}.{closure}`、格納 property の初期値は `型.property.{closure}`)。
   同じ関数の中の 2 つのクロージャ・多重定義の関数のクロージャは同じ表示になるので、行番号で区別する。関数の中の型の中のクロージャには外の関数の名前を付けない。
   表示だけの名前で、鍵・`name` (json) は `{closure}` のまま (json の `owner_name` に囲む単位の名前)。`callers` の呼び出し元 (`caller`) も同じ表示になる
-- 読めない構文があるファイルでは、読めない部分に飲み込まれた関数は単位として出てこない。件数は 1 行の出力にも出る
+- 読めない構文があるファイルでは、関数が単位ごと取り出せない場合がある。report は `files_with_errors` を出すが、gate は抽出できた変更単位だけを `unreadable_changed_units` に出す。例えば追跡済みの関数を `func broken(` に書き換えると、report は解析失敗を出す一方、gate が `changed_units=0`・通知なし・rc=0になる（2026-10-26再現）。探索コマンドにも解析失敗件数は出ないので、検索0件を不存在の証明に使わない
 - gate は組の数が増えたかしか見ないので、次の 2 つは正しい作業でも止まる (寄せる先・揃える先が前から組の外にいたため):
   既にある包み (wrapper) へ写しを寄せたら、包みと残った呼び出し側の形が一致した / 片方の写しにだけ入っていた修正を、もう片方にも入れて形を揃えた。
   どちらも出力の「同じ形」を見て意図した重複なら、除外の設定 (issue 906) で外す

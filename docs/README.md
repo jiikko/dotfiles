@@ -57,8 +57,8 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 | [`tmux-as-platform.md`](tmux-as-platform.md) | tmux を「小さなツールの土台」として使う。popup / menu / prompt / formats / hooks を UI と自動化の primitive として捉える見方。**この repo の tmux 系スクリプトの設計思想**と、キー・実装ファイルの対応表（本番サーバの kill 防護 shim `bin/tmux` を含む） |
 | [`tmux-window-fade.md`](tmux-window-fade.md) | window list の放置フェード (最近作業した window ほど派手に光る) |
 | [`tmux-toast.md`](tmux-toast.md) | `bin/tmux-toast`。フォーカスを奪わない通知 (display-popup との違い) |
-| [`dupscan-overview.md`](dupscan-overview.md) | dupscan (**未実装**。epic 890): Claude Code の実装中に重複したメソッドを作らせない・既存のメソッドを見つけやすくする道具 (構文木で重複を組にする・書く前に引く索引・`make test` で新しい重複を落とす `gate`)。構成・成果物・言語の足し方・既存の道具との関係の 1 枚の要約。要件の正本は issue 891 |
-| [`dupscan-detection.md`](dupscan-detection.md) | dupscan (**未実装**) が類似メソッドを検出する方法: 段ごとの正規化 (L1〜L3) とハッシュ、例、検出しないもの、誤検知と除外の設定、いつ使うか (書く前・セルフレビュー・`make test`) |
+| [`dupscan-overview.md`](dupscan-overview.md) | dupscan（Swift版実装済み。epic 890）: Claude Code の実装中に重複したメソッドを作らせない・既存のメソッドを見つけやすくする道具 (構文木で重複を組にする・書く前に引く索引・`make test` で新しい重複を落とす `gate`)。構成・成果物・言語の足し方・既存の道具との関係の 1 枚の要約。現行仕様は src/dupscan/README.md、設計の経緯は issue 891 |
+| [`dupscan-detection.md`](dupscan-detection.md) | dupscan が類似メソッドを検出する現行の方法・既定値・解析失敗の制約: 段ごとの正規化 (L1〜L3) とハッシュ、例、検出しないもの、誤検知と除外の設定、いつ使うか (書く前・セルフレビュー・`make test`) |
 | [`claude-fork-popup.md`](claude-fork-popup.md) | Claude の会話を `--fork-session` で枝分かれさせ、`C-t b` の popup で覗く。**現在は休眠中**（bind はコメントアウト。使わないと決めた理由と復活手順つき） |
 | [`nvim-plugin-load-tracker.md`](nvim-plugin-load-tracker.md) | 使っていないプラグインを勘でなく数値で棚卸しする仕組み |
 
