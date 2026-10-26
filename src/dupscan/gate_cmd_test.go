@@ -298,3 +298,22 @@ func TestGateListsResolvedGroupAfterRemovingCopy(t *testing.T) {
 		t.Errorf("変わっていないのに消えた組を出した: %q", out)
 	}
 }
+
+// gate の記録は 1 行の JSON で、違反の署名の `->` を `\u003e` にしない (記録を grep で数えるため)。
+func TestGateRecordKeepsSwiftOperators(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Sources/B.swift", helperB)
+	rec := filepath.Join(t.TempDir(), "gate.jsonl")
+	if rc, _, errs := runGateCmd(t, "-record", rec, "-base", "HEAD", root); rc != 1 {
+		t.Fatalf("写しで rc=1: rc=%d err=%q", rc, errs)
+	}
+	b, err := os.ReadFile(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "-> StorageLocation") || strings.Contains(string(b), `\u003e`) || strings.Count(string(b), "\n") != 1 {
+		t.Errorf("1 行で、-> がそのまま残る記録を期待: %q", b)
+	}
+}

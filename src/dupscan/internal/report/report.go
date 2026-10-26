@@ -2,7 +2,6 @@
 package report
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 
 	"dupscan/internal/exclude"
 	"dupscan/internal/group"
+	"dupscan/internal/jsonout"
 	"dupscan/internal/tree"
 )
 
@@ -75,7 +75,7 @@ func (x Exclusions) write(w io.Writer) {
 }
 
 func ruleJSON(r exclude.Rule) string {
-	b, _ := json.Marshal(r)
+	b, _ := jsonout.Line(r)
 	return string(b)
 }
 

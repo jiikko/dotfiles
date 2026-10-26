@@ -1,4 +1,4 @@
-# 923 (bug): dupscan の JSON の出力が `<` `>` `&` を `<` `>` `&` に escape する
+# 923 (bug): dupscan の JSON の出力が `<` `>` `&` を `\u003c` `\u003e` `\u0026` に escape する
 
 > 🚨 **担当中: M4Pro-MacBook-Pro (glogx)**（2026-10-26〜）
 
@@ -11,10 +11,10 @@ Go の `encoding/json` の既定で `<` `>` `&` を escape している。JSON �
 
 ## 詳細 (再現)
 
-- `dupscan report -v` の「除外の 1 行」: `static location(_ connection: StorageConnection, path: String) -> StorageLocation@b2522f088f64`。
-  この 1 行は `.dupscan.json` に貼るためのもの。obaket の `.dupscan.json` は `->` が 323 か所・`>` が 0 か所 (2026-10-26 に数えた) で、
+- `dupscan report -v` の「除外の 1 行」: `static location(_ connection: StorageConnection, path: String) -\u003e StorageLocation@b2522f088f64`。
+  この 1 行は `.dupscan.json` に貼るためのもの。obaket の `.dupscan.json` は `->` が 323 か所・`\u003e` が 0 か所 (2026-10-26 に数えた) で、
   貼る側が毎回手で戻している (obaket issue 1305 でも python で書き直した)。戻さずに貼ると、`->` で grep しても当たらない除外が混ざる
-- `def -format json` の本体の `&&` は `&&`、`Array<Int>` は `Array<Int>` になる
+- `def -format json` の本体の `&&` は `\u0026\u0026`、`Array<Int>` は `Array\u003cInt\u003e` になる
 
 ## 対応方針
 
@@ -23,8 +23,21 @@ JSON として読んだ値は変わらない。
 
 ## 受け入れ条件
 
-- [ ] 4 か所とも `<` `>` `&` をそのまま出す。テストで固定し、helper の `SetEscapeHTML(false)` を外す変異で赤を確かめる
-- [ ] JSON として読んだ値が変わらない (obaket の `report -format json -limit 0 .` を変更前と JSON で比べて一致)
-- [ ] 1 行で出す所 (除外の 1 行・gate の記録) は改行を含まない (Encoder が足す末尾の改行を落とす)
+- [x] 4 か所とも `<` `>` `&` をそのまま出す。テストで固定し、helper の `SetEscapeHTML(false)` を外す変異で赤を確かめる
+- [x] JSON として読んだ値が変わらない (obaket の `report -format json -limit 0 .` を変更前と JSON で比べて一致)
+- [x] 1 行で出す所 (除外の 1 行・gate の記録) は改行を含まない (Encoder が足す末尾の改行を落とす)
 
 ## 進捗
+
+- 2026-10-26: `internal/jsonout` (`Write` / `Line`。どちらも `SetEscapeHTML(false)`) を足し、4 か所をそこへ通した (commit「fix(dupscan): JSON の出力で < > & を escape しない (issue 923)」)
+  - テスト: `internal/jsonout/jsonout_test.go` (Write と Line が `Array<Int>`・`-> Bool`・`a && b` をそのまま出し、読み戻すと同じ値・Line は改行を含まない)、
+    `TestJSONOutputsKeepSwiftOperators` (report の `-v` の除外の 1 行・report の json・def の json)
+  - 変異: `Write` の `SetEscapeHTML(false)` を外す → 両方のテストが赤 (report の json と Write の assert) / `Line` のを外す → 両方が赤 (除外の 1 行と Line の assert)
+  - obaket の `report -format json -limit 0 .` を変更前 (PATH の dupscan) と比べた: 違いは `exclude` (除外の 1 行) の 122 か所だけで、どれも内側の JSON を読むと同じ値。
+    変更前は内側の `\u003e` が文字のまま残っていた (外側を読んだ後も `\u003e` の 6 文字)。この欄を機械で読むのは dupscan のテスト (内側を読み直す) だけ
+  - README の除外の節に「escape しないので、そのまま貼れる」を 1 行足した
+- 2026-10-26 codex review (gpt-6.1-sol・high、読み取りのみ): P2 1 件。helper の設定を外す変異は捕まえるが、`ruleJSON` (効いていない除外の行) と `AppendRecord` (gate の記録) を
+  個別に `json.Marshal` へ戻す退行はどのテストも見ていなかった → `TestStaleExclusionLineKeepsSwiftOperators` と `TestGateRecordKeepsSwiftOperators` を足した。
+  ほかの的 (1 行の出力の末尾・記録の 1 回の write・HTML / shell の消費者・U+2028 / U+2029 (escape はそのまま残る)・helper を通らない残り) は反証できなかった
+- 起票時の本文 (タイトルを含む) と jsonout.go のコメントで `\u003e` などの表記が `>` に化けていた (Claude が送るコマンドの中で `\uXXXX` が文字に戻される)。直して、書いた後に表記を grep で確かめた
+

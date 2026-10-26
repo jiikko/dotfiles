@@ -168,6 +168,7 @@ base は push の前の commit か PR の対象。CI の checkout は浅いの�
 
 誤検知・意図して分けている写しは、repo の root の `.dupscan.json` で外す (設計は issue 906)。report の json の各組と text の `-v`、
 gate の違反の json と `-v` に出る「除外の 1 行」に `kind` (`false-positive` / `intentional`) と `reason` を埋めて貼る。
+dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にならない) ので、除外の 1 行はそのまま貼れる。
 
 ```json
 {"version": 1, "exclude": [

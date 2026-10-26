@@ -1,12 +1,12 @@
 package report
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 
 	"dupscan/internal/exclude"
 	"dupscan/internal/group"
+	"dupscan/internal/jsonout"
 	"dupscan/internal/norm"
 )
 
@@ -130,7 +130,5 @@ func ExplainText(w io.Writer, s ExplainSummary) error {
 
 // WriteJSON は v を字下げした JSON で出す。
 func WriteJSON(w io.Writer, v any) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
+	return jsonout.Write(w, v)
 }

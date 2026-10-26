@@ -416,3 +416,37 @@ func TestCommentFieldCannotBeWrittenInConfig(t *testing.T) {
 		t.Errorf("設定ファイルの comment 欄は rc=2 を期待: rc=%d err=%q", rc, errs)
 	}
 }
+
+// 除外の 1 行は .dupscan.json にそのまま貼るので、Swift の署名の `->` を `\u003e` にしない。def の json の本体の `&&` も同じ。
+func TestJSONOutputsKeepSwiftOperators(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+	rc, text, errs := runReport(t, "-v", root)
+	if rc != 0 || !strings.Contains(text, "除外の 1 行: ") || !strings.Contains(text, "-> StorageLocation@") {
+		t.Fatalf("除外の 1 行に -> がそのまま出ない: rc=%d out=%s stderr=%s", rc, text, errs)
+	}
+	rc, js, errs := runReport(t, "-format", "json", root)
+	if rc != 0 || !strings.Contains(js, "-> StorageLocation") {
+		t.Fatalf("report の json に -> がそのまま出ない: rc=%d out=%s stderr=%s", rc, js, errs)
+	}
+	writeFile(t, root, "Sources/D.swift", "func both(_ a: Bool, _ b: Bool) -> Bool { a && b }\n")
+	rc, defJSON, errs := def(t, "-format", "json", "both", root)
+	if rc != 0 || !strings.Contains(defJSON, "a && b") || !strings.Contains(defJSON, "-> Bool") {
+		t.Fatalf("def の json に && と -> がそのまま出ない: rc=%d out=%s stderr=%s", rc, defJSON, errs)
+	}
+	for name, out := range map[string]string{"report -v": text, "report json": js, "def json": defJSON} {
+		if strings.Contains(out, `\u003e`) || strings.Contains(out, `\u0026`) || strings.Contains(out, `\u003c`) {
+			t.Errorf("%s が < > & を escape した: %s", name, out)
+		}
+	}
+}
+
+// 効いていない除外の行も、貼った除外と同じ形 (`->` のまま) で出す (どの除外かを .dupscan.json で grep して探すため)。
+func TestStaleExclusionLineKeepsSwiftOperators(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+	writeConfig(t, root, groupRule(t, root))
+	writeFile(t, root, "Sources/B.swift", strings.Replace(helperB, "makeLocation", "renamedLocation", 1))
+	rc, out, _ := runReport(t, "-v", root)
+	if rc != 0 || !strings.Contains(out, "効いていない除外: ") || !strings.Contains(out, "-> StorageLocation@") || strings.Contains(out, `\u003e`) {
+		t.Errorf("効いていない除外の行に -> がそのまま出ない: rc=%d out=%q", rc, out)
+	}
+}

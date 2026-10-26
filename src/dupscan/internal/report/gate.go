@@ -1,7 +1,6 @@
 package report
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +11,7 @@ import (
 
 	"dupscan/internal/exclude"
 	"dupscan/internal/gate"
+	"dupscan/internal/jsonout"
 )
 
 // GateSummary は gate の出力の形。
@@ -252,7 +252,7 @@ func short(h string) string { return h[:min(len(h), 12)] }
 // AppendRecord は 1 回の gate の結果を、時刻を添えた 1 行の JSON として path に追記する (回をまたいで違反・除外・許可を数えるため)。
 // 1 行を 1 回の write で書く (同じファイルへ並行に追記しても行が混ざらない。O_APPEND の 1 回の write)。
 func AppendRecord(path string, s GateSummary, now time.Time) error {
-	b, err := json.Marshal(struct {
+	b, err := jsonout.Line(struct {
 		Time string `json:"time"`
 		GateSummary
 	}{now.Format(time.RFC3339), s})

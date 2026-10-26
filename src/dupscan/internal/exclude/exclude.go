@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"dupscan/internal/group"
+	"dupscan/internal/jsonout"
 	"dupscan/internal/norm"
 )
 
@@ -252,6 +253,6 @@ func GroupSnippet(lv norm.Level, members []*group.Entry) string {
 		pins = append(pins, Pin(m))
 	}
 	sort.Strings(pins)
-	b, _ := json.Marshal(Rule{Group: pins, Level: lv.String()})
+	b, _ := jsonout.Line(Rule{Group: pins, Level: lv.String()})
 	return string(b)
 }

@@ -22,6 +22,7 @@
 - `src/dupscan/internal/exclude` (`dupscan/internal/exclude`) — Package exclude は repo の root の .dupscan.json に書いた除外 (誤検知・意図して分けている写し) を読み、report と gate に同じ規則で効かせる。 (internal)
 - `src/dupscan/internal/gate` (`dupscan/internal/gate`) — Package gate は、base から head までに新しく増えた重複を決める (make test・CI で回す dupscan gate の判定)。 (internal)
 - `src/dupscan/internal/group` (`dupscan/internal/group`) — Package group は、正規化したハッシュが同じ単位を段ごとに組 (Type-2) にまとめる。 (internal)
+- `src/dupscan/internal/jsonout` (`dupscan/internal/jsonout`) — Package jsonout は dupscan が書く JSON の形を 1 か所で決める。 (internal)
 - `src/dupscan/internal/lang/swift` (`dupscan/internal/lang/swift`) — Package swift は、Swift のソースを tree-sitter で読み、比べる単位 (関数・初期化子・クロージャなど) を言語に依らない木に写す adapter。 (internal)
 - `src/dupscan/internal/norm` (`dupscan/internal/norm`) — Package norm は、単位の本体を段 (L1 / L2 / L3) ごとに正規化してハッシュを取る。 (internal)
 - `src/dupscan/internal/repo` (`dupscan/internal/repo`) — Package repo は、調べる repo のファイルを git で列挙する。 (internal)
