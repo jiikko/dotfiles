@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"dupscan/internal/exclude"
 )
 
 // 出力の形だけを、adapter を通さずに組み立てた Summary で固める (CLI の通しのテストは main_test.go)。
@@ -109,5 +111,14 @@ func TestClosureLabelShowsOwner(t *testing.T) {
 	c.OwnerName = "" // 囲む単位が無い (型の直下) クロージャは今の形のまま
 	if got := label(c); got != "Clock.{closure}" {
 		t.Errorf("label = %q, 期待 Clock.{closure}", got)
+	}
+}
+
+// 効いていない除外の行は、貼った除外と同じ 1 行の形で出す (`->` のまま・改行なし。.dupscan.json を grep して探せるように)。
+func TestRuleJSONIsOneLineWithoutHTMLEscapes(t *testing.T) {
+	got := ruleJSON(exclude.Rule{Group: []string{"Sources/A.swift|A|f(_ a: Array<Int>) -> Bool@0123456789ab"}, Level: "L1", Kind: "intentional", Reason: "a && b"})
+	want := `{"group":["Sources/A.swift|A|f(_ a: Array<Int>) -> Bool@0123456789ab"],"level":"L1","kind":"intentional","reason":"a && b"}`
+	if got != want {
+		t.Errorf("ruleJSON:\n got  %s\n want %s", got, want)
 	}
 }

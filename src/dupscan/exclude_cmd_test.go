@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -428,6 +429,17 @@ func TestJSONOutputsKeepSwiftOperators(t *testing.T) {
 	if rc != 0 || !strings.Contains(js, "-> StorageLocation") {
 		t.Fatalf("report の json に -> がそのまま出ない: rc=%d out=%s stderr=%s", rc, js, errs)
 	}
+	// 除外の 1 行 (GroupSnippet) そのものが、改行を含まない 1 行で、読み直すと 2 人の釘になる
+	var parsed struct{ Groups []struct{ Exclude string } }
+	if err := json.Unmarshal([]byte(js), &parsed); err != nil || len(parsed.Groups) != 1 {
+		t.Fatalf("組 1 つを期待: %v %s", err, js)
+	}
+	snippet := parsed.Groups[0].Exclude
+	var rule struct{ Group []string }
+	if err := json.Unmarshal([]byte(snippet), &rule); err != nil || strings.Contains(snippet, "\n") || len(rule.Group) != 2 ||
+		!strings.Contains(rule.Group[0], "-> StorageLocation@") || !strings.Contains(rule.Group[1], "-> StorageLocation@") {
+		t.Errorf("除外の 1 行が、改行なしで 2 人の釘を -> のまま持つ 1 行でない: %v %q", err, snippet)
+	}
 	writeFile(t, root, "Sources/D.swift", "func both(_ a: Bool, _ b: Bool) -> Bool { a && b }\n")
 	rc, defJSON, errs := def(t, "-format", "json", "both", root)
 	if rc != 0 || !strings.Contains(defJSON, "a && b") || !strings.Contains(defJSON, "-> Bool") {
@@ -446,7 +458,14 @@ func TestStaleExclusionLineKeepsSwiftOperators(t *testing.T) {
 	writeConfig(t, root, groupRule(t, root))
 	writeFile(t, root, "Sources/B.swift", strings.Replace(helperB, "makeLocation", "renamedLocation", 1))
 	rc, out, _ := runReport(t, "-v", root)
-	if rc != 0 || !strings.Contains(out, "効いていない除外: ") || !strings.Contains(out, "-> StorageLocation@") || strings.Contains(out, `\u003e`) {
-		t.Errorf("効いていない除外の行に -> がそのまま出ない: rc=%d out=%q", rc, out)
+	_, line, found := strings.Cut(out, "効いていない除外: ")
+	line, _, _ = strings.Cut(line, "\n")
+	var got struct{ Group []string }
+	if rc != 0 || !found || json.Unmarshal([]byte(line), &got) != nil {
+		t.Fatalf("効いていない除外の行が JSON で出ない: rc=%d out=%q", rc, out)
+	}
+	written := groupRule(t, repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB}))["group"]
+	if !strings.Contains(line, "-> StorageLocation@") || fmt.Sprint(got.Group) != fmt.Sprint(written) {
+		t.Errorf("効いていない除外の行が、貼った除外と同じ釘を -> のまま持たない: %q (貼ったもの %v)", line, written)
 	}
 }
