@@ -114,7 +114,7 @@ bin/dupscan (入口。初回に src/dupscan をビルドする)
     ^
     | 役割の対応表・単位の抽出・既定の規則
 +--------------------- adapter (言語ごと) ---------------------+
-|  Swift (最初)   |   Go (候補)   |   zsh (候補)   |  ...      |
+|  Swift (最初)   |   Go (候補)   |   ...                      |
 +--------------------------------------------------------------+
 ```
 
@@ -173,7 +173,7 @@ adapter が持つもの:
 2. **役割の対応表**: node の種類 (named / anonymous・field 名) → 役割。種類だけで決まらないものは字面で分ける (Swift の暗黙のメンバー `.x` は `-x` や `!x` と同じ `prefix_expression` なので、トークン `.` で分ける)
 3. **網羅テスト**: 文法の node-types.json にある named な種類が全部、対応表で分類 (か明示して無視) されていること。文法の版を上げたときの対応漏れを黙らせない
 4. **単位の抽出**: どの node が「比べる単位」か (関数・初期化子・クロージャ)
-5. **test / prod の既定**: Swift は `Tests/` 配下・`*Tests.swift`、Go は `_test.go`、zsh は `tests/` 配下 (dotfiles)
+5. **test / prod の既定**: Swift は `Tests/` 配下・`*Tests.swift`、Go は `_test.go`
 6. **テスト関数の判別**: Swift は `@Test` / `func test…`、Go は `func TestXxx`
 7. **所属ターゲット**: Swift は `Package.swift` と `project.pbxproj` を読む
 
@@ -181,7 +181,7 @@ adapter が持つもの:
 |---|---|
 | Swift | 最初に作る。alex-pinkus/tree-sitter-swift の `with-generated-files` branch を使う。obaket の 1626 ファイルで、読めない構文があるのは 50 ファイル (3%)、全体の parse と走査は 5.0 秒 (2026-10-24 実測)。読めないのは `switch await` / `for … where await` / `nonisolated(unsafe)` など。その部分だけ ERROR になり残りは読める |
 | Go | 候補。tree-sitter-go で他の言語と同じ形の adapter にする案。標準の `go/ast` でも正確に取れるが、コアが tree-sitter の木を前提にすると形が揃わない。どちらにするかは未決 (issue 900)。重複のチェックは dupl が既に回っているので、足す価値は索引と `gate` の側にある |
-| zsh | 候補。zsh 専用の成熟した文法が見つかっていないので tree-sitter-bash を使う案。`${(f)...}` や `*(N)` などの zsh だけの構文で ERROR が多い懸念があり、未実測 (issue 900) |
+| zsh / shell script | **対応しない** (ユーザー決定 2026-10-26)。見送った時点の懸念は 2 つで、どちらも未実測: zsh 専用の成熟した tree-sitter の文法が無く、tree-sitter-bash では `${(f)...}`・`*(N)` などの zsh だけの構文が ERROR になりうる / shell の写しは関数の外 (トップレベルの数行・テストの準備) に多いと見ており、関数を単位に比べる dupscan では拾えない形が残りうる。対応するなら adapter のほか、コマンド層が `lang/swift` を直接参照している所 (`main.go` などの `swift.Extensions`・`swift.IsTestPath`) を言語で選ぶ口にし、`norm.go` の `isImplicitParam` (`$` で始まる名前を Swift の `$0` とみなす) を言語ごとに分ける必要がある。再評価するのは、shell の写しを機械で止めたい具体的な場面が出たとき (issue 900) |
 
 言語を足す前に、Swift と同じく「対象の repo の全ファイルを parse して ERROR / MISSING が出るファイルを数える」を測ってから決める。
 
@@ -231,6 +231,6 @@ dupscan だけで依存も使い方もシンプルになるなら、LSP は使�
 | 905 | セルフレビュー・`make test`・CI で新しく入った重複を落とす (`gate`) | 893・894・896・898・906 |
 | 906 | 誤検知を除外する設定 (組・単位・パス・段・下限。理由が必須、効いていない除外と新しい除外を出す) | 893・896 |
 | 904 | 人が試す入口 (`near`・`explain`・`gate` を手で回す) | 893・894・896・897・898・905・906 |
-| 900 | 次の言語 (Go・zsh) の読み取りの実測 | 893 |
+| 900 | 次の言語 (Go) の読み取りの実測。zsh / shell は対応しない | 893 |
 | 899 | LSP との組み合わせ (保留。LSP は使わない) | — |
 | 902 | 編集のたびの Claude Code の hook (保留) | — |
