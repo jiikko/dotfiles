@@ -2,6 +2,27 @@
 
 起票日: 2026-10-24
 
+## 今回の到達点（2026-10-27）
+
+再評価に従い、全repoのgroup化ではなく **対象指定の `near -similar` 試作**を実装した。L1のnode headerと局所採番を既存writerと共有し、3 nodes以上の部分木をsize重み付きmultisetへ写してDice順に並べる。1対象対Nで走査し、同言語・解析可能な単位だけを比較する。`-similar-threshold`の暫定既定0.4、`-limit`は1〜50（既定20）。全候補/返却/比較/skip/parse-error件数を返し、JSONもlimitを守る。
+
+### 実測と改善判断
+
+- e7ddfd9fのwrap.go/links.goを固定した10単位: 従来nearはmin-nodes=1/L1〜L3でも0件、新版はlineWidthのみ1候補、score=0.47205、shared weight=38。19-nodeの対象を既定gateから独立して比較できた。
+- 4a79e2dcのdoctorの両runnerを含む15単位: 従来nearは0件、新版はdeleteRunner.runのみ1候補、score=0.61658、shared weight=435。今回の部分loop例は発見できたが、任意の部分重複を網羅する証明ではない。
+- 既知2例以外の固定合成対照4件（閾値は結果を見て再調整なし）: 入力式だけ異なる正例はrank2/score0.56604。別field/逆条件は閾値未満で、同形だが別policyと設定した反例はrank1/score1。**同形別責務を排除できない**ため、候補を意味の正解と扱わない。この小対照は現repoのheld-out実課題ではなく、一般precisionは未検証。
+- 最終版3回の中央値（通常near→similar、同じ入力）: 全srcのspansWidthは158.3→277.5ms、obaket386e2876のretryingは1261.2→1646.3ms。後者は25,965比較・183skip・57 parse-error files・0候補。全srcは8,675比較・parse-error 1（意図的不正fixture）・0候補。0件を不存在の証明にしない。
+- 別の単発time -lのRSSは全src 204,177,408→211,042,304 bytes、obaket 525,434,880→616,988,672 bytes（中央値ではない）。raw計測・argv・出力はdotfiles/tmp/finish-932-20261027/measure.jsonと*-time.log。時間短縮はなく、追加費用に対し既知の見逃し2例へ到達できたことが今回の改善。実token消費、正しい再利用率、不要な重複追加率の改善は未実証で928の評価対象。
+
+### 受け入れた範囲と採用しない案
+
+- [x] opt-in候補・L1保持・閾値/件数制約・決定的順序・祖先/子孫除外を検査。Swiftのnamed/closure混在祖先鎖も両方向で除外する。
+- [x] デフォルトnear/explain/report/gateは変更前binaryとtext/json計8条件でstdout/stderr/rcがbyte一致。通常のhash/group/gateへ類似scoreを混ぜない。
+- [x] module lint/race、strict module gate、隔離変異6本を実行。閾値/limit/祖先除外/multiset/混在祖先/literal保持を壊す各変更を回帰テストが検出した。2回の反証レビューが見つけたnamed関数およびmixed祖先の除外漏れを訂正。
+- [x] 全対group化・転置索引・LSHは不採用。対象指定の現測定では線形走査が約1.6秒で、全組検索や索引構築の追加複雑性を必要とする実課題を確認していない。必要になればその入力・許容時間とともに再検討する。
+- [x] 差分の自然文説明/正確なsource highlightは不採用。Unit位置とscore/shared weightだけを返し、原文を読む。tree.Nodeはsource spanを持たない。L1構造の詳細比較は918と重複実装しない。
+- [x] 任意のpartial clone、局所宣言挿入でずれる番号、深い反復tree、同形別責務の問題は保証範囲から除く。必要な具体例が出ればこの試作の制限と照合し、別の検出規則の採否を決める。以下の古い全機能条件を、本試作完了の必須条件にはしない。
+
 ## 方向性の再評価（2026-10-27）
 
 対象: a5b4196e の実装と既存測定。
@@ -108,3 +129,5 @@ spansWidthの例では、rangeの入力式が異なってもループ内部の�
 - 2026-10-26: doctorの最長prefix部分重複は[936](../../done/936-refactor-doctor-domain-duplicate-methods.md)で共通化済み。895の検出改善は未着手で継続し、既知例の回帰fixtureを作る際は共通化前の4a79e2dcの両runnerを入力にする。現在のdoctorに未解消のloop重複があるとは扱わない。
 
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
+
+- 2026-10-27: `feat(dupscan): offer opt-in L1 subtree similarity candidates`で対象指定の試作と回帰を追加。`docs(dupscan): record similarity scope and measured limitations`で2歴史例、合成反例、規模別費用と採否を記録。類似検出自体の最小範囲は完了、一般的な開発効率は未実証。
