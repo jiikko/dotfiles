@@ -125,3 +125,5 @@ legacy mode、v2通常/require/strict、flag前後、--、quotes、空白・Unic
 - 2026-10-26: 出力の正確性について読み取り専用Codex subagentで反証レビューし、P1/P2/P3の追加指摘なし。 issue内の相対リンク・JSON/Python構文・diffとBash 5のissue関連テストが成功。929の本文内手順と930の3問い合わせをCLIで再現した。文書の改善は、出力誤認の再現・責務と、既存実装発見/不要な重複追加を測る条件を具体化したこと。機能改善の効果は未検証。
 
 - 2026-10-26: 929でgateのbase/head file parse error通知とstrict-analysisを実装した。本issueの探索コマンド側のcoverage/共通v2は継続して未実装。
+
+- 2026-10-27: 938でcontext/evidenceの先頭状態・grouped text・scope付きnext_actionと任意summaryを実装/局所比較した。938の完了は本issueの全受け入れ条件の完了を意味しない。v2 envelope/serializerへ共通状態とaction modelを統合する作業は継続。

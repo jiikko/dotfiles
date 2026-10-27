@@ -162,3 +162,5 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 - 2026-10-26: context消費と重複追加の同時評価を追加し、最大入力contextとwindow全体の占有を区別。 読み取り専用Codex subagentで指摘の網羅性とcontext計測を反証レビューし、P3（現行/設計、着手条件、計測範囲）の3点を訂正した。文書の改善は、不足した指摘の担当と検証条件を明確にしたこと。実装・両効果の実証は未着手。
 
 - 2026-10-26: [935](done/935-test-doctor-duplicate-discovery-effect.md)でdoctor探索を各方式2回比較した。Dは各run1組、探索recorder転送bytesは平均54,783対28,116で併用が48.7%少なかった。ただし候補は異なり、品質非劣性・model context token/window占有・新規重複追加率は未実証。本issueの実装課題A/Bを置き換えない。
+
+- 2026-10-27: 938でcontext/evidenceの先頭状態・grouped text・scope付きnext_actionと任意summaryを実装/局所比較した。938の完了は本issueの全受け入れ条件の完了を意味しない。出力bytes減少を記録したが、実課題の総tokens/重複追加/時間の評価とregistry/capabilitiesは継続。

@@ -131,3 +131,5 @@ cursorのquery hashは定義IDと探索条件を束縛する。表示上のsecti
 
 
 - 2026-10-27: 924でcontextを含む探索共通経路をmetadata-onlyへ変更し、既存の出力一致を確認した。927の最小版は維持し、予算/継続取得など詳細設計の残りは継続する。
+
+- 2026-10-27: 938でcontext/evidenceの先頭状態・grouped text・scope付きnext_actionと任意summaryを実装/局所比較した。938の完了は本issueの全受け入れ条件の完了を意味しない。既定は変更せず、bytes予算/cursorなど残りのcontext設計を継続。

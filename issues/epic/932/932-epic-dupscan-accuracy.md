@@ -31,7 +31,7 @@
 | [934](934-feat-dupscan-source-evidence-search.md) | doc全文・テスト使用例・元ソースを補助証拠として探す |
 | [935](done/935-test-doctor-duplicate-discovery-effect.md) | doctorの重複検出・探索出力量をgrep/併用で比較する |
 | [937](done/937-feat-dupscan-go-test-call-owner.md) | 比較から除くGoテストにも呼び出し元名を保持する |
-| [938](938-ux-dupscan-agent-friendly.md) | agent のコンテキスト消費と発見性を良くするアイデア (既存 issue との関係つき) |
+| [938](done/938-ux-dupscan-agent-friendly.md) | agent のコンテキスト消費と発見性を良くするアイデア (既存 issue との関係つき) |
 | [939](done/939-ux-dupscan-go-grep-nudge.md) | Go指定grepをGoで対応する探索コマンドへ案内する |
 
 ## 指摘の対応範囲
@@ -59,3 +59,5 @@
 - 2026-10-27: 899でGo/Swiftの補完範囲・所要・前提を実験と一次資料で比較した。通常構文経路とLSP不採用を維持し、typed/indexedの将来候補とunknown契約を決定。899は調査完了で、本体統合や918/926/930の機能実装は継続する。
 
 - 2026-10-27: 938案1を939へ独立させ、Goを明示したgrepの案内を実装した。938の残りの案、928のregistryと効果検証は継続。
+
+- 2026-10-27: 938案2〜4をcontext/evidenceへ実装し、案5は任意summaryを採用、既定短縮は見送って決着。局所の出力量比較と制約を938へ記録。926/927/928の残機能と開発全体の効果検証は継続。

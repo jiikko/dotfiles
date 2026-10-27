@@ -4,7 +4,7 @@
 
 ## 問題と範囲
 
-[938](../938-ux-dupscan-agent-friendly.md)の案1を、独立して検証・完了できる課題へ切り出した。Swift/Go混在repoで `rg -t go BuildDefinitions .` を打つと、従来のhookはSwift専用の `dupscan def/refs` を案内していた。Goのみを追跡するrepoでは案内が出なかった。
+[938](938-ux-dupscan-agent-friendly.md)の案1を、独立して検証・完了できる課題へ切り出した。Swift/Go混在repoで `rg -t go BuildDefinitions .` を打つと、従来のhookはSwift専用の `dupscan def/refs` を案内していた。Goのみを追跡するrepoでは案内が出なかった。
 
 対象は既存Claude PreToolUseの `_claude/hooks/suggest-dupscan-for-symbol-grep.sh`。Goを明示した検索に、Goで使えるindex/callersを案内する。938の案2〜5、928のregistry/capabilities/no-build、Codex固有のhook対応は本issueで実装しない。
 
