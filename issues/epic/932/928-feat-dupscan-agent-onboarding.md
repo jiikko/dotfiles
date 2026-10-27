@@ -6,7 +6,7 @@
 
 対象: a5b4196e の実装と既存測定。
 
-**判断: 導入支援の実装は十分進んだ。次は残った環境確認と効果評価に集中する。** registry/capabilities/doctor/agent-guide、先頭 `-no-build`、Go通知からの能力照会は実装済み。flags_helpは実helpの文字列で、型付きflag schemaではない。Codex実CLIのread-only smokeは成功したが、Claude実CLIはBash許可で止まったため成功扱いにしない。未build/staleの拒否とcold buildを区別する。
+**判断: 導入支援の実装は十分進んだ。次は残った環境確認と効果評価に集中する。** registry/capabilities/doctor/agent-guide、先頭 `-no-build`、Go通知からの能力照会は実装済み。flags_helpは実helpの文字列で、型付きflag schemaではない。Codex実CLIのread-only smokeは成功した。Claude実CLIの当初smokeはBash許可で止まった（末尾の今回評価ではpwd-onlyに限って成功、source編集実験は別途未承認）。未build/staleの拒否とcold buildを区別する。
 
 次の最小作業は、既存権限の範囲でClaudeの導線を確認し、未確認なら理由を残したまま、両agentの同じ探索課題で品質と費用を測ること。grep探索/能力照会/実ソース確認を別集計し、正しい再利用、不要な重複追加、誤誘導、再試行、観測可能なcontext量を記録する。通知が増えただけで利用・効率が上がったとしない。
 
@@ -48,7 +48,8 @@ dupscan agent-guide -target codex -print
 
 ## 検証・受け入れ条件
 
-- [ ] Claude/Codexの各利用環境について、発見経路・利用できたコマンド・未対応の機構を記録し、動作確認できた組だけ案内する。
+- [x] CodexのGo編集1対でshell/guideの導線と実diffを記録し、Claudeはpwd-only smokeの実行まで確認する。（今回。CLIのsource編集・Swift課題と区別）
+- [ ] Claudeのsource編集、両agentのSwift課題など、未検証の接続を既存権限/明示承認の範囲で確認する。動作確認できた組だけ成功として記録する。
 - [ ] CLI不存在/未build/設定なし/壊れた設定/別cwd・worktree/対応言語が混在/非git repo/SDKのシンボルを含むケースを検査する。
 - [ ] capabilities・guide・実際のCLIの対応表が一致し、初回buildと探索そのものの時間を分けて測る。導入の繰り返しで指示を重複させない。
 - [x] hookの通知は少数・短文で、追加の待ち時間を実測する。全repo解析やbuildが通知だけで起きないことを確認する。
@@ -251,3 +252,51 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
 
 - 2026-10-27: `docs(dupscan): correct evidence terminology and conditional acceptance`で反証レビューP2を訂正。typed flags/json-v2を必須の残作業としていた記述を条件付き候補へ変更。環境確認と実課題評価は引き続き未完了。
+
+## 現行版の効果評価と実編集pilot（2026-10-27）
+
+対象09e983fc、toolは同commitの`go build`で固定し、cold buildを比較から除いた。旧doctorの2正例は使わない。CLI用の9課題は人がソースと責務を読んで正解を決め、UTC 12:35:50にquery/期待/Read範囲を凍結した（manifest SHA256 `393bff306da82aa763e19c4f993883ab01534cd18dd0abb5aa4fc7efce1cd82b`）。実装者が選んだ新規の探索的セットで、未使用の負例は含むが、第三者が保管したblind datasetではない。結果を見てqueryや正解を入れ替えていない。9課題はS1〜S4検索、E1〜E3補助証拠、C1〜C2影響調査で、各issueに全数と失敗を記録した。
+
+CLIは同一scopeで5回ずつ、固定seed27で各方式の順を混ぜて実行。stdout/stderrのraw bytes、行数、rc、wall time中央値と範囲を収集した。Goは09e983fcのuserdirs/safefs、SwiftはObaket 386e287652125961d045fe565d0e18fe41495d89のCore source/testsをgit archiveした計330ファイル。元repoの書込みはない。比較は適切な語でのrgと必要範囲Read、同じ型filterのindex、search、context/個別query、evidence。異なる情報量を等価なcontext費用とはしない。rgの行順が変わるrunがあったため、その初期表示順位での勝敗は採点しない。
+
+局所結果: searchは2正例で正解rank1だったがrgも成功し、aliasではfalse negative、source/doc後半では誤候補や取りこぼしが残った。evidenceはdoc/sourceの2正例へ到達したがrgより出力/時間が増えた。contextはC1で3問い合わせを1回へ集約した一方、C2は同名appendの461近似に目的テストが埋もれた。C2のqualified rg0件は不適切な対照と判断し除外、事後の型名rg→Read回復probeとして別集計した。この修正を事前固定の本番成功には数えない。
+
+### Codex実編集の1対
+
+UTC 12:37:46にtask/期待を別途凍結。09e983fcのuserdirs.go/userdirs_test.go/go.mod/go.sumだけを同一内容の別disposable git repoへ複製した。課題は「appごとのtheme.json pathを返し、absolute XDGとhome fallbackを守り、作成/移行をせず、AES-GCM helperがこのmodule内にあるかも答える」。既存関数名を課題文に与えず、正解は既存ConfigDirまたはConfigFileへの委譲と、暗号helperはこのmoduleに無いという限定回答。XDG/home選択規則の写しを新設した場合は不要な重複と採点する。
+
+Codex CLI 0.164.0、各群fresh/ephemeral、workspace-write、project_doc_max_bytes=0。同じ基本promptで、基準群はrg/必要箇所Readのみ、併用群は最初にagent-guideを実行し任意でsearch/evidenceを使える条件。network/skills/別repo/subagentを禁止した。実行ログでは基準群のdupscan呼出しは0、併用群はguideを1回だけ呼び、search/evidenceを使わなかった。利用可能性を与えたことと、検索機能の効果を測れたことを区別する。
+
+| 観測 | rg/Read群 | guide併用群 |
+|---|---:|---:|
+| 実diffの既存ルール再利用 | ConfigDirへ委譲1件 | ConfigDirへ委譲1件 |
+| XDG/home規則の不要な写し | 0件 | 0件 |
+| AES-GCMの回答 | module内に無い、と限定 | module内に無い、と限定 |
+| 完了command events / raw tool出力bytes | 6 / 11582 | 7 / 16262 |
+| CLI集計input tokens / cached input / output tokens | 147363 / 127488 / 1994 | 110442 / 98688 / 1820 |
+
+両diffを人が確認し、新しいThemeConfigPathの実装はコメント以外同じで、ConfigDirから得たdirへtheme.jsonをjoinする9行。基準群は新規theme_test.go、併用群は既存testへの追記を作った。各agent内のoffline test実行後に、評価側でも両方の`go test ./...`を実行した。これは生成物の実行確認であり、テスト検知力の独立した証明ではない。製品の実装差分としてはcommitしない。
+
+基準群は最初のGo build cache書込みで拒否され、writable cacheで再試行した。併用群は1回で通った。実行順は基準→併用の1対でcounterbalanceしていない。さらに両群とも小さなsource/testの全文を自発的にcatした。raw tool出力は併用群が4680bytes多いが、usageの集計input tokensは少ない。反復入力/cacheや再試行を含む別の観測量なので、この差からcontext window占有やtoken節約を断定しない。Codex実行の正確なwall timeは記録せず欠測（CLI9課題のwall timeとは別）。ツール転送後/モデル入力内source tokens/最大context window/課金額も取得していない。
+
+結論: 独立したbefore/after diffで正しい再利用と不要な規則の写し0件を両群に観測できたが、基準群も解ける天井効果だった。search/context/evidenceを使っていないpilotなので、925/927/934の個別寄与や一般的な再利用率改善には使わない。本番12課題へ自動的に進めず、今回の結果を残した上で、別の実際の見落とし事例から必要最小の新pilotを事前固定する。
+
+### Claudeと追加probeの権限制約
+
+Claude Code 2.1.311で`-p --permission-mode dontAsk --tools Bash --allowedTools 'Bash(pwd)' --output-format json`を実行し、実cwdの一致を確認した。rc=0、2turn、duration_ms=10802、permission_denials=[]。これはsourceを読む・編集する実験ではない。以前のBash拒否という履歴は今回のpwd-only条件では再現せず、導線のread-only smokeに限って成功へ更新する。
+
+続くuserdirs実編集pilotは実行前の自動承認レビューで拒否された。private source/task contextを外部Claude serviceへ送ることについてtrusted userの明示承認が無い、という理由である。private Swift sourceを読むCodex追加probeも同じ理由で実行前拒否された。危険bypass、設定変更、間接実行、拒否後の再試行はしない。必要な承認対象は、該当固定source/testsと課題文を各外部agentへ送って評価すること。制限をCLI不具合やagent失敗率には数えず、Claude編集効果とSwift課題のagent挙動を未検証とする。
+
+親からの依頼後に追加したdefault引数probeは、凍結9課題と分ける。最初のMetadataDiff.initは全label付き実call1件とindex~1が一致し、省略引数の反例にはならなかった。次にRetryPolicy.swift:130のretryingはindex~0でも、裸名callersはproduction3/test12の15件を返す。署名の6引数からdefault引数が省略される実sourceを確認した。~0はunusedの証明にならない。この値をagentがどう解釈するかの追加実験は上記レビュー拒否で未実行。matcher拡張の効果が示されたとも扱わない。
+
+### 決着と残作業
+
+- 共通CLI/guideの導線とCodexの実編集1対を観測した。単なる起動回数より先へ進んだが、同等品質・天井効果・検索未利用という結果なので、効率改善の採用判定には不足する。
+- JSON/typed flags/共通serializer/cache/cursorは、この評価から必要性を示せず現段階では不採用。parse error/近似の具体的な問題は既存926/930の担当へ渡し、包括設計を新たな前提にしない。
+- 928はopenを維持する。次は実際に既存実装を見落とした履歴から新しい1課題を固定し、十分なrg対照と、検索を実利用したagentのdiffを比較する。外部へのsource開示が必要な実験は明示承認を得た範囲だけで行う。今回の小規模成功を消して課題を成功するまで選び直すことはしない。
+
+生ログ/manifest/全コマンド/patchはこの実行の`dotfiles/tmp/dupscan-eval-20261027/`に保存。上記に結論・全数・却下理由を移し、再実行の前提は固定commit、scope、queryとここに記した。scratch script自体を恒久的な実行手順にはしない。
+
+改善の再評価: 強いrg/Read対照、実編集の1対、成功だけでない誤誘導/取りこぼし/再試行費用を得た。導入案内があるだけで再利用やcontextを改善したという推測を退け、追加機能の一括実装を不採用にできた。コード・一般的なtoken削減/再利用率の改善を実証したという結論ではない。
+
+- 2026-10-28: `docs(dupscan): evaluate current discovery with fixed tasks and edit pilot`で9課題とCodex実編集1対を評価。issue相対リンク/番号/旧path/next目印とbannerの検査は成功、dupscan gateは変更単位0・新重複/除外なし（既存不正fixtureを通知）。4issueの実証済み条件を分けて更新し、未実証の効果を残した。

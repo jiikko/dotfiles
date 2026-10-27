@@ -40,7 +40,8 @@ dupscan context -symbol StorageClient.upload -definition-file Sources/StorageCli
 - [x] 同じ入力で、既存def/refs/callersとの対応と、省略していない結果の一致を確認する。網羅性は既存コマンドの限界も引き継ぐ。（最小版で達成。下の進捗）
 - [x] context_cmd.goの1回のscanSourceでcontents/解析結果を共用する。別の解析cacheや常駐プロセスを作らない。（a5b4196eでコード確認。呼び出し回数を壊す変異の検出強度は今回未検証）
 - [ ] Claude/Codexで同じ変更課題を既存コマンド列と比較し、必要な情報への到達、往復数、返したbytes、elapsed time、見落としを測る。少ない出力だけを成功指標にしない。
-- [ ] 大きい型、多重定義、同名の別モジュール、1行に複数call、読めない構文、0件で、現行summary/節選択/再取得案内の不足を記録する。
+- [x] 固定実ソースで1定義/18呼出しの集約、同名461近似と省略、12ファイルのparse失敗通知を確認する。（今回C1/C2）
+- [ ] 大きい型、多重定義、同名の別モジュール、1行に複数call、0件で、現行summary/節選択/再取得案内の不足を記録する。今回の2条件で全matrixの完了にはしない。
 
 ### 追加機能を採用する場合だけの受け入れ条件
 
@@ -151,3 +152,24 @@ cursorのquery hashは定義IDと探索条件を束縛する。表示上のsecti
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
 
 - 2026-10-27: `docs(dupscan): correct evidence terminology and conditional acceptance`で反証レビューのP3を訂正。行CallsとCalled集約、節選択と定義選択、label指定の有無を区別し、現行評価と追加機能の受け入れ条件を分けた。P1/P2指摘なし。
+
+## 現行contextの固定課題評価（2026-10-27）
+
+09e983fcのbinaryで、Obaketの386e287652125961d045fe565d0e18fe41495d89から`shared/Sources/ObaketCore`と`shared/Tests/ObaketCoreTests`をgit archiveして固定した。query/正解をUTC 12:35:50に凍結し、測定後に調整しなかった。snapshot corpusには12個のparse error fileがあり、contextが不完全性を通知した。元repoの編集中ファイルや設定は使用・変更していない。
+
+| 課題 | 個別def+refs+callers（3回） | context（1回） | summary→definition,callers（2回） |
+|---|---:|---:|---:|
+| C1 MetadataDiff.compute | 8538bytes / 1054.82ms | 8149bytes / 520.31ms | 6315bytes / 1103.93ms |
+| C2 BoundedFIFOArray.append | 10320bytes / 1023.76ms | 9679bytes / 485.70ms | 6605bytes / 970.44ms |
+
+各5回の中央値。C1は人が対象ソースと18個のqualified call行を照合し、定義1・refs18・calls18との対応を確認した。個別比較は`def MetadataDiff.compute`、`refs compute`、`callers compute`。refsへ型名を渡して0件にする弱い対照は使わない。contextは同じ近似結果を1回で集め、個別3回に対する往復と所要の減少をこの条件で観測した。一方、適切な`rg -n -F MetadataDiff.compute`と定義43〜77行のReadは3400+1723bytes、14.14+2.55msだった。型位置のrefs等を含む同情報量ではなく、contextがrgより速いとは主張しない。
+
+C2は明確な失敗例である。定義は正しく選べてもrefs/callsはappendという名前で461件になり、最初の20件に目的のFIFOテストが無い。人が型の使用箇所を確認すると、この固定corpusでBoundedFIFOArrayを構築するのはテスト2箇所で、対応するappendは5回だった。461を選択した型の使用数と扱うと誤る。出力の近似・省略表示はあるが、summaryだけから影響範囲を確定できない。
+
+当初凍結したC2のqualified rgは0件で、メンバー変数経由の呼び出しを探す対照として不適切だった。この失敗を隠してcontext優位とは採点しない。結果確認後の別probeとして、`rg -n -F BoundedFIFOArray shared -g '*.swift'`→該当テスト1〜31行と定義32〜42行のReadを実行した。3コマンド2050bytes/中央値13.15ms（11.72〜20.98ms）で型を構築する箇所と5 callを確認できた。これは事後の回復戦略で、本番の独立比較には数えない。
+
+判断: C1の既知名の集約は有効だったが、C2では型を特定した影響調査が未完になる。JSON/cursor/snapshot/hashを追加してもこの近似は解決しないため、今回の評価からは不採用とする。既存の警告と型名rg/target Readへのfallbackを維持する。一般の変更課題でagentが見落とさず作業できる差は未測定で、927はopenを維持する。次はC2のような同名メソッドで、summaryを受けたagentが実際に必要な型使用箇所へ回復できるかを、source開示の承認範囲内で確認する。型解決を一式実装することを前提にしない。
+
+改善の再評価: 3問い合わせから1問い合わせへまとめた局所的利点と、同名461件に埋もれる失敗を分けた。段階取得は今回、bytesを減らす代わりに再走査時間を増やした。小出力を成功扱いせず、次の検証対象を明確にした文書の改善である。
+
+- 2026-10-28: `docs(dupscan): evaluate current discovery with fixed tasks and edit pilot`で現行contextの局所的な集約効果と同名近似の失敗を記録。実agent変更課題は未完了としてopen継続。

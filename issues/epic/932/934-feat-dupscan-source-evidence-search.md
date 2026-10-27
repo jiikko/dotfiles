@@ -32,7 +32,8 @@ Go testは比較から除いてもcallsを収集し、937のcallersはtest owner
 
 ## 検証・受け入れ条件
 
-- [ ] 名前/署名/doc先頭には無い語がdoc後半・テスト・使用例にある課題を用意する。コメントだけの言及、古い例、同名の別定義も対照に入れる。
+- [x] sourceコメント/doc後半からの正例2件と、用途を否定するdocコメントの負例1件を事前固定して確認する。（今回E1〜E3）
+- [ ] テストの具体的使用例が唯一の手掛かりになる課題、古い例、同名の別定義の対照を追加する。E1のtestコメントだけで全条件を満たしたとはしない。
 - [x] 旧比較単位・gateの違反/除外が変わらず、source hitと構文上の定義/callを分けられる。（最小版: doc の範囲はハッシュ・鍵に入れない。既存の report / index / def の出力の一致を実データで確認。make test の gate も通過）
 - [x] 部分解析・不正UTF-8の扱い・長い行・省略を表示し、原文位置やsymbol解決を捏造しない。（最小版で達成）
 - [ ] 928の同じ課題で、正しい候補への到達・誤誘導・再利用・不要な重複追加・実際に観測できたコンテキスト量を比較する。今は効果未測定。
@@ -55,3 +56,23 @@ Go testは比較から除いてもcallsを収集し、937のcallersはtest owner
 
 
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
+
+## 補助証拠の固定課題評価（2026-10-27）
+
+09e983fcでE1〜E3を事前固定した。Go corpusは09e983fcのuserdirs、Swift corpusはObaket 386e287652125961d045fe565d0e18fe41495d89のCore。凍結条件とagent検証の制限は[928](928-feat-dupscan-agent-onboarding.md)を参照。課題文には正例の関数名を含めず、ソースから決めた正解集合で確認した。
+
+| 課題 / 固定phrase | 人が決めた正解と観測 | rg / index-doc / search / evidenceのbytes | 中央値ms（同順） |
+|---|---|---:|---:|
+| E1 相対linkの移行 / `相対 symlink` | MoveIfMissingが正解。source枠は囲む関数付きで到達、test枠は単位の外。searchはConfigFileだけで正解なし | 404 / 48 / 1122 / 1291 | 6.25 / 29.89 / 28.40 / 27.98 |
+| E2 既存keyの置換をdropに数えない / `as a drop` | BoundedFIFODictionary.updateValueのdoc2行目へ到達。index-docは0、search上位5に正解なし | 180 / 51 / 3755 / 1670 | 9.55 / 123.83 / 122.45 / 179.67 |
+| E3 UI付帯情報だけで更新を通知したい / `UI 付帯情報` | 正解集合は空。MetadataDiff.computeはその更新を意図して除外するため負例 | 198 / 51 / 3298 / 1697 | 9.20 / 121.42 / 113.79 / 153.74 |
+
+rgは各phraseを`rg -n -i -F <phrase> -g <言語拡張子> <同scope>`で検索した。正例2件ともrgで該当行へ既に到達し、evidenceの方が遅く大きかった。evidenceはfile/位置に加えdocの所属やsourceの囲む関数を返す。その追加情報を得たことと、同じ情報量で効率を改善したことを混同しない。各5回の中央値で、Swift source scopeは4個のparse errorを両evidenceで通知した。
+
+正解の確認にはE1で547bytes/17行/2.20ms、E2で754bytes/20行/2.27msのtarget Readを別途要した。E3のsnippetは否定理由まで含まず、computeへのnext_actionも出た。source hitから再利用を即断すると誤る負例で、22〜84行のRead（3519bytes/63行/2.35ms）で除外の契約を確認して初めて却下できた。コメント一致を発見成功とは採点しない。
+
+判断: metadataでは拾えない正例2件への補助経路は確認したが、強いrg+Read対照より少ない費用で正しい再利用に至る効果は示せなかった。新ReadSet、hash/version、共通JSON/cursor/cacheを今回の結果から採用しない。doc後半を必要時に見る既存fallbackは維持する。Go test owner不足はE1で再現したが、この正例ではsource ownerから到達でき、owner追加が必要な独立課題は未確認。実agentの見落とし・誤誘導・不要な重複追加への差は未検証で、934はopenを維持する。次はコメント一致を誤採用しやすい1課題で実際の候補確認を観測する。
+
+改善の再評価: 2正例だけでなく、否定のコメントから誤った用途へ誘導されうる負例と確認の実費を記録した。出力節約だけを根拠に拡張する計画を避け、既存fallbackの役割と未実証の効果を分けた。コード・実token・開発効率の改善は今回の成果に含めない。
+
+- 2026-10-28: `docs(dupscan): evaluate current discovery with fixed tasks and edit pilot`でdoc/sourceの正負例を評価。強いrg対照との差と確認Readの費用を残し、実agent効果はopenで追跡。

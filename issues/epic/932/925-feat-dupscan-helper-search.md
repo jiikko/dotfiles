@@ -40,9 +40,11 @@ dupscan search -query 'connection bucket fixture' -returns StorageLocation -limi
 
 ## 検証・受け入れ条件
 
-- [ ] 既存indexのfilter・並び順・終了コードを維持する。
-- [ ] 名前が不明でも用途語と型で見つかる / 型が合わない / 同名が複数 / 別ターゲットの候補 / 本当に既存がない、を含むgolden queryを用意する。候補の正解はコードを読んで決め、dupscan自身の判定だけで採点しない。
-- [ ] top-k内の適切な候補、誤った再利用、0件時の誤った不存在断定を検査し、一致根拠と省略を現行textで確認する。JSONは機械処理の具体的不足を確認し採用した場合だけの追加条件とする。
+- [x] 既存indexのfilter・並び順・終了コードを維持する。（実装時の旧出力10条件に加え、今回も型filter/ファイル指定×text/jsonの4条件で旧binaryとrc/stdout/stderr一致）
+- [x] 名前を伏せた用途語+型の正例、型filter不一致、既存なしを、コードから決めた正解と固定queryで確認する。（今回S1〜S4）
+- [ ] 同名が複数・別ターゲットの候補を含む実ソースのgolden queryを追加する。今回の小規模2moduleの結果だけで網羅扱いにしない。
+- [x] 固定課題のtop-k到達/誤候補/false negativeと、現行textの一致根拠・省略・0件の限定説明を確認する。（今回S1〜S4/E1〜E3と実装時の予算検査）
+- [ ] searchを実利用したagentの誤った再利用・不存在断定を比較する。JSONは機械処理の具体的不足を確認し採用した場合だけの追加条件とする。
 - [ ] ClaudeとCodexを分けて、既存indexによる探索との比較を行う。対象が同じ課題で、正しい再利用・最初の適切な候補までの往復・返したbytes・elapsed timeを測る。利用回数だけで成功扱いにしない。
 - [ ] 既存がない課題では正しく新規実装できることを対照に入れる。小さなrepoで対照群も常に既存を見つけるなら、効果を測れない条件として扱う。
 - [ ] 924の代表的規模でlatencyと出力量を測り、検索の便利さと追加コストを評価する。
@@ -157,3 +159,28 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
 
 - 2026-10-27: `docs(dupscan): correct evidence terminology and conditional acceptance`で反証レビューP2を訂正。JSONは未採用の条件付き案とし、text版の品質評価に必須とする旧条件を置き換えた。
+
+## 現行版の固定課題評価（2026-10-27）
+
+対象は09e983fc。旧doctorの2正例を再利用せず、ソースを人が読んでquery・期待候補・非同等候補をUTC 12:35:50に凍結した。名前を課題文に含めないS1/S2と、alias/不存在の対照を含む。今回選んだ小規模課題であり、blindな順位評価や一般化の証明ではない。共通の計測条件と実agent編集pilotは[928](928-feat-dupscan-agent-onboarding.md)へ記録した。
+
+Go corpusは09e983fcの`src/userdirs` / `src/safefs`。rgはqueryの各語を`rg -n -i -e <語> ... -g '*.go' <scope>`でOR検索し、全件のソース・テスト行を許す。indexは同じ型filter、searchは同じ用途語と指定語数。候補の意味上の正解は出力から生成せず、事前に読んだ実装の規則で判定した。
+
+| 固定課題 / scope / query / min / returns | 期待と観測 | rg / index / searchのstdout bytes | 中央値ms（同順） |
+|---|---|---:|---:|
+| 与えたhomeから設定rootを決める / userdirs / `XDG 設定` / 2 / string | ConfigBaseが正解。searchは2候補の1番目、ConfigDirはapp用で入力契約が違う | 5011 / 728 / 1633 | 7.45 / 31.32 / 30.04 |
+| 経路の全要素のsymlinkを拒否 / safefs / `symlink 経路` / 2 / error | NoSymlinkInPathが正解。searchは1候補。root内解決のResolveUnder・最後だけ開くopenDirNoFollowとは別規則 | 8558 / 3660 / 1044 | 5.77 / 29.71 / 29.08 |
+| 要求側の型名だけConfigPathというalias / userdirs / `XDG 設定` / 2 / ConfigPath | 既存ConfigBaseがあるがindex/searchは0。型filterの文字列契約によるfalse negative | 5011 / 48 / 854 | 5.87 / 28.40 / 31.35 |
+| 設定payloadのAES-GCM暗号化 / userdirs / `AES-GCM encrypt` / 1 / なし | 人が4関数を読み、該当なしと確定。searchの0件だけを不在証明にはしない | 0 / 987 / 779 | 7.38 / 31.71 / 30.58 |
+
+S1/S2の正解確認に共通のtarget Readを追加すると、それぞれ534bytes/10行/2.70ms、336bytes/13行/2.21msが別途必要。searchが返す確認argvは各6行/12行で、同じ情報量のReadではない。S1のsearchはindexより出力が多い。rgは両正例で既に正しい行へ到達し、速かった。searchの候補整理は観測できたが、rgで見落とした既存実装を救ったという結果ではない。
+
+alias課題のnext_actionを実行すると、必要語数2→1で0件のまま（820bytes追加）、次にreturns条件を明示解除して2候補へ到達（2277bytes追加）。初回から計3951bytes/3検索となる。黙って型を解決したことにはせず、不要な再問い合わせ費用も結果に含める。
+
+doc/source課題でも失敗を残した。[934](934-feat-dupscan-source-evidence-search.md)のE1では`相対 symlink`のOR検索がConfigFileだけを返し、正解MoveIfMissingは出ない。E2の`as a drop`では短い`a`も一致語になるため上位5件に正解が入らず、evidenceでは到達した。既知の用例だけに合わせたstopword・rank調整は今回行わない。
+
+判断: 現行textの候補整理と限界は評価できた。JSON、同義語、cache、追加rank featureをこの結果だけで採用しない。正しい再利用/不要な重複追加を検索そのものが改善したという実agent差は未実証で、925はopenを維持する。次は独立した実際の見落とし事例から新しい1課題を事前固定し、rg/target Readへsearchを追加した差を調べる。今回の成功/失敗例を入れ替えて効果を作らない。
+
+改善の再評価: 2正例の上位到達だけでなく、型aliasのfalse negative、ORの非同等候補、再検索の実費用、強いrg対照を記録した。機能追加が必要と決めつける状態から、現行版を維持しつつ実証不足を具体的に追える状態へ進めた。コードや一般的な開発効率を改善したという主張ではない。
+
+- 2026-10-28: `docs(dupscan): evaluate current discovery with fixed tasks and edit pilot`で固定評価・互換4条件・失敗と残作業を記録。実証したtext条件だけチェックし、未実証のagent効果を完了扱いにしない。
