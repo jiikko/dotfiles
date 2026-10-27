@@ -121,5 +121,84 @@ next_session; expect_silent ".swift を追跡していない repo" "$(run_bash '
 REPO="$TMP_ROOT"
 next_session; expect_silent "git の外" "$(run_bash 'grep -rn "func executeMutation" Sources')"
 
+# Goの明示指定は、Goで対応する案内だけを出す。
+expect_go_nudge() {
+  if ! printf '%s' "$2" | jq -e --arg n "dupscan index -name $3" '
+    .hookSpecificOutput as $h | ($h.additionalContext | contains($n)) and
+    ($h.additionalContext | contains("dupscan callers")) and
+    ($h.additionalContext | contains("dupscan def") or contains("dupscan refs") or contains("dupscan context") | not) and
+    ($h.permissionDecision == null)' >/dev/null 2>&1; then
+    echo "✗ Goの案内が無い / 非対応コマンドがある / 拒否している: $1"; printf '%s\n' "$2" | head -3; fail=$((fail+1)); return
+  fi
+  echo "✓ $1"; ok=$((ok+1))
+}
+new_repo 0
+printf 'package sample\n' > "$REPO/A.go"
+git -C "$REPO" add -- A.go
+printf 'x\n' > "$REPO/build.log"
+for command in \
+  'rg -n BuildDefinitions -t go .' \
+  'rg -n BuildDefinitions -tgo .' \
+  'rg --type=go -n BuildDefinitions .' \
+  'rg --type go -n BuildDefinitions .' \
+  'grep -rn BuildDefinitions --include=*.go .' \
+  'grep -rn --include *.go BuildDefinitions .' \
+  'rg -n BuildDefinitions -g "*.go" .' \
+  'rg -n -g*.go BuildDefinitions .' \
+  'git grep -n BuildDefinitions -- "*.go"' \
+  'grep -n BuildDefinitions A.go'; do
+  next_session; expect_go_nudge "Go指定: $command" "$(run_bash "$command")" BuildDefinitions
+done
+next_session; expect_go_nudge "Goの小文字名" "$(run_bash 'rg -t go refresh .')" refresh
+next_session; expect_go_nudge "Goのtype宣言" "$(run_bash 'rg -t go "type Worker" .')" Worker
+next_session; expect_go_nudge "GoのType.memberは末尾名を使う" "$(run_bash 'rg -t go Worker.refresh .')" refresh
+next_session; expect_go_nudge "GrepのGo glob" "$(run_grep 'BuildDefinitions' '*.go')" BuildDefinitions
+next_session; expect_go_nudge "GrepのGo type" "$(jq -n --arg d "$REPO" --arg s "s$session" '{tool_name:"Grep",session_id:$s,cwd:$d,tool_input:{pattern:"BuildDefinitions",type:"go"}}' | "$HOOK")" BuildDefinitions
+next_session; expect_go_nudge "GrepのGo path" "$(jq -n --arg d "$REPO" --arg s "s$session" '{tool_name:"Grep",session_id:$s,cwd:$d,tool_input:{pattern:"BuildDefinitions",path:"A.go"}}' | "$HOOK")" BuildDefinitions
+for command in \
+  'rg -i -t go BuildDefinitions .' \
+  'rg -t go "foo.*Bar" .' \
+  'rg -t go TODO .' \
+  'rg -t python BuildDefinitions .' \
+  'rg --type-not go BuildDefinitions .' \
+  'rg --exclude=*.go BuildDefinitions .' \
+  'rg BuildDefinitions .' \
+  'rg -t go BuildDefinitions build.log'; do
+  next_session; expect_silent "Goの対象外: $command" "$(run_bash "$command")"
+done
+# 混在repoでもGoを誤ってSwift向けに案内せず、Go通知がSwift通知の間隔を消費しない。
+printf 'struct A {}\n' > "$REPO/A.swift"
+git -C "$REPO" add -- A.swift
+next_session; expect_go_nudge "混在repoの -t=go" "$(run_bash 'rg -t=go FooBar .')" FooBar
+next_session; expect_go_nudge "混在repoの -nt=go" "$(run_bash 'rg -nt=go FooBar .')" FooBar
+next_session; expect_silent "混在repoの -nit=go はcase-insensitive" "$(run_bash 'rg -nit=go FooBar .')"
+next_session; expect_go_nudge "混在repoで束ねた -nt go" "$(run_bash 'rg -nt go FooBar .')" FooBar
+next_session; expect_go_nudge "混在repoで束ねた -ntgo" "$(run_bash 'rg -ntgo FooBar .')" FooBar
+next_session; expect_silent "混在repoの -nit go はcase-insensitive" "$(run_bash 'rg -nit go FooBar .')"
+next_session; expect_silent "混在repoの -nitgo はcase-insensitive" "$(run_bash 'rg -nitgo FooBar .')"
+next_session; expect_go_nudge "混在repoでGo指定" "$(run_bash 'rg -t go BuildDefinitions .')" BuildDefinitions
+expect_silent "Go通知の2回目は抑制" "$(run_bash 'rg -t go BuildDefinitions .')"
+expect_nudge "同sessionでもSwift通知は独立" "$(run_bash 'rg -t swift FooBar .')" FooBar
+next_session; expect_nudge "-g=!*.go はGoを除外したSwift検索" "$(run_bash 'rg -g=!*.go FooBar .')" FooBar
+next_session; expect_silent "GoとSwiftの矛盾したselector" "$(run_bash 'rg -t go -t swift FooBar .')"
+next_session; expect_go_nudge "負のSwift globはGo指定を覆さない" "$(run_bash 'rg -t go -g "!*.swift" FooBar .')" FooBar
+# 言語のstamp namespaceをsession IDの末尾で表現しない。
+expect_go_nudge "Go stampの衝突確認用" "$(jq -n --arg d "$REPO" '{tool_name:"Bash",session_id:"collision",cwd:$d,tool_input:{command:"rg -t go FooBar ."}}' | "$HOOK")" FooBar
+expect_nudge "末尾-goの別sessionのSwiftを抑制しない" "$(jq -n --arg d "$REPO" '{tool_name:"Bash",session_id:"collision-go",cwd:$d,tool_input:{command:"rg -t swift FooBar ."}}' | "$HOOK")" FooBar
+
+# hook自身はdupscan/goを起動しない。案内文字列を出すだけ。
+SPY_BIN="$TMP_ROOT/spy-bin"; mkdir "$SPY_BIN"
+cat > "$SPY_BIN/dupscan" <<'SPY'
+#!/bin/sh
+: > "$DUPSCAN_NUDGE_SPY"
+exit 99
+SPY
+cp "$SPY_BIN/dupscan" "$SPY_BIN/go"; chmod +x "$SPY_BIN/dupscan" "$SPY_BIN/go"
+next_session
+out=$(jq -n --arg d "$REPO" --arg s "s$session" '{tool_name:"Bash",session_id:$s,cwd:$d,tool_input:{command:"rg -t go FooBar ."}}' |
+  PATH="$SPY_BIN:$PATH" DUPSCAN_NUDGE_SPY="$TMP_ROOT/executed" "$HOOK")
+expect_go_nudge "build/解析を起動せず案内する" "$out" FooBar
+if [ -e "$TMP_ROOT/executed" ]; then echo "✗ hookがdupscan/goを起動した"; fail=$((fail+1)); else echo "✓ hookでdupscan/go起動なし"; ok=$((ok+1)); fi
+
 echo "[suggest-dupscan-for-symbol-grep] $ok passed / $fail failed"
 [ "$fail" -eq 0 ]

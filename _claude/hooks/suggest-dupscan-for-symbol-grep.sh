@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 
-# PreToolUse(Bash / Grep) フック: Swift の repo (git が .swift を追跡している) で、Swift の定義・呼び出し元を探す形の
-# grep / rg / git grep を打とうとしたら、dupscan の def / refs / callers を 1 行案内する。
+# PreToolUse(Bash / Grep): Swiftのsymbol検索と、Goを明示したsymbol検索に対応するdupscanコマンドを案内する。
 #
 # なぜ: Swift の 4 repo の直近 7 日の 27 セッションで、Swift のパスを対象にした grep は 2,882 回、dupscan は 13 回だった (921 の実測)。
 # skill dupscan の 2 節に「grep の前に」と書いてあっても使われない。grep はコメント・文字列・呼び出し側の行が混ざって返る量が多い。
 #
 # 🚨 **止めない (additionalContext だけ)**。grep は文字列・コメント・設定ファイルを探すのに要る。permissionDecision を返さない。
-# 🚨 **出しすぎない**: 同じ session では NUDGE_INTERVAL 秒に 1 回まで。状態は $TMPDIR の session ごとの 1 ファイル (OS が片付ける)。
+# 🚨 **出しすぎない**: 同session/言語ではNUDGE_INTERVAL秒に1回。状態は$TMPDIRに置く (OSが片付ける)。
 #
 # 判定 (粗い。偽陽性は 1 行の案内で済み、偽陰性は今までどおり grep が走るだけ):
 #   - Bash: コマンドに grep / rg の語が無ければ即座に終わる (毎回の Bash の待ちを増やさない)。あれば heredoc の本文を落とし、
@@ -15,16 +14,16 @@
 #   - Grep: tool_input.pattern
 #   - パターンがシンボルらしい: 先頭の宣言の語 (func / struct / class / enum / protocol / extension / actor / init / var / let / case / typealias)・
 #     `\b` `\<` `\>`・末尾の `(` を外した残りが識別子 (`A.b` も可) で、次のどれか:
-#       宣言の語が付いている / PascalCase か camelCase (大文字を含み、全部が大文字ではない) / 検索の対象が Swift (`.swift`・`-t swift`・glob・type)
-#   - repo: cwd (Bash の `-C` は見ない) の git が .swift を 1 つ以上追跡している (dupscan は .dupscan.json が無くても動く)
+#       宣言の語が付いている / PascalCase か camelCase (大文字を含み、全部が大文字ではない) / 検索対象の言語を明示 (Swift、または対応するGo selector)
+#   - repo: cwdのgitが案内対象の.swift/.goを追跡する。Goは明示selector・file/glob指定だけ。dirの中身から言語を推測しない。
 #   - パイプの後ろの grep (`make test | grep FooBar`) は出力を絞っているだけなので案内しない
 #
 # 検出しない形 (silent):
-#   - 全部が小文字の語で Swift を対象にしていない grep (`grep -n refresh config.yml`)・全部が大文字の語 (`TODO`)・正規表現 (`foo.*bar`)
+#   - 全部が小文字の語で言語を明示していない grep (`grep -n refresh config.yml`)・全部が大文字の語 (`TODO`)・正規表現 (`foo.*bar`)
 #   - grep の語が変数・エイリアス・`sh -c "..."` の中にあるもの / `-C` や cd・`$W/…` で別の repo を指したもの (cwd の repo で判定する)
 #   - パイプの後ろの grep (stdin を絞る形)・`A|B` の alternation のパターン
 #   - `-i` (大文字小文字を無視する) の grep (def / refs は完全一致なので、案内しても引けない名前になりうる)
-#   - 対象が Swift 以外のファイルだけの grep (`grep -c Error build.log`・`grep -n Foo .gitignore`)
+#   - 対象が対応するsource以外のファイルだけのgrep (`grep -c Error build.log`・`grep -n Foo .gitignore`)
 #   - grep / rg がコマンドの先頭の語でないもの (`xargs grep …`・`find … -exec grep …`・`time grep …`)
 #   - python3 / jq / git が無い環境 (fail-open)
 #   - 1 つ目のパターンだけを見る (`-e a -e b` の b は見ない)
@@ -57,21 +56,17 @@ esac
 
 [ -n "$cwd" ] && [ -d "$cwd" ] || exit 0
 root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
-# 🚨 パイプの終わりの rc で判定しない: .swift が多い repo (obaket は 100KB 超) では head の後に git が SIGPIPE で落ち、pipefail で
-# 失敗扱いになって黙る。コマンド置換の出力の有無で見る (置換の rc は使わない)
-[ -n "$(git -C "$root" ls-files -- '*.swift' 2>/dev/null | head -n 1)" ] || exit 0
-
-# 名前を 1 つ返す (案内しないなら空)。Bash は cmd、Grep は tool_input を読む
-name=$(HOOK_TOOL="$tool" HOOK_CMD="$cmd" HOOK_INPUT="$input" HOOK_CWD="$cwd" python3 -I - <<'PY' 2>/dev/null
+# 言語と名前を返す。対象dirの内容を調べて言語を推測しない。
+match=$(HOOK_TOOL="$tool" HOOK_CMD="$cmd" HOOK_INPUT="$input" HOOK_CWD="$cwd" python3 -I - <<'PY' 2>/dev/null
 import json, os, re, shlex
 
 DECL = r'(?:func|struct|class|enum|protocol|extension|actor|init|var|let|case|typealias)'
 IDENT = r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?'
 
-def symbol(pattern, swift_target):
+def symbol(pattern, swift_target, declarations=DECL):
     p = pattern.strip()
     p = re.sub(r'\\[b<>]', '', p)
-    m = re.fullmatch(r'(?:(' + DECL + r')\s+)?(' + IDENT + r')\s*(?:\\?\()?', p)
+    m = re.fullmatch(r'(?:(' + declarations + r')\s+)?(' + IDENT + r')\s*(?:\\?\()?', p)
     if not m:
         return ''
     decl, name = m.group(1), m.group(2)
@@ -90,6 +85,54 @@ VALUE_OPTIONS = {
     '-A', '-B', '-C', '-m', '--max-count', '-f', '--file', '--sort', '--sortr', '-M', '--max-columns',
     '-j', '--threads', '--encoding', '--replace', '--context-separator', '--path-separator', '--colors',
 }
+
+def glob_languages(value):
+    if value.startswith('!'):
+        return set()
+    return {lang for lang in ('go', 'swift') if re.search(r'\.' + lang + r'($|[?*{}\[\]])', value)}
+
+def selector_languages(rest):
+    # Positive selectors only. Patterns, excludes, and arguments after -- are not language hints.
+    langs = set()
+    insensitive = False
+    k = 0
+    while k < len(rest):
+        w = rest[k]
+        if w == '--':
+            break
+        kind, value = None, ''
+        if w in ('-t', '--type', '-g', '--glob', '--iglob', '--include'):
+            kind = 'type' if w in ('-t', '--type') else 'glob'
+            value = rest[k + 1] if k + 1 < len(rest) else ''
+            k += 1
+        elif w.startswith('--type='):
+            kind, value = 'type', w.split('=', 1)[1]
+        elif w.startswith(('--glob=', '--iglob=', '--include=')):
+            kind, value = 'glob', w.split('=', 1)[1]
+        elif re.fullmatch(r'-[nHhlLqvcowsFxUu0i]*t(?:=?(?:go|swift))?', w):
+            bundled = re.fullmatch(r'-([nHhlLqvcowsFxUu0i]*)t=?(go|swift)?', w)
+            kind = 'type'
+            value = bundled.group(2) or (rest[k + 1] if k + 1 < len(rest) else '')
+            insensitive = insensitive or 'i' in bundled.group(1)
+            if bundled.group(2) is None:
+                k += 1
+        elif w.startswith('-g') and not w.startswith('--'):
+            kind, value = 'glob', w[2:]
+            if value.startswith('='):
+                value = value[1:]
+        elif w in VALUE_OPTIONS or w in ('-e', '--regexp'):
+            k += 1
+        if kind == 'type' and value in ('go', 'swift'):
+            langs.add(value)
+        elif kind == 'glob':
+            langs.update(glob_languages(value))
+        k += 1
+    return langs, insensitive
+
+def named_languages(paths):
+    cwd = os.environ.get('HOOK_CWD', '')
+    return {lang for p in paths for lang in ('go', 'swift')
+            if p.endswith('.' + lang) and os.path.isfile(p if os.path.isabs(p) else os.path.join(cwd, p))}
 
 def from_segment(words):
     # grep / rg / git grep の後ろから、パターンと Swift を対象にしているかを取る
@@ -137,19 +180,33 @@ def from_segment(words):
         k += 1
     if pattern is None:
         return None
-    if not_swift_files(paths):
+    langs, insensitive = selector_languages(rest)
+    if 'go' in langs:
+        if insensitive or 'swift' in langs or not_source_files(paths, '.go'):
+            return None
+        name = symbol(pattern, True, r'(?:func|type|var|const)')
+        return 'go\t' + name if name else None
+    path_langs = named_languages(paths)
+    for path in paths:
+        if not path.startswith(('!', ':')) and any(c in path for c in '*?['):
+            path_langs.update(glob_languages(path))
+    if not langs and path_langs == {'go'}:
+        name = symbol(pattern, True, r'(?:func|type|var|const)')
+        return 'go\t' + name if name else None
+    if not_source_files(paths):
         return None
-    return symbol(pattern, swift)
+    name = symbol(pattern, swift)
+    return 'swift\t' + name if name else None
 
-def not_swift_files(paths):
-    # 対象を全部ファイルとして名指ししていて、どれも .swift でないなら、設定やログを探している。ファイルかは cwd で確かめる
+def not_source_files(paths, extension=".swift"):
+    # 全対象が指定言語以外の実在fileなら、設定やログ検索として案内を控える。
     # (`..`・`MyPkg.swiftpm` のような dir をファイルと読まない)。在ることを確かめられない対象が 1 つでもあれば判定しない
     cwd = os.environ.get('HOOK_CWD', '')
     if not paths or not cwd:
         return False
     for p in paths:
         full = p if os.path.isabs(p) else os.path.join(cwd, p)
-        if not os.path.isfile(full) or p.endswith('.swift'):
+        if not os.path.isfile(full) or p.endswith(extension):
             return False
     return True
 
@@ -157,9 +214,19 @@ tool = os.environ['HOOK_TOOL']
 if tool == 'Grep':
     ti = json.loads(os.environ['HOOK_INPUT']).get('tool_input') or {}
     glob, typ, path = (str(ti.get(k) or '') for k in ('glob', 'type', 'path'))
-    # Bash の経路と同じ除外: 大文字小文字を無視する検索・Swift でない glob / type・Swift でないファイルを名指し
-    ignored = ti.get('-i') is True or (glob and 'swift' not in glob) or (typ and typ != 'swift') or (path and not_swift_files([path]))
-    print('' if ignored else symbol(str(ti.get('pattern') or ''), 'swift' in glob or typ == 'swift' or path.endswith('.swift')))
+    ignored_case = ti.get('-i') is True
+    langs = glob_languages(glob) | ({typ} if typ in ('go', 'swift') else set())
+    go_target = langs == {'go'} or (not glob and not typ and named_languages([path]) == {'go'})
+    if go_target:
+        ignored = ignored_case or (glob and 'go' not in glob_languages(glob)) or (typ and typ != 'go') or (path and not_source_files([path], '.go'))
+        name = '' if ignored else symbol(str(ti.get('pattern') or ''), True, r'(?:func|type|var|const)')
+        print('go\t' + name if name else '')
+    elif 'go' in langs:
+        print('')
+    else:
+        ignored = ignored_case or (glob and 'swift' not in glob) or (typ and typ != 'swift') or (path and not_source_files([path]))
+        name = '' if ignored else symbol(str(ti.get('pattern') or ''), 'swift' in glob or typ == 'swift' or path.endswith('.swift'))
+        print('swift\t' + name if name else '')
 else:
     cmd = os.environ['HOOK_CMD']
     # 区切りを残して分け、パイプ (`|`) の直後の segment は stdin を絞る grep なので見ない
@@ -183,9 +250,17 @@ else:
             break
 PY
 ) || exit 0
-[ -n "$name" ] || exit 0
+[ -n "$match" ] || exit 0
+language=${match%%$'\t'*}
+name=${match#*$'\t'}
+case "$language" in go|swift) ;; *) exit 0 ;; esac
+# headの後のSIGPIPEを失敗扱いにしない。追跡sourceのある言語だけ案内する。
+[ -n "$(git -C "$root" ls-files -- "*.$language" 2>/dev/null | head -n 1)" ] || exit 0
 
-stamp="${TMPDIR:-/tmp}/claude-dupscan-nudge-${session//[^A-Za-z0-9_-]/_}"
+# Goの通知で既存Swift通知の間隔を消費しない。session IDの末尾とも衝突しないnamespaceにする。
+stamp_prefix=claude-dupscan-nudge
+[ "$language" != go ] || stamp_prefix=claude-dupscan-go-nudge
+stamp="${TMPDIR:-/tmp}/${stamp_prefix}-${session//[^A-Za-z0-9_-]/_}"
 now=$(date +%s)
 if [ -f "$stamp" ]; then
   last=$(cat "$stamp" 2>/dev/null || echo 0)
@@ -197,5 +272,9 @@ fi
 { printf '%s\n' "$now" > "$stamp"; } 2>/dev/null || true
 
 short=${name##*.}
+if [ "$language" = go ]; then
+  msg="dupscan で Go の候補・呼び出し元を引ける: \`dupscan index -name $short\` (定義の候補) / \`dupscan callers '$short'\` (名前による近似)。def / refs / context は Go 非対応。型・同名の別receiverは解決しない (skill dupscan の 2 節)"
+else
 msg="dupscan で Swift の定義・参照を引ける: \`dupscan def $name\` (定義を本体つき・型はメンバーの一覧) / \`dupscan refs $short\` (参照の一覧。[型の位置] / [式の位置] と囲む関数、宣言名・コメント・文字列を除く) / \`dupscan callers '$short'\` (呼び出し元)。grep は文字列・コメント・設定ファイルを探すときに使う (skill dupscan の 2 節)"
+fi
 jq -n --arg c "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $c}}'
