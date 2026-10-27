@@ -86,4 +86,4 @@ inputはe266c5daの`src/dupscan`と`src/tuikit/markdown`をgit archiveした同�
 
 検査結果: 最終注意文を含む差分で`make -C src/dupscan lint test`のlint/全race testが成功。`dupscan gate -base e266c5da -strict-analysis src/dupscan`で新しい重複/追加除外なし。全src gateは既存の意図的な構文不正fixture `src/subproc/boundarycheck/testdata/broken/broken.go`をbase/headで同じ1件報告するため、全srcの完全解析は主張しない。Homebrew Bashでissue完了scriptを使用し、リンク/next/採番/裸path/claim/期限の6検査が成功。親のcodeレビューはP1/P2なし・P3注意文1件を修正、続くdocs反証レビューはP1/P2/P3追加指摘なし。
 
-- 2026-10-28: 895で対象指定 `near -similar` の限定試作を完了。全体hashの異なる2歴史例を発見できたが、型/責務/利用可否は未証明。本issueの役割は継続する。
+- 2026-10-28: 895で対象指定 `near -similar` の限定試作を完了。全体hashの異なる2歴史例を発見できたが、型/責務/利用可否は未証明。一般的な開発効率の評価は928で継続する。
