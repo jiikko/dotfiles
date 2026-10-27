@@ -42,7 +42,7 @@ dupscan search -query 'connection bucket fixture' -returns StorageLocation -limi
 
 - [ ] 既存indexのfilter・並び順・終了コードを維持する。
 - [ ] 名前が不明でも用途語と型で見つかる / 型が合わない / 同名が複数 / 別ターゲットの候補 / 本当に既存がない、を含むgolden queryを用意する。候補の正解はコードを読んで決め、dupscan自身の判定だけで採点しない。
-- [ ] top-k内の適切な候補、誤った再利用、0件時の誤った不存在断定を検査し、一致根拠と省略がtext/JSONの両方に出る。
+- [ ] top-k内の適切な候補、誤った再利用、0件時の誤った不存在断定を検査し、一致根拠と省略を現行textで確認する。JSONは機械処理の具体的不足を確認し採用した場合だけの追加条件とする。
 - [ ] ClaudeとCodexを分けて、既存indexによる探索との比較を行う。対象が同じ課題で、正しい再利用・最初の適切な候補までの往復・返したbytes・elapsed timeを測る。利用回数だけで成功扱いにしない。
 - [ ] 既存がない課題では正しく新規実装できることを対照に入れる。小さなrepoで対照群も常に既存を見つけるなら、効果を測れない条件として扱う。
 - [ ] 924の代表的規模でlatencyと出力量を測り、検索の便利さと追加コストを評価する。
@@ -155,3 +155,5 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 - 最終strict gateはbase66699f2aから変わった14単位で新しい重複なし、追加除外なし。全srcの通常gateは既存の不正fixtureをbase/head各1件として通知する。今回のtext実装のclaimを解除し、残る統合/評価をopenで追跡する。
 
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
+
+- 2026-10-27: `docs(dupscan): correct evidence terminology and conditional acceptance`で反証レビューP2を訂正。JSONは未採用の条件付き案とし、text版の品質評価に必須とする旧条件を置き換えた。

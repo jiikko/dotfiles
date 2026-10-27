@@ -57,11 +57,11 @@ dupscan agent-guide -target codex -print
 
 ## 詳細設計案（2026-10-26）と実装差分
 
-以下の当初案に対し、現行実装はtext/jsonの能力表・診断と表示専用guideを提供する。json-v2と型付きflag metadata/予算serializerは926で統合し、ここでは作ったことにしない。実装済み範囲と差分は末尾の記録を正本とする。
+以下の当初案に対し、現行実装はtext/jsonの能力表・診断と表示専用guideを提供する。json-v2と型付きflag metadata/予算serializerは具体的な不足を確認した場合の未採用候補で、926と調整する。ここでは作ったことにしない。実装済み範囲と差分は末尾の記録を正本とする。
 
 ### Command/adapter registryを情報源にする
 
-当初のinternal/commandmeta分離案に対し、実装はmain package内のcommandSpecへRun/対応出力/問い合わせ形/説明/SymbolsOnlyを登録した。dispatch・capabilities・guideが同じ一覧を使い、import循環を作らない。flags_helpは同じRunの-h結果を得て実flag定義と同期する。型付きflag schemaは926の統合時に扱う。共通usageにも新3コマンドを載せ、正常な旧分析出力の互換性とは分けて検証する。
+当初のinternal/commandmeta分離案に対し、実装はmain package内のcommandSpecへRun/対応出力/問い合わせ形/説明/SymbolsOnlyを登録した。dispatch・capabilities・guideが同じ一覧を使い、import循環を作らない。flags_helpは同じRunの-h結果を得て実flag定義と同期する。型付きflag schemaは、機械処理上の不足を確認して採用する場合に926と設計する。共通usageにも新3コマンドを載せ、正常な旧分析出力の互換性とは分けて検証する。
 
 言語の能力は `internal/langs.All` / `lang.Adapter` から取得する。既存SymbolsをDefs/Refsの能力へ対応させ、Units/Calls等はadapterの実動作に合わせて登録する。手書きの別の言語表をguideへ埋め込まない。
 
@@ -238,7 +238,7 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 
 改善の再評価: 起動できるか/何が対応するかをソースのhelpや手書きの言語表から推測するしかなかった状態から、実dispatch/flag定義を読んだ能力表、ASTを起こさない診断、実行可能な短い例へ進めた。Go通知でbuildを避けつつ実能力を確かめられる。追加したregistry/診断/guide/境界テストと、通知1回あたりの約21msが複雑さ/費用。型解決・外部SDK/target解決を追加したものではなく、正しい再利用・総context/tokens・不要な重複追加の改善はまだ示していない。
 
-残作業は(1)Claude側のBash許可を満たす環境での実動、(2)初回build/準備済み探索を分けた代表環境の検査、(3)917/921の条件を保った両agentの実課題A/B（再利用・誤誘導・重複追加・総context/時間/費用）、(4)926でのtyped flags/json-v2/共通serializerへの統合。実装が揃っただけで全受け入れ条件を満たしたことにはせず、928はopenで継続する。
+残作業は(1)Claude側のBash許可を満たす環境での実動、(2)初回build/準備済み探索を分けた代表環境の検査、(3)917/921の条件を保った両agentの実課題A/B（再利用・誤誘導・重複追加・総context/時間/費用）、(4)typed flags/json-v2/共通serializerは具体的不足が出た場合の未採用候補（現行版の完了条件ではない）。実装が揃っただけで全受け入れ条件を満たしたことにはせず、928はopenで継続する。
 
 - 2026-10-27後半: `feat(dupscan): diagnose local readiness without running analysis` / `feat(dupscan): derive discovery from executable command dispatch` / `feat(dupscan): expose actual command flags through discovery`を統合。`feat(dupscan): print bounded guides for Claude and Codex`と`feat(hooks): validate Go nudges against no-build capabilities`で残る導線を実装し、`docs(dupscan): record discovery readiness and onboarding evidence`で検証と残作業を記録する。
 
@@ -246,6 +246,8 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 
 - 最終のstrict module gateはbase eb2d4bd7から変わった11単位で新しい重複なし、追加除外なし。全srcの通常gateは既存の意図的不正fixtureをbase/head各1件として解析不完全を通知する。issue整合テストも成功した。
 
-- 2026-10-27: 925のtext searchをregistry/guideへ登録。guideは用途語と型で候補を探す例へ更新した。初期の「未実装searchを広告しない」は当時の状態で、現在は登録済みtext版を案内する。効果評価と共通v2統合の未完了は維持する。
+- 2026-10-27: 925のtext searchをregistry/guideへ登録。guideは用途語と型で候補を探す例へ更新した。初期の「未実装searchを広告しない」は当時の状態で、現在は登録済みtext版を案内する。効果評価は未完了。共通v2統合も未実装だが、今回の再評価では条件付き候補とする。
 
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
+
+- 2026-10-27: `docs(dupscan): correct evidence terminology and conditional acceptance`で反証レビューP2を訂正。typed flags/json-v2を必須の残作業としていた記述を条件付き候補へ変更。環境確認と実課題評価は引き続き未完了。

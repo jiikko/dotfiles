@@ -8,7 +8,7 @@
 
 **判断: 近似数の説明不足は改善に値する。matcher拡張と切り離して短い注意表示を先に検討する。** 再現fixtureのindex calls_approx=1、裸のcallers run=2、label指定run(_:)=1を再確認した。全labelsで照合するcallCountsと、原則label数一致のmatchesによる構文上の取りこぼしであり、実際の誤った再利用判断が起きた証明ではない。contextには既定引数省略の注意が既にあり、残る主対象はindexと単体callers。925の順位はcallsを使わない。
 
-次の最小作業は、0件も非0件も「構文近似・同名混入/既定引数省略・未使用の証明ではない」と分かる一貫した説明を付け、数値・順位を変えず確認すること。構造化metadataは926と調整するが、有用なtext説明をjson-v2完成まで待たせない。
+次の最小作業は、0件も非0件も構文近似・同名混入・未使用の証明ではないと分かる説明を付ける。既定引数省略の取りこぼしはindexとlabel指定callersの注意とし、裸のcallersにはlabelで絞っていないことを示し、数値・順位を変えず確認すること。構造化metadataは926と調整するが、有用なtext説明をjson-v2完成まで待たせない。
 
 default metadata/matcherは別段階。定義を指定する照会か、同名/同label/default違いの候補集合かを先に決め、曖昧な対応を1定義へ確定しない。partial omission・overload・繰り返しlabelを検証する。Go variadic/spreadやtrailing closureまで初回で実装する必要はなく、能力表で未対応範囲を明示する。以下の広い受け入れ条件は段階ごとに適用する。
 
@@ -58,3 +58,5 @@ dupscan callers -format json 'run(_:)'
 - 2026-10-26: 出力の正確性について読み取り専用Codex subagentで反証レビューし、P1/P2/P3の追加指摘なし。 issue内の相対リンク・JSON/Python構文・diffとBash 5のissue関連テストが成功。929の本文内手順と930の3問い合わせをCLIで再現した。文書の改善は、出力誤認の再現・責務と、既存実装発見/不要な重複追加を測る条件を具体化したこと。機能改善の効果は未検証。
 
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
+
+- 2026-10-27: `docs(dupscan): correct evidence terminology and conditional acceptance`で反証レビューのP3を訂正。行CallsとCalled集約、節選択と定義選択、label指定の有無を区別し、現行評価と追加機能の受け入れ条件を分けた。P1/P2指摘なし。

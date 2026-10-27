@@ -6,7 +6,7 @@
 
 対象: a5b4196e の実装と既存測定。
 
-**判断: 集約の方向は妥当で、context最小版と段階取得は既にある。追加設計より現行の評価を先に行う。** context_cmd.goは1回のscanSourceでcontentsと解析結果を共用し、定義・近似refs/callers・曖昧さ・非対応・parse error・省略を表示する。938でsummary、`-sections`、選択/scoped取得も実装済み。byte予算、snapshot/hash、cursor、definition IDは未実装である。
+**判断: 集約の方向は妥当で、context最小版と段階取得は既にある。追加設計より現行の評価を先に行う。** context_cmd.goは1回のscanSourceでcontentsと解析結果を共用し、定義・近似refs/callers・曖昧さ・非対応・parse error・省略を表示する。938でsummary、節選択`-sections`、元scopeを保持した再取得案内も実装済み。byte予算、snapshot/hash、cursor、definition IDは未実装である。
 
 次は現在のsummary→section/ソース確認を、個別コマンドと適切なReadに対して固定課題で比較する。同名定義の選択失敗や大きすぎる出力が確認されたら、selectorまたはbyte上限を個別に設計する。snapshot/cursorは繰り返しの部分取得や版混在による失敗が実際に問題になる場合に限る。機能の数や出力短縮だけで効率改善としない。
 
@@ -35,14 +35,18 @@ dupscan context -symbol StorageClient.upload -definition-file Sources/StorageCli
 - token数はモデルごとに違うため、CLIはbytes/行等の測れる予算を持つ。UTF-8とJSONを途中で壊さず、総件数・返却件数・省略箇所を示す。上限が最小のmetadataも収められないときの扱いを定義する。
 - 近似のrefs/callersしか得られない場合は、その範囲と限界を示す。部分的な情報から「他に影響なし」と断定させない。
 
-## 検証・受け入れ条件
+## 現行版を評価する受け入れ条件
 
-- [ ] 選択の曖昧さと、定義選択/参照検索scopeの違いをtext/JSONに表す。
-- [x] 同じ入力で、既存def/refs/callersとの対応と、省略していない結果の一致を確認する。結果の網羅性は既存コマンドの限界も引き継ぐと明示する。（最小版で達成。下の進捗）
-- [ ] 大きい型、多重定義、同名の別モジュール、1行に複数の呼び出し、source変更、読めない構文、0件を検査する。
-- [ ] 小さいbudgetでもJSON/UTF-8が有効で、省略と継続取得が検証できる。継続時の入力変更は検知/明示し、以前の結果と混ぜない。
+- [x] 同じ入力で、既存def/refs/callersとの対応と、省略していない結果の一致を確認する。網羅性は既存コマンドの限界も引き継ぐ。（最小版で達成。下の進捗）
+- [x] context_cmd.goの1回のscanSourceでcontents/解析結果を共用する。別の解析cacheや常駐プロセスを作らない。（a5b4196eでコード確認。呼び出し回数を壊す変異の検出強度は今回未検証）
 - [ ] Claude/Codexで同じ変更課題を既存コマンド列と比較し、必要な情報への到達、往復数、返したbytes、elapsed time、見落としを測る。少ない出力だけを成功指標にしない。
-- [ ] [924](done/924-perf-dupscan-exploration-latency.md) の1走査/batch案と処理を共有できるか確認し、別の解析cacheや常駐プロセスを重複して作らない。
+- [ ] 大きい型、多重定義、同名の別モジュール、1行に複数call、読めない構文、0件で、現行summary/節選択/再取得案内の不足を記録する。
+
+### 追加機能を採用する場合だけの受け入れ条件
+
+- [ ] selector/JSONを採用する場合、選択の曖昧さと定義選択/参照検索scopeの違いを表す。現行textの多重定義警告を「未実装」と扱わない。
+- [ ] byte予算/継続取得を採用する場合、小さいbudgetでもJSON/UTF-8が有効で、省略と継続取得を検証できる。
+- [ ] snapshot/hashを採用する場合、継続時の入力変更を検知/明示し、以前の結果と混ぜない。
 
 関連: [926](926-feat-dupscan-query-diagnostics.md) の曖昧さ・解析不完全の契約を使う。[918](918-feat-dupscan-target-and-literal-table.md) の所属情報が無い段階では、利用可能なモジュールを推測で断定しない。literal差分表やType-3は既存issueの範囲を維持する。
 
@@ -145,3 +149,5 @@ cursorのquery hashは定義IDと探索条件を束縛する。表示上のsecti
 - 2026-10-27: 938でcontext/evidenceの先頭状態・grouped text・scope付きnext_actionと任意summaryを実装/局所比較した。938の完了は本issueの全受け入れ条件の完了を意味しない。既定は変更せず、bytes予算/cursorなど残りのcontext設計を継続。
 
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
+
+- 2026-10-27: `docs(dupscan): correct evidence terminology and conditional acceptance`で反証レビューのP3を訂正。行CallsとCalled集約、節選択と定義選択、label指定の有無を区別し、現行評価と追加機能の受け入れ条件を分けた。P1/P2指摘なし。
