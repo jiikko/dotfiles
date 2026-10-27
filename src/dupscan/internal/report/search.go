@@ -32,9 +32,10 @@ type SearchCandidate struct {
 }
 
 type SearchSummary struct {
-	Units      int
-	Matches    int
-	Candidates []SearchCandidate
+	FilteredUnits int // Indexed units passing hard filters, before lexical matching.
+	Units         int
+	Matches       int
+	Candidates    []SearchCandidate
 }
 
 // SearchTerms bounds the input before matching; repeated spellings retain their first form.
@@ -80,6 +81,7 @@ func BuildSearch(units []*tree.Unit, q SearchQuery) SearchSummary {
 		if q.Scope == "prod" && u.Test || q.Scope == "test" && !u.Test {
 			continue
 		}
+		s.FilteredUnits++
 		doc, _, _ := strings.Cut(u.Doc, "\n")
 		c := SearchCandidate{EndLine: u.EndLine, Entry: IndexEntry{UnitRef: ref(u), ReturnType: u.ReturnType, ParamTypes: u.ParamTypes, Doc: doc, Shared: q.Filters.shared(u.File)}, Matched: []SearchEvidence{}, Missing: []string{}}
 		fields := []string{u.Name, u.Signature, doc}

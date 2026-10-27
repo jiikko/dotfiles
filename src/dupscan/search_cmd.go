@@ -88,7 +88,11 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		return fmt.Sprintf("dupscan search: %q — 候補 %d 件 / 表示 %d 件 / 単位 %d%s\n  lang=%s scope=%s returns=%q param-type=%q file=%q min-matched-terms=%d\n", *query, summary.Matches, returned, summary.Units, ux.suffix(), *language, *scope, *returns, *param, filters.File, *minimum)
 	}
 	footer := "字句による候補。scoreは順位用で確率ではない。型/所属/再利用可否は未証明。Goテスト関数は索引対象外。0件は不存在の証明ではない。\n"
+	hardDiagnostic := ""
 	if summary.Matches == 0 {
+		if summary.FilteredUnits == 0 {
+			hardDiagnostic = "解析済み索引の型/file/scope条件に一致する単位0件。語数を緩めても候補は増えない。型の不存在やalias解決を示すものではない。\n"
+		}
 		fileArg := *file
 		if filters.File != "" {
 			fileArg = filepath.Join(sc.Root, filters.File)
@@ -96,7 +100,7 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		values := map[string]string{"returns": *returns, "param-type": *param, "file": fileArg, "scope": *scope, "lang": *language}
 		reason := ""
 		retryMinimum := *minimum
-		if retryMinimum > 1 {
+		if retryMinimum > 1 && summary.FilteredUnits > 0 {
 			retryMinimum = 1
 			reason = "一致0件の確認案: min-matched-termsを1へ下げる。他の条件は維持 (自動実行しない)"
 		}
@@ -151,6 +155,9 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 				footer += action.String()
 			}
 		}
+	}
+	if hardDiagnostic != "" && len(header(0, false))+len(footer)+len(hardDiagnostic) <= *maxBytes {
+		footer += hardDiagnostic
 	}
 	var body strings.Builder
 	returned := 0

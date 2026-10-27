@@ -198,3 +198,26 @@ func TestSearchExactAndPositionTies(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchCountsHardCandidatesBeforeTerms(t *testing.T) {
+	units := []*tree.Unit{
+		{Kind: tree.KindFunc, File: "prod.go", Name: "other", ReturnType: "string"},
+		{Kind: tree.KindFunc, File: "test.go", Name: "other", ReturnType: "string", Test: true},
+		{Kind: tree.KindFunc, File: "wrong.go", Name: "other", ReturnType: "int"},
+		{Kind: tree.KindClosure, File: "prod.go", Name: "other", ReturnType: "string"},
+	}
+	for _, scope := range []string{"prod", "test", "all"} {
+		s := BuildSearch(units, SearchQuery{Terms: []string{"missing", "absent"}, MinMatched: 2, Scope: scope, Filters: Query{Returns: "string"}})
+		want := 1
+		if scope == "all" {
+			want = 2
+		}
+		if s.Matches != 0 || s.FilteredUnits != want || s.Units != 3 {
+			t.Fatalf("scope=%s: %+v", scope, s)
+		}
+	}
+	s := BuildSearch(units, SearchQuery{Terms: []string{"other"}, Scope: "test", Filters: Query{Returns: "string", File: "prod.go"}})
+	if s.FilteredUnits != 0 || s.Matches != 0 {
+		t.Fatalf("file/scope intersection was ignored: %+v", s)
+	}
+}

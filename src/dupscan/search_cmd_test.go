@@ -216,9 +216,11 @@ func TestSearchOptionalRetryFitsActualRemainingBudget(t *testing.T) {
 		if rc := runSearch([]string{"-query", "Build", "-returns", query, "-max-bytes", "4096", root}, &wide, &errs); rc != 0 {
 			t.Fatalf("wide rc=%d %s", rc, &errs)
 		}
-		_, action, ok := strings.Cut(wide.String(), "next_action: ")
-		budget := wide.Len() - 1
-		if !ok || budget < 1024 || len("next_action: ")+len(action) > budget/2 {
+		prefix, tail, ok := strings.Cut(wide.String(), "next_action: ")
+		line, _, _ := strings.Cut(tail, "\n")
+		action := "next_action: " + line + "\n"
+		budget := len(prefix) + len(action) - 1
+		if !ok || budget < 1024 || len(action) > budget/2 {
 			continue
 		}
 		var out, narrowErr bytes.Buffer
@@ -228,4 +230,54 @@ func TestSearchOptionalRetryFitsActualRemainingBudget(t *testing.T) {
 		return
 	}
 	t.Fatal("fixture did not exercise an optional-action overflow")
+}
+
+func TestSearchSkipsFutileTermRetryWhenHardFiltersMatchNothing(t *testing.T) {
+	root := repoWith(t, map[string]string{"inside space/a.go": searchGoFixture, "outside/b.go": strings.ReplaceAll(searchGoFixture, "Assemble", "Outside")})
+	args := []string{"-query", "connection bucket", "-min-matched-terms", "2", "-returns", "Alias", "-file", filepath.Join(root, "inside space/a.go"), "-lang", "go", "-scope", "prod", filepath.Join(root, "inside space")}
+	var out, errs bytes.Buffer
+	if rc := runSearch(args, &out, &errs); rc != 0 || errs.Len() != 0 {
+		t.Fatalf("%d %s", rc, &errs)
+	}
+	var action nextAction
+	for _, line := range strings.Split(out.String(), "\n") {
+		if raw, ok := strings.CutPrefix(line, "next_action: "); ok {
+			if err := json.Unmarshal([]byte(raw), &action); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if !strings.Contains(out.String(), "語数を緩めても候補は増えない") || !strings.Contains(action.Reason, "returns 条件を外す") {
+		t.Fatalf("futile retry: %s", &out)
+	}
+	t.Chdir(t.TempDir())
+	rc, result, errout := runReport(t, action.Argv[1:]...)
+	if rc != 0 || errout != "" || !strings.Contains(result, "候補 1 件") || !strings.Contains(result, "Assemble") || strings.Contains(result, "Outside") || !strings.Contains(result, "min-matched-terms=2") || !strings.Contains(result, "scope=prod") || !strings.Contains(result, "lang=go") {
+		t.Fatalf("changed unrelated constraint or scope: %d %q %q", rc, result, errout)
+	}
+}
+
+func TestSearchHardFilterDiagnosticDoesNotDisplaceRequiredOutput(t *testing.T) {
+	root := repoWith(t, map[string]string{"a.go": searchGoFixture})
+	var out, errs bytes.Buffer
+	rc := runSearch([]string{"-query", "Build", "-returns", strings.Repeat("x", 392), "-max-bytes", "1024", root}, &out, &errs)
+	if rc != 0 || errs.Len() != 0 || out.Len() > 1024 || !strings.Contains(out.String(), "候補 0 件") || strings.Contains(out.String(), "語数を緩めても候補は増えない") {
+		t.Fatalf("optional diagnostic broke a previously fitting summary: rc=%d bytes=%d stdout=%q stderr=%q", rc, out.Len(), &out, &errs)
+	}
+}
+
+func TestSearchKeepsSameNamedCrossModuleCandidatesUnproven(t *testing.T) {
+	root := repoWith(t, map[string]string{
+		"one/go.mod": "module example/one\ngo 1.26\n",
+		"one/a.go":   "package one\nfunc Config() string { return \"first domain\" }\n",
+		"two/go.mod": "module example/two\ngo 1.26\n",
+		"two/a.go":   "package two\nfunc Config() string { return \"second domain\" }\n",
+	})
+	var out, errs bytes.Buffer
+	if rc := runSearch([]string{"-query", "Config", "-returns", "string", root}, &out, &errs); rc != 0 || errs.Len() != 0 {
+		t.Fatalf("%d %s", rc, &errs)
+	}
+	if !strings.Contains(out.String(), "候補 2 件") || strings.Count(out.String(), "reuse=not_proven") != 2 || !strings.Contains(out.String(), "one/a.go") || !strings.Contains(out.String(), "two/a.go") {
+		t.Fatalf("cross-module name must not imply reuse or collapse: %s", &out)
+	}
 }
