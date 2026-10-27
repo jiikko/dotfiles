@@ -46,6 +46,16 @@ func runAgentGuide(args []string, stdout, stderr io.Writer) int {
 		{Kind: "index", Reason: "書く前に戻り値の型で既存helperを探す", Argv: []string{"dupscan", "index", "-returns", "TYPE"}},
 		{Kind: "evidence", Reason: "名前不明ならdoc全文・テスト・ソースの語から候補を探す", Argv: []string{"dupscan", "evidence", "TERM"}},
 	}
+	for _, spec := range commandSpecs() {
+		if spec.Name == "search" {
+			argv := []string{"dupscan", "search", "-query", "TERM", "-returns", "TYPE"}
+			if *language != "all" {
+				argv = append(argv, "-lang", *language)
+			}
+			actions[0] = nextAction{Kind: "search", Reason: "書く前に用途語と戻り値の型から既存helperの候補を探す", Argv: argv}
+			break
+		}
+	}
 	if symbols {
 		actions = append(actions, nextAction{Kind: "context", Reason: "Swiftの定義・参照・呼び出しを確認する", Argv: []string{"dupscan", "context", "SYMBOL"}})
 	} else {

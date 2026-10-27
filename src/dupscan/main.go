@@ -25,6 +25,7 @@ const usage = `usage: dupscan [report] [flags] [dir ...]
        dupscan gate [flags] [dir ...]
        dupscan near [flags] <file>:<関数名|行> [dir ...]
        dupscan explain [flags] <file>:<関数名|行>
+       dupscan search -query "terms" [-returns Type] [flags] [dir ...]
        dupscan index [-name 語] [-returns 型] [-param-type 型] [-doc 語] [-file ファイル] [dir ...]
        dupscan callers [flags] <名前|名前(ラベル:…)> [dir ...]
        dupscan def [flags] <名前|Type.member|名前(ラベル:…)> [dir ...]

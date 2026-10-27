@@ -113,3 +113,5 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 - 2026-10-26: 初期のname/signature/doc先頭行に加える呼出先/本体hintは[933](933-feat-dupscan-behavior-hint-search.md)、doc全文・テスト等の補助証拠は[934](934-feat-dupscan-source-evidence-search.md)へ起票した。段階ごとの仕様変更を分け、未実装の能力を初期searchに混ぜない。
 
 - 2026-10-27: 924で探索共通経路の比較用本体変換/正規化を省く処理を実装した。925の用途語/署名検索・順位設計は未着手で継続する。
+
+- 2026-10-27: `feat(dupscan): expose bounded metadata helper search`でtext search、source確認argv、0件再検索、registry/guideへの接続を実装。pure検索規則の先行commitを統合し、lint/raceと予算・再検索の各変異を検証。JSON-v2と実課題評価は未完了でopenを維持する。

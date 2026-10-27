@@ -18,6 +18,7 @@ func commandSpecs() []commandSpec {
 		{Name: "gate", Run: runGate, Formats: []string{"text", "json", "xcode"}, Summary: "Check new duplicates against a base"},
 		{Name: "near", Run: runNear, Formats: []string{"text", "json"}, Query: "file:unit-or-line", Summary: "Find units resembling a selected unit"},
 		{Name: "explain", Run: runExplain, Formats: []string{"text", "json"}, Query: "file:unit-or-line", Summary: "Explain normalization and matching"},
+		{Name: "search", Run: runSearch, Formats: []string{"text"}, Query: "-query terms with optional type filters", Summary: "Find helper candidates across name, signature and doc"},
 		{Name: "index", Run: runIndex, Formats: []string{"text", "json"}, Query: "optional metadata filters", Summary: "Find existing units before writing"},
 		{Name: "callers", Run: runCallers, Formats: []string{"text", "json"}, Query: "name-or-signature", Summary: "Find approximate call sites"},
 		{Name: "def", Run: runDef, Formats: []string{"text", "json"}, SymbolsOnly: true, Query: "name-or-Type.member-or-signature", Summary: "Read definitions and type declarations"},

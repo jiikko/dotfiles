@@ -1,7 +1,7 @@
 package report
 
 import (
-	"fmt"
+	"errors"
 	"sort"
 	"strings"
 	"unicode"
@@ -25,6 +25,7 @@ type SearchEvidence struct {
 
 type SearchCandidate struct {
 	Entry   IndexEntry
+	EndLine int
 	Matched []SearchEvidence
 	Missing []string
 	Score   int
@@ -39,16 +40,16 @@ type SearchSummary struct {
 // SearchTerms bounds the input before matching; repeated spellings retain their first form.
 func SearchTerms(query string) ([]string, error) {
 	if !utf8.ValidString(query) {
-		return nil, fmt.Errorf("query must be valid UTF-8")
+		return nil, errors.New("query must be valid UTF-8")
 	}
 	if len(query) > 512 {
-		return nil, fmt.Errorf("query must be at most 512 UTF-8 bytes")
+		return nil, errors.New("query must be at most 512 UTF-8 bytes")
 	}
 	terms := []string{}
 	seen := map[string]bool{}
 	for _, term := range strings.Fields(query) {
 		if utf8.RuneCountInString(term) > 64 {
-			return nil, fmt.Errorf("query term must be at most 64 runes")
+			return nil, errors.New("query term must be at most 64 runes")
 		}
 		key := strings.ToLower(term)
 		if !seen[key] {
@@ -57,7 +58,7 @@ func SearchTerms(query string) ([]string, error) {
 		}
 	}
 	if len(terms) < 1 || len(terms) > 8 {
-		return nil, fmt.Errorf("query must contain 1 to 8 distinct terms")
+		return nil, errors.New("query must contain 1 to 8 distinct terms")
 	}
 	return terms, nil
 }
@@ -80,7 +81,7 @@ func BuildSearch(units []*tree.Unit, q SearchQuery) SearchSummary {
 			continue
 		}
 		doc, _, _ := strings.Cut(u.Doc, "\n")
-		c := SearchCandidate{Entry: IndexEntry{UnitRef: ref(u), ReturnType: u.ReturnType, ParamTypes: u.ParamTypes, Doc: doc, Shared: q.Filters.shared(u.File)}, Matched: []SearchEvidence{}, Missing: []string{}}
+		c := SearchCandidate{EndLine: u.EndLine, Entry: IndexEntry{UnitRef: ref(u), ReturnType: u.ReturnType, ParamTypes: u.ParamTypes, Doc: doc, Shared: q.Filters.shared(u.File)}, Matched: []SearchEvidence{}, Missing: []string{}}
 		fields := []string{u.Name, u.Signature, doc}
 		for _, term := range q.Terms {
 			ev := SearchEvidence{Term: term, Fields: []string{}, Components: searchComponents(term)}

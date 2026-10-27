@@ -34,12 +34,17 @@ type nextAction struct {
 }
 
 func queryNextAction(sc repo.Scope, command, query, reason string, flags ...string) nextAction {
-	argv := append([]string{"dupscan", command}, flags...)
+	args := append([]string{}, flags...)
 	if command == "index" {
-		argv = append(argv, query, "--")
+		args = append(args, query, "--")
 	} else {
-		argv = append(argv, "--", query)
+		args = append(args, "--", query)
 	}
+	return scopedNextAction(sc, command, reason, args...)
+}
+
+func scopedNextAction(sc repo.Scope, command, reason string, args ...string) nextAction {
+	argv := append([]string{"dupscan", command}, args...)
 	if sc.Whole() {
 		argv = append(argv, sc.Root)
 	} else {

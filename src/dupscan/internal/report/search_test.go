@@ -159,7 +159,7 @@ func TestSearchRankingGolden(t *testing.T) {
 	}
 	want := []string{"all.swift", "two.swift", "two_doc.go", "shared.go", "visible.go", "z-prefix.go", "visible_test.go", "private.go", "weak.go"}
 	q := SearchQuery{Terms: []string{"connection", "bucket", "fixture"}, Filters: Query{Shared: func(file string) bool { return file == "shared.go" }}}
-	for round := 0; round < 2; round++ {
+	for range 2 {
 		got := BuildSearch(units, q)
 		files := []string{}
 		for _, c := range got.Candidates {
@@ -184,7 +184,7 @@ func TestSearchExactAndPositionTies(t *testing.T) {
 		{Kind: tree.KindFunc, File: "b.go", Name: "makeFixture"},
 	}
 	want := []string{"z.go:9:0:", "a.go:1:2:z", "a.go:1:8:a", "a.go:1:8:b", "a.go:2:1:", "b.go:0:0:"}
-	for round := 0; round < 2; round++ {
+	for range 2 {
 		s := BuildSearch(units, SearchQuery{Terms: []string{"fixture"}})
 		got := []string{}
 		for _, c := range s.Candidates {
