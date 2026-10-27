@@ -26,6 +26,10 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 		similar = fs.Bool("similar", false, "L1部分木の類似候補を試作表示 (同一動作・再利用は未証明)")
 		threshold = fs.Float64("similar-threshold", 0.4, "類似候補のweighted Dice下限 (0より大きく1以下)")
 	}
+	var compare *string
+	if name == "explain" {
+		compare = fs.String("compare", "", "同scopeの別単位とL1構造を比較 (<file>:<関数名|行>)")
+	}
 	rest, rc, ok := parseFlags(fs, args)
 	if !ok {
 		return rc
@@ -89,6 +93,25 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 			return fail(errors.New("対象は読めない構文を含む"))
 		}
 		return writeSimilar(stdout, stderr, target, entries, got, *threshold, *c.limit, *c.format)
+	}
+	if compare != nil && flagSet(fs, "compare") {
+		otherFile, otherSelector, valid := cutSelector(*compare)
+		if !valid {
+			return fail(errors.New("compare requires <file>:<unit|line>"))
+		}
+		otherAbs, err := absPath(otherFile)
+		if err != nil {
+			return fail(err)
+		}
+		otherRel, err := repoRel(sc.Root, otherAbs)
+		if err != nil {
+			return fail(err)
+		}
+		other, err := pick(entries, otherRel, otherSelector)
+		if err != nil {
+			return fail(err)
+		}
+		return writeComparison(stdout, stderr, target, other, got, *c.limit, *c.format)
 	}
 	var out any
 	var text func(io.Writer) error
