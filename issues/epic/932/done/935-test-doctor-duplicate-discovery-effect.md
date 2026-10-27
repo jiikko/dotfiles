@@ -65,7 +65,7 @@ D=共有すべき同じ規則の重複、P=部分/意味上の重複だが抽出
 
 `disk/scan_test.go:31 (*fakeRunner).run` と `disk/delete_test.go:32 (*deleteRunner).run` は、登録したcommand prefixのうちトークン境界まで一致する最長keyを選ぶloopを重ねて持つ。返すresponse型・stderr・onCall等は違うが、prefix選択の規則は同じdiskテスト基盤のもの。
 
-全部のrunnerを統合せず、選択部分だけを共用する候補。追加処理とreturnの構造が違い、現在の関数全体hashは一致しない。[895](../895-feat-dupscan-type3-candidates.md)へ部分重複の具体例として戻す。既知例なのでheld-outの精度証明には使わない。
+全部のrunnerを統合せず、選択部分だけを共用する候補。追加処理とreturnの構造が違い、現在の関数全体hashは一致しない。[895](895-feat-dupscan-type3-candidates.md)へ部分重複の具体例として戻す。既知例なのでheld-outの精度証明には使わない。
 
 ## 機械一致と共通化判断の違い
 

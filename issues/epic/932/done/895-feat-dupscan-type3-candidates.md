@@ -37,12 +37,12 @@
 
 ## 概要
 
-[891 (要件の正本)](../890/done/891-design-dupscan-requirements.md) の「組にする」「候補の絞り込み」節。部分木のハッシュの多重集合 (大きさで重み付け) の重なりで類似度を測り、対 (か全員が互いに閾値を超える集まり) で出す。
+[891 (要件の正本)](../../890/done/891-design-dupscan-requirements.md) の「組にする」「候補の絞り込み」節。部分木のハッシュの多重集合 (大きさで重み付け) の重なりで類似度を測り、対 (か全員が互いに閾値を超える集まり) で出す。
 祖先と子孫の対 (関数とその中のクロージャ) は出さない。obaket の規模 (関数と初期化子だけで約 2.2 万) で総当たりにならないよう、
 大きさ k 以上の部分木ハッシュの転置索引か MinHash の LSH で候補を絞ってから比べる。
 
-**後回し** (2026-10-24): 主な用途 (書く前に索引を引く 903 と、`make test` で落とす [905](../890/done/905-feat-dupscan-ci-check-gate.md)) では、Type-2 と L3 の一致で足りるかを先に見る (898 の「Claude に書かせた写し」の実測で確かめる)。
-mizchi/similarity は木の編集距離 (TSED) で Type-3 を出しているので、着手するときは比べる ([901](../890/done/901-research-dupscan-existing-tools.md))。
+**後回し** (2026-10-24): 主な用途 (書く前に索引を引く 903 と、`make test` で落とす [905](../../890/done/905-feat-dupscan-ci-check-gate.md)) では、Type-2 と L3 の一致で足りるかを先に見る (898 の「Claude に書かせた写し」の実測で確かめる)。
+mizchi/similarity は木の編集距離 (TSED) で Type-3 を出しているので、着手するときは比べる ([901](../../890/done/901-research-dupscan-existing-tools.md))。
 
 ## 受け入れ条件
 
@@ -52,18 +52,18 @@ mizchi/similarity は木の編集距離 (TSED) で Type-3 を出しているの�
 
 ## 具体例: spansWidth / lineWidth（2026-10-26追記）
 
-[931の検証](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)で、tuikit/markdownの表示幅計算に同じ責務の2実装があった。入力commitはdotfiles e7ddfd9f。現行masterではlineWidthを削除済みなので、再現はこのcommitの別worktreeで行う。
+[931の検証](../../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)で、tuikit/markdownの表示幅計算に同じ責務の2実装があった。入力commitはdotfiles e7ddfd9f。現行masterではlineWidthを削除済みなので、再現はこのcommitの別worktreeで行う。
 
 - wrap.goのspansWidthは19 nodesで既定min-nodes=20未満。links.goのlineWidthは21 nodes。
 - 一方は `range spans`、他方は `range l.spans` で、残りは各 `sp.Text` の `termwidth.Of` の合計。同じ結果を得る呼び出しに寄せられたが、入力式の構文差でL1/L2/L3のhashが全て異なった。
 - min-nodes=1でnearを実行しても一致しなかった。小さい関数の対象化と、完全一致以外の候補抽出の両方が必要。
 - これは構文一致の既知の範囲を超える候補であり、型/動作の同一性を機械的に証明した例ではない。今回のユーザー依頼はアイデアの記録までで、実装は未着手。今回の追加依頼で未着手課題として管理へ戻す。
 
-## 拡張案（未実装）
+## 当初の拡張案（現在の採否は冒頭の到達点を優先）
 
 ### 1. 完全一致と類似候補を分ける
 
-既存L1〜L3のhash・group・gateの違反判定は変更しない。案として `near -similar` と `report -similar` を明示的に選ぶ経路を追加し、Type-3の候補を返す。これらのoptionは現行CLIには無い。初期実装では類似候補だけでgateをrc=1にしたり、自動編集・自動統合したりしない。
+既存L1〜L3のhash・group・gateの違反判定は変更しない。案として `near -similar` と `report -similar` を明示的に選ぶ経路を追加し、Type-3の候補を返す。`near -similar` は冒頭の限定範囲で実装済み、`report -similar` は未採用。初期実装では類似候補だけでgateをrc=1にしたり、自動編集・自動統合したりしない。
 
 `internal/norm` の局所名の正規化を再利用し、`internal/similar` 等の独立した候補処理で部分木のfingerprintを集める。L1ベースの語/役割を用い、呼出先・メンバー名・演算子・定数・制御構造の違いを保持する。scoreは正しさの確率ではなく、確認する順序のための値。
 
@@ -93,7 +93,7 @@ spansWidthの例では、rangeの入力式が異なってもループ内部の�
 
 「寄せられるか」は人/agentが型・nilの扱い・副作用・依存境界・同じ責務かを確認する。共通化先や動作の同一性を確定した表示にしない。自然文の説明は認識できた構文patternから生成し、任意のコードの意味を理解したとは扱わない。認識できなければ正規化ASTの一致/差分を返す。
 
-現行tree.Nodeにはsource spanが無いため、最初は単位位置と正規化ASTの差分を出す。元sourceの正確な範囲を表示するにはadapterからnodeの位置対応を追加する必要があり、存在しない位置を推測で埋めない。JSON/解析coverage/出力量の上限は[926](926-feat-dupscan-query-diagnostics.md)の契約を共用し、型解決・利用可能module/targetの判定をscoreで代用しない。
+現行tree.Nodeにはsource spanが無いため、最初は単位位置と正規化ASTの差分を出す。元sourceの正確な範囲を表示するにはadapterからnodeの位置対応を追加する必要があり、存在しない位置を推測で埋めない。JSON/解析coverage/出力量の上限は[926](../926-feat-dupscan-query-diagnostics.md)の契約を共用し、型解決・利用可能module/targetの判定をscoreで代用しない。
 
 ### 5. 実例・反例・処理量で採否を決める
 
@@ -101,7 +101,7 @@ spansWidthの例では、rangeの入力式が異なってもループ内部の�
 - 反例/注意例: termwidth.Ofとlenの違い、Textと別field、加算と減算、追加のfilter/上限処理、別の呼出先・定数、同じ形だが別責務の実装。差分を隠さず、同一動作と断定しない。候補にする/順位を下げる/出さないという期待は正解表へ事前に分ける。
 - 今回の実例だけに閾値を合わせず、別packageのheld-out例でtop-kの有用な候補到達率・確認した候補中の不適切な候補数を測る。正解はソースと依存境界の確認で決める。
 - 小規模の全対比較との一致、同じ部分木が大量反復する入力、入れ子/再帰の入力、dotfiles/srcとobaket規模で、wall time・peak RSS・比較対数・出力bytesを記録する。現行near/reportとの結果・所要を比べ、追加コストに見合う候補が増えたか判断する。現在の性能/発見率の改善は未計測。
-- 開発効率は[928](928-feat-dupscan-agent-onboarding.md)の手順で別途測る。Type-3でこの例が出ただけでは、grepより既存実装の再利用が増えたことにはならない。
+- 開発効率は[928](../928-feat-dupscan-agent-onboarding.md)の手順で別途測る。Type-3でこの例が出ただけでは、grepより既存実装の再利用が増えたことにはならない。
 
 ## 追加の受け入れ条件
 
@@ -124,10 +124,12 @@ spansWidthの例では、rangeの入力式が異なってもループ内部の�
 
 - 2026-10-26: pendingから同番号のopen課題へ移し、見逃しの実例と検証条件を継続管理。 読み取り専用Codex subagentで指摘の網羅性とcontext計測を反証レビューし、P3（現行/設計、着手条件、計測範囲）の3点を訂正した。文書の改善は、不足した指摘の担当と検証条件を明確にしたこと。実装・両効果の実証は未着手。
 
-- 2026-10-26: [935](done/935-test-doctor-duplicate-discovery-effect.md)のdoctor探索で、disk/scan_test.goとdisk/delete_test.goのfake runnerが同じ最長prefix/トークン境界選択loopを持つと確認した。grep側は2/2回発見したが、現行reportは既定・事前指定の追加条件のどちらでも検出しなかった。完全なメソッドの同一性ではなく部分重複の既知例として、Type-3の回帰入力候補に加える。未実装の895で拾えると実証したものではない。
+- 2026-10-26: [935](935-test-doctor-duplicate-discovery-effect.md)のdoctor探索で、disk/scan_test.goとdisk/delete_test.goのfake runnerが同じ最長prefix/トークン境界選択loopを持つと確認した。grep側は2/2回発見したが、現行reportは既定・事前指定の追加条件のどちらでも検出しなかった。完全なメソッドの同一性ではなく部分重複の既知例として、Type-3の回帰入力候補に加える。未実装の895で拾えると実証したものではない。
 
-- 2026-10-26: doctorの最長prefix部分重複は[936](../../done/936-refactor-doctor-domain-duplicate-methods.md)で共通化済み。895の検出改善は未着手で継続し、既知例の回帰fixtureを作る際は共通化前の4a79e2dcの両runnerを入力にする。現在のdoctorに未解消のloop重複があるとは扱わない。
+- 2026-10-26: doctorの最長prefix部分重複は[936](../../../done/936-refactor-doctor-domain-duplicate-methods.md)で共通化済み。895の検出改善は未着手で継続し、既知例の回帰fixtureを作る際は共通化前の4a79e2dcの両runnerを入力にする。現在のdoctorに未解消のloop重複があるとは扱わない。
 
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
 
 - 2026-10-27: `feat(dupscan): offer opt-in L1 subtree similarity candidates`で対象指定の試作と回帰を追加。`docs(dupscan): record similarity scope and measured limitations`で2歴史例、合成反例、規模別費用と採否を記録。類似検出自体の最小範囲は完了、一般的な開発効率は未実証。
+
+- 2026-10-28: `docs(dupscan): close bounded similarity prototype after review`で文書反証レビューP3（旧本文のnear未実装表記）を訂正。計測値と限定完了の判断にP1/P2なし。対象指定試作の受け入れを満たしたのでdoneへ移す。一般精度・再利用効率や任意の部分重複は保証しない。

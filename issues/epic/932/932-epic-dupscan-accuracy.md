@@ -32,7 +32,7 @@ open子issue 9件をa5b4196eの実装と照合した。全件openを維持する
 
 | 番号 | 何をするか |
 |---|---|
-| [895](895-feat-dupscan-type3-candidates.md) | 小さい関数を含む構文の少し違う重複候補を出す |
+| [895](done/895-feat-dupscan-type3-candidates.md) | 小さい関数を含む構文の少し違う重複候補を出す |
 | [899](done/899-research-dupscan-lsp-integration.md) | 型/シンボル解決の範囲と負担を非LSPの解析から調査する |
 | [918](918-feat-dupscan-target-and-literal-table.md) | 所属/利用可否とリテラル差分の根拠を扱う |
 | [924](done/924-perf-dupscan-exploration-latency.md) | 探索コマンド (`index` / `def` / `refs`) の待ち時間を減らす |
@@ -86,3 +86,5 @@ open子issue 9件をa5b4196eの実装と照合した。全件openを維持する
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`でopen9件を再評価。誤診断/注意表示と効果評価を優先し、大規模拡張は具体的な不足を着手条件とした。
 
 - 2026-10-27: `docs(dupscan): correct evidence terminology and conditional acceptance`で3観点のread-only subagent反証レビューを反映。P2 1件（条件付き設計と旧完了条件の矛盾）とP3 4件（Called/Calls、節/定義選択、条件付き受け入れ、labelなし照会）を訂正。監査を終え親のclaimを解除、全open子issueの位置は維持。
+
+- 2026-10-28: 895で対象指定 `near -similar` の限定試作を完了。全体hashの異なる2歴史例を発見できたが、型/責務/利用可否は未証明。本issueの役割は継続する。
