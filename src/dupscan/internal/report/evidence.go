@@ -16,10 +16,11 @@ type EvidenceEntry struct {
 	File string
 	Line int
 	// Unit は doc の行ならその doc が付いた単位、それ以外なら行を囲む単位 (無ければ空)。
-	Unit  string
-	Text  string
-	Calls []string // その行で呼んでいる名前 (重複を除いて出た順)
-	Hits  int      // doc の節だけ: その単位の doc で語を含む行の数 (Line と Text は最初の行)
+	Unit   string
+	Symbol string // doc の単位の、署名を含まない宣言名
+	Text   string
+	Calls  []string // その行で呼んでいる名前 (重複を除いて出た順)
+	Hits   int      // doc の節だけ: その単位の doc で語を含む行の数 (Line と Text は最初の行)
 }
 
 // CalledName は語を含む行 (テスト・ソース) で呼ばれている名前と、その行の数。
@@ -30,12 +31,13 @@ type CalledName struct {
 
 // EvidenceSummary は evidence の出力。行は 3 つに分け、同じ行を 2 つに数えない。
 type EvidenceSummary struct {
-	Term     string
-	Doc      []EvidenceEntry // doc comment に語がある単位 (単位ごとに 1 件)
-	DocLines int             // Doc の単位の doc で語を含む行の合計
-	Test     []EvidenceEntry // test のファイルか test の単位の中の行 (doc を除く)
-	Source   []EvidenceEntry // それ以外の行 (コメント・文字列を含む)
-	Called   []CalledName    // Test と Source の行で呼ばれている、repo の中に定義がある名前 (行の数の多い順)
+	Term      string
+	Truncated bool            // 行か単位の表示が短縮されている
+	Doc       []EvidenceEntry // doc comment に語がある単位 (単位ごとに 1 件)
+	DocLines  int             // Doc の単位の doc で語を含む行の合計
+	Test      []EvidenceEntry // test のファイルか test の単位の中の行 (doc を除く)
+	Source    []EvidenceEntry // それ以外の行 (コメント・文字列を含む)
+	Called    []CalledName    // Test と Source の行で呼ばれている、repo の中に定義がある名前 (行の数の多い順)
 }
 
 const (
@@ -78,15 +80,17 @@ func BuildEvidence(term string, sources map[string][]byte, units []*tree.Unit, c
 			}
 			n := i + 1
 			e := EvidenceEntry{File: file, Line: n, Text: evidenceText(line), Calls: callsAt[at{file, n}]}
+			textTruncated := e.Text != strings.ToValidUTF8(strings.TrimSpace(line), "\uFFFD")
 			if u := docOwner(byFile[file], n); u != nil {
 				s.DocLines++
 				if j, ok := docAt[u]; ok {
 					s.Doc[j].Hits++
 					continue
 				}
-				e.Unit, e.Calls, e.Hits = label(ref(u)), nil, 1 // doc の中の行に呼び出しは無い
+				e.Unit, e.Symbol, e.Calls, e.Hits = label(ref(u)), u.Name, nil, 1 // doc の中の行に呼び出しは無い
 				docAt[u] = len(s.Doc)
 				s.Doc = append(s.Doc, e)
+				s.Truncated = s.Truncated || textTruncated || utf8.RuneCountInString(e.Unit) > evidenceUnitRunes
 				continue
 			}
 			for _, name := range e.Calls {
@@ -98,6 +102,7 @@ func BuildEvidence(term string, sources map[string][]byte, units []*tree.Unit, c
 			if u != nil {
 				e.Unit = label(ref(u))
 			}
+			s.Truncated = s.Truncated || textTruncated || utf8.RuneCountInString(e.Unit) > evidenceUnitRunes
 			if isTest(file) || u != nil && u.Test {
 				s.Test = append(s.Test, e)
 			} else {

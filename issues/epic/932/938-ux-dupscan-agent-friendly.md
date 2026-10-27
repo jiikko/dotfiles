@@ -76,3 +76,5 @@ agent が dupscan に気づき、少ない出力で正しい次の一手へ進�
 - 2026-10-27: `docs(dupscan): refresh agent UX assumptions after test owner support`で937への参照を完了位置へ合わせ、Go callersはテスト名を表示できるという実装済みの前提へ更新した。938のhook/UX機能自体は未着手のまま。
 
 - 2026-10-27: 案1を939へ切り出して実装した。Go向けindex/callers案内・通知間隔・build非起動を検証。案2〜5と効果測定は未着手で継続する。旧dupscan全件集計にはGoの利用も混ざりうるため、影響しないという断定を訂正した。
+
+- 2026-10-27: `feat(dupscan): add concise query views and scoped next actions`で案2〜4をcontext/evidenceへ実装し、案5の任意summary/節選択を追加した。通常表示の既定は維持。lint/race全テスト・strict module gateが成功し、新規除外なし。測定と採否の詳細は完了記録へ追記する。

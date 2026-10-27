@@ -66,14 +66,31 @@ func runEvidence(args []string, stdout, stderr io.Writer) int {
 		defined[d.Name] = true
 	}
 	s := report.BuildEvidence(term, got.contents, evidenceOwners(got), got.calls, defined, langs.IsTestPath)
-	fmt.Fprintf(stdout, "dupscan evidence: %q — doc に語がある単位 %d 個 / テスト %d 件 / その他のソース %d 件 / そこで呼ばれている名前 %d 個\n",
-		term, len(s.Doc), len(s.Test), len(s.Source), len(s.Called))
+	ux := queryUX{Approximation: "語の一致 (型解決なし)", ParseErrors: len(got.errFiles), Truncated: s.Truncated}
+	if *limit > 0 && (len(s.Doc) > *limit || len(s.Test) > *limit || len(s.Source) > *limit || len(s.Called) > *limit) {
+		ux.Truncated = true
+	}
+	fmt.Fprintf(stdout, "dupscan evidence: %q — doc に語がある単位 %d 個 / テスト %d 件 / その他のソース %d 件 / そこで呼ばれている名前 %d 個%s\n",
+		term, len(s.Doc), len(s.Test), len(s.Source), len(s.Called), ux.suffix())
 	fmt.Fprintln(stdout, "  語の一致 (大文字小文字を区別しない) で、定義・呼び出しの照合ではない。doc は doc comment の全文 (Go は関数の doc だけ)。"+
 		"テスト・ソースの行はコメント・文字列も含む。候補を見つけたら context か def で確かめる")
 	if len(got.errFiles) > 0 {
 		fmt.Fprintf(stdout, "  読めない構文を含むファイルが %d 個 (そこの単位は欠けうる。行は探している): %s\n", len(got.errFiles), headList(got.errFiles, 3))
 	}
-	if err := report.EvidenceText(stdout, s, *limit); err != nil {
+	if len(s.Called) > 0 {
+		if err := writeNextAction(stdout, queryNextAction(sc, "callers", s.Called[0].Name, "語を含む行で呼ばれている候補の使われ方を確かめる")); err != nil {
+			return fail(err)
+		}
+	} else if len(s.Doc) > 0 && s.Doc[0].Symbol != "" {
+		action := queryNextAction(sc, "index", s.Doc[0].Symbol, "doc に語がある候補の定義を索引で確かめる", "-name")
+		if strings.HasSuffix(s.Doc[0].File, ".swift") {
+			action = queryNextAction(sc, "context", s.Doc[0].Symbol, "doc に語がある候補の定義と使われ方を確かめる")
+		}
+		if err := writeNextAction(stdout, action); err != nil {
+			return fail(err)
+		}
+	}
+	if err := report.EvidenceTextGrouped(stdout, s, *limit); err != nil {
 		return fail(err)
 	}
 	return 0

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -71,9 +72,9 @@ func TestEvidenceFindsUnitsByWordsBeyondTheFirstDocLine(t *testing.T) {
 	sec := contextSections(t, out)
 	doc := sec["doc"]
 	for _, want := range []string{
-		"Sources/Store.swift:4 Store.location(_ name: String) -> String | /// Use this when a bucket must be joined with a connection.",
-		"Sources/Store.swift:8 Store.open() | *  The BUCKET is created lazily. */",
-		"pkg/store/store.go:5 Join(a, b string) string | // The bucket comes first.",
+		"  4 Store.location(_ name: String) -> String | /// Use this when a bucket must be joined with a connection.",
+		"  8 Store.open() | *  The BUCKET is created lazily. */",
+		"  5 Join(a, b string) string | // The bucket comes first.",
 	} {
 		if !strings.Contains(doc, want+"\n") {
 			t.Errorf("doc の 2 行目以降 (大文字小文字を区別しない) の語から単位へ辿る。%q が無い: %q", want, doc)
@@ -100,16 +101,16 @@ func TestEvidenceSeparatesTestAndSourceLinesAndNamesCalledHelpers(t *testing.T) 
 	sec := contextSections(t, out)
 	test, src := sec["テストの行"], sec["その他のソースの行"]
 	for _, want := range []string{
-		`Tests/StoreTests.swift:4 StoreTests.testBucket() | let bucket = Store().location("b")  → 呼び出し: location, Store`,
-		`pkg/store/store_test.go:6 (単位の外) | bucket := Join("a", "b")  → 呼び出し: Join`,
+		`  4 StoreTests.testBucket() | let bucket = Store().location("b")  → 呼び出し: location, Store`,
+		`  6 (単位の外) | bucket := Join("a", "b")  → 呼び出し: Join`,
 	} {
 		if !strings.Contains(test, want+"\n") {
 			t.Errorf("テストの行に、囲む単位とその行の呼び出しを添える。%q が無い: %q", want, test)
 		}
 	}
 	for _, want := range []string{
-		"Sources/Store.swift:11 struct Store | // bucket in a plain comment is not a doc",
-		`Sources/Store.swift:12 Store.plain() | func plain() { let s = "bucket"; print(s) }  → 呼び出し: print`,
+		"  11 struct Store | // bucket in a plain comment is not a doc",
+		`  12 Store.plain() | func plain() { let s = "bucket"; print(s) }  → 呼び出し: print`,
 	} {
 		if !strings.Contains(src, want+"\n") {
 			t.Errorf("doc でもテストでもない行 (コメント・文字列を含む) はその他のソースに出す。%q が無い: %q", want, src)
@@ -124,7 +125,7 @@ func TestEvidenceSeparatesTestAndSourceLinesAndNamesCalledHelpers(t *testing.T) 
 func TestEvidenceGroupsDocLinesPerUnit(t *testing.T) {
 	root := repoWith(t, map[string]string{"Sources/A.swift": "/// retry once\n/// then retry again\nfunc go() {}\n"})
 	_, out, _ := evidence(t, "retry", root)
-	if !strings.Contains(out, "Sources/A.swift:1 go() | /// retry once  (doc の 2 行に語がある)\n") || !strings.Contains(out, "## doc に語がある単位 (1 個 / doc の 2 行)") {
+	if !strings.Contains(out, "  1 go() | /// retry once  (doc の 2 行に語がある)\n") || !strings.Contains(out, "## doc に語がある単位 (1 個 / doc の 2 行)") {
 		t.Errorf("同じ単位の doc の行は 1 件にまとめて行の数を添える: %q", out)
 	}
 }
@@ -154,16 +155,16 @@ final class StoreTests: XCTestCase {
 	}
 	doc := contextSections(t, out)["doc"]
 	for _, want := range []string{
-		"Sources/P.swift:2 protocol Transport | /// Frames are sent whole.",
-		"Sources/P.swift:4 Transport.send(_ frame: [UInt8]) | /// Sends one frame.  (doc の 2 行に語がある)",
-		"Sources/P.swift:15 StoreTests.testStore() | /// Uses a fake frame.",
+		"  2 protocol Transport | /// Frames are sent whole.",
+		"  4 Transport.send(_ frame: [UInt8]) | /// Sends one frame.  (doc の 2 行に語がある)",
+		"  15 StoreTests.testStore() | /// Uses a fake frame.",
 	} {
 		if !strings.Contains(doc, want+"\n") {
 			t.Errorf("protocol の要件・型・テスト関数の doc も単位へ辿る。%q が無い: %q", want, doc)
 		}
 	}
 	_, out, _ = evidence(t, "encryption", root)
-	if !strings.Contains(out, "Sources/P.swift:10 Negotiate.var capabilities: UInt32 | /// The only signal for encryption.") {
+	if !strings.Contains(out, "  10 Negotiate.var capabilities: UInt32 | /// The only signal for encryption.") {
 		t.Errorf("保存 property の doc も単位へ辿る: %q", out)
 	}
 }
@@ -172,7 +173,7 @@ func TestEvidenceDocRangeStopsAtNonDocCommentAboveIt(t *testing.T) {
 	root := repoWith(t, map[string]string{"Sources/A.swift": "/// old note\n// MARK: - Helpers\n/// joins parts\n// dupscan:allow helper\nfunc join() {}\n"})
 	_, out, _ := evidence(t, "-limit", "0", "o", root)
 	sec := contextSections(t, out)
-	if !strings.Contains(sec["doc"], "Sources/A.swift:3 join() | /// joins parts\n") || strings.Contains(sec["doc"], "old note") || strings.Contains(sec["doc"], "MARK") {
+	if !strings.Contains(sec["doc"], "  3 join() | /// joins parts\n") || strings.Contains(sec["doc"], "old note") || strings.Contains(sec["doc"], "MARK") {
 		t.Errorf("doc は宣言に近い側から続く doc comment だけ (間の許可の印は飛ばし、MARK の上の doc は入れない): %q", out)
 	}
 }
@@ -181,7 +182,7 @@ func TestEvidenceShortensLongUnitSignatures(t *testing.T) {
 	params := strings.Repeat("argumentNumber: Int, ", 8)
 	root := repoWith(t, map[string]string{"Sources/A.swift": "func long(" + params + "last: Int) {\n    // needle\n}\n"})
 	_, out, _ := evidence(t, "needle", root)
-	if !strings.Contains(out, "Sources/A.swift:2 long("+strings.Repeat("argumentNumber: Int, ", 4)[:75]+"… | // needle\n") {
+	if !strings.Contains(out, "  2 long("+strings.Repeat("argumentNumber: Int, ", 4)[:75]+"… | // needle\n") {
 		t.Errorf("囲む単位の署名は 80 文字で切る: %q", out)
 	}
 }
@@ -209,5 +210,100 @@ func TestEvidenceRejectsBadArguments(t *testing.T) {
 		if rc, _, _ := evidence(t, args...); rc != 2 {
 			t.Errorf("%q は rc=2: rc=%d", args, rc)
 		}
+	}
+}
+
+func TestEvidenceNextActionReplaysCalledAndDocOnlyCandidates(t *testing.T) {
+	for _, docOnly := range []bool{false, true} {
+		t.Run(map[bool]string{false: "called", true: "doc only"}[docOnly], func(t *testing.T) {
+			source := "/// needle is documented\nfunc candidate() {}\n"
+			if !docOnly {
+				source += "func use() { candidate() /* needle */ }\n"
+			}
+			root := repoWith(t, map[string]string{"Sources/A.swift": source})
+			rc, out, errs := evidence(t, "needle", root)
+			if rc != 0 || errs != "" {
+				t.Fatalf("rc=%d out=%q stderr=%q", rc, out, errs)
+			}
+			if strings.Count(out, "next_action: ") != 1 {
+				t.Fatalf("exactly one action: %q", out)
+			}
+			var action nextAction
+			for _, line := range strings.Split(out, "\n") {
+				if strings.HasPrefix(line, "next_action: ") {
+					if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "next_action: ")), &action); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			rc, replay, replayErr := runReport(t, action.Argv[1:]...)
+			if rc != 0 || replayErr != "" || !strings.Contains(replay, "candidate") {
+				t.Fatalf("replay rc=%d out=%q stderr=%q argv=%q", rc, replay, replayErr, action.Argv)
+			}
+			if docOnly && action.Kind != "context" || !docOnly && action.Kind != "callers" {
+				t.Fatalf("unexpected action: %#v", action)
+			}
+		})
+	}
+}
+
+func TestEvidenceNoHitHasNoNextAction(t *testing.T) {
+	_, out, _ := evidence(t, "nothing-matches", evidenceRepo(t))
+	if strings.Contains(out, "next_action:") {
+		t.Fatalf("no result must not suggest an action: %q", out)
+	}
+}
+
+func TestEvidenceFirstLineReportsLimitAndSnippetOmissions(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": "func a() {}\n// needle " + strings.Repeat("x", 200) + "\n// needle again\n"})
+	for _, limit := range []string{"0", "1"} {
+		_, out, _ := evidence(t, "-limit", limit, "needle", root)
+		first, _, _ := strings.Cut(out, "\n")
+		if !strings.Contains(first, "近似: 語の一致") || !strings.Contains(first, "省略: あり") || !strings.Contains(first, "構文解析失敗: 0 ファイル") {
+			t.Fatalf("coverage missing: %q", first)
+		}
+	}
+}
+
+func TestEvidenceDocOnlyPropertyActionShowsDefinition(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": "struct Store {\n /// needle documents capabilities\n var capabilities: UInt32 = 0\n}\n"})
+	rc, out, errs := evidence(t, "needle", root)
+	if rc != 0 || errs != "" {
+		t.Fatalf("rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+	var action nextAction
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "next_action: ") {
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "next_action: ")), &action); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if action.Kind != "context" {
+		t.Fatalf("property action = %#v", action)
+	}
+	rc, replay, replayErr := runReport(t, action.Argv[1:]...)
+	if rc != 0 || replayErr != "" || !strings.Contains(replay, "定義 1 件") || !strings.Contains(replay, "var capabilities: UInt32 = 0") {
+		t.Fatalf("property replay rc=%d out=%q stderr=%q argv=%q", rc, replay, replayErr, action.Argv)
+	}
+}
+
+func TestEvidenceGoDocOnlyActionUsesIndex(t *testing.T) {
+	root := repoWith(t, map[string]string{"store.go": "package store\n// Join combines a needle.\nfunc Join() {}\n"})
+	_, out, _ := evidence(t, "needle", root)
+	var action nextAction
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "next_action: ") {
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "next_action: ")), &action); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if action.Kind != "index" {
+		t.Fatalf("Go action = %#v", action)
+	}
+	rc, replay, errs := runReport(t, action.Argv[1:]...)
+	if rc != 0 || errs != "" || !strings.Contains(replay, "Join()") {
+		t.Fatalf("rc=%d out=%q stderr=%q", rc, replay, errs)
 	}
 }
