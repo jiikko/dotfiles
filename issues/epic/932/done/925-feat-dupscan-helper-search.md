@@ -63,7 +63,7 @@ dupscan search -query 'connection bucket fixture' -returns StorageLocation -limi
 - [ ] 既存がない課題では正しく新規実装できることを対照に入れる。小さなrepoで対照群も常に既存を見つけるなら、効果を測れない条件として扱う。
 - [x] 固定Goと大きいSwift corpusでhit互換とlatency/bytesを測定する。一般的な高速化は主張しない。
 
-関連: [924](done/924-perf-dupscan-exploration-latency.md) は処理速度、[918](done/918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](../890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。917の保留条件は維持する。895/918の実装はepic 932の別担当であり、本issueに混ぜない。
+関連: [924](924-perf-dupscan-exploration-latency.md) は処理速度、[918](918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](../../890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。917の保留条件は維持する。895/918の実装はepic 932の別担当であり、本issueに混ぜない。
 
 ## 詳細設計案（2026-10-26）
 
@@ -114,12 +114,12 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 
 ## grepで見落とした既存実装へ到達するための追加条件
 
-2026-10-26のユーザー確認: grepを使っていても既存実装を見つけられず、似たメソッドを量産しているためdupscanを作った。これを解くことが目的であり、「既知の名前を1回引く速度」やCLIの呼び出し回数だけで有効性を判断しない。[928](928-feat-dupscan-agent-onboarding.md) の比較課題・採否をこの目的へ揃える。
+2026-10-26のユーザー確認: grepを使っていても既存実装を見つけられず、似たメソッドを量産しているためdupscanを作った。これを解くことが目的であり、「既知の名前を1回引く速度」やCLIの呼び出し回数だけで有効性を判断しない。[928](../928-feat-dupscan-agent-onboarding.md) の比較課題・採否をこの目的へ揃える。
 
 - 名前を知らない段階では、現行 `index -returns` / `-param-type` から始められる。新searchは複数用途語を名前/署名/docへ横断して当て、一致根拠を返す役割。名前を既に知っている課題だけで検索性能を評価しない。
 - 別名・docなし・型が容器に包まれる・helperがtest supportや別directoryにある・同名の無関係な関数が多いケースを入れる。字面が全く一致しない用途/型別名は初期lexical検索の限界として失敗数へ残す。意味検索ができると宣伝しない。
 - 0件ならCLIが、型だけのindex検索、1語検索、明示filterを1つ外す、scopeを広げる等の次のargvを最大3個返す。候補がある場合も一般的な絞り込み/再検索案は出せるが、候補の関連性や再利用の適否はagentがコードを読んで判断し、必要なら明示的に再検索する。変更する条件をreasonへ明示し、元のfilterを黙って緩めない。0件を新規実装の許可とみなさない。
-- 候補カードには署名・可視性・一致根拠・file位置と確認用argvを返す。可視性は実際の利用可否の証明ではなく、module/target確認は未解決と表示する。candidateの数や[930](done/930-feat-dupscan-candidate-call-evidence.md)の近似呼び出し数で正しさを代用しない。
+- 候補カードには署名・可視性・一致根拠・file位置と確認用argvを返す。可視性は実際の利用可否の証明ではなく、module/target確認は未解決と表示する。candidateの数や[930](930-feat-dupscan-candidate-call-evidence.md)の近似呼び出し数で正しさを代用しない。
 - 正解集合から、top-5に適切な既存候補が入る率・既存ありなのに候補0となる割合を測る。agent評価では、最終diffの不要な重複追加率、正しい再利用率、誤った統合率を928で計測する。候補の網羅性と最終再利用を別に採点する。
 
 受け入れ条件への追加: grepを適切に使っても見落としが起こる代表課題で、dupscanが適切な候補への到達と重複追加の削減に寄与するか比較する。結果が改善しなければ、語の規則・順位・案内のどこで失敗したかを残す。Type-3と所属target解析の実装は895/918の担当であり、本issueの範囲外。
@@ -134,9 +134,9 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 
 - 2026-10-26: 既存実装発見・比較評価について読み取り専用Codex subagentで反証レビュー。925の「候補の適切性をCLIが判断するように読める」P3を訂正し、候補抽出とagentによる採用判断を分けた。 issue内の相対リンク・JSON/Python構文・diffとBash 5のissue関連テストが成功。929の本文内手順と930の3問い合わせをCLIで再現した。文書の改善は、出力誤認の再現・責務と、既存実装発見/不要な重複追加を測る条件を具体化したこと。機能改善の効果は未検証。
 
-- 2026-10-26: [931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931のtuikit実例では、同じ表示幅ループがslice直渡し/struct.field経由の構文差と19-nodeの閾値で現行near/reportに一致しなかった。未知名からの型/用途検索の評価へ追加する。新searchの効果は未検証。
+- 2026-10-26: [931](../../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931のtuikit実例では、同じ表示幅ループがslice直渡し/struct.field経由の構文差と19-nodeの閾値で現行near/reportに一致しなかった。未知名からの型/用途検索の評価へ追加する。新searchの効果は未検証。
 
-- 2026-10-26: 初期のname/signature/doc先頭行に加える呼出先/本体hintは[933](done/933-feat-dupscan-behavior-hint-search.md)、doc全文・テスト等の補助証拠は[934](934-feat-dupscan-source-evidence-search.md)へ起票した。段階ごとの仕様変更を分け、未実装の能力を初期searchに混ぜない。
+- 2026-10-26: 初期のname/signature/doc先頭行に加える呼出先/本体hintは[933](933-feat-dupscan-behavior-hint-search.md)、doc全文・テスト等の補助証拠は[934](../934-feat-dupscan-source-evidence-search.md)へ起票した。段階ごとの仕様変更を分け、未実装の能力を初期searchに混ぜない。
 
 - 2026-10-27: 924で探索共通経路の比較用本体変換/正規化を省く処理を実装した。925の用途語/署名検索・順位設計は未着手で継続する。
 
@@ -176,7 +176,7 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 
 ## 現行版の固定課題評価（2026-10-27）
 
-対象は09e983fc。旧doctorの2正例を再利用せず、ソースを人が読んでquery・期待候補・非同等候補をUTC 12:35:50に凍結した。名前を課題文に含めないS1/S2と、alias/不存在の対照を含む。今回選んだ小規模課題であり、blindな順位評価や一般化の証明ではない。共通の計測条件と実agent編集pilotは[928](928-feat-dupscan-agent-onboarding.md)へ記録した。
+対象は09e983fc。旧doctorの2正例を再利用せず、ソースを人が読んでquery・期待候補・非同等候補をUTC 12:35:50に凍結した。名前を課題文に含めないS1/S2と、alias/不存在の対照を含む。今回選んだ小規模課題であり、blindな順位評価や一般化の証明ではない。共通の計測条件と実agent編集pilotは[928](../928-feat-dupscan-agent-onboarding.md)へ記録した。
 
 Go corpusは09e983fcの`src/userdirs` / `src/safefs`。rgはqueryの各語を`rg -n -i -e <語> ... -g '*.go' <scope>`でOR検索し、全件のソース・テスト行を許す。indexは同じ型filter、searchは同じ用途語と指定語数。候補の意味上の正解は出力から生成せず、事前に読んだ実装の規則で判定した。
 
@@ -191,7 +191,7 @@ S1/S2の正解確認に共通のtarget Readを追加すると、それぞれ534b
 
 alias課題のnext_actionを実行すると、必要語数2→1で0件のまま（820bytes追加）、次にreturns条件を明示解除して2候補へ到達（2277bytes追加）。初回から計3951bytes/3検索となる。黙って型を解決したことにはせず、不要な再問い合わせ費用も結果に含める。
 
-doc/source課題でも失敗を残した。[934](934-feat-dupscan-source-evidence-search.md)のE1では`相対 symlink`のOR検索がConfigFileだけを返し、正解MoveIfMissingは出ない。E2の`as a drop`では短い`a`も一致語になるため上位5件に正解が入らず、evidenceでは到達した。既知の用例だけに合わせたstopword・rank調整は今回行わない。
+doc/source課題でも失敗を残した。[934](../934-feat-dupscan-source-evidence-search.md)のE1では`相対 symlink`のOR検索がConfigFileだけを返し、正解MoveIfMissingは出ない。E2の`as a drop`では短い`a`も一致語になるため上位5件に正解が入らず、evidenceでは到達した。既知の用例だけに合わせたstopword・rank調整は今回行わない。
 
 判断: 現行textの候補整理と限界は評価できた。JSON、同義語、cache、追加rank featureをこの結果だけで採用しない。正しい再利用/不要な重複追加を検索そのものが改善したという実agent差は未実証で、925はopenを維持する。次は独立した実際の見落とし事例から新しい1課題を事前固定し、rg/target Readへsearchを追加した差を調べる。今回の成功/失敗例を入れ替えて効果を作らない。
 

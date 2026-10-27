@@ -54,7 +54,7 @@ dupscan agent-guide -target codex -print
 - [ ] capabilities・guide・実際のCLIの対応表が一致し、初回buildと探索そのものの時間を分けて測る。導入の繰り返しで指示を重複させない。
 - [x] hookの通知は少数・短文で、追加の待ち時間を実測する。全repo解析やbuildが通知だけで起きないことを確認する。
 - [ ] [917](../890/pending/917-test-dupscan-usefulness-verification.md) / 921の計測とつなぎ、両agentを別集計する。適切な呼び出し、実際の再利用、誤誘導、往復数・elapsed timeを比較し、利用回数の増加だけで採用しない。
-- [ ] Codex/Claudeの固有連携が使えなくても、共通CLIを手動で呼べる導入経路が残る。
+- [x] 共通CLIを手動で呼べる導入経路を確認する。両targetのguide6条件とfixtureの生成argv実行を確認した。固有AI連携の成功と同一視しない。
 
 ## 詳細設計案（2026-10-26）と実装差分
 
@@ -300,3 +300,20 @@ Claude Code 2.1.311で`-p --permission-mode dontAsk --tools Bash --allowedTools 
 改善の再評価: 強いrg/Read対照、実編集の1対、成功だけでない誤誘導/取りこぼし/再試行費用を得た。導入案内があるだけで再利用やcontextを改善したという推測を退け、追加機能の一括実装を不採用にできた。コード・一般的なtoken削減/再利用率の改善を実証したという結論ではない。
 
 - 2026-10-28: `docs(dupscan): evaluate current discovery with fixed tasks and edit pilot`で9課題とCodex実編集1対を評価。issue相対リンク/番号/旧path/next目印とbannerの検査は成功、dupscan gateは変更単位0・新重複/除外なし（既存不正fixtureを通知）。4issueの実証済み条件を分けて更新し、未実証の効果を残した。
+
+## 今回追加したローカル導線検証（2026-10-28）
+
+外部モデルは呼ばず、18673a39と925修正を含む専用worktreeで共通wrapper/CLIを直接実行した。GOPROXY/GOSUMDBはoff。新しい外部ソース送信への許可は未受領なので、ClaudeのGo実編集・CodexのSwift課題の再試行は行っていない。
+
+- binary不在で `-no-build capabilities -format json`: rc2・stdout0bytes。通常起動ではローカルbuild込み1.192秒で準備できた。**compiler cacheはwarm**であり、Go cache全消去のcold buildや初回dependency取得の測定ではない。
+- 準備後の `-no-build capabilities` は別cwdでもrc0/11849bytes、通常起動とbyte一致、約20ms（各単発）。出力を実JSONとしてparseした。
+- claude/codex × go/swift/allのguide6条件はrc0、1221〜1357bytesで4096上限内、約12〜14ms（各単発）。これは表示用CLIの成功であり、各AIが内容を使ったという結果ではない。既存のTestAgentGuideOnlyAdvertisesExecutableRegisteredCommandsでも両templateの4argvをfixtureで実行する。
+- config不在はrc0、壊れたconfigはrc2、stale markerでno-buildはrc2/stdout0、実際の非repo `/private/tmp` はrc2。生成済みmarkerは元へ戻し、検証用configは削除した。初回の非repo条件をdotfiles/tmp配下に置いた試行は親git repoに認識されrc0になったため棄却し、非repo成功例とは数えなかった。
+
+rawはdotfiles/tmp/remaining-932-20261028/readiness.logとreadiness-followup.json。案内の手動実行経路を補強したが、CLI不存在/SDK検索/全混在matrixやcold-cacheを全達成とはしない。既存のdoctor/capabilities/guideテストと区別して残す。数値は非統制の単発観測で、latency改善を主張しない。
+
+925の無益な再検索、927の型名回復、934の原文確認は個別の局所検証として記録する。これらをagentの正しい再利用・誤採用減少・不要な重複追加/実context削減の達成に置き換えない。本issueは実agentの比較が未実証のためopenを維持する。source開示を伴う追加評価は、対象を示した明示許可が得られた範囲だけ実行する。
+
+- 2026-10-28: `docs(dupscan): record local onboarding checks and pending agent evaluation`で共通CLIの実起動6guide/準備状態/別cwd/設定/非repoを検証し、元の弱い非repo試行と未実施項目を区別した。コードの追加や新しい外部agent実験は行っていない。
+
+- 2026-10-28: ローカル導線の追加記録をread-only subagentで反証し、追加指摘なし。AIによる実利用と効率の評価はopenのまま。

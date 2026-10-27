@@ -114,13 +114,13 @@ cursorのquery hashは定義IDと探索条件を束縛する。表示上のsecti
 
 ## 既存候補を採用するまでの確認を短くする
 
-[925](925-feat-dupscan-helper-search.md)で得た候補の定義・本体・利用例を、再利用を判断する根拠としてまとめる。候補の名前だけ分かっても、別々のRead/refs/callersで取りこぼして新設へ戻る往復を減らす。CLIの速度・bytesだけで効果を決めず、最終的な不要な重複追加を928で採点する。
+[925](done/925-feat-dupscan-helper-search.md)で得た候補の定義・本体・利用例を、再利用を判断する根拠としてまとめる。候補の名前だけ分かっても、別々のRead/refs/callersで取りこぼして新設へ戻る往復を減らす。CLIの速度・bytesだけで効果を決めず、最終的な不要な重複追加を928で採点する。
 
 初期版はSwiftのみ。contextの近似refs/callersを選択定義に型解決した使用例と表示しない。出力上限による省略や[929](done/929-bug-dupscan-gate-lost-file-parse-errors.md)と共通する解析不完全を、再利用先/影響箇所が存在しない根拠にしない。JSONのmetadataが単純なrgより大きい場合もあるため、候補の確認に必要なsectionとsnippetを予算へ収め、実際の総tool出力量で評価する。
 
 ## コンテキスト節約の確認条件
 
-初期表示は少数候補と一致根拠に絞り、選択した定義の本体/使用例を必要なsectionだけ追加取得する導線を[925](925-feat-dupscan-helper-search.md)/928と揃える。JSON metadataや同じsnippetの再送が増えた分も計上する。1ページの上限を守ったことと、実装完了までにagentが読む総量やwindow占有が減ったことを区別する。品質を保った総context量と不要な重複追加の同時評価は928が担当する。
+初期表示は少数候補と一致根拠に絞り、選択した定義の本体/使用例を必要なsectionだけ追加取得する導線を[925](done/925-feat-dupscan-helper-search.md)/928と揃える。JSON metadataや同じsnippetの再送が増えた分も計上する。1ページの上限を守ったことと、実装完了までにagentが読む総量やwindow占有が減ったことを区別する。品質を保った総context量と不要な重複追加の同時評価は928が担当する。
 
 ## 進捗
 

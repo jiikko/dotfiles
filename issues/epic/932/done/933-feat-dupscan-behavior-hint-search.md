@@ -39,7 +39,7 @@ inputはe266c5daの`src/dupscan`と`src/tuikit/markdown`をgit archiveした同�
 
 ## 目的と未カバーだった点
 
-書こうとしている処理の入出力や使うAPIは分かるが、既存関数の名前は知らない場面で候補を探す。grepで既存実装を見落とし、似たメソッドを新設する問題を減らす。[925](../925-feat-dupscan-helper-search.md)の初期searchはname/signature/doc先頭行のlexical検索であり、呼出先や本体構造を指定する機能は含まない。本issueはその追加材料を扱う。
+書こうとしている処理の入出力や使うAPIは分かるが、既存関数の名前は知らない場面で候補を探す。grepで既存実装を見落とし、似たメソッドを新設する問題を減らす。[925](925-feat-dupscan-helper-search.md)の初期searchはname/signature/doc先頭行のlexical検索であり、呼出先や本体構造を指定する機能は含まない。本issueはその追加材料を扱う。
 
 ## 現状の裏取り（2920a72a）
 
