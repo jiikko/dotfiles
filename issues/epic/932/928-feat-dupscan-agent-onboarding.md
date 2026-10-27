@@ -1,12 +1,10 @@
 # 928 (feat): dupscan のClaude/Codex共通の導入案内・能力診断を用意する
 
-> 🚨 **担当中: air5 (glogx)**（2026-10-27〜）
-
 起票日: 2026-10-26
 
 ## 目的
 
-CLIを使える環境でもagentが存在・適切なコマンド・対応言語を知らず、普段の探索へ戻る摩擦を減らす。Claude/Codexで共通のCLI契約と短い導入案内を持ち、環境依存の導線は別々に検証する。利用増加と開発効率の改善は未測定。今回は提案のみ。
+CLIを使える環境でもagentが存在・適切なコマンド・対応言語を知らず、普段の探索へ戻る摩擦を減らす。Claude/Codexで共通のCLI契約と短い導入案内を持ち、環境依存の導線は別々に検証する。利用増加と開発効率の改善は未測定。2026-10-27にno-buildの起動経路だけを実装し、registry/capabilities/doctor/guideと統合評価は継続する。
 
 ## 現状の裏取り（5a9a6a98時点）
 
@@ -69,17 +67,17 @@ dupscan doctor -format json-v2 -repo /path/to/repo
 - doctorのsource調査は拡張子の列挙まで。AST解析・重複検出は起動しない。`.dupscan.json` 不在はoptional configとして正常、壊れた設定は明確な診断にする。
 - 各checkは `ok / info / warning / error / not_checked` とreasonを持つ。診断が完了すればrc=0、実行・設定エラーなら2。対応sourceが無いこと等は用途別のreadinessに分け、個別のwarningを「ツール全体が使えない」と一括判定しない。
 
-### buildを起こさない入口
+### buildを起こさない入口（2026-10-27実装済み）
 
 現在のbin/dupscanはgo_autobuild経由で起動するため、binary内のdoctorだけでは未build時の自動buildを防げない。
 
-初期案はwrapper専用の先頭option `-no-build` を追加し、既存go_autobuild helperにread-onlyのreadiness判定を用意する。入力fingerprintの規則を別実装に写さない。current binaryならoptionを取り除いてexecし、missing/stale/失敗状態ならstdoutを空にしてrc=2と短いstderrを返す。古いbinaryで新しいcapabilityを答えたことにしない。binary不存在時はv2 envelopeを返せないwrapperエラーとして契約化する。
+wrapper専用の先頭option `-no-build` を追加した。既存go_autobuild helperのfingerprint/stale判定を共用し、規則を写さない。指紋が取得できてビルド記録と一致すればoptionを取り除いてexecし、missing/stale/指紋取得不能ならstdoutを空にしてrc=2と短いstderrを返す。当該入力のbuild失敗で古いbinaryだけがある場合もstaleとして拒否し、再試行やbackoff記録を更新しない。無関係な過去の失敗記録が残っているだけならcurrent binaryは拒否しない。binary不存在時はv2 envelopeを返せないwrapperエラー。古いbinaryで新しいcapabilityを答えたことにしない。
 
 ```sh
 dupscan -no-build capabilities -format json-v2
 ```
 
-通知hookはこの経路か軽量な存在確認だけを使い、失敗時は1回の案内に留める。通常の手動導入ではno-buildを指定せず、既存のbuild経路を利用できる。変更したwrapperとhelperはshell fixtureで、buildコマンドが実行されないことを直接assertする。
+上のcapabilitiesは未実装の利用予定例で、現在試せるのは `bin/dupscan -no-build -help` 等。通知hookへの接続は未実装。接続時はこの経路か軽量な存在確認だけを使い、失敗時は1回の案内に留める。通常の手動導入ではno-buildを指定せず、既存のbuild経路を利用できる。shell fixtureではbuild/SDK/git起動がないこと、未readyではbinaryも起動しないこと、projectファイルの内容/metadataを変更しないことを直接assertする。
 
 ### guideとagent別導入
 
@@ -167,6 +165,30 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 
 - 2026-10-27: 938でcontext/evidenceの先頭状態・grouped text・scope付きnext_actionと任意summaryを実装/局所比較した。938の完了は本issueの全受け入れ条件の完了を意味しない。出力bytes減少を記録したが、実課題の総tokens/重複追加/時間の評価とregistry/capabilitiesは継続。
 
-- 2026-10-27: `feat(dupscan): add an explicit no-build wrapper path`で先頭optionとfingerprint共通ガードを実装。専用24結果項目・既存go_autobuild suiteが成功し、変更前wrapper/helperと空指紋ガード削除の2変異を検出。新規issueへ切り出さず928内の一項目として記録する。registry/capabilities/doctor/guideとagent評価は未実装でopenを維持する。
+## no-buildの実装と今回の境界（2026-10-27）
 
-- 2026-10-27: `fix(dupscan): preserve static wrapper discovery for warmup checks`で静的なwrapper列挙との不整合を修正した。専用テストを再実行し、全17ツールのwarmupも成功。結果項目数は26という初回報告を24へ訂正した。
+- `bin/dupscan` は先頭の `-no-build` だけを共通helperの `--no-build` へ渡す。残る引数の空文字/空白/記号/改行/`--`と終了コードはそのまま保つ。通常wrapperの起動方法は維持する。
+- helperはasync/sync/build処理へ入る前にstrictなreadinessを判定し、既存のmtime fallbackへは降りない。入力指紋は既存のパス・mtime・サイズであり、内容hashやtoolchain/SDK/Cのassetまで検証する契約には広げない。no-build自身はASTやgitを起動しないが、exec後のcommandの解析を禁止するoptionではない。
+- 独立した新規issueの作成は自動承認レビューで拒否されたため、既存928の一項目として対応した。registry/capabilities/doctor/guide、hook側の対応表の置換、Codex固有の接続、両agentの効果評価は未実装のまま。このissue全体はopenに残す。
+- `feat(dupscan): add an explicit no-build wrapper path`でwrapper/helperと回帰を記録し、`docs(dupscan): record no-build contract and verification`で検証・残作業を更新する。
+
+改善の評価: 軽い問い合わせでも未build/staleなら自動buildが走る従来の起動しかなかったところへ、最新指紋に合う成果物だけを実行し、準備不足ではbuildや旧版execをしない選択肢を追加した。通知hookへ接続するための前提が一つ整った。追加複雑さはwrapperの先頭optionと共通helperのearly guardで、入力集合の二重実装はない。実際の通知/agentの探索効率の向上は未検証。
+
+### 今回の検証結果
+
+- 専用回帰24結果項目（--pkgやasyncは各項目内で複数状態を検査）: current/missing/non-executable/stale/ビルド記録欠落/空指紋、ソース追加・削除・編集、go.mod/go.sum、相対replace先、test-only編集、失敗記録、async/syncとTTL、--pkgの独立成果物、別worktree、先頭以外のflagとargv/rc保持。projectの内容/metadataと外部コマンドmarkerで副作用を検査した。
+- 変異2本: 変更前wrapper/helperではargv保持のassertが失敗し、空指紋guardだけを削除すると本来rc=2のケースがrc=0となって失敗した。期待したassertで検出できた。
+- `make test-dir DIR=tests/bin/test_go_autobuild.sh` が成功し、既存のbuild・lock・失敗回復・--pkg/async・SDKの扱いを維持した。
+- 実バイナリを非gitの `/private/tmp` から `bin/dupscan -no-build -help` で15回実行。rc/stdout/stderrは直接binary実行とすべて一致し、binary/.autobuild成果物の内容・mtime・サイズは変化なし。所要中央値11.72ms（10.57〜13.03ms、1環境の観測値）。速度改善やhookの実運用効果を証明する比較ではない。
+- 実dupscanの `-no-build gate -base 2a6c8691 src` も実行した。Goの変更単位は0、新しい除外なし。既存の意図的な不正Go fixtureをbase/head各1個として解析不完全を通知する（このgateはshellの重複を検査しない）。
+- subagentでテスト検知力と実装/API・文書の反証を分けて確認。--pkgと先頭以外のflagの回帰を補い、fingerprint対象の「ローカルreplace」を「相対パスのreplace」へ正確にした。
+
+- 2026-10-27: `docs(dupscan): record no-build contract and verification`で実装済みの境界・検証・残作業を記録。今回の部分対応を終えてclaimを解除する。928全体はopenで継続する。
+
+- 2026-10-27: `fix(dupscan): preserve static wrapper discovery for warmup checks`で、flag配列を静的なwrapper列挙がsrc_dirと誤読する回帰を修正。明示if/elseへ変更し、専用24結果項目と全17ツールのwarmupが成功した。専用検査の結果項目数を当初の26という報告から24へ訂正した。
+
+### 広域検査の結果と既存環境の制約
+
+`make test-changed` のshell構文/ShellCheck/zsh構文/test-lint-tests/zshrcとbin/claudeの適用検査を最後まで実行した。途中のwarmupはwrapperのflag配列を静的に読めず失敗したため、本対応内で修正し、専用検査と全17ツールのwarmup再実行で成功を確認した。README/issueの適用検査も成功（dupscanのGo全テストとissue整合検査を含む）。
+
+広域検査全体は緑ではない。残る `test_dangling_symlinks.sh` は変更前からある `~/.config/nvim/coc-settings.json -> ~/dotfiles/_coc-settings.json` のリンク先欠落で、単独再実行でも再現する。このテストはautobuild helperを呼ばず、今回変更していない。ユーザーの設定は変更していない。`test_tmux_pane_state_bell.sh` はTERM=dumbでattachできず失敗し、TERM=xterm-256colorで再実行して成功した。`test_claude_links_complete.sh` はworktreeではskipされた。これらをno-build専用検証の成功と混同しない。

@@ -6,6 +6,16 @@ Claude Code にコードを書かせている間に、似たメソッドが量�
 設計と狙いは [`docs/dupscan-overview.md`](../../docs/dupscan-overview.md)、同じと判定する方法と誤検知は
 [`docs/dupscan-detection.md`](../../docs/dupscan-detection.md)、要件の正本は epic 890 (issue 891)。
 
+## ビルドしない起動
+
+`bin/dupscan -no-build <command> ...` はwrapper専用の先頭option（issue 928）。ビルド済みバイナリの入力指紋が現在のものと一致するときだけ、先頭optionを外して同じargv・終了コードで実行する。例: `bin/dupscan -no-build -help`。通常起動の自動ビルドは従来どおり。
+
+未ビルド・指紋不一致・指紋を取得できない場合はstdoutを空にしてrc=2と短いstderrを返す。同期/非同期ビルド、SDK取得、lock取得、失敗記録の更新は行わない。`GO_AUTOBUILD_SYNC`もこの指定を打ち消さない。古い入力で失敗した記録だけが残っていても、現在の指紋とビルド記録が一致するバイナリは実行できる。
+
+判定は共通go_autobuild helperの既存規則（Goソース、go.mod/go.sum、相対パスのreplace先のパス・mtime・サイズ）を使う。内容hash・toolchain/SDK・環境変数・C/埋込asset等まで含む完全なビルド再現性の検証ではない。mtime/サイズを保った変更を見抜く保証も加えない。新しいworktreeはそこに対応するビルド記録が必要で、別worktreeの成果物を流用しない。
+
+`-no-build`はGoバイナリ自身のflagではなく、先頭以外では消費しない。現在のバイナリを実行した後の解析量や動作は選んだcommandに従う。通知hookからindex/report等を起動して全repoを解析してよい、という意味ではない。capabilities/doctor/guideとhookからの利用は928の残作業で、ここでは実装していない。
+
 ## 使い方
 
 ```sh
