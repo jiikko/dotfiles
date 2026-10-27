@@ -2,6 +2,16 @@
 
 起票日: 2026-10-26
 
+## 方向性の再評価（2026-10-27）
+
+対象: a5b4196e の実装と既存測定。
+
+**判断: text最小版は維持し、次は検索品質の評価を優先する。** 現行searchはname/signature/doc先頭行のlexical検索と型/file条件、件数/bytes予算、一致根拠・未一致語・ソース確認argvを備える。固定doctor例では旧型索引の23番目のhelperへ1候補で到達したが、OR検索の `process identity` ではfilesystemのstatIdentityも先頭に出た。小さい出力だけでは正しい再利用を示せない。
+
+次は名前を伏せた実課題と未使用の負例で、適切なrg+必要箇所のRead、index、search、併用を比較する。候補に到達したか、誤誘導、候補確認量、正しい再利用/不要な重複追加を別々に記録する。既知の2正例だけでrankを調整しない。現測定は選んだ例の探索的比較で、同情報量の比較・実token節約・一般的な高速化は未証明。
+
+json-v2・同義語・追加rank featureは、現行textの具体的な失敗や機械処理上の不足を確認してから選ぶ。926の包括設計を一括実装することを本issueの次の前提にしない。930の近似callsは現在も順位に使わない。
+
 ## 目的と利用場面
 
 Claude/Codexが新しいfixtureや値の組み立て関数を書く前に、名前が分からない既存ヘルパーを探せるようにする。利用回数を増やすだけでなく、正しい既存実装へ到達するまでの検索・Readの往復と、不要なヘルパー追加を減らしたい。効果は未測定。2026-10-27にtextの最小版を実装した。json-v2統合と実課題の効果評価は未完了。
@@ -143,3 +153,5 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 - 2026-10-27: `feat(dupscan): rank lexical helper candidates across metadata`を統合し、`feat(dupscan): expose bounded metadata helper search`でtext CLI・source確認・再検索・guideを実装。`docs(dupscan): document lexical helper search and its limits`で実測/残作業を記録する。
 
 - 最終strict gateはbase66699f2aから変わった14単位で新しい重複なし、追加除外なし。全srcの通常gateは既存の不正fixtureをbase/head各1件として通知する。今回のtext実装のclaimを解除し、残る統合/評価をopenで追跡する。
+
+- 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。

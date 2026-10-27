@@ -2,6 +2,17 @@
 
 起票日: 2026-10-25
 
+## 方向性の再評価（2026-10-27）
+
+対象: a5b4196e の実装と既存測定。
+
+**判断: 利用可否の断定を避ける価値はあるが、target解析とliteral比較を独立した小さな作業に分ける。** 現行Unit/UnitRef/GroupJSON/IndexEntryにtarget membershipはなく、ExplainSummaryは単位ごとの形式でliteral比較表もない。925のsearchは全候補に `reuse=not_proven` を表示済み。一方、別targetの候補を実際に誤用した事例は未確認であり、3種のbuild system対応を急ぐ根拠にはしない。
+
+- 所属: まず「非privateだからそのまま使える」と読める説明を見直し、unknownを保つ。1実プロジェクトのdirectory hintを検証し、それでも判断できない具体例が出たらmanifestを1形式だけ扱う。所属が判明しても依存/import・可視性・test-only・条件付きcompileを満たすとは限らない。Package.swiftは実行可能なSwiftであることも費用へ含める。
+- literal: `internal/lang/swift/pr24_fixture_test.go` の歴史fixtureは6 helper中4つが直接literal、2つがstored property参照で、L3でのみ同群になる。最初は選択groupのL1構造差分として直接値と未解決の式を示す。property initializerの値解決は、変更・shadowing・継承・computed/default overrideを扱う別段階とし、実行時値と呼ばない。
+
+所属側はunknown/複数所属/非対応manifest、literal側は直接値変更/未解決参照を別々に検証する。各々がレビュー時の誤判断や確認量を減らすか測ってから範囲を広げる。以下の一括設計は条件付き案であり、全項目の同時実装を次の作業にはしない。
+
 > 2026-10-25に保留した所属/値の判定の案。2026-10-26の未着手課題を管理する依頼に基づきepic 932へ戻す。所属や利用可否を解決した実装はまだ無く、実装・方式選定は未着手。
 
 ## 概要
@@ -26,7 +37,7 @@ Type-3 (少し違う写し) の[895](895-feat-dupscan-type3-candidates.md)も当
 
 ## 利用可能性の誤判断を避ける境界
 
-候補のpublic/internal/unexportedやshared表示だけで、別module/targetから再利用できるとは判断しない。ビルド構成と依存関係を解く範囲を明示し、不明なら不明を返す。今回のopen管理への移動は調査/実装の記録先を用意するもので、候補が実際に利用可能だと判定する機能は未実装。リテラル表の既存範囲を維持し、同じ形が同じドメイン責務を持つという自動判断は追加しない。
+候補のpublic/internal/unexportedやshared表示だけで、別module/targetから再利用できるとは判断しない。ビルド構成と依存関係を解く範囲を明示し、不明なら不明を返す。今回のopen管理への移動は調査/実装の記録先を用意するもので、候補が実際に利用可能だと判定する機能は未実装。既存のexplain・hash・group判定を維持し、同じ形が同じドメイン責務を持つという自動判断は追加しない。
 
 ## 進捗
 
@@ -35,3 +46,5 @@ Type-3 (少し違う写し) の[895](895-feat-dupscan-type3-candidates.md)も当
 - 2026-10-26: 未起票/未着手の指摘を管理する依頼を受け、同番号のままepic 932へ戻し、参照を張り直した。重複issueは作らず、実装・効果検証は未着手。
 
 - 2026-10-26: 利用可能性の限界を追記し、再開条件の表現を優先着手の判断材料に修正。 読み取り専用Codex subagentで指摘の網羅性とcontext計測を反証レビューし、P3（現行/設計、着手条件、計測範囲）の3点を訂正した。文書の改善は、不足した指摘の担当と検証条件を明確にしたこと。実装・両効果の実証は未着手。
+
+- 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。

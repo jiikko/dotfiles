@@ -2,6 +2,16 @@
 
 起票日: 2026-10-26
 
+## 方向性の再評価（2026-10-27）
+
+対象: a5b4196e の実装と既存測定。
+
+**判断: 導入支援の実装は十分進んだ。次は残った環境確認と効果評価に集中する。** registry/capabilities/doctor/agent-guide、先頭 `-no-build`、Go通知からの能力照会は実装済み。flags_helpは実helpの文字列で、型付きflag schemaではない。Codex実CLIのread-only smokeは成功したが、Claude実CLIはBash許可で止まったため成功扱いにしない。未build/staleの拒否とcold buildを区別する。
+
+次の最小作業は、既存権限の範囲でClaudeの導線を確認し、未確認なら理由を残したまま、両agentの同じ探索課題で品質と費用を測ること。grep探索/能力照会/実ソース確認を別集計し、正しい再利用、不要な重複追加、誤誘導、再試行、観測可能なcontext量を記録する。通知が増えただけで利用・効率が上がったとしない。
+
+typed metadata/json-v2・cache・新hookを一式足すのは次の既定作業にしない。既存導線で解けない具体例が出た機能だけを926等と調整する。既存のローカル測定は一般的な効果の証明ではなく、環境差と追加照会の費用も評価へ含める。
+
 ## 目的
 
 CLIを使える環境でもagentが存在・適切なコマンド・対応言語を知らず、普段の探索へ戻る摩擦を減らす。Claude/Codexで共通のCLI契約と短い導入案内を持ち、環境依存の導線は別々に検証する。利用増加と開発効率の改善は未測定。2026-10-27にno-build、registry/capabilities/doctor/agent-guideとGo通知接続を実装した。各環境の実動確認と開発全体の効果評価は下記の状態で継続する。
@@ -237,3 +247,5 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 - 最終のstrict module gateはbase eb2d4bd7から変わった11単位で新しい重複なし、追加除外なし。全srcの通常gateは既存の意図的不正fixtureをbase/head各1件として解析不完全を通知する。issue整合テストも成功した。
 
 - 2026-10-27: 925のtext searchをregistry/guideへ登録。guideは用途語と型で候補を探す例へ更新した。初期の「未実装searchを広告しない」は当時の状態で、現在は登録済みtext版を案内する。効果評価と共通v2統合の未完了は維持する。
+
+- 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。

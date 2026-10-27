@@ -2,6 +2,16 @@
 
 起票日: 2026-10-26
 
+## 方向性の再評価（2026-10-27）
+
+対象: a5b4196e の実装と既存測定。
+
+**判断: 方向性は妥当。包括的CLI再設計より、再現する誤診断3件を先に直す。** 現行では `callers Of -limit 1 src/tuikit/markdown` がrc=2で「-limit は git の repo の中ではない」と返る一方、flagを前へ置いた形は成功する。`refs Worker.run` は末尾名runが存在してもliteral比較で0件になる。main.goはfile-level parse error（抽出単位0も含む）を収集済みでcontext/evidenceは表示するが、従来のdef/refs/index/callersは取り込まない。Go非対応の案内など既存診断まで「無い」と扱わない。
+
+次の最小作業は、(1) 非対応qualified refs、(2) 後置flag、(3) 解析失敗/抽出単位0の通知。正当な0件・hit・部分解析をfixtureで区別し、案内した修正argvが実行できることを確認する。後置flagは受理の統一だけでなく、位置の誤りを正しく説明して拒否する案も比較する。型を黙って取り除いてtyped検索と偽らず、Unicode/backtick/operator等の有効な名前を一律に不正扱いしない。
+
+正常な既存出力/rcの互換を保ち、新診断の契約を先に決める。共通envelope・strict/require・fuzzy候補・selectors・全コマンド予算は条件付き拡張で、3件の修正や928のA/Bの前提ではない。下の大規模設計は候補であり、既存registry/analysisPlanを捨てて作り直す計画ではない。
+
 ## 目的
 
 Claude/Codexがコマンドの書き方の違いで失敗したり、非対応の問い合わせを「対象が存在しない」と解釈したりする往復を減らす。正しい次の問い合わせを少数返せるCLIにする。今回は提案の記録であり、実装・効果測定は未着手。
@@ -11,7 +21,7 @@ Claude/Codexがコマンドの書き方の違いで失敗したり、非対応�
 - `main.go` の `parseInterspersedFlags` をdef/refsは使う。index/callers等は `parseFlags` を使い、位置引数以降のflagの扱いが異なる。
 - `def` は `Type.member` と引数ラベルを解釈する。`refs` は問い合わせ文字列と識別子名の一致で探すので、`refs Worker.run` は `run` の呼び出しがあっても0件（直前の使い捨てSwift repoで再現済み）。
 - def/refsは0件でrc=1、index/callersは0件でもrc=0。現在のJSONには、問い合わせ非対応・本当の0件・解析不完全を区別する共通の状態欄がない。
-- parserが読めなかったファイルの情報は探索コマンドへ返されていない。0件は全構文を調べた証明にならない。
+- main.goはfile-level errorを収集する。context/evidenceは通知済みだが、従来のdef/refs/index/callersは通知へ取り込まない。0件は全構文を調べた証明にならない。
 
 ## 改善案
 
@@ -38,7 +48,7 @@ Claude/Codexがコマンドの書き方の違いで失敗したり、非対応�
 
 既存 `-format text|json|xcode` の正常な出力・終了コードは維持する。machine向けの共通契約は **明示的な `-format json-v2`** に追加し、既存JSONへ共通envelopeを黙って被せない。新しいsearch/context/doctor/capabilitiesもjson-v2を受け付ける。旧モードは現行goldenを固定し、正常ケースのbyte比較で退行を検査する。
 
-CLI定義は928の `internal/commandmeta` を共通の情報源にする。実装順は「command/adapter registry→924の解析Plan/View→本v2診断→search/context→doctor/guideの詳細診断」。循環依存は作らず、共通packageは各commandのRun実装をimportしない。
+現行の情報源は928で実装したmain packageの `command_registry.go:commandSpecs`。`internal/commandmeta` は存在しない。analysisPlan、search/context、doctor/guideも実装済みなので、将来のv2はこれらへ段階的に追加し、過去の実装順を前提に作り直さない。
 
 ### 引数の共通規則
 
@@ -127,3 +137,5 @@ legacy mode、v2通常/require/strict、flag前後、--、quotes、空白・Unic
 - 2026-10-26: 929でgateのbase/head file parse error通知とstrict-analysisを実装した。本issueの探索コマンド側のcoverage/共通v2は継続して未実装。
 
 - 2026-10-27: 938でcontext/evidenceの先頭状態・grouped text・scope付きnext_actionと任意summaryを実装/局所比較した。938の完了は本issueの全受け入れ条件の完了を意味しない。v2 envelope/serializerへ共通状態とaction modelを統合する作業は継続。
+
+- 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。

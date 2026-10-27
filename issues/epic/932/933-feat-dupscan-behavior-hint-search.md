@@ -2,6 +2,16 @@
 
 起票日: 2026-10-26
 
+## 方向性の再評価（2026-10-27）
+
+対象: a5b4196e の実装と既存測定。
+
+**判断: selectorを手掛かりにする余地はあるが、既存の到達経路との比較が着手条件。** 現行 `index -returns int -name Width -limit 0 src/tuikit/markdown` はspansWidth/tableColWidthsを返す。`callers -limit 3 Of src/tuikit/markdown` はcollectLinks/parseFence等を含む29件、`evidence -limit 1 termwidth.Of src/tuikit/markdown` はdoc0/test16/source12で、CalledにOfを表示する。候補到達経路が全く無いわけではない。evidenceの候補集約はrepo内定義名が対象なので、外部Of自体を再利用helperと確定しない。
+
+次は名前を伏せた課題でcallers/evidence/型index/925のlexical search/適切なrgを比較し、selector-aware filterが正しい候補への到達や確認費用を改善するか測る。単なる末尾名Ofによる別receiver混入を対照にする。差がある場合だけcallee/selector構文filterを小さく追加し、alias・receiver・import・動的callの解決は未証明と表示する。
+
+本体構造featureはさらに別の不足事例が条件。925は現在 `-query` 必須であり、用途語なしのhint-only規則は未実装の設計案。以下の全featureを一括追加することを次の作業にしない。
+
 ## 目的と未カバーだった点
 
 書こうとしている処理の入出力や使うAPIは分かるが、既存関数の名前は知らない場面で候補を探す。grepで既存実装を見落とし、似たメソッドを新設する問題を減らす。[925](925-feat-dupscan-helper-search.md)の初期searchはname/signature/doc先頭行のlexical検索であり、呼出先や本体構造を指定する機能は含まない。本issueはその追加材料を扱う。
@@ -34,3 +44,5 @@
 - 2026-10-26: 呼出先/本体hintの不足と925等との境界を確認。 読み取り専用Codex subagentで指摘の網羅性とcontext計測を反証レビューし、P3（現行/設計、着手条件、計測範囲）の3点を訂正した。文書の改善は、不足した指摘の担当と検証条件を明確にしたこと。実装・両効果の実証は未着手。
 
 - 2026-10-27: 924で現行探索の比較用本体変換/正規化を省いた。933の処理構造hintは未実装で継続し、実装時には必要な構造metadataの収集を明示的に設計する。
+
+- 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。

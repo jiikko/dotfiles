@@ -2,9 +2,19 @@
 
 起票日: 2026-10-26
 
+## 方向性の再評価（2026-10-27）
+
+対象: a5b4196e の実装と既存測定。
+
+**判断: 集約の方向は妥当で、context最小版と段階取得は既にある。追加設計より現行の評価を先に行う。** context_cmd.goは1回のscanSourceでcontentsと解析結果を共用し、定義・近似refs/callers・曖昧さ・非対応・parse error・省略を表示する。938でsummary、`-sections`、選択/scoped取得も実装済み。byte予算、snapshot/hash、cursor、definition IDは未実装である。
+
+次は現在のsummary→section/ソース確認を、個別コマンドと適切なReadに対して固定課題で比較する。同名定義の選択失敗や大きすぎる出力が確認されたら、selectorまたはbyte上限を個別に設計する。snapshot/cursorは繰り返しの部分取得や版混在による失敗が実際に問題になる場合に限る。機能の数や出力短縮だけで効率改善としない。
+
+1走査の確認は現行scanSourceの実呼び出しで行える。公開ReadSet/AnalysisView APIの新設は必要条件ではない。以下のコマンド/詳細設計は最小版に追加する場合の条件付き案とし、既実装機能を未着手へ戻さない。
+
 ## 目的と利用場面
 
-「このメソッドを変更する前に、定義と利用箇所を知りたい」というClaude/Codexの探索を、複数コマンドとファイルReadの往復から短くする。byte上限のあるcontextを返し、取りこぼしや近似が見える形にする。実装・効率改善の測定は未着手。
+「このメソッドを変更する前に、定義と利用箇所を知りたい」というClaude/Codexの探索を、複数コマンドとファイルReadの往復から短くする。byte上限のあるcontextを返し、取りこぼしや近似が見える形にする。最小版と段階取得は実装済み。一般的な効率改善の測定は未完了。
 
 ## 現状の裏取り（5a9a6a98時点）
 
@@ -12,7 +22,7 @@
 - defの `-max-lines`、各コマンドのtextの `-limit` はある。JSONは全件を返すが、全セクション共通の出力byte予算・継続取得の契約はない。
 - refs/callersは型解決をしておらず、同名の別メソッドも含みうる。「呼び出しグラフの正確な影響範囲」とは扱えない。
 
-## コマンド案（未実装）
+## 最小版への拡張コマンド案（以下のflag構成は未実装）
 
 ```sh
 dupscan context -symbol StorageClient.upload -definition-file Sources/StorageClient.swift -max-bytes 12000
@@ -60,7 +70,7 @@ IDはcurrent snapshotから列挙した定義に完全一致するときだけ�
 
 ### 共有するReadSetと参照範囲
 
-924の1つのReadSet/AnalysisViewから定義・refs・callersを構成する。選んだ定義に合わせ、refsは末尾名、callersは名前/labelに基づく近似だとsectionごとに明記する。selected definitionと完全に同じ対象へ型解決した結果とは表示しない。
+現行は1回のscanSourceのcontents/解析結果から定義・refs・callersを構成する。公開ReadSet/AnalysisViewを設ける場合も、この共用を維持する。選んだ定義に合わせ、refsは末尾名、callersは名前/labelに基づく近似だとsectionごとに明記する。selected definitionと完全に同じ対象へ型解決した結果とは表示しない。
 
 definition-fileは選択条件だけ。refs/callersの検索は明示されたrepo/path/lang/scopeの範囲全体を使う。scopeがrootでなければ範囲を表示する。1行の別colにある複数callを1件にまとめず、refs/callersで同じ位置を示す場合は役割を保持して関連付ける。
 
@@ -133,3 +143,5 @@ cursorのquery hashは定義IDと探索条件を束縛する。表示上のsecti
 - 2026-10-27: 924でcontextを含む探索共通経路をmetadata-onlyへ変更し、既存の出力一致を確認した。927の最小版は維持し、予算/継続取得など詳細設計の残りは継続する。
 
 - 2026-10-27: 938でcontext/evidenceの先頭状態・grouped text・scope付きnext_actionと任意summaryを実装/局所比較した。938の完了は本issueの全受け入れ条件の完了を意味しない。既定は変更せず、bytes予算/cursorなど残りのcontext設計を継続。
+
+- 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。

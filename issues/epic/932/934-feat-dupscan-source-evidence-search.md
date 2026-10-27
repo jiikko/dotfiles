@@ -2,6 +2,16 @@
 
 起票日: 2026-10-26
 
+## 方向性の再評価（2026-10-27）
+
+対象: a5b4196e の実装と既存測定。
+
+**判断: 補助証拠の方向は妥当で、evidence最小版は実装済み。残りは品質評価を先に行う。** 現行はdoc全文・test/sourceのlexical hit、parse error・省略・次の問い合わせを返し、938のgrouping/scoped取得と928の能力案内もある。metadata-only走査のscanned.contentsを共用済みで、新しいReadSetがないから未着手という状態ではない。
+
+次はdoc後半/テスト使用例が鍵の固定課題と、古い例・紛らわしいコメント・同名別定義の負例で、適切なrg+該当箇所Readに比べて正しい候補へ到達できるか、誤誘導と確認量を測る。source hitだけでhelper発見や再利用を確定しない。比較側を広いcatに固定してbytes差を効果と呼ばない。
+
+Go testは比較から除いてもcallsを収集し、937のcallersはtest ownerを保持する。一方evidenceのGo test ownerは単位外になり、独立したGo test/type docもdoc枠には収集しない制約が残る。実課題で必要ならここを個別に直す。hash/version・共通byte予算・新ReadSet APIは、版の混在/大出力などの失敗を確認してから検討する条件付き案とする。
+
 ## 目的と不足
 
 構文単位の索引から落ちる手掛かりも使い、名前不明の既存実装の見落としと、確認のための大量Readを減らす。[925](925-feat-dupscan-helper-search.md)は初期doc先頭行まで、[927](927-feat-dupscan-agent-context.md)は選択済み定義/近似refs/callersのcontext。本issueは、まだ候補が無い段階でdoc後半やテスト内の使用例から候補へ到達する補助経路を担当する。
@@ -10,9 +20,9 @@
 
 - Unit.Docはdoc comment先頭行。SwiftのdocCommentとGoのdocLineは索引に全文を保持しない。
 - GoのfuncDeclはTest/Benchmark等を比較単位から外す。callsはテスト内のcallも収集するため、全テスト情報が失われるという意味ではない。テスト関数をそのまま重複比較対象へ戻す変更は不要。
-- 現行にあるのはscanned.contentsで、ReadSetは924の未実装設計。元sourceのcontentsは存在するので、索引へ無制限に全文を複製する必要はない。[931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)では広いcatで出力予算を消費し、実際のモデル可視量までは測れていなかった。
+- 現行はmetadata-only走査のscanned.contentsを共用する。公開ReadSetは過去の未実装設計案。元sourceのcontentsは存在するので、索引へ無制限に全文を複製する必要はない。[931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)では広いcatで出力予算を消費し、実際のモデル可視量までは測れていなかった。
 
-## 設計案（未実装）
+## 元の設計案（1〜3の最小版は実装済み、残りは条件付き）
 
 1. doc全文、テスト/使用例、元sourceのlexical一致を、定義検索と区別した証拠として返す。各hitにkind/file/位置/短いsnippet/一致理由を持たせる。コメントや文字列の一致を宣言や実callと偽らない。
 2. 最初は明示的な補助検索modeかnext_actionsとして提供する。定義0件とsourceのhitは別の件数にし、sourceのhitがあるだけで対応するhelperを見つけたと扱わない。hitが非公開/別責務かは確認を残す。
@@ -43,3 +53,5 @@
   - opus の敵対的レビュー 2 周目 (直した差分): P1・P2 なし。既存の `index` / `def` / `report` の出力が変更前と一致し、evidence の区分の移動は「ソース→doc」「テスト→doc」だけで doc の行が本体の行を吸う例も無かった (swift-smbee・screen-share-app の実データ)。P3 のうち README の書き方 (MARK の上の doc の条件・対象の一覧) を直した。記録だけのもの: `index -doc` の最初の行は MARK を挟んだ上の doc も探すので、その形では evidence の doc の範囲と食い違う (index -doc の出力を変えないため揃えていない。再提起には、食い違いで候補を取りこぼした実例が要る)。署名を 80 文字で切ると同じファイルの overload が同じ文字列になる (行番号で区別できる)。`/// dupscan:allow` の形の印は doc の範囲に入る
   - 実測 (swift-smbee): `evidence credit` は 1.25 秒・15,137 bytes (既定の `-limit 20`)、同じ語の `rg -n -i -g '*.swift'` は 2,119 行・240,204 bytes。`cancellation` は 0.92 秒・12,540 bytes と 132,103 bytes。**evidence は節ごとに切っているので同じ情報量の比較ではない**。正しい候補への到達・誤誘導・再利用・重複追加への効果は未測定 (受け入れ条件の 1・4 は 928 の評価で測る)
 
+
+- 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
