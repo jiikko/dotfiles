@@ -5,7 +5,7 @@
 ## 概要
 
 agent が dupscan に気づき、少ない出力で正しい次の一手へ進めるようにするアイデアの置き場。各案に、既存 issue のどこに馴染むか・
-どこと食い違うかを書く。**既存 issue が担当している論点は書き写さず、そちらを指す**。実装・効果測定は未着手で、効果の評価は
+どこと食い違うかを書く。**既存 issue が担当している論点は書き写さず、そちらを指す**。案1は939へ切り出して実装済み。残りの実装・効果測定は未着手で、効果の評価は
 [928](928-feat-dupscan-agent-onboarding.md) の評価手順 (総 context 量と不要な重複追加を同時に見る) に載せる。
 
 ## 前提にする既存の決定
@@ -21,13 +21,13 @@ agent が dupscan に気づき、少ない出力で正しい次の一手へ進�
 
 ## アイデア
 
-### 1. grep 案内 hook を、grep の対象の言語に合わせる
+### 1. grep案内hookを対象言語へ合わせる（[939](done/939-ux-dupscan-go-grep-nudge.md)へ切り出し）
 
 - **実例 (2026-10-26)**: dotfiles の `src/dupscan` (Go) で、dir を対象に `BuildDefinitions` を grep したとき、hook が `dupscan def BuildDefinitions` / `refs` を案内した。
   Go の def / refs は未対応なので、従うと 1 回無駄打ちになる (def は「go のファイル N 個は def / refs の対象外」と注記を返すので、理由は出力で分かる)
-- 今の判定 (`_claude/hooks/suggest-dupscan-for-symbol-grep.sh`): repo が `.swift` を 1 つでも追跡していれば候補にする。対象の言語は一部だけ見ている
+- 939実装前の判定 (`_claude/hooks/suggest-dupscan-for-symbol-grep.sh`): repo が `.swift` を 1 つでも追跡していれば候補にする。対象の言語は一部だけ見ている
   (`.swift` / `-t swift` の指定は Swift と読む。名指しした対象が全部 .swift 以外の実在ファイルなら黙る。Grep ツールの glob / type が Swift 以外なら黙る)。
-  見ていないのは、dir の指定や Go の指定 (`--include=*.go`・`-t go`) を Go と判定すること
+  当時見ていなかったのは、dir の指定や Go の指定 (`--include=*.go`・`-t go`) を Go と判定すること
 - 案: Go の指定が明示されている grep では、Go で使えるコマンドだけを案内する (Go は index (`-name` / `-returns` / `-file`)・callers・report・gate・near・explain が使える。
   Go の callers は937でテスト名も表示するようになった。`index -file` は引き続きテスト関数を載せないため、案内ではこの違いを区別する)
 - 一覧を hook に写すと、928 の registry と食い違う。ただし bash の hook が registry を引くには `dupscan capabilities` を起動するしかなく、
@@ -35,7 +35,7 @@ agent が dupscan に気づき、少ない出力で正しい次の一手へ進�
   それまでは、hook の中の短い対応表を 928 の実装時に置き換える前提で持つ
 - 馴染み: 928 の「Claude は既存 921 の hook を活用し、無差別に別 hook を重ねない」に沿う (新しい hook を作らず既存を直す)
 - 時期: 921 は 2026-11-25 ごろに、Swift のパス (`.swift`・`Sources`・`Tests`・`shared/`・`macOS/`) を対象にした grep と dupscan の回数を比べる。
-  Go の指定がある grep だけを変える案なら、その数え方には効かない。**dir の中の言語で判定するなど、Swift のパスへの案内まで変わる案は、測り直しの後に回す**
+  Goの指定だけを変えても、旧集計のdupscan回数にはGo向け利用が混ざりうる。939ではSwiftの既存案内とstampを維持し、再測定でGo向け/unknownを区別する。**dirの中身から判定してSwiftのパスへの案内を変える案は、測り直しの後に回す**
 
 ### 2. 新しいコマンドの text は、1 行目に要約を出す
 
@@ -72,3 +72,5 @@ agent が dupscan に気づき、少ない出力で正しい次の一手へ進�
   P3 4 件 (予算の serializer の正本は 926・Go で使えるコマンドの列挙が狭い・921 の数え方は Swift のパスだけ・json-v2 に「1 行目」は無い) を、実物で確かめてすべて直した
 
 - 2026-10-27: `docs(dupscan): refresh agent UX assumptions after test owner support`で937への参照を完了位置へ合わせ、Go callersはテスト名を表示できるという実装済みの前提へ更新した。938のhook/UX機能自体は未着手のまま。
+
+- 2026-10-27: 案1を939へ切り出して実装した。Go向けindex/callers案内・通知間隔・build非起動を検証。案2〜5と効果測定は未着手で継続する。旧dupscan全件集計にはGoの利用も混ざりうるため、影響しないという断定を訂正した。

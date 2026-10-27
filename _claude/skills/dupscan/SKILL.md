@@ -43,6 +43,7 @@ dupscan index -file Sources/Foo.swift         # このファイルに何があ�
 型を解決しないので、同名の別の定義・参照も当たる (近似)。flag は名前・パスの前に書く。
 `def` / `refs` / `context` は Swift だけを読む (Go のファイルを読まなかったことは stderr に出る)。Go の定義・参照は LSP (gopls) で引く。
 `callers` と `index -file` は Go のファイルにも使える (Go に引数ラベルは無いので、`callers` は名前と引数の数で当てる)。
+Claudeの既存grep案内hookは、Goを明示した検索には `index -name` / `callers` を案内する。hook自身は解析/buildを起こさず、GoとSwiftの通知間隔を分ける。Codexで同hookが自動発火することは未検証。
 
 ## 3. セルフレビューで gate を回す
 
