@@ -235,3 +235,5 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 - 今後の評価ではcapabilities/doctor/guideや通知内部の自動問い合わせを、候補探索・再利用の実行回数と別集計する。今回の実装範囲を終えclaimを解除し、環境/実課題評価の未完了をopenで追跡する。
 
 - 最終のstrict module gateはbase eb2d4bd7から変わった11単位で新しい重複なし、追加除外なし。全srcの通常gateは既存の意図的不正fixtureをbase/head各1件として解析不完全を通知する。issue整合テストも成功した。
+
+- 2026-10-27: 925のtext searchをregistry/guideへ登録。guideは用途語と型で候補を探す例へ更新した。初期の「未実装searchを広告しない」は当時の状態で、現在は登録済みtext版を案内する。効果評価と共通v2統合の未完了は維持する。

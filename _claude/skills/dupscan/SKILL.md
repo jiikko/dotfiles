@@ -1,6 +1,6 @@
 ---
 name: dupscan
-version: 1.3.0
+version: 1.4.0
 description: Swift か Go の repo で、新しいメソッド (ヘルパー・初期化・値を組み立てる関数) を書く前に同じものが既にないかを dupscan index で引き、実装が終わったセルフレビューで dupscan gate を回して増えた写しを寄せる。関連の実装 (定義・参照・ファイルの中身・呼び出し元) を grep より先に探すときにも使う (def / refs は Swift だけ。callers と index -file は Go も)。「dupscan」「重複したメソッド」「類似メソッドの統合」「既にあるヘルパーを探して」「セルフレビュー」「定義元」「参照」「呼び出し元」「似た関数」で発火。寄せるときはドメインの境界を確かめる (4 節)。Swift と Go 以外の repo では使わない (対応する言語は Swift と Go)。
 ---
 
@@ -15,6 +15,7 @@ description: Swift か Go の repo で、新しいメソッド (ヘルパー・�
 全部の定義の前に引く必要はない。上位 20 件を 1 行ずつ返す (DualNoteApp の 1130 単位で 0.5 秒。初回だけ build に時間がかかる)。
 
 ```sh
+dupscan search -query "connection bucket" -returns StorageLocation -min-matched-terms 2 # 名前不明なら用途語をfield横断で探す (textのみ、字句候補・再利用未証明)
 dupscan index -returns StorageLocation        # 作ろうとしている値の型 (戻り値の型の一部)
 dupscan index -name location                  # 名前の候補の一部
 dupscan index -param-type ConnectionID        # 受け取る型

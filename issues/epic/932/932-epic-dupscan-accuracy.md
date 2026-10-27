@@ -65,3 +65,5 @@
 - 2026-10-27: 928の先頭 `-no-build` 起動を実装。未build/stale/指紋取得不能ではbuildも旧版execもしない。registry/capabilities/doctor/guideと効果評価は継続し、928はopenのまま。
 
 - 2026-10-27後半: 928のregistry/capabilities/doctor/agent-guideとGo通知のno-build接続を実装。旧出力16条件の互換、module lint/race、hook89条件と各変異を検証。Codex実CLIは成功、Claude側のBash許可と両agentのA/B等は残し928はopen。
+
+- 2026-10-27: 925の名前/署名/doc先頭行を横断するtext searchを実装。型だけの索引の23番目だった固定helperへ1候補で到達したが、ORの無関係候補も記録。json-v2と実課題A/Bは残し925はopen。

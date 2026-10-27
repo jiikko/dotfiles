@@ -25,7 +25,7 @@ bin/dupscan -no-build agent-guide -target claude -lang go -print
 bin/dupscan -no-build agent-guide -target codex -lang swift -print
 ```
 
-`capabilities` はrepo不要で、登録済みdispatchとadapterから対応コマンド・出力形式・言語・近似の限界を返す。`flags_help`は各コマンドの実際の`-h`経路から得るため、別のflag一覧を写さない。helpの構築だけで、source/config/gitやparserを起動しない。JSONは`schema_version: 1`の能力表で、926の分析結果用json-v2 envelopeとは別。text/jsonを明示的に選べ、両方とも最大65,536 bytes。未実装のsearchは案内しない。
+`capabilities` はrepo不要で、登録済みdispatchとadapterから対応コマンド・出力形式・言語・近似の限界を返す。`flags_help`は各コマンドの実際の`-h`経路から得るため、別のflag一覧を写さない。helpの構築だけで、source/config/gitやparserを起動しない。JSONは`schema_version: 1`の能力表で、926の分析結果用json-v2 envelopeとは別。text/jsonを明示的に選べ、両方とも最大65,536 bytes。登録されていないcommandは案内しない。
 
 `doctor` は実行パス・git・repo/worktree・拡張子の列挙・optional config・ローカルのgate baseを確認する。構文解析・build・fetch・重複検出はしない。各checkはok/info/warning/error/not_checkedで、入力/実行/configエラーはrc=2、source/baseが無い等のwarningはrc=0。`.dupscan.json`不在は正常で、HEADとbaseが同じでもgate合格とは表示しない。text/jsonは最大65,536 bytes、reasonは最大4,096 bytes。
 
@@ -51,6 +51,8 @@ bin/dupscan gate -v -base <寄せる前> .         # 寄せた結果: base の�
 bin/dupscan near Sources/A.swift:location     # この単位と同じ形の単位 (一致した最も細かい段で)。起点を書かなければ repo 全体と比べる
 bin/dupscan near Sources/A.swift:42 Sources   # 行で指す (その行を含む単位のうち最も後で始まるもの)。起点を絞る
 bin/dupscan explain Sources/A.swift:location  # 段ごとに潰した形・ハッシュと、比べない理由 (なぜ同じ / 違うと判定したか)
+
+bin/dupscan search -query "connection bucket" -returns StorageLocation -min-matched-terms 2
 
 bin/dupscan index -returns StorageLocation    # 書く前に引く: 戻り値の型の一部で既にある定義を (1 行 1 件・上位 20 件)
 bin/dupscan index -name location -param-type String   # 名前の一部・引数の型の一部 (全部の条件に当たるものだけ)
@@ -86,6 +88,14 @@ struct / class / enum / protocol / actor / extension は宣言とメンバーの
 `@Test` / XCTest 関数の中の参照はその関数名を囲む単位として出す。メソッド内の入れ子の `func` は `Type.member` 照合の対象外。
 単位の外でも型の中なら囲む型名を出す。`if let foo` などの省略束縛は外側の値への参照として数え、parameter pack の宣言名は除く。
 text は `-limit` の既定 20 件まで (`0` は全部)、JSON は全件を返す。
+
+`search -query "用途語..."` は名前・署名・doc先頭行を横断する字句検索。型の字面filter（`-returns` / `-param-type`）と`-file`はindexと同じAND条件で、型推論・alias解決はしない。語はUnicode小文字化して重複を除き、1〜8語・全体512bytes・各語64runes以内。camel/acronym/snakeの境界は小文字化前に分け、日本語は原文の部分一致だけを使う。各語が一致したfieldと不足語を示す。意味理解や再利用可能性の証明ではなく、すべて`reuse=not_proven`。
+
+既定は1語以上が一致するOR候補検索。`-min-matched-terms`で必要語数を増やせる。順位は一致語数、語ごとの最強fieldの加点（name3/signature2/doc1）、名前完全一致、shared、非hidden、prod、場所の順。呼び出し数を順位に使わず、scoreを確率とは扱わない。`-lang auto|swift|go`、`-scope all|prod|test`を選べ、Goテスト関数等の索引除外はindexと同じ。
+
+初期版はtextのみ。`-limit`は既定5/範囲1〜50、`-max-bytes`は既定8192/範囲1024〜1048576で要約・カード・案内全体に適用する。docは160runesで切り、候補数・表示数・省略・parse errorを示す。予算にカードが入らなくても候補数を0と偽らない。必須要約すら収まらない場合だけrc=2/空stdout、通常の0件はrc=0。json-v2/-repo/-path/cursorは926と統合するまで追加しない。
+
+候補の`read_argv`は今回の走査位置から最大80行を確認する配列（自動実行しない）。`source_read_truncated`で残りを示し、元ソースの編集後は位置を再確認する。0件時は、必要一致語数の緩和、明示filter1個だけの解除、またはdoc全文/テスト/sourceへのevidence案を返す。変更条件をreasonに明記し、元の絶対directory scopeを保つ。再検索案は残余予算に収まるときだけ出す。ORで0件の語を1語に減らすだけの無益な再検索はしない。
 
 `context` は `def` と同じ問い合わせ (`名前` / `Type.member` / `名前(ラベル:…)`) を受け、1 回の走査から `def`・`refs`・`callers` の節を並べて出す。
 定義は `def <問い合わせ>` と同じ本体・型のoutlineを出す。参照・呼び出しは、同じファイルの連続したヒットを引用符付きのパス見出しにまとめ、各行を `line:col 囲む単位 [印] | ソース` として出す。行を抜き出して使うときは直前のファイル見出しも残す。単独の `def` / `refs` / `callers` の出力は変更しない（issue 938）。

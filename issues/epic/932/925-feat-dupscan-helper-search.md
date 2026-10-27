@@ -1,12 +1,10 @@
 # 925 (feat): dupscan で用途語・署名から既存ヘルパーの候補を探す
 
-> 🚨 **担当中: air5 (glogx)**（2026-10-27〜）
-
 起票日: 2026-10-26
 
 ## 目的と利用場面
 
-Claude/Codexが新しいfixtureや値の組み立て関数を書く前に、名前が分からない既存ヘルパーを探せるようにする。利用回数を増やすだけでなく、正しい既存実装へ到達するまでの検索・Readの往復と、不要なヘルパー追加を減らしたい。効果は未測定。今回は機能提案で、実装は未着手。
+Claude/Codexが新しいfixtureや値の組み立て関数を書く前に、名前が分からない既存ヘルパーを探せるようにする。利用回数を増やすだけでなく、正しい既存実装へ到達するまでの検索・Readの往復と、不要なヘルパー追加を減らしたい。効果は未測定。2026-10-27にtextの最小版を実装した。json-v2統合と実課題の効果評価は未完了。
 
 例: 「接続とバケットからテスト用の保存先を組みたい」が、既存関数名は分からない。戻り値の型と用途語を一度に渡し、使えそうな候補と一致根拠を短く受け取る。
 
@@ -16,7 +14,7 @@ Claude/Codexが新しいfixtureや値の組み立て関数を書く前に、名�
 - 名前以外のフィルターは型やdocの文字列の部分一致。docは宣言のdoc commentの先頭行で、複数の用途語をフィールド横断で当てる検索・一致根拠の一覧はない。
 - `near` は既にある本体から正規化後の一致を探す。書く前の用途語検索とは入力が違う。
 
-## コマンド案（現時点では未実装）
+## コマンド（text最小版を実装済み）
 
 ```sh
 dupscan search -query 'connection bucket fixture' -returns StorageLocation -limit 5
@@ -41,7 +39,9 @@ dupscan search -query 'connection bucket fixture' -returns StorageLocation -limi
 
 関連: [924](done/924-perf-dupscan-exploration-latency.md) は処理速度、[918](918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](../890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。917の保留条件は維持する。895/918の実装はepic 932の別担当であり、本issueに混ぜない。
 
-## 詳細設計案（2026-10-26、未実装）
+## 詳細設計案（2026-10-26）
+
+以下は全体案。現行はtext最小版で、未実装のjson-v2/-repo/-path/共通serializer/効果評価と区別する。実装差分は末尾に記録する。
 
 ### 初期版のCLI
 
@@ -114,4 +114,32 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 
 - 2026-10-27: 924で探索共通経路の比較用本体変換/正規化を省く処理を実装した。925の用途語/署名検索・順位設計は未着手で継続する。
 
-- 2026-10-27: `feat(dupscan): expose bounded metadata helper search`でtext search、source確認argv、0件再検索、registry/guideへの接続を実装。pure検索規則の先行commitを統合し、lint/raceと予算・再検索の各変異を検証。JSON-v2と実課題評価は未完了でopenを維持する。
+## text最小版の実装（2026-10-27）
+
+- SearchTerms/BuildSearchをpureな検索規則へ分け、hard filterはindexのQuery.matchを共用。名前付きの同じUnitsからname/signature/doc先頭行へOR/指定語数を適用する。camel/acronym/snakeの境界は小文字化前に分割し、Unicodeの結合記号を勝手に落とさず、日本語は原文部分一致だけ。語の最強fieldだけを加点し、近似call countは順位に使わない。
+- searchを実dispatch/能力表/agent-guideへ登録。CLIは-query/-returns/-param-type/-file/-lang/-scope/-min-matched-terms/-limit/-max-bytesを持つ。今回のscopeはall/prod/testと既存の位置引数dirで、926の-repo/-path等とは混同しない。textのみで新たな固定JSON契約を作らない。
+- 各カードにfile/line/col・署名・型・既知のvisibility/shared/test・一致field/語と不足語・doc抜粋・再利用not_proven・最大80行のsource確認argvを表示する。doc160runes、候補上限5（1〜50）、全体予算8192（1024〜1048576bytes）。headerに候補数/表示数/parse失敗と省略を出し、候補があるのに表示0件でも不存在としない。
+- 0件ではmin-matched-terms>1なら1へ下げる案、それ以外はfilterを1個だけ変える案、最後は最初の用途語をevidenceでdoc全文/テスト/sourceに当てる案。reasonに変更点を明記し、絶対directory scopeと残るfile/lang等を保つ。自動で条件を緩めて走査し直さず、argvも実行しない。通常ORの0件から1語だけへ再検索しても新しい候補が増えないため、その案は採用しない。
+- 任意の案内で必須要約が予算超過しないよう、実際の残余bytesで収容を判定する。予算不足の0表示、doc切詰め、不完全parseを検査した。source確認argvも実際に実行し、80行上限を確かめた。
+
+### 評価と制約
+
+実ソースsrc/doctorを固定し、変更前の型だけの `index -returns bool`（既定20表示/全50候補）と、今回のquery+同じ型filterを各5回実行。探索的に選んだ正例/反例で、held-outやagent A/Bではない。
+
+| query / min語数 | index候補数 / bytes | search候補数 / bytes | 中央値ms（index/search） |
+|---|---:|---:|---:|
+| 完全一致 プロセス / 2 | 50 / 4113 | 1 / 1186 | 33.54 / 31.24 |
+| Lstat dev / 2 | 50 / 4113 | 1 / 1098 | 32.23 / 31.46 |
+| process identity / 1 | 50 / 4113 | 4 / 2836 | 31.68 / 31.61 |
+
+「完全一致 プロセス」はprocessRunningへ到達し、型だけの索引では23番目で既定表示から外れていた候補が1件になる。「Lstat dev」はstatIdentityへ到達する（旧8番目なので型だけの既定表示にも既にある）。`process identity`は4候補へ減るが、先頭のstatIdentityはfilesystemの識別であり、processの語意を理解していない。不足語・引数型を見て確認が必要。返す情報と絞り込み条件が違うため、bytes減少を同じ情報量や総context削減の証明にはしない。所要も小規模/準備済みの観測値で、速度改善の主張には使わない。
+
+- 旧index/callersのtext/json、report/gateのtext/json/xcodeの10条件でrc/stdout/stderrを比較して一致。既存indexの条件/順位/数値は変更していない。help/能力表とguideにはsearchを追加した。
+- lint/race全テスト、検索規則15種類とCLI4種類の意図的な変異を検査。語数/加点/可視性等の順位、結合記号、予算による偽0件、source確認範囲、進展しない再検索、案内の予算超過を想定assertで検出した。レビューでは「0件案内不足」「確認argv不足」「任意案内による予算超過」を修正した。
+- 追加する複雑さはtoken化/rankingとbounded text出力。新cache・型解決・call hint・構造類似度・v2 envelopeは追加しない。実課題での正しい再利用・不要な重複追加・総context/費用の改善は928、共通JSON/診断は926で評価/統合する。925全体はopenで継続。
+
+改善の再評価: 既知名の部分一致や型だけの一覧に加え、名前を与えずに用途語が異なるmetadata fieldへ現れる既存候補に1回で絞れる。固定の実例で候補の隠れた初期表示と不要な候補を減らし、source確認argvまで具体化した。一方、語彙/型alias/同義語の限界、ORの無関係候補、追加bytesと解析費用は残る。新しい検索が常にgrepより効率的とは主張しない。
+
+- 2026-10-27: `feat(dupscan): rank lexical helper candidates across metadata`を統合し、`feat(dupscan): expose bounded metadata helper search`でtext CLI・source確認・再検索・guideを実装。`docs(dupscan): document lexical helper search and its limits`で実測/残作業を記録する。
+
+- 最終strict gateはbase66699f2aから変わった14単位で新しい重複なし、追加除外なし。全srcの通常gateは既存の不正fixtureをbase/head各1件として通知する。今回のtext実装のclaimを解除し、残る統合/評価をopenで追跡する。
