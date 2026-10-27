@@ -41,6 +41,10 @@ func TestL1ViewPreservesWriterOutputAndNativeTokenBoundaries(t *testing.T) {
 	if _, err := L1View(empty, 100); err != nil {
 		t.Fatalf("empty body: %v", err)
 	}
+	oversized := &tree.Unit{Body: &tree.Node{Kind: "literal", Role: tree.RoleLiteral, Text: strings.Repeat("猫", 100)}}
+	if _, err := L1View(oversized, 64); err == nil {
+		t.Fatal("serialized byte budget ignored despite small node count")
+	}
 	if _, err := L1View(unit, 10); err == nil {
 		t.Fatal("byte budget ignored")
 	}
@@ -75,5 +79,16 @@ func TestL1ViewKeepsUnitWideLocalNumbering(t *testing.T) {
 	}
 	if a[1].Children[1].Header != "(ref $1" || b[1].Children[2].Header != "(ref $2" {
 		t.Fatalf("numbering drift is hidden: %+v %+v", a, b)
+	}
+}
+
+func TestL1ViewPreservesParameterDeclarationOrder(t *testing.T) {
+	u := &tree.Unit{Params: []string{"left", "right"}, Body: &tree.Node{Kind: "body", Children: []*tree.Node{
+		{Kind: "ref", Role: tree.RoleName, Text: "right"},
+		{Kind: "ref", Role: tree.RoleName, Text: "left"},
+	}}}
+	view, err := L1View(u, 1000)
+	if err != nil || view[1].Children[0].Header != "(ref $2" || view[1].Children[1].Header != "(ref $1" {
+		t.Fatalf("parameter declaration order changed: view=%+v error=%v", view, err)
 	}
 }
