@@ -62,11 +62,13 @@ const (
 
 // Call は呼び出しの箇所 1 つ (callers で引く)。型を解決しないので、名前と引数ラベルだけの近似。
 type Call struct {
-	File   string
-	Line   int
-	Col    int
-	Name   string   // 呼ばれる名前 (`a.b.make(…)` なら make。`Foo(…)` なら Foo)
-	Labels []string // 括弧の中の引数ラベル (ラベルの無い引数は `_`)
+	// Selector is a normalized Go identifier/selector chain; it does not resolve an import or receiver.
+	Selector string `json:"-"`
+	File     string
+	Line     int
+	Col      int
+	Name     string   // 呼ばれる名前 (`a.b.make(…)` なら make。`Foo(…)` なら Foo)
+	Labels   []string // 括弧の中の引数ラベル (ラベルの無い引数は `_`)
 	// Trailing は後置クロージャがあること (その分の引数ラベルは Labels に入らない)。
 	Trailing bool
 	// Owner is nil when the adapter uses Unit-based ownership. A nonnil empty

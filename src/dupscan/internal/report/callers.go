@@ -1,7 +1,9 @@
 package report
 
 import (
+	"errors"
 	"fmt"
+	"go/token"
 	"io"
 	"sort"
 	"strings"
@@ -11,8 +13,9 @@ import (
 
 // CallQuery は callers の引き方: 名前と、書いてあれば引数ラベル (`make(x:_:)` の x と _)。
 type CallQuery struct {
-	Name   string
-	Labels []string // nil ならラベルで絞らない
+	Selector string
+	Name     string
+	Labels   []string // nil ならラベルで絞らない
 }
 
 // ParseCallQuery は `名前` か `名前(ラベル:ラベル:)` を読む。ラベルの無い引数は `_:`。
@@ -40,7 +43,7 @@ func ParseCallQuery(s string) (CallQuery, error) {
 // matches は呼び出し c が q に当たるか。後置クロージャの引数はラベルが括弧の外にあるので、後置クロージャのある呼び出しは
 // 括弧の中のラベルが q のラベルの先頭に一致すれば当てる (型を解決しないので近似)。
 func (q CallQuery) matches(c tree.Call) bool {
-	if c.Name != q.Name {
+	if c.Name != q.Name || q.Selector != "" && c.Selector != q.Selector {
 		return false
 	}
 	if q.Labels == nil {
@@ -69,14 +72,19 @@ type CallerEntry struct {
 
 // CallersSummary は callers の出力。
 type CallersSummary struct {
-	Query   string        `json:"query"`
-	Matches int           `json:"matches"`
-	Entries []CallerEntry `json:"entries"`
+	Selector            string        `json:"selector,omitempty"`
+	SelectorLimitations string        `json:"selector_limitations,omitempty"`
+	Query               string        `json:"query"`
+	Matches             int           `json:"matches"`
+	Entries             []CallerEntry `json:"entries"`
 }
 
 // BuildCallers は q に当たる呼び出しを、prod を test より前・場所の順に並べる。isTest はファイルが test のファイルか。
 func BuildCallers(query string, q CallQuery, calls []tree.Call, units []*tree.Unit, isTest func(string) bool) CallersSummary {
-	s := CallersSummary{Query: query, Entries: []CallerEntry{}}
+	s := CallersSummary{Query: query, Entries: []CallerEntry{}, Selector: q.Selector}
+	if q.Selector != "" {
+		s.SelectorLimitations = "Goのみ、Swiftは対象外。単純なidentifier/selector chainの構文一致を元の名前照合と、指定した場合の引数数条件にANDする。import/alias/receiverの同定はしない。同じ字面のshadowingは混ざり、別alias・dot import・動的/indexed calleeは拾わない"
+	}
 	byFile := map[string][]*tree.Unit{}
 	for _, u := range units {
 		byFile[u.File] = append(byFile[u.File], u)
@@ -129,6 +137,11 @@ func CallersText(w io.Writer, s CallersSummary, limit int) error {
 
 // CallersTextMore は CallersText の、省略したときの案内 (more) を呼び出し側が決める版。
 func CallersTextMore(w io.Writer, s CallersSummary, limit int, more string) error {
+	if s.Selector != "" {
+		if _, err := fmt.Fprintf(w, "selector=%q: %s\n", s.Selector, s.SelectorLimitations); err != nil {
+			return err
+		}
+	}
 	if s.Matches == 0 {
 		fmt.Fprintf(w, "dupscan callers: %s の呼び出しなし\n", s.Query)
 		return nil
@@ -149,4 +162,19 @@ func CallersTextMore(w io.Writer, s CallersSummary, limit int, more string) erro
 		fmt.Fprintf(w, "%s:%d %s%s | %s\n", e.File, e.Line, caller, mark, e.Text)
 	}
 	return nil
+}
+
+// ParseCallSelector accepts a source-spelled chain, without import or type resolution.
+func ParseCallSelector(value string) (string, error) {
+	parts := strings.Split(value, ".")
+	if len(parts) < 2 {
+		return "", errors.New("selectorはGoの単純な識別子chainを渡す (例: strings.Join)")
+	}
+	for i, part := range parts {
+		parts[i] = strings.TrimSpace(part)
+		if !token.IsIdentifier(parts[i]) {
+			return "", fmt.Errorf("selectorはGoの単純な識別子chainだけに対応する: %q", value)
+		}
+	}
+	return strings.Join(parts, "."), nil
 }

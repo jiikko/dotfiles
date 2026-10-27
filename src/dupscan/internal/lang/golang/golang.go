@@ -440,7 +440,7 @@ func (w *walker) calls(f *ast.File) []tree.Call {
 			return true
 		}
 		pos := w.position(call.Pos())
-		c := tree.Call{File: w.file, Line: pos.Line, Col: pos.Column, Name: name, Labels: []string{}, Owner: unknownOwner}
+		c := tree.Call{File: w.file, Line: pos.Line, Col: pos.Column, Name: name, Selector: selectorChain(call.Fun), Labels: []string{}, Owner: unknownOwner}
 		for _, owner := range w.callOwners {
 			afterStart := pos.Line > owner.Line || pos.Line == owner.Line && pos.Column >= owner.Col
 			beforeEnd := pos.Line < owner.EndLine || pos.Line == owner.EndLine && pos.Column < owner.EndCol
@@ -479,4 +479,19 @@ func calleeName(e ast.Expr) string {
 			return ""
 		}
 	}
+}
+
+// selectorChain excludes dynamic/indexed callees rather than pretending to resolve them.
+func selectorChain(e ast.Expr) string {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.ParenExpr:
+		return selectorChain(x.X)
+	case *ast.SelectorExpr:
+		if receiver := selectorChain(x.X); receiver != "" {
+			return receiver + "." + x.Sel.Name
+		}
+	}
+	return ""
 }

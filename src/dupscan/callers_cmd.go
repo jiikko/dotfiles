@@ -17,6 +17,7 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("dupscan callers", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	format := fs.String("format", "text", "出力の形式: text / json")
+	selector := fs.String("selector", "", "Goのみ: sourceに書いた単純selector chainをAND (例: strings.Join。型/importは解決しない)")
 	limit := fs.Int("limit", 20, "text で出す件数の上限 (0 は全部)")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, usage)
@@ -37,6 +38,20 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
+
+	exts := langs.Extensions()
+	if *selector != "" {
+		q.Selector, err = report.ParseCallSelector(*selector)
+		if err != nil {
+			return fail(err)
+		}
+		exts = nil
+		for _, adapter := range langs.All {
+			if adapter.Name == "go" {
+				exts = adapter.Extensions
+			}
+		}
+	}
 	dirs := rest[1:]
 	if len(dirs) == 0 {
 		dirs = []string{"."}
@@ -45,8 +60,11 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	got, err := scanSource(repo.Worktree{Scope: sc, Exts: langs.Extensions()}, true, analysisPlan{Options: lang.Options{Calls: true}})
+	got, err := scanSource(repo.Worktree{Scope: sc, Exts: exts}, true, analysisPlan{Options: lang.Options{Calls: true}})
 	if err != nil {
+		if q.Selector != "" {
+			return fail(fmt.Errorf("go selector検索 (Swiftは対象外): %w", err))
+		}
 		return fail(err)
 	}
 	s := report.BuildCallers(rest[0], q, got.calls, got.units, langs.IsTestPath)
