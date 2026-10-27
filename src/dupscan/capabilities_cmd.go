@@ -44,6 +44,7 @@ func buildCapabilities() capabilityDocument {
 	d := capabilityDocument{SchemaVersion: 1, Tool: "dupscan", Version: "unknown", Commands: []capabilityCommand{}, Languages: []capabilityLanguage{}, Limitations: []string{
 		"Flags are the actual command help text, not a structured flag schema.",
 		"Queries use syntax and lexical matching without type resolution; same-named symbols may match.",
+		"External SDK definitions and project/target dependency resolution are not provided.",
 		"This capability schema is not the planned json-v2 analysis envelope.",
 	}}
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {

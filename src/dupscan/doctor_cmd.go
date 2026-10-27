@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
+	"subproc"
 	"unicode/utf8"
 
 	"dupscan/internal/jsonout"
@@ -32,6 +34,9 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	directory := fs.String("repo", ".", "repository directory or subdirectory")
 	base := fs.String("base", "", "gate baseline ref (default: upstream)")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 	if fs.NArg() != 0 || (*format != "text" && *format != "json") {
@@ -59,10 +64,10 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	} else {
 		add("executable", "ok", executable)
 	}
-	if git, err := exec.LookPath("git"); err != nil {
-		add("git", "error", err.Error())
+	if command := subproc.GitCommand(context.Background(), "--version"); command.Err != nil {
+		add("git", "error", command.Err.Error())
 	} else {
-		add("git", "ok", git)
+		add("git", "ok", command.Path)
 	}
 	var adapters []string
 	for _, adapter := range langs.All {

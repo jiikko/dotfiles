@@ -194,3 +194,5 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 `make test-changed` のshell構文/ShellCheck/zsh構文/test-lint-tests/zshrcとbin/claudeの適用検査を最後まで実行した。途中のwarmupはwrapperのflag配列を静的に読めず失敗したため、本対応内で修正し、専用検査と全17ツールのwarmup再実行で成功を確認した。README/issueの適用検査も成功（dupscanのGo全テストとissue整合検査を含む）。
 
 広域検査全体は緑ではない。残る `test_dangling_symlinks.sh` は変更前からある `~/.config/nvim/coc-settings.json -> ~/dotfiles/_coc-settings.json` のリンク先欠落で、単独再実行でも再現する。このテストはautobuild helperを呼ばず、今回変更していない。ユーザーの設定は変更していない。`test_tmux_pane_state_bell.sh` はTERM=dumbでattachできず失敗し、TERM=xterm-256colorで再実行して成功した。`test_claude_links_complete.sh` はworktreeではskipされた。これらをno-build専用検証の成功と混同しない。
+
+- 2026-10-27後半: `feat(dupscan): print bounded guides for Claude and Codex`で表示専用guideと新helpを追加し、doctorをsubproc境界へ統合。先行する診断/dispatch/実flagsの3実装も取り込んだ。lint/race全テスト、guide言語分岐の変異、既存出力16条件の互換を確認。詳細な測定と未確認範囲は後続の完了記録へ残す。
