@@ -1,12 +1,10 @@
 # 928 (feat): dupscan のClaude/Codex共通の導入案内・能力診断を用意する
 
-> 🚨 **担当中: air5 (glogx)**（2026-10-27〜）
-
 起票日: 2026-10-26
 
 ## 目的
 
-CLIを使える環境でもagentが存在・適切なコマンド・対応言語を知らず、普段の探索へ戻る摩擦を減らす。Claude/Codexで共通のCLI契約と短い導入案内を持ち、環境依存の導線は別々に検証する。利用増加と開発効率の改善は未測定。2026-10-27にno-buildの起動経路だけを実装し、registry/capabilities/doctor/guideと統合評価は継続する。
+CLIを使える環境でもagentが存在・適切なコマンド・対応言語を知らず、普段の探索へ戻る摩擦を減らす。Claude/Codexで共通のCLI契約と短い導入案内を持ち、環境依存の導線は別々に検証する。利用増加と開発効率の改善は未測定。2026-10-27にno-build、registry/capabilities/doctor/agent-guideとGo通知接続を実装した。各環境の実動確認と開発全体の効果評価は下記の状態で継続する。
 
 ## 現状の裏取り（5a9a6a98時点）
 
@@ -15,7 +13,7 @@ CLIを使える環境でもagentが存在・適切なコマンド・対応言語
 - [921](../890/pending/921-feat-dupscan-explore-def-refs-and-grep-nudge.md) の案内hookは実装・push済みで、残りは1か月後の効果測定。新規のhookが必要だと一括して扱わない。
 - `main.go` のusageは人向けで、対応コマンド・問い合わせ形式・言語別対応をmachine-readableに返す専用コマンドはない。Codexの各実行環境でこのClaude用hookが使えるかは未検証で、共通に動く前提にしない。
 
-## コマンド・導線案（未実装）
+## 実装した共通CLI（2026-10-27）
 
 ```sh
 dupscan capabilities -format json
@@ -43,15 +41,17 @@ dupscan agent-guide -target codex -print
 - [ ] Claude/Codexの各利用環境について、発見経路・利用できたコマンド・未対応の機構を記録し、動作確認できた組だけ案内する。
 - [ ] CLI不存在/未build/設定なし/壊れた設定/別cwd・worktree/対応言語が混在/非git repo/SDKのシンボルを含むケースを検査する。
 - [ ] capabilities・guide・実際のCLIの対応表が一致し、初回buildと探索そのものの時間を分けて測る。導入の繰り返しで指示を重複させない。
-- [ ] hookの通知は少数・短文で、追加の待ち時間を実測する。全repo解析やbuildが通知だけで起きないことを確認する。
+- [x] hookの通知は少数・短文で、追加の待ち時間を実測する。全repo解析やbuildが通知だけで起きないことを確認する。
 - [ ] [917](../890/pending/917-test-dupscan-usefulness-verification.md) / 921の計測とつなぎ、両agentを別集計する。適切な呼び出し、実際の再利用、誤誘導、往復数・elapsed timeを比較し、利用回数の増加だけで採用しない。
 - [ ] Codex/Claudeの固有連携が使えなくても、共通CLIを手動で呼べる導入経路が残る。
 
-## 詳細設計案（2026-10-26、未実装）
+## 詳細設計案（2026-10-26）と実装差分
+
+以下の当初案に対し、現行実装はtext/jsonの能力表・診断と表示専用guideを提供する。json-v2と型付きflag metadata/予算serializerは926で統合し、ここでは作ったことにしない。実装済み範囲と差分は末尾の記録を正本とする。
 
 ### Command/adapter registryを情報源にする
 
-`internal/commandmeta` にCommandSpec（名前、flag定義builder、Runの登録情報、対応出力、必要な解析feature）を置き、mainのdispatch・help・capabilities・guideが共用する。packageがmainのRun関数をimportする循環は作らず、main側が登録する。登録コマンドとhelp/capabilitiesの一致をテストする。
+当初のinternal/commandmeta分離案に対し、実装はmain package内のcommandSpecへRun/対応出力/問い合わせ形/説明/SymbolsOnlyを登録した。dispatch・capabilities・guideが同じ一覧を使い、import循環を作らない。flags_helpは同じRunの-h結果を得て実flag定義と同期する。型付きflag schemaは926の統合時に扱う。共通usageにも新3コマンドを載せ、正常な旧分析出力の互換性とは分けて検証する。
 
 言語の能力は `internal/langs.All` / `lang.Adapter` から取得する。既存SymbolsをDefs/Refsの能力へ対応させ、Units/Calls等はadapterの実動作に合わせて登録する。手書きの別の言語表をguideへ埋め込まない。
 
@@ -60,11 +60,11 @@ dupscan agent-guide -target codex -print
 ### capabilitiesとdoctor
 
 ```sh
-dupscan capabilities -format json-v2
-dupscan doctor -format json-v2 -repo /path/to/repo
+dupscan capabilities -format json
+dupscan doctor -format json -repo /path/to/repo
 ```
 
-- capabilitiesはrepo無しでも実行でき、tool/build情報、schema、commands/flags/出力mode、言語ごとの対応、近似・外部SDK非対応等の制約を返す。検査対象sourceの走査やgit fetchは行わない。上限は既定65,536 bytesで、超過処理は926の契約を使う。
+- capabilitiesはrepo無しでも実行でき、tool/build情報、schema、commands/flags/出力mode、言語ごとの対応、近似・外部SDK非対応等の制約を返す。検査対象sourceの走査やgit fetchは行わない。現在は上限65,536 bytesで、超過時はrc=2・stdout空とする。926の分析envelope/予算serializerは未統合。
 - doctorはcommand-vで起動した実体、git root/worktree、利用できるadapter、config読取、base候補の解決結果を返す。baseは現行resolveBaseの読取だけを使い、fetchや書込みはしない。HEADとbaseが同じなら注意情報にし、gate合格とは表示しない。
 - doctorのsource調査は拡張子の列挙まで。AST解析・重複検出は起動しない。`.dupscan.json` 不在はoptional configとして正常、壊れた設定は明確な診断にする。
 - 各checkは `ok / info / warning / error / not_checked` とreasonを持つ。診断が完了すればrc=0、実行・設定エラーなら2。対応sourceが無いこと等は用途別のreadinessに分け、個別のwarningを「ツール全体が使えない」と一括判定しない。
@@ -76,10 +76,10 @@ dupscan doctor -format json-v2 -repo /path/to/repo
 wrapper専用の先頭option `-no-build` を追加した。既存go_autobuild helperのfingerprint/stale判定を共用し、規則を写さない。指紋が取得できてビルド記録と一致すればoptionを取り除いてexecし、missing/stale/指紋取得不能ならstdoutを空にしてrc=2と短いstderrを返す。当該入力のbuild失敗で古いbinaryだけがある場合もstaleとして拒否し、再試行やbackoff記録を更新しない。無関係な過去の失敗記録が残っているだけならcurrent binaryは拒否しない。binary不存在時はv2 envelopeを返せないwrapperエラー。古いbinaryで新しいcapabilityを答えたことにしない。
 
 ```sh
-dupscan -no-build capabilities -format json-v2
+dupscan -no-build capabilities -format json
 ```
 
-上のcapabilitiesは未実装の利用予定例で、現在試せるのは `bin/dupscan -no-build -help` 等。通知hookへの接続は未実装。接続時はこの経路か軽量な存在確認だけを使い、失敗時は1回の案内に留める。通常の手動導入ではno-buildを指定せず、既存のbuild経路を利用できる。shell fixtureではbuild/SDK/git起動がないこと、未readyではbinaryも起動しないこと、projectファイルの内容/metadataを変更しないことを直接assertする。
+capabilitiesのno-build起動も実装済み。Go向けの既存通知hookは同梱wrapperのこの経路を使い、失敗時は1回の手動確認案内に留める。Swiftの通常案内は921の観測を維持する。通常の手動導入ではno-buildを指定せず、既存のbuild経路を利用できる。shell fixtureではbuild/SDK/git起動がないこと、未readyではbinaryも起動しないこと、projectファイルの内容/metadataを変更しないことを直接assertする。
 
 ### guideとagent別導入
 
@@ -167,7 +167,9 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 
 - 2026-10-27: 938でcontext/evidenceの先頭状態・grouped text・scope付きnext_actionと任意summaryを実装/局所比較した。938の完了は本issueの全受け入れ条件の完了を意味しない。出力bytes減少を記録したが、実課題の総tokens/重複追加/時間の評価とregistry/capabilitiesは継続。
 
-## no-buildの実装と今回の境界（2026-10-27）
+## no-build実装時点の境界（2026-10-27前半）
+
+この節の「未実装」は前半時点の履歴。後半で進めた機能の現状は末尾の記録を参照する。
 
 - `bin/dupscan` は先頭の `-no-build` だけを共通helperの `--no-build` へ渡す。残る引数の空文字/空白/記号/改行/`--`と終了コードはそのまま保つ。通常wrapperの起動方法は維持する。
 - helperはasync/sync/build処理へ入る前にstrictなreadinessを判定し、既存のmtime fallbackへは降りない。入力指紋は既存のパス・mtime・サイズであり、内容hashやtoolchain/SDK/Cのassetまで検証する契約には広げない。no-build自身はASTやgitを起動しないが、exec後のcommandの解析を禁止するoptionではない。
@@ -195,6 +197,41 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 
 広域検査全体は緑ではない。残る `test_dangling_symlinks.sh` は変更前からある `~/.config/nvim/coc-settings.json -> ~/dotfiles/_coc-settings.json` のリンク先欠落で、単独再実行でも再現する。このテストはautobuild helperを呼ばず、今回変更していない。ユーザーの設定は変更していない。`test_tmux_pane_state_bell.sh` はTERM=dumbでattachできず失敗し、TERM=xterm-256colorで再実行して成功した。`test_claude_links_complete.sh` はworktreeではskipされた。これらをno-build専用検証の成功と混同しない。
 
-- 2026-10-27後半: `feat(dupscan): print bounded guides for Claude and Codex`で表示専用guideと新helpを追加し、doctorをsubproc境界へ統合。先行する診断/dispatch/実flagsの3実装も取り込んだ。lint/race全テスト、guide言語分岐の変異、既存出力16条件の互換を確認。詳細な測定と未確認範囲は後続の完了記録へ残す。
+## 残機能の実装（2026-10-27）
 
-- 2026-10-27後半: `feat(hooks): validate Go nudges against no-build capabilities`で同梱CLIの能力表にGo通知を接続。未準備/不正/非対応では手動確認へ戻し、通知を1024bytes以内に制限する。hook89条件とargvの1文字列化/予算guard除去の2変異を検証。
+- registryをdispatchの正本にし、capabilities/guideもそこを参照する。mainをimportする循環は作らず、GoのSymbols=falseからdef/refs/context非対応を求める。実flagは同じRunの-hだけを呼んだflags_helpとして取得する（flags_status=help_text）。型付きflag schemaではなく、別表の写経やAST/config/gitの実行はない。capabilitiesはtext/json・schema_version=1・65,536bytesまで。
+- doctorはread-only git列挙と既存config/base解決を共用し、sourceを構文解析しない。gitのPATH解決もsubprocのcommand構築だけで行い、os/execの新しい起動口を作らない。エラーとwarning/not_checkedを分け、base解決だけでgate合格とはしない。reasonをUTF-8境界で4,096bytes、全体65,536bytesに制限する。
+- guideはclaude/codex・all/swift/goの表示例を4,096bytes以内で返す。Goにはcontext/def/refsを案内しない。TYPE/TERM/SYMBOLはplaceholderで、実データに置換して使う。初期設計の自動書換えは追加せず、-printが必要。実装後のgateの例はbase=HEADを固定しない。
+- Go通知だけを同梱wrapperの先頭-no-build能力問い合わせへ接続した。PATH上の旧wrapperへ渡すと古いwrapperがbuildしかねないため、同じcheckoutのcompanionを指定する。未準備/不正JSON/非対応なら具体例を出さず手動確認へ戻す。Swiftの通常メッセージ/stampは921の測定前に変更せず、全通知に1,024bytes上限を適用する。
+
+### 検証と実測
+
+- module lint/race全テストとshell構文/ShellCheck/テストlintを実行。capabilitiesは空PATH・壊れたconfig・parser trapでgit/ASTを起動しないことを確認。doctorは壊れたSwift/Go、config不在/不正、unborn/上流無し/shallow、別cwd/worktreeとread-only git許可リストでrepo/.gitの内容/metadata非変更を確認した。
+- ガイドは2agent×3言語の6表示について、4つのargvを実際に既知helperのfixtureへ実行した（gateだけはfixtureのbaselineを明示する-base HEADを追加。表示するguide自体には固定しない）。hookは89 passed / 0 failed。strictなargc/各argv、no-build未準備・不正/非対応の能力情報、長いsymbolの予算、通知間隔と従来のSwift/Go振分けを検査する。
+- 変異: 診断error→rc2の伝播無効化、能力表のサイズguard除去、実help取得の無効化、guideの言語条件逆転、hookのargvを1文字列へ潰す変更、hookの予算guard除去を、それぞれ想定assertで検出した。最初のguide変異では未対応contextがregistryで除外されて3例になることを観測し、検知したassertを正確に記録した。
+- 既存出力比較は同じ924の固定snapshotで、def/refs/Swift callers/Go callers/indexのtext/json、report/gateのtext/json/xcodeを計16条件。rc/stdout/stderrが変更前と一致。共通helpには新しい3コマンドを追記した（正常な分析出力とは分ける）。
+
+### 実CLIの導線・所要と残作業
+
+以下はbuild準備済みのno-build起動を非git cwdから各5回実行した観測値。初回/cold buildを含む比較ではなく、速くなったという主張もしない。
+
+| コマンド | stdout bytes | 中央値ms | 範囲ms |
+|---|---:|---:|---:|
+| capabilities | 10,372 | 12.36 | 11.83〜13.96 |
+| doctor | 1,175 | 74.81 | 72.39〜77.05 |
+| agent-guide / claude | 1,167 | 11.91 | 11.45〜13.06 |
+| agent-guide / codex | 1,204 | 12.49 | 11.43〜12.79 |
+
+- 実hookは追跡済みSwift+Go各1ファイルの同一fixture・各5回、900秒制限を無効にして比較した。準備済みGoは86.25→107.54ms（約21.29ms増）、Swiftは87.25→88.66ms。通常のメッセージは前後でbyte一致（Go268bytes / Swift417bytes）。追加コストと、古い/不正な能力を具体的なcommandとして広告しない利点とのtrade-off。大きなrepoやcold filesystemへの一般化はしない。
+- Codex CLI 0.164.0のread-only/ephemeral環境で、capabilitiesとcodex/swiftのguideを実行し、両方rc=0・Swift context対応・index -returnsの導線を確認した。Claude Code 2.1.311のprint/dontAsk・Bash許可を指定したsmokeは、Bash権限拒否の応答となり成功を確認できなかった。制限を緩めて回避していない。この環境でのClaude実動は未確認として残す。CLI fixtureが通ることをClaude固有連携の成功とは扱わない。
+- 通常のterminal共通CLI経路と、Codex固有hookを仮定しない表示は維持した。設定への自動追記や重複したhook登録は追加しない。
+
+改善の再評価: 起動できるか/何が対応するかをソースのhelpや手書きの言語表から推測するしかなかった状態から、実dispatch/flag定義を読んだ能力表、ASTを起こさない診断、実行可能な短い例へ進めた。Go通知でbuildを避けつつ実能力を確かめられる。追加したregistry/診断/guide/境界テストと、通知1回あたりの約21msが複雑さ/費用。型解決・外部SDK/target解決を追加したものではなく、正しい再利用・総context/tokens・不要な重複追加の改善はまだ示していない。
+
+残作業は(1)Claude側のBash許可を満たす環境での実動、(2)初回build/準備済み探索を分けた代表環境の検査、(3)917/921の条件を保った両agentの実課題A/B（再利用・誤誘導・重複追加・総context/時間/費用）、(4)926でのtyped flags/json-v2/共通serializerへの統合。実装が揃っただけで全受け入れ条件を満たしたことにはせず、928はopenで継続する。
+
+- 2026-10-27後半: `feat(dupscan): diagnose local readiness without running analysis` / `feat(dupscan): derive discovery from executable command dispatch` / `feat(dupscan): expose actual command flags through discovery`を統合。`feat(dupscan): print bounded guides for Claude and Codex`と`feat(hooks): validate Go nudges against no-build capabilities`で残る導線を実装し、`docs(dupscan): record discovery readiness and onboarding evidence`で検証と残作業を記録する。
+
+- 今後の評価ではcapabilities/doctor/guideや通知内部の自動問い合わせを、候補探索・再利用の実行回数と別集計する。今回の実装範囲を終えclaimを解除し、環境/実課題評価の未完了をopenで追跡する。
+
+- 最終のstrict module gateはbase eb2d4bd7から変わった11単位で新しい重複なし、追加除外なし。全srcの通常gateは既存の意図的不正fixtureをbase/head各1件として解析不完全を通知する。issue整合テストも成功した。

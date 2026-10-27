@@ -63,3 +63,5 @@
 - 2026-10-27: 938案2〜4をcontext/evidenceへ実装し、案5は任意summaryを採用、既定短縮は見送って決着。局所の出力量比較と制約を938へ記録。926/927/928の残機能と開発全体の効果検証は継続。
 
 - 2026-10-27: 928の先頭 `-no-build` 起動を実装。未build/stale/指紋取得不能ではbuildも旧版execもしない。registry/capabilities/doctor/guideと効果評価は継続し、928はopenのまま。
+
+- 2026-10-27後半: 928のregistry/capabilities/doctor/agent-guideとGo通知のno-build接続を実装。旧出力16条件の互換、module lint/race、hook89条件と各変異を検証。Codex実CLIは成功、Claude側のBash許可と両agentのA/B等は残し928はopen。
