@@ -24,6 +24,9 @@
   (obaket retro 1293: 「production の挙動を変えない」段で shutdown に後片付けの join を足し、接続の保存が背景の close の最大 60 秒を serializer を持ったまま待った)
 - **テストの fake / stub に、受け側の reject 挙動を模させる**。fake が「常に成功」だと、
   ガード起因の失敗経路がテストから構造的に見えず、修正が悪化を作っていても green になる
+- **protocol に既定の実装つきで要件を足すときは、本物を包む conformer (proxy / decorator / wrapper) を全部挙げ、転送を同じ変更で足すか起票する**。
+  既定の実装 (何もしない・1 件だけ返す) はビルドを落とさないので、包む側が転送し忘れると機能が黙って消える (vlc-multi-video-player retro 426:
+  SAC の `ToastManaging` に足したホバーの停止が、obaket の logging decorator を通ると効かなかった。ビルドも警告も通り、敵対レビューで見つかった)
 - **逆向きも同じ**: 既存経路を共通 helper に差し替えるとき、**helper が新たに throw する
   error** と旧経路が throw していた error の意味論を突き合わせる。呼び出し側の catch / 変換は
   旧 error だけを想定して書かれており、新 error は素通りして汎用エラーに落ちる。
