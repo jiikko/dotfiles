@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"subproc"
 )
 
 const evidenceSwift = `struct Store {
@@ -225,8 +230,8 @@ func TestEvidenceNextActionReplaysCalledAndDocOnlyCandidates(t *testing.T) {
 			if rc != 0 || errs != "" {
 				t.Fatalf("rc=%d out=%q stderr=%q", rc, out, errs)
 			}
-			if strings.Count(out, "next_action: ") != 1 {
-				t.Fatalf("exactly one action: %q", out)
+			if strings.Count(out, "next_action: ") != 2 {
+				t.Fatalf("source confirmation followed by one lookup that does not prove reuse: %q", out)
 			}
 			var action nextAction
 			for _, line := range strings.Split(out, "\n") {
@@ -305,5 +310,107 @@ func TestEvidenceGoDocOnlyActionUsesIndex(t *testing.T) {
 	rc, replay, errs := runReport(t, action.Argv[1:]...)
 	if rc != 0 || errs != "" || !strings.Contains(replay, "Join()") {
 		t.Fatalf("rc=%d out=%q stderr=%q", rc, replay, errs)
+	}
+}
+
+func TestEvidenceSourceConfirmationPrecedesUnrelatedCalledName(t *testing.T) {
+	root := repoWith(t, map[string]string{
+		"one space/A\"界.swift": "/// needle " + strings.Repeat("界", 180) + "\n/// UI-only changes must NOT be emitted as updates.\nfunc candidate() {}\n",
+		"two/Other.swift":      "func unrelated() {}\nfunc usage() { unrelated() /* needle */ }\n",
+		"outside/A.swift":      "/// needle outside scope\nfunc outside() {}\n",
+	})
+	rc, out, errs := evidence(t, "needle", filepath.Join(root, "one space"), filepath.Join(root, "two"))
+	if rc != 0 || errs != "" {
+		t.Fatalf("rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+	var actions []nextAction
+	for _, line := range strings.Split(out, "\n") {
+		if raw, ok := strings.CutPrefix(line, "next_action: "); ok {
+			var action nextAction
+			if err := json.Unmarshal([]byte(raw), &action); err != nil {
+				t.Fatal(err)
+			}
+			actions = append(actions, action)
+		}
+	}
+	if len(actions) != 2 || actions[0].Kind != "read_source" || actions[1].Kind != "callers" || !strings.Contains(out, "unrelated (1 行)") {
+		t.Fatalf("original evidence must precede called-name exploration: %#v\n%s", actions, out)
+	}
+	a := actions[0]
+	wantFile, err := absPath(filepath.Join(root, "one space/A\"界.swift"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Argv) != 4 || a.Argv[0] != "sed" || !filepath.IsAbs(a.Argv[3]) || a.Argv[3] != wantFile || !strings.Contains(a.Reason, "source_read_truncated=false") || !strings.Contains(a.Reason, "owner_unknown=false") {
+		t.Fatalf("source action lost scope or metadata: %#v", a)
+	}
+	t.Chdir(t.TempDir())
+	body, err := subproc.CommandContext(context.Background(), a.Argv[0], a.Argv[1:]...).Output()
+	if err != nil || !bytes.Contains(body, []byte("UI-only changes must NOT be emitted as updates.")) || !bytes.Contains(body, []byte("func candidate()")) || bytes.Contains(body, []byte("outside scope")) {
+		t.Fatalf("source confirmation must reveal the negative context: err=%v body=%q", err, body)
+	}
+	rc, replay, replayErr := runReport(t, actions[1].Argv[1:]...)
+	if rc != 0 || replayErr != "" || !strings.Contains(replay, "unrelated() /* needle */") || strings.Contains(replay, "outside()") {
+		t.Fatalf("secondary lookup must preserve both absolute prefixes: %d %q %q", rc, replay, replayErr)
+	}
+}
+
+func TestEvidenceUnknownGoTestOwnerCanReadOriginalTest(t *testing.T) {
+	root := repoWith(t, map[string]string{
+		"one space/read_test.go": "package p\nimport \"testing\"\nfunc TestRelativeLink(t *testing.T) {\n // needle belongs to this test\n candidate()\n}\n",
+		"one space/source.go":    "package p\nfunc candidate() {}\n",
+	})
+	rc, out, errs := evidence(t, "needle", root)
+	if rc != 0 || errs != "" || !strings.Contains(out, "(単位の外)") {
+		t.Fatalf("rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+	var action nextAction
+	for _, line := range strings.Split(out, "\n") {
+		if raw, ok := strings.CutPrefix(line, "next_action: "); ok {
+			if err := json.Unmarshal([]byte(raw), &action); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if action.Kind != "read_source" || !strings.Contains(action.Reason, "owner_unknown=true") || !strings.Contains(action.Reason, "source_read_truncated=false") || strings.Count(out, "next_action: ") != 1 {
+		t.Fatalf("unknown owner must remain unknown: %#v\n%s", action, out)
+	}
+	t.Chdir(t.TempDir())
+	body, err := subproc.CommandContext(context.Background(), action.Argv[0], action.Argv[1:]...).Output()
+	if err != nil || !bytes.Contains(body, []byte("func TestRelativeLink(t *testing.T)")) || !bytes.Contains(body, []byte("needle belongs to this test")) || !bytes.Contains(body, []byte("candidate()")) {
+		t.Fatalf("source read must work without invented ownership: err=%v body=%q", err, body)
+	}
+}
+
+func TestEvidenceSourceConfirmationBoundsAndDisplayedHit(t *testing.T) {
+	for _, tc := range []struct {
+		name, text, wantRange, truncated string
+		wantLines                        int
+	}{
+		{"bounded first displayed hit", "package p\n// one\n// two\n// three\n// needle first\n" + strings.Repeat("// filler\n", 195) + "// needle later\n", "1,80p", "true", 80},
+		{"no final newline", "package p\n// needle", "1,2p", "false", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := repoWith(t, map[string]string{"a.go": tc.text})
+			rc, out, errs := evidence(t, "-limit", "1", "needle", root)
+			if rc != 0 || errs != "" {
+				t.Fatalf("rc=%d out=%q stderr=%q", rc, out, errs)
+			}
+			var action nextAction
+			for _, line := range strings.Split(out, "\n") {
+				if raw, ok := strings.CutPrefix(line, "next_action: "); ok {
+					if err := json.Unmarshal([]byte(raw), &action); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if len(action.Argv) != 4 || action.Argv[2] != tc.wantRange || !strings.Contains(action.Reason, "source_read_truncated="+tc.truncated) || strings.Count(out, "next_action: ") != 1 {
+				t.Fatalf("source read must be clamped to the displayed hit and EOF: %#v\n%s", action, out)
+			}
+			body, err := subproc.CommandContext(context.Background(), action.Argv[0], action.Argv[1:]...).Output()
+			if err != nil || len(bytes.Split(bytes.TrimSuffix(body, []byte{'\n'}), []byte{'\n'})) != tc.wantLines || bytes.Contains(body, []byte("needle later")) {
+				t.Fatalf("source read must stop at its bound: err=%v body=%q", err, body)
+			}
+		})
 	}
 }

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"dupscan/internal/lang"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"dupscan/internal/langs"
@@ -73,9 +75,19 @@ func runEvidence(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "dupscan evidence: %q — doc に語がある単位 %d 個 / テスト %d 件 / その他のソース %d 件 / そこで呼ばれている名前 %d 個%s\n",
 		term, len(s.Doc), len(s.Test), len(s.Source), len(s.Called), ux.suffix())
 	fmt.Fprintln(stdout, "  語の一致 (大文字小文字を区別しない) で、定義・呼び出しの照合ではない。doc は doc comment の全文 (Go は関数の doc だけ)。"+
-		"テスト・ソースの行はコメント・文字列も含む。候補を見つけたら context か def で確かめる")
+		"テスト・ソースの行はコメント・文字列も含む。一致があれば最初のnext_actionは一致行の原文確認。意味上の再利用可否は未証明。")
 	if len(got.errFiles) > 0 {
 		fmt.Fprintf(stdout, "  読めない構文を含むファイルが %d 個 (そこの単位は欠けうる。行は探している): %s\n", len(got.errFiles), headList(got.errFiles, 3))
+	}
+	for _, entries := range [][]report.EvidenceEntry{s.Doc, s.Test, s.Source} {
+		if len(entries) == 0 {
+			continue
+		}
+		e := entries[0]
+		if err := writeNextAction(stdout, evidenceReadAction(sc, e, got.contents[e.File])); err != nil {
+			return fail(err)
+		}
+		break
 	}
 	if len(s.Called) > 0 {
 		if err := writeNextAction(stdout, queryNextAction(sc, "callers", s.Called[0].Name, "語を含む行で呼ばれている候補の使われ方を確かめる")); err != nil {
@@ -94,6 +106,21 @@ func runEvidence(args []string, stdout, stderr io.Writer) int {
 		return fail(err)
 	}
 	return 0
+}
+
+// The hit is the anchor even when Go test ownership or a complete definition is unavailable.
+func evidenceReadAction(sc repo.Scope, e report.EvidenceEntry, source []byte) nextAction {
+	lines := bytes.Count(source, []byte{'\n'})
+	if len(source) > 0 && source[len(source)-1] != '\n' {
+		lines++
+	}
+	start, end := max(1, e.Line-4), min(lines, e.Line+75)
+	truncated := start > 1 || end < lines
+	return nextAction{
+		Kind:   "read_source",
+		Reason: fmt.Sprintf("一致行の前後の原文を確認 (最大80行、source_read_truncated=%t、owner_unknown=%t)。否定条件や用途は原文で判断し、編集後は再検索する。自動実行しない", truncated, e.Unit == ""),
+		Argv:   []string{"sed", "-n", fmt.Sprintf("%d,%dp", start, end), filepath.Join(sc.Root, e.File)},
+	}
 }
 
 // evidenceOwners は単位に、Swift の定義 (比べる単位から外したテスト関数・protocol の要件・保存 property・enum の case) と型の宣言を足す。
