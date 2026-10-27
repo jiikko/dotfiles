@@ -2,6 +2,10 @@
 
 起票日: 2026-10-26
 
+## 今回の採用範囲（2026-10-28）
+
+既存のdoc/test/sourceの字句証拠へ、最初の一致箇所の原文を確認する具体的なargvを追加した。候補の意味や否定を自動判定する機能ではない。Go testのownerが未取得でも、原文からテスト名・使用例を確認できる。現在の仕様・採否・検証は末尾「原文確認を先にする最小改善」を正本とし、旧案の全機能を実装条件にはしない。実agentの正しい再利用・誤採用・不要な重複追加への効果は928で継続し、この局所改善の完了とは分ける。
+
 ## 方向性の再評価（2026-10-27）
 
 対象: a5b4196e の実装と既存測定。
@@ -32,11 +36,13 @@ Go testは比較から除いてもcallsを収集し、937のcallersはtest owner
 
 ## 検証・受け入れ条件
 
+今回の完了範囲は、doc/test/sourceの字句証拠を、同scopeの原文確認へ具体的につなぐ機能までとする。固定E3とGo testの未知ownerで、意味判定やowner推定を追加せず確認経路の不足を直せると分かったためである。agentが実際に確認して誤採用を減らす効果は独立した実課題比較を要し、928の未完了条件へ残す。下記の機能検証と混ぜて効果を完了扱いにはしない。
+
 - [x] sourceコメント/doc後半からの正例2件と、用途を否定するdocコメントの負例1件を事前固定して確認する。（今回E1〜E3）
-- [ ] テストの具体的使用例が唯一の手掛かりになる課題、古い例、同名の別定義の対照を追加する。E1のtestコメントだけで全条件を満たしたとはしない。
+- [x] テストのコメントだけに語が現れ、owner未取得のGo testから実際のhelper呼び出しを原文で確認できることを検査する。（2026-10-28のCLI回帰。古い例・同名の別責務を意味上自動排除することは保証しない）
 - [x] 旧比較単位・gateの違反/除外が変わらず、source hitと構文上の定義/callを分けられる。（最小版: doc の範囲はハッシュ・鍵に入れない。既存の report / index / def の出力の一致を実データで確認。make test の gate も通過）
 - [x] 部分解析・不正UTF-8の扱い・長い行・省略を表示し、原文位置やsymbol解決を捏造しない。（最小版で達成）
-- [ ] 928の同じ課題で、正しい候補への到達・誤誘導・再利用・不要な重複追加・実際に観測できたコンテキスト量を比較する。今は効果未測定。
+- 928で継続: 同じ課題で正しい候補への到達・誤誘導・再利用・不要な重複追加・実際に観測できたコンテキスト量を比較する。実agent効果は未検証で、この原文確認機能の完了条件とは分ける。
 
 ## 進捗
 
@@ -76,3 +82,40 @@ rgは各phraseを`rg -n -i -F <phrase> -g <言語拡張子> <同scope>`で検索
 改善の再評価: 2正例だけでなく、否定のコメントから誤った用途へ誘導されうる負例と確認の実費を記録した。出力節約だけを根拠に拡張する計画を避け、既存fallbackの役割と未実証の効果を分けた。コード・実token・開発効率の改善は今回の成果に含めない。
 
 - 2026-10-28: `docs(dupscan): evaluate current discovery with fixed tasks and edit pilot`でdoc/sourceの正負例を評価。強いrg対照との差と確認Readの費用を残し、実agent効果はopenで追跡。
+
+## 原文確認を先にする最小改善（2026-10-28）
+
+固定E3のsnippetは「UI付帯情報」に一致しても、次行の「updatedには入れない」という否定理由まで含まなかった。従来のprimary actionはCalledがあればその名前のcallersを優先し、docだけならcontext/indexへ進むため、元の証拠を確認する導線が必ずしも残らなかった。否定検出やrankを追加せず、この具体的な不足だけを直した。
+
+### 採用した動作
+
+- primaryの`next_action`を、表示順doc→test→sourceの最初の証拠の`read_source`にする。argvは`["sed","-n","開始,終了p","絶対file"]`。一致行の4行前〜75行後、最大80行で、走査時に読んだfileの実際の行数へ終了を丸める。
+- 読むfileは同じscanのscope内の証拠に限る。空白・quote・Unicodeを含むpathもJSON argvの要素として保持する。編集後に同じsourceであるとは保証せず、再検索して位置を照合する。行数上限はbytes上限ではない。
+- `source_read_truncated`はfile全体か部分windowかを示す。ownerが未取得なら`owner_unknown=true`を保ち、Go testの名前や宣言位置を推測しない。80行を超える否定条件/定義は読んだ側で追加確認する。
+- 従来のCalled/docの問い合わせはsecond actionとして最大1個残す。件数・順位・snippet・doc/test/sourceの区分を変えず、全hitへargvを繰り返さない。0件はactionなし。語やCalledの一致から正しいhelperと確定しない。
+
+### 新旧の固定入力比較
+
+同じ固定corpus（Go 09e983fc、Swift Obaket 386e287652125961d045fe565d0e18fe41495d89）を使用。toolの変更前18673a39と今回の差分を比較し、各5回、実際にprimary argvを別cwdから実行した。E1〜E3は前節と同じ未調整のquery/scopeで、候補行とCalled集約の出力は新旧byte一致だった。
+
+| 課題 | evidence本体bytes 前→後 | primaryの出力bytes/行 前→後 | evidence中央値ms 前→後 | primary中央値ms 前→後 |
+|---|---:|---:|---:|---:|
+| E1 `相対 symlink` / userdirs | 1291→1704 | 案内なし→1729/50 | 23.24→24.22 | なし→1.81 |
+| E2 `as a drop` / Core source | 1670→2119 | context 2649/36→sed 1121/32 | 122.78→123.84 | 153.45→2.32 |
+| E3 `UI 付帯情報` / Core source | 1697→2137 | context 3442/50→sed 3037/57 | 120.27→120.09 | 153.61→2.22 |
+
+E1は`owner_unknown=true`のまま、実テストとMoveIfMissingの呼び出しへ進めた。E2は一致したdocの2行目とupdateValueの定義を両方読めた。E3は従来primaryのcontextには含まれなかった否定理由とcomputeの定義を今回のsedで確認した。正解集合が空という人の判断を変更したのではなく、その判断に必要な原文へ到達する具体的な入口を用意した。
+
+E3のevidence+primaryは5139→5174bytes（35bytes増）で、E1も新たな原文読取分だけ増える。E2は4319→3240bytesだが、contextのrefs/callers全情報と局所source windowは同情報量ではない。速度/token/一般的なcontext節約の改善とは呼ばない。元のevidence queryの時間差はばらつきの範囲で、primaryの所要は再走査するcontextとsedの違いである。raw argv/出力/5runの範囲はこの実行の`dotfiles/tmp/remaining-932-20261028/934-checks/measure.json`等に保存し、結論と全数は本節へ記録した。検証後に保存先を移したため、生ログ内の/private/tmpの絶対pathは実行時の記録として残る。
+
+### 検証と採否
+
+- [x] 長いdocの次行にある否定理由、別helperを示すCalledとの混在、testだけの手掛かりと未知owner、quoted Unicode filename、別cwd/2prefix、最初の表示hit、80行/EOF/末尾改行なしをCLI回帰から確認し、生成argvも実行した。
+- [x] 隔離9変異でprimary削除・否定文のある下文削除・相対path化・80行上限解除・EOF clamp解除・最終行count無効化・owner捏造・非表示hitの選択・secondary変更をそれぞれ壊し、対応assertがredになることを確認した。最終のtest-only clue fixtureでもowner変異を再確認した。
+- [x] 標準module lintは0 issues、race全テスト成功。fixture最終化後のevidence race検査も実行。strict module gateは変更2単位、新重複/除外・解析失敗なし。全srcの通常gateは既存の意図的不正fixtureをbase/head各1件として通知し、完全解析とは扱わない。
+- semanticな否定/用途判定、任意rank、Go test ownerの新規推定、全hitへの既定argv、cache/hash/cursor/新ReadSet/共通JSONは今回不採用。原文確認の具体的な不足が出た場合だけ、必要な取得範囲を別途設計する。
+- 原文を読んだagentが誤採用しないか、正しい再利用や不要な重複追加を減らすかは928で未検証のまま追跡する。追加の外部source送信/実agent実験は行わない。
+
+改善の再評価: 一致語の短いsnippetや別のCalled名からすぐ再利用へ進む入口を、元の証拠の前後と定義を確認できる入口へ変えた。固定E3で否定理由へ、owner未取得のGo testでも実際の使用例へ到達できた。追加費用は最大1個のargvと局所source読取で、候補の数や順位・既存hash/gateは変えない。ここまでの補助証拠と原文確認の採用範囲は完了し、一般的なagent効果は928で継続する。
+
+- 2026-10-28: `fix(dupscan): confirm evidence source before following call names`で原文確認とCLI回帰を追加。`docs(dupscan): define source confirmation scope and measured cost`で固定正負例・追加費用・不採用範囲を記録。元sourceを読む具体的な導線を完成し、意味上の再利用判断を自動化したとは扱わない。
