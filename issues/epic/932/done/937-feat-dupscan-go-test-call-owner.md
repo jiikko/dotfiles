@@ -33,7 +33,7 @@ bin/dupscan index -file src/doctor/internal/displaycheck/displaycheck_test.go sr
 
 ## 既存issueとの分担
 
-- [930](../930-feat-dupscan-candidate-call-evidence.md)は引数省略・variadic/曖昧さによる照合/数値の根拠。本件は取得済みcallの囲むテスト名を扱う。
+- [930](930-feat-dupscan-candidate-call-evidence.md)は引数省略・variadic/曖昧さによる照合/数値の根拠。本件は取得済みcallの囲むテスト名を扱う。
 - [895](895-feat-dupscan-type3-candidates.md)は部分重複の候補抽出。936の最長prefixの検出漏れは895に既知例として記録済みで、本件では実装しない。
 - 927/934は候補に渡すcontext/補助証拠の取得。本件はその前提となるGo test ownerのmetadataとcallers表示。
 

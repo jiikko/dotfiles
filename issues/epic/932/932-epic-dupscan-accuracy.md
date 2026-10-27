@@ -41,7 +41,7 @@ open子issue 9件をa5b4196eの実装と照合した。全件openを維持する
 | [927](927-feat-dupscan-agent-context.md) | agent 向けに、定義・参照・呼び出しをまとめて返す |
 | [928](928-feat-dupscan-agent-onboarding.md) | Claude / Codex 共通の導入案内と能力診断 |
 | [929](done/929-bug-dupscan-gate-lost-file-parse-errors.md) | gate が、単位を抽出できない解析失敗を通知せずに成功する |
-| [930](930-feat-dupscan-candidate-call-evidence.md) | 候補の呼び出し数に、省略引数・曖昧さの根拠を付ける |
+| [930](done/930-feat-dupscan-candidate-call-evidence.md) | 候補の呼び出し数に、省略引数・曖昧さの根拠を付ける |
 | [933](933-feat-dupscan-behavior-hint-search.md) | 呼出先・処理構造から名前不明の既存helperを探す |
 | [934](934-feat-dupscan-source-evidence-search.md) | doc全文・テスト使用例・元ソースを補助証拠として探す |
 | [935](done/935-test-doctor-duplicate-discovery-effect.md) | doctorの重複検出・探索出力量をgrep/併用で比較する |

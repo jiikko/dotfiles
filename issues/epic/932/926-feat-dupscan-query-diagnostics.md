@@ -121,7 +121,7 @@ legacy mode、v2通常/require/strict、flag前後、--、quotes、空白・Unic
 また、0件と解析不完全、省略された候補と本当の0件、同名候補と選択済み定義を分ける。parse errorを含むfixtureでは、結果がある場合もcoverageの不完全さが見えることを検査する。未知の入力形式を無条件に正常な検索として受理しない。
 
 - [929](done/929-bug-dupscan-gate-lost-file-parse-errors.md) はgate側のfile parse error通知とstrict判定の担当。本issueだけを完了してgateの解析漏れまで直ったとは扱わない。
-- [930](930-feat-dupscan-candidate-call-evidence.md) は呼び出し数の照合条件・省略引数・曖昧さの担当。approx=0を未使用と表示しない。
+- [930](done/930-feat-dupscan-candidate-call-evidence.md) は呼び出し数の照合条件・省略引数・曖昧さの担当。approx=0を未使用と表示しない。
 - このscopeで保証するのは、構文検索の結果と限界を正しく伝えること。型/target解決を実装せず「別moduleから使える」「影響は他に無い」を出力しない。
 
 ## 進捗
