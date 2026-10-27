@@ -15,7 +15,7 @@
 - [x] ~~所属ターゲットを `Package.swift`・XcodeGen の `project.yml`・追跡されている `project.pbxproj` から解決する。どれも無ければ「不明」と出す。
       obaket と DualNoteApp (XcodeGen と SwiftPM。`project.pbxproj` は追跡していないがディスク上にはある) の両方で、代表のファイルの所属が正しいことを確かめる。
       追跡されていない `project.pbxproj` は読まない (手元と CI で結果が割れないように) ことをテストで固定する。`project.yml` は target の `sources` のパスだけを読み、
-      `include:`・templates など読めない書き方に当たったら、その target は「不明」にする~~ 保留にして [918](../../932/918-feat-dupscan-target-and-literal-table.md) へ移した (ユーザー 2026-10-25)
+      `include:`・templates など読めない書き方に当たったら、その target は「不明」にする~~ 保留にして [918](../../932/done/918-feat-dupscan-target-and-literal-table.md) へ移した (ユーザー 2026-10-25)
 
 - [x] 網羅テスト: node-types.json の named な種類が全部、対応表で分類されている (または明示して無視している)
 - [x] 固定の入力: obaket の PR 24 の前の木 (commit 45cc3b208^) から 6 つの `location` の定義を含むファイルを切り出して Swift adapter のテストに置き

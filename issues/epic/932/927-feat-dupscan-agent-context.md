@@ -49,7 +49,7 @@ dupscan context -symbol StorageClient.upload -definition-file Sources/StorageCli
 - [ ] byte予算/継続取得を採用する場合、小さいbudgetでもJSON/UTF-8が有効で、省略と継続取得を検証できる。
 - [ ] snapshot/hashを採用する場合、継続時の入力変更を検知/明示し、以前の結果と混ぜない。
 
-関連: [926](done/926-feat-dupscan-query-diagnostics.md) の曖昧さ・解析不完全の契約を使う。[918](918-feat-dupscan-target-and-literal-table.md) の所属情報が無い段階では、利用可能なモジュールを推測で断定しない。literal差分表やType-3は既存issueの範囲を維持する。
+関連: [926](done/926-feat-dupscan-query-diagnostics.md) の曖昧さ・解析不完全の契約を使う。[918](done/918-feat-dupscan-target-and-literal-table.md) の所属情報が無い段階では、利用可能なモジュールを推測で断定しない。literal差分表やType-3は既存issueの範囲を維持する。
 
 ## 詳細設計案（2026-10-26、未実装）
 

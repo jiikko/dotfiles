@@ -49,7 +49,7 @@ dupscan search -query 'connection bucket fixture' -returns StorageLocation -limi
 - [ ] 既存がない課題では正しく新規実装できることを対照に入れる。小さなrepoで対照群も常に既存を見つけるなら、効果を測れない条件として扱う。
 - [ ] 924の代表的規模でlatencyと出力量を測り、検索の便利さと追加コストを評価する。
 
-関連: [924](done/924-perf-dupscan-exploration-latency.md) は処理速度、[918](918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](../890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。917の保留条件は維持する。895/918の実装はepic 932の別担当であり、本issueに混ぜない。
+関連: [924](done/924-perf-dupscan-exploration-latency.md) は処理速度、[918](done/918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](../890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。917の保留条件は維持する。895/918の実装はepic 932の別担当であり、本issueに混ぜない。
 
 ## 詳細設計案（2026-10-26）
 

@@ -41,7 +41,7 @@ type IndexSummary struct {
 }
 
 // BuildIndex は名前の付いた単位 (クロージャを除く) から q に当たるものを並べる。
-// 並べ方: 名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所を前 → prod を test より前 → private でないもの (そのまま使える) を前 → 呼び出しの多いもの → 場所。
+// 並べ方: 名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所を前 → prod を test より前 → private でないものを前 (他 module/target からの利用可否は未解決) → 呼び出しの多いもの → 場所。
 // File を指したときはファイルの中の行の順 (outline)。
 func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
 	counts := callCounts(units, calls)

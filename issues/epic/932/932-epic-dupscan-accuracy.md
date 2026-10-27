@@ -34,7 +34,7 @@ open子issue 9件をa5b4196eの実装と照合した。全件openを維持する
 |---|---|
 | [895](done/895-feat-dupscan-type3-candidates.md) | 小さい関数を含む構文の少し違う重複候補を出す |
 | [899](done/899-research-dupscan-lsp-integration.md) | 型/シンボル解決の範囲と負担を非LSPの解析から調査する |
-| [918](918-feat-dupscan-target-and-literal-table.md) | 所属/利用可否とリテラル差分の根拠を扱う |
+| [918](done/918-feat-dupscan-target-and-literal-table.md) | 所属/利用可否とリテラル差分の根拠を扱う |
 | [924](done/924-perf-dupscan-exploration-latency.md) | 探索コマンド (`index` / `def` / `refs`) の待ち時間を減らす |
 | [925](925-feat-dupscan-helper-search.md) | 用途語・署名から、名前の分からない既存ヘルパーの候補を探す |
 | [926](done/926-feat-dupscan-query-diagnostics.md) | 問い合わせの形式と、検索 0 件のときの診断を揃える |

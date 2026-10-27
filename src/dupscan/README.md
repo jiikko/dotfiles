@@ -128,12 +128,18 @@ report の text は、組を大きい順 (メンバーのうち最大の単位�
 
 `index` は名前の付いた単位 (関数・初期化子・computed property・subscript など。クロージャとテスト関数は除く) を
 `file:line 型.署名 [shared,test,private] (呼び出し ~N) // doc の最初の行` の 1 行で出す。grep と違い呼び出し側の行・コメント・文字列は混ざらない。
-並べ方は名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所 (`.dupscan.json` の `"shared": ["Tests/SharedTestSupport/**"]` のような glob。`[shared]` と出る) を前 → prod を test より前 → private / fileprivate / unexported (Go の小文字で始まる関数) でないもの (そのまま使える) を前 → 呼び出しの多いもの → 場所。
+並べ方は名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所 (`.dupscan.json` の `"shared": ["Tests/SharedTestSupport/**"]` のような glob。`[shared]` と出る) を前 → prod を test より前 → private / fileprivate / unexported (Go の小文字で始まる関数) でないものを前（他module/targetからの利用可否は未解決） → 呼び出しの多いもの → 場所。
+`shared`は設定globに一致する置き場所の印であり、可視性と同じく再利用可能性の証明ではない。所属target・依存/import・test-only・条件付きcompile等は別に確認する。
+
 textの先頭には構文近似の説明を1行出す（0件でも同じ）。名前と引数ラベル/個数で照合し、型を解決しないので同名の別定義が混ざりうる。Swiftを読むscopeでは、既定引数を省略した呼び出しの取りこぼしも示す。0件は未使用の証拠ではない。JSONの形式・数値・順序は変えない。
 
 呼び出しの数 (`~` は近似の印) は `callers` と同じ当て方 (名前と引数ラベル。初期化子は型の名前) で関数と初期化子だけ数える。既定値のある引数を省いた呼び出しは数えない。
 型は字面の一部で引く (`Tag` で `[Tag]` も当たる。型は解決しないので、typealias・同名の別の型は区別しない)。
 キャッシュは持たず、引くたびに読む (DualNoteApp の 1130 単位で 0.5 秒。issue 897)。`--check` はまだ無い。
+
+`explain -compare <file>:<関数名|行> <file>:<関数名|行> [dir...]` は同scopeの2単位をL1の順序付きAST構造で比較する（text/json、独立schema `dupscan.explain.compare.v1`）。例: `dupscan explain -compare Sources/Other.swift:helper Sources/Main.swift:helper`。既定のexplain出力・hash・group/gate判定は維持する。
+構造pathは正規化AST内の位置であり、source位置ではない。直接のliteral tokenは字面を別欄に残し、property/member参照は未解決の式として表示する。initializerや実行時値を解決しない。局所名は単位全体の順で番号化し、文の挿入は後続番号や位置をずらす。差分は子の同じ位置を比べ、最適な編集対応・同一動作・再利用可否を証明しない。
+`-limit`は差分件数の上限1〜50（既定20）。snippet/tokenは各160runes、literal tokenは差分の各側最大8個。各対象のsource fileとL1表示はそれぞれ1MiBまで、AST深さは256まで。上限超過/対象の解析失敗/異言語はrc=2。差分全数・返却数・snippet等の省略・scope内parse-error file数と予算を表示し、解析不完全を差分なしと混同しない。選択group全員一括比較とmanifest/target解析は未実装。
 
 `near` は report・gate と同じ比べ方 (`group.Eligible` と段のハッシュ) で、指した単位と同じハッシュの単位を出す。指した単位そのものは出さない。
 組の作り方 (被った組・入れ子のクロージャの組を外す) は通さないので、クロージャを指してもその一致が出る。

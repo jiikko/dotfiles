@@ -40,7 +40,7 @@ indexのcalls_approxは1、裸のcallersは2件、label指定は1件。`internal
 - Go variadic/spread・Swift trailing closureの対応拡張は行わない。現行の構文近似のままで、今回の文言は非対応要因を全列挙した完全な能力保証ではない。既存READMEの限界説明を維持する。
 - resolution/name/labels/scope/limitations等の構造化metadataは、必要性が出た場合の条件付き候補として[926](926-feat-dupscan-query-diagnostics.md)で追跡し、本issueでは旧JSONへ欄を追加しない。
 - 実作業での誤判断/不要な重複追加の効果測定は[928](../928-feat-dupscan-agent-onboarding.md)で継続。対象課題にdefault引数helperを含める案は同issueへ渡し、数値が増えただけを成功としない。
-- module/targetの実際の利用可否は[918](../918-feat-dupscan-target-and-literal-table.md)の課題。呼び出し数で代用しない。
+- module/targetの実際の利用可否は[918](918-feat-dupscan-target-and-literal-table.md)の課題。呼び出し数で代用しない。
 
 ## 受け入れ条件・検証
 
