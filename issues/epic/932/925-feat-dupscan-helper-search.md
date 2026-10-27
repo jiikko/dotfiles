@@ -2,6 +2,18 @@
 
 起票日: 2026-10-26
 
+## 今回完了する機能範囲（2026-10-28）
+
+textの字句候補検索と、その制約を保った確認/0件回復を本issueの機能範囲として完了する。複数語・型/file/prod/test・一致根拠・件数/bytes予算・原文確認は実装済み。型aliasや同義語の解決は行わない。実agentが検索を使ったことで再利用/重複追加率が改善するかは、未実証のまま928の評価に残す。この機能完了を開発効率の証明としない。
+
+固定alias例で無益だった語数緩和を修正した。closure以外の索引単位について型/file/scope条件を通った数を語一致より前に数え、0なら語数を減らす案を飛ばす。元の必要語数は維持し、明示的なhard条件があれば1個の解除案へ進み、なければ既存のevidence案を使う。どちらも案内は予算内でのみ表示する。語数を緩めても増えない旨は要約とargvを優先した残余bytesに入る場合だけ表示する。解析不能や索引対象外を含む意味上の不存在とは区別する。
+
+18673a39の固定userdirs.goで `search -query 'XDG 設定' -returns ConfigPath -min-matched-terms 2` の生成argvを順に実行した。旧版は3検索/3867 bytes（最後は語数1で3候補）、新版は2検索/2568 bytes（要求どおり語数2で2候補）。ConfigBaseへ到達し、aliasを解いたのではなく型filter解除を明示した結果である。複数hard条件が交差して0になる場合に2回で回復する保証はしない。
+
+別のhit対照を各5回測定: Go4単位は中央値24.38→23.03ms/1589bytes、大きい固定Swift corpusは187.92→178.52ms/2630bytes。rc/stdout/stderrはbyte一致。非統制の小標本であり高速化の証明には使わず、少なくともこの2入力ではhit出力を変えなかった確認とする。rawはdotfiles/tmp/remaining-932-20261028/{alias-measure,scale}.json。
+
+標準lint/raceとstrict module gateが成功（変わった単位2、新しい重複/除外なし）。同名の別Go moduleの2候補を潰さず、両方をreuse=not_provenとして返すCLI fixtureも追加した。5隔離変異で語retry/count/任意説明budget/action budget/候補欠落をそれぞれ検出。反証レビューで旧851bytesが追加説明だけで1025bytesへ溢れrc2になる問題を再現し、残余予算方式と境界回帰で訂正した。既存action予算テストは末尾の任意説明をactionへ数えていたfixture計算を直し、元のoverflow検出を変異で維持した。
+
 ## 方向性の再評価（2026-10-27）
 
 対象: a5b4196e の実装と既存測定。
@@ -14,7 +26,7 @@ json-v2・同義語・追加rank featureは、現行textの具体的な失敗や
 
 ## 目的と利用場面
 
-Claude/Codexが新しいfixtureや値の組み立て関数を書く前に、名前が分からない既存ヘルパーを探せるようにする。利用回数を増やすだけでなく、正しい既存実装へ到達するまでの検索・Readの往復と、不要なヘルパー追加を減らしたい。効果は未測定。2026-10-27にtextの最小版を実装した。json-v2統合と実課題の効果評価は未完了。
+Claude/Codexが新しいfixtureや値の組み立て関数を書く前に、名前が分からない既存ヘルパーを探せるようにする。利用回数を増やすだけでなく、正しい既存実装へ到達するまでの検索・Readの往復と、不要なヘルパー追加を減らしたい。固定課題の結果と限界は下記へ記録済み。text機能を実装し、json-v2は未採用の条件付き案、実agent効果は928の未完了評価とする。
 
 例: 「接続とバケットからテスト用の保存先を組みたい」が、既存関数名は分からない。戻り値の型と用途語を一度に渡し、使えそうな候補と一致根拠を短く受け取る。
 
@@ -42,12 +54,14 @@ dupscan search -query 'connection bucket fixture' -returns StorageLocation -limi
 
 - [x] 既存indexのfilter・並び順・終了コードを維持する。（実装時の旧出力10条件に加え、今回も型filter/ファイル指定×text/jsonの4条件で旧binaryとrc/stdout/stderr一致）
 - [x] 名前を伏せた用途語+型の正例、型filter不一致、既存なしを、コードから決めた正解と固定queryで確認する。（今回S1〜S4）
-- [ ] 同名が複数・別ターゲットの候補を含む実ソースのgolden queryを追加する。今回の小規模2moduleの結果だけで網羅扱いにしない。
+- [x] 同名の2Go module fixtureを追加し、2候補と未証明表示を確認する。実プロジェクトのtarget解決や全パターンの網羅とは扱わない。
 - [x] 固定課題のtop-k到達/誤候補/false negativeと、現行textの一致根拠・省略・0件の限定説明を確認する。（今回S1〜S4/E1〜E3と実装時の予算検査）
+### 928へ残す未実証の評価（本機能の達成扱いにしない）
+
 - [ ] searchを実利用したagentの誤った再利用・不存在断定を比較する。JSONは機械処理の具体的不足を確認し採用した場合だけの追加条件とする。
 - [ ] ClaudeとCodexを分けて、既存indexによる探索との比較を行う。対象が同じ課題で、正しい再利用・最初の適切な候補までの往復・返したbytes・elapsed timeを測る。利用回数だけで成功扱いにしない。
 - [ ] 既存がない課題では正しく新規実装できることを対照に入れる。小さなrepoで対照群も常に既存を見つけるなら、効果を測れない条件として扱う。
-- [ ] 924の代表的規模でlatencyと出力量を測り、検索の便利さと追加コストを評価する。
+- [x] 固定Goと大きいSwift corpusでhit互換とlatency/bytesを測定する。一般的な高速化は主張しない。
 
 関連: [924](done/924-perf-dupscan-exploration-latency.md) は処理速度、[918](done/918-feat-dupscan-target-and-literal-table.md) は所属ターゲット、[917](../890/pending/917-test-dupscan-usefulness-verification.md) は効果検証。917の保留条件は維持する。895/918の実装はepic 932の別担当であり、本issueに混ぜない。
 
@@ -184,3 +198,7 @@ doc/source課題でも失敗を残した。[934](934-feat-dupscan-source-evidenc
 改善の再評価: 2正例の上位到達だけでなく、型aliasのfalse negative、ORの非同等候補、再検索の実費用、強いrg対照を記録した。機能追加が必要と決めつける状態から、現行版を維持しつつ実証不足を具体的に追える状態へ進めた。コードや一般的な開発効率を改善したという主張ではない。
 
 - 2026-10-28: `docs(dupscan): evaluate current discovery with fixed tasks and edit pilot`で固定評価・互換4条件・失敗と残作業を記録。実証したtext条件だけチェックし、未実証のagent効果を完了扱いにしない。
+
+- 2026-10-28: `fix(dupscan): skip term retries that cannot pass hard filters`で既知alias例の不要な往復を除き、型/file/scopeと元minを維持。局所的な検索/確認機能は完了し、一般的な再利用効果は928に未実証として残す。
+
+- 2026-10-28: 文書反証レビューP3に従い、hard0でも明示filterが無ければevidenceへ進むこと、案内は予算不足なら省くことを明記。実測値と完了scopeにP1/P2指摘なし。
