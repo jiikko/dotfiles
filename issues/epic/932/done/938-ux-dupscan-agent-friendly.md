@@ -15,7 +15,7 @@ agent が dupscan に気づき、少ない出力で正しい次の一手へ進�
   0 件の rc・unsupported の区別・`next_actions` (最大 3 個)・予算付きの serializer もここが正本
   - 例外の前例: [937](937-feat-dupscan-go-test-call-owner.md) は既存の callers の text と JSON の `caller` を変更し、README / 回帰テストに明記して実装した。
     既存の出力を変える案は、この形 (明記して変える) か v2 のどちらかに載せる
-- [927](../927-feat-dupscan-agent-context.md): context での予算の配分・省略・継続取得 (cursor)
+- [927](927-feat-dupscan-agent-context.md): context での予算の配分・省略・継続取得 (cursor)
 - [928](../928-feat-dupscan-agent-onboarding.md): 導入案内・能力診断・commandmeta の registry。hook から全 repo の解析や build を起こさない
 - [921](../../890/pending/921-feat-dupscan-explore-def-refs-and-grep-nudge.md): grep 案内 hook の効果を 2026-11-25 ごろに測り直す
 

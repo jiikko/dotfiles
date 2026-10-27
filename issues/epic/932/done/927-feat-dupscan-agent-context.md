@@ -2,6 +2,12 @@
 
 起票日: 2026-10-26
 
+## 今回の完了範囲（2026-10-28）
+
+既存のcontext集約・段階取得と、既知C2で同名一覧に埋もれたときの型名evidenceへの回復を対象とする。型解決は追加せず、既存primary actionを保ち、一覧省略時だけ具体的な回復argvを最大2本目として出す。広いJSON/追加selector/cursor/snapshot/byte予算は今回は不採用。一般的なagent効果は928の評価で継続する。
+
+以下の現行受け入れ条件はこの局所範囲を評価する。元の実agent比較とCLI全matrixは未達のまま別項に残し、今回の固定入力や回帰fixtureで全達成としない。
+
 ## 方向性の再評価（2026-10-27）
 
 対象: a5b4196e の実装と既存測定。
@@ -39,17 +45,24 @@ dupscan context -symbol StorageClient.upload -definition-file Sources/StorageCli
 
 - [x] 同じ入力で、既存def/refs/callersとの対応と、省略していない結果の一致を確認する。網羅性は既存コマンドの限界も引き継ぐ。（最小版で達成。下の進捗）
 - [x] context_cmd.goの1回のscanSourceでcontents/解析結果を共用する。別の解析cacheや常駐プロセスを作らない。（a5b4196eでコード確認。呼び出し回数を壊す変異の検出強度は今回未検証）
-- [ ] Claude/Codexで同じ変更課題を既存コマンド列と比較し、必要な情報への到達、往復数、返したbytes、elapsed time、見落としを測る。少ない出力だけを成功指標にしない。
 - [x] 固定実ソースで1定義/18呼出しの集約、同名461近似と省略、12ファイルのparse失敗通知を確認する。（今回C1/C2）
+
+- [x] qualifiedな同名refs/callersの省略時に型名evidenceへ進め、既存の本体/節取得を失わない。bare・全件・本体だけの省略では追加しない。固定Swiftと既存C2の実出力argvをローカル実行して確認した。
+
+### 原評価の未達条件（今回の完了に含めない）
+
+- [ ] Claude/Codexで同じ変更課題を既存コマンド列と比較し、必要な情報への到達、往復数、返したbytes、elapsed time、見落としを測る。少ない出力だけを成功指標にしない。
 - [ ] 大きい型、多重定義、同名の別モジュール、1行に複数call、0件で、現行summary/節選択/再取得案内の不足を記録する。今回の2条件で全matrixの完了にはしない。
 
-### 追加機能を採用する場合だけの受け入れ条件
+実agentの総合比較は928が担当する。未実施のCLI全matrixまで928で完了したとは扱わず、今後の不足事例に必要なCLI検査を選ぶための記録として残す。今回実装した回復と元の広い評価の達成を区別する。
+
+### 追加機能を採用する場合だけの受け入れ条件（今回は不採用）
 
 - [ ] selector/JSONを採用する場合、選択の曖昧さと定義選択/参照検索scopeの違いを表す。現行textの多重定義警告を「未実装」と扱わない。
 - [ ] byte予算/継続取得を採用する場合、小さいbudgetでもJSON/UTF-8が有効で、省略と継続取得を検証できる。
 - [ ] snapshot/hashを採用する場合、継続時の入力変更を検知/明示し、以前の結果と混ぜない。
 
-関連: [926](done/926-feat-dupscan-query-diagnostics.md) の曖昧さ・解析不完全の契約を使う。[918](done/918-feat-dupscan-target-and-literal-table.md) の所属情報が無い段階では、利用可能なモジュールを推測で断定しない。literal差分表やType-3は既存issueの範囲を維持する。
+関連: [926](926-feat-dupscan-query-diagnostics.md) の曖昧さ・解析不完全の契約を使う。[918](918-feat-dupscan-target-and-literal-table.md) の所属情報が無い段階では、利用可能なモジュールを推測で断定しない。literal差分表やType-3は既存issueの範囲を維持する。
 
 ## 詳細設計案（2026-10-26、未実装）
 
@@ -114,13 +127,13 @@ cursorのquery hashは定義IDと探索条件を束縛する。表示上のsecti
 
 ## 既存候補を採用するまでの確認を短くする
 
-[925](done/925-feat-dupscan-helper-search.md)で得た候補の定義・本体・利用例を、再利用を判断する根拠としてまとめる。候補の名前だけ分かっても、別々のRead/refs/callersで取りこぼして新設へ戻る往復を減らす。CLIの速度・bytesだけで効果を決めず、最終的な不要な重複追加を928で採点する。
+[925](925-feat-dupscan-helper-search.md)で得た候補の定義・本体・利用例を、再利用を判断する根拠としてまとめる。候補の名前だけ分かっても、別々のRead/refs/callersで取りこぼして新設へ戻る往復を減らす。CLIの速度・bytesだけで効果を決めず、最終的な不要な重複追加を928で採点する。
 
-初期版はSwiftのみ。contextの近似refs/callersを選択定義に型解決した使用例と表示しない。出力上限による省略や[929](done/929-bug-dupscan-gate-lost-file-parse-errors.md)と共通する解析不完全を、再利用先/影響箇所が存在しない根拠にしない。JSONのmetadataが単純なrgより大きい場合もあるため、候補の確認に必要なsectionとsnippetを予算へ収め、実際の総tool出力量で評価する。
+初期版はSwiftのみ。contextの近似refs/callersを選択定義に型解決した使用例と表示しない。出力上限による省略や[929](929-bug-dupscan-gate-lost-file-parse-errors.md)と共通する解析不完全を、再利用先/影響箇所が存在しない根拠にしない。JSONのmetadataが単純なrgより大きい場合もあるため、候補の確認に必要なsectionとsnippetを予算へ収め、実際の総tool出力量で評価する。
 
 ## コンテキスト節約の確認条件
 
-初期表示は少数候補と一致根拠に絞り、選択した定義の本体/使用例を必要なsectionだけ追加取得する導線を[925](done/925-feat-dupscan-helper-search.md)/928と揃える。JSON metadataや同じsnippetの再送が増えた分も計上する。1ページの上限を守ったことと、実装完了までにagentが読む総量やwindow占有が減ったことを区別する。品質を保った総context量と不要な重複追加の同時評価は928が担当する。
+初期表示は少数候補と一致根拠に絞り、選択した定義の本体/使用例を必要なsectionだけ追加取得する導線を[925](925-feat-dupscan-helper-search.md)/928と揃える。JSON metadataや同じsnippetの再送が増えた分も計上する。1ページの上限を守ったことと、実装完了までにagentが読む総量やwindow占有が減ったことを区別する。品質を保った総context量と不要な重複追加の同時評価は928が担当する。
 
 ## 進捗
 
@@ -168,8 +181,44 @@ C2は明確な失敗例である。定義は正しく選べてもrefs/callsはap
 
 当初凍結したC2のqualified rgは0件で、メンバー変数経由の呼び出しを探す対照として不適切だった。この失敗を隠してcontext優位とは採点しない。結果確認後の別probeとして、`rg -n -F BoundedFIFOArray shared -g '*.swift'`→該当テスト1〜31行と定義32〜42行のReadを実行した。3コマンド2050bytes/中央値13.15ms（11.72〜20.98ms）で型を構築する箇所と5 callを確認できた。これは事後の回復戦略で、本番の独立比較には数えない。
 
-判断: C1の既知名の集約は有効だったが、C2では型を特定した影響調査が未完になる。JSON/cursor/snapshot/hashを追加してもこの近似は解決しないため、今回の評価からは不採用とする。既存の警告と型名rg/target Readへのfallbackを維持する。一般の変更課題でagentが見落とさず作業できる差は未測定で、927はopenを維持する。次はC2のような同名メソッドで、summaryを受けたagentが実際に必要な型使用箇所へ回復できるかを、source開示の承認範囲内で確認する。型解決を一式実装することを前提にしない。
+判断: C1の既知名の集約は有効だったが、C2では型を特定した影響調査が未完になる。JSON/cursor/snapshot/hashを追加してもこの近似は解決しないため、今回の評価からは不採用とする。既存の警告と型名rg/target Readへのfallbackを維持する。一般の変更課題でagentが見落とさず作業できる差は未測定で、この評価時点ではC2の回復を継続課題とした。実agentでの次の確認はC2のような同名メソッドで、summaryを受けたagentが実際に必要な型使用箇所へ回復できるかを、source開示の承認範囲内で確認する。型解決を一式実装することを前提にしない。
 
 改善の再評価: 3問い合わせから1問い合わせへまとめた局所的利点と、同名461件に埋もれる失敗を分けた。段階取得は今回、bytesを減らす代わりに再走査時間を増やした。小出力を成功扱いせず、次の検証対象を明確にした文書の改善である。
 
 - 2026-10-28: `docs(dupscan): evaluate current discovery with fixed tasks and edit pilot`で現行contextの局所的な集約効果と同名近似の失敗を記録。実agent変更課題は未完了としてopen継続。
+
+## 既知C2の型名回復導線（2026-10-28）
+
+今回の採用範囲は、同名memberの省略一覧から型名の候補証拠へ回復する小さな導線に限る。qualifiedな`Type.member`でrefs/callers一覧がsummaryまたは件数上限で省略されている場合、既存のprimary next_actionを先頭に維持し、同scopeの`evidence <末尾型名>`を2本目として併記する（最大2本、自動実行なし）。既存のtype scope正規化規則を共用してgeneric/whereを外す。
+
+これは型解決によるmember一覧の絞り込みではない。末尾型名の語一致から構築/使用行を探し、該当fileを読むための案内であり、同名別型・コメント・文字列も混ざることをreasonに明記する。bare照会、一覧の全件表示、定義本体だけの省略には追加しない。定義選択、refs/callersの件数・並び、既存primary actionと省略表示は変えない。JSON/cursor/snapshot/byte予算は今回採用しない。
+
+### ローカル固定入力での確認
+
+新しいagent評価は行わず、既存raw corpus `tmp/dupscan-eval-20261027/swift`をローカルCLIで読むだけに限定した。CLI/Claude等の外部サービスへソースは送信していない。
+
+18673a39のCLIと修正後を比べ、C2は定義1・refs461・calls461、parse-error file12のまま。defaultのactionは既存refs取得→型名evidence、summaryは既存definition展開→型名evidenceとなった。実出力のevidence argvをそのまま実行すると、FIFOを構築するテスト2行へ到達した。そのテストの既知の1〜31行をローカルで読むと5appendを確認できた。影響範囲の網羅性や受け手の型を解決した結果ではない。
+
+- C2 default: 9,672→9,998 bytes。追加actionは326 bytes。
+- C2 summary: 1,215→1,541 bytes。既存の本体取得actionは先頭に保持。
+- 生成argvを実行したevidence: 1,816 bytes。型構築2行を含むが、member呼び出し全件の代わりではない。
+- C1全件表示、C2 `-limit 0`、bare appendはrc/stdout/stderrがbyte一致。C2 default/summaryも追加したevidence actionの1行以外はbyte一致し、既存primary actionのargv・順序を保持した。
+
+改善は、461件の名前近似一覧を読み切る以外に、正しい型名を使う次の具体的なコマンドを出力から選べるようにしたこと。代償は該当条件での1行追加と、選んで実行したときの追加走査。小さい出力量やローカル回復の成功を、実agentの採用判断・変更成功・総時間/context token削減の証明にはしない。
+
+### 検証・残条件の扱い
+
+- [x] ローカルSwift fixtureでdefault/summary/refs-only/callers-only/genericの回復argvを実行し、scope外を含めず構築2行へ到達することを確認。summaryからの従来本体取得も実行して維持を検査。
+- [x] bare・全件表示・一意な短い一覧・定義本体だけの省略は追加actionなし。末尾型名のgeneric/where/nested正規化を検査。
+- [x] 標準lint 0 issues / race全テスト成功。strict gateはchanged_units=2、違反/解析失敗/新規除外なし。別worktreeの9変異（fallback配線/qualified限定/refs・callers各省略条件/本体省略の誤適用/型名正規化と配線/scope保持/primary保持）をそれぞれ予測assertで検出し、復元後clean。
+- [x] root agentがソース/MDを読み取り専用で反証しP1/P2所見なし。原評価の未達と今回の局所受け入れを冒頭から分け、実agent効果と未実施CLI matrixを達成扱いにしない記述へ整理した。
+
+**原評価の未達条件は残す。** 上の「Claude/Codexの同じ変更課題の因果比較」と「大きい型/多重定義/別module/複数call/0件の全matrix」は、今回の局所fixtureやC2回復で全達成としない。実agentの総合評価は[928](../928-feat-dupscan-agent-onboarding.md)で継続する。未実施のCLI全matrixは今回完了せず、今後の不足事例に必要な検査を選ぶ記録として残す。今回の局所完了と、これらの未実施を分けて扱う。型解決や広い継続取得の設計も、具体的な必要性が確認された場合の条件付き案のまま。
+
+- 2026-10-28: `fix(dupscan): offer type evidence for truncated context`で、qualified queryの省略時だけ型名evidenceを追加し、従来のsection取得actionを保持。既知C2の回復が実行可能になった範囲と、追加費用・未検証の実agent効果を記録した。
+
+- 2026-10-28: 隔離9変異を検出し、Bash 5のissue相対リンク・番号一意性・旧パス参照・nextリンク4検査も成功した。外部agent実験は行っていない。
+
+- 2026-10-28: `docs(dupscan): complete scoped context recovery`でroot反証と局所完了範囲を明記。集約・段階取得・既知C2回復は確認したが、型解決、広い条件付き設計、原評価の実agent比較/CLI全matrixは今回の達成に含めない。
+
+- 完了移動後もBash 5のissue整合4検査とstrict duplicate gateが成功。done移動/参照張り直しは標準scriptを使い、除外追加はない。

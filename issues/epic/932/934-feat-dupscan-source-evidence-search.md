@@ -14,7 +14,7 @@ Go testは比較から除いてもcallsを収集し、937のcallersはtest owner
 
 ## 目的と不足
 
-構文単位の索引から落ちる手掛かりも使い、名前不明の既存実装の見落としと、確認のための大量Readを減らす。[925](done/925-feat-dupscan-helper-search.md)は初期doc先頭行まで、[927](927-feat-dupscan-agent-context.md)は選択済み定義/近似refs/callersのcontext。本issueは、まだ候補が無い段階でdoc後半やテスト内の使用例から候補へ到達する補助経路を担当する。
+構文単位の索引から落ちる手掛かりも使い、名前不明の既存実装の見落としと、確認のための大量Readを減らす。[925](done/925-feat-dupscan-helper-search.md)は初期doc先頭行まで、[927](done/927-feat-dupscan-agent-context.md)は選択済み定義/近似refs/callersのcontext。本issueは、まだ候補が無い段階でdoc後半やテスト内の使用例から候補へ到達する補助経路を担当する。
 
 ## 現状の裏取り（2920a72a）
 

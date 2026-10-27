@@ -13,7 +13,7 @@
 | open | 現状と次の確認 |
 |---|---|
 | [925](done/925-feat-dupscan-helper-search.md) | text searchは実装済み。固定正例へ到達する一方alias/ORの取りこぼしあり。実際の見落とし課題で検索を使った差を評価する |
-| [927](927-feat-dupscan-agent-context.md) | context/summary/節選択は実装済み。3問い合わせを1回に集約できるが、同名appendの461件で目的が埋もれる。型名探索への回復を評価する |
+| [927](done/927-feat-dupscan-agent-context.md) | context/summary/節選択は実装済み。3問い合わせを1回に集約できるが、同名appendの461件で目的が埋もれる。型名探索への回復を評価する |
 | [928](928-feat-dupscan-agent-onboarding.md) | 能力案内/doctor/guideは実装済み。Codex実編集1対は両群とも既存ルールを再利用し、検索機能を使った効率差は未実証。外部への追加ソース送信は承認待ち |
 | [934](934-feat-dupscan-source-evidence-search.md) | evidenceはdoc後半/source正例へ到達するが、否定コメントからの誤誘導も残る。実際の候補確認を評価する |
 
