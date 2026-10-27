@@ -63,3 +63,19 @@ func writeNextAction(w io.Writer, action nextAction) error {
 	_, err = fmt.Fprintf(w, "next_action: %s\n", encoded)
 	return err
 }
+
+// callApproximation describes the syntactic matching used by index and callers.
+func (s scanned) callApproximation(labels bool) string {
+	match := "名前のみ (引数ラベル・個数で絞らない)"
+	omitted := ""
+	if labels {
+		match = "名前と引数ラベル/個数"
+		for file := range s.contents {
+			if filepath.Ext(file) == ".swift" {
+				omitted = " Swiftの既定引数を省略した呼び出しは取りこぼす。"
+				break
+			}
+		}
+	}
+	return "構文近似: " + match + "で照合。型未解決で同名の別定義が混ざりうる。" + omitted + " 0件でも未使用の証拠ではない。"
+}

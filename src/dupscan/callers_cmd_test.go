@@ -31,7 +31,7 @@ func callers(t *testing.T, args ...string) (int, string, string) {
 func TestCallersFindsCallSitesNotCommentsOrStrings(t *testing.T) {
 	root := repoWith(t, map[string]string{"Sources/Store.swift": callSites, "Tests/StoreTests.swift": callSitesTest})
 	rc, out, errs := callers(t, "make", root)
-	got := lines(out)
+	got := lines(out)[1:]
 	want := []string{
 		"Sources/Store.swift:4 Store.use() -> Int | let a = make(x: 1, 2)",
 		"Sources/Store.swift:7 Store.use() -> Int | return a + other.make(x: 5, 6) + make(y: 7)",
@@ -48,13 +48,13 @@ func TestCallersNarrowsByLabels(t *testing.T) {
 	root := repoWith(t, map[string]string{"Sources/Store.swift": callSites})
 	_, out, _ := callers(t, "make(x:_:)", root)
 	var at []string
-	for _, l := range lines(out) {
+	for _, l := range lines(out)[1:] {
 		at = append(at, strings.Fields(l)[0])
 	}
 	if strings.Join(at, " ") != "Sources/Store.swift:4 Sources/Store.swift:7 Sources/Store.swift:9" {
 		t.Errorf("make(x:_:) は x と _ の呼び出し 2 件 (7 行目の make(y:) は外す) と、後置クロージャで 2 つ目を補う 1 件: %q", out)
 	}
-	if _, out, _ := callers(t, "make(y:)", root); len(lines(out)) != 1 || !strings.Contains(out, ":7 ") {
+	if _, out, _ := callers(t, "make(y:)", root); len(lines(out)) != 2 || !strings.Contains(out, ":7 ") {
 		t.Errorf("make(y:) は 1 件: %q", out)
 	}
 	if _, out, _ := callers(t, "make(x:)", root); strings.Contains(out, ":9 ") || !strings.Contains(out, "呼び出しなし") {
@@ -80,11 +80,11 @@ func TestCallersNamesEnclosingUnitAndOrdersProdFirst(t *testing.T) {
 	test := "struct FeedChecks {\n    func check() { send(to: 1) }\n}\n"
 	root := repoWith(t, map[string]string{"Sources/Feed.swift": src, "AppTests/FeedChecks.swift": test})
 	_, out, _ := callers(t, "send(to:)", root)
-	want := "Sources/Feed.swift:4 Feed.load() | send(to: item)\nAppTests/FeedChecks.swift:2 FeedChecks.check() [test] | func check() { send(to: 1) }\n"
+	want := swiftLabelApproximation + "\nSources/Feed.swift:4 Feed.load() | send(to: item)\nAppTests/FeedChecks.swift:2 FeedChecks.check() [test] | func check() { send(to: 1) }\n"
 	if out != want {
 		t.Errorf("send(to:) は 2 件 (send(to:retry:) は外す)・クロージャの中は囲む関数・prod を先に:\n got: %q\nwant: %q", out, want)
 	}
-	if _, out, _ := callers(t, "send(to:retry:)", root); len(lines(out)) != 1 || !strings.Contains(out, "Feed.swift:6 ") {
+	if _, out, _ := callers(t, "send(to:retry:)", root); len(lines(out)) != 2 || !strings.Contains(out, "Feed.swift:6 ") {
 		t.Errorf("send(to:retry:) は 1 件 (後置クロージャの無い send(to:) は、ラベルが足りないので外す): %q", out)
 	}
 }

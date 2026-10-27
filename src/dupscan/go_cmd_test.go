@@ -111,7 +111,7 @@ func TestIndexMarksUnexportedGoFuncs(t *testing.T) {
 	if rc := run([]string{"index", "-name", "parselocation", root}, &out, &errb); rc != 0 {
 		t.Fatalf("rc=%d: %s", rc, errb.String())
 	}
-	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")[1:]
 	if len(lines) != 2 || !strings.Contains(lines[0], "pkg/b/b.go") || strings.Contains(lines[0], "unexported") ||
 		!strings.Contains(lines[1], "pkg/a/a.go") || !strings.Contains(lines[1], "unexported") {
 		t.Errorf("公開の関数を先に、非公開に印を付けて並べるはず:\n%s", out.String())

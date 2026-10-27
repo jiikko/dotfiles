@@ -66,7 +66,10 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	case "json":
 		err = report.WriteJSON(stdout, s)
 	case "text":
-		err = report.IndexText(stdout, s, *limit)
+		_, err = fmt.Fprintln(stdout, got.callApproximation(true))
+		if err == nil {
+			err = report.IndexText(stdout, s, *limit)
+		}
 	default:
 		return fail(fmt.Errorf("知らない形式 %q (text / json)", *format))
 	}

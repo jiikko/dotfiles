@@ -54,7 +54,10 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 	case "json":
 		err = report.WriteJSON(stdout, s)
 	case "text":
-		err = report.CallersText(stdout, s, *limit)
+		_, err = fmt.Fprintln(stdout, got.callApproximation(q.Labels != nil))
+		if err == nil {
+			err = report.CallersText(stdout, s, *limit)
+		}
 	default:
 		return fail(fmt.Errorf("知らない形式 %q (text / json)", *format))
 	}
