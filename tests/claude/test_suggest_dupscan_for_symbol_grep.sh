@@ -19,6 +19,25 @@ command -v python3 >/dev/null 2>&1 || { echo "✗ python3 が無い。hook は p
 ok=0; fail=0
 TMP_ROOT=$(mktemp -d); trap 'rm -rf "$TMP_ROOT"' EXIT
 export TMPDIR="$TMP_ROOT"   # 出しすぎ防止の状態ファイルをテストの中に閉じる
+# Pair the hook with its own no-build companion, independent of the user's installed binary.
+mkdir -p "$TMP_ROOT/tool/_claude/hooks/lib" "$TMP_ROOT/tool/bin"
+cp "$HOOK" "$TMP_ROOT/tool/_claude/hooks/"
+cp "$ROOT_DIR/_claude/hooks/lib/hook_io.sh" "$TMP_ROOT/tool/_claude/hooks/lib/"
+HOOK="$TMP_ROOT/tool/_claude/hooks/suggest-dupscan-for-symbol-grep.sh"
+export CAPABILITY_LOG="$TMP_ROOT/capability.log"
+cat > "$TMP_ROOT/tool/bin/dupscan" <<'CLI'
+#!/bin/sh
+[ "$#" -eq 4 ] && [ "$1" = -no-build ] && [ "$2" = capabilities ] && [ "$3" = -format ] && [ "$4" = json ] || exit 99
+printf '%s\n' "$*" >> "$CAPABILITY_LOG"
+[ "${CAPABILITY_UNREADY:-0}" != 1 ] || exit 2
+case "${CAPABILITY_MODE:-ready}" in
+ malformed) printf '{invalid'; exit 0 ;;
+ unsupported) printf '%s\n' '{"tool":"dupscan","schema_version":1,"commands":[]}'; exit 0 ;;
+esac
+printf '%s\n' '{"tool":"dupscan","schema_version":1,"commands":[{"name":"index","languages":["go","swift"]},{"name":"callers","languages":["go","swift"]}]}'
+CLI
+chmod +x "$TMP_ROOT/tool/bin/dupscan"
+
 
 new_repo() { # $1=1 なら .swift を 1 つ追跡する → $REPO
   REPO=$(mktemp -d "$TMP_ROOT/repo.XXXXXX")
@@ -197,8 +216,33 @@ cp "$SPY_BIN/dupscan" "$SPY_BIN/go"; chmod +x "$SPY_BIN/dupscan" "$SPY_BIN/go"
 next_session
 out=$(jq -n --arg d "$REPO" --arg s "s$session" '{tool_name:"Bash",session_id:$s,cwd:$d,tool_input:{command:"rg -t go FooBar ."}}' |
   PATH="$SPY_BIN:$PATH" DUPSCAN_NUDGE_SPY="$TMP_ROOT/executed" "$HOOK")
-expect_go_nudge "build/解析を起動せず案内する" "$out" FooBar
-if [ -e "$TMP_ROOT/executed" ]; then echo "✗ hookがdupscan/goを起動した"; fail=$((fail+1)); else echo "✓ hookでdupscan/go起動なし"; ok=$((ok+1)); fi
+expect_go_nudge "PATH上の旧dupscanやgoを起動せず案内する" "$out" FooBar
+if [ -e "$TMP_ROOT/executed" ]; then echo "✗ hookがPATH上のdupscan/goを起動した"; fail=$((fail+1)); else echo "✓ hookでPATH上のdupscan/go起動なし"; ok=$((ok+1)); fi
+
+next_session
+out=$(CAPABILITY_UNREADY=1 run_bash 'rg -t go FooBar .')
+if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("dupscan capabilities") and (contains("dupscan index -name") | not)' >/dev/null; then
+  echo '✓ no-build未準備では具体的な未検証commandを案内しない'; ok=$((ok+1))
+else echo '✗ 未準備のcapabilityを誤案内'; fail=$((fail+1)); fi
+if [ -s "$CAPABILITY_LOG" ] && ! grep -vFx -- '-no-build capabilities -format json' "$CAPABILITY_LOG" | grep -q .; then
+  echo '✓ capabilityはno-buildの固定argvだけで取得する'; ok=$((ok+1))
+else echo '✗ capabilityが危険なargvで呼ばれた'; fail=$((fail+1)); fi
+
+for mode in malformed unsupported; do
+  next_session
+  out=$(CAPABILITY_MODE="$mode" run_bash 'rg -t go FooBar .')
+  if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("dupscan capabilities") and (contains("dupscan index -name") | not)' >/dev/null; then
+    echo "✓ $mode capabilityは具体的なcommandへ誘導しない"; ok=$((ok+1))
+  else echo "✗ $mode capabilityを誤案内"; fail=$((fail+1)); fi
+done
+printf -v long_symbol '%*s' 1400 ''
+long_symbol="Foo${long_symbol// /a}"
+next_session
+out=$(run_bash "rg -t go $long_symbol .")
+context_bytes=$(printf '%s' "$out" | jq -j '.hookSpecificOutput.additionalContext' | wc -c)
+if [ "$context_bytes" -le 1024 ] && printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("長い名前は手動で渡す")' >/dev/null; then
+  echo '✓ 長いsymbolでも通知は1024bytes以内'; ok=$((ok+1))
+else echo '✗ 長いsymbolで通知予算を超えた'; fail=$((fail+1)); fi
 
 echo "[suggest-dupscan-for-symbol-grep] $ok passed / $fail failed"
 [ "$fail" -eq 0 ]

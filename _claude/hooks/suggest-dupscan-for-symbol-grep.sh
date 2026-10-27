@@ -273,8 +273,20 @@ fi
 
 short=${name##*.}
 if [ "$language" = go ]; then
+  companion="$(dirname "$(readlink -f "$0")")/../../bin/dupscan"
+  capabilities=$("$companion" -no-build capabilities -format json 2>/dev/null) || capabilities=''
+  if ! printf '%s' "$capabilities" | jq -e '
+    .tool == "dupscan" and .schema_version == 1 and
+    ([.commands[] | select(.name == "index" or .name == "callers") | select(.languages | index("go")) | .name] | unique | length == 2)
+  ' >/dev/null 2>&1; then
+    msg="dupscan の Go 対応状況を手動で確認できる: \`dupscan capabilities\`。通知では build やソース解析を起こさない。未build・古い版なら通常起動で準備する (skill dupscan)。"
+  else
   msg="dupscan で Go の候補・呼び出し元を引ける: \`dupscan index -name $short\` (定義の候補) / \`dupscan callers '$short'\` (名前による近似)。def / refs / context は Go 非対応。型・同名の別receiverは解決しない (skill dupscan の 2 節)"
+  fi
 else
 msg="dupscan で Swift の定義・参照を引ける: \`dupscan def $name\` (定義を本体つき・型はメンバーの一覧) / \`dupscan refs $short\` (参照の一覧。[型の位置] / [式の位置] と囲む関数、宣言名・コメント・文字列を除く) / \`dupscan callers '$short'\` (呼び出し元)。grep は文字列・コメント・設定ファイルを探すときに使う (skill dupscan の 2 節)"
+fi
+if [ "${#msg}" -gt 1024 ] || [ "$(printf '%s' "$msg" | wc -c)" -gt 1024 ]; then
+  msg='dupscan capabilities で対応するコマンドを確認できる。長い名前は手動で渡す。文字列・コメント・設定にはgrepを使う。'
 fi
 jq -n --arg c "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $c}}'
