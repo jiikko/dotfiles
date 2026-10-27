@@ -72,7 +72,7 @@ bin/dupscan context DropboxClient.upload      # def・refs・callers を 1 回�
 `callers` は呼び出しの箇所を `file:line 呼び出し元 [test] | その行` で出す (コメント・文字列の中は数えない。テスト関数の中も数える。Swiftの比較対象外テストの呼び出し元は「(単位の外)」)。
 Goは比較対象外の `Test` / `Benchmark` / `Fuzz` / `Example` とtestify形のメソッドも、呼び出し元を名前・署名で表示する。匿名closure内は囲む名前つき関数に帰属する。top-levelや構文エラーのある関数内は所有者を確定せず「(単位の外)」とする。JSONは同じschemaを維持し、該当するGoテストの `caller` が省略から署名へ変わる。テスト本体/内部closureをreport/gateの比較へ追加する変更ではなく、indexの既定結果やGo def/refsの対応範囲も変えない。
 型を解決しないので、同名の別のメソッド・別の型の初期化子の呼び出しも当たる (近似)。ラベルを書けば数と順で絞る。
-後置クロージャのある呼び出しは括弧の中のラベルが先頭に一致すれば当てる。flag は名前の前に書く (`callers -format json make`)。
+後置クロージャのある呼び出しは括弧の中のラベルが先頭に一致すれば当てる。`index` / `callers` / `def` / `refs` / `context` / `evidence` はflagを名前・パスの前後で受け付ける (`callers make -format json`)。単値flagの繰り返しは最後の値を採用し、`--` 以降は名前・パスとして扱う (`callers make -- -literal-dir`)。値の必要なflagの直後の引数は、その値として扱う。
 
 `def` は名前の完全一致で定義を探す。`Type.member` で型を絞り、`make(x:_:)` のように引数ラベルも指定できる。
 `count()` のように括弧を書いた場合は関数・初期化子・subscript・deinit・protocol の関数要件だけに当てる。
@@ -82,7 +82,7 @@ struct / class / enum / protocol / actor / extension は宣言とメンバーの
 `Type.member` はその型の直接メンバーを探す。メソッド内の入れ子の `func` は対象外で、名前だけの `def` なら引ける。
 同名の定義は全件を候補にし、text は `-limit` の既定 20 件まで出す (`0` は全部)。`-format json` は全件を返す。
 
-`refs` の問い合わせは単独の識別子（`run` など）。`def` と異なり `Type.member` の絞り込みはなく、`refs Worker.run` は `run` の呼び出しがあっても0件になる。
+`refs` の問い合わせは単独の識別子（`run` など）。`def` と異なり `Type.member` の絞り込みはなく、`refs Worker.run` のような識別子で始まるqualified問い合わせは、text/jsonともrc=2・stdout空で拒否する。stderrに非対応の理由と、同じscopeの単独名を探す`next_action`のargv配列を最大1個返す。型・ラベルを外すと同名の別型も含む近似になり、自動再検索はしない。単独のUnicode名・backtick付き名・dot operatorは一律に拒否しない（operatorの参照収集まで保証するものではない）。単独名のラベル指定など、その他の入力を網羅検証する変更ではない。
 `refs` は識別子の構文上の位置を `file:line 囲む単位 [test] [型の位置|式の位置] | その行` で出す。これは意味上の型/値判定ではない。`Foo(...)` や `Foo.shared` の `Foo` も、構文上は式の位置として出る。
 宣言名・呼び出しの引数ラベル・コメント・文字列本文は含めず、文字列補間の中の識別子は式の位置として数える。prod を test より先に並べる。
 `@Test` / XCTest 関数の中の参照はその関数名を囲む単位として出す。メソッド内の入れ子の `func` は `Type.member` 照合の対象外。
@@ -300,7 +300,7 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 - クロージャの表示は囲む単位の名前を挟んだ `型.関数.{closure}` (入れ子は `型.関数.{closure}.{closure}`、格納 property の初期値は `型.property.{closure}`)。
   同じ関数の中の 2 つのクロージャ・多重定義の関数のクロージャは同じ表示になるので、行番号で区別する。関数の中の型の中のクロージャには外の関数の名前を付けない。
   表示だけの名前で、鍵・`name` (json) は `{closure}` のまま (json の `owner_name` に囲む単位の名前)。`callers` の呼び出し元 (`caller`) も同じ表示になる
-- 読めない構文があるファイルでは、関数が単位ごと取り出せない場合がある。report は `files_with_errors`、gateはbase/head別の失敗fileと `analysis_incomplete` を出す。抽出できた変更単位は `unreadable_changed_units` にも残す。追跡済みの関数を `func broken(` に書き換えて `changed_units=0` になってもfileの解析失敗を通知し、通常modeはrc契約を維持、-strict-analysisではrc=2にする。探索コマンドにも解析失敗件数は出ないので、検索0件を不存在の証明に使わない
+- 読めない構文があるファイルでは、関数が単位ごと取り出せない場合がある。report は `files_with_errors`、gateはbase/head別の失敗fileと `analysis_incomplete` を出す。抽出できた変更単位は `unreadable_changed_units` にも残す。追跡済みの関数を `func broken(` に書き換えて `changed_units=0` になってもfileの解析失敗を通知し、通常modeはrc契約を維持、-strict-analysisではrc=2にする。`def` / `refs` / `index` / `callers` もtext/jsonのstderrへ解析失敗の件数と引用符付きの先頭3ファイル（残りは件数）を返す。hitと0件の両方で通知し、抽出単位0でも消さない。stdoutのJSON schema・従来の0件rcは維持し、通知だけで失敗にはしない。context/evidenceは従来どおりstdoutの要約で通知する。いずれも検索0件を不存在の証明に使わない
 - Go: 型を解決しないので、呼び出しが処理か値の変換かを構文で決める。組み込みの変換・`len` などと型リテラルへの変換 (`[]byte(s)`) だけを値とし、
   ほかの呼び出しは全部処理として L3 でも畳まない。Go は公開の関数も大文字で始まるので、Swift のように大文字を型の初期化とみなさない
   (`UserID(s)` のような型への変換も処理に数える。見逃しの向き)

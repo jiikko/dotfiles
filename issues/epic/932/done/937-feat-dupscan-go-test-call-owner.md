@@ -29,7 +29,7 @@ bin/dupscan index -file src/doctor/internal/displaycheck/displaycheck_test.go sr
 2. callersは名前のある最内側の所有者を位置範囲から探す。通常関数・Test/Benchmark/Fuzz/Example・testify形のメソッドを扱う。t.Run等の匿名closureの内側も、外側の名前つきテストへ帰属させる。名前を確定できないときだけcaller不明を維持する。
 3. 同一行・複数出現を混ぜないよう、callとownerに必要なcolumn/offset範囲を保持する。別スコープの同名テストはfile/位置を含む識別子で区別する。構文エラーをまたぐ曖昧なownerを確定表示しない。
 4. 初期対応はcallersの所有者表示に絞る。indexの既定結果やGo def/refsの対応範囲を黙って広げない。テストoutlineを返す拡張は、既存[927](../927-feat-dupscan-agent-context.md)のcontext取得や[934](../934-feat-dupscan-source-evidence-search.md)のテスト証拠探索からこのmetadataを利用する段階で検討する。
-5. textでは名前つきテスト内をそのsignatureで表示する。旧JSONのcallerが空から埋まる変更をREADME/fixtureに明記する。新しいkind/reason等のschemaが必要なら[926](../926-feat-dupscan-query-diagnostics.md)の版管理に従う。report/gateの比較対象と既存の違反判定は変えない。
+5. textでは名前つきテスト内をそのsignatureで表示する。旧JSONのcallerが空から埋まる変更をREADME/fixtureに明記する。新しいkind/reason等のschemaが必要なら[926](926-feat-dupscan-query-diagnostics.md)の版管理に従う。report/gateの比較対象と既存の違反判定は変えない。
 
 ## 既存issueとの分担
 

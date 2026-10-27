@@ -47,7 +47,7 @@ PY
 - `src/dupscan/main.go` のparseAll/scanSourceOptionsはfile単位のHasErrorをerrFilesに保持している。
 - `gate_cmd.go` はbase/headのentriesだけをgate.Judgeへ渡し、両側のerrFilesをBuildGateへ伝えていない。
 - `internal/gate/gate.go` のUnreadableは抽出できた変更単位の列挙。単位が0件ならこの経路では通知できない。
-- `internal/report/gate.go` のGateSummaryはfile単位の解析失敗欄を持たない。[926](../926-feat-dupscan-query-diagnostics.md) の探索診断だけではgate側は直らない。
+- `internal/report/gate.go` のGateSummaryはfile単位の解析失敗欄を持たない。[926](926-feat-dupscan-query-diagnostics.md) の探索診断だけではgate側は直らない。
 
 ## 対応方針
 

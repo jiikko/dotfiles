@@ -89,6 +89,6 @@ skill の有る無しを変えて、headless の Claude Code (`claude -p`。`bin
 
 ## Agent向け機能提案との測定の接続（2026-10-26）
 
-新規提案は [925](../../932/925-feat-dupscan-helper-search.md) の用途語検索、[926](../../932/926-feat-dupscan-query-diagnostics.md) の問い合わせ診断、[927](../../932/927-feat-dupscan-agent-context.md) のcontext集約、[928](../../932/928-feat-dupscan-agent-onboarding.md) の共通導入案内。実装は未着手であり、効果測定済みとは扱わない。本issueの既存の保留条件は維持する。
+新規提案は [925](../../932/925-feat-dupscan-helper-search.md) の用途語検索、[926](../../932/done/926-feat-dupscan-query-diagnostics.md) の問い合わせ診断、[927](../../932/927-feat-dupscan-agent-context.md) のcontext集約、[928](../../932/928-feat-dupscan-agent-onboarding.md) の共通導入案内。実装は未着手であり、効果測定済みとは扱わない。本issueの既存の保留条件は維持する。
 
 評価する際はClaude/Codexを分け、同じ課題・同じ入力repo・対応版で、適切な候補への到達、正しい再利用、誤った不存在判断、往復数、返却bytes、elapsed timeを取る。raw command回数だけで改善を判断せず、小規模fixtureで対照群の重複発生率が0だった制約と、設定が対照群へ漏れた制約を踏まえて比較条件を設計する。ログ解析は保存形式・利用可能性を環境ごとに確認し、既存のClaude用集計をCodexにもそのまま使えるとはみなさない。

@@ -10,7 +10,7 @@ agent が dupscan に気づき、少ない出力で正しい次の一手へ進�
 
 ## 前提にする既存の決定
 
-- [926](../926-feat-dupscan-query-diagnostics.md): 既存コマンドの `-format text|json|xcode` の正常な出力と終了コードを維持する (golden での固定は 926 の未完了の受け入れ条件で、
+- [926](926-feat-dupscan-query-diagnostics.md): 既存コマンドの `-format text|json|xcode` の正常な出力と終了コードを維持する (golden での固定は 926 の未完了の受け入れ条件で、
   `src/dupscan` にはまだ golden のテストが無い)。machine 向けの新しい契約は明示した `-format json-v2` と新しいコマンドにだけ足す。
   0 件の rc・unsupported の区別・`next_actions` (最大 3 個)・予算付きの serializer もここが正本
   - 例外の前例: [937](937-feat-dupscan-go-test-call-owner.md) は既存の callers の text と JSON の `caller` を変更し、README / 回帰テストに明記して実装した。

@@ -2,6 +2,16 @@
 
 起票日: 2026-10-26
 
+## 完了した範囲と採否（2026-10-27）
+
+09e983fcから再評価節の3件を実装した。`index`/`callers`も既存interspersed parserを使い、後置flagを受理する。拒否案では正常な次の書き方への往復が残り、既存parserで受理できるため採らなかった。`--`はどの位置でもそこでflag解釈を止め、値欠落flagが区切り記号を値として消費しないようにした。report/gate等の引数規則を変えるCLI全面改訂はしない。
+
+`refs Worker.run`のように識別子で始まるqualified queryは、text/jsonともrc=2・stdout空で拒否し、型を解決できないことをstderrへ表示する。元scopeを保持した単独名refsのargv配列を最大1個提示し、実行はしない。型/ラベルの絞り込みを外すことを明示する。Unicode識別子・backtick付き名・dot operatorは一律拒否しない。型絞り込みをしていた成功検索を変える変更ではなく、literal 0件だった非対応入力の診断を明示的に変えた。その他の不明な入力やラベルだけのqueryまで網羅したvalidatorは作らない。
+
+従来のdef/refs/index/callersは、file-level parse errorの件数と先頭3pathをstderrへ出す（pathは引用し、残りは件数）。hit/0件/抽出単位0のすべてで通知する。stdoutのtext/JSON構造と正常なrc、def/refsの0件rc=1・index/callersの0件rc=0は保つ。Goを読まない案内とcontext/evidenceの既存表示も維持する。
+
+共通json-v2 envelope・strict/require・fuzzy候補・selectors・全コマンドbyte予算は今回不採用。3件を直すためには不要で、既存JSONを変えずstderrを読む導線で診断できる。machine利用でstderrを扱えない実例、候補提示の失敗、大出力/版混在等の具体的な不足が出たら必要な部分だけ再起票する。下の当初設計は将来案の記録であり、本issueの未完了条件ではない。両agentの実課題による再試行回数・誤不存在判断・重複追加率の評価は928で継続し、本修正の効果と断定しない。
+
 ## 方向性の再評価（2026-10-27）
 
 対象: a5b4196e の実装と既存測定。
@@ -14,7 +24,7 @@
 
 ## 目的
 
-Claude/Codexがコマンドの書き方の違いで失敗したり、非対応の問い合わせを「対象が存在しない」と解釈したりする往復を減らす。正しい次の問い合わせを少数返せるCLIにする。今回は提案の記録であり、実装・効果測定は未着手。
+Claude/Codexがコマンドの書き方の違いで失敗したり、非対応の問い合わせを「対象が存在しない」と解釈したりする往復を減らす。正しい次の問い合わせを少数返せるCLIにする。再評価節の最小改善は実装済み。一般的な開発効率の効果測定は928で継続する。
 
 ## 現状の裏取り（5a9a6a98時点）
 
@@ -23,7 +33,7 @@ Claude/Codexがコマンドの書き方の違いで失敗したり、非対応�
 - def/refsは0件でrc=1、index/callersは0件でもrc=0。現在のJSONには、問い合わせ非対応・本当の0件・解析不完全を区別する共通の状態欄がない。
 - main.goはfile-level errorを収集する。context/evidenceは通知済みだが、従来のdef/refs/index/callersは通知へ取り込まない。0件は全構文を調べた証明にならない。
 
-## 改善案
+## 当初の改善案（採否は冒頭）
 
 1. 共通flagの位置と `--` の扱いを揃える。名前・パスの前後どちらでも受け付ける案を、各コマンドの曖昧な位置引数と衝突しないか確認する。file/scope/prod/testの絞り込みも意味を明示して揃える。
 2. 非対応の `Type.member` / ラベル / 言語は、単なる0件と区別し、対応する問い合わせ例を返す。型の解決なしに末尾名へ黙って置換し、絞り込み済みと誤認させない。
@@ -31,18 +41,18 @@ Claude/Codexがコマンドの書き方の違いで失敗したり、非対応�
 4. JSONにschemaの版、状態、部分的な解析であること、結果総数/返却数、省略、次の問い合わせ案を持たせる。案の状態名は `no_match` / `unsupported_query` / `unsupported_language` / `partial` 等。具体的schemaは実装時に確定する。
 5. 既存の正常な呼び出しの終了コードとJSONの互換性を維持する。0件を止めたい用途は共通の明示flag（例: `-require-match`）を設計し、既存defaultを一律変更しない。解析不完全を止めるmodeも、通知とrcの契約を決めてから追加する。
 
-## 検証・受け入れ条件
+## 完了範囲の受け入れ条件
 
-- [ ] まず現在のflag/位置引数/終了コードを表とテストで固定する。
-- [ ] 全コマンドでflag位置、空白を含むパス、`--`、同名/多重定義、非対応言語、読めない構文、正当な0件、誤った問い合わせ形式を検査する。
-- [ ] 同名の別型を含むrefs/callersは近似であると分かり、型を絞れたという誤った表示をしない。
-- [ ] parser errorに関数が飲み込まれて単位を抽出できない場合も、解析不完全を通知できることを確認する。
-- [ ] 次の問い合わせ案は安全にquote可能なargvとして返し、表示内容を自動実行しない。候補数と出力量に上限を設ける。
-- [ ] Claude/Codexで、誤った問い合わせから目的の結果までの再試行回数と、誤った不存在判断が減るかを比較する。改善量は実測する。
+- [x] index/callersの前置/後置flag、重複単値flag、空白/記号scope、`--`のliteral path、欠落flag値をCLIから検査した。
+- [x] qualified refsは正当な0件と区別し、型を外した近似であると説明する。修正argvを再実行し、複数scope内の参照が返りscope外が混ざらないことを検査した。
+- [x] bare Unicode/backtick名の参照取得とdot operator/正当な0件の旧rcを維持する。operator参照収集の拡張はしていない。
+- [x] 4コマンド×hit/no_match/zero_units×text/jsonの24ケースで、file parse error・引用path・先頭3件上限を通知する。index JSONでzero_units fixtureの抽出単位0を確認した。
+- [x] 同一fixtureの変更前後24条件を比較した。完全解析16条件はstdout/stderr/rc一致、部分解析8条件はstdout/rc一致と新stderr警告を確認した。全入力の互換性を証明するものではない。
+- [x] 追加回帰を14種類の退行変異で検証した（scope欠落の予備変異は全repoへの拡大へ修正して再検証）。lint/race/gateとissue検査の結果は末尾に記録する。
 
-関連: [900](../890/900-research-dupscan-next-languages.md) の言語ごとの対応範囲を反映する。[928](928-feat-dupscan-agent-onboarding.md) の能力情報と整合させる。gateのbase/違反/除外の判定を変更する作業は、この探索診断と切り分ける。
+関連: [900](../../890/900-research-dupscan-next-languages.md) の言語ごとの対応範囲を反映する。[928](../928-feat-dupscan-agent-onboarding.md) の能力情報と整合させる。gateのbase/違反/除外の判定を変更する作業は、この探索診断と切り分ける。
 
-## 詳細設計案（2026-10-26、未実装）
+## 不採用とした当初の詳細設計案（2026-10-26、未実装）
 
 ### 互換性と導入順
 
@@ -57,7 +67,7 @@ Claude/Codexがコマンドの書き方の違いで失敗したり、非対応�
 - v2の `-file` はrepo相対の結果selector。scopeのscan範囲を勝手に狭めない。legacy -fileのcwd相対解決は旧モードに残す。contextの `-definition-file` は定義選択だけに使う。
 - `-scope all|prod|test` は返す宣言/出現の分類を絞り、既定all。呼び出し数が別scopeで集計される場合は `calls_scope` を明記する。
 - `-lang auto|swift|go` はregistryから解決。明示swiftならGoは意図的な対象外、autoで既知のGoファイルをdef/refsが読めなければskipとしてcoverageに載せる。domainは列挙したrepo sourcesであり、scope内のtracked/未ignoreのvendor sourceも含む。外部SDK・repo外の依存取得・未知の拡張子は対象外で、module/targetの所属解決をしたとは表示しない。
-- v2のrefs/callersは単独名（callersはlabel指定可）。`Worker.run` を型解決済みの絞り込みとして受理せず `unsupported_query` とし、defと、絞り込みなしのrefs/callersのargv案をreason付きで出す。この拒否はv2だけに追加し、旧モードの扱いは維持する。
+- v2のrefs/callersは単独名（callersはlabel指定可）。`Worker.run` を型解決済みの絞り込みとして受理せず `unsupported_query` とし、defと、絞り込みなしのrefs/callersのargv案をreason付きで出す。当初はv2だけに拒否を追加する案だったが、今回の最小改善では識別子で始まるqualified refsの拒否を旧text/jsonにも明示的に追加した。その他のv2設計は採用していない。
 
 ### v2 envelopeと状態の直交化
 
@@ -116,12 +126,12 @@ legacy mode、v2通常/require/strict、flag前後、--、quotes、空白・Unic
 
 ## 誤った「存在しない」「使えない」を防ぐ出力条件
 
-9d2e801fでも `refs Worker.run` は0件でrc=1、同じ入力の `refs run` は2件となる例を再現した。これは旧仕様だが、書く前の探索では誤った不存在判断から重複実装につながりうる。v2はunsupported queryと合法な再検索argvを返し、裸名への変更で型絞り込みが失われることも表示する。
+9d2e801fでも `refs Worker.run` は0件でrc=1、同じ入力の `refs run` は2件となる例を再現した。これは旧仕様だが、書く前の探索では誤った不存在判断から重複実装につながりうる。今回の最小改善は旧text/jsonで非対応queryと再検索argvを返し、裸名へ変更すると型で絞れないことも表示する。
 
 また、0件と解析不完全、省略された候補と本当の0件、同名候補と選択済み定義を分ける。parse errorを含むfixtureでは、結果がある場合もcoverageの不完全さが見えることを検査する。未知の入力形式を無条件に正常な検索として受理しない。
 
-- [929](done/929-bug-dupscan-gate-lost-file-parse-errors.md) はgate側のfile parse error通知とstrict判定の担当。本issueだけを完了してgateの解析漏れまで直ったとは扱わない。
-- [930](done/930-feat-dupscan-candidate-call-evidence.md) は呼び出し数の照合条件・省略引数・曖昧さの担当。approx=0を未使用と表示しない。
+- [929](929-bug-dupscan-gate-lost-file-parse-errors.md) はgate側のfile parse error通知とstrict判定の担当。本issueだけを完了してgateの解析漏れまで直ったとは扱わない。
+- [930](930-feat-dupscan-candidate-call-evidence.md) は呼び出し数の照合条件・省略引数・曖昧さの担当。approx=0を未使用と表示しない。
 - このscopeで保証するのは、構文検索の結果と限界を正しく伝えること。型/target解決を実装せず「別moduleから使える」「影響は他に無い」を出力しない。
 
 ## 進捗
@@ -139,3 +149,14 @@ legacy mode、v2通常/require/strict、flag前後、--、quotes、空白・Unic
 - 2026-10-27: 938でcontext/evidenceの先頭状態・grouped text・scope付きnext_actionと任意summaryを実装/局所比較した。938の完了は本issueの全受け入れ条件の完了を意味しない。v2 envelope/serializerへ共通状態とaction modelを統合する作業は継続。
 
 - 2026-10-27: `docs(dupscan): reassess open epic 932 work against current behavior`で現実装と残設計を再照合し、上記の最小作業・着手条件へ更新。改善は誤った未実装扱いと一括実装の前提を減らしたこと。コード変更、開発効率/重複追加率の改善は今回の成果に含めない。
+
+
+- 2026-10-27: `fix(dupscan): diagnose unsupported refs and incomplete exploration`で再評価節の3件を実装。既存helperをindexで探し、parseInterspersedFlags・headList・queryNextAction/writeNextActionを再利用した。後置`--`と欠落flag値の退行もCLI回帰で固定した。
+
+### 検証と改善の評価
+
+改善は、qualified refsを「存在しない」で返さず同scopeの実行可能な次問い合わせへ進めること、後置flagをGit pathと誤診しないこと、抽出単位0を含む解析漏れを4探索コマンドで隠さないこと。代償は明示した非対応queryのrc変更と部分解析時stderrの追加、共通parserへの境界処理と回帰テストの増加。構文解析/型解決のcoverageそのものは変わらず、stderrを捨てる利用者には解析不完全の通知が見えない。一般的な時間/コンテキスト/不要な重複追加の削減は未検証。
+
+14種類の退行は、index/callersの旧parser、後置`--`の保持、欠落flag値の見逃し、qualified guard無効化、dot operatorまでの拒否、修正argvの全repo化、path引用/件数上限の欠落、zero-unit errorの抑制、4コマンド各々の警告配線除去。隔離worktreeで構文検査とbaselineを先に行い、すべて狙ったCLI回帰でredを確認した。予備のscope変異はscope自体を消していたため、全repoへ広げる変異に置き換えてscope外の参照混入でredになることを確認し直した。
+
+検査結果: `make -C src/dupscan lint test`（最終差分）でlintと全race testが成功。`dupscan gate -base 09e983fc -strict-analysis src/dupscan`は新しい重複/追加除外なし。全srcのgateは既存の意図的な構文不正fixture `src/subproc/boundarycheck/testdata/broken/broken.go`をbase/headで同じ1件報告し、全srcの完全解析は主張しない。Homebrew Bashでissue完了scriptを実行し、リンク/next/採番/裸path/claim/期限の6検査が成功した。system Bash3.2では完了scriptのcommand substitution構文で停止したためHomebrew Bashを使用（コード変更なし）。親の読み取り専用レビューでP1/P2なし。

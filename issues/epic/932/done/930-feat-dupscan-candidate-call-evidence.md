@@ -38,7 +38,7 @@ indexのcalls_approxは1、裸のcallersは2件、label指定は1件。`internal
 
 - default metadata・省略可能引数のmatcher・possible候補一覧は不採用。現時点の問題は既知近似の説明不足であり、925のsearch順位もcallsを使わない。拡張には同名/同labelでdefaultの異なる定義の識別、partial omission、繰り返しlabel、曖昧な対応の保持が要る。説明追加のためにこの負担を導入しない。**再検討条件**: 説明を理解した上でも省略callの候補取得が必要になった具体例が出たとき。そのとき別途実装範囲と正解表を定める。
 - Go variadic/spread・Swift trailing closureの対応拡張は行わない。現行の構文近似のままで、今回の文言は非対応要因を全列挙した完全な能力保証ではない。既存READMEの限界説明を維持する。
-- resolution/name/labels/scope/limitations等の構造化metadataは、必要性が出た場合の条件付き候補として[926](../926-feat-dupscan-query-diagnostics.md)で追跡し、本issueでは旧JSONへ欄を追加しない。
+- resolution/name/labels/scope/limitations等の構造化metadataは、必要性が出た場合の条件付き候補として[926](926-feat-dupscan-query-diagnostics.md)で追跡し、本issueでは旧JSONへ欄を追加しない。
 - 実作業での誤判断/不要な重複追加の効果測定は[928](../928-feat-dupscan-agent-onboarding.md)で継続。対象課題にdefault引数helperを含める案は同issueへ渡し、数値が増えただけを成功としない。
 - module/targetの実際の利用可否は[918](../918-feat-dupscan-target-and-literal-table.md)の課題。呼び出し数で代用しない。
 

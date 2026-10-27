@@ -28,7 +28,7 @@
 2. 呼出先は「末尾名」「sourceに書かれたselector/receiver」のどこを照合したかを返す。GoのCallsへ必要な構文metadataを追加する場合も、旧callers/近似数の意味を保つ。`termwidth.Of`がimport先の特定symbolに解決されたとは表示しない。alias/動的call/未知のcalleeの非対応範囲を示す。
 3. 次の段階で、range/加算/呼出し等の限定した本体featureを検索材料にする。自由な自然言語から任意の動作を理解する機能とはしない。構造の類似度は[895](done/895-feat-dupscan-type3-candidates.md)の担当で、同じfingerprintの二重実装を避ける。
 4. [924](done/924-perf-dupscan-exploration-latency.md)のAnalysisPlan/Viewで必要なfeatureだけ抽出し、型・語・呼出先・構造の一致根拠を候補ごとに示す。不明なfeatureを一致扱いにしない。暗黙に条件を緩めない。
-5. 候補ID・予算・省略・coverageは[926](926-feat-dupscan-query-diagnostics.md)へ従う。型/責務/利用可否は未証明としてコード確認へつなぐ。構文が大きく違う同目的の実装まで必ず見つかるとは保証しない。
+5. 候補ID・予算・省略・coverageは[926](done/926-feat-dupscan-query-diagnostics.md)へ従う。型/責務/利用可否は未証明としてコード確認へつなぐ。構文が大きく違う同目的の実装まで必ず見つかるとは保証しない。
 
 ## 検証・受け入れ条件
 

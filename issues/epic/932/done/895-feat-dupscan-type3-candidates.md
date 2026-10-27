@@ -93,7 +93,7 @@ spansWidthの例では、rangeの入力式が異なってもループ内部の�
 
 「寄せられるか」は人/agentが型・nilの扱い・副作用・依存境界・同じ責務かを確認する。共通化先や動作の同一性を確定した表示にしない。自然文の説明は認識できた構文patternから生成し、任意のコードの意味を理解したとは扱わない。認識できなければ正規化ASTの一致/差分を返す。
 
-現行tree.Nodeにはsource spanが無いため、最初は単位位置と正規化ASTの差分を出す。元sourceの正確な範囲を表示するにはadapterからnodeの位置対応を追加する必要があり、存在しない位置を推測で埋めない。JSON/解析coverage/出力量の上限は[926](../926-feat-dupscan-query-diagnostics.md)の契約を共用し、型解決・利用可能module/targetの判定をscoreで代用しない。
+現行tree.Nodeにはsource spanが無いため、最初は単位位置と正規化ASTの差分を出す。元sourceの正確な範囲を表示するにはadapterからnodeの位置対応を追加する必要があり、存在しない位置を推測で埋めない。JSON/解析coverage/出力量の上限は[926](926-feat-dupscan-query-diagnostics.md)の契約を共用し、型解決・利用可能module/targetの判定をscoreで代用しない。
 
 ### 5. 実例・反例・処理量で採否を決める
 
