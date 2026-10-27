@@ -74,6 +74,13 @@ Goは比較対象外の `Test` / `Benchmark` / `Fuzz` / `Example` とtestify形�
 型を解決しないので、同名の別のメソッド・別の型の初期化子の呼び出しも当たる (近似)。ラベルを書けば数と順で絞る。
 後置クロージャのある呼び出しは括弧の中のラベルが先頭に一致すれば当てる。`index` / `callers` / `def` / `refs` / `context` / `evidence` はflagを名前・パスの前後で受け付ける (`callers make -format json`)。単値flagの繰り返しは最後の値を採用し、`--` 以降は名前・パスとして扱う (`callers make -- -literal-dir`)。値の必要なflagの直後の引数は、その値として扱う。
 
+
+`callers -selector strings.Join Join [dir ...]` は、Goのソースに書いた単純な識別子chainを条件へ足す。名前の分からないhelperを、使うAPIの字面から探す補助経路で、囲む関数と位置を従来のcallers形式で返す。末尾名の位置引数は引き続き必要で、名前照合と、指定した場合の引数数条件へANDする（例: `callers -selector strings.Join 'Join(_:_:)'`）。queryのdot前後の空白・改行とsource側の空白・改行・括弧は正規化する。
+
+selector指定時は同じscope内のGoだけを読み、Swiftは対象外。import先やreceiverの型を解決しないので、`tw.Join`へのalias変更やdot importは追わず、同じ字面のローカル変数によるshadowingは混ざる。`get().Join`、`items[i].Join`、`pkg.F[T]`のような動的/indexed calleeはこのfilterの対象外（通常のcallersへ戻して調べる）。コメントや文字列の字面からcallを捏造しない。0件でも検索範囲と限界を表示し、Go sourceのないscopeはrc=2でSwift対象外を説明する。
+
+textにはselectorと限界の1行を添え、JSONは明示指定時だけ`selector`/`selector_limitations`を返す。既定modeのstdout/JSON・照合数・順位は変えない。`-limit`は従来どおりtextの件数上限で、JSONは全件を返す。parser errorは既存のstderr警告で通知する。別calleeを除けない問い合わせでは注意表示分だけ出力が増えるため、型index、evidence、適切なrg/Readも使い分ける。
+
 `def` は名前の完全一致で定義を探す。`Type.member` で型を絞り、`make(x:_:)` のように引数ラベルも指定できる。
 `count()` のように括弧を書いた場合は関数・初期化子・subscript・deinit・protocol の関数要件だけに当てる。
 関数・初期化子・property・subscript は `file:line-endLine 型.署名` の見出しとソースを出し、既定 80 行を超えると残りの行数を示す。

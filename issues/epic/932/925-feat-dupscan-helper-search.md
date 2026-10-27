@@ -122,7 +122,7 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 
 - 2026-10-26: [931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931のtuikit実例では、同じ表示幅ループがslice直渡し/struct.field経由の構文差と19-nodeの閾値で現行near/reportに一致しなかった。未知名からの型/用途検索の評価へ追加する。新searchの効果は未検証。
 
-- 2026-10-26: 初期のname/signature/doc先頭行に加える呼出先/本体hintは[933](933-feat-dupscan-behavior-hint-search.md)、doc全文・テスト等の補助証拠は[934](934-feat-dupscan-source-evidence-search.md)へ起票した。段階ごとの仕様変更を分け、未実装の能力を初期searchに混ぜない。
+- 2026-10-26: 初期のname/signature/doc先頭行に加える呼出先/本体hintは[933](done/933-feat-dupscan-behavior-hint-search.md)、doc全文・テスト等の補助証拠は[934](934-feat-dupscan-source-evidence-search.md)へ起票した。段階ごとの仕様変更を分け、未実装の能力を初期searchに混ぜない。
 
 - 2026-10-27: 924で探索共通経路の比較用本体変換/正規化を省く処理を実装した。925の用途語/署名検索・順位設計は未着手で継続する。
 
