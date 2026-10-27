@@ -7,9 +7,10 @@
 # 調べる repo には何も書かない。初回は cgo で文法の C のソースをビルドするので時間がかかる。
 set -u
 source "${0:A:h}/lib/go_autobuild.zsh"
-typeset -a autobuild_flags=()
+# 温め検査が呼び出しを静的に列挙するため、起点とツール名を引数配列に隠さない。
 if [[ "${1-}" == "-no-build" ]]; then
-  autobuild_flags=(--no-build)
   shift
+  go_autobuild_exec --no-build "${0:A:h}/../src/dupscan" dupscan -- "$@"
+else
+  go_autobuild_exec "${0:A:h}/../src/dupscan" dupscan -- "$@"
 fi
-go_autobuild_exec "${autobuild_flags[@]}" "${0:A:h}/../src/dupscan" dupscan -- "$@"

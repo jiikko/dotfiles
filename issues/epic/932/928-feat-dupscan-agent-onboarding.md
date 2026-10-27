@@ -167,4 +167,6 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 
 - 2026-10-27: 938でcontext/evidenceの先頭状態・grouped text・scope付きnext_actionと任意summaryを実装/局所比較した。938の完了は本issueの全受け入れ条件の完了を意味しない。出力bytes減少を記録したが、実課題の総tokens/重複追加/時間の評価とregistry/capabilitiesは継続。
 
-- 2026-10-27: `feat(dupscan): add an explicit no-build wrapper path`で先頭optionとfingerprint共通ガードを実装。専用26条件・既存go_autobuild suiteが成功し、変更前wrapper/helperと空指紋ガード削除の2変異を検出。新規issueへ切り出さず928内の一項目として記録する。registry/capabilities/doctor/guideとagent評価は未実装でopenを維持する。
+- 2026-10-27: `feat(dupscan): add an explicit no-build wrapper path`で先頭optionとfingerprint共通ガードを実装。専用24結果項目・既存go_autobuild suiteが成功し、変更前wrapper/helperと空指紋ガード削除の2変異を検出。新規issueへ切り出さず928内の一項目として記録する。registry/capabilities/doctor/guideとagent評価は未実装でopenを維持する。
+
+- 2026-10-27: `fix(dupscan): preserve static wrapper discovery for warmup checks`で静的なwrapper列挙との不整合を修正した。専用テストを再実行し、全17ツールのwarmupも成功。結果項目数は26という初回報告を24へ訂正した。
