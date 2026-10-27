@@ -159,33 +159,17 @@ func (c common) options() (group.Options, error) {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) > 0 && args[0] == "gate" {
-		return runGate(args[1:], stdout, stderr)
+	if len(args) > 0 {
+		for _, spec := range commandSpecs() {
+			if args[0] == spec.Name {
+				return spec.Run(args[1:], stdout, stderr)
+			}
+		}
 	}
-	if len(args) > 0 && args[0] == "callers" {
-		return runCallers(args[1:], stdout, stderr)
-	}
-	if len(args) > 0 && args[0] == "index" {
-		return runIndex(args[1:], stdout, stderr)
-	}
-	if len(args) > 0 && args[0] == "def" {
-		return runDef(args[1:], stdout, stderr)
-	}
-	if len(args) > 0 && args[0] == "refs" {
-		return runRefs(args[1:], stdout, stderr)
-	}
-	if len(args) > 0 && args[0] == "context" {
-		return runContext(args[1:], stdout, stderr)
-	}
-	if len(args) > 0 && args[0] == "evidence" {
-		return runEvidence(args[1:], stdout, stderr)
-	}
-	if len(args) > 0 && (args[0] == "near" || args[0] == "explain") {
-		return runPoint(args[0], args[1:], stdout, stderr)
-	}
-	if len(args) > 0 && args[0] == "report" {
-		args = args[1:]
-	}
+	return runReportCommand(args, stdout, stderr)
+}
+
+func runReportCommand(args []string, stdout, stderr io.Writer) int {
 	fs, c := newFlags("dupscan", stderr)
 	dirs, rc, ok := parseFlags(fs, args)
 	if !ok {
