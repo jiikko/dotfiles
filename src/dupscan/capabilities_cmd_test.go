@@ -28,8 +28,13 @@ func TestCapabilitiesRegistryAndLanguageSupport(t *testing.T) {
 	seen := map[string]bool{}
 	for i, spec := range commandSpecs() {
 		cmd := got.Commands[i]
-		if seen[cmd.Name] || cmd.Name != spec.Name || spec.Run == nil || !slices.Equal(cmd.Formats, spec.Formats) || cmd.FlagsStatus != "not_checked" {
+		if seen[cmd.Name] || cmd.Name != spec.Name || spec.Run == nil || !slices.Equal(cmd.Formats, spec.Formats) || cmd.FlagsStatus != "help_text" || cmd.FlagsHelp == "" {
 			t.Fatalf("registry mismatch: %+v / %+v", spec, cmd)
+		}
+		var help bytes.Buffer
+		spec.Run([]string{"-h"}, &bytes.Buffer{}, &help)
+		if !strings.HasSuffix(help.String(), cmd.FlagsHelp) || strings.Contains(cmd.FlagsHelp, "usage: dupscan [report]") {
+			t.Errorf("%s flags differ from actual command help: %q", cmd.Name, cmd.FlagsHelp)
 		}
 		seen[cmd.Name] = true
 		if spec.SymbolsOnly && (!slices.Contains(cmd.Languages, "swift") || slices.Contains(cmd.Languages, "go")) {
@@ -101,5 +106,27 @@ func TestRegisteredCommandsDispatchToEntryPoints(t *testing.T) {
 		if gotRC != wantRC || directOut.String() != dispatchedOut.String() || directErr.String() != dispatchedErr.String() {
 			t.Errorf("%s dispatched to a different entry point: rc=%d/%d stdout=%q/%q stderr=%q/%q", spec.Name, gotRC, wantRC, dispatchedOut.String(), directOut.String(), dispatchedErr.String(), directErr.String())
 		}
+	}
+}
+
+func TestCapabilitiesIncludesActualCommandFlags(t *testing.T) {
+	want := map[string][]string{
+		"report":       {"-min-nodes int", "-min-closure-nodes int"},
+		"gate":         {"-base string", "-fail-new-exclusions"},
+		"context":      {"-sections string", "-max-lines int"},
+		"capabilities": {"-format string"},
+		"doctor":       {"-repo string", "-base string"},
+		"agent-guide":  {"-target string", "-print"},
+	}
+	for _, cmd := range buildCapabilities().Commands {
+		for _, flag := range want[cmd.Name] {
+			if !strings.Contains(cmd.FlagsHelp, "  "+flag+"\n") {
+				t.Errorf("%s missing actual flag %q: %s", cmd.Name, flag, cmd.FlagsHelp)
+			}
+		}
+		delete(want, cmd.Name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("commands missing from capabilities: %v", want)
 	}
 }

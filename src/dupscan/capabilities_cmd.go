@@ -21,6 +21,7 @@ type capabilityCommand struct {
 	Query       string   `json:"query,omitempty"`
 	Summary     string   `json:"summary"`
 	FlagsStatus string   `json:"flags_status"`
+	FlagsHelp   string   `json:"flags_help"`
 }
 
 type capabilityLanguage struct {
@@ -41,7 +42,7 @@ type capabilityDocument struct {
 
 func buildCapabilities() capabilityDocument {
 	d := capabilityDocument{SchemaVersion: 1, Tool: "dupscan", Version: "unknown", Commands: []capabilityCommand{}, Languages: []capabilityLanguage{}, Limitations: []string{
-		"Command flag metadata has not been checked; use each command's -h for actual flags.",
+		"Flags are the actual command help text, not a structured flag schema.",
 		"Queries use syntax and lexical matching without type resolution; same-named symbols may match.",
 		"This capability schema is not the planned json-v2 analysis envelope.",
 	}}
@@ -68,7 +69,13 @@ func buildCapabilities() capabilityDocument {
 		if spec.Name == "capabilities" || spec.Name == "doctor" || spec.Name == "agent-guide" {
 			names = []string{}
 		}
-		d.Commands = append(d.Commands, capabilityCommand{Name: spec.Name, Formats: spec.Formats, Languages: names, Query: spec.Query, Summary: spec.Summary, FlagsStatus: "not_checked"})
+		var help bytes.Buffer
+		spec.Run([]string{"-h"}, io.Discard, &help)
+		flagsHelp := help.String()
+		if start := strings.LastIndex(flagsHelp, "\nflags:\n"); start >= 0 {
+			flagsHelp = flagsHelp[start+len("\nflags:\n"):]
+		}
+		d.Commands = append(d.Commands, capabilityCommand{Name: spec.Name, Formats: spec.Formats, Languages: names, Query: spec.Query, Summary: spec.Summary, FlagsStatus: "help_text", FlagsHelp: flagsHelp})
 	}
 	return d
 }
@@ -99,7 +106,7 @@ func runCapabilities(args []string, stdout, stderr io.Writer) int {
 			if c.Query != "" {
 				fmt.Fprintf(&out, "; query=%s", c.Query)
 			}
-			fmt.Fprintf(&out, "; flags=%s\n", c.FlagsStatus)
+			fmt.Fprintf(&out, "; flags=%s\n%s", c.FlagsStatus, c.FlagsHelp)
 		}
 		for _, l := range d.Languages {
 			fmt.Fprintf(&out, "  %s: extensions=%s; symbols=%t\n", l.Name, strings.Join(l.Extensions, ","), l.Symbols)
