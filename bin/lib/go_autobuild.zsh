@@ -14,7 +14,7 @@
 #
 # 使い方:
 #   source "${0:A:h}/lib/go_autobuild.zsh"
-#   go_autobuild_exec [--async] [--pkg <rel>] <src_dir> <name> -- "$@"
+#   go_autobuild_exec [--async] [--no-build] [--pkg <rel>] <src_dir> <name> -- "$@"
 #
 # --pkg <rel>: 1 つの module に複数の main を置く形 (src/doctor/cmd/svcdoctor 等) 用。
 #   指紋と go build は module root (<src_dir>) で取り、成果物と作業ファイルは <src_dir>/<rel> に
@@ -30,6 +30,9 @@
 # (_go_autobuild_warm_signature)。これをしないと「次回の初回 exec」が 17MB の glogx で 230ms
 # かかり、tmux popup 起動の律速になる (実測 2026-09-05。ファイルを読むだけでは温まらない)。
 # 🚨 新しいラッパーを足すときは、そのツールが未知フラグで即終了することを確かめる (温めの起こし方)。
+#
+# --no-build: 入力指紋が一致するバイナリだけを実行する。未build/stale/指紋取得不能なら
+#   stdoutを空にしてrc=2。build・署名温め・lock取得・失敗記録の更新を起こさない。
 #
 # --async: 既存バイナリで即 exec し、再ビルドはバックグラウンドで走らせる (次回起動から反映)。
 #   tmux popup から起動するツール (glogx) 向け。ビルド出力を人に見せないため。
@@ -578,10 +581,11 @@ go_autobuild_spawn_if_stale() {
 }
 
 go_autobuild_exec() {
-  local async=0 pkg=""
+  local async=0 no_build=0 pkg=""
   while (( $# )); do
     case "$1" in
       --async) async=1; shift ;;
+      --no-build) no_build=1; shift ;;
       --pkg)
         # 🚨 値が無いと zsh の shift 2 は何も shift せず、この while が --pkg を永久に見る (無限ループ +
         # stderr 洪水)。ラッパーの書き間違いは loud に止める
@@ -602,6 +606,25 @@ go_autobuild_exec() {
   fi
   [[ "${1-}" == "--" ]] && shift
   local bin="$src_dir/$name"
+  if (( no_build )); then
+    if [[ ! -x "$bin" ]]; then
+      print -u2 -- "$name: no-build: バイナリが無い。-no-build を外して起動する"
+      exit 2
+    fi
+    local current_fp
+    _go_autobuild_fingerprint "$src_dir"
+    current_fp=$REPLY
+    # mtimeだけの縮退では鮮度を証明できないため、指紋が取れないときは実行しない。
+    if [[ -z "$current_fp" ]]; then
+      print -u2 -- "$name: no-build: 入力指紋を確認できない"
+      exit 2
+    fi
+    if _go_autobuild_stale "$src_dir" "$bin" "$current_fp"; then
+      print -u2 -- "$name: no-build: バイナリが古い。-no-build を外して起動する"
+      exit 2
+    fi
+    exec "$bin" "$@"
+  fi
   [[ -n "${GO_AUTOBUILD_SYNC-}" ]] && async=0
 
   if [[ ! -x "$bin" ]]; then
