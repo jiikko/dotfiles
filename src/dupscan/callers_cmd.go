@@ -22,7 +22,7 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, usage)
 		fs.PrintDefaults()
 	}
-	rest, rc, ok := parseFlags(fs, args)
+	rest, rc, ok := parseInterspersedFlags(fs, args)
 	if !ok {
 		return rc
 	}
@@ -62,6 +62,9 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 		return fail(fmt.Errorf("知らない形式 %q (text / json)", *format))
 	}
 	if err != nil {
+		return fail(err)
+	}
+	if err := writeParseWarning(stderr, "callers", got.errFiles); err != nil {
 		return fail(err)
 	}
 	return 0

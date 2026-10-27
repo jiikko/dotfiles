@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"dupscan/internal/langs"
 	"dupscan/internal/repo"
@@ -43,6 +45,22 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
+
+	// A dot operator is a valid bare name; only diagnose an identifier-led qualifier.
+	first, _ := utf8.DecodeRuneInString(query)
+	if strings.Contains(query, ".") && (unicode.IsLetter(first) || first == '_' || first == '`') {
+		q, err := report.ParseDefQuery(query)
+		if err != nil {
+			return fail(err)
+		}
+		if q.Type != "" {
+			fmt.Fprintf(stderr, "dupscan refs: %q は非対応の問い合わせ。Type.memberでは型を解決して絞れない。単独名で探すと同名の別型も含む近似になる\n", query)
+			if err := writeNextAction(stderr, queryNextAction(sc, "refs", q.Name, "型とラベルで絞らず単独名の参照を探す")); err != nil {
+				return fail(err)
+			}
+			return 2
+		}
+	}
 	src, note, err := symbolSource(sc)
 	if err != nil {
 		return fail(err)
@@ -61,6 +79,9 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 		return fail(fmt.Errorf("知らない形式 %q (text / json)", *format))
 	}
 	if err != nil {
+		return fail(err)
+	}
+	if err := writeParseWarning(stderr, "refs", got.errFiles); err != nil {
 		return fail(err)
 	}
 	if note != "" {

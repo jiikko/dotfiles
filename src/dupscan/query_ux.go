@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 
 	"dupscan/internal/repo"
 )
@@ -78,4 +79,18 @@ func (s scanned) callApproximation(labels bool) string {
 		}
 	}
 	return "構文近似: " + match + "で照合。型未解決で同名の別定義が混ざりうる。" + omitted + " 0件でも未使用の証拠ではない。"
+}
+
+// writeParseWarning keeps legacy stdout and no-match exit codes usable while exposing incomplete scans.
+func writeParseWarning(w io.Writer, command string, files []string) error {
+	if len(files) == 0 {
+		return nil
+	}
+	quoted := make([]string, len(files))
+	for i := range quoted {
+		quoted[i] = strconv.Quote(files[i])
+	}
+	detail := headList(quoted, 3)
+	_, err := fmt.Fprintf(w, "dupscan %s: 解析不完全: 読めない構文を含むファイル %d 個: %s。抽出単位が0件でも定義・参照・呼び出しは欠けうる。0件は不存在の証明ではない\n", command, len(files), detail)
+	return err
 }

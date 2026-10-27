@@ -104,7 +104,7 @@ func parseInterspersedFlags(fs *flag.FlagSet, args []string) (dirs []string, rc 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
-			positionals = append(positionals, args[i:]...)
+			positionals = append(positionals, args[i+1:]...)
 			break
 		}
 		if len(arg) > 1 && arg[0] == '-' {
@@ -116,17 +116,18 @@ func parseInterspersedFlags(fs *flag.FlagSet, args []string) (dirs []string, rc 
 			if f := fs.Lookup(name); f != nil {
 				boolFlag, isBool := f.Value.(interface{ IsBoolFlag() bool })
 				if !isBool || !boolFlag.IsBoolFlag() {
-					if i+1 < len(args) {
-						i++
-						flags = append(flags, args[i])
+					if i+1 == len(args) {
+						return parseFlags(fs, flags)
 					}
+					i++
+					flags = append(flags, args[i])
 				}
 			}
 			continue
 		}
 		positionals = append(positionals, arg)
 	}
-	return parseFlags(fs, append(flags, positionals...))
+	return parseFlags(fs, append(append(flags, "--"), positionals...))
 }
 
 // narrowed は、段か下限を既定から変えた走査か (組が作られないだけの除外を「効いていない」と言えない)。

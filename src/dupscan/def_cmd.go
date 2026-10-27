@@ -72,6 +72,9 @@ func runDef(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
+	if err := writeParseWarning(stderr, "def", got.errFiles); err != nil {
+		return fail(err)
+	}
 	if note != "" {
 		fmt.Fprintln(stderr, "dupscan def:", note) // 見つかっても出す (同じ名前の Go の定義が「無い」と読めないように)
 	}
