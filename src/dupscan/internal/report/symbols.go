@@ -16,6 +16,12 @@ type DefQuery struct {
 	Labels []string
 }
 
+// TypeSearchTerm returns a lexical fallback term, not a resolved type identity.
+func (q DefQuery) TypeSearchTerm() string {
+	value := normalizeTypeScope(q.Type)
+	return value[strings.LastIndex(value, ".")+1:]
+}
+
 // ParseDefQuery reads `name`, `Type.member`, and `name(label:label:)`.
 func ParseDefQuery(value string) (DefQuery, error) {
 	value = strings.TrimSpace(value)

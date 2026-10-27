@@ -152,6 +152,13 @@ func runContext(args []string, stdout, stderr io.Writer) int {
 			return fail(err)
 		}
 	}
+	callersOmitted := callers.Matches > 0 && (summary || slices.Contains(selected, "callers") && *limit > 0 && callers.Matches > *limit)
+	if term := q.TypeSearchTerm(); term != "" && (refsOmitted || callersOmitted) {
+		action := queryNextAction(sc, "evidence", term, "同名memberの一覧は型未解決。末尾型名の語一致から構築・使用行を探して該当fileを読む (同名別型・コメント・文字列も混ざる)")
+		if err := writeNextAction(stdout, action); err != nil {
+			return fail(err)
+		}
+	}
 	if summary {
 		fmt.Fprintf(stdout, "\n## 要約 (%d 件)\n", defs.Matches)
 		for i, e := range defs.Entries {
