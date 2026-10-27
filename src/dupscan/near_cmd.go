@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -18,6 +20,12 @@ import (
 // runPoint は 1 つの単位を指す subcommand (near / explain)。最初の引数が `<file>:<関数名>` か `<file>:<行>`、残りが起点 (既定はそのファイルの repo 全体)。
 func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 	fs, c := newFlags("dupscan "+name, stderr)
+	var similar *bool
+	var threshold *float64
+	if name == "near" {
+		similar = fs.Bool("similar", false, "L1部分木の類似候補を試作表示 (同一動作・再利用は未証明)")
+		threshold = fs.Float64("similar-threshold", 0.4, "類似候補のweighted Dice下限 (0より大きく1以下)")
+	}
 	rest, rc, ok := parseFlags(fs, args)
 	if !ok {
 		return rc
@@ -72,6 +80,15 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 	target, err := pick(entries, rel, sel)
 	if err != nil {
 		return fail(err)
+	}
+	if similar != nil && *similar {
+		if *threshold <= 0 || *threshold > 1 || math.IsNaN(*threshold) || math.IsInf(*threshold, 0) || *c.limit < 1 || *c.limit > 50 {
+			return fail(errors.New("similar-threshold は (0,1]、similarのlimitは1〜50"))
+		}
+		if target.Unit.Unreadable {
+			return fail(errors.New("対象は読めない構文を含む"))
+		}
+		return writeSimilar(stdout, stderr, target, entries, got, *threshold, *c.limit, *c.format)
 	}
 	var out any
 	var text func(io.Writer) error

@@ -198,6 +198,14 @@ func (w *writer) write(n *tree.Node, keep bool) {
 		w.str("(#F)")
 		return
 	}
+	w.head(n)
+	for _, c := range n.Children {
+		w.write(c, keep || n.Keep)
+	}
+	w.byte(')')
+}
+
+func (w *writer) head(n *tree.Node) {
 	w.byte('(')
 	w.str(n.Kind)
 	switch {
@@ -221,8 +229,4 @@ func (w *writer) write(n *tree.Node, keep bool) {
 		w.str(" ")
 		w.str(strconv.Quote(n.Text))
 	}
-	for _, c := range n.Children {
-		w.write(c, keep || n.Keep)
-	}
-	w.byte(')')
 }
