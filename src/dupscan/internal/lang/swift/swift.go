@@ -2,6 +2,7 @@
 package swift
 
 import (
+	"bytes"
 	"fmt"
 	"path"
 	"strings"
@@ -86,6 +87,9 @@ func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 	if t == nil {
 		return lang.FileResult{}, fmt.Errorf("%s を parse できない", file)
 	}
+	if t.RootNode().HasError() {
+		t = p.reparseWithoutLocalIsolation(src, t)
+	}
 	defer t.Close()
 	root := t.RootNode()
 	w := &walker{metadataOnly: p.MetadataOnly, file: file, src: src, test: IsTestPath(file), closures: map[string]int{}, seen: map[string]int{}, isUnit: map[string]bool{}}
@@ -101,6 +105,81 @@ func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 		r.References = w.references(root)
 	}
 	return r, nil
+}
+
+// isolationModifier は、文法 (tree-sitter-swift 0.7.4 と、その後の main でも同じ) が関数の中の `nonisolated(unsafe) let` を
+// 呼び出し式 + 別の文として読み、その関数の本体を ERROR にする書き方。
+const isolationModifier = "nonisolated(unsafe)"
+
+// reparseWithoutLocalIsolation は、ERROR のあるファイルが isolationModifier を含むとき、**ERROR 節の範囲の中にある出現だけ**を同じ長さの空白にして
+// 読み直した木を返し、ERROR の節が減ったときだけそれを採る (採らなければ t をそのまま返す)。
+//
+// 範囲を ERROR の中に限るのは、ファイル全体を置き換えると、正常に読めていた箇所 (メンバー宣言の修飾子・文字列リテラルの `\nonisolated(unsafe)`・
+// 式文) まで書き換わり、未変更の単位のハッシュが揺れる / 新しい ERROR を作るため。ERROR 節は、この文法が局所の `nonisolated(unsafe) let` を
+// 読み違えたときの呼び出し式を覆うので、出現はその範囲に入る。
+// 空白に替えるだけなので、どの節の位置も変わらない。walker には元の src を渡したまま使えるので、節の字面 (名前・リテラル・呼び出しの行) は
+// 元のままで、落ちるのは修飾子の語だけ。文法側が直ったら不要になる: 直った版では最初の parse に ERROR が無く、ここへ来ない。
+func (p *Parser) reparseWithoutLocalIsolation(src []byte, t *sitter.Tree) *sitter.Tree {
+	if !bytes.Contains(src, []byte(isolationModifier)) {
+		return t
+	}
+	var spans [][2]int
+	var collect func(n *sitter.Node)
+	collect = func(n *sitter.Node) {
+		if !n.HasError() {
+			return
+		}
+		if n.IsError() {
+			spans = append(spans, [2]int{int(n.StartByte()), int(n.EndByte())})
+			return
+		}
+		for i := range n.ChildCount() {
+			collect(n.Child(i))
+		}
+	}
+	collect(t.RootNode())
+	blank := bytes.Clone(src)
+	changed := false
+	for _, sp := range spans {
+		for off := sp[0]; ; {
+			k := bytes.Index(blank[off:sp[1]], []byte(isolationModifier))
+			if k < 0 {
+				break
+			}
+			at := off + k
+			copy(blank[at:], bytes.Repeat([]byte(" "), len(isolationModifier)))
+			changed = true
+			off = at + len(isolationModifier)
+		}
+	}
+	if !changed {
+		return t
+	}
+	t2 := p.p.Parse(blank, nil)
+	if t2 == nil {
+		return t
+	}
+	if countErrors(t2.RootNode()) >= countErrors(t.RootNode()) {
+		t2.Close()
+		return t
+	}
+	t.Close()
+	return t2
+}
+
+// countErrors は ERROR と欠けた節の数。
+func countErrors(n *sitter.Node) int {
+	if !n.HasError() {
+		return 0
+	}
+	c := 0
+	if n.IsError() || n.IsMissing() {
+		c = 1
+	}
+	for i := range n.ChildCount() {
+		c += countErrors(n.Child(i))
+	}
+	return c
 }
 
 // calls はファイルの中の呼び出しを全部集める (テスト関数の中も。単位にしない関数の中も呼び出し元に数える)。

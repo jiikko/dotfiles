@@ -94,7 +94,7 @@ func TestReportCountsGroupsAmongSmallUnits(t *testing.T) {
 // 読めない構文の関数は、重複が 1 組も無いときの -v でも 1 つずつ出す (「読めない構文があるファイル」だけだと、
 // どの関数が比べられなかったかが分からず、同じファイルの他の関数まで外れたように読める)。
 func TestReportVerboseListsUnreadableUnitsEvenWithoutGroups(t *testing.T) {
-	root := repoWith(t, map[string]string{"a/Local.swift": "final class A {\n    func run(_ block: @escaping () -> Void) {\n        nonisolated(unsafe) let callback = block\n        callback()\n    }\n    func other() -> Int { 1 }\n}\n"})
+	root := repoWith(t, map[string]string{"a/Local.swift": "final class A {\n    func run(_ block: @escaping () -> Void) {\n        let callback = ) block\n        callback()\n    }\n    func other() -> Int { 1 }\n}\n"})
 	_, out, _ := runReport(t, "-v", root)
 	if !strings.Contains(out, "重複なし") {
 		t.Fatalf("前提: 重複が無い: %q", out)
