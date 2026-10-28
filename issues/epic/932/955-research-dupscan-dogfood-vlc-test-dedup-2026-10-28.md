@@ -86,3 +86,5 @@ vlc-multi-video-player で「dupscan を使ってテストの重複を解消す�
 - [x] 起票 (2026-10-28)
 - [ ] F1 の残り 1 ファイル (`VideoGridLoadingCoordinator.swift`) の原因
 - [ ] 直す (F1 の文法・F4 のエラーの文言)。`src/dupscan` を触る他のセッションが居ないときに
+
+- 2026-10-29: 954 を done にした。F1 の `nonisolated(unsafe) let` は 954 で回避済み (関数の中の出現を読み直す。読めないのはその関数だけで、ファイル全体が外れるわけではない)。同じ仕組みで空のタプルの引数 `f(())` も読めるようにした。
