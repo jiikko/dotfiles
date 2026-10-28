@@ -311,10 +311,10 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 			// (一過性の窓で従うと生きた保持者を剥がす = 二重実行)。材料だけ出して止める。
 			fmt.Printf("unreadable lock (size=%s, age=%s) — 書き込み中の一瞬か、書きかけの残骸。"+
 				"時間を空けて再実行し、経過が伸び続けるなら残骸 (剥がすかどうかは人が決める)\n",
-				fmtSize(st.SizeBytes), fmtAge(st.AgeSec))
+				fmtOrUnknown(st.SizeBytes, "B"), fmtOrUnknown(st.AgeSec, "s"))
 		} else if st.Held {
 			fmt.Printf("held by %s@%s (label=%s, age=%s, expires_in=%ds)\n",
-				st.User, st.Host, st.Label, fmtAge(st.AgeSec), st.ExpiresIn)
+				st.User, st.Host, st.Label, fmtOrUnknown(st.AgeSec, "s"), st.ExpiresIn)
 		} else {
 			fmt.Println("free")
 		}
@@ -427,19 +427,12 @@ func main() {
 	os.Exit(run(os.Args[1:]))
 }
 
-// fmtSize / fmtAge は State の「取れなかった」(nil) を **0 に丸めずに**出す
+// fmtOrUnknown は State の「取れなかった」(nil) を **0 に丸めずに**出す (大きさは unit "B"、経過は "s")。
 // 0 に丸めると `serverNow` が失敗したときに
 // 「age=0s = いま書かれたばかり」という嘘を、判断材料の顔で出すことになる。
-func fmtSize(v *int64) string {
+func fmtOrUnknown[T int | int64](v *T, unit string) string {
 	if v == nil {
 		return "不明"
 	}
-	return fmt.Sprintf("%dB", *v)
-}
-
-func fmtAge(v *int) string {
-	if v == nil {
-		return "不明"
-	}
-	return fmt.Sprintf("%ds", *v)
+	return fmt.Sprintf("%d%s", *v, unit)
 }

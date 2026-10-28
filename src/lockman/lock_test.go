@@ -408,7 +408,7 @@ func takeoverSeam(t *testing.T) (observed <-chan struct{}, resume func(), calls 
 // graveyardTokens は退けられた lock の token を読み出す。
 func graveyardTokens(t *testing.T, l *Locker) []string {
 	t.Helper()
-	dir := filepath.Join(l.metaDir, graveyardDirName)
+	dir := graveyardDir(l)
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("graveyard を読めない: %v", err)
@@ -1250,17 +1250,7 @@ func TestReclaimLeavesNoMarkWhenRefreshFails(t *testing.T) {
 // takeoverMarks は回収の調停に使った目印 (<gen>.takeover.<nanos>) を列挙する。
 func takeoverMarks(t *testing.T, l *Locker) []string {
 	t.Helper()
-	ents, err := os.ReadDir(filepath.Join(l.metaDir, tmpDirName))
-	if err != nil {
-		t.Fatalf("tmp を読めない: %v", err)
-	}
-	var out []string
-	for _, e := range ents {
-		if i := strings.Index(e.Name(), takeoverClaimSuffix+"."); i >= 0 {
-			out = append(out, e.Name())
-		}
-	}
-	return out
+	return namesContaining(tmpEntryNames(t, l), takeoverClaimSuffix+".")
 }
 
 // ★回帰テスト: 照合を通った後に目印が置き直されても、**相手の目印を壊さない**。

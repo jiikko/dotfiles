@@ -219,17 +219,31 @@ func assertLeaseHeld(t *testing.T, what string, p leaseProbe, withExit int) {
 
 // waitForLockToken は lock が置かれるのを待ち、保持者の token と生の中身を返す。
 func waitForLockToken(l *Locker) (string, []byte, error) {
-	for range 400 {
-		if b, err := os.ReadFile(l.lockPath()); err == nil && len(b) > 0 {
-			var m Meta
-			if err := json.Unmarshal(b, &m); err != nil {
-				return "", nil, err
-			}
-			return m.Token, b, nil
+	var (
+		token string
+		body  []byte
+		perr  error
+	)
+	placed := pollUntil(4*time.Second, 10*time.Millisecond, func() bool {
+		b, err := os.ReadFile(l.lockPath())
+		if err != nil || len(b) == 0 {
+			return false
 		}
-		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitForLockToken)
+		var m Meta
+		if err := json.Unmarshal(b, &m); err != nil {
+			perr = err
+			return true
+		}
+		token, body = m.Token, b
+		return true
+	})
+	if perr != nil {
+		return "", nil, perr
 	}
-	return "", nil, errors.New("lock が置かれなかった")
+	if !placed {
+		return "", nil, errors.New("lock が置かれなかった")
+	}
+	return token, body, nil
 }
 
 // 🚨 上限 (maxInFlightRenews) は**詰まりが 1 度も無くても**効く。枠を戻すのは「返った更新」

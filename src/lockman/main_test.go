@@ -222,24 +222,50 @@ func TestDispatchWarnsOnCleanupFailureWithoutVerbose(t *testing.T) {
 	}
 }
 
-// captureStderr は fn の実行中の os.Stderr を集める。warnf が直接 os.Stderr へ書くため。
-func captureStderr(t *testing.T, fn func()) string {
+// captureOutput は fn の実行中、*target (os.Stdout か os.Stderr) をパイプに差し替えて、書かれた内容を集める。
+// warnf などが os.Stderr へ、`status` が os.Stdout へ直接書くため。
+func captureOutput(t *testing.T, target **os.File, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	orig := os.Stderr
-	os.Stderr = w
+	orig := *target
+	*target = w
 	done := make(chan string, 1)
 	go func() {
 		b, _ := io.ReadAll(r)
 		done <- string(b)
 	}()
 	fn()
-	os.Stderr = orig
+	*target = orig
 	_ = w.Close()
 	out := <-done
 	_ = r.Close()
 	return out
+}
+
+// captureStderr は fn の実行中の os.Stderr を集める。warnf が直接 os.Stderr へ書くため。
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	return captureOutput(t, &os.Stderr, fn)
+}
+
+// captureStdout は fn の実行中の os.Stdout を集める (`status` は stdout に答えを書く)。
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	return captureOutput(t, &os.Stdout, fn)
+}
+
+// pollUntil は cond が真になるまで tick ごとに見て、limit を過ぎたら false を返す。
+// 壁時計で合否を決めず、成立条件を待つ (sleep は刻みだけ)。t を持たない goroutine からも呼べる。
+func pollUntil(limit, tick time.Duration, cond func() bool) bool {
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(tick) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (pollUntil)
+	}
+	return false
 }

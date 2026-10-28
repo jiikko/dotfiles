@@ -335,12 +335,5 @@ func TestGraveyardRecordSurvivesSlowMount(t *testing.T) {
 // (「待っても成立しない」がこのテストの red そのもの)。
 func waitForCondition(t *testing.T, limit time.Duration, ok func() bool) bool {
 	t.Helper()
-	deadline := time.Now().Add(limit)
-	for time.Now().Before(deadline) {
-		if ok() {
-			return true
-		}
-		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitForCondition)
-	}
-	return false
+	return pollUntil(limit, 5*time.Millisecond, ok)
 }

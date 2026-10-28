@@ -78,6 +78,13 @@ func startIgnoringTermGroup(t *testing.T) (int, <-chan struct{}) {
 	// 孤児として回り続けていた)。回数で切れば、後始末が走らなくても必ず終わる。
 	cmd := exec.Command("/bin/sh", "-c",
 		`trap "" TERM; : > "$1"; i=0; while [ $i -lt 150 ]; do sleep 0.2; i=$((i+1)); done`, "sh", ready)
+	return startGroup(t, cmd, ready)
+}
+
+// startGroup は cmd を新しいプロセスグループで起こし、子が ready ファイルを作る (準備完了の申告) まで待つ。
+// 後始末 (グループへの SIGKILL と、回収できたことの確認) を t.Cleanup に登録する。pgid と「本当に終わったか」の channel を返す。
+func startGroup(t *testing.T, cmd *exec.Cmd, ready string) (int, <-chan struct{}) {
+	t.Helper()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -88,7 +95,7 @@ func startIgnoringTermGroup(t *testing.T) (int, <-chan struct{}) {
 	}
 	waitDone := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(waitDone) }()
-	// 前提: trap を張り終えていること (成立条件をポーリングする。壁時計で待たない)
+	// 前提: 子が準備を終えていること (成立条件をポーリングする。壁時計で待たない)
 	waitForFile(t, ready)
 	t.Cleanup(func() {
 		_ = killGroup(pgid, syscall.SIGKILL)
@@ -132,12 +139,9 @@ func waitForFile(t *testing.T, path string) {
 
 // awaitFile は path が現れるまで待つ (5 秒で諦めてエラーを返す)。t を持たない goroutine からも呼べる形。
 func awaitFile(path string) error {
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(path); err == nil {
-			return nil
-		}
-		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (awaitFile。t を持たない goroutine からも呼ぶ)
+	exists := func() bool { _, err := os.Stat(path); return err == nil }
+	if pollUntil(5*time.Second, 10*time.Millisecond, exists) {
+		return nil
 	}
 	return errors.New(path + " が 5 秒で現れない")
 }
@@ -202,24 +206,6 @@ func startTermRecordingGroup(t *testing.T) (int, string, <-chan struct{}) {
 	cmd := exec.Command("/bin/sh", "-c",
 		`trap 'echo t >> "$2"' TERM; : > "$1"; i=0; while [ $i -lt 150 ]; do sleep 0.2; i=$((i+1)); done`,
 		"sh", ready, termLog)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	pgid, err := syscall.Getpgid(cmd.Process.Pid)
-	if err != nil {
-		t.Fatalf("Getpgid: %v", err)
-	}
-	waitDone := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(waitDone) }()
-	waitForFile(t, ready)
-	t.Cleanup(func() {
-		_ = killGroup(pgid, syscall.SIGKILL)
-		select {
-		case <-waitDone:
-		case <-time.After(5 * time.Second):
-			t.Errorf("後始末: 子 (pgid=%d) を回収できない", pgid)
-		}
-	})
+	pgid, waitDone := startGroup(t, cmd, ready)
 	return pgid, termLog, waitDone
 }

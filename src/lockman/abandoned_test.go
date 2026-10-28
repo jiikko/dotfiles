@@ -44,26 +44,32 @@ func stalePlacedLock(t *testing.T, l *Locker) {
 // tmpEntriesWithSuffix は tmp/ の中で名前が sub を含むものを列挙する。
 func tmpEntriesWithSuffix(t *testing.T, l *Locker, sub string) []string {
 	t.Helper()
+	return namesContaining(tmpEntryNames(t, l), sub)
+}
+
+// tmpEntryNames は metaDir/tmp の全ての名前 (読めなければテストを止める)。
+func tmpEntryNames(t *testing.T, l *Locker) []string {
+	t.Helper()
 	ents, err := os.ReadDir(filepath.Join(l.metaDir, tmpDirName))
 	if err != nil {
 		t.Fatalf("tmp を読めない: %v", err)
 	}
+	names := make([]string, len(ents))
+	for i, e := range ents {
+		names[i] = e.Name()
+	}
+	return names
+}
+
+// namesContaining は names のうち sub を含むもの (sub が空なら全部)。無ければ nil。
+func namesContaining(names []string, sub string) []string {
 	var got []string
-	for _, e := range ents {
-		if name := e.Name(); len(sub) == 0 || contains(name, sub) {
+	for _, name := range names {
+		if strings.Contains(name, sub) {
 			got = append(got, name)
 		}
 	}
 	return got
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
 
 // ① 1 段目: 不可逆な操作の直前で見捨てられていたら、lock を**作らない**。
@@ -384,13 +390,7 @@ func TestUndoReportsWhenLeaseExpiredSoLockRemains(t *testing.T) {
 // waitAbandoned は「見捨てられた」が立つのを条件で待つ (壁時計で assert しない)。
 // 上限を超えたら false を返し、呼び出し側が明示的に FAIL させる。
 func waitAbandoned(ab *abandon) bool {
-	for range 400 {
-		if ab.abandoned() {
-			return true
-		}
-		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitAbandoned)
-	}
-	return false
+	return pollUntil(4*time.Second, 10*time.Millisecond, ab.abandoned)
 }
 
 // newWiringLocker は「見捨てた goroutine をわざと作る」テスト用の Locker。

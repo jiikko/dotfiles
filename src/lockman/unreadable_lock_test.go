@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -410,28 +409,6 @@ func TestDirectoryLockIsClassifiedAsUnreadable(t *testing.T) {
 	if !strings.Contains(out, "読めない") {
 		t.Fatalf("CLI が無音 (恒久 wedge が正常な保持と区別できない): %q", out)
 	}
-}
-
-// captureStdout は fn の実行中の os.Stdout を集める (`status` は stdout に答えを書く)。
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	orig := os.Stdout
-	os.Stdout = w
-	done := make(chan string, 1)
-	go func() {
-		b, _ := io.ReadAll(r)
-		done <- string(b)
-	}()
-	fn()
-	os.Stdout = orig
-	_ = w.Close()
-	out := <-done
-	_ = r.Close()
-	return out
 }
 
 // 🚨 **`status` は「中身を読めない lock」に答えること**。
