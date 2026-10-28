@@ -277,11 +277,14 @@ func (s *Set) StaleGroupCandidate(r Rule) string {
 			continue
 		}
 		current := make([]string, 0, len(g.Members))
+		pins := make([]string, 0, len(g.Members))
 		for _, m := range g.Members {
-			current = append(current, pinKey(Pin(m)))
+			pin := Pin(m)
+			pins = append(pins, pin)
+			current = append(current, pinKey(pin))
 		}
 		sort.Strings(current)
-		if slices.Equal(keys, current) {
+		if slices.Equal(keys, current) && !samePins(r.Group, pins) {
 			if candidate != "" {
 				return ""
 			}

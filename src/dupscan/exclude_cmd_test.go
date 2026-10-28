@@ -10,6 +10,19 @@ import (
 	"testing"
 )
 
+func TestStaleGroupCandidateDoesNotRepeatUnchangedPins(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+	rule := groupRule(t, root)
+	writeConfig(t, root, map[string]any{"paths": []string{"Sources/**"}, "kind": "intentional", "reason": "independent generated fixtures"}, rule)
+	rc, out, errs := runReport(t, "-v", root)
+	if rc != 0 || errs != "" || !strings.Contains(out, "効いていない除外 1") {
+		t.Fatalf("expected the path rule to leave the unchanged group rule stale: rc=%d out=%q stderr=%q", rc, out, errs)
+	}
+	if strings.Contains(out, "同じ鍵の組候補") {
+		t.Errorf("unchanged pins need no replacement candidate: %q", out)
+	}
+}
+
 func TestStaleGroupCandidateInReportAndGate(t *testing.T) {
 	for _, command := range []string{"report", "gate"} {
 		t.Run(command, func(t *testing.T) {
