@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strings"
 
 	"dupscan/internal/langs"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
+	"dupscan/internal/tree"
 )
 
 // runIndex は索引を引く。語を何も渡さなければ全部の単位を 1 行 1 件で出す。
@@ -21,6 +23,7 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&q.Returns, "returns", "", "戻り値の型の一部")
 	fs.StringVar(&q.ParamType, "param-type", "", "どれかの引数の型の一部")
 	fs.StringVar(&q.Doc, "doc", "", "doc comment の最初の行の語")
+	kinds := fs.String("kind", "", "単位の種類で絞る (カンマ区切り: func / init / property。property は computed property・subscript・deinit)。既定は全部")
 	file := fs.String("file", "", "このファイルの単位を行の順に (outline)")
 	format := fs.String("format", "text", "出力の形式: text / json")
 	limit := fs.Int("limit", 20, "text で出す件数の上限 (0 は全部。-file を指したときの既定は全部)")
@@ -39,6 +42,9 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	}
 	sc, err := repo.Resolve(dirs)
 	if err != nil {
+		return fail(err)
+	}
+	if q.Kinds, err = parseKinds(*kinds); err != nil {
 		return fail(err)
 	}
 	if *file != "" {
@@ -95,4 +101,21 @@ func flagSet(fs *flag.FlagSet, name string) bool {
 	set := false
 	fs.Visit(func(f *flag.Flag) { set = set || f.Name == name })
 	return set
+}
+
+// parseKinds は -kind の値 (カンマ区切り) を単位の種類にする。知らない種類は黙って 0 件にせずエラーにする。
+func parseKinds(s string) ([]tree.UnitKind, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	known := map[string]tree.UnitKind{"func": tree.KindFunc, "init": tree.KindInit, "property": tree.KindProperty}
+	var out []tree.UnitKind
+	for _, part := range strings.Split(s, ",") {
+		k, ok := known[strings.TrimSpace(part)]
+		if !ok {
+			return nil, fmt.Errorf("知らない種類 %q (func / init / property)", strings.TrimSpace(part))
+		}
+		out = append(out, k)
+	}
+	return out, nil
 }

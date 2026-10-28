@@ -3,6 +3,7 @@ package report
 import (
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 
@@ -16,6 +17,9 @@ type Query struct {
 	ParamType string // どれかの引数の型の一部
 	Doc       string // doc comment の最初の行の語 (大文字小文字を区別しない)
 	File      string // このファイル (repo の root からの相対) の単位だけ。行の順に並べる
+	// Kinds は単位の種類 (func / init / property) の絞り込み。空なら全部。`-returns` で関数を探すとき、同じ型を返す property (`var location: T`) が
+	// 混ざって上位を占めるのを避ける。
+	Kinds []tree.UnitKind
 	// Shared は共通の置き場所か (nil なら無し)。名前の一致の強さの次に、ここの定義を先に並べる。
 	Shared func(file string) bool
 }
@@ -102,6 +106,9 @@ func (q Query) shared(file string) bool { return q.Shared != nil && q.Shared(fil
 
 func (q Query) match(u *tree.Unit) (int, bool) {
 	if q.File != "" && u.File != q.File {
+		return 0, false
+	}
+	if len(q.Kinds) > 0 && !slices.Contains(q.Kinds, u.Kind) {
 		return 0, false
 	}
 	if q.Returns != "" && !strings.Contains(u.ReturnType, q.Returns) {

@@ -469,3 +469,54 @@ func TestStaleExclusionLineKeepsSwiftOperators(t *testing.T) {
 		t.Errorf("効いていない除外の行が、貼った除外と同じ釘を -> のまま持たない: %q (貼ったもの %v)", line, written)
 	}
 }
+
+// 効いていない除外は、理由を 2 つに分けて出す: 単位は在るが本体が変わった (除外を外してよい) / 指す単位が無い (削除・改名)。
+// 「効いていない除外: 」の行は JSON のまま変えず、理由は次の行に出す。
+func TestStaleExclusionSaysWhyItStoppedWorking(t *testing.T) {
+	// 改名: 釘が指す単位 (makeLocation) が無くなる
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+	writeConfig(t, root, groupRule(t, root))
+	writeFile(t, root, "Sources/B.swift", strings.Replace(helperB, "makeLocation", "renamedLocation", 1))
+	_, out, _ := runReport(t, "-v", root)
+	if !strings.Contains(out, "理由: 指す単位が無い") || strings.Contains(out, "単位は今も在る") {
+		t.Errorf("改名で単位が無くなったのに「指す単位が無い」と出ない: %q", out)
+	}
+	// 本体の書き換え: 単位 (makeLocation) は在るが、ハッシュが合わなくなる
+	root = repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+	writeConfig(t, root, groupRule(t, root))
+	writeFile(t, root, "Sources/B.swift", strings.Replace(helperB, `"conn"`, `"another"`, 1))
+	_, out, _ = runReport(t, "-v", root)
+	if !strings.Contains(out, "理由: 同じ鍵 (ファイル・型・署名) の単位は今も在る") || strings.Contains(out, "指す単位が無い") {
+		t.Errorf("本体を書き換えたのに「同じ鍵の単位は今も在る」と出ない: %q", out)
+	}
+	// どちらでも、効いていない除外の行そのものは JSON のまま (行頭の接頭辞も同じ)。行が 1 本も無ければ検査が空振りするので、本数も見る
+	lines := 0
+	for _, line := range strings.Split(out, "\n") {
+		if rest, ok := strings.CutPrefix(line, "効いていない除外: "); ok {
+			lines++
+			if !json.Valid([]byte(rest)) {
+				t.Errorf("効いていない除外の行が JSON でなくなった: %q", line)
+			}
+		}
+	}
+	if lines != 1 {
+		t.Errorf("「効いていない除外: 」で始まる行が 1 本ではない (%d 本): 接頭辞を変えると、行を拾う手が壊れる: %q", lines, out)
+	}
+}
+
+// 同じ除外を二重に書くと、後ろの除外は効かない。本体も顔ぶれも変わっていないので、原因を「本体が変わった」と断定しない。
+func TestStaleExclusionDoesNotBlameTheBodyWhenTheRuleIsDuplicated(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+	rule := groupRule(t, root)
+	writeConfig(t, root, rule, rule)
+	_, out, _ := runReport(t, "-v", root)
+	if !strings.Contains(out, "効いていない除外 1") {
+		t.Fatalf("前提: 二重の除外の片方が効いていないと出る: %q", out)
+	}
+	if !strings.Contains(out, "効かない原因は特定していない") || !strings.Contains(out, "二重に書かれている") {
+		t.Errorf("原因を断定している / 二重の可能性に触れない: %q", out)
+	}
+	if strings.Contains(out, "組が消えている") || strings.Contains(out, "外してよい") {
+		t.Errorf("原因を決めつける言い方が残っている: %q", out)
+	}
+}

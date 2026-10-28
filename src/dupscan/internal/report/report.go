@@ -46,12 +46,17 @@ type Exclusions struct {
 	Stale []exclude.Rule `json:"stale_exclusions"`
 	// Ambiguous は釘が 2 つ以上の単位に当たるので効かせなかった除外。
 	Ambiguous []exclude.Rule `json:"ambiguous_exclusions"`
+	// staleWhy は Stale と同じ順の、効かない理由 ("hash" / "missing" / "")。text の一覧にだけ使う (JSON の形は変えない)。
+	staleWhy []string
 }
 
 func exclusions(ex *exclude.Set) Exclusions {
 	x := Exclusions{Stale: []exclude.Rule{}, Ambiguous: []exclude.Rule{}}
 	if ex != nil {
-		x.Stale = append(x.Stale, ex.Stale()...)
+		for _, r := range ex.Stale() {
+			x.Stale = append(x.Stale, r)
+			x.staleWhy = append(x.staleWhy, ex.StaleWhy(r))
+		}
 		x.Ambiguous = append(x.Ambiguous, ex.Ambiguous()...)
 	}
 	return x
@@ -72,8 +77,13 @@ func (x Exclusions) note() string {
 }
 
 func (x Exclusions) write(w io.Writer) {
-	for _, r := range x.Stale {
+	for i, r := range x.Stale {
+		// 「効いていない除外: 」の行は、接頭辞も行全体が JSON であることも変えない (grep や、行を JSON として読む手が頼る)。
+		// 理由は次の行に別に出す。
 		fmt.Fprintf(w, "効いていない除外: %s\n", ruleJSON(r))
+		if why := staleWhyText(x.staleWhy, i); why != "" {
+			fmt.Fprintf(w, "  理由: %s\n", why)
+		}
 	}
 	for _, r := range x.Ambiguous {
 		fmt.Fprintf(w, "名指しできない除外: %s\n", ruleJSON(r))
@@ -195,6 +205,7 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 		if opt.Verbose {
 			writeErrorFiles(w, s)
 			s.write(w)
+			writeUnreadableUnits(w, s)
 		}
 		return nil
 	}
@@ -219,11 +230,17 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 	if opt.Verbose {
 		writeErrorFiles(w, s)
 		s.write(w)
-		for _, u := range s.Unreadable {
-			fmt.Fprintf(w, "読めない: %s:%d %s\n", u.File, u.Line, label(u))
-		}
+		writeUnreadableUnits(w, s)
 	}
 	return nil
+}
+
+// writeUnreadableUnits は読めない構文で比べなかった単位を 1 つずつ書く。重複が無いとき (寄せ終わって確かめる場面) も同じ形で出す:
+// 無いと、-v でもファイル名しか出ず、どの関数が外れたかが分からない。
+func writeUnreadableUnits(w io.Writer, s Summary) {
+	for _, u := range s.Unreadable {
+		fmt.Fprintf(w, "読めない: %s:%d %s\n", u.File, u.Line, label(u))
+	}
 }
 
 // filePairsShown は text で出すファイルの組の数。
@@ -327,4 +344,19 @@ func label(u UnitRef) string {
 		return u.Enclosing + "." + name
 	}
 	return name
+}
+
+// staleWhyText は効いていない除外の理由。"hash": 釘の指す単位は今もあるが本体が変わって組にならない (除外を外してよい)。
+// "missing": 釘の指す単位が無い (削除・改名・起点の外。除外を直すか消す)。
+func staleWhyText(why []string, i int) string {
+	if i >= len(why) {
+		return ""
+	}
+	switch why[i] {
+	case "hash":
+		return "同じ鍵 (ファイル・型・署名) の単位は今も在る。効かない原因は特定していない (本体が変わった・組の顔ぶれが変わった・同じ除外が二重に書かれている等)。この除外がまだ要るか見直す"
+	case "missing":
+		return "指す単位が無い (削除・改名・起点の外): 除外を直すか消す"
+	}
+	return ""
 }

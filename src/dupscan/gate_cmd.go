@@ -132,6 +132,8 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 	if hc, err := repo.CommitHash(sc.Root, headCommit); err == nil && hc == baseHash {
 		s.BaseIsHead = true
 	}
+	s.BaseGiven = *baseRef != ""
+	s.Partial, s.Prefixes = !sc.Whole(), sc.Prefixes
 	if *record != "" {
 		if err := report.AppendRecord(*record, s, time.Now()); err != nil {
 			fmt.Fprintln(stderr, "dupscan gate: --record:", err)

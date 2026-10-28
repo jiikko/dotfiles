@@ -1,6 +1,6 @@
 ---
 name: dupscan
-version: 1.4.0
+version: 1.5.0
 description: Swift か Go の repo で、新しいメソッド (ヘルパー・初期化・値を組み立てる関数) を書く前に同じものが既にないかを dupscan index で引き、実装が終わったセルフレビューで dupscan gate を回して増えた写しを寄せる。関連の実装 (定義・参照・ファイルの中身・呼び出し元) を grep より先に探すときにも使う (def / refs は Swift だけ。callers と index -file は Go も)。「dupscan」「重複したメソッド」「類似メソッドの統合」「既にあるヘルパーを探して」「セルフレビュー」「定義元」「参照」「呼び出し元」「似た関数」で発火。寄せるときはドメインの境界を確かめる (4 節)。Swift と Go 以外の repo では使わない (対応する言語は Swift と Go)。
 ---
 
@@ -22,6 +22,9 @@ dupscan index -param-type ConnectionID        # 受け取る型
 dupscan index -doc bucket                     # doc comment の語 (最初の行だけ)
 dupscan evidence bucket                       # 上で見つからないとき: doc の全文・テスト・ソースの行にある語から、doc の付いた宣言と、その語の行で呼ばれている名前を出す
 ```
+
+**寄せ先を新設するとき (重複を直している最中) も引く**。「直している側」に居ると、新しい関数を書く場面だと気づかない。戻り値の型で引くと、本番側に同じ役の関数が既にあることが多い
+(obaket の 1307 で `StorageLocation` を組む test helper の寄せ先を新設し、`StorageConnection.location(at:)` が本番にあるのに気づかず、後から寄せ直した。`index -returns StorageLocation` は 173 件で 7 番目、`-name location` を足すと 118 件の 1 番目に出た。issue 954 の P1)。
 
 使えるものがあれば使う (repo が `.dupscan.json` の `shared` に書いた共通の置き場所の定義は `[shared]` と出て先に並ぶ。
 他のファイルから使えないものは `[private]` か `[fileprivate]`、Go の別の package から使えない小文字の関数は `[unexported]` と出る。使うなら共通の置き場所へ寄せる)。無ければ書く。
@@ -54,6 +57,9 @@ Claudeの既存grep案内hookは、Goを明示した検索には `index -name` /
 ```sh
 dupscan gate                    # upstream との merge-base から作業ツリーまでに増えた写し。無ければ 1 行で rc=0
 ```
+
+**repo の root から打つ**。サブディレクトリから打つと、その配下だけを走査する (別の dir にある同じ形の相手が見えず、新しい重複として止まらない)。1 行目に「repo の一部だけを見ている (起点 …)」と出たら、root から打ち直す
+(obaket で `macOS/` から打つと読めない構文のファイルが 17、root からだと 57 と、範囲が縮んでいた。issue 954 の P4)。
 
 - **rc=1 (違反)**: 「新しい」に出た単位を、「同じ形」に出た既存の単位へ寄せる (呼び出しに置き換える・共通の置き場所へ移す)。寄せる前に 4 節で境界を確かめる。寄せてからもう一度回す
 - **誤検知・意図して分けている写し**: 寄せずに除外を書く。単位の直前に `// dupscan:allow <false-positive|intentional> <理由>`、

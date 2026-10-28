@@ -34,10 +34,14 @@
 #   - grep / rg がコマンドの先頭の語でないもの (`xargs grep …`・`find … -exec grep …`・`time grep …`)
 #   - python3 / jq / git が無い環境 (fail-open)
 #   - 1 つ目のパターンだけを見る (`-e a -e b` の b は見ない)
+#   - 同じ session で DUPSCAN_ACTIVE_WINDOW 秒 (既定 600) 以内に dupscan を打っていたとき (dupscan を使っている最中の作業を案内で遮らない。
+#     印は dupscan の語を含む Bash を見るたびに更新する。954 の P8)
 
 set -uo pipefail
 
 NUDGE_INTERVAL=${DUPSCAN_NUDGE_INTERVAL:-900}
+# dupscan を打ってからこの秒数のあいだは案内しない (dupscan を使っている最中の作業を、同じ案内で遮らない)
+ACTIVE_WINDOW=${DUPSCAN_ACTIVE_WINDOW:-600}
 
 # shellcheck source=_claude/hooks/lib/hook_io.sh
 . "$(dirname "$0")/lib/hook_io.sh" 2>/dev/null || exit 0
@@ -52,6 +56,10 @@ session=$(printf '%s' "$input" | jq -r '.session_id // "unknown"' 2>/dev/null) |
 case "$tool" in
   Bash)
     cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null) || exit 0
+    # dupscan を打った印。grep が無いコマンドでも残す (その後の grep の案内を黙らせるため)。bash の正規表現 1 回なので毎回の Bash の待ちはほぼ増えない
+    if [[ "$cmd" =~ (^|[^A-Za-z0-9_-])dupscan([^A-Za-z0-9_-]|$) ]]; then
+      { printf '%s\n' "$(date +%s)" > "${TMPDIR:-/tmp}/claude-dupscan-used-${session//[^A-Za-z0-9_-]/_}"; } 2>/dev/null || true
+    fi
     [[ "$cmd" =~ (^|[^A-Za-z0-9_-])(grep|rg)([^A-Za-z0-9_-]|$) ]] || exit 0
     cmd=$(hook_strip_heredocs "$cmd")
     ;;
@@ -381,6 +389,15 @@ if [ "$language" = auto ]; then
   else mixed=1; fi
 else
   tracks "$language" || exit 0
+fi
+
+# 直前に dupscan を使っていたら案内しない (使い方を知っている相手に、同じ案内を重ねない)
+used="${TMPDIR:-/tmp}/claude-dupscan-used-${session//[^A-Za-z0-9_-]/_}"
+if [ -f "$used" ]; then
+  used_at=$(cat "$used" 2>/dev/null || echo 0)
+  case "$used_at" in ''|*[!0123456789]*) used_at=0 ;; esac
+  [ "${#used_at}" -le 12 ] || used_at=0
+  [ $(( $(date +%s) - used_at )) -ge "$ACTIVE_WINDOW" ] || exit 0
 fi
 
 # Goの通知で既存Swift通知の間隔を消費しない。session IDの末尾とも衝突しないnamespaceにする。

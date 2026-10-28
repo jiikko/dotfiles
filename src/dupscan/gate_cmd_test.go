@@ -317,3 +317,60 @@ func TestGateRecordKeepsSwiftOperators(t *testing.T) {
 		t.Errorf("1 行で、-> がそのまま残る記録を期待: %q", b)
 	}
 }
+
+// -base を渡したときは「CI なら -base を渡す」と案内しない (渡している)。渡していないときだけ案内する。
+func TestGateBaseIsHeadHintOnlyWhenBaseWasNotGiven(t *testing.T) {
+	root := committedRepo(t)
+	_, given, _ := runGateCmd(t, "-base", "HEAD", root)
+	if !strings.Contains(given, "base が HEAD と同じ") || strings.Contains(given, "-base を渡す") {
+		t.Errorf("-base を渡したのに案内が出る: %q", given)
+	}
+	// 既定の base を HEAD と同じにする: upstream の無い repo では決まらないので、origin/HEAD を HEAD に向ける
+	gitRun(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+	gitRun(t, root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	_, implicit, _ := runGateCmd(t, root)
+	if !strings.Contains(implicit, "base が HEAD と同じ") || !strings.Contains(implicit, "CI なら -base を渡す") {
+		t.Errorf("-base を渡していないのに案内が出ない: %q", implicit)
+	}
+}
+
+// base と head で読めないファイルの一覧が同じなら 1 回だけ出す。違うときは base と head を別々に出す。
+func TestGateUnreadableListIsNotRepeatedWhenSame(t *testing.T) {
+	root := repoWith(t, map[string]string{"Good.swift": helperA, "Same.swift": "func broken("})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-qm", "base")
+	writeFile(t, root, "Good.swift", strings.Replace(helperA, `"conn"`, `"conn2"`, 1))
+	_, out, _ := runGateCmd(t, "-base", "HEAD", root)
+	if n := strings.Count(out, "読めないファイル ("); n != 1 || !strings.Contains(out, "読めないファイル (base・head 同じ): Same.swift") {
+		t.Errorf("同じ一覧を 2 度書いている / 書き方が違う (%d 行): %q", n, out)
+	}
+	// head だけ増えたら別々に出す
+	writeFile(t, root, "Head.swift", "func broken2(")
+	_, out, _ = runGateCmd(t, "-base", "HEAD", root)
+	if !strings.Contains(out, "読めないファイル (base): Same.swift") || !strings.Contains(out, "読めないファイル (head): Head.swift") {
+		t.Errorf("違う一覧は base と head を別々に出す: %q", out)
+	}
+}
+
+// サブディレクトリから打つと repo の一部しか見えない。1 行目にそう書く (root から打つと別の dir の同じ形の相手も見える)。
+// repo の root から打った場合は書かない。
+func TestGateSaysWhenOnlyPartOfTheRepoWasScanned(t *testing.T) {
+	root := repoWith(t, map[string]string{"shared/Sources/A.swift": helperA, "mac/Sources/B.swift": "func unrelated() {}\n"})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-qm", "base")
+	writeFile(t, root, "mac/Sources/B.swift", helperB)
+	partial := filepath.Join(root, "mac")
+	// mac だけを見ると、shared の相手 (helperA) が見えず、新しい重複として止まらない
+	rc, out, _ := runGateCmd(t, "-base", "HEAD", partial)
+	first, _, _ := strings.Cut(out, "\n")
+	if rc != 0 || !strings.Contains(first, "repo の一部だけを見ている") || !strings.Contains(first, "mac/") {
+		t.Errorf("サブディレクトリから打ったのに 1 行目に一部だけと書かない: rc=%d %q", rc, out)
+	}
+	rc, out, _ = runGateCmd(t, "-base", "HEAD", root)
+	if strings.Contains(out, "repo の一部だけを見ている") {
+		t.Errorf("repo の root から打ったのに一部だけと書いている: %q", out)
+	}
+	if rc != 1 {
+		t.Errorf("root から打つと shared の相手が見えて新しい重複で止まるはず: rc=%d %q", rc, out)
+	}
+}

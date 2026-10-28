@@ -98,3 +98,18 @@ func TestNewElementsAreItemized(t *testing.T) {
 		t.Errorf("新しい要素: %v", got)
 	}
 }
+
+// pinKey は釘の末尾のハッシュだけを除く。署名の `@escaping` やパスの `@` で鍵が途中で切れると、
+// 削除した単位を「在る」と判定して除外の効かない理由を取り違える。
+func TestPinKeyDropsOnlyTheTrailingHash(t *testing.T) {
+	for _, c := range []struct{ pin, want string }{
+		{"Sources/B.swift|B|makeLocation(_ p: String) -> StorageLocation@e96167283577", "Sources/B.swift|B|makeLocation(_ p: String) -> StorageLocation"},
+		{"Sources/B@v1.swift|B|make()@abc123", "Sources/B@v1.swift|B|make()"},
+		{"S.swift|T|run(_ f: @escaping () -> Void)@abc123", "S.swift|T|run(_ f: @escaping () -> Void)"},
+		{"no-hash", "no-hash"},
+	} {
+		if got := pinKey(c.pin); got != c.want {
+			t.Errorf("pinKey(%q) = %q, want %q", c.pin, got, c.want)
+		}
+	}
+}

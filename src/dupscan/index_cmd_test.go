@@ -153,3 +153,54 @@ func TestIndexRanksSharedPlaceFirst(t *testing.T) {
 		t.Errorf("読めない glob は rc=2: rc=%d err=%q", rc, errs)
 	}
 }
+
+// 同じ型を返す関数と computed property が混ざる。-returns で関数を探すとき、-kind で property の雑音を外せる。
+const kindMixed = `struct Plan {
+    var location: StorageLocation { StorageLocation(path: "p") }
+    func location(at path: String) -> StorageLocation { StorageLocation(path: path) }
+    init(location: StorageLocation) { self.stored = location }
+    var stored: StorageLocation
+}
+`
+
+func TestIndexKindNarrowsToFunctionsAndInits(t *testing.T) {
+	root := repoWith(t, map[string]string{"Plan.swift": kindMixed})
+	_, all, _ := index(t, "-returns", "StorageLocation", "-limit", "0", root)
+	if !strings.Contains(all, "var location") || !strings.Contains(all, "location(at") {
+		t.Fatalf("前提: 既定は property も関数も出す: %q", all)
+	}
+	_, funcs, _ := index(t, "-returns", "StorageLocation", "-kind", "func", "-limit", "0", root)
+	if !strings.Contains(funcs, "location(at") || strings.Contains(funcs, "var location") {
+		t.Errorf("-kind func は関数だけ (property は出ない): %q", funcs)
+	}
+	_, props, _ := index(t, "-returns", "StorageLocation", "-kind", "property", "-limit", "0", root)
+	if strings.Contains(props, "location(at") || !strings.Contains(props, "var location") {
+		t.Errorf("-kind property は property だけ: %q", props)
+	}
+	_, both, _ := index(t, "-returns", "StorageLocation", "-kind", "func, property", "-limit", "0", root)
+	if !strings.Contains(both, "location(at") || !strings.Contains(both, "var location") {
+		t.Errorf("カンマ区切りで複数の種類を渡せる: %q", both)
+	}
+}
+
+func TestIndexKindRejectsUnknownKindInsteadOfReturningNothing(t *testing.T) {
+	root := repoWith(t, map[string]string{"Plan.swift": kindMixed})
+	rc, out, errs := index(t, "-returns", "StorageLocation", "-kind", "function", root)
+	if rc != 2 || !strings.Contains(errs, "知らない種類") || out != "" {
+		t.Errorf("知らない種類は黙って 0 件にせずエラー: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}
+
+// -kind init は initializer だけを返す。-returns を併用しないので、戻り値の型を持たない init も対象になる
+// (kind の対応表が init を別の種類に取り違えると、ここで落ちる)。
+func TestIndexKindInitReturnsOnlyInitializers(t *testing.T) {
+	root := repoWith(t, map[string]string{"Plan.swift": kindMixed})
+	_, inits, _ := index(t, "-kind", "init", "-limit", "0", root)
+	if !strings.Contains(inits, "init(location") || strings.Contains(inits, "location(at") || strings.Contains(inits, "var location") {
+		t.Errorf("-kind init は initializer だけ: %q", inits)
+	}
+	_, funcs, _ := index(t, "-kind", "func", "-limit", "0", root)
+	if strings.Contains(funcs, "init(location") || !strings.Contains(funcs, "location(at") {
+		t.Errorf("-kind func に initializer は混ざらない: %q", funcs)
+	}
+}

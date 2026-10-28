@@ -90,3 +90,22 @@ func TestReportCountsGroupsAmongSmallUnits(t *testing.T) {
 		t.Errorf("12 節未満の組は数えない: %q", out)
 	}
 }
+
+// 読めない構文の関数は、重複が 1 組も無いときの -v でも 1 つずつ出す (「読めない構文があるファイル」だけだと、
+// どの関数が比べられなかったかが分からず、同じファイルの他の関数まで外れたように読める)。
+func TestReportVerboseListsUnreadableUnitsEvenWithoutGroups(t *testing.T) {
+	root := repoWith(t, map[string]string{"a/Local.swift": "final class A {\n    func run(_ block: @escaping () -> Void) {\n        nonisolated(unsafe) let callback = block\n        callback()\n    }\n    func other() -> Int { 1 }\n}\n"})
+	_, out, _ := runReport(t, "-v", root)
+	if !strings.Contains(out, "重複なし") {
+		t.Fatalf("前提: 重複が無い: %q", out)
+	}
+	if !strings.Contains(out, "読めない: a/Local.swift:2 A.run(") {
+		t.Errorf("重複が無いときの -v に、読めない単位が出ない: %q", out)
+	}
+	if strings.Contains(out, "読めない: a/Local.swift:6") {
+		t.Errorf("読めない構文を含まない other() まで読めないと出た: %q", out)
+	}
+	if _, plain, _ := runReport(t, root); strings.Contains(plain, "読めない: ") {
+		t.Errorf("-v なしでは単位の一覧を出さない: %q", plain)
+	}
+}

@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"dupscan/internal/group"
@@ -16,11 +18,16 @@ import (
 
 // GateSummary は gate の出力の形。
 type GateSummary struct {
-	Root       string          `json:"root"`
-	Base       string          `json:"base"`
-	Head       string          `json:"head"`
-	Changed    int             `json:"changed_units"`
-	BaseIsHead bool            `json:"base_is_head"` // base が head の commit と同じ (CI で -base を付け忘れた疑い)
+	Root       string `json:"root"`
+	Base       string `json:"base"`
+	Head       string `json:"head"`
+	Changed    int    `json:"changed_units"`
+	BaseIsHead bool   `json:"base_is_head"` // base が head の commit と同じ (CI で -base を付け忘れた疑い)
+	// BaseGiven は -base を渡して決めた base か (渡したのに「-base を渡す」と案内しない)。
+	BaseGiven bool `json:"base_given"`
+	// Partial は走査の範囲が repo 全体でないこと (起点がサブディレクトリ)。Prefixes がその起点。
+	Partial    bool            `json:"scope_partial"`
+	Prefixes   []string        `json:"scope_prefixes,omitempty"`
 	Failed     bool            `json:"failed"`
 	Violations []ViolationJSON `json:"violations"`
 	Unreadable []UnitRef       `json:"unreadable_changed_units"`
@@ -106,7 +113,14 @@ func GateJSON(w io.Writer, s GateSummary) error {
 func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	note := ""
 	if s.BaseIsHead {
-		note += "・base が HEAD と同じ (見たのは未コミットの変更だけ。CI なら -base を渡す)"
+		note += "・base が HEAD と同じ (見たのは未コミットの変更だけ"
+		if !s.BaseGiven {
+			note += "。CI なら -base を渡す"
+		}
+		note += ")"
+	}
+	if s.Partial {
+		note += "・repo の一部だけを見ている (起点 " + strings.Join(s.Prefixes, ", ") + "。repo の root から打つと別の dir の同じ形の相手も見える)"
 	}
 	if s.AnalysisIncomplete {
 		note += fmt.Sprintf("・読めない構文のファイル base %d / head %d", len(s.BaseFilesWithErrors), len(s.HeadFilesWithErrors))
@@ -115,7 +129,7 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 		note += fmt.Sprintf("・読めない構文で確かめられなかった変わった単位 %d (-v で一覧)", n)
 	}
 	if n := len(s.NewExclusions); n > 0 {
-		note += fmt.Sprintf("・新しく足された除外 %d (-v で一覧)", n)
+		note += fmt.Sprintf("・新しく足された除外 %d (組・単位・glob・プリセットの要素と、釘の個数の制約を 1 つずつ数えた数で、組の数ではない。-v で一覧)", n)
 	}
 	if s.PathPassed > 0 {
 		note += fmt.Sprintf("・パスの除外で通した変わった単位 %d", s.PathPassed)
@@ -172,10 +186,16 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 			fmt.Fprintf(w, "… 他 %d 件 (-limit 0 か -format json で全部)\n", rest)
 		}
 	}
-	for _, source := range []struct {
+	sources := []struct {
 		name  string
 		files []string
-	}{{"base", s.BaseFilesWithErrors}, {"head", s.HeadFilesWithErrors}} {
+	}{{"base", s.BaseFilesWithErrors}, {"head", s.HeadFilesWithErrors}}
+	if slices.Equal(s.BaseFilesWithErrors, s.HeadFilesWithErrors) {
+		// 同じ一覧を base と head で 2 度書かない (57 個なら 114 行。読んでほしい数行が埋もれる)
+		sources = sources[:1]
+		sources[0].name = "base・head 同じ"
+	}
+	for _, source := range sources {
 		files := source.files
 		if opt.Limit > 0 && len(files) > opt.Limit {
 			files = files[:opt.Limit]

@@ -14,6 +14,7 @@ type Set struct {
 	rules     []Rule
 	used      []bool
 	ambiguous []bool
+	pinKeys   map[string]bool // ハッシュを除いた釘の鍵の集合 (効いていない除外の理由を分けるため)
 	pinCount  map[string]int
 	// basePins は gate のときの base の単位の釘。組・単位の除外は、base に同じ釘の単位があったときか、
 	// その釘が新しく足された要素のときだけ効く (消えた写しの釘の場所に後から同じ写しを置いても覆わない)。nil なら制限しない (report)。
@@ -30,7 +31,7 @@ type Set struct {
 // New は head の単位 (path の除外で外す前の全部) に対する除外を作る。c が nil なら除外は無い。
 // inScope は起点の中のファイルか (nil なら repo 全体)。起点の外を指す除外は「効いていない」に数えない。
 func New(c *Config, entries []*group.Entry, inScope func(string) bool) *Set {
-	s := &Set{pinCount: map[string]int{}, inScope: inScope}
+	s := &Set{pinCount: map[string]int{}, pinKeys: map[string]bool{}, inScope: inScope}
 	if c != nil {
 		s.rules = c.Exclude
 	}
@@ -38,6 +39,7 @@ func New(c *Config, entries []*group.Entry, inScope func(string) bool) *Set {
 	s.ambiguous = make([]bool, len(s.rules))
 	for _, e := range entries {
 		s.pinCount[Pin(e)]++
+		s.pinKeys[pinKey(Pin(e))] = true
 	}
 	for i, r := range s.rules {
 		// 釘は除外に書いた回数まで当たってよい。同じ単位の中で同じ本体のクロージャが並ぶと、順番を入れない釘はどれも同じになるので、
@@ -208,6 +210,33 @@ func (s *Set) Stale() []Rule {
 		}
 	}
 	return out
+}
+
+// pinKey は釘から本体のハッシュ (末尾の `@…`) を除いた鍵 (ファイル・型・署名)。
+// 最後の `@` で切る: ハッシュは末尾に付くので、署名の `@escaping` や、パスの `B@v1.swift` の `@` で鍵が途中で切れない。
+func pinKey(pin string) string {
+	if i := strings.LastIndex(pin, "@"); i >= 0 {
+		return pin[:i]
+	}
+	return pin
+}
+
+// StaleWhy は、効いていない除外が効かない理由を 2 つに分ける。
+//   - "hash": 釘が指す単位と**同じ鍵** (ファイル・型・署名) の単位が全部今もある。効かない原因は特定しない: 本体が変わった・組の顔ぶれが変わった・
+//     同じ除外が二重に書かれている等がありうる。鍵だけでは、削除したクロージャと、残った外側の関数も区別できない (Pin はクロージャの序数を削る)
+//   - "missing": 釘が指す単位のどれかが無い (削除・改名・起点の外)。1 つでも無ければこちら (除外を直すか消す)
+//   - "": 単位を指さない除外 (glob・プリセット) か、釘が無い
+func (s *Set) StaleWhy(r Rule) string {
+	pins := r.pins()
+	if len(pins) == 0 {
+		return ""
+	}
+	for _, p := range pins {
+		if !s.pinKeys[pinKey(p)] {
+			return "missing"
+		}
+	}
+	return "hash"
 }
 
 // Ambiguous は、釘が 2 つ以上の単位に当たるので効かせなかった除外。

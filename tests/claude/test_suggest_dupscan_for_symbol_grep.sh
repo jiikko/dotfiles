@@ -83,6 +83,27 @@ next_session; expect_nudge "git grep の Type.member" "$(run_bash 'git grep -n "
 next_session; expect_nudge "cd の後ろの segment (後ろにパイプが続く)" "$(run_bash 'cd shared && grep -rn "struct HTTPRequestHead" Sources | head -5')" HTTPRequestHead
 next_session; expect_nudge "-e で渡したパターン" "$(run_bash 'grep -rn -e "makeUploadSessionBodyRequest" Sources')" makeUploadSessionBodyRequest
 next_session; expect_nudge "Grep ツールの camelCase" "$(run_grep 'func statsEvent' '')" statsEvent
+# dupscan を使っている最中は案内しない (同じ session の dupscan の後)。別 session と、窓が切れた後は案内する
+next_session; run_bash 'dupscan index -name executeMutation .' >/dev/null
+expect_silent "dupscan を打った直後の同じ session の grep" "$(run_bash 'grep -rn "func executeMutation" shared/Sources')"
+expect_silent "dupscan を含む同じコマンドの grep (パイプの前後を問わない)" "$(run_bash 'dupscan gate && grep -rn "func executeMutation" shared/Sources')"
+next_session; expect_nudge "dupscan を打っていない別の session は案内する" "$(run_bash 'grep -rn "func executeMutation" shared/Sources')" executeMutation
+# 抑止は「失敗して黙った」のではなく、rc=0・stderr 空で正常に終わった結果であること (expect_silent は stdout だけを見るので、失敗でも通ってしまう)
+next_session; run_bash 'dupscan index -name executeMutation .' >/dev/null
+suppressed_err="$TMP_ROOT/suppressed.err"
+jq -n --arg c 'grep -rn "func executeMutation" shared/Sources' --arg d "$REPO" --arg s "s$session" '{tool_name: "Bash", session_id: $s, cwd: $d, tool_input: {command: $c}}' |
+  "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" > "$TMP_ROOT/suppressed.out" 2> "$suppressed_err"; suppressed_rc=$?
+if [ "$suppressed_rc" -eq 0 ] && [ ! -s "$suppressed_err" ] && [ ! -s "$TMP_ROOT/suppressed.out" ]; then
+  echo "✓ 抑止は rc=0・stderr 空・stdout 空の正常終了 (失敗で黙ったのではない)"; ok=$((ok+1))
+else
+  echo "✗ 抑止が正常終了でない: rc=$suppressed_rc stderr=$(head -c 200 "$suppressed_err") stdout=$(head -c 100 "$TMP_ROOT/suppressed.out")"; fail=$((fail+1))
+fi
+next_session; run_bash 'bin/dupscan callers executeMutation' >/dev/null
+expect_silent "bin/dupscan の後も黙る" "$(run_bash 'rg -n StorageOperationLockRegistry shared')"
+next_session; run_bash 'dupscan index -name executeMutation .' >/dev/null
+expect_nudge "窓 (DUPSCAN_ACTIVE_WINDOW) が切れた後は案内する" "$(DUPSCAN_ACTIVE_WINDOW=0 run_bash 'grep -rn "func executeMutation" shared/Sources')" executeMutation
+next_session; run_bash 'cd src/dupscan_helpers && ls' >/dev/null
+expect_nudge "名前が dupscan で始まるだけの語 (dupscan_helpers) は印にならない" "$(run_bash 'grep -rn "func executeMutation" shared/Sources')" executeMutation
 next_session; expect_nudge "Grep ツールの小文字の語でも glob が swift" "$(run_grep 'retrying' '*.swift')" retrying
 
 next_session; expect_silent "小文字の語で Swift を対象にしていない" "$(run_bash 'grep -n refresh config.yml')"
