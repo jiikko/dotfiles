@@ -17,11 +17,11 @@
 
 ## 次に効きそうな改善 (提案。実行はユーザーの判断を待つ)
 
-1. **利用者 (人・agent) に「こうすれば〜になる」と約束する出力文は、書く前にその経路を実機で 1 回通す**。切り出し先: 既存 `_claude/rules/verify-execution-not-just-exit-code.md` へ 1 文 (「出力の案内文が約束する操作は、約束を書いた同じ変更の中で実機で通す」。ツールの `--help`・usage・エラーの案内も同じ)。新規ルールは立てない (発動点が既存の「走った証拠」の項と同じ)。
-2. **既に測って決めた経路 (総当たり・毎行・毎ノード) の内側に判定や呼び出しを足すときは、足す前に実行回数を数え、足した後に前後を測る**。切り出し先: 既存 `_claude/rules/perf-claims-need-measurement.md` へ 1 文 (「ホットループに足す呼び出しは、1 回の費用でなく『内側での実行回数 × 費用』を見積もってから足す」)。
-3. **テストの偽物 (fake / stub) が検索・照合を模すなら、照合の向き (含む / 含まれる / 前方 / 完全) を受け側の実装から写す**。切り出し先: 既存 `_claude/rules/survey-receiver-guards-before-passing-new-values.md` の「テストの fake / stub に、受け側の reject 挙動を模させる」の項へ 1 文 (reject だけでなく、**照合の向き**も)。
-4. **headless の新規セッションで hook の注入を観測するときは、stream-json の出力ではなく、transcript (`~/.claude/projects/<project>/<session>.jsonl`) の `hook_additional_context` を読む**。切り出し先: `.claude/rules/worktree-per-session.md` の「push + pull の後は headless の新規セッションで観測する」の項へ 1 文。
-5. **「難しい / 構造に触る」の見積もりは、コードを 1 回読んでから言う** (関数名やプロファイルの行だけで断定しない)。切り出し先: 却下候補 (局所的な言い間違いで、既存の「ぼやきも事実の主張なら裏を取る」で足りる)。
+1. (反映済み: `verify-execution-not-just-exit-code.md` へ 1 文) **利用者 (人・agent) に「こうすれば〜になる」と約束する出力文は、書く前にその経路を実機で 1 回通す**。切り出し先: 既存 `_claude/rules/verify-execution-not-just-exit-code.md` へ 1 文 (「出力の案内文が約束する操作は、約束を書いた同じ変更の中で実機で通す」。ツールの `--help`・usage・エラーの案内も同じ)。新規ルールは立てない (発動点が既存の「走った証拠」の項と同じ)。
+2. (反映済み: `perf-claims-need-measurement.md` へ 1 文) **既に測って決めた経路 (総当たり・毎行・毎ノード) の内側に判定や呼び出しを足すときは、足す前に実行回数を数え、足した後に前後を測る**。切り出し先: 既存 `_claude/rules/perf-claims-need-measurement.md` へ 1 文 (「ホットループに足す呼び出しは、1 回の費用でなく『内側での実行回数 × 費用』を見積もってから足す」)。
+3. (反映済み: `survey-receiver-guards-before-passing-new-values.md` へ 1 文) **テストの偽物 (fake / stub) が検索・照合を模すなら、照合の向き (含む / 含まれる / 前方 / 完全) を受け側の実装から写す**。切り出し先: 既存 `_claude/rules/survey-receiver-guards-before-passing-new-values.md` の「テストの fake / stub に、受け側の reject 挙動を模させる」の項へ 1 文 (reject だけでなく、**照合の向き**も)。
+4. (反映済み: `.claude/rules/worktree-per-session.md` へ 1 文) **headless の新規セッションで hook の注入を観測するときは、stream-json の出力ではなく、transcript (`~/.claude/projects/<project>/<session>.jsonl`) の `hook_additional_context` を読む**。切り出し先: `.claude/rules/worktree-per-session.md` の「push + pull の後は headless の新規セッションで観測する」の項へ 1 文。
+5. (却下: 言い間違いの話で、既存の「ぼやきも事実の主張なら裏を取る」で足りる) **「難しい / 構造に触る」の見積もりは、コードを 1 回読んでから言う** (関数名やプロファイルの行だけで断定しない)。切り出し先: 却下候補 (局所的な言い間違いで、既存の「ぼやきも事実の主張なら裏を取る」で足りる)。
 
 ## 却下
 
