@@ -137,6 +137,11 @@ func CallersText(w io.Writer, s CallersSummary, limit int) error {
 
 // CallersTextMore は CallersText の、省略したときの案内 (more) を呼び出し側が決める版。
 func CallersTextMore(w io.Writer, s CallersSummary, limit int, more string) error {
+	return CallersTextHint(w, s, limit, more, TruncationHint{})
+}
+
+// CallersTextHint は CallersTextMore に、打ち切ったときだけ先頭に出す全件の大きさと次の手 (hint) を足した版。
+func CallersTextHint(w io.Writer, s CallersSummary, limit int, more string, hint TruncationHint) error {
 	if s.Selector != "" {
 		if _, err := fmt.Fprintf(w, "selector=%q: %s\n", s.Selector, s.SelectorLimitations); err != nil {
 			return err
@@ -146,22 +151,33 @@ func CallersTextMore(w io.Writer, s CallersSummary, limit int, more string) erro
 		fmt.Fprintf(w, "dupscan callers: %s の呼び出しなし\n", s.Query)
 		return nil
 	}
+	if hint.Label != "" && limit > 0 && len(s.Entries) > limit {
+		all := 0
+		for _, e := range s.Entries {
+			all += len(callerRowText(e)) + 1
+		}
+		fmt.Fprintln(w, hint.header(limit, s.Matches, all))
+	}
 	for i, e := range s.Entries {
 		if limit > 0 && i == limit {
 			fmt.Fprintf(w, "… 他 %d 件 (%s)\n", s.Matches-limit, more)
 			break
 		}
-		caller := e.Caller
-		if caller == "" {
-			caller = "(単位の外)"
-		}
-		mark := ""
-		if e.Test {
-			mark = " [test]"
-		}
-		fmt.Fprintf(w, "%s:%d %s%s | %s\n", e.File, e.Line, caller, mark, e.Text)
+		fmt.Fprintln(w, callerRowText(e))
 	}
 	return nil
+}
+
+func callerRowText(e CallerEntry) string {
+	caller := e.Caller
+	if caller == "" {
+		caller = "(単位の外)"
+	}
+	mark := ""
+	if e.Test {
+		mark = " [test]"
+	}
+	return fmt.Sprintf("%s:%d %s%s | %s", e.File, e.Line, caller, mark, e.Text)
 }
 
 // ParseCallSelector accepts a source-spelled chain, without import or type resolution.

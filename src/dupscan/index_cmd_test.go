@@ -67,7 +67,7 @@ func TestIndexLineShowsDocAndMarks(t *testing.T) {
 	// test のファイルを場所の順で前に置き、並べ方が場所でなく prod / test で決まることを見る。
 	root := repoWith(t, map[string]string{"Sources/Helpers.swift": indexed, "AppTests/TestSupport.swift": indexedTest})
 	_, out, _ := index(t, "-name", "listLocation", root)
-	if strings.TrimSpace(out) != swiftLabelApproximation+"\nSources/Helpers.swift:8 Helpers.listLocation(_ p: String, depth: Int) -> StorageLocation [private] (呼び出し ~0) // Location for listing." {
+	if strings.TrimSpace(out) != swiftLabelApproximation+"\nSources/Helpers.swift:8-11 Helpers.listLocation(_ p: String, depth: Int) -> StorageLocation [private] (呼び出し ~0) // Location for listing." {
 		t.Errorf("1 行の形 (許可の印の行は doc にしない): %q", out)
 	}
 	got := lines(func() string { _, o, _ := index(t, "-name", "bucketLocation", root); return o }())[1:]
@@ -80,7 +80,7 @@ func TestIndexFileIsOutlineInLineOrder(t *testing.T) {
 	root := repoWith(t, map[string]string{"Sources/Helpers.swift": indexed, "Sources/U.swift": unrelated})
 	_, out, errs := index(t, "-file", filepath.Join(root, "Sources/Helpers.swift"), root)
 	got := lines(out)[1:]
-	if len(got) != 3 || !strings.Contains(got[0], ":3 ") || !strings.Contains(got[1], ":8 ") || !strings.Contains(got[2], ":12 ") {
+	if len(got) != 3 || !strings.Contains(got[0], ":3-5 ") || !strings.Contains(got[1], ":8-11 ") || !strings.Contains(got[2], ":12 ") {
 		t.Errorf("ファイルの単位を行の順に (クロージャは出さない): %q err=%q", out, errs)
 	}
 	if _, out, _ := index(t, "-file", filepath.Join(root, "Sources/Helpers.swift"), "-limit", "1", root); !strings.Contains(out, "… 他 2 件") {

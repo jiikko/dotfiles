@@ -134,7 +134,8 @@ report の text は、組を大きい順 (メンバーのうち最大の単位�
 同じ画面・同じ型の写しが細切れの組で並ぶのを 1 行で見せ、寄せる作業の単位を決めやすくする (json は `file_pairs` に全部・各組の `nodes`)。
 
 `index` は名前の付いた単位 (関数・初期化子・computed property・subscript など。クロージャとテスト関数は除く) を
-`file:line 型.署名 [shared,test,private] (呼び出し ~N) // doc の最初の行` の 1 行で出す。grep と違い呼び出し側の行・コメント・文字列は混ざらない。
+`file:開始行-終了行 型.署名 [shared,test,private] (呼び出し ~N) // doc の先頭` の 1 行で出す (1 行の単位は `file:行`)。終了行は Read の範囲 (offset / limit) にそのまま使える。grep と違い呼び出し側の行・コメント・文字列は混ざらない。
+text の doc は最初の文まで・100 byte までに縮める (`-doc-bytes N`、0 で縮めない。JSON と `-doc` の絞り込みは全文)。略語 (`e.g.` `Dr.`) の後ろでは切らないが、2 文目に理由や条件がある doc も最初の文で切れる。`-limit` で打ち切ったときだけ、先頭に `該当 N 件 (M 件表示 / 全部で約 X)。…rg -n -i -e 名前 -g '*.go' -- dir` の 1 行を出す (`callers` は `呼び出し N 件`)。dupscan が `rg` を実行するのではなく、実行できる 1 行の提示で、構文木の結果ではなく文字列の一致 (コメント・文字列にも当たる) になる。`def` / `context` の型メンバーの行も同じ形 (終了行つき) になる。
 並べ方は名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所 (`.dupscan.json` の `"shared": ["Tests/SharedTestSupport/**"]` のような glob。`[shared]` と出る) を前 → prod を test より前 → private / fileprivate / unexported (Go の小文字で始まる関数) でないものを前（他module/targetからの利用可否は未解決） → 呼び出しの多いもの → 場所。
 `shared`は設定globに一致する置き場所の印であり、可視性と同じく再利用可能性の証明ではない。所属target・依存/import・test-only・条件付きcompile等は別に確認する。
 

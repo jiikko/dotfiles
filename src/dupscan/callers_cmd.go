@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"regexp"
 
 	"dupscan/internal/langs"
 	"dupscan/internal/repo"
@@ -74,7 +75,11 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 	case "text":
 		_, err = fmt.Fprintln(stdout, got.callApproximation(q.Labels != nil))
 		if err == nil {
-			err = report.CallersText(stdout, s, *limit)
+			hint := report.TruncationHint{Label: "呼び出し", Globs: got.sourceGlobs(), Dirs: dirs}
+			if q.Selector == "" {
+				hint.Pattern = regexp.QuoteMeta(q.Name) + `\(`
+			}
+			err = report.CallersTextHint(stdout, s, *limit, "-limit 0 か -format json で全部。ラベルを書いて絞る", hint)
 		}
 	default:
 		return fail(fmt.Errorf("知らない形式 %q (text / json)", *format))

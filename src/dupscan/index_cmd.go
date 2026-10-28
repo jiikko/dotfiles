@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"regexp"
 
 	"dupscan/internal/langs"
 	"dupscan/internal/repo"
@@ -23,6 +24,7 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	file := fs.String("file", "", "このファイルの単位を行の順に (outline)")
 	format := fs.String("format", "text", "出力の形式: text / json")
 	limit := fs.Int("limit", 20, "text で出す件数の上限 (0 は全部。-file を指したときの既定は全部)")
+	docBytes := fs.Int("doc-bytes", 100, "text の doc を最初の文まで、この byte 数までに縮める (0 は縮めない。JSON と -doc の絞り込みは全文)")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, usage)
 		fs.PrintDefaults()
@@ -68,7 +70,11 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	case "text":
 		_, err = fmt.Fprintln(stdout, got.callApproximation(true))
 		if err == nil {
-			err = report.IndexText(stdout, s, *limit)
+			hint := report.TruncationHint{Label: "該当", Ignore: true, Globs: got.sourceGlobs(), Dirs: dirs}
+			if q.Name != "" {
+				hint.Pattern = regexp.QuoteMeta(q.Name)
+			}
+			err = report.IndexText(stdout, s, report.IndexTextOptions{Limit: *limit, DocBytes: *docBytes, Hint: hint})
 		}
 	default:
 		return fail(fmt.Errorf("知らない形式 %q (text / json)", *format))

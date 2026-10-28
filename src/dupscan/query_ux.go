@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -80,6 +81,20 @@ func (s scanned) callApproximation(labels bool) string {
 		}
 	}
 	return "構文近似: " + match + "で照合。型未解決で同名の別定義が混ざりうる。" + omitted + " 0件でも未使用の証拠ではない。"
+}
+
+// sourceGlobs は走査したファイルの拡張子の glob (`*.go` など。重複なし・昇順)。打ち切ったときの rg の提示に使う。
+func (s scanned) sourceGlobs() []string {
+	seen := map[string]bool{}
+	var globs []string
+	for file := range s.contents {
+		if ext := filepath.Ext(file); ext != "" && !seen[ext] {
+			seen[ext] = true
+			globs = append(globs, "*"+ext)
+		}
+	}
+	sort.Strings(globs)
+	return globs
 }
 
 // relevantParseErrors は読めなかったファイルのうち、問い合わせの名前を本文に含むもの。

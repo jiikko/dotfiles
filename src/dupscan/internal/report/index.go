@@ -23,6 +23,8 @@ type Query struct {
 // IndexEntry は索引の 1 行。
 type IndexEntry struct {
 	UnitRef
+	// EndLine は単位の終わりの行。Read に範囲 (offset / limit) を渡すために text の `file:開始-終了` に出す。無い (0) か 1 行の単位なら出さない。
+	EndLine    int      `json:"end_line,omitempty"`
 	ReturnType string   `json:"return_type,omitempty"`
 	ParamTypes []string `json:"param_types,omitempty"`
 	Doc        string   `json:"doc,omitempty"`
@@ -87,7 +89,7 @@ func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
 	})
 	s := IndexSummary{Units: n, Matches: len(hits), Entries: []IndexEntry{}}
 	for _, h := range hits {
-		e := IndexEntry{UnitRef: ref(h.u), ReturnType: h.u.ReturnType, ParamTypes: h.u.ParamTypes, Doc: h.u.Doc, Shared: q.shared(h.u.File)}
+		e := IndexEntry{UnitRef: ref(h.u), EndLine: h.u.EndLine, ReturnType: h.u.ReturnType, ParamTypes: h.u.ParamTypes, Doc: h.u.Doc, Shared: q.shared(h.u.File)}
 		if n, ok := counts[h.u]; ok {
 			e.Calls = &n
 		}
@@ -177,25 +179,47 @@ func containsAny(xs []string, sub string) bool {
 	return false
 }
 
-// IndexText は索引を 1 行 1 件で出す (`file:line 型.署名 [印] // doc の 1 行目`)。limit を超えた分は件数だけ出す。
-func IndexText(w io.Writer, s IndexSummary, limit int) error {
+// IndexTextOptions は index の text 表示の設定。
+type IndexTextOptions struct {
+	Limit    int            // 出す件数の上限 (0 は全部)
+	DocBytes int            // doc の先頭行を、最初の文まで・この byte 数までに縮める (0 は縮めない)。JSON と -doc の絞り込みは全文のまま
+	Hint     TruncationHint // 打ち切ったときだけ先頭に出す案内
+}
+
+// IndexText は索引を 1 行 1 件で出す (`file:開始-終了 型.署名 [印] // doc の先頭`)。上限を超えた分は件数だけ出し、
+// 打ち切ったときだけ先頭に全件の件数・大きさと次の手を 1 行で示す。
+func IndexText(w io.Writer, s IndexSummary, o IndexTextOptions) error {
 	if s.Matches == 0 {
 		fmt.Fprintf(w, "dupscan index: 当たる単位なし (単位 %d)\n", s.Units)
 		return nil
 	}
+	if o.Hint.Label != "" && o.Limit > 0 && len(s.Entries) > o.Limit {
+		all := 0
+		for _, e := range s.Entries {
+			all += len(IndexEntryTextWith(e, o.DocBytes)) + 1
+		}
+		fmt.Fprintln(w, o.Hint.header(o.Limit, s.Matches, all))
+	}
 	for i, e := range s.Entries {
-		if limit > 0 && i == limit {
-			fmt.Fprintf(w, "… 他 %d 件 (-limit 0 か -format json で全部。語を足して絞る)\n", s.Matches-limit)
+		if o.Limit > 0 && i == o.Limit {
+			fmt.Fprintf(w, "… 他 %d 件 (-limit 0 か -format json で全部。語を足して絞る)\n", s.Matches-o.Limit)
 			break
 		}
-		fmt.Fprintln(w, IndexEntryText(e))
+		fmt.Fprintln(w, IndexEntryTextWith(e, o.DocBytes))
 	}
 	return nil
 }
 
 // IndexEntryText formats one outline entry. def uses the same row shape for type members.
-func IndexEntryText(e IndexEntry) string {
-	line := fmt.Sprintf("%s:%d %s", e.File, e.Line, label(e.UnitRef))
+func IndexEntryText(e IndexEntry) string { return IndexEntryTextWith(e, 0) }
+
+// IndexEntryTextWith は docBytes (0 以下は縮めない) で doc を縮めた 1 行。
+func IndexEntryTextWith(e IndexEntry, docBytes int) string {
+	where := fmt.Sprintf("%s:%d", e.File, e.Line)
+	if e.EndLine > e.Line {
+		where += fmt.Sprintf("-%d", e.EndLine)
+	}
+	line := fmt.Sprintf("%s %s", where, label(e.UnitRef))
 	var marks []string
 	if e.Shared {
 		marks = append(marks, "shared")
@@ -213,7 +237,7 @@ func IndexEntryText(e IndexEntry) string {
 		line += fmt.Sprintf(" (呼び出し ~%d)", *e.Calls)
 	}
 	if e.Doc != "" {
-		line += " // " + e.Doc
+		line += " // " + ShortDoc(e.Doc, docBytes)
 	}
 	return line
 }
