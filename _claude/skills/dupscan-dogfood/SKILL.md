@@ -1,6 +1,6 @@
 ---
 name: dupscan-dogfood
-version: 1.4.0
+version: 1.4.1
 description: dupscan を実際に使って開発タスクをこなし、使って困ったこと (見逃し・雑音・出力が大きい・遅い・grep に戻した理由) を記録して、dotfiles の issue に書き、直せるものは dupscan 自身を直す。「dupscan を使って開発して」「dupscan を使いながら実装して、フィードバックを issue に」「dupscan-dogfood」で発火。タスクが目的で、dupscan の評価・改修は副産物。dupscan を直すだけの依頼や、使わないタスクには使わない。
 ---
 
@@ -81,6 +81,7 @@ skill dupscan の 1〜4 節に従う。**grep より先に dupscan を試す場�
 
 1. `friction.md` の各件を、**自分の所見のまま**起票する。**既存の issue との重複照合は必須にしない** (照合に時間を使って起票が止まるより、重複を後で統合する方が安い)。既出に気づいたら、issue に「既出の可能性: NNN」と 1 行書く。照合せずに書いたことも issue に 1 行書く。
 2. 集計を `friction.md` の先頭に書く: 件数、種類ごとの内訳、dupscan を使った回数と grep に戻した回数、役に立った場面の数。
+   - **重複を寄せる作業 (組の数を減らす依頼) では、前後の組の数を「どこから・何を数えたか」と一緒に書く**。再現できる数え方は、**repo root から** `dupscan -format json -limit 0 .` を打ち、`groups` を数える (全体)。範囲を絞るなら、メンバーの `file` のパスの接頭辞で数える (例: 「メンバーが全部 `macOS/ObaketTests/` の組」＝その module 内で完結する組、「1 つでも含む組」)。cwd を変えると走査範囲が変わり数が変わる (issue 954 の P4)。作業の前後で同じ数え方を使う。
 3. dupscan 自身が直せる不満かを仕分ける:
 
 | 仕分け | 条件 | 行き先 |
