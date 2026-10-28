@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/restartable/internal/runnertest"
 	"io"
 	"net"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -117,13 +117,13 @@ func TestRunnerHelper(t *testing.T) {
 		BuildCommand:        os.Getenv("RESTARTABLE_TEST_BUILD"),
 		RunArgs:             []string{"/bin/sh", "-c", os.Getenv("RESTARTABLE_TEST_RUN")},
 		StopCommand:         os.Getenv("RESTARTABLE_TEST_STOP"),
-		StopCommandTimeout:  envDuration("RESTARTABLE_TEST_STOP_TIMEOUT", 250*time.Millisecond),
-		TermGrace:           envDuration("RESTARTABLE_TEST_TERM_GRACE", 60*time.Millisecond),
+		StopCommandTimeout:  runnertest.EnvDuration("RESTARTABLE_TEST_STOP_TIMEOUT", 250*time.Millisecond),
+		TermGrace:           runnertest.EnvDuration("RESTARTABLE_TEST_TERM_GRACE", 60*time.Millisecond),
 		ReadyCommand:        os.Getenv("RESTARTABLE_TEST_READY"),
-		ReadyTimeout:        envDuration("RESTARTABLE_TEST_READY_TIMEOUT", 120*time.Second),
-		ReadyInterval:       envDuration("RESTARTABLE_TEST_READY_INTERVAL", 500*time.Millisecond),
-		ReadyAttemptTimeout: envDuration("RESTARTABLE_TEST_READY_ATTEMPT_TIMEOUT", 5*time.Second),
-		ReadyCleanupGrace:   envDuration("RESTARTABLE_TEST_READY_CLEANUP_GRACE", 30*time.Millisecond),
+		ReadyTimeout:        runnertest.EnvDuration("RESTARTABLE_TEST_READY_TIMEOUT", 120*time.Second),
+		ReadyInterval:       runnertest.EnvDuration("RESTARTABLE_TEST_READY_INTERVAL", 500*time.Millisecond),
+		ReadyAttemptTimeout: runnertest.EnvDuration("RESTARTABLE_TEST_READY_ATTEMPT_TIMEOUT", 5*time.Second),
+		ReadyCleanupGrace:   runnertest.EnvDuration("RESTARTABLE_TEST_READY_CLEANUP_GRACE", 30*time.Millisecond),
 		IDEnv:               os.Getenv("RESTARTABLE_TEST_ID_ENV"),
 		ControlPath:         os.Getenv("RESTARTABLE_TEST_SOCKET"),
 		Stdin:               stdin, Stdout: os.Stdout, Stderr: os.Stderr, Headless: os.Getenv("RESTARTABLE_TEST_INTERACTIVE") != "1", StdinIsTerminal: stdinIsTerminal,
@@ -151,14 +151,6 @@ func (p signalDuringStartPresenter) Render(model Model) {
 func (signalDuringStartPresenter) Keys() <-chan string { return nil }
 func (signalDuringStartPresenter) Close() error        { return nil }
 
-func envDuration(name string, fallback time.Duration) time.Duration {
-	value, err := time.ParseDuration(os.Getenv(name))
-	if err != nil {
-		return fallback
-	}
-	return value
-}
-
 type testRunner struct {
 	cmd     *exec.Cmd
 	path    string
@@ -168,16 +160,8 @@ type testRunner struct {
 	waitErr error
 }
 
-type ptyStdinRunner struct {
-	cmd    *exec.Cmd
-	master *os.File
-	path   string
-	done   chan struct{}
-	err    error
-
-	outputMu sync.Mutex
-	output   bytes.Buffer
-}
+// ptyStdinRunner は標準入力が端末のままの headless runner (標準出力は pipe で集める)。
+type ptyStdinRunner struct{ *runnertest.PTY }
 
 func startPTYStdinHeadlessRunner(t *testing.T, socketPath string, extraEnv ...string) *ptyStdinRunner {
 	t.Helper()
@@ -212,86 +196,32 @@ func startPTYStdinHeadlessRunner(t *testing.T, socketPath string, extraEnv ...st
 	}
 	_ = stdoutWrite.Close()
 	_ = slave.Close()
-	r := &ptyStdinRunner{cmd: cmd, master: master, path: socketPath, done: make(chan struct{})}
-	go func() {
-		defer close(r.done)
-		r.err = cmd.Wait()
-	}()
-	go func() {
-		defer func() { _ = stdoutRead.Close() }()
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := stdoutRead.Read(buf)
-			if n > 0 {
-				r.outputMu.Lock()
-				_, _ = r.output.Write(buf[:n])
-				r.outputMu.Unlock()
-			}
-			if readErr != nil {
-				return
-			}
-		}
-	}()
-	t.Cleanup(func() {
-		select {
-		case <-r.done:
-		default:
-			_ = r.cmd.Process.Signal(syscall.SIGTERM)
-			select {
-			case <-r.done:
-			case <-time.After(4 * time.Second):
-				_ = r.cmd.Process.Kill()
-				<-r.done
-			}
-		}
-		_ = r.master.Close()
-	})
-	return r
-}
-
-func (r *ptyStdinRunner) outputText() string {
-	r.outputMu.Lock()
-	defer r.outputMu.Unlock()
-	return r.output.String()
+	t.Cleanup(func() { _ = stdoutRead.Close() })
+	return &ptyStdinRunner{runnertest.Attach(t, cmd, master, stdoutRead, socketPath)}
 }
 
 func (r *ptyStdinRunner) waitOutput(t *testing.T, want string) {
 	t.Helper()
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-	timer := time.NewTimer(3 * time.Second)
-	defer timer.Stop()
-	for {
-		if strings.Contains(r.outputText(), want) {
-			return
-		}
-		select {
-		case <-ticker.C:
-		case <-timer.C:
-			t.Fatalf("timed out waiting for %q; output=%q", want, r.outputText())
-		case <-r.done:
-			t.Fatalf("runner exited before %q: %v; output=%q", want, r.err, r.outputText())
-		}
-	}
+	r.WaitText(t, fmt.Sprintf("%q", want), 3*time.Second, func(output string) bool { return strings.Contains(output, want) })
 }
 
 func (r *ptyStdinRunner) signalAndWait(t *testing.T, sig syscall.Signal) int {
 	t.Helper()
-	if err := r.cmd.Process.Signal(sig); err != nil && !errors.Is(err, os.ErrProcessDone) {
+	if err := r.Cmd.Process.Signal(sig); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		t.Fatal(err)
 	}
 	select {
-	case <-r.done:
-		if r.err == nil {
+	case <-r.Done:
+		if r.Err == nil {
 			return 0
 		}
 		var exit *exec.ExitError
-		if errors.As(r.err, &exit) {
+		if errors.As(r.Err, &exit) {
 			return exit.ExitCode()
 		}
-		t.Fatalf("wait for runner: %v", r.err)
+		t.Fatalf("wait for runner: %v", r.Err)
 	case <-time.After(4 * time.Second):
-		t.Fatalf("runner did not exit; output=%q", r.outputText())
+		t.Fatalf("runner did not exit; output=%q", r.Text())
 	}
 	return -1
 }
@@ -360,7 +290,7 @@ func startTestRunnerWithBrokenStdout(t *testing.T, options map[string]string) *t
 
 func startTestRunnerModeWithBrokenStdout(t *testing.T, options map[string]string, waitForStatus, brokenStdout bool) *testRunner {
 	t.Helper()
-	dir := shortTempDir(t, "rnt-")
+	dir := runnertest.ShortTempDir(t, "rnt-")
 	path := filepath.Join(dir, "runner.sock")
 	stdout := filepath.Join(t.TempDir(), "stdout.log")
 	stderr := filepath.Join(t.TempDir(), "stderr.log")
@@ -486,25 +416,15 @@ func waitFor(t *testing.T, limit time.Duration, description string, predicate fu
 
 // shortTempDir は unix socket を置く一時ディレクトリ。socket の path は 103 byte までなので、
 // 長い t.TempDir() (macOS では /var/folders/...) ではなく /tmp の直下に作り、テストの終わりに消す。
-func shortTempDir(t *testing.T, prefix string) string {
-	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", prefix)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
-}
 
-func shellQuote(s string) string  { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 func readFile(path string) string { data, _ := os.ReadFile(path); return string(data) }
 
 func TestHeadlessRunnerWithTerminalStdinDoesNotPassTTYToChild(t *testing.T) {
-	dir := shortTempDir(t, "rstin-")
+	dir := runnertest.ShortTempDir(t, "rstin-")
 	socketPath := filepath.Join(dir, "runner.sock")
 	stopMarker := filepath.Join(dir, "stop-child")
-	run := fmt.Sprintf(`rm -f %s; if read value; then echo run-stdin-read; else echo run-stdin-eof; fi; while [ ! -e %s ]; do /bin/sleep 0.01; done; exit 0`, shellQuote(stopMarker), shellQuote(stopMarker))
-	stop := `if read value; then echo stop-stdin-read; else echo stop-stdin-eof; fi; touch ` + shellQuote(stopMarker)
+	run := fmt.Sprintf(`rm -f %s; if read value; then echo run-stdin-read; else echo run-stdin-eof; fi; while [ ! -e %s ]; do /bin/sleep 0.01; done; exit 0`, runnertest.ShellQuote(stopMarker), runnertest.ShellQuote(stopMarker))
+	stop := `if read value; then echo stop-stdin-read; else echo stop-stdin-eof; fi; touch ` + runnertest.ShellQuote(stopMarker)
 	r := startPTYStdinHeadlessRunner(t, socketPath,
 		"RESTARTABLE_TEST_BUILD=if read value; then echo build-stdin-read; else echo build-stdin-eof; fi",
 		"RESTARTABLE_TEST_RUN="+run,
@@ -516,16 +436,16 @@ func TestHeadlessRunnerWithTerminalStdinDoesNotPassTTYToChild(t *testing.T) {
 	response, err := control.Call(ctx, socketPath, control.Restart)
 	cancel()
 	if err != nil {
-		t.Fatalf("control restart: %v; child output=%q", err, r.outputText())
+		t.Fatalf("control restart: %v; child output=%q", err, r.Text())
 	}
 	if !response.OK || response.Generation != 2 {
 		t.Fatalf("control restart response = %+v, want successful generation 2", response)
 	}
 	r.waitOutput(t, "stop-stdin-eof")
 	waitFor(t, 3*time.Second, "second build with null stdin", func() bool {
-		return strings.Count(r.outputText(), "build-stdin-eof") >= 2
+		return strings.Count(r.Text(), "build-stdin-eof") >= 2
 	})
-	if output := r.outputText(); strings.Contains(output, "stdin-read") {
+	if output := r.Text(); strings.Contains(output, "stdin-read") {
 		t.Fatalf("a child received the terminal stdin: %q", output)
 	}
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
@@ -538,8 +458,8 @@ func TestBuildFailureNeverRunsStaleArtifactAndRestartWaitsForNewRun(t *testing.T
 	count := filepath.Join(dir, "count")
 	artifact := filepath.Join(dir, "artifact")
 	launches := filepath.Join(dir, "launches")
-	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s; if [ "$n" -eq 1 ]; then echo stale > %s; exit 1; fi; echo fresh > %s`, shellQuote(count), shellQuote(count), shellQuote(count), shellQuote(artifact), shellQuote(artifact))
-	run := fmt.Sprintf(`cat %s >> %s; echo >> %s; exec /bin/sleep 30`, shellQuote(artifact), shellQuote(launches), shellQuote(launches))
+	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s; if [ "$n" -eq 1 ]; then echo stale > %s; exit 1; fi; echo fresh > %s`, runnertest.ShellQuote(count), runnertest.ShellQuote(count), runnertest.ShellQuote(count), runnertest.ShellQuote(artifact), runnertest.ShellQuote(artifact))
+	run := fmt.Sprintf(`cat %s >> %s; echo >> %s; exec /bin/sleep 30`, runnertest.ShellQuote(artifact), runnertest.ShellQuote(launches), runnertest.ShellQuote(launches))
 	r, _ := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": run})
 	r.waitStatus(t, string(BuildFailed))
 	if _, err := os.Stat(launches); !os.IsNotExist(err) {
@@ -590,8 +510,8 @@ func TestStopCommandFailureKeepsChildRunningAndPassesID(t *testing.T) {
 	dir := t.TempDir()
 	stopID := filepath.Join(dir, "stop-id")
 	runID := filepath.Join(dir, "run-id")
-	run := fmt.Sprintf(`echo "$RUNNER_INSTANCE" > %s; exec /bin/sleep 30`, shellQuote(runID))
-	stop := fmt.Sprintf(`echo "$RUNNER_INSTANCE" > %s; exit 9`, shellQuote(stopID))
+	run := fmt.Sprintf(`echo "$RUNNER_INSTANCE" > %s; exec /bin/sleep 30`, runnertest.ShellQuote(runID))
+	stop := fmt.Sprintf(`echo "$RUNNER_INSTANCE" > %s; exit 9`, runnertest.ShellQuote(stopID))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_STOP": stop,
 		"RESTARTABLE_TEST_ID_ENV": "RUNNER_INSTANCE",
@@ -656,7 +576,7 @@ func TestStopCommandSuccessWaitsWithoutSignalingChild(t *testing.T) {
 }
 
 func TestStopCommandSuccessIgnoresRestartAndQuitKeysWithoutKillingChild(t *testing.T) {
-	dir := shortTempDir(t, "rkey-")
+	dir := runnertest.ShortTempDir(t, "rkey-")
 	keyPath := filepath.Join(dir, "keys.sock")
 	statePath := filepath.Join(t.TempDir(), "presenter.json")
 	r := startTestRunner(t, map[string]string{
@@ -753,8 +673,8 @@ func TestStopCommandFailureAfterChildExitExitsAndFailsRestart(t *testing.T) {
 	if err := syscall.Mkfifo(fifo, 0600); err != nil {
 		t.Fatal(err)
 	}
-	stop := fmt.Sprintf(`touch %s; read ignored < %s; exit 9`, shellQuote(started), shellQuote(fifo))
-	keyDir := shortTempDir(t, "rkey-")
+	stop := fmt.Sprintf(`touch %s; read ignored < %s; exit 9`, runnertest.ShellQuote(started), runnertest.ShellQuote(fifo))
+	keyDir := runnertest.ShortTempDir(t, "rkey-")
 	keyPath := filepath.Join(keyDir, "keys.sock")
 	statePath := filepath.Join(dir, "presenter.json")
 	r := startTestRunner(t, map[string]string{
@@ -917,7 +837,7 @@ func TestSIGTERMKillsTERMIgnoringChildGroupAndReturns143(t *testing.T) {
 
 func TestSIGTERMStopsGrandchildInChildProcessGroup(t *testing.T) {
 	grandchildFile := filepath.Join(t.TempDir(), "grandchild-pid")
-	run := fmt.Sprintf(`/bin/sleep 30 & echo $! > %s; wait`, shellQuote(grandchildFile))
+	run := fmt.Sprintf(`/bin/sleep 30 & echo $! > %s; wait`, runnertest.ShellQuote(grandchildFile))
 	r := startTestRunner(t, map[string]string{"RESTARTABLE_TEST_RUN": run})
 	status := r.waitStatus(t, string(Running))
 	waitFor(t, time.Second, "grandchild pid", func() bool { return strings.TrimSpace(readFile(grandchildFile)) != "" })
@@ -940,8 +860,8 @@ func TestControlRestartDuringBuildRequiresNextBuild(t *testing.T) {
 	starts := filepath.Join(dir, "starts")
 	artifact := filepath.Join(dir, "artifact")
 	launches := filepath.Join(dir, "launches")
-	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s; echo "$n" >> %s; while [ ! -e %s.$n ]; do /bin/sleep 0.01; done; echo "$n" > %s`, shellQuote(count), shellQuote(count), shellQuote(count), shellQuote(starts), shellQuote(filepath.Join(dir, "gate")), shellQuote(artifact))
-	run := fmt.Sprintf(`cat %s >> %s; echo >> %s; exec /bin/sleep 30`, shellQuote(artifact), shellQuote(launches), shellQuote(launches))
+	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s; echo "$n" >> %s; while [ ! -e %s.$n ]; do /bin/sleep 0.01; done; echo "$n" > %s`, runnertest.ShellQuote(count), runnertest.ShellQuote(count), runnertest.ShellQuote(count), runnertest.ShellQuote(starts), runnertest.ShellQuote(filepath.Join(dir, "gate")), runnertest.ShellQuote(artifact))
+	run := fmt.Sprintf(`cat %s >> %s; echo >> %s; exec /bin/sleep 30`, runnertest.ShellQuote(artifact), runnertest.ShellQuote(launches), runnertest.ShellQuote(launches))
 	r := startTestRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": run})
 	waitFor(t, 2*time.Second, "initial build start", func() bool { return strings.TrimSpace(readFile(starts)) == "1" })
 	responseCh := make(chan struct {
@@ -1000,8 +920,8 @@ func TestControlDisconnectBeforeBuildCommitDropsRequest(t *testing.T) {
 	artifact := filepath.Join(dir, "artifact")
 	launches := filepath.Join(dir, "launches")
 	gateBase := filepath.Join(dir, "gate")
-	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s; echo "$n" >> %s; while [ ! -e %s.$n ]; do /bin/sleep 0.01; done; echo "$n" > %s`, shellQuote(count), shellQuote(count), shellQuote(count), shellQuote(starts), shellQuote(gateBase), shellQuote(artifact))
-	run := fmt.Sprintf(`cat %s >> %s; echo >> %s; exec /bin/sleep 30`, shellQuote(artifact), shellQuote(launches), shellQuote(launches))
+	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s; echo "$n" >> %s; while [ ! -e %s.$n ]; do /bin/sleep 0.01; done; echo "$n" > %s`, runnertest.ShellQuote(count), runnertest.ShellQuote(count), runnertest.ShellQuote(count), runnertest.ShellQuote(starts), runnertest.ShellQuote(gateBase), runnertest.ShellQuote(artifact))
+	run := fmt.Sprintf(`cat %s >> %s; echo >> %s; exec /bin/sleep 30`, runnertest.ShellQuote(artifact), runnertest.ShellQuote(launches), runnertest.ShellQuote(launches))
 	r := startTestRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": run})
 	waitFor(t, 2*time.Second, "initial build start", func() bool { return strings.TrimSpace(readFile(starts)) == "1" })
 	conn, err := net.Dial("unix", r.path)
@@ -1035,10 +955,10 @@ func TestControlDisconnectAfterCommitContinuesRestart(t *testing.T) {
 	dir := t.TempDir()
 	count := filepath.Join(dir, "count")
 	release := filepath.Join(dir, "release")
-	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s`, shellQuote(count), shellQuote(count), shellQuote(count))
+	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s`, runnertest.ShellQuote(count), runnertest.ShellQuote(count), runnertest.ShellQuote(count))
 	// 子は release が置かれるまで TERM で終わらない。終わると Stopping+RestartPending の窓が一瞬で閉じ、負荷が高いと
 	// ポーリングがその窓を取り逃がして落ちていた。窓を開けたまま切断し、切断の後で release して再起動の続きを見る
-	run := fmt.Sprintf(`trap 'while [ ! -e %s ]; do /bin/sleep 0.01; done; exit 0' TERM; while :; do /bin/sleep 0.01; done`, shellQuote(release))
+	run := fmt.Sprintf(`trap 'while [ ! -e %s ]; do /bin/sleep 0.01; done; exit 0' TERM; while :; do /bin/sleep 0.01; done`, runnertest.ShellQuote(release))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_BUILD":      build,
 		"RESTARTABLE_TEST_RUN":        run,
@@ -1118,7 +1038,7 @@ func TestFinishedMarkerBeforeConfirmationKeyDoesNotRestart(t *testing.T) {
 }
 
 func TestStatusConsumesFinishedMarkerBeforeResponding(t *testing.T) {
-	dir := shortTempDir(t, "rsts-")
+	dir := runnertest.ShortTempDir(t, "rsts-")
 	server, err := control.Listen(filepath.Join(dir, "runner.sock"))
 	if err != nil {
 		t.Fatal(err)
@@ -1163,7 +1083,7 @@ func TestDrainOutputsDoesNotKillNaturalExitDescendantHoldingPipe(t *testing.T) {
 	if err := syscall.Mkfifo(gate, 0600); err != nil {
 		t.Fatal(err)
 	}
-	command := fmt.Sprintf("(read value < %s; echo alive > %s; exec /bin/sleep 30) & echo $! > %s; exit 0", shellQuote(gate), shellQuote(marker), shellQuote(pidFile))
+	command := fmt.Sprintf("(read value < %s; echo alive > %s; exec /bin/sleep 30) & echo $! > %s; exit 0", runnertest.ShellQuote(gate), runnertest.ShellQuote(marker), runnertest.ShellQuote(pidFile))
 	proc, err := startProcess([]string{"/bin/sh", "-c", command}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), false)
 	if err != nil {
 		t.Fatal(err)
@@ -1209,7 +1129,7 @@ func TestDrainOutputsDoesNotKillNaturalExitDescendantHoldingPipe(t *testing.T) {
 }
 
 func TestFinishedMarkerRejectsRestartBeforeExitEventIsConsumed(t *testing.T) {
-	dir := shortTempDir(t, "rfin-")
+	dir := runnertest.ShortTempDir(t, "rfin-")
 	server, err := control.Listen(filepath.Join(dir, "runner.sock"))
 	if err != nil {
 		t.Fatal(err)
@@ -1318,7 +1238,7 @@ func TestChildStdoutStderrOrderIsPreserved(t *testing.T) {
 }
 
 func TestBuildFailedControlRestartStartsOneBuild(t *testing.T) {
-	dir := shortTempDir(t, "rbuild-")
+	dir := runnertest.ShortTempDir(t, "rbuild-")
 	server, err := control.Listen(filepath.Join(dir, "runner.sock"))
 	if err != nil {
 		t.Fatal(err)
@@ -1447,7 +1367,7 @@ func TestForceStopWithNoProcessesDoesNotSendToActorEventsSynchronously(t *testin
 func TestForcedShutdownKillsStopCommandGroupAfterChildExits(t *testing.T) {
 	dir := t.TempDir()
 	stopPIDFile := filepath.Join(dir, "stop.pid")
-	stop := fmt.Sprintf(`trap '' TERM; echo $$ > %s; while :; do /bin/sleep 1; done`, shellQuote(stopPIDFile))
+	stop := fmt.Sprintf(`trap '' TERM; echo $$ > %s; while :; do /bin/sleep 1; done`, runnertest.ShellQuote(stopPIDFile))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN":        "exec /bin/sleep 30",
 		"RESTARTABLE_TEST_STOP":       stop,
@@ -1484,8 +1404,8 @@ func TestForcedShutdownKillsStopCommandGroupAfterChildExits(t *testing.T) {
 func TestForcedShutdownIncludesGroupsWhoseLeadersWereReaped(t *testing.T) {
 	dir := t.TempDir()
 	stopPIDFile := filepath.Join(dir, "stop-group.pid")
-	stop := fmt.Sprintf(`echo $$ > %s; (trap '' TERM; while :; do /bin/sleep 1; done) >/dev/null 2>&1 & exit 0`, shellQuote(stopPIDFile))
-	keyDir := shortTempDir(t, "rkey-")
+	stop := fmt.Sprintf(`echo $$ > %s; (trap '' TERM; while :; do /bin/sleep 1; done) >/dev/null 2>&1 & exit 0`, runnertest.ShellQuote(stopPIDFile))
+	keyDir := runnertest.ShortTempDir(t, "rkey-")
 	keyPath := filepath.Join(keyDir, "keys.sock")
 	statePath := filepath.Join(dir, "presenter.json")
 	r := startTestRunner(t, map[string]string{
@@ -1528,7 +1448,7 @@ func TestForcedShutdownIncludesGroupsWhoseLeadersWereReaped(t *testing.T) {
 
 func TestForcedShutdownKillsGrandchildAfterLeaderExits(t *testing.T) {
 	grandchildFile := filepath.Join(t.TempDir(), "grandchild.pid")
-	run := fmt.Sprintf(`(trap '' TERM; while :; do /bin/sleep 1; done) & echo $! > %s; wait`, shellQuote(grandchildFile))
+	run := fmt.Sprintf(`(trap '' TERM; while :; do /bin/sleep 1; done) & echo $! > %s; wait`, runnertest.ShellQuote(grandchildFile))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN":        run,
 		"RESTARTABLE_TEST_TERM_GRACE": "100ms",
@@ -1557,7 +1477,7 @@ func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
 	// 既定の動作で死んで leader-exited / ready を書かず、待ちが 10 秒で切れる (負荷の中で隙間が広がって落ちていた。
 	// 親の trap の前に sleep 1 を挟むと毎回同じ文言で落ちることを確かめた。2026-10-15)
 	run := fmt.Sprintf(`trap 'while [ ! -e %s ]; do /bin/sleep 0.01; done; echo exited > %s; exit 0' TERM; (trap 'echo ready > %s; while [ ! -e %s ]; do /bin/sleep 0.01; done; echo graceful > %s; exit 0' TERM; echo armed > %s; while :; do /bin/sleep 0.01; done) & echo $! > %s; wait`,
-		shellQuote(ready), shellQuote(leaderExited), shellQuote(ready), shellQuote(release), shellQuote(gracefulExit), shellQuote(childArmed), shellQuote(childPIDPath))
+		runnertest.ShellQuote(ready), runnertest.ShellQuote(leaderExited), runnertest.ShellQuote(ready), runnertest.ShellQuote(release), runnertest.ShellQuote(gracefulExit), runnertest.ShellQuote(childArmed), runnertest.ShellQuote(childPIDPath))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN":        run,
 		"RESTARTABLE_TEST_TERM_GRACE": "30s",
@@ -1609,7 +1529,7 @@ func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
 
 func TestQuitConfirmationDuringBuildStopsBuildAndExits(t *testing.T) {
 	dir := t.TempDir()
-	keyDir := shortTempDir(t, "rkey-")
+	keyDir := runnertest.ShortTempDir(t, "rkey-")
 	keyPath := filepath.Join(keyDir, "keys.sock")
 	statePath := filepath.Join(dir, "presenter.json")
 	r := startTestRunner(t, map[string]string{
@@ -1660,7 +1580,7 @@ func TestQuitConfirmationDuringBuildStopsBuildAndExits(t *testing.T) {
 
 func TestQuitConfirmationDuringReadinessUsesStopCommand(t *testing.T) {
 	dir := t.TempDir()
-	keyDir := shortTempDir(t, "rkey-")
+	keyDir := runnertest.ShortTempDir(t, "rkey-")
 	keyPath := filepath.Join(keyDir, "keys.sock")
 	statePath := filepath.Join(t.TempDir(), "presenter.json")
 	childPIDPath := filepath.Join(dir, "child.pid")
@@ -1670,13 +1590,13 @@ func TestQuitConfirmationDuringReadinessUsesStopCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := startTestRunner(t, map[string]string{
-		"RESTARTABLE_TEST_RUN":                   fmt.Sprintf("printf '%%s' \"$$\" > %s; exec /bin/sleep 30", shellQuote(childPIDPath)),
+		"RESTARTABLE_TEST_RUN":                   fmt.Sprintf("printf '%%s' \"$$\" > %s; exec /bin/sleep 30", runnertest.ShellQuote(childPIDPath)),
 		"RESTARTABLE_TEST_READY":                 "exec /bin/sleep 30",
 		"RESTARTABLE_TEST_READY_TIMEOUT":         "30s",
 		"RESTARTABLE_TEST_READY_INTERVAL":        "5ms",
 		"RESTARTABLE_TEST_READY_ATTEMPT_TIMEOUT": "30s",
 		"RESTARTABLE_TEST_STOP_TIMEOUT":          "30s",
-		"RESTARTABLE_TEST_STOP":                  fmt.Sprintf("printf started > %s; read release < %s; kill -TERM \"$(cat %s)\"; printf done > %s", shellQuote(stopMarkerPath), shellQuote(stopReleasePath), shellQuote(childPIDPath), shellQuote(stopMarkerPath)),
+		"RESTARTABLE_TEST_STOP":                  fmt.Sprintf("printf started > %s; read release < %s; kill -TERM \"$(cat %s)\"; printf done > %s", runnertest.ShellQuote(stopMarkerPath), runnertest.ShellQuote(stopReleasePath), runnertest.ShellQuote(childPIDPath), runnertest.ShellQuote(stopMarkerPath)),
 		"RESTARTABLE_TEST_KEY_SOCKET":            keyPath,
 		"RESTARTABLE_TEST_PRESENTER_STATE":       statePath,
 	})
@@ -1728,7 +1648,7 @@ func TestQuitConfirmationDuringReadinessUsesStopCommand(t *testing.T) {
 
 func TestQuitStopCancellationResumesUnconfirmedReadyCheck(t *testing.T) {
 	dir := t.TempDir()
-	keyDir := shortTempDir(t, "rkey-")
+	keyDir := runnertest.ShortTempDir(t, "rkey-")
 	keyPath := filepath.Join(keyDir, "keys.sock")
 	statePath := filepath.Join(dir, "presenter.json")
 	attemptPath := filepath.Join(dir, "ready-attempts")
@@ -1741,7 +1661,7 @@ func TestQuitStopCancellationResumesUnconfirmedReadyCheck(t *testing.T) {
 		}
 	}
 	ready := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s; if [ "$n" -eq 1 ]; then gate=%s; else gate=%s; fi; read result < "$gate"; echo "$n:$result" >> %s; [ "$result" = ready ]`,
-		shellQuote(attemptPath), shellQuote(attemptPath), shellQuote(attemptPath), shellQuote(firstReadyGate), shellQuote(secondReadyGate), shellQuote(attemptResultPath))
+		runnertest.ShellQuote(attemptPath), runnertest.ShellQuote(attemptPath), runnertest.ShellQuote(attemptPath), runnertest.ShellQuote(firstReadyGate), runnertest.ShellQuote(secondReadyGate), runnertest.ShellQuote(attemptResultPath))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN":                 "exec /bin/sleep 30",
 		"RESTARTABLE_TEST_READY":               ready,
@@ -1820,7 +1740,7 @@ func TestReadyCleanupQueuesCancellationWhilePreviousCleanupRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldCommand := fmt.Sprintf(`( trap 'printf term > %s; read release < %s; exit 0' TERM; printf ready > %s; while :; do :; done ) & while [ ! -e %s ]; do :; done; exit 0`,
-		shellQuote(cleanupStarted), shellQuote(cleanupRelease), shellQuote(descendantStarted), shellQuote(descendantStarted))
+		runnertest.ShellQuote(cleanupStarted), runnertest.ShellQuote(cleanupRelease), runnertest.ShellQuote(descendantStarted), runnertest.ShellQuote(descendantStarted))
 	sink := newLogSink(io.Discard, true)
 	oldProc, err := startProcess([]string{oldCommand}, true, os.Environ(), strings.NewReader(""), sink, false)
 	if err != nil {
@@ -1895,7 +1815,7 @@ func TestFinalPresenterRenderClosesTransitionPanelForQuitAndCtrlC(t *testing.T) 
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			keyDir := shortTempDir(t, "rkey-")
+			keyDir := runnertest.ShortTempDir(t, "rkey-")
 			keyPath := filepath.Join(keyDir, "keys.sock")
 			statePath := filepath.Join(dir, "presenter.json")
 			r := startTestRunner(t, map[string]string{
@@ -1939,9 +1859,9 @@ func TestReadyCommandRetriesWithInstanceIDAndReportsReadyInStatus(t *testing.T) 
 	dir := t.TempDir()
 	countPath := filepath.Join(dir, "attempts")
 	runIDPath := filepath.Join(dir, "run-id")
-	ready := fmt.Sprintf(`n=$(cat %s 2>/dev/null || echo 0); n=$((n+1)); printf '%%s' "$n" > %s; [ "$n" -ge 3 ] && [ "$OBAKET_DEV_LOOP" = "$(cat %s)" ]`, shellQuote(countPath), shellQuote(countPath), shellQuote(runIDPath))
+	ready := fmt.Sprintf(`n=$(cat %s 2>/dev/null || echo 0); n=$((n+1)); printf '%%s' "$n" > %s; [ "$n" -ge 3 ] && [ "$OBAKET_DEV_LOOP" = "$(cat %s)" ]`, runnertest.ShellQuote(countPath), runnertest.ShellQuote(countPath), runnertest.ShellQuote(runIDPath))
 	r := startTestRunner(t, map[string]string{
-		"RESTARTABLE_TEST_RUN":            fmt.Sprintf(`printf '%%s' "$OBAKET_DEV_LOOP" > %s; exec /bin/sleep 30`, shellQuote(runIDPath)),
+		"RESTARTABLE_TEST_RUN":            fmt.Sprintf(`printf '%%s' "$OBAKET_DEV_LOOP" > %s; exec /bin/sleep 30`, runnertest.ShellQuote(runIDPath)),
 		"RESTARTABLE_TEST_READY":          ready,
 		"RESTARTABLE_TEST_READY_TIMEOUT":  "2s",
 		"RESTARTABLE_TEST_READY_INTERVAL": "5ms",
@@ -1977,9 +1897,9 @@ func TestReadyTimeoutKillsProbeGroupsButKeepsChildAlive(t *testing.T) {
 	pidPath := filepath.Join(dir, "probe-pids")
 	releaseChild := filepath.Join(dir, "release-child")
 	childSurvived := filepath.Join(dir, "child-survived")
-	ready := fmt.Sprintf(`echo $$ >> %s; trap '' TERM; while :; do /bin/sleep 1; done`, shellQuote(pidPath))
+	ready := fmt.Sprintf(`echo $$ >> %s; trap '' TERM; while :; do /bin/sleep 1; done`, runnertest.ShellQuote(pidPath))
 	r := startTestRunner(t, map[string]string{
-		"RESTARTABLE_TEST_RUN":                   fmt.Sprintf(`while [ ! -e %s ]; do /bin/sleep 0.01; done; touch %s; exec /bin/sleep 30`, shellQuote(releaseChild), shellQuote(childSurvived)),
+		"RESTARTABLE_TEST_RUN":                   fmt.Sprintf(`while [ ! -e %s ]; do /bin/sleep 0.01; done; touch %s; exec /bin/sleep 30`, runnertest.ShellQuote(releaseChild), runnertest.ShellQuote(childSurvived)),
 		"RESTARTABLE_TEST_READY":                 ready,
 		"RESTARTABLE_TEST_READY_TIMEOUT":         "160ms",
 		"RESTARTABLE_TEST_READY_INTERVAL":        "5ms",
@@ -2033,8 +1953,8 @@ func TestChildCanExitBeforeReadyProbeAndProbeGroupIsReaped(t *testing.T) {
 	dir := t.TempDir()
 	started := filepath.Join(dir, "probe-started")
 	pidPath := filepath.Join(dir, "probe-pid")
-	run := fmt.Sprintf(`while [ ! -e %s ]; do /bin/sleep 0.01; done; exit 0`, shellQuote(started))
-	ready := fmt.Sprintf(`echo $$ > %s; touch %s; trap '' TERM; while :; do /bin/sleep 1; done`, shellQuote(pidPath), shellQuote(started))
+	run := fmt.Sprintf(`while [ ! -e %s ]; do /bin/sleep 0.01; done; exit 0`, runnertest.ShellQuote(started))
+	ready := fmt.Sprintf(`echo $$ > %s; touch %s; trap '' TERM; while :; do /bin/sleep 1; done`, runnertest.ShellQuote(pidPath), runnertest.ShellQuote(started))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN":                   run,
 		"RESTARTABLE_TEST_READY":                 ready,
@@ -2066,7 +1986,7 @@ func TestControlRestartDuringReadyDiscardsOldGenerationResult(t *testing.T) {
 	countPath := filepath.Join(dir, "attempts")
 	firstGate := filepath.Join(dir, "first-gate")
 	secondGate := filepath.Join(dir, "second-gate")
-	ready := fmt.Sprintf(`n=$(cat %s 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > %s; if [ "$n" -eq 1 ]; then trap '' TERM; gate=%s; else gate=%s; fi; while [ ! -e "$gate" ]; do /bin/sleep 0.01; done; exit 0`, shellQuote(countPath), shellQuote(countPath), shellQuote(firstGate), shellQuote(secondGate))
+	ready := fmt.Sprintf(`n=$(cat %s 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > %s; if [ "$n" -eq 1 ]; then trap '' TERM; gate=%s; else gate=%s; fi; while [ ! -e "$gate" ]; do /bin/sleep 0.01; done; exit 0`, runnertest.ShellQuote(countPath), runnertest.ShellQuote(countPath), runnertest.ShellQuote(firstGate), runnertest.ShellQuote(secondGate))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN":                   "exec /bin/sleep 30",
 		"RESTARTABLE_TEST_READY":                 ready,
@@ -2234,7 +2154,7 @@ func startInteractiveRunner(t *testing.T, options map[string]string) (r *testRun
 // startInteractiveRunnerMode の waitForStatus=false は、子がすぐ終わって runner が socket の確認より先に終わりうる起動に使う。
 func startInteractiveRunnerMode(t *testing.T, options map[string]string, waitForStatus bool) (r *testRunner, keyPath string) {
 	t.Helper()
-	keyPath = filepath.Join(shortTempDir(t, "rcr-"), "keys.sock")
+	keyPath = filepath.Join(runnertest.ShortTempDir(t, "rcr-"), "keys.sock")
 	options["RESTARTABLE_TEST_INTERACTIVE"] = "1"
 	options["RESTARTABLE_TEST_KEY_SOCKET"] = keyPath
 	options["RESTARTABLE_TEST_PRESENTER_STATE"] = filepath.Join(t.TempDir(), "presenter.json")
@@ -2244,7 +2164,7 @@ func startInteractiveRunnerMode(t *testing.T, options map[string]string, waitFor
 func TestInteractiveChildCrashWaitsAndControlRestartRebuilds(t *testing.T) {
 	launches := filepath.Join(t.TempDir(), "launches")
 	// 1 回目の起動は rc 3 で落ち、2 回目は生き続ける
-	run := fmt.Sprintf(`echo x >> %s; [ "$(wc -l < %s)" -ge 2 ] && exec /bin/sleep 30; exit 3`, shellQuote(launches), shellQuote(launches))
+	run := fmt.Sprintf(`echo x >> %s; [ "$(wc -l < %s)" -ge 2 ] && exec /bin/sleep 30; exit 3`, runnertest.ShellQuote(launches), runnertest.ShellQuote(launches))
 	r, _ := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": "true", "RESTARTABLE_TEST_RUN": run})
 	crashed := r.waitStatus(t, string(Crashed))
 	if crashed.PID != nil || crashed.Ready {
@@ -2267,7 +2187,7 @@ func TestInteractiveChildCrashWaitsAndControlRestartRebuilds(t *testing.T) {
 
 func TestInteractiveChildCrashRestartsWithRKeyAndQuitsWithQ(t *testing.T) {
 	launches := filepath.Join(t.TempDir(), "launches")
-	run := fmt.Sprintf(`echo x >> %s; exit 5`, shellQuote(launches))
+	run := fmt.Sprintf(`echo x >> %s; exit 5`, runnertest.ShellQuote(launches))
 	r, keyPath := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": "true", "RESTARTABLE_TEST_RUN": run})
 	r.waitStatus(t, string(Crashed))
 	sendIntegrationKey(t, keyPath, "R")
@@ -2320,7 +2240,7 @@ func TestCrashedRebuildStopsLeftoverGroupBeforeNextLaunch(t *testing.T) {
 	// 1 回目: TERM を受けたら印を書く孫を残して rc 3 で落ちる (孫が trap を張り終えるのを待ってから落ちる。張る前に
 	// TERM が届くと印を書かずに死に、片付けが効いていても dirty になる)。2 回目: 起動した時点で印があるかを記録する
 	run := fmt.Sprintf(`if [ ! -f %[1]s ]; then echo first > %[1]s; /bin/sh -c 'trap "echo term > %[2]s; exit 0" TERM; : > %[3]s; while :; do sleep 0.05; done' & while [ ! -f %[3]s ]; do sleep 0.01; done; exit 3; fi; if [ -f %[2]s ]; then echo clean >> %[1]s; else echo dirty >> %[1]s; fi; exec /bin/sleep 30`,
-		shellQuote(launches), shellQuote(marker), shellQuote(armed))
+		runnertest.ShellQuote(launches), runnertest.ShellQuote(marker), runnertest.ShellQuote(armed))
 	r, _ := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_TERM_GRACE": "2s"})
 	r.waitStatus(t, string(Crashed))
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
@@ -2340,7 +2260,7 @@ func TestCrashedRebuildStopsLeftoverGroupBeforeNextLaunch(t *testing.T) {
 // 起動の板は InitialModel で開いていて transition を通らないので、run() が計測を始める配線を守る。
 func TestStartupPanelReportsElapsedTime(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "presenter.json")
-	keyPath := filepath.Join(shortTempDir(t, "rst-"), "keys.sock")
+	keyPath := filepath.Join(runnertest.ShortTempDir(t, "rst-"), "keys.sock")
 	startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN": "exec /bin/sleep 30", "RESTARTABLE_TEST_INTERACTIVE": "1",
 		"RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
@@ -2355,7 +2275,7 @@ func TestStartupPanelReportsElapsedTime(t *testing.T) {
 func crashedTERMIgnoringGrandchildRun(dir string) (run, launches string) {
 	launches, armed, gcPID := filepath.Join(dir, "launches"), filepath.Join(dir, "armed"), filepath.Join(dir, "gc.pid")
 	run = fmt.Sprintf(`if [ ! -f %[1]s ]; then echo first > %[1]s; /bin/sh -c 'trap "" TERM; echo $$ > %[3]s; : > %[2]s; while :; do sleep 0.05; done' & while [ ! -f %[2]s ]; do sleep 0.01; done; exit 3; fi; if kill -0 "$(cat %[3]s)" 2>/dev/null; then echo dirty >> %[1]s; else echo clean >> %[1]s; fi; exec /bin/sleep 30`,
-		shellQuote(launches), shellQuote(armed), shellQuote(gcPID))
+		runnertest.ShellQuote(launches), runnertest.ShellQuote(armed), runnertest.ShellQuote(gcPID))
 	return run, launches
 }
 
@@ -2384,7 +2304,7 @@ func TestRestartDuringCrashCleanupDoesNotAddBuild(t *testing.T) {
 	builds := filepath.Join(dir, "builds")
 	run, launches := crashedTERMIgnoringGrandchildRun(dir)
 	r, _ := startInteractiveRunner(t, map[string]string{
-		"RESTARTABLE_TEST_BUILD": "echo b >> " + shellQuote(builds), "RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_TERM_GRACE": "1s",
+		"RESTARTABLE_TEST_BUILD": "echo b >> " + runnertest.ShellQuote(builds), "RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_TERM_GRACE": "1s",
 	})
 	r.waitStatus(t, string(Crashed))
 	results := make(chan control.Response, 2)
@@ -2417,7 +2337,7 @@ func TestRestartDuringCrashCleanupDoesNotAddBuild(t *testing.T) {
 // 起動の確認の段で子が落ちたら、所要時間の行で「アプリが終了しました」を上書きしない。
 func TestCrashDuringReadyKeepsCrashMessage(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "presenter.json")
-	keyPath := filepath.Join(shortTempDir(t, "rcm-"), "keys.sock")
+	keyPath := filepath.Join(runnertest.ShortTempDir(t, "rcm-"), "keys.sock")
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN": "sleep 0.4; exit 4", "RESTARTABLE_TEST_READY": "false", "RESTARTABLE_TEST_READY_INTERVAL": "50ms",
 		"RESTARTABLE_TEST_INTERACTIVE": "1", "RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
@@ -2450,7 +2370,7 @@ func TestQuitFromCrashedLeavesLeftoverGroup(t *testing.T) {
 	dir := t.TempDir()
 	run, _ := crashedTERMIgnoringGrandchildRun(dir)
 	state := filepath.Join(dir, "presenter.json")
-	keyPath := filepath.Join(shortTempDir(t, "rql-"), "keys.sock")
+	keyPath := filepath.Join(runnertest.ShortTempDir(t, "rql-"), "keys.sock")
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_TERM_GRACE": "100ms", "RESTARTABLE_TEST_INTERACTIVE": "1",
 		"RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
@@ -2478,7 +2398,7 @@ func TestQuitDuringCrashCleanupDoesNotLaunch(t *testing.T) {
 	dir := t.TempDir()
 	run, launches := crashedTERMIgnoringGrandchildRun(dir)
 	state := filepath.Join(dir, "presenter.json")
-	keyPath := filepath.Join(shortTempDir(t, "rqc-"), "keys.sock")
+	keyPath := filepath.Join(runnertest.ShortTempDir(t, "rqc-"), "keys.sock")
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_TERM_GRACE": "1s", "RESTARTABLE_TEST_INTERACTIVE": "1",
 		"RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
@@ -2503,7 +2423,7 @@ func TestQuitDuringCrashCleanupDoesNotLaunch(t *testing.T) {
 func TestHeadlessBuildFailureExitsWithOne(t *testing.T) {
 	launches := filepath.Join(t.TempDir(), "launches")
 	r := startTestRunnerMode(t, map[string]string{
-		"RESTARTABLE_TEST_BUILD": "exit 17", "RESTARTABLE_TEST_RUN": "echo x >> " + shellQuote(launches) + "; exec /bin/sleep 30",
+		"RESTARTABLE_TEST_BUILD": "exit 17", "RESTARTABLE_TEST_RUN": "echo x >> " + runnertest.ShellQuote(launches) + "; exec /bin/sleep 30",
 	}, false)
 	select {
 	case <-r.done:
@@ -2523,11 +2443,11 @@ func TestHeadlessBuildFailureExitsWithOne(t *testing.T) {
 func TestHeadlessRebuildFailureStopsOldLeftoversBeforeExit(t *testing.T) {
 	dir := t.TempDir()
 	count, parent, gcPID := filepath.Join(dir, "count"), filepath.Join(dir, "parent.pid"), filepath.Join(dir, "gc.pid")
-	build := fmt.Sprintf(`n=0; [ ! -f %[1]s ] || n=$(cat %[1]s); n=$((n+1)); echo "$n" > %[1]s; [ "$n" -eq 1 ]`, shellQuote(count))
-	run := fmt.Sprintf(`echo $$ > %[1]s; /bin/sleep 300 & echo $! > %[2]s; exec /bin/sleep 300`, shellQuote(parent), shellQuote(gcPID))
+	build := fmt.Sprintf(`n=0; [ ! -f %[1]s ] || n=$(cat %[1]s); n=$((n+1)); echo "$n" > %[1]s; [ "$n" -eq 1 ]`, runnertest.ShellQuote(count))
+	run := fmt.Sprintf(`echo $$ > %[1]s; /bin/sleep 300 & echo $! > %[2]s; exec /bin/sleep 300`, runnertest.ShellQuote(parent), runnertest.ShellQuote(gcPID))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": run,
-		"RESTARTABLE_TEST_STOP": "kill -KILL $(cat " + shellQuote(parent) + ")",
+		"RESTARTABLE_TEST_STOP": "kill -KILL $(cat " + runnertest.ShellQuote(parent) + ")",
 	})
 	r.waitStatus(t, string(Running))
 	waitFor(t, 3*time.Second, "grandchild pid", func() bool { return strings.TrimSpace(readFile(gcPID)) != "" })
@@ -2560,13 +2480,13 @@ func TestHeadlessRebuildFailureStopsOldLeftoversBeforeExit(t *testing.T) {
 func TestQuitFromBuildFailedStopsOldLeftovers(t *testing.T) {
 	dir := t.TempDir()
 	count, parent, gcPID := filepath.Join(dir, "count"), filepath.Join(dir, "parent.pid"), filepath.Join(dir, "gc.pid")
-	build := fmt.Sprintf(`n=0; [ ! -f %[1]s ] || n=$(cat %[1]s); n=$((n+1)); echo "$n" > %[1]s; [ "$n" -eq 1 ]`, shellQuote(count))
-	run := fmt.Sprintf(`echo $$ > %[1]s; /bin/sleep 300 & echo $! > %[2]s; exec /bin/sleep 300`, shellQuote(parent), shellQuote(gcPID))
+	build := fmt.Sprintf(`n=0; [ ! -f %[1]s ] || n=$(cat %[1]s); n=$((n+1)); echo "$n" > %[1]s; [ "$n" -eq 1 ]`, runnertest.ShellQuote(count))
+	run := fmt.Sprintf(`echo $$ > %[1]s; /bin/sleep 300 & echo $! > %[2]s; exec /bin/sleep 300`, runnertest.ShellQuote(parent), runnertest.ShellQuote(gcPID))
 	state := filepath.Join(dir, "presenter.json")
-	keyPath := filepath.Join(shortTempDir(t, "rbq-"), "keys.sock")
+	keyPath := filepath.Join(runnertest.ShortTempDir(t, "rbq-"), "keys.sock")
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": run,
-		"RESTARTABLE_TEST_STOP":        "kill -KILL $(cat " + shellQuote(parent) + ")",
+		"RESTARTABLE_TEST_STOP":        "kill -KILL $(cat " + runnertest.ShellQuote(parent) + ")",
 		"RESTARTABLE_TEST_INTERACTIVE": "1", "RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
 	})
 	r.waitStatus(t, string(Running))
@@ -2603,10 +2523,10 @@ func TestStopCommandRestartStopsOldLeftoversBeforeNextLaunch(t *testing.T) {
 	parent, gcPID, launches := filepath.Join(dir, "parent.pid"), filepath.Join(dir, "gc.pid"), filepath.Join(dir, "launches")
 	// 2 回目の起動は、1 回目の孫が生きているか (zombie は死んでいると数える) を記録する
 	run := fmt.Sprintf(`if [ -f %[2]s ]; then s=$(ps -o stat= -p "$(cat %[2]s)" 2>/dev/null); case "$s" in ""|Z*) echo clean >> %[3]s ;; *) echo dirty >> %[3]s ;; esac; exec /bin/sleep 300; fi; echo $$ > %[1]s; /bin/sleep 300 & echo $! > %[2]s; echo first >> %[3]s; exec /bin/sleep 300`,
-		shellQuote(parent), shellQuote(gcPID), shellQuote(launches))
+		runnertest.ShellQuote(parent), runnertest.ShellQuote(gcPID), runnertest.ShellQuote(launches))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_BUILD": "true", "RESTARTABLE_TEST_RUN": run,
-		"RESTARTABLE_TEST_STOP": "kill -KILL $(cat " + shellQuote(parent) + ")",
+		"RESTARTABLE_TEST_STOP": "kill -KILL $(cat " + runnertest.ShellQuote(parent) + ")",
 	})
 	r.waitStatus(t, string(Running))
 	waitFor(t, 3*time.Second, "first launch", func() bool { return strings.TrimSpace(readFile(gcPID)) != "" })
@@ -2632,9 +2552,9 @@ func TestCtrlCDuringForcedStopKillsWithoutWaitingForGrace(t *testing.T) {
 	dir := t.TempDir()
 	started := filepath.Join(dir, "build-started")
 	state := filepath.Join(dir, "presenter.json")
-	keyPath := filepath.Join(shortTempDir(t, "rcc-"), "keys.sock")
+	keyPath := filepath.Join(runnertest.ShortTempDir(t, "rcc-"), "keys.sock")
 	r := startTestRunnerMode(t, map[string]string{
-		"RESTARTABLE_TEST_BUILD":       "trap '' TERM; : > " + shellQuote(started) + "; while :; do sleep 0.05; done",
+		"RESTARTABLE_TEST_BUILD":       "trap '' TERM; : > " + runnertest.ShellQuote(started) + "; while :; do sleep 0.05; done",
 		"RESTARTABLE_TEST_RUN":         "exec /bin/sleep 300",
 		"RESTARTABLE_TEST_TERM_GRACE":  "60s",
 		"RESTARTABLE_TEST_INTERACTIVE": "1", "RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
@@ -2658,7 +2578,7 @@ func TestCtrlCDuringForcedStopKillsWithoutWaitingForGrace(t *testing.T) {
 func TestHeadlessBuildFailureStopsBuildLeftovers(t *testing.T) {
 	bgPID := filepath.Join(t.TempDir(), "bg.pid")
 	r := startTestRunnerMode(t, map[string]string{
-		"RESTARTABLE_TEST_BUILD": "/bin/sleep 300 </dev/null >/dev/null 2>&1 & echo $! > " + shellQuote(bgPID) + "; exit 1",
+		"RESTARTABLE_TEST_BUILD": "/bin/sleep 300 </dev/null >/dev/null 2>&1 & echo $! > " + runnertest.ShellQuote(bgPID) + "; exit 1",
 		"RESTARTABLE_TEST_RUN":   "exec /bin/sleep 300",
 	}, false)
 	select {

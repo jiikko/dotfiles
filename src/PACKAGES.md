@@ -108,6 +108,7 @@
 - `src/restartable` (`github.com/jiikko/dotfiles/src/restartable`) — Command restartable はコマンドを前面で実行し、キーまたは制御 socket から再起動できる CLI。 (main)
 - `src/restartable/internal/control` (`github.com/jiikko/dotfiles/src/restartable/internal/control`) — Package control implements the private Unix socket used to inspect and restart a runner. (internal)
 - `src/restartable/internal/runner` (`github.com/jiikko/dotfiles/src/restartable/internal/runner`) — Package runner は子プロセスの起動・停止・再起動と、その実行状態や入出力を管理する。 (internal)
+- `src/restartable/internal/runnertest` (`github.com/jiikko/dotfiles/src/restartable/internal/runnertest`) — Package runnertest は restartable のテストが runner を実プロセスで起こして control socket 越しに確かめるときの共有 helper。 (internal)
 - `src/restartable/internal/ui` (`github.com/jiikko/dotfiles/src/restartable/internal/ui`) — Package ui は runner の状態とキー入力を Bubble Tea のインライン端末画面へ接続する。 (internal)
 - `src/runtimeout` (`runtimeout`) — runtimeout — コマンドを時間の上限付きで実行し、時間が来たら子孫ごと止める (coreutils の timeout 相当)。 (main)
 - `src/safefs` (`safefs`) — Package safefs はファイルを動かす・作る操作のうち、「上書きしない」「経路を差し替えられない」を守る部品を 1 か所に置く (doctor の削除エンジンと treefiler のファイル操作が共有する)。

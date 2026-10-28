@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/restartable/internal/runnertest"
 	"io"
 	"net"
 	"os"
@@ -18,18 +19,8 @@ import (
 	"time"
 )
 
-func shortSocketDir(t *testing.T) string {
-	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "rctl-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
-}
-
 func TestListenPermissionsStatusAndDuplicateStart(t *testing.T) {
-	path := filepath.Join(shortSocketDir(t), "runner.sock")
+	path := filepath.Join(runnertest.ShortTempDir(t, "rctl-"), "runner.sock")
 	server, err := Listen(path)
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +79,7 @@ func TestResponseAlwaysIncludesReadyBoolean(t *testing.T) {
 }
 
 func TestListenRemovesOwnedStaleSocketAndRejectsRegularFile(t *testing.T) {
-	dir := shortSocketDir(t)
+	dir := runnertest.ShortTempDir(t, "rctl-")
 	path := filepath.Join(dir, "stale.sock")
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	if err != nil {
@@ -120,7 +111,7 @@ func TestListenRemovesOwnedStaleSocketAndRejectsRegularFile(t *testing.T) {
 }
 
 func TestListenBindFailureKeepsLockInodeStable(t *testing.T) {
-	dir := shortSocketDir(t)
+	dir := runnertest.ShortTempDir(t, "rctl-")
 	path := filepath.Join(dir, "runner.sock")
 	original := listenControlSocket
 	listenControlSocket = func(string) (net.Listener, error) {
@@ -152,7 +143,7 @@ func TestListenBindFailureKeepsLockInodeStable(t *testing.T) {
 }
 
 func TestInvalidRequestAndPathLimit(t *testing.T) {
-	path := filepath.Join(shortSocketDir(t), "control.sock")
+	path := filepath.Join(runnertest.ShortTempDir(t, "rctl-"), "control.sock")
 	server, err := Listen(path)
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +177,7 @@ func TestInvalidRequestAndPathLimit(t *testing.T) {
 }
 
 func TestExtraNULByteDisconnectsControlRequest(t *testing.T) {
-	path := filepath.Join(shortSocketDir(t), "control.sock")
+	path := filepath.Join(runnertest.ShortTempDir(t, "rctl-"), "control.sock")
 	server, err := Listen(path)
 	if err != nil {
 		t.Fatal(err)
@@ -215,7 +206,7 @@ func TestExtraNULByteDisconnectsControlRequest(t *testing.T) {
 }
 
 func TestOversizedControlLineIsRejected(t *testing.T) {
-	path := filepath.Join(shortSocketDir(t), "control.sock")
+	path := filepath.Join(runnertest.ShortTempDir(t, "rctl-"), "control.sock")
 	server, err := Listen(path)
 	if err != nil {
 		t.Fatal(err)
@@ -244,7 +235,7 @@ func TestOversizedControlLineIsRejected(t *testing.T) {
 func TestCloseWhileRequestsArePendingDoesNotPanic(t *testing.T) {
 	const pending = 8
 	for range 3 {
-		path := filepath.Join(shortSocketDir(t), "runner.sock")
+		path := filepath.Join(runnertest.ShortTempDir(t, "rctl-"), "runner.sock")
 		server, err := Listen(path)
 		if err != nil {
 			t.Fatal(err)
@@ -293,7 +284,7 @@ func TestListenLockFDIsNotInheritedByChildren(t *testing.T) {
 		}
 		os.Exit(0)
 	}
-	server, err := Listen(filepath.Join(shortSocketDir(t), "runner.sock"))
+	server, err := Listen(filepath.Join(runnertest.ShortTempDir(t, "rctl-"), "runner.sock"))
 	if err != nil {
 		t.Fatal(err)
 	}

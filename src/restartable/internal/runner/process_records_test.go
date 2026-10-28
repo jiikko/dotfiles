@@ -2,6 +2,7 @@ package runner
 
 import (
 	"fmt"
+	"github.com/jiikko/dotfiles/src/restartable/internal/runnertest"
 	"io"
 	"os"
 	"path/filepath"
@@ -122,7 +123,7 @@ func TestTrackProcessKeepsRecordWhoseOutputIsStillHeld(t *testing.T) {
 	}
 	pidFile := filepath.Join(t.TempDir(), "escaped.pid")
 	// The descendant leaves the group but keeps the shared output pipe open.
-	script := fmt.Sprintf(`/usr/bin/perl -e 'setpgrp(0,0); sleep 30' & echo $! > %s; exit 0`, shellQuote(pidFile))
+	script := fmt.Sprintf(`/usr/bin/perl -e 'setpgrp(0,0); sleep 30' & echo $! > %s; exit 0`, runnertest.ShellQuote(pidFile))
 	held := startTrackedTestProcess(t, script)
 	<-held.done
 	waitFor(t, 5*time.Second, "escaped descendant PID", func() bool { return strings.TrimSpace(readFile(pidFile)) != "" })

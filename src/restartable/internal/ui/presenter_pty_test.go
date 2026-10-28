@@ -1,16 +1,15 @@
 package ui
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/restartable/internal/runnertest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -33,8 +32,8 @@ func TestPTYRunnerHelper(t *testing.T) {
 	code, err := runner.Run(runner.Config{
 		RunArgs:            []string{"/bin/sh", "-c", os.Getenv("RESTARTABLE_PTY_RUN")},
 		ReadyCommand:       os.Getenv("RESTARTABLE_PTY_READY"),
-		ReadyTimeout:       envDuration("RESTARTABLE_PTY_READY_TIMEOUT", 120*time.Second),
-		ReadyInterval:      envDuration("RESTARTABLE_PTY_READY_INTERVAL", 500*time.Millisecond),
+		ReadyTimeout:       runnertest.EnvDuration("RESTARTABLE_PTY_READY_TIMEOUT", 120*time.Second),
+		ReadyInterval:      runnertest.EnvDuration("RESTARTABLE_PTY_READY_INTERVAL", 500*time.Millisecond),
 		ControlPath:        os.Getenv("RESTARTABLE_PTY_CONTROL"),
 		Stdin:              os.Stdin,
 		Stdout:             os.Stdout,
@@ -43,21 +42,13 @@ func TestPTYRunnerHelper(t *testing.T) {
 		StdinIsTerminal:    true,
 		Presenter:          configuredPresenter,
 		TermGrace:          100 * time.Millisecond,
-		OutputDrainTimeout: envDuration("RESTARTABLE_PTY_OUTPUT_DRAIN_TIMEOUT", 0),
+		OutputDrainTimeout: runnertest.EnvDuration("RESTARTABLE_PTY_OUTPUT_DRAIN_TIMEOUT", 0),
 	})
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	os.Exit(code)
-}
-
-func envDuration(name string, fallback time.Duration) time.Duration {
-	value, err := time.ParseDuration(os.Getenv(name))
-	if err != nil {
-		return fallback
-	}
-	return value
 }
 
 // TestPTYDetachedOutputHelper creates a process that leaves the runner's
@@ -100,16 +91,8 @@ func TestPTYDetachedOutputHelper(t *testing.T) {
 	}
 }
 
-type ptyRunner struct {
-	cmd    *exec.Cmd
-	master *os.File
-	path   string
-	done   chan struct{}
-	err    error
-
-	outputMu sync.Mutex
-	output   bytes.Buffer
-}
+// ptyRunner は端末 (pty) の下で動かしている runner の子プロセス。
+type ptyRunner struct{ *runnertest.PTY }
 
 type recordingPresenter struct {
 	*Presenter
@@ -135,12 +118,7 @@ func startPTYRunnerWithEnv(t *testing.T, run string, extraEnv ...string) *ptyRun
 
 func startPTYRunnerWithEnvAndSize(t *testing.T, run string, size *pty.Winsize, extraEnv ...string) *ptyRunner {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "rpty-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	path := filepath.Join(dir, "runner.sock")
+	path := filepath.Join(runnertest.ShortTempDir(t, "rpty-"), "runner.sock")
 	cmd := exec.Command(os.Args[0], "-test.run=^TestPTYRunnerHelper$")
 	cmd.Env = append(os.Environ(),
 		"RESTARTABLE_PTY_HELPER=1",
@@ -155,46 +133,7 @@ func startPTYRunnerWithEnvAndSize(t *testing.T, run string, size *pty.Winsize, e
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &ptyRunner{cmd: cmd, master: master, path: path, done: make(chan struct{})}
-	go func() {
-		defer close(r.done)
-		r.err = cmd.Wait()
-	}()
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := master.Read(buf)
-			if n > 0 {
-				r.outputMu.Lock()
-				_, _ = r.output.Write(buf[:n])
-				r.outputMu.Unlock()
-			}
-			if readErr != nil {
-				return
-			}
-		}
-	}()
-	t.Cleanup(func() {
-		select {
-		case <-r.done:
-		default:
-			_ = r.cmd.Process.Signal(syscall.SIGTERM)
-			select {
-			case <-r.done:
-			case <-time.After(4 * time.Second):
-				_ = r.cmd.Process.Kill()
-				<-r.done
-			}
-		}
-		_ = r.master.Close()
-	})
-	return r
-}
-
-func (r *ptyRunner) text() string {
-	r.outputMu.Lock()
-	defer r.outputMu.Unlock()
-	return r.output.String()
+	return &ptyRunner{runnertest.Attach(t, cmd, master, master, path)}
 }
 
 func TestPTYReadyPanelStaysVisibleUntilReadyThenCloses(t *testing.T) {
@@ -202,7 +141,7 @@ func TestPTYReadyPanelStaysVisibleUntilReadyThenCloses(t *testing.T) {
 	gate := filepath.Join(dir, "ready")
 	statePath := filepath.Join(dir, "panel-state")
 	r := startPTYRunnerWithEnv(t, "exec /bin/sleep 30",
-		"RESTARTABLE_PTY_READY=test -e "+ptyShellQuote(gate),
+		"RESTARTABLE_PTY_READY=test -e "+runnertest.ShellQuote(gate),
 		"RESTARTABLE_PTY_READY_TIMEOUT=5s",
 		"RESTARTABLE_PTY_READY_INTERVAL=5ms",
 		"RESTARTABLE_PTY_PANEL_STATE="+statePath,
@@ -220,7 +159,7 @@ func TestPTYReadyPanelStaysVisibleUntilReadyThenCloses(t *testing.T) {
 	waitPTYCondition(t, r, "ready status and closed progress panel", func() bool {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-		status, err := control.Call(ctx, r.path, control.Status)
+		status, err := control.Call(ctx, r.Path, control.Status)
 		state, stateErr := os.ReadFile(statePath)
 		return err == nil && stateErr == nil && status.Ready && string(state) == "active=false"
 	})
@@ -229,28 +168,9 @@ func TestPTYReadyPanelStaysVisibleUntilReadyThenCloses(t *testing.T) {
 	}
 }
 
-func ptyShellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
-}
-
 func waitPTYOutput(t *testing.T, r *ptyRunner, description string, predicate func(string) bool) {
 	t.Helper()
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-	timer := time.NewTimer(4 * time.Second)
-	defer timer.Stop()
-	for {
-		if output := r.text(); predicate(output) {
-			return
-		}
-		select {
-		case <-ticker.C:
-		case <-timer.C:
-			t.Fatalf("timed out waiting for %s; PTY output: %q", description, r.text())
-		case <-r.done:
-			t.Fatalf("runner exited before %s: %v; PTY output: %q", description, r.err, r.text())
-		}
-	}
+	r.WaitText(t, description, 4*time.Second, predicate)
 }
 
 func TestPTYRunnerRendersStatusAndConfirmAndUsesNullStdin(t *testing.T) {
@@ -259,13 +179,13 @@ func TestPTYRunnerRendersStatusAndConfirmAndUsesNullStdin(t *testing.T) {
 		return strings.Contains(output, "[R] 再起動") && strings.Contains(output, "running (pid ") && strings.Contains(output, "restartable-stdin-status=1")
 	})
 
-	if _, err := r.master.Write([]byte("q")); err != nil {
+	if _, err := r.Master.Write([]byte("q")); err != nil {
 		t.Fatal(err)
 	}
 	waitPTYOutput(t, r, "quit confirmation dialog", func(output string) bool {
 		return strings.Contains(output, "アプリを終了しますか？")
 	})
-	if _, err := r.master.Write([]byte("n")); err != nil {
+	if _, err := r.Master.Write([]byte("n")); err != nil {
 		t.Fatal(err)
 	}
 	if code := signalPTYRunner(t, r); code != 143 {
@@ -316,7 +236,7 @@ func TestPTYRunnerDrainsLateOutputDuringTerminationWithInputBurst(t *testing.T) 
 	if err != nil {
 		t.Fatalf("detached-output leader PID: %v; value=%q", err, ready)
 	}
-	if err := r.cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+	if err := r.Cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		t.Fatal(err)
 	}
 	waitPTYCondition(t, r, "runner draining after its child group exited", func() bool {
@@ -325,10 +245,10 @@ func TestPTYRunnerDrainsLateOutputDuringTerminationWithInputBurst(t *testing.T) 
 	waitPTYCondition(t, r, "actor leaving its event loop for output draining", func() bool {
 		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
 		defer cancel()
-		_, err := control.Call(ctx, r.path, control.Status)
+		_, err := control.Call(ctx, r.Path, control.Status)
 		return errors.Is(err, context.DeadlineExceeded)
 	})
-	if _, err := r.master.Write([]byte(strings.Repeat("r", 400))); err != nil {
+	if _, err := r.Master.Write([]byte(strings.Repeat("r", 400))); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(releasePath, []byte("release"), 0600); err != nil {
@@ -337,34 +257,19 @@ func TestPTYRunnerDrainsLateOutputDuringTerminationWithInputBurst(t *testing.T) 
 	if code := waitPTYRunner(t, r, 5*time.Second); code != 143 {
 		t.Fatalf("runner exit code after drain-window burst = %d, want 143", code)
 	}
-	if output := r.text(); !strings.Contains(output, "delayed-output-line") {
+	if output := r.Text(); !strings.Contains(output, "delayed-output-line") {
 		t.Fatalf("late descendant output was not printed: %q", output)
 	}
 }
 
 func waitPTYCondition(t *testing.T, r *ptyRunner, description string, predicate func() bool) {
 	t.Helper()
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-	timer := time.NewTimer(4 * time.Second)
-	defer timer.Stop()
-	for {
-		if predicate() {
-			return
-		}
-		select {
-		case <-ticker.C:
-		case <-timer.C:
-			t.Fatalf("timed out waiting for %s; PTY output: %q", description, r.text())
-		case <-r.done:
-			t.Fatalf("runner exited before %s: %v; PTY output: %q", description, r.err, r.text())
-		}
-	}
+	r.WaitUntil(t, description, 4*time.Second, predicate)
 }
 
 func signalPTYRunner(t *testing.T, r *ptyRunner) int {
 	t.Helper()
-	if err := r.cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+	if err := r.Cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		t.Fatal(err)
 	}
 	return waitPTYRunner(t, r, 5*time.Second)
@@ -373,17 +278,17 @@ func signalPTYRunner(t *testing.T, r *ptyRunner) int {
 func waitPTYRunner(t *testing.T, r *ptyRunner, limit time.Duration) int {
 	t.Helper()
 	select {
-	case <-r.done:
-		if r.err == nil {
+	case <-r.Done:
+		if r.Err == nil {
 			return 0
 		}
 		var exit *exec.ExitError
-		if errors.As(r.err, &exit) {
+		if errors.As(r.Err, &exit) {
 			return exit.ExitCode()
 		}
-		t.Fatalf("wait for runner: %v", r.err)
+		t.Fatalf("wait for runner: %v", r.Err)
 	case <-time.After(limit):
-		t.Fatalf("runner did not exit after SIGTERM; PTY output: %q", r.text())
+		t.Fatalf("runner did not exit after SIGTERM; PTY output: %q", r.Text())
 	}
 	return -1
 }

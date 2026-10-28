@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"github.com/jiikko/dotfiles/src/restartable/internal/runnertest"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -37,7 +38,7 @@ func (p *recordingPresenter) sawStage(stage TransitionStage) bool {
 func runInProcess(t *testing.T, cfg Config) (int, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	cfg.ControlPath = filepath.Join(shortTempDir(t, "rinp-"), "runner.sock")
+	cfg.ControlPath = filepath.Join(runnertest.ShortTempDir(t, "rinp-"), "runner.sock")
 	cfg.Stdin = strings.NewReader("")
 	cfg.Stdout, cfg.Stderr = &stdout, &stderr
 	code, err := Run(cfg)
