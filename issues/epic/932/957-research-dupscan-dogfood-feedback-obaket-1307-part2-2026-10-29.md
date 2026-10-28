@@ -4,6 +4,20 @@
 
 起票日: 2026-10-29
 
+## 対応結果 (2026-10-29)
+
+起票時の観察と、現行版での再現結果を区別する。以下の「概要」から「見送り」までは起票時の記録を保存したもの。
+今回の調査は固定 dotfiles `d50cff98` からビルドした binary、Go 1.26.0、macOS SDK 27.0 で実施。
+同時に更新される共有 checkout の wrapper を結果の比較対象にはしなかった。hook の検証は Homebrew Bash 5 を使用。
+
+- Q1: 2定義の差分は既存の `explain -compare` (918) で取得できる。README に L2 の組から使う導線を追加。
+- Q2: 古い除外と現在の組を結び付ける案内を採用し、表示のみの改善を実装・検証する。
+- Q3: 設定編集 CLI は保留。一括 `remove --stale` は不採用。956 の ungrouped は sweep に必要な許可を含む。
+- Q4/Q6: JSON の種別・範囲集計を README に追加。専用フラグ・既定の分類変更は今回採用しない。
+- Q5: 複数行は原因ではない。引数付き call と前置文が原因で、現行の保守的な preset 条件を維持する。
+- 954 P3/P8: 現行では解消済み。実ファイルと実 hook の A-B で確認した。
+- 関連: [954](done/954-research-dupscan-dogfood-feedback-obaket-1307-2026-10-28.md)、[955](955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md)、[956](956-research-dupscan-dogfood-self-dedup-2026-10-29.md)。955/956 全体の完了判断・担当には介入しない。
+
 ## 概要
 
 obaket の issue 1307 (テストの類似メソッドの統合) の続きを dupscan-dogfood で進めたときの所見。`954` (前半。done に移っている) の続きで、**954 の P1〜P8 のうち直った・直っていないものの確認**も含む。着手するのは別の人なので、再現手順・数字・未確認のことを分けて書く。
@@ -106,3 +120,94 @@ grep / rg に戻した場面: 呼び出しの**書き方の種類**を数える�
 ## 見送り
 
 - 特になし (どれも価値の判断は着手者に任せる)
+
+
+## 裏どり・採否の根拠
+
+### Q1: 既存の差分表示を使う
+
+`explain -compare` は text/json で直接の literal token を表示し、参照式は未解決として残す。
+obaket `7711fc278` の `ProviderContractFixtures.swift` を取り出し、`s3SmallWireFixture` と
+`dropboxSmallWireFixture` を比較すると 15 differences / 15 returned / truncated=false / parse_error_files=0。
+root 由来の文字列14箇所と small bytes 1箇所。既存 compare が返すのは、設定項目4種類への要約ではなく AST 上の出現ごとの差分であり、この2fixtureでは15箇所になる。
+統合後 `7d2daefdc` の s3 と googleDrive は3差分 (root・small文字列・ページ数)。
+
+既存コマンドの利用例: `dupscan explain -limit 50 -compare Fixtures.swift:dropboxSmallWireFixture Fixtures.swift:s3SmallWireFixture`。
+AST path はソース位置や意味的な項目名ではない。group 全員の一括表・共通接頭辞の集約・意図の自動分類は未実装。
+この点を「新しい差分表示が必要」とは扱わず、まず既存コマンドを使う。
+一括比較は、既存コマンドを使っても多数のペア選択が繰り返し律速になる実例が出たとき再検討する。
+
+### Q2: 除外の更新候補を表示する設計
+
+Go の同形2関数を27 nodesで除外し、両方の `return x * 2` を `return x * 2 + 3` に変える再現例では、
+同じ鍵の29 nodesの組ができ、旧釘 `@18fea7600f09` は `@e85619f08857` に変わる。
+`report -v` には現在の除外 JSON が組の箇所に既に出るが、旧 stale rule と関連付けない。
+`gate -v -base HEAD` は rc=0 / changed=2 / stale=1 で、組を既存と扱うため現在の除外 JSON 自体が出ない。
+したがって「新しいキーが一切出ない」は report について過大で、gate と相関の導線が実際の gap。
+956 の duplicate/ungrouped 分類はこの hash 変更例を解消しない。
+
+採用するのは表示のみ。verbose の stale group の直後に、次を満たす場合だけ現在の除外 JSON を候補として添える。
+
+- 同じ段、hash を除いた鍵の多重集合が完全一致し、現在の組と一意に対応する。
+- closure の序数や多重定義の番号を省く pinKey が重複する場合、複数候補、顔ぶれの増減は案内しない。
+- report は除外前の組、gate は新規違反に絞る前の head の組から照合する。
+- 「同じ鍵の組候補。除外理由の再審査が必要」と示し、原因を本体変更と断定しない。
+- 旧 kind/reason のコピー、設定書換え、候補の自動採用、終了コード・JSON schema の変更はしない。
+
+### Q3: 書込み操作を増やす前の条件
+
+`exclude` サブコマンドは無い (現状ではディレクトリ指定として解釈され rc=2)。
+5回の手編集だけでは、read-only の道具に書込み・整形保持・並行更新の扱いを足す費用の優位は実証されていない。
+Q2 の候補表示を先行させる。特に `--stale` 一括削除は、sweep のための許可まで消すので不採用。
+再開条件は、候補表示後も除外編集が反復して作業の律速になることを記録できたとき。
+将来は read-only の変更案と明示 apply を分け、exact group指定・必須kind/reason・差分preview・
+不正設定拒否・元bytesの再照合・通常gateでの確認を設計条件にする。
+956 F4 の allow-group は別の表現形式の提案であり、同時実装する必然はない。
+
+### Q4/Q6: 全体を走査してから集計する
+
+`-partition test` と `-within macOS/ObaketTests` はいずれも未定義flagとして rc=2。
+一方、既存 JSON に `partition` と `members[].file` があるので、専用フラグがなくても集計できる。
+README に repo root の全件 JSON から `all` / `within` / `contains` / `partition` を数える実行可能な手順を追加した。
+走査の dir を絞ると範囲外の相手を失うので、集計対象の範囲と走査範囲を混同しない。
+
+固定版で obaket `7d2daefdc` の archive の通常ファイルを git fixture に登録して測定
+(symlink は dupscan 自体も読まないため除く): 1,682 files / 26 files with parse errors、149組。
+種別は test 139 / mixed 7 / prod 3。`macOS/ObaketTests/` を含む34組、範囲内で完結する1組。
+起票時の数字との変化を、共通化や効率改善の証拠には使わない (当時のdupscan版が不明)。
+
+mixed の印は各単位の test 判定から付く構文・配置上の分類で、ドメイン境界の証明ではない。
+本番 API をテストから再利用できる場合もあり、一律の「寄せられない」分類や自動除外は不採用。
+JSON の手順を使っても範囲集計の反復が律速になるなら、report 専用の表示後filter/集計を再検討する。
+その際も group形成・除外・gate の判定には波及させず、全体の総数と filter 後の数を区別する。
+
+### Q5: preset が残す3組の原因
+
+6関数の最小例では、除外なしの L2 が3組。preset を適用すると複数行の単一callの組だけ消え、
+引数の `Array("hello".utf8)` を含む組と、`let base = …` を前置する組が残る。
+実 fixture も同じ: smb/sftpとs3/dropbox/googleDrive/pikpakWebDAV/genericWebDAVは引数内の Array call、
+r2/s3-compatible は前置 let があり、preset だけで3組 (2・5・2メンバー) が残る。
+
+本体直下1文・引数中callは0引数だけ、という実装条件と一致する。複数行対応は既存なので追加不要。
+型未解決の任意の引数付きcallを純粋な変換とは判定できないため、preset は広げず、README に対象外の具体例を加えた。
+全候補の不一致理由を verbose に出す案は、今回の原因調査には不要なので見送る。
+再検討するのは、既知の条件を読んでも判定理由を識別できない反例が出たとき。
+
+### 954 P3/P8 の現行確認
+
+- P3: obaket `7d2daefdc` の `QuickSearchClickCoordinatorTests.swift` は 1 file / 77 units、解析失敗通知なし。
+  以前失敗した `FakeQuickSearchRuntimeLease.end()`・`SequencedQuickSearchWindowResolver.resolveQuickSearchWindow(...)`・
+  `ManualQuickSearchWaitState.wait()` を `def` で全文取得できた。いずれも `continuation.yield(())` を含み、
+  954 の空タプル引数を読み直す修正 `8ca19372` の対象。新たな parser 修正は不要。
+- P8: 実hookを隔離sessionで A-B確認。通常Bash 0 B / 最初のSwift symbol rg 574 B /
+  同session再度のrg 0 B / 別sessionのdupscan利用 0 B / 直後のrg 0 B。全rc=0、stderr=0。
+  現行は通知間隔900秒・dupscan利用後600秒抑止。既存hook suiteも145 passed / 0 failed。
+  したがって「毎Bash」「直っていない」は起票時の観察として保存し、現行の事実としては訂正する。
+
+### 改善の評価
+
+既存の比較機能とpreset条件を確認する手順を明示し、不要な新機能・危険なstale一括削除を避けられるようにした。
+JSON集計の手順は範囲外の相手を落とさず数字を取れる。一方、一般的なtoken削減・開発時間短縮は今回測定していない。
+Q2の表示改善は、除外理由の再審査を保ちながら旧除外と現在の候補を人が突き合わせる往復を減らすことを狙う。
+
+反証レビュー: 論点別のread-only subagent 2体で照合。P3として、設定項目数とAST出現数の違いを元記述の誤りと断定していた文を訂正し、hook検証のBash条件を追記した。もう一方は数値を独立再実行して一致し、追加指摘なし。

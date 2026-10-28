@@ -137,6 +137,26 @@ Swift と Go の両方を読む。出力は text だけで、0 件でも rc=0。
 `next_action`は最大2個。最初は`read_source`で、表示順（doc→test→source）の最初の一致行の4行前〜75行後を、最大80行・実ファイルの末尾まで確認する`sed`のargv配列を返す。走査したscope内の絶対fileを使い、別cwdからも実行できる。`source_read_truncated=true`はfile全体を含まないこと、`owner_unknown=true`は囲む単位のmetadataが未取得であることを示す。Go testの所有者を推測で埋めず、原文から確認する。argvは自動実行せず、編集後は再検索して位置を照合する。長い定義の全文や意味上の再利用可否を保証しない。
 2個目は従来の候補探索で、呼び出し名があれば`callers`、docだけの候補ならSwiftは`context` / Goは`index -name`。同名の別責務も含みうるため、先に原文の否定条件や用途を確認する。名前のない文字列一致でも最初の原文確認は案内し、0件では案内しない。
 
+範囲別の集計は、repo root で report の JSON を一度取得して `members[].file` と `partition` から行える。
+`-partition` / `-within` は未実装。ディレクトリを走査対象に渡してから数えると、範囲外の相手との組が失われる。
+次は JSON 全件から `macOS/ObaketTests/` 内で完結する組・1件でも含む組・種別ごとの組数を出す例:
+
+```sh
+dupscan -format json -limit 0 . > report.json
+python3 - report.json <<'PYCODE'
+import collections, json, sys
+groups = json.load(open(sys.argv[1]))["groups"]
+prefix = "macOS/ObaketTests/"
+print("all", len(groups))
+print("within", sum(all(m["file"].startswith(prefix) for m in g["members"]) for g in groups))
+print("contains", sum(any(m["file"].startswith(prefix) for m in g["members"]) for g in groups))
+print("partition", dict(collections.Counter(g["partition"] for g in groups)))
+PYCODE
+```
+
+`partition` は構文・配置から付く test の印による分類で、再利用してよい依存方向の証明ではない。
+`mixed` を一律に除外せず、既存の本番 API をテストから使えるかも個別に確認する。
+
 report の text は、組を大きい順 (メンバーのうち最大の単位の節の数) に並べ、先頭に「ファイルの組」(同じファイルの組み合わせに組が 2 つ以上あるもの) を件数と節の合計の大きい順に 5 行出す。
 同じ画面・同じ型の写しが細切れの組で並ぶのを 1 行で見せ、寄せる作業の単位を決めやすくする (json は `file_pairs` に全部・各組の `nodes`)。
 
@@ -155,6 +175,8 @@ textの先頭には構文近似の説明を1行出す（0件でも同じ）。�
 `explain -compare <file>:<関数名|行> <file>:<関数名|行> [dir...]` は同scopeの2単位をL1の順序付きAST構造で比較する（text/json、独立schema `dupscan.explain.compare.v1`）。例: `dupscan explain -compare Sources/Other.swift:helper Sources/Main.swift:helper`。既定のexplain出力・hash・group/gate判定は維持する。
 構造pathは正規化AST内の位置であり、source位置ではない。直接のliteral tokenは字面を別欄に残し、property/member参照は未解決の式として表示する。initializerや実行時値を解決しない。局所名は単位全体の順で番号化し、文の挿入は後続番号や位置をずらす。差分は子の同じ位置を比べ、最適な編集対応・同一動作・再利用可否を証明しない。
 `-limit`は差分件数の上限1〜50（既定20）。snippet/tokenは各160runes、literal tokenは差分の各側最大8個。各対象のsource fileとL1表示はそれぞれ1MiBまで、AST深さは256まで。上限超過/対象の解析失敗/異言語はrc=2。差分全数・返却数・snippet等の省略・scope内parse-error file数と予算を表示し、解析不完全を差分なしと混同しない。選択group全員一括比較とmanifest/target解析は未実装。
+
+L2 の組の違いを読むときも、メンバーを2つ選んで `explain -limit 50 -compare Other.swift:helper Main.swift:helper` を使える。差分数は AST 上の位置の数で、設定項目の数ではない。同じパス接頭辞が14箇所に書かれていれば14差分になる。組全員の表や、データ表／意図した差の分類にはまとめない。
 
 `near` は report・gate と同じ比べ方 (`group.Eligible` と段のハッシュ) で、指した単位と同じハッシュの単位を出す。指した単位そのものは出さない。
 組の作り方 (被った組・入れ子のクロージャの組を外す) は通さないので、クロージャを指してもその一致が出る。
@@ -277,6 +299,7 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 - プリセット (`preset`) は形で組を外す既定の規則 (issue 919)。今あるのは `l2-single-call` だけ: L2 の組で、メンバー全員の本体が「1 つの呼び出しに原子 (リテラル・名前・メンバーの参照・
   原子だけを埋め込んだ文字列・引数の無い呼び出し) だけを渡す」1 文 (`return`・`try`・`await`・後置の `!` は可) で、L1 のハッシュが全員違う組。
   例: `try TestScratchDirectory.makeFile(prefix: "a", contents: contents)` と `prefix: "b"` の版。寄せるには定数を引数にするしかなく、それは呼んでいる関数そのもの。
+  複数行の呼び出しも対象になる。一方、引数に `Array("hello".utf8)` のような引数付き call がある形や、`let base = …` を前置する2文の本体は対象外。型を解決しないため、任意の call を純粋な値の変換とは扱わない。
   パスの除外と同じく書いた後にできた単位にも効くので、gate はプリセットで通した変わった単位を 1 行目と json (`preset_passed`)・xcode の形式 (note) に毎回出す (止めはしない)
 
 - 釘は `<鍵 (クロージャの順番と多重定義の #n を除く)>@<本体の L1 のハッシュの先頭 12 文字>`。行がずれても効き、本体を直すと外れる。
