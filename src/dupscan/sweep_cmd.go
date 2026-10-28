@@ -89,10 +89,10 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	}
 	ex := exclude.New(cfg, entries, scopeFilter(sc))
 
-	base := ex.ApplyGroups(group.Build(entries, opt))
+	base := dropAllowedGroups(ex, entries, ex.ApplyGroups(group.Build(entries, opt)))
 	deepOpt := group.Options{MinNodes: sweepDeepMinNodes, MinClosureNodes: sweepDeepMinNodes, Levels: []norm.Level{norm.L1, norm.L2, norm.LM}}
-	deep := newGroups(ex.ApplyGroups(group.Build(entries, deepOpt)), base)
-	similar, skippedSimilar := sweepSimilarPairs(entries, base, deep, *threshold, *maxUnits)
+	deep := newGroups(dropAllowedGroups(ex, entries, ex.ApplyGroups(group.Build(entries, deepOpt))), base)
+	similar, skippedSimilar := sweepSimilarPairs(entries, base, deep, *threshold, *maxUnits, ex.Allowed)
 	clusters := sweepClusters(entries, opt)
 
 	w := &lineWriter{w: stdout}
@@ -115,6 +115,34 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 		return fail(w.err)
 	}
 	return 0
+}
+
+// dropAllowedGroups は、メンバーが全部 `dupscan:allow` の許可済みの組を除く (gate が許可済みを新しい重複に数えないのと同じ扱い)。
+// report は許可済みの単位に印を付けるだけで組は出すが、sweep は「見終えた組を静かにする」ための出力なので、全員が許可済みなら出さない。
+// クロージャは、囲む単位が許可済みなら許可済みとして数える (関数に付けた印が、その中の同じ形のクロージャの組にも効く)。
+func dropAllowedGroups(ex interface{ Allowed(*group.Entry) bool }, entries []*group.Entry, groups []group.Group) []group.Group {
+	byKey := map[string]*group.Entry{}
+	for _, e := range entries {
+		byKey[e.Unit.Key] = e
+	}
+	allowed := func(m *group.Entry) bool {
+		if ex.Allowed(m) {
+			return true
+		}
+		owner := byKey[m.Unit.Owner]
+		return m.Unit.Owner != "" && owner != nil && ex.Allowed(owner)
+	}
+	out := groups[:0:0]
+	for _, g := range groups {
+		all := true
+		for _, m := range g.Members {
+			all = all && allowed(m)
+		}
+		if !all {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 // newGroups は groups のうち、メンバーが全部 covered の 1 つの組に含まれるものを除く (下限を下げて同じ組が再び出ただけのもの)。
@@ -194,7 +222,7 @@ func unitLabel(u *tree.Unit) string {
 
 // sweepSimilarPairs は、読める名前つきの単位を総当たりして、Dice が threshold 以上の対を返す。
 // 単位が maxUnits を超えたら総当たりは重いので比べず、飛ばした理由の文を返す。
-func sweepSimilarPairs(entries []*group.Entry, base, deep []group.Group, threshold float64, maxUnits int) ([]sweepSimilar, string) {
+func sweepSimilarPairs(entries []*group.Entry, base, deep []group.Group, threshold float64, maxUnits int, allowed func(*group.Entry) bool) ([]sweepSimilar, string) {
 	var cand []*group.Entry
 	for _, e := range entries {
 		if !e.Unit.Unreadable && e.Unit.Body != nil && e.Unit.Kind != tree.KindClosure && e.Result.Nodes >= sweepDeepMinNodes {
@@ -226,7 +254,7 @@ func sweepSimilarPairs(entries []*group.Entry, base, deep []group.Group, thresho
 	for i := range cand {
 		for j := i + 1; j < len(cand); j++ {
 			a, b := cand[i], cand[j]
-			if path.Ext(a.Unit.File) != path.Ext(b.Unit.File) || grouped[[2]*group.Entry{a, b}] || nested(a.Unit, b.Unit) {
+			if path.Ext(a.Unit.File) != path.Ext(b.Unit.File) || grouped[[2]*group.Entry{a, b}] || nested(a.Unit, b.Unit) || (allowed(a) && allowed(b)) {
 				continue
 			}
 			lo, hi := min(weights[i], weights[j]), weights[i]+weights[j]

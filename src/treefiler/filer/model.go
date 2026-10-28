@@ -889,6 +889,7 @@ func (m *Model) snapAll() {
 
 // HandleKey は 1 打鍵を処理する (キーの表記は bubbletea の KeyPressMsg.String())。入力する文字はキーから推す
 // (1 文字のキーはその文字、space は空白)。入力欄に文字を入れる呼び出し側は HandleInput で KeyPressMsg.Text を渡す。
+// dupscan:allow intentional 板ごとに返す型 (Action / Result) と受け口が違う 1 行の委譲。lineedit.KeyText で文字を推す約束を、板の口の形に合わせて各板が持つ
 func (m *Model) HandleKey(k string) Result {
 	return m.HandleInput(k, lineedit.KeyText(k))
 }

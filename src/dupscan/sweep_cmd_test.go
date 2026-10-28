@@ -308,3 +308,98 @@ func TestSweepDefaultCapKeepsMidSizedReposInSection3(t *testing.T) {
 		t.Errorf("既定の上限 %d が 6000 を下回る: 6128 単位の repo で節 3 が飛ばされる", sweepMaxSimilarUnit)
 	}
 }
+
+const goTwoSinksAllowed = `package a
+
+import (
+	"io"
+	"os"
+)
+
+// dupscan:allow intentional 出力先が違うだけの別の窓口 (テストの注記)
+func captureOut(fn func()) string {
+	r, w, _ := os.Pipe()
+	orig := os.Stdout
+	os.Stdout = w
+	done := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- string(b)
+	}()
+	fn()
+	os.Stdout = orig
+	_ = w.Close()
+	out := <-done
+	_ = r.Close()
+	return out
+}
+
+// dupscan:allow intentional 出力先が違うだけの別の窓口 (テストの注記)
+func captureErr(fn func()) string {
+	r, w, _ := os.Pipe()
+	orig := os.Stderr
+	os.Stderr = w
+	done := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- string(b)
+	}()
+	fn()
+	os.Stderr = orig
+	_ = w.Close()
+	out := <-done
+	_ = r.Close()
+	return out
+}
+`
+
+// `dupscan:allow` はメンバー全員に付いた組を節 2 から除く。片方だけの組は出し続ける (もう片方の新しい写しを見逃さない)。
+func TestSweepAllowMarkersSilenceGroupsOnlyWhenEveryMemberIsAllowed(t *testing.T) {
+	root := repoWith(t, map[string]string{"a/a.go": goTwoSinksAllowed})
+	_, out, _ := sweep(t, root)
+	if s := sweepSection(t, out, 2); strings.Contains(s, "captureOut") {
+		t.Errorf("全員が許可済みの組が出ている: %q", s)
+	}
+	half := strings.Replace(goTwoSinksAllowed, "// dupscan:allow intentional 出力先が違うだけの別の窓口 (テストの注記)\nfunc captureErr", "func captureErr", 1)
+	_, out, _ = sweep(t, repoWith(t, map[string]string{"a/a.go": half}))
+	if s := sweepSection(t, out, 2); !strings.Contains(s, "captureOut") {
+		t.Errorf("片方だけ許可済みの組は出し続ける: %q", s)
+	}
+}
+
+// 節 3 の対も、両方が許可済みなら除く。
+func TestSweepAllowMarkersSilenceSimilarPairs(t *testing.T) {
+	marked := strings.Replace(goNearPair, "func sumPositive", "// dupscan:allow intentional 注記\nfunc sumPositive", 1)
+	marked = strings.Replace(marked, "func sumLogged", "// dupscan:allow intentional 注記\nfunc sumLogged", 1)
+	_, out, _ := sweep(t, "-similar-threshold", "0.5", repoWith(t, map[string]string{"a/a.go": marked}))
+	if s := sweepSection(t, out, 3); strings.Contains(s, "sumPositive") {
+		t.Errorf("両方が許可済みの対が出ている: %q", s)
+	}
+	_, out, _ = sweep(t, "-similar-threshold", "0.5", repoWith(t, map[string]string{"a/a.go": goNearPair}))
+	if s := sweepSection(t, out, 3); !strings.Contains(s, "sumPositive") {
+		t.Fatalf("前提: 印が無ければ出る: %q", s)
+	}
+}
+
+// 節 1 (既定の下限の組) でも、全員が許可済みなら除く。
+func TestSweepAllowMarkersSilenceSection1Groups(t *testing.T) {
+	marked := strings.Replace(midFunctions, "func firstMid", "// dupscan:allow intentional 注記\nfunc firstMid", 1)
+	marked = strings.Replace(marked, "func secondMid", "// dupscan:allow intentional 注記\nfunc secondMid", 1)
+	_, out, _ := sweep(t, "-min-nodes", "12", repoWith(t, map[string]string{"a.go": midFunctions}))
+	if s := sweepSection(t, out, 1); !strings.Contains(s, "firstMid") {
+		t.Fatalf("前提: 印が無ければ節 1 に出る: %q", s)
+	}
+	_, out, _ = sweep(t, "-min-nodes", "12", repoWith(t, map[string]string{"a.go": marked}))
+	if s := sweepSection(t, out, 1); strings.Contains(s, "firstMid") {
+		t.Errorf("全員が許可済みの組が節 1 に出ている: %q", s)
+	}
+}
+
+// 節 3 の対は、片方だけ許可済みなら出し続ける (もう片方と新しい写しを作っても見逃さない)。
+func TestSweepSimilarPairKeptWhenOnlyOneSideIsAllowed(t *testing.T) {
+	marked := strings.Replace(goNearPair, "func sumPositive", "// dupscan:allow intentional 注記\nfunc sumPositive", 1)
+	_, out, _ := sweep(t, "-similar-threshold", "0.5", repoWith(t, map[string]string{"a/a.go": marked}))
+	if s := sweepSection(t, out, 3); !strings.Contains(s, "sumPositive") {
+		t.Errorf("片方だけ許可済みの対が消えた: %q", s)
+	}
+}

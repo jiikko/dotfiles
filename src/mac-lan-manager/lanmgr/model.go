@@ -1038,6 +1038,7 @@ func canonKey(key string) string {
 }
 
 // HandleKey はキーを 1 つ処理する (打った文字はキーの表記から推す。KeyPressMsg.Text を持たない glogx の板の口)。
+// dupscan:allow intentional 板ごとに返す型 (Action / Result) と受け口が違う 1 行の委譲。lineedit.KeyText で文字を推す約束を、板の口の形に合わせて各板が持つ
 func (m *Model) HandleKey(key string) Action { return m.HandleInput(key, lineedit.KeyText(key)) }
 
 // HandleInput はキーを 1 つ処理する (text は打った文字。入力欄に入れる)。
