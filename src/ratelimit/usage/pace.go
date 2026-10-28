@@ -132,19 +132,18 @@ func paceBudget(used int, remain, span time.Duration, cells int) string {
 
 // paceAdviceUnit は助言に使う単位語 ("時間" / "日")。予算 (paceCellUnit) と語が違うのは
 // statusline に揃えたため ("1.2時間分の前借り" と "7.6%/時" が自然に読めるように)。
-func paceAdviceUnit(span time.Duration) string {
-	if span >= 24*time.Hour {
-		return "日"
-	}
-	return "時間"
-}
+func paceAdviceUnit(span time.Duration) string { return paceUnit(span, "時間") }
 
 // paceCellUnit は 1 スロットあたりの予算に使う単位語 ("時" / "日")。
-func paceCellUnit(span time.Duration) string {
+func paceCellUnit(span time.Duration) string { return paceUnit(span, "時") }
+
+// paceUnit は窓の長さ span の単位語。1 日以上の窓は日、それより短ければ hour (時間の語は用途で違う)。
+// 日と時の境目 (24 時間) をここだけに置く。
+func paceUnit(span time.Duration, hour string) string {
 	if span >= 24*time.Hour {
 		return "日"
 	}
-	return "時"
+	return hour
 }
 
 func absFloat(f float64) float64 {

@@ -324,3 +324,17 @@ func TestFormatAgeSeparatesRaceFromClockSkew(t *testing.T) {
 		}
 	}
 }
+
+// キャッシュと更新の印は同じ出所の別のファイル (拡張子だけが違う)。同じ名前になると、印がキャッシュを上書きする。
+func TestSourceFilesDifferOnlyByExtension(t *testing.T) {
+	dir := "/state"
+	for _, s := range []source{srcClaude, srcCodex} {
+		cache, stamp := cachePath(dir, s), stampPath(dir, s)
+		if cache != dir+"/ratelimit-"+string(s)+".json" || stamp != dir+"/ratelimit-"+string(s)+".refresh" {
+			t.Errorf("%s: cache=%q stamp=%q", s, cache, stamp)
+		}
+	}
+	if cachePath(dir, srcClaude) == cachePath(dir, srcCodex) {
+		t.Error("出所が違えばキャッシュも別のファイル")
+	}
+}

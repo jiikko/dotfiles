@@ -102,15 +102,21 @@ func freshTranscript(t *testing.T) string {
 
 func readStatuslineRaw(t *testing.T, cache string) statuslineState {
 	t.Helper()
+	return readStatuslineAs[statuslineState](t, cache)
+}
+
+// readStatuslineAs は書き手が置いた statusline のファイルを T として読む (読めない・JSON でないならテストを止め、中身を出す)。
+func readStatuslineAs[T any](t *testing.T, cache string) T {
+	t.Helper()
 	b, err := os.ReadFile(filepath.Join(cache, "glog", statuslineFile))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var st statuslineState
-	if err := json.Unmarshal(b, &st); err != nil {
+	var v T
+	if err := json.Unmarshal(b, &v); err != nil {
 		t.Fatalf("%v: %s", err, b)
 	}
-	return st
+	return v
 }
 
 // 書き手の出力を読み手が読めることを固定する (ファイル名・項目の名前・値の無い項目の書き方 (null)・版)。
@@ -466,15 +472,7 @@ type statuslineWriters struct {
 
 func readWriters(t *testing.T, cache string) statuslineWriters {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(cache, "glog", statuslineFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var w statuslineWriters
-	if err := json.Unmarshal(b, &w); err != nil {
-		t.Fatalf("%v: %s", err, b)
-	}
-	return w
+	return readStatuslineAs[statuslineWriters](t, cache)
 }
 
 // 値を書き換えた窓には書いたセッション (transcript のパス)・版・時刻を残し、書き換えなかった窓は前の記録を引き継ぐ。

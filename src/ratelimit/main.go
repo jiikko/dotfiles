@@ -258,12 +258,13 @@ func saveCache(dir string, s source, entry cacheEntry) error {
 	return atomicfile.Write(cachePath(dir, s), data, 0o600)
 }
 
-func cachePath(dir string, s source) string {
-	return filepath.Join(dir, "ratelimit-"+string(s)+".json")
-}
+func cachePath(dir string, s source) string { return sourceFile(dir, s, ".json") }
 
-func stampPath(dir string, s source) string {
-	return filepath.Join(dir, "ratelimit-"+string(s)+".refresh")
+func stampPath(dir string, s source) string { return sourceFile(dir, s, ".refresh") }
+
+// sourceFile は出所 s の状態ファイルの置き場所 (キャッシュと更新の印は拡張子だけが違う)。
+func sourceFile(dir string, s source, ext string) string {
+	return filepath.Join(dir, "ratelimit-"+string(s)+ext)
 }
 
 func loadCache(path string) (cacheEntry, bool) {

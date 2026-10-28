@@ -177,21 +177,18 @@ func RenderTableGroups(s *Snapshot, now time.Time, colored bool) (header string,
 }
 
 // padRight は表示幅を w に右詰めパディングする (ANSI を含まないセル専用)。
-func padRight(s string, w int) string {
-	pad := w - termwidth.Of(s)
-	if pad <= 0 {
-		return s
-	}
-	return s + termwidth.PadSpaces(pad)
-}
+func padRight(s string, w int) string { return s + padFor(s, w) }
 
 // padLeft は表示幅を w に左詰めパディングする = 右寄せ (ANSI を含まないセル専用)。
-func padLeft(s string, w int) string {
+func padLeft(s string, w int) string { return padFor(s, w) + s }
+
+// padFor は s を表示幅 w にするために足す空白 (足りていれば空)。
+func padFor(s string, w int) string {
 	pad := w - termwidth.Of(s)
 	if pad <= 0 {
-		return s
+		return ""
 	}
-	return termwidth.PadSpaces(pad) + s
+	return termwidth.PadSpaces(pad)
 }
 
 // remainCols は残り時間を (日 / 時間 / 分) のスロット文字列に分解する。時間と分は常に出し

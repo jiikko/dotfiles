@@ -170,3 +170,23 @@ func TestPaceGaugePaintsFirstColumnOnTinyUsage(t *testing.T) {
 		t.Errorf("1%% の消化が 1 カラムも塗られていない: %q", got)
 	}
 }
+
+// 日と時の境目は 24 時間ちょうど (1 日の窓は日、それより 1ns でも短ければ時)。単位語は助言 (時間) と予算 (時) で違う。
+func TestPaceUnitSwitchesToDaysAtExactlyOneDay(t *testing.T) {
+	for _, c := range []struct {
+		span          time.Duration
+		advice, cells string
+	}{
+		{5 * time.Hour, "時間", "時"},
+		{24*time.Hour - time.Nanosecond, "時間", "時"},
+		{24 * time.Hour, "日", "日"},
+		{7 * 24 * time.Hour, "日", "日"},
+	} {
+		if got := paceAdviceUnit(c.span); got != c.advice {
+			t.Errorf("paceAdviceUnit(%v) = %q, want %q", c.span, got, c.advice)
+		}
+		if got := paceCellUnit(c.span); got != c.cells {
+			t.Errorf("paceCellUnit(%v) = %q, want %q", c.span, got, c.cells)
+		}
+	}
+}
