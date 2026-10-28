@@ -55,6 +55,21 @@ dupscan のコードを、リソースリークと性能の観点で読んだ。
 - **ベンチ**: `bench_test.go` (`DUPSCAN_BENCH_DIR` が無ければ skip) を足した。次の性能の変更で同じ条件を再現できる。
 - **P3・P5**: 未対応 (P3 は構造に触る。P5 は効果が小さい)。リークは見つからなかった。
 
+### 追加の対応: Go の AST 変換と `Quote` の確保 (c4、2026-10-28)
+
+前後の版を**交互に** 3〜5 回ずつ走らせた (負荷の揺れを打ち消すため。load average 7 の機械)。`report -limit 0`、dotfiles の `src`。出力は `report` / `sweep` / `gate` とも前後で byte 同一 (`cmp`)。
+
+| 指標 | 前 | 後 |
+|---|---|---|
+| 確保回数 | 6,692,9xx | **4,601,7xx (-31%)** |
+| 確保量 | 262.9 MB/op | 263.7 MB/op (ほぼ同じ。chunk 256 だと 275 MB で +4.5% だったので 64 にした) |
+| 所要 | 148〜162 ms | 133〜149 ms (交互で約 10% 減。負荷の揺れの幅とは重なる) |
+
+- **arena (`golang/conv.go`)**: `&tree.Node{}` と variadic の子の slice を、ファイルごとの領域 (chunk 64 節) から切り出す。確保の主な源だった (`node` 193 MB / 389 万回・`conv` の variadic 94 MB / 273 万回・`name` 94 MB / 102 万回)。子の並びは cap を切って返す (後の `append` が隣を上書きしない。変異で赤)。節を使い回して共有しない (`norm` の旗の表は節のアドレスで引くので混ざる)。
+- **`norm` の `strconv.Quote`**: 節ごと・段ごとに string を確保していた (`quoteWith` 314 万回・合計 467 万回で全体の約 7 割の一部)。`AppendQuote` と使い回す buffer にした。
+- **見送り**: `Ident` の `tok` を共有する案 (旗の衝突の危険)。bag を sorted slice にして merge する案 (まだ `Shared` の map 参照が残るが、`-similar-max-units` で止められる)。
+- **変異**: 子の cap を切る・空の並びを nil にする、のどちらを外しても赤。
+
 ## 守ること
 
 - **出力を変えない**。直す前後で `report -limit 0 -format json` / `sweep` / `gate` の出力が byte 同一であることを、`src` で確かめる。

@@ -76,6 +76,7 @@ func NormalizeWithForms(u *tree.Unit) Result { return normalize(u, true) }
 type scratch struct {
 	refs, acts map[*tree.Node]bool
 	out        *bufio.Writer
+	quoted     []byte // strconv.AppendQuote の作業 buffer (Quote は呼ぶたびに string を確保する。節ごと・段ごとに呼ぶので数が多い)
 }
 
 // scratchKeepMax は、これより大きく育った表は pool に戻さない (巨大な単位 1 つが、小さい単位の走査の間ずっと大きい表を抱えない)。
@@ -119,7 +120,7 @@ func normalize(u *tree.Unit, withForms bool) Result {
 		} else {
 			out.Reset(h)
 		}
-		w := &writer{out: out, level: l, locals: locals, refs: refs, acts: acts, nums: map[string]int{}}
+		w := &writer{out: out, level: l, locals: locals, refs: refs, acts: acts, nums: map[string]int{}, quoted: &sc.quoted}
 		// 引数は宣言の順に番号を先に振る (本体に出た順だけだと `a - b` と `b - a` が同じになる)。
 		for _, p := range u.Params {
 			if _, ok := w.nums[p]; !ok {
@@ -127,7 +128,7 @@ func normalize(u *tree.Unit, withForms bool) Result {
 			}
 		}
 		w.str("(ret ")
-		w.str(strconv.Quote(u.ReturnType))
+		w.quote(u.ReturnType)
 		w.str(")")
 		w.write(u.Body, false)
 		if err := out.Flush(); err != nil {
@@ -223,11 +224,22 @@ type writer struct {
 	refs   map[*tree.Node]bool
 	acts   map[*tree.Node]bool
 	nums   map[string]int
+	quoted *[]byte // nil なら writer 自身の buf を使う (scratch を持たない呼び出し元用)
+	buf    []byte
 }
 
 // str と byte は形を書き出す。bufio の書き込みの失敗は Flush が返すので、ここでは見ない (先は sha256 と strings.Builder で失敗しない)。
 func (w *writer) str(s string) { _, _ = w.out.WriteString(s) }
-func (w *writer) byte(c byte)  { _ = w.out.WriteByte(c) }
+
+// quote は strconv.Quote(s) と同じ並びを、確保なしで書き出す (作業 buffer は単位をまたいで使い回す)。
+func (w *writer) quote(s string) {
+	if w.quoted == nil {
+		w.quoted = &w.buf
+	}
+	*w.quoted = strconv.AppendQuote((*w.quoted)[:0], s)
+	_, _ = w.out.Write(*w.quoted)
+}
+func (w *writer) byte(c byte) { _ = w.out.WriteByte(c) }
 
 func (w *writer) write(n *tree.Node, keep bool) {
 	if w.level == L3 && !keep && !n.Keep && n.Expr && !n.NoFold && !w.refs[n] && !w.acts[n] {
@@ -259,12 +271,12 @@ func (w *writer) head(n *tree.Node) {
 			w.str(n.LitKind)
 		} else {
 			w.str(" ")
-			w.str(strconv.Quote(n.Text))
+			w.quote(n.Text)
 		}
 	case n.Role == tree.RoleMember && w.level == LM:
 		w.str(" #m")
 	case n.Role != tree.RoleStruct:
 		w.str(" ")
-		w.str(strconv.Quote(n.Text))
+		w.quote(n.Text)
 	}
 }

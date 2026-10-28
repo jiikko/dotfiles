@@ -19,29 +19,63 @@ const unknownKind = "unknown:"
 // ならないことを、種類名が重ならないことで保証する (本体の根の種類が違えば、木の形がどうであれハッシュは違う)。
 const kindPrefix = "go."
 
-func node(kind string, children ...*tree.Node) *tree.Node {
-	return &tree.Node{Kind: kindPrefix + kind, Children: children}
+// arena は 1 ファイルの変換で作る節と子の並びを、まとめて確保した領域から切り出す。節ごとに &tree.Node{} と variadic の slice を
+// 確保していた (src の report で確保の約 2 割)。領域の外へ出る参照は無く、切り出した節は走査が終わるまで生きる。
+// 🚨 節を使い回して共有しない: norm の旗の表は節のアドレスで引くので、同じ節が 2 つの単位に載ると局所の名前の判定が混ざる。
+type arena struct {
+	nodes []tree.Node
+	kids  []*tree.Node
 }
 
-func expr(kind string, children ...*tree.Node) *tree.Node {
-	n := node(kind, children...)
+// arenaChunk は 1 回に取る節の数。256 だと小さいファイルの余りで確保量が増える (src の report で +4.5%)。64 なら確保量は変わらず、確保回数は約 31% 減る。
+const arenaChunk = 64
+
+// mk は節を 1 つ切り出す。領域が満ちたら新しい領域を取る (古い領域の節のアドレスは変わらない)。
+func (w *walker) mk(n tree.Node) *tree.Node {
+	a := &w.arena
+	if len(a.nodes) == cap(a.nodes) {
+		a.nodes = make([]tree.Node, 0, arenaChunk)
+	}
+	a.nodes = append(a.nodes, n)
+	return &a.nodes[len(a.nodes)-1]
+}
+
+// children は子の並びを領域へ写す。cap を切って返すので、後で append しても隣の並びを上書きしない。
+func (a *arena) children(src []*tree.Node) []*tree.Node {
+	if len(src) == 0 {
+		return nil
+	}
+	if cap(a.kids)-len(a.kids) < len(src) {
+		a.kids = make([]*tree.Node, 0, max(arenaChunk, len(src)))
+	}
+	start := len(a.kids)
+	a.kids = append(a.kids, src...)
+	return a.kids[start:len(a.kids):len(a.kids)]
+}
+
+func (w *walker) node(kind string, children ...*tree.Node) *tree.Node {
+	return w.mk(tree.Node{Kind: kindPrefix + kind, Children: w.arena.children(children)})
+}
+
+func (w *walker) expr(kind string, children ...*tree.Node) *tree.Node {
+	n := w.node(kind, children...)
 	n.Expr = true
 	return n
 }
 
-func tok(s string) *tree.Node {
-	return &tree.Node{Kind: kindPrefix + "tok", Role: tree.RoleToken, Text: s}
+func (w *walker) tok(s string) *tree.Node {
+	return w.mk(tree.Node{Kind: kindPrefix + "tok", Role: tree.RoleToken, Text: s})
 }
 
 // none は省かれた部分 (`if` の初期化文・`a[:n]` の下限など)。省いた位置を残さないと `a[:n]` と `a[n:]` が同じになる。
-func none() *tree.Node { return node("none") }
+func (w *walker) none() *tree.Node { return w.node("none") }
 
 // typ は型の位置。字面のまま残す (型の名前を番号にすると、別の型を作る同じ形の処理が同じになる)。
-func typ(e ast.Expr) *tree.Node {
+func (w *walker) typ(e ast.Expr) *tree.Node {
 	if e == nil {
-		return none()
+		return w.none()
 	}
-	return &tree.Node{Kind: kindPrefix + "type", Role: tree.RoleType, Text: typeString(e)}
+	return w.mk(tree.Node{Kind: kindPrefix + "type", Role: tree.RoleType, Text: typeString(e)})
 }
 
 // typeString は型の字面。go/printer で書き出すが、位置を知らない新しい FileSet を渡す (位置が分からないと改行を入れず 1 行に
@@ -57,29 +91,29 @@ func typeString(e ast.Expr) string {
 }
 
 // decl は局所の名前の宣言 (`:=`・`var`・range の変数・関数リテラルの引数)。`_` は名前ではないので字面で残す。
-func decl(id *ast.Ident) *tree.Node {
+func (w *walker) decl(id *ast.Ident) *tree.Node {
 	if id.Name == "_" {
-		return tok("_")
+		return w.tok("_")
 	}
-	return &tree.Node{Kind: kindPrefix + "ident", Role: tree.RoleDecl, Text: id.Name}
+	return w.mk(tree.Node{Kind: kindPrefix + "ident", Role: tree.RoleDecl, Text: id.Name})
 }
 
 // label は字面のまま残す名前 (構造体のリテラルの field 名・goto / break のラベル)。
-func label(id *ast.Ident) *tree.Node {
+func (w *walker) label(id *ast.Ident) *tree.Node {
 	if id == nil {
-		return none()
+		return w.none()
 	}
-	return &tree.Node{Kind: kindPrefix + "label", Role: tree.RoleLabel, Text: id.Name}
+	return w.mk(tree.Node{Kind: kindPrefix + "label", Role: tree.RoleLabel, Text: id.Name})
 }
 
-func name(id *ast.Ident) *tree.Node {
+func (w *walker) name(id *ast.Ident) *tree.Node {
 	switch id.Name {
 	case "_":
-		return tok("_")
+		return w.tok("_")
 	case "true", "false": // Go では識別子だが、Swift の boolean_literal と同じく L2 で種類にする
-		return &tree.Node{Kind: kindPrefix + "lit", Role: tree.RoleLiteral, LitKind: "bool", Text: id.Name, Expr: true}
+		return w.mk(tree.Node{Kind: kindPrefix + "lit", Role: tree.RoleLiteral, LitKind: "bool", Text: id.Name, Expr: true})
 	}
-	return &tree.Node{Kind: kindPrefix + "ident", Role: tree.RoleName, Text: id.Name, Expr: true}
+	return w.mk(tree.Node{Kind: kindPrefix + "ident", Role: tree.RoleName, Text: id.Name, Expr: true})
 }
 
 var litKinds = map[token.Token]string{token.INT: "num", token.FLOAT: "num", token.IMAG: "num", token.CHAR: "char", token.STRING: "str"}
@@ -88,69 +122,69 @@ var litKinds = map[token.Token]string{token.INT: "num", token.FLOAT: "num", toke
 func (w *walker) conv(n ast.Node) *tree.Node {
 	switch n := n.(type) {
 	case nil:
-		return none()
+		return w.none()
 	// --- 式
 	case *ast.Ident:
-		return name(n)
+		return w.name(n)
 	case *ast.BasicLit:
-		return &tree.Node{Kind: kindPrefix + "lit", Role: tree.RoleLiteral, LitKind: litKinds[n.Kind], Text: n.Value, Expr: true}
+		return w.mk(tree.Node{Kind: kindPrefix + "lit", Role: tree.RoleLiteral, LitKind: litKinds[n.Kind], Text: n.Value, Expr: true})
 	case *ast.CompositeLit:
-		out := expr("CompositeLit", typ(n.Type))
+		out := w.expr("CompositeLit", w.typ(n.Type))
 		for _, e := range n.Elts {
 			out.Children = append(out.Children, w.element(e))
 		}
 		return out
 	case *ast.FuncLit:
-		return expr("FuncLit", w.funcType(n.Type), w.conv(n.Body))
+		return w.expr("FuncLit", w.funcType(n.Type), w.conv(n.Body))
 	case *ast.ParenExpr:
-		return expr("ParenExpr", w.conv(n.X))
+		return w.expr("ParenExpr", w.conv(n.X))
 	case *ast.SelectorExpr:
-		return expr("SelectorExpr", w.conv(n.X), &tree.Node{Kind: kindPrefix + "member", Role: tree.RoleMember, Text: n.Sel.Name})
+		return w.expr("SelectorExpr", w.conv(n.X), w.mk(tree.Node{Kind: kindPrefix + "member", Role: tree.RoleMember, Text: n.Sel.Name}))
 	case *ast.IndexExpr:
-		return expr("IndexExpr", w.conv(n.X), w.conv(n.Index))
+		return w.expr("IndexExpr", w.conv(n.X), w.conv(n.Index))
 	case *ast.IndexListExpr:
-		out := expr("IndexListExpr", w.conv(n.X))
+		out := w.expr("IndexListExpr", w.conv(n.X))
 		for _, i := range n.Indices {
 			out.Children = append(out.Children, w.conv(i))
 		}
 		return out
 	case *ast.SliceExpr:
-		out := expr("SliceExpr", w.conv(n.X), w.optExpr(n.Low), w.optExpr(n.High), w.optExpr(n.Max))
+		out := w.expr("SliceExpr", w.conv(n.X), w.optExpr(n.Low), w.optExpr(n.High), w.optExpr(n.Max))
 		if n.Slice3 {
-			out.Children = append(out.Children, tok("3"))
+			out.Children = append(out.Children, w.tok("3"))
 		}
 		return out
 	case *ast.TypeAssertExpr:
-		t := typ(n.Type)
+		t := w.typ(n.Type)
 		if n.Type == nil {
-			t = tok("type") // `x.(type)`
+			t = w.tok("type") // `x.(type)`
 		}
-		return expr("TypeAssertExpr", w.conv(n.X), t)
+		return w.expr("TypeAssertExpr", w.conv(n.X), t)
 	case *ast.CallExpr:
 		return w.call(n)
 	case *ast.StarExpr:
-		return expr("StarExpr", w.conv(n.X))
+		return w.expr("StarExpr", w.conv(n.X))
 	case *ast.UnaryExpr:
 		x := w.conv(n.X)
-		out := expr("UnaryExpr", tok(n.Op.String()), x)
+		out := w.expr("UnaryExpr", w.tok(n.Op.String()), x)
 		if n.Op == token.ARROW { // チャネルからの受信は処理。相手のチャネルも畳まない (`<-chA` と `<-chB` を L3 で同じにしない)
 			out.Action = true
 			x.Keep = true
 		}
 		return out
 	case *ast.BinaryExpr:
-		return expr("BinaryExpr", w.conv(n.X), tok(n.Op.String()), w.conv(n.Y))
+		return w.expr("BinaryExpr", w.conv(n.X), w.tok(n.Op.String()), w.conv(n.Y))
 	case *ast.KeyValueExpr:
 		return w.element(n)
 	case *ast.Ellipsis: // `[...]int` の長さ・可変長の引数の型
-		return typ(n)
+		return w.typ(n)
 	case *ast.ArrayType, *ast.StructType, *ast.FuncType, *ast.InterfaceType, *ast.MapType, *ast.ChanType:
-		return typ(n.(ast.Expr))
+		return w.typ(n.(ast.Expr))
 	case *ast.BadExpr:
-		return node("BadExpr")
+		return w.node("BadExpr")
 	// --- 文
 	case *ast.BlockStmt:
-		out := node("Block")
+		out := w.node("Block")
 		for _, s := range n.List {
 			c := w.conv(s)
 			c.NoFold = true
@@ -160,19 +194,19 @@ func (w *walker) conv(n ast.Node) *tree.Node {
 	case *ast.ExprStmt:
 		x := w.conv(n.X)
 		x.NoFold = true // 文として置いた式は畳まない (`deleteAll()` と `showWelcome()` を同じにしない)
-		return node("ExprStmt", x)
+		return w.node("ExprStmt", x)
 	case *ast.AssignStmt:
-		out := node("Assign")
+		out := w.node("Assign")
 		for _, l := range n.Lhs {
 			if id, ok := l.(*ast.Ident); ok && n.Tok == token.DEFINE {
-				out.Children = append(out.Children, decl(id))
+				out.Children = append(out.Children, w.decl(id))
 				continue
 			}
 			c := w.conv(l)
 			c.Keep = true // 代入の左辺を畳むと `isLoading = …` と `isEditing = …` が同じになる
 			out.Children = append(out.Children, c)
 		}
-		out.Children = append(out.Children, tok(n.Tok.String()))
+		out.Children = append(out.Children, w.tok(n.Tok.String()))
 		for _, r := range n.Rhs {
 			out.Children = append(out.Children, w.conv(r))
 		}
@@ -180,99 +214,99 @@ func (w *walker) conv(n ast.Node) *tree.Node {
 	case *ast.IncDecStmt:
 		x := w.conv(n.X)
 		x.Keep = true
-		return node("IncDec", x, tok(n.Tok.String()))
+		return w.node("IncDec", x, w.tok(n.Tok.String()))
 	case *ast.DeclStmt:
 		return w.conv(n.Decl)
 	case *ast.GenDecl:
-		out := node("GenDecl", tok(n.Tok.String()))
+		out := w.node("GenDecl", w.tok(n.Tok.String()))
 		for _, s := range n.Specs {
 			out.Children = append(out.Children, w.conv(s))
 		}
 		return out
 	case *ast.ValueSpec:
-		out := node("ValueSpec")
+		out := w.node("ValueSpec")
 		for _, id := range n.Names {
-			out.Children = append(out.Children, decl(id))
+			out.Children = append(out.Children, w.decl(id))
 		}
-		out.Children = append(out.Children, typ(n.Type))
+		out.Children = append(out.Children, w.typ(n.Type))
 		for _, v := range n.Values {
 			out.Children = append(out.Children, w.conv(v))
 		}
 		return out
 	case *ast.TypeSpec: // 関数の中の型の宣言。名前も型の字面として残す
-		out := node("TypeSpec", &tree.Node{Kind: kindPrefix + "type", Role: tree.RoleType, Text: n.Name.Name})
+		out := w.node("TypeSpec", w.mk(tree.Node{Kind: kindPrefix + "type", Role: tree.RoleType, Text: n.Name.Name}))
 		if n.Assign.IsValid() {
-			out.Children = append(out.Children, tok("=")) // `type T = int` (別名) と `type T int` (新しい型) を分ける
+			out.Children = append(out.Children, w.tok("=")) // `type T = int` (別名) と `type T int` (新しい型) を分ける
 		}
-		out.Children = append(out.Children, typ(n.Type))
+		out.Children = append(out.Children, w.typ(n.Type))
 		return out
 	case *ast.ReturnStmt:
-		out := node("Return")
+		out := w.node("Return")
 		for _, r := range n.Results {
 			out.Children = append(out.Children, w.conv(r))
 		}
 		return out
 	case *ast.IfStmt:
-		return node("If", w.optStmt(n.Init), w.conv(n.Cond), w.conv(n.Body), w.optStmt(n.Else))
+		return w.node("If", w.optStmt(n.Init), w.conv(n.Cond), w.conv(n.Body), w.optStmt(n.Else))
 	case *ast.ForStmt:
-		return node("For", w.optStmt(n.Init), w.optExpr(n.Cond), w.optStmt(n.Post), w.conv(n.Body))
+		return w.node("For", w.optStmt(n.Init), w.optExpr(n.Cond), w.optStmt(n.Post), w.conv(n.Body))
 	case *ast.RangeStmt:
-		return node("Range", w.rangeVar(n.Key, n.Tok), w.rangeVar(n.Value, n.Tok), tok(n.Tok.String()), w.conv(n.X), w.conv(n.Body))
+		return w.node("Range", w.rangeVar(n.Key, n.Tok), w.rangeVar(n.Value, n.Tok), w.tok(n.Tok.String()), w.conv(n.X), w.conv(n.Body))
 	case *ast.SwitchStmt:
-		return node("Switch", w.optStmt(n.Init), w.optExpr(n.Tag), w.conv(n.Body))
+		return w.node("Switch", w.optStmt(n.Init), w.optExpr(n.Tag), w.conv(n.Body))
 	case *ast.TypeSwitchStmt:
-		return node("TypeSwitch", w.optStmt(n.Init), w.conv(n.Assign), w.typeCases(n.Body))
+		return w.node("TypeSwitch", w.optStmt(n.Init), w.conv(n.Assign), w.typeCases(n.Body))
 	case *ast.CaseClause:
-		out := node("Case")
+		out := w.node("Case")
 		if n.List == nil {
-			out.Children = append(out.Children, tok("default"))
+			out.Children = append(out.Children, w.tok("default"))
 		}
 		for _, e := range n.List {
 			out.Children = append(out.Children, w.conv(e))
 		}
 		return w.withStmts(out, n.Body)
 	case *ast.SelectStmt:
-		return node("Select", w.conv(n.Body))
+		return w.node("Select", w.conv(n.Body))
 	case *ast.CommClause:
-		out := node("Comm", w.optStmt(n.Comm))
+		out := w.node("Comm", w.optStmt(n.Comm))
 		if n.Comm == nil {
-			out.Children[0] = tok("default")
+			out.Children[0] = w.tok("default")
 		}
 		return w.withStmts(out, n.Body)
 	case *ast.GoStmt:
 		c := w.conv(n.Call)
 		c.NoFold = true
-		return node("Go", c)
+		return w.node("Go", c)
 	case *ast.DeferStmt:
 		c := w.conv(n.Call)
 		c.NoFold = true
-		return node("Defer", c)
+		return w.node("Defer", c)
 	case *ast.BranchStmt:
-		return node("Branch", tok(n.Tok.String()), label(n.Label))
+		return w.node("Branch", w.tok(n.Tok.String()), w.label(n.Label))
 	case *ast.LabeledStmt:
-		return node("Labeled", label(n.Label), w.conv(n.Stmt))
+		return w.node("Labeled", w.label(n.Label), w.conv(n.Stmt))
 	case *ast.SendStmt:
 		ch := w.conv(n.Chan)
 		ch.Keep = true // 送り先を畳むと `chA <- v` と `chB <- v` が同じになる
-		return node("Send", ch, tok("<-"), w.conv(n.Value))
+		return w.node("Send", ch, w.tok("<-"), w.conv(n.Value))
 	case *ast.EmptyStmt:
-		return node("Empty")
+		return w.node("Empty")
 	case *ast.BadStmt:
-		return node("BadStmt")
+		return w.node("BadStmt")
 	}
-	return node(fmt.Sprintf("%s%T", unknownKind, n))
+	return w.node(fmt.Sprintf("%s%T", unknownKind, n))
 }
 
 func (w *walker) optExpr(e ast.Expr) *tree.Node {
 	if e == nil {
-		return none()
+		return w.none()
 	}
 	return w.conv(e)
 }
 
 func (w *walker) optStmt(s ast.Stmt) *tree.Node {
 	if s == nil {
-		return none()
+		return w.none()
 	}
 	return w.conv(s)
 }
@@ -288,19 +322,19 @@ func (w *walker) withStmts(out *tree.Node, body []ast.Stmt) *tree.Node {
 
 // typeCases は型の switch の case (並ぶのは型なので字面で残す)。
 func (w *walker) typeCases(b *ast.BlockStmt) *tree.Node {
-	out := node("Block")
+	out := w.node("Block")
 	for _, s := range b.List {
 		cc, ok := s.(*ast.CaseClause)
 		if !ok {
 			out.Children = append(out.Children, w.conv(s))
 			continue
 		}
-		c := node("TypeCase")
+		c := w.node("TypeCase")
 		if cc.List == nil {
-			c.Children = append(c.Children, tok("default"))
+			c.Children = append(c.Children, w.tok("default"))
 		}
 		for _, e := range cc.List {
-			c.Children = append(c.Children, typ(e))
+			c.Children = append(c.Children, w.typ(e))
 		}
 		out.Children = append(out.Children, w.withStmts(c, cc.Body))
 	}
@@ -310,10 +344,10 @@ func (w *walker) typeCases(b *ast.BlockStmt) *tree.Node {
 // rangeVar は range の変数 (`:=` なら宣言、`=` なら代入の左辺)。
 func (w *walker) rangeVar(e ast.Expr, t token.Token) *tree.Node {
 	if e == nil {
-		return none()
+		return w.none()
 	}
 	if id, ok := e.(*ast.Ident); ok && t == token.DEFINE {
-		return decl(id)
+		return w.decl(id)
 	}
 	c := w.conv(e)
 	c.Keep = true
@@ -332,22 +366,22 @@ func (w *walker) element(e ast.Expr) *tree.Node {
 	}
 	k := w.conv(kv.Key)
 	if id, ok := kv.Key.(*ast.Ident); ok {
-		k = label(id)
+		k = w.label(id)
 	}
-	return node("KeyValue", k, w.conv(kv.Value))
+	return w.node("KeyValue", k, w.conv(kv.Value))
 }
 
 // funcType は関数リテラルの引数と戻り値。名前は局所の宣言、型は字面。
 func (w *walker) funcType(ft *ast.FuncType) *tree.Node {
-	out := node("FuncType")
+	out := w.node("FuncType")
 	for _, fl := range []*ast.FieldList{ft.Params, ft.Results} {
-		part := node("Fields")
+		part := w.node("Fields")
 		if fl != nil {
 			for _, f := range fl.List {
 				for _, id := range f.Names {
-					part.Children = append(part.Children, decl(id))
+					part.Children = append(part.Children, w.decl(id))
 				}
-				part.Children = append(part.Children, typ(f.Type))
+				part.Children = append(part.Children, w.typ(f.Type))
 			}
 		}
 		out.Children = append(out.Children, part)
@@ -358,17 +392,17 @@ func (w *walker) funcType(ft *ast.FuncType) *tree.Node {
 func (w *walker) call(n *ast.CallExpr) *tree.Node {
 	var callee *tree.Node
 	if isTypeExpr(n.Fun) {
-		callee = typ(n.Fun) // `[]byte(s)`・`(*T)(p)` は型への変換
+		callee = w.typ(n.Fun) // `[]byte(s)`・`(*T)(p)` は型への変換
 	} else {
 		callee = w.conv(n.Fun)
 	}
 	callee.Keep = true // callee を畳むと呼ぶ相手が消える
-	out := expr("CallExpr", callee)
+	out := w.expr("CallExpr", callee)
 	for _, a := range n.Args {
 		out.Children = append(out.Children, w.conv(a))
 	}
 	if n.Ellipsis.IsValid() {
-		out.Children = append(out.Children, tok("..."))
+		out.Children = append(out.Children, w.tok("..."))
 	}
 	out.Action = isAction(n.Fun)
 	return out

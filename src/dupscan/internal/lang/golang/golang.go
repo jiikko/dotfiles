@@ -132,6 +132,7 @@ type walker struct {
 	closures     map[string]int
 	seen         map[string]int // 鍵の重なりの数 (1 つのファイルに複数書ける `func init()`)
 	lines        []string
+	arena        arena // conv が作る節の領域 (ファイルごと)
 }
 
 // ctx は辿っている場所の文脈。
