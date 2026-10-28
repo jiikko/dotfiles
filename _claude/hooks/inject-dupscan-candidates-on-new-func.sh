@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse(Write / Edit) フック: 新しい関数 (Go / Swift) を足す書き込みの直前に、同じ名前の既存の定義を dupscan index で引いて注入する (push 型)。
 #
-# なぜ: 「書く前に dupscan を引け」と案内する pull 型は、識別子検索 1,680 回に対し dupscan の探索 2 回 (30 日・issue 948) だった。
+# なぜ: 「書く前に dupscan を引け」と案内するだけでは、agent は呼ばない (30 日で識別子検索 1,680 回に対し dupscan の探索 2 回)。
 # 呼ぶかどうかを agent の判断に任せると効果が出ない。書く直前に候補を目の前へ出す。
 #
 # 🚨 止めない (additionalContext だけ)。permissionDecision を返さない。どんな失敗も無音で rc=0 (fail-open)。
@@ -17,7 +17,7 @@
 # 検出しない形 (silent): Bash の書き込み・NotebookEdit・名前が違うが同じ役割の関数 (署名の近さは見ない。dupscan search / index -returns で引く)・
 #   Swift のメソッドと Go の関数の区別 (Swift は字下げのある func も新しい関数として扱う)
 # 計測: 注入のたびに ${XDG_CACHE_HOME:-~/.cache}/claude-dupscan-inject.log へ「時刻 session 名前 候補数」を 1 行足す
-#   (scripts/dupscan_usage_report.py が数える。効果の指標は issue 948)
+#   (scripts/dupscan_usage_report.py が数える)
 
 set -uo pipefail
 unset CDPATH
