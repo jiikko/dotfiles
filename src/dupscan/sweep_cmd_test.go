@@ -172,3 +172,50 @@ func TestSweepSimilarSkipsNestedUnits(t *testing.T) {
 		t.Errorf("入れ子の対は出ない: %q", s)
 	}
 }
+
+func methodFile(name string, recvs ...string) string {
+	var b strings.Builder
+	b.WriteString("package a\n\n")
+	for _, r := range recvs {
+		fmt.Fprintf(&b, "type %s struct{ v int }\n\nfunc (x *%s) %s(n int) bool { return x.v == n }\n\n", r, r, name)
+	}
+	return b.String()
+}
+
+// 同名のメソッドの束: 名前の先頭の語では束ねられない `take` / `busy` のような同名を、受け口の型が 2 種類以上・3 個以上のときだけ出す。
+func TestSweepSameNameMethodClusters(t *testing.T) {
+	root := repoWith(t, map[string]string{
+		"a/a.go": methodFile("take", "alpha", "beta", "gamma"),
+		"b/b.go": methodFile("take", "alpha", "beta"),
+		"c/c.go": methodFile("String", "alpha", "beta", "gamma"),
+		"e/e.go": methodFile("add", "alpha", "beta", "gamma"),
+		"d/d.go": "package a\n\ntype one struct{ v int }\n\nfunc (x *one) busy(n int) bool { return x.v == n }\nfunc (x *one) busyAgain(n int) bool { return x.v == n }\n",
+	})
+	_, out, _ := sweep(t, root)
+	s := sweepSection(t, out, 4)
+	if !strings.Contains(s, "a/ take (同名のメソッド) 受け口 ×3: alpha, beta, gamma") {
+		t.Errorf("3 個・3 種類の同名のメソッドの束が出る: %q", s)
+	}
+	for _, not := range []string{"b/ take", "String", "e/ add"} {
+		if strings.Contains(s, not) {
+			t.Errorf("2 個の束と標準の名前 (String) は出ない: %q in %q", not, s)
+		}
+	}
+}
+
+func TestSweepSameNameMethodsNeedSimilarSize(t *testing.T) {
+	big := "package a\n\ntype big struct{ v int }\n\nfunc (x *big) take(n int) bool {\n\tif n > 1 && x.v < n {\n\t\tx.v += n * 2\n\t\treturn true\n\t}\n\treturn x.v == n || n > 3\n}\n"
+	root := repoWith(t, map[string]string{"a/a.go": methodFile("take", "alpha", "beta"), "a/big.go": big})
+	_, out, _ := sweep(t, "-min-nodes", "60", root)
+	if s := sweepSection(t, out, 4); strings.Contains(s, "take (同名") {
+		t.Errorf("節の数が 2 倍を超えて違う同名は別の仕事として束にしない: %q", s)
+	}
+}
+
+func TestSweepNameClustersSkipPredicateVerbs(t *testing.T) {
+	root := repoWith(t, map[string]string{"a/a.go": clusterFile("is", 5)})
+	_, out, _ := sweep(t, root)
+	if s := sweepSection(t, out, 4); strings.Contains(s, "is*") {
+		t.Errorf("述語 (is*) は束にしない: %q", s)
+	}
+}

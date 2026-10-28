@@ -34,6 +34,8 @@ type sweepSimilar struct {
 type sweepCluster struct {
 	verb, dir string
 	names     []string
+	// method は同名のメソッドの束 (verb は名前そのもの、names は受け口の型)。
+	method bool
 }
 
 func runSweep(args []string, stdout, stderr io.Writer) int {
@@ -248,13 +250,13 @@ func sweepClusters(entries []*group.Entry, opt group.Options) []sweepCluster {
 			continue
 		}
 		verb := leadingWord(u.Name)
-		if verb == "" || verb == "test" || verb == "new" || verb == "init" || verb == "main" {
+		if verb == "" || predicateVerbs[verb] || verb == "test" || verb == "new" || verb == "init" || verb == "main" {
 			continue
 		}
 		k := key{verb, path.Dir(u.File)}
 		by[k] = append(by[k], u.Name)
 	}
-	var out []sweepCluster
+	out := sweepMethodClusters(entries, opt)
 	for k, names := range by {
 		if len(names) >= sweepClusterMin {
 			sort.Strings(names)
@@ -267,6 +269,49 @@ func sweepClusters(entries []*group.Entry, opt group.Options) []sweepCluster {
 		}
 		return out[i].dir+out[i].verb < out[j].dir+out[j].verb
 	})
+	return out
+}
+
+// predicateVerbs は束にしない先頭の語。述語 (`isX` / `hasX`) は入力の型がばらばらで、名前が揃っていても寄せられる道具の手がかりにならない。
+var predicateVerbs = map[string]bool{"is": true, "has": true, "should": true, "can": true, "does": true, "will": true, "are": true}
+
+// 同名のメソッドの束にしない名前 (標準の interface を満たすための名前は、型ごとに並ぶのが普通)。
+var commonMethodNames = map[string]bool{"string": true, "error": true, "close": true, "len": true, "less": true, "swap": true, "write": true, "read": true, "unwrap": true, "init": true}
+
+// sweepMethodClusters は、同じ dir (package) に、同じ名前で受け口の型が 2 種類以上の小さいメソッドが 3 個以上ある束。
+// 節の数が 2 倍以内に収まるものだけ (名前が同じでも大きさが桁違いなら別の仕事)。名前の先頭の語で束ねる側では見えない `take` / `busy` のような同名を拾う。
+func sweepMethodClusters(entries []*group.Entry, opt group.Options) []sweepCluster {
+	type key struct{ name, dir string }
+	type member struct {
+		recv  string
+		nodes int
+	}
+	by := map[key][]member{}
+	for _, e := range entries {
+		u := e.Unit
+		if u.Unreadable || u.Test || u.Kind != tree.KindFunc || u.Enclosing == "" || e.Result.Nodes >= group.MinNodes(e, opt) || commonMethodNames[strings.ToLower(u.Name)] || len([]rune(u.Name)) < 4 {
+			continue
+		}
+		k := key{u.Name, path.Dir(u.File)}
+		by[k] = append(by[k], member{u.Enclosing, e.Result.Nodes})
+	}
+	var out []sweepCluster
+	for k, ms := range by {
+		lo, hi, recvs := ms[0].nodes, ms[0].nodes, map[string]bool{}
+		for _, m := range ms {
+			lo, hi = min(lo, m.nodes), max(hi, m.nodes)
+			recvs[m.recv] = true
+		}
+		if len(ms) < 3 || len(recvs) < 2 || hi > 2*lo {
+			continue
+		}
+		names := make([]string, 0, len(recvs))
+		for r := range recvs {
+			names = append(names, r)
+		}
+		sort.Strings(names)
+		out = append(out, sweepCluster{verb: k.name, dir: k.dir, names: names, method: true})
+	}
 	return out
 }
 
@@ -290,6 +335,10 @@ func sweepClusterText(w *lineWriter, cs []sweepCluster, limit int) {
 		if limit > 0 && i == limit {
 			w.printf("… 他 %d 束 (-limit 0 で全部)\n", len(cs)-limit)
 			break
+		}
+		if c.method {
+			w.printf("%s/ %s (同名のメソッド) 受け口 ×%d: %s\n", c.dir, c.verb, len(c.names), strings.Join(c.names, ", "))
+			continue
 		}
 		w.printf("%s/ %s* ×%d: %s\n", c.dir, c.verb, len(c.names), strings.Join(c.names, ", "))
 	}
