@@ -161,6 +161,8 @@ func (d *doctorDelete) active() bool {
 // blocking は実行中で、抜ける以外のキーを飲む状態か。
 func (d *doctorDelete) blocking() bool { return d.preparing || d.running }
 
+// reset は走行中の削除を cancel して状態を初期化する。
+// dupscan:allow intentional 持っている context.CancelFunc を呼ぶだけの 3 行の nil 守り。Go に nil 安全な呼び出しは無く、同じ形が 10 箇所ある。helper に替えても読む量が減らず、止める相手と時点 (quit・状態の作り直し) はそれぞれ別
 func (d *doctorDelete) reset() {
 	if d.cancel != nil {
 		d.cancel()

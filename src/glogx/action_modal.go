@@ -245,6 +245,7 @@ func (a *actionModal) startCancelable() (context.Context, context.CancelFunc) {
 }
 
 // stop は走行中の push/pull を中断する (quit 時に呼ぶ)。走行中でなければ no-op。
+// dupscan:allow intentional 持っている context.CancelFunc を呼ぶだけの 3 行の nil 守り。Go に nil 安全な呼び出しは無く、同じ形が 10 箇所ある。helper に替えても読む量が減らず、止める相手と時点 (quit・状態の作り直し) はそれぞれ別
 func (a *actionModal) stop() {
 	if a.cancel != nil {
 		a.cancel()
