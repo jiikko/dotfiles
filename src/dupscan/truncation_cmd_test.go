@@ -107,3 +107,27 @@ func TestCallersTruncationHint(t *testing.T) {
 		t.Errorf("no header when nothing is cut: %q", out)
 	}
 }
+
+// 先頭の案内は `| grep` で削れるので、打ち切った事実は stderr にも出る (打ち切っていなければ出ない)。
+func TestTruncationNoticeOnStderr(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("func target() {}\n")
+	for i := range 4 {
+		fmt.Fprintf(&b, "func use%d() { target() }\n", i)
+	}
+	root := repoWith(t, map[string]string{"Calls.swift": b.String()})
+	_, _, errs := callers(t, "target", "-limit", "2", root)
+	if !strings.Contains(errs, "dupscan callers: 4 件中 2 件で打ち切り。全件は -limit 0") {
+		t.Errorf("callers truncation notice on stderr: %q", errs)
+	}
+	_, _, errs = index(t, "-name", "listItem", "-limit", "2", repoWith(t, manyItems(5)))
+	if !strings.Contains(errs, "dupscan index: 5 件中 2 件で打ち切り") {
+		t.Errorf("index truncation notice on stderr: %q", errs)
+	}
+	for _, limit := range []string{"0", "9"} {
+		_, _, errs = callers(t, "target", "-limit", limit, root)
+		if strings.Contains(errs, "打ち切り") {
+			t.Errorf("no notice when nothing is cut (limit %s): %q", limit, errs)
+		}
+	}
+}

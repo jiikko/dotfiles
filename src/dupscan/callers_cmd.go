@@ -80,6 +80,9 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 				hint.Pattern = regexp.QuoteMeta(q.Name) + `\(`
 			}
 			err = report.CallersTextHint(stdout, s, *limit, "-limit 0 か -format json で全部。ラベルを書いて絞る", hint)
+			if note := report.TruncationNotice("callers", *limit, s.Matches); note != "" {
+				fmt.Fprintln(stderr, note)
+			}
 		}
 	default:
 		return fail(fmt.Errorf("知らない形式 %q (text / json)", *format))

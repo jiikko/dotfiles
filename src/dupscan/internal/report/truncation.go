@@ -122,3 +122,12 @@ func endsWithAbbreviation(text string) bool {
 	start := strings.LastIndexAny(text, " \t(")
 	return abbreviations[strings.ToLower(text[start+1:])]
 }
+
+// TruncationNotice は text を件数の上限で打ち切ったときの stderr 用の 1 行 (打ち切っていなければ空)。
+// 先頭の案内 (stdout) は `| grep` で削れるので、削れない stderr にも同じ事実を出す。
+func TruncationNotice(command string, limit, total int) string {
+	if limit <= 0 || total <= limit {
+		return ""
+	}
+	return fmt.Sprintf("dupscan %s: %d 件中 %d 件で打ち切り。全件は -limit 0 か -format json", command, total, limit)
+}

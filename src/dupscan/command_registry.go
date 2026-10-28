@@ -16,6 +16,7 @@ func commandSpecs() []commandSpec {
 	return []commandSpec{
 		{Name: "report", Run: runReportCommand, Formats: []string{"text", "json", "xcode"}, Summary: "Find structurally duplicate units"},
 		{Name: "gate", Run: runGate, Formats: []string{"text", "json", "xcode"}, Summary: "Check new duplicates against a base"},
+		{Name: "sweep", Run: runSweep, Formats: []string{"text"}, Summary: "Dig duplicates from four angles in one scan"},
 		{Name: "near", Run: runNear, Formats: []string{"text", "json"}, Query: "file:unit-or-line", Summary: "Find units resembling a selected unit"},
 		{Name: "explain", Run: runExplain, Formats: []string{"text", "json"}, Query: "file:unit-or-line", Summary: "Explain normalization and matching"},
 		{Name: "search", Run: runSearch, Formats: []string{"text"}, Query: "-query terms with optional type filters", Summary: "Find helper candidates across name, signature and doc"},

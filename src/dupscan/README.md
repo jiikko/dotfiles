@@ -370,6 +370,16 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 
 探索用の `index` / `def` / `refs` / `callers` / `context` / `evidence` は、scope全体の構文解析とmetadataを保ちながら、重複比較用の本体変換・L1〜L3正規化を省く。`index -file` の呼び出し数もscope全体で数える。解析cacheは持たず、編集・追加・削除を毎回読み直す。`report` / `gate` / `near` / `explain` は従来どおり完全な本体で全段を比較する（issue 924）。
 
+### 一括で掘る入口 (`dupscan sweep`)
+
+初めて入る module の重複を、1 回の走査で 4 つの見方から出す。節ごとに順位は別で、節の中を上から見る。
+1. 既定の `report` (下限 20 節・L1/L2)。
+2. 下限を 12 節に下げ、`L1m` も見て、1 に無い組だけ (小さい単位が多く雑音も混ざる。`dupscan:allow` で静かにできる)。
+3. 部分木が似ている対 (`near -similar` を全単位の総当たりにしたもの。Dice 0.6 以上・12 節以上・組に入る対と入れ子は除く)。単位が `-similar-max-units` (既定 3000) を超えたら比べず、そう書く。同一動作・再利用は未証明。
+4. 名前の束 (下限未満の関数が、同じ dir に同じ先頭の語で 4 個以上。メソッド・test・`new`/`init` は除く)。写しではなく「同じ種類の仕事を各所で書いている」手がかり。
+
+text だけ。実測は `src/glogx` で 0.27 秒、`src` 全体 (単位 8705) で 0.2 秒 (3 は上限で飛ばした)。
+
 ### 部分木の類似候補（実験用）
 
 `dupscan near -similar -limit 5 Sources/A.swift:helper` は1対象と同言語の単位を比較する。L1の部分木（3 nodes以上）の重み付き多重集合Diceで候補を並べ、既定閾値は暫定0.4（`-similar-threshold`で変更可）。局所名は既存L1と同じ番号、callee/member/type/literalは保持するが、戻り型は比較しない。`-min-nodes`/`-levels`は既定の完全一致経路用で、この実験では上記の部分木条件を使う。返却は1〜50件、総候補数・返却数・比較/skip数・parse error件数を表示し、JSONも同じ件数上限を守る。

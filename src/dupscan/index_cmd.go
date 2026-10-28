@@ -75,6 +75,9 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 				hint.Pattern = regexp.QuoteMeta(q.Name)
 			}
 			err = report.IndexText(stdout, s, report.IndexTextOptions{Limit: *limit, DocBytes: *docBytes, Hint: hint})
+			if note := report.TruncationNotice("index", *limit, s.Matches); note != "" {
+				fmt.Fprintln(stderr, note)
+			}
 		}
 	default:
 		return fail(fmt.Errorf("知らない形式 %q (text / json)", *format))

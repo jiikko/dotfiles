@@ -54,7 +54,10 @@ for u, (score, f, line) in sorted(rows, key=lambda r: -float(r[1][0])):
 
 - [x] `report` が比べなかった小さい単位の数を出す (text・JSON)。
 - [x] 提案 1 の評価: 4 module と obaket で `L1m` を試し、表にした (opt-in の段として実装)。
-- [ ] 提案 2・3 は、1 の結果と、使われ方 (941 / 943 の測定) を見てから採否を決める。
+- [x] 提案 2 (一括の入口): `dupscan sweep` を実装 (report / 下限 12 + L1m / 部分木の総当たり / 名前の束の 4 節)。
+- [x] 提案 3 (名前の束): `sweep` の 4 節として実装。
+- [x] 提案 4 (打ち切りの見逃し): callers / index が打ち切ったら stderr にも 1 行出す (`| grep` で先頭の案内が削れても残る)。
+- [ ] 実運用での採否: f5 の所見 (連番の名前・testdata の fixture・満点の組の数) を反映するか決める。
 
 ## 提案 1 の評価と実装 (2026-10-28)
 
