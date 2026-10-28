@@ -22,7 +22,7 @@ import (
 
 const (
 	sweepDeepMinNodes   = 12
-	sweepMaxSimilarUnit = 3000
+	sweepMaxSimilarUnit = 8000
 	sweepClusterMin     = 4
 	// 20 個以上が同じ形の群は、構築子 (`init`) や経路登録の closure のような決まりきった書き方であることが多い (obaket の実測:
 	// `init` ×118 が先頭を埋め、実在した 3 組の写しが 400 行目以降に沈んだ)。重みでは先頭に来るので、後ろへ回して先頭の数件だけ出す。
@@ -97,6 +97,7 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 
 	w := &lineWriter{w: stdout}
 	w.printf("dupscan sweep: 単位 %d・ファイル %d・読めないファイル %d。節ごとに順位は別 (上から先に見る価値が高い順)\n", len(entries), got.files, len(got.errFiles))
+	w.printf("意図して分けている組・誤検知は、単位の直前に `// dupscan:allow <false-positive|intentional> <理由>` を書くと静かになる\n")
 	w.section("1. 同じ形の組 (既定の下限 %d 節・段 %s)", opt.MinNodes, *c.levels)
 	sweepGroups(w, base, *c.limit)
 	w.section("2. 下限を %d 節に下げ、メンバー名だけ違う写し (L1m) も見て新しく出た組 (小さい単位が多く、雑音も混ざる。allow 印で静かにできる)", sweepDeepMinNodes)

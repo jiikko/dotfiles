@@ -292,3 +292,19 @@ func TestSweepBigGroupsGoLastAndFold(t *testing.T) {
 		}
 	}
 }
+
+// 見たあとの手段 (許可印の付け方) を、出力の先頭に 1 行添える。判断済みの組が毎回出る repo で、次の人が読み直さずに済む。
+func TestSweepShowsHowToSilenceAGroup(t *testing.T) {
+	root := repoWith(t, map[string]string{"a/a.go": goTwoSinks})
+	_, out, _ := sweep(t, root)
+	if !strings.Contains(out, "// dupscan:allow <false-positive|intentional> <理由>") {
+		t.Errorf("許可印の付け方の案内が無い: %q", out)
+	}
+}
+
+// 単位が既定の上限に収まる repo では節 3 を飛ばさない (既定を上げた根拠は 6128 単位で総当たり約 4.5 秒の実測)。
+func TestSweepDefaultCapKeepsMidSizedReposInSection3(t *testing.T) {
+	if sweepMaxSimilarUnit < 6000 {
+		t.Errorf("既定の上限 %d が 6000 を下回る: 6128 単位の repo で節 3 が飛ばされる", sweepMaxSimilarUnit)
+	}
+}
