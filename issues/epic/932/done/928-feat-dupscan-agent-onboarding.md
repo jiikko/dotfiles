@@ -416,3 +416,7 @@ refresh後のissue標準テストはBash 5で全件成功。dupscan gateは変�
 ## 限定採用による完了の評価（2026-10-28）
 
 `docs(dupscan): close onboarding with bounded adoption and explicit research handoff`で導入機能を限定採用し、残る環境確認と評価計画の扱いを決着した。無期限に正の効果を待つ状態から、検証した導入経路・費用・非保証範囲と、948で継続する研究の責任を明確化した。928に新規hook/自動設定を加えず、一般的な効率や重複追加率が改善したとの主張も増やしていない。元の本番比較は未実施、Claude/Swiftも未検証であり、引継ぎによるscope改訂として閉じる。
+
+最終検証: 能力表/guide/doctor/dispatchの既存Go回帰テストはrc0、issue標準テストはBash 5で全件成功。dupscan gateは変更単位0・rc0、既存不正fixtureをbase/head各1件としてpartial通知。hookのCLI不存在を含む16件は全件成功し、symbol-grep通知テストも成功した。
+
+広いmake test-changedは周辺の個人環境検査でrc2になった。tmuxベル検査はTERM=dumbでattachできず、TERM=xterm-256colorを明示した当該テストの再実行は成功。残る失敗は ~/.config/nvim/coc-settings.json → ~/dotfiles/_coc-settings.json という既存のdangling symlink（リンク先は着手時HEADにも存在しない）。今回の差分はissuesの文書・リンクのみで、Neovim設定/リンクやtmux実装は変更していない。個人設定の修復を928へ混ぜず、全体検査がgreenだったとは報告しない。共通導入機能の採用条件とissue整合検査の成功とは分けて記録する。
