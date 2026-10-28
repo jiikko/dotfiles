@@ -1,19 +1,18 @@
 # 928 (feat): dupscan のClaude/Codex共通の導入案内・能力診断を用意する
 
-> 🚨 **担当中: Mac (glogx)**（2026-10-28〜）
-
 起票日: 2026-10-26
 
-## 現在の判断・目的（2026-10-28 refresh）
+## 採用判断・完了範囲（2026-10-28）
 
-**共通の導入案内・能力診断は実装済み。導入経路の実動確認も進んだが、環境検証と評価の決着が残るためopen。** 「有効性が必ず証明できるまで終われない」という条件にはしない。評価を完遂して、効かなかった用途を含め採用範囲を決めることが必要である。今回のrefreshではdoneへの移動や、未実施項目の除外・移管はしていない。
+ユーザーの「採用の判断は君はできないの？」に対し、下記の限定採用を提示し、「じゃあ対応やって」で対応の指示を受けた。**共通の能力診断・表示専用案内の導入を完了範囲とし、一般的な効率改善の研究は948へ明示的に引き継ぐ。** 本番比較を実施済みにする変更ではない。
 
-目的は、Claude/Codexが対応コマンド・言語・制約を短いCLI案内から確認できるようにすること。registry/capabilities/doctor/agent-guide、wrapper先頭の`-no-build`、Go通知からの能力照会は実装済み。flags_helpは実help文字列であり型付きschemaではない。表示専用guideはユーザーのinstruction/設定へ自動追記しない。現在の実装は下記sourceで裏取りした。
+| 対象 | 判断・根拠 | 採用範囲の限界 |
+|---|---|---|
+| capabilities / doctor / 表示専用agent-guide / -no-build | 維持。実dispatch/flagと対応する能力照会、解析しない診断、短い実行例、未準備時の無build拒否を検証した | 自動instruction変更・agent固有hookの共通動作・全環境の成功は保証しない |
+| search/index/evidence等の探索 | 既存helper・似た実装・広い名前の候補発見に限定して採用し、原文と責務を確認する | 狭い定義検索・文字列/設定にはrgも使う。0件は不存在の証明ではなく、一般的なcontext削減/重複防止は未実証 |
+| 案内の強制・追加通知の拡大 | 928では行わない。既存pilotだけでは利用促進/費用削減を示せなかった | 948の実装済み候補注入hookを撤去・不採用とした判断ではなく、その評価/担当は948で継続 |
 
-- `src/dupscan/command_registry.go` / `capabilities_cmd.go`: dispatchと能力一覧の共通情報源。最新のsweepも登録済み。
-- `src/dupscan/doctor_cmd.go` / `bin/dupscan` / `bin/lib/go_autobuild.zsh`: read-only診断と未準備/stale時のno-build拒否。
-- `src/dupscan/agent_guide_cmd.go`: claude/codex × all/swift/goの表示専用guide、4096bytes上限、対応コマンドだけを案内。
-- 対応する`*_test.go`、`tests/bin/test_dupscan_no_build.sh`、Go通知hookのテスト: 対応表/argv・無解析・設定/別cwd・未build/stale等の回帰検査。テストで覆う条件と実環境での未検証を以下で分ける。
+根拠はregistry/capabilities/doctor/guide/wrapperの現source・自動テストと、後半の実agent実験。実装を増やさず、使える導入経路と未検証の効果を分離した。typed flags/json-v2/cache/全agent×全言語のA/Bを928の追加実装条件にはしない。残研究の引継ぎ内容と再開条件は[948](../948-research-dupscan-meets-its-aims.md)の「928から引き継ぐ評価計画」を正本とする。
 
 ### 実agent評価の現在地
 
@@ -26,28 +25,32 @@
 
 承認後の固定scopeは09e983fcのuserdirs Go source/testsと386e2876のObaketCore Swift source/tests。以前の「source送信は未承認」は履歴であり、この固定scopeの現在の阻害要因ではない。固定binaryは5c89f75b。最新masterのsweep/L1mや948の候補注入hook（57a47305）を評価した実験ではない。個々の数値・誤り・欠測とraw保存場所は後半の実施記録を参照する。
 
-## 検証・受け入れ条件（現在の正本）
+## 完了条件と決着
 
-一つの未チェック項目に実施済み/未実施が混ざっていたため分割した。旧設計・進捗の「open/未承認/未実装」は各時点の履歴で、現在の状態判定は本節による。
+- [x] registry由来の能力/実helpとguide6条件・生成argvの実行fixtureを検査した。
+- [x] doctorの無解析・設定不在/不正・別cwd/worktree・混在source・非repo等を自動テストで確認した。
+- [x] no-build未準備/stale拒否・argv保持・無build・read-onlyと、既存通知の回数/長さ/追加待ち時間を検査した。
+- [x] CLI不在時の通知停止、SDKとrepo内定義の区別、未対応言語の拒否、cold compiler cacheでのbuildを確認し、制限を記録した。
+- [x] Codex/Go・Claude/Go実編集、Codex/Swift読取の限定pilotと欠測/説明誤りを記録した。評価全体を無誤り・省context達成とはしていない。
+- [x] Claude/Swift未実施と原計画（各agent4課題pilot→未使用12課題×2群×2agent）を948へ引き継ぎ、928の全面保証から外す理由・未確認事項・再開条件を明記した。未実施の評価を実施済みにしたチェックではない。
+- [x] 維持/限定採用/拡大しない範囲を上表で決め、917/921の既存期日・保留条件を保持した。
 
-- [x] registry由来のcapabilities/実helpと、対応能力に沿うguideを実装する。6guideと生成argvの実行fixtureで確認済み。
-- [x] 診断でsource解析を起こさず、設定不在/不正・別cwd/worktree・混在source・非repo等を自動テストで検査する。
-- [x] wrapperの未build/stale拒否・argv保持・無build/無developer-tool起動・read-onlyをfixtureで検査する。
-- [x] 表示専用guideを維持し、自動instruction追記による重複を増やさない。
-- [x] 通知の回数/長さ/追加待ち時間と、通知だけで全repo解析・buildを起こさない既存導線を検査する。（948の新しい候補注入hookの効果とは別）
-- [x] Codex/Go実編集、Claude/Go実編集、Codex/Swift読取の実動と限定pilotの品質・出力量をagent別に記録する。
-- [ ] **環境検証の穴を閉じる。** CLI不存在時のfallback、SDKシンボル/未対応対象の誤案内防止、cold compiler cacheでの初回buildを、実行条件・rc・出力とともに確認する。既存のwarm-cache build 1.192秒をcold値へ流用しない。既存fixture/ローカル実行で確認済みの条件は再実装せず証拠を対応付ける。
-- [ ] **Claude/Swiftの接続を決着する。** 未実施の組として実動を確認するか、対象外にする理由と追跡先を明示して受入範囲を改訂する。今回の承認を別source/新しい送信先へ広げない。
-- [ ] **比較評価の残計画を決着する。** 下の手順に沿って、両agentの同じ課題・適切なrg/Read対照・実際の検索利用と結果を評価する。検索を使わなかったrunも除外せず、利用率と案内の限界として保持する。既存pilotを本番12課題や個別機能の因果効果へ数え直さない。
-- [ ] **採用範囲と関連issueとの境界を確定する。** 実測から維持/修正/不採用を用途別に記録し、[917](../890/pending/917-test-dupscan-usefulness-verification.md)・[921](../890/pending/921-feat-dupscan-explore-def-refs-and-grep-nudge.md)・[948](948-research-dupscan-meets-its-aims.md)へ重複しない形で接続する。将来の通常利用測定は各issueの期日を保ち、928だけで実施済みにしない。
+### 残っていた環境検証の結果
 
-## doneにするまでの具体的な順番
+最新source af8b9787の専用worktree、Go 1.26.0、呼出し側のMacOSX.sdk、GOPROXY/GOSUMDB=off、GOTOOLCHAIN=localでローカル検証した。空の専用GOCACHE（開始時0entries）を使い、他セッションのキャッシュを消していない。既存module cache/取得済み依存を使っており、依存downloadも含むcold startではない。wallは各1回・他処理が動く非統制環境の観測で、性能改善の主張ではない。
 
-1. **環境検証を一覧で埋める。** 上記3つの穴と既存証拠を整理し、初回build/準備済み起動/探索の時間を分離する。失敗環境も対応外・制限として記録し、成功として扱うのは実際に動いた条件だけにする。全OS/全SDKを保証する話へ広げない（repoの対象はmacOS）。
-2. **評価の成立条件を満たす。** 実際の既存実装の見落とし履歴から、答えの関数名を漏らさない課題を事前固定する。対照がわざと弱くならず、案内と候補探索を別集計でき、対照群への指示漏れを扱えることを先に確認する。原計画は各agent4課題pilot→未使用12課題×各agent×2群。今回のGo1課題/Swift3課題の再使用セットはその代用にならず、天井効果が残る現状から本番へ自動で進めない。
-3. **有限の評価と採否を完了する。** 原計画を維持するなら上記pilot条件を満たした上で本番を実行し、正しい再利用/不要写し/誤統合・回答誤り、全tool出力量、取得可能なusage・時間・失敗を集計する。効果なし・費用増も有効な結論で、効果が出るまで課題を取り替えない。原計画を実施しないなら、理由・残る不確実性・受け入れる導入範囲を明示して受入条件を改訂し、残研究を既存948/917へ本文付きで引き継ぐ必要がある。**このrefreshではその縮小/移管を決定していない。**
+| 条件 | 結果 |
+|---|---|
+| 初回wrapper→capabilities（空compiler cache） | rc0、14.203秒、stdout13294bytes。Swift文法Cの既存TOKEN_COUNT再定義warningあり |
+| 準備後 -no-build capabilities | rc0、0.032秒、13294bytes。通常起動とbyte一致 |
+| claude/swift表示guide | rc0、0.032秒、1227bytes。SDK定義はLSP等・0件は不存在証明でないと案内。Claudeによる読解/操作成功とは別 |
+| javascript指定guide | rc2、stdout0、stderr69bytes。未対応langを実行例として広告しない |
+| Foundation利用だけのfixtureで def URLSession | rc1、定義なし。repo内currentSessionのdefはrc0、本体103bytesで成功 |
+| 同fixtureで context URLSession | rc0、定義0/参照2/call0、名前による近似・読んだscopeを明示。SDK実装を解決した結果ではない |
 
-一般的なcontext削減や重複防止の成功をdoneの必須条件にはしない。一方、実験未完のまま「効果なし」として終了したり、実動確認だけで一般効果の条件を満たしたことにもしない。typed metadata/json-v2/cache/新hookの追加は928完了の必須作業ではない。948の新hookは別の介入なので、今回のguide＋任意探索の比較（Swift併用はguideのみ）の結果をその効果と扱わない。
+SDKのbare defは「定義なし」としか表示しないため、guideのscope注意と原文確認を含む導入に限定する。SDK全部の誤誘導防止や、全agentがfallbackを理解したことまで検証したとはしない。CLI不存在の既存Go通知fixtureは、PATHをjq/git等だけにした条件で通知しないことを検査する。CLIが無い場合にagentが実際にrgへ戻る挙動を新たに外部実験したわけではない。sourceのないツールを前提にする強制導線は採用しない。
+
+rawの条件・rc・stdout/stderr・時刻は`dotfiles/tmp/close-928-20261028/`のmanifest/results/sdk-resultsへ保存。以前のwarm-cache build 1.192秒や固定5c89f75bのagent実験とは別測定である。
 
 ## 設計・検証の履歴
 
@@ -165,7 +168,7 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 
 「用途/入出力は分かるが名前は不明→indexの型検索/925のsearch→候補の定義と利用例を確認→同じ責務なら再利用、違えば分ける→実装後にgate/nearで名前を変えた写しを検査」をguideの主導線とする。新機能未実装時は現行で実行可能な入口だけを案内する。
 
-全grepを禁止せず、文字列・設定・未対応言語では継続利用する。grepで0件だった時やhelperを書き始める時にdupscanの型/用途検索が役立つことを説明する。軽量hookの契約を保ち、通知だけで全repo解析やbuildを始めない。[929](done/929-bug-dupscan-gate-lost-file-parse-errors.md)の未修正中はgate成功を解析完了の証明と案内しない。
+全grepを禁止せず、文字列・設定・未対応言語では継続利用する。grepで0件だった時やhelperを書き始める時にdupscanの型/用途検索が役立つことを説明する。軽量hookの契約を保ち、通知だけで全repo解析やbuildを始めない。[929](929-bug-dupscan-gate-lost-file-parse-errors.md)の未修正中はgate成功を解析完了の証明と案内しない。
 
 ## コンテキスト消費と重複追加を同時に減らす評価
 
@@ -175,7 +178,7 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 - 構文解析の除外・候補省略で読まなかった正解がないか確認し、正しい候補の到達/課題成功を維持した上で、正しい再利用率と不要な重複追加率、別責務の誤統合率を同時に採点する。
 - 計測層を区別する: (a)toolのraw stdout/stderr bytes、(b)recorder/tool転送後のbytes、(c)観測できる場合のmodel入力側のtool/source text token数、(d)各turnの入力context token数とその最大値。bytesや費用をcontext token数へ固定倍率で換算しない。取得できない層は欠測とする。
 - 各turnの入力context長の最大値と、全turnを通した入力tokenの累積を別に示す。入力側だけ観測できる場合は「最大入力context」と表記し、生成中・出力を含むwindow全体の最大占有は、その範囲を実測できた場合だけ報告する。会話の再送・共通instructions・compaction/要約・出力制限・cacheの扱いを環境ごとに記録し、累積量の減少だけでwindow最大占有が減ったとは言わない。provider固有usageの定義は実装時の一次仕様と実動作で確認する。
-- 初期instructions/agent/model/版/権限/予算/compaction方針を同一agent内で揃え、対照群への設定漏れをpilotで検査する。[931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)のrecorder転送量は、モデルが実際に見た全bytesの証明ではなかった点を踏まえる。
+- 初期instructions/agent/model/版/権限/予算/compaction方針を同一agent内で揃え、対照群への設定漏れをpilotで検査する。[931](../../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)のrecorder転送量は、モデルが実際に見た全bytesの証明ではなかった点を踏まえる。
 - 比較表には課題成功・正しい再利用・不要な重複追加・誤統合・context量・総時間/費用を併記する。一方だけ改善した場合はtrade-offを残す。両効果を観測できた課題/agent/条件の範囲だけを報告し、未実装featureや他repoに一般化しない。
 
 追加受け入れ条件: 上記の計測層と欠測を区別した報告形式を用意し、同じ品質を維持しながらコンテキスト消費と不要な重複追加を減らせたか判定する。12課題の既存案だけで一般的な非劣性や有効性が証明できるとは扱わない。
@@ -190,11 +193,11 @@ Claudeは既存921の案内を共用する。Codexはshell+repository instructio
 
 - 2026-10-26: 既存実装発見・比較評価について読み取り専用Codex subagentで反証レビュー。925の「候補の適切性をCLIが判断するように読める」P3を訂正し、候補抽出とagentによる採用判断を分けた。 issue内の相対リンク・JSON/Python構文・diffとBash 5のissue関連テストが成功。929の本文内手順と930の3問い合わせをCLIで再現した。文書の改善は、出力誤認の再現・責務と、既存実装発見/不要な重複追加を測る条件を具体化したこと。機能改善の効果は未検証。
 
-- 2026-10-26: [931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931で現行dupscan併用とgrep中心を同一入力/固定出力予算で各1 agent比較したが、共通化候補を確定する効率の向上は確認できなかった。予備runの予算超過も記録し、hard capで再確認した。提案feature実装後の再利用/重複追加率の検証は引き続き未着手。
+- 2026-10-26: [931](../../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931で現行dupscan併用とgrep中心を同一入力/固定出力予算で各1 agent比較したが、共通化候補を確定する効率の向上は確認できなかった。予備runの予算超過も記録し、hard capで再確認した。提案feature実装後の再利用/重複追加率の検証は引き続き未着手。
 
 - 2026-10-26: context消費と重複追加の同時評価を追加し、最大入力contextとwindow全体の占有を区別。 読み取り専用Codex subagentで指摘の網羅性とcontext計測を反証レビューし、P3（現行/設計、着手条件、計測範囲）の3点を訂正した。文書の改善は、不足した指摘の担当と検証条件を明確にしたこと。実装・両効果の実証は未着手。
 
-- 2026-10-26: [935](done/935-test-doctor-duplicate-discovery-effect.md)でdoctor探索を各方式2回比較した。Dは各run1組、探索recorder転送bytesは平均54,783対28,116で併用が48.7%少なかった。ただし候補は異なり、品質非劣性・model context token/window占有・新規重複追加率は未実証。本issueの実装課題A/Bを置き換えない。
+- 2026-10-26: [935](935-test-doctor-duplicate-discovery-effect.md)でdoctor探索を各方式2回比較した。Dは各run1組、探索recorder転送bytesは平均54,783対28,116で併用が48.7%少なかった。ただし候補は異なり、品質非劣性・model context token/window占有・新規重複追加率は未実証。本issueの実装課題A/Bを置き換えない。
 
 - 2026-10-27: 938でcontext/evidenceの先頭状態・grouped text・scope付きnext_actionと任意summaryを実装/局所比較した。938の完了は本issueの全受け入れ条件の完了を意味しない。出力bytes減少を記録したが、実課題の総tokens/重複追加/時間の評価とregistry/capabilitiesは継続。
 
@@ -409,3 +412,7 @@ provider usageは対照 input/cache_creation/cache_read/output = 12/8618/49435/2
 反証レビューでは追加P1/P2なし。Go併用がsearchを実利用した表現へ訂正し、検索を使わなかったrunを除外しない条件も明記した。今回のrefresh後も928はopenを維持する。
 
 refresh後のissue標準テストはBash 5で全件成功。dupscan gateは変わった単位0、rc0、既存不正fixtureをbase/head各1件としてpartial通知。コードは変更せず、過去の数値を最新実装の効果へ読み替えていない。
+
+## 限定採用による完了の評価（2026-10-28）
+
+`docs(dupscan): close onboarding with bounded adoption and explicit research handoff`で導入機能を限定採用し、残る環境確認と評価計画の扱いを決着した。無期限に正の効果を待つ状態から、検証した導入経路・費用・非保証範囲と、948で継続する研究の責任を明確化した。928に新規hook/自動設定を加えず、一般的な効率や重複追加率が改善したとの主張も増やしていない。元の本番比較は未実施、Claude/Swiftも未検証であり、引継ぎによるscope改訂として閉じる。

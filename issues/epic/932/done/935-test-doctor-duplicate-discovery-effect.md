@@ -103,7 +103,7 @@ macOS/arm64、build済みbinary、warm-up1回を除いた5回。4queryをround�
 
 - 具体的な完全重複を初期reportだけで小さく返した点は、doctorの探索で役立った。両armで有用な候補を得た4runでは、併用の転送出力が少ないという限定的な観測が得られた。
 - grepは部分重複を拾い、dupscanはこれを逃している。候補の集合が異なるので、どちらかが網羅的に優れるとも、品質の非劣性が証明されたとも言わない。
-- N=2/arm、同じmodule/親設定のagentのみ。推論の揺れ・作戦・候補価値の違いを統制できていない。全体のcontext token・window占有・課題成功・新規重複追加率の実証は[928](../928-feat-dupscan-agent-onboarding.md)の実装課題A/Bへ残す。
+- N=2/arm、同じmodule/親設定のagentのみ。推論の揺れ・作戦・候補価値の違いを統制できていない。全体のcontext token・window占有・課題成功・新規重複追加率の実証は[928](928-feat-dupscan-agent-onboarding.md)の実装課題A/Bへ残す。
 - 実装前のhelper探索と、実装後の既存重複探索は別の段階。今回の結果だけで未実装search/context/Type-3の効果を宣言しない。語や本体hintからの探索は925/933/934、部分重複は895、候補の段階取得とcontext量は927/928が継続対象。
 
 <details>

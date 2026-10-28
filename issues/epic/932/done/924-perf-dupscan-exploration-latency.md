@@ -141,7 +141,7 @@ indexの `-file` は結果の絞り込みであり、既存 `calls_approx` は�
 
 ## 追加観測と探索の目的（2026-10-26）
 
-目的はgrepで見落としていた既存実装へ到達し、似たメソッドの新設を減らすこと。速度は繰り返し使うための条件だが、名前を既に知っている検索の速度だけで探索の有効性を決めない。検索から実装/レビューまでの比較は[928](../928-feat-dupscan-agent-onboarding.md)に集約する。
+目的はgrepで見落としていた既存実装へ到達し、似たメソッドの新設を減らすこと。速度は繰り返し使うための条件だが、名前を既に知っている検索の速度だけで探索の有効性を決めない。検索から実装/レビューまでの比較は[928](928-feat-dupscan-agent-onboarding.md)に集約する。
 
 9d2e801fのbuild済みbinaryとripgrep 15.2.0で追加観測した。入力obaketは `4eefca2724484a57d7f8df2551b2fb8a0e90985f`、計測前後のSwiftファイル集合/内容のSHA-256は `1143d229d1d08a58837363ee4c0e1d1676cf939fcb870ec167f7307bc10ca0b6` で同じ。binaryのSHA-256は `87cec7d3d2bc0e2b0ccb645fe46de5b93a11dbed99eaaf85971f92973f2aee73`。初回1回を除いた5回、4queryの順序をroundごとに反転、compile時間は含めない。CPU負荷/OS cacheは制御していない。rgは並列出力の順序が変わりうるので行のmultiset、dupscanはstdout全体が反復中に同じことを確認した。
 

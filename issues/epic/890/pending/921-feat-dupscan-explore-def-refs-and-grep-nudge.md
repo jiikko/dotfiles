@@ -107,8 +107,10 @@ skill dupscan の 2 節・README・obaket の AGENTS.md / CLAUDE.md の dupscan 
 
 ## 追加提案との境界（2026-10-26）
 
-[928](../../932/928-feat-dupscan-agent-onboarding.md) にClaude/Codex共通のCLI能力診断・導入案内を提案した。本issueのClaude用grep案内は実装済みの入口として利用し、重複して新設しない。既存の1か月後の測定・保留条件は維持する。Codex側の固有hook対応は別途検証する事項で、ここで利用可能と断定しない。CLIの問い合わせ診断は [926](../../932/done/926-feat-dupscan-query-diagnostics.md)、情報をまとめる新commandは [927](../../932/done/927-feat-dupscan-agent-context.md) の範囲とする。
+[928](../../932/done/928-feat-dupscan-agent-onboarding.md) にClaude/Codex共通のCLI能力診断・導入案内を提案した。本issueのClaude用grep案内は実装済みの入口として利用し、重複して新設しない。既存の1か月後の測定・保留条件は維持する。Codex側の固有hook対応は別途検証する事項で、ここで利用可能と断定しない。CLIの問い合わせ診断は [926](../../932/done/926-feat-dupscan-query-diagnostics.md)、情報をまとめる新commandは [927](../../932/done/927-feat-dupscan-agent-context.md) の範囲とする。
 
 - 2026-10-27: 899の補完方式調査が完了。通常の構文探索とLSP不採用は維持し、921のgrep案内の効果測定は既定の条件で継続する。typed/indexed補完を導入済みとは扱わない。
 
 - 2026-10-27: [939](../../932/done/939-ux-dupscan-go-grep-nudge.md)でGo指定の検索への案内を追加した。Swiftの案内本文と既存stamp/間隔、測り直し時期は維持する。上のraw集計はdupscan全探索を含むため、再測定ではGo指定のgrep/明示Go scopeのdupscanを別にも数え、言語不明はunknownへ分ける。Go利用の増加をSwiftの効果と断定しない。
+
+- 2026-10-28: 928で共通診断/表示専用案内を限定採用して完了。一般効果・未使用課題の比較計画とClaude/Swift未検証は948で継続する。本issueの既存測定/保留triggerは変更しない。

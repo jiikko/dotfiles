@@ -6,7 +6,7 @@
 
 agent が dupscan に気づき、少ない出力で正しい次の一手へ進めるようにするアイデアの置き場。各案に、既存 issue のどこに馴染むか・
 どこと食い違うかを書く。**既存 issue が担当している論点は書き写さず、そちらを指す**。案1は939へ切り出して実装済み。案2〜4はcontext/evidenceのtextへ実装し、案5は任意のsummaryとして比較して既定短縮を見送った。出力bytesの比較は下記。開発全体の効果の評価は
-[928](../928-feat-dupscan-agent-onboarding.md) の評価手順 (総 context 量と不要な重複追加を同時に見る) に載せる。
+[928](928-feat-dupscan-agent-onboarding.md) の評価手順 (総 context 量と不要な重複追加を同時に見る) に載せる。
 
 ## 前提にする既存の決定
 
@@ -16,7 +16,7 @@ agent が dupscan に気づき、少ない出力で正しい次の一手へ進�
   - 例外の前例: [937](937-feat-dupscan-go-test-call-owner.md) は既存の callers の text と JSON の `caller` を変更し、README / 回帰テストに明記して実装した。
     既存の出力を変える案は、この形 (明記して変える) か v2 のどちらかに載せる
 - [927](927-feat-dupscan-agent-context.md): context での予算の配分・省略・継続取得 (cursor)
-- [928](../928-feat-dupscan-agent-onboarding.md): 導入案内・能力診断・commandmeta の registry。hook から全 repo の解析や build を起こさない
+- [928](928-feat-dupscan-agent-onboarding.md): 導入案内・能力診断・commandmeta の registry。hook から全 repo の解析や build を起こさない
 - [921](../../890/pending/921-feat-dupscan-explore-def-refs-and-grep-nudge.md): grep 案内 hook の効果を 2026-11-25 ごろに測り直す
 
 ## アイデア

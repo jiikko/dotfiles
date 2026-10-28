@@ -50,7 +50,7 @@ Claude/Codexがコマンドの書き方の違いで失敗したり、非対応�
 - [x] 同一fixtureの変更前後24条件を比較した。完全解析16条件はstdout/stderr/rc一致、部分解析8条件はstdout/rc一致と新stderr警告を確認した。全入力の互換性を証明するものではない。
 - [x] 追加回帰を14種類の退行変異で検証した（scope欠落の予備変異は全repoへの拡大へ修正して再検証）。lint/race/gateとissue検査の結果は末尾に記録する。
 
-関連: [900](../../890/900-research-dupscan-next-languages.md) の言語ごとの対応範囲を反映する。[928](../928-feat-dupscan-agent-onboarding.md) の能力情報と整合させる。gateのbase/違反/除外の判定を変更する作業は、この探索診断と切り分ける。
+関連: [900](../../890/900-research-dupscan-next-languages.md) の言語ごとの対応範囲を反映する。[928](928-feat-dupscan-agent-onboarding.md) の能力情報と整合させる。gateのbase/違反/除外の判定を変更する作業は、この探索診断と切り分ける。
 
 ## 不採用とした当初の詳細設計案（2026-10-26、未実装）
 

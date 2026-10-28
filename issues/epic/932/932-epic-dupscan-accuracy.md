@@ -6,11 +6,7 @@
 
 ## 現在の状態（2026-10-28）
 
-子issue22件中15件完了、6件open、1件pending（946は2026-10-28に追加）。今回対象だった925・927・934の局所機能と確認導線を完了し、その対象では928の実agent評価が未完了。別セッション追加の941〜944は下節の記録・状態を保持する。限定機能の完了と一般的なagent効率の実証を区別する。
-
-| open | 残作業 |
-|---|---|
-| [928](928-feat-dupscan-agent-onboarding.md) | 明示承認済みの固定pilotを実施（Claude Go編集2run・Codex Swift読取6run）。両群の実装/回答は必須条件を満たしたが、Swift併用はguideのみ、Go併用は検索しても説明誤りと出力量増が残った。一般効果・本番12課題・環境matrixは未検証 |
+子issue22件中16件完了、5件open、1件pending。928は共通能力診断/表示専用案内を限定採用し、環境検証を補完して完了。一般的な効率改善と未実施比較は948で継続する。他担当の941〜944/946/948の内容・claimは保持する。
 
 ## 使われやすさと context 消費（2026-10-28 追加）
 
@@ -23,9 +19,11 @@
 | [943](943-perf-dupscan-result-row-shape.md) | 結果行は rg の1.6倍（173 B 対 111 B）で、docが44〜48%。index/callers の行に終端行が無く Read の範囲を決められない（search は範囲つき read_argv を既に出す）。打ち切り時の件数ヘッダと rg の提示も含む |
 | [944](pending/944-feat-dupscan-go-def.md)（保留） | Go の `def`。943の後も全体 Read が多いときに再開 |
 | [946](946-feat-dupscan-recall-from-real-modules.md) | 4 module に回して寄せた 21 件のうち、既定の report が出したのは 4 件。小さい単位を比べていない事実を report に出す・メンバー名 1 語だけが違う写しの段 `L1m`（opt-in。Swift で組が倍増するので既定にしない）を実装済み。一括で掘る入口・名前の束は提案。Swift 固有の所見（既定 213 組の 98% がテスト・読めない構文 3.4%）もここ |
-| [948](948-research-dupscan-meets-its-aims.md) | 狙い (重複を書かない・探しやすい・context が減る) が成り立つかの判定。道具の性能は 2 つ半成り立つが、呼ばれていない (識別子検索 1,680 回に対し 2 回) ので効果は出ていない。入口を push 型にする案 (A1) など |
+| [948](948-research-dupscan-meets-its-aims.md) | 一般的な重複防止/探索/消費量の効果は未実証。928から未実施の比較研究を引継ぎ、候補注入A1等の測定を継続 |
 
 ## 完了した子issue
+
+- [928](done/928-feat-dupscan-agent-onboarding.md): 共通診断/表示専用案内/no-buildを維持し、探索は候補確認に限定採用。CLI不在・SDK/未対応言語・cold compiler buildを追加検証。本番比較とClaude/Swift未検証は948へ理由/再開条件付きで引継ぎ。
 
 - [925](done/925-feat-dupscan-helper-search.md): text検索と明示回復。hard条件候補0で無益な語数緩和を省略。固定alias例で3検索/3867bytes→2検索/2568bytes。
 - [927](done/927-feat-dupscan-agent-context.md): qualified照会の一覧省略時だけ型名evidenceを追加し、従来の取得actionを保持。C2の型構築/テストへ回復する局所導線を確認。
@@ -59,3 +57,5 @@
 2026-10-28の承認後pilotは928に記録。固定binary 5c89f75bの結果を、最新masterのsweep/L1m/打切りstderr通知等へ事後差替えしない。別セッション追加の946/948と既存claimは保持し、948の「未承認/探索+Read未測定」を今回の限定観測へ更新した。一般的な効率改善は未実証のまま。
 
 928をrefreshし、残作業を環境検証・未実施のagent組合せ/比較計画の決着・用途別の採否判断へ整理した。既存pilotは完了、本番12課題は未実施。今回は研究の縮小/移管やdone移動を決めていない。
+
+- `docs(dupscan): close onboarding with bounded adoption and explicit research handoff`で928を完了。最新環境検証・限定採用と、948で継続する未実施研究を区別し、実ファイルから22子=16done/5open/1pendingを再計数した。

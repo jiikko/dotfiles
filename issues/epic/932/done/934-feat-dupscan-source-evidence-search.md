@@ -65,7 +65,7 @@ Go testは比較から除いてもcallsを収集し、937のcallersはtest owner
 
 ## 補助証拠の固定課題評価（2026-10-27）
 
-09e983fcでE1〜E3を事前固定した。Go corpusは09e983fcのuserdirs、Swift corpusはObaket 386e287652125961d045fe565d0e18fe41495d89のCore。凍結条件とagent検証の制限は[928](../928-feat-dupscan-agent-onboarding.md)を参照。課題文には正例の関数名を含めず、ソースから決めた正解集合で確認した。
+09e983fcでE1〜E3を事前固定した。Go corpusは09e983fcのuserdirs、Swift corpusはObaket 386e287652125961d045fe565d0e18fe41495d89のCore。凍結条件とagent検証の制限は[928](928-feat-dupscan-agent-onboarding.md)を参照。課題文には正例の関数名を含めず、ソースから決めた正解集合で確認した。
 
 | 課題 / 固定phrase | 人が決めた正解と観測 | rg / index-doc / search / evidenceのbytes | 中央値ms（同順） |
 |---|---|---:|---:|

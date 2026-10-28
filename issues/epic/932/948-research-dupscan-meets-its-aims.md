@@ -96,7 +96,7 @@ dupscan を Claude Code が使えば、①同じ役割のメソッドを重ね�
 | D | 連番の名前・testdata・近い完全一致の数 | 946 に記録済み。未実装 |
 | E-1 | 入口の指標 | usage report で測定中 |
 | E-2 | gate が止めた数 | 手段未決 (CI ログから数えるか、gate が実行ログを残すか) |
-| E-3 | 928 の実 agent 比較 | 固定scopeの限定pilotは承認・実施済み。本番比較は未実施で、928の現受入条件に沿い実施か移管を決める |
+| E-3 | 928 の実 agent 比較 | 928は診断/案内を限定採用して完了。本番比較とClaude/Swift未検証は本issueへ引継ぎ（末尾の計画・再開条件） |
 
 A1 の既知の限界: 名前が違う同じ役割の関数は引けない (署名の近さは見ない)。名前の一致は `index` の語の一致で、型を解決しない。Swift は字下げのある `func` を新しい関数として扱うため、同じ型の中の同名メソッドも候補に出る。
 
@@ -118,8 +118,24 @@ A1 の既知の限界: 名前が違う同じ役割の関数は引けない (署�
 
 ## 関連
 
-- [932](932-epic-dupscan-accuracy.md) (epic)、[928](928-feat-dupscan-agent-onboarding.md)、[941](941-ux-dupscan-nudge-definition-search-gaps.md)、[942](942-perf-dupscan-fixed-notice-overhead.md)、[943](943-perf-dupscan-result-row-shape.md)、[944](pending/944-feat-dupscan-go-def.md)、[946](946-feat-dupscan-recall-from-real-modules.md)、[947](../../done/947-retro-dupscan-multi-module-dedup-2026-10-28.md)
+- [932](932-epic-dupscan-accuracy.md) (epic)、[928](done/928-feat-dupscan-agent-onboarding.md)、[941](941-ux-dupscan-nudge-definition-search-gaps.md)、[942](942-perf-dupscan-fixed-notice-overhead.md)、[943](943-perf-dupscan-result-row-shape.md)、[944](pending/944-feat-dupscan-go-def.md)、[946](946-feat-dupscan-recall-from-real-modules.md)、[947](../../done/947-retro-dupscan-multi-module-dedup-2026-10-28.md)
 
 - 2026-10-28: `docs(dupscan): reconcile approved pilot with concurrent research`で928の承認・実行状態と限定観測を同期。「探索+Read未測定」と入口だけを主因とする断定を訂正した。A1等の案の採否・将来測定の条件を完了扱いにはしていない。
 
 - 2026-10-28: `docs(dupscan): refresh onboarding status and make closure requirements explicit`でE-3の「許可待ち」を限定pilot実施済みへ訂正。928の残計画や将来課題の許可まで完了したとは扱わない。
+
+## 928から引き継ぐ評価計画（2026-10-28）
+
+928は共通診断/表示専用guideを限定採用して完了し、一般効果の研究は本issueで継続する。既存A1候補注入hookの実装・担当・今後の測定を928側で撤去/変更しない。
+
+引き継ぐ未実施項目:
+
+- 各agent4課題pilot→未使用12課題×2群×Claude/Codexの原計画。928のGo1課題とSwift3課題は既知課題の限定pilotであり、本番達成には数えない。対照も成功する天井効果、Swift併用がguideしか使わないこと、Go併用でも全読/説明誤りが残ったことを出発点にする。
+- Claude/Swiftの実agent接続と同一課題比較は未検証。Codex/Swift guide成功や手動argv検査で代用しない。元のsource送信承認はGo→Claude/Swift→Codexという固定scopeなので、追加送信は必要な対象・送信先に対する承認の範囲を確認する。
+- 対照群へのglobal指示の漏れを扱う隔離条件と、rc/wallをparse前に保存するcollectorの整備。欠測の旧runを都合よく再試行したり、別runの時間で埋めない。
+
+再開の判断材料は、実際の見落とし履歴を固定commit/依頼から復元できた時、または既定の2026-11-04/11-25の通常利用測定で入口/読取量の不足を具体的に確認した時。直ちに48本の本番runを回す決定ではない。原計画を維持するか最小の未使用pilotへ改訂するかを理由付きで事前に確定し、改善が出るまで課題を交換しない。948 A1等はguideだけと別の介入として識別し、使わなかったrunも除外しない。適切なrg/Read対照、品質（再利用/不要写し/誤統合/誤回答）、全tool出力、利用率、usage/時間/失敗をagent別に保存する。
+
+917の別マシン/1301導入後1か月、921の11/25再測定というtriggerは変更せず、結果の共有先とする。成功だけでなく効果なし・費用増も採否判断の結果として残す。928のdoneはこれらの研究完了や一般的なcontext削減の証明を意味しない。
+
+- `docs(dupscan): close onboarding with bounded adoption and explicit research handoff`で上記の未実施計画・制限・再開条件を928から引き継いだ。

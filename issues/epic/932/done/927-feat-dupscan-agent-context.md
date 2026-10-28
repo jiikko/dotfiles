@@ -213,7 +213,7 @@ C2は明確な失敗例である。定義は正しく選べてもrefs/callsはap
 - [x] 標準lint 0 issues / race全テスト成功。strict gateはchanged_units=2、違反/解析失敗/新規除外なし。別worktreeの9変異（fallback配線/qualified限定/refs・callers各省略条件/本体省略の誤適用/型名正規化と配線/scope保持/primary保持）をそれぞれ予測assertで検出し、復元後clean。
 - [x] root agentがソース/MDを読み取り専用で反証しP1/P2所見なし。原評価の未達と今回の局所受け入れを冒頭から分け、実agent効果と未実施CLI matrixを達成扱いにしない記述へ整理した。
 
-**原評価の未達条件は残す。** 上の「Claude/Codexの同じ変更課題の因果比較」と「大きい型/多重定義/別module/複数call/0件の全matrix」は、今回の局所fixtureやC2回復で全達成としない。実agentの総合評価は[928](../928-feat-dupscan-agent-onboarding.md)で継続する。未実施のCLI全matrixは今回完了せず、今後の不足事例に必要な検査を選ぶ記録として残す。今回の局所完了と、これらの未実施を分けて扱う。型解決や広い継続取得の設計も、具体的な必要性が確認された場合の条件付き案のまま。
+**原評価の未達条件は残す。** 上の「Claude/Codexの同じ変更課題の因果比較」と「大きい型/多重定義/別module/複数call/0件の全matrix」は、今回の局所fixtureやC2回復で全達成としない。実agentの総合評価は[928](928-feat-dupscan-agent-onboarding.md)で継続する。未実施のCLI全matrixは今回完了せず、今後の不足事例に必要な検査を選ぶ記録として残す。今回の局所完了と、これらの未実施を分けて扱う。型解決や広い継続取得の設計も、具体的な必要性が確認された場合の条件付き案のまま。
 
 - 2026-10-28: `fix(dupscan): offer type evidence for truncated context`で、qualified queryの省略時だけ型名evidenceを追加し、従来のsection取得actionを保持。既知C2の回復が実行可能になった範囲と、追加費用・未検証の実agent効果を記録した。
 
