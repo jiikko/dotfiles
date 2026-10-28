@@ -4,6 +4,10 @@
 
 起票日: 2026-10-26
 
+## 現在の判断（2026-10-28）
+
+固定Go source/testsをClaude Codeへ、固定Swift source/testsをCodex CLIへ送る今回の評価は、ユーザーの「お願いします」で明示承認された。以前の「未承認」は過去の実行拒否の記録で、現在の着手条件ではない。固定課題・fresh session・既存認証/通常権限で評価し、結果と限界を末尾へ記録する。一般的なcontext削減・重複追加率改善は未実証で、未実施の本番12課題や全環境matrixを完了扱いにはしない。
+
 ## 方向性の再評価（2026-10-27）
 
 対象: a5b4196e の実装と既存測定。
@@ -321,3 +325,61 @@ rawはdotfiles/tmp/remaining-932-20261028/readiness.logとreadiness-followup.jso
 - 2026-10-28: ローカル導線の追加記録をread-only subagentで反証し、追加指摘なし。AIによる実利用と効率の評価はopenのまま。
 
 - 2026-10-28: 925/927/934統合後も既存C2で実argvを連鎖実行した。context 9998bytes→型名evidence 2263bytes→その先頭read_source 1571bytes/47行に5appendを含むことをローカルで確認。これは型解決や影響範囲網羅、agentの正しい選択を保証しない。rawはtmp/remaining-932-20261028/integrated-recovery.json。
+
+## 承認後の実agent評価（2026-10-28）
+
+対象を限定した外部source送信の明示承認を受け、固定sourceを使う探索的pilotを実行した。binaryは5c89f75b、SHA256 `33e34fe359e10413d1994ee06178d7a8feb3e56668bbce7ed4d9ab1cb89866cc`。既存の課題を再使用する実動確認で、held-outの本番評価ではない。対照は通常のrg/Read、併用は同じ条件に最初のagent-guideと任意のdupscanを追加した。新しい製品コードはこの評価から取り込まない。
+
+### Codex / Swift: 3課題×2群
+
+Obaket 386e287652125961d045fe565d0e18fe41495d89のCore source/tests 305 Swiftファイルを各fresh corpusへ複製。CLI 0.165.0、設定model gpt-6.1-sol / effort medium、read-only/ephemeral、project_doc_max_bytes=0、各300秒上限、設定変更・再試行なし。実行順はS対照→S併用→C併用→C対照→E対照→E併用。source/config hashとgit statusは全runで不変だった。server側の実model/effort metadataは出ず、設定値以上の確認はできていない。global指示の完全な非読込も証明しておらず、ログで観測した制約遵守と区別する。
+
+Sは名前を与えないsnapshot差分helperの探索、CはBoundedFIFOArray.appendの容量0契約と具体的な構築/呼出し調査、EはMetadataDiffをUI付帯情報のみの通知へ流用できるかの否定判断。固定oracleとpromptは最初のrun前に凍結した（manifest SHA256 `857c6374ad4d7c0ab0fb803f9b5ddc38e6dd01c8a41498a2858058f882e65376`）。read-only subagentは群対応表/コマンド/費用を見る前に未改変A/B回答を原文と照合し、S両群5/5・C両群5/5・E両群4/4の必須条件を満たしたと採点。誤った不存在断定・別appendの混同・UI除外の逆解釈は見つからなかった。E-Aの絶対リンクにE-controlが残り、Eの完全blindは成立していない。
+
+| 課題 | 対照: command数 / 観測出力bytes / 秒 | 併用: command数 / 観測出力bytes / 秒 |
+|---|---:|---:|
+| S: helper発見・契約 | 13 / 127969 / 44.849 | 14 / 186529 / 42.529 |
+| C: 影響箇所・容量0 | 9 / 41019 / 41.857 | 4 / 62553 / 32.025 |
+| E: 否定契約 | 4 / 60707 / 32.564 | 9 / 66421 / 41.686 |
+| 合計 | 26 / 229695 / 119.270 | 27 / 315503 / 116.240 |
+
+全6runはrc0、timeout/権限拒否/API errorなし。S併用とE併用では存在しないBrowser関連pathをrgへ渡したrc2が各1回あり、その失敗と回復を含めた数字である。併用群のdupscan呼出しは各guide1回のみで、search/context/evidenceは0回。表の件数/bytesにはguideを含め、内訳として1261bytes×3回を別記する。候補探索の実行回数には数えない。残りの差はモデルが選んだrg/Readの範囲・再読等を含み、dupscan検索アルゴリズムの効果とは扱わない。保存したcommand eventsから件数とUTF-8出力bytesを本体でも再計算し、全6runの集計値と一致した。
+
+CLI集計usageは対照 input/cached/output = 446102/366208/4185、併用 = 511707/434048/3967 tokens。bytesはJSONLのcommand aggregated_outputとして観測できた文字列のUTF-8長で、元プロセスの未切詰め全出力やモデルの最大context占有ではない。反復入力/cacheを含むusage、source tokens、課金額を同一視しない。
+
+**判断: この3課題では品質差は観測できず、案内を渡すだけでは検索機能の実利用につながらなかった。** 観測出力量は併用が85808bytes多く、全課題で増加。時間は合計3.030秒短いが単発の大小混在なので短縮効果は主張しない。Swift sourceの編集をしておらず、正しい再利用率・不要な重複追加率の測定ではない。従来の小規模Go対とCLI単体測定をこの結果へ合算して一般効果を作らない。
+
+生データは `dotfiles/tmp/eval-928-approved-20261028/` のmanifest、prompt、source hash、JSONL、stderr、command events、neutral回答に保存する。scratchの実行scriptを恒久的な製品コマンドとして追加しない。
+
+### Claude / Go: 実編集1対
+
+09e983fcのuserdirs.go / userdirs_test.go / go.mod / go.sumを固定し、ThemeConfigPathとmodule限定AES-GCM不存在の同一課題を対照→併用で各1回実行した。CLI 2.1.312、実ログmodelは両群claude-sonnet-5-5、effortは両方default指定・実効値不明。課題の旧freezeと別に、今回の実行protocolはUTC 04:42:35に事前固定した。最初の専用Keychain item取得はCLI起動・source送信前に失敗し、exit/stderrは未保存。通常CLI loginが有効とmetadataで確認して既存認証で進めた。新しい資格情報・設定・権限の追加はしていない。
+
+両群safe-mode/dontAsk、Read/Edit/Write/Bashと同じ狭いcommand許可、各300秒上限。safe-modeを指定したがinitにはplugin/skills一覧が出ており、完全な非読込を実ログだけで証明できたとはしない。観測されたtoolは許可scope内で、subagent・web利用は0。両群ともシェルredirectによる追記が1回拒否され、既存のEdit経路へ切り替えた。拒否を消す再実行や権限拡大はしていない。
+
+| 観測 | 対照 | 併用 |
+|---|---:|---:|
+| tool call / 観測tool-result bytes（拒否を含む） | 8 / 8686 | 8 / 12764 |
+| guide / search | 0 / 0 | 1 / 1 |
+| 実装のConfigDir委譲 / XDG-home規則の追加写し | 1 / 0 | 1 / 0 |
+| 独立grader: race・6条件・作成/移行副作用 | rc0 | rc0 |
+| provider duration_ms | 24027 | 21219 |
+| subprocess wall秒 / rc | 欠測 / 欠測 | 21.728 / 0 |
+
+併用はguide1220bytes、search2329bytesに加え、小module source/testを全読した。対照もsourceと一部testを読んだ。中立A/Bのpatch/回答を、群対応表・toolログを見る前にread-only subagentが採点し、本体でも実diff・grader出力を照合した。両方とも同じ9行のConfigDir委譲で、moduleにない暗号helperを他repoまで不存在と断定しなかった。graderは両patchを保存した後の別copyへ同一の事前固定test（SHA256 `6fb582a008ea5a8824212f569fefd9868e6afb7ed18109170786cdad76f3e177`）を追加して実行し、absolute/relative/unset XDG×HOME有無の6条件と副作用を検査した。製品sourceへ生成patchは取り込まない。
+
+説明は両群とも完全には正しくない。『ConfigFileは移行するので今回使えない』と述べたが、実sourceではlegacyが空なら移行せず、`ConfigFile(app,"theme.json","")`も有効な正解である。併用の新コメントにも同じ過大一般化がある。対照にはgo.modをGoファイルとして数えた誤り、併用には空のdirectoryを環境変数HOMEが空のように述べた曖昧さもあった。実装/再利用の合格を回答全体の無誤りとはしない。
+
+対照のraw streamは保存できたが、collectorがmessageを常にobjectと仮定して終了後に例外となり、process rcと正確なwall値を失った。集計だけを修正し、元runは再実行せず欠測を保持した。providerはsuccessを返し、実test出力も成功したが、これを欠測rc/wallの代用にはしない。併用はrawとprocess metricsをparse前に保存した。raw/tool-result/usageの計測単位はSwiftとも異なるため直接足し合わせない。
+
+provider usageは対照 input/cache_creation/cache_read/output = 12/8618/49435/2668、併用 = 10/9722/42596/2720。list-price cost表示は$0.0661195/$0.0703676であり、実際のsubscription請求額ではない。capacityとして出たcontextWindowは使用量ではない。反復cache入力の減少だけからcontext消費削減を主張しない。
+
+### 採否・残作業と改善の再評価
+
+今回、Claudeでも既存helperを使う実編集とdupscan検索の実行を確認でき、Swiftでは同名callの混同や否定契約の誤採用をしない回答を両群で観測できた。しかし対照も成功し、不要な写しは両群0件。Go併用は4078bytes増、Swift併用も全課題で増えており、一般的な再利用改善・context/token削減・時間短縮を示したとは言えない。現行案内を一律に強化する追加hook、全探索の強制、typed metadata/cache等の一括追加を正当化する結果ではない。
+
+928はopenを維持する。残るのは実際の見落とし履歴から事前固定した課題での探索実利用/不要写しの比較と、元の環境matrixの未検証項目。今回の承認済み8runを本番12課題、両agent同課題の完全比較、個別機能の因果評価へ置き換えない。今後のsource送信は今回の固定scope以外まで許可されたものとは扱わない。別セッションの改善は最新masterで確認するが、今回の固定binary/課題を事後差替えしない。
+
+改善の再評価: 実装を増やす前に、案内から検索が使われない3例、検索を使っても全読・同じ説明誤りが残った1例、対照の天井効果、計測欠測を具体化できた。これは導入方針と評価記録の改善であり、製品コードや一般効率の改善の実証ではない。source自動送信・新設定・恒久的な評価機構の複雑さは追加していない。
+
+- 2026-10-28: `docs(dupscan): distinguish observed agent adoption from efficiency claims`で承認後のSwift6run/Claude2runと失敗・欠測・説明誤りを記録。計画とSwift回答はread-only反証レビュー済み、Goも中立patch/回答を独立採点した。残る受入条件は未完了のまま保持する。
