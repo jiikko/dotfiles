@@ -413,6 +413,7 @@ func notifiableSignals(ignored func(os.Signal) bool) []os.Signal {
 
 // childExitCode は子の終了状態を終了コードへ変換する。
 // シグナル死は shell の慣習に合わせて 128+signal にする。
+// dupscan:allow intentional proctree/childrun.WaitStatus と同じ 6 行 (シグナル死 → 128+n) を、あえて持つ。lockman は標準ライブラリだけの自己完結 (go.sum が空) を保つ。子の終了を取れないときは自前の語彙 (判定不能 125) で返すので、寄せても wrapper が残り、依存と CI の paths が増えるだけ
 func childExitCode(err error) int {
 	if err == nil {
 		return exitOK

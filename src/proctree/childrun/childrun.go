@@ -43,6 +43,7 @@ func StartErrorRC(err error) int {
 }
 
 // WaitStatus は Wait の結果をシェルと同じ rc に直す (シグナルで死んだら 128+n)
+// dupscan:allow intentional lockman の childExitCode が同じ 6 行を持つ。lockman は標準ライブラリだけの自己完結と、子の終了を取れないときの自前の rc (判定不能 125。ここは 126) を保つため、依存せずに別に持つ
 func WaitStatus(err error) int {
 	if err == nil {
 		return 0
