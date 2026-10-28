@@ -250,6 +250,30 @@ def count(uses, nudged, bucket_of):
     return seen
 
 
+def inject_summary(path, since):
+    """hook inject-dupscan-candidates-on-new-func.sh の計測ログ (時刻 session 名前 候補数) を数える。無ければ None。"""
+    try:
+        lines = open(path, encoding="utf-8").read().splitlines()
+    except OSError:
+        return None
+    total = with_hits = 0
+    sessions = set()
+    for line in lines:
+        f = line.split("\t")
+        if len(f) != 4 or not f[3].isdigit():
+            continue
+        try:
+            t = datetime.datetime.fromisoformat(f[0])
+        except ValueError:
+            continue
+        if t < since:
+            continue
+        total += 1
+        with_hits += int(f[3]) > 0
+        sessions.add(f[1])
+    return {"injections": total, "with_candidates": with_hits, "sessions": len(sessions)}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--days", type=int, default=14)
@@ -257,6 +281,8 @@ def main(argv=None):
     ap.add_argument("--by-day", action="store_true", help="日ごとに分けて数える")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--projects-dir", default=os.path.expanduser("~/.claude/projects"))
+    ap.add_argument("--inject-log", default=os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "claude-dupscan-inject.log"),
+                    help="新しい関数の直前に候補を注入する hook の計測ログ")
     ap.add_argument("--include-dupscan-dev", action="store_true", help="dupscan 自身を開発しているセッションも数える")
     args = ap.parse_args(argv)
 
@@ -295,7 +321,7 @@ def main(argv=None):
                 if id(b) == b_id:
                     b["sessions"] += 1
     buckets = dict(sorted(buckets.items()))
-    report = {"days": args.days, "split": args.split, "skipped_dupscan_dev_sessions": skipped_dev, "buckets": {
+    report = {"days": args.days, "split": args.split, "skipped_dupscan_dev_sessions": skipped_dev, "inject": inject_summary(args.inject_log, since), "buckets": {
         name: {**b, "search_symbol": dict(b["search_symbol"]), "explore": dict(b["explore"]), "explore_by_command": dict(b["explore_by_command"]),
                "nudged": dict(b["nudged"]), "nudged_followed": dict(b["nudged_followed"])} for name, b in buckets.items()}}
     if args.json:
@@ -313,6 +339,11 @@ def main(argv=None):
         print(f"  案内が出た grep: {n} 回 {b['nudged']} → 直後 {NEARBY} 手以内に dupscan の探索: {f} 回 ({f * 100 // n if n else 0}%)")
         r, w = b["index_then_read"], b["index_read_with_range"]
         print(f"  dupscan index の直後 {NEARBY} 手以内の Read: {r} 回のうち範囲指定 (offset/limit) あり {w} 回")
+    inj = report["inject"]
+    if inj is None:
+        print("\n候補の注入 (hook inject-dupscan-candidates-on-new-func): 計測ログなし")
+    else:
+        print(f"\n候補の注入 (hook inject-dupscan-candidates-on-new-func): {inj['injections']} 回 / 候補あり {inj['with_candidates']} 回 / セッション {inj['sessions']} 本")
     return 0
 
 

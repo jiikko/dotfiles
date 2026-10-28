@@ -83,9 +83,27 @@ dupscan を Claude Code が使えば、①同じ役割のメソッドを重ね�
   3. context: 1 タスクあたりの探索 + Read の byte。928の承認済み限定pilotを基準に、実際の見落とし履歴を使う未使用課題が必要かを先に決める。本番12課題×2群は未実施で、固定scope以外のsource送信まで今回の承認を広げない。
 - 再測定の日: 2026-11-04 (941 の案内 / 943 の行の形の効果)、2026-11-25 (A の効果)。
 
+## 具体化と対応状況 (2026-10-28)
+
+| 案 | 具体的な内容 | 状態 |
+|---|---|---|
+| **A1** | PreToolUse(Write\|Edit) の hook `_claude/hooks/inject-dupscan-candidates-on-new-func.sh`。書く文字列 (Edit は `new_string`、Write は `content`) にある新しい `func name(` (Edit の `old_string` と書き換え前のファイルに無いもの) を最大 3 つ取り、名前ごとに `dupscan index -name <名前> -limit 20` を 1 回引いて、**名前が大小無視で等しい / 前方一致で共通部分 6 文字以上**の既存の定義を、名前ごとに最大 3 行、additionalContext として注入する。除く: 5 文字未満・Test/Benchmark/Fuzz/Example・init/main/String/Error/Close ほか・Go のメソッド。session × 名前で 1 回。候補が無ければ無音。全体で 6 秒の予算。失敗は無音 rc=0 | **実装済み**。テスト 18 件・変異 6 本で赤 (`tests/claude/test_inject_dupscan_candidates_on_new_func.sh`)。実機: 偽の `readCookies` を足す Edit で `Workspace.ReadCookies` を注入 (dotfiles の `src` で 1 名前あたり約 1 秒) |
+| A1 の計測 | hook が注入のたびに `~/.cache/claude-dupscan-inject.log` へ `時刻 session 名前 候補数` を足す。`scripts/dupscan_usage_report.py` が「注入 N 回 / 候補あり M 回 / session K 本」を出す | **実装済み**。効果の判定は「候補ありの注入の後、同じ session で新しい関数が書かれなかった / 既存を呼んだか」を見る必要があり、**まだ測っていない** (転記元の transcript の読み方を決めてから) |
+| A2 | 2026-11-04 に 941 の案内の効果を測る。上がらなければ pull 型の案内の追加は打ち止め | 日付待ち |
+| A3 | `CLAUDE.md` に文面を足さない | 方針のみ |
+| B (942 b') | 解析不完全の通知を 1 行にする | **942 は air5 が claim 中のため手を付けない** (claim は next/ にある)。air5 に確認してから |
+| C | index の行に `Read` の引数を貼る | 保留。範囲指定の使用率の母数が 0 (index の直後の Read が無い)。A1 の後に母数が増えてから測る |
+| D | 連番の名前・testdata・近い完全一致の数 | 946 に記録済み。未実装 |
+| E-1 | 入口の指標 | usage report で測定中 |
+| E-2 | gate が止めた数 | 手段未決 (CI ログから数えるか、gate が実行ログを残すか) |
+| E-3 | 928 の実 agent 比較 | ユーザーの許可待ち |
+
+A1 の既知の限界: 名前が違う同じ役割の関数は引けない (署名の近さは見ない)。名前の一致は `index` の語の一致で、型を解決しない。Swift は字下げのある `func` を新しい関数として扱うため、同じ型の中の同名メソッドも候補に出る。
+
 ## 受け入れ条件
 
-- [ ] A1 の可否を決める (試作して遅延と雑音を測る。採らないなら理由を書く)。
+- [x] A1 を実装した (遅延は 1 名前あたり約 1 秒。雑音は未測定: 注入ログと、注入の後の挙動を 2026-11-04 に見る)。
+- [ ] A1 の雑音を測る (候補ありの注入のうち、無関係だった割合。transcript を読んで数える)。
 - [ ] 2026-11-04 の再測定の結果を、この issue の「実測と根拠」へ追記する (案内の後の dupscan 率・index 後の範囲指定の率)。
 - [ ] 942 b' の採否を決める。
 - [ ] E-2 の指標 (gate が止めた数) を数える手段を決める。

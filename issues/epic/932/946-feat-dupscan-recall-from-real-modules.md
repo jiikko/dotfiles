@@ -85,3 +85,27 @@ L1 に加えて**メンバー名** (`a.b` の `b`、`RoleMember`) を記号に�
 - 小さい単位を比べていない割合は 45% で lockman と同じ。下限を 12 にすると本番の組が 3 → 141 に増える。
 - Go で測った再現率 (既定 19% → 調整して 86%) は Swift には転用できない。**Swift で同じ手順 (21 件の統合に相当する実測) を回すのは未実施**。
 
+
+## 6 module の追加の実測 (2026-10-28、c4 と f5)
+
+統合前の 4 module の次に、`schedkeys` / `serialrun` / `subproc` / `treefiler` / `tuikit` に回した (`sweep` は tuikit だけ。他は既定の report・`-min-nodes 12`・`near -similar` を別々に回した)。
+
+| module | 統合 | 寄せなかった組と理由 |
+|---|---|---|
+| treefiler | 3 件 (a9f51e46): `historyPath`/`placesPath`/`configPath` → `configFile`、`contains`/`contains2` → `slices.Contains`、`newVirtPair` のクロージャ → `restampTree` | `near -similar` 0.556 の組はテストが production の計算を独立に再計算する形 |
+| subproc | 0 | 6 組すべて `boundarycheck/testdata` の fixture (clean と waitdelay を別パッケージに並べる意図的な写し) |
+| schedkeys | 0 | `keyMenu`/`keyPick` は循環と端で止まる違いが意図 (コメントが `listnav.MotionOf` との統合を禁じる)。`viewMenu`/`viewPick` は描く中身が違う |
+| serialrun | 0 | 候補はどれも意図的、または既に共有済み |
+| tuikit | 0 | `ScrollGlide.Offset`/`CursorGlide.Cursor` (doc が「別物」と明記)、`Exec.SetStdin/Stdout/Stderr` (型が違い helper が薄い wrapper を残すだけ)、`List.Advance`/`Pager.Advance` (相手の型が別で interface が要る)、`fastDispWidth`/`archKernel` (build tag が違う差分テスト用スタブ) |
+
+見つけた方法の内訳 (treefiler の 3 件): 既定の report の L2 が 1 件、`-min-nodes 12` の L1 (と `near -similar` 1.0) が 1 件 (`contains`)、既定の report の L1 test が 1 件。**既定の report は 3 組中 2 組しか出さなかった**。
+
+### 実測から出たフィードバック (未実装。採否は後で決める)
+
+1. 連番の名前 (`contains` / `contains2`) を、末尾の数字を除いた名前の一致として拾う。
+2. `testdata/` の fixture が、subproc の report の唯一の出力になる。既定で外すか「testdata」と印を付ける。
+3. report 末尾の「小さい単位が N 個ある」に、**近い完全一致 (near 1.0) の数**を添える (`contains` はそこに隠れていた)。
+4. 完全一致の組に **build tag / `GOOS` の違い**を出す (`fastDispWidth` / `archKernel` は tag が違うスタブで、別プラットフォームの写しと一目で分かる)。
+5. `dupscan:allow` の理由つきの一覧を出す口 (次の人が組を読み直さずに済む)。tuikit の `sweep` 節 2 は 3 組中 3 組が「別物と書いてある」雑音だった。
+6. `sweep` 節 4 (名前の束) は `is*` のような述語の束が雑音 (`markdown/ is* ×4` は入力の型が全部違う)。述語系の動詞 (`is`/`has`/`should`/`can`) を束から除くか、束のメンバーの引数の型が同じものだけに絞る。
+7. `near -similar` は 517 単位 (treefiler) と 320 単位 (tuikit) で、満点か 0.4 台しか出ず、0.5 以上は 1 件ずつだった。実用の発見手段は report の方で、`sweep` 節 3 は 2 module とも「なし」。節 3 の効用は未確定 (Swift で回して判断する)。

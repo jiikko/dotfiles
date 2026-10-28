@@ -126,6 +126,11 @@
             "command": "~/dotfiles/_claude/hooks/suggest-dupscan-for-go-edit.sh",
             "timeout": 10,
             "type": "command"
+          },
+          {
+            "command": "~/dotfiles/_claude/hooks/inject-dupscan-candidates-on-new-func.sh",
+            "timeout": 10,
+            "type": "command"
           }
         ],
         "matcher": "Write|Edit"
