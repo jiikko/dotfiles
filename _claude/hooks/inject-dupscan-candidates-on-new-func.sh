@@ -106,7 +106,7 @@ def main():
                     if not m or line in hits:
                         continue
                     a, b = m.group(3).lower(), n.lower()
-                    if a == b or ((a.startswith(b) or b.startswith(a)) and len(os.path.commonprefix([a, b])) >= 6):
+                    if a == b or ((a.startswith(b) or b.startswith(a)) and min(len(a), len(b)) >= 6):
                         hits.append(line)
                 if hits:
                     break
