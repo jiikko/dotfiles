@@ -1,6 +1,6 @@
 ---
 name: dupscan-dogfood
-version: 1.3.2
+version: 1.3.3
 description: dupscan を実際に使って開発タスクをこなし、使って困ったこと (見逃し・雑音・出力が大きい・遅い・grep に戻した理由) を記録して、dotfiles の issue に書き、直せるものは dupscan 自身を直す。「dupscan を使って開発して」「dupscan を使いながら実装して、フィードバックを issue に」「dupscan-dogfood」で発火。タスクが目的で、dupscan の評価・改修は副産物。dupscan を直すだけの依頼や、使わないタスクには使わない。
 ---
 
@@ -36,15 +36,16 @@ skill dupscan の 1〜4 節に従う。**grep より先に dupscan を試す場�
 
 | 場面 | 使う |
 |---|---|
-| 新しい関数・helper・テストの fixture を書く前 | `dupscan index -name / -returns / -param-type`、名前が分からなければ `search -query` |
+| 新しい関数・helper・テストの fixture を書く前 (**重複を寄せる先を新設するときも**) | `dupscan index -name / -returns / -param-type`、名前が分からなければ `search -query`。戻り型で引く (`-returns StorageLocation`) と、本番に既にある同じ関数が見つかる (今回、引かずに本番の `location(at:)` の写しを作って push した。issue 954 の P1) |
 | 関数を置き換える・消す前の呼び出し元 | `dupscan callers -limit 0 <名前>` (打ち切りで取りこぼさない) |
 | 定義・参照を探す (Swift) | `def` / `refs` / `context` |
-| 実装が終わったとき | `dupscan gate` (commit の前) |
+| 実装が終わったとき | `dupscan gate` (commit の前)。**repo root から打つ**: `dupscan` は cwd の配下だけを走査するので、サブディレクトリ (例: `macOS/`) から打つと別 target (例: `shared/`) にある同じ形の相手が見えない (issue 954 の P4。見逃すかの検証は未了) |
 | 初めて入る module・まとめて重複を寄せる前 | `dupscan sweep <dir>` |
 
 - 文字列・コメント・設定ファイル・ログ・定義 1 件を狙い撃ちする検索は grep / rg でよい (それは不満ではない)。
 - **0 件・少なすぎる結果を「無い」と読まない**。dupscan は型を解決しない。疑わしければ grep で突き合わせ、食い違ったら記録する。
 - 寄せるときは skill dupscan の 4 節 (ドメインの境界) を先に確かめる。
+- **既存の fixture・helper に寄せるときは、本体が同じに見えても、既定値と副作用が同じかを確かめてから置き換える**。今回、IA / PikPak の接続は fixture の既定 endpoint が違い (`https://mypikpak.com/webdav` と `PikPakWebDAVProviderConfig.defaultEndpointString`)、`makeBrowserUseCase()` は `InMemoryFileWriter` を足すが private 版は `StorageBrowserUseCase` の既定 (`UnsupportedFileWriter`) だった。違うなら引数を明示して挙動を保つ (置き換えて緑でも、既定が違うと検査していたものが変わる)。
 - **build・test のような長い検証をバックグラウンドで回すときは、完了の目印を自分で作る**: 実行本体の終了コードを run 固有のファイルへ書き、最後に `run.done` を作る。
   待つのはそのファイルで、上限を決める (超えたら判定不能と報告)。**バックグラウンド起動の完了通知は「起動した subshell の終了」で、検証の完了とは限らない**
   (今回、起動直後の通知を完了と読みかけた)。結果は `run.rcs` と、ログの実行件数 (`Test run with N tests`・xcresult) で読む。回している間は同じ worktree のコードを編集しない。
