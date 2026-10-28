@@ -27,7 +27,7 @@ dotfiles の Go の 4 module (lockman・mac-lan-manager・ratelimit・restartabl
 
 ## 提案 (未実装。測ってから採る)
 
-1. **「1 語だけ違う写し」を既定の探索の段に入れる**: L1 の形のうち、メンバー名・外部 package の識別子 (`os.Stdout` と `os.Stderr`) だけが違う組を、別の段 (例 `L1m`) として report に出す。評価は、4 module の `captureOutput` のような既知の組を拾い、`Kind.String` / `Key` のような別の規則を何件誤って出すかを数える。895 の「全体 group 化は不採用」とは別で、`near -similar` の全単位走査ではなく、メンバー名を畳んだ hash の一致だけを見る (費用は L2 と同程度)。
+1. ~~**「1 語だけ違う写し」を既定の探索の段に入れる**~~ → **opt-in の段 `L1m` として実装した** (下の「提案 1 の評価と実装」。既定には入れない): L1 の形のうち、メンバー名・外部 package の識別子 (`os.Stdout` と `os.Stderr`) だけが違う組を、別の段 (例 `L1m`) として report に出す。評価は、4 module の `captureOutput` のような既知の組を拾い、`Kind.String` / `Key` のような別の規則を何件誤って出すかを数える。895 の「全体 group 化は不採用」とは別で、`near -similar` の全単位走査ではなく、メンバー名を畳んだ hash の一致だけを見る (費用は L2 と同程度)。
 2. **module を一括で掘る入口**: `report` (既定) → `-min-nodes 12` → `near -similar` の全単位、を 1 コマンドにして、類似度順に候補を出す (今回は下の使い捨ての script で手作業していた)。21 件のうち 18 件はこの 3 段で出た。
 3. **名前の語の束で、形が違う同じ目的の helper を出す**: `wait*` / `await*` / `capture*` / `fmt*` / `count*` のように、動詞の語頭が同じ小さい helper の束を `index` で 1 行ずつ。形が違う 3 件のうち待ち合わせの helper 4 つは、名前の束で見えた。誤検知 (`Test*`・`New*`) の除外が要る。
 4. **`callers` の既定の `-limit 20` で打ち切られた事実を見落とさない**: 今回、`callers or` が 20 件で打ち切られ、呼び出し元の一部 (`lanmgr` の 5 ファイル) を見落としたまま置き換えかけた。943 で足した件数ヘッダ (`呼び出し N 件 (20 件表示 / …)`) は出ていたが、結果を `grep '^src'` で絞って自分で捨てた。リファクタ前に「全件」を取る用途のために、`callers -limit 0` を案内に添えるか、打ち切ったときの終了コードを区別するかを検討する。
@@ -53,5 +53,32 @@ for u, (score, f, line) in sorted(rows, key=lambda r: -float(r[1][0])):
 ## 受け入れ条件
 
 - [x] `report` が比べなかった小さい単位の数を出す (text・JSON)。
-- [ ] 提案 1 の評価: 4 module で `L1m` 相当を試し、拾える既知の組と誤検知の数を表にする。
+- [x] 提案 1 の評価: 4 module と obaket で `L1m` を試し、表にした (opt-in の段として実装)。
 - [ ] 提案 2・3 は、1 の結果と、使われ方 (941 / 943 の測定) を見てから採否を決める。
+
+## 提案 1 の評価と実装 (2026-10-28)
+
+L1 に加えて**メンバー名** (`a.b` の `b`、`RoleMember`) を記号にする段 `L1m` を作り (リテラル・局所の名前の番号・構造は L1 のまま)、統合前の木 (`0973b244^`) の Go 4 module と、Swift の obaket に流した。
+
+| 対象 | 既定の下限 (20) で `L1m` が新しく出す組 | 下限 12 |
+|---|---|---|
+| lockman | 2 (`captureStderr` / `captureStdout`・`RenewTimed` / `ReleaseTimed`) | 2 |
+| mac-lan-manager | 1 (`lanmgrtest.Scan` の setter 3 つ) | 2 |
+| ratelimit | 0 | 0 |
+| restartable | 2 (`outputText` / `text` / `String` ほか) | 3 |
+| **obaket (Swift)** | **105 (本番 59・テスト 29)** | 214 (本番 117) |
+
+- **Go**: 既存の見落としだった `captureStderr` / `captureStdout` を**既定の下限で拾った**。ほかは意図して残したタイムアウト包み (`RenewTimed` / `ReleaseTimed`)・setter 3 つ・既に L1 で出ていた組で、新しい真の写しは 1 件だった。再現率への寄与は大きくない (寄せた 21 件のうち 1 件)。
+- **Swift**: 既定の下限でも本番の組が **3 → 62** に増える。本番 59 組から 16 組を抜き取ると、実際の写しは 9〜10 組 (`executeResolvedCopy` と `executeResolvedMove`・2 つの型の `removeEmptyState`・待ち合わせの closure 群・`write(_ bytes:)`)、誤検知は 4〜5 組 (SwiftUI の `body` の closure・`ObaketDebugAPIServer.routes` のハンドラの表 74 件)、判断が分かれるものが 2 組。**精度は約 6 割で、組が倍増する**。
+- 費用: obaket (26,149 単位) の `report` が 1.06 秒 → 1.14 秒 (約 +8%)。
+- 判断: **既定には入れない** (`-levels L1,L2,L1m` で明示)。理由は Swift の本番の組が倍増して半分近くがノイズになること。Go だけの repo なら既定に入れる余地はあるが、言語で既定を変えるほどの根拠 (新しい真の写し 1 件) はまだ無い。
+- 実装: `norm.LM` (表示は `L1m`)。`Levels` には入れず、`ParseLevel` と hash の計算にだけ足した。`exclude` / `near` / `explain` は既定の段のまま。段の大小で判定していた箇所 (`>= L3` / `>= L2`) を、段を明示した判定に直した。
+- 検証: `norm` のテスト (メンバー名だけが L1m で同じ・構造 / リテラル / 局所の名前の番号は畳まない・形に畳んだ印が出る・既定の段に入らない)、Go と Swift の端から端のテスト (既定では組にならず `-levels L1,L2,L1m` で組になる)。変異 6 本 (畳まない・L1 でも畳む・リテラルも畳む・式を畳む・`ParseLevel` が受けない・既定の段に入れる) で赤を確認。
+
+### Swift について分かったこと (Go の 4 module では見えなかったもの)
+
+- obaket は既定でも **213 組** (うち 98% はテストコード)、本番は 3 組。Go の module (0〜3 組) とは領域が違い、ここで効くのは**見落としを減らすことより、本番の組を優先して絞り込むこと**。
+- 読めない構文のファイルが **57 件 (3.4%)** ある (tree-sitter の Swift 文法の限界)。これらは比較の外で、Go では起きていない Swift 固有の取りこぼし。
+- 小さい単位を比べていない割合は 45% で lockman と同じ。下限を 12 にすると本番の組が 3 → 141 に増える。
+- Go で測った再現率 (既定 19% → 調整して 86%) は Swift には転用できない。**Swift で同じ手順 (21 件の統合に相当する実測) を回すのは未実施**。
+

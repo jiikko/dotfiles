@@ -42,6 +42,7 @@ bin/dupscan -format json .       # 全部の組を JSON で
 bin/dupscan -format xcode .      # Xcode / SwiftLint と同じ `ファイル:行:列: warning:` の形式
 bin/dupscan -limit 0 -v .        # text で全部の組と、読めない構文の単位の一覧
 bin/dupscan -levels L1,L2,L3 .   # 値の位置まで畳んだ一致 (L3) も見る (偶然の一致が多いので既定では見ない)
+bin/dupscan -levels L1,L2,L1m .  # メンバー名 1 語だけが違う写し (L1m) も見る (Swift では SwiftUI の body などで組が倍増するので既定では見ない)
 
 bin/dupscan gate                 # upstream との merge-base から作業ツリーまでに新しく増えた重複。無ければ 1 行
 bin/dupscan gate -base origin/master .        # base を明示する (CI の push なら push の前の commit、PR なら対象のブランチ)
@@ -196,7 +197,7 @@ base で L3 だけ比べなかった相手 (L3Trivial) から来た別の単位�
 | flag | 既定 | 意味 |
 |---|---|---|
 | `-format` | `text` | `text` / `json` / `xcode` |
-| `-levels` | `L1,L2` | 組を出す段。L3 (値の位置まで畳む) は偶然の一致が多いので既定では見ない |
+| `-levels` | `L1,L2` | 組を出す段。L3 (値の位置まで畳む) は偶然の一致が多く、L1m (メンバー名を畳む) は Swift で組が倍増するので、どちらも既定では見ない |
 | `-min-nodes` | 20 | これより節の少ない関数・初期化子・property は比べない (節 20 未満の組は 1 行の委譲などの雑音がほとんどだった。DualNoteApp の実測、issue 898) |
 | `-min-closure-nodes` | 20 | これより節の少ないクロージャは比べない |
 | `-limit` | 20 | text で出す組の上限 (0 は全部)。Claude が何度も回すので短くしている |

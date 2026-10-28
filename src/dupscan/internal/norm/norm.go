@@ -3,6 +3,9 @@
 //   - L1: 局所の名前 (引数・ローカル変数・クロージャの引数) を、単位の中で初めて出た順の番号にする。それ以外の名前とリテラルは残す
 //   - L2: L1 に加えて、リテラルを種類ごとの記号にする
 //   - L3: L2 に加えて、局所の名前を参照しない最大の式を 1 つの記号に畳む (callee・代入の左辺の下と、文として置かれた式そのものは畳まない)
+//   - L1m: L1 に加えて、メンバー名 (`a.b` の `b`) を記号にする (リテラルは残す)。`os.Stdout` と `os.Stderr` だけが違う写しを見つける。
+//     既定の段 (Levels) には入れない: 明示 (-levels L1,L2,L1m) したときだけ組を作る。Swift は修飾子の連鎖 (`.padding()` `.font()`) もメンバー名なので、
+//     view の本体が大量に一致する
 package norm
 
 import (
@@ -25,21 +28,28 @@ const (
 	L1 Level = 1
 	L2 Level = 2
 	L3 Level = 3
+	// LM は L1 に加えてメンバー名 (`a.b` の `b`) を畳む段 (L1m)。Levels には入れない。-levels で明示したときだけ組を作る。
+	LM Level = 4
 )
 
 // Levels は細かい順の全部の段。
 var Levels = []Level{L1, L2, L3}
 
-func (l Level) String() string { return "L" + strconv.Itoa(int(l)) }
+func (l Level) String() string {
+	if l == LM {
+		return "L1m"
+	}
+	return "L" + strconv.Itoa(int(l))
+}
 
-// ParseLevel は "L1" / "L2" / "L3" を段にする。
+// ParseLevel は "L1" / "L2" / "L3" / "L1m" を段にする。
 func ParseLevel(s string) (Level, error) {
-	for _, l := range Levels {
+	for _, l := range append(append([]Level(nil), Levels...), LM) {
 		if strings.TrimSpace(s) == l.String() {
 			return l, nil
 		}
 	}
-	return 0, fmt.Errorf("知らない段 %q (L1 / L2 / L3)", s)
+	return 0, fmt.Errorf("知らない段 %q (L1 / L2 / L3 / L1m)", s)
 }
 
 // Result は 1 つの単位の正規化の結果。
@@ -75,7 +85,7 @@ func normalize(u *tree.Unit, withForms bool) Result {
 	r.L3Trivial = !refs[u.Body]
 	h := sha256.New()
 	out := bufio.NewWriterSize(h, 4096)
-	for _, l := range Levels {
+	for _, l := range append(append([]Level(nil), Levels...), LM) {
 		h.Reset()
 		var form strings.Builder
 		if withForms {
@@ -194,7 +204,7 @@ func (w *writer) str(s string) { _, _ = w.out.WriteString(s) }
 func (w *writer) byte(c byte)  { _ = w.out.WriteByte(c) }
 
 func (w *writer) write(n *tree.Node, keep bool) {
-	if w.level >= L3 && !keep && !n.Keep && n.Expr && !n.NoFold && !w.refs[n] && !w.acts[n] {
+	if w.level == L3 && !keep && !n.Keep && n.Expr && !n.NoFold && !w.refs[n] && !w.acts[n] {
 		w.str("(#F)")
 		return
 	}
@@ -218,13 +228,15 @@ func (w *writer) head(n *tree.Node) {
 		w.str(" $")
 		w.str(strconv.Itoa(num))
 	case n.Role == tree.RoleLiteral:
-		if w.level >= L2 {
+		if w.level == L2 || w.level == L3 {
 			w.str(" #lit:")
 			w.str(n.LitKind)
 		} else {
 			w.str(" ")
 			w.str(strconv.Quote(n.Text))
 		}
+	case n.Role == tree.RoleMember && w.level == LM:
+		w.str(" #m")
 	case n.Role != tree.RoleStruct:
 		w.str(" ")
 		w.str(strconv.Quote(n.Text))

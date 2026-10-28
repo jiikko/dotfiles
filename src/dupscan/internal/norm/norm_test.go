@@ -147,3 +147,61 @@ func TestStreamedHashMatchesForm(t *testing.T) {
 		}
 	}
 }
+
+func member(s string) *tree.Node {
+	return &tree.Node{Kind: "member", Text: s, Role: tree.RoleMember}
+}
+
+// L1m はメンバー名だけを畳む。ほかの違い (局所の名前の番号・リテラル・構造) は畳まない。
+func TestL1mFoldsOnlyMemberNames(t *testing.T) {
+	sel := func(m string) *tree.Node { return node("sel", true, name("os"), member(m)) }
+	a, b := Normalize(unit(nil, sel("Stdout"))), Normalize(unit(nil, sel("Stderr")))
+	if a.Hash[L1] == b.Hash[L1] || a.Hash[L2] == b.Hash[L2] {
+		t.Error("メンバー名の違いは L1 / L2 では残る")
+	}
+	if a.Hash[LM] != b.Hash[LM] {
+		t.Error("メンバー名だけの違いは L1m で同じ")
+	}
+	// 構造が違えば L1m でも違う
+	c := Normalize(unit(nil, node("sel", true, name("os"), member("Stderr"), tok("+"))))
+	if c.Hash[LM] == b.Hash[LM] {
+		t.Error("構造が違えば L1m でも違う")
+	}
+	// リテラルは残す (L1m は L2 ではない)
+	d := Normalize(unit(nil, node("sel", true, name("os"), member("X"), str("a"))))
+	e := Normalize(unit(nil, node("sel", true, name("os"), member("Y"), str("b"))))
+	if d.Hash[LM] == e.Hash[LM] {
+		t.Error("リテラルの違いは L1m で残る")
+	}
+	// 局所の名前は L1 と同じく番号にする
+	p := Normalize(unit([]string{"p"}, node("sel", true, name("p"), member("A"))))
+	q := Normalize(unit([]string{"q"}, node("sel", true, name("q"), member("B"))))
+	if p.Hash[LM] != q.Hash[LM] {
+		t.Error("局所の名前の字面とメンバー名の違いは L1m で同じ")
+	}
+	// 本番の経路と形を作る経路でハッシュが同じ。形にも畳んだ印が出る
+	w := NormalizeWithForms(unit(nil, sel("Stdout")))
+	if w.Hash[LM] != a.Hash[LM] || !strings.Contains(w.Forms[LM], "#m") || strings.Contains(w.Forms[LM], "Stdout") {
+		t.Errorf("形: %q", w.Forms[LM])
+	}
+	// 既定の段には入れない
+	for _, l := range Levels {
+		if l == LM {
+			t.Error("L1m を既定の段に入れない")
+		}
+	}
+}
+
+func TestParseLevelAcceptsL1mButNotUnknown(t *testing.T) {
+	if l, err := ParseLevel(" L1m "); err != nil || l != LM || l.String() != "L1m" {
+		t.Errorf("L1m: %v %v", l, err)
+	}
+	if _, err := ParseLevel("L4"); err == nil {
+		t.Error("L4 という段は無い")
+	}
+	for i, want := range []string{"L1", "L2", "L3"} {
+		if got := Levels[i].String(); got != want {
+			t.Errorf("Levels[%d] = %s", i, got)
+		}
+	}
+}
