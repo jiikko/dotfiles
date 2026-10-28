@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -97,7 +98,7 @@ func choiceItem(section, label, key, help string, cs func(s *Settings) []string,
 	return item{section: section, label: label, key: key, help: help, kind: kindChoice, choices: cs,
 		get: func(s *Settings) string { return *p(s) },
 		set: func(s *Settings, v string) bool {
-			if !contains2(cs(s), v) {
+			if !slices.Contains(cs(s), v) {
 				return false
 			}
 			*p(s) = v
@@ -174,12 +175,15 @@ var (
 	configDirResolved string
 )
 
-func configPath() string {
+func configPath() string { return configFile("treefiler.toml") }
+
+// configFile は置き場 (configDir) の下のファイルのパス。置き場が決まらないときは "" (読み書きしない)。
+func configFile(name string) string {
 	d := configDir()
 	if d == "" {
 		return ""
 	}
-	return filepath.Join(d, "treefiler.toml")
+	return filepath.Join(d, name)
 }
 
 // loadSettings は設定を読む。読めない行はその行だけ既定のまま残し、何行目が悪いかを返す (板の足元に出す)。
@@ -394,7 +398,7 @@ func (m *Model) save(key string) error {
 // fitPalette は palette が ground で選べる組に無ければ先頭へ直す (直したら true)。
 func fitPalette(s *Settings) bool {
 	g := findGround(s.Ground)
-	if contains2(g.palettes, s.Palette) {
+	if slices.Contains(g.palettes, s.Palette) {
 		return false
 	}
 	s.Palette = g.palettes[0]

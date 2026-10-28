@@ -30,13 +30,7 @@ const (
 	historyLineMax = 64 << 10 // これより長い行は読み飛ばす (壊れたファイル・巨大な 1 行で全部を抱えない)
 )
 
-func historyPath() string {
-	d := configDir()
-	if d == "" {
-		return ""
-	}
-	return filepath.Join(d, "treefiler-history")
-}
+func historyPath() string { return configFile("treefiler-history") }
 
 // readHistory は末尾 historyKeep 件を古い順に返す。続けて同じコマンドは 1 件にする (2 つの treefiler が交互に足すと続くことがある)。
 // lines はファイルの行数 (切り詰めて書き直すかの判断に使う)。読めない・戻せない行は捨てて読み進める (1 行ずつ独立なので)。

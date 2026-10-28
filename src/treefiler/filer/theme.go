@@ -1,5 +1,7 @@
 package filer
 
+import "slices"
+
 // theme.go は配色の表 (spec §1.1 の ground・§1.2 の accent・§1.3 の熱の色)。設定の板で選ぶ。
 //
 // 🚨 選んだ配色はパッケージの色の変数 (palette.go の cBg など) へ書き込む (applyTheme)。描くのは UI の 1 本の
@@ -94,20 +96,11 @@ func applyTheme(s *Settings) {
 	ac := accents[acName]
 	cAccDim, cAccAct, cAccRoute = ac.dim, ac.active, ac.route
 	pal, ok := palettes[s.Palette]
-	if !ok || !contains2(g.palettes, s.Palette) {
+	if !ok || !slices.Contains(g.palettes, s.Palette) {
 		pal = palettes[g.palettes[0]]
 	}
 	scale := heatAges[6] / heatRanges[s.HeatRange]
 	for i := range ember {
 		ember[i] = stop{heatAges[i] / scale, pal[i]}
 	}
-}
-
-func contains2(ss []string, s string) bool {
-	for _, x := range ss {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }

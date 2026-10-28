@@ -32,15 +32,6 @@ func (m *Model) spine() map[*node]bool {
 	return s
 }
 
-func contains(ns []*node, n *node) bool {
-	for _, k := range ns {
-		if k == n {
-			return true
-		}
-	}
-	return false
-}
-
 // colEntry は次の列に子のブロックを置く親と、その目標の行。
 type colEntry struct {
 	n *node

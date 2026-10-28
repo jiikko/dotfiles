@@ -42,7 +42,7 @@ func newVirtPair(t *testing.T) *virtPair {
 	mustWriteAll(t, filepath.Join(big, "f0300sub", "inner.txt")) // 開いたままの子フォルダ (遠くても配置する)
 	mustWriteAll(t, filepath.Join(dir, "alpha", "x.txt"))
 	mustWriteAll(t, filepath.Join(dir, "zeta.txt"))
-	_ = filepath.Walk(filepath.Dir(dir), func(p string, fi os.FileInfo, _ error) error { st := virtStamp(p, fi); return os.Chtimes(p, st, st) })
+	restampTree(t, filepath.Dir(dir))
 	vp := &virtPair{t: t, dir: dir}
 	for i, ov := range []int{40, -1} {
 		m, err := New(dir, Options{Now: func() time.Time { return fixedNow }})

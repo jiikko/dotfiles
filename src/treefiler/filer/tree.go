@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -207,7 +208,7 @@ func (n *node) reload() {
 		}
 	}
 	n.kidsVer++ // 新しい並びへ古いノードを差し戻した
-	if n.last != nil && !contains(n.kids, n.last) {
+	if n.last != nil && !slices.Contains(n.kids, n.last) {
 		n.last = nil
 	}
 }

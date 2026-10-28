@@ -18,13 +18,7 @@ import (
 
 const placesKeep = 50
 
-func placesPath() string {
-	d := configDir()
-	if d == "" {
-		return ""
-	}
-	return filepath.Join(d, "treefiler-places")
-}
+func placesPath() string { return configFile("treefiler-places") }
 
 // Place は開いている場所: 起動したフォルダ・開いていたフォルダ (root 以外の展開済み)・カーソル (どれも絶対パス)・プレビューのタイル。
 // Remember place の記録と、glogx が C-g で閉じて開き直したときの記憶 (glogx の filer_resume.go) が同じ形を使う。

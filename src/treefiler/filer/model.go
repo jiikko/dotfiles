@@ -191,7 +191,7 @@ func (m *Model) liveAncestor(n *node) *node {
 // inTree は n が今の木に繋がっているか (読み直しで消えた項目は親の kids から外れる)。
 func (m *Model) inTree(n *node) bool {
 	for ; n.parent != nil; n = n.parent {
-		if !contains(n.parent.kids, n) {
+		if !slices.Contains(n.parent.kids, n) {
 			return false
 		}
 	}
