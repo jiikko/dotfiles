@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"glogx/internal/gitdata/gitdatatest"
 )
 
 func TestParseGitHubURL(t *testing.T) {
@@ -95,7 +97,7 @@ func TestFetchCIStatuses(t *testing.T) {
 		"c1": {"statusCheckRollup": null},
 		"c2": null
 	}}}`
-	batch, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
+	batch, ghErr := FetchCIStatuses(context.Background(), gitdatatest.FakeRunner(fixture, "", nil),
 		Repo{Owner: "o", Name: "r"}, []string{sha1, sha2, sha3})
 	statuses, details := batch.Statuses, batch.Details
 	if ghErr != nil {
@@ -147,7 +149,7 @@ func TestFetchCIStatusesPartialErrors(t *testing.T) {
 		"c1": null
 	}},"errors":[{"path":["repository","c1"],"message":"Something went wrong while executing your query."}]}`
 	exitErr := exec.Command("false").Run() // subproc: no-waitdelay — rc=1 の ExitError を作るだけ (出力を取らない)
-	batch, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "gh: Something went wrong while executing your query.\n", exitErr),
+	batch, ghErr := FetchCIStatuses(context.Background(), gitdatatest.FakeRunner(fixture, "gh: Something went wrong while executing your query.\n", exitErr),
 		Repo{Owner: "o", Name: "r"}, []string{sha1, sha2})
 	statuses := batch.Statuses
 	if statuses[sha1] != StateSuccess {
@@ -162,7 +164,7 @@ func TestFetchCIStatusesPartialErrors(t *testing.T) {
 }
 
 func TestFetchCIStatusesBrokenJSON(t *testing.T) {
-	_, ghErr := FetchCIStatuses(context.Background(), fakeRunner("not json", "", nil),
+	_, ghErr := FetchCIStatuses(context.Background(), gitdatatest.FakeRunner("not json", "", nil),
 		Repo{Owner: "o", Name: "r"}, []string{strings.Repeat("a", 40)})
 	if ghErr == nil || ghErr.Kind != GHOther {
 		t.Errorf("壊れた JSON は GHOther になるべき: %+v", ghErr)
@@ -648,25 +650,25 @@ func TestFetchCommitPR(t *testing.T) {
 	fixture := `{"data":{"repository":{"object":{"associatedPullRequests":{"nodes":[
 		{"number":10,"url":"https://github.com/o/r/pull/10","state":"MERGED"},
 		{"number":12,"url":"https://github.com/o/r/pull/12","state":"OPEN"}]}}}}}`
-	pr, ghErr := FetchCommitPR(context.Background(), fakeRunner(fixture, "", nil), Repo{Owner: "o", Name: "r"}, sha)
+	pr, ghErr := FetchCommitPR(context.Background(), gitdatatest.FakeRunner(fixture, "", nil), Repo{Owner: "o", Name: "r"}, sha)
 	if ghErr != nil || pr == nil || pr.Number != 12 {
 		t.Errorf("pr = %+v, ghErr = %v; want OPEN の #12", pr, ghErr)
 	}
 	// MERGED のみならそれ
 	merged := `{"data":{"repository":{"object":{"associatedPullRequests":{"nodes":[
 		{"number":10,"url":"https://github.com/o/r/pull/10","state":"MERGED"}]}}}}}`
-	pr, _ = FetchCommitPR(context.Background(), fakeRunner(merged, "", nil), Repo{Owner: "o", Name: "r"}, sha)
+	pr, _ = FetchCommitPR(context.Background(), gitdatatest.FakeRunner(merged, "", nil), Repo{Owner: "o", Name: "r"}, sha)
 	if pr == nil || pr.Number != 10 {
 		t.Errorf("pr = %+v; want MERGED の #10", pr)
 	}
 	// PR なし
 	none := `{"data":{"repository":{"object":{"associatedPullRequests":{"nodes":[]}}}}}`
-	pr, ghErr = FetchCommitPR(context.Background(), fakeRunner(none, "", nil), Repo{Owner: "o", Name: "r"}, sha)
+	pr, ghErr = FetchCommitPR(context.Background(), gitdatatest.FakeRunner(none, "", nil), Repo{Owner: "o", Name: "r"}, sha)
 	if pr != nil || ghErr != nil {
 		t.Errorf("PR なしで pr = %+v, ghErr = %v", pr, ghErr)
 	}
 	// 壊れた JSON
-	if _, ghErr = FetchCommitPR(context.Background(), fakeRunner("x", "", nil), Repo{Owner: "o", Name: "r"}, sha); ghErr == nil {
+	if _, ghErr = FetchCommitPR(context.Background(), gitdatatest.FakeRunner("x", "", nil), Repo{Owner: "o", Name: "r"}, sha); ghErr == nil {
 		t.Errorf("壊れた JSON がエラーにならない")
 	}
 }
@@ -703,7 +705,7 @@ func TestParseStatusResponsePRsAndDuration(t *testing.T) {
 			{"number":10,"url":"https://github.com/o/r/pull/10","state":"MERGED"},
 			{"number":12,"url":"https://github.com/o/r/pull/12","state":"OPEN"}]}}
 	}}}`
-	batch, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
+	batch, ghErr := FetchCIStatuses(context.Background(), gitdatatest.FakeRunner(fixture, "", nil),
 		Repo{Owner: "o", Name: "r"}, []string{sha})
 	if ghErr != nil {
 		t.Fatalf("ghErr = %v", ghErr)
@@ -776,7 +778,7 @@ func TestFetchPRStatus(t *testing.T) {
 		{"number":12,"url":"https://github.com/o/r/pull/12","state":"OPEN","title":"new feature","isDraft":true,
 		 "reviewDecision":"REVIEW_REQUIRED","mergeable":"CONFLICTING","baseRefName":"master","headRefName":"f/new"}
 	]}}}}}`
-	pr, ghErr := FetchPRStatus(context.Background(), fakeRunner(fixture, "", nil), Repo{Owner: "o", Name: "r"}, sha)
+	pr, ghErr := FetchPRStatus(context.Background(), gitdatatest.FakeRunner(fixture, "", nil), Repo{Owner: "o", Name: "r"}, sha)
 	if ghErr != nil {
 		t.Fatalf("FetchPRStatus() error = %v", ghErr)
 	}
@@ -789,7 +791,7 @@ func TestFetchPRStatus(t *testing.T) {
 	}
 	// PR なし (object はあるが nodes が空) は nil
 	empty := `{"data":{"repository":{"object":{"associatedPullRequests":{"nodes":[]}}}}}`
-	pr, ghErr = FetchPRStatus(context.Background(), fakeRunner(empty, "", nil), Repo{Owner: "o", Name: "r"}, sha)
+	pr, ghErr = FetchPRStatus(context.Background(), gitdatatest.FakeRunner(empty, "", nil), Repo{Owner: "o", Name: "r"}, sha)
 	if ghErr != nil || pr != nil {
 		t.Fatalf("PR なしで nil にならない: pr=%+v err=%v", pr, ghErr)
 	}

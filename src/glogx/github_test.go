@@ -4,17 +4,11 @@ import (
 	"context"
 	"errors"
 	"glogx/internal/gitdata"
+	"glogx/internal/gitdata/gitdatatest"
 	"glogx/internal/term"
 	"slices"
 	"testing"
 )
-
-// fakeRunner は fixture を返す CommandRunner。通常テストで外部通信しない (issue のテスト方針)。
-func fakeRunner(stdout, stderr string, err error) gitdata.CommandRunner {
-	return func(_ context.Context, _ string, _ ...string) ([]byte, []byte, error) {
-		return []byte(stdout), []byte(stderr), err
-	}
-}
 
 func TestSanitizeDetailLineDropsNonSGREscapes(t *testing.T) {
 	// SGR 以外の ESC シーケンスは端末制御注入の経路 (CI 側の第三者が混入可能) なので
@@ -79,13 +73,13 @@ func TestJobRerun(t *testing.T) {
 	}
 	// 失敗: stderr の末尾行がエラーメッセージになる
 	err := jobRerun(context.Background(),
-		fakeRunner("", "some detail\nrun 123 cannot be rerun\n", errors.New("exit status 1")),
+		gitdatatest.FakeRunner("", "some detail\nrun 123 cannot be rerun\n", errors.New("exit status 1")),
 		gitdata.Repo{Owner: "o", Name: "r"}, 42)
 	if err == nil || err.Error() != "run 123 cannot be rerun" {
 		t.Fatalf("stderr 末尾行がエラーにならない: %v", err)
 	}
 	// stderr が空なら元のエラーを使う
-	err = jobRerun(context.Background(), fakeRunner("", "", errors.New("exit status 1")),
+	err = jobRerun(context.Background(), gitdatatest.FakeRunner("", "", errors.New("exit status 1")),
 		gitdata.Repo{Owner: "o", Name: "r"}, 42)
 	if err == nil || err.Error() != "exit status 1" {
 		t.Fatalf("stderr 空で元エラーが使われない: %v", err)

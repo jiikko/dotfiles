@@ -490,6 +490,7 @@ func hasNofixtureConstraint(f *ast.File) bool {
 // (片方にだけ足すと、本番から import できるのに検査からは外れるパッケージができる)。
 var testSupportPkgs = map[string]bool{
 	"internal/testenv":                   true,
+	"internal/gitdata/gitdatatest":       true,
 	"internal/doctorview/doctortest":     true,
 	"internal/issuesview/issuesviewtest": true,
 	"internal/statusview/statusviewtest": true,

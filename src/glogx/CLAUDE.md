@@ -11,7 +11,7 @@
 - `internal/term/` — 描画の土台 (画面のパッケージと main の両方が使う)。`render.go` は ANSI 色と `Paint` / 切り詰め・折り返しの純関数、`width.go` は幅計算 (`term.DispWidth`。tuikit termwidth の別名)、`box.go` は枠のレイアウト純関数、`terminal.go` は termsafe の入口、`scroll_glide.go` は glide のキー語彙、`hint_items.go` は最下行の案内の詰め (`term.FitHintItems`)。🚨 main の宣言を import できない (main は下位から import できない) ので、ここへ main の型を持ち込まない
 - `render.go` — コミット行の整形 (git log の行。`internal/gitdata` の型を使う)
 - `gitlog_watch.go` — git log の外部変更の監視 (取得は `internal/gitdata`)
-- `internal/gitdata/` (`gitlog.go`, `github.go`, `cache.go`) — git log の取得 (制御文字レコードでコミット境界を識別)、CI 状態の GraphQL 取得とローカルキャッシュ。取得の条件は CLI の Options ではなく `LogQuery` で受け取る。一括取得は `PlanCIChunks` で丸めてから割る (issue 817 の G-1)
+- `internal/gitdata/` (`gitlog.go`, `github.go`, `cache.go`) — git log の取得 (制御文字レコードでコミット境界を識別)、CI 状態の GraphQL 取得とローカルキャッシュ。取得の条件は CLI の Options ではなく `LogQuery` で受け取る。テストの fake の `CommandRunner` は `internal/gitdata/gitdatatest` (main のテストと gitdata の中のテストの両方が使う。gitdata を import しない)。一括取得は `PlanCIChunks` で丸めてから割る (issue 817 の G-1)
 - `external_commands.go` — git/tmux/claude を叩くラッパー群 (テストの差し替え点)
 - `internal/extcmd/` — 画面と main が共有する外部コマンドの口 (エディタ・ブラウザ・クリップボード) と結果の Msg (`extcmd.RunEditorCmd` などテストの差し替え点)
 - `internal/gitexec/` — git の実行の共通入口 (`gitexec.RunGitTimeout` / `RunGitReadTimeout` / `RunGitCmd`・失敗の型 `GitExitError`・status viewer の write 操作の差し替え点)。bubbletea を持たない末端の package (gitdata が使う)

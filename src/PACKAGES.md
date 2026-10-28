@@ -44,6 +44,7 @@
 - `src/glogx/internal/filerview` (`glogx/internal/filerview`) — Package filerview は glogx の全画面 treefiler (F) と、F を出したまま閉じたときの場所の記憶。 (internal)
 - `src/glogx/internal/fswatch` (`glogx/internal/fswatch`) — Package fswatch は glogx の見張り (git log と issues viewer) が共有する「fsnotify のイベント待ち + 保険のポーリング」の札と世代、 watcher の seam。 (internal)
 - `src/glogx/internal/gitdata` (`glogx/internal/gitdata`) — Package gitdata は glogx が描くデータの取得: git log (制御文字レコードでコミット境界を識別)・CI 状態の GraphQL 取得と ローカルキャッシュ。 (internal)
+- `src/glogx/internal/gitdata/gitdatatest` (`glogx/internal/gitdata/gitdatatest`) — Package gitdatatest は gitdata のテストが共有する fake (外部コマンドの CommandRunner)。 (internal)
 - `src/glogx/internal/gitexec` (`glogx/internal/gitexec`) — Package gitexec は glogx の git の実行の共通入口 (時間の上限・失敗の理由・status viewer の write 操作の差し替え点)。 (internal)
 - `src/glogx/internal/issuesview` (`glogx/internal/issuesview`) — Package issuesview は glogx の issues viewer (i) の画面側: 一覧と drawer・本文 pager・番号の絞り込み・リンクのジャンプ・ URL ピッカー・ファイルの見張り。 (internal)
 - `src/glogx/internal/issuesview/issuesviewtest` (`glogx/internal/issuesview/issuesviewtest`) — Package issuesviewtest は issues 画面のテストが共有する issue の fixture (issues.Issue を組む・実ファイルを置く)。 (internal)

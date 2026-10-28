@@ -83,6 +83,7 @@ linters:
             - "!**/*_test.go"
             - "!**/internal/doctorview/doctortest/*.go"
             - "!**/internal/testenv/*.go"
+            - "!**/internal/gitdata/gitdatatest/*.go"
             - "!**/internal/issuesview/issuesviewtest/*.go"
             - "!**/internal/statusview/statusviewtest/*.go"
           deny:
@@ -90,6 +91,8 @@ linters:
               desc: doctortest はテスト専用 (本番のコードから import しない)
             - pkg: glogx/internal/testenv
               desc: testenv はテスト専用 (本番のコードから import しない)
+            - pkg: glogx/internal/gitdata/gitdatatest
+              desc: gitdatatest はテスト専用 (本番のコードから import しない)
             - pkg: glogx/internal/issuesview/issuesviewtest
               desc: issuesviewtest はテスト専用 (本番のコードから import しない)
             - pkg: glogx/internal/statusview/statusviewtest
