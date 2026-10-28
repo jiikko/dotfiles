@@ -4,9 +4,67 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestStaleGroupCandidateInReportAndGate(t *testing.T) {
+	for _, command := range []string{"report", "gate"} {
+		t.Run(command, func(t *testing.T) {
+			root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+			rule := groupRule(t, root)
+			writeConfig(t, root, rule)
+			gitRun(t, root, "add", ".")
+			gitRun(t, root, "commit", "-q", "-m", "excluded group")
+			writeFile(t, root, "Sources/A.swift", strings.ReplaceAll(helperA, `"conn"`, `"changed"`))
+			writeFile(t, root, "Sources/B.swift", strings.ReplaceAll(helperB, `"conn"`, `"changed"`))
+			before, err := os.ReadFile(filepath.Join(root, ".dupscan.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			args := []string{command, "-v"}
+			if command == "gate" {
+				args = append(args, "-base", "HEAD")
+			}
+			args = append(args, root)
+			rc, out, errs := runReport(t, args...)
+			if rc != 0 || errs != "" {
+				t.Fatalf("rc=%d stdout=%q stderr=%q", rc, out, errs)
+			}
+			const prefix = "  同じ鍵の組候補。再審査が必要: "
+			found := 0
+			for _, line := range strings.Split(out, "\n") {
+				if snippet, ok := strings.CutPrefix(line, prefix); ok {
+					var candidate map[string]any
+					if err := json.Unmarshal([]byte(snippet), &candidate); err != nil {
+						t.Fatal(err)
+					}
+					if candidate["kind"] != "" || candidate["reason"] != "" || fmt.Sprint(candidate["group"]) == fmt.Sprint(rule["group"]) {
+						t.Errorf("candidate must have new pins and no copied approval: %v", candidate)
+					}
+					found++
+				}
+			}
+			if found != 1 || !strings.Contains(out, "効いていない除外: ") {
+				t.Fatalf("expected one linked candidate and original stale rule: %q", out)
+			}
+			if command == "gate" && !strings.Contains(out, "新しい重複なし") {
+				t.Errorf("candidate must not change gate judgement: %q", out)
+			}
+			args = append([]string{command}, args[2:]...)
+			_, quiet, _ := runReport(t, args...)
+			if strings.Contains(quiet, prefix) {
+				t.Errorf("candidate must be verbose-only: %q", quiet)
+			}
+			after, err := os.ReadFile(filepath.Join(root, ".dupscan.json"))
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("analysis changed configuration: err=%v", err)
+			}
+		})
+	}
+}
 
 const helperC = `struct C {
     func otherLocation(_ q: String) -> StorageLocation {

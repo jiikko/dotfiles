@@ -15,8 +15,9 @@ type Set struct {
 	rules     []Rule
 	used      []bool
 	ambiguous []bool
-	pinKeys   map[string]bool // ハッシュを除いた釘の鍵の集合 (効いていない除外の理由を分けるため)
+	pinKeys   map[string]int // ハッシュを除いた鍵ごとの単位数 (理由と候補の一意性を確かめる)
 	pinCount  map[string]int
+	groups    []group.Group
 	// basePins は gate のときの base の単位の釘。組・単位の除外は、base に同じ釘の単位があったときか、
 	// その釘が新しく足された要素のときだけ効く (消えた写しの釘の場所に後から同じ写しを置いても覆わない)。nil なら制限しない (report)。
 	basePins map[string]int // 釘ごとの base の単位の数 (同じ関数に並んだ同じ本体のクロージャは同じ釘で数が 2 以上になる)
@@ -32,7 +33,7 @@ type Set struct {
 // New は head の単位 (path の除外で外す前の全部) に対する除外を作る。c が nil なら除外は無い。
 // inScope は起点の中のファイルか (nil なら repo 全体)。起点の外を指す除外は「効いていない」に数えない。
 func New(c *Config, entries []*group.Entry, inScope func(string) bool) *Set {
-	s := &Set{pinCount: map[string]int{}, pinKeys: map[string]bool{}, inScope: inScope}
+	s := &Set{pinCount: map[string]int{}, pinKeys: map[string]int{}, inScope: inScope}
 	if c != nil {
 		s.rules = c.Exclude
 	}
@@ -40,7 +41,7 @@ func New(c *Config, entries []*group.Entry, inScope func(string) bool) *Set {
 	s.ambiguous = make([]bool, len(s.rules))
 	for _, e := range entries {
 		s.pinCount[Pin(e)]++
-		s.pinKeys[pinKey(Pin(e))] = true
+		s.pinKeys[pinKey(Pin(e))]++
 	}
 	for i, r := range s.rules {
 		// 釘は除外に書いた回数まで当たってよい。同じ単位の中で同じ本体のクロージャが並ぶと、順番を入れない釘はどれも同じになるので、
@@ -183,6 +184,7 @@ func (s *Set) known(pin, elem string, k int) bool {
 
 // ApplyGroups は組から、組の除外に当たる組を除く (dropNested の後で呼ぶ。先に除くと、除いた関数の中のクロージャの組が出てくる)。
 func (s *Set) ApplyGroups(groups []group.Group) []group.Group {
+	s.groups = groups
 	out := groups[:0:0]
 	for _, g := range groups {
 		if !s.PathCovers(g.Level, g.Members) && !s.PresetCovers(g.Level, g.Members) && !s.GroupExcluded(g.Level, g.Members) {
@@ -237,7 +239,7 @@ func (s *Set) StaleWhy(r Rule) string {
 		return ""
 	}
 	for _, p := range pins {
-		if !s.pinKeys[pinKey(p)] {
+		if s.pinKeys[pinKey(p)] == 0 {
 			return "missing"
 		}
 	}
@@ -250,6 +252,43 @@ func (s *Set) StaleWhy(r Rule) string {
 		return "ungrouped"
 	}
 	return "hash"
+}
+
+// StaleGroupCandidate は同じ段・同じ鍵の組を再審査の候補にする。釘はクロージャの序数を
+// 持たないので、鍵が複数の単位を指す場合は候補を出さない。除外を更新してよいとは判定しない。
+func (s *Set) StaleGroupCandidate(r Rule) string {
+	if len(r.Group) < 2 || s.StaleWhy(r) != "hash" {
+		return ""
+	}
+	keys := make([]string, 0, len(r.Group))
+	seen := map[string]bool{}
+	for _, p := range r.Group {
+		key := pinKey(p)
+		if s.pinKeys[key] != 1 || seen[key] {
+			return ""
+		}
+		seen[key] = true
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	candidate := ""
+	for _, g := range s.groups {
+		if g.Level != r.level || len(g.Members) != len(keys) {
+			continue
+		}
+		current := make([]string, 0, len(g.Members))
+		for _, m := range g.Members {
+			current = append(current, pinKey(Pin(m)))
+		}
+		sort.Strings(current)
+		if slices.Equal(keys, current) {
+			if candidate != "" {
+				return ""
+			}
+			candidate = GroupSnippet(g.Level, g.Members)
+		}
+	}
+	return candidate
 }
 
 // samePins は組の釘を並びによらず比べる (組の除外は釘を集合として当てる)。

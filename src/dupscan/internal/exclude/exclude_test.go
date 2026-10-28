@@ -1,6 +1,7 @@
 package exclude
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -8,6 +9,56 @@ import (
 	"dupscan/internal/norm"
 	"dupscan/internal/tree"
 )
+
+func TestStaleGroupCandidateRequiresUniqueExactMembers(t *testing.T) {
+	a := ent("A.swift|A|f()", "A.swift", "new-a")
+	b := ent("B.swift|B|f()", "B.swift", "new-b")
+	c := ent("C.swift|C|f()", "C.swift", "new-c")
+	old := []string{"A.swift|A|f()@old-a", "B.swift|B|f()@old-b"}
+	current := group.Group{Level: norm.L1, Members: []*group.Entry{b, a}}
+	for _, tc := range []struct {
+		name    string
+		pins    []string
+		level   string
+		entries []*group.Entry
+		groups  []group.Group
+		want    bool
+	}{
+		{"reordered exact members", old, "L1", []*group.Entry{a, b}, []group.Group{current}, true},
+		{"another level", old, "L2", []*group.Entry{a, b}, []group.Group{current}, false},
+		{"added member", old, "L1", []*group.Entry{a, b, c}, []group.Group{{Level: norm.L1, Members: []*group.Entry{a, b, c}}}, false},
+		{"removed member", append(append([]string{}, old...), Pin(c)), "L1", []*group.Entry{a, b, c}, []group.Group{current}, false},
+		{"missing identity", old, "L1", []*group.Entry{a, c}, []group.Group{{Level: norm.L1, Members: []*group.Entry{a, c}}}, false},
+		{"different members still present", old, "L1", []*group.Entry{a, b, c}, []group.Group{{Level: norm.L1, Members: []*group.Entry{a, c}}}, false},
+		{"duplicate rule identity", []string{old[0], old[0]}, "L1", []*group.Entry{a, b}, []group.Group{current}, false},
+		{"ambiguous current identity", old, "L1", []*group.Entry{a, b, ent("A.swift|A|f()#closure1", "A.swift", "other")}, []group.Group{current}, false},
+		{"multiple candidates", old, "L1", []*group.Entry{a, b}, []group.Group{current, current}, false},
+		{"no group", old, "L1", []*group.Entry{a, b}, nil, false},
+		{"unchanged pins", []string{Pin(a), Pin(b)}, "L1", []*group.Entry{a, b}, []group.Group{current}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rule := Rule{Group: tc.pins, Level: tc.level, Kind: "intentional", Reason: "old reason"}
+			if err := rule.check(); err != nil {
+				t.Fatal(err)
+			}
+			s := New(&Config{Version: 1, Exclude: []Rule{rule}}, tc.entries, nil)
+			s.ApplyGroups(tc.groups)
+			got := s.StaleGroupCandidate(rule)
+			if (got != "") != tc.want {
+				t.Fatalf("candidate=%q, want present=%v", got, tc.want)
+			}
+			if tc.want {
+				var candidate Rule
+				if err := json.Unmarshal([]byte(got), &candidate); err != nil {
+					t.Fatal(err)
+				}
+				if candidate.Level != "L1" || !samePins(candidate.Group, []string{Pin(a), Pin(b)}) || candidate.Kind != "" || candidate.Reason != "" {
+					t.Fatalf("candidate must use current pins without copying approval: %#v", candidate)
+				}
+			}
+		})
+	}
+}
 
 func ent(key, file, h1 string) *group.Entry {
 	return &group.Entry{Unit: &tree.Unit{Key: key, File: file}, Result: norm.Result{Hash: map[norm.Level]string{norm.L1: h1}}}

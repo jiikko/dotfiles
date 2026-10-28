@@ -47,7 +47,8 @@ type Exclusions struct {
 	// Ambiguous は釘が 2 つ以上の単位に当たるので効かせなかった除外。
 	Ambiguous []exclude.Rule `json:"ambiguous_exclusions"`
 	// staleWhy は Stale と同じ順の、効かない理由 (exclude.Set.StaleWhy の値)。text の一覧にだけ使う (JSON の形は変えない)。
-	staleWhy []string
+	staleWhy        []string
+	staleCandidates []string
 }
 
 func exclusions(ex *exclude.Set) Exclusions {
@@ -56,6 +57,7 @@ func exclusions(ex *exclude.Set) Exclusions {
 		for _, r := range ex.Stale() {
 			x.Stale = append(x.Stale, r)
 			x.staleWhy = append(x.staleWhy, ex.StaleWhy(r))
+			x.staleCandidates = append(x.staleCandidates, ex.StaleGroupCandidate(r))
 		}
 		x.Ambiguous = append(x.Ambiguous, ex.Ambiguous()...)
 	}
@@ -83,6 +85,9 @@ func (x Exclusions) write(w io.Writer) {
 		fmt.Fprintf(w, "効いていない除外: %s\n", ruleJSON(r))
 		if why := staleWhyText(x.staleWhy, i); why != "" {
 			fmt.Fprintf(w, "  理由: %s\n", why)
+		}
+		if i < len(x.staleCandidates) && x.staleCandidates[i] != "" {
+			fmt.Fprintf(w, "  同じ鍵の組候補。再審査が必要: %s\n", x.staleCandidates[i])
 		}
 	}
 	for _, r := range x.Ambiguous {
