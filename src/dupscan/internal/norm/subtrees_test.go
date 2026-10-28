@@ -41,3 +41,28 @@ func TestSubtreeDiceCountsMultiplicityAndEmpty(t *testing.T) {
 		t.Fatalf("empty: %v %v", score, weight)
 	}
 }
+
+// Shared は対称で、どちらを歩いても同じ。大きさが違う bag でも、共通のキーの min の和になる。
+func TestSubtreeSharedIsSymmetricMinSum(t *testing.T) {
+	k1, k2, k3 := [32]byte{1}, [32]byte{2}, [32]byte{3}
+	small := SubtreeBag{k1: 4, k2: 1}
+	large := SubtreeBag{k1: 2, k2: 5, k3: 9, [32]byte{4}: 7, [32]byte{5}: 7}
+	want := 2 + 1 // min(4,2) + min(1,5)
+	if got := small.Shared(large); got != want {
+		t.Errorf("small.Shared(large) = %d, want %d", got, want)
+	}
+	if got := large.Shared(small); got != want {
+		t.Errorf("large.Shared(small) = %d, want %d (対称)", got, want)
+	}
+	if got := small.Shared(SubtreeBag{}); got != 0 {
+		t.Errorf("空の bag との共有 = %d, want 0", got)
+	}
+	if got := small.Total(); got != 5 {
+		t.Errorf("Total = %d, want 5", got)
+	}
+	// Dice は Shared と Total から組み立てた値と一致する
+	score, shared := small.Dice(large)
+	if shared != want || score != 2*float64(want)/float64(small.Total()+large.Total()) {
+		t.Errorf("Dice = %v %v", score, shared)
+	}
+}

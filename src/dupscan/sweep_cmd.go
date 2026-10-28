@@ -245,7 +245,9 @@ func sweepSimilarPairs(entries []*group.Entry, base, deep []group.Group, thresho
 	}
 	bags := make([]norm.SubtreeBag, len(cand))
 	weights := make([]int, len(cand))
+	quiet := make([]bool, len(cand)) // 許可済みの単位 (対ごとに引くと、総当たりの内側で何百万回も呼ぶことになる)
 	for i, e := range cand {
+		quiet[i] = allowed(e)
 		bags[i] = norm.Subtrees(e.Unit, 3)
 		for _, wt := range bags[i] {
 			weights[i] += wt
@@ -255,15 +257,18 @@ func sweepSimilarPairs(entries []*group.Entry, base, deep []group.Group, thresho
 	for i := range cand {
 		for j := i + 1; j < len(cand); j++ {
 			a, b := cand[i], cand[j]
-			if path.Ext(a.Unit.File) != path.Ext(b.Unit.File) || grouped[[2]*group.Entry{a, b}] || nested(a.Unit, b.Unit) || (allowed(a) && allowed(b)) {
+			if path.Ext(a.Unit.File) != path.Ext(b.Unit.File) || grouped[[2]*group.Entry{a, b}] || nested(a.Unit, b.Unit) || (quiet[i] && quiet[j]) {
 				continue
 			}
 			lo, hi := min(weights[i], weights[j]), weights[i]+weights[j]
 			if hi == 0 || 2*float64(lo)/float64(hi) < threshold {
 				continue // Dice の上限 2·min/(和) が下限に届かない
 			}
-			if score, shared := bags[i].Dice(bags[j]); shared > 0 && score >= threshold {
-				out = append(out, sweepSimilar{a: a, b: b, score: score, shared: shared})
+			// Dice の分母 (重みの合計の和) は bag ごとに数えてある。bag の中を毎回歩き直さない
+			if shared := bags[i].Shared(bags[j]); shared > 0 {
+				if score := 2 * float64(shared) / float64(weights[i]+weights[j]); score >= threshold {
+					out = append(out, sweepSimilar{a: a, b: b, score: score, shared: shared})
+				}
 			}
 		}
 	}

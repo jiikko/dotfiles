@@ -16,6 +16,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 
 	"dupscan/internal/tree"
 )
@@ -70,13 +71,38 @@ func Normalize(u *tree.Unit) Result { return normalize(u, false) }
 // NormalizeWithForms は Normalize に加えて、段ごとに潰した形の文字列を Forms に入れる (explain とテストの失敗の表示用)。
 func NormalizeWithForms(u *tree.Unit) Result { return normalize(u, true) }
 
+// scratch は normalize が単位ごとに作っていた作業領域 (節の旗の表 2 つと書き出しの buffer)。使い回すと、1 単位あたりの確保が
+// 大きく減る (src の report で確保の約 3 割が、この 3 つだった)。Result には載せないので、返した後に使い回してよい。
+type scratch struct {
+	refs, acts map[*tree.Node]bool
+	out        *bufio.Writer
+}
+
+// scratchKeepMax は、これより大きく育った表は pool に戻さない (巨大な単位 1 つが、小さい単位の走査の間ずっと大きい表を抱えない)。
+const scratchKeepMax = 1 << 14
+
+var scratchPool = sync.Pool{New: func() any {
+	return &scratch{refs: map[*tree.Node]bool{}, acts: map[*tree.Node]bool{}, out: bufio.NewWriterSize(io.Discard, 4096)}
+}}
+
+func (s *scratch) release() {
+	if len(s.refs) > scratchKeepMax || len(s.acts) > scratchKeepMax {
+		return
+	}
+	clear(s.refs)
+	clear(s.acts)
+	s.out.Reset(io.Discard) // 書き込み先 (sha256 / strings.Builder) への参照を残さない
+	scratchPool.Put(s)
+}
+
 // normalize は段ごとの形を sha256 へ直接流してハッシュを取る。形の文字列は withForms のときだけ作る
 // (全部の単位で形を持つと、repo 全体の走査で一時的な確保が数百 MB になる)。
 func normalize(u *tree.Unit, withForms bool) Result {
 	locals := localNames(u)
-	refs := map[*tree.Node]bool{}
+	sc := scratchPool.Get().(*scratch)
+	defer sc.release()
+	refs, acts := sc.refs, sc.acts
 	markRefs(u.Body, locals, refs)
-	acts := map[*tree.Node]bool{}
 	markActions(u.Body, acts)
 	r := Result{Hash: map[Level]string{}, Nodes: countNodes(u.Body)}
 	if withForms {
@@ -84,7 +110,7 @@ func normalize(u *tree.Unit, withForms bool) Result {
 	}
 	r.L3Trivial = !refs[u.Body]
 	h := sha256.New()
-	out := bufio.NewWriterSize(h, 4096)
+	out := sc.out
 	for _, l := range append(append([]Level(nil), Levels...), LM) {
 		h.Reset()
 		var form strings.Builder

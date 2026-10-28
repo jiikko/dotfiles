@@ -53,16 +53,34 @@ func Subtrees(u *tree.Unit, minSize int) SubtreeBag {
 
 // Dice returns weighted multiset overlap; duplicate occurrences are not a set.
 func (a SubtreeBag) Dice(b SubtreeBag) (score float64, shared int) {
-	total := 0
-	for hash, weight := range a {
-		total += weight
-		shared += min(weight, b[hash])
-	}
-	for _, weight := range b {
-		total += weight
-	}
+	shared = a.Shared(b)
+	total := a.Total() + b.Total()
 	if total > 0 {
 		score = 2 * float64(shared) / float64(total)
 	}
 	return score, shared
+}
+
+// Total は重みの合計 (Dice の分母の半分)。総当たりで同じ bag を何度も比べる呼び出し側は、1 度数えて使い回す。
+func (a SubtreeBag) Total() int {
+	total := 0
+	for _, weight := range a {
+		total += weight
+	}
+	return total
+}
+
+// Shared は両方に在る部分木の重みの合計 (Σ min(重み))。小さい方の bag だけを歩くので、大きさが違う対でも引く回数が小さい方に比例する。
+// 対称 (a.Shared(b) == b.Shared(a))。
+func (a SubtreeBag) Shared(b SubtreeBag) int {
+	if len(b) < len(a) {
+		a, b = b, a
+	}
+	shared := 0
+	for hash, weight := range a {
+		if w, ok := b[hash]; ok {
+			shared += min(weight, w)
+		}
+	}
+	return shared
 }
