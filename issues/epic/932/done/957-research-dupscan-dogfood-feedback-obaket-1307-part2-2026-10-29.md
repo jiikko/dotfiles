@@ -1,7 +1,5 @@
 # 957 (research): dupscan を使って 1307 の続き (macOS と shared にまたがる組) を進めて見つかった問題と提案 (着手者向けの詳細)
 
-> 🚨 **担当中: air5 (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-29
 
 ## 対応結果 (2026-10-29)
@@ -11,12 +9,12 @@
 同時に更新される共有 checkout の wrapper を結果の比較対象にはしなかった。hook の検証は Homebrew Bash 5 を使用。
 
 - Q1: 2定義の差分は既存の `explain -compare` (918) で取得できる。README に L2 の組から使う導線を追加。
-- Q2: 古い除外と現在の組を結び付ける案内を採用し、表示のみの改善を実装・検証する。
+- Q2: 古い除外と現在の組を結び付ける案内を採用し、表示のみの改善を実装・検証した。
 - Q3: 設定編集 CLI は保留。一括 `remove --stale` は不採用。956 の ungrouped は sweep に必要な許可を含む。
 - Q4/Q6: JSON の種別・範囲集計を README に追加。専用フラグ・既定の分類変更は今回採用しない。
 - Q5: 複数行は原因ではない。引数付き call と前置文が原因で、現行の保守的な preset 条件を維持する。
 - 954 P3/P8: 現行では解消済み。実ファイルと実 hook の A-B で確認した。
-- 関連: [954](done/954-research-dupscan-dogfood-feedback-obaket-1307-2026-10-28.md)、[955](955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md)、[956](956-research-dupscan-dogfood-self-dedup-2026-10-29.md)。955/956 全体の完了判断・担当には介入しない。
+- 関連: [954](954-research-dupscan-dogfood-feedback-obaket-1307-2026-10-28.md)、[955](../955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md)、[956](../956-research-dupscan-dogfood-self-dedup-2026-10-29.md)。955/956 全体の完了判断・担当には介入しない。
 
 ## 概要
 
@@ -149,7 +147,7 @@ Go の同形2関数を27 nodesで除外し、両方の `return x * 2` を `retur
 採用するのは表示のみ。verbose の stale group の直後に、次を満たす場合だけ現在の除外 JSON を候補として添える。
 
 - 同じ段、hash を除いた鍵の多重集合が完全一致し、現在の組と一意に対応する。
-- closure の序数や多重定義の番号を省く pinKey が重複する場合、複数候補、顔ぶれの増減は案内しない。
+- closure の序数や多重定義の番号を省く pinKey が重複する場合、複数候補、顔ぶれの増減、旧釘と現在の釘が同一の場合は案内しない。
 - report は除外前の組、gate は新規違反に絞る前の head の組から照合する。
 - 「同じ鍵の組候補。除外理由の再審査が必要」と示し、原因を本体変更と断定しない。
 - 旧 kind/reason のコピー、設定書換え、候補の自動採用、終了コード・JSON schema の変更はしない。
@@ -211,3 +209,21 @@ JSON集計の手順は範囲外の相手を落とさず数字を取れる。一�
 Q2の表示改善は、除外理由の再審査を保ちながら旧除外と現在の候補を人が突き合わせる往復を減らすことを狙う。
 
 反証レビュー: 論点別のread-only subagent 2体で照合。P3として、設定項目数とAST出現数の違いを元記述の誤りと断定していた文を訂正し、hook検証のBash条件を追記した。もう一方は数値を独立再実行して一致し、追加指摘なし。
+
+
+## 実装・完了記録
+
+- `feat(dupscan): link stale group rules to unique current candidates` と `fix(dupscan): suppress stale candidates with unchanged pins`: Q2を実装。保持しているheadの組から、段・一意な鍵が一致する候補の既存JSONを、verbose textだけに添える。
+- README: L2から既存compareを使う手順、範囲別JSON集計、presetが扱わない形、stale候補の再審査と一括削除しない注意を追加。
+- module `make lint test`: lint 0 issues、全packageのraceテスト成功。
+- strict module gate (`-base origin/master -strict-analysis -fail-new-exclusions src/dupscan`): rc=0、新規重複・新規除外なし。
+- repo全体gate (`-base origin/master -fail-new-exclusions`): rc=0。ただし既存の意図した不正fixture `src/subproc/boundarycheck/testdata/broken/broken.go` がbase/head各1で解析不完全。完全な解析成功とは扱わない。
+- 11境界caseとreport/gateの統合テスト: 段違い・メンバーの増減/入替・鍵の重複・複数候補・釘不変等を拒否し、verbose以外の出力・設定bytes・gate判定を維持。
+- 6変異 (headの組を保持しない／段の照合を外す／全単位の鍵の一意性を無視／メンバー比較を人数だけにする／複数候補を許す／同一釘の抑止を外す) はすべて狙ったテストでRED。
+- 実装のread-only反証レビュー: P3の「先行paths除外で釘不変でも同じ候補を出す」を採用し、同一釘の候補を抑止する修正と回帰テストを追加。独立Go fixtureではreport/gateのJSONが旧版とバイト一致し、rcも維持された。
+- READMEのJSON集計手順を実行し、149 / within 1 / contains 34 / test 139・mixed 7・prod 3 を確認。issue標準テストも成功。
+
+最終的な改善は、既定の重複判定や除外承認を緩めず、staleから現在の候補へ辿る手掛かりを増やせた点。
+再現例の `gate -v` は引き続きrc=0で、以前は出なかった新しい釘の候補1行が出る。
+設定変更は人がkind/reasonを再審査してから行う。曖昧な鍵・複数候補には案内できず、候補表示のためにheadの組を保持する複雑さは増えた。
+実装後の一般的な開発速度・token消費への効果は未測定。Q1〜Q6とP3/P8は上記の採否・根拠・再開条件で決着したため、この調査を完了とする。

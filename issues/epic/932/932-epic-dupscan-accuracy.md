@@ -4,9 +4,9 @@
 
 既存helperの発見、誤った「不存在」判断の防止、候補の確認費用を改善する。意味上の同一性や別moduleからの利用可否は、構文一致だけでは証明しない。
 
-## 現在の状態（2026-10-28）
+## 現在の状態（2026-10-29）
 
-子issue26件中18件完了、7件open、1件pending。928は共通能力診断/表示専用案内を限定採用し、環境検証を補完して完了。一般的な効率改善と未実施比較は948で継続する。他担当の941〜944/946/948の内容・claimは保持する。
+子issue31件中24件完了、6件open、1件pending。928は共通能力診断/表示専用案内を限定採用し、環境検証を補完して完了。一般的な効率改善と未実施比較は948で継続する。他担当の941〜944/946/948の内容・claimは保持する。
 
 ## 使われやすさと context 消費（2026-10-28 追加）
 
@@ -62,3 +62,5 @@
 - `docs(dupscan): close onboarding with bounded adoption and explicit research handoff`で928を完了。最新環境検証・限定採用と、948で継続する未実施研究を区別し、実ファイルから22子=16done/5open/1pendingを再計数した。
 
 - [952](done/952-bug-dupscan-swift-escaped-identifier-matching.md): 有効なSwiftのバッククォート付き識別子で定義/参照/呼出とindex近似数が分断する未修正の不具合を再現し、記録した。最新sourceでも確認済み。
+
+- [957](done/957-research-dupscan-dogfood-feedback-obaket-1307-part2-2026-10-29.md): 所見を現行版で裏どりし、既存compare/JSON集計の導線とstale groupの一意な更新候補表示を実装。Q3の書込みCLIは編集が律速になる実測を再開条件とし、Q4/Q6の専用filterは全体JSON集計でも律速になる実例まで保留。preset拡張・自動分類・stale一括削除は不採用。P3/P8は既存修正を実ファイル/実hookで確認。
