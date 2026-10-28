@@ -108,7 +108,7 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 		w.section("3. 部分木が似ている対 (Dice %.2f 以上・%d 節以上。同一動作・再利用は未証明。上の組に入る対は除く)", *threshold, sweepDeepMinNodes)
 		sweepSimilarText(w, similar, *c.limit)
 	}
-	w.section("4. 名前の束 (同じ動詞で始まる小さい単位が同じ dir に %d 個以上。寄せられる共通の道具の手がかり)", sweepClusterMin)
+	w.section("4. 名前の束 (同じ動詞で始まる小さい関数が同じ dir に %d 個以上・同名のメソッド・連番の名前。寄せられる共通の道具の手がかり)", sweepClusterMin)
 	sweepClusterText(w, clusters, *c.limit)
 	if w.err != nil {
 		return fail(w.err)
@@ -264,8 +264,8 @@ func sweepSimilarText(w *lineWriter, pairs []sweepSimilar, limit int) {
 	}
 }
 
-// sweepClusters は、下限に満たない小さい単位を、(dir, 名前の先頭の語) で束ねて、sweepClusterMin 個以上のものを返す。
-// 写しではなく「同じ種類の仕事を各所で書いている」手がかり。Test・New・init と、メソッド (受け口の型ごとに同名が並ぶのは普通) は除く。
+// sweepClusters は節 4 の束を返す: 下限に満たない小さい関数を (dir, 名前の先頭の語) で束ねて sweepClusterMin 個以上のもの、同名のメソッドの束 (sweepMethodClusters)、連番の名前の束 (sweepSeqClusters)。
+// 写しではなく「同じ種類の仕事を各所で書いている」手がかり。先頭の語の束は Test・New・init・述語と、メソッドを除く (メソッドは受け口の型ごとに同名が並ぶのが普通なので、同名の束として別に見る)。
 func sweepClusters(entries []*group.Entry, opt group.Options) []sweepCluster {
 	type key struct{ verb, dir string }
 	by := map[key][]string{}

@@ -6,11 +6,12 @@
      言語は command の拡張子・-t・glob から読み、読めないものは unknown (言語の手掛かりがあるものだけを Go / Swift の効果として読む)。
   2. hook の案内 (PreToolUse の additionalContext に dupscan を含むもの) が出た grep の直後 3 手のうちに、dupscan の探索があったか。
   3. dupscan index の直後 3 手のうちの最初の Read が、範囲指定 (offset / limit) つきか (終端行を Read の範囲に使っているか)。
+  4. 新しい関数を足す直前に候補を注入する hook (inject-dupscan-candidates-on-new-func.sh) の注入の回数。transcript ではなく hook の計測ログ (--inject-log) から読む。
 
 数えないもの: dupscan 自身を開発しているセッション (src/dupscan を触る操作が 3 回以上)。測定の対象を自分で動かしているため。
 -i 付きの grep (hook は案内しない)。パイプの後ろの grep (stdin を絞る形)。
 
-使い方: scripts/dupscan_usage_report.py [--days 14] [--split ISO8601] [--json] [--projects-dir DIR]
+使い方: scripts/dupscan_usage_report.py [--days 14] [--split ISO8601] [--json] [--projects-dir DIR] [--inject-log FILE]
   --split を渡すと、その時刻より前 (before) と後 (after) に分けて数える。変更の前後を比べるときに使う。
   --by-day を渡すと、日 (ローカル時刻) ごとに分けて数える。hook や dupscan が入った日の前後で何が変わったかを見るときに使う。
   同じ定義で後から測り直せるよう、集計の条件はこのファイルに置く (issue に貼らない)。

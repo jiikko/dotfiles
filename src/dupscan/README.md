@@ -44,6 +44,8 @@ bin/dupscan -limit 0 -v .        # text で全部の組と、読めない構文�
 bin/dupscan -levels L1,L2,L3 .   # 値の位置まで畳んだ一致 (L3) も見る (偶然の一致が多いので既定では見ない)
 bin/dupscan -levels L1,L2,L1m .  # メンバー名 1 語だけが違う写し (L1m) も見る (Swift では SwiftUI の body などで組が倍増するので既定では見ない)
 
+bin/dupscan sweep src/foo        # 初めて入る module を 1 回の走査で 4 つの見方から掘る (組 / 下限 12 節 + L1m / 部分木の対 / 名前の束)
+
 bin/dupscan gate                 # upstream との merge-base から作業ツリーまでに新しく増えた重複。無ければ 1 行
 bin/dupscan gate -base origin/master .        # base を明示する (CI の push なら push の前の commit、PR なら対象のブランチ)
 bin/dupscan gate -base HEAD~1 -head HEAD .    # 2 つの commit を比べる (過去の commit の流し直し。checkout しない)
@@ -388,5 +390,5 @@ text だけ。実測は `src/glogx` で 0.27 秒、`src` 全体 (単位 8705) �
 
 ## 利用の測定
 
-`scripts/dupscan_usage_report.py` が Claude Code の transcript (`~/.claude/projects/*/*.jsonl`) から、識別子らしい `grep` / `rg` と dupscan の探索 (`gate` は除く) の回数・言語別・hook の案内の直後 3 手以内の探索・`index` の直後の `Read` の範囲指定を数える (`--days N` `--split ISO8601` `--by-day` `--json`)。dupscan 自身を開発しているセッションは除く。
+`scripts/dupscan_usage_report.py` が Claude Code の transcript (`~/.claude/projects/*/*.jsonl`) から、識別子らしい `grep` / `rg` と dupscan の探索 (`gate` は除く) の回数・言語別・hook の案内の直後 3 手以内の探索・`index` の直後の `Read` の範囲指定・新しい関数を足す直前に候補を注入する hook (`inject-dupscan-candidates-on-new-func.sh`) の注入の回数 (`~/.cache/claude-dupscan-inject.log`。`--inject-log` で変える) を数える (`--days N` `--split ISO8601` `--by-day` `--json`)。dupscan 自身を開発しているセッションは除く。
 案内を出したことや利用が増えたことを効果とせず、「grep が dupscan に替わったか」を前後で比べる。数え方は `tests/scripts/test_dupscan_usage_report.sh` が固定している。

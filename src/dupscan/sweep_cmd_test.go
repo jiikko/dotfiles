@@ -245,7 +245,7 @@ func TestSweepSequentialNamesNeedSimilarSize(t *testing.T) {
 	big := "func roundN(x float64) float64 {\n\tif x < 0 {\n\t\treturn -roundN(-x)\n\t}\n\tscaled := x * 1000\n\tfloor := float64(int64(scaled))\n\tif scaled-floor >= 0.5 {\n\t\tfloor++\n\t}\n\treturn floor / 1000\n}\n"
 	root := repoWith(t, map[string]string{"a/a.go": "package a\n\nfunc roundNum3(x float64) float64 { return x }\n\n" + strings.ReplaceAll(big, "roundN", "roundNum")})
 	_, out, _ := sweep(t, root)
-	if s := sweepSection(t, out, 4); strings.Contains(s, "連番") {
+	if s := sweepSection(t, out, 4); strings.Contains(s, "連番の名前 roundNum") {
 		t.Errorf("大きさが違う連番の名前は束にしない: %q", s)
 	}
 }
