@@ -205,6 +205,74 @@ next_session; expect_go_nudge "負のSwift globはGo指定を覆さない" "$(ru
 expect_go_nudge "Go stampの衝突確認用" "$(jq -n --arg d "$REPO" '{tool_name:"Bash",session_id:"collision",cwd:$d,tool_input:{command:"rg -t go FooBar ."}}' | "$HOOK")" FooBar
 expect_nudge "末尾-goの別sessionのSwiftを抑制しない" "$(jq -n --arg d "$REPO" '{tool_name:"Bash",session_id:"collision-go",cwd:$d,tool_input:{command:"rg -t swift FooBar ."}}' | "$HOOK")" FooBar
 
+# 941: 言語の手掛かりが無い検索は、Swift と Go を両方追跡する repo では Swift 専用の def / refs を勧めず、両方で使える index / callers を案内する。
+expect_neutral_nudge() { # $1=説明 $2=stdout $3=名前
+  if ! printf '%s' "$2" | jq -e --arg n "dupscan index -name $3" '
+    .hookSpecificOutput as $h | ($h.additionalContext | contains($n)) and
+    ($h.additionalContext | contains("dupscan callers")) and ($h.additionalContext | contains("Swift のファイルだけ")) and
+    ($h.additionalContext | contains("dupscan def") or contains("dupscan refs") | not) and ($h.permissionDecision == null)' >/dev/null 2>&1; then
+    echo "✗ 中立の案内が出ない / Swift 専用のコマンドを勧めている: $1"; printf '%s\n' "$2" | head -3; fail=$((fail+1)); return
+  fi
+  echo "✓ $1"; ok=$((ok+1))
+}
+expect_extra() { # $1=説明 $2=stdout $3=案内に入るべき追加の名前
+  if printf '%s' "$2" | jq -e --arg n "他の名前も同様に引ける: $3" '.hookSpecificOutput.additionalContext | contains($n)' >/dev/null 2>&1; then
+    echo "✓ $1"; ok=$((ok+1)); else echo "✗ 追加の名前が案内に無い: $1"; printf '%s\n' "$2" | head -3; fail=$((fail+1)); fi
+}
+MIXED_REPO="$REPO"
+next_session; expect_neutral_nudge "混在 repo の言語不明 (PascalCase)" "$(run_bash 'rg -n FooBar .')" FooBar
+next_session; expect_neutral_nudge "混在 repo の func.*Name" "$(run_bash 'rg "func.*FooBar" .')" FooBar
+next_session; expect_neutral_nudge "混在 repo の Grep ツール (言語の手掛かりなし)" "$(run_grep 'FooBar' '')" FooBar
+next_session; out=$(CAPABILITY_MODE=unsupported run_bash 'rg -n FooBar .')
+if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("dupscan def FooBar")' >/dev/null 2>&1; then
+  echo '✓ 混在 repo で Go 対応を確かめられないときは従来どおり Swift 向け (確認の文だけに落として情報を減らさない)'; ok=$((ok+1)); else echo '✗ 混在 repo で Go 対応が未確認のとき従来の Swift 向けの案内でない'; printf '%s\n' "$out" | head -3; fail=$((fail+1)); fi
+# 引用符を取り違える入力 (コメントの ' や $'..') でも、後ろの grep を落とさない (旧の分割に倒す)
+next_session; expect_neutral_nudge "コメントの ' で引用が閉じなくても後ろの grep を見る" "$(run_bash "$(printf 'echo "a" # it'"'"'s\ngrep -rn FooBar .')")" FooBar
+next_session; expect_neutral_nudge "\$'..' の後ろの grep を見る" "$(run_bash "grep \$'it\\'s' . ; grep -rn FooBar .")" FooBar
+# bash -c の中の grep (引用符を読む分割でも見失わない)
+next_session; expect_neutral_nudge "bash -c '…; grep …' の中身" "$(run_bash "bash -c 'cd . ; grep -rn FooBar . | head -5; ls'")" FooBar
+next_session; expect_silent "bash -c の中のパイプの後ろの grep は見ない" "$(run_bash "bash -c 'make test | grep FooBar'")"
+# 値のくっついた短いオプション (-tswift) をパターンの前に置いても、次の語をパターンとして読む
+next_session; expect_nudge "rg -tswift をパターンの前に置く" "$(run_bash 'rg -tswift FooBar .')" FooBar
+# Go のメソッド宣言 (receiver 付き) は言語の手掛かりが無くても Go と読む。Swift に無い形
+next_session; expect_go_nudge "receiver 付きの宣言 (エスケープあり)" "$(run_bash 'rg -n "func \(w \*Workspace\) ReadCookies" .')" ReadCookies
+next_session; expect_go_nudge "receiver 付きの宣言 (grep のエスケープなし)" "$(run_bash 'grep -rn "func (w \*Workspace) ReadCookies" .')" ReadCookies
+next_session; expect_go_nudge "receiver 付きの宣言 (Grep ツール)" "$(run_grep 'func \(w \*Workspace\) ReadCookies' '')" ReadCookies
+next_session; expect_silent "receiver 付きでも Swift を明示したら Go と読まない" "$(run_bash 'rg -t swift "func \(w \*Workspace\) ReadCookies" .')"
+next_session; expect_silent "receiver 付きでも -i なら案内しない" "$(run_bash 'grep -rni "func (w \*Workspace) ReadCookies" .')"
+# 識別子だけの alternation (3 つまで)
+next_session; out=$(run_bash 'rg -t go "ListProfiles|fallbackProfiles" .')
+expect_go_nudge "rg の alternation (Go 指定)" "$out" ListProfiles
+expect_extra "alternation の残りの名前を案内に添える" "$out" fallbackProfiles
+next_session; expect_go_nudge "grep の BRE の \\| (Go 指定)" "$(run_bash 'grep -rn "ListProfiles\|fallbackProfiles" --include=*.go .')" ListProfiles
+next_session; expect_go_nudge "grep -E の |" "$(run_bash 'grep -rnE "ListProfiles|fallbackProfiles" --include=*.go .')" ListProfiles
+next_session; expect_go_nudge "alternation の後ろにパイプが続く" "$(run_bash 'rg -t go "ListProfiles|fallbackProfiles" . | head -5')" ListProfiles
+next_session; expect_go_nudge "Grep ツールの alternation (type=go)" "$(jq -n --arg d "$REPO" --arg s "s$session" '{tool_name:"Grep",session_id:$s,cwd:$d,tool_input:{pattern:"ListProfiles|fallbackProfiles",type:"go"}}' | "$HOOK")" ListProfiles
+next_session; expect_silent "rg の \\| は文字の | なので alternation と読まない" "$(run_bash 'rg -t go "ListProfiles\|fallbackProfiles" .')"
+next_session; expect_silent "grep の BRE の | は文字の |" "$(run_bash 'grep -rn "ListProfiles|fallbackProfiles" --include=*.go .')"
+next_session; expect_silent "alternation が 4 つ" "$(run_bash 'rg -t go "Aaa1|Bbb2|Ccc3|Ddd4" .')"
+next_session; expect_silent "alternation に識別子でない部分" "$(run_bash 'rg -t go "ListProfiles|foo.*bar" .')"
+# 引用符の中の | でコマンドを割らない (割ると alternation が壊れ、パイプの後ろ扱いにもなる)
+next_session; expect_silent "パイプの後ろの grep は alternation でも見ない" "$(run_bash 'make test 2>&1 | rg -t go "ListProfiles|fallbackProfiles"')"
+# Go だけの repo: 言語の手掛かりが無い検索は従来どおり黙る (939)。receiver 付きだけは Go と読める
+new_repo 0; printf 'package sample\n' > "$REPO/A.go"; git -C "$REPO" add -- A.go
+next_session; expect_silent "Go だけの repo の言語不明は黙る (939 の決定)" "$(run_bash 'rg -n FooBar .')"
+next_session; expect_go_nudge "Go だけの repo でも receiver 付きは案内する" "$(run_bash 'rg -n "func \(w \*Workspace\) ReadCookies" .')" ReadCookies
+# 追跡ファイルの優位 (10 倍以上) で言語不明の検索の扱いを決める: 1 つでも追跡していれば混在、とはしない (obaket は Swift 1670 本・Go 1 本)
+new_repo 0; for n in $(seq 1 20); do printf 'struct S%d {}\n' "$n" > "$REPO/S$n.swift"; done; printf 'package a\n' > "$REPO/A.go"; git -C "$REPO" add -A >/dev/null 2>&1
+next_session; expect_nudge "Swift 優位 (20 対 1) の言語不明は従来どおり Swift 向け" "$(run_bash 'rg -n FooBar .')" FooBar
+new_repo 0; for n in $(seq 1 20); do printf 'package a\n' > "$REPO/G$n.go"; done; printf 'struct A {}\n' > "$REPO/A.swift"; git -C "$REPO" add -A >/dev/null 2>&1
+next_session; expect_silent "Go 優位 (1 対 20) の言語不明は黙る (Go だけの repo と同じ)" "$(run_bash 'rg -n FooBar .')"
+next_session; expect_go_nudge "Go 優位でも Go を指定した検索は案内する" "$(run_bash 'rg -t go FooBar .')" FooBar
+next_session; expect_nudge "Go 優位でも Swift を指定した検索は案内する" "$(run_bash 'rg -t swift FooBar .')" FooBar
+# Swift だけの repo は今までどおり Swift 向け (alternation も)
+new_repo 1
+next_session; out=$(run_bash 'grep -rn "FooBar\|BazQux" --include=*.swift Sources')
+expect_nudge "Swift だけの repo の alternation" "$out" FooBar
+expect_extra "Swift の alternation の残りの名前" "$out" BazQux
+next_session; expect_nudge "Swift だけの repo の言語不明は従来どおり Swift 向け" "$(run_bash 'rg -n FooBar .')" FooBar
+REPO="$MIXED_REPO"
+
 # hook自身はdupscan/goを起動しない。案内文字列を出すだけ。
 SPY_BIN="$TMP_ROOT/spy-bin"; mkdir "$SPY_BIN"
 cat > "$SPY_BIN/dupscan" <<'SPY'
@@ -224,7 +292,7 @@ out=$(CAPABILITY_UNREADY=1 run_bash 'rg -t go FooBar .')
 if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("dupscan capabilities") and (contains("dupscan index -name") | not)' >/dev/null; then
   echo '✓ no-build未準備では具体的な未検証commandを案内しない'; ok=$((ok+1))
 else echo '✗ 未準備のcapabilityを誤案内'; fail=$((fail+1)); fi
-if [ -s "$CAPABILITY_LOG" ] && ! grep -vFx -- '-no-build capabilities -format json' "$CAPABILITY_LOG" | grep -q .; then
+if [ -s "$CAPABILITY_LOG" ] && [ -z "$(grep -vFx -- '-no-build capabilities -format json' "$CAPABILITY_LOG" || true)" ]; then
   echo '✓ capabilityはno-buildの固定argvだけで取得する'; ok=$((ok+1))
 else echo '✗ capabilityが危険なargvで呼ばれた'; fail=$((fail+1)); fi
 
