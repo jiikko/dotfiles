@@ -127,10 +127,21 @@ A1 の既知の限界: 名前が違う同じ役割の関数は引けない (署�
 
 **判断に使う材料**: 節 3 を既定で出し続けるか、同じ module の中の対に絞るか、`-similar` を指定したときだけ出すかは、この表を増やしてから決める。**今の n では決めない**。
 
+### A1 を本物の新規セッションで観測した (c4、2026-10-28 21:05)
+
+使い捨ての git repo (`src/foo/a.go` に `collectWidgets` だけ)で、`claude -p --model haiku` の新規セッションに「`src/foo/b.go` を作って `collectWidgetsFast(xs []int) []int` を 1 つだけ書いて」と頼んだ (f5 の取りこぼしの修正後の hook。ユーザーの settings.json の配線のまま)。
+
+- **届いた**: セッションの transcript に `PreToolUse:Write` の `hook_additional_context` が残っていた。内容は「`collectWidgetsFast` に近い既存の定義: `src/foo/a.go:3-11 collectWidgets(xs []int) []int [unexported]`」。hook の所要は **99 ms**。注入ログ (`~/.cache/claude-dupscan-inject.log`) にも `collectWidgetsFast 1` が残った。
+- **行動は変わらなかった**: agent は `collectWidgets` と同じ本体の `collectWidgetsFast` を書いた (重複が増えた)。ただし**依頼文が「この名前の関数を書け」と明示していた**。n=1・小さいモデル (haiku)・既存の関数を読んだ後(a.go は Write の前に Read していた)の観測で、注入が行動を変えるかは**何も言えない**。
+- **計測の注意**: `claude -p --output-format stream-json` の出力には PreToolUse の注入は載らない (`hook_response` は SessionStart のものだけ)。注入の有無は `~/.claude/projects/<project>/<session>.jsonl` の `hook_additional_context` を見る。
+- **次に測るもの**: 「既存を使え」と言わない・名前を指定しない依頼で、注入があるときとないとき (hook を外した A-B) に、重複した関数を書く割合。依頼の形で結果が変わるので、928 の比較と同じく**事前に課題を決めてから**回す。
+
 ## 受け入れ条件
 
 - [x] A1 を実装した (遅延は 1 名前あたり約 1 秒。雑音は未測定: 注入ログと、注入の後の挙動を 2026-11-04 に見る)。
+- [x] A1 が本物のセッションで届くことを確かめた (上の節。99 ms)。
 - [ ] A1 の雑音を測る (候補ありの注入のうち、無関係だった割合。transcript を読んで数える)。
+- [ ] A1 の有無で重複を書く割合が変わるかを、事前に決めた課題の A-B で測る (n=1 の観測では何も言えない)。
 - [ ] 2026-11-04 の再測定の結果を、この issue の「実測と根拠」へ追記する (案内の後の dupscan 率・index 後の範囲指定の率)。
 - [ ] 942 b' の採否を決める。
 - [ ] E-2 の指標 (gate が止めた数) を数える手段を決める。
