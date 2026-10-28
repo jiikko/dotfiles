@@ -15,6 +15,7 @@ import (
 	"dupscan/internal/norm"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
+	"dupscan/internal/tree"
 )
 
 // runPoint は 1 つの単位を指す subcommand (near / explain)。最初の引数が `<file>:<関数名>` か `<file>:<行>`、残りが起点 (既定はそのファイルの repo 全体)。
@@ -200,7 +201,7 @@ func pick(entries []*group.Entry, file, sel string) (*group.Entry, error) {
 		return best, nil
 	}
 	for _, e := range inFile {
-		if e.Unit.Name == sel {
+		if tree.MatchName(e.Unit.Name) == tree.MatchName(sel) {
 			hits = append(hits, e)
 		}
 	}

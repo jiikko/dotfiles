@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"dupscan/internal/repo"
+	"dupscan/internal/tree"
 )
 
 type queryUX struct {
@@ -104,7 +105,9 @@ func (s scanned) sourceGlobs() []string {
 // 例外: 初期化子 (`init`) の「呼び出し ~N」は単位名でなく型名で他のファイルの呼び出しを数える (report.callCounts)。
 // 問い合わせの名前が `init` の部分文字列になりうるときは、名前を含まないファイルも影響しうるので全部残す。
 func (s scanned) relevantParseErrors(name string) []string {
-	needle := strings.ToLower(name)
+	// 照合は MatchName を通して行うので、警告の関連性も同じ形で判定する (囲み付きの query で警告が落ちない)。
+	// 本文の中の綴りは囲み付きのこともあるので、囲みを外した語の部分文字列で探す (`repeat` は `repeat` にも `repeat` を含む)
+	needle := strings.ToLower(tree.MatchName(name))
 	if needle == "" || strings.Contains(initUnitName, needle) {
 		return s.errFiles
 	}

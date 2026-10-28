@@ -114,7 +114,7 @@ type DefinitionsSummary struct {
 func BuildDefinitions(query string, q DefQuery, defs []DefinitionRecord, types []TypeRecord, units []*tree.Unit, calls []tree.Call, sources map[string][]byte, maxLines int, shared func(string) bool) DefinitionsSummary {
 	s := DefinitionsSummary{Query: query, Entries: []DefinitionEntry{}}
 	for _, d := range defs {
-		if d.Name != q.Name || (q.Type != "" && (d.Nested || !sameTypeScope(d.Enclosing, q.Type))) ||
+		if tree.MatchName(d.Name) != tree.MatchName(q.Name) || (q.Type != "" && (d.Nested || !sameTypeScope(d.Enclosing, q.Type))) ||
 			(q.Labels != nil && !supportsArgumentLabels(d)) || !labelsMatch(q.Labels, d.Labels) {
 			continue
 		}
@@ -177,7 +177,7 @@ func labelsMatch(query, got []string) bool {
 		return false
 	}
 	for i := range query {
-		if query[i] != got[i] {
+		if tree.MatchName(query[i]) != tree.MatchName(got[i]) {
 			return false
 		}
 	}
@@ -208,7 +208,16 @@ func normalizeTypeScope(value string) string {
 			}
 		}
 	}
-	return strings.Join(strings.Fields(out.String()), " ")
+	return matchScope(strings.Join(strings.Fields(out.String()), " "))
+}
+
+// matchScope は `Outer.Inner` の各要素を照合用の形にする (`\`A\`.f` の A)。保存する Scope / Enclosing は変えない。
+func matchScope(scope string) string {
+	parts := strings.Split(scope, ".")
+	for i, p := range parts {
+		parts[i] = tree.MatchName(p)
+	}
+	return strings.Join(parts, ".")
 }
 
 func typeMembers(d TypeRecord, defs []DefinitionRecord, types []TypeRecord, units []*tree.Unit, calls []tree.Call, shared func(string) bool) []IndexEntry {
@@ -360,7 +369,7 @@ func BuildReferences(query string, references []ReferenceRecord, units []*tree.U
 		byFile[u.File] = append(byFile[u.File], u)
 	}
 	for _, r := range references {
-		if r.Name != query {
+		if tree.MatchName(r.Name) != tree.MatchName(query) {
 			continue
 		}
 		e := ReferenceEntry{File: r.File, Line: r.Line, Col: r.Col, Test: r.Test || isTest(r.File), Kind: r.Kind, Text: r.Text}

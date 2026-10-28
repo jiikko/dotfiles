@@ -3,6 +3,8 @@
 // adapter (言語ごと) が構文木をこの形に写し、コア (norm・group) はここに書かれた役割だけを見て正規化する。
 package tree
 
+import "strings"
+
 // Role は、木の葉がコアにとって何であるかを表す。
 type Role uint8
 
@@ -123,4 +125,18 @@ type Unit struct {
 	Allow     string
 	HasAllow  bool
 	AllowLine int // 印を書いたコメントの行
+}
+
+// MatchName は名前を照合するための形にする。Swift の識別子は、予約語と同じ綴りのときバッククォートで囲んで宣言できる
+// (`func `repeat`()`) が、使う側は囲まずに書く (`self.repeat(1)`)。宣言名・呼び出し名・参照名・query が同じ対象を指せるよう、
+// 全体を囲む 1 組のバッククォートだけを外す。
+//
+// 🚨 照合にだけ使う。表示用の署名・単位の鍵 (除外の釘に入る)・重複検出の hash が使う名前は変えない。
+// 外すのは「先頭と末尾が 1 つずつのバッククォートで、間に別のバッククォートが無い」ものだけ。
+// Go の名前や演算子、途中に `を含む文字列は、そのまま返す。
+func MatchName(s string) string {
+	if len(s) >= 3 && s[0] == '`' && s[len(s)-1] == '`' && !strings.Contains(s[1:len(s)-1], "`") {
+		return s[1 : len(s)-1]
+	}
+	return s
 }

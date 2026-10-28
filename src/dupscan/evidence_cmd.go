@@ -62,10 +62,10 @@ func runEvidence(args []string, stdout, stderr io.Writer) int {
 	}
 	defined := map[string]bool{}
 	for _, u := range got.units {
-		defined[u.Name] = true
+		defined[tree.MatchName(u.Name)] = true
 	}
 	for _, d := range got.types {
-		defined[d.Name] = true
+		defined[tree.MatchName(d.Name)] = true
 	}
 	s := report.BuildEvidence(term, got.contents, evidenceOwners(got), got.calls, defined, langs.IsTestPath)
 	ux := queryUX{Approximation: "語の一致 (型解決なし)", ParseErrors: len(got.errFiles), Truncated: s.Truncated}

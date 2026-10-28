@@ -123,7 +123,7 @@ func (q Query) match(u *tree.Unit) (int, bool) {
 	if q.Name == "" {
 		return 0, true
 	}
-	name, want := strings.ToLower(u.Name), strings.ToLower(q.Name)
+	name, want := strings.ToLower(tree.MatchName(u.Name)), strings.ToLower(tree.MatchName(q.Name))
 	switch {
 	case name == want:
 		return 3, true
@@ -140,7 +140,7 @@ func (q Query) match(u *tree.Unit) (int, bool) {
 func callCounts(units []*tree.Unit, calls []tree.Call) map[*tree.Unit]int {
 	byName := map[string][]tree.Call{}
 	for _, c := range calls {
-		byName[c.Name] = append(byName[c.Name], c)
+		byName[tree.MatchName(c.Name)] = append(byName[tree.MatchName(c.Name)], c)
 	}
 	out := map[*tree.Unit]int{}
 	for _, u := range units {
@@ -154,7 +154,7 @@ func callCounts(units []*tree.Unit, calls []tree.Call) map[*tree.Unit]int {
 		}
 		q := CallQuery{Name: name, Labels: append([]string{}, u.Labels...)}
 		n := 0
-		for _, c := range byName[name] {
+		for _, c := range byName[tree.MatchName(name)] {
 			if q.matches(c) {
 				n++
 			}

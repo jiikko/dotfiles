@@ -43,7 +43,7 @@ func ParseCallQuery(s string) (CallQuery, error) {
 // matches は呼び出し c が q に当たるか。後置クロージャの引数はラベルが括弧の外にあるので、後置クロージャのある呼び出しは
 // 括弧の中のラベルが q のラベルの先頭に一致すれば当てる (型を解決しないので近似)。
 func (q CallQuery) matches(c tree.Call) bool {
-	if c.Name != q.Name || q.Selector != "" && c.Selector != q.Selector {
+	if tree.MatchName(c.Name) != tree.MatchName(q.Name) || q.Selector != "" && c.Selector != q.Selector {
 		return false
 	}
 	if q.Labels == nil {
@@ -53,7 +53,7 @@ func (q CallQuery) matches(c tree.Call) bool {
 		return false
 	}
 	for i, l := range c.Labels {
-		if l != q.Labels[i] {
+		if tree.MatchName(l) != tree.MatchName(q.Labels[i]) {
 			return false
 		}
 	}

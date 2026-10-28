@@ -94,7 +94,7 @@ func BuildEvidence(term string, sources map[string][]byte, units []*tree.Unit, c
 				continue
 			}
 			for _, name := range e.Calls {
-				if defined[name] {
+				if defined[tree.MatchName(name)] {
 					called[name]++
 				}
 			}

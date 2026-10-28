@@ -69,10 +69,10 @@ Swiftの**照合用識別子**について、宣言・参照・呼出・queryを
 
 ## 受け入れ条件
 
-- [ ] 上記fixtureで、裸名/引用付き名のdef・refs・callers・contextが同じ識別子を追える。
-- [ ] indexのcalls_approxがこのfixtureの実在する呼出を含む。
-- [ ] Swiftとして有効な範囲で、引用あり/なしの宣言・使用・queryの組合せと、property・通常識別子を回帰検査する（裸の予約語宣言のような無効入力は含めない）。
-- [ ] unit key/除外設定/重複検出hashとGoの通常探索に意図しない変更がないことを確認する。
+- [x] 上記fixtureで、裸名/引用付き名のdef・refs・callers・contextが同じ識別子を追える。
+- [x] indexのcalls_approxがこのfixtureの実在する呼出を含む。
+- [x] Swiftとして有効な範囲で、引用あり/なしの宣言・使用・queryの組合せと、property・通常識別子を回帰検査する（裸の予約語宣言のような無効入力は含めない）。
+- [x] unit key/除外設定/重複検出hashとGoの通常探索に意図しない変更がないことを確認する。
 
 ## 既存issueとの関係・検証記録
 
@@ -85,3 +85,20 @@ rawはdotfiles/tmp/audit-dupscan-20261028/のkeyword-results.json、keyword-foll
 - 2026-10-28: `docs(dupscan): record escaped identifier lookup mismatch`で最新sourceでも再現する不具合の詳細を記録。
 
 導入commitは未特定であり、最近入った退行と断定しない。独立した反証レビューで追加P1/P2なし。issue標準テストはBash 5で全件成功。gateはrc0・変更単位0、既存不正fixtureはbase/head各1件でpartial、既存の効いていない除外7件を通知した。今回のsource変更・除外追加はない。
+
+## 対応の結果 (c4、2026-10-28)
+
+**照合用の名前を `tree.MatchName` で正規形にして、比べる所の両辺に通した**。全体を囲む 1 組のバッククォートだけを外す (Go の名前・演算子・途中に ` を含む文字列は変えない)。保存する名前・単位の鍵・署名・重複検出の hash・除外の釘は元の綴りのまま、表示も元の綴り (``A.`repeat` ``)。
+
+比べる所 (11 か所): `def`・`refs`・`callers` の完全一致、`index` の名前一致と呼び出し数の集計、型スコープ (`` `A`.f ``)、引数ラベル (`labelsMatch`・`CallQuery.matches`)、`evidence` の定義集合、`near` / `similar` / `compare` の単位の選択 (`pick`)、`search` の完全一致優先、読めないファイルの警告の関連性判定 (`relevantParseErrors`)。
+
+- **issue の再現の全問い合わせが期待どおりになった**: ``def A.repeat`` と ``def A.`repeat` `` が同じ定義 1 件、`context` が定義 1・参照 1・呼出 1、``callers `repeat` `` が `self.repeat(1)` を 1 件、`index` の `calls_approx` が 0 → 実在の件数。
+- **変えていないことの実測**: バッククォート付きの名前を含む Swift で、重複検出の hash (`@c1e5d9a32fbe`) と除外の釘が前後で一致。dotfiles の `src` (Go 25 module) の `report` / `sweep` / `index` の出力が前後で byte 同一。
+- **codex の敵対的レビュー 1 周**: 6 件を採用 (1 件は**この変更が持ち込んだ退行**: 引用付きの query が、読めないファイルの解析不完全の警告を落とす)。残り 5 件は比べる所の取りこぼし (型名の囲み・引数ラベルの囲み・`evidence`・`near` の単位選択・`search` の完全一致優先)。どれも発火条件を再現テストにした。
+- **変異**: 11 か所それぞれを元に戻すと、対応するテストが赤になる。最初に緑のまま残った 3 本は、テストの穴だった (`refs` の query・宣言名の保存・`evidence` の文言が実際と違い常に偽になる assert)。直して赤を確認した。
+
+### 残る限界 (記録)
+
+- `self` / `Type` / `Protocol` は、裸のキーワードと囲み付きのメンバーで意味が異なりうる (Swift の識別子の仕様)。一律に同一視しているが、adapter から誤照合へ到達する具体例は確認できていない。
+- `-format xcode` など、名前を表示するだけの経路は元の綴りのまま。
+- `gate` の出どころの照合 (元の綴りで比べる) は意図して変えていない。

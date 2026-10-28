@@ -114,7 +114,7 @@ func BuildSearch(units []*tree.Unit, q SearchQuery) SearchSummary {
 		if a.Score != b.Score {
 			return a.Score > b.Score
 		}
-		ae, be := strings.ToLower(a.Entry.Name) == exact, strings.ToLower(b.Entry.Name) == exact
+		ae, be := strings.ToLower(tree.MatchName(a.Entry.Name)) == exact, strings.ToLower(tree.MatchName(b.Entry.Name)) == exact
 		if ae != be {
 			return ae
 		}
