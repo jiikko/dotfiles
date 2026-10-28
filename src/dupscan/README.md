@@ -325,7 +325,7 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 - クロージャの表示は囲む単位の名前を挟んだ `型.関数.{closure}` (入れ子は `型.関数.{closure}.{closure}`、格納 property の初期値は `型.property.{closure}`)。
   同じ関数の中の 2 つのクロージャ・多重定義の関数のクロージャは同じ表示になるので、行番号で区別する。関数の中の型の中のクロージャには外の関数の名前を付けない。
   表示だけの名前で、鍵・`name` (json) は `{closure}` のまま (json の `owner_name` に囲む単位の名前)。`callers` の呼び出し元 (`caller`) も同じ表示になる
-- 関数の中の `nonisolated(unsafe) let` は tree-sitter-swift (upstream の main でも) が ERROR にする。最初の木に ERROR があり `nonisolated(unsafe)` を含むときだけ、ERROR 節の中の出現を同じ長さの空白にして読み直し、ERROR が減れば採る (`internal/lang/swift` の `reparseWithoutLocalIsolation`。位置と字面は元のまま。落ちるのは修飾子の語だけ)
+- tree-sitter-swift (upstream の main でも) が読み違える 2 つの書き方は、最初の木に ERROR / 欠けた節があるときだけ、同じ長さの字面に置き換えて読み直し、ERROR が減れば採る (`internal/lang/swift` の `reparseKnownMisparses`。位置と節の字面は元のまま): 関数の中の `nonisolated(unsafe) let` は ERROR 節の中の出現を空白にする (落ちるのは修飾子の語だけ)。空のタプルを渡す呼び出し `f(())` は、呼び出しの引数の中の欠けた節の位置だけ `(  )` にする (`f()` と同じ形として比べる)。`f((()))`・`g((), ())`・`g(x: ())`・`let y = (())` は読めないまま
 - 読めない構文があるファイルでは、関数が単位ごと取り出せない場合がある。report は `files_with_errors`、gateはbase/head別の失敗fileと `analysis_incomplete` を出す。抽出できた変更単位は `unreadable_changed_units` にも残す。追跡済みの関数を `func broken(` に書き換えて `changed_units=0` になってもfileの解析失敗を通知し、通常modeはrc契約を維持、-strict-analysisではrc=2にする。`def` / `refs` / `index` / `callers` もtext/jsonのstderrへ解析失敗の件数と引用符付きの先頭3ファイル（残りは件数）を返す。hitと0件の両方で通知し、抽出単位0でも消さない。stdoutのJSON schema・従来の0件rcは維持し、通知だけで失敗にはしない。context/evidenceは従来どおりstdoutの要約で通知する。いずれも検索0件を不存在の証明に使わない
 - Go: 型を解決しないので、呼び出しが処理か値の変換かを構文で決める。組み込みの変換・`len` などと型リテラルへの変換 (`[]byte(s)`) だけを値とし、
   ほかの呼び出しは全部処理として L3 でも畳まない。Go は公開の関数も大文字で始まるので、Swift のように大文字を型の初期化とみなさない
