@@ -1,6 +1,6 @@
 ---
 name: dupscan-dogfood
-version: 1.3.0
+version: 1.3.1
 description: dupscan を実際に使って開発タスクをこなし、使って困ったこと (見逃し・雑音・出力が大きい・遅い・grep に戻した理由) を記録して、dotfiles の issue に書き、直せるものは dupscan 自身を直す。「dupscan を使って開発して」「dupscan を使いながら実装して、フィードバックを issue に」「dupscan-dogfood」で発火。タスクが目的で、dupscan の評価・改修は副産物。dupscan を直すだけの依頼や、使わないタスクには使わない。
 ---
 
@@ -50,6 +50,10 @@ skill dupscan の 1〜4 節に従う。**grep より先に dupscan を試す場�
 
 `$d/friction.md` に、困った瞬間に 1 件ずつ追記する。まとめて思い出すと、出力の大きさや rc のような数字が消える。
 
+- **dupscan を使う場面が数回で終わる小さい作業では、`friction.md` を作らず、起票する issue の本文に直接書いてよい**。
+  ただし規律は残す: 困った瞬間に控える数字 (byte 数・件数・rc・所要) は測って書き、測っていないものは「未計測」と書く。grep に戻したときの理由も書く。
+  (`friction.md` の書式は件数が多いときの整理用で、数字を測る規律そのものではない。)
+
 ```markdown
 ## F1 <一行で何が困ったか>
 - 場面: <何をしようとして、どのコマンドを打ったか (コマンドは一字一句)>
@@ -94,7 +98,7 @@ dupscan の修正の作法 (dotfiles の `CLAUDE.md`「`src/` の Go を書く�
 - 置き場所: **dotfiles の** epic 932 の下 (`issues/epic/932/`)。開発タスクが別の repo でも、dupscan の不満は dotfiles の issue に書く (タスクの repo の issue には書かない)。種類が `research` / `feat` / `ux` / `perf` のうち近いもの。dotfiles の issue 規約 (採番を `git fetch` して数える・採番したら即 push・`next/` の claim・反証レビュー) に従う。
 - 小さい所見が複数なら **1 本の issue にまとめてよい**。摩擦は **場面・期待・実際・数字・提案** の順で書く。実際の出力は短く引用する。
 - 既存の issue への追記は、日付つきの節で足す (946 の「実装後の再測定」のような形)。
-- **起票・追記したら、`friction.md` の各件に issue 番号を書く** (どれがどこへ行ったか追えるように)。
+- **起票・追記したら、`friction.md` の各件に issue 番号を書く** (どれがどこへ行ったか追えるように。`friction.md` を作らなかった小さい作業では不要)。
 - **所見の記録だけの issue は反証レビューを省略してよい** (観察の記録で、仕様や設計の主張ではない。ユーザー指示 2026-10-28)。省略したことを issue に 1 行書く。
   **直し方の提案・設計の判断・「効果があった」という主張を含む issue は、反証レビューを通す** (issue 規約。codex が使えない環境では観点を分けた read-only のサブエージェント)。事実と食い違っていた指摘は直してから push する。
 - 採番したら即 push する (dotfiles の issue 規約)。反証レビューを待つ issue は、先に骨組みだけを push して番号を取る。
@@ -105,7 +109,7 @@ dupscan の修正の作法 (dotfiles の `CLAUDE.md`「`src/` の Go を書く�
 ## 開発タスク
 <結果。依頼の本題を先に>
 
-## dupscan のフィードバック (件数は friction.md を数えて書く)
+## dupscan のフィードバック (件数は friction.md か、issue の本文を数えて書く)
 | 種類 | 件数 | 対応 |
 |---|---|---|
 | 見逃し | 2 | 1 件を修正 (commit)、1 件は 946 に追記 |
