@@ -367,3 +367,8 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 `dupscan near -similar -limit 5 Sources/A.swift:helper` は1対象と同言語の単位を比較する。L1の部分木（3 nodes以上）の重み付き多重集合Diceで候補を並べ、既定閾値は暫定0.4（`-similar-threshold`で変更可）。局所名は既存L1と同じ番号、callee/member/type/literalは保持するが、戻り型は比較しない。`-min-nodes`/`-levels`は既定の完全一致経路用で、この実験では上記の部分木条件を使う。返却は1〜50件、総候補数・返却数・比較/skip数・parse error件数を表示し、JSONも同じ件数上限を守る。
 
 これは全体の構文の重なりであり、部分重複の網羅、同一動作、再利用可能性を保証しない。局所宣言の挿入で番号がずれる場合や、深い/反復した部分木の重みが偏る場合がある。祖先・子孫は除外する。位置は単位のみで、共有部分の正確なsource spanは返さない。短いtargetに3 nodes以上の部分木がなければその旨を示す。clone用除外は適用せず、候補をgate違反にはしない。既定near/report/gateの判定は変えない。
+
+## 利用の測定
+
+`scripts/dupscan_usage_report.py` が Claude Code の transcript (`~/.claude/projects/*/*.jsonl`) から、識別子らしい `grep` / `rg` と dupscan の探索 (`gate` は除く) の回数・言語別・hook の案内の直後 3 手以内の探索・`index` の直後の `Read` の範囲指定を数える (`--days N` `--split ISO8601` `--by-day` `--json`)。dupscan 自身を開発しているセッションは除く。
+案内を出したことや利用が増えたことを効果とせず、「grep が dupscan に替わったか」を前後で比べる。数え方は `tests/scripts/test_dupscan_usage_report.sh` が固定している。

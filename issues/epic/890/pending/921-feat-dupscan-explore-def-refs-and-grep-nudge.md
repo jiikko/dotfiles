@@ -77,6 +77,7 @@ skill dupscan の 2 節・README・obaket の AGENTS.md / CLAUDE.md の dupscan 
     Outer.Inner の型の照合を外す (dupscan)。パイプの後ろの判定・Swift の repo の判定・出しすぎ防止・Type.member の大文字・SIGPIPE の判定・値をくっつけた -tswift (hook)。
     cwd でファイルかを確かめる判定を外す変異は、狙ったテスト (`..`) を含む多くのテストが赤になった (先に別のテストが落ちたので mutate-verify は rc=7)
   - 確認: `make -C src/dupscan lint test` rc=0・hook のテスト 43 passed・obaket の report の組は変更前の dupscan と同じ (238 組)
+  - 数え方は [`scripts/dupscan_usage_report.py`](../../../../scripts/dupscan_usage_report.py) に移した (2026-10-28。言語別・案内の直後の探索・`index` の直後の `Read` を足し、canary のテストあり)。下の貼り付けは 10/25 の基準を再現するための元の形で、新しい測定はこの道具で行う。
   - 測り直しの手順 (2026-11-25 ごろ): 直近 30 日の Swift の repo のセッションについて、Swift のパスを対象にした grep と dupscan の探索 (def / refs / callers / index。gate は数えない) を数える。
     2026-10-25 時点の比は grep 2,882 回 : dupscan 13 回 (数え方は「実測」節。母集合はほぼ obaket)。数えるスクリプト (2026-10-25 に使った形に、探索のサブコマンドだけを数える条件を足したもの):
 
