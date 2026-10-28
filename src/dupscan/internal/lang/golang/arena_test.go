@@ -44,3 +44,32 @@ func TestArenaNodesSurviveChunkChange(t *testing.T) {
 		t.Errorf("1 つの領域が chunk を超えた: %d", len(w.arena.nodes))
 	}
 }
+
+// 領域の大きさは arenaFirst から倍々で arenaChunk まで。固定の大きさだと、空関数 1 つのファイルが多い入力で確保量が膨らむ。
+func TestNextChunkGrowsFromSmallToTheCap(t *testing.T) {
+	want := []int{arenaFirst, arenaFirst * 2, arenaFirst * 4, arenaChunk, arenaChunk}
+	got, size := []int{}, 0
+	for range want {
+		size = nextChunk(size)
+		got = append(got, size)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("領域の大きさの並び = %v, want %v", got, want)
+		}
+	}
+	if arenaFirst >= arenaChunk {
+		t.Errorf("最初の大きさ %d が上限 %d 以上 (段階的に増えない)", arenaFirst, arenaChunk)
+	}
+}
+
+// 小さいファイルでは、最初の小さい領域だけで済む (節 3 つのファイルで 64 節ぶんを取らない)。
+func TestArenaTakesOnlyASmallFirstChunkForASmallFile(t *testing.T) {
+	w := &walker{}
+	for range 3 {
+		w.mk(tree.Node{Kind: "n"})
+	}
+	if cap(w.arena.nodes) != arenaFirst {
+		t.Errorf("3 節のファイルが %d 節ぶんの領域を取った (最初は %d)", cap(w.arena.nodes), arenaFirst)
+	}
+}

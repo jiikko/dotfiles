@@ -72,6 +72,13 @@ dupscan のコードを、リソースリークと性能の観点で読んだ。
 - **見送り**: `Ident` の `tok` を共有する案 (旗の衝突の危険)。bag を sorted slice にして merge する案 (まだ `Shared` の map 参照が残るが、`-similar-max-units` で止められる)。
 - **変異**: 子の cap を切る・空の並びを nil にする、のどちらを外しても赤。
 
+### codex レビューの採否 (2026-10-28)
+
+- **採用 (quote buffer)**: `scratch.quoted` が巨大な 1 文字列で育つと pool が抱え続ける。`quotedKeepMax = 1<<16` を超えたら `release` で手放す (`concurrent_test.go` の oversized quote buffer で固定)。
+- **採用 (arena の段階化)**: chunk を最初から 64 にすると、節の少ない小さなファイルの入力で確保量が 2.2 倍になった (manysmall: 8.06 → 18.1 MB)。最初の chunk を 8 にして 2 倍ずつ 64 まで育てる (`nextChunk`)。manysmall は 10.1 MB、`src` は 266.5 MB・4.65M 回で、確保回数の削減 (-31%) はほぼ保たれる (`arena_test.go` の growth / small-first-chunk で固定)。
+- **追加したテスト**: `norm` を並行に呼んでも決定的であること・pool に戻る scratch が空であること・大きさの上限 (`concurrent_test.go`)。
+- **未採用**: P5 (致命的な Parse エラーが稀なためコストに見合わない)。bag を sorted slice で merge する案は、遅さが苦情になったら再開する。
+
 ## 守ること
 
 - **出力を変えない**。直す前後で `report -limit 0 -format json` / `sweep` / `gate` の出力が byte 同一であることを、`src` で確かめる。
@@ -82,7 +89,7 @@ dupscan のコードを、リソースリークと性能の観点で読んだ。
 - [x] P1・P2 を直し、前後の確保量・所要を表で記録する (上の「対応と実測」)。
 - [x] 出力が前後で同一であることを確かめる (`report` / `sweep`。`cmp`)。
 - [x] P4 を一部直した (`Shared` / `Total`。5.0 → 3.5〜4.0 秒。負荷で揺れる)。sorted slice で merge する案は、まだ遅さが問題になるまで見送る (理由: 節 3 は `-similar-max-units` で止められ、既定は `sweep` の入口だけ)。
-- [ ] P3・P5 は、P1・P2 の後の実測を見て採否を決める。
+- [x] P3・P5 は、P1・P2 の後の実測を見て採否を決めた (P5 は不採用、P3 は構造に触るので見送り。上の「codex レビューの採否」と「対応と実測」)。
 
 ## 関連
 

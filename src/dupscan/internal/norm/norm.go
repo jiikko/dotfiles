@@ -82,6 +82,10 @@ type scratch struct {
 // scratchKeepMax は、これより大きく育った表は pool に戻さない (巨大な単位 1 つが、小さい単位の走査の間ずっと大きい表を抱えない)。
 const scratchKeepMax = 1 << 14
 
+// quotedKeepMax は、引用の作業 buffer をこの byte 数を超えて育てたまま pool に戻さない。数節の関数に巨大な文字列リテラルがあると、
+// 表は小さいままで buffer だけが育つ。後続の `[:0]` は容量を縮めないので、要素数でなく容量で見る。
+const quotedKeepMax = 1 << 16
+
 var scratchPool = sync.Pool{New: func() any {
 	return &scratch{refs: map[*tree.Node]bool{}, acts: map[*tree.Node]bool{}, out: bufio.NewWriterSize(io.Discard, 4096)}
 }}
@@ -89,6 +93,9 @@ var scratchPool = sync.Pool{New: func() any {
 func (s *scratch) release() {
 	if len(s.refs) > scratchKeepMax || len(s.acts) > scratchKeepMax {
 		return
+	}
+	if cap(s.quoted) > quotedKeepMax {
+		s.quoted = nil
 	}
 	clear(s.refs)
 	clear(s.acts)

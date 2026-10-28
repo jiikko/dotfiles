@@ -27,14 +27,27 @@ type arena struct {
 	kids  []*tree.Node
 }
 
-// arenaChunk は 1 回に取る節の数。256 だと小さいファイルの余りで確保量が増える (src の report で +4.5%)。64 なら確保量は変わらず、確保回数は約 31% 減る。
-const arenaChunk = 64
+// 領域の大きさは、最初は小さく (arenaFirst)、満ちるたびに倍にして arenaChunk で頭打ちにする。
+// 固定の 64 だと、空関数 1 つのファイルが多い入力で確保量が 2.2 倍になる (1500 ファイルで 8.1 → 18.1 MB)。256 だと src の report で +4.5%。
+// 段階的に増やせば、小さいファイルは小さい領域で済み、大きいファイルは 64 まで増えて確保回数を減らせる。
+const (
+	arenaFirst = 8
+	arenaChunk = 64
+)
+
+// nextChunk は満ちた領域の次の大きさ (最初は arenaFirst、倍々で arenaChunk まで)。
+func nextChunk(full int) int {
+	if full <= 0 {
+		return arenaFirst
+	}
+	return min(full*2, arenaChunk)
+}
 
 // mk は節を 1 つ切り出す。領域が満ちたら新しい領域を取る (古い領域の節のアドレスは変わらない)。
 func (w *walker) mk(n tree.Node) *tree.Node {
 	a := &w.arena
 	if len(a.nodes) == cap(a.nodes) {
-		a.nodes = make([]tree.Node, 0, arenaChunk)
+		a.nodes = make([]tree.Node, 0, nextChunk(cap(a.nodes)))
 	}
 	a.nodes = append(a.nodes, n)
 	return &a.nodes[len(a.nodes)-1]
@@ -46,7 +59,7 @@ func (a *arena) children(src []*tree.Node) []*tree.Node {
 		return nil
 	}
 	if cap(a.kids)-len(a.kids) < len(src) {
-		a.kids = make([]*tree.Node, 0, max(arenaChunk, len(src)))
+		a.kids = make([]*tree.Node, 0, max(nextChunk(cap(a.kids)), len(src)))
 	}
 	start := len(a.kids)
 	a.kids = append(a.kids, src...)
