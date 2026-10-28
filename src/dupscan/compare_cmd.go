@@ -25,7 +25,7 @@ type comparisonSummary struct {
 }
 
 func writeComparison(stdout, stderr io.Writer, left, right *group.Entry, got scanned, limit int, format string) int {
-	fail := func(err error) int { fmt.Fprintln(stderr, "dupscan explain -compare:", err); return 2 }
+	fail := failer(stderr, "dupscan explain -compare")
 	if limit < 1 || limit > 50 {
 		return fail(errors.New("limit must be 1..50"))
 	}

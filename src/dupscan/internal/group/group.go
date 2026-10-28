@@ -59,8 +59,7 @@ type Match struct {
 // Near は target と同じ段のハッシュを持つ他の単位を、一致した最も細かい段で返す。比べるかは Build と同じ Eligible で決める。
 // Build と違い、被った組・入れ子の組を外さない (指した単位がクロージャでも、その一致を出す)。
 func Near(target *Entry, entries []*Entry, opt Options) []Match {
-	levels := append([]norm.Level(nil), opt.Levels...)
-	sort.Slice(levels, func(i, j int) bool { return levels[i] < levels[j] })
+	levels := slices.Sorted(slices.Values(opt.Levels))
 	var out []Match
 	for _, e := range entries {
 		if e == target {
@@ -101,8 +100,7 @@ func Build(entries []*Entry, opt Options) []Group {
 	var groups []Group
 	var seen []map[*Entry]bool
 	// 細かい段から見る (渡された順のままだと、L3 を先に渡すと写しそのものが L3 の組として出る)。
-	levels := append([]norm.Level(nil), opt.Levels...)
-	sort.Slice(levels, func(i, j int) bool { return levels[i] < levels[j] })
+	levels := slices.Sorted(slices.Values(opt.Levels))
 	for _, lv := range levels {
 		byHash := map[string][]*Entry{}
 		for _, e := range entries {

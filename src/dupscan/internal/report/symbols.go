@@ -143,16 +143,7 @@ func BuildDefinitions(query string, q DefQuery, defs []DefinitionRecord, types [
 			s.Entries = append(s.Entries, e)
 		}
 	}
-	sort.SliceStable(s.Entries, func(i, j int) bool {
-		a, b := s.Entries[i], s.Entries[j]
-		if a.Test != b.Test {
-			return !a.Test
-		}
-		if a.File != b.File {
-			return a.File < b.File
-		}
-		return a.Line < b.Line
-	})
+	sortProdFirst(s.Entries, func(e DefinitionEntry) resultPos { return resultPos{e.Test, e.File, e.Line, 0} })
 	s.Matches = len(s.Entries)
 	return s
 }
@@ -384,19 +375,7 @@ func BuildReferences(query string, references []ReferenceRecord, units []*tree.U
 		}
 		s.Entries = append(s.Entries, e)
 	}
-	sort.SliceStable(s.Entries, func(i, j int) bool {
-		a, b := s.Entries[i], s.Entries[j]
-		if a.Test != b.Test {
-			return !a.Test
-		}
-		if a.File != b.File {
-			return a.File < b.File
-		}
-		if a.Line != b.Line {
-			return a.Line < b.Line
-		}
-		return a.Col < b.Col
-	})
+	sortProdFirst(s.Entries, func(e ReferenceEntry) resultPos { return resultPos{e.Test, e.File, e.Line, e.Col} })
 	s.Matches = len(s.Entries)
 	return s
 }
@@ -432,4 +411,28 @@ func ReferencesTextMore(w io.Writer, s ReferencesSummary, limit int, more string
 		fmt.Fprintf(w, "%s:%d %s%s [%s] | %s\n", e.File, e.Line, caller, test, kind, e.Text)
 	}
 	return nil
+}
+
+// resultPos は callers / def / refs の結果を並べる位置。col を持たない結果は 0 を入れる。
+type resultPos struct {
+	test      bool
+	file      string
+	line, col int
+}
+
+// sortProdFirst は探索の結果を、本番を先に、次にファイル・行・列の順に並べる (同じ位置は元の順を保つ)。
+func sortProdFirst[T any](entries []T, pos func(T) resultPos) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		a, b := pos(entries[i]), pos(entries[j])
+		if a.test != b.test {
+			return !a.test
+		}
+		if a.file != b.file {
+			return a.file < b.file
+		}
+		if a.line != b.line {
+			return a.line < b.line
+		}
+		return a.col < b.col
+	})
 }

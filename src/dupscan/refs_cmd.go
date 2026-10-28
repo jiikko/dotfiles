@@ -3,7 +3,6 @@ package main
 import (
 	"dupscan/internal/lang"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"strings"
@@ -16,22 +15,14 @@ import (
 )
 
 func runRefs(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("dupscan refs", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	fs := commandFlags("dupscan refs", stderr)
 	format := fs.String("format", "text", "出力の形式: text / json")
 	limit := fs.Int("limit", 20, "text で出す参照の上限 (0 は全部)")
-	fs.Usage = func() {
-		fmt.Fprint(stderr, usage)
-		fs.PrintDefaults()
-	}
 	_, rc, ok := parseInterspersedFlags(fs, args)
 	if !ok {
 		return rc
 	}
-	fail := func(err error) int {
-		fmt.Fprintln(stderr, "dupscan refs:", err)
-		return 2
-	}
+	fail := failer(stderr, "dupscan refs")
 	pos := fs.Args()
 	if len(pos) == 0 || strings.TrimSpace(pos[0]) == "" {
 		return fail(errors.New("参照を探す名前を渡す (例: StorageOperationLockRegistry)"))

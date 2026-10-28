@@ -53,10 +53,7 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return rc
 	}
-	fail := func(err error) int {
-		fmt.Fprintln(stderr, "dupscan sweep:", err)
-		return 2
-	}
+	fail := failer(stderr, "dupscan sweep")
 	if *c.format != "text" {
 		return fail(fmt.Errorf("sweep は text だけ (知らない形式 %q)", *c.format))
 	}

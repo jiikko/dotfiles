@@ -32,7 +32,7 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return rc
 	}
-	fail := func(err error) int { fmt.Fprintln(stderr, "dupscan search:", err); return 2 }
+	fail := failer(stderr, "dupscan search")
 	terms, err := report.SearchTerms(*query)
 	if err != nil {
 		return fail(err)

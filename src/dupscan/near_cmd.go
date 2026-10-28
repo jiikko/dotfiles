@@ -44,10 +44,7 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "dupscan %s: %v\n", name, err)
 		return 2
 	}
-	fail := func(err error) int {
-		fmt.Fprintf(stderr, "dupscan %s: %v\n", name, err)
-		return 2
-	}
+	fail := failer(stderr, "dupscan "+name)
 	file, sel, ok := cutSelector(rest[0])
 	if !ok {
 		return fail(fmt.Errorf("%q は <file>:<関数名> か <file>:<行> の形ではない", rest[0]))

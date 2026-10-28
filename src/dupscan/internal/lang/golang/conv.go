@@ -162,7 +162,7 @@ func (w *walker) conv(n ast.Node) *tree.Node {
 		}
 		return out
 	case *ast.SliceExpr:
-		out := w.expr("SliceExpr", w.conv(n.X), w.optExpr(n.Low), w.optExpr(n.High), w.optExpr(n.Max))
+		out := w.expr("SliceExpr", w.conv(n.X), w.opt(n.Low), w.opt(n.High), w.opt(n.Max))
 		if n.Slice3 {
 			out.Children = append(out.Children, w.tok("3"))
 		}
@@ -260,15 +260,15 @@ func (w *walker) conv(n ast.Node) *tree.Node {
 		}
 		return out
 	case *ast.IfStmt:
-		return w.node("If", w.optStmt(n.Init), w.conv(n.Cond), w.conv(n.Body), w.optStmt(n.Else))
+		return w.node("If", w.opt(n.Init), w.conv(n.Cond), w.conv(n.Body), w.opt(n.Else))
 	case *ast.ForStmt:
-		return w.node("For", w.optStmt(n.Init), w.optExpr(n.Cond), w.optStmt(n.Post), w.conv(n.Body))
+		return w.node("For", w.opt(n.Init), w.opt(n.Cond), w.opt(n.Post), w.conv(n.Body))
 	case *ast.RangeStmt:
 		return w.node("Range", w.rangeVar(n.Key, n.Tok), w.rangeVar(n.Value, n.Tok), w.tok(n.Tok.String()), w.conv(n.X), w.conv(n.Body))
 	case *ast.SwitchStmt:
-		return w.node("Switch", w.optStmt(n.Init), w.optExpr(n.Tag), w.conv(n.Body))
+		return w.node("Switch", w.opt(n.Init), w.opt(n.Tag), w.conv(n.Body))
 	case *ast.TypeSwitchStmt:
-		return w.node("TypeSwitch", w.optStmt(n.Init), w.conv(n.Assign), w.typeCases(n.Body))
+		return w.node("TypeSwitch", w.opt(n.Init), w.conv(n.Assign), w.typeCases(n.Body))
 	case *ast.CaseClause:
 		out := w.node("Case")
 		if n.List == nil {
@@ -281,7 +281,7 @@ func (w *walker) conv(n ast.Node) *tree.Node {
 	case *ast.SelectStmt:
 		return w.node("Select", w.conv(n.Body))
 	case *ast.CommClause:
-		out := w.node("Comm", w.optStmt(n.Comm))
+		out := w.node("Comm", w.opt(n.Comm))
 		if n.Comm == nil {
 			out.Children[0] = w.tok("default")
 		}
@@ -310,18 +310,12 @@ func (w *walker) conv(n ast.Node) *tree.Node {
 	return w.node(fmt.Sprintf("%s%T", unknownKind, n))
 }
 
-func (w *walker) optExpr(e ast.Expr) *tree.Node {
-	if e == nil {
+// opt は省略できる子 (nil の Expr / Stmt) を none の節にする。
+func (w *walker) opt(n ast.Node) *tree.Node {
+	if n == nil {
 		return w.none()
 	}
-	return w.conv(e)
-}
-
-func (w *walker) optStmt(s ast.Stmt) *tree.Node {
-	if s == nil {
-		return w.none()
-	}
-	return w.conv(s)
+	return w.conv(n)
 }
 
 func (w *walker) withStmts(out *tree.Node, body []ast.Stmt) *tree.Node {

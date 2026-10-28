@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"go/token"
 	"io"
-	"sort"
 	"strings"
 
 	"dupscan/internal/tree"
@@ -105,16 +104,7 @@ func BuildCallers(query string, q CallQuery, calls []tree.Call, units []*tree.Un
 		}
 		s.Entries = append(s.Entries, e)
 	}
-	sort.SliceStable(s.Entries, func(i, j int) bool {
-		a, b := s.Entries[i], s.Entries[j]
-		if a.Test != b.Test {
-			return !a.Test
-		}
-		if a.File != b.File {
-			return a.File < b.File
-		}
-		return a.Line < b.Line
-	})
+	sortProdFirst(s.Entries, func(e CallerEntry) resultPos { return resultPos{e.Test, e.File, e.Line, 0} })
 	s.Matches = len(s.Entries)
 	return s
 }

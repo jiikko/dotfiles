@@ -3,7 +3,6 @@ package main
 import (
 	"dupscan/internal/lang"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 
@@ -12,23 +11,15 @@ import (
 )
 
 func runDef(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("dupscan def", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	fs := commandFlags("dupscan def", stderr)
 	format := fs.String("format", "text", "出力の形式: text / json")
 	limit := fs.Int("limit", 20, "text で出す定義の上限 (0 は全部)")
 	maxLines := fs.Int("max-lines", 80, "定義ごとに出すソース行の上限")
-	fs.Usage = func() {
-		fmt.Fprint(stderr, usage)
-		fs.PrintDefaults()
-	}
 	_, rc, ok := parseInterspersedFlags(fs, args)
 	if !ok {
 		return rc
 	}
-	fail := func(err error) int {
-		fmt.Fprintln(stderr, "dupscan def:", err)
-		return 2
-	}
+	fail := failer(stderr, "dupscan def")
 	pos := fs.Args()
 	if len(pos) == 0 {
 		return fail(errors.New("定義名を渡す (例: retrying か DropboxClient.upload)"))

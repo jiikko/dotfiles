@@ -16,8 +16,7 @@ import (
 
 // runIndex は索引を引く。語を何も渡さなければ全部の単位を 1 行 1 件で出す。
 func runIndex(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("dupscan index", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	fs := commandFlags("dupscan index", stderr)
 	var q report.Query
 	fs.StringVar(&q.Name, "name", "", "名前の一部 (大文字小文字を区別しない)")
 	fs.StringVar(&q.Returns, "returns", "", "戻り値の型の一部")
@@ -28,18 +27,11 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	format := fs.String("format", "text", "出力の形式: text / json")
 	limit := fs.Int("limit", 20, "text で出す件数の上限 (0 は全部。-file を指したときの既定は全部)")
 	docBytes := fs.Int("doc-bytes", 100, "text の doc を最初の文まで、この byte 数までに縮める (0 は縮めない。JSON と -doc の絞り込みは全文)")
-	fs.Usage = func() {
-		fmt.Fprint(stderr, usage)
-		fs.PrintDefaults()
-	}
 	dirs, rc, ok := parseInterspersedFlags(fs, args)
 	if !ok {
 		return rc
 	}
-	fail := func(err error) int {
-		fmt.Fprintln(stderr, "dupscan index:", err)
-		return 2
-	}
+	fail := failer(stderr, "dupscan index")
 	sc, err := repo.Resolve(dirs)
 	if err != nil {
 		return fail(err)

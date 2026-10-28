@@ -11,6 +11,7 @@
 package gate
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -74,8 +75,7 @@ func (r Result) Failed() bool {
 
 // Judge は base と head の単位から違反を決める。
 func Judge(base, head []*group.Entry, opt Options) Result {
-	levels := append([]norm.Level(nil), opt.Levels...)
-	sort.Slice(levels, func(i, j int) bool { return levels[i] < levels[j] })
+	levels := slices.Sorted(slices.Values(opt.Levels))
 	origin := origins(base, head, opt.Options)
 
 	groups := map[norm.Level]map[string][]*group.Entry{}

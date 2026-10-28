@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"dupscan/internal/lang"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -21,21 +20,13 @@ import (
 // 語の一致を返すだけで、定義・呼び出しの照合ではない。doc の行は、その doc が付いた単位を候補として出し、
 // テストとソースの行は、その行で呼んでいる名前を添える (使われ方から候補へ辿る)。text だけを出す理由は context と同じ。
 func runEvidence(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("dupscan evidence", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	fs := commandFlags("dupscan evidence", stderr)
 	limit := fs.Int("limit", 20, "節ごとに出す件数の上限 (0 は全部)")
-	fs.Usage = func() {
-		fmt.Fprint(stderr, usage)
-		fs.PrintDefaults()
-	}
 	_, rc, ok := parseInterspersedFlags(fs, args)
 	if !ok {
 		return rc
 	}
-	fail := func(err error) int {
-		fmt.Fprintln(stderr, "dupscan evidence:", err)
-		return 2
-	}
+	fail := failer(stderr, "dupscan evidence")
 	pos := fs.Args()
 	if len(pos) == 0 || strings.TrimSpace(pos[0]) == "" {
 		return fail(errors.New("探す語を渡す (例: bucket か \"retry after\")"))

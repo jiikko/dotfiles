@@ -68,8 +68,7 @@ type common struct {
 }
 
 func newFlags(name string, stderr io.Writer) (*flag.FlagSet, common) {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	fs := commandFlags(name, stderr)
 	c := common{
 		format:     fs.String("format", "text", "出力の形式: text / json / xcode"),
 		minNodes:   fs.Int("min-nodes", defaultMinNodes, "これより節の少ない関数・初期化子・property は比べない"),
@@ -79,11 +78,26 @@ func newFlags(name string, stderr io.Writer) (*flag.FlagSet, common) {
 		levels:     fs.String("levels", defaultLevels, "見る段 (カンマ区切り。L3 は値の位置まで畳む一致で、偶然の一致が多いので既定では見ない)"),
 		noExclude:  fs.Bool("no-exclude", false, "repo の root の "+exclude.FileName+" の除外を外して回す (除外が正しいかを見直すため)"),
 	}
+	return fs, c
+}
+
+// commandFlags は stderr に出し、-h で共通の usage に続けて flag の一覧を出す FlagSet を作る。
+func commandFlags(name string, stderr io.Writer) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(stderr)
 	fs.Usage = func() {
 		fmt.Fprint(stderr, usage)
 		fs.PrintDefaults()
 	}
-	return fs, c
+	return fs
+}
+
+// failer は「<command>: <err>」を stderr に出して rc=2 を返す関数を作る (入力・実行のエラーはどのサブコマンドも rc=2)。
+func failer(stderr io.Writer, command string) func(error) int {
+	return func(err error) int {
+		fmt.Fprintln(stderr, command+":", err)
+		return 2
+	}
 }
 
 func parseFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool) {

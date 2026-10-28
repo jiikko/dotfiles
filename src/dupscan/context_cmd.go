@@ -3,7 +3,6 @@ package main
 import (
 	"dupscan/internal/lang"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"slices"
@@ -21,23 +20,15 @@ import (
 // 共通の machine 向けの形 (状態・省略・継続取得を持つ版) より前に、固定すべき形が 1 つ増える。
 // refs / callers は名前 (と引数ラベル) だけで当てる。Type.member の Type では絞らない (型を解決しないので、絞ると 0 件になる)。
 func runContext(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("dupscan context", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	fs := commandFlags("dupscan context", stderr)
 	limit := fs.Int("limit", 20, "節ごとに出す件数の上限 (0 は全部)")
 	sectionsFlag := fs.String("sections", "definition,refs,callers", "definition,refs,callers のカンマ区切り、または summary")
 	maxLines := fs.Int("max-lines", 80, "定義ごとに出すソース行の上限")
-	fs.Usage = func() {
-		fmt.Fprint(stderr, usage)
-		fs.PrintDefaults()
-	}
 	_, rc, ok := parseInterspersedFlags(fs, args)
 	if !ok {
 		return rc
 	}
-	fail := func(err error) int {
-		fmt.Fprintln(stderr, "dupscan context:", err)
-		return 2
-	}
+	fail := failer(stderr, "dupscan context")
 	pos := fs.Args()
 	if len(pos) == 0 || strings.TrimSpace(pos[0]) == "" {
 		return fail(errors.New("定義名を渡す (例: retrying か DropboxClient.upload)"))
