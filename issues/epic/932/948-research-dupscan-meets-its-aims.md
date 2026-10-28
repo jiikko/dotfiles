@@ -127,7 +127,7 @@ A1 の既知の限界: 名前が違う同じ役割の関数は引けない (署�
 
 ## 関連
 
-- [932](932-epic-dupscan-accuracy.md) (epic)、[928](done/928-feat-dupscan-agent-onboarding.md)、[941](941-ux-dupscan-nudge-definition-search-gaps.md)、[942](942-perf-dupscan-fixed-notice-overhead.md)、[943](943-perf-dupscan-result-row-shape.md)、[944](pending/944-feat-dupscan-go-def.md)、[946](946-feat-dupscan-recall-from-real-modules.md)、[947](../../done/947-retro-dupscan-multi-module-dedup-2026-10-28.md)
+- [932](932-epic-dupscan-accuracy.md) (epic)、[928](done/928-feat-dupscan-agent-onboarding.md)、[941](941-ux-dupscan-nudge-definition-search-gaps.md)、[942](942-perf-dupscan-fixed-notice-overhead.md)、[943](943-perf-dupscan-result-row-shape.md)、[944](pending/944-feat-dupscan-go-def.md)、[946](done/946-feat-dupscan-recall-from-real-modules.md)、[947](../../done/947-retro-dupscan-multi-module-dedup-2026-10-28.md)
 
 - 2026-10-28: `docs(dupscan): reconcile approved pilot with concurrent research`で928の承認・実行状態と限定観測を同期。「探索+Read未測定」と入口だけを主因とする断定を訂正した。A1等の案の採否・将来測定の条件を完了扱いにはしていない。
 
