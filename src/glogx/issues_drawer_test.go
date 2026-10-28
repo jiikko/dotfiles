@@ -8,25 +8,10 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 
 	"glogx/internal/gitdata"
-	"glogx/internal/issuesview"
 	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
-	"glogx/issues"
 )
-
-// realIssuesView は実ファイルを持つ viewer を作る (openBody は ReadBody を通るので、
-// fake パスの loadedView では本文モードに入れない)。
-func realIssuesView(t *testing.T) *issuesview.IssuesView {
-	t.Helper()
-	dir := t.TempDir()
-	names := []string{"030", "029"}
-	list := make([]*issues.Issue, 0, len(names))
-	for _, n := range names {
-		list = append(list, issuesviewtest.WriteRealIssue(t, dir, n+"-feat-x.md", "# "+n+" feat: x\n\n本文の段落。\n\n- 箇条書き\n"))
-	}
-	return loadedView(list...)
-}
 
 func TestComposeDrawer(t *testing.T) {
 	base := []string{"LLLLLLLLLLLLLLLLLLLL", "MMMMMMMMMMMMMMMMMMMM"}
@@ -81,7 +66,7 @@ func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 100, 20
 	m.usageOv.Dismiss()
-	m.issuesOv = *realIssuesView(t)
+	m.issuesOv = *loadedView(issuesviewtest.RealIssues(t)...)
 	m.issuesOv.Fixture().FinishAnim() // 開く演出は本題でないので着地させる
 
 	// 境界の桁位置 = 引き出しの幅。無ければ -1。

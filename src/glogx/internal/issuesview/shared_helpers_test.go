@@ -1,7 +1,6 @@
 package issuesview
 
 import (
-	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/testenv"
 	"glogx/issues"
 	"testing"
@@ -52,19 +51,6 @@ func landBody(t *testing.T, v *IssuesView, page int) {
 		t.Fatal("本文モードに入れていない")
 	}
 	v.drawer.finish()
-}
-
-// realIssuesView は実ファイルを持つ viewer を作る (openBody は ReadBody を通るので、
-// fake パスの loadedView では本文モードに入れない)。
-func realIssuesView(t *testing.T) *IssuesView {
-	t.Helper()
-	dir := t.TempDir()
-	names := []string{"030", "029"}
-	list := make([]*issues.Issue, 0, len(names))
-	for _, n := range names {
-		list = append(list, issuesviewtest.WriteRealIssue(t, dir, n+"-feat-x.md", "# "+n+" feat: x\n\n本文の段落。\n\n- 箇条書き\n"))
-	}
-	return loadedView(list...)
 }
 
 // requireFake は見張りが seam 経由でフェイクを掴んでいることを確かめる (実 fsnotify に

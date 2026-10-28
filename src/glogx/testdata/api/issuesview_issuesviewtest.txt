@@ -3,6 +3,7 @@ func ManyIssues
 func ManyIssuesOf
 func Path2Issue
 func RealIssue
+func RealIssues
 func SampleIssues
 func StartPagerGlide
 func WatchTree

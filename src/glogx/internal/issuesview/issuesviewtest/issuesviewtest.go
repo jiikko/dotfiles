@@ -123,6 +123,19 @@ func WriteRealIssue(t *testing.T, dir, rel, body string) *issues.Issue {
 	return Path2Issue(dir, rel)
 }
 
+// RealIssues は実ファイルを持つ issue を 2 件 (030・029) 作る (openBody は ReadBody を通るので、fake パスの issue では本文モードに入れない)。
+// viewer への載せ方 (loadedView) は main と issuesview の中のテストで型が違うので、呼び出し側が `loadedView(issuesviewtest.RealIssues(t)...)` と書く。
+func RealIssues(t *testing.T) []*issues.Issue {
+	t.Helper()
+	dir := t.TempDir()
+	names := []string{"030", "029"}
+	list := make([]*issues.Issue, 0, len(names))
+	for _, n := range names {
+		list = append(list, WriteRealIssue(t, dir, n+"-feat-x.md", "# "+n+" feat: x\n\n本文の段落。\n\n- 箇条書き\n"))
+	}
+	return list
+}
+
 // StartPagerGlide は p を from から to への半ページ glide の途中に置く (テスト用)。
 // 本番と同じ入口 (Pager.Move の半ページ移動) を通すので、Offset は着地点 to になる。
 func StartPagerGlide(t *testing.T, p *listnav.Pager, from, to int) {

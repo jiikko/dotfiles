@@ -1,6 +1,7 @@
 package issuesview
 
 import (
+	"glogx/internal/issuesview/issuesviewtest"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 	"strings"
@@ -161,7 +162,7 @@ func TestIssuesViewDrawerIntegration(t *testing.T) {
 	now := base
 	testenv.StubClockFrom(t, &now)
 
-	v := realIssuesView(t)
+	v := loadedView(issuesviewtest.RealIssues(t)...)
 	o := IssuesRenderOpts{Width: 80, Page: 12}
 	v.Lines(o)
 	v.HandleKey("enter", vp(o.Page))
@@ -207,7 +208,7 @@ func TestIssuesViewDrawerKeepsTickAlive(t *testing.T) {
 	now := base
 	testenv.StubClockFrom(t, &now)
 
-	v := realIssuesView(t)
+	v := loadedView(issuesviewtest.RealIssues(t)...)
 	v.Lines(IssuesRenderOpts{Width: 80, Page: 12})
 	v.HandleKey("enter", vp(12))
 	now = base.Add(issuesDrawerDuration / 2)
