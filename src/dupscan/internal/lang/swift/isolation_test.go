@@ -73,3 +73,49 @@ func TestNonisolatedUnsafeInsideStringLiteralIsNotBlanked(t *testing.T) {
 	}
 	unitBy(t, r, "text() -> String")
 }
+
+// 空のタプルを渡す呼び出し (`continuation.yield(())`) は、その関数を ERROR にせず、同じファイルの他の関数も読める。
+func TestEmptyTupleArgumentDoesNotBreakTheFunction(t *testing.T) {
+	src := "final class A {\n    func end(c: AsyncStream<Void>.Continuation) {\n        c.yield(())\n        c.finish()\n    }\n    func other() -> Int { 1 }\n}\n"
+	r := parse(t, "Sources/X.swift", src)
+	if r.HasError {
+		t.Fatal("空のタプルの引数で ERROR のまま")
+	}
+	unitBy(t, r, "end(c: AsyncStream<Void>.Continuation)")
+}
+
+// 呼び出しの引数でない `(())` (別の関数の型) は、同じファイルに `f(())` の読み直しがあっても書き換えない (その関数のハッシュが変わらない)。
+func TestEmptyTupleTypeInAnotherFunctionIsKept(t *testing.T) {
+	alone := langtest.NormBoth(t, unitBy(t, parse(t, "Sources/A.swift", "func b(){let x:(())}\n"), "b()"))
+	with := langtest.NormBoth(t, unitBy(t, parse(t, "Sources/B.swift", "func b(){let x:(())}\nfunc a(){f(())}\n"), "b()"))
+	if alone.Hash[norm.L1] != with.Hash[norm.L1] {
+		t.Errorf("隣の f(()) の読み直しで、別の関数の型 (()) まで書き換えた\n%s\n%s", alone.Forms[norm.L1], with.Forms[norm.L1])
+	}
+}
+
+// 壊れた宣言 `func broken(()) {}` の構文エラーは、隣の `f(())` の読み直しで隠さない。
+func TestEmptyTupleRepairDoesNotHideOtherErrors(t *testing.T) {
+	if r := parse(t, "Sources/X.swift", "func f(){f(())}\nfunc broken(()) {}\n"); !r.HasError {
+		t.Error("別の構文エラー (broken の引数宣言) を隠した")
+	}
+}
+
+// 引数でない `(())` (代入の右辺) は書き換えない: 同じファイルの `g(())` を直しても、読めない関数 h の形は h だけのときと同じ。
+func TestEmptyTupleOutsideCallArgumentIsKept(t *testing.T) {
+	alone := parse(t, "Sources/A.swift", "func h() { let y = (()) }\n")
+	with := parse(t, "Sources/B.swift", "func f() { g(()) }\nfunc h() { let y = (()) }\n")
+	a, b := langtest.NormBoth(t, unitBy(t, alone, "h()")), langtest.NormBoth(t, unitBy(t, with, "h()"))
+	if a.Hash[norm.L1] != b.Hash[norm.L1] {
+		t.Errorf("隣の g(()) の読み直しで、引数でない (()) まで書き換えた\n%s\n%s", a.Forms[norm.L1], b.Forms[norm.L1])
+	}
+}
+
+// パターンの `case (()):` は書き換えない: 前に `g(())` が多くあっても、後ろの正常な関数 c を ERROR に飲み込ませない。
+func TestEmptyTuplePatternDoesNotSwallowNextFunction(t *testing.T) {
+	src := ""
+	for i := range 6 {
+		src += "func a" + string(rune('0'+i)) + "(){g(())}\n"
+	}
+	src += "switch x { case (()): break }\nfunc c() -> Int { return 1 }\n"
+	unitBy(t, parse(t, "Sources/main.swift", src), "c() -> Int")
+}

@@ -88,7 +88,7 @@ func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 		return lang.FileResult{}, fmt.Errorf("%s を parse できない", file)
 	}
 	if t.RootNode().HasError() {
-		t = p.reparseWithoutLocalIsolation(src, t)
+		t = p.reparseKnownMisparses(src, t)
 	}
 	defer t.Close()
 	root := t.RootNode()
@@ -108,54 +108,62 @@ func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 }
 
 // isolationModifier は、文法 (tree-sitter-swift 0.7.4 と、その後の main でも同じ) が関数の中の `nonisolated(unsafe) let` を
-// 呼び出し式 + 別の文として読み、その関数の本体を ERROR にする書き方。
+// 呼び出し式 + 別の文として読み、その関数の本体を ERROR にする書き方。ERROR 節の中の出現を同じ長さの空白にする (落ちるのは修飾子の語だけ)。
 const isolationModifier = "nonisolated(unsafe)"
 
-// reparseWithoutLocalIsolation は、ERROR のあるファイルが isolationModifier を含むとき、**ERROR 節の範囲の中にある出現だけ**を同じ長さの空白にして
-// 読み直した木を返し、ERROR の節が減ったときだけそれを採る (採らなければ t をそのまま返す)。
+// emptyTupleArg は、空のタプルを渡す呼び出し `f(())` (`continuation.yield(())` / `send(())`)。文法は内側の `()` に長さ 0 の欠けた節 (`!`) を置く。
+// 欠けた節が呼び出しの引数の空のタプルの中 (isEmptyTupleArgument) にあり、ちょうど内側の括弧の間にあるときだけ、その `(())` を `(  )` にする
+// (引数の無い呼び出しとして比べる。`f(())` と `f()` は同じ形になる)。
+//   - 位置で確かめる: 欠けた節の前後に広げた範囲で探すと、別の関数の型 `(())` や壊れた宣言 `g(())` まで書き換えて、正常な関数のハッシュを変えたり、
+//     別の構文エラーを隠したりする
+//   - 引数の中に限る: 代入の右辺 `let y = (())` やパターン `case (()):` も同じ欠けた節を持つが、書き換えても直らない (別の ERROR になる)。
+//     ERROR の数はファイル全体で比べるので、同じファイルの `g(())` が直った分で採られ、その関数の形が変わったり、後ろの正常な関数が ERROR に
+//     飲み込まれたりする
+const emptyTupleArg = "(())"
+
+// reparseKnownMisparses は、ERROR のあるファイルについて、上の 2 つの書き方の出現だけを同じ長さの字面に置き換えて読み直した木を返し、
+// ERROR の節が減ったときだけそれを採る (採らなければ t をそのまま返す)。置き換えは節の位置を変えないので、walker には元の src を渡したまま使える。
 //
-// 範囲を ERROR の中に限るのは、ファイル全体を置き換えると、正常に読めていた箇所 (メンバー宣言の修飾子・文字列リテラルの `\nonisolated(unsafe)`・
-// 式文) まで書き換わり、未変更の単位のハッシュが揺れる / 新しい ERROR を作るため。ERROR 節は、この文法が局所の `nonisolated(unsafe) let` を
-// 読み違えたときの呼び出し式を覆うので、出現はその範囲に入る。
-// 空白に替えるだけなので、どの節の位置も変わらない。walker には元の src を渡したまま使えるので、節の字面 (名前・リテラル・呼び出しの行) は
-// 元のままで、落ちるのは修飾子の語だけ。文法側が直ったら不要になる: 直った版では最初の parse に ERROR が無く、ここへ来ない。
-func (p *Parser) reparseWithoutLocalIsolation(src []byte, t *sitter.Tree) *sitter.Tree {
-	if !bytes.Contains(src, []byte(isolationModifier)) {
-		return t
-	}
-	var spans [][2]int
-	var collect func(n *sitter.Node)
-	collect = func(n *sitter.Node) {
+// 置き換えを読み違えの箇所に限るのは、ファイル全体を置き換えると、正常に読めていた箇所 (メンバー宣言の修飾子・文字列リテラルの中の同じ字面・
+// 式文・型) まで書き換わり、未変更の単位のハッシュが揺れる / 新しい ERROR を作る / 別の ERROR を隠すため。
+// 文法側が直ったら不要になる: 直った版では最初の parse に ERROR が無く、ここへ来ない。
+func (p *Parser) reparseKnownMisparses(src []byte, t *sitter.Tree) *sitter.Tree {
+	fixed := bytes.Clone(src)
+	changed := false
+	var visit func(n *sitter.Node)
+	visit = func(n *sitter.Node) {
 		if !n.HasError() {
 			return
 		}
 		if n.IsError() {
-			spans = append(spans, [2]int{int(n.StartByte()), int(n.EndByte())})
+			s, e := int(n.StartByte()), int(n.EndByte())
+			for off := s; ; {
+				k := bytes.Index(fixed[off:e], []byte(isolationModifier))
+				if k < 0 {
+					break
+				}
+				at := off + k
+				copy(fixed[at:], bytes.Repeat([]byte(" "), len(isolationModifier)))
+				changed = true
+				off = at + len(isolationModifier)
+			}
+		}
+		if n.IsMissing() {
+			if at := int(n.StartByte()) - 2; isEmptyTupleArgument(n) && at >= 0 && bytes.HasPrefix(fixed[at:], []byte(emptyTupleArg)) {
+				copy(fixed[at:], "(  )")
+				changed = true
+			}
 			return
 		}
 		for i := range n.ChildCount() {
-			collect(n.Child(i))
+			visit(n.Child(i))
 		}
 	}
-	collect(t.RootNode())
-	blank := bytes.Clone(src)
-	changed := false
-	for _, sp := range spans {
-		for off := sp[0]; ; {
-			k := bytes.Index(blank[off:sp[1]], []byte(isolationModifier))
-			if k < 0 {
-				break
-			}
-			at := off + k
-			copy(blank[at:], bytes.Repeat([]byte(" "), len(isolationModifier)))
-			changed = true
-			off = at + len(isolationModifier)
-		}
-	}
+	visit(t.RootNode())
 	if !changed {
 		return t
 	}
-	t2 := p.p.Parse(blank, nil)
+	t2 := p.p.Parse(fixed, nil)
 	if t2 == nil {
 		return t
 	}
@@ -165,6 +173,20 @@ func (p *Parser) reparseWithoutLocalIsolation(src []byte, t *sitter.Tree) *sitte
 	}
 	t.Close()
 	return t2
+}
+
+// isEmptyTupleArgument は、欠けた節が「呼び出しの引数 (value_argument) の空のタプル (tuple_expression) の中の bang」にあるか。
+func isEmptyTupleArgument(missing *sitter.Node) bool {
+	bang := missing.Parent()
+	if bang == nil || kindOf(bang) != "bang" {
+		return false
+	}
+	tuple := bang.Parent()
+	if tuple == nil || kindOf(tuple) != "tuple_expression" {
+		return false
+	}
+	arg := tuple.Parent()
+	return arg != nil && kindOf(arg) == "value_argument"
 }
 
 // countErrors は ERROR と欠けた節の数。

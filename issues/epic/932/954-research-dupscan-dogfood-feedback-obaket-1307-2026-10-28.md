@@ -151,8 +151,19 @@ dupscan の修正と skill の追記を入れた。敵対的な codex レビュ�
   - codex の敵対レビュー (1 周): 最初の版はファイル全体を置換しており、P2 を 2 件採用した (①ERROR の外の正常な修飾子まで消えて未変更の単位のハッシュが揺れ、gate が新規の重複と判定しうる ②文字列の `\nonisolated(unsafe)` を壊しても、他の関数の ERROR が減れば総数が減って採用される)。どちらも発火条件が具体的で、範囲を ERROR 節に限って直した。位置のずれ (UTF-8・CRLF)・コメント / 文字列の一致・メモリ解放は壊せなかった。実コマンドでも `nonisolated(unsafe) let` を含む関数が「読めない」から外れ、含まない写しと同じ形で比べられる。P3 の `-v` のテストは、読めない例を `nonisolated(unsafe)` から別の壊れた構文 (`let callback = ) block`) に替えた。
 - **obaket の実ファイル**: この Mac に obaket が無く、実ファイルでは確認できない。issue の `ManualQuickSearchWaitState.wait()` の形 (`withTaskCancellationHandler` の 2 つの closure・`[weak self]`・`Task { @MainActor [weak self] in … }`・`guard !Task.isCancelled`) を再現して現行の文法で読むと**読めた** (`dupscan -v` に「読めない」の行は出ない)。したがって 1895 の原因はこの形ではない。実ファイルの同じ関数のほかの部分 (`nonisolated(unsafe)` など) が候補だが、確かめていない。obaket のある Mac で `dupscan -v` の「読めない:」の行を読めば足りる。
 
-### 未着手・未確認
+### obaket の実ファイルの原因と回避 (c6、2026-10-29)
 
-- 文法の版を上げて `nonisolated(unsafe) let` を局所で読めるようにする (別の判断)。
-- `gate` が cwd にかかわらず repo 全体を見る案 (P4 の (b))。
-- obaket の実ファイル `QuickSearchClickCoordinatorTests.swift` が読めない原因 (obaket がこの Mac に無い。issue の最小構文は読めた。`withTaskCancellationHandler` の形ではなく、955 が示した `nonisolated(unsafe)` の可能性があるが未確認)。
+- **原因が分かった**: obaket は `~/src/my-products/apps/obaket` にあった (前節の「この Mac に無い」は誤り)。`QuickSearchClickCoordinatorTests.swift` に `nonisolated(unsafe)` は無く、原因は**空のタプルを渡す呼び出し `f(())`** (`endContinuation.yield(())` など。このファイルに 14 行)。文法は `()` の中に長さ 0 の欠けた節 (`!` の MISSING) を置き、その関数を読めないとする。`c.send(())` も `g(())` も同じで、`c.yield(Void())` と `c.send(  )` は読める。obaket で `(())` を含む Swift は 37 ファイル・93 行。
+- **回避**: `nonisolated(unsafe)` の回避と同じ読み直し (`swift.go` の `reparseKnownMisparses`) に足した。`(())` は、長さ 0 の欠けた節が**呼び出しの引数の空のタプルの中** (`bang` → `tuple_expression` → `value_argument`) にあり、ちょうど内側の括弧の間にあるときだけ `(  )` にする (引数の無い呼び出しとして比べる。`f(())` と `f()` は同じ形になる)。`nonisolated(unsafe)` は従来どおり ERROR 節の範囲の中だけ。どちらも同じ長さの置き換えで位置は変わらず、ERROR が減ったときだけ採る。
+- **実測 (obaket、同じ HEAD で前後)**: 読めないファイル **54 → 26**、読めない単位 **175 → 72**、組の数は 151 のまま。`QuickSearchClickCoordinatorTests.swift` の読めない単位は **0**。
+- **codex のレビュー (1 周目)**: 最初の版は、欠けた節の前後を置き換えの長さぶん広げた範囲で `(())` を探していた。P2 を 2 件採用した: ①隣の関数の型 `let x:(())` まで書き換えて、正常な関数のハッシュが変わる ②壊れた宣言 `func broken(()) {}` まで書き換えて、その構文エラーを隠す。どちらも入力が具体的で、欠けた節の位置で確かめる形に直した。同じ入力を 100 回解析して結果が揺れる例は見つからなかった。
+- **2 周目のレビュー** (codex は利用枠の上限で途中で止まったので、読み取り専用のサブエージェント (opus) で代替): P2 を 2 件採用した。どちらも、引数でない `(())` (代入の右辺 `let y = (())`・パターン `case (()):`) も同じ欠けた節を持ち、書き換えても直らないのに、ERROR の数をファイル全体で比べるので、同じファイルの `g(())` が直った分で採られる: ①前に `g(())` が 6 個あると、トップレベルの `switch … case (()):` を書き換えて後ろの正常な `func c` が ERROR に飲み込まれる ②読めない関数 `h` の形が、同じファイルの `g(())` の有無で変わり、gate に「変わった読めない単位」が出る。サブエージェントは CLI で再現し、Go の実装でもテストで再現してから、親子の確認 (引数の中に限る) を足して直した。構文エラーが隠れる・結果が揺れる・panic は見つからなかった。
+- **テスト**: `TestEmptyTupleArgumentDoesNotBreakTheFunction` / `TestEmptyTupleTypeInAnotherFunctionIsKept` / `TestEmptyTupleRepairDoesNotHideOtherErrors` / `TestEmptyTupleOutsideCallArgumentIsKept` / `TestEmptyTuplePatternDoesNotSwallowNextFunction`。旧版の「前後に広げて探す」に戻す変異で 2・3 本目が赤、引数の中の確認を外す変異で 4・5 本目が赤、欠けた節の扱いを外す変異で 1 本目が赤。文字列の中の `(())` を残すテストも書いたが、walker は節の字面を元のソースから取るのでハッシュが変わらず、変異で緑のまま (何も検査していない) だったので消した。
+- **直らない形 (範囲外)**: `f((()))`・`g((), ())`・`g(x: ())`・`let t = ((), ())` も欠けた節を持つが、書き換えの対象にしていない (読めないまま。誤った結果は出さない)。
+- 残る 26 ファイルの原因は調べていない (別の書き方。必要になったら `dupscan -v` の「読めない:」から同じ手順で最小の形を作る)。
+
+### 決着 (2026-10-29)
+
+- 文法の版を上げる: **効かない** (main でも `nonisolated(unsafe) let` は ERROR。「残りの対応 (c5)」)。upstream への報告はしない (ユーザー決定)。dupscan 側の読み直しで回避した。
+- `gate` が cwd にかかわらず repo 全体を見る (P4 の (b)): **済み** (dir を書かなければ repo 全体)。
+- obaket の実ファイルが読めない原因: **空のタプルの引数 `f(())`** と分かり、回避した (上の節)。
