@@ -22,7 +22,7 @@ type Profile struct {
 func ListProfiles() []Profile {
 	root, err := SupportDir()
 	if err != nil {
-		return []Profile{{Dir: "Default"}}
+		return defaultProfiles()
 	}
 	data, err := os.ReadFile(filepath.Join(root, "Local State"))
 	if err != nil {
@@ -68,8 +68,9 @@ func ListProfiles() []Profile {
 func fallbackProfiles(root string) []Profile {
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return []Profile{{Dir: "Default"}}
+		return defaultProfiles()
 	}
+	// os.ReadDir はファイル名の昇順で返すので、並べ直さない。
 	var out []Profile
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -81,8 +82,12 @@ func fallbackProfiles(root string) []Profile {
 		}
 	}
 	if len(out) == 0 {
-		return []Profile{{Dir: "Default"}}
+		return defaultProfiles()
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Dir < out[j].Dir })
 	return out
+}
+
+// defaultProfiles は一覧を作れなかったときの最後の手段で、Chrome が最初に作る Default だけを返す。
+func defaultProfiles() []Profile {
+	return []Profile{{Dir: "Default"}}
 }
