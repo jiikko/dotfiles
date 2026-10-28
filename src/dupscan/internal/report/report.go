@@ -46,7 +46,7 @@ type Exclusions struct {
 	Stale []exclude.Rule `json:"stale_exclusions"`
 	// Ambiguous は釘が 2 つ以上の単位に当たるので効かせなかった除外。
 	Ambiguous []exclude.Rule `json:"ambiguous_exclusions"`
-	// staleWhy は Stale と同じ順の、効かない理由 ("hash" / "missing" / "")。text の一覧にだけ使う (JSON の形は変えない)。
+	// staleWhy は Stale と同じ順の、効かない理由 (exclude.Set.StaleWhy の値)。text の一覧にだけ使う (JSON の形は変えない)。
 	staleWhy []string
 }
 
@@ -346,8 +346,7 @@ func label(u UnitRef) string {
 	return name
 }
 
-// staleWhyText は効いていない除外の理由。"hash": 釘の指す単位は今もあるが本体が変わって組にならない (除外を外してよい)。
-// "missing": 釘の指す単位が無い (削除・改名・起点の外。除外を直すか消す)。
+// staleWhyText は効いていない除外の理由 (値の意味は exclude.Set.StaleWhy)。
 func staleWhyText(why []string, i int) string {
 	if i >= len(why) {
 		return ""
@@ -357,6 +356,10 @@ func staleWhyText(why []string, i int) string {
 		return "同じ鍵 (ファイル・型・署名) の単位は今も在る。効かない原因は特定していない (本体が変わった・組の顔ぶれが変わった・同じ除外が二重に書かれている等)。この除外がまだ要るか見直す"
 	case "missing":
 		return "指す単位が無い (削除・改名・起点の外): 除外を直すか消す"
+	case "duplicate":
+		return "同じ釘の除外が別にあって、そちらが効いている: 重複を消す"
+	case "ungrouped":
+		return "釘の指す単位は釘の本体のまま今も在る (本体は変わっていない)。効かないのは組の側の理由で、どれかは区別しない: 組に入らない (節が下限未満・本体が他と一致しない) / 別の除外が先に組を消した / gate の base の制約。sweep の節 2・3 は組にならない単位の許可も読むので、そのために置いたのなら残してよい"
 	}
 	return ""
 }

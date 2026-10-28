@@ -2,6 +2,7 @@ package exclude
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -221,10 +222,14 @@ func pinKey(pin string) string {
 	return pin
 }
 
-// StaleWhy は、効いていない除外が効かない理由を 2 つに分ける。
-//   - "hash": 釘が指す単位と**同じ鍵** (ファイル・型・署名) の単位が全部今もある。効かない原因は特定しない: 本体が変わった・組の顔ぶれが変わった・
-//     同じ除外が二重に書かれている等がありうる。鍵だけでは、削除したクロージャと、残った外側の関数も区別できない (Pin はクロージャの序数を削る)
+// StaleWhy は、効いていない除外が効かない理由を分ける。
 //   - "missing": 釘が指す単位のどれかが無い (削除・改名・起点の外)。1 つでも無ければこちら (除外を直すか消す)
+//   - "duplicate": 同じ釘の除外が別にあって、そちらが効いている (重複を消す)
+//   - "ungrouped": 単位の除外で、釘の単位が釘の本体のまま在る。本体は変わっていないので、効かないのは組の側の理由
+//     (組に入らない: 節が下限未満・本体が他と一致しない / 別の除外が先に組を消した / gate の base の制約)。どれかは区別しない。
+//     sweep の節 2・3 は組にならない単位の許可も読むので、「外してよい」とは言わない
+//   - "hash": それ以外。同じ鍵 (ファイル・型・署名) の単位は全部ある。本体が変わった・組の顔ぶれが変わった等で、原因は特定しない。
+//     鍵だけでは、削除したクロージャと、残った外側の関数も区別できない (Pin はクロージャの序数を削る)
 //   - "": 単位を指さない除外 (glob・プリセット) か、釘が無い
 func (s *Set) StaleWhy(r Rule) string {
 	pins := r.pins()
@@ -236,7 +241,20 @@ func (s *Set) StaleWhy(r Rule) string {
 			return "missing"
 		}
 	}
+	for i, o := range s.rules {
+		if s.used[i] && o.Unit == r.Unit && o.Level == r.Level && samePins(o.Group, r.Group) {
+			return "duplicate"
+		}
+	}
+	if r.Unit != "" && s.pinCount[r.Unit] > 0 {
+		return "ungrouped"
+	}
 	return "hash"
+}
+
+// samePins は組の釘を並びによらず比べる (組の除外は釘を集合として当てる)。
+func samePins(a, b []string) bool {
+	return slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b)))
 }
 
 // Ambiguous は、釘が 2 つ以上の単位に当たるので効かせなかった除外。

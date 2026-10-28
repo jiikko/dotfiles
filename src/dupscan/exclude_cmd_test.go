@@ -504,7 +504,7 @@ func TestStaleExclusionSaysWhyItStoppedWorking(t *testing.T) {
 	}
 }
 
-// 同じ除外を二重に書くと、後ろの除外は効かない。本体も顔ぶれも変わっていないので、原因を「本体が変わった」と断定しない。
+// 同じ除外を二重に書くと、後ろの除外は効かない。本体も顔ぶれも変わっていないので「本体が変わった」とは言わず、重複だと名指しする。
 func TestStaleExclusionDoesNotBlameTheBodyWhenTheRuleIsDuplicated(t *testing.T) {
 	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
 	rule := groupRule(t, root)
@@ -513,10 +513,90 @@ func TestStaleExclusionDoesNotBlameTheBodyWhenTheRuleIsDuplicated(t *testing.T) 
 	if !strings.Contains(out, "効いていない除外 1") {
 		t.Fatalf("前提: 二重の除外の片方が効いていないと出る: %q", out)
 	}
-	if !strings.Contains(out, "効かない原因は特定していない") || !strings.Contains(out, "二重に書かれている") {
-		t.Errorf("原因を断定している / 二重の可能性に触れない: %q", out)
+	if !strings.Contains(out, "理由: 同じ釘の除外が別にあって、そちらが効いている") {
+		t.Errorf("二重の除外を重複だと名指ししない: %q", out)
 	}
-	if strings.Contains(out, "組が消えている") || strings.Contains(out, "外してよい") {
-		t.Errorf("原因を決めつける言い方が残っている: %q", out)
+	if strings.Contains(out, "単位は今も在る") || strings.Contains(out, "組が消えている") || strings.Contains(out, "外してよい") {
+		t.Errorf("本体の変化や削除を決めつける言い方が残っている: %q", out)
+	}
+}
+
+// 別々の組の除外のうち片方だけが効いているとき、本体が変わって効かなくなったもう片方を「重複」と言わない。
+// 釘を並べ替えただけの同じ組の除外は重複と名指しする (組の除外は釘を集合として当てる)。
+func TestStaleGroupExclusionIsDuplicateOnlyForTheSameGroup(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+	rule := groupRule(t, root)
+	members := rule["group"].([]any)
+	// 同じ鍵で本体のハッシュだけ違う釘: 組の除外として当たらず、重複でもない
+	rehash := func(p any) string { s := p.(string); return s[:strings.LastIndex(s, "@")+1] + "000000000000" }
+	changed := map[string]any{"group": []any{rehash(members[0]), rehash(members[1])}, "level": rule["level"], "kind": "intentional", "reason": "r"}
+	writeConfig(t, root, rule, changed)
+	_, out, _ := runReport(t, "-v", root)
+	if !strings.Contains(out, "効いていない除外 1") {
+		t.Fatalf("前提: 本体の違う組の除外だけが効いていないと出る: %q", out)
+	}
+	if strings.Contains(out, "重複を消す") || !strings.Contains(out, "理由: 同じ鍵 (ファイル・型・署名) の単位は今も在る") {
+		t.Errorf("釘の違う別の組の除外を重複と名指しした / 従来の理由でない: %q", out)
+	}
+	reversed := map[string]any{"group": []any{members[1], members[0]}, "level": rule["level"], "kind": "intentional", "reason": "r"}
+	writeConfig(t, root, rule, reversed)
+	_, out, _ = runReport(t, "-v", root)
+	if !strings.Contains(out, "理由: 同じ釘の除外が別にあって、そちらが効いている") {
+		t.Errorf("釘を並べ替えただけの同じ組の除外を重複と名指ししない: %q", out)
+	}
+}
+
+// 段だけ違う同じ釘の除外は重複ではない: L2 の組の除外が効いていて、L1 の組がまだ無いので L1 の除外が効かないとき、
+// L1 の除外に「重複を消す」と出すと、後で L1 の組ができたときに要る除外を消させる。
+func TestStaleGroupExclusionAtAnotherLevelIsNotDuplicate(t *testing.T) {
+	// B は A とリテラルだけが違う写し: L1 では組にならず、L2 で組になる
+	helperB2 := strings.Replace(strings.Replace(helperA, "struct A", "struct B", 1), `"conn"`, `"other"`, 1)
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB2})
+	rule := groupRule(t, root)
+	if rule["level"] != "L2" {
+		t.Fatalf("前提: L2 の組の除外になる: %v", rule)
+	}
+	atL1 := map[string]any{"group": rule["group"], "level": "L1", "kind": "intentional", "reason": "r"}
+	writeConfig(t, root, rule, atL1)
+	_, out, _ := runReport(t, "-v", root)
+	if !strings.Contains(out, "効いていない除外 1") {
+		t.Fatalf("前提: L1 の除外だけが効いていないと出る: %q", out)
+	}
+	if strings.Contains(out, "重複を消す") {
+		t.Errorf("段の違う除外を重複と名指しした: %q", out)
+	}
+}
+
+// 組にならない単位 (下限未満・他と本体が一致しない) の許可は、組の除外としては何も消さない。
+// sweep の節 2・3 は組にならない単位の許可も読むので、「本体が変わった」「外してよい」とは言わず、残してよい場合を示す。
+func TestStaleAllowOnUngroupedUnitKeepsItsBody(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": allowed(helperA, "intentional 組にならない形の許可")})
+	_, out, _ := runReport(t, "-v", root)
+	if !strings.Contains(out, "効いていない除外 1") {
+		t.Fatalf("前提: 組の無い単位の許可が効いていないと出る: %q", out)
+	}
+	if !strings.Contains(out, "理由: 釘の指す単位は釘の本体のまま今も在る (本体は変わっていない)") {
+		t.Errorf("本体のまま組に入っていないだけだと出ない: %q", out)
+	}
+	if strings.Contains(out, "効かない原因は特定していない") || strings.Contains(out, "外してよい") || strings.Contains(out, "重複を消す") {
+		t.Errorf("別の理由の文が出ている: %q", out)
+	}
+	// 設定に書いた単位の除外は釘が固定される。本体を書き換えると、同じ鍵の単位は在るが本体が違うので、従来の理由に戻る
+	var stale map[string]any
+	for _, line := range strings.Split(out, "\n") {
+		if rest, ok := strings.CutPrefix(line, "効いていない除外: "); ok {
+			if err := json.Unmarshal([]byte(rest), &stale); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if stale["unit"] == nil {
+		t.Fatalf("前提: 効いていない除外の行から釘を取れない: %q", out)
+	}
+	root = repoWith(t, map[string]string{"Sources/A.swift": strings.Replace(helperA, `"conn"`, `"another"`, 1)})
+	writeConfig(t, root, map[string]any{"unit": stale["unit"], "kind": "intentional", "reason": "r"})
+	_, out, _ = runReport(t, "-v", root)
+	if !strings.Contains(out, "理由: 同じ鍵 (ファイル・型・署名) の単位は今も在る") || strings.Contains(out, "釘の本体のまま") {
+		t.Errorf("釘と本体が違うのに「釘の本体のまま」と出る / 従来の理由に戻らない: %q", out)
 	}
 }
