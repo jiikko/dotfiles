@@ -8,7 +8,7 @@
 
 ## 現在の状態（2026-10-28）
 
-子issue16件中12件完了、4件open。今回895・918・926・930・933の限定実装を完了し、925・927・928・934は現行版の固定課題評価と残作業を更新した。条件付きの旧詳細設計は一括実装しない。
+子issue20件中12件完了、7件open、1件pending（941〜944は2026-10-28追加、下節）。今回895・918・926・930・933の限定実装を完了し、925・927・928・934は現行版の固定課題評価と残作業を更新した。条件付きの旧詳細設計は一括実装しない。
 
 | open | 現状と次の確認 |
 |---|---|
@@ -16,6 +16,17 @@
 | [927](927-feat-dupscan-agent-context.md) | context/summary/節選択は実装済み。3問い合わせを1回に集約できるが、同名appendの461件で目的が埋もれる。型名探索への回復を評価する |
 | [928](928-feat-dupscan-agent-onboarding.md) | 能力案内/doctor/guideは実装済み。Codex実編集1対は両群とも既存ルールを再利用し、検索機能を使った効率差は未実証。外部への追加ソース送信は承認待ち |
 | [934](934-feat-dupscan-source-evidence-search.md) | evidenceはdoc後半/source正例へ到達するが、否定コメントからの誤誘導も残る。実際の候補確認を評価する |
+
+## 使われやすさと context 消費（2026-10-28 追加）
+
+「定義を探すときは grep でなく dupscan を使わせる」入口（案内 hook）の取りこぼしと、「dupscan は grep より context を食わない」前提が狭い検索では成り立たない点を、dotfiles の `src` で実測して起票した（名前3つ・repo 1つの測定で、一般の効果とは扱わない）。広い名前では桁違いに軽い（`Join`: rg 446,145 B / index 2,900 B）一方、定義1件の検索は rg 340 B / index 738 B。
+
+| issue | 内容 |
+|---|---|
+| [941](941-ux-dupscan-nudge-definition-search-gaps.md) | hook が Go の定義検索の典型形（`func.*Name`・receiver付き・名前のalternation）で無音。言語の手掛かりがない検索でGoの名前にSwift用 `def` を勧める |
+| [942](942-perf-dupscan-fixed-notice-overhead.md) | 毎回出る注意書き（root 実行で index 471 B / callers 427 B）が狭い検索の過半。0件・空の全文は保つ。hit 側の通知を弱めるなら926の24ケースを改定する |
+| [943](943-perf-dupscan-result-row-shape.md) | 結果行は rg の1.6倍（173 B 対 111 B）で、docが44〜48%。index/callers の行に終端行が無く Read の範囲を決められない（search は範囲つき read_argv を既に出す） |
+| [944](pending/944-feat-dupscan-go-def.md)（保留） | Go の `def`。943の後も全体 Read が多いときに再開 |
 
 ## 完了した子issue
 
