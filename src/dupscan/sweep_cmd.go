@@ -34,6 +34,8 @@ type sweepSimilar struct {
 type sweepCluster struct {
 	verb, dir string
 	names     []string
+	// seq は連番の名前の束 (verb は数字を除いた名前、names は実際の名前)。
+	seq bool
 	// method は同名のメソッドの束 (verb は名前そのもの、names は受け口の型)。
 	method bool
 }
@@ -150,11 +152,21 @@ func sweepGroups(w *lineWriter, groups []group.Group, limit int) {
 			w.printf("… 他 %d 組 (-limit 0 で全部)\n", len(groups)-limit)
 			break
 		}
-		w.printf("[%s] %s ×%d 節 %d\n", g.Level, g.Partition, len(g.Members), g.Members[0].Result.Nodes)
+		w.printf("[%s] %s ×%d 節 %d\n", g.Level, partitionLabel(g), len(g.Members), g.Members[0].Result.Nodes)
 		for _, m := range g.Members {
 			w.printf("  %s:%d %s\n", m.Unit.File, m.Unit.Line, unitLabel(m.Unit))
 		}
 	}
+}
+
+// partitionLabel は組の種別。メンバーが全部 testdata の下 (go tool が無視する fixture) なら、prod/test でなく testdata と出す。
+func partitionLabel(g group.Group) string {
+	for _, m := range g.Members {
+		if m.Unit.File != "testdata" && !strings.HasPrefix(m.Unit.File, "testdata/") && !strings.Contains(m.Unit.File, "/testdata/") {
+			return g.Partition
+		}
+	}
+	return "testdata"
 }
 
 func sweepWeight(g group.Group) int { return g.Members[0].Result.Nodes * (len(g.Members) - 1) }
@@ -256,7 +268,7 @@ func sweepClusters(entries []*group.Entry, opt group.Options) []sweepCluster {
 		k := key{verb, path.Dir(u.File)}
 		by[k] = append(by[k], u.Name)
 	}
-	out := sweepMethodClusters(entries, opt)
+	out := append(sweepMethodClusters(entries, opt), sweepSeqClusters(entries)...)
 	for k, names := range by {
 		if len(names) >= sweepClusterMin {
 			sort.Strings(names)
@@ -315,6 +327,40 @@ func sweepMethodClusters(entries []*group.Entry, opt group.Options) []sweepClust
 	return out
 }
 
+// sweepSeqClusters は、末尾の数字だけが違う名前 (`contains` / `contains2`) の組。数字を足して名前を避けた写しの手がかり。
+func sweepSeqClusters(entries []*group.Entry) []sweepCluster {
+	type key struct{ base, dir string }
+	by := map[key]map[string]bool{}
+	for _, e := range entries {
+		u := e.Unit
+		if u.Unreadable || u.Test || u.Kind != tree.KindFunc {
+			continue
+		}
+		base := strings.TrimRight(u.Name, "0123456789")
+		if len([]rune(base)) < 4 {
+			continue
+		}
+		k := key{base, path.Dir(u.File)}
+		if by[k] == nil {
+			by[k] = map[string]bool{}
+		}
+		by[k][u.Name] = true
+	}
+	var out []sweepCluster
+	for k, set := range by {
+		if len(set) < 2 {
+			continue
+		}
+		names := make([]string, 0, len(set))
+		for n := range set {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		out = append(out, sweepCluster{verb: k.base, dir: k.dir, names: names, seq: true})
+	}
+	return out
+}
+
 // leadingWord は camelCase / snake_case の名前の先頭の語 (小文字)。`readFile` → `read`。語が 1 つだけの名前は束にしない (空)。
 func leadingWord(name string) string {
 	rs := []rune(name)
@@ -335,6 +381,10 @@ func sweepClusterText(w *lineWriter, cs []sweepCluster, limit int) {
 		if limit > 0 && i == limit {
 			w.printf("… 他 %d 束 (-limit 0 で全部)\n", len(cs)-limit)
 			break
+		}
+		if c.seq {
+			w.printf("%s/ 連番の名前 %s: %s\n", c.dir, c.verb, strings.Join(c.names, ", "))
+			continue
 		}
 		if c.method {
 			w.printf("%s/ %s (同名のメソッド) 受け口 ×%d: %s\n", c.dir, c.verb, len(c.names), strings.Join(c.names, ", "))

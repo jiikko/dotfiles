@@ -219,3 +219,23 @@ func TestSweepNameClustersSkipPredicateVerbs(t *testing.T) {
 		t.Errorf("述語 (is*) は束にしない: %q", s)
 	}
 }
+
+// 末尾の数字だけが違う名前は、名前を避けた写しの手がかりとして出す。
+func TestSweepSequentialNames(t *testing.T) {
+	root := repoWith(t, map[string]string{"a/a.go": "package a\n\nfunc contains(xs []int, n int) bool { return len(xs) > n }\n\nfunc contains2(xs []int, n int) bool { return len(xs) > n }\n\nfunc other1() {}\n\nfunc foo() {}\n\nfunc foo2() {}\n"})
+	_, out, _ := sweep(t, root)
+	s := sweepSection(t, out, 4)
+	if !strings.Contains(s, "a/ 連番の名前 contains: contains, contains2") || strings.Contains(s, "other") || strings.Contains(s, "foo") {
+		t.Errorf("連番の名前の束: %q", s)
+	}
+}
+
+// testdata の下だけでできる組は、go tool が無視する fixture なので prod/test でなく testdata と出す。
+func TestSweepLabelsTestdataGroups(t *testing.T) {
+	fn := func(pkg string) string { return strings.Replace(midFunctions, "package a", "package "+pkg, 1) }
+	root := repoWith(t, map[string]string{"x/testdata/a/a.go": fn("a"), "x/testdata/b/b.go": fn("b")})
+	_, out, _ := sweep(t, "-min-nodes", "12", root)
+	if s := sweepSection(t, out, 1); !strings.Contains(s, "testdata ×") || strings.Contains(s, "prod ×") {
+		t.Errorf("testdata の組の種別: %q", s)
+	}
+}

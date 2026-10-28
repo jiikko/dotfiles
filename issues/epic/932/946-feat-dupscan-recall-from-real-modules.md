@@ -57,7 +57,7 @@ for u, (score, f, line) in sorted(rows, key=lambda r: -float(r[1][0])):
 - [x] 提案 2 (一括の入口): `dupscan sweep` を実装 (report / 下限 12 + L1m / 部分木の総当たり / 名前の束の 4 節)。
 - [x] 提案 3 (名前の束): `sweep` の 4 節として実装。
 - [x] 提案 4 (打ち切りの見逃し): callers / index が打ち切ったら stderr にも 1 行出す (`| grep` で先頭の案内が削れても残る)。
-- [ ] 実運用での採否: f5 の所見 (連番の名前・testdata の fixture・満点の組の数) を反映するか決める。
+- [x] 実運用での採否: f5 の所見のうち、連番の名前・testdata の印 (sweep)・小さい単位の組の数 (report)・同名メソッドの束・述語の除外を実装。build tag の表示・allow の理由一覧・`near -similar` の順位は見合いが低く見送り (理由は下の各項)。
 
 ## 提案 1 の評価と実装 (2026-10-28)
 
@@ -102,11 +102,11 @@ L1 に加えて**メンバー名** (`a.b` の `b`、`RoleMember`) を記号に�
 
 ### 実測から出たフィードバック (未実装。採否は後で決める)
 
-1. 連番の名前 (`contains` / `contains2`) を、末尾の数字を除いた名前の一致として拾う。
-2. `testdata/` の fixture が、subproc の report の唯一の出力になる。既定で外すか「testdata」と印を付ける。
-3. report 末尾の「小さい単位が N 個ある」に、**近い完全一致 (near 1.0) の数**を添える (`contains` はそこに隠れていた)。
-4. 完全一致の組に **build tag / `GOOS` の違い**を出す (`fastDispWidth` / `archKernel` は tag が違うスタブで、別プラットフォームの写しと一目で分かる)。
-5. `dupscan:allow` の理由つきの一覧を出す口 (次の人が組を読み直さずに済む)。tuikit の `sweep` 節 2 は 3 組中 3 組が「別物と書いてある」雑音だった。
+1. (実装済み) 連番の名前 (`contains` / `contains2`) を、末尾の数字を除いた名前の一致として `sweep` 節 4 に出す。
+2. (`sweep` で実装済み。`report` は未変更) `testdata/` の fixture が、subproc の report の唯一の出力になる。`sweep` はメンバーが全部 testdata の下の組を `testdata` と印を付けて出す。`report` の既定の対象から外す案は、report の意味が変わるので採らない。
+3. (実装済み) report 末尾の「小さい単位が N 個ある」に、**同じ形の組が下限 12 節で N 組見える**ことを添える (`contains` はそこに隠れていた。near 1.0 のうち本体が同じ形のものだけで、1 文違う近い写しは数えない)。
+4. (未実装: 単位が build tag を持たず、ファイルの先頭行を読む実装が要る。見合いが低い) 完全一致の組に **build tag / `GOOS` の違い**を出す (`fastDispWidth` / `archKernel` は tag が違うスタブで、別プラットフォームの写しと一目で分かる)。
+5. (未実装: 必要が出たら) `dupscan:allow` の理由つきの一覧を出す口 (次の人が組を読み直さずに済む)。tuikit の `sweep` 節 2 は 3 組中 3 組が「別物と書いてある」雑音だった。
 6. (実装済み) `sweep` 節 4 (名前の束) は `is*` のような述語の束が雑音 (`markdown/ is* ×4` は入力の型が全部違う)。述語系の動詞 (`is`/`has`/`should`/`can`) を束から除くか、束のメンバーの引数の型が同じものだけに絞る。
 7. `near -similar` は 517 単位 (treefiler) と 320 単位 (tuikit) で、満点か 0.4 台しか出ず、0.5 以上は 1 件ずつだった。実用の発見手段は report の方で、`sweep` 節 3 は 2 module とも「なし」。節 3 の効用は未確定 (Swift で回して判断する)。
 

@@ -47,3 +47,46 @@ func TestReportOmitsTheNoteWhenEverythingWasCompared(t *testing.T) {
 		t.Errorf("比べなかった単位が無ければ注記を出さない (1 行を短く保つ): %q", out)
 	}
 }
+
+// 比べなかった小さい単位だけでできる同じ形の組の数も添える (contains / contains2 のような完全一致が、小さい単位の数に埋もれない)。
+const midFunctions = `package a
+
+func firstMid(xs []int, n int) bool {
+	for _, x := range xs {
+		if x == n {
+			return true
+		}
+	}
+	return false
+}
+
+func secondMid(ys []int, m int) bool {
+	for _, y := range ys {
+		if y == m {
+			return true
+		}
+	}
+	return false
+}
+`
+
+func TestReportCountsGroupsAmongSmallUnits(t *testing.T) {
+	root := repoWith(t, map[string]string{"a.go": midFunctions})
+	_, out, _ := runReport(t, root)
+	if !strings.Contains(out, "うち同じ形の組が 1 組ある (-min-nodes 12 で見える)") {
+		t.Fatalf("小さい単位だけの組の数を添える: %q", out)
+	}
+	_, out, _ = runReport(t, "-format", "json", root)
+	var s struct {
+		Groups        int `json:"below_min_groups"`
+		BelowMinFloor int `json:"below_min_floor"`
+	}
+	if err := json.Unmarshal([]byte(out), &s); err != nil || s.Groups != 1 || s.BelowMinFloor != 12 {
+		t.Errorf("json: %+v err=%v", s, err)
+	}
+	// 小さすぎて下限 12 にも満たない単位の組は数えない (雑音)
+	root = repoWith(t, map[string]string{"a.go": smallFunctions})
+	if _, out, _ := runReport(t, root); strings.Contains(out, "うち同じ形") {
+		t.Errorf("12 節未満の組は数えない: %q", out)
+	}
+}

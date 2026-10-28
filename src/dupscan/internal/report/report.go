@@ -21,10 +21,13 @@ type Summary struct {
 	Units           int      `json:"units"`
 	FilesWithErrors []string `json:"files_with_errors"`
 	// BelowMinNodes は節が下限 (MinNodes) に満たず、比べなかった単位の数。0 件の「重複なし」は、これらを比べていない。
-	BelowMinNodes int         `json:"below_min_nodes"`
-	MinNodes      int         `json:"min_nodes"`
-	Unreadable    []UnitRef   `json:"unreadable_units"`
-	Groups        []GroupJSON `json:"groups"`
+	BelowMinNodes int `json:"below_min_nodes"`
+	MinNodes      int `json:"min_nodes"`
+	// BelowMinGroups は、比べなかった小さい単位だけでできる同じ形の組の数 (BelowMinFloor 節まで下げたとき)。
+	BelowMinGroups int         `json:"below_min_groups"`
+	BelowMinFloor  int         `json:"below_min_floor"`
+	Unreadable     []UnitRef   `json:"unreadable_units"`
+	Groups         []GroupJSON `json:"groups"`
 	// FilePairs は組をメンバーのファイルの組み合わせでまとめた件数 (節の合計の大きい順)。同じ画面・同じ型の写しが細切れの組で並ぶのを、1 行で見せる。
 	FilePairs []FilePair `json:"file_pairs"`
 	Exclusions
@@ -281,7 +284,11 @@ func belowMinNote(s Summary) string {
 	if s.BelowMinNodes == 0 {
 		return ""
 	}
-	return fmt.Sprintf("・小さい単位 %d 個は比べていない (節が %d 未満。-min-nodes で下げる)", s.BelowMinNodes, s.MinNodes)
+	note := fmt.Sprintf("・小さい単位 %d 個は比べていない (節が %d 未満。-min-nodes で下げる)", s.BelowMinNodes, s.MinNodes)
+	if s.BelowMinGroups > 0 {
+		note += fmt.Sprintf("・うち同じ形の組が %d 組ある (-min-nodes %d で見える)", s.BelowMinGroups, s.BelowMinFloor)
+	}
+	return note
 }
 
 // Xcode は `ファイル:行:列: warning: …` の形式で書く (swiftlint と並べて回し、Xcode の警告として出すため)。

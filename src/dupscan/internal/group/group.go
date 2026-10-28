@@ -200,6 +200,23 @@ func CountBelowMin(entries []*Entry, opt Options) int {
 	return n
 }
 
+// CountBelowMinGroups は、下限に満たない単位だけでできる組 (下限を floor まで下げたときにだけ見える写し) の数。
+// 「重複なし」の注記に添える手がかり (除外の設定は見ない数。見るのは -min-nodes を下げて回し直したとき)。
+func CountBelowMinGroups(entries []*Entry, opt Options, floor int) int {
+	low := Options{MinNodes: floor, MinClosureNodes: floor, Levels: opt.Levels}
+	n := 0
+	for _, g := range Build(entries, low) {
+		only := true
+		for _, m := range g.Members {
+			only = only && m.Result.Nodes < MinNodes(m, opt)
+		}
+		if only {
+			n++
+		}
+	}
+	return n
+}
+
 // MinNodes は単位の種類に応じた下限 (gate も同じ下限で数える)。
 func MinNodes(e *Entry, opt Options) int {
 	if e.Unit.Kind == tree.KindClosure && opt.MinClosureNodes > 0 {
