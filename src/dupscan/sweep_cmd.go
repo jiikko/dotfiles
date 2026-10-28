@@ -290,8 +290,8 @@ var predicateVerbs = map[string]bool{"is": true, "has": true, "should": true, "c
 // 同名のメソッドの束にしない名前 (標準の interface を満たすための名前は、型ごとに並ぶのが普通)。
 var commonMethodNames = map[string]bool{"string": true, "error": true, "close": true, "len": true, "less": true, "swap": true, "write": true, "read": true, "unwrap": true, "init": true}
 
-// sweepMethodClusters は、同じ dir (package) に、同じ名前で受け口の型が 2 種類以上の小さいメソッドが 3 個以上ある束。
-// 節の数が 2 倍以内に収まるものだけ (名前が同じでも大きさが桁違いなら別の仕事)。名前の先頭の語で束ねる側では見えない `take` / `busy` のような同名を拾う。
+// sweepMethodClusters は、同じ dir (package) に、同じ名前で受け口の型が 2 種類以上の、節が下限の 3 倍未満のメソッドが 3 個以上ある束。
+// 節の数が 3 倍以内に収まるものだけ (名前が同じでも大きさが桁違いなら別の仕事)。名前の先頭の語で束ねる側では見えない `take` / `busy` のような同名を拾う。
 func sweepMethodClusters(entries []*group.Entry, opt group.Options) []sweepCluster {
 	type key struct{ name, dir string }
 	type member struct {
@@ -301,7 +301,7 @@ func sweepMethodClusters(entries []*group.Entry, opt group.Options) []sweepClust
 	by := map[key][]member{}
 	for _, e := range entries {
 		u := e.Unit
-		if u.Unreadable || u.Test || u.Kind != tree.KindFunc || u.Enclosing == "" || e.Result.Nodes >= group.MinNodes(e, opt) || commonMethodNames[strings.ToLower(u.Name)] || len([]rune(u.Name)) < 4 {
+		if u.Unreadable || u.Test || u.Kind != tree.KindFunc || u.Enclosing == "" || e.Result.Nodes >= 3*group.MinNodes(e, opt) || commonMethodNames[strings.ToLower(u.Name)] || len([]rune(u.Name)) < 4 {
 			continue
 		}
 		k := key{u.Name, path.Dir(u.File)}
@@ -314,7 +314,7 @@ func sweepMethodClusters(entries []*group.Entry, opt group.Options) []sweepClust
 			lo, hi = min(lo, m.nodes), max(hi, m.nodes)
 			recvs[m.recv] = true
 		}
-		if len(ms) < 3 || len(recvs) < 2 || hi > 2*lo {
+		if len(ms) < 3 || len(recvs) < 2 || hi > 3*lo {
 			continue
 		}
 		names := make([]string, 0, len(recvs))

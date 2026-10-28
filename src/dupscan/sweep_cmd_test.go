@@ -208,7 +208,7 @@ func TestSweepSameNameMethodsNeedSimilarSize(t *testing.T) {
 	root := repoWith(t, map[string]string{"a/a.go": methodFile("take", "alpha", "beta"), "a/big.go": big})
 	_, out, _ := sweep(t, "-min-nodes", "60", root)
 	if s := sweepSection(t, out, 4); strings.Contains(s, "take (同名") {
-		t.Errorf("節の数が 2 倍を超えて違う同名は別の仕事として束にしない: %q", s)
+		t.Errorf("節の数が 3 倍を超えて違う同名は別の仕事として束にしない: %q", s)
 	}
 }
 
