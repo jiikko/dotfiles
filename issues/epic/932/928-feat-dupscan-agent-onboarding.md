@@ -1,7 +1,5 @@
 # 928 (feat): dupscan のClaude/Codex共通の導入案内・能力診断を用意する
 
-> 🚨 **担当中: air5 (glogx)**（2026-10-28〜）
-
 起票日: 2026-10-26
 
 ## 現在の判断（2026-10-28）
@@ -362,11 +360,11 @@ CLI集計usageは対照 input/cached/output = 446102/366208/4185、併用 = 5117
 | tool call / 観測tool-result bytes（拒否を含む） | 8 / 8686 | 8 / 12764 |
 | guide / search | 0 / 0 | 1 / 1 |
 | 実装のConfigDir委譲 / XDG-home規則の追加写し | 1 / 0 | 1 / 0 |
-| 独立grader: race・6条件・作成/移行副作用 | rc0 | rc0 |
+| 独立grader: race・6条件・新規作成なし | rc0 | rc0 |
 | provider duration_ms | 24027 | 21219 |
 | subprocess wall秒 / rc | 欠測 / 欠測 | 21.728 / 0 |
 
-併用はguide1220bytes、search2329bytesに加え、小module source/testを全読した。対照もsourceと一部testを読んだ。中立A/Bのpatch/回答を、群対応表・toolログを見る前にread-only subagentが採点し、本体でも実diff・grader出力を照合した。両方とも同じ9行のConfigDir委譲で、moduleにない暗号helperを他repoまで不存在と断定しなかった。graderは両patchを保存した後の別copyへ同一の事前固定test（SHA256 `6fb582a008ea5a8824212f569fefd9868e6afb7ed18109170786cdad76f3e177`）を追加して実行し、absolute/relative/unset XDG×HOME有無の6条件と副作用を検査した。製品sourceへ生成patchは取り込まない。
+併用はguide1220bytes、search2329bytesに加え、小module source/testを全読した。対照もsourceと一部testを読んだ。中立A/Bのpatch/回答を、群対応表・toolログを見る前にread-only subagentが採点し、本体でも実diff・grader出力を照合した。両方とも同じ9行のConfigDir委譲で、moduleにない暗号helperを他repoまで不存在と断定しなかった。graderは両patchを保存した後の別copyへ同一の事前固定test（SHA256 `6fb582a008ea5a8824212f569fefd9868e6afb7ed18109170786cdad76f3e177`）を追加して実行し、absolute/relative/unset XDG×HOME有無の6条件と新規作成なしを検査した。移行元ファイルを置いた試験ではなく、移行しない判断はConfigDir委譲の実source確認による。製品sourceへ生成patchは取り込まない。
 
 説明は両群とも完全には正しくない。『ConfigFileは移行するので今回使えない』と述べたが、実sourceではlegacyが空なら移行せず、`ConfigFile(app,"theme.json","")`も有効な正解である。併用の新コメントにも同じ過大一般化がある。対照にはgo.modをGoファイルとして数えた誤り、併用には空のdirectoryを環境変数HOMEが空のように述べた曖昧さもあった。実装/再利用の合格を回答全体の無誤りとはしない。
 
@@ -383,3 +381,7 @@ provider usageは対照 input/cache_creation/cache_read/output = 12/8618/49435/2
 改善の再評価: 実装を増やす前に、案内から検索が使われない3例、検索を使っても全読・同じ説明誤りが残った1例、対照の天井効果、計測欠測を具体化できた。これは導入方針と評価記録の改善であり、製品コードや一般効率の改善の実証ではない。source自動送信・新設定・恒久的な評価機構の複雑さは追加していない。
 
 - 2026-10-28: `docs(dupscan): distinguish observed agent adoption from efficiency claims`で承認後のSwift6run/Claude2runと失敗・欠測・説明誤りを記録。計画とSwift回答はread-only反証レビュー済み、Goも中立patch/回答を独立採点した。残る受入条件は未完了のまま保持する。
+
+- 最新master f3400495へrebaseし、sweep/L1m/打切りstderr通知など別セッションの実装を保持した。今回のA/Bは固定5c89f75bを評価した結果で、新版の効果とは扱わない。948へ限定結果と承認状態を同期。最終追記の追加subagentレビューは一度capacity制限で失敗したが、その後928/932/948の最終差分で実施し、追加P1/P2なし。事前計画・Swift本文と数値・Go中立生成物/ログも独立反証し、指摘を反映した。
+
+- 最新master取込み後の`go test -race ./...`はdupscan全packageで成功。Bash 5でのissue標準テストも成功し、epicは22子=15done/6open/1pendingと実ファイルから再計数した。最新wrapperでのgateは変わった単位0、rc0。既存の意図的不正fixture（src/subproc/boundarycheck/testdata/broken/broken.go）はbase/head各1件でpartialを通知し、完全解析成功とは扱わない。今回の変更は評価記録と状態同期のみ。

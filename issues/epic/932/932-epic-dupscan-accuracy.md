@@ -10,7 +10,7 @@
 
 | open | 残作業 |
 |---|---|
-| [928](928-feat-dupscan-agent-onboarding.md) | sourceを読む実agentの比較は明示許可待ち。ローカルwrapper/guide/config/非repoは追加確認済みだが、cold compiler cacheや全SDK/環境matrix、検索の実利用による再利用/重複追加/実contextの因果効果は未検証 |
+| [928](928-feat-dupscan-agent-onboarding.md) | 明示承認済みの固定pilotを実施（Claude Go編集2run・Codex Swift読取6run）。両群の実装/回答は必須条件を満たしたが、Swift併用はguideのみ、Go併用は検索しても説明誤りと出力量増が残った。一般効果・本番12課題・環境matrixは未検証 |
 
 ## 使われやすさと context 消費（2026-10-28 追加）
 
@@ -55,3 +55,5 @@
 別セッションの941〜944・942/943の出力改善を保持してrebaseした。これら追加課題の完了判断や担当目印には介入せず、最新コードで統合検証をやり直す。
 
 最新master取込み後もlint/raceとstrict gateは成功。後から追加された943の927参照をdoneへ張り直し、追加941〜944の内容・claimは保持した。
+
+2026-10-28の承認後pilotは928に記録。固定binary 5c89f75bの結果を、最新masterのsweep/L1m/打切りstderr通知等へ事後差替えしない。別セッション追加の946/948と既存claimは保持し、948の「未承認/探索+Read未測定」を今回の限定観測へ更新した。一般的な効率改善は未実証のまま。
