@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"dupscan/internal/tree"
+	sitter "github.com/tree-sitter/go-tree-sitter"
+
 	"dupscan/internal/lang/langtest"
 	"dupscan/internal/norm"
 )
@@ -118,4 +121,208 @@ func TestEmptyTuplePatternDoesNotSwallowNextFunction(t *testing.T) {
 	}
 	src += "switch x { case (()): break }\nfunc c() -> Int { return 1 }\n"
 	unitBy(t, parse(t, "Sources/main.swift", src), "c() -> Int")
+}
+
+// 各置換で読めることと、手で書いた比較用の形との L1・行位置を固定する。
+func TestMisparse958Repairs(t *testing.T) {
+	for _, tt := range []struct{ name, body, plain string }{
+		{"A_labeled", "g(value: ())", "g(value: [])"},
+		{"A_tuple", "return (value: (), bytes: 0)", "return (value: [], bytes: 0)"},
+		{"A_compare", "#expect(await task.value == ())", "#expect(await task.value == [])"},
+		{"D_if", "if await box.ready { go() }", "if box.ready { go() }"},
+		{"D_switch", "switch await task.value { case .ok: go() }", "switch task.value { case .ok: go() }"},
+		{"D_try", "switch try #require(result) { case .ok: go() }", "switch #require(result) { case .ok: go() }"},
+		{"D_where", "for _ in 0..<100 where await box.ready { go() }", "for _ in 0..<100 where box.ready { go() }"},
+		{"D_binding", "if let gate = await box.gate { go() } else { stop() }", "if let gate = box.gate { go() } else { stop() }"},
+		{"D_assignment", "if await box.ready { throw Stop() }\noutcome = run()", "if box.ready { throw Stop() }\noutcome = run()"},
+		{"C_assignment", "var final = x\nfinal = resolution\nreturn final", "var result = x\nresult = resolution\nreturn result"},
+		{"C_branch", "var final = x\nif let resolution = fetch() {\nfinal = resolution\n} else {\nfinal = flag ? x : y\n}\nreturn final", "var result = x\nif let resolution = fetch() {\nresult = resolution\n} else {\nresult = flag ? x : y\n}\nreturn result"},
+		{"E_closure", "store.acquire { Issue.record(\"x\") ; return client }", "store.acquire { Issue.record(\"x\");  return client }"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			src := "func f() {\n" + tt.body + "\n}\n"
+			r := parse(t, "Sources/X.swift", src)
+			if r.HasError {
+				t.Fatal("読み直しても ERROR")
+			}
+			u := unitBy(t, r, "f()")
+			v := unitBy(t, parse(t, "Sources/Y.swift", "func f() {\n"+tt.plain+"\n}\n"), "f()")
+			// A は [] を構文上の代理にするが字面は元の () のまま。
+			// 手書き [] の L1 と同一とは主張せず、手書きの木を元の座標で歩いた参照と比べる。
+			if strings.HasPrefix(tt.name, "A_") {
+				v = rawUnit958(t, "func f() {\n"+tt.plain+"\n}\n", src)
+			}
+			a, b := langtest.NormBoth(t, u), langtest.NormBoth(t, v)
+			if a.Hash[norm.L1] != b.Hash[norm.L1] {
+				t.Errorf("L1 が違う\n%s\n%s", a.Forms[norm.L1], b.Forms[norm.L1])
+			}
+			if u.Line != 1 || u.EndLine != strings.Count(src, "\n") {
+				t.Errorf("行位置が変化: %d:%d", u.Line, u.EndLine)
+			}
+			if !parse(t, "Sources/X.swift", src+"func broken(\n").HasError {
+				t.Error("別の構文エラーを隠した")
+			}
+		})
+	}
+}
+
+func rawUnit958(t *testing.T, parsed, original string) *tree.Unit {
+	t.Helper()
+	p, err := NewParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	tr := p.p.Parse([]byte(parsed), nil)
+	defer tr.Close()
+	w := &walker{file: "Sources/X.swift", src: []byte(original), closures: map[string]int{}, seen: map[string]int{}, isUnit: map[string]bool{}}
+	w.walk(tr.RootNode(), ctx{})
+	for _, u := range w.units {
+		if u.Signature == "f()" {
+			return u
+		}
+	}
+	t.Fatal("f がない")
+	return nil
+}
+
+func TestMisparse958Exclusions(t *testing.T) {
+	for _, body := range []string{
+		"if try! box.ready { go() }", "if try? box.ready { go() }", "if try! await box.ready { go() }",
+		"if box.await { go() }", "final class C { final func g() {} }",
+		"let s = \"() await try final x ; return 日本語\"", "g(())",
+	} {
+		t.Run(body, func(t *testing.T) {
+			src := "func f() {\n" + body + "\n}\n"
+			baseline := parse(t, "Sources/A.swift", src)
+			repaired := parse(t, "Sources/B.swift", src+"func repair() { g(value: ()) }\n")
+			a, b := langtest.NormBoth(t, unitBy(t, baseline, "f()")), langtest.NormBoth(t, unitBy(t, repaired, "f()"))
+			if a.Hash[norm.L1] != b.Hash[norm.L1] {
+				t.Errorf("対象外の形が変化\n%s\n%s", a.Forms[norm.L1], b.Forms[norm.L1])
+			}
+			if body != "g(())" {
+				raw := langtest.NormBoth(t, rawUnit958(t, src, src))
+				if raw.Hash[norm.L1] != b.Hash[norm.L1] {
+					t.Error("元の木の L1 を変えた")
+				}
+			} else {
+				plain := langtest.NormBoth(t, unitBy(t, parse(t, "Sources/C.swift", "func f() { g() }"), "f()"))
+				if plain.Hash[norm.L1] != b.Hash[norm.L1] {
+					t.Error("既存の g(()) 規則より A を優先した")
+				}
+			}
+		})
+	}
+}
+
+// 座標を変えないことを、木を採るか否かとは独立に各規則で確認する。
+func TestMisparse958BytePositions(t *testing.T) {
+	for _, tt := range []struct {
+		src    string
+		repair func(*sitter.Node, []byte) bool
+	}{
+		{"func f() { g(value: ()) }\n", repairEmptyTuple},
+		{"func f() { if await box.ready { go() } }\n", repairConditionOperators},
+		{"func f() { var final = x\nfinal = y }\n", repairFinalAssignment},
+		{"func f() { run { go() \t; return x } }\n", repairClosureSemicolon},
+	} {
+		p, err := NewParser()
+		if err != nil {
+			t.Fatal(err)
+		}
+		tr := p.p.Parse([]byte(tt.src), nil)
+		fixed := []byte(tt.src)
+		changed := false
+		var visit func(*sitter.Node)
+		visit = func(n *sitter.Node) {
+			if tt.repair(n, fixed) {
+				changed = true
+			}
+			for i := range n.ChildCount() {
+				visit(n.Child(i))
+			}
+		}
+		visit(tr.RootNode())
+		tr.Close()
+		p.Close()
+		if !changed {
+			t.Errorf("発火しない: %s", tt.src)
+		}
+		if len(fixed) != len(tt.src) {
+			t.Fatal("長さが変化")
+		}
+		for i, b := range fixed {
+			if (b == '\n') != (tt.src[i] == '\n') || (b != tt.src[i] && (b >= 128 || tt.src[i] >= 128)) {
+				t.Errorf("座標または ASCII 外を変更: %d", i)
+			}
+		}
+	}
+}
+
+// I5: 元の木で ERROR の無かったトップレベルの子が、新しい木で範囲・kind を変えたり ERROR を含んだりしたら、その木を採らない。
+// obaket (2026-10-29) では、この判定で捨てた置き換えは 0 件だった (規則どうしの相殺への備え。採用の 1 か所で止める)。
+func TestPreservesTopLevelRejectsChangedNeighbor(t *testing.T) {
+	p, err := NewParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	tree := func(s string) *sitter.Tree {
+		tr := p.p.Parse([]byte(s), nil)
+		t.Cleanup(tr.Close)
+		return tr
+	}
+	before := tree("func a() {}\nfunc b() {}\n")
+	if !preservesTopLevel(before.RootNode(), tree("func a() {}\nfunc b() {}\n").RootNode()) {
+		t.Error("同じ木を捨てた")
+	}
+	if preservesTopLevel(before.RootNode(), tree("func a() {}\nfunc b() {\n\n").RootNode()) {
+		t.Error("正常だった b が ERROR になった木を採った")
+	}
+	if preservesTopLevel(before.RootNode(), tree("func a() {}\nlet b = 1  \n").RootNode()) {
+		t.Error("正常だった b の kind が変わった木を採った")
+	}
+}
+
+// D は、文として読めている if / switch / for では、エラーが条件の側にあるときだけ発火する。本体にだけエラー (直す対象の別の書き方) がある文で、
+// 正しく読めている条件の try / await を消さない (直した単位の L1 は、本体の読み違えだけを手で直したコードと同じ)。
+func TestConditionOperatorsOnlyWhenConditionHasError(t *testing.T) {
+	for _, c := range []struct{ name, src, plain string }{
+		{"if_let_try_await", "func f() async throws {\n    if let v = try await load() {\n        g(())\n    }\n}\n", "func f() async throws {\n    if let v = try await load() {\n        g()\n    }\n}\n"},
+		{"if_try_A", "func f() throws {\n    if try check() {\n        g(value: ())\n    }\n}\n", "func f() throws {\n    if try check() {\n        g(value: [])\n    }\n}\n"},
+		{"for_where_try", "func f() throws {\n    for x in xs where try check(x) {\n        g(())\n    }\n}\n", "func f() throws {\n    for x in xs where try check(x) {\n        g()\n    }\n}\n"},
+		{"cond_closure_argument", "func f() throws {\n    if try items.contains(where: { $0 > 1 }) {\n        g(())\n    }\n}\n", "func f() throws {\n    if try items.contains(where: { $0 > 1 }) {\n        g()\n    }\n}\n"},
+		{"cond_interpolation_closure", "func f() throws {\n    if try s == \"\\(xs.map { $0 })\" {\n        g(())\n    }\n}\n", "func f() throws {\n    if try s == \"\\(xs.map { $0 })\" {\n        g()\n    }\n}\n"},
+		{"cond_has_other_misparse", "func f() async throws {\n    if let v = try await send(()) {\n        go()\n    }\n}\n", "func f() async throws {\n    if let v = try await send() {\n        go()\n    }\n}\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := parse(t, "Sources/X.swift", c.src)
+			if r.HasError {
+				t.Fatal("本体の読み違えを直せていない")
+			}
+			want := unitBy(t, parse(t, "Sources/Y.swift", c.plain), "f()")
+			if c.name == "if_try_A" {
+				want = rawUnit958(t, c.plain, c.src)
+			}
+			a, b := langtest.NormBoth(t, unitBy(t, r, "f()")), langtest.NormBoth(t, want)
+			if a.Hash[norm.L1] != b.Hash[norm.L1] {
+				t.Errorf("条件の try / await まで消した\n%s\n%s", a.Forms[norm.L1], b.Forms[norm.L1])
+			}
+		})
+	}
+}
+
+// 空のタプルを渡す呼び出しは、空白・改行だけが違っても同じ形 (引数の無い呼び出し) として比べる。
+func TestEmptyTupleArgumentIgnoresSpacing(t *testing.T) {
+	want := langtest.NormBoth(t, unitBy(t, parse(t, "Sources/W.swift", "func a(c: C) {\n    c.yield()\n}\n"), "a(c: C)")).Hash[norm.L1]
+	for _, call := range []string{"c.yield(())", "c.yield( ())", "c.yield(() )", "c.yield(\n        ()\n    )", "c.yield(\n        () // done\n    )", "c.yield(/* x */ ())"} {
+		r := parse(t, "Sources/X.swift", "func a(c: C) {\n    "+call+"\n}\n")
+		if r.HasError {
+			t.Errorf("%q が読めない", call)
+			continue
+		}
+		if got := langtest.NormBoth(t, unitBy(t, r, "a(c: C)")).Hash[norm.L1]; got != want {
+			t.Errorf("%q が引数の無い呼び出しと別の形になった", call)
+		}
+	}
 }

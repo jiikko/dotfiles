@@ -111,17 +111,14 @@ func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 // 呼び出し式 + 別の文として読み、その関数の本体を ERROR にする書き方。ERROR 節の中の出現を同じ長さの空白にする (落ちるのは修飾子の語だけ)。
 const isolationModifier = "nonisolated(unsafe)"
 
-// emptyTupleArg は、空のタプルを渡す呼び出し `f(())` (`continuation.yield(())` / `send(())`)。文法は内側の `()` に長さ 0 の欠けた節 (`!`) を置く。
-// 欠けた節が呼び出しの引数の空のタプルの中 (isEmptyTupleArgument) にあり、ちょうど内側の括弧の間にあるときだけ、その `(())` を `(  )` にする
-// (引数の無い呼び出しとして比べる。`f(())` と `f()` は同じ形になる)。
-//   - 位置で確かめる: 欠けた節の前後に広げた範囲で探すと、別の関数の型 `(())` や壊れた宣言 `g(())` まで書き換えて、正常な関数のハッシュを変えたり、
-//     別の構文エラーを隠したりする
-//   - 引数の中に限る: 代入の右辺 `let y = (())` やパターン `case (()):` も同じ欠けた節を持つが、書き換えても直らない (別の ERROR になる)。
-//     ERROR の数はファイル全体で比べるので、同じファイルの `g(())` が直った分で採られ、その関数の形が変わったり、後ろの正常な関数が ERROR に
-//     飲み込まれたりする
-const emptyTupleArg = "(())"
+// 空のタプルを渡す呼び出し `f(())` (`continuation.yield(())` / `send(())`) は、文法が内側の `()` に長さ 0 の欠けた節 (`!`) を置く。
+// 欠けた節が、ラベルの無い唯一の引数の空のタプルの中 (isSoleEmptyTupleArgument) にあるときだけ、その `()` を空白にする
+// (引数の無い呼び出しとして比べる。`f(())` と `f( ())` と `f()` は同じ形になる)。
+//   - 節の形で確かめる: 字面 `(())` で照合すると、空白・改行だけが違う `f( ())` が外れて別の規則 (repairEmptyTuple の `[]`) に落ち、
+//     引数 1 つの別の形になる。欠けた節の前後に広げた範囲で探すと、別の関数の型 `(())` や壊れた宣言 `g(())` まで書き換える
+//   - 引数の中に限る: 代入の右辺 `let y = (())` やパターン `case (()):` も同じ欠けた節を持つが、ここでは空白にしない (repairEmptyTuple の対象)
 
-// reparseKnownMisparses は、ERROR のあるファイルについて、上の 2 つの書き方の出現だけを同じ長さの字面に置き換えて読み直した木を返し、
+// reparseKnownMisparses は、ERROR のあるファイルについて、既知の読み違えの書き方の出現だけを同じ長さの字面に置き換えて読み直した木を返し、
 // ERROR の節が減ったときだけそれを採る (採らなければ t をそのまま返す)。置き換えは節の位置を変えないので、walker には元の src を渡したまま使える。
 //
 // 置き換えを読み違えの箇所に限るのは、ファイル全体を置き換えると、正常に読めていた箇所 (メンバー宣言の修飾子・文字列リテラルの中の同じ字面・
@@ -134,6 +131,15 @@ func (p *Parser) reparseKnownMisparses(src []byte, t *sitter.Tree) *sitter.Tree 
 	visit = func(n *sitter.Node) {
 		if !n.HasError() {
 			return
+		}
+		if repairConditionOperators(n, fixed) {
+			changed = true
+		}
+		if repairFinalAssignment(n, fixed) {
+			changed = true
+		}
+		if repairClosureSemicolon(n, fixed) {
+			changed = true
 		}
 		if n.IsError() {
 			s, e := int(n.StartByte()), int(n.EndByte())
@@ -149,8 +155,11 @@ func (p *Parser) reparseKnownMisparses(src []byte, t *sitter.Tree) *sitter.Tree 
 			}
 		}
 		if n.IsMissing() {
-			if at := int(n.StartByte()) - 2; isEmptyTupleArgument(n) && at >= 0 && bytes.HasPrefix(fixed[at:], []byte(emptyTupleArg)) {
-				copy(fixed[at:], "(  )")
+			if isSoleEmptyTupleArgument(n) {
+				tuple := n.Parent().Parent()
+				copy(fixed[tuple.StartByte():], "  ")
+				changed = true
+			} else if repairEmptyTuple(n, fixed) {
 				changed = true
 			}
 			return
@@ -167,12 +176,249 @@ func (p *Parser) reparseKnownMisparses(src []byte, t *sitter.Tree) *sitter.Tree 
 	if t2 == nil {
 		return t
 	}
-	if countErrors(t2.RootNode()) >= countErrors(t.RootNode()) {
+	if countErrors(t2.RootNode()) >= countErrors(t.RootNode()) || !preservesTopLevel(t.RootNode(), t2.RootNode()) {
 		t2.Close()
 		return t
 	}
 	t.Close()
 	return t2
+}
+
+// preservesTopLevel は I5: 元の source_file 直下の正常な子を、範囲・kind・正常性まで保つ。
+// ERROR の減少との相殺で隣の正常な宣言を飲み込む候補を、採用の一か所で捨てる。
+func preservesTopLevel(before, after *sitter.Node) bool {
+	if kindOf(before) != "source_file" {
+		return true
+	}
+	j := uint(0)
+	for i := range before.ChildCount() {
+		old := before.Child(i)
+		if old.HasError() {
+			continue
+		}
+		for j < after.ChildCount() && after.Child(j).StartByte() < old.StartByte() {
+			j++
+		}
+		if j == after.ChildCount() {
+			return false
+		}
+		n := after.Child(j)
+		if n.StartByte() != old.StartByte() || n.EndByte() != old.EndByte() || n.KindId() != old.KindId() || n.HasError() {
+			return false
+		}
+	}
+	return true
+}
+
+// A: 欠けた ! → bang → tuple_expression の、ちょうど () の中だけを [] にする。
+// 先に既存の (()) 引数規則を試すので g(()) の形は変えない。範囲検索は型やパターンまで拾うため使わない。
+func repairEmptyTuple(n *sitter.Node, fixed []byte) bool {
+	if !n.IsMissing() || kindOf(n) != "!" {
+		return false
+	}
+	bang := n.Parent()
+	if bang == nil || kindOf(bang) != "bang" {
+		return false
+	}
+	tuple := bang.Parent()
+	if tuple == nil || kindOf(tuple) != "tuple_expression" || tuple.EndByte()-tuple.StartByte() != 2 || n.StartByte() != tuple.StartByte()+1 || tuple.Utf8Text(fixed) != "()" {
+		return false
+	}
+	copy(fixed[tuple.StartByte():], "[]")
+	return true
+}
+
+// D: ERROR またはエラーを含む条件文の、if/switch/where に続く式の演算子だけを空白にする。
+// 字面を検索すると box.await や本体の await まで消すので、式の親子だけをたどり本体・呼び出しの中へは入らない。
+// try! / try? は演算子全体で除外する (語だけ消すと ! が否定として読まれる)。
+// 読めない単位を比べられるようにする代わりに、素の await/try の有無だけ違う写しが同じ形になるのは受け入れる。
+func repairConditionOperators(n *sitter.Node, fixed []byte) bool {
+	k := kindOf(n)
+	if !n.IsError() && k != "if_statement" && k != "switch_statement" && k != "for_statement" {
+		return false
+	}
+	// 文として読めている if / switch / for は、エラーが条件の側にあるときだけ直す。本体にだけエラーがある文 (`if let v = try await load() { g(()) }`)
+	// で条件の try / await を消すと、正しく読めていた条件の形が変わる
+	if !n.IsError() && !conditionHasError(n) {
+		return false
+	}
+	active, changed := false, false
+	for i := range n.ChildCount() {
+		c := n.Child(i)
+		switch kindOf(c) {
+		case "if", "switch":
+			active = true
+		case "{", "}", "statements":
+			active = false
+		case "where_clause":
+			if blankConditionOperator(c, fixed) {
+				changed = true
+			}
+		default:
+			if active && blankConditionOperator(c, fixed) {
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
+// conditionHasError は、D の読み違えの形か: 条件の `await` / `try` の式が本体の `{…}` を末尾クロージャとして飲み込む。印は 2 つで、
+// 本体の `{` が文の直下に無い・欠けている、または条件の式 (where 節を含む) の末尾がクロージャで終わる (`if let x = await y { … } else { … }` では
+// else の `{` が文の直下に残るので、後者で見る)。「条件の側の子に ERROR があるか」では判定しない: 条件の中の別の読み違え (`send(())`・`== ()`) でも
+// 真になり、正しく読めている条件の try / await まで消す。
+func conditionHasError(n *sitter.Node) bool {
+	active, brace := false, false
+	for i := range n.ChildCount() {
+		c := n.Child(i)
+		switch kindOf(c) {
+		case "if", "switch":
+			active = true
+		case "{":
+			if c.IsMissing() {
+				return true
+			}
+			brace, active = true, false
+		case "}", "statements":
+			active = false
+		case "where_clause":
+			if endsWithClosure(c) {
+				return true
+			}
+		default:
+			if active && endsWithClosure(c) {
+				return true
+			}
+		}
+	}
+	return !brace
+}
+
+// endsWithClosure は、節の最後の名前つきの子をたどった先が、呼び出しの末尾クロージャ (call_suffix の直下の lambda_literal) か。
+// 括弧の中の引数のクロージャ (`contains(where: { … })`) と、文字列の補間・括弧・配列の中の末尾クロージャ (`"\(xs.map { $0 })"`) は、
+// 正しい条件にも現れるので数えない (その中へは降りない)。
+func endsWithClosure(n *sitter.Node) bool {
+	for n.NamedChildCount() > 0 {
+		parent := n
+		n = n.NamedChild(n.NamedChildCount() - 1)
+		switch kindOf(n) {
+		case "lambda_literal":
+			return kindOf(parent) == "call_suffix"
+		case "line_string_literal", "multi_line_string_literal", "raw_string_literal", "interpolated_expression", "tuple_expression", "array_literal", "dictionary_literal":
+			return false
+		}
+	}
+	return false
+}
+
+func blankConditionOperator(n *sitter.Node, fixed []byte) bool {
+	changed := false
+	switch kindOf(n) {
+	case "await_expression":
+		keyword := n.Child(0)
+		if keyword != nil && kindOf(keyword) == "await" && keyword.Utf8Text(fixed) == "await" {
+			copy(fixed[keyword.StartByte():], "     ")
+			changed = true
+		}
+	case "try_expression":
+		op := n.Child(0)
+		if op == nil || kindOf(op) != "try_operator" || op.Utf8Text(fixed) != "try" {
+			return false
+		}
+		copy(fixed[op.StartByte():], "   ")
+		changed = true
+	case "assignment":
+		// 条件の await が代入の左辺に誤認された形。右辺は次の文なので触らない。
+		c := n.ChildByFieldName("target")
+		return c != nil && blankConditionOperator(c, fixed)
+	case "directly_assignable_expression", "where_clause", "comparison_expression", "equality_expression", "conjunction_expression", "disjunction_expression", "infix_expression":
+	default:
+		return false
+	}
+	for i := range n.NamedChildCount() {
+		if blankConditionOperator(n.NamedChild(i), fixed) {
+			changed = true
+		}
+	}
+	return changed
+}
+
+// C: 文の位置で ERROR の唯一の子が inheritance_modifier(final) であり、次の節が = で始まる代入だけ finaL にする。
+// ERROR 全域の final を探すと宣言の修飾子も変える。語を消すと代入の左辺が無くなるので同じ長さの名前を使う。
+func repairFinalAssignment(n *sitter.Node, fixed []byte) bool {
+	if !n.IsError() || n.Utf8Text(fixed) != "final" || n.NamedChildCount() != 1 || kindOf(n.NamedChild(0)) != "inheritance_modifier" {
+		return false
+	}
+	parent, next := n.Parent(), n.NextSibling()
+	if parent == nil || next == nil {
+		return false
+	}
+	switch kindOf(parent) {
+	case "statements", "if_statement", "function_body":
+	default:
+		return false
+	}
+	for next.ChildCount() > 0 {
+		next = next.Child(0)
+	}
+	if kindOf(next) != "=" {
+		return false
+	}
+	for _, b := range fixed[n.EndByte():next.StartByte()] {
+		if b != ' ' && b != '\t' {
+			return false
+		}
+	}
+	copy(fixed[n.StartByte():], "finaL")
+	return true
+}
+
+// E: lambda_literal の statements 内で、呼び出しと return の間にある長さ 0 の ERROR が ; を指す形だけ。
+// 直前の呼び出しの終わりまでの水平空白と ; を並べ替える。語の削除や改行の追加は文や行位置を変えるので行わない。
+func repairClosureSemicolon(n *sitter.Node, fixed []byte) bool {
+	if !n.IsError() || n.StartByte() != n.EndByte() {
+		return false
+	}
+	parent, prev, next := n.Parent(), n.PrevSibling(), n.NextSibling()
+	if parent == nil || kindOf(parent) != "statements" || parent.Parent() == nil || kindOf(parent.Parent()) != "lambda_literal" || prev == nil || kindOf(prev) != "call_expression" || next == nil || kindOf(next) != "control_transfer_statement" || !hasToken(next, "return") {
+		return false
+	}
+	start, end := prev.EndByte(), n.StartByte()
+	if start >= end || end >= uint(len(fixed)) || fixed[end] != ';' {
+		return false
+	}
+	for _, b := range fixed[start:end] {
+		if b != ' ' && b != '\t' {
+			return false
+		}
+	}
+	copy(fixed[start+1:end+1], fixed[start:end])
+	fixed[start] = ';'
+	return true
+}
+
+// isSoleEmptyTupleArgument は、欠けた節が「ラベルの無い唯一の引数 (value_argument) の、字面が `()` の空のタプルの中の bang」にあるか。
+func isSoleEmptyTupleArgument(missing *sitter.Node) bool {
+	if !isEmptyTupleArgument(missing) {
+		return false
+	}
+	tuple := missing.Parent().Parent()
+	arg := tuple.Parent()
+	args := arg.Parent()
+	return tuple.EndByte()-tuple.StartByte() == 2 && namedNonComment(arg) == 1 && args != nil && kindOf(args) == "value_arguments" && namedNonComment(args) == 1
+}
+
+// namedNonComment は、コメントを除いた名前つきの子の数 (コメントは名前つきの節なので、引数の中に書くと数に入る)。
+func namedNonComment(n *sitter.Node) int {
+	c := 0
+	for i := range n.NamedChildCount() {
+		switch kindOf(n.NamedChild(i)) {
+		case "comment", "multiline_comment":
+		default:
+			c++
+		}
+	}
+	return c
 }
 
 // isEmptyTupleArgument は、欠けた節が「呼び出しの引数 (value_argument) の空のタプル (tuple_expression) の中の bang」にあるか。

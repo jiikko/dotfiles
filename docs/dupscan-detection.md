@@ -5,7 +5,7 @@
 ## 流れ
 
 1. **走査**: 対象の repo のファイルを `git ls-files` で列挙する (各コマンドとも ignore されていない untracked を含める)
-2. **parse**: Swift は tree-sitter、Go は標準の go/ast で構文木にする。読めない構文 (ERROR / MISSING) を含む抽出済み単位は比較から外す (Swift の関数の中の `nonisolated(unsafe) let` と、空のタプルを渡す呼び出し `f(())` は、読み違えの箇所だけを同じ長さの字面に置き換えて読み直す)。report はエラーのあるファイルも出す。gateはbase/headの失敗fileを通知する。探索のコマンドも通知する（下記）
+2. **parse**: Swift は tree-sitter、Go は標準の go/ast で構文木にする。読めない構文 (ERROR / MISSING) を含む抽出済み単位は比較から外す (Swift の、tree-sitter-swift が読み違える書き方 (関数の中の `nonisolated(unsafe) let`・空のタプル・条件の中の `await` / `try`・変数名 `final`・クロージャの中の `;`) は、読み違えの箇所だけを同じ長さの字面に置き換えて読み直す。規則の一覧は README の限界の節)。report はエラーのあるファイルも出す。gateはbase/headの失敗fileを通知する。探索のコマンドも通知する（下記）
 3. **単位の抽出**: 比べる単位 = 関数・初期化子・クロージャ・computed property・subscript・deinit・accessorの本体。関数名と引数ラベルは比べない (名前が違う写しを拾うため)
 4. **正規化**: 本体の構文木を段 (L1 / L2 / L3) ごとに潰す
 5. **ハッシュ**: 潰した木のハッシュを段ごとに取る
