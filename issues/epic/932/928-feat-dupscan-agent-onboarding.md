@@ -1,33 +1,55 @@
 # 928 (feat): dupscan のClaude/Codex共通の導入案内・能力診断を用意する
 
-> 🚨 **担当中: air5 (glogx)**（2026-10-28〜）
-
 起票日: 2026-10-26
 
-## 現在の判断（2026-10-28）
+## 現在の判断・目的（2026-10-28 refresh）
 
-固定Go source/testsをClaude Codeへ、固定Swift source/testsをCodex CLIへ送る今回の評価は、ユーザーの「お願いします」で明示承認された。以前の「未承認」は過去の実行拒否の記録で、現在の着手条件ではない。固定課題・fresh session・既存認証/通常権限で評価し、結果と限界を末尾へ記録する。一般的なcontext削減・重複追加率改善は未実証で、未実施の本番12課題や全環境matrixを完了扱いにはしない。
+**共通の導入案内・能力診断は実装済み。導入経路の実動確認も進んだが、環境検証と評価の決着が残るためopen。** 「有効性が必ず証明できるまで終われない」という条件にはしない。評価を完遂して、効かなかった用途を含め採用範囲を決めることが必要である。今回のrefreshではdoneへの移動や、未実施項目の除外・移管はしていない。
 
-## 方向性の再評価（2026-10-27）
+目的は、Claude/Codexが対応コマンド・言語・制約を短いCLI案内から確認できるようにすること。registry/capabilities/doctor/agent-guide、wrapper先頭の`-no-build`、Go通知からの能力照会は実装済み。flags_helpは実help文字列であり型付きschemaではない。表示専用guideはユーザーのinstruction/設定へ自動追記しない。現在の実装は下記sourceで裏取りした。
 
-対象: a5b4196e の実装と既存測定。
+- `src/dupscan/command_registry.go` / `capabilities_cmd.go`: dispatchと能力一覧の共通情報源。最新のsweepも登録済み。
+- `src/dupscan/doctor_cmd.go` / `bin/dupscan` / `bin/lib/go_autobuild.zsh`: read-only診断と未準備/stale時のno-build拒否。
+- `src/dupscan/agent_guide_cmd.go`: claude/codex × all/swift/goの表示専用guide、4096bytes上限、対応コマンドだけを案内。
+- 対応する`*_test.go`、`tests/bin/test_dupscan_no_build.sh`、Go通知hookのテスト: 対応表/argv・無解析・設定/別cwd・未build/stale等の回帰検査。テストで覆う条件と実環境での未検証を以下で分ける。
 
-**判断: 導入支援の実装は十分進んだ。次は残った環境確認と効果評価に集中する。** registry/capabilities/doctor/agent-guide、先頭 `-no-build`、Go通知からの能力照会は実装済み。flags_helpは実helpの文字列で、型付きflag schemaではない。Codex実CLIのread-only smokeは成功した。Claude実CLIの当初smokeはBash許可で止まった（末尾の今回評価ではpwd-onlyに限って成功、source編集実験は別途未承認）。未build/staleの拒否とcold buildを区別する。
+### 実agent評価の現在地
 
-次の最小作業は、既存権限の範囲でClaudeの導線を確認し、未確認なら理由を残したまま、両agentの同じ探索課題で品質と費用を測ること。grep探索/能力照会/実ソース確認を別集計し、正しい再利用、不要な重複追加、誤誘導、再試行、観測可能なcontext量を記録する。通知が増えただけで利用・効率が上がったとしない。
+| 対象 | 実施・観測 | 言えないこと |
+|---|---|---|
+| Codex / Go実編集 | 旧版の1対。両群ConfigDir再利用、規則の写し0件。併用はguideのみ | 検索機能の寄与、一般的な重複追加率改善 |
+| Claude / Go実編集 | 承認後の1対。両群同じConfigDir委譲・独立grader成功。併用はguide1回+search1回 | 対照も成功し差が出ない。両群にConfigFile説明誤り。対照のprocess rc/wallはcollector不備で欠測 |
+| Codex / Swift読取 | 承認後3課題×2群。固定採点基準は全回答合格。併用はguideのみ | source編集・重複追加率。全3課題で併用の観測出力量が増えたためcontext削減も未実証 |
+| Claude / Swift | 未実施 | Claude×Swiftの実動・比較成功 |
 
-typed metadata/json-v2・cache・新hookを一式足すのは次の既定作業にしない。既存導線で解けない具体例が出た機能だけを926等と調整する。既存のローカル測定は一般的な効果の証明ではなく、環境差と追加照会の費用も評価へ含める。
+承認後の固定scopeは09e983fcのuserdirs Go source/testsと386e2876のObaketCore Swift source/tests。以前の「source送信は未承認」は履歴であり、この固定scopeの現在の阻害要因ではない。固定binaryは5c89f75b。最新masterのsweep/L1mや948の候補注入hook（57a47305）を評価した実験ではない。個々の数値・誤り・欠測とraw保存場所は後半の実施記録を参照する。
 
-## 目的
+## 検証・受け入れ条件（現在の正本）
 
-CLIを使える環境でもagentが存在・適切なコマンド・対応言語を知らず、普段の探索へ戻る摩擦を減らす。Claude/Codexで共通のCLI契約と短い導入案内を持ち、環境依存の導線は別々に検証する。利用増加と開発効率の改善は未測定。2026-10-27にno-build、registry/capabilities/doctor/agent-guideとGo通知接続を実装した。各環境の実動確認と開発全体の効果評価は下記の状態で継続する。
+一つの未チェック項目に実施済み/未実施が混ざっていたため分割した。旧設計・進捗の「open/未承認/未実装」は各時点の履歴で、現在の状態判定は本節による。
 
-## 現状の裏取り（5a9a6a98時点）
+- [x] registry由来のcapabilities/実helpと、対応能力に沿うguideを実装する。6guideと生成argvの実行fixtureで確認済み。
+- [x] 診断でsource解析を起こさず、設定不在/不正・別cwd/worktree・混在source・非repo等を自動テストで検査する。
+- [x] wrapperの未build/stale拒否・argv保持・無build/無developer-tool起動・read-onlyをfixtureで検査する。
+- [x] 表示専用guideを維持し、自動instruction追記による重複を増やさない。
+- [x] 通知の回数/長さ/追加待ち時間と、通知だけで全repo解析・buildを起こさない既存導線を検査する。（948の新しい候補注入hookの効果とは別）
+- [x] Codex/Go実編集、Claude/Go実編集、Codex/Swift読取の実動と限定pilotの品質・出力量をagent別に記録する。
+- [ ] **環境検証の穴を閉じる。** CLI不存在時のfallback、SDKシンボル/未対応対象の誤案内防止、cold compiler cacheでの初回buildを、実行条件・rc・出力とともに確認する。既存のwarm-cache build 1.192秒をcold値へ流用しない。既存fixture/ローカル実行で確認済みの条件は再実装せず証拠を対応付ける。
+- [ ] **Claude/Swiftの接続を決着する。** 未実施の組として実動を確認するか、対象外にする理由と追跡先を明示して受入範囲を改訂する。今回の承認を別source/新しい送信先へ広げない。
+- [ ] **比較評価の残計画を決着する。** 下の手順に沿って、両agentの同じ課題・適切なrg/Read対照・実際の検索利用と結果を評価する。検索を使わなかったrunも除外せず、利用率と案内の限界として保持する。既存pilotを本番12課題や個別機能の因果効果へ数え直さない。
+- [ ] **採用範囲と関連issueとの境界を確定する。** 実測から維持/修正/不採用を用途別に記録し、[917](../890/pending/917-test-dupscan-usefulness-verification.md)・[921](../890/pending/921-feat-dupscan-explore-def-refs-and-grep-nudge.md)・[948](948-research-dupscan-meets-its-aims.md)へ重複しない形で接続する。将来の通常利用測定は各issueの期日を保ち、928だけで実施済みにしない。
 
-- `_claude/skills/dupscan/SKILL.md` と `_claude/CLAUDE.md` に使い方がある。
-- `_claude/settings.json` は `suggest-dupscan-for-symbol-grep.sh` を呼ぶ。hookはClaude CodeのPreToolUseのBash/Grep入力を読む。grepらしい探索に案内を返し、拒否せず、既定900秒で通知を抑える。cwdのrepoでSwiftを追跡しているかを判定する。
-- [921](../890/pending/921-feat-dupscan-explore-def-refs-and-grep-nudge.md) の案内hookは実装・push済みで、残りは1か月後の効果測定。新規のhookが必要だと一括して扱わない。
-- `main.go` のusageは人向けで、対応コマンド・問い合わせ形式・言語別対応をmachine-readableに返す専用コマンドはない。Codexの各実行環境でこのClaude用hookが使えるかは未検証で、共通に動く前提にしない。
+## doneにするまでの具体的な順番
+
+1. **環境検証を一覧で埋める。** 上記3つの穴と既存証拠を整理し、初回build/準備済み起動/探索の時間を分離する。失敗環境も対応外・制限として記録し、成功として扱うのは実際に動いた条件だけにする。全OS/全SDKを保証する話へ広げない（repoの対象はmacOS）。
+2. **評価の成立条件を満たす。** 実際の既存実装の見落とし履歴から、答えの関数名を漏らさない課題を事前固定する。対照がわざと弱くならず、案内と候補探索を別集計でき、対照群への指示漏れを扱えることを先に確認する。原計画は各agent4課題pilot→未使用12課題×各agent×2群。今回のGo1課題/Swift3課題の再使用セットはその代用にならず、天井効果が残る現状から本番へ自動で進めない。
+3. **有限の評価と採否を完了する。** 原計画を維持するなら上記pilot条件を満たした上で本番を実行し、正しい再利用/不要写し/誤統合・回答誤り、全tool出力量、取得可能なusage・時間・失敗を集計する。効果なし・費用増も有効な結論で、効果が出るまで課題を取り替えない。原計画を実施しないなら、理由・残る不確実性・受け入れる導入範囲を明示して受入条件を改訂し、残研究を既存948/917へ本文付きで引き継ぐ必要がある。**このrefreshではその縮小/移管を決定していない。**
+
+一般的なcontext削減や重複防止の成功をdoneの必須条件にはしない。一方、実験未完のまま「効果なし」として終了したり、実動確認だけで一般効果の条件を満たしたことにもしない。typed metadata/json-v2/cache/新hookの追加は928完了の必須作業ではない。948の新hookは別の介入なので、今回のguide＋任意探索の比較（Swift併用はguideのみ）の結果をその効果と扱わない。
+
+## 設計・検証の履歴
+
+以下は実施当時の設計・評価記録。現在の受け入れ状態は上記を参照する。
 
 ## 実装した共通CLI（2026-10-27）
 
@@ -51,16 +73,6 @@ dupscan agent-guide -target codex -print
 - セッション開始やtool呼び出しのたびに全repoを走査しない。初回buildも通常の対話的な導入経路で扱い、軽い通知hookから自動buildを起こさない。wrapperが初回buildする現行仕様を踏まえ、未buildを軽く診断する方法を設計する。
 - baseは信頼するCLI引数/upstream等から決める現行の契約を保ち、生成した設定で `base=HEAD` を固定してgateを弱めない。
 - 通知の回数・長さ・失敗時の挙動を設け、未対応言語やSDKの検索、文字列/設定の検索を誤って誘導しない。repoのソース/docは解析対象データとして扱い、命令やshell文字列として自動実行しない。
-
-## 検証・受け入れ条件
-
-- [x] CodexのGo編集1対でshell/guideの導線と実diffを記録し、Claudeはpwd-only smokeの実行まで確認する。（今回。CLIのsource編集・Swift課題と区別）
-- [ ] Claudeのsource編集、両agentのSwift課題など、未検証の接続を既存権限/明示承認の範囲で確認する。動作確認できた組だけ成功として記録する。
-- [ ] CLI不存在/未build/設定なし/壊れた設定/別cwd・worktree/対応言語が混在/非git repo/SDKのシンボルを含むケースを検査する。
-- [ ] capabilities・guide・実際のCLIの対応表が一致し、初回buildと探索そのものの時間を分けて測る。導入の繰り返しで指示を重複させない。
-- [x] hookの通知は少数・短文で、追加の待ち時間を実測する。全repo解析やbuildが通知だけで起きないことを確認する。
-- [ ] [917](../890/pending/917-test-dupscan-usefulness-verification.md) / 921の計測とつなぎ、両agentを別集計する。適切な呼び出し、実際の再利用、誤誘導、往復数・elapsed timeを比較し、利用回数の増加だけで採用しない。
-- [x] 共通CLIを手動で呼べる導入経路を確認する。両targetのguide6条件とfixtureの生成argv実行を確認した。固有AI連携の成功と同一視しない。
 
 ## 詳細設計案（2026-10-26）と実装差分
 
@@ -387,3 +399,11 @@ provider usageは対照 input/cache_creation/cache_read/output = 12/8618/49435/2
 - 最新master f3400495へrebaseし、sweep/L1m/打切りstderr通知など別セッションの実装を保持した。今回のA/Bは固定5c89f75bを評価した結果で、新版の効果とは扱わない。948へ限定結果と承認状態を同期。最終追記の追加subagentレビューは一度capacity制限で失敗したが、その後928/932/948の最終差分で実施し、追加P1/P2なし。事前計画・Swift本文と数値・Go中立生成物/ログも独立反証し、指摘を反映した。
 
 - 最新master取込み後の`go test -race ./...`はdupscan全packageで成功。Bash 5でのissue標準テストも成功し、epicは22子=15done/6open/1pendingと実ファイルから再計数した。最新wrapperでのgateは変わった単位0、rc0。既存の意図的不正fixture（src/subproc/boundarycheck/testdata/broken/broken.go）はbase/head各1件でpartialを通知し、完全解析成功とは扱わない。今回の変更は評価記録と状態同期のみ。
+
+## refreshの改善評価（2026-10-28）
+
+`docs(dupscan): refresh onboarding status and make closure requirements explicit`で先頭の現在地・チェック項目・doneの手順を再構成した。実施済みClaude編集/Codex調査を未実施扱いしていた混在項目と、現在の判断に見える過去の「未承認」を解消。元の本番比較を未実施のまま保持し、効果を出すまで続ける条件と、評価を終えて採否を決める条件を区別した。これはissueの実行可能性/正確さの改善で、コード・性能・一般的なagent効率の改善ではない。今回は新しい外部CLI実験を実施しない。
+
+反証レビューでは追加P1/P2なし。Go併用がsearchを実利用した表現へ訂正し、検索を使わなかったrunを除外しない条件も明記した。今回のrefresh後も928はopenを維持する。
+
+refresh後のissue標準テストはBash 5で全件成功。dupscan gateは変わった単位0、rc0、既存不正fixtureをbase/head各1件としてpartial通知。コードは変更せず、過去の数値を最新実装の効果へ読み替えていない。

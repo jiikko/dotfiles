@@ -96,7 +96,7 @@ dupscan を Claude Code が使えば、①同じ役割のメソッドを重ね�
 | D | 連番の名前・testdata・近い完全一致の数 | 946 に記録済み。未実装 |
 | E-1 | 入口の指標 | usage report で測定中 |
 | E-2 | gate が止めた数 | 手段未決 (CI ログから数えるか、gate が実行ログを残すか) |
-| E-3 | 928 の実 agent 比較 | ユーザーの許可待ち |
+| E-3 | 928 の実 agent 比較 | 固定scopeの限定pilotは承認・実施済み。本番比較は未実施で、928の現受入条件に沿い実施か移管を決める |
 
 A1 の既知の限界: 名前が違う同じ役割の関数は引けない (署名の近さは見ない)。名前の一致は `index` の語の一致で、型を解決しない。Swift は字下げのある `func` を新しい関数として扱うため、同じ型の中の同名メソッドも候補に出る。
 
@@ -121,3 +121,5 @@ A1 の既知の限界: 名前が違う同じ役割の関数は引けない (署�
 - [932](932-epic-dupscan-accuracy.md) (epic)、[928](928-feat-dupscan-agent-onboarding.md)、[941](941-ux-dupscan-nudge-definition-search-gaps.md)、[942](942-perf-dupscan-fixed-notice-overhead.md)、[943](943-perf-dupscan-result-row-shape.md)、[944](pending/944-feat-dupscan-go-def.md)、[946](946-feat-dupscan-recall-from-real-modules.md)、[947](../../947-retro-dupscan-multi-module-dedup-2026-10-28.md)
 
 - 2026-10-28: `docs(dupscan): reconcile approved pilot with concurrent research`で928の承認・実行状態と限定観測を同期。「探索+Read未測定」と入口だけを主因とする断定を訂正した。A1等の案の採否・将来測定の条件を完了扱いにはしていない。
+
+- 2026-10-28: `docs(dupscan): refresh onboarding status and make closure requirements explicit`でE-3の「許可待ち」を限定pilot実施済みへ訂正。928の残計画や将来課題の許可まで完了したとは扱わない。
