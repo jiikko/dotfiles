@@ -239,23 +239,20 @@ func HoldInUse(env *app.Env) (func(), error) {
 // InUse はエンジンを使っているコマンドがいるか (engine.inuse の排他ロックが取れないか)。開けないなど判定できないときは
 // 「使っている」に倒す (使用中のエンジンを止めるより、止め損ねる方が害が小さい。止め損ねたら down で止められる)。
 func InUse(env *app.Env) bool {
-	f, err := os.OpenFile(filepath.Join(env.StateDir, "engine.inuse"), os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return true
-	}
-	defer func() { _ = f.Close() }()
-	if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
-		return true
-	}
-	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-	return false
+	return lockHeldByOther(filepath.Join(env.StateDir, "engine.inuse"), true)
 }
 
 // ReaperAlive は見張りのロックが他のプロセスに持たれているか。
 func ReaperAlive(env *app.Env) bool {
-	f, err := os.OpenFile(filepath.Join(env.StateDir, "reaper.lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	return lockHeldByOther(filepath.Join(env.StateDir, "reaper.lock"), false)
+}
+
+// lockHeldByOther は path の排他ロックが他のプロセスに持たれているか (取れたらすぐ外す)。開けないときの答えは呼び出し側が決める
+// (InUse は使用中に倒す。ReaperAlive は見張りがいない扱いにして、見張りを起こし直せるようにする)。
+func lockHeldByOther(path string, openFailed bool) bool {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return false
+		return openFailed
 	}
 	defer func() { _ = f.Close() }()
 	if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
