@@ -1,6 +1,6 @@
 ---
 name: dupscan-dogfood
-version: 1.0.0
+version: 1.1.0
 description: dupscan を実際に使って開発タスクをこなし、使って困ったこと (見逃し・雑音・出力が大きい・遅い・grep に戻した理由) を記録して、dotfiles の issue に書き、直せるものは dupscan 自身を直す。「dupscan を使って開発して」「dupscan を使いながら実装して、フィードバックを issue に」「dupscan-dogfood」で発火。タスクが目的で、dupscan の評価・改修は副産物。dupscan を直すだけの依頼や、使わないタスクには使わない。
 ---
 
@@ -9,6 +9,19 @@ description: dupscan を実際に使って開発タスクをこなし、使っ�
 開発タスクを **dupscan を使って**こなし、その途中で見つけた dupscan の不満を記録して、issue に書き、小さく直せるものは直す。
 タスクを終わらせることが先で、dupscan の改修で依頼の範囲を広げない。使い方の正本は skill dupscan (`~/.claude/skills/dupscan/SKILL.md`)。
 これまでの経緯と測定は dotfiles の `issues/epic/932/` (946: 実在の module で見つけた取りこぼし / 948: 狙いが成り立っているかの判定)。
+
+## 引数
+
+```
+/dupscan-dogfood <開発タスクの依頼文>
+/dupscan-dogfood src/lockman に新しい subcommand を足して
+/dupscan-dogfood obaket で ProviderForm の secret 判定を整理したい
+```
+
+- 引数は**開発タスクの依頼文**そのもの。普段 Claude に頼む書き方でよい。対象の repo・module・完了の条件があれば添える。
+- 「dupscan を使って」や、フィードバックの書き方は書かなくてよい (この skill が決めている)。
+- 引数を省いたら、会話の直前に出ている開発タスクをその依頼として扱う。タスクが無ければ、何をするかを聞く (タスク無しで dupscan だけを評価しない)。
+- dupscan を直すだけの依頼には使わない。
 
 ## 0. 始める前に (3 分)
 
