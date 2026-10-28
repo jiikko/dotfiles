@@ -35,3 +35,10 @@ grep / rg に戻した場面: 変更前後の**呼び出しの書き方の種類
 ## 見送り
 
 - 特になし
+
+## 決着 (2026-10-28)
+
+同じ作業の続きを 954 が詳しく扱い、そこで両方とも対応済み。dotfiles 側に残る作業は無いので done へ移す。
+
+- F1 (gate の「読めないファイル」を base と head で重ねて出す): 954 の P5 として commit `fix(dupscan): gate・index・除外・-v・hook の出力を整理する (issue 954 の P1〜P8)` で、一覧が同じなら 1 回にまとめた。`src/dupscan/gate_cmd_test.go` の `TestGateUnreadableListIsNotRepeatedWhenSame` が 2026-10-28 の master で PASS
+- F2 (効いていない除外が毎回出る): dupscan 側は 954 の P7 として同じ commit で、効かない理由 (釘の指す単位が無い / 同じ鍵の単位は全部在る) を出すようにした (`TestStaleExclusionSaysWhyItStoppedWorking` ほかが PASS)。obaket の `.dupscan.json` から古い除外を外すかは obaket 側の作業で、この Mac に obaket が無いため未確認
