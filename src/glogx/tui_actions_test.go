@@ -500,22 +500,6 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 	})
 }
 
-// parseTmuxPrefix: show-options 出力 → bubbletea キー表記。
-func TestParseTmuxPrefix(t *testing.T) {
-	for out, want := range map[string]string{
-		"prefix C-t":  "ctrl+t",
-		"prefix C-b":  "ctrl+b",
-		"prefix M-a":  "", // C-<英字> 以外は機能オフ
-		"prefix None": "",
-		"garbage":     "",
-		"":            "",
-	} {
-		if got := parseTmuxPrefix(out); got != want {
-			t.Errorf("parseTmuxPrefix(%q) = %q; want %q", out, got, want)
-		}
-	}
-}
-
 // 未 push が 1 件も無いときは確認に入らない。
 func TestBrowsePushNoUnpushed(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)

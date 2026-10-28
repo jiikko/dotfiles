@@ -14,6 +14,8 @@ import (
 
 	"subproc"
 
+	"github.com/jiikko/dotfiles/src/tuikit/termcaps"
+
 	"glogx/internal/app"
 	"glogx/internal/gitdata"
 	"glogx/internal/gitexec"
@@ -375,34 +377,12 @@ func jobRerun(ctx context.Context, run gitdata.CommandRunner, repo gitdata.Repo,
 const localCmdTimeout = 5 * time.Second
 
 // loadTmuxPrefix は tmux サーバの現在の prefix を bubbletea キー表記で返す
-// ("" = tmux 外 / 取得失敗 / 未対応表記)。tmux.conf のパースはしない: conf は分割・
-// ライブ変更されうるため、サーバの現在値だけが真実 (show-options で聞く)。
+// ("" = tmux 外 / 取得失敗 / 未対応表記)。テストが差し替えるので var。
 var loadTmuxPrefix = func() string {
-	if os.Getenv("TMUX") == "" {
-		return ""
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
-	defer cancel()
 	// ctx の kill は直接の子にしか効かず、tmux サーバ側が I/O fd を握ると Wait が戻らない
 	// (理由は subproc.WaitDelay の doc。以降のクリップボード系も同じ)
-	cmd := subproc.CommandContext(ctx, "tmux", "show-options", "-g", "prefix")
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return parseTmuxPrefix(strings.TrimSpace(string(out)))
-}
-
-// parseTmuxPrefix は `prefix C-t` 形式の出力を bubbletea 表記 ("ctrl+t") へ変換する。
-// C-<英字> 以外 (M- 系や None 等) は誤爆判定できないので "" (機能オフ) に落とす。
-func parseTmuxPrefix(out string) string {
-	fields := strings.Fields(out)
-	if len(fields) != 2 {
-		return ""
-	}
-	p := fields[1]
-	if len(p) == 3 && strings.HasPrefix(p, "C-") {
-		return "ctrl+" + strings.ToLower(p[2:])
-	}
-	return ""
+	return termcaps.TmuxPrefix(os.Getenv("TMUX"), func(ctx context.Context, name string, args ...string) (string, error) {
+		out, err := subproc.CommandContext(ctx, name, args...).Output()
+		return string(out), err
+	})
 }

@@ -320,6 +320,20 @@ if grep -qE -- '-T root +C-f ' <<< "$tf_bindings"; then
 fi
 print "[test-tmux:zsh] ok: treefiler の popup は prefix f だけ"
 
+# popup の中で prefix f で閉じるのは treefiler 側で、閉じるキーは bind が -e で渡す。bind のキーと -e の値、
+# -e の名前と treefiler が読む名前 (src/treefiler/main.go の toggleKeyEnv) がずれると、テストは緑のまま閉じなくなる。
+print "[test-tmux:zsh] checking the treefiler popup passes its own bind key as the toggle key"
+tf_env=$(sed -n 's/^const toggleKeyEnv = "\(.*\)"$/\1/p' "$ROOT_DIR/src/treefiler/main.go")
+if [[ -z "$tf_env" ]]; then
+  print -u2 "[test-tmux:zsh] src/treefiler/main.go に toggleKeyEnv の定義が見つかりません"
+  exit 1
+fi
+if ! grep -E -- '-T prefix +f ' <<< "$tf_bindings" | grep -qF -- "-e $tf_env=f "; then
+  print -u2 "[test-tmux:zsh] prefix f の treefiler の bind が -e $tf_env=f を渡していません:\n$tf_bindings"
+  exit 1
+fi
+print "[test-tmux:zsh] ok: treefiler の popup は閉じるキー f を $tf_env で渡す"
+
 # 新しいサーバを見るだけでは、以前の conf で bind -n C-f を読んだ稼働中のサーバ (他のマシン) に残る形を検出できない。
 # 残った状態を作ってから reload し、外れることを見る。
 print "[test-tmux:zsh] checking conf reload removes a stale root C-f bind"

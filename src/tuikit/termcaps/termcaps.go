@@ -32,6 +32,36 @@ func TmuxClientFeatures(tmuxEnv string, run Runner) (features []string, ok bool)
 	return ParseFeatures(out), true
 }
 
+// TmuxPrefix は tmux サーバの今の prefix を bubbletea のキーの表記 ("ctrl+t") で返す。
+// tmux の外 (tmuxEnv が空)・聞けなかった・C-<英字> 以外の prefix は "" (使う側は機能ごと切る)。
+// tmux.conf は読まない: conf は分割・ライブで変えられるので、サーバの今の値 (show-options) だけを見る。
+func TmuxPrefix(tmuxEnv string, run Runner) string {
+	if tmuxEnv == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	out, err := run(ctx, "tmux", "show-options", "-g", "prefix")
+	if err != nil {
+		return ""
+	}
+	return ParsePrefix(out)
+}
+
+// ParsePrefix は `prefix C-t` の形の出力を bubbletea の表記にする。M- の系や None は、
+// bubbletea の表記と一対一に合わせられないので "" にする。
+func ParsePrefix(out string) string {
+	fields := strings.Fields(out)
+	if len(fields) != 2 {
+		return ""
+	}
+	p := fields[1]
+	if len(p) == 3 && strings.HasPrefix(p, "C-") {
+		return "ctrl+" + strings.ToLower(p[2:])
+	}
+	return ""
+}
+
 // ParseFeatures は `#{client_termfeatures}` の出力 (カンマ区切り) を名前の列にする。
 func ParseFeatures(out string) []string {
 	return strings.Split(strings.TrimSpace(out), ",")

@@ -44,3 +44,37 @@ func TestSyncedOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestTmuxPrefix(t *testing.T) {
+	calls := 0
+	run := func(out string, err error) Runner {
+		return func(_ context.Context, name string, args ...string) (string, error) {
+			calls++
+			if name != "tmux" || len(args) != 3 || args[0] != "show-options" || args[2] != "prefix" {
+				t.Errorf("想定外のコマンド: %s %v", name, args)
+			}
+			return out, err
+		}
+	}
+	for _, c := range []struct {
+		name, tmux string
+		run        Runner
+		want       string
+	}{
+		{"C-t", "/tmp/tmux-501/default,1,0", run("prefix C-t\n", nil), "ctrl+t"},
+		{"C-b", "/tmp/tmux-501/default,1,0", run("prefix C-b\n", nil), "ctrl+b"},
+		{"M- の系は切る", "/tmp/tmux-501/default,1,0", run("prefix M-a\n", nil), ""},
+		{"None", "/tmp/tmux-501/default,1,0", run("prefix None\n", nil), ""},
+		{"形が違う", "/tmp/tmux-501/default,1,0", run("garbage\n", nil), ""},
+		{"tmux に聞けない", "/tmp/tmux-501/default,1,0", run("prefix C-t\n", errors.New("no server")), ""},
+		{"tmux の外", "", run("prefix C-t\n", nil), ""},
+	} {
+		calls = 0
+		if got := TmuxPrefix(c.tmux, c.run); got != c.want {
+			t.Errorf("%s: TmuxPrefix = %q, want %q", c.name, got, c.want)
+		}
+		if c.tmux == "" && calls != 0 {
+			t.Errorf("%s: tmux の外で tmux に聞いた", c.name)
+		}
+	}
+}

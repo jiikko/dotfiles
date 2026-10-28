@@ -18,6 +18,7 @@
 | 起点 | 起動 dir の**親**を root、起動 dir にカーソル (§5.5) | **pwd を root** にして始める。`-` `Backspace` `Ctrl-H` と、root での `h` `←` `Ctrl-B` で 1 段上へ (§5.7 の reroot_up はそのまま。§6.1 の「root なら先に reroot_up、親へカーソル」は、**カーソルを動かさない**形で写す: 移すと選んでいた項目から外れて壊れたように見える。ユーザー回答 2026-10-22。`Ctrl-H` は入力欄と同じく Backspace の別名) |
 | プレビュー | 中央 90% のポップアップ 1 枚 (§4.6) | **ドラクエの対戦画面のように重なるタイル** (§0.2)。枠の中の飾り (§8.3) は写す |
 | `q` `Esc` | 終了 (`q` は cd 連携) | glogx 流・issues viewer に揃える: タイルの上は 1 枚閉じる / 木の上は **glogx ごと終了** / `F` で閉じて **git log 一覧へ戻る**。`Ctrl-C` は glogx の即終了。F を出したまま終えたら (`q` `Esc` `Ctrl-G` `Ctrl-C`)、30 分以内に同じ dir で開いた glogx は同じ場所の F から始まる (issue 710) |
+| tmux の prefix `f` | 無い | **`bin/treefiler` を tmux の bind (`prefix f`) で開いた popup では、prefix → `f` でも閉じる** (2026-10-29 ユーザー依頼「prefix+f で起動したので prefix+f で閉じて欲しい」)。popup の中のキーは tmux の bind を通らず届くので treefiler が受ける。閉じるキーは bind が `-e TREEFILER_TOGGLE_KEY=f` で渡し、渡されないとき (ペインで直接起動・glogx の `F`) は効かない。prefix は起動時に tmux へ聞いた今の値 (`tuikit/termcaps.TmuxPrefix`)。prefix は飲み、その後の `f` 以外のキーは普通に効く (glogx の prefix の扱いに揃える) |
 | `q` の cd 連携 (`--cwd-file`) | あり | **写さない** |
 | `o` `O` / ソート | 巡回・逆順 | **ソートは `S` (Sort by の巡回: name → modified → size) と設定の板 (Sort by / Reverse)** (issue 720。フォルダは自身の値で比べ、裏の走査の結果は使わない)。`o` は glogx の「外のアプリで開く」のまま (`open <path>`)。`O` は「Finder で表示」(`open -R <path>`。issue 719) |
 | dotfile の切り替え | `.` (§6.1) | **`.` と `I` の両方** (2026-10-24 ユーザー依頼「I を押したら隠しファイル・フォルダを表示トグルにして欲しい」)。どちらも設定の Dotfiles を反転して保存する |
