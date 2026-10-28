@@ -403,3 +403,42 @@ func TestSweepSimilarPairKeptWhenOnlyOneSideIsAllowed(t *testing.T) {
 		t.Errorf("片方だけ許可済みの対が消えた: %q", s)
 	}
 }
+
+// 節 3 は、一致度だけでなく共有している重みの大きい順に並べる。小さい対が一致度 1.0 で上位を占めて、
+// 寄せたときに減る量の大きい対が沈まないように。
+func TestSweepSimilarRanksByIsSharedWeightNotOnlyScore(t *testing.T) {
+	// tinyA / tinyB: 本体は同じで戻り値の型だけが違う小さい対 (どの段のハッシュも一致しないが Dice は 1.000)
+	tiny := `package a
+
+func tinyA(xs []int, n int) bool {
+	for _, x := range xs {
+		if x == n {
+			return true
+		}
+	}
+	return false
+}
+
+func tinyB(xs []int, n int) int {
+	for _, x := range xs {
+		if x == n {
+			return true
+		}
+	}
+	return false
+}
+`
+	big := strings.ReplaceAll(strings.ReplaceAll(goNearPair, "sumPositive", "bigA"), "sumLogged", "bigB")
+	_, out, _ := sweep(t, "-similar-threshold", "0.5", repoWith(t, map[string]string{"a/tiny.go": tiny, "b/big.go": big}))
+	s := sweepSection(t, out, 3)
+	ti, bi := strings.Index(s, "tinyA"), strings.Index(s, "bigA")
+	if ti < 0 || bi < 0 {
+		t.Fatalf("前提: 両方の対が出る: %q", s)
+	}
+	if bi > ti {
+		t.Errorf("共有の重みが大きい対 (bigA) が、一致度が高いだけの小さい対 (tinyA) より後ろ: %q", s)
+	}
+	if !strings.Contains(s, " w=") {
+		t.Errorf("共有の重みを出す: %q", s)
+	}
+}

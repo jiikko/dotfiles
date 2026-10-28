@@ -31,8 +31,9 @@ const (
 )
 
 type sweepSimilar struct {
-	a, b  *group.Entry
-	score float64
+	a, b   *group.Entry
+	score  float64
+	shared int // 共有している部分木の重み (寄せたときに減る量の目安)
 }
 
 type sweepCluster struct {
@@ -262,11 +263,18 @@ func sweepSimilarPairs(entries []*group.Entry, base, deep []group.Group, thresho
 				continue // Dice の上限 2·min/(和) が下限に届かない
 			}
 			if score, shared := bags[i].Dice(bags[j]); shared > 0 && score >= threshold {
-				out = append(out, sweepSimilar{a: a, b: b, score: score})
+				out = append(out, sweepSimilar{a: a, b: b, score: score, shared: shared})
 			}
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
+	// 共有している重みの大きい順 (同じなら一致度が高い順)。一致度だけで並べると、`os.WriteFile` を包む 3 行の test helper のような
+	// 小さい対が 1.0 近くで上位を占め、寄せたときに減る量の大きい対が沈む。
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].shared != out[j].shared {
+			return out[i].shared > out[j].shared
+		}
+		return out[i].score > out[j].score
+	})
 	return out, ""
 }
 
@@ -289,7 +297,7 @@ func sweepSimilarText(w *lineWriter, pairs []sweepSimilar, limit int) {
 			w.printf("… 他 %d 対 (-limit 0 で全部)\n", len(pairs)-limit)
 			break
 		}
-		w.printf("%.3f %s:%d %s ~ %s:%d %s\n", p.score, p.a.Unit.File, p.a.Unit.Line, unitLabel(p.a.Unit), p.b.Unit.File, p.b.Unit.Line, unitLabel(p.b.Unit))
+		w.printf("%.3f w=%d %s:%d %s ~ %s:%d %s\n", p.score, p.shared, p.a.Unit.File, p.a.Unit.Line, unitLabel(p.a.Unit), p.b.Unit.File, p.b.Unit.Line, unitLabel(p.b.Unit))
 	}
 }
 

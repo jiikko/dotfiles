@@ -142,3 +142,20 @@ dupscan が出さなかったが grep なら見つかった写しは 2 つだけ
 - **変更**: 既定の上限を 3000 から **8000** に上げた (obaket の 6845 単位は入る見込みだが、obaket では未測定)。計算量は単位数の 2 乗なので、上限を上げるほど遅くなる。
 - **許可印の案内**: f5 の提案どおり、`sweep` の先頭に「`// dupscan:allow <false-positive|intentional> <理由>` で静かになる」の 1 行を添えた。
 - **見送りで閉じる項目** (理由つき): 完全一致の組への build tag の表示 (単位が build tag を持たず、ファイル先頭を読む実装が要る。見合いが低い)。`allow` の理由つき一覧 (必要が出たら)。`near -similar` の順位 (満点か 0.4 台に偏り、`sweep` 節 3 の方が実用的)。版つき手渡しの Lock 枠を除く近似 (実例が 2 つ)。
+
+### 節 3 の上位の組を 1 つずつ読んだ結果 (c4、2026-10-28)
+
+`sweep -similar-max-units 9000 src` の節 3 の上位を順に読んだ。**寄せたのは 2 組、寄せずに閉じたのは 5 組**。
+
+| 組 | 判断 | 理由 |
+|---|---|---|
+| glogx `fakeRunner` ×2 (Dice 1.000) | 寄せた | `internal/gitdata/gitdatatest.FakeRunner` に。gitdata の中のテストが import できるよう、gitdata を import しない leaf の test 専用 package にした (前例 `issuesviewtest`) |
+| glogx `realIssuesView` ×2 (1.000) | 寄せた | 共通の本体を `issuesviewtest.RealIssues` に出し、wrapper を消した。`loadedView` は両側で型が違うので共有しない |
+| mac-lan-manager / treefiler `HandleKey` | 閉じた (許可印) | 1 行の薄い委譲で、返す型が違う (Action / Result)。共通化しても複雑さが下がらない |
+| glogx `stop` / `reset` / `Stop` | 閉じた (許可印) | 「持っている CancelFunc をあれば呼ぶ」3 行。Go に nil 安全な呼び出しは無く、同じ形が 10 箇所ある。止める相手と時点が別 |
+| lockman `childExitCode` ~ proctree `WaitStatus` | 閉じた (許可印) | シグナル死を 128+n にする同じ 6 行。lockman は標準ライブラリだけの自己完結 (go.sum が空) を保ち、子の終了を取れないときの rc も別 (125 と 126)。寄せても wrapper と依存が増える |
+| `writeFile` 系 (A: pro-con ×2・safefs・treefiler の `os.WriteFile` を包む 3 行 / B: dupscan ×2・glogx `WriteRealIssue` の `MkdirAll` + `WriteFile`) | 寄せない (許可印も付けない) | 共有には test 専用 module (A は 4 module をまたぐ) か 70 か所の書き換え (B) が要り、9 行以下の helper に見合わない。ゲートの下限 (20 節) にも届かない。許可印は 7 単位に付けると雑音が増えるだけなので付けない |
+
+- **dupscan の改善 (同時に実装)**: 節 3 を一致度だけで並べると、小さい対が 1.0 近くで上位を占めた。**共有している部分木の重み (`w`) の大きい順**（同じなら一致度）に並べ替えた。変異: 並べ替えを外すと赤。
+- **許可印の数**: 今回の読みで付けた `dupscan:allow` は 7 単位 (HandleKey ×2・stop/reset/Stop ×3・childExitCode/WaitStatus ×2)。節 3 の出し方を見直す根拠として、数は記録しておく。
+- **`dupscan:allow` が sweep で効かなかった不具合**: 先の案内「allow で静かになる」は偽だった (単位の許可印は report では印が付くだけで、sweep は見ていなかった)。メンバー全員が許可済みの組と、両方が許可済みの対を除くよう直した (クロージャは囲む関数が許可済みなら許可済み)。
