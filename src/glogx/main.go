@@ -1,7 +1,6 @@
-// glogx — glog (src/glog、read-only な git log ラッパー) のコピーに push 機能
-// (b → y/N → git push) を足した派生版。glog 本体は「読むだけ」という契約を守るため
-// 拡張せず、write 操作はこちらに隔離する (ユーザー判断 2026-07-19)。
-// CI キャッシュ ($XDG_CACHE_HOME/glog/) は本家と共有する (同一データ・atomic write)。
+// glogx — git log の対話ブラウザ。push (b → y/N → git push) などの write 操作を持つ。
+// 元の read-only な git log ラッパー glog は退役して、この module に一本化した。
+// CI キャッシュの置き場 ($XDG_CACHE_HOME/glog/) の名前は glog 時代のまま (atomic write)。
 // 設計の一次情報: dotfiles の
 // (対話ブラウズは元 issue の非目標だったが 2026-07-16 のユーザー指示で解禁)
 package main

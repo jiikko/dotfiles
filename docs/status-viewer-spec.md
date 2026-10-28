@@ -5,8 +5,8 @@ glogx の status viewer (`s` キー) が作業ツリーをどう読み、どう�
 [`src/glogx/internal/statusview/worktree_status.go`](../src/glogx/internal/statusview/worktree_status.go) (読み取り) と
 [`src/glogx/internal/statusview/status_view.go`](../src/glogx/internal/statusview/status_view.go) (画面)。
 
-glog 本体 (read-only) にこの画面は置かない。write 操作を glogx 側へ隔離する方針は
-[`src/glogx/README.md`](../src/glogx/README.md) 冒頭が正本。
+この画面は glogx にある (glog は退役済み。経緯は
+[`src/glogx/README.md`](../src/glogx/README.md) の「glog との共通コード分離について」)。
 
 ## 1. 何を読むか
 

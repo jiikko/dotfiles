@@ -114,8 +114,7 @@ type tickMsg struct{}
 // repo の照合まで済んでいるので、受け取り側は開くだけ。
 type issuesRestoreMsg struct{ screen issuesview.IssuesScreen }
 
-// pushMsg は git push の実行結果 (b → y 確認後)。glogx の独自機能で、
-// 本家 glog (read-only) には無い。
+// pushMsg は git push の実行結果 (b → y 確認後)。
 type pushMsg struct{ err error }
 
 // ciPollMsg は CI 追従ポーリングの周期タイマー。追従対象 (ciPollTargets) が 1 つでもある間、
@@ -1480,7 +1479,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// C-g は即終了: tmux の C-g popup (bind -n C-g) をトグル風に開閉するため
-	// (開くキーと同じキーで閉じる)。本家 glog には無い割当。
+	// (開くキーと同じキーで閉じる)。
 	// 閉じる演出の途中に来たキーは即着地させる (q を押してから消えるまでの間、入力が
 	// 効かない時間を作らない)
 	if m.zoom.closing() {
@@ -1546,7 +1545,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
 	// 正規化するので全ビュー (一覧/パネル/詳細/diff) に一括で効く。
-	// 🚨 本家 glog と異なり C-b は ← の別名ではない (push を C-b → b に変えた名残で未割当)
+	// 🚨 C-b は ← の別名ではない (push を C-b → b に変えた名残で未割当)
 	if key == "ctrl+f" {
 		key = "right"
 	}

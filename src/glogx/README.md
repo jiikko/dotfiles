@@ -1,9 +1,8 @@
 # glogx
 
-**glog (read-only) のコピーに write 操作と Claude Code 連携を足した派生版。**
+**git log の対話ブラウザ (read-only だった glog の後継)。write 操作と Claude Code 連携を持つ。**
 push (`b`) / pull --rebase (`u`) に加え、Claude Code / codex の残量表示 (`U`) と
-`claude update` (`C`) を持つ。read-only という glog 本体の契約を守るため、write 操作は
-こちらに隔離している。
+`claude update` (`C`) を持つ。
 
 ## glog との共通コード分離について (2026-07-19 の判断 → 2026-07-22 に決着)
 
@@ -182,7 +181,7 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 
 ### 対話ブラウズのキー操作 (TTY のみ)
 
-`Ctrl-F` は全ビューで `→` の別名 (`C-n`/`C-p` = ↓/↑)。本家と異なり `Ctrl-B` は全ビューの `←` 別名ではなく (issues viewer のタブ移動だけ `←` として受ける)、push は `b` (diff 表示中を除く)。
+`Ctrl-F` は全ビューで `→` の別名 (`C-n`/`C-p` = ↓/↑)。`Ctrl-B` は全ビューの `←` 別名ではなく (issues viewer のタブ移動だけ `←` として受ける)、push は `b` (diff 表示中を除く)。
 
 コミット一覧:
 

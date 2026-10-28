@@ -182,7 +182,7 @@ func Usage() string {
         このヘルプを表示する
 
 対話ブラウズのキー操作 (TTY のみ。Ctrl-F は全ビューで → の別名。
-🚨 本家 glog と異なり Ctrl-B は全ビューの ← 別名ではない。issues viewer のタブ移動だけ ← として受ける):
+🚨 Ctrl-B は全ビューの ← 別名ではない。issues viewer のタブ移動だけ ← として受ける):
   b                         git push (y/N 確認つき。未 push が無ければ警告のみ。
                             diff 表示中の b はスクロールのまま)
   u                         git pull --rebase (y/N 確認つき。成功で一覧を再読込。
@@ -331,7 +331,7 @@ GitHub 連携と前提:
   - remote (upstream → origin) から owner/repo を解決する。GitHub 以外の
     remote では CI 欄は ⬜ になる
   - CI 状態は ~/.cache/glog/ ($XDG_CACHE_HOME 対応) に状態別 TTL で
-    キャッシュされる (success/failure 24h, pending 10s など。本家 glog と共有)
+    キャッシュされる (success/failure 24h, pending 10s など)
 
 使用例:
   glogx                     直近 20 件をブラウズ
