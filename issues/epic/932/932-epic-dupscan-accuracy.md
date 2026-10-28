@@ -15,7 +15,7 @@
 | issue | 内容 |
 |---|---|
 | [941](941-ux-dupscan-nudge-definition-search-gaps.md) | hook が Go の定義検索の典型形（`func.*Name`・receiver付き・名前のalternation）で無音。言語の手掛かりがない検索でGoの名前にSwift用 `def` を勧める |
-| [942](942-perf-dupscan-fixed-notice-overhead.md) | 毎回出る注意書き（root 実行で index 471 B / callers 427 B）が狭い検索の過半。0件・空の全文は保つ。hit 側の通知を弱めるなら926の24ケースを改定する |
+| [942](done/942-perf-dupscan-fixed-notice-overhead.md) | 毎回出る注意書き（root 実行で index 471 B / callers 427 B）が狭い検索の過半。0件・空の全文は保つ。hit 側の通知を弱めるなら926の24ケースを改定する |
 | [943](943-perf-dupscan-result-row-shape.md) | 結果行は rg の1.6倍（173 B 対 111 B）で、docが44〜48%。index/callers の行に終端行が無く Read の範囲を決められない（search は範囲つき read_argv を既に出す）。打ち切り時の件数ヘッダと rg の提示も含む |
 | [944](pending/944-feat-dupscan-go-def.md)（保留） | Go の `def`。943の後も全体 Read が多いときに再開 |
 | [946](done/946-feat-dupscan-recall-from-real-modules.md) | 4 module に回して寄せた 21 件のうち、既定の report が出したのは 4 件。小さい単位を比べていない事実を report に出す・メンバー名 1 語だけが違う写しの段 `L1m`（opt-in。Swift で組が倍増するので既定にしない）を実装済み。一括で掘る入口・名前の束は提案。Swift 固有の所見（既定 213 組の 98% がテスト・読めない構文 3.4%）もここ |
