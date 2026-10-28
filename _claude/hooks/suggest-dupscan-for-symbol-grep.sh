@@ -29,6 +29,8 @@
 #   - パイプの後ろの grep (stdin を絞る形)・識別子でない部分や 4 つ以上の alternation・BRE grep の `A|B` (文字の `|`)
 #   - `-i` (大文字小文字を無視する) の grep (def / refs は完全一致なので、案内しても引けない名前になりうる)
 #   - 対象が対応するsource以外のファイルだけのgrep (`grep -c Error build.log`・`grep -n Foo .gitignore`)
+#   - `cd <dir> && grep … x.go` は <dir> を相対パスの基準にして x.go の有無を見る (リテラルの dir だけ。変数・glob・存在しない dir は追わず、
+#     そのときは相対パスで言語を決めない)。`(cd …)` の括弧の閉じは追わない
 #   - grep / rg がコマンドの先頭の語でないもの (`xargs grep …`・`find … -exec grep …`・`time grep …`)
 #   - python3 / jq / git が無い環境 (fail-open)
 #   - 1 つ目のパターンだけを見る (`-e a -e b` の b は見ない)
@@ -156,8 +158,9 @@ def selector_languages(rest):
 
 def named_languages(paths):
     cwd = os.environ.get('HOOK_CWD', '')
+    # cwd が分からない (cd 先を追えない) ときは、相対パスを読まない (hook 自身の cwd で解決しない)
     return {lang for p in paths for lang in ('go', 'swift')
-            if p.endswith('.' + lang) and os.path.isfile(p if os.path.isabs(p) else os.path.join(cwd, p))}
+            if p.endswith('.' + lang) and (os.path.isabs(p) or cwd) and os.path.isfile(p if os.path.isabs(p) else os.path.join(cwd, p))}
 
 def from_segment(words):
     # grep / rg / git grep の後ろから、パターンと Swift を対象にしているかを取る
@@ -282,6 +285,18 @@ def split_shell(cmd):
     parts.append(''.join(buf))
     return parts
 
+def next_cwd(words, cwd):
+    # `cd <dir>` の後ろの segment は <dir> が相対パスの基準になる。リテラルの dir だけ追う。
+    # 追えない (変数・glob・存在しない dir・引数なし・- ) ときは '' を返し、相対パスの存在で言語を決めない。
+    if not words or words[0] not in ('cd', '(cd'):
+        return cwd
+    args = [w for w in words[1:] if w != '--']
+    if len(args) != 1 or not cwd or args[0].startswith('-') or re.search(r'[$`*?\[]', args[0]):
+        return ''
+    target = os.path.expanduser(args[0])
+    full = target if os.path.isabs(target) else os.path.normpath(os.path.join(cwd, target))
+    return full if os.path.isdir(full) else ''
+
 def expand_shell_c(parts):
     # `bash -c '…; grep …'` の中身を、同じ規則で分けた segment に展開する (1 段だけ)。引用符を読む分割は、引用符の中の `;` で割れた偶然の検出を失うため
     out = []
@@ -324,6 +339,7 @@ else:
     # 区切りを残して分け、パイプ (`|`) の直後の segment は stdin を絞る grep なので見ない
     parts = expand_shell_c(split_shell(cmd))
     prev = None
+    cwd_now = os.environ.get('HOOK_CWD', '')  # `cd <dir> &&` を追って相対パスの基準を動かす (cwd がセッションの cwd と違う形)
     for seg in parts:
         if seg in ('||', '&&', ';', '\n', '|'):
             prev = seg
@@ -336,6 +352,10 @@ else:
             words = shlex.split(seg, comments=True)
         except ValueError:
             continue
+        if words and words[0] in ('cd', '(cd'):
+            cwd_now = next_cwd(words, cwd_now)
+            continue
+        os.environ['HOOK_CWD'] = cwd_now
         got = from_segment(words)
         if got:
             print(got)

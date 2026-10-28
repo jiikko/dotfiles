@@ -265,6 +265,19 @@ new_repo 0; for n in $(seq 1 20); do printf 'package a\n' > "$REPO/G$n.go"; done
 next_session; expect_silent "Go 優位 (1 対 20) の言語不明は黙る (Go だけの repo と同じ)" "$(run_bash 'rg -n FooBar .')"
 next_session; expect_go_nudge "Go 優位でも Go を指定した検索は案内する" "$(run_bash 'rg -t go FooBar .')" FooBar
 next_session; expect_nudge "Go 優位でも Swift を指定した検索は案内する" "$(run_bash 'rg -t swift FooBar .')" FooBar
+# `cd <dir> && grep … 相対パス.go`: 相対パスの基準は cd 先。セッションの cwd で探すと Go の手掛かりを失う (実際の呼び出しで Go の取りこぼしの 88%)
+new_repo 0; mkdir -p "$REPO/sub" "$REPO/other"; printf 'package a\n' > "$REPO/A.go"; printf 'package sub\n' > "$REPO/sub/x.go"; printf 'x\n' > "$REPO/other/notes.md"; printf 'package root\n' > "$REPO/rootonly.go"
+git -C "$REPO" add -A >/dev/null 2>&1
+next_session; expect_go_nudge "cd <相対 dir> && grep … x.go (Go だけの repo の言語不明でも、cd 先のファイルが Go の手掛かり)" "$(run_bash 'cd sub && grep -n "func FooBar" x.go')" FooBar
+next_session; expect_go_nudge "cd <dir>; grep (; で続く)" "$(run_bash 'cd sub; grep -rn FooBar x.go')" FooBar
+next_session; expect_go_nudge "cd <絶対 dir> && grep" "$(run_bash "cd $REPO/sub && grep -n FooBar x.go")" FooBar
+next_session; expect_go_nudge "cd ./sub/../sub && grep (正規化して辿る)" "$(run_bash 'cd ./sub/../sub && grep -n FooBar x.go')" FooBar
+next_session; expect_silent "cd sub && cd .. && grep (戻った先に x.go は無い)" "$(run_bash 'cd sub && cd .. && grep -n FooBar x.go')"
+next_session; expect_silent "存在しない dir へ cd したあとの相対パスは、セッションの cwd に在るファイルでも手掛かりにしない" "$(run_bash 'cd missing && grep -n FooBar rootonly.go')"
+next_session; expect_silent "変数で作った dir へ cd したあとの相対パスは、セッションの cwd に在るファイルでも手掛かりにしない" "$(run_bash 'cd $W && grep -n FooBar rootonly.go')"
+next_session; expect_silent "cd 先に在るのは Go でないファイルだけ" "$(run_bash 'cd other && grep -n FooBar notes.md')"
+next_session; expect_silent "cd の後ろでもパイプの後ろの grep は見ない" "$(run_bash 'cd sub && make test | grep -n FooBar x.go')"
+next_session; expect_go_nudge "cd を挟まない相対パス (従来どおり、セッションの cwd 基準)" "$(run_bash 'grep -n FooBar A.go')" FooBar
 # Swift だけの repo は今までどおり Swift 向け (alternation も)
 new_repo 1
 next_session; out=$(run_bash 'grep -rn "FooBar\|BazQux" --include=*.swift Sources')
