@@ -45,6 +45,11 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan gate:", err)
 		return 2
 	}
+	if fs.NArg() == 0 {
+		// 起点を書かなければ repo 全体を見る。cwd が target の dir だと、別の dir にある同じ形の相手が見えず、止めるべき写しを通す。
+		// 一部だけ見たいときは dir を明示する (その場合は 1 行目に「一部だけ」と出る)。
+		sc.Prefixes = []string{""}
+	}
 
 	var head repo.Source = repo.Worktree{Scope: sc, Exts: langs.Extensions()}
 	headCommit := "HEAD"

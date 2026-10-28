@@ -374,3 +374,21 @@ func TestGateSaysWhenOnlyPartOfTheRepoWasScanned(t *testing.T) {
 		t.Errorf("root から打つと shared の相手が見えて新しい重複で止まるはず: rc=%d %q", rc, out)
 	}
 }
+
+// 起点を書かずに打つと、cwd がサブディレクトリでも repo 全体を見る (別の dir の相手を見逃さない)。dir を明示すれば従来どおり絞る。
+func TestGateWithoutDirScansWholeRepoFromSubdirectory(t *testing.T) {
+	root := repoWith(t, map[string]string{"shared/Sources/A.swift": helperA, "mac/Sources/B.swift": "func unrelated() {}\n"})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-qm", "base")
+	writeFile(t, root, "mac/Sources/B.swift", helperB)
+	t.Chdir(filepath.Join(root, "mac"))
+	rc, out, _ := runGateCmd(t, "-base", "HEAD")
+	if rc != 1 || strings.Contains(out, "repo の一部だけを見ている") {
+		t.Errorf("起点を書かないのに mac/ だけを見ている (shared の相手が見えない): rc=%d %q", rc, out)
+	}
+	rc, out, _ = runGateCmd(t, "-base", "HEAD", ".")
+	first, _, _ := strings.Cut(out, "\n")
+	if rc != 0 || !strings.Contains(first, "repo の一部だけを見ている") {
+		t.Errorf("dir を明示したら従来どおり絞る: rc=%d %q", rc, out)
+	}
+}

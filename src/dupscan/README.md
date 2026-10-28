@@ -46,7 +46,7 @@ bin/dupscan -levels L1,L2,L1m .  # メンバー名 1 語だけが違う写し (L
 
 bin/dupscan sweep src/foo        # 初めて入る module を 1 回の走査で 4 つの見方から掘る (組 / 下限 12 節 + L1m / 部分木の対 / 名前の束)
 
-bin/dupscan gate                 # upstream との merge-base から作業ツリーまでに新しく増えた重複。無ければ 1 行
+bin/dupscan gate                 # upstream との merge-base から作業ツリーまでに新しく増えた重複。無ければ 1 行。dir を書かなければ cwd にかかわらず repo 全体を見る (dir を書くとその配下だけ)
 bin/dupscan gate -base origin/master .        # base を明示する (CI の push なら push の前の commit、PR なら対象のブランチ)
 bin/dupscan gate -base HEAD~1 -head HEAD .    # 2 つの commit を比べる (過去の commit の流し直し。checkout しない)
 bin/dupscan gate -v -base <寄せる前> .         # 寄せた結果: base の組のうち消えた・縮んだ組の一覧 (1 行目には数だけ)

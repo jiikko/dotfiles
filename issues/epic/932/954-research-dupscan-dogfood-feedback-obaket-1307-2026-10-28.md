@@ -142,6 +142,13 @@ dupscan の修正と skill の追記を入れた。敵対的な codex レビュ�
 - 却下: session ID の変換で別 session が衝突 (実際の ID は UUID で、既存の案内の印も同じ変換)、時計の巻き戻りで抑止が長引く (epoch 秒で、結果は案内を 1 回逃すだけ。既存の印も同じ作り)。
 - 記録: `-format xcode` は読めないファイルの一覧の統合と範囲の警告を持たない (text だけ。契約を text 以外に広げるときに足す)。
 
+### 残りの対応 (c5、2026-10-28)
+
+- **P4 (b) 済み**: `gate` は dir を書かなければ、cwd にかかわらず repo 全体を見る (`gate_cmd.go`)。dir を明示したときは従来どおりその配下だけで、1 行目に「repo の一部だけを見ている」と出る。Makefile (`bin/dupscan gate … src`) と CI は dir を明示しているので挙動は変わらない。`TestGateWithoutDirScansWholeRepoFromSubdirectory` で固定 (`mac/` を cwd にして shared の相手で止まる / `.` を明示すると絞る)。ブロックを外す変異で赤。skill dupscan の 3 節と README の `gate` の行を揃えた。
+- **文法の版上げは効かない (実測)**: 現在の `82bb3a5` (0.7.4 の生成物) の後に upstream の main で 10 月に入った修正 (switch の case の後続の文の属性・修飾子、`open` の識別子など) を取り込んだ main (`9e3b87f`) から parser を生成し (`tree-sitter generate`)、`func f() { nonisolated(unsafe) let x = 1 }` を直接パースした。**同じ ERROR** (`nonisolated(unsafe)` が呼び出し式、続く `let` が別の文)。upstream に修正は無い。また main は生成物 (`parser.c`) を含まず、含むのは `with-generated-files` ブランチ (今使っている版) だけなので、main に上げるには生成物を自前で持つ必要があり、効果が無い今は上げない。
+  - 次の手: upstream への報告 (最小の再現は上の 1 関数)。外部への公開なので、ユーザーの了解を取ってから行う。
+- **obaket の実ファイル**: この Mac に obaket が無く、実ファイルでは確認できない。issue の `ManualQuickSearchWaitState.wait()` の形 (`withTaskCancellationHandler` の 2 つの closure・`[weak self]`・`Task { @MainActor [weak self] in … }`・`guard !Task.isCancelled`) を再現して現行の文法で読むと**読めた** (`dupscan -v` に「読めない」の行は出ない)。したがって 1895 の原因はこの形ではない。実ファイルの同じ関数のほかの部分 (`nonisolated(unsafe)` など) が候補だが、確かめていない。obaket のある Mac で `dupscan -v` の「読めない:」の行を読めば足りる。
+
 ### 未着手・未確認
 
 - 文法の版を上げて `nonisolated(unsafe) let` を局所で読めるようにする (別の判断)。
