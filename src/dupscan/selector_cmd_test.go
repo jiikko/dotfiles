@@ -85,7 +85,7 @@ func TestSelectorFiltersSyntaxAndPreservesCallPositionsAndOwners(t *testing.T) {
 }
 
 func TestSelectorRejectsUnsupportedQueriesAndReportsPartialAnalysis(t *testing.T) {
-	root := repoWith(t, map[string]string{"a.go": selectorFixture, "broken.go": "package sample\nfunc broken( {\n"})
+	root := repoWith(t, map[string]string{"a.go": selectorFixture, "broken.go": "package sample\nfunc broken( { // Join Missing\n"})
 	for _, value := range []string{"Join", "strings..Join", "get().Join", "strings.Join[int]", "strings.Join()"} {
 		t.Run(value, func(t *testing.T) {
 			rc, out, errs := callers(t, "Join", "-selector", value, root)

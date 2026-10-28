@@ -94,7 +94,8 @@ func TestLegacyExplorationWarnsOnParseErrorsIncludingZeroUnits(t *testing.T) {
 					files := map[string]string{}
 					bad := []string{"A space.swift", "B\"quote.swift", "C.swift", "D.swift"}
 					for _, path := range bad {
-						files[path] = "func broken( {\n"
+						// 問い合わせの名前 (target / missing) を含めて、結果に影響しうるファイルにする。含まないときの短い通知は parse_warning_relevance_test.go
+						files[path] = "func broken( { // target missing\n"
 					}
 					if scenario != "zero_units" {
 						files["Good.swift"] = "func target() {}\nfunc use() { target() }\n"

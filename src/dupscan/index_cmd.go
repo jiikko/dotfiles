@@ -76,7 +76,7 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	if err := writeParseWarning(stderr, "index", got.errFiles); err != nil {
+	if err := got.warnParseErrors(stderr, "index", q.Name); err != nil {
 		return fail(err)
 	}
 	return 0

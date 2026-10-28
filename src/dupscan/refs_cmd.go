@@ -81,7 +81,7 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	if err := writeParseWarning(stderr, "refs", got.errFiles); err != nil {
+	if err := got.warnParseErrors(stderr, "refs", query); err != nil {
 		return fail(err)
 	}
 	if note != "" {

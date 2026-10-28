@@ -6,6 +6,7 @@ import (
 	"io"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"dupscan/internal/repo"
 )
@@ -79,6 +80,42 @@ func (s scanned) callApproximation(labels bool) string {
 		}
 	}
 	return "構文近似: " + match + "で照合。型未解決で同名の別定義が混ざりうる。" + omitted + " 0件でも未使用の証拠ではない。"
+}
+
+// relevantParseErrors は読めなかったファイルのうち、問い合わせの名前を本文に含むもの。
+// 名前の照合は単位名・呼び出し名の小文字化した部分一致で、その名前は本文の部分文字列なので、
+// 名前を含まないファイルは結果に影響しえない。名前が空のとき (他の条件だけの問い合わせ) と、
+// 本文を持っていないファイルは、影響しうるものとして残す。
+// 例外: 初期化子 (`init`) の「呼び出し ~N」は単位名でなく型名で他のファイルの呼び出しを数える (report.callCounts)。
+// 問い合わせの名前が `init` の部分文字列になりうるときは、名前を含まないファイルも影響しうるので全部残す。
+func (s scanned) relevantParseErrors(name string) []string {
+	needle := strings.ToLower(name)
+	if needle == "" || strings.Contains(initUnitName, needle) {
+		return s.errFiles
+	}
+	var relevant []string
+	for _, file := range s.errFiles {
+		body, ok := s.contents[file]
+		if !ok || strings.Contains(strings.ToLower(string(body)), needle) {
+			relevant = append(relevant, file)
+		}
+	}
+	return relevant
+}
+
+// warnParseErrors は解析不完全を stderr に出す。読めなかったファイルのどれかが問い合わせの名前を含むときは全文
+// (従来どおり。hit・0 件・抽出単位 0 のどれでも出す)。どれも含まないときは、結果に影響しないことを 1 行で示す。
+const initUnitName = "init"
+
+func (s scanned) warnParseErrors(w io.Writer, command, name string) error {
+	if len(s.errFiles) == 0 {
+		return nil
+	}
+	if len(s.relevantParseErrors(name)) == 0 {
+		_, err := fmt.Fprintf(w, "dupscan %s: 読めないファイル %d 個は問い合わせの名前を含まない\n", command, len(s.errFiles))
+		return err
+	}
+	return writeParseWarning(w, command, s.errFiles)
 }
 
 // writeParseWarning keeps legacy stdout and no-match exit codes usable while exposing incomplete scans.

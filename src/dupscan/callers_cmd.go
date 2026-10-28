@@ -82,7 +82,7 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	if err := writeParseWarning(stderr, "callers", got.errFiles); err != nil {
+	if err := got.warnParseErrors(stderr, "callers", q.Name); err != nil {
 		return fail(err)
 	}
 	return 0
