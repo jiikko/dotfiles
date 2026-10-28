@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"flag"
@@ -35,7 +36,7 @@ func runDump(args []string, stdout, stderr io.Writer, now func() time.Time, stop
 		return 2
 	}
 	if *peer != "" {
-		return dumpPeer(sshdest.Dest{User: *user, IP: *peer, HostKeyAlias: or(*host, *peer)}, *asJSON, stdout, stderr, stop, observe)
+		return dumpPeer(sshdest.Dest{User: *user, IP: *peer, HostKeyAlias: cmp.Or(*host, *peer)}, *asJSON, stdout, stderr, stop, observe)
 	}
 	start := now()
 	m, err := newModel()
@@ -94,7 +95,7 @@ func (t *dumpTimings) observe(r lanmgr.Report, since time.Duration) {
 }
 
 func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
-	fmt.Fprintf(w, "host: %s  net_ready: %v  busy(打ち切り): %v  台帳: %d 台\n", or(r.Host, "(不明)"), r.NetReady, r.Busy, r.LedgerSize)
+	fmt.Fprintf(w, "host: %s  net_ready: %v  busy(打ち切り): %v  台帳: %d 台\n", cmp.Or(r.Host, "(不明)"), r.NetReady, r.Busy, r.LedgerSize)
 	if r.NetError != "" {
 		fmt.Fprintf(w, "net_error: %s\n", r.NetError)
 	}
@@ -103,7 +104,7 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 	}
 	fmt.Fprintln(w, "\n# この Mac のサービス (networksetup)")
 	for _, s := range r.Services {
-		fmt.Fprintf(w, "  %-24s %-8s active=%-5v ip=%-16s method=%-6s router=%-14s read=%-5v disabled=%v\n", s.Name, s.Device, s.Active, or(s.IP, "-"), or(s.Method, "-"), or(s.Router, "-"), s.Read, s.Disabled)
+		fmt.Fprintf(w, "  %-24s %-8s active=%-5v ip=%-16s method=%-6s router=%-14s read=%-5v disabled=%v\n", s.Name, s.Device, s.Active, cmp.Or(s.IP, "-"), cmp.Or(s.Method, "-"), cmp.Or(s.Router, "-"), s.Read, s.Disabled)
 	}
 	fmt.Fprintln(w, "\n# 一覧 (画面と同じ判定。target = s / Y / y / o が使う宛先、connect = その IP。hidden = 有線だけの表示で隠れる)")
 	for _, x := range r.Rows {
@@ -115,10 +116,10 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 			mark = "M"
 		}
 		fmt.Fprintf(w, "%s %-28s alias=%-14s main=%-16s lan=%-16s fixed=%v connect=%-16s target=%-24s ssh=%v vnc=%v smb=%v seen=%v user=%s\n",
-			mark, x.Host, or(or(x.Alias, x.Instance), "-"), or(x.MainIP, "-"), or(x.LanIP, "-"), x.LanFixed, or(x.ConnectIP, "-"), or(x.Target, "-"),
-			x.SSH, x.VNC, x.SMB, x.Seen, or(x.User, "?"))
+			mark, x.Host, cmp.Or(cmp.Or(x.Alias, x.Instance), "-"), cmp.Or(x.MainIP, "-"), cmp.Or(x.LanIP, "-"), x.LanFixed, cmp.Or(x.ConnectIP, "-"), cmp.Or(x.Target, "-"),
+			x.SSH, x.VNC, x.SMB, x.Seen, cmp.Or(x.User, "?"))
 		if x.MainLink != "" || x.LanLink != "" {
-			fmt.Fprintf(w, "    線: main=%s lan=%s (IP が見えたこの Mac の I/F の Hardware Port)\n", or(x.MainLink, "-"), or(x.LanLink, "-"))
+			fmt.Fprintf(w, "    線: main=%s lan=%s (IP が見えたこの Mac の I/F の Hardware Port)\n", cmp.Or(x.MainLink, "-"), cmp.Or(x.LanLink, "-"))
 		}
 		if !x.Listed {
 			fmt.Fprintln(w, "    hidden: 有線だけの表示で一覧に出ない")
@@ -127,7 +128,7 @@ func writeDumpText(w io.Writer, r lanmgr.Report, tm dumpTimings) {
 			fmt.Fprintln(w, "    初期設定: 途中 (一覧の !)")
 		}
 		if x.WiredName != "" {
-			fmt.Fprintf(w, "    有線の名前: %s %s\n", x.WiredName, map[bool]string{true: "✓ 引ける", false: or(x.WiredNote, "引けない")}[x.WiredOK])
+			fmt.Fprintf(w, "    有線の名前: %s %s\n", x.WiredName, map[bool]string{true: "✓ 引ける", false: cmp.Or(x.WiredNote, "引けない")}[x.WiredOK])
 		}
 		for _, o := range x.Others {
 			fmt.Fprintf(w, "    その他: %s %s (%s%s)\n", o.Device, o.Addr, o.Kind, map[bool]string{true: ", " + o.Link}[o.Link != ""])
@@ -247,7 +248,7 @@ func dumpPeer(d sshdest.Dest, asJSON bool, stdout, stderr io.Writer, stop <-chan
 			fmt.Fprintln(stdout, "有線 (ルーターの無いサービス): (無し)")
 		} else {
 			fmt.Fprintf(stdout, "有線 (ルーターの無いサービス): service=%s ip=%s method=%s mask=%s router=%s\n",
-				line(r.Service), line(or(r.PeerIP, "-")), line(or(r.Method, "-")), line(or(r.Mask, "-")), line(or(r.Router, "-")))
+				line(r.Service), line(cmp.Or(r.PeerIP, "-")), line(cmp.Or(r.Method, "-")), line(cmp.Or(r.Mask, "-")), line(cmp.Or(r.Router, "-")))
 		}
 	}
 	return 0
@@ -293,13 +294,6 @@ func untilStop(stop <-chan struct{}, run func(ctx context.Context)) (stopped boo
 	default:
 		return false
 	}
-}
-
-func or(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 // plainWriter は dump の文字の出力 (JSON でない方) を端末へ出す前に無害化する (知らせ・走査や網の失敗の文に ESC / OSC が入りうる。

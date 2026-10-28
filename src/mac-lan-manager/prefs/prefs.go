@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"atomicfile"
-	"userdirs"
 
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
@@ -38,12 +37,7 @@ func Default() Prefs {
 const EnvDir = ledger.EnvDir
 
 // DefaultPath は設定の置き場所 (台帳の隣。前の置き場 ~/.config/glogx/mac-lan-manager にあれば初回に移す)。
-func DefaultPath() (string, error) {
-	if d := os.Getenv(EnvDir); d != "" {
-		return filepath.Join(d, "settings.toml"), nil
-	}
-	return userdirs.ConfigFile("mac-lan-manager", "settings.toml", filepath.Join(".config", "glogx", "mac-lan-manager", "settings.toml"))
-}
+func DefaultPath() (string, error) { return ledger.ConfigFilePath("settings.toml") }
 
 // writeGuard は書き込みの直前に通す関門 (本番は nil。テストは一時ディレクトリの外を拒否する)。
 var writeGuard func(path string) error

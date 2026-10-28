@@ -1,6 +1,7 @@
 package lanmgr
 
 import (
+	"cmp"
 	"fmt"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"slices"
@@ -346,7 +347,7 @@ func (m *Model) header(w int) string {
 		left += "   " + sOK.Render("✓") + sDim.Render(fmt.Sprintf(" %d 台見つかった", len(m.peers)))
 	}
 	ips := m.selfIPs()
-	right := sKeycap.Render("c") + sDim.Render(" この Mac  メイン ") + sText.Render(or(ips[1], "-")) + sDim.Render("   内部 ") + sText.Render(or(ips[0], "-"))
+	right := sKeycap.Render("c") + sDim.Render(" この Mac  メイン ") + sText.Render(cmp.Or(ips[1], "-")) + sDim.Render("   内部 ") + sText.Render(cmp.Or(ips[0], "-"))
 	if m.selfLan().Unfixed {
 		right += " " + pillWrn.Render("未固定")
 	}
@@ -355,7 +356,7 @@ func (m *Model) header(w int) string {
 	fit := func() bool { return lipgloss.Width(left)+lipgloss.Width(right)+2 <= w }
 	if !fit() && m.scanErr != nil {
 		left = logo() + "   " + sWarn.Render("✗ Bonjour で探せない")
-		right = sKeycap.Render("c") + sDim.Render(" 内部 ") + sText.Render(or(ips[0], "-"))
+		right = sKeycap.Render("c") + sDim.Render(" 内部 ") + sText.Render(cmp.Or(ips[0], "-"))
 	}
 	if !fit() {
 		left = logo()
@@ -364,10 +365,10 @@ func (m *Model) header(w int) string {
 		}
 	}
 	if !fit() {
-		right = sKeycap.Render("c") + sDim.Render(" メイン ") + sText.Render(or(ips[1], "-")) + sDim.Render("  内部 ") + sText.Render(or(ips[0], "-"))
+		right = sKeycap.Render("c") + sDim.Render(" メイン ") + sText.Render(cmp.Or(ips[1], "-")) + sDim.Render("  内部 ") + sText.Render(cmp.Or(ips[0], "-"))
 	}
 	if !fit() {
-		right = sKeycap.Render("c") + sDim.Render(" 内部 ") + sText.Render(or(ips[0], "-"))
+		right = sKeycap.Render("c") + sDim.Render(" 内部 ") + sText.Render(cmp.Or(ips[0], "-"))
 	}
 	// 詰めても 1 桁超えることがある (左右の間の 2 桁の空白)。超えると全体の行が広がり、影の列が切れた
 	return termwidth.Truncate(left+strings.Repeat(" ", max(w-lipgloss.Width(left)-lipgloss.Width(right), 2))+right, w, "")
@@ -528,7 +529,7 @@ func (m *Model) columns() []col {
 			}
 			return " "
 		}, func(s lipgloss.Style, r row) lipgloss.Style { return s.Foreground(cWarn).Bold(true) }},
-		{"別名", fitWidth, func(r row) string { return or(r.alias, or(r.instance, "-")) }, func(s lipgloss.Style, r row) lipgloss.Style {
+		{"別名", fitWidth, func(r row) string { return cmp.Or(r.alias, cmp.Or(r.instance, "-")) }, func(s lipgloss.Style, r row) lipgloss.Style {
 			s = s.Bold(true)
 			switch {
 			case r.self:
@@ -540,14 +541,14 @@ func (m *Model) columns() []col {
 		}},
 	}
 	if m.pf.ShowMain {
-		cols = append(cols, col{"メイン IP", 24, func(r row) string { return ipCell(or(r.mainIP, "-"), r.mainLink) }, nil})
+		cols = append(cols, col{"メイン IP", 24, func(r row) string { return ipCell(cmp.Or(r.mainIP, "-"), r.mainLink) }, nil})
 	}
 	if m.pf.ShowLan {
 		cols = append(cols, col{"内部 IP", 25, func(r row) string {
 			if r.lanIP != "" && !m.lanFixed(r) {
 				return sWarn.Render(ipCell(r.lanIP, r.lanLink)) // 自動割り当て (起動のたびに変わりうる。未固定)
 			}
-			return ipCell(or(r.lanIP, "-"), r.lanLink)
+			return ipCell(cmp.Or(r.lanIP, "-"), r.lanLink)
 		}, nil})
 	}
 	if m.o.Reach != nil {
@@ -565,7 +566,7 @@ func (m *Model) columns() []col {
 		col{"接続できる", 23, func(r row) string {
 			return pill(r.ssh, "ssh", pillSSH) + pill(r.vnc, "画面共有", pillVNC) + pill(r.smb, "smb", pillSMB)
 		}, nil},
-		col{"user", 7, func(r row) string { return or(r.user, "?") }, nil},
+		col{"user", 7, func(r row) string { return cmp.Or(r.user, "?") }, nil},
 		col{"ホスト名", 0, func(r row) string { return r.host }, func(s lipgloss.Style, r row) lipgloss.Style {
 			if !r.seen && !r.self {
 				return s.Foreground(cMuted) // 台帳にあるが今は見えていない
@@ -621,7 +622,7 @@ func (m *Model) detailCompact(r row) string {
 }
 
 func (m *Model) detailCompactLine(r row) string {
-	name := or(r.alias, or(r.instance, r.host))
+	name := cmp.Or(r.alias, cmp.Or(r.instance, r.host))
 	if r.self {
 		name = "この Mac"
 	}
@@ -833,7 +834,7 @@ func (m *Model) detailLines(r row, width int, inPanel bool) []string {
 		enterLabel = "初期設定"
 	}
 	user, _ := m.userFor(r)
-	name := or(r.alias, or(r.instance, r.host))
+	name := cmp.Or(r.alias, cmp.Or(r.instance, r.host))
 	title := sAccent.Render(name)
 	if name != r.host && r.host != "" {
 		title += sDim.Render("  " + r.host)
@@ -873,10 +874,10 @@ func (m *Model) detailLines(r row, width int, inPanel bool) []string {
 	}
 	lines = append(lines, "")
 	if m.pf.ShowMain {
-		lines = append(lines, label("メイン")+sText.Render(or(r.mainIP, "-"))+tagAfter(r.mainLink))
+		lines = append(lines, label("メイン")+sText.Render(cmp.Or(r.mainIP, "-"))+tagAfter(r.mainLink))
 	}
 	if m.pf.ShowLan {
-		lines = append(lines, label("内部")+sText.Render(or(r.lanIP, "-"))+tagAfter(r.lanLink)+"  "+lanState)
+		lines = append(lines, label("内部")+sText.Render(cmp.Or(r.lanIP, "-"))+tagAfter(r.lanLink)+"  "+lanState)
 		if name, ok, note := m.wiredState(r); name != "" {
 			state := sOK.Render("✓ 引ける")
 			if !ok {
@@ -962,7 +963,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 		body := make([]string, 0, len(items))
 		width := 0
 		for _, it := range items {
-			width = max(width, termwidth.Of(or(it.value, it.shown)))
+			width = max(width, termwidth.Of(cmp.Or(it.value, it.shown)))
 		}
 		for i, it := range items {
 			extra := ""
@@ -976,7 +977,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 			if it.value == "" {
 				val = sMuted
 			}
-			row := sKeycap.Render(strconv.Itoa(i+1)) + "  " + sDim.Width(12).Render(it.label) + val.Width(max(width, 15)+2).Render(or(or(it.value, it.shown), "-")) + extra
+			row := sKeycap.Render(strconv.Itoa(i+1)) + "  " + sDim.Width(12).Render(it.label) + val.Width(max(width, 15)+2).Render(cmp.Or(cmp.Or(it.value, it.shown), "-")) + extra
 			row = termwidth.Truncate(row, max(m.w-8, 12), "…") // 板の内側 (modal は幅 w-1 から縁と余白の 6 桁を引く) に収める。狭い端末で行がはみ出した
 			if i == min(m.copyC, len(items)-1) {
 				row = lipgloss.NewStyle().Background(cSel).Render(row)

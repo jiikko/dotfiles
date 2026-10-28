@@ -2,7 +2,7 @@ package discover
 
 import (
 	"fmt"
-	"os"
+	"mac-lan-manager/internal/testfile"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,11 +14,7 @@ import (
 
 func lines(t *testing.T, name string) []string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return strings.Split(string(b), "\n")
+	return strings.Split(testfile.Read(t, name), "\n")
 }
 
 func TestParseBrowse(t *testing.T) {

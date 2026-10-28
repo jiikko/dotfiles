@@ -65,7 +65,7 @@ func newHarness(t *testing.T, hosts []ledger.Host, peers []discover.Peer) *harne
 		ReadNet:   func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil },
 		LocalHost: func() string { return "kojiM3MacBook-Pro.local" },
 		StartScan: func(time.Time) Scanner { return h.scan.Reopen() },
-		IfName:    func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
+		IfName:    lanmgrtest.IfName,
 		Ledger:    h.store,
 		PrefsPath: "settings.toml (偽物)",
 		SavePrefs: func(_ string, p prefs.Prefs) error { h.saved = append(h.saved, p); return nil },
@@ -684,7 +684,7 @@ func TestLoadingKeepsSelfSingleAndRefusesActions(t *testing.T) {
 		},
 		LocalHost: func() string { return "me.local" },
 		StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan([]discover.Peer{me, mini}...) },
-		IfName:    func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
+		IfName:    lanmgrtest.IfName,
 		// x.local は台帳に内部 IP があるので、読み込み中でも行に IP が出る (ガードが無いと s がそこへ繋ぐ)
 		Ledger: &lanmgrtest.Store{Hosts: []ledger.Host{{Host: "me.local", User: "koji"}, {Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
 		Now:    func() time.Time { return t0 },
@@ -3044,7 +3044,7 @@ func TestKeyRefusedWhenRowsAppearUnderEmptyTab(t *testing.T) {
 		},
 		LocalHost: func() string { return "me.local" },
 		StartScan: func(time.Time) Scanner { return lanmgrtest.NewScan([]discover.Peer{mini}...) },
-		IfName:    func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
+		IfName:    lanmgrtest.IfName,
 		Now:       func() time.Time { return t0 },
 		User:      "koji",
 	})

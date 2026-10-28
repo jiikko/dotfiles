@@ -1,6 +1,7 @@
 package lanmgr
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -143,7 +144,7 @@ func (m *Model) openSetup(r row) {
 		return
 	}
 	m.closeSetup()
-	m.su = &setupState{host: r.host, dest: d, label: or(r.alias, or(r.instance, r.host))}
+	m.su = &setupState{host: r.host, dest: d, label: cmp.Or(r.alias, cmp.Or(r.instance, r.host))}
 	m.sc = scSetup
 	m.observe()
 }

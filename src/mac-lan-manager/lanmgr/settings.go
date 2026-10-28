@@ -3,6 +3,7 @@ package lanmgr
 // 設定の画面 (`,` で開閉)。何の IP をどう出すかを、環境の推測に頼らず設定で決める。
 
 import (
+	"cmp"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"slices"
 	"strings"
@@ -35,14 +36,19 @@ func (m *Model) setCount() int { return setKind0 + len(otherKinds) }
 func (m *Model) lanIFs() []netinfo.Service {
 	var out []netinfo.Service
 	for _, s := range m.self.Enabled() {
-		if m.self.LanIF(s.Device) && !slices.ContainsFunc(out, func(o netinfo.Service) bool { return o.Device == s.Device }) {
+		if m.self.LanIF(s.Device) && !slices.ContainsFunc(out, deviceIs(s.Device)) {
 			out = append(out, s)
 		}
 	}
-	if m.pf.LanIF != "" && len(out) > 0 && !slices.ContainsFunc(out, func(o netinfo.Service) bool { return o.Device == m.pf.LanIF }) {
+	if m.pf.LanIF != "" && len(out) > 0 && !slices.ContainsFunc(out, deviceIs(m.pf.LanIF)) {
 		out = append([]netinfo.Service{{Device: m.pf.LanIF, Name: "(今は使えない)"}}, out...)
 	}
 	return out
+}
+
+// deviceIs は Device が dev のサービスかを見る関数。
+func deviceIs(dev string) func(netinfo.Service) bool {
+	return func(s netinfo.Service) bool { return s.Device == dev }
 }
 
 func (m *Model) savePrefs() {
@@ -120,7 +126,7 @@ func (m *Model) keySettings(key, text string) Action {
 				m.note("ルーターの無い I/F が無い", false)
 				return None
 			}
-			i := slices.IndexFunc(ifs, func(s netinfo.Service) bool { return s.Device == m.pf.LanIF })
+			i := slices.IndexFunc(ifs, deviceIs(m.pf.LanIF))
 			d := 1
 			if key == "left" || key == "h" {
 				d = len(ifs) - 1
@@ -264,8 +270,8 @@ func (m *Model) viewSettings(w int) string {
 		rows = append(rows, row)
 	}
 	sl := m.selfLan()
-	rows = append(rows, "", sDim.Render("今の設定でのこの Mac の内部 IP: ")+sText.Bold(true).Render(or(sl.IP, "-"))+sMuted.Render("  ("+sl.Note+")"))
-	rows = append(rows, sMuted.Render("保存先 "+or(m.o.PrefsPath, "(保存しない)")))
+	rows = append(rows, "", sDim.Render("今の設定でのこの Mac の内部 IP: ")+sText.Bold(true).Render(cmp.Or(sl.IP, "-"))+sMuted.Render("  ("+sl.Note+")"))
+	rows = append(rows, sMuted.Render("保存先 "+cmp.Or(m.o.PrefsPath, "(保存しない)")))
 	// どの行も板の中の幅で切る (折り返すと行が増え、帯の入力欄のキャレットが別の行に出た)
 	for i, r := range rows {
 		rows[i] = termwidth.Truncate(r, inner, "…")

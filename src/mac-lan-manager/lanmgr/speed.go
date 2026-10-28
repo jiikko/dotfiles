@@ -52,7 +52,7 @@ type SpeedTarget struct {
 // 多い。ユーザー決定 2026-10-18)。
 func (m *Model) speedTarget(r row) SpeedTarget {
 	// この Mac のネットワークを読めていない間はここで断らない: 呼び出し側が先に断る (画面の t は needsNet、CLI は SpeedTargets)
-	t := SpeedTarget{Host: r.host, Name: or(r.alias, r.host)}
+	t := SpeedTarget{Host: r.host, Name: cmp.Or(r.alias, r.host)}
 	switch {
 	case r.self:
 		t.Refusal = "この Mac 自身は測らない"
@@ -125,6 +125,11 @@ type speedAsk struct {
 	cur        int
 }
 
+// pathIPIs は経路の IP が ip の経路かを見る関数。
+func pathIPIs(ip string) func(speedPath) bool {
+	return func(p speedPath) bool { return p.ip == ip }
+}
+
 // speedPaths は行の Mac を測れる経路 (内部 IP → メイン IP → その他の IP の順。同じ IP は 1 つ)。網が分かれていて届かない IP
 // (片方だけ固定して 169.254 と帯の番号に分かれた組) は外す: 内部 IP は rows が決めた lanAway、その他の IP はそれが見えた I/F に
 // この Mac が持つ IP と lanReachable で比べる (この Mac の内部 IP 1 つと比べると、別の有線の I/F で届く IP まで外れた)。
@@ -135,7 +140,7 @@ func (m *Model) speedPaths(r row) []speedPath {
 		if ip == "" {
 			return
 		}
-		if i := slices.IndexFunc(ps, func(p speedPath) bool { return p.ip == ip }); i >= 0 {
+		if i := slices.IndexFunc(ps, pathIPIs(ip)); i >= 0 {
 			if ps[i].link == netinfo.LinkUnknown { // 同じ IP の線が後の方で分かるなら、分かる方を採る (台帳の内部 IP がメインとして見えた)
 				ps[i].link = l
 			}
@@ -294,7 +299,7 @@ func (m *Model) startSpeed(host, name string, d sshdest.Dest, link netinfo.Link)
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan speedtest.Result, 1) // 取り消した後に届いた結果は誰も読まない (送り手を止めない)
 	m.speedRun = &speedRun{host: host, name: name, ip: d.IP, link: link, since: m.o.Now(), shown: true, ch: ch, cancel: cancel}
-	m.logf("speed start %s ip=%s link=%s", host, d.IP, or(link.Label(), "?"))
+	m.logf("speed start %s ip=%s link=%s", host, d.IP, cmp.Or(link.Label(), "?"))
 	run, now := m.o.SpeedTest, m.o.Now
 	go func() { ch <- run(ctx, d, now) }()
 }
@@ -390,7 +395,7 @@ func (m *Model) speedLine(r row, label func(string) string) []string {
 	results := slices.DeleteFunc(slices.Collect(maps.Values(m.speed[r.host])), func(res speedResult) bool {
 		return m.speedRun != nil && m.speedRun.host == r.host && m.speedRun.ip == res.ip
 	})
-	seen := func(ip string) bool { return slices.ContainsFunc(paths, func(p speedPath) bool { return p.ip == ip }) }
+	seen := func(ip string) bool { return slices.ContainsFunc(paths, pathIPIs(ip)) }
 	slices.SortFunc(results, func(a, b speedResult) int {
 		if c := cmp.Compare(boolOrder(!seen(a.ip)), boolOrder(!seen(b.ip))); c != 0 { // 今見えている経路を上に
 			return c

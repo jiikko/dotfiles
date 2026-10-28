@@ -130,8 +130,17 @@ func (s *Store) Load() ([]ledger.Host, error) {
 	return slices.Clone(s.Hosts), nil
 }
 
+// hostIs は台帳の鍵 (ledger.Key) が host と同じホストかを見る関数。
+func hostIs(host string) func(ledger.Host) bool {
+	key := ledger.Key(host)
+	return func(x ledger.Host) bool { return x.Host == key }
+}
+
+// IfName はテストの Mac の I/F 番号の名前 (14 = en0・27 = en13)。偽物の走査結果の Addrs の鍵 (I/F 番号) と対で使う。
+func IfName(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] }
+
 func (s *Store) Update(host string, f func(*ledger.Host)) error {
-	i := slices.IndexFunc(s.Hosts, func(x ledger.Host) bool { return x.Host == ledger.Key(host) })
+	i := slices.IndexFunc(s.Hosts, hostIs(host))
 	if i < 0 {
 		return ledger.ErrNotFound
 	}
@@ -152,6 +161,6 @@ func (s *Store) Merge(h ledger.Host, f func(*ledger.Host)) error {
 }
 
 func (s *Store) Remove(host string) error {
-	s.Hosts = slices.DeleteFunc(s.Hosts, func(x ledger.Host) bool { return x.Host == ledger.Key(host) })
+	s.Hosts = slices.DeleteFunc(s.Hosts, hostIs(host))
 	return nil
 }

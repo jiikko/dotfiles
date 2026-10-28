@@ -13,6 +13,7 @@ import (
 
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr"
+	"mac-lan-manager/lanmgr/lanmgrtest"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/speedtest"
@@ -53,7 +54,7 @@ func speedModelWith(readErr error, busy bool, more []ledger.Host) func() (*lanmg
 					discover.Peer{Host: "air.local", Instances: []string{"air"}, SSH: true, Addrs: map[int]string{14: "192.168.50.9"}},
 				)
 			},
-			IfName: func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
+			IfName: lanmgrtest.IfName,
 			Ledger: &speedLedger{hosts: append([]ledger.Host{
 				{Host: "m2macmini.local", User: "koji", LAN: "192.168.100.12", Alias: "mini"},
 				{Host: "air.local", User: "koji"},

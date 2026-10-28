@@ -45,7 +45,7 @@ func dumpModel(busy bool) func() (*lanmgr.Model, error) {
 				return newScan(busy, nil, discover.Peer{Host: "m2macmini.local", Instances: []string{"kojiのMac mini"}, SSH: true,
 					Addrs: map[int]string{14: "192.168.50.7", 27: "169.254.217.100"}})
 			},
-			IfName: func(i int) string { return map[int]string{14: "en0", 27: "en13"}[i] },
+			IfName: lanmgrtest.IfName,
 			User:   "koji",
 		}), nil
 	}

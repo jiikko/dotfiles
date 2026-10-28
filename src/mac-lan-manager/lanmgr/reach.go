@@ -1,6 +1,7 @@
 package lanmgr
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -48,7 +49,7 @@ type ReachTarget struct {
 }
 
 func (m *Model) reachTarget(r row) ReachTarget {
-	t := ReachTarget{Host: r.host, Name: or(r.alias, r.host), LanIP: r.lanIP}
+	t := ReachTarget{Host: r.host, Name: cmp.Or(r.alias, r.host), LanIP: r.lanIP}
 	switch {
 	case r.self:
 		t.Refusal = "この Mac 自身は確かめない"

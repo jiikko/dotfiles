@@ -3,7 +3,7 @@ package reach
 import (
 	"context"
 	"errors"
-	"os"
+	"mac-lan-manager/internal/testfile"
 	"slices"
 	"sync"
 	"testing"
@@ -11,11 +11,7 @@ import (
 
 func readTestdata(t *testing.T, name string) string {
 	t.Helper()
-	b, err := os.ReadFile("testdata/" + name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
+	return testfile.Read(t, name)
 }
 
 // dupOut は宛先の近くの別の機器も応えたときの統計 (作った値。ping のソースの形に合わせた。本物の出力は取れていない)。

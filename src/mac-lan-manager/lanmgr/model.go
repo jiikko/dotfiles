@@ -10,6 +10,7 @@
 package lanmgr
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -740,7 +741,7 @@ func (m *Model) selfLan() selfLanInfo {
 	for _, s := range m.self.Enabled() {
 		if m.pf.LanIF != "" && s.Device == m.pf.LanIF { // 未設定 ("") を I/F の無いサービス (VPN) に一致させない
 			if !m.self.LanIF(s.Device) { // 設定が読めない・ルーターがある・無線の I/F の IP を内部 IP として出さない (I/F の候補と同じ判定)
-				return selfLanInfo{Note: "I/F " + s.Device + " (" + or(s.Port, "種類不明") + ") は内部の網に使えない (読めない・ルーターがある・無線か iPhone USB)"}
+				return selfLanInfo{Note: "I/F " + s.Device + " (" + cmp.Or(s.Port, "種類不明") + ") は内部の網に使えない (読めない・ルーターがある・無線か iPhone USB)"}
 			}
 			// 方式で決める (自動の 169.254 を固定と見て台帳に書けた)。帯は I/F で決めるときも固定の判定と番号の提案に使う
 			note := "I/F " + s.Device
@@ -753,7 +754,7 @@ func (m *Model) selfLan() selfLanInfo {
 			return selfLanInfo{IP: s.IP, Note: note, Unfixed: !fixed(s)}
 		}
 	}
-	return selfLanInfo{Note: "I/F " + or(m.pf.LanIF, "(未設定)") + " が無い"}
+	return selfLanInfo{Note: "I/F " + cmp.Or(m.pf.LanIF, "(未設定)") + " が無い"}
 }
 
 // rows は台帳・Bonjour・この Mac の網から一覧の行を組む (分類はここと ifKind / selfLan / connectIP / userFor に閉じ、UI の状態を読まない)。
@@ -856,7 +857,7 @@ func (m *Model) rows() []row {
 		out[i].noWire = noWire && out[i].lanIP != ""
 		out[i].lanAway = out[i].noWire || !lanReachable(self.lanIP, out[i].lanIP, m.pf.Band)
 	}
-	slices.SortFunc(out, func(a, b row) int { return strings.Compare(or(a.alias, a.host), or(b.alias, b.host)) })
+	slices.SortFunc(out, func(a, b row) int { return strings.Compare(cmp.Or(a.alias, a.host), cmp.Or(b.alias, b.host)) })
 	return append([]row{self}, out...)
 }
 
@@ -923,7 +924,7 @@ func (r row) shellRefusal() string {
 	case !r.ssh && !r.managed:
 		return "ssh が閉じている (相手の画面でリモートログインをオンにしてから)"
 	case r.connectIP() == "":
-		return or(r.awayReason(), "繋ぐ IP が分からない")
+		return cmp.Or(r.awayReason(), "繋ぐ IP が分からない")
 	}
 	return ""
 }
@@ -975,7 +976,7 @@ func (r row) connectIP() string {
 			return "" // その他の I/F (VPN 等) へは落とさない (見当違いの IP へ黙って繋いだ。敵対レビュー)。理由は awayReason
 		}
 	}
-	if ip := or(lan, r.mainIP); ip != "" || len(r.others) == 0 {
+	if ip := cmp.Or(lan, r.mainIP); ip != "" || len(r.others) == 0 {
 		return ip
 	}
 	return r.others[0].Addr
@@ -1023,13 +1024,6 @@ func (m *Model) userFor(r row) (user string, guessed bool) {
 		return r.user, false
 	}
 	return m.o.User, true
-}
-
-func or(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 // ---- キー ----
@@ -1341,7 +1335,7 @@ func (m *Model) keyList(key string) Action {
 			break
 		}
 		if r.connectIP() == "" {
-			m.note(or(r.awayReason(), "繋ぐ IP が分からない"), false)
+			m.note(cmp.Or(r.awayReason(), "繋ぐ IP が分からない"), false)
 			break
 		}
 		m.handOff(ExecRequest{Argv: []string{"open", "vnc://" + m.target(r)}, ExitIsFailure: true}, nil)
@@ -1352,7 +1346,7 @@ func (m *Model) keyList(key string) Action {
 			break
 		}
 		if r.connectIP() == "" {
-			m.note(or(r.awayReason(), "繋ぐ IP が分からない"), false)
+			m.note(cmp.Or(r.awayReason(), "繋ぐ IP が分からない"), false)
 			break
 		}
 		if user == "" { // SyakeScreen は user の無い URL を断る (一覧の鍵が user@host なので、省くと同じ Mac の 2 本目になる)
@@ -1518,12 +1512,12 @@ func (m *Model) askLedger(r row) {
 		}
 		m.ask = &ask{title: "台帳に登録する", body: []string{
 			r.host + " を管理対象にする (Mac には何もしない。初期設定は別)",
-			"user " + or(h.User, "(無し。繋ぐときはこの Mac のユーザー名)") + " / 内部 IP " + or(h.LAN, "-"),
+			"user " + cmp.Or(h.User, "(無し。繋ぐときはこの Mac のユーザー名)") + " / 内部 IP " + cmp.Or(h.LAN, "-"),
 		}, yes: func() Notice {
 			// 板を出している間に別のプロセス (glogx の L・単体のコマンド) が同じ Mac を載せていたら、その行を残す (古い一覧の値で
 			// 置き換えると別名・内部 IP を消した)。空の欄だけ埋める
 			err := m.o.Ledger.Merge(h, func(x *ledger.Host) {
-				x.User, x.LAN = or(x.User, h.User), or(x.LAN, h.LAN)
+				x.User, x.LAN = cmp.Or(x.User, h.User), cmp.Or(x.LAN, h.LAN)
 			})
 			if err != nil {
 				return Notice{Text: "登録できない: " + err.Error(), OK: false}
@@ -1644,7 +1638,7 @@ var (
 			}
 			return ""
 		}, set: func(h *ledger.Host, v string) { h.User = v },
-		emptyMeans: func(m *Model) string { return "既定 (" + or(m.o.User, "分からない") + ")" }}
+		emptyMeans: func(m *Model) string { return "既定 (" + cmp.Or(m.o.User, "分からない") + ")" }}
 )
 
 // openEdit は台帳に載っている Mac の 1 欄の入力欄を開く。
@@ -1684,7 +1678,7 @@ func (m *Model) keyAlias(key, text string) Action {
 			return None
 		}
 		m.reloadLedger()
-		shown := or(v, "(無し)")
+		shown := cmp.Or(v, "(無し)")
 		if v == "" && e.emptyMeans != nil {
 			shown = e.emptyMeans(m)
 		}

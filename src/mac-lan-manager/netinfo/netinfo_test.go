@@ -3,9 +3,8 @@ package netinfo
 import (
 	"context"
 	"errors"
-	"os"
+	"mac-lan-manager/internal/testfile"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -17,11 +16,7 @@ import (
 
 func fixture(t *testing.T, name string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
+	return testfile.Read(t, name)
 }
 
 func TestParseServiceOrder(t *testing.T) {

@@ -86,11 +86,15 @@ const EnvDir = "MAC_LAN_MANAGER_CONFIG_DIR"
 
 // DefaultPath は台帳の置き場所 ($XDG_CONFIG_HOME/mac-lan-manager/hosts.toml、未設定なら ~/.config/mac-lan-manager/hosts.toml)。
 // 前の置き場 (~/.config/glogx/mac-lan-manager/hosts.toml) にあれば初回に移す (userdirs.ConfigFile)。
-func DefaultPath() (string, error) {
+func DefaultPath() (string, error) { return ConfigFilePath("hosts.toml") }
+
+// ConfigFilePath はこのアプリの設定ファイル file の置き場所。EnvDir があればその中、無ければ userdirs の設定の置き場
+// (前の置き場 ~/.config/glogx/mac-lan-manager にあれば初回に移す)。台帳 (hosts.toml) と設定 (settings.toml) が同じ規則を使う。
+func ConfigFilePath(file string) (string, error) {
 	if d := os.Getenv(EnvDir); d != "" {
-		return filepath.Join(d, "hosts.toml"), nil
+		return filepath.Join(d, file), nil
 	}
-	return userdirs.ConfigFile("mac-lan-manager", "hosts.toml", filepath.Join(".config", "glogx", "mac-lan-manager", "hosts.toml"))
+	return userdirs.ConfigFile("mac-lan-manager", file, filepath.Join(".config", "glogx", "mac-lan-manager", file))
 }
 
 // writeGuard は書き込みの直前に通す関門。本番は nil (何もしない)。テストは一時ディレクトリの外を拒否する関数を入れる

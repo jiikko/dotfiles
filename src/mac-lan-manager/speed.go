@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"flag"
@@ -161,9 +162,9 @@ func printSpeed(w io.Writer, r speedReport) {
 	case r.Skipped != "":
 		fmt.Fprintf(w, "%s  - 測らない: %s\n", head, r.Skipped)
 	case r.Error != "":
-		fmt.Fprintf(w, "%s  ✗ %s  [%s %s]\n", head, strings.ReplaceAll(r.Error, "\n", " / "), r.IP, or(r.Link, "経路不明"))
+		fmt.Fprintf(w, "%s  ✗ %s  [%s %s]\n", head, strings.ReplaceAll(r.Error, "\n", " / "), r.IP, cmp.Or(r.Link, "経路不明"))
 	default:
-		fmt.Fprintf(w, "%s  ↑ %s  ↓ %s  [%s %s]", head, speedtest.Format(r.UpBps), speedtest.Format(r.DownBps), r.IP, or(r.Link, "経路不明"))
+		fmt.Fprintf(w, "%s  ↑ %s  ↓ %s  [%s %s]", head, speedtest.Format(r.UpBps), speedtest.Format(r.DownBps), r.IP, cmp.Or(r.Link, "経路不明"))
 		if r.Capped100M {
 			fmt.Fprint(w, "  🚨 100 Mbps 付近で頭打ち (途中に 100M の機器・ケーブル?)")
 		}
