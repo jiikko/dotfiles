@@ -18,13 +18,13 @@ Go testは比較から除いてもcallsを収集し、937のcallersはtest owner
 
 ## 目的と不足
 
-構文単位の索引から落ちる手掛かりも使い、名前不明の既存実装の見落としと、確認のための大量Readを減らす。[925](done/925-feat-dupscan-helper-search.md)は初期doc先頭行まで、[927](done/927-feat-dupscan-agent-context.md)は選択済み定義/近似refs/callersのcontext。本issueは、まだ候補が無い段階でdoc後半やテスト内の使用例から候補へ到達する補助経路を担当する。
+構文単位の索引から落ちる手掛かりも使い、名前不明の既存実装の見落としと、確認のための大量Readを減らす。[925](925-feat-dupscan-helper-search.md)は初期doc先頭行まで、[927](927-feat-dupscan-agent-context.md)は選択済み定義/近似refs/callersのcontext。本issueは、まだ候補が無い段階でdoc後半やテスト内の使用例から候補へ到達する補助経路を担当する。
 
 ## 現状の裏取り（2920a72a）
 
 - Unit.Docはdoc comment先頭行。SwiftのdocCommentとGoのdocLineは索引に全文を保持しない。
 - GoのfuncDeclはTest/Benchmark等を比較単位から外す。callsはテスト内のcallも収集するため、全テスト情報が失われるという意味ではない。テスト関数をそのまま重複比較対象へ戻す変更は不要。
-- 現行はmetadata-only走査のscanned.contentsを共用する。公開ReadSetは過去の未実装設計案。元sourceのcontentsは存在するので、索引へ無制限に全文を複製する必要はない。[931](../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)では広いcatで出力予算を消費し、実際のモデル可視量までは測れていなかった。
+- 現行はmetadata-only走査のscanned.contentsを共用する。公開ReadSetは過去の未実装設計案。元sourceのcontentsは存在するので、索引へ無制限に全文を複製する必要はない。[931](../../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)では広いcatで出力予算を消費し、実際のモデル可視量までは測れていなかった。
 
 ## 元の設計案（1〜3の最小版は実装済み、残りは条件付き）
 
@@ -65,7 +65,7 @@ Go testは比較から除いてもcallsを収集し、937のcallersはtest owner
 
 ## 補助証拠の固定課題評価（2026-10-27）
 
-09e983fcでE1〜E3を事前固定した。Go corpusは09e983fcのuserdirs、Swift corpusはObaket 386e287652125961d045fe565d0e18fe41495d89のCore。凍結条件とagent検証の制限は[928](928-feat-dupscan-agent-onboarding.md)を参照。課題文には正例の関数名を含めず、ソースから決めた正解集合で確認した。
+09e983fcでE1〜E3を事前固定した。Go corpusは09e983fcのuserdirs、Swift corpusはObaket 386e287652125961d045fe565d0e18fe41495d89のCore。凍結条件とagent検証の制限は[928](../928-feat-dupscan-agent-onboarding.md)を参照。課題文には正例の関数名を含めず、ソースから決めた正解集合で確認した。
 
 | 課題 / 固定phrase | 人が決めた正解と観測 | rg / index-doc / search / evidenceのbytes | 中央値ms（同順） |
 |---|---|---:|---:|

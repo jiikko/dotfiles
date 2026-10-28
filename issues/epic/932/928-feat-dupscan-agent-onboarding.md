@@ -317,3 +317,5 @@ rawはdotfiles/tmp/remaining-932-20261028/readiness.logとreadiness-followup.jso
 - 2026-10-28: `docs(dupscan): record local onboarding checks and pending agent evaluation`で共通CLIの実起動6guide/準備状態/別cwd/設定/非repoを検証し、元の弱い非repo試行と未実施項目を区別した。コードの追加や新しい外部agent実験は行っていない。
 
 - 2026-10-28: ローカル導線の追加記録をread-only subagentで反証し、追加指摘なし。AIによる実利用と効率の評価はopenのまま。
+
+- 2026-10-28: 925/927/934統合後も既存C2で実argvを連鎖実行した。context 9998bytes→型名evidence 2263bytes→その先頭read_source 1571bytes/47行に5appendを含むことをローカルで確認。これは型解決や影響範囲網羅、agentの正しい選択を保証しない。rawはtmp/remaining-932-20261028/integrated-recovery.json。

@@ -1,21 +1,16 @@
 # 932 (epic): dupscan の精度を上げる — 既存実装の見落としと誤判断を減らす
 
-> 🚨 **担当中: air5 (glogx)**（2026-10-28〜）
-
 起票日: 2026-10-26
 
 既存helperの発見、誤った「不存在」判断の防止、候補の確認費用を改善する。意味上の同一性や別moduleからの利用可否は、構文一致だけでは証明しない。
 
 ## 現在の状態（2026-10-28）
 
-子issue20件中12件完了、7件open、1件pending（941〜944は2026-10-28追加、下節）。今回895・918・926・930・933の限定実装を完了し、925・927・928・934は現行版の固定課題評価と残作業を更新した。条件付きの旧詳細設計は一括実装しない。
+子issue20件中15件完了、4件open、1件pending。今回対象だった925・927・934の局所機能と確認導線を完了し、その対象では928の実agent評価が未完了。別セッション追加の941〜944は下節の記録・状態を保持する。限定機能の完了と一般的なagent効率の実証を区別する。
 
-| open | 現状と次の確認 |
+| open | 残作業 |
 |---|---|
-| [925](done/925-feat-dupscan-helper-search.md) | text searchは実装済み。固定正例へ到達する一方alias/ORの取りこぼしあり。実際の見落とし課題で検索を使った差を評価する |
-| [927](done/927-feat-dupscan-agent-context.md) | context/summary/節選択は実装済み。3問い合わせを1回に集約できるが、同名appendの461件で目的が埋もれる。型名探索への回復を評価する |
-| [928](928-feat-dupscan-agent-onboarding.md) | 能力案内/doctor/guideは実装済み。Codex実編集1対は両群とも既存ルールを再利用し、検索機能を使った効率差は未実証。外部への追加ソース送信は承認待ち |
-| [934](934-feat-dupscan-source-evidence-search.md) | evidenceはdoc後半/source正例へ到達するが、否定コメントからの誤誘導も残る。実際の候補確認を評価する |
+| [928](928-feat-dupscan-agent-onboarding.md) | sourceを読む実agentの比較は明示許可待ち。ローカルwrapper/guide/config/非repoは追加確認済みだが、cold compiler cacheや全SDK/環境matrix、検索の実利用による再利用/重複追加/実contextの因果効果は未検証 |
 
 ## 使われやすさと context 消費（2026-10-28 追加）
 
@@ -29,6 +24,10 @@
 | [944](pending/944-feat-dupscan-go-def.md)（保留） | Go の `def`。943の後も全体 Read が多いときに再開 |
 
 ## 完了した子issue
+
+- [925](done/925-feat-dupscan-helper-search.md): text検索と明示回復。hard条件候補0で無益な語数緩和を省略。固定alias例で3検索/3867bytes→2検索/2568bytes。
+- [927](done/927-feat-dupscan-agent-context.md): qualified照会の一覧省略時だけ型名evidenceを追加し、従来の取得actionを保持。C2の型構築/テストへ回復する局所導線を確認。
+- [934](done/934-feat-dupscan-source-evidence-search.md): evidenceの先頭actionを原文確認にし、従来の追跡を2番目に残す。否定コメントやowner不明のGoテストの実sourceへ到達。
 
 - [895](done/895-feat-dupscan-type3-candidates.md): opt-inの対象指定 `near -similar`。幅計算とdoctorの歴史例を発見。全体group化/LSHは不採用。
 - [918](done/918-feat-dupscan-target-and-literal-table.md): `explain -compare`で2対象の直接literal/未解決式を比較。initializer/manifest解決は不採用。
@@ -44,3 +43,11 @@
 各topicは専用worktreeで実装・反証レビュー・回帰/変異検証を行い、実測と採用しない理由を子issueへ記録した。共通CLIの構造化metadata、cursor、cache等は具体的な必要性が出た範囲で再検討する。今回の評価で一般的な開発効率が改善したとはまだ言えない。
 
 統合検証: module lint/race全件成功。strict module gateは新重複/新規除外なし。全src gateは既存の意図的不正fixtureがbase/head各1件で解析不完全を通知した（完全な解析成功とは扱わない）。親の反証レビューはP1/P2/P3追加なし。done子末尾の曖昧な継続表現を928の効果評価へ限定した。issueテストは規約どおりBash 5をPATH先頭にして実行する。
+
+今回の追加は、無益な検索往復の削減、型名からの回復、採用前の原文確認という局所的な改善。934の否定例は必要な原文へ届く一方、合計出力量は増えた。これを一般的なtoken削減やagent誤採用率改善へ拡大しない。ソースを外部AIへ送る新実験は行っていない。実測・反証・変異の結果は各子issueへ記録した。
+
+最終統合でもmodule lint/race全件とstrict module gateを通過（変わった単位6、新しい重複/除外なし）。全srcは既存の不正fixtureだけbase/head各1件でpartial。context→型名evidence→原文の実argv連鎖も同scope/別cwdで実行できたが、agentによる採用判断の評価とは扱わない。
+
+最終のread-only反証レビューで追加指摘なし。今回対象の15done/928未完了と担当解除を確認し、issue標準テストもBash 5で成功した。
+
+別セッションの941〜944・942/943の出力改善を保持してrebaseした。これら追加課題の完了判断や担当目印には介入せず、最新コードで統合検証をやり直す。

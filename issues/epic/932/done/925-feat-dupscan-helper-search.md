@@ -136,7 +136,7 @@ scoreは確率ではない。各候補に `matched_terms` とfield別根拠、`m
 
 - 2026-10-26: [931](../../../done/931-refactor-tuikit-domain-duplicates-and-discovery-check.md)の検証: 931のtuikit実例では、同じ表示幅ループがslice直渡し/struct.field経由の構文差と19-nodeの閾値で現行near/reportに一致しなかった。未知名からの型/用途検索の評価へ追加する。新searchの効果は未検証。
 
-- 2026-10-26: 初期のname/signature/doc先頭行に加える呼出先/本体hintは[933](933-feat-dupscan-behavior-hint-search.md)、doc全文・テスト等の補助証拠は[934](../934-feat-dupscan-source-evidence-search.md)へ起票した。段階ごとの仕様変更を分け、未実装の能力を初期searchに混ぜない。
+- 2026-10-26: 初期のname/signature/doc先頭行に加える呼出先/本体hintは[933](933-feat-dupscan-behavior-hint-search.md)、doc全文・テスト等の補助証拠は[934](934-feat-dupscan-source-evidence-search.md)へ起票した。段階ごとの仕様変更を分け、未実装の能力を初期searchに混ぜない。
 
 - 2026-10-27: 924で探索共通経路の比較用本体変換/正規化を省く処理を実装した。925の用途語/署名検索・順位設計は未着手で継続する。
 
@@ -191,7 +191,7 @@ S1/S2の正解確認に共通のtarget Readを追加すると、それぞれ534b
 
 alias課題のnext_actionを実行すると、必要語数2→1で0件のまま（820bytes追加）、次にreturns条件を明示解除して2候補へ到達（2277bytes追加）。初回から計3951bytes/3検索となる。黙って型を解決したことにはせず、不要な再問い合わせ費用も結果に含める。
 
-doc/source課題でも失敗を残した。[934](../934-feat-dupscan-source-evidence-search.md)のE1では`相対 symlink`のOR検索がConfigFileだけを返し、正解MoveIfMissingは出ない。E2の`as a drop`では短い`a`も一致語になるため上位5件に正解が入らず、evidenceでは到達した。既知の用例だけに合わせたstopword・rank調整は今回行わない。
+doc/source課題でも失敗を残した。[934](934-feat-dupscan-source-evidence-search.md)のE1では`相対 symlink`のOR検索がConfigFileだけを返し、正解MoveIfMissingは出ない。E2の`as a drop`では短い`a`も一致語になるため上位5件に正解が入らず、evidenceでは到達した。既知の用例だけに合わせたstopword・rank調整は今回行わない。
 
 判断: 現行textの候補整理と限界は評価できた。JSON、同義語、cache、追加rank featureをこの結果だけで採用しない。正しい再利用/不要な重複追加を検索そのものが改善したという実agent差は未実証で、925はopenを維持する。次は独立した実際の見落とし事例から新しい1課題を事前固定し、rg/target Readへsearchを追加した差を調べる。今回の成功/失敗例を入れ替えて効果を作らない。
 
