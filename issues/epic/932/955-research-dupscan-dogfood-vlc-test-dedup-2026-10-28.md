@@ -71,6 +71,8 @@ vlc-multi-video-player で「dupscan を使ってテストの重複を解消す�
 - **実際**: どちらも `viewModel = VideoGridViewModelTestFactory.createForTest()` と `viewModel.updateLayout(.twoByTwo)` の 2 文で、寄せる意味が無い
 - `w=144` が何の重みかが出力にも `--help` にも見当たらず、2 文の本体で 144 になる理由が分からなかった (未確認: 部分木の節の数か)
 - **提案**: `w` の意味を節の見出しに書く。同じ型の setUp の 2 文のような、文の数が少ない対は下げる
+- 2026-10-28 追記: `w` は commit `feat(dupscan): sweep の節 3 を共有している重みの大きい順に並べる。946 に節 3 の上位を読んだ結果を記録する` (26ce1b2a) で入った
+  「共有している重み」で、節 3 の並びの鍵だった。意味が出力と `--help` に出ないことは変わらない
 
 ## F4 (使い方が分かりにくい): `dupscan . -v` が「`-v` は git の repo の中ではない」と出て rc=2
 
