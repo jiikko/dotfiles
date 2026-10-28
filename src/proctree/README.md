@@ -14,7 +14,7 @@ proctree.Target{Root: cmd.Process.Pid, Group: true}.Stop(5 * time.Second)
 
 止められないもの: 止める前に親を離れて init の子になり、かつグループも抜けたもの (daemon 化した子・`tmux -L` のサーバ等)。
 
-使う側: `src/runtimeout` (時間の上限付き実行。issue 640) / `src/zundamon-kaisetsu` の mermaid の描画 (issue 649)。
+使う側: `src/runtimeout` (時間の上限付き実行。issue 640) / `src/serialrun` / `src/zundamon-kaisetsu` の mermaid の描画 (issue 649)。
 
 ## `childrun` (同じ module の package)
 

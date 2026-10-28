@@ -60,7 +60,7 @@ backspace が文字を壊し、見た目はほぼ同じなのに別の文字列�
 
 **絵文字と曖昧幅の記号を表示文字列に使わない**（端末と描画側の幅計算が食い違い、行ごとに左右へ
 ずれてノイズになる）。`tests/tmux/test_schedule_keys.sh` がシェルと Go の引用文字列を静的に検査する。
-桁揃えは `ansi.StringWidth`（東アジア文字 = 2 セル）で行う。byte 数で詰めると日本語で崩れる。
+桁揃えは `termwidth.Of`（`src/tuikit/termwidth`。東アジア文字 = 2 セル）で行う（`ansi.StringWidth` などは forbidigo が禁止している）。byte 数で詰めると日本語で崩れる。
 
 ## テスト
 

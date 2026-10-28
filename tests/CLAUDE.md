@@ -49,7 +49,7 @@
 (`_claude/rules/perf-claims-need-measurement.md`)。この repo では過去に合計 414 秒 / 通し 433 秒と
 19 秒ずれた実績があり、**before の通しは 490 秒より大きい**と見るのが妥当 = 改善幅は 300 秒より
 大きい側にぶれる。正確に比べたいなら並列化前の commit で通しを 1 回測ること。
-`test-src` の go test も `src/*/go.mod` の全プロジェクトを並列に回す (`run_go_projects`。lint も同じ関数で並列に回る。golangci-lint の file lock は各 `src/*/.golangci.yml` の `allow-parallel-runners: true` で外している)。
+`test-src` の go test も `src/*/go.mod` の全プロジェクトを並列に回す (`run_go_projects`。lint も同じ関数で並列に回る。golangci-lint の file lock は共通の設定 `src/.golangci.yml` の `allow-parallel-runners: true` で外している。各プロジェクトの差分は `src/<name>/.golangci.local.yml`、lint のたびに `scripts/golangci_lint.sh` が合成する)。
 
 🚨 **待ちの実体はエンコードではない**。av1ify / concat のテストは ffmpeg / ffprobe を
 **shell script のモック**に差し替えており (`tests/zshrc/*/test_helper.sh` が `$TEST_TMP/mock_bin` を

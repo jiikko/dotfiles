@@ -123,3 +123,15 @@ dupscan が出さなかったが grep なら見つかった写しは 2 つだけ
 - **連番の名前**: zundamon の `Round` / `Round3` が出たが、整数への丸めと小数 3 桁への丸めで別の仕事 (偽陽性)。→ 節の数が 1.5 倍以内の連番だけに絞った (数字が桁数・版を表す名前は大きさが違う)。`contains` / `contains2` は先に寄せたので実例の確認はできていない。
 - **testdata の印**: subproc の 2 組に `[L1] testdata` が付き、意図的な写しと一目で分かった。有用。
 - **report の添え書き**: 「うち同じ形の組が N 組」は treefiler 2・tuikit 1・zundamon 3・subproc 1 で実数と合い、`contains` を隠していた問題は解消した。
+
+### obaket (Swift・13122 単位) への `sweep` (f5、2026-10-28)
+
+- **問題**: 節 2 の `L1m` が `init` ×118 / routes の closure ×74 / `init` ×77・×49 のような決まりきった群で埋まり、重み順の先頭 4 つを占めた。実在した `handleScreenMove*` (`L1m` ×3・節 141) は 427 行目に沈んだ。
+- **修正** (af8b9787): 20 個以上の群を後ろへ回し、先頭 5 件だけ出して「… 他 N 件」に畳む。境界 (19 と 20) のテストと変異 4 本 (閾値 21 / 19・畳み外し・並べ替え外し) で赤を確認。obaket の出力は 555 行 → 220 行、`handleScreenMove*` は 427 行目 → 48 行目に上がった。
+- **統合 1 件** (obaket 8f0674bc5): `handleScreenMoveResume` / `ResumeBanner` / `Discard` (`L1m` ×3・節 141。既定の report と節 1 には出ず、節 2 で見つかった) を `runScreenMoveClaimed` に寄せた。結果型 3 つは `toJSON()` 以外の共通契約が無いのでファイル内 protocol で束ねた。`discard/request` は claim を取らない別形なので寄せず。`make lint` / `make test` は rc=0。**未検証**: この 3 route を HTTP 経由で動かすテストは無い。変異は未実施。
+- **寄せなかった組**: `ProviderForm.hasStoredSecret` / `needsSecretToUpdateCredential` (`L1m` ×2・節 134) は obaket の issue 1226 に「寄せると嘘の表示が出る」とある別の話。`DropboxClient` の closure 組と adapter の `capabilities` ×6 / `transferWireCapabilities` ×5 は、過去の epic で「寄せる / 寄せない」を決め済みの残りで、節 1 に出続ける (`dupscan:allow` の印が付いていない)。
+- **節 3 は取りこぼし**: 「単位 6845 が上限 3000 を超えたので飛ばした」で何も出ない。総当たりの所要は未測定。
+- **所見**:
+  - 判断済みの組が節 1 に毎回出る。理由つきの許可 (`dupscan:allow`) を repo 側に持つ手段が obaket では使われていないので、sweep の出力に「許可印の付け方」を 1 行添える、または report が許可済みの数を出すと、残りが見える (**未実装**)。
+  - 節 4 は 22 束で、`showError` ×10 / `setBrowser` ×6 / `dismiss` ×5 (presentation の同名メソッド) が出た。手がかりとしては良いが、**実際に寄せた例は 0 件**。
+  - 巨大 module 1 回は 0.67 秒 (13122 単位)。速度は問題ない。

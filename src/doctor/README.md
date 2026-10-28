@@ -73,7 +73,7 @@ CLI が要るのは「スクリプトから叩きたい」「JSON で受けた�
 | `testtmp/` | テストが `$TMPDIR` に作る一時ディレクトリを、中断 (SIGKILL 等) されても次の起動で回収する共通ヘルパー |
 | `runner/` | 外部コマンドの実行口。**stdout / stderr / exit code を分けて返す** (混ぜるとどの stream が判定材料か確定できない)。テストではここを差し替える。コマンドの探索 (`LookPath`) もここ (os/exec を import してよいのはこの package だけ) |
 
-`glogx` からは go.mod の `replace doctor => ../doctor` で参照する。無害化の関門
+`glogx` と `ratelimit` (`cachedir` だけ) は go.mod の `replace doctor => ../doctor` で参照する (`pro-con` も `// indirect` で持つが、`.go` からは import しない)。無害化の関門
 (`src/termsafe`) は逆に**この module が取り込む**側 (`replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe`)。
 
 ## 表示に出す前の関門 (`SanitizeForDisplay`)

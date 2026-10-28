@@ -25,7 +25,7 @@ const usage = `usage: dupscan [report] [flags] [dir ...]
        dupscan gate [flags] [dir ...]
        dupscan sweep [flags] [dir ...]
        dupscan near [flags] <file>:<関数名|行> [dir ...]
-       dupscan explain [flags] <file>:<関数名|行>
+       dupscan explain [flags] <file>:<関数名|行> [-compare <file>:<関数名|行>]
        dupscan search -query "terms" [-returns Type] [flags] [dir ...]
        dupscan index [-name 語] [-returns 型] [-param-type 型] [-doc 語] [-file ファイル] [dir ...]
        dupscan callers [flags] <名前|名前(ラベル:…)> [dir ...]
@@ -50,7 +50,7 @@ def: 完全一致する定義を本体つきで出す。型は宣言とメンバ
 refs: 型・式の位置にある識別子の参照を、それを囲む単位つきで出す (コメント・文字列は除く)。
 context: def・refs・callers を 1 回の走査でまとめて出す (変更の前に定義と使われ方を見る。参照・呼び出しは名前だけで当てた近似。text だけ)。
 evidence: 名前の分からない実装を、doc の全文・テスト・ソースの行にある語から探す (語の一致。doc ならその単位、行ならその行の呼び出しを添える。text だけ)。
-どちらも調べる repo には何も書かない。
+どの subcommand も、調べる repo には何も書かない。
 
 flags:
 `

@@ -18,7 +18,7 @@
 | [`serialrun`](serialrun/README.md) | 重いコマンド (make test / xcodebuild 等) をマシン全体で順番待ちにする CLI `bin/serial-run` と、Claude Code の hook の本体 |
 | [`tmpclean`](tmpclean/README.md) | 一時領域 (Claude Code の scratchpad・`$TMPDIR`) を数え、承認された古いものだけをゴミ箱へ移す CLI `bin/tmpclean` (skill `cleanup-tmp-dir` の本体) |
 | [`codexevents`](codexevents/README.md) | codex exec --json の run が最後まで終わったかを判定して記録する CLI (`bin/codex-fanout` の `-J` / `-S`) |
-| [`dupscan`](dupscan/README.md) | repo の中で本体が同じ形のメソッドを構文木で見つけて組にする CLI `bin/dupscan` (Swift。epic 890) |
+| [`dupscan`](dupscan/README.md) | repo の中で本体が同じ形のメソッドを構文木で見つけて組にする CLI `bin/dupscan` (Swift と Go。epic 890) |
 | [`mp4box`](mp4box/README.md) | MP4 のトップレベルの box のうち壊れていないものの合計 (実効サイズ) を出す CLI (concat の出力サイズの診断) |
 | [`restartable`](restartable/README.md) | コマンドを前面で起動し、キーか socket から再起動できる runner |
 | [`process_supervisor`](process_supervisor/README.md) | 呼んだプロセスが生きている間だけ子を見張って起こし直す module |
@@ -31,7 +31,7 @@
 | [`subproc`](subproc/README.md) | 外部プロセス実行の安全弁 (WaitDelay と git の timeout) |
 | [`atomicfile`](atomicfile/README.md) | 途中の状態を残さないファイル書き込み (temp + rename) |
 | [`safefs`](safefs/README.md) | 上書きしない作成・名前の変更・ゴミ箱への移動 (doctor と treefiler と tmpclean が共有) |
-| [`proctree`](proctree/README.md) | プロセスの子孫を集めて止める (runtimeout と zundamon-kaisetsu が使う)。`proctree/childrun` は子を 1 本起こして待つ道具 (runtimeout・serialrun) の共通部 (秒の引数・rc・死に直し) |
+| [`proctree`](proctree/README.md) | プロセスの子孫を集めて止める (runtimeout・serialrun・zundamon-kaisetsu が使う)。`proctree/childrun` は子を 1 本起こして待つ道具 (runtimeout・serialrun) の共通部 (秒の引数・rc・死に直し) |
 | [`userdirs`](userdirs/README.md) | 道具ごとの設定の置き場 (`~/.config/<app>`) を 1 か所で決め、置き場を変えたときに 1 回だけ引っ越す (pro-con / treefiler / mac-lan-manager が使う) |
 
 package 単位の一覧は [PACKAGES.md](PACKAGES.md) (生成物)。道具を知らなくても grep で見つけられるよう commit しておき、`scripts/go_packages_index.sh --check` (`make test-lint`) が生成し直した結果との差分を検査する。
@@ -133,6 +133,7 @@ on:
       - src/.golangci.yml          # lint の設定の共通の塊 (golangci_lint.sh が差分と合成する)
       - scripts/golangci_config.rb # その合成
       - scripts/go_module_graph.sh # make lint が先に回す module グラフの検査
+      - .github/go-version         # CI の Go の版の正本
   pull_request:
     paths:
       - 'src/<name>/**'
@@ -142,6 +143,7 @@ on:
       - src/.golangci.yml
       - scripts/golangci_config.rb
       - scripts/go_module_graph.sh
+      - .github/go-version
   workflow_dispatch:  # GitHub UI からの手動再実行用
 
 permissions:

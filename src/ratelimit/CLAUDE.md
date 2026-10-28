@@ -20,7 +20,7 @@ Claude Code / codex の利用枠 (5h / weekly) を取得・整形する module �
 ## 入口
 
 - `bin/ratelimit` (`main.go`)。Claude Code の UserPromptSubmit hook (`_claude/hooks/ratelimit-warn.sh`) が Claude 枠を、codex 系 skill が codex 枠を見る
-- `usage.FetchClaudePart` / `FetchCodexPart` などの取得と `usage.RenderDashboard` — glogx の利用枠オーバーレイ・ダッシュボードが replace で取り込む
+- `usage.FetchClaudePart` / `FetchCodexPart` などの取得と `usage.RenderDashboard` — glogx の利用枠オーバーレイ・ダッシュボードと、pro-con の dispatcher (`dispatcher/usage.go`) が replace で取り込む
 
 ## ビルド・テスト
 

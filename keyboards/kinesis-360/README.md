@@ -2,7 +2,7 @@
 
 キーボード内の v-Drive (`Adv360` という名前の仮想ドライブ) にある設定ファイルの写し。
 機種は Advantage360 の SmartSet 版 (`settings/settings.txt` の `model=adv360`。ZMK の Pro 版ではない)、ファームウェアは 1.0.5。
-使っているのは **プロファイル 1** (`settings.txt` の `profile=1`。中身は `layouts/layout1.txt`)。2〜9 は空。
+使っているのは **プロファイル 1** (`settings.txt` の `profile=1`。中身は `layouts/layout1.txt`)。`layoutN.txt` の 2〜9 は空（見出しだけ）。`ledN.txt` の 2〜9 にはインジケータ LED の色が入っている。
 
 | ディレクトリ | 中身 |
 |---|---|

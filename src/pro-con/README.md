@@ -456,5 +456,5 @@ bin/pro-con e2e screen ./tmp/e2e        # 画面の文字
 bin/pro-con e2e stop ./tmp/e2e          # Q → quit で閉じる (dispatcher と偽の PG も止まる)
 ```
 
-`tests/pro-con/test_e2e_scenario.sh` が make test の中で `scenario` を回す (tmux が無ければ skip)。
+`tests/pro-con/test_e2e_scenario.sh` が make test の中で `scenario` を回す (tmux・go・jq のどれかが無ければ skip)。
 

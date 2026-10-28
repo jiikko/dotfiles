@@ -39,7 +39,7 @@ video_001.mp4
 video_002.mp4
 video_003.mp4
 ```
-を選択して実行 → `video.mp4` が生成される
+を選択して実行 → `video.mp4` が生成され、**元のファイルはゴミ箱へ移動される**（Finder アクションは `concat` を `--keep` なしで呼ぶ。残したいときは Terminal で `concat --keep` を使う）
 
 ## 🔧 メンテナンス
 

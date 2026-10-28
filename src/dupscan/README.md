@@ -142,7 +142,7 @@ report の text は、組を大きい順 (メンバーのうち最大の単位�
 
 `index` は名前の付いた単位 (関数・初期化子・computed property・subscript など。クロージャとテスト関数は除く) を
 `file:開始行-終了行 型.署名 [shared,test,private] (呼び出し ~N) // doc の先頭` の 1 行で出す (1 行の単位は `file:行`)。終了行は Read の範囲 (offset / limit) にそのまま使える。grep と違い呼び出し側の行・コメント・文字列は混ざらない。
-text の doc は最初の文まで・100 byte までに縮める (`-doc-bytes N`、0 で縮めない。JSON と `-doc` の絞り込みは全文)。略語 (`e.g.` `Dr.`) の後ろでは切らないが、2 文目に理由や条件がある doc も最初の文で切れる。`-limit` で打ち切ったときだけ、先頭に `該当 N 件 (M 件表示 / 全部で約 X)。…rg -n -i -e 名前 -g '*.go' -- dir` の 1 行を出す (`callers` は `呼び出し N 件`)。dupscan が `rg` を実行するのではなく、実行できる 1 行の提示で、構文木の結果ではなく文字列の一致 (コメント・文字列にも当たる) になる。`def` / `context` の型メンバーの行も同じ形 (終了行つき) になる。
+text の doc は最初の文まで・100 byte までに縮める (`-doc-bytes N`、0 で縮めない。JSON と `-doc` の絞り込みは全文)。略語 (`e.g.` `Dr.`) の後ろでは切らないが、2 文目に理由や条件がある doc も最初の文で切れる。`-limit` で打ち切ったときは、stderr にも `dupscan index: N 件中 M 件で打ち切り。全件は -limit 0 か -format json` の 1 行を出し (`callers` も同じ。先頭の案内を `| grep` で削っても残る)、先頭に `該当 N 件 (M 件表示 / 全部で約 X)。…rg -n -i -e 名前 -g '*.go' -- dir` の 1 行を出す (`callers` は `呼び出し N 件`)。dupscan が `rg` を実行するのではなく、実行できる 1 行の提示で、構文木の結果ではなく文字列の一致 (コメント・文字列にも当たる) になる。`def` / `context` の型メンバーの行も同じ形 (終了行つき) になる。
 並べ方は名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所 (`.dupscan.json` の `"shared": ["Tests/SharedTestSupport/**"]` のような glob。`[shared]` と出る) を前 → prod を test より前 → private / fileprivate / unexported (Go の小文字で始まる関数) でないものを前（他module/targetからの利用可否は未解決） → 呼び出しの多いもの → 場所。
 `shared`は設定globに一致する置き場所の印であり、可視性と同じく再利用可能性の証明ではない。所属target・依存/import・test-only・条件付きcompile等は別に確認する。
 
@@ -363,6 +363,7 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 | `internal/lang/swift` | Swift の adapter (tree-sitter の node の種類の分類表・単位の取り出し・test の判定) |
 | `internal/lang/golang` | Go の adapter (標準の go/ast で読む。`TestConvKnowsEveryNode` が標準ライブラリの実物で、知らない節が無いかを見る) |
 | `internal/report` | text / JSON / Xcode の出力 (report と gate) |
+| `internal/jsonout` | dupscan が書く JSON の形 (`<` `>` `&` を escape しない。貼った設定と grep がずれないため) |
 | `internal/gate` | gate の判定 (変わった単位・出どころ・違反になった最初の段) |
 | `internal/exclude` | `.dupscan.json` の読み込みと検査・釘・除外の効き方 (report と gate が同じ関数を呼ぶ)・効いていない除外 |
 
@@ -377,7 +378,7 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 初めて入る module の重複を、1 回の走査で 4 つの見方から出す。節ごとに順位は別で、節の中を上から見る。
 1. 既定の `report` (下限 20 節・L1/L2)。
 2. 下限を 12 節に下げ、`L1m` も見て、1 に無い組だけ (メンバーが全部 `testdata` の下の組は prod/test でなく `testdata` と出す。小さい単位が多く雑音も混ざる。`dupscan:allow` で静かにできる。20 個以上が同じ形の群 (`init` の羅列など) は後ろに回し、5 件だけ出して「他 N 件」に畳む)。
-3. 部分木が似ている対 (`near -similar` を全単位の総当たりにしたもの。Dice 0.6 以上・12 節以上・組に入る対と入れ子は除く)。単位が `-similar-max-units` (既定 3000) を超えたら比べず、そう書く。同一動作・再利用は未証明。
+3. 部分木が似ている対 (`near -similar` を全単位の総当たりにしたもの。Dice 0.6 以上・12 節以上・組に入る対と入れ子は除く)。`-similar-threshold` (既定 0.6) で Dice の下限を変える。単位が `-similar-max-units` (既定 3000) を超えたら比べず、そう書く。同一動作・再利用は未証明。
 4. 名前の束 (下限未満の関数が、同じ dir に同じ先頭の語で 4 個以上。メソッド・test・`new`/`init`・述語 `is`/`has` などは除く)。末尾の数字だけが違う名前 (`contains` / `contains2`) は、節の数が 1.5 倍以内なら `連番の名前` として出す (`Round` / `Round3` のように数字が桁数・版を表す名前は大きさが違うので除く)。同じ dir に同名で受け口の型が 2 種類以上のメソッド (節が下限の 3 倍未満) が 3 個以上 (節の数が 3 倍以内) あれば `take (同名のメソッド)` として別に出す。写しではなく「同じ種類の仕事を各所で書いている」手がかり。
 
 text だけ。実測は `src/glogx` で 0.27 秒、`src` 全体 (単位 8705) で 0.2 秒 (3 は上限で飛ばした)。

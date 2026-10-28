@@ -72,4 +72,5 @@ tests/zshrc/test_zshrc.sh  # existing zsh tests (also run via make test)
 - [tmux のキーと表示](docs/tools/tmux.md) — prefix は `C-t`。ペイン・ウィンドウ操作、popup、ウィンドウ名、Claude Code の作業状態表示
 - [動画のシェル関数](docs/tools/video-functions.md) — `repair` / `av1ify` (`av1c`) / `concat`
 - [macOS 連携](docs/tools/macos.md) — Karabiner-Elements / `kernel-alloc-watch` / Finder Quick Actions
+- [serial-run を他のプロジェクトに組み込む](docs/tools/serial-run.md) — 重いコマンドを 1 本ずつ流す待ち列
 - Go で書いた自作ツール (glogx・pro-con など) — [`src/README.md`](src/README.md) から各プロジェクトの README へ
