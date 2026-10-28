@@ -673,6 +673,10 @@ test-src:
 # src/ の Go に新しく入った写し (既にある関数と本体が同じ形の関数) を落とす。module ごとの make に置かない:
 # module をまたいだ写し (非公開の helper を別 module へ写したもの) が数えられなくなる。寄せ方・意図した写しの許可は skill dupscan の 3・4 節。
 # base は手元なら upstream との merge-base (detached の worktree は origin/HEAD)。CI は dupscan-gate.yml が -base を渡す
+# 手元の実行は結果を 1 行の JSON で追記する (gate が止めた回数を数えるため。issue 948 の E-2)。CI は CI が立つので記録しない。
+# 数え方: jq -s '[.[] | select(.failed)] | length' ~/.cache/dupscan-gate.jsonl (同じ変更の再実行も 1 回と数えるので「止まった実行の数」)。
+DUPSCAN_GATE_RECORD ?= $(if $(CI),,$(HOME)/.cache/dupscan-gate.jsonl)
+
 test-dupscan-gate:
-	@bin/dupscan gate $(DUPSCAN_GATE_FLAGS) src
+	@$(if $(DUPSCAN_GATE_RECORD),mkdir -p $(dir $(DUPSCAN_GATE_RECORD)) &&) bin/dupscan gate $(if $(DUPSCAN_GATE_RECORD),-record $(DUPSCAN_GATE_RECORD)) $(DUPSCAN_GATE_FLAGS) src
 
