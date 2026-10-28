@@ -24,6 +24,10 @@ const (
 	sweepDeepMinNodes   = 12
 	sweepMaxSimilarUnit = 3000
 	sweepClusterMin     = 4
+	// 20 個以上が同じ形の群は、構築子 (`init`) や経路登録の closure のような決まりきった書き方であることが多い (obaket の実測:
+	// `init` ×118 が先頭を埋め、実在した 3 組の写しが 400 行目以降に沈んだ)。重みでは先頭に来るので、後ろへ回して先頭の数件だけ出す。
+	sweepBigGroupMin   = 20
+	sweepBigGroupShown = 5
 )
 
 type sweepSimilar struct {
@@ -145,15 +149,24 @@ func sweepGroups(w *lineWriter, groups []group.Group, limit int) {
 		w.printf("なし\n")
 		return
 	}
-	// 大きい写しほど寄せた効果が大きいので、節の数 × 余分な写しの数で並べる
-	sort.SliceStable(groups, func(i, j int) bool { return sweepWeight(groups[i]) > sweepWeight(groups[j]) })
+	// 大きい写しほど寄せた効果が大きいので、節の数 × 余分な写しの数で並べる。ただし sweepBigGroupMin 個以上の群は後ろに回す
+	sort.SliceStable(groups, func(i, j int) bool {
+		if bi, bj := len(groups[i].Members) >= sweepBigGroupMin, len(groups[j].Members) >= sweepBigGroupMin; bi != bj {
+			return bj
+		}
+		return sweepWeight(groups[i]) > sweepWeight(groups[j])
+	})
 	for i, g := range groups {
 		if limit > 0 && i == limit {
 			w.printf("… 他 %d 組 (-limit 0 で全部)\n", len(groups)-limit)
 			break
 		}
 		w.printf("[%s] %s ×%d 節 %d\n", g.Level, partitionLabel(g), len(g.Members), g.Members[0].Result.Nodes)
-		for _, m := range g.Members {
+		for j, m := range g.Members {
+			if len(g.Members) >= sweepBigGroupMin && j == sweepBigGroupShown {
+				w.printf("  … 他 %d 件 (-limit 0 でも畳む。全員は report の -limit 0 で見る)\n", len(g.Members)-sweepBigGroupShown)
+				break
+			}
 			w.printf("  %s:%d %s\n", m.Unit.File, m.Unit.Line, unitLabel(m.Unit))
 		}
 	}

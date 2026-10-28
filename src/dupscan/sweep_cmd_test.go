@@ -249,3 +249,46 @@ func TestSweepSequentialNamesNeedSimilarSize(t *testing.T) {
 		t.Errorf("大きさが違う連番の名前は束にしない: %q", s)
 	}
 }
+
+// bigGroupFile は、同じ形で名前だけ違う関数を n 個並べたファイル (shape で形を変えて、別の群にする)。
+func bigGroupFile(prefix string, n int, shape string) string {
+	var b strings.Builder
+	b.WriteString("package a\n\n")
+	for i := range n {
+		fmt.Fprintf(&b, shape, prefix, i)
+	}
+	return b.String()
+}
+
+const (
+	smallShape = "func %s%d(s string, n int) bool {\n\tif len(s) > n && n > 0 {\n\t\treturn true\n\t}\n\treturn false\n}\n\n"
+	bigShape   = "func %s%d(s string, n int) int {\n\tt := 0\n\tfor _, c := range s {\n\t\tt += int(c) + n\n\t}\n\treturn t\n}\n\n"
+)
+
+// 20 個以上が同じ形の群は、重みが大きくても後ろに回し、先頭の数件だけ出す。19 個の群は重みの順のまま全員出す。
+func TestSweepBigGroupsGoLastAndFold(t *testing.T) {
+	for _, tc := range []struct {
+		n       int
+		wantTop string // 先頭に出る群の関数名の接頭辞
+		folded  bool
+	}{
+		{19, "big", false},
+		{20, "small", true},
+	} {
+		root := repoWith(t, map[string]string{
+			"a/a.go": bigGroupFile("big", tc.n, bigShape),
+			"b/b.go": strings.Replace(bigGroupFile("small", 3, smallShape), "package a", "package b", 1),
+		})
+		_, out, _ := sweep(t, "-limit", "0", root)
+		s := sweepSection(t, out, 2)
+		if i, j := strings.Index(s, "big0"), strings.Index(s, "small0"); i < 0 || j < 0 || (i < j) != (tc.wantTop == "big") {
+			t.Errorf("n=%d: 先頭は %s の群: %q", tc.n, tc.wantTop, s)
+		}
+		if got := strings.Contains(s, "… 他 "); got != tc.folded {
+			t.Errorf("n=%d: 畳み=%v のはず: %q", tc.n, tc.folded, s)
+		}
+		if tc.folded && strings.Contains(s, "big5") {
+			t.Errorf("n=%d: 6 件目以降は出ない: %q", tc.n, s)
+		}
+	}
+}
