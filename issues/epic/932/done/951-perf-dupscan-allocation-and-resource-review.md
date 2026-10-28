@@ -1,7 +1,5 @@
 # 951 (perf): dupscan のコードを読んだ結果 — リソースリークは見つからず、正規化の確保が大きい
 
-> 🚨 **担当中: Mac (glogx)**（2026-10-28〜）
-
 起票日: 2026-10-28
 
 > 反証レビュー未実施 (起票時点。数字は 2026-10-28 に `go test -bench` と pprof で取った 1 台 (Apple M5・10 コア) の値)。
@@ -93,4 +91,4 @@ dupscan のコードを、リソースリークと性能の観点で読んだ。
 
 ## 関連
 
-- [932](932-epic-dupscan-accuracy.md) (epic)、[948](948-research-dupscan-meets-its-aims.md) (狙いの判定。context と待ちの観点)、[946](done/946-feat-dupscan-recall-from-real-modules.md) (`sweep` 節 3 の所要)
+- [932](../932-epic-dupscan-accuracy.md) (epic)、[948](../948-research-dupscan-meets-its-aims.md) (狙いの判定。context と待ちの観点)、[946](946-feat-dupscan-recall-from-real-modules.md) (`sweep` 節 3 の所要)
