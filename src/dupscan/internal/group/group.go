@@ -188,6 +188,18 @@ func sortEntries(ms []*Entry) {
 	})
 }
 
+// CountBelowMin は節が下限に満たず、どの段でも比べない単位の数 (読めない構文の単位は別に数えるので含めない)。
+// 「重複なし」が、比べていない小さい単位を黙らせないために report が出す。
+func CountBelowMin(entries []*Entry, opt Options) int {
+	n := 0
+	for _, e := range entries {
+		if !e.Unit.Unreadable && e.Result.Nodes < MinNodes(e, opt) {
+			n++
+		}
+	}
+	return n
+}
+
 // MinNodes は単位の種類に応じた下限 (gate も同じ下限で数える)。
 func MinNodes(e *Entry, opt Options) int {
 	if e.Unit.Kind == tree.KindClosure && opt.MinClosureNodes > 0 {

@@ -265,6 +265,7 @@ const (
 )
 
 // String は画面に出す種類の名前。
+// dupscan:allow intentional 画面の名前 (String) と保存する鍵 (Key) は別の規則: 画面の語を直しても保存した設定が外れないよう、表を分けている (Key のコメント)
 func (k Kind) String() string {
 	switch k {
 	case KindWired:
@@ -286,6 +287,7 @@ func (k Kind) String() string {
 }
 
 // Key は設定ファイルに書く種類の名前 (画面の名前 String とは分ける: 画面の語を直すと、保存した設定が黙って外れた)。
+// dupscan:allow intentional 画面の名前 (String) と保存する鍵 (Key) は別の規則 (上のコメント)
 func (k Kind) Key() string {
 	switch k {
 	case KindWired:

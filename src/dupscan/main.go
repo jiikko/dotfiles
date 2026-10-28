@@ -217,6 +217,7 @@ func runReportCommand(args []string, stdout, stderr io.Writer) int {
 	}
 	ex.Scanned(opt.Levels)
 	s := report.Build(sc.Root, got.files, got.units, got.errFiles, ex.ApplyGroups(group.Build(entries, opt)), ex)
+	s.BelowMinNodes, s.MinNodes = group.CountBelowMin(entries, opt), opt.MinNodes
 	switch *c.format {
 	case "json":
 		err = report.JSON(stdout, s)

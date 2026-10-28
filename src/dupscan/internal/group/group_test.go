@@ -138,3 +138,21 @@ func TestDuplicateClosuresInsideOneUnitAreKept(t *testing.T) {
 		t.Fatalf("囲む関数の組と、1 つの関数の中で重なるクロージャの組の 2 つを期待: %+v", gs)
 	}
 }
+
+// 節が下限に満たない単位の数 (読めない構文の単位は別に数えるので含めない)。下限は単位の種類で違う。
+func TestCountBelowMin(t *testing.T) {
+	small := entry("small", false, "a", "a", "a", 4, false)
+	edge := entry("edge", false, "b", "b", "b", 5, false) // 下限ちょうどは比べる
+	big := entry("big", false, "c", "c", "c", 50, false)
+	unreadable := entry("unreadable", false, "d", "d", "d", 1, false)
+	unreadable.Unit.Unreadable = true
+	closure := entry("closure", false, "e", "e", "e", 8, false)
+	closure.Unit.Kind = tree.KindClosure
+	opt := Options{MinNodes: 5, MinClosureNodes: 10, Levels: norm.Levels}
+	if got := CountBelowMin([]*Entry{small, edge, big, unreadable, closure}, opt); got != 2 {
+		t.Errorf("small と closure (節 8 < クロージャの下限 10) の 2 個だけ: %d", got)
+	}
+	if got := CountBelowMin([]*Entry{small, edge, big}, Options{MinNodes: 3}); got != 0 {
+		t.Errorf("下限を下げれば 0: %d", got)
+	}
+}

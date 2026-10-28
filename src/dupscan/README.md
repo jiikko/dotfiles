@@ -297,6 +297,9 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 
 - **調べる repo に何も書かない**: git は `subproc.GitCommand` (`--no-optional-locks`) で打ち、`.git/index` も書き直さない。継承した `GIT_DIR` などは外す
 - **0 件は判定不能**: 起点に読むファイルが 1 つも無ければ rc=2 で止まる (起点の取り違えで黙って「重複なし」にしない)
+- **「重複なし」は、節が下限 (既定 20) に満たない小さい単位を比べていない**。`report` の 1 行目に `小さい単位 N 個は比べていない (節が 20 未満。-min-nodes で下げる)` と数を出す (JSON は `below_min_nodes` / `min_nodes`)。
+  小さい helper の写し (1 語だけ違う 10 行前後の関数、`or(a, b)` のような定義) はここに入る。lockman では 181 単位のうち 81 単位 (45%) が比べていない側だった。
+  下げると見つかる一方で、意図して分けたものも出る (dotfiles の 4 module で `-min-nodes 12` が出した 17 組のうち、寄せたのは 14 組・一部だけ寄せたのが 1 組・別の規則として残したのが 2 組)。出た組は 1 組ずつ、同じ規則かを確かめてから寄せる (skill dupscan の 4 節)
 - **読めない構文**: 抽出できた単位が ERROR / MISSING を含む場合は比較から外し、件数を出す。単位を抽出できない場合など、通知の限界は下記
 - 列挙は `git ls-files --cached --others --exclude-standard`。symlink・消えたファイル・submodule の中は読まない
 - テスト関数そのもの (Swift Testing の `@Test` / `@Testing.Test`、XCTest の `func test…()`、Go の `_test.go` の go test が呼ぶ関数 (receiver の無い `Test…` / `Benchmark…` / `Fuzz…` で引数 1 つ・`Example…` で引数なし。頭の後ろが小文字なら除かない) と、testify の suite が呼ぶ引数の無い `Test…` メソッド) とその中のクロージャは比べない

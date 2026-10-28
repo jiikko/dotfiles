@@ -16,12 +16,15 @@ import (
 
 // Summary は走査の数え上げ。
 type Summary struct {
-	Root            string      `json:"root"`
-	Files           int         `json:"files"`
-	Units           int         `json:"units"`
-	FilesWithErrors []string    `json:"files_with_errors"`
-	Unreadable      []UnitRef   `json:"unreadable_units"`
-	Groups          []GroupJSON `json:"groups"`
+	Root            string   `json:"root"`
+	Files           int      `json:"files"`
+	Units           int      `json:"units"`
+	FilesWithErrors []string `json:"files_with_errors"`
+	// BelowMinNodes は節が下限 (MinNodes) に満たず、比べなかった単位の数。0 件の「重複なし」は、これらを比べていない。
+	BelowMinNodes int         `json:"below_min_nodes"`
+	MinNodes      int         `json:"min_nodes"`
+	Unreadable    []UnitRef   `json:"unreadable_units"`
+	Groups        []GroupJSON `json:"groups"`
 	// FilePairs は組をメンバーのファイルの組み合わせでまとめた件数 (節の合計の大きい順)。同じ画面・同じ型の写しが細切れの組で並ぶのを、1 行で見せる。
 	FilePairs []FilePair `json:"file_pairs"`
 	Exclusions
@@ -185,14 +188,14 @@ type TextOptions struct {
 // Text は人が読む形で書く。重複が無いときは 1 行だけにする (何度も回す Claude の文脈を食わないように)。
 func Text(w io.Writer, s Summary, opt TextOptions) error {
 	if len(s.Groups) == 0 {
-		fmt.Fprintf(w, "dupscan: 重複なし (%d ファイル・%d 単位)%s%s\n", s.Files, s.Units, unreadableNote(s), s.note())
+		fmt.Fprintf(w, "dupscan: 重複なし (%d ファイル・%d 単位)%s%s%s\n", s.Files, s.Units, unreadableNote(s), belowMinNote(s), s.note())
 		if opt.Verbose {
 			writeErrorFiles(w, s)
 			s.write(w)
 		}
 		return nil
 	}
-	fmt.Fprintf(w, "dupscan: 組 %d (%s)・%d ファイル・%d 単位%s%s\n", len(s.Groups), levelCounts(s), s.Files, s.Units, unreadableNote(s), s.note())
+	fmt.Fprintf(w, "dupscan: 組 %d (%s)・%d ファイル・%d 単位%s%s%s\n", len(s.Groups), levelCounts(s), s.Files, s.Units, unreadableNote(s), belowMinNote(s), s.note())
 	writeFilePairs(w, s.FilePairs)
 	shown := s.Groups
 	if opt.Limit > 0 && len(shown) > opt.Limit {
@@ -271,6 +274,14 @@ func unreadableNote(s Summary) string {
 		return ""
 	}
 	return fmt.Sprintf("・読めない構文があるファイル %d・比べなかった単位 %d (-v で一覧)", len(s.FilesWithErrors), len(s.Unreadable))
+}
+
+// belowMinNote は節が下限に満たず比べなかった単位の数。小さい helper の写し (1 語だけ違う 10 行前後の関数など) はここに入りうる。
+func belowMinNote(s Summary) string {
+	if s.BelowMinNodes == 0 {
+		return ""
+	}
+	return fmt.Sprintf("・小さい単位 %d 個は比べていない (節が %d 未満。-min-nodes で下げる)", s.BelowMinNodes, s.MinNodes)
 }
 
 // Xcode は `ファイル:行:列: warning: …` の形式で書く (swiftlint と並べて回し、Xcode の警告として出すため)。
