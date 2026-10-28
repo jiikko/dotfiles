@@ -182,6 +182,7 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | refresh-on-session, 差分全体の見直し, 用語の揺れ, コメントの更新漏れ, 呼び出し元の追従漏れ | `~/.claude/skills/refresh-on-session/SKILL.md` (ブランチ / セッションの差分だけを見る。差分から用語集を作って照合する。バグ探しは `/code-review`) |
 | events.yml, 審査が通った, バージョン公開を記録, product-analytics, my-products-update-apps-event | `~/.claude/skills/my-products-update-apps-event/SKILL.md` (my-products の product-analytics に App Store の最新版の公開を記録する) |
 | クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `~/.claude/skills/crash-log-analyzer/SKILL.md` |
+| dupscan-dogfood, dupscan を使って開発, dupscan のフィードバック, dupscan を使い込む | `~/.claude/skills/dupscan-dogfood/SKILL.md` (dupscan を使って開発タスクをこなし、困ったことを記録して dotfiles の issue に書き、小さく直せるものは dupscan を直す) |
 | codex-review, Codexレビュー, コードレビュー依頼 | `~/.claude/skills/codex-review/SKILL.md` |
 | codexにリード, codex主導で着手, 設計から codex に任せて（実装は Claude）, codex-lead | `~/.claude/skills/codex-lead/SKILL.md` |
 | codexに書かせて, codexメインで実装, codexに作らせて, 設計から実装まで codex に丸投げ, codex-drive | `~/.claude/skills/codex-drive/SKILL.md` |
