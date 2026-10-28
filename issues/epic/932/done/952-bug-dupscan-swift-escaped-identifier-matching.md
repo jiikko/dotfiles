@@ -1,7 +1,5 @@
 # 952 (bug): dupscan が Swift のバッククォート付き識別子の定義と呼出しを別名として扱う
 
-> 🚨 **担当中: Mac (glogx)**（2026-10-28〜）
-
 起票日: 2026-10-28
 工数: M（Swiftの照合用識別子の統一と、既存key/出力互換の回帰確認）
 
@@ -76,7 +74,7 @@ Swiftの**照合用識別子**について、宣言・参照・呼出・queryを
 
 ## 既存issueとの関係・検証記録
 
-[922](../890/done/922-bug-dupscan-def-refs-known-limits.md)はproperty束縛・optional binding等、[926](done/926-feat-dupscan-query-diagnostics.md)のbacktick記述は入力を一律拒否しない/旧rcの維持を扱う。この宣言と使用の照合不一致は未記録だった。READMEの型未解決・同名混在・default引数省略等の限界とは別であり、LSPの導入を前提としない。
+[922](../../890/done/922-bug-dupscan-def-refs-known-limits.md)はproperty束縛・optional binding等、[926](926-feat-dupscan-query-diagnostics.md)のbacktick記述は入力を一律拒否しない/旧rcの維持を扱う。この宣言と使用の照合不一致は未記録だった。READMEの型未解決・同名混在・default引数省略等の限界とは別であり、LSPの導入を前提としない。
 
 rawはdotfiles/tmp/audit-dupscan-20261028/のkeyword-results.json、keyword-followup.json、latest-results.json。latest-resultsにはsource/binary SHA256とsource commitを保存した。本体とread-only subagentで再現・source照合・既存記録との重複を反証し、実在する未記録不具合と確認した。今回はissueの記録のみで、修正は行っていない。
 

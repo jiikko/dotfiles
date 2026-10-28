@@ -61,4 +61,4 @@
 
 - `docs(dupscan): close onboarding with bounded adoption and explicit research handoff`で928を完了。最新環境検証・限定採用と、948で継続する未実施研究を区別し、実ファイルから22子=16done/5open/1pendingを再計数した。
 
-- [952](952-bug-dupscan-swift-escaped-identifier-matching.md): 有効なSwiftのバッククォート付き識別子で定義/参照/呼出とindex近似数が分断する未修正の不具合を再現し、記録した。最新sourceでも確認済み。
+- [952](done/952-bug-dupscan-swift-escaped-identifier-matching.md): 有効なSwiftのバッククォート付き識別子で定義/参照/呼出とindex近似数が分断する未修正の不具合を再現し、記録した。最新sourceでも確認済み。
