@@ -22,6 +22,8 @@
 set -uo pipefail
 unset CDPATH
 
+# 実験用の opt-out: DUPSCAN_INJECT=off の run は注入しない (A-B で処置の有無だけを変えるため。本番の既定は on。名前の候補の判定は変えない)
+[ "${DUPSCAN_INJECT:-}" = off ] && exit 0
 command -v python3 >/dev/null 2>&1 || exit 0
 command -v git >/dev/null 2>&1 || exit 0
 command -v dupscan >/dev/null 2>&1 || exit 0

@@ -104,6 +104,8 @@ next_session; out=$(run Edit "$REPO/src/foo/B.swift" $'    private func readCook
 expect_has "Swift: 字下げのある func も新しい関数として引く" "$out" "ReadCookies"
 next_session; run Edit "$F" $'func readCookies() {}\n' >/dev/null
 expect_silent "同じ session × 名前の 2 回目は出さない" "$(run Edit "$F" $'func readCookies() {}\n')"
+next_session; expect_silent "DUPSCAN_INJECT=off では、注入の出る名前でも出さない (A-B の対照腕)" "$(DUPSCAN_INJECT=off run Edit "$F" $'func readCookies(x int) int { return x }\n')"
+next_session; expect_has "DUPSCAN_INJECT が off 以外 (空・on) なら通常どおり注入する" "$(DUPSCAN_INJECT=on run Edit "$F" $'func readCookies(x int) int { return x }\n')" "Workspace.ReadCookies"
 n=$(grep -c . "$TMP_ROOT/cache/claude-dupscan-inject.log" || true)
 if [ "$n" -ge 5 ] && grep -q $'\treadCookies\t1$' "$TMP_ROOT/cache/claude-dupscan-inject.log"; then
   echo "✓ 注入の計測ログに「session 名前 候補数」が残る"; ok=$((ok+1))
