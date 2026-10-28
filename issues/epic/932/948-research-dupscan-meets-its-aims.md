@@ -119,9 +119,10 @@ A1 の既知の限界: 名前が違う同じ役割の関数は引けない (署�
 | 2 下限 12 節 + `L1m` | tuikit・zundamon-kaisetsu・obaket | 3 + 3 + (obaket の上位) | 1 (obaket の `handleScreenMove*` ×3) | tuikit と zundamon の 6 組は全部「別物と書いてある・型が違う」雑音。obaket は決まりきった群 (`init` ×118 など) が上位を占めたので、20 個以上の群を畳んだ |
 | 3 部分木の対 | dotfiles の `src` (上位 7 組) | 7 | **2** (`fakeRunner`・`realIssuesView`) | 残り 5 組は意図して分けている・見合いが無い (薄い委譲 / nil 守りの 3 行 / 自己完結を保つ 6 行 / `os.WriteFile` を包む 3 行)。tuikit・treefiler・zundamon では「なし」 |
 | 3 部分木の対 | good-chrome-extensions の Go (上位 7 行。c6、2026-10-28) | 7 | **2 (寄せ先が既にある 1・同じ module の小さい 1)** | ①`updateToast` が 2 つの module (`pikpak-master` / `video-product-manager`) でほぼ字面まで同一 (Dice 1.000)。**どちらも `tuikit` に依存済み**なので、tuikit の toast 側に置ける (module をまたぐが寄せ先がある) ②`Brute.Compare` と `Mask.Compare` は Done と Indexes の比べ方が共通 (0.627。同じ module の小さい写し)。残り 5 行は見合いなし: `os.ReadFile`+`t.Fatal` を包む 3 つの test helper (`mustRead`・`readCacheFile`・`read`。パッケージ越えで、寄せ先は testutil の新設)・`os.Open` と `Open` を包む 2 つの helper (型が違う)・mutex で数を返す 3 行の `callCount` ×3 (型が違う)・4 行の accessor どうし (`isLive`~`Rendered` など。形だけの一致) |
+| 3 部分木の対 | obaket の Swift (上位 7 行。`-similar-max-units 13000` が要る: 単位 12809 > 既定 8000 で既定では飛ばされる。15.5 秒。c6、2026-10-28) | 7 | **3 (明確) + 3 (部分的)** | 明確: `write` (test の中の写しと `Helpers/TransferActivityCenterTestDoubles.swift` の同名)・`waitUntilRequestedDurationCount` (同じ Helpers と別の test に同一)・`waitUntilInsertCount` (同じファイルの 2 つの fake に同一)。**3 つとも同じ module の test double で、字面まで同一 (Dice 1.000)**。部分的: `makeEncryptedBundle`~`makeEnvelope` (暗号の準備の 8 行が共通で、payload の作り方が違う)・`waitUntilCallFinished` ×2 (同じファイルだが先頭の guard が違う)・`makeRouteTestConnectionsViewModel`~`makeSidebarConnectionsViewModel` (組み立てが同じで引数が違う)。見合いなし: S3 の `list`~`listFlat` (クエリが仕様上違う) |
 | 4 名前の束 | obaket (22 束) | 手がかり止まり | 0 | `showError` ×10 などは出たが、寄せた例は 0 件。treefiler の `take` ×5 も意味が同じなのは 2 つだけ |
 
-- **節 3 の収穫は 2/7 (約 3 割) → good-chrome-extensions の Go を足して 4/14 (約 3 割)**。2 つの repo とも 3 割前後で揃ったが、どちらも上位を c4/c6 が読んだもので、n=14・Go の 2 repo のみ (Swift の obaket は、この Mac に submodule が無く未測定)。ただし 7 組は一致度の高い順 (並べ替えの前) に読んだ上位で、**1 つの repo (dotfiles の `src`)・1 人 (c4) の分類・n=7**。一般の割合とは言えない。
+- **節 3 の収穫は 2/7 → good-chrome-extensions の Go を足して 4/14 → obaket の Swift を足して 7/21 (明確なものだけ。約 3 割。部分的な候補を入れると 10/21)**。3 つの repo で 3 割前後に揃ったが、どれも上位を c4/c6 が読んだもので、n=21。**obaket の明確な 3 組はどれも字面まで同一の test double**で、一致度の高い順の上位に集まる (Dice 1.000 が 4 行)。なお、既定の上限 8000 では obaket の節 3 は丸ごと飛ばされる (『飛ばした』と出るだけで、収穫 0 に見える)。ただし 7 組は一致度の高い順 (並べ替えの前) に読んだ上位で、**1 つの repo (dotfiles の `src`)・1 人 (c4) の分類・n=7**。一般の割合とは言えない。
 - **寄せた 2 組はどちらも同じ module の中の test helper**だった。module をまたぐ組 (`HandleKey`・`childExitCode`・`writeFile` 系) は、共有に新しい依存か module が要り、1 つも寄せられなかった。→ 節 3 の価値は「同じ module の中の、組にならなかった完全一致に近い写し」に偏る可能性がある (仮説。要検証)。
 - 節 3 は 6128 単位の `src` で 5.0 秒かかる (既定の上限を 8000 に上げた)。節 1 と既定の report は 0.3 秒未満。
 - 節 2 は、**docs / コメントに「別物」と書いてある組**が雑音の主因 (tuikit)。機械では読めないので、`dupscan:allow` の理由つきの印を使う（`sweep` が全員許可済みの組と対を除くよう直した）。
@@ -147,7 +148,7 @@ A1 の既知の限界: 名前が違う同じ役割の関数は引けない (署�
 - [ ] 942 b' の採否を決める。
 - [x] E-2 の指標 (gate が止めた数) を数える手段を決める (上の表。実装は Makefile の `DUPSCAN_GATE_RECORD`)。
 - [ ] 928の承認後限定pilotを踏まえ、未使用課題での追加比較を実施するか、その採否とscopeを決める。
-- [ ] 節 3 の収穫を、別の repo と module で数え増やす (n=14・Go の 2 repo。Swift が未測定)。**同じ module の中の対に絞る案は採らない方向**: good-chrome-extensions の `updateToast` は module をまたぐが、両方が既に依存する tuikit に寄せ先があり、絞ると最も確かな 1 組を落とす。「共有の依存がある module 間」は残す。Swift (obaket のある環境) で数えてから確定する。
+- [ ] 節 3 の収穫を、別の repo と module で数え増やす (n=21・Go の 2 repo と Swift の 1 repo)。**同じ module の中の対に絞る案は採らない方向**: good-chrome-extensions の `updateToast` は module をまたぐが、両方が既に依存する tuikit に寄せ先があり、絞ると最も確かな 1 組を落とす。「共有の依存がある module 間」は残す。Swift の obaket でも明確な 3 組は同じ module の中だった (module をまたぐ組は 0)。したがって『module をまたぐ組』は good-chrome-extensions の `updateToast` 1 組だけで、絞る案の可否は、module をまたぐ組をもう少し数えてから決める。
 - [ ] この issue の判定表を、再測定の結果で書き換える。
 
 ## 未確認
