@@ -91,7 +91,7 @@ dupscan を Claude Code が使えば、①同じ役割のメソッドを重ね�
 | A1 の計測 | hook が注入のたびに `~/.cache/claude-dupscan-inject.log` へ `時刻 session 名前 候補数` を足す。`scripts/dupscan_usage_report.py` が「注入 N 回 / 候補あり M 回 / session K 本」を出す | **実装済み**。効果の判定は「候補ありの注入の後、同じ session で新しい関数が書かれなかった / 既存を呼んだか」を見る必要があり、**まだ測っていない** (転記元の transcript の読み方を決めてから) |
 | A2 | 2026-11-04 に 941 の案内の効果を測る。上がらなければ pull 型の案内の追加は打ち止め | 日付待ち |
 | A3 | `CLAUDE.md` に文面を足さない | 方針のみ |
-| B (942 b') | 解析不完全の通知を 1 行にする | **942 は air5 が claim 中のため手を付けない** (claim は next/ にある)。air5 に確認してから |
+| B (942 b') | 解析不完全の通知を 1 行にする | **採らない** (942 で決着。942 は c の縮小版を採って done) |
 | C | index の行に `Read` の引数を貼る | 保留。範囲指定の使用率の母数が 0 (index の直後の Read が無い)。A1 の後に母数が増えてから測る |
 | D | 連番の名前・testdata・近い完全一致の数 | 946 に記録済み。未実装 |
 | E-1 | 入口の指標 | usage report で測定中 |
@@ -120,9 +120,10 @@ A1 の既知の限界: 名前が違う同じ役割の関数は引けない (署�
 | 3 部分木の対 | dotfiles の `src` (上位 7 組) | 7 | **2** (`fakeRunner`・`realIssuesView`) | 残り 5 組は意図して分けている・見合いが無い (薄い委譲 / nil 守りの 3 行 / 自己完結を保つ 6 行 / `os.WriteFile` を包む 3 行)。tuikit・treefiler・zundamon では「なし」 |
 | 3 部分木の対 | good-chrome-extensions の Go (上位 7 行。c6、2026-10-28) | 7 | **2 (寄せ先が既にある 1・同じ module の小さい 1)** | ①`updateToast` が 2 つの module (`pikpak-master` / `video-product-manager`) でほぼ字面まで同一 (Dice 1.000)。**どちらも `tuikit` に依存済み**なので、tuikit の toast 側に置ける (module をまたぐが寄せ先がある) ②`Brute.Compare` と `Mask.Compare` は Done と Indexes の比べ方が共通 (0.627。同じ module の小さい写し)。残り 5 行は見合いなし: `os.ReadFile`+`t.Fatal` を包む 3 つの test helper (`mustRead`・`readCacheFile`・`read`。パッケージ越えで、寄せ先は testutil の新設)・`os.Open` と `Open` を包む 2 つの helper (型が違う)・mutex で数を返す 3 行の `callCount` ×3 (型が違う)・4 行の accessor どうし (`isLive`~`Rendered` など。形だけの一致) |
 | 3 部分木の対 | obaket の Swift (上位 7 行。`-similar-max-units 13000` が要る: 単位 12809 > 既定 8000 で既定では飛ばされる。15.5 秒。c6、2026-10-28) | 7 | **3 (明確) + 3 (部分的)** | 明確: `write` (test の中の写しと `Helpers/TransferActivityCenterTestDoubles.swift` の同名)・`waitUntilRequestedDurationCount` (同じ Helpers と別の test に同一)・`waitUntilInsertCount` (同じファイルの 2 つの fake に同一)。**3 つとも同じ module の test double で、字面まで同一 (Dice 1.000)**。部分的: `makeEncryptedBundle`~`makeEnvelope` (暗号の準備の 8 行が共通で、payload の作り方が違う)・`waitUntilCallFinished` ×2 (同じファイルだが先頭の guard が違う)・`makeRouteTestConnectionsViewModel`~`makeSidebarConnectionsViewModel` (組み立てが同じで引数が違う)。見合いなし: S3 の `list`~`listFlat` (クエリが仕様上違う) |
+| 3 部分木の対 | pj_energy_matching の Go (backendV2 と tool の 3 module・2376 単位。上位 7 行 + module をまたぐ 1 行。2026-10-29) | 7 + 1 | **2 (明確) + 2 (部分的)** | 明確: `GetCSVLandCategory` ×2 (model の 2 つの型に 25 件の地目の対応表が丸ごと写されている。違いは関係の辿り方と「未登録」の定数だけ。Dice 0.653 と低いのに上位 1 位)・`ListBiddings`~`ListBiddingsAll` (違いは `qm.Load` の eager load の有無だけ)。**どちらも production のコードで、test double ではない** (obaket と違う)。部分的: `ValidateGeneratorPPAPrice`~`ValidateConsumerPPAPrice` (入札の取得と絞り込みの約 30 行が共通)・`GetMarketDataCSV`~`GetSupplyDemandResultCSV` (期間の引数を解く部分が共通)。見合いなし: consumer / generator の mapper ×2 (生成された型ごとの対応で型が違う)・echo の handler の定型 1。module をまたぐ `toPascalCase` (`tool/gen-go-datastore-sql` ~ `tool/gen-go-usecase`) は 2 つの module に共有の依存が無く寄せ先なし。ただし違いは片方だけの `Pf`→`PF` の置換 1 行で、**2 つの生成ツールの命名のずれの兆候**として読める (pj_energy_matching 側の判断なので報告だけ)。esa-cli (295 単位)・slack-cli (278 単位) は節 3 が「なし」 |
 | 4 名前の束 | obaket (22 束) | 手がかり止まり | 0 | `showError` ×10 などは出たが、寄せた例は 0 件。treefiler の `take` ×5 も意味が同じなのは 2 つだけ |
 
-- **節 3 の収穫は 2/7 → good-chrome-extensions の Go を足して 4/14 → obaket の Swift を足して 7/21 (明確なものだけ。約 3 割。部分的な候補を入れると 10/21)**。3 つの repo で 3 割前後に揃ったが、どれも上位を c4/c6 が読んだもので、n=21。**obaket の明確な 3 組はどれも字面まで同一の test double**で、一致度の高い順の上位に集まる (Dice 1.000 が 4 行)。なお、既定の上限 8000 では obaket の節 3 は丸ごと飛ばされる (『飛ばした』と出るだけで、収穫 0 に見える)。ただし 7 組は一致度の高い順 (並べ替えの前) に読んだ上位で、**1 つの repo (dotfiles の `src`)・1 人 (c4) の分類・n=7**。一般の割合とは言えない。
+- **節 3 の収穫は 2/7 → good-chrome-extensions の Go を足して 4/14 → obaket の Swift を足して 7/21 → pj_energy_matching の Go を足して 9/28 (明確なものだけ。約 3 割。部分的な候補を入れると 14/28)**。4 つの repo で 3 割前後のまま。分類は repo ごとに別の 1 人 (c4・c6・dotfiles-38) で、基準の揃い方は確かめていない。3 つの repo で 3 割前後に揃ったが、どれも上位を c4/c6 が読んだもので、n=21。**obaket の明確な 3 組はどれも字面まで同一の test double**で、一致度の高い順の上位に集まる (Dice 1.000 が 4 行)。なお、既定の上限 8000 では obaket の節 3 は丸ごと飛ばされる (『飛ばした』と出るだけで、収穫 0 に見える)。ただし 7 組は一致度の高い順 (並べ替えの前) に読んだ上位で、**1 つの repo (dotfiles の `src`)・1 人 (c4) の分類・n=7**。一般の割合とは言えない。
 - **寄せた 2 組はどちらも同じ module の中の test helper**だった。module をまたぐ組 (`HandleKey`・`childExitCode`・`writeFile` 系) は、共有に新しい依存か module が要り、1 つも寄せられなかった。→ 節 3 の価値は「同じ module の中の、組にならなかった完全一致に近い写し」に偏る可能性がある (仮説。要検証)。
 - 節 3 は 6128 単位の `src` で 5.0 秒かかる (既定の上限を 8000 に上げた)。節 1 と既定の report は 0.3 秒未満。
 - 節 2 は、**docs / コメントに「別物」と書いてある組**が雑音の主因 (tuikit)。機械では読めないので、`dupscan:allow` の理由つきの印を使う（`sweep` が全員許可済みの組と対を除くよう直した）。
@@ -152,13 +153,13 @@ codex に設計を反証させてから回した (指摘の採用: 問いを「�
 
 - [x] A1 を実装した (遅延は 1 名前あたり約 1 秒。雑音は未測定: 注入ログと、注入の後の挙動を 2026-11-04 に見る)。
 - [x] A1 が本物のセッションで届くことを確かめた (上の節。99 ms)。
-- [ ] A1 の雑音を測る (候補ありの注入のうち、無関係だった割合。transcript を読んで数える)。
+- [ ] A1 の雑音を測る (候補ありの注入のうち、無関係だった割合。transcript を読んで数える)。**2026-10-29 時点で標本 0**: 下の「2026-10-29 の refresh」節。
 - [ ] A1 の有無で重複を書く割合が変わるかを、事前に決めた課題の A-B で測る (n=1 の観測では何も言えない)。**保留 (2026-10-28)**: 下の「A1 の A-B (pilot)」節。小さい fixture では天井効果で差が測れない。再開の条件と直す点はその節。
 - [ ] 2026-11-04 の再測定の結果を、この issue の「実測と根拠」へ追記する (案内の後の dupscan 率・index 後の範囲指定の率)。
-- [ ] 942 b' の採否を決める。
+- [x] 942 b' の採否を決める → **採らない** (942 の「採らなかった方針」で決着。926 の hit 側の契約を弱める割に削れるのが 70 B 前後。942 は done)。
 - [x] E-2 の指標 (gate が止めた数) を数える手段を決める (上の表。実装は Makefile の `DUPSCAN_GATE_RECORD`)。
 - [ ] 928の承認後限定pilotを踏まえ、未使用課題での追加比較を実施するか、その採否とscopeを決める。
-- [ ] 節 3 の収穫を、別の repo と module で数え増やす (n=21・Go の 2 repo と Swift の 1 repo)。**同じ module の中の対に絞る案は採らない方向**: good-chrome-extensions の `updateToast` は module をまたぐが、両方が既に依存する tuikit に寄せ先があり、絞ると最も確かな 1 組を落とす。「共有の依存がある module 間」は残す。Swift の obaket でも明確な 3 組は同じ module の中だった (module をまたぐ組は 0)。したがって『module をまたぐ組』は good-chrome-extensions の `updateToast` 1 組だけで、絞る案の可否は、module をまたぐ組をもう少し数えてから決める。
+- [ ] 節 3 の収穫を、別の repo と module で数え増やす (n=28・Go の 3 repo と Swift の 1 repo。2026-10-29 に pj_energy_matching を足した)。**同じ module の中の対に絞る案は採らない方向**: good-chrome-extensions の `updateToast` は module をまたぐが、両方が既に依存する tuikit に寄せ先があり、絞ると最も確かな 1 組を落とす。「共有の依存がある module 間」は残す。Swift の obaket でも明確な 3 組は同じ module の中だった (module をまたぐ組は 0)。したがって『module をまたぐ組』は good-chrome-extensions の `updateToast` 1 組だけで、絞る案の可否は、module をまたぐ組をもう少し数えてから決める。2026-10-29 に pj_energy_matching で 2 つ目 (`toPascalCase`) が出た: 寄せ先なし (共有の依存が無い) だが、写しのずれ (片方だけの置換) を見せた。module をまたぐ組は 2 組 (寄せ先あり 1・なし 1) で、まだ決めない。
 - [ ] この issue の判定表を、再測定の結果で書き換える。
 
 ## 未確認
@@ -190,3 +191,10 @@ codex に設計を反証させてから回した (指摘の採用: 問いを「�
 917の別マシン/1301導入後1か月、921の11/25再測定というtriggerは変更せず、結果の共有先とする。成功だけでなく効果なし・費用増も採否判断の結果として残す。928のdoneはこれらの研究完了や一般的なcontext削減の証明を意味しない。
 
 - `docs(dupscan): close onboarding with bounded adoption and explicit research handoff`で上記の未実施計画・制限・再開条件を928から引き継いだ。
+
+## 2026-10-29 の refresh (dotfiles-38)
+
+- **A1 の雑音は測れない (標本 0)**: このマシンの transcript (直近 3 日・サブエージェント含む 94 本) で、A1 の hook が入った 2026-10-28 15:52 より後に `.go` / `.swift` へ新しい関数を足した Write / Edit は 0 回。それより前の 39 回 (dotfiles の Go 30・pj_energy_matching 6・esa-cli 2・Swift 1) は hook の前。dupscan 自身の開発は別のマシン (air5 ほか) で、注入ログ (`~/.cache/claude-dupscan-inject.log`) もマシンごとに書かれる。このマシンにはログのファイル自体が無かった (21:05 の観測で 1 行書いたはずのファイル。消した主体は未特定。A-B の pilot は隔離した環境で回したので、そちらのログは別)。hook は本番の配線のまま直接起動すると注入とログの両方を出す (確認済み)。**2026-11-04 の再測定で、各マシンのログと transcript を合わせて数える**。
+- **A1 の hook の潜在的な無音の故障を直した**: 候補の判定で使っていた `os.path.commonprefix` が Python 3.15 で非推奨の警告を出していた。削除されると例外が hook 全体の `except` に吸われ、注入が黙って止まる。判定は `a.startswith(b) or b.startswith(a)` の後なので、共通部分の長さは短い方の長さと等しい → `min(len(a), len(b))` に置き換えた (同じ判定)。テスト 22 件 ok、閾値を 99 / 5 にする変異で赤。repo の中に他の `commonprefix` の使用は無い。
+- 節 3 の収穫と 942 b' は上の表と受け入れ条件に書いた。
+- 再測定 (2026-11-04)・A-B のやり直し・928 から引き継いだ比較の採否は変わらず未着手 (日付待ち・課題の作り直しが要る)。
