@@ -415,29 +415,37 @@ fi
 { printf '%s\n' "$now" > "$stamp"; } 2>/dev/null || true
 
 short=${name##*.}
-# 準備済みの dupscan が Go の index / callers を持つか。通知では build もソース解析も起こさない
-go_capable() {
+# 準備済みの dupscan が Go の index / callers を持つかを ready / no / unknown で返す。通知では build もソース解析も起こさない。
+# unknown (no-build が未build・古い版・指紋不明で拒否) を no と同じに扱わない。src/dupscan を commit するたびに
+# build 済みのバイナリは古い扱いになり、no に倒すと Go の案内の大半が名前の無い確認の文に落ちる (2026-10-27〜28 の
+# 実セッションで 18 回中 15 回)。案内どおりに打てば wrapper が今のソースを build して動き、対応していなければ実行時のエラーで見える
+go_capability() {
   local companion capabilities
   companion="$(dirname "$(readlink -f "$0")")/../../bin/dupscan"
-  capabilities=$("$companion" -no-build capabilities -format json 2>/dev/null) || return 1
-  printf '%s' "$capabilities" | jq -e '
+  capabilities=$("$companion" -no-build capabilities -format json 2>/dev/null) || { REPLY=unknown; return; }
+  if printf '%s' "$capabilities" | jq -e '
     .tool == "dupscan" and .schema_version == 1 and
     ([.commands[] | select(.name == "index" or .name == "callers") | select(.languages | index("go")) | .name] | unique | length == 2)
-  ' >/dev/null 2>&1
+  ' >/dev/null 2>&1; then REPLY=ready; else REPLY=no; fi
 }
 not_ready_msg="dupscan の Go 対応状況を手動で確認できる: \`dupscan capabilities\`。通知では build やソース解析を起こさない。未build・古い版なら通常起動で準備する (skill dupscan)。"
+unbuilt_note="未build・古い版なら初回の起動で build する。"
 if [ "$language" = go ]; then
-  if ! go_capable; then
+  go_capability
+  if [ "$REPLY" = no ]; then
     msg=$not_ready_msg
   else
   msg="dupscan で Go の候補・呼び出し元を引ける: \`dupscan index -name $short\` (定義の候補) / \`dupscan callers '$short'\` (名前による近似)。def / refs / context は Go 非対応。型・同名の別receiverは解決しない (skill dupscan の 2 節)"
+  [ "$REPLY" = ready ] || msg="${msg}。${unbuilt_note}"
   fi
 elif [ "$mixed" = 1 ]; then
   # Swift と Go の両方を追跡する repo で言語の手掛かりが無い検索: どちらの名前か分からないので、両方で使える 2 つだけを案内する。
-  # Go に対応しているか確かめられないとき (未build・古い版) は、中立の文を広告せず従来どおりの Swift 向けの文にする。
-  # 確認の文だけに替えると、Swift の名前のときに従来より情報が減り、通知の間隔も使う
-  if go_capable; then
+  # 準備済みの版が Go 非対応と答えたときだけ、中立の文を広告せず従来どおりの Swift 向けの文にする。
+  # unknown を Swift 向けにしない: Swift の名前なら def / refs を失うが、準備済みの回と同じ文にそろえる (確認できるかで文を変えない)
+  go_capability
+  if [ "$REPLY" != no ]; then
   msg="dupscan で定義の候補・呼び出し元を引ける: \`dupscan index -name $short\` (定義の候補) / \`dupscan callers '$short'\` (名前による近似。型・同名の別receiverは解決しない)。def / refs / context は Swift のファイルだけを読む。grep は文字列・コメント・設定を探すときに使う (skill dupscan の 2 節)"
+  [ "$REPLY" = ready ] || msg="${msg}。${unbuilt_note}"
   fi
 fi
 if [ -z "${msg:-}" ]; then

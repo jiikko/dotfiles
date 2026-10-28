@@ -246,7 +246,14 @@ next_session; expect_neutral_nudge "混在 repo の func.*Name" "$(run_bash 'rg 
 next_session; expect_neutral_nudge "混在 repo の Grep ツール (言語の手掛かりなし)" "$(run_grep 'FooBar' '')" FooBar
 next_session; out=$(CAPABILITY_MODE=unsupported run_bash 'rg -n FooBar .')
 if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("dupscan def FooBar")' >/dev/null 2>&1; then
-  echo '✓ 混在 repo で Go 対応を確かめられないときは従来どおり Swift 向け (確認の文だけに落として情報を減らさない)'; ok=$((ok+1)); else echo '✗ 混在 repo で Go 対応が未確認のとき従来の Swift 向けの案内でない'; printf '%s\n' "$out" | head -3; fail=$((fail+1)); fi
+  echo '✓ 混在 repo で準備済みの版が Go 非対応と答えたときは従来どおり Swift 向け'; ok=$((ok+1)); else echo '✗ 混在 repo で Go 非対応と答えたとき従来の Swift 向けの案内でない'; printf '%s\n' "$out" | head -3; fail=$((fail+1)); fi
+next_session; out=$(CAPABILITY_UNREADY=1 run_bash 'rg -n FooBar .')
+expect_neutral_nudge "混在 repo で未build・古い版 (確認できない) でも中立の案内を出す" "$out" FooBar
+if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("初回の起動で build する")' >/dev/null 2>&1; then
+  echo '✓ 確認できない中立の案内には build の注を添える'; ok=$((ok+1)); else echo '✗ 確認できない中立の案内に build の注が無い'; fail=$((fail+1)); fi
+next_session; out=$(run_bash 'rg -n FooBar .')
+if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("初回の起動で build する") | not' >/dev/null 2>&1; then
+  echo '✓ 準備済みのときは build の注を付けない'; ok=$((ok+1)); else echo '✗ 準備済みなのに build の注が付いた'; fail=$((fail+1)); fi
 # 引用符を取り違える入力 (コメントの ' や $'..') でも、後ろの grep を落とさない (旧の分割に倒す)
 next_session; expect_neutral_nudge "コメントの ' で引用が閉じなくても後ろの grep を見る" "$(run_bash "$(printf 'echo "a" # it'"'"'s\ngrep -rn FooBar .')")" FooBar
 next_session; expect_neutral_nudge "\$'..' の後ろの grep を見る" "$(run_bash "grep \$'it\\'s' . ; grep -rn FooBar .")" FooBar
@@ -323,12 +330,18 @@ if [ -e "$TMP_ROOT/executed" ]; then echo "✗ hookがPATH上のdupscan/goを起
 
 next_session
 out=$(CAPABILITY_UNREADY=1 run_bash 'rg -t go FooBar .')
-if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("dupscan capabilities") and (contains("dupscan index -name") | not)' >/dev/null; then
-  echo '✓ no-build未準備では具体的な未検証commandを案内しない'; ok=$((ok+1))
-else echo '✗ 未準備のcapabilityを誤案内'; fail=$((fail+1)); fi
+# 未build・古い版 (src/dupscan の commit のたびに起きる) でも名前つきの案内を出す。打てば wrapper が build し、非対応なら実行時に見える
+expect_go_nudge "no-build が確認できない (未build・古い版) ときも名前つきで案内する" "$out" FooBar
+if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("初回の起動で build する") and (contains("dupscan capabilities") | not)' >/dev/null; then
+  echo '✓ 確認できない Go の案内には build の注を添え、確認の文に落とさない'; ok=$((ok+1))
+else echo '✗ 確認できない Go の案内の文面が違う'; printf '%s\n' "$out" | head -3; fail=$((fail+1)); fi
 if [ -s "$CAPABILITY_LOG" ] && [ -z "$(grep -vFx -- '-no-build capabilities -format json' "$CAPABILITY_LOG" || true)" ]; then
   echo '✓ capabilityはno-buildの固定argvだけで取得する'; ok=$((ok+1))
 else echo '✗ capabilityが危険なargvで呼ばれた'; fail=$((fail+1)); fi
+
+next_session; out=$(run_bash 'rg -t go FooBar .')
+if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("dupscan index -name FooBar") and (contains("初回の起動で build する") | not)' >/dev/null 2>&1; then
+  echo '✓ Go の案内は準備済みのとき build の注を付けない'; ok=$((ok+1)); else echo '✗ Go の準備済みの案内に build の注が付いた'; printf '%s\n' "$out" | head -3; fail=$((fail+1)); fi
 
 for mode in malformed unsupported; do
   next_session

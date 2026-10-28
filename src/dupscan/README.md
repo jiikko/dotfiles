@@ -31,7 +31,7 @@ bin/dupscan -no-build agent-guide -target codex -lang swift -print
 
 `agent-guide` は`-target claude|codex -print`を指定して、最大4,096 bytesの例だけを表示する。`-lang`はガイドの表示を選ぶもので、各検索コマンドのscopeを自動で絞るflagではない。例のTYPE/TERM/SYMBOLを置き換え、対象repoのcwdまたは末尾のdir指定で使う。instruction/設定の書換え・例の自動実行はしない。Claude固有hookがCodexでも動くとは案内しない。
 
-Goのgrep案内は同じcheckoutのwrapperを固定argv `-no-build capabilities -format json`で呼び、index/callersがGo対応と確認できたときだけ具体例を出す。未準備/不正な能力情報なら手動確認の短い案内に留める。通知は既存のsession/言語単位の900秒制限を保ち、追加contextは最大1,024 bytes。Swiftの通常の案内文・stampは921の測定を妨げないよう維持する。通知からrepo全体の構文解析や自動buildは起こさない。
+Goのgrep案内は同じcheckoutのwrapperを固定argv `-no-build capabilities -format json`で呼び、index/callersがGo対応と確認できたら具体例を出す。未build・古い版で確認できないときも具体例を出し、初回の起動でbuildすると添える (commit のたびに古い扱いになり、確認できない回が大半だったため。issue 941)。準備済みの版が非対応と答えた・能力情報が壊れているときだけ手動確認の短い案内に留める。通知は既存のsession/言語単位の900秒制限を保ち、追加contextは最大1,024 bytes。Swiftの通常の案内文・stampは921の測定を妨げないよう維持する。通知からrepo全体の構文解析や自動buildは起こさない。
 
 ## 使い方
 
