@@ -239,3 +239,13 @@ func TestSweepLabelsTestdataGroups(t *testing.T) {
 		t.Errorf("testdata の組の種別: %q", s)
 	}
 }
+
+// 数字が桁数を表す名前 (Round / Round3) は大きさが違う別の仕事なので、連番の束にしない。
+func TestSweepSequentialNamesNeedSimilarSize(t *testing.T) {
+	big := "func roundN(x float64) float64 {\n\tif x < 0 {\n\t\treturn -roundN(-x)\n\t}\n\tscaled := x * 1000\n\tfloor := float64(int64(scaled))\n\tif scaled-floor >= 0.5 {\n\t\tfloor++\n\t}\n\treturn floor / 1000\n}\n"
+	root := repoWith(t, map[string]string{"a/a.go": "package a\n\nfunc roundNum3(x float64) float64 { return x }\n\n" + strings.ReplaceAll(big, "roundN", "roundNum")})
+	_, out, _ := sweep(t, root)
+	if s := sweepSection(t, out, 4); strings.Contains(s, "連番") {
+		t.Errorf("大きさが違う連番の名前は束にしない: %q", s)
+	}
+}

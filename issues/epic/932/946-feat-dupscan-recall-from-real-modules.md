@@ -116,3 +116,10 @@ dupscan が出さなかったが grep なら見つかった写しは 2 つだけ
 1. `gitWatch.take` と `walker.take` (版つき手渡し: lock → 比較 → 代入 → return)。間に 2 文が挟まるので完全一致の段に入らず、`near -similar` は 0.444 で他の 0.4 台に埋もれた。**未対応**: Lock/defer Unlock の枠を除いて比べる近似。実例が 2 つで共有できるのは 3 行・並行処理の状態を触るため、寄せる価値が低く、実装の見合いが無い。
 2. `take` ×5 / `busy` ×3 のような同名のメソッドは、先頭の語で束ねる節 4 に出なかった。**対応済み**: 同じ dir に同名で受け口の型が 2 種類以上のメソッドが 3 個以上 (節の数が 2 倍以内) あれば、節 4 に `take (同名のメソッド) 受け口 ×N` として出す。標準の interface の名前 (`String` `Error` `Close` ほか)・4 文字未満の名前は除く。述語 (`is*` `has*`) も束から除いた。
 3. 標準ライブラリの再実装 (`tfprobe` の `writeFile` は `os.WriteFile` の手書き) は、dupscan が repo 内の写しだけを比べるため出ない。さらに `os.WriteFile` は forbidigo が禁止していて手書きは意図的 (置き換えると lint が落ちる)。dupscan で扱わない。
+
+### 実装後の再実測 (f5、2026-10-28。treefiler / tuikit / zundamon-kaisetsu / subproc)
+
+- **同名メソッドの束**: treefiler の `take` ×5 だけが出た (他 3 module は 0)。意味が同じなのは 2 つ (gitWatch / walker)、残りは別物。雑音は少ないが、**実際に寄せられた例は 0 件で、役に立つと言える根拠はまだ無い**。`busy` ×3・`start` ×3 は出ない (節の比が 3 倍を超える等。理由は未確認)。
+- **連番の名前**: zundamon の `Round` / `Round3` が出たが、整数への丸めと小数 3 桁への丸めで別の仕事 (偽陽性)。→ 節の数が 1.5 倍以内の連番だけに絞った (数字が桁数・版を表す名前は大きさが違う)。`contains` / `contains2` は先に寄せたので実例の確認はできていない。
+- **testdata の印**: subproc の 2 組に `[L1] testdata` が付き、意図的な写しと一目で分かった。有用。
+- **report の添え書き**: 「うち同じ形の組が N 組」は treefiler 2・tuikit 1・zundamon 3・subproc 1 で実数と合い、`contains` を隠していた問題は解消した。

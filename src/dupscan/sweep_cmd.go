@@ -330,7 +330,9 @@ func sweepMethodClusters(entries []*group.Entry, opt group.Options) []sweepClust
 // sweepSeqClusters は、末尾の数字だけが違う名前 (`contains` / `contains2`) の組。数字を足して名前を避けた写しの手がかり。
 func sweepSeqClusters(entries []*group.Entry) []sweepCluster {
 	type key struct{ base, dir string }
+	type span struct{ lo, hi int }
 	by := map[key]map[string]bool{}
+	size := map[key]*span{}
 	for _, e := range entries {
 		u := e.Unit
 		if u.Unreadable || u.Test || u.Kind != tree.KindFunc {
@@ -343,12 +345,15 @@ func sweepSeqClusters(entries []*group.Entry) []sweepCluster {
 		k := key{base, path.Dir(u.File)}
 		if by[k] == nil {
 			by[k] = map[string]bool{}
+			size[k] = &span{e.Result.Nodes, e.Result.Nodes}
 		}
 		by[k][u.Name] = true
+		size[k].lo, size[k].hi = min(size[k].lo, e.Result.Nodes), max(size[k].hi, e.Result.Nodes)
 	}
 	var out []sweepCluster
 	for k, set := range by {
-		if len(set) < 2 {
+		// 数字が桁数・版を表す名前 (`Round` / `Round3`) は、大きさが違う別の仕事なので、節の数が 1.5 倍以内のものだけ
+		if len(set) < 2 || 2*size[k].hi > 3*size[k].lo {
 			continue
 		}
 		names := make([]string, 0, len(set))
