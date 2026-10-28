@@ -37,6 +37,11 @@ FUNC_GO = re.compile(r"^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*[\[(]", re.M)
 FUNC_SWIFT = re.compile(r"^\s*(?:@\w+\s+|(?:public|internal|private|fileprivate|open|static|class|final|override|mutating|nonisolated)\s+)*func\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]", re.M)
 LINE = re.compile(r"^(\S+?):(\d+)(?:-\d+)?\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*([A-Za-z_][A-Za-z0-9_]*)\s*[(<\[]")
 
+def stems(name):
+    """name の語の境目 (大文字・_ の前) での前方で、6 文字以上のもの (長い順)。name 自身は含まない。"""
+    cuts = [i for i in range(6, len(name)) if name[i].isupper() or name[i] == "_"]
+    return [name[:i].rstrip("_") for i in reversed(cuts)]
+
 def main():
     try:
         d = json.load(sys.stdin)
@@ -86,15 +91,23 @@ def main():
             left = BUDGET - (time.monotonic() - start)
             if left <= 0.5:
                 break
-            r = subprocess.run(["dupscan", "index", "-name", n, "-limit", "20", "-doc-bytes", "60", scope], capture_output=True, text=True, timeout=left)
             hits = []
-            for line in r.stdout.splitlines():
-                m = LINE.match(line)
-                if not m:
-                    continue
-                a, b = m.group(3).lower(), n.lower()
-                if a == b or ((a.startswith(b) or b.startswith(a)) and len(os.path.commonprefix([a, b])) >= 6):
-                    hits.append(line)
+            # index -name は「既存の名前が引く語を含む」ものを返すので、引く名前より短い既存の名前 (collectWidgets に対する collectWidgetsFast) は
+            # 名前そのものでは引けない。名前の語の境目の前方 (長い順に最大 2 つ) も引き、既存の名前が前方になっているものを拾う。
+            for q in [n] + stems(n)[:2]:
+                left = BUDGET - (time.monotonic() - start)
+                if left <= 0.5:
+                    break
+                r = subprocess.run(["dupscan", "index", "-name", q, "-limit", "50" if q != n else "20", "-doc-bytes", "60", scope], capture_output=True, text=True, timeout=left)
+                for line in r.stdout.splitlines():
+                    m = LINE.match(line)
+                    if not m or line in hits:
+                        continue
+                    a, b = m.group(3).lower(), n.lower()
+                    if a == b or ((a.startswith(b) or b.startswith(a)) and len(os.path.commonprefix([a, b])) >= 6):
+                        hits.append(line)
+                if hits:
+                    break
             logged.append((n, len(hits)))
             if hits:
                 out.append("`%s` に近い既存の定義:\n%s" % (n, "\n".join("  " + h for h in hits[:3])))

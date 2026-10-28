@@ -30,7 +30,10 @@ case "$name" in
   TestReadCookies) echo "src/a/t_test.go:1-9 TestReadCookies(t *testing.T) (呼び出し ~0)" ;;
   read) echo "src/a/r.go:1-2 read() (呼び出し ~9)" ;;
   parseThing) echo "src/a/p.go:1-9 parse() (呼び出し ~0)" ;;
+  collectWidgets) echo "src/a/c.go:1-9 collectWidgets(xs []int) []int (呼び出し ~3)" ;;
+  gather) echo "src/a/g.go:1-2 gatherAll() (呼び出し ~0)" ;;
 esac
+# collectWidgetsFast / gatherThings は、どの語でも本物の index -name が返さない (既存の名前が引く語を含むものだけを返すため)
 FAKE
 chmod +x "$FAKE_BIN/dupscan"
 WITH_DUPSCAN="$FAKE_BIN:$PATH"
@@ -83,6 +86,9 @@ expect_has "Go: 大小を無視して名前が等しい既存の定義 (メソ�
 next_session; out=$(run Edit "$F" $'func loadSettings() {}\n')
 expect_has "前方一致 (共通部分が 6 文字以上) の既存の定義を注入する" "$out" "loadSettingsFile"
 expect_lacks "共通の前方が無い名前 (reloadSettings) は雑音なので出さない" "$out" "reloadSettings"
+next_session; out=$(run Edit "$F" $'func collectWidgetsFast(xs []int) []int { return xs }\n')
+expect_has "引く名前より短い既存の定義 (collectWidgets ⊂ collectWidgetsFast) は、語の境目の前方で引いて注入する" "$out" "collectWidgets(xs"
+next_session; expect_silent "前方の語で引いて出た別の名前 (gatherAll) は、既存の名前が前方になっていないので出さない" "$(run Edit "$F" $'func gatherThings() {}\n')"
 next_session; expect_silent "候補が無ければ何も出さない" "$(run Edit "$F" $'func brandNewName() {}\n')"
 next_session; expect_silent "共通部分が 6 文字未満の前方一致 (parse ⊂ parseThing) は出さない" "$(run Edit "$F" $'func parseThing() {}\n')"
 next_session; expect_silent "Edit の old_string に既にある関数は新しくない" "$(run Edit "$F" $'func readCookies(x int) int { return x }\n' $'func readCookies(x int) int { return 0 }\n')"
