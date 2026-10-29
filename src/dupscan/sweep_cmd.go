@@ -17,7 +17,7 @@ import (
 	"dupscan/internal/tree"
 )
 
-// sweep は、重複を掘る 4 つの見方 (既定の report / 下限を下げて L1m も見る / 部分木の類似 / 名前の束) を 1 回の走査でまとめて出す。
+// sweep は、重複を掘る 5 つの見方 (既定の report / 下限を下げて L1m も見る / 部分木の類似 / 名前の束 / 手で展開した helper) を 1 回の走査でまとめて出す。
 // 見方ごとに順位の付け方が違うので、節を混ぜずに節の中で並べる。
 
 const (
@@ -87,15 +87,19 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	}
 	ex := exclude.New(cfg, entries, scopeFilter(sc))
 
-	base := dropAllowedGroups(ex, entries, ex.ApplyGroups(group.Build(entries, opt)))
+	baseAll := group.Build(entries, opt)
+	base := dropAllowedGroups(ex, entries, ex.ApplyGroups(baseAll))
 	deepOpt := group.Options{MinNodes: sweepDeepMinNodes, MinClosureNodes: sweepDeepMinNodes, Levels: []norm.Level{norm.L1, norm.L2, norm.LM}}
-	deep := newGroups(dropAllowedGroups(ex, entries, ex.ApplyGroups(group.Build(entries, deepOpt))), base)
-	similar, skippedSimilar := sweepSimilarPairs(entries, base, deep, *threshold, *maxUnits, ex.Allowed)
+	deepAll := group.Build(entries, deepOpt)
+	deep := newGroups(dropAllowedGroups(ex, entries, ex.ApplyGroups(deepAll)), base)
+	// 節 3 から除く「組に入る対」は、除外で消す前の組で数える (組の除外・allow-group で消した組の対を、似ている対として出し直さない)
+	similar, skippedSimilar := sweepSimilarPairs(entries, baseAll, deepAll, *threshold, *maxUnits, ex.Allowed)
 	clusters := sweepClusters(entries, opt)
+	inlined := sweepInlined(entries, ex.Allowed)
 
 	w := &lineWriter{w: stdout}
 	w.printf("dupscan sweep: 単位 %d・ファイル %d・読めないファイル %d。節ごとに順位は別 (上から先に見る価値が高い順)\n", len(entries), got.files, len(got.errFiles))
-	w.printf("意図して分けている組・誤検知は、単位の直前に `// dupscan:allow <false-positive|intentional> <理由>` を書くと静かになる\n")
+	w.printf("意図して分けている組・誤検知は、単位の直前に `// dupscan:allow <false-positive|intentional> <理由>` を書くと静かになる (組ごとなら、メンバーの 1 つに `// dupscan:allow-group <人数> <種別> <理由>`)\n")
 	w.section("1. 同じ形の組 (既定の下限 %d 節・段 %s)", opt.MinNodes, *c.levels)
 	sweepGroups(w, base, *c.limit)
 	w.section("2. 下限を %d 節に下げ、メンバー名だけ違う写し (L1m) も見て新しく出た組 (小さい単位が多く、雑音も混ざる。allow 印で静かにできる)", sweepDeepMinNodes)
@@ -109,6 +113,8 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	}
 	w.section("4. 名前の束 (同じ動詞で始まる小さい関数が同じ dir に %d 個以上・同名のメソッド・連番の名前。寄せられる共通の道具の手がかり)", sweepClusterMin)
 	sweepClusterText(w, clusters, *c.limit)
+	w.section("5. 既存の小さい関数 (文 %d〜%d 個) の本体の文の並びが、同じ dir の別の単位の中に手書きされている所 (その関数を呼べる候補。単位どうしの比較の 1〜3 には出ない)", inlineMinStmts, inlineMaxStmts)
+	sweepInlinedText(w, inlined, *c.limit)
 	if w.err != nil {
 		return fail(w.err)
 	}

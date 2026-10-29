@@ -23,6 +23,7 @@ final class StoreTests: XCTestCase {
 }
 `
 
+// dupscan:allow-group 8 intentional サブコマンドの名前を付けるだけの 1 行の wrapper (callers / contextCmd / def / refs / evidence / index / near / sweep)。寄せると呼び出し側が名前を文字列で書くことになる
 func callers(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	return runReport(t, append([]string{"callers"}, args...)...)

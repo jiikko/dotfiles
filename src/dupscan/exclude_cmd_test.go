@@ -421,8 +421,11 @@ func TestReorderedLevelsAreNotNarrowed(t *testing.T) {
 	}
 }
 
-func allowed(src, kindReason string) string {
-	return strings.Replace(src, "    func ", "    // dupscan:allow "+kindReason+"\n    func ", 1)
+func allowed(src, kindReason string) string { return marked(src, "dupscan:allow "+kindReason) }
+
+// marked は src の最初の関数の直前の行にコメント mark を置く。
+func marked(src, mark string) string {
+	return strings.Replace(src, "    func ", "    // "+mark+"\n    func ", 1)
 }
 
 func TestAllowCommentOnNewCopyIsListedAsNewExclusion(t *testing.T) {
@@ -646,7 +649,7 @@ func TestStaleAllowOnUngroupedUnitKeepsItsBody(t *testing.T) {
 	if !strings.Contains(out, "効いていない除外 1") {
 		t.Fatalf("前提: 組の無い単位の許可が効いていないと出る: %q", out)
 	}
-	if !strings.Contains(out, "理由: 釘の指す単位は釘の本体のまま今も在る (本体は変わっていない)") {
+	if !strings.Contains(out, "理由: 釘の指す単位は釘の本体のまま今も在る (本体は変わっていない") {
 		t.Errorf("本体のまま組に入っていないだけだと出ない: %q", out)
 	}
 	if strings.Contains(out, "効かない原因は特定していない") || strings.Contains(out, "外してよい") || strings.Contains(out, "重複を消す") {

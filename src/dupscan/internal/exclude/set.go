@@ -2,6 +2,7 @@ package exclude
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -17,12 +18,16 @@ type Set struct {
 	ambiguous []bool
 	pinKeys   map[string]int // ハッシュを除いた鍵ごとの単位数 (理由と候補の一意性を確かめる)
 	pinCount  map[string]int
+	entries   []*group.Entry
 	groups    []group.Group
 	// basePins は gate のときの base の単位の釘。組・単位の除外は、base に同じ釘の単位があったときか、
 	// その釘が新しく足された要素のときだけ効く (消えた写しの釘の場所に後から同じ写しを置いても覆わない)。nil なら制限しない (report)。
 	basePins map[string]int // 釘ごとの base の単位の数 (同じ関数に並んだ同じ本体のクロージャは同じ釘で数が 2 以上になる)
 	newElems map[string]bool
-	inScope  func(file string) bool
+	// baseAllow は base にあった allow-group の出どころ (Rule.allowID)。効いていない理由を分けるのに使う
+	// (覆うかどうかは NewElements が決める: 変わっていない許可の要素は新しく足された要素にしない)。
+	baseAllow map[string]bool
+	inScope   func(file string) bool
 	// narrowed は既定より狭い走査 (段・下限を変えた) か。狭い走査では組が作られないだけの除外を「効いていない」と言えない。
 	narrowed bool
 	// maxLevel は走査で組を作った段のうち最も粗い段。それより粗い段の組の除外は、組が作られないだけなので「効いていない」に数えない
@@ -33,7 +38,7 @@ type Set struct {
 // New は head の単位 (path の除外で外す前の全部) に対する除外を作る。c が nil なら除外は無い。
 // inScope は起点の中のファイルか (nil なら repo 全体)。起点の外を指す除外は「効いていない」に数えない。
 func New(c *Config, entries []*group.Entry, inScope func(string) bool) *Set {
-	s := &Set{pinCount: map[string]int{}, pinKeys: map[string]int{}, inScope: inScope}
+	s := &Set{pinCount: map[string]int{}, pinKeys: map[string]int{}, inScope: inScope, entries: entries}
 	if c != nil {
 		s.rules = c.Exclude
 	}
@@ -47,6 +52,9 @@ func New(c *Config, entries []*group.Entry, inScope func(string) bool) *Set {
 		// 釘は除外に書いた回数まで当たってよい。同じ単位の中で同じ本体のクロージャが並ぶと、順番を入れない釘はどれも同じになるので、
 		// 組の除外にはその釘が人数分書かれる (報告の除外の 1 行のとおり)。当たる単位が書いた回数より多いときだけ名指しできない
 		// (後から同じ本体のクロージャが増えた・別の単位が同じ釘になった) として効かせない。
+		if r.groupMiss != "" {
+			continue // 何も消さないので、名指しできるかは問わない (効いていない除外に人数の食い違いとして出す)
+		}
 		want := map[string]int{}
 		for _, p := range r.pins() {
 			want[p]++
@@ -86,6 +94,20 @@ func (s *Set) LimitToBase(base []*group.Entry, baseCfg *Config) {
 	for _, el := range NewElements(baseCfg, &Config{Exclude: s.rules}) {
 		s.newElems[el.Key] = true
 	}
+	s.baseAllow = allowIDs(baseCfg)
+}
+
+// allowIDs は設定の allow-group の出どころ (Rule.allowID) の集合。
+func allowIDs(c *Config) map[string]bool {
+	out := map[string]bool{}
+	if c != nil {
+		for _, r := range c.Exclude {
+			if r.allowID != "" {
+				out[r.allowID] = true
+			}
+		}
+	}
+	return out
 }
 
 func (r Rule) pins() []string {
@@ -139,7 +161,7 @@ func (s *Set) PresetCovers(lv norm.Level, members []*group.Entry) bool {
 // GroupExcluded は、段 lv の組のメンバーが全部 1 つの組の除外 (段が lv 以下) の釘に当たるか。1 つでも外れたメンバーがいれば出す。
 func (s *Set) GroupExcluded(lv norm.Level, members []*group.Entry) bool {
 	for i, r := range s.rules {
-		if len(r.Group) == 0 || s.ambiguous[i] || r.level > lv {
+		if len(r.Group) == 0 || s.ambiguous[i] || r.level > lv || r.groupMiss != "" {
 			continue
 		}
 		pins := map[string]bool{}
@@ -225,9 +247,12 @@ func pinKey(pin string) string {
 }
 
 // StaleWhy は、効いていない除外が効かない理由を分ける。
+//   - "group-count": `dupscan:allow-group` の人数と、同じ本体の単位の数が合わない (Rule.GroupMiss に段ごとの数)
+//   - "allow-unchanged": gate で、base から変わっていない allow-group が base に無かった単位を指している (base にあった釘しか覆わない)
 //   - "missing": 釘が指す単位のどれかが無い (削除・改名・起点の外)。1 つでも無ければこちら (除外を直すか消す)
 //   - "duplicate": 同じ釘の除外が別にあって、そちらが効いている (重複を消す)
-//   - "ungrouped": 単位の除外で、釘の単位が釘の本体のまま在る。本体は変わっていないので、効かないのは組の側の理由
+//   - "ungrouped": 単位の除外で、釘の単位が釘の本体のまま在る。または組の除外で、釘の単位が全部釘の本体のまま在り、その段で同じ本体の単位が
+//     釘の数だけ (増えていない)。本体も顔ぶれも変わっていないので、効かないのは組の側の理由
 //     (組に入らない: 節が下限未満・本体が他と一致しない / 別の除外が先に組を消した / gate の base の制約)。どれかは区別しない。
 //     sweep の節 2・3 は組にならない単位の許可も読むので、「外してよい」とは言わない
 //   - "hash": それ以外。同じ鍵 (ファイル・型・署名) の単位は全部ある。本体が変わった・組の顔ぶれが変わった等で、原因は特定しない。
@@ -237,6 +262,16 @@ func (s *Set) StaleWhy(r Rule) string {
 	pins := r.pins()
 	if len(pins) == 0 {
 		return ""
+	}
+	if r.groupMiss != "" {
+		return "group-count"
+	}
+	if s.baseAllow[r.allowID] {
+		for _, p := range r.Group {
+			if s.basePins[p] == 0 {
+				return "allow-unchanged"
+			}
+		}
 	}
 	for _, p := range pins {
 		if s.pinKeys[pinKey(p)] == 0 {
@@ -248,10 +283,32 @@ func (s *Set) StaleWhy(r Rule) string {
 			return "duplicate"
 		}
 	}
-	if r.Unit != "" && s.pinCount[r.Unit] > 0 {
+	if r.Unit != "" && s.pinCount[r.Unit] > 0 || len(r.Group) > 0 && s.sameMembers(r) {
 		return "ungrouped"
 	}
 	return "hash"
+}
+
+// sameMembers は、組の除外の釘の単位が全部 (書いた回数ちょうど) 在り、組の段で本体が同じで、同じ本体の単位がほかに無いか。
+func (s *Set) sameMembers(r Rule) bool {
+	want := map[string]int{}
+	for _, p := range r.Group {
+		want[p]++
+	}
+	hash := ""
+	for _, e := range s.entries {
+		if want[Pin(e)] > 0 {
+			hash = e.Result.Hash[r.level]
+			break
+		}
+	}
+	got := map[string]int{}
+	for _, e := range s.entries {
+		if e.Result.Hash[r.level] == hash {
+			got[Pin(e)]++
+		}
+	}
+	return hash != "" && maps.Equal(want, got)
 }
 
 // StaleGroupCandidate は同じ段・同じ鍵の組を再審査の候補にする。釘はクロージャの序数を
@@ -345,8 +402,15 @@ func NewElements(base, head *Config) []Element {
 	}
 	var out []Element
 	seen := map[string]int{}
+	// base から変わっていない allow-group (コメントの中身が base のどれかと同じ) の要素は、新しく足された要素にしない。
+	// その許可は人数だけで顔ぶれを決め直すので、後から足した写しで人数が合うと新しい写しを指す。コメントは diff に出ないので、
+	// 新しい要素として効かせると人の目に届かないまま写しを覆う (gate の Set.known は新しく足された要素なら効かせる)。
+	unchanged := allowIDs(base)
 	if head != nil {
 		for _, r := range head.Exclude {
+			if unchanged[r.allowID] {
+				continue
+			}
 			for _, el := range r.elements() {
 				if have[el] {
 					continue
@@ -379,6 +443,8 @@ func (r Rule) elements() []string {
 		for _, g := range r.Paths {
 			out = append(out, "paths:"+g+" ("+strings.Join(lvs, ",")+")")
 		}
+	case r.groupMiss != "":
+		// 人数の合わない allow-group は何も消さないので、要素も持たない (「新しく足された除外」に数えない)
 	case len(r.Group) > 0:
 		n := map[string]int{}
 		for _, p := range r.Group {

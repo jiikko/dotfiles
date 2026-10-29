@@ -84,6 +84,9 @@ func (x Exclusions) write(w io.Writer) {
 		// 理由は次の行に別に出す。
 		fmt.Fprintf(w, "効いていない除外: %s\n", ruleJSON(r))
 		if why := staleWhyText(x.staleWhy, i); why != "" {
+			if miss := r.GroupMiss(); miss != "" {
+				why += " (" + miss + ")"
+			}
 			fmt.Fprintf(w, "  理由: %s\n", why)
 		}
 		if i < len(x.staleCandidates) && x.staleCandidates[i] != "" {
@@ -359,12 +362,16 @@ func staleWhyText(why []string, i int) string {
 	switch why[i] {
 	case "hash":
 		return "同じ鍵 (ファイル・型・署名) の単位は今も在る。効かない原因は特定していない (本体が変わった・組の顔ぶれが変わった・同じ除外が二重に書かれている等)。この除外がまだ要るか見直す"
+	case "group-count":
+		return "dupscan:allow-group の人数と、同じ本体の単位の数が合わないので効かせていない (写しが増えた・減った・本体を直した): 増えた写しは寄せるか、確かめてから人数を直す"
+	case "allow-unchanged":
+		return "文面 (人数・種別・理由) が base のどれかの dupscan:allow-group と同じ許可は、変わっていないとみなして base にあった単位だけを覆う (コメントが diff に出ないまま、後から足した写しを覆わない)。base に無かった単位 (足した写し・移した単位) を指している: 足した写しなら寄せるか、確かめてから文面を base のどの allow-group とも違うものに書き換える (人数を直しても、別の組の許可と文面が同じなら変わっていないとみなす)。単位を移しただけなら、次の base からは効く"
 	case "missing":
 		return "指す単位が無い (削除・改名・起点の外): 除外を直すか消す"
 	case "duplicate":
 		return "同じ釘の除外が別にあって、そちらが効いている: 重複を消す"
 	case "ungrouped":
-		return "釘の指す単位は釘の本体のまま今も在る (本体は変わっていない)。効かないのは組の側の理由で、どれかは区別しない: 組に入らない (節が下限未満・本体が他と一致しない) / 別の除外が先に組を消した / gate の base の制約。sweep の節 2・3 は組にならない単位の許可も読むので、そのために置いたのなら残してよい"
+		return "釘の指す単位は釘の本体のまま今も在る (本体は変わっていない。組の除外なら顔ぶれも同じ)。効かないのは組の側の理由で、どれかは区別しない: 組に入らない (節が下限未満・本体が他と一致しない) / 別の除外が先に組を消した / gate の base の制約。sweep (節 2 は下限 12 節) は組にならない単位の許可・組の除外も読むので、そのために置いたのなら残してよい"
 	}
 	return ""
 }

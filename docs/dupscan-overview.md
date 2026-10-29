@@ -155,7 +155,7 @@ bin/dupscan (入口。初回に src/dupscan をビルドする)
 | 入口 | 出力 |
 |---|---|
 | `dupscan <repo>` (重複の報告。issue 896) | 人が読む形と `-format json`。test / prod / 両方にまたがる組を分けて出す。組ごとにメンバー (ファイル:行・署名・test / prod・可視性) と一致した段を出す。所属ターゲットは解決しない（918）。共通の置き場所の優先表示と呼び出し数は index の機能 |
-| `dupscan sweep` (初めて入る module を掘る入口) | 1 回の走査で 4 つの見方を出す: 既定の組 / 下限 12 節と `L1m` / 部分木が似ている対 (Type-3 の候補) / 名前の束。text だけ。節ごとの収穫の実測は 948 |
+| `dupscan sweep` (初めて入る module を掘る入口) | 1 回の走査で 5 つの見方を出す: 既定の組 / 下限 12 節と `L1m` / 部分木が似ている対 (Type-3 の候補) / 名前の束 / 既存の小さい関数の本体を別の単位の中に手で展開した所 (956)。text だけ。節ごとの収穫の実測は 948 |
 | `dupscan index [-name 語] [-returns 型] [-param-type 型] [-doc 語] [-kind func,init,property] [-file ファイル]` (索引。issue 897・907) | 1 行 1 件の text と JSON (名前と署名・`ファイル:開始-終了` (Read の範囲にそのまま使える。943)・test・可視性・doc の最初の文)。private / fileprivate / unexported (Go) を後に並べる。呼び出し元の近似数・共通の置き場所の優先表示も実装済み。打ち切ったときは先頭に総件数と次の手を出す。所属ターゲット・`--check` は未実装 |
 | `dupscan search` / `evidence` (名前の分からない実装を探す。925・933・934) | `search` は用途の語・戻り値の型から候補を並べ、範囲つきの読み方 (`read_argv`) を添える。`evidence` は doc・テスト・ソースの行の語から探す |
 | `dupscan def` / `refs` / `context` (Swift だけ) | `def` は定義を本体つきで (型ならメンバーの一覧)、`refs` は型・式の位置の参照を、`context` はその 3 つをまとめて出す。Go は `index` / `callers` で代わりにする (Go の `def` は 944 で保留) |

@@ -12,6 +12,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"dupscan/internal/group"
@@ -38,7 +39,16 @@ type Rule struct {
 
 	levels map[norm.Level]bool // Paths の除外を効かせる段 (Levels が無ければ全部)
 	level  norm.Level          // Group の除外の段
+	// groupMiss は `dupscan:allow-group <人数>` の人数と、同じ本体の単位の数が合わなかったときの、段ごとの数 (合えば空)。
+	// 合わない許可は何も消さず、効いていない除外に出す (増えた写しを、許可が黙って覆わない)。
+	groupMiss string
+	// allowID は allow-group から作った除外の出どころ (コメントの中身: 人数・種別・理由)。gate が、base から変わっていない許可を見分ける。
+	// 書いた単位の鍵は入れない (ファイルの移動・型や関数の改名ではコメントの行が diff に出ないので、それで「新しい許可」にしない)。
+	allowID string
 }
+
+// GroupMiss は `dupscan:allow-group` の人数が合わなかったときの、段ごとの同じ本体の単位の数 (合っていれば空)。
+func (r Rule) GroupMiss() string { return r.groupMiss }
 
 // Config は設定ファイルの中身。
 type Config struct {
@@ -163,13 +173,27 @@ func (r *Rule) check() error {
 	return nil
 }
 
+// allowGroupMark は単位の直前のコメントの `dupscan:allow` の後ろに続けて、組ごとの許可にする印 (`// dupscan:allow-group <人数> <種別> <理由>`)。
+const allowGroupMark = "-group"
+
 // CommentRules は、単位の直前のコメント `// dupscan:allow <種別> <理由>` を単位の除外にする。
+// `// dupscan:allow-group <人数> <種別> <理由>` は、その単位と同じ本体の単位 (細かい段から見て、数がちょうど人数になった段) の組の除外にする。
+// 人数を書かせるのは、後から写しが増えたときに許可が黙って覆わないため (コメントには相手の釘を書けないので、顔ぶれを人数で留める)。
 // 設定ファイルの単位の除外と同じ釘で指すので、gate の「base に同じ釘があったときだけ効く」と「新しく足された除外」もそのまま効く
 // (新しい写しに許可のコメントを添えると、新しく足された除外に出る)。種別か理由の無いコメントは errs に入れる。
 func CommentRules(entries []*group.Entry) (rules []Rule, errs []error) {
 	for _, e := range entries {
 		u := e.Unit
 		if !u.HasAllow {
+			continue
+		}
+		if rest, ok := strings.CutPrefix(u.Allow, allowGroupMark); ok {
+			r, err := groupCommentRule(e, entries, rest)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s:%d: dupscan:allow-group: %w (書き方は `// dupscan:allow-group <人数> <false-positive|intentional> <理由>`)", u.File, u.AllowLine, err))
+				continue
+			}
+			rules = append(rules, r)
 			continue
 		}
 		kind, reason, _ := strings.Cut(u.Allow, " ")
@@ -181,6 +205,47 @@ func CommentRules(entries []*group.Entry) (rules []Rule, errs []error) {
 		rules = append(rules, r)
 	}
 	return rules, errs
+}
+
+// groupCommentRule は `dupscan:allow-group` の後ろ rest (人数・種別・理由) から組の除外を作る。
+func groupCommentRule(e *group.Entry, entries []*group.Entry, rest string) (Rule, error) {
+	u := e.Unit
+	comment := fmt.Sprintf("%s:%d", u.File, u.AllowLine)
+	if rest != "" && rest[0] != ' ' && rest[0] != '\t' {
+		return Rule{}, fmt.Errorf("知らない印 dupscan:allow%s%s", allowGroupMark, strings.Fields(rest)[0])
+	}
+	fields := strings.Fields(rest)
+	n, err := 0, error(nil)
+	if len(fields) > 0 {
+		n, err = strconv.Atoi(fields[0])
+	}
+	if len(fields) == 0 || err != nil || n < 2 {
+		return Rule{}, errors.New("人数 (2 以上の整数) が無い")
+	}
+	kind, reason, _ := strings.Cut(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(rest), fields[0])), " ")
+	reason = strings.TrimSpace(reason)
+	// 種別と理由の検査は単位の除外と同じ
+	if err := (&Rule{Unit: Pin(e), Kind: kind, Reason: reason}).check(); err != nil {
+		return Rule{}, err
+	}
+	id := strconv.Itoa(n) + "\x00" + kind + "\x00" + reason
+	var counts []string
+	for _, lv := range append(append([]norm.Level(nil), norm.Levels...), norm.LM) {
+		var pins []string
+		for _, o := range entries {
+			if !o.Unit.Unreadable && (lv != norm.L3 || !o.Result.L3Trivial) && o.Result.Hash[lv] == e.Result.Hash[lv] {
+				pins = append(pins, Pin(o))
+			}
+		}
+		if len(pins) == n {
+			sort.Strings(pins)
+			r := Rule{Group: pins, Level: lv.String(), Kind: kind, Reason: reason, Comment: comment, allowID: id}
+			return r, r.check()
+		}
+		counts = append(counts, fmt.Sprintf("%s %d", lv, len(pins)))
+	}
+	return Rule{Group: []string{Pin(e)}, Level: norm.L1.String(), level: norm.L1, Kind: kind, Reason: reason, Comment: comment,
+		allowID: id, groupMiss: fmt.Sprintf("人数 %d・同じ本体の単位 %s", n, strings.Join(counts, "・"))}, nil
 }
 
 // WithComments は設定 c にコメントの許可 rules を足した設定を返す (c は書き換えない)。

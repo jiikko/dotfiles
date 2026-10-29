@@ -233,6 +233,8 @@ type writer struct {
 	nums   map[string]int
 	quoted *[]byte // nil なら writer 自身の buf を使う (scratch を持たない呼び出し元用)
 	buf    []byte
+	// anon は局所の名前を番号にせず、どれも同じ記号にする (Seqs の形。並びの途中から切り出しても形が変わらない)。
+	anon bool
 }
 
 // str と byte は形を書き出す。bufio の書き込みの失敗は Flush が返すので、ここでは見ない (先は sha256 と strings.Builder で失敗しない)。
@@ -264,6 +266,8 @@ func (w *writer) head(n *tree.Node) {
 	w.byte('(')
 	w.str(n.Kind)
 	switch {
+	case isLocal(n, w.locals) && w.anon:
+		w.str(" $")
 	case isLocal(n, w.locals):
 		num, ok := w.nums[n.Text]
 		if !ok {
