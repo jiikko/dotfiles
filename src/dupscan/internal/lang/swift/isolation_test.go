@@ -326,3 +326,278 @@ func TestEmptyTupleArgumentIgnoresSpacing(t *testing.T) {
 		}
 	}
 }
+
+// 後続の文まで巻き込んだ ERROR の条件先頭を直す。末尾クロージャの本体と
+// 後続の await/try は残し、条件だけを手で直した関数の L1 と一致させる。
+func TestConditionOperatorsInMisparsedHeads(t *testing.T) {
+	for _, tt := range []struct{ name, body, plain string }{
+		{"D1_token", "if await box.ready { return Stop() }\nreturn error", "if box.ready { return Stop() }\nreturn error"},
+		{"D2_switch", "for x in xs { switch await cleanup.value {\ncase .complete: break\ncase .deferred: deferred = true\ncase let .failed(error): firstFailure = error\n}\ntry Task.checkCancellation() }", "for x in xs { switch cleanup.value {\ncase .complete: break\ncase .deferred: deferred = true\ncase let .failed(error): firstFailure = error\n}\ntry Task.checkCancellation() }"},
+		{"D3_if", "for x in xs { if await recorder.values.count >= count { return true }\nawait Task.yield() }", "for x in xs { if recorder.values.count >= count { return true }\nawait Task.yield() }"},
+		{"D4_where_clause", "for _ in 0..<100 where await bridge.pendingSenderCount == 0 { await Task.yield() }\nproducer.cancel()", "for _ in 0..<100 where bridge.pendingSenderCount == 0 { await Task.yield() }\nproducer.cancel()"},
+		{"D4_where_keyword", "for _ in 0..<100 where await bridge.pendingSenderCount == 0 {\nawait Task.yield()\n}\n#expect(await bridge.pendingCount == 2)\n#expect(try await bridge.receive() == Data([1]))\ntry await producer.value", "for _ in 0..<100 where bridge.pendingSenderCount == 0 {\nawait Task.yield()\n}\n#expect(await bridge.pendingCount == 2)\n#expect(try await bridge.receive() == Data([1]))\ntry await producer.value"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			src := "func f() {\n" + tt.body + "\n}\n"
+			plain := "func f() {\n" + tt.plain + "\n}\n"
+			assertRepairedLike(t, src, plain)
+		})
+	}
+}
+
+func assertRepairedLike(t *testing.T, src, plain string) {
+	t.Helper()
+	r := parse(t, "Sources/X.swift", src)
+	if r.HasError {
+		t.Fatal("読み直しても ERROR")
+	}
+	want := parse(t, "Sources/Y.swift", plain)
+	if want.HasError {
+		t.Fatal("比較用の形が読めない")
+	}
+	a, b := langtest.NormBoth(t, unitBy(t, r, "f()")), langtest.NormBoth(t, unitBy(t, want, "f()"))
+	if a.Hash[norm.L1] != b.Hash[norm.L1] {
+		t.Errorf("L1 が違う\n%s\n%s", a.Forms[norm.L1], b.Forms[norm.L1])
+	}
+	if !parse(t, "Sources/X.swift", src+"func broken(\n").HasError {
+		t.Error("別の構文エラーを隠した")
+	}
+	neighbor := "func neighbor() { keep() }\n"
+	alone := langtest.NormBoth(t, unitBy(t, parse(t, "Sources/Y.swift", neighbor), "neighbor()"))
+	with := langtest.NormBoth(t, unitBy(t, parse(t, "Sources/X.swift", src+neighbor), "neighbor()"))
+	if alone.Hash[norm.L1] != with.Hash[norm.L1] {
+		t.Error("正常な隣の関数が変わった")
+	}
+}
+
+const conditionalAttributesSrc = "#if swift(>=6.4)\n@Probe(\"first\", .timeLimit(.seconds(10)))\n#else\n@Probe(\"second\", .timeLimit(.minutes(1)))\n#endif\nfunc f() { go() }\n"
+
+func TestConditionalAttributesKeepFirstBranch(t *testing.T) {
+	src := "struct S {\n" + conditionalAttributesSrc + "}\n"
+	fixed, changed := applyRule(t, src, repairAttributesForTest)
+	if !changed || strings.Count(string(fixed), "@Probe") != 1 || !strings.Contains(string(fixed), "\"first\"") || strings.Contains(string(fixed), "#") {
+		t.Fatal("最初の分岐だけを残していない")
+	}
+	assertRepairedLike(t, "struct S {\n"+conditionalAttributesSrc+"}\n", "struct S {\n@Probe(\"first\", .timeLimit(.seconds(10)))\nfunc f() { go() }\n}\n")
+}
+
+func repairAttributesForTest(n *sitter.Node, fixed []byte) bool {
+	var blanks [][2]uint
+	return repairConditionalAttributes(n, fixed, &blanks)
+}
+
+func TestConditionalAttributesAtTopLevel(t *testing.T) {
+	plain := "\n@Probe(\"first\", .timeLimit(.seconds(10)))\n\n\n\nfunc f() { go() }\n"
+	assertRepairedLike(t, conditionalAttributesSrc, plain)
+	got := unitBy(t, parse(t, "Sources/X.swift", conditionalAttributesSrc), "f()")
+	want := unitBy(t, parse(t, "Sources/X.swift", plain), "f()")
+	if got.Line != want.Line {
+		t.Fatalf("Line: %d != %d", got.Line, want.Line)
+	}
+	for _, attr := range []string{"Test", "Testing.Test"} {
+		src := strings.ReplaceAll(conditionalAttributesSrc, "Probe", attr)
+		r := parse(t, "Tests/X.swift", src)
+		if r.HasError || len(r.Units) != 0 {
+			t.Fatalf("テスト属性の分岐: %+v", r)
+		}
+	}
+}
+
+// B の範囲だけを消す候補は採り、別の正常な directive も消す候補は捨てる。
+func TestConditionalAttributesKeepOtherDirectives(t *testing.T) {
+	p, err := NewParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	src := []byte(conditionalAttributesSrc + "#if DEBUG\nfunc neighbor() {}\n#endif\n")
+	before := p.p.Parse(src, nil)
+	defer before.Close()
+	fixed := append([]byte(nil), src...)
+	var blanks [][2]uint
+	for i := range before.RootNode().ChildCount() {
+		repairConditionalAttributes(before.RootNode().Child(i), fixed, &blanks)
+	}
+	if len(blanks) == 0 {
+		t.Fatal("B が発火しない")
+	}
+	after := p.p.Parse(fixed, nil)
+	defer after.Close()
+	if after.RootNode().HasError() || !preservesTopLevel(before.RootNode(), after.RootNode(), blanks...) {
+		t.Fatal("B だけの空白化を棄却した")
+	}
+	start := strings.Index(string(fixed), "#if DEBUG")
+	for i := start; i < start+len("#if DEBUG"); i++ {
+		fixed[i] = ' '
+	}
+	bad := p.p.Parse(fixed, nil)
+	defer bad.Close()
+	if countErrors(bad.RootNode()) >= countErrors(before.RootNode()) {
+		t.Fatal("ERROR が減る候補でない")
+	}
+	if preservesTopLevel(before.RootNode(), bad.RootNode(), blanks...) {
+		t.Fatal("別の正常な directive の消失を見逃した")
+	}
+}
+
+func TestConditionalAttributesSkipLeadingComment(t *testing.T) {
+	for _, comment := range []string{"/// doc", "// dupscan:allow reason", "/* doc */", "/** doc\n */", "// ordinary"} {
+		for _, wrap := range []bool{false, true} {
+			src := comment + "\n" + conditionalAttributesSrc
+			if wrap {
+				src = "struct S {\n" + src + "}\n"
+			}
+			if fixed, changed := applyRule(t, src, repairAttributesForTest); changed || string(fixed) != src {
+				t.Fatalf("隣接コメントを切断: %s", src)
+			}
+		}
+		src := comment + "\n\n" + conditionalAttributesSrc
+		if _, changed := applyRule(t, src, repairAttributesForTest); !changed {
+			t.Fatalf("空行のあるコメントで発火しない: %s", src)
+		}
+	}
+}
+
+func TestConditionalAttributesSkipTestMismatch(t *testing.T) {
+	for _, attr := range []string{"Test", "Testing.Test"} {
+		for _, first := range []bool{false, true} {
+			src := strings.Replace(conditionalAttributesSrc, "@Probe", "@"+attr, 1)
+			if !first {
+				src = strings.Replace(conditionalAttributesSrc, "@Probe(\"second", "@"+attr+"(\"second", 1)
+			}
+			for _, candidate := range []string{src, "struct S {\n" + src + "}\n"} {
+				if fixed, changed := applyRule(t, candidate, repairAttributesForTest); changed || string(fixed) != candidate {
+					t.Fatalf("Test 属性の不一致を書き換えた: %s", candidate)
+				}
+			}
+		}
+	}
+}
+
+// 規則の発火自体を検査し、採用条件に救われただけの誤置換も検出する。
+func applyRule(t *testing.T, src string, rule func(*sitter.Node, []byte) bool) ([]byte, bool) {
+	t.Helper()
+	p, err := NewParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	tr := p.p.Parse([]byte(src), nil)
+	defer tr.Close()
+	fixed := []byte(src)
+	changed := false
+	var visit func(*sitter.Node)
+	visit = func(n *sitter.Node) {
+		if !n.HasError() {
+			return
+		}
+		if rule(n, fixed) {
+			changed = true
+		}
+		for i := range n.ChildCount() {
+			visit(n.Child(i))
+		}
+	}
+	visit(tr.RootNode())
+	return fixed, changed
+}
+
+func TestMisparseRulesSkipExcludedForms(t *testing.T) {
+	for _, s := range []string{
+		strings.Replace(conditionalAttributesSrc, "#else", "#elseif DEBUG", 1),
+		strings.Replace(conditionalAttributesSrc, "#else", "#else\nimport Foundation", 1),
+		strings.Replace(conditionalAttributesSrc, "@Probe(\"first\", .timeLimit(.seconds(10)))", "public", 1),
+		strings.Replace(conditionalAttributesSrc, "@Probe(\"second\", .timeLimit(.minutes(1)))", "nonisolated", 1),
+		"#if DEBUG\n" + conditionalAttributesSrc + "#endif\n",
+		strings.Replace(conditionalAttributesSrc, "#else", "#else\nfunc other() {}", 1),
+		"func f() {\n#if DEBUG\ngo()\n#else\nstop()\n#endif\n}\n",
+		"struct S {\n#if DEBUG\nfunc f() {}\n#else\nfunc g() {}\n#endif\n}\n",
+		"func f() { let x =\n#if DEBUG\n1\n#else\n2\n#endif\n}\n",
+		strings.Replace(conditionalAttributesSrc, "\"second\"", "\"日本語\"", 1),
+	} {
+		for _, candidate := range []string{s, "struct Outer {\n" + s + "}\n"} {
+			if fixed, changed := applyRule(t, candidate, repairAttributesForTest); changed || string(fixed) != candidate {
+				t.Errorf("対象外の属性分岐を書き換えた: %s", candidate)
+			}
+		}
+	}
+	for _, body := range []string{
+		"if try! box.ready { return Stop() }\nreturn error",
+		"if try? box.ready { return Stop() }\nreturn error",
+		"if try! await box.ready { return Stop() }\nreturn error",
+		"if box.await { return Stop() }\nreturn error",
+		"let await = true\nif await { go() }",
+		"if await check() { g(()) }",
+		"for x in xs where try check(x) { g(()) }",
+		"if let v = try await load() { g(()) }",
+	} {
+		s := "func f() {\n" + body + "\n}\n"
+		if fixed, changed := applyRule(t, s, repairConditionOperators); changed || string(fixed) != s {
+			t.Errorf("対象外の条件を書き換えた: %s", s)
+		}
+	}
+}
+
+func TestMisparseRulesKeepBytePositions(t *testing.T) {
+	for _, tt := range []struct {
+		src  string
+		rule func(*sitter.Node, []byte) bool
+	}{
+		{"struct S {\n" + conditionalAttributesSrc + "}\n", repairAttributesForTest},
+		{"func f() { if await box.ready { return Stop() }\nreturn error }", repairConditionOperators},
+		{"func f() { for x in xs { if await box.count >= count { return true }\nawait Task.yield() } }", repairConditionOperators},
+	} {
+		fixed, changed := applyRule(t, tt.src, tt.rule)
+		if !changed {
+			t.Fatal("発火しない")
+		}
+		if len(fixed) != len(tt.src) {
+			t.Fatal("長さが変わった")
+		}
+		for i, b := range fixed {
+			if (b == '\n') != (tt.src[i] == '\n') || (b != tt.src[i] && (b >= 128 || tt.src[i] >= 128)) {
+				t.Fatalf("座標または ASCII 外を変更: %d", i)
+			}
+		}
+	}
+}
+
+func TestConditionOperatorsRepairChainedWhereClauses(t *testing.T) {
+	src := `func f() {
+for _ in 0..<100 where await bridge.pendingSenderCount == 0 {
+ await Task.yield()
+}
+producer.cancel()
+await #expect(throws: CancellationError.self) {
+ try await producer.value
+}
+#expect(try await bridge.receive() == Data([1]))
+let consumer = Task { try await bridge.receive() }
+for _ in 0..<100 where await bridge.pendingReceiverCount == 0 {
+ await Task.yield()
+}
+await bridge.cancel()
+await #expect(throws: Failure.cancelled) { try await consumer.value }
+}
+`
+	assertRepairedLike(t, src, strings.ReplaceAll(src, "where await", "where      "))
+}
+
+// C の残りは final とは独立した複数 catch パターンの読み違え。
+// パターンや区切りを消して単一パターンとして扱わない。
+func TestMultiplePatternCatchStaysUnreadable(t *testing.T) {
+	src := "func f() { switch x { case .a: do { go() } catch E.a, E.b(.c) { stop() } catch { fail() }\ncase .b: break } }\n"
+	if !parse(t, "Sources/X.swift", src).HasError {
+		t.Fatal("複数 catch の読み違えが隠れた")
+	}
+}
+
+// トップレベル B と、同じファイルの独立した D を一緒に修復する。
+func TestConditionalAttributesDoNotBlockOtherRules(t *testing.T) {
+	src := conditionalAttributesSrc + "func g() { if await box.ready { return Stop() }\nreturn error }\n"
+	got := langtest.NormBoth(t, unitBy(t, parse(t, "Sources/X.swift", src), "g()"))
+	want := langtest.NormBoth(t, unitBy(t, parse(t, "Sources/Y.swift", "func g() { if box.ready { return Stop() }\nreturn error }\n"), "g()"))
+	if got.Hash[norm.L1] != want.Hash[norm.L1] {
+		t.Fatal("トップレベル B が D の修復を妨げた")
+	}
+}

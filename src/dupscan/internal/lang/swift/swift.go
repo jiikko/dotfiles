@@ -127,10 +127,14 @@ const isolationModifier = "nonisolated(unsafe)"
 func (p *Parser) reparseKnownMisparses(src []byte, t *sitter.Tree) *sitter.Tree {
 	fixed := bytes.Clone(src)
 	changed := false
+	var attributeBlanks [][2]uint
 	var visit func(n *sitter.Node)
 	visit = func(n *sitter.Node) {
 		if !n.HasError() {
 			return
+		}
+		if repairConditionalAttributes(n, fixed, &attributeBlanks) {
+			changed = true
 		}
 		if repairConditionOperators(n, fixed) {
 			changed = true
@@ -176,7 +180,7 @@ func (p *Parser) reparseKnownMisparses(src []byte, t *sitter.Tree) *sitter.Tree 
 	if t2 == nil {
 		return t
 	}
-	if countErrors(t2.RootNode()) >= countErrors(t.RootNode()) || !preservesTopLevel(t.RootNode(), t2.RootNode()) {
+	if countErrors(t2.RootNode()) >= countErrors(t.RootNode()) || !preservesTopLevel(t.RootNode(), t2.RootNode(), attributeBlanks...) {
 		t2.Close()
 		return t
 	}
@@ -185,15 +189,22 @@ func (p *Parser) reparseKnownMisparses(src []byte, t *sitter.Tree) *sitter.Tree 
 }
 
 // preservesTopLevel は I5: 元の source_file 直下の正常な子を、範囲・kind・正常性まで保つ。
-// ERROR の減少との相殺で隣の正常な宣言を飲み込む候補を、採用の一か所で捨てる。
-func preservesTopLevel(before, after *sitter.Node) bool {
+// B が空白化した範囲に全体が収まる子だけを除く。他の directive まで除くと、
+// ERROR の減少との相殺で正常な条件分岐を飲み込む候補を採用してしまう。
+func preservesTopLevel(before, after *sitter.Node, attributeBlanks ...[2]uint) bool {
 	if kindOf(before) != "source_file" {
 		return true
 	}
 	j := uint(0)
 	for i := range before.ChildCount() {
 		old := before.Child(i)
-		if old.HasError() {
+		blanked := false
+		for _, span := range attributeBlanks {
+			if span[0] <= old.StartByte() && old.EndByte() <= span[1] {
+				blanked = true
+			}
+		}
+		if old.HasError() || blanked {
 			continue
 		}
 		for j < after.ChildCount() && after.Child(j).StartByte() < old.StartByte() {
@@ -228,6 +239,105 @@ func repairEmptyTuple(n *sitter.Node, fixed []byte) bool {
 	return true
 }
 
+// B: 宣言の modifiers が属性・ERROR(#else)・属性だけから成り、直後に
+// ERROR(#endif)、直前の兄弟に directive(#if) がある一段の分岐を対象にする。
+// 最初の属性群だけを残し、区切りと後半を ASCII 空白にする。区切りだけを
+// 消すと排他的な属性が同じ宣言に付く。範囲検索は宣言・入れ子・文字列中の
+// #if まで拾うため行わない。source_file と class_body 直下で同じ条件を使う。
+// 直前行にコメントがある形は、空白化で宣言との関連が切れるため残す。
+// 両分岐の Test 属性の有無が異なる形も、比較単位からの除外が変わるため残す。
+func repairConditionalAttributes(n *sitter.Node, fixed []byte, blanks *[][2]uint) bool {
+	if !n.HasError() || kindOf(n) != "function_declaration" || n.ChildCount() < 3 {
+		return false
+	}
+	if parent := n.Parent(); parent == nil || (kindOf(parent) != "class_body" && kindOf(parent) != "source_file") {
+		return false
+	}
+	mods, end := n.Child(0), n.Child(1)
+	start := n.PrevSibling()
+	if kindOf(mods) != "modifiers" || !end.IsError() || strings.TrimSpace(end.Utf8Text(fixed)) != "#endif" || start == nil || kindOf(start) != "directive" || !hasToken(start, "#if") {
+		return false
+	}
+	if prev := start.PrevSibling(); prev != nil && isComment(prev) && prev.EndPosition().Row+1 >= start.StartPosition().Row {
+		return false
+	}
+	// 先行する未閉鎖の #if があれば、この分岐は入れ子なので扱わない。見るのは同じ親の兄弟だけで、型を囲む外側の
+	// `#if OUTER\nstruct S {…}\n#endif` は見ない。そこで発火しても、属性の分岐は 1 段で閉じていて外側の directive は残るので、
+	// 最初の分岐を残した木は同じ規則の結果と変わらない。外側の分岐で誤った木・L1・Line になる入力が示されたら判定を広げる。
+	depth := 0
+	for c := start.PrevSibling(); c != nil; c = c.PrevSibling() {
+		if kindOf(c) != "directive" {
+			continue
+		}
+		if hasToken(c, "#endif") {
+			depth++
+		}
+		if hasToken(c, "#if") {
+			if depth == 0 {
+				return false
+			}
+			depth--
+		}
+	}
+	var other *sitter.Node
+	before, after := 0, 0
+	beforeTest, afterTest := false, false
+	for i := range mods.ChildCount() {
+		c := mods.Child(i)
+		if c.IsError() && strings.TrimSpace(c.Utf8Text(fixed)) == "#else" && other == nil {
+			other = c
+		} else if kindOf(c) == "attribute" && !c.HasError() {
+			if other == nil {
+				before++
+				beforeTest = beforeTest || isTestAttribute(c, fixed)
+			} else {
+				after++
+				afterTest = afterTest || isTestAttribute(c, fixed)
+			}
+		} else {
+			return false
+		}
+	}
+	if other == nil || before == 0 || after == 0 || beforeTest != afterTest {
+		return false
+	}
+	// 節間に未解析の字句がある場合も触らない。
+	if len(bytes.TrimSpace(fixed[start.EndByte():mods.StartByte()])) != 0 || len(bytes.TrimSpace(fixed[mods.EndByte():end.StartByte()])) != 0 {
+		return false
+	}
+	spans := [][2]uint{{start.StartByte(), start.EndByte()}, {other.StartByte(), end.EndByte()}}
+	for _, span := range spans {
+		for _, b := range fixed[span[0]:span[1]] {
+			if b >= 128 {
+				return false
+			}
+		}
+	}
+	*blanks = append(*blanks, spans...)
+	for _, span := range spans {
+		for i := span[0]; i < span[1]; i++ {
+			if fixed[i] != '\n' && fixed[i] != '\r' {
+				fixed[i] = ' '
+			}
+		}
+	}
+	return true
+}
+
+// isTestAttribute は、属性が swift-testing の `@Test` (`@Testing.Test` を含む) か。B の分岐の照合とテスト関数の判定が同じ式を使う。
+func isTestAttribute(n *sitter.Node, src []byte) bool {
+	for i := range n.NamedChildCount() {
+		c := n.NamedChild(i)
+		if kindOf(c) == "user_type" {
+			s := c.Utf8Text(src)
+			if s == "Test" || strings.HasSuffix(s, ".Test") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // D: ERROR またはエラーを含む条件文の、if/switch/where に続く式の演算子だけを空白にする。
 // 字面を検索すると box.await や本体の await まで消すので、式の親子だけをたどり本体・呼び出しの中へは入らない。
 // try! / try? は演算子全体で除外する (語だけ消すと ! が否定として読まれる)。
@@ -250,17 +360,52 @@ func repairConditionOperators(n *sitter.Node, fixed []byte) bool {
 			active = true
 		case "{", "}", "statements":
 			active = false
+		case "where_keyword":
+			active = n.IsError()
 		case "where_clause":
-			if blankConditionOperator(c, fixed) {
+			if blankConditionOperator(c, fixed) || (n.IsError() && blankMisparsedConditionHead(c, fixed)) {
 				changed = true
 			}
 		default:
-			if active && blankConditionOperator(c, fixed) {
+			if active && (blankConditionOperator(c, fixed) || (n.IsError() && blankMisparsedConditionHead(c, fixed))) {
 				changed = true
+			}
+			if n.IsError() {
+				active = false
 			}
 		}
 	}
 	return changed
+}
+
+// ERROR の条件先頭は await_expression を失い await トークンだけになるか、
+// 後続の文を call_expression / navigation_expression の末尾に飲み込む。
+// その先頭の鎖だけをたどって await/try を空白にする。全子へ降りると
+// 引数・末尾クロージャ・後続の文の演算子まで消すため、callee/target 以外は見ない。
+// ERROR の where_keyword も条件の開始とし、最初の子を処理したら止める。
+// 区切りの { } を消すと文の境界を壊すため、演算子の ASCII 字句だけを替える。
+func blankMisparsedConditionHead(n *sitter.Node, fixed []byte) bool {
+	if n.IsError() && n.NamedChildCount() > 0 {
+		return blankMisparsedConditionHead(n.NamedChild(0), fixed)
+	}
+	switch kindOf(n) {
+	case "await":
+		if n.Utf8Text(fixed) == "await" {
+			copy(fixed[n.StartByte():], "     ")
+			return true
+		}
+	case "await_expression", "try_expression":
+		return blankConditionOperator(n, fixed)
+	case "call_expression", "navigation_expression":
+		if n.NamedChildCount() > 0 {
+			return blankMisparsedConditionHead(n.NamedChild(0), fixed)
+		}
+	case "where_clause":
+		if n.NamedChildCount() == 2 && kindOf(n.NamedChild(0)) == "where_keyword" {
+			return blankMisparsedConditionHead(n.NamedChild(1), fixed)
+		}
+	}
+	return false
 }
 
 // conditionHasError は、D の読み違えの形か: 条件の `await` / `try` の式が本体の `{…}` を末尾クロージャとして飲み込む。印は 2 つで、
@@ -315,6 +460,11 @@ func blankConditionOperator(n *sitter.Node, fixed []byte) bool {
 	changed := false
 	switch kindOf(n) {
 	case "await_expression":
+		// 名前 await の直後の本体がオペランドの lambda_literal と読まれた場合は、
+		// 演算子とは確定できない。呼び出し式を包む await と区別して残す。
+		if expr := n.ChildByFieldName("expr"); expr == nil || kindOf(expr) == "lambda_literal" {
+			return false
+		}
 		keyword := n.Child(0)
 		if keyword != nil && kindOf(keyword) == "await" && keyword.Utf8Text(fixed) == "await" {
 			copy(fixed[keyword.StartByte():], "     ")
@@ -1178,16 +1328,8 @@ func (w *walker) isTestFunc(n *sitter.Node, c ctx) bool {
 	}
 	if m := w.modifiers(n); m != nil {
 		for i := range m.NamedChildCount() {
-			a := m.NamedChild(i)
-			if kindOf(a) != "attribute" {
-				continue
-			}
-			for j := range a.NamedChildCount() {
-				if t := a.NamedChild(j); kindOf(t) == "user_type" {
-					if s := w.text(t); s == "Test" || strings.HasSuffix(s, ".Test") {
-						return true
-					}
-				}
+			if a := m.NamedChild(i); kindOf(a) == "attribute" && isTestAttribute(a, w.src) {
+				return true
 			}
 		}
 	}
