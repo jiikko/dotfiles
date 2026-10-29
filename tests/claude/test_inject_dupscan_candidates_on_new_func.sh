@@ -35,6 +35,7 @@ case "$name" in
   resume) echo "src/a/r.go:1-2 resume() (呼び出し ~1)" ;;
   RESUME|RESUMEReady) echo "src/a/r.go:1-2 RESUME() (呼び出し ~1)" ;;
   BASE64|BASE64Decode) echo "src/a/b.go:1-2 BASE64() (呼び出し ~1)" ;;
+  fakeRunner) echo "src/other/x_test.go:3-9 fakeRunner(m map[string]int) int [test,unexported] (呼び出し ~2)"; echo "src/foo/sub/y_test.go:3-9 fakeRunner() int [test,unexported] (呼び出し ~1)"; echo "src/other/p.go:3-9 fakeRunnerProd() int [unexported] (呼び出し ~1)" ;;
 esac
 # collectWidgetsFast / gatherThings は、どの語でも本物の index -name が返さない (既存の名前が引く語を含むものだけを返すため)
 FAKE
@@ -50,6 +51,7 @@ REPO=$(mktemp -d "$TMP_ROOT/repo.XXXXXX")
   printf 'package struct PackagedThing {}\n' > src/foo/Pkg.swift && git add -A &&
   printf 'struct LooseType {}\n' > src/foo/Loose.swift &&
   printf 'package foo\n\nconst fixture = `package a\n\nfunc placeholder() {}\n`\n' > src/foo/fx_test.go &&
+  printf 'module foo\n' > src/foo/go.mod && mkdir -p src/other && printf 'module other\n' > src/other/go.mod &&
   printf 'tmp/\n' > .gitignore ) >/dev/null 2>&1
 session=0
 next_session() { session=$((session + 1)); }
@@ -98,6 +100,10 @@ expect_lacks "共通の前方が無い名前 (reloadSettings) は雑音なので
 next_session; out=$(run Edit "$F" $'func collectWidgetsFast(xs []int) []int { return xs }\n')
 expect_has "引く名前より短い既存の定義 (collectWidgets ⊂ collectWidgetsFast) は、語の境目の前方で引いて注入する" "$out" "collectWidgets(xs"
 next_session; expect_silent "前方の語で引いて出た別の名前 (gatherAll) は、既存の名前が前方になっていないので出さない" "$(run Edit "$F" $'func gatherThings() {}\n')"
+next_session; out=$(run Edit "$REPO/src/foo/new_test.go" $'func fakeRunner() int { return 1 }\n')
+expect_has "Go: 同じ module の別の package のテストの helper は、共通の置き場へ寄せる候補なので出す" "$out" "src/foo/sub/y_test.go"
+expect_lacks "Go: 別の module のテストの非公開の helper は呼べず寄せられないので出さない (署名の map[string] を印と読まない)" "$out" "src/other/x_test.go"
+expect_has "Go: 別の module でも test でない単位は出す" "$out" "src/other/p.go"
 next_session; expect_silent "候補が無ければ何も出さない" "$(run Edit "$F" $'func brandNewName() {}\n')"
 next_session; expect_silent "共通部分が 6 文字未満の前方一致 (parse ⊂ parseThing) は出さない" "$(run Edit "$F" $'func parseThing() {}\n')"
 next_session; expect_silent "Edit の old_string に既にある関数は新しくない" "$(run Edit "$F" $'func readCookies(x int) int { return x }\n' $'func readCookies(x int) int { return 0 }\n')"

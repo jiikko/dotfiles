@@ -104,6 +104,32 @@ def code_only(src, swift):
         i = j
     return "".join(out)
 
+# 印は署名の後ろ・呼び出しの数の前に付く (`… int [test,unexported] (呼び出し ~2)`)。署名の中の `map[string]` を印と読まないよう位置で絞る
+TAGS = re.compile(r"\s\[([a-z,]+)\](?=\s+\(呼び出し|\s+//|\s*$)")
+
+
+def go_module(root, rel_path):
+    """rel_path (root からの相対) を含む Go の module の dir (一番近い go.mod の dir)。無ければ ""。"""
+    d = os.path.dirname(rel_path)
+    while d:
+        if os.path.isfile(os.path.join(root, d, "go.mod")):
+            return d
+        d = os.path.dirname(d)
+    return ""
+
+
+def reachable(root, hit_path, line, rel, ext):
+    """書いているファイルの側から使える候補か。別の Go の module のテストの非公開の helper は、呼ぶことも、共通の置き場へ寄せることも
+    できない (module ごとに別の道具)。同じ module の中なら、別の package でも共通のテストの置き場へ寄せる候補になるので残す。
+    Swift は module が dir で決まらないので見ない。"""
+    if ext != ".go":
+        return True
+    tags = TAGS.search(line)
+    if not tags or not {"test", "unexported"} <= set(tags.group(1).split(",")):
+        return True
+    return go_module(root, hit_path) == go_module(root, rel)
+
+
 LINE = re.compile(r"^(\S+?):(\d+)(?:-\d+)?\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*([A-Za-z_][A-Za-z0-9_]*)\s*[(<\[]")
 
 def stems(name):
@@ -172,14 +198,16 @@ def main():
         root = subprocess.run(["git", "-C", dirpath, "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=3).stdout.strip()
         if not root:
             return
-        if subprocess.run(["git", "-C", root, "check-ignore", "-q", "--", path], capture_output=True, timeout=3).returncode == 0:
+        # git の root は symlink を解いた実パス (macOS の /var → /private/var) なので、書くファイルも実パスにしてから比べる
+        real = os.path.realpath(path)
+        if subprocess.run(["git", "-C", root, "check-ignore", "-q", "--", real], capture_output=True, timeout=3).returncode == 0:
             return
         scope = os.path.join(root, "src") if ext == ".go" and os.path.isdir(os.path.join(root, "src")) else root
         session = re.sub(r"[^A-Za-z0-9_-]", "_", str(d.get("session_id") or "unknown"))
         tmp = os.environ.get("TMPDIR") or "/tmp"
         start = time.monotonic()
         out, logged, type_out = [], [], []
-        rel = os.path.relpath(path, root)
+        rel = os.path.relpath(real, root)
         for t in types[:3]:
             stamp = os.path.join(tmp, "claude-dupscan-inject-%s-type-%s" % (session, t))
             left = BUDGET - (time.monotonic() - start)
@@ -217,7 +245,7 @@ def main():
                     m = LINE.match(line)
                     if not m or line in hits:
                         continue
-                    if near(m.group(3), n):
+                    if near(m.group(3), n) and reachable(root, m.group(1), line, rel, ext):
                         hits.append(line)
                 if hits:
                     break
