@@ -122,13 +122,21 @@ P1〜P4 は「層 / 動作 / 裏の仕事を 1 つ足すたびに N か所」の
     `shellRefusal` が IP の空を先に断るので届かない (足すと最下行・カードの案内と s の述語がまたずれる)。名前の述語 (`reLabel`) の一本化は P7 (847) に残した
   - 変異 (`mutate-verify`): login が有線の名前を落とす → `TestWiredNameUsedAsTarget` / ユーザー名を落とす → `TestSSHUsesLanIPAndHostKeyAlias` ほか 6 本が red
   - 実装の敵対的レビュー (opus、読み取りのみ): 挙動の変わる経路は作れなかった。P3 の 2 件 (カードで target を 2 回取る・865 の旧い置き場所の参照) を直した
-- [ ] P7 有線の名前の判定の写し (847 の範囲。847 の作業に任せる)
+- [x] P7 (847 を閉じる作業で。commit「refactor(mac-lan-manager): 有線の名前の判定を setup.IsWiredName と lanmgr.WiredElsewhere に寄せる (issue 863 P7)」)。
+  方向に書いた `ReachTarget.Names` の型の変更は採らなかった (並行で P1 / P3 が reachTarget を呼ぶため、型を変えずに判定を関数へ寄せた)。
+  名前の種類は `setup.IsWiredName`、「有線の名前が内部 IP と違う」は `lanmgr.WiredElsewhere`、「内部 IP と違う IP がある」は `reach.AnyOther` が 1 か所で判定する
+  - 変異 (`mutate-verify`): reachCell から WiredElsewhere を外す → `TestReachMarksWiredNameElsewhere` が red / IsWiredName の接尾辞を `.local` にする →
+    `TestPingMarksWiredNameElsewhere` と `TestReachRunsAndShowsResult` が red
+  - 敵対的レビュー (opus、読み取りのみ): P3 が 1 件。台帳の鍵そのものが `x.wired.local` の形だと、一覧の列から L の欄が消える。
+    commit「fix(mac-lan-manager): 疎通の列の L / W を台帳の鍵かどうかで分ける」で直した。通常の運用ではこの入力は来ない
+    (有線の名前の広告は `_mac-lan-manager._tcp` で、走査が探さない種類) のでテストは足していない。ほかの入力 (大文字・空の lanIP・
+    名前が 1 つ・reach が結果を返さない) では差を作れなかった
 - [x] P8 (dotfiles-0e。commit「refactor(mac-lan-manager): 詳細の enter の案内を文言で分けない / 見出し・項目名・モーダルのキーの重複をまとめる」)。detailLines / selfStaticKey は「パネルの中か」の真偽を受ける。既存のテストは最下行の案内にも同じ語が出るせいで、パネルの案内が消えても緑だった (変異で確認) ので、カードの台帳の行だけを見る形にした
 - [x] P9 (commit「refactor(mac-lan-manager): 本番で誰も読まない setup.Step.Via を消す」)。destFor の出典にする案は採らない (Plan は確認済みの IP を知らない)
 - [x] P10 は 859 (b9) で止める合図 (untilStop)・相手の選び方 (pickTarget)・待ち方 (settle) が共有になった。残りは出力 (行・JSON) の形が違う部分で、寄せても減る複雑性が小さいので今は寄せない
 - [x] P11 (commit「refactor(mac-lan-manager): RunQuiet を SSHRun に寄せ、失敗に stderr を付ける実装を 1 つにする」)
 - [x] P12 (commit「refactor(mac-lan-manager): 画面を出さないサブコマンドの自動の仕事を Options.Passive 1 つで止める」)
 - [x] U1〜U3 (P8 と同じ commit)。U3 で経路を選ぶ板の中の案内が最下行と同じ書式 (「j/k 経路   y 実行   n/esc キャンセル」) になった
-- 残り: P1〜P4 は trigger 待ち (次に動作・画面の層・裏の仕事・固定の遷移を足すとき)、P6 は済み (上)、P7 は 847。
+- 残り: P1〜P4 は trigger 待ち (次に動作・画面の層・裏の仕事・固定の遷移を足すとき)、P6 と P7 は済み (上)。
   dotfiles-0e は 2026-10-22 に claim を外した (上の済んだ項目のほかに、今すぐ進めるものが無いため)
 - [x] 862 で解消 (2026-10-22。P3 の 9 件 (却下 1) を全部決着。done へ移した)
