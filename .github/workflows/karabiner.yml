@@ -40,7 +40,7 @@ concurrency:
 
 jobs:
   karabiner-lint:
-    runs-on: macos-15  # pin する (issue 133。latest はラベルの移動で黙って版が変わる)
+    runs-on: xcode-27  # pin する (issue 133。latest はラベルの移動で黙って版が変わる)
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

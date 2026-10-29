@@ -27,7 +27,7 @@ concurrency:
 jobs:
   issue-state:
     # 🚨 `macos-latest` にしない (tests.yml と同じ規律)
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7

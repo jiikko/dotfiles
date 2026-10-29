@@ -147,7 +147,7 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
 
 ## platform (macOS のみ)
 
-対象は macOS だけ (issue 133)。**CI も全 workflow が macos-15 runner**なので、手元と CI の
+対象は macOS だけ (issue 133)。**CI も全 workflow が macOS 27 の runner (`xcode-27` ラベル)**なので、手元と CI の
 userland は同じ。GNU 方言を要求する検査・ラッパーは置かない — 正しい macOS の書き方を弾く
 (例: 素の `stat -f %m` は macOS では正しいが、GNU フォールバックを要求する検査はこれを落とす)。
 

@@ -90,7 +90,7 @@ jobs:
   # (実測 2026-09-03: run 33758282835 で「skipped: go が無い」= **検査が 1 度も走っていなかった**)。
   # 共有の _go-project.yml には置かない (doctor 等、他のプロジェクトには関係が無い)。
   no-real-commands:
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7

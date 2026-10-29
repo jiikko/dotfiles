@@ -61,10 +61,12 @@ jobs:
     # 対象は macOS のみ。Linux はサポート対象外なので CI もそちらへ揃える。
     # 🚨 `macos-latest` にしない。同じ commit の setup-nvim が「stable にせず明示 pin する
     #    (更新をファイルの変更として可視化する)」と書いているのと同じ理由で、ラベルの移動で
-    #    誰の commit も無しに環境が変わるのを避ける。**開発機に合わせて 15 (darwin24) に置く**
-    #    (macos-latest は darwin25 = 1 メジャー先だった。mount/ps/stat の出力差は移行の根拠
-    #    そのものなので、ここがズレると逆向きの「CI だけ緑」を作る)。
-    runs-on: macos-15
+    #    誰の commit も無しに環境が変わるのを避ける。**開発機に合わせて macOS 27 に置く**
+    #    (mount/ps/stat の出力差は移行の根拠そのものなので、ここがズレると逆向きの「CI だけ緑」を作る)。
+    #    macOS 27 には `macos-27` ラベルが無く、GitHub は Xcode の major ごとの `xcode-27` で出している
+    #    (2026-10-15 GA)。このラベルは Xcode の版に紐づき OS には紐づかない (preview 中に macOS 26 → 27 へ
+    #    動いた)。開発機の OS を上げたら、対応する `xcode-NN` が載せている macOS を確かめて揃え直す。
+    runs-on: xcode-27
     # macOS runner は VM 起動が遅く、実行自体も ubuntu より遅い。ubuntu 時代の 10 分では
     # 足りない可能性があるので広げる (実測して詰めること)。
     timeout-minutes: 20

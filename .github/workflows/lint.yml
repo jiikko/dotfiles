@@ -33,9 +33,9 @@ concurrency:
 jobs:
   dotfiles-lint:
     # 対象は macOS のみ。Linux はサポート対象外なので CI もそちらへ揃える。
-    # 🚨 `macos-latest` にしない (ラベルの移動で誰の commit も無しに環境が変わる)。開発機が
-    #    darwin24 = macOS 15 なので 15 に置く。tests.yml と同じ規律。
-    runs-on: macos-15
+    # 🚨 `macos-latest` にしない (ラベルの移動で誰の commit も無しに環境が変わる)。開発機に
+    #    合わせて macOS 27 に置く。ラベルの選び方は tests.yml と同じ規律。
+    runs-on: xcode-27
     # macOS runner は VM 起動が遅い。ubuntu 時代の 5 分では足りないので広げる (実測して詰めること)
     timeout-minutes: 15
     steps:

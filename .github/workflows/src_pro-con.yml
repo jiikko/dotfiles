@@ -83,7 +83,7 @@ jobs:
   # tests/pro-con/ の e2e の通し。tests.yml の rest の腕には go が無く、そこでは skip (77) になるので、
   # go と tmux を揃えたここで走らせる。🚨 ここでは 77 も失敗と数える (skip で緑にすると CI のどこでも走らない)
   e2e:
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7

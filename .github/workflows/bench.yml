@@ -58,7 +58,7 @@ jobs:
   # - 再評価の閾値: 最長 job が 10 分を超えたら shard 化を実装する
   bench-nvim:
     # 対象は macOS のみ。`macos-latest` にしないのは他 workflow と同じ理由。
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 40  # BENCH_RUNS=20 (run_bench.sh 既定): 1 run ~40-60s 実測 + setup
     steps:
       - uses: actions/checkout@v7
@@ -86,7 +86,7 @@ jobs:
           budgets: tests/nvim/bench_budgets.ci
 
   bench-zsh:
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 30  # BENCH_RUNS=20: 1 run ~20s 実測
     steps:
       - uses: actions/checkout@v7
@@ -125,7 +125,7 @@ jobs:
           budgets: tests/zshrc/bench_budgets.ci
 
   bench-tmux:
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 30  # BENCH_RUNS=20: 1 run ~20-30s 実測
     steps:
       - uses: actions/checkout@v7
@@ -146,7 +146,7 @@ jobs:
           budgets: tests/tmux/bench_budgets.ci
 
   bench-glogx:
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 25  # BENCH_RUNS=20: build 1 回 + 1 run 数秒
     steps:
       - uses: actions/checkout@v7

@@ -42,7 +42,7 @@ concurrency:
 jobs:
   gate:
     # 対象は macOS のみ。ラベルの移動で環境が変わらないよう 15 に固定する。
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

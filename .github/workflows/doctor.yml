@@ -56,7 +56,7 @@ jobs:
   doctor:
     # macOS runner: doctor は launchd / xcrun / brew / du の挙動を前提にした判定なので、
     # Linux で回すと「動くが意味が無い」テストになる (repo 全体の方針も macOS のみ)
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - name: Silence git init.defaultBranch hint
