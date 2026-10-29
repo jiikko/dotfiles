@@ -835,17 +835,28 @@ func (m *Model) detailLines(r row, width int, inPanel bool) []string {
 		}
 	}
 	lines = append(lines, "")
+	// space (台帳) は網を読むまで keyList が断り、パネルの enter (初期設定) は keyDetail が断る (最下行と同じく案内しない)
+	space := func(label string) string {
+		if !m.actionOK("space", r) {
+			return ""
+		}
+		return keycap("space", label)
+	}
+	enter := keycap("enter", enterLabel)
+	if inPanel && !m.selfOK {
+		enter = ""
+	}
 	switch {
 	case r.self && !r.managed:
-		lines = append(lines, sDim.Render("この Mac は台帳に無い  ")+keycap("space", "登録")+m.selfStaticKey(inPanel, enterLabel))
+		lines = append(lines, sDim.Render("この Mac は台帳に無い  ")+space("登録")+m.selfStaticKey(inPanel, enterLabel))
 	case r.self:
 		lines = append(lines, sOK.Render("✓ 台帳に登録済み")+m.selfStaticKey(inPanel, enterLabel))
 	case !r.managed:
-		lines = append(lines, sDim.Render("未管理: ")+keycap("space", "台帳に登録")+"   "+keycap("enter", enterLabel))
+		lines = append(lines, sDim.Render("未管理: ")+joinKeys(space("台帳に登録"), enter))
 	case !r.seen:
-		lines = append(lines, sWarn.Render("今は Bonjour で見えていない")+"   "+keycap("m", "別名")+"   "+keycap("space", "台帳から外す"))
+		lines = append(lines, sWarn.Render("今は Bonjour で見えていない")+"   "+joinKeys(keycap("m", "別名"), space("台帳から外す")))
 	default:
-		lines = append(lines, keycap("m", "別名")+"   "+keycap("space", "台帳から外す")+"   "+keycap("enter", enterLabel))
+		lines = append(lines, joinKeys(keycap("m", "別名"), space("台帳から外す"), enter))
 	}
 	return lines
 }
@@ -862,6 +873,11 @@ func (m *Model) cardKeys(r row, kv ...string) string {
 		return ""
 	}
 	return "   " + strings.Join(ks, "  ")
+}
+
+// joinKeys はカードの末尾の行のキーを並べる (出さないキー = "" は詰める)。
+func joinKeys(ks ...string) string {
+	return strings.Join(slices.DeleteFunc(ks, func(k string) bool { return k == "" }), "   ")
 }
 
 // tagAfter は詳細カードで IP の後ろに置く線の括弧 (分からなければ何も足さない)。

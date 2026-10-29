@@ -170,8 +170,16 @@ func TestCardHidesNetKeysBeforeNetRead(t *testing.T) {
 	if got := keys.FindAllString(card(), -1); len(got) < 4 {
 		t.Fatalf("前提: 網を読めた後のカードに動作のキーが揃わない (下の否定の対照): %q\n%s", got, card())
 	}
+	panel := func() string { return stripView(strings.Join(h.m.detailLines(h.m.current(), 120, true), "\n")) }
+	tail := regexp.MustCompile(`space\s+台帳から外す|enter\s+初期設定`)
+	if got := tail.FindAllString(panel(), -1); len(got) != 2 {
+		t.Fatalf("前提: 網を読めた後のパネルに space / enter が無い: %q", got)
+	}
 	h.m.selfOK = false
 	if got := keys.FindAllString(card(), -1); len(got) > 0 {
 		t.Errorf("網を読む前にカードが %q を案内した", got)
+	}
+	if got := tail.FindAllString(panel(), -1); len(got) > 0 {
+		t.Errorf("網を読む前にパネルが %q を案内した (space も パネルの enter も「確認中」で断る)", got)
 	}
 }
