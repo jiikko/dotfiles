@@ -135,7 +135,7 @@ bin/dupscan (入口。初回に src/dupscan をビルドする)
 | 単位 | 比べる単位 = 関数・初期化子・クロージャ・computed property・subscript・deinit・accessor (本体と戻り値の型。引数の名前を添える)。引数ラベルは本体に出ないので比べない。テスト関数そのものは既定で除く |
 | 正規化 | 段ごとに組を出す (下の「同じと判定する方法」) |
 | 組分け | Type-2 (同じ形): 正規化した木のハッシュが一致するものを 1 組。Type-3 (少し違う): 組にはしない。L1 の部分木の重み付き多重集合の Dice で、`near -similar` (1 対象と全単位) と `sweep` の節 3 (全単位の総当たり) が候補の対を出す (895) |
-| 除外 | 小さすぎる単位 (ノード数の下限。関数等・クロージャとも既定20節)。読めない構文 (tree-sitter の ERROR / MISSING) を含む抽出済み単位は除く。report はエラーのあるファイルも表示する。gateは単位を取り出せない場合もbase/headの解析失敗fileを通知する。通常rcは維持し、-strict-analysisではrc=2。探索のコマンド (`index` / `callers` / `def` / `refs`) も stderr に解析失敗を通知する (読めないファイルが問い合わせの名前を含まないときは 1 行に縮める。942) |
+| 除外 | 小さすぎる単位 (ノード数の下限。関数等・クロージャとも既定20節) と、読めない構文 (tree-sitter の ERROR / MISSING) を含む単位は比べない。解析の失敗をコマンドごとにどう知らせるか (rc・`-strict-analysis`) は [`README`](../src/dupscan/README.md) の「使い方」「分かっている限界」節 |
 
 ### 同じと判定する方法
 
@@ -152,17 +152,19 @@ bin/dupscan (入口。初回に src/dupscan をビルドする)
 | `scripts/dupscan_usage_report.py` | transcript から dupscan が使われたかを数える (948) |
 | `.github/workflows/src_dupscan.yml` | dupscan 自身の CI (`_go-project.yml` を呼ぶ) |
 
-| 入口 | 出力 |
+flag・出力の形・rc・除外の書式は [`README`](../src/dupscan/README.md) の「使い方」「除外の設定」節が正本。この表には各入口の役割だけを書く (同じ挙動を 2 か所に書くと、機能を足すたびに片方が古くなる)。
+
+| 入口 | 役割 |
 |---|---|
-| `dupscan <repo>` (重複の報告。issue 896) | 人が読む形と `-format json`。test / prod / 両方にまたがる組を分けて出す。組ごとにメンバー (ファイル:行・署名・test / prod・可視性) と一致した段を出す。所属ターゲットは解決しない（918）。共通の置き場所の優先表示と呼び出し数は index の機能 |
-| `dupscan sweep` (初めて入る module を掘る入口) | 1 回の走査で 6 つの見方を出す: 既定の組 / 下限 12 節と `L1m` / 部分木が似ている対 (Type-3 の候補) / 名前の束 / 既存の小さい関数の本体を別の単位の中に手で展開した所 (956) / メンバーを写し合う型の集まり (955)。text だけ。節ごとの収穫の実測は 948 |
-| `dupscan index [-name 語] [-returns 型] [-param-type 型] [-doc 語] [-kind func,init,property] [-file ファイル]` (索引。issue 897・907) | 1 行 1 件の text と JSON (名前と署名・`ファイル:開始-終了` (Read の範囲にそのまま使える。943)・test・可視性・doc の最初の文)。private / fileprivate / unexported (Go) を後に並べる。呼び出し元の近似数・共通の置き場所の優先表示も実装済み。打ち切ったときは先頭に総件数と次の手を出す。所属ターゲット・`--check` は未実装 |
+| `dupscan <repo>` (重複の報告。issue 896) | 既にある写しを組にして出す。test / prod / 両方にまたがる組を分け、組ごとにメンバーと一致した段を出す |
+| `dupscan sweep` (初めて入る module を掘る入口) | 1 回の走査で、組・粗い段の組・Type-3 の候補・名前の束・手で展開した helper・型の写しを並べて見る。節ごとの収穫の実測は 948 |
+| `dupscan index` (索引。issue 897・907) | 名前・署名の型・doc 文から既存の単位を引く。1 行 1 件で、`ファイル:開始-終了` をそのまま Read の範囲に使える (943) |
 | `dupscan search` / `evidence` (名前の分からない実装を探す。925・933・934) | `search` は用途の語・戻り値の型から候補を並べ、範囲つきの読み方 (`read_argv`) を添える。`evidence` は doc・テスト・ソースの行の語から探す |
 | `dupscan def` / `refs` / `context` (Swift だけ) | `def` は定義を本体つきで (型ならメンバーの一覧)、`refs` は型・式の位置の参照を、`context` はその 3 つをまとめて出す。Go は `index` / `callers` で代わりにする (Go の `def` は 944 で保留) |
-| `dupscan callers <名前|名前(ラベル:…)>` (呼び出しの箇所。issue 907) | `file:line 呼び出し元 [test] \| その行` の 1 行 1 件と JSON。型を解決しない近似 (同名の別のメソッドも当たる) |
-| `dupscan gate` (issue 905) | セルフレビューと `make test`・CI の中で、変わった単位のうち同じ形の単位の数が base より増えたものを、寄せる先の候補と一緒に出し、あれば非 0 で終わる。dir を書かなければ repo 全体を見る。段ごとに止める / 報告だけ / 回さないを選べ、既定では L1・L2 を検出・停止し、L3 は明示した場合だけ報告する。意図した写しは理由つきの `dupscan:allow` で通し、寄せないと決めた組は組のメンバーの 1 つに人数つきの `dupscan:allow-group` を書いて通す (人数が合わなければ何も消さない。起点を repo の一部に絞り、同じ言語のファイルが起点の外にもあるときは L1 の組にだけ効く。956・973)。同じ単位に 2 つ目の印を書くと rc=2 (965)。新しく足された許可は別の一覧に出す。違反の寄せる側には base での出どころを添え (本体を変えた写しか、新しく書いたものか)、読めないファイルがあれば違反 0 でも 1 行目で解析が不完全と言う (959)。base が無い場合は rc=2。読めない変更単位とbase/headの解析失敗fileを通知する。単位が0件でもfileは通知し、-strict-analysisではrc=2を優先する。誤検知は除外の設定 (issue 906) で外す |
-| `dupscan near` / `explain` (人が試す入口。issue 904) | `near <file>:<関数名>` はその関数に近い既存のメソッドを段ごとに出す (`-similar` で部分木の類似の候補。895)。`explain <file>:<関数名>` は段ごとに潰した形とハッシュを見せる (なぜ同じ / 違うと判定したか)。`explain -compare A B` は 2 単位の構造の差とリテラルの字面を並べる (918)。`gate` もわざと写しを書いてから手で回すと、`make test` でどう落ちるかが見える |
-| `dupscan capabilities` / `doctor` / `agent-guide` (導入の確認。928) | 対応するコマンドと言語・repo の準備の診断・agent 向けの短い例。`capabilities -outputs report|gate` は `-format json` の欄と `-v` でだけ出る行の意味を引く (962)。どれも構文解析をしない |
+| `dupscan callers` (呼び出しの箇所。issue 907) | 名前で呼び出しの箇所を出す。型を解決しない近似 (同名の別のメソッドも当たる) |
+| `dupscan gate` (issue 905) | セルフレビューと `make test`・CI の中で、base より増えた写しを寄せる先の候補と一緒に出し、あれば非 0 で終わる。既定では L1・L2 で止める。意図した写し・誤検知は理由と種別つきの印か除外の設定で通し、新しく足された許可・除外は別の一覧に出す (906) |
+| `dupscan near` / `explain` (人が試す入口。issue 904) | `near` は 1 つの関数に近い既存のメソッドを、`explain` は段ごとに潰した形を出す (なぜ同じ / 違うと判定したか。`-compare` で 2 単位の差。918) |
+| `dupscan capabilities` / `doctor` / `agent-guide` (導入の確認。928) | 対応するコマンドと言語・出力の欄の意味・repo の準備の診断・agent 向けの短い例。どれも構文解析をしない |
 
 索引・重複の報告・`gate` は同じ単位の一覧から作る (片方だけ別の抽出をして食い違わないように)。
 呼び出し元の数には近似の印を付ける。所属ターゲットは未実装 (6 節)。
@@ -195,7 +197,7 @@ Swift adapter が持つもの（他言語ではparser・規則をその言語に
 
 | 言語 | 状況 |
 |---|---|
-| Swift | 実装済み。alex-pinkus/tree-sitter-swift の `with-generated-files` branch を使う。obaket の 1626 ファイルで、読めない構文があるのは 50 ファイル (3%)、全体の parse と走査は 5.0 秒 (2026-10-24 実測)。読めないまま残るのは、複数のパターンを並べた `catch A, B {` (2026-10-29 時点で obaket の 1 ファイル)。残りを読める場合もあるが、関数ごと抽出できない場合もある。文法 (upstream の main でも) が読み違える書き方 (関数の中の `nonisolated(unsafe) let`・空のタプル・条件の中の `await` / `try`・変数名 `final`・クロージャの中の `;`・関数の属性の `#if` の分岐) は、読み違えの箇所だけを同じ長さの字面に置き換えて読み直す (`internal/lang/swift` の `reparseKnownMisparses`。954・958。obaket で読めないファイル 54 → 26 → 6 → 1、2026-10-29 実測) |
+| Swift | 実装済み。alex-pinkus/tree-sitter-swift の `with-generated-files` branch を使う。obaket の 1626 ファイルで、読めない構文があるのは 50 ファイル (3%)、全体の parse と走査は 5.0 秒 (2026-10-24 実測)。読めないまま残るのは、複数のパターンを並べた `catch A, B {` (2026-10-29 時点で obaket の 1 ファイル)。残りを読める場合もあるが、関数ごと抽出できない場合もある。文法 (upstream の main でも) が読み違える書き方の一部は、読み違えの箇所だけを同じ長さの字面に置き換えて読み直す (規則の一覧は [`README`](../src/dupscan/README.md) の「分かっている限界」節。`internal/lang/swift` の `reparseKnownMisparses`。954・958。obaket で読めないファイル 54 → 26 → 6 → 1、2026-10-29 実測) |
 | Go | 標準の `go/ast` で読む (issue 900)。コアが見るのは tree-sitter の木ではなく `internal/tree` の中立の木なので、adapter が go/ast をそこへ写せば形が揃う。文法の pin が要らず、正しい Go で読めない構文が出ない。網羅テストは node-types.json の代わりに、標準ライブラリの実物を conv に通して知らない節が無いかを見る (`TestConvKnowsEveryNode`)。def / refs は作らない (gopls が型を解決して答える)。dupl (閾値 120 トークン) は既に回っているので、足した価値は索引・`gate` と、dupl の閾値より小さい写しにある (dotfiles の src で 70 組・8547 単位を 1 秒未満。過去の 150 commit に gate を流すと 7 commit で止まり、多くは module をまたいだ本物の写し。2026-10-26。issue 900) |
 | zsh / shell script | **対応しない** (ユーザー決定 2026-10-26)。見送った時点の懸念は 2 つで、どちらも未実測: zsh 専用の成熟した tree-sitter の文法が無く、tree-sitter-bash では `${(f)...}`・`*(N)` などの zsh だけの構文が ERROR になりうる / shell の写しは関数の外 (トップレベルの数行・テストの準備) に多いと見ており、関数を単位に比べる dupscan では拾えない形が残りうる。対応するなら adapter のほか、コマンド層が `lang/swift` を直接参照している所 (`main.go` などの `swift.Extensions`・`swift.IsTestPath`) を言語で選ぶ口にし、`norm.go` の `isImplicitParam` (`$` で始まる名前を Swift の `$0` とみなす) を言語ごとに分ける必要がある。再評価するのは、shell の写しを機械で止めたい具体的な場面が出たとき (issue 900) |
 
