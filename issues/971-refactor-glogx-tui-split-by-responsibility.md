@@ -33,8 +33,7 @@ browseModel の状態 (フィールド) は分けない。分けるのは「ど�
 | `tui.go` | 型・起動・配線の表 | `browseModel` の型、`newBrowseModel`・`Init`・起動時の復元、`Update` / `update` (メッセージ → 受け手の表)、`RunBrowse` |
 | `browse_keys.go` | キーの入口と振り分け | `handleKey`・`updateKeyReachable`・`applyListMotion`・キーリピートの抑止・入力欄の編集キー、`onKeyPress`・`onPaste` |
 | `browse_screens.go` | 全画面へのキーと結果の受け渡し | `routeKeyTo{Doctor,RatelimitDash,Issues,Status,Filer,Lan}`・`restore{Filer,Lan}Screen`、各画面の非同期の結果の `on<Msg>` |
-| `browse_ci.go` | CI 状態の取得とポーリング | `fetchCIStatusesCmd`・`startCIFetch`・チャンク・`ciPoll*`・`ensureCIPoll`・`settleAwaitCI`、`onCIResult`・`onCIPoll`・`onCIPollResult` と型 |
-| `browse_jobs.go` | CI の job パネルと詳細 | `openPanel`・`closePanel`・`handlePanelKey`・`handleDetailKey`・job 詳細・rerun・ETA・job ログ、`panelLines`・`detailBoxLines`、対応する `on<Msg>` と型 |
+| `browse_ci.go` | CI 状態の取得・ポーリングと job パネル (同じ状態を同じ順に触るので 1 ファイル。設計レビューの P2) | `fetchCIStatusesCmd`・`startCIFetch`・`ciPoll*`・`settleAwaitCI`・`openPanel`・`handlePanelKey`・job 詳細・rerun・ETA・job ログ、対応する `on<Msg>` と型 |
 | `browse_overlays.go` | コミットに重ねる diff / PR / PR status と URL | `openDiff`・`handleDiffKey`・`openPR`・`openPRStatus`・URL のコピーと open、対応する `on<Msg>` と型 |
 | `browse_log.go` | git log の読み直しと push / pull | `reloadLog`・`applyLogData`・push / pull とその演出 (`start/advance{Pull,Push}Anim`・`slideColumns`)・`refetchAfterPush`、`onPull`・`onPush` と型 |
 | `browse_lifecycle.go` | 終了・再起動・更新の知らせ | `cancelAll`・`handleQuitKey`・`quitWith`・autobuild の再起動の確認・claude / codex の更新、対応する `on<Msg>` と型 |
@@ -43,7 +42,7 @@ browseModel の状態 (フィールド) は分けない。分けるのは「ど�
 | `browse_view.go` | 描画 | `View`・`viewLines`・`finishWindow`・案内の行・幅と頁・カーソル・背景・spinner・各画面へ渡す描画の options |
 
 - 既存の `gitlog_watch.go`・`fullscreen.go`・`hint_surfaces.go`・`open_workspace.go`・`action_modal.go` はそのまま (既に責務ごとに分かれている)。
-- 新しい 10 ファイルは `structure_ratchet_test.go` の `mainSourceFiles` と `browseModelMethodFiles` に理由つきで足す (検査の目的は
+- 新しい 9 ファイルは `structure_ratchet_test.go` の `mainSourceFiles` と `browseModelMethodFiles` に理由つきで足す (検査の目的は
   「新しい画面が browseModel にメソッドを生やす」形を止めることで、今回は既存の状態機械の分割なので一覧の更新が正当な形)。
 - `src/glogx/CLAUDE.md` の「ファイルの地図」を同じ変更で直す。
 
@@ -61,9 +60,37 @@ browseModel の状態 (フィールド) は分けない。分けるのは「ど�
 
 - `src/glogx/tui.go`・`src/glogx/structure_ratchet_test.go`・`src/glogx/CLAUDE.md`
 
+## 設計のレビューの決着 (opus、読み取りのみ)
+
+update の case を切り出して挙動が変わる case は見つからなかった (break / fallthrough / goto・名前付きの戻り値・defer・複数の型の case が無い。
+update の前段は update に残る)。反映した指摘:
+- P1 同じ分割は tui.go の browseModel の直前のコメントで「tui.go に触らずに済む commit は 2〜3 割」として見送られていた (再提起には同じ方法で
+  数え直すことを求めていた)。数え直した: 直近 90 日に tui.go を触った 181 commit (`git log -p -U0` の hunk の関数見出し) のうち、分けた後に
+  tui.go へ触らずに済むのは **39% (71 本。update の hunk を tui.go に残ると数えた下限) 〜 67% (122 本。on<Msg> へ出た case の中の変更も
+  外へ出ると数えた上限)**。残るのはフィールド (30)・Init (26)・newBrowseModel (16) が多い。前の 2〜3 割は update の case を出さない案のもの。
+  コメントをこの数字と「状態を割らない理由」に書き換えた。ユーザー依頼が明示の分離要望なので進めた
+- P1 forbidigo の「状態機械の時刻は app.TimeNow」は `path-except: tui\.go` で tui.go にしか掛かっていなかった → `(tui|browse_[a-z]+)\.go`
+- P1 「テスト不変が等価の証拠」は成り立たない: ファイル名を名指しするテスト 3 本 (fullscreen_test・hint_registry_gate_test・
+  waitdelay_discipline_test) を直す必要がある → 直した (直す前はどれも黙らずに red)。等価の証拠は行の突き合わせに替えた (下)
+- P2 `.github/workflows/doctor.yml` の paths が tui.go だけ → `src/glogx/browse_*.go` を足した
+- P2 KeyPressMsg の受け方のコメントが PasteMsg の上にずれていた → KeyPressMsg の case の上へ戻した
+- P2 CI の取得と job パネルは同じ状態を同じ順に触る → 表の browse_ci.go と browse_jobs.go を 1 つ (browse_ci.go) にまとめた
+- P2 表に無い宣言の行き先 → 対応表 (名前 → ファイル) で全部決めた。tick の間隔と maxPanelJobs の const ブロックは tui.go に残した
+- P3 代入 1 つと return だけの case は薄い委譲になる → 2 文以下の case は update に残した (切り出したのは 3 文以上の 24 個)
+- P3 tui.go を名指しするコメント・文書 → 移した先に直した (issues/done の過去の記録は直さない)
+
+受けた (直していない): gitlog_watch.go の `handleGitLog*(msg) tea.Cmd` と新しい `on<Msg>(msg) (tea.Model, tea.Cmd)` で名前の付け方が 2 つになる
+(戻り値の形が違うので揃えない)。
+
 ## 進捗
 
-- [ ] 設計のレビュー
-- [ ] ① update の case の切り出し
-- [ ] ② 責務ごとのファイルへの移設
-- [ ] 実装のレビュー・push・Bench
+- [x] 設計のレビュー (上)
+- [x] ① update の case の切り出し — 「refactor(glogx): update の case の本体を on<Msg> メソッドへ切り出す (issue 971 ①)」。update は 659 → 148 行。
+  テストは変えずに `make -C src/glogx test lint` が緑
+- [x] ② 責務ごとのファイルへの移設 — 「refactor(glogx): browseModel のメソッドを責務ごとの browse_*.go へ移す (issue 971 ②)」。
+  tui.go 4241 → 554 行、browse_*.go 9 本 (ci 1024 / view 508 / log 469 / keys 457 / screens 435 / overlays 360 / lifecycle 332 / anim 253 / usage 69)
+  - 等価: 移す前の tui.go と移した後の tui.go + browse_*.go の行を並べ替えて突き合わせ、差は import の行と書き換えたコメントだけ
+  - 変異: browse_anim.go に `var _ = time.Now` を足すと make lint が forbidigo で red (lint の範囲の広げ方が効く)
+  - dupscan gate rc=0 (変わった単位 187、写しの増えなし)
+- [ ] 実装の敵対的レビュー
+- [ ] ルートの make test・push・Bench
