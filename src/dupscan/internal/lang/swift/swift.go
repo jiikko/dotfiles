@@ -601,39 +601,81 @@ func countErrors(n *sitter.Node) int {
 }
 
 // calls はファイルの中の呼び出しを全部集める (テスト関数の中も。単位にしない関数の中も呼び出し元に数える)。
+// テスト関数は単位にしない (walk が中に入らない) ので、その中の呼び出しには持ち主 (tree.CallOwner) を付ける。
+// 付けないと callers は単位で帰属させるので「(単位の外)」になる。中の局所の関数も単位にならないので、その関数を持ち主にする。
+// テスト関数の中の局所の型に入ったら、持ち主を「不明」と明示する (署名の無い CallOwner)。テスト関数のままにすると、その型の property /
+// didSet の中の呼び出しがテスト関数に帰属する。nil にもしない: nil は callers に単位の行範囲で探し直させ、同じ行の別の関数へ帰属させ、
+// test の印も落とす。型の中の関数は、局所の関数と同じく、その関数を持ち主にする。テスト関数の外は nil のまま、今までどおり単位で帰属させる。
 func (w *walker) calls(root *sitter.Node) []tree.Call {
 	lines := strings.Split(string(w.src), "\n")
 	var out []tree.Call
-	var visit func(n *sitter.Node)
-	visit = func(n *sitter.Node) {
+	var visit func(n *sitter.Node, c ctx, inTest bool, owner *tree.CallOwner)
+	visit = func(n *sitter.Node, c ctx, inTest bool, owner *tree.CallOwner) {
+		switch k := kindOf(n); {
+		case isTypeDeclarationKind(k):
+			if name := w.typeName(n); name != "" {
+				c.enclosing = append(append([]string(nil), c.enclosing...), name)
+			}
+			c.testClass = c.testClass || w.inheritsTestCase(n)
+			if inTest {
+				owner = &tree.CallOwner{Test: true}
+			}
+		case k == "function_declaration" || k == "init_declaration" || k == "deinit_declaration" || k == "subscript_declaration":
+			if inTest || w.isTestFunc(n, c) {
+				inTest, owner = true, w.callOwner(n, c)
+			}
+		}
 		if kindOf(n) == "call_expression" && n.NamedChildCount() > 0 {
 			if name := calleeName(n.NamedChild(0), w.src); name != "" {
 				pos := n.StartPosition()
-				c := tree.Call{File: w.file, Line: int(pos.Row) + 1, Col: int(pos.Column) + 1, Name: name, Labels: []string{}}
+				call := tree.Call{File: w.file, Line: int(pos.Row) + 1, Col: int(pos.Column) + 1, Name: name, Labels: []string{}}
 				if suf := childOfKind(n, "call_suffix"); suf != nil {
-					c.Trailing = childOfKind(suf, "lambda_literal") != nil
+					call.Trailing = childOfKind(suf, "lambda_literal") != nil
 					if args := childOfKind(suf, "value_arguments"); args != nil {
 						for i := range args.NamedChildCount() {
 							label := "_"
 							if l := childOfKind(args.NamedChild(i), "value_argument_label"); l != nil {
 								label = l.Utf8Text(w.src)
 							}
-							c.Labels = append(c.Labels, label)
+							call.Labels = append(call.Labels, label)
 						}
 					}
 				}
 				if int(pos.Row) < len(lines) {
-					c.Text = strings.TrimSpace(lines[pos.Row])
+					call.Text = strings.TrimSpace(lines[pos.Row])
 				}
-				out = append(out, c)
+				call.Owner = owner
+				out = append(out, call)
 			}
 		}
 		for i := range n.NamedChildCount() {
-			visit(n.NamedChild(i))
+			visit(n.NamedChild(i), c, inTest, owner)
 		}
 	}
-	visit(root)
+	visit(root, ctx{}, false, nil)
 	return out
+}
+
+// callOwner は単位にしない宣言 (テスト関数とその中の関数) を、呼び出し元として名指しする形にする。
+func (w *walker) callOwner(n *sitter.Node, c ctx) *tree.CallOwner {
+	name := "init"
+	switch kindOf(n) {
+	case "deinit_declaration":
+		name = "deinit"
+	case "subscript_declaration":
+		name = "subscript"
+	case "function_declaration":
+		if ch := n.ChildByFieldName("name"); ch != nil {
+			name = w.text(ch)
+		}
+	}
+	sig, _ := w.declSignature(n, name)
+	start, end := n.StartPosition(), n.EndPosition()
+	return &tree.CallOwner{
+		Signature: sig, Enclosing: strings.Join(c.enclosing, "."),
+		Line: int(start.Row) + 1, Col: int(start.Column) + 1, EndLine: int(end.Row) + 1, EndCol: int(end.Column) + 1,
+		Test: true, Unreadable: n.HasError(),
+	}
 }
 
 // definitions walks declaration metadata only when def was requested. These records never enter Unit,
@@ -1376,9 +1418,8 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 			name = w.text(ch)
 		}
 	}
-	var sig, locals, paramTypes, labels []string
+	var locals, paramTypes, labels []string
 	for _, p := range params(n) {
-		sig = append(sig, collapse(w.text(p)))
 		if in := internalName(p, w.src); in != "" {
 			locals = append(locals, in)
 		}
@@ -1387,13 +1428,8 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 			paramTypes = append(paramTypes, strings.TrimSpace(typ))
 		}
 	}
-	signature := name + "(" + strings.Join(sig, ", ") + ")"
-	ret := returnType(n, w.src)
-	if ret != "" {
-		signature += " -> " + ret
-	}
+	signature, ret := w.declSignature(n, name)
 	if w.isStatic(n) {
-		signature = "static " + signature
 		w.static = true
 		defer func() { w.static = false }()
 	}
@@ -1413,6 +1449,24 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 	u.Doc = w.docComment(n)
 	u.DocStart, u.DocEnd = w.docRange(n)
 	return u
+}
+
+// declSignature は宣言の表示の署名 (`static name(引数) -> 戻り値`) と戻り値の型。単位 (declUnit) と、単位にしない
+// テスト関数の呼び出し元 (calls) が同じ形で名指しするよう 1 か所で組む。
+func (w *walker) declSignature(n *sitter.Node, name string) (string, string) {
+	var sig []string
+	for _, p := range params(n) {
+		sig = append(sig, collapse(w.text(p)))
+	}
+	signature := name + "(" + strings.Join(sig, ", ") + ")"
+	ret := returnType(n, w.src)
+	if ret != "" {
+		signature += " -> " + ret
+	}
+	if w.isStatic(n) {
+		signature = "static " + signature
+	}
+	return signature, ret
 }
 
 func (w *walker) propertyUnit(decl, computed *sitter.Node, name string, c ctx) *tree.Unit {

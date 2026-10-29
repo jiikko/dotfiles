@@ -38,7 +38,7 @@ func TestCallersFindsCallSitesNotCommentsOrStrings(t *testing.T) {
 		"Sources/Store.swift:7 Store.use() -> Int | return a + other.make(x: 5, 6) + make(y: 7)",
 		"Sources/Store.swift:7 Store.use() -> Int | return a + other.make(x: 5, 6) + make(y: 7)",
 		"Sources/Store.swift:9 Store.each() | func each() { list.make(x: 1) { $0 } }",
-		"Tests/StoreTests.swift:3 (単位の外) [test] | func testMake() { XCTAssertEqual(Store().make(x: 1, 2), 3) }",
+		"Tests/StoreTests.swift:3 StoreTests.testMake() [test] | func testMake() { XCTAssertEqual(Store().make(x: 1, 2), 3) }",
 	}
 	if rc != 0 || strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("呼び出しの箇所だけを prod → test の順に (コメント・文字列は数えない):\n got: %q\nwant: %q\nerr=%q", got, want, errs)
