@@ -45,10 +45,7 @@ func newVirtPair(t *testing.T) *virtPair {
 	restampTree(t, filepath.Dir(dir))
 	vp := &virtPair{t: t, dir: dir}
 	for i, ov := range []int{40, -1} {
-		m, err := New(dir, Options{Now: func() time.Time { return fixedNow }})
-		if err != nil {
-			t.Fatal(err)
-		}
+		m := newAt(t, dir)
 		m.virtOverride = ov
 		m.Resize(100, 14)
 		sub := m.loadPath(filepath.Join(big, "f0300sub", "inner.txt"))

@@ -62,7 +62,7 @@ func settle(m *Model) {
 }
 
 // newAt は dir を root にした Model (時刻は fixedNow に固定)。大きさは呼び出し側が決める。
-func newAt(t *testing.T, dir string) *Model {
+func newAt(t testing.TB, dir string) *Model {
 	t.Helper()
 	m, err := New(dir, Options{Now: func() time.Time { return fixedNow }})
 	if err != nil {
@@ -72,11 +72,23 @@ func newAt(t *testing.T, dir string) *Model {
 }
 
 // mustWrite は path に body を書く (0o644)。
-func mustWrite(t *testing.T, path, body string) {
+// dupscan:allow-group 3 intentional 0o644 で書いて落とす mustWrite は safefs・pro-con のテストも同じ数行を持つ。_test.go の helper は module の外から import できず、寄せるにはテスト専用の module を新設して、使う各 module の go.mod の replace と workflow の paths に 1 行ずつ足すことになる。数行に対して依存の方が重い
+func mustWrite(t testing.TB, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// readBody は p の中身を読む。
+// dupscan:allow-group 2 intentional ファイルを読んで落とす readBody は safefs のテストも同じ数行を持つ。_test.go の helper は module の外から import できず、寄せるにはテスト専用の module を新設して、使う各 module の go.mod の replace と workflow の paths に 1 行ずつ足すことになる。数行に対して依存の方が重い
+func readBody(t testing.TB, p string) string {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 // initRepo は dir に branch を初期の枝にした repo を作る。
@@ -87,13 +99,13 @@ func initRepo(t *testing.T, dir, branch string) {
 
 // isolateConfig はこのテストの設定の置き場を自分だけの一時ディレクトリにする (TestMain の置き場は全テストで共有なので、`.` などで保存する
 // テストの後に読むと結果が順序に依存する)。
-func isolateConfig(t *testing.T) {
+func isolateConfig(t testing.TB) {
 	t.Helper()
 	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
 }
 
 // mkfile は親のフォルダを作ってから p に body を書く。
-func mkfile(t *testing.T, p, body string) {
+func mkfile(t testing.TB, p, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		t.Fatal(err)

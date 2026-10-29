@@ -13,29 +13,19 @@ import (
 // dotfile を混ぜるのは、隠す設定 (既定) で kids が絞り込みのスライスを作る経路を通すため (実際のフォルダには .DS_Store 等がある)。
 func hugeFolderModel(b *testing.B, n int) *Model {
 	b.Helper()
-	b.Setenv("TREEFILER_CONFIG_DIR", b.TempDir())
+	isolateConfig(b)
 	dir := b.TempDir()
 	big := filepath.Join(dir, "big")
-	if err := os.MkdirAll(big, 0o755); err != nil {
-		b.Fatal(err)
+	for _, d := range []string{big, filepath.Join(dir, "alpha"), filepath.Join(dir, "beta")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			b.Fatal(err)
+		}
 	}
 	for i := range n {
-		if err := os.WriteFile(filepath.Join(big, fmt.Sprintf("f%06d.txt", i)), nil, 0o644); err != nil {
-			b.Fatal(err)
-		}
+		mustWrite(b, filepath.Join(big, fmt.Sprintf("f%06d.txt", i)), "")
 	}
-	if err := os.WriteFile(filepath.Join(big, ".DS_Store"), nil, 0o644); err != nil {
-		b.Fatal(err)
-	}
-	for _, d := range []string{"alpha", "beta"} {
-		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
-			b.Fatal(err)
-		}
-	}
-	m, err := New(dir, Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		b.Fatal(err)
-	}
+	mustWrite(b, filepath.Join(big, ".DS_Store"), "")
+	m := newAt(b, dir)
 	m.Resize(200, 50)
 	cur := m.loadPath(filepath.Join(big, fmt.Sprintf("f%06d.txt", n/2))) // big の真ん中のファイルへ (big を開く)
 	if cur == nil {

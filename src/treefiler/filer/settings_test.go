@@ -17,9 +17,9 @@ func TestSaveSettingKeepsOtherLines(t *testing.T) {
 	if err := saveSetting(p, "legend", "false", false); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(p)
+	b := readBody(t, p)
 	want := "# 手で書いたコメント\nground = \"vellum\" # 紙\n# row_spacing = 9\nrow_spacing = 2 # 手のメモ\nlegend = false\n"
-	if string(b) != want {
+	if b != want {
 		t.Fatalf("保存の後:\n%s\nwant:\n%s", b, want)
 	}
 	s, bad := loadSettings(p)
@@ -68,9 +68,8 @@ func TestPanelAdjustSavesAndApplies(t *testing.T) {
 	if m.set.Palette != "growth" { // 紙の地では dark の組を選べない
 		t.Fatalf("palette = %s", m.set.Palette)
 	}
-	b, err := os.ReadFile(configPath())
-	if err != nil || !strings.Contains(string(b), "ground = \"parchment\"") {
-		t.Fatalf("保存されていない: %q %v", b, err)
+	if b := readBody(t, configPath()); !strings.Contains(b, "ground = \"parchment\"") {
+		t.Fatalf("保存されていない: %q", b)
 	}
 	m.HandleKey("r") // 既定へ戻す
 	if m.set.Ground != "dark" || cBg != grounds[0].bg {

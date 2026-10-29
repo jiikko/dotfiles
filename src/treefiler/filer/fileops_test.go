@@ -40,15 +40,6 @@ func lastNotice(t *testing.T, m *Model) Notice {
 	return ns[len(ns)-1]
 }
 
-func readBody(t *testing.T, p string) string {
-	t.Helper()
-	b, err := os.ReadFile(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
-}
-
 func TestCreateFileAndFolderMovesCursor(t *testing.T) {
 	m, _ := newOps(t)
 	cdTo(t, m, "a/one.txt")

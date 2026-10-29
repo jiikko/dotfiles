@@ -59,9 +59,12 @@ type lockedBuffer struct {
 	b  bytes.Buffer
 }
 
+// dupscan:allow-group 4 intentional 排他つき buffer の Write は pro-con・restartable のテストも同じ型を持つ。_test.go の helper は module の外から import できず、寄せるにはテスト専用の module を新設して、使う各 module の go.mod の replace と workflow の paths に 1 行ずつ足すことになる。数行に対して依存の方が重い
 func (l *lockedBuffer) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.b.Write(p)
 }
+
+// dupscan:allow-group 4 intentional 排他つき buffer の String は pro-con・restartable のテストも同じ型を持つ (Write の印と同じ理由)
 func (l *lockedBuffer) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }

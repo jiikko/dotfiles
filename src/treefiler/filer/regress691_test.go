@@ -19,9 +19,7 @@ func TestFeedInvalidContinuationDoesNotHang(t *testing.T) {
 	for i := 1; i < len(body); i++ {
 		body[i] = 0x80
 	}
-	if err := os.WriteFile(p, body, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, p, string(body))
 	src, err := openText(p)
 	if err != nil {
 		t.Fatal(err)

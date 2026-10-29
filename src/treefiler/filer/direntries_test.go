@@ -47,9 +47,7 @@ func nastyDir(t *testing.T) string {
 	for _, n := range []string{"café", "caféx", "日本語の名前", strings.Repeat("あ", 85)} { // 85 × 3 = 255 バイト
 		mustWrite(t, filepath.Join(d, n), n)
 	}
-	if err := os.WriteFile(filepath.Join(d, "big"), make([]byte, 300<<10), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, filepath.Join(d, "big"), strings.Repeat("\x00", 300<<10))
 	return d
 }
 

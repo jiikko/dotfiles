@@ -231,23 +231,18 @@ func TestPromptHistoryInMemoryIsCapped(t *testing.T) {
 func TestAppendHistoryDoesNotFollowSymlink(t *testing.T) {
 	d := t.TempDir()
 	target := filepath.Join(d, "other")
-	if err := os.WriteFile(target, []byte("keep\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, target, "keep\n")
 	link := filepath.Join(d, "treefiler-history")
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
 	appendHistory(link, "echo hi")
-	b, err := os.ReadFile(target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	b := readBody(t, target)
 	fi, err := os.Stat(target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(b) != "keep\n" || fi.Mode().Perm() != 0o644 {
+	if b != "keep\n" || fi.Mode().Perm() != 0o644 {
 		t.Fatalf("symlink の先へ書いた / mode を変えた: %q %v", b, fi.Mode().Perm())
 	}
 }
