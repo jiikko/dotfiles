@@ -234,6 +234,6 @@ transcript の `hook_additional_context` と、それを起こした Write / Edi
 実diffで共通化を確認した例はあり、当面は重複検出gateと書く前のindex利用を継続する価値がある。
 この局所的な採用判断と、上記3つの一般効果の実証は区別する。
 
-今回の追加課題は[終了結果のrecord](976-feat-dupscan-gate-record-final-outcome.md)、
+今回の追加課題は[終了結果のrecord](done/976-feat-dupscan-gate-record-final-outcome.md)、
 [CI導入費用](977-research-dupscan-ci-install-and-gate-cost.md)、
 [resolvedの人手検証](978-research-dupscan-resolved-review-evidence.md)。本issueに一般効果の新しい重複課題は作らない。

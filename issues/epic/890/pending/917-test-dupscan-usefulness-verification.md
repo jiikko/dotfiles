@@ -101,5 +101,5 @@ skill の有る無しを変えて、headless の Claude Code (`claude -p`。`bin
 [4日分の中間評価](https://github.com/jiikko/obaket/blob/f3e77fa65/docs/research/dupscan-evaluation-2026-10-29.md)を取得。72run/record70/欠測2、失敗は新規除外policy9・人工probe1・git互換1・原因不明PR1に分けた。
 同tool比較は542→309組だが、resolved251のうち4件だけを共通化実例として確認、247件は未分類。
 ObaketはGHA側の補助JSONで最終rc/run ID/SHA/tool pin/record有無を既に補い、実GHAの成功経路で確認済み。
-上流の終了結果記録は[後続提案](../../932/976-feat-dupscan-gate-record-final-outcome.md)に残す。
+上流の終了結果記録は[後続提案](../../932/done/976-feat-dupscan-gate-record-final-outcome.md)に残す。
 これは1か月評価の完了書き戻しではなく、既存の保留条件・未完了チェックを変更しない。
