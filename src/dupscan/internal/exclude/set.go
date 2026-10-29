@@ -351,6 +351,130 @@ func (s *Set) StaleGroupCandidate(r Rule) string {
 	return candidate
 }
 
+// staleDetailShown は StaleDetail が 1 つの釘について並べる候補の上限 (改名の候補・増えたメンバー)。
+const staleDetailShown = 3
+
+// StaleDetail は、理由が "hash" か "missing" の効いていない除外について、今の木で釘ごとに何が違うかを人が読む文で返す。
+// 本体が記録と違う釘は記録の hash と今の hash を並べ、指す単位が無い釘は同じ本体 (L1) の単位を改名・移動の候補として出し、
+// 組の除外で釘が全部今のまま在るなら、組の段で同じ本体になった釘の外の単位 (組に増えたメンバー) を出す。
+// 原因を 1 つに決めない (候補は除外を書き換えてよい根拠ではない。StaleGroupCandidate と同じく再審査の材料)。
+func (s *Set) StaleDetail(r Rule) []string {
+	if why := s.StaleWhy(r); why != "hash" && why != "missing" {
+		return nil
+	}
+	var out []string
+	recorded := map[string]int{}
+	for _, p := range r.pins() {
+		recorded[p]++
+	}
+	seen := map[string]bool{}
+	present := true
+	for _, p := range r.pins() {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		if n := s.pinCount[p]; n > 0 {
+			// 同じ関数に並んだ同じ本体のクロージャは同じ釘なので、釘が在っても人数は合わないことがある
+			if n != recorded[p] {
+				out = append(out, fmt.Sprintf("同じ釘の単位の数が記録と違う: %s (記録 %d 個 → 今 %d 個)", pinKey(p), recorded[p], n))
+			}
+			continue
+		}
+		present = false
+		key, old := pinKey(p), pinHash(p)
+		var now []string
+		for _, e := range s.entries {
+			if q := Pin(e); pinKey(q) == key {
+				now = append(now, pinHash(q))
+			}
+		}
+		switch {
+		case len(now) == 1:
+			// 「本体が変わった」と言い切らない: 釘はクロージャの番号を削るので、クロージャの釘と外側の関数の釘は同じ鍵になる (Pin)。
+			// 残った 1 つが関数でも、記録がその関数か、消えたクロージャかを決められない。
+			out = append(out, fmt.Sprintf("同じ鍵の単位の本体が記録と違う: %s (記録 @%s → 今 @%s。釘はクロージャの番号を持たないので、本体が変わった形とクロージャが消えた形と区別しない)", key, old, now[0]))
+		case len(now) > 1:
+			slices.Sort(now)
+			out = append(out, fmt.Sprintf("同じ鍵の単位が %d 個あり、どれが記録の単位か決められない: %s (記録 @%s、今 @%s)", len(now), key, old, strings.Join(slices.Compact(now), ", @")))
+		default:
+			if c := s.sameBody(old, r.pins()); len(c) > 0 {
+				out = append(out, fmt.Sprintf("指す単位が無い: %s。同じ本体の単位 (改名・移動の候補): %s", key, strings.Join(c, ", ")))
+			} else {
+				out = append(out, fmt.Sprintf("指す単位が無く、同じ本体 (@%s) の単位も無い: %s", old, key))
+			}
+		}
+	}
+	if present && len(r.Group) > 0 {
+		out = append(out, s.groupChange(r)...)
+	}
+	return out
+}
+
+// pinHash は釘の末尾の本体のハッシュ (`@` の後ろ)。
+func pinHash(pin string) string {
+	if i := strings.LastIndex(pin, "@"); i >= 0 {
+		return pin[i+1:]
+	}
+	return ""
+}
+
+// sameBody は L1 のハッシュ (釘の末尾) が hash の単位の釘のうち、同じ除外が既に指している釘 (pins) を除いたもの (上限 staleDetailShown)。
+// 組の除外の残りのメンバーは記録と同じ本体なので、除かないと改名の候補に並ぶ。
+func (s *Set) sameBody(hash string, pins []string) []string {
+	var out []string
+	for _, e := range s.entries {
+		if p := Pin(e); pinHash(p) == hash && !slices.Contains(pins, p) && !slices.Contains(out, p) {
+			if len(out) == staleDetailShown {
+				return append(out, "…")
+			}
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// groupChange は、釘の単位が全部今のまま在る組の除外について、組の段で釘の単位の本体が揃っているかと、同じ本体の単位が釘の外に増えたかを返す。
+func (s *Set) groupChange(r Rule) []string {
+	want := map[string]bool{}
+	for _, p := range r.Group {
+		want[p] = true
+	}
+	hashes := map[string]bool{}
+	for _, e := range s.entries {
+		if want[Pin(e)] {
+			hashes[e.Result.Hash[r.level]] = true
+		}
+	}
+	if len(hashes) != 1 {
+		return []string{fmt.Sprintf("釘の単位の本体が段 %s で揃っていない (本体は L1 で記録どおりなので、段の指定と組の作り方を見直す)", r.level)}
+	}
+	var hash string
+	for h := range hashes {
+		hash = h
+	}
+	// 数えるのは単位で、釘ではない: 同じ関数に並んだ同じ本体のクロージャは同じ釘になる
+	n := 0
+	var extra []string
+	for _, e := range s.entries {
+		if p := Pin(e); !want[p] && e.Result.Hash[r.level] == hash {
+			n++
+			if !slices.Contains(extra, p) {
+				extra = append(extra, p)
+			}
+		}
+	}
+	if n == 0 {
+		return nil
+	}
+	shown := extra[:min(len(extra), staleDetailShown)]
+	more := ""
+	if k := len(extra) - len(shown); k > 0 {
+		more = fmt.Sprintf(" ほか %d 個の釘", k)
+	}
+	return []string{fmt.Sprintf("組の段 %s で同じ本体の単位が釘の外に %d 個増えた (増えた写しを寄せるか、確かめてから釘を足す): %s%s", r.level, n, strings.Join(shown, ", "), more)}
+}
+
 // samePins は組の釘を並びによらず比べる (組の除外は釘を集合として当てる)。
 func samePins(a, b []string) bool {
 	return slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b)))

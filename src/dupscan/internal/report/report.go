@@ -49,6 +49,7 @@ type Exclusions struct {
 	// staleWhy は Stale と同じ順の、効かない理由 (exclude.Set.StaleWhy の値)。text の一覧にだけ使う (JSON の形は変えない)。
 	staleWhy        []string
 	staleCandidates []string
+	staleDetails    [][]string // Stale と同じ順の、釘ごとの今の木との違い (exclude.Set.StaleDetail)
 }
 
 func exclusions(ex *exclude.Set) Exclusions {
@@ -58,6 +59,7 @@ func exclusions(ex *exclude.Set) Exclusions {
 			x.Stale = append(x.Stale, r)
 			x.staleWhy = append(x.staleWhy, ex.StaleWhy(r))
 			x.staleCandidates = append(x.staleCandidates, ex.StaleGroupCandidate(r))
+			x.staleDetails = append(x.staleDetails, ex.StaleDetail(r))
 		}
 		x.Ambiguous = append(x.Ambiguous, ex.Ambiguous()...)
 	}
@@ -88,6 +90,11 @@ func (x Exclusions) write(w io.Writer) {
 				why += " (" + miss + ")"
 			}
 			fmt.Fprintf(w, "  理由: %s\n", why)
+		}
+		if i < len(x.staleDetails) {
+			for _, d := range x.staleDetails[i] {
+				fmt.Fprintf(w, "  詳しく: %s\n", d)
+			}
 		}
 		if i < len(x.staleCandidates) && x.staleCandidates[i] != "" {
 			fmt.Fprintf(w, "  同じ鍵の組候補。再審査が必要: %s\n", x.staleCandidates[i])
@@ -129,6 +136,8 @@ type GroupJSON struct {
 	Exclude string `json:"exclude"`
 	// Nodes はメンバーのうち最も大きい単位の節の数 (寄せる価値の目安。組はこの大きい順に並べる)。
 	Nodes int `json:"nodes"`
+	// SingleCall はメンバー全員の本体が、1 つの呼び出しを 1 回するだけか (tree.Unit.SingleCall)。
+	SingleCall bool `json:"single_call,omitempty"`
 }
 
 // Build は出力の形を組み立てる。ex は除外 (nil なら無し)。単位の許可の印を付け、その後で効いていない除外を数える。
@@ -145,7 +154,8 @@ func Build(root string, files int, units []*tree.Unit, errFiles []string, groups
 	}
 	s.Groups = []GroupJSON{}
 	for _, g := range groups {
-		gj := GroupJSON{Level: g.Level.String(), Hash: g.Hash, Partition: g.Partition, Exclude: exclude.GroupSnippet(g.Level, g.Members)}
+		gj := GroupJSON{Level: g.Level.String(), Hash: g.Hash, Partition: g.Partition, Exclude: exclude.GroupSnippet(g.Level, g.Members),
+			SingleCall: singleCall(g.Members)}
 		for _, m := range g.Members {
 			r := ref(m.Unit)
 			r.Allowed = ex != nil && ex.Allowed(m)
@@ -202,7 +212,7 @@ func JSON(w io.Writer, s Summary) error {
 type TextOptions struct {
 	// Limit は出す組の上限 (0 は全部)。Claude が何度も回すので、既定は短くする。
 	Limit int
-	// Verbose は読めない構文の単位を 1 つずつ出す。
+	// Verbose は読めない構文の単位・各組の除外の 1 行・効いていない除外とその詳しい理由を 1 つずつ出す (gate は消えた組・新しく足された除外も)。
 	Verbose bool
 }
 
@@ -228,6 +238,7 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 		for _, m := range g.Members {
 			fmt.Fprintf(w, "  %s:%d %s%s\n", m.File, m.Line, label(m), allowedMark(m))
 		}
+		writeSingleCallMark(w, g.SingleCall)
 		if opt.Verbose {
 			fmt.Fprintf(w, "  除外の 1 行: %s\n", g.Exclude)
 		}
@@ -241,6 +252,23 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 		writeUnreadableUnits(w, s)
 	}
 	return nil
+}
+
+// singleCall は、組のメンバー全員の本体が 1 つの呼び出しを 1 回するだけか。
+func singleCall(members []*group.Entry) bool {
+	for _, m := range members {
+		if !m.Unit.SingleCall {
+			return false
+		}
+	}
+	return len(members) > 0
+}
+
+// writeSingleCallMark は薄い委譲の組に印の行を足す。組は隠さない: 寄せられる 1 行の写し (同じ型の別名・別の型への同じ転送) も同じ形になる。
+func writeSingleCallMark(w io.Writer, on bool) {
+	if on {
+		fmt.Fprintln(w, "  印: 全員の本体が 1 つの呼び出しを 1 回するだけ (共通の道具へ寄せた後に残る委譲なら、これ以上寄せる先は無い。除外するなら理由にそう書く)")
+	}
 }
 
 // writeUnreadableUnits は読めない構文で比べなかった単位を 1 つずつ書く。重複が無いとき (寄せ終わって確かめる場面) も同じ形で出す:

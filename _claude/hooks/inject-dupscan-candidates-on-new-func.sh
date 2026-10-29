@@ -13,9 +13,15 @@
 #   - 新しい関数 = 書く文字列 (Edit は new_string、Write は content) にある `func name(` のうち、
 #     Edit の old_string にも、書き換え前のファイルにも `func name(` が無いもの
 #   - 除く名前: 5 文字未満・Test/Benchmark/Fuzz/Example 始まり・init/main/String/Error/Close/body ほか決まり文句、Go のメソッド (func (r T) name)
-#   - 候補 = index の行のうち、名前が大小無視で等しいもの、または一方が他方の前方で共通部分が 6 文字以上のもの
+#   - 候補 = index の行のうち、名前が大小無視で等しいもの、または一方が他方の前方で共通部分が 6 文字以上で、短い方の名前が 2 語以上のもの
+#     (短い方が 1 語 (`resume`) だと、`resumeReady` に対して語が同じだけの無関係な `resume()` が並ぶ。失うもの: 1 語の既存の関数
+#     (`upload`) を、それに語を足した新しい名前 (`uploadAll`) で書くときは出ない)
+#   - 新しい型 = 書く文字列にある型の宣言 (Swift の class / struct / actor / enum / protocol、Go の行頭の `type 名前`) のうち、書き換え前に無いもの。
+#     同じ言語のファイルに同じ名前の型の宣言があれば (private を含む) 出す。git grep の字句の完全一致で、dupscan は使わない
+#     (index は型を返さず、Go では def が使えない)。型は計測ログに書かない (ログは関数の注入の A-B を数える)
 # 検出しない形 (silent): Bash の書き込み・NotebookEdit・名前が違うが同じ役割の関数 (署名の近さは見ない。dupscan search / index -returns で引く)・
-#   Swift のメソッドと Go の関数の区別 (Swift は字下げのある func も新しい関数として扱う)
+#   Swift のメソッドと Go の関数の区別 (Swift は字下げのある func も新しい関数として扱う)・Go の `type (` の中の型・
+#   引数付きの属性 (`@available(…)`) の付いた Swift の型・typealias
 # 計測: 注入のたびに ${XDG_CACHE_HOME:-~/.cache}/claude-dupscan-inject.log へ「時刻 session 名前 候補数」を 1 行足す
 #   (scripts/dupscan_usage_report.py が数える)
 
@@ -37,12 +43,30 @@ SKIP_NAMES = {"init", "main", "string", "error", "close", "body", "description",
 SKIP_PREFIX = ("test", "benchmark", "fuzz", "example")
 FUNC_GO = re.compile(r"^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*[\[(]", re.M)
 FUNC_SWIFT = re.compile(r"^\s*(?:@\w+\s+|(?:public|internal|private|fileprivate|open|static|class|final|override|mutating|nonisolated)\s+)*func\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]", re.M)
+TYPE_SWIFT = re.compile(r"^\s*(?:@\w+\s+|(?:public|package|internal|private|fileprivate|open|final|indirect)\s+)*(?:class|struct|actor|enum|protocol)\s+([A-Za-z_][A-Za-z0-9_]*)", re.M)
+TYPE_GO = re.compile(r"^type\s+([A-Za-z_][A-Za-z0-9_]*)[\s\[]", re.M)
+# `class func` / `class var` は型の宣言ではない (TYPE_SWIFT の名前の位置に来る語)
+NOT_TYPE = {"func", "var", "let", "subscript", "init"}
+# git grep -E -w に渡す宣言の形 (TYPE_SWIFT / TYPE_GO と同じ形。名前は後ろに足す)
+GREP_SWIFT = r"^[[:space:]]*(@[A-Za-z_]+[[:space:]]+|(public|package|internal|private|fileprivate|open|final|indirect)[[:space:]]+)*(class|struct|actor|enum|protocol)[[:space:]]+"
+GREP_GO = r"^type[[:space:]]+"
 LINE = re.compile(r"^(\S+?):(\d+)(?:-\d+)?\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*([A-Za-z_][A-Za-z0-9_]*)\s*[(<\[]")
 
 def stems(name):
     """name の語の境目 (大文字・_ の前) での前方で、6 文字以上のもの (長い順)。name 自身は含まない。"""
     cuts = [i for i in range(6, len(name)) if name[i].isupper() or name[i] == "_"]
     return [name[:i].rstrip("_") for i in reversed(cuts)]
+
+def words(name):
+    """語の数。大文字の連なりはそれに続く数字まで 1 語 (RESUME・BASE64・HTTPGet の HTTP)、大文字 1 つとそれに続く小文字・数字を 1 語にする (loadSettings は 2 語)。"""
+    return len(re.findall(r"[A-Z]+[0-9]*(?![a-z])|[A-Z]?[a-z0-9]+", name))
+
+def near(existing, new):
+    a, b = existing.lower(), new.lower()
+    if a == b:
+        return True
+    short = existing if len(existing) <= len(new) else new
+    return (a.startswith(b) or b.startswith(a)) and len(short) >= 6 and words(short) >= 2
 
 def main():
     try:
@@ -63,13 +87,20 @@ def main():
         except OSError:
             pass
         known = {m.group(1) for m in rx.finditer(before)}
+        trx = TYPE_GO if ext == ".go" else TYPE_SWIFT
+        known_types = {m.group(1) for m in trx.finditer(before)}
+        types = []
+        for m in trx.finditer(new):
+            t = m.group(1)
+            if t not in known_types and t not in types and t not in NOT_TYPE:
+                types.append(t)
         names = []
         for m in rx.finditer(new):
             n = m.group(1)
             if n in known or n in names or len(n) < 5 or n.lower() in SKIP_NAMES or n.lower().startswith(SKIP_PREFIX):
                 continue
             names.append(n)
-        if not names:
+        if not names and not types:
             return
         dirpath = os.path.dirname(path)
         while not os.path.isdir(dirpath) and dirpath != "/":
@@ -81,7 +112,22 @@ def main():
         session = re.sub(r"[^A-Za-z0-9_-]", "_", str(d.get("session_id") or "unknown"))
         tmp = os.environ.get("TMPDIR") or "/tmp"
         start = time.monotonic()
-        out, logged = [], []
+        out, logged, type_out = [], [], []
+        rel = os.path.relpath(path, root)
+        for t in types[:3]:
+            stamp = os.path.join(tmp, "claude-dupscan-inject-%s-type-%s" % (session, t))
+            left = BUDGET - (time.monotonic() - start)
+            if os.path.exists(stamp) or left <= 0.5:
+                continue
+            try:
+                open(stamp, "w").close()
+            except OSError:
+                pass
+            pat = (GREP_GO if ext == ".go" else GREP_SWIFT) + t
+            r = subprocess.run(["git", "-C", root, "grep", "-n", "-I", "-E", "-w", "--untracked", "-e", pat, "--", "*" + ext], capture_output=True, text=True, timeout=left)
+            hits = [h for h in r.stdout.splitlines() if not h.startswith(rel + ":")]
+            if hits:
+                type_out.append("`%s` と同じ名前の型の宣言が既にある:\n%s" % (t, "\n".join("  " + h.strip() for h in hits[:3])))
         for n in names[:3]:
             stamp = os.path.join(tmp, "claude-dupscan-inject-%s-%s" % (session, n))
             if os.path.exists(stamp):
@@ -105,8 +151,7 @@ def main():
                     m = LINE.match(line)
                     if not m or line in hits:
                         continue
-                    a, b = m.group(3).lower(), n.lower()
-                    if a == b or ((a.startswith(b) or b.startswith(a)) and min(len(a), len(b)) >= 6):
+                    if near(m.group(3), n):
                         hits.append(line)
                 if hits:
                     break
@@ -122,8 +167,13 @@ def main():
                         f.write("%s\t%s\t%s\t%d\n" % (time.strftime("%Y-%m-%dT%H:%M:%S%z"), session, n, c))
             except OSError:
                 pass
+        parts = []
         if out:
-            msg = "dupscan: これから足す関数に名前が近い既存の定義がある。再利用・既存の拡張で足りるか見てから書く (別の役割なら無視してよい。署名の近さは `dupscan index -returns 型` / `search` で引く):\n" + "\n".join(out)
+            parts.append("dupscan: これから足す関数に名前が近い既存の定義がある。再利用・既存の拡張で足りるか見てから書く (別の役割なら無視してよい。署名の近さは `dupscan index -returns 型` / `search` で引く):\n" + "\n".join(out))
+        if type_out:
+            parts.append("これから足す型と同じ名前の型が repo にある (Go は同じ package、Swift は同じ module の top-level どうしか同じ型の中なら build で衝突する。Swift の private / fileprivate の型は同じファイルの中だけ。別の型なら名前を変え、同じものなら再利用する):\n" + "\n".join(type_out))
+        if parts:
+            msg = "\n".join(parts)
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": msg}}, ensure_ascii=False))
     except Exception:
         return

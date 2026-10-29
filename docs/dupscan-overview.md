@@ -47,7 +47,7 @@ dupscan を止める側で自動に走らせるのは導入先の検査 (`make t
 
 | hook | いつ | 何を出すか |
 |---|---|---|
-| `inject-dupscan-candidates-on-new-func.sh` (948 A1) | Go / Swift のファイルへ新しい `func` を足す Write / Edit の直前 | 名前の近い既存の定義を `dupscan index` で引いて、最大 3 行注入する。候補が無ければ無音 |
+| `inject-dupscan-candidates-on-new-func.sh` (948 A1・961) | Go / Swift のファイルへ新しい `func` や型を足す Write / Edit の直前 | 名前の近い既存の定義を `dupscan index` で引いて、最大 3 行注入する (前方一致は短い方が 2 語以上のときだけ)。新しい型は、同じ言語のファイルに同じ名前の型の宣言があれば `git grep` で引いて注入する。候補が無ければ無音 |
 | `suggest-dupscan-for-symbol-grep.sh` (939・941) | 識別子らしい語の grep / rg | 同じ名前を引く `dupscan def` / `refs` (Swift) か `index` / `callers` (Go) の案内。session と言語ごとに 900 秒に 1 回 |
 | `suggest-dupscan-for-go-edit.sh` | dotfiles の `src/` の `.go` を Write / Edit したとき | 書く前の `index` と commit 前の `gate` の案内。session に 1 回 |
 

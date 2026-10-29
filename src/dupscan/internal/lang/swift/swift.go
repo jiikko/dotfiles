@@ -1572,17 +1572,21 @@ func (w *walker) newUnit(n *sitter.Node, kind tree.UnitKind, name, sig string, l
 	}
 	if body != nil {
 		u.Body = w.conv(body, nil, "", false, false)
-		u.Delegation = w.delegation(body)
+		if call := w.soleCall(body); call != nil {
+			u.SingleCall = w.thinCall(call)
+			u.Delegation = w.atomCall(call, true)
+		}
 	} else {
 		u.Body = &tree.Node{Kind: "empty"}
 	}
 	return u
 }
 
-// delegation は、本体が「1 つの呼び出しに原子 (atom) だけを渡す」委譲か。本体の直下の文がちょうど 1 つ (コメントを除く) で、
-// その文が呼び出し (return・try・await・後置の ! で包んでよい) で、後置のクロージャが無く、引数が全部原子のとき。
-// 「1 文」だけで判定しない: 1 つの大きな式や guard 1 文の写しを、定数を変えるだけで除外に通せてしまう。
-func (w *walker) delegation(body *sitter.Node) bool {
+// soleCall は、本体の直下の文がちょうど 1 つ (コメントを除く) で、その文が呼び出し (return・try・await・後置の ! で包んでよい) なら、その呼び出しを返す。
+// 委譲の 2 つの印はこの呼び出しから決める: Delegation (プリセット l2-single-call が外す) は後置のクロージャが無く引数が全部原子のときだけ。
+// Delegation を「1 文」だけで判定しない: 1 つの大きな式や guard 1 文の写しを、定数を変えるだけで除外に通せてしまう。
+// SingleCall (thinCall) は外さず印を付けるだけなので、文が 1 つのクロージャの引数も許す。
+func (w *walker) soleCall(body *sitter.Node) *sitter.Node {
 	stmts := childOfKind(body, "statements")
 	if stmts == nil {
 		if fb := childOfKind(body, "function_body"); fb != nil {
@@ -1590,7 +1594,7 @@ func (w *walker) delegation(body *sitter.Node) bool {
 		}
 	}
 	if stmts == nil {
-		return false
+		return nil
 	}
 	var only *sitter.Node
 	for i := range stmts.NamedChildCount() {
@@ -1600,18 +1604,102 @@ func (w *walker) delegation(body *sitter.Node) bool {
 			continue
 		}
 		if only != nil {
-			return false
+			return nil
 		}
 		only = c
 	}
 	if only == nil {
-		return false
+		return nil
 	}
 	call := w.unwrapStatement(only)
 	if call == nil || call.Kind() != "call_expression" {
+		return nil
+	}
+	return call
+}
+
+// thinCall は呼び出しが薄い委譲か (tree.Unit.SingleCall): 呼ぶ先が原子 (名前・メンバーの参照) で、引数が後置のクロージャを含めて
+// thinCallArgs 個まで、どの引数も原子か文が 1 つのクロージャ。引数の数で絞るのは、引数を並べた大きな初期化子の呼び出し
+// (`StorageCapabilities(a: …, b: …, …)` の 20 個) まで印が付くと、寄せる価値のある写しと見分けが付かなくなるため。
+func (w *walker) thinCall(call *sitter.Node) bool {
+	if call.NamedChildCount() != 2 || !w.atom(call.NamedChild(0)) {
 		return false
 	}
-	return w.atomCall(call, true)
+	suffix := call.NamedChild(1)
+	if suffix.Kind() != "call_suffix" {
+		return false
+	}
+	n := 0
+	for i := range suffix.NamedChildCount() {
+		c := suffix.NamedChild(i)
+		switch c.Kind() {
+		case "value_arguments":
+			if !strings.HasPrefix(w.text(c), "(") {
+				return false // 添字 (`values[key]`) も同じ value_arguments で表される (atomCall と同じ)
+			}
+			for j := range c.NamedChildCount() {
+				a := c.NamedChild(j)
+				v := a.ChildByFieldName("value")
+				if a.Kind() != "value_argument" || v == nil || !w.atom(v) && !oneStatementClosure(v) {
+					return false
+				}
+				n++
+			}
+		case "lambda_literal":
+			if !oneStatementClosure(c) {
+				return false
+			}
+			n++
+		}
+	}
+	return n <= thinCallArgs
+}
+
+// thinCallArgs は薄い委譲の引数の数の上限 (後置のクロージャを含む)。
+const thinCallArgs = 2
+
+// oneStatementClosure は、文がちょうど 1 つ (コメントを除く) で、その文が制御文でなく、中のクロージャも同じ条件を満たすクロージャか。
+// 制御文と、文が複数のクロージャを中に持つ文を数えないのは、その 1 文の中に任意の量の処理を入れられるため (寄せる価値のある写しに印が付く)。
+// 入れ子を一律に断らない: 述語の 1 文 (`{ self.updates.contains { $0.id == id } }`) は待機の道具へ寄せた後の委譲に普通に現れる。
+// `defer { … }` は文法が呼び出しとして読むので、制御文の一覧では止まらず、入れ子のクロージャの文の数で止まる。
+// 1 文の大きさは測らない: 引数に呼び出しを並べた式 (`use(a(), b(), c())`)・複数の束縛の let・配列のリテラルは 1 文のまま印が付く。
+// 印は組を隠さず gate も変えないので、測るための下限 (節の数) は置いていない。大きな 1 文に印が付いて除外を誤った例が出たら、節の数の上限を足す。
+func oneStatementClosure(n *sitter.Node) bool {
+	if n.Kind() != "lambda_literal" {
+		return false
+	}
+	stmts := childOfKind(n, "statements")
+	if stmts == nil {
+		return false
+	}
+	var only *sitter.Node
+	for i := range stmts.NamedChildCount() {
+		c := stmts.NamedChild(i)
+		switch c.Kind() {
+		case "comment", "multiline_comment":
+			continue
+		case "for_statement", "while_statement", "repeat_while_statement", "if_statement", "guard_statement", "switch_statement", "do_statement":
+			return false
+		}
+		if only != nil {
+			return false
+		}
+		only = c
+	}
+	return only != nil && nestedClosuresThin(only)
+}
+
+// nestedClosuresThin は、n 自身と n の中のクロージャ (いちばん外側のもの。その中は oneStatementClosure が辿る) が全部 oneStatementClosure か。
+func nestedClosuresThin(n *sitter.Node) bool {
+	if kindOf(n) == "lambda_literal" {
+		return oneStatementClosure(n)
+	}
+	for i := range n.NamedChildCount() {
+		if !nestedClosuresThin(n.NamedChild(i)) {
+			return false
+		}
+	}
+	return true
 }
 
 // unwrapStatement は return・try・await・後置の ! を外す。

@@ -474,11 +474,11 @@ func isAction(fun ast.Expr) bool {
 	}
 }
 
-// delegation は、本体が「1 つの呼び出しに原子 (atom) だけを渡す」委譲か (Swift の adapter と同じ基準)。
-// 本体の文がちょうど 1 つで、それが式の文か 1 つの値を返す return で、中身が呼び出しで、callee と引数が全部原子のとき。
-func delegation(body *ast.BlockStmt) bool {
+// soleCall は、本体の文がちょうど 1 つで、それが式の文か 1 つの値を返す return で、中身が呼び出しなら、その呼び出しを返す (Swift の adapter と同じ基準)。
+// 委譲の 2 つの印 (tree.Unit.SingleCall / Delegation) はどちらもこの呼び出しから決める。
+func soleCall(body *ast.BlockStmt) *ast.CallExpr {
 	if body == nil || len(body.List) != 1 {
-		return false
+		return nil
 	}
 	var e ast.Expr
 	switch s := body.List[0].(type) {
@@ -486,15 +486,56 @@ func delegation(body *ast.BlockStmt) bool {
 		e = s.X
 	case *ast.ReturnStmt:
 		if len(s.Results) != 1 {
-			return false
+			return nil
 		}
 		e = s.Results[0]
 	default:
+		return nil
+	}
+	call, _ := e.(*ast.CallExpr)
+	return call
+}
+
+// thinCall は呼び出しが薄い委譲か (tree.Unit.SingleCall。Swift の adapter と同じ基準): 呼ぶ先が原子で、引数が thinCallArgs 個まで、
+// どの引数も原子か文が 1 つの関数リテラル。引数の数で絞る理由は Swift の thinCall のコメント。
+func thinCall(call *ast.CallExpr) bool {
+	if !atom(call.Fun) || len(call.Args) > thinCallArgs {
 		return false
 	}
-	call, ok := e.(*ast.CallExpr)
-	return ok && atomCall(call, true)
+	for _, a := range call.Args {
+		if f, ok := a.(*ast.FuncLit); ok && oneStatementFunc(f.Body) {
+			continue
+		}
+		if !atom(a) {
+			return false
+		}
+	}
+	return true
 }
+
+// oneStatementFunc は、関数リテラルの本体の文がちょうど 1 つで、それが制御文でなく、中の関数リテラルも同じ条件を満たすか
+// (Swift の oneStatementClosure と同じ。理由もそちら)。
+func oneStatementFunc(body *ast.BlockStmt) bool {
+	if body == nil || len(body.List) != 1 {
+		return false
+	}
+	switch body.List[0].(type) {
+	case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.BlockStmt, *ast.LabeledStmt:
+		return false
+	}
+	thin := true
+	ast.Inspect(body.List[0], func(n ast.Node) bool {
+		if f, ok := n.(*ast.FuncLit); ok {
+			thin = thin && oneStatementFunc(f.Body)
+			return false
+		}
+		return thin
+	})
+	return thin
+}
+
+// thinCallArgs は薄い委譲の引数の数の上限。
+const thinCallArgs = 2
 
 // atomCall は callee が原子で、引数が全部原子の呼び出しか。withArgs が false なら引数を許さない (原子の中の `time.Now()`)。
 func atomCall(call *ast.CallExpr, withArgs bool) bool {

@@ -32,6 +32,9 @@ case "$name" in
   parseThing) echo "src/a/p.go:1-9 parse() (呼び出し ~0)" ;;
   collectWidgets) echo "src/a/c.go:1-9 collectWidgets(xs []int) []int (呼び出し ~3)" ;;
   gather) echo "src/a/g.go:1-2 gatherAll() (呼び出し ~0)" ;;
+  resume) echo "src/a/r.go:1-2 resume() (呼び出し ~1)" ;;
+  RESUME|RESUMEReady) echo "src/a/r.go:1-2 RESUME() (呼び出し ~1)" ;;
+  BASE64|BASE64Decode) echo "src/a/b.go:1-2 BASE64() (呼び出し ~1)" ;;
 esac
 # collectWidgetsFast / gatherThings は、どの語でも本物の index -name が返さない (既存の名前が引く語を含むものだけを返すため)
 FAKE
@@ -41,7 +44,11 @@ NO_DUPSCAN_BIN="$TMP_ROOT/nodup"; mkdir -p "$NO_DUPSCAN_BIN"
 for t in bash env python3 git jq dirname cat; do ln -s "$(command -v "$t")" "$NO_DUPSCAN_BIN/$t"; done
 
 REPO=$(mktemp -d "$TMP_ROOT/repo.XXXXXX")
-( cd "$REPO" && git init -q . && mkdir -p src/foo && printf 'package foo\n\nfunc existingHelper() {}\n' > src/foo/a.go && git add -A ) >/dev/null 2>&1
+( cd "$REPO" && git init -q . && mkdir -p src/foo && printf 'package foo\n\nfunc existingHelper() {}\n' > src/foo/a.go &&
+  printf 'final class ArrivalGate {\n    class func make() -> ArrivalGate { ArrivalGate() }\n}\n' > src/foo/Gate.swift &&
+  printf 'package foo\n\ntype existingThing struct{}\n' > src/foo/thing.go &&
+  printf 'package struct PackagedThing {}\n' > src/foo/Pkg.swift && git add -A &&
+  printf 'struct LooseType {}\n' > src/foo/Loose.swift ) >/dev/null 2>&1
 session=0
 next_session() { session=$((session + 1)); }
 
@@ -100,6 +107,25 @@ next_session; expect_silent "対象でない拡張子" "$(run Edit "$REPO/src/fo
 next_session; expect_silent "相対パス" "$(run Edit "src/foo/a.go" $'func readCookies() {}\n')"
 next_session; expect_silent "git の repo の外" "$(run Edit "$TMP_ROOT/plain/x.go" $'func readCookies() {}\n')"
 next_session; expect_silent "dupscan が PATH に無い" "$(run Edit "$F" $'func readCookies() {}\n' "" "$NO_DUPSCAN_BIN")"
+next_session; expect_silent "前方一致でも、短い方の名前が 1 語 (resume ⊂ resumeReady) なら語が同じだけなので出さない" "$(run Edit "$F" $'func resumeReady() {}\n')"
+S="$REPO/src/foo/New.swift"
+next_session; out=$(run Write "$S" $'@MainActor\nprivate final class ArrivalGate {}\n')
+expect_has "Swift: 足す型と同じ名前の型の宣言が別のファイルにあれば注入する" "$out" "src/foo/Gate.swift:1:final class ArrivalGate"
+next_session; expect_has "Swift: git の追跡外 (ignore されていない untracked) の型も照らす" "$(run Write "$S" $'struct LooseType {}\n')" "src/foo/Loose.swift"
+next_session; expect_has "Go: 行頭の type の名前が同じなら注入する" "$(run Edit "$REPO/src/foo/b.go" $'type existingThing struct{ n int }\n')" "src/foo/thing.go:3:type existingThing"
+next_session; expect_silent "同じ名前の型が無ければ何も出さない" "$(run Write "$S" $'final class BrandNewGate {}\n')"
+next_session; expect_silent "名前を含むだけの型 (ArrivalGateway) は同じ名前ではない" "$(run Write "$S" $'final class ArrivalGateway {}\n')"
+next_session; expect_silent "既存の型の名前の前方 (Loose ⊂ LooseType) は同じ名前ではない" "$(run Write "$S" $'struct Loose {}\n')"
+next_session; expect_has "Go: generic の型 (名前の直後が [) も照らす" "$(run Edit "$REPO/src/foo/b.go" $'type existingThing[T any] struct{ v T }\n')" "src/foo/thing.go:3:type existingThing"
+next_session; expect_has "Swift: package 修飾子の付いた型も照らす (既存の側も package)" "$(run Write "$S" $'package struct PackagedThing {}\n')" "src/foo/Pkg.swift"
+next_session; expect_silent "全大文字の 1 語 (RESUME ⊂ RESUMEReady) は 1 語と数えて出さない" "$(run Edit "$F" $'func RESUMEReady() {}\n')"
+next_session; expect_silent "全大文字に数字が続く 1 語 (BASE64 ⊂ BASE64Decode) も 1 語と数えて出さない" "$(run Edit "$F" $'func BASE64Decode() {}\n')"
+next_session; expect_has "Go の型の注入は、衝突する範囲を package と書く" "$(run Edit "$REPO/src/foo/b.go" $'type existingThing struct{ n int }\n')" "Go は同じ package"
+next_session; expect_has "Swift の型の注入は、private / fileprivate の型は別のファイルどうしでは衝突しないと書く" "$(run Write "$S" $'private struct LooseType {}\n')" "private / fileprivate の型は同じファイルの中だけ"
+next_session; expect_silent "class func は型の宣言ではない" "$(run Edit "$S" $'    class func make() {}\n')"
+next_session; expect_silent "書き換え前 (old_string) に既にある型は新しくない (別のファイルに同じ名前があっても出さない)" "$(run Edit "$S" $'final class ArrivalGate {\n}\n' $'final class ArrivalGate {}\n')"
+next_session; run Write "$S" $'final class ArrivalGate {}\n' >/dev/null
+expect_silent "同じ session × 型の 2 回目は出さない" "$(run Write "$S" $'final class ArrivalGate {}\n')"
 next_session; out=$(run Edit "$REPO/src/foo/B.swift" $'    private func readCookies() {}\n')
 expect_has "Swift: 字下げのある func も新しい関数として引く" "$out" "ReadCookies"
 next_session; run Edit "$F" $'func readCookies() {}\n' >/dev/null

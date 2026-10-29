@@ -60,6 +60,8 @@ type ViolationJSON struct {
 	Same  []UnitRef `json:"same"` // 組に前からいた単位 (寄せる先の候補)
 	// Exclude はこの組を指す組の除外の 1 行 (誤検知なら kind と reason を埋めて .dupscan.json に貼る)。
 	Exclude string `json:"exclude"`
+	// SingleCall は組の全員の本体が、1 つの呼び出しを 1 回するだけか (GroupJSON.SingleCall と同じ)。
+	SingleCall bool `json:"single_call,omitempty"`
 }
 
 // ResolvedJSON は消えた・縮んだ組 1 つの出力。Members は base の側の位置。
@@ -88,8 +90,9 @@ func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set) GateSumm
 		s.PresetPassedList = append(s.PresetPassedList, ref(e.Unit))
 	}
 	for _, v := range r.Violations {
+		members := append(append([]*group.Entry(nil), v.New...), v.Same...)
 		vj := ViolationJSON{Level: v.Level.String(), Fail: v.Fail, New: []UnitRef{}, Same: []UnitRef{},
-			Exclude: exclude.GroupSnippet(v.Level, append(append([]*group.Entry(nil), v.New...), v.Same...))}
+			Exclude: exclude.GroupSnippet(v.Level, members), SingleCall: singleCall(members)}
 		for _, m := range v.New {
 			vj.New = append(vj.New, ref(m.Unit))
 		}
@@ -178,6 +181,7 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 			for _, m := range v.Same {
 				fmt.Fprintf(w, "  同じ形: %s:%d %s%s\n", m.File, m.Line, label(m), allowedMark(m))
 			}
+			writeSingleCallMark(w, v.SingleCall)
 			if opt.Verbose {
 				fmt.Fprintf(w, "  除外の 1 行: %s\n", v.Exclude)
 			}

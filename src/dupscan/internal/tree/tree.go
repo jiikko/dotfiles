@@ -120,6 +120,9 @@ type Unit struct {
 	// Delegation は本体が「1 つの呼び出しに定数や名前を渡すだけ」の委譲か (本体が 1 文の呼び出しで、引数が全部リテラル・名前・メンバーの参照など)。
 	// 除外のプリセット l2-single-call が読む。コアは言語の節の種類を知らないので adapter が決める。
 	Delegation bool
+	// SingleCall は本体が「共通の道具を 1 回呼ぶだけ」の薄い委譲か (本体が 1 文の呼び出しで、呼ぶ先が名前・メンバーの参照、引数が 2 つまでで、どれも原子か文が 1 つのクロージャ)。
+	// 共通の道具へ寄せた後に残る薄い委譲の組に印を付けるのに使う (隠さない。寄せられる 1 行の写しも同じ形になるため)。
+	SingleCall bool
 	Unreadable bool // 読めない構文 (ERROR / MISSING) を含む
 	// Allow は単位の直前のコメントに書いた `dupscan:allow` の後ろ (種別と理由)。HasAllow はその印があること (後ろが空でも)。
 	Allow     string

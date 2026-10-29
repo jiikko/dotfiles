@@ -188,7 +188,10 @@ func (w *walker) funcDecl(d *ast.FuncDecl, limit int) {
 	u := w.newUnit(d, tree.KindFunc, name, sig, encl, locals, ctx{broken: broken})
 	if !w.metadataOnly {
 		u.Body = w.conv(d.Body)
-		u.Delegation = delegation(d.Body)
+		if call := soleCall(d.Body); call != nil {
+			u.SingleCall = thinCall(call)
+			u.Delegation = atomCall(call, true)
+		}
 	}
 	// 戻り値は型だけをハッシュに入れる。名前は Params に入れて本体の中で番号にするので、字面で入れると名前を変えた写しを見逃す
 	u.ReturnType = resultTypes(d.Type.Results)
@@ -253,6 +256,10 @@ func (w *walker) closuresIn(n ast.Node, c ctx) {
 		// 引数は本体の木の中で宣言として数える (Swift のクロージャと同じ。Params には入れない)。
 		if !w.metadataOnly {
 			u.Body = w.conv(fl)
+			// Delegation は関数の宣言だけ (プリセット l2-single-call の対象を変えない)。SingleCall は印だけなので Swift と同じくクロージャにも付ける
+			if call := soleCall(fl.Body); call != nil {
+				u.SingleCall = thinCall(call)
+			}
 		}
 		key := w.add(u)
 		w.closuresIn(fl.Body, ctx{owner: key, ownerName: u.OwnerName + ".{closure}", broken: u.Unreadable})
