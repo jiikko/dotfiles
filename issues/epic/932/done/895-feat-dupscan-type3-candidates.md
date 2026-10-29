@@ -46,9 +46,9 @@ mizchi/similarity は木の編集距離 (TSED) で Type-3 を出しているの�
 
 ## 受け入れ条件
 
-- [ ] 類似度・推移的に束ねないこと・祖先と子孫を除くこと・候補の絞り込みのユニットテスト (adapter に依存しない)
-- [ ] 候補の絞り込みで取りこぼさないこと (総当たりとの一致) を、小さな入力で確かめる
-- [ ] obaket の全体での所要を測って書く
+- [x] 類似度・推移的に束ねないこと・祖先と子孫を除くこと・候補の絞り込みのユニットテスト (adapter に依存しない) — `src/dupscan/similar_cmd_test.go` の `TestSimilarBoundsAndAncestorExclusion` ほか (2026-10-29 照合。adapter を通すテストで、adapter 非依存のユニットテストではない)
+- [x] ~~候補の絞り込みで取りこぼさないこと (総当たりとの一致) を、小さな入力で確かめる~~ — 対象にならない: 試作は絞り込み (転置索引・LSH) を作らず 1 対象対 N の線形走査 (総当たり) にした (「受け入れた範囲と採用しない案」)
+- [x] obaket の全体での所要を測って書く — 「実測と改善判断」の 1261.2→1646.3ms・RSS
 
 ## 具体例: spansWidth / lineWidth（2026-10-26追記）
 
@@ -105,10 +105,10 @@ spansWidthの例では、rangeの入力式が異なってもループ内部の�
 
 ## 追加の受け入れ条件
 
-- [ ] e7ddfd9fの2関数を固定fixtureにし、既定20-node未満の扱いと入力式の構文差を分けて検査する。既定gate/旧near/reportの挙動を維持する。
-- [ ] 今回の候補を上位に出し、差分と共通部分を示せることを確認する。精度を主張する場合はheld-out例と反例の全数値を残す。
-- [ ] 索引のk/score閾値/候補数/予算/解析不完全を出力に示し、候補省略を不存在と混同しない。
-- [ ] 既存の局所名正規化・keep/action/型等の保護条件を後退させず、類似候補のルールを完全一致のhashへ混ぜない。
+- [x] e7ddfd9fの2関数を固定fixtureにし、既定20-node未満の扱いと入力式の構文差を分けて検査する。既定gate/旧near/reportの挙動を維持する。 — `TestSimilarFindsHistoricalWidthShapeWithoutChangingNear` (旧 near が 0 件のまま・similar で lineWidth が 1 位) と旧版との 8 条件 byte 一致
+- [x] 今回の候補を上位に出し、差分と共通部分を示せることを確認する。精度を主張する場合はheld-out例と反例の全数値を残す。 — 上位に出す・共通部分 (shared weight) は済み。差分の表示は不採用 (918 の `explain -compare` を使う)。精度は主張しない (合成対照 4 件の全数値は上に記録)
+- [x] 索引のk/score閾値/候補数/予算/解析不完全を出力に示し、候補省略を不存在と混同しない。 — `similar_cmd.go` の出力に threshold・min_subtree_nodes・compared・skipped・parse_error_files・candidates/returned (索引は作らないので k は無い)
+- [x] 既存の局所名正規化・keep/action/型等の保護条件を後退させず、類似候補のルールを完全一致のhashへ混ぜない。 — 既定 near/explain/report/gate の旧版との byte 一致 (上の [x])
 
 ## 進捗
 
