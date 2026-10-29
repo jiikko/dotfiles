@@ -15,7 +15,7 @@
 | A. 空のタプル `()` が呼び出しの唯一の引数以外にある (欠けた `!`) | 13 | `resume(returning: ())`・`(value: (), bytes: 0)`・`SnapshotMulticaster(initial: (), …)`・`await x == ()`・`super.init(toMemory: ())` | `()` を `[]` に (同じ 2 バイト)。既存の `f(())` の規則を優先する |
 | D. 条件の中の `await` / `try` | 9 | `switch await task.value {`・`if await …`・`for … where await …`・`switch try #require(…)`・`if let gate = await …` | 素の `await` / `try` (後ろに `!` / `?` が無い) の演算子のキーワードを空白に |
 | E. クロージャの中の `;` 区切り | 2 | `{ Issue.record("…") ; return client }` | 改行を足さずに `;` を左に寄せる形を試す。読めなければ対象外 |
-| B. 関数の属性の `#if` / `#else` / `#endif` | 1 | `#if swift(>=6.4) @Test(…) #else @Test(…) #endif func f()` | **対象外**。区切りを消すと排他の 2 属性が同じ宣言に付き、読めても正しくない |
+| B. 関数の属性の `#if` / `#else` / `#endif` | 1 | `#if swift(>=6.4) @Test(…) #else @Test(…) #endif func f()` | 最初の分岐だけを残す: `#if` の行・`#else` 以降の分岐・`#endif` の行を同じ長さの空白に (改行は残す)。区切りだけを消すと排他の 2 属性が同じ宣言に付くので、それはしない (ユーザー指示 2026-10-29 で対象に戻した。当初は対象外) |
 | C. 変数名 `final` | 1 | `final = resolution` (後ろの ERROR 5 箇所は同じ関数からの連鎖) | 代入の側の `final` だけを同じ長さの別名に。宣言の修飾子 (`final class`) は触らない |
 
 - D は影響が大きい: `TransferTracking.swift` は 187 行目の `if await …` 1 つで構文木の根が ERROR になり、ファイル全体 (27 単位) が読めない。954 で書いた「読めないのはその関数だけ」はこの形には当てはまらない
@@ -56,4 +56,12 @@
   - **残り 6 ファイル**: B (属性の `#if`、対象外) 1 / D の形なのに直らない 4 (`if await x { return … }` の 1 行の形・`switch await cleanup.value {`・`if await … >= count { return true }`・`for … where await …`。規則が発火しないか、読み直しても ERROR が減らない) / C の連鎖が残る 1 (`MoveReconcileExecutor` の `switch` の `case`)。次のマイルストーンで codex に原因を調べさせる
   - 検証: `make -C src/dupscan test lint` rc=0。`make test-lint` は、別のセッションの commit (`tests/tmux/test_tmux.sh`) の `test-pipefail-grep-q` だけが赤 (この差分とは無関係。この検証はそれを含まない)
 - 未確認リスク (発火する入力を示せなかった。防御は足していない): 新しい木の根が ERROR でも採る / 型の中では I5 が効かない
-- 次 (マイルストーン 2。codex の枠が戻ってから): 残る 5 ファイル (D の形 4・C の連鎖 1) の原因を調べて直す。B (属性の `#if`) は対象外
+- 2026-10-29: ユーザー指示で B (属性の `#if`) を対象に戻した (最初の分岐だけを残す形なら、排他の 2 属性が同じ宣言に付かない)
+- 2026-10-29 (マイルストーン 2): codex (astra-mid、workspace-write の 2 run) が原因を調べて直した。書き込み無制限の sandbox は自動承認で止められたので、書き込みを worktree と計測の出力先に絞った
+  - **原因と直し方**: D1〜D4 (4 ファイル) は D の規則の見落とし。文として読めず ERROR になった条件 (`if await x { return … }` の 1 行の形・`switch await cleanup.value {`・`if await … >= n { return true }`・`for … where await …`) では、`await` が `await_expression` にならず語だけで残るか、後ろの文を呼び出し (`call_expression` / `navigation_expression`) の末尾に飲み込む。ERROR の中の条件の先頭の鎖 (callee / target) だけをたどってキーワードを空白にする (`blankMisparsedConditionHead`)。ERROR の中の `where_keyword` も条件の始まりにする。名前の `await` の直後の本体がオペランドの `lambda_literal` と読まれた形は演算子と確定できないので消さない。B (1 ファイル) は新しい規則 `repairConditionalAttributes`
+  - **B の設計の反証 (codex sol-high、読み取り 1 本)**: 採用 3 件: ①`#if` の行は元の木で source_file 直下の正常な `directive` なので、空白にすると I5 (`preservesTopLevel`) が必ず捨てる → B が空白にした範囲にまるごと入る子だけを照合から外す (正常な directive を一律に外さない) ②`#if` の直前に doc / `dupscan:allow` のコメントがあると、空白化で生まれる空行で宣言から切れ、許可印の付いた単位が印なしで比較に出る → 直前にコメントがあれば発火しない ③分岐の間で `@Test` の有無が違うと、残す分岐でテスト関数として単位を作るかが変わる → 有無が一致するときだけ発火 (判定はテスト関数の判定と同じ `isTestAttribute` を使う)。記録のみ: `#endif` と宣言の間のコメントは空白化の後に宣言の内側の子になる (同じ意味を手で書いたコードと同じ木なので B 固有の退行ではない)
+  - **obaket (HEAD cae067f7f、前後を同じ時点で取得)**: 読めないファイル **6 → 1**、読めない単位 **10 → 4**、**読めない単位が増えたファイル 0**、組 106 → 106 (増減した組 0)
+  - **変異**: codex が 1 本目 6 本・2 本目 5 本 (B の除外を外す / 全 directive に広げる / 直前のコメントの条件を外す / `@Test` の条件を外す / source_file を外す) を当て、すべてビルドが通り対応のテストが赤。Claude が抜き取りで 2 本 (B の除外を外す・D の条件の先頭の経路を外す) を `mutate-verify` で当て直し、どちらも狙ったテスト (`TestConditionalAttributesAtTopLevel` / `TestConditionOperatorsInMisparsedHeads`) が赤
+  - **残り 1 ファイル (C、`MoveReconcileExecutor.swift`)**: `final` の連鎖ではなく、複数のパターンを並べた `catch A, B {` を文法が読めない。区切りや後ろのパターンを消すと捕まえる型が変わり、同じ長さで意味を保つ置き換えが無いので直さない (`TestMultiplePatternCatchStaysUnreadable` で読めないまま報告されることを固定)
+  - **敵対レビュー (codex sol-high、読み取り 1 本)**: 1 本目は OpenAI 側でサイバーセキュリティの危険と誤判定され、本文が空で終わった (rc=1)。「red team」「攻め口」の語を外し、反例探しと言い直して起こし直した。D の誤った消去・`attributeBlanks` の包含の判定・規則の組み合わせによる L1 / Line / doc / `dupscan:allow` の変化は、どれも反例なし。P2 が 1 件: 型を外側の `#if OUTER` で囲んだ中の属性の分岐でも B が発火する (入れ子の判定が同じ親の兄弟しか見ない)。**却下**: 属性の分岐は 1 段で閉じていて外側の directive は残るので、最初の分岐を残した木は同じ規則の結果と変わらず、誤った形にならない。理由と、再び提起するのに要る条件 (外側の分岐で誤った木・L1・Line になる入力) を `repairConditionalAttributes` のコメントに書いた
+  - 検証: `make -C src/dupscan test lint` rc=0、`make test-lint` rc=0。`dupscan gate` は新しい重複なし
