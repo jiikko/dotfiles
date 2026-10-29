@@ -5,7 +5,7 @@
 ## 概要
 
 `/audit` で src/dupscan に 22 観点を直接実行 (サブエージェントに判定させず、main が読んで判定) で回した。HEAD `a335a9c42`。
-直す項目は [981](981-bug-dupscan-gate-silent-on-generated-go-files.md)・[982](982-cleanup-dupscan-unused-text-writers.md) の 2 本。[983](done/983-bug-dupscan-paths-levels-l1m.md) は反証レビューで 973 の決定と分かり取り下げた。ここには観点ごとの攻め方と、報告しなかったものの理由を残す (次の監査が同じものを出さないため)。
+直す項目は [981](981-bug-dupscan-gate-silent-on-generated-go-files.md)・[982](982-cleanup-dupscan-unused-text-writers.md) の 2 本。[983](983-bug-dupscan-paths-levels-l1m.md) は反証レビューで 973 の決定と分かり取り下げた。ここには観点ごとの攻め方と、報告しなかったものの理由を残す (次の監査が同じものを出さないため)。
 
 ## 走査した母集合
 
@@ -49,3 +49,8 @@
 - 2026-10-30、opus の読み取りのみのサブエージェント 1 本に「誤りだという前提で反証」させた。P1 3 件・P2 2 件・P3 2 件
 - 採った: 983 は 973 で決めた仕様 (README に記載・`elements` の件は 973 の P3 に記録済み) → 取り下げ / 982 の `relevantParseErrors` は master で消済み → 表を直した / CI の unused の赤の見落とし → ci の行に書いた / 38 か所の数え方が書かれていない → 正規表現を書いた / `CallersText` を消すときの doc の移し先 → 982 に書いた / worktree が master より遅れていた → rebase してから書き直した
 - 採らなかった: 「`evidence` / `context` の text の出力が `Fprintf` の誤りを捨て、stdout が閉じていても rc=0」。閉じた stdout で `evidence` / `context` / `callers` / `index` / `gate` を打つと全部 rc=2 だった (2026-10-30。先に出す行の書き込みで誤りを拾う)。途中で切れるパイプでは Go のプロセスは stdout への書き込みで SIGPIPE で終わる。rc=0 になる入力を示せないので記録だけにする。**再提起の条件**: stdout の途中の書き込みだけが失敗して rc=0 になる実行を示す
+
+## 結果 (2026-10-30)
+
+- 981 (生成ファイルを gate・report の 1 行目に出す) と 982 (未使用の CallersText / EvidenceText の削除) は対応して done。983 は取り下げ (done に理由)。
+  ほかの行は記録だけで、残課題は無い (再評価の trigger は各行に書いた)

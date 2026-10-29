@@ -1,7 +1,5 @@
 # 982 (cleanup): 使われていない CallersText / EvidenceText を消す
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-30〜）
-
 起票日: 2026-10-30
 
 ## 概要
