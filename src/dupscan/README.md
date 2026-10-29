@@ -264,36 +264,20 @@ dupscan-gate:
 .PHONY: test dupscan-gate
 ```
 
-CI (GitHub Actions)。runner には dotfiles が無いので、固定した commit の `src/dupscan` を取って build する。
-runner の git が 2.44 より古いと、dupscan が git に付ける `--no-lazy-fetch` を知らずに rc=2 になる (ubuntu-slim は 2.43)。その runner では、CI の中だけでこの引数を外す shim を PATH の先頭に置く (通常の clone では効く場面が無い。実例は obaket の `.github/workflows/dupscan.yml`)。
-**取り出し先は workspace の外にする** (gate は ignore されていない untracked のファイルも読むので、workspace に置くと取ってきた中身まで走査する)。
-base は push の前の commit か PR の対象。CI の checkout は浅いので、base まで履歴を取る (無いと rc=2 で止まる):
+CI (GitHub Actions) は [jiikko/shared-workflows の dupscan-gate](https://github.com/jiikko/shared-workflows/blob/main/docs/dupscan-gate/README.md) を呼ぶ
+(固定した commit の `src/dupscan` を workspace の外で build・base まで履歴を取る checkout・git が 2.44 未満なら `--no-lazy-fetch` を外す shim・
+`-fail-new-exclusions` と `-record` 付きの gate・記録の artifact を持つ。手順はそちらが正本で、ここには写さない)。
+トリガー・paths の絞り込み・concurrency は呼び出し側に書く:
 
 ```yaml
-- uses: actions/checkout@<固定した版>
-  with:
-    fetch-depth: 0            # base の commit まで要る
-- uses: actions/setup-go@<固定した版>
-  with:
-    go-version: "1.25"
-- name: build dupscan
-  env:
-    DOTFILES_SHA: <固定した dotfiles の commit>
-  run: |
-    git clone -q --no-checkout https://github.com/jiikko/dotfiles "$RUNNER_TEMP/dotfiles"
-    git -C "$RUNNER_TEMP/dotfiles" checkout -q "$DOTFILES_SHA" -- src/dupscan src/subproc
-    (cd "$RUNNER_TEMP/dotfiles/src/dupscan" && go build -o "$RUNNER_TEMP/dupscan" .)
-- name: dupscan gate
-  env:
-    BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-    DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-  run: |
-    case "$BASE" in ""|0000000000000000000000000000000000000000) BASE="origin/$DEFAULT_BRANCH" ;; esac  # 新しいブランチの push
-    make test DUPSCAN="$RUNNER_TEMP/dupscan" DUPSCAN_GATE_FLAGS="-base $BASE -fail-new-exclusions"
+jobs:
+  gate:
+    uses: jiikko/shared-workflows/.github/workflows/dupscan-gate.yml@main
+    with:
+      dotfiles_sha: <固定した dotfiles の commit>
 ```
 
-- 手元で確かめたのは Makefile と build の手順 (dotfiles を clone して `src/dupscan` と `src/subproc` だけを取り出し、build して `make test` が写しで落ち・無ければ通り・
-  `dupscan` が無ければ rc=2 で止まる)。obaket の1301には、2026-10-25にGHAの通常runの成功と、写しを足した一時PRのrunがrc=1になった記録がある。上の汎用スニペットが全repoでそのまま動く保証ではないので、新しい導入先でも両方を確かめる
+- 手元で確かめたのは Makefile の手順 (`make test` が写しで落ち・無ければ通り・`dupscan` が無ければ rc=2 で止まる)。shared の workflow は obaket の CI で gate の成功を確かめた (2026-10-30、obaket `e6ca2cac`)。写しで rc=1 になる run は shared に移した後には確かめていない (移す前の obaket 1301 に記録がある)。新しい導入先でも両方を確かめる
 - `-fail-new-exclusions` は CI でだけ付ける (除外を足した PR を人の目に届ける。手元のセルフレビューでは一覧を見て報告に書く)
 - cgo で文法の C のソースを build するので、runner に C compiler が要る (GitHub の macOS / Ubuntu の runner には入っている)
 
