@@ -63,3 +63,4 @@ Maximum は全員 (`_common/modes.md`)。
 
 - 2026-10-29: 本文を今のコードと突き合わせた。`resolveRoster` / `baseRoster` / `investigatePrompt`、`_common/agents.md` の注記、Standard の 6+1、forge の skill eval が 0 本は本文どおり。
   modes.md の「根拠」の表はスコアからモードを選ぶ表で、体数の根拠ではない (本文の「見当たらない」は今もそのとおり)。911 と一緒に保留にした
+- 2026-10-29: 914 で agent 31 本を仕分けた。forge の名簿・検出表が名指しする 22 本は、この issue の結論まで残している。再開して名簿を変えるなら、914 の「仕分け」の表から続ける

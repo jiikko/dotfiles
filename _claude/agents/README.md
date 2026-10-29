@@ -1,4 +1,4 @@
-# エージェント索引 (31 件)
+# エージェント索引 (26 件)
 
 `_claude/agents/*.md` の一覧。**名前を知らないと呼べない**状態を避けるための入口
 (issue 001 の項目 21)。`~/.claude/CLAUDE.md` の「スキルファイル参照」表は skill が主役で、
@@ -39,7 +39,6 @@ agent は一部しか載っていないので、agent はここが正本。
 | エージェント | model | 守備範囲 |
 |---|---|---|
 | `test-runner` | opus | 言語非依存のテスト実行 (pytest / jest / rspec / go test / cargo) |
-| `swift-test-runner` | sonnet | Swift のテスト実行と失敗の切り分け (`make test`) |
 | `swiftui-test-expert` | opus | XCTest / XCUITest / ViewInspector の**書き方**と flaky の潰し方 |
 | `debugger` | opus | 実行時エラー・スタックトレース・想定外の挙動 (言語横断) |
 | `research-assistant` | opus | 実装前の技術調査 (公式ドキュメント・ベストプラクティス・比較) |
@@ -53,21 +52,14 @@ agent は一部しか載っていないので、agent はここが正本。
 | `data-persistence-expert` | opus | SwiftData / Core Data / CloudKit / マイグレーション |
 | `swiftui-performance-expert` | opus | View の再描画コスト・Instruments |
 | `image-editing-expert` | opus | 画像編集 UI (Canvas・レイヤ・ツールパレット) |
-| `appstore-monetization-expert` | sonnet | StoreKit・IAP・サブスク・審査ガイドライン |
 | `appstore-submission-expert` | sonnet | App Store Connect の操作 (提出・TestFlight・リジェクト対応) |
 | `crash-analyzer` | sonnet | クラッシュレポートの取得と解析 |
-| `xcodebuild-runner` | haiku | `make build` を回してコンパイルエラーを読む |
 
-## 🚨 ThumbnailThumb 専用 (他プロジェクトでは使えない)
+## 置いていないもの
 
-`bin/tt-client` など TT 固有の道具に依存する。**他の repo で呼んでも動かない**。
-プロジェクトローカル (`<TT>/.claude/agents/`) へ移すのが本来の置き場所
-(issue 001 の項目 8 / 13。移動は TT 側を触るときにまとめて行う)。
-
-| エージェント | model | 守備範囲 |
-|---|---|---|
-| `tt-api-expert` | sonnet | TT の API モード (`bin/tt-client`) |
-| `smoke-test-runner` | sonnet | TT のスモークテスト (quick / standard / complete) |
+- ThumbnailThumb 専用の `tt-api-expert` / `smoke-test-runner` と、`xcodebuild-runner` / `appstore-monetization-expert` / `swift-test-runner` は、
+  2026-10-29 に global から消した (issue 914)。どれも使われておらず (このマシンの 08-22 以降で 0 回)、dotfiles からの参照も無かった。
+  ThumbnailThumb と baby-note は自分の `.claude/agents/` に写しを持つ (project の agent が同じ名前の global より優先される)
 
 ## ハーネス組み込み
 
