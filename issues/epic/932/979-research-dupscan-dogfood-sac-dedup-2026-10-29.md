@@ -1,5 +1,7 @@
 # 979 (research): SAC (swift-standard-app-components) の重複の統合で使った所見
 
+> 🚨 **担当中: air5 (glogx)**（2026-10-29〜）
+
 起票日: 2026-10-29
 
 ## 概要
