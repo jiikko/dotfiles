@@ -88,7 +88,7 @@ dupscan を Claude Code が使えば、①同じ役割のメソッドを重ね�
 | 案 | 具体的な内容 | 状態 |
 |---|---|---|
 | **A1** | PreToolUse(Write\|Edit) の hook `_claude/hooks/inject-dupscan-candidates-on-new-func.sh`。書く文字列 (Edit は `new_string`、Write は `content`) にある新しい `func name(` (Edit の `old_string` と書き換え前のファイルに無いもの) を最大 3 つ取り、名前ごとに `dupscan index -name <名前> -limit 20` を 1 回引いて、**名前が大小無視で等しい / 前方一致で共通部分 6 文字以上**の既存の定義を、名前ごとに最大 3 行、additionalContext として注入する。除く: 5 文字未満・Test/Benchmark/Fuzz/Example・init/main/String/Error/Close ほか・Go のメソッド。session × 名前で 1 回。候補が無ければ無音。全体で 6 秒の予算。失敗は無音 rc=0 | **実装済み**。テスト 18 件・変異 6 本で赤 (`tests/claude/test_inject_dupscan_candidates_on_new_func.sh`)。実機: 偽の `readCookies` を足す Edit で `Workspace.ReadCookies` を注入 (dotfiles の `src` で 1 名前あたり約 1 秒) |
-| A1 の計測 | hook が注入のたびに `~/.cache/claude-dupscan-inject.log` へ `時刻 session 名前 候補数` を足す。`scripts/dupscan_usage_report.py` が「注入 N 回 / 候補あり M 回 / session K 本」を出す | **実装済み**。効果の判定は「候補ありの注入の後、同じ session で新しい関数が書かれなかった / 既存を呼んだか」を見る必要があり、**まだ測っていない** (転記元の transcript の読み方を決めてから) |
+| A1 の計測 | hook が注入のたびに `~/.cache/claude-dupscan-inject.log` へ `時刻 session 名前 候補数` を足す (2026-10-30 の 987 から 5 列目に引き方 `name` / `returns` が付く。report は 4 列・5 列の両方を数え、戻り型で出した注入の数も出す)。`scripts/dupscan_usage_report.py` が「注入 N 回 / 候補あり M 回 / session K 本」を出す | **実装済み**。効果の判定は「候補ありの注入の後、同じ session で新しい関数が書かれなかった / 既存を呼んだか」を見る必要があり、**まだ測っていない** (転記元の transcript の読み方を決めてから) |
 | A2 | 2026-11-04 に 941 の案内の効果を測る。上がらなければ pull 型の案内の追加は打ち止め | 日付待ち |
 | A3 | `CLAUDE.md` に文面を足さない | 方針のみ |
 | B (942 b') | 解析不完全の通知を 1 行にする | **採らない** (942 で決着。942 は c の縮小版を採って done) |

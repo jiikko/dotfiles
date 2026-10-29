@@ -19,12 +19,27 @@ TMP_ROOT=$(mktemp -d); trap 'rm -rf "$TMP_ROOT"' EXIT
 export TMPDIR="$TMP_ROOT" XDG_CACHE_HOME="$TMP_ROOT/cache"
 
 FAKE_BIN="$TMP_ROOT/bin"; mkdir -p "$FAKE_BIN"
+# sleep-ok: stub: 偽物の slowWidget は予算より長くかかる dupscan を演じる (待ちではない。hook の側が時間切れで打ち切る)
 cat > "$FAKE_BIN/dupscan" <<'FAKE'
 #!/bin/sh
 # 引数: index -name NAME ...  → NAME に応じた行を返す
-while [ $# -gt 0 ]; do [ "$1" = "-name" ] && name="$2"; shift; done
+returns=""
+while [ $# -gt 0 ]; do [ "$1" = "-name" ] && name="$2"; [ "$1" = "-returns" ] && returns="$2"; shift; done
 echo "構文近似: 名前と引数ラベル/個数で照合。"
+# location は作った値: 名前だけでは同じ名前で別の型を返す定義が上位 20 件を埋めて location(at:) が出ず、戻り型と組み合わせると出る形を模す
+if [ "$name" = location ]; then
+  if [ "$returns" = StorageLocation ]; then echo "src/core/Store.swift:40 StorageConnection.location(at: path: String) -> StorageLocation (呼び出し ~12)"; exit 0; fi
+  # 汎用の型で引くと、同じ型を返す無関係な定義が並ぶ (hook は汎用の型では -returns を付けないので、これが出たら退行)
+  if [ "$returns" = String ]; then echo "src/fmt/Fmt.swift:9 Fmt.location(of: v: Int) -> String (呼び出し ~3)"; exit 0; fi
+  for i in $(seq 1 20); do echo "src/ui/V$i.swift:3 View$i.location(in: x: Int) -> CGPoint (呼び出し ~1)"; done
+  exit 0
+fi
+# slowWidget の戻り型の問い合わせは、hook の予算 (6 秒) より長くかかる大きい repo を模す (名前の照合の候補が残るかを見る)
+# exec で置き換える: hook の時間切れが殺すのは子の pid なので、sh の子として起こした待ちの道具は孤児で残る
+if [ "$name" = slowWidget ] && [ -n "$returns" ]; then exec sleep 30; fi
+[ -n "$returns" ] && exit 0
 case "$name" in
+  slowWidget) echo "src/a/w.go:1-9 slowWidget(x int) Widget (呼び出し ~2)" ;;
   readCookies) echo "src/chromecookie/cookie.go:291-349 Workspace.ReadCookies(profile string) (Result, error) (呼び出し ~1) // doc" ;;
   loadSettings) echo "src/a/s.go:10-20 loadSettingsFile(p string) error (呼び出し ~2)"; echo "src/b/s.go:5-9 reloadSettings() (呼び出し ~0)" ;;
   TestReadCookies) echo "src/a/t_test.go:1-9 TestReadCookies(t *testing.T) (呼び出し ~0)" ;;
@@ -152,9 +167,18 @@ next_session; expect_has "Swift: #\"\"\"…\"\"\"# の raw string の中の \"\"
 next_session; expect_silent "Swift: #\"…\"# の raw string の中の func は引かない" "$(run Write "$REPO/src/foo/Raw2.swift" $'let s = #"""\nfunc readCookies() {}\n"""#\n')"
 next_session; expect_silent "git が ignore するパス (tmp/) では引かない" "$(run Write "$REPO/tmp/tool.go" $'package main\n\nfunc readCookies() {}\n')"
 
+next_session; expect_has "Swift: 戻り型が取れたら名前と組み合わせて引き、同じ名前の別の型の定義に埋もれた既存の関数を出す (954 の形)" "$(run Write "$REPO/src/foo/Ctx.swift" $'struct Ctx {\n    func location(path: String) -> StorageLocation {\n        fatalError()\n    }\n}\n')" "StorageConnection.location(at:"
+next_session; expect_lacks "Swift: 汎用の戻り型 (String) では型で引かない (名前だけの結果になる)" "$(run Write "$REPO/src/foo/Ctx2.swift" $'struct Ctx2 {\n    func location(path: String) -> Swift.String {\n        fatalError()\n    }\n}\n')" "Fmt.location(of:"
+next_session; expect_has "Go: 複数の戻り (T, error) は error でない最初の型で引く" "$(run Write "$REPO/src/foo/loc.go" $'package foo\n\nfunc location(p string) (*StorageLocation, error) {\n\treturn nil, nil\n}\n')" "StorageConnection.location(at:"
+
+next_session; expect_has "Swift: 汎用の戻り型でも名前の照合の結果は出す (何も出さない退行を見分ける)" "$(run Write "$REPO/src/foo/Ctx3.swift" $'struct Ctx3 {\n    func location(path: String) -> String {\n        fatalError()\n    }\n}\n')" "View1.location(in:"
+next_session; expect_lacks "Swift: 本体の無い protocol の要件では、次の行の別の要件の戻り型で引かない" "$(run Write "$REPO/src/foo/Proto.swift" $'protocol P {\n    func location(path: String)\n    subscript(i: Int) -> StorageLocation { get }\n}\n')" "StorageConnection.location(at:"
+
+next_session; expect_has "戻り型の問い合わせが時間切れでも、名前の照合で見つけた候補は出す (例外で全体を黙らせない)" "$(run Write "$REPO/src/foo/slow.go" $'package foo\n\nfunc slowWidget(x int) Widget {\n\treturn Widget{}\n}\n')" "slowWidget(x int) Widget"
+
 n=$(grep -c . "$TMP_ROOT/cache/claude-dupscan-inject.log" || true)
-if [ "$n" -ge 5 ] && grep -q $'\treadCookies\t1$' "$TMP_ROOT/cache/claude-dupscan-inject.log"; then
-  echo "✓ 注入の計測ログに「session 名前 候補数」が残る"; ok=$((ok+1))
+if [ "$n" -ge 5 ] && grep -q $'\treadCookies\t1\tname$' "$TMP_ROOT/cache/claude-dupscan-inject.log"; then
+  echo "✓ 注入の計測ログに「session 名前 候補数 引き方」が残る"; ok=$((ok+1))
 else
   echo "✗ 計測ログが想定と違う (行数 $n)"; fail=$((fail+1))
 fi

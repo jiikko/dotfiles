@@ -6,7 +6,9 @@
 #
 # 🚨 止めない (additionalContext だけ)。permissionDecision を返さない。どんな失敗も無音で rc=0 (fail-open)。
 # 🚨 出しすぎない: session × 名前で 1 回。候補が無ければ何も出さない。名前の一致だけを出す (部分一致の雑音は出さない)。
-# 🚨 遅延: 名前 1 つにつき dupscan index を 1 回 (全体で 6 秒の予算。超えたら残りは引かない)。
+#    戻り型が取れたら、名前と戻り型の組み合わせ (index -name 名前 -returns 型) で先に引く。名前だけだと、同じ名前で別の型を返す定義が上位を埋めて
+#    上限の外へ落ちる。名前の照合の後に残りの予算で引く。汎用の型 (error・string・bool・数値・Self など。GENERIC_RETURNS) では型で引かない。引数型では引かない (string や context が多く雑音になる)
+# 🚨 遅延: 名前 1 つにつき dupscan index を最大 4 回 (名前・語の前方 2 つ・戻り型。全体で 6 秒の予算。超えたら残りは引かず、時間切れの問い合わせは空として続ける)。
 #
 # 判定 (python):
 #   - file_path が .go / .swift。dupscan と git が在る。repo の root は書くファイルの属する git repo
@@ -24,10 +26,10 @@
 #   - 新しい型 = 書く文字列にある型の宣言 (Swift の class / struct / actor / enum / protocol、Go の行頭の `type 名前`) のうち、書き換え前に無いもの。
 #     同じ言語のファイルに同じ名前の型の宣言があれば (private を含む) 出す。git grep の字句の完全一致で、dupscan は使わない
 #     (index は型を返さず、Go では def が使えない)。型は計測ログに書かない (ログは関数の注入の A-B を数える)
-# 検出しない形 (silent): Bash の書き込み・NotebookEdit・名前が違うが同じ役割の関数 (署名の近さは見ない。dupscan search / index -returns で引く)・
+# 検出しない形 (silent): Bash の書き込み・NotebookEdit・名前が違うが同じ役割の関数 (戻り型は名前と組み合わせて引くだけで、型だけでは引かない。dupscan search / index -returns で引く)・
 #   Swift のメソッドと Go の関数の区別 (Swift は字下げのある func も新しい関数として扱う)・Go の `type (` の中の型・
 #   引数付きの属性 (`@available(…)`) の付いた Swift の型・typealias
-# 計測: 注入のたびに ${XDG_CACHE_HOME:-~/.cache}/claude-dupscan-inject.log へ「時刻 session 名前 候補数」を 1 行足す
+# 計測: 注入のたびに ${XDG_CACHE_HOME:-~/.cache}/claude-dupscan-inject.log へ「時刻 session 名前 候補数 引き方 (name / returns)」を 1 行足す
 #   (scripts/dupscan_usage_report.py が数える)
 
 set -uo pipefail
@@ -148,6 +150,58 @@ def near(existing, new):
     short = existing if len(existing) <= len(new) else new
     return (a.startswith(b) or b.startswith(a)) and len(short) >= 6 and words(short) >= 2
 
+# 戻り型で引かない汎用の型 (引くと同じ型を返す無関係な関数が並ぶ)。比べる前に小文字にする
+GENERIC_RETURNS = {"error", "string", "bool", "int", "int32", "int64", "uint", "uint32", "uint64", "float32", "float64", "byte", "rune", "any",
+                   "void", "self", "double", "float", "data", "character", "never", "some", "struct", "interface", "func", "map", "chan",
+                   "element", "value", "key", "wrapped", "output"}
+
+def index_lines(args, scope, left):
+    """dupscan index の stdout の行。時間切れはこの問い合わせだけを空にする (例外で hook 全体が黙り、それまでの候補まで捨てる形にしない)。"""
+    try:
+        r = subprocess.run(["dupscan", "index"] + args + ["-doc-bytes", "60", scope], capture_output=True, text=True, timeout=left)
+    except subprocess.TimeoutExpired:
+        return []
+    return r.stdout.splitlines()
+
+def return_type(src, start, swift):
+    """src の start (関数の名前の位置) から始まる署名の戻り型の字面。取れない・汎用の型なら None。
+    Go は引数の閉じ括弧から `{` までで、複数の戻りなら error でない最初のもの。Swift は `->` の後ろ。ポインタ・配列・optional の記号は外す。"""
+    i = src.find("(", start)
+    if i < 0:
+        return None
+    depth = 0
+    for j in range(i, len(src)):
+        c = src[j]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                break
+    else:
+        return None
+    # 署名の残りは同じ行の `{` まで (本体の無い protocol の要件では、次の行の別の要件の戻り型を読まない)
+    tail = re.split(r"[{\n]", src[j + 1:], maxsplit=1)[0].strip()
+    if swift:
+        if "->" not in tail:
+            return None
+        t = tail.split("->", 1)[1].split(" where ")[0].strip()
+    else:
+        t = tail
+        if t.startswith("(") and t.endswith(")"):
+            parts = [p.strip() for p in t[1:-1].split(",") if p.strip()]
+            if any(len(p.split()) > 1 for p in parts):  # 名前付きの戻り (lo, hi int) は名前を飛ばし、型の付いた要素の型だけを見る
+                parts = [p.split()[-1] for p in parts if len(p.split()) > 1]
+            parts = [p for p in parts if p != "error"]
+            t = parts[0] if parts else ""
+    t = t.lstrip("*&[]").rstrip("?!").strip()
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", t or ""):
+        return None
+    t = t.split(".")[-1]  # 修飾 (Swift.String・context.Context) を外してから汎用の型かを見る
+    if t.lower() in GENERIC_RETURNS or len(t) <= 2:  # 1〜2 文字は型引数 (T・U・ID の類) で、dupscan の部分一致では大半の型に当たる
+        return None
+    return t
+
 def main():
     try:
         d = json.load(sys.stdin)
@@ -184,12 +238,13 @@ def main():
             t = m.group(1)
             if t not in known_types and t not in types and t not in NOT_TYPE:
                 types.append(t)
-        names = []
+        names, returns = [], {}
         for m in rx.finditer(new):
             n = m.group(1)
             if n in known or n in names or len(n) < 5 or n.lower() in SKIP_NAMES or n.lower().startswith(SKIP_PREFIX):
                 continue
             names.append(n)
+            returns[n] = return_type(new, m.start(1), swift)
         if not names and not types:
             return
         dirpath = os.path.dirname(path)
@@ -233,15 +288,14 @@ def main():
             left = BUDGET - (time.monotonic() - start)
             if left <= 0.5:
                 break
-            hits = []
+            hits, how = [], "name"
             # index -name は「既存の名前が引く語を含む」ものを返すので、引く名前より短い既存の名前 (collectWidgets に対する collectWidgetsFast) は
             # 名前そのものでは引けない。名前の語の境目の前方 (長い順に最大 2 つ) も引き、既存の名前が前方になっているものを拾う。
             for q in [n] + stems(n)[:2]:
                 left = BUDGET - (time.monotonic() - start)
                 if left <= 0.5:
                     break
-                r = subprocess.run(["dupscan", "index", "-name", q, "-limit", "50" if q != n else "20", "-doc-bytes", "60", scope], capture_output=True, text=True, timeout=left)
-                for line in r.stdout.splitlines():
+                for line in index_lines(["-name", q, "-limit", "50" if q != n else "20"], scope, left):
                     m = LINE.match(line)
                     if not m or line in hits:
                         continue
@@ -249,7 +303,21 @@ def main():
                         hits.append(line)
                 if hits:
                     break
-            logged.append((n, len(hits)))
+            # 戻り型が取れたら、名前の照合の後に残りの予算で、名前と戻り型の組み合わせでも引いて先頭へ置く。名前だけだと、同じ名前で
+            # 別の型を返す定義 (型ごとの location など) が上位 20 件を埋めて目的の定義が落ちる。名前の照合より先に引かない: 1 回が 2 秒かかる
+            # 大きい repo では、先に引くと名前の照合が予算切れで走らなくなる
+            t = returns.get(n)
+            left = BUDGET - (time.monotonic() - start)
+            if t and left > 0.5:
+                typed = []
+                for line in index_lines(["-name", n, "-returns", t, "-limit", "20"], scope, left):
+                    m = LINE.match(line)
+                    if m and line not in typed and near(m.group(3), n) and reachable(root, m.group(1), line, rel, ext):
+                        typed.append(line)
+                if any(line not in hits[:3] for line in typed[:3]):
+                    how = "returns"
+                hits = typed + [h for h in hits if h not in typed]
+            logged.append((n, len(hits), how))
             if hits:
                 out.append("`%s` に近い既存の定義:\n%s" % (n, "\n".join("  " + h for h in hits[:3])))
         if logged:
@@ -257,8 +325,8 @@ def main():
             try:
                 os.makedirs(cache, exist_ok=True)
                 with open(os.path.join(cache, "claude-dupscan-inject.log"), "a") as f:
-                    for n, c in logged:
-                        f.write("%s\t%s\t%s\t%d\n" % (time.strftime("%Y-%m-%dT%H:%M:%S%z"), session, n, c))
+                    for n, c, how in logged:
+                        f.write("%s\t%s\t%s\t%d\t%s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S%z"), session, n, c, how))
             except OSError:
                 pass
         parts = []

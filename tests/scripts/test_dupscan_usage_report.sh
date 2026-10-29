@@ -66,17 +66,19 @@ check "--by-day は日ごとに分ける (1 つの日にまとまる)" '(.bucket
 OUT=$(python3 "$REPORT" --projects-dir "$PROJECTS" --days 3 --split "$(date -u -v+1d '+%Y-%m-%dT%H:%M:%S+00:00')" --json)
 check "--split より前の呼び出しは before に入り、after は空" '.buckets.before.sessions == 1 and .buckets.after.sessions == 0'
 
-# 注入 hook の計測ログ (時刻 session 名前 候補数)。窓の外・壊れた行は数えない
+# 注入 hook の計測ログ (時刻 session 名前 候補数 [引き方])。窓の外・壊れた行は数えない。5 列目は後から足した列で、4 列の古い行も数える
 now_iso=$(date '+%Y-%m-%dT%H:%M:%S%z')
 {
   printf '%s\ts1\tfoo\t2\n' "$now_iso"
   printf '%s\ts1\tbar\t0\n' "$now_iso"
   printf '%s\ts2\tbaz\t1\n' "$now_iso"
+  printf '%s\ts2\tqux\t1\treturns\n' "$now_iso"
+  printf '%s\ts2\tquux\t0\treturns\n' "$now_iso"
   printf '2000-01-01T00:00:00+0900\ts9\told\t3\n'
   printf 'broken line\n'
 } > "$TMP_ROOT/inject.log"
 OUT=$(python3 "$REPORT" --projects-dir "$PROJECTS" --days 3 --inject-log "$TMP_ROOT/inject.log" --json)
-check "注入ログ: 窓の中の 3 回・候補あり 2 回・session 2 本 (古い行と壊れた行は数えない)" '.inject == {"injections":3,"with_candidates":2,"sessions":2}'
+check "注入ログ: 窓の中の 5 回・候補あり 3 回 (うち戻り型で引いた 1 回)・session 2 本 (古い行と壊れた行は数えない。4 列と 5 列の両方を数える)" '.inject == {"injections":5,"with_candidates":3,"with_candidates_by_returns":1,"sessions":2}'
 OUT=$(python3 "$REPORT" --projects-dir "$PROJECTS" --days 3 --inject-log "$TMP_ROOT/none.log" --json)
 check "注入ログが無ければ null" '.inject == null'
 
