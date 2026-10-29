@@ -1,0 +1,1 @@
+../981-bug-dupscan-gate-silent-on-generated-go-files.md
