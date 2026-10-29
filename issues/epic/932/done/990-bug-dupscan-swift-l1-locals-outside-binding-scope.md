@@ -1,7 +1,5 @@
 # 990 (bug): Swift の L1 が、束縛の届かない所の同じ綴りの外側の名前を番号にする
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-30〜）
-
 起票日: 2026-10-30
 
 > 反証レビュー: 2026-10-30 に通した (sonnet)。書き漏れの 4 形・scope の境界の候補・方針の事実の誤り (平らなのは conv でなく木) を反映した。
@@ -52,7 +50,7 @@ Swift は名前解決が無いので近似 (`src/dupscan/internal/lang/swift/out
 
 ## 関連
 
-- [974](done/974-bug-dupscan-l1-numbers-shadowed-outer-names.md): Go は名前解決、Swift は近似にした。その残り
+- [974](974-bug-dupscan-l1-numbers-shadowed-outer-names.md): Go は名前解決、Swift は近似にした。その残り
 
 ## 結果 (2026-10-30、dotfiles-31)
 
