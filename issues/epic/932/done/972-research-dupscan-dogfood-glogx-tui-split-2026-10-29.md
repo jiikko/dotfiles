@@ -1,7 +1,5 @@
 # 972 (research): glogx の tui.go の分割 (971) で dupscan を使った所見
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-29
 
 ## 概要

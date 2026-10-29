@@ -24,7 +24,7 @@
 | [965](done/965-research-dupscan-dogfood-treefiler-dedup-2026-10-29.md) | src/treefiler の重複の統合で使った所見。sweep の節 5 は Test 関数の中を見ない (仕様だが出力に出ない)・同じ単位の 2 つ目の allow-group が黙って効かない・単位の allow は組の全員に要る・Go の `callers New` が `errors.New` を拾う |
 | [966](done/966-ux-dupscan-sweep-silent-allow-marks-2026-10-29.md) | src/tuikit の sweep の 3 組を閉じたときの所見。sweep が印で消した組の数と、人数の合わない allow-group を出すようにした (起点を絞ったときは L1 で多い印だけ)。反証レビューの P2 2 件 (起点を絞ると印が粗い段の別の組に効く・levels を省いたパスの除外が L1m に効かない) を記録 |
 | [970](done/970-refactor-dupscan-group-containment-one-check.md) | 「組が別の組に含まれるか」の判定が 3 か所 (組分け・sweep の節 2・節 6) にあったのを group.Subset に寄せた。done |
-| [972](972-research-dupscan-dogfood-glogx-tui-split-2026-10-29.md) | glogx の tui.go の分割 (971) で使った所見。雑音 3 件: Go の index -file に Swift の注意書き / -file でも無関係な testdata の「解析不完全」 / tmp/ の使い捨ての道具にも候補の注入 |
+| [972](done/972-research-dupscan-dogfood-glogx-tui-split-2026-10-29.md) | glogx の tui.go の分割 (971) で使った所見。雑音 3 件: Go の index -file に Swift の注意書き / -file でも無関係な testdata の「解析不完全」 / tmp/ の使い捨ての道具にも候補の注入 |
 
 ## 完了した子issue
 
