@@ -1,7 +1,5 @@
 # 955 (research): dupscan を使って vlc-multi-video-player のテストの重複を解消したときの所見 (2026-10-28)
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-28
 
 ## 概要
@@ -86,8 +84,10 @@ vlc-multi-video-player で「dupscan を使ってテストの重複を解消す�
 ## 進捗
 
 - [x] 起票 (2026-10-28)
-- [ ] F1 の残り 1 ファイル (`VideoGridLoadingCoordinator.swift`) の原因
-- [ ] F1 の文法を直す (`nonisolated(unsafe) let` は 954 で回避済み。残り 1 ファイルの原因は上の項)
+- [x] F1 の残り 1 ファイル (`VideoGridLoadingCoordinator.swift`) の原因 (2026-10-29。958 で解消済み)
+- [x] F1 の文法を直す (`nonisolated(unsafe) let` は 954、残り 1 ファイルの形は 958 で回避済み)
+- [ ] F2 (型の単位で「メンバーの多くが別の型の写し」を 1 つの候補にまとめる): 未着手。機能の追加で、作るかの判断が先
+- [x] F3 (2026-10-29。節 3 の見出しで w の意味を言う。文の数が少ない対を下げる案は採っていない)
 - [x] F4 (2026-10-29)
 
 - 2026-10-29: 954 を done にした。F1 の `nonisolated(unsafe) let` は 954 で回避済み (関数の中の出現を読み直す。読めないのはその関数だけで、ファイル全体が外れるわけではない)。同じ仕組みで空のタプルの引数 `f(())` も読めるようにした。
@@ -100,3 +100,12 @@ vlc-multi-video-player で「dupscan を使ってテストの重複を解消す�
   - 変異: 5 つの command をそれぞれ旧来の解釈へ戻す 5 本と、位置引数より後ろの flag を捨てる 1 本が、すべて想定のサブテストで赤
   - 敵対的レビュー (opus) 1 周: Makefile・workflow・skill の呼び方は壊れない。P2 (`-` で始まる dir) は README に `--` を書いて受容、P3 (report と sweep のケースが flag の効きを見ていない) はテストを強めて直した
   - 検査: dupscan の test・lint、root の `make test-lint`・`make test-dupscan-gate`、`bin/skill-eval dupscan` (PASS) がいずれも rc=0
+- 2026-10-29: F1 の残り 1 ファイルの原因を特定した。vlc を clone せず、`VideoGridLoadingCoordinator.swift` (vlc `3112c09`、267 行) だけを GitHub API で取り、1 ファイルの repo で `dupscan -v .` を比べた。
+  - 起票時の版 (`e9a07e7f`): 「読めない構文があるファイル: a/C.swift」・比べなかった単位 5。今の版 (origin/master): 読めないファイル 0・20 単位
+  - 原因の形: 151 行の `continuation.resume(returning: ())` (ラベル付きの引数に空のタプル)。5 行の最小の再現 (`c.resume(returning: ())` を持つ関数) も、旧版は読めない・今の版は読める。`c.resume()` の版はどちらでも読める
+  - 直した commit: `git bisect` (src/dupscan の 21 commit) で `fix(dupscan): Swift の読み違え 4 種を読み直しで回避する (issue 958 マイルストーン 1)` (181335ff5)。ラベル付きの形 `g(value: ())` は `internal/lang/swift/isolation_test.go` の `TestMisparse958Repairs` の `A_labeled` が既に守っているので、テストは足していない
+- 2026-10-29: F3 を直した (commit `feat(dupscan): sweep の節 3 の見出しで w の意味を言う (issue 955 F3)`)。見出しに「行頭は Dice と w = 共有している部分木の重みの合計 (寄せたときに減る量の目安) で、w の大きい順」を足した (README は既に書いていた)
+  - 変異: 見出しから説明を消すと `TestSweepSimilarRanksByIsSharedWeightNotOnlyScore` だけが赤 (mutate-verify rc=0)
+  - 敵対的レビューは省略 (出力の見出しの文言だけで、判定・並びは変えていない)
+  - 検査: dupscan の test・lint、root の `make test-lint`・`make test-dupscan-gate` がいずれも rc=0
+  - 提案の後半 (2 文の setUp のような文の数が少ない対を下げる) は採っていない。並びは 946 で w の大きい順に決めたもので、2 文で w=144 になる対を下げるなら w の数え方の見直しになる。再提起するなら、節 3 の上位に寄せる価値の無い小さい対が並ぶ実例を添える
