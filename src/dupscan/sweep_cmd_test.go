@@ -445,3 +445,32 @@ func tinyB(xs []int, n int) int {
 		t.Errorf("節 3 の見出しで w の意味を言う: %q", head)
 	}
 }
+
+// 印を足した後の sweep は、印で消した組の数を出す (「なし」だけでは印が効いたのか元から組が無いのかを区別できない)。
+// 人数の合わない allow-group は組を消さず、印の場所と数の食い違いを出す (黙って組を出し直すだけにしない)。
+func TestSweepReportsSilencedGroupsAndMiscountedAllowGroup(t *testing.T) {
+	_, out, _ := sweep(t, repoWith(t, map[string]string{"a/a.go": goTwoSinks}))
+	if !strings.Contains(out, "印・除外で静かにした組 (節 1・2): 0\n") || strings.Contains(out, "効いていない allow-group") {
+		t.Fatalf("前提: 印が無ければ消した組は 0・食い違いも無い: %q", out)
+	}
+	marked := strings.Replace(goTwoSinks, "func captureOut", "// dupscan:allow-group 2 intentional 注記\nfunc captureOut", 1)
+	_, out, _ = sweep(t, repoWith(t, map[string]string{"a/a.go": marked}))
+	// 関数の中のクロージャどうしは別の組 (L1) として残るので、関数の組 (L1m) で見る
+	if s := sweepSection(t, out, 2); strings.Contains(s, "[L1m]") {
+		t.Fatalf("前提: 人数の合う allow-group は組を消す: %q", s)
+	}
+	if !strings.Contains(out, "印・除外で静かにした組 (節 1・2): 1\n") {
+		t.Errorf("消した組の数が出ていない: %q", out)
+	}
+	miscount := strings.Replace(marked, "allow-group 2 ", "allow-group 3 ", 1)
+	_, out, _ = sweep(t, repoWith(t, map[string]string{"a/a.go": miscount}))
+	if s := sweepSection(t, out, 2); !strings.Contains(s, "[L1m]") {
+		t.Fatalf("前提: 人数の合わない allow-group は組を消さない: %q", s)
+	}
+	if !strings.Contains(out, "🚨 効いていない allow-group (組は出し続ける。寄せるか、確かめてから人数を直す): a/a.go:8 (人数 3・") {
+		t.Errorf("人数の合わない印の場所と数が出ていない: %q", out)
+	}
+	if !strings.Contains(out, "印・除外で静かにした組 (節 1・2): 0\n") {
+		t.Errorf("効かなかった印を消した組に数えている: %q", out)
+	}
+}
