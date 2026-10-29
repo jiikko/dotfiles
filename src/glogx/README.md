@@ -417,7 +417,7 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `options.go` (引数 allowlist) / `internal/gitdata/gitlog.go` (git 実行と %x1e/%x1f レコード解析) /
   `internal/gitdata/github.go` (repo 解決・GraphQL・集約) / `internal/gitdata/cache.go` (XDG キャッシュ) /
   `external_commands.go` (git/tmux/claude の外部プロセスラッパー。エディタ・ブラウザ・クリップボードは `internal/extcmd`) /
-  `internal/term` (ANSI 色・`Paint`・幅の別名・枠と影 (`box.go`)・端末サニタイズ (`terminal.go`)・glide のキー語彙・最下行の案内の詰め) / `render.go` (コミット行の生成) / `tui.go` (Bubble Tea ブラウズの中核・状態遷移) /
+  `internal/term` (ANSI 色・`Paint`・幅の別名・枠と影 (`box.go`)・端末サニタイズ (`terminal.go`)・glide のキー語彙・最下行の案内の詰め) / `render.go` (コミット行の生成) / `tui.go` と `browse_*.go` (Bubble Tea ブラウズの中核・状態遷移。tui.go は型とメッセージの振り分け、browse_*.go は責務ごとの処理。issue 971) /
   `internal/term/box.go` は枠と影の本体 (tuikit の `layout.Panel` / `OverlayCentered`) に glogx のテーマ色を渡すラッパ (確認ダイアログは tuikit の `confirm`) /
   各種オーバーレイ・モーダル (`internal/commitview/` の diff / job 詳細 / PR 状態、
   `internal/usageview/usage_overlay.go` / `action_modal.go`。右下の通知スタック (新しい通知は上に積まれ
@@ -445,7 +445,7 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   その版で答えが変わる (`ಕಾ` の wc は v0.0.23 で 1、v0.0.27 で 2)。indirect 依存なので無関係な
   更新で判定が反転しうる。ツールは解決版を出力に載せるので、**結果を残すときは必ず一緒に控える**
 - GitHub API はテストでは `CommandRunner` を fake に差し替える (fixture 駆動)
-- `tui.go` のテストは機能クラスタで分割: `tui_helpers_test.go` (共有ヘルパー) /
+- browseModel のテストは機能クラスタで分割: `tui_helpers_test.go` (共有ヘルパー) /
   `tui_nav_test.go` (カーソル/スクロール/アニメ/View) / `tui_panel_test.go` (job パネル/詳細/ETA/CI 取得) /
   `tui_actions_test.go` (push/pull/rerun/update) / `tui_overlay_test.go` (diff/PR 状態/コピー) /
   `internal/term/box_test.go` (枠描画)

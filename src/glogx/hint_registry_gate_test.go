@@ -127,9 +127,9 @@ func (m *browseModel) hintLine() string {
 			ca, cv, cr, cp, cpf, cfound)
 	}
 
-	f, err := parser.ParseFile(fset, "tui.go", nil, 0)
+	f, err := parser.ParseFile(fset, "browse_view.go", nil, 0)
 	if err != nil {
-		t.Fatalf("tui.go をパースできない: %v", err)
+		t.Fatalf("browse_view.go をパースできない: %v", err)
 	}
 	assigns, viaFit, returns, prefixAssigns, viaPrefixFn, found := scanHintLineAssigns(f)
 	if !found {
@@ -190,7 +190,7 @@ func TestEveryHintSurfaceHasPrioOne(t *testing.T) {
 // 🚨 単独の状態だけを並べたテストでは順序を 1 mm も守らない。
 // 実測: overlay 3 case を actModal 7 case の上へ移す変異を当てても全パッケージ緑だった。
 //
-// 対の状態は理論上の話ではない: askRerun() の呼び出し元は job パネルの `r` (tui.go の
+// 対の状態は理論上の話ではない: askRerun() の呼び出し元は job パネルの `r` (browse_ci.go の
 // panel キー処理) と job 詳細の `r` の**2 箇所だけ**なので、`rerunConfirm == true` は
 // **必ず** `panelSHA != ""` か `detailOv.visible()` と同時に真になる。順序が入れ替わると
 // 「job 詳細で r を押した直後、『job を再実行しますか? [Y/n]』が出ないまま y/N を待つ」形になる。
@@ -222,7 +222,7 @@ func TestActiveHintSurfacePrecedence(t *testing.T) {
 			m.actModal.pulling = true
 		}, hintSurfacePulling},
 		// 🚨 self-update は overlay / パネルと**共存する**。
-		// C / X は overlay の上からも通る設計 (tui.go の「overlay の分岐より前に置くこと」)。
+		// C / X は overlay の上からも通る設計 (browse_keys.go の「overlay の分岐より前に置くこと」)。
 		// 順序が下がると、実行中を示す唯一の表示が消えたまま Ctrl-C がブロックされ、
 		// 「効かないのに理由が画面に無い」状態になる。
 		{"job パネル + self-update", func(m *browseModel) {

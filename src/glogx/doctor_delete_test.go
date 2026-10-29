@@ -81,7 +81,7 @@ func TestRestartPromptDefersWhileDeleteConfirm(t *testing.T) {
 
 // 中断に使えるキーと、案内に書いてあるキーが一致する。
 //
-// 🚨 案内は doctor_delete.go、キーの分岐は tui.go と**層が分かれている**ので、片側だけ変えても
+// 🚨 案内は doctor_delete.go、キーの分岐は browseModel (browse_keys.go / browse_lifecycle.go) と**層が分かれている**ので、片側だけ変えても
 // build も既存テストも通る。
 //
 // 🚨 期待値を deleteAbortKeys から作らない。それは production と同じ定数から期待値を作る形で、

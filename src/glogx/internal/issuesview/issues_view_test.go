@@ -94,7 +94,7 @@ func TestIssuesViewRescanReanchorsTabAndCursor(t *testing.T) {
 	}
 }
 
-// カテゴリ移動は左右対称に効く。右は tui.go が ctrl+f を "right" へ正規化するので、viewer が
+// カテゴリ移動は左右対称に効く。右は browse_keys.go が ctrl+f を "right" へ正規化するので、viewer が
 // 自分で持つのは左の ctrl+b だけ (ユーザー要望 2026-07-31)。右だけ効いて左が無い状態は
 // 「Tab で行き過ぎたら 1 周するしかない」体験になる。
 func TestIssuesViewTabMovesBothDirections(t *testing.T) {
@@ -109,7 +109,7 @@ func TestIssuesViewTabMovesBothDirections(t *testing.T) {
 	if got := v.currentTab(); got != "" {
 		t.Fatalf("ctrl+b で左へ戻らない: %q", got)
 	}
-	// tui.go の正規化を経た右移動 (ctrl+f → "right") と同じ経路も対称に効く
+	// browse_keys.go の正規化を経た右移動 (ctrl+f → "right") と同じ経路も対称に効く
 	v.HandleKey("right", vp(10)) // All → human
 	if got := v.currentTab(); got != issues.HumanTab {
 		t.Fatalf("right で右へ動かない: %q", got)

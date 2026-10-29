@@ -391,9 +391,9 @@ func (v *IssuesView) SettleClose() {
 // 🚨 viewer を畳む唯一の出口にする。演出の着地 (settleClose) とキーによる即着地の両方が
 // ここを通ることで、片方が stopWatch を通らずに次の watchCmd が走る = watcher が二重に居座る、
 // という取りこぼしが構造的に起きない。
-// 戻り値は「この呼び出しで実際に畳んだか」。🚨 tui.go が演出中のキーを 1 つだけ捨てる判定に使う
+// 戻り値は「この呼び出しで実際に畳んだか」。🚨 browse_keys.go の handleKey が演出中のキーを 1 つだけ捨てる判定に使う
 // (素通しで別ターゲットを開いてしまう e。理由はそちらのコメント)。
-func (v *IssuesView) FinishClose() bool { //nolint:unparam // 戻り値は main (tui.go の演出中のキーの判定) が使う。unparam はパッケージの外の呼び出しを見ない
+func (v *IssuesView) FinishClose() bool { //nolint:unparam // 戻り値は main (browse_keys.go の演出中のキーの判定) が使う。unparam はパッケージの外の呼び出しを見ない
 	if !v.closing {
 		return false
 	}
@@ -1383,7 +1383,7 @@ func (v *IssuesView) clearNumberFilter() {
 // ownsKeys は viewer 自身がキーを解釈し切る状態か (URL ピッカー入力中 / 番号の絞り込み入力中 /
 // 「次にやる」の y/N 確認中)。statusView.ownsKeys と対。
 //
-// 🚨 browseModel 側の U 横取り (tui.go の issuesOv.visible() ブロック) は、この状態では止める。
+// 🚨 browseModel 側の U 横取り (browse_screens.go の routeKeyToIssues) は、この状態では止める。
 // 止めないと viewer が持つキー語彙を外側が奪う: URL ピッカーは
 // 「印字文字はすべて検索語に流す (個別のキーを先に横取りすると、その文字を含む URL を
 // 検索できなくなる)」と宣言しているのに、大文字 `U` だけが残量モーダルに化けていた
@@ -1509,9 +1509,9 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 			break // 絞り込み中はカテゴリの概念が無い (ヘッダーもタブ行を出していない)
 		}
 		v.moveTab(1)
-	// ctrl+b で左へ (ユーザー要望 2026-07-31)。右は tui.go が ctrl+f を "right" へ正規化するので
+	// ctrl+b で左へ (ユーザー要望 2026-07-31)。右は browse_keys.go が ctrl+f を "right" へ正規化するので
 	// 既に効いており、ここで足すのは対になる左だけ。C-b を「←の別名」として全ビューに広げないのは
-	// 一覧・パネル側の left に別の意味を与えないため (tui.go の C-f 正規化の注記を参照)。
+	// 一覧・パネル側の left に別の意味を与えないため (browse_keys.go の C-f 正規化の注記を参照)。
 	case "shift+tab", "h", "left", "ctrl+b":
 		if v.numFilter.active {
 			break
@@ -1616,13 +1616,13 @@ func (v *IssuesView) actionKey(key string) (tea.Cmd, bool) {
 		// e は git log 一覧の e (nvim を repo root で開く) と語彙を揃えたもの。v は先にあった
 		// 割当で、打ち慣れを壊さないため残す (本文モードの hint が案内するのは e だけ)。
 		//
-		// 🚨 閉じる演出中 (issuesCloseDuration) の e はここへ来ない: tui.go が
+		// 🚨 閉じる演出中 (issuesCloseDuration) の e はここへ来ない: browse_keys.go の handleKey が
 		// finishClose で viewer を畳んでから通常のキー処理へ素通しするため、git log 一覧側の
 		// e (openEditorAtRoot = `nvim .`) に着弾する。板がまだ見えているのに repo root が
 		// 全画面で開くので誤爆の体感は軽くない。それでも素通しから e を外していないのは、
-		// tui.go が「演出中のキーを飲まない」を明記した設計判断として持っているため
+		// browse_keys.go が「演出中のキーを飲まない」を明記した設計判断として持っているため
 		// (飲むと q で閉じた直後の q が効かない窓ができる)。窓を閉じたくなったら、
-		// この case ではなく tui.go の素通し側の判断を変えること。
+		// この case ではなく browse_keys.go の素通し側の判断を変えること。
 		return v.editCmd(), true
 	case "y":
 		v.copyPath()
@@ -1666,7 +1666,7 @@ func (v *IssuesView) bodyWidth(total int) int { return max(v.drawer.targetWidth(
 func (v *IssuesView) handleBodyKey(key string, vp IssuesViewport, rows int) tea.Cmd {
 	switch key {
 	// Enter は「TUI 内の開閉 toggle」(ユーザー要望 2026-08-01)。一覧の Enter で開き、本文の
-	// Enter で閉じる。glogx 本体の job パネル (tui.go の handlePanelKey) が既にこの語彙なので、
+	// Enter で閉じる。glogx 本体の job パネル (browse_ci.go の handlePanelKey) が既にこの語彙なので、
 	// viewer だけ Enter が行送りだと同じキーの意味が画面ごとに変わる。
 	// 🚨 term.PagerScrollKey へ渡す前に捌くこと: あちらは enter を 1 行送りに写す。
 	case "q", "esc", "h", "left", "enter":

@@ -3,7 +3,7 @@
 #
 # なぜ別に要るか: doctor 機能は 2 つの module にまたがっている。
 #   - 判定と CLI の本体: src/doctor (svcdoctor / diskdoctor)
-#   - 画面とキャッシュ: src/glogx/internal/doctorview + main (doctor_*_test.go・tui.go) の配線
+#   - 画面とキャッシュ: src/glogx/internal/doctorview + main (doctor_*_test.go・tui.go・browse_*.go) の配線
 # 既存レーンは module 単位なので、**doctor 機能が緑かを 1 つの check で見られない**。
 # src_doctor.yml は module 単体、src_glogx.yml は glogx 全体 (実測 31 秒) で、
 # glogx 側の doctor テストはその中に埋もれる。ここは doctor だけを **実測 1 秒**で回し、
@@ -29,6 +29,7 @@ on:
       - 'src/glogx/doctor_*.go'
       - 'src/glogx/internal/doctorview/**'
       - 'src/glogx/tui.go'
+      - 'src/glogx/browse_*.go'
       - .github/workflows/doctor.yml
       - .github/go-version
   pull_request:
@@ -38,6 +39,7 @@ on:
       - 'src/glogx/doctor_*.go'
       - 'src/glogx/internal/doctorview/**'
       - 'src/glogx/tui.go'
+      - 'src/glogx/browse_*.go'
       - .github/workflows/doctor.yml
       - .github/go-version
   workflow_dispatch:  # GitHub UI からの手動再実行用

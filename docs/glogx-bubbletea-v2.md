@@ -15,10 +15,10 @@ lipgloss / bubbles の v2 も同様 (`charm.land/lipgloss/v2` / `charm.land/bubb
 
 | v1 | v2 | 置き場所 |
 |---|---|---|
-| `View() string` | `View() tea.View` (画面内容 + 端末モードを毎フレーム宣言) | `tui.go` の `View` / 中身は `viewLines()` に分離 |
-| `tea.NewProgram(m, tea.WithAltScreen())` | `v.AltScreen = true` (命令的オプション廃止) | `tui.go` の `View` / `RunBrowse` |
+| `View() string` | `View() tea.View` (画面内容 + 端末モードを毎フレーム宣言) | `browse_view.go` の `View` / 中身は `viewLines()` に分離 |
+| `tea.NewProgram(m, tea.WithAltScreen())` | `v.AltScreen = true` (命令的オプション廃止) | `browse_view.go` の `View` / `RunBrowse` |
 | `case tea.KeyMsg` | `case tea.KeyPressMsg` | `tui.go` の `Update` |
-| `msg.Type == tea.KeyRunes && len(msg.Runes) > 1` | `[]rune(msg.Text)` | `tui.go` の `Update` (まとめ配送の分解) |
+| `msg.Type == tea.KeyRunes && len(msg.Runes) > 1` | `[]rune(msg.Text)` | `browse_keys.go` の `onKeyPress` (まとめ配送の分解) |
 
 テスト側は `m.View()` → `m.View().Content` の機械置換のみ。キー文字列 (`esc` / `enter` / `ctrl+c` / `G` 等) は v2 でも同一
 なので `handleKey` の語彙は無変更 (v2 で space が `" "` → `"space"` に変わるが glogx は space を bind していない)。

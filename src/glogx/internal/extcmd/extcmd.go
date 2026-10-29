@@ -102,14 +102,14 @@ var CopyToClipboard = clipboard.Copy
 
 // EditorCommand は実ファイルを開くエディタのコマンドを組む。**解決の規則 ($VISUAL → $EDITOR → nvim、
 // 値は空白で語分割、quote は解釈しない) は github.com/jiikko/dotfiles/src/tuikit/editor が持つ** (pro-con と共有。2 実装にしない)。
-// 起動に失敗したときは tui.go の EditorClosedMsg がトーストで理由を出す。
+// 起動に失敗したときは browse_screens.go の onEditorClosed がトーストで理由を出す。
 //
 // 🚨 この経路は「実ファイルを 1 つ開く」ものにだけ使う。nvim を直に呼んでいる他の 2 箇所
-// (tui.go の job ログ = 標準入力 + -c の scratch バッファ / open_workspace.go の `nvim .` =
+// (browse_ci.go の job ログ = 標準入力 + -c の scratch バッファ / open_workspace.go の `nvim .` =
 // ディレクトリを開く) は nvim 固有の機能に依存しており、任意の $EDITOR では成立しない。
 //
 // 🚨 **前提: 起動したプロセスの終了 = 編集の完了**。glogx は tea.Exec (foreground.Exec) で TUI を中断して
-// 子プロセスを待ち、戻った境界で一覧と本文を取り直す (tui.go の EditorClosedMsg)。GUI エディタを
+// 子プロセスを待ち、戻った境界で一覧と本文を取り直す (browse_screens.go の onEditorClosed)。GUI エディタを
 // `-w` / `--wait` なしで指定すると即座に戻るので、この前提が破れる。git の GIT_EDITOR と同じ要求で、
 // 直し方も同じ (EDITOR="code -w" のように待たせる)。
 //

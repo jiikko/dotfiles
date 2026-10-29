@@ -48,7 +48,7 @@ var skipDirs = map[string]bool{
 //
 // 🚨 この関数が issues パッケージに在るのは歴史的な理由 (元の実装がここだった) で、
 // main からも呼ぶ。パッケージを 1 つ増やすより**実装が 1 つであること**を優先した
-// (main → issues の依存は tui.go / issues_view.go に既に在り、新しい依存ではない)。
+// (main → issues の依存は browse_screens.go / issues_view.go に既に在り、新しい依存ではない)。
 func ResolveRepoRoot(cwd string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), subproc.GitOpTimeout)
 	defer cancel()

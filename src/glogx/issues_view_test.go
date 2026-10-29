@@ -116,7 +116,7 @@ func newTestIssuesView() issuesview.IssuesView {
 // URL ピッカー入力中は、外側の U 横取りを止めて viewer へ委譲する。
 //
 // urlPicker は doc で「印字文字はすべて検索語に流す。ここで個別のキーを先に横取りすると、
-// その文字を含む URL を検索できなくなる」と宣言しているのに、tui.go が委譲の 3 行前で
+// その文字を含む URL を検索できなくなる」と宣言しているのに、キーの振り分け (browse_screens.go の routeKeyToIssues) が委譲の 3 行前で
 // 大文字 U だけを奪っていた。`github.com/Ueno/...` のような URL を絞り込めない (silent)。
 func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)

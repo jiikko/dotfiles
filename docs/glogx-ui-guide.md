@@ -61,7 +61,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 
 ### emacs 層 (別名だけ)
 
-- `Ctrl-N`/`Ctrl-P` = ↓/↑、`Ctrl-F` = → は**カーソルを持つ画面で同じ**。`Ctrl-F` は `tui.go` の
+- `Ctrl-N`/`Ctrl-P` = ↓/↑、`Ctrl-F` = → は**カーソルを持つ画面で同じ**。`Ctrl-F` は `browse_keys.go` の
   入口で `right` に正規化しているので、各画面は `right` だけ見ればよい
   - doctor 画面も語彙を `listnav.MotionOf` に寄せたので `Ctrl-N`/`Ctrl-P` を受ける (以前は doctor だけ
     受けていなかった)。削除確認パネルは上の例外のとおり受けない
@@ -153,7 +153,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
   一覧の案内を残すと、板では効かないキーを案内することになる (mac-lan-manager の `t` の板と確認の板で、一覧の `t 速度` などが
   残っていた。2026-10-22)。板の中にも案内を書くなら、最下行と同じキーと語にする
   - 例外: 全画面 (issues / status / doctor / ratelimit / F / L) の上に glogx の push・pull・rerun の確認や update の進行・再起動の案内が
-    出たときは、最下行は全画面の案内のまま (中央の板が案内を持つので、狭い最下行を奪ってまで二重に出さない。`src/glogx/tui.go` の
+    出たときは、最下行は全画面の案内のまま (中央の板が案内を持つので、狭い最下行を奪ってまで二重に出さない。`src/glogx/browse_view.go` の
     `hintLine` の注記)。全画面の中の板 (各画面が自分で開く確認・ピッカー) は上のとおり差し替える
 - 最下行の案内は端末幅で落とすが、**抜ける手段 (`q` / 閉じるキー) は必ず残す**。落とし方は `hintfit.Fit` (下の §9 の表) を通す
   (入らない項目は切らずに落とし、優先度 1 = 抜ける手段は席を予約する)。treefiler の最下行は凡例 → 右の欄 → 案内の段で落とす別の方式
@@ -314,7 +314,7 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
   取り出して toast に流す (`deliverNotice`)。Msg 経路で置いた notice も同じ口を通す (通さないと次の打鍵まで出ない。issue 059)。
   通知は 4 種類 (`app.NoticeKind`): 成功 (`NoticeOK`) / 断り・クリップボード失敗 (`NoticeRefused`、✗ のトーストだけ) /
   エラー詳細 (`NoticeError`) / 進行中 (`NoticeInfo`、シアン)。`w` でコピーできるよう控える (`lastWarning`) のは `noticeError` だけ — 断りの文まで控えると
-  直前のエラーを上書きして `w` で辿れなくなる (issue 663。分類の正本は tui.go の `showWarning` の doc)
+  直前のエラーを上書きして `w` で辿れなくなる (issue 663。分類の正本は browse_anim.go の `showWarning` の doc)
 - **数秒以上かかる操作 (通信速度の測定・相手の確認) は、始まりを toast だけで知らせない**。toast は数秒で消え、その後は何が
   起きているか見えなくなる (mac-lan-manager の speedtest でユーザーの指摘。2026-10-22)。回る印・対象・経過秒の進捗のモーダルを出し、
   終われば閉じて結果を toast に出す

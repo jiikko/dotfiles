@@ -93,7 +93,7 @@ func TestIssuesCloseLandsOnKeyWithoutSwallowing(t *testing.T) {
 // 🚨 viewer へ回してはいけない: 畳んだ後の view にモードを持つキーの状態 (/ の絞り込み・n の
 // 確認モーダル) が残り、次に i で開いた瞬間に蘇る。絞り込みが蘇ると全キーが検索語として飲まれて
 // q でも閉じられなくなり、確認モーダルが蘇ると y/Enter で実ファイルが動く。
-// 実体は browseModel が routing 前に finishClose すること (tui.go)。
+// 実体は browseModel が routing 前に finishClose すること (browse_keys.go)。
 func TestIssuesCloseLandsBeforeKeyReachesViewer(t *testing.T) {
 	advance := testenv.StubClock(t)
 

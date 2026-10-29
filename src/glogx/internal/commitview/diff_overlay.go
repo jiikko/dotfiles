@@ -198,7 +198,7 @@ func DecorateDetailLine(line string, colored bool) string {
 // SHA は表示中の SHA ("" = 非表示)。
 func (o *DiffOverlay) SHA() string { return o.sha }
 
-// NewDiffMsg は差分の取得の結果の Msg (tui.go の取得の Cmd が組む)。
+// NewDiffMsg は差分の取得の結果の Msg (browse_overlays.go の取得の Cmd が組む)。
 func NewDiffMsg(sha string, lines []string, err error) DiffMsg {
 	return DiffMsg{sha: sha, lines: lines, err: err}
 }
@@ -206,7 +206,7 @@ func NewDiffMsg(sha string, lines []string, err error) DiffMsg {
 // SHA は取得した差分の SHA。
 func (m DiffMsg) SHA() string { return m.sha }
 
-// NewJobDetailMsg はジョブのログの取得の結果の Msg (tui.go の取得の Cmd が組む)。
+// NewJobDetailMsg はジョブのログの取得の結果の Msg (browse_ci.go の取得の Cmd が組む)。
 func NewJobDetailMsg(key string, lines []string, ghErr *gitdata.GHError) JobDetailMsg {
 	return JobDetailMsg{key: key, lines: lines, ghErr: ghErr}
 }

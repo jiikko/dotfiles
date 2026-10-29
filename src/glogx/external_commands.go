@@ -23,7 +23,7 @@ import (
 
 // 外部プロセス (git / tmux / claude / ブラウザ / クリップボード) を叩くラッパー群。
 // browseModel の状態には一切触れない (結合ゼロ) ため、Bubble Tea の状態機械本体
-// (tui.go) から分離している。多くは `var f = func(...)` の形でテストの差し替え点になる。
+// (tui.go と browse_*.go) から分離している。多くは `var f = func(...)` の形でテストの差し替え点になる。
 
 // noPromptGitCmd は remote に触る git (push/pull) 用のコマンドを組む。GIT_TERMINAL_PROMPT=0
 // で「認証情報が要るのに helper が無い」場合に /dev/tty へ対話プロンプトを出させず即エラーに

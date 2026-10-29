@@ -25,7 +25,7 @@ var execCmdAllow = map[string]string{
 	"internal/gitdata/gitlog.go":       "git log の取得の Cmd を組む (WaitDelay は gitexec.RunGitCmd が張る)",
 	"internal/gitexec/git.go":          "git 実行の共通入口 (WaitDelay は RunGitCmd が張る)",
 	"open_workspace.go":                "e / E の前景エディタ・ファイラー起動 (runEditorCmd = tea.Exec + foreground.Exec)",
-	"tui.go":                           "job ログを nvim の scratch で開く前景実行",
+	"browse_ci.go":                     "job ログを nvim の scratch で開く前景実行",
 }
 
 // 下限は実件数のすぐ下に置く (0 や 1 だと「走査が壊れて対象を取りこぼした」が緑で通る)。

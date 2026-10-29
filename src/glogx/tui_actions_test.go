@@ -1457,7 +1457,7 @@ func TestLatestJudgmentMarksMsgEarly(t *testing.T) {
 	}
 }
 
-// browseModel のキー経路でも並走できること (actionModal 単体の検査だけでは、tui.go の C / X
+// browseModel のキー経路でも並走できること (actionModal 単体の検査だけでは、browse_keys.go の C / X
 // 分岐に 1 行足すだけで機能が無音で死ぬ。2026-08-21 に実測)。
 // ヒント行が走行中の CLI 名を出すことも併せて固定する (codex 単独更新中に「claude update...」と
 // 嘘をつく退行を捕まえる)。

@@ -4,10 +4,10 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 )
 
-// 枠描画のプリミティブ (browseModel の状態に依存しない純関数)。状態機械 (tui.go) から
+// 枠描画のプリミティブ (browseModel の状態に依存しない純関数)。状態機械 (tui.go / browse_*.go) から
 // 描画の下請けを分離する。ここに置くのは「window/box という []string を受けて []string を返す」
 // レイアウト関数だけ。m.width/m.colored 等のモデル状態を読むもの (cursorLine/bgLine/panelLines
-// など) は tui.go に残す。
+// など) は browse_view.go に残す。
 
 // OverlayBox / OverlayCenteredBox は tuikit layout.Overlay / layout.OverlayCentered の別名
 // (行ごと置き換える / 中央に浮かせて左右の背景を残す)。

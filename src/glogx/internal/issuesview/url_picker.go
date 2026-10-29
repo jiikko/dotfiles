@@ -118,7 +118,7 @@ func (p *urlPicker) handleKey(key string) (open, closed bool) {
 	return false, false
 }
 
-// paste は貼り付けた文字列を検索語のカーソルの位置に入れる (bracketed paste。tui.go の PasteMsg)。
+// paste は貼り付けた文字列を検索語のカーソルの位置に入れる (bracketed paste。browse_keys.go の onPaste)。
 // 先に termsafe で無害化する (ESC のシーケンスを丸ごと・BiDi の制御文字を落とす。lineedit.Insert は ESC 1 字しか
 // 落とさず、`[31m` の残骸や RLO が検索語と画面に残る)。空白・改行・タブも落とす: URL に現れず、
 // 打鍵の Space も入れていない (handleKey) ので、貼り付けた URL の末尾の改行が空白として残って何にも一致しなくなるのを避ける。

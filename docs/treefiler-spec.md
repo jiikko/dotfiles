@@ -81,7 +81,7 @@
 
 - **全画面の板として足す**: `src/glogx/fullscreen_id.go` の `FullScreenCount` の直前に ID を足す (横断キーなら `src/glogx/internal/crosskey` の集合にも足す)。足すと `exhaustive` の lint と
   `TestFullScreenSurfacesWireEverySite` が配線の漏れを捕まえる。描画は `finishWithGlobalChrome` を通す (通さないと toast・usage が載らない)
-- **`F` をどの画面からでも受ける**: `tui.go` の `handleKey` で、`C` / `X` (update) と同じく**全画面の dispatch より前**に置く
+- **`F` をどの画面からでも受ける**: `browse_keys.go` の `handleKey` で、`C` / `X` (update) と同じく**全画面の dispatch より前**に置く
   (後ろに置くと各 viewer がキーを飲む)。他の viewer から開くときはその viewer を閉じてから開く (全画面は同時に 1 枚)
 - 🚨 **ファイラー自身の入力モードに `F` と `C` を先取りさせない**: dispatch より前の判定は、ファイラーの検索欄 (`/`)・`!` のコマンド行・設定の板で
   打った大文字の `F` / `C` を横取りする。さらにファイラーは木の上でも `C` (経路以外を畳む) を使う。そこで:

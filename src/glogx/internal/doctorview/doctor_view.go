@@ -644,7 +644,7 @@ func (v *DoctorView) jumpIntoDetail() {
 //
 // 🚨 **キーを飲まずに知らせる**ための seam。handleKey の先頭で `DoctorToast` を
 // 返さない。それだと**その打鍵が空振りする** (q / esc / d / r / Enter が等しく 1 回死ぬ)。
-// 呼ぶのは browseModel 側 (tui.go) で、handleKey を呼ぶ**前**にトーストを出す。
+// 呼ぶのは browseModel 側 (browse_screens.go の routeKeyToDoctor) で、handleKey を呼ぶ**前**にトーストを出す。
 //
 // 🚨 文言は**返り値で渡す**。notice に書くと、それを消すのは TakeNotice() だけなので、
 // 次の再スキャンの理由として使い回される (実測 2026-09-03)。

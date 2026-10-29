@@ -140,7 +140,7 @@ func zoomWindow(lines []string, scale float64, width int, colored, framed bool) 
 		inner, innerH = layout.PanelContentWidth(boxW), max(boxH-3, 1)
 	}
 	// framed の実画面クローム: 上 = 上余白 1 + 枠上辺 1、左 = 左余白 1 + "║ " 2
-	// (内訳の一次情報は tui.go の frameHOverhead / frameVOverhead)。これをスキップして
+	// (内訳の一次情報は browse_view.go の frameHOverhead / frameVOverhead)。これをスキップして
 	// 実画面の中身の左上から映す。枠なし画面はクロームが無いので 0。
 	//
 	// 🚨 下と右もクランプする: snap 直前 (scale ~0.95) は切り出しが実枠の下辺 (▁ の接地行)・

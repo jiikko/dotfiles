@@ -29,17 +29,17 @@ linters:
       # 文化の機械化。~/dotfiles の comment-no-restate-enforced ルールと同じ思想)
       default-signifies-exhaustive: true
     forbidigo:
-      # 「TUI 層は stdout へ直接書かず tea.Msg 経由で描画する」(tui.go 冒頭の不変条件)
+      # 「TUI 層は stdout へ直接書かず tea.Msg 経由で描画する」(browseModel の状態機械 = tui.go と browse_*.go の不変条件)
       # を機械化する。stdout への出力は main.go の静的経路に限定 (exclusions で許可)。
       forbid:
         - pattern: ^fmt\.Print(f|ln)?$
           msg: stdout への直接出力は main.go に限定する (TUI 層は tea.Msg 経由で描画)
-        # tui.go の時刻はテスト差し替え用シーム (internal/app の var TimeNow) 経由で取る規律。push 演出 6 箇所が
+        # 状態機械 (tui.go と browse_*.go。issue 971 で tui.go から分けた) の時刻はテスト差し替え用シーム (internal/app の var TimeNow) 経由で取る規律。push 演出 6 箇所が
         # これを迂回して time.Now/Since を直呼びしていた退行 の再発防止。シーム定義
-        # 自体 (var TimeNow = time.Now。internal/app/clock.go) は tui.go の外なので対象外。tui.go 以外の
+        # 自体 (var TimeNow = time.Now。internal/app/clock.go) は状態機械の外なので対象外。状態機械の外の
         # 正当な time.Now は下の exclusions (path-except) で許可する。
         - pattern: ^time\.(Now|Since)$
-          msg: tui.go の時刻は app.TimeNow シーム経由で取る (テストで固定するため。issue 038)
+          msg: 状態機械 (tui.go / browse_*.go) の時刻は app.TimeNow シーム経由で取る (テストで固定するため。issue 038)
         # 折り返しは termwidth.Wrap / WordWrap を通す。x/ansi の Hardwrap / Wrap はキーキャップで幅を超える行を返し、
         # Wrap は書記素も割る。字面で見るので、別名の import・変数経由の呼び出しは検出しない
         - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
@@ -129,7 +129,7 @@ linters:
             - pkg: os/exec
               desc: render.go は純粋描画層 (プロセス起動禁止)
             - pkg: context
-              desc: render.go は純粋描画層 (非同期処理は tui.go へ)
+              desc: render.go は純粋描画層 (非同期処理は browseModel の状態機械へ)
     gocritic:
       # ruleguard: 単一 checker では書けない構文パターンの不変条件 (ルール本文と理由は
       # ruleguard.rules.go が正本)。enabled-checks は既定の stable セットへの追加。
@@ -162,8 +162,8 @@ linters:
         text: 空白の連結は
         linters:
           - gocritic
-      # app.TimeNow シームの規律は tui.go だけのもの (他ファイルは素の time.Now でよい)
-      - path-except: tui\.go
+      # app.TimeNow シームの規律は状態機械 (tui.go と browse_*.go) だけのもの (他ファイルは素の time.Now でよい)
+      - path-except: (tui|browse_[a-z]+)\.go
         text: TimeNow シーム経由
         linters:
           - forbidigo

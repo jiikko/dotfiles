@@ -6,7 +6,7 @@ package ratelimitview
 // 枠ごとのアナログ盤にして画面いっぱいに描く。
 //
 // 🚨 データの取得経路はこの型が持たない。取得・キャッシュ・1 分ごとのリフレッシュ・quit 時の
-// subprocess 中断はすべて usageOverlay の配管をそのまま使う (tui.go の usageRefreshMsg が
+// subprocess 中断はすべて usageOverlay の配管をそのまま使う (browse_usage.go の usageRefreshMsg が
 // 「U が見えている」に加えて「R が見えている」でも fetch を回す)。同じ値に取得経路を 2 本
 // 持たせると、周期・タイムアウト・single-flight ガードが二重管理になる。
 //

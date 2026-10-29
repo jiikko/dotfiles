@@ -676,10 +676,10 @@ func (v *DoctorView) handleDeleteKey(key string) (doctorAction, bool) {
 
 // deleteAbortKeys は削除の実行中 / 下見中に中断へ使えるキー。案内の文言はここから作る。
 //
-// 🚨 **キーの分岐の正本は tui.go:1321** で、ここはその写し。両者が一致していることは
+// 🚨 **キーの分岐の正本は browse_keys.go の handleKey (ctrl+c / ctrl+g を handleQuitKey へ渡す) と browse_lifecycle.go の handleQuitKey** で、ここはその写し。両者が一致していることは
 // TestDeleteAbortGuidanceMatchesKeys が突き合わせるが、**あのテストの候補キーもハードコード**
-// なので、tui.go とここの両方に載っていない 3 つ目のキーを tui.go だけに足しても誰も落ちない
-// (実測 2026-09-04: ctrl+q を足した)。tui.go の分岐を触るときは、ここと
+// なので、その 2 つとここの両方に載っていない 3 つ目のキーを browseModel の側だけに足しても誰も落ちない
+// (実測 2026-09-04: ctrl+q を足した)。browseModel の分岐を触るときは、ここと
 // あのテストの候補表も一緒に見ること。字句で結ぶ検査は書いていない。
 var deleteAbortKeys = []string{"ctrl+c", "ctrl+g"}
 
@@ -1048,7 +1048,7 @@ func (v *DoctorView) deletePanel(o DoctorRenderOpts) []string {
 		// 案内が無いと「このパネルから抜ける手段が無い」に見える
 		// armedCC なら残り 1 回。「2 回押せ」と「もう 1 回押せ」を並べると、あと何回なのか読めない
 		//
-		// 🚨 **Ctrl-G も併記する**。tui.go は ctrl+g を ctrl+c と同じ 2 段ガードへ
+		// 🚨 **Ctrl-G も併記する**。browseModel (browse_keys.go) は ctrl+g を ctrl+c と同じ 2 段ガードへ
 		// 渡すので実際に中断できるが、案内が Ctrl-C しか書いていなかった。Ctrl-G で抜けようと
 		// した人は「効かない」と思って Ctrl-C を探し (実際には 1 回目が消費されている)、
 		// 逆に Ctrl-G 2 回で中断したときは案内を読んでいた人に理由が分からない。

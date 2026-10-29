@@ -212,7 +212,7 @@ func (v *StatusView) Visible() bool { return v.shown }
 
 // ownsKeys は viewer 自身がキーを解釈し切る状態か (全画面 pager 表示中 / 破棄の y/N 確認中)。
 //
-// 🚨 browseModel 側の p / b / u / U 横取り (tui.go の statusOv.visible() ブロック) は、この状態では
+// 🚨 browseModel 側の p / b / u / U 横取り (browse_screens.go の routeKeyToStatus) は、この状態では
 // 止めなければならない。止めないと viewer が持つキー語彙を外側が奪う:
 //   - 全画面 diff の `b` (半ページ戻り) が push 確認に化け、続く Enter (pager を閉じるつもり) で
 //     実 push が走る (実測 2026-08-21)

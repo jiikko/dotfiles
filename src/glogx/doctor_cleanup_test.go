@@ -15,7 +15,7 @@ import (
 
 // 選んでいた行が消えたら近傍へ寄せ、**寄せたことを画面に出す**。
 //
-// 🚨 フィールド (`notice`) を見るだけでは足りない。表示するのは tui.go の
+// 🚨 フィールド (`notice`) を見るだけでは足りない。表示するのは browse_screens.go の
 // `case doctorview.DoctorToast:` = handleKey の戻り値経路だけで、`restoreCursor` は View から呼ばれる。
 // **browseModel 経由でトーストが出ることまで**見ないと、配線の穴を守れない (実測: 初版は
 // フィールド代入しか見ておらず、本番では一度も出ない状態で緑だった)。
@@ -46,7 +46,7 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 	}
 
 	// 次のキー操作で**画面に**出る。🚨 **browseModel.handleKey 経由**で見る
-	// (tui.go に配線があるので、doctorview.DoctorView だけ叩くと配線の穴を守れない)
+	// (browseModel に配線があるので、doctorview.DoctorView だけ叩くと配線の穴を守れない)
 	m.toast.Clear()
 	m.handleKey("j")
 	if !strings.Contains(m.toast.Text(), "近くの行へ移りました") {

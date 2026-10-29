@@ -238,9 +238,9 @@ func TestFullScreenSurfacesWireEverySite(t *testing.T) {
 // `if` で足す)。構文で全部を塞ぎにいかない。
 func TestFullScreenDrawingGoesThroughTheRegistry(t *testing.T) {
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "tui.go", nil, 0)
+	f, err := parser.ParseFile(fset, "browse_view.go", nil, 0)
 	if err != nil {
-		t.Fatalf("tui.go を parse できない: %v", err)
+		t.Fatalf("browse_view.go を parse できない: %v", err)
 	}
 	var fn *ast.FuncDecl
 	for _, d := range f.Decls {

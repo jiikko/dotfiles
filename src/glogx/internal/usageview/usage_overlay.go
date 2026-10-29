@@ -86,7 +86,7 @@ type UsageOverlay struct {
 	// inFlight は fetch の single-flight ガード (fetchCmd で立て、結果の handle で降ろす)。
 	// cancel が単一スロットのため、fetch を overlap させると先行分の cancel を上書きで取りこぼし、
 	// quit 後も先行 subprocess が app.FetchTimeout まで残る。定期リフレッシュ同士は
-	// app.UsageRefreshInterval > app.FetchTimeout で overlap しない (tui.go の定数コメント) が、
+	// app.UsageRefreshInterval > app.FetchTimeout で overlap しない (browse_usage.go の usageRefreshMsg のコメント) が、
 	// U 再表示 (toggleUsage の stale 経路) との重なりはこのガードでしか防げない。
 	inFlight bool
 	// fetchedAt は snap を取得した時刻 (zero = 未取得)。非表示中はリフレッシュを止めるので、
