@@ -15,7 +15,7 @@ func runDef(args []string, stdout, stderr io.Writer) int {
 	format := fs.String("format", "text", "出力の形式: text / json")
 	limit := fs.Int("limit", 20, "text で出す定義の上限 (0 は全部)")
 	maxLines := fs.Int("max-lines", 80, "定義ごとに出すソース行の上限")
-	_, rc, ok := parseInterspersedFlags(fs, args)
+	_, rc, ok := parseFlags(fs, args)
 	if !ok {
 		return rc
 	}

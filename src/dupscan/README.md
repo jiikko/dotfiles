@@ -75,7 +75,7 @@ bin/dupscan context DropboxClient.upload      # def・refs・callers を 1 回�
 `callers` は呼び出しの箇所を `file:line 呼び出し元 [test] | その行` で出す (コメント・文字列の中は数えない。テスト関数の中も数える。Swiftの比較対象外テストの呼び出し元は「(単位の外)」)。
 Goは比較対象外の `Test` / `Benchmark` / `Fuzz` / `Example` とtestify形のメソッドも、呼び出し元を名前・署名で表示する。匿名closure内は囲む名前つき関数に帰属する。top-levelや構文エラーのある関数内は所有者を確定せず「(単位の外)」とする。JSONは同じschemaを維持し、該当するGoテストの `caller` が省略から署名へ変わる。テスト本体/内部closureをreport/gateの比較へ追加する変更ではなく、indexの既定結果やGo def/refsの対応範囲も変えない。
 型を解決しないので、同名の別のメソッド・別の型の初期化子の呼び出しも当たる (近似)。ラベルを書けば数と順で絞る。
-後置クロージャのある呼び出しは括弧の中のラベルが先頭に一致すれば当てる。`index` / `callers` / `def` / `refs` / `context` / `evidence` はflagを名前・パスの前後で受け付ける (`callers make -format json`)。単値flagの繰り返しは最後の値を採用し、`--` 以降は名前・パスとして扱う (`callers make -- -literal-dir`)。値の必要なflagの直後の引数は、その値として扱う。
+後置クロージャのある呼び出しは括弧の中のラベルが先頭に一致すれば当てる。位置引数を取るサブコマンドはflagを名前・パスの前後で受け付ける (`callers make -format json` / `dupscan . -v`)。`-` で始まる名前・パスは flag と読むので、`--` の後ろに書く (`dupscan -- a -v` は `-v` という dir も見る)。単値flagの繰り返しは最後の値を採用し、`--` 以降は名前・パスとして扱う (`callers make -- -literal-dir`)。値の必要なflagの直後の引数は、その値として扱う。
 
 
 `callers -selector strings.Join Join [dir ...]` は、Goのソースに書いた単純な識別子chainを条件へ足す。名前の分からないhelperを、使うAPIの字面から探す補助経路で、囲む関数と位置を従来のcallers形式で返す。末尾名の位置引数は引き続き必要で、名前照合と、指定した場合の引数数条件へANDする（例: `callers -selector strings.Join 'Join(_:_:)'`）。queryのdot前後の空白・改行とsource側の空白・改行・括弧は正規化する。

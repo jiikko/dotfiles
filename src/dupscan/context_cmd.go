@@ -24,7 +24,7 @@ func runContext(args []string, stdout, stderr io.Writer) int {
 	limit := fs.Int("limit", 20, "節ごとに出す件数の上限 (0 は全部)")
 	sectionsFlag := fs.String("sections", "definition,refs,callers", "definition,refs,callers のカンマ区切り、または summary")
 	maxLines := fs.Int("max-lines", 80, "定義ごとに出すソース行の上限")
-	_, rc, ok := parseInterspersedFlags(fs, args)
+	_, rc, ok := parseFlags(fs, args)
 	if !ok {
 		return rc
 	}

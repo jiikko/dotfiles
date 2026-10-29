@@ -18,7 +18,7 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 	format := fs.String("format", "text", "出力の形式: text / json")
 	selector := fs.String("selector", "", "Goのみ: sourceに書いた単純selector chainをAND (例: strings.Join。型/importは解決しない)")
 	limit := fs.Int("limit", 20, "text で出す件数の上限 (0 は全部)")
-	rest, rc, ok := parseInterspersedFlags(fs, args)
+	rest, rc, ok := parseFlags(fs, args)
 	if !ok {
 		return rc
 	}

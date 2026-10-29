@@ -22,7 +22,7 @@ import (
 func runEvidence(args []string, stdout, stderr io.Writer) int {
 	fs := commandFlags("dupscan evidence", stderr)
 	limit := fs.Int("limit", 20, "節ごとに出す件数の上限 (0 は全部)")
-	_, rc, ok := parseInterspersedFlags(fs, args)
+	_, rc, ok := parseFlags(fs, args)
 	if !ok {
 		return rc
 	}

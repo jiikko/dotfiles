@@ -87,6 +87,16 @@ vlc-multi-video-player で「dupscan を使ってテストの重複を解消す�
 
 - [x] 起票 (2026-10-28)
 - [ ] F1 の残り 1 ファイル (`VideoGridLoadingCoordinator.swift`) の原因
-- [ ] 直す (F1 の文法・F4 のエラーの文言)。`src/dupscan` を触る他のセッションが居ないときに
+- [ ] F1 の文法を直す (`nonisolated(unsafe) let` は 954 で回避済み。残り 1 ファイルの原因は上の項)
+- [x] F4 (2026-10-29)
 
 - 2026-10-29: 954 を done にした。F1 の `nonisolated(unsafe) let` は 954 で回避済み (関数の中の出現を読み直す。読めないのはその関数だけで、ファイル全体が外れるわけではない)。同じ仕組みで空のタプルの引数 `f(())` も読めるようにした。
+- 2026-10-29: F4 を直した (commit `fix(dupscan): 位置引数を取るどのサブコマンドも後置の flag を受ける (issue 955 F4)`)。
+  - 原因: 後置の flag を受ける解釈 (`index` / `callers` などで使っていた) と、受けない解釈 (`flag.Parse` のまま) の 2 つがあり、report・gate・sweep・search・near・capabilities は後者だった。
+    `dupscan . -v` は `-v` をパスとして読み、「-v は git の repo の中ではない」になっていた。エラーの文言を足すのではなく、受ける方 1 つ (`parseFlags`) にまとめた
+  - 直した後の実測 (dotfiles の worktree): `dupscan . -v` / `sweep . -v` / `gate . -v` は、前置と同じ出力で rc は前置と同じ。ついでに `near <file>:<name> -v`・`explain ... -compare <x>`・`dupscan . -h` も直った (どれも変更前は rc=2)
+  - 変わる挙動: `-` で始まる名前・パスを 2 つ目以降に置くと flag と読む (`dupscan a -v` は `-v` という dir を見ず verbose になる)。`--` の後ろに書けば以前どおり。README に書いた。doctor・agent-guide は位置引数を受けないので対象外
+  - テスト: `TestTrailingFlagsMatchLeadingFlags` (report・gate・sweep・search・near で、前置と後置の出力が同じで、flag の無い run とは違う)
+  - 変異: 5 つの command をそれぞれ旧来の解釈へ戻す 5 本と、位置引数より後ろの flag を捨てる 1 本が、すべて想定のサブテストで赤
+  - 敵対的レビュー (opus) 1 周: Makefile・workflow・skill の呼び方は壊れない。P2 (`-` で始まる dir) は README に `--` を書いて受容、P3 (report と sweep のケースが flag の効きを見ていない) はテストを強めて直した
+  - 検査: dupscan の test・lint、root の `make test-lint`・`make test-dupscan-gate`、`bin/skill-eval dupscan` (PASS) がいずれも rc=0

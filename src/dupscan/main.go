@@ -100,7 +100,7 @@ func failer(stderr io.Writer, command string) func(error) int {
 	}
 }
 
-func parseFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool) {
+func parseOrderedFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool) {
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil, 0, false
@@ -114,7 +114,9 @@ func parseFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool
 	return dirs, 0, true
 }
 
-func parseInterspersedFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool) {
+// parseFlags は flag を名前・パスの前後どちらでも受ける。後置を受けないサブコマンドを作らないよう、位置引数を取るサブコマンドはこれを通す
+// (flag.Parse は最初の名前・パスで止まり、後ろの `-v` をパスとして読んで「repo の中ではない」の誤った案内になる)。
+func parseFlags(fs *flag.FlagSet, args []string) (dirs []string, rc int, ok bool) {
 	flags := make([]string, 0, len(args))
 	positionals := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
@@ -133,7 +135,7 @@ func parseInterspersedFlags(fs *flag.FlagSet, args []string) (dirs []string, rc 
 				boolFlag, isBool := f.Value.(interface{ IsBoolFlag() bool })
 				if !isBool || !boolFlag.IsBoolFlag() {
 					if i+1 == len(args) {
-						return parseFlags(fs, flags)
+						return parseOrderedFlags(fs, flags)
 					}
 					i++
 					flags = append(flags, args[i])
@@ -143,7 +145,7 @@ func parseInterspersedFlags(fs *flag.FlagSet, args []string) (dirs []string, rc 
 		}
 		positionals = append(positionals, arg)
 	}
-	return parseFlags(fs, append(append(flags, "--"), positionals...))
+	return parseOrderedFlags(fs, append(append(flags, "--"), positionals...))
 }
 
 // narrowed は、段か下限を既定から変えた走査か (組が作られないだけの除外を「効いていない」と言えない)。

@@ -166,3 +166,42 @@ func TestExplorationRejectsMissingFlagValues(t *testing.T) {
 		}
 	}
 }
+
+// 位置引数を取るサブコマンドは flag を名前・パスの後ろに書いてよく、前に書いたときと同じ結果になる
+// (後ろの `-v` をパスとして読むと「-v は git の repo の中ではない」になる)。
+func TestTrailingFlagsMatchLeadingFlags(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Sources/B.swift", helperB)
+	cases := []struct {
+		name        string
+		flags, rest []string
+		wantRC      int
+	}{
+		{"report", []string{"-v", "-format", "json"}, []string{root}, 0},
+		{"gate", []string{"-v", "-base", "HEAD"}, []string{root}, 1},
+		{"sweep", []string{"-min-nodes", "5"}, []string{root}, 0},
+		{"search", []string{"-query", "location"}, []string{root}, 0},
+		{"near", []string{"-format", "json"}, []string{filepath.Join(root, "Sources/A.swift") + ":location"}, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cmd := []string{c.name}
+			if c.name == "report" {
+				cmd = nil
+			}
+			rc, out, errs := runReport(t, append(append(append([]string{}, cmd...), c.flags...), c.rest...)...)
+			rc2, out2, errs2 := runReport(t, append(append(append([]string{}, cmd...), c.rest...), c.flags...)...)
+			if rc != c.wantRC || out == "" {
+				t.Fatalf("前置の flag で rc=%d (期待 %d): stdout=%q stderr=%q", rc, c.wantRC, out, errs)
+			}
+			if _, bare, _ := runReport(t, append(append([]string{}, cmd...), c.rest...)...); bare == out {
+				t.Fatalf("flag を付けない run と出力が同じで、flag が効いたかを見られない: %q", out)
+			}
+			if rc2 != rc || out2 != out || errs2 != errs {
+				t.Errorf("後置の flag が前置と違う: before=(%d,%q,%q) after=(%d,%q,%q)", rc, out, errs, rc2, out2, errs2)
+			}
+		})
+	}
+}

@@ -18,7 +18,7 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 	fs := commandFlags("dupscan refs", stderr)
 	format := fs.String("format", "text", "出力の形式: text / json")
 	limit := fs.Int("limit", 20, "text で出す参照の上限 (0 は全部)")
-	_, rc, ok := parseInterspersedFlags(fs, args)
+	_, rc, ok := parseFlags(fs, args)
 	if !ok {
 		return rc
 	}

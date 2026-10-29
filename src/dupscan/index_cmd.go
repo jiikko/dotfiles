@@ -27,7 +27,7 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	format := fs.String("format", "text", "出力の形式: text / json")
 	limit := fs.Int("limit", 20, "text で出す件数の上限 (0 は全部。-file を指したときの既定は全部)")
 	docBytes := fs.Int("doc-bytes", 100, "text の doc を最初の文まで、この byte 数までに縮める (0 は縮めない。JSON と -doc の絞り込みは全文)")
-	dirs, rc, ok := parseInterspersedFlags(fs, args)
+	dirs, rc, ok := parseFlags(fs, args)
 	if !ok {
 		return rc
 	}
