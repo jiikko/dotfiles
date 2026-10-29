@@ -10,6 +10,7 @@ import (
 
 	"dupscan/internal/jsonout"
 	"dupscan/internal/langs"
+	"dupscan/internal/report"
 )
 
 const capabilitiesMaxBytes = 65536
@@ -85,6 +86,7 @@ func runCapabilities(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("dupscan capabilities", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	format := fs.String("format", "text", "output format: text / json (capability schema version 1)")
+	outputs := fs.String("outputs", "", "instead of the capability table, describe the output of this command: the json fields per type and the lines only -v prints ("+strings.Join(report.OutputCommands(), " / ")+")")
 	if _, rc, ok := parseFlags(fs, args); !ok {
 		return rc
 	}
@@ -92,8 +94,30 @@ func runCapabilities(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan capabilities: no positional arguments accepted")
 		return 2
 	}
-	d := buildCapabilities()
+	outputsSet := false
+	fs.Visit(func(f *flag.Flag) { outputsSet = outputsSet || f.Name == "outputs" })
 	var out bytes.Buffer
+	if outputsSet {
+		o, ok := report.OutputsFor(*outputs)
+		if !ok {
+			fmt.Fprintf(stderr, "dupscan capabilities: -outputs knows %s, not %q\n", strings.Join(report.OutputCommands(), " / "), *outputs)
+			return 2
+		}
+		switch *format {
+		case "json":
+			if err := jsonout.Write(&out, o); err != nil {
+				fmt.Fprintln(stderr, "dupscan capabilities:", err)
+				return 2
+			}
+		case "text":
+			writeOutputsText(&out, o)
+		default:
+			fmt.Fprintf(stderr, "dupscan capabilities: unknown format %q (text / json)\n", *format)
+			return 2
+		}
+		return writeCapabilities(out, stdout, stderr)
+	}
+	d := buildCapabilities()
 	switch *format {
 	case "json":
 		if err := jsonout.Write(&out, d); err != nil {
@@ -122,6 +146,10 @@ func runCapabilities(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "dupscan capabilities: unknown format %q (text / json)\n", *format)
 		return 2
 	}
+	return writeCapabilities(out, stdout, stderr)
+}
+
+func writeCapabilities(out bytes.Buffer, stdout, stderr io.Writer) int {
 	if out.Len() > capabilitiesMaxBytes {
 		fmt.Fprintln(stderr, "dupscan capabilities: output exceeds 65536 bytes")
 		return 2
@@ -131,4 +159,27 @@ func runCapabilities(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+// writeOutputsText は -outputs の text。型ごとに欄を 1 回だけ並べる (同じ型が何か所に出ても繰り返さない)。
+func writeOutputsText(w io.Writer, o report.Outputs) {
+	fmt.Fprintf(w, "dupscan %s の出力 (-format json の根は %s。欄は型ごとに 1 回。? は空なら欄ごと出ない)\n", o.Command, o.Root)
+	for _, t := range o.Types {
+		fmt.Fprintf(w, "%s:\n", t.Name)
+		for _, f := range t.Fields {
+			omit := ""
+			if f.Omitted {
+				omit = "?"
+			}
+			fmt.Fprintf(w, "  %s%s %s: %s\n", f.Name, omit, f.Type, f.Desc)
+		}
+	}
+	fmt.Fprintf(w, "-v でだけ出る行 (見出しで始まる):\n")
+	for _, v := range o.Verbose {
+		json := ""
+		if v.JSON != "" {
+			json = " [json: " + v.JSON + "]"
+		}
+		fmt.Fprintf(w, "  %q: %s%s\n", v.Prefix, v.Desc, json)
+	}
 }

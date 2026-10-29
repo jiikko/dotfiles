@@ -5,6 +5,7 @@ import (
 	"io"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"dupscan/internal/group"
 	"dupscan/internal/norm"
@@ -68,8 +69,21 @@ func lineSelector(root string, e *group.Entry, entries []*group.Entry) (string, 
 	return shellQuote(filepath.Join(root, u.File)) + ":" + strconv.Itoa(u.Line), true
 }
 
+// writeCompare は -v で除外の 1 行の下にヒントを書く。ヒントの種類は、-v の表の見出しで始まるかで決める
+// (compareHints の文字列は、表の見出しから字下げを除いたもので始まる。どの見出しでも始まらないヒントはテストが落とす)。
 func writeCompare(w io.Writer, hints []string) {
 	for _, h := range hints {
-		fmt.Fprintf(w, "  %s\n", h)
+		key := compareKey(h)
+		vline(w, key, "%s", strings.TrimPrefix("  "+h, verbosePrefix[key]))
 	}
+}
+
+// compareKey はヒントが始まる -v の表の見出しの鍵 (無ければ空)。
+func compareKey(hint string) verboseKey {
+	for _, k := range []verboseKey{verboseCompareSame, verboseCompareArgv, verboseCompareMore, verboseCompareUnpointable} {
+		if strings.HasPrefix("  "+hint, verbosePrefix[k]) {
+			return k
+		}
+	}
+	return ""
 }

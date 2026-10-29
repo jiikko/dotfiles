@@ -33,7 +33,7 @@ const usage = `usage: dupscan [report] [flags] [dir ...]
        dupscan refs [flags] <名前> [dir ...]
        dupscan context [flags] <名前|Type.member|名前(ラベル:…)> [dir ...]
        dupscan evidence [flags] <語> [dir ...]
-       dupscan capabilities [-format text|json]
+       dupscan capabilities [-format text|json] [-outputs report|gate]
        dupscan doctor [-repo dir] [-base ref] [-format text|json]
        dupscan agent-guide -target claude|codex [-lang all|swift|go] -print
 

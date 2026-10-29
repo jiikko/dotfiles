@@ -84,24 +84,24 @@ func (x Exclusions) write(w io.Writer) {
 	for i, r := range x.Stale {
 		// 「効いていない除外: 」の行は、接頭辞も行全体が JSON であることも変えない (grep や、行を JSON として読む手が頼る)。
 		// 理由は次の行に別に出す。
-		fmt.Fprintf(w, "効いていない除外: %s\n", ruleJSON(r))
+		vline(w, verboseStale, "%s", ruleJSON(r))
 		if why := staleWhyText(x.staleWhy, i); why != "" {
 			if miss := r.GroupMiss(); miss != "" {
 				why += " (" + miss + ")"
 			}
-			fmt.Fprintf(w, "  理由: %s\n", why)
+			vline(w, verboseStaleWhy, "%s", why)
 		}
 		if i < len(x.staleDetails) {
 			for _, d := range x.staleDetails[i] {
-				fmt.Fprintf(w, "  詳しく: %s\n", d)
+				vline(w, verboseStaleDetail, "%s", d)
 			}
 		}
 		if i < len(x.staleCandidates) && x.staleCandidates[i] != "" {
-			fmt.Fprintf(w, "  同じ鍵の組候補。再審査が必要: %s\n", x.staleCandidates[i])
+			vline(w, verboseStaleCandidate, "%s", x.staleCandidates[i])
 		}
 	}
 	for _, r := range x.Ambiguous {
-		fmt.Fprintf(w, "名指しできない除外: %s\n", ruleJSON(r))
+		vline(w, verboseAmbiguous, "%s", ruleJSON(r))
 	}
 }
 
@@ -253,7 +253,7 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 		}
 		writeSingleCallMark(w, g.SingleCall)
 		if opt.Verbose {
-			fmt.Fprintf(w, "  除外の 1 行: %s\n", g.Exclude)
+			vline(w, verboseExclude, "%s", g.Exclude)
 			writeCompare(w, g.compare)
 		}
 	}
@@ -289,7 +289,7 @@ func writeSingleCallMark(w io.Writer, on bool) {
 // 無いと、-v でもファイル名しか出ず、どの関数が外れたかが分からない。
 func writeUnreadableUnits(w io.Writer, s Summary) {
 	for _, u := range s.Unreadable {
-		fmt.Fprintf(w, "読めない: %s:%d %s\n", u.File, u.Line, label(u))
+		vline(w, verboseUnreadable, "%s:%d %s", u.File, u.Line, label(u))
 	}
 }
 
@@ -317,7 +317,7 @@ func writeFilePairs(w io.Writer, pairs []FilePair) {
 
 func writeErrorFiles(w io.Writer, s Summary) {
 	for _, f := range s.FilesWithErrors {
-		fmt.Fprintf(w, "読めない構文があるファイル: %s\n", f)
+		vline(w, verboseErrorFile, "%s", f)
 	}
 }
 

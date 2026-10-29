@@ -186,7 +186,7 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 			}
 			writeSingleCallMark(w, v.SingleCall)
 			if opt.Verbose {
-				fmt.Fprintf(w, "  除外の 1 行: %s\n", v.Exclude)
+				vline(w, verboseExclude, "%s", v.Exclude)
 				writeCompare(w, v.compare)
 			}
 		}
@@ -217,33 +217,33 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	}
 	if opt.Verbose {
 		for _, el := range s.NewExclusions {
-			fmt.Fprintf(w, "新しく足された除外: %s%s\n", el.Key, commentAt(el))
+			vline(w, verboseNewExclusion, "%s%s", el.Key, commentAt(el))
 		}
 		for _, f := range s.Untracked {
-			fmt.Fprintf(w, "untracked: %s\n", f)
+			vline(w, verboseUntracked, "%s", f)
 		}
 		for _, u := range s.PathPassedList {
-			fmt.Fprintf(w, "パスの除外で通した: %s:%d %s\n", u.File, u.Line, label(u))
+			vline(w, verbosePathPassed, "%s:%d %s", u.File, u.Line, label(u))
 		}
 		for _, u := range s.PresetPassedList {
-			fmt.Fprintf(w, "プリセットで通した: %s:%d %s\n", u.File, u.Line, label(u))
+			vline(w, verbosePresetPassed, "%s:%d %s", u.File, u.Line, label(u))
 		}
 		if s.BaseConfigError != "" {
-			fmt.Fprintf(w, "base の除外の設定: %s\n", s.BaseConfigError)
+			vline(w, verboseBaseConfig, "%s", s.BaseConfigError)
 		}
 		for _, g := range s.Resolved {
-			kind := "消えた"
+			kind := verboseResolvedGone
 			if g.Remain > 0 {
-				kind = "縮んだ"
+				kind = verboseResolvedShrunk
 			}
-			fmt.Fprintf(w, "%s組: %s (%d → %d)\n", kind, g.Level, len(g.Members), g.Remain)
+			vline(w, kind, "%s (%d → %d)", g.Level, len(g.Members), g.Remain)
 			for _, m := range g.Members {
-				fmt.Fprintf(w, "  base: %s %s\n", m.Where(), label(m))
+				vline(w, verboseResolvedMember, "%s %s", m.Where(), label(m))
 			}
 		}
 		s.write(w)
 		for _, u := range s.Unreadable {
-			fmt.Fprintf(w, "読めない: %s:%d %s\n", u.File, u.Line, label(u))
+			vline(w, verboseUnreadable, "%s:%d %s", u.File, u.Line, label(u))
 		}
 	}
 	return nil

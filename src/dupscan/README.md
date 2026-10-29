@@ -25,7 +25,7 @@ bin/dupscan -no-build agent-guide -target claude -lang go -print
 bin/dupscan -no-build agent-guide -target codex -lang swift -print
 ```
 
-`capabilities` はrepo不要で、登録済みdispatchとadapterから対応コマンド・出力形式・言語・近似の限界を返す。`flags_help`は各コマンドの実際の`-h`経路から得るため、別のflag一覧を写さない。helpの構築だけで、source/config/gitやparserを起動しない。JSONは`schema_version: 1`の能力表で、926の分析結果用json-v2 envelopeとは別。text/jsonを明示的に選べ、両方とも最大65,536 bytes。登録されていないcommandは案内しない。
+`capabilities` はrepo不要で、登録済みdispatchとadapterから対応コマンド・出力形式・言語・近似の限界を返す。`flags_help`は各コマンドの実際の`-h`経路から得るため、別のflag一覧を写さない。helpの構築だけで、source/config/gitやparserを起動しない。JSONは`schema_version: 1`の能力表で、926の分析結果用json-v2 envelopeとは別。text/jsonを明示的に選べ、両方とも最大65,536 bytes。登録されていないcommandは案内しない。`capabilities -outputs report|gate` は能力表の代わりに、その command の `-format json` の欄 (出力の型を辿り、型ごとに 1 回。空なら出ない欄に印) と、`-v` でだけ出る行の見出し・意味・対応する json の欄を返す (text / json。能力表の `schema_version` とは別)。欄と行の説明の正本はこの一覧 (`internal/report/outputs.go`)。
 
 `doctor` は実行パス・git・repo/worktree・拡張子の列挙・optional config・ローカルのgate baseを確認する。構文解析・build・fetch・重複検出はしない。各checkはok/info/warning/error/not_checkedで、入力/実行/configエラーはrc=2、source/baseが無い等のwarningはrc=0。`.dupscan.json`不在は正常で、HEADとbaseが同じでもgate合格とは表示しない。text/jsonは最大65,536 bytes、reasonは最大4,096 bytes。
 
