@@ -259,6 +259,9 @@ type lineCell struct {
 	thick int // 太い線 (git が無視するものでない枝) が寄与したビット
 	emph  emphasis
 	owner *node // その枝が生える親 (線の色の元。spec §1.4 の sap)
+	// routeRun は経路の横の線が通るセル (経路の光が走る所。pulse.go)。emph と mask からは決まらない: 経路の縦棒の上の
+	// 継ぎ目 (╠) も emRoute で横のビットを持つが、その横は兄弟への枝のもの
+	routeRun bool
 }
 
 // lineGrid はセルの位置から線の部品へ。セルは値で持つ: 毎フレーム作る格子でセルごとに確保しない (ポインタで持つと
@@ -271,6 +274,9 @@ func (g lineGrid) add(x, y, bits int, emph emphasis, owner *node, thick bool) {
 	c.mask |= bits
 	if thick {
 		c.thick |= bits
+	}
+	if emph == emRoute && bits&(dirLeft|dirRight) != 0 {
+		c.routeRun = true
 	}
 	if emph >= c.emph {
 		c.emph, c.owner = emph, owner

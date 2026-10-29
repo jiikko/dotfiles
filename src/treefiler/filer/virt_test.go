@@ -58,6 +58,7 @@ func newVirtPair(t *testing.T) *virtPair {
 		settleBackground(t, m)
 		m.Advance(fixedNow.Add(time.Hour)) // 裏の処理を待った回数は 2 つで違うので、同じ時刻へ揃えて止める
 		m.snapAll()
+		m.pulses = nil // 経路の光は snapAll で止まらない (pulse.go)。setCur で出た光の進みも、待った回数で違う
 		if i == 0 {
 			vp.virt = m
 		} else {

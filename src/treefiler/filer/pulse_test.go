@@ -5,58 +5,88 @@ import (
 	"time"
 )
 
-// pulseHeadX は経路の光の頭の桁 (画面の座標)。光を外して描いた画面と比べ、色が変わったセルのうちいちばん左を頭とする
-// (尾はカーソルの側に伸びる。頭が途中の名前の上にあるフレームでは、名前は光らないので線の上の尾の左端になる)。
-func pulseHeadX(t *testing.T, m *Model) (head, cursorX int) {
+// pulseDiff は光を外して描いた画面と今の画面を比べる。changed は変わったセル (画面の座標)、cur はカーソルの背景の左端。
+// カーソルの背景が光で塗り替わったら落とす (出たばかりの頭はそのセルに居る)。
+func pulseDiff(t *testing.T, m *Model) (changed [][2]int, cur [2]int) {
 	t.Helper()
 	keep := m.pulses
 	m.pulses = nil
-	base := m.draw()
-	was := append([]cell(nil), base.cells...)
+	was := append([]cell(nil), m.draw().cells...)
 	m.pulses = keep
 	c := m.draw()
-	head, cursorX = -1, -1
+	cur = [2]int{-1, -1}
 	for i := range c.cells {
-		x := i % c.w
-		if was[i].bg == cCursorBg && (cursorX < 0 || x < cursorX) {
-			cursorX = x
+		x, y := i%c.w, i/c.w
+		if was[i].bg == cCursorBg {
+			if cur[0] < 0 || x < cur[0] {
+				cur = [2]int{x, y}
+			}
+			if c.cells[i].bg != cCursorBg {
+				t.Fatalf("光がカーソルの背景を塗り替えた (%d,%d)", x, y)
+			}
 		}
-		if c.cells[i] != was[i] && (head < 0 || x < head) {
-			head = x
+		if c.cells[i] != was[i] {
+			changed = append(changed, [2]int{x, y})
 		}
 	}
-	return head, cursorX
+	return changed, cur
+}
+
+// headX は光ったセルのうちいちばん左 (尾はカーソルの側に伸びる。頭が途中の名前の上にあるフレームでは、名前は光らないので
+// 線の上の尾の左端になる)。
+func headX(changed [][2]int) int {
+	h := -1
+	for _, p := range changed {
+		if h < 0 || p[0] < h {
+			h = p[0]
+		}
+	}
+	return h
+}
+
+func advBy(m *Model, at *time.Time, d time.Duration) {
+	for end := at.Add(d); at.Before(end); {
+		*at = at.Add(16 * time.Millisecond)
+		m.Advance(*at)
+	}
 }
 
 // カーソルを動かすと、経路の線を光がカーソルの側から root の側へ走り、走り終えたら止まる (2026-10-29 ユーザー依頼)。
+// 光るのは経路の線だけ: カーソルの行の、カーソルより左のセルしか変わらない (root の他の子への枝・縦棒は光らない)。
 func TestPulseRunsFromCursorTowardRoot(t *testing.T) {
 	m := newTest(t)
 	cdTo(t, m, "b/deep/x.txt")
 	settle(m)
 	at := fixedNow
-	adv := func(d time.Duration) {
-		for end := at.Add(d); at.Before(end); {
-			at = at.Add(16 * time.Millisecond)
-			m.Advance(at)
+	var heads []int
+	for range 30 {
+		changed, cur := pulseDiff(t, m)
+		if cur[0] < 0 {
+			t.Fatal("前提: カーソルが描かれていない")
 		}
+		for _, p := range changed {
+			if p[1] != cur[1] || p[0] > cur[0] {
+				t.Fatalf("経路の外が光った: (%d,%d) カーソル=%v", p[0], p[1], cur)
+			}
+		}
+		if h := headX(changed); h >= 0 {
+			heads = append(heads, h)
+		}
+		advBy(m, &at, 16*time.Millisecond)
 	}
-	adv(16 * time.Millisecond)
-	x0, cx := pulseHeadX(t, m)
-	if x0 < 0 || cx < 0 || x0 < cx-4 {
-		t.Fatalf("出た直後の光の頭がカーソルの近くに無い: 頭=%d カーソル=%d", x0, cx)
+	if len(heads) < 5 {
+		t.Fatalf("光ったフレームが少ない: %v", heads)
 	}
-	adv(150 * time.Millisecond)
-	x1, _ := pulseHeadX(t, m)
-	if x1 < 0 || x1 >= x0-4 {
-		t.Fatalf("光が root の側へ走らない: %d → %d", x0, x1)
+	_, cur := pulseDiff(t, m)
+	if heads[0] < cur[0]-4 || heads[len(heads)-1] >= heads[0]-4 {
+		t.Fatalf("光がカーソルの側から root の側へ走らない: 頭の列=%v カーソル=%d", heads, cur[0])
 	}
-	adv(time.Second)
 	if len(m.pulses) != 0 || m.Animating() {
 		t.Fatalf("走り終えた光が残る: %d 本 (動き=%v)", len(m.pulses), m.Animating())
 	}
 }
 
-// 次のキーでは走っている光を打ち切らず、新しい光を足す (押しっぱなしで光が root まで届く)。
+// 次のキーでは走っている光を打ち切らず (進みもそのまま)、新しい光を足す (押しっぱなしで光が root まで届く)。
 func TestPulseSurvivesNextKey(t *testing.T) {
 	m := newTest(t)
 	cdTo(t, m, "a/one.txt")
@@ -66,5 +96,56 @@ func TestPulseSurvivesNextKey(t *testing.T) {
 	m.Advance(fixedNow.Add(32 * time.Millisecond))
 	if len(m.pulses) != 2 {
 		t.Fatalf("次のキーの後の光が %d 本 (前の光と新しい光の 2 本のはず)", len(m.pulses))
+	}
+	if m.pulses[0].t.el < 0.03 {
+		t.Fatalf("次のキーで前の光が出直した (進み %v 秒)", m.pulses[0].t.el)
+	}
+}
+
+// 押しっぱなしでも同時に走る光は maxPulses 本まで。起動時のカーソルでは光らない。
+func TestPulseCountIsCapped(t *testing.T) {
+	m := newTest(t)
+	if len(m.pulses) != 0 {
+		t.Fatalf("起動しただけで光が %d 本", len(m.pulses))
+	}
+	at := fixedNow
+	for range maxPulses + 2 {
+		m.HandleKey("j")
+		at = at.Add(time.Millisecond)
+		m.Advance(at)
+	}
+	if len(m.pulses) != maxPulses {
+		t.Fatalf("光が %d 本 (上限 %d)", len(m.pulses), maxPulses)
+	}
+}
+
+// 動きの途中は経路に縦棒が出る (親と子の行が離れている)。縦棒は光らせない: 桁だけで光るので、頭がその桁に来ると縦の帯ごと
+// 瞬く。背景を塗る頭のセルは、どのフレームでも光 1 本につき 2 つまで (経路が縦棒の桁で曲がる角の、親の行と子の行。縦棒を
+// 光らせると、その間の行の数だけ増える)。
+func TestPulseDoesNotLightVerticalBars(t *testing.T) {
+	m := newTest(t)
+	m.HandleKey("G") // root の直下の先頭から末尾へ: 縦に 8 段動く
+	at := fixedNow
+	sawGlow := false
+	for range 30 {
+		advBy(m, &at, 16*time.Millisecond)
+		keep := m.pulses
+		m.pulses = nil
+		was := append([]cell(nil), m.draw().cells...)
+		m.pulses = keep
+		c := m.draw()
+		heads := 0
+		for i := range c.cells {
+			if c.cells[i].bg != was[i].bg {
+				heads++
+			}
+			sawGlow = sawGlow || c.cells[i] != was[i]
+		}
+		if heads > 2*len(m.pulses) {
+			t.Fatalf("背景を塗ったセルが %d (光は %d 本)", heads, len(m.pulses))
+		}
+	}
+	if !sawGlow {
+		t.Fatal("前提: 光が一度も描かれていない")
 	}
 }

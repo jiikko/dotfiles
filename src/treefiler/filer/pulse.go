@@ -17,9 +17,8 @@ const maxPulses = 6 // 押しっぱなしで同時に走る光の上限 (古い�
 // stepPulses はカーソルが変わったら光を 1 つ出し、走り終えたものを捨てる。
 func (m *Model) stepPulses(dt float64) bool {
 	if m.pulseFor != m.cur {
-		first := m.pulseFor == nil // 起動時のカーソルは動かしたのではないので光らない
 		m.pulseFor = m.cur
-		if !first && m.cur != m.root { // root の上では走る線が無い
+		if m.cur != m.root { // root の上では走る線が無い
 			if len(m.pulses) == maxPulses {
 				m.pulses = append(m.pulses[:0], m.pulses[1:]...)
 			}
@@ -53,7 +52,7 @@ func (m *Model) pulseHeads(now map[*node][2]int) pulseHeads {
 		return nil
 	}
 	rx := float64(rp[0] + m.labelWidth(m.root) + 1) // root の右から出る線の始まり
-	var hs pulseHeads
+	hs := m.pulseBuf[:0]
 	for _, p := range m.pulses {
 		from := m.cur
 		for from.parent != nil && from.depth() > p.depth { // 今のカーソルより深い光はカーソルから走る
@@ -78,10 +77,12 @@ func (m *Model) pulseHeads(now map[*node][2]int) pulseHeads {
 			a:    a,
 		})
 	}
+	m.pulseBuf = hs
 	return hs
 }
 
 // light は経路の線のセル (木の座標の桁 x) を光で明るくする。尾は進む向きの後ろ (カーソル側) に伸びる。頭のセルは背景も塗る。
+// 背景は地の色のセルだけ: 出たばかりの頭はカーソルの名前の 1 桁左に居て、そこはカーソルの背景で塗ってある。
 func (hs pulseHeads) light(c *cell, x int, col rgb) rgb {
 	g, head := 0.0, false
 	for _, h := range hs {
@@ -96,7 +97,7 @@ func (hs pulseHeads) light(c *cell, x int, col rgb) rgb {
 	if g <= 0 {
 		return col
 	}
-	if head {
+	if head && c.bg == cBg {
 		c.bg = mix(cBg, cAccRoute, 0.35*g)
 	}
 	return mix(col, cFlash, g)
