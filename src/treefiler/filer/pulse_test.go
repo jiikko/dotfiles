@@ -120,6 +120,9 @@ func TestPulseCountIsCapped(t *testing.T) {
 	if el := m.pulses[len(m.pulses)-1].t.el; el > 0.0015 {
 		t.Fatalf("上限で今の光を足さなかった (最後の光の進み %v 秒。古い光から捨てるはず)", el)
 	}
+	if el := m.pulses[0].t.el; el < 0.0055 || el > 0.0065 {
+		t.Fatalf("残った最初の光の進みが %v 秒 (古い 2 本を捨てて、6 打ち前の光が残るはず)", el)
+	}
 }
 
 // 光は出発点 (カーソルの名前の 1 桁左) より右を光らせない: 開いたフォルダの上では経路がカーソルの右へ続き、尾がそこまで届く。
