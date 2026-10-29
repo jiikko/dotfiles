@@ -430,8 +430,10 @@ run_in_wt() {  # $1=段の名前 $2=コマンド。出力は呼び出し側の�
   #    検証コマンドに渡るのは環境変数だけ (MUTATE_FILE は export 済み)。報告用の fd 3 は渡さない
   # 背景で起こして wait するのは、中断の trap が wait を抜けて stop_run_group を走らせられるようにするため
   # (前景で起こすと、trap は run が終わるまで走らない)
+  # TEST_FAIL_LEDGER を空で渡す: 変異でわざと起こした赤を、make の runner が落ちたテストの記録
+  # (scripts/test_fail_ledger.sh) に本物の失敗として書くため
   # shellcheck disable=SC2016  # perl のコードはシェルに展開させない
-  ( cd "$WTS_PATH" && exec "$RUNTIMEOUT" -f "$timeout" \
+  ( cd "$WTS_PATH" && TEST_FAIL_LEDGER='' exec "$RUNTIMEOUT" -f "$timeout" \
       perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV or die "exec: $!\n"' \
       "$BASH" -uo pipefail -c "$cmd" ) 3>&- &
   run_root=$!

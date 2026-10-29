@@ -169,10 +169,12 @@ probe_plan() {
 
 # コピーを 1 回走らせて rc を返す (timeout つき)。出力は $2 のファイルへ落とす
 # (「その分岐に到達したか」を ✗ の数で確かめるため。rc だけでは判定できない)。
+# TEST_FAIL_LEDGER を空で渡す: runner を通さずにテストを起こすので、テストの中で runner をわざと落とす make が
+# 落ちたテストの記録 (scripts/test_fail_ledger.sh) に偽の失敗を書く。
 run_probe() {
   local probe="$1" out="$2"
   chmod +x "$probe"
-  "$RUNTIMEOUT" "$PROBE_TIMEOUT" "$probe" < /dev/null > "$out" 2>&1   # stdin は旧実装の & 起動と同じく /dev/null
+  TEST_FAIL_LEDGER='' "$RUNTIMEOUT" "$PROBE_TIMEOUT" "$probe" < /dev/null > "$out" 2>&1   # stdin は旧実装の & 起動と同じく /dev/null
 }
 
 # ✗ の数 (取れなければ 0)。🚨 空文字を返さない — 返すと呼び出し側の [ -le ] が

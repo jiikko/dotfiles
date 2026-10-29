@@ -163,6 +163,25 @@ if [ -n "$$failed" ]; then \
 fi
 endef
 
+# runner が起動する各テストへ空で渡す、runner 自身の集計先。テストの中で runner をわざと落とす make
+# (tests/scripts/test_test_fail_ledger.sh) が受け継ぐと、偽の失敗が外側の全腕合計と本物の記録に混ざる。
+TEST_CHILD_ENV := TEST_FAIL_LEDGER= TEST_FAILS_SUMMARY= TEST_SKIPS_SUMMARY=
+
+# 落ちたテストの一覧 $(2) (1 行 1 名前) を、種類 $(1) で落ちたテストの記録 (scripts/test_fail_ledger.sh) へ足す。
+# runner ごとに 1 回だけ呼ぶ: 全腕合計で書くと単独の target の失敗が漏れ、腕と合計の両方で書くと 2 重になる。
+# 結果を報告しなかったテスト (並列 runner の故障) は渡さない。走っていないテストを落ちたと数えるため。
+# 中断 (Ctrl-C・TERM・HUP) した run も渡さない。runner の trap は exit しないので中断の後も一覧まで進み、
+# 中断で落ちたテストを落ちたと数える。呼ぶ側は record_interrupt_trap で印 (interrupted) を立てておく。
+# 記録の失敗はテストの結果を変えない (理由は出す)。
+define record_failed_tests
+if [ -n "$${interrupted:-}" ]; then echo "[記録] 中断した run なので、落ちたテストを記録しない" >&2; \
+else ./scripts/test_fail_ledger.sh record $(1) "$(2)" || echo "✗ 落ちたテストの記録を書けなかった (テストの結果は変えない)" >&2; fi
+endef
+# $(1) は中断のときに一緒に走らせる後始末 (空でもよい)。EXIT の後始末は呼ぶ側が別に張る。
+define record_interrupt_trap
+interrupted=; trap 'interrupted=1; $(1)' INT TERM HUP
+endef
+
 # run_tests / run_tests_parallel が出した失敗・skip の一覧を、腕をまたいで合算するための受け口。
 # TEST_FAILS_SUMMARY / TEST_SKIPS_SUMMARY (追記先のファイルパス) が環境に在るときだけ追記する。
 # 単体で `make test-tmux` 等を叩いたときは未設定なので何もしない。
@@ -226,13 +245,13 @@ tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); 
 [ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
 fails=$$(mktemp); skips=$$(mktemp); \
 suite_td=$$(mktemp -d) && [ -n "$$suite_td" ] || { echo "✗ 使い捨て TMPDIR を作れない (mktemp -d 失敗)。隔離なしで走らせない" >&2; exit 1; }; \
-trap 'rm -rf "$$suite_td"' EXIT INT TERM HUP; \
+trap 'rm -rf "$$suite_td"' EXIT; $(call record_interrupt_trap,rm -rf "$$suite_td"); \
 i=0; \
 printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; \
 	i=$$((i+1)); td="$$suite_td/$$i"; mkdir -p "$$td"; \
-	if TMPDIR="$$td" "$$t" </dev/null; then :; else rc=$$?; if [ "$$rc" -eq 77 ]; then echo "$$t" >> "$$skips"; else echo "$$t" >> "$$fails"; fi; fi; \
+	if $(TEST_CHILD_ENV) TMPDIR="$$td" "$$t" </dev/null; then :; else rc=$$?; if [ "$$rc" -eq 77 ]; then echo "$$t" >> "$$skips"; else echo "$$t" >> "$$fails"; fi; fi; \
 	rm -rf "$$td"; done; \
-$(call append_test_summary,$$fails,$$skips); \
+$(call record_failed_tests,sh,$$fails); $(call append_test_summary,$$fails,$$skips); \
 if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
 if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails" "$$skips"; exit 1; fi; \
 rm -f "$$fails" "$$skips"
@@ -265,9 +284,9 @@ tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); 
 [ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
 fails=$$(mktemp); skips=$$(mktemp); ran=$$(mktemp); exp=$$(mktemp); miss=$$(mktemp); xrc=0; rc=0; \
 suite_td=$$(mktemp -d) && [ -n "$$suite_td" ] || { echo "✗ 使い捨て TMPDIR を作れない (mktemp -d 失敗)。隔離なしで走らせない" >&2; exit 1; }; \
-trap 'rm -rf "$$suite_td"' EXIT INT TERM HUP; \
+trap 'rm -rf "$$suite_td"' EXIT; $(call record_interrupt_trap,rm -rf "$$suite_td"); \
 printf '%s\n' "$$tests" | FAILS="$$fails" SKIPS="$$skips" RAN="$$ran" SUITE_TD="$$suite_td" xargs -P $(NPROC) -n 1 sh -c \
-	'out=$$(mktemp); td=$$(mktemp -d "$$SUITE_TD/XXXXXX") || exit 1; TMPDIR="$$td" "$$0" >"$$out" 2>&1; rc=$$?; \
+	'out=$$(mktemp); td=$$(mktemp -d "$$SUITE_TD/XXXXXX") || exit 1; $(TEST_CHILD_ENV) TMPDIR="$$td" "$$0" >"$$out" 2>&1; rc=$$?; \
 	rm -rf "$$td"; echo "$$0" >> "$$RAN"; \
 	if [ "$$rc" -eq 0 ]; then echo "[ok] $$0"; \
 	elif [ "$$rc" -eq 77 ]; then echo "[skip] $$0"; cat "$$out"; echo "$$0" >> "$$SKIPS"; \
@@ -278,7 +297,7 @@ echo ""; echo "[並列] 対象 $$(wc -l < "$$exp" | tr -d ' ') 件 / 結果を�
 if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
 if [ -s "$$miss" ]; then { echo ""; echo "✗ 結果を報告しなかったテスト $$(wc -l < "$$miss" | tr -d ' ') 件 (走ったかどうか自体が不明。xargs は utility がシグナルで死ぬか exit 255 だと残りの入力を捨てる):"; sed 's/^/  /' "$$miss"; } >&2; rc=1; fi; \
 if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rc=1; fi; \
-sed 's/$$/ (結果を報告しなかった)/' "$$miss" >> "$$fails"; $(call append_test_summary,$$fails,$$skips); \
+$(call record_failed_tests,sh,$$fails); sed 's/$$/ (結果を報告しなかった)/' "$$miss" >> "$$fails"; $(call append_test_summary,$$fails,$$skips); \
 rm -f "$$fails" "$$skips" "$$ran" "$$ran.s" "$$exp" "$$miss"; \
 [ "$$rc" -eq 0 ] || exit 1; \
 [ "$$xrc" -eq 0 ] || { echo "✗ 並列 runner (xargs) が rc=$$xrc で終わったが、失敗したテストの記録が無い (runner 自体の故障)" >&2; exit 1; }
@@ -463,9 +482,10 @@ test-zshrc:
 # 🚨 bats の stdin は /dev/null にする (while の stdin はテストの一覧。読むと後ろの .bats が黙って走らない。run_tests の注記と同じ)
 test-bats:
 	@if command -v bats >/dev/null 2>&1; then \
-		fails=$$(mktemp); \
+		fails=$$(mktemp); $(call record_interrupt_trap,:); \
 		find tests -type f -name '*.bats' ! -name '*helper*' | sort | \
-			while IFS= read -r t; do echo "[run] $$t"; bats "$$t" </dev/null || echo "$$t" >> "$$fails"; done; \
+			while IFS= read -r t; do echo "[run] $$t"; $(TEST_CHILD_ENV) bats "$$t" </dev/null || echo "$$t" >> "$$fails"; done; \
+		$(call record_failed_tests,bats,$$fails); \
 		if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗した bats:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails"; exit 1; fi; \
 		rm -f "$$fails"; \
 	else \
@@ -639,7 +659,9 @@ for dir in $(GO_PROJECT_DIRS); do \
 	rc=$$(cat "$$outdir/$$i.rc" 2>/dev/null || echo 99); \
 	echo "[go-$(1)] $$dir (rc=$$rc)"; cat "$$outdir/$$i.out"; \
 	[ "$$rc" -eq 0 ] || failed="$$failed $$dir"; \
+	$(if $(filter test,$(1)),[ "$$rc" -eq 0 ] || ./scripts/test_fail_ledger.sh go-names "$$dir" "$$outdir/$$i.out" >> "$$outdir/failed_tests";) \
 done; \
+$(if $(filter test,$(1)),$(call record_failed_tests,go,$$outdir/failed_tests);) \
 rm -rf "$$outdir"; \
 if [ -n "$$failed" ]; then \
 	{ echo ""; echo "✗ [go-$(1)] 失敗したプロジェクト:$$failed"; } >&2; \

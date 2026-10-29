@@ -12,6 +12,8 @@
 #   - test_changed.sh 側: PATH 先頭に偽 make を置いて、呼び出しを記録させる
 set -euo pipefail
 unset CDPATH
+# runner をわざと落とすので、落ちたテストの記録 (scripts/test_fail_ledger.sh) を切る。runner の外から直接起こしても本物へ書かない。
+export TEST_FAIL_LEDGER=
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR" || exit 1

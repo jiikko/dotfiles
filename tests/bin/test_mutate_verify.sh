@@ -970,6 +970,20 @@ rc=$?
 [ "$rc" -eq 0 ] || { fail "GIT_DIR が別の repo を指し、cwd がサブディレクトリだと rc=$rc (期待 0)"; cat "$work/out.log"; }
 
 # ---------------------------------------------------------------------------
+# 52. 検証コマンドへ TEST_FAIL_LEDGER を空で渡す。継承すると、変異でわざと起こした make の runner の赤が
+#     落ちたテストの記録 (scripts/test_fail_ledger.sh) に本物の失敗として書かれる
+# ---------------------------------------------------------------------------
+d="$work/ledger"; make_repo "$d"
+seen="$work/ledger-seen"
+( cd "$d" && TEST_FAIL_LEDGER="$work/real-ledger.tsv" "$MV" \
+    --verify "printf '%s|' \"\${TEST_FAIL_LEDGER-unset}\" >> '$seen'; bash verify.sh" --baseline-expect '^ran 2 checks' \
+    --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad' ) > "$work/out.log" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] || { fail "TEST_FAIL_LEDGER を継承した run が rc=$rc (期待 0)"; cat "$work/out.log"; }
+[ "$(cat "$seen" 2>/dev/null)" = "||" ] \
+  || fail "🚨 検証コマンドが見た TEST_FAIL_LEDGER が [$(cat "$seen" 2>/dev/null)] (期待 baseline と変異の 2 回とも空 = ||)"
+
+# ---------------------------------------------------------------------------
 # 末尾. 🚨 全ケースを通した**後**の残骸ゼロ。
 #     この判定は必ずファイル末尾に置く — 2 周目に「末尾に置く」と書きながら、その後で
 #     新ケースを 3 つ判定より前に足して同じ穴を再生産した。

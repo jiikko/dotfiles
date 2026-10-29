@@ -67,7 +67,9 @@ while IFS= read -r entry; do
   fi
 
   # ② 中断でも回収する trap
-  if grep -qF "trap 'rm -rf \"\$\$suite_td\"' EXIT INT TERM HUP" <<< "$body"; then
+  # 中断の trap は record_interrupt_trap (落ちたテストの記録を止める印も立てる) に後始末を渡して張る
+  if grep -qF "trap 'rm -rf \"\$\$suite_td\"' EXIT" <<< "$body" \
+     && grep -qF '$(call record_interrupt_trap,rm -rf "$$suite_td")' <<< "$body"; then
     ok "$label: 中断 (INT/TERM/HUP) でも親 dir を回収する"
   else
     bad "$label ($name) に中断時の trap が無い (Ctrl-C / CI キャンセルでツリーが残り、変更前より悪化する)"

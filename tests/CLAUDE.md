@@ -80,6 +80,20 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
 - 🚨 写像の穴として既知: `_claude/rules-rationale/*.md` と `_claude/rules-checklists/*.md` は「テスト対象なし」になる
   (issue 188 の発火元がまさに rules-rationale の新設だった)
 
+## 負荷でだけ落ちるテストは、帰属を確かめる前に記録を数える
+
+- `make test` (と `make test-dir` などの単独の target) が赤のとき、runner は落ちたテスト名を 1 行ずつ
+  `${XDG_CACHE_HOME:-~/.cache}/dotfiles-test-fails/log.tsv` へ追記する (日時・commit・load average・種類・名前)。
+  sh / bats は repo root からの相対パス、go は `src/<module> <package> Test名` (名前の無い build の失敗などは `… (テスト名なし)`) で残る
+  - 書かないもの: 緑の run・CI・中断 (Ctrl-C) した run・並列 runner が結果を報告しなかったテスト・lint の赤・
+    `make test-changed` の Go の経路 (`scripts/test_changed.sh` が module の make を直接叩き、runner を通らない)
+- 自分の変更で説明できない赤が出たら、経路を辿り直す前に `scripts/test_fail_ledger.sh top` を見る。前にも落ちていれば回数と、
+  そのテスト名を書いた issue (422 など) が並ぶ。初めてなら、その赤は自分の変更を先に疑う
+- 記録先は `TEST_FAIL_LEDGER` で変えられ、空にすると書かない。runner は起動する各テストへ空で渡す
+  (runner をわざと落とすテストの中の make が、本物の記録に偽の失敗を足さないため。`bin/mutate-verify` の検証コマンドと
+  `make test-assert-reaches-exit` の probe にも空で渡す)。runner を外から叩くテストを書くなら、記録を見たいときだけ
+  一時ファイルを `TEST_FAIL_LEDGER` に渡し、そうでなければ冒頭で `export TEST_FAIL_LEDGER=` する (`tests/scripts/test_test_fail_ledger.sh`)
+
 ## 「0 件」「skip」「沈黙」の扱い
 
 - 発見 0 件は失敗 (`run_tests` が落とす。issue 063)。find の失敗やディレクトリ改名を「未実行なのに緑」にしない
