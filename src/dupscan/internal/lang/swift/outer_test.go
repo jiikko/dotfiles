@@ -22,3 +22,16 @@ func TestMarkOuterStopsAssignSearchAtComma(t *testing.T) {
 		t.Errorf("g(a) の a は shorthand で効いた局所の名前で、外側の名前ではない")
 	}
 }
+
+// 局所の型の init の引数は、同じ型の本体の後ろのメソッドへ届かない (init を出たら外す)。
+func TestMarkOuterInitParamDoesNotReachSiblingMethod(t *testing.T) {
+	ref := &tree.Node{Role: tree.RoleName, Text: "min"}
+	body := &tree.Node{Kind: "class_body", Children: []*tree.Node{
+		{Kind: "init_declaration", Children: []*tree.Node{{Kind: "parameter", Children: []*tree.Node{{Role: tree.RoleDecl, Text: "min"}}}}},
+		{Kind: "function_declaration", Children: []*tree.Node{{Kind: "statements", Children: []*tree.Node{ref}}}},
+	}}
+	markOuter(body, nil)
+	if !ref.Outer {
+		t.Errorf("後ろのメソッドの min は init の引数ではなく外側の名前")
+	}
+}

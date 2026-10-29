@@ -80,13 +80,15 @@ func markOuter(body *tree.Node, params []string) {
 }
 
 // scopeKinds は、中で宣言した名前が外へ届かない節 (block・closure・ループ・switch の case・catch・if / guard・入れ子の関数・
-// 関数の中の局所の型の本体 (struct / class / actor は class_body、enum は enum_class_body)。局所の型の init / subscript の
-// 引数は、型の本体を出るときに外れる。
-// repeat-while は本体の statements が scope なので要らない (条件は本体の外で、本体の宣言は条件に届かない)。
+// 局所の変数の didSet / willSet・関数の中の局所の型の本体 (struct / class / actor は class_body、enum は enum_class_body))。
+// 文法の節のうち中に宣言を持ちうるものは、全部 scope_kinds_test.go の scopeKindDecisions で scope / 素通り / 関数の外に分類してある
+// (局所の型の init / subscript の引数は、型の本体の中の後ろのメソッドへ漏れないよう、それ自身を scope にする。
+// repeat-while の本体は statements で閉じるので素通り)。
 var scopeKinds = map[string]bool{
 	"statements": true, "lambda_literal": true, "for_statement": true, "while_statement": true,
 	"switch_entry": true, "catch_block": true, "if_statement": true, "guard_statement": true, "function_declaration": true,
-	"class_body": true, "enum_class_body": true,
+	"class_body": true, "enum_class_body": true, "didset_clause": true, "willset_clause": true,
+	"init_declaration": true, "subscript_declaration": true,
 }
 
 func cloneSet(m map[string]bool) map[string]bool {

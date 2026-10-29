@@ -25,6 +25,8 @@ func TestL1SwiftBindingDoesNotReachOutsideItsScope(t *testing.T) {
 		{"local_type_init", "        struct S { init(X: Int) {} }\n        show(X); print(1, 2, 3)"},
 		{"local_type_subscript", "        struct S { subscript(X: Int) -> Int { X } }\n        show(X); print(1, 2, 3)"},
 		{"local_enum_member", "        enum E { static let X = 1 }\n        show(X); print(1, 2, 3)"},
+		{"didset_param", "        var v = 0 { didSet(X) { show(X) } }\n        v = 1; show(X); print(1, 2, 3)"},
+		{"willset_param", "        var v = 0 { willSet(X) { show(X) } }\n        v = 1; show(X); print(1, 2, 3)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out := reportGroups(t, map[string]string{
