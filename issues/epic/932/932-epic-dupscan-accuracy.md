@@ -24,6 +24,7 @@
 | [965](done/965-research-dupscan-dogfood-treefiler-dedup-2026-10-29.md) | src/treefiler の重複の統合で使った所見。sweep の節 5 は Test 関数の中を見ない (仕様だが出力に出ない)・同じ単位の 2 つ目の allow-group が黙って効かない・単位の allow は組の全員に要る・Go の `callers New` が `errors.New` を拾う |
 | [966](done/966-ux-dupscan-sweep-silent-allow-marks-2026-10-29.md) | src/tuikit の sweep の 3 組を閉じたときの所見。sweep が印で消した組の数と、人数の合わない allow-group を出すようにした (起点を絞ったときは L1 で多い印だけ)。反証レビューの P2 2 件 (起点を絞ると印が粗い段の別の組に効く・levels を省いたパスの除外が L1m に効かない) を記録 |
 | [973](done/973-bug-dupscan-exclusion-level-and-narrow-allow-group.md) | levels を省いたパスの除外を L1m にも効かせた・起点を絞ったとき allow-group を言語ごとに L1 へ限る (起点の外に同じ言語のファイルがあるときだけ。CI の起点 src では今までどおり効く) |
+| [986](986-design-dupscan-structural-improvements.md) | 2 つの狙い (grep の置き換え・量産の抑止) の到達度の評価と、構造の改善の順 (指標 → 書く前の候補を戻り型・引数型でも引く → gate の近似段を索引なしで試作)。常設の索引と型の解決は 899・924・925 の決定を維持し、再開の条件つきで記録 |
 | [970](done/970-refactor-dupscan-group-containment-one-check.md) | 「組が別の組に含まれるか」の判定が 3 か所 (組分け・sweep の節 2・節 6) にあったのを group.Subset に寄せた。done |
 | [972](done/972-research-dupscan-dogfood-glogx-tui-split-2026-10-29.md) | glogx の tui.go の分割 (971) で使った所見。雑音 3 件: Go の index -file に Swift の注意書き / -file でも無関係な testdata の「解析不完全」 / tmp/ の使い捨ての道具にも候補の注入 |
 | [979](979-research-dupscan-dogfood-sac-dedup-2026-10-29.md) | SAC の重複の統合で使った所見。`index` の呼び出し数が同名の private 関数で合算される・Swift の `callers` はテストメソッドを「(単位の外)」と出す (937 は Go だけ)・sweep の節 2 に `single_call` の印が無い |
