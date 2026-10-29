@@ -78,5 +78,9 @@
 - [x] onPaste: 全画面ごとに 3 回写していた `!actModal.active() && !restartPromptVisible()` を `boardOwnsInput` にまとめ、switch 1 本にした。
   早期 return を外す変異で TestPasteGoesOnlyIntoInputs が red
   — commit「test(glogx): handleKey の段の優先を守るテストを足し、onPaste の板の判定を 1 つにする (issue 975)」
-- [ ] 実装の敵対的レビュー
-- [ ] make test・push・CI・Bench
+- [x] 実装の敵対的レビュー (opus、読み取りのみ): P1・P2 なし。onPaste はド・モルガンで旧と同じ条件・全画面の分岐は排他。
+  足した 3 本は、前提を立てた上で主張する優先だけで red になる (別の機構で弾かれていない)。「diff と PR status が同時に開く経路は無い」も
+  開く経路 4 つを辿って正しい。P3 (boardOwnsInput の doc の「全画面への振り分けより前」の間に C / X の段も挟まる) は記述として誤りでないので直さない
+- [x] ルートの make test rc=0 (2026-10-30)。push 済み (cd0fc2ea2)。CI は Issues / Lint / unused / src/glogx / src/doctor / doctor / dupscan gate が緑
+- [ ] CI の Tests と Bench: cd0fc2ea2 から後の 8 commit の run がどれも後続の push で取り消された (concurrency の cancel-in-progress。
+  再実行も同じ group で取り消された)。私の commit を含む commit で完走した run を見てから done にする
