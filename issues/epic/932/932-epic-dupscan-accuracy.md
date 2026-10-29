@@ -34,6 +34,7 @@
 | [982](done/982-cleanup-dupscan-unused-text-writers.md) | 使われていない `CallersText` / `EvidenceText` を消す (`deadcode -test` で届かない。`unused` は公開名を数えない) |
 | [984](done/984-research-dupscan-audit-2026-10-30.md) | 22 観点の監査 (直接実行) の全数勘定と、報告しなかったものの理由。[983](done/983-bug-dupscan-paths-levels-l1m.md) は 973 で決めた仕様と分かり取り下げ |
 | [990](done/990-bug-dupscan-swift-l1-locals-outside-binding-scope.md) | Swift の L1 が、束縛の届かない所 (closure・ループ・else の中・if の後ろ) の同じ綴りのプロパティを番号にする。[974](done/974-bug-dupscan-l1-numbers-shadowed-outer-names.md) の近似の残り |
+| [993](done/993-test-dupscan-swift-scope-kinds-cover-grammar.md) | Swift の scope の節の種類を文法 (node-types.json) の全部の節と突き合わせてテストで固定。didSet / willSet・局所の型の init / subscript の取りこぼしを直した |
 
 ## 完了した子issue
 
