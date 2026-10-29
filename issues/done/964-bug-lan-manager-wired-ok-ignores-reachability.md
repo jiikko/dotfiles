@@ -68,4 +68,4 @@
 - [x] 敵対的レビュー 2 周目 (opus、直した差分): 壊せなかった。P3 2 件 (板の「10 秒」が手の写し・板の 1 行目と 2 行目の言い回しの食い違い) を
   「refactor(mac-lan-manager): 広告のループの周期を setup.AdvertEvery にし、確認の板の言い回しを揃える」で直した
 - [x] 既に入っている Mac (前の形で走っている) の入れ直し: 自動では起きない (一覧の `!` は名前の解決だけを見るので、前の形でも付かない)。
-  各 Mac で初期設定の名前の手順を実行し直す人の作業として [967](../967-human-reinstall-wired-name-advert-on-each-mac.md) に切り出した
+  各 Mac で初期設定の名前の手順を実行し直す人の作業として [967](967-human-reinstall-wired-name-advert-on-each-mac.md) に切り出した
