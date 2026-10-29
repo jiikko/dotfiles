@@ -219,4 +219,5 @@ transcript の `hook_additional_context` と、それを起こした Write / Edi
   - 抽出の誤り: `FUNC_GO` は書く文字列の行頭の `func` を全部拾い、Go の文字列リテラル (raw string) の中かを見ない。dupscan のように test が Go のソースを fixture として持つ所で起きる
   - ignore されたパス: `.go` で絶対パスなら対象にし、`git check-ignore` を見ない。`tmp/` の使い捨ての道具でも引く
   - `WindowHash` → `window`: 前方一致 (共通部分 6 文字以上) の規則どおり。名前の先頭の語だけが一致する形は、規則の側で避けられない (語の数・語の一致の割合で絞る案はあるが、`allowedGroup` → `allowed` も同じ形なので、絞ると役に立った 1 件も落ちる)
-- 次: 上の 2 つの原因は直せる (文字列リテラルの中を除く・ignore されたパスでは引かない)。直すかは別に決める。2026-11-04 の再測定では、各マシンのログを合わせて同じ分類で数え増やす
+- 次: 上の 2 つの原因は 2026-10-29 に直した (commit「fix(hooks): A1 の候補の注入で、文字列とコメントの中の func と ignore されたパスを引かない」)。
+  同じ 7 回を今の hook に流すなら、`writeFile`・`repoWith`・`apply` の 3 回は出ない見込み (本物の dupscan で fixture の中の `writeFile` が無音になるのは確認、7 回の再生はしていない)。2026-11-04 の再測定では、各マシンのログを合わせて同じ分類で数え増やす
