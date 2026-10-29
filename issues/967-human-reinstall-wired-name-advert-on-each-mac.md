@@ -26,4 +26,11 @@ setup/wiredname.go の InstallScript)。Claude がこれを代わりに打つと
 
 ## 進捗
 
-- [ ] 有線の名前を広告している全 Mac で入れ直した
+- [x] 有線の名前を広告している全 Mac で入れ直した (2026-10-29。ユーザーの許可を得て Claude が打った。lan-manager の UI は通さず、
+  `setup.NameAdvert.InstallScript()` が組んだ sh を、この Mac ではそのまま、相手の 3 台には ssh の `sh -s` で流した)
+  - 入れ直す前は 4 台とも前の形 (`launchctl print` の arguments の 1 番目が `/usr/bin/dns-sd`): kojiM3MBP (kojim3macbook-pro.wired.local → 192.168.100.10)・
+    air5 (→ .11)・m2macmini (→ .15)・ms (→ .13)
+  - 入れ直した後は 4 台とも state = running、arguments の 1 番目が `/bin/sh`、4 番目が `mac-lan-manager-wired-name-v2`、7・8 番目が上の名前と IP。
+    `dns-sd -P` は各 Mac で 1 本だけで、親は job の sh。この Mac (kojiM3MBP) から `dscacheutil -q host -a name <名前>` で 4 つとも台帳の IP に引けた
+  - 「IP を失ったら広告が止まる」は本物の I/F で起こして確かめていない (アダプタを抜く操作が要る)。偽の ifconfig ではテスト
+    (`TestAdvertLoopFollowsIP`) が見ている
