@@ -68,7 +68,7 @@ func buildCapabilities() capabilityDocument {
 				names = append(names, adapter.Name)
 			}
 		}
-		if spec.Name == "capabilities" || spec.Name == "doctor" || spec.Name == "agent-guide" {
+		if spec.Name == "capabilities" {
 			names = []string{}
 		}
 		var help bytes.Buffer

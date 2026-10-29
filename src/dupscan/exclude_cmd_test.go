@@ -90,7 +90,22 @@ func runReport(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var out, errb bytes.Buffer
 	rc := run(args, &out, &errb)
-	return rc, out.String(), errb.String()
+	return rc, out.String(), withoutWatchNotice(t, args, errb.String())
+}
+
+// withoutWatchNotice は使われ方を見ている入口の通知を、先頭にあることを確かめてから外す (残りの stderr を各テストがそのまま検査できるように)。
+func withoutWatchNotice(t *testing.T, args []string, stderr string) string {
+	t.Helper()
+	for _, spec := range commandSpecs() {
+		if len(args) > 0 && args[0] == spec.Name && spec.Watched != "" {
+			notice := watchNotice(spec)
+			if !strings.HasPrefix(stderr, notice) {
+				t.Fatalf("%s: stderr の先頭に使われ方を見ている入口の通知が無い: %q", spec.Name, stderr)
+			}
+			return stderr[len(notice):]
+		}
+	}
+	return stderr
 }
 
 // groupRule は report の json の最初の組に付く「除外の 1 行」に kind と reason を埋めた除外。

@@ -35,8 +35,6 @@ const usage = `usage: dupscan [report] [flags] [dir ...]
        dupscan context [flags] <名前|Type.member|名前(ラベル:…)> [dir ...]
        dupscan evidence [flags] <語> [dir ...]
        dupscan capabilities [-format text|json] [-outputs report|gate]
-       dupscan doctor [-repo dir] [-base ref] [-format text|json]
-       dupscan agent-guide -target claude|codex [-lang all|swift|go] -print
 
 report: dir (既定は .) を起点に、git が追跡しているファイルと ignore されていない untracked のファイルを読み、
 本体が同じ形の単位を段 (L1 / L2 / L3) ごとに組にして出す。
@@ -186,6 +184,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		for _, spec := range commandSpecs() {
 			if args[0] == spec.Name {
+				if spec.Watched != "" {
+					fmt.Fprint(stderr, watchNotice(spec))
+				}
 				return spec.Run(args[1:], stdout, stderr)
 			}
 		}

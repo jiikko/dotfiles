@@ -103,9 +103,33 @@ func TestRegisteredCommandsDispatchToEntryPoints(t *testing.T) {
 		var directOut, directErr, dispatchedOut, dispatchedErr bytes.Buffer
 		wantRC := spec.Run([]string{"-h"}, &directOut, &directErr)
 		gotRC := run([]string{spec.Name, "-h"}, &dispatchedOut, &dispatchedErr)
-		if gotRC != wantRC || directOut.String() != dispatchedOut.String() || directErr.String() != dispatchedErr.String() {
-			t.Errorf("%s dispatched to a different entry point: rc=%d/%d stdout=%q/%q stderr=%q/%q", spec.Name, gotRC, wantRC, dispatchedOut.String(), directOut.String(), dispatchedErr.String(), directErr.String())
+		wantErr := directErr.String()
+		if spec.Watched != "" {
+			wantErr = watchNotice(spec) + wantErr
 		}
+		if gotRC != wantRC || directOut.String() != dispatchedOut.String() || wantErr != dispatchedErr.String() {
+			t.Errorf("%s dispatched to a different entry point: rc=%d/%d stdout=%q/%q stderr=%q/%q", spec.Name, gotRC, wantRC, dispatchedOut.String(), directOut.String(), dispatchedErr.String(), wantErr)
+		}
+	}
+}
+
+// 使われ方を見ている入口は、起動のたびに作った用途と issue の書き先を stderr に出す (stdout と rc は上のテストが入口と同じことを見る)。
+func TestWatchedCommandsTellTheirPurposeOnStderr(t *testing.T) {
+	var watched []string
+	for _, spec := range commandSpecs() {
+		if spec.Watched == "" {
+			continue
+		}
+		watched = append(watched, spec.Name)
+		var out, errb bytes.Buffer
+		run([]string{spec.Name, "-h"}, &out, &errb)
+		first, _, _ := strings.Cut(errb.String(), "\n")
+		if !strings.Contains(first, spec.Watched) || !strings.Contains(first, "issues/epic/932/") {
+			t.Errorf("%s: stderr の 1 行目に用途と issue の書き先が無い: %q", spec.Name, first)
+		}
+	}
+	if got := strings.Join(watched, ","); got != "search,context,evidence" {
+		t.Errorf("使われ方を見ている入口 = %s", got)
 	}
 }
 
@@ -115,8 +139,6 @@ func TestCapabilitiesIncludesActualCommandFlags(t *testing.T) {
 		"gate":         {"-base string", "-fail-new-exclusions"},
 		"context":      {"-sections string", "-max-lines int"},
 		"capabilities": {"-format string"},
-		"doctor":       {"-repo string", "-base string"},
-		"agent-guide":  {"-target string", "-print"},
 	}
 	for _, cmd := range buildCapabilities().Commands {
 		for _, flag := range want[cmd.Name] {

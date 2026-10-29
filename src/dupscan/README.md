@@ -14,22 +14,17 @@ Claude Code にコードを書かせている間に、似たメソッドが量�
 
 判定は共通go_autobuild helperの既存規則（Goソース、go.mod/go.sum、相対パスのreplace先のパス・mtime・サイズ）を使う。内容hash・toolchain/SDK・環境変数・C/埋込asset等まで含む完全なビルド再現性の検証ではない。mtime/サイズを保った変更を見抜く保証も加えない。新しいworktreeはそこに対応するビルド記録が必要で、別worktreeの成果物を流用しない。
 
-`-no-build`はGoバイナリ自身のflagではなく、先頭以外では消費しない。現在のバイナリを実行した後の解析量や動作は選んだcommandに従う。通知hookからindex/report等を起動して全repoを解析してよい、という意味ではない。capabilities/doctor/agent-guideを利用できる。Go向けgrep案内hookもこの経路で同梱CLIへ対応状況を問い合わせる。
+`-no-build`はGoバイナリ自身のflagではなく、先頭以外では消費しない。現在のバイナリを実行した後の解析量や動作は選んだcommandに従う。通知hookからindex/report等を起動して全repoを解析してよい、という意味ではない。capabilitiesを利用できる。Go向けgrep案内hookもこの経路で同梱CLIへ対応状況を問い合わせる。
 
 ## 対応状況と導入の確認
 
 ```sh
 bin/dupscan -no-build capabilities -format json
-bin/dupscan -no-build doctor -repo /path/to/repo -format json
-bin/dupscan -no-build agent-guide -target claude -lang go -print
-bin/dupscan -no-build agent-guide -target codex -lang swift -print
 ```
 
 `capabilities` はrepo不要で、登録済みdispatchとadapterから対応コマンド・出力形式・言語・近似の限界を返す。`flags_help`は各コマンドの実際の`-h`経路から得るため、別のflag一覧を写さない。helpの構築だけで、source/config/gitやparserを起動しない。JSONは`schema_version: 1`の能力表で、926の分析結果用json-v2 envelopeとは別。text/jsonを明示的に選べ、両方とも最大65,536 bytes。登録されていないcommandは案内しない。`capabilities -outputs report|gate` は能力表の代わりに、その command の `-format json` の欄 (出力の型を辿り、型ごとに 1 回。空なら出ない欄に印) と、`-v` でだけ出る行の見出し・意味・対応する json の欄を返す (text / json。能力表の `schema_version` とは別)。欄と行の説明の正本はこの一覧 (`internal/report/outputs.go`)。
 
-`doctor` は実行パス・git・repo/worktree・拡張子の列挙・optional config・ローカルのgate baseを確認する。構文解析・build・fetch・重複検出はしない。各checkはok/info/warning/error/not_checkedで、入力/実行/configエラーはrc=2、source/baseが無い等のwarningはrc=0。`.dupscan.json`不在は正常で、HEADとbaseが同じでもgate合格とは表示しない。text/jsonは最大65,536 bytes、reasonは最大4,096 bytes。
-
-`agent-guide` は`-target claude|codex -print`を指定して、最大4,096 bytesの例だけを表示する。`-lang`はガイドの表示を選ぶもので、各検索コマンドのscopeを自動で絞るflagではない。例のTYPE/TERM/SYMBOLを置き換え、対象repoのcwdまたは末尾のdir指定で使う。instruction/設定の書換え・例の自動実行はしない。Claude固有hookがCodexでも動くとは案内しない。
+`search`・`evidence`・`context` は、作ったときの用途どおりに使われているかを見ている入口で、起動のたびに stderr へ用途と issue の書き先 (`issues/epic/932/`) を 1 行出す (stdout と rc は変えない)。用途と残している理由は `command_registry.go` の `Watched`。
 
 Goのgrep案内は同じcheckoutのwrapperを固定argv `-no-build capabilities -format json`で呼び、index/callersがGo対応と確認できたら具体例を出す。未build・古い版で確認できないときも具体例を出し、初回の起動でbuildすると添える (commit のたびに古い扱いになり、確認できない回が大半だったため。issue 941)。準備済みの版が非対応と答えた・能力情報が壊れているときだけ手動確認の短い案内に留める。通知は既存のsession/言語単位の900秒制限を保ち、追加contextは最大1,024 bytes。Swiftの通常の案内文・stampは921の測定を妨げないよう維持する。通知からrepo全体の構文解析や自動buildは起こさない。
 
