@@ -653,6 +653,24 @@ func TestIssuesViewNamedGroupParentMergesAndHidesWhenDone(t *testing.T) {
 	}
 }
 
+// TestIssuesViewHidesFinishedEpicWithOpenParent は親が group 直下 (open) に残っていても、子に open が
+// 無い epic が既定の一覧から消え、`a` で全開にすると親行ごと戻ることを viewer の行で固定する
+// (2026-10-29 ユーザー要望。判定は issues.Filter)。
+func TestIssuesViewHidesFinishedEpicWithOpenParent(t *testing.T) {
+	dir := "/repo/issues"
+	parent := fakeEpicIssue(dir, "910", "910", "fold", issues.StatusOpen)
+	done := fakeEpicIssue(dir, "910", "914", "agents", issues.StatusDone)
+	v := loadedView(parent, done)
+	if len(v.displayRows) != 0 {
+		t.Fatalf("子に open が無い epic が既定の一覧に残っている: %+v", v.displayRows)
+	}
+	v.filter = issues.FilterAll
+	v.refresh()
+	if len(v.displayRows) != 1 || v.displayRows[0].issue != parent || v.displayRows[0].childCount != 1 {
+		t.Fatalf("a の全開で親行と子が戻らない: %+v", v.displayRows)
+	}
+}
+
 // TestIssuesViewNumberParentWinsOverNamedForm は 1 つの group に親の 2 つの形が並んだとき、番号の形
 // (旧来の親) が親行に残ることを固定する。v.rows の並び (番号の降順) に任せると、後から足した
 // `470-epic-467.md` が 467 を子へ落とす。

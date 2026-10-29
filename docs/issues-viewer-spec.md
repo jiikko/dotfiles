@@ -163,7 +163,10 @@ pending の子を group 直下 (open) へ戻せば、その epic はまた既定
 終わった epic の**親 issue が group 直下 (open) に居るときは、自分の位置ではなく子の見え方に従う**
 (`issues.StatusFilter.showsIssue`): 子が 1 件でも見える段階 (`a` で pending を見せる段階など) では親行も出し、
 子が見えない段階では done と同じく伏せる。親だけを done 扱いにすると、pending の段で保留の子が合成の group 行の
-下へ取り残される。親を自分で done / pending へ置いたときは、その位置が宣言なので従来どおり位置で決める。
+下へ取り残される。親を自分で done / pending / next へ置いたときは、その位置が宣言なので従来どおり位置で決める
+(next の親は open な子と同じく数えるので、▶ を付けた epic は終わった扱いにならない)。親は group ごとに 1 件だけ選ぶ
+(`issues.groupOpenParents`。選び方は親行と同じく番号の形を優先する)。親の 2 つの形が並ぶ group で両方を外すと、
+親行の下に子として描かれる open な issue ごと epic が消える。
 
 🚨 **親 issue を done へ送った終わった epic は、`a` のどの段階でも出さない** (2026-10-02 ユーザー要望)。
 親を done へ送るのは「この epic は閉じた」という明示の宣言で、全部を見せる段階でも閉じた器の親行と子が

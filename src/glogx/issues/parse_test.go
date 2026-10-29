@@ -898,6 +898,7 @@ func TestClosedGroupKeysCountsParentAndIgnoresStrays(t *testing.T) {
 		{"親 issue が open でも子は全部 done", []*Issue{child("467", StatusOpen, GroupEpic), child("460", StatusDone, GroupEpic)}, true},
 		{"親 issue だけ (子が居ない)", []*Issue{child("467", StatusOpen, GroupEpic)}, false},
 		{"親 issue が open で子に open が残る", []*Issue{child("467", StatusOpen, GroupEpic), child("460", StatusOpen, GroupEpic)}, false},
+		{"親を next へ置いた (着手の宣言)", []*Issue{child("467", StatusNext, GroupEpic), child("460", StatusDone, GroupEpic)}, false},
 		{"pending が残っていても完了", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusPending, GroupEpic)}, true},
 		{"waiting が残っていても完了", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusWaiting, GroupEpic)}, true},
 		{"子が pending だけ", []*Issue{child("459", StatusPending, GroupEpic)}, true},
@@ -905,7 +906,7 @@ func TestClosedGroupKeysCountsParentAndIgnoresStrays(t *testing.T) {
 		{"迷子は数えない", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusUnknown, GroupUnknown)}, true},
 		{"子が 0 件", nil, false},
 	} {
-		if got := closedGroupKeys(tc.list)[key]; got != tc.want {
+		if got := closedGroupKeys(tc.list, groupOpenParents(tc.list))[key]; got != tc.want {
 			t.Errorf("%s: got %v want %v", tc.name, got, tc.want)
 		}
 	}
@@ -924,6 +925,9 @@ func TestFilterHidesFinishedEpicWithOpenParent(t *testing.T) {
 	mkFiles(t, filepath.Join(dir, "epic", "920"), "920-design-live.md", "921-feat-open.md")
 	// 親だけの epic (起票した直後)
 	mkFiles(t, filepath.Join(dir, "epic", "930"), "930-design-new.md")
+	// 親の 2 つの形が並ぶ epic: viewer は番号の形 (940) を親行にし、名前付きの形 (945) を open な子として描く
+	mkFiles(t, filepath.Join(dir, "epic", "940"), "940-design-x.md", "945-epic-940.md")
+	mkFiles(t, filepath.Join(dir, "epic", "940", "done"), "941-feat-done.md")
 	all, _ := Scan([]string{dir})
 
 	for _, f := range []StatusFilter{FilterOpen, FilterPending, FilterAll} {
@@ -933,7 +937,7 @@ func TestFilterHidesFinishedEpicWithOpenParent(t *testing.T) {
 		}
 		for n, want := range map[string]bool{
 			"910": f >= FilterPending, "911": f >= FilterPending, "914": f == FilterAll,
-			"920": true, "921": true, "930": true,
+			"920": true, "921": true, "930": true, "940": true, "945": true, "941": true,
 		} {
 			if got[n] != want {
 				t.Errorf("%s: %s の表示 got %v want %v (%v)", f, n, got[n], want, got)

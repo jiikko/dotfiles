@@ -963,8 +963,9 @@ func (f StatusFilter) Next() StatusFilter {
 // 終わった epic の親行が既定の一覧に居座る。親だけを done 扱いにすると、pending の子を見せる段階で
 // 子が親行の代わりに合成の group 行の下へ並ぶので、子が 1 件でも見えている段階では親も見せる。
 // 親を自分で done / pending / waiting / next へ置いたときは、その位置が宣言なので従来どおり Status で決める。
-// closedParentShown は「終わった group のうち、親以外で今の段階に見える子が居る」GroupKey の集合。
-func (f StatusFilter) showsIssue(iss *Issue, closedGroups, retiredGroups, closedParentShown map[string]bool) bool {
+// openParents は groupOpenParents、closedParentShown は「終わった group のうち、親以外で今の段階に
+// 見える子が居る」GroupKey の集合。
+func (f StatusFilter) showsIssue(iss *Issue, closedGroups, retiredGroups, closedParentShown map[string]bool, openParents map[string]*Issue) bool {
 	if key, ok := iss.EpicGroupKey(); ok {
 		if retiredGroups[key] {
 			return false
@@ -972,7 +973,7 @@ func (f StatusFilter) showsIssue(iss *Issue, closedGroups, retiredGroups, closed
 		if !closedGroups[key] {
 			return true
 		}
-		if IsGroupParent(iss) && iss.Status == StatusOpen {
+		if openParents[key] == iss {
 			return closedParentShown[key]
 		}
 	}
@@ -1029,6 +1030,33 @@ func retiredGroupKeys(list []*Issue) map[string]bool {
 	return out
 }
 
+// groupOpenParents は group ごとの親 issue (1 件) のうち、位置が group 直下 (open) のもの。
+//
+// 🚨 親は group ごとに 1 件だけ選ぶ。IsGroupParent の 2 つの形が 1 つの group に並ぶと、viewer
+// (issuesview の rebuildDisplayRows) は番号の形を親行にして、もう一方を子として描く。ここで 2 つとも
+// 親として数えから外すと、子として見えている open な issue ごと epic が「終わった」ことになり消える。
+// 選び方は viewer と同じ (番号の形を優先し、無ければ list の並びで先のもの)。
+// 🚨 open 以外 (next / pending / waiting / done) の親は入れない。親をそこへ置いたのは宣言なので、
+// 子と同じく Status で数え・見せる (next の親を外すと、▶ を付けた epic が終わった扱いになり子の進捗が消える)。
+func groupOpenParents(list []*Issue) map[string]*Issue {
+	parents := make(map[string]*Issue, 4)
+	for _, iss := range list {
+		key, ok := iss.EpicGroupKey()
+		if !ok || !IsGroupParent(iss) {
+			continue
+		}
+		if cur := parents[key]; cur == nil || (IsGroupNumberParent(iss) && !IsGroupNumberParent(cur)) {
+			parents[key] = iss
+		}
+	}
+	for key, iss := range parents {
+		if iss.Status != StatusOpen {
+			delete(parents, key)
+		}
+	}
+	return parents
+}
+
 // closedGroupKeys は「親以外の子が 1 件以上あり、open な子が 1 件も無い」group の GroupKey 集合。
 //
 // 🚨 「open な子」の判定は既定の一覧 (FilterOpen) が見せるかどうかで決める。別の列挙を
@@ -1038,19 +1066,19 @@ func retiredGroupKeys(list []*Issue) map[string]bool {
 // **番号の大きい epic ほど先頭に残る**という元の症状がそのまま戻る。子が pending から
 // group 直下 (open) へ戻れば、この判定も自動で open へ戻る。
 //
-// 🚨 親 issue (IsGroupParent) は数えない (2026-10-29 ユーザー要望で反転。それまでは「親が open なら
-// 終わっていない」として数えていた)。親は子を全部片付けた後も group 直下 (open) に残るのが普通で、
+// 🚨 位置が open の親 issue (groupOpenParents) は数えない (2026-10-29 ユーザー要望で反転。それまでは
+// 「親が open なら終わっていない」として数えていた)。親は子を全部片付けた後も group 直下 (open) に残るのが普通で、
 // 数えると、子の仕事が残っていない epic が既定の一覧に居座る (epic 910: 子は done 3 / pending 3 で
 // 親だけが open)。子の居ない親だけの group は終わった扱いにしない (起票した直後の epic が消える)。
 // 数えるのは GroupEpic の子だけで、予約外ディレクトリの迷子 (GroupUnknown) は
 // group の一員として畳まれないので数えない (数えると、迷子を 1 件置いただけで epic が
 // 永久に「終わっていない」ことになる)。
-func closedGroupKeys(list []*Issue) map[string]bool {
+func closedGroupKeys(list []*Issue, openParents map[string]*Issue) map[string]bool {
 	seen := make(map[string]bool, 4) // その group に子が居たか
 	open := make(map[string]bool, 4) // 既定の一覧に出る (= open な) 子が居たか
 	for _, iss := range list {
 		key, ok := iss.EpicGroupKey()
-		if !ok || IsGroupParent(iss) {
+		if !ok || openParents[key] == iss {
 			continue
 		}
 		seen[key] = true
@@ -1166,17 +1194,18 @@ func Filter(issues []*Issue, tab string, filter StatusFilter) []*Issue {
 	}
 	// 「終わった epic」の判定は**絞り込む前の全件**から作る (タブで絞った後の集合から作ると、
 	// 別カテゴリの open な子が見えなくなり、進行中の epic を終わったものと誤判定する)
-	closed := closedGroupKeys(issues)
+	openParents := groupOpenParents(issues)
+	closed := closedGroupKeys(issues, openParents)
 	retired := retiredGroupKeys(issues)
 	closedParentShown := make(map[string]bool, len(closed))
 	for _, iss := range issues {
-		if key, ok := iss.EpicGroupKey(); ok && closed[key] && !IsGroupParent(iss) && filter.shows(iss.Status) {
+		if key, ok := iss.EpicGroupKey(); ok && closed[key] && openParents[key] != iss && filter.shows(iss.Status) {
 			closedParentShown[key] = true
 		}
 	}
 	out := make([]*Issue, 0, len(issues))
 	for _, iss := range issues {
-		if !filter.showsIssue(iss, closed, retired, closedParentShown) {
+		if !filter.showsIssue(iss, closed, retired, closedParentShown, openParents) {
 			continue
 		}
 		switch {
