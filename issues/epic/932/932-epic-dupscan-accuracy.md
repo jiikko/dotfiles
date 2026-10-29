@@ -27,6 +27,9 @@
 | [970](done/970-refactor-dupscan-group-containment-one-check.md) | 「組が別の組に含まれるか」の判定が 3 か所 (組分け・sweep の節 2・節 6) にあったのを group.Subset に寄せた。done |
 | [972](done/972-research-dupscan-dogfood-glogx-tui-split-2026-10-29.md) | glogx の tui.go の分割 (971) で使った所見。雑音 3 件: Go の index -file に Swift の注意書き / -file でも無関係な testdata の「解析不完全」 / tmp/ の使い捨ての道具にも候補の注入 |
 | [979](979-research-dupscan-dogfood-sac-dedup-2026-10-29.md) | SAC の重複の統合で使った所見。`index` の呼び出し数が同名の private 関数で合算される・Swift の `callers` はテストメソッドを「(単位の外)」と出す (937 は Go だけ)・sweep の節 2 に `single_call` の印が無い |
+| [981](981-bug-dupscan-gate-silent-on-generated-go-files.md) | Go の生成ファイルの見出し (`// Code generated … DO NOT EDIT.`) を付けた新しい写しが gate を無音で通る (変わった単位 0)。読まなかった生成ファイルの数を 1 行目に出す |
+| [982](982-cleanup-dupscan-unused-text-writers.md) | 使われていない `CallersText` / `EvidenceText` を消す (`deadcode -test` で届かない。`unused` は公開名を数えない) |
+| [984](984-research-dupscan-audit-2026-10-30.md) | 22 観点の監査 (直接実行) の全数勘定と、報告しなかったものの理由。[983](done/983-bug-dupscan-paths-levels-l1m.md) は 973 で決めた仕様と分かり取り下げ |
 
 ## 完了した子issue
 

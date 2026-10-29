@@ -5,7 +5,7 @@
 ## 概要
 
 `/audit` で src/dupscan に 22 観点を直接実行 (サブエージェントに判定させず、main が読んで判定) で回した。HEAD `a335a9c42`。
-直す項目は [981](981-bug-dupscan-gate-silent-on-generated-go-files.md)・[982](982-cleanup-dupscan-unused-text-writers.md)・[983](983-bug-dupscan-paths-levels-l1m.md) の 3 本。ここには観点ごとの攻め方と、報告しなかったものの理由を残す (次の監査が同じものを出さないため)。
+直す項目は [981](981-bug-dupscan-gate-silent-on-generated-go-files.md)・[982](982-cleanup-dupscan-unused-text-writers.md) の 2 本。[983](done/983-bug-dupscan-paths-levels-l1m.md) は反証レビューで 973 の決定と分かり取り下げた。ここには観点ごとの攻め方と、報告しなかったものの理由を残す (次の監査が同じものを出さないため)。
 
 ## 走査した母集合
 
@@ -31,19 +31,21 @@
 | resource-leaks | 0 | `Commit.ReadAll` は失敗の経路で git を止めてから待つ。tree-sitter の木・parser は閉じる。正規化の作業領域は大きく育ったものを pool に戻さない |
 | broken-code | 0 | 大文字小文字の違う起点 (`SRC/DUPSCAN`) で `rev-parse --show-prefix` が正規化することを実測した (base と head の範囲がずれない) |
 | dead-code | 1 (→ 982) | |
-| error-handling | 0 | 捨てている戻り値 (`_ =` など 38 か所。`grep -E` で数えた) を全部見た。`strings.Cut` / sha256 への書き込み / 理由コメントのある base の許可の誤り (`gate_cmd.go`) だけ。記録を最終の rc より前に書く件は 976 |
+| error-handling | 0 | 捨てている戻り値 (38 か所。`grep -rn --include='*.go' -E '(^|[^a-zA-Z])_ = |, _ :?= |_, _ = '` から `_test.go` と third_party を除いて数えた) を全部見た。`strings.Cut` / sha256 への書き込み / 理由コメントのある base の許可の誤り (`gate_cmd.go`) だけ。記録を最終の rc より前に書く件は 976 |
 | false-green | 1 (→ 981) | CI と make が `-strict-analysis` を付けないので、読めない構文の変わった単位は rc=0 で通るが、1 行目に数が出る (929・959 で決めた形。報告しない) |
 | performance | 0 | dotfiles の src (Go 1308 ファイル) で report 0.17〜0.31 秒、gate 0.37〜0.38 秒 (最大 RSS 約 370 MB。各 2 回、`/usr/bin/time -l`、2026-10-30)。gate は base と head を両方全部読むが、この規模では直す価値が無い。CI の導入費用は 977 |
 | concurrency | 0 | `parseAll` の worker は別々の添字に書く。`AppendRecord` は O_APPEND の 1 回の write。`make test` は `-race` |
 | test-cleanup | 0 (浅い) | テストの変異は当てていない (次の監査で深掘りするなら、gate の `origins` の段ごとの変異) |
 | test-helpers | 0 | duplication の行と同じ (別 package の 12 行) |
 | dependency | 0 (観測 1) | 文法 `alex-pinkus/tree-sitter-swift` に新しい pseudo-version (2026-10-13) がある (使っているのは 2026-10-04)。上げると 958 の読み直しが要らなくなるかは**未確認**。`govulncheck` は手元に無く**回していない** |
-| ci | 0 (観測 2) | src_dupscan の run 40897135377 (2026-10-29 15:00 の push) が runner 待ち (`queued`) のまま残っていた (runner の label の問題で dupscan の構成ではない)。`src/dupscan/Makefile` が include する `make/serial-run.mk` と、gate が通る `bin/dupscan`・`bin/lib/go_autobuild.zsh` は各 workflow の paths に無いが、CI では serial-run を包まない・wrapper の変更は写しを足さないので報告しない |
+| ci | 0 (観測 3) | 監査の HEAD (`a335a9c42`) では `test-unused-excluding-tests` が CI で赤だった (`relevantParseErrors`。監査中に別のセッションが `2f146e3e8` で直した。私は見落としていた)。src_dupscan の run 40897135377 (2026-10-29 15:00 の push) が runner 待ち (`queued`) のまま残っていた (runner の label の問題で dupscan の構成ではない)。`src/dupscan/Makefile` が include する `make/serial-run.mk` と、gate が通る `bin/dupscan`・`bin/lib/go_autobuild.zsh` は各 workflow の paths に無いが、CI では serial-run を包まない・wrapper の変更は写しを足さないので報告しない |
 | lint-from-done | 0 (→ 982 の 3) | 公開名の未使用を `unused` が数えない形を、lint の段に `deadcode -test` を足すかの検討として 982 に書いた |
 | general | 0 | 上の各行 |
 
-全数: 発見 3 (981 bug・982 cleanup・983 bug)、見送り・既知・観測 6 (responsibility 1・ux 1・false-green の strict 1・dependency 1・ci 2)。
+全数: 発見 2 (981 bug・982 cleanup)、取り下げ 1 (983)、見送り・既知・観測 7 (responsibility 1・ux 1・false-green の strict 1・dependency 1・ci 3)。
 
 ## 反証レビュー
 
-- (この節は反証レビューの後に書く)
+- 2026-10-30、opus の読み取りのみのサブエージェント 1 本に「誤りだという前提で反証」させた。P1 3 件・P2 2 件・P3 2 件
+- 採った: 983 は 973 で決めた仕様 (README に記載・`elements` の件は 973 の P3 に記録済み) → 取り下げ / 982 の `relevantParseErrors` は master で消済み → 表を直した / CI の unused の赤の見落とし → ci の行に書いた / 38 か所の数え方が書かれていない → 正規表現を書いた / `CallersText` を消すときの doc の移し先 → 982 に書いた / worktree が master より遅れていた → rebase してから書き直した
+- 採らなかった: 「`evidence` / `context` の text の出力が `Fprintf` の誤りを捨て、stdout が閉じていても rc=0」。閉じた stdout で `evidence` / `context` / `callers` / `index` / `gate` を打つと全部 rc=2 だった (2026-10-30。先に出す行の書き込みで誤りを拾う)。途中で切れるパイプでは Go のプロセスは stdout への書き込みで SIGPIPE で終わる。rc=0 になる入力を示せないので記録だけにする。**再提起の条件**: stdout の途中の書き込みだけが失敗して rc=0 になる実行を示す
