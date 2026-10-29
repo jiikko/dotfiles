@@ -96,3 +96,14 @@
 - 実装は上のとおりで、残りは利用データでしか測れない 3 項目 (`index` の直後の `Read` が範囲指定か・927 の `append` で件数ヘッダから絞り込みへ進めるか・944 の再開条件)。
 - 2026-10-28 の時点で、非開発セッションの `dupscan index` は 0 回 (`scripts/dupscan_usage_report.py --days 3 --split 2026-10-28T12:28:36+09:00`)。標本が無いので測れない。
 - [941](941-ux-dupscan-nudge-definition-search-gaps.md) で、Go の案内の大半が名前の無い確認の文に落ちていたのを直した。`index` が呼ばれない一因はこれで、修正の後から標本が溜まる見込み。測り直しは 941 と同じ日に回す (claim は外し、冒頭に再開の条件を書いた)。
+
+## 現状の確認 (2026-10-29)
+
+- 実装は残っている: `index -name ReadCookies src` の行は `src/chromecookie/cookie.go:291-349 Workspace.ReadCookies(…) … // ReadCookies は…（Key…` で、
+  終端行と doc の縮め (`…`) が出る。打ち切りのヘッダは `callers append src` で `呼び出し 3273 件 (20 件表示 / 全部で約 515.9 KB)。…rg -n -e 'append\(' …` と出る
+- 標本: `scripts/dupscan_usage_report.py --days 3 --split 2026-10-28T12:28:36+09:00` (dupscan 自身を開発するセッション 5 本は除く) で、
+  after のセッション 6 本に `dupscan index` が 5 回。直後 3 手以内の `Read` は 1 回で、範囲指定 (offset / limit) あり 1 回。
+  **1 回だけなので、まだ「使われる」とは言えない** (before は index 0 回)
+- 927 の `append` 461 件は Swift の固定 corpus (refs / calls) の話で、dotfiles の `index -name append src` は 19 行で打ち切られない
+  (ヘッダの出る場面にならない)。確かめるなら Swift の repo の実際の課題か、`callers` で打ち切られる場面で見る
+- 残りは変わらず利用データ待ち: 範囲指定の割合 (標本を増やす) / 件数ヘッダから絞り込みへ進むか / 944 の再開条件
