@@ -1,10 +1,11 @@
 # 913 (design): forge Phase 1 (事前調査) の専門家 fan-out を main の単一ループへ畳む
 
-> 🚨 **担当中: air5 (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-25
 
-epic [910](910-design-fold-subagents-into-main-loop.md)。前提: [911](911-test-task-completion-evals-for-forge-audit.md) の eval。
+> **保留** (2026-10-29。ユーザー決定: 911 と一緒に保留)。前提の eval (911) を保留にしたので、A / B / C を比べる手段が無い。forge の出番が 09-16 以降無い (911 の「0 の結果」)。
+> **再開の条件**: 911 と同じ (audit で forge を選ぶ回が戻る、または forge を単独で使う場面が増える)
+
+epic [910](../910-design-fold-subagents-into-main-loop.md)。前提: [911](911-test-task-completion-evals-for-forge-audit.md) の eval。
 
 ## 概要
 
@@ -50,6 +51,8 @@ Maximum は全員 (`_common/modes.md`)。
   (`_common/agents.md` 冒頭の注記: プロンプトのテンプレートは agentType のシステムプロンプトに委ね、forge.js は簡潔版だけを持つ)。実際にそう動くかは**未実測**。
   読み込まないなら、今の fan-out は「専門家」ではなく、観点の 1 行 (lens) が違うだけの同じモデルを並べていることになる。最初に 1 本で確かめる
   (ロスターに入る `Explore` は組み込みの agent で `_claude/agents/` に本文が無いので、確かめる対象から外す)
+  - 2026-10-29 (911 の 0): frontmatter は効いている。10-03 の forge の run で、`dependency-analyzer` は定義の `model: sonnet` どおり sonnet、他の専門家は定義どおり opus で走った。
+    本文が system prompt に入ったかは transcript に残らないので直接は見ていない (同じ定義ファイルが `agentType` で読まれていることまでは確か)
 
 ## 関連ファイル
 
@@ -58,4 +61,5 @@ Maximum は全員 (`_common/modes.md`)。
 
 ## 進捗
 
-起票のみ。
+- 2026-10-29: 本文を今のコードと突き合わせた。`resolveRoster` / `baseRoster` / `investigatePrompt`、`_common/agents.md` の注記、Standard の 6+1、forge の skill eval が 0 本は本文どおり。
+  modes.md の「根拠」の表はスコアからモードを選ぶ表で、体数の根拠ではない (本文の「見当たらない」は今もそのとおり)。911 と一緒に保留にした

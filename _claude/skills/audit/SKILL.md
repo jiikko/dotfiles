@@ -134,10 +134,11 @@ AskUserQuestion は最大4選択肢のため、カテゴリ別に2段階で選�
 ### 直接実行 (not forge) が選択された場合
 
 forge を使わず、あなた自身が直接タスクを実行してください。
-Explore エージェントでコードベースを調査し、発見事項を issues ディレクトリに書き出してください。
+対象のファイルは自分で読んで判定し、発見事項を issues ディレクトリに書き出してください。
+Explore エージェントに任せてよいのは、読む場所を探すところまでです (Explore は抜粋を返す道具で、場所は探すがレビュー・監査はしない。判定まで任せると、読んでいない行についての発見が抜粋の要約から作られる)。
 出力フォーマットは issues 配下の既存ファイルに合わせてください（既存ファイルがない場合は、問題の説明・該当箇所（file:symbol）・**発火条件**・推奨対応の4点を各 issue に含めてください。発火条件が示せないものは「未確認」と明記してください）。
 
-**設計系 (design / responsibility / duplication / polymorphism / leaky-abstraction / encapsulation / ui-components) を直接実行でまとめて回すときは、1 体で全タイプを見てよいが、1 つの発見は一番狭く当てはまる型 (L1〜L7 / E1〜E4 など) に 1 回だけ帰属させる**。同じ発見を各タイプの結果として数えない (2026-10-07 の zundamon の監査で 1 本の issue に 7 タイプが並んだ)。forge で回すときは各タイプの個別プロンプトを使う (単独で回した responsibility・leaky-abstraction は固有の発見を出している)
+**設計系 (design / responsibility / duplication / polymorphism / leaky-abstraction / encapsulation / ui-components) を直接実行でまとめて回すときは、1 回の走査で全タイプを見てよいが、1 つの発見は一番狭く当てはまる型 (L1〜L7 / E1〜E4 など) に 1 回だけ帰属させる**。同じ発見を各タイプの結果として数えない (2026-10-07 の zundamon の監査で 1 本の issue に 7 タイプが並んだ)。forge で回すときは各タイプの個別プロンプトを使う (単独で回した responsibility・leaky-abstraction は固有の発見を出している)
 
 各監査タイプの調査指針:
 
