@@ -635,8 +635,11 @@ func TestIssuesViewNamedGroupParentMergesAndHidesWhenDone(t *testing.T) {
 		return iss
 	}
 	parent := named(issues.StatusOpen)
+	// 統合を見る前半は進行中の epic (子に open が残る)。子が全部 done だと、親が open でも終わった
+	// epic として既定の一覧から消える (2026-10-29 ユーザー要望)
+	live := fakeEpicIssue(dir, "pane-perf", "963", "live", issues.StatusOpen)
 	child := fakeEpicIssue(dir, "pane-perf", "962", "relayout", issues.StatusDone)
-	v := loadedView(parent, child)
+	v := loadedView(parent, live)
 	if len(v.displayRows) != 1 || !v.displayRows[0].groupHead || v.displayRows[0].issue != parent {
 		t.Fatalf("名前付きの group の親 issue が親行へ統合されていない: %+v", v.displayRows)
 	}

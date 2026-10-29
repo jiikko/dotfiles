@@ -802,7 +802,7 @@ func TestFilterHidesClosedEpicUntilDoneIsShown(t *testing.T) {
 
 // TestFilterHidesRetiredEpicAtEveryStage は「親 issue を done へ送った終わった epic は、`a` で全部を
 // 見せる段階でも出ない」ことを固定する (2026-10-02 ユーザー要望)。親の形は 2 つ (IsGroupParent) とも見る。
-// 親の無い epic・親だけ先に閉じて open な子が残る epic・親が open の epic は従来どおり出る。
+// 親の無い epic・親だけ先に閉じて open な子が残る epic は従来どおり出る。
 func TestFilterHidesRetiredEpicAtEveryStage(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "issues")
 	// 名前付きの group の親 (obaket の形) を done へ送った epic
@@ -814,7 +814,7 @@ func TestFilterHidesRetiredEpicAtEveryStage(t *testing.T) {
 	// 親だけ先に done へ送ったが open な子が残る epic: 隠すと残りの仕事が消える
 	mkFiles(t, filepath.Join(dir, "epic", "contradict", "done"), "600-epic-contradict.md")
 	mkFiles(t, filepath.Join(dir, "epic", "contradict"), "601-feat-open.md")
-	// 親が open で子が全部 done の epic
+	// 親が open (位置が group 直下なだけ) で子が全部 done の epic: 終わった epic なので全開でだけ出る
 	mkFiles(t, filepath.Join(dir, "epic", "parent-open"), "700-epic-parent-open.md")
 	mkFiles(t, filepath.Join(dir, "epic", "parent-open", "done"), "701-feat-done.md")
 	// 親を pending (保留) にした epic: 保留は閉じた宣言ではない。既定の一覧には出る子が無いので
@@ -837,18 +837,19 @@ func TestFilterHidesRetiredEpicAtEveryStage(t *testing.T) {
 				t.Errorf("%s: 親を done へ送った epic の %s が見えている: %v", f, n, got)
 			}
 		}
-		for _, n := range []string{"600", "601", "700", "701"} {
+		for _, n := range []string{"600", "601"} {
 			if !got[n] {
-				t.Errorf("%s: %s が見えていない (open な子が残る / 親が open の epic): %v", f, n, got)
+				t.Errorf("%s: %s が見えていない (open な子が残る epic): %v", f, n, got)
 			}
 		}
 		// 親の無い / 親を保留にした終わった epic は、通常の状態フィルタどおり (done は全開で、pending の親は ⏸ の段から)
 		for n, want := range map[string]bool{
 			"500": f == FilterAll, "801": f == FilterAll, "800": f >= FilterPending,
 			"900": f == FilterAll, "901": f >= FilterPending,
+			"700": f == FilterAll, "701": f == FilterAll,
 		} {
 			if got[n] != want {
-				t.Errorf("%s: 親の無い / 保留を含む終わった epic の %s の表示 got %v want %v", f, n, got[n], want)
+				t.Errorf("%s: 終わった epic (親が無い / 保留を含む / 親が open なだけ) の %s の表示 got %v want %v", f, n, got[n], want)
 			}
 		}
 	}
@@ -880,7 +881,8 @@ func TestIsGroupParentForms(t *testing.T) {
 }
 
 // TestClosedGroupKeysCountsParentAndIgnoresStrays は「終わった epic」の数え方を固定する。
-// 親 issue が open なら終わっていない / 予約外ディレクトリの迷子は数に入れない (迷子を 1 件
+// 親 issue は数えない (親が open でも子に open が無ければ終わり。親だけの group は終わらない) /
+// 予約外ディレクトリの迷子は数に入れない (迷子を 1 件
 // 置いただけで epic が永久に終わらなくなるのを避ける)。
 func TestClosedGroupKeysCountsParentAndIgnoresStrays(t *testing.T) {
 	key := "/repo/issues/epic/467"
@@ -893,7 +895,9 @@ func TestClosedGroupKeysCountsParentAndIgnoresStrays(t *testing.T) {
 		want bool
 	}{
 		{"全部 done", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusDone, GroupEpic)}, true},
-		{"親 issue が open", []*Issue{child("467", StatusOpen, GroupEpic), child("460", StatusDone, GroupEpic)}, false},
+		{"親 issue が open でも子は全部 done", []*Issue{child("467", StatusOpen, GroupEpic), child("460", StatusDone, GroupEpic)}, true},
+		{"親 issue だけ (子が居ない)", []*Issue{child("467", StatusOpen, GroupEpic)}, false},
+		{"親 issue が open で子に open が残る", []*Issue{child("467", StatusOpen, GroupEpic), child("460", StatusOpen, GroupEpic)}, false},
 		{"pending が残っていても完了", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusPending, GroupEpic)}, true},
 		{"waiting が残っていても完了", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusWaiting, GroupEpic)}, true},
 		{"子が pending だけ", []*Issue{child("459", StatusPending, GroupEpic)}, true},
@@ -903,6 +907,37 @@ func TestClosedGroupKeysCountsParentAndIgnoresStrays(t *testing.T) {
 	} {
 		if got := closedGroupKeys(tc.list)[key]; got != tc.want {
 			t.Errorf("%s: got %v want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestFilterHidesFinishedEpicWithOpenParent は「親 issue が group 直下 (open) に残っていても、親以外の
+// 子に open が無い epic は既定の一覧から消える」ことを固定する (2026-10-29 ユーザー要望。epic 910 の形:
+// 子は done と pending だけで、親だけが open)。親は子が見える段階でだけ出る (pending の段では保留の子と並び、
+// 子が合成の group 行の下へ取り残されない)。子に open が 1 件でも残れば既定の一覧に出る。
+func TestFilterHidesFinishedEpicWithOpenParent(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "issues")
+	mkFiles(t, filepath.Join(dir, "epic", "910"), "910-design-fold.md")
+	mkFiles(t, filepath.Join(dir, "epic", "910", "done"), "914-refactor-a.md")
+	mkFiles(t, filepath.Join(dir, "epic", "910", "pending"), "911-test-b.md")
+	// 子に open が残る epic
+	mkFiles(t, filepath.Join(dir, "epic", "920"), "920-design-live.md", "921-feat-open.md")
+	// 親だけの epic (起票した直後)
+	mkFiles(t, filepath.Join(dir, "epic", "930"), "930-design-new.md")
+	all, _ := Scan([]string{dir})
+
+	for _, f := range []StatusFilter{FilterOpen, FilterPending, FilterAll} {
+		got := make(map[string]bool)
+		for _, iss := range Filter(all, "", f) {
+			got[iss.Number] = true
+		}
+		for n, want := range map[string]bool{
+			"910": f >= FilterPending, "911": f >= FilterPending, "914": f == FilterAll,
+			"920": true, "921": true, "930": true,
+		} {
+			if got[n] != want {
+				t.Errorf("%s: %s の表示 got %v want %v (%v)", f, n, got[n], want, got)
+			}
 		}
 	}
 }

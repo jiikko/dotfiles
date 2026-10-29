@@ -957,13 +957,23 @@ func (f StatusFilter) Next() StatusFilter {
 // 親を done へ送るのは「この epic は閉じた」という明示の宣言で、`a` で全部を見せる段階でも、閉じた器の
 // 親行と子が並び続けると一覧が閉じた epic で埋まる。番号フィルタ (`/`) は Filter を通らないので、
 // 番号を知っていれば引き続き開ける。判定は retiredGroupKeys。
-func (f StatusFilter) showsIssue(iss *Issue, closedGroups, retiredGroups map[string]bool) bool {
+//
+// 🚨 終わった epic の親 issue は、自分の位置 (open) ではなく子の見え方に従う (2026-10-29 ユーザー要望)。
+// 親は子を全部 done / pending へ送った後も group 直下 (open) に残るのが普通で、自分の Status で決めると
+// 終わった epic の親行が既定の一覧に居座る。親だけを done 扱いにすると、pending の子を見せる段階で
+// 子が親行の代わりに合成の group 行の下へ並ぶので、子が 1 件でも見えている段階では親も見せる。
+// 親を自分で done / pending / waiting / next へ置いたときは、その位置が宣言なので従来どおり Status で決める。
+// closedParentShown は「終わった group のうち、親以外で今の段階に見える子が居る」GroupKey の集合。
+func (f StatusFilter) showsIssue(iss *Issue, closedGroups, retiredGroups, closedParentShown map[string]bool) bool {
 	if key, ok := iss.EpicGroupKey(); ok {
 		if retiredGroups[key] {
 			return false
 		}
 		if !closedGroups[key] {
 			return true
+		}
+		if IsGroupParent(iss) && iss.Status == StatusOpen {
+			return closedParentShown[key]
 		}
 	}
 	return f.shows(iss.Status)
@@ -1019,7 +1029,7 @@ func retiredGroupKeys(list []*Issue) map[string]bool {
 	return out
 }
 
-// closedGroupKeys は「子が 1 件以上あり、open な子が 1 件も無い」group の GroupKey 集合。
+// closedGroupKeys は「親以外の子が 1 件以上あり、open な子が 1 件も無い」group の GroupKey 集合。
 //
 // 🚨 「open な子」の判定は既定の一覧 (FilterOpen) が見せるかどうかで決める。別の列挙を
 // 書かない — 同じ問い (今やれることとして出すか) の答えを 2 箇所で持つと必ず食い違う。
@@ -1028,8 +1038,11 @@ func retiredGroupKeys(list []*Issue) map[string]bool {
 // **番号の大きい epic ほど先頭に残る**という元の症状がそのまま戻る。子が pending から
 // group 直下 (open) へ戻れば、この判定も自動で open へ戻る。
 //
-// 🚨 親 issue (IsGroupParent) も 1 件として数える — 親が open なら epic は
-// 終わっていない。数えるのは GroupEpic の子だけで、予約外ディレクトリの迷子 (GroupUnknown) は
+// 🚨 親 issue (IsGroupParent) は数えない (2026-10-29 ユーザー要望で反転。それまでは「親が open なら
+// 終わっていない」として数えていた)。親は子を全部片付けた後も group 直下 (open) に残るのが普通で、
+// 数えると、子の仕事が残っていない epic が既定の一覧に居座る (epic 910: 子は done 3 / pending 3 で
+// 親だけが open)。子の居ない親だけの group は終わった扱いにしない (起票した直後の epic が消える)。
+// 数えるのは GroupEpic の子だけで、予約外ディレクトリの迷子 (GroupUnknown) は
 // group の一員として畳まれないので数えない (数えると、迷子を 1 件置いただけで epic が
 // 永久に「終わっていない」ことになる)。
 func closedGroupKeys(list []*Issue) map[string]bool {
@@ -1037,7 +1050,7 @@ func closedGroupKeys(list []*Issue) map[string]bool {
 	open := make(map[string]bool, 4) // 既定の一覧に出る (= open な) 子が居たか
 	for _, iss := range list {
 		key, ok := iss.EpicGroupKey()
-		if !ok {
+		if !ok || IsGroupParent(iss) {
 			continue
 		}
 		seen[key] = true
@@ -1155,9 +1168,15 @@ func Filter(issues []*Issue, tab string, filter StatusFilter) []*Issue {
 	// 別カテゴリの open な子が見えなくなり、進行中の epic を終わったものと誤判定する)
 	closed := closedGroupKeys(issues)
 	retired := retiredGroupKeys(issues)
+	closedParentShown := make(map[string]bool, len(closed))
+	for _, iss := range issues {
+		if key, ok := iss.EpicGroupKey(); ok && closed[key] && !IsGroupParent(iss) && filter.shows(iss.Status) {
+			closedParentShown[key] = true
+		}
+	}
 	out := make([]*Issue, 0, len(issues))
 	for _, iss := range issues {
-		if !filter.showsIssue(iss, closed, retired) {
+		if !filter.showsIssue(iss, closed, retired, closedParentShown) {
 			continue
 		}
 		switch {
