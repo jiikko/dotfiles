@@ -283,6 +283,8 @@ var fieldDescs = map[string]string{
 
 	"Element.element": "足された除外の要素 (glob と段・組の段と釘・単位の釘・プリセット)",
 	"Element.comment": "コメントから作った許可なら、その場所",
+	"Element.kind":    "要素を書いた除外の種別 (false-positive / intentional)",
+	"Element.reason":  "要素を書いた除外の理由",
 }
 
 // verboseKey は -v の行の種類の鍵。vline には下の名前の付いた定数で渡す (文字列のリテラルで渡すと、書き間違いが

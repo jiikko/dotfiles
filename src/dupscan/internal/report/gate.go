@@ -1,10 +1,13 @@
 package report
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -336,13 +339,82 @@ func commentAt(el exclude.Element) string {
 
 func short(h string) string { return h[:min(len(h), 12)] }
 
+// GateRecord は -record の 1 行。最終の終了結果 (出力の失敗・strict の判定不能を含む) と再現条件を持つ。
+// 判定まで届いた run は GateSummary の欄 (failed など) を前と同じ形で持つ。判定の前に止まった run (base が決まらない・設定が壊れている) は
+// phase と error だけで、GateSummary の欄は無い。起動前・強制終了・書けなかった run は行そのものが無い (記録の欠測で、成功ではない)。
+type GateRecord struct {
+	Time string `json:"time"`
+	// Version は記録の形の版 (exit_code などを足した版が 2。無い行は 1 で、failed だけが判定を表す)。
+	Version int `json:"record_version"`
+	// ExitCode は gate の最終の終了コード (0 / 1 / 2)。failed (重複の違反) と違い、新しい除外・strict・出力の失敗も含む。
+	ExitCode int `json:"exit_code"`
+	// Reasons は rc を非 0 にした理由の全部 (duplicates / new_exclusions / path_excluded_passed / strict_incomplete / output_error、
+	// 判定の前に止まったら error)。併存する。rc が 0 のときだけ空。
+	Reasons []string `json:"reasons"`
+	// Phase は判定の前に止まった段階 (args / scope / head / base / config / scan / untracked)。判定まで届いたら無い。
+	Phase string `json:"phase,omitempty"`
+	Error string `json:"error,omitempty"`
+	// Tool は dupscan の版 (build に VCS の情報が入っていれば)。
+	Tool *Tool `json:"tool,omitempty"`
+	// HeadCommit は head の commit の完全な SHA (作業ツリーを head にした run では HEAD の commit。作業ツリーの中身の証明ではない)。
+	HeadCommit string         `json:"head_commit,omitempty"`
+	Conditions GateConditions `json:"conditions"`
+	*GateSummary
+}
+
+// GateConditions は run の再現条件 (渡した flag の値そのまま)。
+type GateConditions struct {
+	Levels            string `json:"levels"`
+	FailLevels        string `json:"fail_levels"`
+	MinNodes          int    `json:"min_nodes"`
+	MinClosureNodes   int    `json:"min_closure_nodes"`
+	FailNewExclusions bool   `json:"fail_new_exclusions"`
+	StrictAnalysis    bool   `json:"strict_analysis"`
+	NoExclude         bool   `json:"no_exclude"`
+	Base              string `json:"base"` // -base に渡した ref (空は既定の upstream / origin/HEAD)。解決した SHA は base の欄
+	Head              string `json:"head"` // -head に渡した ref (空は作業ツリー)
+}
+
+// Tool は dupscan の版。Revision は build に入った VCS の版 (go build が埋めたときだけ。go_autobuild の build や
+// replace のある module では入らないことがある)、Binary は実行ファイルの sha256 (VCS の情報が無くても、同じ版かを照らせる)。
+type Tool struct {
+	Revision string `json:"revision,omitempty"`
+	Modified bool   `json:"modified,omitempty"`
+	Binary   string `json:"binary_sha256,omitempty"`
+}
+
+// ToolRevision は dupscan の版。どちらも取れなければ nil。
+func ToolRevision() *Tool {
+	var t Tool
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, kv := range info.Settings {
+			switch kv.Key {
+			case "vcs.revision":
+				t.Revision = kv.Value
+			case "vcs.modified":
+				t.Modified = kv.Value == "true"
+			}
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		if f, err := os.Open(exe); err == nil {
+			h := sha256.New()
+			if _, err := io.Copy(h, f); err == nil {
+				t.Binary = hex.EncodeToString(h.Sum(nil))
+			}
+			f.Close()
+		}
+	}
+	if t == (Tool{}) {
+		return nil
+	}
+	return &t
+}
+
 // AppendRecord は 1 回の gate の結果を、時刻を添えた 1 行の JSON として path に追記する (回をまたいで違反・除外・許可を数えるため)。
-// 1 行を 1 回の write で書く (同じファイルへ並行に追記しても行が混ざらない。O_APPEND の 1 回の write)。
-func AppendRecord(path string, s GateSummary, now time.Time) error {
-	b, err := jsonout.Line(struct {
-		Time string `json:"time"`
-		GateSummary
-	}{now.Format(time.RFC3339), s})
+func AppendRecord(path string, r GateRecord, now time.Time) error {
+	r.Time, r.Version = now.Format(time.RFC3339), 2
+	b, err := jsonout.Line(r)
 	if err != nil {
 		return err
 	}

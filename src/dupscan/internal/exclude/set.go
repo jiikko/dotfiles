@@ -510,6 +510,9 @@ func (s *Set) ruleInScope(r Rule) bool {
 type Element struct {
 	Key     string `json:"element"`
 	Comment string `json:"comment,omitempty"`
+	// Kind と Reason は要素を書いた除外の種別と理由 (同じ要素を複数の除外が書いたら最初のもの)。
+	Kind   string `json:"kind,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // NewElements は head の設定にあって base の設定に無い要素 (glob と段・組の段と釘・単位の釘の 1 つずつ)。
@@ -546,7 +549,7 @@ func NewElements(base, head *Config) []Element {
 					continue
 				}
 				seen[el] = len(out)
-				out = append(out, Element{Key: el, Comment: r.Comment})
+				out = append(out, Element{Key: el, Comment: r.Comment, Kind: r.Kind, Reason: r.Reason})
 			}
 		}
 	}

@@ -493,6 +493,16 @@ func (l *lineWriter) printf(format string, a ...any) {
 	}
 }
 
+// Write は io.Writer として渡す口 (fmt.Fprintf の誤りを捨てる出力の関数に渡しても、失敗を後で l.err で読める)。
+func (l *lineWriter) Write(p []byte) (int, error) {
+	if l.err != nil {
+		return 0, l.err
+	}
+	n, err := l.w.Write(p)
+	l.err = err
+	return n, err
+}
+
 func (l *lineWriter) section(format string, a ...any) {
 	l.printf("\n## "+format+"\n", a...)
 }

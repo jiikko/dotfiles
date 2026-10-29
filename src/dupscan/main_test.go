@@ -15,6 +15,10 @@ func TestMain(m *testing.M) {
 	if err := subproc.UnsetGitLocationEnv(); err != nil {
 		panic(err)
 	}
+	// テストのバイナリを dupscan として起こす口 (本物の fd 1 が要るテスト。閉じたパイプへの出力の SIGPIPE など)
+	if os.Getenv("DUPSCAN_TEST_RUN_MAIN") == "1" {
+		os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	}
 	os.Exit(m.Run())
 }
 

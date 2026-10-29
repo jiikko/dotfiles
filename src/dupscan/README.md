@@ -211,7 +211,7 @@ L3 の形やクロージャの順番だけで当てた相手は `(出どころ�
 
 解析漏れも失敗にする場合は `bin/dupscan gate -strict-analysis -base origin/master .`。base/headのいずれかにparse errorがあれば、抽出できた単位が0件でも通知しrc=2にする。違反もある場合は、検出済み違反を出力した上でrc=2を優先する。通常modeのrc契約は維持するが、対象fileと「解析が不完全」を表示する。textのfile一覧はbase/headごとに-limitで制限し、件数と省略を残す（0で全件）。xcodeは正確なエラー位置を持たないためfile単位のwarningを出す。
 
-JSON/recordには必要な場合だけ `analysis_incomplete`、`base_files_with_errors`、`head_files_with_errors`、`strict_analysis` を追加する。`failed` は従来どおり重複違反による失敗を示し、strictによるrc=2とは別。正常入力の通常modeは追加fieldを出さない。対象は指定scope内の対応言語のparseであり、型解決・未対応言語・SDKを含む全解析を保証するmodeではない。
+JSON/recordには必要な場合だけ `analysis_incomplete`、`base_files_with_errors`、`head_files_with_errors`、`strict_analysis` を追加する。`failed` は従来どおり重複違反による失敗を示し、strictによるrc=2とは別 (record の最終の結果は `exit_code` と `reasons`。issue 976)。正常入力の通常modeは追加fieldを出さない。対象は指定scope内の対応言語のparseであり、型解決・未対応言語・SDKを含む全解析を保証するmodeではない。
 
 `gate` の判定: 変わった単位 (鍵が base に無いか、本体のハッシュが base と違う) ごとに、細かい段から順に、他と一致した段の組を見る。
 組のメンバーごとに出どころ (base の側の相手) がその段で持っていた形を引き、組の大きさが同じ出どころから来たメンバーの最大の数より大きいときだけ違反。
@@ -249,7 +249,7 @@ base で L3 だけ比べなかった相手 (L3Trivial) から来た別の単位�
 | `-limit` | 20 | text で出す組の上限 (0 は全部)。Claude が何度も回すので短くしている |
 | `-v` | false | 読めない構文の単位・除外の一覧 (効いていない除外は理由と、釘ごとの「詳しく:」の行も)・各組の「除外の 1 行」とメンバーの違いの確かめ方 (L1 は局所の名前だけが違うと言い、ほかの段は `explain -compare` の argv) を出す |
 | `-no-exclude` | false | `.dupscan.json` の除外を外して回す (除外が正しいかを見直すため。形の誤りは rc=2 のまま) |
-| `-record` | (なし) | gate だけ。1 回ごとの結果 (違反・除外・許可) を、時刻を添えた 1 行の JSON でこのファイルに追記する (回をまたいで数えるため)。書けなければ rc=2 |
+| `-record` | (なし) | gate だけ。1 回ごとの結果 (違反・除外・許可) を、時刻を添えた 1 行の JSON でこのファイルに追記する (回をまたいで数えるため)。出力と最終の判定の後に書き、最終の `exit_code`・rc を非 0 にした `reasons` の全部 (rc が 0 のときだけ空)・再現条件 (`conditions`・`head_commit`・`tool` の実行ファイルの sha256)・`record_version` (2) を持つ。判定の前に止まった run は `phase`・`error`・`reasons: ["error"]` だけ (`failed` などは無い)。`-record` を渡すと SIGPIPE を無視し、閉じたパイプへの出力も `output_error` として記録する。書けなければ元の rc を stderr に出して rc=2。起動前・強制終了の run は行が無い (欠測で、成功ではない) |
 | `-fail-new-exclusions` | false | gate だけ。base から新しく足された除外か、パスの除外で通した変わった単位があれば rc=1 (CI で人の目に届けるため) |
 
 下限の既定20節とL1・L2の選択は、issue 898のDualNoteAppでの較正とobaketでの受け入れを反映したもの。調整は上のflagで明示する。
