@@ -120,7 +120,7 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	}
 	w.section("4. 名前の束 (同じ動詞で始まる小さい関数が同じ dir に %d 個以上・同名のメソッド・連番の名前。寄せられる共通の道具の手がかり)", sweepClusterMin)
 	sweepClusterText(w, clusters, *c.limit)
-	w.section("5. 既存の小さい関数 (文 %d〜%d 個) の本体の文の並びが、同じ dir の別の単位の中に手書きされている所 (その関数を呼べる候補。単位どうしの比較の 1〜3 には出ない)", inlineMinStmts, inlineMaxStmts)
+	w.section("5. 既存の小さい関数 (文 %d〜%d 個) の本体の文の並びが、同じ dir の別の単位の中に手書きされている所 (その関数を呼べる候補。単位どうしの比較の 1〜3 には出ない。テスト関数の中は見ない)", inlineMinStmts, inlineMaxStmts)
 	sweepInlinedText(w, inlined, *c.limit)
 	w.section("6. 型の写し (節 1・2 の組 (L1m・クロージャ・型のメンバーが %d 人以上の組を除く。その中の小さい組は束ねる) を型で束ね、相手と同じ組に入るメンバーが両方に %d つ以上ある型どうしを写しとして、つながる型を 1 つにまとめる。寄せるなら型ごと。protocol の準拠や setUp / tearDown のような決まった形も混ざる。節は寄せたときに減る節の数の目安で、型 1 つ増えるごとに減る節 (節 ÷ (型の数 − 1)) の大きい順)", sweepBigGroupMin, sweepTypeCopyMin)
 	sweepTypeCopyText(w, typeCopies, *c.limit)

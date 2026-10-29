@@ -67,6 +67,20 @@ func TestSweepInlinedHelperBodyInsideAnotherUnit(t *testing.T) {
 	}
 }
 
+// テスト関数は単位にしないので置き場所に上がらない。手書きの写しが一番多い所なので、見ないことを見出しで言う
+// (見出しに無いと「テストの中に写しは無い」と読む)。
+func TestSweepInlinedSkipsTestFunctionsAndSaysSo(t *testing.T) {
+	site := strings.Replace(inlineSite, "func repoWith(t *testing.T, files map[string]string) string {", "func TestRepoWith(t *testing.T) {\n\tfiles := map[string]string{}", 1)
+	site = strings.Replace(site, "\treturn root\n", "\t_ = root\n", 1)
+	if site == inlineSite || !strings.Contains(site, "func TestRepoWith") || strings.Contains(site, "return root") {
+		t.Fatalf("前提: テスト関数にできていない:\n%s", site)
+	}
+	s := inlineSection(t, map[string]string{"a/helper_test.go": inlineHelper, "a/site_test.go": site})
+	if !strings.Contains(s, "テスト関数の中は見ない") || !strings.Contains(s, "なし") {
+		t.Errorf("テスト関数の中の写しは出さず、見ないことを見出しで言う: %q", s)
+	}
+}
+
 // 局所の名前の結び付きが違う並び (`MkdirAll` に渡すのが p でなく root) は同じ形でも別の処理なので出さない。
 func TestSweepInlinedNeedsSameLocalBinding(t *testing.T) {
 	site := strings.Replace(inlineSite, "os.MkdirAll(filepath.Dir(p)", "os.MkdirAll(filepath.Dir(root)", 1)
