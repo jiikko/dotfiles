@@ -1,5 +1,7 @@
 # 916 (docs): rules / CLAUDE.md の古いモデル向け指示と手順型の節を棚卸しする
 
+> 🚨 **担当中: air5 (glogx)**（2026-10-29〜）
+
 起票日: 2026-10-25
 
 epic [910](910-design-fold-subagents-into-main-loop.md)。他の子と独立。
