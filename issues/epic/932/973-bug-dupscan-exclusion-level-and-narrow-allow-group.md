@@ -6,7 +6,7 @@
 
 ## 概要
 
-issue 966 の敵対的レビューで記録した P2 の 2 件。1 件 (P2-a) を直し、1 件 (P2-b) は直し方を取り下げて設計の判断を残した。
+issue 966 の敵対的レビューで記録した P2 の 2 件。どちらも直した (P2-b は 1 回目の直し方を取り下げ、ユーザーが選んだ候補 1 で直した)。
 
 ## P2-a (修正済み): levels を省いたパスの除外が L1m の組を消さない
 
@@ -17,17 +17,22 @@ issue 966 の敵対的レビューで記録した P2 の 2 件。1 件 (P2-a) �
 - 確かめた方法: 変異 (mutate-verify・狙ったテストだけが赤): 既定を `norm.Levels` に戻す → `TestSweepPathExclusionWithoutLevelsCoversL1m`。
   `make -C src/dupscan test lint`・`make test-lint`・`make test-dupscan-gate` が rc=0 (他のセッションの dupscan の変更を取り込んだ rebase の後も dupscan の test・lint を回し直した)
 
-## P2-b (直し方を取り下げ・未対応): 起点を絞ると allow-group が粗い段の別の組に効く
+## P2-b (修正済み): 起点を絞ると allow-group が粗い段の別の組に効く
 
 - 形: allow-group の人数の照合 (`groupCommentRule`) は起点の中の単位だけで同じ本体を数える。起点を絞ると、L1 で人数に足りない印 (相手が起点の外) が、
   粗い段 (L2・L3・L1m) でちょうど人数になった起点の中の別の組に効き、その組を黙って消す (sweep・report。gate は base に無い釘を弾くので止まる)
-- 取り下げた直し方: 「起点が repo 全体でなければ L1 の組にだけ効かせる」。敵対的レビュー (opus) の P1 で崩れた: make test と CI の gate は起点 `src` で打つ (Makefile の `test-dupscan-gate`)。
-  そのため起点はいつも「repo の一部」になり、全員が `src` の中にいる正しい L2 の allow-group まで効かなくなって gate が rc=1 になる。
-  既存の印 (`src/dupscan/callers_cmd_test.go` の `allow-group 8`。L2 で 8 人の見込み・未確認) も、`dupscan sweep src` で組として出直す
-- 直し方の候補 (どちらも設計の判断。ユーザーに委ねる):
-  1. 判定を「起点の中に、その言語の単位が repo の全部入っているか」にする (dotfiles の Go は全部 `src/` の下なので、起点 `src` は全部入っている扱いになる)
-  2. Makefile と CI の gate を起点の指定なし (repo 全体) で打つ
-- 理由と候補は `groupCommentRule` のコメントにも書いた。再開の trigger: 起点を絞った sweep / report で、印を書いていない組が消えている報告が出たとき、または上の候補をユーザーが選んだとき
+- 取り下げた直し方: 「起点が repo 全体でなければ L1 の組にだけ効かせる」。make test と CI の gate は起点 `src` で打つ (Makefile の `test-dupscan-gate`) ので、
+  全員が `src` の中にいる正しい L2 の allow-group まで効かなくなり gate が rc=1 になる (1 周目の敵対的レビューの P1)
+- 採った直し方 (ユーザーが候補 1 を選んだ。2026-10-29): 起点が repo の一部のときだけ repo の全ファイルを一覧にし (`repo.OutsideExts`)、
+  印の単位の言語のファイルが起点の外にもあるときだけ L1 の組に限る (`scopeComplete`)。dotfiles の Go は `src/` の外に 0 本 (`git ls-files '*.go'` で数えた) なので、
+  起点 `src` の gate では今までどおり効く。report・gate (base と head で同じ判定)・near・sweep に同じ判定を渡す。効かせなかった印は人数の合わない印として残る
+- commit「fix(dupscan): 起点の外に同じ言語のファイルがあるときだけ、allow-group を L1 の組に限る (issue 973)」
+- 確かめた方法: 変異 4 本 (mutate-verify・狙ったテストだけが赤): 判定をいつも「全部ある」/ いつも「全部ない」/ 起点の外かを見ずに全部を外に数える /
+  一覧を untracked だけにする。実物: 起点 `src` と root の sweep で静かにした組がどちらも 10、起点 `src/dupscan` では起点の外と区別できない印 1 個を数だけ言う。
+  `make -C src/dupscan test lint`・`make test-lint`・`make test-dupscan-gate` が rc=0
+- 限界 (README に書いた): 判定は言語ごとで相手の有無を見ないので、起点の外に同じ言語のファイルを 1 本置くだけで、起点の中の粗い段の印も効かなくなる (組が出る側に倒れる)。
+  `dupscan-gate.yml` の paths は `src/**` 等なので、`src` の外に Go を足した commit では gate が起動せず、振る舞いが変わるのは次に `src` を触った commit。
+  再開の trigger: `src` の外に Go を置く変更が来たとき (相手の有無まで見る判定にするか、gate の起点を見直す)
 
 ## 反証レビュー (敵対的、opus、読み取りのみ、1 周)
 
@@ -39,8 +44,20 @@ issue 966 の敵対的レビューで記録した P2 の 2 件。1 件 (P2-a) �
 - P3 (採用): `sweep_cmd.go` のコメントが「levels を省くと L1m に効かない」のままだった → 「levels を L3 などに絞ると」に直した
 - レビュー 2 周目は回していない: P2-a の実装は 1 周目で見た版から変えておらず、直したのは P2-b の取り下げとコメントだけ
 
+## 反証レビュー (P2-b の採った直し方、opus、読み取りのみ、1 周)
+
+P1 なし。
+- P2 (記録・README): 上の「限界」。今の dotfiles では起点の外の Go は 0 本で発火しない
+- P2 (採用): 追加したテストが untracked のファイルでしか回っておらず、一覧を untracked だけにする変異が緑になる → 起点の外のファイルを `git add` してから走らせる形にし、その変異で赤を確かめた
+- P2 (記録・未対応): gate の配線 (base にも同じ判定)・near / report の配線・L3 と L1m の段・複数の起点・拡張子を広げるループ (Go も Swift も 1 つ) を見るテストが無い
+- P3 (記録・未対応): `gate -head <commit>` でも判定は作業ツリーの一覧から作る / base と head で起点の外の Go の有無が違うと base の印の段が変わる /
+  言語ごとに判定するが同じ本体の数は全言語で数える (Swift と Go が粗い段で衝突するかは未確認) / 起点に glob の文字があると pathspec と `Contains` がずれる (安全側。変更前から) /
+  起点の外のファイルの `Lstat` の権限エラーで rc=2 になりうる / 起点の L1 でちょうど人数・repo 全体では多い印は今も組を消す (起点の外の写しは見えない。本質的な限界)
+- 性能 (未実測): 起点を絞るたびに repo 全体の `ls-files` と `Lstat` を 1 回ずつ足す。dotfiles は対象 1,309 ファイルで問題にならない見込み。印があるときだけ計算する・`:(exclude)` で外だけを列挙する、が軽くする案
+
 ## 進捗
 
 - [x] P2-a の修正と push
 - [x] P2-b の直し方の取り下げと、理由・候補の記録
-- 未対応: P2-b の本当の直し方 (候補 1・2 から選ぶ)。P3 2 件 (記録)
+- [x] P2-b を候補 1 で修正・敵対的レビュー・push
+- 記録のみ: 上の各レビューの P2・P3 (理由と再開の trigger は各節)
