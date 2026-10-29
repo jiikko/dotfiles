@@ -2,9 +2,7 @@
 
 起票日: 2026-10-29
 
-> **pending の理由と再開の trigger**: 971 (tui.go の分割) の続きの候補。行を移すだけでは済まず、キーを受ける層の順序そのものを
-> 作り替える設計の変更なので、設計のレビューと順序のテストを用意してから始める。trigger: 次に handleKey へ新しい層 (全画面・板・
-> 横断キー) を足すとき、または handleKey の順序の取り違えの不具合が出たとき。
+> 2026-10-29 に pending から再開した (ユーザー指示「リセット後にやって」)。
 
 ## 概要
 
@@ -26,7 +24,7 @@
 
 ## 関連
 
-- [971](../done/971-refactor-glogx-tui-split-by-responsibility.md) (tui.go の分割)
+- [971](done/971-refactor-glogx-tui-split-by-responsibility.md) (tui.go の分割)
 - 863 の P1〜P4 (mac-lan-manager の lanmgr で、行の動作と画面の層を表にした前例)
 
 ## 進捗
