@@ -1,5 +1,7 @@
 # 914 (refactor): agents/ の重複を棚卸しし、手順・知識を skill へ移す
 
+> 🚨 **担当中: air5 (glogx)**（2026-10-29〜）
+
 起票日: 2026-10-25
 
 epic [910](910-design-fold-subagents-into-main-loop.md)。forge のロスターに関わる部分は [913](913-design-forge-phase1-fold-investigation.md) の結論を待つ (913 は今の agent の本文をそのまま使って比べるので、913 がこの issue を待つことはない)。
