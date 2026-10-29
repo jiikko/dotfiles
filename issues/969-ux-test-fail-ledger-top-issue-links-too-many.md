@@ -1,5 +1,7 @@
 # 969 (ux): test_fail_ledger.sh top の issue 番号が多すぎて手がかりにならない
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
+
 起票日: 2026-10-29
 
 ## 概要
