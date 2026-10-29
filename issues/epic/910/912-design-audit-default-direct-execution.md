@@ -1,5 +1,7 @@
 # 912 (design): audit の forge 経路 (監査タイプ × 専門家) を直接実行に寄せる
 
+> 🚨 **担当中: air5 (glogx)**（2026-10-29〜）
+
 起票日: 2026-10-25
 
 epic [910](910-design-fold-subagents-into-main-loop.md)。前提: [911](911-test-task-completion-evals-for-forge-audit.md) の eval。
