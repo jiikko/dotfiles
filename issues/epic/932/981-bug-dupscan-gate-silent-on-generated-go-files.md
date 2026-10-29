@@ -35,5 +35,21 @@ README の「分かっている限界」に書かれた仕様だが、**読ま�
 
 ## 受け入れ条件
 
-- [ ] 上の再現をテストにして、1 行目に生成ファイルの数が出ることを確かめる (出さない変異で赤)
-- [ ] report の json / gate の json に欄を足し、`capabilities -outputs` の一覧 (`internal/report/outputs.go`) に載せる
+- [x] 上の再現をテストにして、1 行目に生成ファイルの数が出ることを確かめる (出さない変異で赤)
+- [x] report の json / gate の json に欄を足し、`capabilities -outputs` の一覧 (`internal/report/outputs.go`) に載せる
+
+## 進捗
+
+- commit「fix(dupscan): Go の生成ファイルとして読まなかったファイルを report と gate の 1 行目に出す (issue 981)」
+  - adapter が `lang.FileResult.Generated` を返し、report は 1 行目と json の `generated_files` に全部、gate は 1 行目・`-v`・xcode (warning)・json の `new_generated_files` に
+    **base に無いか、base では生成でなかったか、中身が base と違う**ものだけを出す (本物の生成コードが base と同じなら出さない)。rc は変えない
+  - テスト `generated_files_test.go` (Red を確かめてから実装。見出しの無い写しは止まる対照のテストつき)
+  - 変異 (`mutate-verify`、狙ったテストだけが赤): adapter の `r.Generated = true` を消す / gate の 1 行目の条件を `n > 99` / base の生成ファイルを差し引かない /
+    中身の比較を外す / xcode の行を出さない / report の `GeneratedFiles` を埋めない — 6 本とも想定の assert で red
+  - `make -C src/dupscan lint test` rc=0
+- 反証レビュー (opus・読み取りのみ) 1 周目: P1「base で既に生成ファイルだったファイルに写しを足すと黙って通る」→ 中身の比較を足して直した (上の 4 本目の変異)。
+  P3「xcode の行と report の json がテストされていない」→ テストを足した (5・6 本目)。
+  採らなかった: P2「`GeneratedFiles` / `NewGeneratedFiles` を呼び出し元が埋めるので、別の経路が `report.Build` を使うと空になる」は、今 Build を呼ぶのが report だけで実害が無い
+  (再提起の条件: report 以外が `report.Build` / `report.BuildGate` を呼び始めたとき)。P3「生成ファイルを移すと新しいパスとして出る」は雑音だけで rc を変えないので受け入れる (`changedGenerated` のコメントに書いた)
+- 反証レビュー 2 周目 (直した差分に opus をもう 1 本): P1/P2 なし。前の P1 は閉じている (base と head の中身は同じパスの鍵で引け、読めなければ ReadAll が誤りを返す)。記録だけの P3: (1) 作業ツリーを head にした gate で `.gitattributes` の `eol=crlf`・`ident`・smudge の filter (LFS) や `core.autocrlf` が効くと、作業ツリーと blob のバイトが違い、変えていない生成ファイルが毎回「書き換えた」に出る (雑音だけ。rc は変えない。dotfiles に `.gitattributes` は無い。再提起の条件: その設定の repo で雑音が出たら、作業ツリーの側を `git hash-object --path` で比べる) / (2) `-head` (commit どうし) で書き換えた生成ファイルを数える経路のテストは無い (比べ方は作業ツリーと同じ関数)
+- sweep / near / index などの探索コマンドは前と同じく生成ファイルを黙って読まない (今回の変更で悪くなってはいない。数を出すかは別に決める)

@@ -193,6 +193,7 @@ var fieldDescs = map[string]string{
 	"Summary.files":                "読んだファイルの数",
 	"Summary.units":                "比べる単位 (関数・初期化子・property・クロージャ) の数",
 	"Summary.files_with_errors":    "読めない構文があるファイル (repo の root からの相対パス)",
+	"Summary.generated_files":      "生成されたファイル (Go の `// Code generated … DO NOT EDIT.`) として単位を出さなかったファイル",
 	"Summary.below_min_nodes":      "節が下限に満たず、比べなかった単位の数 (0 件の「重複なし」は、これらを比べていない)",
 	"Summary.min_nodes":            "比べる単位の節の下限 (-min-nodes)",
 	"Summary.below_min_groups":     "比べなかった小さい単位だけでできる同じ形の組の数 (below_min_floor 節まで下げたとき)",
@@ -254,6 +255,7 @@ var fieldDescs = map[string]string{
 	"GateSummary.strict_analysis":            "-strict-analysis で回した (解析が不完全なら rc=2)",
 	"GateSummary.base_files_with_errors":     "base で読めない構文のファイル",
 	"GateSummary.head_files_with_errors":     "head で読めない構文のファイル",
+	"GateSummary.new_generated_files":        "head で生成されたファイルとして単位を出さなかったファイルのうち、base に無いか、base では生成でなかったか、中身が base と違うもの (そこの写しは比べていない)",
 	"GateSummary.new_exclusions":             "base の設定に無く head にある除外の要素 (釘・glob・プリセット)。黙らせた組の一覧ではない",
 	"GateSummary.untracked_files":            "head の作業ツリーで、ignore されていない untracked から読んだファイル",
 	"GateSummary.path_excluded_passed_units": "パスの除外の下にあるので違反にしなかった、変わった単位の数",
@@ -294,6 +296,7 @@ type verboseKey string
 const (
 	verboseExclude            verboseKey = "exclude"
 	verboseErrorFile          verboseKey = "error-file"
+	verboseNewGenerated       verboseKey = "new-generated"
 	verboseStale              verboseKey = "stale"
 	verboseStaleWhy           verboseKey = "stale-why"
 	verboseStaleDetail        verboseKey = "stale-detail"
@@ -324,6 +327,7 @@ var verboseLines = []VerboseLine{
 	{Key: string(verboseStaleCandidate), Prefix: "  同じ鍵の組候補。再審査が必要: ", Commands: []string{"report", "gate"}, Desc: "同じ鍵の単位でできる今の組の除外の候補 (貼る前に同じ規則か読む。text だけ)"},
 	{Key: string(verboseAmbiguous), Prefix: "名指しできない除外: ", Commands: []string{"report", "gate"}, JSON: "Summary.ambiguous_exclusions / GateSummary.ambiguous_exclusions", Desc: "釘が 2 つ以上の単位に当たるので効かせなかった除外"},
 	{Key: string(verboseUnreadable), Prefix: "読めない: ", Commands: []string{"report", "gate"}, JSON: "Summary.unreadable_units / GateSummary.unreadable_changed_units", Desc: "読めない構文で比べなかった単位 (gate は変わった単位だけ)"},
+	{Key: string(verboseNewGenerated), Prefix: "生成ファイルとして読まなかった: ", Commands: []string{"gate"}, JSON: "GateSummary.new_generated_files", Desc: "head で新しく生成ファイルとして読まなかったファイル"},
 	{Key: string(verboseNewExclusion), Prefix: "新しく足された除外: ", Commands: []string{"gate"}, JSON: "GateSummary.new_exclusions", Desc: "base に無く head にある除外の要素 (黙らせた組の一覧ではない)"},
 	{Key: string(verboseUntracked), Prefix: "untracked: ", Commands: []string{"gate"}, JSON: "GateSummary.untracked_files", Desc: "untracked から読んだファイル"},
 	{Key: string(verbosePathPassed), Prefix: "パスの除外で通した: ", Commands: []string{"gate"}, JSON: "GateSummary.path_excluded_passed", Desc: "パスの除外の下にあるので違反にしなかった、変わった単位"},

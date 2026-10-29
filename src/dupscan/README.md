@@ -371,7 +371,7 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 - 列挙は `git ls-files --cached --others --exclude-standard`。symlink・消えたファイル・submodule の中は読まない
 - テスト関数そのもの (Swift Testing の `@Test` / `@Testing.Test`、XCTest の `func test…()`、Go の `_test.go` の go test が呼ぶ関数 (receiver の無い `Test…` / `Benchmark…` / `Fuzz…` で引数 1 つ・`Example…` で引数なし。頭の後ろが小文字なら除かない) と、testify の suite が呼ぶ引数の無い `Test…` メソッド) とその中のクロージャは比べない
 - 単位: Swift は関数・初期化子・クロージャ・computed property・subscript・deinit・`didSet` / `willSet`。Go は関数・メソッド・関数リテラル (本体の無い宣言は除く)
-- Go の生成されたファイル (`// Code generated … DO NOT EDIT.`) は単位も呼び出しも出さない (寄せる対象ではない)
+- Go の生成されたファイル (`// Code generated … DO NOT EDIT.`) は単位も呼び出しも出さない (寄せる対象ではない)。見出しは手でも書けるので、読まなかったファイルの数を report の 1 行目 (json の `generated_files`) に、gate は base に無いか、base では生成でなかったか、中身が base と違うものだけを 1 行目・`-v`・xcode の形式 (json の `new_generated_files`) に出す。止めはしない (本物の生成コードの追加で赤くしない)。Swift には生成ファイルの判定が無い (全部比べる)
 - `index` / `callers` / `def` / `refs` の解析不完全の通知 (stderr) は、読めなかったファイルのどれかが問い合わせの名前 (小文字化した部分一致) を本文に含むときだけ全文 (件数・先頭 3 path・「0件は不存在の証明ではない」)。どれも名前を含まないときは `読めないファイル N 個は問い合わせの名前を含まない` の 1 行に縮める。名前を持たない問い合わせ (`index -returns` だけ等)・本文を持たないファイル・`init` の部分文字列になる名前 (初期化子の「呼び出し ~N」は型名で数えるため) では全文のまま
 - `def` / `refs` は Go のファイルを読まない。読まなかった数を stderr に出す (黙って「定義なし」にしない。Go の定義・参照は gopls で引く)
 

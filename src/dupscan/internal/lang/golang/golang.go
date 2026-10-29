@@ -64,6 +64,7 @@ func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 	}
 	r := lang.FileResult{HasError: len(errs) > 0}
 	if ast.IsGenerated(f) {
+		r.Generated = true
 		return r, nil
 	}
 	// 関数の宣言の Doc のほかは、節に付いたコメントを外す。型の字面は go/printer で書き出すので、残すと `X int // c` や

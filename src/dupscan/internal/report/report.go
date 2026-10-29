@@ -20,6 +20,8 @@ type Summary struct {
 	Files           int      `json:"files"`
 	Units           int      `json:"units"`
 	FilesWithErrors []string `json:"files_with_errors"`
+	// GeneratedFiles は生成されたファイルとして単位を出さなかったファイル (そこの写しは比べていない)。
+	GeneratedFiles []string `json:"generated_files"`
 	// BelowMinNodes は節が下限 (MinNodes) に満たず、比べなかった単位の数。0 件の「重複なし」は、これらを比べていない。
 	BelowMinNodes int `json:"below_min_nodes"`
 	MinNodes      int `json:"min_nodes"`
@@ -148,6 +150,7 @@ type GroupJSON struct {
 // entries は走査した単位の全部 (メンバーを explain の `<file>:<行>` で指せるかを確かめる。compareHints)。
 func Build(root string, files int, units []*tree.Unit, errFiles []string, groups []group.Group, ex *exclude.Set, entries []*group.Entry) Summary {
 	s := Summary{Root: root, Files: files, Units: len(units), FilesWithErrors: errFiles}
+	s.GeneratedFiles = []string{}
 	if s.FilesWithErrors == nil {
 		s.FilesWithErrors = []string{}
 	}
@@ -232,7 +235,7 @@ type TextOptions struct {
 // Text は人が読む形で書く。重複が無いときは 1 行だけにする (何度も回す Claude の文脈を食わないように)。
 func Text(w io.Writer, s Summary, opt TextOptions) error {
 	if len(s.Groups) == 0 {
-		fmt.Fprintf(w, "dupscan: 重複なし (%d ファイル・%d 単位)%s%s%s\n", s.Files, s.Units, unreadableNote(s), belowMinNote(s), s.note())
+		fmt.Fprintf(w, "dupscan: 重複なし (%d ファイル・%d 単位)%s%s%s\n", s.Files, s.Units, unreadableNote(s)+generatedNote(s), belowMinNote(s), s.note())
 		if opt.Verbose {
 			writeErrorFiles(w, s)
 			s.write(w)
@@ -240,7 +243,7 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 		}
 		return nil
 	}
-	fmt.Fprintf(w, "dupscan: 組 %d (%s)・%d ファイル・%d 単位%s%s%s\n", len(s.Groups), levelCounts(s), s.Files, s.Units, unreadableNote(s), belowMinNote(s), s.note())
+	fmt.Fprintf(w, "dupscan: 組 %d (%s)・%d ファイル・%d 単位%s%s%s\n", len(s.Groups), levelCounts(s), s.Files, s.Units, unreadableNote(s)+generatedNote(s), belowMinNote(s), s.note())
 	writeFilePairs(w, s.FilePairs)
 	shown := s.Groups
 	if opt.Limit > 0 && len(shown) > opt.Limit {
@@ -344,6 +347,14 @@ func unreadableNote(s Summary) string {
 		return ""
 	}
 	return fmt.Sprintf("・読めない構文があるファイル %d・比べなかった単位 %d (-v で一覧)", len(s.FilesWithErrors), len(s.Unreadable))
+}
+
+// generatedNote は生成されたファイルとして読まなかったファイルの数 (見出しは手でも書けるので、比べていない部分があることを黙らせない)。
+func generatedNote(s Summary) string {
+	if len(s.GeneratedFiles) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("・生成ファイルとして読まなかったファイル %d", len(s.GeneratedFiles))
 }
 
 // belowMinNote は節が下限に満たず比べなかった単位の数。小さい helper の写し (1 語だけ違う 10 行前後の関数など) はここに入りうる。

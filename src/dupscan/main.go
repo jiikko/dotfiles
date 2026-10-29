@@ -242,6 +242,7 @@ func runReportCommand(args []string, stdout, stderr io.Writer) int {
 	}
 	ex.Scanned(opt.Levels)
 	s := report.Build(sc.Root, got.files, got.units, got.errFiles, ex.ApplyGroups(group.Build(entries, opt)), ex, entries)
+	s.GeneratedFiles = append(s.GeneratedFiles, got.generated...)
 	s.BelowMinNodes, s.MinNodes = group.CountBelowMin(entries, opt), opt.MinNodes
 	s.BelowMinFloor = sweepDeepMinNodes
 	s.BelowMinGroups = group.CountBelowMinGroups(entries, opt, s.BelowMinFloor)
@@ -335,9 +336,11 @@ func parseLevels(s string) ([]norm.Level, error) {
 
 // scanned は 1 つの読み方で読んだ結果。
 type scanned struct {
-	files       int
-	units       []*tree.Unit
-	errFiles    []string
+	files    int
+	units    []*tree.Unit
+	errFiles []string
+	// generated は生成されたファイルとして単位を出さなかったファイル (lang.FileResult.Generated)。
+	generated   []string
 	entries     []*group.Entry
 	normalized  bool
 	calls       []tree.Call
@@ -380,7 +383,7 @@ func scanSource(src repo.Source, requireFiles bool, plan analysisPlan) (scanned,
 	}
 
 	return scanned{
-		files: len(files), units: parsed.units, errFiles: parsed.errFiles, entries: parsed.entries, normalized: plan.Normalize, calls: parsed.calls,
+		files: len(files), units: parsed.units, errFiles: parsed.errFiles, generated: parsed.generated, entries: parsed.entries, normalized: plan.Normalize, calls: parsed.calls,
 		definitions: parsed.definitions, types: parsed.types, references: parsed.references, contents: contents,
 	}, nil
 }
@@ -395,6 +398,7 @@ type parsedFiles struct {
 	types       []lang.TypeDeclaration
 	references  []lang.Reference
 	errFiles    []string
+	generated   []string
 }
 
 func parseAll(files []string, contents map[string][]byte, plan analysisPlan) (parsedFiles, error) {
@@ -406,6 +410,7 @@ func parseAll(files []string, contents map[string][]byte, plan analysisPlan) (pa
 		types       []lang.TypeDeclaration
 		references  []lang.Reference
 		hasErr      bool
+		generated   bool
 		err         error
 	}
 	results := make([]result, len(files))
@@ -428,7 +433,7 @@ func parseAll(files []string, contents map[string][]byte, plan analysisPlan) (pa
 						entries[j] = &group.Entry{Unit: u, Result: norm.Normalize(u)}
 					}
 				}
-				results[i] = result{units: r.Units, entries: entries, calls: r.Calls, definitions: r.Definitions, types: r.Types, references: r.References, hasErr: r.HasError, err: err}
+				results[i] = result{units: r.Units, entries: entries, calls: r.Calls, definitions: r.Definitions, types: r.Types, references: r.References, hasErr: r.HasError, generated: r.Generated, err: err}
 			}
 		}()
 	}
@@ -450,6 +455,9 @@ func parseAll(files []string, contents map[string][]byte, plan analysisPlan) (pa
 		parsed.references = append(parsed.references, r.references...)
 		if r.hasErr {
 			parsed.errFiles = append(parsed.errFiles, files[i])
+		}
+		if r.generated {
+			parsed.generated = append(parsed.generated, files[i])
 		}
 	}
 	return parsed, nil

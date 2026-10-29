@@ -41,6 +41,9 @@ type GateSummary struct {
 	StrictAnalysis      bool     `json:"strict_analysis,omitempty"`
 	BaseFilesWithErrors []string `json:"base_files_with_errors,omitempty"`
 	HeadFilesWithErrors []string `json:"head_files_with_errors,omitempty"`
+	// NewGeneratedFiles は head で生成されたファイルとして単位を出さなかったファイルのうち、base に無いか、base では生成でなかったか、中身が base と違うもの。
+	// 見出しは 1 行のコメントで手でも書けるので、そこに入った写しは「変わった単位 0」で通る。止めはしない (本物の生成コードで毎回赤くしない)
+	NewGeneratedFiles []string `json:"new_generated_files"`
 	// NewExclusions は base の設定に無く head にある除外の要素 (glob と段・組の段と釘・単位の釘)。人が見る一覧。
 	NewExclusions []exclude.Element `json:"new_exclusions"`
 	// Untracked は head の作業ツリーで、ignore されていない untracked から読んだファイル (commit を head にしたときは空)。
@@ -95,7 +98,7 @@ type ResolvedJSON struct {
 // head が commit なら nil を渡す (行が作業ツリーとずれる argv を出さない)。
 func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set, headEntries []*group.Entry) GateSummary {
 	s := GateSummary{Root: root, Base: base, Head: head, Changed: r.Changed, Failed: r.Failed(),
-		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewExclusions: []exclude.Element{}, Untracked: []string{}, Exclusions: exclusions(ex),
+		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewGeneratedFiles: []string{}, NewExclusions: []exclude.Element{}, Untracked: []string{}, Exclusions: exclusions(ex),
 		PathPassed: len(r.PathPassed), PathPassedList: []UnitRef{}, PresetPassedList: []UnitRef{}, Resolved: []ResolvedJSON{}}
 	for _, g := range r.Resolved {
 		rj := ResolvedJSON{Level: g.Level.String(), Remain: g.Remain}
@@ -158,6 +161,9 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	}
 	if n := len(s.Unreadable); n > 0 {
 		note += fmt.Sprintf("・読めない構文で確かめられなかった変わった単位 %d (-v で一覧)", n)
+	}
+	if n := len(s.NewGeneratedFiles); n > 0 {
+		note += fmt.Sprintf("・生成ファイルとして読まなかった新しい・書き換えたファイル %d (そこの写しは比べていない。-v で一覧)", n)
 	}
 	if n := len(s.NewExclusions); n > 0 {
 		note += fmt.Sprintf("・新しく足された除外 %d (組・単位・glob・プリセットの要素と、釘の個数の制約を 1 つずつ数えた数で、組の数ではない。-v で一覧)", n)
@@ -243,6 +249,9 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 		}
 	}
 	if opt.Verbose {
+		for _, f := range s.NewGeneratedFiles {
+			vline(w, verboseNewGenerated, "%s", f)
+		}
 		for _, el := range s.NewExclusions {
 			vline(w, verboseNewExclusion, "%s%s", el.Key, commentAt(el))
 		}
@@ -301,6 +310,9 @@ func GateXcode(w io.Writer, s GateSummary) error {
 	}
 	for _, u := range s.Unreadable {
 		fmt.Fprintf(w, "%s:%d:%d: note: 読めない構文があるので確かめられなかった: %s (dupscan.gate)\n", filepath.Join(s.Root, u.File), u.Line, u.Col, label(u))
+	}
+	for _, f := range s.NewGeneratedFiles {
+		fmt.Fprintf(w, "%s:1:1: warning: 生成ファイルとして読まなかった新しい・書き換えたファイル (そこの写しは比べていない) (dupscan.gate.generated)\n", filepath.Join(s.Root, f))
 	}
 	for _, u := range s.PathPassedList {
 		fmt.Fprintf(w, "%s:%d:%d: warning: パスの除外の下なので名指ししなかった写し: %s (dupscan.gate.exclude)\n", filepath.Join(s.Root, u.File), u.Line, u.Col, label(u))

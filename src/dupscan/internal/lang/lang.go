@@ -42,6 +42,9 @@ type FileResult struct {
 	// HasError はファイルのどこかに読めない構文があること。読めない部分に飲み込まれた関数は単位として出てこないので、
 	// 呼び出し側は「比べていない部分がある」ことを出力に出す。
 	HasError bool
+	// Generated は生成されたファイルなので単位も呼び出しも出さなかったこと (Go の `// Code generated … DO NOT EDIT.`)。
+	// 見出しは 1 行のコメントで手でも書けるので、読まなかったことを呼び出し側が出力に出す (黙って「重複なし」にしない)。
+	Generated bool
 }
 
 // Definition は def 用の定義情報。重複を比べる Unit ではない。

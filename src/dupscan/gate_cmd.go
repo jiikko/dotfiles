@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os/signal"
@@ -157,6 +158,7 @@ func gateOnce(args []string, stdout, stderr io.Writer) gateOutcome {
 	s := report.BuildGate(sc.Root, baseHash, head.Name(), res, ex, compareEntries)
 	s.BaseFilesWithErrors = b.errFiles
 	s.HeadFilesWithErrors = h.errFiles
+	s.NewGeneratedFiles = append(s.NewGeneratedFiles, changedGenerated(b, h)...)
 	s.AnalysisIncomplete = len(b.errFiles) > 0 || len(h.errFiles) > 0
 	s.StrictAnalysis = *strictAnalysis
 	s.NewExclusions = append(s.NewExclusions, exclude.NewElements(baseCfg, headCfg)...)
@@ -260,4 +262,17 @@ func resolveBase(root, baseRef, headCommit string) (string, error) {
 		ref = h
 	}
 	return repo.MergeBase(root, headCommit, ref)
+}
+
+// changedGenerated は head の生成ファイルのうち、base で生成ファイルでなかったもの (base に無いファイルを含む) と、中身が base と違うもの。
+// 中身を比べないと、見出しを付けた commit で 1 度だけ出た後は、同じファイルに足した写しがずっと黙って通る。
+// 移しただけの生成ファイルも新しいパスとして出る (雑音だけで rc は変えない)。
+func changedGenerated(base, head scanned) []string {
+	var out []string
+	for _, f := range head.generated {
+		if !slices.Contains(base.generated, f) || !bytes.Equal(base.contents[f], head.contents[f]) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
