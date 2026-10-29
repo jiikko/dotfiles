@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -600,9 +601,9 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 			argv = su.dest.SSHArgv(false, true, "sh -c "+setup.Quote(a.InstallScript()))
 		}
 		return &ask{title: st.Title, body: []string{
-			who + " で " + name + " → " + ip + " を Bonjour に広告し続ける (ssh / 画面共有 / smb をこの名前で有線へ繋げる)",
+			who + " で " + name + " → " + ip + " を Bonjour に広告する (ssh / 画面共有 / smb をこの名前で有線へ繋げる)",
 			"ユーザーの LaunchAgent (~/Library/LaunchAgents/" + setup.WiredNameLabel + ".plist) が、" + ip + " をどれかの I/F が持っている間だけ dns-sd -P を走らせる (持っていない間は広告しない)。sudo は要らない",
-			"$ dns-sd -P " + strings.TrimSuffix(name, ".local") + " … " + name + " " + ip + "  (10 秒ごとに ifconfig で " + ip + " を見る)",
+			"$ dns-sd -P " + strings.TrimSuffix(name, ".local") + " … " + name + " " + ip + "  (" + strconv.Itoa(setup.AdvertEvery) + " 秒ごとに ifconfig で " + ip + " を見る)",
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepLedger:
 		if why := m.ledgerBlocked(su.host, su.obs.IP); why != "" {

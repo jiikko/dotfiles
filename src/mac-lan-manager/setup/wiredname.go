@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"mac-lan-manager/sshdest"
@@ -72,9 +73,12 @@ func (a NameAdvert) Validate() error {
 // RemoveScript は plist の ProgramArguments.6 (名前) を読む。名前と IP の位置は dns-sd を直接起こしていた前の形と同じに保つ
 // (前の形で走っている Mac の名前と IP も同じ数え方で読み、止める・入れ直すときに使う)。
 func (a NameAdvert) args() []string {
-	return []string{"/bin/sh", "-c", advertLoop("/sbin/ifconfig", "/usr/bin/dns-sd", "10"), AdvertTag,
+	return []string{"/bin/sh", "-c", advertLoop("/sbin/ifconfig", "/usr/bin/dns-sd", strconv.Itoa(AdvertEvery)), AdvertTag,
 		strings.TrimSuffix(a.Name, ".local"), wiredService, a.Name, a.IP}
 }
+
+// AdvertEvery はループが ifconfig を見る間隔 (秒。確認の板の説明も読む)。
+const AdvertEvery = 10
 
 // AdvertTag はループの形の目印 (sh の $0)。ループの中身を変えたら上げる: 前の形で走っている Mac を「済み」と読まず、初期設定の名前の
 // 手順で入れ直させる (Advertises が見る)。
