@@ -69,12 +69,20 @@ func writeNextAction(w io.Writer, action nextAction) error {
 }
 
 // callApproximation describes the syntactic matching used by index and callers.
-func (s scanned) callApproximation(labels bool) string {
+// Swift の既定引数の注意は、呼び出しを数える相手に Swift の単位があるときだけ要る。results (結果の単位のファイル) を渡すと
+// それで決め、渡さない (結果が 0 件を含む) ときは走査した全ファイルで決める。Go のファイルだけの結果に Swift の注意を出さない。
+func (s scanned) callApproximation(labels bool, results ...string) string {
 	match := "名前のみ (引数ラベル・個数で絞らない)"
 	omitted := ""
 	if labels {
 		match = "名前と引数ラベル/個数"
-		for file := range s.contents {
+		files := results
+		if len(files) == 0 {
+			for file := range s.contents {
+				files = append(files, file)
+			}
+		}
+		for _, file := range files {
 			if filepath.Ext(file) == ".swift" {
 				omitted = " Swiftの既定引数を省略した呼び出しは取りこぼす。"
 				break
@@ -105,17 +113,35 @@ func (s scanned) sourceGlobs() []string {
 // 例外: 初期化子 (`init`) の「呼び出し ~N」は単位名でなく型名で他のファイルの呼び出しを数える (report.callCounts)。
 // 問い合わせの名前が `init` の部分文字列になりうるときは、名前を含まないファイルも影響しうるので全部残す。
 func (s scanned) relevantParseErrors(name string) []string {
+	return s.relevantParseErrorsAny([]string{name})
+}
+
+// relevantParseErrorsAny は names のどれかを本文に含む読めないファイル (index -file の outline は、並べた単位の名前を渡す)。
+// names のどれかが空・init の部分文字列なら、relevantParseErrors と同じく全部を残す。
+func (s scanned) relevantParseErrorsAny(names []string) []string {
 	// 照合は MatchName を通して行うので、警告の関連性も同じ形で判定する (囲み付きの query で警告が落ちない)。
 	// 本文の中の綴りは囲み付きのこともあるので、囲みを外した語の部分文字列で探す (`repeat` は `repeat` にも `repeat` を含む)
-	needle := strings.ToLower(tree.MatchName(name))
-	if needle == "" || strings.Contains(initUnitName, needle) {
-		return s.errFiles
+	needles := make([]string, 0, len(names))
+	for _, name := range names {
+		needle := strings.ToLower(tree.MatchName(name))
+		if needle == "" || strings.Contains(initUnitName, needle) {
+			return s.errFiles
+		}
+		needles = append(needles, needle)
 	}
 	var relevant []string
 	for _, file := range s.errFiles {
 		body, ok := s.contents[file]
-		if !ok || strings.Contains(strings.ToLower(string(body)), needle) {
+		if !ok {
 			relevant = append(relevant, file)
+			continue
+		}
+		lower := strings.ToLower(string(body))
+		for _, needle := range needles {
+			if strings.Contains(lower, needle) {
+				relevant = append(relevant, file)
+				break
+			}
 		}
 	}
 	return relevant
@@ -126,11 +152,17 @@ func (s scanned) relevantParseErrors(name string) []string {
 const initUnitName = "init"
 
 func (s scanned) warnParseErrors(w io.Writer, command, name string) error {
+	return s.warnParseErrorsAny(w, command, []string{name}, "問い合わせの名前")
+}
+
+// warnParseErrorsAny は warnParseErrors の names 版 (index -file の outline: 並べた単位の名前のどれかを含むファイルだけを影響しうると数える)。
+// what は 1 行の文言の主語 (名前を指定していない outline では「並べた単位の名前」)。
+func (s scanned) warnParseErrorsAny(w io.Writer, command string, names []string, what string) error {
 	if len(s.errFiles) == 0 {
 		return nil
 	}
-	if len(s.relevantParseErrors(name)) == 0 {
-		_, err := fmt.Fprintf(w, "dupscan %s: 読めないファイル %d 個は問い合わせの名前を含まない\n", command, len(s.errFiles))
+	if len(s.relevantParseErrorsAny(names)) == 0 {
+		_, err := fmt.Fprintf(w, "dupscan %s: 読めないファイル %d 個は%sを含まない\n", command, len(s.errFiles), what)
 		return err
 	}
 	return writeParseWarning(w, command, s.errFiles)

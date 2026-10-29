@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 
 	"dupscan/internal/langs"
@@ -66,7 +67,7 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	case "json":
 		err = report.WriteJSON(stdout, s)
 	case "text":
-		_, err = fmt.Fprintln(stdout, got.callApproximation(true))
+		_, err = fmt.Fprintln(stdout, got.callApproximation(true, entryFiles(s.Entries)...))
 		if err == nil {
 			hint := report.TruncationHint{Label: "該当", Ignore: true, Globs: got.sourceGlobs(), Dirs: dirs}
 			if q.Name != "" {
@@ -83,10 +84,38 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	if err := got.warnParseErrors(stderr, "index", q.Name); err != nil {
+	names, what := []string{q.Name}, "問い合わせの名前"
+	if q.File != "" && q.Name == "" {
+		what = "並べた単位の名前"
+		// 名前を指定しない outline は、並べた単位の名前で関連を決める (無関係なファイルの読めない fixture で全文の警告を出さない)。
+		// 指定したファイル自身が読めないときは、名前に関係なく影響する
+		names = entryNames(s.Entries)
+		if slices.Contains(got.errFiles, q.File) {
+			names = []string{""}
+		}
+	}
+	if err := got.warnParseErrorsAny(stderr, "index", names, what); err != nil {
 		return fail(err)
 	}
 	return 0
+}
+
+func entryFiles(entries []report.IndexEntry) []string {
+	files := make([]string, len(entries))
+	for i, e := range entries {
+		files[i] = e.File
+	}
+	return files
+}
+
+func entryNames(entries []report.IndexEntry) []string {
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.Name != "" {
+			names = append(names, e.Name)
+		}
+	}
+	return names
 }
 
 func flagSet(fs *flag.FlagSet, name string) bool {
