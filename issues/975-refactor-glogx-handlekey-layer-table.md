@@ -82,5 +82,9 @@
   足した 3 本は、前提を立てた上で主張する優先だけで red になる (別の機構で弾かれていない)。「diff と PR status が同時に開く経路は無い」も
   開く経路 4 つを辿って正しい。P3 (boardOwnsInput の doc の「全画面への振り分けより前」の間に C / X の段も挟まる) は記述として誤りでないので直さない
 - [x] ルートの make test rc=0 (2026-10-30)。push 済み (cd0fc2ea2)。CI は Issues / Lint / unused / src/glogx / src/doctor / doctor / dupscan gate が緑
-- [ ] CI の Tests と Bench: cd0fc2ea2 から後の 8 commit の run がどれも後続の push で取り消された (concurrency の cancel-in-progress。
-  再実行も同じ group で取り消された)。私の commit を含む commit で完走した run を見てから done にする
+- [x] CI の Tests と Bench (2026-10-30 01:47 に確かめた): cd0fc2ea2 から後の run は push が続いて取り消され続けたが、cd0fc2ea2 を含む
+  c0ff0f9d4 で完走した。
+  - Bench (run 40911174662、trusted=yes) は緑。cd0fc2ea2 を含まない前の緑 (run 40898323540、a5d8b357a、trusted=yes) と glogx の metric を比べ、
+    時間は x0.84〜x1.03 のばらつき (issues_view_scale_x100 81 → 68・status_view_scale_x100 81 → 75 は速い側)、確保量の差は 0.01 KB 程度で、悪化なし
+  - Tests (run 40911174628) は 1 件だけ赤: tests/scripts/test_check_comment_provenance.sh が、別の作業 (issue 991) の
+    src/treefiler/filer/smallscreen_test.go のコメントの「(issue 991)」で落ちた。この変更と無関係 (担当のセッションに知らせた)。他のテストは緑
