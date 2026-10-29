@@ -2,6 +2,7 @@ package setup
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -307,8 +308,29 @@ func TestAdvertLoopFollowsIP(t *testing.T) {
 		}
 	})
 
+	// ループの argv は InstallScript が書いた plist から読み戻す (args の並びとループの $1〜$4 の対応、plist の実体参照の往復も一緒に見る)。
+	// 本物の ifconfig / dns-sd と周期だけを偽物に差し替える
+	env, home, _ := wiredSandbox(t)
+	if out, err := runScript(t, env, (NameAdvert{Name: "air5.wired.local", IP: "192.168.100.11"}).InstallScript()); err != nil {
+		t.Fatalf("入れられない: %v %s", err, out)
+	}
+	raw, err := exec.Command("/usr/bin/plutil", "-extract", "ProgramArguments", "json", "-o", "-",
+		filepath.Join(home, "Library", "LaunchAgents", WiredNameLabel+".plist")).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var argv []string
+	if err := json.Unmarshal(raw, &argv); err != nil || len(argv) != 8 || argv[0] != "/bin/sh" {
+		t.Fatalf("plist の ProgramArguments = %q %v", argv, err)
+	}
+	for from, to := range map[string]string{"/sbin/ifconfig ": fakeIfc + " ", "/usr/bin/dns-sd ": fakeDNS + " ", "sleep 10 ": "sleep 0.05 "} {
+		if strings.Count(argv[2], from) != 1 {
+			t.Fatalf("ループに %q が 1 つではない (差し替えが当たらない): %q", from, argv[2])
+		}
+		argv[2] = strings.Replace(argv[2], from, to, 1)
+	}
 	setIfc("en7: flags=8863<UP>\n\tinet 192.168.100.111 netmask 0xffffff00\n") // 前方一致 (.11 と .111) を持っているとは読まない
-	cmd := exec.Command("/bin/sh", "-c", advertLoop(fakeIfc, fakeDNS, "0.05"), AdvertTag, "air5.wired", wiredService, "air5.wired.local", "192.168.100.11")
+	cmd := exec.Command(argv[0], argv[1:]...)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
