@@ -40,9 +40,6 @@ func (a *askBoard) yesKeys() string {
 func (m *Model) drawAsk(c *canvas) {
 	a := m.ask
 	w := min(confirm.MaxWidth+8, m.w-2)
-	if w < 20 || m.h < 7 {
-		return
-	}
 	inner := w - 4
 	body := termwidth.Wrap(a.lead, inner, false)
 	if a.name != "" {
@@ -58,7 +55,13 @@ func (m *Model) drawAsk(c *canvas) {
 		hint = "y: 実行   その他: キャンセル"
 	}
 	body = append(body, "", hint)
-	h := min(len(body)+2, m.h-1)
+	if w < 20 || len(body)+2 > m.h-1 {
+		// 板が収まらないと、答え方の行 (末尾) が枠の外へ押し出される (名前は最低 1 行残すので、lead が折れると高さ 7 でも起きる)。
+		// それでもキーは板が取る (askKey) ので、見えないまま Enter で実行しないよう、答えのキーを先にして最下行に出す
+		m.bottomHint(c, a.yesKeys()+" "+a.verb+" · その他 キャンセル · "+a.title+": "+a.name)
+		return
+	}
+	h := len(body) + 2
 	x0, y0 := (m.w-w)/2, max((m.h-1-h)/2, 0)
 	c.frame(rect{x0, y0, w, h}, cAccRoute)
 	c.put(x0+2, y0, " "+a.title+" ", cText, true)
@@ -73,4 +76,12 @@ func (m *Model) drawAsk(c *canvas) {
 		}
 		c.put(x0+2, y, termwidth.Truncate(s, inner, "…"), col, false)
 	}
+}
+
+// bottomHint は、全部のキーを取る層を描けない大きさのとき、その層が開いていることを最下行に出す (最下行は高さ 1 から在る)。
+// 幅が足りなければ後ろから切るので、効くキーを先に書く。
+func (m *Model) bottomHint(c *canvas, s string) {
+	y := m.h - 1
+	c.clear(0, y, m.w-1, y, cBar)
+	c.put(0, y, termwidth.Truncate(s, m.w, "…"), cText, true)
 }

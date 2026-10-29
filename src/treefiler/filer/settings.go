@@ -450,12 +450,7 @@ func (m *Model) panelKey(k string) {
 func (m *Model) drawPanel(c *canvas) {
 	w := min(52, m.w)
 	h := m.h - 1
-	if w < 24 || h < 6 {
-		return
-	}
 	x0 := m.w - w
-	c.frame(rect{x0, 0, w, h}, cAccRoute)
-	c.put(x0+2, 0, " settings ", cText, true)
 	inner := w - 4
 	// 足元: 選んだ項目の説明・保存のエラー・設定ファイルの場所・キー
 	type footLine struct {
@@ -471,6 +466,14 @@ func (m *Model) drawPanel(c *canvas) {
 	}
 	foot = append(foot, footLine{termwidthTrunc(configPath(), inner), cMuted}, footLine{"j k 移動  h l 変える  r 既定  esc 閉じる", cMuted})
 	room := h - 2 - len(foot) - 1
+	if w < 24 || room < 1 {
+		// 項目の行が 1 行も入らない (画面が小さい・読めない設定の行が多い) と板は見えないが、l / enter / h / r は値を変える (panelKey)。
+		// room が負のまま下の skip を出すと rows[skip:] が範囲外になる
+		m.bottomHint(c, "設定 esc/,/q 閉じる · 画面が小さくて板を描けない")
+		return
+	}
+	c.frame(rect{x0, 0, w, h}, cAccRoute)
+	c.put(x0+2, 0, " settings ", cText, true)
 	// 本文の行 (見出しと項目)
 	type row struct {
 		text  string
