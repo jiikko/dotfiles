@@ -282,3 +282,18 @@ func nested(g Group, in map[string]map[int]bool, finer func(int, norm.Level) boo
 	}
 	return len(common) > 0
 }
+
+// AtLine は file の単位のうち line を含み、最も後の行で始まるものを返す (同じ行で始まるものが複数なら左のもの。
+// `{ a in f { … } }` で外側のクロージャを指す)。無ければ nil。explain の `<file>:<行>` と、report が出す比べ方の
+// argv (その行で指すと同じ単位に戻るときだけ出す) が同じ選び方をするように、両方がこれを呼ぶ
+// (callers が呼び出しを囲む単位を選ぶ規則はクロージャを除くので別。report の callers.go)。
+func AtLine(entries []*Entry, file string, line int) *Entry {
+	var best *Entry
+	for _, e := range entries {
+		u := e.Unit
+		if u.File == file && u.Line <= line && line <= u.EndLine && (best == nil || u.Line > best.Unit.Line || u.Line == best.Unit.Line && u.Col < best.Unit.Col) {
+			best = e
+		}
+	}
+	return best
+}

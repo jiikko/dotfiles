@@ -25,7 +25,6 @@ type SearchEvidence struct {
 
 type SearchCandidate struct {
 	Entry   IndexEntry
-	EndLine int
 	Matched []SearchEvidence
 	Missing []string
 	Score   int
@@ -83,7 +82,7 @@ func BuildSearch(units []*tree.Unit, q SearchQuery) SearchSummary {
 		}
 		s.FilteredUnits++
 		doc, _, _ := strings.Cut(u.Doc, "\n")
-		c := SearchCandidate{EndLine: u.EndLine, Entry: IndexEntry{UnitRef: ref(u), ReturnType: u.ReturnType, ParamTypes: u.ParamTypes, Doc: doc, Shared: q.Filters.shared(u.File)}, Matched: []SearchEvidence{}, Missing: []string{}}
+		c := SearchCandidate{Entry: IndexEntry{UnitRef: ref(u), ReturnType: u.ReturnType, ParamTypes: u.ParamTypes, Doc: doc, Shared: q.Filters.shared(u.File)}, Matched: []SearchEvidence{}, Missing: []string{}}
 		fields := []string{u.Name, u.Signature, doc}
 		for _, term := range q.Terms {
 			ev := SearchEvidence{Term: term, Fields: []string{}, Components: searchComponents(term)}

@@ -170,8 +170,7 @@ func cutSelector(s string) (file, sel string, ok bool) {
 	return s[:i], s[i+1:], true
 }
 
-// pick は file の単位から sel (関数名か行) で 1 つを選ぶ。行なら、その行を含む単位のうち最も後の行で始まるもの
-// (同じ行で始まるものが複数なら左のもの。`{ a in f { … } }` で外側のクロージャを指す)。
+// pick は file の単位から sel (関数名か行) で 1 つを選ぶ。行なら group.AtLine の選び方。
 // 名前で 2 つ以上に当たれば (多重定義・入れ子の型の同名) 候補を並べて止める (黙って片方を選ばない)。
 func pick(entries []*group.Entry, file, sel string) (*group.Entry, error) {
 	var inFile []*group.Entry
@@ -185,13 +184,7 @@ func pick(entries []*group.Entry, file, sel string) (*group.Entry, error) {
 	}
 	var hits []*group.Entry
 	if line, err := strconv.Atoi(sel); err == nil {
-		var best *group.Entry
-		for _, e := range inFile {
-			u := e.Unit
-			if u.Line <= line && line <= u.EndLine && (best == nil || u.Line > best.Unit.Line || u.Line == best.Unit.Line && u.Col < best.Unit.Col) {
-				best = e
-			}
-		}
+		best := group.AtLine(inFile, file, line)
 		if best == nil {
 			return nil, fmt.Errorf("%s:%d を含む単位が無い", file, line)
 		}

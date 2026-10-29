@@ -72,6 +72,9 @@ dupscan gate                    # upstream との merge-base から作業ツリ�
   まとめて書くなら `-format json` の `exclude` (report の各組・gate の各違反) を使う。釘に本体の hash まで入っているので、text の `-v` を切り出さない
   (見出しで切ると別の組のメンバーを拾う)。組に「印: 全員の本体が 1 つの呼び出しを 1 回するだけ」(json は `single_call`) が付いていたら、
   共通の道具へ寄せた後に残る 1 行の委譲のことが多い。寄せる先が呼んでいる道具そのものなら、理由にそう書いて除外する (印だけでは除外しない。同じ形でまだ寄せられる写しもある)。
+  **理由に「メンバーが違う」と書く前に、`-v` の除外の 1 行の下の行を見る**: L1 の組は本体の局所の名前の綴りだけが違う (リテラルも同じ)。ただし局所の名前と同じ綴りの外側の名前 (`bytes := bytes.…` の package・Swift の `if let user` のプロパティ) と、引数・receiver の型は比べていないので、そこは本体と署名を読む。
+  ほかの段は `違いを見る:` の `dupscan explain -compare …` を打ち、違う箇所を確かめてから書く (読み比べて「違う」と書いた理由が、実際は同じだった例が obaket で 6 件ある。dotfiles 963)。
+  メンバーは `file:開始-終了` (json は `end_line`) で出るので、本体はその範囲で Read する
   **除外を書いたら、ユーザーへの報告に書く** (除外は gate を緩めるので、人の目に届けるのが唯一の歯止め。`gate` の 1 行目にも「新しく足された除外」と出る)
 - **寄せる作業の途中で「自分が生んだ組・消した組」を見る**なら、まず `dupscan gate -v`。「新しい」の違反が新しい写しを含む組、「消えた組・縮んだ組」が寄せた結果、
   「新しく足された除外」が自分で足した除外の要素 (釘・glob など。黙らせた組の一覧ではない)。gate は前後の hash の差と同じではない
@@ -96,5 +99,7 @@ report の既存の組をまとめて統合するときも、1 組ずつ次を�
   (obaket では各 test target の `Helpers/SharedTestSupport` の symlink と `project.yml` の path)。次にその全部が `Package.swift` / `project.yml` でその module に依存しているか確かめる。
   1 つでも依存していなければそこは compile で落ちるので、その module に依存する target の中に置き、他の target が要るなら個別のパスで取り込む (`project.yml` の path)。
   上の「使う側のどれもが依存してよい層」は層の話で、これは target の話。Go の repo では `go.mod` と package の import で同じ確認をする。
-  dupscan は型を解決しないので落ちる前には見つけられない (obaket 1307 で 2 回落ちた。dotfiles 959)
+  依存が揃っていても、移す型が参照する宣言の可視性 (`package` / `internal`) は取り込む側の module で意味が変わる (SwiftPM の package の外の Xcode のターゲットからは `package` が見えず、`@testable import` が要る)。
+  足したら、取り込む全 target の build を回す (`swift build` だけでは Xcode のターゲットの側が分からない)。
+  dupscan は型を解決しないので落ちる前には見つけられない (obaket 1307 で 2 回、1309 で 1 回落ちた。dotfiles 959 / 963)
 - 寄せない判断も成果。除外の理由には「どのドメインのどの規則が、なぜ別に変わりうるか」を書く (形が違うから、では書かない)

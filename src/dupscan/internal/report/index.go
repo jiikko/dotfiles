@@ -27,8 +27,6 @@ type Query struct {
 // IndexEntry は索引の 1 行。
 type IndexEntry struct {
 	UnitRef
-	// EndLine は単位の終わりの行。Read に範囲 (offset / limit) を渡すために text の `file:開始-終了` に出す。無い (0) か 1 行の単位なら出さない。
-	EndLine    int      `json:"end_line,omitempty"`
 	ReturnType string   `json:"return_type,omitempty"`
 	ParamTypes []string `json:"param_types,omitempty"`
 	Doc        string   `json:"doc,omitempty"`
@@ -93,7 +91,7 @@ func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
 	})
 	s := IndexSummary{Units: n, Matches: len(hits), Entries: []IndexEntry{}}
 	for _, h := range hits {
-		e := IndexEntry{UnitRef: ref(h.u), EndLine: h.u.EndLine, ReturnType: h.u.ReturnType, ParamTypes: h.u.ParamTypes, Doc: h.u.Doc, Shared: q.shared(h.u.File)}
+		e := IndexEntry{UnitRef: ref(h.u), ReturnType: h.u.ReturnType, ParamTypes: h.u.ParamTypes, Doc: h.u.Doc, Shared: q.shared(h.u.File)}
 		if n, ok := counts[h.u]; ok {
 			e.Calls = &n
 		}
@@ -222,11 +220,7 @@ func IndexEntryText(e IndexEntry) string { return IndexEntryTextWith(e, 0) }
 
 // IndexEntryTextWith は docBytes (0 以下は縮めない) で doc を縮めた 1 行。
 func IndexEntryTextWith(e IndexEntry, docBytes int) string {
-	where := fmt.Sprintf("%s:%d", e.File, e.Line)
-	if e.EndLine > e.Line {
-		where += fmt.Sprintf("-%d", e.EndLine)
-	}
-	line := fmt.Sprintf("%s %s", where, label(e.UnitRef))
+	line := fmt.Sprintf("%s %s", e.Where(), label(e.UnitRef))
 	var marks []string
 	if e.Shared {
 		marks = append(marks, "shared")

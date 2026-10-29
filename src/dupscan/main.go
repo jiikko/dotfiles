@@ -74,7 +74,7 @@ func newFlags(name string, stderr io.Writer) (*flag.FlagSet, common) {
 		minNodes:   fs.Int("min-nodes", defaultMinNodes, "これより節の少ない関数・初期化子・property は比べない"),
 		minClosure: fs.Int("min-closure-nodes", defaultMinClosure, "これより節の少ないクロージャは比べない"),
 		limit:      fs.Int("limit", 20, "text で出す組・違反の上限 (0 は全部)"),
-		verbose:    fs.Bool("v", false, "読めない構文の単位・各組の除外の 1 行・効いていない除外 (理由と、釘ごとの今の木との違い)・gate の消えた組と新しく足された除外を 1 つずつ出す"),
+		verbose:    fs.Bool("v", false, "読めない構文の単位・各組の除外の 1 行とメンバーの違いの確かめ方・効いていない除外 (理由と、釘ごとの今の木との違い)・gate の消えた組と新しく足された除外を 1 つずつ出す"),
 		levels:     fs.String("levels", defaultLevels, "見る段 (カンマ区切り。L3 は値の位置まで畳む一致で、偶然の一致が多いので既定では見ない)"),
 		noExclude:  fs.Bool("no-exclude", false, "repo の root の "+exclude.FileName+" の除外を外して回す (除外が正しいかを見直すため)"),
 	}
@@ -234,7 +234,7 @@ func runReportCommand(args []string, stdout, stderr io.Writer) int {
 		ex.Narrowed()
 	}
 	ex.Scanned(opt.Levels)
-	s := report.Build(sc.Root, got.files, got.units, got.errFiles, ex.ApplyGroups(group.Build(entries, opt)), ex)
+	s := report.Build(sc.Root, got.files, got.units, got.errFiles, ex.ApplyGroups(group.Build(entries, opt)), ex, entries)
 	s.BelowMinNodes, s.MinNodes = group.CountBelowMin(entries, opt), opt.MinNodes
 	s.BelowMinFloor = sweepDeepMinNodes
 	s.BelowMinGroups = group.CountBelowMinGroups(entries, opt, s.BelowMinFloor)

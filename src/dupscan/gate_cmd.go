@@ -116,7 +116,11 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	res := gate.Judge(baseEntries, headEntries, gopt)
-	s := report.BuildGate(sc.Root, baseHash, head.Name(), res, ex)
+	compareEntries := headEntries
+	if *headRef != "" {
+		compareEntries = nil
+	}
+	s := report.BuildGate(sc.Root, baseHash, head.Name(), res, ex, compareEntries)
 	s.BaseFilesWithErrors = b.errFiles
 	s.HeadFilesWithErrors = h.errFiles
 	s.AnalysisIncomplete = len(b.errFiles) > 0 || len(h.errFiles) > 0

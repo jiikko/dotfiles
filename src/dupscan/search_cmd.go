@@ -167,12 +167,12 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 			break
 		}
 		card, truncated := report.SearchCandidateText(candidate)
-		readArgv := []string{"sed", "-n", fmt.Sprintf("%d,%dp", candidate.Entry.Line, max(candidate.Entry.Line, min(candidate.EndLine, candidate.Entry.Line+79))), filepath.Join(sc.Root, candidate.Entry.File)}
+		readArgv := []string{"sed", "-n", fmt.Sprintf("%d,%dp", candidate.Entry.Line, max(candidate.Entry.Line, min(candidate.Entry.EndLine, candidate.Entry.Line+79))), filepath.Join(sc.Root, candidate.Entry.File)}
 		readJSON, err := jsonout.Line(readArgv)
 		if err != nil {
 			return fail(err)
 		}
-		card += fmt.Sprintf("  read_argv: %s\n  source_read_truncated=%t\n", readJSON, candidate.EndLine > candidate.Entry.Line+79)
+		card += fmt.Sprintf("  read_argv: %s\n  source_read_truncated=%t\n", readJSON, candidate.Entry.EndLine > candidate.Entry.Line+79)
 		if len(header(returned+1, snippetTruncated || truncated))+body.Len()+len(card)+len(footer) > *maxBytes {
 			break
 		}

@@ -62,6 +62,8 @@ type ViolationJSON struct {
 	Exclude string `json:"exclude"`
 	// SingleCall は組の全員の本体が、1 つの呼び出しを 1 回するだけか (GroupJSON.SingleCall と同じ)。
 	SingleCall bool `json:"single_call,omitempty"`
+	// compare はメンバーの違いを確かめる手 (text の -v だけに出す。compareHints)。
+	compare []string
 }
 
 // ResolvedJSON は消えた・縮んだ組 1 つの出力。Members は base の側の位置。
@@ -71,8 +73,9 @@ type ResolvedJSON struct {
 	Remain  int       `json:"remain"` // head で同じ組に揃っている数 (0 は消えた)
 }
 
-// BuildGate は gate の出力の形を組み立てる。
-func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set) GateSummary {
+// BuildGate は gate の出力の形を組み立てる。headEntries は head の単位の全部 (compareHints)。explain は作業ツリーを読むので、
+// head が commit なら nil を渡す (行が作業ツリーとずれる argv を出さない)。
+func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set, headEntries []*group.Entry) GateSummary {
 	s := GateSummary{Root: root, Base: base, Head: head, Changed: r.Changed, Failed: r.Failed(),
 		Violations: []ViolationJSON{}, Unreadable: []UnitRef{}, NewExclusions: []exclude.Element{}, Untracked: []string{}, Exclusions: exclusions(ex),
 		PathPassed: len(r.PathPassed), PathPassedList: []UnitRef{}, PresetPassedList: []UnitRef{}, Resolved: []ResolvedJSON{}}
@@ -92,7 +95,7 @@ func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set) GateSumm
 	for _, v := range r.Violations {
 		members := append(append([]*group.Entry(nil), v.New...), v.Same...)
 		vj := ViolationJSON{Level: v.Level.String(), Fail: v.Fail, New: []UnitRef{}, Same: []UnitRef{},
-			Exclude: exclude.GroupSnippet(v.Level, members), SingleCall: singleCall(members)}
+			Exclude: exclude.GroupSnippet(v.Level, members), SingleCall: singleCall(members), compare: compareHints(root, v.Level, members, headEntries)}
 		for _, m := range v.New {
 			vj.New = append(vj.New, ref(m.Unit))
 		}
@@ -176,14 +179,15 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 			}
 			fmt.Fprintf(w, "%s (%s):\n", v.Level, kind)
 			for _, m := range v.New {
-				fmt.Fprintf(w, "  新しい: %s:%d %s\n", m.File, m.Line, label(m))
+				fmt.Fprintf(w, "  新しい: %s %s\n", m.Where(), label(m))
 			}
 			for _, m := range v.Same {
-				fmt.Fprintf(w, "  同じ形: %s:%d %s%s\n", m.File, m.Line, label(m), allowedMark(m))
+				fmt.Fprintf(w, "  同じ形: %s %s%s\n", m.Where(), label(m), allowedMark(m))
 			}
 			writeSingleCallMark(w, v.SingleCall)
 			if opt.Verbose {
 				fmt.Fprintf(w, "  除外の 1 行: %s\n", v.Exclude)
+				writeCompare(w, v.compare)
 			}
 		}
 		if rest := len(s.Violations) - len(shown); rest > 0 {
@@ -234,7 +238,7 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 			}
 			fmt.Fprintf(w, "%s組: %s (%d → %d)\n", kind, g.Level, len(g.Members), g.Remain)
 			for _, m := range g.Members {
-				fmt.Fprintf(w, "  base: %s:%d %s\n", m.File, m.Line, label(m))
+				fmt.Fprintf(w, "  base: %s %s\n", m.Where(), label(m))
 			}
 		}
 		s.write(w)

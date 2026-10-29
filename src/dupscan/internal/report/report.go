@@ -112,9 +112,11 @@ func ruleJSON(r exclude.Rule) string {
 
 // UnitRef は単位 1 つの出力。
 type UnitRef struct {
-	Key        string `json:"key"`
-	File       string `json:"file"`
-	Line       int    `json:"line"`
+	Key  string `json:"key"`
+	File string `json:"file"`
+	Line int    `json:"line"`
+	// EndLine は単位の終わりの行。Read に範囲 (offset / limit) を渡すために text の `file:開始-終了` に出す。無い (0) か 1 行の単位なら出さない。
+	EndLine    int    `json:"end_line,omitempty"`
 	Col        int    `json:"col"`
 	Kind       string `json:"kind"`
 	Name       string `json:"name"`
@@ -138,10 +140,13 @@ type GroupJSON struct {
 	Nodes int `json:"nodes"`
 	// SingleCall はメンバー全員の本体が、1 つの呼び出しを 1 回するだけか (tree.Unit.SingleCall)。
 	SingleCall bool `json:"single_call,omitempty"`
+	// compare はメンバーの違いを確かめる手 (text の -v だけに出す。compareHints)。
+	compare []string
 }
 
 // Build は出力の形を組み立てる。ex は除外 (nil なら無し)。単位の許可の印を付け、その後で効いていない除外を数える。
-func Build(root string, files int, units []*tree.Unit, errFiles []string, groups []group.Group, ex *exclude.Set) Summary {
+// entries は走査した単位の全部 (メンバーを explain の `<file>:<行>` で指せるかを確かめる。compareHints)。
+func Build(root string, files int, units []*tree.Unit, errFiles []string, groups []group.Group, ex *exclude.Set, entries []*group.Entry) Summary {
 	s := Summary{Root: root, Files: files, Units: len(units), FilesWithErrors: errFiles}
 	if s.FilesWithErrors == nil {
 		s.FilesWithErrors = []string{}
@@ -155,7 +160,7 @@ func Build(root string, files int, units []*tree.Unit, errFiles []string, groups
 	s.Groups = []GroupJSON{}
 	for _, g := range groups {
 		gj := GroupJSON{Level: g.Level.String(), Hash: g.Hash, Partition: g.Partition, Exclude: exclude.GroupSnippet(g.Level, g.Members),
-			SingleCall: singleCall(g.Members)}
+			SingleCall: singleCall(g.Members), compare: compareHints(root, g.Level, g.Members, entries)}
 		for _, m := range g.Members {
 			r := ref(m.Unit)
 			r.Allowed = ex != nil && ex.Allowed(m)
@@ -199,8 +204,16 @@ func filePairs(groups []GroupJSON) []FilePair {
 }
 
 func ref(u *tree.Unit) UnitRef {
-	return UnitRef{Key: u.Key, File: u.File, Line: u.Line, Col: u.Col, Kind: string(u.Kind), Name: u.Name,
+	return UnitRef{Key: u.Key, File: u.File, Line: u.Line, EndLine: u.EndLine, Col: u.Col, Kind: string(u.Kind), Name: u.Name,
 		Signature: u.Signature, Enclosing: u.Enclosing, OwnerName: u.OwnerName, Test: u.Test, Visibility: u.Visibility}
+}
+
+// Where は `file:開始-終了` (1 行の単位と終わりの無い単位は `file:行`)。
+func (r UnitRef) Where() string {
+	if r.EndLine > r.Line {
+		return fmt.Sprintf("%s:%d-%d", r.File, r.Line, r.EndLine)
+	}
+	return fmt.Sprintf("%s:%d", r.File, r.Line)
 }
 
 // JSON は JSON で書く。
@@ -236,11 +249,12 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 	for _, g := range shown {
 		fmt.Fprintf(w, "%s %s (節 %d):\n", g.Level, g.Partition, g.Nodes)
 		for _, m := range g.Members {
-			fmt.Fprintf(w, "  %s:%d %s%s\n", m.File, m.Line, label(m), allowedMark(m))
+			fmt.Fprintf(w, "  %s %s%s\n", m.Where(), label(m), allowedMark(m))
 		}
 		writeSingleCallMark(w, g.SingleCall)
 		if opt.Verbose {
 			fmt.Fprintf(w, "  除外の 1 行: %s\n", g.Exclude)
+			writeCompare(w, g.compare)
 		}
 	}
 	if rest := len(s.Groups) - len(shown); rest > 0 {
