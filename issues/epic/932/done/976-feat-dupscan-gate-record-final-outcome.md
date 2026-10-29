@@ -1,7 +1,5 @@
 # 976 (feat): gate の実行記録に最終終了結果と再現条件を残す
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-29
 優先度: 高
 
@@ -43,9 +41,9 @@ Obaket側では補助JSONを実装済み。異常系はローカル検証で、r
 
 ## 分担
 
-[905](../890/done/905-feat-dupscan-ci-check-gate.md)のrecord導入の後続。
-[948](948-research-dupscan-meets-its-aims.md)の一般効果、[917](../890/pending/917-test-dupscan-usefulness-verification.md)の1か月評価は別。
-[959](done/959-research-dupscan-dogfood-feedback-obaket-1307-part3-2026-10-29.md)で済んだ解析不完全/origin表示の再実装はしない。
+[905](../../890/done/905-feat-dupscan-ci-check-gate.md)のrecord導入の後続。
+[948](../948-research-dupscan-meets-its-aims.md)の一般効果、[917](../../890/pending/917-test-dupscan-usefulness-verification.md)の1か月評価は別。
+[959](959-research-dupscan-dogfood-feedback-obaket-1307-part3-2026-10-29.md)で済んだ解析不完全/origin表示の再実装はしない。
 
 ## 進捗
 

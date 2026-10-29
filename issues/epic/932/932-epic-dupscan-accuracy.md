@@ -30,6 +30,7 @@
 
 ## 完了した子issue
 
+- [976](done/976-feat-dupscan-gate-record-final-outcome.md): gate の -record を出力と最終の判定の後に書き、exit_code・reasons・phase・tool・head_commit・conditions を残す。閉じた stdout で rc=0 だった出力の失敗も rc=2 に。
 - [959](done/959-research-dupscan-dogfood-feedback-obaket-1307-part3-2026-10-29.md): obaket 1307 の所見。gate の違反の寄せる側に出どころ (`origins`)、解析が不完全でも 1 行目で「新しい重複 0」。寄せ先を縮んだ組なら通す提案は採らない (L1 の写しは実際に増える)。
 - [963](done/963-research-dupscan-feedback-obaket-1309-2026-10-29.md): obaket 1309 の所見。組のメンバーに終端行、`-v` に除外の理由を書く前のメンバーの違いの確かめ方 (L1 の注記・`explain -compare` の argv)。除外を書く CLI と target の取り込みは見送り (再開の条件つき)。
 - [928](done/928-feat-dupscan-agent-onboarding.md): 共通診断/表示専用案内/no-buildを維持し、探索は候補確認に限定採用。CLI不在・SDK/未対応言語・cold compiler buildを追加検証。本番比較とClaude/Swift未検証は948へ理由/再開条件付きで引継ぎ。
@@ -73,4 +74,4 @@
 
 - [957](done/957-research-dupscan-dogfood-feedback-obaket-1307-part2-2026-10-29.md): 所見を現行版で裏どりし、既存compare/JSON集計の導線とstale groupの一意な更新候補表示を実装。Q3の書込みCLIは編集が律速になる実測を再開条件とし、Q4/Q6の専用filterは全体JSON集計でも律速になる実例まで保留。preset拡張・自動分類・stale一括削除は不採用。P3/P8は既存修正を実ファイル/実hookで確認。
 
-- Obaket1301の中間評価を948/917へ追記。後続提案: [gate終了結果の記録](976-feat-dupscan-gate-record-final-outcome.md)、[CI導入費用の診断](977-research-dupscan-ci-install-and-gate-cost.md)、[resolvedの人手検証支援](978-research-dupscan-resolved-review-evidence.md)。既存の重複検出・探索・一般効果を混同せず、提案の実装は未着手。
+- Obaket1301の中間評価を948/917へ追記。後続提案: [gate終了結果の記録](done/976-feat-dupscan-gate-record-final-outcome.md)、[CI導入費用の診断](977-research-dupscan-ci-install-and-gate-cost.md)、[resolvedの人手検証支援](978-research-dupscan-resolved-review-evidence.md)。既存の重複検出・探索・一般効果を混同せず、提案の実装は未着手。
