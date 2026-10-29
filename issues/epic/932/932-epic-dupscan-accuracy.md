@@ -28,6 +28,7 @@
 
 ## 完了した子issue
 
+- [959](done/959-research-dupscan-dogfood-feedback-obaket-1307-part3-2026-10-29.md): obaket 1307 の所見。gate の違反の寄せる側に出どころ (`origins`)、解析が不完全でも 1 行目で「新しい重複 0」。寄せ先を縮んだ組なら通す提案は採らない (L1 の写しは実際に増える)。
 - [963](done/963-research-dupscan-feedback-obaket-1309-2026-10-29.md): obaket 1309 の所見。組のメンバーに終端行、`-v` に除外の理由を書く前のメンバーの違いの確かめ方 (L1 の注記・`explain -compare` の argv)。除外を書く CLI と target の取り込みは見送り (再開の条件つき)。
 - [928](done/928-feat-dupscan-agent-onboarding.md): 共通診断/表示専用案内/no-buildを維持し、探索は候補確認に限定採用。CLI不在・SDK/未対応言語・cold compiler buildを追加検証。本番比較とClaude/Swift未検証は948へ理由/再開条件付きで引継ぎ。
 

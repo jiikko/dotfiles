@@ -1,7 +1,5 @@
 # 959 (research): dupscan を使って 1307 を最後まで進めて見つかった問題と提案 (着手者向けの詳細)
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-29
 
 957 の続き。obaket の issue 1307 (macOS の `ObaketTests` の重複を寄せる) の最後の組を寄せ、`macOS/ObaketTests/` を含む dupscan の組を **0** にした区間 (obaket `23585f68c`) で、困った点と役に立った点を記録する。
