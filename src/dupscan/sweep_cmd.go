@@ -82,7 +82,11 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	cfg, err = withComments(cfg, entries, *c.noExclude)
+	complete, err := scopeComplete(sc)
+	if err != nil {
+		return fail(err)
+	}
+	cfg, err = withComments(cfg, entries, *c.noExclude, complete)
 	if err != nil {
 		return fail(fmt.Errorf("判定不能: %w", err))
 	}

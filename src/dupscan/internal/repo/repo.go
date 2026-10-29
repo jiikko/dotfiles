@@ -63,6 +63,25 @@ func (s Scope) Contains(file string) bool {
 	return false
 }
 
+// OutsideExts は、exts のうち起点の外に (追跡か ignore されていない untracked の) ファイルがある拡張子。起点が repo 全体なら空。
+// allow-group の人数は起点の中でしか数えないので、起点の外に同じ言語のファイルがあるかで、粗い段の組に効かせてよいかを決める。
+func OutsideExts(s Scope, exts []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if s.Whole() {
+		return out, nil
+	}
+	files, err := List(Scope{Root: s.Root, Prefixes: []string{""}}, exts)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		if !s.Contains(f) {
+			out[filepath.Ext(f)] = true
+		}
+	}
+	return out, nil
+}
+
 // List は起点の中の、拡張子の合うファイルを root からの相対で返す。
 // 追跡しているファイルと、ignore されていない untracked のファイルを含む。symlink・消えたファイル・submodule は含めない。
 func List(s Scope, exts []string) ([]string, error) { return list(s, exts, "--cached", "--others") }

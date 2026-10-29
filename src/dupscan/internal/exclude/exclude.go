@@ -190,7 +190,8 @@ const allowGroupMark = "-group"
 // 人数を書かせるのは、後から写しが増えたときに許可が黙って覆わないため (コメントには相手の釘を書けないので、顔ぶれを人数で留める)。
 // 設定ファイルの単位の除外と同じ釘で指すので、gate の「base に同じ釘があったときだけ効く」と「新しく足された除外」もそのまま効く
 // (新しい写しに許可のコメントを添えると、新しく足された除外に出る)。種別か理由の無いコメントは errs に入れる。
-func CommentRules(entries []*group.Entry) (rules []Rule, errs []error) {
+// complete は、ファイルの言語の単位が起点の中に全部あるか (nil は全部ある。groupCommentRule の段の選び方に使う)。
+func CommentRules(entries []*group.Entry, complete func(file string) bool) (rules []Rule, errs []error) {
 	for _, e := range entries {
 		u := e.Unit
 		if !u.HasAllow {
@@ -202,7 +203,7 @@ func CommentRules(entries []*group.Entry) (rules []Rule, errs []error) {
 				u.File, u.AllowExtraLine, u.AllowLine, u.AllowExtraLine))
 		}
 		if rest, ok := strings.CutPrefix(u.Allow, allowGroupMark); ok {
-			r, err := groupCommentRule(e, entries, rest)
+			r, err := groupCommentRule(e, entries, rest, complete == nil || complete(e.Unit.File))
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s:%d: dupscan:allow-group: %w (書き方は `// dupscan:allow-group <人数> <false-positive|intentional> <理由>`)", u.File, u.AllowLine, err))
 				continue
@@ -223,10 +224,11 @@ func CommentRules(entries []*group.Entry) (rules []Rule, errs []error) {
 
 // groupCommentRule は `dupscan:allow-group` の後ろ rest (人数・種別・理由) から組の除外を作る。
 //
-// 同じ本体の単位は entries (起点の中) でしか数えない。起点を絞ると、L1 で人数に足りない印が粗い段でちょうど人数の別の組に効きうる。
-// 「起点が repo 全体か」で L1 に限る形は採らない: make test と CI の gate は起点 src で打つので、起点の中に全員がいる
-// 正しい L2 の印まで効かなくなり rc=1 になる。直すなら「起点の中にその言語の単位が全部あるか」で判定するか、gate を repo 全体で打つ。
-func groupCommentRule(e *group.Entry, entries []*group.Entry, rest string) (Rule, error) {
+// 同じ本体の単位は entries (起点の中) でしか数えない。complete が偽 (その言語のファイルが起点の外にもある) なら L1 の組にだけ効かせる:
+// L1 で人数に足りない印が粗い段 (L2・L3・L1m) でちょうど人数になった組は、起点の外にいる L1 の相手と区別できず、効かせると
+// 意図していない組を黙って消す。効かせなかった印は人数の合わない印として残す (sweep は数を言い、gate -v は理由に出す)。
+// 「起点が repo 全体か」で判定しない: make test と CI の gate は起点 src で打つので、起点の中に全員がいる正しい L2 の印まで効かなくなる。
+func groupCommentRule(e *group.Entry, entries []*group.Entry, rest string, complete bool) (Rule, error) {
 	u := e.Unit
 	comment := fmt.Sprintf("%s:%d", u.File, u.AllowLine)
 	if rest != "" && rest[0] != ' ' && rest[0] != '\t' {
@@ -248,7 +250,7 @@ func groupCommentRule(e *group.Entry, entries []*group.Entry, rest string) (Rule
 	}
 	id := strconv.Itoa(n) + "\x00" + kind + "\x00" + reason
 	var counts []string
-	over := false
+	over, narrowed := false, false
 	for _, lv := range append(append([]norm.Level(nil), norm.Levels...), norm.LM) {
 		var pins []string
 		for _, o := range entries {
@@ -256,7 +258,9 @@ func groupCommentRule(e *group.Entry, entries []*group.Entry, rest string) (Rule
 				pins = append(pins, Pin(o))
 			}
 		}
-		if len(pins) == n {
+		if len(pins) == n && !complete && lv != norm.L1 {
+			narrowed = true
+		} else if len(pins) == n {
 			sort.Strings(pins)
 			r := Rule{Group: pins, Level: lv.String(), Kind: kind, Reason: reason, Comment: comment, allowID: id}
 			return r, r.check()
@@ -265,7 +269,14 @@ func groupCommentRule(e *group.Entry, entries []*group.Entry, rest string) (Rule
 		over = over || lv == norm.L1 && len(pins) > n
 	}
 	return Rule{Group: []string{Pin(e)}, Level: norm.L1.String(), level: norm.L1, Kind: kind, Reason: reason, Comment: comment,
-		allowID: id, groupMiss: fmt.Sprintf("人数 %d・同じ本体の単位 %s", n, strings.Join(counts, "・")), groupOver: over}, nil
+		allowID: id, groupMiss: fmt.Sprintf("人数 %d・同じ本体の単位 %s%s", n, strings.Join(counts, "・"), narrowedNote(narrowed)), groupOver: over}, nil
+}
+
+func narrowedNote(narrowed bool) string {
+	if !narrowed {
+		return ""
+	}
+	return "・この言語のファイルが起点の外にもあるので L1 の組にだけ効かせる"
 
 }
 

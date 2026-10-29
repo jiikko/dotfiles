@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"runtime"
 	"strings"
 	"sync"
@@ -224,7 +225,12 @@ func runReportCommand(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dupscan:", err)
 		return 2
 	}
-	cfg, err = withComments(cfg, entries, *c.noExclude)
+	complete, err := scopeComplete(sc)
+	if err != nil {
+		fmt.Fprintln(stderr, "dupscan:", err)
+		return 2
+	}
+	cfg, err = withComments(cfg, entries, *c.noExclude, complete)
 	if err != nil {
 		fmt.Fprintln(stderr, "dupscan: 判定不能:", err)
 		return 2
@@ -272,8 +278,8 @@ func loadConfig(src repo.Source, noExclude bool) (*exclude.Config, error) {
 
 // withComments は cfg に単位の直前のコメントの許可を足す。種別か理由の無いコメントはエラー (設定ファイルの誤りと同じく黙って外さない)。
 // noExclude ならコメントも効かせない (形は確かめる)。
-func withComments(cfg *exclude.Config, entries []*group.Entry, noExclude bool) (*exclude.Config, error) {
-	rules, errs := exclude.CommentRules(entries)
+func withComments(cfg *exclude.Config, entries []*group.Entry, noExclude bool, complete func(string) bool) (*exclude.Config, error) {
+	rules, errs := exclude.CommentRules(entries, complete)
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
@@ -281,6 +287,29 @@ func withComments(cfg *exclude.Config, entries []*group.Entry, noExclude bool) (
 		return cfg, nil
 	}
 	return exclude.WithComments(cfg, rules), nil
+}
+
+// scopeComplete は、ファイルの言語 (adapter) の単位が起点の中に全部あるかを返す関数 (起点が repo 全体なら nil = 全部ある)。
+// 同じ adapter の拡張子の 1 つでも起点の外にファイルがあれば、その adapter のファイルは全部「全部ない」にする。
+func scopeComplete(sc repo.Scope) (func(string) bool, error) {
+	if sc.Whole() {
+		return nil, nil
+	}
+	outside, err := repo.OutsideExts(sc, langs.Extensions())
+	if err != nil {
+		return nil, err
+	}
+	partial := map[string]bool{}
+	for _, a := range langs.All {
+		for _, e := range a.Extensions {
+			if outside[e] {
+				for _, e2 := range a.Extensions {
+					partial[e2] = true
+				}
+			}
+		}
+	}
+	return func(file string) bool { return !partial[path.Ext(file)] }, nil
 }
 
 // scopeFilter は、起点が repo 全体でなければ起点の中かを返す関数 (起点の外を指す除外を効いていないに数えないため)。

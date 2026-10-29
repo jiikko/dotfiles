@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+
+	"subproc"
 )
 
 // sweep は 4 つの見方を節ごとに出す。節ごとの中身を、節の見出しで切って確かめる。
@@ -580,5 +583,55 @@ func TestSweepPathExclusionWithoutLevelsCoversL1m(t *testing.T) {
 	_, out, _ = sweep(t, repoWith(t, files))
 	if s := sweepSection(t, out, 2); strings.Contains(s, "[L1m]") {
 		t.Errorf("levels を省いたパスの除外が L1m の組を消していない: %q", s)
+	}
+}
+
+// 起点を絞り、その言語のファイルが起点の外にもあるときは、L1 で人数に足りない allow-group を、粗い段でちょうど人数の別の組に効かせない
+// (起点の外の L1 の相手と区別できない。効かせると意図していない組を黙って消す)。組は出し、印は数だけ言う。
+func TestSweepNarrowScopeAllowGroupBindsOnlyL1WhenLanguageIsOutside(t *testing.T) {
+	variant := func(name, init string) string {
+		return strings.Replace(pickFunc(name), "best := 0", "best := "+init, 1)
+	}
+	a := "package a\n\n// dupscan:allow-group 2 intentional 注記\n" + pickFunc("pickA") + "\n" + variant("pickE", "1")
+	root := repoWith(t, map[string]string{"a/a.go": a, "b/b.go": "package b\n\n" + pickFunc("pickB")})
+	// CI の checkout では全部が追跡されているので、起点の外のファイルは追跡したものとして置く (untracked だけを見る一覧の退行を見逃さない)
+	if out, err := subproc.GitCommand(context.Background(), "-C", root, "add", "-A").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, out)
+	}
+	_, out, _ := sweep(t, root+"/a")
+	if !strings.Contains(sweepSection(t, out, 1)+sweepSection(t, out, 2), "pickE") {
+		t.Errorf("起点の外の L1 の相手を見ずに、粗い段の別の組を黙って消している: %q", out)
+	}
+	if !strings.Contains(out, "人数の合わない allow-group 1 個は、起点の中の L1 の同じ本体の単位が人数より少ないので出していない") {
+		t.Errorf("効かせなかった印の数を言っていない: %q", out)
+	}
+	_, out, _ = sweep(t, root)
+	if strings.Contains(out, "効いていない allow-group") || strings.Contains(out, "出していない") {
+		t.Errorf("repo 全体なら L1 で 2 人に合って印は効く: %q", out)
+	}
+}
+
+// 起点を絞っても、その言語のファイルが起点の中に全部あれば、粗い段の組の allow-group は効く
+// (make test と CI の gate は起点 src で打つ。dotfiles の Go は全部 src の下にあるので、正しい L2 の印が効かなくなると gate が落ちる)。
+func TestSweepNarrowScopeAllowGroupBindsCoarseWhenLanguageIsInside(t *testing.T) {
+	variant := func(name, init string) string {
+		return strings.Replace(pickFunc(name), "best := 0", "best := "+init, 1)
+	}
+	a := "package a\n\n// dupscan:allow-group 2 intentional 注記\n" + pickFunc("pickA") + "\n" + variant("pickE", "1")
+	root := repoWith(t, map[string]string{"a/a.go": a, "doc/README.md": "x\n"})
+	// pickE は節 5 (pickA の本体の手書き) には出るので、組の節 1・2 で見る
+	inGroups := func(out string) bool {
+		return strings.Contains(sweepSection(t, out, 1), "pickE") || strings.Contains(sweepSection(t, out, 2), "pickE")
+	}
+	_, out, _ := sweep(t, root)
+	if inGroups(out) || strings.Contains(out, "効いていない allow-group") {
+		t.Fatalf("前提: repo 全体なら L2 の 2 人の組に印が効く: %q", out)
+	}
+	_, out, _ = sweep(t, root+"/a")
+	if inGroups(out) {
+		t.Errorf("Go が全部起点の中にあるのに、粗い段の組に印を効かせていない: %q", out)
+	}
+	if strings.Contains(out, "出していない") || strings.Contains(out, "効いていない allow-group") {
+		t.Errorf("効いている印を人数の合わない印と数えている: %q", out)
 	}
 }

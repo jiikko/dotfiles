@@ -115,7 +115,11 @@ func runPoint(name string, args []string, stdout, stderr io.Writer) int {
 	var text func(io.Writer) error
 	switch name {
 	case "near":
-		cfg, err = withComments(cfg, entries, *c.noExclude)
+		complete, cerr := scopeComplete(sc)
+		if cerr != nil {
+			return fail(cerr)
+		}
+		cfg, err = withComments(cfg, entries, *c.noExclude, complete)
 		if err != nil {
 			return fail(fmt.Errorf("判定不能: %w", err))
 		}
