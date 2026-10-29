@@ -15,6 +15,7 @@ import (
 	"dupscan/internal/langs"
 	"dupscan/internal/norm"
 	"dupscan/internal/repo"
+	"dupscan/internal/report"
 	"dupscan/internal/tree"
 )
 
@@ -225,6 +226,9 @@ func sweepGroups(w *lineWriter, groups []group.Group, limit int) {
 				break
 			}
 			w.printf("  %s:%d %s\n", m.Unit.File, m.Unit.Line, unitLabel(m.Unit))
+		}
+		if report.SingleCall(g.Members) {
+			w.printf("%s\n", report.SingleCallMark)
 		}
 	}
 }

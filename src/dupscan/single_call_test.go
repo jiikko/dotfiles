@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -149,5 +150,38 @@ func TestGateViolationCarriesSingleCallMark(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(out), &s); rc != 1 || err != nil || len(s.Violations) != 1 || !s.Violations[0].SingleCall {
 		t.Fatalf("gate の違反にも同じ印を付ける (止めるかは変えない): rc=%d err=%v out=%s stderr=%s", rc, err, out, errs)
+	}
+}
+
+// sweep の節 1・2 も report と同じ印を付ける。節 2 は小さい単位が多く、寄せた後に残る 1 行の委譲が並ぶので、印が無いと 1 組ずつ読み直すことになる。
+// 節 1 (既定の下限) と節 2 (下げた下限) は別々に書くので、それぞれに委譲の組を出して節ごとに確かめる。
+func TestSweepMarksThinDelegationGroups(t *testing.T) {
+	fake := func(typ string) string {
+		return "final class " + typ + " {\n    var updateCount = 0\n    let waiters = Waiters()\n" +
+			"    func waitUntilUpdateCount(_ n: Int) async {\n        await waiters.wait(until: { self.updateCount >= n })\n    }\n" +
+			"    func waitSmall(_ n: Int) async {\n        await waiters.wait(until: { n > 0 })\n    }\n}\n"
+	}
+	root := repoWith(t, map[string]string{"Tests/FakeA.swift": fake("FakeA"), "Tests/FakeB.swift": fake("FakeB")})
+	rc, out, errs := sweep(t, root)
+	if rc != 0 {
+		t.Fatalf("rc=%d stderr=%s", rc, errs)
+	}
+	for sec, name := range map[int]string{1: "waitUntilUpdateCount", 2: "waitSmall"} {
+		if got := sweepSection(t, out, sec); !strings.Contains(got, name) || !strings.Contains(got, singleCallMark) {
+			t.Errorf("節 %d の 1 行の委譲の組 (%s) に印の行を付ける: %q", sec, name, got)
+		}
+	}
+	// 寄せた後に残る文言のクロージャ (`header: { Text("…", bundle: .module) }`) の組。周りの本体の形を変えて、クロージャだけを組にする。
+	viewA := "import SwiftUI\nstruct A: View {\n    var body: some View {\n        Section {\n            Text(\"x\")\n        } header: {\n            Text(\"Language\", bundle: .module)\n        }\n    }\n}\n"
+	viewB := "import SwiftUI\nstruct B: View {\n    var body: some View {\n        Form {\n            Section {\n                Toggle(isOn: .constant(true)) { Text(\"y\") }\n" +
+		"                Picker(\"p\", selection: .constant(1)) { Text(\"1\").tag(1) }\n            } header: {\n                Text(\"Theme\", bundle: .module)\n            }\n        }\n    }\n}\n"
+	root = repoWith(t, map[string]string{"Sources/A.swift": viewA, "Sources/B.swift": viewB})
+	if _, out, _ := sweep(t, root); !strings.Contains(sweepSection(t, out, 2), "{closure} in body") || !strings.Contains(sweepSection(t, out, 2), singleCallMark) {
+		t.Errorf("節 2 のクロージャの組にも印を付ける: %q", out)
+	}
+	thick := "final class %s {\n    func total(_ xs: [Int]) -> Int {\n        var t = 0\n        for x in xs where x > 0 { t += x }\n        return t\n    }\n}\n"
+	root = repoWith(t, map[string]string{"Sources/A.swift": fmt.Sprintf(thick, "A"), "Sources/B.swift": fmt.Sprintf(thick, "B")})
+	if _, out, _ := sweep(t, root); !strings.Contains(out, "total") || strings.Contains(out, singleCallMark) {
+		t.Fatalf("委譲でない組には印を付けない: %q", out)
 	}
 }

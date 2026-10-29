@@ -116,7 +116,7 @@ func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set, headEntr
 	for _, v := range r.Violations {
 		members := append(append([]*group.Entry(nil), v.New...), v.Same...)
 		vj := ViolationJSON{Level: v.Level.String(), Fail: v.Fail, New: []UnitRef{}, Same: []UnitRef{},
-			Exclude: exclude.GroupSnippet(v.Level, members), SingleCall: singleCall(members), compare: compareHints(root, v.Level, members, headEntries)}
+			Exclude: exclude.GroupSnippet(v.Level, members), SingleCall: SingleCall(members), compare: compareHints(root, v.Level, members, headEntries)}
 		vj.Origins = []OriginJSON{}
 		for _, m := range v.New {
 			vj.New = append(vj.New, ref(m.Unit))

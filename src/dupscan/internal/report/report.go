@@ -163,7 +163,7 @@ func Build(root string, files int, units []*tree.Unit, errFiles []string, groups
 	s.Groups = []GroupJSON{}
 	for _, g := range groups {
 		gj := GroupJSON{Level: g.Level.String(), Hash: g.Hash, Partition: g.Partition, Exclude: exclude.GroupSnippet(g.Level, g.Members),
-			SingleCall: singleCall(g.Members), compare: compareHints(root, g.Level, g.Members, entries)}
+			SingleCall: SingleCall(g.Members), compare: compareHints(root, g.Level, g.Members, entries)}
 		for _, m := range g.Members {
 			r := ref(m.Unit)
 			r.Allowed = ex != nil && ex.Allowed(m)
@@ -271,8 +271,8 @@ func Text(w io.Writer, s Summary, opt TextOptions) error {
 	return nil
 }
 
-// singleCall は、組のメンバー全員の本体が 1 つの呼び出しを 1 回するだけか。
-func singleCall(members []*group.Entry) bool {
+// SingleCall は、組のメンバー全員の本体が 1 つの呼び出しを 1 回するだけか (report・gate・sweep の印の判定)。
+func SingleCall(members []*group.Entry) bool {
 	for _, m := range members {
 		if !m.Unit.SingleCall {
 			return false
@@ -284,9 +284,12 @@ func singleCall(members []*group.Entry) bool {
 // writeSingleCallMark は薄い委譲の組に印の行を足す。組は隠さない: 寄せられる 1 行の写し (同じ型の別名・別の型への同じ転送) も同じ形になる。
 func writeSingleCallMark(w io.Writer, on bool) {
 	if on {
-		fmt.Fprintln(w, "  印: 全員の本体が 1 つの呼び出しを 1 回するだけ (共通の道具へ寄せた後に残る委譲なら、これ以上寄せる先は無い。除外するなら理由にそう書く)")
+		fmt.Fprintln(w, SingleCallMark)
 	}
 }
+
+// SingleCallMark は薄い委譲の組の下に足す印の行 (report・gate・sweep で同じ文言)。
+const SingleCallMark = "  印: 全員の本体が 1 つの呼び出しを 1 回するだけ (共通の道具へ寄せた後に残る委譲なら、これ以上寄せる先は無い。除外するなら理由にそう書く)"
 
 // writeUnreadableUnits は読めない構文で比べなかった単位を 1 つずつ書く。重複が無いとき (寄せ終わって確かめる場面) も同じ形で出す:
 // 無いと、-v でもファイル名しか出ず、どの関数が外れたかが分からない。
