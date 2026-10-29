@@ -1,5 +1,7 @@
 # 989 (design): Go の型の解決を go/packages で入れ、def・refs・callers を型で確定する
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-30〜）
+
 起票日: 2026-10-30
 
 ## 概要
