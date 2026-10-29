@@ -1,1 +1,0 @@
-../973-bug-dupscan-exclusion-level-and-narrow-allow-group.md
