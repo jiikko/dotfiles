@@ -51,6 +51,11 @@ skill dupscan の 1〜4 節に従う。**grep より先に dupscan を試す場�
 - 文字列・コメント・設定ファイル・ログ・定義 1 件を狙い撃ちする検索は grep / rg でよい (それは不満ではない)。
 - **0 件・少なすぎる結果を「無い」と読まない**。dupscan は型を解決しない。疑わしければ grep で突き合わせ、食い違ったら記録する。
 - 寄せるときは skill dupscan の 4 節 (ドメインの境界) を先に確かめる。
+- **テストの helper に寄せるときは、手書きの写しを grep でも探す**。`sweep` の節 5 は Go の `Test…` 関数の中を見ず、本体が文 1 個の関数 (`if err := os.WriteFile(…); err != nil { t.Fatal(err) }` の helper など) も寄せる先として見ない。
+  写しが一番多いのはテスト関数の中なので、helper の本体の呼び出し (`os.WriteFile`・`os.ReadFile` など) で grep する (2026-10-29 の treefiler: 寄せた 6 か所のうち 5 か所が Test 関数の中、1 か所は文 1 個の helper への寄せで、どれも節 5 に出なかった。issue 965 の F1)。grep に戻した回数と理由は 2 節で記録する
+- **タスクの変更を commit する前に、その repo の全体の検査を回す** (dotfiles ならルートの `make test`。test-lint・test-runtime・test-src を含む)。直した module の `test` / `lint` と `make test-lint` だけで代えない
+  (2026-10-29 の treefiler では、それだけで commit と push を済ませ、ルートの `make test` を後から回した)。
+  規約で実行を禁じた検査 (iOS のシミュレータのテストなど) はビルドまで回し、実行はユーザーに委ねると報告に書く
 - **既存の fixture・helper に寄せるときは、本体が同じに見えても、既定値と副作用が同じかを確かめてから置き換える**。今回、IA / PikPak の接続は fixture の既定 endpoint が違い (`https://mypikpak.com/webdav` と `PikPakWebDAVProviderConfig.defaultEndpointString`)、`makeBrowserUseCase()` は `InMemoryFileWriter` を足すが private 版は `StorageBrowserUseCase` の既定 (`UnsupportedFileWriter`) だった。違うなら引数を明示して挙動を保つ (置き換えて緑でも、既定が違うと検査していたものが変わる)。
 - **build・test のような長い検証をバックグラウンドで回すときは、完了の目印を自分で作る**: 実行本体の終了コードを run 固有のファイルへ書き、最後に `run.done` を作る。
   待つのはそのファイルで、上限を決める (超えたら判定不能と報告)。**バックグラウンド起動の完了通知は「起動した subshell の終了」で、検証の完了とは限らない**
@@ -105,7 +110,7 @@ dupscan の修正の作法 (dotfiles の `CLAUDE.md`「`src/` の Go を書く�
 
 - **dupscan の修正は dotfiles の repo (`~/dotfiles`) で行う**。開発タスクが別の repo (obaket など) でも、dotfiles の worktree を切って作業する (タスクの repo には dupscan の修正を混ぜない)。共有の checkout で編集しない。`src/dupscan` を触るセッションは 1 つだけ (0 節の 4)。
 - テストを書き、**変異を当てて赤を確認する** (`~/.claude/rules/mutation-verify-new-tests.md`)。結果を変えない最適化の変異は緑のままでよい (そう書く)。
-- `make -C src/dupscan test lint` と、`make test-lint` を rc で確かめてから push する。文書 (README・skill・usage) が実体とずれたら同じ commit で直す。
+- `make -C src/dupscan test lint` と、ルートの `make test` (`make test-lint` を含む) を rc で確かめてから push する。文書 (README・skill・usage) が実体とずれたら同じ commit で直す。
 - 実機で再現した入力に対して、直す前後の出力を並べて確かめる (テストが緑でも、実物で効いたかは別)。
 - 直した内容と確かめた方法は commit message に書き、issue にも 1 行足す。
 
