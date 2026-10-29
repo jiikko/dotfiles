@@ -55,13 +55,13 @@ const (
 	maxPanelJobs = 10
 )
 
-// browseModel の状態 (フィールド) はこの型 1 つに置き、メソッドは責務ごとの browse_*.go に分けてある (issue 971。
-// update は「どのメッセージを誰が受けるか」の表だけにし、3 文以上の処理は on<Msg> として受け手のファイルに置く)。
+// browseModel の状態 (フィールド) はこの型 1 つに置き、メソッドは責務ごとの browse_*.go に分けてある
+// (update は「どのメッセージを誰が受けるか」の表だけにし、3 文以上の処理は on<Msg> として受け手のファイルに置く)。
 // 状態を責務ごとの型へ割らないのは、CI の取得とパネルが panelSHA / mergeCIBatch / settleAwaitCI で同じ状態を同じ順に
 // 触るため (割ると同じ順序の保証が 2 つの型にまたがる。CI の取得とパネルが同じ browse_ci.go にあるのも同じ理由)。
 // 分けた効果の見積もり (2026-10-29、直近 90 日に tui.go を触った 181 commit の git log -p -U0 の hunk の関数見出しで数えた):
 // tui.go に触らずに済むのは 39% (update の hunk を tui.go に残ると数えた下限) 〜 67% (on<Msg> へ出た case の中の変更も外へ出ると
-// 数えた上限)。残る変更の多くはフィールドの追加・Init・newBrowseModel。以前の見積もり (2〜3 割) は update の case を出さない案のもの。
+// 数えた上限)。残る変更の多くはフィールドの追加・Init・newBrowseModel。update の case を出さずにメソッドだけを分けると 2〜3 割に留まる。
 type browseModel struct {
 	commits        []gitdata.Commit
 	statuses       map[string]gitdata.CIState // 表示用 (キャッシュ + 取得結果のマージ)

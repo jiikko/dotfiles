@@ -34,7 +34,7 @@ linters:
       forbid:
         - pattern: ^fmt\.Print(f|ln)?$
           msg: stdout への直接出力は main.go に限定する (TUI 層は tea.Msg 経由で描画)
-        # 状態機械 (tui.go と browse_*.go。issue 971 で tui.go から分けた) の時刻はテスト差し替え用シーム (internal/app の var TimeNow) 経由で取る規律。push 演出 6 箇所が
+        # 状態機械 (tui.go と browse_*.go) の時刻はテスト差し替え用シーム (internal/app の var TimeNow) 経由で取る規律。push 演出 6 箇所が
         # これを迂回して time.Now/Since を直呼びしていた退行 の再発防止。シーム定義
         # 自体 (var TimeNow = time.Now。internal/app/clock.go) は状態機械の外なので対象外。状態機械の外の
         # 正当な time.Now は下の exclusions (path-except) で許可する。

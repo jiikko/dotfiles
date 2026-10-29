@@ -53,7 +53,7 @@ var mainSourceFiles = map[string]string{
 	"claude_version.go":    "claude CLI の新版の検出",
 	"codex_version.go":     "codex CLI の新版の検出",
 	"action_modal.go":      "push / pull / claude update の確認モーダル (それらを起こす配線そのものなので main に残す。issue 817 の G-2)",
-	// browse_*.go は tui.go の状態機械を責務ごとに分けたもの (issue 971)。新しい画面ではない (画面は internal/ に置く)
+	// browse_*.go は tui.go の状態機械を責務ごとに分けたもの。新しい画面ではない (画面は internal/ に置く)
 	"browse_keys.go":      "状態機械: キーの入口と振り分け (issue 971)",
 	"browse_screens.go":   "状態機械: 全画面へのキーと非同期の結果の受け渡し (issue 971)",
 	"browse_ci.go":        "状態機械: CI の取得・ポーリングと job パネル (issue 971)",
@@ -73,7 +73,7 @@ var browseModelMethodFiles = map[string]string{
 	"fullscreen.go":     "全画面の排他と開く口",
 	"hint_surfaces.go":  "面ごとの最下行の案内",
 	"open_workspace.go": "e のキーの処理",
-	// tui.go の状態機械を責務ごとに分けたもの (issue 971)。状態 (フィールド) は tui.go の browseModel 1 つのまま
+	// tui.go の状態機械を責務ごとに分けたもの。状態 (フィールド) は tui.go の browseModel 1 つのまま
 	"browse_keys.go":      "キーの入口と振り分け",
 	"browse_screens.go":   "全画面へのキーと非同期の結果の受け渡し",
 	"browse_ci.go":        "CI の取得・ポーリングと job パネル",
