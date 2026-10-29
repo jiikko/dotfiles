@@ -230,21 +230,51 @@ func TestTrackSpan(t *testing.T) {
 	}
 }
 
-// 一定の速さ: 走る時間の半ばで、出発点から root までの (線のセルの数で) 半ばに居る。ease-in / ease-out ではずれる。
+// 一定の速さ: 走る時間の 1/4・1/2・3/4 で、出発点から root までの (線のセルの数で) 同じ割合まで進んでいる。
+// 1 点だけでは、t=0.5 でちょうど 0.5 になる対称な緩急 (smoothstep 等) を見逃す。
 func TestPulseRunsAtConstantSpeed(t *testing.T) {
 	m := newTest(t)
 	cdTo(t, m, "b/deep/x.txt")
 	settle(m)
 	at := fixedNow
-	advBy(m, &at, time.Duration(pulseDur*pulseRun/2*float64(time.Second)))
-	m.draw()
-	h := m.pulseBuf[0]
-	_, end, ok := trackSpan(m.trackBuf, m.trackBuf[h.start], int(math.Round(m.anims[m.root].x.v))+m.labelWidth(m.root)+1)
-	if !ok {
-		t.Fatal("前提: 経路の線の範囲が取れない")
+	run := time.Duration(pulseDur * pulseRun * float64(time.Second))
+	for _, want := range []float64{0.25, 0.5, 0.75} {
+		advBy(m, &at, fixedNow.Add(time.Duration(want*float64(run))).Sub(at))
+		m.draw()
+		h := m.pulseBuf[0]
+		_, end, ok := trackSpan(m.trackBuf, m.trackBuf[h.start], int(math.Round(m.anims[m.root].x.v))+m.labelWidth(m.root)+1)
+		if !ok {
+			t.Fatal("前提: 経路の線の範囲が取れない")
+		}
+		got := (h.head - float64(h.start)) / float64(end-h.start)
+		el := m.pulses[0].el / (pulseDur * pulseRun)
+		if math.Abs(got-el) > 0.04 { // 位置は経過から直接決まる。smoothstep は 1/4 の点で 0.09 ずれる
+			t.Fatalf("走る時間の %.2f で %.2f まで進んだ (同じ割合のはず)", el, got)
+		}
 	}
-	if f := (h.head - float64(h.start)) / float64(end-h.start); f < 0.35 || f > 0.65 {
-		t.Fatalf("走る時間の半ばで %.2f まで進んだ (半ばのはず)", f)
+}
+
+// 走っている間に root を上げても (root の上で h)、光の出発点は同じ項目 (x.txt) の線の先端のまま
+// (深さは root から数えるので、上げると全部の項目の深さが 1 つずれる)。
+func TestPulseKeepsStartOnReroot(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "b/deep/x.txt")
+	settle(m)
+	x, old := m.cur, m.root
+	at := fixedNow.Add(16 * time.Millisecond)
+	m.Advance(at)
+	m.rerootUp()
+	if m.root == old {
+		t.Fatal("前提: root が上がっていない")
+	}
+	m.Advance(at) // 新しい root の位置を作る (経過は進めない)
+	m.draw()
+	if len(m.pulseBuf) == 0 {
+		t.Fatal("root を上げたら光が描かれない")
+	}
+	want := int(math.Round(m.anims[x].x.v)) - 1
+	if got := m.trackBuf[m.pulseBuf[0].start]; got != want {
+		t.Fatalf("root を上げたら光の出発点が桁 %d へずれた (x.txt の線の先端は %d)", got, want)
 	}
 }
 

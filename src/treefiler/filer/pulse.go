@@ -12,7 +12,10 @@ import (
 // snapAll では打ち切らない: 押しっぱなしで押すたびに打ち切ると、新しい光がカーソルの近くで出直すだけで root まで届かない。
 type pulse struct {
 	depth int
-	el    float64 // 出てからの秒数
+	// root は出したときの root。深さは root から数えるので、走っている間に root を上げる (rerootUp) と全部の項目の深さが
+	// 1 つ増える。今の深さは depth + root.depth() (上げた段数だけ増え、rootUndo で戻すと 0 に戻る)
+	root *node
+	el   float64 // 出てからの秒数
 }
 
 const maxPulses = 6 // 押しっぱなしで同時に走る光の上限 (古いものから捨てる)
@@ -25,7 +28,7 @@ func (m *Model) stepPulses(dt float64) bool {
 			if len(m.pulses) == maxPulses {
 				m.pulses = append(m.pulses[:0], m.pulses[1:]...)
 			}
-			m.pulses = append(m.pulses, pulse{depth: m.cur.depth()})
+			m.pulses = append(m.pulses, pulse{depth: m.cur.depth(), root: m.root})
 		}
 	}
 	kept := m.pulses[:0]
@@ -40,7 +43,7 @@ func (m *Model) stepPulses(dt float64) bool {
 
 // pulseHead は 1 フレームの 1 つの光。位置は桁ではなく、経路の横の線のセルを右 (カーソル側) から並べた列 (track) の
 // 番号で持つ: 桁で進めると、頭が途中の名前の上にある間は光るセルが無く、光が途切れて見える (名前は光らせない)。
-// start は出発点 (カーソルの名前の 1 桁左) の番号で、それより手前 (カーソルの右へ続く経路) は光らせない。
+// start は出発点 (出したときのカーソルの深さにある経路の項目の、名前の 1 桁左) の番号で、それより手前は光らせない。
 type pulseHead struct {
 	head, tail, a float64
 	start         int
@@ -75,7 +78,7 @@ func (m *Model) pulseHeads(grid lineGrid, now map[*node][2]int) pulseHeads {
 	m.trackBuf = track
 	hs := m.pulseBuf[:0]
 	for _, p := range m.pulses {
-		fp, ok := now[m.spineAt(p.depth)]
+		fp, ok := now[m.spineAt(p.depth+p.root.depth())]
 		if !ok {
 			continue
 		}
