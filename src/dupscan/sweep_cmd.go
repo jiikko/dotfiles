@@ -17,7 +17,7 @@ import (
 	"dupscan/internal/tree"
 )
 
-// sweep は、重複を掘る 5 つの見方 (既定の report / 下限を下げて L1m も見る / 部分木の類似 / 名前の束 / 手で展開した helper) を 1 回の走査でまとめて出す。
+// sweep は、重複を掘る 6 つの見方 (既定の report / 下限を下げて L1m も見る / 部分木の類似 / 名前の束 / 手で展開した helper / 型の写し) を 1 回の走査でまとめて出す。
 // 見方ごとに順位の付け方が違うので、節を混ぜずに節の中で並べる。
 
 const (
@@ -96,6 +96,7 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	similar, skippedSimilar := sweepSimilarPairs(entries, baseAll, deepAll, *threshold, *maxUnits, ex.Allowed)
 	clusters := sweepClusters(entries, opt)
 	inlined := sweepInlined(entries, ex.Allowed)
+	typeCopies := sweepTypeCopies(base, deep)
 
 	w := &lineWriter{w: stdout}
 	w.printf("dupscan sweep: 単位 %d・ファイル %d・読めないファイル %d。節ごとに順位は別 (上から先に見る価値が高い順)\n", len(entries), got.files, len(got.errFiles))
@@ -116,6 +117,8 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	sweepClusterText(w, clusters, *c.limit)
 	w.section("5. 既存の小さい関数 (文 %d〜%d 個) の本体の文の並びが、同じ dir の別の単位の中に手書きされている所 (その関数を呼べる候補。単位どうしの比較の 1〜3 には出ない)", inlineMinStmts, inlineMaxStmts)
 	sweepInlinedText(w, inlined, *c.limit)
+	w.section("6. 型の写し (節 1・2 の組 (L1m・クロージャ・型のメンバーが %d 人以上の組を除く。その中の小さい組は束ねる) を型で束ね、相手と同じ組に入るメンバーが両方に %d つ以上ある型どうしを写しとして、つながる型を 1 つにまとめる。寄せるなら型ごと。protocol の準拠や setUp / tearDown のような決まった形も混ざる。節は寄せたときに減る節の数の目安で、型 1 つ増えるごとに減る節 (節 ÷ (型の数 − 1)) の大きい順)", sweepBigGroupMin, sweepTypeCopyMin)
+	sweepTypeCopyText(w, typeCopies, *c.limit)
 	if w.err != nil {
 		return fail(w.err)
 	}

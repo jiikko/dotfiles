@@ -87,4 +87,4 @@ func bucketLocation(_ p: String) -> StorageLocation {
 | 実装が終わったセルフレビュー | `dupscan gate` を回し、今の変更で増えた写しが無いかを見る。違反があれば既存のメソッドへ寄せるか、誤検知なら除外を書く | 903・905 |
 | `make test` と CI | 同じ `gate` を網として回す (止めるかは実行コスト次第) | 905 |
 | 判定を確かめたいとき | `dupscan near` で 1 つの関数に近いものを見る (`-similar` で少し違うものも)。`dupscan explain` で段ごとに潰した形とハッシュを、`explain -compare` で 2 単位の差を見る | 904・895・918 |
-| 初めて入る module の既存の写しを掘るとき | `dupscan sweep` で 5 つの見方 (組 / 下限 12 節と L1m / 部分木の対 / 名前の束 / 手で展開した helper) をまとめて見る | 948・956 |
+| 初めて入る module の既存の写しを掘るとき | `dupscan sweep` で 6 つの見方 (組 / 下限 12 節と L1m / 部分木の対 / 名前の束 / 手で展開した helper / 型の写し) をまとめて見る | 948・956・955 |
