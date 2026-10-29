@@ -54,6 +54,6 @@
 
 ## 関連
 
-- 961: 1308 の所見と要望 W1〜W7。
+- [961](done/961-research-dupscan-wishes-from-obaket-1308-2026-10-29.md): 1308 の所見と要望 W1〜W7。2026-10-29 に done。W2 の「詳しく:」・W3 の印 (`single_call`)・W4 / W5 の hook は 961 で入った (1309 の作業の後なので、上の再発の数には効いていない)。W6 は 961 で決めた再開の条件 (1308 の後の 2 件目) を上の W6 の節が満たしたので、この issue で続ける
 - 959 / 960: 1307 の所見と skill の追記。
 - obaket `issues/epic/dupscan-consolidation/done/1309-…`: 今回の作業の記録。
