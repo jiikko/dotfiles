@@ -1,5 +1,7 @@
 # 911 (test): forge / audit のタスク完了 eval を作る (今は「発火するか」の eval しかない)
 
+> 🚨 **担当中: air5 (glogx)**（2026-10-29〜）
+
 起票日: 2026-10-25
 
 epic [910](910-design-fold-subagents-into-main-loop.md) の前提。912 / 913 は、この eval で変更の前後を比べてから決める。
