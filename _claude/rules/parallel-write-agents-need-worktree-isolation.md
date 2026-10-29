@@ -105,5 +105,5 @@ git worktree add --detach "$root/../wt-taskB" <base-commit>
   対象にしているが、同じ checkout を使うのは自分が起こした並行だけではない** —
   別セッション (別の人・別の Claude) が同じ repo を触っていて自分からは見えない場合の
   規律は、あちらの「復元の作法」に置いた (既定は worktree)
-- `~/.claude/skills/codex-drive/SKILL.md` の `[2p]` 競作 — 競作では worktree 分離を必須にしている。
+- `~/.claude/skills/codex-drive/phases-1-2.md` の `[2p]` 競作 — 競作では worktree 分離を必須にしている。
   本ルールはそれを**競作以外の並行実装にも広げる**もの

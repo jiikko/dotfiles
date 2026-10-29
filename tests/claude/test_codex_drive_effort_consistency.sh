@@ -16,7 +16,7 @@
 #   読む run (read-only / review)         = bin/codex-run の既定 ← 基準 (codex-run は ro / review しか起動しない)
 # 検査する写し:
 #   1. 各 driver の実既定と、同じファイルの usage コメントが述べる既定値
-#   2. SKILL.md の全起動例 (```bash ブロック内の codex exec。ヒアドキュメントの本文は除く。`\` の継続行は 1 本に繋ぐ):
+#   2. codex-drive の SKILL.md と Phase のファイル (skill の直下の *.md 全部) の全起動例 (```bash ブロック内の codex exec。ヒアドキュメントの本文は除く。`\` の継続行は 1 本に繋ぐ):
 #      sandbox の種類ごとに (モデル, effort) の組が上の基準と一致すること
 #   3. SKILL.md に現れる全ての `-m gpt-*` / effort が 2 組のどちらかであること (散文の上振れ先の記述を含む)
 #
@@ -44,11 +44,15 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 DRIVER="$ROOT_DIR/bin/codex-fanout"
 RUNNER="$ROOT_DIR/bin/codex-run"
-SKILL_MD="$ROOT_DIR/_claude/skills/codex-drive/SKILL.md"
+SKILL_DIR="$ROOT_DIR/_claude/skills/codex-drive"
+SKILL_MD="$SKILL_DIR/SKILL.md"
+# 本体だけを読まない: 起動例の多くは Phase のファイル (phases-*.md / parallel-launch.md) にある。
+# templates/ はプロンプトの部品で起動例を持たないので対象外
+SKILL_MDS=("$SKILL_DIR"/*.md)
 
 fail=0
 
-for f in "$DRIVER" "$RUNNER" "$SKILL_MD"; do
+for f in "$DRIVER" "$RUNNER" "$SKILL_MD" "${SKILL_MDS[@]}"; do
   [ -f "$f" ] || { echo "FAIL: 検査対象が存在しない: $f" >&2; exit 1; }
 done
 
@@ -95,12 +99,13 @@ if [ "$w_model $w_effort" = "$r_model $r_effort" ]; then
   fail=1
 fi
 
-# 写し 2: SKILL.md の起動例。言語が bash / sh / zsh のコードブロック (```bash) の中で、ヒアドキュメントの
+# 写し 2: skill の *.md の起動例。言語が bash / sh / zsh のコードブロック (```bash) の中で、ヒアドキュメントの
 # 本文とコメント行を除き、`codex exec` を含む行を全部起動例とみなす (前に timeout / env / VAR=x が付いても拾う)。
 # 継続行 (末尾 \) は 1 本に繋ぐ。判定はプロンプト本文を除いた「オプション部分」(</dev/null より前) だけで行う
 # (本文に -s danger-full-access と書かれていても種類を取り違えない)。
 # 1 本に「種類 モデル effort -m の個数 effort の個数 </dev/null の有無」を出す
 launches=$(awk '
+  FNR == 1 { fence = 0; shell = 0; heredoc = ""; pending = "" }
   /^[[:space:]]*```/ {
     if (!fence) { fence = 1; shell = ($0 ~ /^[[:space:]]*```(bash|sh|zsh)[[:space:]]*$/) } else { fence = 0; shell = 0 }
     heredoc = ""; next
@@ -115,7 +120,7 @@ launches=$(awk '
   $0 !~ /^[[:space:]]*#/ && match($0, /(^|[^<])<<-?[[:space:]]*["\047]?[A-Za-z_][A-Za-z0-9_]*/) {
     heredoc = substr($0, RSTART, RLENGTH); sub(/^[^<]?<<-?[[:space:]]*["\047]?/, "", heredoc)
   }
-' "$SKILL_MD" | awk '{
+' "${SKILL_MDS[@]}" | awk '{
   nul = match($0, /<[[:space:]]*\/dev\/null/)
   opts = nul ? substr($0, 1, nul - 1) : $0
   kind = "unknown"
@@ -128,54 +133,54 @@ launches=$(awk '
   t = opts; ne = gsub(/model_reasoning_effort=/, "", t)
   print kind, model, effort, nm, ne, (nul ? "y" : "n")
 }' || true)
-need "$launches" "$SKILL_MD の起動例 (bash のコードブロック内の codex exec)"
+need "$launches" "$SKILL_DIR/*.md の起動例 (bash のコードブロック内の codex exec)"
 
 n_write=0; n_read=0
 while read -r kind model effort nm ne nul; do
   if [ "$nul" != y ]; then
-    echo "FAIL: SKILL.md に </dev/null の無い codex 起動例がある (codex-review スキルの必須規約。オプション部分の境界も取れない)" >&2
+    echo "FAIL: codex-drive の *.md に </dev/null の無い codex 起動例がある (codex-review スキルの必須規約。オプション部分の境界も取れない)" >&2
     fail=1; continue
   fi
   if [ "$nm" -gt 1 ] || [ "$ne" -gt 1 ]; then
-    echo "FAIL: SKILL.md に -m または effort を 2 回指定した起動例がある (codex は後勝ちで、検査は先頭を読むので食い違う)" >&2
+    echo "FAIL: codex-drive の *.md に -m または effort を 2 回指定した起動例がある (codex は後勝ちで、検査は先頭を読むので食い違う)" >&2
     fail=1; continue
   fi
   case "$kind" in
     write) want="$w_model $w_effort"; n_write=$((n_write + 1)) ;;
     read)  want="$r_model $r_effort"; n_read=$((n_read + 1)) ;;
-    *) echo "FAIL: SKILL.md に sandbox の種類が分からない起動例がある (-s danger-full-access / workspace-write / read-only / exec review のどれでもない)" >&2
+    *) echo "FAIL: codex-drive の *.md に sandbox の種類が分からない起動例がある (-s danger-full-access / workspace-write / read-only / exec review のどれでもない)" >&2
        fail=1; continue ;;
   esac
   if [ "$model $effort" != "$want" ]; then
-    echo "FAIL: SKILL.md の $kind run の起動例が $model / $effort だが、既定は $want (どちらかが追随漏れ。'-' は指定が無い)" >&2
+    echo "FAIL: codex-drive の *.md の $kind run の起動例が $model / $effort だが、既定は $want (どちらかが追随漏れ。'-' は指定が無い)" >&2
     fail=1
   fi
 done <<< "$launches"
 # 片方の種類が 0 本なら、その組の一致は何も検査していない
-[ "$n_write" -gt 0 ] || { echo "FAIL: SKILL.md に書く run の起動例が 1 本も無い (抽出の書式が変わった?)" >&2; fail=1; }
-[ "$n_read" -gt 0 ] || { echo "FAIL: SKILL.md に読む run の起動例が 1 本も無い (抽出の書式が変わった?)" >&2; fail=1; }
+[ "$n_write" -gt 0 ] || { echo "FAIL: codex-drive の *.md に書く run の起動例が 1 本も無い (抽出の書式が変わった?)" >&2; fail=1; }
+[ "$n_read" -gt 0 ] || { echo "FAIL: codex-drive の *.md に読む run の起動例が 1 本も無い (抽出の書式が変わった?)" >&2; fail=1; }
 
-# 写し 3: 散文も含め、SKILL.md に現れるモデル / effort は 2 組のどちらか
+# 写し 3: 散文も含め、skill の *.md に現れるモデル / effort は 2 組のどちらか
 while IFS= read -r m; do
   [ -z "$m" ] || [ "$m" = "$w_model" ] || [ "$m" = "$r_model" ] || {
-    echo "FAIL: SKILL.md にモデル $m があるが、許可は $w_model (書く run) と $r_model (読む run) だけ" >&2
+    echo "FAIL: codex-drive の *.md にモデル $m があるが、許可は $w_model (書く run) と $r_model (読む run) だけ" >&2
     fail=1
   }
-done < <(grep -o -- '-m gpt-[A-Za-z0-9.-]*' "$SKILL_MD" | sed 's/^-m //' | sort -u || true)
+done < <(grep -h -o -- '-m gpt-[A-Za-z0-9.-]*' "${SKILL_MDS[@]}" | sed 's/^-m //' | sort -u || true)
 while IFS= read -r e; do
   [ -z "$e" ] || [ "$e" = "$w_effort" ] || [ "$e" = "$r_effort" ] || {
-    echo "FAIL: SKILL.md に effort=$e があるが、許可は $w_effort (書く run) と $r_effort (読む run) だけ" >&2
+    echo "FAIL: codex-drive の *.md に effort=$e があるが、許可は $w_effort (書く run) と $r_effort (読む run) だけ" >&2
     fail=1
   }
-done < <(grep -o 'model_reasoning_effort="[a-z]*"' "$SKILL_MD" | sed 's/.*="\(.*\)"/\1/' | sort -u || true)
+done < <(grep -h -o 'model_reasoning_effort="[a-z]*"' "${SKILL_MDS[@]}" | sed 's/.*="\(.*\)"/\1/' | sort -u || true)
 
 if [ "$fail" -ne 0 ]; then
   echo "" >&2
   echo "codex-drive の既定を変えるときは次をすべて同時に更新すること:" >&2
   echo "  1. bin/codex-fanout (書く run と集約) / bin/codex-run (読む run) の既定と usage コメント" >&2
-  echo "  2. _claude/skills/codex-drive/SKILL.md の起動例とモデル表" >&2
+  echo "  2. _claude/skills/codex-drive/*.md の起動例と、SKILL.md のモデル表" >&2
   echo "  3. tests/codex_fanout.bats / tests/codex_run.bats の絶対 pin" >&2
   exit 1
 fi
 
-echo "ok: codex-drive の既定が driver・usage・SKILL.md で一致 (書く run $w_model/$w_effort ${n_write} 本・読む run $r_model/$r_effort ${n_read} 本)"
+echo "ok: codex-drive の既定が driver・usage・skill の *.md で一致 (書く run $w_model/$w_effort ${n_write} 本・読む run $r_model/$r_effort ${n_read} 本)"

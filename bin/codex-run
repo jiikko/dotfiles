@@ -12,7 +12,7 @@
 # 使い方:
 #   codex-run [-J] [-S schema.json] [-C dir] [-o outdir] [-l label] [-m model] [-e effort] [-t sec] <mode> <prompt-file>
 #     mode         ro | review   (それぞれ codex exec -s read-only / codex exec review)
-#                  workspace-write は扱わない (codex-fanout と同じ安全域。実装は codex-drive [2] の直接起動)
+#                  workspace-write は扱わない (codex-fanout と同じ安全域。実装は codex-drive の phases-1-2.md の [2] の直接起動)
 #     prompt-file  プロンプトのファイル。- で stdin から読む
 #                  **selector (--uncommitted / --base / --commit) は扱わない** — codex exec review は
 #                  selector と PROMPT を併用できず (codex-review スキル手順 1)、本スクリプトは
@@ -72,7 +72,7 @@ shift $((OPTIND - 1))
 mode="$1"; prompt_src="$2"
 case "$mode" in
   ro|review) ;;
-  write|workspace-write) die "workspace-write は扱わない (codex-drive [2] の直接起動を使う)" ;;
+  write|workspace-write) die "workspace-write は扱わない (codex-drive の phases-1-2.md の [2] の直接起動を使う)" ;;
   *) die "mode は ro | review のどちらか (指定: $mode)" ;;
 esac
 # 実体のディレクトリ ($0 が symlink でも辿る。兄弟の codex-fanout と bin/lib を実体の隣から探す)

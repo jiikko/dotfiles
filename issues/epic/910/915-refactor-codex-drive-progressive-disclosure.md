@@ -52,4 +52,26 @@ fan-out の構成 (D1 の 4 案・3.5 / 3.6 の lens) は記事に照らして�
 
 ## 進捗
 
-起票のみ。
+- 2026-10-29: 本文を今のコードと突き合わせた。SKILL.md は 1313 行 (起票時 1311)、外からの参照は 14 本で一覧どおり、effort の検査は本体 1 本だけを読んでいた。
+- 2026-10-29: 分けた (commit: refactor(codex-drive): SKILL.md を入口と Phase のファイルに分ける)。
+
+  | ファイル | 行 | 中身 |
+  |---|---|---|
+  | `SKILL.md` | 354 | 役割分担・大原則 (モデル表を含む)・工程の厚さ・出力の置き場・Phase 0・ワークフロー・「フェーズのファイル」の表・使い分け・やること / やらないこと・関連 |
+  | `parallel-launch.md` | 127 | 並列起動の作法 (driver / fallback) |
+  | `phases-R-S-D.md` | 184 | R・S・D1〜D3 |
+  | `phases-1-2.md` | 273 | 1・2・2p |
+  | `phases-3-review.md` | 358 | 3・3.5・3.55・3.6・3.7・3.8 |
+  | `phases-4-7.md` | 60 | 4〜7 |
+
+  - 案から変えた所: Phase 0 (適性評価) は本体に残した。起動のたびに最初に読む節で、ワークフローの図の `[0]` も「上記」と本体の中を指しているため
+  - 本文は移しただけ: 元の 1313 行の多重集合が、新しい 6 ファイルの行から足した行 (各ファイルの頭と末尾の案内・本体の表) を除いたものと一致することを機械で確かめた (取りこぼし 0・予定外の行 0)
+  - 例外は 1 行: 本体の「下の『上振れ』」は [2] (`phases-1-2.md`) を指すようになったので、ファイル名で書いた (skill の整合の点検で見つけた。他の「上の / 下の」は同じファイルの中で閉じていた)
+  - 各 Phase のファイルの末尾に「次の Phase に入る前に <ファイル> を Read」、頭に「本体から <いつ> Read する」を置いた。本体は「フェーズのファイル」の表で全部を指す
+  - 外からの参照を移した先のファイル名に直した: `bin/codex-fanout` (並列起動の作法・[2p]) / `bin/codex-run` ([2]) / `mutation-verify-new-tests.md` ([3.8]) / `parallel-write-agents-need-worktree-isolation.md` ([2p])。
+    「モデル表」を引く `bin/codex-run` と codex-review は本体のままなので直していない
+  - `tests/claude/test_codex_drive_effort_consistency.sh` を、skill の直下の `*.md` 全部を読む形に広げた (ファイルごとにコードブロックの状態を戻す・`grep -h`・失敗の文の場所)。
+    広げた検査は書く run 3 本・読む run 3 本を見つけ、分ける前の本体 1 本に旧い検査を当てた数 (3 本・3 本) と一致した
+  - 変異: 移した先 (`phases-1-2.md`) の書く run の effort を high にする → 「write run の起動例が gpt-6-astra / high」で赤 / 検査を本体 1 本だけ読む形に戻す → 赤 (起動例を抽出できない)
+  - skill の整合を 3 つの見方で点検し (上の 1 行を直した)、`bin/skill-eval codex-drive` PASS (cases 1/1)。`tests/claude` の 28 本は 26 本が緑で、
+    落ちた 2 本は変更と無関係 (worktree では links の検査が skip で落ちる・`~/.config/nvim/coc-settings.json` の壊れた link は分ける前の本体の checkout でも落ちる)。`make test-lint` rc=0
