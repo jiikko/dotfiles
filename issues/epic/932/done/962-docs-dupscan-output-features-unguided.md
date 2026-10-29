@@ -1,7 +1,5 @@
 # 962 (docs): dupscan の出力にある機能 (json の欄・`-v` の節) が skill に案内されず、使う側が作り直す
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-29
 
 ## 概要
@@ -78,8 +76,8 @@ skill (`_claude/skills/dupscan/SKILL.md`) の 3 節は、当時「違反の `-v`
 
 ## 関連
 
-- [961](done/961-research-dupscan-wishes-from-obaket-1308-2026-10-29.md) の W1 / W7 (起点。961 では skill の 3 節に案内を足すだけにした。961 は 2026-10-29 に done。この issue は継続)
-- [932](932-epic-dupscan-accuracy.md) (epic)
+- [961](961-research-dupscan-wishes-from-obaket-1308-2026-10-29.md) の W1 / W7 (起点。961 では skill の 3 節に案内を足すだけにした。961 は 2026-10-29 に done。この issue は継続)
+- [932](../932-epic-dupscan-accuracy.md) (epic)
 - `src/dupscan/capabilities_cmd.go` / `src/dupscan/agent_guide_cmd.go` / `_claude/skills/dupscan/SKILL.md`
 
 ## 進捗
