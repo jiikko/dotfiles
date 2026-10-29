@@ -328,7 +328,8 @@ if [[ -z "$tf_env" ]]; then
   print -u2 "[test-tmux:zsh] src/treefiler/main.go に toggleKeyEnv の定義が見つかりません"
   exit 1
 fi
-if ! grep -E -- '-T prefix +f ' <<< "$tf_bindings" | grep -qF -- "-e $tf_env=f "; then
+tf_bind=$(grep -E -- '-T prefix +f ' <<< "$tf_bindings")
+if ! grep -qF -- "-e $tf_env=f " <<< "$tf_bind"; then
   print -u2 "[test-tmux:zsh] prefix f の treefiler の bind が -e $tf_env=f を渡していません:\n$tf_bindings"
   exit 1
 fi
