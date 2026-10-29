@@ -55,7 +55,7 @@
 - 場面: 共通 helper を `shared/Tests/SharedTestSupport/` (全 test target が compile する) に置こうとした。
 - 実際: **2 回**、ビルドが落ちた。`CreditedTransferSleepGate` は `ObaketInfrastructure` の型 (`TransferSleeper`) に、`InMemoryUploadBookmarkStore` は `ObaketPlatformContracts` の型に依存するのに、その module に依存しない test target (`ObaketCoreTests` など) も SharedTestSupport を compile するため。
 - 原因は dupscan の外 (どの target が何を compile するかは SwiftPM の `Package.swift` と XcodeGen の `project.yml` の知識)。dupscan は型を解決しないので、検出は期待しない。
-- 提案 (未レビュー): skill dupscan の 4 節 (寄せるとき) に 1 項。「共通の置き場所へ移す前に、その型が参照する module を、置き場所を compile する全 target が依存しているかを `Package.swift` で確かめる。満たさなければ、その module に依存する target の中に置く」。これは skill の変更なので、**ユーザーの承認が要る** (dupscan-dogfood の 7 節)。
+- 提案 (未レビュー): skill dupscan の 4 節 (寄せるとき) に 1 項。「共通の置き場所へ移す前に、その型が参照する module を、置き場所を compile する全 target が依存しているかを `Package.swift` で確かめる。満たさなければ、その module に依存する target の中に置く」。これは skill の変更なので、**ユーザーの承認が要る** (dupscan-dogfood の 7 節)。 → 承認を得て 960 で対応済み。
 
 ### 6. 機械変換の入力を作るのに JSON を python で読んだ (観察。**代替手段の有無は未確認**)
 

@@ -80,4 +80,10 @@ report の既存の組をまとめて統合するときも、1 組ずつ次を�
   寄せるために、別のドメインの知識 (特定の provider の規約・上の層の型) を共通の層へ持ち込まない。依存の向きを逆にしない
 - **何でも入る置き場所を作らない**: `Util` / `Helper` / `Common` のような、ドメインの語で名前の付かない置き場所に寄せない。
   寄せた先の型・関数の名前をドメインの語で付けられないなら、境界をまたいでいる兆候として寄せ方を考え直す
+- **置き場所を取り込む全 target が、移す型の依存を持っているか**: 全 test target が取り込む共通の置き場所 (obaket の `shared/Tests/SharedTestSupport/`)
+  へ移す前に、その型が参照する module (`import` と、シグネチャに出る型の持ち主) を洗う。まず取り込む target を数える
+  (obaket では各 test target の `Helpers/SharedTestSupport` の symlink と `project.yml` の path)。次にその全部が `Package.swift` / `project.yml` でその module に依存しているか確かめる。
+  1 つでも依存していなければそこは compile で落ちるので、その module に依存する target の中に置き、他の target が要るなら個別のパスで取り込む (`project.yml` の path)。
+  上の「使う側のどれもが依存してよい層」は層の話で、これは target の話。Go の repo では `go.mod` と package の import で同じ確認をする。
+  dupscan は型を解決しないので落ちる前には見つけられない (obaket 1307 で 2 回落ちた。dotfiles 959)
 - 寄せない判断も成果。除外の理由には「どのドメインのどの規則が、なぜ別に変わりうるか」を書く (形が違うから、では書かない)
