@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"strings"
 	"time"
 
 	"mac-lan-manager/lanmgr"
@@ -134,9 +133,7 @@ func toPingName(n reach.Name, lanIP string) pingName {
 	if n.LookupErr != nil {
 		pn.LookupError = n.LookupErr.Error()
 	}
-	if strings.HasSuffix(n.Name, ".wired.local") {
-		pn.Elsewhere = n.Elsewhere(lanIP)
-	}
+	pn.Elsewhere = lanmgr.WiredElsewhere(n, lanIP)
 	for _, a := range n.Addrs {
 		pa := pingAddr{IP: a.IP, Sent: a.Ping.Sent, Recv: a.Ping.Recv, AvgMs: a.Ping.AvgMs, SSHOpen: a.SSH == nil, Reachable: a.Reachable()}
 		if a.Ping.Err != nil {

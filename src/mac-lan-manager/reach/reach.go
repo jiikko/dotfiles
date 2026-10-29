@@ -65,9 +65,18 @@ func (n Name) Reachable() bool {
 	return false
 }
 
-// Elsewhere は ip と違う IP に引けたか (有線の名前が内部 IP と違う所を指す。lanmgr の wiredCheck の wiredMissing と同じ見方)。ip が空なら比べない。
+// Elsewhere は ip と違う IP に引けたか (有線の名前が内部 IP と違う所を指す)。ip が空なら比べない。
 func (n Name) Elsewhere(ip string) bool {
-	return ip != "" && slices.ContainsFunc(n.Addrs, func(a Addr) bool { return a.IP != ip })
+	ips := make([]string, len(n.Addrs))
+	for i, a := range n.Addrs {
+		ips[i] = a.IP
+	}
+	return AnyOther(ips, ip)
+}
+
+// AnyOther は ips に ip と違う IP があるか (Name.Elsewhere と lanmgr の wiredCheck が同じ見方で判定する)。ip が空なら比べない。
+func AnyOther(ips []string, ip string) bool {
+	return ip != "" && slices.ContainsFunc(ips, func(s string) bool { return s != ip })
 }
 
 // maxAddrs は名前 1 つについて確かめる IP の数の上限 (引けた IP を全部確かめると、壊れた広告で数が増えたときに ping が並びすぎる)。

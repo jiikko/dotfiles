@@ -40,6 +40,12 @@ func WiredName(host string) (string, error) {
 	return label + ".wired.local", nil
 }
 
+// IsWiredName は name が有線の名前 (WiredName が作る形) か。
+func IsWiredName(name string) bool {
+	label, ok := strings.CutSuffix(name, ".wired.local")
+	return ok && reLabel.MatchString(label)
+}
+
 // NameAdvert は広告する名前と IP。
 type NameAdvert struct {
 	Name string // "air5.wired.local"
@@ -48,8 +54,7 @@ type NameAdvert struct {
 
 // Validate は sh と plist に埋め込む値を確かめる。
 func (a NameAdvert) Validate() error {
-	label, ok := strings.CutSuffix(a.Name, ".wired.local")
-	if !ok || !reLabel.MatchString(label) {
+	if !IsWiredName(a.Name) {
 		return fmt.Errorf("有線の名前が使えない: %q", a.Name)
 	}
 	if !ipv4(a.IP) {

@@ -2,9 +2,9 @@ package lanmgr
 
 import (
 	"context"
-	"slices"
 	"time"
 
+	"mac-lan-manager/reach"
 	"mac-lan-manager/setup"
 )
 
@@ -149,7 +149,7 @@ func (m *Model) wiredCheck(r row) (name string, st wiredStatus, note string) {
 		return name, wiredUnknown, "確かめていない"
 	case w.err != nil || len(w.ips) == 0:
 		return name, wiredMissing, "まだ広告されていない (初期設定の最後の手順で広告する)"
-	case slices.ContainsFunc(w.ips, func(ip string) bool { return ip != r.lanIP }):
+	case reach.AnyOther(w.ips, r.lanIP):
 		return name, wiredMissing, "内部 IP と違う IP に向いている (" + w.ips[0] + ")。初期設定で広告し直す"
 	}
 	return name, wiredOK, ""

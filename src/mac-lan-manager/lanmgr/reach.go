@@ -234,7 +234,7 @@ func (m *Model) reachLines(r row, label func(string) string) []string {
 			st = sWarn.Render("✗ ")
 		}
 		line := st + sText.Render(termsafe.PlainLine(ReachSummary(n))) // 引けない理由は外のコマンドの文
-		if strings.HasSuffix(n.Name, ".wired.local") && n.Elsewhere(res.lanIP) {
+		if WiredElsewhere(n, res.lanIP) {
 			line += sWarn.Render("  内部 IP (" + res.lanIP + ") と違う")
 		}
 		lines = append(lines, next()+line)
@@ -253,7 +253,7 @@ func (m *Model) reachCell(r row) string {
 	res, ok := m.reach[r.host]
 	if m.reachRuns[r.host] != nil || !ok || !slices.Equal(res.asked, t.Names) {
 		w := sMuted.Render("W-")
-		if len(t.Names) > 1 {
+		if slices.ContainsFunc(t.Names, setup.IsWiredName) {
 			w = sMuted.Render("W…")
 		}
 		return sMuted.Render("L…") + " " + w
@@ -263,16 +263,25 @@ func (m *Model) reachCell(r row) string {
 			if n.Name != name {
 				continue
 			}
-			if !n.Reachable() || (prefix == "W" && n.Elsewhere(res.lanIP)) {
+			if !n.Reachable() || WiredElsewhere(n, res.lanIP) {
 				return sWarn.Render(prefix + "✗")
 			}
 			return sOK.Render(prefix + "✓")
 		}
 		return sWarn.Render(prefix + "✗") // 確かめた名前の結果が無い (reach が返さなかった)
 	}
-	w := sMuted.Render("W-")
-	if len(t.Names) > 1 {
-		w = mark("W", t.Names[1])
+	l, w := "", sMuted.Render("W-")
+	for _, name := range t.Names {
+		if setup.IsWiredName(name) {
+			w = mark("W", name)
+		} else {
+			l = mark("L", name)
+		}
 	}
-	return mark("L", t.Names[0]) + " " + w
+	return l + " " + w
+}
+
+// WiredElsewhere は n が有線の名前で、内部 IP (lanIP) と違う IP に引けたか (詳細カード・一覧の列・CLI の ping が同じ判定で ✗ と出す)。
+func WiredElsewhere(n reach.Name, lanIP string) bool {
+	return setup.IsWiredName(n.Name) && n.Elsewhere(lanIP)
 }
