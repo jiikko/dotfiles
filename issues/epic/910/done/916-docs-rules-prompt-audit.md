@@ -1,10 +1,8 @@
 # 916 (docs): rules / CLAUDE.md の古いモデル向け指示と手順型の節を棚卸しする
 
-> 🚨 **担当中: air5 (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-25
 
-epic [910](910-design-fold-subagents-into-main-loop.md)。他の子と独立。
+epic [910](../910-design-fold-subagents-into-main-loop.md)。他の子と独立。
 
 ## 概要
 
@@ -48,7 +46,7 @@ retro からの新規ルールを入口で絞る (issue-rules の retro 節)。
 
 ### 本文の前提の訂正
 
-- `claude-api` skill の prompt-audit は**ある**。2026-09-28 に dotfiles の全プロンプト面へ回し、指摘を全部適用している ([575](../../done/575-docs-prompt-audit-2026-09-28.md))。
+- `claude-api` skill の prompt-audit は**ある**。2026-09-28 に dotfiles の全プロンプト面へ回し、指摘を全部適用している ([575](../../../done/575-docs-prompt-audit-2026-09-28.md))。
   この issue は 575 の後に起票したが 575 を踏まえていなかったので、575 で決着したものは出し直さず、575 が見ていない所だけを見た
 - 量は起票時より増えていた: `_claude/rules/*.md` 36 本・245,686 byte (起票時 35 本・239,035)、`_claude/CLAUDE.md` 31,579 byte (同 29,423)。`paths:` で条件ロードするものは 6 本
 

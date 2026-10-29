@@ -1,1 +1,0 @@
-../916-docs-rules-prompt-audit.md

@@ -24,8 +24,10 @@ dotfiles の forge / audit / agents / codex-drive / rules に当てる。進め�
 3. [913](pending/913-design-forge-phase1-fold-investigation.md) — forge Phase 1 の専門家 fan-out を畳む
 4. [914](done/914-refactor-agents-inventory-to-skills.md) — agents/ の棚卸しと skill への移行
 5. [915](done/915-refactor-codex-drive-progressive-disclosure.md) — codex-drive の SKILL.md をフェーズのファイルに分ける (911 と独立。先に着手してよい)
-6. [916](916-docs-rules-prompt-audit.md) — rules / CLAUDE.md の棚卸し (独立)
+6. [916](done/916-docs-rules-prompt-audit.md) — rules / CLAUDE.md の棚卸し (独立)
 
 ## 状態
 
 - 2026-10-29: 911〜913 は保留 (ユーザー決定)。forge の出番が 09-16 以降無く、eval を作る価値が今は低い (911 の「0 の結果」)。912 は eval の要らない 2 つだけ済ませた。914〜916 を進める
+- 2026-10-29: 914〜916 は done。914 は使われていない global の agent 5 本を消し、名簿の 22 本は 913 待ちで残した。915 は codex-drive を入口と Phase のファイルに分けた。
+  916 は 575 (2026-09-28 の prompt-audit) の後の棚卸しで、「復元の作法」を checklist へ移した。残りは保留中の 911〜913 だけで、再開の条件は 911 の冒頭
