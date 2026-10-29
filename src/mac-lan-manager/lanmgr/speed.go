@@ -180,26 +180,31 @@ func (m *Model) selfIPOn(dev string) string {
 // Y は一覧では ssh のコピーで指が慣れている)。測れるかは CLI と同じ speedTarget で決め、経路は j/k で選ぶ。既定は最初の有線の経路
 // (ユーザー指示 2026-10-18: 既定は有線)。
 func (m *Model) askSpeed(r row) {
-	switch {
-	case m.o.SpeedTest == nil:
-		m.note("この画面では通信速度を測れない", false)
-		return
-	case m.speedRun != nil: // 2 本目は流さず、閉じた進捗のモーダルを開き直す (どの行で押しても、今測っている相手のモーダル)
+	if m.speedRun != nil { // 2 本目は流さず、閉じた進捗のモーダルを開き直す (どの行で押しても、今測っている相手のモーダル)
 		m.speedRun.shown = true
 		return
 	}
 	t := m.speedTarget(r)
-	if t.Refusal != "" {
-		m.note(t.Refusal, false)
-		return
-	}
 	paths := m.speedPaths(r)
-	if len(paths) == 0 {
-		m.note("測る IP が分からない", false)
-		return
-	}
 	cur := max(slices.IndexFunc(paths, func(p speedPath) bool { return p.link == netinfo.LinkWired }), 0)
 	m.ov, m.speedAsk = ovSpeed, &speedAsk{host: t.Host, name: t.Name, user: t.Dest.User, paths: paths, cur: cur}
+}
+
+// speedRefusal は t を断る理由 (案内と t のキーが同じ述語を見る。測定中はどの行でも進捗を開き直すので断らない)。
+func (m *Model) speedRefusal(r row) string {
+	switch {
+	case m.o.SpeedTest == nil:
+		return "この画面では通信速度を測れない"
+	case m.speedRun != nil:
+		return ""
+	}
+	if why := m.speedTarget(r).Refusal; why != "" {
+		return why
+	}
+	if len(m.speedPaths(r)) == 0 {
+		return "測る IP が分からない"
+	}
+	return ""
 }
 
 // currentPaths は host の行の今の経路 (行が無ければ nil)。

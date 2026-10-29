@@ -152,40 +152,6 @@ const (
 	setupTileSideGap = 4
 )
 
-// rowHints は行の Mac への動作のキーの案内 (一覧と詳細のパネルが共有する。案内と効くキーを同じ述語にする)。
-func (m *Model) rowHints(r row) []keyHint {
-	if r.self || r.connectIP() == "" {
-		return nil
-	}
-	var hs []keyHint
-	if m.sshRefusal(r) == "" {
-		hs = append(hs, keyHint{"s", "繋ぐ", 3})
-	}
-	if user, _ := m.userFor(r); user != "" {
-		hs = append(hs, keyHint{"Y", "コピー", 4})
-	}
-	if r.vnc {
-		hs = append(hs, keyHint{"o", "画面共有", 5})
-		if user, _ := m.userFor(r); user != "" { // a が断らない条件 (ユーザー名が要る)
-			hs = append(hs, keyHint{"a", "SyakeScreen", 11})
-		}
-	}
-	if r.smb {
-		hs = append(hs, keyHint{"y", "smb", 6}, keyHint{"O", "Finder で繋ぐ", 12})
-	}
-	switch { // askSpeed と同じ条件
-	case m.o.SpeedTest == nil:
-	case m.speedRun != nil:
-		hs = append(hs, keyHint{"t", "測定の進捗", 9})
-	case m.speedTarget(r).Refusal == "":
-		hs = append(hs, keyHint{"t", "速度", 9})
-	}
-	if m.o.Reach != nil && m.reachTarget(r).Refusal == "" { // startReach が断らない条件 (確かめている途中なら終わったら知らせる)
-		hs = append(hs, keyHint{"p", "疎通", 10})
-	}
-	return hs
-}
-
 // keyHint は最下行の案内の 1 つ。prio は小さいほど残す (1 = 抜ける手段。tuikit/hintfit の尺度)。
 type keyHint struct {
 	key, label string
@@ -849,7 +815,7 @@ func (m *Model) detailLines(r row, width int, inPanel bool) []string {
 	if !r.self {
 		if ip != "" && user != "" {
 			keys := keycap("Y", "コピー")
-			if m.sshRefusal(r) == "" { // 最下行と s のキーと同じ述語 (ssh が閉じた相手に s を案内しない)
+			if m.actionOK("s", r) { // 最下行と s のキーと同じ述語 (ssh が閉じた相手に s を案内しない)
 				keys += "  " + keycap("s", "繋ぐ")
 			}
 			lines = append(lines, label("ssh")+sCode.Render("ssh "+m.login(r, ip))+via+"  "+keys)
@@ -859,7 +825,7 @@ func (m *Model) detailLines(r row, width int, inPanel bool) []string {
 		}
 		if r.vnc && ip != "" {
 			keys := keycap("o", "開く")
-			if user != "" { // 最下行の案内と a のキーと同じ条件
+			if m.actionOK("a", r) { // 最下行の案内と a のキーと同じ述語
 				keys += "  " + keycap("a", "SyakeScreen")
 			}
 			lines = append(lines, label("画面共有")+link("vnc://"+ip)+via+"   "+keys)

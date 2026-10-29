@@ -553,7 +553,7 @@ func (m *Model) Binds(key string) bool {
 	if m.OwnsKeys() {
 		return true
 	}
-	return slices.Contains([]string{"s", "y", "Y", "o", "O", "a", "m", "u", "e", "c", "t", "p", ",", "/", "?", "r", "space", "enter", "tab", "shift+tab", "h", "l", "left", "right"}, key) ||
+	return slices.Contains(listKeys, key) ||
 		listnav.MotionOf(key) != listnav.None
 }
 
@@ -1173,14 +1173,6 @@ func move(cur *int, n int, key string, rows int) bool {
 	return true
 }
 
-// needsNet は、この Mac のネットワークを読めるまで断るキー (最下行の案内もこの間は出さない)。初期設定 (詳細のパネルの enter) も
-// keyDetail が同じ判定 (netRefused) で断る: 読む前に開くと相手のメイン IP が分からず、宛先が台帳の有線の IP のまま閉じるまで固まった。
-// 一覧の enter (詳細のパネルを開く) は読めていなくても開ける
-var needsNet = []string{"s", "Y", "y", "O", "o", "a", "c", "t", "p", "space"}
-
-// rowKeys はカーソルの行の Mac に効くキー (見ていた Mac が一覧から消えた・タブに行が無いときは断る)。c はこの Mac の IP のコピーで行に効かない
-var rowKeys = []string{"s", "Y", "y", "O", "o", "a", "t", "p", "space", "enter", "m", "u"}
-
 // netRefused は、この Mac のネットワークを読み終えていなければ理由を知らせて true (needsNet のキーと初期設定が断る)。
 func (m *Model) netRefused() bool {
 	if m.selfOK {
@@ -1193,9 +1185,6 @@ func (m *Model) netRefused() bool {
 	}
 	return true
 }
-
-// detailKeys は詳細のパネルの中で一覧と同じに効くキー (カーソルの行の Mac への動作。パネルは開いたまま)。
-var detailKeys = []string{"s", "Y", "y", "O", "o", "a", "t", "p", "m", "u", "space", "?", "e"}
 
 // detailFollow はカーソルをパネルを開いた Mac へ戻す (見つからなければ false)。
 func (m *Model) detailFollow() bool {
@@ -1259,23 +1248,10 @@ func (m *Model) keyList(key string) Action {
 		return None
 	}
 	r := m.current()
-	user, guessed := m.userFor(r)
-	guessNote := ""
-	if guessed {
-		guessNote = "  (ユーザー名は推測)"
-	}
-	if r.self && (key == "Y" || key == "y" || key == "O" || key == "o" || key == "a") { // この Mac 自身には繋がない (s は shellRefusal が断る)。最下行・カードも出さない
-		m.note("この Mac には繋がない (この Mac の IP・名前は c でコピー)", false)
-		return None
-	}
-	if user == "" && key == "Y" { // s は sshRefusal が (この Mac の行・ssh が閉じている を先に) 断る
-		m.note(noUserNote, false)
-		return None
+	if a := rowActionOf(key); a != nil { // 移動の語彙より先に (space は半ページの送りでもある)
+		return m.runAction(a, r)
 	}
 	switch key {
-	case "space": // 台帳への登録 / 削除 (Space = 印を付ける。ガイド §2)。一覧では半ページより先に捌く
-		m.askLedger(r)
-		return None
 	case "q", "esc":
 		if key == "esc" && m.filter.String() != "" {
 			m.filter.Reset()
@@ -1308,67 +1284,8 @@ func (m *Model) keyList(key string) Action {
 		m.note("リロードした", true)
 	case "enter":
 		m.detailOpen, m.detailOff, m.detailHost, m.detailSelf = true, 0, r.host, r.self
-	case "s": // シェル (treefiler の s と同じ動詞)
-		if why := m.sshRefusal(r); why != "" {
-			m.note(why, false)
-		} else {
-			// known_hosts を IP でなく台帳の鍵に結び付ける (IP を付け替えても「鍵が変わった」にしない)
-			m.handOff(ExecRequest{Argv: []string{"ssh", "-o", "HostKeyAlias=" + r.host, "--", m.login(r, m.target(r))}}, nil)
-			return Exec
-		}
-	case "Y": // コピー (整形した参照 = コマンド)
-		if r.connectIP() == "" {
-			m.note("繋ぐ IP が分からない", false)
-			break
-		}
-		m.copy("ssh "+m.login(r, m.target(r)), guessNote)
-	case "y": // コピー (素の値 = URL。Finder の「サーバへ接続」に貼る)
-		if url := m.smbURL(r); url != "" {
-			m.copy(url, "")
-		}
-	case "O": // コピー (Finder で smb に繋ぐコマンド。端末に貼ればそのまま Finder が繋ぎにいく)。o の強い版ではない例外 (docs/glogx-ui-guide.md §2)
-		if url := m.smbURL(r); url != "" {
-			m.copy("open "+url, "")
-		}
-	case "o": // 外のアプリで開く (§2)
-		if !r.vnc {
-			m.note("画面共有を広告していない", false)
-			break
-		}
-		if r.connectIP() == "" {
-			m.note(cmp.Or(r.awayReason(), "繋ぐ IP が分からない"), false)
-			break
-		}
-		m.handOff(ExecRequest{Argv: []string{"open", "vnc://" + m.target(r)}, ExitIsFailure: true}, nil)
-		return Exec
-	case "a": // SyakeScreen (screen-share-app) で開く (issue 848)。宛先は o と同じ。入っていなければ open が失敗し、知らせに出る
-		if !r.vnc {
-			m.note("画面共有を広告していない", false)
-			break
-		}
-		if r.connectIP() == "" {
-			m.note(cmp.Or(r.awayReason(), "繋ぐ IP が分からない"), false)
-			break
-		}
-		if user == "" { // SyakeScreen は user の無い URL を断る (一覧の鍵が user@host なので、省くと同じ Mac の 2 本目になる)
-			m.note(noUserNote, false)
-			break
-		}
-		if guessed {
-			m.note("SyakeScreen で開く"+guessNote, false)
-		}
-		m.handOff(ExecRequest{Argv: []string{"open", syakeScreenURL(m.target(r), user)}, ExitIsFailure: true}, nil)
-		return Exec
-	case "m": // 名前の変更 (treefiler と同じ動詞)
-		m.openEdit(r, aliasEdit, r.alias)
-	case "t": // 通信速度を測る (speed.go。確認の板を通す)
-		m.askSpeed(r)
-	case "p": // 疎通を確かめる (reach.go。板は通さない)
-		m.startReach(r)
 	case "e": // メッセージ一覧 (msglog.go)
 		m.openLog()
-	case "u": // ssh のユーザー名 (台帳の user)。欄は台帳の値で開く (推測の名前で開くと、そのまま enter で台帳に固定された。敵対レビュー)
-		m.openEdit(r, userEdit, r.user)
 	}
 	return None
 }
@@ -1438,18 +1355,8 @@ func (m *Model) WaitBG(stop <-chan struct{}) (got []Notice, left int) {
 // PendingBG は結果の来ていない裏の後始末の件数。
 func (m *Model) PendingBG() int { return len(m.bg) }
 
-// smbURL は r のファイル共有の URL (smb://<宛先>)。繋げないなら理由を知らせて "" を返す (y と O が同じ断り方をする)。
-func (m *Model) smbURL(r row) string {
-	if !r.smb {
-		m.note("ファイル共有 (smb / 445) を開いていない", false)
-		return ""
-	}
-	if r.connectIP() == "" {
-		m.note("繋ぐ IP が分からない", false)
-		return ""
-	}
-	return "smb://" + m.target(r)
-}
+// smbURL は r のファイル共有の URL (smb://<宛先>)。繋げるかは smbRefusal が先に決める。
+func (m *Model) smbURL(r row) string { return "smb://" + m.target(r) }
 
 func (m *Model) copy(s, note string) { m.copyAs(s, s+note) }
 

@@ -86,22 +86,25 @@ func (m *Model) ReachTargets() ([]ReachTarget, error) {
 
 // startReach は p。カーソルの行の相手を裏で確かめる。
 func (m *Model) startReach(r row) {
-	switch {
-	case m.o.Reach == nil:
-		m.note("この画面では疎通を確かめられない", false)
-		return
-	case m.reachRuns[r.host] != nil: // 一覧を開いたときに自分で確かめている回なら、終わったら知らせる回にする (2 本目は起こさない)
-		m.reachRuns[r.host].tell = true
+	if run := m.reachRuns[r.host]; run != nil { // 一覧を開いたときに自分で確かめている回なら、終わったら知らせる回にする (2 本目は起こさない)
+		run.tell = true
 		m.noteInfo("疎通を確かめている途中 (" + r.host + ")。終わったら知らせる")
 		return
 	}
 	t := m.reachTarget(r)
-	if t.Refusal != "" {
-		m.note(t.Refusal, false)
-		return
-	}
 	m.runReach(t, true)
 	m.noteInfo(t.Name + " の疎通を確かめています (" + strings.Join(t.Names, " / ") + ")")
+}
+
+// reachRefusal は p を断る理由 (案内と p のキーが同じ述語を見る。確かめている途中の行は、台帳から外した後でも終わったら知らせる)。
+func (m *Model) reachRefusal(r row) string {
+	switch {
+	case m.o.Reach == nil:
+		return "この画面では疎通を確かめられない"
+	case m.reachRuns[r.host] != nil:
+		return ""
+	}
+	return m.reachTarget(r).Refusal
 }
 
 // runReach は t を裏で確かめる。tell は終わったときに知らせを出すか (p で頼んだ回だけ。開いたときに自分で確かめる回は列に出すだけ)。
