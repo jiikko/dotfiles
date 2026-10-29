@@ -441,4 +441,7 @@ func tinyB(xs []int, n int) int {
 	if !strings.Contains(s, " w=") {
 		t.Errorf("共有の重みを出す: %q", s)
 	}
+	if head, _, _ := strings.Cut(s, "\n"); !strings.Contains(head, "w = 共有している部分木の重み") {
+		t.Errorf("節 3 の見出しで w の意味を言う: %q", head)
+	}
 }

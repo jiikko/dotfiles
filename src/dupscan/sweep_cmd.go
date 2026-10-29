@@ -108,7 +108,7 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 		w.section("3. 部分木が似ている対 (飛ばした)")
 		w.printf("%s\n", skippedSimilar)
 	} else {
-		w.section("3. 部分木が似ている対 (Dice %.2f 以上・%d 節以上。同一動作・再利用は未証明。上の組に入る対は除く)", *threshold, sweepDeepMinNodes)
+		w.section("3. 部分木が似ている対 (Dice %.2f 以上・%d 節以上。同一動作・再利用は未証明。上の組に入る対は除く。行頭は Dice と w = 共有している部分木の重みの合計 (寄せたときに減る量の目安) で、w の大きい順)", *threshold, sweepDeepMinNodes)
 		sweepSimilarText(w, similar, *c.limit)
 	}
 	w.section("4. 名前の束 (同じ動詞で始まる小さい関数が同じ dir に %d 個以上・同名のメソッド・連番の名前。寄せられる共通の道具の手がかり)", sweepClusterMin)
