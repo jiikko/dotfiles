@@ -1,7 +1,5 @@
 # 948 (research): dupscan は「重複を書かない・探しやすい・grep より context を食わない」という狙いどおりに動いているか
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-28
 
 > 反証レビュー未実施 (起票時点。数字は 941〜947 と `scripts/dupscan_usage_report.py` の 2026-10-28 の出力から転記した。名前数個・repo 1 つの測定が多く、一般の効果ではない)。
@@ -155,7 +153,7 @@ codex に設計を反証させてから回した (指摘の採用: 問いを「�
 
 - [x] A1 を実装した (遅延は 1 名前あたり約 1 秒。雑音は未測定: 注入ログと、注入の後の挙動を 2026-11-04 に見る)。
 - [x] A1 が本物のセッションで届くことを確かめた (上の節。99 ms)。
-- [ ] A1 の雑音を測る (候補ありの注入のうち、無関係だった割合。transcript を読んで数える)。**2026-10-29 時点で標本 0**: 下の「2026-10-29 の refresh」節。
+- [ ] A1 の雑音を測る (候補ありの注入のうち、無関係だった割合。transcript を読んで数える)。**2026-10-29 夜に 1 回目 (n=7)**: 下の「A1 の雑音 (1 回目)」節。役に立った 1・同じ役割だが寄せ先なし 2・無関係 2・抽出の誤り 2。n が小さいので閉じない
 - [ ] A1 の有無で重複を書く割合が変わるかを、事前に決めた課題の A-B で測る (n=1 の観測では何も言えない)。**保留 (2026-10-28)**: 下の「A1 の A-B (pilot)」節。小さい fixture では天井効果で差が測れない。再開の条件と直す点はその節。
 - [ ] 2026-11-04 の再測定の結果を、この issue の「実測と根拠」へ追記する (案内の後の dupscan 率・index 後の範囲指定の率)。
 - [x] 942 b' の採否を決める → **採らない** (942 の「採らなかった方針」で決着。926 の hit 側の契約を弱める割に削れるのが 70 B 前後。942 は done)。
@@ -200,3 +198,25 @@ codex に設計を反証させてから回した (指摘の採用: 問いを「�
 - **A1 の hook の潜在的な無音の故障を直した**: 候補の判定で使っていた `os.path.commonprefix` が Python 3.15 で非推奨の警告を出していた。削除されると例外が hook 全体の `except` に吸われ、注入が黙って止まる。判定は `a.startswith(b) or b.startswith(a)` の後なので、共通部分の長さは短い方の長さと等しい → `min(len(a), len(b))` に置き換えた (同じ判定)。テスト 22 件 ok、閾値を 99 / 5 にする変異で赤。repo の中に他の `commonprefix` の使用は無い。
 - 節 3 の収穫と 942 b' は上の表と受け入れ条件に書いた。
 - 再測定 (2026-11-04)・A-B のやり直し・928 から引き継いだ比較の採否は変わらず未着手 (日付待ち・課題の作り直しが要る)。
+
+
+## A1 の雑音 (1 回目、2026-10-29 夜)
+
+注入ログ `~/.cache/claude-dupscan-inject.log` (このマシン) の 39 行のうち、候補ありの 7 回 (4 セッション、どれも dotfiles) について、
+transcript の `hook_additional_context` と、それを起こした Write / Edit の中身を読んで分類した。抽出の手順は、ログの session id で `~/.claude/projects/*/<id>.jsonl` とその subagents を開き、注入の直前の Write / Edit を取る。分類は 1 人 (この session) の読み。
+
+| 新しい名前 (書いた所) | 出た候補 | 分類 |
+|---|---|---|
+| `allowedGroup` (dupscan の allow_group_test.go) | `allowed(src, kindReason string) string` ほか 1 | **役に立った**: 同じ package の、印を挿す同じ形の test helper。今のコードは `marked` を共有して書いている (`allowed` と同じ下請け)。注入の時点の版は `strings.Replace` の手書きで、後から寄った。注入が効いたかは transcript からは決められない |
+| `entry` (dupscan の report の test) | `group_test.go` の `entry(key, test, h1…)` | 同じ役割 (test 用に `*Entry` を組む) だが、別 package の test helper で寄せ先が無い |
+| `fixed` (mac-lan-manager の actions.go) | treefiler の `fixed(vs ...string) func(*Settings) []string` | 同じ考え (定数を返す関数を作る) だが、別 module・型も違う。寄せ先なし |
+| `WindowHash` (dupscan の norm.go) | `Line.Window`・`rowCursor.window`・`deleteScroll.window` | **無関係**: 名前の前方 `Window` が一致しただけ (UI の表示窓の関数) |
+| `apply` (`tmp/971-…/tool/main.go`、使い捨ての道具) | pro-con の `Apply` ×3 | **無関係**: 名前が同じだけ。書いた所も ignore された `tmp/` |
+| `writeFile`・`repoWith` (dupscan の sweep_inline_test.go、同じ Edit) | `writeFile` ×3・`repoWith` ×1 | **抽出の誤り**: 新しい関数ではなく、fixture として raw string (`` `…` ``) に入れた Go のソースの中の `func` を拾った |
+
+- 7 回のうち、候補が判断の役に立ちうる (同じ役割) のは 3、実際に寄せられる形だったのは 1。無関係 2・抽出の誤り 2 (計 4) は雑音。**n=7・1 マシン・dotfiles だけ**なので割合としては読まない
+- 原因が特定できた雑音 (hook の該当箇所は `_claude/hooks/inject-dupscan-candidates-on-new-func.sh`):
+  - 抽出の誤り: `FUNC_GO` は書く文字列の行頭の `func` を全部拾い、Go の文字列リテラル (raw string) の中かを見ない。dupscan のように test が Go のソースを fixture として持つ所で起きる
+  - ignore されたパス: `.go` で絶対パスなら対象にし、`git check-ignore` を見ない。`tmp/` の使い捨ての道具でも引く
+  - `WindowHash` → `window`: 前方一致 (共通部分 6 文字以上) の規則どおり。名前の先頭の語だけが一致する形は、規則の側で避けられない (語の数・語の一致の割合で絞る案はあるが、`allowedGroup` → `allowed` も同じ形なので、絞ると役に立った 1 件も落ちる)
+- 次: 上の 2 つの原因は直せる (文字列リテラルの中を除く・ignore されたパスでは引かない)。直すかは別に決める。2026-11-04 の再測定では、各マシンのログを合わせて同じ分類で数え増やす
