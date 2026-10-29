@@ -6,8 +6,8 @@ import (
 
 // 枠描画のプリミティブ (browseModel の状態に依存しない純関数)。状態機械 (tui.go / browse_*.go) から
 // 描画の下請けを分離する。ここに置くのは「window/box という []string を受けて []string を返す」
-// レイアウト関数だけ。m.width/m.colored 等のモデル状態を読むもの (cursorLine/bgLine/panelLines
-// など) は browse_view.go に残す。
+// レイアウト関数だけ。m.width/m.colored 等のモデル状態を読むもの (browse_view.go の cursorLine/bgLine、
+// browse_ci.go の panelLines など) は状態機械の側に残す。
 
 // OverlayBox / OverlayCenteredBox は tuikit layout.Overlay / layout.OverlayCentered の別名
 // (行ごと置き換える / 中央に浮かせて左右の背景を残す)。

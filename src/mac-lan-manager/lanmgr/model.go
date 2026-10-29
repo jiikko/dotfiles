@@ -1027,7 +1027,7 @@ func (m *Model) userFor(r row) (user string, guessed bool) {
 
 // ---- キー ----
 
-// canonKey はキーの表記を 1 つに寄せる。glogx は Space を " " に書き換えてから板へ渡す (tui.go の normalizeSpaceKey) ので、
+// canonKey はキーの表記を 1 つに寄せる。glogx は Space を " " に書き換えてから板へ渡す (glogx の app.NormalizeSpaceKey) ので、
 // "space" だけを見ると glogx の板で Space が台帳の登録ではなく半ページ送り (listnav は " " も下へ送る) に化ける。
 func canonKey(key string) string {
 	if key == " " {

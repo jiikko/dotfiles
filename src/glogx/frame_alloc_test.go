@@ -270,7 +270,7 @@ func frameAllocBytes(t *testing.T, build func(testing.TB) *browseModel) int64 {
 }
 
 // budgetUsageGlanceModel は起動直後の実フレーム: newBrowseModel は usage グランスを
-// visible で起動する (tui.go の usageOverlay{visible: true}) のに、bench fixture は
+// visible で起動する (tui.go の newBrowseModel の usageview.NewUsageOverlay()) のに、bench fixture は
 // それを消していた = アプリ起動直後のフレームがどのゲートの外だった。
 // データ未着 (loading) の箱を重ねた状態で測る。
 func budgetUsageGlanceModel(tb testing.TB) *browseModel {

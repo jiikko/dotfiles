@@ -16,7 +16,7 @@ lipgloss / bubbles の v2 も同様 (`charm.land/lipgloss/v2` / `charm.land/bubb
 | v1 | v2 | 置き場所 |
 |---|---|---|
 | `View() string` | `View() tea.View` (画面内容 + 端末モードを毎フレーム宣言) | `browse_view.go` の `View` / 中身は `viewLines()` に分離 |
-| `tea.NewProgram(m, tea.WithAltScreen())` | `v.AltScreen = true` (命令的オプション廃止) | `browse_view.go` の `View` / `RunBrowse` |
+| `tea.NewProgram(m, tea.WithAltScreen())` | `v.AltScreen = true` (命令的オプション廃止) | `browse_view.go` の `View` / `tui.go` の `RunBrowse` |
 | `case tea.KeyMsg` | `case tea.KeyPressMsg` | `tui.go` の `Update` |
 | `msg.Type == tea.KeyRunes && len(msg.Runes) > 1` | `[]rune(msg.Text)` | `browse_keys.go` の `onKeyPress` (まとめ配送の分解) |
 

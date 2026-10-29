@@ -186,7 +186,7 @@ func TestBrowseModelMethodFilesAllowlist(t *testing.T) {
 			withMethods = append(withMethods, f)
 		}
 	}
-	// canary: tui.go には状態機械のメソッドが 100 本以上ある。数え方が壊れて 0 になったら緑で通さない
+	// canary: 状態機械のメソッドは tui.go と browse_*.go を合わせて 100 本以上ある。数え方が壊れて 0 になったら緑で通さない
 	if methods < 100 {
 		t.Fatalf("browseModel のメソッドを %d 本しか数えていない (数え方が壊れている)", methods)
 	}

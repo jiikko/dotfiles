@@ -163,7 +163,7 @@ linters:
         linters:
           - gocritic
       # app.TimeNow シームの規律は状態機械 (tui.go と browse_*.go) だけのもの (他ファイルは素の time.Now でよい)
-      - path-except: (tui|browse_[a-z]+)\.go
+      - path-except: (tui|browse_[a-z0-9_]+)\.go
         text: TimeNow シーム経由
         linters:
           - forbidigo
