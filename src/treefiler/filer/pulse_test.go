@@ -254,7 +254,7 @@ func TestPulseRunsAtConstantSpeed(t *testing.T) {
 	}
 }
 
-// 走っている間に root を上げても (root の上で h)、光の出発点は同じ項目 (x.txt) の線の先端のまま
+// 走っている間に root を 2 段上げても (root の上で h・goto)、光の出発点は同じ項目 (x.txt) の線の先端のまま
 // (深さは root から数えるので、上げると全部の項目の深さが 1 つずれる)。
 func TestPulseKeepsStartOnReroot(t *testing.T) {
 	m := newTest(t)
@@ -264,8 +264,9 @@ func TestPulseKeepsStartOnReroot(t *testing.T) {
 	at := fixedNow.Add(16 * time.Millisecond)
 	m.Advance(at)
 	m.rerootUp()
-	if m.root == old {
-		t.Fatal("前提: root が上がっていない")
+	m.rerootUp()
+	if m.root.depth() != 0 || old.depth() != 2 {
+		t.Fatalf("前提: root が 2 段上がっていない (旧 root の深さ %d)", old.depth())
 	}
 	m.Advance(at) // 新しい root の位置を作る (経過は進めない)
 	m.draw()
