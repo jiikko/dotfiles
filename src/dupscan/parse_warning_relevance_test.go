@@ -107,8 +107,8 @@ func TestRelevantParseErrors(t *testing.T) {
 		{"ini", []string{"a.go", "b.go", "gone.go"}},
 		{"initialize", []string{"gone.go"}}, // init の部分文字列ではない名前は通常どおり
 	} {
-		if got := s.relevantParseErrors(c.name); !reflect.DeepEqual(got, c.want) {
-			t.Errorf("relevantParseErrors(%q) = %v, want %v", c.name, got, c.want)
+		if got := s.relevantParseErrorsAny([]string{c.name}); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("relevantParseErrorsAny(%q) = %v, want %v", c.name, got, c.want)
 		}
 	}
 }
