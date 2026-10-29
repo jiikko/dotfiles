@@ -15,6 +15,7 @@
 - `filer/kids.go` — 木に見せる子 (dotfile を隠す・カーソルへの経路は見せる) とその覚え (`visKids`。並びが変わったときだけ作り直し、各子に順位を振る)
 - `filer/virt.go` — 巨大なフォルダの仮想化 (画面の近くの子だけを配置しアニメを持たせる。issue 712)。何が全部を動かす場合と違うかは冒頭の doc
 - `filer/anim.go` — 時間で進む補間 (ease-out quint・キーで終点へ飛ばす)
+- `filer/pulse.go` — カーソルが変わるたび経路の線を root へ走る光 (キーで打ち切らない。spec §0.1)
 - `filer/tile.go` / `filer/preview.go` — プレビューのタイル (置き場所・リンク) とテキストの遅延読み込み
 - `filer/palette.go` — 配色と熱の色
 - `filer/render.go` — セルの格子 → 文字列 (I/O をしない純粋な描画層。`.golangci.local.yml` の render-pure)

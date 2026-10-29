@@ -49,4 +49,5 @@ const (
 	fadeInDur  = 0.25
 	fadeOutDur = 0.35
 	beadDur    = 0.35 // ビーズが前のカーソルから今のカーソルまで走る時間 (treebeard は smooth 0.13 のばね)
+	pulseDur   = 0.45 // 経路の光がカーソルから root まで走る時間 (pulse.go)
 )

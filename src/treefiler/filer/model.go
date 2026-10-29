@@ -111,6 +111,8 @@ type Model struct {
 	beadFor      *node // ビーズが走っている先 (カーソルが変わったら走り直す)
 	beadVel      float64
 	beadOn       bool
+	pulses       []pulse     // 経路の線をカーソルから root へ走る光 (押すたびに 1 つ。pulse.go)
+	pulseFor     *node       // 最後に光を出したカーソル
 	search       searchState `layer:"search"`
 	lastSearch   string
 	exploding    *explodeJob
@@ -773,6 +775,7 @@ func (m *Model) step(dt float64) bool {
 	}
 	moving = moving || len(m.ripples) > 0
 	moving = m.stepBead(pos, dt) || moving
+	moving = m.stepPulses(dt) || moving
 	// カメラ: カーソルの名前の左端を画面の 38% に、選択線を画面の縦の中央に (spec §4.5)
 	cp := pos[m.cur]
 	if tx := float64(cp.x) - float64(m.w)*0.38; snapMove { // 縦だけ寄せて横を流すと、飛んでから滑る 2 段の動きになる
@@ -1293,6 +1296,7 @@ func (m *Model) drawBead(c *canvas, ox, oy, ch int) {
 func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
 	// 前のフレームのセル (と線の持ち主の node) は take が手放す。見込みは前のフレームの数 (大きな画面から戻ると作り直す)
 	grid := m.linesInto(m.gridBuf.take(m.gridLast), now, oy, oy+ch-1)
+	pulses := m.pulseHeads(now)
 	m.gridBuf.fit(len(grid))
 	m.gridLast = len(grid)
 	for k, lc := range grid {
@@ -1313,6 +1317,9 @@ func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
 			col = mix(cAccAct, sap, 0.42)
 		case emDim:
 			col = mix(cAccDim, mix(sap, cBg, 0.55), 0.35)
+		}
+		if lc.emph == emRoute {
+			col = pulses.light(p, k[0], col)
 		}
 		p.s, p.fg = glyph(m.set.Lines, lc), col
 	}
