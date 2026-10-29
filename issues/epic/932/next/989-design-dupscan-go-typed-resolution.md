@@ -1,1 +1,0 @@
-../989-design-dupscan-go-typed-resolution.md
