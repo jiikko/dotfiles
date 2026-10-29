@@ -179,6 +179,7 @@ func (m *Model) selfIPOn(dev string) string {
 // askSpeed は t (通信速度を測る) の板を出す。帯域を使い切るので必ず板を通し、y だけで実行する (Enter を打ち続けても流れない。
 // Y は一覧では ssh のコピーで指が慣れている)。測れるかは CLI と同じ speedTarget で決め、経路は j/k で選ぶ。既定は最初の有線の経路
 // (ユーザー指示 2026-10-18: 既定は有線)。
+// 断り (speedRefusal) は表 (rowActions) が先に見る。表を通さずに呼ばない (測る口が無くても板を開く)
 func (m *Model) askSpeed(r row) {
 	if m.speedRun != nil { // 2 本目は流さず、閉じた進捗のモーダルを開き直す (どの行で押しても、今測っている相手のモーダル)
 		m.speedRun.shown = true
@@ -426,7 +427,15 @@ func (m *Model) speedLine(r row, label func(string) string) []string {
 		}
 	}
 	if len(lines) == 0 {
-		lines = append(lines, next()+sDim.Render("未測定  ")+keycap("t", "測る"))
+		state := next() + sDim.Render("未測定")
+		if m.actionOK("t", r) { // 最下行と t のキーと同じ述語 (測定中は別の Mac の進捗を開くので「測る」と言わない)
+			label := "測る"
+			if m.speedRun != nil {
+				label = "測定の進捗"
+			}
+			state += "  " + keycap("t", label)
+		}
+		lines = append(lines, state)
 	}
 	return lines
 }

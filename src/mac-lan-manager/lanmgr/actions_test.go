@@ -2,7 +2,9 @@ package lanmgr
 
 import (
 	"context"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +60,7 @@ func TestRowHintsMatchKeys(t *testing.T) {
 					}
 					h.m.cur[tab] = i
 					r := h.m.current()
+					card := stripView(strings.Join(h.m.detailLines(r, 120, false), "\n"))
 					hinted := slices.ContainsFunc(h.m.rowHints(r), func(k keyHint) bool { return k.key == a.key })
 					shown := h.m.speedRun != nil && h.m.speedRun.shown
 					act := h.keys(a.key)
@@ -67,6 +70,10 @@ func TestRowHintsMatchKeys(t *testing.T) {
 					}
 					if hinted != effected {
 						t.Errorf("%s: %q の %s: 案内=%v 効いた=%v", state, cmpHost(r), a.key, hinted, effected)
+					}
+					// 詳細のカードも、効かないキーを案内しない (t / p はカードの「未測定」「未確認」の行に keycap を添える)
+					if k := cardKey[a.key]; k != nil && !hinted && k.MatchString(card) {
+						t.Errorf("%s: %q のカードが効かない %s を案内した:\n%s", state, cmpHost(r), a.key, card)
 					}
 					// 揃っているだけでなく、効く側に揃っていること (両方を断る形に揃えても上は緑になる)
 					if !hinted && ((state == "測定中" && a.key == "t") || (state == "疎通の途中" && a.key == "p" && r.host == "m2macmini.local")) {
@@ -88,6 +95,28 @@ func TestRowHintsMatchKeys(t *testing.T) {
 	}
 }
 
+var cardKey = map[string]*regexp.Regexp{"t": regexp.MustCompile(`t\s+(測る|測定の進捗)`), "p": regexp.MustCompile(`p\s+確かめる`)}
+
+// 測定中でも、行の無いタブ (絞り込みで 0 件) では t を案内しない (t は「このタブには Mac が無い」で断る)
+func TestNoActionHintsOnEmptyTab(t *testing.T) {
+	h, _ := speedHarness(t)
+	h.cursorTo(t, "m2macmini.local")
+	h.keys("t", "y", "esc")
+	if h.m.speedRun == nil {
+		t.Fatal("前提: 測定が始まらない")
+	}
+	if !slices.ContainsFunc(h.m.hints(), func(k keyHint) bool { return k.key == "t" }) {
+		t.Fatal("前提: 行がある間は t を案内する (下の否定の対照)")
+	}
+	h.keys("/", "z", "z", "z", "z", "enter")
+	if len(h.m.visible()) != 0 {
+		t.Fatalf("前提: 絞り込みで 0 件にならない (%d 行)", len(h.m.visible()))
+	}
+	if hs := h.m.hints(); slices.ContainsFunc(hs, func(k keyHint) bool { return k.key == "t" }) {
+		t.Errorf("行の無いタブで t を案内した: %v", hs)
+	}
+}
+
 func cmpHost(r row) string {
 	if r.self {
 		return "この Mac"
@@ -105,5 +134,19 @@ func TestReachHintWithoutConnectIP(t *testing.T) {
 	}
 	if !slices.ContainsFunc(h.m.rowHints(h.m.current()), func(k keyHint) bool { return k.key == "p" }) {
 		t.Errorf("繋ぐ IP の無い管理対象の行で p を案内しない: %v", h.m.rowHints(h.m.current()))
+	}
+}
+
+// 疎通を確かめる口が無い画面では、詳細のカードにも p を案内しない (p は「この画面では疎通を確かめられない」で断る)
+func TestReachCardKeyNeedsReach(t *testing.T) {
+	h, _ := reachHarness(t)
+	h.cursorTo(t, "m2macmini.local")
+	card := func() string { return stripView(strings.Join(h.m.detailLines(h.m.current(), 120, false), "\n")) }
+	if !cardKey["p"].MatchString(card()) {
+		t.Fatalf("前提: 確かめられる画面のカードに p が無い (下の否定の対照):\n%s", card())
+	}
+	h.m.o.Reach = nil
+	if c := card(); cardKey["p"].MatchString(c) {
+		t.Errorf("確かめる口が無いのにカードが p を案内した:\n%s", c)
 	}
 }

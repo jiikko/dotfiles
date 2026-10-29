@@ -85,6 +85,7 @@ func (m *Model) ReachTargets() ([]ReachTarget, error) {
 }
 
 // startReach は p。カーソルの行の相手を裏で確かめる。
+// 断り (reachRefusal) は表 (rowActions) が先に見る。表を通さずに呼ばない
 func (m *Model) startReach(r row) {
 	if run := m.reachRuns[r.host]; run != nil { // 一覧を開いたときに自分で確かめている回なら、終わったら知らせる回にする (2 本目は起こさない)
 		run.tell = true
@@ -228,7 +229,11 @@ func (m *Model) reachLines(r row, label func(string) string) []string {
 	}
 	res, ok := m.reach[r.host]
 	if !ok {
-		return []string{next() + sDim.Render("未確認  ") + keycap("p", "確かめる")}
+		state := next() + sDim.Render("未確認")
+		if m.actionOK("p", r) { // 最下行と p のキーと同じ述語
+			state += "  " + keycap("p", "確かめる")
+		}
+		return []string{state}
 	}
 	lines := make([]string, 0, len(res.names)+1) // 名前ごとの行と、確かめた時刻の行
 	for _, n := range res.names {
