@@ -148,7 +148,8 @@
   **指摘を直したら変異の前に commit する** (WIP でよい)
 - **worktree でも `git checkout --` は安全にならない** (その worktree の自分の未コミット変更は消え、旧実装が
   通れば green のまま気づけない)。変異対象に未コミット変更があるなら一度 commit してから当てる
-- **バックアップと復元は絶対パスで行う** (`trap` はスクリプトが `cd` した後に走る)
+- **バックアップと復元は絶対パスで行い、控えの名前もパスから作る** (`trap` はスクリプトが `cd` した後に走る。控えを basename で
+  名付けると別ディレクトリの同名ファイルで衝突し、復元が別のファイルを上書きする。retro 908: `internal/gate/gate.go` と `internal/report/gate.go`)
 - **変異は使い捨て worktree で当てる** (正本は `~/.claude/skills/codex-drive/phases-3-review.md` の `[3.8]`)。
   skill を使わない手動の変異検証でも同じ
 - **新規 (untracked) ファイルは `git checkout --` で戻せない** (worktree にも乗らない)。`cp` で 1 世代控え、復元後に
