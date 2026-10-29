@@ -94,3 +94,12 @@ skill の有る無しを変えて、headless の Claude Code (`claude -p`。`bin
 評価する際はClaude/Codexを分け、同じ課題・同じ入力repo・対応版で、適切な候補への到達、正しい再利用、誤った不存在判断、往復数、返却bytes、elapsed timeを取る。raw command回数だけで改善を判断せず、小規模fixtureで対照群の重複発生率が0だった制約と、設定が対照群へ漏れた制約を踏まえて比較条件を設計する。ログ解析は保存形式・利用可能性を環境ごとに確認し、既存のClaude用集計をCodexにもそのまま使えるとはみなさない。
 
 - 2026-10-28: 928で共通診断/表示専用案内を限定採用して完了。一般効果・未使用課題の比較計画とClaude/Swift未検証は948で継続する。本issueの既存測定/保留triggerは変更しない。
+
+
+## Obaket1301からの中間フィードバック (2026-10-29)
+
+[4日分の中間評価](https://github.com/jiikko/obaket/blob/f3e77fa65/docs/research/dupscan-evaluation-2026-10-29.md)を取得。72run/record70/欠測2、失敗は新規除外policy9・人工probe1・git互換1・原因不明PR1に分けた。
+同tool比較は542→309組だが、resolved251のうち4件だけを共通化実例として確認、247件は未分類。
+ObaketはGHA側の補助JSONで最終rc/run ID/SHA/tool pin/record有無を既に補い、実GHAの成功経路で確認済み。
+上流の終了結果記録は[後続提案](../../932/976-feat-dupscan-gate-record-final-outcome.md)に残す。
+これは1か月評価の完了書き戻しではなく、既存の保留条件・未完了チェックを変更しない。

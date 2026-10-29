@@ -95,7 +95,7 @@ dupscan を Claude Code が使えば、①同じ役割のメソッドを重ね�
 | C | index の行に `Read` の引数を貼る | 保留。範囲指定の使用率の母数が 0 (index の直後の Read が無い)。A1 の後に母数が増えてから測る |
 | D | 連番の名前・testdata・近い完全一致の数 | 946 に記録済み。未実装 |
 | E-1 | 入口の指標 | usage report で測定中 |
-| E-2 | gate が止めた数 | 手段を決めた (2026-10-28): 手元の `make test-dupscan-gate` が `~/.cache/dupscan-gate.jsonl` に 1 回 1 行で追記する (`-record`。CI は記録しない)。`jq -s '[.[] \| select(.failed)] \| length' ~/.cache/dupscan-gate.jsonl` が「止まった実行の数」(同じ変更の再実行は別に数える)。CI の `gh run list` は止まりを数えられない (直近 30 回すべて success。手元の pre-push で先に止まるため)。集計は 2026-11-04 の再測定から |
+| E-2 | gate が止めた数 | 手段を決めた (2026-10-28): 手元の `make test-dupscan-gate` が `~/.cache/dupscan-gate.jsonl` に 1 回 1 行で追記する (`-record`。CI は記録しない)。`jq -s '[.[] \| select(.failed)] \| length' ~/.cache/dupscan-gate.jsonl` が「重複違反を記録した実行数」(同じ変更の再実行は別に数える。新規除外policyのrc=1や判定不能の全件数ではない)。CI の `gh run list` は止まりを数えられない (直近 30 回すべて success。手元の pre-push で先に止まるため)。集計は 2026-11-04 の再測定から |
 | E-3 | 928 の実 agent 比較 | 928は診断/案内を限定採用して完了。本番比較とClaude/Swift未検証は本issueへ引継ぎ（末尾の計画・再開条件） |
 
 A1 の既知の限界: 名前が違う同じ役割の関数は引けない (署名の近さは見ない)。名前の一致は `index` の語の一致で、型を解決しない。Swift は字下げのある `func` を新しい関数として扱うため、同じ型の中の同名メソッドも候補に出る。
@@ -221,3 +221,19 @@ transcript の `hook_additional_context` と、それを起こした Write / Edi
   - `WindowHash` → `window`: 前方一致 (共通部分 6 文字以上) の規則どおり。名前の先頭の語だけが一致する形は、規則の側で避けられない (語の数・語の一致の割合で絞る案はあるが、`allowedGroup` → `allowed` も同じ形なので、絞ると役に立った 1 件も落ちる)
 - 次: 上の 2 つの原因は 2026-10-29 に直した (commit「fix(hooks): A1 の候補の注入で、文字列とコメントの中の func と ignore されたパスを引かない」)。
   同じ 7 回を今の hook に流すなら、`writeFile`・`repoWith`・`apply` の 3 回は出ない見込み (本物の dupscan で fixture の中の `writeFile` が無音になるのは確認、7 回の再生はしていない)。2026-11-04 の再測定では、各マシンのログを合わせて同じ分類で数え増やす
+
+
+## Obaket1301の中間結果からの追加 (2026-10-29)
+
+[評価レポート](https://github.com/jiikko/obaket/blob/f3e77fa65/docs/research/dupscan-evaluation-2026-10-29.md)を追加の実運用証拠として参照する。
+2026-10-25〜29の72runは成功60・新規除外policy失敗9・人工probe重複1・git互換rc=2が1・原因不明PR1。
+自然pushかつrecordあり69件の重複違反は観測0だが、手元で先に止まった変更をCIだけでは数えられない。
+書く前の探索/一般的なtoken削減/将来の重複発生率の因果効果は、この中間結果でも未実証のまま。
+
+同tool/閾値・除外なしで542→309組、現行設定込み6組。resolved251の実diff確認は4件・未分類247件。
+実diffで共通化を確認した例はあり、当面は重複検出gateと書く前のindex利用を継続する価値がある。
+この局所的な採用判断と、上記3つの一般効果の実証は区別する。
+
+今回の追加課題は[終了結果のrecord](976-feat-dupscan-gate-record-final-outcome.md)、
+[CI導入費用](977-research-dupscan-ci-install-and-gate-cost.md)、
+[resolvedの人手検証](978-research-dupscan-resolved-review-evidence.md)。本issueに一般効果の新しい重複課題は作らない。
