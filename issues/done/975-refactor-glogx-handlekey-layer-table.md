@@ -1,7 +1,5 @@
 # 975 (refactor): glogx の handleKey (253 行) の順序つきの if の連鎖を、層の表にするか (結論: 表にせず、順序のテストを足す)
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-29
 
 > 2026-10-29 に pending から再開した (ユーザー指示「リセット後にやって」)。
@@ -47,7 +45,7 @@
 
 ## 関連
 
-- [971](done/971-refactor-glogx-tui-split-by-responsibility.md) (tui.go の分割)
+- [971](971-refactor-glogx-tui-split-by-responsibility.md) (tui.go の分割)
 - 863 の P1〜P4 (mac-lan-manager の lanmgr で、行の動作と画面の層を表にした前例)
 
 ## 設計のレビューの決着 (opus、読み取りのみ)
