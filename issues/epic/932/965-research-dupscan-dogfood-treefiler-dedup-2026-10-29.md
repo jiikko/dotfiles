@@ -33,6 +33,9 @@ dupscan-dogfood で「src/treefiler の重複定義を統合する」をこな�
 - 影響: テストの helper を寄せるとき、手書きの写しが一番多いのはテスト関数の中。今回は grep で 6 か所見つけて 6 か所とも寄せた。5 か所は Test 関数の中、1 か所 (`direntries_test.go`) は helper の中で、
   そちらは寄せる先の `mustWrite` の本体が 1 文なので「文 2〜8 個」の範囲外として見ない
 - 提案: 節 5 の見出しに「Test 関数の中と、文 1 個の関数は見ない」を足す。テスト関数の中を置き場所として見る (比べる単位にはしない) かは設計の判断があるので、直す側が決める
+- 対応 (2026-10-29): commit「feat(dupscan): sweep の節 5 の見出しで、テスト関数の中を見ないと言う (issue 965 F1)」。見出しに「テスト関数の中は見ない」を足し、
+  README の「拾わないもの」を Swift (XCTest の `test…`・Swift Testing の `@Test`) まで広げた。「文 1 個の関数は見ない」は見出しの「文 2〜8 個」が既に言っているので足さない。
+  テスト関数の中を置き場所として見る変更は、需要が 1 回なので見送り (skill dupscan-dogfood の 1 節に「テストの helper に寄せるときは grep でも探す」を足して補った)
 
 ### F2 (黙って効かない): 同じ単位に 2 つ目の `dupscan:allow-group` を書いても効かず、警告も出ない
 
@@ -81,3 +84,12 @@ dupscan-dogfood で「src/treefiler の重複定義を統合する」をこな�
 
 事実の主張・数 (組 55) は反証できなかった。P2: F2 の「どちらが読まれるか確かめていない」はソースで確定する → `allowComment` を読んで確かめ、原因として書き直した。
 P3: README の「もう 1 つ」を「曖昧」とするのは強めの言い方 → 提案の文を、文脈からは読めることを添えた形に直した。F4 の `-selector` が素の `New(...)` だけを選ぶ用途に足りるかは未検証のまま。
+
+## 進捗
+
+- [x] F1: 見出しと README (commit「feat(dupscan): sweep の節 5 の見出しで、テスト関数の中を見ないと言う (issue 965 F1)」)
+- [x] F2: 同じ単位の 2 つ目の印を rc=2 (commit「fix(dupscan): 同じ単位の 2 つ目の許可の印を黙って捨てず rc=2 にする (issue 965 F2)」。CI の src/dupscan は緑)
+- [x] F3: 別のセッションが issue 966 で sweep の冒頭行を直した
+- [x] F4: `-selector` を試し、見送り (上の F4)
+- [x] skill dupscan-dogfood: 1 節に「テストの helper の写しは grep でも探す」「commit の前に repo 全体の検査を回す」を足した (commit「skill(dupscan-dogfood): …」)
+- 検証で毎回落ちたもの: ルートの `make test` の `tests/claude/test_dangling_symlinks.sh` (手元の `~/.claude/agents/` に残った、削除済みの agent 5 本への link)。変更と無関係で、`./setup.sh` の再実行で消える (実行していない)
