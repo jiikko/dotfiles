@@ -1,4 +1,4 @@
-# 962 (research): dupscan を obaket 1309 (Core / Presentation のテスト 41 組) で使った所見と、961 への追加
+# 963 (research): dupscan を obaket 1309 (Core / Presentation のテスト 41 組) で使った所見と、961 への追加
 
 起票日: 2026-10-29
 
