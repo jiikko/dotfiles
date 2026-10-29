@@ -207,3 +207,64 @@ func TestPulseDoesNotLightVerticalBars(t *testing.T) {
 		t.Fatal("前提: 光が一度も描かれていない")
 	}
 }
+
+// trackSpan は出発点から root の右の線までの番号の範囲。root の行の線が格子に無いフレーム (rx より右のセルしか無い) でも、
+// 存在しない番号を終点にしない。
+func TestTrackSpan(t *testing.T) {
+	track := []int{20, 18, 16, 14, 12}
+	for _, c := range []struct {
+		from, rx, start, end int
+		ok                   bool
+	}{
+		{16, 12, 2, 4, true},  // rx ちょうどのセルがある
+		{16, 13, 2, 3, true},  // rx が無く、その左にもセルがある
+		{16, 11, 2, 4, true},  // 全部 rx より右 (root の行が格子の外)
+		{21, 20, 0, 0, true},  // 出発点と終点が同じセル
+		{10, 5, 0, 0, false},  // 出発点より左にセルが無い
+		{25, 30, 0, 0, false}, // 全部 rx より左
+	} {
+		s, e, ok := trackSpan(track, c.from, c.rx)
+		if ok != c.ok || (ok && (s != c.start || e != c.end)) {
+			t.Errorf("trackSpan(from=%d, rx=%d) = (%d, %d, %v), want (%d, %d, %v)", c.from, c.rx, s, e, ok, c.start, c.end, c.ok)
+		}
+	}
+}
+
+// 一定の速さ: 走る時間の半ばで、出発点から root までの (線のセルの数で) 半ばに居る。ease-in / ease-out ではずれる。
+func TestPulseRunsAtConstantSpeed(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "b/deep/x.txt")
+	settle(m)
+	at := fixedNow
+	advBy(m, &at, time.Duration(pulseDur*pulseRun/2*float64(time.Second)))
+	m.draw()
+	h := m.pulseBuf[0]
+	_, end, ok := trackSpan(m.trackBuf, m.trackBuf[h.start], int(math.Round(m.anims[m.root].x.v))+m.labelWidth(m.root)+1)
+	if !ok {
+		t.Fatal("前提: 経路の線の範囲が取れない")
+	}
+	if f := (h.head - float64(h.start)) / float64(end-h.start); f < 0.35 || f > 0.65 {
+		t.Fatalf("走る時間の半ばで %.2f まで進んだ (半ばのはず)", f)
+	}
+}
+
+// 親へ上がっても (h)、走っている光の頭は跳ばない: 経路は前にいた子まで続いているので、出発点を動かさない。
+func TestPulseDoesNotJumpOnParent(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "b/deep/x.txt")
+	settle(m)
+	at := fixedNow
+	advBy(m, &at, 16*time.Millisecond)
+	m.draw()
+	before := m.trackBuf[int(math.Round(m.pulseBuf[0].head))]
+	m.HandleKey("h")
+	if m.cur.raw != "deep" {
+		t.Fatalf("前提: 親へ上がっていない (%s)", m.cur.raw)
+	}
+	advBy(m, &at, 16*time.Millisecond)
+	m.draw()
+	after := m.trackBuf[int(math.Round(m.pulseBuf[0].head))]
+	if d := before - after; d < 0 || d > 2 {
+		t.Fatalf("親へ上がった次のフレームで光の頭が %d 桁動いた (%d → %d。1 フレームの進みは 1〜2 桁)", d, before, after)
+	}
+}

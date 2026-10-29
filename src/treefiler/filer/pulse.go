@@ -75,20 +75,12 @@ func (m *Model) pulseHeads(grid lineGrid, now map[*node][2]int) pulseHeads {
 	m.trackBuf = track
 	hs := m.pulseBuf[:0]
 	for _, p := range m.pulses {
-		from := m.cur
-		for from.parent != nil && from.depth() > p.depth { // 今のカーソルより深い光はカーソルから走る
-			from = from.parent
-		}
-		fp, ok := now[from]
+		fp, ok := now[m.spineAt(p.depth)]
 		if !ok {
 			continue
 		}
-		start := trackIndex(track, fp[0]-1) // カーソルの名前の 1 桁左 (線の先端)
-		end := trackIndex(track, rx)
-		if end < len(track) && track[end] < rx {
-			end-- // rx ちょうどの線が無いときは、rx より右の最後のセル
-		}
-		if start >= len(track) || end < start {
+		start, end, ok := trackSpan(track, fp[0]-1, rx) // 出発点はその項目の名前の 1 桁左 (線の先端)
+		if !ok {
 			continue
 		}
 		el := p.el / pulseDur
@@ -110,6 +102,35 @@ func (m *Model) pulseHeads(grid lineGrid, now map[*node][2]int) pulseHeads {
 
 // pulseRun は光が root に着くまでの割合 (残りで消える)。
 const pulseRun = 0.85
+
+// spineAt は今の経路 (spine) の深さ depth の項目。カーソルより深ければ、カーソルより先の続き (spineNext) を辿る:
+// 親へ上がった後も経路は前にいた子まで続いているので、そこから出た光は出発点を動かさずに走り続ける
+// (出発点をカーソルに切り詰めると、走っている光の頭が 1 フレームで root 側へ跳ぶ)。続きが途切れたら最後の項目。
+func (m *Model) spineAt(depth int) *node {
+	n := m.cur
+	for n.parent != nil && n.depth() > depth {
+		n = n.parent
+	}
+	for n.depth() < depth {
+		next := m.spineNext(n)
+		if next == nil {
+			break
+		}
+		n = next
+	}
+	return n
+}
+
+// trackSpan は track (大きい順) のうち、桁 from 以下・rx 以上の番号の範囲 [start, end]。無ければ ok=false。
+// rx ちょうどのセルが無いとき (root の行の線が画面の行の外で格子に無いフレーム) は、rx より右の最後のセルまで。
+func trackSpan(track []int, from, rx int) (start, end int, ok bool) {
+	start = trackIndex(track, from)
+	end = trackIndex(track, rx)
+	if end == len(track) || track[end] < rx {
+		end--
+	}
+	return start, end, start < len(track) && start <= end
+}
 
 // trackIndex は track (大きい順) で x 以下になる最初の番号。
 func trackIndex(track []int, x int) int {

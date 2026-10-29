@@ -16,20 +16,25 @@ func (m *Model) spine() map[*node]bool {
 	for n := m.cur; n != nil; n = n.parent {
 		s[n] = true
 	}
-	n := m.cur
-	for n.dir && n.expanded {
-		ks := m.kids(n)
-		if len(ks) == 0 {
-			break
-		}
-		next := n.last
-		if !m.isKidOf(n, next) {
-			next = ks[0]
-		}
-		s[next] = true
-		n = next
+	for n := m.spineNext(m.cur); n != nil; n = m.spineNext(n) {
+		s[n] = true
 	}
 	return s
+}
+
+// spineNext は spine のカーソルより先の続きで、n の次 (開いたフォルダの最後にいた子 / 先頭の子)。無ければ nil。
+func (m *Model) spineNext(n *node) *node {
+	if !n.dir || !n.expanded {
+		return nil
+	}
+	ks := m.kids(n)
+	if len(ks) == 0 {
+		return nil
+	}
+	if m.isKidOf(n, n.last) {
+		return n.last
+	}
+	return ks[0]
 }
 
 // colEntry は次の列に子のブロックを置く親と、その目標の行。
