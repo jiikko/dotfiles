@@ -13,7 +13,7 @@ func lastRow(m *Model) string {
 	return v[len(v)-1]
 }
 
-// 板を描けない大きさ (幅 22 未満・高さ 7 未満) でも、確認の板はキーを取る。最下行に答えのキーを出さないと、見えないまま Enter でゴミ箱へ移る (issue 991)。
+// 板を描けない大きさ (幅 22 未満・高さ 7 未満) でも、確認の板はキーを取る。最下行に答えのキーを出さないと、見えないまま Enter でゴミ箱へ移る。
 func TestAskBoardTooSmallShowsAnswerKeysOnBottomRow(t *testing.T) {
 	m, _ := newOps(t)
 	cdTo(t, m, "c.txt")
