@@ -545,7 +545,7 @@ func TestSweepNarrowScopeIgnoresExcessOnCoarseLevels(t *testing.T) {
 	}
 }
 
-// パスの除外は levels を省くと L1m に効かないので、節 1 で除外した組の部分集合 (メンバー名だけ違う組) が節 2 に残る。
+// levels を絞ったパスの除外は L1m に効かないので、節 1 で除外した組の部分集合 (メンバー名だけ違う組) が節 2 に残る。
 // それは除外が消した組ではないので、静かにした組の数から引かない (引くと数が少なく出て、負にもなる)。
 func TestSweepSilencedCountIgnoresSubgroupsUncoveredByExclusion(t *testing.T) {
 	sink := func(name, w string) string {
@@ -558,12 +558,27 @@ func TestSweepSilencedCountIgnoresSubgroupsUncoveredByExclusion(t *testing.T) {
 	if s := sweepSection(t, out, 1); !strings.Contains(s, "[L3]") {
 		t.Fatalf("前提: 除外が無ければ節 1 に L3 の組が出る: %q", out)
 	}
-	files[".dupscan.json"] = `{"version":1,"exclude":[{"paths":["gen/**"],"kind":"false-positive","reason":"生成コード"}]}`
+	// levels を L3 に絞ったパスの除外は L1m の組を消さない (levels を省くと L1m も消す)
+	files[".dupscan.json"] = `{"version":1,"exclude":[{"paths":["gen/**"],"levels":["L3"],"kind":"false-positive","reason":"生成コード"}]}`
 	_, out, _ = sweep(t, "-levels", "L1,L2,L3", repoWith(t, files))
 	if s := sweepSection(t, out, 2); !strings.Contains(s, "[L1m]") {
 		t.Fatalf("前提: パスの除外は L1m に効かず、節 2 に部分集合の組が残る: %q", out)
 	}
 	if !strings.Contains(out, "印・除外で静かにした組 (節 1・2): 1\n") {
 		t.Errorf("除外が消した組だけを数えていない: %q", out)
+	}
+}
+
+// levels を省いたパスの除外は L1m の組も消す (省略は全部の段。glob の下のメンバー名だけ違う組を sweep の節 2 に出し続けない)。
+func TestSweepPathExclusionWithoutLevelsCoversL1m(t *testing.T) {
+	files := map[string]string{"gen/a.go": goTwoSinks}
+	_, out, _ := sweep(t, repoWith(t, files))
+	if s := sweepSection(t, out, 2); !strings.Contains(s, "[L1m]") {
+		t.Fatalf("前提: 除外が無ければ節 2 に L1m の組が出る: %q", out)
+	}
+	files[".dupscan.json"] = `{"version":1,"exclude":[{"paths":["gen/**"],"kind":"false-positive","reason":"生成コード"}]}`
+	_, out, _ = sweep(t, repoWith(t, files))
+	if s := sweepSection(t, out, 2); strings.Contains(s, "[L1m]") {
+		t.Errorf("levels を省いたパスの除外が L1m の組を消していない: %q", s)
 	}
 }

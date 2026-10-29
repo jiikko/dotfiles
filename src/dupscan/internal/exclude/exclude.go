@@ -143,7 +143,8 @@ func (r *Rule) check() error {
 			}
 		}
 		if len(r.Levels) == 0 {
-			for _, lv := range norm.Levels {
+			// L1m も含める。norm.Levels だけにすると、除外した glob の下の「メンバー名だけ違う組」が -levels L1m と sweep の節 2 に出続ける
+			for _, lv := range append(append([]norm.Level(nil), norm.Levels...), norm.LM) {
 				r.levels[lv] = true
 			}
 		}
@@ -221,6 +222,10 @@ func CommentRules(entries []*group.Entry) (rules []Rule, errs []error) {
 }
 
 // groupCommentRule は `dupscan:allow-group` の後ろ rest (人数・種別・理由) から組の除外を作る。
+//
+// 同じ本体の単位は entries (起点の中) でしか数えない。起点を絞ると、L1 で人数に足りない印が粗い段でちょうど人数の別の組に効きうる。
+// 「起点が repo 全体か」で L1 に限る形は採らない: make test と CI の gate は起点 src で打つので、起点の中に全員がいる
+// 正しい L2 の印まで効かなくなり rc=1 になる。直すなら「起点の中にその言語の単位が全部あるか」で判定するか、gate を repo 全体で打つ。
 func groupCommentRule(e *group.Entry, entries []*group.Entry, rest string) (Rule, error) {
 	u := e.Unit
 	comment := fmt.Sprintf("%s:%d", u.File, u.AllowLine)
@@ -261,6 +266,7 @@ func groupCommentRule(e *group.Entry, entries []*group.Entry, rest string) (Rule
 	}
 	return Rule{Group: []string{Pin(e)}, Level: norm.L1.String(), level: norm.L1, Kind: kind, Reason: reason, Comment: comment,
 		allowID: id, groupMiss: fmt.Sprintf("人数 %d・同じ本体の単位 %s", n, strings.Join(counts, "・")), groupOver: over}, nil
+
 }
 
 // WithComments は設定 c にコメントの許可 rules を足した設定を返す (c は書き換えない)。
