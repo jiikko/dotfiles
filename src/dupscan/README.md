@@ -73,6 +73,11 @@ Goは比較対象外の `Test` / `Benchmark` / `Fuzz` / `Example` とtestify形�
 後置クロージャのある呼び出しは括弧の中のラベルが先頭に一致すれば当てる。位置引数を取るサブコマンドはflagを名前・パスの前後で受け付ける (`callers make -format json` / `dupscan . -v`)。`-` で始まる名前・パスは flag と読むので、`--` の後ろに書く (`dupscan -- a -v` は `-v` という dir も見る)。単値flagの繰り返しは最後の値を採用し、`--` 以降は名前・パスとして扱う (`callers make -- -literal-dir`)。値の必要なflagの直後の引数は、その値として扱う。
 
 
+`callers -typed <名前|Type.名前|import path.名前> [dir ...]` は、Go だけを go/packages で型を解決して読み (明示したときだけ。構文の近似より遅い。dotfiles の `src` の 25 module で約 13 秒、module 1 つで 0.5〜1 秒)、
+呼ばれる関数を `package のパス.受け手の型.名前` の鍵で確定する (受け手の型が違う同名のメソッドを分け、名前だけの問い合わせは鍵ごとに分けて出す)。
+interface を通した呼び出しと、関数値・method value として渡した所は「呼び出し先を確定できない」に、型の検査が通らないパッケージと、この構成 (今の GOOS / GOARCH・build tag 無し) で
+読んでいない Go のファイルは別に名指しする (正常な 0 件にしない)。module は起点から上へ辿った go.mod と起点の下の go.mod (third_party・testdata の下は除く)。テストのファイルも読む。`-selector` とは一緒に使えない。
+
 `callers -selector strings.Join Join [dir ...]` は、Goのソースに書いた単純な識別子chainを条件へ足す。名前の分からないhelperを、使うAPIの字面から探す補助経路で、囲む関数と位置を従来のcallers形式で返す。末尾名の位置引数は引き続き必要で、名前照合と、指定した場合の引数数条件へANDする（例: `callers -selector strings.Join 'Join(_:_:)'`）。queryのdot前後の空白・改行とsource側の空白・改行・括弧は正規化する。
 
 selector指定時は同じscope内のGoだけを読み、Swiftは対象外。import先やreceiverの型を解決しないので、`tw.Join`へのalias変更やdot importは追わず、同じ字面のローカル変数によるshadowingは混ざる。`get().Join`、`items[i].Join`、`pkg.F[T]`のような動的/indexed calleeはこのfilterの対象外（通常のcallersへ戻して調べる）。コメントや文字列の字面からcallを捏造しない。0件でも検索範囲と限界を表示し、Go sourceのないscopeはrc=2でSwift対象外を説明する。

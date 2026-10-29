@@ -32,6 +32,7 @@
 - `src/dupscan/internal/repo` (`dupscan/internal/repo`) — Package repo は、調べる repo のファイルを git で列挙する。 (internal)
 - `src/dupscan/internal/report` (`dupscan/internal/report`) — Package report は重複の報告を、人が読む形・JSON・Xcode / SwiftLint と同じ形式で書く。 (internal)
 - `src/dupscan/internal/tree` (`dupscan/internal/tree`) — Package tree は、言語に依らない「比べる単位」と、その本体の木を表す。 (internal)
+- `src/dupscan/internal/typed` (`dupscan/internal/typed`) — Package typed は Go の呼び出し元を、go/packages の型の情報で確定する (明示の `callers -typed` のときだけ使う)。 (internal)
 - `src/glogx` (`glogx`) — 対話ブラウズ中はキー操作 (j/k/q/b 等) が主なので、起動時に IME を英数 (ABC) へ 切り替え、終了時に元へ戻す。 (main)
 - `src/glogx/cmd/issue-claim` (`glogx/cmd/issue-claim`) — issue-claim は issue に着手の claim を付ける: next/ に目印 (symlink) を置き、本文冒頭に担当者バナーを書く。 (main)
 - `src/glogx/gorules` (`glogx/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.local.yml の settings.gocritic.settings.ruleguard.rules から参照)。 (build tags: ruleguard)
