@@ -112,6 +112,8 @@ dupscan の修正の作法 (dotfiles の `CLAUDE.md`「`src/` の Go を書く�
 - テストを書き、**変異を当てて赤を確認する** (`~/.claude/rules/mutation-verify-new-tests.md`)。結果を変えない最適化の変異は緑のままでよい (そう書く)。
 - `make -C src/dupscan test lint` と、ルートの `make test` (`make test-lint` を含む) を rc で確かめてから push する。文書 (README・skill・usage) が実体とずれたら同じ commit で直す。
 - 実機で再現した入力に対して、直す前後の出力を並べて確かめる (テストが緑でも、実物で効いたかは別)。
+  **起点を変えて、module の dir からと repo root からの両方で打つ**。dupscan は起点の中の単位だけを数えるので、片方の起点でしか出ない誤報がある
+  (2026-10-29 に、sweep の allow-group の食い違いの表示を tuikit だけで確かめて push し、src/treefiler を起点にすると module をまたぐ正しい印 4 本を誤報した。issue 966 の F4)。
 - 直した内容と確かめた方法は commit message に書き、issue にも 1 行足す。
 
 ## 5. issue に書く
