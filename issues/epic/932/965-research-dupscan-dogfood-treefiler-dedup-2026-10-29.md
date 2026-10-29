@@ -50,6 +50,7 @@ dupscan-dogfood で「src/treefiler の重複定義を統合する」をこな�
   sweep の冒頭の「単位の直前に `dupscan:allow` を書くと静かになる (組ごとなら…allow-group)」を「自分の側に書けば消える」と読んだのが原因
 - その後: `allow-group <人数>` に書き換えて 4 組が消えた
 - 提案: 冒頭の 1 行を「組の全員に書くと静かになる。片方の側だけで決めるなら allow-group」にする (読み違いが 1 回の小さい所見)
+- 2026-10-29: 別のセッションが issue 966 の commit「feat(dupscan): sweep の冒頭に印で消した組の数と、人数の合わない allow-group を出す」で冒頭の行を直した (組の全員に書くか、1 人だけなら allow-group)。F2 (同じ単位の 2 行目の印) は触っていない
 
 ### F4 (雑音): Go の `callers New` が `errors.New` / `rand.New` を拾う
 
