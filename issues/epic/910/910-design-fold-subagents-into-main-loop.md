@@ -23,7 +23,7 @@ dotfiles の forge / audit / agents / codex-drive / rules に当てる。進め�
 2. [912](pending/912-design-audit-default-direct-execution.md) — audit の forge 経路を直接実行に寄せる
 3. [913](pending/913-design-forge-phase1-fold-investigation.md) — forge Phase 1 の専門家 fan-out を畳む
 4. [914](done/914-refactor-agents-inventory-to-skills.md) — agents/ の棚卸しと skill への移行
-5. [915](915-refactor-codex-drive-progressive-disclosure.md) — codex-drive の SKILL.md をフェーズのファイルに分ける (911 と独立。先に着手してよい)
+5. [915](done/915-refactor-codex-drive-progressive-disclosure.md) — codex-drive の SKILL.md をフェーズのファイルに分ける (911 と独立。先に着手してよい)
 6. [916](916-docs-rules-prompt-audit.md) — rules / CLAUDE.md の棚卸し (独立)
 
 ## 状態

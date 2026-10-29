@@ -1,10 +1,8 @@
 # 915 (refactor): codex-drive の SKILL.md (1311 行) をフェーズごとのファイルに分ける
 
-> 🚨 **担当中: air5 (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-25
 
-epic [910](910-design-fold-subagents-into-main-loop.md)。911 の eval とは独立に着手してよい (fan-out の構成は変えず、読み込み方だけを変える)。
+epic [910](../910-design-fold-subagents-into-main-loop.md)。911 の eval とは独立に着手してよい (fan-out の構成は変えず、読み込み方だけを変える)。
 
 ## 概要
 
