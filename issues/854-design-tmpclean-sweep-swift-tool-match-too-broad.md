@@ -53,7 +53,14 @@ framework を読むもの) から集める。テスト (`TestSwiftToolCommand`) 
 ## 進捗
 
 - [x] 起票と実測 (2026-10-21)
-- [ ] make を止めた後の sweep で残りが消えたかを `sweep.log` / `last.json` で確かめる
+- [x] make を止めた後の sweep で残りが消えたかを `sweep.log` / `last.json` で確かめる
+  - 2026-10-29 の観測: `$TMPDIR` の `TemporaryDirectory.*` は 0 件 (`ib8TCh`・`hYWpyC` とも無い)。`sweep.log` は
+    `10-23 14:50 removed=0` → `10-24 19:19 removed=1` (`ib8TCh` が 3 日を越えた 10-23 21:33 の後の最初の回) →
+    `10-25 19:41 removed=1` (`hYWpyC` が 3 日を越えた 10-25 19:23 の直後の回) → `10-26 20:04 removed=10`。ゴミ箱に `TemporaryDirectory` は無い
+  - 確かめきれなかったこと: `last.json` は毎回上書きされ (残っているのは 10-28 の空の回)、10-24・10-25 に消えた 1 件が
+    どの dir かを名前で突き合わせられない。その時刻に長く動く make / git が居たかも分からないので、「make が居ても範囲を決めない」の本番での観測は取れていない
+    (修正そのものは `TestSweepIgnoresLongRunningMake` と変異 ① が守る)。再開の trigger: obaket の dev ループが動いている日の sweep で
+    `last.json` の `limit` が make を指していたら open に戻す
   - 2026-10-22 19:50 の観測 (dotfiles-0e。読むだけ): 最後の sweep は 11:06 (`removed=0`、`kept: 新しい 1`) で、修正 (2ce152af、17:42) より前の版。
     修正の後の sweep はまだ走っていない (hook は 1 日 1 回。`stamp` は 11:06)。$TMPDIR の `TemporaryDirectory.*` は 2 件:
     `ib8TCh` (10-20 21:33) と `hYWpyC` (10-22 19:23)。どちらも `-days 3` に届かないので、今 sweep しても「新しい」で残り、確かめにならない
