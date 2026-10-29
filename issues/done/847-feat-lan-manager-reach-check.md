@@ -96,4 +96,4 @@ CLI の通らない Refusal の分岐を消す / 詳細カードの時刻に日�
 ### 切り出し (起票済み)
 
 - 「有線の名前 ✓ 引ける」/ `wired_ok` / 一覧の `!` が、名前を引けるだけで届かない状態を「済み」と読む (起点の実例) →
-  [964](../964-bug-lan-manager-wired-ok-ignores-reachability.md)。方針 (初期設定の観測と突き合わせるか、疎通の結果を判定に足すか) は 964 で決める
+  [964](964-bug-lan-manager-wired-ok-ignores-reachability.md)。方針 (初期設定の観測と突き合わせるか、疎通の結果を判定に足すか) は 964 で決める
