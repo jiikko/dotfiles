@@ -9,7 +9,8 @@
 `/dupscan-dogfood sacの重複メソッドを統合して` で、my-products の `lib/swift-standard-app-components` (Swift、56 ファイル・385 単位) の重複を寄せたときの所見。
 摩擦は 3 件 (分かりにくい 2・雑音 1)。所見の記録だけの issue なので反証レビューは省いた (dupscan-dogfood の 5 節)。
 既存の issue との重複照合はしていない (気づいた既出だけ各項に書いた)。
-dupscan は別のセッションが同じ時間帯に直していた (`src/dupscan` に 1 時間以内の commit・epic の `next/` に claim が 2 本) ので、こちらでは直していない。
+起票の時点では、別のセッションが同じ時間帯に dupscan を直していた (`src/dupscan` に 1 時間以内の commit・epic の `next/` に claim が 2 本) ので直さなかった。
+その後、ユーザーの指示 (2026-10-29「今作成した dupscan への改善案 issue は今対応して」) で F1〜F3 を直した (下の「対応 (2026-10-30)」)。
 
 ## 開発タスクの結果
 
@@ -67,7 +68,30 @@ SAC の master に 3 commit (`test(toast): 2 つのテストの waitUntil を共
 
 - 見送り: gate `-v` の「消えた組・縮んだ組」に、形が移ったトグルの組 (節 35 → 22) が出なかった。skill dupscan の 3 節に「前からある写しに同じ修正を入れて形が移った組は違反にならず」とあり、文書どおり
 
+## 対応 (2026-10-30)
+
+- **F1**: `index` の「呼び出し ~N」で、他のファイルから呼べない単位は呼べる範囲の呼び出しだけを数える (Swift の private / fileprivate は同じファイル、Go の小文字は同じ dir)。`internal/report/index.go` の `callableFrom`
+  - SAC の寄せる前の版 (`636dd3f`) で、前 `~20` / `~20` → 後 `~12` / `~8` (base の版を `grep -c 'waitUntil("'` で数えた数と一致)
+  - Go の `_test` package も同じ package と数える (変更前からの過大計数。区別しない)
+- **F2**: Swift の `callers` で、比べる単位にしないテスト関数 (XCTest の `func test…()`・swift-testing の `@Test`) と、その中の局所の関数を、呼び出し元として名指しする。`internal/lang/swift/swift.go` の `calls` / `callOwner` (署名の組み立ては `declSignature` で `declUnit` と共有)
+  - SAC の今の版で、前は 21 行中 20 件が「(単位の外)」→ 後はテストメソッドの名前 (例: `ToastContainerFrameTests.testReportsTheBubble…`)。テストメソッドの中の局所の関数 `height(for:)` からの呼び出しは、その関数を名指しする
+  - テスト関数の中の局所の型の property / didSet は、持ち主を「不明」と明示する (署名の無い `CallOwner{Test: true}`)。「(単位の外) [test]」と出る
+- **F3**: sweep の節 1・2 の組にも、report と同じ「1 つの呼び出しを 1 回するだけ」の印を付ける (`report.SingleCall` / `report.SingleCallMark` を公開して共有)
+  - SAC の今の版で、節 2 の印は前 0 → 後 2 組 (`Text("…", bundle: .module)` の 12 件の組と L1 の組)。`init` の代入だけの L1m の組には付かない
+
+確かめ方:
+
+- 変異 (`mutate-verify`。全部で想定のテストが赤): sweep の印を消す / 印を常に出す / Go の dir の判定を外す / テスト関数に持ち主を付けない / 局所の型で持ち主を外さない / 局所の型で持ち主を nil にする / クロージャの組だけ印を消す
+- `make -C src/dupscan test lint` rc=0。ルートの `make test` は rc=2 で、赤は dupscan の外 (`test_dangling_symlinks` の `~/.config/nvim/coc-settings.json`・`test_dotfiles_check_result_ownership` の一時 dir の `rm: Directory not empty`) と、
+  別のセッションが origin で既に消した `query_ux.go:relevantParseErrors` の unused (`2f146e3e8`。rebase で取り込む)
+- codex (gpt-6.1-sol) の敵対的レビューを 3 周。1 周目 P2 1 件 (テスト関数の中の局所の型の property がテスト関数に帰属) と P3 2 件、2 周目 P2 1 件 (持ち主を nil にすると同じ行の別の関数へ帰属し、test の印も落ちる) と P3 1 件 (sweep のテストにクロージャの組が無い)。どれも直した。3 周目は「壊せなかった」
+
+残り (不具合ではない、テストの射程の外):
+
+- json の `caller` の欄が省略されること自体と、`context` の callers 節は、テストで直接見ていない (`BuildCallers` の同じ経路を通る)
+- テスト関数の中の局所の型の `init` / `subscript` / 入れ子の型は、テストで直接見ていない (`callOwner` は関数と同じ分岐で作る)
+
 ## 進捗
 
 - [x] 起票 (この issue)
-- [ ] F1〜F3 の扱いを決める (直す / 却下)
+- [x] F1〜F3 を直す (上の「対応 (2026-10-30)」)
