@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,10 +47,22 @@ func gitCommit(t *testing.T, dir string) {
 // cond の中で Advance を呼んでよい (裏の結果の取り込みと待ちを 1 つの条件にする)。
 func waitFor(t testing.TB, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	waitForDiag(t, what, cond, nil)
+}
+
+// waitForDiag は waitFor と同じ待ちで、時間切れのときに待った時間と diag が返す状態を出す。
+// CI でしか起きない止まりは、落ちた 1 回のログしか手掛かりが無いので、止まった時点の状態をその場で残す。
+func waitForDiag(t testing.TB, what string, cond func() bool, diag func() string) {
+	t.Helper()
+	start := time.Now()
+	deadline := start.Add(10 * time.Second)
 	for !cond() {
 		if time.Now().After(deadline) {
-			t.Fatalf("%s が 10 秒で終わらない", what)
+			msg := fmt.Sprintf("%s が 10 秒で終わらない (待ち始めから %s)", what, time.Since(start).Round(time.Millisecond))
+			if diag != nil {
+				msg += "\n" + diag()
+			}
+			t.Fatal(msg)
 		}
 		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 裏の goroutine の完了を条件で待つループの刻み
 	}
