@@ -123,11 +123,11 @@ func rowActionOf(key string) *rowAction {
 	return nil
 }
 
-// actionOK は r で key の動作が効くか (案内・keycap を出すか)。行の無いタブ (current が空の行) では効かない: keyList が
-// 表より先に「このタブには Mac が無い」で断る (測定中の t のように行を見ずに通す述語があり、行が無くても案内した)。
+// actionOK は r で key の動作が効くか (案内・keycap を出すか)。keyList が表より先に断る 2 つも数える: この Mac のネットワークを
+// 読む前の needsNet のキーと、行の無いタブ (current が空の行。測定中の t のように行を見ずに通す述語があり、行が無くても案内した)。
 func (m *Model) actionOK(key string, r row) bool {
 	a := rowActionOf(key)
-	return a != nil && (r.self || r.host != "") && (a.refuse == nil || a.refuse(m, r) == "")
+	return a != nil && (m.selfOK || !a.needsNet) && (r.self || r.host != "") && (a.refuse == nil || a.refuse(m, r) == "")
 }
 
 // runAction は r に a を効かせる (断るなら理由を知らせる)。

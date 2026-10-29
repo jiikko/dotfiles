@@ -796,21 +796,13 @@ func (m *Model) detailLines(r row, width int, inPanel bool) []string {
 	lines := []string{title, gradRule(width-7, cTeal, cPurple, cPink, lipgloss.Color(surfDetail)), ""}
 	if !r.self {
 		if ip != "" && user != "" {
-			keys := keycap("Y", "コピー")
-			if m.actionOK("s", r) { // 最下行と s のキーと同じ述語 (ssh が閉じた相手に s を案内しない)
-				keys += "  " + keycap("s", "繋ぐ")
-			}
-			lines = append(lines, label("ssh")+sCode.Render("ssh "+m.login(r, ip))+via+"  "+keys)
+			lines = append(lines, label("ssh")+sCode.Render("ssh "+m.login(r, ip))+via+m.cardKeys(r, "Y", "コピー", "s", "繋ぐ"))
 		}
 		if r.smb && ip != "" {
-			lines = append(lines, label("smb")+link("smb://"+ip)+via+"   "+keycap("y", "コピー")+"  "+keycap("O", "open をコピー"))
+			lines = append(lines, label("smb")+link("smb://"+ip)+via+m.cardKeys(r, "y", "コピー", "O", "open をコピー"))
 		}
 		if r.vnc && ip != "" {
-			keys := keycap("o", "開く")
-			if m.actionOK("a", r) { // 最下行の案内と a のキーと同じ述語
-				keys += "  " + keycap("a", "SyakeScreen")
-			}
-			lines = append(lines, label("画面共有")+link("vnc://"+ip)+via+"   "+keys)
+			lines = append(lines, label("画面共有")+link("vnc://"+ip)+via+m.cardKeys(r, "o", "開く", "a", "SyakeScreen"))
 		}
 	}
 	lanState := pillOn.Render("有線・固定")
@@ -856,6 +848,20 @@ func (m *Model) detailLines(r row, width int, inPanel bool) []string {
 		lines = append(lines, keycap("m", "別名")+"   "+keycap("space", "台帳から外す")+"   "+keycap("enter", enterLabel))
 	}
 	return lines
+}
+
+// cardKeys は詳細のカードの行に添える動作のキー (キー, 語 の組を並べる)。最下行と同じ述語 (actionOK) で効くものだけ。
+func (m *Model) cardKeys(r row, kv ...string) string {
+	var ks []string
+	for i := 0; i+1 < len(kv); i += 2 {
+		if m.actionOK(kv[i], r) {
+			ks = append(ks, keycap(kv[i], kv[i+1]))
+		}
+	}
+	if len(ks) == 0 {
+		return ""
+	}
+	return "   " + strings.Join(ks, "  ")
 }
 
 // tagAfter は詳細カードで IP の後ろに置く線の括弧 (分からなければ何も足さない)。

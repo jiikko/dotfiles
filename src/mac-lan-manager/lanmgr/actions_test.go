@@ -50,7 +50,7 @@ func TestRowHintsMatchKeys(t *testing.T) {
 			h.m.hosts = slices.DeleteFunc(slices.Clone(h.m.hosts), func(x ledger.Host) bool { return x.Host == "m2macmini.local" }) // 台帳から外した
 		}
 		h.m.TakeNotices()
-		seen := 0
+		seen, cardHits := 0, 0
 		for tab := range numTabs {
 			h.m.tab = tab
 			for i := range len(h.m.visible()) {
@@ -72,6 +72,9 @@ func TestRowHintsMatchKeys(t *testing.T) {
 						t.Errorf("%s: %q の %s: 案内=%v 効いた=%v", state, cmpHost(r), a.key, hinted, effected)
 					}
 					// 詳細のカードも、効かないキーを案内しない (t / p はカードの「未測定」「未確認」の行に keycap を添える)
+					if k := cardKey[a.key]; k != nil && k.MatchString(card) {
+						cardHits++
+					}
 					if k := cardKey[a.key]; k != nil && !hinted && k.MatchString(card) {
 						t.Errorf("%s: %q のカードが効かない %s を案内した:\n%s", state, cmpHost(r), a.key, card)
 					}
@@ -88,6 +91,9 @@ func TestRowHintsMatchKeys(t *testing.T) {
 					seen++
 				}
 			}
+		}
+		if cardHits == 0 { // カードの照合の正規表現が描き方とずれて空振りしていない
+			t.Errorf("%s: カードの t / p の keycap が一度も見つからない", state)
 		}
 		if seen < 5*8 { // 5 行 × 案内のある 8 キー (行が組まれずに空振りしていない)
 			t.Fatalf("%s: 確かめた組が %d しかない", state, seen)
@@ -148,5 +154,24 @@ func TestReachCardKeyNeedsReach(t *testing.T) {
 	h.m.o.Reach = nil
 	if c := card(); cardKey["p"].MatchString(c) {
 		t.Errorf("確かめる口が無いのにカードが p を案内した:\n%s", c)
+	}
+}
+
+// この Mac のネットワークを読む前は、詳細のカードも網の要るキー (s Y o a y O t p) を案内しない (キーは「確認中」で断る。最下行も出さない)
+func TestCardHidesNetKeysBeforeNetRead(t *testing.T) {
+	h, _ := reachHarness(t)
+	h.m.o.SpeedTest = func(ctx context.Context, _ sshdest.Dest, _ func() time.Time) speedtest.Result {
+		<-ctx.Done()
+		return speedtest.Result{}
+	}
+	h.cursorTo(t, "m2macmini.local")
+	keys := regexp.MustCompile(`(^|\s)(s\s+繋ぐ|Y\s+コピー|o\s+開く|t\s+測る|p\s+確かめる)`)
+	card := func() string { return stripView(strings.Join(h.m.detailLines(h.m.current(), 120, false), "\n")) }
+	if got := keys.FindAllString(card(), -1); len(got) < 4 {
+		t.Fatalf("前提: 網を読めた後のカードに動作のキーが揃わない (下の否定の対照): %q\n%s", got, card())
+	}
+	h.m.selfOK = false
+	if got := keys.FindAllString(card(), -1); len(got) > 0 {
+		t.Errorf("網を読む前にカードが %q を案内した", got)
 	}
 }
