@@ -27,7 +27,7 @@ func writeFile(t *testing.T, root, rel, body string) {
 }
 `
 
-// repoWith は writeFile の本体 (t.Helper() を除く 3 文) をループの中に手で書いている (issue 956 の F1 の実例の形)。
+// repoWith は writeFile の本体 (t.Helper() を除く 3 文) をループの中に手で書いている。
 const inlineSite = `package a
 
 import (
