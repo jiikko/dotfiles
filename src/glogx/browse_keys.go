@@ -45,16 +45,27 @@ func (m *browseModel) onPaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 	// 貼り付け (bracketed paste。bubbletea v2 は既定で有効) は入力欄にだけ入れる。入力欄が無いときは捨てる:
 	// キー操作として解釈すると、貼った文字列が 1 字ずつ一覧のキーとして走る (docs/glogx-ui-guide.md §7)。
 	// 板が入力欄の上に出ている間 (action モーダル・再起動の確認) もキーは板が先に取るので、貼り付けも入れない
-	if m.activeFullScreen() == FullScreenIssues && m.issuesOv.TypingInput() && !m.actModal.active() && !m.restartPromptVisible() {
-		m.issuesOv.Paste(msg.Content)
+	if m.boardOwnsInput() {
+		return m, m.maybeTick()
 	}
-	if m.activeFullScreen() == FullScreenFiler && !m.actModal.active() && !m.restartPromptVisible() {
+	switch m.activeFullScreen() {
+	case FullScreenIssues:
+		if m.issuesOv.TypingInput() {
+			m.issuesOv.Paste(msg.Content)
+		}
+	case FullScreenFiler:
 		m.filerV.Paste(msg.Content) // 入力中 (検索・! のコマンド) だけ入る。filer が捨てる
-	}
-	if m.activeFullScreen() == FullScreenLan && !m.actModal.active() && !m.restartPromptVisible() {
+	case FullScreenLan:
 		m.lanV.Paste(msg.Content) // 入力中 (絞り込み・別名・帯) だけ入る。lanmgr が捨てる
+	case FullScreenNone, FullScreenDoctor, FullScreenRatelimit, FullScreenStatus, FullScreenCount:
 	}
 	return m, m.maybeTick()
+}
+
+// boardOwnsInput は、全画面の上に出る glogx の板 (action モーダル・再起動ダイアログ) が入力を持っているか。
+// handleKey はこの 2 つを全画面への振り分けより前に置いて同じ優先を作る (間にキーの書き換えが挟まるので、この関数へは寄せない)。
+func (m *browseModel) boardOwnsInput() bool {
+	return m.actModal.active() || m.restartPromptVisible()
 }
 
 func (m *browseModel) onKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
