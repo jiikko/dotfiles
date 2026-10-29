@@ -26,7 +26,7 @@
 | [973](done/973-bug-dupscan-exclusion-level-and-narrow-allow-group.md) | levels を省いたパスの除外を L1m にも効かせた・起点を絞ったとき allow-group を言語ごとに L1 へ限る (起点の外に同じ言語のファイルがあるときだけ。CI の起点 src では今までどおり効く) |
 | [986](986-design-dupscan-structural-improvements.md) | 2 つの狙い (grep の置き換え・量産の抑止) の到達度の評価と、構造の改善の順 (指標 → 書く前の候補を戻り型・引数型でも引く → gate の近似段を索引なしで試作)。常設の索引と型の解決は 899・924・925 の決定を維持し、再開の条件つきで記録 |
 | [987](done/987-feat-dupscan-inject-by-return-and-param-type.md) | 986 の改善 2: 書く前の候補の注入 (A1) で、名前の語と戻り型・引数型を組み合わせて既存の関数を引く |
-| [988](988-research-dupscan-gate-near-duplicate-prototype.md) | 986 の改善 3: gate に変わった単位だけの近似比較の段を、索引なしで試作して時間と誤検知の率を測る |
+| [988](pending/988-research-dupscan-gate-near-duplicate-prototype.md)（保留） | 986 の改善 3: gate の近似比較の段の試作。dotfiles の直近 30 commit (変わった単位 358) で近似の段だけが見つける写しは 0 件で測れず、obaket で測るまで保留 |
 | [989](989-design-dupscan-go-typed-resolution.md) | 986 の構造の変更: Go の型の解決を明示実行の go/packages で入れる (ユーザー決定 2026-10-30 で 899 の決定を Go について変えた) |
 | [970](done/970-refactor-dupscan-group-containment-one-check.md) | 「組が別の組に含まれるか」の判定が 3 か所 (組分け・sweep の節 2・節 6) にあったのを group.Subset に寄せた。done |
 | [972](done/972-research-dupscan-dogfood-glogx-tui-split-2026-10-29.md) | glogx の tui.go の分割 (971) で使った所見。雑音 3 件: Go の index -file に Swift の注意書き / -file でも無関係な testdata の「解析不完全」 / tmp/ の使い捨ての道具にも候補の注入 |
