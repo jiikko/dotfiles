@@ -3,10 +3,12 @@ package setup
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -226,7 +228,130 @@ func TestParseStatus(t *testing.T) {
 			t.Errorf("読めない形 %q を読めたことにした", bad)
 		}
 	}
-	if st, err := ParseStatus("stopped\n\n\n"); err != nil || st != (NameState{}) {
+	if st, err := ParseStatus("stopped\n\n\n\n"); err != nil || st != (NameState{}) {
 		t.Errorf("走っていない形 = %+v, %v", st, err)
 	}
+}
+
+// 前の形 (dns-sd を直接起こす LaunchAgent) で走っている Mac は、名前と IP が合っていても済みにしない (IP を失っても広告を止めない形
+// なので、初期設定の名前の手順で入れ直させる)。名前と IP は同じ位置で読めるので、止める側 (RemoveScript) は前の形も止められる。
+func TestNameAdvertOldFormNotDone(t *testing.T) {
+	env, home, dir := wiredSandbox(t)
+	a := NameAdvert{Name: "air5.wired.local", IP: "192.168.100.11"}
+	old := []string{"/usr/bin/dns-sd", "-P", "air5.wired", wiredService, "local", "9", a.Name, a.IP}
+	var b strings.Builder
+	b.WriteString(WiredNameLabel + " = {\n\tstate = running\n\n\targuments = {\n")
+	for _, x := range old {
+		b.WriteString("\t\t" + x + "\n")
+	}
+	b.WriteString("\t}\n}\n")
+	if err := os.WriteFile(filepath.Join(dir, "state"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runScript(t, env, StatusScript())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := ParseStatus(out)
+	if err != nil || !st.Running || st.Name != a.Name || st.IP != a.IP || st.Advertises(a) {
+		t.Errorf("前の形の job = %+v %v (名前と IP は読めて、済みにはしない)", st, err)
+	}
+	if out, err := runScript(t, env, a.InstallScript()); err != nil {
+		t.Fatalf("入れられない: %v %s", err, out)
+	}
+	if out, err := runScript(t, env, RemoveScript(a.Name)); err != nil {
+		t.Errorf("前の形で走っている同じ名前を止められない: %v %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(home, "Library", "LaunchAgents", WiredNameLabel+".plist")); !os.IsNotExist(err) {
+		t.Errorf("plist が残った: %v", err)
+	}
+}
+
+// 広告のループ: IP をこの Mac が持っている間だけ dns-sd を走らせ、無くなったら止め、戻ったら起こし直す。dns-sd が自分で落ちても起こし直す。
+// 止める合図 (TERM) では子の dns-sd も止めてから抜ける。ifconfig と dns-sd は偽物 (dns-sd は自分の pid を書いて sleep に置き換わる)。
+func TestAdvertLoopFollowsIP(t *testing.T) {
+	d, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ifc, pids := filepath.Join(d, "ifconfig.out"), filepath.Join(d, "pids")
+	setIfc := func(s string) {
+		t.Helper()
+		if err := os.WriteFile(ifc, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fakeIfc, fakeDNS := filepath.Join(d, "ifconfig"), filepath.Join(d, "dns-sd")
+	calls := filepath.Join(d, "calls")
+	if err := os.WriteFile(fakeIfc, []byte("#!/bin/sh\necho x >> '"+calls+"'\ncat '"+ifc+"'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fakeDNS, []byte("#!/bin/sh\necho \"$$ $*\" >> '"+pids+"'\nexec /bin/sleep 1000\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	started := func() []string { // 起こされた dns-sd の行 ("<pid> <引数>")
+		b, _ := os.ReadFile(pids)
+		return strings.Fields(strings.ReplaceAll(strings.TrimSpace(string(b)), " ", "_"))
+	}
+	pidOf := func(line string) int {
+		var pid int
+		if _, err := fmt.Sscan(strings.SplitN(line, "_", 2)[0], &pid); err != nil {
+			t.Fatal(err)
+		}
+		return pid
+	}
+	alive := func(pid int) bool { return syscall.Kill(pid, 0) == nil }
+	t.Cleanup(func() { // 落ちた途中で残った偽の dns-sd を止める (自分が起こした pid だけ)
+		for _, l := range started() {
+			_ = syscall.Kill(pidOf(l), syscall.SIGKILL)
+		}
+	})
+
+	setIfc("en7: flags=8863<UP>\n\tinet 192.168.100.111 netmask 0xffffff00\n") // 前方一致 (.11 と .111) を持っているとは読まない
+	cmd := exec.Command("/bin/sh", "-c", advertLoop(fakeIfc, fakeDNS, "0.05"), AdvertTag, "air5.wired", wiredService, "air5.wired.local", "192.168.100.11")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+
+	ifcCalls := func() int { b, _ := os.ReadFile(calls); return strings.Count(string(b), "x") }
+	// 起こしていないことの確認は待つ事象が無いので、ループが 20 周 (約 1 秒) 回るのを待ってから見る。偽の dns-sd は & で起こす sh で、
+	// pid を書くまで数周かかる (3 周では、前方一致で起こす変異を見逃した)。本物の実装を赤にする向きには外れない
+	waitFor(t, "ifconfig を 20 回見る", func() bool { return ifcCalls() >= 20 })
+	if n := len(started()); n != 0 {
+		t.Fatalf("192.168.100.111 しか無いのに dns-sd を %d 回起こした (前方一致で持っていると読んだ)", n)
+	}
+	setIfc("en7: flags=8863<UP>\n\tinet 192.168.100.11 netmask 0xffffff00\n")
+	waitFor(t, "IP を持ったら dns-sd を起こす", func() bool { return len(started()) == 1 })
+	first := pidOf(started()[0])
+	if want := "_-P_air5.wired_" + wiredService + "_local_9_air5.wired.local_192.168.100.11"; !strings.HasSuffix(started()[0], want) {
+		t.Errorf("dns-sd の引数 = %q, want …%q", started()[0], want)
+	}
+	setIfc("en7: flags=8863<UP>\n\tinet 169.254.48.172 netmask 0xffff0000\n")
+	waitFor(t, "IP を失ったら dns-sd を止める", func() bool { return !alive(first) })
+	setIfc("en8: flags=8863<UP>\n\tinet 192.168.100.11 netmask 0xffffff00\n")
+	waitFor(t, "IP が戻ったら起こし直す", func() bool { return len(started()) == 2 })
+	second := pidOf(started()[1])
+	if err := syscall.Kill(second, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "dns-sd が落ちたら起こし直す", func() bool { return len(started()) == 3 })
+	third := pidOf(started()[2])
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "TERM で抜ける", func() bool {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("TERM で 0 以外で抜けた: %v", err)
+			}
+			return true
+		default:
+			return false
+		}
+	})
+	waitFor(t, "TERM で子の dns-sd も止める", func() bool { return !alive(third) })
 }

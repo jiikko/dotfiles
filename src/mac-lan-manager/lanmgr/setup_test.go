@@ -185,13 +185,13 @@ func TestSetupWalksAllSteps(t *testing.T) {
 	setObs(t, h, dests, peerObs)
 	h.keys("r")
 	awaitSetup(h.m)
-	advert = setup.NameState{Running: true, Name: "kojim3macbook-pro.wired.local", IP: "192.168.100.10"} // 入れた後に読む値
+	advert = setup.NameState{Running: true, Name: "kojim3macbook-pro.wired.local", IP: "192.168.100.10", Tag: setup.AdvertTag} // 入れた後に読む値
 	argv = runStep(t, h, nil)
 	awaitNetLoad(h.m)
 	if len(argv) != 3 || argv[0] != "sh" || !strings.Contains(argv[2], "kojim3macbook-pro.wired.local") || !strings.Contains(argv[2], "192.168.100.10") {
 		t.Fatalf("この Mac の名前の広告 = %q", argv)
 	}
-	peerObs.Advert = setup.NameState{Running: true, Name: "m2macmini.wired.local", IP: c.static.IP}
+	peerObs.Advert = setup.NameState{Running: true, Name: "m2macmini.wired.local", IP: c.static.IP, Tag: setup.AdvertTag}
 	setObs(t, h, dests, peerObs) // 入れた後の観測が返す値
 	argv = runStep(t, h, nil)
 	if i := slices.Index(argv, "--"); i < 0 || argv[i+1] != "koji@192.168.50.7" || !strings.Contains(argv[len(argv)-1], "m2macmini.wired.local") ||
@@ -1337,7 +1337,7 @@ func TestPeerRefixAvoidsIPStillSeen(t *testing.T) {
 func TestSelfRefixReusesAdvertIP(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
-	h.m.selfAdvert, h.m.selfAdvertKnown = setup.NameState{Running: true, Name: "kojim3macbook-pro.wired.local", IP: "192.168.100.31"}, true
+	h.m.selfAdvert, h.m.selfAdvertKnown = setup.NameState{Running: true, Name: "kojim3macbook-pro.wired.local", IP: "192.168.100.31", Tag: setup.AdvertTag}, true
 	h.keys("x")
 	if h.m.ask == nil || h.m.ask.title != "この Mac の有線を固定 IP にする" || h.m.ask.exec == nil {
 		t.Fatalf("この Mac の固定 IP の板が出ない: %+v", h.m.ask)
@@ -1415,7 +1415,7 @@ func TestPeerRefixReusesIPOfUnpluggedAdapter(t *testing.T) {
 func TestPeerRefixFallsBackToAdvertIP(t *testing.T) {
 	obs := usbObs(false)
 	obs.Services = nil
-	obs.AdvertKnown, obs.Advert = true, setup.NameState{Running: true, Name: "m2macmini.wired.local", IP: "192.168.100.44"}
+	obs.AdvertKnown, obs.Advert = true, setup.NameState{Running: true, Name: "m2macmini.wired.local", IP: "192.168.100.44", Tag: setup.AdvertTag}
 	h := managedSetup(t, "10.9.9.9", map[int]string{14: "192.168.50.7", 27: "169.254.48.172"}, obs)
 	h.keys("x")
 	if h.m.ask == nil || h.m.ask.static == nil || h.m.ask.static.IP != "192.168.100.44" {
@@ -1428,7 +1428,7 @@ func TestPeerRefixFallsBackToAdvertIP(t *testing.T) {
 func TestSelfRefixLedgerRowAndTried(t *testing.T) {
 	obs := &setup.PeerNet{KeyOK: true, NetKnown: true, Service: "Ethernet", Method: "DHCP", IP: "169.254.217.100"}
 	h, _ := setupHarness(t, obs)
-	h.m.selfAdvert, h.m.selfAdvertKnown = setup.NameState{Running: true, Name: "kojim3macbook-pro.wired.local", IP: "192.168.100.31"}, true
+	h.m.selfAdvert, h.m.selfAdvertKnown = setup.NameState{Running: true, Name: "kojim3macbook-pro.wired.local", IP: "192.168.100.31", Tag: setup.AdvertTag}, true
 	h.m.hosts = append(h.m.hosts, ledger.Host{Host: h.m.host, LAN: "192.168.100.31"})
 	h.keys("x")
 	if h.m.ask == nil || h.m.ask.exec == nil || h.m.ask.exec.Argv[4] != "192.168.100.31" {

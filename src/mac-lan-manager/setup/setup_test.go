@@ -524,8 +524,8 @@ func TestPlan(t *testing.T) {
 	}
 	o = ready
 	o.Peer.Method, o.Peer.IP, o.Peer.Managed, o.Peer.LedgerLAN = "manual", "192.168.100.11", true, "192.168.100.11"
-	o.SelfHost, o.SelfAdvertKnown, o.SelfAdvert = "self.local", true, NameState{Running: true, Name: "self.wired.local", IP: "192.168.100.2"}
-	o.Peer.AdvertKnown, o.Peer.Advert = true, NameState{Running: true, Name: "mini.wired.local", IP: "192.168.100.11"}
+	o.SelfHost, o.SelfAdvertKnown, o.SelfAdvert = "self.local", true, NameState{Running: true, Name: "self.wired.local", IP: "192.168.100.2", Tag: AdvertTag}
+	o.Peer.AdvertKnown, o.Peer.Advert = true, NameState{Running: true, Name: "mini.wired.local", IP: "192.168.100.11", Tag: AdvertTag}
 	for _, st := range Plan(o) {
 		if !st.Done {
 			t.Errorf("全部済んでいるのに %s が残る", st.ID)
@@ -601,7 +601,7 @@ func TestPlanSkipsSelfWhenNoWire(t *testing.T) {
 	}
 	d := o
 	d.Peer.Method, d.Peer.IP, d.Peer.Managed, d.Peer.LedgerLAN = "manual", "192.168.100.11", true, "192.168.100.11"
-	d.Peer.AdvertKnown, d.Peer.Advert = true, NameState{Running: true, Name: "mini.wired.local", IP: "192.168.100.11"}
+	d.Peer.AdvertKnown, d.Peer.Advert = true, NameState{Running: true, Name: "mini.wired.local", IP: "192.168.100.11", Tag: AdvertTag}
 	for _, st := range Plan(d) {
 		if !st.Settled() {
 			t.Errorf("相手の手順が全部済んでいるのに %s が残る: %+v", st.ID, st)
