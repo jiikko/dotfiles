@@ -102,8 +102,11 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	w := &lineWriter{w: stdout}
 	w.printf("dupscan sweep: 単位 %d・ファイル %d・読めないファイル %d。節ごとに順位は別 (上から先に見る価値が高い順)\n", len(entries), got.files, len(got.errFiles))
 	w.printf("意図して分けている組・誤検知は、組の全員の単位の直前に `// dupscan:allow <false-positive|intentional> <理由>` を書くと静かになる (1 人だけに書いて組ごと静かにするなら、メンバーの 1 つに `// dupscan:allow-group <人数> <種別> <理由>`)\n")
-	// 印が無ければ出た組の数との差で数える (節 1 から消した組は、節 2 の走査にも同じ組として入る。節ごとの差を足すと 2 回数える)
-	sweepExclusionText(w, len(baseAll)+len(newGroups(deepAll, baseAll))-len(base)-len(deep), ex.Stale(), sc.Whole())
+	// 節ごとに、印が無ければ出た組の数との差で数える。節 2 は、印が無くても節 1 の組に覆われない組だけで比べる:
+	// 節 1 から消した組は節 2 の走査にも同じ組として入る (deep 全体の差だと 2 回数える)。また、節 1 で除外した組の部分集合が
+	// 節 2 に残ることがある (パスの除外は levels を省くと L1m に効かない)。それは除外が消した組ではないので引かない (引くと負になる)
+	silenced := len(baseAll) - len(base) + len(newGroups(deepAll, baseAll)) - len(newGroups(deep, baseAll))
+	sweepExclusionText(w, silenced, ex.Stale(), sc.Whole())
 	w.section("1. 同じ形の組 (既定の下限 %d 節・段 %s)", opt.MinNodes, *c.levels)
 	sweepGroups(w, base, *c.limit)
 	w.section("2. 下限を %d 節に下げ、メンバー名だけ違う写し (L1m) も見て新しく出た組 (小さい単位が多く、雑音も混ざる。allow 印で静かにできる)", sweepDeepMinNodes)
@@ -146,7 +149,7 @@ func sweepExclusionText(w *lineWriter, silenced int, stale []exclude.Rule, whole
 		}
 	}
 	if outside > 0 {
-		w.printf("人数の合わない allow-group %d 個は、起点の中の L1 の同じ本体の単位が人数以下なので出していない (起点の外のメンバーと区別できない。repo の root から打つか、gate -v で見る)\n", outside)
+		w.printf("人数の合わない allow-group %d 個は、起点の中の L1 の同じ本体の単位が人数より少ないので出していない (起点の外のメンバーと区別できない。repo の root から打つか、gate -v で見る)\n", outside)
 	}
 }
 

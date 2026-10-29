@@ -480,7 +480,7 @@ func pickFunc(name string) string {
 	return "func " + name + "(xs []int, limit int) int {\n\tbest := 0\n\tfor _, x := range xs {\n\t\tif x > best && x < limit {\n\t\t\tbest = x\n\t\t}\n\t}\n\treturn best\n}\n"
 }
 
-// 起点を repo の一部に絞ると、起点の外のメンバーは数えられない。L1 で人数以下の allow-group は、写しが減ったのか
+// 起点を repo の一部に絞ると、起点の外のメンバーは数えられない。L1 で人数より少ない allow-group は、写しが減ったのか
 // 起点の外にいるのかを区別できないので 🚨 では出さず数だけ言う。L1 で人数より多いものは起点によらず食い違いなので出す。
 func TestSweepNarrowScopeReportsOnlyExcessAllowGroups(t *testing.T) {
 	marked := "package a\n\n// dupscan:allow-group 2 intentional 注記\n" + pickFunc("pickA")
@@ -493,7 +493,7 @@ func TestSweepNarrowScopeReportsOnlyExcessAllowGroups(t *testing.T) {
 	if strings.Contains(out, "🚨 効いていない allow-group") {
 		t.Errorf("起点の外のメンバーを、写しが減ったと読んでいる: %q", out)
 	}
-	if !strings.Contains(out, "人数の合わない allow-group 1 個は、起点の中の L1 の同じ本体の単位が人数以下なので出していない") {
+	if !strings.Contains(out, "人数の合わない allow-group 1 個は、起点の中の L1 の同じ本体の単位が人数より少ないので出していない") {
 		t.Errorf("出さなかった印の数を言っていない: %q", out)
 	}
 	three := marked + "\n" + pickFunc("pickC") + "\n" + pickFunc("pickD")
@@ -542,5 +542,28 @@ func TestSweepNarrowScopeIgnoresExcessOnCoarseLevels(t *testing.T) {
 	}
 	if strings.Contains(out, "🚨 効いていない allow-group") {
 		t.Errorf("粗い段の一致の多さを、範囲によらない食い違いと読んでいる: %q", out)
+	}
+}
+
+// パスの除外は levels を省くと L1m に効かないので、節 1 で除外した組の部分集合 (メンバー名だけ違う組) が節 2 に残る。
+// それは除外が消した組ではないので、静かにした組の数から引かない (引くと数が少なく出て、負にもなる)。
+func TestSweepSilencedCountIgnoresSubgroupsUncoveredByExclusion(t *testing.T) {
+	sink := func(name, w string) string {
+		return "func " + name + "(xs []int, limit int) int {\n\tv := 0\n\tfor _, x := range xs {\n\t\tif x > v && x < limit {\n\t\t\tv = x\n\t\t}\n\t}\n\tfmt.Fprintln(" + w + ", v)\n\treturn v\n}\n"
+	}
+	src := "package gen\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nvar bufA struct{ W, R *os.File }\n\n" +
+		sink("a", "os.Stdout") + "\n" + sink("b", "os.Stderr") + "\n" + sink("c", "bufA.W") + "\n" + sink("d", "bufA.R")
+	files := map[string]string{"gen/x.go": src}
+	_, out, _ := sweep(t, "-levels", "L1,L2,L3", repoWith(t, files))
+	if s := sweepSection(t, out, 1); !strings.Contains(s, "[L3]") {
+		t.Fatalf("前提: 除外が無ければ節 1 に L3 の組が出る: %q", out)
+	}
+	files[".dupscan.json"] = `{"version":1,"exclude":[{"paths":["gen/**"],"kind":"false-positive","reason":"生成コード"}]}`
+	_, out, _ = sweep(t, "-levels", "L1,L2,L3", repoWith(t, files))
+	if s := sweepSection(t, out, 2); !strings.Contains(s, "[L1m]") {
+		t.Fatalf("前提: パスの除外は L1m に効かず、節 2 に部分集合の組が残る: %q", out)
+	}
+	if !strings.Contains(out, "印・除外で静かにした組 (節 1・2): 1\n") {
+		t.Errorf("除外が消した組だけを数えていない: %q", out)
 	}
 }
