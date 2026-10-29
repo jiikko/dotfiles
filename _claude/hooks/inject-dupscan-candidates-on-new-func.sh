@@ -10,8 +10,13 @@
 #
 # 判定 (python):
 #   - file_path が .go / .swift。dupscan と git が在る。repo の root は書くファイルの属する git repo
-#   - 新しい関数 = 書く文字列 (Edit は new_string、Write は content) にある `func name(` のうち、
-#     Edit の old_string にも、書き換え前のファイルにも `func name(` が無いもの
+#   - 新しい関数 = 書いた後のファイル (Write は content、Edit は今のファイルの old_string を new_string に置き換えたもの) にある
+#     `func name(` のうち、Edit の old_string にも、書き換え前のファイルにも `func name(` が無いもの。書いた後のファイルを作れない
+#     (ファイルが無い・old_string が見つからない) ときは new_string だけを見る
+#   - 文字列リテラルとコメントの中は見ない (Go の raw string・"…"・rune、Swift の """…"""・"…"、// と /* */)。test が Go のソースを
+#     fixture として文字列に持つと、その中の func を新しい関数と読んでいた。Edit の new_string は文字列の途中から始まりうるので、
+#     書いた後のファイル全体を頭から読んで決める
+#   - git が ignore するパス (tmp/ の使い捨ての道具など) では引かない
 #   - 除く名前: 5 文字未満・Test/Benchmark/Fuzz/Example 始まり・init/main/String/Error/Close/body ほか決まり文句、Go のメソッド (func (r T) name)
 #   - 候補 = index の行のうち、名前が大小無視で等しいもの、または一方が他方の前方で共通部分が 6 文字以上で、短い方の名前が 2 語以上のもの
 #     (短い方が 1 語 (`resume`) だと、`resumeReady` に対して語が同じだけの無関係な `resume()` が並ぶ。失うもの: 1 語の既存の関数
@@ -50,6 +55,55 @@ NOT_TYPE = {"func", "var", "let", "subscript", "init"}
 # git grep -E -w に渡す宣言の形 (TYPE_SWIFT / TYPE_GO と同じ形。名前は後ろに足す)
 GREP_SWIFT = r"^[[:space:]]*(@[A-Za-z_]+[[:space:]]+|(public|package|internal|private|fileprivate|open|final|indirect)[[:space:]]+)*(class|struct|actor|enum|protocol)[[:space:]]+"
 GREP_GO = r"^type[[:space:]]+"
+# シェルの単引用符の中なので、単引用符と三重引用符は文字で書かない
+SQ, DQ, TRIPLE = chr(39), chr(34), chr(34) * 3
+
+def code_only(src, swift):
+    """文字列リテラルとコメントの中身を空白にした src (改行は残すので、行頭の宣言の判定は変わらない)。閉じない文字列・コメントは末尾まで消す。"""
+    blank = lambda t: re.sub(r"[^\n]", " ", t)
+    out, i, n = [], 0, len(src)
+    while i < n:
+        if src.startswith("//", i):
+            j = src.find("\n", i)
+            j = n if j < 0 else j
+        elif src.startswith("/*", i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if src.startswith("*/", j):
+                    depth, j = depth - 1, j + 2
+                elif swift and src.startswith("/*", j):
+                    depth, j = depth + 1, j + 2
+                else:
+                    j += 1
+        elif swift and (src.startswith(TRIPLE, i) or (src[i] == "#" and src[i:].lstrip("#").startswith(DQ))):
+            # Swift の raw string (#"…"# / #"""…"""#) は同じ数の # で閉じ、中にエスケープが無い。ふつうの三重引用符は \""" を閉じと読まない
+            k = len(src[i:]) - len(src[i:].lstrip("#"))
+            triple = src.startswith(TRIPLE, i + k)
+            close = (TRIPLE if triple else DQ) + "#" * k
+            j = i + k + (3 if triple else 1)
+            if k:
+                j = src.find(close, j)
+                j = n if j < 0 else j + len(close)
+            else:
+                while j < n and not src.startswith(TRIPLE, j):
+                    j += 2 if src[j] == "\\" else 1
+                j = min(j + 3, n)
+        elif not swift and src[i] == "`":
+            j = src.find("`", i + 1)
+            j = n if j < 0 else j + 1
+        elif src[i] == DQ or (not swift and src[i] == SQ):
+            q, j = src[i], i + 1
+            while j < n and src[j] not in (q, "\n"):
+                j += 2 if src[j] == "\\" else 1
+            j = min(j + 1, n)
+        else:
+            out.append(src[i])
+            i += 1
+            continue
+        out.append(blank(src[i:j]))
+        i = j
+    return "".join(out)
+
 LINE = re.compile(r"^(\S+?):(\d+)(?:-\d+)?\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*([A-Za-z_][A-Za-z0-9_]*)\s*[(<\[]")
 
 def stems(name):
@@ -80,12 +134,22 @@ def main():
         if not new:
             return
         rx = FUNC_GO if ext == ".go" else FUNC_SWIFT
-        before = ti.get("old_string") or ""
+        swift = ext == ".swift"
+        old = ti.get("old_string") or ""
+        current = None
         try:
             with open(path, encoding="utf-8", errors="replace") as f:
-                before += "\n" + f.read()
+                current = f.read()
         except OSError:
             pass
+        if "new_string" not in ti:
+            after = new
+        elif current is not None and old in current:
+            after = current.replace(old, new, -1 if ti.get("replace_all") else 1)
+        else:
+            after = None
+        new = code_only(after, swift) if after is not None else code_only(new, swift)
+        before = code_only(old, swift) + "\n" + (code_only(current, swift) if current is not None else "")
         known = {m.group(1) for m in rx.finditer(before)}
         trx = TYPE_GO if ext == ".go" else TYPE_SWIFT
         known_types = {m.group(1) for m in trx.finditer(before)}
@@ -107,6 +171,8 @@ def main():
             dirpath = os.path.dirname(dirpath)
         root = subprocess.run(["git", "-C", dirpath, "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=3).stdout.strip()
         if not root:
+            return
+        if subprocess.run(["git", "-C", root, "check-ignore", "-q", "--", path], capture_output=True, timeout=3).returncode == 0:
             return
         scope = os.path.join(root, "src") if ext == ".go" and os.path.isdir(os.path.join(root, "src")) else root
         session = re.sub(r"[^A-Za-z0-9_-]", "_", str(d.get("session_id") or "unknown"))

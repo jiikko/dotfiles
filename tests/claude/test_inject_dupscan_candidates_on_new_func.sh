@@ -48,7 +48,9 @@ REPO=$(mktemp -d "$TMP_ROOT/repo.XXXXXX")
   printf 'final class ArrivalGate {\n    class func make() -> ArrivalGate { ArrivalGate() }\n}\n' > src/foo/Gate.swift &&
   printf 'package foo\n\ntype existingThing struct{}\n' > src/foo/thing.go &&
   printf 'package struct PackagedThing {}\n' > src/foo/Pkg.swift && git add -A &&
-  printf 'struct LooseType {}\n' > src/foo/Loose.swift ) >/dev/null 2>&1
+  printf 'struct LooseType {}\n' > src/foo/Loose.swift &&
+  printf 'package foo\n\nconst fixture = `package a\n\nfunc placeholder() {}\n`\n' > src/foo/fx_test.go &&
+  printf 'tmp/\n' > .gitignore ) >/dev/null 2>&1
 session=0
 next_session() { session=$((session + 1)); }
 
@@ -132,6 +134,18 @@ next_session; run Edit "$F" $'func readCookies() {}\n' >/dev/null
 expect_silent "同じ session × 名前の 2 回目は出さない" "$(run Edit "$F" $'func readCookies() {}\n')"
 next_session; expect_silent "DUPSCAN_INJECT=off では、注入の出る名前でも出さない (A-B の対照腕)" "$(DUPSCAN_INJECT=off run Edit "$F" $'func readCookies(x int) int { return x }\n')"
 next_session; expect_has "DUPSCAN_INJECT が off 以外 (空・on) なら通常どおり注入する" "$(DUPSCAN_INJECT=on run Edit "$F" $'func readCookies(x int) int { return x }\n')" "Workspace.ReadCookies"
+# 文字列リテラルとコメントの中の func は新しい関数ではない (test が Go のソースを fixture として文字列に持つ)
+next_session; expect_silent "Go: raw string の fixture の中の func は引かない" "$(run Write "$REPO/src/foo/fx2_test.go" $'package foo\n\nconst src = `package a\n\nfunc readCookies() {}\n`\n')"
+next_session; expect_silent "Go: 既存の raw string の中を書き換える Edit は、new_string が文字列の途中からでも引かない" "$(run Edit "$REPO/src/foo/fx_test.go" $'func readCookies() {}' $'func placeholder() {}')"
+next_session; expect_has "Go: fixture の後ろにある本物の関数は引く" "$(run Write "$REPO/src/foo/fx3_test.go" $'package foo\n\nconst src = `func other() {}`\n\nfunc readCookies() {}\n')" "Workspace.ReadCookies"
+next_session; expect_has "Go: backquote の rune は raw string の始まりと読まない (後ろの関数を引く)" "$(run Write "$REPO/src/foo/rune.go" $'package foo\n\nvar bq = \'`\'\n\nfunc readCookies() {}\n')" "Workspace.ReadCookies"
+next_session; expect_silent "Go: /* */ のコメントの中の func は引かない" "$(run Write "$REPO/src/foo/c.go" $'package foo\n\n/*\nfunc readCookies() {}\n*/\n')"
+next_session; expect_silent "Swift: 三重引用符の文字列の中の func は引かない" "$(run Write "$REPO/src/foo/Fx.swift" $'let src = """\nfunc readCookies() {}\n"""\n')"
+next_session; expect_has "Swift: 三重引用符の中の \\\"\"\" を閉じと読まない (後ろの関数を引く)" "$(run Write "$REPO/src/foo/Esc.swift" $'let s = """\n x \\""" y\n"""\nfunc readCookies() {}\n')" "ReadCookies"
+next_session; expect_has "Swift: #\"\"\"…\"\"\"# の raw string の中の \"\"\" を閉じと読まない (後ろの関数を引く)" "$(run Write "$REPO/src/foo/Raw.swift" $'let s = #"""\n x """ y\n"""#\nfunc readCookies() {}\n')" "ReadCookies"
+next_session; expect_silent "Swift: #\"…\"# の raw string の中の func は引かない" "$(run Write "$REPO/src/foo/Raw2.swift" $'let s = #"""\nfunc readCookies() {}\n"""#\n')"
+next_session; expect_silent "git が ignore するパス (tmp/) では引かない" "$(run Write "$REPO/tmp/tool.go" $'package main\n\nfunc readCookies() {}\n')"
+
 n=$(grep -c . "$TMP_ROOT/cache/claude-dupscan-inject.log" || true)
 if [ "$n" -ge 5 ] && grep -q $'\treadCookies\t1$' "$TMP_ROOT/cache/claude-dupscan-inject.log"; then
   echo "✓ 注入の計測ログに「session 名前 候補数」が残る"; ok=$((ok+1))
