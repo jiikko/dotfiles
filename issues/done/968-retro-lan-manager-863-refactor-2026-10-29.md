@@ -1,14 +1,12 @@
 # 968 (retro): lan-manager の 863 (P1〜P3) の refactor と epic 932 の done の点検の振り返り
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-29
 
 ## 概要
 
 2026-10-29 の 1 セッションで、次の 2 つを行った。
 - epic 932 の done 28 件を、依頼と実装で突き合わせた (不備 0。チェックの付け方を 895・942 で直した)。
-- [863](done/863-refactor-lan-manager-audit-2026-10-22-design.md) の P1〜P3 を実装した。commit は「refactor(mac-lan-manager): 行の動作のキーと案内を 1 つの表の同じ断りの述語から決める」ほか 4 本。
+- [863](863-refactor-lan-manager-audit-2026-10-22-design.md) の P1〜P3 を実装した。commit は「refactor(mac-lan-manager): 行の動作のキーと案内を 1 つの表の同じ断りの述語から決める」ほか 4 本。
 
 踏んだ所と回りくどかった所を書く。
 
