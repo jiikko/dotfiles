@@ -60,10 +60,13 @@ commit「fix(dupscan): L1 で、局所の名前と同じ綴りの外側の名前
 - 前後の比較 (組の集合。変更前の版と同じ入力で):
   | repo | 組 (前 → 後) | L1 の hash の変わる単位 |
   |---|---|---|
-  | dotfiles `src` (Go) | 55 → 55 | 55 / 8967 |
-  | pj_energy_matching (Go) | 41 → 41 | 14 / 2388 |
+  | dotfiles `src` (Go) | 55 → 55 | 6 / 8976 (訂正。下の注) |
+  | pj_energy_matching (Go) | 41 → 41 | 12 / 2376 (訂正。下の注) |
   | flickorder-client (Swift) | 183 → 183 | 797 / 7777 |
   | DualNoteApp (Swift) | 104 → 104 | 167 / 2225 |
+  - 訂正 (2026-10-30、990 の測定で気づいた): Go の数は、最初に「dotfiles 55 / 8967・pj 14 / 2388」と書いた。単位の鍵 (複数行の署名) の
+    改行とタブで、行区切りの TSV の突き合わせが鍵と hash を取り違えていた。鍵を引用して数え直すと、974 の前後の commit で dotfiles 6 / 8976・
+    pj 12 / 2376。Swift の数 (797・167) は鍵に改行が無く、正しい。commit のメッセージの数は前のまま
   - Swift の hash の変化は、shorthand に参照の node を足した分が大半 (flickorder の shorthand は約 486 か所。closure と囲む関数の両方が変わる)
   - 実装の途中で、shorthand をいつも外側と読む版は flickorder の正しい組を 2 つ落とした (引数を読む `if let since`)。引数なら番号にする形に直した
   - 測った repo には `.dupscan.json` が無く、釘の外れは数えていない。README の除外の節に、正規化を変えたときの釘の付け直し方を書いた
