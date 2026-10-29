@@ -110,10 +110,21 @@ P1〜P4 は「層 / 動作 / 裏の仕事を 1 つ足すたびに N か所」の
 
 ## 進捗
 
-- [ ] P1 行の動作の表
-- [ ] P2 画面の層
-- [ ] P3 裏の仕事
-- [ ] P4 固定の試み
+- [x] P1 行の動作の表 (2026-10-29。commit「refactor(mac-lan-manager): 行の動作のキーと案内を 1 つの表の同じ断りの述語から決める」と、敵対的レビューの対応 2 つ「fix(mac-lan-manager): 行の無いタブと詳細のカードでも…」「fix(mac-lan-manager): 詳細のカードの動作のキーを全部…」)
+  - `lanmgr/actions.go` の `rowActions` に、キーごとの副作用の無い断り (refuse) と実行 (run) を置き、keyList・rowHints・詳細のカードの keycap (`cardKeys`)・needsNet / rowKeys / detailKeys / Binds のキーの列をそこから引く。`actionOK` は keyList が表より先に断る 2 つ (網を読む前の needsNet のキー・行の無いタブ) も数える
+  - 挙動を変えた (ユーザー了承 2026-10-29「改善するなら挙動を変えてもいい」。案内をキーに揃える向き): p は繋ぐ IP が無い管理対象の行・確かめている途中で台帳から外した行でも案内する / t は測定中どの行でも「測定の進捗」を案内し、測る経路が無い行では案内しない / Y・y・O の断りを awayReason に揃える / 詳細のカードは網を読む前・効かない行でキーを出さない
+  - 検証: `TestRowHintsMatchKeys` (5 行 × 案内のある 8 キー × 3 状態で 案内 = 効いた、カードの t / p も)・`TestReachHintWithoutConnectIP`・`TestNoActionHintsOnEmptyTab`・`TestReachCardKeyNeedsReach`・`TestCardHidesNetKeysBeforeNetRead`。変異 (mutate-verify) 8 本で red
+- [x] P2 画面の層 (2026-10-29。commit「refactor(mac-lan-manager): 一番上の層を top() 1 つで決め、…」)
+  - `lanmgr/layer.go` の `top()` で一番上の層を 1 つ決め、HandleInput・hints・overlayBox・OwnsKeys をその switch にした。足りない画面 (small) は層に数えない (層にすると OwnsKeys が false になり、絞り込みの入力中に縮めた端末で横断キーが glogx に渡る。設計の反証レビュー)
+  - 変えなかった: View (初期設定のタイルを詳細のパネルの上に重ねて描くので複数のフラグを読む)・CaretPos・Paste・logKey (層の下の入力欄を見る)
+  - 検証: 挙動は変えない (既存テスト無変更で緑)。`TestSpeedProgressIsAboveDetailPanel` を足した (順序を入れ替える変異が緑で通ったため)。変異 2 本で red
+- [x] P3 裏の仕事 (2026-10-29。P2 と同じ commit)
+  - `lanmgr/bgjobs.go` の `bgJobs` ({busy, label}、並びが見出しの優先順) から Busy と見出しの待ちの文を引く
+  - 表にしなかった: Advance の取り込み順と Close の止め方 (取り込みの順を変えると、同じ tick でどの結果を見て次を決めるかが変わる。設計の反証レビュー)
+  - 検証: `TestHeaderPrefersConfirmOverWiredLookup` を足した。変異 2 本で red
+- P4 固定の試み: **見送り** (2026-10-29、設計の反証レビュー)。テストが 5 つの map を直接読み書きしており (setup_test.go 12 箇所)、型を変えるとテストの書き換えになって等価の証拠が消える。今回は遷移も足さないので、得るものは map を 1 つに寄せることだけ。setupExecDone の宛先の更新を destFor に寄せると IP 以外 (User・Validate) も変わる。読み手の一覧に `setupAction` (StepPeerStatic の `m.claimed[su.host]`) も要る。**再開の trigger**: 固定の試みに遷移 (取り消し・台帳から外したときの片付け) を足すとき
+- レビュー: 設計の反証 1 回・実装の敵対的レビュー 3 回 (opus、読み取りのみ)。採用した指摘は上の各項と commit message (3 回目の指摘「網を読む前のカードの末尾の space / パネルの enter」の直しは、変異で red を確かめたが 4 回目のレビューは回していない)。P2・P3 は到達できる状態の範囲で挙動の差を作れなかった
+  - 受容した残り (3 回目のレビューの P3): カードと最下行で同じキーの語が違う (o「開く」/「画面共有」、y「コピー」/「smb」、O「open をコピー」/「Finder で繋ぐ」。前からある)・最下行の hints の needsNet の削除と actionOK が同じ判定を二重に持つ (今は同じ出典の表から引くので揃う。DeleteFunc は space / c / enter のためにだけ要る)
 - [x] P6 ssh の宛先 (dotfiles-c3。commit「refactor(mac-lan-manager): ssh の宛先 Dest を sshdest へ移し、s / Y / 詳細のカードの宛先を login 1 つから組む」)
   - `setup.Dest`・`Validate`・`SSHArgv`・`controlPath`・`ValidAlias` を中身を変えずに新 package `sshdest` へ移した。speedtest が import するのは ledger と sshdest だけになった
   - s・Y・詳細のカードの `user@<target>` を `lanmgr` の `Model.login` から組む。target は呼び出し側が 1 回だけ取って渡す (カードの ssh と smb の行で宛先を揃える)
@@ -137,6 +148,6 @@ P1〜P4 は「層 / 動作 / 裏の仕事を 1 つ足すたびに N か所」の
 - [x] P11 (commit「refactor(mac-lan-manager): RunQuiet を SSHRun に寄せ、失敗に stderr を付ける実装を 1 つにする」)
 - [x] P12 (commit「refactor(mac-lan-manager): 画面を出さないサブコマンドの自動の仕事を Options.Passive 1 つで止める」)
 - [x] U1〜U3 (P8 と同じ commit)。U3 で経路を選ぶ板の中の案内が最下行と同じ書式 (「j/k 経路   y 実行   n/esc キャンセル」) になった
-- 残り: P1〜P4 は trigger 待ち (次に動作・画面の層・裏の仕事・固定の遷移を足すとき)、P6 と P7 は済み (上)。
+- 残り: 無し (P4 だけ見送り。再開の trigger は上)。P1〜P3 は 2026-10-29 にユーザーの依頼で trigger を待たずに入れた。P6 と P7 は済み (上)。
   dotfiles-0e は 2026-10-22 に claim を外した (上の済んだ項目のほかに、今すぐ進めるものが無いため)
 - [x] 862 で解消 (2026-10-22。P3 の 9 件 (却下 1) を全部決着。done へ移した)
