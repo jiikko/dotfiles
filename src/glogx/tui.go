@@ -797,242 +797,27 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.invalidateLines() // 幅で折り返し行数が変わる
-		// resize 中の glide は破棄して即時にする (表示 offset が stale になるため)。一覧だけでなく
-		// pager 側も止める: 幅で行数が変わり、glide の着地点が resize 前の行数基準で古くなる。
-		m.glide.Stop()
-		m.diffOv.StopGlides()
-		m.issuesOv.StopGlides()
-		m.statusOv.StopGlides()
-		m.ensureCursorVisible()
-		m.filerV.Resize(m.contentWidth(), m.pageSize())
-		if m.filerV.Animating() {
-			return m, m.maybeTick()
-		}
-		return m, nil
+		return m.onWindowSize(msg)
 	case filerview.FilerChangedMsg:
-		// treefiler のライブ更新の合図。取り込んで、今のチャネルからの合図なら次の合図を待ち直す
-		if !msg.Open() {
-			return m, nil
-		}
-		m.filerV.Advance(app.TimeNow())
-		m.filerV.DrainNotices(m.deliverNotice)
-		return m, tea.Batch(m.filerV.Rearm(msg), m.maybeTick())
+		return m.onFilerChanged(msg)
 	case lanview.LanChangedMsg:
-		// mac-lan-manager の走査の合図。取り込んで、今のチャネルからの合図なら次の合図を待ち直す
-		if !msg.Open() {
-			return m, nil
-		}
-		m.lanV.Advance(app.TimeNow())
-		m.lanV.DrainNotices(m.deliverNotice)
-		return m, tea.Batch(m.lanV.Rearm(msg), m.maybeTick())
+		return m.onLanChanged(msg)
 	case tickMsg:
-		m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
-		// 閉じる演出が着地したらここで初めて終了する (演出の間はまだ描き続ける)
-		if m.zoom.settle(app.TimeNow()) {
-			m.done = true
-			return m, tea.Quit
-		}
-		// issues viewer の閉じる演出が着地したらここで畳む。🚨 下の spinnerActive の早期 return
-		// より前に置く: animating() は closing のあいだ true を返し続け、この settleClose が
-		// 下ろして初めて false になる。後ろに置くと最後の 1 拍が届かず閉じかけの姿で固まる。
-		m.issuesOv.SettleClose()
-		m.statusOv.SettleClose() // status viewer も同じ理由で spinnerActive の判定より前に畳む
-		// treefiler の動きも spinnerActive の判定より前に進める (後ろだと、動き終わる最後の 1 拍が届かず途中の姿で止まる)
-		m.filerV.Advance(app.TimeNow())
-		m.filerV.DrainNotices(m.deliverNotice)
-		m.lanV.Advance(app.TimeNow()) // 走査の途中の結果を取り込む (spinnerActive の判定より前: 走査が終わる最後の 1 拍を取りこぼさない)
-		m.lanV.DrainNotices(m.deliverNotice)
-		if !m.spinnerActive() {
-			return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
-		}
-		if m.pullAnimating {
-			m.advancePullAnim() // pull で増えた新規行を 1 行/フレームで上から降らせる
-		}
-		if m.glide.Active() {
-			m.glide.Advance(m.offset) // 一覧のスクロールを表示 offset で滑らせる
-		}
-		// pager 側 (diff / issues 一覧・本文) の glide も同じ tick で進める。共有型なので
-		// 手触り (カーブ・フレーム数) は自動的に一覧と揃う (internal/term/scroll_glide.go)。
-		m.diffOv.AdvanceGlide()
-		m.issuesOv.AdvanceGlide()
-		m.statusOv.AdvanceGlide()
-		var pushRefetchCmd tea.Cmd
-		if m.pushAnimating {
-			pushRefetchCmd = m.advancePushAnim() // push 境界の罫線を 1 コミット/フレームで上へ
-		}
-		for sha, start := range m.pushSlides {
-			if app.TimeNow().Sub(start) >= pushSlideDuration {
-				delete(m.pushSlides, sha) // 沈み込みが終わった区画は通常表示へ戻す
-			}
-		}
-		var toastHoldCmd tea.Cmd
-		if m.toast.Animating() {
-			// トーストの横スライド (右画面外との出入り) をカラム単位で 1 フレーム進める。
-			// 入場完了時は holding へ移り toast.Hold 後の退場タイマーを返す。
-			toastHoldCmd = toastTimers(m.toast.Advance())
-		}
-		m.frame++
-		// list に毎フレーム変化する内容 (loading スピナー) が乗るのは fetch/awaitCI の 2 状態
-		// だけ。他の spinnerActive 条件 (panelHasPendingJob/pullAnimating/detailsLoading/
-		// jobDetailBusy/diffBusy) のスピナー・経過時間は panelLines/diffBoxLines 側 (lines() の
-		// 外) で毎フレーム描かれるので、ここで list を無効化すると -p 巨大 patch を含む全行を
-		// 80ms ごとに組み直すだけの無駄になる (レビュー C7)。offset を動かす pull アニメも
-		// lines() は不変なので invalidate 不要 (View が窓を切り直す)
-		//
-		// 🚨 この 2 状態では「header 行のスピナー字形」を変えるために全行を組み直している。
-		// perf 監査 2026-07-25 で指摘されたが、さらに絞る対応はしないと判断した:
-		// 既定 (patch なし) の RenderLines は 7.8µs / 12.6KB で 80ms 周期に対し無視できる。
-		// 効くのは -p 併用時 (実測 332µs / 733KB per frame) だけで、それも fetch 中の数秒に限る
-		// = 80ms 予算の 0.4%。一方 header 行だけの差分更新にするには Line の契約 (Text に
-		// 字形が焼き込まれている) を変えるか、verbatim / mediumLines の 2 経路へ header 生成を
-		// 複製する必要があり、表示バグの危険が利得に見合わない。
-		// -p を常用して fetch 中の描画が重いと体感したら再評価する (その時は Line にスピナー
-		// 位置を持たせて View 側で差し替えるのが筋)。
-		//
-		// CI 実行中 (StatePending) のコミットも header 行がスピナーなので同じく組み直す。こちらは
-		// fetch と違って CI の実行時間 (数分) 続くが、コストは上の実測どおり既定で 7.8µs、-p でも
-		// 80ms 予算の 0.4% なので同じ判断で受ける。
-		if m.fetching() || len(m.awaitCI) > 0 || m.listHasPending() {
-			m.invalidateLines()
-		}
-		return m, tea.Batch(m.maybeTick(), toastHoldCmd, pushRefetchCmd)
+		return m.onTick(msg)
 	case ciResultMsg:
-		// 世代不一致 = pull/push の再取得 (startCIFetch) 前に飛ばした旧世代チャンク。
-		// 丸ごと捨てる (データも捨てる: 同じ SHA は新世代のチャンクが取り直す)
-		if msg.epoch != m.fetchEpoch {
-			return m, m.maybeTick()
-		}
-		m.invalidateLines()
-		// チャンクごとに届くので、成功チャンクで先の失敗チャンクの警告を消さない
-		// (取得開始時のリセットは startCIFetch が担う)
-		if msg.ghErr != nil {
-			m.ghErr = msg.ghErr
-		}
-		// 応答に無かった SHA は unknown で埋める (fetched へ入れる = 終了時に SaveCache
-		// される 30 秒の負キャッシュ)。q での中断 (fillUnknown) と違い、こちらは API の
-		// 実際の返答に基づく確定。範囲はこのチャンクの SHA だけ — 全 toFetch で埋めると
-		// まだ飛んでいるチャンクの SHA を「応答に無かった」と誤判定する
-		filled := gitdata.FillUnknownFetched(msg.batch.Statuses, msg.shas)
-		m.mergeCIBatch(filled, msg.batch.Details, msg.batch.PRs)
-		// 未着チャンクが残っている間は fetching() が true のまま (スピナー・invalidate gate・
-		// パネルガードの出典)。toFetch は着弾ぶんを差し引き、パネルが既に結果の来た SHA で
-		// 待たされないようにする
-		m.pendingFetches = max(m.pendingFetches-1, 0)
-		// 🚨 ここを slices.DeleteFunc で書かないこと: あれは in-place 圧縮して破棄した末尾を
-		// ゼロ埋めするが、chunkSHAs は元スライスの部分スライスを返すので m.toFetch と
-		// 未着チャンクの msg.shas は同じ配列を共有している。in-place に削ると「まだ飛んでいる
-		// チャンクの SHA 列」が空文字へ潰れ、その結果が届いても unknown 埋め・loading 解除の
-		// 対象を失う。新しいスライスへ写して共有配列に触らない。
-		remaining := make([]string, 0, len(m.toFetch))
-		for _, sha := range m.toFetch {
-			if !slices.Contains(msg.shas, sha) {
-				remaining = append(remaining, sha)
-			}
-		}
-		m.toFetch = remaining
-		// 一括取得待ちでパネルを開いていた SHA の loading を解除する (結果が来なかった
-		// SHA も含めて解除。details 不在は「(CI job 情報なし)」表示に落ちる)
-		for _, sha := range msg.shas {
-			m.clearDetailsFlags(sha)
-		}
-		m.settleAwaitCI()
-		// 一括取得で実行中コミットの Details が入った場合も ETA basis を補充する
-		// (パネルを取得中に開いていたケース)。pending が見えたらここで追従チェーンが張られる
-		// (起動直後に既に pending なコミットがある場合の開始点でもある)。
-		return m, tea.Batch(m.maybeFetchETABasis(), m.ensureCIPoll())
+		return m.onCIResult(msg)
 	case detailMsg:
-		m.invalidateLines()
-		m.clearDetailsFlags(msg.sha)
-		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (sticky 警告の防止・レビュー C4)
-		m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
-		// リフレッシュで job 数が縮んだ場合にフォーカスを範囲内へ戻す
-		if msg.sha == m.panelSHA && m.panelCursor >= len(m.details[m.panelSHA]) {
-			m.panelCursor = len(m.details[m.panelSHA]) - 1
-		}
-		// ETA basis (同名完了 job) の補充と追従チェーンの開始をここで行う (openPanel 時点では
-		// details 未取得で pending かどうか判定できない)。ensureCIPoll は single-flight なので
-		// 既にチェーンが生きていれば nil を返す (二重 timer で加速しない)。
-		return m, tea.Batch(m.maybeFetchETABasis(), m.ensureCIPoll())
+		return m.onDetail(msg)
 	case basisMsg:
-		m.invalidateLines()
-		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)
-		m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
-		// レスポンスに現れなかった target も含めて loading 解除し、Details エントリを
-		// 空スライスで確定させる (未設定のままだと同じ target を無限に取り直してしまう)。
-		for _, sha := range msg.targets {
-			m.clearDetailsFlags(sha)
-			if _, ok := m.details[sha]; !ok {
-				m.details[sha] = []gitdata.CheckDetail{}
-			}
-		}
-		return m, nil
+		return m.onBasis(msg)
 	case commitview.JobDetailMsg:
-		m.ghErr = msg.Err() // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)。
-		// 🚨 ghErr は共有 sticky 警告なので detailOv.receive に閉じず browseModel で無条件代入する。
-		// receive は busy 落とし・cache 格納・(今開いている詳細なら) 末尾スクロールを担う。currentKey は
-		// live な detailKey() を渡す (snapshot 禁止: リフレッシュで panelCursor がクランプされ得るため)。
-		m.detailOv.Receive(msg, m.detailKey(), m.visibleDetailRows())
-		// Y で詳細取得を待っていたら、到着したこの内容をコピーする。取得失敗
-		// (ghErr) は上の sticky 警告に任せ、予約だけ静かに破棄する。
-		// 🚨 予約後にフォーカスが動いていたら (detailKey() != msg.key) コピーしない: msg.lines は
-		// 予約時の job のログだが、focusedJob() は現フォーカスを返すため、貼ると「別 job のヘッダに
-		// 旧 job の本文」という silent 誤コピーになる。詳細ポップアップを閉じただけ (closePanel を
-		// 経ない) でカーソル移動できる経路があり、copyOnDetail が残るため起きる (レビュー確定 high)。
-		if m.copyOnDetail == msg.Key() {
-			m.copyOnDetail = ""
-			if job, ok := m.focusedJob(); ok && m.detailKey() == msg.Key() && msg.Err() == nil && len(msg.Lines()) > 0 {
-				m.copyJobContextLines(job, msg.Lines())
-			}
-		}
-		return m, nil
+		return m.onJobDetail(msg)
 	case prMsg:
-		delete(m.prBusy, msg.sha)
-		// 取得中にカーソルが動いていたら、結果の反映 (キャッシュ・バッジ) だけ行い
-		// 自動オープン・トーストは出さない: 離れたコミットの PR がいきなりブラウザで
-		// 開くのを防ぐ (jobDetailMsg / prStatusMsg と同型の stale ガード)
-		wasCurrent := len(m.commits) > 0 && m.commits[m.cursor].SHA == msg.sha
-		if msg.ghErr != nil {
-			// 一時エラーをキャッシュすると「PR はありません」という誤答が固定される
-			// (次の p で再試行させる) ため、キャッシュは成功時のみ
-			if wasCurrent {
-				m.showWarning("PR の取得に失敗しました: " + app.FirstLine(msg.ghErr.Warning()))
-			}
-			return m, m.maybeTick()
-		}
-		m.prCache[msg.sha] = msg.pr
-		m.invalidateLines() // コミット行の PR バッジに反映
-		if !wasCurrent {
-			return m, m.maybeTick()
-		}
-		if msg.pr == nil {
-			m.toast.Show("このコミットに紐づく PR はありません", false)
-			return m, m.maybeTick()
-		}
-		m.toast.Show(fmt.Sprintf("PR #%d を開きます", msg.pr.Number), true)
-		return m, tea.Batch(m.openURLCmd(msg.pr.URL), m.maybeTick())
+		return m.onPR(msg)
 	case prStatusMsg:
-		// receive は当該 sha が表示中ならエラー時に close するため、sha 一致は receive の前に捕捉する。
-		// notice は「今表示中の対象」の失敗のときだけ出す: 別 sha へ移った後に届く遅延エラーで
-		// 無関係な失敗 notice を被せない (レビュー確定 low)。
-		wasCurrent := msg.sha == m.prStatusOv.SHA()
-		m.prStatusOv.Receive(msg.sha, msg.status, msg.ghErr)
-		if msg.ghErr != nil && wasCurrent {
-			// 一時エラーはキャッシュしない (receive 側)。理由はトーストで伝える
-			m.showWarning("PR の取得に失敗しました: " + app.FirstLine(msg.ghErr.Warning()))
-		}
-		return m, m.maybeTick()
+		return m.onPRStatus(msg)
 	case commitview.DiffMsg:
-		// 警告は「今表示中の対象」の失敗のときだけ出す: 別 SHA へ移った後に届く遅延エラーで
-		// 無関係な失敗 notice を被せない (prStatusMsg の wasCurrent と同型。receive は当該
-		// sha が表示中ならエラー時に close するため、一致は receive の前に捕捉する)
-		wasCurrent := msg.SHA() == m.diffOv.SHA()
-		if err := m.diffOv.Receive(msg); err != nil && wasCurrent {
-			m.showWarning("diff の取得に失敗しました: " + app.FirstLine(err.Error()))
-		}
-		return m, m.maybeTick()
+		return m.onDiff(msg)
 	case prefixMsg:
 		m.tmuxPrefix = msg.key
 		return m, nil
@@ -1044,17 +829,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 動かないため。フレーム tick を足すとこのチェーンの意図 (1s 周期) が崩れる。
 		return m, m.issuesOv.HandleWatch(msg)
 	case issuesview.IssuesScanMsg:
-		// 戻り値は畳まれていた取り直しの予約 (issuesview.IssuesView.Receive の doc)。捨てると
-		// 「自分がファイルを動かしたのに一覧が古いまま」が残る
-		cmd := m.issuesOv.Receive(msg)
-		// receive → rebindOpen が置く notice (開いていた issue の消失) をこのフレームで配達する。
-		// 打鍵経路の takeNotice に任せると、次のキーまで「本文が無言で畳まれた」に見え、
-		// その次のキーが q だと理由が 1 度も描かれずに終了する。
-		// maybeTick はトーストを出したときだけ束ねる (issuesWatchMsg の 1s チェーンの意図を崩さない)
-		if m.deliverNotice(m.issuesOv.TakeNotice()) {
-			return m, tea.Batch(cmd, m.maybeTick())
-		}
-		return m, cmd
+		return m.onIssuesScan(msg)
 	case statusview.StatusLoadMsg:
 		// git status の結果 (status viewer)。返り値はプレビューの取り直し予約 (内容が変わった
 		// ときだけ)。🚨 maybeTick も束ねる: 取得中スピナーを回していた場合、結果到着でそれを
@@ -1095,42 +870,9 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.maybeTick()
 	case autobuildMsg:
-		// 裏のビルドが決着したらトーストで知らせる。
-		//
-		// 🚨 notify と keep は同時に立つ (handle は「開始を伝えた後も失敗を拾うため監視を続ける」を
-		// この組み合わせで表す)。通知したときに tickCmd を張り直さないと監視チェーンが切れ、
-		// その後のビルド失敗が二度と通知されない (監視は失敗を検出する唯一の経路)。
-		res, notify, keep := m.autobuild.handle(msg.result, app.TimeNow())
-		var watch tea.Cmd
-		if keep {
-			watch = m.autobuild.tickCmd()
-		}
-		if notify && res == autobuildInstalled {
-			// 完成はその場で再起動できる合図なので、消えるトーストでなくダイアログで出す。
-			// 🚨 ここでは「出したい」を立てるだけ。実際に出るのは中断できない処理 (claude update /
-			// push / pull) が走っていないときで、判断は restartPromptVisible() が持つ
-			m.restartPending = true
-			return m, tea.Batch(m.maybeTick(), watch)
-		}
-		if notify {
-			text, ok := autobuildToast(res)
-			m.toast.Show(text, ok)
-			return m, tea.Batch(m.maybeTick(), watch) // トーストのスライドは tick で進む
-		}
-		return m, watch
+		return m.onAutobuild(msg)
 	case autobuildSpawnMsg:
-		// pull 後の裏ビルドが始まった。🚨 起動時とまったく同じ形で監視を張る (newAutobuildWatch →
-		// handle で「ビルド中」を即出す → tickCmd)。完成すれば通常の autobuildMsg 経路が
-		// 再起動ダイアログを出すので、ここで完成側の面倒を見る必要はない。
-		if !msg.spawned || m.autobuild.active {
-			return m, nil
-		}
-		m.autobuild = newAutobuildWatch(selfExePath(), true, app.TimeNow())
-		if res, notify, _ := m.autobuild.handle(autobuildRunning, app.TimeNow()); notify {
-			text, ok := autobuildToast(res)
-			m.toast.Show(text, ok)
-		}
-		return m, tea.Batch(m.autobuild.tickCmd(), m.maybeTick())
+		return m.onAutobuildSpawn(msg)
 	case toast.Msg:
 		m.toast.StartLeaving(msg) // 静止明け: 退場アニメへ (世代一致時のみ)。maybeTick で tick 再開
 		return m, m.maybeTick()
@@ -1158,288 +900,642 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case gitLogReloadMsg:
 		return m, m.handleGitLogReload(msg)
 	case ciPollMsg:
-		if msg.gen != m.ciPollGen {
-			return m, nil // reloadAfterPull で世代が進んだ後の残タイマーは破棄
-		}
-		targets := m.ciPollTargets()
-		if len(targets) == 0 {
-			// 🚨 **ここで awaitCI を空にする**。ciPollTargets は commits を走査して
-			// `m.awaitCI[c.SHA]` を targets に入れるので、**targets が空なら残っている awaitCI の
-			// 要素は定義上 commits の外**にいる = どの経路でも取り除かれないファントム。
-			// ⚠️ 打ち切り (awaitAttempts) を早期 return の前へ動かしても効かない: この分岐は
-			// ciPolling=false でチェーンごと止めるため、1 回数えても次の周期が来ない。
-			m.awaitCI, m.awaitAttempts = nil, 0
-			m.ciPolling = false // 追従対象なし: チェーンを止める (次の開始点で再アーム)
-			return m, nil
-		}
-		if m.panelGrace > 0 {
-			m.panelGrace-- // rerun 直後: 新しい実行が GraphQL に映るまで空振りを許す
-		}
-		// 「CI が 1 つも現れない」の打ち切りは周期の側で数える。結果着弾の側で数えると、
-		// 一括取得が複数チャンクへ割れた回に awaitAttempts が余分に進み、意図した
-		// ciPollInterval × ciAwaitMaxAttempts (= 2 分) より早く諦めてしまう
-		if len(m.awaitCI) > 0 {
-			m.awaitAttempts++
-			if m.awaitAttempts >= ciAwaitMaxAttempts {
-				m.awaitCI = nil // 諦める: workflow を持たない repo で永久にポーリングしない
-			}
-		}
-		next := m.scheduleCIPoll()
-		// 別経路の取得と重ねない (同一 SHA への GraphQL 並行は完了順で statuses/details が
-		// 上書きされる。fetchPanelDetails と同じ注意)。タイマーだけ繋いで次の周期に回す
-		if m.ciPollInFlight || m.fetching() {
-			return m, next
-		}
-		m.ciPollInFlight = true
-		gen := m.ciPollGen
-		fetch := ciPollFetch(m.repo, targets, func(b gitdata.CIBatch, e *gitdata.GHError) tea.Msg {
-			return ciPollResultMsg{gen: gen, batch: b, ghErr: e}
-		})
-		return m, tea.Batch(fetch, next, m.maybeTick())
+		return m.onCIPoll(msg)
 	case ciPollResultMsg:
-		// 🚨 in-flight は世代不一致でも必ず下ろす: リロード側は「飛んでいる poll の結果が
-		// 着弾するまで in-flight を維持する」前提 (reloadAfterPull のコメント) なので、
-		// ここで下ろさないと以降の周期が永久に fetch を見送る
-		m.ciPollInFlight = false
-		if msg.gen != m.ciPollGen {
-			// リロード前に投げた結果。マージすると入れ替わった statuses を古い観測で
-			// 巻き戻す (決着済みの SHA が pending に戻り、表示と追従が 1 周期ぶれる)
-			return m, m.ensureCIPoll()
-		}
-		m.invalidateLines()
-		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (sticky 警告の防止)
-		m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
-		m.settleAwaitCI()
-		// リフレッシュで job 数が縮んだ場合にフォーカスを範囲内へ戻す
-		if m.panelSHA != "" && m.panelCursor >= len(m.details[m.panelSHA]) {
-			m.panelCursor = max(len(m.details[m.panelSHA])-1, -1)
-		}
-		return m, tea.Batch(m.maybeFetchETABasis(), m.ensureCIPoll())
+		return m.onCIPollResult(msg)
 	case pullMsg:
-		m.actModal.pulling = false
-		if msg.err != nil {
-			m.showGitFailure("pull に失敗", msg.err)
-			return m, m.maybeTick()
-		}
-		// 成功トーストを右下にせり上げつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
-		m.toast.Show("pull --rebase しました", true)
-		// pull で自分のソースが更新されたなら、その場で裏ビルドを始める (autobuildAfterPull)。
-		// status viewer を開いたまま p で pull した場合は、その場で読み直す: 自動更新は 1.5 秒
-		// 周期なので、待たせるとヘッダーの ahead/behind が古いまま残って「効いていない」に見える。
-		return m, tea.Batch(m.reloadAfterPull(), m.maybeTick(), m.autobuildAfterPull(), m.statusOv.LoadCmd())
+		return m.onPull(msg)
 	case rerunMsg:
-		m.actModal.rerunning = false
-		if msg.err != nil {
-			m.showWarning("再実行に失敗: " + app.FirstLine(msg.err.Error()))
-			return m, m.maybeTick()
-		}
-		m.toast.Show("CI を再実行します", true)
-		// パネルを開いたままなら猶予つきで追従対象に留める (rerun が GraphQL に映るまでのラグは
-		// rerunPollGrace のコメント参照)。映れば StatePending になり、以降は通常の追従へ
-		// 自然に引き継がれる。パネルが閉じられていれば何もしない (次の開き直しで最新を取る)
-		var poll tea.Cmd
-		if msg.sha == m.panelSHA && m.panelSHA != "" {
-			m.panelGrace = rerunPollGrace
-			poll = m.ensureCIPoll() // 既にチェーンが生きていれば nil (二重化しない)
-		}
-		return m, tea.Batch(poll, m.maybeTick())
+		return m.onRerun(msg)
 	case updateBeginMsg:
-		// C / X 連打で「同じ CLI」の update が走行中なら二重実行しない (自己更新が競合する)。
-		// 🚨 別の CLI は弾かない: claude と codex は独立に走らせる (ユーザー要望 2026-08-21)。
-		// ここを anyUpdating() に戻すと片方の実行中にもう片方が始められず直列に戻る。
-		if m.actModal.isUpdating(msg.target) {
-			return m, m.maybeTick()
-		}
-		// 🚨 判定 Cmd の走行中 (実測 40-80ms) は update モーダルが出ていないため、その窓で
-		// b / u / r を押すと確認モーダルが立つ。そこへ update を重ねると、描かれるのは update
-		// (boxLines の switch 順) なのにキーを受け取るのは確認 (handleKey の判定順) になり、
-		// 「完了まで終了できません」の画面で Enter が git push を起動する (audit 2026-08-20 で
-		// runGitPush 1 回を実測)。確認・git 実行中は update を譲り、理由をトーストで伝える。
-		// 🚨 ここに anyUpdating() を足さないこと: 別 CLI の update とは並走させる。
-		// 本来の直し方は「描画とキー判定を同一の状態値から導出する」(未対応)。
-		if m.actModal.pushConfirm || m.actModal.pullConfirm || m.actModal.rerunConfirm ||
-			m.actModal.pushing || m.actModal.pulling || m.actModal.rerunning {
-			m.toast.Show(msg.target+" update は確認/実行が終わってから実行してください", false) // 断り (✗。ガイド §9)
-			return m, m.maybeTick()
-		}
-		return m, tea.Batch(m.actModal.runUpdate(msg.target), m.maybeTick())
+		return m.onUpdateBegin(msg)
 	case updateMsg:
-		// 🚨 早期リターン (「すでに latest」の判定結果) で走行中の update を降ろさないこと。
-		// C の判定 Cmd が並走したとき、その結果が走っている自己更新の追跡を消し、モーダルが
-		// 閉じて終了ガードが解ける (自己更新が孤児化 / 二重起動する。2026-08-21 に
-		// npm 2 本同時と Ctrl-C 脱出を実測)。走行中なら判定結果は捨てる。
-		if msg.early && m.actModal.isUpdating(msg.target) {
-			return m, m.maybeTick()
-		}
-		// 該当 CLI だけ走行中から外す。もう片方が走っていればモーダルは残る
-		// (両方終わるまで「完了まで終了できません」を維持する)
-		m.actModal.finishUpdate(msg.target)
-		// 結果は右下トーストで出す (旧: 何かキーで閉じるダイアログ。ユーザー要望 2026-07-25)。
-		// バージョンが上がったのか latest だったのかは 1 行に畳んで一目で分かる形にする。
-		// 「新バージョンあり」の通知 (showClaudeUpdate) と違って調停は挟まない:
-		// こちらは C / X を押した本人への結果なので、先行トーストを上書きする後勝ちが正しい。
-		// どちらの CLI の結果かが一目で分かるよう、主語として CLI 名を常に前置する
-		// (ユーザー要望 2026-08-12。旧: codex のみ前置)。
-		name := msg.target + " "
-		switch {
-		case msg.err != nil:
-			m.showWarning(name + "更新に失敗: " + app.FirstLine(msg.err.Error()))
-		case msg.before != "" && msg.after != "" && msg.before != msg.after:
-			m.toast.Show(name+"v"+msg.before+" → v"+msg.after+" に更新しました", true)
-		case msg.before != "" && msg.before == msg.after && msg.early:
-			// glogx 自身が「installed >= キャッシュ済み latest」を証明した早期リターン。
-			// ここだけが「最新です」と言ってよい (update は走っていない)。
-			m.toast.Show(name+"すでに最新版です (v"+msg.before+")", true)
-		case msg.before != "" && msg.before == msg.after:
-			// update を走らせたのにバージョンが動かなかった。🚨 これを「最新です」と言わないこと:
-			// CLI は自前の stale なキャッシュを見て「更新不要」と判断しても exit 0 で成功する
-			// (実測 2026-09-03: 起動時トーストが codex の新版を告げた直後に X を押しても
-			// ~/.codex/version.json が 44 日前で止まっていて "already up to date" が返り、
-			// glogx がそれを「すでに最新版です」と翻訳していた)。glogx は registry 直取りの
-			// latest を握っているので、それより古いままなら警告として出す。
-			if latest := cachedLatestVersion(versionCacheFileFor(msg.target)); versionLess(msg.before, latest) {
-				m.showWarning(name + "update を実行しましたが v" + msg.before + " のままです (公開は v" + latest + ")" + updateNoteSuffix(msg.note))
-				return m, m.maybeTick()
-			}
-			m.toast.Show(name+"update を実行しましたが変化なし (v"+msg.before+")"+updateNoteSuffix(msg.note), true)
-		case msg.after != "":
-			m.toast.Show(name+"現在のバージョン: v"+msg.after, true) // before 不明で比較できず
-		default:
-			m.toast.Show(name+"update を実行しました", true) // 前後とも取得できず
-		}
-		return m, m.maybeTick()
+		return m.onUpdate(msg)
 	case pushMsg:
-		m.actModal.pushing = false
-		if msg.err != nil {
-			m.showGitFailure("push に失敗", msg.err)
-			return m, m.maybeTick()
-		}
-		m.toast.Show("push しました", true)
-		if len(m.commits) == 0 {
-			return m, m.maybeTick() // 再取得先が無くてもトーストは出す (アニメ tick を回す)
-		}
-		if !m.hasRepo {
-			// CI の再取得は無いが、未 push (🔼) は手元で判定し直す (読み直さないと push 済みのコミットが 🔼 のまま残る)
-			cmds := []tea.Cmd{m.reloadLog(true, "push 後の再読込に失敗しました: "), m.maybeTick()}
-			if m.statusOv.Visible() {
-				cmds = append(cmds, m.statusOv.LoadCmd()) // GitHub の repo のときと同じく viewer の ahead を即消す
-			}
-			return m, tea.Batch(cmds...)
-		}
-		// status viewer 表示中は演出を出さない (対象のコミット一覧が画面に無く、演出分だけ
-		// 再取得が遅れるだけ)。代わりに viewer を読み直してヘッダーの ahead を即消す
-		// (pull 成功時の statusOv.loadCmd と同じ理由)
-		if m.statusOv.Visible() {
-			return m, tea.Batch(m.refetchAfterPush(), m.maybeTick(), m.statusOv.LoadCmd())
-		}
-		if m.startPushAnim() {
-			return m, m.maybeTick() // 演出完了後 (advancePushAnim) に refetchAfterPush へ進む
-		}
-		return m, tea.Batch(m.refetchAfterPush(), m.maybeTick())
+		return m.onPush(msg)
 	case extcmd.OpenURLMsg:
 		if msg.Err != nil {
 			m.showWarning("ブラウザを開けませんでした: " + app.FirstLine(msg.Err.Error()))
 		}
 		return m, m.maybeTick()
 	case extcmd.EditorClosedMsg:
-		if msg.ReclaimErr != nil {
-			m.showWarning("端末の前面を取り戻せませんでした (" + app.FirstLine(msg.ReclaimErr.Error()) + ")。止まったら fg で戻してください")
-		}
-		// 後処理は起動元で決める (extcmd.ExecOrigin)。treefiler の ! / s / e、mac-lan-manager の s / o / 初期設定の手順から
-		// 戻ったときの知らせる文は各画面の ExecReturned が決める (シェルの 0 以外の終了で「エディタが異常終了しました」を出さない)
-		var w string
-		switch msg.Origin {
-		case extcmd.OriginFiler:
-			w = m.filerV.ExecReturned(msg.Err)
-		case extcmd.OriginLan:
-			w = m.lanV.ExecReturned(msg.Err)
-		case extcmd.OriginEditor:
-		}
-		if msg.Origin != extcmd.OriginEditor {
-			if w != "" {
-				m.showWarning(app.FirstLine(w))
-			}
-			return m, m.maybeTick()
-		}
-		// エディタを閉じて復帰。job ログは stdin 渡しなのでファイルは残らず、バッファも破棄済み。
-		// 🚨 issues viewer の e (別名 v) だけは実ファイルを編集可能で開く (メモを足せるように
-		// readonly にしていない) ので、復帰の境界で取り直す。取り直さないと編集結果 (H1・front matter の
-		// status・チェックボックス) が一覧にも本文にも出ず、viewer が古い内容を最新として表示する。
-		// 🚨 viewer 表示中でも IssuesView の通知 (TakeNotice で受け取る) へ回さない: 通知はどのヘッダーも描かず、
-		// 次の打鍵で TakeNotice されるまで画面に出ない (キーを押すまで失敗が黙殺される)。
-		// viewLines が viewer の窓にもトーストを合成するので、ここは常にトーストでよい。
-		// 🚨 起動対象は $VISUAL/$EDITOR で変わる (extcmd.EditorCommand) ので、文言でツール名を名指し
-		// しない。job ログ・repo root だけは nvim 固定だが、失敗の主因は可変側 (typo した
-		// $EDITOR・PATH に無いエディタ) なので総称で出す。
-		//
-		// 🚨 「起動できなかった」と「起動できたが 0 以外で終了した」を分ける。後者 (nvim の :cq 等)
-		// はエディタが実際に開いてファイルを保存できているので、reload を飛ばすと上の不変条件
-		// (復帰の境界で取り直す) が破れ、保存済みの編集が出ないまま古い内容を最新として表示する。
-		if extcmd.IsQuitRequest(msg.Err) {
-			// エディタの <C-g> (glogx ごと閉じて)。保存は nvim 側が済ませている (保存できなければ抜けずに止まる)。
-			// 終了が飲まれたとき (push 中など) は viewer に戻るので、取り直しも積む
-			_, quitCmd := m.handleQuitKey("ctrl+g")
-			return m, tea.Batch(m.issuesOv.ReloadAfterEdit(), quitCmd, m.maybeTick())
-		}
-		var exitErr *exec.ExitError
-		switch {
-		case msg.Err == nil:
-		case errors.As(msg.Err, &exitErr):
-			m.showWarning("エディタが異常終了しました: " + app.FirstLine(msg.Err.Error()))
-		default:
-			// 起動失敗はファイルが変わっていないので取り直さない
-			m.showWarning("エディタを開けませんでした: " + app.FirstLine(msg.Err.Error()))
-			return m, m.maybeTick()
-		}
-		return m, tea.Batch(m.issuesOv.ReloadAfterEdit(), m.maybeTick())
+		return m.onEditorClosed(msg)
+	case tea.PasteMsg:
+		return m.onPaste(msg)
 	// KeyMsg (v2 では KeyPressMsg/KeyReleaseMsg を束ねる interface) ではなく押下だけを取る。
 	// 離鍵イベントは KeyboardEnhancements を要求していないので届かないが、interface で受けると
 	// 将来 enhancement を有効にした瞬間に 1 打が 2 回処理される。
-	case tea.PasteMsg:
-		// 貼り付け (bracketed paste。bubbletea v2 は既定で有効) は入力欄にだけ入れる。入力欄が無いときは捨てる:
-		// キー操作として解釈すると、貼った文字列が 1 字ずつ一覧のキーとして走る (docs/glogx-ui-guide.md §7)。
-		// 板が入力欄の上に出ている間 (action モーダル・再起動の確認) もキーは板が先に取るので、貼り付けも入れない
-		if m.activeFullScreen() == FullScreenIssues && m.issuesOv.TypingInput() && !m.actModal.active() && !m.restartPromptVisible() {
-			m.issuesOv.Paste(msg.Content)
-		}
-		if m.activeFullScreen() == FullScreenFiler && !m.actModal.active() && !m.restartPromptVisible() {
-			m.filerV.Paste(msg.Content) // 入力中 (検索・! のコマンド) だけ入る。filer が捨てる
-		}
-		if m.activeFullScreen() == FullScreenLan && !m.actModal.active() && !m.restartPromptVisible() {
-			m.lanV.Paste(msg.Content) // 入力中 (絞り込み・別名・帯) だけ入る。lanmgr が捨てる
-		}
-		return m, m.maybeTick()
 	case tea.KeyPressMsg:
-		// 高速連打やパイプ入力で複数の文字キーが 1 つのキーイベント (Text 長 > 1) に
-		// まとまって届いた場合の分解。まとめずに msg.String() だけ見ると "hhq" のような
-		// 未知キー扱いになり、以降の操作が全て無視されたように見える (pty スモークで実測)。
-		// v2 の入力デコーダは grapheme クラスタ単位で 1 イベントを返すのでまとまらない想定だが、
-		// 保険として残す (v1 で実際に起きた回帰であり、削っても得られる簡素化は 10 行)。
-		if runes := []rune(msg.Text); len(runes) > 1 {
-			var cmds []tea.Cmd
-			for _, r := range runes {
-				_, cmd := m.handleKey(string(r))
-				if cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				if m.done {
-					break
-				}
-			}
-			// 🚨 単キー経路と同じく maybeTick を束ねる: 分解したキーが出したトースト・glide は
-			// 他に tick を回す理由が無ければ 1 フレームも進まず、shown=0 のまま凍って見えない。
-			// この経路は「普段は通らないが通ったときだけ壊れる」ので気づきにくい。
-			// maybeTick は single-flight なのでループ内の Cmd と重ねても二重には走らない。
-			return m, tea.Batch(append(cmds, m.maybeTick())...)
-		}
-		// handleKey はキー経路の唯一の入口。ここで maybeTick を必ず束ねることで、ハンドラや
-		// openX()/copyX() の内部で出したトースト (バリデーション失敗・コピー結果など) が
-		// 呼び出し側で return m, nil されてもアニメ tick が確実に回る (トーストが shown=0 のまま
-		// 凍って見えない事故を防ぐ)。maybeTick は single-flight で冪等なので二重には走らない。
-		model, cmd := m.handleKey(msg.String())
-		return model, tea.Batch(cmd, m.maybeTick())
+		return m.onKeyPress(msg)
 	}
 	return m, nil
+}
+
+func (m *browseModel) onWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	m.width = msg.Width
+	m.height = msg.Height
+	m.invalidateLines() // 幅で折り返し行数が変わる
+	// resize 中の glide は破棄して即時にする (表示 offset が stale になるため)。一覧だけでなく
+	// pager 側も止める: 幅で行数が変わり、glide の着地点が resize 前の行数基準で古くなる。
+	m.glide.Stop()
+	m.diffOv.StopGlides()
+	m.issuesOv.StopGlides()
+	m.statusOv.StopGlides()
+	m.ensureCursorVisible()
+	m.filerV.Resize(m.contentWidth(), m.pageSize())
+	if m.filerV.Animating() {
+		return m, m.maybeTick()
+	}
+	return m, nil
+}
+
+func (m *browseModel) onFilerChanged(msg filerview.FilerChangedMsg) (tea.Model, tea.Cmd) {
+	// treefiler のライブ更新の合図。取り込んで、今のチャネルからの合図なら次の合図を待ち直す
+	if !msg.Open() {
+		return m, nil
+	}
+	m.filerV.Advance(app.TimeNow())
+	m.filerV.DrainNotices(m.deliverNotice)
+	return m, tea.Batch(m.filerV.Rearm(msg), m.maybeTick())
+}
+
+func (m *browseModel) onLanChanged(msg lanview.LanChangedMsg) (tea.Model, tea.Cmd) {
+	// mac-lan-manager の走査の合図。取り込んで、今のチャネルからの合図なら次の合図を待ち直す
+	if !msg.Open() {
+		return m, nil
+	}
+	m.lanV.Advance(app.TimeNow())
+	m.lanV.DrainNotices(m.deliverNotice)
+	return m, tea.Batch(m.lanV.Rearm(msg), m.maybeTick())
+}
+
+func (m *browseModel) onTick(_ tickMsg) (tea.Model, tea.Cmd) {
+	m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
+	// 閉じる演出が着地したらここで初めて終了する (演出の間はまだ描き続ける)
+	if m.zoom.settle(app.TimeNow()) {
+		m.done = true
+		return m, tea.Quit
+	}
+	// issues viewer の閉じる演出が着地したらここで畳む。🚨 下の spinnerActive の早期 return
+	// より前に置く: animating() は closing のあいだ true を返し続け、この settleClose が
+	// 下ろして初めて false になる。後ろに置くと最後の 1 拍が届かず閉じかけの姿で固まる。
+	m.issuesOv.SettleClose()
+	m.statusOv.SettleClose() // status viewer も同じ理由で spinnerActive の判定より前に畳む
+	// treefiler の動きも spinnerActive の判定より前に進める (後ろだと、動き終わる最後の 1 拍が届かず途中の姿で止まる)
+	m.filerV.Advance(app.TimeNow())
+	m.filerV.DrainNotices(m.deliverNotice)
+	m.lanV.Advance(app.TimeNow()) // 走査の途中の結果を取り込む (spinnerActive の判定より前: 走査が終わる最後の 1 拍を取りこぼさない)
+	m.lanV.DrainNotices(m.deliverNotice)
+	if !m.spinnerActive() {
+		return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
+	}
+	if m.pullAnimating {
+		m.advancePullAnim() // pull で増えた新規行を 1 行/フレームで上から降らせる
+	}
+	if m.glide.Active() {
+		m.glide.Advance(m.offset) // 一覧のスクロールを表示 offset で滑らせる
+	}
+	// pager 側 (diff / issues 一覧・本文) の glide も同じ tick で進める。共有型なので
+	// 手触り (カーブ・フレーム数) は自動的に一覧と揃う (internal/term/scroll_glide.go)。
+	m.diffOv.AdvanceGlide()
+	m.issuesOv.AdvanceGlide()
+	m.statusOv.AdvanceGlide()
+	var pushRefetchCmd tea.Cmd
+	if m.pushAnimating {
+		pushRefetchCmd = m.advancePushAnim() // push 境界の罫線を 1 コミット/フレームで上へ
+	}
+	for sha, start := range m.pushSlides {
+		if app.TimeNow().Sub(start) >= pushSlideDuration {
+			delete(m.pushSlides, sha) // 沈み込みが終わった区画は通常表示へ戻す
+		}
+	}
+	var toastHoldCmd tea.Cmd
+	if m.toast.Animating() {
+		// トーストの横スライド (右画面外との出入り) をカラム単位で 1 フレーム進める。
+		// 入場完了時は holding へ移り toast.Hold 後の退場タイマーを返す。
+		toastHoldCmd = toastTimers(m.toast.Advance())
+	}
+	m.frame++
+	// list に毎フレーム変化する内容 (loading スピナー) が乗るのは fetch/awaitCI の 2 状態
+	// だけ。他の spinnerActive 条件 (panelHasPendingJob/pullAnimating/detailsLoading/
+	// jobDetailBusy/diffBusy) のスピナー・経過時間は panelLines/diffBoxLines 側 (lines() の
+	// 外) で毎フレーム描かれるので、ここで list を無効化すると -p 巨大 patch を含む全行を
+	// 80ms ごとに組み直すだけの無駄になる (レビュー C7)。offset を動かす pull アニメも
+	// lines() は不変なので invalidate 不要 (View が窓を切り直す)
+	//
+	// 🚨 この 2 状態では「header 行のスピナー字形」を変えるために全行を組み直している。
+	// perf 監査 2026-07-25 で指摘されたが、さらに絞る対応はしないと判断した:
+	// 既定 (patch なし) の RenderLines は 7.8µs / 12.6KB で 80ms 周期に対し無視できる。
+	// 効くのは -p 併用時 (実測 332µs / 733KB per frame) だけで、それも fetch 中の数秒に限る
+	// = 80ms 予算の 0.4%。一方 header 行だけの差分更新にするには Line の契約 (Text に
+	// 字形が焼き込まれている) を変えるか、verbatim / mediumLines の 2 経路へ header 生成を
+	// 複製する必要があり、表示バグの危険が利得に見合わない。
+	// -p を常用して fetch 中の描画が重いと体感したら再評価する (その時は Line にスピナー
+	// 位置を持たせて View 側で差し替えるのが筋)。
+	//
+	// CI 実行中 (StatePending) のコミットも header 行がスピナーなので同じく組み直す。こちらは
+	// fetch と違って CI の実行時間 (数分) 続くが、コストは上の実測どおり既定で 7.8µs、-p でも
+	// 80ms 予算の 0.4% なので同じ判断で受ける。
+	if m.fetching() || len(m.awaitCI) > 0 || m.listHasPending() {
+		m.invalidateLines()
+	}
+	return m, tea.Batch(m.maybeTick(), toastHoldCmd, pushRefetchCmd)
+}
+
+func (m *browseModel) onCIResult(msg ciResultMsg) (tea.Model, tea.Cmd) {
+	// 世代不一致 = pull/push の再取得 (startCIFetch) 前に飛ばした旧世代チャンク。
+	// 丸ごと捨てる (データも捨てる: 同じ SHA は新世代のチャンクが取り直す)
+	if msg.epoch != m.fetchEpoch {
+		return m, m.maybeTick()
+	}
+	m.invalidateLines()
+	// チャンクごとに届くので、成功チャンクで先の失敗チャンクの警告を消さない
+	// (取得開始時のリセットは startCIFetch が担う)
+	if msg.ghErr != nil {
+		m.ghErr = msg.ghErr
+	}
+	// 応答に無かった SHA は unknown で埋める (fetched へ入れる = 終了時に SaveCache
+	// される 30 秒の負キャッシュ)。q での中断 (fillUnknown) と違い、こちらは API の
+	// 実際の返答に基づく確定。範囲はこのチャンクの SHA だけ — 全 toFetch で埋めると
+	// まだ飛んでいるチャンクの SHA を「応答に無かった」と誤判定する
+	filled := gitdata.FillUnknownFetched(msg.batch.Statuses, msg.shas)
+	m.mergeCIBatch(filled, msg.batch.Details, msg.batch.PRs)
+	// 未着チャンクが残っている間は fetching() が true のまま (スピナー・invalidate gate・
+	// パネルガードの出典)。toFetch は着弾ぶんを差し引き、パネルが既に結果の来た SHA で
+	// 待たされないようにする
+	m.pendingFetches = max(m.pendingFetches-1, 0)
+	// 🚨 ここを slices.DeleteFunc で書かないこと: あれは in-place 圧縮して破棄した末尾を
+	// ゼロ埋めするが、chunkSHAs は元スライスの部分スライスを返すので m.toFetch と
+	// 未着チャンクの msg.shas は同じ配列を共有している。in-place に削ると「まだ飛んでいる
+	// チャンクの SHA 列」が空文字へ潰れ、その結果が届いても unknown 埋め・loading 解除の
+	// 対象を失う。新しいスライスへ写して共有配列に触らない。
+	remaining := make([]string, 0, len(m.toFetch))
+	for _, sha := range m.toFetch {
+		if !slices.Contains(msg.shas, sha) {
+			remaining = append(remaining, sha)
+		}
+	}
+	m.toFetch = remaining
+	// 一括取得待ちでパネルを開いていた SHA の loading を解除する (結果が来なかった
+	// SHA も含めて解除。details 不在は「(CI job 情報なし)」表示に落ちる)
+	for _, sha := range msg.shas {
+		m.clearDetailsFlags(sha)
+	}
+	m.settleAwaitCI()
+	// 一括取得で実行中コミットの Details が入った場合も ETA basis を補充する
+	// (パネルを取得中に開いていたケース)。pending が見えたらここで追従チェーンが張られる
+	// (起動直後に既に pending なコミットがある場合の開始点でもある)。
+	return m, tea.Batch(m.maybeFetchETABasis(), m.ensureCIPoll())
+}
+
+func (m *browseModel) onDetail(msg detailMsg) (tea.Model, tea.Cmd) {
+	m.invalidateLines()
+	m.clearDetailsFlags(msg.sha)
+	m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (sticky 警告の防止・レビュー C4)
+	m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
+	// リフレッシュで job 数が縮んだ場合にフォーカスを範囲内へ戻す
+	if msg.sha == m.panelSHA && m.panelCursor >= len(m.details[m.panelSHA]) {
+		m.panelCursor = len(m.details[m.panelSHA]) - 1
+	}
+	// ETA basis (同名完了 job) の補充と追従チェーンの開始をここで行う (openPanel 時点では
+	// details 未取得で pending かどうか判定できない)。ensureCIPoll は single-flight なので
+	// 既にチェーンが生きていれば nil を返す (二重 timer で加速しない)。
+	return m, tea.Batch(m.maybeFetchETABasis(), m.ensureCIPoll())
+}
+
+func (m *browseModel) onBasis(msg basisMsg) (tea.Model, tea.Cmd) {
+	m.invalidateLines()
+	m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)
+	m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
+	// レスポンスに現れなかった target も含めて loading 解除し、Details エントリを
+	// 空スライスで確定させる (未設定のままだと同じ target を無限に取り直してしまう)。
+	for _, sha := range msg.targets {
+		m.clearDetailsFlags(sha)
+		if _, ok := m.details[sha]; !ok {
+			m.details[sha] = []gitdata.CheckDetail{}
+		}
+	}
+	return m, nil
+}
+
+func (m *browseModel) onJobDetail(msg commitview.JobDetailMsg) (tea.Model, tea.Cmd) {
+	m.ghErr = msg.Err() // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)。
+	// 🚨 ghErr は共有 sticky 警告なので detailOv.receive に閉じず browseModel で無条件代入する。
+	// receive は busy 落とし・cache 格納・(今開いている詳細なら) 末尾スクロールを担う。currentKey は
+	// live な detailKey() を渡す (snapshot 禁止: リフレッシュで panelCursor がクランプされ得るため)。
+	m.detailOv.Receive(msg, m.detailKey(), m.visibleDetailRows())
+	// Y で詳細取得を待っていたら、到着したこの内容をコピーする。取得失敗
+	// (ghErr) は上の sticky 警告に任せ、予約だけ静かに破棄する。
+	// 🚨 予約後にフォーカスが動いていたら (detailKey() != msg.key) コピーしない: msg.lines は
+	// 予約時の job のログだが、focusedJob() は現フォーカスを返すため、貼ると「別 job のヘッダに
+	// 旧 job の本文」という silent 誤コピーになる。詳細ポップアップを閉じただけ (closePanel を
+	// 経ない) でカーソル移動できる経路があり、copyOnDetail が残るため起きる (レビュー確定 high)。
+	if m.copyOnDetail == msg.Key() {
+		m.copyOnDetail = ""
+		if job, ok := m.focusedJob(); ok && m.detailKey() == msg.Key() && msg.Err() == nil && len(msg.Lines()) > 0 {
+			m.copyJobContextLines(job, msg.Lines())
+		}
+	}
+	return m, nil
+}
+
+func (m *browseModel) onPR(msg prMsg) (tea.Model, tea.Cmd) {
+	delete(m.prBusy, msg.sha)
+	// 取得中にカーソルが動いていたら、結果の反映 (キャッシュ・バッジ) だけ行い
+	// 自動オープン・トーストは出さない: 離れたコミットの PR がいきなりブラウザで
+	// 開くのを防ぐ (jobDetailMsg / prStatusMsg と同型の stale ガード)
+	wasCurrent := len(m.commits) > 0 && m.commits[m.cursor].SHA == msg.sha
+	if msg.ghErr != nil {
+		// 一時エラーをキャッシュすると「PR はありません」という誤答が固定される
+		// (次の p で再試行させる) ため、キャッシュは成功時のみ
+		if wasCurrent {
+			m.showWarning("PR の取得に失敗しました: " + app.FirstLine(msg.ghErr.Warning()))
+		}
+		return m, m.maybeTick()
+	}
+	m.prCache[msg.sha] = msg.pr
+	m.invalidateLines() // コミット行の PR バッジに反映
+	if !wasCurrent {
+		return m, m.maybeTick()
+	}
+	if msg.pr == nil {
+		m.toast.Show("このコミットに紐づく PR はありません", false)
+		return m, m.maybeTick()
+	}
+	m.toast.Show(fmt.Sprintf("PR #%d を開きます", msg.pr.Number), true)
+	return m, tea.Batch(m.openURLCmd(msg.pr.URL), m.maybeTick())
+}
+
+func (m *browseModel) onPRStatus(msg prStatusMsg) (tea.Model, tea.Cmd) {
+	// receive は当該 sha が表示中ならエラー時に close するため、sha 一致は receive の前に捕捉する。
+	// notice は「今表示中の対象」の失敗のときだけ出す: 別 sha へ移った後に届く遅延エラーで
+	// 無関係な失敗 notice を被せない (レビュー確定 low)。
+	wasCurrent := msg.sha == m.prStatusOv.SHA()
+	m.prStatusOv.Receive(msg.sha, msg.status, msg.ghErr)
+	if msg.ghErr != nil && wasCurrent {
+		// 一時エラーはキャッシュしない (receive 側)。理由はトーストで伝える
+		m.showWarning("PR の取得に失敗しました: " + app.FirstLine(msg.ghErr.Warning()))
+	}
+	return m, m.maybeTick()
+}
+
+func (m *browseModel) onDiff(msg commitview.DiffMsg) (tea.Model, tea.Cmd) {
+	// 警告は「今表示中の対象」の失敗のときだけ出す: 別 SHA へ移った後に届く遅延エラーで
+	// 無関係な失敗 notice を被せない (prStatusMsg の wasCurrent と同型。receive は当該
+	// sha が表示中ならエラー時に close するため、一致は receive の前に捕捉する)
+	wasCurrent := msg.SHA() == m.diffOv.SHA()
+	if err := m.diffOv.Receive(msg); err != nil && wasCurrent {
+		m.showWarning("diff の取得に失敗しました: " + app.FirstLine(err.Error()))
+	}
+	return m, m.maybeTick()
+}
+
+func (m *browseModel) onIssuesScan(msg issuesview.IssuesScanMsg) (tea.Model, tea.Cmd) {
+	// 戻り値は畳まれていた取り直しの予約 (issuesview.IssuesView.Receive の doc)。捨てると
+	// 「自分がファイルを動かしたのに一覧が古いまま」が残る
+	cmd := m.issuesOv.Receive(msg)
+	// receive → rebindOpen が置く notice (開いていた issue の消失) をこのフレームで配達する。
+	// 打鍵経路の takeNotice に任せると、次のキーまで「本文が無言で畳まれた」に見え、
+	// その次のキーが q だと理由が 1 度も描かれずに終了する。
+	// maybeTick はトーストを出したときだけ束ねる (issuesWatchMsg の 1s チェーンの意図を崩さない)
+	if m.deliverNotice(m.issuesOv.TakeNotice()) {
+		return m, tea.Batch(cmd, m.maybeTick())
+	}
+	return m, cmd
+}
+
+func (m *browseModel) onAutobuild(msg autobuildMsg) (tea.Model, tea.Cmd) {
+	// 裏のビルドが決着したらトーストで知らせる。
+	//
+	// 🚨 notify と keep は同時に立つ (handle は「開始を伝えた後も失敗を拾うため監視を続ける」を
+	// この組み合わせで表す)。通知したときに tickCmd を張り直さないと監視チェーンが切れ、
+	// その後のビルド失敗が二度と通知されない (監視は失敗を検出する唯一の経路)。
+	res, notify, keep := m.autobuild.handle(msg.result, app.TimeNow())
+	var watch tea.Cmd
+	if keep {
+		watch = m.autobuild.tickCmd()
+	}
+	if notify && res == autobuildInstalled {
+		// 完成はその場で再起動できる合図なので、消えるトーストでなくダイアログで出す。
+		// 🚨 ここでは「出したい」を立てるだけ。実際に出るのは中断できない処理 (claude update /
+		// push / pull) が走っていないときで、判断は restartPromptVisible() が持つ
+		m.restartPending = true
+		return m, tea.Batch(m.maybeTick(), watch)
+	}
+	if notify {
+		text, ok := autobuildToast(res)
+		m.toast.Show(text, ok)
+		return m, tea.Batch(m.maybeTick(), watch) // トーストのスライドは tick で進む
+	}
+	return m, watch
+}
+
+func (m *browseModel) onAutobuildSpawn(msg autobuildSpawnMsg) (tea.Model, tea.Cmd) {
+	// pull 後の裏ビルドが始まった。🚨 起動時とまったく同じ形で監視を張る (newAutobuildWatch →
+	// handle で「ビルド中」を即出す → tickCmd)。完成すれば通常の autobuildMsg 経路が
+	// 再起動ダイアログを出すので、ここで完成側の面倒を見る必要はない。
+	if !msg.spawned || m.autobuild.active {
+		return m, nil
+	}
+	m.autobuild = newAutobuildWatch(selfExePath(), true, app.TimeNow())
+	if res, notify, _ := m.autobuild.handle(autobuildRunning, app.TimeNow()); notify {
+		text, ok := autobuildToast(res)
+		m.toast.Show(text, ok)
+	}
+	return m, tea.Batch(m.autobuild.tickCmd(), m.maybeTick())
+}
+
+func (m *browseModel) onCIPoll(msg ciPollMsg) (tea.Model, tea.Cmd) {
+	if msg.gen != m.ciPollGen {
+		return m, nil // reloadAfterPull で世代が進んだ後の残タイマーは破棄
+	}
+	targets := m.ciPollTargets()
+	if len(targets) == 0 {
+		// 🚨 **ここで awaitCI を空にする**。ciPollTargets は commits を走査して
+		// `m.awaitCI[c.SHA]` を targets に入れるので、**targets が空なら残っている awaitCI の
+		// 要素は定義上 commits の外**にいる = どの経路でも取り除かれないファントム。
+		// ⚠️ 打ち切り (awaitAttempts) を早期 return の前へ動かしても効かない: この分岐は
+		// ciPolling=false でチェーンごと止めるため、1 回数えても次の周期が来ない。
+		m.awaitCI, m.awaitAttempts = nil, 0
+		m.ciPolling = false // 追従対象なし: チェーンを止める (次の開始点で再アーム)
+		return m, nil
+	}
+	if m.panelGrace > 0 {
+		m.panelGrace-- // rerun 直後: 新しい実行が GraphQL に映るまで空振りを許す
+	}
+	// 「CI が 1 つも現れない」の打ち切りは周期の側で数える。結果着弾の側で数えると、
+	// 一括取得が複数チャンクへ割れた回に awaitAttempts が余分に進み、意図した
+	// ciPollInterval × ciAwaitMaxAttempts (= 2 分) より早く諦めてしまう
+	if len(m.awaitCI) > 0 {
+		m.awaitAttempts++
+		if m.awaitAttempts >= ciAwaitMaxAttempts {
+			m.awaitCI = nil // 諦める: workflow を持たない repo で永久にポーリングしない
+		}
+	}
+	next := m.scheduleCIPoll()
+	// 別経路の取得と重ねない (同一 SHA への GraphQL 並行は完了順で statuses/details が
+	// 上書きされる。fetchPanelDetails と同じ注意)。タイマーだけ繋いで次の周期に回す
+	if m.ciPollInFlight || m.fetching() {
+		return m, next
+	}
+	m.ciPollInFlight = true
+	gen := m.ciPollGen
+	fetch := ciPollFetch(m.repo, targets, func(b gitdata.CIBatch, e *gitdata.GHError) tea.Msg {
+		return ciPollResultMsg{gen: gen, batch: b, ghErr: e}
+	})
+	return m, tea.Batch(fetch, next, m.maybeTick())
+}
+
+func (m *browseModel) onCIPollResult(msg ciPollResultMsg) (tea.Model, tea.Cmd) {
+	// 🚨 in-flight は世代不一致でも必ず下ろす: リロード側は「飛んでいる poll の結果が
+	// 着弾するまで in-flight を維持する」前提 (reloadAfterPull のコメント) なので、
+	// ここで下ろさないと以降の周期が永久に fetch を見送る
+	m.ciPollInFlight = false
+	if msg.gen != m.ciPollGen {
+		// リロード前に投げた結果。マージすると入れ替わった statuses を古い観測で
+		// 巻き戻す (決着済みの SHA が pending に戻り、表示と追従が 1 周期ぶれる)
+		return m, m.ensureCIPoll()
+	}
+	m.invalidateLines()
+	m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (sticky 警告の防止)
+	m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
+	m.settleAwaitCI()
+	// リフレッシュで job 数が縮んだ場合にフォーカスを範囲内へ戻す
+	if m.panelSHA != "" && m.panelCursor >= len(m.details[m.panelSHA]) {
+		m.panelCursor = max(len(m.details[m.panelSHA])-1, -1)
+	}
+	return m, tea.Batch(m.maybeFetchETABasis(), m.ensureCIPoll())
+}
+
+func (m *browseModel) onPull(msg pullMsg) (tea.Model, tea.Cmd) {
+	m.actModal.pulling = false
+	if msg.err != nil {
+		m.showGitFailure("pull に失敗", msg.err)
+		return m, m.maybeTick()
+	}
+	// 成功トーストを右下にせり上げつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
+	m.toast.Show("pull --rebase しました", true)
+	// pull で自分のソースが更新されたなら、その場で裏ビルドを始める (autobuildAfterPull)。
+	// status viewer を開いたまま p で pull した場合は、その場で読み直す: 自動更新は 1.5 秒
+	// 周期なので、待たせるとヘッダーの ahead/behind が古いまま残って「効いていない」に見える。
+	return m, tea.Batch(m.reloadAfterPull(), m.maybeTick(), m.autobuildAfterPull(), m.statusOv.LoadCmd())
+}
+
+func (m *browseModel) onRerun(msg rerunMsg) (tea.Model, tea.Cmd) {
+	m.actModal.rerunning = false
+	if msg.err != nil {
+		m.showWarning("再実行に失敗: " + app.FirstLine(msg.err.Error()))
+		return m, m.maybeTick()
+	}
+	m.toast.Show("CI を再実行します", true)
+	// パネルを開いたままなら猶予つきで追従対象に留める (rerun が GraphQL に映るまでのラグは
+	// rerunPollGrace のコメント参照)。映れば StatePending になり、以降は通常の追従へ
+	// 自然に引き継がれる。パネルが閉じられていれば何もしない (次の開き直しで最新を取る)
+	var poll tea.Cmd
+	if msg.sha == m.panelSHA && m.panelSHA != "" {
+		m.panelGrace = rerunPollGrace
+		poll = m.ensureCIPoll() // 既にチェーンが生きていれば nil (二重化しない)
+	}
+	return m, tea.Batch(poll, m.maybeTick())
+}
+
+func (m *browseModel) onUpdateBegin(msg updateBeginMsg) (tea.Model, tea.Cmd) {
+	// C / X 連打で「同じ CLI」の update が走行中なら二重実行しない (自己更新が競合する)。
+	// 🚨 別の CLI は弾かない: claude と codex は独立に走らせる (ユーザー要望 2026-08-21)。
+	// ここを anyUpdating() に戻すと片方の実行中にもう片方が始められず直列に戻る。
+	if m.actModal.isUpdating(msg.target) {
+		return m, m.maybeTick()
+	}
+	// 🚨 判定 Cmd の走行中 (実測 40-80ms) は update モーダルが出ていないため、その窓で
+	// b / u / r を押すと確認モーダルが立つ。そこへ update を重ねると、描かれるのは update
+	// (boxLines の switch 順) なのにキーを受け取るのは確認 (handleKey の判定順) になり、
+	// 「完了まで終了できません」の画面で Enter が git push を起動する (audit 2026-08-20 で
+	// runGitPush 1 回を実測)。確認・git 実行中は update を譲り、理由をトーストで伝える。
+	// 🚨 ここに anyUpdating() を足さないこと: 別 CLI の update とは並走させる。
+	// 本来の直し方は「描画とキー判定を同一の状態値から導出する」(未対応)。
+	if m.actModal.pushConfirm || m.actModal.pullConfirm || m.actModal.rerunConfirm ||
+		m.actModal.pushing || m.actModal.pulling || m.actModal.rerunning {
+		m.toast.Show(msg.target+" update は確認/実行が終わってから実行してください", false) // 断り (✗。ガイド §9)
+		return m, m.maybeTick()
+	}
+	return m, tea.Batch(m.actModal.runUpdate(msg.target), m.maybeTick())
+}
+
+func (m *browseModel) onUpdate(msg updateMsg) (tea.Model, tea.Cmd) {
+	// 🚨 早期リターン (「すでに latest」の判定結果) で走行中の update を降ろさないこと。
+	// C の判定 Cmd が並走したとき、その結果が走っている自己更新の追跡を消し、モーダルが
+	// 閉じて終了ガードが解ける (自己更新が孤児化 / 二重起動する。2026-08-21 に
+	// npm 2 本同時と Ctrl-C 脱出を実測)。走行中なら判定結果は捨てる。
+	if msg.early && m.actModal.isUpdating(msg.target) {
+		return m, m.maybeTick()
+	}
+	// 該当 CLI だけ走行中から外す。もう片方が走っていればモーダルは残る
+	// (両方終わるまで「完了まで終了できません」を維持する)
+	m.actModal.finishUpdate(msg.target)
+	// 結果は右下トーストで出す (旧: 何かキーで閉じるダイアログ。ユーザー要望 2026-07-25)。
+	// バージョンが上がったのか latest だったのかは 1 行に畳んで一目で分かる形にする。
+	// 「新バージョンあり」の通知 (showClaudeUpdate) と違って調停は挟まない:
+	// こちらは C / X を押した本人への結果なので、先行トーストを上書きする後勝ちが正しい。
+	// どちらの CLI の結果かが一目で分かるよう、主語として CLI 名を常に前置する
+	// (ユーザー要望 2026-08-12。旧: codex のみ前置)。
+	name := msg.target + " "
+	switch {
+	case msg.err != nil:
+		m.showWarning(name + "更新に失敗: " + app.FirstLine(msg.err.Error()))
+	case msg.before != "" && msg.after != "" && msg.before != msg.after:
+		m.toast.Show(name+"v"+msg.before+" → v"+msg.after+" に更新しました", true)
+	case msg.before != "" && msg.before == msg.after && msg.early:
+		// glogx 自身が「installed >= キャッシュ済み latest」を証明した早期リターン。
+		// ここだけが「最新です」と言ってよい (update は走っていない)。
+		m.toast.Show(name+"すでに最新版です (v"+msg.before+")", true)
+	case msg.before != "" && msg.before == msg.after:
+		// update を走らせたのにバージョンが動かなかった。🚨 これを「最新です」と言わないこと:
+		// CLI は自前の stale なキャッシュを見て「更新不要」と判断しても exit 0 で成功する
+		// (実測 2026-09-03: 起動時トーストが codex の新版を告げた直後に X を押しても
+		// ~/.codex/version.json が 44 日前で止まっていて "already up to date" が返り、
+		// glogx がそれを「すでに最新版です」と翻訳していた)。glogx は registry 直取りの
+		// latest を握っているので、それより古いままなら警告として出す。
+		if latest := cachedLatestVersion(versionCacheFileFor(msg.target)); versionLess(msg.before, latest) {
+			m.showWarning(name + "update を実行しましたが v" + msg.before + " のままです (公開は v" + latest + ")" + updateNoteSuffix(msg.note))
+			return m, m.maybeTick()
+		}
+		m.toast.Show(name+"update を実行しましたが変化なし (v"+msg.before+")"+updateNoteSuffix(msg.note), true)
+	case msg.after != "":
+		m.toast.Show(name+"現在のバージョン: v"+msg.after, true) // before 不明で比較できず
+	default:
+		m.toast.Show(name+"update を実行しました", true) // 前後とも取得できず
+	}
+	return m, m.maybeTick()
+}
+
+func (m *browseModel) onPush(msg pushMsg) (tea.Model, tea.Cmd) {
+	m.actModal.pushing = false
+	if msg.err != nil {
+		m.showGitFailure("push に失敗", msg.err)
+		return m, m.maybeTick()
+	}
+	m.toast.Show("push しました", true)
+	if len(m.commits) == 0 {
+		return m, m.maybeTick() // 再取得先が無くてもトーストは出す (アニメ tick を回す)
+	}
+	if !m.hasRepo {
+		// CI の再取得は無いが、未 push (🔼) は手元で判定し直す (読み直さないと push 済みのコミットが 🔼 のまま残る)
+		cmds := []tea.Cmd{m.reloadLog(true, "push 後の再読込に失敗しました: "), m.maybeTick()}
+		if m.statusOv.Visible() {
+			cmds = append(cmds, m.statusOv.LoadCmd()) // GitHub の repo のときと同じく viewer の ahead を即消す
+		}
+		return m, tea.Batch(cmds...)
+	}
+	// status viewer 表示中は演出を出さない (対象のコミット一覧が画面に無く、演出分だけ
+	// 再取得が遅れるだけ)。代わりに viewer を読み直してヘッダーの ahead を即消す
+	// (pull 成功時の statusOv.loadCmd と同じ理由)
+	if m.statusOv.Visible() {
+		return m, tea.Batch(m.refetchAfterPush(), m.maybeTick(), m.statusOv.LoadCmd())
+	}
+	if m.startPushAnim() {
+		return m, m.maybeTick() // 演出完了後 (advancePushAnim) に refetchAfterPush へ進む
+	}
+	return m, tea.Batch(m.refetchAfterPush(), m.maybeTick())
+}
+
+func (m *browseModel) onEditorClosed(msg extcmd.EditorClosedMsg) (tea.Model, tea.Cmd) {
+	if msg.ReclaimErr != nil {
+		m.showWarning("端末の前面を取り戻せませんでした (" + app.FirstLine(msg.ReclaimErr.Error()) + ")。止まったら fg で戻してください")
+	}
+	// 後処理は起動元で決める (extcmd.ExecOrigin)。treefiler の ! / s / e、mac-lan-manager の s / o / 初期設定の手順から
+	// 戻ったときの知らせる文は各画面の ExecReturned が決める (シェルの 0 以外の終了で「エディタが異常終了しました」を出さない)
+	var w string
+	switch msg.Origin {
+	case extcmd.OriginFiler:
+		w = m.filerV.ExecReturned(msg.Err)
+	case extcmd.OriginLan:
+		w = m.lanV.ExecReturned(msg.Err)
+	case extcmd.OriginEditor:
+	}
+	if msg.Origin != extcmd.OriginEditor {
+		if w != "" {
+			m.showWarning(app.FirstLine(w))
+		}
+		return m, m.maybeTick()
+	}
+	// エディタを閉じて復帰。job ログは stdin 渡しなのでファイルは残らず、バッファも破棄済み。
+	// 🚨 issues viewer の e (別名 v) だけは実ファイルを編集可能で開く (メモを足せるように
+	// readonly にしていない) ので、復帰の境界で取り直す。取り直さないと編集結果 (H1・front matter の
+	// status・チェックボックス) が一覧にも本文にも出ず、viewer が古い内容を最新として表示する。
+	// 🚨 viewer 表示中でも IssuesView の通知 (TakeNotice で受け取る) へ回さない: 通知はどのヘッダーも描かず、
+	// 次の打鍵で TakeNotice されるまで画面に出ない (キーを押すまで失敗が黙殺される)。
+	// viewLines が viewer の窓にもトーストを合成するので、ここは常にトーストでよい。
+	// 🚨 起動対象は $VISUAL/$EDITOR で変わる (extcmd.EditorCommand) ので、文言でツール名を名指し
+	// しない。job ログ・repo root だけは nvim 固定だが、失敗の主因は可変側 (typo した
+	// $EDITOR・PATH に無いエディタ) なので総称で出す。
+	//
+	// 🚨 「起動できなかった」と「起動できたが 0 以外で終了した」を分ける。後者 (nvim の :cq 等)
+	// はエディタが実際に開いてファイルを保存できているので、reload を飛ばすと上の不変条件
+	// (復帰の境界で取り直す) が破れ、保存済みの編集が出ないまま古い内容を最新として表示する。
+	if extcmd.IsQuitRequest(msg.Err) {
+		// エディタの <C-g> (glogx ごと閉じて)。保存は nvim 側が済ませている (保存できなければ抜けずに止まる)。
+		// 終了が飲まれたとき (push 中など) は viewer に戻るので、取り直しも積む
+		_, quitCmd := m.handleQuitKey("ctrl+g")
+		return m, tea.Batch(m.issuesOv.ReloadAfterEdit(), quitCmd, m.maybeTick())
+	}
+	var exitErr *exec.ExitError
+	switch {
+	case msg.Err == nil:
+	case errors.As(msg.Err, &exitErr):
+		m.showWarning("エディタが異常終了しました: " + app.FirstLine(msg.Err.Error()))
+	default:
+		// 起動失敗はファイルが変わっていないので取り直さない
+		m.showWarning("エディタを開けませんでした: " + app.FirstLine(msg.Err.Error()))
+		return m, m.maybeTick()
+	}
+	return m, tea.Batch(m.issuesOv.ReloadAfterEdit(), m.maybeTick())
+}
+
+func (m *browseModel) onPaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+	// 貼り付け (bracketed paste。bubbletea v2 は既定で有効) は入力欄にだけ入れる。入力欄が無いときは捨てる:
+	// キー操作として解釈すると、貼った文字列が 1 字ずつ一覧のキーとして走る (docs/glogx-ui-guide.md §7)。
+	// 板が入力欄の上に出ている間 (action モーダル・再起動の確認) もキーは板が先に取るので、貼り付けも入れない
+	if m.activeFullScreen() == FullScreenIssues && m.issuesOv.TypingInput() && !m.actModal.active() && !m.restartPromptVisible() {
+		m.issuesOv.Paste(msg.Content)
+	}
+	if m.activeFullScreen() == FullScreenFiler && !m.actModal.active() && !m.restartPromptVisible() {
+		m.filerV.Paste(msg.Content) // 入力中 (検索・! のコマンド) だけ入る。filer が捨てる
+	}
+	if m.activeFullScreen() == FullScreenLan && !m.actModal.active() && !m.restartPromptVisible() {
+		m.lanV.Paste(msg.Content) // 入力中 (絞り込み・別名・帯) だけ入る。lanmgr が捨てる
+	}
+	return m, m.maybeTick()
+}
+
+func (m *browseModel) onKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// 高速連打やパイプ入力で複数の文字キーが 1 つのキーイベント (Text 長 > 1) に
+	// まとまって届いた場合の分解。まとめずに msg.String() だけ見ると "hhq" のような
+	// 未知キー扱いになり、以降の操作が全て無視されたように見える (pty スモークで実測)。
+	// v2 の入力デコーダは grapheme クラスタ単位で 1 イベントを返すのでまとまらない想定だが、
+	// 保険として残す (v1 で実際に起きた回帰であり、削っても得られる簡素化は 10 行)。
+	if runes := []rune(msg.Text); len(runes) > 1 {
+		var cmds []tea.Cmd
+		for _, r := range runes {
+			_, cmd := m.handleKey(string(r))
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			if m.done {
+				break
+			}
+		}
+		// 🚨 単キー経路と同じく maybeTick を束ねる: 分解したキーが出したトースト・glide は
+		// 他に tick を回す理由が無ければ 1 フレームも進まず、shown=0 のまま凍って見えない。
+		// この経路は「普段は通らないが通ったときだけ壊れる」ので気づきにくい。
+		// maybeTick は single-flight なのでループ内の Cmd と重ねても二重には走らない。
+		return m, tea.Batch(append(cmds, m.maybeTick())...)
+	}
+	// handleKey はキー経路の唯一の入口。ここで maybeTick を必ず束ねることで、ハンドラや
+	// openX()/copyX() の内部で出したトースト (バリデーション失敗・コピー結果など) が
+	// 呼び出し側で return m, nil されてもアニメ tick が確実に回る (トーストが shown=0 のまま
+	// 凍って見えない事故を防ぐ)。maybeTick は single-flight で冪等なので二重には走らない。
+	model, cmd := m.handleKey(msg.String())
+	return model, tea.Batch(cmd, m.maybeTick())
 }
 
 // updateKeyReachable は C / X を update の入口として受けてよいかを返す。overlay が自分の語彙を
