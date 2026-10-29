@@ -14,7 +14,7 @@
 - Q4/Q6: JSON の種別・範囲集計を README に追加。専用フラグ・既定の分類変更は今回採用しない。
 - Q5: 複数行は原因ではない。引数付き call と前置文が原因で、現行の保守的な preset 条件を維持する。
 - 954 P3/P8: 現行では解消済み。実ファイルと実 hook の A-B で確認した。
-- 関連: [954](954-research-dupscan-dogfood-feedback-obaket-1307-2026-10-28.md)、[955](../955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md)、[956](../956-research-dupscan-dogfood-self-dedup-2026-10-29.md)。955/956 全体の完了判断・担当には介入しない。
+- 関連: [954](954-research-dupscan-dogfood-feedback-obaket-1307-2026-10-28.md)、[955](../955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md)、[956](956-research-dupscan-dogfood-self-dedup-2026-10-29.md)。955/956 全体の完了判断・担当には介入しない。
 
 ## 概要
 
