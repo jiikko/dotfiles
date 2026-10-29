@@ -204,17 +204,19 @@ func (m *Model) pageHead(w int) string {
 // hints は最下行に載せるキー。板・モーダルが開いている間はその板のキーだけにする (一覧のキーを残すと、板では効かないキーを案内する)。
 // 一覧では、選んでいる Mac の動作のキー (s 繋ぐ…) を名前の長さ・配置に依らず載せる (詳細カードが 1 行に畳まれると、そこから押し出された)。
 func (m *Model) hints() []keyHint {
-	var hs []keyHint
-	switch {
-	case m.small:
+	if m.small {
 		return []keyHint{{"q", "閉じる", 1}}
-	case m.progressShown():
+	}
+	var hs []keyHint
+	l := m.top()
+	switch l {
+	case layerSetupProgress:
 		hs = progressHints
-	case m.speedShown():
+	case layerSpeedProgress:
 		hs = speedProgressHints
-	case m.ov == ovSpeed:
+	case layerSpeedAsk:
 		hs = speedBoxHints
-	case m.ov == ovConfirm:
+	case layerConfirm:
 		yes := "y/enter"
 		if m.ask != nil && (m.ask.auto || m.ask.selfOnly) { // HandleInput が enter で実行しない板
 			yes = "y"
@@ -223,25 +225,25 @@ func (m *Model) hints() []keyHint {
 		if m.ask != nil && m.ask.exec != nil {
 			hs = append(hs, keyHint{"c", "コマンドをコピー", 3})
 		}
-	case m.ov == ovCopyIP:
+	case layerCopyIP:
 		keys := "1/2"
 		if len(m.selfCopyItems()) > 2 {
 			keys = "1/2/3"
 		}
 		hs = []keyHint{{keys, "すぐコピー", 2}, {"j/k+enter", "選んでコピー", 3}, {"esc", "やめる", 1}}
-	case m.ov == ovLog:
+	case layerLog:
 		hs = []keyHint{{"j/k", "選ぶ", 3}, {"y", "1 件コピー", 2}, {"Y", "全部コピー", 4}, {"e/esc", "閉じる", 1}}
-	case m.ov == ovAlias:
+	case layerAlias:
 		hs = []keyHint{{"enter", "決める", 2}, {"esc", "やめる", 1}}
-	case m.ov == ovHelp:
+	case layerHelp:
 		hs = []keyHint{{"どのキーでも", "閉じる", 1}}
-	case m.sc == scSetup:
+	case layerSetup:
 		hs = []keyHint{{"x", "実行", 2}, {"r", "リロード", 3}, {"e", "メッセージ", 4}, {"q/esc", "戻る", 1}} // e: 1 行に切った接続の失敗の全文
-	case m.sc == scSettings:
+	case layerSettings:
 		hs = []keyHint{{"j/k", "項目", 2}, {"space", "入/切", 3}, {"←/→", "選ぶ", 4}, {"enter", "編集", 5}, {"q/esc/,", "閉じる", 1}}
-	case m.filtering:
+	case layerFilter:
 		hs = []keyHint{{"enter", "確定", 2}, {"esc", "やめる", 1}}
-	case m.detailOpen:
+	case layerDetail:
 		hs = []keyHint{{"q/esc", "戻る", 1}}
 		if r := m.current(); !r.self {
 			hs = append(hs, keyHint{"enter", "初期設定", 2})
@@ -252,16 +254,16 @@ func (m *Model) hints() []keyHint {
 		if m.detailMax > 0 {
 			hs = append(hs, keyHint{"j/k", "送る", 3})
 		}
-	default:
+	case layerList:
 		rows := m.rowHints(m.current())
 		hs = append(make([]keyHint, 0, 2+len(rows)+6), keyHint{"j/k", "移動", 7}, keyHint{"enter", "詳細", 6})
 		hs = append(hs, rows...)
 		hs = append(hs, keyHint{"h/l", "タブ", 10}, keyHint{"space", "台帳", 8}, keyHint{"c", "この Mac の IP", 9},
 			keyHint{",", "設定", 11}, keyHint{"?", "全部のキー", 2}, keyHint{"q", "閉じる", 1})
 	}
-	if m.ov == ovNone && !m.speedShown() && !m.progressShown() && m.sc != scSettings && !m.filtering && !m.selfOK { // 読めるまで断るキーは案内にも出さない (出すと押しても断られた。板とモーダルのキーは網を読まない)
+	if (l == layerList || l == layerDetail) && !m.selfOK { // 読めるまで断るキーは案内にも出さない (出すと押しても断られた。板とモーダルのキーは網を読まない)
 		hs = slices.DeleteFunc(hs, func(h keyHint) bool {
-			return slices.Contains(needsNet, h.key) || (m.detailOpen && h.key == "enter") // パネルの enter (初期設定) も netRefused が断る
+			return slices.Contains(needsNet, h.key) || (l == layerDetail && h.key == "enter") // パネルの enter (初期設定) も netRefused が断る
 		})
 	}
 	return hs
@@ -283,27 +285,7 @@ func (m *Model) header(w int) string {
 	switch {
 	case m.Busy():
 		// 何を待っているかを出す (Busy は走査の他に相手の確認・確認待ちも含む。走査が終わった後も「Bonjour で探しています」と出た)
-		var what string
-		switch {
-		case !m.netReady:
-			what = " この Mac のネットワーク設定を確認中"
-		case m.scan != nil && m.scan.Busy(m.now):
-			what = fmt.Sprintf(" Bonjour で探しています (%d 台)", len(m.peers))
-		case m.su != nil && m.su.ch != nil:
-			what = " 相手に接続して確認中"
-		case m.netCh != nil:
-			what = " この Mac のネットワーク設定を確認中"
-		case len(m.pending) == 0 && !m.awaitingUnconf() && len(m.bg) > 0:
-			what = " 有線の名前の広告を止めている"
-		case len(m.pending) == 0 && !m.awaitingUnconf() && m.speedRun != nil:
-			what = " 通信速度を測っている"
-		case len(m.pending) == 0 && !m.awaitingUnconf() && len(m.reachRuns) > 0:
-			what = " 疎通を確かめている"
-		case len(m.pending) == 0 && !m.awaitingUnconf():
-			what = " 有線の名前を確かめている"
-		default: // 残る Busy は確認待ち (pending / awaitingUnconf)
-			what = " 固定 IP の確認待ち"
-		}
+		what := " " + m.busyLabel()
 		left += "   " + lipgloss.NewStyle().Foreground(cPink).Render(spinner.At(m.now, spinStep)) + sDim.Render(what)
 	case !m.selfOK:
 		left += "   " + sWarn.Render("✗ この Mac のネットワークを読めない") + sDim.Render(" (r で読み直す)")
@@ -901,14 +883,12 @@ func kindPill(k netinfo.Kind) string {
 
 // overlayBox は重ねる板と、その中の入力欄の行・桁 (入力欄が無ければ fieldRow = -1)。
 func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
-	if m.progressShown() {
+	switch m.top() {
+	case layerSetupProgress:
 		return m.progressBox(), -1, 0
-	}
-	if m.speedShown() {
+	case layerSpeedProgress:
 		return m.speedProgressBox(), -1, 0
-	}
-	switch m.ov {
-	case ovConfirm:
+	case layerConfirm:
 		if m.ask != nil {
 			hint := confirm.HintYesNo
 			switch {
@@ -921,9 +901,9 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 			}
 			return modal(m.ask.title, m.ask.body, hint, m.w), -1, 0
 		}
-	case ovLog:
+	case layerLog:
 		return m.logBox(), -1, 0
-	case ovCopyIP:
+	case layerCopyIP:
 		unfixed := m.selfLan().Unfixed
 		items := m.selfCopyItems()
 		body := make([]string, 0, len(items))
@@ -955,7 +935,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 			keys = "1 / 2 / 3"
 		}
 		return modal("この Mac の IP・名前をコピー", body, keys+" すぐコピー   j/k + enter 選んでコピー   esc やめる", m.w), -1, 0
-	case ovAlias:
+	case layerAlias:
 		prefix := sDim.Render(m.edit.label + "  ")
 		// 欄の幅は板に入る分だけ (板は幅 w-1 から縁と余白の 6 桁を引いた中に描く)。固定の 25 桁だと、狭い端末で前置きと欄が 2 行に割れ、
 		// キャレットが欄の外に立った
@@ -964,9 +944,9 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 		field := lipgloss.NewStyle().Background(cCode).Render(termwidth.FillRight(txt, fw))
 		// 板の中の位置: 上の辺 1 + 余白 1 + 題 1 + 空行 1 = 4 行目、左の辺 1 + 余白 2 + 前置き
 		return modal(m.edit.title, []string{prefix + field}, "enter 決める   esc やめる", m.w), 4, 3 + lipgloss.Width(prefix) + col
-	case ovSpeed:
+	case layerSpeedAsk:
 		return m.speedBox(), -1, 0
-	case ovHelp:
+	case layerHelp:
 		keys := [][2]string{{"j / k / g / G / ctrl-d / ctrl-u", "移動"}, {"h / l / tab", "管理対象 / 未管理 / この Mac のタブ"}, {"/", "絞り込み"},
 			{"s", "ssh で繋ぐ (端末を渡す)"}, {"Y", "ssh のコマンドをコピー"}, {"y", "smb の接続先をコピー"}, {"O", "Finder で smb に繋ぐコマンド (open smb://…) をコピー"}, {"o", "画面共有を開く"}, {"a", "SyakeScreen で開く (syakescreen://connect)"},
 			{"c", "この Mac の IP・有線の名前をコピー"}, {"enter", "詳細 (中でもう一度 enter で初期設定。この Mac の行では有線を固定 IP にする)"}, {"space", "台帳に登録 / 台帳から外す"}, {"m", "別名を付ける"}, {"t", "通信速度を測る (管理対象。確認してから帯域を使う。測定中は進捗を開く)"}, {"p", "疎通を確かめる (管理対象の名前ごとに ping と ssh の口)"}, {"u", "ssh のユーザー名を変える"}, {"e", "メッセージ一覧 (y でコピー)"}, {",", "設定"},
@@ -981,7 +961,7 @@ func (m *Model) overlayBox() (box string, fieldRow, fieldX int) {
 		// 一覧の印 (キーではないが、ほかに説明する場所が無い)
 		body = append(body, "", lipgloss.NewStyle().Foreground(cWarn).Bold(true).Width(34).Render("! (管理対象の行)")+sText.Render("初期設定が途中 (enter で開く)"))
 		return modal("キーの一覧", body, "どのキーでも閉じる", m.w), -1, 0
-	case ovNone:
+	case layerList, layerFilter, layerDetail, layerSettings, layerSetup:
 	}
 	return "", -1, 0
 }

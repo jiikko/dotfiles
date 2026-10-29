@@ -527,14 +527,13 @@ func (m *Model) Changed() <-chan struct{} {
 // Busy は走査が続いているか (呼び出し側はこの間、遅い周期で Advance を呼ぶ。spinner もこの間だけ回る)。
 // この Mac のネットワークを裏で読んでいる間も Busy (読み終わりを Advance で取り込むため)。
 func (m *Model) Busy() bool {
-	return m.netCh != nil || (m.scan != nil && m.scan.Busy(m.now)) || (m.su != nil && m.su.ch != nil) || len(m.pending) > 0 || m.awaitingUnconf() ||
-		len(m.bg) > 0 || m.wiredWait > 0 || m.speedRun != nil || len(m.reachRuns) > 0
+	return m.busyJob() != nil
 }
 
-// OwnsKeys は全部のキーを画面が持つ層 (入力欄・確認・板・設定・測定の進捗) が開いているか (glogx は横断キーも渡す)。
-// 測定の進捗も数える: 数えないと glogx の L・横断キーがモーダルの裏で板を閉じ、Close が測定を黙って取り消す
+// OwnsKeys は一覧の上に層 (入力欄・確認・板・設定・測定の進捗) が開いているか (開いていれば glogx は横断キーも渡す。
+// 渡さないと L・横断キーが層の裏で板を閉じ、Close が測定を黙って取り消す)。
 func (m *Model) OwnsKeys() bool {
-	return m.filtering || m.bandEdit || m.ov != ovNone || m.sc == scSettings || m.sc == scSetup || m.detailOpen || m.speedShown()
+	return m.top() != layerList
 }
 
 // Binds はこの画面が使うキーか (glogx の横断キー・U より先にこの画面へ渡す。s は status の横断キーと同じ字だが、ここでは ssh)。
@@ -1070,11 +1069,10 @@ func (m *Model) HandleInput(key, text string) Action {
 		return None
 	}
 	m.wantHost = "" // 自分で動かしたら、後から見つかった Mac へカーソルを跳ばさない (効かないキーでは消さない)
-	if m.speedShown() {
+	switch m.top() {
+	case layerSpeedProgress:
 		return m.keySpeedProgress(key)
-	}
-	switch m.ov {
-	case ovConfirm:
+	case layerConfirm:
 		a := m.ask
 		if a != nil && a.exec != nil && key == "c" { // 実行するコマンドの全文をコピーする (板は閉じない。うまくいかないときに相談できるように。ユーザー要望)
 			m.copyAs(shellLine(a.exec.Argv), "実行するコマンド (全文)")
@@ -1113,29 +1111,24 @@ func (m *Model) HandleInput(key, text string) Action {
 			m.note(n.Text, n.OK)
 		}
 		return None // 知らないキーはすべて取り消し (§4)
-	case ovCopyIP:
+	case layerCopyIP:
 		return m.keyCopyIP(key)
-	case ovLog:
+	case layerLog:
 		return m.keyLog(key)
-	case ovAlias:
+	case layerAlias:
 		return m.keyAlias(key, text)
-	case ovSpeed:
+	case layerSpeedAsk:
 		return m.keySpeed(key)
-	case ovHelp:
+	case layerHelp:
 		m.ov = ovNone // どのキーでも閉じる
 		return None
-	case ovNone:
-	}
-	if m.sc == scSetup && m.su != nil {
+	case layerSetup, layerSetupProgress:
 		return m.keySetup(key)
-	}
-	if m.sc == scSettings {
+	case layerSettings:
 		return m.keySettings(key, text)
-	}
-	if m.detailOpen {
+	case layerDetail:
 		return m.keyDetail(key)
-	}
-	if m.filtering { // 入力中は入力欄が先にキーを取る (§7)
+	case layerFilter: // 入力中は入力欄が先にキーを取る (§7)
 		switch key {
 		case "esc":
 			m.filtering = false
@@ -1147,6 +1140,7 @@ func (m *Model) HandleInput(key, text string) Action {
 			m.cur[m.tab] = 0
 		}
 		return None
+	case layerList:
 	}
 	return m.keyList(key)
 }
@@ -1355,7 +1349,7 @@ func (m *Model) WaitBG(stop <-chan struct{}) (got []Notice, left int) {
 // PendingBG は結果の来ていない裏の後始末の件数。
 func (m *Model) PendingBG() int { return len(m.bg) }
 
-// smbURL は r のファイル共有の URL (smb://<宛先>)。繋げるかは smbRefusal が先に決める。
+// smbURL は r のファイル共有の URL (smb://<宛先>)。繋げるかは表 (rowActions) の smbRefusal が先に決める (表を通さずに呼ばない)。
 func (m *Model) smbURL(r row) string { return "smb://" + m.target(r) }
 
 func (m *Model) copy(s, note string) { m.copyAs(s, s+note) }
