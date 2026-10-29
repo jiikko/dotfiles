@@ -177,7 +177,7 @@ func sweepTypeCopies(groupSets ...[]group.Group) []sweepTypeCopy {
 func sweepTypedGroups(groupSets [][]group.Group) [][]*group.Entry {
 	type typed struct {
 		members []*group.Entry
-		keys    map[string]bool
+		set     map[*group.Entry]bool
 	}
 	var all []typed
 	for _, gs := range groupSets {
@@ -185,13 +185,13 @@ func sweepTypedGroups(groupSets [][]group.Group) [][]*group.Entry {
 			if g.Level == norm.LM {
 				continue
 			}
-			tg := typed{keys: map[string]bool{}}
+			var tg typed
 			for _, m := range g.Members {
 				if m.Unit.Kind != tree.KindClosure && m.Unit.Enclosing != "" {
 					tg.members = append(tg.members, m)
-					tg.keys[m.Unit.Key] = true
 				}
 			}
+			tg.set = group.MemberSet(tg.members)
 			if len(tg.members) >= 2 && len(tg.members) < sweepBigGroupMin {
 				all = append(all, tg)
 			}
@@ -201,14 +201,11 @@ func sweepTypedGroups(groupSets [][]group.Group) [][]*group.Entry {
 	for i, g := range all {
 		covered := false
 		for j, o := range all {
-			if i == j || len(o.keys) < len(g.keys) || (len(o.keys) == len(g.keys) && j > i) {
+			// 同じ集合どうしは先に出た方を残す
+			if i == j || (len(o.set) == len(g.set) && j > i) {
 				continue
 			}
-			in := true
-			for k := range g.keys {
-				in = in && o.keys[k]
-			}
-			if covered = in; covered {
+			if covered = group.Subset(g.set, o.set); covered {
 				break
 			}
 		}

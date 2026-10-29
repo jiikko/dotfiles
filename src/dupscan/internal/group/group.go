@@ -114,10 +114,7 @@ func Build(entries []*Entry, opt Options) []Group {
 			if len(ms) < 2 {
 				continue
 			}
-			set := map[*Entry]bool{}
-			for _, m := range ms {
-				set[m] = true
-			}
+			set := MemberSet(ms)
 			if covered(set, seen) {
 				continue
 			}
@@ -139,21 +136,34 @@ func Build(entries []*Entry, opt Options) []Group {
 
 func covered(set map[*Entry]bool, seen []map[*Entry]bool) bool {
 	for _, s := range seen {
-		if len(s) != len(set) {
-			continue
-		}
-		eq := true
-		for e := range set {
-			if !s[e] {
-				eq = false
-				break
-			}
-		}
-		if eq {
+		if len(s) == len(set) && Subset(set, s) {
 			return true
 		}
 	}
 	return false
+}
+
+// MemberSet は組のメンバーの集合。
+func MemberSet(members []*Entry) map[*Entry]bool {
+	set := make(map[*Entry]bool, len(members))
+	for _, m := range members {
+		set[m] = true
+	}
+	return set
+}
+
+// Subset は、a のメンバーが全員 b に入っているか。組が別の組に含まれるか・同じ集合かの判定はこれを通す
+// (同じ entries から作った組どうしは、同じ単位を同じ *Entry で持つ)。
+func Subset(a, b map[*Entry]bool) bool {
+	if len(a) > len(b) {
+		return false
+	}
+	for e := range a {
+		if !b[e] {
+			return false
+		}
+	}
+	return true
 }
 
 func partition(ms []*Entry) string {

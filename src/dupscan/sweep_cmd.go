@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -167,30 +168,18 @@ func dropAllowedGroups(ex interface{ Allowed(*group.Entry) bool }, entries []*gr
 
 // newGroups は groups のうち、メンバーが全部 covered の 1 つの組に含まれるものを除く (下限を下げて同じ組が再び出ただけのもの)。
 func newGroups(groups, covered []group.Group) []group.Group {
+	sets := make([]map[*group.Entry]bool, len(covered))
+	for i, o := range covered {
+		sets[i] = group.MemberSet(o.Members)
+	}
 	var out []group.Group
 	for _, g := range groups {
-		if !coveredByAny(g, covered) {
+		set := group.MemberSet(g.Members)
+		if !slices.ContainsFunc(sets, func(o map[*group.Entry]bool) bool { return group.Subset(set, o) }) {
 			out = append(out, g)
 		}
 	}
 	return out
-}
-
-func coveredByAny(g group.Group, covered []group.Group) bool {
-	for _, o := range covered {
-		in := map[*group.Entry]bool{}
-		for _, m := range o.Members {
-			in[m] = true
-		}
-		all := true
-		for _, m := range g.Members {
-			all = all && in[m]
-		}
-		if all {
-			return true
-		}
-	}
-	return false
 }
 
 func sweepGroups(w *lineWriter, groups []group.Group, limit int) {
