@@ -1409,7 +1409,7 @@ func (w *walker) declUnit(n *sitter.Node, c ctx) *tree.Unit {
 	u.ParamTypes = paramTypes
 	u.Labels = labels
 	u.Visibility = w.visibility(n)
-	u.Allow, u.AllowLine, u.HasAllow = w.allowComment(n)
+	u.Allow, u.AllowLine, u.HasAllow, u.AllowExtraLine = w.allowComment(n)
 	u.Doc = w.docComment(n)
 	u.DocStart, u.DocEnd = w.docRange(n)
 	return u
@@ -1424,7 +1424,7 @@ func (w *walker) propertyUnit(decl, computed *sitter.Node, name string, c ctx) *
 		}
 	}
 	u.Visibility = w.visibility(decl)
-	u.Allow, u.AllowLine, u.HasAllow = w.allowComment(decl)
+	u.Allow, u.AllowLine, u.HasAllow, u.AllowExtraLine = w.allowComment(decl)
 	u.Doc = w.docComment(decl)
 	u.DocStart, u.DocEnd = w.docRange(decl)
 	return u
@@ -1482,14 +1482,20 @@ func (w *walker) commentBody(c *sitter.Node) string {
 }
 
 // allowComment は宣言 n の直前のコメントの先頭から許可の印を探し、印の後ろを返す。クロージャ・didSet は名前で指せないので対象にしない。
-func (w *walker) allowComment(n *sitter.Node) (string, int, bool) {
+// extra は 2 つ目の印の行 (無ければ 0)。
+func (w *walker) allowComment(n *sitter.Node) (allow string, line int, ok bool, extra int) {
 	for _, c := range leadingComments(n) {
 		// 印はコメントの先頭だけで読む (`// TODO: dupscan:allow は使わない` のような文を許可にしない)。
-		if after, ok := strings.CutPrefix(w.commentBody(c), allowMarker); ok {
-			return strings.TrimSpace(after), int(c.StartPosition().Row) + 1, true
+		after, found := strings.CutPrefix(w.commentBody(c), allowMarker)
+		if !found {
+			continue
 		}
+		if ok {
+			return allow, line, true, int(c.StartPosition().Row) + 1
+		}
+		allow, line, ok = strings.TrimSpace(after), int(c.StartPosition().Row)+1, true
 	}
-	return "", 0, false
+	return allow, line, ok, 0
 }
 
 // docRange は宣言 n の直前の doc comment (`///` か `/**`) の行の範囲 (1 始まり。無ければ 0, 0)。宣言に近い側から続く doc comment だけを数える

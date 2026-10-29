@@ -187,6 +187,11 @@ func CommentRules(entries []*group.Entry) (rules []Rule, errs []error) {
 		if !u.HasAllow {
 			continue
 		}
+		// 読む印の規則は作り続ける (gate は base の誤りを捨てるので、ここで飛ばすと base の許可が丸ごと消え、変えていない許可が新しく見える)。
+		if u.AllowExtraLine > 0 {
+			errs = append(errs, fmt.Errorf("%s:%d: dupscan:allow: 同じ単位に印が 2 つある (読むのは %d 行目だけで、%d 行目は読まない。1 つの単位で読む印は 1 つ。段の違う 2 つの組を消すなら、2 つ目の allow-group は残る組の別のメンバーに書く)",
+				u.File, u.AllowExtraLine, u.AllowLine, u.AllowExtraLine))
+		}
 		if rest, ok := strings.CutPrefix(u.Allow, allowGroupMark); ok {
 			r, err := groupCommentRule(e, entries, rest)
 			if err != nil {

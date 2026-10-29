@@ -124,6 +124,55 @@ func TestMalformedAllowGroupIsUndecidable(t *testing.T) {
 	}
 }
 
+// 1 つの単位で読む印は 1 つなので、同じ単位の 2 つ目の印は黙って捨てず rc=2 にする (段の違う 2 つの組を 2 行の allow-group で消そうとして、
+// 2 行目が効かないまま気づけなかった)。読む行と読まない行を両方言う (Swift は宣言に近い側の印を読み、Go は上の印を読むので、向きが言語で違う)。
+func TestSecondAllowMarkerOnOneUnitIsUndecidable(t *testing.T) {
+	// 2 行目 = 上の印、3 行目 = 宣言の直前の印
+	twice := marked(marked(helperA, "dupscan:allow-group 4 intentional 上の行"), "dupscan:allow-group 3 intentional 下の行")
+	if !strings.Contains(twice, "上の行\n    // dupscan:allow-group 3 intentional 下の行\n    func") {
+		t.Fatalf("前提: 印の並びが違う:\n%s", twice)
+	}
+	root := repoWith(t, map[string]string{"Sources/A.swift": twice, "Sources/B.swift": helperB})
+	if rc, _, errs := runReport(t, root); rc != 2 || !strings.Contains(errs, "Sources/A.swift:2: dupscan:allow: 同じ単位に印が 2 つある (読むのは 3 行目だけで、2 行目は読まない") {
+		t.Errorf("Swift: rc=2 と読む行・読まない行を期待: rc=%d err=%q", rc, errs)
+	}
+	goSrc := `package a
+
+// dupscan:allow-group 3 intentional 1 行目
+// dupscan:allow-group 4 intentional 2 行目
+func Load(p string) string { return p + "x" }
+`
+	root = repoWith(t, map[string]string{"a/a.go": goSrc})
+	if rc, _, errs := runReport(t, root); rc != 2 || !strings.Contains(errs, "a/a.go:4: dupscan:allow: 同じ単位に印が 2 つある (読むのは 3 行目だけで、4 行目は読まない") {
+		t.Errorf("Go: rc=2 と読む行・読まない行を期待: rc=%d err=%q", rc, errs)
+	}
+	one := strings.Replace(goSrc, "// dupscan:allow-group 4 intentional 2 行目\n", "", 1)
+	if one == goSrc {
+		t.Fatal("前提: 2 行目を消せていない")
+	}
+	if _, _, errs := runReport(t, repoWith(t, map[string]string{"a/a.go": one})); strings.Contains(errs, "印が 2 つ") {
+		t.Errorf("印が 1 つなら 2 つ目の誤りを出さない: %q", errs)
+	}
+}
+
+// base に 2 つの印があり、head で読まない方を消して直したとき、読んでいた印 (変えていない許可) を新しく足された除外に数えない
+// (gate は base の印の誤りを捨てるので、誤りのある単位の規則まで捨てると、base の許可が丸ごと消えて head の許可が新しく見える)。
+func TestFixingSecondAllowMarkerKeepsTheReadMarkerUnchanged(t *testing.T) {
+	keep := allowed(helperB, "intentional 分けておく")
+	// Swift は宣言に近い側の印を読むので、読まない印は上に足す
+	both := strings.Replace(keep, "    // dupscan:allow intentional 分けておく", "    // dupscan:allow intentional 上の行は読まない\n    // dupscan:allow intentional 分けておく", 1)
+	if both == keep {
+		t.Fatal("前提: 2 つ目の印を足せていない")
+	}
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": both})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Sources/B.swift", keep)
+	if rc, out, errs := runGateCmd(t, "-fail-new-exclusions", "-base", "HEAD", root); rc != 0 || strings.Contains(out, "新しく足された除外") {
+		t.Errorf("読んでいた印は変わっていない: rc=0 と新しく足された除外なしを期待: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}
+
 // 下限未満で組にならない組の許可 (sweep の節 2 のための許可) は、本体も顔ぶれも変わっていなければ「見直せ」と言わない。
 func TestStaleAllowGroupBelowMinNodesKeepsItsBody(t *testing.T) {
 	small := func(name string) string {

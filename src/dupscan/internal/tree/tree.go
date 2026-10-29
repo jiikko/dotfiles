@@ -128,6 +128,9 @@ type Unit struct {
 	Allow     string
 	HasAllow  bool
 	AllowLine int // 印を書いたコメントの行
+	// AllowExtraLine は同じ単位の 2 つ目の印の行 (無ければ 0)。読むのは 1 つ目だけなので、CommentRules が誤りにする
+	// (段の違う 2 つの組を 1 つの単位の 2 行の allow-group で消そうとすると、2 行目が黙って効かなかった)。
+	AllowExtraLine int
 }
 
 // MatchName は名前を照合するための形にする。Swift の識別子は、予約語と同じ綴りのときバッククォートで囲んで宣言できる

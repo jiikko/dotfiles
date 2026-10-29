@@ -201,7 +201,7 @@ func (w *walker) funcDecl(d *ast.FuncDecl, limit int) {
 	if ast.IsExported(name) {
 		u.Visibility = "public"
 	}
-	u.Allow, u.AllowLine, u.HasAllow = w.allowComment(d.Doc)
+	u.Allow, u.AllowLine, u.HasAllow, u.AllowExtraLine = w.allowComment(d.Doc)
 	u.Doc = docLine(d.Doc)
 	if d.Doc != nil {
 		u.DocStart, u.DocEnd = w.position(d.Doc.Pos()).Line, w.position(d.Doc.End()).Line
@@ -404,17 +404,22 @@ func commentText(c *ast.Comment) string {
 }
 
 // allowComment は宣言の直前のコメント (空行を挟まない。go/ast の Doc) の行の先頭から許可の印を探す。
-// 印はその行の先頭だけで読む (`// TODO: dupscan:allow は使わない` のような文を許可にしない)。
-func (w *walker) allowComment(doc *ast.CommentGroup) (string, int, bool) {
+// 印はその行の先頭だけで読む (`// TODO: dupscan:allow は使わない` のような文を許可にしない)。extra は 2 つ目の印の行 (無ければ 0)。
+func (w *walker) allowComment(doc *ast.CommentGroup) (allow string, line int, ok bool, extra int) {
 	if doc == nil {
-		return "", 0, false
+		return "", 0, false, 0
 	}
 	for _, c := range doc.List {
-		if after, ok := strings.CutPrefix(commentText(c), allowMarker); ok {
-			return strings.TrimSpace(after), w.position(c.Pos()).Line, true
+		after, found := strings.CutPrefix(commentText(c), allowMarker)
+		if !found {
+			continue
 		}
+		if ok {
+			return allow, line, true, w.position(c.Pos()).Line
+		}
+		allow, line, ok = strings.TrimSpace(after), w.position(c.Pos()).Line, true
 	}
-	return "", 0, false
+	return allow, line, ok, 0
 }
 
 // docLine は doc comment の最初の行 (許可の印の行と、`//go:` などの指示は除く)。
