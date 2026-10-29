@@ -104,4 +104,8 @@ update の前段は update に残る)。反映した指摘:
 - [x] ルートの make test: 1 回目は test-comment-provenance (足したコメントの issue 番号) と test-yaml (120 字) が赤 →
   「docs(glogx): 分割で足したコメントから経緯の語を外し、yaml の行の長さを戻す」で直した。2 回目の赤は `tests/claude/test_dangling_symlinks.sh` だけ
   (`~/.claude/agents/` に dotfiles 側で消えた agent への link が残っている。この変更と無関係で、前から赤)
-- [ ] push・Bench
+- [x] push・CI・Bench (2026-10-29): 私の commit を含む最新の commit で Tests (run 40882469253。push が続いて取り消されたので再実行) / Lint / unused /
+  src/glogx / src/doctor / doctor (paths に browse_*.go を足したレーン) が緑。Bench は run 40881558987 (c35f66bca、trusted=yes) で緑。
+  前の緑の Bench (run 40877654164、242261f64、変更の前、trusted=yes) と glogx の metric を比べた: 確保量 (alloc_kb) は全 metric で同じ、
+  時間は x0.78〜x1.02 (view_panel 0.045 → 0.046、status_view_scale_x100 78 → 79 が x1.01〜1.02、他は速い側。どれも run 間のばらつきの範囲)。
+  コードは移しただけなので、時間が変わる機構は無い
