@@ -31,7 +31,7 @@
 4. commit message に「どの変異で red を確認したか」を書く
 ```
 
-**手で組む前に、対象 repo の `bin/` に固有の変異の道具が無いか (`ls bin | grep -i mutat`。obaket の `bin/mutate` は今の木で当てて戻すので incremental build が効く) と `bin/mutate-verify` (issue 408。dotfiles の `bin/` は PATH 上にあり、どの repo でも `mutate-verify` で呼べる。issue 585) を見る**。自前の driver を書くと判定の実装が 1 つ増える (obaket retro 1109)。下の「復元の作法」と手順 0〜3 の guard
+**手で組む前に、対象 repo の `bin/` に固有の変異の道具が無いか (`ls bin | grep -i mutat`。obaket の `bin/mutate` は今の木で当てて戻すので incremental build が効く) と `bin/mutate-verify` (issue 408。dotfiles の `bin/` は PATH 上にあり、どの repo でも `mutate-verify` で呼べる。issue 585) を見る**。自前の driver を書くと判定の実装が 1 つ増える (obaket retro 1109)。「復元の作法」(`rules-checklists/` 側) と手順 0〜3 の guard
 (baseline green / 当たったか / 誤ファイル / 構文 = 第 3 の結果 / zero execution / red の帰属 /
 未コミット差分があれば拒否 / 各 run の時間の上限 = `--timeout`、超えたら rc=10) を機械で強制する。使い捨て worktree の中だけで変異させるので作業ツリーを触らず、
 未コミットの変更は持ち込むので「今書いたテスト」も検証できる。変異の当て方 (`--apply`) は呼び出し側の責任。
@@ -71,22 +71,7 @@ rc=0 が保証するのは「`--expect` の検査が落ちた」**まで**で、
   根拠の fixture を消していると、「変異で確認済み」は変異体については真、HEAD については偽になる。
   **前回 red だった変異が green に転じたとき**も、実装より先にテスト本体・fixture が巻き添えで消えていないか疑う
 
-🚨 **復元の作法** (`bin/mutate-verify` を使えば下は構造的に起きない):
-
-- **`cp` のバックアップを世代で持たない** (古い世代を書き戻して配線が消える)。作業ツリーで変異させるなら
-  1 ファイルにつき 1 世代に限り、当てる前後で `git diff --stat` を読む
-- **`git checkout -- <path>` を常用手順にしない**。未コミットの変更 (自分の途中作業・並行セッションの作業) を
-  まとめて消す (commit 済みを確認しても、確認から実行までの間に他セッションが書けば同じ)。🚨 **発動点は「レビュー指摘を直した直後」** — 直後は必ず未コミットなので、
-  **指摘を直したら変異の前に commit する** (WIP でよい)
-- **worktree でも `git checkout --` は安全にならない** (その worktree の自分の未コミット変更は消え、旧実装が
-  通れば green のまま気づけない)。変異対象に未コミット変更があるなら一度 commit してから当てる
-- **バックアップと復元は絶対パスで行う** (`trap` はスクリプトが `cd` した後に走る)
-- **変異は使い捨て worktree で当てる** (正本は `~/.claude/skills/codex-drive/phases-3-review.md` の `[3.8]`)。
-  skill を使わない手動の変異検証でも同じ
-- **新規 (untracked) ファイルは `git checkout --` で戻せない** (worktree にも乗らない)。`cp` で 1 世代控え、復元後に
-  `grep -c MUTANT` 等でマーカー残骸ゼロを確認する
-- **破壊的な clean を検証手順に入れたら、報告前に `git status` で追跡ファイルと lock ファイル**
-  (`Package.resolved` 等) **の変化を確認する**。変わっていたら pin を戻して測り直す
+**`bin/mutate-verify` を使わずに手で変異を当てるときは、当てる前に `~/dotfiles/_claude/rules-checklists/mutation-verify-new-tests.md` の「復元の作法」を Read する** (`cp` の世代・`git checkout --`・untracked・破壊的な clean で、未コミットの変更や他人の作業を消す形。道具を使えば構造的に起きない)。
 
 **A-B のケース間で状態を共有しない**。`HOME` / `ZDOTDIR` / 一時ディレクトリはケースごとに新規作成し、
 測る対象が環境変数なら親から落とす (`env -u <名前>`)。矛盾する結果が出たら、まずハーネスの隔離を疑う。
