@@ -234,3 +234,16 @@ func TestGateParseFailureTextLimitKeepsCoverageCounts(t *testing.T) {
 		}
 	}
 }
+
+// 読めないファイルがあって違反が無いとき、先頭で通ったことが分かる (「解析が不完全」だけだと失敗に読める)。「なし」とは言い切らない。
+func TestGateIncompletePassSaysZeroFirst(t *testing.T) {
+	root := repoWith(t, map[string]string{"Good.swift": helperA, "Broken.swift": "func broken("})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-qm", "base")
+	writeFile(t, root, "Good.swift", helperA+"\nfunc extra() {}\n")
+	rc, out, errs := runGateCmd(t, "-base", "HEAD", root)
+	first, _, _ := strings.Cut(out, "\n")
+	if rc != 0 || !strings.HasPrefix(first, "dupscan gate: 新しい重複 0 (読めたファイルの中で)・解析が不完全 (") || strings.Contains(out, "新しい重複なし") {
+		t.Fatalf("rc=%d first=%q stderr=%q", rc, first, errs)
+	}
+}

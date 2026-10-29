@@ -14,6 +14,8 @@ import (
 	"dupscan/internal/exclude"
 	"dupscan/internal/gate"
 	"dupscan/internal/jsonout"
+	"dupscan/internal/norm"
+	"dupscan/internal/tree"
 )
 
 // GateSummary は gate の出力の形。
@@ -62,8 +64,21 @@ type ViolationJSON struct {
 	Exclude string `json:"exclude"`
 	// SingleCall は組の全員の本体が、1 つの呼び出しを 1 回するだけか (GroupJSON.SingleCall と同じ)。
 	SingleCall bool `json:"single_call,omitempty"`
+	// Origins は New の単位のうち、base に出どころ (相手) を当てた単位ごとの出どころ (新しく書いた単位は入らない)。
+	Origins []OriginJSON `json:"origins"`
 	// compare はメンバーの違いを確かめる手 (text の -v だけに出す。compareHints)。
 	compare []string
+}
+
+// OriginJSON は寄せる側の単位 1 つの出どころ。
+type OriginJSON struct {
+	Key  string  `json:"key"` // 寄せる側の単位の鍵 (ViolationJSON.new の key)
+	From UnitRef `json:"from"`
+	// BodyChanged は出どころから本体 (L1) を変えたか。
+	BodyChanged bool `json:"body_changed"`
+	// Sure は出どころを確かに言えるか: 同じ鍵 (クロージャを除く) か、本体が L2 まで同じ。L3 の形やクロージャの順番だけで
+	// 当てた相手 (gate の origins の緩い段) は、関係の無い単位のことがあるので false にし、text では名指しを弱める。
+	Sure bool `json:"sure"`
 }
 
 // ResolvedJSON は消えた・縮んだ組 1 つの出力。Members は base の側の位置。
@@ -96,8 +111,15 @@ func BuildGate(root, base, head string, r gate.Result, ex *exclude.Set, headEntr
 		members := append(append([]*group.Entry(nil), v.New...), v.Same...)
 		vj := ViolationJSON{Level: v.Level.String(), Fail: v.Fail, New: []UnitRef{}, Same: []UnitRef{},
 			Exclude: exclude.GroupSnippet(v.Level, members), SingleCall: singleCall(members), compare: compareHints(root, v.Level, members, headEntries)}
+		vj.Origins = []OriginJSON{}
 		for _, m := range v.New {
 			vj.New = append(vj.New, ref(m.Unit))
+			if b := v.From[m]; b != nil {
+				sameKey := b.Unit.Key == m.Unit.Key && m.Unit.Kind != tree.KindClosure
+				vj.Origins = append(vj.Origins, OriginJSON{Key: m.Unit.Key, From: ref(b.Unit),
+					BodyChanged: b.Result.Hash[norm.L1] != m.Result.Hash[norm.L1],
+					Sure:        sameKey || b.Result.Hash[norm.L2] == m.Result.Hash[norm.L2]})
+			}
 		}
 		for _, m := range v.Same {
 			vj.Same = append(vj.Same, ref(m.Unit))
@@ -154,9 +176,11 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	}
 	note += s.note()
 	if len(s.Violations) == 0 {
+		// 読めないファイルがあるときに「なし」と言い切らない (そこに写しがあっても見えない)。ただし通ったことは先頭で分かる形にする
+		// (「解析が不完全」だけだと失敗に読め、rc を見るまで通ったか分からない)。
 		status := "新しい重複なし"
 		if s.AnalysisIncomplete {
-			status = "解析が不完全"
+			status = "新しい重複 0 (読めたファイルの中で)・解析が不完全"
 		}
 		fmt.Fprintf(w, "dupscan gate: %s (base %s・変わった単位 %d)%s\n", status, short(s.Base), s.Changed, note)
 	} else {
@@ -179,7 +203,7 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 			}
 			fmt.Fprintf(w, "%s (%s):\n", v.Level, kind)
 			for _, m := range v.New {
-				fmt.Fprintf(w, "  新しい: %s %s\n", m.Where(), label(m))
+				fmt.Fprintf(w, "  新しい: %s %s%s\n", m.Where(), label(m), fromNote(m, v.Origins))
 			}
 			for _, m := range v.Same {
 				fmt.Fprintf(w, "  同じ形: %s %s%s\n", m.Where(), label(m), allowedMark(m))
@@ -331,4 +355,27 @@ func AppendRecord(path string, s GateSummary, now time.Time) error {
 		return err
 	}
 	return f.Close()
+}
+
+// fromNote は寄せる側の単位の出どころの注記。出どころの無い (新しく書いた) 単位には付けない。
+// 同じ鍵なら「本体を変えた」だけ (その場で直した)、違う鍵なら base の単位を名指しする (移した・改名した・寄せ先に置いた)。
+// 確かに言えない相手 (OriginJSON.Sure) は名指しを弱める (新しく書いた写しを「寄せた結果」と読ませない)。
+func fromNote(m UnitRef, origins []OriginJSON) string {
+	for _, o := range origins {
+		if o.Key != m.Key {
+			continue
+		}
+		if !o.Sure {
+			return fmt.Sprintf(" (出どころは確かでない: base の %s:%d %s に形が近い)", o.From.File, o.From.Line, label(o.From))
+		}
+		changed := "移した (本体は同じ)"
+		if o.BodyChanged {
+			changed = "本体を変えた"
+		}
+		if o.From.Key == m.Key && m.Kind != string(tree.KindClosure) {
+			return " (" + changed + "。base にも同じ単位)"
+		}
+		return fmt.Sprintf(" (base の %s:%d %s から。%s)", o.From.File, o.From.Line, label(o.From), changed)
+	}
+	return ""
 }

@@ -270,6 +270,12 @@ var fieldDescs = map[string]string{
 	"ViolationJSON.same":        "組に前からいた単位 (寄せる先の候補)",
 	"ViolationJSON.exclude":     "この組を指す組の除外の 1 行 (GroupJSON.exclude と同じ形)",
 	"ViolationJSON.single_call": "組の全員の本体が、1 つの呼び出しを 1 回するだけ",
+	"ViolationJSON.origins":     "new の単位のうち base に出どころを当てた単位ごとの出どころ (新しく書いた単位は入らない)",
+
+	"OriginJSON.key":          "寄せる側の単位の鍵 (new の key)",
+	"OriginJSON.from":         "base の側の出どころの単位",
+	"OriginJSON.body_changed": "出どころから本体 (L1) を変えたか",
+	"OriginJSON.sure":         "出どころを確かに言えるか (同じ鍵か本体が L2 まで同じ)。false は L3 の形やクロージャの順番だけで当てた相手",
 
 	"ResolvedJSON.level":   "段",
 	"ResolvedJSON.members": "base の組のメンバー (base の側の位置)",

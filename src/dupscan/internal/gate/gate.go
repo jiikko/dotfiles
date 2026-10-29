@@ -37,6 +37,10 @@ type Violation struct {
 	New []*group.Entry
 	// Same は組に前からいた単位 (寄せる先の候補)。
 	Same []*group.Entry
+	// From は New の単位の出どころ (base の側の相手)。無い (新しい単位) なら入れない。寄せる側に出た単位が、base のどの単位から
+	// 来て本体を変えたかを読み手に見せる (寄せ先に置いた正本が、消した写しの出どころに当たって既存の別の写しと同じ形になった、を
+	// 出力だけで読めるように)。
+	From map[*group.Entry]*group.Entry
 	Fail bool
 }
 
@@ -139,6 +143,12 @@ func Judge(base, head []*group.Entry, opt Options) Result {
 			if _, done := judged[k]; !done {
 				v, ok, byPath := judgeGroup(lv, h, g, origin, opt)
 				if ok {
+					v.From = map[*group.Entry]*group.Entry{}
+					for _, m := range v.New {
+						if b := origin[m]; b != nil {
+							v.From[m] = b
+						}
+					}
 					r.Violations = append(r.Violations, v)
 				}
 				for _, m := range byPath {
