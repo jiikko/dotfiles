@@ -126,7 +126,29 @@ func (w *walker) name(id *ast.Ident) *tree.Node {
 	case "true", "false": // Go では識別子だが、Swift の boolean_literal と同じく L2 で種類にする
 		return w.mk(tree.Node{Kind: kindPrefix + "lit", Role: tree.RoleLiteral, LitKind: "bool", Text: id.Name, Expr: true})
 	}
-	return w.mk(tree.Node{Kind: kindPrefix + "ident", Role: tree.RoleName, Text: id.Name, Expr: true})
+	return w.mk(tree.Node{Kind: kindPrefix + "ident", Role: tree.RoleName, Text: id.Name, Expr: true, Outer: w.outer(id)})
+}
+
+// convUnit は単位 unit の本体 body を変換する。その間、名前解決で単位の外を指す参照を Outer にする。
+func (w *walker) convUnit(unit, body ast.Node) *tree.Node {
+	lo, hi := w.unitLo, w.unitHi
+	w.unitLo, w.unitHi = unit.Pos(), unit.End()
+	defer func() { w.unitLo, w.unitHi = lo, hi }()
+	return w.conv(body)
+}
+
+// outer は id が単位の外の名前を指すか。parser の名前解決 (ast.Ident.Obj) で決める: 解決されない名前 (import した package・
+// 組み込み) と、宣言が単位の範囲の外にある名前 (package 水準・囲む関数の局所) は外側。引数・receiver・名前つきの戻り値は
+// 単位の範囲の中で宣言されるので局所。単位の外で変換するとき (範囲が無い) は決めない。
+func (w *walker) outer(id *ast.Ident) bool {
+	if !w.unitLo.IsValid() {
+		return false
+	}
+	if id.Obj == nil {
+		return true
+	}
+	p := id.Obj.Pos()
+	return !p.IsValid() || p < w.unitLo || p >= w.unitHi
 }
 
 var litKinds = map[token.Token]string{token.INT: "num", token.FLOAT: "num", token.IMAG: "num", token.CHAR: "char", token.STRING: "str"}

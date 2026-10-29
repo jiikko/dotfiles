@@ -73,15 +73,16 @@ func realRoot(t *testing.T, root string) string {
 }
 
 // 番号は綴りで振るので、局所の名前と同じ綴りの package も番号になり、違う package を呼ぶ 2 つが L1 の組になる。L1 の行はそれを言う。
-func TestVerboseL1LineSaysShadowedOuterNamesAreNumbered(t *testing.T) {
-	trim := func(pkg, param string) string {
-		return "package a\n\nimport \"" + pkg + "\"\n\nfunc f(v " + param + ") bool {\n\t" + pkg + " := " + pkg + ".TrimSpace(v)\n" +
-			"\tif len(" + pkg + ") > 0 {\n\t\treturn len(" + pkg + ") > 1\n\t}\n\treturn false\n}\n"
+func TestVerboseL1LineSaysWhichShadowedOuterNamesStayNumbered(t *testing.T) {
+	// 外側の名前を番号にしない扱い (Go は名前解決、Swift は近似) で残る形を、L1 の行が断る。別の package を呼ぶ写しは組にならない (l1_shadow_test.go)
+	trim := func(local, param string) string {
+		return "package a\n\nimport \"bytes\"\n\nfunc f(" + param + " []byte) bool {\n\t" + local + " := bytes.TrimSpace(" + param + ")\n" +
+			"\tif len(" + local + ") > 0 {\n\t\treturn len(" + local + ") > 1\n\t}\n\treturn false\n}\n"
 	}
-	root := repoWith(t, map[string]string{"a/a.go": trim("bytes", "[]byte"), "b/b.go": trim("strings", "string")})
+	root := repoWith(t, map[string]string{"a/a.go": trim("t", "v"), "b/b.go": trim("u", "w")})
 	rc, out, errs := runReport(t, "-v", "-min-nodes", "1", root)
-	if rc != 0 || !strings.Contains(out, "L1 ") || !strings.Contains(out, "局所の名前と同じ綴りの外側の名前 (package・プロパティ) も番号になる") {
-		t.Fatalf("別の package を呼ぶ L1 の組で、外側の名前も番号になると書く: rc=%d out=%q stderr=%q", rc, out, errs)
+	if rc != 0 || !strings.Contains(out, "L1 ") || !strings.Contains(out, "Swift は名前を解決しないので、局所の名前と同じ綴りの外側の名前が番号になる形が残る (block・closure・ループの中や if / guard の条件で宣言した綴りを、束縛の届かない所 (その外・else の中) で使う所)") {
+		t.Fatalf("L1 の組で、外側の名前が番号になる形が残る範囲を書く: rc=%d out=%q stderr=%q", rc, out, errs)
 	}
 }
 

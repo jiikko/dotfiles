@@ -46,7 +46,11 @@ type Node struct {
 	Action bool
 	// Capture は `[store]` のように捕まえた外側の名前。番号にはせず字面を残すが、畳むかの判定では局所の参照として数える
 	// (数えないと、捕まえた名前だけを使うクロージャが L3 で本体ごと畳まれて比べられなくなる)。
-	Capture  bool
+	Capture bool
+	// Outer は、局所の名前と同じ綴りでも単位の外の名前 (package・package 水準の宣言・プロパティ) を指す参照。番号にせず字面を残す
+	// (綴りだけで局所と決めると `bytes := bytes.TrimSpace(b)` と `strings := strings.TrimSpace(s)` が同じ形になる)。
+	// 解決できる adapter (Go の名前解決) だけが付ける。付かない参照は従来どおり綴りで決める。
+	Outer    bool
 	Children []*Node
 }
 

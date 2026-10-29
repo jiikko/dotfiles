@@ -1578,6 +1578,7 @@ func (w *walker) newUnit(n *sitter.Node, kind tree.UnitKind, name, sig string, l
 	}
 	if body != nil {
 		u.Body = w.conv(body, nil, "", false, false)
+		markOuter(u.Body, locals)
 		if call := w.soleCall(body); call != nil {
 			u.SingleCall = w.thinCall(call)
 			u.Delegation = w.atomCall(call, true)
@@ -1906,6 +1907,11 @@ func (w *walker) conv(n, parent *sitter.Node, field string, binding, afterDot bo
 		out.Role = w.nameRole(parent, field, binding, afterDot)
 		out.Expr = out.Role == tree.RoleName
 		out.Capture = parent != nil && kindOf(parent) == "capture_list_item" && out.Role == tree.RoleName && field == "name"
+		if out.Role == tree.RoleDecl && isOptionalBindingShorthand(parent, n, field) {
+			// `if let user` は新しい局所の名前であると同時に、user の参照。参照の分を子に持つ。参照が外側 (プロパティ) か
+			// 引数・既出の局所かは markOuter が決める (外側なら字面、局所なら番号。いつも字面にすると引数を読む写しを落とす)
+			out.Children = []*tree.Node{{Kind: k, Role: tree.RoleName, Text: out.Text, Expr: true}}
+		}
 		return out
 	case classify(k) == classType:
 		out.Role = tree.RoleType

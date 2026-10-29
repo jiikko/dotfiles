@@ -54,7 +54,7 @@ const allowMarker = "dupscan:allow"
 // 生成されたファイル (`// Code generated … DO NOT EDIT.`) は単位も呼び出しも出さない (人が寄せる対象ではない)。
 func (p *Parser) Parse(file string, src []byte) (lang.FileResult, error) {
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, file, src, parser.ParseComments|parser.AllErrors|parser.SkipObjectResolution)
+	f, err := parser.ParseFile(fset, file, src, parser.ParseComments|parser.AllErrors)
 	var errs scanner.ErrorList
 	if err != nil && !errors.As(err, &errs) {
 		return lang.FileResult{}, fmt.Errorf("%s を parse できない: %w", file, err)
@@ -133,6 +133,8 @@ type walker struct {
 	seen         map[string]int // 鍵の重なりの数 (1 つのファイルに複数書ける `func init()`)
 	lines        []string
 	arena        arena // conv が作る節の領域 (ファイルごと)
+	// unitLo / unitHi は本体を変換している単位の範囲。名前解決で、宣言がこの外にある参照を外側の名前 (Outer) にする
+	unitLo, unitHi token.Pos
 }
 
 // ctx は辿っている場所の文脈。
@@ -187,7 +189,7 @@ func (w *walker) funcDecl(d *ast.FuncDecl, limit int) {
 	broken := w.errorIn(d.Pos(), limit)
 	u := w.newUnit(d, tree.KindFunc, name, sig, encl, locals, ctx{broken: broken})
 	if !w.metadataOnly {
-		u.Body = w.conv(d.Body)
+		u.Body = w.convUnit(d, d.Body)
 		if call := soleCall(d.Body); call != nil {
 			u.SingleCall = thinCall(call)
 			u.Delegation = atomCall(call, true)
@@ -255,7 +257,7 @@ func (w *walker) closuresIn(n ast.Node, c ctx) {
 		u.Visibility = "local"
 		// 引数は本体の木の中で宣言として数える (Swift のクロージャと同じ。Params には入れない)。
 		if !w.metadataOnly {
-			u.Body = w.conv(fl)
+			u.Body = w.convUnit(fl, fl)
 			// Delegation は関数の宣言だけ (プリセット l2-single-call の対象を変えない)。SingleCall は印だけなので Swift と同じくクロージャにも付ける
 			if call := soleCall(fl.Body); call != nil {
 				u.SingleCall = thinCall(call)

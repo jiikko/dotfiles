@@ -174,7 +174,7 @@ func localNames(u *tree.Unit) map[string]bool {
 }
 
 func isLocal(n *tree.Node, locals map[string]bool) bool {
-	return (n.Role == tree.RoleName || n.Role == tree.RoleDecl) && locals[n.Text]
+	return (n.Role == tree.RoleName || n.Role == tree.RoleDecl) && locals[n.Text] && !n.Outer
 }
 
 // isImplicitParam は `$0` などの暗黙のクロージャの引数。位置に意味があるので番号にせず字面を残すが、
