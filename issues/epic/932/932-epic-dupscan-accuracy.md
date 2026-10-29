@@ -30,7 +30,6 @@
 | [989](989-design-dupscan-go-typed-resolution.md) | 986 の構造の変更: Go の型の解決を明示実行の go/packages で入れる (ユーザー決定 2026-10-30 で 899 の決定を Go について変えた) |
 | [970](done/970-refactor-dupscan-group-containment-one-check.md) | 「組が別の組に含まれるか」の判定が 3 か所 (組分け・sweep の節 2・節 6) にあったのを group.Subset に寄せた。done |
 | [972](done/972-research-dupscan-dogfood-glogx-tui-split-2026-10-29.md) | glogx の tui.go の分割 (971) で使った所見。雑音 3 件: Go の index -file に Swift の注意書き / -file でも無関係な testdata の「解析不完全」 / tmp/ の使い捨ての道具にも候補の注入 |
-| [979](979-research-dupscan-dogfood-sac-dedup-2026-10-29.md) | SAC の重複の統合で使った所見。`index` の呼び出し数が同名の private 関数で合算される・Swift の `callers` はテストメソッドを「(単位の外)」と出す (937 は Go だけ)・sweep の節 2 に `single_call` の印が無い |
 | [981](done/981-bug-dupscan-gate-silent-on-generated-go-files.md) | Go の生成ファイルの見出し (`// Code generated … DO NOT EDIT.`) を付けた新しい写しが gate を無音で通る (変わった単位 0)。読まなかった生成ファイルの数を 1 行目に出す |
 | [982](done/982-cleanup-dupscan-unused-text-writers.md) | 使われていない `CallersText` / `EvidenceText` を消す (`deadcode -test` で届かない。`unused` は公開名を数えない) |
 | [984](done/984-research-dupscan-audit-2026-10-30.md) | 22 観点の監査 (直接実行) の全数勘定と、報告しなかったものの理由。[983](done/983-bug-dupscan-paths-levels-l1m.md) は 973 で決めた仕様と分かり取り下げ |
@@ -38,6 +37,7 @@
 
 ## 完了した子issue
 
+- [979](done/979-research-dupscan-dogfood-sac-dedup-2026-10-29.md): SAC の重複の統合で使った所見 3 件を直した。`index` の呼び出し数は private / 小文字の単位を呼べる範囲だけで数える・Swift の `callers` はテスト関数とその中の局所の関数を名指しする (局所の型の property は持ち主不明)・sweep の節 1・2 にも `single_call` の印。
 - [976](done/976-feat-dupscan-gate-record-final-outcome.md): gate の -record を出力と最終の判定の後に書き、exit_code・reasons・phase・tool・head_commit・conditions を残す。閉じた stdout で rc=0 だった出力の失敗も rc=2 に。
 - [959](done/959-research-dupscan-dogfood-feedback-obaket-1307-part3-2026-10-29.md): obaket 1307 の所見。gate の違反の寄せる側に出どころ (`origins`)、解析が不完全でも 1 行目で「新しい重複 0」。寄せ先を縮んだ組なら通す提案は採らない (L1 の写しは実際に増える)。
 - [963](done/963-research-dupscan-feedback-obaket-1309-2026-10-29.md): obaket 1309 の所見。組のメンバーに終端行、`-v` に除外の理由を書く前のメンバーの違いの確かめ方 (L1 の注記・`explain -compare` の argv)。除外を書く CLI と target の取り込みは見送り (再開の条件つき)。
