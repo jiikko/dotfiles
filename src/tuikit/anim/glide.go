@@ -61,6 +61,7 @@ func (g *ScrollGlide) Advance(target int) {
 }
 
 // Offset は描画に使う offset を返す。glide 中は途中位置、それ以外は論理 offset (target)。
+// dupscan:allow-group 2 intentional CursorGlide.Cursor と同じなのは読み出しの 4 行だけ。Start (進行中なら即時へ倒す / 捨てて始め直す) と Advance (整数の二次 ease-in / EaseOutBack の行き過ぎ) が違う状態機械で、共通の土台へ寄せると違いが土台の分岐になる
 func (g *ScrollGlide) Offset(target int) int {
 	if !g.active {
 		return target

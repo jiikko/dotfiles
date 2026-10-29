@@ -79,6 +79,7 @@ func (l *List) DrawCursor(total int) int {
 func (l *List) Animating() bool { return l.glide.Active() }
 
 // Advance は滑走を 1 フレーム進める (tick のたびに呼ぶ)。
+// dupscan:allow-group 2 intentional Pager.Advance と形が同じだが、相手が違う (List は anim.CursorGlide と Cursor、Pager は anim.ScrollGlide と Offset)。2 行の nil 守りを共通にしても読む量は減らない
 func (l *List) Advance() {
 	if l.glide.Active() {
 		l.glide.Advance(l.Cursor)

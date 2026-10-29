@@ -79,6 +79,7 @@ func (x *Exec) Run() error {
 	return err
 }
 
+// dupscan:allow-group 3 intentional bubbletea の ExecCommand (SetStdin(io.Reader) / SetStdout(io.Writer) / SetStderr(io.Writer)) が 3 つを別の名前・別の引数の型で要求する。寄せる先の helper を足しても 3 つの口は残る
 func (x *Exec) SetStdin(r io.Reader) {
 	if x.Cmd != nil && x.Cmd.Stdin == nil {
 		x.Cmd.Stdin = r
