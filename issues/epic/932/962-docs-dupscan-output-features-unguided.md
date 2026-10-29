@@ -54,6 +54,22 @@ skill (`_claude/skills/dupscan/SKILL.md`) の 3 節は、当時「違反の `-v`
 - 案内の漏れを機械で止めるなら、「作業者が自作で作り直したもの」を拾う手段が要る。検査で拾えるのは「一覧にある欄が skill から辿れるか」までで、
   作業者が一覧を引かない限り W1 / W7 の形は防げない。どこまでを検査にするかは着手時に決める
 
+## 設計 (2026-10-29。反証レビュー (opus) を通した後の形)
+
+最初の案 (出力の型の各欄に `desc` タグ・`capabilities -format json` に `outputs` を足して schema_version を上げる) は、反証レビューで次の理由で採らなかった:
+- schema_version を上げると、`_claude/hooks/suggest-dupscan-for-symbol-grep.sh` の `go_capability` が `.schema_version == 1` を照らしているので、Go の grep の案内が全部「非対応」に落ちる (`-no-build` の古い版もあるので `== 2` に直しても同じ)
+- 欄をパスに平たくして能力表に足すと、`capabilities` の 64KB の上限に届く見込み (超えると何も出さず rc=2 で、hook と dogfood の確認が壊れる)
+- `desc` タグは raw string でバッククォートを書けず、gopls / godoc に出ず、設定ファイルの入力でもある `exclude.Rule` に出力の説明が混ざる
+- 同じ型の欄が出る場所で意味が違う (`UnitRef.allowed` は report と near にだけ入り、gate では出ない) ので、欄に 1 つの説明では事実と違う
+
+採った形:
+- 入口は `dupscan capabilities -outputs report|gate` (能力表と schema_version は変えない)。型ごとに 1 回だけ欄を並べ、どの型がどこに出るかを添える。text と json
+- 説明は `internal/report` の表 (鍵は `型名.json の欄名`) に置き、Go のコメントは残す。出る場所で意味が違う欄は、説明にそう書く
+- `-v` の行は {鍵・見出し・説明・対応する json の欄・subcommand} の表に置き、描く処理は表の鍵を受ける関数でだけ書く
+- 検査: (1) reflect で辿った欄の集合と説明の表の鍵が両方向で一致する (2) fixture で出した report / gate の json の鍵が、辿った型の欄に全部ある (3) report package の `-v` の分岐と `-v` 専用の関数の中で、fmt で直に書いていない (AST) (4) `-v` の表の鍵が全部使われ、`-outputs` の名前が登録済みの subcommand
+- 正本は一覧の側。skill の 3 節は「欄と `-v` の行の意味は `dupscan capabilities -outputs gate` で引く」の 1 行にし、欄をまたぐ意味 (gate は前後の hash の差と同じではない) だけを残す。README も一覧を指す
+- 検出しない形: 欄の意味が変わったのに説明が古いまま (欄の増減しか見ない)・`-v` の分岐から呼ぶ別の関数の中で直に書く行・fixture に出ない json の欄の誤り (型は辿るので、欄の追加は (1) で捕まる)
+
 ## 受け入れ条件 (案)
 
 - [ ] report と gate の json の欄 (出力の型から作る) と `-v` の節 (描画と共有する説明から作る) の一覧を、1 か所で引ける
