@@ -117,6 +117,39 @@ func TestPulseCountIsCapped(t *testing.T) {
 	if len(m.pulses) != maxPulses {
 		t.Fatalf("光が %d 本 (上限 %d)", len(m.pulses), maxPulses)
 	}
+	if el := m.pulses[len(m.pulses)-1].t.el; el > 0.0015 {
+		t.Fatalf("上限で今の光を足さなかった (最後の光の進み %v 秒。古い光から捨てるはず)", el)
+	}
+}
+
+// 光は出発点 (カーソルの名前の 1 桁左) より右を光らせない: 開いたフォルダの上では経路がカーソルの右へ続き、尾がそこまで届く。
+func TestPulseDoesNotLightRightOfCursor(t *testing.T) {
+	hs := pulseHeads{{x: 10, tail: 12, a: 1, from: 12}}
+	c := &cell{bg: cBg}
+	for x := 10; x <= 22; x++ {
+		lit := hs.light(c, x, cAccRoute) != cAccRoute
+		if lit != (x <= 12) {
+			t.Fatalf("桁 %d: 光った=%v (出発点 12 より右は光らない)", x, lit)
+		}
+	}
+}
+
+// glogx は New の後に RestorePlace でカーソルを記録の場所へ移す。場所の復元では光らない。
+func TestPulseNotOnRestorePlace(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "b/deep/x.txt")
+	p := m.Place()
+	m2 := newAt(t, m.root.path())
+	m2.Resize(120, 40)
+	settle(m2)
+	m2.RestorePlace(p)
+	m2.Advance(fixedNow.Add(16 * time.Millisecond))
+	if m2.cur.raw != "x.txt" {
+		t.Fatalf("前提: 記録の場所へ戻っていない (%s)", m2.cur.raw)
+	}
+	if len(m2.pulses) != 0 {
+		t.Fatalf("場所の復元で光が %d 本出た", len(m2.pulses))
+	}
 }
 
 // 動きの途中は経路に縦棒が出る (親と子の行が離れている)。縦棒は光らせない: 桁だけで光るので、頭がその桁に来ると縦の帯ごと

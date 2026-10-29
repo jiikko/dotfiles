@@ -162,6 +162,7 @@ func (m *Model) RestorePlace(p Place) {
 		}
 	}
 	m.reveal(p.Cursor)
+	m.pulseFor = m.cur // 場所の復元はカーソルを動かしたのではない (経路の光を出さない。pulse.go)
 	for _, tp := range p.Tiles {
 		m.restoreTile(tp)
 	}

@@ -35,9 +35,10 @@ func (m *Model) stepPulses(dt float64) bool {
 	return len(m.pulses) > 0
 }
 
-// pulseHead は 1 フレームの 1 つの光: 頭の桁 (木の座標)・尾の長さ・強さ。
+// pulseHead は 1 フレームの 1 つの光: 頭の桁 (木の座標)・尾の長さ・強さ・光が触れる右端 (出発点)。
+// 右端で切る: 経路はカーソルより先 (開いたフォルダの前回いた子) にも続くので、尾がカーソルの右の線まで届く。
 type pulseHead struct {
-	x, tail, a float64
+	x, tail, a, from float64
 }
 
 type pulseHeads []pulseHead
@@ -75,6 +76,7 @@ func (m *Model) pulseHeads(now map[*node][2]int) pulseHeads {
 			x:    fx + (rx-fx)*p.t.v,
 			tail: math.Max(3, math.Min(12, (fx-rx)*0.15)),
 			a:    a,
+			from: fx,
 		})
 	}
 	m.pulseBuf = hs
@@ -87,7 +89,7 @@ func (hs pulseHeads) light(c *cell, x int, col rgb) rgb {
 	g, head := 0.0, false
 	for _, h := range hs {
 		d := float64(x) - math.Round(h.x)
-		if d < 0 || d > h.tail {
+		if d < 0 || d > h.tail || float64(x) > h.from {
 			continue
 		}
 		if v := h.a * (1 - d/(h.tail+1)); v > g {
