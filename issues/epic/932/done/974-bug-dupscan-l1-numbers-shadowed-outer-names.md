@@ -1,7 +1,5 @@
 # 974 (bug): L1 が局所の名前と同じ綴りの外側の名前も番号にし、違う package・プロパティを使う 2 つを同じ形にする
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-29
 
 概要: norm の局所の名前の表が scope を見ず綴りで照合するので、`bytes := bytes.TrimSpace(b)` と `strings := strings.TrimSpace(s)`、Swift の `if let user` と `if let account` が L1 の組になる。
@@ -31,7 +29,7 @@
 
 ## 関連
 
-- [963](done/963-research-dupscan-feedback-obaket-1309-2026-10-29.md): L1 の行の文を弱めた。反証レビュー 2 周目で見つかった
+- [963](963-research-dupscan-feedback-obaket-1309-2026-10-29.md): L1 の行の文を弱めた。反証レビュー 2 周目で見つかった
 
 ## 着手の記録 (2026-10-29 夜、dotfiles-31。5h 枠の上限で中断・claim は外した)
 
