@@ -1,1 +1,0 @@
-../971-refactor-glogx-tui-split-by-responsibility.md
