@@ -1,4 +1,4 @@
-# 975 (refactor): glogx の handleKey (253 行) の順序つきの if の連鎖を、層の表にするか
+# 975 (refactor): glogx の handleKey (253 行) の順序つきの if の連鎖を、層の表にするか (結論: 表にせず、順序のテストを足す)
 
 > 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
 
@@ -50,6 +50,33 @@
 - [971](done/971-refactor-glogx-tui-split-by-responsibility.md) (tui.go の分割)
 - 863 の P1〜P4 (mac-lan-manager の lanmgr で、行の動作と画面の層を表にした前例)
 
+## 設計のレビューの決着 (opus、読み取りのみ)
+
+- 「表にしない」「後半を routeKeyToLog へ出す」の挙動は壊せなかった。ただし 3 問への答えは「routeKeyToLog は名前を付けて移す以上の効果が小さい」:
+  issue の動機の段の順序は handleKey に残ったままで、U は handleKey・Dismiss は routeKeyToLog と分かれて他の routeKeyTo* と形が揃わない
+  → **routeKeyToLog への切り出しは採らない** (`_claude/rules/verify-design-intent-before-refactor.md`: どれも良くならないなら分けない)
+- P2 段の順序 (action モーダル → 再起動ダイアログ → 全画面) の写しが onPaste にもある → `boardOwnsInput` 1 つにまとめた (下)
+- P3 根拠に挙げた fix (879ded3f2・132cc8123) は述語の追加が中心で「置き場所の誤り」だけではない (結論の「表にしても置き場所は人が選ぶ」は崩れない)
+- 推測で挙がった「入れ替えても緑」の組は、下の変異で実測した
+
+## 決めたこと
+
+- handleKey は層の表にせず、後半も切り出さない。代わりに、段の優先を守るテストを足し、onPaste の板の判定を 1 つにする
+
 ## 進捗
 
-- [ ] 着手の判断 (trigger 待ち)
+- [x] 着手の判断 (2026-10-29 再開。上の「調べたこと」で見送らないと決めた)
+- [x] 隣り合う段を入れ替える変異を 11 組当てた (意味のある組だけ。受けるキーが互いに別の段 (b と u など) の入れ替えは等価なので外した)。
+  既存のテストで red: C-c・C-g ↔ action モーダル / action モーダル ↔ prefix / update ↔ 全画面 / 全画面 ↔ U / q ↔ job パネル / job パネル ↔ 一覧の switch。
+  緑のまま通った 5 組の扱い:
+  - 再起動ダイアログ ↔ C / X の update → TestRestartPromptTakesUpdateKeys を足した
+  - usage の消去 ↔ diff の重ね板 → TestKeyOverDiffDismissesUsage を足した
+  - PR status ↔ i → TestPRStatusTakesIssuesKey を足した
+  - キーリピートの抑止 ↔ 終了演出の着地 → 足さない (押しっぱなしのキーが演出の途中で着地するかの差だけ)
+  - diff ↔ PR status → 足さない (片方が開いている間はもう片方を開くキー d / P が届かず、同時に開く経路が無い = 等価な変異)
+  足した 3 本は、入れ替えた変異でそれぞれ red になることを確かめた
+- [x] onPaste: 全画面ごとに 3 回写していた `!actModal.active() && !restartPromptVisible()` を `boardOwnsInput` にまとめ、switch 1 本にした。
+  早期 return を外す変異で TestPasteGoesOnlyIntoInputs が red
+  — commit「test(glogx): handleKey の段の優先を守るテストを足し、onPaste の板の判定を 1 つにする (issue 975)」
+- [ ] 実装の敵対的レビュー
+- [ ] make test・push・CI・Bench
