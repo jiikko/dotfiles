@@ -928,6 +928,14 @@ func TestFilterHidesFinishedEpicWithOpenParent(t *testing.T) {
 	// 親の 2 つの形が並ぶ epic: viewer は番号の形 (940) を親行にし、名前付きの形 (945) を open な子として描く
 	mkFiles(t, filepath.Join(dir, "epic", "940"), "940-design-x.md", "945-epic-940.md")
 	mkFiles(t, filepath.Join(dir, "epic", "940", "done"), "941-feat-done.md")
+	// 2 つの形が並び、選び方で結果が変わる配置 (番号の降順だと名前付きの形が先に来る):
+	// 950 は番号の親が pending・名前付きの 955 が open → 955 は open な子なので epic は進行中
+	mkFiles(t, filepath.Join(dir, "epic", "950", "pending"), "950-design-x.md")
+	mkFiles(t, filepath.Join(dir, "epic", "950"), "955-epic-950.md")
+	mkFiles(t, filepath.Join(dir, "epic", "950", "done"), "951-feat-done.md")
+	// 960 は番号の親が open・名前付きの 965 が done → open な子が無いので終わった epic
+	mkFiles(t, filepath.Join(dir, "epic", "960"), "960-design-y.md")
+	mkFiles(t, filepath.Join(dir, "epic", "960", "done"), "965-epic-960.md", "961-feat-done.md")
 	all, _ := Scan([]string{dir})
 
 	for _, f := range []StatusFilter{FilterOpen, FilterPending, FilterAll} {
@@ -938,6 +946,8 @@ func TestFilterHidesFinishedEpicWithOpenParent(t *testing.T) {
 		for n, want := range map[string]bool{
 			"910": f >= FilterPending, "911": f >= FilterPending, "914": f == FilterAll,
 			"920": true, "921": true, "930": true, "940": true, "945": true, "941": true,
+			"950": true, "955": true, "951": true, // 進行中の epic の子は状態フィルタの対象外
+			"960": f == FilterAll, "965": f == FilterAll, "961": f == FilterAll,
 		} {
 			if got[n] != want {
 				t.Errorf("%s: %s の表示 got %v want %v (%v)", f, n, got[n], want, got)
