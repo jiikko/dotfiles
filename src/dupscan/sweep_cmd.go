@@ -102,7 +102,8 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	w := &lineWriter{w: stdout}
 	w.printf("dupscan sweep: 単位 %d・ファイル %d・読めないファイル %d。節ごとに順位は別 (上から先に見る価値が高い順)\n", len(entries), got.files, len(got.errFiles))
 	w.printf("意図して分けている組・誤検知は、組の全員の単位の直前に `// dupscan:allow <false-positive|intentional> <理由>` を書くと静かになる (1 人だけに書いて組ごと静かにするなら、メンバーの 1 つに `// dupscan:allow-group <人数> <種別> <理由>`)\n")
-	sweepExclusionText(w, len(baseAll)-len(base)+len(newGroups(deepAll, base))-len(deep), ex.Stale())
+	// 印が無ければ出た組の数との差で数える (節 1 から消した組は、節 2 の走査にも同じ組として入る。節ごとの差を足すと 2 回数える)
+	sweepExclusionText(w, len(baseAll)+len(newGroups(deepAll, baseAll))-len(base)-len(deep), ex.Stale(), sc.Whole())
 	w.section("1. 同じ形の組 (既定の下限 %d 節・段 %s)", opt.MinNodes, *c.levels)
 	sweepGroups(w, base, *c.limit)
 	w.section("2. 下限を %d 節に下げ、メンバー名だけ違う写し (L1m) も見て新しく出た組 (小さい単位が多く、雑音も混ざる。allow 印で静かにできる)", sweepDeepMinNodes)
@@ -129,12 +130,23 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 // sweepExclusionText は、節 1・2 から除外 (印・設定ファイル) で消した組の数と、人数が合わずに効いていない allow-group を出す。
 // 印を足した後の「なし」だけでは、印が効いて消えたのか、組が元から無かったのかを出力から区別できない。
 // 人数の食い違いは gate では -v の一覧にしか出ず、sweep は組を黙って出し直すだけだった。
-func sweepExclusionText(w *lineWriter, silenced int, stale []exclude.Rule) {
+// 起点が repo の一部なら、L1 の同じ本体の単位が人数より多い印 (exclude.Rule.GroupMissOver) だけを出し、ほかは数だけ言う:
+// 同じ本体の単位は起点の中でしか数えないので、module をまたぐ組の印は、写しが減ったのか起点の外にいるのかを区別できない
+// (src/treefiler で 4 本がこの形だった)。
+func sweepExclusionText(w *lineWriter, silenced int, stale []exclude.Rule, whole bool) {
 	w.printf("印・除外で静かにした組 (節 1・2): %d\n", silenced)
+	outside := 0
 	for _, r := range stale {
-		if r.GroupMiss() != "" && r.Comment != "" {
+		switch {
+		case r.GroupMiss() == "" || r.Comment == "":
+		case whole || r.GroupMissOver():
 			w.printf("🚨 効いていない allow-group (組は出し続ける。寄せるか、確かめてから人数を直す): %s (%s)\n", r.Comment, r.GroupMiss())
+		default:
+			outside++
 		}
+	}
+	if outside > 0 {
+		w.printf("人数の合わない allow-group %d 個は、起点の中の L1 の同じ本体の単位が人数以下なので出していない (起点の外のメンバーと区別できない。repo の root から打つか、gate -v で見る)\n", outside)
 	}
 }
 

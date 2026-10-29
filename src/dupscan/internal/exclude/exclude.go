@@ -42,6 +42,11 @@ type Rule struct {
 	// groupMiss は `dupscan:allow-group <人数>` の人数と、同じ本体の単位の数が合わなかったときの、段ごとの数 (合えば空)。
 	// 合わない許可は何も消さず、効いていない除外に出す (増えた写しを、許可が黙って覆わない)。
 	groupMiss string
+	// groupOver は、人数の合わなかった allow-group で、L1 の同じ本体の単位が人数より多かったか。
+	// 走査の起点を repo の一部に絞ると起点の外のメンバーは数えられない。起点の外を足しても数は減らないので、L1 で多いなら
+	// それより粗いどの段 (L2・L3・L1m は L1 の一致を含む) でも多く、どの段でも人数に合わない。粗い段だけで多いのは、
+	// 起点の外の相手と L1 でちょうど人数に合う形と区別できない。
+	groupOver bool
 	// allowID は allow-group から作った除外の出どころ (コメントの中身: 人数・種別・理由)。gate が、base から変わっていない許可を見分ける。
 	// 書いた単位の鍵は入れない (ファイルの移動・型や関数の改名ではコメントの行が diff に出ないので、それで「新しい許可」にしない)。
 	allowID string
@@ -49,6 +54,9 @@ type Rule struct {
 
 // GroupMiss は `dupscan:allow-group` の人数が合わなかったときの、段ごとの同じ本体の単位の数 (合っていれば空)。
 func (r Rule) GroupMiss() string { return r.groupMiss }
+
+// GroupMissOver は、人数の合わなかった allow-group で、L1 の同じ本体の単位が人数より多かったか (走査の範囲によらない食い違い)。
+func (r Rule) GroupMissOver() bool { return r.groupOver }
 
 // Config は設定ファイルの中身。
 type Config struct {
@@ -235,6 +243,7 @@ func groupCommentRule(e *group.Entry, entries []*group.Entry, rest string) (Rule
 	}
 	id := strconv.Itoa(n) + "\x00" + kind + "\x00" + reason
 	var counts []string
+	over := false
 	for _, lv := range append(append([]norm.Level(nil), norm.Levels...), norm.LM) {
 		var pins []string
 		for _, o := range entries {
@@ -248,9 +257,10 @@ func groupCommentRule(e *group.Entry, entries []*group.Entry, rest string) (Rule
 			return r, r.check()
 		}
 		counts = append(counts, fmt.Sprintf("%s %d", lv, len(pins)))
+		over = over || lv == norm.L1 && len(pins) > n
 	}
 	return Rule{Group: []string{Pin(e)}, Level: norm.L1.String(), level: norm.L1, Kind: kind, Reason: reason, Comment: comment,
-		allowID: id, groupMiss: fmt.Sprintf("人数 %d・同じ本体の単位 %s", n, strings.Join(counts, "・"))}, nil
+		allowID: id, groupMiss: fmt.Sprintf("人数 %d・同じ本体の単位 %s", n, strings.Join(counts, "・")), groupOver: over}, nil
 }
 
 // WithComments は設定 c にコメントの許可 rules を足した設定を返す (c は書き換えない)。

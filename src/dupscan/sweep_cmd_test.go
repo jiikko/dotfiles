@@ -474,3 +474,73 @@ func TestSweepReportsSilencedGroupsAndMiscountedAllowGroup(t *testing.T) {
 		t.Errorf("効かなかった印を消した組に数えている: %q", out)
 	}
 }
+
+// 同じ本体の関数 (L1 で一致する。sweep の節 2 の下限 12 節を超える)。
+func pickFunc(name string) string {
+	return "func " + name + "(xs []int, limit int) int {\n\tbest := 0\n\tfor _, x := range xs {\n\t\tif x > best && x < limit {\n\t\t\tbest = x\n\t\t}\n\t}\n\treturn best\n}\n"
+}
+
+// 起点を repo の一部に絞ると、起点の外のメンバーは数えられない。L1 で人数以下の allow-group は、写しが減ったのか
+// 起点の外にいるのかを区別できないので 🚨 では出さず数だけ言う。L1 で人数より多いものは起点によらず食い違いなので出す。
+func TestSweepNarrowScopeReportsOnlyExcessAllowGroups(t *testing.T) {
+	marked := "package a\n\n// dupscan:allow-group 2 intentional 注記\n" + pickFunc("pickA")
+	root := repoWith(t, map[string]string{"a/a.go": marked, "b/b.go": "package b\n\n" + pickFunc("pickB")})
+	_, out, _ := sweep(t, root)
+	if strings.Contains(out, "効いていない allow-group") || strings.Contains(out, "出していない") {
+		t.Fatalf("前提: repo 全体なら 2 人の組で印は効く: %q", out)
+	}
+	_, out, _ = sweep(t, root+"/a")
+	if strings.Contains(out, "🚨 効いていない allow-group") {
+		t.Errorf("起点の外のメンバーを、写しが減ったと読んでいる: %q", out)
+	}
+	if !strings.Contains(out, "人数の合わない allow-group 1 個は、起点の中の L1 の同じ本体の単位が人数以下なので出していない") {
+		t.Errorf("出さなかった印の数を言っていない: %q", out)
+	}
+	three := marked + "\n" + pickFunc("pickC") + "\n" + pickFunc("pickD")
+	_, out, _ = sweep(t, repoWith(t, map[string]string{"a/a.go": three, "b/b.go": "package b\n"})+"/a")
+	if !strings.Contains(out, "🚨 効いていない allow-group (組は出し続ける。寄せるか、確かめてから人数を直す): a/a.go:3 (人数 2・同じ本体の単位 L1 3") {
+		t.Errorf("起点の中で人数より多い写しの食い違いを出していない: %q", out)
+	}
+}
+
+// 既定の下限 (20 節) を超える関数。節 1 にも、下限を下げた節 2 の走査にも同じ組として入る。
+func bigFunc(name string) string {
+	return "func " + name + "(xs []int, limit int) (int, int) {\n\tbest, n := 0, 0\n\tfor _, x := range xs {\n\t\tif x > best && x < limit {\n\t\t\tbest = x\n\t\t\tn++\n\t\t}\n\t\tif n > limit {\n\t\t\tbreak\n\t\t}\n\t}\n\treturn best, n\n}\n"
+}
+
+// 節 1 にも節 2 の走査にも入る組を印で消しても、静かにした組は 1 と数える (節 2 の側で 2 回目に数えない)。
+func TestSweepSilencedCountsGroupOnceAcrossSections(t *testing.T) {
+	plain := "package a\n\n" + bigFunc("bigA") + "\n" + bigFunc("bigB")
+	_, out, _ := sweep(t, repoWith(t, map[string]string{"a/a.go": plain}))
+	if s := sweepSection(t, out, 1); !strings.Contains(s, "bigA") {
+		t.Fatalf("前提: 印が無ければ節 1 に出る: %q", out)
+	}
+	marked := strings.Replace(plain, "func bigA", "// dupscan:allow-group 2 intentional 注記\nfunc bigA", 1)
+	_, out, _ = sweep(t, repoWith(t, map[string]string{"a/a.go": marked}))
+	if strings.Contains(out, "bigA") {
+		t.Fatalf("前提: 印で組が消える: %q", out)
+	}
+	if !strings.Contains(out, "印・除外で静かにした組 (節 1・2): 1\n") {
+		t.Errorf("1 つの組を節ごとに数えている: %q", out)
+	}
+}
+
+// 起点を絞ったとき、粗い段 (literal を畳む段) で人数より多く一致しても、起点の外に L1 の相手がいれば印は正しい。🚨 では出さない。
+func TestSweepNarrowScopeIgnoresExcessOnCoarseLevels(t *testing.T) {
+	variant := func(name, init string) string {
+		return strings.Replace(pickFunc(name), "best := 0", "best := "+init, 1)
+	}
+	a := "package a\n\n// dupscan:allow-group 2 intentional 注記\n" + pickFunc("pickA") + "\n" + variant("pickE", "1") + "\n" + variant("pickF", "2")
+	root := repoWith(t, map[string]string{"a/a.go": a, "b/b.go": "package b\n\n" + pickFunc("pickB")})
+	_, out, _ := sweep(t, root)
+	if strings.Contains(out, "効いていない allow-group") {
+		t.Fatalf("前提: repo 全体なら L1 で 2 人に合って印は効く: %q", out)
+	}
+	_, out, _ = sweep(t, root+"/a")
+	if !strings.Contains(out, "同じ本体の単位 L1 1") && !strings.Contains(out, "出していない") {
+		t.Fatalf("前提: 起点の中では L1 が 1 で人数に合わない: %q", out)
+	}
+	if strings.Contains(out, "🚨 効いていない allow-group") {
+		t.Errorf("粗い段の一致の多さを、範囲によらない食い違いと読んでいる: %q", out)
+	}
+}
