@@ -204,3 +204,26 @@ func TestIndexKindInitReturnsOnlyInitializers(t *testing.T) {
 		t.Errorf("-kind func に initializer は混ざらない: %q", funcs)
 	}
 }
+
+// 他のファイル (Go は他の package) から呼べない単位は、呼べる範囲の呼び出しだけを数える。名前だけで数えると、同名の private な写しが
+// ファイルごとにあるとき両方に合計が付き、どちらが多く使われているかを読み違える。
+func TestIndexCountsHiddenUnitCallsOnlyWhereTheyAreVisible(t *testing.T) {
+	swift := func(typ string, calls int) string {
+		body := strings.Repeat("        waitUntil(\"x\")\n", calls)
+		return "final class " + typ + " {\n    private func waitUntil(_ what: String) {}\n    func run() {\n" + body + "    }\n}\n"
+	}
+	root := repoWith(t, map[string]string{"Tests/A.swift": swift("A", 3), "Tests/B.swift": swift("B", 1)})
+	_, out, errs := index(t, "-name", "waitUntil", root)
+	if !strings.Contains(out, "A.waitUntil(_ what: String) [test,private] (呼び出し ~3)") ||
+		!strings.Contains(out, "B.waitUntil(_ what: String) [test,private] (呼び出し ~1)") {
+		t.Fatalf("private はそのファイルの呼び出しだけを数える: %q err=%q", out, errs)
+	}
+	goSrc := func(pkg string, calls int) string {
+		return "package " + pkg + "\n\nfunc helper() {}\n\nfunc Run() {\n" + strings.Repeat("\thelper()\n", calls) + "}\n"
+	}
+	root = repoWith(t, map[string]string{"a/a.go": goSrc("a", 2), "a/a2.go": "package a\n\nfunc Other() {\n\thelper()\n}\n", "b/b.go": goSrc("b", 1)})
+	_, out, errs = index(t, "-name", "helper", root)
+	if !strings.Contains(out, "a/a.go:3 helper() [unexported] (呼び出し ~3)") || !strings.Contains(out, "b/b.go:3 helper() [unexported] (呼び出し ~1)") {
+		t.Fatalf("Go の小文字の関数は同じ package (dir) の呼び出しを数える (別のファイルも含む): %q err=%q", out, errs)
+	}
+}

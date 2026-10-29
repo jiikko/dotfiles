@@ -3,6 +3,7 @@ package report
 import (
 	"fmt"
 	"io"
+	"path"
 	"slices"
 	"sort"
 	"strings"
@@ -153,13 +154,26 @@ func callCounts(units []*tree.Unit, calls []tree.Call) map[*tree.Unit]int {
 		q := CallQuery{Name: name, Labels: append([]string{}, u.Labels...)}
 		n := 0
 		for _, c := range byName[tree.MatchName(name)] {
-			if q.matches(c) {
+			if q.matches(c) && callableFrom(u, c.File) {
 				n++
 			}
 		}
 		out[u] = n
 	}
 	return out
+}
+
+// callableFrom は、そのファイルからの呼び出しが u に届きうるか。名前だけで数えると、同名の private な写しがファイルごとにあるとき
+// 両方に合計が付く。Swift の private / fileprivate は同じファイルだけ (型の private も同じファイルの extension までしか見えない)、
+// Go の小文字は同じ package (= 同じ dir。_test package からは見えないが区別しない近似)。
+func callableFrom(u *tree.Unit, file string) bool {
+	switch u.Visibility {
+	case "private", "fileprivate":
+		return file == u.File
+	case "unexported":
+		return path.Dir(file) == path.Dir(u.File)
+	}
+	return true
 }
 
 // typeName は囲む型の表し (`Outer.Inner`・`Foo where T == Int`) から、初期化の呼び出しに書く型の名前を取る。
