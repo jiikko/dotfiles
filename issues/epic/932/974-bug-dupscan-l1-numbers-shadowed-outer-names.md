@@ -1,7 +1,5 @@
 # 974 (bug): L1 が局所の名前と同じ綴りの外側の名前も番号にし、違う package・プロパティを使う 2 つを同じ形にする
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-29
 
 概要: norm の局所の名前の表が scope を見ず綴りで照合するので、`bytes := bytes.TrimSpace(b)` と `strings := strings.TrimSpace(s)`、Swift の `if let user` と `if let account` が L1 の組になる。
@@ -32,3 +30,15 @@
 ## 関連
 
 - [963](done/963-research-dupscan-feedback-obaket-1309-2026-10-29.md): L1 の行の文を弱めた。反証レビュー 2 周目で見つかった
+
+## 着手の記録 (2026-10-29 夜、dotfiles-31。5h 枠の上限で中断・claim は外した)
+
+- 再現 1 を本物の `bin/dupscan -v` で確認: `bytes := bytes.TrimSpace(b)` と `strings := strings.TrimSpace(s)` の 2 関数が L1 の組になる。
+  対照 (局所の変数を `t` にした同じ 2 関数) は「重複なし」。原因は外側と同じ綴りの局所の名前で、issue の記述どおり。再現 2 (Swift) は未確認
+- 反証レビューは未実施のまま
+- 直し方の当たり (Go): 宣言は `internal/lang/golang/conv.go` の `walker.decl` が `RoleDecl` にし、`AssignStmt` (`:=`) は左辺の宣言を右辺より先に子に並べる。
+  norm (`internal/norm/norm.go` の `localNames` / `isLocal`) は綴りだけで照合するので、木の順で「宣言より後」と判定しても右辺は救えない。
+  adapter の側で、`:=` と `ValueSpec` の右辺に出る「その文で宣言する名前と同じ綴り」の参照のうち、引数 (`Unit.Params`) と
+  それより前の宣言に無いものへ印 (例: `tree.Node` に外側を指す印) を付け、norm がその参照を番号にせず字面で残す案。
+  `x := x + 1` (引数 x の更新) を壊さないため、既出の名前は番号のままにする。walker は今は既出の宣言を持っていない
+- まだコードは書いていない (worktree の変更なし)
