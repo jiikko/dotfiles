@@ -30,7 +30,7 @@ obaket の週次の Claude audit の PR 24 で、名前の違う同じ中身の�
 | [897](897-feat-dupscan-index-subcommand.md) | 探索のための索引 (subcommand)。名前・署名の型・doc 文で引く (名前の検索も LSP でなくこれでまかなう) | 893・894 |
 | [898](898-test-dupscan-obaket-calibration.md) | obaket と DualNoteApp に当てた実測・既定の閾値・PR 24 の前の木での肯定と否定の期待値・変異 (Type-3 の条件は 895 の着手時) | 894・896 |
 | [899](../../932/done/899-research-dupscan-lsp-integration.md) | 型/シンボル解決を非LSPから調査。epic 932で継続し、LSP不採用の方針は維持 | 896 |
-| [900](../900-research-dupscan-next-languages.md) | 次の言語 (Go) を足す (go/ast の adapter。zsh は対応しない) | 893 |
+| [900](900-research-dupscan-next-languages.md) | 次の言語 (Go) を足す (go/ast の adapter。zsh は対応しない) | 893 |
 | [902](../pending/902-feat-dupscan-claude-code-hook.md) | **保留**: 編集のたびの hook。止める網は `make test` (905) にした。`make test` まで待つと手戻りが大きい実例が続いたら再開 | — |
 | [904](904-feat-dupscan-trial-subcommands.md) | 人が試す入口 (`near`・`explain`・`gate` を手で回す)。動作確認として何ができるか・なぜ同じと判定したかを手で確かめる | 893・894・896・897・898・905・906 |
 | [905](905-feat-dupscan-ci-check-gate.md) | **セルフレビュー・`make test`・CI で新しく入った重複を落とす** (`dupscan gate`)。変わった単位を名指しし、その形の単位が base より増えたときだけ落とす。止めるかは所要と誤って止める割合を見て決める | 893・894・896・898・906 |

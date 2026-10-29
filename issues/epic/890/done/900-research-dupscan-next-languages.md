@@ -1,7 +1,5 @@
 # 900 (research): dupscan の次の言語 (Go・zsh) の読み取りを測る
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-26〜）
-
 起票日: 2026-10-24
 
 > **zsh / shell script は対応しない** (ユーザー決定 2026-10-26。理由と、対応するなら要る改修は `docs/dupscan-overview.md` §4 の言語の表)。この issue に残るのは Go だけ。
@@ -10,12 +8,12 @@
 
 ## 概要
 
-[891 (要件の正本)](done/891-design-dupscan-requirements.md) の「構想: 対応する言語」節。Swift の次は Go と zsh が候補 (ユーザー 2026-10-24)。足す前に、Swift と同じく
+[891 (要件の正本)](891-design-dupscan-requirements.md) の「構想: 対応する言語」節。Swift の次は Go と zsh が候補 (ユーザー 2026-10-24)。足す前に、Swift と同じく
 「対象の repo の全ファイルを読ませて、読めない構文 (ERROR / MISSING) が出るファイルを数える」を測ってから決める。
 zsh は tree-sitter-bash を使う案で、zsh だけの構文 (`${(f)...}`・glob の修飾子など) を読めるかが分かれ目。Go は tree-sitter-go か標準の `go/ast`。
 
 Go の重複のチェックは dupl (golangci-lint) が dotfiles の Go の 7 module (doctor・glogx・mac-lan-manager・pro-con・ratelimit・treefiler・tuikit) で有効。閾値はどれも 120 トークンで、tuikit 以外はテストを除外 (`src/*/.golangci.local.yml`)。
-Go を足す価値は、索引と `gate` ([905](done/905-feat-dupscan-ci-check-gate.md)) の側と、dupl の閾値より小さいヘルパーの写しにある。
+Go を足す価値は、索引と `gate` ([905](905-feat-dupscan-ci-check-gate.md)) の側と、dupl の閾値より小さいヘルパーの写しにある。
 
 ## 対応方針 (2026-10-26。ユーザーと合意)
 
@@ -48,6 +46,8 @@ Go を足す価値は、索引と `gate` ([905](done/905-feat-dupscan-ci-check-g
 - 2026-10-26 dotfiles の `src/` の `.go` を Write / Edit すると、session に 1 回「書く前に dupscan index・commit の前に dupscan gate」を案内する hook と、
   CLAUDE.md の節を足した (ユーザー決定: CLAUDE.md の 1 行 + 書く瞬間の hook。commit: feat(claude): src の Go を書くときに dupscan を案内する)。
   敵対的レビュー 1 周 (P1 なし。テストが rc・stderr を捨てていた偽の緑を直した)・変異 10 本が全部 red
+- 2026-10-29: 受け入れ条件 3 つが全部済んでいるので done へ移す (ユーザー指示)。claim は kojiM3MBP (glogx) のもので、最後の commit は 10-26 18:08 (gate を make test と CI に入れた)。
+  Go の def / refs は方針どおり後回し (gopls で引ける)。zsh はユーザー決定で対応しない。残課題は無い
 
 ## 較正 (2026-10-26。master f4f463b41)
 

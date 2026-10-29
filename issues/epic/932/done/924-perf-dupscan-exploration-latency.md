@@ -18,7 +18,7 @@ dotfiles `e4489100` 時点のSwift実装を確認した。
 - 解析結果のキャッシュは持たず、問い合わせのたびに読み直す。
 - `index -file` にもrepo内の呼び出しを数えた `calls_approx` がある。対象ファイルだけを読む変更ではこの値が変わるため、単純に走査範囲を狭めればよいとは言えない。
 
-関連: [900](../../890/900-research-dupscan-next-languages.md) ではGo追加に向けてadapter選択・コマンド層を変更中。着手時に取り込み、共通の走査経路を確認し直す。900の言語追加・Go較正と、本issueのSwift探索latencyを混同しない。
+関連: [900](../../890/done/900-research-dupscan-next-languages.md) ではGo追加に向けてadapter選択・コマンド層を変更中。着手時に取り込み、共通の走査経路を確認し直す。900の言語追加・Go較正と、本issueのSwift探索latencyを混同しない。
 
 ## 現状の計測（2026-10-26）
 
