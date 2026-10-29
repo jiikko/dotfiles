@@ -98,6 +98,30 @@ P1 2 件・P2 6 件・P3 2 件。全部を上の設計に反映した (P2-8 は�
 - P3: 933 で足りる部分の切り分け → 動機を「受け手の型で絞る」に言い直した / go.mod の変更は他の module の tidy に影響しない (dupscan に依存する module は無い)
 - 崩せなかった: module ごとに読み、文字列の鍵で比べる方式そのもの (replace の先は module のパスで呼ばれ、`./...` は自分の module の package しか読まない)
 
+## 結果 (2026-10-30)
+
+- 実装: commit「feat(dupscan): callers -typed で Go の呼び出し元を go/packages の型から確定する (issue 989)」。`src/dupscan/internal/typed` と `callers -typed`
+- 出力: 型で確定した呼び出し (鍵ごと) / 呼び出し先を確定できない (interface を通した呼び出し・関数値として渡した所。修飾した問い合わせでも、名前が同じ interface のメソッドは消さずにここへ出す) /
+  型で確定できないパッケージ (自分の誤り) / 依存の誤りで結果が欠けうるパッケージ (走査して数えたうえで注記) / この構成で読んでいない Go のファイル (構文を読んだ位置から決める)
+- 本物: `callers -typed Scope.Whole src/dupscan` は 6 件 (1.0 秒)、`callers -typed New src/dupscan` は `errors.New` 43・`dupscan/internal/exclude.New` 16・`crypto/sha256.New` 4・`math/rand/v2.New` 1 に分かれた (0.6 秒)
+- 確かめた方法: テスト 10 本・変異 11 本 (どれも狙ったテストだけが赤)・`make -C src/dupscan test lint`・`make test-lint`・ルートの `make test` が rc=0
+- 受け入れ条件: 899 の fixture の形 (受け手の違う同名・alias・interface) は 10 本のテストで確かめた。build tag の構成の切り替え (`-tags`) は入れていない (既定の構成だけ。外れたファイルは「読んでいない」に出す)
+
+### 敵対的レビュー (opus) の 1 周目・2 周目 (実装)
+
+- 1 周目 P1 (採用): 修飾した問い合わせで interface を通した呼び出しが消える / build tag で外れたファイル (IgnoredFiles) を読んだに数える
+- 1 周目 P2 (採用): cgo の元の .go を読んでいないと誤って出す / 依存の誤りでパッケージが丸ごと消える (IllTyped は依存の誤りでも真)
+- 1 周目 P2 (記録・設計の文言を直す): 確定できないパッケージに構文の近似の結果は添えていない (案内の文で構文の callers を勧める) / 関数型のフィールドを通した呼び出しは、関数を渡した所だけを記録する
+- 2 周目 P2 (採用): 存在しない型 (`Typo.Save`) でも当たったように見える / interface の method value が消える / 依存の誤りの注記が「数えていない」の見出しに並ぶ / 「読んだ」を一覧から決めている
+- 記録 (未対応・P3): 無名の interface のメソッドの鍵が同じ package の関数と衝突しうる / alias の受け手の鍵 (未確認) / 起点を module の下の dir にしても module 全体を読む (確定・Untyped は起点の外も含む) /
+  Untyped の Path の名前空間 (module の相対パスと package の ID が混ざる) / 別の module の依存が壊れると could not import で丸ごと外す (同じ module の中なら注記して走査) /
+  変種ごとに別の鍵へ解決する同じ呼び出しの重複の除き方 / パッケージの関数への問い合わせ (`a.Save`) でも interface の `Save` が Unknown に出る (受け手を持つ鍵かを見ていない)
+- **テストの穴**: cgo の fixture が無いので、「読んだ」を構文の位置から取る直しは変異で赤を確かめていない
+
+### 残り
+
+- `def` / `refs` の型の経路は 944 (Go の def) と入口が重なるので、944 の再開のときに合わせて決める (944 に 1 行足した)
+
 ## 関連
 
 - 986 (設計の地図)・899 (LSP・型の解決の調査と結論。この issue で Go について変えた)・944 (Go の def。本体つきで定義を返す。この issue と組み合わせられる)・965 F4 (callers の雑音)・933 (`callers -selector`)

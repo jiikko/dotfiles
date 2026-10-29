@@ -25,3 +25,5 @@
 - [ ] 再開条件の集計 (transcript で `index` / `callers` の直後の Read に offset / limit があるか) を結果つきで書く。
 - [ ] 本体つき `def` で 1 回の探索が `index` + 範囲 Read より小さいか、byte で比べる。
 - [ ] 同名の別 receiver がある Go の fixture で、混ざる/混ざらないの扱いを test で固定する。
+
+- 2026-10-30: 989 で Go の `callers -typed` (go/packages で型から確定) が入った。Go の `def` / `refs` を型の経路で引くかは、この issue の再開のときに合わせて決める (989 の「残り」)。
