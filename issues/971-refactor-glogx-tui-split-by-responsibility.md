@@ -92,5 +92,16 @@ update の前段は update に残る)。反映した指摘:
   - 等価: 移す前の tui.go と移した後の tui.go + browse_*.go の行を並べ替えて突き合わせ、差は import の行と書き換えたコメントだけ
   - 変異: browse_anim.go に `var _ = time.Now` を足すと make lint が forbidigo で red (lint の範囲の広げ方が効く)
   - dupscan gate rc=0 (変わった単位 187、写しの増えなし)
-- [ ] 実装の敵対的レビュー
-- [ ] ルートの make test・push・Bench
+- [x] 実装の敵対的レビュー (opus、読み取りのみ): ① ② とも挙動は壊せず、外れた検査も見つからなかった。
+  - ① の on<Msg> 24 本の本体は、字下げを戻すと旧 update の中に全部見つかる (24/24)。旧の case はどれも return で終わっていて、
+    ① で足した `return m, nil` は 0 件 (① の commit message の「本体の最後が return で無い case にだけ足した」に当たる case は無かった。訂正)
+  - ② の新しいファイルの区間は全部、旧の宣言の境目から始まり、重なり 0・取りこぼしは import と書き換えたコメントだけ。
+    旧の tui.go に `//go:`・build tag・`//nolint` は 0 件
+  - 反映した P3 4 件 (「docs(glogx): 移設の後のコメントの指す先を実体に合わせる」): forbidigo の path-except を `browse_[a-z0-9_]+` へ
+    (`browse_ci_panel.go` のような名前で黙って外れる)・bubbletea-v2 の表の RunBrowse・term/box.go の panelLines・ratchet の canary のコメント。
+    前からずれていた 2 件 (lanmgr の normalizeSpaceKey・frame_alloc_test の usageOverlay) も直した
+  - 直した差分はコメントと正規表現だけなので、2 周目の敵対的レビューは省いた
+- [x] ルートの make test: 1 回目は test-comment-provenance (足したコメントの issue 番号) と test-yaml (120 字) が赤 →
+  「docs(glogx): 分割で足したコメントから経緯の語を外し、yaml の行の長さを戻す」で直した。2 回目の赤は `tests/claude/test_dangling_symlinks.sh` だけ
+  (`~/.claude/agents/` に dotfiles 側で消えた agent への link が残っている。この変更と無関係で、前から赤)
+- [ ] push・Bench
