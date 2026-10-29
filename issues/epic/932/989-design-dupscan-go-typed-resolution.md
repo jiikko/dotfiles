@@ -32,10 +32,52 @@
 5. **母集合の違いの見せ方**: 構文で見つけた件数と型で確定した件数を、出力でどう分けるか
 6. **Swift**: この issue は Go だけ。Swift の index store は 899 の結論のまま (新鮮な store の読み取りだけ) で、別に扱う
 
+## 決めたこと (2026-10-30)
+
+- **go の版 (ユーザー決定 2026-10-30、設計レビューの後に確認し直して維持)**: dupscan 本体の go.mod の `go` 行を 1.26.0 に上げ、`golang.org/x/tools` を足す。CI は既に `.github/go-version` の 1.26.x。
+  失うもの (確認のときに伝えた): `bin/dupscan` は pull の後の最初の起動で自動ビルドし、Go 1.25 のマシンでは toolchain (約 90MB) の取得も走る (`bin/lib/go_autobuild.zsh`)。
+  その間、書く前の候補の注入 (hook、予算 6 秒) は候補を出せず、失敗が記録されると最長 600 秒 (`GO_AUTOBUILD_FAILED_TTL`) その状態が続く。
+  別の module に分ける案 (本体の go.mod を変えない) は採らなかった
+
+## 設計 (反証レビュー (opus) を受けて直した版)
+
+### 最初の範囲と動機
+
+- 最初は Go の `callers -typed` だけ。`def` / `refs` は 944 (Go の def) と入口が重なるので、そちらと合わせて後で決める
+- 型が要るのは「変数を受け手にしたメソッド呼び出しを、受け手の型で絞る」こと。`errors.New` / `rand.New` のような `pkg.F` の形は、import の表と照らせば構文だけでも分けられる (933 の `-selector` に近い)。
+  型の経路の効果は、受け手の型が違う同名のメソッド (`a.Save()` と `b.Save()`) を分けられるかで確かめる
+
+### 問い合わせと出力
+
+- 問い合わせは修飾した鍵で書く: `<import path>.<名前>` か `<import path>.<型>.<メソッド>` (例: `dupscan/internal/repo.Scope.Whole`)。修飾の無い名前 (`Save`) も受け、その名前の全部の鍵に分けて出す (除くのではなく分ける)
+- 出力は鍵ごとに 3 つの区分を出す:
+  1. **型で確定した呼び出し**: 呼び出しの式の関数の部分が、その鍵のオブジェクトを指すもの
+  2. **呼び出し先を確定できない呼び出し**: interface のメソッドを通した呼び出し (鍵の型がその interface を満たすときの `Saver.Save` 等)、関数値・method value として渡した先での呼び出し。
+     899 の方針どおり「unknown」として件数と位置を出し、確定に数えない
+  3. **型で確定できないパッケージ**: 読み込みの誤り・`IllTyped`・型の検査の誤り (cgo の失敗を含む)。そのパッケージのファイルは構文の近似の結果を「確定できない」と明示して添える。**正常な 0 件として返さない**
+- さらに「この構成で読んでいない Go のファイル」の数を出す: 起点の中の `.go` ファイルのうち、読み込んだパッケージの `CompiledGoFiles` と `IgnoredFiles` のどちらにも無いもの (build tag で丸ごと外れる dir など。`src/treefiler/gorules` は全体が `//go:build ruleguard`)
+
+### 型の読み込み
+
+- module の見つけ方: 起点の各 dir について、上へ辿った最も近い go.mod の module と、起点の下の go.mod の module。`third_party` と `testdata` の下の go.mod は除く (replace 用の stub など)
+- module ごとに `go/packages` を 1 回 (`Dir` = module の root、パターン `./...`、`Tests: true`、`NeedName|NeedFiles|NeedCompiledGoFiles|NeedSyntax|NeedTypes|NeedTypesInfo|NeedModule`)。
+  test のための変種 (`p [p.test]`・`p_test`) で同じファイルが 2 回読まれるので、呼び出しの位置 (ファイル・行・列) で重複を除く
+- module をまたいだ比較は、型のオブジェクトではなく文字列の鍵で行う (module ごとに別々に型を検査するため)。鍵のそろえ方:
+  ポインタの受け手 `*A` は `A` に、ジェネリクスは `Origin()` でインスタンス化の前に、埋め込みで昇格したメソッドは選択の受け手ではなく宣言の受け手 (`Obj()` の `Recv`) で作る
+- 呼び出しの式の関数の部分は、`ParenExpr`・`IndexExpr`・`IndexListExpr` (`pkg.F[int](x)`) をほどいてから識別子を取る
+- build の構成は既定 (今の GOOS / GOARCH・tag 無し) だけ。自動の build はしないが、`NeedTypes` は依存の export data のために `go list -export` で依存を compile する (cgo を含む)。
+  明示の `-typed` の実行のときだけ走り、失敗はパッケージ単位で区分 3 に出す
+
+### 測ったこと (2026-10-30、x/tools v0.52.0・go1.26.0、使い捨ての probe)
+
+- dotfiles の `src` の 25 module を順に読み込むと 13.1 秒・最大 86MB (1 回目 15.2 秒)。module 1 つでは 0.5〜0.7 秒 (glogx は 0.70 秒・58MB)。型の誤りのあるパッケージは 0 個
+- 明示して打つ `callers -typed` には使える速さ。書く前の注入の hook (予算 6 秒) から `src` 全体を引くには遅いので、hook からは呼ばない
+
 ## 受け入れ条件 (案)
 
 - 899 の fixture の形 (A.Save / B.Save / alias / interface / build tag) で、型の経路が呼び出し元を区別する
-- `callers New` の形で、`errors.New` / `rand.New` を除いた結果を返す
+- 受け手の型が違う同名のメソッド (`a.Save()` と `b.Save()`) を、鍵ごとに分けて出す
+- interface を通した呼び出しを、確定に数えず区分 2 に出す
 - コンパイルの通らないパッケージで、正常な 0 件を返さない
 - 所要の実測を本文に書く
 
@@ -45,6 +87,16 @@ P1 なし。
 - P2 (採用): CI の Go の版は go.mod の `go` 行ではなく `.github/go-version` (1.26.x) → 論点 3 を「go.mod の最低版の問題」に書き直した
 - P3 (採用): 899 の「自動 build を導入しない」との関係 → 型の経路は明示した実行に限ると書いた / 944 と入口が同じ → 論点 1 に足した
 - 反証できなかった: hook の引用、`index -returns` / `-param-type` の実在、899 の事実 (x/tools の版・IllTyped・所要は未測定)、21 件中 4 件、単位約 8,700、ユーザー決定の書き方
+
+## 設計の反証レビュー (2026-10-30、opus、読み取りのみ)
+
+P1 2 件・P2 6 件・P3 2 件。全部を上の設計に反映した (P2-8 はユーザーに確認し直して、決定を維持した)。
+- P1: interface の呼び出し・関数値が区分の無いまま黙って消える → 区分 2 を足した / 「errors.New を除く」は定義できない (名前だけの問い合わせでは本物の呼び出し先) → 鍵ごとに分けて出す形と、受け入れ条件を直した
+- P2: テストを読まない (今の callers はテストも出す) → `Tests: true` と位置での重複の除去 / build tag で丸ごと外れる dir は件数にも出ない → 読んでいないファイルの数を出す /
+  cgo と依存の compile → 区分 3 に出す / 起点が module の下の dir だと module が 0 個・入れ子の stub の go.mod → 上へ辿る・third_party と testdata を除く /
+  鍵のそろえ方 (ポインタ・ジェネリクス・埋め込み・IndexExpr) / go の版を上げると hook の index が一時的に空になる → ユーザーに確認し直した
+- P3: 933 で足りる部分の切り分け → 動機を「受け手の型で絞る」に言い直した / go.mod の変更は他の module の tidy に影響しない (dupscan に依存する module は無い)
+- 崩せなかった: module ごとに読み、文字列の鍵で比べる方式そのもの (replace の先は module のパスで呼ばれ、`./...` は自分の module の package しか読まない)
 
 ## 関連
 
