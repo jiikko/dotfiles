@@ -72,12 +72,31 @@ skill (`_claude/skills/dupscan/SKILL.md`) の 3 節は、当時「違反の `-v`
 
 ## 受け入れ条件 (案)
 
-- [ ] report と gate の json の欄 (出力の型から作る) と `-v` の節 (描画と共有する説明から作る) の一覧を、1 か所で引ける
-- [ ] skill から、その一覧へ 1 手で辿れる
-- [ ] 一覧と出力の型がずれたら落ちる検査がある (変異で赤を確かめる)
+- [x] report と gate の json の欄 (出力の型から作る) と `-v` の節 (描画と共有する説明から作る) の一覧を、1 か所で引ける (`dupscan capabilities -outputs report|gate`)
+- [x] skill から、その一覧へ 1 手で辿れる (skill の 3 節の先頭の項。usage の行にも)
+- [x] 一覧と出力の型がずれたら落ちる検査がある (変異で赤を確かめる)
 
 ## 関連
 
 - [961](done/961-research-dupscan-wishes-from-obaket-1308-2026-10-29.md) の W1 / W7 (起点。961 では skill の 3 節に案内を足すだけにした。961 は 2026-10-29 に done。この issue は継続)
 - [932](932-epic-dupscan-accuracy.md) (epic)
 - `src/dupscan/capabilities_cmd.go` / `src/dupscan/agent_guide_cmd.go` / `_claude/skills/dupscan/SKILL.md`
+
+## 進捗
+
+- 2026-10-29: 実装した (commit `feat(dupscan): capabilities -outputs で report / gate の json の欄と -v の行の意味を引く (issue 962)`)。形は上の「設計」節のとおり
+  - 出力の大きさ: `-outputs gate` は text 約 6.5KB・json 約 14KB、`-outputs report` は json 約 10KB (上限 64KB)。能力表 (`capabilities -format json`) は変えていない
+  - 検査 6 つ (欄と説明の表の両方向・実際の json の鍵・-v にだけ出る行の見出し・-v を直に書かない AST・鍵は識別子で全部使う・-outputs の名前)。変異 22 本がどれも狙ったテストで赤
+  - 963 が足した `UnitRef.end_line` を、置いた検査がそのまま捕まえた (rebase の後に説明を足した)
+  - 実装の敵対的レビュー (opus) 2 周:
+    - 1 周目: AST の検査の素通り 4 通り・鍵の書き間違いで本番が panic・型を辿る規則の違い → 直した
+    - 2 周目: master の 963 の -v の行を取り込んでいなかった・鍵の変換や式で検査を素通り・Verbose を変数に取った分岐・型の根が Marshaler を埋め込む形 → 直した
+    - 3 周目は回していない (2 周目の指摘はどれも再現入力付きで、変異で赤にして閉じた。5h 枠が 84% だったため)
+  - 受け入れた穴 (検出しない形):
+    - 欄の意味が変わったのに説明が古い (欄の増減しか見ない)
+    - -v の分岐から呼ぶ、-v 専用として名前を挙げていない関数の中で直に書く行は、AST では見ない。fixture に出る行なら出力の差分の検査が見る。fixture に出る -v の行は report で 3 種・gate で 6 種で、出ない種類 (stale-detail・ambiguous・new-exclusion・path-passed など) は AST の検査だけが守る
+    - 型を辿る処理は、値のフィールドに付いたポインタの受け口の Marshaler・浅い欄が深い欄を隠す形を、encoding/json より厳しく誤りにする (偽陽性で、今の型には無い)
+  - skill に `-format json` の `exclude` の説明 (961) が残っている。欄の定義でなく「text を切り出さない」使い方の案内なので残した
+  - agent-guide (codex の入口) には `-outputs` を案内していない (2 周目までの指摘。範囲外として残す)
+  - 検査: dupscan の test・lint、root の `make test-lint`・`make test-dupscan-gate` が rc=0。skill の整合チェック 3 回 (skill の中・外・使う人の目) は食い違いなし
+- [ ] `bin/skill-eval dupscan` (5h 枠が閾値を超えていて skill-eval が自分で止まった。リセット後に回して done にする)
