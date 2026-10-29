@@ -1,7 +1,5 @@
 # 955 (research): dupscan を使って vlc-multi-video-player のテストの重複を解消したときの所見 (2026-10-28)
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-29〜）
-
 起票日: 2026-10-28
 
 ## 概要
