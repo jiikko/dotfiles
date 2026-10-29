@@ -38,7 +38,7 @@
 
 ## 関連
 
-- [954](954-research-dupscan-dogfood-feedback-obaket-1307-2026-10-28.md) (`nonisolated(unsafe)` と `f(())` の回避)・[955](../955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md)・[932](../932-epic-dupscan-accuracy.md) (epic)
+- [954](954-research-dupscan-dogfood-feedback-obaket-1307-2026-10-28.md) (`nonisolated(unsafe)` と `f(())` の回避)・[955](955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md)・[932](../932-epic-dupscan-accuracy.md) (epic)
 - `src/dupscan/internal/lang/swift/swift.go` の `reparseKnownMisparses` / `isEmptyTupleArgument`、同じ dir の `isolation_test.go`
 
 ## 進捗

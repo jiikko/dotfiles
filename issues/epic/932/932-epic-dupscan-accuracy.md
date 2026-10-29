@@ -20,7 +20,7 @@
 | [944](pending/944-feat-dupscan-go-def.md)（保留） | Go の `def`。943の後も全体 Read が多いときに再開 |
 | [946](done/946-feat-dupscan-recall-from-real-modules.md) | 4 module に回して寄せた 21 件のうち、既定の report が出したのは 4 件。小さい単位を比べていない事実を report に出す・メンバー名 1 語だけが違う写しの段 `L1m`（opt-in。Swift で組が倍増するので既定にしない）を実装済み。一括で掘る入口・名前の束は提案。Swift 固有の所見（既定 213 組の 98% がテスト・読めない構文 3.4%）もここ |
 | [948](948-research-dupscan-meets-its-aims.md) | 一般的な重複防止/探索/消費量の効果は未実証。928から未実施の比較研究を引継ぎ、候補注入A1等の測定を継続 |
-| [955](955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md) | vlc のテストの重複の解消で使った所見。関数の中の `nonisolated(unsafe) let` 1 行でファイル全体が「読めない構文」になる (954 の P3 の答えの 1 つ。6 行で再現)・sweep の節 2 は 20 組中 1 か所だけが寄せる価値・節 3 の `w` の意味・後置 flag のエラー |
+| [955](done/955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md) | vlc のテストの重複の解消で使った所見。関数の中の `nonisolated(unsafe) let` 1 行でファイル全体が「読めない構文」になる (954 の P3 の答えの 1 つ。6 行で再現)・sweep の節 2 は 20 組中 1 か所だけが寄せる価値・節 3 の `w` の意味・後置 flag のエラー。done: F1 は 954・958 で解消、F2 は sweep の節 6 (型の写し)、F3・F4 は直した |
 | [965](965-research-dupscan-dogfood-treefiler-dedup-2026-10-29.md) | src/treefiler の重複の統合で使った所見。sweep の節 5 は Test 関数の中を見ない (仕様だが出力に出ない)・同じ単位の 2 つ目の allow-group が黙って効かない・単位の allow は組の全員に要る・Go の `callers New` が `errors.New` を拾う |
 
 ## 完了した子issue
