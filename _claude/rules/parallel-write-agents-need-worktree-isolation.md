@@ -42,6 +42,9 @@
   worktree を消しても、そこで起こしたプロセスは残る (CLAUDE.md「一時ファイルの配置」の
   `trap` の注記と同じ形)。確認は `ps -Ao pid,ppid,%cpu,etime,command` で
   **PPID=1 (孤児) かつ CPU を食っているもの**を見る
+  - **止める前に、そのプロセスの起動時刻 (`etime`) を、自分が止めた run の時刻と突き合わせる**。コマンド行に自分の worktree のパスがあることは
+    「自分の残骸」の証拠にならない (同じ worktree で今走っている検査も同じパスを持つ。PPID=1 は daemon 化した正常な tmux サーバでも出る)
+    (retro 980: 止めた make test の残骸と読んだ隔離 tmux サーバが、走行中の make test-lint の構文確認のものだった可能性がある)
 - 🚨 **エージェントに負荷を作らせるなら、親の終了で回収される形に限る** (`go test -parallel` /
   `-count`)。`(while :; do :; done) &` のような busy loop を使わせない — 非対話の `zsh -c` では
   `kill $(jobs -p)` が効かず、親が先に終わると**孤児になって焼き続ける**。
