@@ -1,6 +1,8 @@
 package filer
 
 import (
+	"math"
+	"slices"
 	"testing"
 	"time"
 )
@@ -57,10 +59,16 @@ func TestPulseRunsFromCursorTowardRoot(t *testing.T) {
 	m := newTest(t)
 	cdTo(t, m, "b/deep/x.txt")
 	settle(m)
+	// root の右から出る線の始まり (画面の桁)
+	rootLine := int(math.Round(m.anims[m.root].x.v)) + m.labelWidth(m.root) + 1 - int(math.Round(m.camX.v))
 	at := fixedNow
 	var heads []int
+	gaps := 0
 	for range 30 {
 		changed, cur := pulseDiff(t, m)
+		if len(changed) == 0 && len(m.pulses) > 0 {
+			gaps++
+		}
 		if cur[0] < 0 {
 			t.Fatal("前提: カーソルが描かれていない")
 		}
@@ -76,6 +84,16 @@ func TestPulseRunsFromCursorTowardRoot(t *testing.T) {
 	}
 	if len(heads) < 5 {
 		t.Fatalf("光ったフレームが少ない: %v", heads)
+	}
+	if gaps > 0 {
+		t.Fatalf("走っている途中で光が途切れたフレームが %d (頭の列=%v)", gaps, heads)
+	}
+	if heads[len(heads)-1] > rootLine {
+		t.Fatalf("光が root の線 (桁 %d) まで届かない: 頭の列=%v", rootLine, heads)
+	}
+	// 一定の速さ: root の線に着くのは走る時間 (pulseDur*pulseRun ≒ 24 フレーム) の終わりの方。ease-out だと 10 フレーム前後で着く
+	if i := slices.Index(heads, rootLine); i < 18 {
+		t.Fatalf("光が %d フレーム目で root の線に着いた (一定の速さなら 18 フレーム目より後): 頭の列=%v", i, heads)
 	}
 	_, cur := pulseDiff(t, m)
 	if heads[0] < cur[0]-4 || heads[len(heads)-1] >= heads[0]-4 {
@@ -97,8 +115,8 @@ func TestPulseSurvivesNextKey(t *testing.T) {
 	if len(m.pulses) != 2 {
 		t.Fatalf("次のキーの後の光が %d 本 (前の光と新しい光の 2 本のはず)", len(m.pulses))
 	}
-	if m.pulses[0].t.el < 0.03 {
-		t.Fatalf("次のキーで前の光が出直した (進み %v 秒)", m.pulses[0].t.el)
+	if m.pulses[0].el < 0.03 {
+		t.Fatalf("次のキーで前の光が出直した (進み %v 秒)", m.pulses[0].el)
 	}
 }
 
@@ -117,22 +135,26 @@ func TestPulseCountIsCapped(t *testing.T) {
 	if len(m.pulses) != maxPulses {
 		t.Fatalf("光が %d 本 (上限 %d)", len(m.pulses), maxPulses)
 	}
-	if el := m.pulses[len(m.pulses)-1].t.el; el > 0.0015 {
+	if el := m.pulses[len(m.pulses)-1].el; el > 0.0015 {
 		t.Fatalf("上限で今の光を足さなかった (最後の光の進み %v 秒。古い光から捨てるはず)", el)
 	}
-	if el := m.pulses[0].t.el; el < 0.0055 || el > 0.0065 {
+	if el := m.pulses[0].el; el < 0.0055 || el > 0.0065 {
 		t.Fatalf("残った最初の光の進みが %v 秒 (古い 2 本を捨てて、6 打ち前の光が残るはず)", el)
 	}
 }
 
 // 光は出発点 (カーソルの名前の 1 桁左) より右を光らせない: 開いたフォルダの上では経路がカーソルの右へ続き、尾がそこまで届く。
-func TestPulseDoesNotLightRightOfCursor(t *testing.T) {
-	hs := pulseHeads{{x: 10, tail: 12, a: 1, from: 12}}
+// 頭より先 (root 側) も光らせない。
+func TestPulseLightsOnlyBetweenStartAndHead(t *testing.T) {
+	ps := pulseHeads{
+		track: []int{20, 18, 16, 14, 12, 10},
+		hs:    []pulseHead{{head: 4, tail: 5, a: 1, start: 2}},
+	}
 	c := &cell{bg: cBg}
-	for x := 10; x <= 22; x++ {
-		lit := hs.light(c, x, cAccRoute) != cAccRoute
-		if lit != (x <= 12) {
-			t.Fatalf("桁 %d: 光った=%v (出発点 12 より右は光らない)", x, lit)
+	for _, x := range ps.track {
+		lit := ps.light(c, x, cAccRoute) != cAccRoute
+		if lit != (x >= 12 && x <= 16) {
+			t.Fatalf("桁 %d: 光った=%v (出発点 16 から頭 12 までだけ光る)", x, lit)
 		}
 	}
 }

@@ -113,7 +113,8 @@ type Model struct {
 	beadOn       bool
 	pulses       []pulse     // 経路の線をカーソルから root へ走る光 (押すたびに 1 つ。pulse.go)
 	pulseFor     *node       // 最後に光を出したカーソル (New で起動時のカーソルにする: 起動は動かしたのではない)
-	pulseBuf     pulseHeads  // pulseHeads の入れ物 (毎フレーム使い回す)
+	pulseBuf     []pulseHead // pulseHeads の入れ物 (毎フレーム使い回す)
+	trackBuf     []int       // 同じく、経路の横の線の桁の列
 	search       searchState `layer:"search"`
 	lastSearch   string
 	exploding    *explodeJob
@@ -1298,7 +1299,7 @@ func (m *Model) drawBead(c *canvas, ox, oy, ch int) {
 func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
 	// 前のフレームのセル (と線の持ち主の node) は take が手放す。見込みは前のフレームの数 (大きな画面から戻ると作り直す)
 	grid := m.linesInto(m.gridBuf.take(m.gridLast), now, oy, oy+ch-1)
-	pulses := m.pulseHeads(now)
+	pulses := m.pulseHeads(grid, now)
 	m.gridBuf.fit(len(grid))
 	m.gridLast = len(grid)
 	for k, lc := range grid {
@@ -1320,7 +1321,7 @@ func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
 		case emDim:
 			col = mix(cAccDim, mix(sap, cBg, 0.55), 0.35)
 		}
-		if lc.routeRun { // 縦棒は光らせない: 光は桁だけで決まるので、縦棒ごと光ると縦の帯が瞬く
+		if lc.routeRun { // 縦棒は光らせない: 光は桁で決まるので、縦棒ごと光ると縦の帯が瞬く
 			col = pulses.light(p, k[0], col)
 		}
 		p.s, p.fg = glyph(m.set.Lines, lc), col
