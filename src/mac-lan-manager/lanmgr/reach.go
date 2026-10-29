@@ -253,7 +253,7 @@ func (m *Model) reachCell(r row) string {
 	res, ok := m.reach[r.host]
 	if m.reachRuns[r.host] != nil || !ok || !slices.Equal(res.asked, t.Names) {
 		w := sMuted.Render("W-")
-		if slices.ContainsFunc(t.Names, setup.IsWiredName) {
+		if slices.ContainsFunc(t.Names, func(n string) bool { return n != t.Host }) {
 			w = sMuted.Render("W…")
 		}
 		return sMuted.Render("L…") + " " + w
@@ -263,19 +263,21 @@ func (m *Model) reachCell(r row) string {
 			if n.Name != name {
 				continue
 			}
-			if !n.Reachable() || WiredElsewhere(n, res.lanIP) {
+			if !n.Reachable() || (prefix == "W" && WiredElsewhere(n, res.lanIP)) {
 				return sWarn.Render(prefix + "✗")
 			}
 			return sOK.Render(prefix + "✓")
 		}
 		return sWarn.Render(prefix + "✗") // 確かめた名前の結果が無い (reach が返さなかった)
 	}
+	// L と W は名前の形ではなく台帳の鍵かどうかで分ける (reachTarget が Names を台帳の鍵 + 有線の名前で作る。台帳の鍵が
+	// x.wired.local の形で登録されていても、L の欄を消さない)
 	l, w := "", sMuted.Render("W-")
 	for _, name := range t.Names {
-		if setup.IsWiredName(name) {
-			w = mark("W", name)
-		} else {
+		if name == t.Host {
 			l = mark("L", name)
+		} else {
+			w = mark("W", name)
 		}
 	}
 	return l + " " + w
