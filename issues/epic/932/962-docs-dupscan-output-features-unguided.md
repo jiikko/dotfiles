@@ -99,4 +99,4 @@ skill (`_claude/skills/dupscan/SKILL.md`) の 3 節は、当時「違反の `-v`
   - skill に `-format json` の `exclude` の説明 (961) が残っている。欄の定義でなく「text を切り出さない」使い方の案内なので残した
   - agent-guide (codex の入口) には `-outputs` を案内していない (2 周目までの指摘。範囲外として残す)
   - 検査: dupscan の test・lint、root の `make test-lint`・`make test-dupscan-gate` が rc=0。skill の整合チェック 3 回 (skill の中・外・使う人の目) は食い違いなし
-- [ ] `bin/skill-eval dupscan` (5h 枠が閾値を超えていて skill-eval が自分で止まった。リセット後に回して done にする)
+- [x] `bin/skill-eval dupscan` (2026-10-29 23:53。PASS・score=1・2/2・$0.37。5h 枠のリセットの後に回した)
