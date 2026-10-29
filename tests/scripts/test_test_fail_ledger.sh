@@ -56,19 +56,29 @@ TEST_FAIL_LEDGER="$work/norm.tsv" run_ledger record sh "$list"
   && ok "record: sh の名前は repo root からの相対パスに揃える" || bad "record: 名前が揃っていない: [$(cut -f5 "$work/norm.tsv")]"
 
 # --- top ---
-mkdir -p "$work/issues/done"
-printf 'test_two.sh が落ちた\n' > "$work/issues/done/422-x.md"
+# 番号を並べるのは done 以外だけで、done は本数だけ出す: test_two.sh は両方 / test_one.sh は done だけ
+mkdir -p "$work/issues/done" "$work/issues/waiting" "$work/issues/epic/9/done"
+printf 'test_two.sh が落ちた\n' > "$work/issues/waiting/422-x.md"
+printf 'test_two.sh を直した\n' > "$work/issues/done/100-y.md"
+printf 'test_two.sh と test_one.sh\n' > "$work/issues/epic/9/done/101-z.md"
 printf 'foo_test_two.sh と TestTopper と gononame と (テスト名なし)\n' > "$work/issues/500-other.md"
 printf 'tests/x/test_two.sh\n' > "$list"
 TEST_FAIL_LEDGER="$work/a.tsv" run_ledger record sh "$list"
 top_out=$(TEST_FAIL_LEDGER="$work/a.tsv" TEST_FAIL_LEDGER_ISSUES_DIR="$work/issues" run_ledger top 2>&1)
 first=$(printf '%s\n' "$top_out" | sed -n 3p)
 case "$first" in
-  *"   2  "*"tests/x/test_two.sh  (issue 422)") ok "top: 回数の多い順に、名前を書いた issue を添えて出す" ;;
+  *"   2  "*"tests/x/test_two.sh  (issue 422 / done 2 本)") ok "top: 回数の多い順に、done 以外の issue の番号と done の本数を添えて出す" ;;
   *) bad "top: 先頭の行が違う: [$first]"; printf '%s\n' "$top_out" ;;
 esac
-[ "$(printf '%s\n' "$top_out" | sed -n 4p | awk '{print $1}')" = 1 ] \
-  && ok "top: 2 番目は 1 回のテスト" || bad "top: 2 番目の行が違う: $(printf '%s\n' "$top_out" | sed -n 4p)"
+# 状態は issues からの相対パスで決める: issues ディレクトリの置き場所のパスに /done/ があっても同じ行になる
+mkdir -p "$work/done" && cp -R "$work/issues" "$work/done/issues"
+top_moved=$(TEST_FAIL_LEDGER="$work/a.tsv" TEST_FAIL_LEDGER_ISSUES_DIR="$work/done/issues" run_ledger top 2>&1 | sed -n 3p)
+[ "$top_moved" = "$first" ] && ok "top: issues の置き場所のパスに done があっても状態を取り違えない" \
+  || bad "top: issues を done/ の下へ置くと行が変わる: [$top_moved] (期待 [$first])"
+case "$(printf '%s\n' "$top_out" | sed -n 4p)" in
+  *"   1  "*"tests/x/test_one.sh  (done 1 本)") ok "top: 2 番目は 1 回のテストで、done だけなら本数だけ出す" ;;
+  *) bad "top: 2 番目の行が違う: $(printf '%s\n' "$top_out" | sed -n 4p)" ;;
+esac
 top_n=$(TEST_FAIL_LEDGER="$work/a.tsv" run_ledger top 1 | tail -n +3 | wc -l | tr -d ' ')
 [ "$top_n" = 1 ] && ok "top N: N 件で切る" || bad "top N: $top_n 件出た (期待 1)"
 for n in １ 0; do

@@ -88,7 +88,7 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
   - 書かないもの: 緑の run・CI・中断 (Ctrl-C) した run・並列 runner が結果を報告しなかったテスト・lint の赤・
     `make test-changed` の Go の経路 (`scripts/test_changed.sh` が module の make を直接叩き、runner を通らない)
 - 自分の変更で説明できない赤が出たら、経路を辿り直す前に `scripts/test_fail_ledger.sh top` を見る。前にも落ちていれば回数と、
-  そのテスト名を書いた issue (422 など) が並ぶ。初めてなら、その赤は自分の変更を先に疑う
+  そのテスト名を書いた done 以外の issue の番号 (waiting の 422 など)・done の issue の本数が並ぶ。初めてなら、その赤は自分の変更を先に疑う
 - 記録先は `TEST_FAIL_LEDGER` で変えられ、空にすると書かない。runner は起動する各テストへ空で渡す
   (runner をわざと落とすテストの中の make が、本物の記録に偽の失敗を足さないため。`bin/mutate-verify` の検証コマンドと
   `make test-assert-reaches-exit` の probe にも空で渡す)。runner を外から叩くテストを書くなら、記録を見たいときだけ

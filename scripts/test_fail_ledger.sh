@@ -86,6 +86,8 @@ go_names() {
 # (パスや module の書き方は issue ごとに揺れる。部分一致だと TestRun が TestRunner の issue に当たる)。
 # テスト名の無い go の失敗は引かない (残るのは module・package の短い名前で、無関係な issue に当たる)。
 # 引くのは名前の最後の部分だけなので、同じファイル名・同じ Test 名の別のテストを書いた issue にも付く (手がかりとして出す)。
+# 番号を並べるのは done 以外の issue だけで、done は本数だけ出す。よく話題になるテストほど done が積もり、
+# 今も効く issue (waiting で再発を待つもの) の番号がその中に埋もれる。
 issues_for() {
   local name="$1" key dir="${TEST_FAIL_LEDGER_ISSUES_DIR:-$ROOT_DIR/issues}"
   case "$name" in *" (テスト名なし)") return 0 ;; esac
@@ -93,8 +95,22 @@ issues_for() {
   key="${key##* }"
   key="${key##*/}"
   [ -n "$key" ] && [ -d "$dir" ] || return 0
-  grep -rlFw --include='*.md' -- "$key" "$dir" 2>/dev/null \
-    | sed -nE 's|.*/([0-9]{3,})-[^/]*$|\1|p' | sort -u | paste -sd, -
+  local hits h rel num open="" closed=0
+  hits=$(grep -rlFw --include='*.md' -- "$key" "$dir" 2>/dev/null)
+  [ -n "$hits" ] || return 0
+  # 状態は issues からの相対パスで決める (checkout の置き場所のパスに done が入っていても取り違えない)
+  while IFS= read -r h; do
+    rel="${h#"$dir"/}"
+    num=$(printf '%s' "${rel##*/}" | sed -nE 's/^([0-9]{3,})-.*/\1/p')
+    [ -n "$num" ] || continue
+    case "$rel" in
+      done/* | */done/*) closed=$((closed + 1)) ;;
+      *) open="$open $num" ;;
+    esac
+  done <<< "$hits"
+  open=$(printf "%s" "$open" | tr " " "\n" | sed "/^$/d" | sort -u | paste -sd, -)
+  [ "$closed" -gt 0 ] || closed=
+  printf '%s' "${open:+issue $open}${open:+${closed:+ / }}${closed:+done $closed 本}"
 }
 
 top() {
@@ -112,7 +128,7 @@ top() {
     | LC_ALL=C sort -t "$(printf '\t')" -k1,1nr -k2,2r | head -n "$n" \
     | while IFS="$(printf '\t')" read -r count last name; do
         refs=$(issues_for "$name")
-        printf '%4d  %-19s  %s%s\n' "$count" "$last" "$name" "${refs:+  (issue $refs)}"
+        printf '%4d  %-19s  %s%s\n' "$count" "$last" "$name" "${refs:+  ($refs)}"
       done
 }
 
