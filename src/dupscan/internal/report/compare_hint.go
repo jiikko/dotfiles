@@ -29,7 +29,7 @@ func compareHints(root string, lv norm.Level, members, entries []*group.Entry) [
 		return nil
 	}
 	if lv == norm.L1 {
-		return []string{"違い: 本体で局所の名前として番号にした綴りだけ。リテラルと、番号にしなかった名前は全員同じ (L1。Swift は名前を解決しないので、局所の名前と同じ綴りの外側の名前が番号になる形が残る (block・closure・ループの中や if / guard の条件で宣言した綴りを、束縛の届かない所 (その外・else の中) で使う所)。引数と receiver の型は比べていない)"}
+		return []string{"違い: 本体で局所の名前として番号にした綴りだけ。リテラルと、番号にしなかった名前は全員同じ (L1。Swift は名前を解決しないので、局所の名前と外側の名前 (プロパティ) の区別は構文の近似 (宣言の効く範囲を block・closure・ループ・if / guard などの節で区切る)。引数と receiver の型は比べていない)"}
 	}
 	if entries == nil {
 		return nil

@@ -81,7 +81,7 @@ func TestVerboseL1LineSaysWhichShadowedOuterNamesStayNumbered(t *testing.T) {
 	}
 	root := repoWith(t, map[string]string{"a/a.go": trim("t", "v"), "b/b.go": trim("u", "w")})
 	rc, out, errs := runReport(t, "-v", "-min-nodes", "1", root)
-	if rc != 0 || !strings.Contains(out, "L1 ") || !strings.Contains(out, "Swift は名前を解決しないので、局所の名前と同じ綴りの外側の名前が番号になる形が残る (block・closure・ループの中や if / guard の条件で宣言した綴りを、束縛の届かない所 (その外・else の中) で使う所)") {
+	if rc != 0 || !strings.Contains(out, "L1 ") || !strings.Contains(out, "Swift は名前を解決しないので、局所の名前と外側の名前 (プロパティ) の区別は構文の近似 (宣言の効く範囲を block・closure・ループ・if / guard などの節で区切る)") {
 		t.Fatalf("L1 の組で、外側の名前が番号になる形が残る範囲を書く: rc=%d out=%q stderr=%q", rc, out, errs)
 	}
 }

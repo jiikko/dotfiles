@@ -7,9 +7,10 @@ import "dupscan/internal/tree"
 // 別のプロパティを読む写しが同じ形になる。
 // 宣言は、同じ並びで後ろに `=` (for 文では `in`) があればその右辺を読み終えてから効く (`let x = x…`・`if let x = x`・
 // `for x in x.items`)。無ければその場で効く (引数・クロージャの引数。クロージャの `{ x in … }` の `in` は右辺ではない)。
-// scope は見ない近似: block・closure・ループの中や、束縛の届かない所 (if の束縛の else・if の後ろ・guard の else) でも、
-// その後ろでは同じ綴りを局所と読む
-// (Swift の tree-sitter に名前解決が無いので。Go は parser の名前解決で決めている)。
+// 宣言は囲む scope (scopeKinds) の中だけで効き、scope を出たら外す。tree-sitter-swift の木は if / guard の条件・then・else を
+// 同じ並びに平らに置くので、並びの中の `else` で切り替える: if は else から先で条件の束縛を外し、guard は else の本体でだけ外して
+// guard の後ろ (親の並びの続き) では効かせる。
+// (Swift の tree-sitter に名前解決が無いので近似。Go は parser の名前解決で決めている)。
 func markOuter(body *tree.Node, params []string) {
 	known := make(map[string]bool, len(params))
 	for _, p := range params {
@@ -34,9 +35,20 @@ func markOuter(body *tree.Node, params []string) {
 			}
 			return
 		}
+		var snap, afterGuard map[string]bool
+		scope := scopeKinds[n.Kind]
+		if scope {
+			snap = cloneSet(known)
+		}
 		var pending []string
 		activateAt, assignAt := -1, -1
 		for i, c := range n.Children {
+			if scope && c.Role == tree.RoleToken && c.Text == "else" && (n.Kind == "if_statement" || n.Kind == "guard_statement") {
+				if n.Kind == "guard_statement" {
+					afterGuard = cloneSet(known) // 条件の束縛は guard の後ろで効く
+				}
+				known = cloneSet(snap) // else の側には条件の束縛が届かない
+			}
 			if i < assignAt { // 宣言から `=` までの間 (型注釈・`?`・pattern の残り) の宣言も、右辺の後で効く
 				visit(c, &pending)
 				continue
@@ -57,8 +69,32 @@ func markOuter(body *tree.Node, params []string) {
 		for _, name := range pending { // 右辺が無いまま並びが終わった
 			known[name] = true
 		}
+		switch {
+		case afterGuard != nil:
+			known = afterGuard
+		case scope:
+			known = snap
+		}
 	}
 	visit(body, nil)
+}
+
+// scopeKinds は、中で宣言した名前が外へ届かない節 (block・closure・ループ・switch の case・catch・if / guard・入れ子の関数・
+// 関数の中の局所の型の本体 (struct / class / actor は class_body、enum は enum_class_body)。局所の型の init / subscript の
+// 引数は、型の本体を出るときに外れる。
+// repeat-while は本体の statements が scope なので要らない (条件は本体の外で、本体の宣言は条件に届かない)。
+var scopeKinds = map[string]bool{
+	"statements": true, "lambda_literal": true, "for_statement": true, "while_statement": true,
+	"switch_entry": true, "catch_block": true, "if_statement": true, "guard_statement": true, "function_declaration": true,
+	"class_body": true, "enum_class_body": true,
+}
+
+func cloneSet(m map[string]bool) map[string]bool {
+	c := make(map[string]bool, len(m))
+	for k, v := range m {
+		c[k] = v
+	}
+	return c
 }
 
 // assignAfterDecl は n.Children[i] が宣言を含むとき、同じ並びで後ろにある `=` (for 文では `in`) の token の位置を返す。
