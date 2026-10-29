@@ -75,4 +75,5 @@ W1 (小さく、機械処理の足場) → W7 (作業中の自己点検) → W3 
 
 - 959 / 960: 1307 のときの所見と、skill の追記。
 - 958: Swift の読めない構文 (今回も `MoveReconcileExecutor.swift` 1 ファイルが「読めない」のまま。base と同じで、今回の変更とは無関係)。
+  - 958 は done (2026-10-29)。このファイルの `catch A, B {` は直さないと決めた既知の限界
 - obaket `issues/epic/dupscan-consolidation/done/1308-…`: 今回の作業の記録。

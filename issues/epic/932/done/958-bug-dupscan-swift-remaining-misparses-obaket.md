@@ -1,7 +1,5 @@
 # 958 (bug): dupscan の Swift で、obaket の残り 26 ファイルが読めない原因 5 種を読めるようにする
 
-> 🚨 **担当中: c6 (dupscan)**（2026-10-29〜）
-
 起票日: 2026-10-29
 
 ## 概要
@@ -40,7 +38,7 @@
 
 ## 関連
 
-- [954](done/954-research-dupscan-dogfood-feedback-obaket-1307-2026-10-28.md) (`nonisolated(unsafe)` と `f(())` の回避)・[955](955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md)・[932](932-epic-dupscan-accuracy.md) (epic)
+- [954](954-research-dupscan-dogfood-feedback-obaket-1307-2026-10-28.md) (`nonisolated(unsafe)` と `f(())` の回避)・[955](../955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md)・[932](../932-epic-dupscan-accuracy.md) (epic)
 - `src/dupscan/internal/lang/swift/swift.go` の `reparseKnownMisparses` / `isEmptyTupleArgument`、同じ dir の `isolation_test.go`
 
 ## 進捗
@@ -65,3 +63,4 @@
   - **残り 1 ファイル (C、`MoveReconcileExecutor.swift`)**: `final` の連鎖ではなく、複数のパターンを並べた `catch A, B {` を文法が読めない。区切りや後ろのパターンを消すと捕まえる型が変わり、同じ長さで意味を保つ置き換えが無いので直さない (`TestMultiplePatternCatchStaysUnreadable` で読めないまま報告されることを固定)
   - **敵対レビュー (codex sol-high、読み取り 1 本)**: 1 本目は OpenAI 側でサイバーセキュリティの危険と誤判定され、本文が空で終わった (rc=1)。「red team」「攻め口」の語を外し、反例探しと言い直して起こし直した。D の誤った消去・`attributeBlanks` の包含の判定・規則の組み合わせによる L1 / Line / doc / `dupscan:allow` の変化は、どれも反例なし。P2 が 1 件: 型を外側の `#if OUTER` で囲んだ中の属性の分岐でも B が発火する (入れ子の判定が同じ親の兄弟しか見ない)。**却下**: 属性の分岐は 1 段で閉じていて外側の directive は残るので、最初の分岐を残した木は同じ規則の結果と変わらず、誤った形にならない。理由と、再び提起するのに要る条件 (外側の分岐で誤った木・L1・Line になる入力) を `repairConditionalAttributes` のコメントに書いた
   - 検証: `make -C src/dupscan test lint` rc=0、`make test-lint` rc=0。`dupscan gate` は新しい重複なし
+- 2026-10-29: ユーザー指示で done。受け入れ条件はすべて満たした。残る `catch A, B {` (obaket の `MoveReconcileExecutor.swift` 1 ファイル) は直さないと決めた既知の限界で、`TestMultiplePatternCatchStaysUnreadable` が読めないまま報告されることを固定している。未確認リスク 2 件 (新しい木の根が ERROR でも採る / 型の中では I5 が効かない) は、発火する入力が見つかったら新しい issue で扱う
