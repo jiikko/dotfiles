@@ -226,3 +226,26 @@ func TestCollapseAllFromRootGoesToFirstKid(t *testing.T) {
 		t.Fatalf("root の上の Z のカーソル = %s, want %s", m.cur.raw, ks[0].raw)
 	}
 }
+
+// ファイルの上の > は何も開かず、失敗の知らせを出す (親のフォルダを開かない)。
+func TestExplodeOnFileFailsWithoutOpeningParent(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "dir", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(root, "dir", "f.txt"), "")
+	m := newAt(t, root)
+	m.Resize(120, 40)
+	settle(m)
+	f := m.loadPath(filepath.Join(root, "dir", "f.txt"))
+	m.setCur(f)
+	m.TakeNotices()
+	m.HandleKey(">")
+	if m.exploding != nil {
+		t.Fatal("ファイルの上の > で explode が始まった")
+	}
+	ns := m.TakeNotices()
+	if len(ns) != 1 || ns[0].OK || !strings.Contains(ns[0].Text, "ファイルは開けません") {
+		t.Fatalf("失敗の知らせが出ない: %+v", ns)
+	}
+}

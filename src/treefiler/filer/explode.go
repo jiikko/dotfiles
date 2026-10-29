@@ -96,7 +96,9 @@ func (m *Model) explode() {
 	}
 	target := m.cur
 	if !target.dir {
-		target = target.parent // ファイルの上では親のフォルダ (treebeard と同じ。spec §5.4)。root はフォルダなので親がいる
+		// treebeard はファイルの上では親を対象にするが、カーソルの外が開くのは意図とずれるので写さない (spec §0.1)
+		m.fail("ファイルは開けません (> はフォルダの上で使います)")
+		return
 	}
 	showHidden, intoIgnored := m.set.ShowHidden, m.set.ExplodeIgnore
 	snap := m.gitSnap
