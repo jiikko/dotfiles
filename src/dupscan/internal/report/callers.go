@@ -120,12 +120,7 @@ func enclosing(units []*tree.Unit, line int) *tree.Unit {
 	return best
 }
 
-// CallersText は callers を 1 行 1 件で出す (`file:line 呼び出し元 [test] | その行`)。
-func CallersText(w io.Writer, s CallersSummary, limit int) error {
-	return CallersTextMore(w, s, limit, "-limit 0 か -format json で全部。ラベルを書いて絞る")
-}
-
-// CallersTextMore は CallersText の、省略したときの案内 (more) を呼び出し側が決める版。
+// CallersTextMore は callers を 1 行 1 件で出す (`file:line 呼び出し元 [test] | その行`)。more は省略したときの案内。
 func CallersTextMore(w io.Writer, s CallersSummary, limit int, more string) error {
 	return CallersTextHint(w, s, limit, more, TruncationHint{})
 }

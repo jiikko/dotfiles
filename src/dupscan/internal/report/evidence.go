@@ -1,8 +1,6 @@
 package report
 
 import (
-	"fmt"
-	"io"
 	"slices"
 	"sort"
 	"strings"
@@ -143,46 +141,4 @@ func shorten(t string, runes int) string {
 		return t
 	}
 	return string([]rune(t)[:runes]) + "…"
-}
-
-// EvidenceText は evidence を節ごとに出す。limit は節ごとの件数の上限 (0 は全部)。
-func EvidenceText(w io.Writer, s EvidenceSummary, limit int) error {
-	fmt.Fprintf(w, "\n## 語を含む行で呼ばれている名前のうち、repo の定義と同じ名前 (%d 個。型を解決しないので同名の外の関数 (t.Fatalf・append など) も混ざる)\n", len(s.Called))
-	for i, c := range s.Called {
-		if limit > 0 && i == limit {
-			fmt.Fprintf(w, "… 他 %d 個 (-limit 0 で全部)\n", len(s.Called)-limit)
-			break
-		}
-		fmt.Fprintf(w, "%s (%d 行)\n", c.Name, c.Lines)
-	}
-	sections := []struct {
-		title   string
-		entries []EvidenceEntry
-	}{
-		{fmt.Sprintf("doc に語がある単位 (%d 個 / doc の %d 行)", len(s.Doc), s.DocLines), s.Doc},
-		{fmt.Sprintf("テストの行 (%d 件)", len(s.Test)), s.Test},
-		{fmt.Sprintf("その他のソースの行 (%d 件。コメント・文字列を含む)", len(s.Source)), s.Source},
-	}
-	for _, sec := range sections {
-		fmt.Fprintf(w, "\n## %s\n", sec.title)
-		for i, e := range sec.entries {
-			if limit > 0 && i == limit {
-				fmt.Fprintf(w, "… 他 %d 件 (-limit 0 で全部)\n", len(sec.entries)-limit)
-				break
-			}
-			unit := shorten(e.Unit, evidenceUnitRunes)
-			if unit == "" {
-				unit = "(単位の外)"
-			}
-			fmt.Fprintf(w, "%s:%d %s | %s", e.File, e.Line, unit, e.Text)
-			if e.Hits > 1 {
-				fmt.Fprintf(w, "  (doc の %d 行に語がある)", e.Hits)
-			}
-			if len(e.Calls) > 0 {
-				fmt.Fprintf(w, "  → 呼び出し: %s", strings.Join(e.Calls, ", "))
-			}
-			fmt.Fprintln(w)
-		}
-	}
-	return nil
 }

@@ -31,5 +31,13 @@
 
 ## 受け入れ条件
 
-- [ ] `deadcode -test ./...` の出力が `langtest` の 2 件だけになる
-- [ ] `make -C src/dupscan lint test` が通る
+- [x] `deadcode -test ./...` の出力が空になる (`langtest` の 2 件は `-test` を付けないときだけ出る。テスト専用の package なので正当)
+- [x] `make -C src/dupscan lint test` が通る
+
+## 進捗
+
+- commit「cleanup(dupscan): 使われていない CallersText / EvidenceText を消す (issue 982)」。`CallersText` の doc の出力の形は `CallersTextMore` の doc へ移した。
+  テストは足していない (消しただけで、呼び出し元が 0 件なのは `deadcode -test` で確かめた)
+- 対応方針 3 (`deadcode -test` を lint に足す) は**採らない**: dotfiles の src の 25 module で `deadcode -test` を数えると (2026-10-30)、doctor 12・chromecookie 3・
+  proctree / subproc / termsafe / tmpclean / tuikit 各 1 が出る。module ごとに回すと、subproc のような共有の module の公開名は他の module からだけ呼ばれるので未使用に見える
+  (偽陽性)。module をまたいで roots を取る形が作れたら再検討する
