@@ -45,12 +45,9 @@
   - 🚨 `&&` でも、push の出力を `| tail` に通すと rc は tail のもので、同じ事故になる (retro 450)。push の rc は `> log 2>&1; rc=$?` で直接取る。
     この形 (push をパイプに通したまま worktree / branch を消す 1 本の Bash) は PreToolUse の `_claude/hooks/deny-piped-push-then-destroy.sh` が止める
     (字面で見る粗い判定。検出しない形と、分かっていて受ける偽陽性は hook の冒頭)
-  - 🚨 **push できたかは HEAD ではなく、自分の commit (subject か patch-id) が origin にあるかで見る**。rebase が衝突で止まると、
-    最初の commit で止まった場合の HEAD は origin の側の commit を指し、「HEAD が origin の祖先か」は真になる (retro 1003: この確認が
-    通って worktree を消した)。rebase の rc を見て止まったら抜けるのは `commit-with-pathspec.md` の push の再試行の項
-- 🚨 **ファイルを書き換えるスクリプトは、作業根を引数 (絶対パス) で受け取る形で書き、`cd` と相対パスに頼らない**。
-  相対パスで書くスクリプトの作業根はその行の `cd` で決まり、どの checkout を書いているかが呼び出しの字面に出ない
-  (retro 1003: 前の `cd ~/dotfiles && …` の行に続けて打ち、worktree のつもりで本体の 6 ファイルを書き換えた)
+  - 🚨 **push できたかは HEAD ではなく、自分の commit (subject か patch-id) が origin にあるかで見る**。最初の commit で止まった rebase の
+    HEAD は origin の commit を指す (retro 1003)。rebase の rc は `commit-with-pathspec.md` の push の再試行の項
+- 🚨 **ファイルを書き換えるスクリプトは作業根を絶対パスの引数で受け、`cd` と相対パスに頼らない** (どの checkout を書くかが字面に出ない。retro 1003)
 - 🚨 **本体への pull / worktree remove は `git -C ~/dotfiles` で対象を明示する**。worktree の cwd で
   `git pull` を打つと detached HEAD で必ず失敗する (同日 3 回)。`commit-with-pathspec.md` の
   「worktree からの merge / push も cwd 依存」と同じ罠の pull 版
