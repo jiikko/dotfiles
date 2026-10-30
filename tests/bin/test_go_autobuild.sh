@@ -1193,16 +1193,21 @@ rm -f "$T/assets/.#lock.md"
 
 # pattern の展開が Go の path.Match と同じ集合を返す (期待値は go1.26.0 の go list -f '{{.EmbedFiles}}' で取った。! で始まる名前は go が package のファイルとして拒むので置かない)
 PM="$TMP_DIR/patmatch"; mkdir -p "$PM"
-for f in a.txt ab.txt b.txt 'x y.txt' ab; do : > "$PM/$f"; done
-embed_expand() {  # $1=pattern → 当たったファイル名を空白で並べる
+for f in a.txt ab.txt abc.txt b.txt c.txt 'x y.txt' ab; do : > "$PM/$f"; done
+embed_expand() {  # $1=pattern $2=呼び出し側で立てる option (省略可) → 当たったファイル名を空白で並べる
   printf '%s\t%s\n' "$PM" "$1" > "$PM/.autobuild.embeds"
-  zsh -c 'source "$1"; _go_autobuild_embed_files "$2"; print -rn -- ${(o)reply:t}' zsh "$LIB" "$PM"
+  zsh -c '[[ -n "$3" ]] && setopt "$3"; source "$1"; _go_autobuild_embed_files "$2"; print -rn -- ${(o)reply:t}' zsh "$LIB" "$PM" "${2-}"
 }
-for c in '[^a]*.txt|b.txt x y.txt' '[!a]*.txt|a.txt ab.txt' 'a\b|ab'; do
+for c in '[^a]*.txt|b.txt c.txt x y.txt' '[!a]*.txt|a.txt ab.txt abc.txt' 'a\b|ab' '*\.txt|a.txt ab.txt abc.txt b.txt c.txt x y.txt' \
+  'a\b*|ab ab.txt abc.txt' '\a*.txt|a.txt ab.txt abc.txt' 'a\b.tx?|ab.txt' '[a-b]*.txt|a.txt ab.txt abc.txt b.txt' \
+  '[^a-b]*.txt|c.txt x y.txt' '[a!]b*|ab ab.txt abc.txt'; do
   got="$(embed_expand "${c%%|*}")"
   [[ "$got" == "${c#*|}" ]] || fail "embed: pattern ${c%%|*} の展開が Go と違う (got: $got)"
 done
-ok "embed: 否定のクラス ([^...] は否定 / [!...] の ! は字) と \ のエスケープを Go と同じに展開する"
+ok "embed: 否定のクラス ([^...] は否定 / [!...] の ! は字)・\ のエスケープ・範囲を Go と同じに展開する (10 件)"
+got="$(embed_expand '[^a]*.txt' extendedglob)"
+[[ "$got" == 'b.txt c.txt x y.txt' ]] || fail "embed: 呼び出し側の extendedglob で展開が変わる (got: $got)"
+ok "embed: 呼び出し側が extendedglob を立てていても展開は変わらない"
 
 # 入れ替えの経路 (pro-con の ctrl+r・dispatcher) も同じ判定を通る
 freeze "$ROOT"

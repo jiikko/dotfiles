@@ -52,6 +52,7 @@
 #   .autobuild.failed 失敗したときの入力の指紋 (同じ入力での再挑戦を抑える)
 #   .autobuild.lock   排他 (中に持ち主の pid) / .autobuild.log 進捗と失敗の記録
 #   .autobuild.new.<pid>  rename 前の一時バイナリ
+#   .autobuild.list.<pid> go list の出力と書きかけの .autobuild.embeds (_go_autobuild_record_embeds)
 
 zmodload zsh/datetime 2>/dev/null
 zmodload -F zsh/stat b:zstat 2>/dev/null
@@ -163,11 +164,7 @@ _go_autobuild_embed_files() {  # $1=src_dir
         g="${pat//\\/}"
         hit=(); [[ -e "$dir/$g" ]] && hit=("$dir/$g")
       else
-        # Go の path.Match のメタ文字 (* ? [ ]) だけを生かし、zsh だけが特別に読む文字 (`(` `|` `<` …) は字そのものにする
-        g="${(b)pat}"
-        g="${${${${g//\\\*/*}//\\\?/?}//\\\[/[}//\\\]/]}"
-        # 否定のクラスを Go に合わせる: Go は [^...] を否定に読み、[!...] の ! は字そのもの (zsh は逆に [! を否定に読む)
-        g="${${g//\[\\^/[^}//\[!/[\\!}"
+        _go_autobuild_go_glob "$pat"; g=$REPLY
         # ディレクトリも quote して 1 語の pattern にする ("$dir"/${~g} の形は \( を含む pattern で何も当たらない。zsh 5.9 で実測)
         g="${(b)dir}/$g"
         hit=(${~g})
@@ -185,6 +182,33 @@ _go_autobuild_embed_files() {  # $1=src_dir
   done < "$rec"
   reply=("${(@u)out:#*/.autobuild.*}")   # 作業ファイルは拾わない (`*` の pattern が拾うと、ビルドのたびに書く .autobuild.built で常に stale になる)
   return 0
+}
+
+# Go の path.Match の pattern を zsh の pattern にして REPLY へ返す (1 字ずつ写す。置換を重ねる形は \ と否定のクラスで Go とずれた)。
+# 外: * ? はそのまま、[ はクラスの始まり、\X は X を字として、他は字として quote する (zsh だけが特別に読む ( | < # ~ ^ を殺す)。
+# クラスの中: 先頭の ^ は否定 (Go)、先頭の ! は字 (zsh は否定に読むので quote)、] で閉じる、- は範囲、\X は X を字として。
+_go_autobuild_go_glob() {  # $1=Go の pattern
+  local p="$1" c out=
+  local -i i=1 incls=0 first=0
+  while (( i <= $#p )); do
+    c="$p[i]"
+    if [[ "$c" == '\' ]]; then
+      (( i++ )); out+="${(b)p[i]}"
+    elif (( incls )); then
+      if (( first )) && [[ "$c" == '^' ]]; then out+='^'
+      elif (( first )) && [[ "$c" == '!' ]]; then out+='\!'   # (b) は ! を quote しないので自分で
+      elif [[ "$c" == ']' ]]; then out+=']'; incls=0
+      elif [[ "$c" == '-' ]]; then out+='-'
+      else out+="${(b)c}"
+      fi
+      first=0
+    elif [[ "$c" == '*' || "$c" == '?' ]]; then out+="$c"
+    elif [[ "$c" == '[' ]]; then out+='['; incls=1; first=1
+    else out+="${(b)c}"
+    fi
+    (( i++ ))
+  done
+  REPLY=$out
 }
 
 # ビルドの前に //go:embed の pattern を記録する (_go_autobuild_embed_files が読む)。module の外 (標準ライブラリ・module cache) の
@@ -208,6 +232,8 @@ _go_autobuild_record_embeds() {  # $1=src_dir $2=mod_dir $3=pkg / 0 = 記録し�
     print -u2 -- "go_autobuild: go list で //go:embed の pattern を取れない (exit $rc)"
     return 1
   fi
+  # 読めなければ (掃除に消された等) 空の記録を書かずに失敗にする (空の記録は embed の変更を黙って見逃す)
+  [[ -r "$out" ]] || { print -u2 -- "go_autobuild: go list の出力 ($out) を読めない"; return 1; }
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -n "$line" ]] || continue
     dir="${${line%%$'\t'*}:A}"
@@ -216,7 +242,8 @@ _go_autobuild_record_embeds() {  # $1=src_dir $2=mod_dir $3=pkg / 0 = 記録し�
     done
   done < "$out"
   command rm -f "$out" 2>/dev/null
-  print -r -- "${(pj:\n:)keep}" >| "$rec.tmp.$$" 2>/dev/null && command mv -f "$rec.tmp.$$" "$rec" 2>/dev/null
+  # 書きかけも .autobuild.list.<pid>.* にする (途中で死んだ残りを spawn の掃除が拾う)
+  print -r -- "${(pj:\n:)keep}" >| "$out.rec" 2>/dev/null && command mv -f "$out.rec" "$rec" 2>/dev/null
   return 0
 }
 
