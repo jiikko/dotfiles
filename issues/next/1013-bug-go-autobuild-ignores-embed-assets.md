@@ -1,0 +1,1 @@
+../1013-bug-go-autobuild-ignores-embed-assets.md
