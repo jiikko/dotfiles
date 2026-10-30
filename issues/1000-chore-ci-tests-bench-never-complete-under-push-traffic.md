@@ -55,3 +55,4 @@ retro 999 の P-2。`.github/workflows/tests.yml` と `bench.yml` は `concurren
   偽の gh は jobs の filter=latest を模していない
 - [ ] push の後の最初の schedule の run を本物の Actions で見る
   - 2026-10-30 15:33 時点で未起動: 14:17・15:17 とも schedule の run が 0 件 (`gh run list --event schedule` が `[]`)。tests.yml・bench.yml とも state=active、master の定義に `cron: '17 * * * *'` がある。新しく足した cron は最初の起動が遅れることがあるので、次に schedule の run が出たときに gate の判定 (ログの ci_schedule_gate の行) と本体の走り方を見る。同じ時間帯に push の Tests は 3 本続けて完走していた (05:50Z・06:05Z・06:23Z)
+  - 2026-10-30 16:23 時点でも未起動 (14:17・15:17・16:17 の 3 回とも 0 件)。この repo では schedule の run が一度も作られていない (`actions/runs?event=schedule` の total_count=0)。repo は public・archived でない・Actions は enabled (allowed_actions=all)。`on:` の構文は push の run が動いているので通っている。原因は未特定 (GitHub 側の遅延か、cron の登録が起きていないか)。判断待ち
