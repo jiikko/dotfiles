@@ -1,1 +1,0 @@
-../1010-bug-claude-md-compact-fidelity-rename.md
