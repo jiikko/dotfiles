@@ -1208,12 +1208,13 @@ done
 ok "embed: 否定のクラス ([^...] は否定 / [!...] の ! は字)・\ のエスケープ・範囲を Go と同じに展開する (10 件)"
 # クラスの中のエスケープ・字としての [・マルチバイト (期待値は同じく go1.26.0 の go list で取った)
 PM2="$TMP_DIR/patmatch2"; mkdir -p "$PM2"
-for f in x-y xay xby 'x[y' 'あ.txt' a.txt; do : > "$PM2/$f"; done
-for c in 'x[a\-z]y|x-y xay' 'x\[y|x[y' '?.txt|a.txt あ.txt' '[^a].txt|あ.txt'; do
+mkdir -p "$PM2/s"
+for f in x-y xay xby 'x[y' 'あ.txt' a.txt s/Zx 's/]x' 's/^x' s/ax; do : > "$PM2/$f"; done
+for c in 'x[a\-z]y|x-y xay' 'x\[y|x[y' '?.txt|a.txt あ.txt' '[^a].txt|あ.txt' 's/[Z-^]x|]x ^x Zx'; do
   got="$(embed_expand "${c%%|*}" '' "$PM2")"
   [[ "$got" == "${c#*|}" ]] || fail "embed: pattern ${c%%|*} の展開が Go と違う (got: $got)"
 done
-ok "embed: クラスの中の \- / 字としての \[ / マルチバイトの ? と否定のクラスを Go と同じに展開する"
+ok "embed: クラスの中の \- / 字としての \[ / マルチバイトの ? と否定のクラス / ^ を上端にした範囲を Go と同じに展開する"
 # 呼び出し側の option と locale に左右されない
 for c in 'setopt extendedglob|[^a]*.txt|b.txt c.txt x y.txt|' 'setopt shwordsplit|[^a]*.txt|b.txt c.txt x y.txt|' 'setopt shwordsplit|x *.txt|x y.txt|' \
   'export LC_ALL=C|?.txt|a.txt あ.txt|PM2'; do
@@ -1245,6 +1246,24 @@ embed_run u2 >/dev/null
 grep -q 'pattern を展開できない' "$ROOT/stderr" || fail "embed: 展開できない pattern を起動のたびに知らせない"
 [[ "$(calls "$ROOT")" == "$before" ]] || fail "embed: 展開できない pattern で作り直し続ける"
 ok "展開して 0 件の pattern は起動のたびに stderr で知らせ、作り直し続けない"
+
+# replace 先の module の embed も記録して入力に数える (glogx → ../doctor の形。module の外として捨てない)
+ROOT="$(new_project embedreplace)"
+mkdir -p "$ROOT/src/dep"
+printf 'module dep\n\ngo 1.99\n' > "$ROOT/src/dep/go.mod"
+printf 'package dep\n' > "$ROOT/src/dep/dep.go"
+printf 'd\n' > "$ROOT/src/dep/asset.md"
+printf 'module tool\n\ngo 1.99\n\nreplace dep => ../dep\n' > "$ROOT/src/tool/go.mod"
+printf '%s\t%s\n' "$ROOT/src/dep" 'asset.md' > "$ROOT/embeds"
+FAKE_GO_EMBEDS="$ROOT/embeds" FAKE_GO_MARK=v1 run_tool "$ROOT" >/dev/null
+grep -q 'src/dep.*asset\.md' "$ROOT/src/tool/.autobuild.embeds" || fail "embed: replace 先の embed を記録しない ($(cat "$ROOT/src/tool/.autobuild.embeds"))"
+mtime_at 60 "$ROOT/src/dep/go.mod" "$ROOT/src/dep/dep.go" "$ROOT/src/dep/asset.md"
+freeze "$ROOT"
+before="$(calls "$ROOT")"
+bump "$ROOT/src/dep/asset.md"
+FAKE_GO_EMBEDS="$ROOT/embeds" FAKE_GO_MARK=v2 run_tool "$ROOT" >/dev/null
+[[ "$(calls "$ROOT")" -gt "$before" ]] || fail "embed: replace 先の embed したファイルだけの変更で再ビルドしない"
+ok "replace 先の module の embed も記録し、そのファイルだけの変更で再ビルドする"
 
 # go list が落ちたらビルドの失敗にする (記録の無いまま通すと「記録が無い」で指紋が落ち着き、embed したファイルの変更を以後見逃す)
 ROOT="$(new_project embedlistfail)"

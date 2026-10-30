@@ -51,13 +51,13 @@ directive の構文解析 (引用符・`all:`・build tag・実際にリンク�
 
 ## 受け入れ条件
 
-- [ ] embed したファイルだけを変えると指紋が変わる (tests/bin/test_go_autobuild.sh)
-- [ ] embed したディレクトリにファイルを足す・embed したファイルを消すと指紋が変わる
-- [ ] `all:` の pattern・dot ファイル・replace 先の module の embed の fixture
-- [ ] 展開して 0 件の pattern は stale になる
-- [ ] pro-con の入れ替えの経路 (`go_autobuild_spawn_if_stale`) も、md だけの変更で入れ替えると答える
-- [ ] glogx 側の扱いを決めて、その決めたことをテストで守る
-- [ ] 起動の経路の指紋の時間を前後で測って書く
+- [x] embed したファイルだけを変えると指紋が変わる (tests/bin/test_go_autobuild.sh)
+- [x] embed したディレクトリにファイルを足す・embed したファイルを消すと指紋が変わる
+- [x] `all:` の pattern・dot ファイル・replace 先の module の embed の fixture
+- [x] 展開して 0 件の pattern を黙らせない (方針を変えた: stale にし続けると backoff が効かず pro-con の入れ替えが毎周「新版あり」になるので、起動のたびに stderr で知らせる)
+- [x] pro-con の入れ替えの経路 (`go_autobuild_spawn_if_stale`) も、md だけの変更で入れ替えると答える
+- [x] glogx 側の扱いを決めて、その決めたことをテストで守る (glogx と replace 先に embed が無いことをテストで守り、入ったら直す場所を出す)
+- [x] 起動の経路の指紋の時間を前後で測って書く (下の進捗)
 
 ## 関連ファイル
 
@@ -74,3 +74,21 @@ directive の構文解析 (引用符・`all:`・build tag・実際にリンク�
   glogx 側は今は動きが変わらない / 受け入れ条件の抜け (消す・all:・replace 先)。
   受け入れ条件から外した指摘: glogx の mtime の順序の判定は cp -p / rsync -a で足したファイルや消したファイルを拾えない
   (既存の性質。glogx は今 embed を持たないので、この issue では扱わない)
+- 2026-10-31 実装と 5 周の敵対的レビュー (opus)。commit (subject):
+  - fix(go_autobuild): //go:embed で焼き込んだファイルも再ビルドの判定の入力に数える
+  - fix(go_autobuild): go list を HUP に巻き込まない・落ちたらビルドの失敗にする・( ) を含む pattern を字どおりに展開する
+  - fix(go_autobuild): 開始時点の記録を go list の前に戻し、否定のクラスと \ のエスケープを Go と同じに展開する
+  - fix(go_autobuild): embed の pattern を 1 字ずつ zsh の pattern に写し、\ のエスケープも Go と同じにする
+  - fix(go_autobuild): embed の pattern の写しをクラスの中と外で分け、呼び出し側の option と locale に左右されないようにする
+  - fix(go_autobuild): ^ を上端にした範囲を Go と同じに展開し、replace 先の embed を守る
+  - 形: ビルドの前に `go list -deps -f '{{.Dir}} {{.EmbedPatterns}}'` で pattern を `.autobuild.embeds` に記録 (module と replace 先の外は捨てる)、
+    起動のたびにその pattern を Go の path.Match と同じ意味で zsh に写して展開し、指紋に足す。記録の有無も入力に数える (前の版のバイナリは 1 回だけ作り直す)。
+    go list は trap '' HUP の届く foreground で走らせ、落ちたらビルドの失敗にする
+  - 実測 (src/pro-con の指紋、50 回の平均を 3 回): 前 24.8〜25.3ms / 後 25.2〜26.6ms、入力は 515 → 522 件
+  - pattern の展開を go1.26.0 の go list と突き合わせ: 18 種の pattern × 既定 / LC_ALL=C / shwordsplit / extendedglob で 83 件一致
+  - 敵対的レビューで実験で再現して直したもの: go list がコマンド置換で HUP に死ぬ (P1) / ( ) の誤展開 / 開始時点の記録の位置 / 否定のクラス /
+    \ のエスケープ / クラスの中の \! \- / 字としての \[ / 呼び出し側の locale・option / ^ を上端にした範囲
+  - 直さない (コード `_go_autobuild_go_glob` の上に書いた。どれも黙らない): [\]-^] は 0 件で知らせる / NFD の字と (b) が quote する字が同じ階層の名前に並ぶと
+    0 件で知らせる / **/x は Go より多く拾う / go list と指紋の間に .go を保存して新しい embed を足すと、次に .go を触るまでその embed 先を見逃す
+    (窓は go list の所要時間、バイナリは正しい)
+  - 未実測: 本物の pro-con で md だけを直して pull したときに作り直されること (この変更が master に入った後の最初の pull で確かめられる)

@@ -183,10 +183,15 @@ _go_autobuild_embed_files() {  # $1=src_dir
 }
 
 # Go の path.Match の pattern を写す。reply=(zsh の pattern / \ を外したただのパス / グロブの文字を含むか 1|0)。
-# 1 字ずつ写す。クラスの中では zsh が特別に読む字 (! ^ [ \ と字としての - ]) だけに \ を付ける ((b) は ! や - を quote しないので、否定や範囲に化けた)。
+# 1 字ずつ写す。クラスの中では zsh が特別に読む字 (! [ \ と字としての - ]、先頭の字としての ^) だけに \ を付ける ((b) は ! や - を quote しないので、否定や範囲に化けた)。
 # クラスの外は (b) で zsh の特別な字だけを quote する (ふつうの字に \ を付けると、GLOB_SUBST の下では \ ごと字として残り当たらない)。
 # 外: * ? はそのまま、[ はクラスの始まり、\X は X を字として。クラスの中: 先頭の ^ は否定 (Go。zsh も同じ)、] で閉じる、
 # - は範囲、それ以外 (先頭の ! を含む。zsh は否定に読むが Go では字) と \X は字として。
+# Go と食い違うと分かっていて直さない形 (どれも黙らない: 0 件なら起動のたびに知らせ、多いのは再ビルドが増えるだけ。
+# go1.26.0 の go list と突き合わせた。実際の pattern で踏んだら、その pattern を tests/bin/test_go_autobuild.sh の表に足して直す):
+# - [\]-^] (] から ^ の範囲): 0 件になる (知らせる)
+# - NFD の字と (b) が quote する字 (( ^ | ~ * …) が同じ階層の名前に並ぶディレクトリの下: グロブが 0 件になる (知らせる)
+# - **/x: zsh は再帰に読むので Go より多く拾う
 _go_autobuild_go_glob() {  # $1=Go の pattern
   emulate -L zsh
   local LC_ALL=en_US.UTF-8   # 1 字ずつ写す (C の locale ではマルチバイトの字をバイトで割る)
@@ -197,14 +202,14 @@ _go_autobuild_go_glob() {  # $1=Go の pattern
     if [[ "$c" == '\' ]]; then
       (( i++ ))
       if (( incls )); then
-        if [[ "$p[i]" == [-\\\]\[!^] ]]; then out+="\\$p[i]"; else out+="$p[i]"; fi
+        if [[ "$p[i]" == [-\\\]\[!] ]] || { (( first )) && [[ "$p[i]" == '^' ]]; }; then out+="\\$p[i]"; else out+="$p[i]"; fi
         first=0
       else out+="${(b)p[i]}"; lit+="$p[i]"; fi
     elif (( incls )); then
       if (( first )) && [[ "$c" == '^' ]]; then out+='^'
       elif [[ "$c" == ']' ]]; then out+=']'; incls=0
       elif [[ "$c" == '-' ]]; then out+='-'
-      elif [[ "$c" == [\\\[!^] ]]; then out+="\\$c"
+      elif [[ "$c" == [\\\[!] ]]; then out+="\\$c"   # ^ は先頭でだけ特別 (途中の \^ は範囲の端を壊す: [Z-\^] が ] を落とした)
       else out+="$c"   # ふつうの字には \ を付けない (範囲の端に \ を付けると zsh は範囲に読まない)
       fi
       first=0
