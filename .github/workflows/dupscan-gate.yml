@@ -12,6 +12,8 @@ on:
     paths:
       - 'src/**'
       - .dupscan.json
+      - bin/dupscan  # make test-dupscan-gate が呼ぶ起動口
+      - bin/lib/go_autobuild.zsh  # bin/dupscan が source してビルドする
       - .github/workflows/dupscan-gate.yml
       - .github/go-version
       - Makefile
@@ -19,6 +21,8 @@ on:
     paths:
       - 'src/**'
       - .dupscan.json
+      - bin/dupscan  # make test-dupscan-gate が呼ぶ起動口
+      - bin/lib/go_autobuild.zsh  # bin/dupscan が source してビルドする
       - .github/workflows/dupscan-gate.yml
       - .github/go-version
       - Makefile

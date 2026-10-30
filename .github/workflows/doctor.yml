@@ -26,6 +26,7 @@ on:
     paths:
       - 'src/doctor/**'
       - 'src/safefs/**'  # ゴミ箱への移動の本体 (issue 722)
+      - 'src/termsafe/**'  # src/doctor の go.mod が replace で取り込む (issue 228)
       - 'src/glogx/doctor_*.go'
       - 'src/glogx/internal/doctorview/**'
       - 'src/glogx/tui.go'
@@ -36,6 +37,7 @@ on:
     paths:
       - 'src/doctor/**'
       - 'src/safefs/**'  # ゴミ箱への移動の本体 (issue 722)
+      - 'src/termsafe/**'  # src/doctor の go.mod が replace で取り込む (issue 228)
       - 'src/glogx/doctor_*.go'
       - 'src/glogx/internal/doctorview/**'
       - 'src/glogx/tui.go'
