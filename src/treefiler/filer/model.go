@@ -115,6 +115,8 @@ type Model struct {
 	pulseFor     *node       // 最後に光を出したカーソル (New で起動時のカーソルにする: 起動は動かしたのではない)
 	pulseBuf     []pulseHead // pulseHeads の入れ物 (毎フレーム使い回す)
 	trackBuf     []int       // 同じく、経路の横の線の桁の列
+	movedAt      time.Time   // 最後にカーソルが変わったのを見た時刻 (押しっぱなしの判定。pulse.go)
+	holding      bool        // 押しっぱなしの最中 (離したら光を出す)
 	search       searchState `layer:"search"`
 	lastSearch   string
 	exploding    *explodeJob

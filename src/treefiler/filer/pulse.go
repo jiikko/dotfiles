@@ -9,7 +9,9 @@ import (
 // 光が走る感じ」)。起点は毎フレーム、今の経路のその深さの項目の位置から取る (列のスクロール・カメラの途中でも線に乗る)。
 // 出したときの項目そのものを起点にしない: カーソルが離れると、その項目は仮想化したブロックでは配置されず (virt.go)、
 // 仮想化の有無で画面が変わる (virt_test.go)。経路の上の項目は必ず配置される。
-// snapAll では打ち切らない: 押しっぱなしで押すたびに打ち切ると、新しい光がカーソルの近くで出直すだけで root まで届かない。
+// 押しっぱなしの間は光らせず、走っている光も消す。離したら最後のカーソルから 1 本出す (2026-10-30 ユーザー依頼
+// 「押しっぱなしの時は消していいよ。キーを離したタイミングで」)。端末からは離したことが届かないので、カーソルの変化が
+// holdGap 秒より短い間隔で続く間を押しっぱなしとみなし、holdGap 秒動かなければ離したとみなす。
 type pulse struct {
 	depth int
 	// root は出したときの root。深さは root から数えるので、走っている間に root を上げる (rerootUp) と全部の項目の深さが
@@ -18,18 +20,31 @@ type pulse struct {
 	el   float64 // 出てからの秒数
 }
 
-const maxPulses = 6 // 押しっぱなしで同時に走る光の上限 (古いものから捨てる)
+// maxPulses は同時に走る光の上限 (古いものから捨てる)。光の寿命は動きの速さの設定と重いフレーム (1 回の進みは 0.05 秒で
+// 頭打ち) で実時間より延びるので、holdGap の間隔の打鍵でも重なりうる。
+const maxPulses = 6
 
-// stepPulses はカーソルが変わったら光を 1 つ出し、走り終えたものを捨てる。
+// holdGap は押しっぱなしとみなすカーソルの変化の間隔 (実時間の秒)。macOS のキーリピートの既定の間隔 (約 0.09 秒) より長く、
+// 離してから光るまでの待ちが気にならない長さ。
+const holdGap = 0.15
+
+// stepPulses はカーソルが変わったら光を 1 つ出し (押しっぱなしの間は出さず、離したら出す)、走り終えたものを捨てる。
+// 押しっぱなしの判定は実時間 (Advance に渡った時刻) で測る: dt は速さの設定を掛けて 0.05 秒で頭打ちにした値。
 func (m *Model) stepPulses(dt float64) bool {
 	if m.pulseFor != m.cur {
 		m.pulseFor = m.cur
-		if m.cur != m.root { // root の上では走る線が無い
-			if len(m.pulses) == maxPulses {
-				m.pulses = append(m.pulses[:0], m.pulses[1:]...)
-			}
-			m.pulses = append(m.pulses, pulse{depth: m.cur.depth(), root: m.root})
+		held := !m.movedAt.IsZero() && m.lastAdv.Sub(m.movedAt).Seconds() < holdGap
+		m.movedAt = m.lastAdv
+		if held {
+			m.holding = true
+			m.pulses = m.pulses[:0]
+		} else {
+			m.emitPulse()
 		}
+	}
+	if m.holding && m.lastAdv.Sub(m.movedAt).Seconds() >= holdGap {
+		m.holding = false
+		m.emitPulse()
 	}
 	kept := m.pulses[:0]
 	for _, p := range m.pulses {
@@ -38,7 +53,18 @@ func (m *Model) stepPulses(dt float64) bool {
 		}
 	}
 	m.pulses = kept
-	return len(m.pulses) > 0
+	return len(m.pulses) > 0 || m.holding // 押しっぱなしの間も時計を回す (離したことを時間で知る)
+}
+
+// emitPulse は今のカーソルから光を 1 つ出す。root の上では走る線が無いので出さない。
+func (m *Model) emitPulse() {
+	if m.cur == m.root {
+		return
+	}
+	if len(m.pulses) == maxPulses {
+		m.pulses = append(m.pulses[:0], m.pulses[1:]...)
+	}
+	m.pulses = append(m.pulses, pulse{depth: m.cur.depth(), root: m.root})
 }
 
 // pulseHead は 1 フレームの 1 つの光。位置は桁ではなく、経路の横の線のセルを右 (カーソル側) から並べた列 (track) の
@@ -58,6 +84,7 @@ type pulseHeads struct {
 // 光は出発点から root の右の線の始まりまで、一定の速さで走る (2026-10-30 ユーザー依頼「root まで光がぴーっと走って欲しい」。
 // ease-out では経路の大半を 0.1 秒で過ぎ、残りを root の手前で消えかけながら留まっていた)。
 func (m *Model) pulseHeads(grid lineGrid, now map[*node][2]int) pulseHeads {
+	m.pulseBuf, m.trackBuf = m.pulseBuf[:0], m.trackBuf[:0] // 前のフレームの光を残さない (光が 0 本のフレームでも)
 	if len(m.pulses) == 0 {
 		return pulseHeads{}
 	}

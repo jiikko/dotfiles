@@ -104,23 +104,61 @@ func TestPulseRunsFromCursorTowardRoot(t *testing.T) {
 	}
 }
 
-// 次のキーでは走っている光を打ち切らず (進みもそのまま)、新しい光を足す (押しっぱなしで光が root まで届く)。
-func TestPulseSurvivesNextKey(t *testing.T) {
+// 間を空けて押した次のキーでは、走っている光を打ち切らず (進みもそのまま)、新しい光を足す。
+func TestPulseSurvivesSpacedKey(t *testing.T) {
 	m := newTest(t)
 	cdTo(t, m, "a/one.txt")
 	settle(m)
-	m.Advance(fixedNow.Add(16 * time.Millisecond))
+	at := fixedNow
+	advBy(m, &at, 200*time.Millisecond)
 	m.HandleKey("j")
-	m.Advance(fixedNow.Add(32 * time.Millisecond))
+	advBy(m, &at, 16*time.Millisecond)
 	if len(m.pulses) != 2 {
-		t.Fatalf("次のキーの後の光が %d 本 (前の光と新しい光の 2 本のはず)", len(m.pulses))
+		t.Fatalf("間を空けた次のキーの後の光が %d 本 (前の光と新しい光の 2 本のはず)", len(m.pulses))
 	}
-	if m.pulses[0].el < 0.03 {
+	if m.pulses[0].el < 0.2 {
 		t.Fatalf("次のキーで前の光が出直した (進み %v 秒)", m.pulses[0].el)
 	}
 }
 
-// 押しっぱなしでも同時に走る光は maxPulses 本まで。起動時のカーソルでは光らない。
+// 押しっぱなし (holdGap より短い間隔でカーソルが変わり続ける) の間は光らせず、走っていた光も消す。離して holdGap 秒
+// 動かなければ、最後のカーソルから 1 本出す (2026-10-30 ユーザー依頼)。押しっぱなしの間も時計は回す。
+func TestPulseHeldThenReleased(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "b") // 起動時のカーソルは a
+	settle(m)
+	if len(m.pulses) != 1 {
+		t.Fatalf("前提: 最初の 1 回で光が出ていない (%d 本)", len(m.pulses))
+	}
+	at := fixedNow
+	for range 4 { // キーリピート (0.03 秒おき)
+		m.HandleKey("j")
+		at = at.Add(30 * time.Millisecond)
+		m.Advance(at)
+		if len(m.pulses) != 0 {
+			t.Fatalf("押しっぱなしの間に光が %d 本ある", len(m.pulses))
+		}
+	}
+	last := m.cur
+	at = at.Add(100 * time.Millisecond)
+	m.Advance(at)
+	if len(m.pulses) != 0 {
+		t.Fatalf("離して 0.1 秒で光った (%d 本)", len(m.pulses))
+	}
+	// 光が 0 本でも、押しっぱなしの間は「動いている」と返す (止まると Advance が来ず、離したことを知れない。
+	// 今は移動のアニメの方が長く時計を回すので、Animating では見えない)
+	if !m.stepPulses(0) {
+		t.Fatal("押しっぱなしの間に stepPulses が止まったと返した")
+	}
+	at = at.Add(60 * time.Millisecond)
+	m.Advance(at)
+	if len(m.pulses) != 1 || m.spineAt(m.pulses[0].depth) != last {
+		t.Fatalf("離して %v 秒で、最後のカーソルから光が 1 本出ていない (%d 本)", holdGap, len(m.pulses))
+	}
+}
+
+// 同時に走る光は maxPulses 本まで (古いものから捨てる)。重いフレーム (1 回の進みは 0.05 秒で頭打ち) では、間を空けた打鍵でも
+// 光の寿命が実時間より延びて重なる。起動時のカーソルでは光らない。
 func TestPulseCountIsCapped(t *testing.T) {
 	m := newTest(t)
 	if len(m.pulses) != 0 {
@@ -129,17 +167,17 @@ func TestPulseCountIsCapped(t *testing.T) {
 	at := fixedNow
 	for range maxPulses + 2 {
 		m.HandleKey("j")
-		at = at.Add(time.Millisecond)
+		at = at.Add(200 * time.Millisecond) // 打鍵の間に 1 フレームだけ (進みは 0.05 秒)
 		m.Advance(at)
 	}
 	if len(m.pulses) != maxPulses {
 		t.Fatalf("光が %d 本 (上限 %d)", len(m.pulses), maxPulses)
 	}
-	if el := m.pulses[len(m.pulses)-1].el; el > 0.0015 {
-		t.Fatalf("上限で今の光を足さなかった (最後の光の進み %v 秒。古い光から捨てるはず)", el)
+	if el := m.pulses[len(m.pulses)-1].el; math.Abs(el-0.05) > 1e-9 {
+		t.Fatalf("上限で今の光を足さなかった (最後の光の進み %v 秒)", el)
 	}
-	if el := m.pulses[0].el; el < 0.0055 || el > 0.0065 {
-		t.Fatalf("残った最初の光の進みが %v 秒 (古い 2 本を捨てて、6 打ち前の光が残るはず)", el)
+	if el := m.pulses[0].el; math.Abs(el-0.05*maxPulses) > 1e-9 {
+		t.Fatalf("残った最初の光の進みが %v 秒 (古い 2 本を捨てて、%d 打ち前の光が残るはず)", el, maxPulses)
 	}
 }
 
@@ -285,7 +323,7 @@ func TestPulseDoesNotJumpOnParent(t *testing.T) {
 	cdTo(t, m, "b/deep/x.txt")
 	settle(m)
 	at := fixedNow
-	advBy(m, &at, 16*time.Millisecond)
+	advBy(m, &at, 200*time.Millisecond) // 押しっぱなしとみなされない間を空ける
 	m.draw()
 	before := m.trackBuf[int(math.Round(m.pulseBuf[0].head))]
 	m.HandleKey("h")
