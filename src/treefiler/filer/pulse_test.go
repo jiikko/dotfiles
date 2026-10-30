@@ -110,13 +110,15 @@ func TestPulseSurvivesSpacedKey(t *testing.T) {
 	cdTo(t, m, "a/one.txt")
 	settle(m)
 	at := fixedNow
-	advBy(m, &at, 200*time.Millisecond)
+	at = at.Add(160 * time.Millisecond) // holdGap (0.15 秒) を少しだけ越えた間隔
+	m.Advance(at)
 	m.HandleKey("j")
-	advBy(m, &at, 16*time.Millisecond)
+	at = at.Add(time.Millisecond)
+	m.Advance(at)
 	if len(m.pulses) != 2 {
 		t.Fatalf("間を空けた次のキーの後の光が %d 本 (前の光と新しい光の 2 本のはず)", len(m.pulses))
 	}
-	if m.pulses[0].el < 0.2 {
+	if m.pulses[0].el < 0.05 { // 1 回の進みは 0.05 秒で頭打ち。出直していれば 0.001
 		t.Fatalf("次のキーで前の光が出直した (進み %v 秒)", m.pulses[0].el)
 	}
 }
@@ -154,6 +156,29 @@ func TestPulseHeldThenReleased(t *testing.T) {
 	m.Advance(at)
 	if len(m.pulses) != 1 || m.spineAt(m.pulses[0].depth) != last {
 		t.Fatalf("離して %v 秒で、最後のカーソルから光が 1 本出ていない (%d 本)", holdGap, len(m.pulses))
+	}
+	advBy(m, &at, time.Second)
+	if len(m.pulses) != 0 || m.stepPulses(0) {
+		t.Fatalf("離した後の光が走り終えても止まらない (%d 本。押しっぱなしの印が残っている)", len(m.pulses))
+	}
+}
+
+// 押しっぱなしの最中に間の空いたカーソルの変化が来たら (重いフレーム)、押しっぱなしを終える: その変化の光 1 本だけで、
+// 離した判定でもう 1 本出さない。
+func TestPulseSpacedMoveEndsHold(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "b")
+	settle(m)
+	at := fixedNow
+	m.HandleKey("j")
+	at = at.Add(30 * time.Millisecond)
+	m.Advance(at) // 押しっぱなし
+	m.HandleKey("j")
+	at = at.Add(200 * time.Millisecond)
+	m.Advance(at) // 間の空いた変化 (重いフレーム): ここで 1 本
+	advBy(m, &at, 300*time.Millisecond)
+	if len(m.pulses) != 1 {
+		t.Fatalf("間の空いた変化の後に光が %d 本 (1 本のはず)", len(m.pulses))
 	}
 }
 

@@ -39,6 +39,7 @@ func (m *Model) stepPulses(dt float64) bool {
 			m.holding = true
 			m.pulses = m.pulses[:0]
 		} else {
+			m.holding = false // 間の空いた変化は押しっぱなしの終わり (下ろさないと、離した判定でもう 1 本出る)
 			m.emitPulse()
 		}
 	}
