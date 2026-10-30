@@ -2,7 +2,7 @@
 # scripts/check_instruction_budget.sh (常時読み込みの指示ファイルの合計の上限) の契約を fixture の木で固定する。
 #
 # 守るもの: 上限の内なら通す / global 層が上限を超えたら落とす / frontmatter に paths: がある rule は数えない /
-# 本文にある paths: は条件ロードではないので数える / 字数をバイトでなく文字で数える / repo 層を足して上限を超えたら落とす /
+# 本文にある paths: は条件ロードではないので数える / 上限ちょうどは通す / サブディレクトリの rule も数える / 字数をバイトでなく文字で数える / repo 層を足して上限を超えたら落とす /
 # 数える対象が空 (rule 0 本・_claude/CLAUDE.md 無し) なら緑にしない / Makefile の test-lint から配線されている。
 set -uo pipefail
 unset CDPATH
@@ -46,6 +46,22 @@ ascii 110000 > "$T/_claude/rules/big.md"
 run
 if [ "$RC" -eq 1 ] && printf '%s' "$OUT" | grep -q 'global 層が 1000 字超えている'; then ok 'global 層が上限 (111,000) を超えたら落とす'
 else bad "global 層の上限超えが落ちない (rc=$RC): $OUT"; fi
+
+new_tree edge
+ascii 109000 > "$T/_claude/rules/big.md"
+run
+rc_at=$RC
+printf 'a' >> "$T/_claude/rules/big.md"
+run
+if [ "$rc_at" -eq 0 ] && [ "$RC" -eq 1 ]; then ok '上限ちょうど (111,000) は通し、1 字超えたら落とす'
+else bad "上限の境界が違う (ちょうど rc=$rc_at / 1 字超え rc=$RC): $OUT"; fi
+
+new_tree subdir
+mkdir -p "$T/_claude/rules/sub"
+ascii 120000 > "$T/_claude/rules/sub/deep.md"
+run
+if [ "$RC" -eq 1 ]; then ok 'rules のサブディレクトリに置いた rule も数える'
+else bad "サブディレクトリの rule を数えていない (rc=$RC): $OUT"; fi
 
 new_tree paths
 { printf -- '---\npaths:\n  - "**/*.swift"\n---\n'; ascii 200000; } > "$T/_claude/rules/cond.md"

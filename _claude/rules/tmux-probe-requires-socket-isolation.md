@@ -23,6 +23,7 @@
 - **残骸を走査して消す掃除機構は作らない**。消すのは**自分が控えたパスだけ**にする
   （走査は母集合を取り違えた瞬間に本番の socket へ届く。`adversarial-review-own-safeguards.md` §0-A）
 - **そもそも tmux を新規に立てる必要があるか先に問う**
+- probe の全サブコマンド (非破壊のものも) に `unset TMUX TMUX_PANE` と一意な `-L` (または `-S`) を付ける
 - 恒久テストは tests/tmux/ の既存方式に倣う (冒頭の `unset TMUX TMUX_PANE` + `TMUX_TMPDIR`。`lib/isolate_env.sh` は HOME/XDG の隔離**だけ**で、socket は対象外)
 
 ## なぜ
