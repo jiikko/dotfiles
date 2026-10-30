@@ -41,7 +41,7 @@ HOME="$HOME" "$ROOT_DIR/setup.sh" | tee "$TEST_TMPDIR/setup.out"
 
 # setup.sh は mac-lan-manager の LaunchAgent のラベルを Go の const の行から読む。行の形が変わって読めなくなったら落とす
 # (探す文言が setup.sh から消えると、この検査は何も見ずに通るので、先に在ることを確かめる)
-if ! grep -q '広告のラベルを読めない' "$ROOT_DIR/setup.sh"; then
+if ! grep -q 'echo "WARN: 有線の名前の広告のラベルを読めない' "$ROOT_DIR/setup.sh"; then
   print -u2 "setup.sh にラベルを読めないときの WARN の文言が無い (この検査と setup.sh の文言を揃える)"
   exit 1
 fi

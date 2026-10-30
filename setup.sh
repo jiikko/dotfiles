@@ -153,8 +153,8 @@ fi
 # dotfiles の無い相手の Mac はここを通らないので、lan-manager の初期設定の名前の手順で入れ直す
 # ラベルは Go の const の行から読む (ここに写すと片方だけ変えたときにずれる)。読めなければ WARN (tests/setup/test_setup.sh が出ないことを見る)
 _wired_label=$(sed -n 's/^const WiredNameLabel = "\([A-Za-z0-9.-]*\)"$/\1/p' ~/dotfiles/src/mac-lan-manager/setup/wiredname.go 2>/dev/null)
-if [ -z "$_wired_label" ]; then
-  echo "WARN: 有線の名前の広告のラベルを読めない (src/mac-lan-manager/setup/wiredname.go の const WiredNameLabel の行の形が変わった)"
+if [[ -z "$_wired_label" || "$_wired_label" == *$'\n'* ]]; then  # 2 行に当たると改行入りの名前になり、plist が無いと読んで黙る
+  echo "WARN: 有線の名前の広告のラベルを読めない (src/mac-lan-manager/setup/wiredname.go が無いか、const WiredNameLabel = \"…\" の行が 1 本でない)"
 elif [ -f ~/Library/LaunchAgents/"$_wired_label".plist ]; then
   if command -v go >/dev/null 2>&1; then
     GO_AUTOBUILD_SYNC=1 ~/dotfiles/bin/mac-lan-manager upgrade-advert || \
