@@ -249,6 +249,7 @@ func TestPaneOfferKeepsNewest(t *testing.T) {
 }
 
 // フォルダの上では頼まない。待っている間にフォルダへ移ったら待つのをやめる (読み込みが返らなくても Busy が下りる)。
+// 同じファイルへ戻ったら頼み直す。
 func TestPaneFolderStopsWaiting(t *testing.T) {
 	m := newTest(t)
 	release := blockLoader(t, m)
@@ -265,6 +266,12 @@ func TestPaneFolderStopsWaiting(t *testing.T) {
 	}
 	if m.paneLoading() {
 		t.Fatal("フォルダへ移っても、返らない読み込みを待ち続ける")
+	}
+	// 同じファイルへ戻ったら頼み直す (待つのをやめたので、前の頼みの結果を取り込む Advance は来ない)
+	cdTo(t, m, "c.txt")
+	m.Advance(m.lastAdv.Add(200 * time.Millisecond))
+	if m.pane.gen == gen || !m.paneLoading() {
+		t.Fatal("同じファイルへ戻っても頼み直さない (前の本文が薄いまま残る)")
 	}
 	release()
 }

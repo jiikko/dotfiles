@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
@@ -81,8 +82,9 @@ func (m *Model) stepPane() {
 	m.pane.mu.Unlock()
 	if m.paneWidth() == 0 || m.cur.dir {
 		// 出さない間は待たない: 読み込みが返らないファイル (止まったネットワークのマウント) で Busy が下りず、tick が回り続ける。
-		// 遅れて届いた結果は、同じ世代のまま次の Advance で取り込む (描くかは drawPane が鍵で決める)
-		m.pane.waiting = false
+		// 頼んだ記録も消す: 消さないと、同じファイルへ戻ったときに「頼み済み」で頼み直さず、待ちもしないので、届いた結果を
+		// 取り込む Advance が来ないまま前の本文が薄く残る (読み込みが返らないなら二度と頼まない)
+		m.pane.waiting, m.pane.asked = false, paneKey{}
 		return
 	}
 	if m.holding {
@@ -124,8 +126,8 @@ func (p *paneState) offer(r paneResult) {
 // 端末も戻らない (タイルの読み込みは bubbletea の Update の中で走り、そこで回復されていた)。
 func loadPaneSafe(load func(paneKey) paneResult, k paneKey, gen int) (r paneResult) {
 	defer func() {
-		if recover() != nil {
-			r = paneResult{gen: gen, key: k, note: "表示できません (内部エラー): " + k.name}
+		if v := recover(); v != nil {
+			r = paneResult{gen: gen, key: k, note: fmt.Sprintf("表示できません (内部エラー: %v): %s", v, k.name)}
 		}
 	}()
 	r = load(k)
