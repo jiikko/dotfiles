@@ -1,3 +1,10 @@
+---
+paths:
+  - "tmp/**"
+  - "**/tmp/**"
+---
+<!-- paths: 発動点が「./tmp にレポートを書いた瞬間」なので、tmp の下のファイルに触れたときに読み込む。
+issues/ を持つ repo では issue-rules-inject.sh が起動時にも全文を注入する (done へ送る節は tmp に触れずに発動するため) -->
 # 検証レポートを `./tmp` に出したら、結論と却下理由を issue へ移すまでが 1 セット
 
 > **トリガー型ルール。** 監査・レビュー・裏取り・反証の結果を `./tmp/*.md` に書き出した
@@ -6,19 +13,19 @@
 ## ルール
 
 - **`./tmp` に出した検証・監査・レビューのレポートは、①結論 ②全数勘定 ③却下した指摘とその理由
-  を issue (または対象コードのコメント) へ移すまで作業を終えない**。`tmp/` は
+  を issue (または対象コードのコメント) へ移すまで作業を終えない**。issues/ の無い repo では、移し先は対象コードのコメントと、ユーザーへの報告の本文にする。`tmp/` は
   `~/.gitignore_global:5` で ignore されているので、レポート本体はセッションが終われば消える
 - **移す優先順位は「却下理由 > 結論 > 経緯」**。却下理由は「消えると同じ誤指摘が再生成される」
-  性質の情報で、失うと反証コストを丸ごと再支払いすることになる
+  性質の情報で、失うと反証コストを丸ごと再支払いすることになる。却下理由は「なぜ崩れたか」まで書く (「該当なし」だけでは次の audit が同じ指摘を出す)
 - 🚨 **効くのは次のセッションだけではない。同一セッションで複数の監査を回すなら、次を起こす前に
   却下理由を書く。** 後続の監査は書かれた却下理由を読んで重複判定する (実測 2026-09-06:
   resource-leaks の却下理由を issue へ書いてから後続 3 タイプを回したところ、
   同じ指摘の再提出が 2 件止まった)
 - **移し先の使い分け**: 着手する残債は `issues/` の新規 issue へ / 「対応しない」と決めた指摘は
-  該当コードの直近コメントへ ([`pending-issue-rationale-in-code.md`](../rules/pending-issue-rationale-in-code.md)) /
-  出典の監査 issue が残っているなら、そこに「反証・対応の結果」節を足して全数勘定を書く
+  該当コードの直近コメントへ ([`pending-issue-rationale-in-code.md`](pending-issue-rationale-in-code.md)) /
+  出典の監査 issue が残っているなら、そこに「反証・対応の結果」節を足して全数勘定 (生存 N / 却下 M) を書き、done へ送る
 - **レポート本体を `docs/` に commit して残すのは採らない**。レポートはその時点のスナップショット
-  であり、コードが動けば嘘になる ([`claude-md-maintenance.md`](../rules/claude-md-maintenance.md) の
+  であり、コードが動けば嘘になる ([`claude-md-maintenance.md`](claude-md-maintenance.md) の
   「What はコードが真の出典」と同型)。残すのは結論と判断理由だけ
 
 ## 同型: issue が `tmp/` のスクリプトの実行を指示していないか
@@ -70,26 +77,7 @@ node tmp/probe-dex6.js   # atob 2 段目の入力を観測
 
 起源: 2026-08-21 の実例。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/move-report-conclusions-to-issues.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
 
-## やること / やらないこと
-
-- ✓ `./tmp` にレポートを書いたら、同じセッションで結論・全数勘定・却下理由を issue / コードへ移す
-- ✓ 却下した指摘は「なぜ崩れたか」を書く (「該当なし」だけでは次の audit が同じ指摘を出す)
-- ✓ 出典の監査 issue が残っているなら、そこに全数勘定 (生存 N / 却下 M) を残して done へ送る
-- ✓ issue に手順を書いたら `tmp/` で grep し、「中身の無いスクリプトの実行指示」になっていないか見る
-- ✓ `done/` へ送る前に、本文の「現状は〜」を実測し直す (測れないなら「未実測」と書く)
-- ✗ 「レポートを `./tmp/x.md` に出しました」で報告を終える (次のセッションには存在しない)
-- ✗ レポート本体を `docs/` に commit してスナップショットを正本にする
-- ✗ 却下理由を省いて「対応した分」だけ issue 化する (省いた分が再生成される)
-- ✗ issue から `node tmp/foo.js` の実行を指示する (本体は残らない。貼るか tracked に置く)
-- ✗ 役目を終えた調査スクリプトを「一応」tracked に移す (製品側と二重実装になる。消して製品側を指す)
-- ✗ issue 本文の仮定法 (「〜なら原因は X」) を現在の設定値として決着節に書く
-- ✗ 既に満たされている条件を「戻して再現を見よ」と再開の trigger に書く
-
 ## 関連
 
-- [`pending-issue-rationale-in-code.md`](../rules/pending-issue-rationale-in-code.md) — 「却下した指摘の理由を
+- [`pending-issue-rationale-in-code.md`](pending-issue-rationale-in-code.md) — 「却下した指摘の理由を
   コード直近に残す」。本ルールはその**レポート版**で、issue 側へ移す動線を担当する
-- [`claude-md-maintenance.md`](../rules/claude-md-maintenance.md) — 「ドキュメントは Why を保存する」
-- [`perf-claims-need-measurement.md`](../rules/perf-claims-need-measurement.md) — 「主張するなら実測値か
-  『未実測 + trigger』を残す」。本ルールの追加節はそれを**issue を閉じるときの環境値**へ広げたもの
-- issue 070 の「反証・対応の結果」節 — 手作業で移した実例

@@ -80,7 +80,7 @@
 
 - **`issues/` (または `issue/`) を持つ repo では、SessionStart hook (`_claude/hooks/issue-rules-inject.sh`) が issue 運用規約を注入する。この CLAUDE.md と同じ拘束力で従う**。正本は `~/dotfiles/_claude/issue-rules.md`、repo 固有の事項は各 repo の `issues/README.md`。issues/ を持たない repo には適用しない
 - issues/ がある repo なのに注入が見当たらないときは、issue を触る前に正本を Read する
-- claim の手順・検証レポートを issue へ移す手順・issue の反証レビューは `issue-rules.d/` の rule が正本で、同じ hook が 1 本ずつ注入する。注入が見当たらなければ `~/dotfiles/_claude/issue-rules.d/` を Read する
+- claim の手順と issue の反証レビューは `issue-rules.d/` の rule が正本で、同じ hook が 1 本ずつ注入する。検証レポートを issue へ移す手順 ([`move-report-conclusions-to-issues.md`](rules/move-report-conclusions-to-issues.md)) は `paths:` で tmp の下に触れたときにどの repo でも読み込まれ、issues/ のある repo では同じ hook が起動時にも注入する。注入が見当たらなければ `~/dotfiles/_claude/issue-rules.d/` を Read する
 
 ## 設計方針
 

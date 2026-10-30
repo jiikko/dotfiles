@@ -50,7 +50,7 @@
 3. **消す責任がどこにも無い**。同じ節は「線引きは置き場所ではなく終了時に消す責任が実装されているか」と書くが、
    それは「スクリプト / テストの隔離ディレクトリ」側の話で、セッションが手で書いたログには誰も消す責任を持たない。
    `make clean-tmp` (`scripts/clean_tmp.sh`) は手動起動で、既定は 30 日より古いものだけ — 今ある 1170 件は全部 30 日以内なので対象外
-4. ログの用途と寿命が合っていない。push / pull / lint のログは**同じ手順の中で書いて rc と中身を読んだら役目を終える** (`_claude/issue-rules.d/move-report-conclusions-to-issues.md` の表の 1 行目
+4. ログの用途と寿命が合っていない。push / pull / lint のログは**同じ手順の中で書いて rc と中身を読んだら役目を終える** (`_claude/rules/move-report-conclusions-to-issues.md` の表の 1 行目
    「同じ手順の中で書いて読む出力先」)。セッションを越えて残す理由が無いのに、セッションを越えて残る場所 (gitignore された repo 内) に置いている
 
 対比: `scripts/issue_claim.sh` は push の出力を `"$work/push.log"` (自分で作った一時ディレクトリ) に書き、終わりに消している。道具は正しく、手で打つ作法だけが直下に書いている。
@@ -92,7 +92,7 @@
 
 - `_claude/CLAUDE.md` の「一時ファイルの配置」
 - `_claude/skills/codex-drive/SKILL.md` (run 固有の永続パス。A の例外の出典)
-- `_claude/issue-rules.d/move-report-conclusions-to-issues.md` (「同じ手順の中で書いて読む出力先」)
+- `_claude/rules/move-report-conclusions-to-issues.md` (「同じ手順の中で書いて読む出力先」)
 - `_claude/rules/verify-execution-not-just-exit-code.md` / `.claude/rules/worktree-per-session.md` (`> log 2>&1` の例)
 - `scripts/clean_tmp.sh` / `Makefile` の `clean-tmp`
 - `_claude/skills/zundamon-kaisetsu/SKILL.md` (手順 3。サブディレクトリに出す正しい形の例)

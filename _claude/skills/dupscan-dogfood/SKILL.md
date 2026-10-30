@@ -171,7 +171,7 @@ skill の改善案: <無し | 1) 内容 / 直す節 / 失うもの ... 直して
 
 - **この skill 自身の改善提案を、報告の最後に必ず添える** (7 節)。
 - **効果の主張は、測ったものだけ**。「重複を防げた」と言えるのは、防げた具体的な場面を示せるときだけ。無ければ「使った・困らなかった」と書く。
-- 作業 dir (`$d`) は、issue へ結論を移したら消してよい (dotfiles の `_claude/issue-rules.d/move-report-conclusions-to-issues.md`)。
+- 作業 dir (`$d`) は、issue へ結論を移したら消してよい (dotfiles の `_claude/rules/move-report-conclusions-to-issues.md`)。
 
 ## 7. この skill 自身の改善を提案する (使うたびに)
 

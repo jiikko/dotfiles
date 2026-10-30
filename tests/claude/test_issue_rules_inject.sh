@@ -7,6 +7,8 @@
 #   ② issues/ が無い repo (仕事の repo) で注入する → 無関係な規約が毎セッション読まれる
 #   ③ issue-rules.d/ の rule が届かない → hook 1 本の注入は約 10k 字で末尾が黙って落ちる ので、
 #     1 ファイル 1 呼び出しで settings.json に並べる。並べ漏れ・上限超えを固定する
+#   ④ rules/ から注入する rule (paths: で条件ロードし、issues/ のある repo では起動時にも要るもの) に
+#     frontmatter が混ざる / paths: が外れて常時読み込みと二重になる
 # 同じ repo で issues/ の有無だけを変えた A-B で①②を固定する。
 set -euo pipefail
 unset CDPATH
@@ -16,6 +18,8 @@ HOOK="$ROOT_DIR/_claude/hooks/issue-rules-inject.sh"
 RULES="$ROOT_DIR/_claude/issue-rules.md"
 RULES_D="$ROOT_DIR/_claude/issue-rules.d"
 SETTINGS="$ROOT_DIR/_claude/settings.json"
+# rules/ のうち、この hook が issues/ のある repo へ起動時にも注入するもの
+INJECTED_RULES="rules/move-report-conclusions-to-issues.md"
 fails=0
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -64,11 +68,25 @@ for f in "$RULES_D"/*.md; do
 done
 [ "$nd" -ge 1 ] || ng "issue-rules.d/ に rule が 1 本も無い (移動で消えていないか)"
 
+# ④ rules/ から注入するものは、本文 (最初の見出しから後) を全部届け、frontmatter と paths: の注記は届けない
+for rel in $INJECTED_RULES; do
+  f="$ROOT_DIR/_claude/$rel"
+  [ -f "$f" ] || { ng "$rel が無い"; continue; }
+  [ "$(sed -n 1p "$f")" = "---" ] && grep -q '^paths:' <<< "$(sed -n '2,/^---$/p' "$f")" \
+    || ng "$rel に paths: の frontmatter が無い (常時読み込みになり、hook の注入と二重になる)"
+  got=$(printf '{"cwd":"%s/src"}' "$repo" | "$HOOK" "$rel" | jq -r '.hookSpecificOutput.additionalContext')
+  want=$(sed -n '/^# /,$p' "$f")
+  case "$got" in *"$want"*) ;; *) ng "$rel の本文が全部は注入されていない" ;; esac
+  case "$got" in *"paths:"*|*"<!--"*) ng "$rel の frontmatter か注記が注入に混ざった" ;; esac
+  case "$got" in "🚨 この規約は"*) ng "$rel が注入の上限を超えている (分けるか縮める)" ;; esac
+done
+
 # ③ settings.json の SessionStart に、本体 + issue-rules.d/ の各ファイルがちょうど 1 本ずつ並ぶ
 wired=$(jq -r '[.hooks.SessionStart[].hooks[].command | select(test("issue-rules-inject\\.sh"))
                | sub(".*issue-rules-inject\\.sh ?"; "")] | sort | .[]' "$SETTINGS")
-expect=$( { echo ""; for f in "$RULES_D"/*.md; do [ -f "$f" ] && echo "issue-rules.d/$(basename "$f")"; done; } | sort)
-[ "$wired" = "$expect" ] || ng "settings.json の配線と issue-rules.d/ が食い違う: wired=[$wired] expect=[$expect]"
+expect=$( { echo ""; for f in "$RULES_D"/*.md; do [ -f "$f" ] && echo "issue-rules.d/$(basename "$f")"; done
+            for rel in $INJECTED_RULES; do echo "$rel"; done; } | sort)
+[ "$wired" = "$expect" ] || ng "settings.json の配線と issue-rules.d/ + INJECTED_RULES が食い違う: wired=[$wired] expect=[$expect]"
 
 # 上限を超えたら、警告を先頭に置く (打ち切られるのは末尾)
 got=$(ctx env ISSUE_RULES_INJECT_MAX=10)

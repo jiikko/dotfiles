@@ -4,6 +4,7 @@
 #
 #   issue-rules-inject.sh                       # _claude/issue-rules.md (規約の本体)
 #   issue-rules-inject.sh issue-rules.d/<x>.md  # issue 運用でしか発動しない rule
+#   issue-rules-inject.sh rules/<x>.md          # paths: で条件ロードする rule のうち、issues/ のある repo では起動時から要るもの
 #
 # なぜ: 規約を ~/.claude/CLAUDE.md や rules/ に置くと issues/ を持たない repo (仕事の repo) でも
 # 毎セッション全文読まれる。逆に各 repo の issues/README.md へコピーすると更新が伝播せず乖離する
@@ -32,7 +33,13 @@ fi
 issue_hook_resolve_dir || exit 0
 
 rules="${ISSUE_RULES_FILE:-$here/../${1:-issue-rules.md}}"
-if ! body=$(cat "$rules" 2>/dev/null) || [ -z "$body" ]; then
+# rules/ の rule は先頭に paths: の frontmatter と、その理由の HTML コメントを持つ。注入には要らないので落とす
+# (Claude Code も条件ロードのときは frontmatter を本文に入れない)
+if ! body=$(awk 'NR == 1 && $0 == "---" { fm = 1; next }
+                 fm == 1 { if ($0 == "---") fm = 2; next }
+                 fm == 2 && /^<!--/ { c = 1 }
+                 c == 1 { if (/-->/) { c = 0; fm = 3 }; next }
+                 { fm = 3; print }' "$rules" 2>/dev/null) || [ -z "$body" ]; then
   issue_hook_emit "🚨 issue 運用規約 ($rules) を読めなかった。この repo には issues/ があるので、issue を書く前にユーザーへ伝えること:" "$rules"
   exit 0
 fi

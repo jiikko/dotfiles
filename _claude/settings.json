@@ -191,7 +191,7 @@
             "type": "command"
           },
           {
-            "command": "~/dotfiles/_claude/hooks/issue-rules-inject.sh issue-rules.d/move-report-conclusions-to-issues.md",
+            "command": "~/dotfiles/_claude/hooks/issue-rules-inject.sh rules/move-report-conclusions-to-issues.md",
             "timeout": 10,
             "type": "command"
           },

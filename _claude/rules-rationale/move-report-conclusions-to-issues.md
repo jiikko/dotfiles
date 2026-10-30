@@ -1,6 +1,6 @@
 # 検証レポートを `./tmp` に出したら、結論と却下理由を issue へ移すまでが 1 セット — なぜ・実例
 
-ルール本文: `~/dotfiles/_claude/issue-rules.d/move-report-conclusions-to-issues.md`（issues/ を持つ repo のセッションにだけ SessionStart hook `issue-rules-inject.sh` が注入する。issue 414）。
+ルール本文: `~/dotfiles/_claude/rules/move-report-conclusions-to-issues.md`（`paths:` で tmp の下のファイルに触れたときに読み込む。issues/ を持つ repo では SessionStart hook `issue-rules-inject.sh` が起動時にも注入する。issue 414 の追補）。
 この文書は起動時には読まれない。ルールの根拠・起源・実例を保存し、ルールを疑う・改訂する・却下するときに読む。
 
 ## なぜ (起源: 2026-08-21 の実例)
@@ -64,3 +64,9 @@ jsdom でやっていた。移さず削除し、issue を製品側へのポイ�
 学び: `tmp/` を指す実行指示を見つけたら、まず「その解析はもう終わっていないか」を問う。
 終わっているなら tracked へ移すのではなく削除し、製品側へのポインタに直す (移すと二重実装になる)。
 
+## 本文の `## 関連` から移したもの (2026-10-30、rule を `_claude/rules/` へ移して `paths:` を付けたとき)
+
+- [`claude-md-maintenance.md`](../rules/claude-md-maintenance.md) — 「ドキュメントは Why を保存する」
+- [`perf-claims-need-measurement.md`](../rules/perf-claims-need-measurement.md) — 「主張するなら実測値か
+  『未実測 + trigger』を残す」。done へ送る節はそれを**issue を閉じるときの環境値**へ広げたもの
+- issue 070 の「反証・対応の結果」節 — 手作業で移した実例
