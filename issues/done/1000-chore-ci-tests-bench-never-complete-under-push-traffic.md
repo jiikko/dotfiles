@@ -1,7 +1,5 @@
 # 1000 (chore): push の多い時間帯に、CI の Tests と Bench が cancel-in-progress で何時間も完走しない
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-30〜）
-
 起票日: 2026-10-30
 
 ## 概要
