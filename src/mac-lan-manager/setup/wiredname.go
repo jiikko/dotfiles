@@ -158,7 +158,7 @@ func RemoveScript(name string) string {
 %sif [ -z "$nm" ] && [ -f "$p" ]; then nm=$(plutil -extract ProgramArguments.6 raw -o - "$p" 2>/dev/null) || nm=; fi
 if [ -n "$nm" ] && [ "$nm" != %s ]; then echo "mac-lan-manager: 別の名前 ($nm) を広告している (止めない)" >&2; exit 4; fi # ExitOtherName
 %se=%s
-rm -f "$p" "$e"; rmdir "${e%%/*}" 2>/dev/null || :
+rm -f "$p" || exit; rm -f "$e" || exit; rmdir "${e%%/*}" 2>/dev/null || : # plist を消せないまま 0 で抜けると呼び出し側は止めたと知らせ、実在しない exe を指す plist が残る
 `, plistPath, jobArgs, Quote(name), bootoutLine, exePath)
 }
 

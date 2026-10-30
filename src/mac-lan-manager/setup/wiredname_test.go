@@ -184,6 +184,21 @@ func TestNameAdvertScripts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "bootout_rc"), []byte("3"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// plist を消せないとき (LaunchAgents が書けない) は失敗を返し、plist が指す実行ファイルを残す
+	agents := filepath.Dir(plist)
+	if err := os.Chmod(agents, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runScript(t, env, RemoveScript(a.Name))
+	if err := os.Chmod(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err == nil {
+		t.Errorf("plist を消せないのに成功を返した (呼び出し側は止めたと知らせる): %s", out)
+	}
+	if _, err := os.Stat(exe); err != nil {
+		t.Errorf("plist が残るのに実行ファイルを消した (次のログインで launchd が無い実行ファイルを起こし続ける): %v", err)
+	}
 	if out, err := runScript(t, env, RemoveScript(a.Name)); err != nil {
 		t.Fatalf("消せない: %v %s", err, out)
 	}
