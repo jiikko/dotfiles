@@ -120,7 +120,7 @@ _go_autobuild_replace_dirs() {  # $1=mod_dir
 # tests/bin/test_go_autobuild.sh が、入ったら落とす)。
 # embed の記録 (.autobuild.embeds) の有無とその中身も入力に数える: 記録が無いまま作ったバイナリ (この仕組みの前の版を含む) は、
 # 記録を書く次のビルドまで指紋が合わないので 1 回作り直される。
-# _go_autobuild_embed_unresolved に、展開して 0 件だった pattern を返す (指紋がそれを stale に倒す)。
+# _go_autobuild_embed_unresolved に、展開して 0 件だった pattern を返す (指紋がそれを知らせる)。
 _go_autobuild_inputs() {  # $1=src_dir
   local root
   local -a roots files
@@ -141,11 +141,13 @@ _go_autobuild_inputs() {  # $1=src_dir
 # 🚨 directive を自分で構文解析しない (引用符・all:・build tag・リンクされる package に限る、を go が解く)。展開だけをここでする。
 # 展開は Go より広めに拾う (dot ファイルと _ で始まるものも拾う。余分は再ビルドが増えるだけ、拾い損ねると黙って古いまま)。
 # ディレクトリに当たったら下を全部。0 件の pattern は _go_autobuild_embed_unresolved に積む (go build は通ったのに展開が 0 件 =
-# ここの展開の誤り。黙って取りこぼさない)。記録が無ければ何も返さない (_go_autobuild_fingerprint が記録の有無を入力に数える)。
+# ここの展開の誤り。指紋が起動のたびに知らせる)。記録が無ければ何も返さない (_go_autobuild_fingerprint が記録の有無を入力に数える)。
 typeset -ga _go_autobuild_embed_unresolved
 _go_autobuild_embed_files() {  # $1=src_dir
-  local rec="${1:A}/.autobuild.embeds" line dir pat
+  local rec="${1:A}/.autobuild.embeds" line dir pat g
   local -a parts out hit
+  # nullglob / globdots は option で効かせる (修飾子 (ND) を pattern の後ろに付ける形は、\( を含む pattern で当たらないことがあった)
+  setopt localoptions nullglob globdots
   _go_autobuild_embed_unresolved=()
   reply=()
   [[ -f "$rec" ]] || return 0
@@ -155,13 +157,25 @@ _go_autobuild_embed_files() {  # $1=src_dir
     dir="$parts[1]"
     for pat in "${(@)parts[2,-1]}"; do
       pat="${pat#all:}"
-      hit=("$dir"/${~pat}(ND))
+      if [[ "$pat" != *[*?[]* ]]; then
+        # Go のメタ文字 (* ? [) が無ければただのパス。zsh のグロブに通さない (quote した文字が glob にならず、\ が残ったまま返る)
+        hit=(); [[ -e "$dir/$pat" ]] && hit=("$dir/$pat")
+      else
+        # Go の path.Match のメタ文字 (* ? [ ]) だけを生かし、zsh だけが特別に読む文字 (`(` `|` `<` …) は字そのものにする
+        g="${(b)pat}"
+        g="${${${${g//\\\*/*}//\\\?/?}//\\\[/[}//\\\]/]}"
+        # ディレクトリも quote して 1 語の pattern にする ("$dir"/${~g} の形は \( を含む pattern で何も当たらない。zsh 5.9 で実測)
+        g="${(b)dir}/$g"
+        hit=(${~g})
+      fi
       if (( ! $#hit )); then
         _go_autobuild_embed_unresolved+=("$dir/$pat")
         continue
       fi
       for line in "${hit[@]}"; do
-        if [[ -d "$line" ]]; then out+=("$line"/**/*(.ND)); else out+=("$line"); fi
+        if [[ -d "$line" ]]; then out+=("$line"/**/*(.ND))
+        elif [[ -e "$line" ]]; then out+=("$line")   # 壊れた symlink (エディタのロック .#x 等) は拾わない (zstat が落ちて指紋が取れなくなる)
+        fi
       done
     done
   done < "$rec"
@@ -170,25 +184,33 @@ _go_autobuild_embed_files() {  # $1=src_dir
 }
 
 # ビルドの前に //go:embed の pattern を記録する (_go_autobuild_embed_files が読む)。module の外 (標準ライブラリ・module cache) の
-# package は捨てる (版は go.sum が持つ)。go list が落ちたら記録を消す (指紋は「記録が無い」で取る。go build も落ちるのが普通)。
-_go_autobuild_record_embeds() {  # $1=src_dir $2=mod_dir $3=pkg
-  local rec="${1:A}/.autobuild.embeds" out line dir d
+# package は捨てる (版は go.sum が持つ)。go list が落ちたら記録を消して 1 を返す (呼び出し側はビルドの失敗として扱う。記録の無いまま
+# ビルドを通すと「記録が無い」で指紋が落ち着き、embed したファイルだけの変更を以後見逃す)。
+# 🚨 go list をコマンド置換 $(...) に入れない。zsh はそこで trap '' HUP を落とすので、popup を閉じたときの HUP で go list だけが
+# 死ぬ (.claude/rules/zsh-trap-not-inherited.md)。trap を張ったシェルの foreground で一時ファイルへ出す。
+# 一時ファイルは .autobuild.new.<pid>.list (途中で死んだ残りは _go_autobuild_spawn の掃除が拾う)。
+_go_autobuild_record_embeds() {  # $1=src_dir $2=mod_dir $3=pkg / 0 = 記録した, 1 = go list が落ちた
+  local rec="${1:A}/.autobuild.embeds" line dir d rc=0
   local -a roots keep
   roots=("$2")
   _go_autobuild_replace_dirs "$2"; roots+=("${reply[@]}")
-  if ! out=$(command go list -C "$2" -deps \
-      -f '{{if .EmbedPatterns}}{{.Dir}}{{range .EmbedPatterns}}{{"\t"}}{{.}}{{end}}{{end}}' "$3" 2>/dev/null); then
-    command rm -f "$rec" 2>/dev/null
-    print -u2 -- "go_autobuild: go list で //go:embed の pattern を取れない (embed したファイルだけの変更を再ビルドの契機にできない)"
-    return 0
+  _go_autobuild_self_pid
+  local out="${1:A}/.autobuild.new.$REPLY.list"
+  command go list -C "$2" -deps \
+    -f '{{if .EmbedPatterns}}{{.Dir}}{{range .EmbedPatterns}}{{"\t"}}{{.}}{{end}}{{end}}' "$3" >| "$out" || rc=$?
+  if (( rc )); then
+    command rm -f "$out" "$rec" 2>/dev/null
+    print -u2 -- "go_autobuild: go list で //go:embed の pattern を取れない (exit $rc)"
+    return 1
   fi
-  for line in "${(@f)out}"; do
+  while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -n "$line" ]] || continue
     dir="${${line%%$'\t'*}:A}"
     for d in "${roots[@]}"; do
       if [[ "$dir" == "$d" || "$dir" == "$d"/* ]]; then keep+=("$dir"$'\t'"${line#*$'\t'}"); break; fi
     done
-  done
+  done < "$out"
+  command rm -f "$out" 2>/dev/null
   print -r -- "${(pj:\n:)keep}" >| "$rec.tmp.$$" 2>/dev/null && command mv -f "$rec.tmp.$$" "$rec" 2>/dev/null
   return 0
 }
@@ -270,9 +292,9 @@ _go_autobuild_fingerprint() {  # $1=src_dir (入力集合は _go_autobuild_input
   # embed の記録も入力 (中身が変われば pattern が変わった)。無ければ無いことを入力にする (_go_autobuild_inputs の doc)
   if [[ -f "${1:A}/.autobuild.embeds" ]]; then files+=("${1:A}/.autobuild.embeds"); else out+="embeds: none"$'\n'; fi
   if (( $#_go_autobuild_embed_unresolved )); then
-    # 毎回違う値を入れて常に stale にする (同じ値だと「ビルド済み」と一致して、展開の誤りのまま黙る)
-    print -u2 -- "go_autobuild: //go:embed の pattern を展開できない (常に再ビルドする): ${(j:, :)_go_autobuild_embed_unresolved}"
-    out+="embeds: unresolved ${EPOCHREALTIME-$RANDOM}"$'\n'
+    # 起動のたびに知らせる。作り直し続けにはしない (毎回違う値を入れると backoff も効かず、pro-con の入れ替えが毎周「新版あり」になる)
+    print -u2 -- "go_autobuild: //go:embed の pattern を展開できない (そのファイルの変更では再ビルドしない): ${(j:, :)_go_autobuild_embed_unresolved}"
+    out+="embeds: unresolved ${(j: :)_go_autobuild_embed_unresolved}"$'\n'
   fi
   zstat -A mt +mtime -- "${files[@]}" 2>/dev/null || return 0
   zstat -A sz +size  -- "${files[@]}" 2>/dev/null || return 0
@@ -418,16 +440,11 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # (別シェルからの stale takeover が実行中 builder の一時ファイルを消すのを避ける)
   _go_autobuild_self_pid
   local bin="$src_dir/$name" tmp="$src_dir/.autobuild.new.$REPLY"
-  # このビルドが「何を入力にしたか」を開始時点で確定させる。成功時にこれを記録するので、
+  # このビルドが「何を入力にしたか」を go build の前に確定させる (下の _go_autobuild_fingerprint)。成功時にこれを記録するので、
   # ビルド実行中に着地した編集は次回の指紋比較で必ず差として出る (_go_autobuild_fingerprint の doc)。
   local built_fp started_at=${EPOCHREALTIME-0} seen_at seen_fp
   local local_go required_go mod_dir pkg
   _go_autobuild_resolve_mod "$src_dir"; mod_dir="$reply[1]"; pkg="$reply[2]"
-  # 指紋より先に embed の pattern を記録する (指紋の入力集合がそれを読む。後に書くと次の起動で毎回 1 回作り直す)
-  _go_autobuild_record_embeds "$src_dir" "$mod_dir" "$pkg"
-  _go_autobuild_fingerprint "$src_dir"; built_fp=$REPLY
-  # install の可否を決めるための基準 (下の guard の doc)。開始時点の記録を控える。
-  _go_autobuild_read_built "$src_dir"; seen_at=$reply[1]; seen_fp=$reply[2]
   required_go=$(awk '$1 == "go" {print $2; exit}' "$mod_dir/go.mod" 2>/dev/null)
   # go 自体が無い環境 (新しい Mac / PATH が通っていない) を go build の "command not found"
   # (exit 127) に任せない。popup 起点だと 1 行の英語エラーが点滅して消えるだけで、
@@ -462,6 +479,15 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
     && ! is-at-least "$required_go" "${local_go#go}"; then
     (( quiet )) || print -u2 -- "$name: 初回は Go $required_go の toolchain 取得で時間がかかることがあります"
   fi
+  # 指紋より先に embed の pattern を記録する (指紋の入力集合がそれを読む。後に書くと次の起動で毎回 1 回作り直す)。
+  # go が無いときの案内 (上) より後に置く (go list の 127 で案内を潰さない)
+  if ! _go_autobuild_record_embeds "$src_dir" "$mod_dir" "$pkg"; then
+    print -u2 -- "$name: build failed (go list)"
+    return 1
+  fi
+  _go_autobuild_fingerprint "$src_dir"; built_fp=$REPLY
+  # install の可否を決めるための基準 (下の guard の doc)。go build の前の時点の記録を控える。
+  _go_autobuild_read_built "$src_dir"; seen_at=$reply[1]; seen_fp=$reply[2]
   local rc=0
   # 🚨 この go build を「サブシェルの中」や「バックグラウンドジョブ」にしない。zsh は fork した
   # サブシェル `( ... )` と `&` のジョブで trap をリセットするので、_go_autobuild_spawn が張った
@@ -578,6 +604,7 @@ _go_autobuild_record_rev() {  # $1=src_dir (記録先)。tree hash と dirty は
   # 含めない。指紋には含めているので再ビルド判定は正しい)
   # embed したファイルも入力 (_go_autobuild_inputs と同じ集合)。
   _go_autobuild_embed_files "$src_dir"
+  reply=(${(M)reply:#$mod_dir/*})   # replace 先の embed は見ない (下の注記と同じ)
   [[ -n "$(command git -C "$mod_dir" status --porcelain \
       -- '*.go' go.mod go.sum ':(exclude)*_test.go' "${reply[@]}" 2>/dev/null)" ]] \
     && rev+=" +dirty"

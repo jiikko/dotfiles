@@ -64,6 +64,8 @@ if [ "$1" = "env" ]; then printf '%s\n' "${FAKE_GO_VERSION:-go1.99.0}"; exit 0; 
 # `{{.Dir}}<TAB>pattern...` の形)。FAKE_GO_LIST_FAIL で落とす
 if [ "$1" = "list" ]; then
   [ -n "${FAKE_GO_LIST_FAIL:-}" ] && exit 1
+  # popup を閉じたときの HUP を模す。継承した SIG_IGN があれば無視され、無ければ 129 で死ぬ
+  [ -n "${FAKE_GO_LIST_SELF_HUP:-}" ] && kill -HUP $$
   [ -n "${FAKE_GO_EMBEDS:-}" ] && [ -f "$FAKE_GO_EMBEDS" ] && cat "$FAKE_GO_EMBEDS"
   exit 0
 fi
@@ -1146,6 +1148,20 @@ embed_case "embed していないファイルを直す" keep bump "$T/plain.md"
 embed_case "embed した glob にファイルを足す (.go は触らない)" rebuild eval 'printf "b\n" > "$T/assets/b.md"'
 embed_case "all: のディレクトリの下の dot ファイルを直す" rebuild bump "$T/data/.hid/x"
 embed_case "embed したファイルを消す" rebuild rm "$T/assets/a.md"
+# Go の embed は ( ) を字そのものとして通す。zsh のグループとして読むと別のファイルを拾って本物を見逃す
+printf 'p\n' > "$T/assets/p(1).md"; printf 'q\n' > "$T/assets/p1.md"
+printf '%s\t%s\t%s\n' "$T" 'assets/p(1).md' 'all:data' > "$ROOT/embeds"
+bump "$T/main.go"; embed_run p0 >/dev/null
+embed_case "名前に ( ) を含む embed したファイルを直す" rebuild bump "$T/assets/p(1).md"
+embed_case "( ) の pattern がグループとして当たる別のファイルを直す" keep bump "$T/assets/p1.md"
+printf '%s\t%s\t%s\n' "$T" 'assets/*.md' 'all:data' > "$ROOT/embeds"
+bump "$T/main.go"; embed_run r0 >/dev/null   # 戻した pattern を記録させる (記録はビルドのときだけ書く)
+# エディタのロック (.#x.md) のような壊れた symlink が glob に直接当たっても、指紋を取れなくしない (取れないと mtime の順序比較へ縮退する)
+ln -s /nonexistent "$T/assets/.#lock.md"
+fp_now() { zsh -c 'source "$1"; _go_autobuild_fingerprint "$2"; print -r -- "$REPLY"' zsh "$ROOT/bin/lib/go_autobuild.zsh" "$T"; }
+[[ -n "$(fp_now)" ]] || fail "embed: 壊れた symlink で指紋が取れなくなった"
+ok "embed: 壊れた symlink を拾わない (指紋が取れる)"
+rm -f "$T/assets/.#lock.md"
 
 # 入れ替えの経路 (pro-con の ctrl+r・dispatcher) も同じ判定を通る
 freeze "$ROOT"
@@ -1155,28 +1171,41 @@ wait_for "embed: 起動したビルドの成果物が設置されない" binary_
 wait_for "embed: builder が lock を解放しない" builder_done "$ROOT"
 ok "embed したファイルだけの変更で go_autobuild_spawn_if_stale も再ビルドする"
 
-# 展開して 0 件 = こちらの展開の誤り。黙って古いままにせず、毎回作り直して知らせる
+# 展開して 0 件 = こちらの展開の誤り。黙らずに起動のたびに知らせる。作り直し続けにはしない (backoff と pro-con の入れ替えを回し続ける)
 printf '%s\t%s\n' "$T" 'nomatch/*.md' > "$ROOT/embeds"
 bump "$T/main.go"
 embed_run u1 >/dev/null
+: > "$ROOT/stderr"
 before="$(calls "$ROOT")"
 embed_run u2 >/dev/null
-[[ "$(calls "$ROOT")" -gt "$before" ]] || fail "embed: 展開して 0 件の pattern を stale にしない (黙って取りこぼす)"
-grep -q 'pattern を展開できない' "$ROOT/stderr" || fail "embed: 展開できない pattern を知らせない"
-ok "展開して 0 件の pattern は常に再ビルドし、stderr で知らせる"
+grep -q 'pattern を展開できない' "$ROOT/stderr" || fail "embed: 展開できない pattern を起動のたびに知らせない"
+[[ "$(calls "$ROOT")" == "$before" ]] || fail "embed: 展開できない pattern で作り直し続ける"
+ok "展開して 0 件の pattern は起動のたびに stderr で知らせ、作り直し続けない"
 
-# go list が落ちたら記録を消し、記録が無い状態のまま落ち着く (毎回作り直さない)
+# go list が落ちたらビルドの失敗にする (記録の無いまま通すと「記録が無い」で指紋が落ち着き、embed したファイルの変更を以後見逃す)
 ROOT="$(new_project embedlistfail)"
 FAKE_GO_MARK=v1 run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
-FAKE_GO_LIST_FAIL=1 FAKE_GO_MARK=v2 run_tool "$ROOT" >/dev/null
+if FAKE_GO_LIST_FAIL=1 FAKE_GO_MARK=v2 run_tool "$ROOT" >/dev/null; then fail "embed: go list が落ちたのにビルドを成功として扱った"; fi
+binary_is "$ROOT" v1 || fail "embed: go list が落ちたのに新しいバイナリを入れた"
 [[ ! -e "$ROOT/src/tool/.autobuild.embeds" ]] || fail "embed: go list が落ちたのに記録が残った"
-grep -q 'go list で //go:embed の pattern を取れない' "$ROOT/stderr" || fail "embed: go list の失敗を知らせない"
-before="$(calls "$ROOT")"
-FAKE_GO_MARK=v3 run_tool "$ROOT" >/dev/null
-[[ "$(calls "$ROOT")" == "$before" ]] || fail "embed: 記録が無い状態で毎回再ビルドする"
-ok "go list が落ちたら記録を消して知らせ、その状態で落ち着く"
+grep -q 'go list で //go:embed の pattern を取れない (exit 1)' "$ROOT/stderr" || fail "embed: go list の失敗を exit code つきで知らせない"
+FAKE_GO_MARK=v3 run_tool "$ROOT" >/dev/null || fail "embed: go list が直った後にビルドできない"
+binary_is "$ROOT" v3 || fail "embed: go list が直った後に作り直さない"
+[[ -f "$ROOT/src/tool/.autobuild.embeds" ]] || fail "embed: go list が直った後に記録を書かない"
+ok "go list が落ちたらビルドの失敗にし (exit code を残す)、直れば作り直して記録を書く"
+
+# 裏のビルド (popup を閉じると HUP が飛ぶ) でも go list は死なない (trap '' HUP が届く foreground で走らせる)
+ROOT="$(new_project embedhup)"
+FAKE_GO_MARK=v1 run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+FAKE_GO_LIST_SELF_HUP=1 FAKE_GO_MARK=hup spawn_if_stale "$ROOT" || fail "embed: stale なのにビルドを起動しない"
+wait_for "embed: HUP を受けた裏のビルドの成果物が設置されない" binary_is "$ROOT" hup
+wait_for "embed: builder が lock を解放しない" builder_done "$ROOT"
+[[ -f "$ROOT/src/tool/.autobuild.embeds" ]] || fail "embed: 裏のビルドで go list が HUP で死んだ (記録が無い)"
+ok "裏のビルドの go list は HUP を無視する (記録を書いてから入れる)"
 
 # この仕組みの前の版で作ったバイナリ (記録が無く、指紋に記録の有無の行も無い) は 1 回だけ作り直す
 ROOT="$(new_project embedupgrade)"
