@@ -57,23 +57,16 @@ if $id_mode; then
   # 🚨 --commit は 40 桁の完全な SHA でしか一致しない。短縮 SHA だとエラーにならず空が返り、「まだ起動していない」と誤診する
   sha="$(git rev-parse --verify --quiet "${id_args[1]:-HEAD}^{commit}")" \
     || { echo "commit を解決できません: ${id_args[1]:-HEAD}" >&2; exit 2; }
-  rows=$(gh run list --commit "$sha" --workflow "$id_wf" --limit 20 --json databaseId,headSha,createdAt,event,conclusion \
-    --jq 'sort_by(.createdAt) | reverse | .[] | "\(.databaseId)\t\(.headSha)\t\(.event)\t\(.conclusion)"') || gh_failed
+  rows=$(gh run list --commit "$sha" --workflow "$id_wf" --limit 20 --json databaseId,headSha,createdAt \
+    --jq 'sort_by(.createdAt) | reverse | .[] | "\(.databaseId)\t\(.headSha)"') || gh_failed
   # 照合は bash の側で行う (一覧の並びや絞り込みを信用しない。先頭が別の commit の古い run だったことがある)
-  # 取り消された schedule の run (毎時の run が次の時刻の run に取り消されたもの・手で取り消したもの) は、他に run があれば飛ばす:
-  # 新しい順で先頭に来るので、拾うと同じ commit の push の run の結果の代わりに「取り消し」を返す
-  found=""; fallback=""; matched=0
-  while IFS=$'\t' read -r rid rsha rev rcon; do
+  found=""; matched=0
+  while IFS=$'\t' read -r rid rsha; do
     [ -n "$rid" ] || continue
     [ "$rsha" = "$sha" ] || continue
     matched=$((matched + 1))
-    if [ "$rev" = schedule ] && [ "$rcon" = cancelled ]; then
-      [ -n "$fallback" ] || fallback="$rid"
-      continue
-    fi
     [ -n "$found" ] || found="$rid"
   done <<< "$rows"
-  [ -n "$found" ] || found="$fallback"
   if [ -z "$found" ]; then
     # push されたかは GitHub に聞く。ローカルの追跡 ref は fetch していなければ古く、URL への push や tag だけの push も
     # 映らない (それで「push していない」と言うと、来る run を待つのをやめさせてしまう)
@@ -146,9 +139,7 @@ if [ "${#failed[@]}" -eq 0 ]; then
   # そのあと成功していれば黙る (古い赤を蒸し返さない)。
   stale=0
   seen_wf=""
-  # 窓は 200 本: 毎時の schedule の run (Tests と Bench) が 1 時間に 2 本ずつ枠を使うので、60 本だと 1 日余り push が
-  # 無いだけで、他の workflow の最新の赤が窓の外へ押し出され、まだ緑になっていない workflow の 🚨 が出なくなる
-  recent_tsv=$(gh run list --limit 200 --json databaseId,headSha,conclusion,name \
+  recent_tsv=$(gh run list --limit 60 --json databaseId,headSha,conclusion,name \
     --jq '.[] | select(.conclusion != null and .conclusion != "cancelled") | "\(.name)\t\(.headSha)\t\(.conclusion)\t\(.databaseId)"') || gh_failed
   while IFS=$'\t' read -r wf sha concl dbid; do
     [ -n "$wf" ] || continue

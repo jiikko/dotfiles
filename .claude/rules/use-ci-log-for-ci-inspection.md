@@ -10,8 +10,7 @@
   (`gh run watch "$(ci-log -i Tests)"` と引数の中で展開すると rc が捨てられる。`--exit-status` が無いと run が失敗しても rc=0 で終わる)。
   `gh run list --limit 1` のように「最新」で選ぶと、別の commit の run を拾うことがある (2026-10-02 に 2026-09-04 の run の success を拾いかけた。issue 634)。
   rc=4 は「run がまだ無い」(push 直後 / paths filter で起動しない) なので上限つきで再試行する。rc=5 は GitHub に無い (push していない) commit で、待っても来ない。
-  **issues/ だけの commit では、push の Tests / Lint は起動しない** (paths-ignore)。その commit で待つのは `Issues`
-  (Tests は毎時の schedule の run が master の最新として走らせることはある。下の項)
+  **issues/ だけの commit では Tests / Lint は起動しない** (paths-ignore)。その commit で待つのは `Issues`
   - 🚨 **名指しで待った run が緑でも、報告の前に引数なしの `ci-log` を 1 回打ち、その commit の全 run の失敗を見る**。名指しは
     「待つ対象」を決めるためのもので、名指ししなかった workflow (paths 付きの検査など) については何も言わない (retro 689: 3 本を名指しで
     待って緑を見続け、`unused` の赤を 10 本見逃した)
@@ -23,11 +22,6 @@
 - 🚨 **特定の workflow の結果を根拠にするときは run を名指しで確認する**。「HEAD が緑」は
   「HEAD で起動しなかった workflow」については何も言っていない (`gh run view <id> --json headSha` で
   どの commit を建てたかまで見る)
-- **Tests と Bench は push の run が次の push に取り消され続けることがある** (cancel-in-progress)。その間は毎時 17 分の
-  schedule の run (push と別の concurrency の group) が master の最新を 1 本走らせるので、検証したい commit を祖先に含む
-  schedule の run を探して待つ (`gh run list --workflow Tests --event schedule`)。最新の commit を本体の job が既に検証していれば、
-  schedule の run は本体を走らせない (緑なら gate だけで緑、赤なら gate だけの run を取り消す。`scripts/ci_schedule_gate.sh`。issue 1000)。
-  取り消された schedule の run は検証ではないので読まない (`ci-log -i` は他に run があれば飛ばす)
 
 ## なぜ
 

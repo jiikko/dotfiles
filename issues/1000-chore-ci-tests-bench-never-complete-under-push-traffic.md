@@ -53,6 +53,14 @@ retro 999 の P-2。`.github/workflows/tests.yml` と `bench.yml` は `concurren
   走り切ったのは 1 つだけ)
 - [x] 敵対的レビュー (opus) 3 周。直したもの・受けたものは commit message に書いた。受けた: schedule の起動は負荷で遅れたり落ちたりしうる /
   偽の gh は jobs の filter=latest を模していない
-- [ ] push の後の最初の schedule の run を本物の Actions で見る
+- [x] push の後の最初の schedule の run を本物の Actions で見る (3 回とも起動せず。下の決着で revert)
   - 2026-10-30 15:33 時点で未起動: 14:17・15:17 とも schedule の run が 0 件 (`gh run list --event schedule` が `[]`)。tests.yml・bench.yml とも state=active、master の定義に `cron: '17 * * * *'` がある。新しく足した cron は最初の起動が遅れることがあるので、次に schedule の run が出たときに gate の判定 (ログの ci_schedule_gate の行) と本体の走り方を見る。同じ時間帯に push の Tests は 3 本続けて完走していた (05:50Z・06:05Z・06:23Z)
   - 2026-10-30 16:23 時点でも未起動 (14:17・15:17・16:17 の 3 回とも 0 件)。この repo では schedule の run が一度も作られていない (`actions/runs?event=schedule` の total_count=0)。repo は public・archived でない・Actions は enabled (allowed_actions=all)。`on:` の構文は push の run が動いているので通っている。原因は未特定 (GitHub 側の遅延か、cron の登録が起きていないか)。判断待ち
+
+## 決着 (2026-10-30)
+
+- **ユーザー判断で、作業中の push で CI が取り消されるのは許容する**。毎時の schedule の run は費用が増える (「金かかるから push トリガーで動かしたい」)。CI の結果の確認は後回しでよい
+- そのため、毎時の schedule の run を足した commit (ci: push が続いて Tests / Bench が完走しない間も、毎時の schedule の run で master の最新を検証する) を丸ごと revert した。schedule・schedule-gate・`scripts/ci_schedule_gate.sh`・その検査・`bin/ci-log` の schedule の扱い・CI の確認の規則の段落が消え、push の run は取り消す形のまま
+- schedule の run は 14:17・15:17・16:17 の 3 回とも作られなかった (原因は未特定のまま。外したので追わない)
+- 却下した案: ①push の run を取り消さず 1 本だけ待たせる (`cancel-in-progress: false`)。古い commit の run も最後まで走り、費用が増える ②PR を経て master に入れる。直接 push を前提にした運用・規約・道具を全部変えることになり、PR と master で 2 回走りうる。どちらも、取り消しを許容する判断で要らなくなった
+- 再提起の trigger: master の赤に気づくのが遅れて、実害 (壊れた master の上に複数の commit が積まれる等) が出たとき。その時は ①から検討する

@@ -19,11 +19,6 @@ on:
     paths-ignore:
       - 'issues/**'
   workflow_dispatch:  # GitHub UI からの手動再実行 (flake 切り分け用)
-  # push が数分おきに続くと、push の run は下の cancel-in-progress で次の push に取り消され続け、完走する run が途切れる
-  # (2026-10-29 に約 2 時間)。1 時間ごとに master の最新を 1 本、push と別の group で走らせる。最新の commit を本体の job が
-  # 既に検証していれば、本体は走らせずにその結果を引き継ぐ (schedule-gate)。検証したい commit を含むかは祖先で見る
-  schedule:
-    - cron: '17 * * * *'
 
 permissions:
   contents: read
@@ -35,50 +30,17 @@ env:
   GIT_CONFIG_VALUE_0: main
 
 # 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
-# schedule の run は push と別の group にする: 同じ group だと次の push に取り消され、schedule を足した意味が無い
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'schedule' && 'schedule' || 'push' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # schedule の run だけ: master の最新の commit に、本体の job が走って結果を出した run があれば本体を走らせず、その結果を引き継ぐ
-  schedule-gate:
-    if: github.event_name == 'schedule'
-    runs-on: xcode-27
-    timeout-minutes: 5
-    permissions:
-      actions: write  # 検証済みで赤の commit で、gate だけの run を取り消す
-      contents: read
-    outputs:
-      run: ${{ steps.gate.outputs.run }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: gate
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          scripts/ci_schedule_gate.sh tests.yml "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"
-      # 検証済みで赤の commit なら、gate だけの run は取り消して終える。緑で終えると新しい順で run を選ぶ bin/ci-log -i に赤を隠し、
-      # 赤で終えると push が無い間に赤い run が毎時積み重なり (通知も毎時)、push の run を re-run で緑にしても赤が残る。
-      # 取り消しは非同期なので待ち、届かなければ赤で終える (緑には倒さない)
-      - if: steps.gate.outputs.prior == 'failure'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh run cancel "${{ github.run_id }}" -R "${{ github.repository }}"
-          sleep 120
-          echo "::error::前の run で赤の commit。gate だけの run の取り消しが届かなかった" && exit 1
-
   # 実行時間短縮のため 2 グループに並列分割し、heavy はジョブ内でも xargs -P 並列
   # (Makefile の run_tests_parallel)。テスト増殖で heavy が 5.6 分に育った実測 (2026-07-20)
   # を受けての措置。
   # グループ定義 (どのディレクトリが heavy か) は Makefile 側に集約 (CI_HEAVY_TEST_DIRS)。
   # rest は除外方式なので新テストディレクトリは自動で rest 側で走る。
   dotfiles-tests:
-    needs: schedule-gate
-    # push では schedule-gate は skip になる。!cancelled() が無いと、skip した needs に引きずられて本体も skip される。
-    # 'false' でないなら走らせる: gate の job が落ちて出力が空のときも本体を走らせる (検証を飛ばすより安い)
-    if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.schedule-gate.outputs.run != 'false') }}
     strategy:
       fail-fast: false
       matrix:
