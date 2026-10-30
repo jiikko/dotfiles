@@ -1,1 +1,0 @@
-../1001-bug-issue-tooling-assumes-three-digit-numbers.md
