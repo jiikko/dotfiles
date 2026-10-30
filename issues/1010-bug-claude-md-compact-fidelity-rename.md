@@ -1,5 +1,7 @@
 # 1010 (bug): claude-md-compact の fidelity.py が rename したファイルを照合できない
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-30〜）
+
 起票日: 2026-10-30
 
 ## 概要
