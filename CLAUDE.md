@@ -37,7 +37,7 @@
 
 - コメントに「以前は X だった」と書きたくなったら、X が今も選ばれうる書き方なら「X にしない。X だと〜が壊れる」に直し、そうでなければ消してコミットログへ回す
 - 外部の制約・実測値・却下した指摘の再提起条件は Why not に含める (`~/.claude/rules/pending-issue-rationale-in-code.md`)
-- コメントの経緯・出所の語は `make test-lint` の `test-comment-provenance` (`scripts/check_comment_provenance.sh`) が止める (語彙と検出しない形は script 冒頭)
+- コメントの経緯・出所の語は `make test-lint` の `test-comment-provenance` (`scripts/check_comment_provenance.sh`) が止める (語彙と検出しない形は script 冒頭)。書いた直後には PostToolUse の hook (`_claude/hooks/comment-provenance-on-edit.sh`) が、そのファイルだけを数えて知らせる
 
 ## `_claude/` (Claude Code 設定の正本) を触るとき
 

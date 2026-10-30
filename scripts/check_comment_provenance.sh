@@ -21,6 +21,9 @@
 #   書き直したら `--update` で一覧を作り直す。`--update` は件数が増えたファイルがあれば拒否する (rename の組は増加に数えない)。
 #   増やすのが正当なとき (open の issue の番号を書く) だけ `--update --allow-increase` を使う。
 #   `--list [path の接頭辞]` は数えた行を `path:行番号:本文` で出す (書き直す行を探す用。判定はしない)。
+#   `--file <path>` は 1 ファイルだけを数え、一覧の件数を超えたら数えた行を出して rc=1 (編集の直後に知らせる hook 用。
+#     git に add する前のファイルも数える。gitignore されて追跡もされていないファイル (add されないので CI も見ない) と走査の対象外の path は
+#     rc=0 で何も出さない。rename・減ったの判定はしない)。
 #
 # 脅威モデル: コメントを書く人が経緯・出所の語を**うっかり**足すこと。語の言い換え (「前の版では」「指摘を受けて」) は止めない。
 # 検出しない形:
@@ -44,12 +47,14 @@ cd "$ROOT_DIR" || { printf '✗ repo root へ移動できない: %s\n' "$ROOT_DI
 ALLOW="scripts/comment_provenance_allowlist.txt"
 MIN_FILES="${CHECK_COMMENT_PROVENANCE_MIN_FILES:-300}"
 
-mode=check; prefix=''; allow_increase=0
+mode=check; prefix=''; allow_increase=0; single=0
 case "${1:-}" in
   '') ;;
   --update) mode=update; [ "${2:-}" = --allow-increase ] && allow_increase=1 ;;
   --list) mode=list; prefix="${2:-}" ;;
-  *) printf '使い方: %s [--update [--allow-increase] | --list [path の接頭辞]]\n' "$0" >&2; exit 2 ;;
+  --file) [ -n "${2:-}" ] || { printf '使い方: %s --file <repo root からの path>\n' "$0" >&2; exit 2; }
+    mode=list; prefix="$2"; single=1 ;;
+  *) printf '使い方: %s [--update [--allow-increase] | --list [path の接頭辞] | --file <path>]\n' "$0" >&2; exit 2 ;;
 esac
 
 for c in git awk sort xargs; do
@@ -59,36 +64,53 @@ done
 tmp="$(mktemp -d)" || { printf '✗ 一時ディレクトリを作れない\n'; exit 1; }
 trap 'rm -rf "$tmp"' EXIT
 
+# $1 の path のコメント記号の種類を REPLY に入れる (slash / pound / dash)。走査の対象外なら空。
+# 全体の走査と --file が同じ分類を使う (分けると、hook が知らせる範囲と CI が落とす範囲がずれる)
+classify() {
+  REPLY=''
+  case "$1" in
+    issues/*|*/vendor/*|vendor/*|*/testdata/*|testdata/*|*.md|*.json) return 0 ;;
+    scripts/check_comment_provenance.sh|tests/scripts/test_check_comment_provenance.sh|"$ALLOW") return 0 ;;
+  esac
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  case "$1" in *$'\t'*|*$'\n'*) printf '✗ path にタブか改行がある (一覧の形にできない。判定できないので緑にしない): %s\n' "$1"; exit 1 ;; esac
+  local b="${1##*/}" first=''
+  case "$b" in
+    *.go|*.swift|*.js|*.ts|*.tsx|*.c|*.h|*.m|*.jsonc|*.mod) REPLY=slash ;;
+    *.sh|*.zsh|*.bash|*.bats|*.rb|*.py|*.pl|*.awk|*.exp|*.yml|*.yaml|*.toml|*.conf|*.tmux|*.ci|*.tape|*.mk) REPLY=pound ;;
+    Makefile|GNUmakefile|Brewfile|.gitignore|.gitattributes|.envrc) REPLY=pound ;;
+    *.lua) REPLY=dash ;;
+    *.*) ;;
+    _*) REPLY=pound ;;
+    *) IFS= read -r first < "$1" 2>/dev/null; case "$first" in '#!'*) REPLY=pound ;; esac ;;
+  esac
+}
+
 # 言語ごとのコメント記号でファイルを分ける (一覧は NUL 区切り。改行入りの path を割らない)。
 # $tmp/tracked は git にある全 path (改行区切り。「無くなった」の判定に使う)、$tmp/scanned は走査したファイル
-git ls-files -z > "$tmp/files" || { printf '✗ git ls-files に失敗\n'; exit 1; }
 : > "$tmp/slash"; : > "$tmp/pound"; : > "$tmp/dash"; : > "$tmp/tracked"; : > "$tmp/scanned"
+if [ "$single" -eq 1 ]; then
+  : > "$tmp/files"
+  # 1 ファイルだけ。git の外のファイル (add する前) も数える
+  git check-ignore -q -- "$prefix" 2>/dev/null && exit 0
+  classify "$prefix"
+  [ -n "$REPLY" ] || exit 0
+  printf './%s\0' "$prefix" >> "$tmp/$REPLY"
+  MIN_FILES=1
+else
+  git ls-files -z > "$tmp/files" || { printf '✗ git ls-files に失敗\n'; exit 1; }
+fi
 nfiles=0
 while IFS= read -r -d '' f; do
   printf '%s\n' "$f" >> "$tmp/tracked"
-  case "$f" in
-    issues/*|*/vendor/*|vendor/*|*/testdata/*|testdata/*|*.md|*.json) continue ;;
-    scripts/check_comment_provenance.sh|tests/scripts/test_check_comment_provenance.sh|"$ALLOW") continue ;;
-  esac
-  [ -f "$f" ] && [ ! -L "$f" ] || continue
-  case "$f" in *$'\t'*|*$'\n'*) printf '✗ path にタブか改行がある (一覧の形にできない。判定できないので緑にしない): %s\n' "$f"; exit 1 ;; esac
-  b="${f##*/}"
-  dest=''
-  case "$b" in
-    *.go|*.swift|*.js|*.ts|*.tsx|*.c|*.h|*.m|*.jsonc|*.mod) dest=slash ;;
-    *.sh|*.zsh|*.bash|*.bats|*.rb|*.py|*.pl|*.awk|*.exp|*.yml|*.yaml|*.toml|*.conf|*.tmux|*.ci|*.tape|*.mk) dest=pound ;;
-    Makefile|GNUmakefile|Brewfile|.gitignore|.gitattributes|.envrc) dest=pound ;;
-    *.lua) dest=dash ;;
-    *.*) ;;
-    _*) dest=pound ;;
-    *) first=''; IFS= read -r first < "$f" 2>/dev/null; case "$first" in '#!'*) dest=pound ;; esac ;;
-  esac
+  classify "$f"; dest="$REPLY"
   [ -n "$dest" ] || continue
   # ./ を前に付ける (awk は `a=b` の形の引数をファイルではなく変数の代入として読む)
   printf './%s\0' "$f" >> "$tmp/$dest"
   printf '%s\n' "$f" >> "$tmp/scanned"
   nfiles=$((nfiles + 1))
 done < "$tmp/files"
+[ "$single" -eq 1 ] && nfiles=1
 if [ "$nfiles" -lt "$MIN_FILES" ]; then
   printf '✗ 検査したファイルが %s 件しか無い (期待: %s 件以上。走査が壊れている)\n' "$nfiles" "$MIN_FILES"
   exit 1
@@ -135,6 +157,16 @@ if ! scan > "$tmp/raw"; then
   exit 1
 fi
 
+if [ "$single" -eq 1 ]; then
+  # 一覧の件数まで (既存の違反) は黙る。超えたら数えた行を全部出す (どの行が増えたかは件数のラチェットでは決まらない)
+  found=$(wc -l < "$tmp/raw" | tr -d ' ')
+  allowed=0
+  [ -f "$ALLOW" ] && allowed=$(awk -F'\t' -v p="$prefix" '$3 == p && $1 ~ /^[0-9]+$/ {print $1; exit}' "$ALLOW")
+  [ "$found" -gt "${allowed:-0}" ] || exit 0
+  printf '✗ %s: コメントに経緯・出所の語が %s 行ある (一覧は %s。Why not だけを書き、経緯はコミットログへ)\n' "$prefix" "$found" "${allowed:-0}"
+  sort -t: -k2,2n "$tmp/raw"
+  exit 1
+fi
 if [ "$mode" = list ]; then
   awk -v p="$prefix" 'index($0, p) == 1' "$tmp/raw" | sort -t: -k1,1 -k2,2n
   exit 0

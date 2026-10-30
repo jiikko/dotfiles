@@ -64,6 +64,11 @@
             "command": "~/dotfiles/_claude/hooks/gofmt-on-edit.sh",
             "timeout": 10,
             "type": "command"
+          },
+          {
+            "command": "~/dotfiles/_claude/hooks/comment-provenance-on-edit.sh",
+            "timeout": 10,
+            "type": "command"
           }
         ],
         "matcher": "Write|Edit"

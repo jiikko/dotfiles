@@ -129,6 +129,22 @@ chmod 000 "$WORK/r/b.sh"; run; chmod 644 "$WORK/r/b.sh"
 new_repo; put issues/README.md 'x'; RC=0; OUT="$(CHECK_COMMENT_PROVENANCE_ROOT="$WORK/r" "$CHECK" 2>&1)" || RC=$?
 [ "$RC" -ne 0 ] && grep -q 'しか無い' <<< "$OUT" && ok '検査したファイルが少なすぎれば落とす' || bad "空の走査を通す (rc=$RC): $OUT"
 
+# --file (編集の直後の hook が使う 1 ファイルの検査)
+new_repo; put a.sh 'echo ok'; run --update
+printf 'package x\n// issue 802 で直した\n' > "$WORK/r/new.go"   # git に add しない (Write で作った直後の形)
+run --file new.go
+[ "$RC" -eq 1 ] && grep -q '^new.go:2:// issue 802' <<< "$OUT" && ok '--file は add する前のファイルも数え、数えた行を出す' || bad "--file が add 前のファイルを見ない (rc=$RC): $OUT"
+put x.go $'package x\n// issue 802'; run --update --allow-increase; run --file x.go
+[ "$RC" -eq 0 ] && [ -z "$OUT" ] && ok '--file は一覧の件数までなら黙る' || bad "--file が一覧どおりで出した (rc=$RC): $OUT"
+put x.go $'package x\n// issue 802\n// 以前は別の形'; run --file x.go
+[ "$RC" -eq 1 ] && grep -q '一覧は 1' <<< "$OUT" && ok '--file は一覧を超えたら落とす' || bad "--file が増加を通す (rc=$RC): $OUT"
+printf '# issue 802\n' > "$WORK/r/note.md"; run --file note.md
+[ "$RC" -eq 0 ] && [ -z "$OUT" ] && ok '--file は走査の対象外 (Markdown) を数えない' || bad "--file が対象外を数えた (rc=$RC): $OUT"
+printf 'tmp/\n' > "$WORK/r/.gitignore"; mkdir -p "$WORK/r/tmp"; printf '# issue 802\n' > "$WORK/r/tmp/s.sh"; run --file tmp/s.sh
+[ "$RC" -eq 0 ] && [ -z "$OUT" ] && ok '--file は gitignore されて追跡もされていないファイルを数えない (CI も見ない)' || bad "--file が ignore されたファイルを数えた (rc=$RC): $OUT"
+run --file
+[ "$RC" -eq 2 ] && ok '--file に path が無ければ使い方の誤り' || bad "--file の引数なしが rc=2 にならない (rc=$RC): $OUT"
+
 # 今の repo 全体
 RC=0; OUT="$("$CHECK" 2>&1)" || RC=$?
 [ "$RC" -eq 0 ] && ok "repo 全体: $(tail -1 <<< "$OUT")" || bad "repo 全体が赤 (rc=$RC): $OUT"
