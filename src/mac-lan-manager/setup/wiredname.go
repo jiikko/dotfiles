@@ -5,7 +5,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"mac-lan-manager/sshdest"
@@ -15,7 +14,10 @@ import (
 // `air5.local` は Bonjour が有線と Wi-Fi の両方の IP を返し、どちらへ繋ぐかが決まらない。人が ssh / 画面共有 / smb で打つ名前を有線に
 // 向けるためのもの (lan-manager 自身は IP で繋ぐ)。
 //
-// - root は要らない: ユーザーの LaunchAgent が sh のループ (advertLoop) を起こし続け、ループが /usr/bin/dns-sd -P を子として起こす。
+// - root は要らない: ユーザーの LaunchAgent がループの実行ファイル (advertScript を AdvertExe に書いたもの) を起こし続け、ループが
+//   /usr/bin/dns-sd -P を子として起こす。plist に /bin/sh -c でループを直接書かない: システム設定のバックグラウンド項目には実行ファイルの
+//   名前が出るので「sh」と出て、何の項目か分からなかった (ユーザー指摘)。実行ファイルを dotfiles の bin/ に置かないのは、相手の Mac にも
+//   ssh で入れるため (相手に dotfiles があるか・どの版かに依らない)。
 //   名前は登録したプロセスが生きている間だけ残る (mDNSResponder に固定の名前を持たせる設定は無い)。
 // - ループは、広告する IP をこの Mac のどの I/F も持っていない間は dns-sd を止める (964): dns-sd を直接 KeepAlive で走らせていた
 //   ときは、有線のアダプタを替えて I/F が IP を失った後も古い IP を広告し続け、相手から「名前が内部 IP に引ける = 済み」と読まれ、
@@ -69,41 +71,49 @@ func (a NameAdvert) Validate() error {
 	return nil
 }
 
-// args は plist の ProgramArguments。jobArgs は launchctl print の arguments の 4 番目 (AdvertTag)・7 番目 (名前)・8 番目 (IP) を読み、
-// RemoveScript は plist の ProgramArguments.6 (名前) を読む。名前と IP の位置は dns-sd を直接起こしていた前の形と同じに保つ
-// (前の形で走っている Mac の名前と IP も同じ数え方で読み、止める・入れ直すときに使う)。
-func (a NameAdvert) args() []string {
-	return []string{"/bin/sh", "-c", advertLoop("/sbin/ifconfig", "/usr/bin/dns-sd", strconv.Itoa(AdvertEvery)), AdvertTag,
-		strings.TrimSuffix(a.Name, ".local"), wiredService, a.Name, a.IP}
+// args は plist の ProgramArguments (先頭の実行ファイルは exe。$HOME を含むので InstallScript が入れる先の sh で決める)。jobArgs は
+// launchctl print の arguments の 4 番目 (AdvertTag)・7 番目 (名前)・8 番目 (IP) を読み、RemoveScript は plist の ProgramArguments.6 (名前)
+// を読む。名前と IP の位置は dns-sd を直接起こしていた形・sh -c でループを書いていた形と同じに保つ (前の形で走っている Mac の名前と IP も
+// 同じ数え方で読み、止める・入れ直すときに使う)。2・3 番目の ifconfig と dns-sd はその位置を埋めるだけでなく、テストが偽物に差し替える口。
+func (a NameAdvert) args(exe string) []string {
+	return []string{exe, "/sbin/ifconfig", "/usr/bin/dns-sd", AdvertTag, strings.TrimSuffix(a.Name, ".local"), wiredService, a.Name, a.IP}
 }
 
 // AdvertEvery はループが ifconfig を見る間隔 (秒。確認の板の説明も読む)。
 const AdvertEvery = 10
 
-// AdvertTag はループの形の目印 (sh の $0)。ループの中身を変えたら上げる: 前の形で走っている Mac を「済み」と読まず、初期設定の名前の
+// AdvertTag はループの形の目印 (実行ファイルの $3)。ループの中身・引数の並びを変えたら上げる: 前の形で走っている Mac を「済み」と読まず、初期設定の名前の
 // 手順で入れ直させる (Advertises が見る)。
-const AdvertTag = "mac-lan-manager-wired-name-v2"
+const AdvertTag = "mac-lan-manager-wired-name-v3"
 
-// advertLoop は IP を持っている間だけ dns-sd -P を走らせる sh (1 行。launchctl print は引数を 1 行ずつ出し、jobArgs が行で数えるので
-// 改行を入れない)。$1 = dns-sd に渡すインスタンス名、$2 = サービスの種類、$3 = 名前、$4 = IP。every 秒ごとに ifconfig を見る。
-// dns-sd が自分で落ちても次の回で起こし直す。止める合図 (bootout の TERM) では子の dns-sd と待ちの sleep も止めてから抜ける。
-// ifconfig と dns-sd はテストで偽物に差し替えるため引数で受ける。
-func advertLoop(ifconfig, dnssd, every string) string {
-	return fmt.Sprintf(`p=; s=; trap '[ -n "$p" ] && kill "$p" 2>/dev/null; [ -n "$s" ] && kill "$s" 2>/dev/null; exit 0' TERM INT HUP; `+
-		`while :; do if %s | /usr/bin/grep -qF "inet $4 "; then `+
-		`if [ -z "$p" ] || ! kill -0 "$p" 2>/dev/null; then %s -P "$1" "$2" local 9 "$3" "$4" >/dev/null 2>&1 & p=$!; fi; `+
-		`elif [ -n "$p" ]; then kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; p=; fi; `+
-		`sleep %s & s=$!; wait "$s"; s=; done`, ifconfig, dnssd, every)
-}
+// advertScript は IP を持っている間だけ dns-sd -P を走らせる実行ファイルの中身 (引数は args の 2 番目から: ifconfig・dns-sd・目印・
+// dns-sd に渡すインスタンス名・サービスの種類・名前・IP)。AdvertEvery 秒ごとに ifconfig を見る。dns-sd が自分で落ちても次の回で
+// 起こし直す。止める合図 (bootout の TERM) では子の dns-sd と待ちの sleep も止めてから抜ける。
+var advertScript = fmt.Sprintf(`#!/bin/sh
+ifc=$1 dns=$2; shift 3
+p=; s=
+trap '[ -n "$p" ] && kill "$p" 2>/dev/null; [ -n "$s" ] && kill "$s" 2>/dev/null; exit 0' TERM INT HUP
+while :; do
+	if "$ifc" | /usr/bin/grep -qF "inet $4 "; then
+		if [ -z "$p" ] || ! kill -0 "$p" 2>/dev/null; then "$dns" -P "$1" "$2" local 9 "$3" "$4" >/dev/null 2>&1 & p=$!; fi
+	elif [ -n "$p" ]; then kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; p=; fi
+	sleep %d & s=$!; wait "$s"; s=
+done
+`, AdvertEvery)
 
 // plistPath は sh の中で使う plist の置き場 ($HOME を sh に展開させる)。
 const plistPath = `"$HOME/Library/LaunchAgents/` + WiredNameLabel + `.plist"`
+
+// AdvertExe はループの実行ファイルの名前 (システム設定のバックグラウンド項目にこの名前で出る)。exePath はその置き場 (sh の中で使う)。
+const AdvertExe = "mac-lan-manager-wired-name"
+
+const exePath = `"$HOME/Library/Application Support/mac-lan-manager/` + AdvertExe + `"`
 
 // InstallScript は LaunchAgent を書いて (書き換えて) 起こし直す sh。sudo は要らない。gui のドメインに入れるので、その Mac に
 // ログインしている間に打つ (ssh からでも入る。air5 で実測)。ログインしていなければ bootstrap が失敗して非 0 で抜ける。
 func (a NameAdvert) InstallScript() string {
 	var items strings.Builder
-	for _, s := range a.args() {
+	for _, s := range a.args("")[1:] { // 先頭の実行ファイルは入れる先の $HOME で決まるので、書いた後に plutil で差し込む
 		items.WriteString("<string>")
 		_ = xml.EscapeText(&items, []byte(s)) // ループの sh は & と > を含む。strings.Builder への書き込みは失敗しない
 		items.WriteString("</string>")
@@ -114,8 +124,11 @@ func (a NameAdvert) InstallScript() string {
 		`</array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/></dict></plist>`
 	var b strings.Builder
 	b.WriteString("set -e\numask 022\n")
-	fmt.Fprintf(&b, "mkdir -p \"$HOME/Library/LaunchAgents\"\np=%s\n", plistPath)
-	fmt.Fprintf(&b, "printf '%%s\\n' %s > \"$p.tmp\"\nplutil -lint \"$p.tmp\" >/dev/null\nmv -f \"$p.tmp\" \"$p\"\n", Quote(plist))
+	fmt.Fprintf(&b, "e=%s\nmkdir -p \"$HOME/Library/LaunchAgents\" \"${e%%/*}\"\np=%s\n", exePath, plistPath)
+	// 走っている前の版の実行ファイルは mv で置き換える (書き込みで上書きすると、sh が読みかけのファイルの中身が変わる)
+	fmt.Fprintf(&b, "printf '%%s' %s > \"$e.tmp\"\nchmod 755 \"$e.tmp\"\nmv -f \"$e.tmp\" \"$e\"\n", Quote(advertScript))
+	fmt.Fprintf(&b, "printf '%%s\\n' %s > \"$p.tmp\"\nplutil -insert ProgramArguments.0 -string \"$e\" \"$p.tmp\"\n"+
+		"plutil -lint \"$p.tmp\" >/dev/null\nmv -f \"$p.tmp\" \"$p\"\n", Quote(plist))
 	// 前の版が走っていれば止めてから入れ直す (止めずに bootstrap すると「既にある」で失敗する)
 	b.WriteString(jobArgs + bootoutLine)
 	fmt.Fprintf(&b, "launchctl bootstrap \"gui/$(id -u)\" \"$p\"\n")
@@ -129,8 +142,8 @@ var bootoutLine = fmt.Sprintf(`if [ -n "$out" ]; then rc=0; launchctl bootout "g
 if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then echo "mac-lan-manager: 名前の広告を止められない (launchctl bootout rc=$rc)" >&2; exit "$rc"; fi; fi
 `, WiredNameLabel)
 
-// jobArgs は走っている job の形の目印・名前・IP を読む sh の断片 (launchctl print の arguments の 4・7・8 番目。sh -c のループの形で
-// この並びになることは macOS 27.0.1 の launchctl submit で実測した。state はタブ 1 つ下げの行だけを見る: 1 段深い所にも
+// jobArgs は走っている job の形の目印・名前・IP を読む sh の断片 (launchctl print の arguments の 4・7・8 番目。arguments が
+// ProgramArguments の並びのまま出ることは macOS 27.0.1 で実測した。state はタブ 1 つ下げの行だけを見る: 1 段深い所にも
 // state = active が出る。実測)。走っていなければ st は空。
 var jobArgs = fmt.Sprintf(`out=$(launchctl print "gui/$(id -u)/%s" 2>/dev/null) || out=
 st=$(printf '%%s\n' "$out" | awk -F' = ' '/^\tstate = /{print $2; exit}')
@@ -138,14 +151,15 @@ arg() { printf '%%s\n' "$out" | awk -v k="$1" '/^\targuments = \{/{a=1;n=0;next}
 tg=$(arg 4); nm=$(arg 7); ip=$(arg 8)
 `, WiredNameLabel)
 
-// RemoveScript は name を広告している LaunchAgent を止めて消す sh (無ければ何もしない)。別の名前を広告していれば消さずに抜ける
+// RemoveScript は name を広告している LaunchAgent を止めて、plist と実行ファイルを消す sh (無ければ何もしない)。別の名前を広告していれば消さずに抜ける
 // (台帳に古い名前の行が残った Mac で、その行を外すと、改名した後の今の広告を止めた)。
 func RemoveScript(name string) string {
 	return fmt.Sprintf(`p=%s
 %sif [ -z "$nm" ] && [ -f "$p" ]; then nm=$(plutil -extract ProgramArguments.6 raw -o - "$p" 2>/dev/null) || nm=; fi
 if [ -n "$nm" ] && [ "$nm" != %s ]; then echo "mac-lan-manager: 別の名前 ($nm) を広告している (止めない)" >&2; exit 4; fi # ExitOtherName
-%srm -f "$p"
-`, plistPath, jobArgs, Quote(name), bootoutLine)
+%se=%s
+rm -f "$p" "$e"; rmdir "${e%%/*}" 2>/dev/null || :
+`, plistPath, jobArgs, Quote(name), bootoutLine, exePath)
 }
 
 // ExitOtherName は RemoveScript が「別の名前を広告している (止めない)」で抜けるときの終了コード。呼び出し側は手で止める案内を出さない
@@ -154,7 +168,8 @@ const ExitOtherName = 4
 
 // RemoveHint は相手で手で止めるときの 1 行 (ssh が届かなかったときに知らせる。bootout だけだと、次のログインで plist から生き返る)。
 func RemoveHint() string {
-	return "launchctl bootout gui/$(id -u)/" + WiredNameLabel + "; rm ~/Library/LaunchAgents/" + WiredNameLabel + ".plist"
+	return "launchctl bootout gui/$(id -u)/" + WiredNameLabel + "; rm ~/Library/LaunchAgents/" + WiredNameLabel + ".plist" +
+		" ~/Library/Application\\ Support/mac-lan-manager/" + AdvertExe
 }
 
 // StatusScript は広告の状態を 4 行で出す sh: 1 行目は none (job も plist も無い) / running / stopped、2・3 行目は走っている job の

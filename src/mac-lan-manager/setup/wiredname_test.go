@@ -55,7 +55,7 @@ func wiredSandbox(t *testing.T) (env []string, home, dir string) {
 	if err := os.WriteFile(filepath.Join(bin, "launchctl"), []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range []string{"mkdir", "mv", "rm", "cat"} { // /bin は launchctl があるので PATH に入れず、使う道具だけを並べる
+	for _, c := range []string{"mkdir", "mv", "rm", "cat", "chmod", "rmdir"} { // /bin は launchctl があるので PATH に入れず、使う道具だけを並べる
 		if err := os.Symlink("/bin/"+c, filepath.Join(bin, c)); err != nil {
 			t.Fatal(err)
 		}
@@ -73,7 +73,7 @@ func wiredSandbox(t *testing.T) (env []string, home, dir string) {
 func printOut(state string, a NameAdvert) string {
 	var b strings.Builder
 	b.WriteString(WiredNameLabel + " = {\n\tactive count = 1\n\tstate = " + state + "\n\n\targuments = {\n")
-	for _, x := range a.args() {
+	for _, x := range a.args("/Users/x/Library/Application Support/mac-lan-manager/" + AdvertExe) {
 		b.WriteString("\t\t" + x + "\n")
 	}
 	b.WriteString("\t}\n\n\tendpoints = {\n\t\t\"x\" = {\n\t\t\tstate = active\n\t\t}\n\t}\n}\n")
@@ -117,6 +117,13 @@ func TestNameAdvertScripts(t *testing.T) {
 	plist := filepath.Join(home, "Library", "LaunchAgents", WiredNameLabel+".plist")
 	if out, err := exec.Command("/usr/bin/plutil", "-lint", plist).CombinedOutput(); err != nil {
 		t.Fatalf("plist が壊れている: %v %s", err, out)
+	}
+	exe := filepath.Join(home, "Library", "Application Support", "mac-lan-manager", AdvertExe)
+	if fi, err := os.Stat(exe); err != nil || fi.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("ループの実行ファイルが無い・実行できない: %v %v", fi, err)
+	}
+	if out, err := exec.Command("/usr/bin/plutil", "-extract", "ProgramArguments.0", "raw", "-o", "-", plist).Output(); err != nil || strings.TrimSuffix(string(out), "\n") != exe {
+		t.Errorf("plist が起こすのはループの実行ファイルでない (バックグラウンド項目に sh と出る): %q %v", out, err)
 	}
 	b, _ := os.ReadFile(filepath.Join(dir, "log"))
 	if !strings.Contains(string(b), "bootstrap gui/") || !strings.Contains(string(b), plist) {
@@ -176,6 +183,9 @@ func TestNameAdvertScripts(t *testing.T) {
 	}
 	if _, err := os.Stat(plist); !os.IsNotExist(err) {
 		t.Errorf("plist が残った: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(exe)); !os.IsNotExist(err) {
+		t.Errorf("ループの実行ファイルの置き場が残った: %v", err)
 	}
 	if err := os.Remove(filepath.Join(dir, "state")); err != nil {
 		t.Fatal(err)
@@ -310,8 +320,8 @@ func TestAdvertLoopFollowsIP(t *testing.T) {
 		}
 	})
 
-	// ループの argv は InstallScript が書いた plist から読み戻す (args の並びとループの $1〜$4 の対応、plist の実体参照の往復も一緒に見る)。
-	// 本物の ifconfig / dns-sd と周期だけを偽物に差し替える
+	// ループの argv は InstallScript が書いた plist から読み戻し、plist が指す実行ファイルを走らせる (args の並びとループの引数の対応も
+	// 一緒に見る)。本物の ifconfig / dns-sd (argv の 2・3 番目) と周期だけを偽物に差し替える
 	env, home, _ := wiredSandbox(t)
 	if out, err := runScript(t, env, (NameAdvert{Name: "air5.wired.local", IP: "192.168.100.11"}).InstallScript()); err != nil {
 		t.Fatalf("入れられない: %v %s", err, out)
@@ -322,14 +332,21 @@ func TestAdvertLoopFollowsIP(t *testing.T) {
 		t.Fatal(err)
 	}
 	var argv []string
-	if err := json.Unmarshal(raw, &argv); err != nil || len(argv) != 8 || argv[0] != "/bin/sh" {
+	if err := json.Unmarshal(raw, &argv); err != nil || len(argv) != 8 || filepath.Base(argv[0]) != AdvertExe ||
+		argv[1] != "/sbin/ifconfig" || argv[2] != "/usr/bin/dns-sd" {
 		t.Fatalf("plist の ProgramArguments = %q %v", argv, err)
 	}
-	for from, to := range map[string]string{"/sbin/ifconfig ": fakeIfc + " ", "/usr/bin/dns-sd ": fakeDNS + " ", "sleep 10 ": "sleep 0.05 "} {
-		if strings.Count(argv[2], from) != 1 {
-			t.Fatalf("ループに %q が 1 つではない (差し替えが当たらない): %q", from, argv[2])
-		}
-		argv[2] = strings.Replace(argv[2], from, to, 1)
+	argv[1], argv[2] = fakeIfc, fakeDNS
+	body, err := os.ReadFile(argv[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(body), "sleep 10 ") != 1 {
+		t.Fatalf("ループに sleep 10 が 1 つではない (差し替えが当たらない): %q", body)
+	}
+	argv[0] = filepath.Join(d, "advert")
+	if err := os.WriteFile(argv[0], []byte(strings.Replace(string(body), "sleep 10 ", "sleep 0.05 ", 1)), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	setIfc("en7: flags=8863<UP>\n\tinet 192.168.100.111 netmask 0xffffff00\n") // 前方一致 (.11 と .111) を持っているとは読まない
 	cmd := exec.Command(argv[0], argv[1:]...)
