@@ -247,3 +247,17 @@ obaket のセッション (`macOS/` で起動) で `⚠ 42 instruction files add
   - P3「他の rule の『§1.5』『0-B』の参照は rule の目次を経由して 1 段多くたどる」: 実害は小さく、約 20 箇所を書き換える差分の方が大きい
 - **再開の trigger**: obaket の起動で上限超えの warning が再び出たとき。次の候補は `verify-execution-not-just-exit-code.md` (7.9k) の参照資料の節 (「確認の仕方」の表など)。
   検証のたびに発動する rule なので、手順の節は切り出さない
+
+### 追補 (2026-10-30): 再び上限を超えていたので 19.4k 字を戻し、上限を機械で検査する
+
+- **超えていた**: global 層 126.4k (`_claude/CLAUDE.md` 16.9k + rule 109.4k)。obaket の `macOS/` で起動するセッションは、repo 層 38.7k
+  (gh api で測った。my-products 14,089 + obaket 19,573 + obaket/macOS 5,011) を足して約 165.1k。dotfiles のセッションは 140.1k
+- **縮めた** (commit「docs(claude): 常時読み込みの rule を 109.4k → 90.0k 字に縮める」): ルール節の言い換えの `## やること / やらないこと` を消し
+  (ルール節に無かった 10 項はルール節へ移した。adversarial-review-own-safeguards の節は checklist へ切り出した規範の唯一の常時読み込みなので残した)、
+  `## 関連` を発動点の違う姉妹ルールと一次情報だけにし、`## なぜ` の定型文を縮め、本文の実例の括弧書き 45 件を各 rationale の「本文から移した実例」節へ移した
+- 結果 (`LC_ALL=en_US.UTF-8 wc -m`、paths: の無いもの): rule 109,408 → 約 90.1k。global 層 107.1k、dotfiles のセッション 120.8k、obaket の見込み約 145.8k
+- **検査**: `scripts/check_instruction_budget.sh` (`make test-lint` の `test-instruction-budget`、CI の Lint)。global 層を 150,000 − 39,000 (他の repo 層の取り置き) 以内に、
+  dotfiles のセッションを 150,000 以内に保つ。取り置きは CI から他の repo を読めないので定数。**再開の trigger**: 他の repo で上限超えの警告が出たら、repo 層を測り直して取り置きを上げる
+- 反証レビュー (opus 1 体、読み取りのみ): P1 なし。採用 = ブランチの削除の禁止が圧縮で消えていた / rules のサブディレクトリを数えていなかった / 境界のテスト / perf と tmux の項の欠け / 空行の残り。
+  記録 = 出典の指し先 4 件 (issue 098 等) は rationale へ移していない (規範ではない)・`paths:` の値と `@import` の展開は数えない (検査の冒頭に書いた)
+- 未確認: auto memory (MEMORY.md) が警告の集計に入るか。入るなら、obaket の memory の分だけ取り置きが足りない
