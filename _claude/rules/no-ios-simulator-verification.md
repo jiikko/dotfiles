@@ -5,4 +5,4 @@
 - **解禁条件は人間の明示指示のみ**（「シミュレータで確認して」等）。「念のため動かして確認」をしない。macOS アプリは対象外。
 - UI 検証手段の方針は [`no-osascript-for-ui-verification.md`](no-osascript-for-ui-verification.md) を参照（osascript でなく XCUITest）。ただし iOS では本ルールが優先し、XCUITest の**実行**はユーザーに委ねる（ビルド確認までは自発的に可）。
 
-<!-- frontmatter の paths: は付けない: 発動点は「make test を打つ」行動で、Swift を 1 つも Read せずに打つ経路がある (paths: は Read でしか発火しない)。issue 414 の決定 -->
+<!-- frontmatter の paths: は付けない: 発動点は「make test を打つ」行動で、Swift を 1 つも触らずに打つ経路がある (paths: は一致するファイルの Read / Write / Edit でしか発火しない)。issue 414 の決定 -->

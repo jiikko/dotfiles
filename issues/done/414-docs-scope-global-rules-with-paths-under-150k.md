@@ -261,3 +261,5 @@ obaket のセッション (`macOS/` で起動) で `⚠ 42 instruction files add
 - 反証レビュー (opus 1 体、読み取りのみ): P1 なし。採用 = ブランチの削除の禁止が圧縮で消えていた / rules のサブディレクトリを数えていなかった / 境界のテスト / perf と tmux の項の欠け / 空行の残り。
   記録 = 出典の指し先 4 件 (issue 098 等) は rationale へ移していない (規範ではない)・`paths:` の値と `@import` の展開は数えない (検査の冒頭に書いた)
 - 未確認: auto memory (MEMORY.md) が警告の集計に入るか。入るなら、obaket の memory の分だけ取り置きが足りない
+- 2026-10-30 追記: `paths:` の rule は 2.1.314 では一致するファイルの Read・Write・Edit で読み込まれる (headless の A-B で実測。`_claude/skills/claude-md-compact/paths-probe.sh`)。
+  上の「A 却下」「D 見送り」の根拠のうち「Write / Edit では発火しない」は今の版では成り立たない。commit・テストの実行のようにファイルに触れずに進む行動が発動点の規範は、引き続き無条件に置く
