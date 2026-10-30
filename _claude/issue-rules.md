@@ -79,6 +79,7 @@
   （hash でなく subject）、結果の実測値、残タスク（未着手 / スコープ外 / 未検証を分ける）。chat の報告は流れる
 - done へ移す commit では、その番号を参照している open issue にも「NNN で解消 / 継続」を 1 行足す
 - 取りこぼしは Stop hook（`issue-progress-check.sh`）が差し戻す。ただし hook が見るのは構造までで、本文の正しさは書く側の責任
+- **「既存の提案・決定が無い」と書く前に、issues/ 全体 (別の epic・pending・done) を概念の語で探す**。epic の中だけを探すと、同じ道具の前の epic にある保留を見落とす (dotfiles retro 1012)
 - **issue の記述を鵜呑みにしない**。着手前に実コードと git 履歴で検証する。特に「〜は存在しない」「呼び出しは 0 件」
   のような不在の主張は数え直し、結果を本文へ書き戻す
 - 新規作成・大幅改訂は commit 前に反証レビューへ通す（`issue-rules.d/issue-creation-codex-review.md`。同じ hook が別に注入する）
