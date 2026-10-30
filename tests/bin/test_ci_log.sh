@@ -35,7 +35,7 @@ case "$1 $2" in
                       [ -n "${GH_ID_ROWS:-}" ] && printf '%b\n' "$GH_ID_ROWS"; exit 0 ;;
       *"--limit 40"*) [ -n "${GH_FAIL_FIRST:-}" ] && { echo "HTTP 401: Bad credentials" >&2; exit 1; }
                       [ -n "${GH_FAILED_ROWS:-}" ] && printf '%b\n' "$GH_FAILED_ROWS"; exit 0 ;;
-      *"--limit 60"*) [ -n "${GH_FAIL_SECOND:-}" ] && { echo "HTTP 401: Bad credentials" >&2; exit 1; }
+      *"--limit 200"*) [ -n "${GH_FAIL_SECOND:-}" ] && { echo "HTTP 401: Bad credentials" >&2; exit 1; }
                       [ -n "${GH_RECENT_ROWS:-}" ] && printf '%b\n' "$GH_RECENT_ROWS"; exit 0 ;;
       *) echo "(run 一覧)"; exit 0 ;;
     esac ;;
@@ -111,6 +111,18 @@ for sh in bash /bin/bash; do
     ok "[$sh] -i は先頭の別の commit の run を飛ばして一致する run の ID を返す"
   else
     fail "[$sh] -i の照合: rc=$RC out=$(cat "$OUT") err=$(cat "$ERR")"
+  fi
+  GH_ID_ROWS="777\t$head_sha\tschedule\tcancelled\n555\t$head_sha\tpush\tfailure" run_case id_skip_sched -i Tests
+  if [[ $RC -eq 0 && "$(cat "$OUT")" == 555 ]]; then
+    ok "[$sh] -i は自分を取り消した schedule の run を飛ばし、同じ commit の push の run を返す"
+  else
+    fail "[$sh] -i が取り消された schedule の run を返した: rc=$RC out=$(cat "$OUT")"
+  fi
+  GH_ID_ROWS="777\t$head_sha\tschedule\tcancelled" run_case id_only_sched -i Tests
+  if [[ $RC -eq 0 && "$(cat "$OUT")" == 777 ]]; then
+    ok "[$sh] -i は取り消された schedule の run しか無ければそれを返す"
+  else
+    fail "[$sh] -i が取り消された schedule の run だけのときに返さない: rc=$RC out=$(cat "$OUT")"
   fi
   GH_ID_ROWS="555\t$head_sha" run_case id_short_sha -i Tests "$(git -C "$REPO" rev-parse --short HEAD)"
   if [[ $RC -eq 0 ]] && grep -q -- "--commit $head_sha --workflow Tests" "$LOG"; then
