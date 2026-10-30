@@ -147,16 +147,17 @@ AskUserQuestion で「これらの issue を `done/` へ移動しますか？」
 
 ユーザーが承認した場合:
 
-1. **`scripts/issue_done.sh <NNN>` がある repo では、それを使う**（dotfiles にはある）。
+1. **dotfiles の `scripts/issue_done.sh <NNN>` を使う**（他の repo でも、その repo の中から `~/dotfiles/scripts/issue_done.sh` で呼べる。
+   対象は cwd の repo の issues/。`issue/` の repo では `ISSUES_DIR="$PWD/issue"` を repo root で渡す）。その repo の `issues/README.md` が別の完了コマンドを定めていれば、そちらを使う。
    移動 / claim symlink の削除 / 本文の相対リンクの張り直し / **他 issue からこの issue への参照の
    張り直し** の 4 つを 1 コマンドで行い、リンク検査が落ちたら移動を戻す。
    実測 2026-09-09（retro 345）: 手作業だと 12 件中 **4 回**取りこぼし、1 回は CI を赤くした。
 
    ```sh
-   scripts/issue_done.sh 313 324      # 複数まとめて可。1 件ずつ検査して通ったものだけ確定する
+   ~/dotfiles/scripts/issue_done.sh 313 324   # 複数まとめて可。1 件ずつ検査して通ったものだけ確定する
    ```
 
-   **無い repo では以下を手でやる**（4 つ目まで忘れないこと）:
+   **dotfiles の無いマシンでは以下を手でやる**（4 つ目まで忘れないこと）:
 
    対象 issue に `next/` の目印（symlink）があれば先に消す（`git rm <その issue の next/>/NNN-x.md`。残すと dangling になり
    `tests/issues/test_next_links_valid.sh` が落ちる。直下へ戻したときに偽の claim として復活する）。
