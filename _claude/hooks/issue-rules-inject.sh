@@ -33,12 +33,14 @@ fi
 issue_hook_resolve_dir || exit 0
 
 rules="${ISSUE_RULES_FILE:-$here/../${1:-issue-rules.md}}"
-# rules/ の rule は先頭に paths: の frontmatter と、その理由の HTML コメントを持つ。注入には要らないので落とす
-# (Claude Code も条件ロードのときは frontmatter を本文に入れない)
-if ! body=$(awk 'NR == 1 && $0 == "---" { fm = 1; next }
-                 fm == 1 { if ($0 == "---") fm = 2; next }
-                 fm == 2 && /^<!--/ { c = 1 }
-                 c == 1 { if (/-->/) { c = 0; fm = 3 }; next }
+# rules/ の rule は先頭に paths: の frontmatter と、その理由の HTML コメントを持つ。注入には要らないので、
+# frontmatter と、その後の最初の本文の行までにある空行・コメントを落とす (行末の CR は判定でだけ無視する)
+if ! body=$(awk '{ l = $0; sub(/\r$/, "", l) }
+                 NR == 1 && l == "---" { fm = 1; next }
+                 fm == 1 { if (l == "---") fm = 2; next }
+                 c == 1 { if (l ~ /-->/) c = 0; next }
+                 fm == 2 && l == "" { next }
+                 fm == 2 && l ~ /^<!--/ { if (l !~ /-->/) c = 1; next }
                  { fm = 3; print }' "$rules" 2>/dev/null) || [ -z "$body" ]; then
   issue_hook_emit "🚨 issue 運用規約 ($rules) を読めなかった。この repo には issues/ があるので、issue を書く前にユーザーへ伝えること:" "$rules"
   exit 0

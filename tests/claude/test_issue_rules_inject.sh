@@ -75,9 +75,9 @@ for rel in $INJECTED_RULES; do
   [ "$(sed -n 1p "$f")" = "---" ] && grep -q '^paths:' <<< "$(sed -n '2,/^---$/p' "$f")" \
     || ng "$rel に paths: の frontmatter が無い (常時読み込みになり、hook の注入と二重になる)"
   got=$(printf '{"cwd":"%s/src"}' "$repo" | "$HOOK" "$rel" | jq -r '.hookSpecificOutput.additionalContext')
+  # 1 行目の前置きの後が、最初の見出しから末尾までと完全に一致する (前に漏れた行も、欠けた行も赤)
   want=$(sed -n '/^# /,$p' "$f")
-  case "$got" in *"$want"*) ;; *) ng "$rel の本文が全部は注入されていない" ;; esac
-  case "$got" in *"paths:"*|*"<!--"*) ng "$rel の frontmatter か注記が注入に混ざった" ;; esac
+  [ "$(printf '%s\n' "$got" | sed 1d)" = "$want" ] || ng "$rel の注入が本文と一致しない (frontmatter・注記が混ざったか、本文が欠けた)"
   case "$got" in "🚨 この規約は"*) ng "$rel が注入の上限を超えている (分けるか縮める)" ;; esac
 done
 
