@@ -51,11 +51,13 @@ func TestIndexFileOutlineIgnoresUnrelatedUnreadableFiles(t *testing.T) {
 		"a.go":                 "package a\n\nfunc outlineTarget() {}\n",
 		"testdata/broken/b.go": "package b\n\nfunc broken( {\n",
 	})
+	// testdata の下 (go が読まない置き場) の読めないファイルが並べた単位の名前を含まないなら、何も言わない (gate・report と同じ数え方)
 	_, _, errs = runReport(t, "index", "-file", root+"/a.go", root)
-	if errs != "dupscan index: 読めないファイル 1 個は並べた単位の名前を含まない\n" {
-		t.Errorf("並べた単位の名前を含まない読めないファイルは 1 行にする: %q", errs)
+	if errs != "" {
+		t.Errorf("並べた単位の名前を含まない testdata の読めないファイルは黙る: %q", errs)
 	}
 
+	// 名指ししたファイル自身が読めないなら、testdata の下でも全文の警告
 	_, _, errs = runReport(t, "index", "-file", root+"/testdata/broken/b.go", root)
 	if !strings.Contains(errs, "解析不完全") {
 		t.Errorf("指定したファイル自身が読めないときは全文の警告: %q", errs)

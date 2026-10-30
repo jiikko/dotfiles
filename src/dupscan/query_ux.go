@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
+	"dupscan/internal/langs"
 	"dupscan/internal/repo"
 	"dupscan/internal/tree"
 )
@@ -16,8 +18,16 @@ import (
 type queryUX struct {
 	Approximation string
 	ParseErrors   int
-	Unsupported   bool
-	Truncated     bool
+	// IgnoredParseErrors は、その言語のツールが読まない置き場 (Go の testdata) の読めないファイルの数 (ParseErrors に数えない)。
+	IgnoredParseErrors int
+	Unsupported        bool
+	Truncated          bool
+}
+
+// newQueryUX は読めないファイルを、解析不完全に数えるものと testdata の下のものに分けて持つ queryUX。
+func newQueryUX(approximation string, s scanned) queryUX {
+	attention, ignored := s.splitErrFiles()
+	return queryUX{Approximation: approximation, ParseErrors: len(attention), IgnoredParseErrors: len(ignored)}
 }
 
 func (s queryUX) suffix() string {
@@ -28,7 +38,11 @@ func (s queryUX) suffix() string {
 	if s.Unsupported {
 		unsupported = "あり"
 	}
-	return fmt.Sprintf(" / 近似: %s / 省略: %s / 構文解析失敗: %d ファイル / 未対応言語: %s", s.Approximation, omitted, s.ParseErrors, unsupported)
+	ignored := ""
+	if s.IgnoredParseErrors > 0 {
+		ignored = fmt.Sprintf(" (ほかに読めない testdata %d)", s.IgnoredParseErrors)
+	}
+	return fmt.Sprintf(" / 近似: %s / 省略: %s / 構文解析失敗: %d ファイル%s / 未対応言語: %s", s.Approximation, omitted, s.ParseErrors, ignored, unsupported)
 }
 
 type nextAction struct {
@@ -113,18 +127,47 @@ func (s scanned) sourceGlobs() []string {
 // 例外: 初期化子 (`init`) の「呼び出し ~N」は単位名でなく型名で他のファイルの呼び出しを数える (report.callCounts)。
 // 名前が `init` の部分文字列になりうるときは、名前を含まないファイルも影響しうるので全部残す。
 func (s scanned) relevantParseErrorsAny(names []string) []string {
-	// 照合は MatchName を通して行うので、警告の関連性も同じ形で判定する (囲み付きの query で警告が落ちない)。
-	// 本文の中の綴りは囲み付きのこともあるので、囲みを外した語の部分文字列で探す (`repeat` は `repeat` にも `repeat` を含む)
-	needles := make([]string, 0, len(names))
+	return s.relevantAmong(s.errFiles, names)
+}
+
+// splitErrFiles は読めないファイルを、解析不完全に数えるものと、その言語のツールが読まない置き場 (Go の testdata) のものに分ける
+// (gate・report の 1 行目と同じ分け方。langs.ToolIgnores)。壊れていて当然の fixture で、毎回の問い合わせに解析不完全の全文を出さない。
+// named は名指しされたファイル (index -file の対象)。testdata の下でも、名指しされたら解析不完全に数える。
+func (s scanned) splitErrFiles(named ...string) (attention, ignored []string) {
+	for _, f := range s.errFiles {
+		if langs.ToolIgnores(f) && !slices.Contains(named, f) {
+			ignored = append(ignored, f)
+		} else {
+			attention = append(attention, f)
+		}
+	}
+	return attention, ignored
+}
+
+// nameless は、names で読めないファイルを絞れない問い合わせか (名前が空・init の部分文字列。relevantAmong が全部を返す)。
+func nameless(names []string) bool {
 	for _, name := range names {
 		needle := strings.ToLower(tree.MatchName(name))
 		if needle == "" || strings.Contains(initUnitName, needle) {
-			return s.errFiles
+			return true
 		}
-		needles = append(needles, needle)
+	}
+	return false
+}
+
+// relevantAmong は files のうち names のどれかを本文に含むもの (relevantParseErrorsAny の本体)。
+func (s scanned) relevantAmong(files, names []string) []string {
+	// 照合は MatchName を通して行うので、警告の関連性も同じ形で判定する (囲み付きの query で警告が落ちない)。
+	// 本文の中の綴りは囲み付きのこともあるので、囲みを外した語の部分文字列で探す (`repeat` は `repeat` にも `repeat` を含む)
+	if nameless(names) {
+		return files
+	}
+	needles := make([]string, 0, len(names))
+	for _, name := range names {
+		needles = append(needles, strings.ToLower(tree.MatchName(name)))
 	}
 	var relevant []string
-	for _, file := range s.errFiles {
+	for _, file := range files {
 		body, ok := s.contents[file]
 		if !ok {
 			relevant = append(relevant, file)
@@ -151,15 +194,28 @@ func (s scanned) warnParseErrors(w io.Writer, command, name string) error {
 
 // warnParseErrorsAny は warnParseErrors の names 版 (index -file の outline: 並べた単位の名前のどれかを含むファイルだけを影響しうると数える)。
 // what は 1 行の文言の主語 (名前を指定していない outline では「並べた単位の名前」)。
-func (s scanned) warnParseErrorsAny(w io.Writer, command string, names []string, what string) error {
-	if len(s.errFiles) == 0 {
+// testdata の下の読めないファイルは解析不完全に数えず、名前を含むときだけそこが欠けうることを 1 行で言う (含まなければ何も言わない)。
+// named は名指しされたファイル (splitErrFiles)。
+func (s scanned) warnParseErrorsAny(w io.Writer, command string, names []string, what string, named ...string) error {
+	attention, ignored := s.splitErrFiles(named...)
+	if hit := s.relevantAmong(ignored, names); len(hit) > 0 {
+		// 名前で絞れない問い合わせ (名前が無い・init の部分文字列) では全部が「影響しうる」になるので、名前があるとは言わない
+		where := "に" + what + "がある"
+		if nameless(names) {
+			where = ""
+		}
+		if _, err := fmt.Fprintf(w, "dupscan %s: 読めない testdata %d 個 (go が読まない置き場)%s。そこの定義・呼び出しは欠けうる: %s\n", command, len(hit), where, headList(hit, 3)); err != nil {
+			return err
+		}
+	}
+	if len(attention) == 0 {
 		return nil
 	}
-	if len(s.relevantParseErrorsAny(names)) == 0 {
-		_, err := fmt.Fprintf(w, "dupscan %s: 読めないファイル %d 個は%sを含まない\n", command, len(s.errFiles), what)
+	if len(s.relevantAmong(attention, names)) == 0 {
+		_, err := fmt.Fprintf(w, "dupscan %s: 読めないファイル %d 個は%sを含まない\n", command, len(attention), what)
 		return err
 	}
-	return writeParseWarning(w, command, s.errFiles)
+	return writeParseWarning(w, command, attention)
 }
 
 // writeParseWarning keeps legacy stdout and no-match exit codes usable while exposing incomplete scans.

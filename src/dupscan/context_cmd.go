@@ -85,7 +85,8 @@ func runContext(args []string, stdout, stderr io.Writer) int {
 	callQuery := report.CallQuery{Name: name, Labels: q.Labels}
 	callers := report.BuildCallers(callQueryText(callQuery), callQuery, got.calls, got.units, langs.IsTestPath)
 
-	ux := queryUX{Approximation: "名前・ラベル照合", ParseErrors: len(got.errFiles), Unsupported: note != ""}
+	ux := newQueryUX("名前・ラベル照合", got)
+	ux.Unsupported = note != ""
 	totals := map[string]int{"definition": defs.Matches, "refs": refs.Matches, "callers": callers.Matches}
 	for section, total := range totals {
 		if total > 0 && (!slices.Contains(selected, section) || *limit > 0 && total > *limit) {
@@ -124,8 +125,8 @@ func runContext(args []string, stdout, stderr io.Writer) int {
 	if note != "" {
 		fmt.Fprintf(stdout, "  %s。呼び出しも Swift の分だけ\n", note)
 	}
-	if len(got.errFiles) > 0 {
-		fmt.Fprintf(stdout, "  読めない構文を含むファイルが %d 個 (そこの定義・参照・呼び出しは欠けうる): %s\n", len(got.errFiles), headList(got.errFiles, 3))
+	if attention, _ := got.splitErrFiles(); len(attention) > 0 {
+		fmt.Fprintf(stdout, "  読めない構文を含むファイルが %d 個 (そこの定義・参照・呼び出しは欠けうる): %s\n", len(attention), headList(attention, 3))
 	}
 	refsOmitted := refs.Matches > 0 && (summary || slices.Contains(selected, "refs") && *limit > 0 && refs.Matches > *limit)
 	if defs.Matches+callers.Matches > 0 || refsOmitted {

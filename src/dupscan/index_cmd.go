@@ -94,7 +94,7 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 			names = []string{""}
 		}
 	}
-	if err := got.warnParseErrorsAny(stderr, "index", names, what); err != nil {
+	if err := got.warnParseErrorsAny(stderr, "index", names, what, q.File); err != nil {
 		return fail(err)
 	}
 	return 0

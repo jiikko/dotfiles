@@ -42,4 +42,21 @@ Go の `testdata` の下に読めない構文の `.go` があり、gate / report
     `ToolIgnoredOnly` の「空なら偽」を常に真にする変異は緑のまま (呼び出し側が 2 か所とも読めないファイル 0 件で先に抜けるので届かない。等価な変異)
   - `make -C src/dupscan lint test` rc=0
 - 敵対的レビューで記録だけにしたもの: 文言の「testdata」「go が読まない置き場」は Go に決め打ち (`ToolIgnores` を 2 つ目の言語が使い始めたら文言を adapter から引く) /
-  near・sweep・callers の解析の警告は今までどおり testdata も出す (972 の F2 で `index -file` だけ関係の判定にした。探索のコマンドの警告は別に決める)
+  ~~near・sweep・callers の解析の警告は今までどおり testdata も出す~~ → 下の「探索のコマンドへの横展開」で揃えた
+
+## 探索のコマンドへの横展開 (2026-10-30、ユーザー指示「探索コマンドの警告も揃えて」)
+
+- commit「fix(dupscan): 探索のコマンドの解析の警告も、Go の testdata の読めないファイルを解析不完全に数えない (issue 997)」
+  - `callers` / `def` / `refs` / `index` の stderr (`warnParseErrorsAny`): testdata の下の読めないファイルは解析不完全の全文にも「…を含まない」の 1 行にも数えない。
+    問い合わせの名前を含むときだけ `読めない testdata N 個 (go が読まない置き場) に問い合わせの名前がある。そこの定義・呼び出しは欠けうる` の 1 行。
+    名前で絞れない問い合わせ (`index -returns` だけ・`init` の部分文字列) では「名前がある」と言わない (敵対的レビューの P2)。`index -file` で名指ししたファイル自身は testdata の下でも全文
+  - `search` / `context` / `evidence` の 1 行目の「構文解析失敗: N ファイル」は testdata を除いて数え、`(ほかに読めない testdata M)` を添える。`context` / `evidence` の「読めない構文を含むファイルが」の行も testdata を除く
+  - `sweep` の先頭行は `読めないファイル N・読めない testdata M (go が読まない置き場)`
+  - 変えていない: `near -similar` と `explain -compare` の `parse_error_files` (json の欄と同じ値)、各コマンドの json の stdout
+  - dotfiles の実物: `index -name broken src` は今まで毎回出ていた「読めないファイル 1 個は問い合わせの名前を含まない」を出さなくなった (fixture の中身は `package` の 1 語)。`sweep src/subproc` の先頭行は `読めないファイル 0・読めない testdata 1`
+  - テスト `query_testdata_errors_test.go` 2 本と、972 の `index_file_notice_test.go` の期待の更新 (名前を含まない testdata は 1 行も出さない)。
+    変異 (狙ったテストだけが赤): testdata の分け方を外す / `index -file` の名指しを外す / 名前を含むときの 1 行を出さない / 名前で絞れないときの言い方を外す
+  - `make -C src/dupscan lint test` rc=0
+- 敵対的レビューで記録だけにしたもの: 起点そのものが testdata の中 (`callers Foo pkg/testdata/x`) でも testdata の扱いになる (「欠けうる」とは言うが「0 件は不存在の証明ではない」は付かない) /
+  `search -file testdata/x.go` には名指しの経路が無い (`index -file` と揃っていない) / 読めないファイルが testdata の中と外に混ざる場合を固めるテストは無い (コードでは件数は外の分で正しい)。
+  **再提起の条件**: testdata の中を調べる問い合わせで、警告が足りずに読み違えた実例が出たとき

@@ -105,7 +105,12 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	typeCopies := sweepTypeCopies(base, deep)
 
 	w := &lineWriter{w: stdout}
-	w.printf("dupscan sweep: 単位 %d・ファイル %d・読めないファイル %d。節ごとに順位は別 (上から先に見る価値が高い順)\n", len(entries), got.files, len(got.errFiles))
+	attention, ignored := got.splitErrFiles()
+	testdata := ""
+	if len(ignored) > 0 {
+		testdata = fmt.Sprintf("・読めない testdata %d (go が読まない置き場)", len(ignored))
+	}
+	w.printf("dupscan sweep: 単位 %d・ファイル %d・読めないファイル %d%s。節ごとに順位は別 (上から先に見る価値が高い順)\n", len(entries), got.files, len(attention), testdata)
 	w.printf("意図して分けている組・誤検知は、組の全員の単位の直前に `// dupscan:allow <false-positive|intentional> <理由>` を書くと静かになる (1 人だけに書いて組ごと静かにするなら、メンバーの 1 つに `// dupscan:allow-group <人数> <種別> <理由>`)\n")
 	// 節ごとに、印が無ければ出た組の数との差で数える。節 2 は、印が無くても節 1 の組に覆われない組だけで比べる:
 	// 節 1 から消した組は節 2 の走査にも同じ組として入る (deep 全体の差だと 2 回数える)。また、節 1 で除外した組の部分集合が

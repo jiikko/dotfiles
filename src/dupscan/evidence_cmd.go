@@ -59,7 +59,8 @@ func runEvidence(args []string, stdout, stderr io.Writer) int {
 		defined[tree.MatchName(d.Name)] = true
 	}
 	s := report.BuildEvidence(term, got.contents, evidenceOwners(got), got.calls, defined, langs.IsTestPath)
-	ux := queryUX{Approximation: "語の一致 (型解決なし)", ParseErrors: len(got.errFiles), Truncated: s.Truncated}
+	ux := newQueryUX("語の一致 (型解決なし)", got)
+	ux.Truncated = s.Truncated
 	if *limit > 0 && (len(s.Doc) > *limit || len(s.Test) > *limit || len(s.Source) > *limit || len(s.Called) > *limit) {
 		ux.Truncated = true
 	}
@@ -67,8 +68,8 @@ func runEvidence(args []string, stdout, stderr io.Writer) int {
 		term, len(s.Doc), len(s.Test), len(s.Source), len(s.Called), ux.suffix())
 	fmt.Fprintln(stdout, "  語の一致 (大文字小文字を区別しない) で、定義・呼び出しの照合ではない。doc は doc comment の全文 (Go は関数の doc だけ)。"+
 		"テスト・ソースの行はコメント・文字列も含む。一致があれば最初のnext_actionは一致行の原文確認。意味上の再利用可否は未証明。")
-	if len(got.errFiles) > 0 {
-		fmt.Fprintf(stdout, "  読めない構文を含むファイルが %d 個 (そこの単位は欠けうる。行は探している): %s\n", len(got.errFiles), headList(got.errFiles, 3))
+	if attention, _ := got.splitErrFiles(); len(attention) > 0 {
+		fmt.Fprintf(stdout, "  読めない構文を含むファイルが %d 個 (そこの単位は欠けうる。行は探している): %s\n", len(attention), headList(attention, 3))
 	}
 	for _, entries := range [][]report.EvidenceEntry{s.Doc, s.Test, s.Source} {
 		if len(entries) == 0 {

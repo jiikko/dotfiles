@@ -84,7 +84,8 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	}
 	summary := report.BuildSearch(got.units, report.SearchQuery{Terms: terms, Filters: filters, MinMatched: *minimum, Scope: *scope})
 	header := func(returned int, snippetTruncated bool) string {
-		ux := queryUX{Approximation: "名前/署名/doc先頭行の字句一致", ParseErrors: len(got.errFiles), Truncated: returned < summary.Matches || snippetTruncated}
+		ux := newQueryUX("名前/署名/doc先頭行の字句一致", got)
+		ux.Truncated = returned < summary.Matches || snippetTruncated
 		return fmt.Sprintf("dupscan search: %q — 候補 %d 件 / 表示 %d 件 / 単位 %d%s\n  lang=%s scope=%s returns=%q param-type=%q file=%q min-matched-terms=%d\n", *query, summary.Matches, returned, summary.Units, ux.suffix(), *language, *scope, *returns, *param, filters.File, *minimum)
 	}
 	footer := "字句による候補。scoreは順位用で確率ではない。型/所属/再利用可否は未証明。Goテスト関数は索引対象外。0件は不存在の証明ではない。\n"

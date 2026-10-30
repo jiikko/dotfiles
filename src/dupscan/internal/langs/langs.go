@@ -55,11 +55,16 @@ func IsTestPath(file string) bool {
 	return ok && a.IsTestPath(file)
 }
 
-// ToolIgnoredOnly は files が 1 つ以上あり、全部がその言語のツールの読まない置き場 (lang.Adapter.ToolIgnores) にあるか。
+// ToolIgnores は file がその言語のツールの読まない置き場 (lang.Adapter.ToolIgnores。Go の testdata の下) にあるか。
+func ToolIgnores(file string) bool {
+	a, ok := For(file)
+	return ok && a.ToolIgnores != nil && a.ToolIgnores(file)
+}
+
+// ToolIgnoredOnly は files が 1 つ以上あり、全部がその言語のツールの読まない置き場にあるか。
 func ToolIgnoredOnly(files []string) bool {
 	for _, f := range files {
-		a, ok := For(f)
-		if !ok || a.ToolIgnores == nil || !a.ToolIgnores(f) {
+		if !ToolIgnores(f) {
 			return false
 		}
 	}
