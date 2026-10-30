@@ -120,16 +120,6 @@ func (s scanned) sourceGlobs() []string {
 	return globs
 }
 
-// relevantParseErrorsAny は読めなかったファイルのうち、names (問い合わせの名前。index -file の outline は並べた単位の名前) の
-// どれかを本文に含むもの。名前の照合は単位名・呼び出し名の小文字化した部分一致で、その名前は本文の部分文字列なので、
-// 名前を含まないファイルは結果に影響しえない。名前が空のとき (他の条件だけの問い合わせ) と、
-// 本文を持っていないファイルは、影響しうるものとして残す。
-// 例外: 初期化子 (`init`) の「呼び出し ~N」は単位名でなく型名で他のファイルの呼び出しを数える (report.callCounts)。
-// 名前が `init` の部分文字列になりうるときは、名前を含まないファイルも影響しうるので全部残す。
-func (s scanned) relevantParseErrorsAny(names []string) []string {
-	return s.relevantAmong(s.errFiles, names)
-}
-
 // splitErrFiles は読めないファイルを、解析不完全に数えるものと、その言語のツールが読まない置き場 (Go の testdata) のものに分ける
 // (gate・report の 1 行目と同じ分け方。langs.ToolIgnores)。壊れていて当然の fixture で、毎回の問い合わせに解析不完全の全文を出さない。
 // named は名指しされたファイル (index -file の対象)。testdata の下でも、名指しされたら解析不完全に数える。
@@ -155,7 +145,12 @@ func nameless(names []string) bool {
 	return false
 }
 
-// relevantAmong は files のうち names のどれかを本文に含むもの (relevantParseErrorsAny の本体)。
+// relevantAmong は files (読めなかったファイル) のうち、names (問い合わせの名前。index -file の outline は並べた単位の名前) の
+// どれかを本文に含むもの。名前の照合は単位名・呼び出し名の小文字化した部分一致で、その名前は本文の部分文字列なので、
+// 名前を含まないファイルは結果に影響しえない。名前が空のとき (他の条件だけの問い合わせ) と、
+// 本文を持っていないファイルは、影響しうるものとして残す。
+// 例外: 初期化子 (`init`) の「呼び出し ~N」は単位名でなく型名で他のファイルの呼び出しを数える (report.callCounts)。
+// 名前が `init` の部分文字列になりうるときは、名前を含まないファイルも影響しうるので全部残す。
 func (s scanned) relevantAmong(files, names []string) []string {
 	// 照合は MatchName を通して行うので、警告の関連性も同じ形で判定する (囲み付きの query で警告が落ちない)。
 	// 本文の中の綴りは囲み付きのこともあるので、囲みを外した語の部分文字列で探す (`repeat` は `repeat` にも `repeat` を含む)
