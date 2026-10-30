@@ -40,3 +40,15 @@ func execViaForeground(m dsl.Matcher) {
 	m.Match(`tea.ExecProcess($*_)`).
 		Report(`端末を渡す実行は x := foreground.NewExec(cmd) を tea.Exec(x, fn) に渡し、fn で x.Err を読む (戻った後に端末の前面を取り戻す。issue 707・757)`)
 }
+
+// rawViaSetRaw: node の raw を書くのは setRaw (filer/tree.go) だけ。名前順の比較は raw を小文字にした lower を使うので、raw だけを
+// 書き換えると lower が古いまま残り、並べ替えで食い違う (root を上げた後の旧 root が、並べ方を変えると兄弟の先頭へ飛んだ)。
+// 型では絞らない: ruleguard は同じパッケージの型 (`*node`・`*treefiler/filer.node`) を Type.Is で引けず、規則の読み込みごと失敗する
+// (どの規則も効かなくなる)。raw という欄への代入は全部止める (filer で raw を持つ他の型は composite literal でしか書かない)。
+// 左辺の個数は 1 と 2 だけ見る (`$*_` を左辺に書くと読み込みが失敗する)。
+// 検出しない形: 3 つ以上を並べた代入・composite literal (&node{raw: ...}。本体は newNodeAttr の setRaw だけ。テストは lower も
+// 一緒に書く)・reflect や unsafe での書き込み (うっかりの範囲で起きない)
+func rawViaSetRaw(m dsl.Matcher) {
+	m.Match(`$x.raw = $_`, `$x.raw, $_ = $_, $_`, `$_, $x.raw = $_, $_`).
+		Report(`node の raw は setRaw で書く (名前順の比較に使う lower を一緒に書き換える)`)
+}

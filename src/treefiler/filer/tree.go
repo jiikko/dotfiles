@@ -153,7 +153,9 @@ func newNodeAttr(raw string, a entryAttr, parent *node) *node {
 }
 
 // setRaw はディスク上の名前を書き換える (名前順の比較に使う小文字の名前も一緒に。raw だけを書くと並べ替えで食い違う)。
-func (n *node) setRaw(raw string) { n.raw, n.lower = raw, strings.ToLower(raw) }
+func (n *node) setRaw(raw string) {
+	n.raw, n.lower = raw, strings.ToLower(raw) //nolint:gocritic // raw を書く唯一の場所 (gorules の rawViaSetRaw)
+}
 
 // newRoot は path を root にした木を作る。root は最初から開いておく。
 func newRoot(path string) (*node, error) {
