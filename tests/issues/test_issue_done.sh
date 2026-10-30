@@ -158,7 +158,10 @@ grep -qF '担当者バナーを削除' "$work/ok.log" || fail "③ バナーを�
 # 2. 実体が無い / 複数ある / done 済み は着手しない
 # ---------------------------------------------------------------------------
 d2="$work/missing"; mkdir -p "$d2"; make_fixture "$d2"
-if ISSUES_DIR="$d2/issues" "$SCRIPT" 999 >/dev/null 2>&1; then fail "実体の無い番号を受け付けた"; fi
+if ISSUES_DIR="$d2/issues" "$SCRIPT" 999 > "$work/missing.log" 2>&1; then fail "実体の無い番号を受け付けた"; fi
+# 探した場所を出す (他の repo から呼んだとき、どの issues/ を見たかが分からないと取り違えに気づけない)。道具は物理パスで出す
+grep -qF "探した場所: $(cd "$d2/issues" && pwd -P)" "$work/missing.log" ||
+  { cat "$work/missing.log" >&2; fail "見つからないときに探した場所を出していない"; }
 if ISSUES_DIR="$d2/issues" "$SCRIPT" 12 >/dev/null 2>&1; then fail "3 桁でない番号を受け付けた"; fi
 
 # 2.5 追跡外の claim symlink でも通る (glogx の `n` が作る通常の状態)

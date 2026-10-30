@@ -449,7 +449,7 @@ for num in "$@"; do
     done | sort || true)"
   count="$(printf '%s' "$matches" | grep -c . || true)"
   if [ "$count" -eq 0 ]; then
-    printf '✗ issue %s の実体が見つからない (既に done/ に在る?)\n' "$num" >&2; exit 1
+    printf '✗ issue %s の実体が見つからない (探した場所: %s。既に done/ に在る?)\n' "$num" "$ISSUES_DIR" >&2; exit 1
   fi
   if [ "$count" -ne 1 ]; then
     printf '✗ issue %s の実体が %d 件ある (番号の衝突):\n%s\n' "$num" "$count" "$matches" >&2; exit 1
