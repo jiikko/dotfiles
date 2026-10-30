@@ -263,3 +263,6 @@ obaket のセッション (`macOS/` で起動) で `⚠ 42 instruction files add
 - 未確認: auto memory (MEMORY.md) が警告の集計に入るか。入るなら、obaket の memory の分だけ取り置きが足りない
 - 2026-10-30 追記: `paths:` の rule は 2.1.314 では一致するファイルの Read・Write・Edit で読み込まれる (headless の A-B で実測。`_claude/skills/claude-md-compact/paths-probe.sh`)。
   上の「A 却下」「D 見送り」の根拠のうち「Write / Edit では発火しない」は今の版では成り立たない。commit・テストの実行のようにファイルに触れずに進む行動が発動点の規範は、引き続き無条件に置く
+- 2026-10-30 追記 (2): `move-report-conclusions-to-issues.md` を `issue-rules.d/` から `_claude/rules/` へ移し、`paths: tmp/** **/tmp/**` を付けた (D 案)。issues/ のある repo では hook が起動時にも注入し続ける。
+  user-level の rule の照合を headless で実測 (2.1.314・issues/ の無い使い捨ての repo): 何もしない NONE / `tmp/report.md` の Write で読み込まれた / `notes/` は NONE / `sub/tmp/` は読み込まれた / project の外の `…/tmp/` を絶対パスで Write は NONE。
+  よって worktree で作業するセッションが本体 checkout の tmp に書いても読み込まれない (issues/ のある repo は hook で補われる)
