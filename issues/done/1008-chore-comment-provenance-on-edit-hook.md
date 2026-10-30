@@ -1,7 +1,5 @@
 # 1008 (chore): コメントの経緯の語を、編集した直後にそのファイルだけ検査して知らせる hook
 
-> 🚨 **担当中: dotfiles-2e**（2026-10-30〜）
-
 起票日: 2026-10-30
 
 ## 概要
@@ -49,4 +47,4 @@ root の `make test` (test-lint) と CI で落とすが、見つかるのは com
   - 2 周目 (直した差分): 再現できたのは P3 1 件 (hook の冒頭の「大文字小文字の違う path は黙る」が実際と合わない) だけで、その項を消した。
     dir の symlink・ignore の打ち消し (`!x`)・追跡済みで ignore に当たるファイル・worktree の .gitignore は壊せなかった。
     未確認: Claude Code の Write が symlink を辿って書くか、普通のファイルに置き換えるか (どちらでも判定は合うと推測)
-- [ ] `~/dotfiles` に pull した後、本物の session で知らせが出ることを確かめる
+- [x] `~/dotfiles` に pull した後、headless の新しい session (haiku) に worktree の中へ `# issue 123 で直した` を含むファイルを Write させ、transcript の `hook_additional_context` (PostToolUse:Write) に数えた行と案内が載ったことを確かめた (2026-10-30)
