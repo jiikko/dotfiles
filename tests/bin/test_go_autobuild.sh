@@ -66,6 +66,16 @@ if [ "$1" = "list" ]; then
   [ -n "${FAKE_GO_LIST_FAIL:-}" ] && exit 1
   # popup を閉じたときの HUP を模す。継承した SIG_IGN があれば無視され、無ければ 129 で死ぬ
   [ -n "${FAKE_GO_LIST_SELF_HUP:-}" ] && kill -HUP $$
+  # go list の最中を窓として開ける (go build の FAKE_GO_GATE と同じ作り。上限つき)
+  if [ -n "${FAKE_GO_LIST_GATE:-}" ]; then
+    echo $$ > "$FAKE_GO_LIST_GATE.entered"
+    _i=0
+    while [ ! -e "$FAKE_GO_LIST_GATE.release" ]; do
+      _i=$((_i + 1))
+      if [ "$_i" -gt 1200 ]; then echo "fake go: list の gate が 60s 開かない: $FAKE_GO_LIST_GATE" >&2; exit 70; fi
+      sleep 0.05  # sleep-ok: tick: 偽 go の gate 待ちの刻み (上限つき)
+    done
+  fi
   [ -n "${FAKE_GO_EMBEDS:-}" ] && [ -f "$FAKE_GO_EMBEDS" ] && cat "$FAKE_GO_EMBEDS"
   exit 0
 fi
@@ -638,6 +648,24 @@ binary_is "$ROOT" now \
   || fail "走行中の builder が新しいバイナリを古い成果物で踏んだ (got: $(binary_mark "$ROOT"))"
 ok "走行中の builder は、あとから入った新しいバイナリを踏まない"
 
+# 同じことを go list の最中で: 開始時点の記録 (seen) は go list の前に取る。後に取ると、go list の間に完走した同期ビルドの
+# 記録を「開始時点」と読み、自分より後に始まったビルドの成果物を古い成果物で踏む
+ROOT="$(new_project revertlist)"
+FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+gate_new revertlist; GATE="$REPLY"
+AUTOBUILD_ARGS=--async FAKE_GO_LIST_GATE="$GATE" FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
+wait_for "builder が go list に入らない" gate_entered "$GATE"
+builder_pid="$(cat "$ROOT/src/tool/.autobuild.lock/pid")"
+GO_AUTOBUILD_SYNC=1 FAKE_GO_MARK=now run_tool "$ROOT" >/dev/null
+binary_is "$ROOT" now || fail "前提が崩れた: 同期ビルドが入っていない (got: $(binary_mark "$ROOT"))"
+gate_release "$GATE"
+wait_for "走行中の builder が終わらない" builder_gone "$builder_pid"
+binary_is "$ROOT" now \
+  || fail "go list の最中の builder が、その間に入った新しいバイナリを古い成果物で踏んだ (got: $(binary_mark "$ROOT"))"
+ok "go list の最中の builder も、その間に入った新しいバイナリを踏まない"
+
 printf '\n## lock を解放してよいのは持ち主だけ\n'
 # 🚨 EXIT trap が所有権を見ずに rm -rf すると、timeout 超過で lock を奪われた builder が
 # 「奪った側の lock」まで消す。以後その src は無施錠になり多重ビルドが漏れる。
@@ -1163,6 +1191,19 @@ fp_now() { zsh -c 'source "$1"; _go_autobuild_fingerprint "$2"; print -r -- "$RE
 ok "embed: 壊れた symlink を拾わない (指紋が取れる)"
 rm -f "$T/assets/.#lock.md"
 
+# pattern の展開が Go の path.Match と同じ集合を返す (期待値は go1.26.0 の go list -f '{{.EmbedFiles}}' で取った。! で始まる名前は go が package のファイルとして拒むので置かない)
+PM="$TMP_DIR/patmatch"; mkdir -p "$PM"
+for f in a.txt ab.txt b.txt 'x y.txt' ab; do : > "$PM/$f"; done
+embed_expand() {  # $1=pattern → 当たったファイル名を空白で並べる
+  printf '%s\t%s\n' "$PM" "$1" > "$PM/.autobuild.embeds"
+  zsh -c 'source "$1"; _go_autobuild_embed_files "$2"; print -rn -- ${(o)reply:t}' zsh "$LIB" "$PM"
+}
+for c in '[^a]*.txt|b.txt x y.txt' '[!a]*.txt|a.txt ab.txt' 'a\b|ab'; do
+  got="$(embed_expand "${c%%|*}")"
+  [[ "$got" == "${c#*|}" ]] || fail "embed: pattern ${c%%|*} の展開が Go と違う (got: $got)"
+done
+ok "embed: 否定のクラス ([^...] は否定 / [!...] の ! は字) と \ のエスケープを Go と同じに展開する"
+
 # 入れ替えの経路 (pro-con の ctrl+r・dispatcher) も同じ判定を通る
 freeze "$ROOT"
 bump "$T/assets/b.md"
@@ -1238,7 +1279,7 @@ printf '\n## 作業ファイル / lock を残さない\n'
 # 解放 (spawn subshell の EXIT trap) が済んでいないことがある。即時判定にすると spawn を使う
 # テストの直後で偽陽性になる: 手元では 0ms で解放されるが CI の遅い runner で落ちた (2026-08-01)。
 # 「残さない」の意味は「builder が終われば消える」であって「バイナリと同時に消える」ではない。
-leftovers() { find "$TMP_DIR" \( -name '.autobuild.new.*' -o -name 'nohup.out' -o -name '.autobuild.lock' \) | head -5; }
+leftovers() { find "$TMP_DIR" \( -name '.autobuild.new.*' -o -name '.autobuild.list.*' -o -name 'nohup.out' -o -name '.autobuild.lock' \) | head -5; }
 leftovers_gone() { leftover="$(leftovers)"; [[ -z "$leftover" ]]; }
 tt_wait_until leftovers_gone || :
 [[ -z "$leftover" ]] || fail "10 秒経っても作業ファイル / lock が残っている: $leftover"

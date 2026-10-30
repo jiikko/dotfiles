@@ -158,12 +158,16 @@ _go_autobuild_embed_files() {  # $1=src_dir
     for pat in "${(@)parts[2,-1]}"; do
       pat="${pat#all:}"
       if [[ "$pat" != *[*?[]* ]]; then
-        # Go のメタ文字 (* ? [) が無ければただのパス。zsh のグロブに通さない (quote した文字が glob にならず、\ が残ったまま返る)
-        hit=(); [[ -e "$dir/$pat" ]] && hit=("$dir/$pat")
+        # Go のメタ文字 (* ? [) が無ければただのパス。zsh のグロブに通さない (quote した文字が glob にならず、\ が残ったまま返る)。
+        # Go の \ はエスケープなので外す (a\b → ab)
+        g="${pat//\\/}"
+        hit=(); [[ -e "$dir/$g" ]] && hit=("$dir/$g")
       else
         # Go の path.Match のメタ文字 (* ? [ ]) だけを生かし、zsh だけが特別に読む文字 (`(` `|` `<` …) は字そのものにする
         g="${(b)pat}"
         g="${${${${g//\\\*/*}//\\\?/?}//\\\[/[}//\\\]/]}"
+        # 否定のクラスを Go に合わせる: Go は [^...] を否定に読み、[!...] の ! は字そのもの (zsh は逆に [! を否定に読む)
+        g="${${g//\[\\^/[^}//\[!/[\\!}"
         # ディレクトリも quote して 1 語の pattern にする ("$dir"/${~g} の形は \( を含む pattern で何も当たらない。zsh 5.9 で実測)
         g="${(b)dir}/$g"
         hit=(${~g})
@@ -188,14 +192,15 @@ _go_autobuild_embed_files() {  # $1=src_dir
 # ビルドを通すと「記録が無い」で指紋が落ち着き、embed したファイルだけの変更を以後見逃す)。
 # 🚨 go list をコマンド置換 $(...) に入れない。zsh はそこで trap '' HUP を落とすので、popup を閉じたときの HUP で go list だけが
 # 死ぬ (.claude/rules/zsh-trap-not-inherited.md)。trap を張ったシェルの foreground で一時ファイルへ出す。
-# 一時ファイルは .autobuild.new.<pid>.list (途中で死んだ残りは _go_autobuild_spawn の掃除が拾う)。
+# 一時ファイルは .autobuild.list.<pid> (途中で死んだ残りは _go_autobuild_spawn の掃除が拾う)。.autobuild.new.* にしない: テストは
+# その出現を「go build が始まった = 指紋を取り終えた」の目印にしている。
 _go_autobuild_record_embeds() {  # $1=src_dir $2=mod_dir $3=pkg / 0 = 記録した, 1 = go list が落ちた
   local rec="${1:A}/.autobuild.embeds" line dir d rc=0
   local -a roots keep
   roots=("$2")
   _go_autobuild_replace_dirs "$2"; roots+=("${reply[@]}")
   _go_autobuild_self_pid
-  local out="${1:A}/.autobuild.new.$REPLY.list"
+  local out="${1:A}/.autobuild.list.$REPLY"
   command go list -C "$2" -deps \
     -f '{{if .EmbedPatterns}}{{.Dir}}{{range .EmbedPatterns}}{{"\t"}}{{.}}{{end}}{{end}}' "$3" >| "$out" || rc=$?
   if (( rc )); then
@@ -443,6 +448,9 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # このビルドが「何を入力にしたか」を go build の前に確定させる (下の _go_autobuild_fingerprint)。成功時にこれを記録するので、
   # ビルド実行中に着地した編集は次回の指紋比較で必ず差として出る (_go_autobuild_fingerprint の doc)。
   local built_fp started_at=${EPOCHREALTIME-0} seen_at seen_fp
+  # install の可否を決めるための基準 (下の guard の doc)。開始時点の記録を控える (started_at と同じ時点。go list の後に取ると、
+  # その間に完走した別のビルドの記録を「開始時点」と読んで上書きする)。
+  _go_autobuild_read_built "$src_dir"; seen_at=$reply[1]; seen_fp=$reply[2]
   local local_go required_go mod_dir pkg
   _go_autobuild_resolve_mod "$src_dir"; mod_dir="$reply[1]"; pkg="$reply[2]"
   required_go=$(awk '$1 == "go" {print $2; exit}' "$mod_dir/go.mod" 2>/dev/null)
@@ -486,8 +494,6 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
     return 1
   fi
   _go_autobuild_fingerprint "$src_dir"; built_fp=$REPLY
-  # install の可否を決めるための基準 (下の guard の doc)。go build の前の時点の記録を控える。
-  _go_autobuild_read_built "$src_dir"; seen_at=$reply[1]; seen_fp=$reply[2]
   local rc=0
   # 🚨 この go build を「サブシェルの中」や「バックグラウンドジョブ」にしない。zsh は fork した
   # サブシェル `( ... )` と `&` のジョブで trap をリセットするので、_go_autobuild_spawn が張った
@@ -642,8 +648,8 @@ _go_autobuild_spawn() {  # $1=src_dir $2=name
     # その builder は mv 先を失って "install failed" で落ちる。持ち主の pid が生きていない
     # ものだけを消す (自己レビューで検出 2026-08-01)。
     local stale owner
-    for stale in "$src_dir"/.autobuild.new.*(N); do
-      owner=${${stale:t}#.autobuild.new.}
+    for stale in "$src_dir"/.autobuild.new.*(N) "$src_dir"/.autobuild.list.*(N); do
+      owner=${${${stale:t}#.autobuild.new.}#.autobuild.list.}
       owner=${owner%%.*}
       [[ "$owner" == <-> ]] && kill -0 "$owner" 2>/dev/null && continue
       command rm -f "$stale" 2>/dev/null
@@ -747,7 +753,7 @@ go_autobuild_exec() {
   else
     # 🚨 指紋はこの分岐でしか読まれない。外側で取ると --async (既定の経路) と初回ビルドでも
     # 毎起動 3.83ms 払い、そのまま捨てることになる (go_autobuild_spawn_if_stale と
-    # _go_autobuild_build はどちらも自分で取り直す。前者は判定の正本、後者は開始時点の鮮度)。
+    # _go_autobuild_build はどちらも自分で取り直す。前者は判定の正本、後者は go build の直前の鮮度)。
     # ここに閉じ込めるのは節約だけが理由ではない: 外側に置くと「取れなかった空の指紋」が
     # 全分岐に見える変数として残り、_go_autobuild_stale の縮退経路 (mtime の順序比較) を
     # 意図せず呼ぶ改修の余地を作る。
