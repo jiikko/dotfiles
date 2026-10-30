@@ -72,6 +72,7 @@ type app struct {
 	toggleKey, prefix string
 	armed             bool
 	perf              *perflog.Log     // nil = 測らない
+	debug             *debugLog        // nil = 状態を書かない (TREEFILER_DEBUG)
 	clock             func() time.Time // nil = time.Now (テストが tick の張り方を実時間に依らず見るために差し替える)
 }
 
@@ -114,14 +115,20 @@ func (a *app) takeToggle(key string) (consumed, quit bool) {
 func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	start := a.perf.Now()
 	m, cmd := a.update(msg)
+	if a.perf == nil && a.debug == nil {
+		return m, cmd
+	}
+	kind, key := "other", "-"
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		kind, key = "key", msg.String()
+	case tickMsg:
+		kind = "tick"
+	}
+	if a.debug != nil {
+		a.debug.write(kind, key, a.f.DebugState())
+	}
 	if a.perf != nil {
-		kind, key := "other", "-"
-		switch msg := msg.(type) {
-		case tea.KeyPressMsg:
-			kind, key = "key", msg.String()
-		case tickMsg:
-			kind = "tick"
-		}
 		anim := 0
 		if a.f.Animating() {
 			anim = 1
@@ -258,6 +265,8 @@ func main() {
 	}
 	perfPath := os.Getenv(perfLogEnv)
 	os.Unsetenv(perfLogEnv) //nolint:errcheck // `!` / `s` で起こす子 (その中の treefiler) に同じログへ追記させない
+	debugPath := os.Getenv(debugEnv)
+	os.Unsetenv(debugEnv) //nolint:errcheck // 同じ理由
 	unsynced := !termcaps.SyncedOutput(os.Getenv, runCmd)
 	f, err := filer.New(dir, filer.Options{Unsynced: unsynced})
 	if err != nil {
@@ -276,8 +285,17 @@ func main() {
 		}
 		opts = append(opts, tea.WithOutput(perflog.Output{File: os.Stdout, Log: a.perf}))
 	}
+	if debugPath != "" {
+		if a.debug, err = openDebugLog(debugPath, time.Now); err != nil {
+			fmt.Fprintln(os.Stderr, "treefiler:", err)
+			os.Exit(1)
+		}
+	}
 	_, err = tea.NewProgram(a, opts...).Run()
 	if cerr := a.perf.Close(); err == nil && cerr != nil {
+		err = cerr
+	}
+	if cerr := a.debug.Close(); err == nil && cerr != nil {
 		err = cerr
 	}
 	if err != nil {

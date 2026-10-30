@@ -17,6 +17,7 @@
 - `filer/virt.go` — 巨大なフォルダの仮想化 (画面の近くの子だけを配置しアニメを持たせる。issue 712)。何が全部を動かす場合と違うかは冒頭の doc
 - `filer/anim.go` — 時間で進む補間 (ease-out quint・キーで終点へ飛ばす)
 - `filer/pane.go` — 右 3 割のプレビューの欄 (`p` で開閉。裏の goroutine で先頭を読み、Advance で取り込む。spec §0.1)
+- `filer/debug.go` / `debuglog.go` — 動作の確かめ用の内部の状態 (`DebugState`) と、それを `TREEFILER_DEBUG` へ 1 行ずつ書くログ (下の「動作を確かめる」)
 - `filer/pulse.go` — カーソルが変わるたび経路の線を root へ走る光 (キーで打ち切らない。spec §0.1)
 - `filer/tile.go` / `filer/preview.go` — プレビューのタイル (置き場所・リンク) とテキストの遅延読み込み
 - `filer/palette.go` — 配色と熱の色
@@ -88,6 +89,18 @@ tfprobe は Model をヘッドレスで回すので、bubbletea の描画の周�
 - PDCA は tfprobe と同じ: 直す前のバイナリを `BIN=` で残し、直した後と交互に同じ条件で回す (load average で時間が揺れる)。
   遅い打鍵は `keys.tsv` で名指しし、`perf.log` のその打鍵の前後を時刻順に読む (何が待たせたかは行の並びで見える)
 - 押しっぱなしは `ARGS=-interval 40ms`、大きいフォルダ・裏の走査が長い場面は `ROOT=~` (裏の処理の間の遅い tick が効く場面)
+
+## 動作を確かめる (make debug。Claude が実物を動かして判定する)
+
+`make -C src/treefiler debug ROOT=<dir> KEYS='l j*3 p'` は perf と同じく実物の bin/treefiler を run ごとの tmux で起こし (本番の tmux には繋がない)、
+キーを 1 つずつ送って、打鍵の後ごとの画面 (`screens/NNN-<キー>.txt`。起動直後が `000-start`) と内部の状態のログ (`state.jsonl`) を
+本体の checkout の `tmp/tfdebug-<日時>/` に残す。状態のログは `TREEFILER_DEBUG` (main.go の debuglog.go) が Update ごとに
+`filer.DebugState` (filer/debug.go) を JSON で 1 行書いたもので、時計が進んだだけで変わらない行は書かない。
+
+- 判定は画面の文字より状態の値で行う (カーソル・開いている層・タイルの枚数・木と欄の幅・押しっぱなし・光の本数・欄の世代と待ち・今の本文か)。
+  色・動きの心地よさは見えない。押しっぱなしは tmux から 1 打ずつ送るので、本物のキーリピートではない (`ARGS=-interval 30ms` で近づける)
+- 判定に要る値が足りなければ `DebugState` に足す (読み手は Claude と tfperf だけ。名前は JSON の名前を変えない)
+- 設定は `treefiler.toml` を結果のフォルダへ写して使うので、`p` などで保存しても本物の設定は変わらない。終わりに q を session が閉じるまで送り直す
 
 ## ビルド・テスト
 

@@ -2,10 +2,12 @@
 // treefiler は TREEFILER_PERFLOG のログ (perflog) を書き、tfperf は送った時刻と組にして打鍵ごとに集計する。
 // tfprobe (Model をヘッドレスで回す) と違い、bubbletea の描画の周期と tmux の画面への書き込みまでを含む (外の端末の描画は含まない)。
 //
-//	tfperf run -bin <treefiler> -root <dir> -out <dir> [-keys 'j*30 k*30'] [-interval 200ms]
+//	tfperf run -bin <treefiler> -root <dir> -out <dir> [-keys 'j*30 k*30'] [-interval 200ms] [-snap]
 //	tfperf report <out>
 //
 // run は report まで行う。out には perf.log (treefiler のログ)・sends.tsv (送った時刻)・keys.tsv (打鍵ごと)・summary.txt を置く。
+// -snap は動作の確かめ用 (Claude が実物を動かして判定する): 打鍵の後ごとの画面 (screens/NNN-<キー>.txt。起動直後が 000-start) と、
+// treefiler の内部の状態のログ (state.jsonl。TREEFILER_DEBUG。1 行 1 状態で、時計が進んだだけで変わらない行は書かない) も残す。
 package main
 
 import (
@@ -56,6 +58,7 @@ type runOpts struct {
 	bin, root, out, keys string
 	interval, warmup     time.Duration
 	width, height        int
+	snap                 bool
 }
 
 func run(args []string) error {
@@ -69,6 +72,7 @@ func run(args []string) error {
 	fs.DurationVar(&o.warmup, "warmup", 1500*time.Millisecond, "起動して最初の描画が出てから最初の打鍵までの間 (開いたときの動きと裏の走査を待つ)")
 	fs.IntVar(&o.width, "width", 200, "画面の幅")
 	fs.IntVar(&o.height, "height", 50, "画面の高さ")
+	fs.BoolVar(&o.snap, "snap", false, "打鍵の後ごとの画面 (screens/) と内部の状態のログ (state.jsonl) も残す (動作の確かめ用)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -117,19 +121,29 @@ func run(args []string) error {
 		t.stop()
 		os.Exit(130)
 	}()
-	if err := t.start(o, bin, root, cfg, logPath); err != nil {
+	debugPath := ""
+	if o.snap {
+		debugPath = filepath.Join(o.out, "state.jsonl")
+		if err := os.MkdirAll(filepath.Join(o.out, "screens"), 0o755); err != nil {
+			return err
+		}
+	}
+	if err := t.start(o, bin, root, cfg, logPath, debugPath); err != nil {
 		return err
 	}
 	if err := waitFor(15*time.Second, func() bool { return logHas(logPath, "\tview\t") }); err != nil {
 		return fmt.Errorf("treefiler の最初の描画がログに出ない: %w (画面: %s)", err, t.capture())
 	}
 	time.Sleep(o.warmup) // sleep-ok: 入力の間隔 (起動直後の動きと走査が落ち着いてから打ち始める)
+	if err := t.snap(o, 0, "start"); err != nil {
+		return err
+	}
 
 	sends, err := os.Create(filepath.Join(o.out, "sends.tsv"))
 	if err != nil {
 		return err
 	}
-	for _, k := range keys {
+	for i, k := range keys {
 		before := time.Now().UnixNano()
 		if err := t.cmd("send-keys", "-t", t.session, k); err != nil {
 			sends.Close()
@@ -138,15 +152,16 @@ func run(args []string) error {
 		// 送り終えた時刻も残す: send-keys は tmux のクライアントを 1 本起こすので、その起動の分を treefiler の所要から外して読む
 		fmt.Fprintf(sends, "%d\t%d\t%s\n", before, time.Now().UnixNano(), k)
 		time.Sleep(o.interval) // sleep-ok: 打鍵の間隔そのもの (人の打鍵の速さを模す入力)
+		if err := t.snap(o, i+1, k); err != nil {
+			sends.Close()
+			return err
+		}
 	}
 	if err := sends.Close(); err != nil {
 		return err
 	}
-	if err := t.cmd("send-keys", "-t", t.session, "q"); err != nil {
+	if err := t.quit(); err != nil {
 		return err
-	}
-	if err := waitFor(10*time.Second, func() bool { return t.cmd("has-session", "-t", t.session) != nil }); err != nil {
-		return fmt.Errorf("q で閉じない: %w", err)
 	}
 	f, err := os.Create(filepath.Join(o.out, "summary.txt"))
 	if err != nil {
@@ -224,15 +239,55 @@ func newTmuxServer(out string) *tmuxServer {
 
 // start は treefiler を detached な session で起こす。🚨 client を付けないので、測る書き込みは tmux の画面の格子までで、
 // 外の端末の描画は含まない。default-terminal だけは本番 (_tmux.conf) に揃える (treefiler の色と同期出力の判定が TERM を見る)。
-func (t *tmuxServer) start(o runOpts, bin, root, cfg, logPath string) error {
+func (t *tmuxServer) start(o runOpts, bin, root, cfg, logPath, debugPath string) error {
 	conf := filepath.Join(o.out, "tmux.conf")
 	if err := writeFile(conf, "set -g default-terminal \"tmux-256color\"\n"); err != nil {
 		return err
 	}
-	return t.cmd("-f", conf, "new-session", "-d", "-s", t.session,
+	args := []string{"-f", conf, "new-session", "-d", "-s", t.session,
 		"-x", strconv.Itoa(o.width), "-y", strconv.Itoa(o.height), "-c", root,
-		"-e", "TREEFILER_PERFLOG="+logPath, "-e", "TREEFILER_CONFIG_DIR="+cfg,
-		bin, root)
+		"-e", "TREEFILER_PERFLOG=" + logPath, "-e", "TREEFILER_CONFIG_DIR=" + cfg}
+	if debugPath != "" {
+		args = append(args, "-e", "TREEFILER_DEBUG="+debugPath)
+	}
+	return t.cmd(append(args, bin, root)...)
+}
+
+// quit は q を送って treefiler を閉じる。台本の終わりにタイル・キー一覧が開いていると q はそれを 1 枚閉じるだけなので、
+// session が終わるまで送り直す (8 回まで)。
+func (t *tmuxServer) quit() error {
+	gone := func() bool { return t.cmd("has-session", "-t", t.session) != nil }
+	for range 8 {
+		if err := t.cmd("send-keys", "-t", t.session, "q"); err != nil {
+			if gone() {
+				return nil
+			}
+			return err
+		}
+		if waitFor(1500*time.Millisecond, gone) == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("q を 8 回送っても閉じない (画面: %s)", t.capture())
+}
+
+// snap は -snap のとき、今の画面を screens/<i>-<キー>.txt に残す (-snap でなければ何もしない)。
+func (t *tmuxServer) snap(o runOpts, i int, key string) error {
+	if !o.snap {
+		return nil
+	}
+	return writeFile(filepath.Join(o.out, "screens", snapName(i, key)), t.capture()+"\n")
+}
+
+// snapName は画面のファイルの名前。キーの名前の記号 (C-n・/ など) はファイル名に使える文字へ寄せる。
+func snapName(i int, key string) string {
+	b := []byte(key)
+	for j, c := range b {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
+			b[j] = '_'
+		}
+	}
+	return fmt.Sprintf("%03d-%s.txt", i, b)
 }
 
 func writeFile(path, body string) error {

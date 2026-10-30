@@ -4,7 +4,7 @@
 # バージョンは src/.golangci.yml (version: "2") と整合させること。
 GOLANGCI_LINT_VERSION := v2.15.0
 
-.PHONY: lint test vet-gorules probe perf
+.PHONY: lint test vet-gorules probe perf debug
 
 lint: vet-gorules
 	../../scripts/go_module_graph.sh
@@ -37,3 +37,9 @@ perf:
 	mkdir -p $(PERF_OUT)
 	[ "$(BIN)" != "$(PERF_OUT)/treefiler" ] || go build -o $(BIN) .
 	go run ./tools/tfperf run -bin $(BIN) -root $(ROOT) -out $(PERF_OUT) -keys '$(KEYS)' $(ARGS)
+
+# 動作を確かめる (tools/tfperf の -snap): perf と同じく隔離した tmux で起こし、打鍵の後ごとの画面 (screens/) と内部の状態のログ
+# (state.jsonl。TREEFILER_DEBUG) を残す。Claude が実物を動かして状態の値で判定するため。例: make debug ROOT=~/dotfiles KEYS='l j*3 p'
+DEBUG_OUT ?= $(abspath $(shell git rev-parse --git-common-dir)/..)/tmp/tfdebug-$(shell date +%Y%m%d-%H%M%S)
+debug:
+	$(MAKE) perf PERF_OUT=$(DEBUG_OUT) ARGS='-snap $(ARGS)'

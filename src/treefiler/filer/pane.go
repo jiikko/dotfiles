@@ -106,6 +106,10 @@ func (m *Model) stepPane() {
 	}()
 }
 
+// paneFresh は r が今のカーソル・大きさの中身か (違えば薄く出す)。鍵ごと比べる: パスだけでは、幅を変えた直後 (glogx は Resize の
+// 直後に描く) の前の幅の本文や、書き換わる前の本文を今の中身として出す。
+func (m *Model) paneFresh(r *paneResult) bool { return r.gen == m.pane.gen && r.key == m.paneKeyNow() }
+
 // paneKeyNow は今のカーソルと欄の大きさから決まる中身の鍵 (ファイルを読まない。path は node が持つ値)。
 func (m *Model) paneKeyNow() paneKey {
 	w, h := m.paneBody()
@@ -215,7 +219,7 @@ func (m *Model) drawPane(c *canvas, ch int) {
 	if r == nil {
 		return
 	}
-	fresh := r.gen == m.pane.gen && r.key == m.paneKeyNow() // 鍵ごと比べる (幅を変えた直後の古い幅の本文・書き換わる前の本文を薄くする)
+	fresh := m.paneFresh(r)
 	if r.note != "" {
 		if fresh {
 			c.put(x0+2, 1, termwidth.Truncate(r.note, bw, "…"), cMuted, false)

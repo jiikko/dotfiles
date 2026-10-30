@@ -154,3 +154,19 @@ func TestTeaKeyName(t *testing.T) {
 		}
 	}
 }
+
+// 画面のファイルの名前: 打鍵の番号を 3 桁で揃え、キーの記号はファイル名に使える文字へ寄せる。
+func TestSnapName(t *testing.T) {
+	for _, c := range []struct {
+		i         int
+		key, want string
+	}{
+		{0, "start", "000-start.txt"},
+		{12, "C-n", "012-C_n.txt"},
+		{3, "/", "003-_.txt"},
+	} {
+		if got := snapName(c.i, c.key); got != c.want {
+			t.Errorf("snapName(%d, %q) = %q, want %q", c.i, c.key, got, c.want)
+		}
+	}
+}
