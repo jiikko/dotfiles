@@ -1,7 +1,5 @@
 # 1002 (perf): treefiler がフォルダに初めて入るときの読み込み・並べ替えを UI の外へ出す
 
-> 🚨 **担当中: dotfiles-2e (tfload)**（2026-10-30〜）
-
 起票日: 2026-10-30
 
 ## 概要
@@ -102,6 +100,9 @@ P1 2 件・P2 4 件・P3 7 件。取り込んだ:
     諦めた後も続きを残す → TestNextKeyGivesUpOnStuckLoad / カーソルの守りを外す → TestContinuationNeedsCursorOnFolder / inTree を見ない →
     TestLoadFailureNoticeOnlyInTree / gaveUp を見ない → TestStuckLoadIsWaitedOnce / ctrl+c の前に待つ → TestQuitDoesNotWaitForLoad /
     キーごとに 1 秒 → TestFlushWaitCountsFromRequest / 覗かない → TestFlushTakesArrivedResultAfterGivingUp / 上限切れの枝で覗かない → TestFlushTakesArrivedResultAfterLimit
+
+- [x] レビューを直した最終の版での確認 (2026-10-30): root の make test rc=0。tfperf (直す前と最終を 1 回ずつ) で 20,000 件に入る `l` の
+  handle_ms 57.0 → 12.4・draw_ms 79.1 → 13.5
 
 ## 残タスク (スコープ外)
 
