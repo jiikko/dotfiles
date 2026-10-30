@@ -72,7 +72,7 @@
 
 tfprobe は Model をヘッドレスで回すので、bubbletea の描画の周期・tick の張り方・端末への書き込みは測らない。「操作がもっさりする」は
 `make -C src/treefiler perf` (既定は `src/` で `j*30 k*30`。`ROOT=` `KEYS=` `BIN=` `ARGS="-interval 700ms -width 320 -height 85"`) で測る。
-実物の bin/treefiler を run ごとの `-L` の tmux で起こし (本番の tmux には繋がない)、打鍵を 1 つずつ送って、`TREEFILER_PERFLOG` のログ
+実物の bin/treefiler を run ごとの tmux (`-S <out>/tmux.sock`) で起こし (本番の tmux には繋がない)、打鍵を 1 つずつ送って、`TREEFILER_PERFLOG` のログ
 (perflog。update / view / write の 1 行ずつ) と送った時刻を組にする。結果は本体の checkout の `tmp/tfperf-<日時>/`
 (`summary.txt`・打鍵ごとの `keys.tsv`・生の `perf.log`)。設定は `treefiler.toml` だけを写し、places と history は本物を触らない。
 
