@@ -22,7 +22,7 @@ var scopeKindDecisions = map[string]string{
 	// 素通り: 宣言は中の scope の節 (block・closure・型の本体) を通してしか持たない。宣言を包むだけの節も同じ
 	"function_body": "pass", "do_statement": "pass", "switch_statement": "pass", "switch_pattern": "pass",
 	"class_declaration": "pass", "capture_list": "pass", "lambda_function_type": "pass",
-	"computed_property": "pass", "computed_getter": "pass", "computed_setter": "pass", "computed_modify": "pass",
+	"computed_property": "pass", "computed_getter": "pass", "computed_modify": "pass", "computed_setter": "scope",
 	"willset_didset_block": "pass", "property_declaration": "pass", "pattern": "pass", "capture_list_item": "pass",
 	"lambda_function_type_parameters": "pass",
 	// repeat-while の条件の束縛は Swift では書けない (文法が許すだけ)。本体は statements で閉じる
@@ -34,8 +34,8 @@ var scopeKindDecisions = map[string]string{
 }
 
 // declMakers は、子に持つと「中に宣言を持ちうる」と数える節 (宣言そのもの・宣言を中に持つ節)。
-// swift.go の nameRole が RoleDecl を返す親の節 (lambda_parameter・parameter・didset / willset・capture_list_item・pattern) を
-// 足したら、ここにも足す (足さないと、その節を持つ親が分類を求められない)。
+// swift.go の declParentKinds (nameRole が RoleDecl を返す親の節) は全部ここに含まれることを、下のテストで見る。
+// 条件つきで RoleDecl を返す親 (capture_list_item・pattern) は nameRole の switch にあるので、ここに手で並べる。
 var declMakers = map[string]bool{
 	"statements": true, "property_declaration": true, "value_binding_pattern": true, "lambda_parameter": true, "parameter": true,
 	"pattern": true, "function_declaration": true, "class_declaration": true, "protocol_declaration": true,
@@ -43,6 +43,19 @@ var declMakers = map[string]bool{
 	"switch_entry": true, "didset_clause": true, "willset_clause": true, "computed_getter": true, "computed_setter": true,
 	"computed_modify": true, "enum_class_body": true, "class_body": true, "protocol_body": true, "lambda_literal": true,
 	"capture_list_item": true, "lambda_function_type_parameters": true,
+}
+
+func TestDeclMakersIncludeEveryDeclParent(t *testing.T) {
+	for kind := range declParentKinds {
+		if !declMakers[kind] {
+			t.Errorf("declParentKinds の %s が declMakers に無い (その節を持つ親が scope の分類を求められない)", kind)
+		}
+	}
+	for _, kind := range []string{"capture_list_item", "pattern"} {
+		if !declMakers[kind] {
+			t.Errorf("条件つきで宣言を作る %s が declMakers に無い", kind)
+		}
+	}
 }
 
 func grammarNodeTypes(t *testing.T) []byte {

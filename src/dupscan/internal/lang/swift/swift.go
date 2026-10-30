@@ -2129,6 +2129,12 @@ func startsUpper(s string) bool {
 	return unicode.IsUpper(r)
 }
 
+// declParentKinds は、直下の名前が引数 (新しい局所の名前) になる節。didSet(old) の old・set(v) の v も引数。
+// 宣言を作る節の一覧 (scope_kinds_test.go の declMakers) はこの表を含むことをテストで見る (足し忘れると scope の分類から漏れる)。
+var declParentKinds = map[string]bool{
+	"lambda_parameter": true, "parameter": true, "didset_clause": true, "willset_clause": true, "computed_setter": true,
+}
+
 // nameRole は simple_identifier の役割を、親・field 名・束縛の文脈から決める。
 func (w *walker) nameRole(parent *sitter.Node, field string, binding, afterDot bool) tree.Role {
 	if parent == nil {
@@ -2136,6 +2142,9 @@ func (w *walker) nameRole(parent *sitter.Node, field string, binding, afterDot b
 	}
 	if field == "bound_identifier" && binding {
 		return tree.RoleDecl // `if case minValue = z` の minValue も bound_identifier だが、let / var が無ければ値
+	}
+	if declParentKinds[kindOf(parent)] {
+		return tree.RoleDecl
 	}
 	switch kindOf(parent) {
 	case "value_argument_label":
@@ -2149,8 +2158,6 @@ func (w *walker) nameRole(parent *sitter.Node, field string, binding, afterDot b
 			return tree.RoleDecl
 		}
 		return tree.RoleName
-	case "lambda_parameter", "parameter", "didset_clause", "willset_clause":
-		return tree.RoleDecl // didSet(old) の old も引数
 	case "pattern":
 		// `case .light:` の light・`case let .some(z)` の some は enum の case 名。`case minValue:` は値。
 		// 束縛 (let / var) の pattern の中の名前だけが局所の名前。
