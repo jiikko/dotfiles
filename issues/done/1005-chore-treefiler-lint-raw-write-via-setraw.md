@@ -1,7 +1,5 @@
 # 1005 (chore): treefiler の node.raw を setRaw の外で書き換えない規則を lint に足す
 
-> 🚨 **担当中: dotfiles-2e (rawrule)**（2026-10-30〜）
-
 起票日: 2026-10-30
 
 ## 概要
