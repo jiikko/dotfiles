@@ -28,9 +28,9 @@ golangci-lint の結果キャッシュが ruleguard の規則の中身を鍵に�
 
 | # | 気づき (一般形) | 切り出し先 | 状態 |
 |---|---|---|---|
-| A | **キャッシュは緑だけでなく赤も持ち越す**。入力 (設定・規則・生成物) を戻しても失敗が消えないときは、コードを読み直す前に空のキャッシュ dir で 1 回回す。あわせて、道具の設定が**パスで指すだけのファイル**が鍵に入っているかを確かめる (入っていなければ鍵に入れる経路を作る。1006 の形) | `_claude/rules/verify-execution-not-just-exit-code.md` の「キャッシュされた緑と path filter は、鍵に数えない入力の変化を見ない」に追記 (今は緑の側と Go の testcache だけを書いている) | 未着手 |
-| B | **処理を別の goroutine・thread・task へ移すときは、テストが差し替える package 変数・グローバルの seam を先に列挙し、instance の seam に移してから移す**。移したあとの差し替えは、走っている処理と競合する (race detector はその経路を通るテストを `-race` で回したときしか見えない) | `_claude/rules/survey-receiver-guards-before-passing-new-values.md` の「既存の呼び出しの下に新しい待ちを足すとき」の隣に 1 項 (発動点は「処理の実行の文脈を変えるとき」で、同じ節の拡張で足りる) | 未着手 |
-| C | **同じ機械の検査に 2 セッション続けて落ちるなら、検査を書く時点に寄せる** (編集した直後に、そのファイルだけを同じ検査に通して知らせる)。commit の前の一括で見つけると、直しと回し直しが落ちた回数だけ増える | 新規 issue: `src/` などの Write / Edit の後に、そのファイルだけを `scripts/check_comment_provenance.sh` に通して知らせる PostToolUse hook (既存の `suggest-dupscan-for-go-edit.sh` と同じ置き方) | 未着手 |
+| A | **キャッシュは緑だけでなく赤も持ち越す**。入力 (設定・規則・生成物) を戻しても失敗が消えないときは、コードを読み直す前に空のキャッシュ dir で 1 回回す。あわせて、道具の設定が**パスで指すだけのファイル**が鍵に入っているかを確かめる (入っていなければ鍵に入れる経路を作る。1006 の形) | `_claude/rules/verify-execution-not-just-exit-code.md` の「キャッシュされた緑と path filter は、鍵に数えない入力の変化を見ない」に追記 (今は緑の側と Go の testcache だけを書いている) | 対応済み |
+| B | **処理を別の goroutine・thread・task へ移すときは、テストが差し替える package 変数・グローバルの seam を先に列挙し、instance の seam に移してから移す**。移したあとの差し替えは、走っている処理と競合する (race detector はその経路を通るテストを `-race` で回したときしか見えない) | `_claude/rules/survey-receiver-guards-before-passing-new-values.md` の「既存の呼び出しの下に新しい待ちを足すとき」の隣に 1 項 (発動点は「処理の実行の文脈を変えるとき」で、同じ節の拡張で足りる) | 対応済み |
+| C | **同じ機械の検査に 2 セッション続けて落ちるなら、検査を書く時点に寄せる** (編集した直後に、そのファイルだけを同じ検査に通して知らせる)。commit の前の一括で見つけると、直しと回し直しが落ちた回数だけ増える | 新規 issue: `src/` などの Write / Edit の後に、そのファイルだけを `scripts/check_comment_provenance.sh` に通して知らせる PostToolUse hook (既存の `suggest-dupscan-for-go-edit.sh` と同じ置き方) | 対応済み (issue 1008) |
 | — | 変異がビルドできない・assert が見る量が退行で動かない (4) | 却下: `mutation-verify-new-tests.md` の手順 1.5 と「その assert が見ている量は、壊れたときに動くのか」で足りる。守れて、気づけた | — |
 | — | 後の段が使う fixture を書き換えたまま戻さない (5) | 却下: `mutation-verify-new-tests.md` の「A-B のケース間で状態を共有しない」で足りる | — |
 | — | 配線の grep がコメントに当たる (6) | 却下: 変異で見つかった (仕組みが働いた) | — |
@@ -39,4 +39,7 @@ golangci-lint の結果キャッシュが ruleguard の規則の中身を鍵に�
 
 ## 進捗
 
-- 起票のみ。A〜C の実行はユーザーの判断を待つ
+- A: commit「docs(rules): キャッシュは赤も持ち越す・同期の処理を別の実行の文脈へ移す前に package 変数の seam を instance へ移す (retro 1007)」で `verify-execution-not-just-exit-code.md` に 2 項
+- B: 同じ commit で `survey-receiver-guards-before-passing-new-values.md` に 1 項
+- C: issue 1008 (hook `comment-provenance-on-edit.sh` と検査の `--file`)
+- 残課題なし (提案は全部対応か却下)
