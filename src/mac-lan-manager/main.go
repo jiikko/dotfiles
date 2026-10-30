@@ -201,7 +201,8 @@ ping は管理対象の相手 (引数を渡せばその相手だけ) の名前 (
 終了コード: 0 = 確かめた名前が全部届く / 1 = 届かない・引けない名前があった / 2 = 引数の誤り・管理対象に無い相手 / 130 = 止められた。
 
 upgrade-advert は、この Mac が前の形で有線の名前を広告していれば、読み込まれている job の名前と IP のまま今の形で入れ直す
-(dotfiles の setup.sh が呼ぶ。広告していない・今の形なら何もしない)。終了コード: 0 = 入れ直した・何もしない / 1 = 読めない・入れ直せない / 2 = 引数の誤り。
+(dotfiles の setup.sh が呼ぶ。広告していない・今の形なら何もしない)。
+終了コード: 0 = 入れ直した・何もしない / 1 = 読めない・入れ直せない・plist があるのに job が読み込まれていない (戻し方を出す) / 2 = 引数の誤り。
 `
 
 func main() {
@@ -226,7 +227,7 @@ func main() {
 			cancel()
 			os.Exit(rc)
 		case "upgrade-advert":
-			os.Exit(runUpgradeAdvert(os.Args[2:], os.Stdout, os.Stderr, live.ReadAdvert,
+			os.Exit(runUpgradeAdvert(os.Args[2:], os.Stdout, os.Stderr, live.ReadAdvert, live.AdvertPlistExists,
 				func(ctx context.Context, argv []string) error { _, err := live.SSHRun(ctx, argv); return err }))
 		}
 		fmt.Fprint(os.Stderr, usage)

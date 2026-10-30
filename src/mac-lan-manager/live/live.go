@@ -6,6 +6,7 @@ import (
 	"context"
 	"net"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -64,6 +65,16 @@ func runQuiet(ctx context.Context, argv []string) error {
 // ReadAdvert はこの Mac の有線の名前の広告の状態を読む。
 func ReadAdvert(ctx context.Context) (setup.NameState, error) {
 	return setup.ReadNameState(ctx, func(ctx context.Context, argv []string) (string, error) { return RunOut(ctx, argv[0], argv[1:]...) })
+}
+
+// AdvertPlistExists はこの Mac に有線の名前の広告の plist があるか。
+func AdvertPlistExists() bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(home, "Library", "LaunchAgents", setup.WiredNameLabel+".plist"))
+	return err == nil
 }
 
 // RunOut はコマンドを起こして標準出力を返す (subproc の WaitDelay 付き)。
