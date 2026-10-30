@@ -18,6 +18,7 @@ import (
 	"glogx/internal/testenv"
 
 	"testwait"
+	"treefiler/filer"
 )
 
 // installInertDoctor は doctor の走査口を**何も触らない fake** に差し替える。
@@ -73,7 +74,10 @@ func joinDoctorCleanup(t *testing.T) {
 // main のパッケージ固有の前処理: mac-lan-manager (L) の本物のネットワークの読み取り (networksetup) と Bonjour の走査
 // (終わらない dns-sd) を起こさない (fullscreen_test は横断キーで全部の板を開く)。
 func TestMain(m *testing.M) {
-	testenv.Main(m, "glogx-cache", func(string) { lanview.FixtureSetOptions(fakeLanOptions) })
+	testenv.Main(m, "glogx-cache", func(string) {
+		lanview.FixtureSetOptions(fakeLanOptions)
+		filer.LoadWait = -1 // F のフォルダの読み込みを同期で待つ (壁時計で同期 / 非同期が分かれると、同じキーの列で画面が変わる)
+	})
 }
 
 func newTestBrowse(t *testing.T, n int, statuses map[string]gitdata.CIState, toFetch []string) *browseModel {

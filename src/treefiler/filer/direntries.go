@@ -36,8 +36,12 @@ var readBulk = readEntriesBulk
 
 // readEntries は dir の中身を読む。並びは決めない (呼び出し側が並べる)。読む間に消えた項目は落とす。
 // フォルダ自体が読めないときの error は os.ReadDir と同じもの (まとめて読む経路の失敗は今の形でもう 1 度試してから返す)。
-func readEntries(dir string) ([]dirEntry, error) {
-	if es, err := readBulk(dir); err == nil {
+func readEntries(dir string) ([]dirEntry, error) { return readEntriesVia(readBulk, dir) }
+
+// readEntriesVia は readEntries の、まとめて読む関数を渡す形 (裏の goroutine は頼んだ時点の readBulk を受け取る。
+// goroutine の中で readBulk を読むと、テストの差し替えと競合する)。
+func readEntriesVia(bulk func(string) ([]dirEntry, error), dir string) ([]dirEntry, error) {
+	if es, err := bulk(dir); err == nil {
 		return es, nil
 	}
 	return readEntriesSlow(dir)

@@ -380,7 +380,8 @@ func (m *Model) nodeFor(path string) *node {
 	}
 	info, _ := os.Lstat(path) // 消えていても項目は作る (開くときに「開けません」になる)
 	n := newNode(baseName(path), info, nil)
-	n.raw, n.abs = path, path // root の外のファイル (parent が無い)
+	n.setRaw(path) // root の外のファイル (parent が無い)
+	n.abs = path
 	return n
 }
 

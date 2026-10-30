@@ -52,7 +52,8 @@ func (m *Model) rootUndo() func() {
 	r := m.root
 	raw, parent, mtime, size := r.raw, r.parent, r.mtime, r.size
 	return func() {
-		r.raw, r.parent, r.mtime, r.size = raw, parent, mtime, size
+		r.setRaw(raw)
+		r.parent, r.mtime, r.size = parent, mtime, size
 		m.root = r
 	}
 }

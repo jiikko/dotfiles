@@ -10,6 +10,7 @@
 - `filer/model.go` — 状態・キー・時間 (`Advance`)・描画の組み立て。外へ出す面は `New` / `Resize` / `HandleKey` (`HandleInput`) / `Advance` / `View` /
   `Animating` / `Busy` / `OwnsKeys` / `Binds` / `CaretPos` / `Paste` / `TakeExec` / `ExecDone` / `TakeNotices` / `Refresh` / `Changed` / `WatchingChan` / `Close`
 - `filer/tree.go` — ディスクの木 (開いたときに 1 段ずつ読む・名前の自然順・symlink は辿らない)
+- `filer/load.go` — 打鍵で初めて開くフォルダ (`l` / Enter・Space / Tab) の読み込みを裏の goroutine で行い、`LoadWait` (12ms) だけ待つ。間に合わなければ打鍵の残り (続き) を覚えて Advance で取り込む。他の読み込みは同期のまま。🚨 テストと tfprobe は `LoadWait` を負 (同期) にする (壁時計で同期 / 非同期が分かれると、同じキーの列で画面が変わる)
 - `filer/direntries.go` (`_darwin.go`) — フォルダの中身を属性ごと読む (getattrlistbulk でまとめて・だめなら ReadDir + lstat。load / readSig / walkDir が使う。issue 714)
 - `filer/layout.go` — 列と行の配置・線の格子 (spec §3・§2.1)
 - `filer/kids.go` — 木に見せる子 (dotfile を隠す・カーソルへの経路は見せる) とその覚え (`visKids`。並びが変わったときだけ作り直し、各子に順位を振る)

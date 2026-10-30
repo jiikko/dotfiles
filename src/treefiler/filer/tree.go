@@ -20,6 +20,7 @@ import (
 type node struct {
 	name     string // 表示に使う前に termsafe を通した名前
 	raw      string // ディスク上の名前 (パスの組み立てに使う)
+	lower    string // raw を小文字にしたもの (名前順の比較のたびに作り直さない。2 万件の並べ替えの大半が ToLower の確保だった)
 	abs      string // 絶対パス。作るときに 1 回だけ組み立てる (毎フレーム熱と git を引くので、親をたどって連結すると確保が増える)
 	dir      bool
 	parent   *node
@@ -96,7 +97,7 @@ func (o sortOrder) less(a, b *node) bool {
 		c = cmp.Compare(sizeKey(b), sizeKey(a)) // 大きい方が上
 	}
 	if c == 0 {
-		c = cmpName(a.raw, b.raw, o.natural)
+		c = cmpName(a.lower, b.lower, a.raw, b.raw, o.natural)
 	}
 	if o.reverse {
 		c = -c
@@ -143,12 +144,16 @@ func newNode(raw string, info os.FileInfo, parent *node) *node {
 
 // newNodeAttr は属性 (項目そのものの lstat の値) から作る。
 func newNodeAttr(raw string, a entryAttr, parent *node) *node {
-	n := &node{raw: raw, abs: raw, name: termsafe.PlainLine(raw), parent: parent, dir: a.dir, mtime: a.mtime, size: a.size}
+	n := &node{abs: raw, name: termsafe.PlainLine(raw), parent: parent, dir: a.dir, mtime: a.mtime, size: a.size}
+	n.setRaw(raw)
 	if parent != nil {
 		n.abs = filepath.Join(parent.abs, raw)
 	}
 	return n
 }
+
+// setRaw はディスク上の名前を書き換える (名前順の比較に使う小文字の名前も一緒に。raw だけを書くと並べ替えで食い違う)。
+func (n *node) setRaw(raw string) { n.raw, n.lower = raw, strings.ToLower(raw) }
 
 // newRoot は path を root にした木を作る。root は最初から開いておく。
 func newRoot(path string) (*node, error) {
@@ -173,18 +178,34 @@ func (n *node) load() {
 	if !n.dir {
 		return
 	}
+	kids, err := readKids(n, readEntries, order)
+	n.setKids(kids, err)
+}
+
+// readKids は dir の中身を読み、子のノードを作って o で並べる。木には付けない (setKids が付ける)。
+// 裏の goroutine からも呼ぶ (load.go): 触るのは新しく作るノードと dir.abs (作った後に書き換わらない) だけ。read と o は呼び出し側が渡す。
+func readKids(dir *node, read func(string) ([]dirEntry, error), o sortOrder) ([]*node, error) {
+	ents, err := read(dir.abs) // 属性は項目そのもの (lstat。symlink を辿らない)
+	if err != nil {
+		return nil, err
+	}
+	kids := make([]*node, 0, len(ents))
+	for _, e := range ents {
+		kids = append(kids, newNodeAttr(e.name, e.entryAttr, dir))
+	}
+	sortKids(kids, o)
+	return kids, nil
+}
+
+// setKids は読んだ子を木に付ける (読み込み済みにする)。失敗は readErr に残し、空のフォルダとして扱う。
+// kidsVer を増やすので、見せる子の覚え (visKids) は作り直される。
+func (n *node) setKids(kids []*node, err error) {
 	n.loaded = true
-	ents, err := readEntries(n.path()) // 属性は項目そのもの (lstat。symlink を辿らない)
 	if err != nil {
 		n.readErr = err
 		n.kids = nil
 		return
 	}
-	kids := make([]*node, 0, len(ents))
-	for _, e := range ents {
-		kids = append(kids, newNodeAttr(e.name, e.entryAttr, n))
-	}
-	sortKids(kids, order)
 	n.kids = kids
 	n.kidsVer++
 }
@@ -219,8 +240,8 @@ func sortKids(kids []*node, o sortOrder) {
 }
 
 // cmpName は名前順 (大文字小文字を無視し、natural なら数字の連なりを数として比べる。同じなら元の名前。spec §5.6)。
-func cmpName(a, b string, natural bool) int {
-	la, lb := strings.ToLower(a), strings.ToLower(b)
+// la・lb は a・b を小文字にしたもの (node.lower)。
+func cmpName(la, lb, a, b string, natural bool) int {
 	c := strings.Compare(la, lb)
 	if natural {
 		c = naturalCmp(la, lb)

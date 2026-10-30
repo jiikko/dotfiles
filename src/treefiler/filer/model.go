@@ -121,9 +121,12 @@ type Model struct {
 	search       searchState `layer:"search"`
 	lastSearch   string
 	exploding    *explodeJob
-	help         bool        `layer:"help"`
-	prompt       promptState `layer:"prompt"`
-	ask          *askBoard   `layer:"ask"` // 確認の板 (ask.go。d のゴミ箱と、> で開く項目が多いとき)
+	loads        []*loadReq                       // 打鍵で頼んで裏で読んでいるフォルダ (load.go)
+	loadCont     *loadCont                        // 読み込みを待っている打鍵の残り (load.go)
+	loadRead     func(string) ([]dirEntry, error) // 打鍵で頼む読み込みの読み手 (nil = readEntries。テストが止められる読み手を入れる)
+	help         bool                             `layer:"help"`
+	prompt       promptState                      `layer:"prompt"`
+	ask          *askBoard                        `layer:"ask"` // 確認の板 (ask.go。d のゴミ箱と、> で開く項目が多いとき)
 	exec         *ExecRequest
 }
 
@@ -214,6 +217,7 @@ func (m *Model) Changed() <-chan struct{} {
 
 // Close はライブ更新のポーリングを止める (glogx でファイラーを閉じたとき)。
 func (m *Model) Close() {
+	m.loadCont = nil // 開き直したときに古い打鍵の続きで潜らない (読み込み中の記録は残し、開き直した後の Advance で取り込む)
 	m.watch.close()
 	m.savePlace()
 }
@@ -235,11 +239,12 @@ func (m *Model) Resize(w, h int) {
 // Busy は裏で走査・git の取得が走っているか (呼び出し側はこの間、遅い周期で Advance を呼んで結果を取り込む)。
 // 取り込んでいない結果がある間も true (最後の結果を取り込む前に呼び出し側が tick を止める窓を塞ぐ)。
 func (m *Model) Busy() bool {
-	return m.walker.busy() || m.git.busy() || m.exploding != nil || m.opener.busy() || m.diffBusy() || m.paneLoading()
+	return m.walker.busy() || m.git.busy() || m.exploding != nil || m.opener.busy() || m.diffBusy() || m.paneLoading() || len(m.loads) > 0
 }
 
 // Animating は動いている途中か (呼び出し側はこの間だけ高い周期で Advance を呼ぶ)。
-func (m *Model) Animating() bool { return m.moving }
+// 打鍵で頼んだ読み込みを待つ間も (頼んでから loadHot まで) 立てる: 届いた結果を次のフレームで取り込む。
+func (m *Model) Animating() bool { return m.moving || m.loadsHot() }
 
 // OwnsKeys は入力欄 (検索・!)・設定の板・キー一覧のどれかを開いているか。その間は全部のキーを filer が持つ
 // (glogx は横断キーも F も渡す。spec §0.3。キー一覧は ? 以外のキーで閉じるだけなので、閉じたキーで glogx が動くと食い違う)。
@@ -362,8 +367,9 @@ func (m *Model) Advance(now time.Time) bool {
 	m.animClock += dt
 	m.takeBackground()
 	m.takeExplode()
+	m.takeLoads()
 	m.moving = m.step(dt)
-	return m.moving
+	return m.Animating()
 }
 
 // openDirs は root と、開いているフォルダ (git を取る repo を決める)。
@@ -912,6 +918,7 @@ func (m *Model) HandleInput(k, text string) Result {
 	if k == "ctrl+c" && !m.search.active && !m.prompt.active && m.ask == nil {
 		return Quit // どこからでも即終了 (glogx-ui-guide §1)。検索中は検索の取り消し (spec §6.2)・入力欄と確認の板は取り消し
 	}
+	m.flushLoad() // 読み込みを待っている打鍵の残りを、このキーより先に済ませる (load.go)。ctrl+c は待たせない (q と esc は待つ: タイルや層を閉じるのにも使い、待たないと閉じた後に続きで潜る)
 	if m.help {
 		m.help = false // キー一覧は ? 以外のキーで閉じるだけ (spec §6.6)。閉じたキーは他の意味を持たない
 		return None
@@ -999,8 +1006,7 @@ func init() {
 		m.setCur(m.cur.parent)
 	}), "h", "left", "ctrl+b")
 	bind(do(func(m *Model) {
-		if m.cur.dir {
-			m.ensureLoaded(m.cur)
+		if m.cur.dir && m.requestLoad(m.cur, false) { // 読み終わったら続きで開く (load.go)
 			m.cur.expanded = !m.cur.expanded
 		}
 	}), "space", " ", "tab")
@@ -1098,7 +1104,14 @@ func (m *Model) descend() {
 		m.openTile(m.cur, m.cursorRect())
 		return
 	}
-	m.ensureLoaded(m.cur)
+	if !m.requestLoad(m.cur, true) {
+		return // 読み終わったら続きで潜る (load.go)
+	}
+	m.descendLoaded()
+}
+
+// descendLoaded は読み込み済みのカーソルのフォルダを開いて潜る (見える子が無ければ何もしない)。
+func (m *Model) descendLoaded() {
 	ks := m.kids(m.cur)
 	if len(ks) == 0 {
 		return
@@ -1188,7 +1201,8 @@ func (m *Model) rerootUp() {
 	found := false
 	for i, k := range nr.kids {
 		if k.raw == baseName(old.raw) {
-			old.raw, old.parent = k.raw, nr       // abs は変わらない (同じフォルダ)
+			old.setRaw(k.raw) // abs は変わらない (同じフォルダ)
+			old.parent = nr
 			old.mtime, old.size = k.mtime, k.size // 新しい親は k の値で並べた。旧 root の値は開いたときのままなので写す (reload と同じ。issue 720 の敵対レビュー)
 			nr.kids[i] = old
 			found = true
@@ -1536,6 +1550,9 @@ func (m *Model) statusBar(c *canvas) {
 		crumbW += widthOf(n.name)
 	}
 	// 幅が足りなければ凡例から落とす。抜ける手段 (q) は残す (glogx-ui-guide §5)
+	if len(m.loads) > 0 {
+		right = append([]seg{{spinnerFrame(m.now()) + " ", cAccRoute, false}, {"reading " + m.loads[len(m.loads)-1].n.name + " · ", cText, false}}, right...)
+	}
 	if m.exploding != nil {
 		right = append([]seg{{spinnerFrame(m.now()) + " ", cAccRoute, false}, {"exploding · " + itoa(m.exploding.count()) + " folders · ", cText, false},
 			{"esc", cAccRoute, true}, {" stops · ", cMuted, false}}, right...)

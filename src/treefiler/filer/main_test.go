@@ -20,6 +20,7 @@ var sb sandbox.Sandbox
 // TestMain は設定と前回の場所の置き場所を一時ディレクトリへ向ける。
 // 🚨 向けないと、テストが本物の ~/.config/treefiler/treefiler.toml を書き換える (2026-10-09 に . のテストが実際に書いた)。
 func TestMain(m *testing.M) {
+	LoadWait = -1                                         // 打鍵で頼むフォルダの読み込みを同期で待つ (壁時計で同期 / 非同期が分かれると、同じキーの列で画面が変わる。非同期は load_test.go が見る)
 	if err := subproc.UnsetGitLocationEnv(); err != nil { // 継承した GIT_DIR などで、一時 dir に作る repo の git が別の repo を書かない (issue 740)
 		panic(err)
 	}

@@ -48,6 +48,7 @@ type options struct {
 }
 
 func main() {
+	filer.LoadWait = -1 // フォルダの読み込みを同期で待つ (壁時計で同期 / 非同期が分かれると、同じ種の台本でも辿る経路が run ごとに変わる)
 	var o options
 	flag.StringVar(&o.root, "root", ".", "開くフォルダ")
 	flag.StringVar(&o.out, "out", "", "結果を書くフォルダ (必須。無ければ作る)")

@@ -3,6 +3,7 @@ package filer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -10,10 +11,10 @@ import (
 func TestSortOrderLess(t *testing.T) {
 	t0 := time.Unix(1_800_000_000, 0)
 	f := func(name string, age time.Duration, size int64) *node {
-		return &node{raw: name, mtime: t0.Add(-age), size: size}
+		return &node{raw: name, lower: strings.ToLower(name), mtime: t0.Add(-age), size: size}
 	}
 	d := func(name string, age time.Duration) *node {
-		return &node{raw: name, dir: true, mtime: t0.Add(-age), size: 4096}
+		return &node{raw: name, lower: strings.ToLower(name), dir: true, mtime: t0.Add(-age), size: 4096}
 	}
 	old, mid, newf := f("b-old", 3*time.Hour, 900), f("c-mid", 2*time.Hour, 10), f("a-new", time.Hour, 50)
 	dirOld, dirNew := d("z-dir", 5*time.Hour), d("y-dir", 0)
@@ -201,5 +202,21 @@ func TestSortKeySaveFailureShowsOnlyFailure(t *testing.T) {
 	ns := m.TakeNotices()
 	if len(ns) != 1 || ns[0].OK {
 		t.Fatalf("知らせ = %+v", ns)
+	}
+}
+
+// 名前順は大文字小文字を無視する (読み込んだノード = newNodeAttr の作り方で並べる)。
+func TestNameOrderIgnoresCase(t *testing.T) {
+	var kids []*node
+	for _, n := range []string{"C10", "B", "c9", "a", "b"} {
+		kids = append(kids, newNodeAttr(n, entryAttr{}, nil))
+	}
+	sortKids(kids, sortOrder{natural: true})
+	var got []string
+	for _, k := range kids {
+		got = append(got, k.raw)
+	}
+	if s := strings.Join(got, ","); s != "a,B,b,c9,C10" {
+		t.Fatalf("got %s, want a,B,b,c9,C10 (大文字小文字を無視・数字は数として・同じなら元の名前)", s)
 	}
 }
