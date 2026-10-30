@@ -35,7 +35,7 @@ git -C "$work" config commit.gpgsign false
 git -C "$work" config core.hooksPath "$HOOK_DIR"
 git -C "$work" remote add origin "$remote"
 # 8 番のケース用: issues/ の外のファイルへの相対リンク (リンク先を動かすとリンクが切れる)
-first_issue=$(find "$work/issues" -maxdepth 1 -type f -name '[0-9][0-9][0-9]-*.md' | sort | head -1)
+first_issue=$(find "$work/issues" -maxdepth 1 -type f -name '[0-9][0-9][0-9]*-*.md' | sort | head -1)
 printf '# fixture\n' >"$work/docs/pre-push-fixture.md"
 printf '\n[fixture](../docs/pre-push-fixture.md)\n' >>"$first_issue"
 git -C "$work" add -A
@@ -63,9 +63,9 @@ else
 fi
 
 # --- 既存の番号とまだ無い番号を実物から取る ---
-existing=$(find "$work/issues" -maxdepth 1 -type f -name '[0-9][0-9][0-9]-*.md' | sed 's|.*/||' | sort | head -1)
+existing=$(find "$work/issues" -maxdepth 1 -type f -name '[0-9][0-9][0-9]*-*.md' | sed 's|.*/||' | sort | head -1)
 existing_num=${existing%%-*}
-max=$(find "$work/issues" -type f -name '[0-9][0-9][0-9]-*.md' | sed 's|.*/||; s|-.*||' | sort -n | tail -1)
+max=$(find "$work/issues" -type f -name '[0-9][0-9][0-9]*-*.md' | sed 's|.*/||; s|-.*||' | sort -n | tail -1)
 free_num=$(printf '%03d' $((10#$max + 1)))
 [ -n "$existing_num" ] && [ -n "$free_num" ] || { echo "✗ fixture から番号を取れない" >&2; exit 1; }
 

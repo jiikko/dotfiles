@@ -318,4 +318,11 @@ grep -q '✗ canary' "$work/mut-canary.log" ||
   { cat "$work/mut-canary.log" >&2; fail "canary ではなく後段で落ちた (触る前に止まっていない)"; }
 [ "$before_c" = "$(snapshot "$dc")" ] || fail "canary で落ちたのに fixture が変わっている"
 
-printf '✓ issue_done.sh: 正常系 (global / group / repo root からの参照 / 追跡外 claim / epic の深い置き場を拒否 / --help / ISSUES_DIR なしは cwd の repo・repo の外は拒否・継承した GIT_DIR を無視) / baseline 赤の拒否 / 変異 8 本 (claim 削除・本文の張り直し・参照の張り直し・走査範囲・判定前の中断・母集合の空振り・canary・バナー除去) すべて red (バナー除去は検査側で red。それ以外は rollback 済み)\n'
+# 4 桁の番号 (1000 番以降) も受ける
+d4="$work/four"; mkdir -p "$d4"; make_fixture "$d4"
+printf '# f\n' > "$d4/issues/1000-feat-f.md"
+git -C "$d4" add -A; git -C "$d4" -c user.email=t@t -c user.name=t commit -qm four
+ISSUES_DIR="$d4/issues" "$SCRIPT" 1000 > "$work/four.log" 2>&1 || { cat "$work/four.log" >&2; fail "4 桁の番号 1000 を done にできない"; }
+[ -f "$d4/issues/done/1000-feat-f.md" ] || fail "1000 が done/ へ移っていない"
+
+printf '✓ issue_done.sh: 正常系 (global / group / 4 桁の番号 / repo root からの参照 / 追跡外 claim / epic の深い置き場を拒否 / --help / ISSUES_DIR なしは cwd の repo・repo の外は拒否・継承した GIT_DIR を無視) / baseline 赤の拒否 / 変異 8 本 (claim 削除・本文の張り直し・参照の張り直し・走査範囲・判定前の中断・母集合の空振り・canary・バナー除去) すべて red (バナー除去は検査側で red。それ以外は rollback 済み)\n'

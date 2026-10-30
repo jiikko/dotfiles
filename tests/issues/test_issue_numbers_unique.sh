@@ -47,8 +47,9 @@ fi
 
 total=$(printf '%s\n' "$files" | wc -l | tr -d ' ')
 
-# basename の先頭 3 桁だけを取り出して重複を数える。
-numbers=$(printf '%s\n' "$files" | sed 's|.*/||; s|^\([0-9][0-9][0-9]\)-.*|\1|')
+# basename の先頭の番号 (3 桁以上の数字) を取り出して重複を数える。🚨 3 桁で切り出さない: 1000 番以降はファイル名のまま残り、
+# `1000-a.md` と `1000-b.md` が別の値になって重複を見逃す
+numbers=$(printf '%s\n' "$files" | sed 's|.*/||; s|^\([0-9]\{3,\}\)-.*|\1|')
 dups=$(printf '%s\n' "$numbers" | sort | uniq -d)
 
 if [ -n "$dups" ]; then

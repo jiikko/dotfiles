@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # issue_number_drafts.sh — 番号の無い仮の名前で起票された issue に番号を付ける。
 #
-#   scripts/issue_number_drafts.sh [<数える ref>]     (既定の ref は origin/master)
+#   scripts/issue_number_drafts.sh [<数える ref>]     (既定の ref は origin の既定のブランチ。無ければ origin/master)
 #
 # ## なぜ
 #
@@ -35,16 +35,21 @@ usage() {
   cat <<'EOF'
 usage: scripts/issue_number_drafts.sh [<ref>]
   issues/ 配下の new-<type>-<slug>.md に番号を付けて改名し、参照を張り替える (commit はしない)。
-  番号は working tree と <ref> (既定 origin/master) の issues/ の最大 + 1 から振る。
+  番号は working tree と <ref> (既定は origin の既定のブランチ) の issues/ の最大 + 1 から振る。
 EOF
 }
 
 case "${1:-}" in -h|--help) usage; exit 0 ;; esac
 [ $# -le 1 ] || { usage >&2; exit 2; }
-ref="${1:-origin/master}"
+ref="${1:-}"
 
+# lib の場所は cd の前に解決する (cd の後だと、サブディレクトリから相対パスで起動したときに $0 が解決できない)
+# shellcheck source=lib/issue_numbers.sh
+. "$(dirname "$(readlink -f "$0")")/lib/issue_numbers.sh"
 root="$(git rev-parse --show-toplevel)"
 cd "$root" || exit 1
+
+[ -n "$ref" ] || ref="$(issue_default_ref)"
 
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 
@@ -69,10 +74,7 @@ for f in "${drafts[@]}"; do
   seen="$seen $b"
 done
 
-max="$({ find issues -type f -name '[0-9][0-9][0-9]-*.md' | sed 's|.*/||'
-         git ls-tree -r --name-only "$ref" -- issues | sed 's|.*/||'; } |
-       grep -E '^[0-9]{3}-' | cut -c1-3 | LC_ALL=C sort | tail -1 || true)"
-n=$((10#${max:-0}))
+n="$(issue_max_number "$ref")"
 
 for f in "${drafts[@]}"; do
   n=$((n + 1))

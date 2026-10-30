@@ -84,4 +84,15 @@ refuse dup 'mkdir -p issues/done && cp issues/new-feat-second.md issues/done/new
 refuse bad-name 'mv issues/new-feat-second.md issues/new-Feat_second.md'
 refuse claim 'mkdir -p issues/next && ln -s ../new-feat-second.md issues/next/new-feat-second.md'
 
+# ④ 999 と 1000 を跨ぐ: 番号を数値で比べる (3 桁で切り出すと最大が 999 のままで 1000 を取り直す)
+d="$work/four"
+mkdir -p "$d/issues/done"
+: > "$d/issues/done/999-a.md"
+: > "$d/issues/1000-b.md"
+printf '# new (bug): x\n' > "$d/issues/new-bug-x.md"
+g "$d" init -q; g "$d" add -A; g "$d" commit -qm base
+g "$d" update-ref refs/remotes/origin/master HEAD
+out="$(cd "$d" && "$SCRIPT")" || fail "999 と 1000 があるときに失敗した: $out"
+[ -f "$d/issues/1001-bug-x.md" ] || fail "999 と 1000 があるとき仮の名前が 1001 にならない: $(find "$d/issues" -name '*.md')"
+
 printf '✓ issue_number_drafts.sh\n'

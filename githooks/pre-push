@@ -44,6 +44,7 @@ EXCLUDED=(
   test_issue_claim
   test_issue_done
   test_issue_number_drafts
+  test_issue_numbers_four_digits
   test_next_claims_have_banner_fixtures
 )
 

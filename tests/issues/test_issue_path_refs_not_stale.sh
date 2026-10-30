@@ -65,14 +65,14 @@ scan_tree() {
       next unless /^([^:]+):(\d+):(.*)$/s;
       my ($f, $l, $t) = ($1, $2, $3);
       $t =~ s/\]\([^)]*\)/](LINK)/g;               # markdown リンク先は持ち主が別なので外す
-      while ($t =~ m{((?:[A-Za-z0-9_.-]+/)*issues/(?:[A-Za-z0-9_.-]+/)*[0-9]{3}-[A-Za-z0-9._-]+\.md)}g) {
+      while ($t =~ m{((?:[A-Za-z0-9_.-]+/)*issues/(?:[A-Za-z0-9_.-]+/)*[0-9]{3,}-[A-Za-z0-9._-]+\.md)}g) {
         print "$f:$l\t$1\n";
       }'
   )
 }
 
 # $1 = repo root, $2 = 見出し, $3 = 出力先の prefix ($3.sum に "候補<TAB>腐り" を書く),
-# $4 = 1 なら内訳を出さない (canary は腐り 1 件が正常なので、失敗に見える行を出さない)
+# $4 = 1 なら内訳を出さない (canary は腐り 2 件が正常なので、失敗に見える行を出さない)
 report() {
   local root="$1" label="$2" pre="$3" quiet="${4:-0}" idx cand viol
   idx="$pre.idx"
@@ -99,23 +99,25 @@ mkdir -p "$canary/issues/done" "$canary/docs"
 : > "$canary/issues/done/091-feat-lockman-directory-lease-lock.md"
 : > "$canary/issues/done/186-human-verify-schedkeys-pane-indicator.md"
 : > "$canary/issues/done/333-retro-ruby-lsp-selection-2026-09-08.md"
+: > "$canary/issues/done/1000-chore-four-digits.md"
 # 腐りは **先頭以外**に置く (「最初に見つけたものだけ見る」変異を素通しさせない)
 cat > "$canary/docs/a.md" <<'CEOF'
 fixture: issues/186-x.md は番号だけ一致する別物
 他 repo: obaket `issues/724-test-transfer-activity-center-tests-two-second-poll-timeouts.md`
 他 repo: VLCMultiVideoPlayer `issues/done/333-bug-click-seek-perceived-no-op.md`
 腐り: `issues/091-feat-lockman-directory-lease-lock.md`
+4 桁の腐り: `issues/1000-chore-four-digits.md`
 リンクは対象外: [x](../issues/091-feat-lockman-directory-lease-lock.md)
 CEOF
 work="$(mktemp -d)"
 trap 'rm -rf "$canary" "$work"' EXIT
-report "$canary" '  canary (腐り 1 件が正常)' "$work/c" 1
+report "$canary" '  canary (腐り 2 件が正常)' "$work/c" 1
 read -r ccand cviol < "$work/c.sum"
-if [ "$ccand" -ne 4 ]; then
-  printf '✗ canary の候補件数が想定と違う (want 4, got %s) — 抽出が壊れている\n' "$ccand" >&2; fail=1
+if [ "$ccand" -ne 5 ]; then
+  printf '✗ canary の候補件数が想定と違う (want 5, got %s) — 抽出が壊れている\n' "$ccand" >&2; fail=1
 fi
-if [ "$cviol" -ne 1 ]; then
-  printf '✗ canary の腐り件数が想定と違う (want 1, got %s) — 判定が壊れている\n' "$cviol" >&2; fail=1
+if [ "$cviol" -ne 2 ]; then
+  printf '✗ canary の腐り件数が想定と違う (want 2, got %s) — 判定が壊れている\n' "$cviol" >&2; fail=1
 fi
 
 # --- 本走査 -----------------------------------------------------------------------------------

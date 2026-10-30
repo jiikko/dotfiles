@@ -31,7 +31,7 @@ git ls-files -- "${@:-.}" | grep -E '(^|/)(CLAUDE|README)\.md$' \
       case "/$d/" in */issues/*|*/issue/*)
         # issue 運用の置き場 (直下に NNN-*.md を持つ issues/) とその配下だけ外す。同名の Go package 等は残す
         t=$(printf '%s\n' "$d" | sed -E 's#^((.*/)?issues?)(/.*)?$#\1#')
-        [ -n "$(find "$t" -maxdepth 1 -name '[0-9][0-9][0-9]-*.md' -print -quit)" ] && continue ;;
+        [ -n "$(find "$t" -maxdepth 1 -name '[0-9][0-9][0-9]*-*.md' -print -quit)" ] && continue ;;
       esac
       printf '%s\n' "$d"
     done

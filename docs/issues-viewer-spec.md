@@ -686,7 +686,7 @@ viewer は `status:` があれば表示し、**パスと食い違う場合は融
 | 新しいファイル名フィールドは遵守されない | 既存のカテゴリトークン遵守率は dotfiles 30/30 だが SnapTrim 0/48・dropbox 106/218。規約は retroactive に適用されず、古い番号帯は rename されていない。「トークン不在」に既定値を当てるしかなく、未着手と付け忘れが区別できない |
 | basename を含む既存参照が腐る | 35 箇所 (production のコメント 10 箇所を含む)。状態遷移ごとに rename すると毎回切れる |
 | 先行事例が無い | md ベースの issue/task 管理 10 事例 (todo.txt / org-mode / Obsidian Tasks / MADR / Backlog.md / Jekyll / taskwarrior 等) でファイル名を状態 carrier にしているものは 0 件 |
-| 番号の前に置く形は採番を壊す | `wip-030-...` にすると `issues/README.md` の次番号確認コマンドが `^[0-9]{3}-` で落とし、max が 029 に後退する (実測)。番号再利用は他 repo で 37 件発生済み |
+| 番号の前に置く形は採番を壊す | `wip-030-...` にすると、先頭の番号で数える採番 (`scripts/issue_next_number.sh`) から落ち、max が 029 に後退する (実測は当時の `issues/README.md` の次番号確認コマンド)。番号再利用は他 repo で 37 件発生済み |
 
 ### なぜ `ongoing/` ディレクトリも作らないか (実測)
 

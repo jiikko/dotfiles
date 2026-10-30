@@ -7,15 +7,16 @@ SessionStart hook（`_claude/hooks/issue-rules-inject.sh`）が注入する（is
 
 ## 採番
 
-次番号の確認（`find` で深さを切らずに数え、origin 側も数える）:
+次の番号（作業ツリーと origin の issues/ を深さを切らずに数え、最大 + 1 を出す）:
 
 ```sh
 git fetch origin
-{ find issues -type f -name '[0-9][0-9][0-9]-*.md' | sed 's|.*/||'; git ls-tree -r --name-only origin/master -- issues | sed 's|.*/||'; } |
-  grep -E '^[0-9]{3}-' | sort | tail -1
+scripts/issue_next_number.sh
 ```
 
-（`ls` でディレクトリを列挙しない: `epic/<name>/` の 2 段を数え漏らす）
+- 番号は 999 までは 3 桁、1000 からは 4 桁以上。手で数えるときも `^[0-9]{3}-`・`cut -c1-3`・文字列の `sort` を使わない
+  (どれも 1000 番以降を数えず、次の採番が既にある番号を取り直す。issue 1001)。数え方の正本は `scripts/lib/issue_numbers.sh`
+- `ls` でディレクトリを列挙しない: `epic/<name>/` の 2 段を数え漏らす
 
 - **push しない書き手 (pro-con の PG) は番号を取らず `new-<type>-<slug>.md` で起票し、取り込む側が push の直前に
   `scripts/issue_number_drafts.sh` で番号を付ける**（issue 530。手順は `src/pro-con/integrator-guide.md` の役目 2）

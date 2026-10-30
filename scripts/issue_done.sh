@@ -345,10 +345,7 @@ for n in "$@"; do
   case "$n" in -h|--help) usage; exit 0 ;; esac
 done
 for n in "$@"; do
-  case "$n" in
-    [0-9][0-9][0-9]) ;;
-    *) printf '✗ issue 番号は 3 桁で指定する: %s\n' "$n" >&2; exit 2 ;;
-  esac
+  [[ "$n" =~ ^[0-9]{3,}$ ]] || { printf '✗ issue 番号は 3 桁以上の数字で指定する: %s\n' "$n" >&2; exit 2; }
 done
 # 既定は cwd の repo の issues/ (issue_claim.sh と同じ決め方)。スクリプトの置き場から決めない:
 # ~/dotfiles/scripts/issue_done.sh を他の repo から呼ぶと dotfiles の issues/ を探し、同じ番号が dotfiles にもあれば

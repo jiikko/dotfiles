@@ -72,7 +72,7 @@ find issues -name done -prune -o -type f -name '*.md' -print0   # 起点は repo
   1 回だけ列挙される（二重に数えない）
 - **`issues/done/` = 完了**（対象外）
 - **issue でないファイルを除外する**: `README.md` / `readme.md` / `audit-log` などの管理ファイル。
-  番号規約のある repo では `^[0-9]{3}-` に一致するものだけを issue とみなすのが安全
+  番号規約のある repo では `^[0-9]{3,}-` に一致するものだけを issue とみなすのが安全 (1000 番以降は 4 桁。`^[0-9]{3}-` だと落ちる)
 - **`NNN-human-*.md` は Phase B の検証対象から外す**。人がやるまで open が正しい状態で、
   実装の有無では done を判定できない（自動 done 化は誤検出になる）。human の扱いは Step 0 の
   期限報告だけで完結する
