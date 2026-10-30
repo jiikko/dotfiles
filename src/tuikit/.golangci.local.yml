@@ -27,6 +27,7 @@ linters:
             - "**/hintfit/**"
             - "**/gutter/**"
             - "**/spinner/**"
+            - "**/tickchain/**"
             # foreground は端末の前面の確かめ・子へ端末を渡すのが仕事 (I/O なので parts-pure の対象外) だが、描画フレームワークには依存しない
             - "**/foreground/**"
             - "**/highlight/**"
@@ -61,6 +62,7 @@ linters:
             - "**/hintfit/**"
             - "**/gutter/**"
             - "**/spinner/**"
+            - "**/tickchain/**"
             - "**/highlight/**"
             - "**/markdown/**"
             - "**/sgr/**"

@@ -4,7 +4,7 @@
 # バージョンは src/.golangci.yml (version: "2") と整合させること。
 GOLANGCI_LINT_VERSION := v2.15.0
 
-.PHONY: lint test vet-gorules probe
+.PHONY: lint test vet-gorules probe perf
 
 lint: vet-gorules
 	../../scripts/go_module_graph.sh
@@ -27,3 +27,13 @@ CYCLES ?= 5
 OUT ?= $(abspath $(shell git rev-parse --git-common-dir)/..)/tmp/tfprobe-$(shell date +%Y%m%d-%H%M%S)
 probe:
 	go run ./tools/tfprobe -root $(ROOT) -out $(OUT) -cycles $(CYCLES) $(ARGS)
+
+# 実物の bin/treefiler を隔離した tmux で起こし、打鍵から端末への書き出しまでを測る (tools/tfperf。読み方は CLAUDE.md の「打鍵の所要を実物のバイナリで測る」)。
+# 直す前後を比べるときは、直す前のバイナリを BIN= で渡す。例: make perf ROOT=~/Downloads KEYS='j*40 k*40'
+KEYS ?= j*30 k*30
+PERF_OUT ?= $(abspath $(shell git rev-parse --git-common-dir)/..)/tmp/tfperf-$(shell date +%Y%m%d-%H%M%S)
+BIN ?= $(PERF_OUT)/treefiler
+perf:
+	mkdir -p $(PERF_OUT)
+	[ "$(BIN)" != "$(PERF_OUT)/treefiler" ] || go build -o $(BIN) .
+	go run ./tools/tfperf run -bin $(BIN) -root $(ROOT) -out $(PERF_OUT) -keys '$(KEYS)' $(ARGS)

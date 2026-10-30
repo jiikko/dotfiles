@@ -127,7 +127,9 @@
 - `src/treefiler` (`treefiler`) — treefiler は横に育つ木のファイラー (bin/treefiler)。 (main)
 - `src/treefiler/filer` (`treefiler/filer`) — Package filer は treefiler の画面の部品 (木・タイル・キー・描画)。
 - `src/treefiler/gorules` (`treefiler/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.local.yml から参照)。 (build tags: ruleguard)
+- `src/treefiler/perflog` (`treefiler/perflog`) — Package perflog は bin/treefiler の打鍵から端末への書き出しまでの所要を、追記型のログに 1 行ずつ書く (TREEFILER_PERFLOG)。
 - `src/treefiler/termsync` (`treefiler/termsync`) — Package termsync は、外側の端末が同期出力を持たないときに bubbletea へ渡す設定 (bin/treefiler と glogx が使う)。
+- `src/treefiler/tools/tfperf` (`treefiler/tools/tfperf`) — tfperf は実物の bin/treefiler を隔離した tmux の中で起こし、打鍵を 1 つずつ送って、打鍵から端末への書き出しまでの所要を測る。 (main)
 - `src/treefiler/tools/tfprobe` (`treefiler/tools/tfprobe`) — tfprobe は treefiler の画面 (filer.Model) を本物のディレクトリでヘッドレスに動かし、操作ごとの所要と、サイクルごとの 資源 (goroutine・fd・子プロセス・GC 後のヒープ) を測る。 (main)
 - `src/tuikit/anim` (`github.com/jiikko/dotfiles/src/tuikit/anim`) — Package anim は端末 UI の演出に使う状態機械と緩急カーブ。
 - `src/tuikit/caret` (`github.com/jiikko/dotfiles/src/tuikit/caret`) — Package caret は入力欄のキャレットを端末のカーソルにする (bubbletea v2 の View.Cursor)。
@@ -151,6 +153,7 @@
 - `src/tuikit/termcaps` (`github.com/jiikko/dotfiles/src/tuikit/termcaps`) — Package termcaps は、アプリの出力を最後に描く端末 (tmux の中なら外側のクライアント) が何に対応しているかを判定する。
 - `src/tuikit/termcolor` (`github.com/jiikko/dotfiles/src/tuikit/termcolor`) — Package termcolor は、24bit の色をそのまま書き出してよいかの判定 (bubbletea の色の判定を tmux の中で補う)。
 - `src/tuikit/termwidth` (`github.com/jiikko/dotfiles/src/tuikit/termwidth`) — Package termwidth は端末表示幅の単一情報源。
+- `src/tuikit/tickchain` (`github.com/jiikko/dotfiles/src/tuikit/tickchain`) — Package tickchain は描き直しの tick を 1 本に束ね、今張ってある tick より早い tick が要るときだけ張り直す。
 - `src/tuikit/toast` (`github.com/jiikko/dotfiles/src/tuikit/toast`) — Package toast は右下に数秒だけ出す通知 (トースト) のスタック。
 - `src/tuikit/widthenv` (`github.com/jiikko/dotfiles/src/tuikit/widthenv`) — Package widthenv は「tuikit の幅モデルが支持しない env」の検出とその文言を 1 箇所に集める。
 - `src/userdirs` (`userdirs`) — Package userdirs は道具ごとの設定の置き場を 1 か所で決める。

@@ -33,6 +33,7 @@
 - `filer/ask.go` — 中央の確認の板 (`d` のゴミ箱と `>` が使う。開いている間は全部のキーを取る)
 - `filer/tileview.go` — タイルに出す表示の行 (本体 / diff・Markdown の整形)
 - `tools/tfprobe/` — 実物のディレクトリで台本を回して所要と資源を測る道具 (下の「実物で測る」)
+- `perflog/` / `tools/tfperf/` — 実物のバイナリでの打鍵の所要のログ (`TREEFILER_PERFLOG`) と、隔離した tmux から打鍵して測る道具 (下の「打鍵の所要を実物のバイナリで測る」)
 
 ## 触る前に読むもの
 
@@ -66,6 +67,25 @@
   Go の os/exec の側で少し残る。どちらも頭打ちに近い。2026-10-22 の調べ。issue に記録)。goroutine・fd・children が増えたらリーク。
   🚨 数で見えるのは「増え続ける」形だけで、閉じた Model を 1 つだけ掴み続ける形は増えないので見えない (疑うなら `-memprofile`)
 - 速さだけの退行 (描画結果は同じ) はテストで固定していない (壁時計を合否にしない)。ここで見る: 例 `live-touch` のフレーム、`tile-code` の 1 打
+
+## 打鍵の所要を実物のバイナリで測る (tools/tfperf)
+
+tfprobe は Model をヘッドレスで回すので、bubbletea の描画の周期・tick の張り方・端末への書き込みは測らない。「操作がもっさりする」は
+`make -C src/treefiler perf` (既定は `src/` で `j*30 k*30`。`ROOT=` `KEYS=` `BIN=` `ARGS="-interval 700ms -width 320 -height 85"`) で測る。
+実物の bin/treefiler を run ごとの `-L` の tmux で起こし (本番の tmux には繋がない)、打鍵を 1 つずつ送って、`TREEFILER_PERFLOG` のログ
+(perflog。update / view / write の 1 行ずつ) と送った時刻を組にする。結果は本体の checkout の `tmp/tfperf-<日時>/`
+(`summary.txt`・打鍵ごとの `keys.tsv`・生の `perf.log`)。設定は `treefiler.toml` だけを写し、places と history は本物を触らない。
+
+- 指標: `deliver` (送ってから届くまで = tmux と pty。treefiler の外) / `handle` (キーの Update) / `draw` (届いてから最初の書き込み) /
+  `next_frame` (キーから動きの次のフレームの tick。16ms 前後でなければ tick の張り方が動きを待たせている) / `settle` (動きが止まるまで) /
+  `view_max`・`cpu`・`frames`・`kbytes`
+- 書き込みの間隔をカクつきとして読まない: 1 行の移動はセルの粒度で途中に 1 回しか画面が変わらず、差分の無いフレームは bubbletea が書かない
+- 測れないもの: tmux の session に client を付けないので、`write` は tmux の画面の格子への書き込みまでで、外の端末 (Ghostty など) の描画と
+  tmux の client の再描画は含まない。`write` の行は bubbletea の描画の周期ごとに 2 回 (端末への指示の列と画面の差分) 出ることがあり、フレームの数ではない。
+  ログは最初の描画と閉じたときにしか書き出さないので、q で閉じない・Ctrl-C で止めた run の perf.log には最初の描画より後が残らない
+- PDCA は tfprobe と同じ: 直す前のバイナリを `BIN=` で残し、直した後と交互に同じ条件で回す (load average で時間が揺れる)。
+  遅い打鍵は `keys.tsv` で名指しし、`perf.log` のその打鍵の前後を時刻順に読む (何が待たせたかは行の並びで見える)
+- 押しっぱなしは `ARGS=-interval 40ms`、大きいフォルダ・裏の走査が長い場面は `ROOT=~` (裏の処理の間の遅い tick が効く場面)
 
 ## ビルド・テスト
 

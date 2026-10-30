@@ -72,7 +72,7 @@ Markdown は整形して、コードは言語ごとに色を付けて出す (外
 
 `,` の板で変えた値はその場で効き、`~/.config/treefiler/treefiler.toml` (`$XDG_CONFIG_HOME` があればその下。前の置き場 `~/.config/glogx` のファイルは初回に移す) の 1 行だけを書き換えて保存する (他の行とコメントは残す。
 手で書いてもよい。形式は `key = value`)。読めない行は既定のまま使い、板の足元に何行目かを出す。
-`TREEFILER_CONFIG_DIR` で置き場所を差し替えられる (テストはこれで本物を触らない)。
+`TREEFILER_CONFIG_DIR` で置き場所を差し替えられる (テストはこれで本物を触らない)。`TREEFILER_PERFLOG=<file>` を渡すと、打鍵から端末への書き込みまでの所要を 1 行ずつ追記する (測り方は CLAUDE.md の「打鍵の所要を実物のバイナリで測る」)。
 
 `Remember place` (既定で on) は、閉じたときの開いたフォルダ・カーソル・プレビューのタイルを起動したフォルダごとに
 `~/.config/treefiler/treefiler-places` へ覚え、次に同じフォルダから開いたときに戻す (tmux の `C-t f` ならペインの cwd ごと)。

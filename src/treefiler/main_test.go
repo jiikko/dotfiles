@@ -10,6 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
+
 	"treefiler/filer"
 )
 
@@ -151,4 +153,84 @@ func TestNoToggleKeyDoesNotQuit(t *testing.T) {
 			t.Fatalf("%s: prefix → f で閉じた", c.name)
 		}
 	}
+}
+
+// 裏の処理を待つ遅い tick が張ってある間に打鍵で動きが始まったら、動きの次のフレームを遅い tick まで待たせない
+// (打鍵の直後に最大 busyInterval 止まって見える)。届いた tick を受けて次を張り、張った Cmd は張ったときの seq を運ぶ。
+// 時計は差し替える (実時間で測ると、Update が遅い日に張り直しの判定が偶然通る)。
+func TestKeyDuringSlowTickArmsFrameTick(t *testing.T) {
+	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	root := t.TempDir()
+	for _, n := range []string{"a", "b", "c"} {
+		if err := os.WriteFile(filepath.Join(root, n), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f, err := filer.New(root, filer.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	a := &app{f: f, clock: func() time.Time { return clock }}
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	for i := 0; f.Animating(); i++ { // 開いたときの動きを終わらせる
+		if i > 1000 {
+			t.Fatal("開いたときの動きが 16 秒分進めても終わらない")
+		}
+		clock = clock.Add(frameInterval)
+		a.Update(tickMsg{})
+	}
+
+	a.ticks = tickchain.Chain{}
+	slowSeq, _ := a.ticks.Want(clock, busyInterval) // 裏の処理を待つ遅い tick が張ってある
+	clock = clock.Add(10 * time.Millisecond)
+	_, cmd := a.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	if !f.Animating() {
+		t.Fatal("j で動きが始まらない (前提が崩れた)")
+	}
+	due, seq, ok := a.ticks.Pending()
+	if want := clock.Add(frameInterval); !ok || !due.Equal(want) {
+		t.Fatalf("動きが始まったのに、次の tick は %v 後 (frameInterval %v 後に張り直していない)", due.Sub(clock), frameInterval)
+	}
+	if got, ok := tickIn(t, cmd); !ok || got.seq != seq {
+		t.Fatalf("返した Cmd が張った tick を運ばない: %+v ok=%v (張った seq %d)", got, ok, seq)
+	}
+
+	clock = due
+	a.Update(tickMsg{seq}) // 張り直した tick が届く
+	next, _, ok := a.ticks.Pending()
+	if !ok || !next.After(due) {
+		t.Fatalf("届いた tick を受けて次の tick を張らない (動きが止まる): pending=%v next=%v", ok, next)
+	}
+	_, live, _ := a.ticks.Pending()
+	clock = clock.Add(busyInterval)
+	a.Update(tickMsg{slowSeq}) // 追い越された遅い tick が後から届いても、張ってある tick を外さない
+	// seq で見る: 古い tick で外すと、同じ Update の末尾で張り直されて「張ってある」ことは変わらない
+	if _, now, ok := a.ticks.Pending(); !ok || now != live {
+		t.Fatalf("追い越された古い tick で、張ってある tick (seq %d) を外した (今は seq %d ok=%v)", live, now, ok)
+	}
+}
+
+// tickIn は Update が返した Cmd (tea.Batch) の中の tick を取り出す。tick の Cmd は張った周期だけ待ってから返す。
+func tickIn(t *testing.T, cmd tea.Cmd) (tickMsg, bool) {
+	t.Helper()
+	if cmd == nil {
+		return tickMsg{}, false
+	}
+	msgs := []tea.Msg{cmd()}
+	for len(msgs) > 0 {
+		m := msgs[0]
+		msgs = msgs[1:]
+		switch m := m.(type) {
+		case tickMsg:
+			return m, true
+		case tea.BatchMsg:
+			for _, c := range m {
+				if c != nil {
+					msgs = append(msgs, c())
+				}
+			}
+		}
+	}
+	return tickMsg{}, false
 }

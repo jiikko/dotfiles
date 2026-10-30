@@ -13,6 +13,7 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 - `sgr` — 基本の ANSI 色・装飾
 - `anim` — 開閉演出 (`Transition`)・進捗 (`Elapsed`)・数行スクロールの glide 演出
 - `spinner` — 回る印の字形とコマの選び方 (`Frame` / `At`。tick の回し方は各画面)
+- `tickchain` — 描き直しの tick を 1 本に束ね、今の tick より早く要るときだけ張り直す (周期が状態で変わる画面の tick)
 - `layout` — 画面合成 (`ComposeDrawer` / `Panel` / `Overlay` / `Scrollbar` 等)
 - `confirm` — y/N 確認ダイアログ
 - `lineedit` — 1 行入力欄 (readline 風編集キー)

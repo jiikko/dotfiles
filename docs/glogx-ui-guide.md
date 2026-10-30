@@ -297,6 +297,7 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 | 入力欄 (§7) | `lineedit` + `caret` | pro-con・glogx (issues の番号の絞り込み・URL ピッカー)。schedkeys は受ける文字を絞るため自前の欄で、§7 の編集キーと語の決め方を揃えている (`src/schedkeys/editor.go`) |
 | 操作の結果の通知 (下) | `toast.Stack` | glogx・pro-con |
 | 処理中の回る印 (点字の spinner) | `spinner.Frame` (自前の整数で回す) / `spinner.At` (時刻から選ぶ)。いつ tick し・いつ止めるかは各画面 | glogx・pro-con・treefiler・restartable |
+| 描き直しの tick (動きの間は速く・待つ間は遅く) | `tickchain.Chain` (`Want` で張るかを決め、seq を tick の Msg に載せて `Fired` へ返す)。bool の single-flight にしない (遅い tick が張ってある間に始まった動きが止まる) | treefiler・glogx |
 | 行を幅で切る・揃える・折る | `termwidth` (x/ansi の `Hardwrap` / `Wrap` は使わない) | 全部 |
 
 ### 通知: 操作の結果は右下の toast に出す

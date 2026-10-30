@@ -35,6 +35,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `gutter` | 本文の左に出す行番号の溝 (nvim の number): `Width(行数)` (番号 + 空白 1 の桁。最低 2 桁) / `Format(番号, 桁)` (右寄せ・色なし。番号 0 は空白だけ) = `Number(番号, 桁)` (番号の部分) + `Separator`。番号だけを塗るなら `Number` を使い、`Format` の出力を区切りの長さで切らない | 番号は**ソースの行番号**を渡す (表示行の連番ではない。折り返しの続き行は 0)。glogx の issues の本文と treefiler のタイル |
 | `hintfit` | `Fit` (最下行のキーの案内を幅に収める。入らない項目は切らずに落とし、元の並び順で繋ぐ。優先度 1 = 抜ける手段は席を予約し、入らなければ最短の 1 つを単独で返す) / `ShortestExit` | 狭い端末でも「何ができてどう抜けるか」を残す (glogx の全画面と mac-lan-manager が同じ落とし方を使う。issue 785) |
 | `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` / `WindowOffset` / `ClampOffset` (窓の計算) / `Cycle` (端で回る選択の位置) | 一覧・本文の移動を毎回書かない |
+| `tickchain` | `Chain` の `Want(今, 周期)` (張るべきなら seq を返す) / `Fired(seq)` (届いた tick が最新か) / `Pending()`: 描き直しの tick を 1 本に束ね、張ってある tick より早く要るときだけ張り直す。tea.Cmd は持たない (seq を載せた tick は呼び出し側が作る) | 周期が状態で変わる tick を回す画面 (動きの間は速く、裏の処理を待つ間は遅く)。bool の single-flight で周期を張った時点に決めると、遅い tick が張ってある間に始まった動きが最大でその周期だけ止まる (issue 995) |
 | `framebench` | `NewRenderer(幅, 高さ)` / `Frame(content, 属性)` / `Written()`: 画面の文字列を bubbletea v2 のレンダラと同じ手順 (前のコマと同じなら描かない → セルへ書き直す → 端末への差分) で通す計測の道具。部品ではない (ultraviolet を import する。bubbletea は import しない) | フレームのベンチをレンダラ込みで測る。下の「フレームの重さを測る」 |
 | `cmd/termwidth` | シェルから `termwidth.Of` で表示幅を測るコマンド (`bin/termwidth <文字列>`)。部品ではない | `bin/tmux-toast` が通知の枠の幅を決める (issue 670 で python3 の east_asian_width を置き換えた) |
 
@@ -194,7 +195,7 @@ if confirm.IsYes(key) { run() }
 
 | 何を | どこで |
 |---|---|
-| 部品 (`anim` / `confirm` / `editor` / `foreground` / `gutter` / `highlight` / `hintfit` / `layout` / `lineedit` / `listnav` / `markdown` / `sgr` / `spinner` / `termcaps` / `termcolor` / `termwidth` / `toast` / `widthenv`) は bubbletea を import しない (使ってよいのは `caret` と `examples/`。`framebench` は計測の道具で部品ではない) | `.golangci.local.yml` の depguard (`no-framework-in-parts`) |
+| 部品 (`anim` / `confirm` / `editor` / `foreground` / `gutter` / `highlight` / `hintfit` / `layout` / `lineedit` / `listnav` / `markdown` / `sgr` / `spinner` / `termcaps` / `tickchain` / `termcolor` / `termwidth` / `toast` / `widthenv`) は bubbletea を import しない (使ってよいのは `caret` と `examples/`。`framebench` は計測の道具で部品ではない) | `.golangci.local.yml` の depguard (`no-framework-in-parts`) |
 | 部品 (上から `editor`・`foreground`・`termcaps`・`termcolor`・`widthenv` を除いたもの) は `os` / `os/exec` / `context` を import しない | `.golangci.local.yml` の depguard (`parts-pure`) |
 | 部品を足したら上の 2 つのリスト (または外す理由つきの表) に載せる | `tests/scripts/test_tuikit_depguard_covers_parts.sh` (issue 790) |
 | 部品の中で `time.Now` / `time.Since` を呼ばない | `.golangci.local.yml` の forbidigo |
