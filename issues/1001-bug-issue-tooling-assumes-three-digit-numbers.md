@@ -10,7 +10,7 @@ dotfiles の issue の番号が 999 に達し、1000・1001 (この issue) を�
 ## 3 桁を前提にしている所 (2026-10-30 の master で grep した)
 
 番号の衝突を作るもの (急ぎ):
-- `issues/README.md` の「採番」の手順と `_claude/issue-rules.md` の手順: `grep -E '^[0-9]{3}-' | sort | tail -1` で最大の番号を出す。
+- `issues/README.md` の「採番」の手順 (14〜15 行。`_claude/issue-rules.md` は「git fetch して origin 側も数える」とだけ書き README を指す): `grep -E '^[0-9]{3}-' | sort | tail -1` で最大の番号を出す。
   1000 番以降のファイルはこの grep に掛からず、最大は 999 のまま。掛けても `sort` が文字列の順なので `999-…` が `1000-…` より後に来る。
   → 次に採番するセッションも 1000 を取る
 - `scripts/issue_number_drafts.sh` (72〜74 行): `'[0-9][0-9][0-9]-*.md'` と `grep -E '^[0-9]{3}-' | cut -c1-3` で最大を出す。同じく 1000 番以降を数えない
@@ -24,7 +24,13 @@ dotfiles の issue の番号が 999 に達し、1000・1001 (この issue) を�
   (`scripts/issue_claim.sh` は `^[0-9]{3,}$` で受ける)
 
 素通りするもの:
+- `tests/githooks/test_pre_push.sh` (38・66・68〜69 行): `[0-9][0-9][0-9]-*.md` で最大を出し `%03d` で空き番号を作る。4 桁の issue があると最大が 999 のままで
+  空き番号が 1000 になり、既にある 1000 と衝突する
 - `tests/issues/test_issue_path_refs_not_stale.sh` (68 行): `[0-9]{3}-` だけを見るので、1000 番以降の issue を指す古いパスを検査しない
+
+手順・仕様の文書 (同じ前提を書いている):
+- `_claude/skills/issue-sync/SKILL.md` (75 行): 「`^[0-9]{3}-` に一致するものだけを issue とみなす」
+- `docs/issues-viewer-spec.md` (689 行): 次番号の確認のコマンドを `^[0-9]{3}-` として書いている
 
 対象外 (確かめた): `_claude/hooks/issue-progress-check.sh` は `[0-9]{3,}` で受ける (コメントに「桁数を決め打たない」とある)。
 `human-tasks-due.sh`・`retro-open.sh` の `[0-9]...` は日付の照合。glogx の issues の読み取り (`numberedRe = ^(\d{2,})-`) は桁数を問わない
@@ -36,5 +42,9 @@ dotfiles の issue の番号が 999 に達し、1000・1001 (この issue) を�
 - 各検査に 1000 番の fixture を足し、3 桁の前提に戻す変異で red を確かめる
 
 ## 進捗
+
+- [x] 起票時の反証レビュー (sonnet、読み取りのみ): 衝突・見逃し・拒否・素通りの主張はどれも反証されなかった。
+  `_claude/issue-rules.md` に採番のコマンドは無い (README だけ) → 直した。挙げ漏れ 3 か所 (tests/githooks/test_pre_push.sh・issue-sync の SKILL・
+  issues-viewer-spec) を足した
 
 - [ ] 直すかの判断 (ユーザー)
