@@ -168,8 +168,8 @@ const ExitOtherName = 4
 
 // RemoveHint は相手で手で止めるときの 1 行 (ssh が届かなかったときに知らせる。bootout だけだと、次のログインで plist から生き返る)。
 func RemoveHint() string {
-	return "launchctl bootout gui/$(id -u)/" + WiredNameLabel + "; rm ~/Library/LaunchAgents/" + WiredNameLabel + ".plist" +
-		" ~/Library/Application\\ Support/mac-lan-manager/" + AdvertExe
+	return "launchctl bootout gui/$(id -u)/" + WiredNameLabel + "; rm -f ~/Library/LaunchAgents/" + WiredNameLabel + ".plist" +
+		" ~/Library/Application\\ Support/mac-lan-manager/" + AdvertExe + "; rmdir ~/Library/Application\\ Support/mac-lan-manager"
 }
 
 // StatusScript は広告の状態を 4 行で出す sh: 1 行目は none (job も plist も無い) / running / stopped、2・3 行目は走っている job の

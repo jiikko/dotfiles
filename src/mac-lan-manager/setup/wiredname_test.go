@@ -163,6 +163,9 @@ func TestNameAdvertScripts(t *testing.T) {
 		if _, err := os.Stat(plist); err != nil {
 			t.Errorf("job=%v: 別の名前のとき plist を消した: %v", jobLoaded, err)
 		}
+		if _, err := os.Stat(exe); err != nil {
+			t.Errorf("job=%v: 別の名前のときループの実行ファイルを消した (今の広告が次の起動で起きない): %v", jobLoaded, err)
+		}
 	}
 	setPrint(printOut("running", a))
 	// bootout が「走っていない (3)」以外で落ちたら、止めたことにしない
@@ -174,6 +177,9 @@ func TestNameAdvertScripts(t *testing.T) {
 	}
 	if _, err := os.Stat(plist); err != nil {
 		t.Errorf("止められなかったのに plist を消した (次のログインまで走り続け、その後は戻らない): %v", err)
+	}
+	if _, err := os.Stat(exe); err != nil {
+		t.Errorf("止められなかったのにループの実行ファイルを消した: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "bootout_rc"), []byte("3"), 0o644); err != nil {
 		t.Fatal(err)
@@ -277,6 +283,9 @@ func TestNameAdvertOldFormNotDone(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "Library", "LaunchAgents", WiredNameLabel+".plist")); !os.IsNotExist(err) {
 		t.Errorf("plist が残った: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "Library", "Application Support", "mac-lan-manager")); !os.IsNotExist(err) {
+		t.Errorf("ループの実行ファイルの置き場が残った: %v", err)
 	}
 }
 
