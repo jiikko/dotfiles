@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // graveyard の retention は **退避した時刻**から測ること。
@@ -306,7 +308,7 @@ func TestGraveyardRecordSurvivesSlowMount(t *testing.T) {
 
 	// 見捨てられた goroutine を進ませ、打刻が着地するのを**成立条件**で待つ
 	releaseSeam()
-	stamped := waitForCondition(t, 5*time.Second, func() bool {
+	stamped := testwait.Poll(5*time.Second, func() bool {
 		ok := false
 		forEachGraveyard(t, l, func(p string) {
 			if fi, err := os.Stat(p); err == nil && fi.ModTime().After(old.Add(time.Hour)) {
@@ -315,6 +317,7 @@ func TestGraveyardRecordSurvivesSlowMount(t *testing.T) {
 		})
 		return ok
 	})
+
 	if !stamped {
 		t.Fatalf("鈍いマウントで打刻が着地しない (退避の後に I/O が要る実装になっている)。" +
 			"次の掃除で退避の記録が消える")
@@ -328,12 +331,4 @@ func TestGraveyardRecordSurvivesSlowMount(t *testing.T) {
 	if n := countGraveyard(t, l); n != 1 {
 		t.Fatalf("鈍いマウントで退避の記録が消えた (%d 件)", n)
 	}
-}
-
-// waitForCondition は成立条件を上限つきでポーリングし、成立したかを返す (壁時計で待たない)。
-// 🚨 **成立しなかったことを呼び出し側が判定に使う**ので、ここでは Fatal にしない
-// (「待っても成立しない」がこのテストの red そのもの)。
-func waitForCondition(t *testing.T, limit time.Duration, ok func() bool) bool {
-	t.Helper()
-	return pollUntil(limit, 5*time.Millisecond, ok)
 }

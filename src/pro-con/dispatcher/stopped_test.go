@@ -15,7 +15,7 @@ import (
 
 	"pro-con/card"
 	"pro-con/eventlog"
-	"pro-con/internal/testwait"
+	"testwait"
 )
 
 // 止まったかを見る間を短くした ExecRunner (実時間の 30 秒を待たない)。

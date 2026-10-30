@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"testwait"
 )
 
 func TestSaveSettingKeepsOtherLines(t *testing.T) {
@@ -232,13 +234,14 @@ func TestExplodeIgnoredSetting(t *testing.T) {
 
 func waitExplode(t *testing.T, m *Model) {
 	t.Helper()
-	waitFor(t, "explode", func() bool {
+	testwait.Until(t, "explode", func() bool {
 		if m.exploding == nil {
 			return true
 		}
 		m.Advance(fixedNow)
 		return false
 	})
+
 }
 
 // Git を off にしたら、off にする前に始めた取得の結果も取り込まず、読み直しでも取りに行かない。

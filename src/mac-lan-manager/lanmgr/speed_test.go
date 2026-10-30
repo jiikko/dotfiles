@@ -13,11 +13,11 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"mac-lan-manager/discover"
-	"mac-lan-manager/internal/testwait"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/speedtest"
 	"mac-lan-manager/sshdest"
+	"testwait"
 )
 
 // fakeSpeed は SpeedTest の偽物。呼ばれた宛先と ctx を控え、results に送った結果を返す (送るまで測定中のまま)。
@@ -198,7 +198,7 @@ func TestSpeedStopsOnClose(t *testing.T) {
 // awaitSpeed は裏の測定の結果が Advance で取り込まれるまで待つ (上限つき)。
 func awaitSpeed(t *testing.T, m *Model) {
 	t.Helper()
-	testwait.Until(t, "測定の結果の取り込み", 10*time.Second, func() { m.Advance(t0) }, func() bool { return m.speedRun == nil })
+	testwait.Until(t, "測定の結果の取り込み", func() bool { return m.speedRun == nil }, testwait.Step(func() { m.Advance(t0) }))
 }
 
 // 最下行の案内に t を出すのは、t が効く行 (管理対象で測れる相手) だけ。未管理の行と、測る口が無い画面 (SpeedTest が nil) には出さない。

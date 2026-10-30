@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // 🚨 この file のテストは数秒ずつ実時間で走る (子の sleep 3/4 が lease の期限を跨ぎ、更新の ticker も本物)。時計を注入して
@@ -32,7 +34,7 @@ func TestOnLostKillEscalatesToSigkill(t *testing.T) {
 	}
 	const ttl = 600 * time.Millisecond // tick = 200ms
 	go func() {
-		if waitForCondition(t, 4*time.Second, func() bool { _, err := os.Stat(l.lockPath()); return err == nil }) {
+		if testwait.Poll(4*time.Second, func() bool { _, err := os.Stat(l.lockPath()); return err == nil }) {
 			_ = l.Break() // 他者が引き継いだ = lease 喪失
 		}
 	}()
@@ -54,7 +56,7 @@ func TestOnLostWarnDoesNotKillChild(t *testing.T) {
 	}
 	const ttl = 600 * time.Millisecond
 	go func() {
-		if waitForCondition(t, 4*time.Second, func() bool { _, err := os.Stat(l.lockPath()); return err == nil }) {
+		if testwait.Poll(4*time.Second, func() bool { _, err := os.Stat(l.lockPath()); return err == nil }) {
 			_ = l.Break()
 		}
 	}()
@@ -116,7 +118,7 @@ func TestRenewDoesNotPileUpGoroutinesWhenBlocked(t *testing.T) {
 	}
 	const ttl = 600 * time.Millisecond // tick = 200ms
 	go func() {
-		if waitForCondition(t, 4*time.Second, func() bool { _, err := os.Stat(l.lockPath()); return err == nil }) {
+		if testwait.Poll(4*time.Second, func() bool { _, err := os.Stat(l.lockPath()); return err == nil }) {
 			// 詰まらせる (消してから作ると errNotOwner を拾う窓ができるので rename で被せる)
 			tmp := l.lockPath() + ".fifo"
 			if err := syscall.Mkfifo(tmp, 0o600); err != nil {
@@ -224,7 +226,7 @@ func waitForLockToken(l *Locker) (string, []byte, error) {
 		body  []byte
 		perr  error
 	)
-	placed := pollUntil(4*time.Second, 10*time.Millisecond, func() bool {
+	placed := testwait.Poll(4*time.Second, func() bool {
 		b, err := os.ReadFile(l.lockPath())
 		if err != nil || len(b) == 0 {
 			return false
@@ -236,7 +238,8 @@ func waitForLockToken(l *Locker) (string, []byte, error) {
 		}
 		token, body = m.Token, b
 		return true
-	})
+	}, testwait.Tick(10*time.Millisecond))
+
 	if perr != nil {
 		return "", nil, perr
 	}

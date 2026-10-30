@@ -65,7 +65,6 @@
 - `src/mac-lan-manager/discover` (`mac-lan-manager/discover`) — Package discover は、Bonjour (dns-sd) で LAN の Mac を見つけるときの出力を読む。
 - `src/mac-lan-manager/internal/testfile` (`mac-lan-manager/internal/testfile`) — Package testfile はテストが package の testdata/ から固定の入力 (本物のコマンドの出力を取ったもの) を読む helper。 (internal)
 - `src/mac-lan-manager/internal/testsandbox` (`mac-lan-manager/internal/testsandbox`) — Package testsandbox は、ledger と prefs のテストの書き込みを一時ディレクトリの配下に閉じ込める関門を持つ。 (internal)
-- `src/mac-lan-manager/internal/testwait` (`mac-lan-manager/internal/testwait`) — Package testwait はテストの「条件が成り立つまで刻みを回して待つ」を 1 つに持つ。 (internal)
 - `src/mac-lan-manager/lanmgr` (`mac-lan-manager/lanmgr`) — Package lanmgr は mac-lan-manager の画面を持つ。
 - `src/mac-lan-manager/lanmgr/lanmgrtest` (`mac-lan-manager/lanmgr/lanmgrtest`) — Package lanmgrtest は lanmgr の Scanner と ledger.Store の偽物を、本物の規約のまま 1 つずつ持つ (テスト専用。
 - `src/mac-lan-manager/ledger` (`mac-lan-manager/ledger`) — Package ledger は、管理対象の Mac の台帳を読み書きする (台帳は mac-lan-manager を実行している Mac の中だけに持つ)。
@@ -88,7 +87,6 @@
 - `src/pro-con/fake` (`pro-con/fake`) — Package fake は claude を起動せずに pro-con の画面とつなぎ込みを動かすための模擬 backend。
 - `src/pro-con/flockmark` (`pro-con/flockmark`) — Package flockmark は「開いている間 flock を持ち続ける印」(<id>.lock) の作り方と、作りかけの残りの見分け方を持つ。
 - `src/pro-con/gitx` (`pro-con/gitx`) — Package gitx は pro-con が git を呼ぶときの共通の口 (見張りの読み取り = package monitor と、worktree の片付け = package wtclean)。
-- `src/pro-con/internal/testwait` (`pro-con/internal/testwait`) — Package testwait は pro-con のテストが「何かが起きる」のを待つ helper。 (internal)
 - `src/pro-con/live` (`pro-con/live`) — Package live は本物の backend。
 - `src/pro-con/metrics` (`pro-con/metrics`) — Package metrics はカードごとの所要の記録。
 - `src/pro-con/monitor` (`pro-con/monitor`) — Package monitor は見張り (pro-con monitor)。
@@ -122,6 +120,7 @@
 - `src/subproc/clipboard` (`subproc/clipboard`) — Package clipboard は文字列を OS のクリップボードへ書く (glogx と treefiler の両方が使う)。
 - `src/termsafe` (`github.com/jiikko/dotfiles/src/termsafe`) — Package termsafe は「外部由来の文字列を端末へ出す前に無害化する」単一の関門。
 - `src/termsafe/ctlprobe` (`github.com/jiikko/dotfiles/src/termsafe/ctlprobe`) — Package ctlprobe は「端末が制御として解釈しうる文字が残っているか」を判定する、 **テスト専用**のオラクル。
+- `src/testwait` (`testwait`) — Package testwait はテストの「条件が成り立つまで上限つきで待つ」を 1 つに持つ。
 - `src/tmpclean` (`tmpclean`) — Package tmpclean は一時領域 (Claude Code の scratchpad と $TMPDIR の直下) を数え、ユーザーが承認した古いものだけを ゴミ箱へ移す CLI の本体。
 - `src/tmpclean/cmd/tmpclean` (`tmpclean/cmd/tmpclean`) — Command tmpclean は一時領域 (Claude Code の scratchpad・$TMPDIR) を数え、承認された古いものだけをゴミ箱へ移す。 (main)
 - `src/tmpclean/internal/runner` (`tmpclean/internal/runner`) — Package runner は tmpclean の外部コマンドの実行口。 (internal)

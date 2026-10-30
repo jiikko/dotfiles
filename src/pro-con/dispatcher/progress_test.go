@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"pro-con/card"
-	"pro-con/internal/testwait"
 	"pro-con/store"
+	"testwait"
 )
 
 // progressGit は本物の git を一時ディレクトリで走らせる (進捗は本物の git の出力の形に依る)。

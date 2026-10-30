@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // `--io-timeout` で見捨てた goroutine が、失敗を報告した後に副作用を置いていく。
@@ -351,7 +353,7 @@ func TestUndoDoesNotClaimTheLockRemainsWhenIndeterminate(t *testing.T) {
 	}
 	// 実際、内側の goroutine は走り切って lock を消す = 「残る」は偽だった
 	<-released
-	if waitForCondition(t, 2*time.Second, func() bool { _, serr := os.Lstat(l.lockPath()); return os.IsNotExist(serr) }) {
+	if testwait.Poll(2*time.Second, func() bool { _, serr := os.Lstat(l.lockPath()); return os.IsNotExist(serr) }) {
 		return
 	}
 	t.Fatal("期限切れで返った後も内側の goroutine が lock を消していない (このテストの前提が崩れている)")
@@ -390,7 +392,7 @@ func TestUndoReportsWhenLeaseExpiredSoLockRemains(t *testing.T) {
 // waitAbandoned は「見捨てられた」が立つのを条件で待つ (壁時計で assert しない)。
 // 上限を超えたら false を返し、呼び出し側が明示的に FAIL させる。
 func waitAbandoned(ab *abandon) bool {
-	return pollUntil(4*time.Second, 10*time.Millisecond, ab.abandoned)
+	return testwait.Poll(4*time.Second, ab.abandoned, testwait.Tick(10*time.Millisecond))
 }
 
 // newWiringLocker は「見捨てた goroutine をわざと作る」テスト用の Locker。

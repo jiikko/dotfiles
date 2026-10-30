@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // 猶予が切れた**後**でも、SIGKILL の直前に「もう終わったか」を見直すこと。
@@ -140,7 +142,7 @@ func waitForFile(t *testing.T, path string) {
 // awaitFile は path が現れるまで待つ (5 秒で諦めてエラーを返す)。t を持たない goroutine からも呼べる形。
 func awaitFile(path string) error {
 	exists := func() bool { _, err := os.Stat(path); return err == nil }
-	if pollUntil(5*time.Second, 10*time.Millisecond, exists) {
+	if testwait.Poll(5*time.Second, exists, testwait.Tick(10*time.Millisecond)) {
 		return nil
 	}
 	return errors.New(path + " が 5 秒で現れない")
@@ -187,7 +189,7 @@ func TestEscalateSendsTermWhenChildIsAlive(t *testing.T) {
 	go func() { escalateGroupKill(pgid, exited, 3*time.Second); close(done) }()
 	defer func() { close(exited); <-done }()
 
-	if waitForCondition(t, 5*time.Second, func() bool { b, err := os.ReadFile(termLog); return err == nil && len(b) > 0 }) {
+	if testwait.Poll(5*time.Second, func() bool { b, err := os.ReadFile(termLog); return err == nil && len(b) > 0 }) {
 		return
 	}
 	t.Fatalf("生きている子へ TERM が飛んでいない (pgid=%d)", pgid)

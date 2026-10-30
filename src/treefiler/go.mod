@@ -32,6 +32,7 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	safefs v0.0.0
+	testwait v0.0.0
 )
 
 replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
@@ -45,3 +46,5 @@ replace atomicfile => ../atomicfile
 replace safefs => ../safefs
 
 replace userdirs => ../userdirs
+
+replace testwait => ../testwait

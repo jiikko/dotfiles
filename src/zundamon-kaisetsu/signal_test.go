@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+
+	"testwait"
 )
 
 func buildBinary(t *testing.T) string {
@@ -74,7 +76,7 @@ func TestMainDiesBySignal(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "エンジンへの問い合わせ", requested.Load)
+	testwait.Until(t, "エンジンへの問い合わせ", requested.Load)
 	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +100,7 @@ func TestMainKeepsIgnoredSignal(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "エンジンへの問い合わせ", requested.Load)
+	testwait.Until(t, "エンジンへの問い合わせ", requested.Load)
 	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
 		t.Fatal(err)
 	}

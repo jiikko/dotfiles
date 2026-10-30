@@ -29,7 +29,7 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 - `help/` — `pro-con help` が出す話題ごとの本文 (`debug.md` / `flow.md` / `terms.md` / `usage.md`)
 - `pm-guide.md` / `integrator-guide.md` — PM / 取り込みの係の session に渡す指示書 (`card guide` / `card guide --integrator` が出す)
 - `samples/` — 過去の issue 番号ごとの動作確認・回帰サンプル
-- `internal/testwait/` — テストが条件を上限つきで待つ helper (テストからだけ使う)
+- テストが条件を上限つきで待つ helper は共通の module `src/testwait` (`testwait.Until` / `Poll`。replace で取り込む)
 
 ## 入口 (CLI サブコマンド、main.go が dispatch)
 

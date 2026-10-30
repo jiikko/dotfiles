@@ -66,3 +66,5 @@ replace mac-lan-manager => ../mac-lan-manager
 replace userdirs => ../userdirs
 
 replace tmpclean => ../tmpclean
+
+replace testwait => ../testwait

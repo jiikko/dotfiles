@@ -11,6 +11,7 @@ on:
     branches: [master]
     paths:
       - 'src/glogx/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/doctor/**'   # replace で取り込む共有 module (issue 148)
       - 'src/termsafe/**'  # replace で取り込む共有 module (無害化の関門。issue 228)
       - 'src/tuikit/**'  # replace で取り込む共有 module (幅の単一情報源 + 演出・合成の部品)
@@ -40,6 +41,7 @@ on:
   pull_request:
     paths:
       - 'src/glogx/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/doctor/**'   # replace で取り込む共有 module (issue 148)
       - 'src/termsafe/**'  # replace で取り込む共有 module (無害化の関門。issue 228)
       - 'src/tuikit/**'  # replace で取り込む共有 module (幅の単一情報源 + 演出・合成の部品)

@@ -35,6 +35,7 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	ratelimit v0.0.0
 	subproc v0.0.0
+	testwait v0.0.0
 )
 
 replace (
@@ -53,3 +54,5 @@ replace (
 )
 
 replace userdirs => ../userdirs
+
+replace testwait => ../testwait

@@ -12,11 +12,11 @@ import (
 
 	"pro-con/agents"
 	"pro-con/card"
-	"pro-con/internal/testwait"
 	"pro-con/live"
 	"pro-con/store"
 	"pro-con/wake"
 	"slices"
+	"testwait"
 )
 
 // 終了で止めるとき: 作業中のカードは PG を止めて着手待ちへ戻し、続きから再開する文を持たせる。質問待ちは列をそのまま残して止める。

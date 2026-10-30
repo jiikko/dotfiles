@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"pro-con/flockmark"
-	"pro-con/internal/testwait"
+	"testwait"
 )
 
 func fastInterval(t *testing.T) {

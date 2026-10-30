@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"pro-con/dispatcher"
-	"pro-con/internal/testwait"
 	"pro-con/presence"
 	"pro-con/store"
 	supervisor "process_supervisor"
+	"testwait"
 )
 
 // supTest は supervisor を、sh の台本を dispatcher の代わりにして回す。scripts[i] が i 回目の起動 (足りなければ最後を繰り返す)。

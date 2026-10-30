@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 func startTrackedTestProcess(t *testing.T, script string) *process {
@@ -34,7 +36,7 @@ func startSettledProcess(t *testing.T) *process {
 	proc := startTrackedTestProcess(t, "exit 0")
 	<-proc.done
 	<-proc.outputEnd
-	waitFor(t, 5*time.Second, "settled process group to disappear", func() bool { return !groupExists(proc.pid) })
+	testwait.Until(t, "settled process group to disappear", func() bool { return !groupExists(proc.pid) }, testwait.Within(5*time.Second))
 	return proc
 }
 
@@ -114,7 +116,7 @@ func TestTrackProcessKeepsReapedLeaderWhoseGroupIsAliveForForcedShutdown(t *test
 		t.Fatal("forced stop did not finish")
 	}
 	// SIGKILLed orphans disappear once launchd reaps them, after forceDone.
-	waitFor(t, 5*time.Second, "forced shutdown to kill the descendant process group", func() bool { return !groupExists(live.pid) })
+	testwait.Until(t, "forced shutdown to kill the descendant process group", func() bool { return !groupExists(live.pid) }, testwait.Within(5*time.Second))
 }
 
 func TestTrackProcessKeepsRecordWhoseOutputIsStillHeld(t *testing.T) {
@@ -126,13 +128,13 @@ func TestTrackProcessKeepsRecordWhoseOutputIsStillHeld(t *testing.T) {
 	script := fmt.Sprintf(`/usr/bin/perl -e 'setpgrp(0,0); sleep 30' & echo $! > %s; exit 0`, runnertest.ShellQuote(pidFile))
 	held := startTrackedTestProcess(t, script)
 	<-held.done
-	waitFor(t, 5*time.Second, "escaped descendant PID", func() bool { return strings.TrimSpace(readFile(pidFile)) != "" })
+	testwait.Until(t, "escaped descendant PID", func() bool { return strings.TrimSpace(readFile(pidFile)) != "" }, testwait.Within(5*time.Second))
 	escaped, err := strconv.Atoi(strings.TrimSpace(readFile(pidFile)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = signalGroup(escaped, syscall.SIGKILL) })
-	waitFor(t, 5*time.Second, "leader group to empty after the descendant left it", func() bool { return !groupExists(held.pid) })
+	testwait.Until(t, "leader group to empty after the descendant left it", func() bool { return !groupExists(held.pid) }, testwait.Within(5*time.Second))
 	select {
 	case <-held.outputEnd:
 		t.Fatal("fixture: output ended although the escaped descendant holds the pipe")

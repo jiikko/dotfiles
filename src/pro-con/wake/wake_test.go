@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"pro-con/internal/testwait"
+	"testwait"
 )
 
 func listen(t *testing.T, dir string) *Server {

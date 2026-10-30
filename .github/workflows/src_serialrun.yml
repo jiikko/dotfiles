@@ -11,6 +11,7 @@ on:
     branches: [master]
     paths:
       - 'src/serialrun/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/proctree/**'     # replace で取り込む共有 module (子孫を集めて止める)
       - 'src/subproc/**'      # replace で取り込む共有 module (git を起こす口・git の場所の環境変数)
       - .github/workflows/src_serialrun.yml
@@ -23,6 +24,7 @@ on:
   pull_request:
     paths:
       - 'src/serialrun/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/proctree/**'     # replace で取り込む共有 module (子孫を集めて止める)
       - 'src/subproc/**'      # replace で取り込む共有 module (git を起こす口・git の場所の環境変数)
       - .github/workflows/src_serialrun.yml

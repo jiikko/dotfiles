@@ -52,6 +52,7 @@ var ownSourceExcluded = map[string]string{
 	"../subproc":    "外部プロセス起動の安全弁だけで、画面に出す文字列を持たない",
 	"../atomicfile": "ファイルの atomic な置き換えだけで、画面に出す文字列を持たない",
 	"../userdirs":   "設定の置き場の解決と引っ越しだけで、画面に出す文字列を持たない",
+	"../testwait":   "テストの待ちの helper だけで、画面に出す文字列を持たない (テストからだけ使う)",
 }
 
 // ownSourceRoots の正本は go.mod の replace (ローカルの module を取り込んだら、その module は

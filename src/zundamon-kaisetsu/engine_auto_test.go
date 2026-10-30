@@ -23,6 +23,8 @@ import (
 	"zundamon-kaisetsu/internal/app"
 	"zundamon-kaisetsu/internal/engine"
 	"zundamon-kaisetsu/internal/paths"
+
+	"testwait"
 )
 
 // fakeEngine は起動・停止を切り替えられる偽のエンジン。止まっている間はポートで誰も待ち受けない (接続を拒否される)。
@@ -169,7 +171,7 @@ func TestWithEngineConcurrentStartOnce(t *testing.T) {
 	fe.upGate = make(chan struct{})
 	doneA, doneB := make(chan error, 1), make(chan error, 1)
 	go func() { doneA <- engine.WithEngine(env, func() error { return nil }) }()
-	waitUntil(t, "A の起動開始", func() bool { return fe.ups.Load() == 1 })
+	testwait.Until(t, "A の起動開始", func() bool { return fe.ups.Load() == 1 })
 	go func() { doneB <- engine.WithEngine(env, func() error { return nil }) }() // A の起動中に来る: まだ接続を拒否される
 	// B が確かめる (手元のポートなら 1ms 未満) のに十分な窓を A の起動中に作る。ロックが無ければ B はここで「止まっている」を見て
 	// 二重に起動する。ロックがあれば B は待つので、窓の長さは結果を変えない
@@ -558,7 +560,7 @@ func TestWithStartLockShowsHolder(t *testing.T) {
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- engine.WithStartLock(&waiter, func() error { return nil }) }()
 	out := func() string { mu.Lock(); defer mu.Unlock(); return errb.String() }
-	waitUntil(t, "待つ側の表示", func() bool { return strings.Contains(out(), "持っているのは") })
+	testwait.Until(t, "待つ側の表示", func() bool { return strings.Contains(out(), "持っているのは") })
 	close(release)
 	if err := <-done; err != nil {
 		t.Fatal(err)
@@ -641,27 +643,28 @@ func TestReaperProcessLifecycle(t *testing.T) {
 	if err := env.SpawnReaper(); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "見張りがロックを取る", func() bool { return engine.ReaperAlive(env) })
+	testwait.Until(t, "見張りがロックを取る", func() bool { return engine.ReaperAlive(env) })
 	var pid int
-	waitUntil(t, "見張りの pid", func() bool {
+	testwait.Until(t, "見張りの pid", func() bool {
 		b, _ := os.ReadFile(filepath.Join(env.StateDir, "reaper.lock"))
 		pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
 		return pid > 0
 	})
+
 	if sid, err := syscall.Getsid(pid); err != nil || sid != pid {
 		t.Errorf("見張りが別のセッションに切り離されていない (sid=%d pid=%d err=%v)", sid, pid, err)
 	}
 	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "kill した見張りのロックが外れる", func() bool { return !engine.ReaperAlive(env) })
+	testwait.Until(t, "kill した見張りのロックが外れる", func() bool { return !engine.ReaperAlive(env) })
 
 	// 印が古く、エンジンが応答しなければ、見張りは印を消して終わる
 	writeMarker(t, env, "container", env.Engine, engine.StartGrace+time.Minute)
 	if err := env.SpawnReaper(); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "見張りが印を消して終わる", func() bool { return !markerExists(env) && !engine.ReaperAlive(env) })
+	testwait.Until(t, "見張りが印を消して終わる", func() bool { return !markerExists(env) && !engine.ReaperAlive(env) })
 }
 
 // 見張りが止めた後もポートが応答しているなら (デスクトップアプリ・旧版の固定名のコンテナ)、失敗には数えずログに残す。
@@ -692,7 +695,7 @@ func TestStartEngineSkipsPullWhenImageIsLocal(t *testing.T) {
 	cancel := withAppCtx(t)
 	done := make(chan error, 1)
 	go func() { done <- engine.StartEngine(env) }()
-	waitUntil(t, "run まで進む", func() bool { b, _ := os.ReadFile(log); return strings.Contains(string(b), "run ") })
+	testwait.Until(t, "run まで進む", func() bool { b, _ := os.ReadFile(log); return strings.Contains(string(b), "run ") })
 	cancel() // 応答待ち (最大 180 秒) を打ち切る
 	<-done   //nolint:errcheck // 打ち切ったので失敗で返る。終わるのを待つだけ
 	b, _ := os.ReadFile(log)
@@ -890,7 +893,7 @@ func TestEngineInterruptIsNotReportedAsFailure(t *testing.T) {
 			t.Setenv("PATH", shims)
 			done := make(chan error, 1)
 			go func() { done <- tc.run(env) }()
-			waitUntil(t, "ランタイムの呼び出しが止まる", func() bool { return paths.IsFile(marker) })
+			testwait.Until(t, "ランタイムの呼び出しが止まる", func() bool { return paths.IsFile(marker) })
 			cancel()
 			if err := <-done; !errors.Is(err, app.ErrInterrupted) {
 				t.Fatalf("中断として返っていない: %v", err)

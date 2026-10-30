@@ -16,10 +16,10 @@ import (
 	"context"
 	"pro-con/backend"
 	"pro-con/fake"
-	"pro-con/internal/testwait"
 	"pro-con/live"
 	"pro-con/store"
 	"pro-con/ui"
+	"testwait"
 )
 
 // exec に失敗したら旧版のまま続けるので、書いた状態のファイルは残さない。前に引き継いだ状態のファイルも役目を終えて消える。

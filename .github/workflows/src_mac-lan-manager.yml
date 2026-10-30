@@ -9,6 +9,7 @@ on:
     branches: [master]
     paths:
       - 'src/mac-lan-manager/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/atomicfile/**'  # replace で取り込む共有 module (台帳の書き込み)
       - 'src/userdirs/**'  # replace で取り込む共有 module (台帳・設定の置き場。issue 777)
       - 'src/tuikit/**'      # replace で取り込む共有 module (幅・移動の語彙・入力欄・spinner)
@@ -24,6 +25,7 @@ on:
   pull_request:
     paths:
       - 'src/mac-lan-manager/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/atomicfile/**'  # replace で取り込む共有 module (台帳の書き込み)
       - 'src/userdirs/**'  # replace で取り込む共有 module (台帳・設定の置き場。issue 777)
       - 'src/tuikit/**'      # replace で取り込む共有 module (幅・移動の語彙・入力欄・spinner)

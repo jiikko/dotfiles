@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"mac-lan-manager/discover"
-	"mac-lan-manager/internal/testwait"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/reach"
+	"testwait"
 )
 
 // fakeReach は Reach の偽物。呼ばれた名前と ctx を控え、results に送った結果を返す (送るまで確かめている途中のまま)。
@@ -58,7 +58,7 @@ func (f *fakeReach) started(t *testing.T) ([]string, context.Context) {
 // awaitReach は結果が取り込まれるまで Advance する (上限 10 秒)。
 func awaitReach(t *testing.T, h *harness) {
 	t.Helper()
-	testwait.Until(t, "疎通の結果の取り込み", 10*time.Second, func() { h.m.Advance(t0) }, func() bool { return len(h.m.reachRuns) == 0 })
+	testwait.Until(t, "疎通の結果の取り込み", func() bool { return len(h.m.reachRuns) == 0 }, testwait.Step(func() { h.m.Advance(t0) }))
 }
 
 var (

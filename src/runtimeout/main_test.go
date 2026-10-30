@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 var bin string // テスト用にビルドした runtimeout の絶対パス
@@ -66,22 +68,10 @@ func alive(pid int) bool {
 	return s != "" && !strings.HasPrefix(s, "Z")
 }
 
-// waitFor は cond が成立するまで待つ。上限は判定ではなく hang の安全網
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for range 400 {
-		if cond() {
-			return
-		}
-		time.Sleep(25 * time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み
-	}
-	t.Fatalf("10 秒待っても成立しない: %s", what)
-}
-
 func readPid(t *testing.T, path string) int {
 	t.Helper()
 	var pid int
-	waitFor(t, "pid ファイル "+path, func() bool {
+	testwait.Until(t, "pid ファイル "+path, func() bool {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return false
@@ -93,6 +83,7 @@ func readPid(t *testing.T, path string) int {
 		pid, err = strconv.Atoi(s)
 		return err == nil
 	})
+
 	return pid
 }
 
@@ -196,7 +187,7 @@ wait`
 	}
 	for i, name := range names {
 		pid := pids[i]
-		waitFor(t, name+"が止まる", func() bool { return !alive(pid) })
+		testwait.Until(t, name+"が止まる", func() bool { return !alive(pid) })
 	}
 }
 
@@ -218,7 +209,7 @@ func TestTimeoutKillsAfterGrace(t *testing.T) {
 	case <-time.After(30 * time.Second): // hang の安全網 (判定ではない)
 		t.Fatal("TERM を無視する子を止められず、道具が戻らない")
 	}
-	waitFor(t, "TERM を無視する子が KILL で止まる", func() bool { return !alive(pid) })
+	testwait.Until(t, "TERM を無視する子が KILL で止まる", func() bool { return !alive(pid) })
 }
 
 // 時間切れでは、グループの中の子にも KILL より先に TERM が届く (後始末の機会がある)
@@ -255,7 +246,7 @@ func TestTermStopsTreeAndReraises(t *testing.T) {
 	}
 	for i, name := range []string{"子", "孫"} {
 		pid := pids[i]
-		waitFor(t, name+"が止まる", func() bool { return !alive(pid) })
+		testwait.Until(t, name+"が止まる", func() bool { return !alive(pid) })
 	}
 }
 
@@ -300,7 +291,7 @@ func TestForegroundKeepsGroupAndStopsTree(t *testing.T) {
 	}
 	for i, name := range []string{"子", "孫"} {
 		pid := pids[i]
-		waitFor(t, name+"が止まる", func() bool { return !alive(pid) })
+		testwait.Until(t, name+"が止まる", func() bool { return !alive(pid) })
 	}
 }
 

@@ -19,6 +19,8 @@ import (
 	"github.com/creack/pty"
 	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 	"golang.org/x/sys/unix"
+
+	"testwait"
 )
 
 // `!` で起こしたプロセスが終わった後、端末の前面が起こした側 (treefiler / glogx) へ戻っていること。
@@ -189,7 +191,7 @@ func runBangOnPTY(t *testing.T, c bangCase) {
 		}
 		_ = master.Close()
 	})
-	// 段ごとに着いた時刻を控え、待ちが時間切れになったらそれと子孫のプロセス・擬似端末の出力の末尾を出す
+	// 段ごとに着いた時刻を控え、待ちが時間切れになったらそれと擬似端末の出力の末尾を出す
 	// (この待ちは CI の混んだ runner でだけ時間切れになったことがあり、手元では再現しない。止まった段と、止まっていたプロセスを残す)
 	begin := time.Now()
 	var stages []string
@@ -202,12 +204,13 @@ func runBangOnPTY(t *testing.T, c bangCase) {
 		if len(tail) > 2000 {
 			tail = tail[len(tail)-2000:]
 		}
-		return fmt.Sprintf("着いた段: %s\nhelper の終了: %v\nhelper と子孫 (STAT の T は止まっている、+ は前面のグループ):\n%s擬似端末の出力の末尾 (全 %d bytes):\n%q",
-			strings.Join(stages, " / "), isDone(), processTree(cmd.Process.Pid), len(o), tail)
+		// helper とその子孫のプロセスは testwait が test のプロセスの子孫として出す
+		return fmt.Sprintf("着いた段: %s\nhelper の終了: %v\n擬似端末の出力の末尾 (全 %d bytes):\n%q",
+			strings.Join(stages, " / "), isDone(), len(o), tail)
 	}
 	wait := func(what string, cond func() bool) {
 		t.Helper()
-		waitForDiag(t, what, cond, diag)
+		testwait.Until(t, what, cond, testwait.Diag(diag))
 		mark(what)
 	}
 	send := func(s string) { _, _ = master.WriteString(s); mark(fmt.Sprintf("送った %q", s)) } // helper が先に抜けていたら EIO になるだけ (判定は READY で行う)
@@ -261,44 +264,6 @@ func runBangOnPTY(t *testing.T, c bangCase) {
 	if left, err := os.ReadDir(childTmp); err != nil || len(left) > 0 {
 		t.Fatalf("helper の子が $TMPDIR に残した (err=%v): %v", err, left)
 	}
-}
-
-// processTree は pid とその子孫の ps の行を返す (時間切れの診断用。取れなければ理由を返す)。
-func processTree(pid int) string {
-	out, err := exec.Command("ps", "-Ao", "pid=,ppid=,pgid=,tpgid=,stat=,etime=,command=").Output()
-	if err != nil {
-		return fmt.Sprintf("(ps が失敗: %v)\n", err)
-	}
-	kids := map[int][]int{}
-	rows := map[int]string{}
-	for _, line := range strings.Split(string(out), "\n") {
-		f := strings.Fields(line)
-		if len(f) < 2 {
-			continue
-		}
-		p, err1 := strconv.Atoi(f[0])
-		pp, err2 := strconv.Atoi(f[1])
-		if err1 != nil || err2 != nil {
-			continue
-		}
-		rows[p] = line
-		kids[pp] = append(kids[pp], p)
-	}
-	var b strings.Builder
-	var walk func(p int)
-	walk = func(p int) {
-		if row, ok := rows[p]; ok {
-			b.WriteString(row + "\n")
-		}
-		for _, k := range kids[p] {
-			walk(k)
-		}
-	}
-	walk(pid)
-	if b.Len() == 0 {
-		return fmt.Sprintf("(pid %d はもう居ない)\n", pid)
-	}
-	return b.String()
 }
 
 func readyLine(s string) string {

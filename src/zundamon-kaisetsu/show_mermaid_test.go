@@ -14,6 +14,8 @@ import (
 	"zundamon-kaisetsu/internal/paths"
 	"zundamon-kaisetsu/internal/script"
 	"zundamon-kaisetsu/internal/show"
+
+	"testwait"
 )
 
 // fakeMermaid は PATH の先頭に偽の npx を置く。偽物は引数と PUPPETEER_SKIP_DOWNLOAD を log に 1 行ずつ書き、mode に従って動く:
@@ -210,10 +212,11 @@ func TestMermaidCancelKillsGrandchild(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { _, _, err := build.Assemble(s, env); done <- err }()
 	pidFile := filepath.Join(filepath.Dir(log), "grandchild.pid")
-	waitUntil(t, "偽物が孫を起こす", func() bool {
+	testwait.Until(t, "偽物が孫を起こす", func() bool {
 		b, err := os.ReadFile(pidFile)
 		return err == nil && strings.TrimSpace(string(b)) != ""
 	})
+
 	b, err := os.ReadFile(pidFile)
 	must(t, err)
 	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
@@ -223,7 +226,7 @@ func TestMermaidCancelKillsGrandchild(t *testing.T) {
 	if err := <-done; err == nil {
 		t.Fatal("中断したのに組み立てが成功した")
 	}
-	waitUntil(t, "孫のプロセスが居なくなる", func() bool { return syscall.Kill(pid, 0) != nil })
+	testwait.Until(t, "孫のプロセスが居なくなる", func() bool { return syscall.Kill(pid, 0) != nil })
 }
 
 // TestMermaidTimeoutMessage は、描くのが時間切れになったら、その旨で止まることを確かめる。
@@ -241,10 +244,11 @@ func TestMermaidTimeoutMessage(t *testing.T) {
 	}()
 	// 時間切れの前に孫が起きたことを確かめる (起きる前に止まると、残らないことを確かめられない)
 	pidFile := filepath.Join(filepath.Dir(log), "grandchild.pid")
-	waitUntil(t, "偽物が孫を起こす", func() bool {
+	testwait.Until(t, "偽物が孫を起こす", func() bool {
 		b, err := os.ReadFile(pidFile)
 		return err == nil && strings.HasSuffix(string(b), "\n")
 	})
+
 	if err := <-done; err == nil || !strings.Contains(err.Error(), "終わらない") {
 		t.Fatalf("時間切れで止まるはず (%v)", err)
 	}
@@ -254,7 +258,7 @@ func TestMermaidTimeoutMessage(t *testing.T) {
 	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
 	must(t, err)
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
-	waitUntil(t, "時間切れの後に孫のプロセスが居なくなる", func() bool { return syscall.Kill(pid, 0) != nil })
+	testwait.Until(t, "時間切れの後に孫のプロセスが居なくなる", func() bool { return syscall.Kill(pid, 0) != nil })
 }
 
 // TestMermaidBrokenCacheHint は、キャッシュに壊れた PNG があるとき、そのパスと描き直し方を案内することを確かめる。

@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"testwait"
 )
 
 // newBig は root/big/sub に n 個のファイルを置き、カーソルを big に置く。> で見える項目は sub と n 個のファイルで n+1 個。
@@ -34,7 +36,7 @@ func waitExplodeDone(t *testing.T, m *Model) {
 	if j == nil {
 		t.Fatal("explode が始まっていない")
 	}
-	waitFor(t, "explode の走査", j.finished)
+	testwait.Until(t, "explode の走査", j.finished)
 }
 
 // 見える項目が 100 件以上なら、開く前に確認の板 (件数と対象の名前) を出す。n と Enter は取り消して知らせ、y で開く。99 件までは聞かずに開く。

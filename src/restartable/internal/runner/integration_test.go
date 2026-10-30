@@ -21,6 +21,8 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/jiikko/dotfiles/src/restartable/internal/control"
+
+	"testwait"
 )
 
 type presenterSnapshot struct {
@@ -253,14 +255,15 @@ func readPresenterSnapshot(path string) (presenterSnapshot, bool) {
 func waitPresenterSnapshot(t *testing.T, path, description string, predicate func(presenterSnapshot) bool) presenterSnapshot {
 	t.Helper()
 	var snapshot presenterSnapshot
-	waitFor(t, 3*time.Second, description, func() bool {
+	testwait.Until(t, description, func() bool {
 		got, ok := readPresenterSnapshot(path)
 		if !ok {
 			return false
 		}
 		snapshot = got
 		return predicate(got)
-	})
+	}, testwait.Within(3*time.Second))
+
 	return snapshot
 }
 
@@ -341,7 +344,7 @@ func startTestRunnerModeWithBrokenStdout(t *testing.T, options map[string]string
 		}
 	})
 	if waitForStatus {
-		waitFor(t, 3*time.Second, "runner control socket", func() bool {
+		testwait.Until(t, "runner control socket", func() bool {
 			select {
 			case <-r.done:
 				t.Fatalf("runner exited before opening control socket: %v; stderr: %s", r.waitErr, readFile(stderr))
@@ -351,7 +354,8 @@ func startTestRunnerModeWithBrokenStdout(t *testing.T, options map[string]string
 			defer cancel()
 			response, err := control.Call(ctx, path, control.Status)
 			return err == nil && response.OK
-		})
+		}, testwait.Within(3*time.Second))
+
 	}
 	return r
 }
@@ -365,14 +369,15 @@ func (r *testRunner) status() (control.Response, error) {
 func (r *testRunner) waitStatus(t *testing.T, want string) control.Response {
 	t.Helper()
 	var response control.Response
-	waitFor(t, 3*time.Second, "runner state "+want, func() bool {
+	testwait.Until(t, "runner state "+want, func() bool {
 		got, err := r.status()
 		if err != nil {
 			return false
 		}
 		response = got
 		return got.State == want
-	})
+	}, testwait.Within(3*time.Second))
+
 	return response
 }
 
@@ -394,24 +399,6 @@ func (r *testRunner) signalAndWait(t *testing.T, sig syscall.Signal) int {
 		t.Fatalf("runner did not exit after signal %v; stderr: %s", sig, readFile(r.stderr))
 	}
 	return -1
-}
-
-func waitFor(t *testing.T, limit time.Duration, description string, predicate func() bool) {
-	t.Helper()
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-	timer := time.NewTimer(limit)
-	defer timer.Stop()
-	for {
-		if predicate() {
-			return
-		}
-		select {
-		case <-ticker.C:
-		case <-timer.C:
-			t.Fatalf("timed out waiting for %s", description)
-		}
-	}
 }
 
 // shortTempDir は unix socket を置く一時ディレクトリ。socket の path は 103 byte までなので、
@@ -442,9 +429,10 @@ func TestHeadlessRunnerWithTerminalStdinDoesNotPassTTYToChild(t *testing.T) {
 		t.Fatalf("control restart response = %+v, want successful generation 2", response)
 	}
 	r.waitOutput(t, "stop-stdin-eof")
-	waitFor(t, 3*time.Second, "second build with null stdin", func() bool {
+	testwait.Until(t, "second build with null stdin", func() bool {
 		return strings.Count(r.Text(), "build-stdin-eof") >= 2
-	})
+	}, testwait.Within(3*time.Second))
+
 	if output := r.Text(); strings.Contains(output, "stdin-read") {
 		t.Fatalf("a child received the terminal stdin: %q", output)
 	}
@@ -474,7 +462,7 @@ func TestBuildFailureNeverRunsStaleArtifactAndRestartWaitsForNewRun(t *testing.T
 	if !response.OK || response.Generation != 1 || response.PID == nil {
 		t.Fatalf("restart response = %+v", response)
 	}
-	waitFor(t, time.Second, "new run to record artifact", func() bool { return strings.TrimSpace(readFile(launches)) != "" })
+	testwait.Until(t, "new run to record artifact", func() bool { return strings.TrimSpace(readFile(launches)) != "" }, testwait.Within(time.Second))
 	if got := strings.TrimSpace(readFile(launches)); got != "fresh" {
 		t.Fatalf("run used artifact %q, want fresh", got)
 	}
@@ -520,7 +508,7 @@ func TestStopCommandFailureKeepsChildRunningAndPassesID(t *testing.T) {
 	if status.PID == nil {
 		t.Fatalf("running response has no pid: %+v", status)
 	}
-	waitFor(t, time.Second, "run id env", func() bool { return readFile(runID) != "" })
+	testwait.Until(t, "run id env", func() bool { return readFile(runID) != "" }, testwait.Within(time.Second))
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	response, err := control.Call(ctx, r.path, control.Restart)
@@ -700,10 +688,11 @@ func TestStopCommandFailureAfterChildExitExitsAndFailsRestart(t *testing.T) {
 		restartResult <- callResult{response: response, err: err}
 	}()
 	r.waitStatus(t, string(Stopping))
-	waitFor(t, 2*time.Second, "stop-cmd start marker", func() bool {
+	testwait.Until(t, "stop-cmd start marker", func() bool {
 		_, err := os.Stat(started)
 		return err == nil
-	})
+	}, testwait.Within(2*time.Second))
+
 	if err := syscall.Kill(*initial.PID, syscall.SIGTERM); err != nil {
 		t.Fatalf("terminate fake application: %v", err)
 	}
@@ -832,7 +821,7 @@ func TestSIGTERMKillsTERMIgnoringChildGroupAndReturns143(t *testing.T) {
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
 	}
-	waitFor(t, time.Second, "TERM-ignoring child removal", func() bool { return errors.Is(syscall.Kill(*status.PID, 0), syscall.ESRCH) })
+	testwait.Until(t, "TERM-ignoring child removal", func() bool { return errors.Is(syscall.Kill(*status.PID, 0), syscall.ESRCH) }, testwait.Within(time.Second))
 }
 
 func TestSIGTERMStopsGrandchildInChildProcessGroup(t *testing.T) {
@@ -840,7 +829,7 @@ func TestSIGTERMStopsGrandchildInChildProcessGroup(t *testing.T) {
 	run := fmt.Sprintf(`/bin/sleep 30 & echo $! > %s; wait`, runnertest.ShellQuote(grandchildFile))
 	r := startTestRunner(t, map[string]string{"RESTARTABLE_TEST_RUN": run})
 	status := r.waitStatus(t, string(Running))
-	waitFor(t, time.Second, "grandchild pid", func() bool { return strings.TrimSpace(readFile(grandchildFile)) != "" })
+	testwait.Until(t, "grandchild pid", func() bool { return strings.TrimSpace(readFile(grandchildFile)) != "" }, testwait.Within(time.Second))
 	grandchild, err := strconv.Atoi(strings.TrimSpace(readFile(grandchildFile)))
 	if err != nil {
 		t.Fatal(err)
@@ -848,7 +837,7 @@ func TestSIGTERMStopsGrandchildInChildProcessGroup(t *testing.T) {
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
 	}
-	waitFor(t, time.Second, "grandchild process group cleanup", func() bool { return errors.Is(syscall.Kill(grandchild, 0), syscall.ESRCH) })
+	testwait.Until(t, "grandchild process group cleanup", func() bool { return errors.Is(syscall.Kill(grandchild, 0), syscall.ESRCH) }, testwait.Within(time.Second))
 	if status.PID == nil {
 		t.Fatal("no child pid")
 	}
@@ -863,7 +852,7 @@ func TestControlRestartDuringBuildRequiresNextBuild(t *testing.T) {
 	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s; echo "$n" >> %s; while [ ! -e %s.$n ]; do /bin/sleep 0.01; done; echo "$n" > %s`, runnertest.ShellQuote(count), runnertest.ShellQuote(count), runnertest.ShellQuote(count), runnertest.ShellQuote(starts), runnertest.ShellQuote(filepath.Join(dir, "gate")), runnertest.ShellQuote(artifact))
 	run := fmt.Sprintf(`cat %s >> %s; echo >> %s; exec /bin/sleep 30`, runnertest.ShellQuote(artifact), runnertest.ShellQuote(launches), runnertest.ShellQuote(launches))
 	r := startTestRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": run})
-	waitFor(t, 2*time.Second, "initial build start", func() bool { return strings.TrimSpace(readFile(starts)) == "1" })
+	testwait.Until(t, "initial build start", func() bool { return strings.TrimSpace(readFile(starts)) == "1" }, testwait.Within(2*time.Second))
 	responseCh := make(chan struct {
 		response control.Response
 		err      error
@@ -879,14 +868,15 @@ func TestControlRestartDuringBuildRequiresNextBuild(t *testing.T) {
 	}()
 	// Wait until the control request has been accepted by the socket layer while
 	// the build remains gated, then let that build finish.
-	waitFor(t, time.Second, "control request accepted", func() bool {
+	testwait.Until(t, "control request accepted", func() bool {
 		status, err := r.status()
 		return err == nil && status.RestartPending
-	})
+	}, testwait.Within(time.Second))
+
 	if err := os.WriteFile(filepath.Join(dir, "gate.1"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 2*time.Second, "required second build start", func() bool { return strings.Contains(readFile(starts), "2\n") })
+	testwait.Until(t, "required second build start", func() bool { return strings.Contains(readFile(starts), "2\n") }, testwait.Within(2*time.Second))
 	if got := readFile(launches); got != "" {
 		t.Fatalf("first build artifact launched before required rebuild: %q", got)
 	}
@@ -904,7 +894,7 @@ func TestControlRestartDuringBuildRequiresNextBuild(t *testing.T) {
 	case <-time.After(4 * time.Second):
 		t.Fatal("restart response timed out")
 	}
-	waitFor(t, time.Second, "new run to record artifact", func() bool { return strings.TrimSpace(readFile(launches)) != "" })
+	testwait.Until(t, "new run to record artifact", func() bool { return strings.TrimSpace(readFile(launches)) != "" }, testwait.Within(time.Second))
 	if got := strings.TrimSpace(readFile(launches)); got != "2" {
 		t.Fatalf("launched artifact sequence = %q, want only generation 2", got)
 	}
@@ -923,7 +913,7 @@ func TestControlDisconnectBeforeBuildCommitDropsRequest(t *testing.T) {
 	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s; echo "$n" >> %s; while [ ! -e %s.$n ]; do /bin/sleep 0.01; done; echo "$n" > %s`, runnertest.ShellQuote(count), runnertest.ShellQuote(count), runnertest.ShellQuote(count), runnertest.ShellQuote(starts), runnertest.ShellQuote(gateBase), runnertest.ShellQuote(artifact))
 	run := fmt.Sprintf(`cat %s >> %s; echo >> %s; exec /bin/sleep 30`, runnertest.ShellQuote(artifact), runnertest.ShellQuote(launches), runnertest.ShellQuote(launches))
 	r := startTestRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": run})
-	waitFor(t, 2*time.Second, "initial build start", func() bool { return strings.TrimSpace(readFile(starts)) == "1" })
+	testwait.Until(t, "initial build start", func() bool { return strings.TrimSpace(readFile(starts)) == "1" }, testwait.Within(2*time.Second))
 	conn, err := net.Dial("unix", r.path)
 	if err != nil {
 		t.Fatal(err)
@@ -933,16 +923,16 @@ func TestControlDisconnectBeforeBuildCommitDropsRequest(t *testing.T) {
 	}{Command: "restart"}); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, time.Second, "pre-commit request accepted", func() bool { status, err := r.status(); return err == nil && status.RestartPending })
+	testwait.Until(t, "pre-commit request accepted", func() bool { status, err := r.status(); return err == nil && status.RestartPending }, testwait.Within(time.Second))
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, time.Second, "pre-commit disconnect observed", func() bool { status, err := r.status(); return err == nil && !status.RestartPending })
+	testwait.Until(t, "pre-commit disconnect observed", func() bool { status, err := r.status(); return err == nil && !status.RestartPending }, testwait.Within(time.Second))
 	if err := os.WriteFile(gateBase+".1", nil, 0600); err != nil {
 		t.Fatal(err)
 	}
 	status := r.waitStatus(t, string(Running))
-	waitFor(t, time.Second, "current build launch", func() bool { return strings.TrimSpace(readFile(launches)) == "1" })
+	testwait.Until(t, "current build launch", func() bool { return strings.TrimSpace(readFile(launches)) == "1" }, testwait.Within(time.Second))
 	if status.Generation != 1 || strings.Contains(readFile(starts), "2\n") {
 		t.Fatalf("pre-commit disconnect caused rebuild: status=%+v builds=%q", status, readFile(starts))
 	}
@@ -977,20 +967,22 @@ func TestControlDisconnectAfterCommitContinuesRestart(t *testing.T) {
 	}{Command: "restart"}); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 10*time.Second, "restart commit", func() bool {
+	testwait.Until(t, "restart commit", func() bool {
 		status, err := r.status()
 		return err == nil && status.State == string(Stopping) && status.RestartPending
-	})
+	}, testwait.Within(10*time.Second))
+
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 10*time.Second, "committed restart despite disconnect", func() bool {
+	testwait.Until(t, "committed restart despite disconnect", func() bool {
 		status, err := r.status()
 		return err == nil && status.State == string(Running) && status.Generation == 2 && status.PID != nil
-	})
+	}, testwait.Within(10*time.Second))
+
 	if got := strings.TrimSpace(readFile(count)); got != "2" {
 		t.Fatalf("build count after committed disconnect = %q", got)
 	}
@@ -1089,7 +1081,7 @@ func TestDrainOutputsDoesNotKillNaturalExitDescendantHoldingPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-proc.done
-	waitFor(t, 10*time.Second, "descendant PID", func() bool { return strings.TrimSpace(readFile(pidFile)) != "" })
+	testwait.Until(t, "descendant PID", func() bool { return strings.TrimSpace(readFile(pidFile)) != "" }, testwait.Within(10*time.Second))
 	pid, err := strconv.Atoi(strings.TrimSpace(readFile(pidFile)))
 	if err != nil {
 		t.Fatal(err)
@@ -1110,19 +1102,20 @@ func TestDrainOutputsDoesNotKillNaturalExitDescendantHoldingPipe(t *testing.T) {
 
 	a.drainOutputs()
 
-	waitFor(t, time.Second, "natural-exit descendant to wait at the named pipe", func() bool {
+	testwait.Until(t, "natural-exit descendant to wait at the named pipe", func() bool {
 		file, err := os.OpenFile(gate, os.O_WRONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			return false
 		}
 		gateWriter = file
 		return true
-	})
+	}, testwait.Within(time.Second))
+
 	if _, err := gateWriter.WriteString("continue\n"); err != nil {
 		t.Fatal(err)
 	}
 	_ = gateWriter.Close()
-	waitFor(t, time.Second, "natural-exit descendant to continue after output drain", func() bool { return strings.TrimSpace(readFile(marker)) == "alive" })
+	testwait.Until(t, "natural-exit descendant to continue after output drain", func() bool { return strings.TrimSpace(readFile(marker)) == "alive" }, testwait.Within(time.Second))
 	if !strings.Contains(stderr.String(), fmt.Sprintf("子孫が出力を握ったまま残っている (pgid %d)", proc.pid)) {
 		t.Fatalf("missing descendant output warning: %q", stderr.String())
 	}
@@ -1384,7 +1377,7 @@ func TestForcedShutdownKillsStopCommandGroupAfterChildExits(t *testing.T) {
 		_, err := control.Call(ctx, r.path, control.Restart)
 		result <- err
 	}()
-	waitFor(t, time.Second, "stop command to start", func() bool { return strings.TrimSpace(readFile(stopPIDFile)) != "" })
+	testwait.Until(t, "stop command to start", func() bool { return strings.TrimSpace(readFile(stopPIDFile)) != "" }, testwait.Within(time.Second))
 	stopPID, err := strconv.Atoi(strings.TrimSpace(readFile(stopPIDFile)))
 	if err != nil {
 		t.Fatal(err)
@@ -1398,7 +1391,7 @@ func TestForcedShutdownKillsStopCommandGroupAfterChildExits(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("control call did not finish during forced shutdown")
 	}
-	waitFor(t, time.Second, "stop command group cleanup", func() bool { return !groupExists(stopPID) })
+	testwait.Until(t, "stop command group cleanup", func() bool { return !groupExists(stopPID) }, testwait.Within(time.Second))
 }
 
 func TestForcedShutdownIncludesGroupsWhoseLeadersWereReaped(t *testing.T) {
@@ -1426,7 +1419,7 @@ func TestForcedShutdownIncludesGroupsWhoseLeadersWereReaped(t *testing.T) {
 	waitPresenterSnapshot(t, statePath, "successful stop command", func(got presenterSnapshot) bool {
 		return got.Model.State == Stopping && got.Model.StopAccepted
 	})
-	waitFor(t, time.Second, "stop group leader PID", func() bool { return strings.TrimSpace(readFile(stopPIDFile)) != "" })
+	testwait.Until(t, "stop group leader PID", func() bool { return strings.TrimSpace(readFile(stopPIDFile)) != "" }, testwait.Within(time.Second))
 	stopPID, err := strconv.Atoi(strings.TrimSpace(readFile(stopPIDFile)))
 	if err != nil {
 		t.Fatal(err)
@@ -1443,7 +1436,7 @@ func TestForcedShutdownIncludesGroupsWhoseLeadersWereReaped(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("pending restart call did not finish during forced shutdown")
 	}
-	waitFor(t, time.Second, "reaped stop command group cleanup", func() bool { return !groupExists(stopPID) })
+	testwait.Until(t, "reaped stop command group cleanup", func() bool { return !groupExists(stopPID) }, testwait.Within(time.Second))
 }
 
 func TestForcedShutdownKillsGrandchildAfterLeaderExits(t *testing.T) {
@@ -1457,12 +1450,12 @@ func TestForcedShutdownKillsGrandchildAfterLeaderExits(t *testing.T) {
 	if status.PID == nil {
 		t.Fatal("runner has no child PID")
 	}
-	waitFor(t, time.Second, "grandchild PID", func() bool { return strings.TrimSpace(readFile(grandchildFile)) != "" })
+	testwait.Until(t, "grandchild PID", func() bool { return strings.TrimSpace(readFile(grandchildFile)) != "" }, testwait.Within(time.Second))
 	t.Cleanup(func() { _ = signalGroup(*status.PID, syscall.SIGKILL) })
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
 	}
-	waitFor(t, time.Second, "grandchild group cleanup", func() bool { return !groupExists(*status.PID) })
+	testwait.Until(t, "grandchild group cleanup", func() bool { return !groupExists(*status.PID) }, testwait.Within(time.Second))
 }
 
 func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
@@ -1486,9 +1479,9 @@ func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
 	if initial.PID == nil {
 		t.Fatal("runner has no child PID")
 	}
-	waitFor(t, 10*time.Second, "descendant PID", func() bool { return strings.TrimSpace(readFile(childPIDPath)) != "" })
+	testwait.Until(t, "descendant PID", func() bool { return strings.TrimSpace(readFile(childPIDPath)) != "" }, testwait.Within(10*time.Second))
 	t.Cleanup(func() { _ = signalGroup(*initial.PID, syscall.SIGKILL) })
-	waitFor(t, 10*time.Second, "descendant to arm its TERM trap", func() bool { return strings.TrimSpace(readFile(childArmed)) != "" })
+	testwait.Until(t, "descendant to arm its TERM trap", func() bool { return strings.TrimSpace(readFile(childArmed)) != "" }, testwait.Within(10*time.Second))
 	type restartResult struct {
 		response control.Response
 		err      error
@@ -1500,17 +1493,18 @@ func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
 		response, err := control.Call(ctx, r.path, control.Restart)
 		restartDone <- restartResult{response: response, err: err}
 	}()
-	waitFor(t, 10*time.Second, "descendant to receive SIGTERM", func() bool { return strings.TrimSpace(readFile(ready)) != "" })
-	waitFor(t, 10*time.Second, "group leader to finish before its descendant", func() bool {
+	testwait.Until(t, "descendant to receive SIGTERM", func() bool { return strings.TrimSpace(readFile(ready)) != "" }, testwait.Within(10*time.Second))
+	testwait.Until(t, "group leader to finish before its descendant", func() bool {
 		return errors.Is(syscall.Kill(*initial.PID, 0), syscall.ESRCH) && strings.TrimSpace(readFile(leaderExited)) != ""
-	})
+	}, testwait.Within(10*time.Second))
+
 	if !groupExists(*initial.PID) {
 		t.Fatal("process group disappeared while its descendant was still handling SIGTERM")
 	}
 	if err := os.WriteFile(release, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 2*time.Second, "descendant to complete graceful termination", func() bool { return strings.TrimSpace(readFile(gracefulExit)) != "" })
+	testwait.Until(t, "descendant to complete graceful termination", func() bool { return strings.TrimSpace(readFile(gracefulExit)) != "" }, testwait.Within(2*time.Second))
 	select {
 	case result := <-restartDone:
 		if result.err != nil {
@@ -1615,9 +1609,10 @@ func TestQuitConfirmationDuringReadinessUsesStopCommand(t *testing.T) {
 	if stopping.Model.State != Stopping || stopping.Model.Intent != IntentExit || stopping.Model.Transition.Kind != TransitionQuit || stopping.Model.Transition.Stage != TransitionStop {
 		t.Fatalf("confirmed quit during readiness did not enter the stop path: %+v", stopping.Model)
 	}
-	waitFor(t, 3*time.Second, "stop-cmd to run for a quit during readiness", func() bool {
+	testwait.Until(t, "stop-cmd to run for a quit during readiness", func() bool {
 		return readFile(stopMarkerPath) == "started"
-	})
+	}, testwait.Within(3*time.Second))
+
 	busy := sendKeyAndWaitRender(t, keyPath, statePath, "Q")
 	if busy.Model.State != Stopping || !busy.Model.Transition.Busy || busy.Model.Message != "処理中" {
 		t.Fatalf("Q during stop-cmd should be ignored as busy: %+v", busy.Model)
@@ -1633,9 +1628,10 @@ func TestQuitConfirmationDuringReadinessUsesStopCommand(t *testing.T) {
 	if err := stopRelease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 3*time.Second, "stop-cmd to stop the running child", func() bool {
+	testwait.Until(t, "stop-cmd to stop the running child", func() bool {
 		return readFile(stopMarkerPath) == "done"
-	})
+	}, testwait.Within(3*time.Second))
+
 	select {
 	case <-r.done:
 	case <-time.After(4 * time.Second):
@@ -1672,9 +1668,10 @@ func TestQuitStopCancellationResumesUnconfirmedReadyCheck(t *testing.T) {
 		"RESTARTABLE_TEST_KEY_SOCKET":          keyPath,
 		"RESTARTABLE_TEST_PRESENTER_STATE":     statePath,
 	})
-	waitFor(t, 3*time.Second, "first readiness command to block on its gate", func() bool {
+	testwait.Until(t, "first readiness command to block on its gate", func() bool {
 		return strings.TrimSpace(readFile(attemptPath)) == "1"
-	})
+	}, testwait.Within(3*time.Second))
+
 	readyStatus := r.waitStatus(t, string(Running))
 	if readyStatus.Ready {
 		t.Fatalf("status reported ready before the gated command succeeded: %+v", readyStatus)
@@ -1691,9 +1688,10 @@ func TestQuitStopCancellationResumesUnconfirmedReadyCheck(t *testing.T) {
 	if cancelled.Model.State != Running || cancelled.Model.Ready {
 		t.Fatalf("Esc did not return to running with readiness unconfirmed: %+v", cancelled.Model)
 	}
-	waitFor(t, 3*time.Second, "readiness command to restart after Esc", func() bool {
+	testwait.Until(t, "readiness command to restart after Esc", func() bool {
 		return strings.TrimSpace(readFile(attemptPath)) == "2"
-	})
+	}, testwait.Within(3*time.Second))
+
 	readyGate, err := os.OpenFile(secondReadyGate, os.O_WRONLY, 0600)
 	if err != nil {
 		t.Fatal(err)
@@ -1762,10 +1760,11 @@ func TestReadyCleanupQueuesCancellationWhilePreviousCleanupRuns(t *testing.T) {
 	})
 	a := &actor{cfg: Config{ReadyCleanupGrace: 30 * time.Second}, events: make(chan actorEvent, 4)}
 	a.startReadyCleanup(oldProc, 1, 1, readyCleanupCompleted)
-	waitFor(t, 3*time.Second, "old cleanup process to enter its gated TERM handler", func() bool {
+	testwait.Until(t, "old cleanup process to enter its gated TERM handler", func() bool {
 		_, err := os.Stat(cleanupStarted)
 		return err == nil
-	})
+	}, testwait.Within(3*time.Second))
+
 	a.readyProbe = newProc
 	a.startReadyCleanup(newProc, 2, 2, readyCleanupCancelled)
 	gate, err := os.OpenFile(cleanupRelease, os.O_WRONLY, 0600)
@@ -1784,9 +1783,10 @@ func TestReadyCleanupQueuesCancellationWhilePreviousCleanupRuns(t *testing.T) {
 		t.Fatalf("first cleanup event = %+v, want old process cleanup", oldDone)
 	}
 	a.handleReadyCleanupDone(oldDone)
-	waitFor(t, 3*time.Second, "queued ready process group to be cleaned", func() bool {
+	testwait.Until(t, "queued ready process group to be cleaned", func() bool {
 		return !groupExists(newProc.pid)
-	})
+	}, testwait.Within(3*time.Second))
+
 	newDone := <-a.events
 	if newDone.kind != readyCleanupDoneEvent || newDone.proc != newProc {
 		t.Fatalf("second cleanup event = %+v, want new process cleanup", newDone)
@@ -1873,14 +1873,15 @@ func TestReadyCommandRetriesWithInstanceIDAndReportsReadyInStatus(t *testing.T) 
 		t.Fatalf("status reported ready before the confirmation command succeeded: %+v", initial)
 	}
 	var readyStatus control.Response
-	waitFor(t, 3*time.Second, "ready command to succeed on its third attempt", func() bool {
+	testwait.Until(t, "ready command to succeed on its third attempt", func() bool {
 		got, err := r.status()
 		if err != nil {
 			return false
 		}
 		readyStatus = got
 		return got.Ready
-	})
+	}, testwait.Within(3*time.Second))
+
 	if readyStatus.Generation != 1 || strings.TrimSpace(readFile(countPath)) != "3" {
 		t.Fatalf("ready status/attempt count = %+v / %q", readyStatus, readFile(countPath))
 	}
@@ -1911,9 +1912,10 @@ func TestReadyTimeoutKillsProbeGroupsButKeepsChildAlive(t *testing.T) {
 	if status.PID == nil || status.Ready {
 		t.Fatalf("initial readiness status = %+v", status)
 	}
-	waitFor(t, 3*time.Second, "ready timeout result", func() bool {
+	testwait.Until(t, "ready timeout result", func() bool {
 		return strings.Contains(readFile(r.stderr), "起動を確認できませんでした")
-	})
+	}, testwait.Within(3*time.Second))
+
 	status, err := r.status()
 	if err != nil || status.State != string(Running) || status.Ready || status.PID == nil || *status.PID == 0 {
 		t.Fatalf("readiness failure changed child status: %+v, err=%v", status, err)
@@ -1924,10 +1926,11 @@ func TestReadyTimeoutKillsProbeGroupsButKeepsChildAlive(t *testing.T) {
 	if err := os.WriteFile(releaseChild, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 2*time.Second, "application continues after readiness timeout", func() bool {
+	testwait.Until(t, "application continues after readiness timeout", func() bool {
 		_, err := os.Stat(childSurvived)
 		return err == nil
-	})
+	}, testwait.Within(2*time.Second))
+
 	if got := strings.Count(readFile(r.stderr), "起動を確認できませんでした"); got != 1 {
 		t.Fatalf("readiness timeout result count = %d, stderr=%q", got, readFile(r.stderr))
 	}
@@ -1940,9 +1943,10 @@ func TestReadyTimeoutKillsProbeGroupsButKeepsChildAlive(t *testing.T) {
 		if err != nil {
 			t.Fatalf("invalid probe process id %q: %v", line, err)
 		}
-		waitFor(t, 2*time.Second, fmt.Sprintf("ready probe process group %d cleanup", pid), func() bool {
+		testwait.Until(t, fmt.Sprintf("ready probe process group %d cleanup", pid), func() bool {
 			return !groupExists(pid)
-		})
+		}, testwait.Within(2*time.Second))
+
 	}
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
@@ -1978,7 +1982,7 @@ func TestChildCanExitBeforeReadyProbeAndProbeGroupIsReaped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ready probe pid = %q: %v", pidText, err)
 	}
-	waitFor(t, 2*time.Second, "ready probe group cleanup after child exit", func() bool { return !groupExists(pid) })
+	testwait.Until(t, "ready probe group cleanup after child exit", func() bool { return !groupExists(pid) }, testwait.Within(2*time.Second))
 }
 
 func TestControlRestartDuringReadyDiscardsOldGenerationResult(t *testing.T) {
@@ -1996,9 +2000,10 @@ func TestControlRestartDuringReadyDiscardsOldGenerationResult(t *testing.T) {
 		"RESTARTABLE_TEST_READY_CLEANUP_GRACE":   "20ms",
 		"RESTARTABLE_TEST_TERM_GRACE":            "60ms",
 	})
-	waitFor(t, 3*time.Second, "first generation readiness probe", func() bool {
+	testwait.Until(t, "first generation readiness probe", func() bool {
 		return strings.TrimSpace(readFile(countPath)) == "1"
-	})
+	}, testwait.Within(3*time.Second))
+
 	first, err := r.status()
 	if err != nil || first.Generation != 1 || first.Ready {
 		t.Fatalf("first generation status = %+v, err=%v", first, err)
@@ -2009,9 +2014,10 @@ func TestControlRestartDuringReadyDiscardsOldGenerationResult(t *testing.T) {
 	if err != nil || !response.OK || response.Generation != 2 || response.Ready {
 		t.Fatalf("control restart response = %+v, err=%v", response, err)
 	}
-	waitFor(t, 3*time.Second, "second generation readiness probe", func() bool {
+	testwait.Until(t, "second generation readiness probe", func() bool {
 		return strings.TrimSpace(readFile(countPath)) == "2"
-	})
+	}, testwait.Within(3*time.Second))
+
 	if err := os.WriteFile(firstGate, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -2022,10 +2028,11 @@ func TestControlRestartDuringReadyDiscardsOldGenerationResult(t *testing.T) {
 	if err := os.WriteFile(secondGate, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 3*time.Second, "second generation readiness", func() bool {
+	testwait.Until(t, "second generation readiness", func() bool {
 		got, err := r.status()
 		return err == nil && got.Generation == 2 && got.Ready
-	})
+	}, testwait.Within(3*time.Second))
+
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
 	}
@@ -2053,7 +2060,7 @@ func TestRunnerSignalHandlingAndSIGPIPEDefaultInExecChild(t *testing.T) {
 			if code := r.signalAndWait(t, tc.sig); code != tc.code {
 				t.Fatalf("runner exit code = %d, want %d", code, tc.code)
 			}
-			waitFor(t, time.Second, "child group cleanup", func() bool { return !groupExists(*status.PID) })
+			testwait.Until(t, "child group cleanup", func() bool { return !groupExists(*status.PID) }, testwait.Within(time.Second))
 		})
 	}
 
@@ -2079,9 +2086,10 @@ func TestRunnerSignalHandlingAndSIGPIPEDefaultInExecChild(t *testing.T) {
 		if status.PID == nil {
 			t.Fatal("runner has no child PID after stdout broke")
 		}
-		waitFor(t, time.Second, "one broken-output warning", func() bool {
+		testwait.Until(t, "one broken-output warning", func() bool {
 			return strings.Contains(readFile(r.stderr), "出力先に書けなくなったので以後のログを捨てる")
-		})
+		}, testwait.Within(time.Second))
+
 		if got := strings.Count(readFile(r.stderr), "出力先に書けなくなったので以後のログを捨てる"); got != 1 {
 			t.Fatalf("broken-output warnings = %d, want one; stderr=%q", got, readFile(r.stderr))
 		}
@@ -2136,7 +2144,7 @@ func TestForwardKeysExitsWhenEventAndKeyQueuesAreFull(t *testing.T) {
 		forwardKeys(done, keys, events)
 		close(forwarded)
 	}()
-	waitFor(t, time.Second, "key forwarder to block on the full actor queue", func() bool { return len(keys) == cap(keys)-1 })
+	testwait.Until(t, "key forwarder to block on the full actor queue", func() bool { return len(keys) == cap(keys)-1 }, testwait.Within(time.Second))
 	keys <- "q"
 	close(done)
 	select {
@@ -2191,7 +2199,7 @@ func TestInteractiveChildCrashRestartsWithRKeyAndQuitsWithQ(t *testing.T) {
 	r, keyPath := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": "true", "RESTARTABLE_TEST_RUN": run})
 	r.waitStatus(t, string(Crashed))
 	sendIntegrationKey(t, keyPath, "R")
-	waitFor(t, 3*time.Second, "R to launch again", func() bool { return strings.Count(readFile(launches), "x") >= 2 })
+	testwait.Until(t, "R to launch again", func() bool { return strings.Count(readFile(launches), "x") >= 2 }, testwait.Within(3*time.Second))
 	r.waitStatus(t, string(Crashed))
 	sendIntegrationKey(t, keyPath, "Q")
 	sendIntegrationKey(t, keyPath, "y")
@@ -2248,7 +2256,7 @@ func TestCrashedRebuildStopsLeftoverGroupBeforeNextLaunch(t *testing.T) {
 	if response, err := control.Call(ctx, r.path, control.Restart); err != nil || !response.OK {
 		t.Fatalf("restart from crashed = %+v, %v", response, err)
 	}
-	waitFor(t, 3*time.Second, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 })
+	testwait.Until(t, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 }, testwait.Within(3*time.Second))
 	if got := strings.Fields(readFile(launches)); len(got) != 2 || got[1] != "clean" {
 		t.Fatalf("launches = %q, want the second launch after the leftover group got TERM\nstderr: %s\nstdout: %s", got, readFile(r.stderr), readFile(r.stdout))
 	}
@@ -2289,7 +2297,7 @@ func TestCrashedRebuildKillsTERMIgnoringLeftoverBeforeNextLaunch(t *testing.T) {
 	if response, err := control.Call(ctx, r.path, control.Restart); err != nil || !response.OK {
 		t.Fatalf("restart from crashed = %+v, %v", response, err)
 	}
-	waitFor(t, 3*time.Second, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 })
+	testwait.Until(t, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 }, testwait.Within(3*time.Second))
 	if got := strings.Fields(readFile(launches)); got[1] != "clean" {
 		t.Fatalf("launches = %q, want the TERM-ignoring grandchild killed before the second launch", got)
 	}
@@ -2325,7 +2333,7 @@ func TestRestartDuringCrashCleanupDoesNotAddBuild(t *testing.T) {
 	if got := strings.Fields(readFile(builds)); len(got) != 2 {
 		t.Fatalf("builds = %q, want the initial build and one rebuild", got)
 	}
-	waitFor(t, 3*time.Second, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 })
+	testwait.Until(t, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 }, testwait.Within(3*time.Second))
 	if got := strings.Fields(readFile(launches)); len(got) != 2 || got[1] != "clean" {
 		t.Fatalf("launches = %q", got)
 	}
@@ -2450,7 +2458,7 @@ func TestHeadlessRebuildFailureStopsOldLeftoversBeforeExit(t *testing.T) {
 		"RESTARTABLE_TEST_STOP": "kill -KILL $(cat " + runnertest.ShellQuote(parent) + ")",
 	})
 	r.waitStatus(t, string(Running))
-	waitFor(t, 3*time.Second, "grandchild pid", func() bool { return strings.TrimSpace(readFile(gcPID)) != "" })
+	testwait.Until(t, "grandchild pid", func() bool { return strings.TrimSpace(readFile(gcPID)) != "" }, testwait.Within(3*time.Second))
 	pid, err := strconv.Atoi(strings.TrimSpace(readFile(gcPID)))
 	if err != nil {
 		t.Fatal(err)
@@ -2490,7 +2498,7 @@ func TestQuitFromBuildFailedStopsOldLeftovers(t *testing.T) {
 		"RESTARTABLE_TEST_INTERACTIVE": "1", "RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
 	})
 	r.waitStatus(t, string(Running))
-	waitFor(t, 3*time.Second, "grandchild pid", func() bool { return strings.TrimSpace(readFile(gcPID)) != "" })
+	testwait.Until(t, "grandchild pid", func() bool { return strings.TrimSpace(readFile(gcPID)) != "" }, testwait.Within(3*time.Second))
 	pid, err := strconv.Atoi(strings.TrimSpace(readFile(gcPID)))
 	if err != nil {
 		t.Fatal(err)
@@ -2529,7 +2537,7 @@ func TestStopCommandRestartStopsOldLeftoversBeforeNextLaunch(t *testing.T) {
 		"RESTARTABLE_TEST_STOP": "kill -KILL $(cat " + runnertest.ShellQuote(parent) + ")",
 	})
 	r.waitStatus(t, string(Running))
-	waitFor(t, 3*time.Second, "first launch", func() bool { return strings.TrimSpace(readFile(gcPID)) != "" })
+	testwait.Until(t, "first launch", func() bool { return strings.TrimSpace(readFile(gcPID)) != "" }, testwait.Within(3*time.Second))
 	if pid, err := strconv.Atoi(strings.TrimSpace(readFile(gcPID))); err == nil {
 		t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 	}
@@ -2538,7 +2546,7 @@ func TestStopCommandRestartStopsOldLeftoversBeforeNextLaunch(t *testing.T) {
 	if response, err := control.Call(ctx, r.path, control.Restart); err != nil || !response.OK {
 		t.Fatalf("restart = %+v, %v", response, err)
 	}
-	waitFor(t, 3*time.Second, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 })
+	testwait.Until(t, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 }, testwait.Within(3*time.Second))
 	if got := strings.Fields(readFile(launches)); got[1] != "clean" {
 		t.Fatalf("launches = %q, want the old grandchild gone before the second launch", got)
 	}
@@ -2559,7 +2567,7 @@ func TestCtrlCDuringForcedStopKillsWithoutWaitingForGrace(t *testing.T) {
 		"RESTARTABLE_TEST_TERM_GRACE":  "60s",
 		"RESTARTABLE_TEST_INTERACTIVE": "1", "RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
 	}, true)
-	waitFor(t, 3*time.Second, "build to start", func() bool { _, err := os.Stat(started); return err == nil })
+	testwait.Until(t, "build to start", func() bool { _, err := os.Stat(started); return err == nil }, testwait.Within(3*time.Second))
 	quitWithConfirm(t, keyPath, state) // ビルド中の Q → 強制停止 (ビルドは TERM を無視するので 60s の猶予を待つ)
 	waitPresenterSnapshot(t, state, "exiting", func(got presenterSnapshot) bool { return got.Model.State == Exiting })
 	sendIntegrationKey(t, keyPath, "ctrl+c")

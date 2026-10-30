@@ -10,6 +10,7 @@ on:
     branches: [master]
     paths:
       - 'src/zundamon-kaisetsu/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/proctree/**'     # replace で取り込む共有 module (子孫を集めて止める)
       - '_claude/skills/zundamon-kaisetsu/**'
       - .github/workflows/src_zundamon-kaisetsu.yml
@@ -22,6 +23,7 @@ on:
   pull_request:
     paths:
       - 'src/zundamon-kaisetsu/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/proctree/**'     # replace で取り込む共有 module (子孫を集めて止める)
       - '_claude/skills/zundamon-kaisetsu/**'
       - .github/workflows/src_zundamon-kaisetsu.yml

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"testwait"
 )
 
 // fakeOpen は openCommand を差し替え、open(1) に渡そうとした引数を 1 回につき 1 つの文字列 (空白区切り) で記録する。
@@ -31,13 +33,14 @@ func fakeOpen(t *testing.T, err error) func() []string {
 
 func settleOpen(t *testing.T, m *Model) []Notice {
 	t.Helper()
-	waitFor(t, "open", func() bool {
+	testwait.Until(t, "open", func() bool {
 		if !m.opener.busy() {
 			return true
 		}
 		m.Advance(fixedNow)
 		return false
 	})
+
 	return m.TakeNotices()
 }
 

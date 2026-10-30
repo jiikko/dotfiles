@@ -17,10 +17,10 @@ import (
 
 	"pro-con/card"
 	"pro-con/eventlog"
-	"pro-con/internal/testwait"
 	"pro-con/live"
 	"pro-con/store"
 	"pro-con/wake"
+	"testwait"
 )
 
 // viewDir は socket のパスが上限に収まる置き場 (t.TempDir は macOS では長く、socket が一時ディレクトリへ逃がす側に倒れる)。

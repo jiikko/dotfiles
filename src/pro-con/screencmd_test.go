@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"pro-con/dispatcher"
-	"pro-con/internal/testwait"
 	"pro-con/relay"
+	"testwait"
 )
 
 func screenCmd(t *testing.T, args ...string) (int, string, string) {

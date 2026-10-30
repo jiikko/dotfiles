@@ -32,7 +32,7 @@
 ## 待つために `sleep` を書かない — 条件のポーリングにする
 
 - **dotfiles では `make test-lint` (`scripts/check_test_sleeps.sh`) が、理由の印の無い sleep を落とす** (shell の `sleep` と Go の
-  `*_test.go` の `time.Sleep`)。待つなら `tests/lib/wait_until.sh` の `tt_wait_until` / 各 package の待ちの helper で条件を待つ。
+  `*_test.go` の `time.Sleep`)。待つなら shell は `tests/lib/wait_until.sh` の `tt_wait_until`、Go は共通の module `src/testwait` (`testwait.Until` / `Poll`。時間切れで待った時間・子孫のプロセス・goroutine を出す) で条件を待つ。module ごとに待ちの helper を写さない。
   待ちではない sleep (kill される子・窓を作る入力・否定の確認) だけ、同じ行か直前の行に `sleep-ok: <分類>: <理由>` を書く
 - **「そのうち終わるはず」の `sleep N` を書かない。** 成立条件を**関数**にして、
   上限つきでポーリングする。上限を超えたら**明示的に FAIL** させる (黙って先へ進まない)

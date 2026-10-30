@@ -11,6 +11,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"testwait"
 )
 
 func TestWiredName(t *testing.T) {
@@ -341,30 +343,30 @@ func TestAdvertLoopFollowsIP(t *testing.T) {
 	ifcCalls := func() int { b, _ := os.ReadFile(calls); return strings.Count(string(b), "x") }
 	// 起こしていないことの確認は待つ事象が無いので、ループが 20 周 (約 1 秒) 回るのを待ってから見る。偽の dns-sd は & で起こす sh で、
 	// pid を書くまで数周かかる (3 周では、前方一致で起こす変異を見逃した)。本物の実装を赤にする向きには外れない
-	waitFor(t, "ifconfig を 20 回見る", func() bool { return ifcCalls() >= 20 })
+	testwait.Until(t, "ifconfig を 20 回見る", func() bool { return ifcCalls() >= 20 })
 	if n := len(started()); n != 0 {
 		t.Fatalf("192.168.100.111 しか無いのに dns-sd を %d 回起こした (前方一致で持っていると読んだ)", n)
 	}
 	setIfc("en7: flags=8863<UP>\n\tinet 192.168.100.11 netmask 0xffffff00\n")
-	waitFor(t, "IP を持ったら dns-sd を起こす", func() bool { return len(started()) == 1 })
+	testwait.Until(t, "IP を持ったら dns-sd を起こす", func() bool { return len(started()) == 1 })
 	first := pidOf(started()[0])
 	if want := "_-P_air5.wired_" + wiredService + "_local_9_air5.wired.local_192.168.100.11"; !strings.HasSuffix(started()[0], want) {
 		t.Errorf("dns-sd の引数 = %q, want …%q", started()[0], want)
 	}
 	setIfc("en7: flags=8863<UP>\n\tinet 169.254.48.172 netmask 0xffff0000\n")
-	waitFor(t, "IP を失ったら dns-sd を止める", func() bool { return !alive(first) })
+	testwait.Until(t, "IP を失ったら dns-sd を止める", func() bool { return !alive(first) })
 	setIfc("en8: flags=8863<UP>\n\tinet 192.168.100.11 netmask 0xffffff00\n")
-	waitFor(t, "IP が戻ったら起こし直す", func() bool { return len(started()) == 2 })
+	testwait.Until(t, "IP が戻ったら起こし直す", func() bool { return len(started()) == 2 })
 	second := pidOf(started()[1])
 	if err := syscall.Kill(second, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "dns-sd が落ちたら起こし直す", func() bool { return len(started()) == 3 })
+	testwait.Until(t, "dns-sd が落ちたら起こし直す", func() bool { return len(started()) == 3 })
 	third := pidOf(started()[2])
 	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "TERM で抜ける", func() bool {
+	testwait.Until(t, "TERM で抜ける", func() bool {
 		select {
 		case err := <-done:
 			if err != nil {
@@ -375,5 +377,6 @@ func TestAdvertLoopFollowsIP(t *testing.T) {
 			return false
 		}
 	})
-	waitFor(t, "TERM で子の dns-sd も止める", func() bool { return !alive(third) })
+
+	testwait.Until(t, "TERM で子の dns-sd も止める", func() bool { return !alive(third) })
 }

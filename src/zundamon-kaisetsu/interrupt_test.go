@@ -21,19 +21,9 @@ import (
 	"zundamon-kaisetsu/internal/extcmd"
 	"zundamon-kaisetsu/internal/outfile"
 	"zundamon-kaisetsu/internal/paths"
-)
 
-// waitUntil は条件が成り立つまで刻んで待つ。10 秒で成り立たなければ落とす (ハングの安全網。合否は条件で決める)。
-func waitUntil(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for range 1000 {
-		if cond() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み
-	}
-	t.Fatalf("%s が 10 秒たっても成り立たない", what)
-}
+	"testwait"
+)
 
 // withAppCtx は Ctx を取り消せるものに差し替える (テストの後に戻す)。
 func withAppCtx(t *testing.T) context.CancelFunc {
@@ -68,10 +58,10 @@ func TestInterruptStopsChildThenRemovesTemp(t *testing.T) {
 	go func() {
 		done <- build.CmdBuild(env, filepath.Join("testdata", "build", "script.json"), filepath.Join(t.TempDir(), "out"), "html", 1, 64, true, false)
 	}()
-	waitUntil(t, "偽の ffmpeg の起動", func() bool { return paths.IsFile(marker) })
+	testwait.Until(t, "偽の ffmpeg の起動", func() bool { return paths.IsFile(marker) })
 	cancel()
 	var err error
-	waitUntil(t, "cmdBuild の終了", func() bool {
+	testwait.Until(t, "cmdBuild の終了", func() bool {
 		select {
 		case err = <-done:
 			return true
@@ -79,6 +69,7 @@ func TestInterruptStopsChildThenRemovesTemp(t *testing.T) {
 			return false
 		}
 	})
+
 	if !errors.Is(err, app.ErrInterrupted) {
 		t.Errorf("中断の誤りが返らない: %v", err)
 	}
@@ -108,10 +99,10 @@ func TestRunQuietStopsOnInterrupt(t *testing.T) {
 		rc, _ := extcmd.RunQuiet(time.Minute, "/bin/sh", "-c", "touch "+marker+"; exec /bin/sleep 30")
 		got <- rc
 	}()
-	waitUntil(t, "子の起動", func() bool { return paths.IsFile(marker) })
+	testwait.Until(t, "子の起動", func() bool { return paths.IsFile(marker) })
 	cancel()
 	var rc int
-	waitUntil(t, "runQuiet の終了", func() bool {
+	testwait.Until(t, "runQuiet の終了", func() bool {
 		select {
 		case rc = <-got:
 			return true
@@ -119,6 +110,7 @@ func TestRunQuietStopsOnInterrupt(t *testing.T) {
 			return false
 		}
 	})
+
 	if rc != 130 {
 		t.Errorf("rc=%d want 130 (中断)", rc)
 	}

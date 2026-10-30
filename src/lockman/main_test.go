@@ -256,16 +256,3 @@ func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	return captureOutput(t, &os.Stdout, fn)
 }
-
-// pollUntil は cond が真になるまで tick ごとに見て、limit を過ぎたら false を返す。
-// 壁時計で合否を決めず、成立条件を待つ (sleep は刻みだけ)。t を持たない goroutine からも呼べる。
-func pollUntil(limit, tick time.Duration, cond func() bool) bool {
-	deadline := time.Now().Add(limit)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return true
-		}
-		time.Sleep(tick) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (pollUntil)
-	}
-	return false
-}

@@ -13,13 +13,13 @@ import (
 	"path/filepath"
 	"pro-con/agents"
 	"pro-con/dispatcher"
-	"pro-con/internal/testwait"
 	"pro-con/live"
 	"pro-con/presence"
 	"pro-con/store"
 	"pro-con/wake"
 	"strings"
 	"sync"
+	"testwait"
 )
 
 // listEveryTick は暇な間の一覧の間引きを切る。この file のテストは空の状態 (暇) で回し、一覧を取った回数で Tick を数える

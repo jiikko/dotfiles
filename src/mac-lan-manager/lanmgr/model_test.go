@@ -22,12 +22,12 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 
 	"mac-lan-manager/discover"
-	"mac-lan-manager/internal/testwait"
 	"mac-lan-manager/lanmgr/lanmgrtest"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/prefs"
 	"mac-lan-manager/setup"
+	"testwait"
 )
 
 func TestMain(m *testing.M) { widthenv.ExitIfUnsupported(); m.Run() }
@@ -809,7 +809,7 @@ func TestKeyAppliesFinishedNetLoad(t *testing.T) {
 		Ledger:    &lanmgrtest.Store{Hosts: []ledger.Host{{Host: "x.local", User: "koji", LAN: "192.168.100.9"}}},
 		Now:       func() time.Time { return t0 },
 	})
-	testwait.Until(t, "読み込みの結果が届く", 5*time.Second, nil, func() bool { return len(m.netCh) > 0 })
+	testwait.Until(t, "読み込みの結果が届く", func() bool { return len(m.netCh) > 0 }, testwait.Within(5*time.Second))
 	m.HandleKey("j")
 	if a := m.HandleKey("s"); a != Exec {
 		t.Errorf("届いた結果を取り込まず「読んでいます」で断った: %v %+v", a, m.TakeNotices())
@@ -2173,7 +2173,7 @@ func TestLedgerRemoveStopsWiredName(t *testing.T) {
 		}
 		h.keys("y")
 		var notes []Notice
-		testwait.Until(t, "広告を止める ssh の結果の取り込み", 5*time.Second, func() { h.m.Advance(t0) }, func() bool { return len(h.m.bg) == 0 })
+		testwait.Until(t, "広告を止める ssh の結果の取り込み", func() bool { return len(h.m.bg) == 0 }, testwait.Within(5*time.Second), testwait.Step(func() { h.m.Advance(t0) }))
 		notes = h.m.TakeNotices()
 		if len(h.store.Hosts) != 0 {
 			t.Fatalf("台帳から外していない: %+v", h.store.Hosts)
@@ -2244,7 +2244,7 @@ func (otherNameError) ExitCode() int { return setup.ExitOtherName }
 // awaitWired は裏で引いている有線の名前を全部取り込む。
 func awaitWired(t *testing.T, m *Model) {
 	t.Helper()
-	testwait.Until(t, "有線の名前を引き終える", 5*time.Second, m.takeWired, func() bool { return m.wiredWait == 0 })
+	testwait.Until(t, "有線の名前を引き終える", func() bool { return m.wiredWait == 0 }, testwait.Within(5*time.Second), testwait.Step(m.takeWired))
 }
 
 // wiredHarness は内部 IP を台帳で固定した mini (169.254.217.100) と、名前を引く偽物 (answers の名前 → IP)。
@@ -2429,7 +2429,7 @@ func TestWiredNameNotUsedOverWifi(t *testing.T) {
 // advanceUntil は cond が真になるまで tick を進める (本番と同じ Advance の経路で取り込ませる)。
 func advanceUntil(t *testing.T, m *Model, at time.Time, cond func() bool) {
 	t.Helper()
-	testwait.Until(t, "tick を進めた後の条件", 5*time.Second, func() { m.Advance(at) }, cond)
+	testwait.Until(t, "tick を進めた後の条件", cond, testwait.Within(5*time.Second), testwait.Step(func() { m.Advance(at) }))
 }
 
 // r → この Mac の網の読み込み → 名前を引く → tick で取り込む、の配線を通して、宛先が名前になる。引いている間は Busy (tick を回す)。
@@ -3055,7 +3055,7 @@ func TestKeyRefusedWhenRowsAppearUnderEmptyTab(t *testing.T) {
 	}
 	close(release)
 	// 結果が届くまで (取り込みはキーの入口で)
-	testwait.Until(t, "読み込みの結果が届く", 5*time.Second, nil, func() bool { return len(m.netCh) > 0 })
+	testwait.Until(t, "読み込みの結果が届く", func() bool { return len(m.netCh) > 0 }, testwait.Within(5*time.Second))
 	m.TakeNotices()
 	if a := m.HandleKey("s"); a == Exec {
 		t.Fatal("一度も描かれていない Mac へ s が繋いだ")

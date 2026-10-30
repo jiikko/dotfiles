@@ -5,9 +5,12 @@ go 1.25.0
 require (
 	proctree v0.0.0
 	subproc v0.0.0
+	testwait v0.0.0
 )
 
 replace (
 	proctree => ../proctree
 	subproc => ../subproc
 )
+
+replace testwait => ../testwait

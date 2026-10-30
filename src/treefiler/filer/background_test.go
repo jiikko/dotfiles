@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // settleBackground は裏の走査と git の取得が終わるまで Advance を回す (hang guard 10 秒)。
@@ -20,16 +22,17 @@ func settleBackground(t testing.TB, m *Model) {
 	m.walker.now = func() time.Time { return time.Unix(0, clock.Load()) }
 	m.walker.mu.Unlock()
 	at := fixedNow
-	waitFor(t, "裏の処理", func() bool {
+	testwait.Until(t, "裏の処理", func() bool {
 		at = at.Add(20 * time.Millisecond)
 		clock.Add(int64(time.Second))
 		m.Advance(at)
 		if m.Busy() {
 			return false
 		}
-		m.Advance(at.Add(20 * time.Millisecond)) // 最後の結果を取り込む
+		m.Advance(at.Add(20 * time.Millisecond))
 		return !m.Busy()
 	})
+
 }
 
 // フォルダの色は配下でいちばん新しい更新で決まる。dotfile を隠している間は dotfile を数えない (spec §5.1)。
@@ -158,7 +161,7 @@ func TestBusyUntilResultsAreTaken(t *testing.T) {
 		return w || m.git.running
 	}
 	idle := func() bool { return !running() }
-	waitFor(t, "走査", idle)
+	testwait.Until(t, "走査", idle)
 	// 源ごとに見る (Model.Busy だけだと、片方の未取り込みがもう片方に隠れる)
 	if !m.walker.busy() {
 		t.Fatal("走査の結果を取り込んでいないのに walker.busy が false")
@@ -179,7 +182,7 @@ func TestBusyUntilResultsAreTaken(t *testing.T) {
 	m.walker.mu.Lock()
 	m.walker.queue = nil // 見えているフォルダの依頼は今回の主張と無関係なので捨てる
 	m.walker.mu.Unlock()
-	waitFor(t, "走りかけの 1 本", idle)
+	testwait.Until(t, "走りかけの 1 本", idle)
 	m.takeBackground()
 	if m.Busy() {
 		t.Fatal("取り込んだ後も Busy のまま (tick が止まらない)")

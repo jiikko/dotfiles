@@ -1,12 +1,13 @@
 package filer
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // needGit は git の無い環境ではテストを飛ばす。CI (macos runner には git がある) で無いのは環境の壊れなので落とす
@@ -41,31 +42,6 @@ func commitAll(t *testing.T, dir string) {
 func gitCommit(t *testing.T, dir string) {
 	t.Helper()
 	gitIn(t, dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x")
-}
-
-// waitFor は cond が true になるまで刻んで待つ。10 秒は hang guard (実時間の合否ではない。止まらないときだけ落とす)。
-// cond の中で Advance を呼んでよい (裏の結果の取り込みと待ちを 1 つの条件にする)。
-func waitFor(t testing.TB, what string, cond func() bool) {
-	t.Helper()
-	waitForDiag(t, what, cond, nil)
-}
-
-// waitForDiag は waitFor と同じ待ちで、時間切れのときに待った時間と diag が返す状態を出す。
-// CI でしか起きない止まりは、落ちた 1 回のログしか手掛かりが無いので、止まった時点の状態をその場で残す。
-func waitForDiag(t testing.TB, what string, cond func() bool, diag func() string) {
-	t.Helper()
-	start := time.Now()
-	deadline := start.Add(10 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			msg := fmt.Sprintf("%s が 10 秒で終わらない (待ち始めから %s)", what, time.Since(start).Round(time.Millisecond))
-			if diag != nil {
-				msg += "\n" + diag()
-			}
-			t.Fatal(msg)
-		}
-		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 裏の goroutine の完了を条件で待つループの刻み
-	}
 }
 
 // settle は動きを終点まで進める (Advance で裏の結果を取り込み、アニメーションを飛ばす)。
@@ -129,10 +105,11 @@ func mkfile(t testing.TB, p, body string) {
 // waitWalked は裏の走査が dir の結果を出すまで、時計を 1 秒ずつ進めて待つ (now は呼び出し側の時計。進めた分が残る)。
 func waitWalked(t *testing.T, m *Model, now *time.Time, dir string) {
 	t.Helper()
-	waitFor(t, "走査の結果: "+dir, func() bool {
+	testwait.Until(t, "走査の結果: "+dir, func() bool {
 		*now = now.Add(time.Second)
 		m.Advance(*now)
 		_, ok := m.recs[dir]
 		return ok
 	})
+
 }

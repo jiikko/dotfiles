@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"mac-lan-manager/internal/testwait"
 	"mac-lan-manager/netinfo"
+	"testwait"
 )
 
 // sandbox は偽の networksetup / sudo / nohup だけが見える PATH を作る。偽の networksetup は引数を 1 つずつ [..] で囲んで log に書く。
@@ -68,11 +68,6 @@ func runSh(t *testing.T, path, script string, env ...string) *exec.Cmd {
 }
 
 func readLog(dir string) string { b, _ := os.ReadFile(filepath.Join(dir, "log")); return string(b) }
-
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	testwait.Until(t, what, 10*time.Second, nil, cond)
-}
 
 func me(t *testing.T) string {
 	t.Helper()
@@ -132,7 +127,7 @@ func TestStaticIPKeepsWhenConfirmed(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := runSh(t, path, s.Script())
-	waitFor(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
+	testwait.Until(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
 	if _, err := os.Stat(s.ConfirmPath()); err == nil {
 		t.Fatal("前の回の印を消さずに変えた (古い印で戻しを飛ばす)")
 	}
@@ -167,7 +162,7 @@ func TestStaticIPConfirmMustComeViaNewIP(t *testing.T) {
 				}
 			}
 			cmd := runSh(t, path, "cd "+Quote(dir)+" && "+s.Script())
-			waitFor(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
+			testwait.Until(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
 			if err := runSh(t, path, s.ConfirmCommand(), env).Wait(); err == nil {
 				t.Error("受け取られなかった確認が 0 で戻った")
 			}
@@ -215,7 +210,7 @@ func TestStaticIPConfirmViaAcceptIP(t *testing.T) {
 				t.Fatal(err)
 			}
 			cmd := runSh(t, path, s.Script())
-			waitFor(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
+			testwait.Until(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
 			cerr := runSh(t, path, s.ConfirmCommand(), tc.env).Wait()
 			if err := cmd.Wait(); err != nil {
 				t.Fatal(err)
@@ -235,7 +230,7 @@ func TestStaticIPLock(t *testing.T) {
 	first := staticIP(t, dir)
 	first.Window = time.Second // 2 本目の前面の確かめが走る間、1 本目が lock を持っている
 	cmd := runSh(t, path, first.Script())
-	waitFor(t, "1 本目が固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
+	testwait.Until(t, "1 本目が固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
 	second := staticIP(t, dir)
 	second.IP, second.Token = "192.168.100.12", "test-token-2"
 	pre := exec.Command("/bin/sh", "-c", second.RemoteCommand())
@@ -298,12 +293,12 @@ func TestStaticIPRollsBackOnTerm(t *testing.T) {
 	s := staticIP(t, dir)
 	s.Window = 30 * time.Second
 	cmd := runSh(t, path, s.Script())
-	waitFor(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
+	testwait.Until(t, "固定 IP にする", func() bool { return strings.Contains(readLog(dir), "-setmanual") })
 	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
 	_ = cmd.Wait()
-	waitFor(t, "戻す", func() bool { return strings.Contains(readLog(dir), "-setdhcp") })
+	testwait.Until(t, "戻す", func() bool { return strings.Contains(readLog(dir), "-setdhcp") })
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // 残った sleep (自分が起こしたグループだけ)
 	if _, err := os.Stat(s.lockPath()); err == nil {
 		t.Error("止められた後に lock が残った")
@@ -386,13 +381,14 @@ func TestRemoteCommandRunsDetached(t *testing.T) {
 	if strings.Contains(readLog(dir), "-setmanual") {
 		t.Errorf("前面が戻る前に変更が走った (印を変更の後に書いている): %q", readLog(dir))
 	}
-	waitFor(t, "背景で戻しまで走る", func() bool { return strings.Contains(readLog(dir), "-setdhcp") })
+	testwait.Until(t, "背景で戻しまで走る", func() bool { return strings.Contains(readLog(dir), "-setdhcp") })
 	// 背景は戻しの後に lock を外す (finish の drop: 改名してから消す)。偽の sudo -b は背景を待たないので、ここで待たずに戻ると
 	// drop の改名が TempDir の後始末の途中に入り、「directory not empty」で落ちる
-	waitFor(t, "背景が lock を外し終える", func() bool {
+	testwait.Until(t, "背景が lock を外し終える", func() bool {
 		m, _ := filepath.Glob(s.lockPath() + "*")
 		return len(m) == 0
 	})
+
 	// nohup は ssh が切れたときの SIGHUP で止まらないためのもの。SIGHUP は本物の端末が切れないと届かないので、ここでは
 	// 配線だけを固定する (挙動は段 4 の前の人手の確認: ssh が切れても変更が最後まで走るか)
 	if !strings.Contains(s.RemoteCommand(), "sudo -n -b nohup sh -c ") {
@@ -687,11 +683,12 @@ func TestStaticIPFreshLockIsNotTakenOver(t *testing.T) {
 	a, b := staticIP(t, dir), staticIP(t, dir)
 	b.IP, b.Token = "192.168.100.12", "test-token-2"
 	ca := runSh(t, path, a.Script())
-	waitFor(t, "1 本目が lock を取って start を書く手前に居る", func() bool {
+	testwait.Until(t, "1 本目が lock を取って start を書く手前に居る", func() bool {
 		_, errLock := os.Stat(a.lockPath() + "/pid")
 		_, errOnce := os.Stat(filepath.Join(dir, "ps-once"))
 		return errLock == nil && errOnce == nil
 	})
+
 	cb := exec.Command("/bin/sh", "-c", b.Script())
 	cb.Env = []string{"PATH=" + path}
 	if out, err := cb.CombinedOutput(); err == nil || !strings.Contains(string(out), "走っている") {

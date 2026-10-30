@@ -17,8 +17,8 @@ import (
 
 	"pro-con/card"
 	"pro-con/dispatcher"
-	"pro-con/internal/testwait"
 	"pro-con/store"
+	"testwait"
 )
 
 func card_(t *testing.T, dir string, args ...string) (rc int, out, errOut string) {

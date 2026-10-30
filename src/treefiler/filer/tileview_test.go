@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 func TestPutSGRColorsAndWidth(t *testing.T) {
@@ -214,7 +216,7 @@ func markModified(t *testing.T, m *Model, rel string) {
 
 func waitDiff(t *testing.T, m *Model) {
 	t.Helper()
-	waitFor(t, "diff の取得", func() bool { return !m.diffBusy() })
+	testwait.Until(t, "diff の取得", func() bool { return !m.diffBusy() })
 }
 
 func TestDiffToggle(t *testing.T) {

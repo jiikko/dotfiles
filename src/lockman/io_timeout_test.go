@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // --io-timeout (091:418) のテスト。着手時点で **0 件**だった。
@@ -181,7 +183,7 @@ func TestWithSeparatesLostLeaseFromIndeterminate(t *testing.T) {
 			const ttl = 600 * time.Millisecond // tick = ttl/renewDivisor = 200ms
 			go func() {
 				// lock が置かれるのを待ってから壊す (壁時計で待たない)
-				if waitForCondition(t, 4*time.Second, func() bool { _, err := os.Stat(l.lockPath()); return err == nil }) {
+				if testwait.Poll(4*time.Second, func() bool { _, err := os.Stat(l.lockPath()); return err == nil }) {
 					c.breakIt(t, l)
 				}
 			}()

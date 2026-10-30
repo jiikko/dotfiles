@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"pro-con/eventlog"
-	"pro-con/internal/testwait"
+	"testwait"
 )
 
 var logT0 = time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)

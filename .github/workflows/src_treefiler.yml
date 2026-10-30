@@ -10,6 +10,7 @@ on:
     branches: [master]
     paths:
       - 'src/treefiler/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/termsafe/**'    # replace で取り込む共有 module (無害化の関門)
       - 'src/safefs/**'      # replace で取り込む共有 module (ファイル操作。issue 722)
       - 'src/subproc/**'     # replace で取り込む共有 module (git の起動)
@@ -26,6 +27,7 @@ on:
   pull_request:
     paths:
       - 'src/treefiler/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/termsafe/**'    # replace で取り込む共有 module (無害化の関門)
       - 'src/safefs/**'      # replace で取り込む共有 module (ファイル操作。issue 722)
       - 'src/subproc/**'     # replace で取り込む共有 module (git の起動)

@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // rig は sh の台本を子にして、起こした回数と出来事を数える。
@@ -52,17 +54,6 @@ func kinds(evs []Event) []EventKind {
 		out[i] = e.Kind
 	}
 	return out
-}
-
-// eventually は cond が真になるまで待つ (上限 5 秒)。
-func eventually(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for i := 0; !cond(); i++ {
-		if i > 500 {
-			t.Fatalf("5 秒たっても %s", what)
-		}
-		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (eventually)
-	}
 }
 
 // 落ち続ける子は CrashLimit 回まで起こし直し、超えたら諦める。
@@ -174,7 +165,7 @@ func TestStopSendsSignalAndWaits(t *testing.T) {
 	r := &rig{}
 	s := r.spec(`trap 'touch "` + mark + `"; exit 0' TERM; touch "` + ready + `"; while :; do sleep 0.01; done`)
 	stop := Start(context.Background(), s)
-	eventually(t, "子が trap を入れない", func() bool { _, err := os.Stat(ready); return err == nil })
+	testwait.Until(t, "子が trap を入れない", func() bool { _, err := os.Stat(ready); return err == nil }, testwait.Within(5*time.Second))
 	res := stop()
 	if _, err := os.Stat(mark); err != nil {
 		t.Fatalf("SIGTERM が子に届かない / 抜けるのを待たずに戻った: %v", err)
@@ -194,7 +185,7 @@ func TestStopKillsAfterStopWait(t *testing.T) {
 	s := r.spec(`trap "" TERM; touch "` + ready + `"; while :; do sleep 0.01; done`)
 	s.StopWait = 100 * time.Millisecond
 	stop := Start(context.Background(), s)
-	eventually(t, "子が trap を入れない", func() bool { _, err := os.Stat(ready); return err == nil })
+	testwait.Until(t, "子が trap を入れない", func() bool { _, err := os.Stat(ready); return err == nil }, testwait.Within(5*time.Second))
 	start := time.Now()
 	res := stop()
 	if ExitCode(res.Err) != -1 || res.Reason != ReasonStopped {
@@ -209,7 +200,7 @@ func TestLifelineClosesStdinOnStop(t *testing.T) {
 	s := r.spec(`trap "" TERM; touch "` + ready + `"; cat >/dev/null`)
 	s.Lifeline, s.StopWait = true, time.Minute
 	stop := Start(context.Background(), s)
-	eventually(t, "子が trap を入れない", func() bool { _, err := os.Stat(ready); return err == nil })
+	testwait.Until(t, "子が trap を入れない", func() bool { _, err := os.Stat(ready); return err == nil }, testwait.Within(5*time.Second))
 	done := make(chan Result, 1)
 	go func() { done <- stop() }()
 	select {
@@ -232,17 +223,18 @@ func TestLifelineSurvivesParentKill(t *testing.T) {
 		t.Fatal(err)
 	}
 	var child int
-	eventually(t, "子が立たない", func() bool {
+	testwait.Until(t, "子が立たない", func() bool {
 		b, err := os.ReadFile(pidFile)
 		if err != nil || !strings.HasSuffix(string(b), "\n") {
 			return false
 		}
 		child, err = strconv.Atoi(strings.TrimSpace(string(b)))
 		return err == nil
-	})
+	}, testwait.Within(5*time.Second))
+
 	_ = parent.Process.Kill()
 	_ = parent.Wait()
-	eventually(t, "見張る側が死んでも子が残った", func() bool { return syscall.Kill(child, 0) != nil })
+	testwait.Until(t, "見張る側が死んでも子が残った", func() bool { return syscall.Kill(child, 0) != nil }, testwait.Within(5*time.Second))
 }
 
 // TestHelperSupervisor は TestLifelineSurvivesParentKill が起こす見張る側 (PROCESS_SUPERVISOR_HELPER が無ければ何もしない)。

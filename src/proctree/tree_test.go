@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 func alive(pid int) bool {
@@ -20,22 +22,10 @@ func alive(pid int) bool {
 	return s != "" && !strings.HasPrefix(s, "Z")
 }
 
-// waitFor は cond が成立するまで待つ。上限は判定ではなく hang の安全網
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for range 400 {
-		if cond() {
-			return
-		}
-		time.Sleep(25 * time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み
-	}
-	t.Fatalf("10 秒待っても成立しない: %s", what)
-}
-
 func readPid(t *testing.T, path string) int {
 	t.Helper()
 	var pid int
-	waitFor(t, "pid ファイル "+path, func() bool {
+	testwait.Until(t, "pid ファイル "+path, func() bool {
 		b, err := os.ReadFile(path)
 		if err != nil || !strings.HasSuffix(string(b), "\n") {
 			return false
@@ -43,6 +33,7 @@ func readPid(t *testing.T, path string) int {
 		pid, err = strconv.Atoi(strings.TrimSpace(string(b)))
 		return err == nil
 	})
+
 	return pid
 }
 
@@ -83,7 +74,7 @@ func TestStopTree(t *testing.T) {
 		Target{Root: cmd.Process.Pid, Group: group}.Stop(time.Second)
 		for i, name := range []string{"根", "グループの中の孫", "setsid で抜けた孫"} {
 			pid := pids[i]
-			waitFor(t, name+"が止まる (group="+strconv.FormatBool(group)+")", func() bool { return !alive(pid) })
+			testwait.Until(t, name+"が止まる (group="+strconv.FormatBool(group)+")", func() bool { return !alive(pid) })
 		}
 		<-done
 	}

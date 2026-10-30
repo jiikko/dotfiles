@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"testwait"
 )
 
 // virt_test.go は巨大なフォルダの仮想化 (virt.go) が、全部を動かした場合と同じ画面を描くことを固定する。
@@ -79,7 +81,7 @@ func (vp *virtPair) quiesce() {
 		defer m.walker.mu.Unlock()
 		return !m.walker.running
 	}
-	waitFor(vp.t, "裏の走査", func() bool { return idle(vp.virt) && idle(vp.ref) })
+	testwait.Until(vp.t, "裏の走査", func() bool { return idle(vp.virt) && idle(vp.ref) })
 }
 
 func mustWriteAll(t *testing.T, p string) {
@@ -111,7 +113,7 @@ func virtStamp(p string, fi os.FileInfo) time.Time {
 // 大きさが 1 フレームだけ違う。負荷の高いときや GOMAXPROCS=1 で出る)。
 func (vp *virtPair) quiet() {
 	vp.t.Helper()
-	waitFor(vp.t, "裏の計算", func() bool { return computed(vp.virt) && computed(vp.ref) })
+	testwait.Until(vp.t, "裏の計算", func() bool { return computed(vp.virt) && computed(vp.ref) })
 }
 
 // computed は m の裏の計算が終わっているか (結果は取り込んでいなくてよい)。
