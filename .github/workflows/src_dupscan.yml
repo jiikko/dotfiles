@@ -10,6 +10,7 @@ on:
     branches: [master]
     paths:
       - 'src/dupscan/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/subproc/**'     # replace で取り込む共有 module
       - .github/workflows/src_dupscan.yml
       - .github/workflows/_go-project.yml
@@ -20,6 +21,7 @@ on:
   pull_request:
     paths:
       - 'src/dupscan/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/subproc/**'
       - .github/workflows/src_dupscan.yml
       - .github/workflows/_go-project.yml

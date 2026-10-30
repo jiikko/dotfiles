@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // 閉じない `*` `~~` `[` が多い段落と、とても長い段落は線形の時間で描く。
@@ -26,10 +28,6 @@ func TestRenderPathologicalParagraphsAreLinear(t *testing.T) {
 			defer close(done)
 			_, _ = Render(in, 80, false)
 		}()
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			t.Fatalf("%s: 10 秒で描き終わらない (段落の長さの 2 乗に戻っている)", name)
-		}
+		testwait.Recv(t, name+": 10 秒で描き終わらない (段落の長さの 2 乗に戻っている)", done, testwait.Within(10*time.Second))
 	}
 }

@@ -11,6 +11,8 @@ import (
 
 	"pro-con/card"
 	"pro-con/wake"
+
+	"testwait"
 )
 
 var t0 = time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)
@@ -417,11 +419,7 @@ func TestSubmitPokesDispatcher(t *testing.T) {
 	if _, err := Submit(dir, Request{Kind: "add", Title: "t"}); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-srv.Wakes():
-	case <-time.After(10 * time.Second):
-		t.Fatal("箱に置いても dispatcher を起こさない")
-	}
+	testwait.Recv(t, "箱に置いても dispatcher を起こさない", srv.Wakes(), testwait.Within(10*time.Second))
 }
 
 // attach の間の指示は、どの列のカードにも原文と打った時刻で履歴に残す。状態は変えない。空の指示・時刻の無い指示は受けない。

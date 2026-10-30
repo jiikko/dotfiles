@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // fakeStarter は dns-sd の偽物。-B は行を出した後、止められる (ctx の取り消し・Close) まで閉じない (本物と同じく終わらない)。
@@ -126,13 +128,9 @@ func TestCloseClosesChanged(t *testing.T) {
 	s.Close()
 	s.Close()
 	for { // 閉じる前に積まれた合図が 1 つ残っていることがあるので、閉じたと分かるまで読む
-		select {
-		case _, ok := <-ch:
-			if !ok {
-				return
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("Close の後も Changed が閉じない")
+		_, ok := testwait.RecvOK(t, "Close の後も Changed が閉じない", ch, testwait.Within(5*time.Second))
+		if !ok {
+			return
 		}
 	}
 }
@@ -182,15 +180,11 @@ func scanLateInterface(t *testing.T, during bool) {
 	gStarted := make(chan struct{})
 	// state はスキャナの帳簿を条件が立つまで見る (待ちの実体は条件。上限で諦めて先へ進め、結果の assert で落とす)
 	state := func(cond func() bool) {
-		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+		testwait.Poll(3*time.Second, func() bool {
 			s.mu.Lock()
-			ok := cond()
-			s.mu.Unlock()
-			if ok {
-				return
-			}
-			time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は cond)
-		}
+			defer s.mu.Unlock()
+			return cond()
+		}, testwait.Tick(5*time.Millisecond))
 	}
 	start := func(ctx context.Context, _ string, args ...string) (io.ReadCloser, error) {
 		pr, pw := io.Pipe()
@@ -508,23 +502,17 @@ func TestResolveIsBoundedAndTimesOut(t *testing.T) {
 	h := &hangStarter{browse: b.String()}
 	s := Start(h.start, time.Now())
 	defer s.Close()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	var p, seen, n int
+	testwait.Until(t, "応えない -L が諦められない", func() bool {
 		s.mu.Lock()
-		p, seen := s.pending, len(s.seen)
+		p, seen = s.pending, len(s.seen)
 		s.mu.Unlock()
 		h.mu.Lock()
-		n := h.lookups
+		n = h.lookups
 		h.mu.Unlock()
 		// 諦めたインスタンスは帳簿から外す (後で別の I/F で Add されたら引き直す)
-		if n == 20*lookupAttempts && p == 0 && seen == 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("応えない -L が諦められない (-L %d 回 seen %d pending %d)", n, seen, p)
-		}
-		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は上の条件)
-	}
+		return n == 20*lookupAttempts && p == 0 && seen == 0
+	}, testwait.Diag(func() string { return fmt.Sprintf("-L %d 回 seen %d pending %d", n, seen, p) }))
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.max > maxLookups || h.max < 2 {

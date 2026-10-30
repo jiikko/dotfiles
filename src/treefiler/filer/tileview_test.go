@@ -437,11 +437,8 @@ func TestDiffToggleCancelsInflightFetch(t *testing.T) {
 	m.HandleKey("d") // diff へ (取得は止まったまま)
 	<-started
 	m.HandleKey("d") // 本体へ: 取得を止める
-	select {
-	case <-canceled:
-	case <-time.After(10 * time.Second): // hang guard (止めなかったときだけ落とす)
-		t.Fatal("本体へ戻しても取得中の git を止めない")
-	}
+	// hang guard (止めなかったときだけ落とす)
+	testwait.Recv(t, "本体へ戻しても取得中の git を止めない", canceled, testwait.Within(10*time.Second))
 	waitDiff(t, m) // 取得の goroutine が終わってから抜ける (差し替え点を戻す後始末と、HEAD が無いときの 2 回目の呼び出しを重ねない)
 }
 

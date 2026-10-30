@@ -71,15 +71,11 @@ func TestReadyProbeLoopDoesNotAccumulateProcessRecords(t *testing.T) {
 	a.startReadyCheck()
 	maxRecords := 0
 	for done := 0; done < probes; {
-		select {
-		case ev := <-a.events:
-			if ev.kind == readyProbeDoneEvent {
-				done++
-			}
-			a.handleEvent(ev)
-		case <-time.After(10 * time.Second):
-			t.Fatalf("ready probe loop stalled after %d probes", done)
+		ev := testwait.Recv(t, "ready probe loop stalled after", a.events, testwait.Within(10*time.Second), testwait.Diag(func() string { return fmt.Sprintf("ready probe loop stalled after %d probes", done) }))
+		if ev.kind == readyProbeDoneEvent {
+			done++
 		}
+		a.handleEvent(ev)
 		maxRecords = max(maxRecords, len(a.allProcesses))
 	}
 	t.Logf("max process records over %d probes: %d", probes, maxRecords)
@@ -107,13 +103,9 @@ func TestTrackProcessKeepsReapedLeaderWhoseGroupIsAliveForForcedShutdown(t *test
 		t.Fatal("record of a reaped leader whose process group is alive was dropped")
 	}
 	a.beginForceStop()
-	select {
-	case ev := <-a.events:
-		if ev.kind != forceDoneEvent || !ev.forced {
-			t.Fatalf("unexpected event after forced stop: %+v", ev)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("forced stop did not finish")
+	ev := testwait.Recv(t, "forced stop did not finish", a.events, testwait.Within(10*time.Second))
+	if ev.kind != forceDoneEvent || !ev.forced {
+		t.Fatalf("unexpected event after forced stop: %+v", ev)
 	}
 	// SIGKILLed orphans disappear once launchd reaps them, after forceDone.
 	testwait.Until(t, "forced shutdown to kill the descendant process group", func() bool { return !groupExists(live.pid) }, testwait.Within(5*time.Second))

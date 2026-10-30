@@ -14,6 +14,8 @@ import (
 	"github.com/jiikko/dotfiles/src/restartable/internal/runner"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
+
+	"testwait"
 )
 
 type failingUIWriter struct{ writes int }
@@ -427,11 +429,7 @@ func TestTeaModelDropsKeyWhenRunnerQueueIsFull(t *testing.T) {
 		close(done)
 	}()
 
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("key update blocked when the runner key queue was full")
-	}
+	testwait.Recv(t, "key update blocked when the runner key queue was full", done, testwait.Within(time.Second))
 }
 
 func TestTeaModelPreservesControlKeysWhenRunnerQueueIsFull(t *testing.T) {
@@ -492,11 +490,7 @@ func TestPrintlnFallsBackToStderrAfterProgramExit(t *testing.T) {
 
 	presenter.Println("final report")
 	close(presenter.closed)
-	select {
-	case <-presenter.printDone:
-	case <-time.After(time.Second):
-		t.Fatal("print loop did not finish")
-	}
+	testwait.Recv(t, "print loop did not finish", presenter.printDone, testwait.Within(time.Second))
 	_ = writeEnd.Close()
 	os.Stderr = previousStderr
 	output, err := io.ReadAll(readEnd)
@@ -529,34 +523,18 @@ func TestPrintlnDoesNotDuplicateAnInFlightLineAfterProgramExit(t *testing.T) {
 		presenter.Println("in-flight")
 		close(callDone)
 	}()
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("print loop did not start the in-flight line")
-	}
+	testwait.Recv(t, "print loop did not start the in-flight line", started, testwait.Within(time.Second))
 	close(presenter.runDone)
 	close(release)
-	select {
-	case <-callDone:
-	case <-time.After(time.Second):
-		t.Fatal("Println did not finish after the program exited")
-	}
-	select {
-	case line := <-delivered:
-		if line != "in-flight" {
-			t.Fatalf("program received %q, want in-flight", line)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("in-flight line was not delivered to the program")
+	testwait.Recv(t, "Println did not finish after the program exited", callDone, testwait.Within(time.Second))
+	line := testwait.Recv(t, "in-flight line was not delivered to the program", delivered, testwait.Within(time.Second))
+	if line != "in-flight" {
+		t.Fatalf("program received %q, want in-flight", line)
 	}
 
 	presenter.Println("after-exit")
 	close(presenter.closed)
-	select {
-	case <-presenter.printDone:
-	case <-time.After(time.Second):
-		t.Fatal("print loop did not finish after close")
-	}
+	testwait.Recv(t, "print loop did not finish after close", presenter.printDone, testwait.Within(time.Second))
 	if got, want := fallback.String(), "after-exit\n"; got != want {
 		t.Fatalf("fallback output = %q, want %q", got, want)
 	}

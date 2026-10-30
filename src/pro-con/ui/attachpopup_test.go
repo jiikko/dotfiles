@@ -10,6 +10,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"testwait"
 )
 
 // popup の中身は外の tmux サーバの環境で起きるので、attach の作業場所・環境を渡し、入れ子の tmux は TMUX を落として
@@ -129,12 +131,9 @@ func TestPopupGivesUpOnHungTmux(t *testing.T) {
 	hung := &PopupAttach{Tmux: fake(`exec sleep 60`), prefixTimeout: 50 * time.Millisecond}
 	got := make(chan error, 1)
 	go func() { got <- hung.run(exec.Command("/usr/bin/true"), "C-1") }()
-	select {
-	case err := <-got:
-		if err == nil || !strings.Contains(err.Error(), "応答しない") {
-			t.Fatalf("応答しない tmux で popup を開きに行った / 失敗で戻らない: %v", err)
-		}
-	case <-time.After(30 * time.Second): // hang guard (合否は「戻ったか」。所要は測らない)
-		t.Fatal("応答しない tmux で attach の裏の処理が戻らない")
+	// hang guard (合否は「戻ったか」。所要は測らない)
+	err := testwait.Recv(t, "応答しない tmux で attach の裏の処理が戻らない", got, testwait.Within(30*time.Second))
+	if err == nil || !strings.Contains(err.Error(), "応答しない") {
+		t.Fatalf("応答しない tmux で popup を開きに行った / 失敗で戻らない: %v", err)
 	}
 }

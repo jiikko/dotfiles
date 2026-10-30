@@ -2,12 +2,15 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // ctx の期限で子を殺した後、pipe を継承した孫が残っていても Run が戻る (WaitDelay)。
@@ -57,39 +60,27 @@ func TestExecKillsGrandchildOnCancel(t *testing.T) {
 	}
 
 	cancel()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("cancel 後に Exec が戻らない")
-	}
+	testwait.Recv(t, "cancel 後に Exec が戻らない", done, testwait.Within(10*time.Second))
 
 	// 孫が死ぬこと。ポーリングは「死ぬまでの上限」であって合否の基準ではない
-	deadline := time.Now().Add(5 * time.Second)
-	for processAlive(pid) {
-		if time.Now().After(deadline) {
-			t.Fatalf("孫 (pid=%d) が cancel 後も生きている (プロセスグループごと殺していない)", pid)
-		}
-		time.Sleep(20 * time.Millisecond) // sleep-ok: tick: 孫が死ぬのを条件で待つ刻み (上限つき)
-	}
+	testwait.Until(t, fmt.Sprintf("孫 (pid=%d) が cancel 後も死ぬ (生きていればプロセスグループごと殺していない)", pid),
+		func() bool { return !processAlive(pid) }, testwait.Within(5*time.Second), testwait.Tick(20*time.Millisecond))
 }
 
 // waitForPID は孫が書いた pid を読めるまで待つ。読めなければ **判定不能として落とす**
 // (「孫が生まれなかった」を合格にしない)。
 func waitForPID(t *testing.T, path string, limit time.Duration) int {
 	t.Helper()
-	deadline := time.Now().Add(limit)
-	for {
-		b, err := os.ReadFile(path)
-		if err == nil {
-			if pid, cerr := strconv.Atoi(strings.TrimSpace(string(b))); cerr == nil && pid > 0 {
-				return pid
+	pid := 0
+	testwait.Until(t, "判定不能: 孫の pid を "+path+" から読む (読めなければ孫が生まれていない = 何も検査できていない)", func() bool {
+		if b, err := os.ReadFile(path); err == nil {
+			if p, cerr := strconv.Atoi(strings.TrimSpace(string(b))); cerr == nil && p > 0 {
+				pid = p
 			}
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("判定不能: 孫の pid を %s から読めない (孫が生まれていない = 何も検査できていない)", path)
-		}
-		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 孫の pid が書かれるのを条件で待つ刻み (上限つき)
-	}
+		return pid > 0
+	}, testwait.Within(limit))
+	return pid
 }
 
 // processAlive は pid が生きているかを signal 0 で見る。

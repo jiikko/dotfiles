@@ -11,6 +11,8 @@ import (
 	"pro-con/wake"
 	"pro-con/wtclean"
 	"subproc"
+
+	"testwait"
 )
 
 // fakeDispatcherPidEnv が付いていると、テストの二進は dispatcher として起こされたときに偽物になる: 自分の pid をこのパスへ書き、
@@ -53,11 +55,9 @@ func runFakeDispatcher(pidPath string) int {
 	if os.WriteFile(tmp, []byte(strconv.Itoa(os.Getpid())), 0o600) != nil || os.Rename(tmp, filepath.Clean(pidPath)) != nil {
 		return 1
 	}
-	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); { // 上限はテストが落ちたときに残さないため
-		if _, err := os.Stat(pidPath + ".release"); err == nil {
-			return 0
-		}
-		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: helper プロセスの中で release の合図を待つ刻み (t が無い)
+	// 上限はテストが落ちたときに残さないため (helper プロセスの中なので t が無く、落とさずに rc で返す)
+	if testwait.Poll(30*time.Second, func() bool { _, err := os.Stat(pidPath + ".release"); return err == nil }) {
+		return 0
 	}
 	return 1
 }

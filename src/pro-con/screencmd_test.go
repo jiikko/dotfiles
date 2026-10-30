@@ -124,13 +124,9 @@ func TestScreenFollow(t *testing.T) {
 	// 描き直した 1 枚を follow が出してから閉じる (出す前に閉じると、読み直す前にファイルが消える)
 	testwait.Until(t, "--follow が描き直した 2 枚目を出さない", func() bool { return strings.Contains(o.String(), "2 枚目") })
 	w.Close()
-	select {
-	case rc := <-done:
-		if rc != 0 || !strings.Contains(o.String(), "2 枚目") || !strings.Contains(e.String(), "閉じた") {
-			t.Fatalf("--follow: rc=%d out=%q err=%q", rc, o.String(), e.String())
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("画面が閉じても --follow が終わらない")
+	rc := testwait.Recv(t, "画面が閉じても --follow が終わらない", done, testwait.Within(10*time.Second))
+	if rc != 0 || !strings.Contains(o.String(), "2 枚目") || !strings.Contains(e.String(), "閉じた") {
+		t.Fatalf("--follow: rc=%d out=%q err=%q", rc, o.String(), e.String())
 	}
 }
 
@@ -184,12 +180,8 @@ func TestScreenFollowWaitsForFirstFrame(t *testing.T) {
 		done <- runScreen([]string{"--e2e", root, "--follow", "--timeout", "500ms"}, t.TempDir(), time.Now, &o, &e)
 	}()
 	w.Put(relay.Frame{ANSI: "遅れて描いた 1 枚", At: time.Now()})
-	select {
-	case rc := <-done:
-		if rc != 0 || !strings.Contains(o.String(), "遅れて描いた 1 枚") || !strings.Contains(e.String(), "上限") {
-			t.Fatalf("--follow (1 枚目を待つ): rc=%d out=%q err=%q", rc, o.String(), e.String())
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("--follow が上限で終わらない")
+	rc := testwait.Recv(t, "--follow が上限で終わらない", done, testwait.Within(10*time.Second))
+	if rc != 0 || !strings.Contains(o.String(), "遅れて描いた 1 枚") || !strings.Contains(e.String(), "上限") {
+		t.Fatalf("--follow (1 枚目を待つ): rc=%d out=%q err=%q", rc, o.String(), e.String())
 	}
 }

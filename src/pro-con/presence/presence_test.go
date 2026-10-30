@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"pro-con/flockmark"
+
+	"testwait"
 )
 
 func open(t *testing.T, dir string) *Screen {
@@ -183,11 +185,7 @@ func TestScanSkipsNonRegularLock(t *testing.T) {
 	var ss []Info
 	var err error
 	go func() { ss, err = List(dir); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("FIFO の印で数え上げが止まった")
-	}
+	testwait.Recv(t, "FIFO の印で数え上げが止まった", done, testwait.Within(10*time.Second))
 	if err != nil || len(ss) != 1 || ss[0].ID != s.Info().ID {
 		t.Fatalf("FIFO の印があると数えられない: %+v (%v)", ss, err)
 	}

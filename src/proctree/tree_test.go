@@ -95,9 +95,6 @@ func TestStopWithoutPS(t *testing.T) {
 	done := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(done) }()
 	Target{Root: pid, Group: false}.Stop(200 * time.Millisecond)
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second): // hang の安全網 (判定ではない)
-		t.Fatal("ps が使えない Stop で、TERM を無視する子が止まらない")
-	}
+	// hang の安全網 (判定ではない)
+	testwait.Recv(t, "ps が使えない Stop で、TERM を無視する子が止まらない", done, testwait.Within(10*time.Second))
 }

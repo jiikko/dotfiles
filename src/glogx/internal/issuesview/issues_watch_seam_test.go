@@ -11,6 +11,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/fsnotify/fsnotify"
+
+	"testwait"
 )
 
 // 回帰 (2026-08-21 実測): 消えて戻ったディレクトリを再び watch する。
@@ -83,12 +85,7 @@ func TestIssuesWatchEventPathWithoutFsnotify(t *testing.T) {
 	issuesviewtest.WriteIssue(t, path, "# 001 feat: 編集後\n", time.Now())
 	fw.Emit(fsnotify.Event{Name: path, Op: fsnotify.Write})
 
-	var raw tea.Msg
-	select {
-	case raw = <-got:
-	case <-time.After(5 * time.Second):
-		t.Fatal("イベントを流したのに観測が返らない")
-	}
+	raw := testwait.Recv(t, "イベントを流したのに観測が返らない", got, testwait.Within(5*time.Second))
 	msg, ok := raw.(IssuesWatchMsg)
 	if !ok || msg.closed {
 		t.Fatalf("イベントで観測が返らない: %+v", msg)

@@ -183,12 +183,12 @@ func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
 	go func() { done <- spawnSupervisor(dir, nil) }()
 	deadline := time.Now().Add(10 * time.Second) // 上限だけ (通る形は条件が揃った時点で進む)
 	pid := 0
-	for pid == 0 {
+	testwait.Until(t, "偽の dispatcher が起動しない", func() bool {
 		if b, err := os.ReadFile(pidFile); err == nil {
 			pid, _ = strconv.Atoi(string(b))
 		}
-		if pid == 0 && time.Now().After(deadline) {
-			t.Fatal("偽の dispatcher が起動しない")
+		if pid != 0 {
+			return true
 		}
 		select {
 		case err := <-done: // 中継は dispatcher が pid を書く前に抜けてよい。失敗 (中継が起動しない等) だけここで落とす
@@ -198,15 +198,11 @@ func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
 			done <- err
 		default:
 		}
-		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 偽の dispatcher の pid を待つ刻み。中継の失敗を見る副作用つきのループ (上限つき)
-	}
-	select { // 偽の dispatcher は release まで居続ける。その間に戻らなければ、画面は常駐する dispatcher を待って固まる
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(time.Until(deadline)):
-		t.Fatal("spawnSupervisor が dispatcher の生きている間に戻らない (中継が supervisor を待っている)")
+		return false
+	}, testwait.Within(time.Until(deadline)))
+	err := testwait.Recv(t, "spawnSupervisor が dispatcher の生きている間に戻らない (中継が supervisor を待っている)", done, testwait.Within(time.Until(deadline)))
+	if err != nil {
+		t.Fatal(err)
 	}
 	me := strconv.Itoa(os.Getpid())
 	sup := ""
@@ -224,20 +220,19 @@ func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
 	release()
 	// dispatcher が rc=0 で抜けたら supervisor も抜ける
 	testwait.Until(t, fmt.Sprintf("dispatcher が抜けたのに supervisor (pid %s) が残った", sup), func() bool { return exec.Command("kill", "-0", sup).Run() != nil })
-	for {
+	last := ""
+	testwait.Until(t, fmt.Sprintf("抜けた dispatcher (pid %d) が刈り取られない", pid), func() bool {
 		out, err := exec.Command("ps", "-o", "ppid=,stat=", "-p", strconv.Itoa(pid)).Output()
 		if err != nil { // 居ない = 刈り取られた
-			return
+			return true
 		}
 		f := strings.Fields(string(out))
 		if len(f) == 2 && f[0] == me && strings.HasPrefix(f[1], "Z") {
 			t.Fatalf("抜けた dispatcher (pid %d) が画面の子のゾンビで残った: ppid=%s stat=%s", pid, f[0], f[1])
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("抜けた dispatcher (pid %d) が刈り取られない: %q", pid, strings.TrimSpace(string(out)))
-		}
-		time.Sleep(20 * time.Millisecond) // sleep-ok: tick: ゾンビが刈り取られるのを待つ刻み。ループの中で状態を検査する (上限つき)
-	}
+		last = strings.TrimSpace(string(out))
+		return false
+	}, testwait.Within(time.Until(deadline)), testwait.Tick(20*time.Millisecond), testwait.Diag(func() string { return "ps: " + last }))
 }
 
 // --join は --view / --mock と組まない (読むだけのつもりが書ける形を作らない)。サブコマンドの前にも付けない。--as には名前が要る。

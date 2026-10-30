@@ -462,13 +462,9 @@ func TestCardWaitWakesOnNotification(t *testing.T) {
 	mustSubmit(t, env.dir, store.Request{Kind: "review", CardID: "C-001"})
 	mustApply(t, env.dir)
 	f.broadcast()
-	select {
-	case r := <-ch:
-		if r.rc != 0 || !strings.Contains(r.out, "C-001") || !strings.Contains(r.out, "レビュー") {
-			t.Fatalf("wait: rc=%d out=%q err=%q", r.rc, r.out, r.err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("知らせを送っても wait が返らない (ポーリングの 1 時間を待っている)")
+	r := testwait.Recv(t, "知らせを送っても wait が返らない (ポーリングの 1 時間を待っている)", ch, testwait.Within(10*time.Second))
+	if r.rc != 0 || !strings.Contains(r.out, "C-001") || !strings.Contains(r.out, "レビュー") {
+		t.Fatalf("wait: rc=%d out=%q err=%q", r.rc, r.out, r.err)
 	}
 }
 
@@ -494,13 +490,9 @@ func TestCardWaitPollsAndTimesOut(t *testing.T) {
 	waitFirstRead = func() {}
 	mustSubmit(t, env.dir, store.Request{Kind: "plan", CardID: "C-002"})
 	mustApply(t, env.dir)
-	select {
-	case rc := <-ch:
-		if rc != 0 || !strings.Contains(out, "依頼 → 着手待ち") {
-			t.Fatalf("wait (ポーリング): rc=%d out=%q", rc, out)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("dispatcher が居ないと wait が返らない (ポーリングしていない)")
+	rc := testwait.Recv(t, "dispatcher が居ないと wait が返らない (ポーリングしていない)", ch, testwait.Within(10*time.Second))
+	if rc != 0 || !strings.Contains(out, "依頼 → 着手待ち") {
+		t.Fatalf("wait (ポーリング): rc=%d out=%q", rc, out)
 	}
 	if rc, _, errOut := viewCmd(t, env, "wait", "C-002", "--timeout", "100ms"); rc != 1 || !strings.Contains(errOut, "着手待ち のまま") {
 		t.Fatalf("時間切れ: rc=%d err=%q", rc, errOut)
@@ -527,13 +519,9 @@ func TestCardWaitWithoutUntilWaitsForChange(t *testing.T) {
 	mustSubmit(t, env.dir, store.Request{Kind: "plan", CardID: "C-002"})
 	mustApply(t, env.dir)
 	f.broadcast()
-	select {
-	case out := <-ch:
-		if !strings.Contains(out, "依頼 → 着手待ち") {
-			t.Fatalf("wait: %q", out)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("列が変わっても wait が返らない")
+	out := testwait.Recv(t, "列が変わっても wait が返らない", ch, testwait.Within(10*time.Second))
+	if !strings.Contains(out, "依頼 → 着手待ち") {
+		t.Fatalf("wait: %q", out)
 	}
 }
 

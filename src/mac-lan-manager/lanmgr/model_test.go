@@ -652,18 +652,10 @@ func TestNetLoadIsAsyncAndSuperseded(t *testing.T) {
 	}
 	m.o.ReadNet = func(context.Context) (netinfo.Snapshot, error) { return selfNet(), nil }
 	m.Reload()
-	select {
-	case <-cancelled:
-	case <-time.After(5 * time.Second):
-		t.Fatal("読み直しで前の読み込みを取り消していない")
-	}
+	testwait.Recv(t, "読み直しで前の読み込みを取り消していない", cancelled, testwait.Within(5*time.Second))
 	done := make(chan struct{})
 	go func() { awaitNetLoad(m); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("読み直しの結果が来ない (前の読み込みを待っている / 読み直していない)")
-	}
+	testwait.Recv(t, "読み直しの結果が来ない (前の読み込みを待っている / 読み直していない)", done, testwait.Within(5*time.Second))
 	if len(m.self.Services) != 2 || m.Busy() {
 		t.Errorf("読み直しの結果が取り込まれていない: %+v busy=%v", m.self.Services, m.Busy())
 	}

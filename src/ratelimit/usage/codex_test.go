@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // codexRateLimitsJSON は実機の app-server 応答 (2026-07-31 取得) の result 部。
@@ -194,13 +196,10 @@ func TestFetchCodexReturnsWhenDescendantHoldsStdout(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { _, err := FetchCodex(ctx); done <- err }()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("err = %v, want context.DeadlineExceeded を包んだエラー", err)
-		}
-	case <-time.After(30 * time.Second): // hang guard (子孫の sleep 60 より十分短い)
-		t.Fatal("ctx が終わっても FetchCodex が返らない (子孫が stdout を握っている)")
+	// hang guard (子孫の sleep 60 より十分短い)
+	err := testwait.Recv(t, "ctx が終わっても FetchCodex が返らない (子孫が stdout を握っている)", done, testwait.Within(30*time.Second))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded を包んだエラー", err)
 	}
 }
 

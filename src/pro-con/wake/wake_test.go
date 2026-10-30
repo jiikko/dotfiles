@@ -3,6 +3,7 @@ package wake
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,11 +48,7 @@ func TestPokeWakes(t *testing.T) {
 	if err := Poke(dir); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-s.Wakes():
-	case <-time.After(10 * time.Second):
-		t.Fatal("Poke で起きない")
-	}
+	testwait.Recv(t, "Poke で起きない", s.Wakes(), testwait.Within(10*time.Second))
 }
 
 // dispatcher が居なければ Poke は誤りを返す (ハングしない)。
@@ -77,17 +74,9 @@ func TestSubscribeGetsBroadcastAcrossRestart(t *testing.T) {
 	sub := NewSubscriber(dir, func() { got <- struct{}{} })
 	go func() { sub.Run(ctx); close(done) }()
 	testwait.Until(t, "購読が繋がらない", func() bool { return s.Subscribers() == 1 })
-	select { // 繋がった直後の 1 回
-	case <-got:
-	case <-time.After(10 * time.Second):
-		t.Fatal("繋がっても読み直させない (繋がる前の知らせを取り逃す)")
-	}
+	testwait.Recv(t, "繋がっても読み直させない (繋がる前の知らせを取り逃す)", got, testwait.Within(10*time.Second))
 	s.Broadcast()
-	select {
-	case <-got:
-	case <-time.After(10 * time.Second):
-		t.Fatal("Broadcast が届かない")
-	}
+	testwait.Recv(t, "Broadcast が届かない", got, testwait.Within(10*time.Second))
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -95,17 +84,9 @@ func TestSubscribeGetsBroadcastAcrossRestart(t *testing.T) {
 	testwait.Until(t, "起動し直した dispatcher に繋ぎ直さない", func() bool { return s2.Subscribers() == 1 })
 	recv(t, got, "繋ぎ直しても読み直させない")
 	s2.Broadcast()
-	select {
-	case <-got:
-	case <-time.After(10 * time.Second):
-		t.Fatal("繋ぎ直した後の Broadcast が届かない")
-	}
+	testwait.Recv(t, "繋ぎ直した後の Broadcast が届かない", got, testwait.Within(10*time.Second))
 	cancel()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("ctx が終わっても購読が戻らない")
-	}
+	testwait.Recv(t, "ctx が終わっても購読が戻らない", done, testwait.Within(10*time.Second))
 	testwait.Until(t, "画面が抜けたのに購読に残る", func() bool { return s2.Subscribers() == 0 })
 }
 
@@ -254,13 +235,9 @@ func TestSubscriberRefusesLooseFallbackDir(t *testing.T) {
 	sub := NewSubscriber(long, func() { changed <- struct{}{} }).OnRefused(func(err error) { refused <- err })
 	wg.Add(1)
 	go func() { defer wg.Done(); sub.Run(ctx) }()
-	select {
-	case err := <-refused:
-		if !errors.Is(err, ErrUnsafeDir) {
-			t.Fatalf("知らせの理由が違う: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("逃がし先を使えないことを知らせない")
+	err := testwait.Recv(t, "逃がし先を使えないことを知らせない", refused, testwait.Within(5*time.Second))
+	if !errors.Is(err, ErrUnsafeDir) {
+		t.Fatalf("知らせの理由が違う: %v", err)
 	}
 	// sleep-ok: negative: つながらない間に知らせが 1 度だけで増えないことの確認 (成立条件が無い)
 	time.Sleep(3 * retryEvery) // 繋ぎ直しを何度か回す (知らせは 1 度だけ・権限は直さない)
@@ -271,11 +248,7 @@ func TestSubscriberRefusesLooseFallbackDir(t *testing.T) {
 		t.Fatalf("購読が権限を直した: %v %v", st.Mode(), err)
 	}
 	listen(t, long)
-	select {
-	case <-changed:
-	case <-time.After(5 * time.Second):
-		t.Fatal("dispatcher が直して listen した後もつながらない")
-	}
+	testwait.Recv(t, "dispatcher が直して listen した後もつながらない", changed, testwait.Within(5*time.Second))
 }
 
 // Notify は購読している画面すべてへ知らせる (画面を開いた・閉じた。dispatcher は Tick を回さずに中継する)。
@@ -299,12 +272,8 @@ func TestNotifyBroadcasts(t *testing.T) {
 	}
 	seen := map[int]bool{}
 	for len(seen) < 2 {
-		select {
-		case i := <-got:
-			seen[i] = true
-		case <-time.After(10 * time.Second):
-			t.Fatalf("知らせが全員に届かない: %v", seen)
-		}
+		i := testwait.Recv(t, "知らせが全員に届かない", got, testwait.Within(10*time.Second), testwait.Diag(func() string { return fmt.Sprintf("知らせが全員に届かない: %v", seen) }))
+		seen[i] = true
 	}
 	if len(s.Wakes()) != 0 {
 		t.Fatal("Notify で dispatcher を起こした (Tick を回す理由は無い)")
@@ -314,9 +283,5 @@ func TestNotifyBroadcasts(t *testing.T) {
 // recv は ch から 1 つ受ける (届かなければ落とす。上限はハングの防止で、時間は判定に使わない)。
 func recv[T any](t *testing.T, ch <-chan T, what string) {
 	t.Helper()
-	select {
-	case <-ch:
-	case <-time.After(10 * time.Second):
-		t.Fatal(what)
-	}
+	testwait.Recv(t, what, ch, testwait.Within(10*time.Second))
 }

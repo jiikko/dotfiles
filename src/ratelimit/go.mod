@@ -19,6 +19,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
 	golang.org/x/sys v0.47.0 // indirect
+	testwait v0.0.0
 )
 
 replace atomicfile => ../atomicfile
@@ -32,3 +33,5 @@ replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit
 
 replace safefs => ../safefs
+
+replace testwait => ../testwait

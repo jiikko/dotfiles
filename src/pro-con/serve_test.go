@@ -90,13 +90,9 @@ func serveExitsWithoutScreens(t *testing.T, mode presence.Mode) {
 		}
 	}
 	scr.Close() // 落ちた画面と同じ (Leave しない)
-	select {
-	case rc := <-done:
-		if rc != 0 {
-			t.Fatalf("rc=%d", rc)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("画面が無くなっても抜けない")
+	rc := testwait.Recv(t, "画面が無くなっても抜けない", done, testwait.Within(10*time.Second))
+	if rc != 0 {
+		t.Fatalf("rc=%d", rc)
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, dispatcher.StopResultFile)); err != nil || string(b) != "ok\n" {
 		t.Fatalf("止めた結果を書かない: %q %v", b, err)
@@ -153,13 +149,9 @@ func TestServeAloneGraceCountsFromLastScreen(t *testing.T) {
 	scr.Close()
 	waitTicks(3) // 画面が消えた直後: 猶予はここから (起動から数えると、すぐ抜ける)
 	advance(time.Minute)
-	select {
-	case rc := <-done:
-		if rc != 0 {
-			t.Fatalf("rc=%d", rc)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("猶予が過ぎても抜けない")
+	rc := testwait.Recv(t, "猶予が過ぎても抜けない", done, testwait.Within(10*time.Second))
+	if rc != 0 {
+		t.Fatalf("rc=%d", rc)
 	}
 }
 
@@ -241,13 +233,9 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 		t.Fatalf("join の画面が開いているだけで、持ち主の quit の停止をやめた: ok=%v res=%q", ok, res)
 	}
 	go func() { ok, _, res := run(t, 1<<30, presence.Owner, false); got <- result{ok, res} }()
-	select {
-	case r := <-got:
-		if r.ok || r.res == "ok\n" || r.res == "" {
-			t.Fatalf("画面が開いたのに止めるのをやめない / 止めたと書いた / 最初の失敗を書かない: ok=%v res=%q", r.ok, r.res)
-		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("画面が開いても止めるのをやめない (戻らない)")
+	r := testwait.Recv(t, "画面が開いても止めるのをやめない (戻らない)", got, testwait.Within(30*time.Second))
+	if r.ok || r.res == "ok\n" || r.res == "" {
+		t.Fatalf("画面が開いたのに止めるのをやめない / 止めたと書いた / 最初の失敗を書かない: ok=%v res=%q", r.ok, r.res)
 	}
 }
 
@@ -412,17 +400,9 @@ func TestServeSignalWaitsForClosingScreens(t *testing.T) {
 	ownersStayOpenObserved = func() { once.Do(func() { close(observed) }) }
 	t.Cleanup(func() { ownersStayOpenObserved = nil })
 	cancel() // dispatcher と画面に同時に届いた
-	select { // 画面が閉じるのは dispatcher が「開いている」と見た後 (秒数でなく、見たことを待つ)
-	case <-observed:
-	case <-time.After(10 * time.Second):
-		t.Fatal("dispatcher が持ち主の画面を見に行かない")
-	}
+	testwait.Recv(t, "dispatcher が持ち主の画面を見に行かない", observed, testwait.Within(10*time.Second))
 	sc.Close()
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		t.Fatal("抜けない")
-	}
+	testwait.Recv(t, "抜けない", done, testwait.Within(30*time.Second))
 	if !stopped.Load() {
 		t.Fatal("画面が閉じる途中だったのに、止めずに抜けた (PG が残る)")
 	}
@@ -448,11 +428,7 @@ func TestServeAloneTreatsUncountableAsNoScreens(t *testing.T) {
 	go func() {
 		done <- serve(context.Background(), d, dir, nil, serveOpts{interval: 5 * time.Millisecond, alone: 20 * time.Millisecond}, io.Discard)
 	}()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("画面を数えられないまま、止めずに回り続けた")
-	}
+	testwait.Recv(t, "画面を数えられないまま、止めずに回り続けた", done, testwait.Within(10*time.Second))
 }
 
 // 取り消されて (SIGTERM) 止めようとしたが止めきれないまま抜けるときは、rc=1 で抜ける (止めたふりをしない)。
@@ -474,12 +450,8 @@ func TestServeSignalStopFailureExitsNonZero(t *testing.T) {
 	}()
 	testwait.Until(t, "Tick が回らない", func() bool { return ticks.Load() != 0 })
 	cancel()
-	select {
-	case rc := <-done:
-		if rc != 1 {
-			t.Fatalf("止めきれないまま抜けたのに rc=%d", rc)
-		}
-	case <-time.After(60 * time.Second):
-		t.Fatal("抜けない")
+	rc := testwait.Recv(t, "抜けない", done, testwait.Within(60*time.Second))
+	if rc != 1 {
+		t.Fatalf("止めきれないまま抜けたのに rc=%d", rc)
 	}
 }

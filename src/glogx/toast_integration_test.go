@@ -8,6 +8,8 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
 	tea "charm.land/bubbletea/v2"
+
+	"testwait"
 )
 
 // pull/push 完了トーストの退場 (leaving) が tick で hidden まで到達することの回帰テスト。
@@ -105,11 +107,6 @@ func execForToastMsg(t *testing.T, cmd tea.Cmd) toast.Msg {
 			}
 		}(c)
 	}
-	select {
-	case tm := <-ch:
-		return tm
-	case <-time.After(2 * time.Second):
-		t.Fatal("Update の返り Batch に退場タイマー (toast.Msg) が含まれていない")
-		return toast.Msg{}
-	}
+	tm := testwait.Recv(t, "Update の返り Batch に退場タイマー (toast.Msg) が含まれていない", ch, testwait.Within(2*time.Second))
+	return tm
 }

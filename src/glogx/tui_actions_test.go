@@ -21,6 +21,8 @@ import (
 	"glogx/internal/testenv"
 
 	tea "charm.land/bubbletea/v2"
+
+	"testwait"
 )
 
 // b → y/N → git push (glogx の独自機能)。
@@ -202,13 +204,9 @@ func TestActionModalStopCancelsRunningPush(t *testing.T) {
 	done := make(chan tea.Msg, 1)
 	go func() { done <- action() }() // action は runGitPush(ctx) で block
 	a.stop()                         // quit 相当: 走行中 push を cancel
-	select {
-	case msg := <-done:
-		if pm, ok := msg.(pushMsg); !ok || pm.err == nil {
-			t.Errorf("cancel 後の結果 = %#v; want pushMsg{err=context.Canceled}", msg)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("stop() が走行中 push を cancel しなかった (git が孤児化する)")
+	msg := testwait.Recv(t, "stop() が走行中 push を cancel しなかった (git が孤児化する)", done, testwait.Within(2*time.Second))
+	if pm, ok := msg.(pushMsg); !ok || pm.err == nil {
+		t.Errorf("cancel 後の結果 = %#v; want pushMsg{err=context.Canceled}", msg)
 	}
 }
 

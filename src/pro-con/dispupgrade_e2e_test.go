@@ -14,6 +14,8 @@ import (
 	"pro-con/dispatcher"
 	"pro-con/eventlog"
 	"pro-con/upgrade"
+
+	"testwait"
 )
 
 // 本物の pro-con のバイナリで、動いている dispatcher が新版へ自分で切り替わる。shim は偽物 (呼ばれたら新版を置く)、
@@ -78,16 +80,11 @@ func TestDispatcherUpgradesItselfE2E(t *testing.T) {
 	t.Cleanup(func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) })
 	logText := func() string { b, _ := os.ReadFile(logf.Name()); return string(b) }
 	pid := strconv.Itoa(cmd.Process.Pid)
-	deadline := time.Now().Add(60 * time.Second)
-	for { // dispatcher が lock を取るまで (それより前は取れて当然)
-		if b, _ := os.ReadFile(filepath.Join(dir, dispatcher.LockFile)); strings.TrimSpace(string(b)) == pid {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("dispatcher が lock を取らない:\n%s", logText())
-		}
-		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: dispatcher が lock を取るまでの刻み。失敗メッセージが動的で waitUntil に載らない (上限つき)
-	}
+	// dispatcher が lock を取るまで (それより前は取れて当然)
+	testwait.Until(t, "dispatcher が lock を取らない", func() bool {
+		b, _ := os.ReadFile(filepath.Join(dir, dispatcher.LockFile))
+		return strings.TrimSpace(string(b)) == pid
+	}, testwait.Within(60*time.Second), testwait.Diag(logText))
 	switched := func() bool {
 		evs, _ := eventlog.Read(dir)
 		for _, e := range evs {
@@ -97,14 +94,15 @@ func TestDispatcherUpgradesItselfE2E(t *testing.T) {
 		}
 		return false
 	}
-	for !switched() { // 入れ替わるまで、2 つ目の dispatcher が lock を取れないことを確かめ続ける
+	// 入れ替わるまで、2 つ目の dispatcher が lock を取れないことを確かめ続ける (試行に副作用がある)
+	testwait.Until(t, "新版に切り替わらない", func() bool {
+		if switched() {
+			return true
+		}
 		select {
 		case err := <-exited:
 			t.Fatalf("dispatcher が抜けた (%v):\n%s", err, logText())
 		default:
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("新版に切り替わらない:\n%s", logText())
 		}
 		if unlock, err := dispatcher.Lock(dir); err == nil {
 			unlock()
@@ -112,8 +110,8 @@ func TestDispatcherUpgradesItselfE2E(t *testing.T) {
 		} else if !errors.Is(err, dispatcher.ErrRunning) {
 			t.Fatal(err)
 		}
-		time.Sleep(2 * time.Millisecond) // sleep-ok: tick: lock を取り続ける試行のループ。試行に副作用がある
-	}
+		return false
+	}, testwait.Within(60*time.Second), testwait.Tick(2*time.Millisecond), testwait.Diag(logText))
 	for _, want := range []string{"新版ができた", "新版へ切り替える", "PID " + pid + " のまま"} {
 		if !strings.Contains(logText(), want) {
 			t.Errorf("出来事に %q が無い:\n%s", want, logText())
@@ -130,11 +128,7 @@ func TestDispatcherUpgradesItselfE2E(t *testing.T) {
 	if err := syscall.Kill(cmd.Process.Pid, syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-exited: //nolint:errcheck // 抜けたかだけを見る (SIGTERM での終了の rc は問わない)
-	case <-time.After(30 * time.Second):
-		t.Fatalf("SIGTERM で抜けない:\n%s", logText())
-	}
+	_ = testwait.Recv(t, "SIGTERM で抜けない", exited, testwait.Within(30*time.Second), testwait.Diag(func() string { return "SIGTERM で抜けない:\n" + logText() }))
 	unlock, err := dispatcher.Lock(dir)
 	if err != nil {
 		t.Fatalf("dispatcher が抜けた後も lock が外れない (子が握っている?): %v\n%s", err, logText())

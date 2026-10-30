@@ -14,6 +14,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/tuikit/foreground"
+
+	"testwait"
 )
 
 // 外のコマンドへ渡す前に前面を持っていたときだけ、戻った後に取り戻す (持っていなかった前面を奪わない)。
@@ -288,21 +290,11 @@ func TestStopWatcherKeepsContinueAfterTTINFlood(t *testing.T) {
 	}
 	_ = syscall.Kill(os.Getpid(), syscall.SIGCONT)
 	// SIGCONT がチャンネルへ届いてから (見張りは止まる処理の中なので、受け口に積まれたまま)、見張りを止まる処理から戻す
-	deadline := time.Now().Add(5 * time.Second)
-	for len(w.cont) == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("SIGCONT がチャンネルへ届かない")
-		}
-		time.Sleep(time.Millisecond) // sleep-ok: tick: 受け口に積まれるのを待つ刻み (ui の package に待ちの helper が無い)
-	}
+	testwait.Until(t, "SIGCONT がチャンネルへ届かない", func() bool { return len(w.cont) > 0 }, testwait.Within(5*time.Second), testwait.Tick(time.Millisecond))
 	close(release)
-	select {
-	case msg := <-got:
-		if msg != (Continued{}) {
-			t.Fatalf("知らせが違う: %#v", msg)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("SIGCONT が捨てられ、入れ直しを頼まない")
+	msg := testwait.Recv(t, "SIGCONT が捨てられ、入れ直しを頼まない", got, testwait.Within(5*time.Second))
+	if msg != (Continued{}) {
+		t.Fatalf("知らせが違う: %#v", msg)
 	}
 }
 

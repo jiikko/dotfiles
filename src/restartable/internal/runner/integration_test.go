@@ -212,19 +212,15 @@ func (r *ptyStdinRunner) signalAndWait(t *testing.T, sig syscall.Signal) int {
 	if err := r.Cmd.Process.Signal(sig); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		t.Fatal(err)
 	}
-	select {
-	case <-r.Done:
-		if r.Err == nil {
-			return 0
-		}
-		var exit *exec.ExitError
-		if errors.As(r.Err, &exit) {
-			return exit.ExitCode()
-		}
-		t.Fatalf("wait for runner: %v", r.Err)
-	case <-time.After(4 * time.Second):
-		t.Fatalf("runner did not exit; output=%q", r.Text())
+	testwait.Recv(t, "runner did not exit; output", r.Done, testwait.Within(4*time.Second), testwait.Diag(func() string { return fmt.Sprintf("runner did not exit; output=%q", r.Text()) }))
+	if r.Err == nil {
+		return 0
 	}
+	var exit *exec.ExitError
+	if errors.As(r.Err, &exit) {
+		return exit.ExitCode()
+	}
+	t.Fatalf("wait for runner: %v", r.Err)
 	return -1
 }
 
@@ -384,20 +380,18 @@ func (r *testRunner) waitStatus(t *testing.T, want string) control.Response {
 func (r *testRunner) signalAndWait(t *testing.T, sig syscall.Signal) int {
 	t.Helper()
 	_ = r.cmd.Process.Signal(sig)
-	select {
-	case <-r.done:
-		err := r.waitErr
-		if err == nil {
-			return 0
-		}
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return exit.ExitCode()
-		}
-		t.Fatalf("wait runner: %v", err)
-	case <-time.After(4 * time.Second):
-		t.Fatalf("runner did not exit after signal %v; stderr: %s", sig, readFile(r.stderr))
+	testwait.Recv(t, "runner did not exit after signal", r.done, testwait.Within(4*time.Second), testwait.Diag(func() string {
+		return fmt.Sprintf("runner did not exit after signal %v; stderr: %s", sig, readFile(r.stderr))
+	}))
+	err := r.waitErr
+	if err == nil {
+		return 0
 	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode()
+	}
+	t.Fatalf("wait runner: %v", err)
 	return -1
 }
 
@@ -637,13 +631,9 @@ func TestStopCommandSuccessIgnoresRestartAndQuitKeysWithoutKillingChild(t *testi
 		t.Fatalf("Esc did not cancel accepted stop: %+v", got.Model)
 	}
 	for i, resultCh := range []<-chan callResult{restartResult, secondRestartResult} {
-		select {
-		case result := <-resultCh:
-			if result.err != nil || result.response.OK || result.response.Reason != "stop cancelled" {
-				t.Fatalf("restart response %d after Esc = %+v, err=%v", i+1, result.response, result.err)
-			}
-		case <-time.After(4 * time.Second):
-			t.Fatalf("restart request %d was not rejected after Esc", i+1)
+		result := testwait.Recv(t, "restart request", resultCh, testwait.Within(4*time.Second), testwait.Diag(func() string { return fmt.Sprintf("restart request %d was not rejected after Esc", i+1) }))
+		if result.err != nil || result.response.OK || result.response.Reason != "stop cancelled" {
+			t.Fatalf("restart response %d after Esc = %+v, err=%v", i+1, result.response, result.err)
 		}
 	}
 	if err := syscall.Kill(*initial.PID, 0); err != nil {
@@ -706,24 +696,16 @@ func TestStopCommandFailureAfterChildExitExitsAndFailsRestart(t *testing.T) {
 	if err := gate.Close(); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case result := <-restartResult:
-		if result.err != nil {
-			t.Fatal(result.err)
-		}
-		if result.response.OK || !strings.Contains(result.response.Reason, "stop-cmd failed") {
-			t.Fatalf("restart response after child exit = %+v", result.response)
-		}
-	case <-time.After(4 * time.Second):
-		t.Fatal("failed stop-cmd request was not rejected after child exit")
+	result := testwait.Recv(t, "failed stop-cmd request was not rejected after child exit", restartResult, testwait.Within(4*time.Second))
+	if result.err != nil {
+		t.Fatal(result.err)
 	}
-	select {
-	case <-r.done:
-		if r.waitErr != nil {
-			t.Fatalf("runner did not exit naturally after stop failure: %v; stderr: %s", r.waitErr, readFile(r.stderr))
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("runner kept running after stop-cmd failed and child exited")
+	if result.response.OK || !strings.Contains(result.response.Reason, "stop-cmd failed") {
+		t.Fatalf("restart response after child exit = %+v", result.response)
+	}
+	testwait.Recv(t, "runner kept running after stop-cmd failed and child exited", r.done, testwait.Within(3*time.Second))
+	if r.waitErr != nil {
+		t.Fatalf("runner did not exit naturally after stop failure: %v; stderr: %s", r.waitErr, readFile(r.stderr))
 	}
 }
 
@@ -883,16 +865,12 @@ func TestControlRestartDuringBuildRequiresNextBuild(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "gate.2"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case result := <-responseCh:
-		if result.err != nil {
-			t.Fatal(result.err)
-		}
-		if !result.response.OK || result.response.Generation != 1 {
-			t.Fatalf("restart response = %+v", result.response)
-		}
-	case <-time.After(4 * time.Second):
-		t.Fatal("restart response timed out")
+	result := testwait.Recv(t, "restart response timed out", responseCh, testwait.Within(4*time.Second))
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	if !result.response.OK || result.response.Generation != 1 {
+		t.Fatalf("restart response = %+v", result.response)
 	}
 	testwait.Until(t, "new run to record artifact", func() bool { return strings.TrimSpace(readFile(launches)) != "" }, testwait.Within(time.Second))
 	if got := strings.TrimSpace(readFile(launches)); got != "2" {
@@ -993,15 +971,13 @@ func TestControlDisconnectAfterCommitContinuesRestart(t *testing.T) {
 
 func TestChildExitWinsOverLaterControlRestart(t *testing.T) {
 	r := startTestRunnerMode(t, map[string]string{"RESTARTABLE_TEST_RUN": "exit 0"}, false)
-	select {
-	case <-r.done:
-		err := r.waitErr
-		if err != nil {
-			t.Fatalf("natural runner exit: %v", err)
-		}
-	case <-time.After(3 * time.Second):
+	testwait.Recv(t, "runner did not exit after child: status", r.done, testwait.Within(3*time.Second), testwait.Diag(func() string {
 		status, err := r.status()
-		t.Fatalf("runner did not exit after child: status=%+v statusErr=%v stderr=%s", status, err, readFile(r.stderr))
+		return fmt.Sprintf("runner did not exit after child: status=%+v statusErr=%v stderr=%s", status, err, readFile(r.stderr))
+	}))
+	err := r.waitErr
+	if err != nil {
+		t.Fatalf("natural runner exit: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -1201,15 +1177,13 @@ func TestLargeTTYLogRetainsFirstAndLastAndReportsDrops(t *testing.T) {
 func TestChildStdoutStderrOrderIsPreserved(t *testing.T) {
 	run := `printf 'out-1\n'; printf 'err-1\n' >&2; printf 'out-2\n'; printf 'err-2\n' >&2; exit 0`
 	r := startTestRunnerMode(t, map[string]string{"RESTARTABLE_TEST_RUN": run}, false)
-	select {
-	case <-r.done:
-		err := r.waitErr
-		if err != nil {
-			t.Fatalf("runner exit: %v; stderr: %s", err, readFile(r.stderr))
-		}
-	case <-time.After(3 * time.Second):
+	testwait.Recv(t, "runner did not exit: status", r.done, testwait.Within(3*time.Second), testwait.Diag(func() string {
 		status, err := r.status()
-		t.Fatalf("runner did not exit: status=%+v statusErr=%v stderr=%s", status, err, readFile(r.stderr))
+		return fmt.Sprintf("runner did not exit: status=%+v statusErr=%v stderr=%s", status, err, readFile(r.stderr))
+	}))
+	err := r.waitErr
+	if err != nil {
+		t.Fatalf("runner exit: %v; stderr: %s", err, readFile(r.stderr))
 	}
 	file, err := os.Open(r.stdout)
 	if err != nil {
@@ -1350,11 +1324,7 @@ func TestForceStopWithNoProcessesDoesNotSendToActorEventsSynchronously(t *testin
 	}
 	done := make(chan struct{})
 	go func() { a.beginForceStop(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("beginForceStop deadlocked sending to its own unbuffered event channel")
-	}
+	testwait.Recv(t, "beginForceStop deadlocked sending to its own unbuffered event channel", done, testwait.Within(time.Second))
 }
 
 func TestForcedShutdownKillsStopCommandGroupAfterChildExits(t *testing.T) {
@@ -1386,11 +1356,7 @@ func TestForcedShutdownKillsStopCommandGroupAfterChildExits(t *testing.T) {
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
 	}
-	select {
-	case <-result: //nolint:errcheck // forced shutdown 中の呼び出しは終わればよい (失敗で返るのも正しい)
-	case <-time.After(time.Second):
-		t.Fatal("control call did not finish during forced shutdown")
-	}
+	_ = testwait.Recv(t, "control call did not finish during forced shutdown", result, testwait.Within(time.Second))
 	testwait.Until(t, "stop command group cleanup", func() bool { return !groupExists(stopPID) }, testwait.Within(time.Second))
 }
 
@@ -1431,11 +1397,7 @@ func TestForcedShutdownIncludesGroupsWhoseLeadersWereReaped(t *testing.T) {
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
 	}
-	select {
-	case <-result: //nolint:errcheck // forced shutdown 中の呼び出しは終わればよい (失敗で返るのも正しい)
-	case <-time.After(time.Second):
-		t.Fatal("pending restart call did not finish during forced shutdown")
-	}
+	_ = testwait.Recv(t, "pending restart call did not finish during forced shutdown", result, testwait.Within(time.Second))
 	testwait.Until(t, "reaped stop command group cleanup", func() bool { return !groupExists(stopPID) }, testwait.Within(time.Second))
 }
 
@@ -1505,16 +1467,12 @@ func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
 		t.Fatal(err)
 	}
 	testwait.Until(t, "descendant to complete graceful termination", func() bool { return strings.TrimSpace(readFile(gracefulExit)) != "" }, testwait.Within(2*time.Second))
-	select {
-	case result := <-restartDone:
-		if result.err != nil {
-			t.Fatal(result.err)
-		}
-		if !result.response.OK || result.response.Generation != 2 {
-			t.Fatalf("restart response = %+v", result.response)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("restart did not finish after the process group exited")
+	result := testwait.Recv(t, "restart did not finish after the process group exited", restartDone, testwait.Within(3*time.Second))
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	if !result.response.OK || result.response.Generation != 2 {
+		t.Fatalf("restart response = %+v", result.response)
 	}
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
@@ -1562,11 +1520,7 @@ func TestQuitConfirmationDuringBuildStopsBuildAndExits(t *testing.T) {
 	if quitting.Model.State != Exiting || quitting.Model.ExitCode != 0 || quitting.Model.Transition.Kind != TransitionQuit {
 		t.Fatalf("confirmed Q during build did not enter graceful quit: %+v", quitting.Model)
 	}
-	select {
-	case <-r.done:
-	case <-time.After(4 * time.Second):
-		t.Fatal("runner did not exit after confirmed build quit")
-	}
+	testwait.Recv(t, "runner did not exit after confirmed build quit", r.done, testwait.Within(4*time.Second))
 	if r.waitErr != nil {
 		t.Fatalf("runner exit = %v, want code 0", r.waitErr)
 	}
@@ -1632,11 +1586,7 @@ func TestQuitConfirmationDuringReadinessUsesStopCommand(t *testing.T) {
 		return readFile(stopMarkerPath) == "done"
 	}, testwait.Within(3*time.Second))
 
-	select {
-	case <-r.done:
-	case <-time.After(4 * time.Second):
-		t.Fatal("runner did not exit after stop-cmd stopped the child")
-	}
+	testwait.Recv(t, "runner did not exit after stop-cmd stopped the child", r.done, testwait.Within(4*time.Second))
 	if r.waitErr != nil {
 		t.Fatalf("runner exit = %v, want code 0", r.waitErr)
 	}
@@ -1830,11 +1780,7 @@ func TestFinalPresenterRenderClosesTransitionPanelForQuitAndCtrlC(t *testing.T) 
 			for _, key := range tc.keys {
 				sendKeyAndWaitRender(t, keyPath, statePath, key)
 			}
-			select {
-			case <-r.done:
-			case <-time.After(4 * time.Second):
-				t.Fatalf("runner did not exit after %s", tc.name)
-			}
+			testwait.Recv(t, "runner did not exit after", r.done, testwait.Within(4*time.Second), testwait.Diag(func() string { return "runner did not exit after " + tc.name }))
 			if tc.code == 0 && r.waitErr != nil {
 				t.Fatalf("runner exit = %v, want code 0", r.waitErr)
 			}
@@ -1966,13 +1912,11 @@ func TestChildCanExitBeforeReadyProbeAndProbeGroupIsReaped(t *testing.T) {
 		"RESTARTABLE_TEST_READY_ATTEMPT_TIMEOUT": "2s",
 		"RESTARTABLE_TEST_READY_CLEANUP_GRACE":   "20ms",
 	})
-	select {
-	case <-r.done:
-		if r.waitErr != nil {
-			t.Fatalf("runner exit after child finished first: %v; stderr=%s", r.waitErr, readFile(r.stderr))
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatalf("runner did not exit after its child; stderr=%s", readFile(r.stderr))
+	testwait.Recv(t, "runner did not exit after its child; stderr", r.done, testwait.Within(3*time.Second), testwait.Diag(func() string {
+		return "runner did not exit after its child; stderr=" + readFile(r.stderr)
+	}))
+	if r.waitErr != nil {
+		t.Fatalf("runner exit after child finished first: %v; stderr=%s", r.waitErr, readFile(r.stderr))
 	}
 	if got := strings.TrimSpace(readFile(r.stderr)); got != "起動を確認できませんでした" {
 		t.Fatalf("headless child-exit-before-ready result = %q", got)
@@ -2068,11 +2012,7 @@ func TestRunnerSignalHandlingAndSIGPIPEDefaultInExecChild(t *testing.T) {
 		r := startTestRunnerMode(t, map[string]string{
 			"RESTARTABLE_TEST_RUN": `yes | head -c1`,
 		}, false)
-		select {
-		case <-r.done:
-		case <-time.After(3 * time.Second):
-			t.Fatal("runner did not exit after yes piped into head")
-		}
+		testwait.Recv(t, "runner did not exit after yes piped into head", r.done, testwait.Within(3*time.Second))
 		if output := readFile(r.stdout) + readFile(r.stderr); strings.Contains(output, "Broken pipe") {
 			t.Fatalf("exec child inherited ignored SIGPIPE: %q", output)
 		}
@@ -2105,11 +2045,7 @@ func TestSIGTERMDuringPresenterStartReachesRunnerSignalHandler(t *testing.T) {
 		"RESTARTABLE_TEST_RUN":                 "exec /bin/sleep 30",
 		"RESTARTABLE_TEST_SIGNAL_DURING_START": marker,
 	}, false)
-	select {
-	case <-r.done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("runner did not handle SIGTERM delivered during presenter startup")
-	}
+	testwait.Recv(t, "runner did not handle SIGTERM delivered during presenter startup", r.done, testwait.Within(3*time.Second))
 	if !strings.Contains(readFile(marker), "handled") {
 		t.Fatalf("runner did not route startup SIGTERM through its handler; marker=%q exit=%v", readFile(marker), r.waitErr)
 	}
@@ -2147,11 +2083,7 @@ func TestForwardKeysExitsWhenEventAndKeyQueuesAreFull(t *testing.T) {
 	testwait.Until(t, "key forwarder to block on the full actor queue", func() bool { return len(keys) == cap(keys)-1 }, testwait.Within(time.Second))
 	keys <- "q"
 	close(done)
-	select {
-	case <-forwarded:
-	case <-time.After(time.Second):
-		t.Fatal("key forwarder did not stop after actor shutdown")
-	}
+	testwait.Recv(t, "key forwarder did not stop after actor shutdown", forwarded, testwait.Within(time.Second))
 }
 
 // startInteractiveRunner はキーを受ける (UI のある) runner を起動する。子が rc≠0 で落ちたときに待つのはこの形だけ。
@@ -2203,41 +2135,33 @@ func TestInteractiveChildCrashRestartsWithRKeyAndQuitsWithQ(t *testing.T) {
 	r.waitStatus(t, string(Crashed))
 	sendIntegrationKey(t, keyPath, "Q")
 	sendIntegrationKey(t, keyPath, "y")
-	select {
-	case <-r.done:
-		if r.waitErr != nil {
-			t.Fatalf("Q after crash: runner exit = %v, want rc 0", r.waitErr)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatalf("runner did not exit after Q y; stderr: %s", readFile(r.stderr))
+	testwait.Recv(t, "runner did not exit after Q y; stderr", r.done, testwait.Within(3*time.Second), testwait.Diag(func() string { return "runner did not exit after Q y; stderr: " + readFile(r.stderr) }))
+	if r.waitErr != nil {
+		t.Fatalf("Q after crash: runner exit = %v, want rc 0", r.waitErr)
 	}
 }
 
 // rc 0 の終了は人の Cmd+Q 等なので、UI があっても待たずに runner を終える。
 func TestInteractiveChildCleanExitStillEndsRunner(t *testing.T) {
 	r, _ := startInteractiveRunnerMode(t, map[string]string{"RESTARTABLE_TEST_RUN": "exit 0"}, false)
-	select {
-	case <-r.done:
-		if r.waitErr != nil {
-			t.Fatalf("clean child exit: runner exit = %v, want rc 0", r.waitErr)
-		}
-	case <-time.After(3 * time.Second):
+	testwait.Recv(t, "runner kept running after the child exited with rc 0", r.done, testwait.Within(3*time.Second), testwait.Diag(func() string {
 		status, _ := r.status()
-		t.Fatalf("runner kept running after the child exited with rc 0: %+v", status)
+		return fmt.Sprintf("runner kept running after the child exited with rc 0: %+v", status)
+	}))
+	if r.waitErr != nil {
+		t.Fatalf("clean child exit: runner exit = %v, want rc 0", r.waitErr)
 	}
 }
 
 // UI の無い起動では待っても操作できないので、子の rc をそのまま runner の rc にして終える。
 func TestHeadlessChildCrashExitsWithChildCode(t *testing.T) {
 	r := startTestRunnerMode(t, map[string]string{"RESTARTABLE_TEST_RUN": "exit 7"}, false)
-	select {
-	case <-r.done:
-		var exit *exec.ExitError
-		if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 7 {
-			t.Fatalf("headless crash: runner exit = %v, want rc 7", r.waitErr)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatalf("headless runner did not exit after the child crashed; stderr: %s", readFile(r.stderr))
+	testwait.Recv(t, "headless runner did not exit after the child crashed; stderr", r.done, testwait.Within(3*time.Second), testwait.Diag(func() string {
+		return "headless runner did not exit after the child crashed; stderr: " + readFile(r.stderr)
+	}))
+	var exit *exec.ExitError
+	if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 7 {
+		t.Fatalf("headless crash: runner exit = %v, want rc 7", r.waitErr)
 	}
 }
 
@@ -2390,11 +2314,7 @@ func TestQuitFromCrashedLeavesLeftoverGroup(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 	quitWithConfirm(t, keyPath, state)
-	select {
-	case <-r.done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("runner did not exit after Q y")
-	}
+	testwait.Recv(t, "runner did not exit after Q y", r.done, testwait.Within(3*time.Second))
 	// 強制停止は終わるまで runner の終了を止めるので、消すなら r.done の時点で既に消えている
 	if !processAlive(pid) {
 		t.Fatalf("Q from crashed stopped the leftover grandchild %d", pid)
@@ -2415,11 +2335,7 @@ func TestQuitDuringCrashCleanupDoesNotLaunch(t *testing.T) {
 	sendIntegrationKey(t, keyPath, "R")
 	r.waitStatus(t, string(Building)) // 孫が TERM を無視するので grace の 1s は片付けの最中
 	quitWithConfirm(t, keyPath, state)
-	select {
-	case <-r.done:
-	case <-time.After(4 * time.Second):
-		t.Fatal("runner did not exit after Q y during cleanup")
-	}
+	testwait.Recv(t, "runner did not exit after Q y during cleanup", r.done, testwait.Within(4*time.Second))
 	// 起動しなかったことには待つ条件が無い。起動したなら子は起動直後に launches へ書くので、その分だけ待つ
 	time.Sleep(300 * time.Millisecond) // sleep-ok: negative: 起きないことの確認
 	if got := strings.Fields(readFile(launches)); len(got) != 1 {
@@ -2433,14 +2349,12 @@ func TestHeadlessBuildFailureExitsWithOne(t *testing.T) {
 	r := startTestRunnerMode(t, map[string]string{
 		"RESTARTABLE_TEST_BUILD": "exit 17", "RESTARTABLE_TEST_RUN": "echo x >> " + runnertest.ShellQuote(launches) + "; exec /bin/sleep 30",
 	}, false)
-	select {
-	case <-r.done:
-		var exit *exec.ExitError
-		if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 1 {
-			t.Fatalf("headless build failure: runner exit = %v, want rc 1", r.waitErr)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatalf("headless runner kept waiting after the build failed; stderr: %s", readFile(r.stderr))
+	testwait.Recv(t, "headless runner kept waiting after the build failed; stderr", r.done, testwait.Within(3*time.Second), testwait.Diag(func() string {
+		return "headless runner kept waiting after the build failed; stderr: " + readFile(r.stderr)
+	}))
+	var exit *exec.ExitError
+	if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 1 {
+		t.Fatalf("headless build failure: runner exit = %v, want rc 1", r.waitErr)
 	}
 	if got := readFile(launches); got != "" {
 		t.Fatalf("run started after a failed build: %q", got)
@@ -2469,14 +2383,12 @@ func TestHeadlessRebuildFailureStopsOldLeftoversBeforeExit(t *testing.T) {
 	if response, err := control.Call(ctx, r.path, control.Restart); err == nil && response.OK {
 		t.Fatalf("restart with a failing rebuild succeeded: %+v", response)
 	}
-	select {
-	case <-r.done:
-		var exit *exec.ExitError
-		if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 1 {
-			t.Fatalf("headless rebuild failure: runner exit = %v, want rc 1", r.waitErr)
-		}
-	case <-time.After(4 * time.Second):
-		t.Fatalf("headless runner did not exit after the rebuild failed; stderr: %s", readFile(r.stderr))
+	testwait.Recv(t, "headless runner did not exit after the rebuild failed; stderr", r.done, testwait.Within(4*time.Second), testwait.Diag(func() string {
+		return "headless runner did not exit after the rebuild failed; stderr: " + readFile(r.stderr)
+	}))
+	var exit *exec.ExitError
+	if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 1 {
+		t.Fatalf("headless rebuild failure: runner exit = %v, want rc 1", r.waitErr)
 	}
 	// 強制停止は終わるまで runner の終了を止めるので、r.done の時点で孫は消えている
 	if processAlive(pid) {
@@ -2511,13 +2423,9 @@ func TestQuitFromBuildFailedStopsOldLeftovers(t *testing.T) {
 	}
 	r.waitStatus(t, string(BuildFailed))
 	quitWithConfirm(t, keyPath, state)
-	select {
-	case <-r.done:
-		if r.waitErr != nil {
-			t.Fatalf("Q from build-failed: runner exit = %v, want rc 0", r.waitErr)
-		}
-	case <-time.After(4 * time.Second):
-		t.Fatalf("runner did not exit after Q y; stderr: %s", readFile(r.stderr))
+	testwait.Recv(t, "runner did not exit after Q y; stderr", r.done, testwait.Within(4*time.Second), testwait.Diag(func() string { return "runner did not exit after Q y; stderr: " + readFile(r.stderr) }))
+	if r.waitErr != nil {
+		t.Fatalf("Q from build-failed: runner exit = %v, want rc 0", r.waitErr)
 	}
 	// 強制停止は終わるまで runner の終了を止めるので、r.done の時点で孫は消えている
 	if processAlive(pid) {
@@ -2571,14 +2479,13 @@ func TestCtrlCDuringForcedStopKillsWithoutWaitingForGrace(t *testing.T) {
 	quitWithConfirm(t, keyPath, state) // ビルド中の Q → 強制停止 (ビルドは TERM を無視するので 60s の猶予を待つ)
 	waitPresenterSnapshot(t, state, "exiting", func(got presenterSnapshot) bool { return got.Model.State == Exiting })
 	sendIntegrationKey(t, keyPath, "ctrl+c")
-	select {
-	case <-r.done:
-		var exit *exec.ExitError
-		if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 130 {
-			t.Fatalf("Ctrl-C during forced stop: runner exit = %v, want rc 130", r.waitErr)
-		}
-	case <-time.After(10 * time.Second): // hang guard (猶予の 60s より十分短い)
-		t.Fatalf("Ctrl-C did not cut the 60s grace short; stderr: %s", readFile(r.stderr))
+	// hang guard (猶予の 60s より十分短い)
+	testwait.Recv(t, "Ctrl-C did not cut the 60s grace short; stderr", r.done, testwait.Within(10*time.Second), testwait.Diag(func() string {
+		return "Ctrl-C did not cut the 60s grace short; stderr: " + readFile(r.stderr)
+	}))
+	var exit *exec.ExitError
+	if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 130 {
+		t.Fatalf("Ctrl-C during forced stop: runner exit = %v, want rc 130", r.waitErr)
 	}
 }
 
@@ -2589,14 +2496,12 @@ func TestHeadlessBuildFailureStopsBuildLeftovers(t *testing.T) {
 		"RESTARTABLE_TEST_BUILD": "/bin/sleep 300 </dev/null >/dev/null 2>&1 & echo $! > " + runnertest.ShellQuote(bgPID) + "; exit 1",
 		"RESTARTABLE_TEST_RUN":   "exec /bin/sleep 300",
 	}, false)
-	select {
-	case <-r.done:
-		var exit *exec.ExitError
-		if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 1 {
-			t.Fatalf("headless build failure: runner exit = %v, want rc 1", r.waitErr)
-		}
-	case <-time.After(4 * time.Second):
-		t.Fatalf("headless runner did not exit after the build failed; stderr: %s", readFile(r.stderr))
+	testwait.Recv(t, "headless runner did not exit after the build failed; stderr", r.done, testwait.Within(4*time.Second), testwait.Diag(func() string {
+		return "headless runner did not exit after the build failed; stderr: " + readFile(r.stderr)
+	}))
+	var exit *exec.ExitError
+	if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 1 {
+		t.Fatalf("headless build failure: runner exit = %v, want rc 1", r.waitErr)
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(readFile(bgPID)))
 	if err != nil {

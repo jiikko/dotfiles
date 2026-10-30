@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 func newTestLocker(t *testing.T) *Locker {
@@ -476,11 +478,7 @@ func TestStaleTakeoverDoesNotEvictFreshLock(t *testing.T) {
 	}()
 
 	// 遅れてくる側が「期限切れ」と判定し終えるまで待つ。上限は安全網 (合否ではない)。
-	select {
-	case <-observed:
-	case <-time.After(10 * time.Second):
-		t.Fatal("seam が呼ばれない: 期限切れの判定に到達していないので、このテストは何も守っていない")
-	}
+	testwait.Recv(t, "seam が呼ばれない: 期限切れの判定に到達していないので、このテストは何も守っていない", observed, testwait.Within(10*time.Second))
 
 	// その隙に引き継ぎを完走させる
 	winner, err := l.Acquire(time.Minute, "winner")
@@ -533,11 +531,7 @@ func TestStaleTakeoverRefusesWhenGenerationChangedAfterClaimSwept(t *testing.T) 
 		_, err := l.Acquire(time.Minute, "late")
 		late <- err
 	}()
-	select {
-	case <-observed:
-	case <-time.After(10 * time.Second):
-		t.Fatal("seam が呼ばれない: 期限切れの判定に到達していない")
-	}
+	testwait.Recv(t, "seam が呼ばれない: 期限切れの判定に到達していない", observed, testwait.Within(10*time.Second))
 
 	winner, err := l.Acquire(time.Minute, "winner")
 	if err != nil {
@@ -653,11 +647,7 @@ func TestStaleTakeoverRefusesRenewedLock(t *testing.T) {
 		_, err := l.Acquire(time.Minute, "late")
 		late <- err
 	}()
-	select {
-	case <-observed:
-	case <-time.After(10 * time.Second):
-		t.Fatal("seam が呼ばれない: 期限切れの判定に到達していない")
-	}
+	testwait.Recv(t, "seam が呼ばれない: 期限切れの判定に到達していない", observed, testwait.Within(10*time.Second))
 
 	// 保持者が滑り込みで延長した状態を作る (token は同じ / mtime だけ進む)。
 	// 期限切れの lease は Renew が受けないので、打刻を直接作る。

@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 const testBanner = "> 🚨 **担当中: host (glogx)**（2026-09-19〜）"
@@ -241,13 +243,10 @@ func TestRewriteRefusesFIFOWithoutBlocking(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- clearClaimBanner(p) }()
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("FIFO を書き換えた")
-		}
-	case <-time.After(10 * time.Second): // hang guard (書き手を待って止まる退行は、ここで赤になる)
-		t.Fatal("FIFO を読んで書き手を待ったまま戻らない")
+	// hang guard (書き手を待って止まる退行は、ここで赤になる)
+	err := testwait.Recv(t, "FIFO を読んで書き手を待ったまま戻らない", done, testwait.Within(10*time.Second))
+	if err == nil {
+		t.Fatal("FIFO を書き換えた")
 	}
 }
 

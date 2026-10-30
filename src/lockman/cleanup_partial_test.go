@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // 期限切れした掃除は「どこまで進んだか」を報告すること。
@@ -53,56 +55,52 @@ func TestCleanupTimedReportsPartialProgress(t *testing.T) {
 
 	ch := make(chan CleanupResult, 1)
 	go func() { ch <- l.CleanupTimed(true) }()
-	select {
-	case res := <-ch:
-		if !hasTimeoutError(res) {
-			t.Fatalf("掃除のタイムアウトが Errors に入っていない: %+v", res)
-		}
-		if !res.Partial {
-			t.Errorf("期限切れなのに Partial が false (呼び出し側が「これで全部」と読む): %+v", res)
-		}
-		// 🚨 **「0 でない」と「全件でない」の両方**を見る。前者だけだと部分結果を捨てる旧挙動しか
-		// 検出できず、後者だけだと「常に 0」でも通る。両方で「途中経過を報告している」を固定する。
-		if res.Removed == 0 {
-			t.Errorf("期限切れ時に進捗を捨てている: removed=0 (途中まで消しているのに 0 と報告)")
-		}
-		if res.Removed >= residue {
-			t.Errorf("途中で止まっていない (removed=%d / 全 %d 件)。窓を再現できていないので"+
-				"このテストは一括カウントの変異を検出できない", res.Removed, residue)
-		}
-		// 🚨 **報告が実態を上回っていないこと**。ここは**片側 assert** で、
-		// 見捨てた goroutine が消し続けるぶんは `got` を増やす方向にしか効かないので
-		// 偽の赤にはならない。2 周目はこれを「ほとんど何も検査しない」として消したが、
-		// **変異を当てずに vacuous と判定していた**のが誤りで、実際は期限切れ枝で
-		// 「報告 > 実態」を守る**唯一の上限**だった (実測: `removed` を 2 倍に水増しする
-		// 変異が、消した後は全スイート緑で通る)。「消したのに 0 件と言う」嘘の**鏡像**
-		// (「消していないのに消したと言う」) がここに当たる。
-		// 🚨 **待ちの前に置くこと**。待った後だと goroutine が全部消し終えているので
-		// 上限が緩みきって何も検出しない。
-		if left := countDirEntries(t, filepath.Join(l.metaDir, tmpDirName)); residue-left < res.Removed {
-			t.Errorf("報告 (%d) が実際に消えた数 (%d) を上回っている", res.Removed, residue-left)
-		}
+	res := testwait.Recv(t, "CleanupTimed が 20s 以内に戻らない (包みが無い)", ch, testwait.Within(20*time.Second))
+	if !hasTimeoutError(res) {
+		t.Fatalf("掃除のタイムアウトが Errors に入っていない: %+v", res)
+	}
+	if !res.Partial {
+		t.Errorf("期限切れなのに Partial が false (呼び出し側が「これで全部」と読む): %+v", res)
+	}
+	// 🚨 **「0 でない」と「全件でない」の両方**を見る。前者だけだと部分結果を捨てる旧挙動しか
+	// 検出できず、後者だけだと「常に 0」でも通る。両方で「途中経過を報告している」を固定する。
+	if res.Removed == 0 {
+		t.Errorf("期限切れ時に進捗を捨てている: removed=0 (途中まで消しているのに 0 と報告)")
+	}
+	if res.Removed >= residue {
+		t.Errorf("途中で止まっていない (removed=%d / 全 %d 件)。窓を再現できていないので"+
+			"このテストは一括カウントの変異を検出できない", res.Removed, residue)
+	}
+	// 🚨 **報告が実態を上回っていないこと**。ここは**片側 assert** で、
+	// 見捨てた goroutine が消し続けるぶんは `got` を増やす方向にしか効かないので
+	// 偽の赤にはならない。2 周目はこれを「ほとんど何も検査しない」として消したが、
+	// **変異を当てずに vacuous と判定していた**のが誤りで、実際は期限切れ枝で
+	// 「報告 > 実態」を守る**唯一の上限**だった (実測: `removed` を 2 倍に水増しする
+	// 変異が、消した後は全スイート緑で通る)。「消したのに 0 件と言う」嘘の**鏡像**
+	// (「消していないのに消したと言う」) がここに当たる。
+	// 🚨 **待ちの前に置くこと**。待った後だと goroutine が全部消し終えているので
+	// 上限が緩みきって何も検出しない。
+	if left := countDirEntries(t, filepath.Join(l.metaDir, tmpDirName)); residue-left < res.Removed {
+		t.Errorf("報告 (%d) が実際に消えた数 (%d) を上回っている", res.Removed, residue-left)
+	}
 
-		// 🚨 **見捨てた goroutine が終わるのを待ってからテストを終える**。
-		// 待たないと、`t.Cleanup` の `TempDir` 削除と、掃除を続けている goroutine の
-		// **`stampCleanup` による `.cleanup_at` の再作成**が競合し、
-		// `TempDir RemoveAll cleanup: ... directory not empty` で**無関係な赤**が出る
-		// (レビュー実測: 並行負荷の高い環境で `go test -race ./...` 8 回中 2 回。
-		//  こちらの環境では 16 回中 0 回で再現しなかったが、機構は成立している)。
-		// 待つのは時間ではなく**成立条件** (`avoid-wall-clock-assertions.md`)。
-		hook.Store(nil) // 残りは全速で消させる
-		// 🚨 待つ対象は「打刻が現れること」= 掃除の完了。**打刻はエラーが 0 件のときしか
-		// 起きない**ので、この fixture (エラーを作らない) 専用の条件である
-		// (将来この fixture がエラーを持つと 10 秒待って落ちる)。
-		waitForFile(t, filepath.Join(l.metaDir, cleanupStampName))
+	// 🚨 **見捨てた goroutine が終わるのを待ってからテストを終える**。
+	// 待たないと、`t.Cleanup` の `TempDir` 削除と、掃除を続けている goroutine の
+	// **`stampCleanup` による `.cleanup_at` の再作成**が競合し、
+	// `TempDir RemoveAll cleanup: ... directory not empty` で**無関係な赤**が出る
+	// (レビュー実測: 並行負荷の高い環境で `go test -race ./...` 8 回中 2 回。
+	//  こちらの環境では 16 回中 0 回で再現しなかったが、機構は成立している)。
+	// 待つのは時間ではなく**成立条件** (`avoid-wall-clock-assertions.md`)。
+	hook.Store(nil) // 残りは全速で消させる
+	// 🚨 待つ対象は「打刻が現れること」= 掃除の完了。**打刻はエラーが 0 件のときしか
+	// 起きない**ので、この fixture (エラーを作らない) 専用の条件である
+	// (将来この fixture がエラーを持つと 10 秒待って落ちる)。
+	waitForFile(t, filepath.Join(l.metaDir, cleanupStampName))
 
-		// 見捨てられた後も掃除は続き、最後まで消し切ること
-		// (「見捨てられたら sweep を打ち切る」型の退行を検出する)
-		if left := countDirEntries(t, filepath.Join(l.metaDir, tmpDirName)); left != 0 {
-			t.Errorf("掃除が終わったのに %d 件残っている", left)
-		}
-	case <-time.After(20 * time.Second):
-		t.Fatal("CleanupTimed が 20s 以内に戻らない (包みが無い)")
+	// 見捨てられた後も掃除は続き、最後まで消し切ること
+	// (「見捨てられたら sweep を打ち切る」型の退行を検出する)
+	if left := countDirEntries(t, filepath.Join(l.metaDir, tmpDirName)); left != 0 {
+		t.Errorf("掃除が終わったのに %d 件残っている", left)
 	}
 }
 
@@ -122,11 +120,7 @@ func TestCleanupCLISaysIndeterminateWhenNothingRemoved(t *testing.T) {
 		})
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(20 * time.Second):
-		t.Fatal("cleanup が 20s 以内に戻らない")
-	}
+	testwait.Recv(t, "cleanup が 20s 以内に戻らない", done, testwait.Within(20*time.Second))
 	// 🚨 **行の構造を丸ごと固定する**。部分一致 + 「悪い語」の否定リストでは、
 	// ①同じ偽の肯定を**別の言い回し**で書けば素通りし ②否定リストの語は
 	// production から消えているので**一字一句戻したときしか鳴らない**。
@@ -185,22 +179,18 @@ func TestCleanupTimedKeepsSweepErrorsOnTimeout(t *testing.T) {
 
 	ch := make(chan CleanupResult, 1)
 	go func() { ch <- l.CleanupTimed(true) }()
-	select {
-	case res := <-ch:
-		if !res.Partial || !hasTimeoutError(res) {
-			t.Fatalf("期限切れとして返っていない: %+v", res)
+	res := testwait.Recv(t, "CleanupTimed が 20s 以内に戻らない", ch, testwait.Within(20*time.Second))
+	if !res.Partial || !hasTimeoutError(res) {
+		t.Fatalf("期限切れとして返っていない: %+v", res)
+	}
+	var sweepErrs int
+	for _, e := range res.Errors {
+		if !strings.HasPrefix(e, errIOTimeout.Error()) {
+			sweepErrs++
 		}
-		var sweepErrs int
-		for _, e := range res.Errors {
-			if !strings.HasPrefix(e, errIOTimeout.Error()) {
-				sweepErrs++
-			}
-		}
-		if sweepErrs == 0 {
-			t.Fatalf("sweep 中のエラーを捨てている (タイムアウト 1 本だけ): %+v", res.Errors)
-		}
-	case <-time.After(20 * time.Second):
-		t.Fatal("CleanupTimed が 20s 以内に戻らない")
+	}
+	if sweepErrs == 0 {
+		t.Fatalf("sweep 中のエラーを捨てている (タイムアウト 1 本だけ): %+v", res.Errors)
 	}
 }
 
@@ -260,11 +250,7 @@ func TestCleanupCLIDistinguishesPartialFromComplete(t *testing.T) {
 		})
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(20 * time.Second):
-		t.Fatal("cleanup が 20s 以内に戻らない")
-	}
+	testwait.Recv(t, "cleanup が 20s 以内に戻らない", done, testwait.Within(20*time.Second))
 	// 🚨 こちらも**完全一致**。部分一致 (`Contains(out, "removed>=1")`) だと、
 	// 括弧の中身に「掃除は途中で、次回の続きから減る」のような**偽の断定**を戻す変異が
 	// 素通りする (実測: その変異は全スイート緑だった)。

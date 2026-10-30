@@ -84,3 +84,34 @@ func (f *fatalT) Fatalf(format string, args ...any) {
 	}
 	runtime.Goexit()
 }
+
+// 届いた値を返す (双方向のチャネルをそのまま渡せる)。
+func TestRecvReturnsValue(t *testing.T) {
+	ch := make(chan int, 1)
+	ch <- 7
+	if got := Recv(t, "値", ch); got != 7 {
+		t.Errorf("Recv = %d, want 7", got)
+	}
+}
+
+// 届かなければ黙って戻らず、what と診断を出して落とす。
+func TestRecvFailsAtLimitWithDiagnostics(t *testing.T) {
+	ch := make(chan struct{})
+	msg := fatalOf(t, func(ft testing.TB) {
+		Recv(ft, "終わりの合図", ch, Within(20*time.Millisecond), Diag(func() string { return "段: 起動した後" }))
+	})
+	for _, want := range []string{"終わりの合図 が 20ms 待っても届かない", "段: 起動した後", "goroutine "} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("時間切れの文に %q が無い:\n%s", want, msg)
+		}
+	}
+}
+
+// 閉じたチャネルからは ok=false で返る (閉じるのを待つ使い方)。
+func TestRecvOKReportsClosed(t *testing.T) {
+	ch := make(chan int)
+	close(ch)
+	if _, ok := RecvOK(t, "閉じる", ch); ok {
+		t.Error("閉じたチャネルで ok=true")
+	}
+}

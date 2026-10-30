@@ -17,6 +17,8 @@ import (
 	"github.com/creack/pty"
 	"github.com/jiikko/dotfiles/src/restartable/internal/control"
 	"github.com/jiikko/dotfiles/src/restartable/internal/runner"
+
+	"testwait"
 )
 
 // TestPTYRunnerHelper is the child process used by the real-terminal tests.
@@ -277,18 +279,14 @@ func signalPTYRunner(t *testing.T, r *ptyRunner) int {
 
 func waitPTYRunner(t *testing.T, r *ptyRunner, limit time.Duration) int {
 	t.Helper()
-	select {
-	case <-r.Done:
-		if r.Err == nil {
-			return 0
-		}
-		var exit *exec.ExitError
-		if errors.As(r.Err, &exit) {
-			return exit.ExitCode()
-		}
-		t.Fatalf("wait for runner: %v", r.Err)
-	case <-time.After(limit):
-		t.Fatalf("runner did not exit after SIGTERM; PTY output: %q", r.Text())
+	testwait.Recv(t, "runner did not exit after SIGTERM; PTY output", r.Done, testwait.Within(limit), testwait.Diag(func() string { return fmt.Sprintf("runner did not exit after SIGTERM; PTY output: %q", r.Text()) }))
+	if r.Err == nil {
+		return 0
 	}
+	var exit *exec.ExitError
+	if errors.As(r.Err, &exit) {
+		return exit.ExitCode()
+	}
+	t.Fatalf("wait for runner: %v", r.Err)
 	return -1
 }

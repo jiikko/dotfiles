@@ -193,13 +193,8 @@ func probeLease(l, other *Locker, ttl time.Duration, wantToken string) leaseProb
 // 「どの assert が落ちたか分からない」**になる (boundedInt と同じ安全網)。
 func recvProbe(t *testing.T, ch <-chan leaseProbe) leaseProbe {
 	t.Helper()
-	select {
-	case p := <-ch:
-		return p
-	case <-time.After(20 * time.Second):
-		t.Fatalf("lease の観測が 20s 以内に戻らない (奪う側の Acquire が詰まった可能性)")
-		return leaseProbe{}
-	}
+	p := testwait.Recv(t, "lease の観測が 20s 以内に戻らない (奪う側の Acquire が詰まった可能性)", ch, testwait.Within(20*time.Second))
+	return p
 }
 
 // assertLeaseHeld は「保持者の lease が生きたままだった」を検査する。

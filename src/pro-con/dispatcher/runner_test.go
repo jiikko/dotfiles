@@ -11,6 +11,8 @@ import (
 	"pro-con/agents"
 	"pro-con/card"
 	"pro-con/store"
+
+	"testwait"
 )
 
 // fakeRunner は実行を記録し、release に終了コードが来るまで終わらない。ログに 1 行書く。
@@ -27,11 +29,7 @@ type fakeRunner struct {
 // waitStarted は n 本目の実行が始まるまで待つ (上限 5 秒)。
 func (f *fakeRunner) waitStarted(t *testing.T) {
 	t.Helper()
-	select {
-	case <-f.started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("実行が 5 秒たっても始まらない")
-	}
+	testwait.Recv(t, "実行が 5 秒たっても始まらない", f.started, testwait.Within(5*time.Second))
 }
 
 func (f *fakeRunner) Run(ctx context.Context, dir, command, logPath, _ string) (int, error) {

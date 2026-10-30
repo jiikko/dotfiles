@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 	"glogx/internal/testenv"
 
 	tea "charm.land/bubbletea/v2"
+
+	"testwait"
 )
 
 // filerDir は treefiler で開く小さな木 (pwd の代わりに t.Chdir する)。
@@ -100,14 +103,9 @@ func TestFilerBackgroundNoticeShowsOnTick(t *testing.T) {
 	m.handleKey("F")
 	m.handleKey("G") // a.txt → b.mp3 → sub (末尾のフォルダ)
 	m.handleKey(">") // explode は裏で走り、完了の知らせは Advance の中で積まれる
-	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(m.toast.Text(), "開いた") {
-		if time.Now().After(deadline) {
-			t.Fatalf("explode の完了の知らせが tick で出ない (キーを押すまで出ない形): toast=%q", m.toast.Text())
-		}
-		fireTick(m)
-		time.Sleep(time.Millisecond) // sleep-ok: tick: 裏の explode の完了を条件で待つループの刻み
-	}
+	testwait.Until(t, "explode の完了の知らせが tick で出ない (キーを押すまで出ない形)", func() bool { return strings.Contains(m.toast.Text(), "開いた") },
+		testwait.Within(5*time.Second), testwait.Step(func() { fireTick(m) }), testwait.Tick(time.Millisecond),
+		testwait.Diag(func() string { return fmt.Sprintf("toast=%q", m.toast.Text()) }))
 }
 
 // glogx の tick で動きが進み、止まったら tick のチェーンが終わる。開いた直後から tick が回ること
@@ -187,13 +185,10 @@ func TestFilerCloseStopsWatching(t *testing.T) {
 	}
 	ch := m.filerV.Fixture().Model().Changed()
 	m.handleKey("F")
-	select {
-	case _, ok := <-ch:
-		if ok {
-			t.Fatal("閉じた後にチャネルが閉じていない (合図が来た)")
-		}
-	case <-time.After(5 * time.Second): // hang guard
-		t.Fatal("閉じてもポーリングが止まらない (チャネルが閉じない)")
+	// hang guard
+	_, ok := testwait.RecvOK(t, "閉じてもポーリングが止まらない (チャネルが閉じない)", ch, testwait.Within(5*time.Second))
+	if ok {
+		t.Fatal("閉じた後にチャネルが閉じていない (合図が来た)")
 	}
 }
 

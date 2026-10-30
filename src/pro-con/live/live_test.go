@@ -20,6 +20,8 @@ import (
 	"pro-con/store"
 	"pro-con/wake"
 	"sync/atomic"
+
+	"testwait"
 )
 
 // 実測 (Claude Code 2.1.281) の transcript の形を縮めた見本。人間の発言は origin.kind=human、ツールの結果と
@@ -288,11 +290,8 @@ func TestStartDoesNotBlock(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	returned := make(chan struct{})
 	go func() { b.Start(ctx); close(returned) }()
-	select {
-	case <-returned:
-	case <-time.After(5 * time.Second): // 安全網 (Start が待つ退行ならここで止まる)
-		t.Fatal("Start が最初の読み取りを待っている")
-	}
+	// 安全網 (Start が待つ退行ならここで止まる)
+	testwait.Recv(t, "Start が最初の読み取りを待っている", returned, testwait.Within(5*time.Second))
 	if !strings.Contains(b.Describe(), "読み込み中") {
 		t.Fatalf("最初の読み取りの前なのに %q", b.Describe())
 	}
@@ -554,11 +553,7 @@ func TestBroadcastRefreshesWithoutList(t *testing.T) {
 	runningCard(t, b, "C-001", "bbbbbbbb")
 	srv.Broadcast()
 	waitFor("知らされてもカードを読み直さない", func() bool { return len(b.Poll().Cards) == 1 })
-	select {
-	case <-b.Changed():
-	case <-time.After(10 * time.Second):
-		t.Fatal("読み直しを画面へ知らせない")
-	}
+	testwait.Recv(t, "読み直しを画面へ知らせない", b.Changed(), testwait.Within(10*time.Second))
 	if n := lists.Load(); n != 1 {
 		t.Fatalf("知らされた読み直しで一覧を取り直した (%d 回)", n)
 	}
@@ -646,11 +641,7 @@ func TestScreenEventsGoToInbox(t *testing.T) {
 		be.Start(ctx)
 	}
 	defer func() { cancel(); a.Wait(); b.Wait() }()
-	select { // 最初の読み直し: 箱に画面の出来事しか無いので「適用待ち」は出さない (dispatcher が止まっているように見せない)
-	case <-a.Changed():
-	case <-time.After(10 * time.Second):
-		t.Fatal("読み直しが済まない")
-	}
+	testwait.Recv(t, "読み直しが済まない", a.Changed(), testwait.Within(10*time.Second))
 	if d := a.Describe(); strings.Contains(d, "適用待ち") {
 		t.Fatalf("画面の出来事を適用待ちに数えた: %q", d)
 	}
@@ -887,11 +878,7 @@ func TestViewOnlyBackend(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	b.Start(ctx)
 	defer func() { cancel(); b.Wait() }()
-	select { // 最初の読み直しが済むまで (読み直しの途中で書く経路も見る)
-	case <-be.(backend.Notifier).Changed():
-	case <-time.After(10 * time.Second):
-		t.Fatal("読み直しが済まない")
-	}
+	testwait.Recv(t, "読み直しが済まない", be.(backend.Notifier).Changed(), testwait.Within(10*time.Second))
 	if n, err := presence.Count(b.dir); err != nil || n != 0 {
 		t.Fatalf("見ているだけの画面を数えた: %d %v", n, err)
 	}

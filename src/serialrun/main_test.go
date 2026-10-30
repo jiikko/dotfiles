@@ -233,23 +233,18 @@ func exitCode(t *testing.T, cmd *exec.Cmd) int {
 	t.Helper()
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	select {
-	case err := <-done:
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-				return 128 + int(ws.Signal())
-			}
-			return ee.ExitCode()
+	err := testwait.Recv(t, "serial-run が 10 秒で終わらない", done, testwait.Within(10*time.Second))
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+			return 128 + int(ws.Signal())
 		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		return 0
-	case <-time.After(10 * time.Second):
-		t.Fatal("serial-run が 10 秒で終わらない")
-		return -1
+		return ee.ExitCode()
 	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return 0
 }
 
 func TestRunsOneAtATimeInTicketOrder(t *testing.T) {

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // commitAll は作業ツリーの全部を commit し、その hash を返す。
@@ -139,12 +141,8 @@ func TestCommitReadAllStopsGitOnError(t *testing.T) {
 		_, err := c.ReadAll(files)
 		done <- err
 	}()
-	select {
-	case err := <-done:
-		if err == nil || !strings.Contains(err.Error(), "blob として返さない") {
-			t.Errorf("無い blob で失敗を期待: %v", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("読みかけで止めた ReadAll が戻らない (git の終了を待ち続けている)")
+	err = testwait.Recv(t, "読みかけで止めた ReadAll が戻らない (git の終了を待ち続けている)", done, testwait.Within(10*time.Second))
+	if err == nil || !strings.Contains(err.Error(), "blob として返さない") {
+		t.Errorf("無い blob で失敗を期待: %v", err)
 	}
 }

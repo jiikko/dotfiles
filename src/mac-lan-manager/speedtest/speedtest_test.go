@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"mac-lan-manager/sshdest"
+
+	"testwait"
 )
 
 var dest = sshdest.Dest{User: "koji", IP: "192.168.100.12", HostKeyAlias: "m2macmini.local"}
@@ -227,13 +229,9 @@ func TestMeasureUpStopsWhenWriteBlocks(t *testing.T) {
 	}
 	done := make(chan Result, 1)
 	go func() { done <- Measure(context.Background(), dest, start, c.clock(), Duration) }()
-	select {
-	case r := <-done:
-		if r.Err == nil || !strings.Contains(r.Err.Error(), "下り") {
-			t.Errorf("Err = %v (上りは止まって 0 を数え、下りで何も届かずに失敗するはず)", r.Err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("詰まった Write で止まったまま (時間が来ても stdin を閉じていない)")
+	r := testwait.Recv(t, "詰まった Write で止まったまま (時間が来ても stdin を閉じていない)", done, testwait.Within(10*time.Second))
+	if r.Err == nil || !strings.Contains(r.Err.Error(), "下り") {
+		t.Errorf("Err = %v (上りは止まって 0 を数え、下りで何も届かずに失敗するはず)", r.Err)
 	}
 }
 
@@ -305,13 +303,8 @@ func measureWithin(t *testing.T, ctx context.Context, start Start, clk Clock) Re
 	t.Helper()
 	done := make(chan Result, 1)
 	go func() { done <- Measure(ctx, dest, start, clk, Duration) }()
-	select {
-	case r := <-done:
-		return r
-	case <-time.After(10 * time.Second):
-		t.Fatal("Measure が 10 秒で戻らない")
-		return Result{}
-	}
+	r := testwait.Recv(t, "Measure が 10 秒で戻らない", done, testwait.Within(10*time.Second))
+	return r
 }
 
 // stream は下りの相手を演じる読み口。chunks を 1 回の Read に 1 つずつ渡し、渡し切った後の次の Read で onDrained を呼んで

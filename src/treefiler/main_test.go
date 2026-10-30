@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,8 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
 
 	"treefiler/filer"
+
+	"testwait"
 )
 
 // q で終わるとき Close を呼ぶ (Remember place が保存される)。
@@ -72,14 +75,9 @@ func TestBackgroundNoticeShowsOnTick(t *testing.T) {
 	a := &app{f: f}
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	a.Update(tea.KeyPressMsg{Code: '>', Text: ">"}) // カーソルは sub (フォルダ) → explode
-	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(a.toast.Text(), "開いた") {
-		if time.Now().After(deadline) {
-			t.Fatalf("explode の完了の知らせが tick で出ない: %q", a.toast.Text())
-		}
-		a.Update(tickMsg{})
-		time.Sleep(time.Millisecond) // sleep-ok: tick: 裏の explode の完了を条件で待つループの刻み
-	}
+	testwait.Until(t, "explode の完了の知らせが tick で出ない", func() bool { return strings.Contains(a.toast.Text(), "開いた") },
+		testwait.Within(5*time.Second), testwait.Step(func() { a.Update(tickMsg{}) }), testwait.Tick(time.Millisecond),
+		testwait.Diag(func() string { return fmt.Sprintf("toast=%q", a.toast.Text()) }))
 }
 
 func isQuit(cmd tea.Cmd) bool {

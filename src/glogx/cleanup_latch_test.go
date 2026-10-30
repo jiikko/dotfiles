@@ -1,11 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"glogx/internal/app"
 	"runtime"
 	"sync"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // app.CleanupLatch が守る中心の不変条件: **カウント 0 での登録が、看取りと同時に走っても壊れない**。
@@ -36,11 +39,7 @@ func TestCleanupLatchAddAtZeroConcurrentWithWait(t *testing.T) {
 		close(start)
 		done := make(chan struct{})
 		go func() { wg.Wait(); close(done) }()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Fatal("固まった (wait が閉じない)")
-		}
+		testwait.Recv(t, "固まった (wait が閉じない)", done, testwait.Within(5*time.Second))
 	}
 }
 
@@ -67,11 +66,7 @@ func TestCleanupLatchAddAndDoneWhileWaiterIsParked(t *testing.T) {
 	case <-time.After(20 * time.Millisecond):
 	}
 	l.Done() // 最後の 1 本が帰る
-	select {
-	case <-w:
-	case <-time.After(5 * time.Second):
-		t.Fatal("全部帰ったのに wait が閉じない")
-	}
+	testwait.Recv(t, "全部帰ったのに wait が閉じない", w, testwait.Within(5*time.Second))
 }
 
 // latch は package グローバルで **pull / 再スキャンのたびに使い回される**。
@@ -89,11 +84,7 @@ func TestCleanupLatchIsReusableAcrossCycles(t *testing.T) {
 		case <-time.After(20 * time.Millisecond):
 		}
 		l.Done()
-		select {
-		case <-w:
-		case <-time.After(5 * time.Second):
-			t.Fatalf("%d 周目: done の後も wait が閉じない", cycle)
-		}
+		testwait.Recv(t, fmt.Sprintf("%d 周目: done の後も wait が閉じない", cycle), w, testwait.Within(5*time.Second))
 	}
 }
 
@@ -115,11 +106,7 @@ func TestCleanupLatchDoesNotGoNegative(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 	l.Done()
-	select {
-	case <-l.Wait():
-	case <-time.After(5 * time.Second):
-		t.Fatal("全部帰ったのに wait が閉じない")
-	}
+	testwait.Recv(t, "全部帰ったのに wait が閉じない", l.Wait(), testwait.Within(5*time.Second))
 }
 
 // 看取りは「今走っている仕事が帰るまで」戻らない。
@@ -133,21 +120,13 @@ func TestCleanupLatchWaitBlocksUntilDone(t *testing.T) {
 	case <-time.After(30 * time.Millisecond):
 	}
 	l.Done()
-	select {
-	case <-w:
-	case <-time.After(5 * time.Second):
-		t.Fatal("done の後も wait が閉じない")
-	}
+	testwait.Recv(t, "done の後も wait が閉じない", w, testwait.Within(5*time.Second))
 }
 
 // 仕事が無ければ閉じ済みの channel を返す (呼び出し側が常に受信できる契約)。
 func TestCleanupLatchWaitIsClosedWhenIdle(t *testing.T) {
 	var l app.CleanupLatch
-	select {
-	case <-l.Wait():
-	case <-time.After(time.Second):
-		t.Fatal("仕事が無いのに wait が閉じていない")
-	}
+	testwait.Recv(t, "仕事が無いのに wait が閉じていない", l.Wait(), testwait.Within(time.Second))
 }
 
 // 🚨 **pull 側も latch に載っていること**を配線として固定する。

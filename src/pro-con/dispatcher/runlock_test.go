@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // buildLockman は本物の lockman (src/lockman) をテストの一時ディレクトリへ build する (偽物では lockman の契約 = 121・子のグループ・シグナルの受け渡しを確かめられない)。
@@ -108,11 +110,7 @@ func TestExecRunnerLockedCancelKillsStubbornChild(t *testing.T) {
 	}()
 	child := readPid(t, filepath.Join(wt, "child.pid"))
 	cancel()
-	select {
-	case <-done:
-	case <-time.After(20 * time.Second):
-		t.Fatal("取り消しても実行が終わらない")
-	}
+	testwait.Recv(t, "取り消しても実行が終わらない", done, testwait.Within(20*time.Second))
 	waitGone(t, child)
 	if rc, err := r.Run(context.Background(), wt, "true", filepath.Join(t.TempDir(), "log"), "lk6"); rc != 0 || err != nil {
 		t.Fatalf("取り消した後に lock が残っている: rc=%d err=%v", rc, err)
@@ -140,11 +138,7 @@ func TestKillStaleFindsLockedRun(t *testing.T) {
 	}()
 	readPid(t, filepath.Join(wt, "started")) // bash が起動した (印の文字列は lockman の引数にも載るので、ps の一致では bash の起動を待てない)
 	killStale(runID)
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("印で止めても lock を取った実行が終わらない")
-	}
+	testwait.Recv(t, "印で止めても lock を取った実行が終わらない", done, testwait.Within(10*time.Second))
 }
 
 // runLockDir は同じ repo の worktree どうしで同じ置き場になり、別の repo なら別になる。

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // fakeRunner はコマンド名 + 先頭引数で応答を返す。calls で「読み取り系しか呼んでいない」を確かめる。
@@ -1009,12 +1011,8 @@ func TestCollectBundleIDsStopsOnSymlinkLoops(t *testing.T) {
 		visits, _ = collectBundleIDsCounted(base, 0, ids)
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		// 訪問回数で判定できない (終わらない) 形。安全網であって合否の基準ではない
-		t.Fatal("走査が終わらない (巡回検出が無い)")
-	}
+	// 訪問回数で判定できない (終わらない) 形。安全網であって合否の基準ではない
+	testwait.Recv(t, "走査が終わらない (巡回検出が無い)", done, testwait.Within(30*time.Second))
 	if visits > int64(wantMax) {
 		t.Errorf("同じ実体を何度も走査している (巡回検出が効いていない): visits=%d want<=%d", visits, wantMax)
 	}

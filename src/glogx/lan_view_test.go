@@ -18,6 +18,8 @@ import (
 	"mac-lan-manager/lanmgr/lanmgrtest"
 	"mac-lan-manager/live"
 	"mac-lan-manager/netinfo"
+
+	"testwait"
 )
 
 // lanScans はテストの中で起こした走査 (最後が今の走査)。
@@ -267,13 +269,8 @@ func TestLanOpensWithoutWaitingForNetwork(t *testing.T) {
 		t.Fatalf("読み込み中なのに tick が回らない / 読んでいる印が無い: busy=%v\n%s", m.lanV.Busy(), view())
 	}
 	close(release)
-	for deadline := time.Now().Add(5 * time.Second); strings.Contains(view(), "ネットワーク設定を確認中"); {
-		if time.Now().After(deadline) {
-			t.Fatal("読み終えても tick で取り込まない")
-		}
-		fireTick(m)
-		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件のポーリングの刻み (待ちの実体は上の条件)
-	}
+	testwait.Until(t, "読み終えても tick で取り込まない", func() bool { return !strings.Contains(view(), "ネットワーク設定を確認中") },
+		testwait.Within(5*time.Second), testwait.Step(func() { fireTick(m) }))
 }
 
 // キーの案内は枠の外の最下行に出し (他の全画面と同じ場所)、板の内側には描かない。中身は lanmgr が今の画面で効くキー。

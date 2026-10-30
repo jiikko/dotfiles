@@ -46,13 +46,8 @@ func (f *fakeSpeed) run(ctx context.Context, d sshdest.Dest, _ func() time.Time)
 // started は測定が起こされるのを待つ (起こされなければ 10 秒で赤にする。待ち続けると suite ごと止まった)。
 func (f *fakeSpeed) started(t *testing.T) context.Context {
 	t.Helper()
-	select {
-	case ctx := <-f.ctx:
-		return ctx
-	case <-time.After(10 * time.Second):
-		t.Fatal("測定が起こされない")
-		return nil
-	}
+	ctx := testwait.Recv(t, "測定が起こされない", f.ctx, testwait.Within(10*time.Second))
+	return ctx
 }
 
 // speedHarness は管理対象の mini (有線で見えている) と未管理の air を並べた画面。

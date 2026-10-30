@@ -10,6 +10,7 @@ on:
     branches: [master]
     paths:
       - 'src/chromecookie/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
       - src/.golangci.yml          # lint の設定の共通の塊 (golangci_lint.sh が差分と合成する)
       - scripts/golangci_config.rb # その合成
@@ -20,6 +21,7 @@ on:
   pull_request:
     paths:
       - 'src/chromecookie/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
       - src/.golangci.yml          # lint の設定の共通の塊 (golangci_lint.sh が差分と合成する)
       - scripts/golangci_config.rb # その合成

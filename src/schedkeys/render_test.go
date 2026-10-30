@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"testwait"
 )
 
 // 描画の壊れ方に対する回帰テスト。
@@ -42,11 +45,7 @@ func TestViewportTerminatesAndFits(t *testing.T) {
 				shown, col = e.viewport(w, true)
 				close(done)
 			}()
-			select {
-			case <-done:
-			case <-time.After(3 * time.Second):
-				t.Fatalf("%s w=%d: viewport が返らない (無限ループ)", name, w)
-			}
+			testwait.Recv(t, fmt.Sprintf("%s w=%d: viewport が返らない (無限ループ)", name, w), done, testwait.Within(3*time.Second))
 			if got := ansi.StringWidth(shown); got > w {
 				t.Errorf("%s w=%d: 表示幅 %d が幅を超えた", name, w, got)
 			}

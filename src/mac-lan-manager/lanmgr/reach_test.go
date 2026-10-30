@@ -46,13 +46,8 @@ func reachHarness(t *testing.T) (*harness, *fakeReach) {
 // started は確認が起こされるのを待つ (起こされなければ 10 秒で赤にする)。
 func (f *fakeReach) started(t *testing.T) ([]string, context.Context) {
 	t.Helper()
-	select {
-	case n := <-f.names:
-		return n, <-f.ctx
-	case <-time.After(10 * time.Second):
-		t.Fatal("疎通の確認が起こされない")
-		return nil, nil
-	}
+	n := testwait.Recv(t, "疎通の確認が起こされない", f.names, testwait.Within(10*time.Second))
+	return n, <-f.ctx
 }
 
 // awaitReach は結果が取り込まれるまで Advance する (上限 10 秒)。
@@ -158,11 +153,7 @@ func TestReachCancelledOnClose(t *testing.T) {
 	h.keys("p")
 	_, ctx := f.started(t)
 	h.m.Close()
-	select {
-	case <-ctx.Done():
-	case <-time.After(10 * time.Second):
-		t.Fatal("Close で取り消されない")
-	}
+	testwait.Recv(t, "Close で取り消されない", ctx.Done(), testwait.Within(10*time.Second))
 	if len(h.m.reachRuns) > 0 {
 		t.Error("Close の後も確かめている途中のまま")
 	}
@@ -275,14 +266,10 @@ func TestReachAutoUsesPeersOfSameAdvance(t *testing.T) {
 	// 有線の I/F にも見えた (内部 IP が帯の番号で固定 = 有線の名前を持つ)。合図の 1 回の Advance だけで確かめ直す
 	h.scan.SetPeers([]discover.Peer{{Host: "new.local", Instances: []string{"new"}, SSH: true, Addrs: map[int]string{14: "192.168.50.60", 27: "192.168.100.20"}}}...)
 	h.m.Advance(t0)
-	select {
-	case names := <-f.names:
-		<-f.ctx
-		if !slices.Equal(names, []string{"new.local", "new.wired.local"}) {
-			t.Errorf("2 回目の名前 = %v", names)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("合図の 1 回の Advance で確かめ直さない")
+	names := testwait.Recv(t, "合図の 1 回の Advance で確かめ直さない", f.names, testwait.Within(10*time.Second))
+	<-f.ctx
+	if !slices.Equal(names, []string{"new.local", "new.wired.local"}) {
+		t.Errorf("2 回目の名前 = %v", names)
 	}
 }
 

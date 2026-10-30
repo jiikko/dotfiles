@@ -16,6 +16,8 @@ import (
 	"glogx/internal/usageview"
 
 	tea "charm.land/bubbletea/v2"
+
+	"testwait"
 )
 
 func TestParseClaudeAuthStatus(t *testing.T) {
@@ -288,12 +290,7 @@ func TestCheckCLIHealthCmdKeepsCodexIssueWhenClaudeTimesOut(t *testing.T) {
 		codexWasParallel = true
 	case <-time.After(time.Second):
 	}
-	var msg cliHealthMsg
-	select {
-	case msg = <-result:
-	case <-time.After(cliHealthTimeout + time.Second):
-		t.Fatal("health command did not finish")
-	}
+	msg := testwait.Recv(t, "health command did not finish", result, testwait.Within(cliHealthTimeout+time.Second))
 	if !codexWasParallel {
 		t.Fatal("codex check did not run before claude timeout")
 	}

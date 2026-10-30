@@ -203,13 +203,9 @@ func TestLifelineClosesStdinOnStop(t *testing.T) {
 	testwait.Until(t, "子が trap を入れない", func() bool { _, err := os.Stat(ready); return err == nil }, testwait.Within(5*time.Second))
 	done := make(chan Result, 1)
 	go func() { done <- stop() }()
-	select {
-	case res := <-done:
-		if res.Err != nil {
-			t.Fatalf("EOF で抜けていない: %+v", res)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("stdin を閉じず、kill まで待った")
+	res := testwait.Recv(t, "stdin を閉じず、kill まで待った", done, testwait.Within(10*time.Second))
+	if res.Err != nil {
+		t.Fatalf("EOF で抜けていない: %+v", res)
 	}
 }
 

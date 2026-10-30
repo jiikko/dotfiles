@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,11 +52,9 @@ func TestEscalateStillKillsWhenChildIsAlive(t *testing.T) {
 
 	escalateGroupKill(pgid, make(chan struct{}), 10*time.Millisecond)
 
-	select {
-	case <-waitDone:
-	case <-time.After(5 * time.Second):
-		t.Fatalf("生きている子へ SIGKILL が飛んでいない (pgid=%d)", pgid)
-	}
+	testwait.Recv(t, "生きている子へ SIGKILL が飛んでいない (pgid", waitDone, testwait.Within(5*time.Second), testwait.Diag(func() string {
+		return fmt.Sprintf("生きている子へ SIGKILL が飛んでいない (pgid=%d)", pgid)
+	}))
 }
 
 // startIgnoringTermGroup は **SIGTERM を無視する**子を新しいプロセスグループで起こし、

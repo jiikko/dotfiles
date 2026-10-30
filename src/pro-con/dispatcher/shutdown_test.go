@@ -304,11 +304,7 @@ func TestRequestStopPokes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { _, _ = RequestStop(ctx, dir, time.Minute); close(done) }()
-	select {
-	case <-srv.Wakes():
-	case <-time.After(10 * time.Second):
-		t.Fatal("止める頼みで dispatcher を起こさない")
-	}
+	testwait.Recv(t, "止める頼みで dispatcher を起こさない", srv.Wakes(), testwait.Within(10*time.Second))
 	cancel()
 	<-done
 }
@@ -484,13 +480,9 @@ func TestRequestStopReadsResultWhileLockTakenAgain(t *testing.T) {
 	// 頼みが置かれたら、止め終えた結果を書く (lock は持ったまま)。置かれなくても進み、下の select が落とす
 	testwait.Poll(4*time.Second, func() bool { _, err := os.Stat(filepath.Join(dir, StopRequestFile)); return err == nil })
 	WriteStopResult(dir, nil)
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("止め終えたのに誤りを返した: %v", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("結果を書いても戻らない (lock が外れるのを待っている)")
+	err = testwait.Recv(t, "結果を書いても戻らない (lock が外れるのを待っている)", done, testwait.Within(10*time.Second))
+	if err != nil {
+		t.Fatalf("止め終えたのに誤りを返した: %v", err)
 	}
 }
 

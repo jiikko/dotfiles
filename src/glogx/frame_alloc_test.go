@@ -19,6 +19,8 @@ import (
 	"glogx/internal/gitdata"
 	"glogx/internal/term"
 	"glogx/internal/testenv"
+
+	"testwait"
 )
 
 // reapplyAfterResetRe は置き換える前の実装 (正規表現版)。**テスト専用**で、
@@ -325,14 +327,8 @@ func budgetFilerModel(tb testing.TB) *browseModel {
 	// 🚨 実時計 (app.TimeNow) を渡さない: Advance は 1 回の経過を 0.05 秒で頭打ちにするので、毎回「今 + 1 秒」を渡すと 2 回目以降は
 	// 呼び出しの間の実時間しか進まず、途中の画面を測る。CI の遅さで進み方が変わり、確保が 156 → 164 回と揺れた (2745215c の CI)
 	at := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
-	for deadline := time.Now().Add(10 * time.Second); m.filerV.Animating() || m.filerV.Busy(); {
-		if time.Now().After(deadline) {
-			tb.Fatal("treefiler の動き・裏の処理が 10 秒で止まらない")
-		}
-		at = at.Add(50 * time.Millisecond)
-		m.filerV.Advance(at)
-		time.Sleep(time.Millisecond) // sleep-ok: tick: 裏の goroutine (走査・git) の完了を条件で待つループの刻み
-	}
+	testwait.Until(tb, "treefiler の動き・裏の処理が止まる", func() bool { return !m.filerV.Animating() && !m.filerV.Busy() },
+		testwait.Step(func() { at = at.Add(50 * time.Millisecond); m.filerV.Advance(at) }), testwait.Tick(time.Millisecond))
 	// git の取り込みが失敗すると印の無い軽い画面を測って緑になる (assertFrameDrawn は描いたかしか見ない)
 	if v := term.StripANSI(m.View().Content); !strings.Contains(v, "⎇ main") {
 		tb.Fatalf("前提: treefiler が repo のブランチを描いていない:\n%s", v)

@@ -210,11 +210,8 @@ func TestWatchPicksUpNewFileAndLightsUp(t *testing.T) {
 	defer m.Close()
 	m.Advance(fixedNow) // 見るフォルダ (開いている root) を渡す。基準は木が読み込んだ中身なので、最初の観測を待たずに作ってよい
 	mustWrite(t, filepath.Join(m.root.path(), "fresh.txt"), "f\n")
-	select {
-	case <-ch:
-	case <-time.After(5 * time.Second): // hang guard
-		t.Fatal("ファイルを作っても合図が届かない")
-	}
+	// hang guard
+	testwait.Recv(t, "ファイルを作っても合図が届かない", ch, testwait.Within(5*time.Second))
 	m.Advance(fixedNow.Add(time.Second))
 	var fresh *node
 	for _, k := range m.kids(m.root) {
@@ -232,16 +229,13 @@ func TestWatchPicksUpNewFileAndLightsUp(t *testing.T) {
 		t.Fatalf("root へ光が昇らない / 弱まらない: %+v", r)
 	}
 	m.Close()
-	select {
-	case _, ok := <-ch:
-		if ok {
-			// 溜まっていた合図を読んだ。次は閉じている
-			if _, ok := <-ch; ok {
-				t.Fatal("Close の後もチャネルが閉じない")
-			}
+	// hang guard
+	_, ok := testwait.RecvOK(t, "Close の後もチャネルが閉じない (待っている呼び出し側が残る)", ch, testwait.Within(5*time.Second))
+	if ok {
+		// 溜まっていた合図を読んだ。次は閉じている
+		if _, ok := <-ch; ok {
+			t.Fatal("Close の後もチャネルが閉じない")
 		}
-	case <-time.After(5 * time.Second): // hang guard
-		t.Fatal("Close の後もチャネルが閉じない (待っている呼び出し側が残る)")
 	}
 }
 

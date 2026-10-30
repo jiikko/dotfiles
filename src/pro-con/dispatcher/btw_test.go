@@ -10,6 +10,8 @@ import (
 	"pro-con/card"
 	"pro-con/live"
 	"pro-con/store"
+
+	"testwait"
 )
 
 func btw(t *testing.T, dir, id, q string) {
@@ -22,16 +24,16 @@ func btw(t *testing.T, dir, id, q string) {
 // answered は答えが記録に出るまで Tick する (答えは裏で作る)。上限は止まったときの保険で、時間を測る検査ではない。
 func answered(t *testing.T, r *crashRig) card.Btw {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
+	var b card.Btw
+	testwait.Until(t, "btw に答えない", func() bool {
 		r.tick(t)
 		if c := states(t, r.dir)["C-001"]; len(c.Btws) > 0 && !c.Btws[0].Answered.IsZero() {
-			return c.Btws[0]
+			b = c.Btws[0]
+			return true
 		}
-		time.Sleep(time.Millisecond) // sleep-ok: tick: ループの中で r.tick を回す副作用つきの待ちの刻み (上限つき)
-	}
-	t.Fatal("btw に答えない")
-	return card.Btw{}
+		return false
+	}, testwait.Tick(time.Millisecond))
+	return b
 }
 
 // btw は PG を止めず (再開も止めもしない)、別のプロセス (Ask) が PG の出力の末尾と質問から答え、答えを記録に書く。

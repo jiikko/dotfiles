@@ -13,6 +13,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/fsnotify/fsnotify"
+
+	"testwait"
 )
 
 // openedWatchView は「viewer を開いてスキャン結果を受け取り、見張りの基準も取れた」状態を作る。
@@ -438,13 +440,8 @@ func waitMsg(t *testing.T, cmd tea.Cmd, wait time.Duration) tea.Msg {
 	t.Helper()
 	ch := make(chan tea.Msg, 1)
 	go func() { ch <- cmd() }()
-	select {
-	case msg := <-ch:
-		return msg
-	case <-time.After(wait):
-		t.Fatal("Cmd が返らない (イベントを待ったまま固まっている)")
-		return nil
-	}
+	msg := testwait.Recv(t, "Cmd が返らない (イベントを待ったまま固まっている)", ch, testwait.Within(wait))
+	return msg
 }
 
 func TestIssuesWatchIgnoresStaleGeneration(t *testing.T) {

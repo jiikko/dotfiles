@@ -298,12 +298,8 @@ func TestBangHelperOnPTY(t *testing.T) {
 			os.Exit(0)
 		}
 		if mark != "" { // シェルが bg の後に前面を取り戻すのと同じ: 前面でないので SIGTTOU を無視して移す
-			for deadline := time.Now().Add(10 * time.Second); ; {
-				if _, err := os.Stat(mark); err == nil || time.Now().After(deadline) {
-					break
-				}
-				time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 子が印のファイルを作るのを条件で待つループの刻み
-			}
+			// helper プロセスの中なので t が無い。来なくても先へ進む (結果は LEADER の行で親が判定する)
+			testwait.Poll(10*time.Second, func() bool { _, err := os.Stat(mark); return err == nil }, testwait.Tick(5*time.Millisecond))
 			signal.Ignore(syscall.SIGTTOU)
 			if err := unix.IoctlSetPointerInt(0, unix.TIOCSPGRP, syscall.Getpgrp()); err != nil {
 				fmt.Printf("\nHELPER take-back %v\n", err)

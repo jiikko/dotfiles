@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/jiikko/dotfiles/src/tuikit/foreground/ptytest"
+
+	"testwait"
 )
 
 // alive は pid のプロセスがまだ居るか (ゾンビは reap されるまで居る扱いになるので、上限つきで居なくなるのを待つ側で使う)。
@@ -59,11 +61,7 @@ func TestExecRunnerCancelKillsStubbornChild(t *testing.T) {
 	}()
 	child := readPid(t, pidFile)
 	cancel()
-	select {
-	case <-done:
-	case <-time.After(20 * time.Second):
-		t.Fatal("取り消しても実行が終わらない")
-	}
+	testwait.Recv(t, "取り消しても実行が終わらない", done, testwait.Within(20*time.Second))
 	waitGone(t, child)
 }
 
@@ -107,11 +105,7 @@ func TestKillStaleByRunMarker(t *testing.T) {
 	waitPS(t, "/bin/bash -x -c sleep 64; true "+RunMark+id("mine"))
 	waitPS(t, "/bin/bash -c "+runScript+" "+RunMark+id("mine")) // 先頭ではない方 (mine 本体と同じ形)
 	killStale(id("mine"))
-	select {
-	case <-mine:
-	case <-time.After(5 * time.Second):
-		t.Fatal("印で残った自分の実行を止めない")
-	}
+	testwait.Recv(t, "印で残った自分の実行を止めない", mine, testwait.Within(5*time.Second))
 	select {
 	case <-other:
 		t.Fatal("印の違う実行を撃った")

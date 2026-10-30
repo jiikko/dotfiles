@@ -46,15 +46,13 @@ func stopFromOutside(t *testing.T, r ExecRunner, dir, runID string) (rc, child i
 		_ = syscall.Kill(-bash, syscall.SIGKILL)
 		t.Fatalf("前提: 5 秒送り直してもグループの全部が止まらない:\n%s", psOf(bash, child))
 	}
-	select {
-	case <-done:
-	case <-time.After(20 * time.Second):
-		// 前提 (全部止まった) を確かめた後なので、ここで返らないのは見張りの不具合。諦める時点のグループの様子を残す
+	// 前提 (全部止まった) を確かめた後なので、ここで返らないのは見張りの不具合。諦める時点のグループの様子を残す
+	testwait.Recv(t, "グループが止まったまま、実行が終わらない", done, testwait.Within(20*time.Second), testwait.Diag(func() string {
 		t.Logf("20 秒たっても返らない。bash=%d child=%d・見張りの判定 groupStopped=%v。bash のグループと child の ps:\n%s",
 			bash, child, groupStopped([]int{bash}), psOf(bash, child))
 		_ = syscall.Kill(-bash, syscall.SIGKILL)
-		t.Fatal("グループが止まったまま、実行が終わらない")
-	}
+		return "グループが止まったまま、実行が終わらない"
+	}))
 	return rc, child, err
 }
 

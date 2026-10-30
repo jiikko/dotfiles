@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"testwait"
 )
 
 // lockHelperEnv は TestLockExecHelper を入れ替えの役で走らせる印 (値は段: old / new)。lockHelperDir は状態の置き場。
@@ -96,16 +98,21 @@ func TestLockSurvivesExec(t *testing.T) {
 		return string(b)
 	}
 	has := func(name string) bool { _, err := os.Stat(filepath.Join(dir, name)); return err == nil }
-	deadline := time.Now().Add(30 * time.Second)
-	for !has("old-pid") { // old が lock を取るまで (それより前は取れて当然)
-		if has("failed") || time.Now().After(deadline) {
+	failed := func() string { return "failed: " + read("failed") }
+	// old が lock を取るまで (それより前は取れて当然)。失敗の合図 (failed) が出たらそこで落とす
+	testwait.Until(t, "入れ替えの前の役が lock を取らない", func() bool {
+		if has("failed") {
 			t.Fatalf("入れ替えの前の役が lock を取らない: %s", read("failed"))
 		}
-		time.Sleep(time.Millisecond) // sleep-ok: tick: old が lock を取るまでの刻み。失敗の合図 (failed) も見る上限つきの待ち
-	}
+		return has("old-pid")
+	}, testwait.Within(30*time.Second), testwait.Tick(time.Millisecond), testwait.Diag(failed))
 	tries := 0
-	for !has("new-pid") { // 入れ替えの前から、受け取り終えるまで取り続けてみる
-		if has("failed") || time.Now().After(deadline) {
+	// 入れ替えの前から、受け取り終えるまで取り続けてみる (試行に副作用があり、回数も数える)
+	testwait.Until(t, "入れ替わった役が lock を受け取らない", func() bool {
+		if has("new-pid") {
+			return true
+		}
+		if has("failed") {
 			t.Fatalf("入れ替わった役が lock を受け取らない: %s", read("failed"))
 		}
 		unlock, err := Lock(dir)
@@ -117,8 +124,8 @@ func TestLockSurvivesExec(t *testing.T) {
 			t.Fatal(err)
 		}
 		tries++
-		time.Sleep(time.Millisecond) // sleep-ok: tick: lock を取り続ける試行のループ。試行に副作用があり、回数も数える
-	}
+		return false
+	}, testwait.Within(30*time.Second), testwait.Tick(time.Millisecond), testwait.Diag(failed))
 	if tries < 50 { // 隙 (300ms) の間に試せていなければ、このテストは何も確かめていない
 		t.Fatalf("入れ替えの間に %d 回しか試せていない", tries)
 	}
@@ -131,13 +138,9 @@ func TestLockSurvivesExec(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case err := <-exited:
-		if err != nil {
-			t.Fatalf("入れ替わった役が失敗で抜けた: %v (%s)", err, read("failed"))
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("入れ替わった役が抜けない")
+	err := testwait.Recv(t, "入れ替わった役が抜けない", exited, testwait.Within(10*time.Second))
+	if err != nil {
+		t.Fatalf("入れ替わった役が失敗で抜けた: %v (%s)", err, read("failed"))
 	}
 	unlock, err := Lock(dir) // 子 (sleep) はまだ生きている。握っていれば取れない
 	if err != nil {

@@ -1,12 +1,15 @@
 package runner
 
 import (
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 type brokenOutputWriter struct{ writes int }
@@ -64,22 +67,14 @@ func TestTTYFlusherBatchesUntilInjectedTickAndPrintsDropNotice(t *testing.T) {
 	}
 	got := make([]string, 0, len(want))
 	for range want {
-		select {
-		case line := <-printed:
-			got = append(got, line)
-		case <-time.After(2 * time.Second):
-			t.Fatalf("timed out waiting for injected flush; got %q", got)
-		}
+		line := testwait.Recv(t, "timed out waiting for injected flush; got", printed, testwait.Within(2*time.Second), testwait.Diag(func() string { return fmt.Sprintf("timed out waiting for injected flush; got %q", got) }))
+		got = append(got, line)
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Println lines = %q, want %q", got, want)
 	}
 	close(done)
-	select {
-	case <-flusherDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("flusher did not stop after done was closed")
-	}
+	testwait.Recv(t, "flusher did not stop after done was closed", flusherDone, testwait.Within(2*time.Second))
 }
 
 func TestHeadlessOutputFailureWarnsOnceAndKeepsReading(t *testing.T) {
@@ -184,12 +179,8 @@ func TestMarkPrintsBlankLineAfterBufferedLinesWithoutTick(t *testing.T) {
 	want := []string{"before", ""}
 	got := make([]string, 0, len(want))
 	for range want {
-		select {
-		case line := <-printed:
-			got = append(got, line)
-		case <-time.After(2 * time.Second):
-			t.Fatalf("Mark did not flush without a tick; got %q", got)
-		}
+		line := testwait.Recv(t, "Mark did not flush without a tick; got", printed, testwait.Within(2*time.Second), testwait.Diag(func() string { return fmt.Sprintf("Mark did not flush without a tick; got %q", got) }))
+		got = append(got, line)
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("printed = %q, want %q", got, want)

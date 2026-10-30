@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // 2026-10-09 に再現した不具合の回帰テスト。
@@ -29,11 +31,8 @@ func TestFeedInvalidContinuationDoesNotHang(t *testing.T) {
 		src.ensure(50)
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second): // hang guard (実時間の合否ではない。止まらないときだけ落とす)
-		t.Fatal("ensure が戻らない (切れ目 0 で空の行を足し続けている)")
-	}
+	// hang guard (実時間の合否ではない。止まらないときだけ落とす)
+	testwait.Recv(t, "ensure が戻らない (切れ目 0 で空の行を足し続けている)", done, testwait.Within(10*time.Second))
 	if !src.eof || len(src.lines) < 2 {
 		t.Fatalf("読み切れていない: eof=%v lines=%d", src.eof, len(src.lines))
 	}

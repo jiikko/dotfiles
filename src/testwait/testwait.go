@@ -61,13 +61,44 @@ func Until(t testing.TB, what string, cond func() bool, opts ...Option) {
 	if wait(c, cond) {
 		return
 	}
+	fail(t, c, fmt.Sprintf("%s が %v 待っても成り立たない (待ち始めから %v)", what, c.limit, time.Since(start).Round(time.Millisecond)))
+}
+
+// fail は時間切れの文に呼び出し側の診断と Snapshot を添えてテストを落とす。
+func fail(t testing.TB, c config, head string) {
+	t.Helper()
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s が %v 待っても成り立たない (待ち始めから %v)", what, c.limit, time.Since(start).Round(time.Millisecond))
+	b.WriteString(head)
 	if c.diag != nil {
 		fmt.Fprintf(&b, "\n--- 呼び出し側の診断\n%s", strings.TrimRight(c.diag(), "\n"))
 	}
 	b.WriteString("\n" + Snapshot())
 	t.Fatalf("%s", b.String())
+}
+
+// Recv は ch から 1 つ受け取って返す。上限 (既定 Limit。Within で変える) までに届かなければ what と診断を出してテストを落とす。
+// ch が閉じていれば、その型のゼロ値を返す (受け取りと同じ)。
+func Recv[T any](t testing.TB, what string, ch <-chan T, opts ...Option) T {
+	t.Helper()
+	v, _ := RecvOK(t, what, ch, opts...)
+	return v
+}
+
+// RecvOK は Recv と同じ待ちで、ch が閉じていたかも返す (受け取りの v, ok と同じ。閉じていれば ok は false)。
+func RecvOK[T any](t testing.TB, what string, ch <-chan T, opts ...Option) (T, bool) {
+	t.Helper()
+	c := newConfig(opts)
+	start := time.Now()
+	timer := time.NewTimer(c.limit)
+	defer timer.Stop()
+	select {
+	case v, ok := <-ch:
+		return v, ok
+	case <-timer.C:
+	}
+	fail(t, c, fmt.Sprintf("%s が %v 待っても届かない (待ち始めから %v)", what, c.limit, time.Since(start).Round(time.Millisecond)))
+	var zero T
+	return zero, false
 }
 
 // Poll は cond が成り立つまで最長 limit 待ち、成り立ったかを返す (落とすかは呼ぶ側が決める。落とすなら Snapshot を添える)。

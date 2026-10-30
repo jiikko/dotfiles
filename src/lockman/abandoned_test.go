@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -307,13 +308,10 @@ func TestWithTimeoutMarksAbandonInProduction(t *testing.T) {
 	if errors.Is(aerr, errAbandoned) {
 		t.Fatal("errAbandoned が呼び出し側へ漏れている (exit 3 が exit 1 に化ける)")
 	}
-	select {
-	case ok := <-observed:
-		if !ok {
-			t.Fatal("withTimeout が期限切れで見捨てを立てていない (4 秒待っても false のまま)")
-		}
-	case <-time.After(30 * time.Second): // 安全網。合否には使わない
-		t.Fatal("seam が返らない")
+	// 安全網。合否には使わない
+	ok := testwait.Recv(t, "seam が返らない", observed, testwait.Within(30*time.Second))
+	if !ok {
+		t.Fatal("withTimeout が期限切れで見捨てを立てていない (4 秒待っても false のまま)")
 	}
 }
 
@@ -431,13 +429,9 @@ func TestAbandonWiringReachesTakeoverPath(t *testing.T) {
 		if _, err := l.AcquireTimed(time.Minute, "wiring"); !errors.Is(err, errIOTimeout) {
 			t.Fatalf("errIOTimeout を期待したが %v", err)
 		}
-		select {
-		case ok := <-observed:
-			if !ok {
-				t.Fatal("tryTakeover へ ab が届いていない (nil が渡っている = ②③ の検査が production から死ぬ)")
-			}
-		case <-time.After(30 * time.Second):
-			t.Fatal("seam に到達していない: 引き継ぎ経路を通っていない")
+		ok := testwait.Recv(t, "seam に到達していない: 引き継ぎ経路を通っていない", observed, testwait.Within(30*time.Second))
+		if !ok {
+			t.Fatal("tryTakeover へ ab が届いていない (nil が渡っている = ②③ の検査が production から死ぬ)")
 		}
 	})
 
@@ -460,13 +454,11 @@ func TestAbandonWiringReachesTakeoverPath(t *testing.T) {
 		if _, err := l.AcquireTimed(time.Minute, "wiring"); !errors.Is(err, errIOTimeout) {
 			t.Fatalf("errIOTimeout を期待したが %v", err)
 		}
-		select {
-		case ok := <-observed:
-			if !ok {
-				t.Fatal("引き継ぎ後の tryPlace へ ab が届いていない (この issue の主症状が復活する)")
-			}
-		case <-time.After(30 * time.Second):
-			t.Fatalf("2 回目の tryPlace へ到達していない (seam の到達 %d 回)", calls)
+		ok := testwait.Recv(t, "2 回目の tryPlace へ到達していない (seam の到達", observed, testwait.Within(30*time.Second), testwait.Diag(func() string {
+			return fmt.Sprintf("2 回目の tryPlace へ到達していない (seam の到達 %d 回)", calls)
+		}))
+		if !ok {
+			t.Fatal("引き継ぎ後の tryPlace へ ab が届いていない (この issue の主症状が復活する)")
 		}
 	})
 }

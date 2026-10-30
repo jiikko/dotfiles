@@ -292,18 +292,10 @@ func TestGraveyardRecordSurvivesSlowMount(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- l.BreakTimed() }()
 
-	select {
-	case <-entered:
-	case <-time.After(10 * time.Second):
-		t.Fatal("前提が作れていない: rename 後の seam に入らない")
-	}
-	select {
-	case err := <-done:
-		if !errors.Is(err, errIOTimeout) {
-			t.Fatalf("鈍いマウントなのに期限切れになっていない: %v", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("BreakTimed が 10 秒以内に戻らない (包みが無い)")
+	testwait.Recv(t, "前提が作れていない: rename 後の seam に入らない", entered, testwait.Within(10*time.Second))
+	err = testwait.Recv(t, "BreakTimed が 10 秒以内に戻らない (包みが無い)", done, testwait.Within(10*time.Second))
+	if !errors.Is(err, errIOTimeout) {
+		t.Fatalf("鈍いマウントなのに期限切れになっていない: %v", err)
 	}
 
 	// 見捨てられた goroutine を進ませ、打刻が着地するのを**成立条件**で待つ

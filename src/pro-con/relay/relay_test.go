@@ -49,12 +49,10 @@ func TestPutDoesNotWaitForStuckWrite(t *testing.T) {
 		}
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
+	testwait.Recv(t, "書き出しが詰まっている間に Put が待った (画面の描画が止まる)", done, testwait.Within(10*time.Second), testwait.Diag(func() string {
 		unstick()
-		t.Fatal("書き出しが詰まっている間に Put が待った (画面の描画が止まる)")
-	}
+		return "書き出しが詰まっている間に Put が待った (画面の描画が止まる)"
+	}))
 	unstick()
 	path := filepath.Join(w.dir, w.ID()+".frame")
 	testwait.Until(t, "詰まりが解けても最後の 1 枚が書かれない", func() bool {
@@ -249,13 +247,9 @@ func TestListSkipsNonRegularLock(t *testing.T) {
 	}
 	done := make(chan []Screen, 1)
 	go func() { ss, _ := List(dir); done <- ss }()
-	select {
-	case ss := <-done:
-		if len(ss) != 1 || ss[0].ID != w.ID() || !ss[0].Open {
-			t.Fatalf("一覧: %+v", ss)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("FIFO の印を開いて一覧が止まった")
+	ss := testwait.Recv(t, "FIFO の印を開いて一覧が止まった", done, testwait.Within(10*time.Second))
+	if len(ss) != 1 || ss[0].ID != w.ID() || !ss[0].Open {
+		t.Fatalf("一覧: %+v", ss)
 	}
 }
 
@@ -280,13 +274,9 @@ func TestWriterSpacesWritesWhileChangesContinue(t *testing.T) {
 	w.write = func(p string, data []byte) error { writes.Add(1); return writeAtomic(p, data) }
 	gap := func(what string) time.Duration {
 		t.Helper()
-		select {
-		case d := <-gaps:
-			return d
-		case <-time.After(10 * time.Second): // ハングの安全網 (合否の基準ではない)
-			t.Fatal(what)
-			return 0
-		}
+		// ハングの安全網 (合否の基準ではない)
+		d := testwait.Recv(t, what, gaps, testwait.Within(10*time.Second))
+		return d
 	}
 	w.Put(Frame{ANSI: "1"}) // 1 回きりの変化
 	if d := gap("1 枚目の後に空けない"); d != minInterval {
@@ -301,11 +291,8 @@ func TestWriterSpacesWritesWhileChangesContinue(t *testing.T) {
 		<-idle
 	}
 	release <- time.Time{} // 空けている間に何も来なかった (止まった)
-	select {               // ループが次の描き直しを待ち始めてから置く (待ち始める前に置くと「空けている間に来た」になる)
-	case <-idle:
-	case <-time.After(10 * time.Second): // ハングの安全網
-		t.Fatal("変化が止まった後に次の描き直しを待ち始めない")
-	}
+	// ハングの安全網
+	testwait.Recv(t, "変化が止まった後に次の描き直しを待ち始めない", idle, testwait.Within(10*time.Second))
 	w.Put(Frame{ANSI: "3"})
 	if d := gap("3 枚目の後に空けない"); d != minInterval {
 		t.Fatalf("変化が止まった後の 1 回きりの変化なのに %v 空けた (期待 minInterval = %v)", d, minInterval)

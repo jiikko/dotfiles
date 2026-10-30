@@ -2,6 +2,7 @@ package filer
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os/exec"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+
+	"testwait"
 )
 
 // `!` のキー待ちで矢印キー (ESC [ D) を押しても、残りのバイトが戻った先へ漏れない。
@@ -25,24 +28,15 @@ func TestKeyWaitSwallowsWholeEscapeSequence(t *testing.T) {
 	var out lockedBuffer
 	done := make(chan struct{})
 	go func() { _, _ = io.Copy(&out, master); close(done) }() // pty の出力は EIO で終わる
-	deadline := time.Now().Add(10 * time.Second)
-	for !strings.Contains(out.String(), "何かキーを押すと") {
-		if time.Now().After(deadline) {
-			t.Fatalf("キー待ちの案内が出ない: %q", out.String())
-		}
-		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: pty の出力に案内が出るのを条件で待つループの刻み
-	}
+	testwait.Until(t, "キー待ちの案内が出ない", func() bool { return strings.Contains(out.String(), "何かキーを押すと") },
+		testwait.Tick(5*time.Millisecond), testwait.Diag(func() string { return fmt.Sprintf("出力: %q", out.String()) }))
 	if _, err := master.WriteString("\x1b[D"); err != nil {
 		t.Fatal(err)
 	}
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("包みのシェルが失敗: %v (%q)", err, out.String())
 	}
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatalf("pty の出力が終わらない: %q", out.String())
-	}
+	testwait.Recv(t, "pty の出力が終わらない", done, testwait.Within(10*time.Second), testwait.Diag(func() string { return fmt.Sprintf("pty の出力が終わらない: %q", out.String()) }))
 	got := out.String()
 	i := strings.Index(got, "LEFT<")
 	if i < 0 || !strings.Contains(got[i:], ">END") {

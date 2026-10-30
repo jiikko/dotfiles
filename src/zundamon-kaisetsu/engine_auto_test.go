@@ -842,13 +842,10 @@ func TestEngineInUseIsShared(t *testing.T) {
 		}
 		done <- err
 	}()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(5 * time.Second): // 待ちの上限 (共有なら即座に返る)
-		t.Fatal("2 つ目のコマンドが使用中のロックを取れずに待っている (共有ロックになっていない)")
+	// 待ちの上限 (共有なら即座に返る)
+	err = testwait.Recv(t, "2 つ目のコマンドが使用中のロックを取れずに待っている (共有ロックになっていない)", done, testwait.Within(5*time.Second))
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

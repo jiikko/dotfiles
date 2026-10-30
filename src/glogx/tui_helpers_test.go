@@ -16,6 +16,8 @@ import (
 	"glogx/internal/gitdata"
 	"glogx/internal/lanview"
 	"glogx/internal/testenv"
+
+	"testwait"
 )
 
 // installInertDoctor は doctor の走査口を**何も触らない fake** に差し替える。
@@ -64,11 +66,7 @@ func joinDoctorCleanup(t *testing.T) {
 	t.Helper()
 	done := make(chan struct{})
 	go func() { defer close(done); doctorview.WaitDoctorCleanup() }()
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		t.Fatal("判定不能: doctor の走査が 30 秒で帰らない (cancel が届いていないか、seam が差さっていない)")
-	}
+	testwait.Recv(t, "判定不能: doctor の走査が 30 秒で帰らない (cancel が届いていないか、seam が差さっていない)", done, testwait.Within(30*time.Second))
 }
 
 // TestMain は隔離した環境でテストを走らせる (前処理の中身と理由は internal/testenv の Main が正本)。

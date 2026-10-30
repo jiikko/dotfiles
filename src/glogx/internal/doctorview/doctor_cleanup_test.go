@@ -13,6 +13,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"testwait"
 )
 
 // 走査中に行が増えても、選択は同じエントリに留まる。
@@ -140,11 +142,7 @@ func TestWaitDoctorCleanupWaitsForTrackedScan(t *testing.T) {
 	}
 
 	close(release)
-	select {
-	case <-waited:
-	case <-time.After(5 * time.Second):
-		t.Fatal("走査が終わったのに WaitDoctorCleanup が戻らない")
-	}
+	testwait.Recv(t, "走査が終わったのに WaitDoctorCleanup が戻らない", waited, testwait.Within(5*time.Second))
 	mu.Lock()
 	defer mu.Unlock()
 	if !finished {
@@ -230,11 +228,9 @@ func TestEachDoctorScanIsTrackedUntilItReturns(t *testing.T) {
 			}
 
 			// 走査が始まった証拠を待つ (始まっていなければ判定不能)
-			select {
-			case <-started:
-			case <-time.After(15 * time.Second):
-				t.Fatalf("判定不能: %s の Run が呼ばれない (fixture が経路を通っていない)", tc)
-			}
+			testwait.Recv(t, "判定不能", started, testwait.Within(15*time.Second), testwait.Diag(func() string {
+				return "判定不能: " + tc + " の Run が呼ばれない (fixture が経路を通っていない)"
+			}))
 
 			v.Stop() // = cancelAll 相当 (ctx を切るだけ。子の死は待たない)
 			WaitDoctorCleanup()
@@ -287,12 +283,7 @@ func TestDeleteIsTrackedAndCancelled(t *testing.T) {
 				}
 			}
 
-			var ctx context.Context
-			select {
-			case ctx = <-ctxCh:
-			case <-time.After(10 * time.Second):
-				t.Fatal("判定不能: deleteFn が呼ばれない")
-			}
+			ctx := testwait.Recv(t, "判定不能: deleteFn が呼ばれない", ctxCh, testwait.Within(10*time.Second))
 			if ctx.Err() != nil {
 				t.Fatal("判定不能: 削除の ctx が最初から切れている")
 			}
@@ -366,19 +357,11 @@ func TestRescanCancelsPreviousGeneration(t *testing.T) {
 	}
 
 	runCmd(v.start(true))
-	select {
-	case <-started:
-	case <-time.After(10 * time.Second):
-		t.Fatal("判定不能: 1 世代目の Run が呼ばれない")
-	}
+	testwait.Recv(t, "判定不能: 1 世代目の Run が呼ばれない", started, testwait.Within(10*time.Second))
 
 	runCmd(v.Rescan()) // 2 世代目。start の冒頭で前世代を止めるはず
 
-	select {
-	case <-returned:
-	case <-time.After(5 * time.Second):
-		t.Fatal("rescan が前世代を cancel していない (誰も止められない走査が latch に残り、WaitDoctorCleanup が数分待つ)")
-	}
+	testwait.Recv(t, "rescan が前世代を cancel していない (誰も止められない走査が latch に残り、WaitDoctorCleanup が数分待つ)", returned, testwait.Within(5*time.Second))
 	v.Stop() // 2 世代目も止める (ブロックした goroutine と latch のカウントを残さない)
 	WaitDoctorCleanup()
 }
@@ -391,11 +374,7 @@ func drainDoctorCleanup(t *testing.T) {
 	t.Helper()
 	done := make(chan struct{})
 	go func() { <-doctorCleanup.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		t.Fatal("判定不能: 前のテストの走査が残っている (latch が空にならない)")
-	}
+	testwait.Recv(t, "判定不能: 前のテストの走査が残っている (latch が空にならない)", done, testwait.Within(30*time.Second))
 }
 
 // doctor の後始末も latch に載っていることを型で固定する (main の cleanup_latch_test.go の pull 側の pin と対。

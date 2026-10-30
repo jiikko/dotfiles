@@ -10,6 +10,7 @@ on:
     branches: [master]
     paths:
       - 'src/ratelimit/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/subproc/**'     # replace で取り込む共有 module
       - 'src/atomicfile/**'  # replace で取り込む共有 module
       - 'src/termsafe/**'    # replace で取り込む共有 module (無害化の関門)
@@ -30,6 +31,7 @@ on:
   pull_request:
     paths:
       - 'src/ratelimit/**'
+      - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/subproc/**'     # replace で取り込む共有 module
       - 'src/atomicfile/**'  # replace で取り込む共有 module
       - 'src/termsafe/**'    # replace で取り込む共有 module (無害化の関門)

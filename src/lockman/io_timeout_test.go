@@ -50,13 +50,8 @@ func boundedInt(t *testing.T, what string, fn func() int) int {
 	t.Helper()
 	ch := make(chan int, 1)
 	go func() { ch <- fn() }()
-	select {
-	case got := <-ch:
-		return got
-	case <-time.After(20 * time.Second):
-		t.Fatalf("%s が 20s 以内に戻らない (--io-timeout の包みが無い)", what)
-		return -1
-	}
+	got := testwait.Recv(t, what+" が 20s 以内に戻らない (--io-timeout の包みが無い)", ch, testwait.Within(20*time.Second))
+	return got
 }
 
 // 包みは Locker の入口すべてに要る。1 つでも素通りすると --io-timeout の目的
@@ -75,13 +70,9 @@ func TestIOTimeoutWrapsLockerEntries(t *testing.T) {
 			l := fifoLocker(t, lockFile)
 			ch := make(chan error, 1)
 			go func() { ch <- c.call(l) }()
-			select {
-			case err := <-ch:
-				if !errors.Is(err, errIOTimeout) {
-					t.Fatalf("詰まっているのに判定不能を返さない: %v", err)
-				}
-			case <-time.After(20 * time.Second):
-				t.Fatalf("%s が 20s 以内に戻らない (包みが無い)", c.name)
+			err := testwait.Recv(t, c.name+" が 20s 以内に戻らない (包みが無い)", ch, testwait.Within(20*time.Second))
+			if !errors.Is(err, errIOTimeout) {
+				t.Fatalf("詰まっているのに判定不能を返さない: %v", err)
 			}
 		})
 	}
@@ -98,26 +89,22 @@ func TestIOTimeoutWrapsDeferredCleanup(t *testing.T) {
 	type out struct{ res CleanupResult }
 	ch := make(chan out, 1)
 	go func() { ch <- out{l.CleanupTimed(true)} }()
-	select {
-	case o := <-ch:
-		if len(o.res.Errors) != 1 || !strings.HasPrefix(o.res.Errors[0], errIOTimeout.Error()) {
-			t.Fatalf("掃除のタイムアウトが Errors に入っていない: %+v", o.res)
-		}
-		// 🚨 **「Removed は必ず 0」は消えた不変条件**。
-		// 期限切れでも「どこまで進んだか」を報告する仕様になったので、この fixture で 0 なのは
-		// **残骸を 1 件も置いていないから**であって、「進捗を捨てているから」ではない。
-		// 旧 assert のまま fixture を現実的にすると、正しい挙動に**偽の赤**が出る。
-		if !o.res.Partial {
-			t.Errorf("期限切れなのに Partial が立っていない: %+v", o.res)
-		}
-		if o.res.Removed != 0 {
-			t.Errorf("残骸を置いていないのに消したことになっている: %+v", o.res)
-		}
-		if o.res.Skipped {
-			t.Errorf("force なのに skip された: %+v", o.res)
-		}
-	case <-time.After(20 * time.Second):
-		t.Fatal("CleanupTimed が 20s 以内に戻らない (包みが無い)")
+	o := testwait.Recv(t, "CleanupTimed が 20s 以内に戻らない (包みが無い)", ch, testwait.Within(20*time.Second))
+	if len(o.res.Errors) != 1 || !strings.HasPrefix(o.res.Errors[0], errIOTimeout.Error()) {
+		t.Fatalf("掃除のタイムアウトが Errors に入っていない: %+v", o.res)
+	}
+	// 🚨 **「Removed は必ず 0」は消えた不変条件**。
+	// 期限切れでも「どこまで進んだか」を報告する仕様になったので、この fixture で 0 なのは
+	// **残骸を 1 件も置いていないから**であって、「進捗を捨てているから」ではない。
+	// 旧 assert のまま fixture を現実的にすると、正しい挙動に**偽の赤**が出る。
+	if !o.res.Partial {
+		t.Errorf("期限切れなのに Partial が立っていない: %+v", o.res)
+	}
+	if o.res.Removed != 0 {
+		t.Errorf("残骸を置いていないのに消したことになっている: %+v", o.res)
+	}
+	if o.res.Skipped {
+		t.Errorf("force なのに skip された: %+v", o.res)
 	}
 }
 

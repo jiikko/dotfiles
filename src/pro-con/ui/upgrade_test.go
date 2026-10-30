@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"testwait"
 )
 
 // upgradeModel は一時ディレクトリの repo の形 (src/pro-con/{go.mod,pro-con} + bin/lib/go_autobuild.zsh) から
@@ -230,11 +233,7 @@ func TestImportClampsCursor(t *testing.T) {
 		data := []byte(`{"input":true,"inputKind":3,"line":"abc","cursor":` + itoa(cur) + `}`)
 		fin := make(chan struct{})
 		go func() { _ = m.ImportState(data); close(fin) }()
-		select {
-		case <-fin:
-		case <-time.After(2 * time.Second):
-			t.Fatalf("cursor=%d で止まった", cur)
-		}
+		testwait.Recv(t, "cursor", fin, testwait.Within(2*time.Second), testwait.Diag(func() string { return fmt.Sprintf("cursor=%d で止まった", cur) }))
 		if c := m.line.Cursor(); c < 0 || c > 3 {
 			t.Fatalf("cursor=%d がはみ出した: %d", cur, c)
 		}

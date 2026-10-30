@@ -201,13 +201,10 @@ func TestTimeoutKillsAfterGrace(t *testing.T) {
 	}()
 	pid := readPid(t, pidf)
 	defer killIfAlive(pid)
-	select {
-	case rc := <-res:
-		if rc != rcTimeout {
-			t.Fatalf("rc: got %d want %d", rc, rcTimeout)
-		}
-	case <-time.After(30 * time.Second): // hang の安全網 (判定ではない)
-		t.Fatal("TERM を無視する子を止められず、道具が戻らない")
+	// hang の安全網 (判定ではない)
+	rc := testwait.Recv(t, "TERM を無視する子を止められず、道具が戻らない", res, testwait.Within(30*time.Second))
+	if rc != rcTimeout {
+		t.Fatalf("rc: got %d want %d", rc, rcTimeout)
 	}
 	testwait.Until(t, "TERM を無視する子が KILL で止まる", func() bool { return !alive(pid) })
 }

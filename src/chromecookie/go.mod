@@ -23,4 +23,7 @@ require (
 	modernc.org/opt v0.1.3 // indirect
 	modernc.org/strutil v1.1.3 // indirect
 	modernc.org/token v1.0.1 // indirect
+	testwait v0.0.0
 )
+
+replace testwait => ../testwait

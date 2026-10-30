@@ -9,6 +9,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"testwait"
 )
 
 // modalStates は actionModal の「モーダルとしての状態」を 1 つずつ立てたもの。
@@ -85,11 +87,7 @@ func TestWaitPullCleanupOutlivesQuit(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 	close(release)
-	select {
-	case <-waited:
-	case <-time.After(time.Second):
-		t.Fatal("pull 完了後も waitPullCleanup が戻らない")
-	}
+	testwait.Recv(t, "pull 完了後も waitPullCleanup が戻らない", waited, testwait.Within(time.Second))
 }
 
 // modalStates が actionModal の bool フィールドを網羅していることを型から検査する。

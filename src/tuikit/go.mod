@@ -28,6 +28,9 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect
+	testwait v0.0.0
 )
 
 replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
+
+replace testwait => ../testwait

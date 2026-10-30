@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"testwait"
 )
 
 var fixedNow = time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
@@ -365,11 +367,8 @@ func TestFIFOIsRefusedWithoutBlocking(t *testing.T) {
 		m.HandleKey("enter")
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second): // hang guard (合否は下の知らせで見る)
-		t.Fatal("FIFO を開こうとして返らない")
-	}
+	// hang guard (合否は下の知らせで見る)
+	testwait.Recv(t, "FIFO を開こうとして返らない", done, testwait.Within(5*time.Second))
 	if len(m.tiles) != 0 || len(m.TakeNotices()) != 1 {
 		t.Fatal("FIFO でタイルが開いた / 知らせが出ない")
 	}

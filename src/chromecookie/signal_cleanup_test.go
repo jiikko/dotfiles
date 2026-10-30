@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"testwait"
 )
 
 // helperEnv はテストバイナリを「後始末の被験体」として再実行するための目印。
@@ -70,12 +72,7 @@ func TestSignalCleanupRemovesTempDirs(t *testing.T) {
 				}
 				line <- ""
 			}()
-			var dir string
-			select {
-			case dir = <-line:
-			case <-time.After(30 * time.Second):
-				t.Fatal("子プロセスが準備完了を報告しない")
-			}
+			dir := testwait.Recv(t, "子プロセスが準備完了を報告しない", line, testwait.Within(30*time.Second))
 			if dir == "" {
 				t.Fatal("子プロセスが一時ディレクトリを作れなかった")
 			}
