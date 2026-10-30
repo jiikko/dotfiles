@@ -1,7 +1,5 @@
 # 996 (bug): ローカル変数を 1 つ足しただけの写しを near -similar と sweep の節 3 が見つけない
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-30〜）
-
 起票日: 2026-10-30
 
 ## 概要
@@ -9,12 +7,12 @@
 部分木の類似 (`near -similar` と sweep の節 3。どちらも `internal/norm/subtrees.go` の `Subtrees` の Dice) は、局所の名前を**単位全体で出た順の番号**にした L1 の形で
 部分木の hash を取る。写しの途中にローカル変数を 1 つ足すと、それより後ろに初めて出る局所の名前の番号が全部 1 つずれ、後ろの部分木の hash が一つも一致しなくなる。
 `Subtrees` の doc は「Local numbering is unit-wide: inserting a local can change later fingerprints.」と限界を書いていて、
-[895](done/895-feat-dupscan-type3-candidates.md) は「局所宣言の挿入でずれる番号」を保証範囲から外し、「必要な具体例が出れば別の検出規則の採否を決める」とした。この issue がその具体例。
+[895](895-feat-dupscan-type3-candidates.md) は「局所宣言の挿入でずれる番号」を保証範囲から外し、「必要な具体例が出れば別の検出規則の採否を決める」とした。この issue がその具体例。
 
 ## 実例 (2026-10-30)
 
 `internal/report/evidence.go` の `EvidenceText` は、`internal/report/grouped.go` の `EvidenceTextGrouped` に置き換わった後に残った写しだった (どこからも呼ばれず、
-[982](done/982-cleanup-dupscan-unused-text-writers.md) で消した)。違いはループの前の `var group fileHeading` の 1 文、ループの中の書式の文字列・`e.File` の引数の削除・`group.write(...)` の呼び出し。
+[982](982-cleanup-dupscan-unused-text-writers.md) で消した)。違いはループの前の `var group fileHeading` の 1 文、ループの中の書式の文字列・`e.File` の引数の削除・`group.write(...)` の呼び出し。
 
 - 消す前の木 (`8ae039fbd`) で `dupscan near -similar src/dupscan/internal/report/evidence.go:EvidenceText src/dupscan` → `candidates=0` (しきい値 0.4・比べた単位 684)
 - sweep の節 3 (Dice 0.60 以上) にも出ていなかった

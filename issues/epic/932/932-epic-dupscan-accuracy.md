@@ -33,6 +33,8 @@
 | [981](done/981-bug-dupscan-gate-silent-on-generated-go-files.md) | Go の生成ファイルの見出し (`// Code generated … DO NOT EDIT.`) を付けた新しい写しが gate を無音で通る (変わった単位 0)。読まなかった生成ファイルの数を 1 行目に出す |
 | [982](done/982-cleanup-dupscan-unused-text-writers.md) | 使われていない `CallersText` / `EvidenceText` を消す (`deadcode -test` で届かない。`unused` は公開名を数えない) |
 | [984](done/984-research-dupscan-audit-2026-10-30.md) | 22 観点の監査 (直接実行) の全数勘定と、報告しなかったものの理由。[983](done/983-bug-dupscan-paths-levels-l1m.md) は 973 で決めた仕様と分かり取り下げ |
+| [996](done/996-bug-dupscan-similar-misses-inserted-local.md) | near -similar と sweep の節 3 が、宣言を 1 文足しただけの写しを見落としていた (局所の名前の番号がずれる)。部分木では局所の名前を同じ記号にした。done |
+| [997](done/997-ux-dupscan-gate-incomplete-noise-from-testdata.md) | Go の testdata の壊れた fixture で gate の 1 行目が毎回「解析が不完全」。testdata だけなら 1 行目を「新しい重複なし」+ 数にした (json・strict は変えない)。done |
 | [990](done/990-bug-dupscan-swift-l1-locals-outside-binding-scope.md) | Swift の L1 が、束縛の届かない所 (closure・ループ・else の中・if の後ろ) の同じ綴りのプロパティを番号にする。[974](done/974-bug-dupscan-l1-numbers-shadowed-outer-names.md) の近似の残り |
 | [993](done/993-test-dupscan-swift-scope-kinds-cover-grammar.md) | Swift の scope の節の種類を文法 (node-types.json) の全部の節と突き合わせてテストで固定。didSet / willSet・局所の型の init / subscript の取りこぼしを直した |
 | [994](done/994-bug-dupscan-swift-decl-roles-setter-and-local-names.md) | Swift の setter の引数を局所の名前に・宣言を作る節の表を nameRole と 1 つに。局所の関数名を宣言にする案は、組への影響が無く採らない |
