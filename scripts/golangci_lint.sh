@@ -92,6 +92,8 @@ done
 locals=()
 [ -e .golangci.local.yml ] && locals=(.golangci.local.yml)
 json=$(ruby "$repo/scripts/golangci_config.rb" "$repo/src/.golangci.yml" ${locals[@]+"${locals[@]}"})
+# ruleguard の規則のファイルの中身を設定に入れる (入れないと結果キャッシュの鍵に入らず、規則の変更が手元で効かない。理由は golangci_ruleguard_key.rb)
+json=$(printf '%s\n' "$json" | ruby "$repo/scripts/golangci_ruleguard_key.rb")
 # 合成した設定は中身の sha256 で決まる置き場に書く (exec したいので後で消せない。同じ中身なら同じファイルを使い回す。
 # 1 つ数 KB で、共通の塊か差分を変えたときだけ増える。消す仕組みは作らない。要らなければディレクトリごと消してよい)。
 # 一時ファイルに書いてから rename で置く (並列の lint に書きかけを読ませない)。拡張子で golangci-lint が書式を決める

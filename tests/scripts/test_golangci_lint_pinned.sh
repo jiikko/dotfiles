@@ -146,7 +146,7 @@ unset FAKE_SLEEP
 printf 'linters:\n  enable:\n    - forbidigo\n' > "$mod/.golangci.local.yml"
 rm -f "$FAKE_CFG_SEEN" "$FAKE_CFG_PATH"
 out=$("$helper" v2.5.0 run ./... 2>&1) || bad "差分つきの run が失敗した: $out"
-want=$(ruby "$ROOT_DIR/scripts/golangci_config.rb" "$ROOT_DIR/src/.golangci.yml" "$mod/.golangci.local.yml")
+want=$(ruby "$ROOT_DIR/scripts/golangci_config.rb" "$ROOT_DIR/src/.golangci.yml" "$mod/.golangci.local.yml" | ruby "$ROOT_DIR/scripts/golangci_ruleguard_key.rb")
 if [ -f "$FAKE_CFG_SEEN" ] && [ "$(cat "$FAKE_CFG_SEEN")" = "$want" ]; then note "run に、共通の塊とそのディレクトリの差分を合成した設定を渡す"; else bad "run に渡した設定が合成の結果と違う (出力: $out)"; fi
 first=$(cat "$FAKE_CFG_PATH" 2>/dev/null)
 case "$first" in
@@ -158,6 +158,14 @@ esac
 printf 'linters:\n  enable:\n    - depguard\n' > "$mod/.golangci.local.yml"
 "$helper" v2.5.0 run ./... >/dev/null 2>&1 || bad "差分を変えた run が失敗した"
 [ "$(cat "$FAKE_CFG_PATH")" != "$first" ] && note "差分を変えると別の置き場になる" || bad "差分を変えても同じ置き場のまま"
+# ruleguard の規則のファイルの中身は、渡す設定の disable に入る (鍵のスクリプトを通っている。結果を捨てる配線の退行もここで落ちる)
+local_before=$(cat "$mod/.golangci.local.yml")
+mkdir -p "$mod/gorules" && printf 'package gorules\n' > "$mod/gorules/rules.go"
+printf 'linters:\n  settings:\n    gocritic:\n      settings:\n        ruleguard:\n          rules: gorules/rules.go\n' > "$mod/.golangci.local.yml"
+"$helper" v2.5.0 run ./... >/dev/null 2>&1 || bad "ruleguard の規則つきの run が失敗した"
+if grep -q '"disable": "dotfiles-rules-[0-9a-f]\{16\}"' "$FAKE_CFG_SEEN" 2>/dev/null; then note "ruleguard の規則の中身を、渡す設定の disable に入れる"; else bad "渡した設定に ruleguard の規則の鍵が無い"; fi
+rm -rf "$mod/gorules"
+printf '%s\n' "$local_before" > "$mod/.golangci.local.yml"
 left=$(find "$DOTFILES_GO_TOOLS_CACHE/golangci-config" -name '*.json.*' | wc -l | tr -d ' ')
 [ "$left" = 0 ] && note "書きかけの一時ファイルを残さない" || bad "書きかけが $left 個残った"
 refuse() { # $1=説明 $2=準備 (sh) $3...=引数
@@ -193,7 +201,7 @@ for env_cpp in unset empty; do # go env -w の値は、環境変数が無いと�
   [ "$(cat "$FAKE_CPP_SEEN")" = "-DFROMENVW=1 $cpp1" ] && note "go env -w の CGO_CPPFLAGS を残す (環境変数: $env_cpp)" || bad "8: go env の値 (環境変数: $env_cpp): $(cat "$FAKE_CPP_SEEN")"
 done
 co2="$TMP_DIR/co2"; mkdir -p "$co2/scripts" "$co2/src"
-cp "$helper" "$ROOT_DIR/scripts/golangci_config.rb" "$co2/scripts/" && cp "$ROOT_DIR/src/.golangci.yml" "$co2/src/" || bad "8: 2 つ目の checkout を作れない"
+cp "$helper" "$ROOT_DIR/scripts/golangci_config.rb" "$ROOT_DIR/scripts/golangci_ruleguard_key.rb" "$co2/scripts/" && cp "$ROOT_DIR/src/.golangci.yml" "$co2/src/" || bad "8: 2 つ目の checkout を作れない"
 "$co2/scripts/golangci_lint.sh" v2.5.0 run ./... >/dev/null 2>&1 || bad "8: 2 つ目の checkout の run が失敗した"
 cpp2=$(cat "$FAKE_CPP_SEEN")
 if [ "$cpp2" != "$cpp1" ] && [[ "$cpp2" =~ ^-DDOTFILES_LINT_CHECKOUT_ ]]; then note "別の checkout なら別の定義"; else bad "8: 別の checkout でも同じ定義: $cpp2"; fi

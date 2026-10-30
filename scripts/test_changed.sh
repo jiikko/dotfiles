@@ -162,7 +162,7 @@ for p in "$@"; do
   case "$p" in
     # 全プロジェクトの make lint が通る共有の入口と、それが合成する設定の共通の塊。変えたら Go の lint を全部回す
     # (shell の lint だけでは本物の経路を通らない)。src/*/* と *.yml より先に置く (src/.golangci.yml が *.yml に当たって YAML の検査だけになる)
-    scripts/golangci_lint.sh|scripts/golangci_config.rb|src/.golangci.yml)
+    scripts/golangci_lint.sh|scripts/golangci_config.rb|scripts/golangci_ruleguard_key.rb|src/.golangci.yml)
       add_shell_targets; add_target test-go-lint
       [ "$p" = src/.golangci.yml ] && add_target test-yaml
       add_test_dirs_referencing "$p" ;;

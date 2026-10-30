@@ -79,6 +79,8 @@ Claude Code で package を探すときは [PACKAGES.md](PACKAGES.md) を引く�
   `make test` 全体が落ちる** (bin/schedkeys 追加時に実際に落とした 2026-08-27)
 - **golangci-lint の設定は、共通の塊 `src/.golangci.yml` と、モジュールごとの差分 `src/<module>/.golangci.local.yml` (無くてよい) の 2 つ**。
   `scripts/golangci_lint.sh` が run のたびに `scripts/golangci_config.rb` で合成して `-c` で渡す (CI も同じ入口。合成した設定は commit しない)。
+  ruleguard の規則のファイル (`gorules/rules.go`) の中身は `scripts/golangci_ruleguard_key.rb` が設定に入れる (入れないと結果キャッシュの鍵に入らず、
+  規則を変えても手元で効かない。`rules` は相対パスか glob で書き、`${base-path}` などの変数は使わない)。
   linter を足す・版を上げるときは `src/.golangci.yml` を 1 回直す。モジュールに `.golangci.local.yml` 以外の `.golangci.*` を置かない。
   **差分は足すだけ**: 共通の塊の値を書き換える・型の違う値で上書きする・`linters.default` / `linters.disable` を書くと合成が rc=2 で止まる
   (golangci-lint 自身はどれもエラーにせず、共通の linter が黙って消える)。lint は `make -C src/<module> lint` (モジュールの根) から起動する。
@@ -132,6 +134,7 @@ on:
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
       - src/.golangci.yml          # lint の設定の共通の塊 (golangci_lint.sh が差分と合成する)
       - scripts/golangci_config.rb # その合成
+      - scripts/golangci_ruleguard_key.rb # ruleguard の規則の中身を設定の鍵に入れる
       - scripts/go_module_graph.sh # make lint が先に回す module グラフの検査
       - .github/go-version         # CI の Go の版の正本
   pull_request:
@@ -142,6 +145,7 @@ on:
       - scripts/golangci_lint.sh
       - src/.golangci.yml
       - scripts/golangci_config.rb
+      - scripts/golangci_ruleguard_key.rb
       - scripts/go_module_graph.sh
       - .github/go-version
   workflow_dispatch:  # GitHub UI からの手動再実行用
