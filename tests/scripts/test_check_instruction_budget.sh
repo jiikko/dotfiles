@@ -38,13 +38,13 @@ run() {
 new_tree under
 ascii 100000 > "$T/_claude/rules/big.md"
 run
-if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'global 層 102000 字 (_claude/CLAUDE.md + rule 2 本'; then ok '上限の内 (global 102,000 字) は通し、数えた字数と本数を出す'
+if [ "$RC" -eq 0 ] && grep -q 'global 層 102000 字 (_claude/CLAUDE.md + rule 2 本' <<<"$OUT"; then ok '上限の内 (global 102,000 字) は通し、数えた字数と本数を出す'
 else bad "上限の内が通らない / 字数が違う (rc=$RC): $OUT"; fi
 
 new_tree over
 ascii 110000 > "$T/_claude/rules/big.md"
 run
-if [ "$RC" -eq 1 ] && printf '%s' "$OUT" | grep -q 'global 層が 1000 字超えている'; then ok 'global 層が上限 (111,000) を超えたら落とす'
+if [ "$RC" -eq 1 ] && grep -q 'global 層が 1000 字超えている' <<<"$OUT"; then ok 'global 層が上限 (111,000) を超えたら落とす'
 else bad "global 層の上限超えが落ちない (rc=$RC): $OUT"; fi
 
 new_tree edge
@@ -78,7 +78,7 @@ else bad "本文の paths: で数えるのをやめている (rc=$RC): $OUT"; fi
 new_tree multibyte
 awk 'BEGIN { s = ""; for (i = 1; i < 50000; i++) s = s "字"; print s }' > "$T/_claude/rules/ja.md"
 run
-if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'global 層 52000 字'; then ok '全角を 1 字と数える (50,000 字 = 150,000 バイトでも通す)'
+if [ "$RC" -eq 0 ] && grep -q 'global 層 52000 字' <<<"$OUT"; then ok '全角を 1 字と数える (50,000 字 = 150,000 バイトでも通す)'
 else bad "字数をバイトで数えている (rc=$RC): $OUT"; fi
 
 new_tree session
@@ -86,20 +86,20 @@ ascii 100000 > "$T/_claude/rules/big.md"
 ascii 1000 > "$T/CLAUDE.md"
 ascii 50000 > "$T/.claude/rules/repo.md"
 run
-if [ "$RC" -eq 1 ] && printf '%s' "$OUT" | grep -q 'dotfiles のセッションが上限を 3000 字超えている' && ! printf '%s' "$OUT" | grep -q 'global 層が'; then
+if [ "$RC" -eq 1 ] && grep -q 'dotfiles のセッションが上限を 3000 字超えている' <<<"$OUT" && ! grep -q 'global 層が' <<<"$OUT"; then
   ok 'global 層が上限の内でも、repo 層を足したセッションが 150,000 を超えたら落とす'
 else bad "repo 層を足した上限超えが落ちない (rc=$RC): $OUT"; fi
 
 new_tree no-rules
 rm "$T/_claude/rules/base.md"
 run
-if [ "$RC" -eq 1 ] && printf '%s' "$OUT" | grep -q '1 本も無い'; then ok '常時読み込みの rule が 0 本なら緑にしない'
+if [ "$RC" -eq 1 ] && grep -q '1 本も無い' <<<"$OUT"; then ok '常時読み込みの rule が 0 本なら緑にしない'
 else bad "rule 0 本で緑になる (rc=$RC): $OUT"; fi
 
 new_tree no-claude-md
 rm "$T/_claude/CLAUDE.md"
 run
-if [ "$RC" -eq 1 ] && printf '%s' "$OUT" | grep -q 'CLAUDE.md が無い'; then ok '_claude/CLAUDE.md が無ければ緑にしない'
+if [ "$RC" -eq 1 ] && grep -q 'CLAUDE.md が無い' <<<"$OUT"; then ok '_claude/CLAUDE.md が無ければ緑にしない'
 else bad "_claude/CLAUDE.md が無くても緑になる (rc=$RC): $OUT"; fi
 
 if [ "$fails" -ne 0 ]; then

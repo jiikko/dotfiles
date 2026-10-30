@@ -394,7 +394,7 @@ test-comment-provenance:
 	@scripts/check_comment_provenance.sh
 
 # 毎セッション全文読まれる指示ファイル (_claude/CLAUDE.md・paths: の無い rule) の合計を Claude Code の上限 150k 字の内に保つ。
-# 数え方・他の repo の分の取り置き・検出しないものは scripts/check_instruction_budget.sh の冒頭 (issue 414)
+# 数え方・他の repo の分の取り置き・検出しないものは scripts/check_instruction_budget.sh の冒頭
 test-instruction-budget:
 	@scripts/check_instruction_budget.sh
 

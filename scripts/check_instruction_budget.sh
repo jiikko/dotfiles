@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # check_instruction_budget.sh — 毎セッション全文読まれる指示ファイルの合計を、Claude Code の上限 150k 字の内に保つ。
 #   Claude Code は起動時に、常時読み込む指示ファイル (CLAUDE.md と frontmatter に `paths:` の無い rule) の合計が 150k 字を超えると
-#   `⚠ N instruction files add up to …k chars, over the 150.0k-char total limit` を出す (issue 414)。
+#   `⚠ N instruction files add up to …k chars, over the 150.0k-char total limit` を出す。
 #
-# 数えるもの (`LC_ALL=en_US.UTF-8 wc -m`。issue 414 で警告の値とほぼ一致した数え方):
+# 数えるもの (`LC_ALL=en_US.UTF-8 wc -m`。警告の値とほぼ一致した数え方):
 #   - global 層: `_claude/CLAUDE.md` + `_claude/rules/` の下の `*.md` (どの repo のセッションにも載る)
 #   - dotfiles の repo 層: `CLAUDE.md` + `.claude/rules/` の下の `*.md`
 #   rules はサブディレクトリも数える (scripts/claude_links.sh はディレクトリごと link する。読まれないなら多く数えて赤に倒れるだけ)
@@ -15,7 +15,7 @@
 #   - `_claude/CLAUDE.md` が無い・数えた rule が 0 本 (数え方が空振りした)
 #
 # OTHER_REPO_RESERVE は、global 層に repo 層を足すセッションのうち最も重いものの repo 層。CI からは他の repo を読めないので定数で持つ。
-#   測り方は issue 414 の「obaket の実測」(gh api で CLAUDE.md と .claude/rules を取り、paths: の無いものを wc -m)。
+#   測り方: gh api で各 repo の CLAUDE.md と .claude/rules を取り、paths: の無いものを wc -m で数える (clone は要らない)。
 #   2026-10-30: my-products 14,089 + obaket 19,573 + obaket/macOS 5,011 = 38,673 (obaket の macOS/ で起動したセッション)。
 #   他の repo で上限超えの警告が出たら測り直して上げる。下げるのも測り直したときだけ。
 #
@@ -26,6 +26,7 @@
 #   - CLAUDE.md の `@path` の import が展開する中身 (今は 0 件)
 #   - `paths:` の値 (空・YAML として壊れている) は見ない。キーがあれば条件ロードと見なす
 set -uo pipefail
+unset CDPATH
 
 LIMIT=150000
 OTHER_REPO_RESERVE=39000
