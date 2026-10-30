@@ -1194,9 +1194,10 @@ rm -f "$T/assets/.#lock.md"
 # pattern の展開が Go の path.Match と同じ集合を返す (期待値は go1.26.0 の go list -f '{{.EmbedFiles}}' で取った。! で始まる名前は go が package のファイルとして拒むので置かない)
 PM="$TMP_DIR/patmatch"; mkdir -p "$PM"
 for f in a.txt ab.txt abc.txt b.txt c.txt 'x y.txt' ab; do : > "$PM/$f"; done
-embed_expand() {  # $1=pattern $2=呼び出し側で立てる option (省略可) → 当たったファイル名を空白で並べる
-  printf '%s\t%s\n' "$PM" "$1" > "$PM/.autobuild.embeds"
-  zsh -c '[[ -n "$3" ]] && setopt "$3"; source "$1"; _go_autobuild_embed_files "$2"; print -rn -- ${(o)reply:t}' zsh "$LIB" "$PM" "${2-}"
+embed_expand() {  # $1=pattern $2=呼び出し側で先に打つコマンド (setopt・export。省略可) $3=fixture の dir (省略時 $PM) → 当たったファイル名を空白で並べる
+  local dir="${3:-$PM}"
+  printf '%s\t%s\n' "$dir" "$1" > "$dir/.autobuild.embeds"
+  zsh -c 'eval "$3"; source "$1"; _go_autobuild_embed_files "$2"; print -rn -- "${(o)reply[@]:t}"' zsh "$LIB" "$dir" "${2-}"
 }
 for c in '[^a]*.txt|b.txt c.txt x y.txt' '[!a]*.txt|a.txt ab.txt abc.txt' 'a\b|ab' '*\.txt|a.txt ab.txt abc.txt b.txt c.txt x y.txt' \
   'a\b*|ab ab.txt abc.txt' '\a*.txt|a.txt ab.txt abc.txt' 'a\b.tx?|ab.txt' '[a-b]*.txt|a.txt ab.txt abc.txt b.txt' \
@@ -1205,9 +1206,26 @@ for c in '[^a]*.txt|b.txt c.txt x y.txt' '[!a]*.txt|a.txt ab.txt abc.txt' 'a\b|a
   [[ "$got" == "${c#*|}" ]] || fail "embed: pattern ${c%%|*} の展開が Go と違う (got: $got)"
 done
 ok "embed: 否定のクラス ([^...] は否定 / [!...] の ! は字)・\ のエスケープ・範囲を Go と同じに展開する (10 件)"
-got="$(embed_expand '[^a]*.txt' extendedglob)"
-[[ "$got" == 'b.txt c.txt x y.txt' ]] || fail "embed: 呼び出し側の extendedglob で展開が変わる (got: $got)"
-ok "embed: 呼び出し側が extendedglob を立てていても展開は変わらない"
+# クラスの中のエスケープ・字としての [・マルチバイト (期待値は同じく go1.26.0 の go list で取った)
+PM2="$TMP_DIR/patmatch2"; mkdir -p "$PM2"
+for f in x-y xay xby 'x[y' 'あ.txt' a.txt; do : > "$PM2/$f"; done
+for c in 'x[a\-z]y|x-y xay' 'x\[y|x[y' '?.txt|a.txt あ.txt' '[^a].txt|あ.txt'; do
+  got="$(embed_expand "${c%%|*}" '' "$PM2")"
+  [[ "$got" == "${c#*|}" ]] || fail "embed: pattern ${c%%|*} の展開が Go と違う (got: $got)"
+done
+ok "embed: クラスの中の \- / 字としての \[ / マルチバイトの ? と否定のクラスを Go と同じに展開する"
+# 呼び出し側の option と locale に左右されない
+for c in 'setopt extendedglob|[^a]*.txt|b.txt c.txt x y.txt|' 'setopt shwordsplit|[^a]*.txt|b.txt c.txt x y.txt|' 'setopt shwordsplit|x *.txt|x y.txt|' \
+  'export LC_ALL=C|?.txt|a.txt あ.txt|PM2'; do
+  pre="${c%%|*}"; rest="${c#*|}"; pat="${rest%%|*}"; rest="${rest#*|}"; want="${rest%%|*}"; which="${rest#*|}"
+  if [[ "$which" == PM2 ]]; then got="$(embed_expand "$pat" "$pre" "$PM2")"; else got="$(embed_expand "$pat" "$pre")"; fi
+  [[ "$got" == "$want" ]] || fail "embed: 呼び出し側の $pre で $pat の展開が変わる (got: $got)"
+done
+ok "embed: 呼び出し側の extendedglob・shwordsplit・LC_ALL=C でも展開は変わらない"
+printf '%s\t%s\n' "$PM2" 'none(1).md' > "$PM2/.autobuild.embeds"
+got="$(zsh -c 'source "$1"; _go_autobuild_embed_files "$2"; print -rn -- "$#reply ${#_go_autobuild_embed_unresolved}"' zsh "$LIB" "$PM2")"
+[[ "$got" == "0 1" ]] || fail "embed: 無いパスの pattern を 0 件として知らせない (got: 件数 未解決 = $got)"
+ok "embed: グロブの文字の無い pattern が無いパスなら、0 件として知らせる"
 
 # 入れ替えの経路 (pro-con の ctrl+r・dispatcher) も同じ判定を通る
 freeze "$ROOT"

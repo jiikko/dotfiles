@@ -145,10 +145,13 @@ _go_autobuild_inputs() {  # $1=src_dir
 # ここの展開の誤り。指紋が起動のたびに知らせる)。記録が無ければ何も返さない (_go_autobuild_fingerprint が記録の有無を入力に数える)。
 typeset -ga _go_autobuild_embed_unresolved
 _go_autobuild_embed_files() {  # $1=src_dir
+  # 呼び出し側の option (shwordsplit・ksharrays・noglob 等) と locale (C では ? やクラスが 1 文字でなく 1 バイトに当たる) に左右されない
+  emulate -L zsh
+  setopt nullglob globdots   # 修飾子 (ND) を pattern の後ろに付ける形は、\( を含む pattern で当たらないことがあった
+  local LC_ALL=en_US.UTF-8
   local rec="${1:A}/.autobuild.embeds" line dir pat g
   local -a parts out hit
-  # nullglob / globdots は option で効かせる (修飾子 (ND) を pattern の後ろに付ける形は、\( を含む pattern で当たらないことがあった)
-  setopt localoptions nullglob globdots
+  local -i before
   _go_autobuild_embed_unresolved=()
   reply=()
   [[ -f "$rec" ]] || return 0
@@ -157,58 +160,61 @@ _go_autobuild_embed_files() {  # $1=src_dir
     parts=("${(@ps:\t:)line}")
     dir="$parts[1]"
     for pat in "${(@)parts[2,-1]}"; do
-      pat="${pat#all:}"
-      if [[ "$pat" != *[*?[]* ]]; then
-        # Go のメタ文字 (* ? [) が無ければただのパス。zsh のグロブに通さない (quote した文字が glob にならず、\ が残ったまま返る)。
-        # Go の \ はエスケープなので外す (a\b → ab)
-        g="${pat//\\/}"
-        hit=(); [[ -e "$dir/$g" ]] && hit=("$dir/$g")
-      else
-        _go_autobuild_go_glob "$pat"; g=$REPLY
+      _go_autobuild_go_glob "${pat#all:}"
+      if (( reply[3] )); then
         # ディレクトリも quote して 1 語の pattern にする ("$dir"/${~g} の形は \( を含む pattern で何も当たらない。zsh 5.9 で実測)
-        g="${(b)dir}/$g"
+        g="${(b)dir}/$reply[1]"
         hit=(${~g})
+      else
+        # グロブの文字が無ければただのパス。zsh のグロブに通さない (グロブの文字が無い語は quote の \ が残ったまま返る)
+        hit=("$dir/$reply[2]")
       fi
-      if (( ! $#hit )); then
-        _go_autobuild_embed_unresolved+=("$dir/$pat")
-        continue
-      fi
+      before=$#out
       for line in "${hit[@]}"; do
         if [[ -d "$line" ]]; then out+=("$line"/**/*(.ND))
-        elif [[ -e "$line" ]]; then out+=("$line")   # 壊れた symlink (エディタのロック .#x 等) は拾わない (zstat が落ちて指紋が取れなくなる)
+        elif [[ -e "$line" ]]; then out+=("$line")   # 壊れた symlink (エディタのロック .#x 等) と、当たらずに残った字面は拾わない
         fi
       done
+      (( $#out > before )) || _go_autobuild_embed_unresolved+=("$dir/$pat")
     done
   done < "$rec"
   reply=("${(@u)out:#*/.autobuild.*}")   # 作業ファイルは拾わない (`*` の pattern が拾うと、ビルドのたびに書く .autobuild.built で常に stale になる)
   return 0
 }
 
-# Go の path.Match の pattern を zsh の pattern にして REPLY へ返す (1 字ずつ写す。置換を重ねる形は \ と否定のクラスで Go とずれた)。
-# 外: * ? はそのまま、[ はクラスの始まり、\X は X を字として、他は字として quote する (zsh だけが特別に読む ( | < # ~ ^ を殺す)。
-# クラスの中: 先頭の ^ は否定 (Go)、先頭の ! は字 (zsh は否定に読むので quote)、] で閉じる、- は範囲、\X は X を字として。
+# Go の path.Match の pattern を写す。reply=(zsh の pattern / \ を外したただのパス / グロブの文字を含むか 1|0)。
+# 1 字ずつ写す。クラスの中では zsh が特別に読む字 (! ^ [ \ と字としての - ]) だけに \ を付ける ((b) は ! や - を quote しないので、否定や範囲に化けた)。
+# クラスの外は (b) で zsh の特別な字だけを quote する (ふつうの字に \ を付けると、GLOB_SUBST の下では \ ごと字として残り当たらない)。
+# 外: * ? はそのまま、[ はクラスの始まり、\X は X を字として。クラスの中: 先頭の ^ は否定 (Go。zsh も同じ)、] で閉じる、
+# - は範囲、それ以外 (先頭の ! を含む。zsh は否定に読むが Go では字) と \X は字として。
 _go_autobuild_go_glob() {  # $1=Go の pattern
-  local p="$1" c out=
-  local -i i=1 incls=0 first=0
+  emulate -L zsh
+  local LC_ALL=en_US.UTF-8   # 1 字ずつ写す (C の locale ではマルチバイトの字をバイトで割る)
+  local p="$1" c out= lit=
+  local -i i=1 incls=0 first=0 meta=0
   while (( i <= $#p )); do
     c="$p[i]"
     if [[ "$c" == '\' ]]; then
-      (( i++ )); out+="${(b)p[i]}"
+      (( i++ ))
+      if (( incls )); then
+        if [[ "$p[i]" == [-\\\]\[!^] ]]; then out+="\\$p[i]"; else out+="$p[i]"; fi
+        first=0
+      else out+="${(b)p[i]}"; lit+="$p[i]"; fi
     elif (( incls )); then
       if (( first )) && [[ "$c" == '^' ]]; then out+='^'
-      elif (( first )) && [[ "$c" == '!' ]]; then out+='\!'   # (b) は ! を quote しないので自分で
       elif [[ "$c" == ']' ]]; then out+=']'; incls=0
       elif [[ "$c" == '-' ]]; then out+='-'
-      else out+="${(b)c}"
+      elif [[ "$c" == [\\\[!^] ]]; then out+="\\$c"
+      else out+="$c"   # ふつうの字には \ を付けない (範囲の端に \ を付けると zsh は範囲に読まない)
       fi
       first=0
-    elif [[ "$c" == '*' || "$c" == '?' ]]; then out+="$c"
-    elif [[ "$c" == '[' ]]; then out+='['; incls=1; first=1
-    else out+="${(b)c}"
+    elif [[ "$c" == '*' || "$c" == '?' ]]; then out+="$c"; meta=1
+    elif [[ "$c" == '[' ]]; then out+='['; incls=1; first=1; meta=1
+    else out+="${(b)c}"; lit+="$c"
     fi
     (( i++ ))
   done
-  REPLY=$out
+  reply=("$out" "$lit" "$meta")
 }
 
 # ビルドの前に //go:embed の pattern を記録する (_go_autobuild_embed_files が読む)。module の外 (標準ライブラリ・module cache) の
