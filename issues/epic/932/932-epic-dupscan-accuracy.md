@@ -28,6 +28,7 @@
 | [987](done/987-feat-dupscan-inject-by-return-and-param-type.md) | 986 の改善 2: 書く前の候補の注入 (A1) で、名前の語と戻り型・引数型を組み合わせて既存の関数を引く |
 | [988](pending/988-research-dupscan-gate-near-duplicate-prototype.md)（保留） | 986 の改善 3: gate の近似比較の段の試作。dotfiles の直近 30 commit (変わった単位 358) で近似の段だけが見つける写しは 0 件で測れず、obaket で測るまで保留 |
 | [989](done/989-design-dupscan-go-typed-resolution.md) | 986 の構造の変更: Go の型の解決を明示実行の go/packages で入れる (ユーザー決定 2026-10-30 で 899 の決定を Go について変えた) |
+| [1009](1009-design-dupscan-post-write-body-similarity-candidates.md) | 未解決をまとめて受ける案を探した結果。まとめて片付く案は無く、一番近い「変わった単位だけを既存の全単位と近似照合する」は 902 (hook。ユーザー指示で保留) と 988 の合流。雑音を止める手段・循環しない測り方・採否の基準の 3 つが欠けている |
 | [970](done/970-refactor-dupscan-group-containment-one-check.md) | 「組が別の組に含まれるか」の判定が 3 か所 (組分け・sweep の節 2・節 6) にあったのを group.Subset に寄せた。done |
 | [972](done/972-research-dupscan-dogfood-glogx-tui-split-2026-10-29.md) | glogx の tui.go の分割 (971) で使った所見。雑音 3 件: Go の index -file に Swift の注意書き / -file でも無関係な testdata の「解析不完全」 / tmp/ の使い捨ての道具にも候補の注入 |
 | [981](done/981-bug-dupscan-gate-silent-on-generated-go-files.md) | Go の生成ファイルの見出し (`// Code generated … DO NOT EDIT.`) を付けた新しい写しが gate を無音で通る (変わった単位 0)。読まなかった生成ファイルの数を 1 行目に出す |
