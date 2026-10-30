@@ -43,15 +43,3 @@
 ## 作成判定の最終ガード
 
 問いかけ前に [`claude-md-maintenance.md`](claude-md-maintenance.md) の「作るタイミング」基準を満たすか自己確認する。**満たさないなら問いかけ自体をスキップする** (中身が単純で local convention が無いディレクトリで無駄な選択を強いない)。
-
-## やること / やらないこと
-
-- ✓ レイヤーディレクトリでの非自明な編集の前にチェックし、不在なら 3 択で問う
-- ✓ 「作る」なら内容案 → 合意 → Write の順を守る
-- ✗ 無断で作成する / 黙って続行する
-- ✗ 軽微な変更で毎回聞く / 一度「作らない」と言われたものを同セッションで再度問う
-
-## 関連
-
-- [`claude-md-maintenance.md`](claude-md-maintenance.md) — 作成 / 削除基準と保守ルール (本ルールの自己ガードに使う)
-- [`pending-issue-rationale-in-code.md`](pending-issue-rationale-in-code.md) — 「Why を残す」同思想

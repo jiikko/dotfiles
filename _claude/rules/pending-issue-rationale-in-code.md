@@ -51,14 +51,6 @@ redirectUri: getEnv('REDIRECT_URI', 'http://localhost:43823/auth/callback'),
 - レビュー指摘 (codex / cross-review) を「対応不要」と判断した時
 - リファクタ提案を「現状維持」、バグ修正提案を「これは仕様」と判断した時
 
-## やること / やらないこと
-
-- ✓ 「なぜ素朴に変えないのか」を制約ベースで該当コード直近にコメント
-- ✓ 依存先と「どうなれば変更可能か」を明示
-- ✗ issue 側だけに「該当なし」を書いてコード側に痕跡を残さない
-- ✗ 断定口調で将来の再評価を阻害する
-
 ## 関連
 
-- [`claude-md-maintenance.md`](claude-md-maintenance.md) — 「Why を残す」同思想。ディレクトリ単位の制約は CLAUDE.md、行単位の制約はコードコメント
-- [`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) — 裏返しの規律: 実装 (lint/型/exhaustive switch) で強制済みの不変条件は再掲しない。コメントに残すのは「実装で守れない制約」だけ
+- [`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) — 裏返し: 実装で強制済みの不変条件はコメントで再掲しない

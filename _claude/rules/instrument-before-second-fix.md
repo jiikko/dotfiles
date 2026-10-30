@@ -8,7 +8,7 @@
 
 ## なぜ
 
-起源: obaket issue 227 Dropbox -1005, 2026-06-09。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/instrument-before-second-fix.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/instrument-before-second-fix.md` (起動時には読まれない。改訂するときに読む)。
 
 ## 「不具合対応の原則」(CLAUDE.md) との関係
 
@@ -23,8 +23,7 @@
      (`gh run view <id> --log-failed` / `--log`。GHA の retention は 90 日)。issue や過去の自分が
      「観測するには CI で 1 run 要る」と書いていても、**まずアーカイブを読む**
    - **検証 (テスト・ビルド) が止まった / 落ちたときも、baseline と比べる前に open issue を症状の語 (止まる / hang / flaky) と
-     止まった target・suite の名前で grep する**。既知の止まりは回避策 (`--skip` する suite 等) が issue に書いてあることが多い
-     (obaket retro 1141: 既知の hang を baseline の worktree で切り分け直し、約 30 分かけた)。**長い検証 (全体のテスト・E2E) を回す前にも**、
+     止まった target・suite の名前で grep する**。既知の止まりは回避策 (`--skip` する suite 等) が issue に書いてあることが多い。**長い検証 (全体のテスト・E2E) を回す前にも**、
      その経路の既知の止まりと回避の指定を同じ語で探す (止まってから探すと、止まりに気づくまでの待ちを丸ごと失う。obaket retro 1161: 約 1 時間)
 4. 無ければ観測手段を仕込む (下表)
 5. 観測データで仮説を作り直す。データが仮説と矛盾したらデータを優先する
@@ -113,14 +112,3 @@
 - 以前直したパターンの完全な再発 (観測済みの既知問題)
 - ユーザーが特定アクションを明示している場合
 - 1 回目がそもそも検証 (仮説の確認) であって修正でない場合
-
-## やらないこと
-
-- ✗ 情報を増やさず 2 発目・3 発目の blind fix を打つ
-- ✗ 仮説で説明できていない観測値が残っているのに、原因を確定したと書く
-- ✗ 古いログ・別条件の結果を「現環境でも真」と思い込む
-- ✗ 症状を場当たりに追う print の乱射
-
-## 関連
-
-- `~/.claude/CLAUDE.md`「不具合対応の原則」/ [`escalate-to-forge-after-failed-tries.md`](escalate-to-forge-after-failed-tries.md) / [`check-other-platform-reference.md`](check-other-platform-reference.md) (A-B 差分観測と同じ思想)

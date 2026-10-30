@@ -63,20 +63,3 @@
 テストを消す理由ではない (実例は rationale)。
 
 起源: 2026-09-01 obaket (issue 692)。詳細は rationale。
-
-## やること / やらないこと
-
-- ✓ カバレッジ要求は「テスト容易性 × 価値」の 2 軸で評価し、困難×低価値のときだけ拒否する
-- ✓ テストを削除したら、失ったカバレッジと代替の検証案を issue に起こす (「元々穴だった分」と「削除で失った分」を分けて書く)
-- ✓ 拒否時は該当箇所・低価値の根拠・代替案をセットで示す
-- ✓ 受容の検出可能性は三値で書き、示せないなら「確実には気づけない」と明記して trigger を残す
-- ✓ 困難×高価値はテスタブルに構造を直してから書く
-- ✗ カバレッジ数値のためだけの、回帰を捕まえない水増しテストを書く
-- ✗ 「テスト困難」を高価値ロジック skip の言い訳に流用する
-- ✗ 黙って skip する / 理由を述べずに拒否する
-- ✗ 受容を通すために、確認していない「気づける」理由を書く
-
-## 関連
-
-- [`verify-design-intent-before-refactor.md`](verify-design-intent-before-refactor.md) — thin delegation / 「複雑性が実際に下がるか」で判断する同思想 (本ルールは「価値が実際にあるか」で判断)
-- [`no-osascript-for-ui-verification.md`](no-osascript-for-ui-verification.md) / [`no-ios-simulator-verification.md`](no-ios-simulator-verification.md) — 低価値・困難な検証を避ける同根 (検証手段の版)

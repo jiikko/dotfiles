@@ -8,7 +8,7 @@
 
 ## なぜ
 
-根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/comment-no-restate-enforced.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/comment-no-restate-enforced.md` (起動時には読まれない。改訂するときに読む)。
 
 ## 強制済み (コメント不要) と コメントで残す の例
 
@@ -24,17 +24,3 @@
 
 - コードを touch した際、近傍コメントが「今は実装強制されている不変条件の再掲」になっていたら、その場で削除する (lint ルール追加・型変更・exhaustive 化などで後から強制が効くようになり、コメントが冗長化しているパターン)
 - 強制手段を**新設したとき** (custom lint rule / 型強化 / test 追加) は、それと重複する既存コメントが無いか確認して削除する
-
-## やること / やらないこと
-
-- ✓ コメントは「実装で強制できない制約 (Why / メタ設計判断)」に限定する
-- ✓ 強制済みかは「コメント無しで lint/compile/test が止めるか」で判定する
-- ✓ 強制手段を新設したら重複コメントを削除する
-- ✗ lint / 型 / exhaustive switch が守っている不変条件をコメントで再掲する
-- ✗ 「念のため」で実装強制済みの規約をコメントにも書く (二重管理 = 乖離の温床)
-
-## 関連
-
-- [`claude-md-maintenance.md`](claude-md-maintenance.md) — 「What はコードが真の出典、ドキュメントは Why を保存する」同思想 (本ルールはコメント版)
-- [`pending-issue-rationale-in-code.md`](pending-issue-rationale-in-code.md) — コメントに残すべき「実装で守れない制約」の書き方
-- [`verify-design-intent-before-refactor.md`](verify-design-intent-before-refactor.md) — 「分割しないと判断した理由をコメントで残す」= 本ルールの ✅ 側 (強制不可な設計判断)

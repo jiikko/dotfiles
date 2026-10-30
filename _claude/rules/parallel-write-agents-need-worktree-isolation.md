@@ -16,7 +16,7 @@
   損は両方向に出る (変異中のスナップショットを P1 として報告される / 先に直すと報告が「もう直っている」の確認に費やされる)。
   気づいた修正はメモしておき、**レビュー結果が届いてからまとめて当てる**
   - **分ける側はレビューにする**: HEAD に detached の worktree を切ってレビューにはそちらを読ませ、本体では次の作業を続ける。「書き換えない」で待つと、
-    待ちの間に手が動いて破る (retro 846: レビュー中に R1〜R4 の直しを入れた。後半は分けて、待ちが作業の止まりにならなかった)
+    待ちの間に手が動いて破る
   - **レビューに差分の範囲 (`<下端>..HEAD`) を渡す前に、下端が HEAD の祖先かを確かめる** (`git merge-base --is-ancestor <下端> HEAD`)。worktree を切った後に origin が進むと、
     `origin/master..HEAD` の diff に他人の commit の逆向きが混ざる。祖先でなければ rebase してから渡すか、自分の commit を `git show <sha>` で渡す (obaket retro 1302)
 - **書き始める前に、触る予定のファイルと関数を並行セッション全員へ申告する**
@@ -44,15 +44,16 @@
   **PPID=1 (孤児) かつ CPU を食っているもの**を見る
   - **止める前に、そのプロセスの起動時刻 (`etime`) を、自分が止めた run の時刻と突き合わせる**。コマンド行に自分の worktree のパスがあることは
     「自分の残骸」の証拠にならない (同じ worktree で今走っている検査も同じパスを持つ。PPID=1 は daemon 化した正常な tmux サーバでも出る)
-    (retro 980: 止めた make test の残骸と読んだ隔離 tmux サーバが、走行中の make test-lint の構文確認のものだった可能性がある)
+
 - 🚨 **エージェントに負荷を作らせるなら、親の終了で回収される形に限る** (`go test -parallel` /
   `-count`)。`(while :; do :; done) &` のような busy loop を使わせない — 非対話の `zsh -c` では
   `kill $(jobs -p)` が効かず、親が先に終わると**孤児になって焼き続ける**。
   負荷下の確認手段が無いなら「**負荷下は未確認**」と書かせる
+- **並行中に main agent が同じ tree で build / test を走らせない** (何を検証したか分からなくなる)
 
 ## なぜ
 
-起源: ThumbnailThumb #435, 2026-08-11。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/parallel-write-agents-need-worktree-isolation.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/parallel-write-agents-need-worktree-isolation.md` (起動時には読まれない。改訂するときに読む)。
 
 ## やること
 
@@ -83,30 +84,11 @@ git worktree add --detach "$root/../wt-taskB" <base-commit>
 共有ファイル（テストヘルパー、生成物、設定 YAML）が衝突しうるなら、**先に 1 体で共有部分を
 確定させて commit し、その上で並行させる**と衝突が構造的に減る。
 
-## やらないこと
-
-- ✗ `-s workspace-write` を 2 体以上、同一 working tree で並行起動する
-- ✗ 「担当ディレクトリが重ならない」を理由に分離を省く
-- ✗ worktree の成果を `cp` でファイル単位に上書きして戻す（他マシンの変更を黙って消す）
-- ✗ 並行中に main agent が同じ tree で build / test を走らせる（何を検証したか不明になる）
-- ✗ read-only のレビュー中に、同じファイルを書き換える（変異検証も、思いついた修正も）
-
 ## 例外
 
-- **read-only（`-s read-only`）の並行は分離不要**。レビュー・調査・トリアージを何体並べてもよい
-  （本ルールは書き込みだけを対象にする）。**ただし自分 (main agent) が同じファイルを書き換えて
-  いる間は例外にならない** — 変異検証・実装の途中状態・レビュー中に入れた修正はレビュワーには
-  「他者の書き込み」に見えるので、上のルールどおり分ける
+- **read-only（`-s read-only`）の並行は分離不要**。ただし自分が同じファイルを書き換えている間は、上のルールどおり分ける
 - 1 体だけの書き込み + main agent の待機
 
 ## 関連
 
-- [`commit-with-pathspec.md`](commit-with-pathspec.md) — 同一 index を複数主体が触る問題。
-  本ルールは「同一 working tree を複数主体が書く」版
-- [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 変異検証の手順そのもの。
-  レビュー中に回さない（本ルール）と併せて読む。**本ルールは「自分が並行させるとき」を
-  対象にしているが、同じ checkout を使うのは自分が起こした並行だけではない** —
-  別セッション (別の人・別の Claude) が同じ repo を触っていて自分からは見えない場合の
-  規律は、あちらの「復元の作法」に置いた (既定は worktree)
-- `~/.claude/skills/codex-drive/phases-1-2.md` の `[2p]` 競作 — 競作では worktree 分離を必須にしている。
-  本ルールはそれを**競作以外の並行実装にも広げる**もの
+- [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 自分から見えない別セッションが同じ checkout を触る場合の規律は、あちらの「復元の作法」(既定は worktree)

@@ -17,7 +17,7 @@
 
 ## なぜ
 
-起源: dotfiles av1ify のクリップボード入力, 2026-08-22。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/verify-interactive-prompt-with-pty-driver.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/verify-interactive-prompt-with-pty-driver.md` (起動時には読まれない。改訂するときに読む)。
 
 ## パイプで足りるか / pty が要るか
 
@@ -34,24 +34,4 @@
 (`functions <name>` の中身に呼び出しが在ることを assert する) 方が正直で、
 挙動確認は pty の手動検証と human issue に回す。
 🚨 **その human issue が済むまで、その挙動に頼る経路を本物のコマンドへ配線しない** (配線するなら未確認だと画面か案内に出す)。
-「確認が済んでから本物を起こす」とコメントに書いても止まらない (retro 809: 書いた本人が配線し、テストは緑のまま本番で 1 度も走らなかった)
-
-## やること / やらないこと
-
-- ✓ pty driver は「プロンプトを待ってから書く」形にする
-- ✓ パイプで足りる分岐はパイプで書く (pty を全部に使わない)
-- ✓ pty でしか成立しない挙動は、テストでは配線の静的 pin に留め、挙動は human issue へ回す
-- ✓ 対話の確認が失敗したら、まずハーネス (EOF・タイミング・pty の有無) を疑う
-- ✗ `printf 'y\n' | script -q /dev/null cmd` で対話を確認する
-- ✗ pty が要る挙動をパイプでテストし、green を根拠にする (vacuous)
-- ✗ ハーネス由来の失敗を実装のバグとして修正しにいく
-
-## 関連
-
-- [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) 節 2 —
-  「テストハーネス自身の失敗を緑に畳まない」。本ルールは**逆向き**の事故
-  (ハーネスの失敗が**赤**として出て、実装のバグに見える) を扱う
-- [`no-osascript-for-ui-verification.md`](no-osascript-for-ui-verification.md) —
-  「精度の低い検証手段で探索ループに入らない」同思想 (あちらは UI、こちらは対話プロンプト)
-- 起源の記録: issue 095 の項目 1 /
-  実装側の注記: `tests/zshrc/av1ify/test_av1ify_clipboard.sh` の Test 21
+「確認が済んでから本物を起こす」とコメントに書いても止まらない

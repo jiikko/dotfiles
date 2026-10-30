@@ -25,8 +25,7 @@
 > (esa-cli の sync の排他: パスの文字列 → 実パスに置き換えたら、リンクを指し直された同じ文字列の 2 本が取れた。esa-cli issue 014)。
 >
 > **検査 (throw / return する位置) を処理の前の方へ動かすときも発動する**。元の位置との間にある状態の変更 (登録・差し替え・cache の更新・lock) は、
-> 動かすと失敗の経路で走らなくなる。それらが失敗の経路で担っていた後始末 (古いものを捨てる・相手に失効を知らせる) が残るかを列挙する
-> (obaket retro 1106: validate を build の差し替えより前へ移しかけ、不正になった設定の旧 build が cache に残る形になった)。
+> 動かすと失敗の経路で走らなくなる。それらが失敗の経路で担っていた後始末 (古いものを捨てる・相手に失効を知らせる) が残るかを列挙する。
 
 ## ルール
 
@@ -45,7 +44,7 @@
 
 ## なぜ
 
-起源: obaket issue 544、2026-08-26 の実測。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/list-masked-failure-modes-before-removing-guard.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/list-masked-failure-modes-before-removing-guard.md` (起動時には読まれない。改訂するときに読む)。
 
 ## 特に危険な形
 
@@ -65,19 +64,6 @@
    ([`mutation-verify-new-tests.md`](mutation-verify-new-tests.md))
 4. red にならないなら、検出手段を先に入れてから外す
 
-## やること / やらないこと
-
-- ✓ 外す前に「マスクしていたもの」を列挙する
-- ✓ 残る防御が単一障害点かを確認し、壊す変異が検出されるか実験する
-- ✓ 検出できないなら、外す前に検出手段 (テスト / 静的ゲート) を用意する
-- ✗ 「本来の目的に対して冗長」だけを根拠に外す
-- ✗ 危険側の既定値を持つ引数を、無防備なまま最後の砦にする
-
 ## 関連
 
-- [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) —
-  **姉妹ルール。あちらは安全機構を「作った」とき、こちらは「外した」とき**。
-  今回は作る側の規律を全部守っていても防げなかった (外す判断そのものが起点だったため)
-- [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 手順 3 の実験手段
-- [`survey-receiver-guards-before-passing-new-values.md`](survey-receiver-guards-before-passing-new-values.md) —
-  受け側のガードを先に洗う同思想 (あちらは「新しい値を通す」とき、こちらは「ガードを抜く」とき)
+- [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) — 姉妹ルール。あちらは安全機構を作ったとき、こちらは外したとき

@@ -16,7 +16,7 @@
 
 ## なぜ
 
-起源: 2026-08-03 obaket の実測。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/adversarial-review-own-safeguards.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/adversarial-review-own-safeguards.md` (起動時には読まれない。改訂するときに読む)。
 
 ## やること
 
@@ -50,10 +50,5 @@
 
 ## 関連
 
-- `~/.claude/CLAUDE.md`「レビュー方針」— 敵対的レビューを通す範囲と、出力の検閲作法
-- [`list-masked-failure-modes-before-removing-guard.md`](list-masked-failure-modes-before-removing-guard.md) —
-  **姉妹ルール。本ルールは安全機構を「作った」とき、あちらは「外した」とき**
-- [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — **変異検証は本ルールの代わりにならない**
-  (変異は自分が想定した不変条件しか試さないので、全部 red にした後でも敵対レビューは想定の外側の P1 を出す)
-- [`sandbox-real-destructive-test-apis.md`](sandbox-real-destructive-test-apis.md) — テスト環境の隔離側の姉妹ルール
-- [`path-shim-must-resolve-real-binary.md`](path-shim-must-resolve-real-binary.md) — 自作の計測装置そのものが暴走する形
+- [`list-masked-failure-modes-before-removing-guard.md`](list-masked-failure-modes-before-removing-guard.md) — 姉妹ルール。本ルールは安全機構を作ったとき、あちらは外したとき
+- [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 変異検証は本ルールの代わりにならない (変異は自分が想定した不変条件しか試さない)

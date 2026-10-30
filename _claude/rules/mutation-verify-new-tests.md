@@ -13,10 +13,11 @@
   列挙してから言う**。テスト名から挙動を推測しない
 - **既存の assert を「何も検査していない」として消すときも、消す前に変異を 1 本当てる**
   (当てずに vacuous と断じた assert が、実は唯一の上限だったことがある)
+- 環境変数や DEBUG で出し分ける出力を、seam 無しで assert しない (必ず vacuous になる)
 
 ## なぜ
 
-起源: obaket issue 454、2026-08-03。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/mutation-verify-new-tests.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/mutation-verify-new-tests.md` (起動時には読まれない。改訂するときに読む)。
 
 ## 手順 (特別なツールは要らない)
 
@@ -104,8 +105,7 @@ rc=0 が保証するのは「`--expect` の検査が落ちた」**まで**で、
 取り込み・依存の不在を主張するときも、名前の grep だけで断定せず、symlink の実体・生成されたプロジェクトのファイル一覧・ビルド設定など、対象の取り込み経路まで辿る。
 
 「〜を検出するテストが無い」「callsite が 0 件」のような**不在の主張**は、テストを書く / 書かない判断を決める。green と同じ重さで裏を取る。
-**網 (検査・CI の paths) を外す理由として「X は Y を読まない」をコメントに書くときも同じ**で、下の 2 通りの列挙を書く前に済ませる
-(retro 855: 「check_*.sh は issues/ を読まない」と書いた後で、.md 以外を見る検査が 3 本見つかった)。
+**網 (検査・CI の paths) を外す理由として「X は Y を読まない」をコメントに書くときも同じ**で、下の 2 通りの列挙を書く前に済ませる。
 
 - **grep 1 本で確定させない** (テストはリテラル値で書かれていることがある)。確定させる唯一の方法は
   **変異を当てて green を見ること**。やっていないなら「未検証」と書く
@@ -126,20 +126,6 @@ rc=0 が保証するのは「`--expect` の検査が落ちた」**まで**で、
 (起動時には読まれない。常時読み込みの合計を上限 150k 字に収めるために切り出した)。
 見出しは assert と期待値 / fixture と前提 / 到達しているか / red の読み方 / 観測の設計 / 実装の二重化・配線 / fake・stub / platform・シェル。
 
-## やること / やらないこと
-
-- ✓ 確認した変異を commit message に残す (再現可能な検証記録として)
-- ✗ 環境変数や DEBUG でゲートされた出力を、seam 無しで assert しようとする (必ず vacuous になる)
-- ✗ 期待する文字列・値を埋めるだけの変異で「テストは効いている」と結論する
-- ✗ ビルドできなかった変異の緑を「変異を検知できなかった」と読む
-
 ## 関連
 
-- [`refuse-low-value-coverage.md`](refuse-low-value-coverage.md) — 姉妹ルール。
-  あちらは「無価値なテストを書かない」、こちらは「書いたテストが実際に効くか確かめる」
-- [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) — **変異は自分が
-  想定した不変条件しか試さない**。変異を全部 red にした後でも敵対レビューは P1 を出す。片方で閉じず、両方通す
-- [`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) — 本ルールの **前段**
-  (変異を当てる前に、そのテストがそもそも走っているかを確かめる)
-- [`measure-external-cli-streams-separately.md`](measure-external-cli-streams-separately.md) —
-  runner の文言をルールへ転記せず、判定スクリプト側を正本にする根拠
+- [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) — 変異を全部 red にした後でも、敵対レビューは想定の外側を出す。片方で閉じず両方通す

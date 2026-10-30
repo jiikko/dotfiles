@@ -8,10 +8,4 @@
 
 ## なぜ
 
-根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/ping-poing-immediate-reply.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
-
-## やること / やらないこと
-
-- ✓ `ping` 単独 → `poing` だけ即返す
-- ✗ 思考・調査・ツール呼び出し・前置き・確認質問
-- ✗ `ping deploy` のような続きのある入力にこのルールを適用する
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/ping-poing-immediate-reply.md` (起動時には読まれない。改訂するときに読む)。

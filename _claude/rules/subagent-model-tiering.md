@@ -74,13 +74,11 @@ sonnet が弱いのは「実装は正しいが、**検査対象の集合が想�
   子や孫を止めたい場面の扱いとして「起こしたときに pid を控え、その pid だけを kill する」を同じ行に添える**。共有のマシンでは、
   広いパターンが他のセッションの同じ道具を止める (レビュー担当が `pkill -f` を打ち、同じ時間帯に本物の描画が killed で落ちた。retro 647)
 - **読み取りのみを頼むなら、ファイルの編集だけでなく、道具が黙って書く副作用も名指しで止め、止め方を同じ行に添える** (go の `-mod=mod` が
-  go.sum を書く → `GOFLAGS=-mod=readonly`、パッケージマネージャの install / lock の更新 → 実行しない、`git fetch` / `git pull` が remote-tracking ref を更新する → 実行せず、必要な最新化は main agent に頼む)。終わったら worktree の `git status` を見る
-  (retro 786: 読み取りのみのレビュアーが `GOFLAGS=-mod=mod` で `go list -m all` を走らせ、go.sum に 9 行書き足した)。
+  go.sum を書く → `GOFLAGS=-mod=readonly`、パッケージマネージャの install / lock の更新 → 実行しない、`git fetch` / `git pull` が remote-tracking ref を更新する → 実行せず、必要な最新化は main agent に頼む)。終わったら worktree の `git status` を見る。
   作業者が自分で書くシェルのリダイレクト (`> /tmp/x`) も「どこにも書かない」と名指しで入れる (道具の副作用の文言では読めない。retro 814)
   止めるのは書き込みと実行 (テスト・ビルド) で、読み取りのコマンド (`git show`・`cat`・`grep`) は「使ってよい」と明記する。「何も実行しない」と書くと、自動承認がファイルを読むことまで拒否してレビューが空振りする (obaket retro 1302)
 - **検証を委ねる指示には、結論の根拠にする量 (残ったものの大きさ・状態・時刻) を run の証拠のファイルへ書かせる段を入れる。報告の本文にだけ書かせない**。
-  本文にしか無い値は、証拠を片付けたり compaction を挟んだりすると出典が消え、測り直しになる (obaket retro 1177: 取り消しの後に残ったファイルの大きさが
-  報告にしか無く、片付けの後に根拠にしようとして再現し直した)
+  本文にしか無い値は、証拠を片付けたり compaction を挟んだりすると出典が消え、測り直しになる
 
 ## 検閲の観点 (sonnet/haiku のアウトプットを採用する前に)
 
@@ -98,7 +96,7 @@ sonnet が弱いのは「実装は正しいが、**検査対象の集合が想�
 
 ## なぜ
 
-根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/subagent-model-tiering.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/subagent-model-tiering.md` (起動時には読まれない。改訂するときに読む)。
 
 ## 例外
 

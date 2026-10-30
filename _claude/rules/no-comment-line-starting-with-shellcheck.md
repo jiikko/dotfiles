@@ -22,7 +22,7 @@ paths:
 
 ## なぜ
 
-起源: dotfiles `scripts/discover_shell_scripts.sh`, 2026-07-16 実測。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/no-comment-line-starting-with-shellcheck.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/no-comment-line-starting-with-shellcheck.md` (起動時には読まれない。改訂するときに読む)。
 
 ## やること / やらないこと
 

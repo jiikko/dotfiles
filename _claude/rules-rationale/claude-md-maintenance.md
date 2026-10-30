@@ -11,3 +11,7 @@
 - **手順書は動作で探す** (2026-09-06): issue 291 で group issue の完了先を変えたとき、宣言 5 箇所は揃えたのに issue-sync skill の Step 6 だけが旧契約のまま残った
 - **値の契約** (2026-09-21 obaket 888): `screen/move` の directory 分岐を `INVALID_REQUEST` → `accepted` に変えたが、goldenpath skill の step が `INVALID_REQUEST` を assert したまま残り、次のマイルストーンの作業で偶然気づいた
 - **コピーでなく単一の正本** (2026-09-19 dotfiles issue 401 / 402): 注記付きのコピー 6 本が正本より古いまま誰にも気づかれていなかった
+
+## 本文から移した実例 (2026-10-30。常時読み込みの字数を減らすため、rule の本文の括弧書きから移した)
+
+- retro 778: 置き場の規約に codex-drive を根拠として引いたが、codex-drive 自身が 2 通りに割れており、 引いた「scratchpad は終了で消える」も実測と違った

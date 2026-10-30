@@ -29,7 +29,7 @@ paths:
 
 ## なぜ
 
-起源: dotfiles `bin/codex-fanout`, 2026-09-01 (issue 150 の敵対レビュー)。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/shell-numeric-gate-explicit-digits.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/shell-numeric-gate-explicit-digits.md` (起動時には読まれない。改訂するときに読む)。
 
 ## やること / やらないこと
 

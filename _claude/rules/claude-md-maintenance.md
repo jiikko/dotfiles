@@ -64,19 +64,9 @@
 - ✓ **同じ規約を複数の場所 (別 repo・テンプレートの派生) へ配るときは、コピーを置かず単一の正本を読み込ませる経路を作る**。
   コピーが避けられないなら、ずれを機械で検出する検査を同時に置く。「直接変更せず正本を変更」の注記は同期の仕組みではない
 - ✓ **根拠として他の文書 (skill・rule・issue) を引くときは、引く行をその場で読む** (要約や記憶で引かない)。引用先の中で記述が割れていたら、
-  引く前に割れを直すか、割れていると書く (retro 778: 置き場の規約に codex-drive を根拠として引いたが、codex-drive 自身が 2 通りに割れており、
-  引いた「scratchpad は終了で消える」も実測と違った)
+  引く前に割れを直すか、割れていると書く
 - ❌ 「絶対に変更不可」/ 「TODO」/ コードを読めば自明な目次 / issue 番号だけで中身なし / 「過去にバグった」だけ (再現条件・失敗モードを書く)
-
-## やること / やらないこと
-
-- ✓ コードを touch する前後に該当ディレクトリの CLAUDE.md を読み、乖離は同じ PR で直す
-- ✓ 不要になった警告 (root cause 修正済みの workaround) は削除する
-- ✗ 定期 CLAUDE.md レビュー会 / 1 PR で複数ディレクトリの「全部見直し」 (ユーザーが `claude-md-refresh` を起動したときを除く)
-- ✗ 「あとで直す」コメントを CLAUDE.md に残す / 形骸化した CLAUDE.md を置きっぱなしにする
 
 ## 関連
 
-- [`claude-md-layer-prompt.md`](claude-md-layer-prompt.md) — 新規作成の問いかけルール
-- [`pending-issue-rationale-in-code.md`](pending-issue-rationale-in-code.md) — 「Why を残す」同思想
-- Anthropic blog: [How Claude Code works in large codebases](https://claude.com/blog/how-claude-code-works-in-large-codebases-best-practices-and-where-to-start) — "lean and layered" CLAUDE.md の出典
+- [`claude-md-layer-prompt.md`](claude-md-layer-prompt.md) — 新規作成の問いかけ

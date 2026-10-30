@@ -27,7 +27,7 @@ paths:
 
 ## なぜ
 
-根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/no-osascript-for-ui-verification.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/no-osascript-for-ui-verification.md` (起動時には読まれない。改訂するときに読む)。
 
 ## 動作確認の優先順位
 

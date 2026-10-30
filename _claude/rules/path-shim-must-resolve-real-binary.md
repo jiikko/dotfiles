@@ -16,10 +16,11 @@
 - **長時間走るバックグラウンド計測の出力をファイルへリダイレクトするなら、行バッファに
   する** (`stdbuf -oL` / 進捗は stderr へ)。ブロックバッファのままだと暴走が無音になり、
   気づくのが遅れる
+- 同じ変更の中に shim / wrapper が複数あるなら、全部を絶対パスにする (片方だけで済ませない)
 
 ## なぜ
 
-起源: dotfiles bench, 2026-08-21。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/path-shim-must-resolve-real-binary.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/path-shim-must-resolve-real-binary.md` (起動時には読まれない。改訂するときに読む)。
 
 ## 形
 
@@ -39,19 +40,3 @@ case "$resolved" in
   "$shimdir"/*) echo "shim resolved to itself: $resolved" >&2; exit 70 ;;
 esac
 ```
-
-## やること / やらないこと
-
-- ✓ 実体は `command -v` の結果 (絶対パス) で exec する
-- ✓ 解決結果が shim 自身の配下なら即座に失敗させる
-- ✓ 実体の解決は PATH を書き換える前に済ませ、絶対パスを渡す
-- ✓ バックグラウンド計測は行バッファにして、暴走が音を出す状態にする
-- ✗ shim の中で相対名 (`tmux`) や「既定値が相対名の変数」を exec する
-- ✗ 同じ変更の中に shim / wrapper が複数あるとき、片方だけ絶対パス化して満足する
-
-## 関連
-
-- [`tmux-probe-requires-socket-isolation.md`](tmux-probe-requires-socket-isolation.md) —
-  「自作の計測装置が本番を壊す」同族。あちらのトリガは socket 隔離、こちらは PATH 解決
-- [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) —
-  自作の計測・検査を自己レビューで閉じない (暴走・無音は正常系の試行では出ない)

@@ -7,10 +7,11 @@
 - 修正方針の第 1 候補は「**動いている方の構造に揃える**」
 - **platform の違いに限らず、同じ機能の別の入口 (同じ CLI の対話と `-p`、同じ API の別のクライアント・別のコマンド) で
   片方だけ動くときも同じ手順を当てる**。壊れている入口の防御を作り込む前に、動いている入口がどこから値を得ているかを確かめる
+- 構造の差分を意図して残すなら、理由を docstring に書く
 
 ## なぜ
 
-起源: DualNote iOS #030 IME バグ, 2026-05-23。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/check-other-platform-reference.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/check-other-platform-reference.md` (起動時には読まれない。改訂するときに読む)。
 
 ## 調査開始時の手順
 
@@ -34,15 +35,3 @@
 - 構造的差分が意図的 (docstring に理由が明記されている)
 
 → 別の調査手法 (forge skill / 公式 sample / Forum 検索) に切り替える。
-
-## やること / やらないこと
-
-- ✓ 調査開始の最初の 5 分で参照実装の有無を確認する
-- ✓ 仮説を立てる前に構造比較を実施する
-- ✓ 意図的な構造的差分には docstring に理由を残す
-- ✗ 自分が触っている platform だけ見て仮説を立てる
-- ✗ 「別 platform は別物だから関係ない」と切り捨てる (構造的には同根の場合が多い)
-
-## 関連
-
-- [`escalate-to-forge-after-failed-tries.md`](escalate-to-forge-after-failed-tries.md) / [`instrument-before-second-fix.md`](instrument-before-second-fix.md) (成功 vs 失敗の A-B 差分観測と同じ思想)

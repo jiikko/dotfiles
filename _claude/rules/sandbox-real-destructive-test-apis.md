@@ -37,23 +37,3 @@
 起源: dotfiles 148 段階 ④ (削除エンジン), 2026-09-03。根拠・起源・実例は
 `~/dotfiles/_claude/rules-rationale/sandbox-real-destructive-test-apis.md` に置く
 (起動時には読まれない。ルールを疑う・改訂するときに読む)。
-
-## やること / やらないこと
-
-- ✓ 破壊的 API を本物で呼ぶテストには、サンドボックス外を**実行前に拒否**する仕掛けを同じ commit で入れる
-- ✓ 拒否は API の手前に置く (事後検証にしない)
-- ✓ 段数を宣言したら段ごとに変異を当てて red を確認する
-- ✓ 破壊的操作は「エントリ単位で plan → exec → verify」に組み、実行直前に取り直した値で判定する
-- ✗ 「fixture が一時ディレクトリだから安全」で隔離を省く
-- ✗ 実装の commit と隔離ハーネスの commit を分ける
-- ✗ 「全部 plan → 全部 exec」の構造を破壊的操作に使う (窓が処理件数に比例して広がる)
-
-## 関連
-
-- [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) —
-  **姉妹ルール。あちらは「機構そのものの検査」、こちらは「テスト環境の隔離」**が発動点。
-  §1.5 (段ごとの変異) と 0-B (既にある答えを近似で作り直さない) は本ルールからも使う
-- [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 隔離ハーネスも
-  「変異を当てて red を見る」対象 (自己テストが何を証明しているかを確かめる)
-- [`tmux-probe-requires-socket-isolation.md`](tmux-probe-requires-socket-isolation.md) —
-  同じ「自作の道具が本番を壊す」ファミリー (あちらは socket、こちらはファイルシステム)

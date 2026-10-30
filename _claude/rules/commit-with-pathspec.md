@@ -6,12 +6,12 @@
 - `git add` も対象ファイルを明示する。`git add .` / `git add -A` は禁止（既存の c skill ルールと同じ）
 - **新規ファイルは pathspec commit でも事前の `git add <path>` が必要**（untracked は pathspec だけでは拾えない）。add するのは自分が作ったファイルだけ
   - **commit の後に `git status --short` の `??` を見て、自分が作ったファイルが残っていないかを確かめる**。残っていたら、その commit は手元で検証した木と別物で、
-    手元の検査は緑のまま push 先だけが壊れる (retro 819: 既存のディレクトリに 1 ファイルだけ足した回で 2 度漏れ、CI のビルドが 3 commit の間落ちていた)
+    手元の検査は緑のまま push 先だけが壊れる
 - commit 前の `git status` で、自分が触っていないファイルがステージ済み・変更済みでも**巻き込まない・リセットしない**。それは並行セッションの作業中データかもしれない
 
 ## なぜ
 
-根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/commit-with-pathspec.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/commit-with-pathspec.md` (起動時には読まれない。改訂するときに読む)。
 
 ## pathspec は cwd 相対で解決される — repo root へ移動してから打つ
 
@@ -47,7 +47,7 @@
 - 対策: **commit 後に `git show --stat HEAD` を読み、想定したファイルが全部入っているか目視する**。
   ファイル削除・追加を伴う変更では特に。`git status` に生成物が残っていたらそれが漏れのサイン
 - **pathspec の一覧は `git diff HEAD --name-only --no-renames` (index と作業ツリーの両方。rename の旧パスも出す) で取り、件数を期待値 (当てたパッチのファイル数など) と突き合わせる**。
-  `git diff --name-only` は未ステージだけを返すので、index に書く道具 (`git apply --3way`・merge の衝突の解決) の後では一覧が欠ける (retro 822: 269 ファイルを漏らして一覧だけを push した)
+  `git diff --name-only` は未ステージだけを返すので、index に書く道具 (`git apply --3way`・merge の衝突の解決) の後では一覧が欠ける
 - **追記・置換だけのつもりの変更は、commit の前に `git diff --numstat` の削除行を数え、想定と合うかを見る** (追記なら 0)。
   stat はファイルの有無だけでなく**行数の向き**も読む。文書は検査が中身を見ないことが多く、中身が消えても検査は緑のまま通る
 - **除外の判定は「自分が触ったか」ではなく「その差分が自分の変更と無関係か」で行う。**
@@ -94,22 +94,10 @@ MSGEOF
 
 🚨 **`reset` / `commit --amend` / `rebase` / `cherry-pick` / squash の soft reset / reflog・refspec を打つ前に、`~/dotfiles/_claude/rules-checklists/commit-with-pathspec.md` を Read する** (起動時には読まれない。常時読み込みの指示ファイル合計が上限 150k 字を超えたため、2026-10-12 にこの節の本文を切り出した。dotfiles issue 414 の続き)。pathspec 規律は「混入」は防ぐが、履歴を書き換える操作は防げない。直近コミットが自分のものとは限らず、`reset HEAD~1` は並行セッションの commit を切り落としうる。打つ前に `git log -N --format='%h %ad %s' --date=format:'%H:%M'` で対象が自分の commit かを見る (author と時刻では他セッションへの帰属は決まらない)。
 
-## やること / やらないこと
-
-- ✓ `git commit -m "..." -- path1 path2` で自分の変更ファイルだけコミットする
-- ✓ 新規ファイルは自分が作ったものだけ `git add <path>` してから pathspec commit
-- ✓ 見覚えのないステージ済み変更は放置する（並行セッションの作業中かもしれない）
-- ✓ ただし除外の前に `git diff -- <path>` を読み、自分の変更が原因で modified になっていないか見る
-- ✓ reset / amend / rebase の前に `git log` で対象コミットが自分のものか確認する
-- ✗ pathspec なしの `git commit` / `git commit -a` / `git add .` / `git add -A`
-- ✗ 他セッションのものかもしれない変更の unstage・checkout・restore
-- ✗ 直近コミットの所有者を確認せずに reset HEAD~N / commit --amend する
-
 ## 例外
 
 - ユーザーが明示的に「全部コミットして」と指示した場合（その場合も `git status` で内容を確認し、意図外のファイルが混ざっていないか報告してから）
 
 ## 関連
 
-- `~/.claude/skills/c/SKILL.md` — commit 手順の一次情報（本ルールの pathspec 要件を組み込み済み）
-- `~/.claude/CLAUDE.md`「Git 禁止操作」— stash 禁止・push 前確認
+- `~/.claude/skills/c/SKILL.md` — commit 手順の一次情報
