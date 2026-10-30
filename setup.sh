@@ -148,6 +148,18 @@ if command -v go >/dev/null 2>&1; then
   ~/dotfiles/scripts/go_env_trimpath.sh || echo "warning: go env に -trimpath を足せなかった (scripts/go_env_trimpath.sh。issue 816)" >&2
 fi
 
+# mac-lan-manager の有線の名前の広告 (LaunchAgent) が前の形なら、走っている job の名前と IP のまま今の形へ入れ直す (判定は upgrade-advert)。
+# plist の無い Mac では起こさない (広告を入れていない Mac で Go のビルドを待たせない)。ラベルは src/mac-lan-manager/setup の WiredNameLabel と同じ。
+# dotfiles の無い相手の Mac はここを通らないので、lan-manager の初期設定の名前の手順で入れ直す
+if [ -f ~/Library/LaunchAgents/com.jiikko.mac-lan-manager.wired-name.plist ]; then
+  if command -v go >/dev/null 2>&1; then
+    GO_AUTOBUILD_SYNC=1 ~/dotfiles/bin/mac-lan-manager upgrade-advert || \
+      echo "WARN: 有線の名前の広告を今の形へ入れ直せなかった (bin/mac-lan-manager upgrade-advert を単体で再実行して確認)"
+  else
+    echo "WARN: go が無いので有線の名前の広告の形を確かめない (bin/mac-lan-manager upgrade-advert)"
+  fi
+fi
+
 # setup.sh の sha256 を state file に記録する (direnv 風の実行漏れ検出用)。
 # _zshrc が「現在の setup.sh の sha256」とこの記録を比較し、差分があれば再実行を促す。
 # 末尾まで到達した = 一通り適用済み、とみなして記録する (set -e は無いので警告があっても到達)。

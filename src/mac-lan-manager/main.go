@@ -180,6 +180,7 @@ const usage = `usage: mac-lan-manager
        mac-lan-manager dump --peer <IP> [--user <name>] [--host <Bonjour のホスト名>] [--json]
        mac-lan-manager speedtest [--json] [--wait 8s] [<ホスト名か別名>...]
        mac-lan-manager ping [--json] [--wait 8s] [<ホスト名か別名>...]
+       mac-lan-manager upgrade-advert
 
 手元の Mac 同士を、ネットに繋がっていない有線の LAN (内部の網) で繋いで管理する。
 Bonjour で見えている Mac と台帳 (~/.config/mac-lan-manager/hosts.toml) の Mac を一覧にする。
@@ -198,6 +199,9 @@ ping は管理対象の相手 (引数を渡せばその相手だけ) の名前 (
 名前を引いて、引けた IP へ ping (3 回) と ssh の口 (22 番に TCP で繋ぐ) を確かめる (画面の p と同じ)。届く = ping が返るか 22 番が開く。
 届いた相手が本人かは見ない (同じ IP の別の機器でも届くと出る)。有線の名前が内部 IP と違う IP に引けたら知らせる。
 終了コード: 0 = 確かめた名前が全部届く / 1 = 届かない・引けない名前があった / 2 = 引数の誤り・管理対象に無い相手 / 130 = 止められた。
+
+upgrade-advert は、この Mac が前の形で有線の名前を広告していれば、読み込まれている job の名前と IP のまま今の形で入れ直す
+(dotfiles の setup.sh が呼ぶ。広告していない・今の形なら何もしない)。終了コード: 0 = 入れ直した・何もしない / 1 = 読めない・入れ直せない / 2 = 引数の誤り。
 `
 
 func main() {
@@ -221,6 +225,9 @@ func main() {
 			rc := runPing(os.Args[2:], os.Stdout, os.Stderr, time.Now, ctx.Done(), quietModel, live.Reach)
 			cancel()
 			os.Exit(rc)
+		case "upgrade-advert":
+			os.Exit(runUpgradeAdvert(os.Args[2:], os.Stdout, os.Stderr, live.ReadAdvert,
+				func(ctx context.Context, argv []string) error { _, err := live.SSHRun(ctx, argv); return err }))
 		}
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)

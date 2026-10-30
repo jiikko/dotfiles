@@ -35,11 +35,9 @@ func Options() (lanmgr.Options, error) {
 		log = FileLog(p)
 	}
 	return lanmgr.Options{
-		Log:     log, // 操作のログ (~/Library/Logs/mac-lan-manager.log)
-		ReadNet: func(ctx context.Context) (netinfo.Snapshot, error) { return netinfo.Read(ctx, RunOut) },
-		ReadAdvert: func(ctx context.Context) (setup.NameState, error) {
-			return setup.ReadNameState(ctx, func(ctx context.Context, argv []string) (string, error) { return RunOut(ctx, argv[0], argv[1:]...) })
-		},
+		Log:        log, // 操作のログ (~/Library/Logs/mac-lan-manager.log)
+		ReadNet:    func(ctx context.Context) (netinfo.Snapshot, error) { return netinfo.Read(ctx, RunOut) },
+		ReadAdvert: ReadAdvert,
 		LocalHost:  localHost,
 		StartScan:  func(now time.Time) lanmgr.Scanner { return discover.Start(discover.ExecStarter, now) },
 		IfName:     ifName,
@@ -61,6 +59,11 @@ func Options() (lanmgr.Options, error) {
 func runQuiet(ctx context.Context, argv []string) error {
 	_, err := SSHRun(ctx, argv)
 	return err
+}
+
+// ReadAdvert はこの Mac の有線の名前の広告の状態を読む。
+func ReadAdvert(ctx context.Context) (setup.NameState, error) {
+	return setup.ReadNameState(ctx, func(ctx context.Context, argv []string) (string, error) { return RunOut(ctx, argv[0], argv[1:]...) })
 }
 
 // RunOut はコマンドを起こして標準出力を返す (subproc の WaitDelay 付き)。
