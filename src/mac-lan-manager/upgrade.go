@@ -35,7 +35,8 @@ func runUpgradeAdvert(args []string, stdout, stderr io.Writer, read func(context
 	case st.Name == "" || st.IP == "": // 広告していない (plist も job も無い) と、plist だけで job が読み込まれていないは同じ値で来る
 		if plistExists() {
 			fmt.Fprintln(stderr, "mac-lan-manager upgrade-advert: 有線の名前の広告の plist はあるが job が読み込まれていない (次のログインまで広告しない)。"+
-				"今戻すなら: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/"+setup.WiredNameLabel+".plist")
+				"今戻すなら、画面にログインしている端末で: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/"+setup.WiredNameLabel+".plist"+
+				" (画面にログインしていない ssh で回した・launchctl disable で止めてあるなら、この知らせは当たらない)")
 			return 1
 		}
 		fmt.Fprintln(stdout, "有線の名前は広告していない (入れ直さない)")
