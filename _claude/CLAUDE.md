@@ -168,6 +168,7 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | WCAG, アクセシビリティ, ダークモード, スタイルレビュー | `~/.claude/skills/style-review/SKILL.md` |
 | AVFoundation, AVPlayer, 動画再生, seek, scrub, frame stepping | `~/.claude/skills/avfoundation-reference/SKILL.md` |
 | watchOS, Apple Watch, WatchKit, WatchConnectivity, HealthKit, コンプリケーション | `~/.claude/skills/watchos-expert/SKILL.md` |
+| リキッドグラス, Liquid Glass, glassEffect, GlassEffectContainer, macOS 26 / iOS 26 のデザイン | `~/.claude/skills/liquid-glass/SKILL.md` (外部の skill。出典と手を入れた所は同じ dir の `UPSTREAM.md`) |
 | App Store, TestFlight, 審査, リジェクト, App Store Connect | agent: `appstore-submission-expert` |
 | issue-sync, issue同期, 完了漏れ, done移動 | `~/.claude/skills/issue-sync/SKILL.md` |
 | issue-writeback, issue更新漏れ, 書き戻し漏れ, issue更新した? | `~/.claude/skills/issue-writeback/SKILL.md` (本文の追記漏れ。done 移動は issue-sync) |
