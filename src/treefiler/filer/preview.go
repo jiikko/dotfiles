@@ -30,15 +30,18 @@ var imageExt = map[string]bool{
 }
 
 // refuse は開けない理由を返す (開けるなら "")。toast で出す文 (spec §0.4)。
-func refuse(n *node) string {
-	ext := strings.ToLower(filepath.Ext(n.raw))
+func refuse(n *node) string { return refuseName(n.raw, n.name) }
+
+// refuseName は refuse の本体 (名前だけで決まる。裏の goroutine からも呼ぶので node を読まない)。
+func refuseName(raw, name string) string {
+	ext := strings.ToLower(filepath.Ext(raw))
 	switch {
 	case audioExt[ext]:
-		return "音声は表示できません: " + n.name
+		return "音声は表示できません: " + name
 	case ext == ".pdf": // PDF は写さない (2026-10-09 ユーザー回答)。先頭に NUL が無い PDF もあるので、テキストとして開かせない
-		return "PDF は表示できません: " + n.name
+		return "PDF は表示できません: " + name
 	case imageExt[ext]:
-		return "画像はまだ表示できません: " + n.name
+		return "画像はまだ表示できません: " + name
 	}
 	return ""
 }

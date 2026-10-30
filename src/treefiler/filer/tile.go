@@ -187,24 +187,34 @@ func (m *Model) openTile(n *node, from rect) {
 
 // newTile は n を読むタイルを作る (まだ積まない)。開けなければ理由を返す。
 func (m *Model) newTile(n *node, from rect) (*tile, string) {
-	if msg := refuse(n); msg != "" {
+	src, msg := openFor(n.path(), n.raw, n.name)
+	if msg != "" {
 		return nil, msg
-	}
-	src, err := openText(n.path())
-	if err != nil {
-		switch {
-		case errors.Is(err, errBinary):
-			return nil, "バイナリは表示できません: " + n.name
-		case errors.Is(err, errNotRegular):
-			return nil, "通常のファイルではないので開けません: " + n.name
-		default:
-			return nil, "開けません: " + n.name
-		}
 	}
 	t := &tile{slot: len(m.tiles) % 4, from: from}
 	t.setSource(n, src)
 	src.ensure(2 * m.tileRows(t))
 	return t, ""
+}
+
+// openFor は path のファイルを本文として開く。開けなければ理由 (toast・プレビューの欄に出す文) を返す。
+// node を読まない (プレビューの欄は裏の goroutine から呼ぶ)。
+func openFor(path, raw, name string) (*textSource, string) {
+	if msg := refuseName(raw, name); msg != "" {
+		return nil, msg
+	}
+	src, err := openText(path)
+	if err != nil {
+		switch {
+		case errors.Is(err, errBinary):
+			return nil, "バイナリは表示できません: " + name
+		case errors.Is(err, errNotRegular):
+			return nil, "通常のファイルではないので開けません: " + name
+		default:
+			return nil, "開けません: " + name
+		}
+	}
+	return src, ""
 }
 
 // restoreTile は記憶のタイルを開き切った状態で積む (RestorePlace)。開けなくなったファイルは知らせずに飛ばす: 起動の直後に、

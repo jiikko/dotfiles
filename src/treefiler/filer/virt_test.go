@@ -49,6 +49,7 @@ func newVirtPair(t *testing.T) *virtPair {
 	for i, ov := range []int{40, -1} {
 		m := newAt(t, dir)
 		m.virtOverride = ov
+		m.set.Preview = false // 右のプレビューの欄は裏で読むので、結果が届くフレームが 2 つの Model で揃わない (比べたいのは木)
 		m.Resize(100, 14)
 		sub := m.loadPath(filepath.Join(big, "f0300sub", "inner.txt"))
 		sub.parent.expanded = true

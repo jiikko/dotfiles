@@ -117,6 +117,7 @@ type Model struct {
 	trackBuf     []int       // 同じく、経路の横の線の桁の列
 	movedAt      time.Time   // 最後にカーソルが変わったのを見た時刻 (押しっぱなしの判定。pulse.go)
 	holding      bool        // 押しっぱなしの最中 (離したら光を出す)
+	pane         paneState   // 右のプレビューの欄 (pane.go)
 	search       searchState `layer:"search"`
 	lastSearch   string
 	exploding    *explodeJob
@@ -234,7 +235,7 @@ func (m *Model) Resize(w, h int) {
 // Busy は裏で走査・git の取得が走っているか (呼び出し側はこの間、遅い周期で Advance を呼んで結果を取り込む)。
 // 取り込んでいない結果がある間も true (最後の結果を取り込む前に呼び出し側が tick を止める窓を塞ぐ)。
 func (m *Model) Busy() bool {
-	return m.walker.busy() || m.git.busy() || m.exploding != nil || m.opener.busy() || m.diffBusy()
+	return m.walker.busy() || m.git.busy() || m.exploding != nil || m.opener.busy() || m.diffBusy() || m.paneLoading()
 }
 
 // Animating は動いている途中か (呼び出し側はこの間だけ高い周期で Advance を呼ぶ)。
@@ -781,9 +782,10 @@ func (m *Model) step(dt float64) bool {
 	moving = moving || len(m.ripples) > 0
 	moving = m.stepBead(pos, dt) || moving
 	moving = m.stepPulses(dt) || moving
-	// カメラ: カーソルの名前の左端を画面の 38% に、選択線を画面の縦の中央に (spec §4.5)
+	m.stepPane()
+	// カメラ: カーソルの名前の左端を木の幅 (右のプレビューの欄を除く) の 38% に、選択線を画面の縦の中央に (spec §4.5)
 	cp := pos[m.cur]
-	if tx := float64(cp.x) - float64(m.w)*0.38; snapMove { // 縦だけ寄せて横を流すと、飛んでから滑る 2 段の動きになる
+	if tx := float64(cp.x) - float64(m.treeWidth())*0.38; snapMove { // 縦だけ寄せて横を流すと、飛んでから滑る 2 段の動きになる
 		m.camX.step(tx, camDur, 0)
 		m.camX.snap()
 	} else {
@@ -1036,6 +1038,10 @@ func init() {
 		m.applySettings("show_hidden")
 	}), ".", "I")
 	bind(do(func(m *Model) { m.panel.open, m.help = true, false }), ",")
+	bind(do(func(m *Model) {
+		m.set.Preview = !m.set.Preview // 設定の Preview pane と同じ (保存もする)
+		m.applySettings("preview")
+	}), "p")
 	bind(do(func(m *Model) { m.opener.open(m.cur.path(), m.cur.name) }), "o")
 	bind(do(func(m *Model) { m.opener.reveal(m.cur.path(), m.cur.name) }), "O")
 	bind(do(func(m *Model) { m.copyPath(false) }), "y")
@@ -1242,6 +1248,7 @@ func (m *Model) draw() *canvas {
 	m.drawLines(c, now, ox, oy, ch)
 	m.drawNames(c, pos, ox, oy, ch)
 	m.drawBead(c, ox, oy, ch)
+	m.drawPane(c, ch)
 	for i, t := range m.tiles {
 		front := i == len(m.tiles)-1
 		p := math.Max(0, math.Min(1, t.open.v))
@@ -1606,6 +1613,7 @@ var helpKeys = [][2]string{
 	{"- backspace ^H", "root を 1 段上へ"},
 	{". I", "dotfile の表示を切り替え"},
 	{",", "設定"},
+	{"p", "右のプレビューの欄を開閉"},
 	{"o O", "外のアプリで開く (open) · Finder で表示"},
 	{"y Y", "パスをコピー (絶対 · root からの相対)"},
 	{":", "入力したパスへ移動 (root の外なら root を上げる)"},

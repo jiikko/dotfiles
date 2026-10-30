@@ -213,7 +213,10 @@ func TestFrameAllocBudget(t *testing.T) {
 		// (増えたのは描く文字列そのもので、確保の無駄ではない)。! cmd / s shell の案内を足して 45861 B
 		// 158 / 46200 は動きの途中の画面の値だった (fixture が実時計で進めていて止まりきらない。budgetFilerModel の注記)。
 		// 止まった画面で 220 / 50799 B (-race)。線の格子のセルを値で持ち map を使い回して 124 回 (-race なし) / 39790 B (-race)
-		{"filer", budgetFilerModel, 126, 40500},
+		// 右 3 割のプレビューの欄 (既定で開く。treefiler の pane.go) にカーソルの n00.md の本文を描いて 47012 B (-race)。欄を閉じた
+		// 既定では 39787 B に戻るのを実測した。増えたのは描く文字列そのもの (1 フレームの出力 8720 → 11472 B) で、欄を描く処理の
+		// 確保は 1 フレームあたり 25 B ほど (-race なし。2026-10-30)
+		{"filer", budgetFilerModel, 126, 49400},
 	}
 	for _, c := range cases {
 		m := c.build(t)
