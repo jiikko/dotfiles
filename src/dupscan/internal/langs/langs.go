@@ -55,6 +55,17 @@ func IsTestPath(file string) bool {
 	return ok && a.IsTestPath(file)
 }
 
+// ToolIgnoredOnly は files が 1 つ以上あり、全部がその言語のツールの読まない置き場 (lang.Adapter.ToolIgnores) にあるか。
+func ToolIgnoredOnly(files []string) bool {
+	for _, f := range files {
+		a, ok := For(f)
+		if !ok || a.ToolIgnores == nil || !a.ToolIgnores(f) {
+			return false
+		}
+	}
+	return len(files) > 0
+}
+
 // Parsers は 1 つの goroutine の中で使う、adapter ごとの読み手 (初めて読む言語のときに作る)。
 type Parsers struct {
 	opt lang.Options

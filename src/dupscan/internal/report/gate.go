@@ -41,6 +41,9 @@ type GateSummary struct {
 	StrictAnalysis      bool     `json:"strict_analysis,omitempty"`
 	BaseFilesWithErrors []string `json:"base_files_with_errors,omitempty"`
 	HeadFilesWithErrors []string `json:"head_files_with_errors,omitempty"`
+	// ErrorsToolIgnoredOnly は、base と head の読めないファイルが全部その言語のツールの読まない置き場 (Go の testdata) にあること。
+	// text の 1 行目の状態の語だけを変える (analysis_incomplete と -strict-analysis の rc は変えない)。
+	ErrorsToolIgnoredOnly bool `json:"-"`
 	// NewGeneratedFiles は head で生成されたファイルとして単位を出さなかったファイルのうち、base に無いか、base では生成でなかったか、中身が base と違うもの。
 	// 見出しは 1 行のコメントで手でも書けるので、そこに入った写しは「変わった単位 0」で通る。止めはしない (本物の生成コードで毎回赤くしない)
 	NewGeneratedFiles []string `json:"new_generated_files"`
@@ -156,7 +159,11 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 	if s.Partial {
 		note += "・repo の一部だけを見ている (起点 " + strings.Join(s.Prefixes, ", ") + "。repo の root から打つと別の dir の同じ形の相手も見える)"
 	}
-	if s.AnalysisIncomplete {
+	quietErrors := s.AnalysisIncomplete && s.ErrorsToolIgnoredOnly && !s.StrictAnalysis // strict は rc=2 で止めるので、先頭も不完全と言う
+	switch {
+	case quietErrors:
+		note += fmt.Sprintf("・読めない testdata %d (go が読まない置き場。-strict-analysis では数える。-v で一覧)", len(unionFiles(s.BaseFilesWithErrors, s.HeadFilesWithErrors)))
+	case s.AnalysisIncomplete:
 		note += fmt.Sprintf("・読めない構文のファイル base %d / head %d", len(s.BaseFilesWithErrors), len(s.HeadFilesWithErrors))
 	}
 	if n := len(s.Unreadable); n > 0 {
@@ -188,7 +195,7 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 		// 読めないファイルがあるときに「なし」と言い切らない (そこに写しがあっても見えない)。ただし通ったことは先頭で分かる形にする
 		// (「解析が不完全」だけだと失敗に読め、rc を見るまで通ったか分からない)。
 		status := "新しい重複なし"
-		if s.AnalysisIncomplete {
+		if s.AnalysisIncomplete && !quietErrors {
 			status = "新しい重複 0 (読めたファイルの中で)・解析が不完全"
 		}
 		fmt.Fprintf(w, "dupscan gate: %s (base %s・変わった単位 %d)%s\n", status, short(s.Base), s.Changed, note)
@@ -235,6 +242,9 @@ func GateText(w io.Writer, s GateSummary, opt TextOptions) error {
 		// 同じ一覧を base と head で 2 度書かない (57 個なら 114 行。読んでほしい数行が埋もれる)
 		sources = sources[:1]
 		sources[0].name = "base・head 同じ"
+	}
+	if quietErrors && !opt.Verbose {
+		sources = nil // testdata の壊れた fixture の一覧は -v でだけ出す (毎回の 1 行を増やさない)
 	}
 	for _, source := range sources {
 		files := source.files
@@ -462,4 +472,15 @@ func fromNote(m UnitRef, origins []OriginJSON) string {
 		return fmt.Sprintf(" (base の %s:%d %s から。%s)", o.From.File, o.From.Line, label(o.From), changed)
 	}
 	return ""
+}
+
+// unionFiles は a と b の和 (重複を除く)。
+func unionFiles(a, b []string) []string {
+	out := slices.Clone(a)
+	for _, f := range b {
+		if !slices.Contains(out, f) {
+			out = append(out, f)
+		}
+	}
+	return out
 }

@@ -243,6 +243,7 @@ func runReportCommand(args []string, stdout, stderr io.Writer) int {
 	ex.Scanned(opt.Levels)
 	s := report.Build(sc.Root, got.files, got.units, got.errFiles, ex.ApplyGroups(group.Build(entries, opt)), ex, entries)
 	s.GeneratedFiles = append(s.GeneratedFiles, got.generated...)
+	s.ErrorsToolIgnoredOnly = langs.ToolIgnoredOnly(got.errFiles)
 	s.BelowMinNodes, s.MinNodes = group.CountBelowMin(entries, opt), opt.MinNodes
 	s.BelowMinFloor = sweepDeepMinNodes
 	s.BelowMinGroups = group.CountBelowMinGroups(entries, opt, s.BelowMinFloor)

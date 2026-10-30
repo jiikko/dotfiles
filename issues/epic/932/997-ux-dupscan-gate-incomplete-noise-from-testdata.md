@@ -30,5 +30,18 @@ Go の `testdata` の下に読めない構文の `.go` があり、gate / report
 
 ## 受け入れ条件
 
-- [ ] testdata の下の壊れたファイルだけがある repo で、gate の 1 行目が「新しい重複なし」で、testdata の数が別に出ることをテストにする (直す前に赤)。json の `analysis_incomplete` と strict の rc=2 は変わらないことも見る
-- [ ] testdata の外の壊れたファイルは今までどおり「解析が不完全」になる (対照)
+- [x] testdata の下の壊れたファイルだけがある repo で、gate の 1 行目が「新しい重複なし」で、testdata の数が別に出ることをテストにする (直す前に赤)。json の `analysis_incomplete` と strict の rc=2 は変わらないことも見る
+- [x] testdata の外の壊れたファイルは今までどおり「解析が不完全」になる (対照)
+
+## 進捗
+
+- commit「fix(dupscan): 読めないファイルが Go の testdata の下だけなら、gate と report の 1 行目を「解析が不完全」にしない (issue 997)」
+  - `lang.Adapter.ToolIgnores` (その言語のツールが読まない置き場。Go は `testdata` の下) と `langs.ToolIgnoredOnly` を足し、gate は base と head を合わせて、report は読めないファイルが全部そこにあるときだけ
+    1 行目を `新しい重複なし …・読めない testdata N (go が読まない置き場。-strict-analysis では数える。-v で一覧)` にする。ファイルの一覧は `-v` でだけ出す
+  - json の `analysis_incomplete` / `*_files_with_errors`・xcode・`-record`・`-strict-analysis` の rc=2 は変えていない (929 の契約)。strict のときは 1 行目も今までどおり「解析が不完全」 (敵対的レビューの P2: rc=2 で止めるのに先頭が「なし」だと失敗に見えない)
+  - dotfiles の `bin/dupscan gate src` の 1 行目が `新しい重複なし (…)・…・読めない testdata 1 (…)` になったのを確かめた
+  - テスト `testdata_errors_test.go` 3 本 (testdata だけ・testdata の外の対照・report)。変異 (狙ったテストだけが赤): gate の判定を外す / report の判定を外す / 置き場の判定で常に真 / strict の除外を外す。
+    `ToolIgnoredOnly` の「空なら偽」を常に真にする変異は緑のまま (呼び出し側が 2 か所とも読めないファイル 0 件で先に抜けるので届かない。等価な変異)
+  - `make -C src/dupscan lint test` rc=0
+- 敵対的レビューで記録だけにしたもの: 文言の「testdata」「go が読まない置き場」は Go に決め打ち (`ToolIgnores` を 2 つ目の言語が使い始めたら文言を adapter から引く) /
+  near・sweep・callers の解析の警告は今までどおり testdata も出す (972 の F2 で `index -file` だけ関係の判定にした。探索のコマンドの警告は別に決める)

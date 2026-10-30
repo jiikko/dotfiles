@@ -160,6 +160,7 @@ func gateOnce(args []string, stdout, stderr io.Writer) gateOutcome {
 	s.HeadFilesWithErrors = h.errFiles
 	s.NewGeneratedFiles = append(s.NewGeneratedFiles, changedGenerated(b, h)...)
 	s.AnalysisIncomplete = len(b.errFiles) > 0 || len(h.errFiles) > 0
+	s.ErrorsToolIgnoredOnly = langs.ToolIgnoredOnly(append(slices.Clone(b.errFiles), h.errFiles...))
 	s.StrictAnalysis = *strictAnalysis
 	s.NewExclusions = append(s.NewExclusions, exclude.NewElements(baseCfg, headCfg)...)
 	if baseCfgErr != nil {

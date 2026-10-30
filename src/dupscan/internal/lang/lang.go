@@ -27,7 +27,10 @@ type Adapter struct {
 	Extensions []string
 	// IsTestPath はその言語の慣習で test のファイルかを決める。
 	IsTestPath func(file string) bool
-	NewParser  func(Options) (Parser, error)
+	// ToolIgnores は、その言語のツールがビルドも検査もしない置き場のファイルか (Go の testdata の下。nil なら無い)。
+	// そこの読めないファイルは壊れていて当然の fixture なので、人が読む 1 行目で「解析が不完全」に数えない (json と -strict-analysis では数える)。
+	ToolIgnores func(file string) bool
+	NewParser   func(Options) (Parser, error)
 	// Symbols は def と refs の材料 (Options.Defs / Refs) を集めるか。集めない言語のファイルを def / refs は読まない。
 	Symbols bool
 }

@@ -20,6 +20,8 @@ type Summary struct {
 	Files           int      `json:"files"`
 	Units           int      `json:"units"`
 	FilesWithErrors []string `json:"files_with_errors"`
+	// ErrorsToolIgnoredOnly は、読めないファイルが全部その言語のツールの読まない置き場 (Go の testdata) にあること (text の 1 行目の語だけを変える)。
+	ErrorsToolIgnoredOnly bool `json:"-"`
 	// GeneratedFiles は生成されたファイルとして単位を出さなかったファイル (そこの写しは比べていない)。
 	GeneratedFiles []string `json:"generated_files"`
 	// BelowMinNodes は節が下限 (MinNodes) に満たず、比べなかった単位の数。0 件の「重複なし」は、これらを比べていない。
@@ -348,6 +350,9 @@ func levelCounts(s Summary) string {
 func unreadableNote(s Summary) string {
 	if len(s.FilesWithErrors) == 0 && len(s.Unreadable) == 0 {
 		return ""
+	}
+	if s.ErrorsToolIgnoredOnly {
+		return fmt.Sprintf("・読めない testdata %d (go が読まない置き場。-v で一覧)", len(s.FilesWithErrors))
 	}
 	return fmt.Sprintf("・読めない構文があるファイル %d・比べなかった単位 %d (-v で一覧)", len(s.FilesWithErrors), len(s.Unreadable))
 }

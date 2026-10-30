@@ -24,7 +24,7 @@ import (
 var Extensions = []string{".go"}
 
 // Adapter は Go の読み方。def と refs の材料 (Options.Defs / Refs) は集めない (Go では gopls が型を解決して答えられる)。
-var Adapter = lang.Adapter{Name: "go", Extensions: Extensions, IsTestPath: IsTestPath, NewParser: newParser}
+var Adapter = lang.Adapter{Name: "go", Extensions: Extensions, IsTestPath: IsTestPath, ToolIgnores: inTestdata, NewParser: newParser}
 
 // Parser は状態を持たない (go/parser はファイルごとに FileSet を作る)。
 type Parser struct{ opt lang.Options }
@@ -36,9 +36,11 @@ func (p *Parser) Close() {}
 
 // IsTestPath は Go の慣習で test のファイルか (`_test.go` と、go のツールが読まない `testdata` の下)。
 func IsTestPath(file string) bool {
-	if strings.HasSuffix(file, "_test.go") {
-		return true
-	}
+	return strings.HasSuffix(file, "_test.go") || inTestdata(file)
+}
+
+// inTestdata は file が testdata の下か (go のツールはビルドも go vet もしない)。
+func inTestdata(file string) bool {
 	for _, c := range strings.Split(path.Dir(file), "/") {
 		if c == "testdata" {
 			return true
