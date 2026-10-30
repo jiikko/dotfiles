@@ -192,6 +192,8 @@ _go_autobuild_embed_files() {  # $1=src_dir
 # - [\]-^] (] から ^ の範囲): 0 件になる (知らせる)
 # - NFD の字と (b) が quote する字 (( ^ | ~ * …) が同じ階層の名前に並ぶディレクトリの下: グロブが 0 件になる (知らせる)
 # - **/x: zsh は再帰に読むので Go より多く拾う
+# - src_dir の package の `//go:embed *` のように成果物のバイナリ自身に当たる pattern: install のたびに mtime が変わるので毎回作り直す
+#   (バイナリの名前は src_dir から決まらない。codexevents → codex-events)
 _go_autobuild_go_glob() {  # $1=Go の pattern
   emulate -L zsh
   local LC_ALL=en_US.UTF-8   # 1 字ずつ写す (C の locale ではマルチバイトの字をバイトで割る)
@@ -229,7 +231,10 @@ _go_autobuild_go_glob() {  # $1=Go の pattern
 # 死ぬ (.claude/rules/zsh-trap-not-inherited.md)。trap を張ったシェルの foreground で一時ファイルへ出す。
 # 一時ファイルは .autobuild.list.<pid> (途中で死んだ残りは _go_autobuild_spawn の掃除が拾う)。.autobuild.new.* にしない: テストは
 # その出現を「go build が始まった = 指紋を取り終えた」の目印にしている。
-_go_autobuild_record_embeds() {  # $1=src_dir $2=mod_dir $3=pkg / 0 = 記録した, 1 = go list が落ちた
+# 🚨 go list が落ちても前の記録は消さない。消すと失敗記録 (.autobuild.failed) の指紋から embed したファイルが外れ、
+# 一時的に欠けたファイル (checkout の途中など) を戻しても指紋が変わらず、TTL まで再挑戦しない。
+# 記録の中身が変わらなければ書き直さない (mtime も指紋の入力。並行したビルドが毎回 mtime を変えると、互いに「作り直した直後なのに stale」を残す)。
+_go_autobuild_record_embeds() {  # $1=src_dir $2=mod_dir $3=pkg / 0 = 中身が変わらない, 1 = go list が落ちた, 2 = 中身が変わった
   local rec="${1:A}/.autobuild.embeds" line dir d rc=0
   local -a roots keep
   roots=("$2")
@@ -239,7 +244,7 @@ _go_autobuild_record_embeds() {  # $1=src_dir $2=mod_dir $3=pkg / 0 = 記録し�
   command go list -C "$2" -deps \
     -f '{{if .EmbedPatterns}}{{.Dir}}{{range .EmbedPatterns}}{{"\t"}}{{.}}{{end}}{{end}}' "$3" >| "$out" || rc=$?
   if (( rc )); then
-    command rm -f "$out" "$rec" 2>/dev/null
+    command rm -f "$out" 2>/dev/null
     print -u2 -- "go_autobuild: go list で //go:embed の pattern を取れない (exit $rc)"
     return 1
   fi
@@ -254,8 +259,14 @@ _go_autobuild_record_embeds() {  # $1=src_dir $2=mod_dir $3=pkg / 0 = 記録し�
   done < "$out"
   command rm -f "$out" 2>/dev/null
   # 書きかけも .autobuild.list.<pid>.* にする (途中で死んだ残りを spawn の掃除が拾う)
-  print -r -- "${(pj:\n:)keep}" >| "$out.rec" 2>/dev/null && command mv -f "$out.rec" "$rec" 2>/dev/null
-  return 0
+  local new="${(pj:\n:)keep}" old=
+  [[ -f "$rec" ]] && old=$(<"$rec")
+  [[ -f "$rec" && "$new" == "$old" ]] && return 0
+  if [[ -n "$new" ]]; then print -r -- "$new" >| "$out.rec"; else : >| "$out.rec"; fi 2>/dev/null \
+    && command mv -f "$out.rec" "$rec" 2>/dev/null   # 空は 0 バイトで書く (改行 1 つでも -s が「中身あり」と読む)
+  # 空 (embed が無い) どうしは指紋の上で同じ (_go_autobuild_fingerprint は空の記録を「記録が無い」と数える)
+  [[ -z "$new" && -z "$old" ]] && return 0
+  return 2
 }
 
 _go_autobuild_sources_newer_than() {  # 0 = 新しいソースがある (ref 不在も含む)
@@ -333,7 +344,7 @@ _go_autobuild_fingerprint() {  # $1=src_dir (入力集合は _go_autobuild_input
   (( $#files )) || return 0
   local out=
   # embed の記録も入力 (中身が変われば pattern が変わった)。無ければ無いことを入力にする (_go_autobuild_inputs の doc)
-  if [[ -f "${1:A}/.autobuild.embeds" ]]; then files+=("${1:A}/.autobuild.embeds"); else out+="embeds: none"$'\n'; fi
+  if [[ -s "${1:A}/.autobuild.embeds" ]]; then files+=("${1:A}/.autobuild.embeds"); else out+="embeds: none"$'\n'; fi
   if (( $#_go_autobuild_embed_unresolved )); then
     # 起動のたびに知らせる。作り直し続けにはしない (毎回違う値を入れると backoff も効かず、pro-con の入れ替えが毎周「新版あり」になる)
     print -u2 -- "go_autobuild: //go:embed の pattern を展開できない (そのファイルの変更では再ビルドしない): ${(j:, :)_go_autobuild_embed_unresolved}"
@@ -525,13 +536,19 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
     && ! is-at-least "$required_go" "${local_go#go}"; then
     (( quiet )) || print -u2 -- "$name: 初回は Go $required_go の toolchain 取得で時間がかかることがあります"
   fi
-  # 指紋より先に embed の pattern を記録する (指紋の入力集合がそれを読む。後に書くと次の起動で毎回 1 回作り直す)。
   # go が無いときの案内 (上) より後に置く (go list の 127 で案内を潰さない)
-  if ! _go_autobuild_record_embeds "$src_dir" "$mod_dir" "$pkg"; then
+  # 指紋は go list の前に取る。go list の間に .go が変わっても、指紋は古い .go を持つので次の起動で差として出る
+  # (後に取ると、古い .go で記録した pattern と新しい .go の指紋が組になり、新しい embed 先の変更を次に .go を触るまで見逃した)。
+  # 代わりに記録の中身が変わったら、この指紋は古い記録で取ったものなので、印を足して次の起動で 1 回作り直させる
+  # (pattern を変えたときと、embed を持つ module の最初のビルドだけ。embed の無い module の記録は空で、指紋は「記録が無い」と同じ)
+  _go_autobuild_fingerprint "$src_dir"; built_fp=$REPLY
+  local -i embeds_rc=0
+  _go_autobuild_record_embeds "$src_dir" "$mod_dir" "$pkg" || embeds_rc=$?
+  if (( embeds_rc == 1 )); then
     print -u2 -- "$name: build failed (go list)"
     return 1
   fi
-  _go_autobuild_fingerprint "$src_dir"; built_fp=$REPLY
+  (( embeds_rc == 2 )) && built_fp+=$'\n'"embeds: changed ${EPOCHREALTIME-$RANDOM}"
   local rc=0
   # 🚨 この go build を「サブシェルの中」や「バックグラウンドジョブ」にしない。zsh は fork した
   # サブシェル `( ... )` と `&` のジョブで trap をリセットするので、_go_autobuild_spawn が張った

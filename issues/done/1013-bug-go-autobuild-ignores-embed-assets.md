@@ -90,3 +90,9 @@ directive の構文解析 (引用符・`all:`・build tag・実際にリンク�
     0 件で知らせる / **/x は Go より多く拾う / go list と指紋の間に .go を保存して新しい embed を足すと、次に .go を触るまでその embed 先を見逃す
     (窓は go list の所要時間、バイナリは正しい)
   - 未実測: 本物の pro-con で md だけを直して pull したときに作り直されること (この変更が master に入った後の最初の pull で確かめられる)
+- 2026-10-31 done の後に、変更全体を見る 6 周目の敵対的レビュー (opus)。commit (subject): fix(go_autobuild): go list の失敗で記録を消さない・記録を中身が変わったときだけ書く・指紋を go list の前に取る (issue 1013)
+  - 実験で再現して直したもの: go list が一度落ちると前の記録を消し、embed したファイルを戻しても TTL (600 秒) まで再挑戦しなかった /
+    ビルドのたびに記録の mtime が変わり、並行したビルドが互いに「作り直した直後なのに stale」を残した / go list と指紋の間の .go の編集で、
+    新しい embed 先の変更を次に .go を触るまで見逃した / glogx の前提のテストが字下げした //go:embed を見逃した
+  - 指紋を go list の前に取るので、embed を持つ module は最初のビルドと pattern を変えたときに 1 回余分に作り直す (embed の無い module は記録が空で、余分は無い)
+  - 直さない: `//go:embed *` のように成果物のバイナリ自身に当たる pattern は毎回作り直す (バイナリの名前は src_dir から決まらない。コード `_go_autobuild_go_glob` の上に記録)

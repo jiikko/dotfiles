@@ -1153,10 +1153,14 @@ out="$(embed_run v1)"
 grep -q 'assets/\*\.md' "$T/.autobuild.embeds" || fail "embed: pattern を記録しない ($(cat "$T/.autobuild.embeds" 2>/dev/null))"
 grep -q fakepkg "$T/.autobuild.embeds" && fail "embed: module の外の package を記録した"
 ok "ビルドの前に go list の pattern を記録する (module の外は捨てる)"
+# 最初のビルドの指紋は記録が無いときに取ったものなので、記録を書いた次の起動で 1 回だけ作り直す (指紋は go list の前に取る)
 before="$(calls "$ROOT")"
 embed_run v2 >/dev/null
-[[ "$(calls "$ROOT")" == "$before" ]] || fail "embed: 何も変えていないのに再ビルドした (記録の書き方と指紋がずれている)"
-ok "記録を書いたビルドの直後は再ビルドしない"
+[[ "$(calls "$ROOT")" == "$((before + 1))" ]] || fail "embed: 記録を書いた次の起動で 1 回作り直さない (got: $(( $(calls "$ROOT") - before )) 回)"
+before="$(calls "$ROOT")"
+embed_run v3 >/dev/null
+[[ "$(calls "$ROOT")" == "$before" ]] || fail "embed: 何も変えていないのに再ビルドし続ける (記録の書き方と指紋がずれている)"
+ok "記録を書いた次の起動で 1 回だけ作り直し、その後は作り直さない"
 
 embed_case() {  # $1=説明 $2=期待 (rebuild / keep)、残り=変更のコマンド
   local what="$1" want="$2"; shift 2
@@ -1240,6 +1244,7 @@ ok "embed したファイルだけの変更で go_autobuild_spawn_if_stale も�
 printf '%s\t%s\n' "$T" 'nomatch/*.md' > "$ROOT/embeds"
 bump "$T/main.go"
 embed_run u1 >/dev/null
+embed_run u1b >/dev/null   # 記録の中身が変わった次の起動は 1 回作り直す (設計どおり)
 : > "$ROOT/stderr"
 before="$(calls "$ROOT")"
 embed_run u2 >/dev/null
@@ -1272,12 +1277,58 @@ freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
 if FAKE_GO_LIST_FAIL=1 FAKE_GO_MARK=v2 run_tool "$ROOT" >/dev/null; then fail "embed: go list が落ちたのにビルドを成功として扱った"; fi
 binary_is "$ROOT" v1 || fail "embed: go list が落ちたのに新しいバイナリを入れた"
-[[ ! -e "$ROOT/src/tool/.autobuild.embeds" ]] || fail "embed: go list が落ちたのに記録が残った"
+[[ -e "$ROOT/src/tool/.autobuild.embeds" ]] || fail "embed: go list が落ちたら前の記録を消した (失敗記録の指紋から embed のファイルが外れる)"
 grep -q 'go list で //go:embed の pattern を取れない (exit 1)' "$ROOT/stderr" || fail "embed: go list の失敗を exit code つきで知らせない"
 FAKE_GO_MARK=v3 run_tool "$ROOT" >/dev/null || fail "embed: go list が直った後にビルドできない"
 binary_is "$ROOT" v3 || fail "embed: go list が直った後に作り直さない"
 [[ -f "$ROOT/src/tool/.autobuild.embeds" ]] || fail "embed: go list が直った後に記録を書かない"
-ok "go list が落ちたらビルドの失敗にし (exit code を残す)、直れば作り直して記録を書く"
+ok "go list が落ちたらビルドの失敗にし (exit code を残し、前の記録は残す)、直れば作り直して記録を書く"
+
+# go list が落ちた後 (embed したファイルが一時的に欠けた等)、embed したファイルを直せば TTL を待たずに再挑戦する
+ROOT="$(new_project embedlistretry)"
+mkdir -p "$ROOT/src/tool/assets"; printf 'a\n' > "$ROOT/src/tool/assets/a.md"
+printf '%s\t%s\n' "$ROOT/src/tool" 'assets/a.md' > "$ROOT/embeds"
+FAKE_GO_EMBEDS="$ROOT/embeds" FAKE_GO_MARK=v1 run_tool "$ROOT" >/dev/null
+FAKE_GO_EMBEDS="$ROOT/embeds" FAKE_GO_MARK=v1b run_tool "$ROOT" >/dev/null   # 記録を書いた次の起動の 1 回
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+FAKE_GO_EMBEDS="$ROOT/embeds" FAKE_GO_LIST_FAIL=1 spawn_if_stale "$ROOT" || fail "embed: stale なのにビルドを起動しない"
+wait_for "embed: 失敗記録が現れない" test -f "$ROOT/src/tool/.autobuild.failed"
+wait_for "embed: builder が lock を解放しない" builder_done "$ROOT"
+bump "$ROOT/src/tool/assets/a.md"
+FAKE_GO_EMBEDS="$ROOT/embeds" FAKE_GO_MARK=retry spawn_if_stale "$ROOT" \
+  || fail "embed: go list が落ちた後に embed したファイルを直しても再挑戦しない (TTL まで古いまま)"
+wait_for "embed: 再挑戦の成果物が設置されない" binary_is "$ROOT" retry
+wait_for "embed: builder が lock を解放しない" builder_done "$ROOT"
+ok "go list が落ちた後も、embed したファイルを直せば TTL を待たずに再挑戦する"
+
+# 記録の中身が変わらないビルドでは記録を書き直さない (mtime も指紋の入力。並行したビルドが互いを stale にしない)
+rec="$ROOT/src/tool/.autobuild.embeds"
+mtime_at 60 "$rec"
+rec_before="$(stat -f %m "$rec")"
+bump "$ROOT/src/tool/main.go"
+FAKE_GO_EMBEDS="$ROOT/embeds" FAKE_GO_MARK=same run_tool "$ROOT" >/dev/null
+binary_is "$ROOT" same || fail "embed: 前提が崩れた: 作り直していない"
+[[ "$(stat -f %m "$rec")" == "$rec_before" ]] || fail "embed: 中身の同じ記録を書き直した (mtime が変わる)"
+ok "記録の中身が変わらなければ書き直さない"
+
+# go list の最中に .go が変わったら、次の起動で作り直す (指紋は go list の前に取る)
+ROOT="$(new_project embedrace)"
+FAKE_GO_MARK=v1 run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+gate_new embedrace; GATE="$REPLY"
+AUTOBUILD_ARGS=--async FAKE_GO_LIST_GATE="$GATE" FAKE_GO_MARK=racy run_tool "$ROOT" >/dev/null
+wait_for "embed: builder が go list に入らない" gate_entered "$GATE"
+builder_pid="$(cat "$ROOT/src/tool/.autobuild.lock/pid")"
+mtime_at 5 "$ROOT/src/tool/main.go"   # go list の最中の編集
+gate_release "$GATE"
+wait_for "embed: 走行中の builder が終わらない" builder_gone "$builder_pid"
+binary_is "$ROOT" racy || fail "embed: 前提が崩れた: 裏のビルドが入っていない (got: $(binary_mark "$ROOT"))"
+before="$(calls "$ROOT")"
+FAKE_GO_MARK=after run_tool "$ROOT" >/dev/null
+[[ "$(calls "$ROOT")" -gt "$before" ]] || fail "embed: go list の最中に変わった .go を、次の起動で作り直さない"
+ok "go list の最中に .go が変わったら、次の起動で作り直す"
 
 # 裏のビルド (popup を閉じると HUP が飛ぶ) でも go list は死なない (trap '' HUP が届く foreground で走らせる)
 ROOT="$(new_project embedhup)"
@@ -1311,7 +1362,7 @@ ok "前の版で作ったバイナリは 1 回だけ作り直して記録を書�
 # glogx 側の判定 (src/glogx/autobuild.go の autobuildSourceFile) は embed を見ない。glogx の木に embed が入ったら、そこも直すこと
 glogx_embeds=""
 for d in "$ROOT_DIR/src/glogx" $(zsh -c 'source "$1"; _go_autobuild_replace_dirs "$2"; print -l -- $reply' zsh "$LIB" "$ROOT_DIR/src/glogx"); do
-  glogx_embeds+="$(grep -rln --include='*.go' '^//go:embed' "$d" 2>/dev/null || true)"   # 無マッチの rc=1 で set -e に落とされない
+  glogx_embeds+="$(grep -rlnE --include='*.go' '^[[:space:]]*//go:embed' "$d" 2>/dev/null || true)"   # 無マッチの rc=1 で set -e に落とされない
 done
 [[ -z "$glogx_embeds" ]] || fail "glogx の木に //go:embed が入った。src/glogx/autobuild.go の autobuildSourceFile も embed を見るよう直す: $glogx_embeds"
 ok "glogx の木 (と replace 先) に //go:embed が無い (glogx 側の判定が embed を見ないことの前提)"
