@@ -56,7 +56,8 @@ func again(xs []int) int { n:=0;for _,x:=range xs {n+=x};return n }
 	target := filepath.Join(root, "a.go") + ":outer"
 	rc, out, errs := runReport(t, "near", "-similar", "-similar-threshold", "0.01", "-limit", "1", "-format", "json", target)
 	var s similarSummary
-	if err := json.Unmarshal([]byte(out), &s); err != nil || rc != 0 || s.Skipped < 1 || s.Total != 0 || s.Returned != 0 || len(s.Matches) != 0 {
+	// outer の中のクロージャ (2 行目) は target の子孫なので候補にしない。copy・again は outer のクロージャと同じ本体なので候補になり、-limit 1 で 1 件だけ返す
+	if err := json.Unmarshal([]byte(out), &s); err != nil || rc != 0 || s.Skipped < 1 || s.Total != 2 || s.Returned != 1 || len(s.Matches) != 1 || s.Matches[0].Unit.Line == 2 {
 		t.Fatalf("ancestor/limit: %d %s %s %v", rc, out, errs, err)
 	}
 	for _, args := range [][]string{{"-similar-threshold", "NaN"}, {"-similar-threshold", "0"}, {"-similar-threshold", "1.1"}, {"-limit", "0"}, {"-limit", "51"}, {"-format", "xcode"}} {

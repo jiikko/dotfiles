@@ -45,7 +45,7 @@ func writeSimilar(stdout, stderr io.Writer, target *group.Entry, entries []*grou
 		return 2
 	}
 	at := func(u *tree.Unit) similarUnit { return similarUnit{File: u.File, Line: u.Line, Col: u.Col} }
-	s := similarSummary{Target: at(target.Unit), Mode: "experimental_l1_subtrees", Threshold: threshold, MinSubtreeNodes: 3, ParseErrorFiles: len(got.errFiles), Matches: []similarMatch{}, Limitations: "reuse=not_proven; whole-unit overlap, not partial-clone coverage; return type is not compared; unit-wide local numbering; nested subtree weights; clone exclusions are not applied"}
+	s := similarSummary{Target: at(target.Unit), Mode: "experimental_l1_subtrees", Threshold: threshold, MinSubtreeNodes: 3, ParseErrorFiles: len(got.errFiles), Matches: []similarMatch{}, Limitations: "reuse=not_proven; whole-unit overlap, not partial-clone coverage; return type is not compared; local names anonymized (a-b equals b-a); nested subtree weights; clone exclusions are not applied"}
 	ancestors := map[string]string{}
 	for _, e := range entries {
 		ancestors[e.Unit.Key] = e.Unit.Owner

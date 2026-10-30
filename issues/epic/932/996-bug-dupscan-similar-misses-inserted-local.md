@@ -36,10 +36,10 @@
 
 ## 受け入れ条件
 
-- [ ] 宣言を 1 文足しただけの写しの Dice が 1.0 になる (今は番号がずれて下がる) ことを `internal/norm` のテストにする (直す前に赤)
-- [ ] 実例の対のスコアを直す前後で書く (上の 0.388 → 0.507)
-- [ ] dotfiles の `src` で sweep の節 3 の対の数と所要を直す前後で測って書く (増えすぎるなら採らない)
-- [ ] `Subtrees` の doc と、`similar_cmd.go` の Limitations の `unit-wide local numbering` を直した形に合わせて書き直す (引数に先に番号を振る前処理も要らなくなる)
+- [x] 宣言を 1 文足しただけの写しの Dice が 1.0 になる (今は番号がずれて下がる) ことを `internal/norm` のテストにする (直す前に赤)
+- [x] 実例の対のスコアを直す前後で書く (上の 0.388 → 0.507)
+- [x] dotfiles の `src` で sweep の節 3 の対の数と所要を直す前後で測って書く (増えすぎるなら採らない)
+- [x] `Subtrees` の doc と、`similar_cmd.go` の Limitations の `unit-wide local numbering` を直した形に合わせて書き直す (引数に先に番号を振る前処理も要らなくなる)
 
 ## 測った結果 (2026-10-30、dotfiles の `src`、`sweep -limit 0`)
 
@@ -51,3 +51,16 @@
 増えた 36 対は、本体が同じで引数の並び・数だけが違う小さな helper (多くは module をまたいだテストの `must` / `write` / `writeFile` 系) と、
 `treefiler/filer/model.go` の `spawnFrom ~ ghostTarget` (0.768)。引数の宣言の順に番号を振っていたので、引数の並びが違うだけで別の形になっていた。
 どれも「似ている候補」として筋が通るので採る (局所の名前の入れ替え `a - b` / `b - a` の区別は部分木の中で無くなるが、節 3 は同一性を主張しない)
+
+## 進捗
+
+- commit「fix(dupscan): 部分木の類似で局所の名前を番号にせず、宣言を 1 文足した写しを見つける (issue 996)」
+  - `internal/norm/subtrees.go` の `Subtrees` の writer を `anon` にした (引数に先に番号を振る前処理は要らなくなったので消した)。doc と `similar_cmd.go` の Limitations・README の near -similar と sweep の節 3 の行を合わせた
+  - テスト `TestSubtreesIgnoreInsertedLocalDeclaration` (宣言を 1 文足した写しと、根以外の部分木が全部一致する)。直す前は共有の重み 3 / 期待 12 で赤
+  - `TestSimilarBoundsAndAncestorExclusion` の期待を直した: `outer` の中のクロージャは `copy` / `again` の本体と同じ形で、今までは番号のずれでたまたま一致せず `Total == 0` だった。
+    守りたいのは「target の子孫は候補にしない」と `-limit` なので、子孫が候補に出ないこと・`Total == 2`・返すのは 1 件を直接見る形にした
+  - 変異 (`mutate-verify`、狙ったテストだけが赤): `anon` を外す → `TestSubtreesIgnoreInsertedLocalDeclaration` / 子孫の除外を外す → `TestSimilarBoundsAndAncestorExclusion`
+  - `make -C src/dupscan lint test` rc=0
+- 敵対的レビュー (opus・読み取りのみ): 壊せなかった (呼び出し元は similar と sweep の 2 か所だけ・捕まえた名前と `$0` は今までどおり字面・テストは空回りしない)。
+  指摘の「節 3 の README の行が古い」は直した。「閾値 0.6 / 0.4 を較正し直していない」は、上の実測 (52 → 88 対、消えた対 0、増えたのは本体が同じで引数の並びだけ違う helper) で採る判断をした。
+  **再提起の条件**: 節 3 か near -similar で、局所の名前を同じ記号にしたせいで本体の違う単位が上位に出る実例が出たとき

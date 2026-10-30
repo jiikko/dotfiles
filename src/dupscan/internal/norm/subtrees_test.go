@@ -66,3 +66,28 @@ func TestSubtreeSharedIsSymmetricMinSum(t *testing.T) {
 		t.Errorf("Dice = %v %v", score, shared)
 	}
 }
+
+// 写しの途中に局所の名前の宣言を 1 文足しても、後ろの文の部分木は一致したまま (番号を単位全体の出た順で振ると、後ろの名前の番号がずれて一致しなくなっていた)。
+func TestSubtreesIgnoreInsertedLocalDeclaration(t *testing.T) {
+	ident := func(role tree.Role, s string) *tree.Node { return &tree.Node{Kind: "identifier", Role: role, Text: s} }
+	stmts := func(extra bool) *tree.Unit {
+		var body []*tree.Node
+		if extra {
+			body = append(body, &tree.Node{Kind: "define", Children: []*tree.Node{ident(tree.RoleDecl, "group"), {Kind: "literal", Role: tree.RoleLiteral, Text: "0", LitKind: "int"}}})
+		}
+		body = append(body,
+			&tree.Node{Kind: "define", Children: []*tree.Node{ident(tree.RoleDecl, "x"), {Kind: "call", Action: true, Children: []*tree.Node{ident(tree.RoleName, "load"), ident(tree.RoleName, "p")}}}},
+			&tree.Node{Kind: "call", Action: true, Children: []*tree.Node{ident(tree.RoleName, "show"), ident(tree.RoleName, "x"), ident(tree.RoleName, "p")}},
+		)
+		return &tree.Unit{Params: []string{"p"}, Body: &tree.Node{Kind: "block", Children: body}}
+	}
+	plain := Subtrees(stmts(false), 3)
+	shared := plain.Shared(Subtrees(stmts(true), 3))
+	root := 0 // 根 (本体の block) は文の数が違うので一致しない。それ以外の部分木は全部一致する
+	for _, w := range plain {
+		root = max(root, w)
+	}
+	if want := plain.Total() - root; shared != want {
+		t.Errorf("宣言を 1 文足した写しと共有する重み %d, want %d (後ろの文の部分木が一致しない)", shared, want)
+	}
+}

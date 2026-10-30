@@ -9,21 +9,17 @@ import (
 )
 
 // SubtreeBag holds L1 Merkle fingerprints, weighted by subtree size.
-// Local numbering is unit-wide: inserting a local can change later fingerprints.
 type SubtreeBag map[[32]byte]int
 
 // Subtrees preserves L1's names, types, literals and actions. It does not fold.
 // Nested subtrees contribute independently; the score is not semantic equivalence.
+// 局所の名前は番号にせず、どれも同じ記号にする (anon)。単位全体で出た順に番号を振ると、写しの途中に宣言を 1 文足しただけで
+// 後ろの名前の番号がずれ、後ろの部分木が 1 つも一致しなくなる。代わりに部分木の中の局所の名前の入れ替え (a - b と b - a) は区別しない。
 func Subtrees(u *tree.Unit, minSize int) SubtreeBag {
 	bag := SubtreeBag{}
 	var head strings.Builder
 	out := bufio.NewWriter(&head)
-	w := &writer{out: out, level: L1, locals: localNames(u), nums: map[string]int{}}
-	for _, p := range u.Params {
-		if _, ok := w.nums[p]; !ok {
-			w.nums[p] = len(w.nums) + 1
-		}
-	}
+	w := &writer{out: out, level: L1, locals: localNames(u), nums: map[string]int{}, anon: true}
 	var walk func(*tree.Node) ([32]byte, int)
 	walk = func(n *tree.Node) ([32]byte, int) {
 		head.Reset()
