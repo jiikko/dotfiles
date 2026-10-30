@@ -48,5 +48,5 @@
 ## 進捗
 
 - [x] P-1 (ユーザー指示「両方やって」2026-10-30): `_claude/rules/verify-design-intent-before-refactor.md` の確認の 1 に追記した
-- [x] P-2 (同): [1000](1000-chore-ci-tests-bench-never-complete-under-push-traffic.md) を起票した
-- 1000 を採番するときに、採番の手順・番号の重複の検査・issue_done.sh が 3 桁を前提にしていると分かった → [1001](1001-bug-issue-tooling-assumes-three-digit-numbers.md)
+- [x] P-2 (同): [1000](../1000-chore-ci-tests-bench-never-complete-under-push-traffic.md) を起票した
+- 1000 を採番するときに、採番の手順・番号の重複の検査・issue_done.sh が 3 桁を前提にしていると分かった → [1001](../1001-bug-issue-tooling-assumes-three-digit-numbers.md)
