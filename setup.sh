@@ -149,9 +149,13 @@ if command -v go >/dev/null 2>&1; then
 fi
 
 # mac-lan-manager の有線の名前の広告 (LaunchAgent) が前の形なら、走っている job の名前と IP のまま今の形へ入れ直す (判定は upgrade-advert)。
-# plist の無い Mac では起こさない (広告を入れていない Mac で Go のビルドを待たせない)。ラベルは src/mac-lan-manager/setup の WiredNameLabel と同じ。
+# plist の無い Mac では起こさない (広告を入れていない Mac で Go のビルドを待たせない)。
 # dotfiles の無い相手の Mac はここを通らないので、lan-manager の初期設定の名前の手順で入れ直す
-if [ -f ~/Library/LaunchAgents/com.jiikko.mac-lan-manager.wired-name.plist ]; then
+# ラベルは Go の const の行から読む (ここに写すと片方だけ変えたときにずれる)。読めなければ WARN (tests/setup/test_setup.sh が出ないことを見る)
+_wired_label=$(sed -n 's/^const WiredNameLabel = "\([A-Za-z0-9.-]*\)"$/\1/p' ~/dotfiles/src/mac-lan-manager/setup/wiredname.go 2>/dev/null)
+if [ -z "$_wired_label" ]; then
+  echo "WARN: 有線の名前の広告のラベルを読めない (src/mac-lan-manager/setup/wiredname.go の const WiredNameLabel の行の形が変わった)"
+elif [ -f ~/Library/LaunchAgents/"$_wired_label".plist ]; then
   if command -v go >/dev/null 2>&1; then
     GO_AUTOBUILD_SYNC=1 ~/dotfiles/bin/mac-lan-manager upgrade-advert || \
       echo "WARN: 有線の名前の広告を今の形へ入れ直せなかった (bin/mac-lan-manager upgrade-advert を単体で再実行して確認)"

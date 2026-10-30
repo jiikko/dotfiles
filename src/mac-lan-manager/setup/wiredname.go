@@ -31,7 +31,7 @@ import (
 //   指すのは、初期設定を開き直して名前の手順まで進めてから。
 // - dns-sd -P は広告する I/F を選べないので、名前は Wi-Fi 側にも見える (受容。747)。
 
-// WiredNameLabel は LaunchAgent の名前 (~/Library/LaunchAgents/<これ>.plist)。
+// WiredNameLabel は LaunchAgent の名前 (~/Library/LaunchAgents/<これ>.plist)。dotfiles の setup.sh がこの行を sed で読む。
 const WiredNameLabel = "com.jiikko.mac-lan-manager.wired-name"
 
 // wiredService は dns-sd -P が名前と一緒に登録する目印のサービスの種類 (名前だけは登録できない)。
