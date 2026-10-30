@@ -81,6 +81,20 @@ for rel in $INJECTED_RULES; do
   case "$got" in "🚨 この規約は"*) ng "$rel が注入の上限を超えている (分けるか縮める)" ;; esac
 done
 
+# ④ 剥がし方の境界: frontmatter の後の空行・複数行の注記・注記の連続・CRLF でも、本文だけが届く
+fx() { # $1=名前 $2=printf の書式 $3=期待する本文 (printf の書式)
+  printf -- "$2" > "$WORK/$1.md"
+  local got want
+  got=$(ctx env ISSUE_RULES_FILE="$WORK/$1.md" | sed 1d)
+  want=$(printf -- "$3")
+  [ "$got" = "$want" ] || ng "fixture $1: 本文だけが届いていない: [$got]"
+}
+fx blank_multi '---\npaths:\n  - "a"\n---\n\n<!-- c\nc2 -->\n# T\nbody\n' '# T\nbody'
+fx two_notes '---\npaths:\n  - "a"\n---\n<!-- one -->\n<!-- two -->\n# T\nbody\n' '# T\nbody'
+fx crlf '---\r\npaths:\r\n  - "a"\r\n---\r\n<!-- c -->\r\n# T\r\nbody\r\n' '# T\r\nbody\r'
+# 本文の中の空行と注記は落とさない
+fx inner '---\npaths:\n  - "a"\n---\n# T\n\n<!-- keep -->\nbody\n' '# T\n\n<!-- keep -->\nbody'
+
 # ③ settings.json の SessionStart に、本体 + issue-rules.d/ の各ファイルがちょうど 1 本ずつ並ぶ
 wired=$(jq -r '[.hooks.SessionStart[].hooks[].command | select(test("issue-rules-inject\\.sh"))
                | sub(".*issue-rules-inject\\.sh ?"; "")] | sort | .[]' "$SETTINGS")
