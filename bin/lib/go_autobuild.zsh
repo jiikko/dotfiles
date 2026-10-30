@@ -48,6 +48,7 @@
 # src_dir に置く作業ファイル (いずれも .gitignore 済み):
 #   .autobuild.built  前回ビルドした入力の指紋 (再ビルド判定の基準)
 #   .autobuild.rev    そのビルド元の tree hash (診断用。判定には使わない)
+#   .autobuild.embeds ビルドしたときに go list が出した //go:embed の pattern (指紋の入力集合に足す。_go_autobuild_embed_files)
 #   .autobuild.failed 失敗したときの入力の指紋 (同じ入力での再挑戦を抑える)
 #   .autobuild.lock   排他 (中に持ち主の pid) / .autobuild.log 進捗と失敗の記録
 #   .autobuild.new.<pid>  rename 前の一時バイナリ
@@ -113,10 +114,13 @@ _go_autobuild_replace_dirs() {  # $1=mod_dir
   return 0
 }
 
-# ビルド入力の集合を reply へ返す (*_test.go を除く .go + 各 module root の go.mod / go.sum。
-# module root と replace 先を合わせる)。🚨 入力集合はここが唯一の定義 (指紋・縮退経路・
-# glogx 側 src/glogx/autobuild.go の autobuildSourcesNewer と同じ定義を保つ)。
-# `//go:embed` で .go 以外を焼き込むようになったら、そのアセットもここへ足すこと。
+# ビルド入力の集合を reply へ返す (*_test.go を除く .go + 各 module root の go.mod / go.sum + //go:embed が指すファイル。
+# module root と replace 先を合わせる)。🚨 入力集合はここが唯一の定義 (指紋・縮退経路)。
+# glogx 側 src/glogx/autobuild.go の autobuildSourceFile は embed を見ない (glogx と replace 先に embed が無い。
+# tests/bin/test_go_autobuild.sh が、入ったら落とす)。
+# embed の記録 (.autobuild.embeds) の有無とその中身も入力に数える: 記録が無いまま作ったバイナリ (この仕組みの前の版を含む) は、
+# 記録を書く次のビルドまで指紋が合わないので 1 回作り直される。
+# _go_autobuild_embed_unresolved に、展開して 0 件だった pattern を返す (指紋がそれを stale に倒す)。
 _go_autobuild_inputs() {  # $1=src_dir
   local root
   local -a roots files
@@ -126,7 +130,66 @@ _go_autobuild_inputs() {  # $1=src_dir
   for root in "${roots[@]}"; do
     files+=("$root"/**/*.go(N) "$root"/go.mod(N) "$root"/go.sum(N))
   done
-  reply=(${files:#*_test.go})   # go build の入力ではない (テスト編集で再ビルドを起こさない)
+  files=(${files:#*_test.go})   # go build の入力ではない (テスト編集で再ビルドを起こさない)
+  _go_autobuild_embed_files "$1"
+  reply=("${files[@]}" "${reply[@]}")
+  return 0
+}
+
+# //go:embed が指すファイルを reply へ返す。pattern はビルドしたときに go list が出したもの (.autobuild.embeds。1 行 = package の
+# ディレクトリと pattern をタブで並べたもの)。pattern は .go を変えない限り変わらず、.go を変えればビルドし直して記録も取り直す。
+# 🚨 directive を自分で構文解析しない (引用符・all:・build tag・リンクされる package に限る、を go が解く)。展開だけをここでする。
+# 展開は Go より広めに拾う (dot ファイルと _ で始まるものも拾う。余分は再ビルドが増えるだけ、拾い損ねると黙って古いまま)。
+# ディレクトリに当たったら下を全部。0 件の pattern は _go_autobuild_embed_unresolved に積む (go build は通ったのに展開が 0 件 =
+# ここの展開の誤り。黙って取りこぼさない)。記録が無ければ何も返さない (_go_autobuild_fingerprint が記録の有無を入力に数える)。
+typeset -ga _go_autobuild_embed_unresolved
+_go_autobuild_embed_files() {  # $1=src_dir
+  local rec="${1:A}/.autobuild.embeds" line dir pat
+  local -a parts out hit
+  _go_autobuild_embed_unresolved=()
+  reply=()
+  [[ -f "$rec" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do   # 末尾に改行の無い最後の行も読む (read は偽を返すが line は埋まる)
+    [[ -n "$line" ]] || continue
+    parts=("${(@ps:\t:)line}")
+    dir="$parts[1]"
+    for pat in "${(@)parts[2,-1]}"; do
+      pat="${pat#all:}"
+      hit=("$dir"/${~pat}(ND))
+      if (( ! $#hit )); then
+        _go_autobuild_embed_unresolved+=("$dir/$pat")
+        continue
+      fi
+      for line in "${hit[@]}"; do
+        if [[ -d "$line" ]]; then out+=("$line"/**/*(.ND)); else out+=("$line"); fi
+      done
+    done
+  done < "$rec"
+  reply=("${(@u)out:#*/.autobuild.*}")   # 作業ファイルは拾わない (`*` の pattern が拾うと、ビルドのたびに書く .autobuild.built で常に stale になる)
+  return 0
+}
+
+# ビルドの前に //go:embed の pattern を記録する (_go_autobuild_embed_files が読む)。module の外 (標準ライブラリ・module cache) の
+# package は捨てる (版は go.sum が持つ)。go list が落ちたら記録を消す (指紋は「記録が無い」で取る。go build も落ちるのが普通)。
+_go_autobuild_record_embeds() {  # $1=src_dir $2=mod_dir $3=pkg
+  local rec="${1:A}/.autobuild.embeds" out line dir d
+  local -a roots keep
+  roots=("$2")
+  _go_autobuild_replace_dirs "$2"; roots+=("${reply[@]}")
+  if ! out=$(command go list -C "$2" -deps \
+      -f '{{if .EmbedPatterns}}{{.Dir}}{{range .EmbedPatterns}}{{"\t"}}{{.}}{{end}}{{end}}' "$3" 2>/dev/null); then
+    command rm -f "$rec" 2>/dev/null
+    print -u2 -- "go_autobuild: go list で //go:embed の pattern を取れない (embed したファイルだけの変更を再ビルドの契機にできない)"
+    return 0
+  fi
+  for line in "${(@f)out}"; do
+    [[ -n "$line" ]] || continue
+    dir="${${line%%$'\t'*}:A}"
+    for d in "${roots[@]}"; do
+      if [[ "$dir" == "$d" || "$dir" == "$d"/* ]]; then keep+=("$dir"$'\t'"${line#*$'\t'}"); break; fi
+    done
+  done
+  print -r -- "${(pj:\n:)keep}" >| "$rec.tmp.$$" 2>/dev/null && command mv -f "$rec.tmp.$$" "$rec" 2>/dev/null
   return 0
 }
 
@@ -203,9 +266,16 @@ _go_autobuild_fingerprint() {  # $1=src_dir (入力集合は _go_autobuild_input
   REPLY=
   _go_autobuild_inputs "$1"; files=("${reply[@]}")
   (( $#files )) || return 0
+  local out=
+  # embed の記録も入力 (中身が変われば pattern が変わった)。無ければ無いことを入力にする (_go_autobuild_inputs の doc)
+  if [[ -f "${1:A}/.autobuild.embeds" ]]; then files+=("${1:A}/.autobuild.embeds"); else out+="embeds: none"$'\n'; fi
+  if (( $#_go_autobuild_embed_unresolved )); then
+    # 毎回違う値を入れて常に stale にする (同じ値だと「ビルド済み」と一致して、展開の誤りのまま黙る)
+    print -u2 -- "go_autobuild: //go:embed の pattern を展開できない (常に再ビルドする): ${(j:, :)_go_autobuild_embed_unresolved}"
+    out+="embeds: unresolved ${EPOCHREALTIME-$RANDOM}"$'\n'
+  fi
   zstat -A mt +mtime -- "${files[@]}" 2>/dev/null || return 0
   zstat -A sz +size  -- "${files[@]}" 2>/dev/null || return 0
-  local out=
   for (( i = 1; i <= $#files; i++ )); do
     out+="${files[i]} $mt[i] $sz[i]"$'\n'   # 絶対パス (replace 先は src_dir の外にある)
   done
@@ -351,11 +421,13 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # このビルドが「何を入力にしたか」を開始時点で確定させる。成功時にこれを記録するので、
   # ビルド実行中に着地した編集は次回の指紋比較で必ず差として出る (_go_autobuild_fingerprint の doc)。
   local built_fp started_at=${EPOCHREALTIME-0} seen_at seen_fp
+  local local_go required_go mod_dir pkg
+  _go_autobuild_resolve_mod "$src_dir"; mod_dir="$reply[1]"; pkg="$reply[2]"
+  # 指紋より先に embed の pattern を記録する (指紋の入力集合がそれを読む。後に書くと次の起動で毎回 1 回作り直す)
+  _go_autobuild_record_embeds "$src_dir" "$mod_dir" "$pkg"
   _go_autobuild_fingerprint "$src_dir"; built_fp=$REPLY
   # install の可否を決めるための基準 (下の guard の doc)。開始時点の記録を控える。
   _go_autobuild_read_built "$src_dir"; seen_at=$reply[1]; seen_fp=$reply[2]
-  local local_go required_go mod_dir pkg
-  _go_autobuild_resolve_mod "$src_dir"; mod_dir="$reply[1]"; pkg="$reply[2]"
   required_go=$(awk '$1 == "go" {print $2; exit}' "$mod_dir/go.mod" 2>/dev/null)
   # go 自体が無い環境 (新しい Mac / PATH が通っていない) を go build の "command not found"
   # (exit 127) に任せない。popup 起点だと 1 行の英語エラーが点滅して消えるだけで、
@@ -497,15 +569,17 @@ _go_autobuild_record_rev() {  # $1=src_dir (記録先)。tree hash と dirty は
   # 🚨 diff でなく status で見る。diff は追跡対象しか比較しないので、まだ git add していない
   # 新規 .go を見落とす。それは go build の入力に入る (= その版はコミットに存在しないコードで
   # 動いている) ので、記録が clean を名乗ると診断が嘘になる (自己レビューで検出 2026-08-02)。
-  # 🚨 対象を指紋と同じ入力集合に絞る (*_test.go を除く .go + go.mod + go.sum)。
+  # 🚨 対象を指紋と同じ入力集合に絞る (*_test.go を除く .go + go.mod + go.sum + embed したファイル)。
   # ディレクトリ全体を見ると、成果物や作業ファイルを .gitignore していない repo で常に
   # +dirty になる。*_test.go を含めても同じことが起きる: テストは go build の入力ではないので
   # 成果物はコミットの内容そのものなのに、テストを常時いじるこの repo では +dirty が
   # 出っぱなしになり記録が何も言わなくなる (自己レビューで検出 2026-08-02)。
   # 🚨 replace 先の dirty は見ない (別 module の tree なので、この記録の「どこから作ったか」には
   # 含めない。指紋には含めているので再ビルド判定は正しい)
+  # embed したファイルも入力 (_go_autobuild_inputs と同じ集合)。
+  _go_autobuild_embed_files "$src_dir"
   [[ -n "$(command git -C "$mod_dir" status --porcelain \
-      -- '*.go' go.mod go.sum ':(exclude)*_test.go' 2>/dev/null)" ]] \
+      -- '*.go' go.mod go.sum ':(exclude)*_test.go' "${reply[@]}" 2>/dev/null)" ]] \
     && rev+=" +dirty"
   print -r -- "$rev" >| "$src_dir/.autobuild.rev" 2>/dev/null
   return 0

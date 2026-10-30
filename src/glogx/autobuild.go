@@ -151,6 +151,8 @@ func autobuildStaleBinary(exePath string) bool {
 // 🚨 「ソース」の定義は go_autobuild.zsh の再帰 glob と揃える (**/*.go から _test.go を除く +
 // 直下の go.mod / go.sum)。食い違うと「shim は再ビルドしないのに glogx は古いと言う」矛盾、
 // あるいはその逆 (黙って旧版に固定) が出る。片方を変えたら両方直すこと。
+// go_autobuild.zsh は //go:embed が指すファイルも入力に数えるが、ここは数えない: glogx と replace 先に embed が無い
+// (tests/bin/test_go_autobuild.sh が、入ったら落とす。そのときはここも .autobuild.embeds を読むよう直す)。
 func autobuildSourcesNewer(dir string, binAt time.Time) bool {
 	// ソース木の外では判定しない (配布・コピーされたバイナリ、テストバイナリの一時ディレクトリ)。
 	// go_autobuild.zsh はバイナリを src_dir 直下へ置くので、隣に go.mod があるのがソース木の印。

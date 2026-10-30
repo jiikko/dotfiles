@@ -553,8 +553,8 @@ var templateMarks = regexp.MustCompile(`__DATA_JSON__|__TITLE__`)
 
 // RenderHTML はデータをプレイヤー (skill の templates/player.html) に差し込む。
 //
-// テンプレートは go:embed で焼き込まない: bin/lib/go_autobuild.zsh の再ビルドの判定は .go と go.mod / go.sum しか
-// 見ないので、焼き込むとテンプレートだけを直したときに古いバイナリが古い見た目で作り続ける。
+// テンプレートは go:embed で焼き込まない: skill の templates/ (module の外) にあり、SetSkillDir で差し替えられる
+// (embed は module の外を指せない)。
 func RenderHTML(data *PlayerData, env *app.Env) (string, error) {
 	tb, err := os.ReadFile(env.Template())
 	if err != nil {
