@@ -175,6 +175,7 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | start-issues-ops, issue運用を始める, issuesディレクトリを作る | `~/.claude/skills/start-issues-ops/SKILL.md` |
 | cleanup-tmp-dir, /tmp を掃除, 一時ファイルを片付け, TMPDIR が溜まっている | `~/.claude/skills/cleanup-tmp-dir/SKILL.md` (消す前に承認を取る。dotfiles の tmp/ は `make clean-tmp`) |
 | claude-md-refresh, CLAUDE.md の refresh, README が古い, ディレクトリの文書の乖離 | `~/.claude/skills/claude-md-refresh/SKILL.md` (引数で対象ディレクトリを指定。issues/ は対象外) |
+| claude-md-compact, CLAUDE.md を圧縮, rules を縮める, 常時読み込みを減らす, instruction files の上限 | `~/.claude/skills/claude-md-compact/SKILL.md` (規範を残して実例・重複を外へ移す。ずれを直すのは claude-md-refresh) |
 | refresh-on-session, 差分全体の見直し, 用語の揺れ, コメントの更新漏れ, 呼び出し元の追従漏れ | `~/.claude/skills/refresh-on-session/SKILL.md` (差分だけを見る。バグ探しは `/code-review`) |
 | events.yml, 審査が通った, バージョン公開を記録, product-analytics, my-products-update-apps-event | `~/.claude/skills/my-products-update-apps-event/SKILL.md` |
 | クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `~/.claude/skills/crash-log-analyzer/SKILL.md` |

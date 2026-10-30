@@ -42,3 +42,7 @@ global timeout 5 秒の環境で 8 秒後も driver・stub・孫プロセスが�
 - [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) の
   「実測 4 回目」節 — 変異 all-red の後に敵対レビューがこの 2 件を出した経緯
 - issue 150 の「対応」節
+
+## 起源 (2026-10-30 に rule の本文の「なぜ」節から移した)
+
+- dotfiles `bin/codex-fanout`, 2026-09-01 (issue 150 の敵対レビュー)

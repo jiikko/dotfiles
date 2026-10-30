@@ -9,6 +9,7 @@ description: ディレクトリ・レイヤーごとに置いた CLAUDE.md と R
 ディレクトリに置いた文書 (CLAUDE.md / README.md) を実体と突き合わせ、ずれていれば直す。
 保守の規範 (何を残し、何を書かないか) の正本は `~/.claude/rules/claude-md-maintenance.md` で、この skill はそれを
 **明示起動の一括点検**として回す手順を持つ (ルールの「定期レビューはしない」の例外。ユーザーが起動したときだけ回す)。
+中身を変えずに常時読み込みの字数を縮めるのは `claude-md-compact`。
 
 ## 引数
 
