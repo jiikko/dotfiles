@@ -12,12 +12,14 @@
 ## 実例 (2026-10-30)
 
 `internal/report/evidence.go` の `EvidenceText` は、`internal/report/grouped.go` の `EvidenceTextGrouped` に置き換わった後に残った写しだった (どこからも呼ばれず、
-[982](done/982-cleanup-dupscan-unused-text-writers.md) で消した)。違いはループの前の `var group fileHeading` の 1 文と、書式の文字列・1 つの呼び出し。
+[982](done/982-cleanup-dupscan-unused-text-writers.md) で消した)。違いはループの前の `var group fileHeading` の 1 文、ループの中の書式の文字列・`e.File` の引数の削除・`group.write(...)` の呼び出し。
 
 - 消す前の木 (`8ae039fbd`) で `dupscan near -similar src/dupscan/internal/report/evidence.go:EvidenceText src/dupscan` → `candidates=0` (しきい値 0.4・比べた単位 684)
 - sweep の節 3 (Dice 0.60 以上) にも出ていなかった
 - `explain -compare` は、ループの中の局所の名前が `$8` → `$9` にずれていることを示した
 - 写しを見つけたのは `deadcode` (未使用の関数) だった
+- **スコアの実測** (同じ木で `-similar-threshold 0.05`): 今の形で **0.388** (しきい値 0.4 のわずかに下)。`Subtrees` を `anon` にした版で **0.507**。
+  番号のずれは主因の一部で、書式の違い・引数の削除も大きな祖先の部分木の一致を崩している (反証レビューの指摘で測った)。`anon` で `near -similar` (0.4) には出るが、sweep の節 3 (0.60) には出ない
 
 ## 発火条件
 
@@ -32,6 +34,18 @@
 
 ## 受け入れ条件
 
-- [ ] 上の実例の形 (途中に 1 文の宣言を足した写し) をテストにして、`near -similar` の候補に出ることを確かめる (直す前に赤)
+- [ ] 宣言を 1 文足しただけの写しの Dice が 1.0 になる (今は番号がずれて下がる) ことを `internal/norm` のテストにする (直す前に赤)
+- [ ] 実例の対のスコアを直す前後で書く (上の 0.388 → 0.507)
 - [ ] dotfiles の `src` で sweep の節 3 の対の数と所要を直す前後で測って書く (増えすぎるなら採らない)
-- [ ] `Subtrees` の doc の限界の行を、直した形に合わせて書き直す
+- [ ] `Subtrees` の doc と、`similar_cmd.go` の Limitations の `unit-wide local numbering` を直した形に合わせて書き直す (引数に先に番号を振る前処理も要らなくなる)
+
+## 測った結果 (2026-10-30、dotfiles の `src`、`sweep -limit 0`)
+
+| | 節 3 の対 | 所要 (sweep 全体) |
+|---|---|---|
+| 今の形 | 52 | 5.42 秒 |
+| `anon` | 88 (+36、消えた対 0) | 5.42 秒 |
+
+増えた 36 対は、本体が同じで引数の並び・数だけが違う小さな helper (多くは module をまたいだテストの `must` / `write` / `writeFile` 系) と、
+`treefiler/filer/model.go` の `spawnFrom ~ ghostTarget` (0.768)。引数の宣言の順に番号を振っていたので、引数の並びが違うだけで別の形になっていた。
+どれも「似ている候補」として筋が通るので採る (局所の名前の入れ替え `a - b` / `b - a` の区別は部分木の中で無くなるが、節 3 は同一性を主張しない)
