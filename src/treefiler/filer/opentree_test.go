@@ -12,22 +12,8 @@ import (
 // layoutAll は仮想化せずに全ノードを配置する (正解役だけに使う)。
 func (m *Model) layoutAll() map[*node]place { return m.layoutWith(false) }
 
-// columnByLayout は column の正解役 (木全体を配置して、同じ深さの項目を y で並べる)。
-func columnByLayout(m *Model, of *node) []*node {
-	pos := m.layoutAll()
-	d := of.depth()
-	var col []*node
-	for n := range pos {
-		if n.depth() == d {
-			col = append(col, n)
-		}
-	}
-	sort.Slice(col, func(i, j int) bool { return pos[col[i]].y < pos[col[j]].y })
-	return col
-}
-
 // maxFixtureNodes はこの検査が扱う木の節の数の上限。fixture は数十節で、これを超えたら木が fixture の外 (実在の dir) へ広がっている。
-// 正解役 columnByLayout は節ごとに配置を作り直して並べる O(n²) なので、外の dir が大きい (開発機の $TMPDIR は 5 万件に達した) と終わらない。
+// 正解役の配置は打鍵ごとに木全体を作り直すので、外の dir が大きい (開発機の $TMPDIR は 5 万件に達した) と終わらない。
 const maxFixtureNodes = 300
 
 // escapedFixture は木が fixture の外へ広がったか (節の数が上限を超えたか) と、その数。
@@ -47,7 +33,9 @@ func capAscent(m *Model, limit, k string) string {
 }
 
 // 列 (検索の対象) は、配置を作って y で並べた列と同じ項目・同じ順。開閉・dotfile・経路の上の dotfile・並びの設定を乱数で混ぜる。
-func TestColumnMatchesLayout(t *testing.T) {
+// TestOpenTreeMatchesLayout は、検索の対象 (openTree) が、仮想化せずに配置した項目 (描く項目) とちょうど同じ集合であることを、
+// 乱数の操作列 (開閉・移動・隠しファイル・並べ替え) の後ごとに確かめる。検索で届く項目と光る項目を揃える前提 (spec §6.2)。
+func TestOpenTreeMatchesLayout(t *testing.T) {
 	keys := []string{"j", "k", "J", "K", "g", "G", "h", "l", "l", "space", "tab", "c", "C", ".", "S"}
 	for seed := range uint64(40) {
 		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
@@ -72,18 +60,23 @@ func TestColumnMatchesLayout(t *testing.T) {
 				}
 				log = append(log, k)
 				if n, escaped := escapedFixture(m); escaped {
-					t.Fatalf("%v の後に木が fixture の外へ広がった: %d 節 (root=%s)。正解役は O(n²) で、外の dir が大きいと終わらない", log, n, m.root.path())
+					t.Fatalf("%v の後に木が fixture の外へ広がった: %d 節 (root=%s)。正解役は打鍵ごとに全体を配置し、外の dir が大きいと終わらない", log, n, m.root.path())
 				}
-				checked := 0
-				for _, n := range maps(m.layoutAll()) {
-					want, got := columnByLayout(m, n), m.column(n)
-					if !slices.Equal(want, got) {
-						t.Fatalf("%v の後の %s の列:\n got %s\nwant %s", log, n.abs, names(got), names(want))
-					}
-					checked++
-				}
-				if checked == 0 {
+				want := maps(m.layoutAll())
+				got := m.openTree()
+				if len(want) == 0 {
 					t.Fatal("配置が空 (検査が何も見ていない)")
+				}
+				byPath := func(ns []*node) []string {
+					out := make([]string, len(ns))
+					for i, n := range ns {
+						out[i] = n.abs
+					}
+					sort.Strings(out)
+					return out
+				}
+				if w, g := byPath(want), byPath(got); !slices.Equal(w, g) {
+					t.Fatalf("%v の後の開いた木と配置が食い違う:\n got %s\nwant %s", log, g, w)
 				}
 			}
 		})

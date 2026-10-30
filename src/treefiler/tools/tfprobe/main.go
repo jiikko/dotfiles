@@ -54,7 +54,7 @@ func main() {
 	flag.StringVar(&o.out, "out", "", "結果を書くフォルダ (必須。無ければ作る)")
 	flag.StringVar(&o.file, "file", "treefiler/filer/model.go", "タイルで開くファイル (root からの相対。無ければその段を飛ばす)")
 	flag.StringVar(&o.md, "md", "treefiler/README.md", "タイルで開く Markdown (root からの相対。無ければその段を飛ばす)")
-	flag.StringVar(&o.query, "query", "tr", "検索で打つ文字列 (root の直下の名前の中から探す。/ はカーソルの列の中の検索)")
+	flag.StringVar(&o.query, "query", "tr", "検索で打つ文字列 (root の直下の名前の中から探す。/ は開いている木の全体の検索)")
 	flag.IntVar(&o.cycles, "cycles", 5, "台本を回す回数 (サイクルごとに Model を作って閉じる = glogx の F の開閉)")
 	flag.IntVar(&o.width, "width", 200, "画面の幅")
 	flag.IntVar(&o.height, "height", 50, "画面の高さ")
@@ -420,7 +420,7 @@ func (p *probe) cycle(c int) error {
 			s.keys("y") // 見える項目が 100 件以上なら確認の板が出る (filer/explode.go)。板が無いときの y はパスのコピーなので打たない
 		}
 	})
-	// j / k と / はカーソルの列 (兄弟) の中で動く。root の列は root だけなので、l で root の直下の列へ入ってから動く
+	// j / k はカーソルの列 (兄弟) の中で動く (/ は開いている木の全体を探す)。root の列は root だけなので、l で root の直下の列へ入ってから動く
 	s.phase("move", func() { s.keys(moveKeys(columnSize(p.o.root))...) })
 	s.phase("search", func() {
 		s.keys("/")

@@ -9,7 +9,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
-// search.go はカーソルの列の中のあいまい検索 (`/`。spec §6.2)。入力は tuikit/lineedit (glogx-ui-guide §7 の編集キー)。
+// search.go は開いている木の全体のあいまい検索 (`/`。spec §6.2)。入力は tuikit/lineedit (glogx-ui-guide §7 の編集キー)。
 
 type searchState struct {
 	active  bool
@@ -17,6 +17,7 @@ type searchState struct {
 	origin  *node // 検索を始めたときのカーソル (Esc / 一致なしで戻る先)
 	at      int   // 今の一致の番号
 	matches []*node
+	hit     map[*node]bool // matches と同じ集合。ハイライトはこれに入る項目だけに付ける (光っているのに Tab で届かない項目を作らない)
 }
 
 // rank の段 (小さいほど良い。spec §6.2 の fuzzy)。
@@ -119,30 +120,37 @@ func isWordStart(name string, i int) bool {
 	return unicode.IsLower(prev) && unicode.IsUpper(cur)
 }
 
-// column はカーソルの列 (同じ深さの見えている項目を上から)。画面の外の項目も検索の対象 (仮想化した配置は画面の近くしか持たない)。
-// 配置 (layout.go の layoutWith) は、列ごとに上の列の開いたフォルダの順に、その見せる子のブロックを重ねずに並べるので、
-// 列の上からの並びは「上の列の開いたフォルダの見せる子 (visKids の順) を順に繋いだもの」と同じ。配置を作って y で並べ直さない
-// (5 万件の列で 1 打鍵 24ms かかる)。🚨 layoutWith の「次の列に置く親」の条件を変えたら、ここも合わせる
-// (search_test.go の TestColumnMatchesLayout が配置を正解役に突き合わせる)。
-func (m *Model) column(of *node) []*node {
-	col := []*node{m.root}
-	for range of.depth() {
-		var next []*node
-		for _, p := range col {
-			if p.dir && p.expanded {
-				next = append(next, m.kids(p)...)
+// openTree は開いている木の全体を読み順 (root → 開いたフォルダの見せる子 → 次の兄弟) で並べる。開いていないフォルダの中は含めない
+// (見えない項目はハイライトできず、飛ぶには途中を開いて木の形を変えることになる。spec §6.2)。画面の外の項目も含む
+// (仮想化した配置は画面の近くしか持たない)。
+func (m *Model) openTree() []*node {
+	var out []*node
+	var walk func(n *node)
+	walk = func(n *node) {
+		out = append(out, n)
+		if n.dir && n.expanded {
+			for _, k := range m.kids(n) {
+				walk(k)
 			}
 		}
-		col = next
 	}
-	return col
+	walk(m.root)
+	return out
 }
 
-// findMatches は列の中で query に一致する項目を、良い段から (同じ段は上から) 並べる。
-// どれかが部分一致以上なら、文字が順に含まれるだけの一致は外す (spec §6.2)。
-func findMatches(col []*node, query string) []*node {
+// findMatches は order (読み順) の中で query に一致する項目を、良い段から並べる。同じ段の中は from から読み順で次に来るものを先に
+// (from が一致すれば from から)、末尾を越えたら先頭から。どれかが部分一致以上なら、文字が順に含まれるだけの一致は外す (spec §6.2)。
+func findMatches(order []*node, query string, from *node) []*node {
+	start := 0
+	for i, n := range order {
+		if n == from {
+			start = i
+			break
+		}
+	}
 	var byRank [rankNone][]*node
-	for _, n := range col {
+	for k := range order {
+		n := order[(start+k)%len(order)]
 		if r, _ := fuzzy(n.name, query); r < rankNone {
 			byRank[r] = append(byRank[r], n)
 		}
@@ -155,6 +163,15 @@ func findMatches(col []*node, query string) []*node {
 		out = byRank[rankLoose]
 	}
 	return out
+}
+
+// setMatches は一致とハイライトの集合を 1 か所で揃えて置く。
+func (s *searchState) setMatches(ms []*node) {
+	s.matches = ms
+	s.hit = make(map[*node]bool, len(ms))
+	for _, n := range ms {
+		s.hit[n] = true
+	}
 }
 
 func (m *Model) startSearch() {
@@ -199,18 +216,19 @@ func (m *Model) endSearch(restore bool) {
 		m.restoreOrigin()
 	}
 	s := &m.search
-	s.active, s.matches, s.origin = false, nil, nil
+	s.active, s.matches, s.hit, s.origin = false, nil, nil, nil
 }
 
 // refreshMatches は検索語が変わった後に一致を引き直し、いちばん良い一致へ移る (無ければ始めた位置へ)。
 func (m *Model) refreshMatches() {
 	s := &m.search
-	if s.line.Empty() { // 空欄は何にも一致しない (列を作らない)
-		s.matches, s.at = nil, 0
+	if s.line.Empty() { // 空欄は何にも一致しない (木を辿らない)
+		s.setMatches(nil)
+		s.at = 0
 		m.restoreOrigin()
 		return
 	}
-	s.matches = findMatches(m.column(s.origin), s.line.String())
+	s.setMatches(findMatches(m.openTree(), s.line.String(), s.origin))
 	s.at = 0
 	if len(s.matches) > 0 {
 		m.setCur(s.matches[0])
@@ -228,19 +246,19 @@ func (m *Model) restoreOrigin() {
 
 func (m *Model) stepMatch(d int) {
 	s := &m.search
-	// 検索中のライブ更新で消えた一致は外す (木の外へカーソルを出さない)。今の列の集合で引く
-	// (一致ごとに inTree で兄弟を線形に探すと、5 万件の列で一致の数 × 5 万になる)
-	inCol := map[*node]bool{}
-	for _, n := range m.column(s.origin) {
-		inCol[n] = true
+	// 検索中のライブ更新で消えた・畳まれた一致は外す (木の外へカーソルを出さない)。今の開いた木の集合で引く
+	// (一致ごとに inTree で兄弟を線形に探すと、一致の数 × 項目の数になる)
+	inTree := map[*node]bool{}
+	for _, n := range m.openTree() {
+		inTree[n] = true
 	}
 	live := s.matches[:0]
 	for _, n := range s.matches {
-		if inCol[n] {
+		if inTree[n] {
 			live = append(live, n)
 		}
 	}
-	s.matches = compactTail(s.matches, live)
+	s.setMatches(compactTail(s.matches, live))
 	s.at = min(s.at, max(len(live)-1, 0))
 	if len(s.matches) == 0 {
 		return
@@ -249,14 +267,14 @@ func (m *Model) stepMatch(d int) {
 	m.setCur(s.matches[s.at])
 }
 
-// repeatSearch は確定した前回の検索で、カーソルの列の次 / 前の一致へ (n / N)。
+// repeatSearch は確定した前回の検索で、開いている木の読み順で次 / 前の一致へ (n / N)。
 func (m *Model) repeatSearch(d int) {
 	if m.lastSearch == "" {
 		m.fail("前回の検索がありません (/ で検索する)")
 		return
 	}
-	col := m.column(m.cur) // 列の中の並び (上から)。1 回だけ作る
-	ms := findMatches(col, m.lastSearch)
+	col := m.openTree() // 読み順の並び。1 回だけ作る
+	ms := findMatches(col, m.lastSearch, m.root)
 	if len(ms) == 0 {
 		m.fail("一致がありません: " + m.lastSearch)
 		return

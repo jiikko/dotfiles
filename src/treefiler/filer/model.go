@@ -1424,7 +1424,7 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 			if d := m.details(n); d != "" {
 				c.put(x+m.nameWidth(n)+2, y, d, mix(cBg, base, a.alpha.v*0.5), false) // 列の中で右揃え・薄く (spec §3.4)
 			}
-			if q != "" {
+			if q != "" && m.search.hit[n] {
 				if r, spans := fuzzy(n.name, q); r < rankNone {
 					lw := n.labelCells()
 					for _, sp := range spans {
@@ -1626,7 +1626,7 @@ var helpKeys = [][2]string{
 	{"> <", "配下を全部開く (esc で中断。100 件以上は確認) · 配下を全部畳む"},
 	{"Z", "全部畳んで root 直下に戻る (カーソルは経路の root 直下へ)"},
 	{"e", "エディタで開く (フォルダも)"},
-	{"/ n N", "列の中を検索 · 次 · 前"},
+	{"/ n N", "開いた木の全体を検索 · 次 · 前"},
 	{"- backspace ^H", "root を 1 段上へ"},
 	{". I", "dotfile の表示を切り替え"},
 	{",", "設定"},
