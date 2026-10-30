@@ -1,12 +1,10 @@
 # 994 (bug): Swift の setter の引数を宣言として扱い、宣言を作る節の一覧を nameRole と 1 つにする
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-10-30〜）
-
 起票日: 2026-10-30
 
 ## 概要
 
-[993](done/993-test-dupscan-swift-scope-kinds-cover-grammar.md) で「守れていないもの」として記録した残りを片付ける。
+[993](993-test-dupscan-swift-scope-kinds-cover-grammar.md) で「守れていないもの」として記録した残りを片付ける。
 
 1. computed property の `set(v)` の v が宣言 (引数) として扱われず、引数の名前だけが違う setter の写しが L1 の組にならない
 2. 宣言を作る節の一覧 (`scope_kinds_test.go` の `declMakers`) が、`swift.go` の `nameRole` と結ばれていない (足し忘れても緑)
