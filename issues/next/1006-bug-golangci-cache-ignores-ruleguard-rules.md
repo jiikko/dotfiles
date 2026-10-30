@@ -1,0 +1,1 @@
+../1006-bug-golangci-cache-ignores-ruleguard-rules.md
