@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # issue_done.sh — issue を done/ へ送る 4 手順を 1 コマンドに寄せる。
 #
-#   scripts/issue_done.sh <NNN> [<NNN>...]
+#   scripts/issue_done.sh <NNN> [<NNN>...]   (他の repo でも、その repo の中から ~/dotfiles/scripts/issue_done.sh で呼べる)
 #
 # ## なぜ 1 本に寄せるか
 #
@@ -81,10 +81,13 @@ unset CDPATH
 # `|| true` で握り潰されて「リンクが解決しない」という別の理由で落ちる。判定はどれもバイト列の一致なので C で読む
 export LC_ALL=C
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" # 道具の置き場 (dotfiles)。操作する repo ではない
 BANNER_AWK="$ROOT_DIR/scripts/lib/claim_banner.awk" # 担当者バナーの判定規則 (tests/issues/test_next_claims_have_banner.sh と共用)
-ISSUES_DIR="${ISSUES_DIR:-$ROOT_DIR/issues}"
-while [ "${ISSUES_DIR%/}" != "$ISSUES_DIR" ]; do ISSUES_DIR="${ISSUES_DIR%/}"; done
+# 🚨 hook などから継承した GIT_DIR / GIT_WORK_TREE は `git -C` より優先され、既定の repo の解決も移動も別の repo に向く
+# shellcheck source=bin/lib/git_location_env.sh
+. "$ROOT_DIR/bin/lib/git_location_env.sh" ||
+  { echo "issue_done: bin/lib/git_location_env.sh を読めない" >&2; exit 2; }
+git_location_env_unset || { echo "issue_done: 継承した git の場所の環境変数 (GIT_DIR など) を外せない" >&2; exit 2; }
 
 usage() {
   cat >&2 <<'USAGE'
@@ -93,7 +96,7 @@ usage: scripts/issue_done.sh <NNN> [<NNN>...]
   issue を done/ へ送る (移動 / claim symlink の削除 / 本文リンクの張り直しと担当者バナーの削除 /
   他 issue からの参照の張り直し) を 1 コマンドで行い、リンク検査が落ちたら移動を戻す。
 
-  ISSUES_DIR=<dir>   検査・操作の対象ディレクトリ (既定: <repo>/issues)
+  ISSUES_DIR=<dir>   検査・操作の対象ディレクトリ (既定: cwd の git repo の root の issues)
 USAGE
 }
 
@@ -347,6 +350,15 @@ for n in "$@"; do
     *) printf '✗ issue 番号は 3 桁で指定する: %s\n' "$n" >&2; exit 2 ;;
   esac
 done
+# 既定は cwd の repo の issues/ (issue_claim.sh と同じ決め方)。スクリプトの置き場から決めない:
+# ~/dotfiles/scripts/issue_done.sh を他の repo から呼ぶと dotfiles の issues/ を探し、同じ番号が dotfiles にもあれば
+# そちらを done へ動かす。dotfiles の worktree から本体の実体パスで呼んだときも、本体の checkout を動かす
+if [ -z "${ISSUES_DIR:-}" ]; then
+  repo="$(git rev-parse --show-toplevel 2>/dev/null)" ||
+    { printf '✗ git の repo の中で実行するか、ISSUES_DIR を指定する (何も動かしていない)\n' >&2; exit 2; }
+  ISSUES_DIR="$repo/issues"
+fi
+while [ "${ISSUES_DIR%/}" != "$ISSUES_DIR" ]; do ISSUES_DIR="${ISSUES_DIR%/}"; done
 [ -d "$ISSUES_DIR" ] || { printf '✗ 対象ディレクトリが無い: %s\n' "$ISSUES_DIR" >&2; exit 1; }
 # 🚨 物理パスへ揃える。BASE_DIR は `pwd -P` で物理、find / scan_candidates の出力もここから
 # 派生するので、片方だけ論理パス (macOS の /var -> /private/var 等) だと

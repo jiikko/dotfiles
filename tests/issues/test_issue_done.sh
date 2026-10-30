@@ -99,10 +99,23 @@ make_fake_root() {
   mkdir -p "$fake/scripts"
   ln -s "$ROOT_DIR/tests" "$fake/tests"
   ln -s "$ROOT_DIR/scripts/lib" "$fake/scripts/lib" # バナーの判定規則 (claim_banner.awk) は本物を通す
+  ln -s "$ROOT_DIR/bin" "$fake/bin"                 # git_location_env.sh も本物を通す
   if [ -n "$expr" ]; then sed "$expr" "$SCRIPT" > "$fake/scripts/issue_done.sh"
   else cp "$SCRIPT" "$fake/scripts/issue_done.sh"; fi
   chmod +x "$fake/scripts/issue_done.sh"
   printf '%s' "$fake"
+}
+
+# 戻ったことの判定は「fixture を作り直した直後との全ファイル差分ゼロ」で見る
+# (ファイルの有無だけを見ると、本文だけ書き換わって戻っていない形を素通しする)
+snapshot() {
+  ( cd "$1" || exit 1
+    find issues -print | sort | while IFS= read -r p; do
+      if [ -L "$p" ]; then printf '%s|L|%s\n' "$p" "$(readlink "$p")"
+      elif [ -f "$p" ]; then printf '%s|F|%s\n' "$p" "$(shasum -a 256 < "$p" | awk '{print $1}')"
+      else printf '%s|D|\n' "$p"
+      fi
+    done )
 }
 
 # ---------------------------------------------------------------------------
@@ -191,6 +204,31 @@ LANG=ja_JP.UTF-8 LC_ALL=ja_JP.UTF-8 ISSUES_DIR="$d29/issues" "$SCRIPT" 347 > "$w
   { cat "$work/badbytes.log" >&2; fail "不正なバイトを含む本文の issue を UTF-8 のロケールで送れない"; }
 banner_check "$d29/issues/done/347-refactor-a.md" || fail "不正なバイトを含む本文: バナーの外し方が違う"
 
+# 2.9 ISSUES_DIR を渡さないときは cwd の repo の issues/ を相手にする (他の repo から ~/dotfiles/scripts/issue_done.sh で呼ぶ形)。
+#     🚨 道具は fake root (issues/ を持たない) から呼ぶ。既定が置き場の issues/ に戻る退行で、この checkout の issue を動かさないため
+fake_cwd="$(make_fake_root root-cwd '')"
+dw="$work/cwd"; mkdir -p "$dw"; make_fixture "$dw"
+( cd "$dw/docs" && env -u ISSUES_DIR "$fake_cwd/scripts/issue_done.sh" 347 ) > "$work/cwd.log" 2>&1 ||
+  { cat "$work/cwd.log" >&2; fail "ISSUES_DIR なし: cwd の repo (サブディレクトリから) の issue を動かせない"; }
+[ -f "$dw/issues/done/347-refactor-a.md" ] || fail "ISSUES_DIR なし: cwd の repo の issue が done に無い"
+
+# repo の外では、何も動かさず理由を出して止まる
+nogit="$work/nogit"; mkdir -p "$nogit"
+if ( cd "$nogit" && env -u ISSUES_DIR "$fake_cwd/scripts/issue_done.sh" 347 ) > "$work/nogit.log" 2>&1; then
+  fail "git の repo の外で ISSUES_DIR なしなのに成功した"
+fi
+grep -q 'git の repo の中で実行する' "$work/nogit.log" || { cat "$work/nogit.log" >&2; fail "repo の外: 理由が出ていない"; }
+
+# 継承した GIT_DIR が別の repo を指していても、cwd の repo を動かし、GIT_DIR の repo には触らない (hook から呼ばれる形)
+dg="$work/gitdir-cwd"; mkdir -p "$dg"; make_fixture "$dg"
+do_="$work/gitdir-other"; mkdir -p "$do_"; make_fixture "$do_"
+before_o="$(snapshot "$do_")"
+( cd "$dg" && env -u ISSUES_DIR GIT_DIR="$do_/.git" "$fake_cwd/scripts/issue_done.sh" 347 ) > "$work/gitdir.log" 2>&1 ||
+  { cat "$work/gitdir.log" >&2; fail "継承した GIT_DIR があると cwd の repo の issue を動かせない"; }
+[ -f "$dg/issues/done/347-refactor-a.md" ] || fail "継承した GIT_DIR: cwd の repo の issue が done に無い"
+[ "$before_o" = "$(snapshot "$do_")" ] || fail "継承した GIT_DIR の repo の issue を動かした"
+[ -z "$(git -C "$do_" status --porcelain)" ] || fail "継承した GIT_DIR の repo の index / 作業ツリーを変えた"
+
 # ---------------------------------------------------------------------------
 # 3. 着手前に既に赤いなら何も動かさない (自分の変更のせいに見える赤を作らない)
 # ---------------------------------------------------------------------------
@@ -205,18 +243,6 @@ fi
 # ---------------------------------------------------------------------------
 # 4. 変異: 手順を 1 つずつ外すと、対応する検査が赤くなり **元へ戻る**
 # ---------------------------------------------------------------------------
-# 戻ったことの判定は「fixture を作り直した直後との全ファイル差分ゼロ」で見る
-# (ファイルの有無だけを見ると、本文だけ書き換わって戻っていない形を素通しする)
-snapshot() {
-  ( cd "$1" || exit 1
-    find issues -print | sort | while IFS= read -r p; do
-      if [ -L "$p" ]; then printf '%s|L|%s\n' "$p" "$(readlink "$p")"
-      elif [ -f "$p" ]; then printf '%s|F|%s\n' "$p" "$(shasum -a 256 < "$p" | awk '{print $1}')"
-      else printf '%s|D|\n' "$p"
-      fi
-    done )
-}
-
 check_mutant() {  # $1=名前 $2=sed 式 $3=赤くなるべき検査のキーワード
   local name expr want fake dm before after
   name="$1"; expr="$2"; want="$3"
@@ -289,4 +315,4 @@ grep -q '✗ canary' "$work/mut-canary.log" ||
   { cat "$work/mut-canary.log" >&2; fail "canary ではなく後段で落ちた (触る前に止まっていない)"; }
 [ "$before_c" = "$(snapshot "$dc")" ] || fail "canary で落ちたのに fixture が変わっている"
 
-printf '✓ issue_done.sh: 正常系 (global / group / repo root からの参照 / 追跡外 claim / epic の深い置き場を拒否 / --help) / baseline 赤の拒否 / 変異 8 本 (claim 削除・本文の張り直し・参照の張り直し・走査範囲・判定前の中断・母集合の空振り・canary・バナー除去) すべて red (バナー除去は検査側で red。それ以外は rollback 済み)\n'
+printf '✓ issue_done.sh: 正常系 (global / group / repo root からの参照 / 追跡外 claim / epic の深い置き場を拒否 / --help / ISSUES_DIR なしは cwd の repo・repo の外は拒否・継承した GIT_DIR を無視) / baseline 赤の拒否 / 変異 8 本 (claim 削除・本文の張り直し・参照の張り直し・走査範囲・判定前の中断・母集合の空振り・canary・バナー除去) すべて red (バナー除去は検査側で red。それ以外は rollback 済み)\n'
