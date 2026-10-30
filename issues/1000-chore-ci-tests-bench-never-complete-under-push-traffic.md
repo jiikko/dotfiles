@@ -54,3 +54,4 @@ retro 999 の P-2。`.github/workflows/tests.yml` と `bench.yml` は `concurren
 - [x] 敵対的レビュー (opus) 3 周。直したもの・受けたものは commit message に書いた。受けた: schedule の起動は負荷で遅れたり落ちたりしうる /
   偽の gh は jobs の filter=latest を模していない
 - [ ] push の後の最初の schedule の run を本物の Actions で見る
+  - 2026-10-30 15:33 時点で未起動: 14:17・15:17 とも schedule の run が 0 件 (`gh run list --event schedule` が `[]`)。tests.yml・bench.yml とも state=active、master の定義に `cron: '17 * * * *'` がある。新しく足した cron は最初の起動が遅れることがあるので、次に schedule の run が出たときに gate の判定 (ログの ci_schedule_gate の行) と本体の走り方を見る。同じ時間帯に push の Tests は 3 本続けて完走していた (05:50Z・06:05Z・06:23Z)
