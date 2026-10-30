@@ -41,4 +41,16 @@ retro 999 の P-2。`.github/workflows/tests.yml` と `bench.yml` は `concurren
 - [x] 起票時の反証レビュー (sonnet、読み取りのみ): 「どの commit も完走しない」は言い過ぎ (間が空けば完走する) → 直した。
   候補 2 の schedule の run は group を明示的に分けないと取り消される → 書き足した。候補 1 の式は有効
 
-- [ ] 方針を決める
+- [x] 方針を決める: 候補 2 (ユーザー指示「1000 は候補 2 でやって」2026-10-30)
+- [x] 実装 — commit「ci: push が続いて Tests / Bench が完走しない間も、毎時の schedule の run で master の最新を検証する (issue 1000)」
+  - tests.yml・bench.yml に毎時 17 分の schedule。concurrency の group は schedule と push で分ける
+  - schedule-gate (`scripts/ci_schedule_gate.sh`): その commit を本体の job が既に検証したか (job の一覧で、schedule-gate 以外の job が
+    success / failure で終わった run があるか) を見る。緑なら gate だけで緑、赤なら gate だけの run を取り消す、未検証なら本体を走らせる。
+    走っている途中の run は数えない (push が続く場面で次の push に取り消されるため)。問い合わせの失敗は本体を走らせる
+  - bin/ci-log -i は取り消された schedule の run を飛ばす。引数なしの ci-log の窓を 60 → 200 本
+  - runner は GitHub の hosted (repo は public で課金なし)。gate も規約どおり xcode-27 に置いた
+- [x] テストと変異 (10 本 red)・repo 全体の make test rc=0・本物の GitHub に判定を読み取りで打って確かめた (直近 8 commit で本体が緑で
+  走り切ったのは 1 つだけ)
+- [x] 敵対的レビュー (opus) 3 周。直したもの・受けたものは commit message に書いた。受けた: schedule の起動は負荷で遅れたり落ちたりしうる /
+  偽の gh は jobs の filter=latest を模していない
+- [ ] push の後の最初の schedule の run を本物の Actions で見る
