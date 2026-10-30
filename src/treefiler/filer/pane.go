@@ -49,6 +49,9 @@ type paneState struct {
 	shown   *paneResult // 描いている結果
 	mu      sync.Mutex
 	latest  *paneResult // goroutine が置いた最新の結果 (Advance で shown へ移す)
+	// loader は裏で走らせる読み込み (nil なら loadPane)。テストが止める読み込みに差し替えて、UI の goroutine で読んでいない
+	// ことを確かめる。Model ごとに持つ: パッケージの変数にすると、前のテストの goroutine が読むのと差し替えが競合する
+	loader func(paneKey) paneResult
 }
 
 // paneWidth は欄の桁 (出さないなら 0)。
@@ -76,35 +79,62 @@ func (m *Model) stepPane() {
 		m.pane.shown, m.pane.latest, m.pane.waiting = r, nil, false
 	}
 	m.pane.mu.Unlock()
-	pw := m.paneWidth()
-	if pw == 0 || m.cur.dir || m.holding {
+	if m.paneWidth() == 0 || m.cur.dir {
+		// 出さない間は待たない: 読み込みが返らないファイル (止まったネットワークのマウント) で Busy が下りず、tick が回り続ける。
+		// 遅れて届いた結果は、同じ世代のまま次の Advance で取り込む (描くかは drawPane が鍵で決める)
+		m.pane.waiting = false
 		return
 	}
-	w, h := m.paneBody()
-	k := paneKey{path: m.cur.path(), raw: m.cur.raw, name: m.cur.name, mtime: m.cur.mtime.UnixNano(), size: m.cur.size,
-		w: w, h: h, wrap: m.set.Wrap}
+	if m.holding {
+		return
+	}
+	k := m.paneKeyNow()
 	if k == m.pane.asked {
 		return
 	}
 	m.pane.gen++
 	m.pane.asked, m.pane.waiting = k, true
 	gen := m.pane.gen
+	load := m.pane.loader
+	if load == nil {
+		load = loadPane
+	}
 	go func() {
-		r := paneLoader(k)
-		r.gen = gen
-		m.pane.mu.Lock()
-		if m.pane.latest == nil || m.pane.latest.gen < gen {
-			m.pane.latest = &r
-		}
-		m.pane.mu.Unlock()
+		m.pane.offer(loadPaneSafe(load, k, gen))
 	}()
 }
 
-// paneLoading は頼んだ中身がまだ届いていないか (欄を閉じた後も、頼んだ分は届くまで数える: 届いた結果を取り込む Advance を呼ばせる)。
-func (m *Model) paneLoading() bool { return m.pane.waiting }
+// paneKeyNow は今のカーソルと欄の大きさから決まる中身の鍵 (ファイルを読まない。path は node が持つ値)。
+func (m *Model) paneKeyNow() paneKey {
+	w, h := m.paneBody()
+	return paneKey{path: m.cur.path(), raw: m.cur.raw, name: m.cur.name, mtime: m.cur.mtime.UnixNano(), size: m.cur.size,
+		w: w, h: h, wrap: m.set.Wrap}
+}
 
-// paneLoader は裏で走らせる読み込み (テストが止める読み込みに差し替えて、UI の goroutine で読んでいないことを確かめる)。
-var paneLoader = loadPane
+// offer は裏の goroutine が結果を置く。前に置かれたものより新しい世代だけを置く (古い頼みが遅れて届いても、新しい結果を消さない)。
+func (p *paneState) offer(r paneResult) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.latest == nil || p.latest.gen < r.gen {
+		p.latest = &r
+	}
+}
+
+// loadPaneSafe は load を呼び、panic を欄の 1 行に変える: 裏の goroutine の panic は回復されずにプロセスごと落ち、
+// 端末も戻らない (タイルの読み込みは bubbletea の Update の中で走り、そこで回復されていた)。
+func loadPaneSafe(load func(paneKey) paneResult, k paneKey, gen int) (r paneResult) {
+	defer func() {
+		if recover() != nil {
+			r = paneResult{gen: gen, key: k, note: "表示できません (内部エラー): " + k.name}
+		}
+	}()
+	r = load(k)
+	r.gen = gen
+	return r
+}
+
+// paneLoading は今出すべき中身を待っているか (Busy。待つ間は呼び出し側が Advance を回し、届いた結果を取り込ませる)。
+func (m *Model) paneLoading() bool { return m.pane.waiting }
 
 // loadPane は k のファイルの先頭を読み、欄の高さ分の行を整形する。UI の goroutine から呼ばない (ファイルを読む)。
 func loadPane(k paneKey) paneResult {
@@ -183,7 +213,7 @@ func (m *Model) drawPane(c *canvas, ch int) {
 	if r == nil {
 		return
 	}
-	fresh := r.gen == m.pane.gen && r.key.path == m.cur.path()
+	fresh := r.gen == m.pane.gen && r.key == m.paneKeyNow() // 鍵ごと比べる (幅を変えた直後の古い幅の本文・書き換わる前の本文を薄くする)
 	if r.note != "" {
 		if fresh {
 			c.put(x0+2, 1, termwidth.Truncate(r.note, bw, "…"), cMuted, false)

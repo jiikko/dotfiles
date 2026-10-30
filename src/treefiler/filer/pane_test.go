@@ -4,6 +4,8 @@ import (
 	"math"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,33 +78,27 @@ func TestPaneToggleIsSaved(t *testing.T) {
 	}
 }
 
-// ファイルの中身は裏で読む: 読み込みが止まっていても、カーソルを動かした Advance はすぐ戻る (UI の goroutine で読まない)。
-// 届いてから今のファイルになる。
+// ファイルの中身は裏で読む: 読み込みは、それを頼んだ Advance が戻ってから先へ進める (UI の goroutine で読むと、Advance が
+// 読み込みの終わりを待つので、読み込みは Advance の戻りを見られない)。届いてから今のファイルの中身になる。
 func TestPaneLoadsAsync(t *testing.T) {
 	m := newTest(t)
-	release := make(chan struct{})
-	orig := paneLoader
-	paneLoader = func(k paneKey) paneResult { <-release; return orig(k) }
-	t.Cleanup(func() { paneLoader = orig })
-	cdTo(t, m, "a/one.txt")
-	done := make(chan struct{})
-	go func() {
-		m.Advance(m.lastAdv.Add(200 * time.Millisecond))
-		close(done)
-	}()
-	testwait.Until(t, "読み込みが止まったままの Advance が戻る", func() bool {
+	returned := make(chan struct{})
+	var sawReturn atomic.Bool
+	m.pane.loader = func(k paneKey) paneResult {
 		select {
-		case <-done:
-			return true
-		default:
-			return false
+		case <-returned:
+			sawReturn.Store(true)
+		case <-time.After(5 * time.Second): // hang guard (同期で読む退行で、Advance が永久に戻らないのを止める)
 		}
-	})
-	if !m.paneLoading() {
-		t.Fatal("前提: 頼んでいない")
+		return loadPane(k)
 	}
-	close(release)
+	cdTo(t, m, "a/one.txt")
+	m.Advance(m.lastAdv.Add(200 * time.Millisecond))
+	close(returned)
 	settlePane(t, m)
+	if !sawReturn.Load() {
+		t.Fatal("読み込みが、頼んだ Advance の戻りより先に終わった (UI の goroutine で読んでいる)")
+	}
 	got := strings.Join(paneText(m), "\n")
 	for _, want := range []string{"one.txt", "1", "2", "3"} {
 		if !strings.Contains(got, want) {
@@ -186,5 +182,119 @@ func TestLoadPaneFitsBody(t *testing.T) {
 		if w := termwidth.Of(termwidth.StripSGR(l)); w > 20-r.gw {
 			t.Fatalf("%d 行目が %d 桁 (本文の幅 %d を超える)", i, w, 20-r.gw)
 		}
+	}
+}
+
+// blockLoader は m の欄の読み込みを release を呼ぶまで止める (後始末でも放す)。止めるのは 5 秒まで: UI の goroutine で読む
+// 退行では、止めた読み込みを待つ Advance が戻らず、テストが赤ではなく止まって判定できなくなる。
+func blockLoader(t *testing.T, m *Model) (release func()) {
+	ch := make(chan struct{})
+	m.pane.loader = func(k paneKey) paneResult {
+		select {
+		case <-ch:
+		case <-time.After(5 * time.Second): // 上限 (hang guard)
+		}
+		return loadPane(k)
+	}
+	var once sync.Once
+	release = func() { once.Do(func() { close(ch) }) }
+	t.Cleanup(release)
+	return release
+}
+
+// paneBodyColors は欄の本文 (見出しの下) の空白でないセルの色の集合。
+func paneBodyColors(m *Model) map[rgb]bool {
+	c := m.draw()
+	set := map[rgb]bool{}
+	for y := 1; y < m.canvasH(); y++ {
+		for x := m.w - m.paneWidth() + 1; x < m.w; x++ {
+			if p := c.at(x, y); p.s != " " && p.s != "" {
+				set[p.fg] = true
+			}
+		}
+	}
+	return set
+}
+
+// 今のカーソルの中身が届くまでは、前の本文を薄い色で出す。届いたら薄い色は消える。
+func TestPaneDimsUntilCurrentArrives(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "a/one.txt")
+	settlePane(t, m)
+	dim := mix(cMuted, cBg, 0.4)
+	if paneBodyColors(m)[dim] {
+		t.Fatal("前提: 届いた本文が薄い")
+	}
+	release := blockLoader(t, m)
+	cdTo(t, m, "a/two.go")
+	m.Advance(m.lastAdv.Add(200 * time.Millisecond))
+	if !paneBodyColors(m)[dim] {
+		t.Fatal("読み込み中に前の本文が薄くならない (前のファイルの中身を今のものとして出している)")
+	}
+	release()
+	settlePane(t, m)
+	if paneBodyColors(m)[dim] {
+		t.Fatal("届いた後も薄い")
+	}
+}
+
+// 古い頼みの結果が遅れて届いても、先に届いた新しい結果を消さない。
+func TestPaneOfferKeepsNewest(t *testing.T) {
+	var p paneState
+	p.offer(paneResult{gen: 2})
+	p.offer(paneResult{gen: 1})
+	if p.latest.gen != 2 {
+		t.Fatalf("遅れて届いた世代 1 が世代 2 を上書きした")
+	}
+}
+
+// フォルダの上では頼まない。待っている間にフォルダへ移ったら待つのをやめる (読み込みが返らなくても Busy が下りる)。
+func TestPaneFolderStopsWaiting(t *testing.T) {
+	m := newTest(t)
+	release := blockLoader(t, m)
+	cdTo(t, m, "c.txt")
+	m.Advance(m.lastAdv.Add(200 * time.Millisecond))
+	if !m.paneLoading() {
+		t.Fatal("前提: 頼んでいない")
+	}
+	gen := m.pane.gen
+	cdTo(t, m, "b")
+	m.Advance(m.lastAdv.Add(200 * time.Millisecond))
+	if m.pane.gen != gen {
+		t.Fatal("フォルダの上で頼んだ")
+	}
+	if m.paneLoading() {
+		t.Fatal("フォルダへ移っても、返らない読み込みを待ち続ける")
+	}
+	release()
+}
+
+// 裏の読み込みの panic はプロセスを落とさず、欄に理由を 1 行出す。
+func TestPaneLoaderPanicIsNote(t *testing.T) {
+	r := loadPaneSafe(func(paneKey) paneResult { panic("boom") }, paneKey{name: "x.go"}, 7)
+	if r.gen != 7 || !strings.Contains(r.note, "内部エラー") {
+		t.Fatalf("panic の結果: gen %d note %q", r.gen, r.note)
+	}
+}
+
+// Markdown は整形して出す (見出しの # を外す)。
+func TestLoadPaneRendersMarkdown(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "r.md")
+	mustWrite(t, p, "# Title\n\nbody text\n")
+	r := loadPane(paneKey{path: p, raw: "r.md", name: "r.md", w: 30, h: 10, wrap: true})
+	got := termwidth.StripSGR(strings.Join(r.lines, "\n"))
+	if !strings.Contains(got, "Title") || strings.Contains(got, "# Title") || !strings.Contains(got, "body text") {
+		t.Fatalf("Markdown を整形していない:\n%s", got)
+	}
+}
+
+// 幅を変えた直後 (Advance の前に描く。glogx は Resize の直後に描く) は、前の幅で作った本文を今の中身として出さない。
+func TestPaneDimsAfterResizeBeforeAdvance(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "a/one.txt")
+	settlePane(t, m)
+	m.Resize(m.w+20, m.h)
+	if !paneBodyColors(m)[mix(cMuted, cBg, 0.4)] {
+		t.Fatal("幅を変えた直後に、前の幅の本文を今の中身として出した")
 	}
 }
