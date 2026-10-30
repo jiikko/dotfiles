@@ -9,10 +9,10 @@
 set -euo pipefail
 
 # lib の場所は cd の前に解決する (cd の後だと、サブディレクトリから相対パスで起動したときに $0 が解決できない)
-# shellcheck source=lib/issue_numbers.sh
+# shellcheck source=scripts/lib/issue_numbers.sh
 . "$(dirname "$(readlink -f "$0")")/lib/issue_numbers.sh"
 root="$(git rev-parse --show-toplevel)"
-cd "$root"
+cd "$root" || exit 1
 ref="${1:-$(issue_default_ref)}"
 git rev-parse --verify -q "$ref^{commit}" >/dev/null || { echo "issue_next_number: $ref が無い (git fetch してから回す)" >&2; exit 1; }
 [ -d issues ] || { echo "issue_next_number: $root に issues/ が無い" >&2; exit 1; }

@@ -44,7 +44,7 @@ case "${1:-}" in -h|--help) usage; exit 0 ;; esac
 ref="${1:-}"
 
 # lib の場所は cd の前に解決する (cd の後だと、サブディレクトリから相対パスで起動したときに $0 が解決できない)
-# shellcheck source=lib/issue_numbers.sh
+# shellcheck source=scripts/lib/issue_numbers.sh
 . "$(dirname "$(readlink -f "$0")")/lib/issue_numbers.sh"
 root="$(git rev-parse --show-toplevel)"
 cd "$root" || exit 1
