@@ -127,7 +127,7 @@ func TestBrowseScrollAnimNoHeightCap(t *testing.T) {
 func TestBrowseTickSingleFlight(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.usageOv.Fixture().SetVisible(false) // usage 取得中も spinnerActive になるため、tick 単体の検証から隔離する
-	if m.maybeTick() == nil || !m.ticking {
+	if m.maybeTick() == nil || !tickPending(m) {
 		t.Fatal("初回 maybeTick が tick を返さない / ticking が立たない")
 	}
 	if m.maybeTick() != nil {
@@ -135,13 +135,13 @@ func TestBrowseTickSingleFlight(t *testing.T) {
 	}
 	// tickMsg 到着で 1 拍消費 → spinnerActive なら 1 本だけ再アーム
 	m.pendingFetches = 1 // 一括取得中 (fetching() はここから導出。issue 224)
-	if _, cmd := m.Update(tickMsg{}); cmd == nil || !m.ticking {
+	if _, cmd := fireTick(m); cmd == nil || !tickPending(m) {
 		t.Fatal("spinnerActive 中の tickMsg で再アームされない")
 	}
 	// spinnerActive でなくなれば再アームせずチェーンは死ぬ
 	m.pendingFetches = 0
-	if _, cmd := m.Update(tickMsg{}); cmd != nil || m.ticking {
-		t.Fatalf("非 spinnerActive で tick が止まらない: cmd=%v ticking=%v", cmd != nil, m.ticking)
+	if _, cmd := fireTick(m); cmd != nil || tickPending(m) {
+		t.Fatalf("非 spinnerActive で tick が止まらない: cmd=%v ticking=%v", cmd != nil, tickPending(m))
 	}
 }
 
@@ -151,11 +151,11 @@ func TestBrowseTickPullAnimOncePerTick(t *testing.T) {
 	m.height = 6 // 短すぎない (offset を持てる)
 	m.pullAnimating = true
 	m.offset = 3
-	m.Update(tickMsg{})
+	fireTick(m)
 	if m.offset != 2 {
 		t.Fatalf("1 tickMsg で offset=%d (want 2 = 1 回だけ減算)", m.offset)
 	}
-	m.Update(tickMsg{})
+	fireTick(m)
 	if m.offset != 1 {
 		t.Fatalf("2 tickMsg 後 offset=%d (want 1)", m.offset)
 	}
@@ -167,7 +167,7 @@ func TestBrowseTickInvalidateGate(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.pendingFetches = 1
 	m.linesValid = true
-	m.Update(tickMsg{})
+	fireTick(m)
 	if m.linesValid {
 		t.Error("fetching 中の tickMsg でリストが無効化されない")
 	}
@@ -175,7 +175,7 @@ func TestBrowseTickInvalidateGate(t *testing.T) {
 	mp := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	mp.statuses = statusesFor(mp, gitdata.StatePending)
 	mp.linesValid = true
-	mp.Update(tickMsg{})
+	fireTick(mp)
 	if mp.linesValid {
 		t.Error("CI 実行中のコミットがあるのに tickMsg でリストが無効化されない (スピナーが止まる)")
 	}
@@ -185,7 +185,7 @@ func TestBrowseTickInvalidateGate(t *testing.T) {
 	m2.pullAnimating = true
 	m2.offset = 3
 	m2.linesValid = true
-	m2.Update(tickMsg{})
+	fireTick(m2)
 	if !m2.linesValid {
 		t.Error("pullAnimating のみで list が無効化された (C7 gate 破れ = 毎フレーム全行再構築)")
 	}
@@ -235,16 +235,16 @@ func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 // 🚨 単キー経路のコメントは「ハンドラ内部で出したトーストが return m, nil されても tick が確実に
 // 回る」と不変条件を宣言しているのに、分解ループ側はそこから外れていた。トースト (コピー結果) や
 // glide が始まっても他に tick を回す理由が無ければ 1 フレームも進まず、shown=0 のまま凍る。
-// 判定は cmd != nil ではなく m.ticking で見る: single-flight なので、別経路が先に張っていると
+// 判定は cmd != nil ではなく tickPending(m) で見る: single-flight なので、別経路が先に張っていると
 // cmd は nil になりうる (それでは不変条件を確かめられない)。
 func TestBrowseBatchedRunesArmsTick(t *testing.T) {
 	testenv.StubClipboardFunc(t, func(string) error { return nil })
 
 	m := newTestBrowse(t, 3, map[string]gitdata.CIState{}, nil)
 	m.statuses = statusesFor(m, gitdata.StateSuccess)
-	m.ticking = false
+	clearTick(m)
 	m.Update(tea.KeyPressMsg{Text: "yy"}) // y = コピー (結果トーストが出る)
-	if !m.ticking {
+	if !tickPending(m) {
 		t.Fatal("複数 rune 経路で tick チェーンが張られない (トーストが凍って見えない)")
 	}
 }

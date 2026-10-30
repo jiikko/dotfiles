@@ -81,12 +81,12 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 		sha := m.commits[0].SHA
 		(*m.diffOv.Fixture().Sha()) = sha
 		m.diffOv.Fixture().Cache().Store(sha, lines, sha)
-		m.ticking = false
+		clearTick(m)
 		m.handleKey(" ")
 		if !m.diffOv.Fixture().Pager().Animating() {
 			t.Fatal("Space で glide が立たない (テスト前提の破れ)")
 		}
-		if !m.ticking {
+		if !tickPending(m) {
 			t.Error("glide が立ったのに tick チェーンが張られない")
 		}
 	})
@@ -96,9 +96,9 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 		m.statuses = statusesFor(m, gitdata.StateSuccess)
 		m.usageOv.Dismiss()
 		m.height = 12
-		m.ticking = false
+		clearTick(m)
 		m.handleKey("ctrl+d")
-		if m.glide.Active() && !m.ticking {
+		if m.glide.Active() && !tickPending(m) {
 			t.Error("glide が立ったのに tick チェーンが張られない")
 		}
 	})

@@ -224,12 +224,12 @@ func TestPushAnimUsesClockSeam(t *testing.T) {
 	if !m.startPushAnim() {
 		t.Fatal("未 push が 2 件あるのに startPushAnim が始まらない")
 	}
-	m.Update(tickMsg{})
+	fireTick(m)
 	if _, ok := m.statuses[m.commits[1].SHA]; !ok {
 		t.Fatal("凍結時計で pushAnimStep 経過前なのに演出が進んだ (time.Now 直呼びの疑い)")
 	}
 	advance(pushAnimStep)
-	m.Update(tickMsg{})
+	fireTick(m)
 	if _, ok := m.statuses[m.commits[1].SHA]; ok {
 		t.Fatal("凍結時計を pushAnimStep 進めても最古の unpushed が消えない")
 	}
@@ -238,7 +238,7 @@ func TestPushAnimUsesClockSeam(t *testing.T) {
 	}
 	// 沈み込みの掃除も凍結時計基準: pushSlideDuration 経過で区画が通常表示へ戻る
 	advance(pushSlideDuration)
-	m.Update(tickMsg{})
+	fireTick(m)
 	if _, ok := m.pushSlides[m.commits[1].SHA]; ok {
 		t.Fatal("pushSlideDuration 経過後も沈み込みが掃除されない")
 	}
@@ -284,13 +284,13 @@ func TestBrowsePushFlow(t *testing.T) {
 		t.Fatal("push 成功で演出が始まらない")
 	}
 	// pushAnimStep 経過前の tick では進まない (80ms tick ごとに 1 段進むと目で追えない)
-	m.Update(tickMsg{})
+	fireTick(m)
 	if _, ok := m.statuses[m.commits[1].SHA]; !ok {
 		t.Fatal("pushAnimStep 経過前に演出が進んだ")
 	}
 	// 以降は経過済みとして 1 tick = 1 段で進める
 	m.pushAnimNext = time.Time{}
-	m.Update(tickMsg{})
+	fireTick(m)
 	if _, ok := m.statuses[m.commits[1].SHA]; ok {
 		t.Fatal("1 tick 目で最古の unpushed が消えない")
 	}
@@ -298,9 +298,9 @@ func TestBrowsePushFlow(t *testing.T) {
 		t.Fatal("tip が先に消えた (演出は古い順のはず)")
 	}
 	m.pushAnimNext = time.Time{}
-	m.Update(tickMsg{}) // 残る tip が消える
+	fireTick(m) // 残る tip が消える
 	m.pushAnimNext = time.Time{}
-	m.Update(tickMsg{}) // 全部消えた次の段で演出終了 → 再取得へ
+	fireTick(m) // 全部消えた次の段で演出終了 → 再取得へ
 	if m.pushAnimating {
 		t.Fatal("演出が終わらない")
 	}
@@ -518,7 +518,7 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 	m.width, m.height = 80, 20
 	m.maybeTick()
 	for i := 0; i < 200 && m.toast.Phase() != toast.Holding; i++ {
-		m.Update(tickMsg{})
+		fireTick(m)
 	}
 	if v := term.StripANSI(m.View().Content); !strings.Contains(v, "未 push のコミットはありません") {
 		t.Fatalf("トーストが描画されない (phase=%d frame=%d)", m.toast.Phase(), m.toast.Frame())

@@ -346,8 +346,8 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	// advanceGlide を呼ぶ前に「キー処理が tick を返している」ことを必ず確かめる: 手で進める
 	// だけのテストは、tick を張り忘れて実機で永久に固まるバグ を隠す。
 	// 🚨 cmd の nil 判定では足りない: maybeTick は single-flight で、既にチェーンが生きていれば
-	// nil を返す。不変条件は「glide 中は tick チェーンが生きている (m.ticking)」。
-	if m.handleKey(" "); m.diffOv.Fixture().Pager().Animating() && !m.ticking {
+	// nil を返す。不変条件は「glide 中は tick チェーンが生きている (tickPending)」。
+	if m.handleKey(" "); m.diffOv.Fixture().Pager().Animating() && !tickPending(m) {
 		t.Fatal("glide 中なのに tick チェーンが無い (実機では中途位置で固まる)")
 	}
 	for range term.ScrollAnimFrames {

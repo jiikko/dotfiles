@@ -105,7 +105,7 @@ func TestFilerBackgroundNoticeShowsOnTick(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("explode の完了の知らせが tick で出ない (キーを押すまで出ない形): toast=%q", m.toast.Text())
 		}
-		m.Update(tickMsg{})
+		fireTick(m)
 		time.Sleep(time.Millisecond) // sleep-ok: tick: 裏の explode の完了を条件で待つループの刻み
 	}
 }
@@ -125,7 +125,7 @@ func TestFilerAnimationAdvancesOnTickAndStops(t *testing.T) {
 		if !m.spinnerActive() {
 			break
 		}
-		m.Update(tickMsg{})
+		fireTick(m)
 	}
 	if m.filerV.Animating() {
 		t.Fatal("tick を 200 回回しても止まらない")
@@ -159,7 +159,7 @@ func TestFilerResizeTicksAndUToggles(t *testing.T) {
 	if m.filerV.Animating() {
 		t.Fatal("前提: 止まっていない")
 	}
-	m.ticking = false // 止まった後は tick のチェーンも終わっている (テストの中では tickMsg を流していないので手で戻す)
+	clearTick(m) // 止まった後は tick のチェーンも終わっている (テストの中では tickMsg を流していないので手で戻す)
 	if _, cmd := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40}); cmd == nil || !m.filerV.Animating() {
 		t.Fatal("大きさが変わっても tick が回らない")
 	}

@@ -44,8 +44,8 @@ func TestToastLeavingReachesHiddenViaTick(t *testing.T) {
 
 			// 入場を holding まで進め、holding へ遷移したフレームで Update が返す Cmd を捕捉する。
 			var enterCmd tea.Cmd
-			for i := 0; i < 200 && m.ticking; i++ {
-				_, enterCmd = m.Update(tickMsg{})
+			for i := 0; i < 200 && tickPending(m); i++ {
+				_, enterCmd = fireTick(m)
 				if m.toast.Phase() == toast.Holding {
 					break
 				}
@@ -66,8 +66,8 @@ func TestToastLeavingReachesHiddenViaTick(t *testing.T) {
 			}
 
 			// 退場チェーンを回し、shown が減って hidden まで到達することを確認。
-			for i := 0; i < 200 && m.ticking; i++ {
-				m.Update(tickMsg{})
+			for i := 0; i < 200 && tickPending(m); i++ {
+				fireTick(m)
 			}
 			if m.toast.Visible() {
 				t.Fatalf("退場が hidden まで到達しない: phase=%d frame=%d", m.toast.Phase(), m.toast.Frame())

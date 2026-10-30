@@ -9,6 +9,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/termcaps"
 	"github.com/jiikko/dotfiles/src/tuikit/termcolor"
+	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
 	"subproc"
@@ -191,7 +192,7 @@ type browseModel struct {
 	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (github.com/jiikko/dotfiles/src/tuikit/toast)。
 	toast toast.Stack
 
-	ticking bool // 80ms スピナー tick チェーンが 1 本生きているか (maybeTick の single-flight)
+	ticks tickchain.Chain // tick のチェーン (maybeTick)。張ってある tick より早く要るときだけ張り直す
 	// push 成功の演出 (startPushAnim)。演出が statuses の StateUnpushed を先に消していく
 	// ため、演出後の CI ポーリング対象 (push 時点の tip) は pushAnimTip に捕捉しておく
 	pushAnimating bool

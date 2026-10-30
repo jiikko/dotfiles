@@ -14,28 +14,30 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-type tickMsg struct{}
+// tickMsg の seq は張ったときの番号 (tickchain)。
+type tickMsg struct{ seq uint64 }
 
-func tickEvery(d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(time.Time) tea.Msg { return tickMsg{} })
+func tickEvery(d time.Duration, seq uint64) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg { return tickMsg{seq} })
 }
 
-// maybeTick は tick を single-flight で仕込む。既にチェーンが 1 本生きていれば nil を返して
+// maybeTick は tick を 1 本のチェーンに束ねて仕込む。張ってある tick が今の周期のうちに届くなら nil を返して
 // 二重チェーンを作らない。tea.Batch(cmd, maybeTick()) は Init・各 fetch 経路など多数に散らばり、
 // 非同期処理が重なるたびに独立した自己増殖チェーンが恒久追加されて (push 直後ポーリングでは
-// 最長 2 分間に ~48 本まで) 再描画/アニメが N 倍化していた (レビュー C1)。この single-flight で
-// 全 tick 発行を 1 本に束ねる。🚨 ciPoll の tea.Tick は別周期の独立タイマーなので
-// maybeTick を通さない (それぞれ seq/guard で管理)。
+// 最長 2 分間に ~48 本まで) 再描画/アニメが N 倍化していた (レビュー C1)。🚨 ciPoll の tea.Tick は別周期の
+// 独立タイマーなので maybeTick を通さない (それぞれ seq/guard で管理)。
 //
-// 周期は scroll glide 中だけ scrollInterval (~30fps) に上げて滑らかにし、それ以外は
-// spinnerInterval (12.5fps) に落として CPU を節約する。チェーンは毎 tickMsg で maybeTick
-// から張り直されるので、glide 開始/終了で周期が自動的に切り替わる。
+// 周期は動きの間だけ上げ (tickInterval)、それ以外は spinnerInterval (12.5fps) に落として CPU を節約する。
+// 張ってある 80ms の tick より早く要るとき (動きが始まった) は張り直す。bool の single-flight にしない:
+// 張った時点の周期に縛られ、動きの次のフレームが張ってある遅い tick まで最大 80ms 止まる。
+// 追い越された古い tick は onTick が捨てる。
 func (m *browseModel) maybeTick() tea.Cmd {
-	if m.ticking {
+	d := m.tickInterval()
+	seq, ok := m.ticks.Want(app.TimeNow(), d)
+	if !ok {
 		return nil
 	}
-	m.ticking = true
-	return tickEvery(m.tickInterval())
+	return tickEvery(d, seq)
 }
 
 // tickInterval は今のフレーム周期。横に動く演出 (scroll glide / toast スライド / 引き出し) の
@@ -109,8 +111,12 @@ func (m *browseModel) deliverNotice(text string, kind app.NoticeKind) bool {
 	return true
 }
 
-func (m *browseModel) onTick(_ tickMsg) (tea.Model, tea.Cmd) {
-	m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
+func (m *browseModel) onTick(msg tickMsg) (tea.Model, tea.Cmd) {
+	// 張り直しで追い越された古い tick は捨てる: 新しい tick がまだ張ってある。処理すると、フレームの数で進む動き
+	// (pull の行・push の罫線・glide・toast のスライド) が余分に 1 歩進む
+	if !m.ticks.Fired(msg.seq) {
+		return m, nil
+	}
 	// 閉じる演出が着地したらここで初めて終了する (演出の間はまだ描き続ける)
 	if m.zoom.settle(app.TimeNow()) {
 		m.done = true

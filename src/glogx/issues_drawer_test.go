@@ -95,7 +95,7 @@ func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
 	moved := 0
 	for range 20 {
 		now = now.Add(tickIntervalForTest)
-		m.Update(tickMsg{})
+		fireTick(m)
 		cur := edge()
 		if cur > prev {
 			t.Fatalf("板が右へ戻った: %d -> %d (右から左へ入るはず)", prev, cur)

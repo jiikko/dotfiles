@@ -376,7 +376,7 @@ func TestBrowseInitWiresCLIHealth(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	// usage と通常 tick はこの配線テストの対象外なので、長時間 Cmd を作らない。
 	m.usageOv.Fixture().SetInFlight(true)
-	m.ticking = true
+	holdTick(m)
 
 	got, found := initCLIHealthMsg(t, m)
 	if !found {
@@ -466,7 +466,7 @@ func TestBrowseStartupShowsCLIHealthWarningsInView(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
 	// usage と通常 tick はこのテストの対象外なので長時間 Cmd を作らせない。
 	m.usageOv.Fixture().SetInFlight(true)
-	m.ticking = true
+	holdTick(m)
 	// newTestBrowse は NoFrame なので page = height-1。height=10 (page=9) は
 	// toastDrawBudget が重要警告 2 枚分を確保する帯 (これを外すと 1 枚しか描かれない)。
 	m.width, m.height = 120, 10
@@ -553,7 +553,7 @@ func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
 		t.Helper()
 		t.Setenv("XDG_CACHE_HOME", t.TempDir()) // usage のキャッシュは外れる
 		m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, []string{shaA, shaB})
-		m.ticking = true
+		holdTick(m)
 		m.fetch = func() tea.Msg { return nil } // 本物の gh を起こさない
 		m.pendingFetches = 2                    // チャンク 2 つ: 途中では放さないことを見る
 		return m, m.Init()
@@ -605,7 +605,7 @@ func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
 			t.Fatal(err)
 		}
 		m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, []string{shaA, shaB})
-		m.ticking = true
+		holdTick(m)
 		m.fetch = func() tea.Msg { return nil }
 		m.pendingFetches = 2
 		m.Init()

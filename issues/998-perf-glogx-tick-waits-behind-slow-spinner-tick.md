@@ -20,3 +20,16 @@ tuikit の `tickchain` に寄せて直した。glogx は同じ形だが、**glog
   toast_integration_test・tui_nav_test) と、`tickMsg{}` を流してアニメを進める 22 か所。古い tick を捨てると `tickMsg{}` (seq 0) は
   捨てられるので、張ってある seq の tick を流す helper に寄せる
 - 測るなら: glogx に perflog の配線を足すか、filerview のテストで「遅い tick の間の打鍵で次の tick が frameInterval 以内に張られる」を見る
+
+## 進捗
+
+- [x] `maybeTick` / `onTick` / `tickMsg` を `tickchain.Chain` に寄せた (`Want(app.TimeNow(), m.tickInterval())`・tickMsg に seq・
+  追い越された古い tick は onTick の先頭で捨てる)。tui.go の `ticking bool` は `ticks tickchain.Chain` に
+- [x] テストの書き換え: `m.ticking` の読み書きと `tickMsg{}` を流す箇所を tick_helpers_test.go の helper (`fireTick` / `tickPending` /
+  `holdTick` / `clearTick`) に寄せた (11 ファイル)。go test は全部通る
+- [x] テスト `TestAnimStartDuringSpinnerTickRearms`: スピナーの tick が張ってある間に ctrl+d の glide が始まったら tickInterval 後に張り直す /
+  追い越されたスピナーの tick を glide の 1 フレームに数えない (ease-in の 1 フレーム目は位置が動かないことがあるので、着くまでの回数で見る)
+  - 変異で red を確認 (bin/mutate-verify): maybeTick を「張ってあれば張らない」に戻す → このテスト / onTick で古い tick を捨てない → このテスト
+    (「新しい tick 5 回で glide が着いた。6 回で着くはず」)。最初に位置で見た版は、古い tick を捨てない変異で緑のままだった
+- glogx での遅れの実測はしていない (tools/tfperf は bin/treefiler 用)。直す前の形は treefiler と同じで、treefiler では最大 80ms → 22ms
+  (issue 995)。**trigger**: glogx の `F` やスクロールでもっさりすると言われたら、glogx に perflog の配線を足して測る

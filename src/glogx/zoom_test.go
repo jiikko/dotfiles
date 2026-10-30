@@ -115,7 +115,7 @@ func TestAppZoomCloseThenQuit(t *testing.T) {
 
 	// 着地したら終了する
 	advance(appZoomDuration)
-	m.Update(tickMsg{})
+	fireTick(m)
 	if !m.done {
 		t.Fatal("演出が着地しても終了しない")
 	}

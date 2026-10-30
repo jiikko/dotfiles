@@ -379,7 +379,7 @@ func TestRestartPromptKeys(t *testing.T) {
 func TestAutobuildMsgKeepsWatchingWhileNotifying(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.toast.Clear()
-	m.ticking = false // single-flight で maybeTick が nil を返すと Batch の要素が減る
+	clearTick(m) // single-flight で maybeTick が nil を返すと Batch の要素が減る
 	m.autobuild = autobuildWatch{
 		binPath: "/x/glogx", failedPath: "/x/" + autobuildFailedStamp,
 		active: true, until: app.TimeNow().Add(autobuildWatchTimeout), pending: autobuildStarted,
