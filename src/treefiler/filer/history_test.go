@@ -52,7 +52,7 @@ func TestBangHistoryKeepsBothOfTwoModels(t *testing.T) {
 	runBang(t, a, "cmd-a1")
 	runBang(t, b, "cmd-b1")
 	runBang(t, a, "cmd-a2")
-	got, _ := readHistory(historyPath())
+	got, _ := readHistory(historyPath(), historyKeep)
 	if strings.Join(got, ",") != "cmd-a1,cmd-b1,cmd-a2" {
 		t.Fatalf("履歴 = %q", got)
 	}
@@ -62,7 +62,7 @@ func TestBangHistorySkipsLeadingSpaceAndIs0600(t *testing.T) {
 	m := newTest(t)
 	runBang(t, m, "echo keep")
 	runBang(t, m, " echo secret")
-	got, _ := readHistory(historyPath())
+	got, _ := readHistory(historyPath(), historyKeep)
 	if strings.Join(got, ",") != "echo keep" {
 		t.Fatalf("先頭が空白のコマンドが残った: %q", got)
 	}
@@ -88,7 +88,7 @@ func TestBangHistoryTrimsAndRoundTripsNewlines(t *testing.T) {
 	if len(h) != historyKeep || h[len(h)-1] != "printf 'a\nb'" || h[0] != "c"+strconv.Itoa(2*historyKeep+50-historyKeep+1) {
 		t.Fatalf("読んだ履歴 = %d 件 (先頭 %q・末尾 %q)", len(h), h[0], h[len(h)-1])
 	}
-	if _, lines := readHistory(path); lines != historyKeep {
+	if _, lines := readHistory(path, historyKeep); lines != historyKeep {
 		t.Fatalf("書き直した後の行数 = %d", lines)
 	}
 }
@@ -101,7 +101,7 @@ func TestBangHistoryToleratesBrokenFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, lines := readHistory(path)
+	got, lines := readHistory(path, historyKeep)
 	if strings.Join(got, ",") != "ok1,ok2" || lines != 5 {
 		t.Fatalf("履歴 = %q / 行数 = %d", got, lines)
 	}
@@ -138,12 +138,12 @@ func TestBangHistoryRewriteBoundaryAndPerm(t *testing.T) {
 	path := historyPath()
 	writeHistoryLines(t, path, 2*historyKeep, 0o644)
 	newAt(t, t.TempDir())
-	if _, lines := readHistory(path); lines != 2*historyKeep {
+	if _, lines := readHistory(path, historyKeep); lines != 2*historyKeep {
 		t.Fatalf("ちょうど 2 倍で書き直した: %d 行", lines)
 	}
 	writeHistoryLines(t, path, 2*historyKeep+1, 0o644)
 	newAt(t, t.TempDir())
-	if _, lines := readHistory(path); lines != historyKeep {
+	if _, lines := readHistory(path, historyKeep); lines != historyKeep {
 		t.Fatalf("2 倍を超えたのに書き直さない: %d 行", lines)
 	}
 	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
@@ -162,10 +162,10 @@ func TestBangHistoryRewriteLeavesSymlinkTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	newAt(t, t.TempDir())
-	if _, lines := readHistory(target); lines != 2*historyKeep+1 {
+	if _, lines := readHistory(target, historyKeep); lines != 2*historyKeep+1 {
 		t.Fatalf("link 先を切り詰めた: %d 行", lines)
 	}
-	if _, lines := readHistory(path); lines != historyKeep {
+	if _, lines := readHistory(path, historyKeep); lines != historyKeep {
 		t.Fatalf("履歴を書き直していない: %d 行", lines)
 	}
 }
@@ -178,7 +178,7 @@ func TestBangHistoryCollapsesRunsAndKeepsRetyped(t *testing.T) {
 	runBang(t, a, "make")
 	runBang(t, b, "rm -rf build")
 	runBang(t, a, "make")
-	got, _ := readHistory(historyPath())
+	got, _ := readHistory(historyPath(), historyKeep)
 	if strings.Join(got, ",") != "make,rm -rf build,make" {
 		t.Fatalf("履歴 = %q", got)
 	}
@@ -194,7 +194,7 @@ func TestBangHistorySkipsUnicodeLeadingSpace(t *testing.T) {
 	for _, c := range []string{"\techo tab", "　echo wide", " echo nbsp", "echo keep"} {
 		appendHistory(path, c)
 	}
-	if got, _ := readHistory(path); strings.Join(got, ",") != "echo keep" {
+	if got, _ := readHistory(path, historyKeep); strings.Join(got, ",") != "echo keep" {
 		t.Fatalf("履歴 = %q", got)
 	}
 }
@@ -207,7 +207,7 @@ func TestBangHistoryDropsOverlongLastLine(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got, lines := readHistory(path); strings.Join(got, ",") != "ok1" || lines != 2 {
+	if got, lines := readHistory(path, historyKeep); strings.Join(got, ",") != "ok1" || lines != 2 {
 		t.Fatalf("履歴 = %d 件 / 行数 = %d", len(got), lines)
 	}
 }

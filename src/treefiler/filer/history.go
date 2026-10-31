@@ -15,7 +15,8 @@ import (
 	"atomicfile"
 )
 
-// history.go は `!` のコマンドの履歴をプロセスと dir をまたいで残す。保存先は設定と同じ置き場の treefiler-history (configDir)。
+// history.go は `!` のコマンドと `/` の検索の履歴をプロセスと dir をまたいで残す。保存先は設定と同じ置き場の treefiler-history と
+// treefiler-search-history (configDir)。
 //
 // 形式は 1 行 1 コマンドで、コマンドを strconv.Quote した文字列 (改行・制御文字を含んでも 1 行に収まる)。
 // 🚨 打つたびに O_APPEND で 1 行足す。「閉じるときにまとめて書く」にしない: Close は F を閉じる・他の画面へ移るたびに呼ばれ、
@@ -30,11 +31,12 @@ const (
 	historyLineMax = 64 << 10 // これより長い行は読み飛ばす (壊れたファイル・巨大な 1 行で全部を抱えない)
 )
 
-func historyPath() string { return configFile("treefiler-history") }
+func historyPath() string       { return configFile("treefiler-history") }
+func searchHistoryPath() string { return configFile("treefiler-search-history") }
 
-// readHistory は末尾 historyKeep 件を古い順に返す。続けて同じコマンドは 1 件にする (2 つの treefiler が交互に足すと続くことがある)。
+// readHistory は末尾 keep 件を古い順に返す。続けて同じコマンドは 1 件にする (2 つの treefiler が交互に足すと続くことがある)。
 // lines はファイルの行数 (切り詰めて書き直すかの判断に使う)。読めない・戻せない行は捨てて読み進める (1 行ずつ独立なので)。
-func readHistory(path string) (hist []string, lines int) {
+func readHistory(path string, keep int) (hist []string, lines int) {
 	if path == "" {
 		return nil, 0
 	}
@@ -52,8 +54,8 @@ func readHistory(path string) (hist []string, lines int) {
 		if ok {
 			if cmd, uerr := strconv.Unquote(line); uerr == nil && cmd != "" && (len(hist) == 0 || hist[len(hist)-1] != cmd) {
 				hist = append(hist, cmd)
-				if len(hist) > 2*historyKeep { // 末尾だけ残す (読みながら捨てて、全部を抱えない)
-					hist = append(hist[:0:0], hist[len(hist)-historyKeep:]...)
+				if len(hist) > 2*keep { // 末尾だけ残す (読みながら捨てて、全部を抱えない)
+					hist = append(hist[:0:0], hist[len(hist)-keep:]...)
 				}
 			}
 		}
@@ -61,8 +63,8 @@ func readHistory(path string) (hist []string, lines int) {
 			break
 		}
 	}
-	if len(hist) > historyKeep {
-		hist = hist[len(hist)-historyKeep:]
+	if len(hist) > keep {
+		hist = hist[len(hist)-keep:]
 	}
 	return hist, lines
 }
@@ -96,9 +98,16 @@ func readLimitedLine(r *bufio.Reader) (line string, ok, present bool, err error)
 	}
 }
 
+// keepInHistory は cmd を履歴に残すか。空と、先頭が空白のもの (zsh の HIST_IGNORE_SPACE と同じ逃げ道) は残さない。
+// メモリの履歴とファイルで同じ述語を使う (片方だけで弾くと、開いている間だけ辿れて次に開くと消える)。
+func keepInHistory(cmd string) bool {
+	r, _ := utf8.DecodeRuneInString(cmd)
+	return cmd != "" && !unicode.IsSpace(r)
+}
+
 // appendHistory は cmd を 1 行足す。失敗はコマンドの実行を止めない (履歴は付け足しの機能なので知らせも出さない)。
 func appendHistory(path, cmd string) {
-	if r, _ := utf8.DecodeRuneInString(cmd); path == "" || cmd == "" || unicode.IsSpace(r) {
+	if path == "" || !keepInHistory(cmd) {
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -114,12 +123,15 @@ func appendHistory(path, cmd string) {
 	_ = f.Close()
 }
 
-// loadHistory は Model を作るときに履歴を読む。ファイルが上限の 2 倍の行を超えていたら末尾 historyKeep 件で書き直す
+// loadHistory は Model を作るときに path の履歴の末尾 keep 件を読み、norm (nil なら無し) で整える。
+// ファイルが keep の 2 倍の行を超えたか、norm が件数を変えたら、整えた後の履歴で書き直す
 // (読んでから書き直すまでの間に他方が足した 1 行は消えうる。頻度が低いので受ける)。
-func loadHistory() []string {
-	path := historyPath()
-	hist, lines := readHistory(path)
-	if lines > 2*historyKeep {
+func loadHistory(path string, keep int, norm func([]string) []string) []string {
+	hist, lines := readHistory(path, keep)
+	if norm != nil {
+		hist = norm(hist)
+	}
+	if lines > 2*keep || (norm != nil && lines > len(hist)) {
 		var b strings.Builder
 		for _, c := range hist {
 			b.WriteString(strconv.Quote(c) + "\n")

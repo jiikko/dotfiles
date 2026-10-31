@@ -120,6 +120,7 @@ type Model struct {
 	pane         paneState   // 右のプレビューの欄 (pane.go)
 	search       searchState `layer:"search"`
 	lastSearch   string
+	searchHist   []string // 確定した検索語 (古い順、重複なし、searchHistKeep 件まで。search.go)
 	exploding    *explodeJob
 	loads        []*loadReq                       // 打鍵で頼んで裏で読んでいるフォルダ (load.go)
 	loadCont     *loadCont                        // 読み込みを待っている打鍵の残り (load.go)
@@ -162,7 +163,8 @@ func New(dir string, opts Options) (*Model, error) {
 		root.last = ks[0]
 	}
 	m.set, m.setErrs = loadSettings(configPath())
-	m.prompt.history = loadHistory()
+	m.prompt.history = loadHistory(historyPath(), historyKeep, nil)
+	m.searchHist = loadSearchHistory()
 	if len(m.setErrs) > 0 {
 		m.fail("設定ファイルに読めない行があります (" + itoa(len(m.setErrs)) + " 件。, の板の足元に出ています)")
 	}
@@ -1604,13 +1606,13 @@ func (m *Model) searchBar(c *canvas) {
 	q := m.search.line.String()
 	switch {
 	case q == "":
-		c.put(x+1, y, "  tab ↑↓ 移動 · enter 留まる · esc 戻る", cMuted, false)
+		c.put(x+1, y, "  tab 移動 · ↑↓ 履歴 · enter 留まる · esc 戻る", cMuted, false)
 	case len(m.search.matches) == 0:
 		x = c.put(x+1, y, "  no match", cDot, false)
 		c.put(x, y, "  esc 戻る", cMuted, false)
 	default:
 		x = c.put(x+1, y, "  "+itoa(m.search.at+1)+"/"+itoa(len(m.search.matches)), cAccRoute, false)
-		c.put(x, y, "  tab ↑↓ 移動 · enter 留まる · esc 戻る", cMuted, false)
+		c.put(x, y, "  tab 移動 · ↑↓ 履歴 · enter 留まる · esc 戻る", cMuted, false)
 	}
 }
 

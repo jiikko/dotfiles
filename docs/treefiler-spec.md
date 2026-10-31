@@ -402,7 +402,7 @@ ground 切替で使える heat palette が変わる (settings.rs: `Ground::palet
 幅の落とし方: `base = 右の既存幅合計 + 24`、`hw` = 案内 4 つの幅合計、`legend_w = 4 + 7 + 7`。`w >= base+legend_w+hw` なら凡例+4 案内、`w >= base+hw` なら凡例なし+4 案内、それ以外は `?` 案内のみ (凡例は `w >= base+legend_w+? 案内幅` のときだけ)。
 
 `!` プロンプト行: ` {フォルダ名} $ ` (太字 route) + 入力 (text) + 反転空白 (カーソル) + (余裕があれば) `  enter run · esc cancel · $f = selection ` (muted)。入力は幅超過時に先頭から削って末尾を見せる。
-`/` 検索行: ` / ` (太字 route) + 入力 + 反転空白 + 件数 (`  {at}/{n}`、n>0 route 色、0 件は `  no match` を dot 色) + ヒント (空入力または n>0: `  tab ↑↓ cycle · enter stay · esc back `、0 件: `  esc back `、muted)。
+`/` 検索行: ` / ` (太字 route) + 入力 + 反転空白 + 件数 (`  {at}/{n}`、n>0 route 色、0 件は `  no match` を dot 色) + ヒント (空入力または n>0: `  tab 移動 · ↑↓ 履歴 · enter 留まる · esc 戻る ` (treebeard は `tab ↑↓ cycle · enter stay · esc back`。↑↓ は §6.2 の履歴)、0 件: `  esc back `、muted)。
 
 ## 4. 動き
 
@@ -563,7 +563,10 @@ help が開いているとき: `?` 以外のキーは help を閉じるだけで
   開いていない中身まで探すと、ハイライトできない項目へ飛び、途中のフォルダを開いて木の形を変えることになる)。**ハイライトは一致の集合 (`Tab` で回る項目) と同じ項目だけ**に付ける
 - 入力で即カーソルが追従: `find(query)` (最良 rank、同順位は**起点から読み順で次に来るもの**。起点が一致すれば起点)、空または 0 件なら起点に戻る。
 - 文字入力 (ctrl なし)、`Backspace` (空なら検索を閉じる)、`Ctrl-U` 全消去、`Ctrl-W` 末尾の英数字連とその前の非英数字を削る (`trim_end_matches(!alnum)` → `trim_end_matches(alnum)`)。
-- `Tab` `↓` `Ctrl-N` = 次の一致、`⇧Tab` `↑` (入力が空でないとき) `Ctrl-P` = 前の一致。入力が空で `↑` = 直前の確定検索の語を呼び戻す。
+- `Tab` `Ctrl-N` = 次の一致、`⇧Tab` `Ctrl-P` = 前の一致。
+- **`↑` `↓` = 検索の履歴を辿る** (2026-10-31 ユーザー決定「vim みたいに」。treebeard は `↑` `↓` で一致を移り、空欄の `↑` で直前の語を呼び戻した)。
+  vim の `/` と同じく、打ちかけの語で始まる履歴だけを辿り、端では止まり、`↓` で最新を越えたら打ちかけの語に戻す。辿った後に打ち直したら、次の `↑` はその語で新しい方から辿り直す。
+  `Enter` で確定した語を一致の有無に関わらず残し、同じ語は新しい方だけ、最新 50 件。`!` の履歴と同じく設定の置き場の `treefiler-search-history` に追記で残し、次に開いたときも辿れる
 - `Enter` = 確定してその位置に留まる (何も開かない。カーソルが一致内なら `last_search` に保存)。`Esc` `Ctrl-C` = キャンセルして起点へ。
 - fuzzy (`main.rs: fuzzy`): smart case (query に大文字があれば完全一致、なければ小文字化)。rank 0 = 前方一致、1 = 単語先頭 (非英数の直後 / camelCase の小→大)、2 = 部分一致、3 (`LOOSE`) = 文字が順に含まれる。返すスパンは一致位置 (loose は連続を併合)。`matches`: rank<3 が 1 つでもあれば loose は除外、全部 loose なら全部。
 

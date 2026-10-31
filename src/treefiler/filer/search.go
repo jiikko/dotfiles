@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -18,6 +19,71 @@ type searchState struct {
 	at      int   // 今の一致の番号
 	matches []*node
 	hit     map[*node]bool // matches と同じ集合。ハイライトはこれに入る項目だけに付ける (光っているのに Tab で届かない項目を作らない)
+	histAt  int            // 履歴を辿っている位置 (len(searchHist) = 辿っていない・打ちかけの語)
+	draft   string         // 辿り始めたときの打ちかけの語 (この語で始まる履歴だけを辿り、↓ で最新を越えたら戻す。vim の / と同じ)
+}
+
+// searchHistKeep は検索の履歴を覚える件数 (ユーザー決定 2026-10-31)。
+const searchHistKeep = 50
+
+// searchHistReadLines は検索の履歴のファイルから読む行の数。開いている間は追記だけなので、同じ語を何度も打つとファイルに重なる。
+// 読む窓が 50 件ぶんしかないと、重なった語で埋まって、50 件に満たないうちに別の語が落ちる。読んだら畳んだ形で書き直す (loadHistory)
+const searchHistReadLines = 2000
+
+// loadSearchHistory は検索の履歴を読み、同じ語は新しい方だけを残して最新 searchHistKeep 件にする。
+func loadSearchHistory() []string {
+	return loadHistory(searchHistoryPath(), searchHistReadLines, func(h []string) []string { return dedupeKeepNewest(h, searchHistKeep) })
+}
+
+// dedupeKeepNewest は hist (古い順) から、同じ語の古い方を落として末尾 keep 件を返す。
+func dedupeKeepNewest(hist []string, keep int) []string {
+	seen := map[string]bool{}
+	var rev []string
+	for i := len(hist) - 1; i >= 0 && len(rev) < keep; i-- {
+		if !seen[hist[i]] {
+			seen[hist[i]] = true
+			rev = append(rev, hist[i])
+		}
+	}
+	slices.Reverse(rev)
+	return rev
+}
+
+// rememberSearch は確定した検索語を履歴の最新にする (前にあった同じ語は外す)。
+func (m *Model) rememberSearch(q string) {
+	if !keepInHistory(q) {
+		return
+	}
+	m.searchHist = dedupeKeepNewest(append(slices.Clone(m.searchHist), q), searchHistKeep)
+	appendHistory(searchHistoryPath(), q)
+}
+
+// stepHistory は打ちかけの語で始まる履歴を、d < 0 で古い方へ・d > 0 で新しい方へ 1 つ辿る。新しい方の端を越えたら打ちかけの語に戻す。
+// 当たる語が無ければ何もしない。辿ったら一致を引き直す。
+func (m *Model) stepHistory(d int) {
+	s, h := &m.search, m.searchHist
+	if s.histAt == len(h) {
+		s.draft = s.line.String()
+	}
+	next := -1
+	for i := s.histAt + d; i >= 0 && i < len(h); i += d {
+		if strings.HasPrefix(h[i], s.draft) {
+			next = i
+			break
+		}
+	}
+	var text string
+	switch {
+	case next >= 0:
+		s.histAt, text = next, h[next]
+	case d > 0 && s.histAt < len(h):
+		s.histAt, text = len(h), s.draft
+	default:
+		return
+	}
+	s.line.Reset()
+	s.line.Insert(text)
+	m.refreshMatches()
 }
 
 // rank の段 (小さいほど良い。spec §6.2 の fuzzy)。
@@ -175,7 +241,7 @@ func (s *searchState) setMatches(ms []*node) {
 }
 
 func (m *Model) startSearch() {
-	m.search = searchState{active: true, origin: m.cur}
+	m.search = searchState{active: true, origin: m.cur, histAt: len(m.searchHist)}
 }
 
 // searchKey は検索中のキー。lineedit の編集キーを先に渡し、Enter / Esc / 一致の移動だけを自分で捌く。
@@ -183,28 +249,39 @@ func (m *Model) searchKey(key, text string) {
 	s := &m.search
 	switch {
 	case key == "enter":
-		if q := s.line.String(); q != "" && len(s.matches) > 0 {
-			m.lastSearch = q
+		if q := s.line.String(); q != "" {
+			m.rememberSearch(q) // 一致が無くても残す (vim と同じ。打ち直す手間を省く)
+			if len(s.matches) > 0 {
+				m.lastSearch = q
+			}
 		}
 		m.endSearch(false)
 		return
 	case key == "esc" || key == "ctrl+c":
 		m.endSearch(true)
 		return
-	case key == "tab" || key == "down" || key == "ctrl+n":
+	case key == "tab" || key == "ctrl+n":
 		m.stepMatch(1)
 		return
-	case key == "shift+tab" || key == "ctrl+p" || (key == "up" && !s.line.Empty()):
+	case key == "shift+tab" || key == "ctrl+p":
 		m.stepMatch(-1)
 		return
-	case key == "up" && s.line.Empty():
-		s.line.Insert(m.lastSearch) // 空欄の ↑ は前回の検索を呼び戻す
+	case key == "up": // 履歴を辿る (vim の / と同じく、打ちかけの語で始まるものだけ)
+		m.stepHistory(-1)
+		return
+	case key == "down":
+		m.stepHistory(1)
+		return
 	case (key == "backspace" || key == "ctrl+h") && s.line.Empty(): // 空欄の backspace で閉じる (ctrl+h は lineedit と同じく backspace の別名)
 		m.endSearch(true)
 		return
 	default:
+		before := s.line.String()
 		if !s.line.Key(key, text) {
 			return
+		}
+		if s.line.String() != before { // 打ち直したら、次の ↑ はその語で始まる履歴を新しい方から辿る (カーソルを動かしただけでは辿り続ける)
+			s.histAt = len(m.searchHist)
 		}
 	}
 	m.refreshMatches()
