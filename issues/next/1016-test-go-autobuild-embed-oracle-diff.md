@@ -1,0 +1,1 @@
+../1016-test-go-autobuild-embed-oracle-diff.md
