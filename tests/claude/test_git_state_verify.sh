@@ -237,6 +237,11 @@ if grep -q 'すべて push 済み' <<< "$sec"; then
 else
   pass "B について偽の全クリアを出さない"
 fi
+if grep -q '判定不能: 行き先に入れない' <<< "$body"; then
+  bad "入れた行き先 (B) に「行き先に入れない」の判定不能が付いた"
+else
+  pass "入れた行き先に判定不能を付けない"
+fi
 # 行き先が存在しないときは「判定不能」であって「push 済み」ではない
 if grep -q '判定不能: 行き先が見つからない' <<< "$(body_of "git -C $x/does-not-exist push" "$x/A")"; then
   pass "git -C の行き先が無いときは判定不能と言う"

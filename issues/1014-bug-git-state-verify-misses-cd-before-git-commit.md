@@ -61,4 +61,8 @@ dotfiles の commit と push の結果はどこにも出ていない。同じ日
     `cd a || cd b` は b だけを残す、`case` の `)` をサブシェルの閉じと読む
   - 性能 (`/bin/bash` 3.2、2 回ずつ): 代入と参照 100 組 (2.2 KB) は 0.13〜0.20 秒 → 0.23〜0.24 秒。git を含む 30 KB (echo 1000 行) は
     12.4〜12.6 秒 → 12.9〜13.0 秒。12 秒の大半は修正前からある分割器の文字単位のループ
-- [ ] push して `~/dotfiles` へ pull し、本物の session で注入される state を見る
+- [x] push して `~/dotfiles` へ pull し、本物の session で注入される state を見た (2026-10-31)。session の cwd が obaket のまま
+  `cd /Users/koji/dotfiles-wt-1014-… && git push` を打つと、obaket のブロックに続いて worktree のブロック (last commit が push した commit) が出た
+- [x] そのとき worktree のブロックの末尾に「判定不能: 行き先に入れない (権限?)」が誤って付いた。`report_repo` が末尾の
+  `[ 件数 -gt 20 ] && printf` の rc=1 を返し、呼び出し側が「入れない」と読んでいた (修正前から、未 push が 20 件以下の `-C` の行き先で起きていた)。
+  `return 0` で直し、テストを足した (commit「fix(hooks): git-state-verify が入れた行き先に判定不能を付けないようにする (1014)」。`return 0` を外す変異で red)
