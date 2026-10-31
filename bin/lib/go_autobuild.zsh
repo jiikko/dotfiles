@@ -225,7 +225,7 @@ _go_autobuild_go_glob() {  # $1=Go の pattern
 }
 
 # ビルドの前に //go:embed の pattern を記録する (_go_autobuild_embed_files が読む)。module の外 (標準ライブラリ・module cache) の
-# package は捨てる (版は go.sum が持つ)。go list が落ちたら記録を消して 1 を返す (呼び出し側はビルドの失敗として扱う。記録の無いまま
+# package は捨てる (版は go.sum が持つ)。go list が落ちたら 1 を返す (呼び出し側はビルドの失敗として扱う。記録の無いまま
 # ビルドを通すと「記録が無い」で指紋が落ち着き、embed したファイルだけの変更を以後見逃す)。
 # 🚨 go list をコマンド置換 $(...) に入れない。zsh はそこで trap '' HUP を落とすので、popup を閉じたときの HUP で go list だけが
 # 死ぬ (.claude/rules/zsh-trap-not-inherited.md)。trap を張ったシェルの foreground で一時ファイルへ出す。
