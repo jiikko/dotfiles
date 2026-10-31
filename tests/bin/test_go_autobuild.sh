@@ -1201,7 +1201,8 @@ for f in a.txt ab.txt abc.txt b.txt c.txt 'x y.txt' ab; do : > "$PM/$f"; done
 embed_expand() {  # $1=pattern $2=呼び出し側で先に打つコマンド (setopt・export。省略可) $3=fixture の dir (省略時 $PM) → 当たったファイル名を空白で並べる
   local dir="${3:-$PM}"
   printf '%s\t%s\n' "$dir" "$1" > "$dir/.autobuild.embeds"
-  zsh -c 'eval "$3"; source "$1"; _go_autobuild_embed_files "$2"; print -rn -- "${(o)reply[@]:t}"' zsh "$LIB" "$dir" "${2-}"
+  # 並べるのは外で LC_ALL=C の sort (zsh の (o) は locale で順が変わる: en_US.UTF-8 の CI では あ.txt が a.txt より先に来た)
+  zsh -c 'eval "$3"; source "$1"; _go_autobuild_embed_files "$2"; print -rl -- "${reply[@]:t}"' zsh "$LIB" "$dir" "${2-}" | LC_ALL=C sort | paste -sd ' ' -
 }
 for c in '[^a]*.txt|b.txt c.txt x y.txt' '[!a]*.txt|a.txt ab.txt abc.txt' 'a\b|ab' '*\.txt|a.txt ab.txt abc.txt b.txt c.txt x y.txt' \
   'a\b*|ab ab.txt abc.txt' '\a*.txt|a.txt ab.txt abc.txt' 'a\b.tx?|ab.txt' '[a-b]*.txt|a.txt ab.txt abc.txt b.txt' \
@@ -1214,7 +1215,7 @@ ok "embed: 否定のクラス ([^...] は否定 / [!...] の ! は字)・\ の�
 PM2="$TMP_DIR/patmatch2"; mkdir -p "$PM2"
 mkdir -p "$PM2/s"
 for f in x-y xay xby 'x[y' 'あ.txt' a.txt s/Zx 's/]x' 's/^x' s/ax; do : > "$PM2/$f"; done
-for c in 'x[a\-z]y|x-y xay' 'x\[y|x[y' '?.txt|a.txt あ.txt' '[^a].txt|あ.txt' 's/[Z-^]x|]x ^x Zx'; do
+for c in 'x[a\-z]y|x-y xay' 'x\[y|x[y' '?.txt|a.txt あ.txt' '[^a].txt|あ.txt' 's/[Z-^]x|Zx ]x ^x'; do
   got="$(embed_expand "${c%%|*}" '' "$PM2")"
   [[ "$got" == "${c#*|}" ]] || fail "embed: pattern ${c%%|*} の展開が Go と違う (got: $got)"
 done
