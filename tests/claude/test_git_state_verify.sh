@@ -284,6 +284,35 @@ else
   bad "2 つ目の行き先が落ちた ($(grep -c '^検査した repo: ' <<< "$body") ブロック)"
 fi
 
+# --- ④c `cd <dir> && git commit`: hook は session の cwd で走るので、cd の行き先も見る -------------
+#
+# 🚨 hook のプロセスの cwd は、コマンドの中で cd した先ではない。`cd <worktree> && git commit` で
+# 共有 checkout (session の cwd) の state だけを「これで検証すること」として出していた。
+printf '\n## cd の行き先: hook の cwd ではなく cd した repo も見る\n'
+for c in "cd $x/B && git commit -m x" "W=$x/B; cd \"\$W\" && git push origin HEAD:master" \
+         "cd $x && cd B && git commit -m x" "(cd $x/B && git commit -m x)"; do
+  body=$(body_of "$c" "$x/A")
+  if grep -qF "検査した repo: $bTop" <<< "$body" && grep -qF "検査した repo: $aTop" <<< "$body"; then
+    pass "cd の行き先と cwd の両方を出す ($c)"
+  else
+    bad "cd の行き先 (B) か cwd (A) が出ていない ($c): $(grep '^検査した repo: ' <<< "$body" | tr '\n' ' ')"
+  fi
+done
+# サブシェルの中の cd は外の git に効かない。拾うと関係の無い repo を「触った」と出す
+body=$(body_of "X=\$(cd $x/B && pwd) && git commit -m x" "$x/A")
+if grep -qF "検査した repo: $bTop" <<< "$body"; then
+  bad "コマンド置換の中の cd を外の git の行き先と読んだ"
+else
+  pass "コマンド置換の中の cd は外の git の行き先にしない"
+fi
+# 展開できない行き先は判定不能と出す (空に畳むと cwd を見たことになる)
+# shellcheck disable=SC2016  # 展開させずに字面の `$UNKNOWN_DIR` を hook へ渡すのがこのケースの主眼
+if grep -q '判定不能: 行き先が見つからない' <<< "$(body_of 'cd "$UNKNOWN_DIR" && git push' "$x/A")"; then
+  pass "展開できない cd の行き先は判定不能と言う"
+else
+  bad "展開できない cd の行き先が黙って落ちた"
+fi
+
 # 🚨 cwd と同じ実体を指す `-C` は 2 度出さない (重複除去が消えると同じ repo が 2 ブロック出る)
 body=$(body_of "git -C . commit -m x" "$x/A")
 if [ "$(grep -c '^検査した repo: ' <<< "$body")" -eq 1 ]; then
@@ -362,7 +391,7 @@ fi
 # 🚨 追加ブロックの件数に上限がある (300 件で本文が 101 KB になり cwd が埋没した)
 many=""; for i in $(seq 12); do many+="git -C /nope/$i push && "; done; many+="git commit -m x"
 body=$(body_of "$many" "$x/A")
-if grep -qF '以下略: git -C の行き先が 6 件以上ある' <<< "$body"; then
+if grep -qF '以下略: git -C / cd の行き先が 6 件以上ある' <<< "$body"; then
   pass "行き先が多いときは打ち切って (以下略) を出す"
 else
   bad "行き先の件数に上限が無い ($(grep -c '^検査した repo: ' <<< "$body") ブロック出た)"
