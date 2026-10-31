@@ -1,1 +1,0 @@
-../1014-bug-git-state-verify-misses-cd-before-git-commit.md

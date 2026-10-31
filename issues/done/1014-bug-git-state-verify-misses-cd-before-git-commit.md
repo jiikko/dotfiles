@@ -1,7 +1,5 @@
 # 1014 (bug): git-state-verify が `cd <dir> && git commit` の dir を見ず、hook の cwd の repo の state を出す
 
-> 🚨 **担当中: air5 (glogx)**（2026-10-31〜）
-
 起票日: 2026-10-31
 
 ## 概要
