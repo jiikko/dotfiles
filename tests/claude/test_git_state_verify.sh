@@ -313,6 +313,41 @@ else
   bad "展開できない cd の行き先が黙って落ちた"
 fi
 
+# lib が返す行き先を表で確かめる (hook を通すと存在しない dir は判定不能に畳まれ、展開の誤りが見えない)。
+# 期待値は「行き先を | でつないだもの」(空 = cwd)。HOME は /h に固定する
+printf '\n## lib: cd と -C から行き先を組む\n'
+# shellcheck disable=SC2016  # 左の列はコマンドの字面。展開させずに lib へ渡す
+while IFS=$'\t' read -r c want; do
+  [ -n "$c" ] || continue
+  got=$( HOME=/h; . "$ROOT_DIR/_claude/hooks/lib/git_cmd_detect.sh"
+         git_cmd_invokes "$c" commit push || true
+         printf '%s' "$GIT_CMD_TARGET_DIRS" | paste -sd '|' - )
+  if [ "$got" = "$want" ]; then pass "行き先: $c → $want"; else bad "行き先: $c → $got (期待 $want)"; fi
+done <<'CASES'
+cd /a && git commit	/a
+cd /a && cd b && git -C c push	/a/b/c
+cd /a && git -C /z push	/z
+W=/w; cd "$W" && git push	/w
+export W=/w; cd $W && git push	/w
+W=/w; cd ${W}/x && git push	/w/x
+cd ~/x && git push	/h/x
+cd "~/x" && git push	~/x
+cd $HOME/x && git push	/h/x
+cd && git push	/h
+cd - && git push	(cd -)
+cd /a; cd - && git push	(cd -)
+cd -- /a && git push	/a
+builtin cd /a && git push	/a
+if cd /a; then git commit; fi	/a
+cd $UNKNOWN && git push	$UNKNOWN
+W=/w; git -C '$W' push	$W
+X=$(cd /b && pwd) && git commit
+X=`cd /b` && git commit
+X=`true; cd /b` && git commit
+cd /a && (cd /b && (cd /c) && git commit) && git push	/b|/a
+W=/a; (W=/b); cd $W && git push	/a
+CASES
+
 # 🚨 cwd と同じ実体を指す `-C` は 2 度出さない (重複除去が消えると同じ repo が 2 ブロック出る)
 body=$(body_of "git -C . commit -m x" "$x/A")
 if [ "$(grep -c '^検査した repo: ' <<< "$body")" -eq 1 ]; then
