@@ -351,6 +351,11 @@ X=`cd /b` && git commit
 X=`true; cd /b` && git commit
 cd /a && (cd /b && (cd /c) && git commit) && git push	/b|/a
 W=/a; (W=/b); cd $W && git push	/a
+W=/a; WX=/b; cd $W && git push	/a
+W=/a; W=/b; cd $W && git push	/b
+until cd /a; do :; done; git push	/a
+command cd /a && git push	/a
+echo ${A:-"}"}; cd /a && git push	/a
 CASES
 
 # 🚨 cwd と同じ実体を指す `-C` は 2 度出さない (重複除去が消えると同じ repo が 2 ブロック出る)

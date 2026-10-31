@@ -56,7 +56,7 @@
 _GIT_CMD_OPEN=$'\x1f('
 _GIT_CMD_CLOSE=$'\x1f)'
 _git_cmd_split() { # _git_cmd_split <cmd>
-  local s="$1" out="" ch q="" i n bt=0
+  local s="$1" out="" ch q="" i n bt=0 bq
   n=${#s}
   for ((i = 0; i < n; i++)); do
     ch="${s:i:1}"
@@ -79,8 +79,14 @@ _git_cmd_split() { # _git_cmd_split <cmd>
             else bt=0; out+=$'\n'"$_GIT_CMD_CLOSE"$'\n'; fi ;;
       '$')  if [ "${s:i+1:1}" = "(" ]; then out+=$'\n'"$_GIT_CMD_OPEN"$'\n'; i=$((i + 1))
             elif [ "${s:i+1:1}" = "{" ]; then
-              while [ "$i" -lt "$n" ] && [ "${s:i:1}" != "}" ]; do out+="${s:i:1}"; i=$((i + 1)); done
-              out+="${s:i:1}"
+              # `${A:-"}"}` の引用の中の `}` で止まらない (止まると残りの `"` が行末まで引用を開き、後ろの git を取りこぼす)
+              bq=""
+              while [ "$i" -lt "$n" ]; do
+                ch="${s:i:1}"; out+="$ch"
+                if [ -n "$bq" ]; then [ "$ch" = "$bq" ] && bq=""
+                else case "$ch" in \'|\") bq="$ch" ;; '}') break ;; esac; fi
+                i=$((i + 1))
+              done
             else out+="$ch"; fi ;;
       *)    out+="$ch" ;;
     esac
