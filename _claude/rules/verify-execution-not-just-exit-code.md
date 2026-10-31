@@ -91,6 +91,8 @@ CI の runner / OS / 依存を差し替えたら、緑どうしの比較で終�
 **手元と CI で toolchain の版が違うなら、push の前に CI と同じ版でも 1 回回す** (CI が go.mod の `go` 行・`.tool-versions` 等から
 版を決める repo。Go なら `GOTOOLCHAIN=go<版> go test ./...`)。その版でだけ出る不具合は、CI が赤くなるまで見えない
 (dotfiles の chromecookie: go1.25.0 でだけ `os.Root` 由来の `DirEntry.Info()` が失敗した。esa-cli issue 014)。
+**locale (`LANG` / `LC_ALL`) も版と同じ扱い**。並び・照合・文字クラスに依存する結果 (zsh の `(o)`・`sort`・`[[:alpha:]]`) は locale で変わる。
+CI の locale でも 1 回回すか、結果を並べる・比べる側を `LC_ALL=C` で固定する。処理の側で locale を固定しても、テストの側の並びは別に固定が要る (retro 1015)。
 
 ## 確認を求める外部コマンドは、非対話だと「何もせず rc=0」で返る
 

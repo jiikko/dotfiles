@@ -11,7 +11,8 @@
   `gh run list --limit 1` のように「最新」で選ぶと、別の commit の run を拾うことがある (2026-10-02 に 2026-09-04 の run の success を拾いかけた。issue 634)。
   rc=4 は「run がまだ無い」(push 直後 / paths filter で起動しない) なので上限つきで再試行する。rc=5 は GitHub に無い (push していない) commit で、待っても来ない。
   **issues/ だけの commit では Tests / Lint は起動しない** (paths-ignore)。その commit で待つのは `Issues`
-  - 🚨 **名指しで待った run が緑でも、報告の前に引数なしの `ci-log` を 1 回打ち、その commit の全 run の失敗を見る**。名指しは
+  - 🚨 **名指しで待った run が緑でも、CI を待たずに push を重ねたときも、完了の報告の前に最後の commit で引数なしの `ci-log` を 1 回打ち、全 run の失敗を見る**
+    (待たない運用は「確認を後回しにする」であって「見ない」ではない。retro 1015: 10 回 push して一度も見ず、赤いまま完了を報告した)。名指しは
     「待つ対象」を決めるためのもので、名指ししなかった workflow (paths 付きの検査など) については何も言わない (retro 689: 3 本を名指しで
     待って緑を見続け、`unused` の赤を 10 本見逃した)
 - 🚨 **HEAD が緑でも「直前までが緑」ではない**。paths filter 付きの workflow は、その paths に触らない
