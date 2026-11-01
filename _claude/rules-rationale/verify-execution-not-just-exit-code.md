@@ -397,6 +397,11 @@ dotfiles の chromecookie (esa-cli / slack-cli / newrelic-nrql-cli が go get �
 `go list -m all`・build・test・CI はどれも緑だった。取り込む側の build / test / CI も緑で、go.sum の古い行を消そうとして手で tidy を
 打つまで見えなかった。dotfiles では `scripts/go_module_graph.sh` が、外から import できる module について取り込む側の立場の検査を持つ。
 
+## 背景の run を止めるのはハーネスの停止から (obaket retro 1354, 2026-11-02)
+
+自分が背景で起こした `make test` を pid の `kill` で止めようとして、権限で拒否された。ハーネスの `TaskStop` (背景のタスクの ID) では止まった。
+ハーネスが起こした run はハーネスが止め方を持っており、pid を探して kill するより手数が少なく、広いパターンの kill で他人のプロセスに届く事故も起きない。
+
 ## 本文から移した実例 (2026-10-30。常時読み込みの字数を減らすため、rule の本文の括弧書きから移した)
 
 - retro 940: 省略されたのは参照の一覧なのに定義の本体を取り直させる案内と、完全な一覧から同じ argv を繰り返させる案内が、文言の assert を通っていた
