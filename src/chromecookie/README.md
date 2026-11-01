@@ -27,7 +27,7 @@ ws.InstallCleanupOnSignal()                 // main の先頭で 1 回 (②: シ
 ws.SweepStaleTempDirs()                     // main の先頭で 1 回 (③: SIGKILL 等で残った残骸を消す)
 
 pw, err := chromecookie.KeychainPassword() // *EnvError なら即停止
-res, err := ws.ReadCookies(profile, pw)     // names を渡すとその名前だけ読む
+res, err := ws.ReadCookiesForHost(profile, pw, "team.esa.io") // その host 宛てに送られうる Cookie だけを読む
 // 目的の Cookie が無かったら、原因の手がかりを確かめる
 if err := res.Diagnose("esa 宛ての Cookie "); err != nil { /* *ReadError: 記録して次のプロファイルへ */ }
 ```
@@ -40,6 +40,10 @@ if err := res.Diagnose("esa 宛ての Cookie "); err != nil { /* *ReadError: 記
 | `IsMissing` — Cookie DB が無い / `Diagnose` が nil (Cookie 0 件) | 黙って skip |
 | `*ReadError` — アクセス拒否・壊れた DB・全件復号失敗・`-wal` / `-shm` を読めない | 記録して skip し、全滅したら `IssueNote` で理由を添える |
 | それ以外 | 止める側に倒す (分類は許可リスト) |
+
+送信先のホストが決まっているなら `ReadCookiesForHost` を使う (他サイトのセッション Cookie を復号しない。
+絞りは `HostMatches` と同じ判定の host_key の完全一致で、`Diagnose` の全件復号失敗も絞った行だけで数える)。
+`ReadCookies` は全件 (names を渡すとその名前だけ) を読む。
 
 `ListProfiles` は Local State からプロファイルを列挙する (直近に使ったものが先頭)。
 Cookie DB 以外のファイル (slack-cli の Local Storage など) を一時コピーするときも `ws.NewTempDir` を通す
