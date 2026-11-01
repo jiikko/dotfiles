@@ -54,6 +54,21 @@ import sys
 import tempfile
 
 REPO = os.path.dirname(os.path.abspath(__file__))
+
+
+def replace_dirs(gomod):
+    """go.mod の replace のうち、相対パス（./ か ../ で始まる）を指すものの右辺を返す。"""
+    out = []
+    for line in open(gomod, encoding="utf-8"):
+        line = line.split("//", 1)[0].strip()
+        if line.startswith("replace "):
+            line = line[len("replace "):]
+        if "=>" not in line:
+            continue
+        target = line.split("=>", 1)[1].split()[0]
+        if target.startswith("./") or target.startswith("../"):
+            out.append(target)
+    return out
 MUTATIONS = [
     # (名前, ファイル, 置換前, 置換後, テスト対象パッケージ, 期待して red になるテスト名)
     ('v11 を平文として素通しする', 'cookie.go', '\tcase "v10", "v11":', '\tcase "v10":', './', 'TestDecryptValueHandlesV10AndV11'),
@@ -139,6 +154,10 @@ def main():
             return {n for n in names if n in {".git", "tmp"}}
 
         shutil.copytree(REPO, root, ignore=ignore)
+        # go.mod の相対パスの replace（testwait => ../testwait）の先も、コピーの隣へ同じ相対位置で置く。
+        # 置かないとコピーの側で「replacement directory does not exist」になり baseline が落ちる。
+        for rel in replace_dirs(os.path.join(REPO, "go.mod")):
+            shutil.copytree(os.path.normpath(os.path.join(REPO, rel)), os.path.normpath(os.path.join(root, rel)))
 
         rc, out, err = run("go test -count=1 ./...", root)
         if rc != 0:
