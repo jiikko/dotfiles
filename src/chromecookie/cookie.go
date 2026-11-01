@@ -257,7 +257,7 @@ func decryptCookies(rows []rawCookie, key []byte, metaVersion int) ([]Cookie, de
 	return out, st
 }
 
-// Result は ReadCookies の結果。
+// Result は ReadCookiesForHost の結果。
 type Result struct {
 	Cookies []Cookie
 
@@ -279,34 +279,6 @@ func (r Result) Diagnose(what string) error {
 	return r.skipped.AsError(what)
 }
 
-// ReadCookies は指定プロファイルの Cookie DB を作業領域へコピーし、password（KeychainPassword の値）で
-// 復号して返す。names を渡すとその名前の Cookie だけを読む（露出面を最小にする）。空なら全件。
-//
-// password を引数で受けるのは、呼び出し側が Keychain をテストで差し替えられるようにするため
-// （実物の security は許可ダイアログを出す）。
-//
-// 戻り値のエラーの分類はパッケージの doc を参照。DB を開けない・cookies テーブルを読めない
-// （壊れた DB・sqlite 以外のファイル・古いスキーマ）は、鍵を取れた後のこのプロファイル固有の
-// 問題なので *ReadError（ReadBroken）にする。
-//
-// 送信先のホストが決まっているなら ReadCookiesForHost を使う（他サイトの Cookie を復号しない）。
-func (w *Workspace) ReadCookies(profile string, password []byte, names ...string) (Result, error) {
-	return w.readCookies(profile, password, nil, names)
-}
-
-// ReadCookiesForHost は ReadCookies と同じだが、reqHost 宛てに送られうる Cookie（HostMatches が真になる
-// host_key）の行だけを読み、復号する。他サイトのセッション Cookie を復号してメモリに持たないため。
-// names を渡すと、さらにその名前に絞る。
-//
-// Result.Diagnose の「全件の復号失敗」も、この絞った行だけで数える。reqHost 宛ての暗号化された
-// Cookie が 1 件も無ければ鍵違いは検出されず、「Cookie が無い」（nil）になる。
-func (w *Workspace) ReadCookiesForHost(profile string, password []byte, reqHost string, names ...string) (Result, error) {
-	if reqHost == "" {
-		return Result{}, errors.New("chromecookie: ReadCookiesForHost の reqHost が空です")
-	}
-	return w.readCookies(profile, password, hostKeyCandidates(reqHost), names)
-}
-
 // hostKeyCandidates は reqHost 宛てに HostMatches が真になりうる host_key を全部返す
 // （host-only の reqHost と、ラベル境界の各 suffix に先頭ドットを付けたドメイン Cookie）。
 // 例: "team.esa.io" → team.esa.io, .team.esa.io, .esa.io, .io
@@ -325,7 +297,26 @@ func hostKeyCandidates(reqHost string) []string {
 	}
 }
 
-func (w *Workspace) readCookies(profile string, password []byte, hostKeys, names []string) (Result, error) {
+// ReadCookiesForHost は指定プロファイルの Cookie DB を作業領域へコピーし、reqHost 宛てに送られうる
+// Cookie（HostMatches が真になる host_key）の行だけを、password（KeychainPassword の値）で復号して返す。
+// names を渡すと、さらにその名前に絞る。
+//
+// 全件を読む口は置かない。他サイトのセッション Cookie まで復号してメモリに持つことになり、
+// 送信先の決まっている呼び出し側（slack-cli / esa-cli / newrelic-nrql-cli）には要らない。
+//
+// Result.Diagnose の「全件の復号失敗」も、この絞った行だけで数える。reqHost 宛ての暗号化された
+// Cookie が 1 件も無ければ鍵違いは検出されず、「Cookie が無い」（nil）になる。
+//
+// password を引数で受けるのは、呼び出し側が Keychain をテストで差し替えられるようにするため
+// （実物の security は許可ダイアログを出す）。
+//
+// 戻り値のエラーの分類はパッケージの doc を参照。DB を開けない・cookies テーブルを読めない
+// （壊れた DB・sqlite 以外のファイル・古いスキーマ）は、鍵を取れた後のこのプロファイル固有の
+// 問題なので *ReadError（ReadBroken）にする。
+func (w *Workspace) ReadCookiesForHost(profile string, password []byte, reqHost string, names ...string) (Result, error) {
+	if reqHost == "" {
+		return Result{}, errors.New("chromecookie: ReadCookiesForHost の reqHost が空です")
+	}
 	key, err := deriveKey(password)
 	if err != nil {
 		return Result{}, err
@@ -356,23 +347,10 @@ func (w *Workspace) readCookies(profile string, password []byte, hostKeys, names
 		metaVersion = 0
 	}
 
-	var conds []string
 	var args []any
-	for _, f := range []struct {
-		col  string
-		vals []string
-	}{{"host_key", hostKeys}, {"name", names}} {
-		if len(f.vals) == 0 {
-			continue
-		}
-		conds = append(conds, f.col+` IN (?`+strings.Repeat(`, ?`, len(f.vals)-1)+`)`)
-		for _, v := range f.vals {
-			args = append(args, v)
-		}
-	}
-	query := `SELECT host_key, name, value, encrypted_value FROM cookies`
-	if len(conds) > 0 {
-		query += ` WHERE ` + strings.Join(conds, ` AND `)
+	query := `SELECT host_key, name, value, encrypted_value FROM cookies WHERE ` + inClause("host_key", hostKeyCandidates(reqHost), &args)
+	if len(names) > 0 {
+		query += ` AND ` + inClause("name", names, &args)
 	}
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -393,6 +371,14 @@ func (w *Workspace) readCookies(profile string, password []byte, hostKeys, names
 	}
 	out, st := decryptCookies(raw, key, metaVersion)
 	return Result{Cookies: out, decrypt: st, skipped: skipped}, nil
+}
+
+// inClause は "col IN (?, ?, …)" を返し、vals を args に足す。vals は空でないこと。
+func inClause(col string, vals []string, args *[]any) string {
+	for _, v := range vals {
+		*args = append(*args, v)
+	}
+	return col + ` IN (?` + strings.Repeat(`, ?`, len(vals)-1) + `)`
 }
 
 // HostMatches は Cookie の host_key が対象ホストに送信されるべきか判定する。

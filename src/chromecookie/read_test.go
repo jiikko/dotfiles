@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// ReadCookies のエラーの分類（即停止 / 黙って skip / 記録して skip）を、実物の sqlite の
+// ReadCookiesForHost のエラーの分類（即停止 / 黙って skip / 記録して skip）を、実物の sqlite の
 // Cookie DB を HOME の下に作って固定する。Keychain は通さない（password を直接渡す）。
 // 分類の意味は package doc（cookie.go）を参照。
 
@@ -77,23 +77,23 @@ func TestReadCookiesClassification(t *testing.T) {
 			{host: ".example.com", name: "sid", enc: encWithPassword(t, testPassword, "SECRET", ".example.com")},
 			{host: ".example.com", name: "other", value: "plain"},
 		})
-		res, err := testWS.ReadCookies("P", []byte(testPassword), "sid")
+		res, err := testWS.ReadCookiesForHost("P", []byte(testPassword), "example.com", "sid")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(res.Cookies) != 1 || res.Cookies[0].Name != "sid" || res.Cookies[0].Value != "SECRET" {
 			t.Errorf("sid だけを復号して返すべき: %+v", res.Cookies)
 		}
-		all, err := testWS.ReadCookies("P", []byte(testPassword))
+		all, err := testWS.ReadCookiesForHost("P", []byte(testPassword), "example.com")
 		if err != nil || len(all.Cookies) != 2 {
-			t.Errorf("names 無しは全件: %+v %v", all.Cookies, err)
+			t.Errorf("names 無しは host 宛ての全件: %+v %v", all.Cookies, err)
 		}
 		assertNoLeftovers(t)
 	})
 
 	t.Run("Cookie DB が無いのは IsMissing（黙って skip）", func(t *testing.T) {
 		isolateTemp(t)
-		_, err := testWS.ReadCookies("NoSuch", []byte(testPassword))
+		_, err := testWS.ReadCookiesForHost("NoSuch", []byte(testPassword), "example.com")
 		if !IsMissing(err) || IsEnvError(err) {
 			t.Errorf("DB 無しが Missing にならない: %T %v", err, err)
 		}
@@ -109,7 +109,7 @@ func TestReadCookiesClassification(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "Cookies"), []byte("this is not sqlite"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		_, err := testWS.ReadCookies("P", []byte(testPassword))
+		_, err := testWS.ReadCookiesForHost("P", []byte(testPassword), "example.com")
 		if !isReadKind(err, ReadBroken) || IsEnvError(err) {
 			t.Errorf("壊れた DB が ReadBroken にならない: %T %v", err, err)
 		}
@@ -122,7 +122,7 @@ func TestReadCookiesClassification(t *testing.T) {
 		writeCookieDB(t, home, "P", "23", []fakeCookie{
 			{host: ".example.com", name: "sid", enc: encWithPassword(t, "another-password", "SECRET", "")},
 		})
-		res, err := testWS.ReadCookies("P", []byte(testPassword))
+		res, err := testWS.ReadCookiesForHost("P", []byte(testPassword), "example.com")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,7 +138,7 @@ func TestReadCookiesClassification(t *testing.T) {
 		isolateTemp(t)
 		home := os.Getenv("HOME")
 		writeCookieDB(t, home, "P", "23", nil)
-		res, err := testWS.ReadCookies("P", []byte(testPassword))
+		res, err := testWS.ReadCookiesForHost("P", []byte(testPassword), "example.com")
 		if err != nil || len(res.Cookies) != 0 {
 			t.Fatalf("空の DB: %+v %v", res.Cookies, err)
 		}
@@ -155,7 +155,7 @@ func TestReadCookiesClassification(t *testing.T) {
 			t.Fatal(err)
 		}
 		lockForTest(t, path+"-wal")
-		res, err := testWS.ReadCookies("P", []byte(testPassword))
+		res, err := testWS.ReadCookiesForHost("P", []byte(testPassword), "example.com")
 		if err != nil {
 			t.Fatalf("-wal だけ読めないのはプロファイル全体の失敗にしない: %v", err)
 		}
@@ -173,7 +173,7 @@ func TestReadCookiesClassification(t *testing.T) {
 		if err := os.Symlink(t.TempDir(), filepath.Join(parent, tempRootName)); err != nil {
 			t.Fatal(err)
 		}
-		_, err := testWS.ReadCookies("P", []byte(testPassword))
+		_, err := testWS.ReadCookiesForHost("P", []byte(testPassword), "example.com")
 		if !IsEnvError(err) {
 			t.Errorf("作業領域の異常が EnvError にならない（プロファイルごとに skip されてしまう）: %T %v", err, err)
 		}

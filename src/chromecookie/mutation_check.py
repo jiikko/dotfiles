@@ -114,6 +114,7 @@ MUTATIONS = [
     ('作業領域の異常を素のエラーで返す（setup が「ログインしてから」に化ける）', 'workspace.go', '\t\treturn "", nil, w.tempRootError(err)\n\t}\n\tw.mu.Lock()', '\t\treturn "", nil, err\n\t}\n\tw.mu.Lock()', './', 'TestTempRootFailureIsEnvError'),
     ('終了処理中を素のエラーで返す', 'workspace.go', '\t\treturn "", nil, w.tempRootError(errCleanupClosing)', '\t\treturn "", nil, errCleanupClosing', './', 'TestTempRootFailureIsEnvError'),
     ('壊れた DB を素のエラーで返す（自動検出が未知のエラーとして止まる）', 'cookie.go', '\t\treturn Result{}, &ReadError{Kind: ReadBroken, Msg: "Cookie DB を読めません", Err: err}', '\t\treturn Result{}, err', './', 'TestReadCookiesClassification'),
+    ('host の絞り込みを外す（他サイトのセッション Cookie まで復号する）', 'cookie.go', '`SELECT host_key, name, value, encrypted_value FROM cookies WHERE ` + inClause("host_key", hostKeyCandidates(reqHost), &args)', '`SELECT host_key, name, value, encrypted_value FROM cookies WHERE 1=1`', './', 'TestReadCookiesForHost'),
     ('names の絞り込みを外す（露出面が全 Cookie に広がる）', 'cookie.go', '\tif len(names) > 0 {', '\tif false && len(names) > 0 {', './', 'TestReadCookiesClassification'),
     ('既存の作業領域の group / other 権限を見逃す', 'workspace.go', '\tif got.Mode().Perm()&0o077 != 0 {', '\tif false && got.Mode().Perm()&0o077 != 0 {', './', 'TestPermissiveExistingRootIsRejected'),
 ]

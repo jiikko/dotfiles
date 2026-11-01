@@ -10,7 +10,7 @@ import (
 
 // Profile は Chrome のプロファイル 1 件。
 type Profile struct {
-	Dir   string // ディレクトリ名（Default / Profile 3 …）。ReadCookies に渡す値
+	Dir   string // ディレクトリ名（Default / Profile 3 …）。ReadCookiesForHost に渡す値
 	Name  string // 表示名（Local State の name）
 	Email string // ログイン中 Google アカウント（対象サービスのログインとは限らない）
 }
