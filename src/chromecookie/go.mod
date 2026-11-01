@@ -7,7 +7,7 @@ require modernc.org/sqlite v1.28.0
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
-	github.com/jiikko/dotfiles/src/testwait v0.0.0
+	github.com/jiikko/dotfiles/src/testwait v0.0.0-20261101103228-d17e1488b625
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/mattn/go-isatty v0.0.16 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
@@ -26,4 +26,7 @@ require (
 	modernc.org/token v1.0.1 // indirect
 )
 
+// chromecookie は dotfiles の外の repo が go get で取り込み、取り込む側はこの replace を見ない。testwait の require を
+// 他の module と同じ v0.0.0 にすると、取り込む側の go mod tidy が実在しない版を取りに行って落ちる。取得できる
+// pseudo-version (testwait を変えた commit 以降なら何でもよい) にしておく。テストの実行は replace の ../testwait を使う。
 replace github.com/jiikko/dotfiles/src/testwait => ../testwait
