@@ -26,7 +26,4 @@ require (
 	modernc.org/token v1.0.1 // indirect
 )
 
-// chromecookie は dotfiles の外の repo が go get で取り込み、取り込む側はこの replace を見ない。testwait の require を
-// 他の module と同じ v0.0.0 にすると、取り込む側の go mod tidy が実在しない版を取りに行って落ちる。取得できる
-// pseudo-version (testwait を変えた commit 以降なら何でもよい) にしておく。テストの実行は replace の ../testwait を使う。
 replace github.com/jiikko/dotfiles/src/testwait => ../testwait
