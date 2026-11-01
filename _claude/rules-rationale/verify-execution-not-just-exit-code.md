@@ -389,6 +389,14 @@ dupscan の 938 で、出力が「次はこれを打て」と argv を案内す�
 「summary から本体へ移れる」に偏り、省略の原因や候補の種類ごとに案内を打ち直して進展するかを見ていなかった。レビューの後に取得先の選択と回帰を足し直した。
 「約束の操作を実機で 1 回通す」の項は、案内が正しいかを 1 回確かめるところまでで、案内を辿った連鎖が進むか・終わるかは言っていないので、その下位項にした。
 
+## 受け手の環境で依存の解決を回す (esa-cli retro 018, 2026-11-01)
+
+dotfiles の chromecookie (esa-cli / slack-cli / newrelic-nrql-cli が go get で取り込む) のテストが、dotfiles の中でしか解決できない testwait
+(ドット無しの module 名 + v0.0.0。replace ../testwait) を使っていた。取り込む側は依存先の replace を見ないので、取り込む 3 repo の
+`go mod tidy` だけが「malformed module path "testwait"」で落ちた。dotfiles の中では replace が埋めるので、lint の `go mod tidy -diff` /
+`go list -m all`・build・test・CI はどれも緑だった。取り込む側の build / test / CI も緑で、go.sum の古い行を消そうとして手で tidy を
+打つまで見えなかった。dotfiles では `scripts/go_module_graph.sh` が、外から import できる module について取り込む側の立場の検査を持つ。
+
 ## 本文から移した実例 (2026-10-30。常時読み込みの字数を減らすため、rule の本文の括弧書きから移した)
 
 - retro 940: 省略されたのは参照の一覧なのに定義の本体を取り直させる案内と、完全な一覧から同じ argv を繰り返させる案内が、文言の assert を通っていた
